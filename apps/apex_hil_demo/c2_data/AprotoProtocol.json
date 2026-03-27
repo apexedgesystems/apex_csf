@@ -1,0 +1,209 @@
+{
+  "component": "AprotoProtocol",
+  "structs": {
+    "AckPayload": {
+      "category": "PROTOCOL",
+      "size": 8,
+      "fields": [
+        {
+          "name": "cmdOpcode",
+          "type": "uint",
+          "offset": 0,
+          "size": 2,
+          "value": null
+        },
+        {
+          "name": "cmdSequence",
+          "type": "uint",
+          "offset": 2,
+          "size": 2,
+          "value": null
+        },
+        {
+          "name": "status",
+          "type": "uint",
+          "offset": 4,
+          "size": 1,
+          "value": null
+        },
+        {
+          "name": "reserved",
+          "type": "array",
+          "offset": 5,
+          "size": 3,
+          "value": [],
+          "element_type": "uint",
+          "dims": [3]
+        }
+      ]
+    },
+    "AprotoFlags": {
+      "category": "PROTOCOL",
+      "size": 6,
+      "fields": [
+        {
+          "name": "internalOrigin",
+          "type": "uint",
+          "offset": 0,
+          "size": 1,
+          "value": null
+        },
+        {
+          "name": "isResponse",
+          "type": "uint",
+          "offset": 1,
+          "size": 1,
+          "value": null
+        },
+        {
+          "name": "ackRequested",
+          "type": "uint",
+          "offset": 2,
+          "size": 1,
+          "value": null
+        },
+        {
+          "name": "crcPresent",
+          "type": "uint",
+          "offset": 3,
+          "size": 1,
+          "value": null
+        },
+        {
+          "name": "encryptedPresent",
+          "type": "uint",
+          "offset": 4,
+          "size": 1,
+          "value": null
+        },
+        {
+          "name": "reserved1",
+          "type": "uint",
+          "offset": 5,
+          "size": 1,
+          "value": null
+        }
+      ]
+    },
+    "AprotoHeader": {
+      "category": "PROTOCOL",
+      "size": 19,
+      "fields": [
+        {
+          "name": "magic",
+          "type": "uint",
+          "offset": 0,
+          "size": 2,
+          "value": null
+        },
+        {
+          "name": "version",
+          "type": "uint",
+          "offset": 2,
+          "size": 1,
+          "value": null
+        },
+        {
+          "name": "flags",
+          "type": "struct",
+          "offset": 3,
+          "size": 6,
+          "fields": [
+            {
+              "internalOrigin": {
+                "type": "uint",
+                "size": 1,
+                "value": null
+              }
+            },
+            {
+              "isResponse": {
+                "type": "uint",
+                "size": 1,
+                "value": null
+              }
+            },
+            {
+              "ackRequested": {
+                "type": "uint",
+                "size": 1,
+                "value": null
+              }
+            },
+            {
+              "crcPresent": {
+                "type": "uint",
+                "size": 1,
+                "value": null
+              }
+            },
+            {
+              "encryptedPresent": {
+                "type": "uint",
+                "size": 1,
+                "value": null
+              }
+            },
+            {
+              "reserved1": {
+                "type": "uint",
+                "size": 1,
+                "value": null
+              }
+            }
+          ]
+        },
+        {
+          "name": "fullUid",
+          "type": "uint",
+          "offset": 9,
+          "size": 4,
+          "value": null
+        },
+        {
+          "name": "opcode",
+          "type": "uint",
+          "offset": 13,
+          "size": 2,
+          "value": null
+        },
+        {
+          "name": "sequence",
+          "type": "uint",
+          "offset": 15,
+          "size": 2,
+          "value": null
+        },
+        {
+          "name": "payloadLength",
+          "type": "uint",
+          "offset": 17,
+          "size": 2,
+          "value": null
+        }
+      ]
+    },
+    "CryptoMeta": {
+      "category": "PROTOCOL",
+      "size": 13,
+      "fields": [
+        {
+          "name": "keyIndex",
+          "type": "uint",
+          "offset": 0,
+          "size": 1,
+          "value": null
+        },
+        {
+          "name": "nonce",
+          "type": "array",
+          "offset": 1,
+          "size": 12,
+          "value": [],
+          "element_type": "uint",
+          "dims": [12]
+        }
+      ]
+    }
+  }
+}

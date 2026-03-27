@@ -1,0 +1,126 @@
+{
+  "application": "ApexHilDemo",
+  "description": "Hardware-in-the-loop demo: plant model + dual STM32/emulated flight controllers",
+  "protocol": {
+    "transport": "TCP",
+    "framing": "SLIP",
+    "port": 9000,
+    "header": "AprotoProtocol.json"
+  },
+  "components": [
+    {
+      "name": "Executive",
+      "fullUid": "0x000000",
+      "type": "CORE",
+      "dataFile": "SystemComponent.json",
+      "notes": "System executive. Health via GET_HEALTH (opcode 0x0001). See ExecutiveHealthPacket in docs."
+    },
+    {
+      "name": "Scheduler",
+      "fullUid": "0x000100",
+      "type": "CORE",
+      "dataFile": "SystemComponent.json",
+      "notes": "Task scheduler. Base telemetry only (opcodes 0x0080-0x0081)."
+    },
+    {
+      "name": "ActionEngine",
+      "fullUid": "0x000500",
+      "type": "CORE",
+      "dataFile": "SystemComponent.json",
+      "notes": "Event watchpoint/sequence engine. TPRM-configurable."
+    },
+    {
+      "name": "HilPlantModel",
+      "fullUid": "0x007800",
+      "type": "SW_MODEL",
+      "dataFile": "HilPlantModel.json",
+      "notes": "1-DOF vertical flight plant model. TUNABLE_PARAM for mass/drag/control gains."
+    },
+    {
+      "name": "HilDriver (STM32)",
+      "fullUid": "0x007A00",
+      "instanceIndex": 0,
+      "type": "DRIVER",
+      "dataFile": "HilDriver.json",
+      "notes": "Real STM32 flight controller via /dev/ttyACM0. STATE is read-only."
+    },
+    {
+      "name": "HilDriver (Emulated)",
+      "fullUid": "0x007A01",
+      "instanceIndex": 1,
+      "type": "DRIVER",
+      "dataFile": "HilDriver.json",
+      "notes": "Software-emulated flight controller via PTY. Same STATE layout as STM32 driver."
+    },
+    {
+      "name": "HilComparator",
+      "fullUid": "0x007B00",
+      "type": "SUPPORT",
+      "dataFile": "HilComparator.json",
+      "notes": "Compares real vs emulated driver outputs. TUNABLE_PARAM for divergence threshold."
+    },
+    {
+      "name": "SystemMonitor",
+      "fullUid": "0x00C800",
+      "type": "SUPPORT",
+      "dataFile": "SystemComponent.json",
+      "notes": "CPU/memory/GPU health monitor. Base telemetry only in this release."
+    }
+  ],
+  "wireProtocol": {
+    "dataFile": "HilProtocol.json",
+    "description": "SLIP-framed structs on UART between host and STM32",
+    "opcodes": {
+      "0x10": "STATE_UPDATE (VehicleState: host -> controller)",
+      "0x20": "CONTROL_CMD (ControlCmd: controller -> host)",
+      "0x30": "HEARTBEAT (HeartbeatData: bidirectional)"
+    }
+  },
+  "systemOpcodes": {
+    "description": "System opcodes (0x0000-0x00FF) are handled by ApexInterface. Executive opcodes (0x0100+) are routed to fullUid=0x000000.",
+    "interface": {
+      "0x0000": "SYS_NOOP - connectivity check (any fullUid)",
+      "0x0001": "SYS_PING - echo payload back",
+      "0x0002": "SYS_GET_STATUS - interface status",
+      "0x0003": "SYS_RESET - reset decoder state",
+      "0x0020": "FILE_BEGIN - start file transfer",
+      "0x0021": "FILE_CHUNK - file data chunk",
+      "0x0022": "FILE_END - finalize transfer",
+      "0x0023": "FILE_ABORT - abort transfer",
+      "0x0024": "FILE_STATUS - query transfer status"
+    },
+    "executive": {
+      "0x0100": "GET_HEALTH - ExecutiveHealthPacket (48 bytes)",
+      "0x0101": "EXEC_NOOP - executive connectivity check",
+      "0x0102": "GET_CLOCK_FREQ - clock frequency (2 bytes)",
+      "0x0103": "GET_RT_MODE - RT mode (1 byte)",
+      "0x0104": "GET_CLOCK_CYCLES - cycle count (8 bytes)",
+      "0x0110": "CMD_PAUSE - pause execution",
+      "0x0111": "CMD_RESUME - resume execution",
+      "0x0112": "CMD_SHUTDOWN - graceful shutdown",
+      "0x0113": "CMD_FAST_FORWARD - non-RT fast-forward",
+      "0x0114": "CMD_LOCK - lock component for update (4B fullUid)",
+      "0x0115": "CMD_UNLOCK - unlock component (4B fullUid)",
+      "0x0116": "CMD_SLEEP - sleep mode (clock ticks, tasks paused)",
+      "0x0117": "CMD_WAKE - wake from sleep",
+      "0x0120": "SET_CLOCK_FREQ - set frequency (2B payload)",
+      "0x0121": "SET_VERBOSITY - set log level (1B payload)",
+      "0x0125": "RELOAD_TPRM - reload component params (4B fullUid)",
+      "0x0126": "RELOAD_LIBRARY - hot-swap .so (4B fullUid)",
+      "0x0127": "RELOAD_EXECUTIVE - restart via execve",
+      "0x0130": "INSPECT - read registered data (9B: u32 fullUid, u8 category, u16 offset, u16 len)"
+    },
+    "component": {
+      "0x0080": "GET_COMMAND_COUNT - command statistics (all components)",
+      "0x0081": "GET_STATUS_INFO - component lifecycle status (all components)"
+    }
+  },
+  "inspectCategories": {
+    "0": "STATIC_PARAM - read-only constants",
+    "1": "TUNABLE_PARAM - runtime-adjustable parameters",
+    "2": "STATE - internal component state",
+    "3": "INPUT - external data fed to component",
+    "4": "OUTPUT - data produced by component"
+  },
+  "stateDataAccess": "Read-only via INSPECT (opcode 0x0130). Use JSON struct dictionaries to interpret raw bytes."
+}

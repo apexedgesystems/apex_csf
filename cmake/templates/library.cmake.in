@@ -1,0 +1,24 @@
+# ==============================================================================
+# Module: @MODULE_NAME@
+# ==============================================================================
+
+include(apex/All)
+apex_module(@MODULE_NAME@)
+
+set(CPP_SOURCES
+  "${SRC_DIR}/@PRIMARY_SOURCE@.cpp"
+)
+
+apex_add_library(
+  NAME       ${LIB_NAME}
+  TYPE       @LIB_TYPE@
+  INC        "${INC_DIR}"
+  SRC        ${CPP_SOURCES}
+  DEPS_PUBLIC @PUBLIC_DEPS@
+)
+
+apex_standard_optins(${LIB_NAME})
+
+if (EXISTS "${TST_DIR}/CMakeLists.txt")
+  add_subdirectory(tst)
+endif ()

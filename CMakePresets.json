@@ -1,0 +1,219 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja",
+      "cacheVariables": { "CMAKE_EXPORT_COMPILE_COMMANDS": "ON" }
+    },
+
+    {
+      "name": "native-linux-debug",
+      "displayName": "Native (Ubuntu) - Debug",
+      "inherits": "base",
+      "binaryDir": "build/native-linux-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang-21",
+        "CMAKE_CXX_COMPILER": "clang++-21"
+      }
+    },
+    {
+      "name": "native-linux-profile",
+      "displayName": "Native (Ubuntu) - Profile (gperftools/perf-friendly)",
+      "inherits": "base",
+      "binaryDir": "build/native-linux-profile",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang-21",
+        "CMAKE_CXX_COMPILER": "clang++-21",
+        "CMAKE_CXX_FLAGS": "-fno-omit-frame-pointer -gdwarf-4",
+        "APEX_USE_SPLIT_DWARF": "OFF"
+      }
+    },
+    {
+      "name": "native-linux-release",
+      "displayName": "Native (Ubuntu) - Release",
+      "inherits": "base",
+      "binaryDir": "build/native-linux-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_C_COMPILER": "clang-21",
+        "CMAKE_CXX_COMPILER": "clang++-21"
+      }
+    },
+
+    {
+      "name": "jetson-aarch64-debug",
+      "displayName": "Jetson AGX Thor (aarch64) - Debug",
+      "inherits": "base",
+      "binaryDir": "build/jetson-aarch64-debug",
+      "toolchainFile": "cmake/toolchains/jetson-aarch64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "OFF",
+        "CMAKE_PREFIX_PATH": "/opt/sysroots/jetson-thor/usr",
+        "APEX_REQUIRE_CUDA": "ON"
+      }
+    },
+    {
+      "name": "jetson-aarch64-release",
+      "displayName": "Jetson AGX Thor (aarch64) - Release",
+      "inherits": "base",
+      "binaryDir": "build/jetson-aarch64-release",
+      "toolchainFile": "cmake/toolchains/jetson-aarch64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF",
+        "CMAKE_PREFIX_PATH": "/opt/sysroots/jetson-thor/usr",
+        "APEX_REQUIRE_CUDA": "ON"
+      }
+    },
+
+    {
+      "name": "rpi-aarch64-debug",
+      "displayName": "Raspberry Pi (aarch64) - Debug",
+      "inherits": "base",
+      "binaryDir": "build/rpi-aarch64-debug",
+      "toolchainFile": "cmake/toolchains/rpi-aarch64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "rpi-aarch64-release",
+      "displayName": "Raspberry Pi (aarch64) - Release",
+      "inherits": "base",
+      "binaryDir": "build/rpi-aarch64-release",
+      "toolchainFile": "cmake/toolchains/rpi-aarch64.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+
+    {
+      "name": "riscv64-linux-debug",
+      "displayName": "RISC-V 64 (Linux) - Debug",
+      "inherits": "base",
+      "binaryDir": "build/riscv64-linux-debug",
+      "toolchainFile": "cmake/toolchains/riscv64-linux-gnu.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+    {
+      "name": "riscv64-linux-release",
+      "displayName": "RISC-V 64 (Linux) - Release",
+      "inherits": "base",
+      "binaryDir": "build/riscv64-linux-release",
+      "toolchainFile": "cmake/toolchains/riscv64-linux-gnu.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF"
+      }
+    },
+
+    {
+      "name": "stm32-baremetal",
+      "displayName": "STM32 (L476) - Bare-metal",
+      "inherits": "base",
+      "binaryDir": "build/stm32",
+      "toolchainFile": "cmake/toolchains/stm32-gcc.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "APEX_HAL_PLATFORM": "stm32"
+      }
+    },
+
+    {
+      "name": "zephyr-arm",
+      "displayName": "Zephyr RTOS (ARM)",
+      "inherits": "base",
+      "binaryDir": "build/zephyr-arm",
+      "toolchainFile": "cmake/toolchains/zephyr.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "ZEPHYR_BOARD": "nucleo_l476rg"
+      }
+    },
+
+    {
+      "name": "arduino-baremetal",
+      "displayName": "Arduino Uno (ATmega328P) - Bare-metal",
+      "inherits": "base",
+      "binaryDir": "build/arduino",
+      "toolchainFile": "cmake/toolchains/avr-gcc.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "APEX_HAL_PLATFORM": "avr"
+      }
+    },
+
+    {
+      "name": "pico-baremetal",
+      "displayName": "Pico (RP2040) - Bare-metal",
+      "inherits": "base",
+      "binaryDir": "build/pico",
+      "toolchainFile": "cmake/toolchains/pico-gcc.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "APEX_HAL_PLATFORM": "pico"
+      }
+    },
+
+    {
+      "name": "esp32-baremetal",
+      "displayName": "ESP32-S3 (Xtensa LX7) - Bare-metal (ESP-IDF)",
+      "inherits": "base",
+      "binaryDir": "build/esp32",
+      "toolchainFile": "cmake/toolchains/esp32-gcc.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "APEX_HAL_PLATFORM": "esp32"
+      }
+    },
+
+    {
+      "name": "c2000-baremetal",
+      "displayName": "TI C2000 F28004x (C28x DSP) - Bare-metal",
+      "inherits": "base",
+      "binaryDir": "build/c2000",
+      "toolchainFile": "cmake/toolchains/c2000-cgt.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "APEX_HAL_PLATFORM": "c2000"
+      }
+    }
+  ],
+
+  "buildPresets": [
+    { "name": "native-linux-debug",    "configurePreset": "native-linux-debug" },
+    { "name": "native-linux-profile",  "configurePreset": "native-linux-profile" },
+    { "name": "native-linux-release",  "configurePreset": "native-linux-release" },
+    { "name": "jetson-aarch64-debug",  "configurePreset": "jetson-aarch64-debug" },
+    { "name": "jetson-aarch64-release", "configurePreset": "jetson-aarch64-release" },
+    { "name": "rpi-aarch64-debug",     "configurePreset": "rpi-aarch64-debug" },
+    { "name": "rpi-aarch64-release",   "configurePreset": "rpi-aarch64-release" },
+    { "name": "riscv64-linux-debug",   "configurePreset": "riscv64-linux-debug" },
+    { "name": "riscv64-linux-release", "configurePreset": "riscv64-linux-release" },
+    { "name": "stm32-baremetal",       "configurePreset": "stm32-baremetal" },
+    { "name": "zephyr-arm",            "configurePreset": "zephyr-arm" },
+    { "name": "arduino-baremetal",     "configurePreset": "arduino-baremetal" },
+    { "name": "pico-baremetal",        "configurePreset": "pico-baremetal" },
+    { "name": "esp32-baremetal",       "configurePreset": "esp32-baremetal" },
+    { "name": "c2000-baremetal",      "configurePreset": "c2000-baremetal" }
+  ],
+
+  "testPresets": [
+    { "name": "native-linux-debug",    "configurePreset": "native-linux-debug" },
+    { "name": "native-linux-release",  "configurePreset": "native-linux-release" },
+    { "name": "jetson-aarch64-debug",  "configurePreset": "jetson-aarch64-debug" },
+    { "name": "jetson-aarch64-release", "configurePreset": "jetson-aarch64-release" }
+  ]
+}

@@ -1,0 +1,11 @@
+# StreamCompactModel (componentId=133, instanceIndex=0)
+# fullUid = 0x8500 (34048)
+# Total: 24 bytes (StreamCompactTunableParams)
+
+[StreamCompactTunableParams]
+fieldWidth = { type = "uint", size = 4, value = 2048 }
+fieldHeight = { type = "uint", size = 4, value = 2048 }
+threshold = { type = "float", size = 4, value = 0.5 }
+classCount = { type = "uint", size = 4, value = 8 }
+classMin = { type = "float", size = 4, value = 0.0 }
+classMax = { type = "float", size = 4, value = 1.0 }

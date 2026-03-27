@@ -1,0 +1,11 @@
+# FFTAnalyzerModel (componentId=131, instanceIndex=0)
+# fullUid = 0x8300 (33536)
+# Total: 24 bytes (FFTAnalyzerTunableParams)
+
+[FFTAnalyzerTunableParams]
+channelCount = { type = "uint", size = 4, value = 256 }
+samplesPerChannel = { type = "uint", size = 4, value = 4096 }
+peakThresholdDb = { type = "float", size = 4, value = -20.0 }
+sampleRateHz = { type = "float", size = 4, value = 10000.0 }
+reserved0 = { type = "uint", size = 4, value = 0 }
+reserved1 = { type = "uint", size = 4, value = 0 }

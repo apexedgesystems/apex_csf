@@ -1,0 +1,71 @@
+# =========================================
+# Rust / Cargo
+# =========================================
+/target/
+**/*.rs.bk
+
+# Cargo lockfile
+# (keep if this is a binary crate, ignore if library crate)
+# Cargo.lock
+
+# Profiling / benchmarking
+*.profraw
+*.profdata
+*.gcda
+*.gcno
+*.gcov
+
+# =========================================
+# IDEs & Editors
+# =========================================
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains (CLion, IntelliJ, etc.)
+.idea/
+
+# Other editors
+*.swp
+*.swo
+*~
+
+# =========================================
+# OS-specific junk
+# =========================================
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Linux
+*~
+
+# =========================================
+# Project-specific extras
+# =========================================
+/tmp/
+/out/
+/build/
+*.log
+
+# Rustdoc output
+/target/doc/
+
+# =========================================
+# Containers / CI
+# =========================================
+# Docker
+*.dockerfile
+*.tar
+**/.docker-cache
+.dockerignore
+
+# CI caches (e.g., GitHub Actions)
+/.cargo-cache/
+/.cargo/

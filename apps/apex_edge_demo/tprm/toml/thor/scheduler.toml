@@ -1,0 +1,151 @@
+# Scheduler (componentId=1, instanceIndex=0)
+# Thor deployment: 2 pools
+#   Pool 0 (RT CPU): SystemMonitor telemetry, pinned to cores 4-5, SCHED_FIFO 70
+#   Pool 1 (GPU dispatch): All GPU kick/poll tasks, pinned to cores 6-7, SCHED_OTHER
+#
+# GPU tasks on Pool 1 absorb NVIDIA driver jitter (cudaLaunchKernel can
+# occasionally block 50-200us). Pool 0 RT tasks are never affected.
+
+[SchedulerTprmHeader]
+numPools = { type = "uint", size = 1, value = 2 }
+workersPerPool = { type = "uint", size = 1, value = 2 }
+numTasks = { type = "uint", size = 1, value = 11 }
+
+# Component fullUids:
+# CONV_FILTER_MODEL    = 0x8200 (33280)
+# FFT_ANALYZER_MODEL   = 0x8300 (33536)
+# BATCH_STATS_MODEL    = 0x8400 (33792)
+# STREAM_COMPACT_MODEL = 0x8500 (34048)
+# SYSTEM_MONITOR       = 0xC800 (51200)
+
+# Task 0: ConvFilterModel.kick - 1Hz, GPU pool
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33280 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 1 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 1: ConvFilterModel.poll - 1Hz, GPU pool, offset 50
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33280 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 1 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 50 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 2: BatchStatsModel.kick - 5Hz, GPU pool
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33792 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 1 }
+freqN = { type = "uint", size = 2, value = 5 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 3: BatchStatsModel.poll - 5Hz, GPU pool, offset 10
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33792 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 1 }
+freqN = { type = "uint", size = 2, value = 5 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 10 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 4: FFTAnalyzerModel.kick - 2Hz, GPU pool, offset 12
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33536 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 1 }
+freqN = { type = "uint", size = 2, value = 2 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 12 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 5: FFTAnalyzerModel.poll - 2Hz, GPU pool, offset 37
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33536 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 1 }
+freqN = { type = "uint", size = 2, value = 2 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 37 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 6: StreamCompactModel.kick - 1Hz, GPU pool, offset 25
+[[task]]
+fullUid = { type = "uint", size = 4, value = 34048 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 1 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 25 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 7: StreamCompactModel.poll - 1Hz, GPU pool, offset 75
+[[task]]
+fullUid = { type = "uint", size = 4, value = 34048 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 1 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 75 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 8: SystemMonitor.telemetry - 1Hz, RT pool, lowest priority, offset 90
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51200 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 90 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 9: ConvFilterModel.kick secondary - 2Hz, GPU pool
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33280 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 1 }
+freqN = { type = "uint", size = 2, value = 2 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 25 }
+priority = { type = "int", size = 1, value = -32 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 10: StreamCompactModel.kick secondary - 2Hz, GPU pool
+[[task]]
+fullUid = { type = "uint", size = 4, value = 34048 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 1 }
+freqN = { type = "uint", size = 2, value = 2 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 50 }
+priority = { type = "int", size = 1, value = -32 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }

@@ -1,0 +1,260 @@
+{
+  "component": "HilProtocol",
+  "structs": {
+    "ControlCmd": {
+      "category": "PROTOCOL",
+      "opcode": "0x20",
+      "size": 15,
+      "fields": [
+        {
+          "name": "thrust",
+          "type": "struct",
+          "offset": 0,
+          "size": 12,
+          "fields": [
+            {
+              "x": {
+                "type": "float",
+                "size": 4,
+                "value": "0.0F"
+              }
+            },
+            {
+              "y": {
+                "type": "float",
+                "size": 4,
+                "value": "0.0F"
+              }
+            },
+            {
+              "z": {
+                "type": "float",
+                "size": 4,
+                "value": "0.0F"
+              }
+            }
+          ]
+        },
+        {
+          "name": "mode",
+          "type": "ControlMode",
+          "offset": 12,
+          "size": 0,
+          "value": null
+        },
+        {
+          "name": "reserved",
+          "type": "array",
+          "offset": 12,
+          "size": 3,
+          "value": [],
+          "element_type": "uint",
+          "dims": [3]
+        }
+      ]
+    },
+    "HeartbeatData": {
+      "category": "PROTOCOL",
+      "opcode": "0x30",
+      "size": 12,
+      "fields": [
+        {
+          "name": "cycleCount",
+          "type": "uint",
+          "offset": 0,
+          "size": 4,
+          "value": null
+        },
+        {
+          "name": "stepCount",
+          "type": "uint",
+          "offset": 4,
+          "size": 4,
+          "value": null
+        },
+        {
+          "name": "overheadUs",
+          "type": "uint",
+          "offset": 8,
+          "size": 4,
+          "value": null
+        }
+      ]
+    },
+    "Vec3f": {
+      "category": "PROTOCOL",
+      "size": 12,
+      "fields": [
+        {
+          "name": "x",
+          "type": "float",
+          "offset": 0,
+          "size": 4,
+          "value": "0.0F"
+        },
+        {
+          "name": "y",
+          "type": "float",
+          "offset": 4,
+          "size": 4,
+          "value": "0.0F"
+        },
+        {
+          "name": "z",
+          "type": "float",
+          "offset": 8,
+          "size": 4,
+          "value": "0.0F"
+        }
+      ]
+    },
+    "VehicleState": {
+      "category": "PROTOCOL",
+      "opcode": "0x10",
+      "size": 48,
+      "fields": [
+        {
+          "name": "pos",
+          "type": "struct",
+          "offset": 0,
+          "size": 12,
+          "fields": [
+            {
+              "x": {
+                "type": "float",
+                "size": 4,
+                "value": "0.0F"
+              }
+            },
+            {
+              "y": {
+                "type": "float",
+                "size": 4,
+                "value": "0.0F"
+              }
+            },
+            {
+              "z": {
+                "type": "float",
+                "size": 4,
+                "value": "0.0F"
+              }
+            }
+          ]
+        },
+        {
+          "name": "vel",
+          "type": "struct",
+          "offset": 12,
+          "size": 12,
+          "fields": [
+            {
+              "x": {
+                "type": "float",
+                "size": 4,
+                "value": "0.0F"
+              }
+            },
+            {
+              "y": {
+                "type": "float",
+                "size": 4,
+                "value": "0.0F"
+              }
+            },
+            {
+              "z": {
+                "type": "float",
+                "size": 4,
+                "value": "0.0F"
+              }
+            }
+          ]
+        },
+        {
+          "name": "accel",
+          "type": "struct",
+          "offset": 24,
+          "size": 12,
+          "fields": [
+            {
+              "x": {
+                "type": "float",
+                "size": 4,
+                "value": "0.0F"
+              }
+            },
+            {
+              "y": {
+                "type": "float",
+                "size": 4,
+                "value": "0.0F"
+              }
+            },
+            {
+              "z": {
+                "type": "float",
+                "size": 4,
+                "value": "0.0F"
+              }
+            }
+          ]
+        },
+        {
+          "name": "altitude",
+          "type": "float",
+          "offset": 36,
+          "size": 4,
+          "value": null
+        },
+        {
+          "name": "simTime",
+          "type": "float",
+          "offset": 40,
+          "size": 4,
+          "value": null
+        },
+        {
+          "name": "stepCount",
+          "type": "uint",
+          "offset": 44,
+          "size": 4,
+          "value": null
+        }
+      ]
+    }
+  },
+  "enums": {
+    "ControlMode": {
+      "underlying_type": "uint8_t",
+      "values": {
+        "HOLD_ALT": 1,
+        "IDLE": 0,
+        "WAYPOINT": 2
+      }
+    },
+    "ControllerStatus": {
+      "underlying_type": "uint8_t",
+      "values": {
+        "ERROR": 2,
+        "IDLE": 0,
+        "RUNNING": 1
+      }
+    },
+    "HilOpcode": {
+      "underlying_type": "uint8_t",
+      "values": {
+        "ACK": 160,
+        "CMD_RESET": 3,
+        "CMD_SET_MODE": 4,
+        "CMD_SET_TARGET": 5,
+        "CMD_START": 1,
+        "CMD_STOP": 2,
+        "CONTROL_CMD": 32,
+        "HEARTBEAT": 48,
+        "NACK": 161,
+        "STATE_UPDATE": 16
+      }
+    }
+  }
+}

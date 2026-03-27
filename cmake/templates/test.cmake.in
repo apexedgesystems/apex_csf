@@ -1,0 +1,16 @@
+# ==============================================================================
+# Tests: @MODULE_NAME@
+# ==============================================================================
+
+include(apex/All)
+
+set(TEST_SOURCES
+  "${CMAKE_CURRENT_SOURCE_DIR}/@TEST_FILE@_uTest.cpp"
+)
+
+apex_add_gtest(
+  TARGET  Test@TARGET_NAME@
+  SOURCES ${TEST_SOURCES}
+  LINK    @LINK_LIBS@
+  LABELS  @LABELS@
+)

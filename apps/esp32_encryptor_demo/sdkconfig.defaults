@@ -1,0 +1,47 @@
+# ==============================================================================
+# sdkconfig.defaults - ESP-IDF configuration for esp32_encryptor_demo
+#
+# Minimal configuration for AES-256-GCM encryption firmware on ESP32-S3.
+# Settings not listed here use ESP-IDF defaults.
+# ==============================================================================
+
+# --- Target ---
+CONFIG_IDF_TARGET="esp32s3"
+
+# --- CPU Frequency ---
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
+
+# --- Flash ---
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="16MB"
+
+# --- C++ Runtime ---
+# No exceptions or RTTI (bare-metal style, matches STM32/Pico)
+CONFIG_COMPILER_CXX_EXCEPTIONS=n
+CONFIG_COMPILER_CXX_RTTI=n
+
+# --- FreeRTOS ---
+# ESP-IDF always runs FreeRTOS. Pin to core 0 for deterministic timing.
+CONFIG_FREERTOS_UNICORE=y
+
+# --- NVS (key storage) ---
+CONFIG_NVS_ENCRYPTION=n
+
+# --- USB ---
+# Use USB Serial/JTAG controller for CDC serial port (command channel).
+# This is simpler than full TinyUSB OTG and works with the ESP32-S3
+# internal USB PHY without additional managed components.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# --- Watchdog ---
+# Disable task watchdog during development (executive loop timing varies)
+CONFIG_ESP_TASK_WDT_EN=n
+
+# --- Log Level ---
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+CONFIG_LOG_DEFAULT_LEVEL=2
+
+# --- Bootloader ---
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+CONFIG_BOOTLOADER_LOG_LEVEL=2

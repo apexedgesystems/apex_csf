@@ -1,0 +1,37 @@
+# ==============================================================================
+# Module: @MODULE_NAME@ (with CUDA)
+# ==============================================================================
+
+include(apex/All)
+apex_module(@MODULE_NAME@)
+
+set(CPP_SOURCES
+  "${SRC_DIR}/@PRIMARY_SOURCE@.cpp"
+)
+
+set(CUDA_SOURCES
+  "${SRC_DIR}/@CUDA_SOURCE@.cu"
+)
+
+# CPU library (core)
+apex_add_library(
+  NAME       ${LIB_NAME}
+  TYPE       @LIB_TYPE@
+  INC        "${INC_DIR}"
+  SRC        ${CPP_SOURCES}
+  DEPS_PUBLIC @PUBLIC_DEPS@
+)
+
+# CUDA sidecar (real lib when CUDA active, shim otherwise)
+apex_add_library_cuda(
+  NAME ${LIB_NAME}_cuda
+  CORE ${LIB_NAME}
+  SRC  ${CUDA_SOURCES}
+)
+
+apex_standard_optins(${LIB_NAME})
+apex_standard_optins(${LIB_NAME}_cuda)
+
+if (EXISTS "${TST_DIR}/CMakeLists.txt")
+  add_subdirectory(tst)
+endif ()

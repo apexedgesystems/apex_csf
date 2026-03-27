@@ -1,0 +1,39 @@
+{
+  "component": "VirtualFlightCtrl",
+  "structs": {
+    "VfcState": {
+      "category": "STATE",
+      "size": 16,
+      "fields": [
+        {
+          "name": "rxCount",
+          "type": "uint",
+          "offset": 0,
+          "size": 4,
+          "value": 0
+        },
+        {
+          "name": "txCount",
+          "type": "uint",
+          "offset": 4,
+          "size": 4,
+          "value": 0
+        },
+        {
+          "name": "crcErrors",
+          "type": "uint",
+          "offset": 8,
+          "size": 4,
+          "value": 0
+        },
+        {
+          "name": "pollCount",
+          "type": "uint",
+          "offset": 12,
+          "size": 4,
+          "value": 0
+        }
+      ]
+    }
+  }
+}

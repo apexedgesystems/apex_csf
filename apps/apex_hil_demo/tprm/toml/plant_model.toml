@@ -1,0 +1,22 @@
+# HilPlantModel (componentId=120, instanceIndex=0, fullUid=0x7800)
+# Total: 64 bytes (8 doubles)
+#
+# HilPlantTunableParams:
+#   double mass         = 10.0    Vehicle mass [kg]
+#   double dragCd       = 0.5     Drag coefficient
+#   double dragArea     = 0.1     Reference area [m^2]
+#   double targetAlt    = 100.0   PD controller target altitude [m]
+#   double ctrlKp       = 2.0     Proportional gain [N/m]
+#   double ctrlKd       = 1.5     Derivative gain [N/(m/s)]
+#   double thrustMax       = 200.0  Maximum thrust magnitude [N]
+#   double commLossFrames  = 25.0   Control frames with no new cmd before failsafe (0=disabled)
+
+[HilPlantTunableParams]
+mass = { type = "double", size = 8, value = 10.0 }
+dragCd = { type = "double", size = 8, value = 0.5 }
+dragArea = { type = "double", size = 8, value = 0.1 }
+targetAlt = { type = "double", size = 8, value = 100.0 }
+ctrlKp = { type = "double", size = 8, value = 2.0 }
+ctrlKd = { type = "double", size = 8, value = 1.5 }
+thrustMax = { type = "double", size = 8, value = 200.0 }
+commLossFrames = { type = "double", size = 8, value = 25.0 }

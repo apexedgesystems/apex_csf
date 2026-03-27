@@ -1,0 +1,59 @@
+{
+  "component": "HilComparator",
+  "structs": {
+    "ComparatorState": {
+      "category": "STATE",
+      "size": 16,
+      "fields": [
+        {
+          "name": "maxDivergence",
+          "type": "float",
+          "offset": 0,
+          "size": 4,
+          "value": "0.0F"
+        },
+        {
+          "name": "compareCount",
+          "type": "uint",
+          "offset": 4,
+          "size": 4,
+          "value": 0
+        },
+        {
+          "name": "warnCount",
+          "type": "uint",
+          "offset": 8,
+          "size": 4,
+          "value": 0
+        },
+        {
+          "name": "reserved",
+          "type": "uint",
+          "offset": 12,
+          "size": 4,
+          "value": 0
+        }
+      ]
+    },
+    "ComparatorTunableParams": {
+      "category": "TUNABLE_PARAM",
+      "size": 8,
+      "fields": [
+        {
+          "name": "warnThreshold",
+          "type": "float",
+          "offset": 0,
+          "size": 4,
+          "value": "0.1F"
+        },
+        {
+          "name": "reserved",
+          "type": "float",
+          "offset": 4,
+          "size": 4,
+          "value": "0.0F"
+        }
+      ]
+    }
+  }
+}

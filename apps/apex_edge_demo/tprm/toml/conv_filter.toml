@@ -1,0 +1,11 @@
+# ConvFilterModel (componentId=130, instanceIndex=0)
+# fullUid = 0x8200 (33280)
+# Total: 24 bytes (ConvFilterTunableParams)
+
+[ConvFilterTunableParams]
+imageWidth = { type = "uint", size = 4, value = 2048 }
+imageHeight = { type = "uint", size = 4, value = 2048 }
+kernelRadius = { type = "uint", size = 4, value = 3 }
+kernelType = { type = "uint", size = 4, value = 0 }
+gaussianSigma = { type = "float", size = 4, value = 1.5 }
+reserved0 = { type = "uint", size = 4, value = 0 }

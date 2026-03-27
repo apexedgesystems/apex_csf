@@ -1,0 +1,20 @@
+# apex_data.toml - Base component telemetry definitions
+#
+# Defines telemetry response structs for the common component opcodes
+# (0x0080-0x00FF) that ALL components inherit from SystemComponentBase.
+#
+# These are the base layer commands - every CORE, SW_MODEL, HW_MODEL,
+# DRIVER, and SUPPORT component responds to these opcodes.
+#
+# Headers are discovered by convention (inc/*.hpp in same directory).
+
+component = "SystemComponent"
+
+[structs]
+# Telemetry responses for base component commands
+ComponentCommandCountTlm = { category = "TELEMETRY", opcode = "0x0080" }
+ComponentStatusInfoTlm = { category = "TELEMETRY", opcode = "0x0081" }
+
+[enums]
+# Component type classification for logging and registry
+ComponentType = { header = "inc/ComponentType.hpp" }

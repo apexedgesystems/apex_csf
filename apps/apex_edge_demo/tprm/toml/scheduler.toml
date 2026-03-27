@@ -1,0 +1,126 @@
+# Scheduler (componentId=1, instanceIndex=0)
+# Total: 168 bytes = 3 byte header + 11 x 15 byte task entries
+#
+# Single pool for native testing. For Thor deployment, split into:
+#   Pool 0 (RT CPU): telemetry tasks
+#   Pool 1 (GPU dispatch): kick/poll tasks
+
+[SchedulerTprmHeader]
+numPools = { type = "uint", size = 1, value = 1 }
+workersPerPool = { type = "uint", size = 1, value = 2 }
+numTasks = { type = "uint", size = 1, value = 9 }
+
+# Component fullUids:
+# CONV_FILTER_MODEL    = 0x8200 (33280) [componentId=130, instance=0]
+# FFT_ANALYZER_MODEL   = 0x8300 (33536) [componentId=131, instance=0]
+# BATCH_STATS_MODEL    = 0x8400 (33792) [componentId=132, instance=0]
+# STREAM_COMPACT_MODEL = 0x8500 (34048) [componentId=133, instance=0]
+# SYSTEM_MONITOR       = 0xC800 (51200) [componentId=200, instance=0]
+
+# Task 0: ConvFilterModel.kick - 1Hz, normal priority
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33280 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 1: ConvFilterModel.poll - 1Hz, low priority, offset 50
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33280 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 50 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 2: BatchStatsModel.kick - 5Hz, normal priority
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33792 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 5 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 3: BatchStatsModel.poll - 5Hz, low priority, offset 10
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33792 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 5 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 10 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 4: FFTAnalyzerModel.kick - 2Hz, normal priority, offset 12
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33536 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 2 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 12 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 5: FFTAnalyzerModel.poll - 2Hz, low priority, offset 37
+[[task]]
+fullUid = { type = "uint", size = 4, value = 33536 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 2 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 37 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 6: StreamCompactModel.kick - 1Hz, normal priority, offset 25
+[[task]]
+fullUid = { type = "uint", size = 4, value = 34048 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 25 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 5: StreamCompactModel.poll - 1Hz, low priority, offset 75
+[[task]]
+fullUid = { type = "uint", size = 4, value = 34048 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 75 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 6: SystemMonitor.telemetry - 1Hz, lowest priority, offset 90
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51200 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 90 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }

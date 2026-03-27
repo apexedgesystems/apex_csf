@@ -1,0 +1,10 @@
+# vfc_data.toml - Component data manifest for VirtualFlightCtrl
+#
+# Software model that emulates the STM32 flight controller for SIL testing.
+# Shares the model/ directory with HilPlantModel.
+
+component = "VirtualFlightCtrl"
+
+[structs]
+# Runtime state (registered with ApexRegistry)
+VfcState = { category = "STATE", header = "inc/VirtualFlightCtrlData.hpp" }

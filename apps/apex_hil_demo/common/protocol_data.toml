@@ -1,0 +1,20 @@
+# protocol_data.toml - Shared HIL protocol types
+#
+# Wire format types shared between host (POSIX) and controller (STM32).
+# A C2 system needs these to encode commands and decode telemetry on the
+# HIL UART link.
+
+component = "HilProtocol"
+
+[structs]
+# Wire types (host <-> controller, SLIP-framed)
+Vec3f = { category = "PROTOCOL", header = "inc/VehicleState.hpp" }
+VehicleState = { category = "PROTOCOL", opcode = "0x10", header = "inc/VehicleState.hpp" }
+ControlCmd = { category = "PROTOCOL", opcode = "0x20", header = "inc/VehicleState.hpp" }
+HeartbeatData = { category = "PROTOCOL", opcode = "0x30", header = "inc/VehicleState.hpp" }
+
+[enums]
+# Protocol enumerations
+HilOpcode = { header = "inc/HilProtocol.hpp" }
+ControlMode = { header = "inc/VehicleState.hpp" }
+ControllerStatus = { header = "inc/HilProtocol.hpp" }

@@ -1,0 +1,114 @@
+# Executive (componentId=0, instanceIndex=0)
+# Total: 114 bytes = 48 bytes (ExecutiveTunableParams) + 66 bytes (6 x ThreadConfigEntry)
+#
+# NVIDIA Jetson AGX Thor (12x Cortex-A78AE):
+#   Core 0: CLOCK thread (FIFO 90) - dedicated, isolated via isolcpus
+#   Core 1: TASK_EXECUTION thread (FIFO 80) - dedicated
+#   Core 2: EXT_IO thread (OTHER) - dedicated
+#   Core 3: STARTUP, SHUTDOWN, WATCHDOG (OTHER) - shared housekeeping
+#
+# Kernel cmdline: isolcpus=0-7 nohz_full=0-7 rcu_nocbs=0-7
+
+[ExecutiveTunableParams]
+clockFrequencyHz = { type = "uint", size = 2, value = 100 }
+reserved0 = { type = "uint", size = 2, value = 0 }
+rtMode = { type = "uint", size = 1, value = 1 }
+reserved1 = { type = "uint", size = 1, value = 0 }
+reserved2 = { type = "uint", size = 2, value = 0 }
+rtMaxLagTicks = { type = "uint", size = 4, value = 5 }
+startupMode = { type = "uint", size = 1, value = 0 }
+reserved3 = { type = "uint", size = 1, value = 0 }
+reserved4 = { type = "uint", size = 2, value = 0 }
+startupDelaySeconds = { type = "uint", size = 4, value = 2 }
+shutdownMode = { type = "uint", size = 1, value = 0 }
+skipCleanup = { type = "uint", size = 1, value = 0 }
+reserved5 = { type = "uint", size = 2, value = 0 }
+shutdownAfterSeconds = { type = "uint", size = 4, value = 0 }
+reserved6 = { type = "uint", size = 4, value = 0 }
+shutdownAtCycle = { type = "uint", size = 8, value = 0 }
+watchdogIntervalMs = { type = "uint", size = 4, value = 1000 }
+profilingSampleEveryN = { type = "uint", size = 4, value = 100 }
+
+# Thread 0: STARTUP - SCHED_OTHER, priority 0, affinity [3]
+[[thread]]
+policy = { type = "int", size = 1, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+affinityCount = { type = "uint", size = 1, value = 1 }
+affinity0 = { type = "uint", size = 1, value = 3 }
+affinity1 = { type = "uint", size = 1, value = 255 }
+affinity2 = { type = "uint", size = 1, value = 255 }
+affinity3 = { type = "uint", size = 1, value = 255 }
+affinity4 = { type = "uint", size = 1, value = 255 }
+affinity5 = { type = "uint", size = 1, value = 255 }
+affinity6 = { type = "uint", size = 1, value = 255 }
+affinity7 = { type = "uint", size = 1, value = 255 }
+
+# Thread 1: SHUTDOWN - SCHED_OTHER, priority 0, affinity [3]
+[[thread]]
+policy = { type = "int", size = 1, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+affinityCount = { type = "uint", size = 1, value = 1 }
+affinity0 = { type = "uint", size = 1, value = 3 }
+affinity1 = { type = "uint", size = 1, value = 255 }
+affinity2 = { type = "uint", size = 1, value = 255 }
+affinity3 = { type = "uint", size = 1, value = 255 }
+affinity4 = { type = "uint", size = 1, value = 255 }
+affinity5 = { type = "uint", size = 1, value = 255 }
+affinity6 = { type = "uint", size = 1, value = 255 }
+affinity7 = { type = "uint", size = 1, value = 255 }
+
+# Thread 2: CLOCK - SCHED_FIFO, priority 90, affinity [0] (isolated core)
+[[thread]]
+policy = { type = "int", size = 1, value = 1 }
+priority = { type = "int", size = 1, value = 90 }
+affinityCount = { type = "uint", size = 1, value = 1 }
+affinity0 = { type = "uint", size = 1, value = 0 }
+affinity1 = { type = "uint", size = 1, value = 255 }
+affinity2 = { type = "uint", size = 1, value = 255 }
+affinity3 = { type = "uint", size = 1, value = 255 }
+affinity4 = { type = "uint", size = 1, value = 255 }
+affinity5 = { type = "uint", size = 1, value = 255 }
+affinity6 = { type = "uint", size = 1, value = 255 }
+affinity7 = { type = "uint", size = 1, value = 255 }
+
+# Thread 3: TASK_EXECUTION - SCHED_FIFO, priority 80, affinity [1]
+[[thread]]
+policy = { type = "int", size = 1, value = 1 }
+priority = { type = "int", size = 1, value = 80 }
+affinityCount = { type = "uint", size = 1, value = 1 }
+affinity0 = { type = "uint", size = 1, value = 1 }
+affinity1 = { type = "uint", size = 1, value = 255 }
+affinity2 = { type = "uint", size = 1, value = 255 }
+affinity3 = { type = "uint", size = 1, value = 255 }
+affinity4 = { type = "uint", size = 1, value = 255 }
+affinity5 = { type = "uint", size = 1, value = 255 }
+affinity6 = { type = "uint", size = 1, value = 255 }
+affinity7 = { type = "uint", size = 1, value = 255 }
+
+# Thread 4: EXT_IO - SCHED_OTHER, priority 0, affinity [2]
+[[thread]]
+policy = { type = "int", size = 1, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+affinityCount = { type = "uint", size = 1, value = 1 }
+affinity0 = { type = "uint", size = 1, value = 2 }
+affinity1 = { type = "uint", size = 1, value = 255 }
+affinity2 = { type = "uint", size = 1, value = 255 }
+affinity3 = { type = "uint", size = 1, value = 255 }
+affinity4 = { type = "uint", size = 1, value = 255 }
+affinity5 = { type = "uint", size = 1, value = 255 }
+affinity6 = { type = "uint", size = 1, value = 255 }
+affinity7 = { type = "uint", size = 1, value = 255 }
+
+# Thread 5: WATCHDOG - SCHED_OTHER, priority 0, affinity [3]
+[[thread]]
+policy = { type = "int", size = 1, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+affinityCount = { type = "uint", size = 1, value = 1 }
+affinity0 = { type = "uint", size = 1, value = 3 }
+affinity1 = { type = "uint", size = 1, value = 255 }
+affinity2 = { type = "uint", size = 1, value = 255 }
+affinity3 = { type = "uint", size = 1, value = 255 }
+affinity4 = { type = "uint", size = 1, value = 255 }
+affinity5 = { type = "uint", size = 1, value = 255 }
+affinity6 = { type = "uint", size = 1, value = 255 }
+affinity7 = { type = "uint", size = 1, value = 255 }

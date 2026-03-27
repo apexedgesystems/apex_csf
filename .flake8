@@ -1,0 +1,16 @@
+[flake8]
+max-line-length = 100
+
+extend-ignore =
+    # W503: line break before binary operator (black does this)
+    W503,
+    # E203: whitespace before ':' in slices (black does this)
+    E203,
+
+exclude =
+    .git,
+    .venv,
+    __pycache__,
+    build,
+    dist,
+    .eggs,

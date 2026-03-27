@@ -1,0 +1,8 @@
+# HilDriver instance 0 (componentId=122, instanceIndex=0, fullUid=0x7A00)
+# Total: 128 bytes
+#
+# DriverTprm:
+#   char devicePath[128]    Null-terminated serial device path
+
+[DriverTprm]
+devicePath = { type = "string", size = 128, value = "/dev/ttyUSB0" }

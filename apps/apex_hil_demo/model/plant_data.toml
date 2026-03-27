@@ -1,0 +1,13 @@
+# plant_data.toml - Component data manifest for HilPlantModel
+#
+# Declares structs for C2 system integration: tunable parameters and
+# runtime state. Wire types (VehicleState, ControlCmd) are in protocol_data.toml.
+
+component = "HilPlantModel"
+
+[structs]
+# Tunable parameters (TPRM-configurable at startup)
+HilPlantTunableParams = { category = "TUNABLE_PARAM", header = "inc/HilPlantData.hpp" }
+
+# Runtime state (registered with ApexRegistry)
+HilPlantState = { category = "STATE", header = "inc/HilPlantData.hpp" }

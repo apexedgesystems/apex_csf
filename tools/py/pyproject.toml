@@ -1,0 +1,51 @@
+[project]
+name = "apex-py-tools"
+version = "0.1.0"
+description = "CLI tools for Apex CSF C++ project"
+authors = [
+    {name = "Kevin Alexander Gomez"}
+]
+license = "MIT"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.2.3,<3.0.0",
+    "numpy>=2.2.4,<3.0.0",
+    "matplotlib>=3.8.0,<4.0.0",
+    "seaborn>=0.13.0,<0.14.0",
+    "scipy>=1.11.0,<2.0.0",
+    "pytest>=8.3.5,<9.0.0",
+    "tomli>=2.2.1,<3.0.0",
+    "tomlkit>=0.13.2,<0.14.0",
+    "toml>=0.10.2,<0.11.0"
+]
+
+[tool.poetry]
+packages = [{include = "apex_tools", from = "src"}]
+
+[tool.poetry.scripts]
+# C2 tools
+c2-deck = "apex_tools.c2.deck_gen:main"
+
+# Monte Carlo tools
+mc-plot = "apex_tools.mc.mc_plot:main"
+
+# Benchmarking tools have moved to Vernier:
+#   https://github.com/apexedgesystems/vernier
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^4.2.0"
+black = "^25.1.0"
+flake8 = "^7.1.2"
+mypy = "^1.15.0"
+isort = "^6.0.1"
+flake8-bugbear = "^24.12.12"
+flake8-comprehensions = "^3.16.0"
+flake8-docstrings = "^1.7.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+# Note: black, isort, and flake8 configs are managed by root .pre-commit-config.yaml
+# and .flake8 - no local overrides needed here.

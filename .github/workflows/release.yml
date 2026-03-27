@@ -1,0 +1,140 @@
+# ==============================================================================
+# Release -- Build artifacts and publish to GitHub Releases
+#
+# Triggered by pushing a version tag (v*). Builds all platform artifacts
+# through the full Docker pipeline and attaches them to the GitHub Release.
+#
+# Artifact inventory (14 packages):
+#
+#   Library packages (5) -- for downstream projects consuming apex as a library
+#     apex-csf-{VER}-x86_64-linux.tar.gz
+#     apex-csf-{VER}-x86_64-linux-cuda.tar.gz
+#     apex-csf-{VER}-aarch64-jetson.tar.gz
+#     apex-csf-{VER}-aarch64-rpi.tar.gz
+#     apex-csf-{VER}-riscv64-linux.tar.gz
+#
+#   Tool packages (2) -- CLI tools for operators and developers
+#     apex-tools-{VER}-x86_64-linux.tar.gz    (Rust + C++ CLI tools)
+#     apex_py_tools-{VER}-py3-none-any.whl    (Python tools wheel)
+#
+#   Firmware packages (5) -- bare-metal binaries per MCU target
+#     stm32_encryptor_demo-{VER}-stm32.tar.gz
+#     arduino_encryptor_demo-{VER}-arduino.tar.gz
+#     pico_encryptor_demo-{VER}-pico.tar.gz
+#     esp32_encryptor_demo-{VER}-esp32.tar.gz
+#     c2000_encryptor_demo-{VER}-c2000.tar.gz
+#
+#   App packages (2) -- POSIX deployments with resolved ELF dependencies
+#     ApexEdgeDemo.tar.gz    (Jetson: executive + GPU compute models)
+#     ApexHilDemo.tar.gz     (RPi POSIX + STM32 firmware bundle)
+#
+# Build flow:
+#   make artifacts            -- Docker multi-stage: all builders -> final -> extract
+#   make release-all          -- POSIX app packaging via pkg_resolve.sh (reuses
+#                                dev images already built by make artifacts)
+# ==============================================================================
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  packages: read
+
+jobs:
+  build-artifacts:
+    name: Build Release Artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+
+    env:
+      REGISTRY: ghcr.io/${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/share/boost /usr/local/graalvm /usr/local/.ghcup
+          sudo docker image prune -af
+          df -h /
+
+      - name: Prepare environment
+        run: |
+          touch ~/.gitconfig
+          mkdir -p ~/.ssh
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull cached dev images
+        run: |
+          for img in apex.base apex.dev.cpu apex.dev.cuda apex.dev.jetson \
+                     apex.dev.rpi apex.dev.riscv64 \
+                     apex.dev.stm32 apex.dev.esp32 apex.dev.pico \
+                     apex.dev.arduino apex.dev.c2000; do
+            docker pull $REGISTRY/$img:latest && \
+              docker tag $REGISTRY/$img:latest $img || true
+          done
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify version matches CMakeLists.txt
+        run: |
+          cmake_version=$(sed -n 's/.*VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' \
+            CMakeLists.txt | head -1)
+          tag_version="${{ steps.version.outputs.version }}"
+          if [ "$cmake_version" != "$tag_version" ]; then
+            echo "ERROR: Tag version ($tag_version) does not match CMakeLists.txt ($cmake_version)"
+            exit 1
+          fi
+          echo "Version verified: $tag_version"
+
+      - name: Build all platform artifacts
+        run: make artifacts VERSION=${{ steps.version.outputs.version }}
+
+      - name: Build app release packages
+        run: |
+          make release APP=ApexEdgeDemo
+          make release APP=ApexHilDemo
+
+      - name: List artifacts
+        run: |
+          ls -la output/
+          ls -la build/release/ 2>/dev/null || true
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: Apex CSF ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            output/apex-csf-${{ steps.version.outputs.version }}-x86_64-linux.tar.gz
+            output/apex-csf-${{ steps.version.outputs.version }}-x86_64-linux-cuda.tar.gz
+            output/apex-csf-${{ steps.version.outputs.version }}-aarch64-jetson.tar.gz
+            output/apex-csf-${{ steps.version.outputs.version }}-aarch64-rpi.tar.gz
+            output/apex-csf-${{ steps.version.outputs.version }}-riscv64-linux.tar.gz
+            output/apex-csf-${{ steps.version.outputs.version }}-stm32.tar.gz
+            output/apex-csf-${{ steps.version.outputs.version }}-arduino.tar.gz
+            output/apex-csf-${{ steps.version.outputs.version }}-pico.tar.gz
+            output/apex-csf-${{ steps.version.outputs.version }}-esp32.tar.gz
+            output/apex-csf-${{ steps.version.outputs.version }}-c2000.tar.gz
+            output/apex-tools-${{ steps.version.outputs.version }}-x86_64-linux.tar.gz
+            output/apex_py_tools-${{ steps.version.outputs.version }}-py3-none-any.whl
+            build/release/ApexEdgeDemo.tar.gz
+            build/release/ApexHilDemo.tar.gz

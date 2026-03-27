@@ -1,0 +1,178 @@
+# Scheduler 1kHz variant (componentId=1, instanceIndex=0)
+# Same tasks as scheduler.toml but offsets scaled for 1000Hz clock.
+# At 100Hz: telemetry offsets 51-54 (510-540ms into each second).
+# At 1000Hz: telemetry offsets 510-540 (same wall-clock positions).
+# Comparator/TestPlugin offsets also scaled (10Hz offset 0->0, 10Hz offset 5->50).
+
+[SchedulerTprmHeader]
+numPools = { type = "uint", size = 1, value = 1 }
+workersPerPool = { type = "uint", size = 1, value = 2 }
+numTasks = { type = "uint", size = 1, value = 14 }
+
+# Task 0: HilPlantModel.plantStep - 100Hz, highest priority
+[[task]]
+fullUid = { type = "uint", size = 4, value = 30720 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 100 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 127 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 1: HilPlantModel.control - 50Hz, high priority
+[[task]]
+fullUid = { type = "uint", size = 4, value = 30720 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 50 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 63 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 2: HilPlantModel.telemetry - 1Hz, lowest priority, offset 510
+[[task]]
+fullUid = { type = "uint", size = 4, value = 30720 }
+taskUid = { type = "uint", size = 1, value = 3 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 510 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 3: VirtualFlightCtrl.controlStep - 50Hz, high priority
+[[task]]
+fullUid = { type = "uint", size = 4, value = 30976 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 50 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 50 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 4: HilDriver[0].sendState - 50Hz (real STM32 driver)
+[[task]]
+fullUid = { type = "uint", size = 4, value = 31232 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 50 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 40 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 5: HilDriver[0].recvCommand - 50Hz (real STM32 driver)
+[[task]]
+fullUid = { type = "uint", size = 4, value = 31232 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 50 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 39 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 6: HilDriver[1].sendState - 50Hz (emulated driver)
+[[task]]
+fullUid = { type = "uint", size = 4, value = 31233 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 50 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 40 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 7: HilDriver[1].recvCommand - 50Hz (emulated driver)
+[[task]]
+fullUid = { type = "uint", size = 4, value = 31233 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 50 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 39 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 8: HilComparator.compare - 10Hz, low priority
+[[task]]
+fullUid = { type = "uint", size = 4, value = 31488 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 10 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 9: VirtualFlightCtrl.telemetry - 1Hz, lowest priority, offset 520
+[[task]]
+fullUid = { type = "uint", size = 4, value = 30976 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 520 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 10: HilDriver[0].telemetry - 1Hz (real driver), offset 530
+[[task]]
+fullUid = { type = "uint", size = 4, value = 31232 }
+taskUid = { type = "uint", size = 1, value = 3 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 530 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 11: HilDriver[1].telemetry - 1Hz (emulated driver), offset 540
+[[task]]
+fullUid = { type = "uint", size = 4, value = 31233 }
+taskUid = { type = "uint", size = 1, value = 3 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 540 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 12: SystemMonitor.telemetry - 1Hz, lowest priority, offset 550
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51200 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 550 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 13: TestPlugin.tick - 10Hz, low priority, offset 50
+[[task]]
+fullUid = { type = "uint", size = 4, value = 64000 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 10 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 50 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }

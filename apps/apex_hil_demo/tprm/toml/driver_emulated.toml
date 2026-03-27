@@ -1,0 +1,10 @@
+# HilDriver instance 1 (componentId=122, instanceIndex=1, fullUid=0x7A01)
+# Total: 128 bytes
+#
+# DriverTprm:
+#   char devicePath[128]    Null-terminated serial device path
+#
+# Empty path: executive sets device path dynamically via PTY slave path.
+
+[DriverTprm]
+devicePath = { type = "string", size = 128, value = "" }

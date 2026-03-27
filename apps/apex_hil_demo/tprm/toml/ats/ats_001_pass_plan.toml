@@ -1,0 +1,604 @@
+# ATS 001: Communication Pass Plan
+#
+# Scheduled operations for a communication pass window. Steps fire at
+# absolute cycle offsets from sequence start (100 Hz clock).
+#
+# Timeline:
+#   T+0.0s (cycle 0):    Enable high-rate telemetry on SystemMonitor
+#   T+5.0s (cycle 500):  NOOP connectivity check to Plant
+#   T+10.0s (cycle 1000): NOOP connectivity check to Driver #0
+#   T+20.0s (cycle 2000): NOOP connectivity check to Driver #1
+#   T+50.0s (cycle 5000): Disable high-rate telemetry on SystemMonitor
+#
+# Note: ATS timing is currently cycle-based (delayCycles = absolute cycle
+# offset from startCycle). Future: extensible to TAI/GPS/MET via time
+# provider delegate on the executive.
+#
+# StandaloneSequenceTprm: 8-byte header + 16 steps x 84 bytes = 1352 bytes
+
+[__enums__]
+DATA_WRITE = 0
+COMMAND = 1
+ARM_CONTROL = 2
+ABORT = 0
+SKIP = 1
+GOTO_STEP = 2
+NEXT = 0
+EQ = 4
+RAW = 10
+OUTPUT = 4
+
+# ==============================================================================
+# Header (8 bytes) - type=1 (ATS)
+# ==============================================================================
+[StandaloneSequenceTprm]
+sequenceId   = { type = "uint", size = 2, value = 100 }
+eventId      = { type = "uint", size = 2, value = 0 }
+stepCount    = { type = "uint", size = 1, value = 5 }
+repeatCount  = { type = "uint", size = 1, value = 0 }
+type         = { type = "uint", size = 1, value = 1 }
+armed        = { type = "uint", size = 1, value = 1 }
+
+# ==============================================================================
+# Step 0: Enable high-rate telemetry (T+0s, cycle 0)
+#   COMMAND to SystemMonitor (0xC800), opcode 0x0010 (hypothetical ENABLE_HRT)
+# ==============================================================================
+[StandaloneSequenceTprm.step_0]
+targetFullUid    = { type = "uint", size = 4, value = "0xC800" }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = "COMMAND" }
+andMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+xorMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+duration         = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+commandOpcode    = { type = "uint", size = 2, value = "0x0010" }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload   = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+timeoutCycles    = { type = "uint", size = 4, value = 100 }
+onTimeout        = { type = "uint", size = 1, value = "SKIP" }
+onComplete       = { type = "uint", size = 1, value = "NEXT" }
+gotoStep         = { type = "uint", size = 1, value = 0 }
+retryMax         = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_0.waitCondition]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled          = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_0_tail]
+reserved         = { type = "uint", size = 1, value = 0 }
+
+# ==============================================================================
+# Step 1: NOOP to Plant (T+5s, cycle 500)
+# ==============================================================================
+[StandaloneSequenceTprm.step_1]
+targetFullUid    = { type = "uint", size = 4, value = "0x7800" }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = "COMMAND" }
+andMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+xorMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+duration         = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+commandOpcode    = { type = "uint", size = 2, value = "0x0000" }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload   = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles      = { type = "uint", size = 4, value = 500 }
+timeoutCycles    = { type = "uint", size = 4, value = 200 }
+onTimeout        = { type = "uint", size = 1, value = "SKIP" }
+onComplete       = { type = "uint", size = 1, value = "NEXT" }
+gotoStep         = { type = "uint", size = 1, value = 0 }
+retryMax         = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_1.waitCondition]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled          = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_1_tail]
+reserved         = { type = "uint", size = 1, value = 0 }
+
+# ==============================================================================
+# Step 2: NOOP to Driver #0 (T+10s, cycle 1000)
+# ==============================================================================
+[StandaloneSequenceTprm.step_2]
+targetFullUid    = { type = "uint", size = 4, value = "0x7A00" }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = "COMMAND" }
+andMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+xorMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+duration         = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+commandOpcode    = { type = "uint", size = 2, value = "0x0000" }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload   = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles      = { type = "uint", size = 4, value = 1000 }
+timeoutCycles    = { type = "uint", size = 4, value = 200 }
+onTimeout        = { type = "uint", size = 1, value = "SKIP" }
+onComplete       = { type = "uint", size = 1, value = "NEXT" }
+gotoStep         = { type = "uint", size = 1, value = 0 }
+retryMax         = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_2.waitCondition]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled          = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_2_tail]
+reserved         = { type = "uint", size = 1, value = 0 }
+
+# ==============================================================================
+# Step 3: NOOP to Driver #1 (T+20s, cycle 2000)
+# ==============================================================================
+[StandaloneSequenceTprm.step_3]
+targetFullUid    = { type = "uint", size = 4, value = "0x7A01" }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = "COMMAND" }
+andMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+xorMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+duration         = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+commandOpcode    = { type = "uint", size = 2, value = "0x0000" }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload   = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles      = { type = "uint", size = 4, value = 2000 }
+timeoutCycles    = { type = "uint", size = 4, value = 200 }
+onTimeout        = { type = "uint", size = 1, value = "SKIP" }
+onComplete       = { type = "uint", size = 1, value = "NEXT" }
+gotoStep         = { type = "uint", size = 1, value = 0 }
+retryMax         = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_3.waitCondition]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled          = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_3_tail]
+reserved         = { type = "uint", size = 1, value = 0 }
+
+# ==============================================================================
+# Step 4: Disable high-rate telemetry (T+50s, cycle 5000)
+#   COMMAND to SystemMonitor, opcode 0x0011 (hypothetical DISABLE_HRT)
+# ==============================================================================
+[StandaloneSequenceTprm.step_4]
+targetFullUid    = { type = "uint", size = 4, value = "0xC800" }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = "COMMAND" }
+andMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+xorMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+duration         = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+commandOpcode    = { type = "uint", size = 2, value = "0x0011" }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload   = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles      = { type = "uint", size = 4, value = 5000 }
+timeoutCycles    = { type = "uint", size = 4, value = 100 }
+onTimeout        = { type = "uint", size = 1, value = "SKIP" }
+onComplete       = { type = "uint", size = 1, value = "NEXT" }
+gotoStep         = { type = "uint", size = 1, value = 0 }
+retryMax         = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_4.waitCondition]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled          = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_4_tail]
+reserved         = { type = "uint", size = 1, value = 0 }
+
+# ==============================================================================
+# Steps 5-15: Empty (unused)
+# ==============================================================================
+[StandaloneSequenceTprm.step_5]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+actionType={type="uint",size=1,value=0}
+andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+duration={type="uint",size=4,value=0}
+armTarget={type="uint",size=1,value=0}
+armIndex={type="uint",size=1,value=0}
+armState={type="uint",size=1,value=0}
+commandOpcode={type="uint",size=2,value=0}
+commandPayloadLen={type="uint",size=1,value=0}
+commandPayload={type="array",size=16,value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+delayCycles={type="uint",size=4,value=0}
+timeoutCycles={type="uint",size=4,value=0}
+onTimeout={type="uint",size=1,value=0}
+onComplete={type="uint",size=1,value=0}
+gotoStep={type="uint",size=1,value=0}
+retryMax={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_5.waitCondition]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+predicate={type="uint",size=1,value=0}
+dataType={type="uint",size=1,value=0}
+threshold={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+enabled={type="uint",size=1,value=0}
+reserved={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_5_tail]
+reserved={type="uint",size=1,value=0}
+
+[StandaloneSequenceTprm.step_6]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+actionType={type="uint",size=1,value=0}
+andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+duration={type="uint",size=4,value=0}
+armTarget={type="uint",size=1,value=0}
+armIndex={type="uint",size=1,value=0}
+armState={type="uint",size=1,value=0}
+commandOpcode={type="uint",size=2,value=0}
+commandPayloadLen={type="uint",size=1,value=0}
+commandPayload={type="array",size=16,value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+delayCycles={type="uint",size=4,value=0}
+timeoutCycles={type="uint",size=4,value=0}
+onTimeout={type="uint",size=1,value=0}
+onComplete={type="uint",size=1,value=0}
+gotoStep={type="uint",size=1,value=0}
+retryMax={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_6.waitCondition]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+predicate={type="uint",size=1,value=0}
+dataType={type="uint",size=1,value=0}
+threshold={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+enabled={type="uint",size=1,value=0}
+reserved={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_6_tail]
+reserved={type="uint",size=1,value=0}
+
+[StandaloneSequenceTprm.step_7]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+actionType={type="uint",size=1,value=0}
+andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+duration={type="uint",size=4,value=0}
+armTarget={type="uint",size=1,value=0}
+armIndex={type="uint",size=1,value=0}
+armState={type="uint",size=1,value=0}
+commandOpcode={type="uint",size=2,value=0}
+commandPayloadLen={type="uint",size=1,value=0}
+commandPayload={type="array",size=16,value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+delayCycles={type="uint",size=4,value=0}
+timeoutCycles={type="uint",size=4,value=0}
+onTimeout={type="uint",size=1,value=0}
+onComplete={type="uint",size=1,value=0}
+gotoStep={type="uint",size=1,value=0}
+retryMax={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_7.waitCondition]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+predicate={type="uint",size=1,value=0}
+dataType={type="uint",size=1,value=0}
+threshold={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+enabled={type="uint",size=1,value=0}
+reserved={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_7_tail]
+reserved={type="uint",size=1,value=0}
+
+[StandaloneSequenceTprm.step_8]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+actionType={type="uint",size=1,value=0}
+andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+duration={type="uint",size=4,value=0}
+armTarget={type="uint",size=1,value=0}
+armIndex={type="uint",size=1,value=0}
+armState={type="uint",size=1,value=0}
+commandOpcode={type="uint",size=2,value=0}
+commandPayloadLen={type="uint",size=1,value=0}
+commandPayload={type="array",size=16,value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+delayCycles={type="uint",size=4,value=0}
+timeoutCycles={type="uint",size=4,value=0}
+onTimeout={type="uint",size=1,value=0}
+onComplete={type="uint",size=1,value=0}
+gotoStep={type="uint",size=1,value=0}
+retryMax={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_8.waitCondition]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+predicate={type="uint",size=1,value=0}
+dataType={type="uint",size=1,value=0}
+threshold={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+enabled={type="uint",size=1,value=0}
+reserved={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_8_tail]
+reserved={type="uint",size=1,value=0}
+
+[StandaloneSequenceTprm.step_9]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+actionType={type="uint",size=1,value=0}
+andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+duration={type="uint",size=4,value=0}
+armTarget={type="uint",size=1,value=0}
+armIndex={type="uint",size=1,value=0}
+armState={type="uint",size=1,value=0}
+commandOpcode={type="uint",size=2,value=0}
+commandPayloadLen={type="uint",size=1,value=0}
+commandPayload={type="array",size=16,value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+delayCycles={type="uint",size=4,value=0}
+timeoutCycles={type="uint",size=4,value=0}
+onTimeout={type="uint",size=1,value=0}
+onComplete={type="uint",size=1,value=0}
+gotoStep={type="uint",size=1,value=0}
+retryMax={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_9.waitCondition]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+predicate={type="uint",size=1,value=0}
+dataType={type="uint",size=1,value=0}
+threshold={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+enabled={type="uint",size=1,value=0}
+reserved={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_9_tail]
+reserved={type="uint",size=1,value=0}
+
+[StandaloneSequenceTprm.step_10]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+actionType={type="uint",size=1,value=0}
+andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+duration={type="uint",size=4,value=0}
+armTarget={type="uint",size=1,value=0}
+armIndex={type="uint",size=1,value=0}
+armState={type="uint",size=1,value=0}
+commandOpcode={type="uint",size=2,value=0}
+commandPayloadLen={type="uint",size=1,value=0}
+commandPayload={type="array",size=16,value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+delayCycles={type="uint",size=4,value=0}
+timeoutCycles={type="uint",size=4,value=0}
+onTimeout={type="uint",size=1,value=0}
+onComplete={type="uint",size=1,value=0}
+gotoStep={type="uint",size=1,value=0}
+retryMax={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_10.waitCondition]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+predicate={type="uint",size=1,value=0}
+dataType={type="uint",size=1,value=0}
+threshold={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+enabled={type="uint",size=1,value=0}
+reserved={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_10_tail]
+reserved={type="uint",size=1,value=0}
+
+[StandaloneSequenceTprm.step_11]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+actionType={type="uint",size=1,value=0}
+andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+duration={type="uint",size=4,value=0}
+armTarget={type="uint",size=1,value=0}
+armIndex={type="uint",size=1,value=0}
+armState={type="uint",size=1,value=0}
+commandOpcode={type="uint",size=2,value=0}
+commandPayloadLen={type="uint",size=1,value=0}
+commandPayload={type="array",size=16,value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+delayCycles={type="uint",size=4,value=0}
+timeoutCycles={type="uint",size=4,value=0}
+onTimeout={type="uint",size=1,value=0}
+onComplete={type="uint",size=1,value=0}
+gotoStep={type="uint",size=1,value=0}
+retryMax={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_11.waitCondition]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+predicate={type="uint",size=1,value=0}
+dataType={type="uint",size=1,value=0}
+threshold={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+enabled={type="uint",size=1,value=0}
+reserved={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_11_tail]
+reserved={type="uint",size=1,value=0}
+
+[StandaloneSequenceTprm.step_12]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+actionType={type="uint",size=1,value=0}
+andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+duration={type="uint",size=4,value=0}
+armTarget={type="uint",size=1,value=0}
+armIndex={type="uint",size=1,value=0}
+armState={type="uint",size=1,value=0}
+commandOpcode={type="uint",size=2,value=0}
+commandPayloadLen={type="uint",size=1,value=0}
+commandPayload={type="array",size=16,value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+delayCycles={type="uint",size=4,value=0}
+timeoutCycles={type="uint",size=4,value=0}
+onTimeout={type="uint",size=1,value=0}
+onComplete={type="uint",size=1,value=0}
+gotoStep={type="uint",size=1,value=0}
+retryMax={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_12.waitCondition]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+predicate={type="uint",size=1,value=0}
+dataType={type="uint",size=1,value=0}
+threshold={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+enabled={type="uint",size=1,value=0}
+reserved={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_12_tail]
+reserved={type="uint",size=1,value=0}
+
+[StandaloneSequenceTprm.step_13]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+actionType={type="uint",size=1,value=0}
+andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+duration={type="uint",size=4,value=0}
+armTarget={type="uint",size=1,value=0}
+armIndex={type="uint",size=1,value=0}
+armState={type="uint",size=1,value=0}
+commandOpcode={type="uint",size=2,value=0}
+commandPayloadLen={type="uint",size=1,value=0}
+commandPayload={type="array",size=16,value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+delayCycles={type="uint",size=4,value=0}
+timeoutCycles={type="uint",size=4,value=0}
+onTimeout={type="uint",size=1,value=0}
+onComplete={type="uint",size=1,value=0}
+gotoStep={type="uint",size=1,value=0}
+retryMax={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_13.waitCondition]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+predicate={type="uint",size=1,value=0}
+dataType={type="uint",size=1,value=0}
+threshold={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+enabled={type="uint",size=1,value=0}
+reserved={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_13_tail]
+reserved={type="uint",size=1,value=0}
+
+[StandaloneSequenceTprm.step_14]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+actionType={type="uint",size=1,value=0}
+andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+duration={type="uint",size=4,value=0}
+armTarget={type="uint",size=1,value=0}
+armIndex={type="uint",size=1,value=0}
+armState={type="uint",size=1,value=0}
+commandOpcode={type="uint",size=2,value=0}
+commandPayloadLen={type="uint",size=1,value=0}
+commandPayload={type="array",size=16,value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+delayCycles={type="uint",size=4,value=0}
+timeoutCycles={type="uint",size=4,value=0}
+onTimeout={type="uint",size=1,value=0}
+onComplete={type="uint",size=1,value=0}
+gotoStep={type="uint",size=1,value=0}
+retryMax={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_14.waitCondition]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+predicate={type="uint",size=1,value=0}
+dataType={type="uint",size=1,value=0}
+threshold={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+enabled={type="uint",size=1,value=0}
+reserved={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_14_tail]
+reserved={type="uint",size=1,value=0}
+
+[StandaloneSequenceTprm.step_15]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+actionType={type="uint",size=1,value=0}
+andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+duration={type="uint",size=4,value=0}
+armTarget={type="uint",size=1,value=0}
+armIndex={type="uint",size=1,value=0}
+armState={type="uint",size=1,value=0}
+commandOpcode={type="uint",size=2,value=0}
+commandPayloadLen={type="uint",size=1,value=0}
+commandPayload={type="array",size=16,value=[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]}
+delayCycles={type="uint",size=4,value=0}
+timeoutCycles={type="uint",size=4,value=0}
+onTimeout={type="uint",size=1,value=0}
+onComplete={type="uint",size=1,value=0}
+gotoStep={type="uint",size=1,value=0}
+retryMax={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_15.waitCondition]
+targetFullUid={type="uint",size=4,value=0}
+targetCategory={type="uint",size=1,value=0}
+targetByteOffset={type="uint",size=2,value=0}
+targetByteLen={type="uint",size=1,value=0}
+predicate={type="uint",size=1,value=0}
+dataType={type="uint",size=1,value=0}
+threshold={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
+enabled={type="uint",size=1,value=0}
+reserved={type="uint",size=1,value=0}
+[StandaloneSequenceTprm.step_15_tail]
+reserved={type="uint",size=1,value=0}

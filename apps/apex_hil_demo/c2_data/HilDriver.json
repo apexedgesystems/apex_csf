@@ -1,0 +1,81 @@
+{
+  "component": "HilDriver",
+  "structs": {
+    "DriverState": {
+      "category": "STATE",
+      "size": 28,
+      "fields": [
+        {
+          "name": "txCount",
+          "type": "uint",
+          "offset": 0,
+          "size": 4,
+          "value": 0
+        },
+        {
+          "name": "rxCount",
+          "type": "uint",
+          "offset": 4,
+          "size": 4,
+          "value": 0
+        },
+        {
+          "name": "crcErrors",
+          "type": "uint",
+          "offset": 8,
+          "size": 4,
+          "value": 0
+        },
+        {
+          "name": "txMisses",
+          "type": "uint",
+          "offset": 12,
+          "size": 4,
+          "value": 0
+        },
+        {
+          "name": "rxMisses",
+          "type": "uint",
+          "offset": 16,
+          "size": 4,
+          "value": 0
+        },
+        {
+          "name": "hasCmd",
+          "type": "uint",
+          "offset": 20,
+          "size": 1,
+          "value": 0
+        },
+        {
+          "name": "uartOpen",
+          "type": "uint",
+          "offset": 21,
+          "size": 1,
+          "value": 0
+        },
+        {
+          "name": "commLost",
+          "type": "uint",
+          "offset": 22,
+          "size": 1,
+          "value": 0
+        },
+        {
+          "name": "reserved",
+          "type": "uint",
+          "offset": 23,
+          "size": 1,
+          "value": 0
+        },
+        {
+          "name": "commLostCount",
+          "type": "uint",
+          "offset": 24,
+          "size": 4,
+          "value": 0
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,28 @@
+# Safe-mode Scheduler (componentId=1, instanceIndex=0)
+# Minimal task schedule for degraded operation after crashes.
+# Only schedules SystemMonitor for health telemetry to C2.
+# All mission models (plant, drivers, comparator, VFC) are excluded.
+#
+# Total: 18 bytes = 3 byte header + 1 x 15 byte task entry
+#
+# The executive, scheduler, interface, and filesystem are core components
+# that operate independently of the scheduler TPRM. They remain active
+# regardless of what tasks are scheduled here.
+
+[SchedulerTprmHeader]
+numPools = { type = "uint", size = 1, value = 1 }
+workersPerPool = { type = "uint", size = 1, value = 1 }
+numTasks = { type = "uint", size = 1, value = 1 }
+
+# Task 0: SystemMonitor.telemetry - 1Hz
+# Keeps platform health data flowing to C2 for diagnostics.
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51200 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }

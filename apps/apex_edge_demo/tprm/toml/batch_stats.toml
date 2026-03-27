@@ -1,0 +1,11 @@
+# BatchStatsModel (componentId=132, instanceIndex=0)
+# fullUid = 0x8400 (33792)
+# Total: 24 bytes (BatchStatsTunableParams)
+
+[BatchStatsTunableParams]
+elementCount = { type = "uint", size = 4, value = 1048576 }
+groupSize = { type = "uint", size = 4, value = 4096 }
+histogramBins = { type = "uint", size = 4, value = 64 }
+histogramMin = { type = "float", size = 4, value = -10.0 }
+histogramMax = { type = "float", size = 4, value = 10.0 }
+reserved0 = { type = "uint", size = 4, value = 0 }

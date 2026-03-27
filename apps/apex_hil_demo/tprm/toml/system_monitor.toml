@@ -1,0 +1,65 @@
+# SystemMonitor (componentId=200, instanceIndex=0)
+# Total: 122 bytes
+#
+# Raspberry Pi 4 configuration: monitors all 4 Cortex-A72 cores
+# matching the HIL thread layout:
+#   Core 0: CLOCK (FIFO @ 90)
+#   Core 1: TASK_EXEC (FIFO @ 80)
+#   Core 2: EXT_IO (OTHER)
+#   Core 3: STARTUP/SHUTDOWN/WATCHDOG (OTHER)
+
+# Sample rate (4 bytes)
+sampleRateHz = { type = "float", size = 4, value = 1.0 }
+
+# CPU domain (54 bytes)
+cpuEnabled = { type = "uint", size = 1, value = 1 }
+monitoredCoreCount = { type = "uint", size = 1, value = 4 }
+monitoredCore0 = { type = "uint", size = 2, value = 0 }
+monitoredCore1 = { type = "uint", size = 2, value = 1 }
+monitoredCore2 = { type = "uint", size = 2, value = 2 }
+monitoredCore3 = { type = "uint", size = 2, value = 3 }
+monitoredCore4 = { type = "uint", size = 2, value = 0 }
+monitoredCore5 = { type = "uint", size = 2, value = 0 }
+monitoredCore6 = { type = "uint", size = 2, value = 0 }
+monitoredCore7 = { type = "uint", size = 2, value = 0 }
+monitoredCore8 = { type = "uint", size = 2, value = 0 }
+monitoredCore9 = { type = "uint", size = 2, value = 0 }
+monitoredCore10 = { type = "uint", size = 2, value = 0 }
+monitoredCore11 = { type = "uint", size = 2, value = 0 }
+monitoredCore12 = { type = "uint", size = 2, value = 0 }
+monitoredCore13 = { type = "uint", size = 2, value = 0 }
+monitoredCore14 = { type = "uint", size = 2, value = 0 }
+monitoredCore15 = { type = "uint", size = 2, value = 0 }
+cpuLoadWarnPercent = { type = "float", size = 4, value = 80.0 }
+cpuLoadCritPercent = { type = "float", size = 4, value = 95.0 }
+cpuTempWarnC = { type = "int", size = 2, value = 70 }
+cpuTempCritC = { type = "int", size = 2, value = 80 }
+cpuRtThrottleWarn = { type = "uint", size = 4, value = 1 }
+cpuRtThrottleCrit = { type = "uint", size = 4, value = 10 }
+
+# Memory domain (36 bytes)
+memEnabled = { type = "uint", size = 1, value = 1 }
+memPad0 = { type = "uint", size = 1, value = 0 }
+memPad1 = { type = "uint", size = 1, value = 0 }
+memPad2 = { type = "uint", size = 1, value = 0 }
+memRamWarnPercent = { type = "float", size = 4, value = 80.0 }
+memRamCritPercent = { type = "float", size = 4, value = 95.0 }
+memSwapWarnBytes = { type = "uint", size = 8, value = 1 }
+memSwapCritBytes = { type = "uint", size = 8, value = 1 }
+memFdWarnPercent = { type = "float", size = 4, value = 70.0 }
+memFdCritPercent = { type = "float", size = 4, value = 90.0 }
+
+# GPU domain (28 bytes) - disabled on Pi
+gpuEnabled = { type = "uint", size = 1, value = 0 }
+gpuDeviceIndex = { type = "int", size = 1, value = 0 }
+gpuTempWarnC = { type = "int", size = 2, value = 75 }
+gpuTempCritC = { type = "int", size = 2, value = 85 }
+gpuPad = { type = "uint", size = 2, value = 0 }
+gpuUtilWarnPercent = { type = "float", size = 4, value = 90.0 }
+gpuUtilCritPercent = { type = "float", size = 4, value = 98.0 }
+gpuMemWarnPercent = { type = "float", size = 4, value = 80.0 }
+gpuMemCritPercent = { type = "float", size = 4, value = 95.0 }
+gpuThrottleWarnOnAny = { type = "uint", size = 1, value = 0 }
+gpuPad2_0 = { type = "uint", size = 1, value = 0 }
+gpuPad2_1 = { type = "uint", size = 1, value = 0 }
+gpuPad2_2 = { type = "uint", size = 1, value = 0 }

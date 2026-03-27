@@ -1,0 +1,16 @@
+# ==============================================================================
+# Performance Tests: @MODULE_NAME@
+# ==============================================================================
+
+include(apex/All)
+
+set(PTEST_SOURCES
+  "${CMAKE_CURRENT_SOURCE_DIR}/@TEST_FILE@_pTest.cpp"
+)
+
+apex_add_ptest(
+  TARGET  @TARGET_NAME@_PTEST
+  SOURCES ${PTEST_SOURCES}
+  LINK    @LINK_LIBS@
+  LABELS  @LABELS@
+)

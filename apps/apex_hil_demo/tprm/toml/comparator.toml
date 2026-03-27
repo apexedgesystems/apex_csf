@@ -1,0 +1,10 @@
+# HilComparator (componentId=123, instanceIndex=0, fullUid=0x7B00)
+# Total: 8 bytes
+#
+# ComparatorTunableParams:
+#   float warnThreshold    Divergence magnitude warning threshold [N]
+#   float reserved         Reserved for alignment
+
+[ComparatorTunableParams]
+warnThreshold = { type = "float", size = 4, value = 0.1 }
+reserved = { type = "float", size = 4, value = 0.0 }

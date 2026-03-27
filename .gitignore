@@ -1,0 +1,49 @@
+# Project guide (not public until major release)
+CLAUDE.md
+
+# Build artifacts
+/build/
+/output/
+/release/
+compile_commands.json
+
+# Temporary files
+/tmp/
+*.log
+
+# Performance tests (run manually, not committed)
+**/ptst/
+
+# Design docs and future proposals (internal only)
+docs/future/
+**/docs/design/
+
+# Binary data files (generated gravity coefficients, not committed)
+**/*.bin
+
+# IDE and editor
+/.vscode/
+/.idea/
+
+# Python
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+*.egg-info/
+.venv
+
+# Rust
+target/
+Cargo.lock.bak
+
+# Dev scripts (not committed)
+tools/py/dev/
+tools/rust/dev/
+
+# Internal dev reference material
+**/.claude_docs/
+
+# Archived test results (kept locally, not committed)
+**/.archive/

@@ -1,0 +1,13 @@
+# comparator_data.toml - Component data manifest for HilComparator
+#
+# Declares structs for C2 system integration: tunable parameters and
+# runtime state for redundant-channel divergence detection.
+
+component = "HilComparator"
+
+[structs]
+# Tunable parameters (TPRM-configurable at startup)
+ComparatorTunableParams = { category = "TUNABLE_PARAM", header = "inc/HilComparatorData.hpp" }
+
+# Runtime state (registered with ApexRegistry)
+ComparatorState = { category = "STATE", header = "inc/HilComparatorData.hpp" }

@@ -1,0 +1,68 @@
+{
+  "component": "SystemComponent",
+  "structs": {
+    "ComponentCommandCountTlm": {
+      "category": "TELEMETRY",
+      "opcode": "0x0080",
+      "size": 16,
+      "fields": [
+        {
+          "name": "commandCount",
+          "type": "uint",
+          "offset": 0,
+          "size": 8,
+          "value": 0
+        },
+        {
+          "name": "rejectedCount",
+          "type": "uint",
+          "offset": 8,
+          "size": 8,
+          "value": 0
+        }
+      ]
+    },
+    "ComponentStatusInfoTlm": {
+      "category": "TELEMETRY",
+      "opcode": "0x0081",
+      "size": 4,
+      "fields": [
+        {
+          "name": "status",
+          "type": "uint",
+          "offset": 0,
+          "size": 1,
+          "value": 0
+        },
+        {
+          "name": "initialized",
+          "type": "uint",
+          "offset": 1,
+          "size": 1,
+          "value": 0
+        },
+        {
+          "name": "configured",
+          "type": "uint",
+          "offset": 2,
+          "size": 1,
+          "value": 0
+        },
+        {
+          "name": "registered",
+          "type": "uint",
+          "offset": 3,
+          "size": 1,
+          "value": 0
+        }
+      ]
+    }
+  },
+  "enums": {
+    "ComponentType": {
+      "underlying_type": "int",
+      "values": {},
+      "_warning": "Enum 'ComponentType' not found in headers"
+    }
+  }
+}

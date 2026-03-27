@@ -1,0 +1,12 @@
+# ActionComponent (componentId=5, instanceIndex=0, fullUid=0x000500)
+# Total: 2624 bytes (ActionEngineTprm)
+#
+# Empty configuration: no watchpoints, groups, notifications, or sequences.
+# Eliminates "loadTprm failed for ACTION" warning in system.log.
+
+[action]
+maxWatchpoints = 0
+maxWatchpointGroups = 0
+maxNotifications = 0
+maxTimedActions = 0
+maxSequences = 0

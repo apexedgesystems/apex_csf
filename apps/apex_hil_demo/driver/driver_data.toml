@@ -1,0 +1,11 @@
+# driver_data.toml - Component data manifest for HilDriver
+#
+# Declares structs for C2 system integration. Multi-instance component
+# (two driver instances for redundant UART channels).
+# Wire types (ControlCmd) are in protocol_data.toml.
+
+component = "HilDriver"
+
+[structs]
+# Runtime state (registered with ApexRegistry)
+DriverState = { category = "STATE", header = "inc/HilDriverData.hpp" }

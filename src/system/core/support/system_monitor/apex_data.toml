@@ -1,0 +1,17 @@
+# apex_data.toml - Component data manifest for SystemMonitor
+#
+# Runtime system health monitor. Provides structured telemetry via
+# postInternalTelemetry() for CPU load, temperature, memory, and FD usage.
+
+component = "SystemMonitor"
+
+[structs]
+# Tunable parameters (TPRM-configurable at startup)
+SystemMonitorTunableParams = { category = "TUNABLE_PARAM" }
+
+# Telemetry: periodic health snapshot (sent via postInternalTelemetry)
+SysMonHealthTlm = { category = "TELEMETRY", opcode = "0x0100" }
+
+[enums]
+# Telemetry opcodes
+SysMonTlmOpcode = { header = "SystemMonitorTlm.hpp" }

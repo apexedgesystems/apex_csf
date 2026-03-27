@@ -1,0 +1,332 @@
+# Common dev shell configuration
+x-common: &common
+  working_dir: /home/${USER}/workspace
+  volumes:
+    - .:/home/${USER}/workspace:cached
+    - ccache:/ccache
+    - ~/.gitconfig:/home/${USER}/.gitconfig:ro
+    - ~/.ssh:/home/${USER}/.ssh:ro
+  tty: true
+  stdin_open: true
+
+# Common embedded MCU configuration (adds /dev bind mount for udev symlinks)
+x-embedded: &embedded
+  <<: *common
+  volumes:
+    - .:/home/${USER}/workspace:cached
+    - ccache:/ccache
+    - ~/.gitconfig:/home/${USER}/.gitconfig:ro
+    - ~/.ssh:/home/${USER}/.ssh:ro
+    - /dev:/dev
+  privileged: true
+  command: bash
+
+# Common build arguments
+x-build-args: &build-args
+  USER: ${USER}
+  HOST_UID: ${HOST_UID}
+  HOST_GID: ${HOST_GID}
+
+services:
+  # ============================================================================
+  # Base image (build-only, not meant to be run directly)
+  # ============================================================================
+  base:
+    image: apex.base
+    build:
+      context: .
+      dockerfile: docker/base.Dockerfile
+      args:
+        <<: *build-args
+    profiles: ["build-only"]
+
+  # ============================================================================
+  # Interactive development shells - Primary
+  # ============================================================================
+  dev:
+    <<: *common
+    image: apex.dev.cpu
+    build:
+      context: .
+      dockerfile: docker/dev/cpu.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-cpu
+    privileged: true
+    command: bash
+
+  dev-cuda:
+    <<: *common
+    image: apex.dev.cuda
+    build:
+      context: .
+      dockerfile: docker/dev/cuda.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-cuda
+    privileged: true
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    command: bash
+
+  dev-jetson:
+    <<: *common
+    image: apex.dev.jetson
+    build:
+      context: .
+      dockerfile: docker/dev/jetson.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-jetson
+    privileged: true
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=
+      - NVIDIA_DRIVER_CAPABILITIES=
+      - NVIDIA_DISABLE_REQUIRE=true
+    command: bash
+
+  # ============================================================================
+  # Interactive development shells - Additional Linux targets
+  # ============================================================================
+  dev-rpi:
+    <<: *common
+    image: apex.dev.rpi
+    build:
+      context: .
+      dockerfile: docker/dev/rpi.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-rpi
+    privileged: true
+    command: bash
+
+  dev-riscv64:
+    <<: *common
+    image: apex.dev.riscv64
+    build:
+      context: .
+      dockerfile: docker/dev/riscv64.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-riscv64
+    privileged: true
+    command: bash
+
+  dev-zephyr:
+    <<: *embedded
+    image: apex.dev.zephyr
+    build:
+      context: .
+      dockerfile: docker/dev/zephyr.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-zephyr
+
+  # ============================================================================
+  # Interactive development shells - Embedded/MCU
+  # ============================================================================
+  dev-stm32:
+    <<: *embedded
+    image: apex.dev.stm32
+    build:
+      context: .
+      dockerfile: docker/dev/stm32.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-stm32
+
+  dev-esp32:
+    <<: *embedded
+    image: apex.dev.esp32
+    build:
+      context: .
+      dockerfile: docker/dev/esp32.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-esp32
+
+  dev-pico:
+    <<: *embedded
+    image: apex.dev.pico
+    build:
+      context: .
+      dockerfile: docker/dev/pico.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-pico
+
+  dev-arduino:
+    <<: *embedded
+    image: apex.dev.arduino
+    build:
+      context: .
+      dockerfile: docker/dev/arduino.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-arduino
+
+  dev-atmega328pb:
+    <<: *embedded
+    image: apex.dev.atmega328pb
+    build:
+      context: .
+      dockerfile: docker/dev/atmega328pb.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-atmega328pb
+
+  dev-pic32:
+    <<: *embedded
+    image: apex.dev.pic32
+    build:
+      context: .
+      dockerfile: docker/dev/pic32.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-pic32
+
+  dev-c2000:
+    <<: *embedded
+    image: apex.dev.c2000
+    build:
+      context: .
+      dockerfile: docker/dev/c2000.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-c2000
+
+  # ============================================================================
+  # Builder images (CI artifact generation)
+  # All use the unified docker/builder.Dockerfile with different DEV_IMAGE
+  # and BUILD_CMD arguments.
+  # ============================================================================
+  builder-cpu:
+    image: apex.builder.cpu
+    build:
+      context: .
+      dockerfile: docker/builder.Dockerfile
+      args:
+        <<: *build-args
+        DEV_IMAGE: apex.dev.cpu
+        BUILD_CMD: "make release && make tools"
+
+  builder-cuda:
+    image: apex.builder.cuda
+    build:
+      context: .
+      dockerfile: docker/builder.Dockerfile
+      args:
+        <<: *build-args
+        DEV_IMAGE: apex.dev.cuda
+        BUILD_CMD: "make release CMAKE_EXTRA_ARGS='-DAPEX_BUILD_TOOLS=OFF'"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  builder-jetson:
+    image: apex.builder.jetson
+    build:
+      context: .
+      dockerfile: docker/builder.Dockerfile
+      args:
+        <<: *build-args
+        DEV_IMAGE: apex.dev.jetson
+        BUILD_CMD: "make jetson-release"
+
+  builder-rpi:
+    image: apex.builder.rpi
+    build:
+      context: .
+      dockerfile: docker/builder.Dockerfile
+      args:
+        <<: *build-args
+        DEV_IMAGE: apex.dev.rpi
+        BUILD_CMD: "cmake --preset rpi-aarch64-release && cmake --build --preset rpi-aarch64-release -j$(nproc)"
+
+  builder-riscv64:
+    image: apex.builder.riscv64
+    build:
+      context: .
+      dockerfile: docker/builder.Dockerfile
+      args:
+        <<: *build-args
+        DEV_IMAGE: apex.dev.riscv64
+        BUILD_CMD: "cmake --preset riscv64-linux-release && cmake --build --preset riscv64-linux-release -j$(nproc)"
+
+  builder-stm32:
+    image: apex.builder.stm32
+    build:
+      context: .
+      dockerfile: docker/builder.Dockerfile
+      args:
+        <<: *build-args
+        DEV_IMAGE: apex.dev.stm32
+        BUILD_CMD: "make stm32"
+
+  builder-arduino:
+    image: apex.builder.arduino
+    build:
+      context: .
+      dockerfile: docker/builder.Dockerfile
+      args:
+        <<: *build-args
+        DEV_IMAGE: apex.dev.arduino
+        BUILD_CMD: "make arduino"
+
+  builder-pico:
+    image: apex.builder.pico
+    build:
+      context: .
+      dockerfile: docker/builder.Dockerfile
+      args:
+        <<: *build-args
+        DEV_IMAGE: apex.dev.pico
+        BUILD_CMD: "make pico"
+
+  builder-esp32:
+    image: apex.builder.esp32
+    build:
+      context: .
+      dockerfile: docker/builder.Dockerfile
+      args:
+        <<: *build-args
+        DEV_IMAGE: apex.dev.esp32
+        BUILD_CMD: "make esp32"
+
+  builder-c2000:
+    image: apex.builder.c2000
+    build:
+      context: .
+      dockerfile: docker/builder.Dockerfile
+      args:
+        <<: *build-args
+        DEV_IMAGE: apex.dev.c2000
+        BUILD_CMD: "make c2000"
+
+  # ============================================================================
+  # Final artifact packager
+  # ============================================================================
+  final:
+    image: apex.final
+    build:
+      context: .
+      dockerfile: docker/final.Dockerfile
+      args:
+        USER: ${USER}
+        VERSION: ${VERSION:-0.0.0}
+
+volumes:
+  ccache:
+    name: apex-ccache

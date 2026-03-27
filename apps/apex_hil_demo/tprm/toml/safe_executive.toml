@@ -1,0 +1,109 @@
+# Safe-mode Executive (componentId=0, instanceIndex=0)
+# Identical to normal executive except:
+#   - shutdownMode = 0 (MANUAL) -- no auto-shutdown, waits for operator
+#   - shutdownAfterSeconds = 0
+# This ensures the degraded system stays up for C2 diagnostics.
+
+[ExecutiveTunableParams]
+clockFrequencyHz = { type = "uint", size = 2, value = 100 }
+reserved0 = { type = "uint", size = 2, value = 0 }
+rtMode = { type = "uint", size = 1, value = 1 }
+reserved1 = { type = "uint", size = 1, value = 0 }
+reserved2 = { type = "uint", size = 2, value = 0 }
+rtMaxLagTicks = { type = "uint", size = 4, value = 5 }
+startupMode = { type = "uint", size = 1, value = 0 }
+reserved3 = { type = "uint", size = 1, value = 0 }
+reserved4 = { type = "uint", size = 2, value = 0 }
+startupDelaySeconds = { type = "uint", size = 4, value = 1 }
+shutdownMode = { type = "uint", size = 1, value = 0 }
+skipCleanup = { type = "uint", size = 1, value = 0 }
+reserved5 = { type = "uint", size = 2, value = 0 }
+shutdownAfterSeconds = { type = "uint", size = 4, value = 0 }
+reserved6 = { type = "uint", size = 4, value = 0 }
+shutdownAtCycle = { type = "uint", size = 8, value = 0 }
+watchdogIntervalMs = { type = "uint", size = 4, value = 1000 }
+profilingSampleEveryN = { type = "uint", size = 4, value = 0 }
+
+# Thread 0: STARTUP - SCHED_OTHER, priority 0, affinity [3]
+[[thread]]
+policy = { type = "int", size = 1, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+affinityCount = { type = "uint", size = 1, value = 1 }
+affinity0 = { type = "uint", size = 1, value = 3 }
+affinity1 = { type = "uint", size = 1, value = 255 }
+affinity2 = { type = "uint", size = 1, value = 255 }
+affinity3 = { type = "uint", size = 1, value = 255 }
+affinity4 = { type = "uint", size = 1, value = 255 }
+affinity5 = { type = "uint", size = 1, value = 255 }
+affinity6 = { type = "uint", size = 1, value = 255 }
+affinity7 = { type = "uint", size = 1, value = 255 }
+
+# Thread 1: SHUTDOWN - SCHED_OTHER, priority 0, affinity [3]
+[[thread]]
+policy = { type = "int", size = 1, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+affinityCount = { type = "uint", size = 1, value = 1 }
+affinity0 = { type = "uint", size = 1, value = 3 }
+affinity1 = { type = "uint", size = 1, value = 255 }
+affinity2 = { type = "uint", size = 1, value = 255 }
+affinity3 = { type = "uint", size = 1, value = 255 }
+affinity4 = { type = "uint", size = 1, value = 255 }
+affinity5 = { type = "uint", size = 1, value = 255 }
+affinity6 = { type = "uint", size = 1, value = 255 }
+affinity7 = { type = "uint", size = 1, value = 255 }
+
+# Thread 2: CLOCK - SCHED_FIFO, priority 90, affinity [0]
+[[thread]]
+policy = { type = "int", size = 1, value = 1 }
+priority = { type = "int", size = 1, value = 90 }
+affinityCount = { type = "uint", size = 1, value = 1 }
+affinity0 = { type = "uint", size = 1, value = 0 }
+affinity1 = { type = "uint", size = 1, value = 255 }
+affinity2 = { type = "uint", size = 1, value = 255 }
+affinity3 = { type = "uint", size = 1, value = 255 }
+affinity4 = { type = "uint", size = 1, value = 255 }
+affinity5 = { type = "uint", size = 1, value = 255 }
+affinity6 = { type = "uint", size = 1, value = 255 }
+affinity7 = { type = "uint", size = 1, value = 255 }
+
+# Thread 3: TASK_EXECUTION - SCHED_FIFO, priority 80, affinity [1]
+[[thread]]
+policy = { type = "int", size = 1, value = 1 }
+priority = { type = "int", size = 1, value = 80 }
+affinityCount = { type = "uint", size = 1, value = 1 }
+affinity0 = { type = "uint", size = 1, value = 1 }
+affinity1 = { type = "uint", size = 1, value = 255 }
+affinity2 = { type = "uint", size = 1, value = 255 }
+affinity3 = { type = "uint", size = 1, value = 255 }
+affinity4 = { type = "uint", size = 1, value = 255 }
+affinity5 = { type = "uint", size = 1, value = 255 }
+affinity6 = { type = "uint", size = 1, value = 255 }
+affinity7 = { type = "uint", size = 1, value = 255 }
+
+# Thread 4: EXT_IO - SCHED_OTHER, priority 0, affinity [2]
+[[thread]]
+policy = { type = "int", size = 1, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+affinityCount = { type = "uint", size = 1, value = 1 }
+affinity0 = { type = "uint", size = 1, value = 2 }
+affinity1 = { type = "uint", size = 1, value = 255 }
+affinity2 = { type = "uint", size = 1, value = 255 }
+affinity3 = { type = "uint", size = 1, value = 255 }
+affinity4 = { type = "uint", size = 1, value = 255 }
+affinity5 = { type = "uint", size = 1, value = 255 }
+affinity6 = { type = "uint", size = 1, value = 255 }
+affinity7 = { type = "uint", size = 1, value = 255 }
+
+# Thread 5: WATCHDOG - SCHED_OTHER, priority 0, affinity [3]
+[[thread]]
+policy = { type = "int", size = 1, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+affinityCount = { type = "uint", size = 1, value = 1 }
+affinity0 = { type = "uint", size = 1, value = 3 }
+affinity1 = { type = "uint", size = 1, value = 255 }
+affinity2 = { type = "uint", size = 1, value = 255 }
+affinity3 = { type = "uint", size = 1, value = 255 }
+affinity4 = { type = "uint", size = 1, value = 255 }
+affinity5 = { type = "uint", size = 1, value = 255 }
+affinity6 = { type = "uint", size = 1, value = 255 }
+affinity7 = { type = "uint", size = 1, value = 255 }

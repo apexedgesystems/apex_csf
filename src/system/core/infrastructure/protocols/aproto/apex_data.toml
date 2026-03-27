@@ -1,0 +1,15 @@
+# apex_data.toml - APROTO wire protocol definitions
+#
+# Defines the packet framing and system-level structures for APROTO protocol.
+# C2 systems use these to encode commands and decode responses.
+#
+# Headers are discovered by convention (inc/*.hpp in same directory).
+
+component = "AprotoProtocol"
+
+[structs]
+# Wire protocol structures (packet framing)
+AprotoHeader = { category = "PROTOCOL" }
+AprotoFlags = { category = "PROTOCOL" }
+AckPayload = { category = "PROTOCOL" }
+CryptoMeta = { category = "PROTOCOL" }
