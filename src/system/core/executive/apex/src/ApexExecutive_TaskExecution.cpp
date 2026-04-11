@@ -17,7 +17,12 @@
 #include "src/system/core/executive/apex/inc/ApexExecutive.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
+#include <unistd.h>
+
+#include <cerrno>
 #include <chrono>
+#include <cstring>
+#include <vector>
 
 #include <fmt/core.h>
 
@@ -169,6 +174,48 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
     if (interface_ && interface_->isInitialized()) {
       interface_->drainTelemetryOutboxes();
       interface_->drainCommandsToComponents();
+
+      // Deferred RELOAD_EXECUTIVE: the ACK is now queued in the TX buffer.
+      // Flush it to the wire, then execv. The client receives the ACK before
+      // the connection drops.
+      if (controlState_.restartPending.load(std::memory_order_acquire)) {
+        // One more TX drain to push the ACK out.
+        interface_->drainTelemetryOutboxes();
+        interface_->pollSockets(0);
+
+        sysLog_->flush();
+        if (auto* sl = fileSystem_.swapLog()) {
+          sl->flush();
+        }
+
+        // Build argv and exec.
+        const std::string EXEC_STR = restartExecTarget_.string();
+        std::vector<const char*> argv;
+        argv.push_back(EXEC_STR.c_str());
+        for (const auto& arg : args_) {
+          argv.push_back(arg.c_str());
+        }
+        argv.push_back(nullptr);
+        execv(EXEC_STR.c_str(), const_cast<char* const*>(argv.data()));
+
+        // execv failed -- roll back bank swap and continue.
+        const int EXEC_ERRNO = errno;
+        sysLog_->warning(
+            label(), static_cast<std::uint8_t>(0x01),
+            fmt::format("execv failed (errno={}): {} -- system continues with old binary",
+                        EXEC_ERRNO, std::strerror(EXEC_ERRNO)));
+        if (restartDidSwapBinary_) {
+          const std::string FN = restartExecTarget_.filename().string();
+          if (fileSystem_.swapBankFile(system_core::filesystem::BIN_DIR, FN)) {
+            sysLog_->info(label(), "RELOAD_EXECUTIVE: bank swap rolled back after execv failure");
+          } else {
+            sysLog_->warning(
+                label(), static_cast<std::uint8_t>(0x01),
+                "RELOAD_EXECUTIVE: bank swap rollback failed, on-disk state inconsistent");
+          }
+        }
+        controlState_.restartPending.store(false, std::memory_order_release);
+      }
     }
 
     // Execute scheduled tasks (core work)

@@ -1,0 +1,59 @@
+# app_data.toml - ApexHilDemo application descriptor for Zenith target generation
+#
+# Hardware-in-the-loop demo: 3DOF plant model, virtual flight controller,
+# dual drivers (real STM32 + emulated), comparator, system health.
+#
+# Core components (Executive, Scheduler, FileSystem, Registry, Interface,
+# Action) are auto-included by the target generator at their standard UIDs.
+# Only declare app-specific component instances below.
+
+application = "ApexHilDemo"
+description = "Hardware-in-the-loop demonstration with dual-driver comparison."
+
+[protocol]
+transport = "TCP"
+framing = "SLIP"
+port = 9000
+
+[[components]]
+name = "HilPlantModel"
+fullUid = "0x007800"
+type = "SW_MODEL"
+notes = "3DOF physics simulation"
+
+[[components]]
+name = "VirtualFlightCtrl"
+fullUid = "0x007900"
+type = "HW_MODEL"
+notes = "Emulated STM32 behind PTY"
+
+[[components]]
+name = "HilDriver"
+fullUid = "0x007A00"
+instanceIndex = 0
+type = "DRIVER"
+notes = "Real STM32 UART driver"
+
+[[components]]
+name = "HilDriver"
+fullUid = "0x007A01"
+instanceIndex = 1
+type = "DRIVER"
+notes = "Emulated STM32 driver (peers with VirtualFlightCtrl)"
+
+[[components]]
+name = "HilComparator"
+fullUid = "0x007B00"
+type = "SUPPORT"
+notes = "Diffs ControlCmd from both drivers"
+
+[[components]]
+name = "SystemMonitor"
+fullUid = "0x00C800"
+type = "SUPPORT"
+
+[[components]]
+name = "TestPlugin"
+fullUid = "0x00FA00"
+type = "SW_MODEL"
+notes = "Hot-swap test target"

@@ -26,13 +26,22 @@ use super::Error;
 /* ----------------------------- Manifest Types ----------------------------- */
 
 /// Data category for struct classification.
+///
+/// Matches the C++ DataCategory enum plus manifest-specific categories
+/// (COMMAND, TELEMETRY, PROTOCOL) for wire format structs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum DataCategory {
-    /// Tunable parameters (TPRM).
+    /// Static parameters (read-only after init).
+    StaticParam,
+    /// Tunable parameters (TPRM-configurable at runtime).
     TunableParam,
     /// Runtime state.
     State,
+    /// External input data.
+    Input,
+    /// Published output data.
+    Output,
     /// Command payload.
     Command,
     /// Telemetry payload.
@@ -44,8 +53,11 @@ pub enum DataCategory {
 impl std::fmt::Display for DataCategory {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            DataCategory::StaticParam => write!(f, "STATIC_PARAM"),
             DataCategory::TunableParam => write!(f, "TUNABLE_PARAM"),
             DataCategory::State => write!(f, "STATE"),
+            DataCategory::Input => write!(f, "INPUT"),
+            DataCategory::Output => write!(f, "OUTPUT"),
             DataCategory::Command => write!(f, "COMMAND"),
             DataCategory::Telemetry => write!(f, "TELEMETRY"),
             DataCategory::Protocol => write!(f, "PROTOCOL"),

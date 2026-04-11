@@ -1,0 +1,309 @@
+# TelemetryManager (componentId=201, instanceIndex=0, fullUid=0xC900)
+# Total: 520 bytes = 8 bytes header + 32 x 16 bytes subscriptions
+#
+# Default subscriptions push WaveGenerator telemetry:
+#   - WaveGen#0 OUTPUT at 10 Hz (opcode 0x0200)
+#   - WaveGen#1 OUTPUT at 10 Hz (opcode 0x0201)
+#   - WaveGen#0 STATE at 1 Hz (opcode 0x0202)
+#   - WaveGen#1 STATE at 1 Hz (opcode 0x0203)
+#
+# Ground client filters these by opcode (not ACK/NAK) so they do not
+# interfere with command responses.
+
+[TelemetryManagerTprm]
+collectRateHz = { type = "uint", size = 2, value = 10 }
+reserved0 = { type = "uint", size = 2, value = 0 }
+reserved1 = { type = "uint", size = 4, value = 0 }
+
+
+# Subscription 0: WaveGen#0 OUTPUT at 10 Hz
+sub0_fullUid = { type = "uint", size = 4, value = 53248 }
+sub0_category = { type = "uint", size = 1, value = 4 }
+sub0_active = { type = "uint", size = 1, value = 1 }
+sub0_opcode = { type = "uint", size = 2, value = 512 }
+sub0_offset = { type = "uint", size = 2, value = 0 }
+sub0_length = { type = "uint", size = 2, value = 0 }
+sub0_rateDiv = { type = "uint", size = 2, value = 1 }
+sub0_reserved = { type = "uint", size = 2, value = 0 }
+
+# Subscription 1: WaveGen#1 OUTPUT at 10 Hz
+sub1_fullUid = { type = "uint", size = 4, value = 53249 }
+sub1_category = { type = "uint", size = 1, value = 4 }
+sub1_active = { type = "uint", size = 1, value = 1 }
+sub1_opcode = { type = "uint", size = 2, value = 513 }
+sub1_offset = { type = "uint", size = 2, value = 0 }
+sub1_length = { type = "uint", size = 2, value = 0 }
+sub1_rateDiv = { type = "uint", size = 2, value = 1 }
+sub1_reserved = { type = "uint", size = 2, value = 0 }
+
+# Subscription 2: WaveGen#0 STATE at 1 Hz
+sub2_fullUid = { type = "uint", size = 4, value = 53248 }
+sub2_category = { type = "uint", size = 1, value = 2 }
+sub2_active = { type = "uint", size = 1, value = 1 }
+sub2_opcode = { type = "uint", size = 2, value = 514 }
+sub2_offset = { type = "uint", size = 2, value = 0 }
+sub2_length = { type = "uint", size = 2, value = 0 }
+sub2_rateDiv = { type = "uint", size = 2, value = 10 }
+sub2_reserved = { type = "uint", size = 2, value = 0 }
+
+# Subscription 3: WaveGen#1 STATE at 1 Hz
+sub3_fullUid = { type = "uint", size = 4, value = 53249 }
+sub3_category = { type = "uint", size = 1, value = 2 }
+sub3_active = { type = "uint", size = 1, value = 1 }
+sub3_opcode = { type = "uint", size = 2, value = 515 }
+sub3_offset = { type = "uint", size = 2, value = 0 }
+sub3_length = { type = "uint", size = 2, value = 0 }
+sub3_rateDiv = { type = "uint", size = 2, value = 10 }
+sub3_reserved = { type = "uint", size = 2, value = 0 }
+
+sub4_fullUid = { type = "uint", size = 4, value = 0 }
+sub4_category = { type = "uint", size = 1, value = 0 }
+sub4_active = { type = "uint", size = 1, value = 0 }
+sub4_opcode = { type = "uint", size = 2, value = 0 }
+sub4_offset = { type = "uint", size = 2, value = 0 }
+sub4_length = { type = "uint", size = 2, value = 0 }
+sub4_rateDiv = { type = "uint", size = 2, value = 0 }
+sub4_reserved = { type = "uint", size = 2, value = 0 }
+
+sub5_fullUid = { type = "uint", size = 4, value = 0 }
+sub5_category = { type = "uint", size = 1, value = 0 }
+sub5_active = { type = "uint", size = 1, value = 0 }
+sub5_opcode = { type = "uint", size = 2, value = 0 }
+sub5_offset = { type = "uint", size = 2, value = 0 }
+sub5_length = { type = "uint", size = 2, value = 0 }
+sub5_rateDiv = { type = "uint", size = 2, value = 0 }
+sub5_reserved = { type = "uint", size = 2, value = 0 }
+
+sub6_fullUid = { type = "uint", size = 4, value = 0 }
+sub6_category = { type = "uint", size = 1, value = 0 }
+sub6_active = { type = "uint", size = 1, value = 0 }
+sub6_opcode = { type = "uint", size = 2, value = 0 }
+sub6_offset = { type = "uint", size = 2, value = 0 }
+sub6_length = { type = "uint", size = 2, value = 0 }
+sub6_rateDiv = { type = "uint", size = 2, value = 0 }
+sub6_reserved = { type = "uint", size = 2, value = 0 }
+
+sub7_fullUid = { type = "uint", size = 4, value = 0 }
+sub7_category = { type = "uint", size = 1, value = 0 }
+sub7_active = { type = "uint", size = 1, value = 0 }
+sub7_opcode = { type = "uint", size = 2, value = 0 }
+sub7_offset = { type = "uint", size = 2, value = 0 }
+sub7_length = { type = "uint", size = 2, value = 0 }
+sub7_rateDiv = { type = "uint", size = 2, value = 0 }
+sub7_reserved = { type = "uint", size = 2, value = 0 }
+
+sub8_fullUid = { type = "uint", size = 4, value = 0 }
+sub8_category = { type = "uint", size = 1, value = 0 }
+sub8_active = { type = "uint", size = 1, value = 0 }
+sub8_opcode = { type = "uint", size = 2, value = 0 }
+sub8_offset = { type = "uint", size = 2, value = 0 }
+sub8_length = { type = "uint", size = 2, value = 0 }
+sub8_rateDiv = { type = "uint", size = 2, value = 0 }
+sub8_reserved = { type = "uint", size = 2, value = 0 }
+
+sub9_fullUid = { type = "uint", size = 4, value = 0 }
+sub9_category = { type = "uint", size = 1, value = 0 }
+sub9_active = { type = "uint", size = 1, value = 0 }
+sub9_opcode = { type = "uint", size = 2, value = 0 }
+sub9_offset = { type = "uint", size = 2, value = 0 }
+sub9_length = { type = "uint", size = 2, value = 0 }
+sub9_rateDiv = { type = "uint", size = 2, value = 0 }
+sub9_reserved = { type = "uint", size = 2, value = 0 }
+
+sub10_fullUid = { type = "uint", size = 4, value = 0 }
+sub10_category = { type = "uint", size = 1, value = 0 }
+sub10_active = { type = "uint", size = 1, value = 0 }
+sub10_opcode = { type = "uint", size = 2, value = 0 }
+sub10_offset = { type = "uint", size = 2, value = 0 }
+sub10_length = { type = "uint", size = 2, value = 0 }
+sub10_rateDiv = { type = "uint", size = 2, value = 0 }
+sub10_reserved = { type = "uint", size = 2, value = 0 }
+
+sub11_fullUid = { type = "uint", size = 4, value = 0 }
+sub11_category = { type = "uint", size = 1, value = 0 }
+sub11_active = { type = "uint", size = 1, value = 0 }
+sub11_opcode = { type = "uint", size = 2, value = 0 }
+sub11_offset = { type = "uint", size = 2, value = 0 }
+sub11_length = { type = "uint", size = 2, value = 0 }
+sub11_rateDiv = { type = "uint", size = 2, value = 0 }
+sub11_reserved = { type = "uint", size = 2, value = 0 }
+
+sub12_fullUid = { type = "uint", size = 4, value = 0 }
+sub12_category = { type = "uint", size = 1, value = 0 }
+sub12_active = { type = "uint", size = 1, value = 0 }
+sub12_opcode = { type = "uint", size = 2, value = 0 }
+sub12_offset = { type = "uint", size = 2, value = 0 }
+sub12_length = { type = "uint", size = 2, value = 0 }
+sub12_rateDiv = { type = "uint", size = 2, value = 0 }
+sub12_reserved = { type = "uint", size = 2, value = 0 }
+
+sub13_fullUid = { type = "uint", size = 4, value = 0 }
+sub13_category = { type = "uint", size = 1, value = 0 }
+sub13_active = { type = "uint", size = 1, value = 0 }
+sub13_opcode = { type = "uint", size = 2, value = 0 }
+sub13_offset = { type = "uint", size = 2, value = 0 }
+sub13_length = { type = "uint", size = 2, value = 0 }
+sub13_rateDiv = { type = "uint", size = 2, value = 0 }
+sub13_reserved = { type = "uint", size = 2, value = 0 }
+
+sub14_fullUid = { type = "uint", size = 4, value = 0 }
+sub14_category = { type = "uint", size = 1, value = 0 }
+sub14_active = { type = "uint", size = 1, value = 0 }
+sub14_opcode = { type = "uint", size = 2, value = 0 }
+sub14_offset = { type = "uint", size = 2, value = 0 }
+sub14_length = { type = "uint", size = 2, value = 0 }
+sub14_rateDiv = { type = "uint", size = 2, value = 0 }
+sub14_reserved = { type = "uint", size = 2, value = 0 }
+
+sub15_fullUid = { type = "uint", size = 4, value = 0 }
+sub15_category = { type = "uint", size = 1, value = 0 }
+sub15_active = { type = "uint", size = 1, value = 0 }
+sub15_opcode = { type = "uint", size = 2, value = 0 }
+sub15_offset = { type = "uint", size = 2, value = 0 }
+sub15_length = { type = "uint", size = 2, value = 0 }
+sub15_rateDiv = { type = "uint", size = 2, value = 0 }
+sub15_reserved = { type = "uint", size = 2, value = 0 }
+
+sub16_fullUid = { type = "uint", size = 4, value = 0 }
+sub16_category = { type = "uint", size = 1, value = 0 }
+sub16_active = { type = "uint", size = 1, value = 0 }
+sub16_opcode = { type = "uint", size = 2, value = 0 }
+sub16_offset = { type = "uint", size = 2, value = 0 }
+sub16_length = { type = "uint", size = 2, value = 0 }
+sub16_rateDiv = { type = "uint", size = 2, value = 0 }
+sub16_reserved = { type = "uint", size = 2, value = 0 }
+
+sub17_fullUid = { type = "uint", size = 4, value = 0 }
+sub17_category = { type = "uint", size = 1, value = 0 }
+sub17_active = { type = "uint", size = 1, value = 0 }
+sub17_opcode = { type = "uint", size = 2, value = 0 }
+sub17_offset = { type = "uint", size = 2, value = 0 }
+sub17_length = { type = "uint", size = 2, value = 0 }
+sub17_rateDiv = { type = "uint", size = 2, value = 0 }
+sub17_reserved = { type = "uint", size = 2, value = 0 }
+
+sub18_fullUid = { type = "uint", size = 4, value = 0 }
+sub18_category = { type = "uint", size = 1, value = 0 }
+sub18_active = { type = "uint", size = 1, value = 0 }
+sub18_opcode = { type = "uint", size = 2, value = 0 }
+sub18_offset = { type = "uint", size = 2, value = 0 }
+sub18_length = { type = "uint", size = 2, value = 0 }
+sub18_rateDiv = { type = "uint", size = 2, value = 0 }
+sub18_reserved = { type = "uint", size = 2, value = 0 }
+
+sub19_fullUid = { type = "uint", size = 4, value = 0 }
+sub19_category = { type = "uint", size = 1, value = 0 }
+sub19_active = { type = "uint", size = 1, value = 0 }
+sub19_opcode = { type = "uint", size = 2, value = 0 }
+sub19_offset = { type = "uint", size = 2, value = 0 }
+sub19_length = { type = "uint", size = 2, value = 0 }
+sub19_rateDiv = { type = "uint", size = 2, value = 0 }
+sub19_reserved = { type = "uint", size = 2, value = 0 }
+
+sub20_fullUid = { type = "uint", size = 4, value = 0 }
+sub20_category = { type = "uint", size = 1, value = 0 }
+sub20_active = { type = "uint", size = 1, value = 0 }
+sub20_opcode = { type = "uint", size = 2, value = 0 }
+sub20_offset = { type = "uint", size = 2, value = 0 }
+sub20_length = { type = "uint", size = 2, value = 0 }
+sub20_rateDiv = { type = "uint", size = 2, value = 0 }
+sub20_reserved = { type = "uint", size = 2, value = 0 }
+
+sub21_fullUid = { type = "uint", size = 4, value = 0 }
+sub21_category = { type = "uint", size = 1, value = 0 }
+sub21_active = { type = "uint", size = 1, value = 0 }
+sub21_opcode = { type = "uint", size = 2, value = 0 }
+sub21_offset = { type = "uint", size = 2, value = 0 }
+sub21_length = { type = "uint", size = 2, value = 0 }
+sub21_rateDiv = { type = "uint", size = 2, value = 0 }
+sub21_reserved = { type = "uint", size = 2, value = 0 }
+
+sub22_fullUid = { type = "uint", size = 4, value = 0 }
+sub22_category = { type = "uint", size = 1, value = 0 }
+sub22_active = { type = "uint", size = 1, value = 0 }
+sub22_opcode = { type = "uint", size = 2, value = 0 }
+sub22_offset = { type = "uint", size = 2, value = 0 }
+sub22_length = { type = "uint", size = 2, value = 0 }
+sub22_rateDiv = { type = "uint", size = 2, value = 0 }
+sub22_reserved = { type = "uint", size = 2, value = 0 }
+
+sub23_fullUid = { type = "uint", size = 4, value = 0 }
+sub23_category = { type = "uint", size = 1, value = 0 }
+sub23_active = { type = "uint", size = 1, value = 0 }
+sub23_opcode = { type = "uint", size = 2, value = 0 }
+sub23_offset = { type = "uint", size = 2, value = 0 }
+sub23_length = { type = "uint", size = 2, value = 0 }
+sub23_rateDiv = { type = "uint", size = 2, value = 0 }
+sub23_reserved = { type = "uint", size = 2, value = 0 }
+
+sub24_fullUid = { type = "uint", size = 4, value = 0 }
+sub24_category = { type = "uint", size = 1, value = 0 }
+sub24_active = { type = "uint", size = 1, value = 0 }
+sub24_opcode = { type = "uint", size = 2, value = 0 }
+sub24_offset = { type = "uint", size = 2, value = 0 }
+sub24_length = { type = "uint", size = 2, value = 0 }
+sub24_rateDiv = { type = "uint", size = 2, value = 0 }
+sub24_reserved = { type = "uint", size = 2, value = 0 }
+
+sub25_fullUid = { type = "uint", size = 4, value = 0 }
+sub25_category = { type = "uint", size = 1, value = 0 }
+sub25_active = { type = "uint", size = 1, value = 0 }
+sub25_opcode = { type = "uint", size = 2, value = 0 }
+sub25_offset = { type = "uint", size = 2, value = 0 }
+sub25_length = { type = "uint", size = 2, value = 0 }
+sub25_rateDiv = { type = "uint", size = 2, value = 0 }
+sub25_reserved = { type = "uint", size = 2, value = 0 }
+
+sub26_fullUid = { type = "uint", size = 4, value = 0 }
+sub26_category = { type = "uint", size = 1, value = 0 }
+sub26_active = { type = "uint", size = 1, value = 0 }
+sub26_opcode = { type = "uint", size = 2, value = 0 }
+sub26_offset = { type = "uint", size = 2, value = 0 }
+sub26_length = { type = "uint", size = 2, value = 0 }
+sub26_rateDiv = { type = "uint", size = 2, value = 0 }
+sub26_reserved = { type = "uint", size = 2, value = 0 }
+
+sub27_fullUid = { type = "uint", size = 4, value = 0 }
+sub27_category = { type = "uint", size = 1, value = 0 }
+sub27_active = { type = "uint", size = 1, value = 0 }
+sub27_opcode = { type = "uint", size = 2, value = 0 }
+sub27_offset = { type = "uint", size = 2, value = 0 }
+sub27_length = { type = "uint", size = 2, value = 0 }
+sub27_rateDiv = { type = "uint", size = 2, value = 0 }
+sub27_reserved = { type = "uint", size = 2, value = 0 }
+
+sub28_fullUid = { type = "uint", size = 4, value = 0 }
+sub28_category = { type = "uint", size = 1, value = 0 }
+sub28_active = { type = "uint", size = 1, value = 0 }
+sub28_opcode = { type = "uint", size = 2, value = 0 }
+sub28_offset = { type = "uint", size = 2, value = 0 }
+sub28_length = { type = "uint", size = 2, value = 0 }
+sub28_rateDiv = { type = "uint", size = 2, value = 0 }
+sub28_reserved = { type = "uint", size = 2, value = 0 }
+
+sub29_fullUid = { type = "uint", size = 4, value = 0 }
+sub29_category = { type = "uint", size = 1, value = 0 }
+sub29_active = { type = "uint", size = 1, value = 0 }
+sub29_opcode = { type = "uint", size = 2, value = 0 }
+sub29_offset = { type = "uint", size = 2, value = 0 }
+sub29_length = { type = "uint", size = 2, value = 0 }
+sub29_rateDiv = { type = "uint", size = 2, value = 0 }
+sub29_reserved = { type = "uint", size = 2, value = 0 }
+
+sub30_fullUid = { type = "uint", size = 4, value = 0 }
+sub30_category = { type = "uint", size = 1, value = 0 }
+sub30_active = { type = "uint", size = 1, value = 0 }
+sub30_opcode = { type = "uint", size = 2, value = 0 }
+sub30_offset = { type = "uint", size = 2, value = 0 }
+sub30_length = { type = "uint", size = 2, value = 0 }
+sub30_rateDiv = { type = "uint", size = 2, value = 0 }
+sub30_reserved = { type = "uint", size = 2, value = 0 }
+
+sub31_fullUid = { type = "uint", size = 4, value = 0 }
+sub31_category = { type = "uint", size = 1, value = 0 }
+sub31_active = { type = "uint", size = 1, value = 0 }
+sub31_opcode = { type = "uint", size = 2, value = 0 }
+sub31_offset = { type = "uint", size = 2, value = 0 }
+sub31_length = { type = "uint", size = 2, value = 0 }
+sub31_rateDiv = { type = "uint", size = 2, value = 0 }
+sub31_reserved = { type = "uint", size = 2, value = 0 }

@@ -1,0 +1,46 @@
+# app_data.toml - ApexOpsDemo application descriptor for Zenith target generation
+#
+# Pure SIL demo: configurable waveform generators with rich telemetry.
+# Used for Zenith operations interface development and testing.
+#
+# Core components (Executive, Scheduler, FileSystem, Registry, Interface,
+# Action) are auto-included by the target generator at their standard UIDs.
+# Only declare app-specific component instances below.
+
+application = "ApexOpsDemo"
+description = "SIL waveform demo for operations development and testing."
+
+[protocol]
+transport = "TCP"
+framing = "SLIP"
+port = 9000
+
+[[components]]
+name = "WaveGenerator"
+fullUid = "0x00D000"
+instanceIndex = 0
+type = "SW_MODEL"
+notes = "1 Hz sine wave (default)"
+
+[[components]]
+name = "WaveGenerator"
+fullUid = "0x00D001"
+instanceIndex = 1
+type = "SW_MODEL"
+notes = "5 Hz square wave (default)"
+
+[[components]]
+name = "TelemetryManager"
+fullUid = "0x00C900"
+type = "SUPPORT"
+
+[[components]]
+name = "SystemMonitor"
+fullUid = "0x00C800"
+type = "SUPPORT"
+
+[[components]]
+name = "TestPlugin"
+fullUid = "0x00FA00"
+type = "SW_MODEL"
+notes = "Hot-swap test target"

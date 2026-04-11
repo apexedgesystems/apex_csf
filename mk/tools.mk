@@ -42,12 +42,12 @@ tools: tools-cpp tools-rust tools-py
 	$(call log,tools,All tools built)
 
 # ------------------------------------------------------------------------------
-# Apex Data Database (C2 artifacts)
+# Apex Data Database (Ops artifacts)
 # ------------------------------------------------------------------------------
 
 # Generate struct dictionaries from registered apex_data.toml manifests
 # Requires: make tools-rust (for apex_data_gen), cmake configure (for manifest list)
-# Output: build/*/apex_data_db/*.json - struct dictionaries for C2 systems
+# Output: build/*/apex_data_db/*.json - struct dictionaries for operations systems
 apex-data-db: tools-rust
 	$(call log,apex-data-db,Generating struct dictionaries)
 	@mkdir -p "$(BUILD_DIR)/apex_data_db"
@@ -70,7 +70,7 @@ apex-data-db: tools-rust
 	$(call log,apex-data-db,Struct dictionaries generated to $(BUILD_DIR)/apex_data_db/)
 
 # ------------------------------------------------------------------------------
-# TPRM Templates (C2 artifacts)
+# TPRM Templates (Ops artifacts)
 # ------------------------------------------------------------------------------
 
 # Generate TOML templates from struct dictionaries for TPRM authoring
@@ -97,7 +97,7 @@ tprm-templates: apex-data-db
 	$(call log,tprm-templates,TOML templates generated to $(BUILD_DIR)/tprm_templates/)
 
 # ------------------------------------------------------------------------------
-# C2 Command/Telemetry Deck
+# Ops Command/Telemetry Deck
 # ------------------------------------------------------------------------------
 
 # Generate a consolidated cmd/tlm deck from struct dictionaries.
@@ -105,54 +105,101 @@ tprm-templates: apex-data-db
 # tunable parameters, and state data across all registered components.
 #
 # Requires: make apex-data-db (for JSON struct dictionaries)
-# Output: build/*/c2_deck.md
-c2-deck: apex-data-db
-	$(call log,c2-deck,Generating command/telemetry deck)
-	@python3 $(PY_TOOLS_DIR)/src/apex_tools/c2/deck_gen.py \
+# Output: build/*/ops_deck.md
+ops-deck: apex-data-db
+	$(call log,ops-deck,Generating command/telemetry deck)
+	@python3 $(PY_TOOLS_DIR)/src/apex_tools/ops/deck_gen.py \
 	  --db "$(BUILD_DIR)/apex_data_db" \
-	  --output "$(BUILD_DIR)/c2_deck.md"
+	  --output "$(BUILD_DIR)/ops_deck.md"
 
 # ------------------------------------------------------------------------------
-# C2 Artifacts (umbrella)
+# Ops Artifacts (umbrella)
 # ------------------------------------------------------------------------------
 
-# Generate all C2 integration artifacts in a single command.
+# Generate all Operations integration artifacts in a single command.
 # Produces struct dictionaries, TPRM templates, and the cmd/tlm deck.
 #
 # Output:
 #   build/*/apex_data_db/*.json       Struct dictionaries (field layouts)
 #   build/*/tprm_templates/*.toml     Editable TPRM configuration templates
-#   build/*/c2_deck.md                Consolidated command/telemetry deck
-c2-artifacts: apex-data-db tprm-templates c2-deck
-	$(call log,c2-artifacts,All C2 artifacts generated to $(BUILD_DIR)/)
+#   build/*/ops_deck.md                Consolidated command/telemetry deck
+ops-artifacts: apex-data-db tprm-templates ops-deck
+	$(call log,ops-artifacts,All Ops artifacts generated to $(BUILD_DIR)/)
 
 # ------------------------------------------------------------------------------
-# C2 SDK Package
+# Ops SDK Package
 # ------------------------------------------------------------------------------
 
 # Bundles struct dictionaries, runtime metadata exports, and a quick-start
-# README into a self-contained package for C2 integrators.
+# README into a self-contained package for operations integrators.
 #
 # Usage:
-#   make c2-sdk APP=ApexHilDemo
+#   make ops-sdk APP=ApexHilDemo
 #
 # Requires:
 #   - make apex-data-db (struct dictionaries)
 #   - A prior test run (for .apex_fs/db/ exports -- optional but recommended)
 #
 # Output:
-#   build/*/c2_sdk/<APP>-c2-sdk.tar.gz
+#   build/*/ops_sdk/<APP>-ops-sdk.tar.gz
 #     <APP>/structs/*.json          Struct dictionaries (type layouts)
 #     <APP>/runtime/registry.rdat   Component/task/data metadata (if available)
 #     <APP>/runtime/scheduler.sdat  Task schedule metadata (if available)
-#     <APP>/README.md               Quick-start guide for C2 integrators
+#     <APP>/README.md               Quick-start guide for operations integrators
 
-c2-sdk: apex-data-db
-	@test -n "$(APP)" || { printf '$(TERM_RED)[c2-sdk]$(TERM_RESET) APP not set. Usage: make c2-sdk APP=<name>\n'; exit 1; }
-	$(call log,c2-sdk,Packaging C2 SDK for $(APP))
-	@bash tools/sh/bin/c2_sdk_package.sh \
+ops-sdk: apex-data-db
+	@test -n "$(APP)" || { printf '$(TERM_RED)[ops-sdk]$(TERM_RESET) APP not set. Usage: make ops-sdk APP=<name>\n'; exit 1; }
+	$(call log,ops-sdk,Packaging Ops SDK for $(APP))
+	@bash tools/sh/bin/ops_sdk_package.sh \
 	  --app "$(APP)" \
 	  --build-dir "$(BUILD_DIR)"
+
+# ------------------------------------------------------------------------------
+# Zenith Target Config Generation
+# ------------------------------------------------------------------------------
+
+# Generate Zenith target configs from app_data.toml + struct dictionaries.
+# Reads the per-app app_data.toml manifest and combines it with the JSON
+# struct dictionaries to produce a ready-to-use target directory.
+#
+# Usage:
+#   make zenith-target APP=ApexOpsDemo
+#
+# Requires:
+#   - make apex-data-db (for JSON struct dictionaries)
+#   - apps/<app>/app_data.toml (per-app component manifest)
+#
+# Output:
+#   build/*/zenith_targets/<APP>/
+#     app_manifest.json   Component list + protocol config
+#     commands.json       Opcode table for command panel
+#     telemetry.json      Default telemetry plot layouts
+#     structs/*.json      Struct dictionaries (copied)
+
+zenith-target: apex-data-db
+	@test -n "$(APP)" || { printf '$(TERM_RED)[zenith-target]$(TERM_RESET) APP not set. Usage: make zenith-target APP=<name>\n'; exit 1; }
+	$(call log,zenith-target,Generating Zenith target configs for $(APP))
+	@python3 $(PY_TOOLS_DIR)/src/apex_tools/ops/target_gen.py \
+	  --app "$(APP)" \
+	  --apps-dir "apps" \
+	  --db "$(BUILD_DIR)/apex_data_db" \
+	  --output "$(BUILD_DIR)/zenith_targets/$(APP)"
+
+# Validate generated target config against a live Apex target.
+# Connects via APROTO, queries GET_REGISTRY + GET_DATA_CATALOG, and
+# diffs against the generated config. Warns on mismatches.
+#
+# Usage:
+#   make zenith-validate APP=ApexOpsDemo HOST=192.168.1.119
+#   make zenith-validate APP=ApexOpsDemo HOST=localhost PORT=9000
+
+zenith-validate: zenith-target
+	@test -n "$(HOST)" || { printf '$(TERM_RED)[zenith-validate]$(TERM_RESET) HOST not set. Usage: make zenith-validate APP=<name> HOST=<ip> [PORT=<port>]\n'; exit 1; }
+	$(call log,zenith-validate,Validating $(APP) against $(HOST):$(or $(PORT),9000))
+	@python3 $(PY_TOOLS_DIR)/src/apex_tools/ops/target_validate.py \
+	  --generated "$(BUILD_DIR)/zenith_targets/$(APP)" \
+	  --host "$(HOST)" \
+	  --port "$(or $(PORT),9000)"
 
 # ------------------------------------------------------------------------------
 # Static Analysis
@@ -171,6 +218,6 @@ static: prep
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: static tools apex-data-db tprm-templates c2-deck c2-artifacts c2-sdk
+.PHONY: static tools apex-data-db tprm-templates ops-deck ops-artifacts ops-sdk zenith-target zenith-validate
 
 endif  # TOOLS_MK_GUARD

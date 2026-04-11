@@ -1,0 +1,15 @@
+# WaveGenerator instance 1 (componentId=208, instanceIndex=1, fullUid=0xD001)
+# Default: 5 Hz square wave, amplitude 2.0, no noise.
+
+[WaveGenTunableParams]
+frequency = { type = "float", size = 4, value = 5.0 }
+amplitude = { type = "float", size = 4, value = 2.0 }
+dcOffset = { type = "float", size = 4, value = 0.0 }
+phaseOffset = { type = "float", size = 4, value = 0.0 }
+noiseAmplitude = { type = "float", size = 4, value = 0.0 }
+dutyCycle = { type = "float", size = 4, value = 0.5 }
+waveType = { type = "uint", size = 1, value = 1 }
+reserved0 = { type = "uint", size = 1, value = 0 }
+reserved1 = { type = "uint", size = 1, value = 0 }
+reserved2 = { type = "uint", size = 1, value = 0 }
+reserved3 = { type = "float", size = 4, value = 0.0 }

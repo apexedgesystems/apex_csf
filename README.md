@@ -8,13 +8,12 @@
 Apex CSF is a real-time control and simulation framework. You write
 components -- models, drivers, support services -- and the framework handles
 scheduling, lifecycle management, communication, logging, and deployment.
-It targets the same problem space as NASA cFS and JPL F Prime but is built
-on modern C++ with first-class support for CUDA, Monte Carlo simulation,
-and bare-metal microcontrollers.
+Built on modern C++ with first-class support for CUDA, Monte Carlo
+simulation, and bare-metal microcontrollers.
 
-Use it to build flight software, hardware-in-the-loop test rigs, industrial
-controllers, edge compute pipelines, or any system where deterministic
-real-time scheduling matters.
+Use it to build real-time control applications, hardware-in-the-loop test
+rigs, edge compute pipelines, or any system where deterministic scheduling
+matters.
 
 ---
 
@@ -214,6 +213,7 @@ After building, start with one of these depending on your interest:
 
 | If you want to...                       | Start here                                                                                |
 | --------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Connect Zenith and see live telemetry   | [apex_ops_demo](apps/apex_ops_demo/)                                                      |
 | Run a full executive with GPU models    | [apex_edge_demo](apps/apex_edge_demo/)                                                    |
 | See host + MCU hardware-in-the-loop     | [apex_hil_demo](apps/apex_hil_demo/)                                                      |
 | Run Monte Carlo sweeps across all cores | [apex_mc_demo](apps/apex_mc_demo/)                                                        |
@@ -226,6 +226,7 @@ After building, start with one of these depending on your interest:
 
 | Application                                            | Description                                                   | Platforms          |
 | ------------------------------------------------------ | ------------------------------------------------------------- | ------------------ |
+| [apex_ops_demo](apps/apex_ops_demo/)                   | Waveform telemetry for Zenith operations interface testing     | x86_64, RPi        |
 | [apex_edge_demo](apps/apex_edge_demo/)                 | GPU workloads under ApexExecutive RT scheduling               | x86_64 + CUDA      |
 | [apex_hil_demo](apps/apex_hil_demo/)                   | POSIX plant model + STM32 flight controller over UART/SLIP    | x86_64 + STM32     |
 | [apex_mc_demo](apps/apex_mc_demo/)                     | Monte Carlo voltage regulator tolerance analysis              | x86_64             |
@@ -473,10 +474,11 @@ See [tools/rust/README.md](tools/rust/README.md),
 
 ### Related Projects
 
-| Project                                               | Purpose                  |
-| ----------------------------------------------------- | ------------------------ |
-| [Vernier](https://github.com/apexedgesystems/vernier) | Performance benchmarking |
-| [Seeker](https://github.com/apexedgesystems/seeker)   | System diagnostics       |
+| Project                                               | Purpose                                  |
+| ----------------------------------------------------- | ---------------------------------------- |
+| [Zenith](https://github.com/apexedgesystems/zenith)   | Real-time operations interface (web UI)  |
+| [Vernier](https://github.com/apexedgesystems/vernier) | Performance benchmarking                 |
+| [Seeker](https://github.com/apexedgesystems/seeker)   | System diagnostics                       |
 
 ---
 

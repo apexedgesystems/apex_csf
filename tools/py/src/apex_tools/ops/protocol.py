@@ -1,5 +1,5 @@
 """
-SLIP framing and APROTO packet encode/decode for C2 client.
+SLIP framing and APROTO packet encode/decode for operations client.
 
 Provides low-level protocol primitives:
   - SLIP encode/decode (RFC 1055)
@@ -44,12 +44,16 @@ SYS_RESET = 0x0003
 SYS_ACK = 0x00FE
 SYS_NAK = 0x00FF
 
-# File transfer opcodes
+# File transfer opcodes: upload
 FILE_BEGIN = 0x0020
 FILE_CHUNK = 0x0021
 FILE_END = 0x0022
 FILE_ABORT = 0x0023
 FILE_STATUS = 0x0024
+
+# File transfer opcodes: download
+FILE_GET = 0x0025
+FILE_READ_CHUNK = 0x0026
 
 # Executive opcodes
 EXEC_GET_HEALTH = 0x0100
@@ -65,12 +69,35 @@ EXEC_CMD_LOCK = 0x0114
 EXEC_CMD_UNLOCK = 0x0115
 EXEC_CMD_SLEEP = 0x0116
 EXEC_CMD_WAKE = 0x0117
-EXEC_SET_CLOCK_FREQ = 0x0120
 EXEC_SET_VERBOSITY = 0x0121
 EXEC_RELOAD_TPRM = 0x0125
 EXEC_RELOAD_LIBRARY = 0x0126
 EXEC_RELOAD_EXECUTIVE = 0x0127
 EXEC_INSPECT = 0x0130
+EXEC_GET_REGISTRY = 0x0140
+EXEC_GET_DATA_CATALOG = 0x0141
+
+# Base component opcodes (all components respond to these)
+COMPONENT_GET_COMMAND_COUNT = 0x0080
+COMPONENT_GET_STATUS_INFO = 0x0081
+
+# Component health/stats opcode (universal for all components via fullUid routing)
+COMPONENT_GET_HEALTH = 0x0100
+
+# ActionComponent opcodes (fullUid=0x000500)
+ACTION_LOAD_RTS = 0x0500
+ACTION_START_RTS = 0x0501
+ACTION_STOP_RTS = 0x0502
+ACTION_LOAD_ATS = 0x0503
+ACTION_START_ATS = 0x0504
+ACTION_STOP_ATS = 0x0505
+
+# Well-known component fullUids
+FULLUID_EXECUTIVE = 0x000000
+FULLUID_SCHEDULER = 0x000100
+FULLUID_INTERFACE = 0x000400
+FULLUID_ACTION = 0x000500
+FULLUID_SYSMON = 0x00C800
 
 # NAK status codes
 NAK_SUCCESS = 0
@@ -97,6 +124,11 @@ NAK_NAMES = {
     18: "FACTORY_NOT_FOUND",
     19: "INIT_FAILED",
     20: "NOT_SWAPPABLE",
+    21: "INVALID_PAYLOAD",
+    22: "FILE_NOT_FOUND",
+    23: "READ_FAILED",
+    24: "NO_DOWNLOAD",
+    25: "CHUNK_OUT_OF_RANGE",
 }
 
 
@@ -267,10 +299,117 @@ def parse_file_status_response(data: bytes) -> dict:
     if len(data) < 8:
         return {"error": "Response too short"}
     state, reserved, chunks_received, bytes_received = struct.unpack("<BBHI", data[:8])
-    state_names = {0: "IDLE", 1: "RECEIVING", 2: "COMPLETE", 3: "ERROR"}
+    state_names = {0: "IDLE", 1: "RECEIVING", 2: "COMPLETE", 3: "ERROR", 4: "SENDING"}
     return {
         "state": state,
         "state_name": state_names.get(state, f"UNKNOWN({state})"),
         "chunks_received": chunks_received,
         "bytes_received": bytes_received,
     }
+
+
+def build_file_get(path: str, max_chunk_size: int = 4096) -> bytes:
+    """Build FILE_GET payload (66 bytes: path[64] + maxChunkSize:u16)."""
+    path_bytes = path.encode("utf-8")[:63]
+    path_padded = path_bytes + b"\x00" * (64 - len(path_bytes))
+    return path_padded + struct.pack("<H", max_chunk_size)
+
+
+def build_file_read_chunk(chunk_index: int) -> bytes:
+    """Build FILE_READ_CHUNK payload (2-byte chunk index)."""
+    return struct.pack("<H", chunk_index)
+
+
+def parse_file_get_response(data: bytes) -> dict:
+    """Parse FILE_GET response (12 bytes).
+
+    Fields: totalSize:u32, chunkSize:u16, totalChunks:u16, crc32:u32.
+    """
+    if len(data) < 12:
+        return {"error": f"Response too short ({len(data)} bytes, need 12)"}
+    total_size, chunk_size, total_chunks, crc32 = struct.unpack("<IHHI", data[:12])
+    return {
+        "total_size": total_size,
+        "chunk_size": chunk_size,
+        "total_chunks": total_chunks,
+        "crc32": crc32,
+    }
+
+
+# Component type names (matches ComponentType enum)
+COMPONENT_TYPE_NAMES = {
+    0: "EXECUTIVE",
+    1: "CORE",
+    2: "SW_MODEL",
+    3: "HW_MODEL",
+    4: "SUPPORT",
+    5: "DRIVER",
+}
+
+# Data category names (matches DataCategory enum)
+DATA_CATEGORY_NAMES = {
+    0: "STATIC_PARAM",
+    1: "TUNABLE_PARAM",
+    2: "STATE",
+    3: "INPUT",
+    4: "OUTPUT",
+}
+
+
+def parse_registry_response(data: bytes) -> list[dict]:
+    """Parse GET_REGISTRY response into list of component entries.
+
+    Each entry is 44 bytes:
+      fullUid:u32(4) type:u8(1) taskCount:u8(1) dataCount:u8(1) reserved:u8(1)
+      name:char[32](32) instanceIndex:u8(1) padding:u8[3](3)
+    """
+    ENTRY_SIZE = 44
+    entries = []
+    for i in range(len(data) // ENTRY_SIZE):
+        off = i * ENTRY_SIZE
+        full_uid = struct.unpack_from("<I", data, off)[0]
+        comp_type = data[off + 4]
+        task_count = data[off + 5]
+        data_count = data[off + 6]
+        name_bytes = data[off + 8 : off + 40]
+        name = name_bytes.split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+        instance_index = data[off + 40]
+        entries.append(
+            {
+                "full_uid": full_uid,
+                "type": comp_type,
+                "type_name": COMPONENT_TYPE_NAMES.get(comp_type, f"UNKNOWN({comp_type})"),
+                "task_count": task_count,
+                "data_count": data_count,
+                "name": name,
+                "instance_index": instance_index,
+            }
+        )
+    return entries
+
+
+def parse_data_catalog_response(data: bytes) -> list[dict]:
+    """Parse GET_DATA_CATALOG response into list of data entries.
+
+    Each entry is 44 bytes:
+      fullUid:u32(4) category:u8(1) reserved:u8[3](3) size:u32(4) name:char[32](32)
+    """
+    ENTRY_SIZE = 44
+    entries = []
+    for i in range(len(data) // ENTRY_SIZE):
+        off = i * ENTRY_SIZE
+        full_uid = struct.unpack_from("<I", data, off)[0]
+        category = data[off + 4]
+        size = struct.unpack_from("<I", data, off + 8)[0]
+        name_bytes = data[off + 12 : off + 44]
+        name = name_bytes.split(b"\x00", 1)[0].decode("utf-8", errors="replace")
+        entries.append(
+            {
+                "full_uid": full_uid,
+                "category": category,
+                "category_name": DATA_CATEGORY_NAMES.get(category, f"UNKNOWN({category})"),
+                "size": size,
+                "name": name,
+            }
+        )
+    return entries

@@ -18,7 +18,7 @@ import sys
 import time
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3] / "tools/py/src"))
-from apex_tools.c2.client import AprotoClient  # noqa: E402
+from apex_tools.ops.client import AprotoClient  # noqa: E402
 
 
 def main() -> int:

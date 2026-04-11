@@ -18,8 +18,10 @@
 #include "src/system/core/infrastructure/system_component/apex/inc/CoreComponentBase.hpp"
 #include "src/system/core/infrastructure/system_component/apex/inc/IComponentResolver.hpp"
 #include "src/system/core/components/scheduler/apex/inc/SchedulerStatus.hpp"
+#include "src/system/core/components/scheduler/apex/inc/SchedulerTlm.hpp"
 #include "src/system/core/components/scheduler/base/inc/IScheduler.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/SequenceGroup.hpp"
+#include "src/system/core/components/scheduler/apex/inc/SchedulerData.hpp"
 #include "src/system/core/components/scheduler/apex/inc/TaskConfig.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/SchedulableTask.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/TaskBuilder.hpp"
@@ -152,6 +154,42 @@ public:
   [[nodiscard]] bool isSleeping() const noexcept {
     return sleeping_.load(std::memory_order_acquire);
   }
+
+  /* ----------------------------- Command Handling ----------------------------- */
+
+  /**
+   * @brief Handle commands dispatched to the scheduler.
+   *
+   * Component-specific opcodes:
+   *   - 0x0100: GET_HEALTH - Returns SchedulerHealthTlm (32 bytes).
+   *
+   * Delegates to base class for common opcodes (0x0080-0x0082).
+   *
+   * @param opcode Command opcode.
+   * @param payload Command payload.
+   * @param response Output buffer for response data.
+   * @return Status code (0 = success).
+   */
+  [[nodiscard]] std::uint8_t handleCommand(std::uint16_t opcode,
+                                           apex::compat::rospan<std::uint8_t> payload,
+                                           std::vector<std::uint8_t>& response) noexcept override;
+
+  /* ----------------------------- Health Query Helpers ----------------------------- */
+
+  /** @brief Cumulative period deadline violations. Override in multi-thread. */
+  [[nodiscard]] virtual std::size_t totalPeriodViolations() const noexcept { return 0; }
+
+  /** @brief Period violations in the most recent tick. Override in multi-thread. */
+  [[nodiscard]] virtual std::size_t periodViolationsThisTick() const noexcept { return 0; }
+
+  /** @brief Cumulative skip-on-busy count. Override in multi-thread. */
+  [[nodiscard]] virtual std::size_t totalSkips() const noexcept { return 0; }
+
+  /** @brief Number of thread pools. Override in multi-thread. */
+  [[nodiscard]] virtual std::uint8_t numPools() const noexcept { return 1; }
+
+  /** @brief Skip-on-busy mode enabled. Override in multi-thread. */
+  [[nodiscard]] virtual bool skipOnBusyEnabled() const noexcept { return false; }
 
   /* ----------------------------- Component Resolver ----------------------------- */
 
@@ -360,8 +398,14 @@ protected:
   /** @brief Component resolver for task lookup during TPRM loading. */
   system_component::IComponentResolver* componentResolver_{nullptr};
 
+  /** @brief Full TPRM binary for INSPECT readback (header + task entries). */
+  std::vector<std::uint8_t> tprmRaw_{};
+
   /** @brief Sleep mode flag: when true, tick() skips task dispatch but still increments counter. */
   std::atomic<bool> sleeping_{false};
+
+  /** @brief Health snapshot for INSPECT OUTPUT readback (populated on GET_HEALTH). */
+  SchedulerHealthTlm healthTlm_{};
 };
 
 } // namespace scheduler

@@ -1,0 +1,224 @@
+
+ApexOpsDemo Checkout: raspberrypi.local:9000
+========================================================================
+
+------------------------------------------------------------------------
+  1. Connectivity (SYS_NOOP)
+------------------------------------------------------------------------
+  PASS  NOOP returns SUCCESS
+
+------------------------------------------------------------------------
+  2. PING Echo (SYS_PING)
+------------------------------------------------------------------------
+  PASS  PING returns SUCCESS
+
+------------------------------------------------------------------------
+  3. Component Addressing
+------------------------------------------------------------------------
+  PASS  Executive (0x000000)
+  PASS  Scheduler (0x000100)
+  PASS  Interface (0x000400)
+  PASS  Action (0x000500)
+  PASS  WaveGen#0 (0x00D000)
+  PASS  WaveGen#1 (0x00D001)
+  PASS  TelemetryMgr (0x00C900)
+  PASS  SystemMonitor (0x00C800)
+  PASS  TestPlugin (0x00FA00)
+
+------------------------------------------------------------------------
+  4. File Transfer (8KB)
+------------------------------------------------------------------------
+  PASS  Transfer returns SUCCESS
+  PASS  Progress callback fired
+  PASS  Bytes written matches
+
+------------------------------------------------------------------------
+  5. File Transfer Status (FILE_STATUS)
+------------------------------------------------------------------------
+  PASS  FILE_STATUS returns SUCCESS
+  PASS  Transfer state IDLE after success (IDLE)
+
+------------------------------------------------------------------------
+  6. File Transfer Abort + Recovery
+------------------------------------------------------------------------
+  PASS  Abort returns SUCCESS
+  PASS  Transfer state IDLE after abort
+  PASS  Transfer after abort succeeds
+
+------------------------------------------------------------------------
+  7. Clock Rate
+------------------------------------------------------------------------
+  PASS  Clock rate ~100 Hz (measured 100)
+
+------------------------------------------------------------------------
+  8. Executive Health (GET_HEALTH)
+------------------------------------------------------------------------
+  PASS  GET_HEALTH returns SUCCESS
+  PASS  Health packet >= 48 bytes
+  PASS  Clock running (cycles=30040)
+  PASS  Frequency = 100 Hz
+  PASS  No frame overruns (got 0)
+  PASS  No watchdog warnings (got 0)
+  PASS  Clock running flag set
+  PASS  Not sleeping
+
+------------------------------------------------------------------------
+  9. Clock Queries (GET_CLOCK_FREQ, GET_RT_MODE)
+------------------------------------------------------------------------
+  PASS  GET_CLOCK_FREQ returns SUCCESS
+  PASS  Clock freq = 100 Hz
+  PASS  GET_RT_MODE returns SUCCESS
+  PASS  RT mode = 1 (HARD_PERIOD_COMPLETE=1)
+
+------------------------------------------------------------------------
+  10. Scheduler Health
+------------------------------------------------------------------------
+  PASS  Scheduler GET_HEALTH returns SUCCESS
+  PASS  Scheduler health >= 32 bytes
+  PASS  Tick count advancing (30044)
+  PASS  Task count = 8
+  PASS  No period violations (0)
+  PASS  Fundamental freq = 100 Hz
+
+------------------------------------------------------------------------
+  11. Interface Stats
+------------------------------------------------------------------------
+  PASS  Interface GET_STATS accepted
+
+------------------------------------------------------------------------
+  12. Action Engine Stats
+------------------------------------------------------------------------
+  PASS  Action GET_STATS accepted
+
+------------------------------------------------------------------------
+  13. Base Component Opcodes (GET_COMMAND_COUNT, GET_STATUS_INFO)
+------------------------------------------------------------------------
+  PASS  WaveGen#0 GET_COMMAND_COUNT accepted
+  PASS  WaveGen#0 GET_STATUS_INFO accepted
+  PASS  Scheduler GET_COMMAND_COUNT accepted
+  PASS  Scheduler commands=0 rejected=0
+  PASS  Scheduler GET_STATUS_INFO accepted
+  PASS  Scheduler initialized=1 configured=1 registered=1
+
+------------------------------------------------------------------------
+  14. INSPECT Categories
+------------------------------------------------------------------------
+  PASS  INSPECT TUNABLE_PARAM returns SUCCESS
+  PASS  TUNABLE data present
+  PASS  INSPECT STATE returns SUCCESS
+  PASS  STATE data present
+  PASS  INSPECT OUTPUT returns SUCCESS
+  PASS  OUTPUT data present
+  PASS  INSPECT STATIC_PARAM handled
+
+------------------------------------------------------------------------
+  15. Sleep / Wake
+------------------------------------------------------------------------
+  PASS  Sleeping flag set after SLEEP
+  PASS  Sleeping flag cleared after WAKE
+  PASS  Clock advancing after WAKE
+
+------------------------------------------------------------------------
+  16. Pause / Resume
+------------------------------------------------------------------------
+  PASS  PAUSE returns SUCCESS
+  PASS  Paused flag set after PAUSE
+  PASS  RESUME returns SUCCESS
+  PASS  Paused flag cleared after RESUME
+  PASS  Clock advancing after RESUME
+
+------------------------------------------------------------------------
+  17. Lock / Unlock
+------------------------------------------------------------------------
+  PASS  Lock WaveGen#1 returns SUCCESS
+  PASS  Unlock WaveGen#1 returns SUCCESS
+  PASS  Clock advancing after unlock
+  PASS  Lock non-existent returns COMPONENT_NOT_FOUND
+
+------------------------------------------------------------------------
+  18. SET_CLOCK_FREQ
+------------------------------------------------------------------------
+  PASS  SET_CLOCK_FREQ(50) returns SUCCESS
+  PASS  Frequency changed to 50 Hz
+  PASS  Rate after SET_CLOCK_FREQ (measured 100 Hz)
+  PASS  SET_CLOCK_FREQ(100) restore SUCCESS
+
+------------------------------------------------------------------------
+  19. SET_VERBOSITY
+------------------------------------------------------------------------
+  PASS  SET_VERBOSITY(2) returns SUCCESS
+  PASS  SET_VERBOSITY(0) restore SUCCESS
+
+------------------------------------------------------------------------
+  20. TPRM Reload
+------------------------------------------------------------------------
+  PASS  TPRM reload accepted
+  PASS  Frequency updated to 10.0 Hz
+
+------------------------------------------------------------------------
+  21. Library Hot-Swap (RELOAD_LIBRARY)
+------------------------------------------------------------------------
+  SKIP  (--skip-reload-lib)
+
+------------------------------------------------------------------------
+  23. WaveGen INSPECT State
+------------------------------------------------------------------------
+  PASS  INSPECT WaveGen#0 STATE returns SUCCESS
+  PASS  State >= 48 bytes
+  PASS  stepCount advancing (30760)
+  PASS  sampleCount advancing (30760)
+
+------------------------------------------------------------------------
+  24. WaveGen INSPECT Output
+------------------------------------------------------------------------
+  PASS  INSPECT WaveGen#0 OUTPUT returns SUCCESS
+  PASS  Output >= 8 bytes
+  PASS  Output value present (1.395)
+  PASS  Phase in [0,1] (0.310)
+
+------------------------------------------------------------------------
+  25. WaveGen INSPECT Tunable
+------------------------------------------------------------------------
+  PASS  INSPECT WaveGen#0 TUNABLE returns SUCCESS
+  PASS  Tunable >= 32 bytes
+  PASS  Frequency = 10.0 Hz
+  PASS  Amplitude = 1.5
+  PASS  WaveType = 0
+
+------------------------------------------------------------------------
+  26. WaveGen GET_STATS (custom opcode)
+------------------------------------------------------------------------
+  PASS  WaveGen GET_STATS accepted
+  PASS  WaveGen output=-0.956 phase=0.610
+
+------------------------------------------------------------------------
+  27. Multi-Instance Verify
+------------------------------------------------------------------------
+  PASS  WaveGen#0 STATE readable
+  PASS  WaveGen#1 STATE readable
+  PASS  WaveGen#0 stepCount=30765
+  PASS  WaveGen#1 stepCount=30763
+  PASS  Both instances advancing
+
+------------------------------------------------------------------------
+  28. SystemMonitor Reachability
+------------------------------------------------------------------------
+  PASS  SysMonitor NOOP returns SUCCESS
+
+------------------------------------------------------------------------
+  29. C2 Latency
+------------------------------------------------------------------------
+  min=9.1ms  median=10.1ms  p99=11.6ms  max=11.6ms
+  PASS  Median latency < 50ms (got 10.1ms)
+
+------------------------------------------------------------------------
+  30. Post-Test Health
+------------------------------------------------------------------------
+  PASS  Clock still ~100 Hz (measured 100)
+  PASS  No watchdog warnings (0)
+
+  SKIP  22. Executive Restart (--skip-restart)
+
+========================================================================
+  Results: 97 passed, 0 failed
+========================================================================

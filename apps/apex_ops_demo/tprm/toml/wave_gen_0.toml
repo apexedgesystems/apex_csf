@@ -1,0 +1,26 @@
+# WaveGenerator instance 0 (componentId=208, instanceIndex=0, fullUid=0xD000)
+# Default: 1 Hz sine wave, amplitude 1.0, no noise.
+#
+# WaveGenTunableParams (32 bytes):
+#   float frequency = 1.0
+#   float amplitude = 1.0
+#   float dcOffset = 0.0
+#   float phaseOffset = 0.0
+#   float noiseAmplitude = 0.0
+#   float dutyCycle = 0.5
+#   uint8_t waveType = 0 (SINE)
+#   uint8_t reserved[3] = 0
+#   float reserved2 = 0.0
+
+[WaveGenTunableParams]
+frequency = { type = "float", size = 4, value = 1.0 }
+amplitude = { type = "float", size = 4, value = 1.0 }
+dcOffset = { type = "float", size = 4, value = 0.0 }
+phaseOffset = { type = "float", size = 4, value = 0.0 }
+noiseAmplitude = { type = "float", size = 4, value = 0.0 }
+dutyCycle = { type = "float", size = 4, value = 0.5 }
+waveType = { type = "uint", size = 1, value = 0 }
+reserved0 = { type = "uint", size = 1, value = 0 }
+reserved1 = { type = "uint", size = 1, value = 0 }
+reserved2 = { type = "uint", size = 1, value = 0 }
+reserved3 = { type = "float", size = 4, value = 0.0 }

@@ -11,3 +11,6 @@ HilPlantTunableParams = { category = "TUNABLE_PARAM", header = "inc/HilPlantData
 
 # Runtime state (registered with ApexRegistry)
 HilPlantState = { category = "STATE", header = "inc/HilPlantData.hpp" }
+
+# Output: vehicle state vector sent to drivers each control tick
+VehicleState = { category = "OUTPUT", header = "../common/inc/VehicleState.hpp" }

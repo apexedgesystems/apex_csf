@@ -1,5 +1,5 @@
 """
-APROTO C2 client for commanding Apex executive applications.
+APROTO operations client for commanding Apex executive applications.
 
 Provides a high-level interface for:
   - Basic commands (noop, ping, status, arbitrary command)
@@ -9,7 +9,7 @@ Provides a high-level interface for:
   - Runtime updates (lock, unlock, TPRM reload, exec restart)
 
 Usage:
-    from apex_tools.c2.client import AprotoClient
+    from apex_tools.ops.client import AprotoClient
 
     with AprotoClient("raspberrypi.local", 9000) as c2:
         health = c2.get_health()
@@ -56,7 +56,7 @@ def crc32c(data: bytes, init: int = 0xFFFFFFFF) -> int:
 
 
 class AprotoClient:
-    """High-level APROTO C2 client over TCP with SLIP framing."""
+    """High-level APROTO operations client over TCP with SLIP framing."""
 
     def __init__(self, host: str, port: int = 9000, timeout: float = 5.0):
         self.host = host
@@ -106,7 +106,12 @@ class AprotoClient:
         self._sock.sendall(encoded)
 
     def _recv_response(self, timeout: Optional[float] = None) -> dict:
-        """Receive and parse one APROTO response."""
+        """Receive and parse one APROTO ACK/NAK response.
+
+        Filters for ACK (0x00FE) or NAK (0x00FF) opcode packets, discarding
+        any unsolicited telemetry packets pushed by TelemetryManager or
+        SystemMonitor via postInternalTelemetry().
+        """
         if self._sock is None:
             raise ConnectionError("Not connected")
 
@@ -116,7 +121,12 @@ class AprotoClient:
             frames = proto.slip_decode_stream(self._rx_buf)
             for frame in frames:
                 parsed = proto.parse_header(frame)
-                if parsed is not None and parsed["is_response"]:
+                if parsed is None or not parsed["is_response"]:
+                    continue
+                # Only accept ACK/NAK packets (opcode 0x00FE or 0x00FF).
+                # Discard unsolicited telemetry packets (any other opcode).
+                opc = parsed["opcode"]
+                if opc == proto.SYS_ACK or opc == proto.SYS_NAK:
                     return parsed
 
             # Read more data.
@@ -200,6 +210,42 @@ class AprotoClient:
             return struct.unpack("<Q", extra[:8])[0]
         return 0
 
+    # Component health queries
+
+    def get_scheduler_health(self) -> dict:
+        """Get scheduler health telemetry (32 bytes)."""
+        return self.send_command(proto.FULLUID_SCHEDULER, proto.COMPONENT_GET_HEALTH)
+
+    def get_action_stats(self) -> dict:
+        """Get action engine statistics (56 bytes)."""
+        return self.send_command(proto.FULLUID_ACTION, proto.COMPONENT_GET_HEALTH)
+
+    def get_interface_stats(self) -> dict:
+        """Get interface communication statistics (56 bytes)."""
+        return self.send_command(proto.FULLUID_INTERFACE, proto.COMPONENT_GET_HEALTH)
+
+    def get_sysmon_health(self) -> dict:
+        """Get system monitor health (request via component opcode)."""
+        return self.send_command(proto.FULLUID_SYSMON, proto.COMPONENT_GET_HEALTH)
+
+    # Action engine sequence commands
+
+    def start_rts(self, slot: int) -> dict:
+        """Start a loaded RTS sequence."""
+        return self.send_command(proto.FULLUID_ACTION, proto.ACTION_START_RTS, bytes([slot]))
+
+    def stop_rts(self, slot: int) -> dict:
+        """Stop an active RTS sequence."""
+        return self.send_command(proto.FULLUID_ACTION, proto.ACTION_STOP_RTS, bytes([slot]))
+
+    def start_ats(self, slot: int) -> dict:
+        """Start a loaded ATS sequence."""
+        return self.send_command(proto.FULLUID_ACTION, proto.ACTION_START_ATS, bytes([slot]))
+
+    def stop_ats(self, slot: int) -> dict:
+        """Stop an active ATS sequence."""
+        return self.send_command(proto.FULLUID_ACTION, proto.ACTION_STOP_ATS, bytes([slot]))
+
     # Ground test / inspection
 
     def inspect(self, full_uid: int, category: int, offset: int = 0, length: int = 0) -> dict:
@@ -217,6 +263,35 @@ class AprotoClient:
         """
         payload = struct.pack("<IBHH", full_uid, category, offset, length)
         return self.send_command(0x000000, proto.EXEC_INSPECT, payload)
+
+    # Runtime self-description
+
+    def get_registry(self) -> dict:
+        """Get component registry dump.
+
+        Returns:
+            dict with 'status', 'status_name', and 'components' list on success.
+            Each component: {full_uid, type, type_name, task_count, data_count,
+                            name, instance_index}.
+        """
+        result = self.send_command(0x000000, proto.EXEC_GET_REGISTRY)
+        extra = result.get("extra", b"")
+        if len(extra) >= 44:
+            result["components"] = proto.parse_registry_response(extra)
+        return result
+
+    def get_data_catalog(self) -> dict:
+        """Get data entry catalog dump.
+
+        Returns:
+            dict with 'status', 'status_name', and 'data_entries' list on success.
+            Each entry: {full_uid, category, category_name, size, name}.
+        """
+        result = self.send_command(0x000000, proto.EXEC_GET_DATA_CATALOG)
+        extra = result.get("extra", b"")
+        if len(extra) >= 44:
+            result["data_entries"] = proto.parse_data_catalog_response(extra)
+        return result
 
     # File transfer
 
@@ -274,8 +349,69 @@ class AprotoClient:
                 result["file_end"] = end_resp
         return result
 
+    def recv_file(
+        self,
+        remote_path: str,
+        local_path: str,
+        max_chunk_size: int = 4096,
+        progress_cb: Optional[Callable[[int, int], None]] = None,
+    ) -> dict:
+        """Download a file from the target filesystem.
+
+        Args:
+            remote_path: Source path relative to .apex_fs/ root.
+            local_path: Local file to write.
+            max_chunk_size: Maximum bytes per chunk (default 4096).
+            progress_cb: Optional callback(chunks_received, total_chunks).
+
+        Returns:
+            ACK/NAK result from FILE_GET, with 'file_get' key on success.
+        """
+        # FILE_GET
+        get_payload = proto.build_file_get(remote_path, max_chunk_size)
+        result = self.send_command(0, proto.FILE_GET, get_payload)
+        if result.get("status", 0) != 0:
+            return result
+
+        extra = result.get("extra", b"")
+        if len(extra) < 12:
+            return {"status": 255, "status_name": "MISSING_GET_RESPONSE", "extra": extra}
+
+        info = proto.parse_file_get_response(extra)
+        result["file_get"] = info
+        total_chunks = info["total_chunks"]
+        expected_crc = info["crc32"]
+
+        # FILE_READ_CHUNK (sequential)
+        assembled = bytearray()
+        for i in range(total_chunks):
+            chunk_payload = proto.build_file_read_chunk(i)
+            chunk_result = self.send_command(0, proto.FILE_READ_CHUNK, chunk_payload)
+            if chunk_result.get("status", 0) != 0:
+                self.send_command(0, proto.FILE_ABORT, ack_req=False)
+                return chunk_result
+            assembled.extend(chunk_result.get("extra", b""))
+            if progress_cb is not None:
+                progress_cb(i + 1, total_chunks)
+
+        # Verify CRC32.
+        actual_crc = crc32c(bytes(assembled))
+        if actual_crc != expected_crc:
+            result["crc_match"] = False
+            result["status"] = 13
+            result["status_name"] = "CRC_MISMATCH"
+            return result
+
+        result["crc_match"] = True
+
+        # Write to local file.
+        Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+        Path(local_path).write_bytes(bytes(assembled))
+
+        return result
+
     def abort_transfer(self) -> dict:
-        """Abort current file transfer."""
+        """Abort current file transfer (upload or download)."""
         return self.send_command(0, proto.FILE_ABORT)
 
     def get_transfer_status(self) -> dict:
@@ -311,17 +447,13 @@ class AprotoClient:
     def reload_executive(self) -> dict:
         """Restart executive via execve.
 
-        The process calls execv() before the ACK can be sent, so the
-        connection will be closed by the remote side.  This method catches
-        the expected ConnectionError / TimeoutError and returns a synthetic
-        SUCCESS result.  The caller should reconnect after a brief delay.
+        Apex defers execv until after the ACK is on the wire, so this is a
+        normal send_command. The connection will drop shortly after the ACK
+        arrives. Callers should reconnect after a brief delay.
         """
-        try:
-            return self.send_command(0x000000, proto.EXEC_RELOAD_EXECUTIVE)
-        except (ConnectionError, TimeoutError):
-            # Expected: execv replaced the process before ACK was sent.
-            self._sock = None
-            return {"status": 0, "status_name": "SUCCESS (execve)"}
+        result = self.send_command(0x000000, proto.EXEC_RELOAD_EXECUTIVE)
+        self._sock = None
+        return result
 
     # Compound operations
 

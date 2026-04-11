@@ -1,12 +1,12 @@
 """Generate a consolidated command/telemetry deck from struct dictionaries.
 
 Reads all JSON struct dictionaries produced by apex_data_gen and generates
-a single markdown document describing the full C2 interface surface of an
+a single markdown document describing the full operations interface surface of an
 Apex application.
 
 Usage:
-    c2-deck --db build/native-linux-debug/apex_data_db --output c2_deck.md
-    c2-deck --db build/native-linux-debug/apex_data_db  # prints to stdout
+    ops-deck --db build/native-linux-debug/apex_data_db --output ops_deck.md
+    ops-deck --db build/native-linux-debug/apex_data_db  # prints to stdout
 """
 
 import argparse
@@ -219,7 +219,7 @@ def generate_deck(dicts, out):
 
     # 6. State data
     out.write("## 6. State Data\n\n")
-    out.write("State data is read-only from the C2 interface.\n\n")
+    out.write("State data is read-only from the operations interface.\n\n")
     if not states:
         out.write("No state data defined.\n\n")
     else:
@@ -272,7 +272,7 @@ def main():
             generate_deck(dicts, f)
         count = len(dicts)
         print(
-            f"[c2-deck] Generated {args.output} ({count} components)",
+            f"[ops-deck] Generated {args.output} ({count} components)",
             file=sys.stderr,
         )
     else:

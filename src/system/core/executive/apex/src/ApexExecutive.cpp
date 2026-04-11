@@ -70,7 +70,7 @@ ApexExecutive::ApexExecutive(const std::filesystem::path& execPath,
       heartbeatLog_(std::make_shared<logs::SystemLog>((fsRoot / HEARTBEAT_LOG_FN).string())),
       fileSystem_(fsRoot), scheduler_(DEFAULT_CLOCK_FREQUENCY, fileSystem_.coreLogDir()) {
   // Initialize signal set for graceful shutdown
-  // NOTE: SIGSEGV is intentionally NOT included - we want segfaults to crash
+  // NOTE: SIGSEGV is intentionally NOT included -- segfaults should crash
   // immediately with core dumps for debugging
   sigemptyset(&signalSet_);
   sigaddset(&signalSet_, SIGINT);  // CTRL+C - user interrupt
@@ -447,13 +447,14 @@ void ApexExecutive::configureRegisteredComponents() noexcept {
                                    comp->fullUid()));
     }
 
-    // Set internal bus for models (SW_MODEL or HW_MODEL)
-    if (system_core::system_component::isModel(comp->componentType())) {
+    // Set internal bus for all schedulable components (models + support + drivers).
+    // Support components (SystemMonitor, TelemetryManager) use the bus for
+    // postInternalTelemetry() to push data to external TCP clients.
+    if (system_core::system_component::isSchedulable(comp->componentType())) {
       comp->setInternalBus(interface_.get());
       sysLog_->debug(
           label(),
-          fmt::format("Set internal bus for model {} (0x{:06X})", comp->label(), comp->fullUid()),
-          2);
+          fmt::format("Set internal bus for {} (0x{:06X})", comp->label(), comp->fullUid()), 2);
     }
   }
 
@@ -546,6 +547,31 @@ RunResult ApexExecutive::run() noexcept {
                   fmt::format("Registered {} (fullUid=0x{:06X})", componentName(), fullUid()));
   }
 
+  // Register executive tunable params for INSPECT readback
+  {
+    auto tprmStatus =
+        registry_.registerData(fullUid(), system_core::data::DataCategory::TUNABLE_PARAM,
+                               "tunableParams", &tunableParams_, sizeof(ExecutiveTunableParams));
+    if (system_core::registry::isError(tprmStatus)) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(tprmStatus),
+                       fmt::format("Executive tunableParams registration failed: {}",
+                                   system_core::registry::toString(tprmStatus)));
+    }
+  }
+
+  // Register executive health packet as OUTPUT for INSPECT readback.
+  // The packet is populated on each GET_HEALTH call and on each INSPECT read.
+  {
+    getHealthPacket(); // Populate initial snapshot.
+    auto status = registry_.registerData(fullUid(), system_core::data::DataCategory::OUTPUT,
+                                         "health", &healthPacket_, sizeof(ExecutiveHealthPacket));
+    if (system_core::registry::isError(status)) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(status),
+                       fmt::format("Executive health registration failed: {}",
+                                   system_core::registry::toString(status)));
+    }
+  }
+
   registerCoreComponent(scheduler_);
   registerCoreComponent(fileSystem_);
   registerCoreComponent(registry_);
@@ -623,7 +649,7 @@ RunResult ApexExecutive::run() noexcept {
   // Register action engine stats as OUTPUT data
   {
     auto status = registry_.registerData(
-        actionComp_.fullUid(), system_core::data::DataCategory::OUTPUT, "stats",
+        actionComp_.fullUid(), system_core::data::DataCategory::OUTPUT, "health",
         const_cast<void*>(static_cast<const void*>(&actionComp_.stats())),
         sizeof(system_core::data::EngineStats));
     if (system_core::registry::isError(status)) {
@@ -641,7 +667,7 @@ RunResult ApexExecutive::run() noexcept {
   // Register interface stats as OUTPUT data
   {
     auto status = registry_.registerData(
-        interface_->fullUid(), system_core::data::DataCategory::OUTPUT, "stats",
+        interface_->fullUid(), system_core::data::DataCategory::OUTPUT, "health",
         const_cast<void*>(static_cast<const void*>(&interface_->stats())),
         sizeof(system_core::interface::ApexInterface::Stats));
     if (system_core::registry::isError(status)) {
@@ -656,34 +682,10 @@ RunResult ApexExecutive::run() noexcept {
     }
   }
 
-  // Freeze registry before run phase (makes queries RT-safe)
-  auto freezeStatus = registry_.freeze();
-  if (system_core::registry::isError(freezeStatus)) {
-    sysLog_->error(
-        label(), static_cast<std::uint8_t>(freezeStatus),
-        fmt::format("Registry freeze failed: {}", system_core::registry::toString(freezeStatus)));
-  } else {
-    sysLog_->info(label(), fmt::format("Registry frozen: {} components, {} tasks, {} data entries",
-                                       registry_.componentCount(), registry_.taskCount(),
-                                       registry_.dataCount()));
-  }
+  // NOTE: Registry freeze moved to after all initialization (scheduler, interface, etc.)
+  // so that core component registerData calls in doInit() are captured.
 
-  // Initialize registry log and output comprehensive contents
-  registry_.initRegistryLog(fileSystem_.coreLogDir());
-  registry_.logRegistryContents();
-  sysLog_->info(label(), fmt::format("Registry log: {}",
-                                     (fileSystem_.coreLogDir() / "registry.log").string()));
-
-  // Export registry database
-  auto exportStatus = registry_.exportDatabase(fileSystem_.dbDir());
-  if (exportStatus == system_core::registry::Status::SUCCESS) {
-    sysLog_->info(label(), fmt::format("Registry database: {}",
-                                       (fileSystem_.dbDir() / "registry.rdat").string()));
-  } else {
-    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_REGISTRY_EXPORT),
-                     fmt::format("Registry database export failed: {}",
-                                 system_core::registry::toString(exportStatus)));
-  }
+  // NOTE: Registry log/export moved to after freeze (so all data entries are captured)
 
   // Initialize scheduler
   sysLog_->info(label(), "Initializing scheduler...");
@@ -722,7 +724,7 @@ RunResult ApexExecutive::run() noexcept {
   }
 
   // Connect interface to component resolver for command routing.
-  // RegistryBase implements IComponentResolver, so we pass it directly.
+  // RegistryBase implements IComponentResolver and is passed directly.
   interface_->setComponentResolver(&registry_);
 
   // Set filesystem root for file transfer handler.
@@ -733,6 +735,64 @@ RunResult ApexExecutive::run() noexcept {
 
   // Derived class hook for additional configuration (if needed)
   configureComponents();
+
+  // Register core component data descriptors with registry.
+  // Core components use registerCoreComponent() which doesn't iterate data
+  // descriptors like registerComponent() does for app components. By this point
+  // all core components have been initialized and their doInit() has run,
+  // so their registerData() calls have populated their descriptor lists.
+  {
+    system_core::system_component::SystemComponentBase* coreComps[] = {
+        &scheduler_, &fileSystem_, &registry_, interface_.get(), &actionComp_,
+    };
+    for (auto* comp : coreComps) {
+      if (comp == nullptr)
+        continue;
+      for (std::size_t i = 0; i < comp->dataCount(); ++i) {
+        const auto* desc = comp->dataDescriptor(i);
+        if (desc != nullptr && desc->ptr != nullptr) {
+          auto status = registry_.registerData(comp->fullUid(), desc->category, desc->name,
+                                               desc->ptr, desc->size);
+          if (system_core::registry::isError(status)) {
+            sysLog_->warning(label(), static_cast<std::uint8_t>(status),
+                             fmt::format("Failed to register data '{}' for {} (0x{:06X})",
+                                         desc->name, comp->componentName(), comp->fullUid()));
+          }
+        }
+      }
+    }
+  }
+
+  // Freeze registry (moved here from earlier so all data descriptors are captured)
+  auto freezeStatus = registry_.freeze();
+  if (system_core::registry::isError(freezeStatus)) {
+    sysLog_->error(
+        label(), static_cast<std::uint8_t>(freezeStatus),
+        fmt::format("Registry freeze failed: {}", system_core::registry::toString(freezeStatus)));
+  } else {
+    sysLog_->info(label(), fmt::format("Registry frozen: {} components, {} tasks, {} data entries",
+                                       registry_.componentCount(), registry_.taskCount(),
+                                       registry_.dataCount()));
+  }
+
+  // Initialize registry log and output comprehensive contents (after freeze)
+  registry_.initRegistryLog(fileSystem_.coreLogDir());
+  registry_.logRegistryContents();
+  sysLog_->info(label(), fmt::format("Registry log: {}",
+                                     (fileSystem_.coreLogDir() / "registry.log").string()));
+
+  // Export registry database
+  {
+    auto exportStatus = registry_.exportDatabase(fileSystem_.dbDir());
+    if (exportStatus == system_core::registry::Status::SUCCESS) {
+      sysLog_->info(label(), fmt::format("Registry database: {}",
+                                         (fileSystem_.dbDir() / "registry.rdat").string()));
+    } else {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_REGISTRY_EXPORT),
+                       fmt::format("Registry database export failed: {}",
+                                   system_core::registry::toString(exportStatus)));
+    }
+  }
 
   // Allocate queues for interface itself (self-command routing for deterministic timing).
   // QueueManager maintains fullUid -> queues mapping; components use IInternalBus for messaging.

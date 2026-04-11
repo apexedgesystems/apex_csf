@@ -3,3 +3,4 @@
 
 # Components (alphabetical)
 add_subdirectory(system_monitor)
+add_subdirectory(telemetry_manager)

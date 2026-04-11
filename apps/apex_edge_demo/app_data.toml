@@ -1,0 +1,46 @@
+# app_data.toml - ApexEdgeDemo application descriptor for Zenith target generation
+#
+# Edge compute demo: GPU workload models (convolution, FFT, batch stats,
+# stream compaction) with system health monitoring including NVML GPU telemetry.
+#
+# Core components (Executive, Scheduler, FileSystem, Registry, Interface,
+# Action) are auto-included by the target generator at their standard UIDs.
+# Only declare app-specific component instances below.
+
+application = "ApexEdgeDemo"
+description = "GPU edge compute workloads with NVML health monitoring."
+
+[protocol]
+transport = "TCP"
+framing = "SLIP"
+port = 9000
+
+[[components]]
+name = "ConvFilterModel"
+fullUid = "0x008200"
+type = "SW_MODEL"
+notes = "2D convolution GPU workload"
+
+[[components]]
+name = "FFTAnalyzerModel"
+fullUid = "0x008300"
+type = "SW_MODEL"
+notes = "FFT analysis GPU workload"
+
+[[components]]
+name = "BatchStatsModel"
+fullUid = "0x008400"
+type = "SW_MODEL"
+notes = "Parallel reduction GPU workload"
+
+[[components]]
+name = "StreamCompactModel"
+fullUid = "0x008500"
+type = "SW_MODEL"
+notes = "Threshold + classify GPU workload"
+
+[[components]]
+name = "SystemMonitor"
+fullUid = "0x00C800"
+type = "SUPPORT"
+notes = "CPU + GPU health via NVML"

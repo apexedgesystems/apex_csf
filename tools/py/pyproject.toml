@@ -24,8 +24,9 @@ dependencies = [
 packages = [{include = "apex_tools", from = "src"}]
 
 [tool.poetry.scripts]
-# C2 tools
-c2-deck = "apex_tools.c2.deck_gen:main"
+# Operations tools
+ops-deck = "apex_tools.ops.deck_gen:main"
+zenith-target = "apex_tools.ops.target_gen:main"
 
 # Monte Carlo tools
 mc-plot = "apex_tools.mc.mc_plot:main"

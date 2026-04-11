@@ -9,3 +9,6 @@ component = "HilDriver"
 [structs]
 # Runtime state (registered with ApexRegistry)
 DriverState = { category = "STATE", header = "inc/HilDriverData.hpp" }
+
+# Output: control command received from flight controller
+ControlCmd = { category = "OUTPUT", header = "../common/inc/VehicleState.hpp" }

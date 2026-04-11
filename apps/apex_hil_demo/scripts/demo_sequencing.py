@@ -26,7 +26,7 @@ import struct
 import sys
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3] / "tools/py/src"))
-from apex_tools.c2.client import AprotoClient  # noqa: E402
+from apex_tools.ops.client import AprotoClient  # noqa: E402
 
 # ActionComponent opcodes (0x0500 range)
 OPCODE_LOAD_RTS = 0x0500

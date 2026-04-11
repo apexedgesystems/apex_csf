@@ -1,0 +1,21 @@
+# apex_data.toml - Component data manifest for Scheduler
+#
+# Core task scheduler (fullUid=0x000100). Dispatches scheduled tasks to
+# thread pools at configured rates and priorities. Configuration is
+# entirely TPRM-driven.
+
+component = "Scheduler"
+
+[structs]
+# TPRM header (pool count, workers, task count)
+SchedulerTprmHeader = { category = "TUNABLE_PARAM", header = "inc/SchedulerData.hpp" }
+
+# Per-task scheduling entry (one per scheduled task)
+SchedulerTaskEntry = { category = "TUNABLE_PARAM", header = "inc/SchedulerData.hpp" }
+
+# Health telemetry (32 bytes, returned by GET_HEALTH opcode 0x0100)
+SchedulerHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/SchedulerTlm.hpp" }
+
+[enums]
+# Telemetry opcodes
+SchedulerTlmOpcode = { header = "inc/SchedulerTlm.hpp" }

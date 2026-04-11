@@ -1,0 +1,24 @@
+# apex_data.toml - Component data manifest for TelemetryManager
+#
+# Push telemetry component (fullUid varies by application).
+# Reads registered data from the registry and pushes to the external
+# interface at configured rates via postInternalTelemetry().
+
+component = "TelemetryManager"
+
+[structs]
+# Tunable parameters (subscription table, TPRM-configurable)
+TelemetryManagerTprm = { category = "TUNABLE_PARAM", header = "inc/TelemetryManagerData.hpp" }
+
+# Single subscription entry (16 bytes each, 32 max)
+TelemetrySubscription = { category = "TUNABLE_PARAM", header = "inc/TelemetryManagerData.hpp" }
+
+# Runtime state and counters
+TelemetryManagerState = { category = "STATE", header = "inc/TelemetryManagerData.hpp" }
+
+# Health telemetry returned by GET_STATS (opcode 0x0100)
+TelemetryManagerHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/TelemetryManagerData.hpp" }
+
+[enums]
+# Command opcodes
+TelemetryManagerOpcode = { header = "inc/TelemetryManager.hpp" }

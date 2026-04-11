@@ -5,6 +5,7 @@
 
 #include "src/system/core/components/action/apex/inc/ActionComponent.hpp"
 #include "src/system/core/components/action/apex/inc/ActionEngineTprm.hpp"
+#include "src/system/core/components/action/apex/inc/ActionTlm.hpp"
 #include "src/system/core/infrastructure/data/inc/SequenceValidation.hpp"
 
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
@@ -416,7 +417,8 @@ std::uint8_t ActionComponent::handleCommand(std::uint16_t opcode,
                                             std::vector<std::uint8_t>& response) noexcept {
   using system_component::CommandResult;
 
-  // ActionComponent opcodes: 0x0500-0x05FF
+  // ActionComponent opcodes
+  constexpr std::uint16_t GET_STATS = 0x0100;
   constexpr std::uint16_t LOAD_RTS = 0x0500;
   constexpr std::uint16_t START_RTS = 0x0501;
   constexpr std::uint16_t STOP_RTS = 0x0502;
@@ -425,6 +427,28 @@ std::uint8_t ActionComponent::handleCommand(std::uint16_t opcode,
   constexpr std::uint16_t STOP_ATS = 0x0505;
 
   switch (opcode) {
+  case GET_STATS: {
+    ActionHealthTlm tlm{};
+    const auto& S = iface_.stats;
+    tlm.totalCycles = S.totalCycles;
+    tlm.watchpointsFired = S.watchpointsFired;
+    tlm.groupsFired = S.groupsFired;
+    tlm.actionsApplied = S.actionsApplied;
+    tlm.commandsRouted = S.commandsRouted;
+    tlm.armControlsApplied = S.armControlsApplied;
+    tlm.sequenceSteps = S.sequenceSteps;
+    tlm.sequenceTimeouts = S.sequenceTimeouts;
+    tlm.sequenceRetries = S.sequenceRetries;
+    tlm.sequenceAborts = S.sequenceAborts;
+    tlm.notificationsInvoked = S.notificationsInvoked;
+    tlm.resolveFailures = S.resolveFailures;
+    tlm.rtsLoaded = S.rtsLoaded;
+    tlm.atsLoaded = S.atsLoaded;
+    response.resize(sizeof(tlm));
+    std::memcpy(response.data(), &tlm, sizeof(tlm));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
   case START_RTS:
   case START_ATS: {
     if (payload.empty()) {

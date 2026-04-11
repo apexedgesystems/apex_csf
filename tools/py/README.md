@@ -5,7 +5,7 @@
 **Platform:** Cross-platform Python >=3.10
 
 Command-line tools for the Apex CSF C++ project. Python tools focus on
-visualization and C2 interface generation.
+visualization and operations interface generation.
 
 ---
 
@@ -28,11 +28,11 @@ The build directory is relocatable (copy anywhere, source `.env`, and run).
 
 ## Tools
 
-### C2 (1)
+### Operations (1)
 
-| Tool      | Purpose                                                     | Docs                          |
-| --------- | ----------------------------------------------------------- | ----------------------------- |
-| `c2-deck` | Generate consolidated cmd/tlm deck from struct dictionaries | [c2_deck.md](docs/c2_deck.md) |
+| Tool       | Purpose                                                     | Docs                            |
+| ---------- | ----------------------------------------------------------- | ------------------------------- |
+| `ops-deck` | Generate consolidated cmd/tlm deck from struct dictionaries | [ops_deck.md](docs/ops_deck.md) |
 
 ### Monte Carlo (1)
 
