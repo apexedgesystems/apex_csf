@@ -77,17 +77,6 @@ public:
   [[nodiscard]] std::size_t poolCount() const noexcept { return pools_.size(); }
 
   /**
-   * @brief Get number of period deadline violations detected this tick.
-   *
-   * A period violation occurs when a task is still running from a previous
-   * dispatch when it should run again (e.g., a 5Hz task still running at
-   * its next 5Hz slot).
-   */
-  [[nodiscard]] std::size_t periodViolationsThisTick() const noexcept {
-    return periodViolationsThisTick_;
-  }
-
-  /**
    * @brief Check if any task has a period deadline violation.
    *
    * For HARD_PERIOD_COMPLETE mode: Returns true if any task that should
@@ -127,6 +116,20 @@ public:
    */
   [[nodiscard]] std::size_t totalSkipCount() const noexcept { return totalSkipCount_; }
 
+  /* ----------------------------- Health Query Overrides ----------------------------- */
+
+  [[nodiscard]] std::size_t totalPeriodViolations() const noexcept override {
+    return totalPeriodViolations_;
+  }
+  [[nodiscard]] std::size_t periodViolationsThisTick() const noexcept override {
+    return periodViolationsThisTick_;
+  }
+  [[nodiscard]] std::size_t totalSkips() const noexcept override { return totalSkipCount_; }
+  [[nodiscard]] std::uint8_t numPools() const noexcept override {
+    return static_cast<std::uint8_t>(pools_.size());
+  }
+  [[nodiscard]] bool skipOnBusyEnabled() const noexcept override { return skipOnBusy_; }
+
 protected:
   /** @brief Delegate tick execution to multi-threaded dispatch. */
   void executeTick(std::uint16_t tick) noexcept override {
@@ -150,6 +153,7 @@ private:
   std::vector<std::string> poolNames_;
   std::filesystem::path logDir_;
   std::size_t periodViolationsThisTick_{0};      ///< Count of period violations detected this tick.
+  std::size_t totalPeriodViolations_{0};         ///< Cumulative period violations since startup.
   std::atomic<bool> periodViolationFlag_{false}; ///< Sticky flag for period violations.
   bool skipOnBusy_{false};                       ///< Skip tasks still running (SKIP_ON_BUSY mode).
   std::size_t totalSkipCount_{0};                ///< Total skipped invocations across all tasks.

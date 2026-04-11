@@ -103,6 +103,9 @@ bool SystemMonitor::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     return false;
   }
 
+  // Cache raw TPRM for INSPECT readback
+  tunableParams_ = loaded;
+
   // Unpack into runtime config
   config_.sampleRateHz = loaded.sampleRateHz;
 
@@ -156,6 +159,14 @@ std::uint8_t SystemMonitor::doInit() noexcept {
   // Register telemetry task
   registerTask<SystemMonitor, &SystemMonitor::telemetry>(
       static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry");
+
+  // Register tunable params for INSPECT readback
+  registerData(data::DataCategory::TUNABLE_PARAM, "tunableParams", &tunableParams_,
+               sizeof(SystemMonitorTunableParams));
+
+  // Register health snapshot as OUTPUT for INSPECT readback.
+  // Populated on each telemetry sample cycle.
+  registerData(data::DataCategory::OUTPUT, "health", &healthTlm_, sizeof(SysMonHealthTlm));
 
   // Capture init-time snapshot (NOT RT-safe, cold path)
   captureKernelSnapshot();
@@ -352,23 +363,23 @@ std::uint8_t SystemMonitor::telemetry() noexcept {
 
   ++sampleCount_;
 
+  // Update persistent health snapshot (also used for INSPECT OUTPUT readback).
+  healthTlm_.sampleCount = sampleCount_;
+  healthTlm_.warnCount = warnCount_;
+  healthTlm_.critCount = critCount_;
+  healthTlm_.monitoredCoreCount = config_.cpu.monitoredCoreCount;
+  healthTlm_.cpuTempC = lastCpuTempC_;
+  for (std::uint8_t i = 0; i < config_.cpu.monitoredCoreCount; ++i) {
+    healthTlm_.coreLoad[i] = lastCoreLoad_[i];
+  }
+  healthTlm_.ramUsedPercent = lastRamUsedPercent_;
+  healthTlm_.fdCount = lastFdCount_;
+
   // Post structured telemetry via interface pipeline (RT-safe, zero-alloc at call site).
   auto* bus = internalBus();
   if (bus != nullptr) {
-    SysMonHealthTlm tlm{};
-    tlm.sampleCount = sampleCount_;
-    tlm.warnCount = warnCount_;
-    tlm.critCount = critCount_;
-    tlm.monitoredCoreCount = config_.cpu.monitoredCoreCount;
-    tlm.cpuTempC = lastCpuTempC_;
-    for (std::uint8_t i = 0; i < config_.cpu.monitoredCoreCount; ++i) {
-      tlm.coreLoad[i] = lastCoreLoad_[i];
-    }
-    tlm.ramUsedPercent = lastRamUsedPercent_;
-    tlm.fdCount = lastFdCount_;
-
     const auto PAYLOAD = apex::compat::rospan<std::uint8_t>(
-        reinterpret_cast<const std::uint8_t*>(&tlm), sizeof(tlm));
+        reinterpret_cast<const std::uint8_t*>(&healthTlm_), sizeof(healthTlm_));
     (void)bus->postInternalTelemetry(
         fullUid(), static_cast<std::uint16_t>(SysMonTlmOpcode::HEALTH_SAMPLE), PAYLOAD);
   }

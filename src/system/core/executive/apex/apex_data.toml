@@ -1,0 +1,21 @@
+# apex_data.toml - Component data manifest for ApexExecutive
+#
+# Root executive component (fullUid=0x000000). Handles all executive opcodes
+# (0x0100-0x0130): health queries, execution control, runtime updates, and
+# data inspection. Every Apex application has exactly one executive.
+
+component = "ApexExecutive"
+
+[structs]
+# Tunable parameters (TPRM-configurable at startup)
+ExecutiveTunableParams = { category = "TUNABLE_PARAM", header = "inc/ExecutiveData.hpp" }
+
+# Thread configuration (TPRM: RT policy, priority, affinity per thread)
+ExecutiveThreadConfigTprm = { category = "TUNABLE_PARAM", header = "inc/ExecutiveData.hpp" }
+
+# Health telemetry (48 bytes, returned by GET_HEALTH opcode 0x0100)
+ExecutiveHealthPacket = { category = "TELEMETRY", opcode = "0x0100", header = "inc/ExecutiveState.hpp" }
+
+[enums]
+# Executive-specific opcodes (0x0100-0x0130)
+Opcode = { header = "inc/ApexExecutive.hpp" }

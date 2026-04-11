@@ -2,8 +2,10 @@
  * @file FileTransferHandler.cpp
  * @brief Chunked file transfer over APROTO system opcodes.
  *
- * Assembles file chunks into a staging file, verifies CRC32, and atomically
- * moves the completed file to the destination path.
+ * Upload: assembles file chunks into a staging file, verifies CRC32,
+ * and atomically moves the completed file to the destination path.
+ *
+ * Download: opens a source file, computes CRC32, serves chunks on demand.
  */
 
 #include "src/system/core/components/interface/apex/inc/FileTransferHandler.hpp"
@@ -36,8 +38,9 @@ FileTransferHandler::~FileTransferHandler() { resetState(); }
 
 std::uint8_t FileTransferHandler::handleBegin(const std::uint8_t* payload,
                                               std::size_t payloadLen) noexcept {
-  // Reject if transfer already in progress.
-  if (state_ == aproto::FileTransferState::RECEIVING) {
+  // Reject if any transfer already in progress.
+  if (state_ == aproto::FileTransferState::RECEIVING ||
+      state_ == aproto::FileTransferState::SENDING) {
     return static_cast<std::uint8_t>(aproto::NakStatus::TRANSFER_IN_PROGRESS);
   }
 
@@ -213,26 +216,164 @@ std::uint8_t FileTransferHandler::handleStatus(std::uint8_t* response,
   aproto::FileStatusResponse resp{};
   resp.state = static_cast<std::uint8_t>(state_);
   resp.reserved = 0;
-  resp.chunksReceived = chunksReceived_;
-  resp.bytesReceived = bytesReceived_;
+
+  if (state_ == aproto::FileTransferState::SENDING) {
+    // Download in progress: report chunks/bytes sent.
+    resp.chunksReceived = chunksSent_;
+    resp.bytesReceived = bytesSent_;
+  } else {
+    // Upload or idle: report chunks/bytes received.
+    resp.chunksReceived = chunksReceived_;
+    resp.bytesReceived = bytesReceived_;
+  }
 
   std::memcpy(response, &resp, sizeof(resp));
   responseLen = sizeof(resp);
   return static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS);
 }
 
+/* ----------------------------- Download (FILE_GET / FILE_READ_CHUNK) ---- */
+
+static constexpr std::size_t FILE_GET_MIN_SIZE = sizeof(aproto::FileGetPayload);
+static constexpr std::size_t READ_CHUNK_HEADER_SIZE = 2; // uint16_t chunkIndex
+
+std::uint8_t FileTransferHandler::handleGet(const std::uint8_t* payload, std::size_t payloadLen,
+                                            std::uint8_t* response,
+                                            std::size_t& responseLen) noexcept {
+  responseLen = 0;
+
+  // Reject if any transfer already in progress.
+  if (state_ == aproto::FileTransferState::RECEIVING ||
+      state_ == aproto::FileTransferState::SENDING) {
+    return static_cast<std::uint8_t>(aproto::NakStatus::TRANSFER_IN_PROGRESS);
+  }
+
+  // Validate payload size.
+  if (payloadLen < FILE_GET_MIN_SIZE) {
+    return static_cast<std::uint8_t>(aproto::NakStatus::INVALID_PAYLOAD);
+  }
+
+  // Parse payload.
+  aproto::FileGetPayload get{};
+  std::memcpy(&get, payload, sizeof(get));
+  get.path[sizeof(get.path) - 1] = '\0';
+
+  const std::string PATH(get.path);
+
+  // Validate path.
+  if (PATH.empty() || !isPathSafe(PATH)) {
+    return static_cast<std::uint8_t>(aproto::NakStatus::PATH_INVALID);
+  }
+
+  // Resolve full path and check existence.
+  const fs::path FULL_PATH = fsRoot_ / PATH;
+  std::error_code ec;
+  if (!fs::exists(FULL_PATH, ec) || fs::is_directory(FULL_PATH, ec)) {
+    return static_cast<std::uint8_t>(aproto::NakStatus::FILE_NOT_FOUND);
+  }
+
+  // Get file size.
+  const auto FILE_SIZE = fs::file_size(FULL_PATH, ec);
+  if (ec || FILE_SIZE == 0) {
+    return static_cast<std::uint8_t>(aproto::NakStatus::FILE_NOT_FOUND);
+  }
+
+  // Open for reading.
+  sendFile_.open(FULL_PATH, std::ios::binary);
+  if (!sendFile_.is_open()) {
+    return static_cast<std::uint8_t>(aproto::NakStatus::READ_FAILED);
+  }
+
+  // Compute CRC32 of the source file.
+  sendCrc32_ = computeFileCrc32(FULL_PATH);
+
+  // Determine chunk size: use client's max or default to 4096.
+  sendChunkSize_ = (get.maxChunkSize > 0) ? get.maxChunkSize : 4096;
+  sendTotalSize_ = static_cast<std::uint32_t>(FILE_SIZE);
+  sendTotalChunks_ =
+      static_cast<std::uint16_t>((sendTotalSize_ + sendChunkSize_ - 1) / sendChunkSize_);
+  chunksSent_ = 0;
+  bytesSent_ = 0;
+
+  state_ = aproto::FileTransferState::SENDING;
+
+  // Build response.
+  aproto::FileGetResponse resp{};
+  resp.totalSize = sendTotalSize_;
+  resp.chunkSize = sendChunkSize_;
+  resp.totalChunks = sendTotalChunks_;
+  resp.crc32 = sendCrc32_;
+
+  std::memcpy(response, &resp, sizeof(resp));
+  responseLen = sizeof(resp);
+  return static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS);
+}
+
+std::uint8_t FileTransferHandler::handleReadChunk(const std::uint8_t* payload,
+                                                  std::size_t payloadLen, std::uint8_t* response,
+                                                  std::size_t& responseLen) noexcept {
+  responseLen = 0;
+
+  // Must be in SENDING state.
+  if (state_ != aproto::FileTransferState::SENDING) {
+    return static_cast<std::uint8_t>(aproto::NakStatus::NO_DOWNLOAD);
+  }
+
+  // Parse chunk index.
+  if (payloadLen < READ_CHUNK_HEADER_SIZE) {
+    return static_cast<std::uint8_t>(aproto::NakStatus::INVALID_PAYLOAD);
+  }
+
+  std::uint16_t chunkIndex = 0;
+  std::memcpy(&chunkIndex, payload, sizeof(chunkIndex));
+
+  // Range check.
+  if (chunkIndex >= sendTotalChunks_) {
+    return static_cast<std::uint8_t>(aproto::NakStatus::CHUNK_OUT_OF_RANGE);
+  }
+
+  // Seek to chunk offset.
+  const auto OFFSET = static_cast<std::streamoff>(chunkIndex) * sendChunkSize_;
+  sendFile_.seekg(OFFSET, std::ios::beg);
+  if (!sendFile_.good()) {
+    resetState();
+    return static_cast<std::uint8_t>(aproto::NakStatus::READ_FAILED);
+  }
+
+  // Read chunk data.
+  const std::size_t REMAINING =
+      sendTotalSize_ - static_cast<std::uint32_t>(chunkIndex) * sendChunkSize_;
+  const std::size_t READ_SIZE = std::min(static_cast<std::size_t>(sendChunkSize_), REMAINING);
+
+  sendFile_.read(reinterpret_cast<char*>(response), static_cast<std::streamsize>(READ_SIZE));
+  if (!sendFile_.good() && !sendFile_.eof()) {
+    resetState();
+    return static_cast<std::uint8_t>(aproto::NakStatus::READ_FAILED);
+  }
+
+  responseLen = static_cast<std::size_t>(sendFile_.gcount());
+  ++chunksSent_;
+  bytesSent_ += static_cast<std::uint32_t>(responseLen);
+
+  // Auto-complete after last chunk.
+  if (chunksSent_ >= sendTotalChunks_) {
+    sendFile_.close();
+    state_ = aproto::FileTransferState::IDLE;
+  }
+
+  return static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS);
+}
+
 /* ----------------------------- File Helpers ----------------------------- */
 
 void FileTransferHandler::resetState() noexcept {
+  // Upload cleanup.
   if (stageFile_.is_open()) {
     stageFile_.close();
   }
-
-  // Delete partial staging file.
   std::error_code ec;
   fs::remove(stagePath_, ec);
 
-  state_ = aproto::FileTransferState::IDLE;
   expectedTotalSize_ = 0;
   expectedChunkSize_ = 0;
   expectedTotalChunks_ = 0;
@@ -240,6 +381,19 @@ void FileTransferHandler::resetState() noexcept {
   destinationPath_.clear();
   chunksReceived_ = 0;
   bytesReceived_ = 0;
+
+  // Download cleanup.
+  if (sendFile_.is_open()) {
+    sendFile_.close();
+  }
+  sendTotalSize_ = 0;
+  sendChunkSize_ = 0;
+  sendTotalChunks_ = 0;
+  sendCrc32_ = 0;
+  chunksSent_ = 0;
+  bytesSent_ = 0;
+
+  state_ = aproto::FileTransferState::IDLE;
 }
 
 std::uint32_t FileTransferHandler::computeFileCrc32(const fs::path& path) const noexcept {

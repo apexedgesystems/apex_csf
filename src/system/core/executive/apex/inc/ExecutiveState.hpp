@@ -156,6 +156,7 @@ struct ControlState {
   std::atomic<bool> shutdownRequested{false}; ///< Shutdown trigger.
   std::atomic<bool> pauseRequested{false};    ///< Pause request.
   std::atomic<bool> isPaused{false};          ///< Currently paused.
+  std::atomic<bool> restartPending{false};    ///< Deferred execv (set by RELOAD_EXECUTIVE).
 };
 
 /* ----------------------------- OUTPUT Structures ----------------------------- */

@@ -1,5 +1,5 @@
 # ==============================================================================
-# apex/DataDefinitions.cmake - C2 struct dictionary manifest registration
+# apex/DataDefinitions.cmake - Ops struct dictionary manifest registration
 # ==============================================================================
 #
 # Registers apex_data.toml manifests for struct dictionary generation.

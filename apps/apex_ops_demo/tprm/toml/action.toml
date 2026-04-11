@@ -1,0 +1,7 @@
+# ActionEngine (componentId=5, instanceIndex=0)
+# Minimal configuration: no watchpoints, groups, or actions initially.
+# Sequences can be loaded at runtime via LOAD_RTS/LOAD_ATS commands.
+#
+# This file is intentionally minimal for Phase 1. Watchpoints and
+# automated sequences will be added when ThermalModel and
+# MissionController are implemented (Phase 2+).

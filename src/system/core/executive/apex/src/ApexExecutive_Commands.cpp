@@ -5,7 +5,7 @@
  * Handles all executive opcodes (0x0100+):
  *  - Query commands: GET_HEALTH, GET_CLOCK_FREQ, GET_RT_MODE, GET_CLOCK_CYCLES
  *  - Control commands: PAUSE, RESUME, SHUTDOWN, FAST_FORWARD, SLEEP, WAKE
- *  - Set commands: SET_CLOCK_FREQ, SET_VERBOSITY
+ *  - Set commands: SET_VERBOSITY
  *  - Runtime update: LOCK/UNLOCK, RELOAD_TPRM, RELOAD_LIBRARY, RELOAD_EXECUTIVE
  *  - Ground test: INSPECT
  */
@@ -33,45 +33,35 @@ using system_core::system_component::CommandResult;
 
 /* ----------------------------- Health Packet ----------------------------- */
 
-ExecutiveHealthPacket ApexExecutive::getHealthPacket() const noexcept {
-  ExecutiveHealthPacket packet{};
+const ExecutiveHealthPacket& ApexExecutive::getHealthPacket() const noexcept {
+  // Populate the cached member (mutable for const access).
+  healthPacket_.clockCycles = clockState_.cycles.load(std::memory_order_acquire);
+  healthPacket_.clockFrequencyHz = clockFrequency_;
+  healthPacket_.frameOverrunCount = clockState_.overrunCount.load(std::memory_order_acquire);
+  healthPacket_.taskExecutionCycles = taskState_.cycles.load(std::memory_order_acquire);
+  healthPacket_.watchdogWarningCount = watchdogState_.warningCount;
+  healthPacket_.rtMode = static_cast<std::uint8_t>(rtConfig_.mode);
 
-  // Clock state
-  packet.clockCycles = clockState_.cycles.load(std::memory_order_acquire);
-  packet.clockFrequencyHz = clockFrequency_;
-  packet.frameOverrunCount = clockState_.overrunCount.load(std::memory_order_acquire);
-
-  // Task execution state
-  packet.taskExecutionCycles = taskState_.cycles.load(std::memory_order_acquire);
-
-  // Watchdog state
-  packet.watchdogWarningCount = watchdogState_.warningCount;
-
-  // RT mode
-  packet.rtMode = static_cast<std::uint8_t>(rtConfig_.mode);
-
-  // Control state flags
-  packet.flags = 0;
+  healthPacket_.flags = 0;
   if (clockState_.isRunning.load(std::memory_order_acquire)) {
-    packet.flags |= ExecutiveHealthPacket::FLAG_CLOCK_RUNNING;
+    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_CLOCK_RUNNING;
   }
   if (controlState_.isPaused.load(std::memory_order_acquire)) {
-    packet.flags |= ExecutiveHealthPacket::FLAG_PAUSED;
+    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_PAUSED;
   }
   if (controlState_.shutdownRequested.load(std::memory_order_acquire)) {
-    packet.flags |= ExecutiveHealthPacket::FLAG_SHUTDOWN_REQUESTED;
+    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_SHUTDOWN_REQUESTED;
   }
   if (taskState_.lagThresholdExceeded.load(std::memory_order_acquire)) {
-    packet.flags |= ExecutiveHealthPacket::FLAG_LAG_EXCEEDED;
+    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_LAG_EXCEEDED;
   }
   if (scheduler_.isSleeping()) {
-    packet.flags |= ExecutiveHealthPacket::FLAG_SLEEPING;
+    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_SLEEPING;
   }
 
-  // External I/O stats
-  packet.commandsProcessed = ioState_.commandsProcessed.load(std::memory_order_acquire);
+  healthPacket_.commandsProcessed = ioState_.commandsProcessed.load(std::memory_order_acquire);
 
-  return packet;
+  return healthPacket_;
 }
 
 /* ----------------------------- Command Dispatch ----------------------------- */
@@ -83,8 +73,8 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     // === Query commands (no payload, return data) ===
 
   case static_cast<std::uint16_t>(Opcode::GET_HEALTH): {
-    // Return 48-byte health packet.
-    const ExecutiveHealthPacket PACKET = getHealthPacket();
+    // Return 48-byte health packet (also updates the registered OUTPUT snapshot).
+    const auto& PACKET = getHealthPacket();
     response.resize(sizeof(ExecutiveHealthPacket));
     std::memcpy(response.data(), &PACKET, sizeof(ExecutiveHealthPacket));
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
@@ -164,16 +154,6 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
     // === Set commands (payload required) ===
-
-  case static_cast<std::uint16_t>(Opcode::SET_CLOCK_FREQ): {
-    if (payload.size() < 2) {
-      return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
-    }
-    std::uint16_t newFreq = 0;
-    std::memcpy(&newFreq, payload.data(), 2);
-    setClockFrequency(newFreq);
-    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
-  }
 
   case static_cast<std::uint16_t>(Opcode::SET_VERBOSITY): {
     if (payload.size() < 1) {
@@ -516,6 +496,11 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
   }
 
   case static_cast<std::uint16_t>(Opcode::RELOAD_EXECUTIVE): {
+    // Deferred restart: prepare the exec target and set the restartPending
+    // flag. The main loop checks this flag after draining commands, flushes
+    // the ACK to the wire, then calls execv(). This guarantees the client
+    // receives the SUCCESS ACK before the connection drops.
+
     // Check for a new binary in the inactive bank.
     const std::filesystem::path EXEC_NAME = execPath_.filename();
     const std::filesystem::path INACTIVE_BIN = fileSystem_.inactiveBinDir() / EXEC_NAME;
@@ -549,7 +534,6 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       }
       didSwapBinary = true;
 
-      // Exec the newly active binary.
       execTarget = ACTIVE_BIN;
       sysLog_->info(label(),
                     fmt::format("Executive restart with new binary: {}", execTarget.string()));
@@ -563,43 +547,13 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       }
     }
 
-    // Flush all logs before exec.
-    sysLog_->flush();
-    if (auto* sl = fileSystem_.swapLog()) {
-      sl->flush();
-    }
+    // Stash target and set flag. The main loop will exec after sending the ACK.
+    // Write target before flag (release ordering on the atomic store).
+    restartExecTarget_ = execTarget;
+    restartDidSwapBinary_ = didSwapBinary;
+    controlState_.restartPending.store(true, std::memory_order_release);
 
-    // Re-exec with original arguments.
-    std::vector<const char*> argv;
-    const std::string EXEC_STR = execTarget.string();
-    argv.push_back(EXEC_STR.c_str());
-    for (const auto& arg : args_) {
-      argv.push_back(arg.c_str());
-    }
-    argv.push_back(nullptr);
-    execv(EXEC_STR.c_str(), const_cast<char* const*>(argv.data()));
-
-    // If execv returns, it failed. Roll back the bank swap so the next
-    // restart loads the known-good binary, not the failed one.
-    const int EXEC_ERRNO = errno;
-    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
-                     fmt::format("execv failed (errno={}): {} -- system continues with old binary",
-                                 EXEC_ERRNO, std::strerror(EXEC_ERRNO)));
-    if (didSwapBinary) {
-      const std::string FN = EXEC_NAME.string();
-      if (fileSystem_.swapBankFile(system_core::filesystem::BIN_DIR, FN)) {
-        sysLog_->info(label(), "RELOAD_EXECUTIVE: bank swap rolled back after execv failure");
-      } else {
-        sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
-                         "RELOAD_EXECUTIVE: bank swap rollback failed, on-disk state inconsistent");
-      }
-      if (auto* sl = fileSystem_.swapLog()) {
-        sl->warning("SWAP", static_cast<std::uint8_t>(CommandResult::EXEC_FAILED),
-                    fmt::format("RELOAD_EXECUTIVE_FAIL: execv_failed errno={} rollback={}",
-                                EXEC_ERRNO, didSwapBinary ? "attempted" : "n/a"));
-      }
-    }
-    return static_cast<std::uint8_t>(CommandResult::EXEC_FAILED);
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 
     // === Ground test / inspection commands ===
@@ -629,6 +583,71 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     auto bytes = entry->getBytes();
     response.resize(COPY_LEN);
     std::memcpy(response.data(), bytes.data() + offset, COPY_LEN);
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+    // === Runtime self-description commands ===
+
+  case static_cast<std::uint16_t>(Opcode::GET_REGISTRY): {
+    // No payload required. Response: packed array of component entries.
+    // Per entry (44 bytes):
+    //   fullUid:u32(4) type:u8(1) taskCount:u8(1) dataCount:u8(1) reserved:u8(1)
+    //   name:char[32](32) instanceIndex:u8(1) padding:u8[3](3)
+    static constexpr std::size_t ENTRY_SIZE = 44;
+
+    const auto COMPONENTS = registry_.getAllComponents();
+    response.resize(COMPONENTS.size() * ENTRY_SIZE);
+    std::memset(response.data(), 0, response.size());
+
+    for (std::size_t i = 0; i < COMPONENTS.size(); ++i) {
+      const auto& COMP = COMPONENTS[i];
+      std::uint8_t* dst = response.data() + i * ENTRY_SIZE;
+
+      std::memcpy(dst + 0, &COMP.fullUid, 4);
+      dst[4] = static_cast<std::uint8_t>(COMP.type);
+      dst[5] = static_cast<std::uint8_t>(COMP.taskCount);
+      dst[6] = static_cast<std::uint8_t>(COMP.dataCount);
+      dst[7] = 0; // reserved
+
+      if (COMP.name != nullptr) {
+        std::strncpy(reinterpret_cast<char*>(dst + 8), COMP.name, 31);
+        dst[8 + 31] = '\0';
+      }
+
+      dst[40] = static_cast<std::uint8_t>(COMP.fullUid & 0xFF); // instanceIndex
+      // dst[41..43] = padding (already zeroed)
+    }
+
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case static_cast<std::uint16_t>(Opcode::GET_DATA_CATALOG): {
+    // No payload required. Response: packed array of data entries.
+    // Per entry (44 bytes):
+    //   fullUid:u32(4) category:u8(1) reserved:u8[3](3) size:u32(4) name:char[32](32)
+    static constexpr std::size_t ENTRY_SIZE = 44;
+
+    const auto DATA = registry_.getAllData();
+    response.resize(DATA.size() * ENTRY_SIZE);
+    std::memset(response.data(), 0, response.size());
+
+    for (std::size_t i = 0; i < DATA.size(); ++i) {
+      const auto& D = DATA[i];
+      std::uint8_t* dst = response.data() + i * ENTRY_SIZE;
+
+      std::memcpy(dst + 0, &D.fullUid, 4);
+      dst[4] = static_cast<std::uint8_t>(D.category);
+      // dst[5..7] = reserved (already zeroed)
+
+      const auto SZ = static_cast<std::uint32_t>(D.size);
+      std::memcpy(dst + 8, &SZ, 4);
+
+      if (D.name != nullptr) {
+        std::strncpy(reinterpret_cast<char*>(dst + 12), D.name, 31);
+        dst[12 + 31] = '\0';
+      }
+    }
+
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 

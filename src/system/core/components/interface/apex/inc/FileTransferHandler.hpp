@@ -4,15 +4,20 @@
  * @file FileTransferHandler.hpp
  * @brief Chunked file transfer over APROTO system opcodes.
  *
- * Handles FILE_BEGIN, FILE_CHUNK, FILE_END, FILE_ABORT, FILE_STATUS opcodes.
- * Assembles chunks into a staging file, verifies CRC32, and atomically moves
- * the completed file to the destination path under the filesystem root.
+ * Upload (ground -> target):
+ *   FILE_BEGIN, FILE_CHUNK, FILE_END, FILE_ABORT, FILE_STATUS
+ *   Assembles chunks into a staging file, verifies CRC32, atomically commits.
+ *
+ * Download (target -> ground):
+ *   FILE_GET, FILE_READ_CHUNK, FILE_ABORT, FILE_STATUS
+ *   Opens a file for reading, serves chunks on demand, client verifies CRC32.
  *
  * Design:
- *  - One transfer at a time (IDLE -> RECEIVING -> COMPLETE/ERROR -> IDLE).
- *  - Chunks must arrive in order (sequential chunkIndex).
- *  - CRC32 of entire file verified on FILE_END before commit.
- *  - Destination path validated to be under filesystem root (no traversal).
+ *  - One transfer at a time (upload OR download, not both).
+ *  - State machine: IDLE -> RECEIVING (upload) or SENDING (download) -> IDLE.
+ *  - FILE_ABORT resets state for either direction.
+ *  - FILE_STATUS reports progress for either direction.
+ *  - All paths validated to be under filesystem root (no traversal).
  *  - NOT RT-safe: performs file I/O. Called from Interface's system opcode handler.
  */
 
@@ -87,6 +92,31 @@ public:
   [[nodiscard]] std::uint8_t handleStatus(std::uint8_t* response,
                                           std::size_t& responseLen) const noexcept;
 
+  /* ----------------------------- Download (FILE_GET / FILE_READ_CHUNK) ---- */
+
+  /**
+   * @brief Handle FILE_GET opcode (begin download).
+   * @param payload Raw payload bytes (must be FileGetPayload).
+   * @param payloadLen Payload length.
+   * @param response Output buffer for FileGetResponse (12 bytes).
+   * @param responseLen Output: bytes written to response.
+   * @return NakStatus code.
+   */
+  [[nodiscard]] std::uint8_t handleGet(const std::uint8_t* payload, std::size_t payloadLen,
+                                       std::uint8_t* response, std::size_t& responseLen) noexcept;
+
+  /**
+   * @brief Handle FILE_READ_CHUNK opcode (read one chunk).
+   * @param payload Raw payload bytes (chunkIndex:u16).
+   * @param payloadLen Payload length.
+   * @param response Output buffer for chunk data (up to sendChunkSize_ bytes).
+   * @param responseLen Output: bytes written to response.
+   * @return NakStatus code.
+   */
+  [[nodiscard]] std::uint8_t handleReadChunk(const std::uint8_t* payload, std::size_t payloadLen,
+                                             std::uint8_t* response,
+                                             std::size_t& responseLen) noexcept;
+
 private:
   /** @brief Reset state to IDLE, close staging file, delete partial file. */
   void resetState() noexcept;
@@ -110,10 +140,19 @@ private:
   std::uint32_t expectedCrc32_{0};
   std::string destinationPath_; ///< Relative path under fsRoot_.
 
-  // Transfer progress
+  // Upload progress
   std::uint16_t chunksReceived_{0};
   std::uint32_t bytesReceived_{0};
   std::ofstream stageFile_; ///< Output stream to staging file.
+
+  // Download (sending) state
+  std::uint32_t sendTotalSize_{0};
+  std::uint16_t sendChunkSize_{0};
+  std::uint16_t sendTotalChunks_{0};
+  std::uint32_t sendCrc32_{0};
+  std::uint16_t chunksSent_{0};
+  std::uint32_t bytesSent_{0};
+  std::ifstream sendFile_; ///< Input stream from source file.
 };
 
 } // namespace interface

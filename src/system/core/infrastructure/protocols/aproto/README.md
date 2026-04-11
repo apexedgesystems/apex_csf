@@ -19,29 +19,37 @@ Lightweight binary protocol for commanding system components and receiving telem
 | How do I route to a specific component?    | `AprotoTypes`  |
 | How do I check encode/decode result codes? | `AprotoStatus` |
 
-| Component          | Type          | Purpose                                                                                 | RT-Safe |
-| ------------------ | ------------- | --------------------------------------------------------------------------------------- | ------- |
-| `AprotoHeader`     | Struct        | 14-byte packed header (magic, version, flags, fullUid, opcode, sequence, payloadLength) | Yes     |
-| `AprotoFlags`      | Struct        | Protocol flags (internalOrigin, isResponse, ackRequested, crcPresent, encryptedPresent) | Yes     |
-| `AckPayload`       | Struct        | ACK/NAK response payload (cmdOpcode, cmdSequence, status)                               | Yes     |
-| `CryptoMeta`       | Struct        | Encryption metadata (keyIndex, nonce)                                                   | Yes     |
-| `PacketView`       | Struct        | Zero-copy view into encoded packet buffer                                               | Yes     |
-| `buildHeader`      | Free function | Create AprotoHeader from parameters                                                     | Yes     |
-| `encodeHeader`     | Free function | Serialize header to bytes                                                               | Yes     |
-| `decodeHeader`     | Free function | Parse header from bytes                                                                 | Yes     |
-| `encodePacket`     | Free function | Serialize header + payload + optional CRC                                               | Yes     |
-| `validatePacket`   | Free function | Verify magic, version, CRC                                                              | Yes     |
-| `createPacketView` | Free function | Create zero-copy view of encoded packet                                                 | Yes     |
-| `getPayload`       | Free function | Extract payload span from packet                                                        | Yes     |
-| `getCryptoMeta`    | Free function | Extract encryption metadata                                                             | Yes     |
-| `computeCrc`       | Free function | Hardware-accelerated CRC32-C                                                            | Yes     |
-| `encodeAckNak`     | Free function | Build ACK/NAK response packet                                                           | Yes     |
-| `makeFlags`        | Free function | Construct flags from booleans                                                           | Yes     |
-| `packetSize`       | Free function | Calculate total packet size from header                                                 | Yes     |
-| `toString(Status)` | Free function | Convert status code to string                                                           | Yes     |
-| `isSuccess`        | Free function | Check if status is success                                                              | Yes     |
-| `isError`          | Free function | Check if status is an error                                                             | Yes     |
-| `isWarning`        | Free function | Check if status is a warning                                                            | Yes     |
+| Component            | Type          | Purpose                                                                                 | RT-Safe |
+| -------------------- | ------------- | --------------------------------------------------------------------------------------- | ------- |
+| `AprotoHeader`       | Struct        | 14-byte packed header (magic, version, flags, fullUid, opcode, sequence, payloadLength) | Yes     |
+| `AprotoFlags`        | Struct        | Protocol flags (internalOrigin, isResponse, ackRequested, crcPresent, encryptedPresent) | Yes     |
+| `AckPayload`         | Struct        | ACK/NAK response payload (cmdOpcode, cmdSequence, status)                               | Yes     |
+| `CryptoMeta`         | Struct        | Encryption metadata (keyIndex, nonce)                                                   | Yes     |
+| `PacketView`         | Struct        | Zero-copy view into encoded packet buffer                                               | Yes     |
+| `SystemOpcode`       | Enum          | System opcodes: NOOP, PING, file transfer (upload + download), ACK/NAK                  | Yes     |
+| `NakStatus`          | Enum          | Extended NAK status codes for all system operations                                     | Yes     |
+| `FileTransferState`  | Enum          | Transfer state machine: IDLE, RECEIVING, COMPLETE, ERROR, SENDING                       | Yes     |
+| `FileBeginPayload`   | Struct        | FILE_BEGIN payload (76B: totalSize, chunkSize, totalChunks, crc32, path)                | Yes     |
+| `FileEndResponse`    | Struct        | FILE_END response (8B: status, bytesWritten)                                            | Yes     |
+| `FileStatusResponse` | Struct        | FILE_STATUS response (8B: state, chunksReceived, bytesReceived)                         | Yes     |
+| `FileGetPayload`     | Struct        | FILE_GET payload (66B: path, maxChunkSize)                                              | Yes     |
+| `FileGetResponse`    | Struct        | FILE_GET response (12B: totalSize, chunkSize, totalChunks, crc32)                       | Yes     |
+| `buildHeader`        | Free function | Create AprotoHeader from parameters                                                     | Yes     |
+| `encodeHeader`       | Free function | Serialize header to bytes                                                               | Yes     |
+| `decodeHeader`       | Free function | Parse header from bytes                                                                 | Yes     |
+| `encodePacket`       | Free function | Serialize header + payload + optional CRC                                               | Yes     |
+| `validatePacket`     | Free function | Verify magic, version, CRC                                                              | Yes     |
+| `createPacketView`   | Free function | Create zero-copy view of encoded packet                                                 | Yes     |
+| `getPayload`         | Free function | Extract payload span from packet                                                        | Yes     |
+| `getCryptoMeta`      | Free function | Extract encryption metadata                                                             | Yes     |
+| `computeCrc`         | Free function | Hardware-accelerated CRC32-C                                                            | Yes     |
+| `encodeAckNak`       | Free function | Build ACK/NAK response packet                                                           | Yes     |
+| `makeFlags`          | Free function | Construct flags from booleans                                                           | Yes     |
+| `packetSize`         | Free function | Calculate total packet size from header                                                 | Yes     |
+| `toString(Status)`   | Free function | Convert status code to string                                                           | Yes     |
+| `isSuccess`          | Free function | Check if status is success                                                              | Yes     |
+| `isError`            | Free function | Check if status is an error                                                             | Yes     |
+| `isWarning`          | Free function | Check if status is a warning                                                            | Yes     |
 
 ---
 

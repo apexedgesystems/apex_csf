@@ -160,7 +160,7 @@ Verify:
 
 ```bash
 PYTHONPATH=tools/py/src python3 -c "
-from apex_tools.c2.client import AprotoClient
+from apex_tools.ops.client import AprotoClient
 import struct
 with AprotoClient('raspberrypi.local', 9000) as c2:
     r = c2.get_health()
@@ -287,7 +287,7 @@ If the system enters PAUSE state, the stdin CLI reader may have received garbage
 Always start with `</dev/null`. To recover:
 
 ```python
-from apex_tools.c2.client import AprotoClient
+from apex_tools.ops.client import AprotoClient
 with AprotoClient("raspberrypi.local", 9000) as c2:
     c2.send_command(0x000000, 0x0115)  # EXEC_CMD_RESUME
 ```

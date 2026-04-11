@@ -112,7 +112,6 @@ public:
    * @brief Update clock frequency dynamically.
    * @param newFrequency New frequency in Hz.
    */
-  void setClockFrequency(std::uint16_t newFrequency) noexcept;
 
   /**
    * @brief Request system pause (takes effect after current frame completes).
@@ -138,7 +137,7 @@ public:
    *
    * @return ExecutiveHealthPacket with current state.
    */
-  [[nodiscard]] ExecutiveHealthPacket getHealthPacket() const noexcept;
+  [[nodiscard]] const ExecutiveHealthPacket& getHealthPacket() const noexcept;
 
   /* ----------------------------- Command Handling ----------------------------- */
 
@@ -148,7 +147,7 @@ public:
    *
    * Query commands (0x0100-0x010F): No payload, return data.
    * Control commands (0x0110-0x011F): No payload, trigger action.
-   * Set commands (0x0120-0x012F): Payload required, set parameter.
+   * Set commands (0x0121-0x012F): Payload required, set parameter.
    */
   enum class Opcode : std::uint16_t {
     // Query commands (no payload, return data)
@@ -165,8 +164,7 @@ public:
     CMD_FAST_FORWARD = 0x0113, ///< Enter fast-forward mode (non-RT).
 
     // Set commands (payload required)
-    SET_CLOCK_FREQ = 0x0120, ///< Set clock frequency (2-byte payload).
-    SET_VERBOSITY = 0x0121,  ///< Set log verbosity (1-byte payload).
+    SET_VERBOSITY = 0x0121, ///< Set log verbosity (1-byte payload).
 
     // System mode commands
     CMD_SLEEP = 0x0116, ///< Enter sleep mode (clock ticks, tasks paused).
@@ -182,6 +180,10 @@ public:
     // Ground test / inspection commands
     INSPECT = 0x0130, ///< Read registered data (9-byte payload: u32 fullUid, u8 category, u16
                       ///< offset, u16 len).
+
+    // Runtime self-description commands
+    GET_REGISTRY = 0x0140,     ///< Dump component registry (no payload, packed response).
+    GET_DATA_CATALOG = 0x0141, ///< Dump data entry catalog (no payload, packed response).
   };
 
   /**
@@ -201,7 +203,7 @@ public:
    *   - 0x0113: CMD_FAST_FORWARD - Enter fast-forward mode.
    *
    * Set commands (payload required):
-   *   - 0x0120: SET_CLOCK_FREQ - Set clock frequency (2-byte payload).
+   *   - 0x0120: (removed -- fundamental frequency is a design-time parameter, not runtime).
    *   - 0x0121: SET_VERBOSITY - Set log verbosity (1-byte payload).
    *
    * Ground test commands (payload required):
@@ -393,6 +395,11 @@ private:
   std::filesystem::path execPath_{};
   std::vector<std::string> args_{};
 
+  // Deferred restart target (set by RELOAD_EXECUTIVE, consumed by main loop).
+  // Written before controlState_.restartPending is set (release ordering).
+  std::filesystem::path restartExecTarget_{};
+  bool restartDidSwapBinary_{false};
+
   // Parsed CLI arguments
   apex::helpers::args::ParsedArgs parsedArgs_{};
 
@@ -453,8 +460,8 @@ private:
   ShutdownState shutdownState_{};   ///< Shutdown sequence state.
   ProfilingState profilingState_{}; ///< Profiling subsystem state.
 
-  // Output packet (populated on demand)
-  ExecutiveHealthPacket healthPacket_{}; ///< Current health snapshot.
+  // Output packet (populated on demand, registered as OUTPUT for INSPECT)
+  mutable ExecutiveHealthPacket healthPacket_{}; ///< Current health snapshot.
 
   // Registered components (for auto-configuration after interface init)
   std::vector<system_core::system_component::SystemComponentBase*> registeredComponents_{};

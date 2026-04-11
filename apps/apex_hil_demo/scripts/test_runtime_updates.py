@@ -21,8 +21,8 @@ import tempfile
 import time
 
 sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3] / "tools/py/src"))
-from apex_tools.c2 import protocol as proto  # noqa: E402
-from apex_tools.c2.client import AprotoClient, crc32c  # noqa: E402
+from apex_tools.ops import protocol as proto  # noqa: E402
+from apex_tools.ops.client import AprotoClient, crc32c  # noqa: E402
 
 PASS = 0
 FAIL = 0

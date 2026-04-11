@@ -1,0 +1,25 @@
+# apex_data.toml - Component data manifest for ApexInterface
+#
+# TCP server component that bridges external C2 clients to internal
+# components via APROTO protocol. Handles system opcodes (0x0000-0x001F),
+# file transfer (0x0020-0x0024), and routes component/executive opcodes
+# through the registry.
+
+component = "ApexInterface"
+
+[structs]
+# Socket and framing configuration (TPRM-configurable)
+ApexInterfaceTunables = { category = "TUNABLE_PARAM", header = "inc/ApexInterfaceTunables.hpp" }
+
+# Health telemetry (56 bytes, returned by GET_STATS opcode 0x0100)
+InterfaceHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/InterfaceTlm.hpp" }
+
+[enums]
+# Framing protocol selection (SLIP, COBS)
+FramingType = { header = "inc/ApexInterfaceTunables.hpp" }
+
+# Interface status codes
+Status = { header = "inc/InterfaceStatus.hpp" }
+
+# Telemetry opcodes
+InterfaceTlmOpcode = { header = "inc/InterfaceTlm.hpp" }

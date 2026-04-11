@@ -145,6 +145,11 @@ std::uint8_t SchedulerMultiThread::doInit() noexcept {
 /* ----------------------------- Execution ----------------------------- */
 
 Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcept {
+  // Track dispatch count for health telemetry (tickCount_ is only incremented
+  // by SchedulerBase::tick() which the executive does not call -- it calls
+  // executeTasksOnTickMulti() directly).
+  ++tickCount_;
+
   // Reset per-tick violation counter
   periodViolationsThisTick_ = 0;
 
@@ -199,6 +204,7 @@ Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcep
       // Check for period deadline violation: task still running from previous dispatch
       if (entry.stillRunning()) {
         ++periodViolationsThisTick_;
+        ++totalPeriodViolations_;
         periodViolationFlag_.store(true, std::memory_order_release);
 
         if (skipOnBusy_) {

@@ -29,6 +29,7 @@
 #include "src/system/core/support/system_monitor/inc/SystemMonitorConfig.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorData.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorSnapshot.hpp"
+#include "src/system/core/support/system_monitor/inc/SystemMonitorTlm.hpp"
 
 #include "src/system/core/infrastructure/system_component/apex/inc/SupportComponentBase.hpp"
 
@@ -201,6 +202,7 @@ private:
   /* ----------------------------- State ----------------------------- */
 
   SystemMonitorConfig config_;
+  SystemMonitorTunableParams tunableParams_{};
   SystemMonitorSnapshot snapshot_;
 
   /// Counters.
@@ -227,6 +229,9 @@ private:
 
   /// RT throttle tracking (cumulative from /proc/sys/kernel/sched_rt_throttled).
   std::uint64_t prevRtThrottleCount_{0};
+
+  /// Health snapshot for INSPECT OUTPUT readback (populated on each telemetry cycle).
+  SysMonHealthTlm healthTlm_{};
 };
 
 } // namespace support

@@ -1,24 +1,24 @@
 #!/bin/bash
 # ==============================================================================
-# c2_sdk_package.sh - C2 integration SDK packager
+# ops_sdk_package.sh - Operations integration SDK packager
 #
 # Bundles struct dictionaries, runtime metadata exports, and a quick-start
-# README into a self-contained package for C2 integrators. The package
+# README into a self-contained package for operations integrators. The package
 # contains everything needed to build a ground station or control interface
 # without access to the Apex source code or build system.
 #
 # Usage:
-#   c2_sdk_package.sh --app <name> --build-dir <path> [options]
+#   ops_sdk_package.sh --app <name> --build-dir <path> [options]
 #
 # Options:
 #   --app <name>          Application name (required)
 #   --build-dir <path>    Build directory (required)
-#   --output <path>       Output directory (default: <build-dir>/c2_sdk)
+#   --output <path>       Output directory (default: <build-dir>/ops_sdk)
 #   --port <port>         Default TCP port to document (default: 9000)
 #   --help                Show this help
 #
 # Output:
-#   <output>/<app>-c2-sdk.tar.gz
+#   <output>/<app>-ops-sdk.tar.gz
 #     <app>/structs/*.json          Struct dictionaries
 #     <app>/runtime/registry.rdat   Component metadata (if available)
 #     <app>/runtime/scheduler.sdat  Task schedule (if available)
@@ -28,7 +28,7 @@
 
 set -euo pipefail
 
-readonly SCRIPT_NAME="c2-sdk"
+readonly SCRIPT_NAME="ops-sdk"
 
 log() { printf '\033[36m[%s]\033[0m %s\n' "$SCRIPT_NAME" "$1" >&2; }
 log_ok() { printf '\033[32m[%s]\033[0m %s\n' "$SCRIPT_NAME" "$1" >&2; }
@@ -87,7 +87,7 @@ done
   exit 1
 }
 
-OUTPUT_DIR="${OUTPUT_DIR:-$BUILD_DIR/c2_sdk}"
+OUTPUT_DIR="${OUTPUT_DIR:-$BUILD_DIR/ops_sdk}"
 
 # ==============================================================================
 # Stage SDK Contents
@@ -135,7 +135,7 @@ fi
 # ==============================================================================
 
 cat >"$SDK_DIR/README.md" <<READMEEOF
-# $APP C2 Integration SDK
+# $APP Operations Integration SDK
 
 ## Contents
 
@@ -302,6 +302,6 @@ log "Generated README.md"
 # Create Tarball
 # ==============================================================================
 
-tar -czf "$OUTPUT_DIR/$APP-c2-sdk.tar.gz" -C "$OUTPUT_DIR" "$APP"
-TARBALL_SIZE=$(du -sh "$OUTPUT_DIR/$APP-c2-sdk.tar.gz" | cut -f1)
-log_ok "Package: $OUTPUT_DIR/$APP-c2-sdk.tar.gz ($TARBALL_SIZE, $JSON_COUNT struct files)"
+tar -czf "$OUTPUT_DIR/$APP-ops-sdk.tar.gz" -C "$OUTPUT_DIR" "$APP"
+TARBALL_SIZE=$(du -sh "$OUTPUT_DIR/$APP-ops-sdk.tar.gz" | cut -f1)
+log_ok "Package: $OUTPUT_DIR/$APP-ops-sdk.tar.gz ($TARBALL_SIZE, $JSON_COUNT struct files)"

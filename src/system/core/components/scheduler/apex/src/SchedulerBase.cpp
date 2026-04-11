@@ -7,6 +7,7 @@
 #include "src/system/core/components/scheduler/apex/inc/SchedulerData.hpp"
 #include "src/system/core/components/scheduler/apex/inc/SchedulerExport.hpp"
 #include "src/system/core/components/scheduler/apex/inc/SchedulerStatus.hpp"
+#include "src/system/core/components/scheduler/apex/inc/SchedulerTlm.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
 #include <cstdint>
@@ -210,7 +211,7 @@ SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
 
     auto* newTask = newComponent.taskByUid(entry.taskUid);
     if (newTask == nullptr) {
-      // New component doesn't have this task — leave it as-is (will be skipped if locked).
+      // New component doesn't have this task -- leave it as-is (will be skipped if locked).
       continue;
     }
 
@@ -512,7 +513,7 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     return false;
   }
 
-  // Backup current schedule so we can restore on failure.
+  // Backup current schedule for restoration on failure.
   // This prevents leaving the scheduler empty if parsing fails.
   auto backupEntries = std::move(entries_);
   auto backupSchedule = std::move(schedule_);
@@ -597,6 +598,16 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
                                         skippedComponents + skippedTasks, header->numTasks,
                                         skippedComponents, skippedTasks));
   }
+
+  // Keep full TPRM binary for INSPECT readback and register with registry
+  tprmRaw_ = tprmData;
+  registerData(system_core::data::DataCategory::TUNABLE_PARAM, "tunableParams", tprmRaw_.data(),
+               tprmRaw_.size());
+
+  // Register health snapshot as OUTPUT for INSPECT readback.
+  // Populated on each GET_HEALTH call.
+  registerData(system_core::data::DataCategory::OUTPUT, "health", &healthTlm_,
+               sizeof(SchedulerHealthTlm));
 
   // Log configuration after loading
   if (componentLog() != nullptr) {
@@ -730,6 +741,35 @@ Status SchedulerBase::exportSchedule(const std::filesystem::path& dbDir) noexcep
   }
 
   return Status::SUCCESS;
+}
+
+/* ----------------------------- Command Handling ----------------------------- */
+
+std::uint8_t SchedulerBase::handleCommand(std::uint16_t opcode,
+                                          apex::compat::rospan<std::uint8_t> payload,
+                                          std::vector<std::uint8_t>& response) noexcept {
+  using system_component::CommandResult;
+
+  switch (opcode) {
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::GET_HEALTH): {
+    // Populate the persistent member (also used for INSPECT OUTPUT readback).
+    healthTlm_.tickCount = tickCount_;
+    healthTlm_.taskCount = static_cast<std::uint32_t>(entries_.size());
+    healthTlm_.totalPeriodViolations = static_cast<std::uint32_t>(totalPeriodViolations());
+    healthTlm_.totalSkipCount = static_cast<std::uint32_t>(totalSkips());
+    healthTlm_.fundamentalFreqHz = ffreq_;
+    healthTlm_.poolCount = numPools();
+    healthTlm_.sleeping = sleeping_.load(std::memory_order_acquire) ? 1 : 0;
+    healthTlm_.skipOnBusy = skipOnBusyEnabled() ? 1 : 0;
+    healthTlm_.violationsThisTick = static_cast<std::uint32_t>(periodViolationsThisTick());
+    response.resize(sizeof(healthTlm_));
+    std::memcpy(response.data(), &healthTlm_, sizeof(healthTlm_));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  default:
+    return system_component::SystemComponentBase::handleCommand(opcode, payload, response);
+  }
 }
 
 } // namespace scheduler

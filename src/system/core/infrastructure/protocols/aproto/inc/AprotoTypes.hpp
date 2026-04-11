@@ -189,12 +189,17 @@ enum class SystemOpcode : std::uint16_t {
   GET_STATUS = 0x0002, ///< Get component status
   RESET = 0x0003,      ///< Reset component state
 
-  // File transfer (0x0020-0x002F)
-  FILE_BEGIN = 0x0020,  ///< Initiate file transfer (FileBeginPayload)
+  // File transfer: upload (0x0020-0x0024)
+  FILE_BEGIN = 0x0020,  ///< Initiate file upload (FileBeginPayload)
   FILE_CHUNK = 0x0021,  ///< File data chunk (chunkIndex + data)
-  FILE_END = 0x0022,    ///< Finalize transfer (CRC verify + commit)
-  FILE_ABORT = 0x0023,  ///< Abort current transfer
+  FILE_END = 0x0022,    ///< Finalize upload (CRC verify + commit)
+  FILE_ABORT = 0x0023,  ///< Abort current transfer (upload or download)
   FILE_STATUS = 0x0024, ///< Query transfer status
+
+  // File transfer: download (0x0025-0x0026)
+  FILE_GET = 0x0025, ///< Request file download (FileGetPayload)
+  FILE_READ_CHUNK =
+      0x0026, ///< Read chunk from target (chunkIndex payload, chunk data in ACK extra)
 
   ACK = 0x00FE, ///< Acknowledgment (response only)
   NAK = 0x00FF, ///< Negative acknowledgment (response only)
@@ -223,6 +228,10 @@ enum class NakStatus : std::uint8_t {
   INIT_FAILED = 19,         ///< New component init() failed.
   NOT_SWAPPABLE = 20,       ///< Component does not support library reload.
   INVALID_PAYLOAD = 21,     ///< Payload too small or malformed.
+  FILE_NOT_FOUND = 22,      ///< FILE_GET: requested file does not exist.
+  READ_FAILED = 23,         ///< FILE_READ_CHUNK: filesystem read error.
+  NO_DOWNLOAD = 24,         ///< FILE_READ_CHUNK without prior FILE_GET.
+  CHUNK_OUT_OF_RANGE = 25,  ///< FILE_READ_CHUNK: chunkIndex >= totalChunks.
 };
 
 /* ----------------------------- File Transfer Types ----------------------------- */
@@ -230,9 +239,10 @@ enum class NakStatus : std::uint8_t {
 /// File transfer state machine.
 enum class FileTransferState : std::uint8_t {
   IDLE = 0,      ///< No transfer in progress.
-  RECEIVING = 1, ///< Chunks being received.
+  RECEIVING = 1, ///< Upload: chunks being received.
   COMPLETE = 2,  ///< Transfer complete (CRC verified).
   ERROR = 3,     ///< Transfer failed.
+  SENDING = 4,   ///< Download: file open for chunk reads.
 };
 
 /// Payload for FILE_BEGIN opcode.
@@ -264,6 +274,24 @@ struct FileStatusResponse {
 } __attribute__((packed));
 
 static_assert(sizeof(FileStatusResponse) == 8, "FileStatusResponse must be 8 bytes");
+
+/// Payload for FILE_GET opcode (download request).
+struct FileGetPayload {
+  char path[64];              ///< Source path relative to .apex_fs/ root.
+  std::uint16_t maxChunkSize; ///< Maximum bytes per chunk (client's buffer limit).
+} __attribute__((packed));
+
+static_assert(sizeof(FileGetPayload) == 66, "FileGetPayload must be 66 bytes");
+
+/// Response payload for FILE_GET opcode (returned in ACK extra data).
+struct FileGetResponse {
+  std::uint32_t totalSize;   ///< File size in bytes.
+  std::uint16_t chunkSize;   ///< Actual bytes per chunk (may be <= maxChunkSize).
+  std::uint16_t totalChunks; ///< Total number of chunks.
+  std::uint32_t crc32;       ///< CRC32 of entire file (client verifies after last chunk).
+} __attribute__((packed));
+
+static_assert(sizeof(FileGetResponse) == 12, "FileGetResponse must be 12 bytes");
 
 /* -------------------------- Helper Functions ---------------------------- */
 

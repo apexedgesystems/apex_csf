@@ -95,6 +95,54 @@ protected:
     return handler_.handleEnd(resp.data(), respLen);
   }
 
+  /** @brief Create a file under testRoot_ with given contents. */
+  void createFile(const std::string& relPath, const std::vector<std::uint8_t>& data) {
+    const fs::path DEST = testRoot_ / relPath;
+    fs::create_directories(DEST.parent_path());
+    std::ofstream f(DEST, std::ios::binary);
+    f.write(reinterpret_cast<const char*>(data.data()), static_cast<std::streamsize>(data.size()));
+  }
+
+  /** @brief Build a FileGetPayload. */
+  aproto::FileGetPayload makeGetPayload(const std::string& path, std::uint16_t maxChunkSize) {
+    aproto::FileGetPayload get{};
+    std::memset(get.path, 0, sizeof(get.path));
+    std::strncpy(get.path, path.c_str(), sizeof(get.path) - 1);
+    get.maxChunkSize = maxChunkSize;
+    return get;
+  }
+
+  /** @brief Download a complete file via handleGet + handleReadChunk. Returns assembled bytes. */
+  std::vector<std::uint8_t> recvFile(const std::string& path, std::uint16_t maxChunkSize,
+                                     std::uint8_t& statusOut) {
+    const auto GET = makeGetPayload(path, maxChunkSize);
+    std::array<std::uint8_t, sizeof(aproto::FileGetResponse)> getResp{};
+    std::size_t getLen = 0;
+    statusOut = handler_.handleGet(reinterpret_cast<const std::uint8_t*>(&GET), sizeof(GET),
+                                   getResp.data(), getLen);
+    if (statusOut != 0)
+      return {};
+
+    aproto::FileGetResponse info{};
+    std::memcpy(&info, getResp.data(), sizeof(info));
+
+    std::vector<std::uint8_t> assembled;
+    assembled.reserve(info.totalSize);
+
+    for (std::uint16_t i = 0; i < info.totalChunks; ++i) {
+      std::array<std::uint8_t, 4096> chunkBuf{};
+      std::size_t chunkLen = 0;
+      const std::uint16_t IDX = i;
+      statusOut = handler_.handleReadChunk(reinterpret_cast<const std::uint8_t*>(&IDX), sizeof(IDX),
+                                           chunkBuf.data(), chunkLen);
+      if (statusOut != 0)
+        return assembled;
+      assembled.insert(assembled.end(), chunkBuf.begin(), chunkBuf.begin() + chunkLen);
+    }
+
+    return assembled;
+  }
+
   fs::path testRoot_;
   system_core::interface::FileTransferHandler handler_;
 };
@@ -363,4 +411,222 @@ TEST_F(FileTransferHandlerTest, OverwriteExistingFile) {
   std::vector<std::uint8_t> contents((std::istreambuf_iterator<char>(f)),
                                      std::istreambuf_iterator<char>());
   EXPECT_EQ(contents, DATA2);
+}
+
+/* ----------------------------- FILE_GET Tests ----------------------------- */
+
+/** @test FILE_GET with valid file succeeds and returns correct metadata. */
+TEST_F(FileTransferHandlerTest, GetValidFile) {
+  const std::vector<std::uint8_t> DATA{0x48, 0x65, 0x6C, 0x6C, 0x6F};
+  createFile("download/test.bin", DATA);
+
+  const auto GET = makeGetPayload("download/test.bin", 64);
+  std::array<std::uint8_t, sizeof(aproto::FileGetResponse)> resp{};
+  std::size_t respLen = 0;
+  const std::uint8_t STATUS = handler_.handleGet(reinterpret_cast<const std::uint8_t*>(&GET),
+                                                 sizeof(GET), resp.data(), respLen);
+  EXPECT_EQ(STATUS, static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS));
+  EXPECT_EQ(respLen, sizeof(aproto::FileGetResponse));
+
+  aproto::FileGetResponse info{};
+  std::memcpy(&info, resp.data(), sizeof(info));
+  EXPECT_EQ(info.totalSize, 5U);
+  EXPECT_EQ(info.chunkSize, 64);
+  EXPECT_EQ(info.totalChunks, 1);
+  EXPECT_EQ(info.crc32, computeCrc32(DATA));
+}
+
+/** @test FILE_GET with non-existent file returns FILE_NOT_FOUND. */
+TEST_F(FileTransferHandlerTest, GetNonExistentFile) {
+  const auto GET = makeGetPayload("no/such/file.bin", 64);
+  std::array<std::uint8_t, sizeof(aproto::FileGetResponse)> resp{};
+  std::size_t respLen = 0;
+  const std::uint8_t STATUS = handler_.handleGet(reinterpret_cast<const std::uint8_t*>(&GET),
+                                                 sizeof(GET), resp.data(), respLen);
+  EXPECT_EQ(STATUS, static_cast<std::uint8_t>(aproto::NakStatus::FILE_NOT_FOUND));
+}
+
+/** @test FILE_GET with directory traversal path returns PATH_INVALID. */
+TEST_F(FileTransferHandlerTest, GetTraversalPath) {
+  const auto GET = makeGetPayload("../etc/passwd", 64);
+  std::array<std::uint8_t, sizeof(aproto::FileGetResponse)> resp{};
+  std::size_t respLen = 0;
+  const std::uint8_t STATUS = handler_.handleGet(reinterpret_cast<const std::uint8_t*>(&GET),
+                                                 sizeof(GET), resp.data(), respLen);
+  EXPECT_EQ(STATUS, static_cast<std::uint8_t>(aproto::NakStatus::PATH_INVALID));
+}
+
+/** @test FILE_GET with too-small payload returns INVALID_PAYLOAD. */
+TEST_F(FileTransferHandlerTest, GetTooSmallPayload) {
+  const std::array<std::uint8_t, 4> SMALL{};
+  std::array<std::uint8_t, sizeof(aproto::FileGetResponse)> resp{};
+  std::size_t respLen = 0;
+  const std::uint8_t STATUS = handler_.handleGet(SMALL.data(), SMALL.size(), resp.data(), respLen);
+  EXPECT_EQ(STATUS, static_cast<std::uint8_t>(aproto::NakStatus::INVALID_PAYLOAD));
+}
+
+/** @test FILE_GET while upload in progress returns TRANSFER_IN_PROGRESS. */
+TEST_F(FileTransferHandlerTest, GetWhileUploading) {
+  const std::vector<std::uint8_t> DATA{0x41, 0x42, 0x43};
+  const auto BEGIN = makeBeginPayload(DATA, "test.bin", 64);
+  (void)handler_.handleBegin(reinterpret_cast<const std::uint8_t*>(&BEGIN), sizeof(BEGIN));
+
+  createFile("other.bin", DATA);
+  const auto GET = makeGetPayload("other.bin", 64);
+  std::array<std::uint8_t, sizeof(aproto::FileGetResponse)> resp{};
+  std::size_t respLen = 0;
+  const std::uint8_t STATUS = handler_.handleGet(reinterpret_cast<const std::uint8_t*>(&GET),
+                                                 sizeof(GET), resp.data(), respLen);
+  EXPECT_EQ(STATUS, static_cast<std::uint8_t>(aproto::NakStatus::TRANSFER_IN_PROGRESS));
+}
+
+/* ----------------------------- FILE_READ_CHUNK Tests ----------------------------- */
+
+/** @test FILE_READ_CHUNK without active download returns NO_DOWNLOAD. */
+TEST_F(FileTransferHandlerTest, ReadChunkWithoutGet) {
+  const std::uint16_t IDX = 0;
+  std::array<std::uint8_t, 4096> resp{};
+  std::size_t respLen = 0;
+  const std::uint8_t STATUS = handler_.handleReadChunk(reinterpret_cast<const std::uint8_t*>(&IDX),
+                                                       sizeof(IDX), resp.data(), respLen);
+  EXPECT_EQ(STATUS, static_cast<std::uint8_t>(aproto::NakStatus::NO_DOWNLOAD));
+}
+
+/** @test FILE_READ_CHUNK with out-of-range index returns CHUNK_OUT_OF_RANGE. */
+TEST_F(FileTransferHandlerTest, ReadChunkOutOfRange) {
+  const std::vector<std::uint8_t> DATA{0x41, 0x42, 0x43};
+  createFile("range.bin", DATA);
+
+  const auto GET = makeGetPayload("range.bin", 64);
+  std::array<std::uint8_t, sizeof(aproto::FileGetResponse)> getResp{};
+  std::size_t getLen = 0;
+  (void)handler_.handleGet(reinterpret_cast<const std::uint8_t*>(&GET), sizeof(GET), getResp.data(),
+                           getLen);
+
+  // Request chunk index 99 (file is 1 chunk).
+  const std::uint16_t IDX = 99;
+  std::array<std::uint8_t, 4096> resp{};
+  std::size_t respLen = 0;
+  const std::uint8_t STATUS = handler_.handleReadChunk(reinterpret_cast<const std::uint8_t*>(&IDX),
+                                                       sizeof(IDX), resp.data(), respLen);
+  EXPECT_EQ(STATUS, static_cast<std::uint8_t>(aproto::NakStatus::CHUNK_OUT_OF_RANGE));
+}
+
+/* ----------------------------- Complete Download Tests ----------------------------- */
+
+/** @test Single-chunk download round-trip matches original file. */
+TEST_F(FileTransferHandlerTest, SingleChunkDownload) {
+  const std::vector<std::uint8_t> DATA{0x48, 0x65, 0x6C, 0x6C, 0x6F};
+  createFile("dl/hello.bin", DATA);
+
+  std::uint8_t status = 0;
+  const auto RESULT = recvFile("dl/hello.bin", 64, status);
+  EXPECT_EQ(status, static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS));
+  EXPECT_EQ(RESULT, DATA);
+}
+
+/** @test Multi-chunk download round-trip matches original file. */
+TEST_F(FileTransferHandlerTest, MultiChunkDownload) {
+  // 10 bytes, 3 bytes per chunk = 4 chunks (3+3+3+1).
+  const std::vector<std::uint8_t> DATA{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+  createFile("dl/multi.bin", DATA);
+
+  std::uint8_t status = 0;
+  const auto RESULT = recvFile("dl/multi.bin", 3, status);
+  EXPECT_EQ(status, static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS));
+  EXPECT_EQ(RESULT, DATA);
+}
+
+/** @test Download from nested directory succeeds. */
+TEST_F(FileTransferHandlerTest, DownloadNestedPath) {
+  const std::vector<std::uint8_t> DATA{0x01, 0x02};
+  createFile("a/b/c/deep.bin", DATA);
+
+  std::uint8_t status = 0;
+  const auto RESULT = recvFile("a/b/c/deep.bin", 64, status);
+  EXPECT_EQ(status, static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS));
+  EXPECT_EQ(RESULT, DATA);
+}
+
+/** @test Upload then download round-trip: file survives both directions. */
+TEST_F(FileTransferHandlerTest, UploadThenDownload) {
+  const std::vector<std::uint8_t> DATA{0x10, 0x20, 0x30, 0x40, 0x50};
+  EXPECT_EQ(sendFile(DATA, "roundtrip.bin", 64),
+            static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS));
+
+  std::uint8_t status = 0;
+  const auto RESULT = recvFile("roundtrip.bin", 64, status);
+  EXPECT_EQ(status, static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS));
+  EXPECT_EQ(RESULT, DATA);
+}
+
+/** @test FILE_ABORT during download resets state for new transfer. */
+TEST_F(FileTransferHandlerTest, AbortDuringDownload) {
+  const std::vector<std::uint8_t> DATA{0x01, 0x02, 0x03, 0x04};
+  createFile("abort_dl.bin", DATA);
+
+  const auto GET = makeGetPayload("abort_dl.bin", 2);
+  std::array<std::uint8_t, sizeof(aproto::FileGetResponse)> getResp{};
+  std::size_t getLen = 0;
+  (void)handler_.handleGet(reinterpret_cast<const std::uint8_t*>(&GET), sizeof(GET), getResp.data(),
+                           getLen);
+
+  // Read one chunk, then abort.
+  const std::uint16_t IDX = 0;
+  std::array<std::uint8_t, 4096> chunkBuf{};
+  std::size_t chunkLen = 0;
+  (void)handler_.handleReadChunk(reinterpret_cast<const std::uint8_t*>(&IDX), sizeof(IDX),
+                                 chunkBuf.data(), chunkLen);
+
+  const std::uint8_t ABORT_STATUS = handler_.handleAbort();
+  EXPECT_EQ(ABORT_STATUS, static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS));
+
+  // Should be able to start a new upload now.
+  EXPECT_EQ(sendFile(DATA, "after_abort.bin", 64),
+            static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS));
+}
+
+/** @test FILE_STATUS during download reports SENDING state and progress. */
+TEST_F(FileTransferHandlerTest, StatusDuringDownload) {
+  const std::vector<std::uint8_t> DATA{0x41, 0x42, 0x43, 0x44};
+  createFile("status_dl.bin", DATA);
+
+  const auto GET = makeGetPayload("status_dl.bin", 2);
+  std::array<std::uint8_t, sizeof(aproto::FileGetResponse)> getResp{};
+  std::size_t getLen = 0;
+  (void)handler_.handleGet(reinterpret_cast<const std::uint8_t*>(&GET), sizeof(GET), getResp.data(),
+                           getLen);
+
+  // Read one chunk.
+  const std::uint16_t IDX = 0;
+  std::array<std::uint8_t, 4096> chunkBuf{};
+  std::size_t chunkLen = 0;
+  (void)handler_.handleReadChunk(reinterpret_cast<const std::uint8_t*>(&IDX), sizeof(IDX),
+                                 chunkBuf.data(), chunkLen);
+
+  // Check status mid-download.
+  std::array<std::uint8_t, sizeof(aproto::FileStatusResponse)> statusBuf{};
+  std::size_t statusLen = 0;
+  (void)handler_.handleStatus(statusBuf.data(), statusLen);
+
+  aproto::FileStatusResponse statusResp{};
+  std::memcpy(&statusResp, statusBuf.data(), sizeof(statusResp));
+  EXPECT_EQ(statusResp.state, static_cast<std::uint8_t>(aproto::FileTransferState::SENDING));
+  EXPECT_EQ(statusResp.chunksReceived, 1); // Field reused for chunksSent.
+  EXPECT_EQ(statusResp.bytesReceived, 2U); // Field reused for bytesSent.
+}
+
+/** @test Back-to-back downloads succeed. */
+TEST_F(FileTransferHandlerTest, BackToBackDownloads) {
+  const std::vector<std::uint8_t> DATA1{0x01, 0x02, 0x03};
+  const std::vector<std::uint8_t> DATA2{0x04, 0x05, 0x06, 0x07};
+  createFile("dl1.bin", DATA1);
+  createFile("dl2.bin", DATA2);
+
+  std::uint8_t status = 0;
+  EXPECT_EQ(recvFile("dl1.bin", 64, status), DATA1);
+  EXPECT_EQ(status, static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS));
+
+  EXPECT_EQ(recvFile("dl2.bin", 64, status), DATA2);
+  EXPECT_EQ(status, static_cast<std::uint8_t>(aproto::NakStatus::SUCCESS));
 }

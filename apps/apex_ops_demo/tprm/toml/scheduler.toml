@@ -1,0 +1,124 @@
+# Scheduler (componentId=1, instanceIndex=0)
+# Total: 3 + (8 x 15) = 123 bytes
+#
+# Task schedule for ApexOpsDemo:
+#   100 Hz: WaveGenerator #0 waveStep (priority 127, seqGroup 0 phase 0)
+#   100 Hz: WaveGenerator #1 waveStep (priority 126, seqGroup 1 phase 0)
+#    10 Hz: TelemetryManager collect (priority 40, offset 3)
+#    10 Hz: TestPlugin tick (priority -64, offset 5)
+#     1 Hz: WaveGenerator #0 telemetry (priority -128, offset 51, seqGroup 0 phase 1)
+#     1 Hz: WaveGenerator #1 telemetry (priority -128, offset 52, seqGroup 1 phase 1)
+#     1 Hz: SystemMonitor telemetry (priority -128, offset 53)
+#     1 Hz: TelemetryManager telemetry (priority -128, offset 54)
+#
+# Sequence groups ensure waveStep completes before telemetry for each
+# WaveGenerator instance (prevents contention on shared state).
+#
+# Component fullUids:
+#   0xD000 (53248): WaveGenerator instance 0
+#   0xD001 (53249): WaveGenerator instance 1
+#   0xC800 (51200): SystemMonitor
+#   0xFA00 (64000): TestPlugin
+
+[SchedulerTprmHeader]
+numPools = { type = "uint", size = 1, value = 1 }
+workersPerPool = { type = "uint", size = 1, value = 2 }
+numTasks = { type = "uint", size = 1, value = 8 }
+
+# Task 0: WaveGenerator #0 waveStep @ 100 Hz, priority 127, seq group 0 phase 0
+[[task]]
+fullUid = { type = "uint", size = 4, value = 53248 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 100 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 127 }
+seqGroup = { type = "uint", size = 1, value = 0 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 1: WaveGenerator #1 waveStep @ 100 Hz, priority 126, seq group 1 phase 0
+[[task]]
+fullUid = { type = "uint", size = 4, value = 53249 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 100 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 126 }
+seqGroup = { type = "uint", size = 1, value = 1 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 2: WaveGenerator #0 telemetry @ 1 Hz, priority -128, offset 51, seq group 0 phase 1
+[[task]]
+fullUid = { type = "uint", size = 4, value = 53248 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 51 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 0 }
+seqPhase = { type = "uint", size = 1, value = 1 }
+
+# Task 3: WaveGenerator #1 telemetry @ 1 Hz, priority -128, offset 52, seq group 1 phase 1
+[[task]]
+fullUid = { type = "uint", size = 4, value = 53249 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 52 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 1 }
+seqPhase = { type = "uint", size = 1, value = 1 }
+
+# Task 4: SystemMonitor telemetry @ 1 Hz, priority -128, offset 53
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51200 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 53 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 5: TestPlugin tick @ 10 Hz, priority -64, offset 5
+[[task]]
+fullUid = { type = "uint", size = 4, value = 64000 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 10 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 5 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 6: TelemetryManager collect @ 50 Hz, priority 40, offset 1
+# Runs after waveStep (priority 127/126) but before telemetry (-128).
+# Offset must be < period (100/50=2 ticks), so offset=1.
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51456 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 50 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 1 }
+priority = { type = "int", size = 1, value = 40 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 7: TelemetryManager telemetry @ 1 Hz, priority -128, offset 54
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51456 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 54 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }

@@ -1,0 +1,24 @@
+# wave_data.toml - Component data manifest for WaveGenerator
+#
+# Configurable waveform generator (fullUid=0x00D000, 0x00D001).
+# Two instances generate independent signals for C2 telemetry testing.
+# All parameters are TPRM-configurable at runtime.
+
+component = "WaveGenerator"
+
+[structs]
+# Tunable parameters (TPRM-configurable, 32 bytes)
+WaveGenTunableParams = { category = "TUNABLE_PARAM", header = "inc/WaveGenData.hpp" }
+
+# Runtime state (registered with ApexRegistry, 48 bytes)
+WaveGenState = { category = "STATE", header = "inc/WaveGenData.hpp" }
+
+# Published output for INSPECT access (8 bytes)
+WaveGenOutput = { category = "OUTPUT", header = "inc/WaveGenData.hpp" }
+
+# Health telemetry returned by GET_STATS opcode 0x0100 (32 bytes)
+WaveGenHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/WaveGenData.hpp" }
+
+[enums]
+# Waveform type selection
+WaveType = { header = "inc/WaveGenData.hpp" }

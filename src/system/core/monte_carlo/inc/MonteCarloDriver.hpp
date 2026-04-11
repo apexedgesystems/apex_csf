@@ -87,6 +87,18 @@ struct DriverConfig {
   /// Per-thread RNG seed offset. Thread i uses (baseSeed + i).
   /// Set to 0 for reproducible default seeding.
   std::uint64_t baseSeed{0};
+
+  /// Progress callback interval (runs). 0 = no callback.
+  /// Called from the main thread after every N completed runs.
+  /// Signature: void(uint32_t completedRuns, uint32_t totalRuns, double elapsedSeconds)
+  std::uint32_t progressInterval{0};
+
+  /// Progress callback function. Called if progressInterval > 0.
+  std::function<void(std::uint32_t, std::uint32_t, double)> onProgress;
+
+  /// Poll interval in milliseconds for progress checking (default: 100ms).
+  /// Only used when progressInterval > 0. Lower = more responsive, higher = less overhead.
+  std::uint32_t pollIntervalMs{100};
 };
 
 /* ----------------------------- MonteCarloDriver ----------------------------- */
@@ -193,8 +205,26 @@ public:
       pool_->enqueueTask("mc-worker", TASK);
     }
 
-    // Block until all workers drain the run queue
-    latch.wait();
+    // Wait for completion with optional progress reporting
+    if (config_.progressInterval > 0 && config_.onProgress) {
+      std::uint32_t lastReported = 0;
+      while (!latch.tryWait()) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(config_.pollIntervalMs));
+        std::uint32_t completed = nextRun.load(std::memory_order_relaxed);
+        if (completed >= lastReported + config_.progressInterval) {
+          double elapsed =
+              std::chrono::duration<double>(std::chrono::steady_clock::now() - START).count();
+          config_.onProgress(completed, TOTAL_RUNS, elapsed);
+          lastReported = completed;
+        }
+      }
+      // Final progress report
+      double elapsed =
+          std::chrono::duration<double>(std::chrono::steady_clock::now() - START).count();
+      config_.onProgress(TOTAL_RUNS, TOTAL_RUNS, elapsed);
+    } else {
+      latch.wait();
+    }
 
     const auto END = std::chrono::steady_clock::now();
 

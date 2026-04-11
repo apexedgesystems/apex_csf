@@ -29,9 +29,13 @@ static RE_CONSTEXPR: Lazy<Regex> = Lazy::new(|| {
 });
 
 // Match struct body, allowing nested braces (for brace initializers like {0})
-// Also handles __attribute__((packed)) and similar attributes between } and ;
+// Handles __attribute__((packed)) both before the name (GCC style) and after } (trailing).
+// Examples matched:
+//   struct Foo { ... };
+//   struct __attribute__((packed)) Foo { ... };
+//   struct Foo { ... } __attribute__((packed));
 static RE_STRUCT: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"(?s)\bstruct\s+(\w+)\s*\{((?:[^{}]|\{[^}]*\})*)\}(?:\s*__attribute__\s*\(\([^)]*\)\))?\s*;")
+    Regex::new(r"(?s)\bstruct\s+(?:__attribute__\s*\(\([^)]*\)\)\s*)?(\w+)\s*\{((?:[^{}]|\{[^}]*\})*)\}(?:\s*__attribute__\s*\(\([^)]*\)\))?\s*;")
         .expect("struct regex")
 });
 
@@ -85,6 +89,9 @@ pub fn parse_header(content: &str, opts: &TemplateOptions) -> Result<Json, Error
     let raw = collect_structs(&content)?;
     let names: HashSet<String> = raw.keys().cloned().collect();
 
+    // Collect enum definitions so field_to_json can resolve enum type sizes
+    let enums = collect_enums_from_stripped(&content);
+
     for (sname, fields) in &raw {
         // Apply struct filter if specified
         if let Some(ref filter) = opts.struct_filter {
@@ -95,7 +102,7 @@ pub fn parse_header(content: &str, opts: &TemplateOptions) -> Result<Json, Error
 
         let mut out_fields = Vec::with_capacity(fields.len());
         for rf in fields {
-            let meta = field_to_json(rf, &raw, &names, &defines);
+            let meta = field_to_json(rf, &raw, &names, &defines, &enums);
             let mut obj = JsonMap::new();
             obj.insert(rf.name.clone(), Json::Object(meta));
             out_fields.push(Json::Object(obj));
@@ -186,9 +193,14 @@ pub struct ParsedEnum {
 /// Collect all enum class definitions from header content.
 pub fn collect_enums(content: &str) -> Result<BTreeMap<String, ParsedEnum>, Error> {
     let content = strip_comments(content);
+    Ok(collect_enums_from_stripped(&content))
+}
+
+/// Collect enum class definitions from already comment-stripped content.
+fn collect_enums_from_stripped(content: &str) -> BTreeMap<String, ParsedEnum> {
     let mut out = BTreeMap::new();
 
-    for cap in RE_ENUM_CLASS.captures_iter(&content) {
+    for cap in RE_ENUM_CLASS.captures_iter(content) {
         let name = cap[1].to_string();
         let underlying = cap.get(2).map(|m| normalize_type(m.as_str()));
         let body = &cap[3];
@@ -202,7 +214,7 @@ pub fn collect_enums(content: &str) -> Result<BTreeMap<String, ParsedEnum>, Erro
         );
     }
 
-    Ok(out)
+    out
 }
 
 /// Parse enum value declarations from body text.
@@ -444,6 +456,7 @@ fn field_to_json(
     all: &BTreeMap<String, Vec<RawField>>,
     names: &HashSet<String>,
     defines: &Json,
+    enums: &BTreeMap<String, ParsedEnum>,
 ) -> JsonMap<String, Json> {
     let mut m = JsonMap::new();
 
@@ -511,7 +524,7 @@ fn field_to_json(
             let mut nested_json = Vec::with_capacity(nested.len());
             let mut total = 0usize;
             for nf in nested {
-                let meta = field_to_json(nf, all, names, defines);
+                let meta = field_to_json(nf, all, names, defines, enums);
                 let mut obj = JsonMap::new();
                 obj.insert(nf.name.clone(), Json::Object(meta.clone()));
                 total += meta.get("size").and_then(as_usize).unwrap_or(0);
@@ -529,6 +542,19 @@ fn field_to_json(
         m.insert("type".into(), json!("unknown"));
         m.insert("size".into(), json!(0));
         m.insert("value".into(), Json::Null);
+        return m;
+    }
+
+    // Check if this is a known enum type -- resolve via underlying type
+    if let Some(pe) = enums.get(&rf.ty) {
+        let underlying = pe.underlying_type.as_deref().unwrap_or("int");
+        let (logical, sz) = determine_type(underlying);
+        m.insert("type".into(), json!(logical));
+        m.insert("size".into(), json!(sz.unwrap_or(0)));
+        m.insert(
+            "value".into(),
+            parse_default_value(rf.default_value.as_deref(), &logical),
+        );
         return m;
     }
 

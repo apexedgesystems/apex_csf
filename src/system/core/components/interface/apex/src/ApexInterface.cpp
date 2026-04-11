@@ -10,6 +10,7 @@
 
 #include "src/system/core/components/interface/apex/inc/ApexInterface.hpp"
 #include "src/system/core/components/interface/apex/inc/ComponentQueues.hpp"
+#include "src/system/core/components/interface/apex/inc/InterfaceTlm.hpp"
 #include "src/system/core/infrastructure/protocols/aproto/inc/AprotoCodec.hpp"
 #include "src/system/core/infrastructure/system_component/apex/inc/IComponentResolver.hpp"
 #include "src/system/core/infrastructure/protocols/framing/cobs/inc/COBSFraming.hpp"
@@ -125,6 +126,10 @@ bool ApexInterface::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     return false;
   }
 
+  // Register tunables for INSPECT readback
+  registerData(data::DataCategory::TUNABLE_PARAM, "tunableParams", &tunables_,
+               sizeof(ApexInterfaceTunables));
+
   setConfigured(true);
   return true;
 }
@@ -151,7 +156,7 @@ void ApexInterface::processBytesRx(std::uint8_t serverId,
 
     if (USE_SLIP) {
       // Resume writing where previous partial decode left off. The decoder's w starts at 0
-      // each call, so we offset the output pointer by frameLen (bytes already decoded) and
+      // Each call advances the output pointer by frameLen (bytes already decoded) and
       // reduce capacity accordingly. On frame completion, frameLen gives the total size.
       const std::size_t ALREADY = slip_.st.frameLen;
       std::uint8_t* const OUT_PTR = frameBuf_.data() + ALREADY;
@@ -277,7 +282,7 @@ void ApexInterface::processAprotoPacket(std::uint8_t serverId,
 
   ++stats_.packetsReceived;
 
-  // Ignore responses (we only handle commands).
+  // Responses are ignored; only commands are processed.
   if (view.isResponse()) {
     // Make response available to app via RX pipe (telemetry passthrough).
     std::vector<std::uint8_t> msg(frame.data(), frame.data() + frame.size());
@@ -395,8 +400,41 @@ bool ApexInterface::handleSystemOpcode(std::uint8_t serverId,
     return true;
   }
 
+    /* ----------------------------- File Download Opcodes ----------------------------- */
+
+  case aproto::SystemOpcode::FILE_GET: {
+    std::array<std::uint8_t, sizeof(aproto::FileGetResponse)> respData{};
+    std::size_t respLen = 0;
+    const std::uint8_t STATUS =
+        fileTransfer_.handleGet(view.payload.data(), view.payload.size(), respData.data(), respLen);
+    if (view.ackRequested()) {
+      enqueueAckNak(serverId, view.header, STATUS,
+                    apex::compat::rospan<std::uint8_t>{respData.data(), respLen});
+    }
+    return true;
+  }
+
+  case aproto::SystemOpcode::FILE_READ_CHUNK: {
+    // Response buffer sized to max chunk (4096) to hold the chunk data.
+    std::array<std::uint8_t, 4096> respData{};
+    std::size_t respLen = 0;
+    const std::uint8_t STATUS = fileTransfer_.handleReadChunk(
+        view.payload.data(), view.payload.size(), respData.data(), respLen);
+    if (view.ackRequested()) {
+      enqueueAckNak(serverId, view.header, STATUS,
+                    apex::compat::rospan<std::uint8_t>{respData.data(), respLen});
+    }
+    return true;
+  }
+
   default:
-    // Unknown system opcode - NAK if requested.
+    // Opcodes 0x0080-0x00FF are base component opcodes (GET_COMMAND_COUNT,
+    // GET_STATUS_INFO, etc.) handled by SystemComponentBase::handleCommand.
+    // Route these to the target component instead of NAK'ing.
+    if (OPCODE >= 0x0080) {
+      return false; // Fall through to routeToComponent().
+    }
+    // Unknown system opcode below 0x0080 - NAK if requested.
     if (view.ackRequested()) {
       enqueueAckNak(serverId, view.header, 2); // Unknown opcode error.
     }
@@ -535,7 +573,7 @@ void ApexInterface::enqueueAckNak(std::uint8_t serverId, const aproto::AprotoHea
 /* ----------------------------- Queue Draining ----------------------------- */
 
 void ApexInterface::drainTelemetryOutboxes() noexcept {
-  // Server ID 0 for our single TCP socket.
+  // Server ID 0 (single TCP socket).
   constexpr std::uint8_t SERVER_ID = 0;
 
   queueMgr_.forEach([this](std::uint32_t /*fullUid*/, ComponentQueues& q) {
@@ -618,9 +656,30 @@ std::size_t ApexInterface::drainCommandsToComponents(std::size_t maxPerComponent
 std::uint8_t ApexInterface::handleCommand(std::uint16_t opcode,
                                           apex::compat::rospan<std::uint8_t> payload,
                                           std::vector<std::uint8_t>& response) noexcept {
-  // Interface-specific opcodes (0x0082-0x00FF).
+  // Interface-specific opcodes.
+  if (opcode == static_cast<std::uint16_t>(InterfaceTlmOpcode::GET_STATS)) {
+    // GET_STATS (0x0100) - Return packed health telemetry.
+    InterfaceHealthTlm tlm{};
+    tlm.packetsReceived = stats_.packetsReceived;
+    tlm.packetsInvalid = stats_.packetsInvalid;
+    tlm.systemCommands = stats_.systemCommands;
+    tlm.routedCommands = stats_.routedCommands;
+    tlm.responsesQueued = stats_.responsesQueued;
+    tlm.telemetryFrames = stats_.telemetryFrames;
+    tlm.framingErrors = stats_.framingErrors;
+    tlm.internalCommandsSent = stats_.internalCommandsSent;
+    tlm.internalTelemetrySent = stats_.internalTelemetrySent;
+    tlm.internalCommandsFailed = stats_.internalCommandsFailed;
+    tlm.multicastCommandsSent = stats_.multicastCommandsSent;
+    tlm.broadcastCommandsSent = stats_.broadcastCommandsSent;
+    tlm.cmdQueueOverflows = stats_.cmdQueueOverflows;
+    tlm.tlmQueueOverflows = stats_.tlmQueueOverflows;
+    response.resize(sizeof(tlm));
+    std::memcpy(response.data(), &tlm, sizeof(tlm));
+    return 0; // SUCCESS
+  }
   if (opcode == 0x0082) {
-    // GET_INTERFACE_STATS - Return statistics structure.
+    // GET_INTERFACE_STATS (legacy) - Return raw statistics structure.
     response.resize(sizeof(Stats));
     std::memcpy(response.data(), &stats_, sizeof(Stats));
     return 0; // SUCCESS

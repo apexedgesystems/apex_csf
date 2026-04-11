@@ -71,28 +71,37 @@ fn run(cli: &Cli) -> Result<PathBuf, Box<dyn std::error::Error>> {
     // Collect all headers to parse
     let headers = discover_headers(manifest_dir, &manifest)?;
 
-    // Parse all headers for structs
-    let opts = TemplateOptions::default();
-    let mut all_parsed: BTreeMap<String, Json> = BTreeMap::new();
+    // Two-pass parsing: collect all defines/enums first, then parse structs
+    // with the merged define set. This handles cross-header constants like
+    // MAX_MONITORED_CORES defined in Config.hpp but used in Tlm.hpp.
     let mut all_enums: BTreeMap<String, ParsedEnum> = BTreeMap::new();
+    let mut all_contents: Vec<String> = Vec::new();
 
     for header_path in &headers {
         let content = tunable_params::read_file(header_path)?;
 
-        // Parse structs
-        let parsed = tunable_params::parse_header(&content, &opts)?;
-        if let Json::Object(obj) = parsed {
-            for (key, value) in obj {
-                if !key.starts_with("__") {
-                    all_parsed.insert(key, value);
-                }
-            }
-        }
-
-        // Parse enums
+        // Collect enums from all headers
         let enums = tunable_params::collect_enums(&content)?;
         for (name, parsed_enum) in enums {
             all_enums.insert(name, parsed_enum);
+        }
+
+        all_contents.push(content);
+    }
+
+    // Concatenate all header contents so defines/constexprs are visible
+    // to all struct definitions (simulates #include resolution)
+    let merged_content = all_contents.join("\n");
+
+    let opts = TemplateOptions::default();
+    let mut all_parsed: BTreeMap<String, Json> = BTreeMap::new();
+
+    let parsed = tunable_params::parse_header(&merged_content, &opts)?;
+    if let Json::Object(obj) = parsed {
+        for (key, value) in obj {
+            if !key.starts_with("__") {
+                all_parsed.insert(key, value);
+            }
         }
     }
 

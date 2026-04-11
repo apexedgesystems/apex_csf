@@ -1,9 +1,9 @@
-"""Unit tests for apex_tools.c2.protocol module.
+"""Unit tests for apex_tools.ops.protocol module.
 
 Tests SLIP framing, APROTO packet construction, and header parsing.
 """
 
-from apex_tools.c2.protocol import (
+from apex_tools.ops.protocol import (
     build_packet,
     parse_header,
     slip_decode_stream,

@@ -1,0 +1,29 @@
+# apex_data.toml - Component data manifest for ActionComponent
+#
+# Action engine (fullUid=0x000500). Evaluates watchpoints, fires events,
+# manages timed actions and command sequences (RTS/ATS). Configuration
+# loaded from monolithic ActionEngineTprm at boot and per-file
+# StandaloneSequenceTprm on demand.
+
+component = "ActionComponent"
+
+[structs]
+# Monolithic engine configuration (watchpoints, groups, inline sequences,
+# notifications, timed actions)
+ActionEngineTprm = { category = "TUNABLE_PARAM", header = "inc/ActionEngineTprm.hpp" }
+
+# Watchpoint configuration entry (26 bytes each, 8 max)
+WatchpointTprm = { category = "TUNABLE_PARAM", header = "inc/ActionEngineTprm.hpp" }
+
+# Health telemetry (56 bytes, returned by GET_STATS opcode 0x0100)
+ActionHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/ActionTlm.hpp" }
+
+# Internal engine statistics (runtime state, mirrors ActionHealthTlm)
+EngineStats = { category = "STATE", header = "../../infrastructure/data/inc/ActionInterface.hpp" }
+
+[enums]
+# Action component status codes
+Status = { header = "inc/ActionComponentStatus.hpp" }
+
+# Telemetry opcodes
+ActionTlmOpcode = { header = "inc/ActionTlm.hpp" }

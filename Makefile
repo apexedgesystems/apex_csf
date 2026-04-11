@@ -165,12 +165,13 @@ help:
 	@printf '  %-28s %s\n' "make tsan" "Build and test with ThreadSanitizer"
 	@printf '  %-28s %s\n' "make ubsan" "Build and test with UBSanitizer"
 	@printf '\n'
-	@printf '%s\n' "C2 Artifacts:"
-	@printf '  %-28s %s\n' "make c2-artifacts" "Generate all C2 artifacts (struct dicts + templates + deck)"
+	@printf '%s\n' "Integration Artifacts:"
+	@printf '  %-28s %s\n' "make ops-artifacts" "Generate all ops artifacts (struct dicts + templates + deck)"
 	@printf '  %-28s %s\n' "make apex-data-db" "Generate JSON struct dictionaries"
 	@printf '  %-28s %s\n' "make tprm-templates" "Generate TOML templates for tunable params"
-	@printf '  %-28s %s\n' "make c2-deck" "Generate consolidated cmd/tlm deck"
-	@printf '  %-28s %s\n' "make c2-sdk APP=<name>" "Package C2 SDK for external integrators"
+	@printf '  %-28s %s\n' "make ops-deck" "Generate consolidated cmd/tlm deck"
+	@printf '  %-28s %s\n' "make ops-sdk APP=<name>" "Package ops SDK for external integrators"
+	@printf '  %-28s %s\n' "make zenith-target APP=<name>" "Generate Zenith target config directory"
 	@printf '\n'
 	@printf '%s\n' "Release:"
 	@printf '  %-28s %s\n' "make release APP=<name>" "Build + package all platforms for an app"

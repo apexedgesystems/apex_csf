@@ -31,17 +31,6 @@ using enum executive::Status;
 
 namespace executive {
 
-void ApexExecutive::setClockFrequency(std::uint16_t newFrequency) noexcept {
-  if (newFrequency == 0) {
-    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_INVALID_CLOCK_FREQ),
-                     "Cannot set clock frequency to 0, ignoring request");
-    return;
-  }
-
-  clockFrequency_ = newFrequency;
-  sysLog_->info(label(), fmt::format("Clock frequency updated to {} Hz", clockFrequency_));
-}
-
 void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
   sysLog_->debug(label(), "Clock thread waiting for startup signal", 1);
 
@@ -113,7 +102,7 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
                                      "Clock cycle: {}, Task cycle: {}",
                                      CURRENT_LAG, rtConfig_.maxLagTicks, clockCycles, taskCycles));
         // LAG_TOLERANT is a SOFT mode, so isViolation stays false (no shutdown)
-        // But we track that threshold was exceeded for diagnostics
+        // Track that the threshold was exceeded for diagnostics
         taskState_.lagThresholdExceeded.store(true, std::memory_order_release);
       }
     }
