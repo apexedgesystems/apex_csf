@@ -226,7 +226,7 @@ After building, start with one of these depending on your interest:
 
 | Application                                            | Description                                                   | Platforms          |
 | ------------------------------------------------------ | ------------------------------------------------------------- | ------------------ |
-| [apex_ops_demo](apps/apex_ops_demo/)                   | Waveform telemetry for Zenith operations interface testing     | x86_64, RPi        |
+| [apex_ops_demo](apps/apex_ops_demo/)                   | Waveform telemetry for Zenith operations interface testing    | x86_64, RPi        |
 | [apex_edge_demo](apps/apex_edge_demo/)                 | GPU workloads under ApexExecutive RT scheduling               | x86_64 + CUDA      |
 | [apex_hil_demo](apps/apex_hil_demo/)                   | POSIX plant model + STM32 flight controller over UART/SLIP    | x86_64 + STM32     |
 | [apex_mc_demo](apps/apex_mc_demo/)                     | Monte Carlo voltage regulator tolerance analysis              | x86_64             |
@@ -474,11 +474,11 @@ See [tools/rust/README.md](tools/rust/README.md),
 
 ### Related Projects
 
-| Project                                               | Purpose                                  |
-| ----------------------------------------------------- | ---------------------------------------- |
-| [Zenith](https://github.com/apexedgesystems/zenith)   | Real-time operations interface (web UI)  |
-| [Vernier](https://github.com/apexedgesystems/vernier) | Performance benchmarking                 |
-| [Seeker](https://github.com/apexedgesystems/seeker)   | System diagnostics                       |
+| Project                                               | Purpose                                 |
+| ----------------------------------------------------- | --------------------------------------- |
+| [Zenith](https://github.com/apexedgesystems/zenith)   | Real-time operations interface (web UI) |
+| [Vernier](https://github.com/apexedgesystems/vernier) | Performance benchmarking                |
+| [Seeker](https://github.com/apexedgesystems/seeker)   | System diagnostics                      |
 
 ---
 
