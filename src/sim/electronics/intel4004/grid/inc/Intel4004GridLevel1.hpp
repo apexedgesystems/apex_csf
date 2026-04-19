@@ -870,6 +870,7 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     if (componentMode_ && componentTypes_.empty()) {
       auto classification = classifyComponents(*this);
       componentTypes_ = std::move(classification.types);
+      if (norOutputNets_.empty()) buildNorOutputSet();
       // Initialize latch stored values from prevV (captures warmup state).
       // ACC bits are initialized from readAccumulator (digital readback)
       // because binary switch warmup may leave marginal analog voltages.
@@ -943,20 +944,25 @@ struct Intel4004GridLevel1 : Intel4004Grid {
           continue;
         }
         if (ctype == ComponentType::DYNAMIC_STORAGE) {
-          // Dynamic storage: binary switch provides base conductance.
-          // BehavioralLatchManager adds strong hold on top (after loop).
-          const auto& bp = bsParams_;
-          double vs = std::max(prevV[t.drain], prevV[t.source]);
-          double vgs = prevV[t.gate] - vs;
-          double gds;
-          if (vgs < -bp.vth - bp.subthMargin)
-            gds = bp.gOn;
-          else if (vgs > -bp.vth + bp.subthMargin)
-            gds = bp.gOff;
-          else
-            gds = bp.gSubth;
-          mna.addConductance(t.drain, t.source, gds);
-          continue;
+          // Sub-classify: if gate is a NOR output net, this transistor
+          // is driven by proven physics and can use Level 1 stamps.
+          if (norOutputNets_.count(t.gate)) {
+            // NOR-output-gated: fall through to Level 1 stamp below.
+          } else {
+            // Latch feedback core: binary switch + behavioral latch hold.
+            const auto& bp = bsParams_;
+            double vs = std::max(prevV[t.drain], prevV[t.source]);
+            double vgs = prevV[t.gate] - vs;
+            double gds;
+            if (vgs < -bp.vth - bp.subthMargin)
+              gds = bp.gOn;
+            else if (vgs > -bp.vth + bp.subthMargin)
+              gds = bp.gOff;
+            else
+              gds = bp.gSubth;
+            mna.addConductance(t.drain, t.source, gds);
+            continue;
+          }
         }
         if (ctype == ComponentType::PASS_GATE) {
           // Pass gates: Level 1 physics (fall through to stamp below).
