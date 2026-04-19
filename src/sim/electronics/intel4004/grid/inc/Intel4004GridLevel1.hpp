@@ -959,19 +959,10 @@ struct Intel4004GridLevel1 : Intel4004Grid {
           continue;
         }
         if (ctype == ComponentType::PASS_GATE) {
-          // Pass gates: binary switch (proven for ACC=5 single instruction).
-          const auto& bp = bsParams_;
-          double vs = std::max(prevV[t.drain], prevV[t.source]);
-          double vgs = prevV[t.gate] - vs;
-          double gds;
-          if (vgs < -bp.vth - bp.subthMargin)
-            gds = bp.gOn;
-          else if (vgs > -bp.vth + bp.subthMargin)
-            gds = bp.gOff;
-          else
-            gds = bp.gSubth;
-          mna.addConductance(t.drain, t.source, gds);
-          continue;
+          // Pass gates: Level 1 physics (fall through to stamp below).
+          // Proven in isolated test: correct transfer when ON, charge
+          // retention with cap companion when OFF, proper selectivity
+          // with multiple pass gates on same storage node.
         }
         // NOR_GATE_MEMBER: falls through to Level 1 stamp below
       }
