@@ -1,0 +1,33 @@
+# app_data.toml - ApexActionDemo application descriptor for Zenith target generation
+#
+# Action engine demo: telemetry monitoring, onboard command sequencing, and
+# runtime data mutation. Used for Zenith action interface development and testing.
+#
+# Core components (Executive, Scheduler, FileSystem, Registry, Interface,
+# Action) are auto-included by the target generator at their standard UIDs.
+# Only declare app-specific component instances below.
+
+application = "ApexActionDemo"
+description = "Action engine demo for telemetry monitoring, sequencing, and data mutation."
+
+[protocol]
+transport = "TCP"
+framing = "SLIP"
+port = 9000
+
+[[components]]
+name = "SensorModel"
+fullUid = "0x00D200"
+type = "SW_MODEL"
+notes = "Temperature ramp with overtemp detection"
+
+[[components]]
+name = "DataTransform"
+fullUid = "0x00CA00"
+type = "SUPPORT"
+notes = "Command-driven byte-level data mutation"
+
+[[components]]
+name = "SystemMonitor"
+fullUid = "0x00C800"
+type = "SUPPORT"

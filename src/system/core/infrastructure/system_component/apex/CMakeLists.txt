@@ -32,7 +32,7 @@ apex_add_library(
   DEPS_PUBLIC
   system_component_base
   utilities_helpers
-  system_core_data
+  utilities_time
   system_core_logs
   system_core_schedulable
   fmt::fmt

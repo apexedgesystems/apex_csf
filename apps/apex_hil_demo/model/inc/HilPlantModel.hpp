@@ -19,7 +19,7 @@
 #include "apps/apex_hil_demo/model/inc/PointMassDynamics.hpp"
 #include "apps/apex_hil_demo/model/inc/DragModel.hpp"
 
-#include "src/system/core/infrastructure/data/inc/ModelData.hpp"
+#include "src/system/core/infrastructure/system_component/apex/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/apex/inc/SwModelBase.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 #include "src/utilities/helpers/inc/Files.hpp"

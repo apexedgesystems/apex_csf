@@ -1,0 +1,9 @@
+# sensor_data.toml - Component data manifest for SensorModel
+
+component = "SensorModel"
+
+[structs]
+SensorTunableParams = { category = "TUNABLE_PARAM", header = "inc/SensorData.hpp" }
+SensorState = { category = "STATE", header = "inc/SensorData.hpp" }
+SensorOutput = { category = "OUTPUT", header = "inc/SensorData.hpp" }
+SensorHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/SensorData.hpp" }

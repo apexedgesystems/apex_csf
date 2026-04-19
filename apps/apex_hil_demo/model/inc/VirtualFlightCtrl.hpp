@@ -23,7 +23,7 @@
 #include "apps/apex_hil_demo/firmware/inc/FlightController.hpp"
 #include "apps/apex_hil_demo/model/inc/VirtualFlightCtrlData.hpp"
 
-#include "src/system/core/infrastructure/data/inc/ModelData.hpp"
+#include "src/system/core/infrastructure/system_component/apex/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
 #include "src/system/core/infrastructure/system_component/apex/inc/HwModelBase.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/TransportKind.hpp"

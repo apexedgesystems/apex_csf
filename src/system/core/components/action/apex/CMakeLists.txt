@@ -1,7 +1,7 @@
 # ==============================================================================
 # system_core_action - Runtime action orchestration component
 #
-# Wraps ActionInterface (from system_core_data) as a CoreComponentBase.
+# Wraps ActionInterface as a CoreComponentBase.
 # Provides the executive with a managed lifecycle for the action engine:
 # watchpoint evaluation, group logic, event dispatch, sequence stepping,
 # and action processing each scheduler cycle.
@@ -13,10 +13,12 @@ include(apex/All)
 apex_module(system_core_action)
 
 # ------------------------------------------------------------------------------
-# Sources (2 files)
+# Sources (3 files)
 # ------------------------------------------------------------------------------
 
-set(CPP_SOURCES "${SRC_DIR}/ActionComponent.cpp" "${SRC_DIR}/ActionComponentStatus.cpp")
+set(CPP_SOURCES "${SRC_DIR}/ActionComponent.cpp" "${SRC_DIR}/ActionComponentStatus.cpp"
+                "${SRC_DIR}/SequenceCatalog.cpp"
+)
 
 # ------------------------------------------------------------------------------
 # Library
@@ -32,7 +34,6 @@ apex_add_library(
   SRC
   ${CPP_SOURCES}
   DEPS_PUBLIC
-  system_core_data
   system_core_system_component
   utilities_concurrency
   utilities_helpers
@@ -52,4 +53,4 @@ apex_add_data_manifest()
 # Subdirectories
 # ------------------------------------------------------------------------------
 
-apex_add_test_subdirs(utst)
+apex_add_test_subdirs(utst ptst)

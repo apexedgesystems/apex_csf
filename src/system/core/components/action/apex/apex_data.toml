@@ -19,7 +19,7 @@ WatchpointTprm = { category = "TUNABLE_PARAM", header = "inc/ActionEngineTprm.hp
 ActionHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/ActionTlm.hpp" }
 
 # Internal engine statistics (runtime state, mirrors ActionHealthTlm)
-EngineStats = { category = "STATE", header = "../../infrastructure/data/inc/ActionInterface.hpp" }
+EngineStats = { category = "STATE", header = "inc/ActionInterface.hpp" }
 
 [enums]
 # Action component status codes

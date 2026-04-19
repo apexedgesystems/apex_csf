@@ -1,5 +1,5 @@
 # ActionComponent (componentId=5, instanceIndex=0, fullUid=0x000500)
-# Total: 2624 bytes (ActionEngineTprm)
+# Total: 1616 bytes (ActionEngineTprm)
 #
 # Use cases:
 #   WP0: Altitude > 150m (event 1)
@@ -231,12 +231,12 @@ armed            = { type = "uint", size = 1, value = 0 }
 reserved         = { type = "uint", size = 1, value = 0 }
 
 # ==============================================================================
-# Sequences (4 x 304 bytes = 1216 bytes)
-# Each sequence: 8 bytes header + 8 x 37 bytes steps = 304 bytes
+# Sequences (4 x 136 bytes = 544 bytes)
+# Each sequence: 8 bytes header + 8 x 16 bytes steps = 136 bytes
 # ==============================================================================
 
 # SEQ0-3: Unused (all zeros)
-# Each sequence header is 8 bytes, then 8 steps of 37 bytes each
+# Each sequence header is 8 bytes, then 8 steps of 16 bytes each
 
 [ActionEngineTprm.sequence_0]
 eventId          = { type = "uint", size = 2, value = 0 }
@@ -252,14 +252,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_0.step_1]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -267,14 +263,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_0.step_2]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -282,14 +274,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_0.step_3]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -297,14 +285,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_0.step_4]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -312,14 +296,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_0.step_5]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -327,14 +307,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_0.step_6]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -342,14 +318,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_0.step_7]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -357,14 +329,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 # SEQ1: Same empty structure
 [ActionEngineTprm.sequence_1]
@@ -381,14 +349,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_1.step_1]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -396,14 +360,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_1.step_2]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -411,14 +371,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_1.step_3]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -426,14 +382,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_1.step_4]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -441,14 +393,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_1.step_5]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -456,14 +404,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_1.step_6]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -471,14 +415,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_1.step_7]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -486,14 +426,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 # SEQ2: Same empty structure
 [ActionEngineTprm.sequence_2]
@@ -510,14 +446,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_2.step_1]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -525,14 +457,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_2.step_2]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -540,14 +468,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_2.step_3]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -555,14 +479,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_2.step_4]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -570,14 +490,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_2.step_5]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -585,14 +501,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_2.step_6]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -600,14 +512,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_2.step_7]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -615,14 +523,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 # SEQ3: Same empty structure
 [ActionEngineTprm.sequence_3]
@@ -639,14 +543,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_3.step_1]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -654,14 +554,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_3.step_2]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -669,14 +565,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_3.step_3]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -684,14 +576,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_3.step_4]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -699,14 +587,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_3.step_5]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -714,14 +598,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_3.step_6]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -729,14 +609,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.sequence_3.step_7]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -744,14 +620,10 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 # ==============================================================================
 # Notifications (8 x 68 bytes = 544 bytes)
@@ -819,7 +691,7 @@ logSeverity      = { type = "uint", size = 1, value = 0 }
 armed            = { type = "uint", size = 1, value = 0 }
 
 # ==============================================================================
-# Timed Actions (16 x 38 bytes = 608 bytes)
+# Timed Actions (16 x 17 bytes = 272 bytes)
 # ==============================================================================
 
 # TA0: Fault injection - zero state bytes 4-7 at cycle 500
@@ -831,13 +703,9 @@ targetByteLen    = { type = "uint", size = 1, value = 4 }
 actionType       = { type = "uint", size = 1, value = "DATA_WRITE" }
 trigger          = { type = "uint", size = 1, value = "AT_CYCLE" }
 triggerParam     = { type = "uint", size = 4, value = 500 }
-duration         = { type = "uint", size = 4, value = 1 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 # TA1: Stuck-at-zero thrust.z at cycle 200 for 100 cycles
 [ActionEngineTprm.action_1]
@@ -848,13 +716,9 @@ targetByteLen    = { type = "uint", size = 1, value = 4 }
 actionType       = { type = "uint", size = 1, value = "DATA_WRITE" }
 trigger          = { type = "uint", size = 1, value = "AT_CYCLE" }
 triggerParam     = { type = "uint", size = 4, value = 200 }
-duration         = { type = "uint", size = 4, value = 100 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 # TA2-15: Unused
 [ActionEngineTprm.action_2]
@@ -865,13 +729,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_3]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -881,13 +741,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_4]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -897,13 +753,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_5]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -913,13 +765,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_6]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -929,13 +777,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_7]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -945,13 +789,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_8]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -961,13 +801,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_9]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -977,13 +813,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_10]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -993,13 +825,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_11]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -1009,13 +837,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_12]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -1025,13 +849,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_13]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -1041,13 +861,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_14]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -1057,13 +873,9 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }
 
 [ActionEngineTprm.action_15]
 targetFullUid    = { type = "uint", size = 4, value = 0 }
@@ -1073,10 +885,6 @@ targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = 0 }
 trigger          = { type = "uint", size = 1, value = 0 }
 triggerParam     = { type = "uint", size = 4, value = 0 }
-duration         = { type = "uint", size = 4, value = 0 }
-andMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-xorMask          = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-reserved         = { type = "uint", size = 1, value = 0 }

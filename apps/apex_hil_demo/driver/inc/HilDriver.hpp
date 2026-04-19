@@ -22,7 +22,7 @@
 #include "apps/apex_hil_demo/common/inc/VehicleState.hpp"
 #include "apps/apex_hil_demo/driver/inc/HilDriverData.hpp"
 
-#include "src/system/core/infrastructure/data/inc/ModelData.hpp"
+#include "src/system/core/infrastructure/system_component/apex/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
 #include "src/system/core/infrastructure/protocols/serial/uart/inc/UartAdapter.hpp"
 #include "src/system/core/infrastructure/protocols/serial/uart/inc/UartConfig.hpp"

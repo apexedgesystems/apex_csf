@@ -17,7 +17,7 @@
  * @note NOT RT-safe: Export involves file I/O.
  */
 
-#include "src/system/core/infrastructure/data/inc/DataCategory.hpp"
+#include "src/system/core/infrastructure/system_component/apex/inc/DataCategory.hpp"
 
 #include <cstddef>
 #include <cstdint>

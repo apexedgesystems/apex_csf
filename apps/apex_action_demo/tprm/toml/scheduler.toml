@@ -1,0 +1,70 @@
+# Scheduler (componentId=1, instanceIndex=0)
+# Total: 3 + (15 x 4) = 63 bytes
+#
+# Task schedule for ApexActionDemo:
+#   10 Hz: SensorModel sensorStep (priority 127)
+#    1 Hz: SensorModel telemetry (priority -128, offset 5)
+#    1 Hz: DataTransform telemetry (priority -128, offset 6)
+#    1 Hz: SystemMonitor telemetry (priority -128, offset 7)
+#
+# DataTransform has no periodic apply task -- mask application is
+# command-driven via the action engine's sequencer. The 1 Hz telemetry
+# task reports health stats only.
+#
+# Component fullUids:
+#   0xD200 (53760): SensorModel instance 0
+#   0xCA00 (51712): DataTransform instance 0
+#   0xC800 (51200): SystemMonitor instance 0
+
+[SchedulerTprmHeader]
+numPools = { type = "uint", size = 1, value = 1 }
+workersPerPool = { type = "uint", size = 1, value = 1 }
+numTasks = { type = "uint", size = 1, value = 4 }
+
+# Task 0: SensorModel sensorStep @ 10 Hz, priority 127
+[[task]]
+fullUid = { type = "uint", size = 4, value = 53760 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 10 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 127 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 1: SensorModel telemetry @ 1 Hz, priority -128, offset 5
+[[task]]
+fullUid = { type = "uint", size = 4, value = 53760 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 5 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 2: DataTransform telemetry @ 1 Hz, priority -128, offset 6
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51712 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 6 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 3: SystemMonitor telemetry @ 1 Hz, priority -128, offset 7
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51200 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 7 }
+priority = { type = "int", size = 1, value = -128 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }

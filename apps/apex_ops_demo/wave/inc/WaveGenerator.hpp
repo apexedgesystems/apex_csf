@@ -23,7 +23,7 @@
 
 #include "apps/apex_ops_demo/wave/inc/WaveGenData.hpp"
 
-#include "src/system/core/infrastructure/data/inc/ModelData.hpp"
+#include "src/system/core/infrastructure/system_component/apex/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/apex/inc/SwModelBase.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 #include "src/utilities/helpers/inc/Files.hpp"

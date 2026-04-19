@@ -274,7 +274,7 @@ std::uint8_t ApexExecutive::doInit() noexcept {
  * Maps (fullUid, category) to a mutable byte pointer via the registry.
  * The const_cast is justified: the registry stores const pointers for safety,
  * but the underlying component data is mutable and owned by the component.
- * The action engine needs write access for DATA_WRITE operations.
+ * Support components need write access for data mutation operations.
  *
  * @param ctx ApexRegistry pointer.
  * @param fullUid Target component's full UID.
@@ -646,6 +646,15 @@ RunResult ApexExecutive::run() noexcept {
     }
   }
 
+  // Scan sequence catalog (all RTS + ATS files, cached binaries for on-demand loading)
+  {
+    const std::size_t CATALOG_SIZE =
+        actionComp_.scanCatalog(fileSystem_.rtsDir(), fileSystem_.atsDir());
+    sysLog_->info(label(),
+                  fmt::format("Sequence catalog: {} entries ({} RTS, {} ATS)", CATALOG_SIZE,
+                              actionComp_.catalog().rtsCount(), actionComp_.catalog().atsCount()));
+  }
+
   // Register action engine stats as OUTPUT data
   {
     auto status = registry_.registerData(
@@ -733,8 +742,40 @@ RunResult ApexExecutive::run() noexcept {
   // Auto-configure registered components: allocate queues and set internal bus for models
   configureRegisteredComponents();
 
+  // Allocate a command queue for the action component so support components
+  // can send internal bus commands to it (e.g., DataTransform sending
+  // START_ATS via onBusReady). Other core components (scheduler, filesystem,
+  // registry) handle commands directly without queues to preserve response
+  // payloads for ground queries (GET_HEALTH, GET_STATS).
+  {
+    auto* queues = interface_->allocateQueues(actionComp_.fullUid());
+    if (queues != nullptr) {
+      sysLog_->debug(label(),
+                     fmt::format("Allocated queue for {} (0x{:06X})", actionComp_.componentName(),
+                                 actionComp_.fullUid()),
+                     2);
+    }
+  }
+
   // Derived class hook for additional configuration (if needed)
   configureComponents();
+
+  // Post-init bus ready: notify all registered components that the internal bus is wired.
+  // Components override onBusReady() to issue startup commands to other components
+  // (e.g., a support component loading a sequence into the action engine).
+  {
+    for (auto* comp : registeredComponents_) {
+      if (comp != nullptr) {
+        comp->onBusReady();
+      }
+    }
+
+    // Drain all queued internal commands before runtime starts.
+    const std::size_t FLUSHED = interface_->drainCommandsToComponents();
+    if (FLUSHED > 0) {
+      sysLog_->info(label(), fmt::format("Init bus flush: {} commands processed", FLUSHED));
+    }
+  }
 
   // Register core component data descriptors with registry.
   // Core components use registerCoreComponent() which doesn't iterate data

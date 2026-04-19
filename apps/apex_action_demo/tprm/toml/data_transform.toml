@@ -1,0 +1,130 @@
+# DataTransform (componentId=202, instanceIndex=0, fullUid=0xCA00)
+# Total: 292 bytes (FaultCampaignTprm)
+#
+# Pre-defined fault injection campaign for the action demo.
+# At boot, DataTransform reads this TPRM, generates an ATS from the fault
+# entries, and loads it into the action engine via the internal bus.
+# Each fault fires at its triggerCycle as an absolute cycle offset.
+#
+# Clock runs at 10 Hz, so 10 cycles = 1 second.
+#
+# SensorModel fullUid: 0xD200 (53760)
+# SensorOutput layout (12 bytes, category=OUTPUT=4):
+#   temperature:     offset 0, 4 bytes (float32)
+#   temperatureRate: offset 4, 4 bytes (float32)
+#   overtemp:        offset 8, 1 byte  (uint8)
+#
+# MaskType: ZERO=0, HIGH=1, FLIP=2, CUSTOM=3
+#
+# Campaign timeline (600 cycles = 60 seconds):
+#   Fault 0 @ cycle 100 (10s):  ZERO temperature, one-shot
+#   Fault 1 @ cycle 200 (20s):  HIGH temperature, hold 50 cycles (5s)
+#   Fault 2 @ cycle 350 (35s):  FLIP temperatureRate, one-shot
+#   Fault 3 @ cycle 400 (40s):  ZERO overtemp flag, hold 100 cycles (10s)
+#   Fault 4 @ cycle 550 (55s):  ZERO temperature, one-shot
+
+[FaultCampaignTprm]
+entryCount = { type = "uint", size = 1, value = 5 }
+reserved   = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+# Fault 0: ZERO temperature at cycle 100, one-shot
+[FaultCampaignTprm.entry_0]
+targetFullUid    = { type = "uint", size = 4, value = "0xD200" }
+targetCategory   = { type = "uint", size = 1, value = 4 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 4 }
+maskType         = { type = "uint", size = 1, value = 0 }
+customAnd        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+customXor        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+triggerCycle     = { type = "uint", size = 4, value = 100 }
+durationCycles   = { type = "uint", size = 4, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+# Fault 1: HIGH temperature at cycle 200, hold 50 cycles
+[FaultCampaignTprm.entry_1]
+targetFullUid    = { type = "uint", size = 4, value = "0xD200" }
+targetCategory   = { type = "uint", size = 1, value = 4 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 4 }
+maskType         = { type = "uint", size = 1, value = 1 }
+customAnd        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+customXor        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+triggerCycle     = { type = "uint", size = 4, value = 200 }
+durationCycles   = { type = "uint", size = 4, value = 50 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+# Fault 2: FLIP temperatureRate at cycle 350, one-shot
+[FaultCampaignTprm.entry_2]
+targetFullUid    = { type = "uint", size = 4, value = "0xD200" }
+targetCategory   = { type = "uint", size = 1, value = 4 }
+targetByteOffset = { type = "uint", size = 2, value = 4 }
+targetByteLen    = { type = "uint", size = 1, value = 4 }
+maskType         = { type = "uint", size = 1, value = 2 }
+customAnd        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+customXor        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+triggerCycle     = { type = "uint", size = 4, value = 350 }
+durationCycles   = { type = "uint", size = 4, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+# Fault 3: ZERO overtemp flag at cycle 400, hold 100 cycles
+[FaultCampaignTprm.entry_3]
+targetFullUid    = { type = "uint", size = 4, value = "0xD200" }
+targetCategory   = { type = "uint", size = 1, value = 4 }
+targetByteOffset = { type = "uint", size = 2, value = 8 }
+targetByteLen    = { type = "uint", size = 1, value = 1 }
+maskType         = { type = "uint", size = 1, value = 0 }
+customAnd        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+customXor        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+triggerCycle     = { type = "uint", size = 4, value = 400 }
+durationCycles   = { type = "uint", size = 4, value = 100 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+# Fault 4: ZERO temperature at cycle 550, one-shot
+[FaultCampaignTprm.entry_4]
+targetFullUid    = { type = "uint", size = 4, value = "0xD200" }
+targetCategory   = { type = "uint", size = 1, value = 4 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 4 }
+maskType         = { type = "uint", size = 1, value = 0 }
+customAnd        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+customXor        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+triggerCycle     = { type = "uint", size = 4, value = 550 }
+durationCycles   = { type = "uint", size = 4, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+# Entries 5-7: Unused
+[FaultCampaignTprm.entry_5]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+maskType         = { type = "uint", size = 1, value = 0 }
+customAnd        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+customXor        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+triggerCycle     = { type = "uint", size = 4, value = 0 }
+durationCycles   = { type = "uint", size = 4, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+[FaultCampaignTprm.entry_6]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+maskType         = { type = "uint", size = 1, value = 0 }
+customAnd        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+customXor        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+triggerCycle     = { type = "uint", size = 4, value = 0 }
+durationCycles   = { type = "uint", size = 4, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+[FaultCampaignTprm.entry_7]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+maskType         = { type = "uint", size = 1, value = 0 }
+customAnd        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+customXor        = { type = "array", size = 8, element_type = "uint", value = [0,0,0,0,0,0,0,0] }
+triggerCycle     = { type = "uint", size = 4, value = 0 }
+durationCycles   = { type = "uint", size = 4, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }

@@ -1,12 +1,899 @@
-# ActionComponent (componentId=5, instanceIndex=0, fullUid=0x000500)
-# Total: 2624 bytes (ActionEngineTprm)
+# ActionComponent (componentId=5, fullUid=0x000500)
+# Total: 1616 bytes (ActionEngineTprm)
 #
-# Empty configuration: no watchpoints, groups, notifications, or sequences.
-# Eliminates "loadTprm failed for ACTION" warning in system.log.
+# Use cases:
+#   WP0: Temperature > 50.0 (event 1)
+#   WP1: Temperature > 80.0 (event 2)
+#   WP2: Overtemp flag != 0 (event 3)
+#   WP3: Temperature > 100.0 (event 4)
+#   WP4: Temperature == 0.0 (event 5) - nested trigger detection
+#   GP0: Temperature > 80.0 AND overtemp flag set (event 10)
+#   GP1: WP0 OR WP3 (event 11)
+#   NT0: Log warning on temp > 50 (event 1)
+#   NT1: Log warning on temp > 80 (event 2)
+#   NT2: Log error on overtemp (event 3)
+#   NT3: Log error on group fire (event 10)
+#   NT4: Log error on fault detection (event 5)
+#   NT5: Log info on OR group fire (event 11)
+#
+# Component fullUids:
+#   SensorModel:    0xD200 (210 << 8)
+#   DataTransform:  0xCA00 (202 << 8)
+#
+# SensorOutput (OUTPUT=4) offsets:
+#   temperature:     0, len 4 (float)
+#   temperatureRate: 4, len 4 (float)
+#   overtemp:        8, len 1 (uint8)
+#
+# SensorState (STATE=2) offsets:
+#   stepCount:  0, len 4 (uint32)
+#   wrapCount:  4, len 4 (uint32)
+#
+# DataTransform opcodes:
+#   SET_TARGET=0x0609, ARM_ENTRY=0x0601, DISARM_ENTRY=0x0602
+#   PUSH_ZERO_MASK=0x0603, PUSH_HIGH_MASK=0x0604, PUSH_FLIP_MASK=0x0605
+#   APPLY_ENTRY=0x060A, APPLY_ALL=0x060B, CLEAR_ALL=0x0608
 
-[action]
-maxWatchpoints = 0
-maxWatchpointGroups = 0
-maxNotifications = 0
-maxTimedActions = 0
-maxSequences = 0
+# Enum definitions for action engine types
+[__enums__]
+# WatchPredicate
+GT = 0
+LT = 1
+GE = 2
+LE = 3
+EQ = 4
+NE = 5
+BIT_SET = 6
+BIT_CLEAR = 7
+CHANGED = 8
+# WatchDataType
+UINT8 = 0
+UINT16 = 1
+UINT32 = 2
+UINT64 = 3
+INT8 = 4
+INT16 = 5
+INT32 = 6
+INT64 = 7
+FLOAT32 = 8
+FLOAT64 = 9
+# DataCategory
+STATIC_PARAM = 0
+TUNABLE_PARAM = 1
+STATE = 2
+INPUT = 3
+OUTPUT = 4
+# GroupLogic (AND=0 already defined above)
+OR = 1
+# ActionType
+COMMAND = 0
+ARM_CONTROL = 1
+# ActionTrigger (IMMEDIATE=0 conflicts with nothing)
+IMMEDIATE = 0
+AT_CYCLE = 1
+AFTER_CYCLES = 2
+AT_TIME = 3
+ON_EVENT = 4
+# SequenceType
+RTS = 0
+ATS = 1
+# LogSeverity
+INFO = 0
+WARNING = 1
+ERR = 2
+
+# ==============================================================================
+# Watchpoints (8 x 26 bytes = 208 bytes)
+# ==============================================================================
+
+# WP0: Temperature > 50.0 -> event 1
+[ActionEngineTprm.watchpoint_0]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
+eventId          = { type = "uint", size = 2, value = 0 }
+minFireCount     = { type = "uint", size = 2, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+# WP1: Temperature > 80.0 -> event 2
+[ActionEngineTprm.watchpoint_1]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
+eventId          = { type = "uint", size = 2, value = 0 }
+minFireCount     = { type = "uint", size = 2, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+# WP2: Overtemp flag != 0 -> event 3
+[ActionEngineTprm.watchpoint_2]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
+eventId          = { type = "uint", size = 2, value = 0 }
+minFireCount     = { type = "uint", size = 2, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+# WP3: Temperature > 100.0 -> event 4
+[ActionEngineTprm.watchpoint_3]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
+eventId          = { type = "uint", size = 2, value = 0 }
+minFireCount     = { type = "uint", size = 2, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+# WP4: Temperature == 0.0 -> event 5 (nested trigger detection)
+[ActionEngineTprm.watchpoint_4]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
+eventId          = { type = "uint", size = 2, value = 0 }
+minFireCount     = { type = "uint", size = 2, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+# WP5-7: Unused
+[ActionEngineTprm.watchpoint_5]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
+eventId          = { type = "uint", size = 2, value = 0 }
+minFireCount     = { type = "uint", size = 2, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+[ActionEngineTprm.watchpoint_6]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
+eventId          = { type = "uint", size = 2, value = 0 }
+minFireCount     = { type = "uint", size = 2, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+[ActionEngineTprm.watchpoint_7]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
+eventId          = { type = "uint", size = 2, value = 0 }
+minFireCount     = { type = "uint", size = 2, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
+
+# ==============================================================================
+# Groups (4 x 12 bytes = 48 bytes)
+# ==============================================================================
+
+# GP0: Temperature > 80.0 AND overtemp flag set -> event 10
+[ActionEngineTprm.group_0]
+refs             = { type = "array", size = 4, element_type = "uint", value = [0, 0, 0, 0] }
+refCount         = { type = "uint", size = 1, value = 0 }
+logic            = { type = "uint", size = 1, value = 0 }
+eventId          = { type = "uint", size = 2, value = 0 }
+minFireCount     = { type = "uint", size = 2, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "uint", size = 1, value = 0 }
+
+# GP1: WP0 OR WP3 -> event 11
+[ActionEngineTprm.group_1]
+refs             = { type = "array", size = 4, element_type = "uint", value = [0, 0, 0, 0] }
+refCount         = { type = "uint", size = 1, value = 0 }
+logic            = { type = "uint", size = 1, value = 0 }
+eventId          = { type = "uint", size = 2, value = 0 }
+minFireCount     = { type = "uint", size = 2, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "uint", size = 1, value = 0 }
+
+# GP2-3: Unused
+[ActionEngineTprm.group_2]
+refs             = { type = "array", size = 4, element_type = "uint", value = [0, 0, 0, 0] }
+refCount         = { type = "uint", size = 1, value = 0 }
+logic            = { type = "uint", size = 1, value = 0 }
+eventId          = { type = "uint", size = 2, value = 0 }
+minFireCount     = { type = "uint", size = 2, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.group_3]
+refs             = { type = "array", size = 4, element_type = "uint", value = [0, 0, 0, 0] }
+refCount         = { type = "uint", size = 1, value = 0 }
+logic            = { type = "uint", size = 1, value = 0 }
+eventId          = { type = "uint", size = 2, value = 0 }
+minFireCount     = { type = "uint", size = 2, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "uint", size = 1, value = 0 }
+
+# ==============================================================================
+# Sequences (4 x 136 bytes = 544 bytes)
+# Each sequence: 8 bytes header + 8 x 16 bytes steps = 136 bytes
+# ==============================================================================
+
+# SEQ0-3: Unused (all zeros)
+# Each sequence header is 8 bytes, then 8 steps of 16 bytes each
+
+[ActionEngineTprm.sequence_0]
+eventId          = { type = "uint", size = 2, value = 0 }
+stepCount        = { type = "uint", size = 1, value = 0 }
+repeatCount      = { type = "uint", size = 1, value = 0 }
+seqType          = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "array", size = 2, element_type = "uint", value = [0, 0] }
+
+[ActionEngineTprm.sequence_0.step_0]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_0.step_1]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_0.step_2]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_0.step_3]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_0.step_4]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_0.step_5]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_0.step_6]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_0.step_7]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+# SEQ1: Unused
+[ActionEngineTprm.sequence_1]
+eventId          = { type = "uint", size = 2, value = 0 }
+stepCount        = { type = "uint", size = 1, value = 0 }
+repeatCount      = { type = "uint", size = 1, value = 0 }
+seqType          = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "array", size = 2, element_type = "uint", value = [0, 0] }
+
+[ActionEngineTprm.sequence_1.step_0]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_1.step_1]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_1.step_2]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_1.step_3]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_1.step_4]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_1.step_5]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_1.step_6]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_1.step_7]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+# SEQ2: Unused
+[ActionEngineTprm.sequence_2]
+eventId          = { type = "uint", size = 2, value = 0 }
+stepCount        = { type = "uint", size = 1, value = 0 }
+repeatCount      = { type = "uint", size = 1, value = 0 }
+seqType          = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "array", size = 2, element_type = "uint", value = [0, 0] }
+
+[ActionEngineTprm.sequence_2.step_0]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_2.step_1]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_2.step_2]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_2.step_3]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_2.step_4]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_2.step_5]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_2.step_6]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_2.step_7]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+# SEQ3: Unused
+[ActionEngineTprm.sequence_3]
+eventId          = { type = "uint", size = 2, value = 0 }
+stepCount        = { type = "uint", size = 1, value = 0 }
+repeatCount      = { type = "uint", size = 1, value = 0 }
+seqType          = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "array", size = 2, element_type = "uint", value = [0, 0] }
+
+[ActionEngineTprm.sequence_3.step_0]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_3.step_1]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_3.step_2]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_3.step_3]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_3.step_4]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_3.step_5]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_3.step_6]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.sequence_3.step_7]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+# ==============================================================================
+# Notifications (8 x 68 bytes = 544 bytes)
+# ==============================================================================
+
+# NT0: Temperature > 50 warning (event 1)
+[ActionEngineTprm.notification_0]
+eventId          = { type = "uint", size = 2, value = 0 }
+logLabel         = { type = "string", size = 16, value = 0 }
+logMessage       = { type = "string", size = 48, value = 0 }
+logSeverity      = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+
+# NT1: Temperature > 80 warning (event 2)
+[ActionEngineTprm.notification_1]
+eventId          = { type = "uint", size = 2, value = 0 }
+logLabel         = { type = "string", size = 16, value = 0 }
+logMessage       = { type = "string", size = 48, value = 0 }
+logSeverity      = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+
+# NT2: Overtemp error (event 3)
+[ActionEngineTprm.notification_2]
+eventId          = { type = "uint", size = 2, value = 0 }
+logLabel         = { type = "string", size = 16, value = 0 }
+logMessage       = { type = "string", size = 48, value = 0 }
+logSeverity      = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+
+# NT3: Temperature+overtemp group error (event 10)
+[ActionEngineTprm.notification_3]
+eventId          = { type = "uint", size = 2, value = 0 }
+logLabel         = { type = "string", size = 16, value = 0 }
+logMessage       = { type = "string", size = 48, value = 0 }
+logSeverity      = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+
+# NT4: Fault detection error (event 5)
+[ActionEngineTprm.notification_4]
+eventId          = { type = "uint", size = 2, value = 0 }
+logLabel         = { type = "string", size = 16, value = 0 }
+logMessage       = { type = "string", size = 48, value = 0 }
+logSeverity      = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+
+# NT5: OR group fire info (event 11)
+[ActionEngineTprm.notification_5]
+eventId          = { type = "uint", size = 2, value = 0 }
+logLabel         = { type = "string", size = 16, value = 0 }
+logMessage       = { type = "string", size = 48, value = 0 }
+logSeverity      = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+
+# NT6-7: Unused
+[ActionEngineTprm.notification_6]
+eventId          = { type = "uint", size = 2, value = 0 }
+logLabel         = { type = "string", size = 16, value = 0 }
+logMessage       = { type = "string", size = 48, value = 0 }
+logSeverity      = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.notification_7]
+eventId          = { type = "uint", size = 2, value = 0 }
+logLabel         = { type = "string", size = 16, value = 0 }
+logMessage       = { type = "string", size = 48, value = 0 }
+logSeverity      = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 0 }
+
+# ==============================================================================
+# Timed Actions (16 x 17 bytes = 272 bytes)
+# ==============================================================================
+
+# TA0-15: Unused (timing handled by RTS/ATS sequences)
+[ActionEngineTprm.action_0]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_1]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_2]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_3]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_4]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_5]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_6]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_7]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_8]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_9]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_10]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_11]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_12]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_13]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_14]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+
+[ActionEngineTprm.action_15]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = 0 }
+trigger          = { type = "uint", size = 1, value = 0 }
+triggerParam     = { type = "uint", size = 4, value = 0 }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }

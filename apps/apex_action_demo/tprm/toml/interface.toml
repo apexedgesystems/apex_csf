@@ -1,0 +1,18 @@
+# ApexInterface (componentId=4, instanceIndex=0)
+# Total: 84 bytes
+#
+# Network configuration for C2 access. Listens on all interfaces, port 9000.
+# SLIP framing, no CRC (matching ops demo defaults).
+
+[ApexInterfaceTunables]
+host = { type = "string", size = 64, value = "0.0.0.0" }
+port = { type = "uint", size = 2, value = 9000 }
+framing = { type = "uint", size = 1, value = 0 }
+crcEnabled = { type = "uint", size = 1, value = 0 }
+cmdQueueCapacity = { type = "uint", size = 2, value = 32 }
+tlmQueueCapacity = { type = "uint", size = 2, value = 64 }
+maxPayloadBytes = { type = "uint", size = 2, value = 4096 }
+padding1 = { type = "uint", size = 2, value = 0 }
+pollTimeoutMs = { type = "uint", size = 4, value = 10 }
+droppedFrameReportThreshold = { type = "uint", size = 2, value = 1 }
+padding2 = { type = "uint", size = 2, value = 0 }

@@ -95,6 +95,25 @@ Individual tprms are extracted to `.apex_fs/tprm/` during init.
   --shutdown-after 5
 ```
 
+## Init Sequence
+
+The executive init phase performs several steps after component registration
+and TPRM loading:
+
+- **Core component queue allocation**: Allocates command queues for all core
+  components (scheduler, filesystem, registry, action) so they can receive
+  internal bus commands from support components during init.
+
+- **Catalog scan**: Calls `scanCatalog()` on the ActionComponent to populate
+  the sequence catalog with all RTS and ATS files found in the filesystem.
+
+- **onBusReady lifecycle**: After all components are configured and the
+  internal bus is wired, the executive calls `onBusReady()` on every
+  registered component. Components override this hook to issue startup
+  commands to other components (e.g., a support component loading a sequence
+  into the action engine). All queued commands are drained before runtime
+  starts.
+
 ## RT Safety
 
 | Function              | RT-Safe | Notes                       |

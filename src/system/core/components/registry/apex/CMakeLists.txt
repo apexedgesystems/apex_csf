@@ -11,7 +11,6 @@
 #
 # Dependencies:
 #   system_core_system_component - Base class for system components
-#   system_core_data             - DataCategory enum
 # ==============================================================================
 
 include(apex/All)
@@ -38,7 +37,6 @@ apex_add_library(
   ${CPP_SOURCES}
   DEPS_PUBLIC
   system_core_system_component
-  system_core_data
   fmt::fmt
 )
 

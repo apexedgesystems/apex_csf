@@ -23,7 +23,9 @@
  */
 
 #include "src/system/core/components/action/apex/inc/ActionComponentStatus.hpp"
-#include "src/system/core/infrastructure/data/inc/ActionInterface.hpp"
+#include "src/system/core/components/action/apex/inc/ActionInterface.hpp"
+#include "src/system/core/components/action/apex/inc/ResourceCatalog.hpp"
+#include "src/system/core/components/action/apex/inc/SequenceCatalog.hpp"
 #include "src/system/core/infrastructure/system_component/apex/inc/CoreComponentBase.hpp"
 
 #include <cstdint>
@@ -183,20 +185,94 @@ public:
    */
   [[nodiscard]] bool loadAts(std::uint8_t slot, const std::filesystem::path& path) noexcept;
 
+  /* ----------------------------- Catalog-Based Operations ----------------------------- */
+
+  /**
+   * @brief Scan filesystem directories and populate the sequence catalog.
+   * @param rtsDir Path to rts/ directory.
+   * @param atsDir Path to ats/ directory.
+   * @return Total entries added.
+   * @note NOT RT-safe: File I/O.
+   */
+  std::size_t scanCatalog(const std::filesystem::path& rtsDir,
+                          const std::filesystem::path& atsDir) noexcept;
+
+  /**
+   * @brief Start an RTS by sequence ID (catalog lookup + cached load).
+   *
+   * Looks up the sequence in the catalog, checks blocking, finds a free
+   * execution slot (or preempts a lower-priority sequence), loads the
+   * cached binary via memcpy (no filesystem I/O), and starts execution.
+   *
+   * @param sequenceId Sequence ID to start.
+   * @return Slot index where loaded, or 0xFF on failure.
+   * @note RT-safe: O(log N) lookup + memcpy + deserialize. No I/O.
+   */
+  std::uint8_t startRtsById(std::uint16_t sequenceId) noexcept;
+
+  /**
+   * @brief Stop a running RTS by sequence ID.
+   * @param sequenceId Sequence ID to stop.
+   * @return true if found and stopped, false if not running.
+   * @note RT-safe: O(SEQUENCE_TABLE_SIZE) scan.
+   */
+  bool stopRtsById(std::uint16_t sequenceId) noexcept;
+
+  /**
+   * @brief Load ATS entries from the catalog into execution slots.
+   *
+   * Iterates the catalog for ATS entries and loads them into the ATS
+   * execution slot range (slots RTS_SLOT_COUNT .. SEQUENCE_TABLE_SIZE-1).
+   * Entries with armed=true are started immediately.
+   *
+   * @return Number of ATS entries loaded.
+   * @note NOT RT-safe: deserializes cached binaries.
+   */
+  std::uint8_t loadAtsFromCatalog() noexcept;
+
+  /**
+   * @brief Get the sequence catalog (read-only).
+   * @return Const reference to the catalog.
+   * @note RT-safe: Direct member access.
+   */
+  [[nodiscard]] const data::SequenceCatalog& catalog() const noexcept { return catalog_; }
+
   /* ----------------------------- Command Handling ----------------------------- */
 
   /**
    * @brief Handle ground commands directed to the action component.
    *
-   * Opcodes (0x0500 range):
+   * Slot-based opcodes (0x0500 range):
    *   - 0x0500: LOAD_RTS  (payload: u8 slot, char[63] filename)
    *   - 0x0501: START_RTS (payload: u8 slot)
    *   - 0x0502: STOP_RTS  (payload: u8 slot)
    *   - 0x0503: LOAD_ATS  (payload: u8 slot, char[63] filename)
    *   - 0x0504: START_ATS (payload: u8 slot)
    *   - 0x0505: STOP_ATS  (payload: u8 slot)
+   *   - 0x0506: ABORT_ALL_RTS (no payload)
    *
-   * @note RT-safe for START/STOP. NOT RT-safe for LOAD (file I/O).
+   * ID-based opcodes (catalog lookup):
+   *   - 0x0510: START_RTS_BY_ID  (payload: u16 sequenceId)
+   *   - 0x0511: STOP_RTS_BY_ID   (payload: u16 sequenceId)
+   *   - 0x0512: SET_PRIORITY      (payload: u16 sequenceId, u8 priority)
+   *   - 0x0513: SET_BLOCKING      (payload: u16 seqId, u8 count, u16[] blockIds)
+   *   - 0x0514: SET_ABORT_EVENT   (payload: u16 seqId, u16 abortEventId)
+   *   - 0x0515: SET_EXCLUSION_GROUP (payload: u16 seqId, u8 group)
+   *
+   * Catalog/status opcodes:
+   *   - 0x0520: RESCAN_CATALOG (no payload)
+   *   - 0x0521: GET_CATALOG    (no payload, response: catalog dump)
+   *   - 0x0522: GET_STATUS     (payload: u16 seqId, response: exec status)
+   *
+   * Resource catalog opcodes:
+   *   - 0x0530: ACTIVATE_WP           (payload: u16 watchpointId)
+   *   - 0x0531: DEACTIVATE_WP         (payload: u16 watchpointId)
+   *   - 0x0532: ACTIVATE_GROUP        (payload: u16 groupId)
+   *   - 0x0533: DEACTIVATE_GROUP      (payload: u16 groupId)
+   *   - 0x0534: ACTIVATE_NOTIFICATION (payload: u16 notificationId)
+   *   - 0x0535: DEACTIVATE_NOTIFICATION (payload: u16 notificationId)
+   *
+   * @note RT-safe for START/STOP/ABORT. NOT RT-safe for LOAD/RESCAN (I/O).
    */
   [[nodiscard]] std::uint8_t handleCommand(std::uint16_t opcode,
                                            apex::compat::rospan<std::uint8_t> payload,
@@ -244,6 +320,12 @@ private:
   void dispatchLogNotifications(std::uint16_t eventId, std::uint32_t fireCount) noexcept;
 
   data::ActionInterface iface_{};
+  data::SequenceCatalog catalog_;         ///< Sequence catalog (metadata + cached binaries).
+  data::WatchpointCatalog wpCatalog_;     ///< Watchpoint definitions.
+  data::GroupCatalog grpCatalog_;         ///< Group definitions.
+  data::NotificationCatalog noteCatalog_; ///< Notification definitions.
+  std::filesystem::path catalogRtsDir_{}; ///< Stored rts/ path for rescan.
+  std::filesystem::path catalogAtsDir_{}; ///< Stored ats/ path for rescan.
 };
 
 } // namespace action

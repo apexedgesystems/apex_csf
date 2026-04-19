@@ -15,7 +15,7 @@ compile_commands.json
 **/ptst/
 
 # Design docs and future proposals (internal only)
-docs/future/
+docs/
 **/docs/design/
 
 # Binary data files (generated gravity coefficients, not committed)
@@ -44,6 +44,7 @@ tools/rust/dev/
 
 # Internal dev reference material
 **/.claude_docs/
+.design_docs/
 
 # Archived test results (kept locally, not committed)
 **/.archive/

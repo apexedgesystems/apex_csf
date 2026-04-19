@@ -23,7 +23,7 @@
  *  - For simple components, call setConfigured(true) before init().
  */
 
-#include "src/system/core/infrastructure/data/inc/DataCategory.hpp"
+#include "src/system/core/infrastructure/system_component/apex/inc/DataCategory.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/ComponentType.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/IComponent.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/CommandResult.hpp"
@@ -289,6 +289,19 @@ public:
    * @note NOT RT-safe: File I/O.
    */
   virtual bool loadTprm(const std::filesystem::path& /*tprmDir*/) noexcept { return true; }
+
+  /**
+   * @brief Post-init hook called after all components are registered and the
+   *        internal bus is wired.
+   *
+   * Override this to issue internal commands to other components during startup.
+   * The internal bus (postInternalCommand) is available when this is called.
+   * All queued commands are drained before runtime starts.
+   *
+   * @note NOT RT-safe. Called once during executive init.
+   * @note Default implementation does nothing.
+   */
+  virtual void onBusReady() noexcept {}
 
   /**
    * @brief Look up a schedulable task by UID.
