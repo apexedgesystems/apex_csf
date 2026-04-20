@@ -97,6 +97,30 @@ struct MnaCudaWorkspace {
 bool solveCuda(MnaCudaWorkspace& ws, const double* A, double* b, std::size_t dim) noexcept;
 
 /**
+ * @brief Solve Ax = b for device-resident A and b (no H2D / D2H).
+ *
+ * Assumes the caller has already populated `dA` (dim x dim row-major)
+ * and `dB` (dim) on the device; the solution is written back into
+ * `dB` in place. `dA` is destroyed by the LU factorization. The
+ * workspace must be prepared for a dim >= the requested dim.
+ *
+ * This is the Phase 4 inner-NR-iter solve: the MNA matrix is
+ * populated on device by `stampMosfetL1Batch`, so re-uploading it to
+ * the device after every iteration would be wasted bandwidth.
+ *
+ * @param ws   Prepared workspace (`dA`/`dB` members are unused; any
+ *             device pointers can be passed explicitly).
+ * @param dA   Device matrix (dim x dim, row-major).
+ * @param dB   Device RHS (dim); receives solution.
+ * @param dim  Matrix dimension.
+ * @return true on success, false on singular matrix or CUDA error.
+ *
+ * @note NOT RT-SAFE: kernel launches.
+ */
+bool solveCudaDeviceResident(MnaCudaWorkspace& ws, double* dA, double* dB,
+                             std::size_t dim) noexcept;
+
+/**
  * @brief Batch solve multiple MNA systems on GPU.
  *
  * Solves multiple independent systems in parallel. Each system must have

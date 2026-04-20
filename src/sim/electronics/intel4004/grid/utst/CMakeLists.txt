@@ -40,3 +40,30 @@ target_compile_definitions(
   TestSimElectronicsIntel4004Grid
   PRIVATE INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/intel4004/netlist/data"
 )
+
+# ------------------------------------------------------------------------------
+# CUDA Integration Tests (Phase 4 pipeline)
+# ------------------------------------------------------------------------------
+
+if (TARGET sim_electronics_intel4004_grid_cuda AND CMAKE_CUDA_COMPILER)
+  apex_add_gtest(
+    TARGET
+    sim_electronics_intel4004_grid_cuda_uTest
+    SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/PhaseFourPipeline_uTest.cu"
+    LINK
+    sim_electronics_intel4004_grid_cuda
+    sim_electronics_devices_nonlinear_cuda
+    sim_electronics_mna_cuda
+    sim_electronics_devices_nonlinear
+    LABELS
+    sim
+    electronics
+    intel4004
+    cuda
+  )
+  set_target_properties(
+    sim_electronics_intel4004_grid_cuda_uTest PROPERTIES CUDA_SEPARABLE_COMPILATION ON
+                                                          CUDA_RESOLVE_DEVICE_SYMBOLS ON
+  )
+endif ()

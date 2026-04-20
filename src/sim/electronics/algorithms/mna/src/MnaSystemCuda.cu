@@ -173,6 +173,47 @@ bool solveCuda(MnaCudaWorkspace& ws, const double* A, double* b, std::size_t dim
 #endif
 }
 
+bool solveCudaDeviceResident(MnaCudaWorkspace& ws, double* dA, double* dB,
+                             std::size_t dim) noexcept {
+#if COMPAT_HAVE_CUSOLVER
+  if (!ws.canHandle(dim) || dA == nullptr || dB == nullptr) {
+    return false;
+  }
+
+  cusolverDnHandle_t handle = static_cast<cusolverDnHandle_t>(ws.solverHandle);
+  int n = static_cast<int>(dim);
+
+  // LU factorize dA in place.
+  if (cusolverDnDgetrf(handle, n, n, dA, n, static_cast<double*>(ws.dWork), ws.dIpiv,
+                       static_cast<int*>(ws.dInfo)) != CUSOLVER_STATUS_SUCCESS) {
+    return false;
+  }
+
+  // Check for singular matrix.
+  int info = 0;
+  if (cudaMemcpy(&info, ws.dInfo, sizeof(int), cudaMemcpyDeviceToHost) != cudaSuccess) {
+    return false;
+  }
+  if (info != 0) {
+    return false;
+  }
+
+  // Back-substitute (CUBLAS_OP_T to match row-major convention).
+  if (cusolverDnDgetrs(handle, CUBLAS_OP_T, n, 1, dA, n, ws.dIpiv, dB, n,
+                       static_cast<int*>(ws.dInfo)) != CUSOLVER_STATUS_SUCCESS) {
+    return false;
+  }
+
+  return true;
+#else
+  (void)ws;
+  (void)dA;
+  (void)dB;
+  (void)dim;
+  return false;
+#endif
+}
+
 bool solveBatchCuda(MnaCudaWorkspace& ws, const double* As, double* bs, std::size_t dim,
                     std::size_t batchSize) noexcept {
 #if COMPAT_HAVE_CUSOLVER
