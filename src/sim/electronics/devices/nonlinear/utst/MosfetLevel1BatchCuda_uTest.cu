@@ -345,3 +345,100 @@ TEST_F(MosfetBatchCudaFixture, StampMosfetL1BatchMatchesCpu) {
   cudaFree(dG);
   cudaFree(dI);
 }
+
+TEST_F(MosfetBatchCudaFixture, NrUpdateAndLimit_NoLimit) {
+  // Case: max delta below the limit -> should apply 1x scale.
+  constexpr int N = 1121;
+  constexpr double LIMIT = 5.0;
+
+  std::vector<double> prev(N), next(N);
+  for (int i = 0; i < N; ++i) {
+    prev[i] = 0.01 * static_cast<double>(i);
+    next[i] = prev[i] + 0.1 * std::sin(0.01 * i); // max |delta| = 0.1
+  }
+
+  double expectedMax = 0.0;
+  for (int i = 0; i < N; ++i) {
+    expectedMax = std::max(expectedMax, std::fabs(next[i] - prev[i]));
+  }
+  ASSERT_LT(expectedMax, LIMIT);
+
+  double *dNewV = nullptr, *dPrevV = nullptr, *dMaxDelta = nullptr;
+  ASSERT_EQ(cudaMalloc(&dNewV, N * sizeof(double)), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&dPrevV, N * sizeof(double)), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&dMaxDelta, sizeof(double)), cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(dNewV, next.data(), N * sizeof(double), cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(dPrevV, prev.data(), N * sizeof(double), cudaMemcpyHostToDevice),
+            cudaSuccess);
+
+  ASSERT_TRUE(nl_cuda::nrUpdateAndLimit(dNewV, dPrevV, dMaxDelta, N, LIMIT));
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+
+  double gpuMax = 0.0;
+  std::vector<double> gpuOut(N);
+  ASSERT_EQ(cudaMemcpy(&gpuMax, dMaxDelta, sizeof(double), cudaMemcpyDeviceToHost), cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(gpuOut.data(), dPrevV, N * sizeof(double), cudaMemcpyDeviceToHost),
+            cudaSuccess);
+
+  EXPECT_NEAR(gpuMax, expectedMax, 1e-12);
+  for (int i = 0; i < N; ++i) {
+    // No limiting: prev should have been updated to exactly next[i].
+    EXPECT_NEAR(gpuOut[i], next[i], 1e-12) << "i=" << i;
+  }
+
+  cudaFree(dNewV);
+  cudaFree(dPrevV);
+  cudaFree(dMaxDelta);
+}
+
+TEST_F(MosfetBatchCudaFixture, NrUpdateAndLimit_Limited) {
+  // Case: max delta exceeds the limit -> should scale all deltas.
+  constexpr int N = 1121;
+  constexpr double LIMIT = 5.0;
+
+  std::vector<double> prev(N), next(N);
+  for (int i = 0; i < N; ++i) {
+    prev[i] = 0.0;
+    next[i] = 10.0 * std::sin(0.01 * i); // max |delta| ~ 9.95 > 5
+  }
+
+  double expectedMax = 0.0;
+  for (int i = 0; i < N; ++i) {
+    expectedMax = std::max(expectedMax, std::fabs(next[i] - prev[i]));
+  }
+  ASSERT_GT(expectedMax, LIMIT);
+  const double scale = LIMIT / expectedMax;
+
+  double *dNewV = nullptr, *dPrevV = nullptr, *dMaxDelta = nullptr;
+  ASSERT_EQ(cudaMalloc(&dNewV, N * sizeof(double)), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&dPrevV, N * sizeof(double)), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&dMaxDelta, sizeof(double)), cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(dNewV, next.data(), N * sizeof(double), cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(dPrevV, prev.data(), N * sizeof(double), cudaMemcpyHostToDevice),
+            cudaSuccess);
+
+  ASSERT_TRUE(nl_cuda::nrUpdateAndLimit(dNewV, dPrevV, dMaxDelta, N, LIMIT));
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+
+  double gpuMax = 0.0;
+  std::vector<double> gpuOut(N);
+  ASSERT_EQ(cudaMemcpy(&gpuMax, dMaxDelta, sizeof(double), cudaMemcpyDeviceToHost), cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(gpuOut.data(), dPrevV, N * sizeof(double), cudaMemcpyDeviceToHost),
+            cudaSuccess);
+
+  // Max-delta returned is the UNLIMITED max (caller uses it for
+  // convergence testing against NR threshold, not the limited one).
+  EXPECT_NEAR(gpuMax, expectedMax, 1e-12);
+
+  // Each prev[i] should have moved by scale * (next[i] - prev[i]).
+  // Since prev was 0.0, gpuOut[i] == scale * next[i].
+  for (int i = 0; i < N; ++i) {
+    EXPECT_NEAR(gpuOut[i], scale * next[i], 1e-12) << "i=" << i;
+  }
+
+  cudaFree(dNewV);
+  cudaFree(dPrevV);
+  cudaFree(dMaxDelta);
+}

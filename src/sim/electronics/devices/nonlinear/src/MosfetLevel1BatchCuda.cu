@@ -187,6 +187,71 @@ __global__ __launch_bounds__(256, 6) void kStampMosfetL1Batch(
   atomicAddIfRow(I, s, netCount, cdreq);
 }
 
+/* ----------------------------- NR update + convergence reduction ----------------------------- */
+
+/**
+ * @brief Block-level reduction of max(|newV[i] - prevV[i]|), with
+ *        grid-level aggregation via `atomicMax` on double bits.
+ *
+ * The output `dMaxDelta` must be initialised to 0.0 before launch.
+ */
+__device__ __forceinline__ void atomicMaxDouble(double* addr, double value) {
+  unsigned long long* asUll = reinterpret_cast<unsigned long long*>(addr);
+  unsigned long long oldBits = *asUll;
+  unsigned long long expected;
+  do {
+    expected = oldBits;
+    double current = __longlong_as_double(static_cast<long long>(expected));
+    if (current >= value) return;
+    unsigned long long desired =
+        static_cast<unsigned long long>(__double_as_longlong(value));
+    oldBits = atomicCAS(asUll, expected, desired);
+  } while (oldBits != expected);
+}
+
+__global__ void kNrMaxDelta(const double* __restrict__ newV,
+                            const double* __restrict__ prevV, double* maxDelta, int n) {
+  extern __shared__ double sdata[];
+  const int tid = threadIdx.x;
+  const int i = blockIdx.x * blockDim.x + tid;
+
+  double my = 0.0;
+  if (i < n) {
+    my = fabs(newV[i] - prevV[i]);
+  }
+  sdata[tid] = my;
+  __syncthreads();
+
+  for (int offset = blockDim.x / 2; offset > 0; offset >>= 1) {
+    if (tid < offset) {
+      double other = sdata[tid + offset];
+      if (other > sdata[tid]) sdata[tid] = other;
+    }
+    __syncthreads();
+  }
+  if (tid == 0) {
+    atomicMaxDouble(maxDelta, sdata[0]);
+  }
+}
+
+/**
+ * @brief Apply NR limiter and write the updated voltages into prevV.
+ *
+ * Reads `maxDelta` (populated by `kNrMaxDelta`) to decide the scale
+ * factor: if the unlimited max change exceeds `limit`, all deltas are
+ * shrunk uniformly so the largest is exactly `limit`; otherwise no
+ * scaling is applied.
+ */
+__global__ void kNrApplyLimit(const double* __restrict__ newV, double* prevV,
+                              const double* maxDelta, int n, double limit) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= n) return;
+  const double m = *maxDelta;
+  const double scale = (m > limit) ? (limit / m) : 1.0;
+  const double delta = newV[i] - prevV[i];
+  prevV[i] += scale * delta;
+}
+
 } // namespace
 
 /* ----------------------------- Host-Side Launch Wrappers ----------------------------- */
@@ -245,6 +310,25 @@ bool stampMosfetL1Batch(const MosfetBias* dBiases, const MosfetLevel1Params* dPa
   kStampMosfetL1Batch<<<blocks, threads, 0, s>>>(dBiases, dParams, dNets, dG, dI,
                                                  static_cast<int>(count),
                                                  static_cast<int>(netCount), gmin);
+  return cudaPeekAtLastError() == cudaSuccess;
+}
+
+bool nrUpdateAndLimit(const double* dNewV, double* dPrevV, double* dMaxDelta, std::size_t n,
+                      double limit, void* stream) noexcept {
+  if (dNewV == nullptr || dPrevV == nullptr || dMaxDelta == nullptr || n == 0) {
+    return false;
+  }
+  const int threads = BLOCK_SIZE;
+  const int blocks = static_cast<int>((n + threads - 1) / threads);
+  const cudaStream_t s = static_cast<cudaStream_t>(stream);
+
+  // Reset max-delta accumulator, then reduce.
+  if (cudaMemsetAsync(dMaxDelta, 0, sizeof(double), s) != cudaSuccess) return false;
+  kNrMaxDelta<<<blocks, threads, threads * sizeof(double), s>>>(dNewV, dPrevV, dMaxDelta,
+                                                                static_cast<int>(n));
+  if (cudaPeekAtLastError() != cudaSuccess) return false;
+
+  kNrApplyLimit<<<blocks, threads, 0, s>>>(dNewV, dPrevV, dMaxDelta, static_cast<int>(n), limit);
   return cudaPeekAtLastError() == cudaSuccess;
 }
 

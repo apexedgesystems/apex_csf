@@ -169,6 +169,38 @@ bool stampMosfetL1Batch(const MosfetBias* dBiases, const MosfetLevel1Params* dPa
                         void* stream = nullptr) noexcept;
 
 /**
+ * @brief Apply NR limiting and update node voltages on device.
+ *
+ * Given the freshly-solved voltages `dNewV` and the previous NR
+ * iteration's voltages `dPrevV`, this kernel (in two launches):
+ *
+ *   1. Computes `delta[i] = dNewV[i] - dPrevV[i]` and reduces to
+ *      `maxAbsDelta = max_i |delta[i]|`.
+ *   2. If `maxAbsDelta > limit`, scales all deltas uniformly so the
+ *      largest change is exactly `limit` volts; otherwise leaves
+ *      them alone. Writes the result back into `dPrevV` for the
+ *      next NR iteration.
+ *
+ * `dMaxDelta` is a single device-resident double. The caller reads
+ * it after the kernel returns to decide convergence (compare to the
+ * NR threshold). `dMaxDelta` is the UNLIMITED max-delta, which is
+ * what the CPU path compares to for convergence.
+ *
+ * Matches `Intel4004GridLevel1::simulateLevel1` NR limiter: 5.0 V
+ * per-iteration cap on max voltage change.
+ *
+ * @param dNewV     Device array of N doubles (freshly solved x).
+ * @param dPrevV    Device array of N doubles (prev iter; updated in place).
+ * @param dMaxDelta Device scalar (1 double); output: L_inf delta.
+ * @param n         N (length of dNewV / dPrevV).
+ * @param limit     Max |delta| per iter (default 5.0 V, matches CPU).
+ * @param stream    CUDA stream.
+ * @return true on launch success.
+ */
+bool nrUpdateAndLimit(const double* dNewV, double* dPrevV, double* dMaxDelta, std::size_t n,
+                      double limit = 5.0, void* stream = nullptr) noexcept;
+
+/**
  * @brief Get the launch configuration used for a given batch size.
  * @note Useful for nsys / ncu profiling annotations.
  */
