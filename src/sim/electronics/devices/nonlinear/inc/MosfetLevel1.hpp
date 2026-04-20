@@ -22,6 +22,7 @@
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/utilities/compatibility/inc/compat_cuda_attrs.hpp"
 
 #include <cmath>
 
@@ -70,6 +71,64 @@ struct MosfetLevel1Params {
  * @endcode
  */
 struct MosfetLevel1 {
+  /**
+   * @brief Combined (id, gm, gds) from a single region evaluation.
+   *
+   * Returned by `stampValues` so that a caller who needs all three
+   * Newton-Raphson stamp quantities (drain current, transconductance,
+   * output conductance) pays the cost of the region-branch and
+   * shared-subexpression math exactly once instead of three times.
+   */
+  struct StampValues {
+    double id;  ///< Drain current.
+    double gm;  ///< dId/dVgs.
+    double gds; ///< dId/dVds.
+  };
+
+  /**
+   * @brief Compute {id, gm, gds} together.
+   *
+   * Equivalent to calling `current`, `transconductance`, and
+   * `outputConductance` successively, but evaluates the region branch
+   * and shared subexpressions (VGST, LAMBDA_FACTOR, ratio, id_at_th_base)
+   * exactly once. The 2242-MOSFET Intel 4004 NR stamp path invokes all
+   * three per transistor per iteration; this combined call is the fast
+   * path for that workload.
+   *
+   * @note RT-safe (pure math, no allocations).
+   */
+  [[nodiscard]] SIM_HD_FI static StampValues stampValues(double vgs, double vds,
+                                                      const MosfetLevel1Params& params) noexcept {
+    if (vgs <= params.Vth - params.Vsmooth) {
+      return {0.0, 0.0, 0.0};
+    }
+
+    if (vgs < params.Vth && params.Vsmooth > 0.0) {
+      const double VGST_EFF = vgs - (params.Vth - params.Vsmooth);
+      const double RATIO = VGST_EFF / params.Vsmooth;
+      const double ID_AT_TH_BASE = 0.5 * params.Kp * params.Vsmooth * params.Vsmooth;
+      const double LAMBDA_FACTOR = 1.0 + params.lambda * vds;
+      const double ID_AT_TH = ID_AT_TH_BASE * LAMBDA_FACTOR;
+      return {ID_AT_TH * RATIO * RATIO, ID_AT_TH * 2.0 * RATIO / params.Vsmooth,
+              ID_AT_TH_BASE * params.lambda * RATIO * RATIO};
+    }
+
+    const double VGST = vgs - params.Vth;
+    const double LAMBDA_FACTOR = 1.0 + params.lambda * vds;
+
+    if (vds < VGST) {
+      // Linear region.
+      const double ID_BASE = params.Kp * (VGST * vds - 0.5 * vds * vds);
+      const double DID_DVDS_BASE = params.Kp * (VGST - vds);
+      return {ID_BASE * LAMBDA_FACTOR, params.Kp * vds * LAMBDA_FACTOR,
+              DID_DVDS_BASE * LAMBDA_FACTOR + ID_BASE * params.lambda};
+    }
+
+    // Saturation region.
+    const double ID_SAT = 0.5 * params.Kp * VGST * VGST;
+    return {ID_SAT * LAMBDA_FACTOR, params.Kp * VGST * LAMBDA_FACTOR, ID_SAT * params.lambda};
+  }
+
   /**
    * @brief Compute drain current using Shichman-Hodges equations.
    *
@@ -214,9 +273,10 @@ struct MosfetLevel1 {
    */
   static void stamp(MnaSystem& mna, NetID drainNet, NetID gateNet, NetID sourceNet, double vgs,
                     double vds, const MosfetLevel1Params& params) {
-    const double ID = current(vgs, vds, params);
-    const double GM = transconductance(vgs, vds, params);
-    const double GDS = outputConductance(vgs, vds, params);
+    const auto SV = stampValues(vgs, vds, params);
+    const double ID = SV.id;
+    const double GM = SV.gm;
+    const double GDS = SV.gds;
     const double IEQ = ID - GM * vgs - GDS * vds;
 
     // Symmetric gds conductance (drain-source resistance)
@@ -268,9 +328,10 @@ struct MosfetLevel1 {
     double vgsC = std::max(evalVgs, 0.0);
     double vdsC = std::max(evalVds, 0.0);
 
-    double id = current(vgsC, vdsC, params);
-    double gm = transconductance(vgsC, vdsC, params);
-    double gdsDevice = outputConductance(vgsC, vdsC, params);
+    const auto SV = stampValues(vgsC, vdsC, params);
+    double id = SV.id;
+    double gm = SV.gm;
+    double gdsDevice = SV.gds;
     double gdsStamp = std::max(gdsDevice, gmin);
     double idEq = id - gm * evalVgs - gdsDevice * evalVds;
 
@@ -317,9 +378,10 @@ struct MosfetLevel1 {
     double vsgC = std::max(evalVsg, 0.0);
     double vsdC = std::max(evalVsd, 0.0);
 
-    double id = current(vsgC, vsdC, params);
-    double gm = transconductance(vsgC, vsdC, params);
-    double gdsDevice = outputConductance(vsgC, vsdC, params);
+    const auto SV = stampValues(vsgC, vsdC, params);
+    double id = SV.id;
+    double gm = SV.gm;
+    double gdsDevice = SV.gds;
     double gdsStamp = std::max(gdsDevice, gmin);
     double idEq = id - gm * evalVsg - gdsDevice * evalVsd;
 

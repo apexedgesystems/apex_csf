@@ -83,7 +83,7 @@ TEST(GateLevelEvaluation, NorAllInactive) {
   gate.outputNet = 5;
   gate.inputNets = {1, 2, 3};
 
-  std::vector<bool> state(10, true);
+  std::vector<std::uint8_t> state(10, true);
   EXPECT_TRUE(Intel4004GateLevel::evaluateNor(gate, state));
 }
 
@@ -93,7 +93,7 @@ TEST(GateLevelEvaluation, NorOneActive) {
   gate.outputNet = 5;
   gate.inputNets = {1, 2, 3};
 
-  std::vector<bool> state(10, true);
+  std::vector<std::uint8_t> state(10, true);
   state[2] = false;
   EXPECT_FALSE(Intel4004GateLevel::evaluateNor(gate, state));
 }
@@ -104,7 +104,7 @@ TEST(GateLevelEvaluation, NorAllActive) {
   gate.outputNet = 5;
   gate.inputNets = {1, 2, 3};
 
-  std::vector<bool> state(10, true);
+  std::vector<std::uint8_t> state(10, true);
   state[1] = false;
   state[2] = false;
   state[3] = false;
@@ -117,7 +117,7 @@ TEST(GateLevelEvaluation, InverterTruthTable) {
   gate.outputNet = 5;
   gate.inputNets = {1};
 
-  std::vector<bool> state(10, true);
+  std::vector<std::uint8_t> state(10, true);
 
   state[1] = true;
   EXPECT_TRUE(Intel4004GateLevel::evaluateNor(gate, state));

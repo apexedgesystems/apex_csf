@@ -129,9 +129,16 @@ public:
    *
    * @return New output value.
    */
-  static bool evaluateNor(const Gate& gate, const std::vector<bool>& netState) {
-    for (auto inputNet : gate.inputNets) {
-      if (!netState[inputNet]) {
+  static bool evaluateNor(const Gate& gate, const std::vector<std::uint8_t>& netState) {
+    // Indexed loop with raw pointers: in a debug build, range-for on
+    // std::vector<unsigned int> does not inline the iterator operators
+    // (~20% self-time in operator== / operator++ / operator*). Direct
+    // indexing produces a single load per iteration.
+    const auto* inputs = gate.inputNets.data();
+    const std::size_t N = gate.inputNets.size();
+    const auto* state = netState.data();
+    for (std::size_t i = 0; i < N; ++i) {
+      if (!state[inputs[i]]) {
         return LOW;
       }
     }
@@ -147,13 +154,11 @@ public:
    * @return Number of evaluation rounds needed.
    */
   std::size_t propagate(std::size_t maxRounds = 100) {
-    std::vector<bool> changed(netCount_, false);
-
     for (std::size_t round = 0; round < maxRounds; ++round) {
       bool anyChanged = false;
 
       for (auto& gate : gates_) {
-        bool newVal = evaluateNor(gate, netState_);
+        std::uint8_t newVal = evaluateNor(gate, netState_) ? 1 : 0;
         if (newVal != netState_[gate.outputNet]) {
           netState_[gate.outputNet] = newVal;
           anyChanged = true;
@@ -164,7 +169,7 @@ public:
       // holds the destination value when the gate closes.
       for (auto& pg : passGates_) {
         if (!netState_[pg.clockNet]) {
-          bool srcVal = netState_[pg.sourceNet];
+          std::uint8_t srcVal = netState_[pg.sourceNet];
           if (srcVal != netState_[pg.drainNet]) {
             netState_[pg.drainNet] = srcVal;
             anyChanged = true;
@@ -306,7 +311,7 @@ public:
 private:
   std::size_t netCount_ = 0;
   mna::NetID vdd_ = 0;
-  std::vector<bool> netState_;       ///< Current logic state per net.
+  std::vector<std::uint8_t> netState_; ///< Current logic state per net (0/1).
   std::set<mna::NetID> timingNets_;  ///< Nets driven by clock/timing signals.
   std::set<mna::NetID> dynamicNets_; ///< Nets only driven by pass gates (need state hold).
 

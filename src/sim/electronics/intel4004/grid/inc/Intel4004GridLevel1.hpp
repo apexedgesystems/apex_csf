@@ -1031,9 +1031,10 @@ struct Intel4004GridLevel1 : Intel4004Grid {
 
       double vgsM = std::max(evalVgs, 0.0);
       double vdsM = std::max(evalVds, 0.0);
-      const double id = MosfetLevel1::current(vgsM, vdsM, PARAMS);
-      const double gm = MosfetLevel1::transconductance(vgsM, vdsM, PARAMS);
-      const double gdsDevice = MosfetLevel1::outputConductance(vgsM, vdsM, PARAMS);
+      const auto SV = MosfetLevel1::stampValues(vgsM, vdsM, PARAMS);
+      const double id = SV.id;
+      const double gm = SV.gm;
+      const double gdsDevice = SV.gds;
       const double gdsStamp = std::max(gdsDevice, G_MIN);
 
       // Compensation current uses DEVICE gds, not G_MIN-augmented.

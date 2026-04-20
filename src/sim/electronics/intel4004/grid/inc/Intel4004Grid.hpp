@@ -175,6 +175,8 @@ struct Intel4004Grid {
   std::uint8_t dataBusDrive_ = 0;      ///< Nibble to drive on D0-D3 during M1/M2.
   bool dataBusDriving_ = false;        ///< True when ROM is driving the bus.
   std::size_t bytesFetched_ = 0;       ///< ROM bytes served so far.
+
+public:
   std::uint16_t lastCapturedAddr_ = 0; ///< Address read from D0-D3 during A1-A3.
   double stepDt_ = 0.0;                ///< Timestep for current solve (set before step).
 

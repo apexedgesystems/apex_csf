@@ -19,11 +19,12 @@
 
 #include "src/sim/electronics/intel4004/netlist/inc/Intel4004Netlist.hpp"
 
+#include <algorithm>
 #include <fstream>
-#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 
 namespace sim::electronics::intel4004 {
 
@@ -41,7 +42,12 @@ namespace sim::electronics::intel4004 {
  */
 inline Intel4004Netlist parseSpiceNetlist(const std::string& content) {
   Intel4004Netlist result;
-  std::set<std::string> netSet;
+  // unordered_set avoids the per-insert log(N) string compare of std::set.
+  // uniqueNets is sorted once at the end to preserve the sorted-output
+  // contract documented on Intel4004Netlist::uniqueNets.
+  std::unordered_set<std::string> netSet;
+  netSet.reserve(2048);
+  result.transistors.reserve(2242);
 
   std::istringstream stream(content);
   std::string line;
@@ -75,6 +81,7 @@ inline Intel4004Netlist parseSpiceNetlist(const std::string& content) {
   }
 
   result.uniqueNets.assign(netSet.begin(), netSet.end());
+  std::sort(result.uniqueNets.begin(), result.uniqueNets.end());
 
   return result;
 }

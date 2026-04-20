@@ -356,9 +356,24 @@ private:
   std::vector<double> cscAx_;           ///< CSC values.
   std::vector<int> colWork_;            ///< Reusable workspace for counting sort.
 
+  // Cached CSC pattern: once buildCsc has established cscAp_/cscAi_ for a
+  // given triplet+vsource structure, subsequent calls with the same (row,col)
+  // sequence skip the sort/merge and only rescatter values. The mapping from
+  // triplet/vsource origin -> cscAx_ slot is recorded on the slow path.
+  std::vector<int> tripletToCscIdx_;          ///< Per-triplet slot in cscAx_ (-1 if filtered).
+  std::vector<int> vsourceCscIdx_;            ///< 4 slots per vsource: [pos-row, vsrow-pos, neg-row, vsrow-neg] (-1 if ground).
+  int groundCscIdx_ = -1;                     ///< Slot of the {0,0,1.0} ground diagonal entry.
+  bool cscPatternCached_ = false;             ///< True iff the cached pattern is valid.
+  std::vector<std::int64_t> cachedRowCol_;    ///< Packed (row<<32 | col) per triplet for SIMD match.
+  std::vector<std::int64_t> cachedVsourceRc_; ///< Packed (pos<<32 | neg) per vsource for match.
+
   void freeKluFactors();
   bool kluSolve(double* rhsSolution, std::size_t dim);
   void buildCsc();
+  bool patternMatchesCached() const noexcept;
+  void buildCscFromCachedPattern();
+  void recordCscPattern();
+
 
   /**
    * @brief Build RHS vector from current injections and voltage sources.

@@ -75,7 +75,141 @@ std::size_t MnaSystemSparse::addVoltageSource(NetID pos, NetID neg, double v) {
 
 /* ----------------------------- Matrix Build ----------------------------- */
 
+namespace {
+inline std::int64_t packRowCol(int row, int col) noexcept {
+  return (static_cast<std::int64_t>(static_cast<std::uint32_t>(row)) << 32) |
+         static_cast<std::uint32_t>(col);
+}
+} // namespace
+
+bool MnaSystemSparse::patternMatchesCached() const noexcept {
+  if (!cscPatternCached_) {
+    return false;
+  }
+  if (tripletToCscIdx_.size() != triplets_.size()) {
+    return false;
+  }
+  if (vsourceCscIdx_.size() != vsources_.size() * 4) {
+    return false;
+  }
+  const std::size_t N_TRIP = triplets_.size();
+  const CooEntry* TRIP = triplets_.data();
+  const std::int64_t* CACHED = cachedRowCol_.data();
+  for (std::size_t i = 0; i < N_TRIP; ++i) {
+    if (packRowCol(TRIP[i].row, TRIP[i].col) != CACHED[i]) {
+      return false;
+    }
+  }
+  const std::size_t N_VS = vsources_.size();
+  const auto* VS = vsources_.data();
+  const std::int64_t* CACHED_VS = cachedVsourceRc_.data();
+  for (std::size_t i = 0; i < N_VS; ++i) {
+    if (packRowCol(static_cast<int>(VS[i].pos), static_cast<int>(VS[i].neg)) != CACHED_VS[i]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void MnaSystemSparse::buildCscFromCachedPattern() {
+  // Zero only the value array; pattern (cscAp_/cscAi_) is unchanged.
+  std::fill(cscAx_.begin(), cscAx_.end(), 0.0);
+
+  // Scatter triplet values via the pre-recorded mapping.
+  const std::size_t N_TRIP = triplets_.size();
+  const int* MAP = tripletToCscIdx_.data();
+  const CooEntry* TRIP = triplets_.data();
+  double* AX = cscAx_.data();
+  for (std::size_t i = 0; i < N_TRIP; ++i) {
+    int slot = MAP[i];
+    if (slot >= 0) {
+      AX[slot] += TRIP[i].value;
+    }
+  }
+
+  // Scatter voltage-source stamps (always +/- 1.0; written, not accumulated,
+  // since each vsource produces unique (row,col) pairs outside the triplet set).
+  const std::size_t N_VS = vsources_.size();
+  for (std::size_t i = 0; i < N_VS; ++i) {
+    int posRow = vsourceCscIdx_[4 * i + 0];      // (pos, vsRow) = 1.0
+    int posSym = vsourceCscIdx_[4 * i + 1];      // (vsRow, pos) = 1.0
+    int negRow = vsourceCscIdx_[4 * i + 2];      // (neg, vsRow) = -1.0
+    int negSym = vsourceCscIdx_[4 * i + 3];      // (vsRow, neg) = -1.0
+    if (posRow >= 0) AX[posRow] = 1.0;
+    if (posSym >= 0) AX[posSym] = 1.0;
+    if (negRow >= 0) AX[negRow] = -1.0;
+    if (negSym >= 0) AX[negSym] = -1.0;
+  }
+
+  // Ground diagonal entry {0,0,1.0}.
+  if (groundCscIdx_ >= 0) {
+    AX[groundCscIdx_] = 1.0;
+  }
+}
+
+void MnaSystemSparse::recordCscPattern() {
+  // Binary-search each triplet's (row,col) in cscAi_[cscAp_[col]..cscAp_[col+1]).
+  // buildCsc filters (row==0 || col==0), so those triplets get -1.
+  const std::size_t N_TRIP = triplets_.size();
+  tripletToCscIdx_.resize(N_TRIP);
+  cachedRowCol_.resize(N_TRIP);
+  for (std::size_t i = 0; i < N_TRIP; ++i) {
+    int row = triplets_[i].row;
+    int col = triplets_[i].col;
+    cachedRowCol_[i] = packRowCol(row, col);
+    if (row == 0 || col == 0) {
+      tripletToCscIdx_[i] = -1;
+      continue;
+    }
+    int start = cscAp_[col];
+    int end = cscAp_[col + 1];
+    auto it = std::lower_bound(cscAi_.begin() + start, cscAi_.begin() + end, row);
+    tripletToCscIdx_[i] = static_cast<int>(it - cscAi_.begin());
+  }
+
+  // Record voltage-source slots (4 per vsource, each -1 if pos/neg == 0).
+  const std::size_t N_VS = vsources_.size();
+  const std::size_t N = netCount_;
+  vsourceCscIdx_.resize(4 * N_VS);
+  cachedVsourceRc_.resize(N_VS);
+  for (std::size_t i = 0; i < N_VS; ++i) {
+    int pos = static_cast<int>(vsources_[i].pos);
+    int neg = static_cast<int>(vsources_[i].neg);
+    int vsRow = static_cast<int>(N + i);
+    cachedVsourceRc_[i] = packRowCol(pos, neg);
+    auto lookup = [&](int row, int col) -> int {
+      int start = cscAp_[col];
+      int end = cscAp_[col + 1];
+      auto it = std::lower_bound(cscAi_.begin() + start, cscAi_.begin() + end, row);
+      return static_cast<int>(it - cscAi_.begin());
+    };
+    vsourceCscIdx_[4 * i + 0] = (pos != 0) ? lookup(pos, vsRow) : -1;
+    vsourceCscIdx_[4 * i + 1] = (pos != 0) ? lookup(vsRow, pos) : -1;
+    vsourceCscIdx_[4 * i + 2] = (neg != 0) ? lookup(neg, vsRow) : -1;
+    vsourceCscIdx_[4 * i + 3] = (neg != 0) ? lookup(vsRow, neg) : -1;
+  }
+
+  // Ground diagonal {0,0,1.0} lives at cscAp_[0].
+  if (!cscAp_.empty()) {
+    int start = cscAp_[0];
+    int end = cscAp_[1];
+    auto it = std::lower_bound(cscAi_.begin() + start, cscAi_.begin() + end, 0);
+    groundCscIdx_ = (it != cscAi_.begin() + end && *it == 0)
+                        ? static_cast<int>(it - cscAi_.begin())
+                        : -1;
+  } else {
+    groundCscIdx_ = -1;
+  }
+
+  cscPatternCached_ = true;
+}
+
 void MnaSystemSparse::buildCsc() {
+  if (patternMatchesCached()) {
+    buildCscFromCachedPattern();
+    return;
+  }
+
   std::size_t n = netCount_;
   std::size_t m = vsources_.size();
   int dim = static_cast<int>(n + m);
@@ -166,6 +300,8 @@ void MnaSystemSparse::buildCsc() {
     }
   }
   cscAp_[dim] = static_cast<int>(writePos);
+
+  recordCscPattern();
 }
 
 void MnaSystemSparse::buildRhsVector() {
