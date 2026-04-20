@@ -27,6 +27,35 @@ target_link_libraries(
 )
 
 # ------------------------------------------------------------------------------
+# CUDA Acceleration (Optional)
+# ------------------------------------------------------------------------------
+
+if (CMAKE_CUDA_COMPILER)
+  set(CUDA_SOURCES "${SRC_DIR}/MosfetLevel1BatchCuda.cu")
+
+  apex_add_library(
+    NAME
+    ${LIB_NAME}_cuda
+    TYPE
+    OBJECT
+    INC
+    "${INC_DIR}"
+    SRC
+    ${CUDA_SOURCES}
+    DEPS_PUBLIC
+    ${LIB_NAME}
+  )
+
+  set_target_properties(
+    ${LIB_NAME}_cuda PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON
+  )
+
+  message(STATUS "devices/nonlinear: CUDA acceleration enabled")
+else ()
+  message(STATUS "devices/nonlinear: CUDA not available (CPU-only)")
+endif ()
+
+# ------------------------------------------------------------------------------
 # Opt-ins (coverage, doxygen, UPX)
 # ------------------------------------------------------------------------------
 

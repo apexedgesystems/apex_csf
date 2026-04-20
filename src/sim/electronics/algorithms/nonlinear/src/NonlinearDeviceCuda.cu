@@ -35,8 +35,9 @@ namespace sim::electronics::nonlinear::cuda {
  * @param conductances Output: device conductances.
  * @param n Number of devices.
  */
-__global__ void evaluateDevicesKernel(const DeviceParams* deviceParams, const double* nodeVoltages,
-                                      double* currents, double* conductances, int n) {
+__global__ __launch_bounds__(256, 6) void evaluateDevicesKernel(
+    const DeviceParams* deviceParams, const double* nodeVoltages, double* currents,
+    double* conductances, int n) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= n) {
     return;
@@ -127,9 +128,9 @@ __global__ void evaluateDevicesKernel(const DeviceParams* deviceParams, const do
  * @param netCount Number of nets (matrix dimension).
  * @param n Number of devices.
  */
-__global__ void stampDevicesKernel(const DeviceParams* deviceParams, const double* currents,
-                                   const double* conductances, const double* nodeVoltages,
-                                   double* G_matrix, double* I_vector, int netCount, int n) {
+__global__ __launch_bounds__(256, 6) void stampDevicesKernel(
+    const DeviceParams* deviceParams, const double* currents, const double* conductances,
+    const double* nodeVoltages, double* G_matrix, double* I_vector, int netCount, int n) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= n) {
     return;
@@ -171,7 +172,9 @@ __global__ void stampDevicesKernel(const DeviceParams* deviceParams, const doubl
 
 void evaluateDevicesCuda(const DeviceParams* d_deviceParams, const double* d_nodeVoltages,
                          double* d_currents, double* d_conductances, int deviceCount) {
-  constexpr int BLOCK_SIZE = 256;
+  // Smaller block size spreads blocks over more SMs for modest device
+  // counts (e.g. deviceCount=10k gives grid=79 at TPB=128, ~SM-full).
+  constexpr int BLOCK_SIZE = 128;
   int numBlocks = (deviceCount + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   evaluateDevicesKernel<<<numBlocks, BLOCK_SIZE>>>(d_deviceParams, d_nodeVoltages, d_currents,
@@ -183,7 +186,7 @@ void evaluateDevicesCuda(const DeviceParams* d_deviceParams, const double* d_nod
 void stampDevicesCuda(const DeviceParams* d_deviceParams, const double* d_currents,
                       const double* d_conductances, const double* d_nodeVoltages,
                       double* d_G_matrix, double* d_I_vector, int netCount, int deviceCount) {
-  constexpr int BLOCK_SIZE = 256;
+  constexpr int BLOCK_SIZE = 128;
   int numBlocks = (deviceCount + BLOCK_SIZE - 1) / BLOCK_SIZE;
 
   stampDevicesKernel<<<numBlocks, BLOCK_SIZE>>>(d_deviceParams, d_currents, d_conductances,

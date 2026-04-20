@@ -45,8 +45,9 @@ constexpr int THREADS_PER_BLOCK = 256;
  * @param batch Number of systems.
  * @param success Output success flags (batch bools).
  */
-__global__ void solveBatch8x8Kernel(const double* SIM_RESTRICT As, double* SIM_RESTRICT bs,
-                                    int batch, bool* SIM_RESTRICT success) {
+__global__ __launch_bounds__(64, 24) void solveBatch8x8Kernel(
+    const double* SIM_RESTRICT As, double* SIM_RESTRICT bs, int batch,
+    bool* SIM_RESTRICT success) {
   const int IDX = blockIdx.x * blockDim.x + threadIdx.x;
   if (IDX >= batch)
     return;
@@ -138,8 +139,9 @@ __global__ void solveBatch8x8Kernel(const double* SIM_RESTRICT As, double* SIM_R
 /**
  * @brief Kernel: Batch solve for 16x16 systems.
  */
-__global__ void solveBatch16x16Kernel(const double* SIM_RESTRICT As, double* SIM_RESTRICT bs,
-                                      int batch, bool* SIM_RESTRICT success) {
+__global__ __launch_bounds__(64, 24) void solveBatch16x16Kernel(
+    const double* SIM_RESTRICT As, double* SIM_RESTRICT bs, int batch,
+    bool* SIM_RESTRICT success) {
   const int IDX = blockIdx.x * blockDim.x + threadIdx.x;
   if (IDX >= batch)
     return;
@@ -216,14 +218,15 @@ __global__ void solveBatch16x16Kernel(const double* SIM_RESTRICT As, double* SIM
 /**
  * @brief Kernel: Batch solve for 32x32 systems.
  *
- * Uses shared memory for better performance with larger matrices.
- * One thread block per system, threads cooperate on elimination.
- *
- * Optimized: Uses 128 threads (4 warps) for better occupancy.
- * Each row update is parallelized across multiple threads.
+ * Shared-mem A + per-block parallelism across rows. 128 threads per
+ * block (4 warps, 4 threads per row). `__launch_bounds__(128, 12)`
+ * caps registers at 40 so the register block-limit matches the warp
+ * block-limit; shared memory (A[N][N+1] = 8.4 KB) is the remaining
+ * binding occupancy constraint.
  */
-__global__ void solveBatch32x32Kernel(const double* SIM_RESTRICT As, double* SIM_RESTRICT bs,
-                                      int batch, bool* SIM_RESTRICT success) {
+__global__ __launch_bounds__(128, 12) void solveBatch32x32Kernel(
+    const double* SIM_RESTRICT As, double* SIM_RESTRICT bs, int batch,
+    bool* SIM_RESTRICT success) {
   constexpr int N = 32;
   constexpr int THREADS = 128;                 // 4 warps for better occupancy
   constexpr int THREADS_PER_ROW = THREADS / N; // 4 threads per row
@@ -384,93 +387,105 @@ __global__ void solveBatch32x32Kernel(const double* SIM_RESTRICT As, double* SIM
  * Optimized: Uses 256 threads (8 warps) with 4 threads per row for
  * parallelized column updates during elimination.
  */
-__global__ void solveBatch64x64Kernel(const double* SIM_RESTRICT As, double* SIM_RESTRICT bs,
-                                      int batch, bool* SIM_RESTRICT success) {
+// __launch_bounds__(256, 6) pins 6 blocks per SM = 48 warps = 100%
+// theoretical occupancy (48 warp-slot max / 8 warps per block).
+__global__ __launch_bounds__(256, 6) void solveBatch64x64Kernel(
+    const double* SIM_RESTRICT As, double* SIM_RESTRICT bs, int batch,
+    bool* SIM_RESTRICT success) {
   constexpr int N = 64;
-  constexpr int THREADS = 256;                 // 8 warps for maximum occupancy
-  constexpr int THREADS_PER_ROW = THREADS / N; // 4 threads per row
+  constexpr int THREADS = 256;
+  constexpr int LANES_PER_ROW = THREADS / N; // 4
+  constexpr int COLS_PER_LANE = N / LANES_PER_ROW; // 16
 
   const int sysIdx = blockIdx.x;
   if (sysIdx >= batch)
     return;
 
   const int tid = threadIdx.x;
-  const int row = tid / THREADS_PER_ROW;  // Which row this thread works on
-  const int lane = tid % THREADS_PER_ROW; // Position within row group
+  const int row = tid / LANES_PER_ROW;
+  const int lane = tid % LANES_PER_ROW;
 
-  // Shared memory
-  __shared__ double A[N][N + 1]; // +1 avoids bank conflicts
-  __shared__ double b[N];
-  __shared__ int pivotRow;
+  // A lives in global; only the pivot row, b, and a few scalars are in
+  // shared memory. Holding A[64][65] in shared (33.3 KB) caps blocks
+  // per SM at 2 via the shared-mem block-limit. The global layout keeps
+  // static shared at ~1 KB so occupancy is limited by the warp slot
+  // count instead.
+  __shared__ double pivotR[N + 1]; // +1 keeps bank-conflict avoidance
+  __shared__ double bSh[N];        // 0.5 KB
+  __shared__ int pivotIdx;
   __shared__ bool singular;
 
+  double* A = const_cast<double*>(As) + sysIdx * N * N;
+  double* bout = bs + sysIdx * N;
+
+  // Load b into shared (one thread per element).
+  if (tid < N) {
+    bSh[tid] = bout[tid];
+  }
   if (tid == 0)
     singular = false;
   __syncthreads();
 
-  // Load matrix (4 threads per row, strided access)
-  const double* Ain = As + sysIdx * N * N;
-  double* bout = bs + sysIdx * N;
-
-  if (row < N) {
-    for (int j = lane; j < N; j += THREADS_PER_ROW) {
-      A[row][j] = Ain[row * N + j];
-    }
-    if (lane == 0) {
-      b[row] = bout[row];
-    }
-  }
-  __syncthreads();
-
   // Gaussian elimination
   for (int k = 0; k < N && !singular; ++k) {
-    // Find pivot (thread 0)
+    // Serial scan for the pivot in thread 0. Parallel warp-shuffle
+    // variants add register pressure that outweighs the shorter scan.
     if (tid == 0) {
       int maxRow = k;
-      double maxVal = fabs(A[k][k]);
+      double maxVal = fabs(A[k * N + k]);
       for (int i = k + 1; i < N; ++i) {
-        double val = fabs(A[i][k]);
-        if (val > maxVal) {
-          maxVal = val;
+        double v = fabs(A[i * N + k]);
+        if (v > maxVal) {
+          maxVal = v;
           maxRow = i;
         }
       }
       if (maxVal < 1e-15) {
         singular = true;
       }
-      pivotRow = maxRow;
+      pivotIdx = maxRow;
     }
     __syncthreads();
 
     if (singular)
       break;
 
-    // Swap rows (parallel across columns)
-    int maxRow = pivotRow;
-    if (maxRow != k) {
-      for (int j = tid; j < N; j += THREADS) {
-        double tmp = A[k][j];
-        A[k][j] = A[maxRow][j];
-        A[maxRow][j] = tmp;
-      }
-      if (tid == 0) {
-        double tmp = b[k];
-        b[k] = b[maxRow];
-        b[maxRow] = tmp;
-      }
+    int maxRow = pivotIdx;
+
+    // Swap rows in global if needed. 64 threads, one column each.
+    if (maxRow != k && tid < N) {
+      double t = A[k * N + tid];
+      A[k * N + tid] = A[maxRow * N + tid];
+      A[maxRow * N + tid] = t;
+    }
+    if (maxRow != k && tid == 0) {
+      double t = bSh[k];
+      bSh[k] = bSh[maxRow];
+      bSh[maxRow] = t;
     }
     __syncthreads();
 
-    // Eliminate - each thread group handles one row below pivot
-    // Parallelize column updates within each row
+    // Load pivot row k into shared. 64 threads, one column each.
+    if (tid < N) {
+      pivotR[tid] = A[k * N + tid];
+    }
+    __syncthreads();
+
+    // Eliminate rows below pivot. Each (row, lane) handles 16 consecutive
+    // columns of one row. Reads A[row][k] and A[row][cols] from global,
+    // writes back A[row][cols].
     if (row > k && row < N) {
-      double factor = A[row][k] / A[k][k];
-      // Each thread in the row group updates different columns
-      for (int j = k + 1 + lane; j < N; j += THREADS_PER_ROW) {
-        A[row][j] -= factor * A[k][j];
+      double factor = A[row * N + k] / pivotR[k];
+      const int cBeg = lane * COLS_PER_LANE;
+      const int cEnd = cBeg + COLS_PER_LANE;
+#pragma unroll
+      for (int j = cBeg; j < cEnd; ++j) {
+        if (j > k) {
+          A[row * N + j] -= factor * pivotR[j];
+        }
       }
       if (lane == 0) {
-        b[row] -= factor * b[k];
+        bSh[row] -= factor * bSh[k];
       }
     }
     __syncthreads();
@@ -482,49 +497,33 @@ __global__ void solveBatch64x64Kernel(const double* SIM_RESTRICT As, double* SIM
     return;
   }
 
-  // Parallel back substitution with unrolled reduction
-  __shared__ double partialSums[THREADS];
-
-#pragma unroll 4
+  // Back substitution. Reads A[i][>i] from global (one row per outer
+  // step), uses small warp-reduce + cross-warp shared accumulator
+  // (8 elements) instead of the old 256-element partialSums.
+  __shared__ double warpSum[8];
   for (int i = N - 1; i >= 0; --i) {
-    // Each thread computes partial sum for columns it handles
     double mySum = 0.0;
-#pragma unroll 4
     for (int j = i + 1 + tid; j < N; j += THREADS) {
-      mySum += A[i][j] * b[j];
+      mySum += A[i * N + j] * bSh[j];
     }
-    partialSums[tid] = mySum;
+    // Intra-warp reduction.
+#pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+      mySum += __shfl_down_sync(0xffffffff, mySum, offset);
+    }
+    if ((tid & 31) == 0) {
+      warpSum[tid >> 5] = mySum;
+    }
     __syncthreads();
-
-    // Unrolled reduction (256 threads)
-    if (tid < 128)
-      partialSums[tid] += partialSums[tid + 128];
-    __syncthreads();
-    if (tid < 64)
-      partialSums[tid] += partialSums[tid + 64];
-    __syncthreads();
-    if (tid < 32)
-      partialSums[tid] += partialSums[tid + 32];
-    __syncthreads();
-    if (tid < 16)
-      partialSums[tid] += partialSums[tid + 16];
-    __syncthreads();
-    if (tid < 8)
-      partialSums[tid] += partialSums[tid + 8];
-    __syncthreads();
-    if (tid < 4)
-      partialSums[tid] += partialSums[tid + 4];
-    __syncthreads();
-    if (tid < 2)
-      partialSums[tid] += partialSums[tid + 2];
-    __syncthreads();
-    if (tid < 1)
-      partialSums[tid] += partialSums[tid + 1];
-    __syncthreads();
-
-    // Thread 0 finalizes this row
-    if (tid == 0) {
-      b[i] = (b[i] - partialSums[0]) / A[i][i];
+    if (tid < 32) {
+      double v = (tid < 8) ? warpSum[tid] : 0.0;
+#pragma unroll
+      for (int offset = 4; offset > 0; offset >>= 1) {
+        v += __shfl_down_sync(0xffffffff, v, offset);
+      }
+      if (tid == 0) {
+        bSh[i] = (bSh[i] - v) / A[i * N + i];
+      }
     }
     __syncthreads();
   }
@@ -533,9 +532,9 @@ __global__ void solveBatch64x64Kernel(const double* SIM_RESTRICT As, double* SIM
     success[sysIdx] = true;
   }
 
-  // Write results (parallel)
-  if (row < N && lane == 0) {
-    bout[row] = b[row];
+  // Write b back (64 threads, one element each).
+  if (tid < N) {
+    bout[tid] = bSh[tid];
   }
 }
 
@@ -550,8 +549,9 @@ __global__ void solveBatch64x64Kernel(const double* SIM_RESTRICT As, double* SIM
  *
  * Single-precision variant for higher throughput when precision allows.
  */
-__global__ void solveBatch8x8KernelF32(const float* SIM_RESTRICT As, float* SIM_RESTRICT bs,
-                                       int batch, bool* SIM_RESTRICT success) {
+__global__ __launch_bounds__(64, 24) void solveBatch8x8KernelF32(
+    const float* SIM_RESTRICT As, float* SIM_RESTRICT bs, int batch,
+    bool* SIM_RESTRICT success) {
   const int IDX = blockIdx.x * blockDim.x + threadIdx.x;
   if (IDX >= batch)
     return;
@@ -635,8 +635,9 @@ __global__ void solveBatch8x8KernelF32(const float* SIM_RESTRICT As, float* SIM_
 /**
  * @brief Kernel: Batch solve for 16x16 systems (FP32).
  */
-__global__ void solveBatch16x16KernelF32(const float* SIM_RESTRICT As, float* SIM_RESTRICT bs,
-                                         int batch, bool* SIM_RESTRICT success) {
+__global__ __launch_bounds__(64, 24) void solveBatch16x16KernelF32(
+    const float* SIM_RESTRICT As, float* SIM_RESTRICT bs, int batch,
+    bool* SIM_RESTRICT success) {
   const int IDX = blockIdx.x * blockDim.x + threadIdx.x;
   if (IDX >= batch)
     return;
@@ -710,8 +711,9 @@ __global__ void solveBatch16x16KernelF32(const float* SIM_RESTRICT As, float* SI
 /**
  * @brief Kernel: Batch solve for 32x32 systems (FP32).
  */
-__global__ void solveBatch32x32KernelF32(const float* SIM_RESTRICT As, float* SIM_RESTRICT bs,
-                                         int batch, bool* SIM_RESTRICT success) {
+__global__ __launch_bounds__(128, 12) void solveBatch32x32KernelF32(
+    const float* SIM_RESTRICT As, float* SIM_RESTRICT bs, int batch,
+    bool* SIM_RESTRICT success) {
   constexpr int N = 32;
   constexpr int THREADS = 128;
   constexpr int THREADS_PER_ROW = THREADS / N;
@@ -852,8 +854,9 @@ __global__ void solveBatch32x32KernelF32(const float* SIM_RESTRICT As, float* SI
 /**
  * @brief Kernel: Batch solve for 64x64 systems (FP32).
  */
-__global__ void solveBatch64x64KernelF32(const float* SIM_RESTRICT As, float* SIM_RESTRICT bs,
-                                         int batch, bool* SIM_RESTRICT success) {
+__global__ __launch_bounds__(256, 6) void solveBatch64x64KernelF32(
+    const float* SIM_RESTRICT As, float* SIM_RESTRICT bs, int batch,
+    bool* SIM_RESTRICT success) {
   constexpr int N = 64;
   constexpr int THREADS = 256;
   constexpr int THREADS_PER_ROW = THREADS / N;
@@ -1083,14 +1086,21 @@ bool solveBatchCustom(MnaBatchWorkspace& ws, const double* As, double* bs, std::
   // Select kernel based on dimension
   int intBatch = static_cast<int>(batch);
   if (dim == 8) {
-    dim3 grid((batch + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK);
-    dim3 block(THREADS_PER_BLOCK);
+    // TPB = 64 keeps the grid large enough to span many SMs even on
+    // modest batches (batch / 256 would give only 4 blocks at 1024).
+    constexpr int TPB_8 = 64;
+    dim3 grid((batch + TPB_8 - 1) / TPB_8);
+    dim3 block(TPB_8);
     solveBatch8x8Kernel<<<grid, block, 0, s>>>(static_cast<double*>(ws.dA),
                                                static_cast<double*>(ws.db), intBatch,
                                                static_cast<bool*>(ws.dSuccess));
   } else if (dim == 16) {
-    dim3 grid((batch + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK);
-    dim3 block(THREADS_PER_BLOCK);
+    // TPB = 64 — same rationale as dim=8. Each thread owns one full
+    // 16x16 system in local memory; smaller blocks keep enough grid
+    // parallelism for typical batch sizes.
+    constexpr int TPB_16 = 64;
+    dim3 grid((batch + TPB_16 - 1) / TPB_16);
+    dim3 block(TPB_16);
     solveBatch16x16Kernel<<<grid, block, 0, s>>>(static_cast<double*>(ws.dA),
                                                  static_cast<double*>(ws.db), intBatch,
                                                  static_cast<bool*>(ws.dSuccess));
@@ -1254,14 +1264,18 @@ bool solveBatchCustomF32(MnaBatchWorkspaceF32& ws, const float* As, float* bs, s
   // Select kernel based on dimension
   int intBatch = static_cast<int>(batch);
   if (dim == 8) {
-    dim3 grid((batch + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK);
-    dim3 block(THREADS_PER_BLOCK);
+    // TPB = 64 keeps the grid wide enough to span many SMs; TPB=256
+    // would land only 4 blocks for batch=1024 (5% SM utilisation).
+    constexpr int TPB = 64;
+    dim3 grid((batch + TPB - 1) / TPB);
+    dim3 block(TPB);
     solveBatch8x8KernelF32<<<grid, block, 0, s>>>(static_cast<float*>(ws.dA),
                                                   static_cast<float*>(ws.db), intBatch,
                                                   static_cast<bool*>(ws.dSuccess));
   } else if (dim == 16) {
-    dim3 grid((batch + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK);
-    dim3 block(THREADS_PER_BLOCK);
+    constexpr int TPB = 64;
+    dim3 grid((batch + TPB - 1) / TPB);
+    dim3 block(TPB);
     solveBatch16x16KernelF32<<<grid, block, 0, s>>>(static_cast<float*>(ws.dA),
                                                     static_cast<float*>(ws.db), intBatch,
                                                     static_cast<bool*>(ws.dSuccess));
