@@ -36,6 +36,19 @@ struct MosfetBias {
 };
 
 /**
+ * @brief Per-transistor net connectivity for the fused MOSFET stamp.
+ *
+ * Net IDs index into a flat N-element node-voltage vector and the
+ * N x N MNA matrix. Net 0 is ground by convention and is ignored by
+ * the scatter (it is the reference node, not a DOF).
+ */
+struct MosfetNets {
+  int drain;
+  int gate;
+  int source;
+};
+
+/**
  * @brief Per-device stamp result (output from stamp kernel).
  */
 struct MosfetStamp {
@@ -118,6 +131,42 @@ bool evalStampBatch(const MosfetBias* dBiases, const MosfetLevel1Params* dParams
 bool evalStampBatchSoA(const MosfetBias* dBiases, const MosfetLevel1Params* dParams,
                        double* dId, double* dGm, double* dGds, std::size_t count,
                        void* stream = nullptr) noexcept;
+
+/**
+ * @brief Fused stamp + scatter for the MNA Jacobian of N MOSFETs.
+ *
+ * Evaluates `MosfetLevel1::stampValues(vgs, vds, params)` for each
+ * transistor and, using SPICE mode selection (xnrm/xrev from the sign
+ * of vds), atomically adds the linearised contribution into the MNA
+ * matrix `dG` (row-major, netCount x netCount) and RHS vector `dI`.
+ * This is the core building block of the fully GPU-resident Intel 4004
+ * L1 NR loop.
+ *
+ * The caller must have cleared the MOSFET contribution slice of `dG`
+ * and `dI` before calling this kernel (MNA accumulates; any pre-
+ * existing stamps from other component types will be preserved).
+ *
+ * Net 0 is treated as ground and skipped (no writes).
+ *
+ * @param dBiases   Device array of N MosfetBias (vgs, vds).
+ * @param dParams   Device array of N MosfetLevel1Params.
+ * @param dNets     Device array of N MosfetNets (drain, gate, source).
+ * @param dG        Device N_net x N_net matrix, row-major (modified).
+ * @param dI        Device N_net RHS vector (modified).
+ * @param count     Number of MOSFETs.
+ * @param netCount  N_net (row/column extent of dG; length of dI).
+ * @param gmin      Conductance floor (added to gds for numerical
+ *                  stability; matches the CPU stampTransistorsLevel1
+ *                  convention).
+ * @param stream    CUDA stream.
+ * @return true on launch success.
+ *
+ * @note NOT RT-safe: launches a CUDA kernel.
+ */
+bool stampMosfetL1Batch(const MosfetBias* dBiases, const MosfetLevel1Params* dParams,
+                        const MosfetNets* dNets, double* dG, double* dI, std::size_t count,
+                        std::size_t netCount, double gmin = 1e-12,
+                        void* stream = nullptr) noexcept;
 
 /**
  * @brief Get the launch configuration used for a given batch size.

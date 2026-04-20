@@ -85,6 +85,108 @@ __global__ __launch_bounds__(256, 6) void kStampBatchPerDeviceSoA(
   gdsOut[i] = sv.gds;
 }
 
+/* ----------------------------- Fused Stamp + Scatter ----------------------------- */
+
+/**
+ * @brief Per-thread: evaluate stampValues and atomically scatter 10
+ *        matrix contributions + 2 RHS contributions.
+ *
+ * Mirrors the CPU `Intel4004GridLevel1::stampTransistorsLevel1` Level 1
+ * stamp pattern (PMOS in NMOS-mirror convention): mode selection by
+ * sign of VDS, gds symmetric, gm coupling distributed by xnrm/xrev,
+ * Norton-equivalent current `cdreq` into drain/source.
+ */
+__device__ __forceinline__ void atomicAddIfNode(double* A, int row, int col, int netCount,
+                                                double value) {
+  if (row <= 0 || col <= 0 || row >= netCount || col >= netCount) {
+    return; // Skip ground and out-of-range (ground is net 0).
+  }
+  atomicAdd(&A[row * netCount + col], value);
+}
+
+__device__ __forceinline__ void atomicAddIfRow(double* I, int row, int netCount, double value) {
+  if (row <= 0 || row >= netCount) {
+    return;
+  }
+  atomicAdd(&I[row], value);
+}
+
+__global__ __launch_bounds__(256, 6) void kStampMosfetL1Batch(
+    const MosfetBias* __restrict__ biases, const MosfetLevel1Params* __restrict__ params,
+    const MosfetNets* __restrict__ nets, double* __restrict__ G, double* __restrict__ I,
+    int count, int netCount, double gmin) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= count) {
+    return;
+  }
+
+  const MosfetBias b = biases[i];
+  const MosfetLevel1Params p = params[i];
+  const MosfetNets n = nets[i];
+
+  // SPICE mode selection by VDS sign. VSG / VSD are already the
+  // NMOS-mirror-convention inputs the CPU path passes in (bias is
+  // computed by the host before the launch).
+  const double vsg = b.vgs; // Here: vgs == VSG in the PMOS mirror.
+  const double vsd = b.vds; // And: vds == VSD.
+
+  int xnrm, xrev;
+  double evalVgs, evalVds;
+  if (vsd >= 0.0) {
+    xnrm = 1;
+    xrev = 0;
+    evalVgs = vsg;
+    evalVds = vsd;
+  } else {
+    xnrm = 0;
+    xrev = 1;
+    evalVgs = vsg - vsd; // VD - VG = VSG - VSD (in the mirror frame).
+    evalVds = -vsd;
+  }
+
+  const double vgsEval = fmax(evalVgs, 0.0);
+  const double vdsEval = fmax(evalVds, 0.0);
+  const auto sv = MosfetLevel1::stampValues(vgsEval, vdsEval, p);
+  const double id = sv.id;
+  const double gm = sv.gm;
+  const double gdsDev = sv.gds;
+  const double gdsStamp = fmax(gdsDev, gmin);
+
+  // Compensation current: CPU uses cdreq = -(id - gds*VSD - gm*VSG) for
+  // xnrm==1, else cdreq = (id - gds*(-VSD) - gm*(VD-VG)). Match exactly.
+  double cdreq;
+  if (xnrm == 1) {
+    cdreq = -(id - gdsDev * vsd - gm * vsg);
+  } else {
+    cdreq = (id - gdsDev * (-vsd) - gm * (vsg - vsd));
+  }
+
+  const int d = n.drain;
+  const int g = n.gate;
+  const int s = n.source;
+
+  // Symmetric gds (matches addConductance(d, s, gdsStamp)).
+  atomicAddIfNode(G, d, d, netCount, gdsStamp);
+  atomicAddIfNode(G, s, s, netCount, gdsStamp);
+  atomicAddIfNode(G, d, s, netCount, -gdsStamp);
+  atomicAddIfNode(G, s, d, netCount, -gdsStamp);
+
+  // gm coupling, xnrm/xrev distribution.
+  const double xrevGm = xrev * gm;
+  const double xnrmGm = xnrm * gm;
+  const double xDelta = (xnrm - xrev) * gm;
+  atomicAddIfNode(G, d, d, netCount, xrevGm);
+  atomicAddIfNode(G, s, s, netCount, xnrmGm);
+  atomicAddIfNode(G, d, g, netCount, xDelta);
+  atomicAddIfNode(G, d, s, netCount, -xnrmGm);
+  atomicAddIfNode(G, s, g, netCount, -xDelta);
+  atomicAddIfNode(G, s, d, netCount, -xrevGm);
+
+  // RHS: I[drain] -= cdreq ; I[source] += cdreq (matches addCurrent(d, s, -cdreq)).
+  atomicAddIfRow(I, d, netCount, -cdreq);
+  atomicAddIfRow(I, s, netCount, cdreq);
+}
+
 } // namespace
 
 /* ----------------------------- Host-Side Launch Wrappers ----------------------------- */
@@ -127,6 +229,22 @@ bool evalStampBatchSoA(const MosfetBias* dBiases, const MosfetLevel1Params* dPar
   const cudaStream_t s = static_cast<cudaStream_t>(stream);
   kStampBatchPerDeviceSoA<<<blocks, threads, 0, s>>>(dBiases, dParams, dId, dGm, dGds,
                                                      static_cast<int>(count));
+  return cudaPeekAtLastError() == cudaSuccess;
+}
+
+bool stampMosfetL1Batch(const MosfetBias* dBiases, const MosfetLevel1Params* dParams,
+                        const MosfetNets* dNets, double* dG, double* dI, std::size_t count,
+                        std::size_t netCount, double gmin, void* stream) noexcept {
+  if (dBiases == nullptr || dParams == nullptr || dNets == nullptr || dG == nullptr ||
+      dI == nullptr || count == 0 || netCount == 0) {
+    return false;
+  }
+  const int threads = BLOCK_SIZE;
+  const int blocks = static_cast<int>((count + threads - 1) / threads);
+  const cudaStream_t s = static_cast<cudaStream_t>(stream);
+  kStampMosfetL1Batch<<<blocks, threads, 0, s>>>(dBiases, dParams, dNets, dG, dI,
+                                                 static_cast<int>(count),
+                                                 static_cast<int>(netCount), gmin);
   return cudaPeekAtLastError() == cudaSuccess;
 }
 
