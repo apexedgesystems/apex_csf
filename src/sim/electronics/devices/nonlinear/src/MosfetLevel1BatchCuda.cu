@@ -209,8 +209,8 @@ __device__ __forceinline__ void atomicMaxDouble(double* addr, double value) {
   } while (oldBits != expected);
 }
 
-__global__ void kNrMaxDelta(const double* __restrict__ newV,
-                            const double* __restrict__ prevV, double* maxDelta, int n) {
+__global__ __launch_bounds__(256, 6) void kNrMaxDelta(
+    const double* __restrict__ newV, const double* __restrict__ prevV, double* maxDelta, int n) {
   extern __shared__ double sdata[];
   const int tid = threadIdx.x;
   const int i = blockIdx.x * blockDim.x + tid;
