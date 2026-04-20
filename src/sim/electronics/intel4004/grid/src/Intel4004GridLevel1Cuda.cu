@@ -17,10 +17,78 @@
  */
 
 #include "src/sim/electronics/intel4004/grid/inc/Intel4004GridLevel1Cuda.cuh"
+#include "src/sim/electronics/intel4004/grid/inc/Intel4004Components.hpp"
 
 #include <cuda_runtime.h>
 
 namespace sim::electronics::intel4004::cuda {
+
+Phase4ScatterTable populateScatterTable(const Intel4004GridLevel1& grid) {
+  using sim::electronics::intel4004::ComponentType;
+  namespace nl_cuda = sim::electronics::devices::nonlinear::cuda;
+
+  Phase4ScatterTable out;
+  const auto& transistors = grid.transistors_;
+  out.classes.resize(transistors.size(), Phase4TransistorClass::L1_STAMP);
+
+  // Requires the grid to have run `computeTransistorKp()` and the
+  // component classification at least once. If the kp vector is
+  // empty the grid hasn't primed yet -- classify L1 for everything
+  // and use the default Kp. This is the fallback path for tests
+  // that exercise the populator without running a full simulation.
+  const bool haveKp = !grid.transistorKp_.empty();
+  const bool haveTypes = grid.componentMode_ && !grid.componentTypes_.empty();
+
+  // VTO used by the L1 stamp math in the CPU path (same-VTO mode).
+  const double vth =
+      grid.sameVtoMode_ ? Intel4004GridLevel1::VTH_ENH : Intel4004GridLevel1::VTH_ENH;
+
+  for (std::size_t i = 0; i < transistors.size(); ++i) {
+    const auto& t = transistors[i];
+    Phase4TransistorClass cls = Phase4TransistorClass::L1_STAMP;
+
+    if (haveTypes) {
+      const auto ctype = grid.componentTypes_[i];
+      // Mirrors Intel4004GridLevel1::stampTransistorsLevel1 dispatch:
+      if (ctype == ComponentType::STANDALONE_LOAD ||
+          (ctype == ComponentType::NOR_GATE_MEMBER && t.isDiodeLoad)) {
+        cls = Phase4TransistorClass::DEPLETION_LOAD;
+      } else if (ctype == ComponentType::DYNAMIC_STORAGE &&
+                 grid.norOutputNets_.count(t.gate) == 0) {
+        cls = Phase4TransistorClass::BINARY_SWITCH;
+      }
+    }
+
+    // Clock-gated transistors always use the binary-switch CPU path.
+    if (grid.clk1Net_ != 0 && (t.gate == grid.clk1Net_ || t.gate == grid.clk2Net_)) {
+      cls = Phase4TransistorClass::BINARY_SWITCH;
+    }
+
+    out.classes[i] = cls;
+    switch (cls) {
+      case Phase4TransistorClass::L1_STAMP:
+        out.nets.push_back(nl_cuda::MosfetNets{static_cast<int>(t.drain),
+                                               static_cast<int>(t.gate),
+                                               static_cast<int>(t.source)});
+        out.params.push_back(sim::electronics::devices::nonlinear::MosfetLevel1Params{
+            .Kp = haveKp ? grid.transistorKp_[i] : Intel4004GridLevel1::KP_PROCESS,
+            .Vth = vth,
+            .lambda = Intel4004GridLevel1::LAMBDA,
+            .Vsmooth = 0.1});
+        out.l1Indices.push_back(i);
+        out.l1Count++;
+        break;
+      case Phase4TransistorClass::BINARY_SWITCH:
+        out.binarySwitchCount++;
+        break;
+      case Phase4TransistorClass::DEPLETION_LOAD:
+        out.depletionLoadCount++;
+        break;
+    }
+  }
+
+  return out;
+}
 
 Intel4004GridLevel1Cuda::Intel4004GridLevel1Cuda(Intel4004GridLevel1& /*grid*/) noexcept {
   // Scaffold: no allocations yet. Follow-up passes will size the

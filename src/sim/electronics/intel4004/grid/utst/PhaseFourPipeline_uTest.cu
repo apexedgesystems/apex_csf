@@ -26,6 +26,8 @@
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystemCuda.cuh"
 #include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1.hpp"
 #include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1BatchCuda.cuh"
+#include "src/sim/electronics/intel4004/grid/inc/Intel4004GridLevel1Cuda.cuh"
+#include "src/sim/electronics/intel4004/netlist/inc/SpiceNetlistParser.hpp"
 #include "src/utilities/compatibility/inc/compat_cuda_error.hpp"
 
 #include <gtest/gtest.h>
@@ -320,6 +322,69 @@ TEST_F(PhaseFourPipelineFixture, OneIter_SmallVoltages_NoLimit) {
   for (int i = 0; i < NET_COUNT; ++i) {
     EXPECT_NEAR(gpuPrev[i], cpuPrev[i], 1e-9) << "prevV[" << i << "] mismatch";
   }
+}
+
+#ifdef INTEL4004_DATA_DIR
+static const std::string SPICE_PATH = INTEL4004_DATA_DIR "/lajos-4004.spice";
+#else
+static const std::string SPICE_PATH = "src/sim/electronics/intel4004/netlist/data/lajos-4004.spice";
+#endif
+
+TEST_F(PhaseFourPipelineFixture, ScatterTable_Intel4004_AllClassified) {
+  using sim::electronics::intel4004::classifyComponents;
+  using sim::electronics::intel4004::Intel4004GridLevel1;
+  using sim::electronics::intel4004::cuda::Phase4TransistorClass;
+  using sim::electronics::intel4004::cuda::populateScatterTable;
+  using sim::electronics::intel4004::loadSpiceNetlist;
+
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  Intel4004GridLevel1 grid;
+  auto circuit = grid.buildCircuit(NETLIST);
+  grid.computeTransistorKp();
+  auto classification = classifyComponents(grid);
+  grid.componentTypes_ = std::move(classification.types);
+  grid.buildNorOutputSet();
+
+  auto table = populateScatterTable(grid);
+
+  // Every transistor must be accounted for (L1 + binary + depletion).
+  const std::size_t total = table.l1Count + table.binarySwitchCount + table.depletionLoadCount;
+  EXPECT_EQ(total, grid.transistors_.size())
+      << "L1=" << table.l1Count << " BSW=" << table.binarySwitchCount
+      << " DEP=" << table.depletionLoadCount << " grid=" << grid.transistors_.size();
+
+  // classes[] is populated for every transistor.
+  EXPECT_EQ(table.classes.size(), grid.transistors_.size());
+
+  // L1 arrays are consistent in size.
+  EXPECT_EQ(table.nets.size(), table.l1Count);
+  EXPECT_EQ(table.params.size(), table.l1Count);
+  EXPECT_EQ(table.l1Indices.size(), table.l1Count);
+
+  // Each l1 index refers to a transistor actually classified L1_STAMP.
+  for (auto idx : table.l1Indices) {
+    ASSERT_LT(idx, grid.transistors_.size());
+    EXPECT_EQ(table.classes[idx], Phase4TransistorClass::L1_STAMP);
+  }
+
+  // Nets are in range [1, netCount) (ground is 0, not valid DOF).
+  const std::size_t netCount = circuit.netCount();
+  for (const auto& n : table.nets) {
+    EXPECT_GE(n.drain, 0);
+    EXPECT_LT(n.drain, static_cast<int>(netCount));
+    EXPECT_GE(n.gate, 0);
+    EXPECT_LT(n.gate, static_cast<int>(netCount));
+    EXPECT_GE(n.source, 0);
+    EXPECT_LT(n.source, static_cast<int>(netCount));
+  }
+
+  // Params have non-zero Kp (populated from transistorKp_).
+  for (const auto& p : table.params) {
+    EXPECT_GT(p.Kp, 0.0);
+  }
+
+  std::printf("Intel 4004 scatter table: L1=%zu BSW=%zu DEP=%zu total=%zu netCount=%zu\n",
+              table.l1Count, table.binarySwitchCount, table.depletionLoadCount, total, netCount);
 }
 
 TEST_F(PhaseFourPipelineFixture, FiveIters_MatchesCpu) {
