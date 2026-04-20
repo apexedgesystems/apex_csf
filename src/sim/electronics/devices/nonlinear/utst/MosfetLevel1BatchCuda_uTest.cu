@@ -139,3 +139,55 @@ TEST_F(MosfetBatchCudaFixture, PerDeviceMatchesCpu) {
   cudaFree(dParams);
   cudaFree(dStamps);
 }
+
+TEST_F(MosfetBatchCudaFixture, SoAMatchesCpu) {
+  const std::size_t N = 2242;
+  const auto biases = buildBiases(N);
+
+  std::vector<MosfetLevel1Params> params(N);
+  for (std::size_t i = 0; i < N; ++i) {
+    params[i].Kp = 5e-3 * (0.5 + 0.001 * static_cast<double>(i));
+    params[i].Vth = (i % 7 == 0) ? -0.17 : 1.17;
+    params[i].lambda = 0.03;
+    params[i].Vsmooth = 0.1;
+  }
+
+  nl_cuda::MosfetBias* dBiases = nullptr;
+  MosfetLevel1Params* dParams = nullptr;
+  double* dId = nullptr;
+  double* dGm = nullptr;
+  double* dGds = nullptr;
+  ASSERT_EQ(cudaMalloc(&dBiases, N * sizeof(nl_cuda::MosfetBias)), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&dParams, N * sizeof(MosfetLevel1Params)), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&dId, N * sizeof(double)), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&dGm, N * sizeof(double)), cudaSuccess);
+  ASSERT_EQ(cudaMalloc(&dGds, N * sizeof(double)), cudaSuccess);
+
+  ASSERT_EQ(cudaMemcpy(dBiases, biases.data(), N * sizeof(nl_cuda::MosfetBias),
+                       cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(dParams, params.data(), N * sizeof(MosfetLevel1Params), cudaMemcpyHostToDevice),
+      cudaSuccess);
+
+  ASSERT_TRUE(nl_cuda::evalStampBatchSoA(dBiases, dParams, dId, dGm, dGds, N));
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+
+  std::vector<double> id(N), gm(N), gds(N);
+  ASSERT_EQ(cudaMemcpy(id.data(), dId, N * sizeof(double), cudaMemcpyDeviceToHost), cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(gm.data(), dGm, N * sizeof(double), cudaMemcpyDeviceToHost), cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(gds.data(), dGds, N * sizeof(double), cudaMemcpyDeviceToHost), cudaSuccess);
+
+  for (std::size_t i = 0; i < N; ++i) {
+    const auto cpuSv = MosfetLevel1::stampValues(biases[i].vgs, biases[i].vds, params[i]);
+    EXPECT_NEAR(id[i], cpuSv.id, 1e-12) << "id mismatch at i=" << i;
+    EXPECT_NEAR(gm[i], cpuSv.gm, 1e-12) << "gm mismatch at i=" << i;
+    EXPECT_NEAR(gds[i], cpuSv.gds, 1e-12) << "gds mismatch at i=" << i;
+  }
+
+  cudaFree(dBiases);
+  cudaFree(dParams);
+  cudaFree(dId);
+  cudaFree(dGm);
+  cudaFree(dGds);
+}

@@ -102,6 +102,24 @@ bool evalStampBatch(const MosfetBias* dBiases, const MosfetLevel1Params* dParams
                     MosfetStamp* dStamps, std::size_t count, void* stream = nullptr) noexcept;
 
 /**
+ * @brief Batch-evaluate N MOSFETs, writing outputs in SoA layout.
+ *
+ * Same math as `evalStampBatch` but writes three aligned parallel
+ * arrays (`dId`, `dGm`, `dGds`) instead of the 24-byte `MosfetStamp`
+ * struct-of-three. Each store is an 8-byte double at the thread's
+ * natural offset; a warp of 32 threads writes one fully-coalesced
+ * 256-byte burst per array (3 x 256 B total), versus 32 x 24 B =
+ * 768 B in straddled transactions for the AoS variant. Intended for
+ * the fused stamp+scatter path and any caller that consumes the
+ * three quantities independently (e.g. separate MNA G / I vectors).
+ *
+ * @note NOT RT-safe: launches a CUDA kernel.
+ */
+bool evalStampBatchSoA(const MosfetBias* dBiases, const MosfetLevel1Params* dParams,
+                       double* dId, double* dGm, double* dGds, std::size_t count,
+                       void* stream = nullptr) noexcept;
+
+/**
  * @brief Get the launch configuration used for a given batch size.
  * @note Useful for nsys / ncu profiling annotations.
  */

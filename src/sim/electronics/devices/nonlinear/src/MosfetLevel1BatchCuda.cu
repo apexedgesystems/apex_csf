@@ -63,6 +63,28 @@ __global__ __launch_bounds__(256, 6) void kStampBatchPerDevice(
   stamps[i] = out;
 }
 
+/* ----------------------------- SoA Output Kernel ----------------------------- */
+
+/**
+ * @brief Per-device params, SoA output. Each thread writes one double
+ *        into each of three aligned parallel arrays.
+ */
+__global__ __launch_bounds__(256, 6) void kStampBatchPerDeviceSoA(
+    const MosfetBias* __restrict__ biases, const MosfetLevel1Params* __restrict__ params,
+    double* __restrict__ idOut, double* __restrict__ gmOut, double* __restrict__ gdsOut,
+    int count) {
+  const int i = blockIdx.x * blockDim.x + threadIdx.x;
+  if (i >= count) {
+    return;
+  }
+  const MosfetBias b = biases[i];
+  const MosfetLevel1Params p = params[i];
+  const auto sv = MosfetLevel1::stampValues(b.vgs, b.vds, p);
+  idOut[i] = sv.id;
+  gmOut[i] = sv.gm;
+  gdsOut[i] = sv.gds;
+}
+
 } // namespace
 
 /* ----------------------------- Host-Side Launch Wrappers ----------------------------- */
@@ -90,6 +112,21 @@ bool evalStampBatch(const MosfetBias* dBiases, const MosfetLevel1Params* dParams
   const cudaStream_t s = static_cast<cudaStream_t>(stream);
   kStampBatchPerDevice<<<blocks, threads, 0, s>>>(dBiases, dParams, dStamps,
                                                   static_cast<int>(count));
+  return cudaPeekAtLastError() == cudaSuccess;
+}
+
+bool evalStampBatchSoA(const MosfetBias* dBiases, const MosfetLevel1Params* dParams,
+                       double* dId, double* dGm, double* dGds, std::size_t count,
+                       void* stream) noexcept {
+  if (dBiases == nullptr || dParams == nullptr || dId == nullptr || dGm == nullptr ||
+      dGds == nullptr || count == 0) {
+    return false;
+  }
+  const int threads = BLOCK_SIZE;
+  const int blocks = static_cast<int>((count + threads - 1) / threads);
+  const cudaStream_t s = static_cast<cudaStream_t>(stream);
+  kStampBatchPerDeviceSoA<<<blocks, threads, 0, s>>>(dBiases, dParams, dId, dGm, dGds,
+                                                     static_cast<int>(count));
   return cudaPeekAtLastError() == cudaSuccess;
 }
 
