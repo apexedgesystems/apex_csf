@@ -1,5 +1,5 @@
 # ==============================================================================
-# stm32_encryptor_demo - STM32 LiteExecutive application for NUCLEO-L476RG
+# stm32_encryptor_demo - STM32 McuExecutive application for NUCLEO-L476RG
 # ==============================================================================
 #
 # Data channel + command channel + flash key store.
@@ -118,7 +118,7 @@ apex_add_firmware(
   INC
   ${FIRMWARE_INC}
   LINK
-  executive_lite
+  executive_mcu
   encryption_lite
   system_core_protocols_framing_slip
   utilities_checksums_crc

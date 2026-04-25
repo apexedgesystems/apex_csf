@@ -17,8 +17,8 @@
 
 #include "src/sim/gpu_compute/conv_filter/inc/ConvFilterData.hpp"
 #include "src/sim/gpu_compute/conv_filter/inc/ConvFilterKernel.cuh"
-#include "src/system/core/infrastructure/system_component/apex/inc/ModelData.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/SwModelBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 #include "src/utilities/compatibility/inc/compat_cuda_blas.hpp"
 #include "src/utilities/compatibility/inc/compat_cuda_error.hpp"

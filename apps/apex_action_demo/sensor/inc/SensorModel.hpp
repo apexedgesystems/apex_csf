@@ -17,8 +17,8 @@
 
 #include "apps/apex_action_demo/sensor/inc/SensorData.hpp"
 
-#include "src/system/core/infrastructure/system_component/apex/inc/ModelData.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/SwModelBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 
 #include <fmt/format.h>

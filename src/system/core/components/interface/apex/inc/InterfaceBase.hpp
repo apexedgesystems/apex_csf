@@ -18,7 +18,7 @@
 #include "src/system/core/components/interface/apex/inc/MessageBuffer.hpp"
 #include "src/system/core/infrastructure/protocols/network/tcp/inc/TcpSocketServer.hpp"
 #include "src/system/core/infrastructure/protocols/network/udp/inc/UdpSocketServer.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/CoreComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/CoreComponentBase.hpp"
 #include "src/utilities/compatibility/inc/compat_span.hpp"
 #include "src/utilities/concurrency/inc/SPSCQueue.hpp"
 

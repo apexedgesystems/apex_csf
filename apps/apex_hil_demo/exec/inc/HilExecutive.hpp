@@ -17,7 +17,7 @@
  * Action engine configuration is loaded from TPRM, not hardcoded.
  */
 
-#include "src/system/core/executive/apex/inc/ApexExecutive.hpp"
+#include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitor.hpp"
 
 #include "apps/apex_hil_demo/driver/inc/HilDriver.hpp"

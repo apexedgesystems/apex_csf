@@ -2,7 +2,7 @@
 #define APEX_HAL_PICO_SYSTICK_SOURCE_HPP
 /**
  * @file PicoSysTickSource.hpp
- * @brief SysTick-based tick source for LiteExecutive on RP2040.
+ * @brief SysTick-based tick source for McuExecutive on RP2040.
  *
  * Configures the ARM SysTick timer directly via CMSIS registers (no vendor
  * HAL dependency). Prescales a 1 kHz base tick to the desired executive
@@ -14,7 +14,7 @@
  * Usage:
  *  1. Create instance with desired frequency
  *  2. Wire isrCallback() into isr_systick
- *  3. Pass to LiteExecutive constructor
+ *  3. Pass to McuExecutive constructor
  *
  * @code
  * static apex::hal::pico::PicoSysTickSource tickSource(100);
@@ -23,12 +23,12 @@
  *   apex::hal::pico::PicoSysTickSource::isrCallback();
  * }
  *
- * executive::lite::LiteExecutive exec(&tickSource, 100);
+ * executive::mcu::McuExecutive exec(&tickSource, 100);
  * exec.run();
  * @endcode
  */
 
-#include "src/system/core/executive/lite/inc/ITickSource.hpp"
+#include "src/system/core/executive/mcu/inc/ITickSource.hpp"
 
 #ifndef APEX_HAL_PICO_MOCK
 #include "hardware/clocks.h"
@@ -87,7 +87,7 @@ namespace pico {
  *
  * Memory usage: ~32 bytes.
  */
-class PicoSysTickSource final : public executive::lite::ITickSource {
+class PicoSysTickSource final : public executive::mcu::ITickSource {
 public:
   /**
    * @brief Construct with desired tick frequency.

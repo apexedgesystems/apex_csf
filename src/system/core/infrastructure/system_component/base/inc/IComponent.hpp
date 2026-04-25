@@ -8,7 +8,7 @@
  *   - Zero dependencies beyond <stdint.h> and ComponentType.hpp
  *   - No std::filesystem, std::shared_ptr, std::vector, std::thread
  *   - Suitable for bare-metal MCU targets
- *   - Both SystemComponentBase (Apex) and LiteComponentBase implement this
+ *   - Both SystemComponentBase (Apex) and McuComponentBase implement this
  *
  * RT Constraints:
  *   - All query methods are RT-safe (const, noexcept, O(1))
@@ -16,7 +16,7 @@
  *
  * Implementations:
  *   - SystemComponentBase (apex/) - Full-featured, heap-using, POSIX filesystem
- *   - LiteComponentBase (lite/) - Minimal, static allocation, no filesystem
+ *   - McuComponentBase (lite/) - Minimal, static allocation, no filesystem
  */
 
 #include "src/system/core/infrastructure/system_component/base/inc/ComponentType.hpp"
@@ -37,7 +37,7 @@ namespace system_component {
  *
  * Derived implementations:
  *   - SystemComponentBase: Full-featured for Linux/RTOS (ApexExecutive)
- *   - LiteComponentBase: Minimal for bare-metal MCUs (LiteExecutive)
+ *   - McuComponentBase: Minimal for bare-metal MCUs (McuExecutive)
  */
 class IComponent {
 public:

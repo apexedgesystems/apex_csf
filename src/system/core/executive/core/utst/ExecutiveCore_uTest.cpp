@@ -142,7 +142,7 @@ TEST(ExecutiveCore_API, ImplementsIExecutive) {
 }
 
 /** @test ExecutiveCore can be referred to as the canonical executive type. */
-TEST(ExecutiveCore_API, UsableAsCanonicalExecutiveBase) {
+TEST(ExecutiveCore_API, UsableAsCanonicalPosixExecutiveBase) {
   TestExecutive exec;
   executive::ExecutiveCore* core = &exec;
 

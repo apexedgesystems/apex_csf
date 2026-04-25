@@ -50,7 +50,7 @@
  */
 
 #include "src/system/core/components/action/apex/inc/ActionEngineConfig.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/DataTarget.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/DataTarget.hpp"
 #include "src/utilities/concurrency/inc/Delegate.hpp"
 
 #include <cmath>

@@ -7,7 +7,7 @@
  * Design:
  *   - Standalone scheduler interface (does not inherit IComponent)
  *   - Zero heavy dependencies (no std::filesystem, std::vector in interface)
- *   - Suitable for both ApexExecutive (SchedulerBase) and LiteExecutive (SchedulerLite)
+ *   - Suitable for both ApexExecutive (SchedulerBase) and McuExecutive (SchedulerLite)
  *
  * RT Constraints:
  *   - tick() is RT-safe (the main execution entry point)
@@ -36,7 +36,7 @@ namespace scheduler {
  *
  * Derived implementations:
  *   - SchedulerBase: Full-featured for Linux/RTOS (ApexExecutive)
- *   - SchedulerLite: Minimal for bare-metal MCUs (LiteExecutive)
+ *   - SchedulerLite: Minimal for bare-metal MCUs (McuExecutive)
  */
 class IScheduler {
 public:

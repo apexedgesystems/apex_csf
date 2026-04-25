@@ -48,7 +48,7 @@ for bare-metal MCU targets.
 This library is the foundation for all component implementations in the system.
 Depend on it when:
 
-- Implementing a new system component (`SystemComponentBase`, `LiteComponentBase`)
+- Implementing a new system component (`SystemComponentBase`, `McuComponentBase`)
 - Writing generic code that operates on any component via `IComponent*`
 - Defining component-specific status codes that extend `Status`
 - Declaring transport requirements for HW_MODEL/DRIVER pairing

@@ -2,7 +2,7 @@
 #define APEX_HAL_STM32_TIMER_TICK_SOURCE_HPP
 /**
  * @file Stm32TimerTickSource.hpp
- * @brief Hardware timer-based tick source for LiteExecutive on STM32.
+ * @brief Hardware timer-based tick source for McuExecutive on STM32.
  *
  * Uses a general-purpose or basic timer (TIM6, TIM7, TIM2-TIM5) to generate
  * periodic interrupts at the exact desired executive frequency. Unlike
@@ -22,8 +22,8 @@
  * Usage:
  *  1. Create instance with timer peripheral and frequency
  *  2. Wire isrCallback() into the timer's IRQ handler
- *  3. Pass to LiteExecutive constructor
- *  4. LiteExecutive::run() calls start()/waitForNextTick()/stop()
+ *  3. Pass to McuExecutive constructor
+ *  4. McuExecutive::run() calls start()/waitForNextTick()/stop()
  *
  * @code
  * static apex::hal::stm32::Stm32TimerTickSource tickSource(TIM6, 100);
@@ -34,7 +34,7 @@
  * }
  *
  * // In main
- * executive::lite::LiteExecutive exec(&tickSource, &scheduler);
+ * executive::mcu::McuExecutive exec(&tickSource, &scheduler);
  * exec.run();
  * @endcode
  *
@@ -43,7 +43,7 @@
  * 0.01% for standard clock configurations.
  */
 
-#include "src/system/core/executive/lite/inc/ITickSource.hpp"
+#include "src/system/core/executive/mcu/inc/ITickSource.hpp"
 
 #include <stdint.h>
 
@@ -76,7 +76,7 @@ namespace stm32 {
  *
  * Memory usage: ~20 bytes.
  */
-class Stm32TimerTickSource final : public executive::lite::ITickSource {
+class Stm32TimerTickSource final : public executive::mcu::ITickSource {
 public:
   /**
    * @brief Construct with timer peripheral and frequency.

@@ -12,10 +12,10 @@
 #include "src/system/core/components/interface/apex/inc/ComponentQueues.hpp"
 #include "src/system/core/components/interface/apex/inc/InterfaceTlm.hpp"
 #include "src/system/core/infrastructure/protocols/aproto/inc/AprotoCodec.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/IComponentResolver.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/IComponentResolver.hpp"
 #include "src/system/core/infrastructure/protocols/framing/cobs/inc/COBSFraming.hpp"
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/SystemComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 #include "src/utilities/compatibility/inc/compat_attributes.hpp"
 

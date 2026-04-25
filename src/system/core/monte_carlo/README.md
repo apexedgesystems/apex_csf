@@ -72,9 +72,9 @@ fmt::print("Throughput: {:.0f} runs/sec ({} threads, {:.2f}s)\n",
 
 MonteCarloDriver is NOT an executive variant. It does not implement `IExecutive`
 and does not inherit from any executive class. It is a batch orchestrator that
-_uses_ LiteExecutive instances (or raw model calls) as workers.
+_uses_ McuExecutive instances (or raw model calls) as workers.
 
-| Concern     | ApexExecutive             | LiteExecutive | MonteCarloDriver  |
+| Concern     | ApexExecutive             | McuExecutive | MonteCarloDriver  |
 | ----------- | ------------------------- | ------------- | ----------------- |
 | Threading   | Multi-thread pools        | Single-thread | Thread-per-worker |
 | Timing      | RT clock sync             | ITickSource   | None (max speed)  |
@@ -161,7 +161,7 @@ Parameter variation utilities for generating sweep inputs.
 
 ## 4. Common Patterns
 
-### With LiteExecutive
+### With McuExecutive
 
 Run a full simulation per MC iteration:
 
@@ -170,7 +170,7 @@ MonteCarloDriver<Params, Result> driver(
     [](const Params& p, std::uint32_t) -> Result {
         // Each worker gets its own executive + model
         FreeRunningSource tick(100);
-        LiteExecutive<> exec(&tick, 100, 500);  // 500 cycles
+        McuExecutive<> exec(&tick, 100, 500);  // 500 cycles
 
         MyModel model(p);
         exec.addTask({TaskBuilder::bindMember<MyModel, &MyModel::step>(model),
@@ -249,6 +249,6 @@ make compose-testp
 
 ## 8. See Also
 
-- `src/system/core/executive/lite/` - LiteExecutive (fast simulation worker)
-- `src/system/core/executive/lite/inc/FreeRunningSource.hpp` - Max-speed tick source
+- `src/system/core/executive/mcu/` - McuExecutive (fast simulation worker)
+- `src/system/core/executive/mcu/inc/FreeRunningSource.hpp` - Max-speed tick source
 - `src/utilities/concurrency/` - Thread pool, lock-free queues

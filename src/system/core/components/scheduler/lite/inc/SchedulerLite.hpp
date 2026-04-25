@@ -8,7 +8,7 @@
  *   - Static task table (compile-time sized via MaxTasks template parameter)
  *   - Simple rate-group execution (no thread pools)
  *   - No heap allocation in hot path
- *   - Suitable for bare-metal MCU targets with LiteExecutive
+ *   - Suitable for bare-metal MCU targets with McuExecutive
  *
  * Template Parameters:
  *   - MaxTasks: Maximum number of tasks in the static table (default 32).
@@ -41,7 +41,7 @@
 
 #include "src/system/core/components/scheduler/base/inc/IScheduler.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/ComponentType.hpp"
-#include "src/system/core/infrastructure/system_component/lite/inc/LiteComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/mcu/inc/McuComponentBase.hpp"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -92,7 +92,7 @@ struct LiteTaskEntry {
  * Tasks are registered at boot time and executed sequentially
  * based on their rate and priority configuration.
  *
- * Inherits IComponent implementation from LiteComponentBase. Implements
+ * Inherits IComponent implementation from McuComponentBase. Implements
  * IScheduler for scheduler-specific methods (tick, taskCount, etc.).
  *
  * @tparam MaxTasks Maximum number of tasks in the static table. Each
@@ -119,7 +119,7 @@ struct LiteTaskEntry {
  * @note RT-safe: tick() has no allocation, O(n) execution.
  */
 template <size_t MaxTasks = DEFAULT_LITE_MAX_TASKS, typename Counter = uint64_t>
-class SchedulerLite : public system_core::system_component::lite::LiteComponentBase,
+class SchedulerLite : public system_core::system_component::mcu::McuComponentBase,
                       public IScheduler {
 public:
   /// Compile-time maximum number of tasks.

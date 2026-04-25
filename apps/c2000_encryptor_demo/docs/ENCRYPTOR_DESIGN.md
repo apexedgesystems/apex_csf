@@ -156,7 +156,7 @@ copy in `Device_init()`.
 
 ## Task Model
 
-No LiteExecutive (C++03 limitation). Simple polling loop:
+No McuExecutive (C++03 limitation). Simple polling loop:
 
 ```
 main():

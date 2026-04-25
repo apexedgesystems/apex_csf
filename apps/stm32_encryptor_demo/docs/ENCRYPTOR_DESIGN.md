@@ -190,7 +190,7 @@ RAM, erase the page, and rewrite all slots with the updated key.
 
 ## Task Model
 
-### LiteExecutive (100 Hz)
+### McuExecutive (100 Hz)
 
 The firmware uses a cooperative scheduler with five tasks. Two execution modes
 are supported (selected at compile time via `APEX_USE_FREERTOS`):
@@ -228,7 +228,7 @@ main():
   if store empty:
     provision test key      # Write 0x00..0x1F to slot 0
   engine.loadActiveKey()    # Load key from store into encrypt engine
-  registerSchedulerTasks()  # 5 tasks into LiteExecutive
+  registerSchedulerTasks()  # 5 tasks into McuExecutive
   exec.init() + exec.run()  # Blocks forever (cooperative loop)
 ```
 

@@ -34,7 +34,7 @@ table. The Arduino Nano ESP32 has generous memory -- no optimization needed.
 | Component                | Estimated Size | Notes                     |
 | ------------------------ | -------------- | ------------------------- |
 | FreeRTOS kernel          | ~20 KB         | Heap, task stacks, timers |
-| LiteExecutive task stack | 4 KB           | Pinned to core 0          |
+| McuExecutive task stack | 4 KB           | Pinned to core 0          |
 | UART RX/TX buffers       | 2 KB           | 512 + 512 per UART        |
 | USB CDC buffers          | 512 B          | TinyUSB managed           |
 | SLIP encode/decode       | ~1 KB          | Frame buffers             |

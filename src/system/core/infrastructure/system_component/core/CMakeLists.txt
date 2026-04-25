@@ -4,14 +4,14 @@
 # Header-only library providing ComponentCore: the platform-agnostic
 # concrete base for IComponent implementations. Owns identity, lifecycle,
 # and registration state shared by both POSIX (SystemComponentBase) and
-# MCU (LiteComponentBase) tiers.
+# MCU (McuComponentBase) tiers.
 #
 # Components:
 #   - ComponentCore - Concrete base with state, still abstract.
 #
 # Dependents:
 #   - system_core_system_component (SystemComponentBase)
-#   - system_component_lite (LiteComponentBase)
+#   - system_component_mcu (McuComponentBase)
 # ==============================================================================
 
 include(apex/All)

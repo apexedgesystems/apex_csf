@@ -261,5 +261,5 @@ GPU paths are not covered (requires NVIDIA hardware).
 ## 7. See Also
 
 - `src/system/core/infrastructure/system_component/` - SupportComponentBase
-- `src/system/core/executive/apex/` - ApexExecutive (registers and schedules monitor)
+- `src/system/core/executive/posix/` - ApexExecutive (registers and schedules monitor)
 - `src/system/core/infrastructure/protocols/aproto/` - APROTO telemetry transport

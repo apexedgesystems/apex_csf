@@ -17,12 +17,12 @@
  *
  * Component identity is intentionally NOT inherited here. Each platform
  * tier brings its own ComponentCore-derived component base in (POSIX:
- * SystemComponentBase, MCU: LiteComponentBase). ExecutiveCore exposes
+ * SystemComponentBase, MCU: McuComponentBase). ExecutiveCore exposes
  * the shared executive identity constants that those tiers' identity
  * overrides should return.
  *
  * Design notes:
- *   - Avoids a diamond: SystemComponentBase and LiteComponentBase each
+ *   - Avoids a diamond: SystemComponentBase and McuComponentBase each
  *     inherit ComponentCore directly, and ExecutiveCore does not.
  *     A platform executive base that mixes a component base with
  *     ExecutiveCore therefore has exactly one ComponentCore subobject.
@@ -50,12 +50,12 @@ namespace executive {
  *   - run(), shutdown(), isShutdownRequested(), cycleCount()
  *
  * Derived classes that also inherit a ComponentCore-based component
- * base (SystemComponentBase or LiteComponentBase) should return the
+ * base (SystemComponentBase or McuComponentBase) should return the
  * ExecutiveCore constants from their componentId() / componentName() /
  * componentType() / label() overrides:
  *
  * @code
- * class MyExecutive : public LiteComponentBase, public ExecutiveCore {
+ * class MyExecutive : public McuComponentBase, public ExecutiveCore {
  *   uint16_t componentId() const noexcept override {
  *     return ExecutiveCore::COMPONENT_ID;
  *   }

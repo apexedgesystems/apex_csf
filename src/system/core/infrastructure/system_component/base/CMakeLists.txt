@@ -6,7 +6,7 @@
 #
 # Dependents:
 #   - system_component_apex (SystemComponentBase hierarchy)
-#   - system_component_lite (LiteComponentBase) [future]
+#   - system_component_mcu (McuComponentBase) [future]
 # ==============================================================================
 
 include(apex/All)

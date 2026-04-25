@@ -5,8 +5,8 @@
 # must satisfy. No heavy dependencies - suitable for bare-metal.
 #
 # Dependents:
-#   - executive (ExecutiveBase, ApexExecutive)
-#   - executive_lite (LiteExecutive)
+#   - executive (PosixExecutiveBase, ApexExecutive)
+#   - executive_mcu (McuExecutive)
 # ==============================================================================
 
 include(apex/All)

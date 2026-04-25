@@ -74,7 +74,7 @@ Breakdown by component (FreeRTOS variant, from linker map):
 | EncryptorEngine                                | ~1.5 KB          | Data channel pipeline                    |
 | CommandDeck                                    | ~2 KB            | 14 command handlers                      |
 | KeyStore                                       | ~1 KB            | Flash page management                    |
-| LiteExecutive + SchedulerLite                  | ~1.5 KB          | Cooperative scheduler                    |
+| McuExecutive + SchedulerLite                  | ~1.5 KB          | Cooperative scheduler                    |
 | Main + init + stubs                            | ~1 KB            | Boot, UART init, task registration       |
 | **Total**                                      | **~26.4 KB**     | **Matches linker output**                |
 

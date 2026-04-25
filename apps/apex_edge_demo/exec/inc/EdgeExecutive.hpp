@@ -15,7 +15,7 @@
  *   - SystemMonitor (SUPPORT): CPU + GPU health telemetry via NVML
  */
 
-#include "src/system/core/executive/apex/inc/ApexExecutive.hpp"
+#include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitor.hpp"
 
 #include "src/sim/gpu_compute/batch_stats/inc/BatchStatsModel.hpp"

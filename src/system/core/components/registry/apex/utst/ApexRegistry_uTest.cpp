@@ -13,7 +13,7 @@
 #include "src/system/core/components/registry/apex/inc/ApexRegistry.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/SchedulableTask.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/TaskBuilder.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/IComponentResolver.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/IComponentResolver.hpp"
 
 #include <cstdint>
 

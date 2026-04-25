@@ -26,7 +26,7 @@
 #include "src/system/core/components/action/apex/inc/ActionInterface.hpp"
 #include "src/system/core/components/action/apex/inc/ResourceCatalog.hpp"
 #include "src/system/core/components/action/apex/inc/SequenceCatalog.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/CoreComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/CoreComponentBase.hpp"
 
 #include <cstdint>
 #include <filesystem>

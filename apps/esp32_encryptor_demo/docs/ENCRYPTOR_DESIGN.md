@@ -202,10 +202,10 @@ endurance far exceeds the raw flash cycle limit (100K cycles per sector).
 
 ## Task Model
 
-### LiteExecutive (100 Hz) inside FreeRTOS
+### McuExecutive (100 Hz) inside FreeRTOS
 
 The firmware uses a cooperative scheduler with five tasks. ESP-IDF runs FreeRTOS
-by default; the LiteExecutive runs inside a pinned FreeRTOS task on core 0
+by default; the McuExecutive runs inside a pinned FreeRTOS task on core 0
 (unicore mode via `CONFIG_FREERTOS_UNICORE=y`).
 
 ```

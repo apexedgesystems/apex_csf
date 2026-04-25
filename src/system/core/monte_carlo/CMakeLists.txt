@@ -9,7 +9,7 @@
 #   SweepGenerator     - Parameter variation utilities (grid, random, LHS)
 #
 # Design:
-#   NOT an executive variant. Drives LiteExecutive instances (or raw model
+#   NOT an executive variant. Drives McuExecutive instances (or raw model
 #   calls) as workers. Parallelism is across runs, not within a single frame.
 #   Each worker grabs runs from an atomic counter (work-stealing pattern).
 #

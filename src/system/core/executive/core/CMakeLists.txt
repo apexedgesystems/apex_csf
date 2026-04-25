@@ -10,8 +10,8 @@
 #   - ExecutiveCore - Concrete base with identity constants, abstract.
 #
 # Dependents:
-#   - system_core_executive (ExecutiveBase / ApexExecutive)
-#   - executive_lite (LiteExecutive)
+#   - system_core_executive (PosixExecutiveBase / ApexExecutive)
+#   - executive_mcu (McuExecutive)
 # ==============================================================================
 
 include(apex/All)

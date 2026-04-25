@@ -11,7 +11,7 @@
  * - cleanup() performs heavy I/O and is not real-time safe.
  */
 
-#include "src/system/core/infrastructure/system_component/apex/inc/CoreComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/CoreComponentBase.hpp"
 #include "src/system/core/components/filesystem/apex/inc/FileSystemStatus.hpp"
 
 #include <cstdint>

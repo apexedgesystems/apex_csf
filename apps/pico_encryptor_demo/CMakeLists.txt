@@ -1,5 +1,5 @@
 # ==============================================================================
-# pico_encryptor_demo - RP2040 LiteExecutive application for Raspberry Pi Pico
+# pico_encryptor_demo - RP2040 McuExecutive application for Raspberry Pi Pico
 # ==============================================================================
 #
 # AES-256-GCM encryption firmware for Raspberry Pi Pico (RP2040).
@@ -66,7 +66,7 @@ apex_add_firmware(
   "${CMAKE_SOURCE_DIR}/src/system/core/hal/base"
   "${CMAKE_SOURCE_DIR}/src/system/core/hal/pico/inc"
   LINK
-  executive_lite
+  executive_mcu
   encryption_lite
   system_core_protocols_framing_slip
   utilities_checksums_crc

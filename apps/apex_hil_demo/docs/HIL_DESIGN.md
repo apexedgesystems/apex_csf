@@ -15,7 +15,7 @@ same shared libraries.
 ```
   POSIX Host (Raspberry Pi 4 / Linux)                STM32 (NUCLEO-L476RG)
   +--------------------------------------------+     +--------------------------+
-  |  HilExecutive                              |     |  LiteExecutive           |
+  |  HilExecutive                              |     |  McuExecutive           |
   |                                            |     |  +--------------------+  |
   |  +------------------+                      |     |  | FlightController   |  |
   |  | HilPlantModel    |  VehicleState        |     |  |  Prediction model  |  |
@@ -379,7 +379,7 @@ Wire format: `[SLIP_END] [opcode:1] [payload:N] [CRC-16:2] [SLIP_END]`
 | STM32->Host | CONTROL_CMD 0x20  | ControlCmd (16B)    | 50 Hz |
 | STM32->Host | HEARTBEAT 0x30    | HeartbeatData (12B) | 1 Hz  |
 
-## STM32 Task Schedule (LiteExecutive @ 100 Hz)
+## STM32 Task Schedule (McuExecutive @ 100 Hz)
 
 | Task          | Rate   | Priority | Description                             |
 | ------------- | ------ | -------- | --------------------------------------- |

@@ -7,7 +7,7 @@
  */
 
 #include "src/system/core/components/registry/apex/inc/RegistryExport.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/DataCategory.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/DataCategory.hpp"
 
 #include <cstring>
 #include <filesystem>

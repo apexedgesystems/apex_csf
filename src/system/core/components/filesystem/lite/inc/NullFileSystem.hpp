@@ -11,7 +11,7 @@
  *   - Suitable for bare-metal MCU targets without storage
  *
  * Use Cases:
- *   - LiteExecutive on MCUs without filesystem
+ *   - McuExecutive on MCUs without filesystem
  *   - Testing components that optionally use filesystem
  *   - Environments where logging/storage is disabled
  *
@@ -47,7 +47,7 @@ constexpr std::uint16_t NULL_FILESYSTEM_COMPONENT_ID = 2;
  * @brief No-op IComponent implementation for environments without storage.
  *
  * Provides a filesystem interface where all operations succeed but do nothing.
- * Useful for LiteExecutive deployments where no persistent storage is available
+ * Useful for McuExecutive deployments where no persistent storage is available
  * or needed.
  *
  * Usage:

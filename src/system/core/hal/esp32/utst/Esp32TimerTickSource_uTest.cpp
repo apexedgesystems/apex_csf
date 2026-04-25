@@ -10,7 +10,7 @@
 #include <gtest/gtest.h>
 
 using apex::hal::esp32::Esp32TimerTickSource;
-using executive::lite::ITickSource;
+using executive::mcu::ITickSource;
 
 /* ----------------------------- Default Construction ----------------------------- */
 

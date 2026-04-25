@@ -15,8 +15,8 @@
  *   - Frequency decimation happens at scheduler level (TaskEntry::shouldRun)
  */
 
-#include "src/system/core/infrastructure/system_component/apex/inc/CoreComponentBase.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/IComponentResolver.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/CoreComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/IComponentResolver.hpp"
 #include "src/system/core/components/scheduler/apex/inc/SchedulerStatus.hpp"
 #include "src/system/core/components/scheduler/apex/inc/SchedulerTlm.hpp"
 #include "src/system/core/components/scheduler/base/inc/IScheduler.hpp"

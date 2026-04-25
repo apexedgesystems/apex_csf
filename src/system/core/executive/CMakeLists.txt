@@ -2,16 +2,16 @@
 # executive - Executive implementations for system control
 #
 # Directory structure:
-#   base/ - IExecutive interface (header-only, no heavy deps)
-#   core/ - ExecutiveCore shared concrete base (header-only, no heavy deps)
-#   apex/ - ApexExecutive (full-featured for resource-rich systems)
-#   lite/ - LiteExecutive (minimal for MCUs)
+#   base/  - IExecutive interface (header-only, no heavy deps)
+#   core/  - ExecutiveCore shared concrete base (header-only, no heavy deps)
+#   posix/ - PosixExecutiveBase / ApexExecutive (POSIX tier)
+#   mcu/   - McuExecutive (MCU tier)
 #
 # Libraries:
 #   executive_base - Pure interface (INTERFACE, header-only)
 #   executive_core - Shared concrete base (INTERFACE, header-only)
-#   system_core_executive - Full implementation (SHARED)
-#   executive_lite - MCU implementation (INTERFACE, header-only)
+#   system_core_executive - POSIX implementation (SHARED)
+#   executive_mcu - MCU implementation (INTERFACE, header-only)
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -28,14 +28,14 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/core/CMakeLists.txt")
   add_subdirectory(core)
 endif ()
 
-# Apex implementation library (ApexExecutive)
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apex/CMakeLists.txt")
-  add_subdirectory(apex)
+# POSIX implementation library (PosixExecutiveBase / ApexExecutive)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/posix/CMakeLists.txt")
+  add_subdirectory(posix)
 endif ()
 
-# Lite implementation library (LiteExecutive)
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lite/CMakeLists.txt")
-  add_subdirectory(lite)
+# MCU implementation library (McuExecutive)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mcu/CMakeLists.txt")
+  add_subdirectory(mcu)
 endif ()
 
 # Watchdog supervisor binary (POSIX only, no Apex deps)

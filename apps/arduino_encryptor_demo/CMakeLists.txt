@@ -1,5 +1,5 @@
 # ==============================================================================
-# arduino_encryptor_demo - AVR LiteExecutive application for Arduino Uno R3
+# arduino_encryptor_demo - AVR McuExecutive application for Arduino Uno R3
 # ==============================================================================
 #
 # Port of stm32_encryptor to ATmega328P (8-bit AVR, 32 KB flash, 2 KB SRAM).
@@ -46,7 +46,7 @@ apex_add_firmware(
   "${CMAKE_SOURCE_DIR}/src/system/core/hal/base"
   "${CMAKE_SOURCE_DIR}/src/system/core/hal/avr/inc"
   LINK
-  executive_lite
+  executive_mcu
   encryption_lite
   system_core_protocols_framing_slip
   utilities_checksums_crc

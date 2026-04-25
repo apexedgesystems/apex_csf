@@ -9,7 +9,7 @@
  * @note RT-safe: Pure POD structures.
  */
 
-#include "src/system/core/infrastructure/system_component/apex/inc/DataTarget.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/DataTarget.hpp"
 #include "src/utilities/data_proxy/inc/ByteMaskProxy.hpp"
 
 #include <array>

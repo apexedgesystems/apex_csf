@@ -17,7 +17,7 @@
  * Derivatives:
  *   - SystemComponentBase (posix/) - adds TPRM, internal bus, command
  *     handling, data descriptors, configured/locked semantics, logging.
- *   - LiteComponentBase (mcu/) - adds MCU-specific constraints
+ *   - McuComponentBase (mcu/) - adds MCU-specific constraints
  *     (deletes moves) but otherwise uses ComponentCore as-is.
  *
  * Initialization template:
