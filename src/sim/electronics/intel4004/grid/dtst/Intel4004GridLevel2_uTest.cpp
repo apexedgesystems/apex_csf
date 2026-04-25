@@ -55,8 +55,10 @@ TEST(Intel4004L2, ConstructionIsIndependent) {
   EXPECT_NEAR(grid.gminTransient_, 1e-9, 1e-15);
   EXPECT_NEAR(grid.gminDriven_, 1e-12, 1e-15);
 
-  // BSIM3 latch params calibrated for the Intel 4004 10 micron PMOS process.
-  EXPECT_NEAR(grid.bsim3LatchParams_.n_factor, 1.8, 1e-9);
+  // BSIM3 latch params: n_factor=2.5 lands in the >100 mV overdrive
+  // regime per MosfetBsim3Probe.NFactorSweep with the multiplicative
+  // weak-inv-correct I-V formula.
+  EXPECT_NEAR(grid.bsim3LatchParams_.n_factor, 2.5, 1e-9);
   EXPECT_NEAR(grid.bsim3LatchParams_.Vth0, Intel4004GridLevel2::VTH_ENH, 1e-9);
 }
 
@@ -142,7 +144,7 @@ TEST(Intel4004L2, LatchStampDelegatesToBsim3) {
   // Pick a representative latch transistor (one whose gate is NOT a NOR
   // output net -- those are the ones routed to the BSIM3 hook).
   // We assert the L2 params match what the hook will use.
-  EXPECT_NEAR(grid.bsim3LatchParams_.n_factor, 1.8, 1e-9);
+  EXPECT_NEAR(grid.bsim3LatchParams_.n_factor, 2.5, 1e-9);
   EXPECT_NEAR(grid.bsim3LatchParams_.Vth0, Intel4004GridLevel2::VTH_ENH, 1e-9);
   EXPECT_NEAR(grid.bsim3LatchParams_.lambda, Intel4004GridLevel2::LAMBDA, 1e-9);
 

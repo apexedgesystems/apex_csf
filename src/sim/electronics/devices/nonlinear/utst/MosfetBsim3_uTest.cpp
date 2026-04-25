@@ -70,8 +70,15 @@ TEST(MosfetBsim3, StrongInversionSaturation_MatchesLevel1Form) {
   const double vds = 5.0; // Deep saturation (Vds >> Vdsat = Vov)
   const double idBsim = MosfetBsim3::current(vgs, vds, 0.0, p);
   const double idL1Reference = 0.5 * p.Kp * Vov * Vov;
-  EXPECT_NEAR(idBsim, idL1Reference, 0.05 * idL1Reference)
-      << "BSIM3 strong-saturation should match L1 within 5%; bsim=" << idBsim
+  // Tolerance 10% (relaxed from 5%). The BSIM3 weak-inversion correction
+  // (the +2*n*Vt term in the multiplicative kernel) adds ~beta*n*Vt*Vgst
+  // overhead in strong inversion -- about 8% at Vgst=1V, n=1.5. This is
+  // the documented trade-off for getting exp((Vgs-Vth)/(n*Vt))
+  // subthreshold scaling instead of exp(2*(Vgs-Vth)/(n*Vt)). Without
+  // this term, weak-inv current is ~10x too small and the documented
+  // L2 latch-feedback overdrive is unreachable.
+  EXPECT_NEAR(idBsim, idL1Reference, 0.10 * idL1Reference)
+      << "BSIM3 strong-saturation should match L1 within 10%; bsim=" << idBsim
       << " L1ref=" << idL1Reference;
 }
 

@@ -111,12 +111,17 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
 
   /// BSIM3 parameter template for the latch feedback core. Per-transistor
   /// `Kp` is overridden from `transistorKp_` (W/L-binned calibrated values).
-  /// `n_factor = 1.8` is calibrated for the 10 micron PMOS process and
-  /// gives positive overdrive on the depletion-load NOR gate
-  /// (see `MosfetBsim3Probe.NFactorSweep`).
+  /// `n_factor = 2.5` lands in the >100 mV overdrive regime per the
+  /// post-fix `MosfetBsim3Probe.NFactorSweep`:
+  ///   n=1.5 -> +29 mV (insufficient, like the old broken impl)
+  ///   n=2.0 -> +63 mV (positive but marginal)
+  ///   n=2.5 -> +101 mV ("well below VTH" per docs)
+  ///   n=3.0 -> +141 mV (deeper but n is on the high side of typical)
+  /// 10-micron PMOS with thick (50 nm) gate oxide can support n around
+  /// 2.0-3.0 due to depletion-region capacitance / interface states.
   MosfetBsim3Params bsim3LatchParams_{
       .Kp = KP_PROCESS, .Vth0 = VTH_ENH, .lambda = LAMBDA, .W = 1.0, .L = 1.0,
-      .n_factor = 1.8, .Vt = 0.026, .eta0 = 0.0, .K1 = 0.0, .K2 = 0.0, .phi = 0.7,
+      .n_factor = 2.5, .Vt = 0.026, .eta0 = 0.0, .K1 = 0.0, .K2 = 0.0, .phi = 0.7,
       .ua = 0.0, .ub = 0.0, .tox = 50e-9, .delta = 0.01};
 
   /**

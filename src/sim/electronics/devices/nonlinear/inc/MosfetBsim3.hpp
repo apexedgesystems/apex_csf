@@ -194,14 +194,20 @@ struct MosfetBsim3 {
   /**
    * @brief Saturation voltage with smooth transition.
    *
-   * Vdsat = Vgst_eff (simplified, ignoring velocity saturation for
-   * the 10 µm process where velocity saturation is negligible).
-   * Full BSIM3 includes Esat*L correction; for our process L is large
-   * enough that Esat*L >> Vgst, so Vdsat ≈ Vgst_eff.
+   * Long-channel BSIM3: Vdsat ≈ Vgst_eff in strong inversion. In weak
+   * inversion, real BSIM3 has Vdsat ≈ ~2*Vt (a constant floor) so that
+   * the channel saturates at a few thermal voltages, not at the
+   * vanishing Vgst_eff. Without this floor the I-V degenerates to
+   * Id ∝ Vgst_eff² (exp(2x) scaling); with the floor Id ∝ Vgst_eff
+   * (exp(x) scaling) — the canonical exponential subthreshold.
+   *
+   * Smooth blend: sqrt(Vgst² + (2*Vt)²). Strong inv → Vgst_eff;
+   * weak inv → 2*Vt.
    */
   [[nodiscard]] static double saturationVoltage(double vgstEffVal,
-                                                const MosfetBsim3Params& /*p*/) noexcept {
-    return std::max(vgstEffVal, 0.0);
+                                                const MosfetBsim3Params& p) noexcept {
+    const double floor2vt = 2.0 * p.Vt;
+    return std::sqrt(vgstEffVal * vgstEffVal + floor2vt * floor2vt);
   }
 
   /**
@@ -258,7 +264,6 @@ struct MosfetBsim3 {
     const double vth = thresholdVoltage(vds, vbs, p);
     const double vgstEffVal = vgstEff(vgs, vth, p);
     if (vgstEffVal <= 0.0) {
-      // Numerical zero (vanishing tail far below threshold).
       return 0.0;
     }
     const double mu = mobilityFactor(vgstEffVal, p);
@@ -266,14 +271,30 @@ struct MosfetBsim3 {
     const double vdsat = saturationVoltage(vgstEffVal, p);
     const double vdseffVal = vdsEff(vds, vdsat, p);
 
-    // Quadratic-in-Vdseff core, smooth across linear/saturation:
-    //   I = beta * Vgst_eff * Vdseff * (1 - 0.5 * Vdseff / Vgst_eff)
-    //     = beta * (Vgst_eff * Vdseff - 0.5 * Vdseff^2)
-    const double idCore = beta * (vgstEffVal * vdseffVal - 0.5 * vdseffVal * vdseffVal);
+    // BSIM3-style saturation current. Multiplicative form so Id → 0 as
+    // Vgst_eff → 0 (no current floor in deep weak inversion).
+    //
+    //   Id_sat = (beta/2) * Vgst_eff * (Vgst_eff + 2*n*Vt)
+    //
+    //   Strong  (Vgst_eff >> n*Vt): Id_sat → 0.5*beta*Vgst². ✓
+    //   Weak    (Vgst_eff << n*Vt): Id_sat → beta * n*Vt * Vgst_eff.
+    //     With Vgst_eff = n*Vt * exp((Vgs-Vth)/(n*Vt)) in weak inv,
+    //     this gives Id ∝ exp((Vgs-Vth)/(n*Vt)) -- the canonical
+    //     subthreshold exponential the documented L2 design relies on.
+    //   Vgst_eff → 0:           Id_sat → 0. ✓
+    const double n_vt_2 = 2.0 * p.n_factor * p.Vt;
+    const double idSat = 0.5 * beta * vgstEffVal * (vgstEffVal + n_vt_2);
 
-    // Channel-length modulation in saturation only (Vds beyond Vdsat).
+    // Smooth linear-to-saturation transition: factor = 1 - (1-r)²
+    // where r = Vdseff / Vdsat ∈ [0, 1]. Equivalent to the textbook
+    // (Vgst*Vds - 0.5*Vds²) form when Vdseff < Vdsat. Reaches 1 at
+    // Vds = Vdsat (saturation).
+    const double r = vdseffVal / std::max(vdsat, 1e-12);
+    const double factor = r * (2.0 - r);
+
+    // Channel-length modulation in saturation only.
     const double clm = 1.0 + p.lambda * std::max(vds - vdseffVal, 0.0);
-    return idCore * clm;
+    return idSat * factor * clm;
   }
 
   /* ----------------------------- Derivatives ----------------------------- */
