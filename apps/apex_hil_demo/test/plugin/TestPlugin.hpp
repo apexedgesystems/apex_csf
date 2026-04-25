@@ -19,8 +19,8 @@
  * after hot-swap, the new version is running.
  */
 
-#include "src/system/core/infrastructure/system_component/apex/inc/SwModelBase.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/PluginInterface.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/PluginInterface.hpp"
 
 #include <cstdint>
 

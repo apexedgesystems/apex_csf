@@ -11,12 +11,12 @@
  * Supports two execution modes (selected at compile time):
  *
  * Bare-metal (default):
- *   LiteExecutive runs directly in main() using Stm32SysTickSource.
+ *   McuExecutive runs directly in main() using Stm32SysTickSource.
  *
  * FreeRTOS (APEX_USE_FREERTOS):
- *   LiteExecutive runs inside a FreeRTOS task using FreeRtosTickSource
+ *   McuExecutive runs inside a FreeRTOS task using FreeRtosTickSource
  *   (vTaskDelayUntil). A single FreeRTOS task hosts the executive; all
- *   scheduler tasks remain within LiteExecutive.
+ *   scheduler tasks remain within McuExecutive.
  *
  * Task model (100 Hz fundamental):
  *   - profilerStartTask: 100 Hz (priority 127, DWT cycle start marker)
@@ -30,7 +30,7 @@
 #include "EncryptorConfig.hpp"
 #include "EncryptorEngine.hpp"
 #include "KeyStore.hpp"
-#include "LiteExecutive.hpp"
+#include "McuExecutive.hpp"
 #include "OverheadTracker.hpp"
 #include "Stm32Flash.hpp"
 #include "Stm32Uart.hpp"
@@ -80,7 +80,7 @@ static apex::hal::stm32::FreeRtosTickSource tickSource(100); // 100 Hz
 #else
 static apex::hal::stm32::Stm32SysTickSource tickSource(100); // 100 Hz
 #endif
-static executive::lite::LiteExecutive<> exec(&tickSource, 100);
+static executive::mcu::McuExecutive<> exec(&tickSource, 100);
 
 /* ----------------------------- Overhead Tracker ----------------------------- */
 
@@ -177,7 +177,7 @@ static void registerSchedulerTasks() {
 /* ----------------------------- FreeRTOS Executive Task ----------------------------- */
 
 /**
- * @brief FreeRTOS task that runs the LiteExecutive.
+ * @brief FreeRTOS task that runs the McuExecutive.
  *
  * Configures scheduler tasks, initializes executive, and enters the
  * executive main loop. Uses FreeRtosTickSource for timing (vTaskDelayUntil).

@@ -33,7 +33,7 @@ apex_add_gtest(
   ${UNIT_TEST_SOURCES}
   LINK
   hal_interface
-  executive_lite
+  executive_mcu
   LABELS
   hal
 )

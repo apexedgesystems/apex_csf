@@ -28,7 +28,7 @@
 #include "src/system/core/infrastructure/protocols/aproto/inc/AprotoTypes.hpp"
 #include "src/system/core/infrastructure/protocols/framing/cobs/inc/COBSFraming.hpp"
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/IInternalBus.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
 
 #include <cstdint>
 

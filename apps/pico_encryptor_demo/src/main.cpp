@@ -21,7 +21,7 @@
 #include "EncryptorConfig.hpp"
 #include "EncryptorEngine.hpp"
 #include "KeyStore.hpp"
-#include "LiteExecutive.hpp"
+#include "McuExecutive.hpp"
 #include "OverheadTracker.hpp"
 #include "PicoFlash.hpp"
 #include "PicoSysTickSource.hpp"
@@ -57,7 +57,7 @@ static encryptor::EncryptorEngine engine(dataUart, &keyStore);
 /* ----------------------------- Executive Stack ----------------------------- */
 
 static apex::hal::pico::PicoSysTickSource tickSource(100); // 100 Hz
-static executive::lite::LiteExecutive<> exec(&tickSource, 100);
+static executive::mcu::McuExecutive<> exec(&tickSource, 100);
 
 /* ----------------------------- Overhead Tracker ----------------------------- */
 

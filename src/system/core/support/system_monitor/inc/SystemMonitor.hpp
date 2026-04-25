@@ -31,7 +31,7 @@
 #include "src/system/core/support/system_monitor/inc/SystemMonitorSnapshot.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorTlm.hpp"
 
-#include "src/system/core/infrastructure/system_component/apex/inc/SupportComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SupportComponentBase.hpp"
 
 #include <cstdint>
 

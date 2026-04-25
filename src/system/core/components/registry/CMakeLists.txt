@@ -3,7 +3,7 @@
 #
 # Directory structure:
 #   apex/ - ApexRegistry (full-featured runtime registration, RDAT export)
-#   lite/ - StaticRegistry or NullRegistry (minimal for MCUs) [future]
+#   mcu/  - McuRegistry (minimal for MCUs) [future]
 #
 # Libraries:
 #   system_core_registry - Full implementation (SHARED)
@@ -18,7 +18,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apex/CMakeLists.txt")
   add_subdirectory(apex)
 endif ()
 
-# Lite implementation library (StaticRegistry) [future]
-# if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lite/CMakeLists.txt")
-#   add_subdirectory(lite)
+# MCU implementation library [future]
+# if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mcu/CMakeLists.txt")
+#   add_subdirectory(mcu)
 # endif ()

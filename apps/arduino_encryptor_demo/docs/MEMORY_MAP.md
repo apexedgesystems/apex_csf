@@ -55,7 +55,7 @@ runtime data storage in this application (EEPROM is used for keys instead).
 | SLIP framing                   | ~400 B         | Encode + decode                                 |
 | CRC-16/XMODEM                  | ~200 B         | Bitwise (no lookup table to save SRAM)          |
 | UART driver (interrupt-driven) | ~500 B         | ISR + ring buffer logic                         |
-| LiteExecutive + SchedulerLite  | ~800 B         | Cooperative scheduler, tick source              |
+| McuExecutive + McuScheduler  | ~800 B         | Cooperative scheduler, tick source              |
 | Command handler                | ~1.5 KB        | 14 opcodes, dispatch, response builder          |
 | Encrypt pipeline               | ~1 KB          | Frame parse, CRC check, encrypt, output build   |
 | Key store (EEPROM driver)      | ~400 B         | Read/write/erase, bitmap scan                   |
@@ -103,7 +103,7 @@ full optimization history (3,533 -> 1,280 bytes across 2 passes + UART fixes).
 | Symbol                               | Size        | % of SRAM | Notes                                     |
 | ------------------------------------ | ----------- | --------- | ----------------------------------------- |
 | engine (EncryptorEngine)             | 307 B       | 15.0%     | Crypto state + buffers (MAX_PLAINTEXT=48) |
-| exec (LiteExecutive<8, uint32_t>)    | 144 B       | 7.0%      | 8-task table + uint32_t counters          |
+| exec (McuExecutive<8, uint32_t>)    | 144 B       | 7.0%      | 8-task table + uint32_t counters          |
 | uart (AvrUart<64, 32>)               | 128 B       | 6.3%      | 64 RX + 32 TX rings + state               |
 | commandDeck                          | 121 B       | 5.9%      | Response + SLIP encode buffers            |
 | decodeBuf                            | 51 B        | 2.5%      | SLIP decode output                        |
@@ -126,7 +126,7 @@ full optimization history (3,533 -> 1,280 bytes across 2 passes + UART fixes).
 3. **Single UART.** Eliminates the second set of RX/TX ring buffers.
    Command and data share one channel via 1-byte prefix multiplexing.
 
-4. **Template LiteExecutive<8, uint32_t>.** Task table 32 -> 8 slots (-288 B).
+4. **Template McuExecutive<8, uint32_t>.** Task table 32 -> 8 slots (-288 B).
    Counter type uint64_t -> uint32_t saves 12 bytes of SRAM and ~2 KB of
    flash (eliminates avr-gcc 64-bit software arithmetic routines).
 

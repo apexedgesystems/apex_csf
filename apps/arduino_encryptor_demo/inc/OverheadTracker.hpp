@@ -14,12 +14,12 @@
  * normally hooks for millis()). Since we run bare-metal without Arduino
  * libs, we provide our own overflow counter.
  *
- * Fast-forward control is delegated to the LiteExecutive.
+ * Fast-forward control is delegated to the McuExecutive.
  *
  * @note RT-safe: markTickStart() and markTickEnd() are O(1) register reads.
  */
 
-#include "LiteExecutive.hpp"
+#include "McuExecutive.hpp"
 
 #include <avr/io.h>
 #include <stdint.h>
@@ -63,7 +63,7 @@ struct OverheadStats {
  */
 class OverheadTracker {
 public:
-  explicit OverheadTracker(executive::lite::LiteExecutive<8, uint32_t>& exec) noexcept
+  explicit OverheadTracker(executive::mcu::McuExecutive<8, uint32_t>& exec) noexcept
       : exec_(exec), stats_{}, startCount_(0), overflows_(0) {}
 
   /**
@@ -144,7 +144,7 @@ public:
   static OverheadTracker* instance_;
 
 private:
-  executive::lite::LiteExecutive<8, uint32_t>& exec_;
+  executive::mcu::McuExecutive<8, uint32_t>& exec_;
   OverheadStats stats_;
   volatile uint8_t startCount_;
   volatile uint16_t overflows_;

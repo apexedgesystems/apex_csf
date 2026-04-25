@@ -15,7 +15,7 @@
  * @note One instance only (Timer1 is a singleton resource).
  */
 
-#include "src/system/core/executive/lite/inc/ITickSource.hpp"
+#include "src/system/core/executive/mcu/inc/ITickSource.hpp"
 
 #ifndef APEX_HAL_AVR_MOCK
 #include <avr/interrupt.h>
@@ -34,9 +34,9 @@ namespace avr {
 
 /**
  * @class AvrTimerTickSource
- * @brief Timer1 CTC-based tick source for LiteExecutive.
+ * @brief Timer1 CTC-based tick source for McuExecutive.
  */
-class AvrTimerTickSource final : public executive::lite::ITickSource {
+class AvrTimerTickSource final : public executive::mcu::ITickSource {
 public:
   /**
    * @brief Construct tick source with desired frequency.

@@ -11,7 +11,7 @@
 
 A closed-loop hardware-in-the-loop flight simulation. The Raspberry Pi runs
 a 3DOF plant model (gravity + drag + point mass dynamics) under a full
-ApexExecutive. The STM32 runs a PD flight controller under a LiteExecutive.
+ApexExecutive. The STM32 runs a PD flight controller under a McuExecutive.
 VehicleState flows from host to STM32 at 50 Hz; ControlCmd flows back at
 50 Hz. A software-emulated flight controller runs in parallel for comparison.
 
@@ -99,7 +99,7 @@ stabilizes) and converges within the first 30 seconds.
 
 The same FlightController class runs on both:
 
-- STM32 Cortex-M4 at 80 MHz (bare-metal, LiteExecutive)
+- STM32 Cortex-M4 at 80 MHz (bare-metal, McuExecutive)
 - Raspberry Pi Cortex-A72 at 1.8 GHz (Linux, VirtualFlightCtrl HW_MODEL)
 
 Both produce identical control outputs given the same VehicleState input.

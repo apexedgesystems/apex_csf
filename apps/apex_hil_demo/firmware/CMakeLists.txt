@@ -87,7 +87,7 @@ apex_add_firmware(
   INC
   ${FIRMWARE_INC}
   LINK
-  executive_lite
+  executive_mcu
   system_core_protocols_framing_slip
   utilities_checksums_crc
 )

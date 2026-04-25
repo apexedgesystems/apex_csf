@@ -42,7 +42,7 @@ tasks. The framework calls your tasks at the frequencies you configure.
 Here is a minimal simulation model:
 
 ```cpp
-#include "src/system/core/infrastructure/system_component/apex/inc/SwModelBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
 
 class ThermalModel final : public system_core::system_component::SwModelBase {
 public:
@@ -114,8 +114,8 @@ filesystem, and logging. Your component's `doInit()` registers tasks. The
 scheduler calls those tasks at the configured frequency. Everything in the
 hot path is RT-safe: no allocations, no blocking, bounded execution.
 
-For bare-metal targets, the same pattern applies with `LiteExecutive`,
-`LiteComponentBase`, and `SchedulerLite<N>` -- zero heap allocation.
+For bare-metal targets, the same pattern applies with `McuExecutive`,
+`McuComponentBase`, and `McuScheduler<N>` -- zero heap allocation.
 
 ---
 
@@ -163,7 +163,7 @@ The **scheduler** supports three execution models:
 
 - `SchedulerMultiThread` -- parallel execution with a thread pool (Linux)
 - `SchedulerSingleThread` -- deterministic sequential execution (Linux)
-- `SchedulerLite<N>` -- static task table, zero heap (bare-metal MCU)
+- `McuScheduler<N>` -- static task table, zero heap (bare-metal MCU)
 
 Task frequency, priority, phase, and thread affinity are configured externally
 via **TPRM** (tunable parameter) files -- not hard-coded. Change timing without
@@ -399,12 +399,12 @@ Performance benchmarking uses
 
 ### System Core -- Infrastructure
 
-| Library                                                                            | Namespace                       | Description                                                                               |
-| ---------------------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------- |
-| [system_component](src/system/core/infrastructure/system_component/base/README.md) | `system_core::system_component` | Component base classes and lifecycle (IComponent, SystemComponentBase, LiteComponentBase) |
-| [schedulable](src/system/core/infrastructure/schedulable/README.md)                | `system_core::schedulable`      | Lightweight task abstractions (~24 bytes) with zero-cost delegates                        |
-| [data](src/system/core/infrastructure/data/README.md)                              | `system_core::data`             | Typed data containers, endianness handling, watchpoints, and fault injection              |
-| [logs](src/system/core/infrastructure/logs/README.md)                              | `logs`                          | RT-safe asynchronous logging with file-backed persistence and rotation                    |
+| Library                                                                            | Namespace                       | Description                                                                              |
+| ---------------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------- |
+| [system_component](src/system/core/infrastructure/system_component/base/README.md) | `system_core::system_component` | Component base classes and lifecycle (IComponent, SystemComponentBase, McuComponentBase) |
+| [schedulable](src/system/core/infrastructure/schedulable/README.md)                | `system_core::schedulable`      | Lightweight task abstractions (~24 bytes) with zero-cost delegates                       |
+| [data](src/system/core/infrastructure/data/README.md)                              | `system_core::data`             | Typed data containers, endianness handling, watchpoints, and fault injection             |
+| [logs](src/system/core/infrastructure/logs/README.md)                              | `logs`                          | RT-safe asynchronous logging with file-backed persistence and rotation                   |
 
 ### Protocols
 

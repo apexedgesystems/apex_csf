@@ -126,7 +126,7 @@ CRC-16/XMODEM covers opcode + payload.
 ### Algorithm
 
 AES-256-GCM per FIPS 197 + NIST SP 800-38D. Software implementation via
-`encryption_lite` library. Standard 8-bit CHAR_BIT on ARM Cortex-M0+.
+`encryption_mcu` library. Standard 8-bit CHAR_BIT on ARM Cortex-M0+.
 
 ### Performance
 
@@ -204,7 +204,7 @@ Interrupts are disabled for the duration of each flash write or erase.
 
 ## Task Model
 
-### LiteExecutive (100 Hz)
+### McuExecutive (100 Hz)
 
 The firmware uses a cooperative scheduler with three tasks. The SysTick timer
 is prescaled from 1 kHz to 100 Hz by `PicoSysTickSource`.
@@ -220,7 +220,7 @@ Cortex-M3+ feature). The `OverheadTracker` is a no-op stub that returns zeros
 for all queries. The OVERHEAD command responds with valid protocol frames
 containing zero values.
 
-**Bare-metal only:** No RTOS support on the Pico. The `LiteExecutive` runs
+**Bare-metal only:** No RTOS support on the Pico. The `McuExecutive` runs
 directly in `main()` with `PicoSysTickSource` providing timing via WFI
 (Wait For Interrupt).
 
@@ -246,7 +246,7 @@ main():
     provision test key      # Write 0x00..0x1F to slot 0
   engine.loadActiveKey()    # Load key from store into encrypt engine
   tracker.enableDwt()       # No-op on M0+ (API consistency)
-  registerSchedulerTasks()  # 3 tasks into LiteExecutive
+  registerSchedulerTasks()  # 3 tasks into McuExecutive
   exec.init() + exec.run()  # Blocks forever (cooperative loop via SysTick WFI)
 ```
 

@@ -8,7 +8,7 @@
  * portable macros that expand to modern C++ keywords on conforming compilers
  * and degrade gracefully on ancient toolchains.
  *
- * Intended consumers: bare-metal HAL headers and the LiteExecutive chain
+ * Intended consumers: bare-metal HAL headers and the McuExecutive chain
  * that must compile on toolchains with limited C++ support (e.g., TI C2000
  * CGT which only supports C++03).
  *

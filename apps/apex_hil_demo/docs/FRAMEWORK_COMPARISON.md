@@ -194,7 +194,7 @@ F Prime statically links everything into a single monolithic binary.
 | Feature              | Apex                                                     | cFS                             | F Prime                        |
 | -------------------- | -------------------------------------------------------- | ------------------------------- | ------------------------------ |
 | POSIX (Linux/macOS)  | Full support (ApexExecutive)                             | Full support (OSAL)             | Full support                   |
-| Bare-metal MCU       | LiteExecutive (STM32, AVR, Pico, ESP32, C2000, PIC32)    | VxWorks, RTEMS (not bare-metal) | Baremetal scheduler (limited)  |
+| Bare-metal MCU       | McuExecutive (STM32, AVR, Pico, ESP32, C2000, PIC32)    | VxWorks, RTEMS (not bare-metal) | Baremetal scheduler (limited)  |
 | Same-source reuse    | Same source compiles for POSIX (shared) and MCU (static) | Separate BSP per platform       | Separate topology per platform |
 | GPU (CUDA)           | Native support (schedulable GPU tasks)                   | Not supported                   | Not supported                  |
 | Hardware abstraction | HAL layer per platform (UART, SPI, I2C, CAN, Flash)      | OSAL + PSP per platform         | Os abstraction layer           |
@@ -819,7 +819,7 @@ component model.
 - **GPU task scheduling**: CUDA kernels registered as schedulable tasks,
   dispatched by the same scheduler as CPU tasks.
 - **Bare-metal + POSIX from same source**: FlightController compiles and runs
-  identically on STM32 (LiteExecutive, no heap, no OS) and Linux
+  identically on STM32 (McuExecutive, no heap, no OS) and Linux
   (ApexExecutive, full framework). Shared codec and protocol libraries.
 - **Action engine**: Declarative watchpoints, sequences, and notifications
   configured via TPRM. No callback code required on the executive.

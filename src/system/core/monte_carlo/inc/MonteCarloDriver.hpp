@@ -13,7 +13,7 @@
  *
  * Architecture:
  *   - NOT an executive variant: does not implement IExecutive
- *   - Drives LiteExecutive instances (or raw model calls) as workers
+ *   - Drives McuExecutive instances (or raw model calls) as workers
  *   - Parallelism is across runs, not within a single frame
  *   - GPU batching is orthogonal (user handles in their run function)
  *

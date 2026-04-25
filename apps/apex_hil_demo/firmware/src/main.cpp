@@ -23,7 +23,7 @@
 #include "FlightController.hpp"
 #include "HilConfig.hpp"
 #include "HilProtocol.hpp"
-#include "LiteExecutive.hpp"
+#include "McuExecutive.hpp"
 #include "Stm32SysTickSource.hpp"
 #include "Stm32Uart.hpp"
 #include "stm32l4xx_hal.h"
@@ -47,7 +47,7 @@ static hil::FlightController controller;
 /* ----------------------------- Executive Stack ----------------------------- */
 
 static apex::hal::stm32::Stm32SysTickSource tickSource(hil::EXEC_FREQ_HZ);
-static executive::lite::LiteExecutive<> exec(&tickSource, hil::EXEC_FREQ_HZ);
+static executive::mcu::McuExecutive<> exec(&tickSource, hil::EXEC_FREQ_HZ);
 
 /* ----------------------------- DWT Profiling ----------------------------- */
 

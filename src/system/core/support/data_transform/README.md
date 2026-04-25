@@ -262,4 +262,4 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L
 - `src/system/core/infrastructure/system_component/` - SupportComponentBase lifecycle
 - `src/utilities/data_proxy/` - ByteMaskProxy for mask operations
 - `src/system/core/components/action/` - Action engine (sequences, commands)
-- `src/system/core/executive/apex/` - ApexExecutive (registers and schedules support)
+- `src/system/core/executive/posix/` - ApexExecutive (registers and schedules support)

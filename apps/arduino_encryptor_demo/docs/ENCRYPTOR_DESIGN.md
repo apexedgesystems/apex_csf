@@ -135,7 +135,7 @@ CRC-16/XMODEM covers opcode + payload (channel prefix is transport-level framing
 ### Algorithm
 
 AES-256-GCM per FIPS 197 + NIST SP 800-38D. Software implementation via
-`encryption_lite` library. Standard 8-bit CHAR_BIT on AVR (unlike the C2000 port
+`encryption_mcu` library. Standard 8-bit CHAR_BIT on AVR (unlike the C2000 port
 which requires 16-bit workarounds).
 
 ### Performance
@@ -207,7 +207,7 @@ Writes are infrequent (provisioning only) and happen outside the real-time loop.
 
 ## Task Model
 
-### LiteExecutive (100 Hz)
+### McuExecutive (100 Hz)
 
 The firmware uses a cooperative scheduler driven by Timer1 compare-match interrupts
 at 100 Hz. Four tasks are registered:
@@ -227,7 +227,7 @@ measure per-tick CPU overhead via Timer0.
 | Timer  | Usage                              | Configuration                           |
 | ------ | ---------------------------------- | --------------------------------------- |
 | Timer0 | Overhead measurement               | Normal mode, prescaler=64, overflow ISR |
-| Timer1 | LiteExecutive tick source (100 Hz) | CTC mode, prescaler varies              |
+| Timer1 | McuExecutive tick source (100 Hz) | CTC mode, prescaler varies              |
 | Timer2 | Unused                             | Available for future PWM or timing      |
 
 ### Initialization Sequence
@@ -243,7 +243,7 @@ main():
     provision test key   # Copy from PROGMEM to EEPROM slot 0
   engine.loadActiveKey() # Load key from store into encrypt engine
   SLIP config            # maxFrameSize, trailing END, drop-until-END
-  registerTasks()        # 4 tasks into LiteExecutive
+  registerTasks()        # 4 tasks into McuExecutive
   exec.init()            # Configure Timer1
   exec.run()             # Blocks forever (cooperative loop)
 ```
@@ -270,7 +270,7 @@ task (profilerStart) and last task (profilerEnd) in each scheduler tick.
 command reports last/min/max/count/budget in Timer0 tick units.
 
 **Fast-forward mode:** When enabled via the FASTFORWARD command, the
-LiteExecutive skips the wait-for-tick delay and runs tasks back-to-back. This
+McuExecutive skips the wait-for-tick delay and runs tasks back-to-back. This
 reveals the maximum achievable scheduler rate, limited by task execution time
 rather than the 100 Hz timer.
 

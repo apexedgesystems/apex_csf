@@ -153,7 +153,7 @@ TEST(FreeRtosTickSource, TickCountMonotonic) {
 /** @test Verify ITickSource pointer works (polymorphism). */
 TEST(FreeRtosTickSource, PolymorphicAccess) {
   apex::hal::stm32::FreeRtosTickSource ts(50);
-  executive::lite::ITickSource* iface = &ts;
+  executive::mcu::ITickSource* iface = &ts;
 
   EXPECT_EQ(iface->tickFrequency(), 50U);
   EXPECT_FALSE(iface->isRunning());

@@ -10,7 +10,7 @@
  *   - DataEntry: Registered data block with byte-level access
  */
 
-#include "src/system/core/infrastructure/system_component/apex/inc/DataCategory.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/DataCategory.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/ComponentType.hpp"
 #include "src/utilities/compatibility/inc/compat_span.hpp"
 

@@ -27,7 +27,7 @@
  * No hardware dependencies. Runs as pure SIL on any POSIX host.
  */
 
-#include "src/system/core/executive/apex/inc/ApexExecutive.hpp"
+#include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/support/data_transform/inc/DataTransform.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitor.hpp"
 

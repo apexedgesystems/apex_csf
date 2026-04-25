@@ -7,7 +7,7 @@
 Hardware abstraction for embedded peripherals, internal storage, and tick
 sources. Provides platform-agnostic interfaces (UART, CAN, SPI, I2C, Flash) and
 platform-specific implementations with zero-allocation I/O paths. Includes
-hardware tick sources for driving the LiteExecutive main loop on bare-metal
+hardware tick sources for driving the McuExecutive main loop on bare-metal
 targets. Designed for real-time systems with deterministic behavior on the hot
 path.
 
@@ -272,7 +272,7 @@ Stm32I2c i2c(I2C1, i2cPins);
 // Flash: blocking, no pins or peripheral pointer needed
 Stm32Flash flash;
 
-// Tick sources: implement executive::lite::ITickSource
+// Tick sources: implement executive::mcu::ITickSource
 Stm32SysTickSource sysTick(100);           // 100 Hz, prescales 1kHz SysTick
 Stm32TimerTickSource timerTick(TIM6, 100); // 100 Hz via TIM6
 FreeRtosTickSource freertosTs(100);        // 100 Hz via vTaskDelayUntil

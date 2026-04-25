@@ -22,7 +22,7 @@
 #include "EncryptorConfig.hpp"
 #include "EncryptorEngine.hpp"
 #include "KeyStore.hpp"
-#include "LiteExecutive.hpp"
+#include "McuExecutive.hpp"
 #include "OverheadTracker.hpp"
 
 #include "AvrEeprom.hpp"
@@ -74,8 +74,8 @@ encryptor::OverheadTracker* encryptor::OverheadTracker::instance_ = nullptr;
 /// Timer1 tick source at 100 Hz.
 static apex::hal::avr::AvrTimerTickSource tickSource(100);
 
-/// LiteExecutive at 100 Hz.
-static executive::lite::LiteExecutive<8, uint32_t> exec(&tickSource, 100);
+/// McuExecutive at 100 Hz.
+static executive::mcu::McuExecutive<8, uint32_t> exec(&tickSource, 100);
 
 /* ----------------------------- Overhead Tracker ----------------------------- */
 

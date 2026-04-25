@@ -170,10 +170,10 @@ std::array<uint8_t, 32> key;
 auto status = apex::encryption::generateKey(key);
 ```
 
-### 3.7 Lite (Bare-Metal AES-256-GCM)
+### 3.7 MCU (Bare-Metal AES-256-GCM)
 
-**Namespace:** `apex::encryption::lite`
-**Header:** `src/utilities/encryption/lite/inc/Aes256GcmLite.hpp`
+**Namespace:** `apex::encryption::mcu`
+**Header:** `src/utilities/encryption/mcu/inc/Aes256GcmMcu.hpp`
 **RT-safe:** No (variable-time S-box lookups; use hardware AES for side-channel resistance)
 
 Standalone software AES-256-GCM with no OpenSSL or OS dependencies. Header-only,
@@ -185,16 +185,16 @@ zero heap allocation, suitable for Cortex-M4 and similar bare-metal targets.
 | aes256GcmDecrypt() | Decrypt with tag verification              |
 
 ```cpp
-#include "src/utilities/encryption/lite/inc/Aes256GcmLite.hpp"
+#include "src/utilities/encryption/mcu/inc/Aes256GcmMcu.hpp"
 
-namespace lite = apex::encryption::lite;
+namespace mcu = apex::encryption::mcu;
 
 std::array<uint8_t, 32> key{};
 std::array<uint8_t, 12> nonce{};
 std::array<uint8_t, 16> tag{};
 std::vector<uint8_t> ciphertext(plaintext.size());
 
-auto result = lite::aes256GcmEncrypt(
+auto result = mcu::aes256GcmEncrypt(
     key.data(), nonce.data(),
     aad.data(), aad.size(),
     plaintext.data(), plaintext.size(),

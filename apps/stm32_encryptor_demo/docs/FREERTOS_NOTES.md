@@ -2,7 +2,7 @@
 
 ## Motivation
 
-The bare-metal `stm32_encryptor_demo` uses LiteExecutive with Stm32SysTickSource
+The bare-metal `stm32_encryptor_demo` uses McuExecutive with Stm32SysTickSource
 for cooperative scheduling. This works well for simple workloads but does not
 exercise FreeRTOS, which is needed for:
 
@@ -15,14 +15,14 @@ compile flag (CMake option). When enabled, the same application code runs the
 executive inside a FreeRTOS task using FreeRtosTickSource. The command protocol
 and serial_checkout.py are identical in both modes.
 
-## Architecture: Option 3 (LiteExecutive + FreeRtosTickSource)
+## Architecture: Option 3 (McuExecutive + FreeRtosTickSource)
 
 ### What changes
 
 | Layer             | Bare-metal                         | FreeRTOS                                   |
 | ----------------- | ---------------------------------- | ------------------------------------------ |
 | Tick source       | Stm32SysTickSource (SysTick + WFI) | FreeRtosTickSource (vTaskDelayUntil)       |
-| Main loop         | LiteExecutive::run() in main()     | LiteExecutive::run() in FreeRTOS task      |
+| Main loop         | McuExecutive::run() in main()     | McuExecutive::run() in FreeRTOS task      |
 | SysTick ownership | Shared: HAL + tick source          | FreeRTOS kernel                            |
 | HAL timebase      | SysTick (shared)                   | SysTick (via FreeRTOS xTaskGetTickCount)   |
 | Context switch    | None (single-threaded)             | FreeRTOS PendSV (preemptive between tasks) |
@@ -30,7 +30,7 @@ and serial_checkout.py are identical in both modes.
 
 ### What stays the same
 
-- SchedulerLite priorities (127, 0, -128) still control execution order within a tick
+- McuScheduler priorities (127, 0, -128) still control execution order within a tick
 - All application code (EncryptorEngine, CommandDeck, KeyStore, OverheadTracker)
 - Command protocol (same opcodes, same serial_checkout.py)
 - SLIP + CRC framing on both channels
@@ -38,10 +38,10 @@ and serial_checkout.py are identical in both modes.
 
 ### What you do NOT get (yet)
 
-- FreeRTOS preemption between SchedulerLite tasks (they run cooperatively within
+- FreeRTOS preemption between McuScheduler tasks (they run cooperatively within
   a single FreeRTOS task)
 - FreeRTOS priorities for individual scheduler tasks (the executive task has one
-  FreeRTOS priority; SchedulerLite sorts by its own priority field)
+  FreeRTOS priority; McuScheduler sorts by its own priority field)
 - Time-slicing within the executive tick
 - Stack isolation between scheduler tasks (they share the executive task stack)
 
@@ -184,8 +184,8 @@ The FreeRTOS variant becomes worthwhile when:
 
 ## Pure FreeRTOS Approach (Option 4)
 
-The current FreeRTOS variant (Option 3) wraps the entire LiteExecutive in a single
-FreeRTOS task. A "pure FreeRTOS" approach would eliminate LiteExecutive entirely
+The current FreeRTOS variant (Option 3) wraps the entire McuExecutive in a single
+FreeRTOS task. A "pure FreeRTOS" approach would eliminate McuExecutive entirely
 and map each logical task to its own FreeRTOS task with independent stack, priority,
 and timing.
 
@@ -193,8 +193,8 @@ and timing.
 
 | Current (Option 3)                     | Pure FreeRTOS (Option 4)                                |
 | -------------------------------------- | ------------------------------------------------------- |
-| 1 FreeRTOS task runs LiteExecutive     | 4 FreeRTOS tasks (one per function)                     |
-| SchedulerLite controls execution order | FreeRTOS priority preemption controls order             |
+| 1 FreeRTOS task runs McuExecutive     | 4 FreeRTOS tasks (one per function)                     |
+| McuScheduler controls execution order | FreeRTOS priority preemption controls order             |
 | Shared stack (2 KB for all tasks)      | Per-task stacks (512 B - 1 KB each)                     |
 | Rate dividers (freqN/freqD) set rates  | vTaskDelayUntil per task sets rates                     |
 | DWT bracketing via profiler tasks      | FreeRTOS run-time stats (configGENERATE_RUN_TIME_STATS) |
@@ -216,26 +216,26 @@ The four tasks would be:
 | Task stacks                   | 2,048 B (1 executive) | 2,304 B (4 tasks)      |
 | Task control blocks           | ~140 B (1 TCB + idle) | ~350 B (4 TCBs + idle) |
 | Idle task                     | ~570 B                | ~570 B                 |
-| LiteExecutive + SchedulerLite | ~200 B                | 0 B                    |
+| McuExecutive + McuScheduler | ~200 B                | 0 B                    |
 | **Total RTOS overhead**       | **~11 KB**            | **~13.5 KB**           |
 
 Pure FreeRTOS uses ~2.5 KB more RAM. Each FreeRTOS task needs its own stack
 (minimum usable ~256 B, practical minimum ~512 B) plus a TCB (~70 B). With 4
 application tasks, the per-task stack cost exceeds the shared-stack savings from
-removing LiteExecutive.
+removing McuExecutive.
 
 ### FLASH comparison
 
 | Component                       | Option 3 | Option 4 | Delta       |
 | ------------------------------- | -------- | -------- | ----------- |
 | FreeRTOS kernel                 | ~3,100 B | ~3,100 B | 0           |
-| LiteExecutive + SchedulerLite   | ~1,200 B | 0 B      | -1,200 B    |
+| McuExecutive + McuScheduler   | ~1,200 B | 0 B      | -1,200 B    |
 | vTaskDelayUntil calls (4 tasks) | 0 B      | ~200 B   | +200 B      |
 | FreeRTOS run-time stats         | 0 B      | ~300 B   | +300 B      |
 | **Net FLASH delta**             | -        | -        | **~-700 B** |
 
-Pure FreeRTOS saves a small amount of FLASH by dropping executive_lite. The
-savings are modest because SchedulerLite is already minimal (~1.2 KB).
+Pure FreeRTOS saves a small amount of FLASH by dropping executive_mcu. The
+savings are modest because McuScheduler is already minimal (~1.2 KB).
 
 ### What you gain
 
@@ -256,7 +256,7 @@ savings are modest because SchedulerLite is already minimal (~1.2 KB).
 
 ### What you lose
 
-1. **Deterministic execution order**: SchedulerLite guarantees tasks run in
+1. **Deterministic execution order**: McuScheduler guarantees tasks run in
    priority order within each tick. Pure FreeRTOS runs highest-ready-priority
    first, but equal-priority tasks time-slice (round-robin). The strict
    "profiler start -> work -> profiler end" bracket no longer works.
@@ -270,11 +270,11 @@ savings are modest because SchedulerLite is already minimal (~1.2 KB).
    especially when tasks are simple (ledBlinkTask needs only a few bytes of
    stack but must allocate at least configMINIMAL_STACK_SIZE = 128 words).
 
-4. **Portability**: The executive model (ITickSource + SchedulerLite) works on
+4. **Portability**: The executive model (ITickSource + McuScheduler) works on
    any platform. Pure FreeRTOS tasks are FreeRTOS-specific. Moving to a
    different RTOS (Zephyr, ThreadX) requires rewriting the task structure.
 
-5. **Rate accuracy**: SchedulerLite rate dividers are exact integer ratios of
+5. **Rate accuracy**: McuScheduler rate dividers are exact integer ratios of
    the fundamental frequency. vTaskDelayUntil has 1-tick (1 ms) granularity.
    100 Hz = 10 ms periods are exact, but odd rates (e.g., 33 Hz) introduce
    jitter.
@@ -298,7 +298,7 @@ variant (Option 3) proves the integration path without the added complexity.
 If pursued, this could be a new compile flag (e.g., `APEX_FREERTOS_PURE`) or a
 separate app. Implementation steps:
 
-1. Replace LiteExecutive with 4 xTaskCreate calls, each with vTaskDelayUntil
+1. Replace McuExecutive with 4 xTaskCreate calls, each with vTaskDelayUntil
 2. Replace DWT bracketing with configGENERATE_RUN_TIME_STATS (DWT as timer)
 3. Add OVERHEAD command handler that reads FreeRTOS run-time stats
 4. Adjust FreeRTOS heap to accommodate 4 task stacks

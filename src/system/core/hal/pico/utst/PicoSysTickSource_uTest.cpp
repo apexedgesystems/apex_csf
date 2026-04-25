@@ -10,7 +10,7 @@
 #include <gtest/gtest.h>
 
 using apex::hal::pico::PicoSysTickSource;
-using executive::lite::ITickSource;
+using executive::mcu::ITickSource;
 
 /* ----------------------------- Default Construction ----------------------------- */
 

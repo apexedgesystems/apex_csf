@@ -12,14 +12,14 @@
  * the STM32's DWT->CYCCNT at 80 MHz). Unlike the Pico (Cortex-M0+
  * no-op stub), this is a real implementation.
  *
- * Fast-forward control is delegated to the LiteExecutive.
+ * Fast-forward control is delegated to the McuExecutive.
  *
  * All buffers are statically allocated. No heap usage.
  *
  * @note RT-safe: markTickStart() and markTickEnd() are O(1) register reads.
  */
 
-#include "LiteExecutive.hpp"
+#include "McuExecutive.hpp"
 
 #include <stdint.h>
 
@@ -65,7 +65,7 @@ struct OverheadStats {
  * @brief CCOUNT-based per-tick overhead measurement.
  *
  * Lifecycle:
- *  1. Construct with LiteExecutive reference
+ *  1. Construct with McuExecutive reference
  *  2. Call enableDwt() once at startup (no-op on Xtensa, for API consistency)
  *  3. Register profilerStartTask (priority 127) and profilerEndTask (priority -128)
  *  4. Query stats via command channel
@@ -76,9 +76,9 @@ class OverheadTracker {
 public:
   /**
    * @brief Construct tracker bound to an executive.
-   * @param exec LiteExecutive for fast-forward delegation and frequency query.
+   * @param exec McuExecutive for fast-forward delegation and frequency query.
    */
-  explicit OverheadTracker(executive::lite::LiteExecutive<>& exec) noexcept
+  explicit OverheadTracker(executive::mcu::McuExecutive<>& exec) noexcept
       : exec_(exec), stats_{}, startCycles_(0) {}
 
   /**
@@ -129,7 +129,7 @@ public:
   /**
    * @brief Enable or disable fast-forward mode.
    * @param enabled true to enable, false to resume normal timing.
-   * @note Delegates to LiteExecutive::setFastForward().
+   * @note Delegates to McuExecutive::setFastForward().
    */
   void setFastForward(bool enabled) noexcept { exec_.setFastForward(enabled); }
 
@@ -170,7 +170,7 @@ public:
   }
 
 private:
-  executive::lite::LiteExecutive<>& exec_;
+  executive::mcu::McuExecutive<>& exec_;
   OverheadStats stats_;
   uint32_t startCycles_;
 };

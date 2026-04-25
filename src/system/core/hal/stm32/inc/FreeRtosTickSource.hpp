@@ -2,7 +2,7 @@
 #define APEX_HAL_STM32_FREERTOS_TICK_SOURCE_HPP
 /**
  * @file FreeRtosTickSource.hpp
- * @brief FreeRTOS-based tick source for LiteExecutive on Cortex-M.
+ * @brief FreeRTOS-based tick source for McuExecutive on Cortex-M.
  *
  * Uses vTaskDelayUntil() to generate periodic ticks at the desired executive
  * frequency. FreeRTOS runs at configTICK_RATE_HZ (typically 1 kHz); this class
@@ -18,7 +18,7 @@
  * static apex::hal::stm32::FreeRtosTickSource tickSource(100);  // 100 Hz
  *
  * void executiveTask(void* param) {
- *   executive::lite::LiteExecutive exec(&tickSource, 100);
+ *   executive::mcu::McuExecutive exec(&tickSource, 100);
  *   exec.addTask({...});
  *   exec.init();
  *   exec.run();  // Blocks, uses vTaskDelayUntil internally
@@ -28,7 +28,7 @@
  * @note RT-safe: All methods are O(1) with bounded execution time.
  */
 
-#include "src/system/core/executive/lite/inc/ITickSource.hpp"
+#include "src/system/core/executive/mcu/inc/ITickSource.hpp"
 
 #include <stdint.h>
 
@@ -56,7 +56,7 @@ namespace stm32 {
  *
  * Memory usage: ~20 bytes.
  */
-class FreeRtosTickSource final : public executive::lite::ITickSource {
+class FreeRtosTickSource final : public executive::mcu::ITickSource {
 public:
   /**
    * @brief Construct with desired tick frequency.

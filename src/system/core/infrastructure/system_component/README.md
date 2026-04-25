@@ -1,10 +1,17 @@
 # System Component Library
 
-Component base classes and lifecycle management for the Apex executive framework. Three tiers: a pure interface (`IComponent`), a full-featured implementation for Linux/RTOS (`SystemComponentBase`), and a minimal implementation for bare-metal MCUs (`LiteComponentBase`).
+Component base classes and lifecycle management for the Apex executive framework. Four directory tiers organize the hierarchy:
 
-**Namespace:** `system_core::system_component`
-**Libraries:** `system_component_base` (INTERFACE), `system_core_system_component` (SHARED), `system_component_lite` (INTERFACE)
-**Platform:** Cross-platform (apex: Linux/RTOS, lite: bare-metal)
+| Tier     | Contents                                                                       | Instantiable?             |
+| -------- | ------------------------------------------------------------------------------ | ------------------------- |
+| `base/`  | Pure virtual `IComponent` interface                                            | No (pure virtual)         |
+| `core/`  | `ComponentCore` shared concrete base (identity, lifecycle, registration state) | No (still abstract)       |
+| `posix/` | `SystemComponentBase` and POSIX-tier specializations                           | Yes (full POSIX features) |
+| `mcu/`   | `McuComponentBase` for bare-metal targets                                      | Yes (static allocation)   |
+
+**Namespace:** `system_core::system_component` (POSIX), `system_core::system_component::mcu` (MCU)
+**Libraries:** `system_component_base` (INTERFACE), `system_component_core` (INTERFACE), `system_core_system_component` (SHARED, POSIX), `system_component_mcu` (INTERFACE)
+**Platform:** Cross-platform (`posix/`: Linux/RTOS, `mcu/`: bare-metal)
 **C++ Standard:** C++23
 
 ---
@@ -14,9 +21,10 @@ Component base classes and lifecycle management for the Apex executive framework
 | Component                  | Type               | Purpose                                                                                 | RT-Safe                                       |
 | -------------------------- | ------------------ | --------------------------------------------------------------------------------------- | --------------------------------------------- |
 | `IComponent`               | Abstract interface | Minimal pure interface (identity, lifecycle, status)                                    | Queries: Yes, Lifecycle: No                   |
+| `ComponentCore`            | Abstract class     | Shared concrete base: identity, lifecycle, registration state (no platform deps)        | Queries: Yes, Lifecycle: No                   |
 | `ComponentType`            | Enum               | Component classification (EXECUTIVE, CORE, SW_MODEL, HW_MODEL, SUPPORT, DRIVER)         | Yes                                           |
 | `Status`                   | Enum               | Typed status codes with extension marker                                                | Yes                                           |
-| `SystemComponentBase`      | Abstract class     | Full-featured base (lifecycle, status, logging, data descriptors)                       | Queries: Yes, Lifecycle: No                   |
+| `SystemComponentBase`      | Abstract class     | POSIX-tier base on ComponentCore (TPRM, internal bus, logging, data descriptors)        | Queries: Yes, Lifecycle: No                   |
 | `SystemComponent<T>`       | Template class     | A/B parameter staging with file loading and hot-reload                                  | `activeParams()`: Yes, `load()`/`apply()`: No |
 | `SchedulableComponentBase` | Abstract class     | Base for components with scheduled tasks                                                | Task lookup: Yes, Registration: No            |
 | `CoreComponentBase`        | Abstract class     | Base for non-schedulable core components (scheduler, filesystem)                        | Queries: Yes                                  |
@@ -25,7 +33,7 @@ Component base classes and lifecycle management for the Apex executive framework
 | `HwModelBase`              | Abstract class     | Base for hardware emulation models (HW_MODEL)                                           | Runtime: Yes                                  |
 | `SupportComponentBase`     | Abstract class     | Base for runtime support services                                                       | Runtime: Yes                                  |
 | `DriverBase`               | Abstract class     | Base for real hardware interfaces (DRIVER)                                              | Runtime: Yes                                  |
-| `LiteComponentBase`        | Abstract class     | Minimal implementation for bare-metal MCUs                                              | Queries: Yes, Lifecycle: No                   |
+| `McuComponentBase`         | Abstract class     | Minimal implementation for bare-metal MCUs                                              | Queries: Yes, Lifecycle: No                   |
 | `PackedTprm`               | Struct             | TPRM file reader (archive extraction, entry lookup)                                     | No (file I/O)                                 |
 | `ComponentRegistry`        | Class              | Component lookup by fullUid, componentId, or name                                       | Yes (read-only queries)                       |
 | `SystemComponentTlm`       | Struct             | Telemetry snapshot for component state export                                           | Yes                                           |
@@ -39,7 +47,7 @@ Component base classes and lifecycle management for the Apex executive framework
 | How do I create a schedulable model?              | Inherit `SimModelBase` or `HwModelBase`      |
 | How do I add tunable parameters with hot-reload?  | `SystemComponent<TParams>`                   |
 | How do I get RT-safe parameter access?            | `activeParams()` (atomic pointer load, ~9ns) |
-| How do I build for bare-metal MCUs?               | Inherit `LiteComponentBase`                  |
+| How do I build for bare-metal MCUs?               | Inherit `McuComponentBase`                   |
 | What status codes can init/load return?           | `Status` enum (SUCCESS through EOE marker)   |
 | How do I classify data blocks semantically?       | `DataCategory` enum                          |
 | How do I wrap typed data with category semantics? | `ModelData<T, Category>`                     |
@@ -56,11 +64,11 @@ Component base classes and lifecycle management for the Apex executive framework
 | Create a hardware driver component             | Yes -- inherit `DriverBase`                    |
 | Add tunable parameters with hot-reload         | Yes -- `SystemComponent<TParams>`              |
 | Need component identity (componentId, fullUid) | Yes -- `IComponent` interface                  |
-| Build for bare-metal MCU with LiteExecutive    | Yes -- `LiteComponentBase`                     |
+| Build for bare-metal MCU with McuExecutive     | Yes -- `McuComponentBase`                      |
 | Task scheduling configuration (freq, priority) | No -- scheduler owns config                    |
 | Component-to-component messaging               | No -- use `IInternalBus` (separate library)    |
 
-**Design intent:** Three-tier component hierarchy. `IComponent` is the universal contract (no heavy deps). `SystemComponentBase` adds lifecycle, logging, data descriptors, and TPRM support for Linux/RTOS. `LiteComponentBase` provides static-allocation implementation for MCUs. A/B parameter staging enables lock-free RT parameter access with zero-allocation hot-reload.
+**Design intent:** Four-tier component hierarchy. `IComponent` is the universal contract (no heavy deps). `ComponentCore` adds the concrete identity / lifecycle / registration state shared by every implementation, with no platform deps. `SystemComponentBase` (POSIX tier) extends ComponentCore with TPRM, logging, data descriptors, and internal bus access. `McuComponentBase` (MCU tier) extends ComponentCore with static-allocation contracts. The shared ComponentCore lets `ComponentRegistry` accept either tier, so MCU components register through the same call path POSIX components use. A/B parameter staging enables lock-free RT parameter access with zero-allocation hot-reload.
 
 ---
 
@@ -116,7 +124,7 @@ Component base classes and lifecycle management for the Apex executive framework
 | Component             | Stack                                | Heap                    |
 | --------------------- | ------------------------------------ | ----------------------- |
 | `IComponent`          | 8B (vtable)                          | 0                       |
-| `LiteComponentBase`   | ~24B (vtable + state)                | 0                       |
+| `McuComponentBase`    | ~24B (vtable + state)                | 0                       |
 | `SystemComponentBase` | ~120B (vtable + state + descriptors) | Log pointer (shared)    |
 | `SystemComponent<T>`  | ~120B + 2 \* sizeof(T) (A/B banks)   | 0 (banks inline)        |
 | `PackedTprm`          | ~32B                                 | File buffer (transient) |
@@ -125,14 +133,14 @@ Component base classes and lifecycle management for the Apex executive framework
 
 ## 4. Design Principles
 
-- **Three-tier hierarchy** -- `IComponent` (universal), `SystemComponentBase` (Linux/RTOS), `LiteComponentBase` (MCU)
+- **Three-tier hierarchy** -- `IComponent` (universal), `SystemComponentBase` (Linux/RTOS), `McuComponentBase` (MCU)
 - **Template method pattern** -- `init()` is non-virtual and calls `preInit()` then `doInit()`
 - **Zero-allocation parameter staging** -- A/B banks are inline members, `apply()` is an atomic pointer swap
 - **RT-safe queries** -- `activeParams()`, `status()`, `fullUid()`, `label()` are O(1) with no allocation
 - **Configuration requirement** -- `init()` requires `isConfigured()` == true (prevents uninitialized operation)
 - **Extensible status codes** -- `EOE_SYSTEM_COMPONENT` marker allows derived components to add codes without collision
 - **Component type classification** -- `ComponentType` enum drives scheduler, registry, and logging behavior
-- **Static-allocation lite path** -- `LiteComponentBase` uses no heap, no `std::filesystem`, no `std::thread`
+- **Static-allocation MCU path** -- `McuComponentBase` uses no heap, no `std::filesystem`, no `std::thread`
 - **Data descriptor registration** -- Components declare data blocks during `doInit()` for registry integration
 
 ---
@@ -163,10 +171,10 @@ public:
 };
 ```
 
-### SystemComponentBase (apex/)
+### SystemComponentBase (posix/)
 
 ```cpp
-class SystemComponentBase : public IComponent {
+class SystemComponentBase : public ComponentCore {
 public:
   /// @note NOT RT-safe: Boot-time initialization (template method).
   [[nodiscard]] uint8_t init() noexcept override;
@@ -194,7 +202,7 @@ protected:
 };
 ```
 
-### SystemComponent<TParams> (apex/)
+### SystemComponent<TParams> (posix/)
 
 ```cpp
 template <typename TParams>
@@ -221,10 +229,10 @@ protected:
 };
 ```
 
-### LiteComponentBase (lite/)
+### McuComponentBase (mcu/)
 
 ```cpp
-class LiteComponentBase : public IComponent {
+class McuComponentBase : public ComponentCore {
 public:
   /// @note NOT RT-safe: Calls doInit() hook.
   [[nodiscard]] uint8_t init() noexcept override;
@@ -237,7 +245,7 @@ public:
   [[nodiscard]] bool isInitialized() const noexcept override;
   [[nodiscard]] const char* lastError() const noexcept;
 
-  /// @note Called by LiteExecutive during registration.
+  /// @note Called by McuExecutive during registration.
   void setInstanceIndex(uint8_t instanceIdx) noexcept;
 
 protected:
@@ -269,7 +277,7 @@ enum class Status : uint8_t {
 ### Simple Component (No Parameters)
 
 ```cpp
-#include "src/system/core/infrastructure/system_component/apex/inc/CoreComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/CoreComponentBase.hpp"
 
 class MyComponent : public system_core::system_component::CoreComponentBase {
 public:
@@ -290,7 +298,7 @@ protected:
 ### Component with Tunable Parameters
 
 ```cpp
-#include "src/system/core/infrastructure/system_component/apex/inc/SystemComponent.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SystemComponent.hpp"
 
 struct MyParams {
   uint16_t frequency{100};
@@ -338,12 +346,12 @@ if (comp.canRollback()) {
 }
 ```
 
-### Bare-Metal Component (LiteComponentBase)
+### Bare-Metal Component (McuComponentBase)
 
 ```cpp
-#include "src/system/core/infrastructure/system_component/lite/inc/LiteComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/mcu/inc/McuComponentBase.hpp"
 
-class McuSensor : public system_core::system_component::lite::LiteComponentBase {
+class McuSensor : public system_core::system_component::mcu::McuComponentBase {
 public:
   uint16_t componentId() const noexcept override { return 200; }
   const char* componentName() const noexcept override { return "MCU_SENSOR"; }
@@ -364,12 +372,12 @@ protected:
 
 ### Test Organization
 
-| Directory    | Type              | Tests | Runs with `make test` |
-| ------------ | ----------------- | ----- | --------------------- |
-| `base/utst/` | Unit tests        | 15    | Yes                   |
-| `apex/utst/` | Unit tests        | 49    | Yes                   |
-| `lite/utst/` | Unit tests        | 10    | Yes                   |
-| `apex/ptst/` | Performance tests | 10    | No (manual)           |
+| Directory     | Type              | Tests | Runs with `make test` |
+| ------------- | ----------------- | ----- | --------------------- |
+| `base/utst/`  | Unit tests        | 15    | Yes                   |
+| `posix/utst/` | Unit tests        | 49    | Yes                   |
+| `mcu/utst/`   | Unit tests        | 10    | Yes                   |
+| `posix/ptst/` | Performance tests | 10    | No (manual)           |
 
 ### Test Requirements
 
@@ -377,7 +385,7 @@ protected:
 - Tests verify lifecycle transitions, status codes, A/B staging, rollback
 - Tests verify IComponent interface contract across implementations
 - Tests verify PackedTprm archive extraction and entry lookup
-- Tests verify LiteComponentBase lifecycle and registration
+- Tests verify McuComponentBase lifecycle and registration
 
 ---
 

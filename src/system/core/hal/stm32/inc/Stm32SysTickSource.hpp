@@ -2,7 +2,7 @@
 #define APEX_HAL_STM32_SYSTICK_SOURCE_HPP
 /**
  * @file Stm32SysTickSource.hpp
- * @brief SysTick-based tick source for LiteExecutive on Cortex-M.
+ * @brief SysTick-based tick source for McuExecutive on Cortex-M.
  *
  * Shares the ARM SysTick timer with the STM32 HAL (HAL_IncTick runs at 1kHz).
  * Prescales the 1kHz SysTick down to the desired executive frequency (e.g.,
@@ -14,8 +14,8 @@
  * Usage:
  *  1. Create instance with desired frequency
  *  2. Wire isrCallback() into SysTick_Handler (alongside HAL_IncTick)
- *  3. Pass to LiteExecutive constructor
- *  4. LiteExecutive::run() calls start()/waitForNextTick()/stop()
+ *  3. Pass to McuExecutive constructor
+ *  4. McuExecutive::run() calls start()/waitForNextTick()/stop()
  *
  * @code
  * static apex::hal::stm32::Stm32SysTickSource tickSource(100);  // 100 Hz
@@ -27,7 +27,7 @@
  * }
  *
  * // In main
- * executive::lite::LiteExecutive exec(&tickSource, &scheduler);
+ * executive::mcu::McuExecutive exec(&tickSource, &scheduler);
  * exec.run();
  * @endcode
  *
@@ -37,7 +37,7 @@
  *  - Invalid frequencies are clamped to 1000 Hz
  */
 
-#include "src/system/core/executive/lite/inc/ITickSource.hpp"
+#include "src/system/core/executive/mcu/inc/ITickSource.hpp"
 
 #include <stdint.h>
 
@@ -72,7 +72,7 @@ namespace stm32 {
  *
  * Memory usage: ~24 bytes.
  */
-class Stm32SysTickSource final : public executive::lite::ITickSource {
+class Stm32SysTickSource final : public executive::mcu::ITickSource {
 public:
   /**
    * @brief Construct with desired tick frequency.

@@ -1,7 +1,7 @@
 # Scheduler Library
 
 **Namespace:** `system_core::scheduler`
-**Platform:** Linux (POSIX), bare-metal MCU (SchedulerLite)
+**Platform:** Linux (POSIX), bare-metal MCU (McuScheduler)
 **C++ Standard:** C++23
 
 RT-friendly task scheduling with scheduler-owned configuration, N/D frequency decimation, and support for single-threaded, multi-threaded, and bare-metal execution models.
@@ -31,7 +31,7 @@ RT-friendly task scheduling with scheduler-owned configuration, N/D frequency de
 | `SchedulerBase`         | Abstract scheduler with task management | Partial |
 | `SchedulerSingleThread` | Sequential execution                    | Partial |
 | `SchedulerMultiThread`  | Parallel execution with ThreadPool      | Partial |
-| `SchedulerLite<N>`      | Static-table scheduler for MCUs         | Partial |
+| `McuScheduler<N>`       | Static-table scheduler for MCUs         | Partial |
 | `TaskConfig`            | Scheduling configuration (POD)          | Yes     |
 | `TaskEntry`             | Task + config + runtime state           | Yes     |
 | `SequenceGroup`         | Phase-based task sequencing             | Yes     |
@@ -41,7 +41,7 @@ RT-friendly task scheduling with scheduler-owned configuration, N/D frequency de
 ### Quick Example
 
 ```cpp
-#include "src/system/core/components/scheduler/apex/inc/SchedulerSingleThread.hpp"
+#include "src/system/core/components/scheduler/posix/inc/SchedulerSingleThread.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/TaskBuilder.hpp"
 
 using system_core::scheduler::SchedulerSingleThread;
@@ -72,13 +72,13 @@ scheduler.executeTasksOnTickSingle(0);
 | -------------------------------------------- | ---------------------------------------------- |
 | Deterministic single-threaded task execution | Yes -- `SchedulerSingleThread`                 |
 | Parallel task execution with thread pools    | Yes -- `SchedulerMultiThread`                  |
-| Bare-metal MCU scheduling (no heap)          | Yes -- `SchedulerLite<N>`                      |
+| Bare-metal MCU scheduling (no heap)          | Yes -- `McuScheduler<N>`                       |
 | N/D frequency decimation with phase offsets  | Yes -- `TaskConfig` with freqN/freqD/offset    |
 | Intra-frame task ordering dependencies       | Yes -- `SequenceGroup` with phase-based waits  |
 | TPRM-based runtime task configuration        | Yes -- `SchedulerData` with SDAT binary export |
 | Simple timer/callback scheduling             | No -- use OS timer APIs directly               |
 
-**Design intent:** Tasks are minimal executables; the scheduler owns all configuration. Two execution modes (sequential, parallel) share a common base. The lite variant provides zero-heap scheduling for MCU targets with static task tables.
+**Design intent:** Tasks are minimal executables; the scheduler owns all configuration. Two execution modes (sequential, parallel) share a common base. The MCU variant provides zero-heap scheduling for MCU targets with static task tables.
 
 ---
 
@@ -115,7 +115,7 @@ Measured on x86_64 (clang-21, -O2), Docker container, 15 repeats per data point,
 | Chain4 minimal work         | 261.2       | 3.8K    | 1.3% |
 | ThreadPool dispatch latency | 3.372       | 296.6K  | 4.4% |
 
-### SchedulerLite Execution
+### McuScheduler Execution
 
 | Operation                     | Median (us) | Calls/s | CV%   |
 | ----------------------------- | ----------- | ------- | ----- |
@@ -129,16 +129,16 @@ Measured on x86_64 (clang-21, -O2), Docker container, 15 repeats per data point,
 
 ### Profiler Analysis (gperftools)
 
-**Lite AllTests (184 samples):**
+**MCU AllTests (184 samples):**
 
-| Function                       | Self-Time | Type                        |
-| ------------------------------ | --------- | --------------------------- |
-| `liteTaskThunk` (user payload) | 43.5%     | CPU-bound (task execution)  |
-| `addTask`                      | 20.7%     | CPU-bound (array insertion) |
-| `shouldExecute`                | 14.7%     | CPU-bound (modulus check)   |
-| `SchedulerLite` (constructor)  | 6.5%      | CPU-bound (array zeroing)   |
-| `tick`                         | 6.0%      | CPU-bound (iteration loop)  |
-| `sortTasksByPriority`          | 2.7%      | CPU-bound (insertion sort)  |
+| Function                      | Self-Time | Type                        |
+| ----------------------------- | --------- | --------------------------- |
+| `mcuTaskThunk` (user payload) | 43.5%     | CPU-bound (task execution)  |
+| `addTask`                     | 20.7%     | CPU-bound (array insertion) |
+| `shouldExecute`               | 14.7%     | CPU-bound (modulus check)   |
+| `McuScheduler` (constructor)  | 6.5%      | CPU-bound (array zeroing)   |
+| `tick`                        | 6.0%      | CPU-bound (iteration loop)  |
+| `sortTasksByPriority`         | 2.7%      | CPU-bound (insertion sort)  |
 
 **ST TaskCountScaling/1000 (8410 samples):**
 
@@ -165,7 +165,7 @@ Measured on x86_64 (clang-21, -O2), Docker container, 15 repeats per data point,
 | ----------------------- | ------------------------------------ | --------------------------- |
 | `SchedulerSingleThread` | ~512B (base + log ptr)               | Vector storage for entries  |
 | `SchedulerMultiThread`  | ~640B (base + pool ptr)              | ThreadPool + vector storage |
-| `SchedulerLite<32>`     | ~416B (32 \* 12B entries + counters) | 0                           |
+| `McuScheduler<32>`      | ~416B (32 \* 12B entries + counters) | 0                           |
 | `TaskEntry`             | 64B                                  | 0                           |
 | `TaskConfig`            | 12B                                  | 0                           |
 | `SequenceGroup`         | 32B + atomic counter                 | 0                           |
@@ -184,7 +184,7 @@ Measured on x86_64 (clang-21, -O2), Docker container, 15 repeats per data point,
 | `SchedulerBase`         | Schedule geometry, task management, TPRM loading          |
 | `SchedulerSingleThread` | Sequential execution, deterministic order                 |
 | `SchedulerMultiThread`  | Parallel execution with ThreadPool                        |
-| `SchedulerLite<N>`      | Static task table, no heap, MCU targets                   |
+| `McuScheduler<N>`       | Static task table, no heap, MCU targets                   |
 
 This separation enables:
 
@@ -198,8 +198,8 @@ This separation enables:
 | Directory | Library                 | Purpose                            |
 | --------- | ----------------------- | ---------------------------------- |
 | `base/`   | `scheduler_base`        | IScheduler interface (header-only) |
-| `apex/`   | `system_core_scheduler` | Full implementation (SHARED)       |
-| `lite/`   | `scheduler_lite`        | MCU implementation (header-only)   |
+| `posix/`  | `system_core_scheduler` | Full implementation (SHARED)       |
+| `mcu/`    | `scheduler_mcu`         | MCU implementation (header-only)   |
 
 ### File Organization
 
@@ -209,7 +209,7 @@ This separation enables:
 | `SchedulerBase.hpp`         | `SchedulerBase`         | Abstract scheduler with task management |
 | `SchedulerSingleThread.hpp` | `SchedulerSingleThread` | Sequential execution                    |
 | `SchedulerMultiThread.hpp`  | `SchedulerMultiThread`  | Parallel execution                      |
-| `SchedulerLite.hpp`         | `SchedulerLite<N>`      | Static-table MCU scheduler              |
+| `McuScheduler.hpp`          | `McuScheduler<N>`       | Static-table MCU scheduler              |
 | `SchedulerData.hpp`         | `SchedulerTaskEntry`    | Packed 15-byte task config for TPRM     |
 | `SchedulerStatus.hpp`       | `Status`                | Typed status codes                      |
 | `SchedulerExport.hpp`       | SDAT export             | Binary schedule database export         |
@@ -229,7 +229,7 @@ This separation enables:
 | `scheduler.init()`           | No      | Log creation, allocations      |
 | `waitForPhase()`             | Yes     | Hybrid spin/park wait          |
 | `advancePhase()`             | Yes     | Atomic increment + notify      |
-| `SchedulerLite::tick()`      | Yes     | No heap, O(n)                  |
+| `McuScheduler::tick()`       | Yes     | No heap, O(n)                  |
 
 ---
 
@@ -302,15 +302,15 @@ scheduler.addTask(taskPost, cfg, &seq);
 
 Phase numbers account for task count: if 2 tasks run at phase 1, the next phase is 3.
 
-### SchedulerLite for MCUs
+### McuScheduler for MCUs
 
 Zero-heap scheduler with compile-time-sized task table:
 
 ```cpp
-using system_core::scheduler::lite::SchedulerLite;
+using system_core::scheduler::mcu::McuScheduler;
 
 // 8-task table, uint32_t counter (for 8-bit MCUs)
-SchedulerLite<8, uint32_t> sched(100);  // 100 Hz
+McuScheduler<8, uint32_t> sched(100);  // 100 Hz
 
 sched.addTask({myTask, &ctx, 1, 1, 0, 0, 1});   // 100 Hz
 sched.addTask({slowTask, &ctx, 1, 10, 0, 0, 2}); // 10 Hz
@@ -322,7 +322,7 @@ while (running) {
 }
 ```
 
-Each `LiteTaskEntry` is 12 bytes. `SchedulerLite<32>` uses 384 bytes of SRAM.
+Each `McuTaskEntry` is 12 bytes. `McuScheduler<32>` uses 384 bytes of SRAM.
 
 ### Schedule Database Export
 
@@ -424,17 +424,17 @@ Helper functions:
 | `bindLambda()`            | Stateless lambda binding          |
 | `bindFreeFunction()`      | C-style function binding          |
 
-### 6.8 SchedulerLite
+### 6.8 McuScheduler
 
-| Method                  | Purpose                    |
-| ----------------------- | -------------------------- |
-| `SchedulerLite(freqHz)` | Construct with frequency   |
-| `addTask(entry)`        | Add task to static table   |
-| `tick()`                | Execute one scheduler tick |
-| `taskCount()`           | Get registered task count  |
-| `maxTasks()`            | Get compile-time capacity  |
-| `task(idx)`             | Get task entry by index    |
-| `clearTasks()`          | Remove all tasks           |
+| Method                 | Purpose                    |
+| ---------------------- | -------------------------- |
+| `McuScheduler(freqHz)` | Construct with frequency   |
+| `addTask(entry)`       | Add task to static table   |
+| `tick()`               | Execute one scheduler tick |
+| `taskCount()`          | Get registered task count  |
+| `maxTasks()`           | Get compile-time capacity  |
+| `task(idx)`            | Get task entry by index    |
+| `clearTasks()`         | Remove all tasks           |
 
 ### 6.9 Priority Constants
 
@@ -508,7 +508,7 @@ scheduler.addTask(task, 100, 2);
 
 ```cpp
 // AVR/STM32: 8-task, 32-bit counter
-SchedulerLite<8, uint32_t> sched(100);
+McuScheduler<8, uint32_t> sched(100);
 
 void sensorRead(void* ctx) noexcept { /* ... */ }
 void commTx(void* ctx) noexcept { /* ... */ }
@@ -546,27 +546,27 @@ while (true) {
 
 ## 9. Testing
 
-| Directory    | Type                   | Tests | Runs with `make test` |
-| ------------ | ---------------------- | ----- | --------------------- |
-| `apex/utst/` | Unit tests             | 61    | Yes                   |
-| `base/utst/` | Unit tests             | 6     | Yes                   |
-| `lite/utst/` | Unit tests             | 18    | Yes                   |
-| `apex/ptst/` | Performance benchmarks | 23    | No (manual)           |
-| `lite/ptst/` | Performance benchmarks | 7     | No (manual)           |
+| Directory     | Type                   | Tests | Runs with `make test` |
+| ------------- | ---------------------- | ----- | --------------------- |
+| `posix/utst/` | Unit tests             | 61    | Yes                   |
+| `base/utst/`  | Unit tests             | 6     | Yes                   |
+| `mcu/utst/`   | Unit tests             | 18    | Yes                   |
+| `posix/ptst/` | Performance benchmarks | 23    | No (manual)           |
+| `mcu/ptst/`   | Performance benchmarks | 7     | No (manual)           |
 
 ### Test Organization
 
-| Component           | Test File                                | Tests  |
-| ------------------- | ---------------------------------------- | ------ |
-| SchedulableTask     | `apex/utst/SchedulableTask_uTest.cpp`    | 11     |
-| SchedulerData       | `apex/utst/SchedulerData_uTest.cpp`      | 19     |
-| SchedulerStatus     | `apex/utst/SchedulerStatus_uTest.cpp`    | 11     |
-| TaskBuilder         | `apex/utst/TaskBuilder_uTest.cpp`        | 9      |
-| SchedulableTaskCUDA | `apex/utst/SchedulableTaskCUDA_uTest.cu` | 8      |
-| SchedulerOverhead   | `apex/utst/SchedulerOverhead_uTest.cpp`  | 3      |
-| IScheduler          | `base/utst/IScheduler_uTest.cpp`         | 6      |
-| SchedulerLite       | `lite/utst/SchedulerLite_uTest.cpp`      | 18     |
-| **Total**           |                                          | **85** |
+| Component           | Test File                                 | Tests  |
+| ------------------- | ----------------------------------------- | ------ |
+| SchedulableTask     | `posix/utst/SchedulableTask_uTest.cpp`    | 11     |
+| SchedulerData       | `posix/utst/SchedulerData_uTest.cpp`      | 19     |
+| SchedulerStatus     | `posix/utst/SchedulerStatus_uTest.cpp`    | 11     |
+| TaskBuilder         | `posix/utst/TaskBuilder_uTest.cpp`        | 9      |
+| SchedulableTaskCUDA | `posix/utst/SchedulableTaskCUDA_uTest.cu` | 8      |
+| SchedulerOverhead   | `posix/utst/SchedulerOverhead_uTest.cpp`  | 3      |
+| IScheduler          | `base/utst/IScheduler_uTest.cpp`          | 6      |
+| McuScheduler        | `mcu/utst/McuScheduler_uTest.cpp`         | 18     |
+| **Total**           |                                           | **85** |
 
 ---
 

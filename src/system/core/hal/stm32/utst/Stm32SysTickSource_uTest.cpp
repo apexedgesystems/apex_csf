@@ -8,7 +8,7 @@
 #include <gtest/gtest.h>
 
 using apex::hal::stm32::Stm32SysTickSource;
-using executive::lite::ITickSource;
+using executive::mcu::ITickSource;
 
 /* ----------------------------- Default Construction ----------------------------- */
 

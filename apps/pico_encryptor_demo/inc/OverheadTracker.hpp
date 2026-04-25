@@ -12,7 +12,7 @@
  * @note RT-safe: All methods are O(1) no-ops.
  */
 
-#include "LiteExecutive.hpp"
+#include "McuExecutive.hpp"
 
 #include <stdint.h>
 
@@ -49,8 +49,7 @@ struct OverheadStats {
  */
 class OverheadTracker {
 public:
-  explicit OverheadTracker(executive::lite::LiteExecutive<>& exec) noexcept
-      : exec_(exec), stats_{} {}
+  explicit OverheadTracker(executive::mcu::McuExecutive<>& exec) noexcept : exec_(exec), stats_{} {}
 
   /// No-op on M0+ (no DWT to enable).
   void enableDwt() noexcept {}
@@ -77,7 +76,7 @@ public:
   [[nodiscard]] uint32_t budgetCycles() const noexcept { return 0; }
 
 private:
-  executive::lite::LiteExecutive<>& exec_;
+  executive::mcu::McuExecutive<>& exec_;
   OverheadStats stats_;
 };
 

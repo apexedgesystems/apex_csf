@@ -7,7 +7,7 @@
  * Design:
  *   - Standalone executive interface (does not inherit IComponent)
  *   - Zero heavy dependencies (no std::filesystem, std::vector in interface)
- *   - Suitable for both ApexExecutive and LiteExecutive
+ *   - Suitable for both ApexExecutive and McuExecutive
  *
  * RT Constraints:
  *   - run() contains the main loop - RT characteristics depend on implementation
@@ -15,8 +15,8 @@
  *   - Query methods are RT-safe
  *
  * Implementations:
- *   - ExecutiveBase/ApexExecutive (apex/) - Full-featured, multi-threaded
- *   - LiteExecutive (lite/) - Single-threaded, bare-metal compatible
+ *   - PosixExecutiveBase/ApexExecutive (apex/) - Full-featured, multi-threaded
+ *   - McuExecutive (mcu/) - Single-threaded, bare-metal compatible
  */
 
 #include <stdint.h>
@@ -49,8 +49,8 @@ enum class RunResult : uint8_t {
  * is run() which executes the main control/scheduler loop.
  *
  * Derived implementations:
- *   - ExecutiveBase/ApexExecutive: Full-featured for Linux/RTOS
- *   - LiteExecutive: Minimal for bare-metal MCUs
+ *   - PosixExecutiveBase/ApexExecutive: Full-featured for Linux/RTOS
+ *   - McuExecutive: Minimal for bare-metal MCUs
  */
 class IExecutive {
 public:

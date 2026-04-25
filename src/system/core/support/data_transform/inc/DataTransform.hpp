@@ -30,7 +30,7 @@
 #include "src/system/core/support/data_transform/inc/DataTransformData.hpp"
 #include "src/system/core/support/data_transform/inc/FaultCampaignTprm.hpp"
 
-#include "src/system/core/infrastructure/system_component/apex/inc/SupportComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SupportComponentBase.hpp"
 #include "src/utilities/concurrency/inc/Delegate.hpp"
 
 #include <cstdint>

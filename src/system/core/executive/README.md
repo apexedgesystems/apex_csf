@@ -1,30 +1,44 @@
 # Executive Module
 
-The executive is the central coordinator for Apex systems. It owns the scheduler, filesystem, and component registry.
+The executive is the central coordinator for Apex systems. POSIX-tier executives (`ApexExecutive` and derived) own the scheduler, filesystem, and component registry. MCU-tier executives (`McuExecutive`) own a static scheduler and tick source.
 
-## Overview
+## Directory Tiers
 
-| Class           | Purpose                                          |
-| --------------- | ------------------------------------------------ |
-| `ApexExecutive` | Abstract base class defining executive interface |
-| `ApexExecutive` | Default implementation with full RT scheduling   |
+| Tier     | Contents                                                             | Instantiable? |
+| -------- | -------------------------------------------------------------------- | ------------- |
+| `base/`  | Pure virtual `IExecutive` interface                                  | No            |
+| `core/`  | `ExecutiveCore` shared base: identity constants, IExecutive contract | No            |
+| `posix/` | `PosixExecutiveBase` + `ApexExecutive` (POSIX tier)                  | Yes           |
+| `mcu/`   | `McuExecutive` (MCU tier)                                            | Yes           |
+
+## Class Overview
+
+| Class                | Tier  | Purpose                                                                      |
+| -------------------- | ----- | ---------------------------------------------------------------------------- |
+| `IExecutive`         | base  | Pure interface (run, shutdown, isShutdownRequested, cycleCount)              |
+| `ExecutiveCore`      | core  | Shared base: COMPONENT_ID=0, COMPONENT_NAME="Executive", IExecutive contract |
+| `PosixExecutiveBase` | posix | POSIX executive base (mixes SystemComponentBase + ExecutiveCore)             |
+| `ApexExecutive`      | posix | Full POSIX executive with multi-threaded run loop, TPRM, logs, C2            |
+| `McuExecutive`       | mcu   | Single-threaded MCU executive on `McuComponentBase` + ExecutiveCore          |
 
 ## Component Identity System
 
-All components registered with the executive implement the identity interface:
+Every component the executive can register implements `IComponent` through `ComponentCore`. The shared concrete base owns the identity / lifecycle / registration state:
 
 ```cpp
-class SystemComponentBase {
+class ComponentCore : public IComponent {
 public:
-  // Required overrides (pure virtual)
+  // Required overrides (pure virtual on ComponentCore)
   [[nodiscard]] virtual std::uint16_t componentId() const noexcept = 0;
   [[nodiscard]] virtual const char* componentName() const noexcept = 0;
 
-  // Auto-assigned during registration
+  // Concrete: auto-assigned during registration
   [[nodiscard]] std::uint8_t instanceIndex() const noexcept;
   [[nodiscard]] std::uint32_t fullUid() const noexcept;  // (componentId << 8) | instanceIndex
 };
 ```
+
+Both `SystemComponentBase` (POSIX tier) and `McuComponentBase` (MCU tier) inherit `ComponentCore`. `ComponentRegistry` accepts `ComponentCore*`, so either tier can register through the same code path.
 
 ### fullUid Composition
 

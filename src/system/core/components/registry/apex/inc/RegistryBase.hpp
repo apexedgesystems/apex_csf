@@ -21,8 +21,8 @@
 
 #include "src/system/core/components/registry/apex/inc/RegistryData.hpp"
 #include "src/system/core/components/registry/apex/inc/RegistryStatus.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/CoreComponentBase.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/IComponentResolver.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/CoreComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/IComponentResolver.hpp"
 #include "src/utilities/compatibility/inc/compat_span.hpp"
 
 #include <cstdint>

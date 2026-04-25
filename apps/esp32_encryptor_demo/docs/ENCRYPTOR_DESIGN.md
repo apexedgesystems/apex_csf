@@ -127,7 +127,7 @@ CRC-16/XMODEM covers opcode + payload.
 ### Algorithm
 
 AES-256-GCM per FIPS 197 + NIST SP 800-38D. Software implementation via
-`encryption_lite` library. Standard 8-bit CHAR_BIT on Xtensa LX7.
+`encryption_mcu` library. Standard 8-bit CHAR_BIT on Xtensa LX7.
 
 ### Performance
 
@@ -202,10 +202,10 @@ endurance far exceeds the raw flash cycle limit (100K cycles per sector).
 
 ## Task Model
 
-### LiteExecutive (100 Hz) inside FreeRTOS
+### McuExecutive (100 Hz) inside FreeRTOS
 
 The firmware uses a cooperative scheduler with five tasks. ESP-IDF runs FreeRTOS
-by default; the LiteExecutive runs inside a pinned FreeRTOS task on core 0
+by default; the McuExecutive runs inside a pinned FreeRTOS task on core 0
 (unicore mode via `CONFIG_FREERTOS_UNICORE=y`).
 
 ```

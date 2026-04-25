@@ -8,7 +8,7 @@
 
 #include "src/system/core/support/system_monitor/inc/SystemMonitor.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorTlm.hpp"
-#include "src/system/core/infrastructure/system_component/apex/inc/IInternalBus.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
 
 // Seeker RT-safe APIs (used in telemetry task)
 #include "src/cpu/inc/CpuUtilization.hpp" // getCpuUtilizationSnapshot, computeUtilizationDelta

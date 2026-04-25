@@ -9,7 +9,7 @@
  *   - Keys persisted in NVS (survive power cycles)
  *
  * FreeRTOS execution model:
- *   LiteExecutive runs inside a pinned FreeRTOS task on core 0 (unicore
+ *   McuExecutive runs inside a pinned FreeRTOS task on core 0 (unicore
  *   mode via CONFIG_FREERTOS_UNICORE=y). Esp32TimerTickSource uses
  *   esp_timer for 100 Hz ticks with FreeRTOS task notification for
  *   efficient blocking.
@@ -33,7 +33,7 @@
 #include "Esp32Uart.hpp"
 #include "Esp32UsbCdc.hpp"
 #include "KeyStore.hpp"
-#include "LiteExecutive.hpp"
+#include "McuExecutive.hpp"
 #include "OverheadTracker.hpp"
 
 #include "driver/gpio.h"
@@ -130,7 +130,7 @@ static encryptor::EncryptorEngine engine(dataUart, &keyStore);
 /* ----------------------------- Executive Stack ----------------------------- */
 
 static apex::hal::esp32::Esp32TimerTickSource tickSource(100); // 100 Hz
-static executive::lite::LiteExecutive<> exec(&tickSource, 100);
+static executive::mcu::McuExecutive<> exec(&tickSource, 100);
 
 /* ----------------------------- Overhead Tracker ----------------------------- */
 
@@ -211,7 +211,7 @@ static void profilerEndTask(void* ctx) noexcept {
 /* ----------------------------- Executive Task ----------------------------- */
 
 /**
- * @brief FreeRTOS task that runs the LiteExecutive.
+ * @brief FreeRTOS task that runs the McuExecutive.
  *
  * Configures scheduler tasks, initializes executive, and enters the
  * executive main loop. Uses Esp32TimerTickSource for timing

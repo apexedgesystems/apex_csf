@@ -10,7 +10,7 @@
 
 #include "EncryptorEngine.hpp"
 
-#include "src/utilities/encryption/lite/inc/Aes256GcmLite.hpp"
+#include "src/utilities/encryption/mcu/inc/Aes256GcmMcu.hpp"
 
 #include <string.h>
 
@@ -158,10 +158,10 @@ void EncryptorEngine::processFrame(const uint8_t* frame, size_t len) noexcept {
   uint8_t* ct = outputFrame_ + 1 + GCM_NONCE_LEN;
   uint8_t tag[GCM_TAG_LEN];
 
-  auto gcmResult = apex::encryption::lite::aes256GcmEncrypt(
+  auto gcmResult = apex::encryption::mcu::aes256GcmEncrypt(
       activeKey_, nonce_, frame, static_cast<uint32_t>(PT_LEN), nullptr, 0, ct, tag);
 
-  if (gcmResult.status != apex::encryption::lite::GcmStatus::OK) {
+  if (gcmResult.status != apex::encryption::mcu::GcmStatus::OK) {
     ++stats_.framesErr;
     return;
   }

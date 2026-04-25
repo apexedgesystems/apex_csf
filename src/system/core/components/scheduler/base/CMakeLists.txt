@@ -6,7 +6,7 @@
 #
 # Dependents:
 #   - scheduler (SchedulerBase, SchedulerMultiThread, SchedulerSingleThread)
-#   - scheduler_lite (SchedulerLite)
+#   - scheduler_mcu (McuScheduler)
 # ==============================================================================
 
 include(apex/All)

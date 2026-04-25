@@ -14,7 +14,7 @@ set(UNIT_TEST_SOURCES IExecutive_uTest.cpp)
 
 apex_add_gtest(
   TARGET
-  ExecutiveBase_uTest
+  PosixExecutiveBase_uTest
   SOURCES
   ${UNIT_TEST_SOURCES}
   LINK

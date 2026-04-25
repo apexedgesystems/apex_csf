@@ -1,5 +1,5 @@
 # ==============================================================================
-# esp32_encryptor_demo - ESP32-S3 LiteExecutive application for Arduino Nano ESP32
+# esp32_encryptor_demo - ESP32-S3 McuExecutive application for Arduino Nano ESP32
 # ==============================================================================
 #
 # AES-256-GCM encryption firmware for ESP32-S3 (Arduino Nano ESP32).
@@ -74,8 +74,8 @@ apex_add_firmware(
   "${CMAKE_SOURCE_DIR}/src/system/core/hal/base"
   "${CMAKE_SOURCE_DIR}/src/system/core/hal/esp32/inc"
   LINK
-  executive_lite
-  encryption_lite
+  executive_mcu
+  encryption_mcu
   system_core_protocols_framing_slip
   utilities_checksums_crc
 )

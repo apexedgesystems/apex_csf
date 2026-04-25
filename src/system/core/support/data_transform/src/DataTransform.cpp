@@ -5,7 +5,7 @@
 
 #include "src/system/core/support/data_transform/inc/DataTransform.hpp"
 
-#include "src/system/core/infrastructure/system_component/apex/inc/IInternalBus.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
 #include "src/utilities/helpers/inc/Files.hpp"
 
 #include <cstdio>
