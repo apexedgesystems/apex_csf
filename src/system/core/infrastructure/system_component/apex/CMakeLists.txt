@@ -31,6 +31,7 @@ apex_add_library(
   ${CPP_SOURCES}
   DEPS_PUBLIC
   system_component_base
+  system_component_core
   utilities_helpers
   utilities_time
   system_core_logs

@@ -1,22 +1,28 @@
 # ==============================================================================
-# system_component_lite - Minimal component base for MCU targets
+# system_component_core - Shared concrete IComponent base
 #
-# Header-only library providing LiteComponentBase for resource-constrained
-# systems. No heap allocation, no std::filesystem dependencies.
+# Header-only library providing ComponentCore: the platform-agnostic
+# concrete base for IComponent implementations. Owns identity, lifecycle,
+# and registration state shared by both POSIX (SystemComponentBase) and
+# MCU (LiteComponentBase) tiers.
 #
 # Components:
-#   - LiteComponentBase - Minimal IComponent implementation
+#   - ComponentCore - Concrete base with state, still abstract.
+#
+# Dependents:
+#   - system_core_system_component (SystemComponentBase)
+#   - system_component_lite (LiteComponentBase)
 # ==============================================================================
 
 include(apex/All)
-apex_module(system_component_lite)
+apex_module(system_component_core)
 
 # ------------------------------------------------------------------------------
 # Interface Library
 # ------------------------------------------------------------------------------
 
 apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" DEPS_INTERFACE system_component_base
-                           system_component_core
+                           BAREMETAL
 )
 
 # ------------------------------------------------------------------------------

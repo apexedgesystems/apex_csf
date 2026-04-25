@@ -2,20 +2,15 @@
 #define APEX_SYSTEM_COMPONENT_BASE_HPP
 /**
  * @file SystemComponentBase.hpp
- * @brief Minimal abstract base for system components (status, init(), error context).
+ * @brief POSIX-tier IComponent base with TPRM, bus, logging, command handling.
  *
- * Design:
- *  - Non-templated base for polymorphic component management.
- *  - Provides lifecycle (init, reset), status tracking, and error context.
- *  - Labels and error strings are literals for zero-allocation diagnostics.
- *  - Template method pattern: init() is non-virtual and calls doInit() hook.
- *  - Executive queries status()/lastError() to log component lifecycle.
- *
- * RT Lifecycle Constraints:
- *  - Construct and call init() on all components BEFORE entering RT phase.
- *  - status(), isInitialized(), isConfigured(), label(), lastError() are RT-safe.
- *  - Never destroy components during RT execution.
- *  - init(), reset() are boot-time only; do not call from RT context.
+ * Layers POSIX-specific component capabilities on top of ComponentCore:
+ *  - TPRM file loading (filesystem-backed parameter storage)
+ *  - Internal bus access for component-to-component messaging
+ *  - Component log files (one per component instance)
+ *  - Data descriptors for registry integration
+ *  - APROTO command handling
+ *  - Configured / locked semantics for runtime updates
  *
  * Configuration Requirement:
  *  - init() requires isConfigured() == true (ERROR_NOT_CONFIGURED otherwise).
@@ -25,9 +20,9 @@
 
 #include "src/system/core/infrastructure/system_component/apex/inc/DataCategory.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/ComponentType.hpp"
-#include "src/system/core/infrastructure/system_component/base/inc/IComponent.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/CommandResult.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
+#include "src/system/core/infrastructure/system_component/core/inc/ComponentCore.hpp"
 #include "src/utilities/compatibility/inc/compat_span.hpp"
 
 #include <array>
@@ -61,9 +56,6 @@ class IInternalBus;
 /// Maximum length for component name (including null terminator).
 constexpr std::size_t COMPONENT_NAME_MAX_LEN = 32;
 
-/// Invalid full UID (returned on registration failure).
-constexpr std::uint32_t INVALID_COMPONENT_UID = 0xFFFFFFFF;
-
 /// Maximum data descriptors per component.
 constexpr std::size_t MAX_DATA_PER_COMPONENT = 16;
 
@@ -88,25 +80,28 @@ struct DataDescriptor {
 
 /**
  * @class SystemComponentBase
- * @brief Non-templated base providing status, init(), reset(), and error context.
+ * @brief POSIX-tier component base layered on ComponentCore.
  *
- * Derived classes must implement:
- *  - uint8_t doInit() noexcept; (initialization logic, called by init())
+ * Derived classes must implement (from ComponentCore / IComponent):
+ *  - componentId(), componentName()
+ *  - doInit() (initialization logic, called by init())
  *
  * Optionally override:
- *  - void doReset() noexcept; (cleanup logic, called by reset())
- *  - const char* label() const noexcept; (component name for diagnostics)
+ *  - componentType() (default returns CORE)
+ *  - label() (default returns "SYSTEM_COMPONENT")
+ *  - doReset() (default no-op)
+ *  - preInit() (default no-op; called after configured check passes)
  *
  * @note RT-safe queries: status(), isInitialized(), isConfigured(), label(), lastError().
  * @note NOT RT-safe: init(), reset() (may allocate, do I/O).
  */
-class SystemComponentBase : public IComponent {
+class SystemComponentBase : public ComponentCore {
 public:
   /** @brief Default constructor. */
   SystemComponentBase() noexcept = default;
 
   /** @brief Virtual destructor. */
-  virtual ~SystemComponentBase() = default;
+  ~SystemComponentBase() override = default;
 
   // Non-copyable (components have identity)
   SystemComponentBase(const SystemComponentBase&) = delete;
@@ -117,51 +112,12 @@ public:
   SystemComponentBase& operator=(SystemComponentBase&&) noexcept = default;
 
   /**
-   * @brief Boot-time initialization (template method pattern).
-   * @return Status code (SUCCESS on success).
-   * @note NOT RT-safe: May allocate, perform I/O, or block.
-   * @note FAILS with ERROR_NOT_CONFIGURED if isConfigured() is false.
-   * @note Idempotent: returns SUCCESS if already initialized.
-   */
-  [[nodiscard]] std::uint8_t init() noexcept override {
-    if (!configured_) {
-      setStatus(static_cast<std::uint8_t>(Status::ERROR_NOT_CONFIGURED));
-      setLastError("init() called before configuration");
-      return status();
-    }
-    if (initialized_) {
-      return status(); // Idempotent
-    }
-    preInit(); // Hook for derived classes (e.g., apply staged → active)
-    const std::uint8_t RESULT = doInit();
-    setStatus(RESULT);
-    if (RESULT == static_cast<std::uint8_t>(Status::SUCCESS)) {
-      initialized_ = true;
-      setLastError(nullptr);
-    }
-    return RESULT;
-  }
-
-  /**
-   * @brief Reset component state for re-initialization.
-   * @note NOT RT-safe: May deallocate or perform cleanup.
-   * @note Calls doReset() hook, then clears initialized flag.
-   * @note Does NOT clear configured flag (params remain loaded).
-   */
-  void reset() noexcept override {
-    doReset();
-    initialized_ = false;
-    setStatus(static_cast<std::uint8_t>(Status::SUCCESS));
-    setLastError(nullptr);
-  }
-
-  /**
    * @brief Get component type identifier (defined by derived class).
    * @return 16-bit component type ID.
    * @note UID ranges: 0 = Executive, 1-100 = System components, 101+ = Models.
    * @note Must be unique per component type. Multiple instances share the same ID.
    */
-  [[nodiscard]] virtual std::uint16_t componentId() const noexcept override = 0;
+  [[nodiscard]] std::uint16_t componentId() const noexcept override = 0;
 
   /**
    * @brief Get component name for collision detection.
@@ -169,7 +125,7 @@ public:
    * @note Used to distinguish multi-instance (same ID + same name) from
    *       collision (same ID + different name).
    */
-  [[nodiscard]] virtual const char* componentName() const noexcept override = 0;
+  [[nodiscard]] const char* componentName() const noexcept override = 0;
 
   /**
    * @brief Get component type classification.
@@ -177,30 +133,9 @@ public:
    * @note Default is CORE; override in derived classes (e.g., SimModelBase returns MODEL).
    * @note Used for logging directory selection and registry organization.
    */
-  [[nodiscard]] virtual ComponentType componentType() const noexcept override {
+  [[nodiscard]] ComponentType componentType() const noexcept override {
     return ComponentType::CORE;
   }
-
-  /**
-   * @brief Set instance index and compute full UID.
-   * @param instanceIdx Instance index assigned by executive (0 for first, 1 for second, etc.).
-   * @note Called by executive during registration.
-   * @note Full UID = (componentId << 8) | instanceIndex.
-   */
-  void setInstanceIndex(std::uint8_t instanceIdx) noexcept {
-    instanceIndex_ = instanceIdx;
-    fullUid_ = (static_cast<std::uint32_t>(componentId()) << 8) | instanceIdx;
-    registered_ = true;
-  }
-
-  /** @brief Get full UID (componentId << 8 | instanceIndex). Valid after registration. */
-  [[nodiscard]] std::uint32_t fullUid() const noexcept override { return fullUid_; }
-
-  /** @brief Get instance index (0 for first instance, 1 for second, etc.). */
-  [[nodiscard]] std::uint8_t instanceIndex() const noexcept override { return instanceIndex_; }
-
-  /** @brief Check if component is registered with executive. */
-  [[nodiscard]] bool isRegistered() const noexcept override { return registered_; }
 
   /// Common component opcodes (0x0080-0x00FF range, below system 0x0100+).
   enum ComponentOpcode : std::uint16_t {
@@ -346,28 +281,7 @@ public:
    * @return Static label for diagnostics.
    * @note RT-safe: Returns pointer to static string.
    */
-  [[nodiscard]] virtual const char* label() const noexcept override { return "SYSTEM_COMPONENT"; }
-
-  /**
-   * @brief Last operation status code.
-   * @return Current status.
-   * @note RT-safe: Simple member read.
-   */
-  [[nodiscard]] std::uint8_t status() const noexcept override { return status_; }
-
-  /**
-   * @brief Last error context (string literal or nullptr).
-   * @return Error description, or nullptr if no error.
-   * @note RT-safe: Simple pointer read.
-   * @note Executive queries this to log detailed error context.
-   */
-  [[nodiscard]] const char* lastError() const noexcept { return lastError_; }
-
-  /**
-   * @brief True after successful init().
-   * @note RT-safe: Simple member read.
-   */
-  [[nodiscard]] bool isInitialized() const noexcept override { return initialized_; }
+  [[nodiscard]] const char* label() const noexcept override { return "SYSTEM_COMPONENT"; }
 
   /**
    * @brief True if component has been configured (params loaded or set ready).
@@ -427,37 +341,17 @@ protected:
   [[nodiscard]] logs::SystemLog* componentLog() const noexcept { return componentLog_.get(); }
 
   /**
-   * @brief Initialization hook (pure virtual).
-   * @return Status code (SUCCESS on success).
-   * @note Called by init() after configuration check passes.
-   * @note Derived classes implement actual initialization logic here.
-   * @note On failure, call setLastError() with context before returning.
+   * @brief Pre-condition check before init() runs doInit().
+   * @return SUCCESS to proceed, ERROR_NOT_CONFIGURED if not yet configured.
+   * @note Overrides ComponentCore default (which always returns 0).
    */
-  [[nodiscard]] virtual std::uint8_t doInit() noexcept = 0;
-
-  /**
-   * @brief Pre-init hook (optional override).
-   * @note Called by init() after configuration check, before doInit().
-   * @note Override to perform pre-initialization setup (e.g., apply staged params).
-   */
-  virtual void preInit() noexcept {}
-
-  /**
-   * @brief Reset hook (optional override).
-   * @note Called by reset() before clearing initialized flag.
-   * @note Override to perform cleanup (release resources, reset state).
-   */
-  virtual void doReset() noexcept {}
-
-  /** @brief Update last status (for derived classes). */
-  void setStatus(std::uint8_t s) noexcept { status_ = s; }
-
-  /**
-   * @brief Set error context (string literal).
-   * @param err Error description (must be static string or nullptr).
-   * @note RT-safe: Just stores pointer.
-   */
-  void setLastError(const char* err) noexcept { lastError_ = err; }
+  [[nodiscard]] std::uint8_t preInitCheck() noexcept override {
+    if (!configured_) {
+      setLastError("init() called before configuration");
+      return static_cast<std::uint8_t>(Status::ERROR_NOT_CONFIGURED);
+    }
+    return static_cast<std::uint8_t>(Status::SUCCESS);
+  }
 
   /**
    * @brief Mark component as configured (ready for init).
@@ -492,13 +386,7 @@ protected:
 private:
   std::shared_ptr<logs::SystemLog> componentLog_{nullptr};
   IInternalBus* internalBus_{nullptr};
-  std::uint8_t status_{static_cast<std::uint8_t>(Status::SUCCESS)};
-  const char* lastError_{nullptr};
-  std::uint32_t fullUid_{INVALID_COMPONENT_UID};
-  std::uint8_t instanceIndex_{0};
   bool configured_{false};
-  bool initialized_{false};
-  bool registered_{false};
   bool locked_{false};
 
   // Command statistics (system-wide tracking).

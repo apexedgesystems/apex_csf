@@ -36,10 +36,10 @@ std::uint8_t SystemComponentBase::handleCommand(std::uint16_t opcode,
   case GET_STATUS_INFO: {
     // Serialize ComponentStatusInfoTlm (4 bytes).
     ComponentStatusInfoTlm tlm{};
-    tlm.status = status_;
-    tlm.initialized = initialized_ ? 1 : 0;
-    tlm.configured = configured_ ? 1 : 0;
-    tlm.registered = registered_ ? 1 : 0;
+    tlm.status = status();
+    tlm.initialized = isInitialized() ? 1 : 0;
+    tlm.configured = isConfigured() ? 1 : 0;
+    tlm.registered = isRegistered() ? 1 : 0;
     response.resize(sizeof(tlm));
     std::memcpy(response.data(), &tlm, sizeof(tlm));
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
