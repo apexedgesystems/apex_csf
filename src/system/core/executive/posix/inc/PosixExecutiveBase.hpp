@@ -31,7 +31,7 @@ namespace executive {
  * - status() returns uint8_t; cast to/from Status where needed.
  */
 class PosixExecutiveBase : public system_core::system_component::SystemComponentBase,
-                      public ExecutiveCore {
+                           public ExecutiveCore {
 public:
   using Status = system_core::system_component::Status;
 

@@ -11,14 +11,14 @@ Minimal IComponent implementation for resource-constrained MCU targets. Static a
 
 ## 1. Quick Reference
 
-| Component           | Header                  | RT-Safe      | Description                               |
-| ------------------- | ----------------------- | ------------ | ----------------------------------------- |
+| Component          | Header                 | RT-Safe      | Description                               |
+| ------------------ | ---------------------- | ------------ | ----------------------------------------- |
 | `McuComponentBase` | `McuComponentBase.hpp` | Queries only | Minimal IComponent with static allocation |
 
 | Question                                            | Answer                                             |
 | --------------------------------------------------- | -------------------------------------------------- |
-| What is the minimal component base for MCU targets? | `McuComponentBase`                                |
-| How do I implement a bare-metal component?          | Derive from `McuComponentBase`, implement hooks   |
+| What is the minimal component base for MCU targets? | `McuComponentBase`                                 |
+| How do I implement a bare-metal component?          | Derive from `McuComponentBase`, implement hooks    |
 | What is the full UID formula?                       | `(componentId << 8) \| instanceIndex`              |
 | What lifecycle hooks must I implement?              | `doInit()` (required), `doReset()` (optional)      |
 | How does this differ from SystemComponentBase?      | No TPRM, no registry, no command queue, no logging |
@@ -30,7 +30,7 @@ Minimal IComponent implementation for resource-constrained MCU targets. Static a
 | Scenario                                      | Use This Library?               |
 | --------------------------------------------- | ------------------------------- |
 | Bare-metal MCU component                      | Yes                             |
-| Component with McuExecutive                  | Yes                             |
+| Component with McuExecutive                   | Yes                             |
 | Need component identity (fullUid, status)     | Yes                             |
 | Need registry integration or data descriptors | No -- use `SystemComponentBase` |
 | Need internal bus or command queue            | No -- use `SystemComponentBase` |

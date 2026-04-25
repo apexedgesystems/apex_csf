@@ -2,12 +2,12 @@
 
 Component base classes and lifecycle management for the Apex executive framework. Four directory tiers organize the hierarchy:
 
-| Tier | Contents | Instantiable? |
-|------|----------|---------------|
-| `base/` | Pure virtual `IComponent` interface | No (pure virtual) |
-| `core/` | `ComponentCore` shared concrete base (identity, lifecycle, registration state) | No (still abstract) |
-| `posix/` | `SystemComponentBase` and POSIX-tier specializations | Yes (full POSIX features) |
-| `mcu/` | `McuComponentBase` for bare-metal targets | Yes (static allocation) |
+| Tier     | Contents                                                                       | Instantiable?             |
+| -------- | ------------------------------------------------------------------------------ | ------------------------- |
+| `base/`  | Pure virtual `IComponent` interface                                            | No (pure virtual)         |
+| `core/`  | `ComponentCore` shared concrete base (identity, lifecycle, registration state) | No (still abstract)       |
+| `posix/` | `SystemComponentBase` and POSIX-tier specializations                           | Yes (full POSIX features) |
+| `mcu/`   | `McuComponentBase` for bare-metal targets                                      | Yes (static allocation)   |
 
 **Namespace:** `system_core::system_component` (POSIX), `system_core::system_component::mcu` (MCU)
 **Libraries:** `system_component_base` (INTERFACE), `system_component_core` (INTERFACE), `system_core_system_component` (SHARED, POSIX), `system_component_mcu` (INTERFACE)
@@ -33,7 +33,7 @@ Component base classes and lifecycle management for the Apex executive framework
 | `HwModelBase`              | Abstract class     | Base for hardware emulation models (HW_MODEL)                                           | Runtime: Yes                                  |
 | `SupportComponentBase`     | Abstract class     | Base for runtime support services                                                       | Runtime: Yes                                  |
 | `DriverBase`               | Abstract class     | Base for real hardware interfaces (DRIVER)                                              | Runtime: Yes                                  |
-| `McuComponentBase`        | Abstract class     | Minimal implementation for bare-metal MCUs                                              | Queries: Yes, Lifecycle: No                   |
+| `McuComponentBase`         | Abstract class     | Minimal implementation for bare-metal MCUs                                              | Queries: Yes, Lifecycle: No                   |
 | `PackedTprm`               | Struct             | TPRM file reader (archive extraction, entry lookup)                                     | No (file I/O)                                 |
 | `ComponentRegistry`        | Class              | Component lookup by fullUid, componentId, or name                                       | Yes (read-only queries)                       |
 | `SystemComponentTlm`       | Struct             | Telemetry snapshot for component state export                                           | Yes                                           |
@@ -47,7 +47,7 @@ Component base classes and lifecycle management for the Apex executive framework
 | How do I create a schedulable model?              | Inherit `SimModelBase` or `HwModelBase`      |
 | How do I add tunable parameters with hot-reload?  | `SystemComponent<TParams>`                   |
 | How do I get RT-safe parameter access?            | `activeParams()` (atomic pointer load, ~9ns) |
-| How do I build for bare-metal MCUs?               | Inherit `McuComponentBase`                  |
+| How do I build for bare-metal MCUs?               | Inherit `McuComponentBase`                   |
 | What status codes can init/load return?           | `Status` enum (SUCCESS through EOE marker)   |
 | How do I classify data blocks semantically?       | `DataCategory` enum                          |
 | How do I wrap typed data with category semantics? | `ModelData<T, Category>`                     |
@@ -64,7 +64,7 @@ Component base classes and lifecycle management for the Apex executive framework
 | Create a hardware driver component             | Yes -- inherit `DriverBase`                    |
 | Add tunable parameters with hot-reload         | Yes -- `SystemComponent<TParams>`              |
 | Need component identity (componentId, fullUid) | Yes -- `IComponent` interface                  |
-| Build for bare-metal MCU with McuExecutive    | Yes -- `McuComponentBase`                     |
+| Build for bare-metal MCU with McuExecutive     | Yes -- `McuComponentBase`                      |
 | Task scheduling configuration (freq, priority) | No -- scheduler owns config                    |
 | Component-to-component messaging               | No -- use `IInternalBus` (separate library)    |
 
@@ -124,7 +124,7 @@ Component base classes and lifecycle management for the Apex executive framework
 | Component             | Stack                                | Heap                    |
 | --------------------- | ------------------------------------ | ----------------------- |
 | `IComponent`          | 8B (vtable)                          | 0                       |
-| `McuComponentBase`   | ~24B (vtable + state)                | 0                       |
+| `McuComponentBase`    | ~24B (vtable + state)                | 0                       |
 | `SystemComponentBase` | ~120B (vtable + state + descriptors) | Log pointer (shared)    |
 | `SystemComponent<T>`  | ~120B + 2 \* sizeof(T) (A/B banks)   | 0 (banks inline)        |
 | `PackedTprm`          | ~32B                                 | File buffer (transient) |

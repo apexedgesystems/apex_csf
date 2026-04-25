@@ -15,8 +15,14 @@ apex_module(system_component_mcu)
 # Interface Library
 # ------------------------------------------------------------------------------
 
-apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" DEPS_INTERFACE system_component_base
-                           system_component_core
+apex_add_interface_library(
+  NAME
+  ${LIB_NAME}
+  INC
+  "${INC_DIR}"
+  DEPS_INTERFACE
+  system_component_base
+  system_component_core
 )
 
 # ------------------------------------------------------------------------------

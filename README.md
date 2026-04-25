@@ -399,12 +399,12 @@ Performance benchmarking uses
 
 ### System Core -- Infrastructure
 
-| Library                                                                            | Namespace                       | Description                                                                               |
-| ---------------------------------------------------------------------------------- | ------------------------------- | ----------------------------------------------------------------------------------------- |
+| Library                                                                            | Namespace                       | Description                                                                              |
+| ---------------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------- |
 | [system_component](src/system/core/infrastructure/system_component/base/README.md) | `system_core::system_component` | Component base classes and lifecycle (IComponent, SystemComponentBase, McuComponentBase) |
-| [schedulable](src/system/core/infrastructure/schedulable/README.md)                | `system_core::schedulable`      | Lightweight task abstractions (~24 bytes) with zero-cost delegates                        |
-| [data](src/system/core/infrastructure/data/README.md)                              | `system_core::data`             | Typed data containers, endianness handling, watchpoints, and fault injection              |
-| [logs](src/system/core/infrastructure/logs/README.md)                              | `logs`                          | RT-safe asynchronous logging with file-backed persistence and rotation                    |
+| [schedulable](src/system/core/infrastructure/schedulable/README.md)                | `system_core::schedulable`      | Lightweight task abstractions (~24 bytes) with zero-cost delegates                       |
+| [data](src/system/core/infrastructure/data/README.md)                              | `system_core::data`             | Typed data containers, endianness handling, watchpoints, and fault injection             |
+| [logs](src/system/core/infrastructure/logs/README.md)                              | `logs`                          | RT-safe asynchronous logging with file-backed persistence and rotation                   |
 
 ### Protocols
 

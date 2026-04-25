@@ -199,7 +199,7 @@ This separation enables:
 | --------- | ----------------------- | ---------------------------------- |
 | `base/`   | `scheduler_base`        | IScheduler interface (header-only) |
 | `apex/`   | `system_core_scheduler` | Full implementation (SHARED)       |
-| `lite/`   | `scheduler_mcu`        | MCU implementation (header-only)   |
+| `lite/`   | `scheduler_mcu`         | MCU implementation (header-only)   |
 
 ### File Organization
 

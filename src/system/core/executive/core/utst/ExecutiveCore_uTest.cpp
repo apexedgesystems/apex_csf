@@ -33,9 +33,7 @@ public:
 
   void shutdown() noexcept override { shutdownRequested_ = true; }
 
-  [[nodiscard]] bool isShutdownRequested() const noexcept override {
-    return shutdownRequested_;
-  }
+  [[nodiscard]] bool isShutdownRequested() const noexcept override { return shutdownRequested_; }
 
   [[nodiscard]] uint64_t cycleCount() const noexcept override { return cycles_; }
 

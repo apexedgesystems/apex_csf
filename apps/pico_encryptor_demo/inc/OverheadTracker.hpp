@@ -49,8 +49,7 @@ struct OverheadStats {
  */
 class OverheadTracker {
 public:
-  explicit OverheadTracker(executive::mcu::McuExecutive<>& exec) noexcept
-      : exec_(exec), stats_{} {}
+  explicit OverheadTracker(executive::mcu::McuExecutive<>& exec) noexcept : exec_(exec), stats_{} {}
 
   /// No-op on M0+ (no DWT to enable).
   void enableDwt() noexcept {}

@@ -74,7 +74,7 @@ MonteCarloDriver is NOT an executive variant. It does not implement `IExecutive`
 and does not inherit from any executive class. It is a batch orchestrator that
 _uses_ McuExecutive instances (or raw model calls) as workers.
 
-| Concern     | ApexExecutive             | McuExecutive | MonteCarloDriver  |
+| Concern     | ApexExecutive             | McuExecutive  | MonteCarloDriver  |
 | ----------- | ------------------------- | ------------- | ----------------- |
 | Threading   | Multi-thread pools        | Single-thread | Thread-per-worker |
 | Timing      | RT clock sync             | ITickSource   | None (max speed)  |

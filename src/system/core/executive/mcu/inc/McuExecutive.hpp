@@ -85,7 +85,7 @@ namespace mcu {
 template <size_t MaxTasks = system_core::scheduler::mcu::DEFAULT_LITE_MAX_TASKS,
           typename Counter = uint64_t>
 class McuExecutive : public system_core::system_component::mcu::McuComponentBase,
-                      public ExecutiveCore {
+                     public ExecutiveCore {
 public:
   /// Owned scheduler type.
   using Scheduler = system_core::scheduler::mcu::SchedulerLite<MaxTasks, Counter>;
@@ -100,8 +100,8 @@ public:
    * Scheduler is owned by value.
    */
   McuExecutive(ITickSource* tickSource,
-                uint16_t freqHz = system_core::scheduler::mcu::DEFAULT_LITE_FREQ_HZ,
-                Counter maxCycles = 0) noexcept
+               uint16_t freqHz = system_core::scheduler::mcu::DEFAULT_LITE_FREQ_HZ,
+               Counter maxCycles = 0) noexcept
       : tickSource_(tickSource), scheduler_(freqHz), maxCycles_(maxCycles) {
     // Executive is self-registered (always instance 0)
     setInstanceIndex(0);

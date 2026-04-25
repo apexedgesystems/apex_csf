@@ -21,8 +21,14 @@ apex_module(system_component_core)
 # Interface Library
 # ------------------------------------------------------------------------------
 
-apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" DEPS_INTERFACE system_component_base
-                           BAREMETAL
+apex_add_interface_library(
+  NAME
+  ${LIB_NAME}
+  INC
+  "${INC_DIR}"
+  DEPS_INTERFACE
+  system_component_base
+  BAREMETAL
 )
 
 # ------------------------------------------------------------------------------

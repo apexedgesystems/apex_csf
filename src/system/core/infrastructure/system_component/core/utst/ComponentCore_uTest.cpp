@@ -43,9 +43,7 @@ public:
   int preInitCalls() const noexcept { return preInitCalls_; }
 
   // Order log (records each hook in the order it was invoked).
-  const char* orderAt(std::size_t i) const noexcept {
-    return i < orderLen_ ? order_[i] : nullptr;
-  }
+  const char* orderAt(std::size_t i) const noexcept { return i < orderLen_ ? order_[i] : nullptr; }
   std::size_t orderLen() const noexcept { return orderLen_; }
 
 protected:

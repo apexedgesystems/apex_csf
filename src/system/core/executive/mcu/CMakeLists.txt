@@ -27,7 +27,6 @@ apex_add_interface_library(
   executive_core
   scheduler_mcu
   system_component_base
-  system_component_mcu
   BAREMETAL
 )
 

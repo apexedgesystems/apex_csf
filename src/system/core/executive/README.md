@@ -4,22 +4,22 @@ The executive is the central coordinator for Apex systems. POSIX-tier executives
 
 ## Directory Tiers
 
-| Tier | Contents | Instantiable? |
-|------|----------|---------------|
-| `base/` | Pure virtual `IExecutive` interface | No |
-| `core/` | `ExecutiveCore` shared base: identity constants, IExecutive contract | No |
-| `posix/` | `PosixExecutiveBase` + `ApexExecutive` (POSIX tier) | Yes |
-| `mcu/` | `McuExecutive` (MCU tier) | Yes |
+| Tier     | Contents                                                             | Instantiable? |
+| -------- | -------------------------------------------------------------------- | ------------- |
+| `base/`  | Pure virtual `IExecutive` interface                                  | No            |
+| `core/`  | `ExecutiveCore` shared base: identity constants, IExecutive contract | No            |
+| `posix/` | `PosixExecutiveBase` + `ApexExecutive` (POSIX tier)                  | Yes           |
+| `mcu/`   | `McuExecutive` (MCU tier)                                            | Yes           |
 
 ## Class Overview
 
-| Class                | Tier   | Purpose                                                                   |
-| -------------------- | ------ | ------------------------------------------------------------------------- |
-| `IExecutive`         | base   | Pure interface (run, shutdown, isShutdownRequested, cycleCount)           |
-| `ExecutiveCore`      | core   | Shared base: COMPONENT_ID=0, COMPONENT_NAME="Executive", IExecutive contract |
-| `PosixExecutiveBase` | posix  | POSIX executive base (mixes SystemComponentBase + ExecutiveCore)          |
-| `ApexExecutive`      | posix  | Full POSIX executive with multi-threaded run loop, TPRM, logs, C2          |
-| `McuExecutive`       | mcu    | Single-threaded MCU executive on `McuComponentBase` + ExecutiveCore       |
+| Class                | Tier  | Purpose                                                                      |
+| -------------------- | ----- | ---------------------------------------------------------------------------- |
+| `IExecutive`         | base  | Pure interface (run, shutdown, isShutdownRequested, cycleCount)              |
+| `ExecutiveCore`      | core  | Shared base: COMPONENT_ID=0, COMPONENT_NAME="Executive", IExecutive contract |
+| `PosixExecutiveBase` | posix | POSIX executive base (mixes SystemComponentBase + ExecutiveCore)             |
+| `ApexExecutive`      | posix | Full POSIX executive with multi-threaded run loop, TPRM, logs, C2            |
+| `McuExecutive`       | mcu   | Single-threaded MCU executive on `McuComponentBase` + ExecutiveCore          |
 
 ## Component Identity System
 
