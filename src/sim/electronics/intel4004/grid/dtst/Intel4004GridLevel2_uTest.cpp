@@ -15,6 +15,7 @@
  */
 
 #include "src/sim/electronics/devices/nonlinear/inc/MosfetBsim3.hpp"
+#include "src/sim/electronics/intel4004/behavioral/inc/Intel4004Cpu.hpp"
 #include "src/sim/electronics/intel4004/grid/inc/Intel4004GridLevel2.hpp"
 #include "src/sim/electronics/intel4004/netlist/inc/SpiceNetlistParser.hpp"
 
@@ -24,6 +25,7 @@
 #include <string>
 #include <vector>
 
+using sim::electronics::intel4004::Intel4004Cpu;
 using sim::electronics::intel4004::Intel4004GridLevel2;
 using sim::electronics::intel4004::loadSpiceNetlist;
 
@@ -231,6 +233,93 @@ TEST(Intel4004L2, DISABLED_ConductanceSweepProbe) {
     const auto [oob, acc] = runOnce(G);
     std::printf("G=%-9.0e -> %3zu out-of-bounds, ACC=%u\n", G, oob, static_cast<unsigned>(acc));
   }
+}
+
+/* ----------------------------- L2 multi-instruction parity ----------------------------- */
+
+/**
+ * @test L2 multi-instruction LDM produces same ACC as L0 (mirrors L1
+ *       multi-instruction tests). Behavioral X3 still fires; L2's
+ *       improvement vs L1 is the analog fidelity (BSIM3 + overlay off
+ *       + GMIN tiering), not the instruction execution path.
+ */
+TEST(Intel4004L2, MultiInstructionLdm5) {
+  // L0 reference
+  Intel4004Cpu cpu;
+  std::uint8_t romL0[] = {0xD5, 0x00};
+  cpu.loadProgram(romL0, sizeof(romL0));
+  cpu.step();
+  ASSERT_EQ(cpu.accumulator, 5);
+
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  constexpr std::size_t WARMUP = 16;
+  std::vector<std::uint8_t> rom(WARMUP + 1, 0x00);
+  rom[WARMUP] = 0xD5;
+
+  Intel4004GridLevel2 grid;
+  ASSERT_TRUE(grid.applyBehavioralX3_); // default: behavioral X3 active
+
+  auto circuit = grid.buildCircuit(NETLIST);
+  grid.enableSparseModeLevel1(circuit);
+  circuit.solver().invalidateCache();
+  auto state = grid.simulateLevel1(circuit, rom.data(), rom.size(), WARMUP, 0);
+  grid.traceExecuteByte(circuit, state, rom[WARMUP], nullptr);
+
+  EXPECT_EQ(grid.readAccumulator(state.nodeVoltages), cpu.accumulator);
+}
+
+/* ----------------------------- Pure-physics multi-instruction probe ----------------------------- */
+
+/**
+ * @test Pure-physics LDM 5: does the analog circuit propagate
+ *       D0..D3 -> OPA -> ACC without behavioral X3 execution?
+ *
+ * This is the load-bearing milestone for "100% physics multi-instruction".
+ * L2's defaults turn OFF: behavioral overlay AND behavioral X3 switch.
+ * The analog circuit must transfer the data-bus value to ACC through
+ * the actual transistor connections (M1368: D0 -> OPA-IB -> OPA.0,
+ * then internal X3 path: OPA -> ACC via ADD-ACC / M12 / ADSR signals).
+ *
+ * Pass criterion: ACC reads 5 (or any digital answer matching L0).
+ * Fail mode (informational): ACC reads warmup state (likely 15) ->
+ * physics path not yet propagating; identifies which gap to attack.
+ */
+TEST(Intel4004L2, DISABLED_PurePhysicsLdm5) {
+  // L0 reference
+  Intel4004Cpu cpu;
+  std::uint8_t romL0[] = {0xD5, 0x00};
+  cpu.loadProgram(romL0, sizeof(romL0));
+  cpu.step();
+  ASSERT_EQ(cpu.accumulator, 5);
+
+  // L2 simulation
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  constexpr std::size_t WARMUP = 16;
+  std::vector<std::uint8_t> rom(WARMUP + 1, 0x00);
+  rom[WARMUP] = 0xD5;
+
+  Intel4004GridLevel2 grid;
+  ASSERT_FALSE(grid.applyBehavioralLatchOverlay_);
+  ASSERT_FALSE(grid.applyBehavioralX3_);
+
+  auto circuit = grid.buildCircuit(NETLIST);
+  grid.enableSparseModeLevel1(circuit);
+  circuit.solver().invalidateCache();
+
+  // Phase 1: warmup with L1 binary switch (inherited)
+  auto state = grid.simulateLevel1(circuit, rom.data(), rom.size(), WARMUP, 0);
+
+  // Phase 2: trace-execute the LDM byte (drives external clocks + data
+  // bus, no behavioral X3 because we disabled it)
+  grid.traceExecuteByte(circuit, state, rom[WARMUP], nullptr);
+
+  const std::uint8_t l2Acc = grid.readAccumulator(state.nodeVoltages);
+  std::printf("\n  L2 pure-physics LDM 5: L0=%u, L2=%u %s\n",
+              static_cast<unsigned>(cpu.accumulator), static_cast<unsigned>(l2Acc),
+              (l2Acc == cpu.accumulator) ? "[MATCH]" : "[MISMATCH -- physics path gap]");
+
+  EXPECT_EQ(l2Acc, cpu.accumulator)
+      << "Pure-physics ACC must match L0 for LDM 5";
 }
 
 /* ----------------------------- Differentiated-GMIN sweep ----------------------------- */

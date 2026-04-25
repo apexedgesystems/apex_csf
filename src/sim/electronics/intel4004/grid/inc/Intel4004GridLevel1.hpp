@@ -121,6 +121,14 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   ///      suppress spurious bistable flips from clock-edge transients.
   bool applyBehavioralLatchOverlay_ = true;
 
+  /// Execute LDM/ADD/SUB/etc. instructions behaviorally at X3 of each
+  /// machine cycle, writing the result directly to ACC node voltages
+  /// (bypassing physics). L1 default = true (the digital execution path
+  /// the multi-instruction tests rely on). L2 sets this false to test
+  /// pure-physics multi-instruction: the analog data-bus -> OPA -> ACC
+  /// transistor connections must propagate the value end-to-end.
+  bool applyBehavioralX3_ = true;
+
   /// Conductance of the soft Norton anchor when overlay is enabled.
   /// 0.0 = hard voltage source (default; preserves L1 behavioral pinning).
   /// > 0 = Norton equivalent: addConductance(net, 0, G) + addCurrent(net, 0, G*V).
@@ -520,7 +528,7 @@ struct Intel4004GridLevel1 : Intel4004Grid {
 
       // After X3 phase: execute instruction behaviorally.
       // OPR was latched during M1, OPA during M2. Now decode and execute.
-      if (ms == 7 && !latchValues_.empty()) {
+      if (ms == 7 && applyBehavioralX3_ && !latchValues_.empty()) {
         auto readLatch4 = [&](const char* n0, const char* n1,
                               const char* n2, const char* n3) -> std::uint8_t {
           mna::NetID nets[] = {findNet(n0), findNet(n1), findNet(n2), findNet(n3)};

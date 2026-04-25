@@ -82,6 +82,12 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
     latchOverlayConductance_ = 0.0;
     gminTransient_ = 5e-3;                // strong anchor on floating nets
     gminDriven_ = 1e-12;                  // tiny on NOR-output / clocks
+    // Behavioral X3 instruction execution stays ON in default L2 -- same
+    // digital execution path as L1, but with BSIM3 + overlay-off analog
+    // fidelity around the latch nets. The pure-physics X3 datapath
+    // (`applyBehavioralX3_ = false`) is an explicit opt-in for probing
+    // the remaining 100% physics multi-instruction milestone; see
+    // `Intel4004L2.DISABLED_PurePhysicsLdm5`.
   }
 
   /// BSIM3 parameter template for the latch feedback core. Per-transistor
