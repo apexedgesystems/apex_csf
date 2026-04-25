@@ -1,0 +1,13 @@
+# apex_data.toml - Component data manifest for DataTransform
+#
+# Data transformation support component (fullUid=0x00CA00). Applies byte-level
+# transforms (masks, overrides) to registered data blocks via ByteMaskProxy.
+
+component = "DataTransform"
+
+[structs]
+TransformStats = { category = "STATE", header = "inc/DataTransformData.hpp" }
+DataTransformTlm = { category = "TELEMETRY", opcode = "0x0600", header = "inc/DataTransformData.hpp" }
+
+[enums]
+DataTransformOpcode = { header = "inc/DataTransformData.hpp" }

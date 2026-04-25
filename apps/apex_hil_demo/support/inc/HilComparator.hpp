@@ -18,7 +18,7 @@
 #include "apps/apex_hil_demo/driver/inc/HilDriver.hpp"
 #include "apps/apex_hil_demo/support/inc/HilComparatorData.hpp"
 
-#include "src/system/core/infrastructure/data/inc/ModelData.hpp"
+#include "src/system/core/infrastructure/system_component/apex/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/apex/inc/SupportComponentBase.hpp"
 
 #include <fmt/format.h>

@@ -1,17 +1,31 @@
 # ==============================================================================
 # Unit Tests: system_core_action
+#
+# Tests ActionComponent lifecycle and the action engine primitives
+# (ActionInterface, DataAction, DataWatchpoint, DataSequence,
+# EventNotification, SequenceValidation).
 # ==============================================================================
 
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Test Sources (1)
+# Sources (9 files)
 # ------------------------------------------------------------------------------
 
-set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/ActionComponent_uTest.cpp")
+set(UNIT_TEST_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/ActionComponent_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ActionInterface_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DataAction_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DataWatchpoint_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DataSequence_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/EventNotification_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ResourceCatalog_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/SequenceValidation_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/SequenceCatalog_uTest.cpp"
+)
 
 # ------------------------------------------------------------------------------
-# Unit Tests
+# Test Target
 # ------------------------------------------------------------------------------
 
 apex_add_gtest(

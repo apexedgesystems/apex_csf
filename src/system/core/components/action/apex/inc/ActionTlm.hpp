@@ -43,7 +43,7 @@ enum class ActionTlmOpcode : std::uint16_t {
  *   4       4     watchpointsFired       - Watchpoint edge detections
  *   8       4     groupsFired            - Group edge detections
  *   --- Action Activity ---
- *   12      4     actionsApplied         - DATA_WRITE actions applied
+ *   12      4     actionsApplied         - Actions applied
  *   16      4     commandsRouted         - COMMAND actions routed
  *   20      4     armControlsApplied     - ARM_CONTROL actions applied
  *   --- Sequence Activity ---
@@ -58,8 +58,11 @@ enum class ActionTlmOpcode : std::uint16_t {
  *   --- Loading ---
  *   48      4     rtsLoaded              - Standalone RTS files loaded
  *   52      4     atsLoaded              - Standalone ATS files loaded
+ *   --- Abort/Exclusion ---
+ *   56      4     abortEventsDispatched  - Abort events dispatched
+ *   60      4     exclusionStops         - Sequences stopped by mutual exclusion
  *
- * Total: 56 bytes.
+ * Total: 64 bytes.
  */
 struct __attribute__((packed)) ActionHealthTlm {
   /* ----------------------------- Cycle Stats ----------------------------- */
@@ -73,7 +76,7 @@ struct __attribute__((packed)) ActionHealthTlm {
 
   /* ----------------------------- Actions ----------------------------- */
 
-  std::uint32_t actionsApplied{0};     ///< DATA_WRITE actions applied.
+  std::uint32_t actionsApplied{0};     ///< Actions applied.
   std::uint32_t commandsRouted{0};     ///< COMMAND actions routed.
   std::uint32_t armControlsApplied{0}; ///< ARM_CONTROL actions applied.
 
@@ -96,9 +99,14 @@ struct __attribute__((packed)) ActionHealthTlm {
 
   std::uint32_t rtsLoaded{0}; ///< Standalone RTS files loaded.
   std::uint32_t atsLoaded{0}; ///< Standalone ATS files loaded.
+
+  /* ----------------------------- Abort/Exclusion ----------------------------- */
+
+  std::uint32_t abortEventsDispatched{0}; ///< Abort events dispatched.
+  std::uint32_t exclusionStops{0};        ///< Sequences stopped by mutual exclusion.
 };
 
-static_assert(sizeof(ActionHealthTlm) == 56, "ActionHealthTlm size mismatch");
+static_assert(sizeof(ActionHealthTlm) == 64, "ActionHealthTlm size mismatch");
 
 } // namespace action
 } // namespace system_core

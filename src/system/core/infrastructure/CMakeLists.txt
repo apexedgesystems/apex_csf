@@ -5,7 +5,6 @@
 add_subdirectory(system_component)
 
 # Other infrastructure
-add_subdirectory(data)
 add_subdirectory(logs)
 add_subdirectory(protocols)
 add_subdirectory(schedulable)

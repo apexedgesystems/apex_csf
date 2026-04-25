@@ -5,39 +5,45 @@ Component base classes and lifecycle management for the Apex executive framework
 **Namespace:** `system_core::system_component`
 **Libraries:** `system_component_base` (INTERFACE), `system_core_system_component` (SHARED), `system_component_lite` (INTERFACE)
 **Platform:** Cross-platform (apex: Linux/RTOS, lite: bare-metal)
-**C++ Standard:** C++17
+**C++ Standard:** C++23
 
 ---
 
 ## 1. Quick Reference
 
-| Component                  | Type               | Purpose                                                                         | RT-Safe                                       |
-| -------------------------- | ------------------ | ------------------------------------------------------------------------------- | --------------------------------------------- |
-| `IComponent`               | Abstract interface | Minimal pure interface (identity, lifecycle, status)                            | Queries: Yes, Lifecycle: No                   |
-| `ComponentType`            | Enum               | Component classification (EXECUTIVE, CORE, SW_MODEL, HW_MODEL, SUPPORT, DRIVER) | Yes                                           |
-| `Status`                   | Enum               | Typed status codes with extension marker                                        | Yes                                           |
-| `SystemComponentBase`      | Abstract class     | Full-featured base (lifecycle, status, logging, data descriptors)               | Queries: Yes, Lifecycle: No                   |
-| `SystemComponent<T>`       | Template class     | A/B parameter staging with file loading and hot-reload                          | `activeParams()`: Yes, `load()`/`apply()`: No |
-| `SchedulableComponentBase` | Abstract class     | Base for components with scheduled tasks                                        | Task lookup: Yes, Registration: No            |
-| `CoreComponentBase`        | Abstract class     | Base for non-schedulable core components (scheduler, filesystem)                | Queries: Yes                                  |
-| `SimModelBase`             | Abstract class     | Base for simulation models (SW_MODEL)                                           | Runtime: Yes                                  |
-| `SwModelBase`              | Abstract class     | Alias for SimModelBase (SW_MODEL type)                                          | Runtime: Yes                                  |
-| `HwModelBase`              | Abstract class     | Base for hardware emulation models (HW_MODEL)                                   | Runtime: Yes                                  |
-| `SupportComponentBase`     | Abstract class     | Base for runtime support services                                               | Runtime: Yes                                  |
-| `DriverBase`               | Abstract class     | Base for real hardware interfaces (DRIVER)                                      | Runtime: Yes                                  |
-| `LiteComponentBase`        | Abstract class     | Minimal implementation for bare-metal MCUs                                      | Queries: Yes, Lifecycle: No                   |
-| `PackedTprm`               | Struct             | TPRM file reader (archive extraction, entry lookup)                             | No (file I/O)                                 |
-| `ComponentRegistry`        | Class              | Component lookup by fullUid, componentId, or name                               | Yes (read-only queries)                       |
-| `SystemComponentTlm`       | Struct             | Telemetry snapshot for component state export                                   | Yes                                           |
+| Component                  | Type               | Purpose                                                                                 | RT-Safe                                       |
+| -------------------------- | ------------------ | --------------------------------------------------------------------------------------- | --------------------------------------------- |
+| `IComponent`               | Abstract interface | Minimal pure interface (identity, lifecycle, status)                                    | Queries: Yes, Lifecycle: No                   |
+| `ComponentType`            | Enum               | Component classification (EXECUTIVE, CORE, SW_MODEL, HW_MODEL, SUPPORT, DRIVER)         | Yes                                           |
+| `Status`                   | Enum               | Typed status codes with extension marker                                                | Yes                                           |
+| `SystemComponentBase`      | Abstract class     | Full-featured base (lifecycle, status, logging, data descriptors)                       | Queries: Yes, Lifecycle: No                   |
+| `SystemComponent<T>`       | Template class     | A/B parameter staging with file loading and hot-reload                                  | `activeParams()`: Yes, `load()`/`apply()`: No |
+| `SchedulableComponentBase` | Abstract class     | Base for components with scheduled tasks                                                | Task lookup: Yes, Registration: No            |
+| `CoreComponentBase`        | Abstract class     | Base for non-schedulable core components (scheduler, filesystem)                        | Queries: Yes                                  |
+| `SimModelBase`             | Abstract class     | Base for simulation models (SW_MODEL)                                                   | Runtime: Yes                                  |
+| `SwModelBase`              | Abstract class     | Alias for SimModelBase (SW_MODEL type)                                                  | Runtime: Yes                                  |
+| `HwModelBase`              | Abstract class     | Base for hardware emulation models (HW_MODEL)                                           | Runtime: Yes                                  |
+| `SupportComponentBase`     | Abstract class     | Base for runtime support services                                                       | Runtime: Yes                                  |
+| `DriverBase`               | Abstract class     | Base for real hardware interfaces (DRIVER)                                              | Runtime: Yes                                  |
+| `LiteComponentBase`        | Abstract class     | Minimal implementation for bare-metal MCUs                                              | Queries: Yes, Lifecycle: No                   |
+| `PackedTprm`               | Struct             | TPRM file reader (archive extraction, entry lookup)                                     | No (file I/O)                                 |
+| `ComponentRegistry`        | Class              | Component lookup by fullUid, componentId, or name                                       | Yes (read-only queries)                       |
+| `SystemComponentTlm`       | Struct             | Telemetry snapshot for component state export                                           | Yes                                           |
+| `DataCategory`             | Enum               | Semantic categories for data blocks (STATIC_PARAM, TUNABLE_PARAM, STATE, INPUT, OUTPUT) | Yes                                           |
+| `ModelData`                | Template class     | Typed container for model data with category-based access control                       | Yes                                           |
+| `DataTarget`               | Struct             | Runtime byte-range addressing for registered data blocks                                | Yes                                           |
 
-| Question                                         | Answer                                       |
-| ------------------------------------------------ | -------------------------------------------- |
-| What is the universal component interface?       | `IComponent`                                 |
-| How do I create a schedulable model?             | Inherit `SimModelBase` or `HwModelBase`      |
-| How do I add tunable parameters with hot-reload? | `SystemComponent<TParams>`                   |
-| How do I get RT-safe parameter access?           | `activeParams()` (atomic pointer load, ~9ns) |
-| How do I build for bare-metal MCUs?              | Inherit `LiteComponentBase`                  |
-| What status codes can init/load return?          | `Status` enum (SUCCESS through EOE marker)   |
+| Question                                          | Answer                                       |
+| ------------------------------------------------- | -------------------------------------------- |
+| What is the universal component interface?        | `IComponent`                                 |
+| How do I create a schedulable model?              | Inherit `SimModelBase` or `HwModelBase`      |
+| How do I add tunable parameters with hot-reload?  | `SystemComponent<TParams>`                   |
+| How do I get RT-safe parameter access?            | `activeParams()` (atomic pointer load, ~9ns) |
+| How do I build for bare-metal MCUs?               | Inherit `LiteComponentBase`                  |
+| What status codes can init/load return?           | `Status` enum (SUCCESS through EOE marker)   |
+| How do I classify data blocks semantically?       | `DataCategory` enum                          |
+| How do I wrap typed data with category semantics? | `ModelData<T, Category>`                     |
+| How do I address a byte range in registered data? | `DataTarget` struct                          |
 
 ---
 
@@ -176,6 +182,9 @@ public:
 
   /// @note NOT RT-safe: Registration (called by executive).
   void setInstanceIndex(uint8_t idx) noexcept;
+
+  /// @note NOT RT-safe: Called once after bus is wired, before runtime starts.
+  virtual void onBusReady() noexcept {}
 
 protected:
   virtual void preInit() noexcept {}
@@ -376,5 +385,5 @@ protected:
 
 - `src/system/core/infrastructure/schedulable/` -- SchedulableTask used by SchedulableComponentBase
 - `src/system/core/infrastructure/logs/` -- SystemLog used by components for diagnostics
-- `src/system/core/infrastructure/data/` -- DataCategory for data descriptor registration
+- `src/utilities/data_proxy/` -- ByteMaskProxy, EndiannessProxy for data transformation
 - `src/utilities/helpers/` -- Files utility for TPRM binary loading

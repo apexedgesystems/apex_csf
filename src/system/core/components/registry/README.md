@@ -449,8 +449,7 @@ auto zBytes = entry->getBytes(16, 8);
 
 - C++17 compiler (GCC 10+, Clang 12+)
 - fmt library (formatting)
-- system_core_system_component (SystemComponentBase)
-- system_core_data (DataCategory)
+- system_core_system_component (SystemComponentBase, DataCategory)
 
 ### Runtime
 

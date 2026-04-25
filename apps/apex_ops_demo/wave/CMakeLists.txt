@@ -1,25 +1,25 @@
 # ==============================================================================
 # Wave generator library (header-only)
+#
+# Configurable waveform generator with telemetry output.
 # ==============================================================================
 
 include(apex/All)
+apex_module(apex_ops_demo_wave)
 
 # ------------------------------------------------------------------------------
 # Interface Library
 # ------------------------------------------------------------------------------
 
-apex_module(apex_ops_demo_wave)
-
-add_library(${LIB_NAME} INTERFACE)
-
-target_include_directories(
-  ${LIB_NAME} INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/inc>
-                        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}>
-)
-
-target_link_libraries(
+apex_add_interface_library(
+  NAME
   ${LIB_NAME}
-  INTERFACE system_core_system_component utilities_helpers fmt::fmt
+  INC
+  "${INC_DIR}"
+  DEPS_INTERFACE
+  system_core_system_component
+  utilities_helpers
+  fmt::fmt
 )
 
 # ------------------------------------------------------------------------------

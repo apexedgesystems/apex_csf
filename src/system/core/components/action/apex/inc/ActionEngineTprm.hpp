@@ -77,18 +77,14 @@ struct SequenceStepTprm {
   std::uint8_t targetCategory;    ///< DataCategory enum value.
   std::uint16_t targetByteOffset; ///< Byte offset.
   std::uint8_t targetByteLen;     ///< Byte length.
-  std::uint8_t actionType;        ///< ActionType enum value.
-  std::uint8_t andMask[8];        ///< AND mask bytes.
-  std::uint8_t xorMask[8];        ///< XOR mask bytes.
+  std::uint8_t actionType;        ///< ActionType enum value (COMMAND=0, ARM_CONTROL=1).
   std::uint32_t delayCycles;      ///< Delay before this step (from previous).
-  std::uint32_t duration;         ///< Cycles to hold (0 = one-shot).
   std::uint8_t armTarget;         ///< ArmControlTarget enum (for ARM_CONTROL).
   std::uint8_t armIndex;          ///< Table index for ARM_CONTROL.
   std::uint8_t armState;          ///< 1 = arm, 0 = disarm.
-  std::uint8_t reserved;          ///< Padding to 36 bytes.
 } __attribute__((packed));
 
-static_assert(sizeof(SequenceStepTprm) == 37, "SequenceStepTprm must be 37 bytes");
+static_assert(sizeof(SequenceStepTprm) == 16, "SequenceStepTprm must be 16 bytes");
 
 /**
  * @struct SequenceTprm
@@ -104,7 +100,7 @@ struct SequenceTprm {
   SequenceStepTprm steps[8]; ///< Step table (8 inline steps).
 } __attribute__((packed));
 
-static_assert(sizeof(SequenceTprm) == 8 + 8 * 37, "SequenceTprm size mismatch");
+static_assert(sizeof(SequenceTprm) == 8 + 8 * 16, "SequenceTprm size mismatch");
 
 /**
  * @struct NotificationTprm
@@ -129,19 +125,15 @@ struct TimedActionTprm {
   std::uint8_t targetCategory;    ///< DataCategory enum value.
   std::uint16_t targetByteOffset; ///< Byte offset.
   std::uint8_t targetByteLen;     ///< Byte length.
-  std::uint8_t actionType;        ///< ActionType enum value.
+  std::uint8_t actionType;        ///< ActionType enum value (COMMAND=0, ARM_CONTROL=1).
   std::uint8_t trigger;           ///< ActionTrigger enum value.
   std::uint32_t triggerParam;     ///< Cycle count for AT_CYCLE, etc.
-  std::uint32_t duration;         ///< Cycles to hold.
-  std::uint8_t andMask[8];        ///< AND mask bytes.
-  std::uint8_t xorMask[8];        ///< XOR mask bytes.
   std::uint8_t armTarget;         ///< ArmControlTarget enum (for ARM_CONTROL).
   std::uint8_t armIndex;          ///< Table index for ARM_CONTROL.
   std::uint8_t armState;          ///< 1 = arm, 0 = disarm.
-  std::uint8_t reserved;          ///< Padding to 40 bytes.
 } __attribute__((packed));
 
-static_assert(sizeof(TimedActionTprm) == 38, "TimedActionTprm must be 38 bytes");
+static_assert(sizeof(TimedActionTprm) == 17, "TimedActionTprm must be 17 bytes");
 
 /* ----------------------------- ActionEngineTprm ----------------------------- */
 
@@ -158,13 +150,13 @@ static_assert(sizeof(TimedActionTprm) == 38, "TimedActionTprm must be 38 bytes")
 struct ActionEngineTprm {
   WatchpointTprm watchpoints[8];     ///< 8 x 26 = 208 bytes.
   GroupTprm groups[4];               ///< 4 x 12 = 48 bytes.
-  SequenceTprm sequences[4];         ///< 4 x 304 = 1216 bytes.
+  SequenceTprm sequences[4];         ///< 4 x 136 = 544 bytes.
   NotificationTprm notifications[8]; ///< 8 x 68 = 544 bytes.
-  TimedActionTprm actions[16];       ///< 16 x 38 = 608 bytes.
+  TimedActionTprm actions[16];       ///< 16 x 17 = 272 bytes.
 } __attribute__((packed));
 
-// Total: 208 + 48 + 1216 + 544 + 608 = 2624 bytes
-static_assert(sizeof(ActionEngineTprm) == 2624, "ActionEngineTprm size mismatch");
+// Total: 208 + 48 + 544 + 544 + 272 = 1616 bytes
+static_assert(sizeof(ActionEngineTprm) == 1616, "ActionEngineTprm size mismatch");
 
 // Required for hex2cpp loading.
 static_assert(std::is_trivially_copyable_v<ActionEngineTprm>,
@@ -204,12 +196,7 @@ struct StandaloneStepTprm {
   std::uint8_t targetCategory;    ///< DataCategory enum value.
   std::uint16_t targetByteOffset; ///< Byte offset.
   std::uint8_t targetByteLen;     ///< Byte length.
-  std::uint8_t actionType;        ///< ActionType enum value.
-
-  /* ---- DATA_WRITE fields ---- */
-  std::uint8_t andMask[8]; ///< AND mask bytes.
-  std::uint8_t xorMask[8]; ///< XOR mask bytes.
-  std::uint32_t duration;  ///< Cycles to hold (0 = one-shot).
+  std::uint8_t actionType;        ///< ActionType enum value (COMMAND=0, ARM_CONTROL=1).
 
   /* ---- ARM_CONTROL fields ---- */
   std::uint8_t armTarget; ///< ArmControlTarget enum.
@@ -237,7 +224,7 @@ struct StandaloneStepTprm {
   std::uint8_t reserved; ///< Padding.
 } __attribute__((packed));
 
-static_assert(sizeof(StandaloneStepTprm) == 84, "StandaloneStepTprm must be 84 bytes");
+static_assert(sizeof(StandaloneStepTprm) == 64, "StandaloneStepTprm must be 64 bytes");
 
 /**
  * @struct StandaloneSequenceTprm
@@ -257,8 +244,8 @@ struct StandaloneSequenceTprm {
   StandaloneStepTprm steps[16]; ///< Step table (SEQUENCE_MAX_STEPS).
 } __attribute__((packed));
 
-// Header: 8 bytes. Steps: 16 * 84 = 1344 bytes. Total: 1352 bytes.
-static_assert(sizeof(StandaloneSequenceTprm) == 1352, "StandaloneSequenceTprm size mismatch");
+// Header: 8 bytes. Steps: 16 * 64 = 1024 bytes. Total: 1032 bytes.
+static_assert(sizeof(StandaloneSequenceTprm) == 1032, "StandaloneSequenceTprm size mismatch");
 
 static_assert(std::is_trivially_copyable_v<StandaloneSequenceTprm>,
               "StandaloneSequenceTprm must be trivially copyable");

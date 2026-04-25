@@ -19,27 +19,22 @@ make compose-testp
 # 3. Build release (rpi, package, tarball)
 make release APP=ApexOpsDemo
 
-# 4. Deploy to Pi
-RELEASE=build/release/ApexOpsDemo/rpi
-scp $RELEASE/bank_a/bin/ApexOpsDemo kalex@192.168.1.119:~/apex_c2_demo/bank_a/bin/
-rsync -aL $RELEASE/bank_a/libs/ kalex@192.168.1.119:~/apex_c2_demo/bank_a/lib/
-scp $RELEASE/bank_a/tprm/master.tprm kalex@192.168.1.119:~/apex_c2_demo/bank_a/tprm/
+# 4. Deploy to Pi (clean install from tarball)
+scp build/release/ApexOpsDemo.tar.gz kalex@192.168.1.119:~/ApexOpsDemo.tar.gz
+ssh kalex@192.168.1.119 'sudo rm -rf ~/apex_c2_demo && mkdir ~/apex_c2_demo && \
+  tar xzf ~/ApexOpsDemo.tar.gz -C ~/apex_c2_demo --strip-components=1 && \
+  rm ~/ApexOpsDemo.tar.gz'
 
-# 5. Copy test plugin for library hot-swap testing
-scp build/rpi-aarch64-release/test_plugins/OpsTestPlugin_v2.so \
-  kalex@192.168.1.119:~/apex_c2_demo/bank_a/libs/
+# 5. Start on Pi
+ssh kalex@192.168.1.119 'cd ~/apex_c2_demo/rpi && \
+  sudo ./run.sh ApexOpsDemo </dev/null &>/tmp/opsdemo.log &'
 
-# 6. Start on Pi
-ssh kalex@192.168.1.119 'cd ~/apex_c2_demo && \
-  sudo rm -rf .apex_fs && \
-  sudo ./run.sh </dev/null &>/tmp/opsdemo.log &'
-
-# 7. Verify
+# 6. Verify
 ssh kalex@192.168.1.119 'pgrep ApexOpsDemo && sudo ss -tlnp | grep 9000'
 
-# 8. Run checkout
+# 7. Run checkout
 python3 apps/apex_ops_demo/scripts/checkout.py --host 192.168.1.119 \
-  --plugin-so build/rpi-aarch64-release/test_plugins/OpsTestPlugin_v2.so
+  --skip-restart --skip-reload-lib
 ```
 
 ## Zenith Target Generation

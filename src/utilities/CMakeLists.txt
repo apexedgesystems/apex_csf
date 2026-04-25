@@ -1,13 +1,14 @@
 # ==============================================================================
 # Utilities
 # ==============================================================================
-# Cross-platform utility libraries: checksums, compatibility, encryption,
-# helpers, concurrency, and math.
+# Cross-platform utility libraries: checksums, compatibility, data_proxy,
+# encryption, helpers, concurrency, math, and time.
 # ==============================================================================
 
 # Bare-metal compatible libraries (header-only or explicitly flagged BAREMETAL)
 add_subdirectory(checksums)
 add_subdirectory(compatibility)
+add_subdirectory(data_proxy)
 add_subdirectory(encryption)
 add_subdirectory(helpers)
 

@@ -32,7 +32,7 @@
 #include "src/system/core/support/telemetry_manager/inc/TelemetryManagerData.hpp"
 
 #include "src/system/core/components/registry/apex/inc/ApexRegistry.hpp"
-#include "src/system/core/infrastructure/data/inc/ModelData.hpp"
+#include "src/system/core/infrastructure/system_component/apex/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/apex/inc/SupportComponentBase.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 #include "src/utilities/helpers/inc/Files.hpp"

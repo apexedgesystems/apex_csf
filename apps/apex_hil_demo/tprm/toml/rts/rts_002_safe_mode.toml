@@ -49,9 +49,6 @@ targetCategory   = { type = "uint", size = 1, value = "OUTPUT" }
 targetByteOffset = { type = "uint", size = 2, value = 8 }
 targetByteLen    = { type = "uint", size = 1, value = 4 }
 actionType       = { type = "uint", size = 1, value = "DATA_WRITE" }
-andMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-xorMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
@@ -86,9 +83,6 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = "COMMAND" }
-andMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-xorMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
@@ -123,9 +117,6 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = "COMMAND" }
-andMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-xorMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
@@ -164,9 +155,6 @@ targetCategory   = { type = "uint", size = 1, value = "OUTPUT" }
 targetByteOffset = { type = "uint", size = 2, value = 8 }
 targetByteLen    = { type = "uint", size = 1, value = 4 }
 actionType       = { type = "uint", size = 1, value = "DATA_WRITE" }
-andMask          = { type = "array", size = 8, value = [255,255,255,255,0,0,0,0] }
-xorMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
@@ -201,9 +189,6 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = "COMMAND" }
-andMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-xorMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
@@ -239,9 +224,6 @@ targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
 actionType       = { type = "uint", size = 1, value = "COMMAND" }
-andMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-xorMask          = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-duration         = { type = "uint", size = 4, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
@@ -276,9 +258,6 @@ targetCategory = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen = { type = "uint", size = 1, value = 0 }
 actionType = { type = "uint", size = 1, value = 0 }
-andMask = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-xorMask = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-duration = { type = "uint", size = 4, value = 0 }
 armTarget = { type = "uint", size = 1, value = 0 }
 armIndex = { type = "uint", size = 1, value = 0 }
 armState = { type = "uint", size = 1, value = 0 }
@@ -310,9 +289,6 @@ targetCategory = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen = { type = "uint", size = 1, value = 0 }
 actionType = { type = "uint", size = 1, value = 0 }
-andMask = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-xorMask = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
-duration = { type = "uint", size = 4, value = 0 }
 armTarget = { type = "uint", size = 1, value = 0 }
 armIndex = { type = "uint", size = 1, value = 0 }
 armState = { type = "uint", size = 1, value = 0 }
@@ -344,9 +320,6 @@ targetCategory={type="uint",size=1,value=0}
 targetByteOffset={type="uint",size=2,value=0}
 targetByteLen={type="uint",size=1,value=0}
 actionType={type="uint",size=1,value=0}
-andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-duration={type="uint",size=4,value=0}
 armTarget={type="uint",size=1,value=0}
 armIndex={type="uint",size=1,value=0}
 armState={type="uint",size=1,value=0}
@@ -378,9 +351,6 @@ targetCategory={type="uint",size=1,value=0}
 targetByteOffset={type="uint",size=2,value=0}
 targetByteLen={type="uint",size=1,value=0}
 actionType={type="uint",size=1,value=0}
-andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-duration={type="uint",size=4,value=0}
 armTarget={type="uint",size=1,value=0}
 armIndex={type="uint",size=1,value=0}
 armState={type="uint",size=1,value=0}
@@ -412,9 +382,6 @@ targetCategory={type="uint",size=1,value=0}
 targetByteOffset={type="uint",size=2,value=0}
 targetByteLen={type="uint",size=1,value=0}
 actionType={type="uint",size=1,value=0}
-andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-duration={type="uint",size=4,value=0}
 armTarget={type="uint",size=1,value=0}
 armIndex={type="uint",size=1,value=0}
 armState={type="uint",size=1,value=0}
@@ -446,9 +413,6 @@ targetCategory={type="uint",size=1,value=0}
 targetByteOffset={type="uint",size=2,value=0}
 targetByteLen={type="uint",size=1,value=0}
 actionType={type="uint",size=1,value=0}
-andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-duration={type="uint",size=4,value=0}
 armTarget={type="uint",size=1,value=0}
 armIndex={type="uint",size=1,value=0}
 armState={type="uint",size=1,value=0}
@@ -480,9 +444,6 @@ targetCategory={type="uint",size=1,value=0}
 targetByteOffset={type="uint",size=2,value=0}
 targetByteLen={type="uint",size=1,value=0}
 actionType={type="uint",size=1,value=0}
-andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-duration={type="uint",size=4,value=0}
 armTarget={type="uint",size=1,value=0}
 armIndex={type="uint",size=1,value=0}
 armState={type="uint",size=1,value=0}
@@ -514,9 +475,6 @@ targetCategory={type="uint",size=1,value=0}
 targetByteOffset={type="uint",size=2,value=0}
 targetByteLen={type="uint",size=1,value=0}
 actionType={type="uint",size=1,value=0}
-andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-duration={type="uint",size=4,value=0}
 armTarget={type="uint",size=1,value=0}
 armIndex={type="uint",size=1,value=0}
 armState={type="uint",size=1,value=0}
@@ -548,9 +506,6 @@ targetCategory={type="uint",size=1,value=0}
 targetByteOffset={type="uint",size=2,value=0}
 targetByteLen={type="uint",size=1,value=0}
 actionType={type="uint",size=1,value=0}
-andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-duration={type="uint",size=4,value=0}
 armTarget={type="uint",size=1,value=0}
 armIndex={type="uint",size=1,value=0}
 armState={type="uint",size=1,value=0}
@@ -582,9 +537,6 @@ targetCategory={type="uint",size=1,value=0}
 targetByteOffset={type="uint",size=2,value=0}
 targetByteLen={type="uint",size=1,value=0}
 actionType={type="uint",size=1,value=0}
-andMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-xorMask={type="array",size=8,value=[0,0,0,0,0,0,0,0]}
-duration={type="uint",size=4,value=0}
 armTarget={type="uint",size=1,value=0}
 armIndex={type="uint",size=1,value=0}
 armState={type="uint",size=1,value=0}

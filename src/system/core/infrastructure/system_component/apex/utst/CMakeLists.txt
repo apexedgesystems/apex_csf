@@ -2,12 +2,13 @@
 # Unit Tests: system_core_system_component
 #
 # Tests Status enum, SystemComponentBase lifecycle (init/reset/idempotent),
-# SystemComponent<T> A/B parameter staging (load/apply/rollback), and
-# PackedTprm archive extraction and entry lookup.
+# SystemComponent<T> A/B parameter staging (load/apply/rollback),
+# PackedTprm archive extraction and entry lookup, and data primitives
+# (DataCategory, ModelData, DataTarget).
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# Sources (4 files)
+# Sources (7 files)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
@@ -15,6 +16,9 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponentBase_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponent_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/PackedTprm_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DataCategory_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DataTarget_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ModelData_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 # action - Runtime action orchestration component
 #
 # Directory structure:
-#   apex/ - ActionComponent (wraps ActionInterface from system_core_data)
+#   apex/ - ActionComponent (wraps ActionInterface)
 #
 # Libraries:
 #   system_core_action - Full implementation (SHARED)

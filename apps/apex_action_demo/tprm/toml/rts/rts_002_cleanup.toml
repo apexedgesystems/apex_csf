@@ -1,0 +1,543 @@
+# RTS 002: Cleanup
+#
+# Clears all DataTransform fault injection entries. Started by RTS 001 via
+# START_RTS on completion of the fault campaign. Manual start only (eventId=0).
+#
+# StandaloneSequenceTprm: 8-byte header + 16 steps x 84 bytes = 1352 bytes
+#
+# Components:
+#   0xCA00: DataTransform
+
+[__enums__]
+# ActionType
+COMMAND = 0
+ARM_CONTROL = 1
+# StepTimeoutPolicy
+ABORT = 0
+SKIP = 1
+GOTO_STEP = 2
+# StepCompletionAction
+NEXT = 0
+REPEAT = 1
+START_RTS = 2
+# WatchPredicate
+EQ = 4
+# WatchDataType
+RAW = 10
+# DataCategory
+OUTPUT = 4
+
+# ==============================================================================
+# Header (8 bytes)
+# ==============================================================================
+[StandaloneSequenceTprm]
+sequenceId   = { type = "uint", size = 2, value = 2 }
+eventId      = { type = "uint", size = 2, value = 0 }
+stepCount    = { type = "uint", size = 1, value = 1 }
+repeatCount  = { type = "uint", size = 1, value = 0 }
+type         = { type = "uint", size = 1, value = 0 }
+armed        = { type = "uint", size = 1, value = 1 }
+
+# ==============================================================================
+# Step 0: CLEAR_ALL on DataTransform (0xCA00)
+# ==============================================================================
+[StandaloneSequenceTprm.step_0]
+targetFullUid    = { type = "uint", size = 4, value = "0xCA00" }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = "COMMAND" }
+armTarget        = { type = "uint", size = 1, value = 0 }
+armIndex         = { type = "uint", size = 1, value = 0 }
+armState         = { type = "uint", size = 1, value = 0 }
+commandOpcode    = { type = "uint", size = 2, value = "0x0608" }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload   = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+timeoutCycles    = { type = "uint", size = 4, value = 50 }
+onTimeout        = { type = "uint", size = 1, value = "SKIP" }
+onComplete       = { type = "uint", size = 1, value = "NEXT" }
+gotoStep         = { type = "uint", size = 1, value = 0 }
+retryMax         = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_0.waitCondition]
+targetFullUid    = { type = "uint", size = 4, value = 0 }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+predicate        = { type = "uint", size = 1, value = 0 }
+dataType         = { type = "uint", size = 1, value = 0 }
+threshold        = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled          = { type = "uint", size = 1, value = 0 }
+reserved         = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_0_tail]
+reserved         = { type = "uint", size = 1, value = 0 }
+
+# ==============================================================================
+# Steps 1-15: Empty (unused)
+# ==============================================================================
+[StandaloneSequenceTprm.step_1]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_1.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_1_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_2]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_2.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_2_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_3]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_3.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_3_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_4]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_4.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_4_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_5]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_5.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_5_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_6]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_6.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_6_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_7]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_7.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_7_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_8]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_8.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_8_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_9]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_9.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_9_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_10]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_10.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_10_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_11]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_11.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_11_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_12]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_12.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_12_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_13]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_13.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_13_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_14]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_14.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_14_tail]
+reserved = { type = "uint", size = 1, value = 0 }
+
+[StandaloneSequenceTprm.step_15]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+actionType = { type = "uint", size = 1, value = 0 }
+armTarget = { type = "uint", size = 1, value = 0 }
+armIndex = { type = "uint", size = 1, value = 0 }
+armState = { type = "uint", size = 1, value = 0 }
+commandOpcode = { type = "uint", size = 2, value = 0 }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles = { type = "uint", size = 4, value = 0 }
+timeoutCycles = { type = "uint", size = 4, value = 0 }
+onTimeout = { type = "uint", size = 1, value = 0 }
+onComplete = { type = "uint", size = 1, value = 0 }
+gotoStep = { type = "uint", size = 1, value = 0 }
+retryMax = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_15.waitCondition]
+targetFullUid = { type = "uint", size = 4, value = 0 }
+targetCategory = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen = { type = "uint", size = 1, value = 0 }
+predicate = { type = "uint", size = 1, value = 0 }
+dataType = { type = "uint", size = 1, value = 0 }
+threshold = { type = "array", size = 8, value = [0,0,0,0,0,0,0,0] }
+enabled = { type = "uint", size = 1, value = 0 }
+reserved = { type = "uint", size = 1, value = 0 }
+[StandaloneSequenceTprm.step_15_tail]
+reserved = { type = "uint", size = 1, value = 0 }
