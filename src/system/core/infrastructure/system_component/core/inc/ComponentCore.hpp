@@ -112,13 +112,21 @@ public:
 
   /* ----------------------------- Status ----------------------------- */
 
+  /** @brief Last status code recorded by init() or reset(). @note RT-safe: O(1). */
   [[nodiscard]] uint8_t status() const noexcept override { return status_; }
+
+  /** @brief True after a successful init() call. @note RT-safe: O(1). */
   [[nodiscard]] bool isInitialized() const noexcept override { return initialized_; }
 
   /* ----------------------------- Registration ----------------------------- */
 
+  /** @brief Full component UID (componentId << 8) | instanceIndex. @note RT-safe: O(1). */
   [[nodiscard]] uint32_t fullUid() const noexcept override { return fullUid_; }
+
+  /** @brief Instance index assigned at registration. @note RT-safe: O(1). */
   [[nodiscard]] uint8_t instanceIndex() const noexcept override { return instanceIndex_; }
+
+  /** @brief True after setInstanceIndex() has been called. @note RT-safe: O(1). */
   [[nodiscard]] bool isRegistered() const noexcept override { return registered_; }
 
   /**

@@ -171,10 +171,10 @@ public:
 };
 ```
 
-### SystemComponentBase (apex/)
+### SystemComponentBase (posix/)
 
 ```cpp
-class SystemComponentBase : public IComponent {
+class SystemComponentBase : public ComponentCore {
 public:
   /// @note NOT RT-safe: Boot-time initialization (template method).
   [[nodiscard]] uint8_t init() noexcept override;
@@ -202,7 +202,7 @@ protected:
 };
 ```
 
-### SystemComponent<TParams> (apex/)
+### SystemComponent<TParams> (posix/)
 
 ```cpp
 template <typename TParams>
@@ -232,7 +232,7 @@ protected:
 ### McuComponentBase (mcu/)
 
 ```cpp
-class McuComponentBase : public IComponent {
+class McuComponentBase : public ComponentCore {
 public:
   /// @note NOT RT-safe: Calls doInit() hook.
   [[nodiscard]] uint8_t init() noexcept override;
@@ -372,12 +372,12 @@ protected:
 
 ### Test Organization
 
-| Directory    | Type              | Tests | Runs with `make test` |
-| ------------ | ----------------- | ----- | --------------------- |
-| `base/utst/` | Unit tests        | 15    | Yes                   |
-| `apex/utst/` | Unit tests        | 49    | Yes                   |
-| `mcu/utst/`  | Unit tests        | 10    | Yes                   |
-| `apex/ptst/` | Performance tests | 10    | No (manual)           |
+| Directory     | Type              | Tests | Runs with `make test` |
+| ------------- | ----------------- | ----- | --------------------- |
+| `base/utst/`  | Unit tests        | 15    | Yes                   |
+| `posix/utst/` | Unit tests        | 49    | Yes                   |
+| `mcu/utst/`   | Unit tests        | 10    | Yes                   |
+| `posix/ptst/` | Performance tests | 10    | No (manual)           |
 
 ### Test Requirements
 

@@ -295,11 +295,11 @@ fs.configureShutdownCleanup(true, "/archive/backups");
 
 ## 8. Testing
 
-| Directory    | Type                   | Tests | Runs with `make test` |
-| ------------ | ---------------------- | ----- | --------------------- |
-| `apex/utst/` | Unit tests             | 16    | Yes                   |
-| `mcu/utst/`  | Unit tests             | 10    | Yes                   |
-| `apex/ptst/` | Performance benchmarks | 7     | No (manual)           |
+| Directory     | Type                   | Tests | Runs with `make test` |
+| ------------- | ---------------------- | ----- | --------------------- |
+| `posix/utst/` | Unit tests             | 16    | Yes                   |
+| `mcu/utst/`   | Unit tests             | 10    | Yes                   |
+| `posix/ptst/` | Performance benchmarks | 7     | No (manual)           |
 
 ### Test Organization
 

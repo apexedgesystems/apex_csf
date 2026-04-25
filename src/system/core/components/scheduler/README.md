@@ -198,7 +198,7 @@ This separation enables:
 | Directory | Library                 | Purpose                            |
 | --------- | ----------------------- | ---------------------------------- |
 | `base/`   | `scheduler_base`        | IScheduler interface (header-only) |
-| `apex/`   | `system_core_scheduler` | Full implementation (SHARED)       |
+| `posix/`  | `system_core_scheduler` | Full implementation (SHARED)       |
 | `mcu/`    | `scheduler_mcu`         | MCU implementation (header-only)   |
 
 ### File Organization
@@ -546,27 +546,27 @@ while (true) {
 
 ## 9. Testing
 
-| Directory    | Type                   | Tests | Runs with `make test` |
-| ------------ | ---------------------- | ----- | --------------------- |
-| `apex/utst/` | Unit tests             | 61    | Yes                   |
-| `base/utst/` | Unit tests             | 6     | Yes                   |
-| `mcu/utst/`  | Unit tests             | 18    | Yes                   |
-| `apex/ptst/` | Performance benchmarks | 23    | No (manual)           |
-| `mcu/ptst/`  | Performance benchmarks | 7     | No (manual)           |
+| Directory     | Type                   | Tests | Runs with `make test` |
+| ------------- | ---------------------- | ----- | --------------------- |
+| `posix/utst/` | Unit tests             | 61    | Yes                   |
+| `base/utst/`  | Unit tests             | 6     | Yes                   |
+| `mcu/utst/`   | Unit tests             | 18    | Yes                   |
+| `posix/ptst/` | Performance benchmarks | 23    | No (manual)           |
+| `mcu/ptst/`   | Performance benchmarks | 7     | No (manual)           |
 
 ### Test Organization
 
-| Component           | Test File                                | Tests  |
-| ------------------- | ---------------------------------------- | ------ |
-| SchedulableTask     | `apex/utst/SchedulableTask_uTest.cpp`    | 11     |
-| SchedulerData       | `apex/utst/SchedulerData_uTest.cpp`      | 19     |
-| SchedulerStatus     | `apex/utst/SchedulerStatus_uTest.cpp`    | 11     |
-| TaskBuilder         | `apex/utst/TaskBuilder_uTest.cpp`        | 9      |
-| SchedulableTaskCUDA | `apex/utst/SchedulableTaskCUDA_uTest.cu` | 8      |
-| SchedulerOverhead   | `apex/utst/SchedulerOverhead_uTest.cpp`  | 3      |
-| IScheduler          | `base/utst/IScheduler_uTest.cpp`         | 6      |
-| McuScheduler        | `mcu/utst/McuScheduler_uTest.cpp`        | 18     |
-| **Total**           |                                          | **85** |
+| Component           | Test File                                 | Tests  |
+| ------------------- | ----------------------------------------- | ------ |
+| SchedulableTask     | `posix/utst/SchedulableTask_uTest.cpp`    | 11     |
+| SchedulerData       | `posix/utst/SchedulerData_uTest.cpp`      | 19     |
+| SchedulerStatus     | `posix/utst/SchedulerStatus_uTest.cpp`    | 11     |
+| TaskBuilder         | `posix/utst/TaskBuilder_uTest.cpp`        | 9      |
+| SchedulableTaskCUDA | `posix/utst/SchedulableTaskCUDA_uTest.cu` | 8      |
+| SchedulerOverhead   | `posix/utst/SchedulerOverhead_uTest.cpp`  | 3      |
+| IScheduler          | `base/utst/IScheduler_uTest.cpp`          | 6      |
+| McuScheduler        | `mcu/utst/McuScheduler_uTest.cpp`         | 18     |
+| **Total**           |                                           | **85** |
 
 ---
 

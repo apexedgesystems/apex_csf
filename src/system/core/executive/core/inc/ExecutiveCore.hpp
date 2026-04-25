@@ -87,10 +87,29 @@ public:
 
   ~ExecutiveCore() override = default;
 
-  // IExecutive methods stay pure virtual; derived classes implement them.
+  /**
+   * @brief Main control / scheduler loop entry.
+   * @note NOT RT-safe during startup / shutdown phases.
+   * @note Inner loop may be RT-safe depending on implementation.
+   */
   [[nodiscard]] RunResult run() noexcept override = 0;
+
+  /**
+   * @brief Request graceful shutdown.
+   * @note Thread-safe / ISR-safe depending on implementation; sets a flag.
+   */
   void shutdown() noexcept override = 0;
+
+  /**
+   * @brief Check if shutdown has been requested.
+   * @note RT-safe: O(1) flag read in all expected implementations.
+   */
   [[nodiscard]] bool isShutdownRequested() const noexcept override = 0;
+
+  /**
+   * @brief Number of completed execution cycles since run() started.
+   * @note RT-safe: O(1) counter read in all expected implementations.
+   */
   [[nodiscard]] uint64_t cycleCount() const noexcept override = 0;
 
 protected:
