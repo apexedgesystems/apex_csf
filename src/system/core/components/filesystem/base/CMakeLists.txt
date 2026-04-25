@@ -1,44 +1,34 @@
 # ==============================================================================
-# executive_mcu - Minimal executive for MCU targets
+# filesystem_base - Pure interface library (header-only)
 #
-# Header-only library providing McuExecutive for resource-constrained systems.
-# Single-threaded, no heap allocation in hot path.
+# Provides the IFileSystem marker interface that all filesystem
+# implementations satisfy. No heavy dependencies -- suitable for both
+# POSIX and bare-metal MCU targets.
 #
-# Components:
-#   - ITickSource       - Abstract tick source interface
-#   - FreeRunningSource - No-wait tick source for testing
-#   - McuExecutive     - Minimal IExecutive implementation
+# Dependents:
+#   - system_core_filesystem (FileSystemBase, ApexFileSystem)
+#   - filesystem_mcu (NullFileSystem)
+#   - Future: RTOS-tier implementations
 # ==============================================================================
 
 include(apex/All)
-apex_module(executive_mcu)
 
 # ------------------------------------------------------------------------------
 # Interface Library
 # ------------------------------------------------------------------------------
 
-apex_add_interface_library(
-  NAME
-  ${LIB_NAME}
-  INC
-  "${INC_DIR}"
-  DEPS_INTERFACE
-  executive_base
-  executive_core
-  scheduler_mcu
-  system_component_base
-  system_component_mcu
-  BAREMETAL
-)
+apex_add_interface_library(NAME filesystem_base INC "${PROJECT_SOURCE_DIR}" BAREMETAL)
 
 # ------------------------------------------------------------------------------
-# Opt-ins (coverage, doxygen, UPX)
+# Opt-ins (coverage, doxygen)
 # ------------------------------------------------------------------------------
 
-apex_standard_optins(${LIB_NAME})
+apex_standard_optins(filesystem_base)
 
 # ------------------------------------------------------------------------------
 # Subdirectories
 # ------------------------------------------------------------------------------
 
-apex_add_test_subdirs(utst)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/utst/CMakeLists.txt")
+  add_subdirectory(utst)
+endif ()

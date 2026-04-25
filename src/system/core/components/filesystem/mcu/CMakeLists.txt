@@ -1,34 +1,22 @@
 # ==============================================================================
-# executive_mcu - Minimal executive for MCU targets
+# filesystem_mcu - No-op filesystem for MCU targets
 #
-# Header-only library providing McuExecutive for resource-constrained systems.
-# Single-threaded, no heap allocation in hot path.
+# Header-only library providing NullFileSystem for resource-constrained systems.
+# All operations are no-ops that succeed without doing anything.
 #
 # Components:
-#   - ITickSource       - Abstract tick source interface
-#   - FreeRunningSource - No-wait tick source for testing
-#   - McuExecutive     - Minimal IExecutive implementation
+#   - NullFileSystem - No-op IComponent implementation
 # ==============================================================================
 
 include(apex/All)
-apex_module(executive_mcu)
+apex_module(filesystem_mcu)
 
 # ------------------------------------------------------------------------------
 # Interface Library
 # ------------------------------------------------------------------------------
 
-apex_add_interface_library(
-  NAME
-  ${LIB_NAME}
-  INC
-  "${INC_DIR}"
-  DEPS_INTERFACE
-  executive_base
-  executive_core
-  scheduler_mcu
-  system_component_base
-  system_component_mcu
-  BAREMETAL
+apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" DEPS_INTERFACE filesystem_base
+                           system_component_base
 )
 
 # ------------------------------------------------------------------------------

@@ -1,17 +1,16 @@
 # ==============================================================================
-# executive_mcu - Minimal executive for MCU targets
+# scheduler_mcu - Minimal scheduler for MCU targets
 #
-# Header-only library providing McuExecutive for resource-constrained systems.
-# Single-threaded, no heap allocation in hot path.
+# Header-only library providing SchedulerLite for resource-constrained systems.
+# Static task table, no heap allocation in hot path.
 #
 # Components:
-#   - ITickSource       - Abstract tick source interface
-#   - FreeRunningSource - No-wait tick source for testing
-#   - McuExecutive     - Minimal IExecutive implementation
+#   - SchedulerLite - Minimal IScheduler implementation
+#   - LiteTaskEntry - Static task configuration
 # ==============================================================================
 
 include(apex/All)
-apex_module(executive_mcu)
+apex_module(scheduler_mcu)
 
 # ------------------------------------------------------------------------------
 # Interface Library
@@ -23,11 +22,8 @@ apex_add_interface_library(
   INC
   "${INC_DIR}"
   DEPS_INTERFACE
-  executive_base
-  executive_core
-  scheduler_mcu
+  scheduler_base
   system_component_base
-  system_component_mcu
   BAREMETAL
 )
 
@@ -41,4 +37,4 @@ apex_standard_optins(${LIB_NAME})
 # Subdirectories
 # ------------------------------------------------------------------------------
 
-apex_add_test_subdirs(utst)
+apex_add_test_subdirs(utst ptst)

@@ -24,7 +24,7 @@
 #include "src/system/core/executive/posix/inc/RTMode.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
-#include "src/system/core/components/scheduler/apex/inc/SchedulerData.hpp"
+#include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
 
 #include "src/system/core/infrastructure/schedulable/inc/SequenceGroup.hpp"
 

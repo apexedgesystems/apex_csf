@@ -48,7 +48,7 @@
  * @note Use ApexExecutive for full-featured Linux/RTOS deployments.
  */
 
-#include "src/system/core/components/scheduler/lite/inc/SchedulerLite.hpp"
+#include "src/system/core/components/scheduler/mcu/inc/SchedulerLite.hpp"
 #include "src/system/core/executive/core/inc/ExecutiveCore.hpp"
 #include "src/system/core/executive/mcu/inc/ITickSource.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/ComponentType.hpp"
@@ -82,13 +82,13 @@ namespace mcu {
  *
  * @note RT-safe: Main loop is RT-safe if tick source and scheduler are.
  */
-template <size_t MaxTasks = system_core::scheduler::lite::DEFAULT_LITE_MAX_TASKS,
+template <size_t MaxTasks = system_core::scheduler::mcu::DEFAULT_LITE_MAX_TASKS,
           typename Counter = uint64_t>
 class McuExecutive : public system_core::system_component::mcu::McuComponentBase,
                       public ExecutiveCore {
 public:
   /// Owned scheduler type.
-  using Scheduler = system_core::scheduler::lite::SchedulerLite<MaxTasks, Counter>;
+  using Scheduler = system_core::scheduler::mcu::SchedulerLite<MaxTasks, Counter>;
 
   /**
    * @brief Construct executive with tick source and scheduler frequency.
@@ -100,7 +100,7 @@ public:
    * Scheduler is owned by value.
    */
   McuExecutive(ITickSource* tickSource,
-                uint16_t freqHz = system_core::scheduler::lite::DEFAULT_LITE_FREQ_HZ,
+                uint16_t freqHz = system_core::scheduler::mcu::DEFAULT_LITE_FREQ_HZ,
                 Counter maxCycles = 0) noexcept
       : tickSource_(tickSource), scheduler_(freqHz), maxCycles_(maxCycles) {
     // Executive is self-registered (always instance 0)
@@ -256,7 +256,7 @@ public:
    * @return true on success, false if table is full.
    * @note NOT RT-safe: Must be called before init().
    */
-  bool addTask(const system_core::scheduler::lite::LiteTaskEntry& entry) noexcept {
+  bool addTask(const system_core::scheduler::mcu::LiteTaskEntry& entry) noexcept {
     return scheduler_.addTask(entry);
   }
 

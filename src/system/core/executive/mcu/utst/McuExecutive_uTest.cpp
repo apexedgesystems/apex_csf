@@ -11,7 +11,7 @@
 using executive::RunResult;
 using executive::mcu::FreeRunningSource;
 using McuExecutive = executive::mcu::McuExecutive<>;
-using system_core::scheduler::lite::LiteTaskEntry;
+using system_core::scheduler::mcu::LiteTaskEntry;
 
 /* ----------------------------- Test Helpers ----------------------------- */
 

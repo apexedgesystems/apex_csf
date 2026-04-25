@@ -41,7 +41,7 @@ RT-friendly task scheduling with scheduler-owned configuration, N/D frequency de
 ### Quick Example
 
 ```cpp
-#include "src/system/core/components/scheduler/apex/inc/SchedulerSingleThread.hpp"
+#include "src/system/core/components/scheduler/posix/inc/SchedulerSingleThread.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/TaskBuilder.hpp"
 
 using system_core::scheduler::SchedulerSingleThread;
@@ -199,7 +199,7 @@ This separation enables:
 | --------- | ----------------------- | ---------------------------------- |
 | `base/`   | `scheduler_base`        | IScheduler interface (header-only) |
 | `apex/`   | `system_core_scheduler` | Full implementation (SHARED)       |
-| `lite/`   | `scheduler_lite`        | MCU implementation (header-only)   |
+| `lite/`   | `scheduler_mcu`        | MCU implementation (header-only)   |
 
 ### File Organization
 
@@ -307,7 +307,7 @@ Phase numbers account for task count: if 2 tasks run at phase 1, the next phase 
 Zero-heap scheduler with compile-time-sized task table:
 
 ```cpp
-using system_core::scheduler::lite::SchedulerLite;
+using system_core::scheduler::mcu::SchedulerLite;
 
 // 8-task table, uint32_t counter (for 8-bit MCUs)
 SchedulerLite<8, uint32_t> sched(100);  // 100 Hz

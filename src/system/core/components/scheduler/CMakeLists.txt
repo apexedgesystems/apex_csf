@@ -2,13 +2,14 @@
 # scheduler - Task scheduling implementations
 #
 # Directory structure:
-#   base/ - IScheduler interface (header-only, no heavy deps)
-#   apex/ - SchedulerBase, SchedulerMultiThread, SchedulerSingleThread (full-featured)
-#   lite/ - SchedulerLite (minimal for MCUs)
+#   base/  - IScheduler interface (header-only, no heavy deps)
+#   posix/ - SchedulerBase, SchedulerMultiThread, SchedulerSingleThread (POSIX tier)
+#   mcu/   - SchedulerLite (MCU tier)
 #
 # Libraries:
 #   scheduler_base - Pure interface (INTERFACE, header-only)
-#   system_core_scheduler - Full implementation (SHARED)
+#   system_core_scheduler - POSIX implementation (SHARED)
+#   scheduler_mcu - MCU implementation (INTERFACE, header-only)
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
@@ -20,12 +21,12 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/base/CMakeLists.txt")
   add_subdirectory(base)
 endif ()
 
-# Apex implementation library (SchedulerBase, SchedulerMultiThread, SchedulerSingleThread)
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/apex/CMakeLists.txt")
-  add_subdirectory(apex)
+# POSIX implementation library (SchedulerBase, SchedulerMultiThread, SchedulerSingleThread)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/posix/CMakeLists.txt")
+  add_subdirectory(posix)
 endif ()
 
-# Lite implementation library (SchedulerLite)
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lite/CMakeLists.txt")
-  add_subdirectory(lite)
+# MCU implementation library (SchedulerLite)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mcu/CMakeLists.txt")
+  add_subdirectory(mcu)
 endif ()

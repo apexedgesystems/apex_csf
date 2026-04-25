@@ -15,7 +15,7 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/PackedTprm.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
-#include "src/system/core/components/scheduler/apex/inc/SchedulerData.hpp"
+#include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
 
 #include <unistd.h>
 
