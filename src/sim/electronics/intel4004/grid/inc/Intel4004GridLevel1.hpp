@@ -28,7 +28,6 @@
  * @note NOT RT-safe: initialization allocates. Stamp functions are RT-safe.
  */
 
-#include "src/sim/electronics/devices/nonlinear/inc/MosfetBsim3.hpp"
 #include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1.hpp"
 #include "src/sim/electronics/intel4004/grid/inc/Intel4004Components.hpp"
 #include "src/sim/electronics/intel4004/grid/inc/Intel4004Grid.hpp"
@@ -39,8 +38,6 @@
 
 namespace sim::electronics::intel4004 {
 
-using devices::nonlinear::MosfetBsim3;
-using devices::nonlinear::MosfetBsim3Params;
 using devices::nonlinear::MosfetLevel1;
 using devices::nonlinear::MosfetLevel1Params;
 
@@ -104,26 +101,6 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// Resistive load mode: depletion loads stamped as fixed conductance (G_LOAD).
   /// Required for the working ACC=5 component hybrid configuration.
   bool resistiveLoads_ = true;
-
-  /// Use BSIM3 physics for the latch feedback core (~338 transistors
-  /// classified as `DYNAMIC_STORAGE` with non-NOR-output gates).
-  /// When false, falls back to the binary-switch + behavioral-latch
-  /// path that's the current 15% behavioral fraction of L1.
-  /// Default true: BSIM3's smooth `Vgst_eff` is what gives the cross-
-  /// coupled latch positive overdrive at the calibrated 4004 operating
-  /// point (verified in `MosfetBsim3_uTest`).
-  bool useBsim3ForLatch_ = true;
-
-  /// BSIM3 parameter template for latch feedback core. The per-transistor
-  /// `Kp` is taken from `transistorKp_` (the W/L-binned calibrated values
-  /// from `computeTransistorKp`); `n_factor` and the body / DIBL terms
-  /// are uniform per the 10 µm process. Calibrated default
-  /// `n_factor = 1.8` gives positive overdrive on the depletion-load
-  /// NOR gate per `MosfetBsim3Probe.NFactorSweep`.
-  MosfetBsim3Params bsim3LatchParams_{
-      .Kp = KP_PROCESS, .Vth0 = VTH_ENH, .lambda = LAMBDA, .W = 1.0, .L = 1.0,
-      .n_factor = 1.8, .Vt = 0.026, .eta0 = 0.0, .K1 = 0.0, .K2 = 0.0, .phi = 0.7,
-      .ua = 0.0, .ub = 0.0, .tox = 50e-9, .delta = 0.01};
 
   /// Compute per-transistor Kp from calibrated W/L bins.
   void computeTransistorKp() const {
@@ -859,6 +836,36 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /* ----------------------------- Level 1 Stamping ----------------------------- */
 
   /**
+   * @brief Stamp the latch feedback core for a single DYNAMIC_STORAGE
+   * transistor whose gate is NOT a NOR output net.
+   *
+   * L1 default: binary switch (the 15% behavioral fraction). Shichman-
+   * Hodges cannot resolve this region because the depletion-load PMOS
+   * NOR's `VOL = 1.20V > VTH_enh = 1.17V` (overdrive -30 mV).
+   *
+   * L2 (Intel4004GridLevel2) overrides this hook with BSIM3's smooth
+   * Vgst_eff to capture moderate-inversion conduction --> 100% physics.
+   *
+   * Virtual is non-template; the only concrete MNA type used by the
+   * solver callback is mna::MnaSystemSparse.
+   */
+  virtual void stampLatchFeedbackTransistor(mna::MnaSystemSparse& mna, std::size_t idx,
+                                            const std::vector<double>& prevV) const {
+    const auto& t = transistors_[idx];
+    const auto& bp = bsParams_;
+    double vs = std::max(prevV[t.drain], prevV[t.source]);
+    double vgs = prevV[t.gate] - vs;
+    double gds;
+    if (vgs < -bp.vth - bp.subthMargin)
+      gds = bp.gOn;
+    else if (vgs > -bp.vth + bp.subthMargin)
+      gds = bp.gOff;
+    else
+      gds = bp.gSubth;
+    mna.addConductance(t.drain, t.source, gds);
+  }
+
+  /**
    * @brief Stamp all PMOS transistors using Newton-Raphson linearized Level 1.
    *
    * For each transistor, stamps three components:
@@ -933,13 +940,6 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     for (std::size_t idx = 0; idx < transistors_.size(); ++idx) {
       const auto& t = transistors_[idx];
 
-      // BSIM3 routing flag: set by the dispatch below for the latch
-      // feedback core. When true, the stamp at the bottom uses
-      // `MosfetBsim3` instead of `MosfetLevel1`. The stamp pattern
-      // is identical (same xnrm/xrev SPICE convention); only the
-      // (id, gm, gds) calculation changes.
-      bool useBsim3 = false;
-
       // Skip transistors connected to clock nets (CLK1, CLK2).
       // Clocks are external inputs driven behaviorally. Level 1 stamps
       // on CLK-connected transistors add gm column entries that fight
@@ -978,30 +978,11 @@ struct Intel4004GridLevel1 : Intel4004Grid {
           // is driven by proven physics and can use Level 1 stamps.
           if (norOutputNets_.count(t.gate)) {
             // NOR-output-gated: fall through to Level 1 stamp below.
-          } else if (useBsim3ForLatch_) {
-            // Latch feedback core with BSIM3 physics. Falls through to
-            // the standard SPICE stamp at the bottom of the loop, but
-            // with `useBsim3 = true` so the (id, gm, gds) computation
-            // uses `MosfetBsim3::stampValues` instead of MosfetLevel1.
-            // The behavioral latch overlay below (lines that pin
-            // storage nets via voltage sources) is still in effect for
-            // safety -- it's only a no-op once BSIM3's smooth Vgst_eff
-            // resolves the latch from physics alone, which is the L2
-            // milestone we are working toward.
-            useBsim3 = true;
           } else {
-            // Legacy path: binary switch + behavioral latch hold.
-            const auto& bp = bsParams_;
-            double vs = std::max(prevV[t.drain], prevV[t.source]);
-            double vgs = prevV[t.gate] - vs;
-            double gds;
-            if (vgs < -bp.vth - bp.subthMargin)
-              gds = bp.gOn;
-            else if (vgs > -bp.vth + bp.subthMargin)
-              gds = bp.gOff;
-            else
-              gds = bp.gSubth;
-            mna.addConductance(t.drain, t.source, gds);
+            // Latch feedback core: dispatched to a virtual hook so a
+            // derived class (Intel4004GridLevel2) can plug in BSIM3
+            // physics without modifying L1.
+            stampLatchFeedbackTransistor(mna, idx, prevV);
             continue;
           }
         }
@@ -1072,25 +1053,10 @@ struct Intel4004GridLevel1 : Intel4004Grid {
 
       double vgsM = std::max(evalVgs, 0.0);
       double vdsM = std::max(evalVds, 0.0);
-      double id, gm, gdsDevice;
-      if (useBsim3) {
-        // Latch feedback core: BSIM3's smooth Vgst_eff captures the
-        // moderate-inversion conduction the cross-coupled latch needs.
-        // Reuse the calibrated W/L-binned Kp from `transistorKp_`.
-        MosfetBsim3Params bp = bsim3LatchParams_;
-        bp.Kp = kp;       // Per-transistor Kp from W/L calibration
-        bp.Vth0 = vth;    // Same Vth as the L1 path
-        bp.lambda = LAMBDA;
-        const auto SV = MosfetBsim3::stampValues(vgsM, vdsM, /*vbs=*/0.0, bp);
-        id = SV.id;
-        gm = SV.gm;
-        gdsDevice = SV.gds;
-      } else {
-        const auto SV = MosfetLevel1::stampValues(vgsM, vdsM, PARAMS);
-        id = SV.id;
-        gm = SV.gm;
-        gdsDevice = SV.gds;
-      }
+      const auto SV = MosfetLevel1::stampValues(vgsM, vdsM, PARAMS);
+      const double id = SV.id;
+      const double gm = SV.gm;
+      const double gdsDevice = SV.gds;
       const double gdsStamp = std::max(gdsDevice, G_MIN);
 
       // Compensation current uses DEVICE gds, not G_MIN-augmented.
