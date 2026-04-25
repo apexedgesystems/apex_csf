@@ -42,11 +42,14 @@ TEST(Intel4004L2, ConstructionIsIndependent) {
   Intel4004GridLevel2 grid;
 
   // L2 = 100% physics for the steady-state hold: behavioral overlay OFF,
-  // BSIM3 stamps the latch core, differentiated GMIN keeps NR convergent.
+  // BSIM3 stamps the latch core, NR clamping (no current) replaces strong
+  // GMIN as the anti-pathology aid.
   EXPECT_FALSE(grid.applyBehavioralLatchOverlay_);
+  EXPECT_TRUE(grid.clampNrIterates_);
 
-  // Calibrated GMIN tiers (see DISABLED_DifferentiatedGminSweep dtest):
-  EXPECT_NEAR(grid.gminTransient_, 5e-3, 1e-12);
+  // Weak GMIN -- NR clamp handles convergence; weak GMIN doesn't fight
+  // pass-transistor drive on decode-chain nets.
+  EXPECT_NEAR(grid.gminTransient_, 1e-9, 1e-15);
   EXPECT_NEAR(grid.gminDriven_, 1e-12, 1e-15);
 
   // BSIM3 latch params calibrated for the Intel 4004 10 micron PMOS process.

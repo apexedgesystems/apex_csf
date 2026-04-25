@@ -137,6 +137,18 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// inputs even when bus tri-state isn't yet working from physics.
   bool forceM1SampledData_ = false;
 
+  /// Clamp NR iterates to [V_NR_LO, V_NR_HI] after each NR step.
+  /// This is a "post-iteration limiter" -- a numerical convergence aid
+  /// distinct from GMIN: it adds zero current to the circuit but
+  /// algebraically forces nodes back into a sensible range when the
+  /// linear solver produces unbounded steps. Enabling this lets us
+  /// drop gminTransient_ to weak (1e-9) without reintroducing the
+  /// ±100s-of-volts NR pathology, freeing pass-transistor drive on
+  /// pass-driven nets like ~OPR.x in the decode chain.
+  bool clampNrIterates_ = false;
+  static constexpr double V_NR_LO = -1.0;
+  static constexpr double V_NR_HI = 6.0;
+
   /// Conductance of the soft Norton anchor when overlay is enabled.
   /// 0.0 = hard voltage source (default; preserves L1 behavioral pinning).
   /// > 0 = Norton equivalent: addConductance(net, 0, G) + addCurrent(net, 0, G*V).
@@ -494,6 +506,15 @@ struct Intel4004GridLevel1 : Intel4004Grid {
           fv(net, storedV);
         }
       }
+
+      // Optional plug-in: post-iteration voltage clamp.
+      if (clampNrIterates_) {
+        for (std::size_t i = 1; i < v.size(); ++i) {
+          if (i == vdd_) continue;
+          if (v[i] < V_NR_LO) v[i] = V_NR_LO;
+          else if (v[i] > V_NR_HI) v[i] = V_NR_HI;
+        }
+      }
     };
 
     // Install nrLimitCallback: force behavioral signals after EACH NR
@@ -709,6 +730,16 @@ struct Intel4004GridLevel1 : Intel4004Grid {
               newV[clk2Net_] = clk2High_ ? VDD_VOLTAGE : 0.0;
             if (scN > 0 && scN < newV.size())
               newV[scN] = 0.0; // LOW for single-cycle instructions
+            // Optional plug-in: post-iteration voltage clamp. Adds zero
+            // current but caps NR step pathology -- lets us run with
+            // weak GMIN so pass-transistor drive isn't overpowered.
+            if (clampNrIterates_) {
+              for (std::size_t i = 1; i < newV.size(); ++i) {
+                if (i == vdd_) continue;
+                if (newV[i] < V_NR_LO) newV[i] = V_NR_LO;
+                else if (newV[i] > V_NR_HI) newV[i] = V_NR_HI;
+              }
+            }
           });
     }
   }

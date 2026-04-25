@@ -78,9 +78,13 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
   /// OPA -> ACC transfer. simulateLevel1 only runs the analog circuit;
   /// instruction state propagation requires the trace path.
   Intel4004GridLevel2() {
-    applyBehavioralLatchOverlay_ = false; // BSIM3 + GMIN converge alone
+    applyBehavioralLatchOverlay_ = false; // BSIM3 + clamp converge alone
     latchOverlayConductance_ = 0.0;
-    gminTransient_ = 5e-3;                // strong anchor on floating nets
+    // Algebraic anchor via NR clamp instead of strong GMIN. The clamp
+    // is a no-current limiter that caps NR step pathology; weak GMIN
+    // doesn't fight pass-transistor drive on the decode chain.
+    clampNrIterates_ = true;
+    gminTransient_ = 1e-9;                // weak (no longer the anti-pathology aid)
     gminDriven_ = 1e-12;                  // tiny on NOR-output / clocks
     // Behavioral X3 instruction execution stays ON in default L2 -- same
     // digital execution path as L1, but with BSIM3 + overlay-off analog
