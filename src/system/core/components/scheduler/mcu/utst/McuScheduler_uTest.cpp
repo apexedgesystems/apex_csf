@@ -1,14 +1,14 @@
 /**
- * @file SchedulerLite_uTest.cpp
- * @brief Unit tests for SchedulerLite.
+ * @file McuScheduler_uTest.cpp
+ * @brief Unit tests for McuScheduler.
  */
 
-#include "src/system/core/components/scheduler/mcu/inc/SchedulerLite.hpp"
+#include "src/system/core/components/scheduler/mcu/inc/McuScheduler.hpp"
 
 #include <gtest/gtest.h>
 
-using system_core::scheduler::mcu::LiteTaskEntry;
-using SchedulerLite = system_core::scheduler::mcu::SchedulerLite<>;
+using system_core::scheduler::mcu::McuTaskEntry;
+using McuScheduler = system_core::scheduler::mcu::McuScheduler<>;
 
 /* ----------------------------- Test Helpers ----------------------------- */
 
@@ -28,20 +28,20 @@ static void resetTestState() {
 /* ----------------------------- Default Construction ----------------------------- */
 
 /** @test Default construction creates scheduler with expected state. */
-TEST(SchedulerLite_DefaultConstruction, InitialState) {
-  SchedulerLite sched;
+TEST(McuScheduler_DefaultConstruction, InitialState) {
+  McuScheduler sched;
 
   EXPECT_EQ(sched.fundamentalFreq(), 100);
   EXPECT_EQ(sched.taskCount(), 0);
   EXPECT_EQ(sched.tickCount(), 0);
   EXPECT_FALSE(sched.isInitialized());
   EXPECT_EQ(sched.componentId(), 1);
-  EXPECT_STREQ(sched.componentName(), "SchedulerLite");
+  EXPECT_STREQ(sched.componentName(), "McuScheduler");
 }
 
 /** @test Custom frequency is applied. */
-TEST(SchedulerLite_DefaultConstruction, CustomFrequency) {
-  SchedulerLite sched(200);
+TEST(McuScheduler_DefaultConstruction, CustomFrequency) {
+  McuScheduler sched(200);
 
   EXPECT_EQ(sched.fundamentalFreq(), 200);
 }
@@ -49,10 +49,10 @@ TEST(SchedulerLite_DefaultConstruction, CustomFrequency) {
 /* ----------------------------- Task Registration ----------------------------- */
 
 /** @test addTask() adds task and increments count. */
-TEST(SchedulerLite_TaskRegistration, AddSingleTask) {
-  SchedulerLite sched;
+TEST(McuScheduler_TaskRegistration, AddSingleTask) {
+  McuScheduler sched;
 
-  LiteTaskEntry entry{testTask, nullptr, 1, 1, 0, 0, 1};
+  McuTaskEntry entry{testTask, nullptr, 1, 1, 0, 0, 1};
   const bool RESULT = sched.addTask(entry);
 
   EXPECT_TRUE(RESULT);
@@ -60,10 +60,10 @@ TEST(SchedulerLite_TaskRegistration, AddSingleTask) {
 }
 
 /** @test addTask() rejects null function pointer. */
-TEST(SchedulerLite_TaskRegistration, RejectsNullFunction) {
-  SchedulerLite sched;
+TEST(McuScheduler_TaskRegistration, RejectsNullFunction) {
+  McuScheduler sched;
 
-  LiteTaskEntry entry{nullptr, nullptr, 1, 1, 0, 0, 1};
+  McuTaskEntry entry{nullptr, nullptr, 1, 1, 0, 0, 1};
   const bool RESULT = sched.addTask(entry);
 
   EXPECT_FALSE(RESULT);
@@ -71,24 +71,24 @@ TEST(SchedulerLite_TaskRegistration, RejectsNullFunction) {
 }
 
 /** @test addTask() rejects when table is full. */
-TEST(SchedulerLite_TaskRegistration, RejectsWhenFull) {
-  SchedulerLite sched;
+TEST(McuScheduler_TaskRegistration, RejectsWhenFull) {
+  McuScheduler sched;
 
   // Fill up the task table
-  for (std::size_t i = 0; i < SchedulerLite::MAX_TASKS; ++i) {
-    LiteTaskEntry entry{testTask, nullptr, 1, 1, 0, 0, static_cast<std::uint8_t>(i)};
+  for (std::size_t i = 0; i < McuScheduler::MAX_TASKS; ++i) {
+    McuTaskEntry entry{testTask, nullptr, 1, 1, 0, 0, static_cast<std::uint8_t>(i)};
     EXPECT_TRUE(sched.addTask(entry));
   }
 
   // One more should fail
-  LiteTaskEntry extra{testTask, nullptr, 1, 1, 0, 0, 99};
+  McuTaskEntry extra{testTask, nullptr, 1, 1, 0, 0, 99};
   EXPECT_FALSE(sched.addTask(extra));
-  EXPECT_EQ(sched.taskCount(), SchedulerLite::MAX_TASKS);
+  EXPECT_EQ(sched.taskCount(), McuScheduler::MAX_TASKS);
 }
 
 /** @test clearTasks() removes all tasks. */
-TEST(SchedulerLite_TaskRegistration, ClearTasks) {
-  SchedulerLite sched;
+TEST(McuScheduler_TaskRegistration, ClearTasks) {
+  McuScheduler sched;
   sched.addTask({testTask, nullptr, 1, 1, 0, 0, 1});
   sched.addTask({testTask, nullptr, 1, 1, 0, 0, 2});
 
@@ -98,12 +98,12 @@ TEST(SchedulerLite_TaskRegistration, ClearTasks) {
 }
 
 /** @test task() returns entry by index. */
-TEST(SchedulerLite_TaskRegistration, TaskByIndex) {
-  SchedulerLite sched;
+TEST(McuScheduler_TaskRegistration, TaskByIndex) {
+  McuScheduler sched;
   int context = 42;
   sched.addTask({testTask, &context, 1, 1, 0, 5, 1});
 
-  const LiteTaskEntry* entry = sched.task(0);
+  const McuTaskEntry* entry = sched.task(0);
 
   ASSERT_NE(entry, nullptr);
   EXPECT_EQ(entry->fn, testTask);
@@ -113,10 +113,10 @@ TEST(SchedulerLite_TaskRegistration, TaskByIndex) {
 }
 
 /** @test task() returns nullptr for out-of-range index. */
-TEST(SchedulerLite_TaskRegistration, TaskOutOfRange) {
-  SchedulerLite sched;
+TEST(McuScheduler_TaskRegistration, TaskOutOfRange) {
+  McuScheduler sched;
 
-  const LiteTaskEntry* entry = sched.task(0);
+  const McuTaskEntry* entry = sched.task(0);
 
   EXPECT_EQ(entry, nullptr);
 }
@@ -124,8 +124,8 @@ TEST(SchedulerLite_TaskRegistration, TaskOutOfRange) {
 /* ----------------------------- Lifecycle ----------------------------- */
 
 /** @test init() succeeds and sets initialized flag. */
-TEST(SchedulerLite_Lifecycle, InitSucceeds) {
-  SchedulerLite sched;
+TEST(McuScheduler_Lifecycle, InitSucceeds) {
+  McuScheduler sched;
 
   const std::uint8_t RESULT = sched.init();
 
@@ -134,8 +134,8 @@ TEST(SchedulerLite_Lifecycle, InitSucceeds) {
 }
 
 /** @test init() is idempotent. */
-TEST(SchedulerLite_Lifecycle, InitIdempotent) {
-  SchedulerLite sched;
+TEST(McuScheduler_Lifecycle, InitIdempotent) {
+  McuScheduler sched;
   (void)sched.init();
 
   const std::uint8_t RESULT = sched.init();
@@ -144,8 +144,8 @@ TEST(SchedulerLite_Lifecycle, InitIdempotent) {
 }
 
 /** @test reset() clears tick count. */
-TEST(SchedulerLite_Lifecycle, ResetClearsTickCount) {
-  SchedulerLite sched;
+TEST(McuScheduler_Lifecycle, ResetClearsTickCount) {
+  McuScheduler sched;
   (void)sched.init();
   sched.tick();
   sched.tick();
@@ -159,9 +159,9 @@ TEST(SchedulerLite_Lifecycle, ResetClearsTickCount) {
 /* ----------------------------- Task Execution ----------------------------- */
 
 /** @test tick() executes task and increments tick count. */
-TEST(SchedulerLite_Execution, TickExecutesTask) {
+TEST(McuScheduler_Execution, TickExecutesTask) {
   resetTestState();
-  SchedulerLite sched;
+  McuScheduler sched;
   int context = 123;
   sched.addTask({testTask, &context, 1, 1, 0, 0, 1});
   (void)sched.init();
@@ -174,9 +174,9 @@ TEST(SchedulerLite_Execution, TickExecutesTask) {
 }
 
 /** @test Multiple ticks execute task multiple times. */
-TEST(SchedulerLite_Execution, MultipleTicksExecuteMultipleTimes) {
+TEST(McuScheduler_Execution, MultipleTicksExecuteMultipleTimes) {
   resetTestState();
-  SchedulerLite sched;
+  McuScheduler sched;
   sched.addTask({testTask, nullptr, 1, 1, 0, 0, 1});
   (void)sched.init();
 
@@ -189,9 +189,9 @@ TEST(SchedulerLite_Execution, MultipleTicksExecuteMultipleTimes) {
 }
 
 /** @test Task with lower frequency runs less often. */
-TEST(SchedulerLite_Execution, FrequencyDivisor) {
+TEST(McuScheduler_Execution, FrequencyDivisor) {
   resetTestState();
-  SchedulerLite sched(100); // 100 Hz fundamental
+  McuScheduler sched(100); // 100 Hz fundamental
   // Task runs at 1/10 fundamental = 10 Hz (every 10 ticks)
   sched.addTask({testTask, nullptr, 1, 10, 0, 0, 1});
   (void)sched.init();
@@ -206,9 +206,9 @@ TEST(SchedulerLite_Execution, FrequencyDivisor) {
 }
 
 /** @test Task offset delays first execution. */
-TEST(SchedulerLite_Execution, OffsetDelaysExecution) {
+TEST(McuScheduler_Execution, OffsetDelaysExecution) {
   resetTestState();
-  SchedulerLite sched(100);
+  McuScheduler sched(100);
   // Task runs every tick but offset by 5
   sched.addTask({testTask, nullptr, 1, 1, 5, 0, 1});
   (void)sched.init();
@@ -225,7 +225,7 @@ TEST(SchedulerLite_Execution, OffsetDelaysExecution) {
 }
 
 /** @test Multiple tasks execute in priority order. */
-TEST(SchedulerLite_Execution, PriorityOrdering) {
+TEST(McuScheduler_Execution, PriorityOrdering) {
   static int order[3];
   static int orderIndex = 0;
   orderIndex = 0;
@@ -235,7 +235,7 @@ TEST(SchedulerLite_Execution, PriorityOrdering) {
   auto task3 = [](void* ctx) noexcept { order[orderIndex++] = *static_cast<int*>(ctx); };
 
   int id1 = 1, id2 = 2, id3 = 3;
-  SchedulerLite sched;
+  McuScheduler sched;
   // Add in reverse priority order
   sched.addTask({task1, &id1, 1, 1, 0, -10, 1}); // Low priority
   sched.addTask({task2, &id2, 1, 1, 0, 10, 2});  // High priority
@@ -252,9 +252,9 @@ TEST(SchedulerLite_Execution, PriorityOrdering) {
 
 /* ----------------------------- IScheduler Interface ----------------------------- */
 
-/** @test SchedulerLite implements IScheduler interface. */
-TEST(SchedulerLite_Interface, ImplementsIScheduler) {
-  SchedulerLite sched(50);
+/** @test McuScheduler implements IScheduler interface. */
+TEST(McuScheduler_Interface, ImplementsIScheduler) {
+  McuScheduler sched(50);
   system_core::scheduler::IScheduler* iface = &sched;
 
   EXPECT_EQ(iface->fundamentalFreq(), 50);
@@ -269,8 +269,8 @@ TEST(SchedulerLite_Interface, ImplementsIScheduler) {
 /* ----------------------------- Registration ----------------------------- */
 
 /** @test setInstanceIndex() computes fullUid correctly. */
-TEST(SchedulerLite_Registration, SetInstanceIndex) {
-  SchedulerLite sched;
+TEST(McuScheduler_Registration, SetInstanceIndex) {
+  McuScheduler sched;
 
   sched.setInstanceIndex(2);
 

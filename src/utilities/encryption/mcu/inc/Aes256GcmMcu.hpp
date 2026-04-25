@@ -1,7 +1,7 @@
 #ifndef APEX_UTILITIES_ENCRYPTION_LITE_AES256_GCM_LITE_HPP
 #define APEX_UTILITIES_ENCRYPTION_LITE_AES256_GCM_LITE_HPP
 /**
- * @file Aes256GcmLite.hpp
+ * @file Aes256GcmMcu.hpp
  * @brief Standalone AES-256-GCM authenticated encryption for bare-metal targets.
  *
  * Software AES-256-GCM (AEAD) without OpenSSL or any OS dependencies.
@@ -29,7 +29,7 @@
 
 namespace apex {
 namespace encryption {
-namespace lite {
+namespace mcu {
 
 /* ----------------------------- Constants ----------------------------- */
 
@@ -539,7 +539,7 @@ inline GcmResult aes256GcmDecrypt(const uint8_t* key, const uint8_t* nonce,
   return {GcmStatus::OK, ctLen};
 }
 
-} // namespace lite
+} // namespace mcu
 } // namespace encryption
 } // namespace apex
 

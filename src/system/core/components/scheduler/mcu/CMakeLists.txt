@@ -1,12 +1,12 @@
 # ==============================================================================
 # scheduler_mcu - Minimal scheduler for MCU targets
 #
-# Header-only library providing SchedulerLite for resource-constrained systems.
+# Header-only library providing McuScheduler for resource-constrained systems.
 # Static task table, no heap allocation in hot path.
 #
 # Components:
-#   - SchedulerLite - Minimal IScheduler implementation
-#   - LiteTaskEntry - Static task configuration
+#   - McuScheduler - Minimal IScheduler implementation
+#   - McuTaskEntry - Static task configuration
 # ==============================================================================
 
 include(apex/All)

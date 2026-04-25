@@ -135,7 +135,7 @@ CRC-16/XMODEM covers opcode + payload (channel prefix is transport-level framing
 ### Algorithm
 
 AES-256-GCM per FIPS 197 + NIST SP 800-38D. Software implementation via
-`encryption_lite` library. Standard 8-bit CHAR_BIT on AVR (unlike the C2000 port
+`encryption_mcu` library. Standard 8-bit CHAR_BIT on AVR (unlike the C2000 port
 which requires 16-bit workarounds).
 
 ### Performance

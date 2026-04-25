@@ -1,7 +1,7 @@
-#ifndef APEX_SCHEDULER_MCU_SCHEDULER_LITE_HPP
-#define APEX_SCHEDULER_MCU_SCHEDULER_LITE_HPP
+#ifndef APEX_SCHEDULER_MCU_MCU_SCHEDULER_HPP
+#define APEX_SCHEDULER_MCU_MCU_SCHEDULER_HPP
 /**
- * @file SchedulerLite.hpp
+ * @file McuScheduler.hpp
  * @brief Minimal scheduler for resource-constrained systems.
  *
  * Design:
@@ -13,7 +13,7 @@
  * Template Parameters:
  *   - MaxTasks: Maximum number of tasks in the static table (default 32).
  *     Set to the actual number of tasks + small margin for the target.
- *     Each LiteTaskEntry is 12 bytes, so this directly controls SRAM usage.
+ *     Each McuTaskEntry is 12 bytes, so this directly controls SRAM usage.
  *   - Counter: Tick counter type (default uint64_t). Use uint32_t on
  *     8/16-bit MCUs to avoid expensive software 64-bit arithmetic.
  *     uint32_t at 100 Hz overflows after ~497 days.
@@ -53,24 +53,24 @@ namespace mcu {
 /* ----------------------------- Constants ----------------------------- */
 
 /// Default maximum number of tasks in the static task table.
-constexpr size_t DEFAULT_LITE_MAX_TASKS = 32;
+constexpr size_t DEFAULT_MCU_MAX_TASKS = 32;
 
 /// Default fundamental frequency (Hz).
-constexpr uint16_t DEFAULT_LITE_FREQ_HZ = 100;
+constexpr uint16_t DEFAULT_MCU_FREQ_HZ = 100;
 
 /// Scheduler component ID (matches apex scheduler).
 constexpr uint16_t SCHEDULER_LITE_COMPONENT_ID = 1;
 
-/* ----------------------------- LiteTaskEntry ----------------------------- */
+/* ----------------------------- McuTaskEntry ----------------------------- */
 
 /**
- * @struct LiteTaskEntry
- * @brief Static task configuration for SchedulerLite.
+ * @struct McuTaskEntry
+ * @brief Static task configuration for McuScheduler.
  *
  * Describes a task to be executed at a specific rate. All fields are
  * compile-time or boot-time configured. 12 bytes per entry on all platforms.
  */
-struct LiteTaskEntry {
+struct McuTaskEntry {
   using TaskFn = void (*)(void* ctx) noexcept;
 
   TaskFn fn{nullptr};     ///< Task function pointer (nullptr = unused slot).
@@ -82,10 +82,10 @@ struct LiteTaskEntry {
   uint8_t taskId{0};      ///< Task identifier for diagnostics.
 };
 
-/* ----------------------------- SchedulerLite ----------------------------- */
+/* ----------------------------- McuScheduler ----------------------------- */
 
 /**
- * @class SchedulerLite
+ * @class McuScheduler
  * @brief Minimal IScheduler implementation for MCU targets.
  *
  * Provides simple rate-group scheduling without heap allocation.
@@ -96,7 +96,7 @@ struct LiteTaskEntry {
  * IScheduler for scheduler-specific methods (tick, taskCount, etc.).
  *
  * @tparam MaxTasks Maximum number of tasks in the static table. Each
- *         LiteTaskEntry is 12 bytes, so sizeof(tasks_) = MaxTasks * 12.
+ *         McuTaskEntry is 12 bytes, so sizeof(tasks_) = MaxTasks * 12.
  *         Default: 32 (384 bytes). For constrained MCUs, use the actual
  *         number of registered tasks + small margin.
  * @tparam Counter Tick counter type. Default: uint64_t. Use uint32_t on
@@ -105,8 +105,8 @@ struct LiteTaskEntry {
  *
  * Usage:
  * @code
- * SchedulerLite<> sched(100);  // 32-task, uint64_t (default)
- * SchedulerLite<8, uint32_t> sched(100);  // 8-task, uint32_t (AVR)
+ * McuScheduler<> sched(100);  // 32-task, uint64_t (default)
+ * McuScheduler<8, uint32_t> sched(100);  // 8-task, uint32_t (AVR)
  * sched.addTask({myTask, &ctx, 1, 1, 0, 0, 1});  // 100 Hz task
  * sched.addTask({slowTask, &ctx, 1, 10, 0, 0, 2});  // 10 Hz task
  * sched.init();
@@ -118,9 +118,9 @@ struct LiteTaskEntry {
  *
  * @note RT-safe: tick() has no allocation, O(n) execution.
  */
-template <size_t MaxTasks = DEFAULT_LITE_MAX_TASKS, typename Counter = uint64_t>
-class SchedulerLite : public system_core::system_component::mcu::McuComponentBase,
-                      public IScheduler {
+template <size_t MaxTasks = DEFAULT_MCU_MAX_TASKS, typename Counter = uint64_t>
+class McuScheduler : public system_core::system_component::mcu::McuComponentBase,
+                     public IScheduler {
 public:
   /// Compile-time maximum number of tasks.
   static constexpr size_t MAX_TASKS = MaxTasks;
@@ -129,16 +129,16 @@ public:
    * @brief Construct scheduler with specified frequency.
    * @param freqHz Fundamental scheduling frequency in Hz.
    */
-  explicit SchedulerLite(uint16_t freqHz = DEFAULT_LITE_FREQ_HZ) noexcept
+  explicit McuScheduler(uint16_t freqHz = DEFAULT_MCU_FREQ_HZ) noexcept
       : fundamentalFreq_(freqHz) {}
 
-  ~SchedulerLite() override = default;
+  ~McuScheduler() override = default;
 
   // Non-copyable, non-movable
-  SchedulerLite(const SchedulerLite&) = delete;
-  SchedulerLite& operator=(const SchedulerLite&) = delete;
-  SchedulerLite(SchedulerLite&&) = delete;
-  SchedulerLite& operator=(SchedulerLite&&) = delete;
+  McuScheduler(const McuScheduler&) = delete;
+  McuScheduler& operator=(const McuScheduler&) = delete;
+  McuScheduler(McuScheduler&&) = delete;
+  McuScheduler& operator=(McuScheduler&&) = delete;
 
   /* ----------------------------- IComponent: Identity ----------------------------- */
 
@@ -153,10 +153,10 @@ public:
 
   /**
    * @brief Get component name.
-   * @return "SchedulerLite".
+   * @return "McuScheduler".
    * @note RT-safe: O(1).
    */
-  [[nodiscard]] const char* componentName() const noexcept override { return "SchedulerLite"; }
+  [[nodiscard]] const char* componentName() const noexcept override { return "McuScheduler"; }
 
   /**
    * @brief Get component type classification.
@@ -234,7 +234,7 @@ public:
    * @note NOT RT-safe: Must be called before init() or during reset.
    * @note Does not re-sort; call init() after all tasks are added.
    */
-  bool addTask(const LiteTaskEntry& entry) noexcept {
+  bool addTask(const McuTaskEntry& entry) noexcept {
     if (taskCount_ >= MaxTasks) {
       return false;
     }
@@ -252,7 +252,7 @@ public:
   void clearTasks() noexcept {
     taskCount_ = 0;
     for (auto& task : tasks_) {
-      task = LiteTaskEntry{};
+      task = McuTaskEntry{};
     }
   }
 
@@ -262,7 +262,7 @@ public:
    * @return Pointer to task entry, or nullptr if out of range.
    * @note RT-safe: O(1).
    */
-  [[nodiscard]] const LiteTaskEntry* task(size_t idx) const noexcept {
+  [[nodiscard]] const McuTaskEntry* task(size_t idx) const noexcept {
     if (idx < taskCount_) {
       return &tasks_[idx];
     }
@@ -303,7 +303,7 @@ private:
    *   freqN=1, freqD=10: runs every 10 ticks (10 Hz)
    *   freqN=2, freqD=1: runs every tick (200 Hz - but scheduler is 100 Hz, so runs every tick)
    */
-  [[nodiscard]] bool shouldExecute(const LiteTaskEntry& task, Counter tick) const noexcept {
+  [[nodiscard]] bool shouldExecute(const McuTaskEntry& task, Counter tick) const noexcept {
     if (task.freqN == 0 || task.freqD == 0) {
       return false;
     }
@@ -338,7 +338,7 @@ private:
     }
   }
 
-  LiteTaskEntry tasks_[MaxTasks]{};
+  McuTaskEntry tasks_[MaxTasks]{};
   Counter tickCount_{0};
   uint16_t fundamentalFreq_;
   size_t taskCount_{0};
@@ -348,4 +348,4 @@ private:
 } // namespace scheduler
 } // namespace system_core
 
-#endif // APEX_SCHEDULER_MCU_SCHEDULER_LITE_HPP
+#endif // APEX_SCHEDULER_MCU_MCU_SCHEDULER_HPP

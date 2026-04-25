@@ -119,7 +119,7 @@ apex_add_firmware(
   ${FIRMWARE_INC}
   LINK
   executive_mcu
-  encryption_lite
+  encryption_mcu
   system_core_protocols_framing_slip
   utilities_checksums_crc
   DEFS

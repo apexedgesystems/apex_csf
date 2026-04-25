@@ -16,7 +16,7 @@
  *
  * Implementations:
  *   - SystemComponentBase (apex/) - Full-featured, heap-using, POSIX filesystem
- *   - McuComponentBase (lite/) - Minimal, static allocation, no filesystem
+ *   - McuComponentBase (mcu/) - Minimal, static allocation, no filesystem
  */
 
 #include "src/system/core/infrastructure/system_component/base/inc/ComponentType.hpp"

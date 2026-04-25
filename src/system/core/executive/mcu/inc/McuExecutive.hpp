@@ -7,15 +7,15 @@
  * Design:
  *   - Single-threaded, cooperative scheduling
  *   - Uses ITickSource abstraction for timing
- *   - Owns SchedulerLite by value
+ *   - Owns McuScheduler by value
  *   - No heap allocation in hot path
  *   - No std::filesystem, std::thread, std::vector
  *   - Suitable for bare-metal MCU targets
  *
  * Template Parameters:
- *   - MaxTasks: Forwarded to SchedulerLite. Controls static task table size.
- *     Each LiteTaskEntry is 12 bytes. Default 32 (384 bytes).
- *   - Counter: Forwarded to SchedulerLite and used for cycleCount/maxCycles.
+ *   - MaxTasks: Forwarded to McuScheduler. Controls static task table size.
+ *     Each McuTaskEntry is 12 bytes. Default 32 (384 bytes).
+ *   - Counter: Forwarded to McuScheduler and used for cycleCount/maxCycles.
  *     Default uint64_t. Use uint32_t on 8/16-bit MCUs.
  *
  * Architecture:
@@ -48,7 +48,7 @@
  * @note Use ApexExecutive for full-featured Linux/RTOS deployments.
  */
 
-#include "src/system/core/components/scheduler/mcu/inc/SchedulerLite.hpp"
+#include "src/system/core/components/scheduler/mcu/inc/McuScheduler.hpp"
 #include "src/system/core/executive/core/inc/ExecutiveCore.hpp"
 #include "src/system/core/executive/mcu/inc/ITickSource.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/ComponentType.hpp"
@@ -73,7 +73,7 @@ namespace mcu {
  * ExecutiveCore. The two bases meet here so the executive presents a
  * single ComponentCore subobject and a single IExecutive interface.
  *
- * Owns SchedulerLite by value. Tick source is injected via constructor
+ * Owns McuScheduler by value. Tick source is injected via constructor
  * (dependency injection) to allow testing with FreeRunningSource on
  * desktop while using SysTickSource on MCU.
  *
@@ -82,13 +82,13 @@ namespace mcu {
  *
  * @note RT-safe: Main loop is RT-safe if tick source and scheduler are.
  */
-template <size_t MaxTasks = system_core::scheduler::mcu::DEFAULT_LITE_MAX_TASKS,
+template <size_t MaxTasks = system_core::scheduler::mcu::DEFAULT_MCU_MAX_TASKS,
           typename Counter = uint64_t>
 class McuExecutive : public system_core::system_component::mcu::McuComponentBase,
                      public ExecutiveCore {
 public:
   /// Owned scheduler type.
-  using Scheduler = system_core::scheduler::mcu::SchedulerLite<MaxTasks, Counter>;
+  using Scheduler = system_core::scheduler::mcu::McuScheduler<MaxTasks, Counter>;
 
   /**
    * @brief Construct executive with tick source and scheduler frequency.
@@ -100,7 +100,7 @@ public:
    * Scheduler is owned by value.
    */
   McuExecutive(ITickSource* tickSource,
-               uint16_t freqHz = system_core::scheduler::mcu::DEFAULT_LITE_FREQ_HZ,
+               uint16_t freqHz = system_core::scheduler::mcu::DEFAULT_MCU_FREQ_HZ,
                Counter maxCycles = 0) noexcept
       : tickSource_(tickSource), scheduler_(freqHz), maxCycles_(maxCycles) {
     // Executive is self-registered (always instance 0)
@@ -147,10 +147,10 @@ public:
 
   /**
    * @brief Get diagnostic label.
-   * @return "EXEC_LITE" (MCU-tier label, distinct from POSIX "EXECUTIVE").
+   * @return "EXEC_MCU" (MCU-tier label, distinct from POSIX "EXECUTIVE").
    * @note RT-safe: O(1).
    */
-  [[nodiscard]] const char* label() const noexcept override { return "EXEC_LITE"; }
+  [[nodiscard]] const char* label() const noexcept override { return "EXEC_MCU"; }
 
   /* ----------------------------- IExecutive ----------------------------- */
 
@@ -256,7 +256,7 @@ public:
    * @return true on success, false if table is full.
    * @note NOT RT-safe: Must be called before init().
    */
-  bool addTask(const system_core::scheduler::mcu::LiteTaskEntry& entry) noexcept {
+  bool addTask(const system_core::scheduler::mcu::McuTaskEntry& entry) noexcept {
     return scheduler_.addTask(entry);
   }
 

@@ -55,7 +55,7 @@ runtime data storage in this application (EEPROM is used for keys instead).
 | SLIP framing                   | ~400 B         | Encode + decode                                 |
 | CRC-16/XMODEM                  | ~200 B         | Bitwise (no lookup table to save SRAM)          |
 | UART driver (interrupt-driven) | ~500 B         | ISR + ring buffer logic                         |
-| McuExecutive + SchedulerLite  | ~800 B         | Cooperative scheduler, tick source              |
+| McuExecutive + McuScheduler  | ~800 B         | Cooperative scheduler, tick source              |
 | Command handler                | ~1.5 KB        | 14 opcodes, dispatch, response builder          |
 | Encrypt pipeline               | ~1 KB          | Frame parse, CRC check, encrypt, output build   |
 | Key store (EEPROM driver)      | ~400 B         | Read/write/erase, bitmap scan                   |

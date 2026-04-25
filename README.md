@@ -115,7 +115,7 @@ scheduler calls those tasks at the configured frequency. Everything in the
 hot path is RT-safe: no allocations, no blocking, bounded execution.
 
 For bare-metal targets, the same pattern applies with `McuExecutive`,
-`McuComponentBase`, and `SchedulerLite<N>` -- zero heap allocation.
+`McuComponentBase`, and `McuScheduler<N>` -- zero heap allocation.
 
 ---
 
@@ -163,7 +163,7 @@ The **scheduler** supports three execution models:
 
 - `SchedulerMultiThread` -- parallel execution with a thread pool (Linux)
 - `SchedulerSingleThread` -- deterministic sequential execution (Linux)
-- `SchedulerLite<N>` -- static task table, zero heap (bare-metal MCU)
+- `McuScheduler<N>` -- static task table, zero heap (bare-metal MCU)
 
 Task frequency, priority, phase, and thread affinity are configured externally
 via **TPRM** (tunable parameter) files -- not hard-coded. Change timing without

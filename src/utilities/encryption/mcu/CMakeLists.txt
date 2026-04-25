@@ -1,15 +1,15 @@
 # ==============================================================================
-# Module: encryption_lite
+# Module: encryption_mcu
 #
 # Standalone AES-256-GCM for bare-metal targets.
 # Header-only, no OpenSSL, no OS dependencies.
 #
 # Components:
-#   - Aes256GcmLite - Software AES-256-GCM encrypt/decrypt
+#   - Aes256GcmMcu - Software AES-256-GCM encrypt/decrypt
 # ==============================================================================
 
 include(apex/All)
-apex_module(encryption_lite)
+apex_module(encryption_mcu)
 
 # ------------------------------------------------------------------------------
 # Interface Library

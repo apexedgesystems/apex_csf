@@ -47,7 +47,7 @@ apex_add_firmware(
   "${CMAKE_SOURCE_DIR}/src/system/core/hal/avr/inc"
   LINK
   executive_mcu
-  encryption_lite
+  encryption_mcu
   system_core_protocols_framing_slip
   utilities_checksums_crc
 )

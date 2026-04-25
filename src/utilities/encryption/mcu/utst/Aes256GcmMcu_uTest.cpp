@@ -1,12 +1,12 @@
 /**
- * @file Aes256GcmLite_uTest.cpp
- * @brief Unit tests for standalone AES-256-GCM (encryption_lite).
+ * @file Aes256GcmMcu_uTest.cpp
+ * @brief Unit tests for standalone AES-256-GCM (encryption_mcu).
  *
  * Test vectors from NIST SP 800-38D (GCM specification) and
  * NIST CAVP AES-GCM test vectors.
  */
 
-#include "src/utilities/encryption/lite/inc/Aes256GcmLite.hpp"
+#include "src/utilities/encryption/mcu/inc/Aes256GcmMcu.hpp"
 
 #include <gtest/gtest.h>
 
@@ -15,15 +15,15 @@
 #include <cstring>
 #include <vector>
 
-using apex::encryption::lite::aes256GcmDecrypt;
-using apex::encryption::lite::aes256GcmEncrypt;
-using apex::encryption::lite::GcmResult;
-using apex::encryption::lite::GcmStatus;
+using apex::encryption::mcu::aes256GcmDecrypt;
+using apex::encryption::mcu::aes256GcmEncrypt;
+using apex::encryption::mcu::GcmResult;
+using apex::encryption::mcu::GcmStatus;
 
 /* ----------------------------- AES Block Tests ----------------------------- */
 
 /** @test Verify AES-256 block encryption against FIPS 197 Appendix C.3. */
-TEST(Aes256GcmLite_AesBlock, FIPS197_AppendixC3) {
+TEST(Aes256GcmMcu_AesBlock, FIPS197_AppendixC3) {
   // FIPS 197 Appendix C.3: AES-256 test vector
   // Key:       000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
   // Plaintext: 00112233445566778899aabbccddeeff
@@ -37,10 +37,10 @@ TEST(Aes256GcmLite_AesBlock, FIPS197_AppendixC3) {
                                 0xEA, 0xFC, 0x49, 0x90, 0x4B, 0x49, 0x60, 0x89};
 
   uint32_t rk[60];
-  apex::encryption::lite::detail::aes256KeyExpand(KEY, rk);
+  apex::encryption::mcu::detail::aes256KeyExpand(KEY, rk);
 
   uint8_t ct[16];
-  apex::encryption::lite::detail::aesEncryptBlock(rk, PT, ct);
+  apex::encryption::mcu::detail::aesEncryptBlock(rk, PT, ct);
 
   EXPECT_EQ(0, std::memcmp(ct, EXPECTED, 16));
 }
@@ -48,7 +48,7 @@ TEST(Aes256GcmLite_AesBlock, FIPS197_AppendixC3) {
 /* ----------------------------- GCM Encrypt Tests ----------------------------- */
 
 /** @test AES-256-GCM with zero-length plaintext and zero-length AAD. */
-TEST(Aes256GcmLite_Encrypt, EmptyPlaintextEmptyAAD) {
+TEST(Aes256GcmMcu_Encrypt, EmptyPlaintextEmptyAAD) {
   // NIST CAVP Test Case 13 (AES-256-GCM, no plaintext, no AAD)
   // Key:   0000000000000000000000000000000000000000000000000000000000000000
   // IV:    000000000000000000000000
@@ -70,7 +70,7 @@ TEST(Aes256GcmLite_Encrypt, EmptyPlaintextEmptyAAD) {
 }
 
 /** @test AES-256-GCM Test Case 14 from NIST SP 800-38D. */
-TEST(Aes256GcmLite_Encrypt, NIST_TestCase14) {
+TEST(Aes256GcmMcu_Encrypt, NIST_TestCase14) {
   // Key:   0000000000000000000000000000000000000000000000000000000000000000
   // IV:    000000000000000000000000
   // PT:    00000000000000000000000000000000
@@ -96,7 +96,7 @@ TEST(Aes256GcmLite_Encrypt, NIST_TestCase14) {
 }
 
 /** @test AES-256-GCM Test Case 15 from NIST SP 800-38D. */
-TEST(Aes256GcmLite_Encrypt, NIST_TestCase15) {
+TEST(Aes256GcmMcu_Encrypt, NIST_TestCase15) {
   // Key:   feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308
   // IV:    cafebabefacedbaddecaf888
   // PT:    d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a72
@@ -136,7 +136,7 @@ TEST(Aes256GcmLite_Encrypt, NIST_TestCase15) {
 }
 
 /** @test AES-256-GCM Test Case 16 from NIST SP 800-38D (with AAD). */
-TEST(Aes256GcmLite_Encrypt, NIST_TestCase16_WithAAD) {
+TEST(Aes256GcmMcu_Encrypt, NIST_TestCase16_WithAAD) {
   // Key:   feffe9928665731c6d6a8f9467308308feffe9928665731c6d6a8f9467308308
   // IV:    cafebabefacedbaddecaf888
   // PT:    d9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a72
@@ -178,7 +178,7 @@ TEST(Aes256GcmLite_Encrypt, NIST_TestCase16_WithAAD) {
 /* ----------------------------- GCM Decrypt Tests ----------------------------- */
 
 /** @test Decrypt Test Case 14 and verify roundtrip. */
-TEST(Aes256GcmLite_Decrypt, NIST_TestCase14_Roundtrip) {
+TEST(Aes256GcmMcu_Decrypt, NIST_TestCase14_Roundtrip) {
   const uint8_t KEY[32] = {0};
   const uint8_t NONCE[12] = {0};
   const uint8_t CT[16] = {0xCE, 0xA7, 0x40, 0x3D, 0x4D, 0x60, 0x6B, 0x6E,
@@ -196,7 +196,7 @@ TEST(Aes256GcmLite_Decrypt, NIST_TestCase14_Roundtrip) {
 }
 
 /** @test Decrypt Test Case 16 (with AAD) and verify roundtrip. */
-TEST(Aes256GcmLite_Decrypt, NIST_TestCase16_Roundtrip) {
+TEST(Aes256GcmMcu_Decrypt, NIST_TestCase16_Roundtrip) {
   const uint8_t KEY[32] = {0xFE, 0xFF, 0xE9, 0x92, 0x86, 0x65, 0x73, 0x1C, 0x6D, 0x6A, 0x8F,
                            0x94, 0x67, 0x30, 0x83, 0x08, 0xFE, 0xFF, 0xE9, 0x92, 0x86, 0x65,
                            0x73, 0x1C, 0x6D, 0x6A, 0x8F, 0x94, 0x67, 0x30, 0x83, 0x08};
@@ -228,7 +228,7 @@ TEST(Aes256GcmLite_Decrypt, NIST_TestCase16_Roundtrip) {
 /* ----------------------------- Auth Failure Tests ----------------------------- */
 
 /** @test Authentication fails when tag is modified. */
-TEST(Aes256GcmLite_AuthFailure, ModifiedTag) {
+TEST(Aes256GcmMcu_AuthFailure, ModifiedTag) {
   const uint8_t KEY[32] = {0};
   const uint8_t NONCE[12] = {0};
   const uint8_t CT[16] = {0xCE, 0xA7, 0x40, 0x3D, 0x4D, 0x60, 0x6B, 0x6E,
@@ -250,7 +250,7 @@ TEST(Aes256GcmLite_AuthFailure, ModifiedTag) {
 }
 
 /** @test Authentication fails when ciphertext is modified. */
-TEST(Aes256GcmLite_AuthFailure, ModifiedCiphertext) {
+TEST(Aes256GcmMcu_AuthFailure, ModifiedCiphertext) {
   const uint8_t KEY[32] = {0};
   const uint8_t NONCE[12] = {0};
   uint8_t ct[16] = {0xCE, 0xA7, 0x40, 0x3D, 0x4D, 0x60, 0x6B, 0x6E,
@@ -268,7 +268,7 @@ TEST(Aes256GcmLite_AuthFailure, ModifiedCiphertext) {
 /* ----------------------------- Null Pointer Tests ----------------------------- */
 
 /** @test Null key returns ERROR_NULL_POINTER. */
-TEST(Aes256GcmLite_NullPointer, NullKey) {
+TEST(Aes256GcmMcu_NullPointer, NullKey) {
   const uint8_t NONCE[12] = {0};
   uint8_t tag[16];
   GcmResult r = aes256GcmEncrypt(nullptr, NONCE, nullptr, 0, nullptr, 0, nullptr, tag);
@@ -276,7 +276,7 @@ TEST(Aes256GcmLite_NullPointer, NullKey) {
 }
 
 /** @test Null nonce returns ERROR_NULL_POINTER. */
-TEST(Aes256GcmLite_NullPointer, NullNonce) {
+TEST(Aes256GcmMcu_NullPointer, NullNonce) {
   const uint8_t KEY[32] = {0};
   uint8_t tag[16];
   GcmResult r = aes256GcmEncrypt(KEY, nullptr, nullptr, 0, nullptr, 0, nullptr, tag);
@@ -286,7 +286,7 @@ TEST(Aes256GcmLite_NullPointer, NullNonce) {
 /* ----------------------------- Roundtrip Tests ----------------------------- */
 
 /** @test Encrypt then decrypt with random-ish data verifies roundtrip. */
-TEST(Aes256GcmLite_Roundtrip, ArbitraryData) {
+TEST(Aes256GcmMcu_Roundtrip, ArbitraryData) {
   uint8_t key[32];
   for (int i = 0; i < 32; ++i) {
     key[i] = static_cast<uint8_t>(i * 7 + 13);
@@ -320,7 +320,7 @@ TEST(Aes256GcmLite_Roundtrip, ArbitraryData) {
 }
 
 /** @test Single-byte plaintext roundtrip. */
-TEST(Aes256GcmLite_Roundtrip, SingleByte) {
+TEST(Aes256GcmMcu_Roundtrip, SingleByte) {
   const uint8_t KEY[32] = {0x42};
   const uint8_t NONCE[12] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
                              0x07, 0x08, 0x09, 0x0A, 0x0B, 0x0C};
@@ -338,7 +338,7 @@ TEST(Aes256GcmLite_Roundtrip, SingleByte) {
 }
 
 /** @test Nonce uniqueness: same plaintext with different nonces produces different ciphertext. */
-TEST(Aes256GcmLite_Roundtrip, DifferentNonceDifferentCiphertext) {
+TEST(Aes256GcmMcu_Roundtrip, DifferentNonceDifferentCiphertext) {
   const uint8_t KEY[32] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A, 0x0B,
                            0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16,
                            0x17, 0x18, 0x19, 0x1A, 0x1B, 0x1C, 0x1D, 0x1E, 0x1F, 0x20};

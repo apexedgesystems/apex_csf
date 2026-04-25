@@ -4,7 +4,7 @@
 # Directory structure:
 #   base/  - IScheduler interface (header-only, no heavy deps)
 #   posix/ - SchedulerBase, SchedulerMultiThread, SchedulerSingleThread (POSIX tier)
-#   mcu/   - SchedulerLite (MCU tier)
+#   mcu/   - McuScheduler (MCU tier)
 #
 # Libraries:
 #   scheduler_base - Pure interface (INTERFACE, header-only)
@@ -26,7 +26,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/posix/CMakeLists.txt")
   add_subdirectory(posix)
 endif ()
 
-# MCU implementation library (SchedulerLite)
+# MCU implementation library (McuScheduler)
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mcu/CMakeLists.txt")
   add_subdirectory(mcu)
 endif ()

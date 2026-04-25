@@ -140,7 +140,7 @@ Component base classes and lifecycle management for the Apex executive framework
 - **Configuration requirement** -- `init()` requires `isConfigured()` == true (prevents uninitialized operation)
 - **Extensible status codes** -- `EOE_SYSTEM_COMPONENT` marker allows derived components to add codes without collision
 - **Component type classification** -- `ComponentType` enum drives scheduler, registry, and logging behavior
-- **Static-allocation lite path** -- `McuComponentBase` uses no heap, no `std::filesystem`, no `std::thread`
+- **Static-allocation MCU path** -- `McuComponentBase` uses no heap, no `std::filesystem`, no `std::thread`
 - **Data descriptor registration** -- Components declare data blocks during `doInit()` for registry integration
 
 ---
@@ -229,7 +229,7 @@ protected:
 };
 ```
 
-### McuComponentBase (lite/)
+### McuComponentBase (mcu/)
 
 ```cpp
 class McuComponentBase : public IComponent {
@@ -376,7 +376,7 @@ protected:
 | ------------ | ----------------- | ----- | --------------------- |
 | `base/utst/` | Unit tests        | 15    | Yes                   |
 | `apex/utst/` | Unit tests        | 49    | Yes                   |
-| `lite/utst/` | Unit tests        | 10    | Yes                   |
+| `mcu/utst/`  | Unit tests        | 10    | Yes                   |
 | `apex/ptst/` | Performance tests | 10    | No (manual)           |
 
 ### Test Requirements

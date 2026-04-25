@@ -8,7 +8,7 @@ include(apex/All)
 # Test Sources (1)
 # ------------------------------------------------------------------------------
 
-set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerLite_uTest.cpp")
+set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/McuScheduler_uTest.cpp")
 
 # ------------------------------------------------------------------------------
 # Unit Tests
@@ -16,7 +16,7 @@ set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerLite_uTest.cpp")
 
 apex_add_gtest(
   TARGET
-  TestSchedulerLite
+  TestMcuScheduler
   SOURCES
   ${UNIT_TEST_SOURCES}
   LINK

@@ -28,7 +28,7 @@ Deterministic, no-throw filesystem management with atomic writes, archival, and 
 | ---------------- | ------------------------------------------------------ | ------- |
 | `FileSystemBase` | Abstract base with maintenance, atomic write, archival | Partial |
 | `ApexFileSystem` | Standard deployment layout (6 subdirectories)          | Partial |
-| `NullFileSystem` | No-op filesystem for lite/baremetal targets            | Yes     |
+| `NullFileSystem` | No-op filesystem for bare-metal targets                | Yes     |
 | `Status`         | Typed status codes for all operations                  | Yes     |
 
 ### Quick Example
@@ -175,7 +175,7 @@ enum class FsyncPolicy : std::uint8_t {
 | ---------------- | ------------------------------------------------------ |
 | `FileSystemBase` | Abstract base with maintenance, atomic write, archival |
 | `ApexFileSystem` | Standard deployment layout (6 subdirectories)          |
-| `NullFileSystem` | No-op filesystem for lite/baremetal targets            |
+| `NullFileSystem` | No-op filesystem for bare-metal targets                |
 | `Status`         | Typed status codes for all operations                  |
 
 ### ApexFileSystem Directories
@@ -298,7 +298,7 @@ fs.configureShutdownCleanup(true, "/archive/backups");
 | Directory    | Type                   | Tests | Runs with `make test` |
 | ------------ | ---------------------- | ----- | --------------------- |
 | `apex/utst/` | Unit tests             | 16    | Yes                   |
-| `lite/utst/` | Unit tests             | 10    | Yes                   |
+| `mcu/utst/`  | Unit tests             | 10    | Yes                   |
 | `apex/ptst/` | Performance benchmarks | 7     | No (manual)           |
 
 ### Test Organization

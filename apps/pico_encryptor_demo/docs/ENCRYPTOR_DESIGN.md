@@ -126,7 +126,7 @@ CRC-16/XMODEM covers opcode + payload.
 ### Algorithm
 
 AES-256-GCM per FIPS 197 + NIST SP 800-38D. Software implementation via
-`encryption_lite` library. Standard 8-bit CHAR_BIT on ARM Cortex-M0+.
+`encryption_mcu` library. Standard 8-bit CHAR_BIT on ARM Cortex-M0+.
 
 ### Performance
 

@@ -1,4 +1,4 @@
-# SystemComponent Lite
+# SystemComponent MCU
 
 **Namespace:** `system_core::system_component::mcu`
 **Platform:** Cross-platform (bare-metal compatible)

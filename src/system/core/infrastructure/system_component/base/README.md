@@ -172,5 +172,5 @@ no runtime behavior to benchmark.
 ## 6. See Also
 
 - **SystemComponentBase** (`../apex/`) - Full-featured implementation (POSIX, heap)
-- **SystemComponentLite** (`../lite/`) - Minimal implementation (static, bare-metal)
+- **McuComponentBase** (`../mcu/`) - Minimal implementation (static, bare-metal)
 - **SystemComponent** (`../../`) - Top-level system component hierarchy

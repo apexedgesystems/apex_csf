@@ -11,7 +11,7 @@
 using executive::RunResult;
 using executive::mcu::FreeRunningSource;
 using McuExecutive = executive::mcu::McuExecutive<>;
-using system_core::scheduler::mcu::LiteTaskEntry;
+using system_core::scheduler::mcu::McuTaskEntry;
 
 /* ----------------------------- Test Helpers ----------------------------- */
 
@@ -31,7 +31,7 @@ TEST(McuExecutive_DefaultConstruction, InitialState) {
   EXPECT_EQ(exec.componentId(), 0);
   EXPECT_STREQ(exec.componentName(), "McuExecutive");
   EXPECT_EQ(exec.componentType(), system_core::system_component::ComponentType::EXECUTIVE);
-  EXPECT_STREQ(exec.label(), "EXEC_LITE");
+  EXPECT_STREQ(exec.label(), "EXEC_MCU");
   EXPECT_FALSE(exec.isInitialized());
   EXPECT_EQ(exec.cycleCount(), 0);
   EXPECT_FALSE(exec.isShutdownRequested());

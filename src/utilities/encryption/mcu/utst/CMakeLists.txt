@@ -1,5 +1,5 @@
 # ==============================================================================
-# encryption_lite - Unit Tests
+# encryption_mcu - Unit Tests
 # ==============================================================================
 
 include(apex/All)
@@ -8,7 +8,7 @@ include(apex/All)
 # Sources (1 file)
 # ------------------------------------------------------------------------------
 
-set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Aes256GcmLite_uTest.cpp")
+set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Aes256GcmMcu_uTest.cpp")
 
 # ------------------------------------------------------------------------------
 # Test Target
@@ -16,11 +16,11 @@ set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Aes256GcmLite_uTest.cpp")
 
 apex_add_gtest(
   TARGET
-  TestEncryptionLite
+  TestEncryptionMcu
   SOURCES
   ${UNIT_TEST_SOURCES}
   LINK
-  encryption_lite
+  encryption_mcu
   LABELS
   utilities
 )

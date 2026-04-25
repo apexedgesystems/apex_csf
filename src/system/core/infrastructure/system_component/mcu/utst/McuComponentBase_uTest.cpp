@@ -10,12 +10,12 @@
 /**
  * @brief Concrete test component for McuComponentBase testing.
  */
-class TestLiteComponent : public system_core::system_component::mcu::McuComponentBase {
+class TestMcuComponent : public system_core::system_component::mcu::McuComponentBase {
 public:
-  explicit TestLiteComponent(bool initSuccess = true) noexcept : initSuccess_(initSuccess) {}
+  explicit TestMcuComponent(bool initSuccess = true) noexcept : initSuccess_(initSuccess) {}
 
   [[nodiscard]] std::uint16_t componentId() const noexcept override { return 42; }
-  [[nodiscard]] const char* componentName() const noexcept override { return "TestLiteComponent"; }
+  [[nodiscard]] const char* componentName() const noexcept override { return "TestMcuComponent"; }
   [[nodiscard]] system_core::system_component::ComponentType
   componentType() const noexcept override {
     return system_core::system_component::ComponentType::SW_MODEL;
@@ -47,10 +47,10 @@ private:
 
 /** @test Default construction sets expected initial state. */
 TEST(McuComponentBase_DefaultConstruction, InitialStateIsCorrect) {
-  TestLiteComponent comp;
+  TestMcuComponent comp;
 
   EXPECT_EQ(comp.componentId(), 42);
-  EXPECT_STREQ(comp.componentName(), "TestLiteComponent");
+  EXPECT_STREQ(comp.componentName(), "TestMcuComponent");
   EXPECT_EQ(comp.componentType(), system_core::system_component::ComponentType::SW_MODEL);
   EXPECT_STREQ(comp.label(), "TEST_LITE");
   EXPECT_FALSE(comp.isInitialized());
@@ -65,7 +65,7 @@ TEST(McuComponentBase_DefaultConstruction, InitialStateIsCorrect) {
 
 /** @test init() calls doInit() and sets initialized flag on success. */
 TEST(McuComponentBase_Lifecycle, InitSuccessful) {
-  TestLiteComponent comp;
+  TestMcuComponent comp;
 
   const std::uint8_t RESULT = comp.init();
 
@@ -77,7 +77,7 @@ TEST(McuComponentBase_Lifecycle, InitSuccessful) {
 
 /** @test init() is idempotent - second call returns success without calling doInit(). */
 TEST(McuComponentBase_Lifecycle, InitIdempotent) {
-  TestLiteComponent comp;
+  TestMcuComponent comp;
 
   (void)comp.init();
   const std::uint8_t RESULT = comp.init();
@@ -89,7 +89,7 @@ TEST(McuComponentBase_Lifecycle, InitIdempotent) {
 
 /** @test init() failure sets error state. */
 TEST(McuComponentBase_Lifecycle, InitFailure) {
-  TestLiteComponent comp(false); // Configured to fail
+  TestMcuComponent comp(false); // Configured to fail
 
   const std::uint8_t RESULT = comp.init();
 
@@ -100,7 +100,7 @@ TEST(McuComponentBase_Lifecycle, InitFailure) {
 
 /** @test reset() calls doReset() and clears state. */
 TEST(McuComponentBase_Lifecycle, ResetClearsState) {
-  TestLiteComponent comp;
+  TestMcuComponent comp;
   (void)comp.init();
 
   comp.reset();
@@ -113,7 +113,7 @@ TEST(McuComponentBase_Lifecycle, ResetClearsState) {
 
 /** @test Component can be re-initialized after reset. */
 TEST(McuComponentBase_Lifecycle, ReinitAfterReset) {
-  TestLiteComponent comp;
+  TestMcuComponent comp;
   (void)comp.init();
   comp.reset();
 
@@ -126,7 +126,7 @@ TEST(McuComponentBase_Lifecycle, ReinitAfterReset) {
 
 /** @test setInstanceIndex() computes fullUid correctly. */
 TEST(McuComponentBase_Registration, SetInstanceIndex) {
-  TestLiteComponent comp;
+  TestMcuComponent comp;
 
   comp.setInstanceIndex(3);
 
@@ -138,7 +138,7 @@ TEST(McuComponentBase_Registration, SetInstanceIndex) {
 
 /** @test Instance index 0 produces correct fullUid. */
 TEST(McuComponentBase_Registration, InstanceIndexZero) {
-  TestLiteComponent comp;
+  TestMcuComponent comp;
 
   comp.setInstanceIndex(0);
 
@@ -149,7 +149,7 @@ TEST(McuComponentBase_Registration, InstanceIndexZero) {
 
 /** @test Maximum instance index (255) produces correct fullUid. */
 TEST(McuComponentBase_Registration, MaxInstanceIndex) {
-  TestLiteComponent comp;
+  TestMcuComponent comp;
 
   comp.setInstanceIndex(255);
 
@@ -162,11 +162,11 @@ TEST(McuComponentBase_Registration, MaxInstanceIndex) {
 
 /** @test McuComponentBase satisfies IComponent interface. */
 TEST(McuComponentBase_Interface, ImplementsIComponent) {
-  TestLiteComponent comp;
+  TestMcuComponent comp;
   system_core::system_component::IComponent* iface = &comp;
 
   EXPECT_EQ(iface->componentId(), 42);
-  EXPECT_STREQ(iface->componentName(), "TestLiteComponent");
+  EXPECT_STREQ(iface->componentName(), "TestMcuComponent");
   EXPECT_EQ(iface->componentType(), system_core::system_component::ComponentType::SW_MODEL);
   EXPECT_STREQ(iface->label(), "TEST_LITE");
   EXPECT_EQ(iface->init(), 0);

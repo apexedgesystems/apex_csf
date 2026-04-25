@@ -16,7 +16,7 @@
  *
  * Implementations:
  *   - PosixExecutiveBase/ApexExecutive (apex/) - Full-featured, multi-threaded
- *   - McuExecutive (lite/) - Single-threaded, bare-metal compatible
+ *   - McuExecutive (mcu/) - Single-threaded, bare-metal compatible
  */
 
 #include <stdint.h>
