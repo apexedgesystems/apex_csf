@@ -70,6 +70,18 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// the MNA matrix is non-singular during NR iteration.
   double gminTransient_ = 1e-9; ///< GMIN for transient (can be ramped during warmup).
 
+  /// GMIN tier for "actively driven" nets (NOR outputs whose depletion
+  /// load provides an algebraic constraint, clock signals forced via NR
+  /// callback). 0 = use gminTransient_ uniformly. When set, this is
+  /// applied INSTEAD of gminTransient_ on driven nets, while everything
+  /// else (floating storage, pass-gate intermediates) gets gminTransient_.
+  ///
+  /// Use case: L2 with overlay off needs strong gminTransient_ (~1e-3)
+  /// to algebraically anchor floating nets, but NOR outputs would have
+  /// their logic levels distorted by 1e-3. Setting gminDriven_ = 1e-9
+  /// keeps them clean.
+  double gminDriven_ = 0.0;
+
   /// Parasitic capacitance for Level 1 model.
   static constexpr double CPARA_L1 = 10e-15;
 
@@ -1161,11 +1173,6 @@ struct Intel4004GridLevel1 : Intel4004Grid {
    * @note RT-safe.
    */
   template <typename MnaSystemT> void stampGmin(MnaSystemT& mna, std::size_t netCount) const {
-    // Per-node GMIN: NOR gate outputs (driven by depletion loads) get tiny
-    // GMIN (1e-12) so logic levels stay clean. All other nodes (dynamic,
-    // floating, pass gate destinations) get gminTransient_ for NR anchoring.
-    // This prevents GMIN from interfering with decoder logic while keeping
-    // NR convergence on floating nodes.
     if (norOutputNets_.empty()) {
       buildNorOutputSet();
     }
@@ -1173,6 +1180,12 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       if (n == vdd_)
         continue;
       double gmin = gminTransient_;
+      // Driven nets (NOR outputs, clocks) get a smaller GMIN if configured,
+      // so strong gminTransient_ on floating nets doesn't distort logic levels.
+      if (gminDriven_ > 0.0 &&
+          (norOutputNets_.count(n) || n == clk1Net_ || n == clk2Net_)) {
+        gmin = gminDriven_;
+      }
       mna.addConductance(n, circuit::Circuit::ground(), gmin);
     }
   }

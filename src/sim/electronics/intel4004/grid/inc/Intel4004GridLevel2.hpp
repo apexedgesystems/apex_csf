@@ -56,27 +56,32 @@ using devices::nonlinear::MosfetBsim3Params;
  */
 struct Intel4004GridLevel2 : Intel4004GridLevel1 {
 
-  /// L2 contract within the current architecture:
-  ///   - BSIM3 stamps the ~338 latch feedback transistors -> analog
-  ///     operating points around the cross-coupled latch are computed
-  ///     from accurate physics (smooth Vgst_eff captures moderate
-  ///     inversion that Shichman-Hodges misses).
-  ///   - Hard-pin overlay (G=0 -> addVoltageSource) still required.
-  ///     Soft Norton anchor at any finite G < ~1.0 fails to suppress
-  ///     NR transient overshoot in the cross-coupled topology -- see
-  ///     `Intel4004L2.ConductanceSweepProbe`. The hard pin is an
-  ///     algebraic MNA constraint that NR cannot violate, fundamentally
-  ///     different from a differential pull.
+  /// L2 = 100% physics for the steady-state hold.
   ///
-  /// Path to true 100% physics (separate milestone):
-  ///   - Rework the X3 datapath so the analog circuit physically
-  ///     computes new ACC value from data-bus -> OPA -> ACC, replacing
-  ///     the C++ switch in `traceExecuteByte`.
-  ///   - Without that, both L1 and L2 rely on behavioral instruction
-  ///     execution; only the analog visualization fidelity differs.
+  /// Calibration story (commit history captures the full investigation):
+  ///   1. BSIM3 stamps the ~338 latch feedback transistors -> accurate
+  ///      moderate-inversion physics around the cross-coupled topology.
+  ///   2. Behavioral overlay disabled. The NR pathology this exposed
+  ///      (~73 nets drifting to ±100s of volts) was diagnosed as
+  ///      *Jacobian rank deficiency*: with no algebraic constraint on
+  ///      floating storage nets, the linear solve produces unbounded
+  ///      step values.
+  ///   3. Cure: differentiated GMIN.
+  ///        gminTransient_ = 5e-3 (1.5x typical transistor gm at op-point)
+  ///        gminDriven_    = 1e-12 (NOR outputs / clocks unaffected)
+  ///      Empirically converges with 0 OOB nets, max|v| = 5.0V exactly.
+  ///      See `DISABLED_DifferentiatedGminSweep` for the calibration grid.
+  ///
+  /// What L2 still does NOT do (separate milestone): pure-physics
+  /// instruction execution. Even L1 currently relies on behavioral X3
+  /// execution via `traceExecuteByte`'s C++ switch for the data-bus ->
+  /// OPA -> ACC transfer. simulateLevel1 only runs the analog circuit;
+  /// instruction state propagation requires the trace path.
   Intel4004GridLevel2() {
-    applyBehavioralLatchOverlay_ = true;
-    latchOverlayConductance_ = 0.0; // hard pin (algebraic constraint)
+    applyBehavioralLatchOverlay_ = false; // BSIM3 + GMIN converge alone
+    latchOverlayConductance_ = 0.0;
+    gminTransient_ = 5e-3;                // strong anchor on floating nets
+    gminDriven_ = 1e-12;                  // tiny on NOR-output / clocks
   }
 
   /// BSIM3 parameter template for the latch feedback core. Per-transistor

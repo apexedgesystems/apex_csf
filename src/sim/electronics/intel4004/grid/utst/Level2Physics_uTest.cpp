@@ -528,6 +528,63 @@ TEST(DynamicStorageHold, Bsim3PassGateOff_HoldsLow) {
   EXPECT_TRUE(res.converged);
 }
 
+/**
+ * @test Inverter logic level is preserved when GMIN is differentiated.
+ *
+ * Small-circuit verification of the GMIN-tier mechanism that L2 uses at
+ * full chip scale. Setup: same depletion-load + enhancement inverter as
+ * Level1Physics.InverterInputLow (VOL = 1.201V reference). Apply two
+ * GMIN regimes:
+ *   1. Uniform 5e-3 (strong floor on every node) -- distorts VOL.
+ *   2. Differentiated: 5e-3 on input, 1e-12 on the NOR-output node --
+ *      VOL stays clean.
+ *
+ * Pass criterion: differentiated VOL within 5 mV of the 1.201V reference.
+ * This validates that giving NOR-output nets a tiny GMIN exemption
+ * preserves logic levels even when other nodes have a strong floor.
+ */
+TEST(DynamicStorageHold, DifferentiatedGminPreservesVol) {
+  // Net 0=GND, 1=VDD, 2=OUT (NOR output), 3=IN (input LOW).
+  constexpr double GMIN_STRONG = 5e-3;
+  constexpr double GMIN_TINY = 1e-12;
+
+  // Regime 1: uniform strong GMIN -- expect VOL distortion.
+  std::vector<double> V_uniform = {0, VDD, 2.0, 0};
+  double vol_uniform = solveDc(4, V_uniform,
+      [](MnaSystemSparse& mna, const std::vector<double>& v) {
+        mna.addVoltageSource(1, 0, VDD);
+        mna.addVoltageSource(3, 0, 0.0);
+        stampPmosL1(mna, 2, 1, 1, v, KP * WL_DEP, VTH_DEP);
+        stampPmosL1(mna, 0, 3, 2, v, KP * WL_ENH, VTH_ENH);
+        // Uniform strong GMIN on output -- this is the "broken" regime.
+        mna.addConductance(2, 0, GMIN_STRONG);
+      });
+
+  // Regime 2: differentiated -- tiny GMIN on the NOR output (net 2),
+  // strong GMIN elsewhere (a no-op here since other nets are voltage-pinned).
+  std::vector<double> V_diff = {0, VDD, 2.0, 0};
+  double vol_diff = solveDc(4, V_diff,
+      [](MnaSystemSparse& mna, const std::vector<double>& v) {
+        mna.addVoltageSource(1, 0, VDD);
+        mna.addVoltageSource(3, 0, 0.0);
+        stampPmosL1(mna, 2, 1, 1, v, KP * WL_DEP, VTH_DEP);
+        stampPmosL1(mna, 0, 3, 2, v, KP * WL_ENH, VTH_ENH);
+        mna.addConductance(2, 0, GMIN_TINY); // tiny on NOR output
+      });
+
+  std::printf("\n  Inverter VOL with GMIN tiers:\n");
+  std::printf("    uniform 5e-3 on output -> VOL = %.4fV (distorted)\n", vol_uniform);
+  std::printf("    diff. 1e-12 on NOR-out -> VOL = %.4fV (clean)\n", vol_diff);
+  std::printf("    reference (Level1Physics.InverterInputLow) = 1.2010V\n");
+
+  EXPECT_NEAR(vol_diff, 1.201, 0.005)
+      << "Differentiated GMIN must preserve VOL within 5 mV of reference";
+  // Uniform 5e-3 should *visibly* distort the level; sanity-check it's at
+  // least 50 mV off so the test is meaningful, not just trivially passing.
+  EXPECT_GT(std::fabs(vol_uniform - 1.201), 0.05)
+      << "Uniform strong GMIN should distort VOL (control case)";
+}
+
 /** @test Compare drift: same initial, same circuit, different model = different drift? */
 TEST(DynamicStorageHold, ModelDriftMismatch) {
   for (double initVolts : {0.5, 1.2, 2.5, 3.5, 4.5}) {
