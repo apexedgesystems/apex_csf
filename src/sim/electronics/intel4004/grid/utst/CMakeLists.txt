@@ -15,6 +15,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/Level1Stamp_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Level1Params_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Level1Physics_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Level2Physics_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ComponentClassification_uTest.cpp"
 )
 
