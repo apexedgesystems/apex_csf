@@ -16,7 +16,7 @@ set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/NullFileSystem_uTest.cpp")
 
 apex_add_gtest(
   TARGET
-  TestFilesystemLite
+  TestFilesystemMcu
   SOURCES
   ${UNIT_TEST_SOURCES}
   LINK

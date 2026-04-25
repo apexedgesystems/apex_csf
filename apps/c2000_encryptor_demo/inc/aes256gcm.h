@@ -2,7 +2,7 @@
  * @file aes256gcm.h
  * @brief Standalone AES-256-GCM in C for C2000 (16-bit CHAR_BIT safe).
  *
- * Direct C port of Aes256GcmLite.hpp with explicit 0xFF masking on all
+ * Direct C port of Aes256GcmMcu.hpp with explicit 0xFF masking on all
  * byte operations for C28x compatibility (CHAR_BIT=16).
  *
  * References:
