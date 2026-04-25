@@ -322,6 +322,65 @@ TEST(Intel4004L2, DISABLED_PurePhysicsLdm5) {
       << "Pure-physics ACC must match L0 for LDM 5";
 }
 
+/* ----------------------------- Per-phase decode chain diagnostic ----------------------------- */
+
+/**
+ * @test Capture ~OPR / N0992 / N1008 values during EACH clock phase
+ *       of LDM 0xD5 execution to find when (if ever) the decode chain
+ *       fires correctly. The hypothesis from the research is that
+ *       ~OPR.x evaluates during M1.CLK2 when SC&M12&CLK2 gates the
+ *       data bus into N1008..N1011.
+ *
+ * Manual diagnostic; ~30 seconds.
+ */
+TEST(Intel4004L2, DISABLED_PerPhaseDecodeTrace) {
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  constexpr std::size_t WARMUP = 16;
+  std::vector<std::uint8_t> rom(WARMUP + 1, 0x00);
+  rom[WARMUP] = 0xD5;
+
+  Intel4004GridLevel2 grid;
+  grid.applyBehavioralX3_ = false;
+
+  auto circuit = grid.buildCircuit(NETLIST);
+  grid.enableSparseModeLevel1(circuit);
+  circuit.solver().invalidateCache();
+  auto state = grid.simulateLevel1(circuit, rom.data(), rom.size(), WARMUP, 0);
+
+  const char* sigs[] = {"D3", "D2", "D1", "D0",
+                        "N1008", "N1009", "N1010", "N1011",
+                        "N0992", "N0993", "N0994", "N0995",
+                        "~OPR.0", "~OPR.1", "~OPR.2", "~OPR.3",
+                        "OPR.0", "OPR.1", "OPR.2", "OPR.3",
+                        "SC&M12&CLK2", "M12", "SC", "SYNC"};
+  std::vector<unsigned> ids;
+  for (const char* s : sigs) ids.push_back(grid.findNet(s));
+
+  std::printf("\n  ==== Per-phase decode trace, LDM 0xD5 ====\n");
+  std::printf("  ms phase  ");
+  for (std::size_t i = 0; i < std::size(sigs); ++i) {
+    std::printf("%-8.8s ", sigs[i]);
+  }
+  std::printf("\n");
+
+  auto callback = [&](std::uint8_t ms, int clkPhase, const std::vector<double>& v) {
+    std::printf("  M%u %s   ", static_cast<unsigned>(ms), clkPhase == 0 ? "C1" : "C2");
+    for (std::size_t i = 0; i < ids.size(); ++i) {
+      if (ids[i] == 0) {
+        std::printf("---      ");
+      } else {
+        std::printf("%7.3f  ", v[ids[i]]);
+      }
+    }
+    std::printf("\n");
+  };
+
+  grid.traceExecuteByte(circuit, state, rom[WARMUP], callback);
+
+  std::printf("\n  Active-low: <2.5V => logic 1 (asserted), >=2.5V => logic 0\n");
+  std::printf("  For LDM 0xD5: D3..D0 = 1,1,0,1; expected ~OPR.3..0 = 0,0,1,0 (=5V/5V/0V/5V)\n");
+}
+
 /* ----------------------------- X3 datapath diagnostic ----------------------------- */
 
 /**
