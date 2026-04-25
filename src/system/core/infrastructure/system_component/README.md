@@ -1,10 +1,17 @@
 # System Component Library
 
-Component base classes and lifecycle management for the Apex executive framework. Three tiers: a pure interface (`IComponent`), a full-featured implementation for Linux/RTOS (`SystemComponentBase`), and a minimal implementation for bare-metal MCUs (`McuComponentBase`).
+Component base classes and lifecycle management for the Apex executive framework. Four directory tiers organize the hierarchy:
 
-**Namespace:** `system_core::system_component`
-**Libraries:** `system_component_base` (INTERFACE), `system_core_system_component` (SHARED), `system_component_mcu` (INTERFACE)
-**Platform:** Cross-platform (apex: Linux/RTOS, lite: bare-metal)
+| Tier | Contents | Instantiable? |
+|------|----------|---------------|
+| `base/` | Pure virtual `IComponent` interface | No (pure virtual) |
+| `core/` | `ComponentCore` shared concrete base (identity, lifecycle, registration state) | No (still abstract) |
+| `posix/` | `SystemComponentBase` and POSIX-tier specializations | Yes (full POSIX features) |
+| `mcu/` | `McuComponentBase` for bare-metal targets | Yes (static allocation) |
+
+**Namespace:** `system_core::system_component` (POSIX), `system_core::system_component::mcu` (MCU)
+**Libraries:** `system_component_base` (INTERFACE), `system_component_core` (INTERFACE), `system_core_system_component` (SHARED, POSIX), `system_component_mcu` (INTERFACE)
+**Platform:** Cross-platform (`posix/`: Linux/RTOS, `mcu/`: bare-metal)
 **C++ Standard:** C++23
 
 ---
@@ -14,9 +21,10 @@ Component base classes and lifecycle management for the Apex executive framework
 | Component                  | Type               | Purpose                                                                                 | RT-Safe                                       |
 | -------------------------- | ------------------ | --------------------------------------------------------------------------------------- | --------------------------------------------- |
 | `IComponent`               | Abstract interface | Minimal pure interface (identity, lifecycle, status)                                    | Queries: Yes, Lifecycle: No                   |
+| `ComponentCore`            | Abstract class     | Shared concrete base: identity, lifecycle, registration state (no platform deps)        | Queries: Yes, Lifecycle: No                   |
 | `ComponentType`            | Enum               | Component classification (EXECUTIVE, CORE, SW_MODEL, HW_MODEL, SUPPORT, DRIVER)         | Yes                                           |
 | `Status`                   | Enum               | Typed status codes with extension marker                                                | Yes                                           |
-| `SystemComponentBase`      | Abstract class     | Full-featured base (lifecycle, status, logging, data descriptors)                       | Queries: Yes, Lifecycle: No                   |
+| `SystemComponentBase`      | Abstract class     | POSIX-tier base on ComponentCore (TPRM, internal bus, logging, data descriptors)        | Queries: Yes, Lifecycle: No                   |
 | `SystemComponent<T>`       | Template class     | A/B parameter staging with file loading and hot-reload                                  | `activeParams()`: Yes, `load()`/`apply()`: No |
 | `SchedulableComponentBase` | Abstract class     | Base for components with scheduled tasks                                                | Task lookup: Yes, Registration: No            |
 | `CoreComponentBase`        | Abstract class     | Base for non-schedulable core components (scheduler, filesystem)                        | Queries: Yes                                  |
@@ -60,7 +68,7 @@ Component base classes and lifecycle management for the Apex executive framework
 | Task scheduling configuration (freq, priority) | No -- scheduler owns config                    |
 | Component-to-component messaging               | No -- use `IInternalBus` (separate library)    |
 
-**Design intent:** Three-tier component hierarchy. `IComponent` is the universal contract (no heavy deps). `SystemComponentBase` adds lifecycle, logging, data descriptors, and TPRM support for Linux/RTOS. `McuComponentBase` provides static-allocation implementation for MCUs. A/B parameter staging enables lock-free RT parameter access with zero-allocation hot-reload.
+**Design intent:** Four-tier component hierarchy. `IComponent` is the universal contract (no heavy deps). `ComponentCore` adds the concrete identity / lifecycle / registration state shared by every implementation, with no platform deps. `SystemComponentBase` (POSIX tier) extends ComponentCore with TPRM, logging, data descriptors, and internal bus access. `McuComponentBase` (MCU tier) extends ComponentCore with static-allocation contracts. The shared ComponentCore lets `ComponentRegistry` accept either tier, so MCU components register through the same call path POSIX components use. A/B parameter staging enables lock-free RT parameter access with zero-allocation hot-reload.
 
 ---
 
