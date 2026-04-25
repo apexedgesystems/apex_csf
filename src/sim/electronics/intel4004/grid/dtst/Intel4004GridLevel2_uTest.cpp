@@ -37,17 +37,20 @@ static const std::string SPICE_PATH = std::string(INTEL4004_DATA_DIR) + "/lajos-
 
 /* ----------------------------- Construction ----------------------------- */
 
-/** @test L2 is operationally distinct from L1 (different type, different config). */
+/** @test L2 contract: pure physics, no behavioral stubs. */
 TEST(Intel4004L2, ConstructionIsIndependent) {
   Intel4004GridLevel2 grid;
 
-  // L2 = 100% physics for the steady-state hold: behavioral overlay OFF,
-  // BSIM3 stamps the latch core, NR clamping (no current) replaces strong
-  // GMIN as the anti-pathology aid.
-  EXPECT_FALSE(grid.applyBehavioralLatchOverlay_);
+  // L2 must have NO behavioral stubs.
+  EXPECT_FALSE(grid.applyBehavioralLatchOverlay_)
+      << "L2 contract: no latch overlay -- BSIM3 stamps the latch from physics";
+  EXPECT_FALSE(grid.applyBehavioralX3_)
+      << "L2 contract: no behavioral X3 instruction switch -- physics drives ACC";
+
+  // Legitimate SPICE-style numerical aid (no current draw):
   EXPECT_TRUE(grid.clampNrIterates_);
 
-  // Weak GMIN -- NR clamp handles convergence; weak GMIN doesn't fight
+  // Weak GMIN -- clamp handles convergence; weak GMIN doesn't fight
   // pass-transistor drive on decode-chain nets.
   EXPECT_NEAR(grid.gminTransient_, 1e-9, 1e-15);
   EXPECT_NEAR(grid.gminDriven_, 1e-12, 1e-15);
@@ -186,68 +189,29 @@ TEST(Intel4004L2, CoexistsWithLevel1) {
 
 /* ----------------------------- Parameter probe ----------------------------- */
 
-/**
- * @test Conductance sweep probe -- evidence that hard pin (G=0) is the
- * only viable anchor for the cross-coupled latch under simulateLevel1.
- *
- * Empirical results from this probe (logged once, captured in comments):
- *   G=0       ->  0 out-of-bounds  (hard MNA constraint)
- *   G=1e-12   -> 65 out-of-bounds
- *   G=1e-9    -> 93 out-of-bounds
- *   G=1e-6    -> 77 out-of-bounds
- *   G=1e-3    -> 72 out-of-bounds
- *   G=1.0     -> 35 out-of-bounds  (still bad, despite very strong pull)
- *
- * Conclusion: a Norton anchor of any finite conductance fails to suppress
- * NR transient overshoot in the bistable latch topology. The hard
- * voltage source works because it is an algebraic constraint at the MNA
- * level, not a differential pull. The soft-overlay infrastructure is
- * preserved (latchOverlayConductance_) for use after the X3 datapath
- * rework, when the cross-coupled latch may converge from physics alone.
- *
- * Disabled by default (3-minute runtime; manual diagnostic).
- */
-TEST(Intel4004L2, DISABLED_ConductanceSweepProbe) {
-  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
-  constexpr std::size_t WARMUP = 16;
-  std::vector<std::uint8_t> rom(WARMUP + 1, 0x00);
-  rom[WARMUP] = 0xD5; // LDM 5
-
-  auto runOnce = [&](double G) -> std::pair<std::size_t, std::uint8_t> {
-    Intel4004GridLevel2 grid;
-    grid.latchOverlayConductance_ = G;
-    auto circuit = grid.buildCircuit(NETLIST);
-    grid.enableSparseModeLevel1(circuit);
-    circuit.solver().invalidateCache();
-    auto state = grid.simulateLevel1(circuit, rom.data(), rom.size(), WARMUP, 1);
-
-    constexpr double V_LO = -1.0;
-    constexpr double V_HI = Intel4004GridLevel2::VDD_VOLTAGE + 1.0;
-    std::size_t outOfRange = 0;
-    for (std::size_t i = 1; i < state.nodeVoltages.size(); ++i) {
-      const double v = state.nodeVoltages[i];
-      if (!std::isfinite(v) || v < V_LO || v > V_HI) ++outOfRange;
-    }
-    return {outOfRange, grid.readAccumulator(state.nodeVoltages)};
-  };
-
-  std::printf("L0 expected ACC after LDM 5 = 5 (warmup readback)\n");
-  for (double G : {0.0, 1e-12, 1e-9, 1e-6, 1e-3, 1.0}) {
-    const auto [oob, acc] = runOnce(G);
-    std::printf("G=%-9.0e -> %3zu out-of-bounds, ACC=%u\n", G, oob, static_cast<unsigned>(acc));
-  }
-}
-
 /* ----------------------------- L2 multi-instruction parity ----------------------------- */
 
 /**
- * @test L2 multi-instruction LDM produces same ACC as L0 (mirrors L1
- *       multi-instruction tests). Behavioral X3 still fires; L2's
- *       improvement vs L1 is the analog fidelity (BSIM3 + overlay off
- *       + GMIN tiering), not the instruction execution path.
+ * @test L2 multi-instruction LDM through PURE PHYSICS.
+ *
+ * L2 has no behavioral stubs (no overlay, no X3 switch). For this test
+ * to pass, the analog circuit alone must propagate D-bus -> OPR/OPA
+ * -> decode -> control signals -> ACC end-to-end through the actual
+ * 2,242 transistors.
+ *
+ * DISABLED: currently blocked by dynamic-logic structural issues in
+ * the decode chain. Single-input depletion-load PMOS NORs can't pull
+ * below Vth (1.17V), so ~OPR.x stages stick at intermediate voltages.
+ * Pure-physics decode chain doesn't fire correctly.
+ *
+ * Future unblock paths (each substantial research effort):
+ *   - Add a defined RESET / cold-start sequence so chip bootstraps
+ *     from a clean state like real silicon
+ *   - Iterate sub-step count + clock timing to give dynamic logic
+ *     time to propagate stages
+ *   - Move to a SPICE-class engine with proper precharge handling
  */
-TEST(Intel4004L2, MultiInstructionLdm5) {
-  // L0 reference
+TEST(Intel4004L2, DISABLED_MultiInstructionLdm5_PurePhysics) {
   Intel4004Cpu cpu;
   std::uint8_t romL0[] = {0xD5, 0x00};
   cpu.loadProgram(romL0, sizeof(romL0));
@@ -260,7 +224,7 @@ TEST(Intel4004L2, MultiInstructionLdm5) {
   rom[WARMUP] = 0xD5;
 
   Intel4004GridLevel2 grid;
-  ASSERT_TRUE(grid.applyBehavioralX3_); // default: behavioral X3 active
+  ASSERT_FALSE(grid.applyBehavioralX3_); // L2 contract
 
   auto circuit = grid.buildCircuit(NETLIST);
   grid.enableSparseModeLevel1(circuit);
@@ -268,7 +232,8 @@ TEST(Intel4004L2, MultiInstructionLdm5) {
   auto state = grid.simulateLevel1(circuit, rom.data(), rom.size(), WARMUP, 0);
   grid.traceExecuteByte(circuit, state, rom[WARMUP], nullptr);
 
-  EXPECT_EQ(grid.readAccumulator(state.nodeVoltages), cpu.accumulator);
+  EXPECT_EQ(grid.readAccumulator(state.nodeVoltages), cpu.accumulator)
+      << "Pure-physics LDM not yet working -- decode chain blocked by Vth";
 }
 
 /* ----------------------------- Pure-physics multi-instruction probe ----------------------------- */

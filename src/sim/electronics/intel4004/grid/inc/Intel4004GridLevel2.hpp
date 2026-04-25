@@ -77,22 +77,36 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
   /// execution via `traceExecuteByte`'s C++ switch for the data-bus ->
   /// OPA -> ACC transfer. simulateLevel1 only runs the analog circuit;
   /// instruction state propagation requires the trace path.
+  /// L2 = PURE PHYSICS. No behavioral stubs.
+  ///
+  /// L1 owns all behavioral overrides (latch overlay, X3 instruction
+  /// switch, OPR/OPA/SC/timing-net forcing in forceBehavioral). L2's
+  /// contract is: force only real external pins (CLK1, CLK2, D0..D3
+  /// during ROM input phases); let physics compute everything else.
+  ///
+  /// What L2 owns architecturally:
+  ///   - BSIM3 latch-feedback stamp (smooth Vgst_eff captures the
+  ///     moderate-inversion conduction Shichman-Hodges misses)
+  ///   - Behavioral overlay OFF (storage nets driven by physics)
+  ///   - NR clamp [-1V, +6V] post-iteration -- legitimate SPICE-style
+  ///     numerical aid (no current draw, just bounds NR step pathology)
+  ///   - Weak GMIN (1e-9) -- no longer the anti-pathology aid; clamp
+  ///     does that job, freeing weak GMIN to not fight pass-transistor
+  ///     drive on dynamic-logic decode-chain nets like ~OPR.x
+  ///   - Behavioral X3 instruction switch DISABLED
+  ///
+  /// Honest limit: pure-physics multi-instruction is currently blocked
+  /// by structural issues in the decode chain (single-input depletion-
+  /// load PMOS NORs can't pull below Vth = 1.17V, so dynamic logic
+  /// stages stick at intermediate voltages). Steady-state hold works.
+  /// Multi-instruction does not work end-to-end without the L1
+  /// behavioral stubs that L2 explicitly does NOT inherit.
   Intel4004GridLevel2() {
-    applyBehavioralLatchOverlay_ = false; // BSIM3 + clamp converge alone
-    latchOverlayConductance_ = 0.0;
-    // Algebraic anchor via NR clamp instead of strong GMIN. The clamp
-    // is a no-current limiter that caps NR step pathology; weak GMIN
-    // doesn't fight pass-transistor drive on the decode chain.
-    clampNrIterates_ = true;
-    gminTransient_ = 1e-9;                // weak (no longer the anti-pathology aid)
-    gminDriven_ = 1e-12;                  // tiny on NOR-output / clocks
-    // Behavioral X3 instruction execution stays ON in default L2 -- same
-    // digital execution path as L1, but with BSIM3 + overlay-off analog
-    // fidelity around the latch nets. The pure-physics X3 datapath
-    // (`applyBehavioralX3_ = false`) is an explicit opt-in for probing
-    // the remaining 100% physics multi-instruction milestone; see
-    // `Intel4004L2.DISABLED_PurePhysicsLdm5`.
-    forceM1SampledData_ = true; // bypass data-bus contention during M1 sampling
+    applyBehavioralLatchOverlay_ = false; // L2 contract: pure physics, no overlay
+    applyBehavioralX3_ = false;           // L2 contract: pure physics, no X3 switch
+    clampNrIterates_ = true;              // legitimate numerical aid (no current draw)
+    gminTransient_ = 1e-9;
+    gminDriven_ = 1e-12;                  // tiny GMIN on NOR-output / clock nets
   }
 
   /// BSIM3 parameter template for the latch feedback core. Per-transistor

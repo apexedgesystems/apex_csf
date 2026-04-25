@@ -70,17 +70,17 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// the MNA matrix is non-singular during NR iteration.
   double gminTransient_ = 1e-9; ///< GMIN for transient (can be ramped during warmup).
 
-  /// GMIN tier for "actively driven" nets (NOR outputs whose depletion
-  /// load provides an algebraic constraint, clock signals forced via NR
-  /// callback). 0 = use gminTransient_ uniformly. When set, this is
-  /// applied INSTEAD of gminTransient_ on driven nets, while everything
-  /// else (floating storage, pass-gate intermediates) gets gminTransient_.
-  ///
-  /// Use case: L2 with overlay off needs strong gminTransient_ (~1e-3)
-  /// to algebraically anchor floating nets, but NOR outputs would have
-  /// their logic levels distorted by 1e-3. Setting gminDriven_ = 1e-9
-  /// keeps them clean.
-  double gminDriven_ = 0.0;
+  /// Plug-in hooks for derived levels (default values preserve L1 behavior).
+  /// L1 default: behavioral overlay ON, behavioral X3 ON, no clamp,
+  /// uniform GMIN (gminDriven_=0). L2 sets these to disable behavioral
+  /// stubs and add legitimate numerical aids per the COMPONENT_STATUS
+  /// L2 contract (full physics, no behavioral stubs).
+  bool applyBehavioralLatchOverlay_ = true;  ///< L2 sets false: pure physics, no overlay.
+  bool applyBehavioralX3_ = true;            ///< L2 sets false: pure physics, no X3 switch.
+  bool clampNrIterates_ = false;             ///< L2 sets true: NR voltage clamp (no current).
+  double gminDriven_ = 0.0;                  ///< L2 sets >0: tiny GMIN on NOR-output/clock nets.
+  static constexpr double V_NR_LO = -1.0;
+  static constexpr double V_NR_HI = 6.0;
 
   /// Parasitic capacitance for Level 1 model.
   static constexpr double CPARA_L1 = 10e-15;
@@ -113,53 +113,6 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// Resistive load mode: depletion loads stamped as fixed conductance (G_LOAD).
   /// Required for the working ACC=5 component hybrid configuration.
   bool resistiveLoads_ = true;
-
-  /// Pin DYNAMIC_STORAGE nets to clean rails after the transistor stamps.
-  /// L1 default = hard voltage source (the 15% behavioral fraction).
-  /// L2 = soft Norton anchor at `latchOverlayConductance_`, weak enough
-  ///      that BSIM3 dominates the operating point but strong enough to
-  ///      suppress spurious bistable flips from clock-edge transients.
-  bool applyBehavioralLatchOverlay_ = true;
-
-  /// Execute LDM/ADD/SUB/etc. instructions behaviorally at X3 of each
-  /// machine cycle, writing the result directly to ACC node voltages
-  /// (bypassing physics). L1 default = true (the digital execution path
-  /// the multi-instruction tests rely on). L2 sets this false to test
-  /// pure-physics multi-instruction: the analog data-bus -> OPA -> ACC
-  /// transistor connections must propagate the value end-to-end.
-  bool applyBehavioralX3_ = true;
-
-  /// Force the M1.CLK2 sampled-data nodes (N1008..N1011 in the Lajos
-  /// netlist) directly to the D-bit values, bypassing the chip-internal
-  /// data-bus drivers that fight external forcing of D0..D3 during M1.
-  /// L1 default = false (legacy behavior). L2 sets true when probing
-  /// pure-physics multi-instruction: gives the decode chain correct
-  /// inputs even when bus tri-state isn't yet working from physics.
-  bool forceM1SampledData_ = false;
-
-  /// Clamp NR iterates to [V_NR_LO, V_NR_HI] after each NR step.
-  /// This is a "post-iteration limiter" -- a numerical convergence aid
-  /// distinct from GMIN: it adds zero current to the circuit but
-  /// algebraically forces nodes back into a sensible range when the
-  /// linear solver produces unbounded steps. Enabling this lets us
-  /// drop gminTransient_ to weak (1e-9) without reintroducing the
-  /// ±100s-of-volts NR pathology, freeing pass-transistor drive on
-  /// pass-driven nets like ~OPR.x in the decode chain.
-  bool clampNrIterates_ = false;
-  static constexpr double V_NR_LO = -1.0;
-  static constexpr double V_NR_HI = 6.0;
-
-  /// Conductance of the soft Norton anchor when overlay is enabled.
-  /// 0.0 = hard voltage source (default; preserves L1 behavioral pinning).
-  /// > 0 = Norton equivalent: addConductance(net, 0, G) + addCurrent(net, 0, G*V).
-  ///
-  /// Numerical interpretation: at conductance G, the anchor pulls a node
-  /// toward `storedV` with current G*(storedV - V_node). When G is much
-  /// smaller than the BSIM3 stamp's gm at the operating point, the anchor
-  /// is dominated by physics; when G is much larger, the node is pinned.
-  /// The MC-calibrated sweet spot is the smallest G where NR converges
-  /// throughout the warmup -> program transition.
-  double latchOverlayConductance_ = 0.0;
 
   /// Compute per-transistor Kp from calibrated W/L bins.
   void computeTransistorKp() const {
@@ -310,20 +263,6 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         for (int b = 0; b < 4; ++b) {
           bool bitSet = (dataBusDrive_ >> b) & 1;
           fv(dataBusNets_[b], bitSet ? 0.0 : VDD_VOLTAGE);
-        }
-      }
-
-      // Optionally also force the M1.CLK2 sampled-data nodes directly,
-      // bypassing the data-bus contention with chip-internal drivers.
-      // Per Kintli reverse-engineering: N1011=D0, N1010=D1, N1009=D2,
-      // N1008=D3 sampled when SC&M12&CLK2 fires.
-      if (forceM1SampledData_ && machineState_ == 3 && dataBusDriving_ && !clk2High_) {
-        const char* nNames[] = {"N1011", "N1010", "N1009", "N1008"}; // bit 0..3
-        for (int b = 0; b < 4; ++b) {
-          auto id = findNet(nNames[b]);
-          if (id == 0) continue;
-          bool bitSet = (dataBusDrive_ >> b) & 1;
-          fv(id, bitSet ? 0.0 : VDD_VOLTAGE);
         }
       }
 
@@ -507,7 +446,7 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         }
       }
 
-      // Optional plug-in: post-iteration voltage clamp.
+      // Optional plug-in (default off): post-iteration voltage clamp to rails.
       if (clampNrIterates_) {
         for (std::size_t i = 1; i < v.size(); ++i) {
           if (i == vdd_) continue;
@@ -1184,16 +1123,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     // nrLimitCallback path in traceExecuteByte, which samples pass gate
     // states and updates latchValues_ between NR iterations.
     if (applyBehavioralLatchOverlay_ && componentMode_ && !latchValues_.empty()) {
-      if (latchOverlayConductance_ > 0.0) {
-        const double G = latchOverlayConductance_;
-        for (auto& [net, storedV] : latchValues_) {
-          mna.addConductance(net, circuit::Circuit::ground(), G);
-          mna.addCurrent(net, circuit::Circuit::ground(), G * storedV);
-        }
-      } else {
-        for (auto& [net, storedV] : latchValues_) {
-          mna.addVoltageSource(net, 0, storedV);
-        }
+      for (auto& [net, storedV] : latchValues_) {
+        mna.addVoltageSource(net, 0, storedV);
       }
     }
   }
