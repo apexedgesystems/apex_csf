@@ -56,6 +56,12 @@ using devices::nonlinear::MosfetBsim3Params;
  */
 struct Intel4004GridLevel2 : Intel4004GridLevel1 {
 
+  /// L2 = 100% physics. The behavioral latch overlay is OFF: BSIM3's
+  /// smooth Vgst_eff resolves the cross-coupled latch from physics alone.
+  Intel4004GridLevel2() {
+    applyBehavioralLatchOverlay_ = false;
+  }
+
   /// BSIM3 parameter template for the latch feedback core. Per-transistor
   /// `Kp` is overridden from `transistorKp_` (W/L-binned calibrated values).
   /// `n_factor = 1.8` is calibrated for the 10 micron PMOS process and

@@ -102,6 +102,15 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// Required for the working ACC=5 component hybrid configuration.
   bool resistiveLoads_ = true;
 
+  /// Pin DYNAMIC_STORAGE nets to clean rails via voltage sources after the
+  /// transistor stamps. This is the 15% behavioral fraction of L1: the
+  /// cross-coupled latch cannot resolve from Shichman-Hodges alone, so we
+  /// pin its outputs to the digital truth held in `latchValues_`.
+  ///
+  /// L2 (Intel4004GridLevel2) sets this to false: BSIM3's smooth Vgst_eff
+  /// resolves the latch from physics alone -> true 100% physics.
+  bool applyBehavioralLatchOverlay_ = true;
+
   /// Compute per-transistor Kp from calibrated W/L bins.
   void computeTransistorKp() const {
     transistorKp_.resize(transistors_.size());
@@ -1091,7 +1100,7 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     // voltages. The stored values are updated by the forceBehavioral/
     // nrLimitCallback path in traceExecuteByte, which samples pass gate
     // states and updates latchValues_ between NR iterations.
-    if (componentMode_ && !latchValues_.empty()) {
+    if (applyBehavioralLatchOverlay_ && componentMode_ && !latchValues_.empty()) {
       for (auto& [net, storedV] : latchValues_) {
         mna.addVoltageSource(net, 0, storedV);
       }
