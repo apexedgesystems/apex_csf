@@ -2,15 +2,20 @@
 #define APEX_SYSTEM_CORE_EXECUTIVE_BASE_HPP
 /**
  * @file ExecutiveBase.hpp
- * @brief Base for executives (status, init(), run()), sharing one SystemLog across the system.
+ * @brief POSIX-tier executive base layered on SystemComponentBase + ExecutiveCore.
  *
  * Notes:
- * - Inherits status/init/logger behavior from SystemComponentBase.
- * - Derived executives create the single SystemLog and install it into the base.
- * - init() may perform I/O; not real-time safe.
+ * - SystemComponentBase provides ComponentCore identity + POSIX component
+ *   features (TPRM, internal bus, command handling, logging).
+ * - ExecutiveCore provides the IExecutive contract and the canonical
+ *   executive identity constants (id=0, name="Executive", type=EXECUTIVE).
+ * - The two bases meet here; identity overrides return the ExecutiveCore
+ *   constants so the component-side identity matches the executive-side.
+ * - Derived executives create the single SystemLog and install it into the
+ *   base; init() may perform I/O and is not real-time safe.
  */
 
-#include "src/system/core/executive/base/inc/IExecutive.hpp"
+#include "src/system/core/executive/core/inc/ExecutiveCore.hpp"
 #include "src/system/core/infrastructure/system_component/apex/inc/SystemComponentBase.hpp"
 
 #include <cstdint>
@@ -19,34 +24,38 @@ namespace executive {
 
 /**
  * @class ExecutiveBase
- * @brief Minimal executive interface layered on SystemComponentBase.
+ * @brief POSIX executive base mixing SystemComponentBase and ExecutiveCore.
  *
  * Status handling mirrors other components:
  * - SUCCESS = 0 (via SystemComponentBase::Status)
  * - status() returns uint8_t; cast to/from Status where needed.
  */
-class ExecutiveBase : public system_core::system_component::SystemComponentBase, public IExecutive {
+class ExecutiveBase : public system_core::system_component::SystemComponentBase,
+                      public ExecutiveCore {
 public:
   using Status = system_core::system_component::Status;
 
   /* ----------------------------- Component Identity ----------------------------- */
 
-  /// Component type identifier (0 = Executive, the root component).
-  static constexpr std::uint16_t COMPONENT_ID = 0;
-
-  /// Component name for collision detection.
-  static constexpr const char* COMPONENT_NAME = "Executive";
-
-  /** @brief Get component type identifier. */
-  [[nodiscard]] std::uint16_t componentId() const noexcept override { return COMPONENT_ID; }
+  /** @brief Get component type identifier (0 = Executive). */
+  [[nodiscard]] std::uint16_t componentId() const noexcept override {
+    return ExecutiveCore::COMPONENT_ID;
+  }
 
   /** @brief Get component name. */
-  [[nodiscard]] const char* componentName() const noexcept override { return COMPONENT_NAME; }
+  [[nodiscard]] const char* componentName() const noexcept override {
+    return ExecutiveCore::COMPONENT_NAME;
+  }
 
   /** @brief Get component type classification. */
   [[nodiscard]] system_core::system_component::ComponentType
   componentType() const noexcept override {
-    return system_core::system_component::ComponentType::EXECUTIVE;
+    return ExecutiveCore::COMPONENT_TYPE;
+  }
+
+  /** @brief Component label. */
+  [[nodiscard]] const char* label() const noexcept override {
+    return ExecutiveCore::COMPONENT_LABEL;
   }
 
   /* ----------------------------- Lifecycle ----------------------------- */
@@ -64,9 +73,6 @@ public:
 
   /** @brief Get number of completed execution cycles. */
   [[nodiscard]] uint64_t cycleCount() const noexcept override = 0;
-
-  /** @brief Component label. */
-  [[nodiscard]] const char* label() const noexcept override { return "EXECUTIVE"; }
 
 protected:
   /** @brief Default constructor. */

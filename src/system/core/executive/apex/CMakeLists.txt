@@ -42,6 +42,7 @@ apex_add_library(
   ${CPP_SOURCES}
   DEPS_PUBLIC
   executive_base
+  executive_core
   system_core_action
   system_core_registry
   system_core_interface

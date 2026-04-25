@@ -49,7 +49,7 @@
  */
 
 #include "src/system/core/components/scheduler/lite/inc/SchedulerLite.hpp"
-#include "src/system/core/executive/base/inc/IExecutive.hpp"
+#include "src/system/core/executive/core/inc/ExecutiveCore.hpp"
 #include "src/system/core/executive/lite/inc/ITickSource.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/ComponentType.hpp"
 #include "src/system/core/infrastructure/system_component/lite/inc/LiteComponentBase.hpp"
@@ -58,11 +58,6 @@
 
 namespace executive {
 namespace lite {
-
-/* ----------------------------- Constants ----------------------------- */
-
-/// Executive component ID (matches apex executive).
-constexpr uint16_t LITE_EXECUTIVE_COMPONENT_ID = 0;
 
 /* ----------------------------- LiteExecutive ----------------------------- */
 
@@ -73,8 +68,10 @@ constexpr uint16_t LITE_EXECUTIVE_COMPONENT_ID = 0;
  * Provides a simple main loop that coordinates a tick source and scheduler.
  * The executive waits for each tick, then executes the scheduler.
  *
- * Inherits IComponent implementation from LiteComponentBase. Implements
- * IExecutive for executive-specific methods (run, shutdown, cycleCount).
+ * Inherits IComponent state from LiteComponentBase (via ComponentCore) and
+ * the IExecutive contract / executive identity constants from
+ * ExecutiveCore. The two bases meet here so the executive presents a
+ * single ComponentCore subobject and a single IExecutive interface.
  *
  * Owns SchedulerLite by value. Tick source is injected via constructor
  * (dependency injection) to allow testing with FreeRunningSource on
@@ -88,7 +85,7 @@ constexpr uint16_t LITE_EXECUTIVE_COMPONENT_ID = 0;
 template <size_t MaxTasks = system_core::scheduler::lite::DEFAULT_LITE_MAX_TASKS,
           typename Counter = uint64_t>
 class LiteExecutive : public system_core::system_component::lite::LiteComponentBase,
-                      public IExecutive {
+                      public ExecutiveCore {
 public:
   /// Owned scheduler type.
   using Scheduler = system_core::scheduler::lite::SchedulerLite<MaxTasks, Counter>;
@@ -122,33 +119,35 @@ public:
 
   /**
    * @brief Get component type identifier.
-   * @return Executive component ID (0).
+   * @return Executive component ID (0, from ExecutiveCore).
    * @note RT-safe: O(1).
    */
   [[nodiscard]] uint16_t componentId() const noexcept override {
-    return LITE_EXECUTIVE_COMPONENT_ID;
+    return ExecutiveCore::COMPONENT_ID;
   }
 
   /**
    * @brief Get component name.
-   * @return "LiteExecutive".
+   * @return "LiteExecutive" (MCU-tier descriptive name).
    * @note RT-safe: O(1).
+   * @note Differs from ExecutiveCore::COMPONENT_NAME ("Executive") to give
+   *       MCU executive a distinct identifier in mixed-fleet diagnostics.
    */
   [[nodiscard]] const char* componentName() const noexcept override { return "LiteExecutive"; }
 
   /**
    * @brief Get component type classification.
-   * @return ComponentType::EXECUTIVE.
+   * @return ComponentType::EXECUTIVE (from ExecutiveCore).
    * @note RT-safe: O(1).
    */
   [[nodiscard]] system_core::system_component::ComponentType
   componentType() const noexcept override {
-    return system_core::system_component::ComponentType::EXECUTIVE;
+    return ExecutiveCore::COMPONENT_TYPE;
   }
 
   /**
    * @brief Get diagnostic label.
-   * @return "EXEC_LITE".
+   * @return "EXEC_LITE" (MCU-tier label, distinct from POSIX "EXECUTIVE").
    * @note RT-safe: O(1).
    */
   [[nodiscard]] const char* label() const noexcept override { return "EXEC_LITE"; }
