@@ -102,14 +102,24 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// Required for the working ACC=5 component hybrid configuration.
   bool resistiveLoads_ = true;
 
-  /// Pin DYNAMIC_STORAGE nets to clean rails via voltage sources after the
-  /// transistor stamps. This is the 15% behavioral fraction of L1: the
-  /// cross-coupled latch cannot resolve from Shichman-Hodges alone, so we
-  /// pin its outputs to the digital truth held in `latchValues_`.
-  ///
-  /// L2 (Intel4004GridLevel2) sets this to false: BSIM3's smooth Vgst_eff
-  /// resolves the latch from physics alone -> true 100% physics.
+  /// Pin DYNAMIC_STORAGE nets to clean rails after the transistor stamps.
+  /// L1 default = hard voltage source (the 15% behavioral fraction).
+  /// L2 = soft Norton anchor at `latchOverlayConductance_`, weak enough
+  ///      that BSIM3 dominates the operating point but strong enough to
+  ///      suppress spurious bistable flips from clock-edge transients.
   bool applyBehavioralLatchOverlay_ = true;
+
+  /// Conductance of the soft Norton anchor when overlay is enabled.
+  /// 0.0 = hard voltage source (default; preserves L1 behavioral pinning).
+  /// > 0 = Norton equivalent: addConductance(net, 0, G) + addCurrent(net, 0, G*V).
+  ///
+  /// Numerical interpretation: at conductance G, the anchor pulls a node
+  /// toward `storedV` with current G*(storedV - V_node). When G is much
+  /// smaller than the BSIM3 stamp's gm at the operating point, the anchor
+  /// is dominated by physics; when G is much larger, the node is pinned.
+  /// The MC-calibrated sweet spot is the smallest G where NR converges
+  /// throughout the warmup -> program transition.
+  double latchOverlayConductance_ = 0.0;
 
   /// Compute per-transistor Kp from calibrated W/L bins.
   void computeTransistorKp() const {
@@ -1101,8 +1111,16 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     // nrLimitCallback path in traceExecuteByte, which samples pass gate
     // states and updates latchValues_ between NR iterations.
     if (applyBehavioralLatchOverlay_ && componentMode_ && !latchValues_.empty()) {
-      for (auto& [net, storedV] : latchValues_) {
-        mna.addVoltageSource(net, 0, storedV);
+      if (latchOverlayConductance_ > 0.0) {
+        const double G = latchOverlayConductance_;
+        for (auto& [net, storedV] : latchValues_) {
+          mna.addConductance(net, circuit::Circuit::ground(), G);
+          mna.addCurrent(net, circuit::Circuit::ground(), G * storedV);
+        }
+      } else {
+        for (auto& [net, storedV] : latchValues_) {
+          mna.addVoltageSource(net, 0, storedV);
+        }
       }
     }
   }

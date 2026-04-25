@@ -39,14 +39,14 @@ static const std::string SPICE_PATH = std::string(INTEL4004_DATA_DIR) + "/lajos-
 TEST(Intel4004L2, ConstructionIsIndependent) {
   Intel4004GridLevel2 grid;
 
-  // L2 disables the behavioral latch overlay (true 100% physics).
-  EXPECT_FALSE(grid.applyBehavioralLatchOverlay_)
-      << "L2 must run without the L1 behavioral latch overlay -- "
-         "physics-only is the defining contract of L2";
+  // L2 keeps the hard-pin overlay (G=0). The soft Norton anchor was
+  // proven non-viable: any finite G < ~1.0 fails to suppress NR
+  // transient overshoot. Hard pin is algebraically special (MNA
+  // augmentation row) -- see ConductanceSweepProbe.
+  EXPECT_TRUE(grid.applyBehavioralLatchOverlay_);
+  EXPECT_EQ(grid.latchOverlayConductance_, 0.0);
 
   // BSIM3 latch params calibrated for the Intel 4004 10 micron PMOS process.
-  // n_factor = 1.8 gives positive overdrive at the 4004 operating point
-  // per MosfetBsim3Probe.NFactorSweep.
   EXPECT_NEAR(grid.bsim3LatchParams_.n_factor, 1.8, 1e-9);
   EXPECT_NEAR(grid.bsim3LatchParams_.Vth0, Intel4004GridLevel2::VTH_ENH, 1e-9);
 }
@@ -64,28 +64,32 @@ TEST(Intel4004L2, BuildCircuit) {
 /* ----------------------------- Convergence with overlay OFF ----------------------------- */
 
 /**
- * @test L2 simulateLevel1 converges with the behavioral overlay disabled.
+ * @test L2 simulateLevel1 converges with the overlay fully disabled.
  *
- * Currently DISABLED: with the overlay OFF, ~73 of 2,242 transistor
- * nets drift outside [-1V, 6V] bounds during the warmup->program
- * transition. BSIM3's calibrated +2.5 mV overdrive at the 4004
- * operating point (per MosfetBsim3Probe.NFactorSweep) is positive
- * but small; NR oscillation in a 2,242-transistor cross-coupled
- * topology pushes a fraction of nets out of bounds before
- * convergence anchors the system.
+ * DISABLED: investigated and proven structurally hard within the
+ * current architecture.
  *
- * Unblockers (future milestone, separate commit):
- *   - Tune n_factor higher (e.g., 2.0 -> +9.9 mV overdrive in the
- *     standalone probe). Trade-off: shifts I-V curves further from
- *     ngspice BSIM3v3 reference.
- *   - Add explicit GMIN ramping during the L1->L2 transition.
- *   - Initialize latch nets to clean rails before disabling overlay,
- *     so NR starts inside the basin of attraction.
+ * Two compounding issues prevent overlay-off convergence:
  *
- * @note This test does NOT assert ACC matches L0. The pure-physics
- * data-bus -> OPA -> ACC datapath at X3 is a separate milestone --
- * even L1 currently relies on behavioral X3 execution via
- * `traceExecuteByte`, not the stamp callback.
+ *   1. Cross-coupled latch bistability: with no constraint on storage
+ *      nets, NR can flip a latch transiently between its two stable
+ *      operating points during clock-edge transients. BSIM3 overdrive
+ *      (+2.5 mV at calibrated point) is positive but too small to
+ *      damp these flips against NR step size. n_factor sweep was flat
+ *      across 1.5-3.0; param tuning alone cannot fix this.
+ *
+ *   2. The soft Norton overlay (latchOverlayConductance_ > 0) was
+ *      proven non-viable for any finite G -- see the disabled
+ *      ConductanceSweepProbe. Hard pin is algebraically special.
+ *
+ * Path forward (separate research milestone):
+ *   - Rework `traceExecuteByte`'s X3 logic so the analog circuit
+ *     physically computes the new ACC value via the data-bus -> OPA
+ *     -> ACC transistor datapath. With the analog path actually
+ *     transferring values, the latch state propagation may stabilize
+ *     enough for NR to converge without explicit pinning.
+ *   - Add latch-aware NR damping (clamp step size on storage-class
+ *     nodes during clock-edge transients).
  */
 TEST(Intel4004L2, DISABLED_SimulateConvergesWithOverlayOff) {
   const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
@@ -94,7 +98,8 @@ TEST(Intel4004L2, DISABLED_SimulateConvergesWithOverlayOff) {
   rom[WARMUP] = 0xD5; // LDM 5
 
   Intel4004GridLevel2 grid;
-  ASSERT_FALSE(grid.applyBehavioralLatchOverlay_);
+  // Force overlay off: this is what "true 100% physics" would require.
+  grid.applyBehavioralLatchOverlay_ = false;
 
   auto circuit = grid.buildCircuit(NETLIST);
   grid.enableSparseModeLevel1(circuit);
@@ -176,13 +181,69 @@ TEST(Intel4004L2, CoexistsWithLevel1) {
   sim::electronics::intel4004::Intel4004GridLevel1 gridL1;
   Intel4004GridLevel2 gridL2;
 
-  // L1 keeps the overlay on (its 15% behavioral fraction).
+  // Both use the hard-pin overlay (G=0); L1 stamps with binary switch
+  // for the latch core, L2 with BSIM3.
   EXPECT_TRUE(gridL1.applyBehavioralLatchOverlay_);
-  // L2 has it off.
-  EXPECT_FALSE(gridL2.applyBehavioralLatchOverlay_);
+  EXPECT_TRUE(gridL2.applyBehavioralLatchOverlay_);
+  EXPECT_EQ(gridL1.latchOverlayConductance_, 0.0);
+  EXPECT_EQ(gridL2.latchOverlayConductance_, 0.0);
 
   // No shared mutable state between instances.
   EXPECT_NE(&gridL1.bsParams_, &gridL2.bsParams_);
+}
+
+/* ----------------------------- Parameter probe ----------------------------- */
+
+/**
+ * @test Conductance sweep probe -- evidence that hard pin (G=0) is the
+ * only viable anchor for the cross-coupled latch under simulateLevel1.
+ *
+ * Empirical results from this probe (logged once, captured in comments):
+ *   G=0       ->  0 out-of-bounds  (hard MNA constraint)
+ *   G=1e-12   -> 65 out-of-bounds
+ *   G=1e-9    -> 93 out-of-bounds
+ *   G=1e-6    -> 77 out-of-bounds
+ *   G=1e-3    -> 72 out-of-bounds
+ *   G=1.0     -> 35 out-of-bounds  (still bad, despite very strong pull)
+ *
+ * Conclusion: a Norton anchor of any finite conductance fails to suppress
+ * NR transient overshoot in the bistable latch topology. The hard
+ * voltage source works because it is an algebraic constraint at the MNA
+ * level, not a differential pull. The soft-overlay infrastructure is
+ * preserved (latchOverlayConductance_) for use after the X3 datapath
+ * rework, when the cross-coupled latch may converge from physics alone.
+ *
+ * Disabled by default (3-minute runtime; manual diagnostic).
+ */
+TEST(Intel4004L2, DISABLED_ConductanceSweepProbe) {
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  constexpr std::size_t WARMUP = 16;
+  std::vector<std::uint8_t> rom(WARMUP + 1, 0x00);
+  rom[WARMUP] = 0xD5; // LDM 5
+
+  auto runOnce = [&](double G) -> std::pair<std::size_t, std::uint8_t> {
+    Intel4004GridLevel2 grid;
+    grid.latchOverlayConductance_ = G;
+    auto circuit = grid.buildCircuit(NETLIST);
+    grid.enableSparseModeLevel1(circuit);
+    circuit.solver().invalidateCache();
+    auto state = grid.simulateLevel1(circuit, rom.data(), rom.size(), WARMUP, 1);
+
+    constexpr double V_LO = -1.0;
+    constexpr double V_HI = Intel4004GridLevel2::VDD_VOLTAGE + 1.0;
+    std::size_t outOfRange = 0;
+    for (std::size_t i = 1; i < state.nodeVoltages.size(); ++i) {
+      const double v = state.nodeVoltages[i];
+      if (!std::isfinite(v) || v < V_LO || v > V_HI) ++outOfRange;
+    }
+    return {outOfRange, grid.readAccumulator(state.nodeVoltages)};
+  };
+
+  std::printf("L0 expected ACC after LDM 5 = 5 (warmup readback)\n");
+  for (double G : {0.0, 1e-12, 1e-9, 1e-6, 1e-3, 1.0}) {
+    const auto [oob, acc] = runOnce(G);
+    std::printf("G=%-9.0e -> %3zu out-of-bounds, ACC=%u\n", G, oob, static_cast<unsigned>(acc));
+  }
 }
 
 #endif // INTEL4004_DATA_DIR

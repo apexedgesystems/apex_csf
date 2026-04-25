@@ -56,10 +56,27 @@ using devices::nonlinear::MosfetBsim3Params;
  */
 struct Intel4004GridLevel2 : Intel4004GridLevel1 {
 
-  /// L2 = 100% physics. The behavioral latch overlay is OFF: BSIM3's
-  /// smooth Vgst_eff resolves the cross-coupled latch from physics alone.
+  /// L2 contract within the current architecture:
+  ///   - BSIM3 stamps the ~338 latch feedback transistors -> analog
+  ///     operating points around the cross-coupled latch are computed
+  ///     from accurate physics (smooth Vgst_eff captures moderate
+  ///     inversion that Shichman-Hodges misses).
+  ///   - Hard-pin overlay (G=0 -> addVoltageSource) still required.
+  ///     Soft Norton anchor at any finite G < ~1.0 fails to suppress
+  ///     NR transient overshoot in the cross-coupled topology -- see
+  ///     `Intel4004L2.ConductanceSweepProbe`. The hard pin is an
+  ///     algebraic MNA constraint that NR cannot violate, fundamentally
+  ///     different from a differential pull.
+  ///
+  /// Path to true 100% physics (separate milestone):
+  ///   - Rework the X3 datapath so the analog circuit physically
+  ///     computes new ACC value from data-bus -> OPA -> ACC, replacing
+  ///     the C++ switch in `traceExecuteByte`.
+  ///   - Without that, both L1 and L2 rely on behavioral instruction
+  ///     execution; only the analog visualization fidelity differs.
   Intel4004GridLevel2() {
-    applyBehavioralLatchOverlay_ = false;
+    applyBehavioralLatchOverlay_ = true;
+    latchOverlayConductance_ = 0.0; // hard pin (algebraic constraint)
   }
 
   /// BSIM3 parameter template for the latch feedback core. Per-transistor
