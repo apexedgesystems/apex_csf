@@ -3,9 +3,17 @@
 /**
  * @file ComponentRegistry.hpp
  * @brief Component registration helper with collision detection.
+ *
+ * The registry is intentionally tier-agnostic: it accepts any
+ * ComponentCore-derived component (POSIX SystemComponentBase, MCU
+ * McuComponentBase, future RTOS variants). Collision detection only
+ * inspects componentId() and componentName(), both available on
+ * ComponentCore. Platform-specific post-registration (TPRM loading,
+ * log init, internal bus wiring) stays in the executive that owns the
+ * registry.
  */
 
-#include "src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/core/inc/ComponentCore.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -33,12 +41,14 @@ struct ComponentRegistry {
 
   /**
    * @brief Register a component and get its instance index.
-   * @param component Pointer to component.
+   * @param component Pointer to component (any ComponentCore-derived type).
    * @param[out] instanceIndex Assigned instance index.
    * @return true on success, false on collision.
    * @note NOT RT-safe.
+   * @note Accepts ComponentCore* so MCU components can register through
+   *       the same registry that POSIX components use.
    */
-  bool registerComponent(SystemComponentBase* component, std::uint8_t& instanceIndex) {
+  bool registerComponent(ComponentCore* component, std::uint8_t& instanceIndex) {
     const std::uint16_t ID = component->componentId();
     const char* NAME = component->componentName();
 

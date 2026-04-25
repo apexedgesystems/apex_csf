@@ -15,6 +15,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponentStatus_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponentBase_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponent_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ComponentRegistry_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/PackedTprm_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DataCategory_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DataTarget_uTest.cpp"
@@ -32,6 +33,7 @@ apex_add_gtest(
   ${UNIT_TEST_SOURCES}
   LINK
   system_core_system_component
+  system_component_mcu
   system_core_logs
   utilities_helpers
   fmt::fmt
