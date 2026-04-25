@@ -88,6 +88,7 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
     // (`applyBehavioralX3_ = false`) is an explicit opt-in for probing
     // the remaining 100% physics multi-instruction milestone; see
     // `Intel4004L2.DISABLED_PurePhysicsLdm5`.
+    forceM1SampledData_ = true; // bypass data-bus contention during M1 sampling
   }
 
   /// BSIM3 parameter template for the latch feedback core. Per-transistor

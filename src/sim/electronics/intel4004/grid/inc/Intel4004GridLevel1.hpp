@@ -129,6 +129,14 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// transistor connections must propagate the value end-to-end.
   bool applyBehavioralX3_ = true;
 
+  /// Force the M1.CLK2 sampled-data nodes (N1008..N1011 in the Lajos
+  /// netlist) directly to the D-bit values, bypassing the chip-internal
+  /// data-bus drivers that fight external forcing of D0..D3 during M1.
+  /// L1 default = false (legacy behavior). L2 sets true when probing
+  /// pure-physics multi-instruction: gives the decode chain correct
+  /// inputs even when bus tri-state isn't yet working from physics.
+  bool forceM1SampledData_ = false;
+
   /// Conductance of the soft Norton anchor when overlay is enabled.
   /// 0.0 = hard voltage source (default; preserves L1 behavioral pinning).
   /// > 0 = Norton equivalent: addConductance(net, 0, G) + addCurrent(net, 0, G*V).
@@ -290,6 +298,20 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         for (int b = 0; b < 4; ++b) {
           bool bitSet = (dataBusDrive_ >> b) & 1;
           fv(dataBusNets_[b], bitSet ? 0.0 : VDD_VOLTAGE);
+        }
+      }
+
+      // Optionally also force the M1.CLK2 sampled-data nodes directly,
+      // bypassing the data-bus contention with chip-internal drivers.
+      // Per Kintli reverse-engineering: N1011=D0, N1010=D1, N1009=D2,
+      // N1008=D3 sampled when SC&M12&CLK2 fires.
+      if (forceM1SampledData_ && machineState_ == 3 && dataBusDriving_ && !clk2High_) {
+        const char* nNames[] = {"N1011", "N1010", "N1009", "N1008"}; // bit 0..3
+        for (int b = 0; b < 4; ++b) {
+          auto id = findNet(nNames[b]);
+          if (id == 0) continue;
+          bool bitSet = (dataBusDrive_ >> b) & 1;
+          fv(id, bitSet ? 0.0 : VDD_VOLTAGE);
         }
       }
 
