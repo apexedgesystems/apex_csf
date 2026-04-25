@@ -354,10 +354,12 @@ TEST(Intel4004L2, DISABLED_X3DatapathDiagnostic) {
   auto state = grid.simulateLevel1(circuit, rom.data(), rom.size(), WARMUP, 0);
 
   const char* signals[] = {
+      "OPR.0", "OPR.1", "OPR.2", "OPR.3",
       "OPA.0", "OPA.1", "OPA.2", "OPA.3",
       "ACC.0", "ACC.1", "ACC.2", "ACC.3",
+      "~OPR.0", "~OPR.1", "~OPR.2", "~OPR.3",
       "ADD-ACC", "ADSL", "ADSR", "WRITE_ACC(1)", "M12",
-      "X31", "X3i", "OPA-IB",
+      "LDM/BBL", "X31", "X3i", "OPA-IB",
   };
 
   std::printf("\n  ==== X3 datapath diagnostic, end of byte ====\n");
