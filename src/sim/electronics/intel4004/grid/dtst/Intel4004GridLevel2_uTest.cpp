@@ -322,6 +322,63 @@ TEST(Intel4004L2, DISABLED_PurePhysicsLdm5) {
       << "Pure-physics ACC must match L0 for LDM 5";
 }
 
+/* ----------------------------- X3 datapath diagnostic ----------------------------- */
+
+/**
+ * @test Diagnose which X3-path signals are correctly driven when
+ *       pure-physics mode is enabled. Dumps OPA, ACC, and the
+ *       intermediate control signals (ADD-ACC, ADSL, ADSR, WRITE_ACC,
+ *       M12) at end of each machine state during LDM 5 execution.
+ *
+ * Active-low logic: 0V means logic 1 (asserted).
+ * For LDM, we expect during X3:
+ *   - WRITE_ACC asserts (~0V)
+ *   - ADD-ACC fires (~0V) -> opens OPA -> ACC pass gate
+ *   - OPA[0..3] holds 0101 (LDM 5)
+ *   - ACC[0..3] settles to 0101 by end of X3
+ *
+ * Manual diagnostic; ~30 seconds.
+ */
+TEST(Intel4004L2, DISABLED_X3DatapathDiagnostic) {
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  constexpr std::size_t WARMUP = 16;
+  std::vector<std::uint8_t> rom(WARMUP + 1, 0x00);
+  rom[WARMUP] = 0xD5;
+
+  Intel4004GridLevel2 grid;
+  grid.applyBehavioralX3_ = false; // pure-physics probe
+
+  auto circuit = grid.buildCircuit(NETLIST);
+  grid.enableSparseModeLevel1(circuit);
+  circuit.solver().invalidateCache();
+  auto state = grid.simulateLevel1(circuit, rom.data(), rom.size(), WARMUP, 0);
+
+  const char* signals[] = {
+      "OPA.0", "OPA.1", "OPA.2", "OPA.3",
+      "ACC.0", "ACC.1", "ACC.2", "ACC.3",
+      "ADD-ACC", "ADSL", "ADSR", "WRITE_ACC(1)", "M12",
+      "X31", "X3i", "OPA-IB",
+  };
+
+  std::printf("\n  ==== X3 datapath diagnostic, end of byte ====\n");
+  std::printf("  signal            ID    voltage   logic\n");
+  std::printf("  ----------------  ----  --------  -----\n");
+  grid.traceExecuteByte(circuit, state, rom[WARMUP], nullptr);
+
+  for (const char* sig : signals) {
+    auto id = grid.findNet(sig);
+    if (id == 0) {
+      std::printf("  %-16s  ----  (not found)\n", sig);
+      continue;
+    }
+    const double v = state.nodeVoltages[id];
+    const char* lvl = (v < 2.5) ? "1" : "0"; // active-low
+    std::printf("  %-16s  %4u  %8.4f  %s\n", sig, static_cast<unsigned>(id), v, lvl);
+  }
+  std::printf("\n  L0 expects: OPA=0101 (=5), ACC=0101 (=5)\n");
+  std::printf("  Active-low: '1' = 0V LOW; '0' = 5V HIGH\n");
+}
+
 /* ----------------------------- Differentiated-GMIN sweep ----------------------------- */
 
 /**
