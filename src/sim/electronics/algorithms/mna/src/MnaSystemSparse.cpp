@@ -328,6 +328,30 @@ bool MnaSystemSparse::factorize() {
   buildCsc();
   buildRhsVector();
 
+  // KLU fast-path: if symbolic ordering + numeric factor are still
+  // valid (same pattern), use `klu_refactor` -- which reuses the
+  // partial-pivot ordering and only redoes the numerical work.
+  // Typically 5-10x faster than `klu_factor` and matches the NR
+  // iteration pattern (structure stable, values change). Falls
+  // back to full analyze + factor on any failure.
+  //
+  // Hot path: every NR iter inside `TransientSolver::solveStep`
+  // calls factorize(); without this fast-path, every iter pays the
+  // full `klu_analyze` + `klu_factor` cost.
+  if (kluSymbolic_ != nullptr && kluNumeric_ != nullptr && cachedVsourceCount_ == vsources_.size()) {
+    int ok = klu_refactor(cscAp_.data(), cscAi_.data(), cscAx_.data(), kluSymbolic_, kluNumeric_,
+                          &kluCommon_);
+    if (ok) {
+      factorized_ = true;
+      // Skip the cachedTriplets_ copy on the fast path: tripletsMatch()
+      // is only consulted by the cached-LU branch which factorize()
+      // is bypassing, and the copy is O(nnz) for every NR iter.
+      return true;
+    }
+    // Refactor failed (numerical issue, e.g. zero pivot under the
+    // existing pivot ordering); fall through to full factor below.
+  }
+
   freeKluFactors();
 
   auto dim = static_cast<int>(netCount_ + vsources_.size());
@@ -364,6 +388,27 @@ bool MnaSystemSparse::factorize() {
 bool MnaSystemSparse::refactorize() {
   buildCsc();
   buildRhsVector();
+
+  // Fast path: when the symbolic pattern AND a prior numeric factor
+  // are both still valid, use `klu_refactor` -- which reuses the
+  // partial-pivot ordering from the previous numeric factor and
+  // only redoes the numerical work. KLU `klu_refactor` is typically
+  // 5-10x faster than `klu_factor` on the same matrix shape, and
+  // matches the NR loop pattern exactly (structure stable across
+  // iters, only values change). Falls back to full factor on any
+  // failure (e.g. structural singularity from a pivot that was
+  // valid on the previous iter but not this one).
+  if (kluSymbolic_ != nullptr && kluNumeric_ != nullptr) {
+    int ok = klu_refactor(cscAp_.data(), cscAi_.data(), cscAx_.data(), kluSymbolic_, kluNumeric_,
+                          &kluCommon_);
+    if (ok) {
+      factorized_ = true;
+      // Skip the cachedTriplets_ copy: tripletsMatch() isn't needed
+      // on this fast path (see the parallel comment in factorize).
+      return true;
+    }
+    // Refactor failed (numerical issue); fall through to full factor.
+  }
 
   // Full numeric factorization reusing cached symbolic ordering
   if (kluNumeric_ != nullptr) {
