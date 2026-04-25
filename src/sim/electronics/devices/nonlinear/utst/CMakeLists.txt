@@ -12,6 +12,7 @@ set(TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/MosfetLevel1_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/MosfetLevel2_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/MosfetLevel3_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/MosfetBsim3_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SchottkyDiode_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ZenerDiode_uTest.cpp"
 )
