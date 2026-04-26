@@ -82,14 +82,17 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   static constexpr double V_NR_LO = -1.0;
   static constexpr double V_NR_HI = 6.0;
 
-  /// Drive POC (Power-On Clear) pin LOW during the first byte's SYNC
-  /// phase to model real-silicon power-on reset. The POC pin is an
-  /// external chip pin that's asserted LOW briefly at power-on to
-  /// initialize dynamic state to a defined configuration. After
-  /// release, the chip's depletion load M1273 (VDD VDD POC) holds
-  /// POC HIGH naturally. Default false preserves L1 behavior; L2
-  /// sets true to enable physics-based bootstrap.
+  /// Drive POC (Power-On Clear) pin LOW during the first N bytes'
+  /// machine cycles to model real-silicon power-on reset. The POC pin
+  /// is an external chip pin asserted LOW at power-on to initialize
+  /// dynamic state. Real silicon holds POC for many clock cycles
+  /// while VDD stabilizes; we configure how many bytes worth to hold.
+  /// After release, depletion load M1273 (VDD VDD POC) holds POC HIGH.
+  ///
+  /// Default false preserves L1 behavior. L2 sets true; pocBytes_
+  /// controls duration (default 4 bytes ≈ 32 machine states).
   bool assertPocFirstByte_ = false;
+  std::size_t pocBytes_ = 4; ///< Number of bytes to hold POC asserted
 
   /// Drive CLK2-phase timing signals (M12, M22, X12, X22, A12, A22, A32, X32)
   /// only during their CLK2 sub-phase, not throughout the entire machine
@@ -308,12 +311,13 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         fv(opaIbNet, (machineState_ == 4) ? 0.0 : VDD_VOLTAGE);
       }
 
-      // Power-On Clear protocol: assert POC LOW during first byte's
-      // SYNC phase, then release. Models real-silicon reset bootstrap.
-      if (assertPocFirstByte_ && bytesFetched_ == 0 && machineState_ <= 2) {
+      // Power-On Clear protocol: assert POC LOW for the first pocBytes_
+      // bytes (entire byte cycle, not just SYNC). Models real-silicon
+      // reset bootstrap with extended hold time. After release,
+      // depletion load M1273 (VDD VDD POC) holds POC HIGH naturally.
+      if (assertPocFirstByte_ && bytesFetched_ < pocBytes_) {
         fv(pocNet, 0.0);
       }
-      // After first byte: stop forcing; depletion load M1273 holds HIGH.
 
       if (dataBusDriving_) {
         for (int b = 0; b < 4; ++b) {
