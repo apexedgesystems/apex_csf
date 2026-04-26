@@ -425,6 +425,48 @@ TEST(Intel4004L2, DISABLED_FromScratchDecodeProbe) {
               static_cast<unsigned>(grid.readAccumulator(state.nodeVoltages)));
 }
 
+/**
+ * @test [DIAG] Compare OPA capture behavior for LDM 5 vs LDM 3 vs LDM 7.
+ *       Dumps OPA.0..3, OPR.0..3, ACC, decode signals after each byte.
+ *       Tells us exactly which signals differ between cases.
+ */
+TEST(Intel4004L2, DISABLED_LdmCompareDiagnostic) {
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  constexpr std::size_t WARMUP = 32;
+
+  for (std::uint8_t opcode : {0xD5, 0xD3, 0xD7}) {
+    std::vector<std::uint8_t> rom(WARMUP + 2, 0x00);
+    rom[WARMUP] = opcode;
+    rom[WARMUP + 1] = opcode;
+
+    Intel4004GridLevel2 grid;
+    grid.enableMeyerCaps_ = true;
+    grid.gminTransient_ = grid.gminTransientWithCaps_;
+    auto circuit = grid.buildCircuit(NETLIST);
+    auto state = grid.simulateLevel1FromScratch(circuit, rom.data(), rom.size(),
+                                                WARMUP, 0);
+    grid.traceExecuteByte(circuit, state, rom[WARMUP], nullptr);
+    grid.traceExecuteByte(circuit, state, rom[WARMUP + 1], nullptr);
+
+    auto V = [&](const char* name) -> double {
+      auto id = grid.findNet(name);
+      return id == 0 ? -999.0 : state.nodeVoltages[id];
+    };
+
+    std::printf("\n  ==== LDM 0x%02X (low nibble %X) after byte 1 ====\n",
+                opcode, opcode & 0xF);
+    std::printf("    OPR = [%.2f, %.2f, %.2f, %.2f]V\n",
+                V("OPR.0"), V("OPR.1"), V("OPR.2"), V("OPR.3"));
+    std::printf("    OPA = [%.2f, %.2f, %.2f, %.2f]V (low nibble %X expects bits)\n",
+                V("OPA.0"), V("OPA.1"), V("OPA.2"), V("OPA.3"), opcode & 0xF);
+    std::printf("    ACC = [%.2f, %.2f, %.2f, %.2f]V -> readback %u\n",
+                V("ACC.0"), V("ACC.1"), V("ACC.2"), V("ACC.3"),
+                static_cast<unsigned>(grid.readAccumulator(state.nodeVoltages)));
+    std::printf("    LDM/BBL=%.2fV  WRITE_ACC=%.2fV  ADD-ACC=%.2fV\n",
+                V("LDM/BBL"), V("WRITE_ACC(1)"), V("ADD-ACC"));
+  }
+}
+
 /* ----------------------------- Multi-byte evolution probe ----------------------------- */
 
 /**
