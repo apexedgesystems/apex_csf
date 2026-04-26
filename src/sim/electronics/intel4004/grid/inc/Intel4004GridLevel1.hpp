@@ -91,6 +91,30 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// sets true to enable physics-based bootstrap.
   bool assertPocFirstByte_ = false;
 
+  /// Drive CLK2-phase timing signals (M12, M22, X12, X22, A12, A22, A32, X32)
+  /// only during their CLK2 sub-phase, not throughout the entire machine
+  /// state. Per Intel 4004 signal naming convention (suffix `2` = CLK2
+  /// sub-phase), these signals should be LOW only when both:
+  ///   - machineState_ == i (we're in that machine state)
+  ///   - clk2High_ == false (we're in CLK2 sub-phase)
+  ///
+  /// L1 default = false (preserves existing behavior; L1 multi-instruction
+  /// tests pass via behavioral X3 override regardless of timing precision).
+  /// L2 sets true: pure-physics simulation needs precise CLK-phase timing
+  /// so chip-internal NOR gates compute correct derived signals.
+  bool phaseAwareTiming_ = false;
+
+  /// Skip the forceBehavioral overrides for chip-internal timing signals
+  /// (timingNets_, syncNet_, scM12Clk2, scM22Clk2, opaIbNet). When true,
+  /// only EXTERNAL chip pins (CLK1, CLK2, SC, D0..D3 during ROM input)
+  /// are forced; the chip's own timing generator + decode logic compute
+  /// internal signals from physics.
+  ///
+  /// L1 default = false (preserves working behavioral overrides). L2
+  /// sets true for pure physics: lets the chip's analog circuit form
+  /// its own internal state without override interference.
+  bool skipInternalSignalForcing_ = false;
+
   /// Parasitic capacitance for Level 1 model.
   static constexpr double CPARA_L1 = 10e-15;
 
@@ -258,16 +282,31 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         if (net > 0 && net < N)
           v[net] = val;
       };
+      // External pin forcing (always done -- these are real chip pins).
       fv(clk1Net_, clk1High_ ? VDD_VOLTAGE : 0.0);
       fv(clk2Net_, clk2High_ ? VDD_VOLTAGE : 0.0);
-      fv(scNetLocal, 0.0);
-      for (std::size_t i = 0; i < 8; ++i) {
-        fv(timingNets_[i], (machineState_ == i) ? 0.0 : VDD_VOLTAGE);
+
+      // Internal-signal forcing. L1 default forces these via behavioral
+      // override (works because behavioral X3 override masks timing
+      // imprecision). L2 sets skipInternalSignalForcing_=true to let
+      // the chip's analog timing generator + decode logic compute these
+      // from physics.
+      if (!skipInternalSignalForcing_) {
+        fv(scNetLocal, 0.0);
+        // CLK2-phase timing signals: LOW throughout machine state (L1
+        // legacy) or only during CLK2 sub-phase (phaseAwareTiming_).
+        const bool clk2_active = !clk2High_;
+        for (std::size_t i = 0; i < 8; ++i) {
+          const bool assert_low = phaseAwareTiming_
+              ? (machineState_ == i && clk2_active)
+              : (machineState_ == i);
+          fv(timingNets_[i], assert_low ? 0.0 : VDD_VOLTAGE);
+        }
+        fv(syncNet_, (machineState_ <= 2) ? VDD_VOLTAGE : 0.0);
+        fv(scM12Clk2Net, ((machineState_ == 3) && !clk2High_) ? 0.0 : VDD_VOLTAGE);
+        fv(scM22Clk2Net, ((machineState_ == 4) && !clk2High_) ? 0.0 : VDD_VOLTAGE);
+        fv(opaIbNet, (machineState_ == 4) ? 0.0 : VDD_VOLTAGE);
       }
-      fv(syncNet_, (machineState_ <= 2) ? VDD_VOLTAGE : 0.0);
-      fv(scM12Clk2Net, ((machineState_ == 3) && !clk2High_) ? 0.0 : VDD_VOLTAGE);
-      fv(scM22Clk2Net, ((machineState_ == 4) && !clk2High_) ? 0.0 : VDD_VOLTAGE);
-      fv(opaIbNet, (machineState_ == 4) ? 0.0 : VDD_VOLTAGE);
 
       // Power-On Clear protocol: assert POC LOW during first byte's
       // SYNC phase, then release. Models real-silicon reset bootstrap.
@@ -457,9 +496,17 @@ struct Intel4004GridLevel1 : Intel4004Grid {
             break; // NOP, JCN, FIM, JUN, JMS, INC, ISZ, BBL, I/O: no ACC write
           }
         }
-        // Force all latch values
-        for (auto& [net, storedV] : latchValues_) {
-          fv(net, storedV);
+        // Force all latch values via fv() during NR iterations.
+        // This is part of the behavioral latch overlay (separate from
+        // the stamp-level voltage-source pinning gated in
+        // stampTransistorsLevel1's tail). When the overlay is disabled
+        // (L2 pure physics), this fv() pinning must also be skipped --
+        // otherwise the chip's analog dynamic state gets overridden
+        // every NR iteration, e.g. ~OPR.x clamped to 0V from warmup.
+        if (applyBehavioralLatchOverlay_) {
+          for (auto& [net, storedV] : latchValues_) {
+            fv(net, storedV);
+          }
         }
       }
 

@@ -108,6 +108,8 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
     gminTransient_ = 1e-9;
     gminDriven_ = 1e-12;                  // tiny GMIN on NOR-output / clock nets
     assertPocFirstByte_ = true;           // physics: POC reset bootstrap
+    phaseAwareTiming_ = true;             // CLK2 signals only LOW during CLK2 sub-phase
+    skipInternalSignalForcing_ = true;    // chip computes internal signals from physics
   }
 
   /// BSIM3 parameter template for the latch feedback core. Per-transistor

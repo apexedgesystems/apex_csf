@@ -340,6 +340,59 @@ TEST(Intel4004L2, DISABLED_FromScratchDecodeProbe) {
               static_cast<unsigned>(grid.readAccumulator(state.nodeVoltages)));
 }
 
+/* ----------------------------- Multi-byte evolution probe ----------------------------- */
+
+/**
+ * @test Run several LDM 5 bytes sequentially under L2 default config
+ *       (Meyer caps + POC + FromScratch). Observe how ACC, ~OPR, and
+ *       decode signals evolve over multiple clock cycles. If state
+ *       converges toward correct value over time, we have signal that
+ *       longer simulation unblocks things; if stuck, issue is structural.
+ *
+ * Long-running: each byte takes ~1 minute with caps on, so 5 bytes ~5min.
+ */
+TEST(Intel4004L2, DISABLED_MultiByteEvolution) {
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  constexpr std::size_t WARMUP = 16;
+  constexpr std::size_t NUM_LDM = 5;
+  std::vector<std::uint8_t> rom(WARMUP + NUM_LDM, 0x00);
+  for (std::size_t i = 0; i < NUM_LDM; ++i) rom[WARMUP + i] = 0xD5; // LDM 5
+
+  Intel4004GridLevel2 grid;
+  grid.applyBehavioralX3_ = false;
+  grid.enableMeyerCaps_ = true;
+  grid.gminTransient_ = grid.gminTransientWithCaps_;
+  auto circuit = grid.buildCircuit(NETLIST);
+
+  // Warmup with L2 stamps (FromScratch path, consistent KLU pattern)
+  auto state = grid.simulateLevel1FromScratch(circuit, rom.data(), rom.size(), WARMUP, 0);
+  std::printf("\n  After WARMUP: ACC=%u  ~OPR=[%.2f, %.2f, %.2f, %.2f]V\n",
+              static_cast<unsigned>(grid.readAccumulator(state.nodeVoltages)),
+              state.nodeVoltages[grid.findNet("~OPR.0")],
+              state.nodeVoltages[grid.findNet("~OPR.1")],
+              state.nodeVoltages[grid.findNet("~OPR.2")],
+              state.nodeVoltages[grid.findNet("~OPR.3")]);
+  std::fflush(stdout);
+
+  // Then trace LDM bytes one at a time, observe evolution
+  for (std::size_t b = 0; b < NUM_LDM; ++b) {
+    grid.traceExecuteByte(circuit, state, rom[WARMUP + b], nullptr);
+    const auto acc = grid.readAccumulator(state.nodeVoltages);
+    std::printf("  Byte %zu (LDM 5) -> ACC=%u  ~OPR=[%.2f, %.2f, %.2f, %.2f]V"
+                "  ADD-ACC=%.2fV  WRITE_ACC=%.2fV\n",
+                b, static_cast<unsigned>(acc),
+                state.nodeVoltages[grid.findNet("~OPR.0")],
+                state.nodeVoltages[grid.findNet("~OPR.1")],
+                state.nodeVoltages[grid.findNet("~OPR.2")],
+                state.nodeVoltages[grid.findNet("~OPR.3")],
+                state.nodeVoltages[grid.findNet("ADD-ACC")],
+                state.nodeVoltages[grid.findNet("WRITE_ACC(1)")]);
+    std::fflush(stdout);
+  }
+
+  std::printf("\n  L0 expects ACC=5 after any LDM 5\n");
+}
+
 /* ----------------------------- Meyer cap experiment ----------------------------- */
 
 /**
