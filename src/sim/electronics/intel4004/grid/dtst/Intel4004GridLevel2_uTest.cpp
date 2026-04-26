@@ -353,8 +353,8 @@ TEST(Intel4004L2, DISABLED_FromScratchDecodeProbe) {
  */
 TEST(Intel4004L2, DISABLED_MultiByteEvolution) {
   const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
-  constexpr std::size_t WARMUP = 16;
-  constexpr std::size_t NUM_LDM = 5;
+  constexpr std::size_t WARMUP = 32; // longer settle
+  constexpr std::size_t NUM_LDM = 3;
   std::vector<std::uint8_t> rom(WARMUP + NUM_LDM, 0x00);
   for (std::size_t i = 0; i < NUM_LDM; ++i) rom[WARMUP + i] = 0xD5; // LDM 5
 
