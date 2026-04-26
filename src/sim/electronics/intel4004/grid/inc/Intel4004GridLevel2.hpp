@@ -199,6 +199,91 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
     mna.addMatrixEntry(t.source, t.drain, -static_cast<double>(xrev) * gm);
     mna.addCurrent(t.drain, t.source, -cdreq);
   }
+
+  /* ----------------------------- Meyer cap dynamics ----------------------------- */
+
+  /// Enable per-transistor Meyer intrinsic + overlap caps in the stamp.
+  /// Default false -- L2 ships pure DC steady-state hold (already
+  /// validated). Set true when running transient simulations of dynamic
+  /// logic where charge dynamics matter (clock-edge coupling through
+  /// Cgd, refresh through gate-source caps). The cap-companion stamps
+  /// add ~3 caps per transistor x 2,242 transistors = ~6,700 cap stamps
+  /// per NR iteration; expect simulation to slow noticeably.
+  bool enableMeyerCaps_ = false;
+
+  /// Meyer cap parameters template. Process-level constants
+  /// (oxide thickness, overlap diffusion); per-transistor W/L is
+  /// folded into Kp via the existing transistorKp_ binning.
+  MosfetBsim3Params meyerCapParams_{
+      .Kp = KP_PROCESS, .Vth0 = VTH_ENH, .lambda = LAMBDA, .W = 1.0, .L = 1.0,
+      .n_factor = 2.5, .Vt = 0.026, .eta0 = 0.0, .K1 = 0.0, .K2 = 0.0, .phi = 0.7,
+      .ua = 0.0, .ub = 0.0, .tox = 50e-9, .delta = 0.01,
+      .Lov = 1e-6, .include_caps = true};
+
+  /**
+   * @brief Per-transistor Meyer cap-companion stamping for dynamic logic.
+   *
+   * For each transistor in `transistors_`, computes Meyer intrinsic +
+   * overlap capacitances (Cgs, Cgd, Cgb) at the previous-timestep
+   * operating point and stamps backward-Euler cap companions:
+   *
+   *   For a cap C between nodes a and b:
+   *     Geq = C / dt
+   *     Ieq = Geq * (V_a(t-dt) - V_b(t-dt))
+   *   Stamp: addConductance(a, b, Geq); addCurrent(a, b, Ieq).
+   *
+   * Cgb stamps to ground (PMOS-only convention, body tied to GND).
+   * Skips clock-gated transistors (their gate is externally forced;
+   * cap dynamics on those nets are dominated by the external drive).
+   *
+   * @note RT-safe.
+   */
+  void stampDynamicCharge(mna::MnaSystemSparse& mna,
+                          const std::vector<double>& prevTimestepV) const override {
+    if (!enableMeyerCaps_) return;
+    if (stepDt_ <= 0.0) return;
+
+    if (transistorKp_.empty()) computeTransistorKp();
+
+    for (std::size_t idx = 0; idx < transistors_.size(); ++idx) {
+      const auto& t = transistors_[idx];
+      // Skip clock-gated transistors; clocks are externally forced.
+      if (t.gate == clk1Net_ || t.gate == clk2Net_) continue;
+
+      const double VS = prevTimestepV[t.source];
+      const double VD = prevTimestepV[t.drain];
+      const double VG = prevTimestepV[t.gate];
+      const double VSG = VS - VG;
+      const double VSD = VS - VD;
+      // PMOS in NMOS-mirror convention.
+      const double vgs = std::max(VSG, 0.0);
+      const double vds = std::max(VSD, 0.0);
+
+      // Per-transistor params: use calibrated Kp + W/L bin.
+      MosfetBsim3Params pp = meyerCapParams_;
+      pp.Kp = transistorKp_[idx];
+      pp.Vth0 = sameVtoMode_ ? VTH_ENH : (t.isDiodeLoad ? VTH_DEP : VTH_ENH);
+
+      const auto caps = MosfetBsim3::meyerCapacitances(vgs, vds, /*vbs=*/0.0, pp);
+
+      // Cap companion stamps: G = C/dt, I = G * (V_a_prev - V_b_prev).
+      auto stampCap = [&](mna::NetID a, mna::NetID b, double C) {
+        if (C <= 0.0) return;
+        const double Geq = C / stepDt_;
+        mna.addConductance(a, b, Geq);
+        const double Va = (a < prevTimestepV.size()) ? prevTimestepV[a] : 0.0;
+        const double Vb = (b < prevTimestepV.size()) ? prevTimestepV[b] : 0.0;
+        mna.addCurrent(a, b, Geq * (Va - Vb));
+      };
+
+      // Cgs between gate and source (PMOS effective source is at higher V).
+      stampCap(t.gate, t.source, caps.Cgs);
+      // Cgd between gate and drain.
+      stampCap(t.gate, t.drain, caps.Cgd);
+      // Cgb between gate and bulk (= GND for PMOS-only single-well).
+      stampCap(t.gate, circuit::Circuit::ground(), caps.Cgb);
+    }
+  }
 };
 
 } // namespace sim::electronics::intel4004

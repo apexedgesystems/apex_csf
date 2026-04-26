@@ -629,7 +629,11 @@ struct Intel4004GridLevel1 : Intel4004Grid {
           stampExternalIO(mna);
           stampParasiticCapsLevel1(mna, prevTimestepV_); // Caps use previous TIMESTEP (constant)
           stampGmin(mna, prevV.size());
-          // (debug removed)
+          // Plug-in hook for derived levels: per-transistor charge / cap
+          // dynamics. Default no-op preserves L1 behavior; L2 overrides
+          // to stamp Meyer caps on every transistor for dynamic-logic
+          // simulation. See stampDynamicCharge() below.
+          stampDynamicCharge(mna, prevTimestepV_);
         });
     circuit.solver().setSparse(true);
     circuit.solver().setAlwaysReanalyze(true);
@@ -894,6 +898,32 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     else
       gds = bp.gSubth;
     mna.addConductance(t.drain, t.source, gds);
+  }
+
+  /**
+   * @brief Plug-in hook: per-transistor charge / capacitance dynamics
+   *        for transient simulation.
+   *
+   * Default L1 implementation: no-op. L1's parasitic-cap stamp
+   * (stampParasiticCapsLevel1) covers the lumped 10 fF parasitic on
+   * each net; that's the model L1 documented uses, and is sufficient
+   * for the L1 component-hybrid simulation (10/10 dtests pass).
+   *
+   * L2 overrides this hook to stamp the Meyer intrinsic + overlap
+   * capacitances per transistor (Cgs, Cgd, Cgb), enabling dynamic-
+   * logic simulation that respects per-transistor charge dynamics
+   * (clock-edge coupling through Cgd, refresh through gate-source
+   * caps, etc.). See `Intel4004GridLevel2::stampDynamicCharge`.
+   *
+   * @param mna           NR-iteration MNA system to stamp into.
+   * @param prevTimestepV Voltages from the PREVIOUS timestep (constant
+   *                      during NR), needed for the cap-companion
+   *                      backward-Euler current source term.
+   */
+  virtual void stampDynamicCharge(mna::MnaSystemSparse& /*mna*/,
+                                  const std::vector<double>& /*prevTimestepV*/) const {
+    // L1 default: no per-transistor charge model; only the lumped
+    // parasitic cap from stampParasiticCapsLevel1 is in play.
   }
 
   /**
