@@ -292,6 +292,51 @@ TEST(Intel4004L2, DISABLED_PurePhysicsLdm5) {
       << "Pure-physics ACC must match L0 for LDM 5";
 }
 
+/* ----------------------------- Meyer cap experiment ----------------------------- */
+
+/**
+ * @test Probe whether enabling per-transistor Meyer caps changes the
+ *       state of the X3 datapath. This validates that the cap stamps
+ *       are wired correctly + observes any effect on decode chain
+ *       propagation. Captures end-of-byte snapshot.
+ */
+TEST(Intel4004L2, DISABLED_MeyerCapsX3Snapshot) {
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  constexpr std::size_t WARMUP = 16;
+  std::vector<std::uint8_t> rom(WARMUP + 1, 0x00);
+  rom[WARMUP] = 0xD5;
+
+  for (bool capsOn : {false, true}) {
+    std::printf("\n  === Iteration: caps %s ===\n", capsOn ? "ON" : "OFF");
+    std::fflush(stdout);
+    Intel4004GridLevel2 grid;
+    grid.enableMeyerCaps_ = capsOn;
+    grid.applyBehavioralX3_ = false; // pure-physics probe
+    auto circuit = grid.buildCircuit(NETLIST);
+    grid.enableSparseModeLevel1(circuit);
+    circuit.solver().invalidateCache();
+    std::printf("  starting warmup...\n"); std::fflush(stdout);
+    auto state = grid.simulateLevel1(circuit, rom.data(), rom.size(), WARMUP, 0);
+    std::printf("  warmup done; running traceExecuteByte...\n"); std::fflush(stdout);
+    grid.traceExecuteByte(circuit, state, rom[WARMUP], nullptr);
+    std::printf("  trace done\n"); std::fflush(stdout);
+
+    const char* sigs[] = {"OPR.0","OPR.1","OPR.2","OPR.3",
+                          "~OPR.0","~OPR.1","~OPR.2","~OPR.3",
+                          "OPA.0","OPA.1","OPA.2","OPA.3",
+                          "ACC.0","ACC.1","ACC.2","ACC.3",
+                          "ADD-ACC", "WRITE_ACC(1)", "LDM/BBL"};
+    std::printf("\n  Meyer caps %s\n", capsOn ? "ON " : "OFF");
+    for (const char* s : sigs) {
+      auto id = grid.findNet(s);
+      if (id == 0) continue;
+      std::printf("    %-16s = %.4fV\n", s, state.nodeVoltages[id]);
+    }
+    std::printf("    ACC readback=%u (L0 expects 5)\n",
+                static_cast<unsigned>(grid.readAccumulator(state.nodeVoltages)));
+  }
+}
+
 /* ----------------------------- Per-phase decode chain diagnostic ----------------------------- */
 
 /**

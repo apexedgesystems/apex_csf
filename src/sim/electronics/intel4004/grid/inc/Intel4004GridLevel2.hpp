@@ -242,46 +242,52 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
                           const std::vector<double>& prevTimestepV) const override {
     if (!enableMeyerCaps_) return;
     if (stepDt_ <= 0.0) return;
+    if (prevTimestepV.empty()) return;
 
     if (transistorKp_.empty()) computeTransistorKp();
 
+    const std::size_t N = prevTimestepV.size();
+    auto safeV = [&](mna::NetID n) -> double {
+      return (n != 0 && n < N) ? prevTimestepV[n] : 0.0;
+    };
+
     for (std::size_t idx = 0; idx < transistors_.size(); ++idx) {
       const auto& t = transistors_[idx];
+      // Skip if any terminal is invalid.
+      if (t.gate == 0 && t.source == 0 && t.drain == 0) continue;
       // Skip clock-gated transistors; clocks are externally forced.
       if (t.gate == clk1Net_ || t.gate == clk2Net_) continue;
 
-      const double VS = prevTimestepV[t.source];
-      const double VD = prevTimestepV[t.drain];
-      const double VG = prevTimestepV[t.gate];
+      const double VS = safeV(t.source);
+      const double VD = safeV(t.drain);
+      const double VG = safeV(t.gate);
       const double VSG = VS - VG;
       const double VSD = VS - VD;
-      // PMOS in NMOS-mirror convention.
       const double vgs = std::max(VSG, 0.0);
       const double vds = std::max(VSD, 0.0);
 
-      // Per-transistor params: use calibrated Kp + W/L bin.
       MosfetBsim3Params pp = meyerCapParams_;
       pp.Kp = transistorKp_[idx];
       pp.Vth0 = sameVtoMode_ ? VTH_ENH : (t.isDiodeLoad ? VTH_DEP : VTH_ENH);
 
       const auto caps = MosfetBsim3::meyerCapacitances(vgs, vds, /*vbs=*/0.0, pp);
 
-      // Cap companion stamps: G = C/dt, I = G * (V_a_prev - V_b_prev).
       auto stampCap = [&](mna::NetID a, mna::NetID b, double C) {
-        if (C <= 0.0) return;
+        if (C <= 0.0 || !std::isfinite(C)) return;
+        if (a == b) return; // degenerate
         const double Geq = C / stepDt_;
+        if (!std::isfinite(Geq)) return;
         mna.addConductance(a, b, Geq);
-        const double Va = (a < prevTimestepV.size()) ? prevTimestepV[a] : 0.0;
-        const double Vb = (b < prevTimestepV.size()) ? prevTimestepV[b] : 0.0;
-        mna.addCurrent(a, b, Geq * (Va - Vb));
+        mna.addCurrent(a, b, Geq * (safeV(a) - safeV(b)));
       };
 
-      // Cgs between gate and source (PMOS effective source is at higher V).
-      stampCap(t.gate, t.source, caps.Cgs);
-      // Cgd between gate and drain.
-      stampCap(t.gate, t.drain, caps.Cgd);
-      // Cgb between gate and bulk (= GND for PMOS-only single-well).
-      stampCap(t.gate, circuit::Circuit::ground(), caps.Cgb);
+      // Only stamp if gate is a real net (not ground).
+      if (t.gate != 0) {
+        if (t.source != 0) stampCap(t.gate, t.source, caps.Cgs);
+        if (t.drain != 0)  stampCap(t.gate, t.drain,  caps.Cgd);
+        // Cgb to ground (NetID 0). Skip if gate is also 0 (degenerate).
+        stampCap(t.gate, circuit::Circuit::ground(), caps.Cgb);
+      }
     }
   }
 };
