@@ -305,6 +305,10 @@ TEST(Intel4004L2, DISABLED_FromScratchDecodeProbe) {
 
   Intel4004GridLevel2 grid;
   grid.applyBehavioralX3_ = false;
+  // Enable Meyer caps from the start so pattern is stable throughout
+  // (avoids pattern mismatch between binary-switch warmup and L2 phase).
+  grid.enableMeyerCaps_ = true;
+  grid.gminTransient_ = grid.gminTransientWithCaps_;
   auto circuit = grid.buildCircuit(NETLIST);
 
   // Run L2 stamps from t=0 (no binary switch warmup)
