@@ -324,7 +324,9 @@ struct Intel4004GridLevel1 : Intel4004Grid {
 
       // Behavioral latch updates: sample data bus into OPA during M2,
       // and transfer OPA to ACC during X3 for LDM instructions.
-      if (!latchValues_.empty()) {
+      // Gated by applyBehavioralLatchOverlay_ -- L2 (overlay off) lets
+      // chip-internal pass gates physically latch D-bus into OPR/OPA.
+      if (applyBehavioralLatchOverlay_ && !latchValues_.empty()) {
         // M1: latch high nibble from data bus into OPR (opcode register)
         if (machineState_ == 3 && dataBusDriving_) {
           mna::NetID oprNets[] = {findNet("OPR.0"), findNet("OPR.1"),
