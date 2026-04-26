@@ -292,6 +292,44 @@ TEST(Intel4004L2, DISABLED_PurePhysicsLdm5) {
       << "Pure-physics ACC must match L0 for LDM 5";
 }
 
+/**
+ * @test Use simulateLevel1FromScratch (no binary-switch warmup) to see
+ *       if ~OPR.x decode signals settle correctly when running L2 stamps
+ *       from t=0. Dumps signals at end of byte for analysis.
+ */
+TEST(Intel4004L2, DISABLED_FromScratchDecodeProbe) {
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  constexpr std::size_t WARMUP = 16;
+  std::vector<std::uint8_t> rom(WARMUP + 1, 0x00);
+  rom[WARMUP] = 0xD5;
+
+  Intel4004GridLevel2 grid;
+  grid.applyBehavioralX3_ = false;
+  auto circuit = grid.buildCircuit(NETLIST);
+
+  // Run L2 stamps from t=0 (no binary switch warmup)
+  auto state = grid.simulateLevel1FromScratch(circuit, rom.data(), rom.size(),
+                                              WARMUP, 0);
+
+  // Then trace the LDM byte
+  grid.traceExecuteByte(circuit, state, rom[WARMUP], nullptr);
+
+  const char* sigs[] = {"OPR.0","OPR.1","OPR.2","OPR.3",
+                        "~OPR.0","~OPR.1","~OPR.2","~OPR.3",
+                        "ACC.0","ACC.1","ACC.2","ACC.3",
+                        "N0992","N0993","N0994","N0995",
+                        "N1008","N1009","N1010","N1011",
+                        "ADD-ACC", "WRITE_ACC(1)", "LDM/BBL"};
+  std::printf("\n  ==== FromScratch decode probe (LDM 0xD5) ====\n");
+  for (const char* s : sigs) {
+    auto id = grid.findNet(s);
+    if (id == 0) continue;
+    std::printf("    %-16s = %.4fV\n", s, state.nodeVoltages[id]);
+  }
+  std::printf("    ACC readback=%u (L0 expects 5)\n",
+              static_cast<unsigned>(grid.readAccumulator(state.nodeVoltages)));
+}
+
 /* ----------------------------- Meyer cap experiment ----------------------------- */
 
 /**
@@ -312,6 +350,9 @@ TEST(Intel4004L2, DISABLED_MeyerCapsX3Snapshot) {
     Intel4004GridLevel2 grid;
     grid.enableMeyerCaps_ = capsOn;
     grid.applyBehavioralX3_ = false; // pure-physics probe
+    if (capsOn) {
+      grid.gminTransient_ = grid.gminTransientWithCaps_; // 1e-6 anchor for caps-on
+    }
     auto circuit = grid.buildCircuit(NETLIST);
     grid.enableSparseModeLevel1(circuit);
     circuit.solver().invalidateCache();

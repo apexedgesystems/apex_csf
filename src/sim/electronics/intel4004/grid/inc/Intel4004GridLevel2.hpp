@@ -211,6 +211,14 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
   /// per NR iteration; expect simulation to slow noticeably.
   bool enableMeyerCaps_ = false;
 
+  /// GMIN floor used during Meyer-cap simulation. Caps add ~µS-scale
+  /// conductances scattered across the matrix; the diagonal-only GMIN
+  /// at 1e-9 leaves the matrix near-singular at high-Z nodes that have
+  /// only off-diagonal cap connections. Bump to 1e-6 (still much
+  /// smaller than typical pass-transistor drive ~10-100 µA) when caps
+  /// are on, ensuring every node has an algebraic anchor.
+  double gminTransientWithCaps_ = 1e-6;
+
   /// Physical channel length L for the 4004 process (10 µm).
   /// Used by Meyer cap calc to compute Cox*W*L = actual gate
   /// capacitance. (For I-V, W and L are folded into Kp; for caps
