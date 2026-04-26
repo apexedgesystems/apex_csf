@@ -243,6 +243,39 @@ TEST(Intel4004L2, PurePhysicsLdmFiveSettled) {
          "produce ACC=5 after settling. Got ACC=" << static_cast<unsigned>(lastAcc);
 }
 
+/**
+ * @test Pure-physics LDM 3 -- different value, verify robustness.
+ *       Slow test (~6 min) since each byte takes ~1.5 min with caps.
+ */
+TEST(Intel4004L2, DISABLED_PurePhysicsLdmSevenSettled) {
+  Intel4004Cpu cpu;
+  std::uint8_t romL0[] = {0xD7, 0x00};
+  cpu.loadProgram(romL0, sizeof(romL0));
+  cpu.step();
+  ASSERT_EQ(cpu.accumulator, 7);
+
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  constexpr std::size_t WARMUP = 32;
+  std::vector<std::uint8_t> rom(WARMUP + 3, 0x00);
+  for (std::size_t i = 0; i < 3; ++i) rom[WARMUP + i] = 0xD7;
+
+  Intel4004GridLevel2 grid;
+  grid.enableMeyerCaps_ = true;
+  grid.gminTransient_ = grid.gminTransientWithCaps_;
+  auto circuit = grid.buildCircuit(NETLIST);
+  auto state = grid.simulateLevel1FromScratch(circuit, rom.data(), rom.size(),
+                                              WARMUP, 0);
+
+  std::uint8_t lastAcc = 0;
+  for (std::size_t b = 0; b < 3; ++b) {
+    grid.traceExecuteByte(circuit, state, rom[WARMUP + b], nullptr);
+    lastAcc = grid.readAccumulator(state.nodeVoltages);
+    std::printf("  Byte %zu LDM 7: ACC=%u (L0 expects 7)\n", b,
+                static_cast<unsigned>(lastAcc));
+  }
+  EXPECT_EQ(lastAcc, cpu.accumulator) << "Pure-physics LDM 7";
+}
+
 /* ----------------------------- L2 multi-instruction parity ----------------------------- */
 
 /**
