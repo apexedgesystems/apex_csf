@@ -192,6 +192,81 @@ TEST(Level2PhysicsProbe, InverterVolWithSubthreshold) {
   EXPECT_LT(vout, VDD);
 }
 
+/* ----------------------------- PMOS pull-up isolated test ----------------------------- */
+
+/**
+ * @test Isolated test of M1081-style pull-up: PMOS with drain=VDD,
+ *       gate at controllable voltage, source=floating output node.
+ *
+ * Mirrors Intel 4004's ~OPR.x driver topology. If our BSIM3 stamp is
+ * correct, output should pull toward VDD when gate is LOW.
+ *
+ *   VDD ---- D
+ *            |
+ *            M  <- gate = controlled
+ *            |
+ *            S ---- output (floating, weak GMIN to ground)
+ */
+TEST(Level2PhysicsProbe, PmosPullUpToFloatingNode) {
+  std::printf("\n  ==== M1081-style PMOS pull-up isolated test ====\n");
+
+  for (double vGate : {0.0, 1.0, 2.0, 3.0}) {
+    std::vector<double> V = {0, VDD, 0.5, vGate};
+    MosfetBsim3Params bp;
+    bp.Kp = KP * 0.14; // WL_DEPLETION_CASCADED
+    bp.Vth0 = VTH_ENH;
+    bp.lambda = LAMBDA;
+    bp.W = 1.0; bp.L = 1.0;
+    bp.n_factor = 2.5;
+    bp.K1 = 0.0; bp.eta0 = 0.0;
+    double vout = solveDc(4, V, [&](MnaSystemSparse& mna, const std::vector<double>& v) {
+      mna.addVoltageSource(1, 0, VDD);
+      mna.addVoltageSource(3, 0, vGate);
+
+      // M1081-style stamp: drain=VDD(1), gate(3), source=output(2)
+      const double VS = v[2], VG = v[3], VD = v[1];
+      const double VSG = VS - VG, VSD = VS - VD;
+
+      NetID sD = 1, sS = 2;
+      double eVSG = VSG, eVSD = VSD;
+      // Reverse mode: VSD < 0 means drain is HIGHER than source
+      if (VSD < 0.0) {
+        std::swap(sD, sS);
+        eVSG = VD - VG;
+        eVSD = VD - VS;
+      }
+      const double vgsM = std::max(eVSG, 0.0);
+      const double vdsM = std::max(eVSD, 0.0);
+      const auto SV = MosfetBsim3::stampValues(vgsM, vdsM, /*vbs=*/0.0, bp);
+      const double gds = std::max(SV.gds, 1e-12);
+      const double ieq = SV.id - SV.gm * eVSG - gds * eVSD;
+
+      mna.addConductance(sD, sS, gds);
+      mna.addMatrixEntry(sD, 3, SV.gm);
+      mna.addMatrixEntry(sD, sS, -SV.gm);
+      mna.addMatrixEntry(sS, 3, -SV.gm);
+      mna.addMatrixEntry(sS, sS, SV.gm);
+      mna.addCurrent(sD, sS, ieq);
+
+      // Weak GMIN on output node (matches L2 default)
+      mna.addConductance(2, 0, 1e-9);
+    });
+
+    const double Vsg = VDD - vGate;
+    const char* tag = (Vsg > VTH_ENH + 0.1) ? "ON " : "OFF";
+    std::printf("    Vgate=%.1fV (Vsg=%.2f, %s) -> Vout=%.4fV  ",
+                vGate, Vsg, tag, vout);
+    if (Vsg > VTH_ENH + 0.5) {
+      if (vout > VDD * 0.7) std::printf("[GOOD: pulls HIGH]\n");
+      else                  std::printf("[BAD: stamp pulls toward GND when should pull HIGH]\n");
+    } else {
+      std::printf("[informational]\n");
+    }
+  }
+  std::printf("  If Vgate=1V Vout near 5V, BSIM3 stamp is correct.\n");
+  std::printf("  If Vout stays low, stamp has a sign / direction bug.\n\n");
+}
+
 /* ============================================================================
  * Single-input "inverter" cross-coupling -- IMPORTANT NEGATIVE RESULT.
  *
