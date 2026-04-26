@@ -191,6 +191,58 @@ TEST(Intel4004L2, CoexistsWithLevel1) {
 
 /* ----------------------------- Parameter probe ----------------------------- */
 
+/* ----------------------------- L2 PURE-PHYSICS multi-instruction parity ----------------------------- */
+
+/**
+ * @test L2 pure-physics multi-instruction LDM 5 produces ACC=5 from
+ *       transistor physics alone (no behavioral X3 switch).
+ *
+ * After the BSIM3 fix + Meyer caps + POC + phase-aware timing +
+ * properly-gated latch overlays, the chip's dynamic logic correctly
+ * computes the LDM decode chain end-to-end. ACC takes 1-2 bytes to
+ * settle (initial dynamic-logic transient), then stays at the
+ * correct value.
+ *
+ * Note: ACC after byte 0 may be transient; bytes 1+ should be correct.
+ */
+TEST(Intel4004L2, PurePhysicsLdmFiveSettled) {
+  Intel4004Cpu cpu;
+  std::uint8_t romL0[] = {0xD5, 0x00};
+  cpu.loadProgram(romL0, sizeof(romL0));
+  cpu.step();
+  ASSERT_EQ(cpu.accumulator, 5);
+
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  constexpr std::size_t WARMUP = 32;
+  constexpr std::size_t NUM_LDM = 3;
+  std::vector<std::uint8_t> rom(WARMUP + NUM_LDM, 0x00);
+  for (std::size_t i = 0; i < NUM_LDM; ++i) rom[WARMUP + i] = 0xD5;
+
+  Intel4004GridLevel2 grid;
+  grid.enableMeyerCaps_ = true;
+  grid.gminTransient_ = grid.gminTransientWithCaps_;
+  ASSERT_FALSE(grid.applyBehavioralX3_);
+  ASSERT_FALSE(grid.applyBehavioralLatchOverlay_);
+
+  auto circuit = grid.buildCircuit(NETLIST);
+  auto state = grid.simulateLevel1FromScratch(circuit, rom.data(), rom.size(),
+                                              WARMUP, 0);
+
+  // Run all LDM bytes
+  std::uint8_t lastAcc = 0;
+  for (std::size_t b = 0; b < NUM_LDM; ++b) {
+    grid.traceExecuteByte(circuit, state, rom[WARMUP + b], nullptr);
+    lastAcc = grid.readAccumulator(state.nodeVoltages);
+    std::printf("  Byte %zu: ACC=%u (L0 expects 5)\n", b,
+                static_cast<unsigned>(lastAcc));
+  }
+
+  // After settling (byte 0 may be transient), final ACC must equal 5.
+  EXPECT_EQ(lastAcc, cpu.accumulator)
+      << "Pure-physics LDM 5 (with caps + POC + phase-aware timing) must "
+         "produce ACC=5 after settling. Got ACC=" << static_cast<unsigned>(lastAcc);
+}
+
 /* ----------------------------- L2 multi-instruction parity ----------------------------- */
 
 /**
