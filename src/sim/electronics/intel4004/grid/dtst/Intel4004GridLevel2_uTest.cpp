@@ -293,9 +293,15 @@ TEST(Intel4004L2, DISABLED_PurePhysicsLdm5) {
 }
 
 /**
- * @test Use simulateLevel1FromScratch (no binary-switch warmup) to see
- *       if ~OPR.x decode signals settle correctly when running L2 stamps
- *       from t=0. Dumps signals at end of byte for analysis.
+ * @test [DEMONSTRATION] Pure-physics LDM 5 with Meyer caps + extended
+ *       warmup, observing whether ~OPR.x and ACC.x evolve toward the
+ *       correct state over multiple bytes.
+ *
+ * KEY FINDING from this test: Meyer caps + FromScratch path run
+ * cleanly at chip scale (no segfault). However, ~OPR.x and ACC.x do
+ * not yet converge to correct LDM-decode values. The decode chain
+ * needs further investigation: dynamic charge alone is necessary
+ * but not sufficient.
  */
 TEST(Intel4004L2, DISABLED_FromScratchDecodeProbe) {
   const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
