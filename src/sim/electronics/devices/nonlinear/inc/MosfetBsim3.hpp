@@ -99,6 +99,21 @@ struct MosfetBsim3Params {
 
   // Smooth Vds saturation transition width
   double delta = 0.01; ///< Vds smoothing parameter (V)
+
+  // ============================================================================
+  // Meyer capacitance model (intrinsic + overlap). For dynamic-logic
+  // simulation. See `meyerCapacitances()` for the full physics + limitations.
+  // ============================================================================
+  /// Lateral diffusion of source/drain under the gate (m). Sets the
+  /// physical overlap capacitance Cgs_ov = Cgd_ov = Cox * W * Lov.
+  /// 4004 10 micron process: Lov ≈ 1 µm typical (~10% of L).
+  double Lov = 1e-6;
+
+  /// Whether to include Meyer intrinsic + overlap capacitances in the
+  /// stamp. Default false: pure DC I-V only (no transient charge
+  /// dynamics). Set true for transient simulations of dynamic logic
+  /// where intrinsic gate caps couple clock edges across stages.
+  bool include_caps = false;
 };
 
 /**
@@ -327,6 +342,99 @@ struct MosfetBsim3 {
                                                    const MosfetBsim3Params& p) noexcept {
     constexpr double DV = 1e-6;
     return (current(vgs, vds, vbs + DV, p) - current(vgs, vds, vbs - DV, p)) / (2.0 * DV);
+  }
+
+  /* ----------------------------- Meyer capacitance model ----------------------------- */
+
+  /**
+   * @brief Intrinsic + overlap MOSFET gate capacitances per the Meyer
+   *        model (the textbook predecessor to BSIM3's full charge model).
+   *
+   * Three regions depending on operating point:
+   *
+   *   Cutoff       (Vgst < 0):     Cgs=0,            Cgd=0,            Cgb=Cox*W*L
+   *   Linear/triode (Vds < Vdsat): Cgs and Cgd via the standard Meyer
+   *                                interpolation (Tsividis Ch. 9 / SPICE
+   *                                Level 1-3 cap model):
+   *                                  Cgs = (2/3)*Cox*W*L * [1 - ((Vgst-Vds)/(2Vgst-Vds))^2]
+   *                                  Cgd = (2/3)*Cox*W*L * [1 - (Vgst    /(2Vgst-Vds))^2]
+   *                                Cgb = 0 (channel screens bulk in inversion)
+   *   Saturation   (Vds >= Vdsat): Cgs = (2/3)*Cox*W*L, Cgd = 0,         Cgb=0
+   *
+   * Plus constant overlap caps (gate physically extends Lov over the
+   * source/drain diffusion):
+   *   Cgs_ov = Cgd_ov = Cox * W * Lov
+   *
+   * Cox = ε_ox / tox where ε_ox = 3.45e-11 F/m for thermal SiO2.
+   *
+   * Reference: SPICE 2 / 3 source code; Tsividis "Operation and Modeling
+   * of the MOS Transistor" Ch. 9. This is exactly the cap model that
+   * ngspice MOS levels 1/2/3 use, and is industry-standard for
+   * long-channel dynamic-logic simulation of vintage technologies.
+   *
+   * Documented limitations (per Tsividis):
+   *   1. Meyer caps are NOT charge-conservative. Each cap is computed
+   *      independently from bias; the underlying Q is not a single-valued
+   *      function of Vgs/Vds/Vbs. For digital logic with rail-to-rail
+   *      transitions, this introduces small errors that average out per
+   *      cycle. For analog precision (e.g. switched-capacitor circuits)
+   *      a charge-based model (BSIM3 full Qg/Qd/Qs) is required.
+   *   2. No drain/source-substrate junction capacitance modeled here.
+   *      For the 4004, junction caps are ~0.1-0.5 fF/µm² and are absorbed
+   *      into the existing parasitic-cap stamp (CPARA_L1).
+   *   3. Sharp transition between cutoff (channel off) and inversion (channel on)
+   *      at Vgst=0 -- not smoothed. For NR convergence with small step
+   *      sizes this is generally OK; pathologically tight loops may need
+   *      smoothing via Vgst_eff (TODO if encountered).
+   *   4. No fringe / sidewall capacitance contributions; absorbed into
+   *      the overlap cap parameter Lov.
+   *
+   * Calibration target: 4004 10 µm process with tox=50 nm, Lov=1 µm.
+   *   Cox ≈ 0.69 fF/µm². W=10µm, L=10µm transistor: Cox*W*L ≈ 69 fF.
+   *   Cgs_ov = 0.69 * 10 * 1 = 6.9 fF.
+   */
+  struct MeyerCaps {
+    double Cgs; ///< Intrinsic + overlap gate-source cap (F).
+    double Cgd; ///< Intrinsic + overlap gate-drain cap (F).
+    double Cgb; ///< Intrinsic gate-bulk cap (F).
+  };
+
+  /// Oxide capacitance density (F/m²): Cox = ε_ox / tox.
+  [[nodiscard]] static double oxideCapDensity(const MosfetBsim3Params& p) noexcept {
+    constexpr double EPS_OX = 3.45e-11; // F/m, thermal SiO2
+    return EPS_OX / std::max(p.tox, 1e-12);
+  }
+
+  /// Meyer intrinsic + overlap capacitances at the given bias.
+  [[nodiscard]] static MeyerCaps meyerCapacitances(double vgs, double vds, double vbs,
+                                                    const MosfetBsim3Params& p) noexcept {
+    const double Cox = oxideCapDensity(p);
+    const double CoxWL = Cox * p.W * p.L;
+    const double Cov = Cox * p.W * p.Lov;
+
+    const double vth = thresholdVoltage(vds, vbs, p);
+    const double Vgst = vgs - vth;
+
+    // Cutoff: gate cap to bulk only.
+    if (Vgst <= 0.0) {
+      return {Cov, Cov, CoxWL};
+    }
+
+    const double Vdsat = std::max(Vgst, 1e-12); // long-channel approx
+    if (vds <= Vdsat) {
+      // Linear/triode region.
+      const double denom = std::max(2.0 * Vgst - vds, 1e-12);
+      const double a = (Vgst - vds) / denom;
+      const double b = Vgst / denom;
+      const double Cgs_int = (2.0 / 3.0) * CoxWL * (1.0 - a * a);
+      const double Cgd_int = (2.0 / 3.0) * CoxWL * (1.0 - b * b);
+      return {std::max(Cgs_int, 0.0) + Cov,
+              std::max(Cgd_int, 0.0) + Cov,
+              0.0};
+    }
+
+    // Saturation: only Cgs intrinsic (channel pinched off at drain end).
+    return {(2.0 / 3.0) * CoxWL + Cov, Cov, 0.0};
   }
 
   /* ----------------------------- Combined entry ----------------------------- */

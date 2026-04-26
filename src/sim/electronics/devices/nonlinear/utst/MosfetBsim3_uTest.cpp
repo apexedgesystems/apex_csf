@@ -129,6 +129,93 @@ TEST(MosfetBsim3, GmConsistentWithNumericalDerivative) {
   }
 }
 
+/* ========================== Meyer cap model ========================== */
+
+/** @test In cutoff, all gate cap concentrates on gate-bulk; Cgs/Cgd are
+ *        only the constant overlap caps. Per Meyer model textbook. */
+TEST(MosfetBsim3Meyer, CutoffRegion_GateBulkDominates) {
+  MosfetBsim3Params p;
+  p.K1 = 0.0; p.eta0 = 0.0; // disable body/DIBL for clean check
+  // Vgs = 0 < Vth0 = 1.17, deep cutoff
+  const auto c = MosfetBsim3::meyerCapacitances(0.0, 1.0, 0.0, p);
+  const double Cox = MosfetBsim3::oxideCapDensity(p);
+  const double CoxWL = Cox * p.W * p.L;
+  const double Cov = Cox * p.W * p.Lov;
+  EXPECT_NEAR(c.Cgs, Cov, 1e-18) << "cutoff Cgs = overlap only";
+  EXPECT_NEAR(c.Cgd, Cov, 1e-18) << "cutoff Cgd = overlap only";
+  EXPECT_NEAR(c.Cgb, CoxWL, 1e-18) << "cutoff Cgb = full Cox*W*L";
+}
+
+/** @test Saturation: Cgs is (2/3)*Cox*W*L, Cgd is just overlap, Cgb is 0.
+ *        Standard Meyer textbook value. */
+TEST(MosfetBsim3Meyer, SaturationRegion_TwoThirdsCgs) {
+  MosfetBsim3Params p;
+  p.K1 = 0.0; p.eta0 = 0.0;
+  const double vgs = p.Vth0 + 1.0; // strong overdrive
+  const double vds = 5.0;          // deep saturation
+  const auto c = MosfetBsim3::meyerCapacitances(vgs, vds, 0.0, p);
+  const double Cox = MosfetBsim3::oxideCapDensity(p);
+  const double CoxWL = Cox * p.W * p.L;
+  const double Cov = Cox * p.W * p.Lov;
+  EXPECT_NEAR(c.Cgs, (2.0 / 3.0) * CoxWL + Cov, 1e-18)
+      << "saturation Cgs = (2/3)*Cox*W*L + overlap";
+  EXPECT_NEAR(c.Cgd, Cov, 1e-18) << "saturation Cgd = overlap only";
+  EXPECT_NEAR(c.Cgb, 0.0, 1e-18) << "saturation Cgb = 0 (channel screens bulk)";
+}
+
+/** @test Linear region with Vds=0: symmetric Cgs = Cgd = Cox*W*L/2.
+ *        Standard Meyer textbook value at Vds=0. */
+TEST(MosfetBsim3Meyer, LinearRegion_VdsZero_SymmetricCgsCgd) {
+  MosfetBsim3Params p;
+  p.K1 = 0.0; p.eta0 = 0.0;
+  const double vgs = p.Vth0 + 1.0; // strong overdrive
+  const double vds = 0.0;
+  const auto c = MosfetBsim3::meyerCapacitances(vgs, vds, 0.0, p);
+  const double Cox = MosfetBsim3::oxideCapDensity(p);
+  const double CoxWL = Cox * p.W * p.L;
+  const double Cov = Cox * p.W * p.Lov;
+  EXPECT_NEAR(c.Cgs, 0.5 * CoxWL + Cov, 1e-18) << "Vds=0 linear: Cgs = Cox*W*L/2";
+  EXPECT_NEAR(c.Cgd, 0.5 * CoxWL + Cov, 1e-18) << "Vds=0 linear: Cgd = Cox*W*L/2";
+  EXPECT_NEAR(c.Cgb, 0.0, 1e-18);
+}
+
+/** @test Linear region near boundary to saturation (Vds = Vdsat - epsilon):
+ *        approaches Cgs = (2/3)*Cox*W*L, Cgd = 0. Continuous with sat region. */
+TEST(MosfetBsim3Meyer, LinearToSaturationContinuity) {
+  MosfetBsim3Params p;
+  p.K1 = 0.0; p.eta0 = 0.0;
+  const double Vov = 1.0;
+  const double vgs = p.Vth0 + Vov;
+  const auto cLinNearSat = MosfetBsim3::meyerCapacitances(vgs, Vov - 1e-9, 0.0, p);
+  const auto cSat = MosfetBsim3::meyerCapacitances(vgs, Vov + 1e-9, 0.0, p);
+  EXPECT_NEAR(cLinNearSat.Cgs, cSat.Cgs, 1e-12)
+      << "Cgs continuous across linear/sat boundary";
+  EXPECT_NEAR(cLinNearSat.Cgd, cSat.Cgd, 1e-12)
+      << "Cgd continuous across linear/sat boundary";
+}
+
+/** @test Total gate charge conservation (approximate). In cutoff Cgg = Cgb.
+ *        In strong inversion (sat), Cgg = Cgs + Cgd (overlap component) +
+ *        intrinsic 2/3*CoxWL. Sanity check on total cap magnitudes. */
+TEST(MosfetBsim3Meyer, TotalGateCapacitanceSanity) {
+  MosfetBsim3Params p;
+  p.K1 = 0.0; p.eta0 = 0.0;
+  const double Cox = MosfetBsim3::oxideCapDensity(p);
+  const double CoxWL = Cox * p.W * p.L;
+
+  // Cutoff: total = Cgb ≈ CoxWL (plus 2*Cov for overlaps to source/drain)
+  const auto cCut = MosfetBsim3::meyerCapacitances(0.0, 1.0, 0.0, p);
+  const double totalCut = cCut.Cgs + cCut.Cgd + cCut.Cgb;
+  EXPECT_GT(totalCut, CoxWL); // Cgb plus 2*Cov
+  EXPECT_LT(totalCut, 1.5 * CoxWL); // not pathologically large
+
+  // Saturation: total ≈ (2/3)*CoxWL + 2*Cov (Cgs + Cgd_ov)
+  const auto cSat = MosfetBsim3::meyerCapacitances(p.Vth0 + 1.0, 5.0, 0.0, p);
+  const double totalSat = cSat.Cgs + cSat.Cgd + cSat.Cgb;
+  EXPECT_GT(totalSat, 0.6 * CoxWL);
+  EXPECT_LT(totalSat, 0.8 * CoxWL);
+}
+
 /* ========================== L2 Unblocker Probe ========================== */
 
 namespace {
