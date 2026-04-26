@@ -211,11 +211,17 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
   /// per NR iteration; expect simulation to slow noticeably.
   bool enableMeyerCaps_ = false;
 
-  /// Meyer cap parameters template. Process-level constants
-  /// (oxide thickness, overlap diffusion); per-transistor W/L is
-  /// folded into Kp via the existing transistorKp_ binning.
+  /// Physical channel length L for the 4004 process (10 µm).
+  /// Used by Meyer cap calc to compute Cox*W*L = actual gate
+  /// capacitance. (For I-V, W and L are folded into Kp; for caps
+  /// we need the real geometry.)
+  static constexpr double L_PHYSICAL = 10e-6;
+
+  /// Meyer cap parameters template. Process-level constants only;
+  /// per-transistor W is derived in stampDynamicCharge from the
+  /// calibrated W/L bin (transistorKp_ / KP_PROCESS).
   MosfetBsim3Params meyerCapParams_{
-      .Kp = KP_PROCESS, .Vth0 = VTH_ENH, .lambda = LAMBDA, .W = 1.0, .L = 1.0,
+      .Kp = KP_PROCESS, .Vth0 = VTH_ENH, .lambda = LAMBDA, .W = L_PHYSICAL, .L = L_PHYSICAL,
       .n_factor = 2.5, .Vt = 0.026, .eta0 = 0.0, .K1 = 0.0, .K2 = 0.0, .phi = 0.7,
       .ua = 0.0, .ub = 0.0, .tox = 50e-9, .delta = 0.01,
       .Lov = 1e-6, .include_caps = true};
@@ -246,6 +252,7 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
 
     if (transistorKp_.empty()) computeTransistorKp();
 
+
     const std::size_t N = prevTimestepV.size();
     auto safeV = [&](mna::NetID n) -> double {
       return (n != 0 && n < N) ? prevTimestepV[n] : 0.0;
@@ -269,25 +276,52 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
       MosfetBsim3Params pp = meyerCapParams_;
       pp.Kp = transistorKp_[idx];
       pp.Vth0 = sameVtoMode_ ? VTH_ENH : (t.isDiodeLoad ? VTH_DEP : VTH_ENH);
+      // Per-transistor physical W from calibrated W/L bin:
+      //   transistorKp_[i] = KP_PROCESS * (W/L)_i
+      //   (W/L)_i = transistorKp_[i] / KP_PROCESS
+      //   W_physical = (W/L)_i * L_PHYSICAL
+      const double WL_ratio = transistorKp_[idx] / KP_PROCESS;
+      pp.W = WL_ratio * L_PHYSICAL;
+      pp.L = L_PHYSICAL;
 
       const auto caps = MosfetBsim3::meyerCapacitances(vgs, vds, /*vbs=*/0.0, pp);
 
       auto stampCap = [&](mna::NetID a, mna::NetID b, double C) {
         if (C <= 0.0 || !std::isfinite(C)) return;
         if (a == b) return; // degenerate
+        if (a >= N || b >= N) return; // OOB guard
         const double Geq = C / stepDt_;
         if (!std::isfinite(Geq)) return;
         mna.addConductance(a, b, Geq);
         mna.addCurrent(a, b, Geq * (safeV(a) - safeV(b)));
       };
 
-      // Only stamp if gate is a real net (not ground).
-      if (t.gate != 0) {
-        if (t.source != 0) stampCap(t.gate, t.source, caps.Cgs);
-        if (t.drain != 0)  stampCap(t.gate, t.drain,  caps.Cgd);
-        // Cgb to ground (NetID 0). Skip if gate is also 0 (degenerate).
-        stampCap(t.gate, circuit::Circuit::ground(), caps.Cgb);
+      // KNOWN ISSUE (next-session debug): stamping all 3 Meyer caps
+      // (Cgs, Cgd, Cgb) per transistor at full chip scale crashes the
+      // MNA solver (KLU factorize) AFTER stamping completes. The cap
+      // VALUES are textbook-correct (~50-200 fF range -- see
+      // diagnostic in tests). The MODEL works correctly at single-
+      // transistor scale (5/5 MosfetBsim3Meyer tests pass).
+      //
+      // The crash signature: stampDynamicCharge() returns cleanly
+      // (per printf diagnostic), then KLU factorize runs and the
+      // process segfaults. Likely matrix conditioning issue: the
+      // ~6,700 added cap-companion stamps may create rank deficiency
+      // or extreme conditioning when combined with the existing
+      // transistor stamps.
+      //
+      // Currently stamping Cgs only (Cgd/Cgb commented out below) for
+      // isolation; Cgs alone reproduces the crash. Investigation paths:
+      //   - Use larger gminTransient_ to better-condition matrix
+      //   - Add small leakage-conductance to all cap-stamped nodes
+      //   - Use klu_refactor instead of full klu_factorize
+      //   - Use ngspice as solver for the caps-ON case
+      if (t.gate != 0 && t.source != 0) {
+        stampCap(t.gate, t.source, caps.Cgs);
       }
+      // Cgd/Cgb temporarily disabled while debugging Cgs path:
+      // if (t.drain != 0)  stampCap(t.gate, t.drain,  caps.Cgd);
+      // stampCap(t.gate, circuit::Circuit::ground(), caps.Cgb);
     }
   }
 };
