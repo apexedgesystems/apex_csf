@@ -82,6 +82,15 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   static constexpr double V_NR_LO = -1.0;
   static constexpr double V_NR_HI = 6.0;
 
+  /// Drive POC (Power-On Clear) pin LOW during the first byte's SYNC
+  /// phase to model real-silicon power-on reset. The POC pin is an
+  /// external chip pin that's asserted LOW briefly at power-on to
+  /// initialize dynamic state to a defined configuration. After
+  /// release, the chip's depletion load M1273 (VDD VDD POC) holds
+  /// POC HIGH naturally. Default false preserves L1 behavior; L2
+  /// sets true to enable physics-based bootstrap.
+  bool assertPocFirstByte_ = false;
+
   /// Parasitic capacitance for Level 1 model.
   static constexpr double CPARA_L1 = 10e-15;
 
@@ -237,6 +246,7 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     auto scM12Clk2Net = findNet("SC&M12&CLK2");
     auto scM22Clk2Net = findNet("SC&M22&CLK2");
     auto opaIbNet = findNet("OPA-IB");
+    auto pocNet = findNet("POC");
 
     // Force behavioral signals into a voltage vector. driveNet (G_DRIVER
     // conductance) is overwhelmed by Level 1 stamp loads on timing nets.
@@ -258,6 +268,13 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       fv(scM12Clk2Net, ((machineState_ == 3) && !clk2High_) ? 0.0 : VDD_VOLTAGE);
       fv(scM22Clk2Net, ((machineState_ == 4) && !clk2High_) ? 0.0 : VDD_VOLTAGE);
       fv(opaIbNet, (machineState_ == 4) ? 0.0 : VDD_VOLTAGE);
+
+      // Power-On Clear protocol: assert POC LOW during first byte's
+      // SYNC phase, then release. Models real-silicon reset bootstrap.
+      if (assertPocFirstByte_ && bytesFetched_ == 0 && machineState_ <= 2) {
+        fv(pocNet, 0.0);
+      }
+      // After first byte: stop forcing; depletion load M1273 holds HIGH.
 
       if (dataBusDriving_) {
         for (int b = 0; b < 4; ++b) {

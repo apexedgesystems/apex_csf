@@ -107,6 +107,7 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
     clampNrIterates_ = true;              // legitimate numerical aid (no current draw)
     gminTransient_ = 1e-9;
     gminDriven_ = 1e-12;                  // tiny GMIN on NOR-output / clock nets
+    assertPocFirstByte_ = true;           // physics: POC reset bootstrap
   }
 
   /// BSIM3 parameter template for the latch feedback core. Per-transistor
