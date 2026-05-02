@@ -13,6 +13,13 @@ GENERATE_TREEVIEW      = YES
 SEARCHENGINE           = YES
 MARKDOWN_SUPPORT       = YES
 
+# doxygen-awesome-css theme (https://jothepro.github.io/doxygen-awesome-css/)
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+HTML_COLORSTYLE        = LIGHT
+HTML_EXTRA_STYLESHEET  = @DOXYGEN_AWESOME_CSS_DIR@/doxygen-awesome.css \
+                         @DOXYGEN_AWESOME_CSS_DIR@/doxygen-awesome-sidebar-only.css
+
 EXTRACT_ALL            = YES
 EXTRACT_PRIVATE        = YES
 EXTRACT_STATIC         = YES
