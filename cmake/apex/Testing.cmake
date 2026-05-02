@@ -35,7 +35,7 @@ function (apex_add_gtest)
   endif ()
 
   cmake_parse_arguments(
-    GT "TIMING_ALL;NO_COVERAGE"
+    GT "TIMING_ALL;NO_COVERAGE;NO_PCH"
     "TARGET;INC;WORKING_DIR;RESOURCE_LOCK;COVERAGE_FOR;REQUIRES_THREADS"
     "SOURCES;CUDA;LINK;LABELS;TIMING_TESTS;TIMING_PATTERNS" ${ARGN}
   )
@@ -43,6 +43,10 @@ function (apex_add_gtest)
 
   add_executable(${GT_TARGET})
   target_sources(${GT_TARGET} PRIVATE ${GT_SOURCES})
+
+  if (NOT GT_NO_PCH)
+    apex_pch_apply(${GT_TARGET} TEST)
+  endif ()
 
   if (GT_INC)
     target_include_directories(${GT_TARGET} PRIVATE "${GT_INC}")

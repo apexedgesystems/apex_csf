@@ -33,6 +33,9 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 # Build acceleration (ccache, fast linker, split DWARF)
 include(apex/BuildAcceleration)
 
+# Precompiled headers (hosted builds only; auto-skipped for bare-metal)
+include(apex/Pch)
+
 # Coverage initialization
 include(apex/Coverage)
 apex_coverage_init()
