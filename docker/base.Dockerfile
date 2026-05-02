@@ -232,7 +232,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libgoogle-perftools-dev \
       libunwind-dev \
       valgrind \
-      bpftrace
+      bpftrace \
+      rr
 
 # ==============================================================================
 # SuiteSparse (KLU sparse solver)
