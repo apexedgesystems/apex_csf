@@ -98,14 +98,14 @@ define _build
 	@cmake --preset $(2) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
 	$(call log,build,Building $(1))
 	@cmake --build --preset $(2) -j$(NUM_JOBS)
-	@ln -sf $(3)/compile_commands.json compile_commands.json 2>/dev/null || true
+	@ln -sf $(3)/compile_commands.json compile_commands.json
 endef
 
 # _configure: Configure a CMake preset (no build)
 # Usage: $(call _configure,preset,build_dir)
 define _configure
 	@cmake --preset $(1) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
-	@ln -sf $(2)/compile_commands.json compile_commands.json 2>/dev/null || true
+	@ln -sf $(2)/compile_commands.json compile_commands.json
 endef
 
 # _platform_targets: Generate build and configure targets for a platform
@@ -222,7 +222,7 @@ help:
 	@printf '\n'
 	@printf '%s\n' "Cleanup:"
 	@printf '  %-28s %s\n' "make clean" "Clean build artifacts"
-	@printf '  %-28s %s\n' "make distclean" "Remove build/ entirely"
+	@printf '  %-28s %s\n' "make distclean" "Remove build/ entirely (SURE=1 if cross-builds present)"
 	@printf '  %-28s %s\n' "make docker-clean" "Clean Docker dangling images"
 	@printf '  %-28s %s\n' "make docker-prune" "Remove all apex.* images"
 	@printf '\n'
@@ -283,10 +283,10 @@ c2000: prep
 	@cmake --preset $(C2000_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
 	$(call log,build,Building C2000 firmware)
 	@cmake --build --preset $(C2000_PRESET) --target firmware -j$(NUM_JOBS)
-	@ln -sf $(C2000_DIR)/compile_commands.json compile_commands.json 2>/dev/null || true
+	@ln -sf $(C2000_DIR)/compile_commands.json compile_commands.json
 configure-c2000: prep
 	@cmake --preset $(C2000_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
-	@ln -sf $(C2000_DIR)/compile_commands.json compile_commands.json 2>/dev/null || true
+	@ln -sf $(C2000_DIR)/compile_commands.json compile_commands.json
 
 # ==============================================================================
 # Configure-Only (native)
