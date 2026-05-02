@@ -205,14 +205,17 @@ zenith-validate: zenith-target
 # Static Analysis
 # ------------------------------------------------------------------------------
 
-# Static analysis with Clang's scan-build
+STATIC_PRESET ?= native-linux-static
+STATIC_DIR    := build/$(STATIC_PRESET)
+
+# Static analysis with Clang's scan-build. Uses its own preset/build dir so
+# scan-build's wrapped object files don't pollute the normal debug build.
 static: prep
-	$(call log,static,Configuring for static analysis)
-	@cmake -DCMAKE_BUILD_TYPE=Debug -B"$(BUILD_DIR)" -S. -GNinja
+	$(call _configure,$(STATIC_PRESET),$(STATIC_DIR))
 	$(call log,static,Running scan-build)
-	@cd "$(BUILD_DIR)" && scan-build --status-bugs ninja -j$(NUM_JOBS)
+	@cd "$(STATIC_DIR)" && scan-build --status-bugs ninja -j$(NUM_JOBS)
 	$(call log,static,Running tests to verify)
-	@cd "$(BUILD_DIR)" && $(call with_lib_path,ctest --output-on-failure)
+	@cd "$(STATIC_DIR)" && $(call with_lib_path,ctest --output-on-failure)
 
 # ------------------------------------------------------------------------------
 # Phony Declarations

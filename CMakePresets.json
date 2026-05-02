@@ -47,6 +47,56 @@
     },
 
     {
+      "name": "native-linux-asan",
+      "displayName": "Native (Ubuntu) - Debug + AddressSanitizer",
+      "inherits": "base",
+      "binaryDir": "build/native-linux-asan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SANITIZER": "asan"
+      }
+    },
+    {
+      "name": "native-linux-tsan",
+      "displayName": "Native (Ubuntu) - Debug + ThreadSanitizer",
+      "inherits": "base",
+      "binaryDir": "build/native-linux-tsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SANITIZER": "tsan"
+      }
+    },
+    {
+      "name": "native-linux-ubsan",
+      "displayName": "Native (Ubuntu) - Debug + UBSanitizer",
+      "inherits": "base",
+      "binaryDir": "build/native-linux-ubsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "SANITIZER": "ubsan"
+      }
+    },
+    {
+      "name": "native-linux-coverage",
+      "displayName": "Native (Ubuntu) - Debug + Coverage (LLVM source-based)",
+      "inherits": "native-linux-debug",
+      "binaryDir": "build/native-linux-coverage",
+      "cacheVariables": {
+        "ENABLE_COVERAGE": "ON",
+        "APEX_COVERAGE_LLVM_VERSION": "21"
+      }
+    },
+    {
+      "name": "native-linux-static",
+      "displayName": "Native (Ubuntu) - Debug for scan-build static analysis",
+      "inherits": "base",
+      "binaryDir": "build/native-linux-static",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+
+    {
       "name": "jetson-aarch64-debug",
       "displayName": "Jetson AGX Thor (aarch64) - Debug",
       "inherits": "base",
@@ -196,6 +246,11 @@
     { "name": "native-linux-debug",    "configurePreset": "native-linux-debug" },
     { "name": "native-linux-profile",  "configurePreset": "native-linux-profile" },
     { "name": "native-linux-release",  "configurePreset": "native-linux-release" },
+    { "name": "native-linux-asan",     "configurePreset": "native-linux-asan" },
+    { "name": "native-linux-tsan",     "configurePreset": "native-linux-tsan" },
+    { "name": "native-linux-ubsan",    "configurePreset": "native-linux-ubsan" },
+    { "name": "native-linux-coverage", "configurePreset": "native-linux-coverage" },
+    { "name": "native-linux-static",   "configurePreset": "native-linux-static" },
     { "name": "jetson-aarch64-debug",  "configurePreset": "jetson-aarch64-debug" },
     { "name": "jetson-aarch64-release", "configurePreset": "jetson-aarch64-release" },
     { "name": "rpi-aarch64-debug",     "configurePreset": "rpi-aarch64-debug" },
@@ -213,6 +268,10 @@
   "testPresets": [
     { "name": "native-linux-debug",    "configurePreset": "native-linux-debug" },
     { "name": "native-linux-release",  "configurePreset": "native-linux-release" },
+    { "name": "native-linux-asan",     "configurePreset": "native-linux-asan" },
+    { "name": "native-linux-tsan",     "configurePreset": "native-linux-tsan" },
+    { "name": "native-linux-ubsan",    "configurePreset": "native-linux-ubsan" },
+    { "name": "native-linux-coverage", "configurePreset": "native-linux-coverage" },
     { "name": "jetson-aarch64-debug",  "configurePreset": "jetson-aarch64-debug" },
     { "name": "jetson-aarch64-release", "configurePreset": "jetson-aarch64-release" }
   ]
