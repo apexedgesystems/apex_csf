@@ -30,6 +30,10 @@ project(
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
+# Build-tier classification (hosted / cross-linux / baremetal / rtos).
+# Single source of truth — included before anything that gates on tier.
+include(apex/Tiers)
+
 # Build acceleration (ccache, fast linker, split DWARF)
 include(apex/BuildAcceleration)
 
@@ -43,20 +47,15 @@ apex_coverage_init()
 # ------------------------------------------------------------------------------
 # Platform detection
 # ------------------------------------------------------------------------------
-# APEX_PLATFORM_BAREMETAL: True when targeting bare-metal (no OS)
-# Must be set early, before add_subdirectory(src) which checks it
-if (CMAKE_SYSTEM_NAME STREQUAL "Generic")
-  set(APEX_PLATFORM_BAREMETAL
-      TRUE
-      CACHE INTERNAL "Bare-metal platform detected"
-  )
-  message(STATUS "[apex] Bare-metal platform detected")
-else ()
-  set(APEX_PLATFORM_BAREMETAL
-      FALSE
-      CACHE INTERNAL "Not a bare-metal platform"
-  )
-endif ()
+# APEX_PLATFORM_BAREMETAL is a derived alias of APEX_TIER (set by Tiers.cmake
+# above). Kept for backward compatibility with the existing call sites in
+# Targets.cmake, Coverage.cmake, Pch.cmake, etc.
+apex_tier_is("baremetal" _is_baremetal)
+set(APEX_PLATFORM_BAREMETAL
+    ${_is_baremetal}
+    CACHE INTERNAL "Alias: APEX_TIER STREQUAL baremetal"
+)
+unset(_is_baremetal)
 
 # APEX_HAL_PLATFORM: Which HAL platform to build (stm32, avr, pico, esp32)
 # Set explicitly via preset or -DAPEX_HAL_PLATFORM=stm32
