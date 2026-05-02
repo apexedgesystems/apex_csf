@@ -98,10 +98,8 @@ clean-rust: clean-rust-build clean-rust-local
 clean: clean-ninja clean-upx clean-docs clean-py clean-rust coverage-clean
 	$(call log,clean,Done)
 
-# Guard for distclean: refuse if non-default (cross-compile / firmware)
-# build dirs are present unless SURE=1, since those may take many minutes
-# to repopulate. Runs as a prerequisite so the rust/py cleanups don't fire
-# until the guard passes.
+# Refuse distclean when non-default build dirs are present unless SURE=1.
+# Runs as a prerequisite so rust/py cleanups don't fire until the guard passes.
 distclean-guard:
 	@if [ -d build ]; then \
 	  non_default=$$(ls build 2>/dev/null | grep -vE '^native-linux-' || true); \

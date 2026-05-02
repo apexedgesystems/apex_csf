@@ -36,11 +36,8 @@ COPY --chown=${HOST_UID}:${HOST_GID} . .
 # ==============================================================================
 # Build Release Artifacts
 # ==============================================================================
-# BuildKit cache mount on /ccache: lets warm release runs short-circuit
-# unchanged TUs across rebuilds. CCACHE_DIR=/ccache is already set in the
-# parent dev image. Cache key defaults to target path, so all builder-*
-# images share the cache (cpu, cuda, jetson, etc. compile mostly the same
-# code with different flags — sharing amplifies hit rate).
+# Cache mount on /ccache (CCACHE_DIR set in parent dev image). Cache key
+# defaults to target path, so all builder-* images share the cache.
 RUN --mount=type=cache,target=/ccache,uid=${HOST_UID},gid=${HOST_GID} \
     make distclean 2>/dev/null || true && \
     eval ${BUILD_CMD} && \

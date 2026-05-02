@@ -1,13 +1,8 @@
 # ==============================================================================
 # mk/size.mk - Binary size analysis (Google bloaty)
 #
-# Reads ELF / Mach-O / PE binaries and prints hierarchical size breakdowns
-# by symbol, compile unit, archive, or section. Useful for MCU firmware
-# (where flash size is the constraining resource) and for tracking the
-# binary size of POSIX apps over time.
-#
-# bloaty is installed in the apex.base image. These targets only invoke
-# the tool; they do not build anything.
+# Wraps bloaty for ELF / Mach-O / PE binaries with per-platform shortcuts.
+# bloaty is installed in apex.base.
 #
 # Usage:
 #   make size FILE=path/to/binary [DIM=compileunits,symbols] [N=20]
@@ -27,10 +22,10 @@ SIZE_MK_GUARD := 1
 # Configuration
 # ------------------------------------------------------------------------------
 
-# Default dimensions: compileunits then symbols within each. Good first look.
+# Default dimensions: compile units then symbols.
 DIM ?= compileunits,symbols
 
-# Top N rows to print per dimension. Tune for verbosity.
+# Top N rows to print per dimension.
 N ?= 25
 
 # ------------------------------------------------------------------------------

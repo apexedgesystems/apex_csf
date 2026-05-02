@@ -97,8 +97,7 @@ $(eval $(call _compose_target,c2000-debug,C2000 firmware (debug),dev-c2000,c2000
 # ------------------------------------------------------------------------------
 # Size Analysis (bloaty)
 # ------------------------------------------------------------------------------
-# bloaty lives in apex.base. Route size targets through dev-cuda. For MCU
-# firmware, the FW=<name> argument is forwarded explicitly.
+# bloaty lives in apex.base. Route through dev-cuda.
 
 .PHONY: compose-size compose-size-stm32 compose-size-arduino compose-size-pico
 .PHONY: compose-size-esp32 compose-size-c2000 compose-size-app compose-size-diff

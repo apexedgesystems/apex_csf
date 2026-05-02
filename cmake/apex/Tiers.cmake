@@ -10,9 +10,7 @@ include_guard(GLOBAL)
 #   baremetal    - Bare-metal MCU (no OS, restricted stdlib, static link only).
 #   rtos         - RTOS build (Zephyr, etc.) — between baremetal and POSIX.
 #
-# This is the single source of truth for "what kind of build is this?".
-# Replaces the prior pattern of asking CMAKE_SYSTEM_NAME, CMAKE_CROSSCOMPILING,
-# and APEX_PLATFORM_BAREMETAL in three different places.
+# Single source of truth for "what kind of build is this?".
 #
 # ------------------------------------------------------------------------------
 # Capability matrix (informative)

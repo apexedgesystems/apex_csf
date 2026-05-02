@@ -2,9 +2,8 @@
 # CI -- Build, test, and lint on push/PR to main
 #
 # Runs format-check, debug build, and test suite inside Docker Compose
-# containers. Uses the CPU dev image (no NVIDIA driver required).
-# CUDA GPU code is auto-skipped: find_package(CUDAToolkit QUIET) returns
-# NOT_FOUND in the CPU image, so gpu_compute subdirectories are excluded.
+# containers. Uses the CPU dev image. CUDA build paths are skipped when
+# CUDAToolkit_FOUND is false at configure time.
 # ==============================================================================
 name: CI
 

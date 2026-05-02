@@ -16,9 +16,7 @@ endif ()
 # ------------------------------------------------------------------------------
 # doxygen-awesome-css theme (jothepro/doxygen-awesome-css)
 # ------------------------------------------------------------------------------
-# Lazy fetch: only happens when an apex_add_doxygen call actually needs
-# the theme path. Avoids a wasted git clone when no library invokes
-# Doxygen (which is the current project state — see _apex_fetch_doxygen_awesome).
+# Lazy fetch: only fires when an apex_add_doxygen call needs the theme path.
 function (_apex_fetch_doxygen_awesome)
   if (DEFINED DOXYGEN_AWESOME_CSS_DIR)
     return()

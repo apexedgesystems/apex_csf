@@ -25,10 +25,8 @@ ASAN_DIR       := build/$(ASAN_PRESET)
 TSAN_DIR       := build/$(TSAN_PRESET)
 UBSAN_DIR      := build/$(UBSAN_PRESET)
 
-# ASan + CUDA workaround: ASan's shadow memory reservation collides with
-# CUDA's virtual address space. protect_shadow_gap=0 disables the
-# protection that triggers the conflict. detect_leaks=0 turns off LSan,
-# whose noise against CUDA's persistent allocations is not actionable.
+# protect_shadow_gap=0 avoids ASan/CUDA virtual-memory conflict.
+# detect_leaks=0 disables LSan (noisy against CUDA's persistent allocations).
 ASAN_RUN_OPTIONS ?= protect_shadow_gap=0:detect_leaks=0
 
 # ------------------------------------------------------------------------------

@@ -30,8 +30,7 @@ project(
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
-# Build-tier classification (hosted / cross-linux / baremetal / rtos).
-# Single source of truth — included before anything that gates on tier.
+# Build-tier classification (hosted / cross-linux / baremetal / rtos)
 include(apex/Tiers)
 
 # Build acceleration (ccache, fast linker, split DWARF)
@@ -47,9 +46,7 @@ apex_coverage_init()
 # ------------------------------------------------------------------------------
 # Platform detection
 # ------------------------------------------------------------------------------
-# APEX_PLATFORM_BAREMETAL is a derived alias of APEX_TIER (set by Tiers.cmake
-# above). Kept for backward compatibility with the existing call sites in
-# Targets.cmake, Coverage.cmake, Pch.cmake, etc.
+# APEX_PLATFORM_BAREMETAL is a derived alias of APEX_TIER.
 apex_tier_is("baremetal" _is_baremetal)
 set(APEX_PLATFORM_BAREMETAL
     ${_is_baremetal}
