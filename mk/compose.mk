@@ -88,6 +88,39 @@ $(eval $(call _compose_target,esp32,ESP32 firmware,dev-esp32,esp32))
 $(eval $(call _compose_target,c2000,C2000 firmware,dev-c2000,c2000))
 
 # ------------------------------------------------------------------------------
+# Size Analysis (bloaty)
+# ------------------------------------------------------------------------------
+# bloaty lives in apex.base. Route size targets through dev-cuda. For MCU
+# firmware, the FW=<name> argument is forwarded explicitly.
+
+.PHONY: compose-size compose-size-stm32 compose-size-arduino compose-size-pico
+.PHONY: compose-size-esp32 compose-size-c2000 compose-size-app compose-size-diff
+
+compose-size:
+	$(call _compose_run,size,dev-cuda,size,FILE="$(FILE)" DIM="$(DIM)" N="$(N)")
+
+compose-size-stm32:
+	$(call _compose_run,size-stm32,dev-cuda,size-stm32,FW="$(FW)" DIM="$(DIM)" N="$(N)")
+
+compose-size-arduino:
+	$(call _compose_run,size-arduino,dev-cuda,size-arduino,FW="$(FW)" DIM="$(DIM)" N="$(N)")
+
+compose-size-pico:
+	$(call _compose_run,size-pico,dev-cuda,size-pico,FW="$(FW)" DIM="$(DIM)" N="$(N)")
+
+compose-size-esp32:
+	$(call _compose_run,size-esp32,dev-cuda,size-esp32,FW="$(FW)" DIM="$(DIM)" N="$(N)")
+
+compose-size-c2000:
+	$(call _compose_run,size-c2000,dev-cuda,size-c2000,FW="$(FW)" DIM="$(DIM)" N="$(N)")
+
+compose-size-app:
+	$(call _compose_run,size-app,dev-cuda,size-app,APP="$(APP)" DIM="$(DIM)" N="$(N)")
+
+compose-size-diff:
+	$(call _compose_run,size-diff,dev-cuda,size-diff,NEW="$(NEW)" OLD="$(OLD)" DIM="$(DIM)" N="$(N)")
+
+# ------------------------------------------------------------------------------
 # Firmware Flash and Reset
 # ------------------------------------------------------------------------------
 # Kept explicit because each platform passes different device-selector variables.

@@ -22,6 +22,7 @@ include mk/tools.mk
 include mk/firmware.mk
 include mk/compose.mk
 include mk/release.mk
+include mk/size.mk
 include mk/clean.mk
 
 # ==============================================================================
@@ -177,6 +178,16 @@ help:
 	@printf '  %-28s %s\n' "make release APP=<name>" "Build + package all platforms for an app"
 	@printf '  %-28s %s\n' "make release-all" "Release all registered apps"
 	@printf '  %-28s %s\n' "make release-clean" "Remove release/ directory"
+	@printf '\n'
+	@printf '%s\n' "Size Analysis (bloaty):"
+	@printf '  %-28s %s\n' "make size FILE=<path>" "Bloaty size breakdown of any binary"
+	@printf '  %-28s %s\n' "make size-stm32 FW=<n>" "Bloaty on stm32 firmware ELF"
+	@printf '  %-28s %s\n' "make size-arduino FW=<n>" "Bloaty on arduino firmware ELF"
+	@printf '  %-28s %s\n' "make size-pico FW=<n>" "Bloaty on pico firmware ELF"
+	@printf '  %-28s %s\n' "make size-esp32 FW=<n>" "Bloaty on esp32 firmware ELF"
+	@printf '  %-28s %s\n' "make size-c2000 FW=<n>" "Bloaty on c2000 firmware ELF"
+	@printf '  %-28s %s\n' "make size-app APP=<n>" "Bloaty on native release app"
+	@printf '  %-28s %s\n' "make size-diff NEW=. OLD=." "Bloaty diff between two binaries"
 	@printf '\n'
 	@printf '%s\n' "Firmware:"
 	@printf '  %-28s %s\n' "make stm32-flash" "Flash STM32 firmware via ST-Link"
