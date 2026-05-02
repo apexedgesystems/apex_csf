@@ -34,9 +34,22 @@ set(INSTALL_GTEST
 fetchcontent_makeavailable(googletest)
 
 # Suppress vernier/seeker tests and docs during their fetch. Save apex_csf's
-# own settings first; restore after.
-set(_apex_save_BUILD_TESTING "${BUILD_TESTING}")
-set(_apex_save_PROJECT_BUILD_DOCS "${PROJECT_BUILD_DOCS}")
+# own settings first; restore after. Use ON as fallback when the variable
+# wasn't set yet at save time (typical first-configure path).
+if (NOT DEFINED _apex_save_BUILD_TESTING)
+  if (DEFINED BUILD_TESTING)
+    set(_apex_save_BUILD_TESTING "${BUILD_TESTING}")
+  else ()
+    set(_apex_save_BUILD_TESTING ON)
+  endif ()
+endif ()
+if (NOT DEFINED _apex_save_PROJECT_BUILD_DOCS)
+  if (DEFINED PROJECT_BUILD_DOCS)
+    set(_apex_save_PROJECT_BUILD_DOCS "${PROJECT_BUILD_DOCS}")
+  else ()
+    set(_apex_save_PROJECT_BUILD_DOCS ON)
+  endif ()
+endif ()
 set(BUILD_TESTING
     OFF
     CACHE BOOL "" FORCE

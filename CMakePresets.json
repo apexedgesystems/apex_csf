@@ -64,32 +64,23 @@
     {
       "name": "native-linux-asan",
       "displayName": "Native (Ubuntu) - Debug + AddressSanitizer",
-      "inherits": "base",
+      "inherits": "native-linux-debug",
       "binaryDir": "build/native-linux-asan",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "SANITIZER": "asan"
-      }
+      "cacheVariables": { "SANITIZER": "asan" }
     },
     {
       "name": "native-linux-tsan",
       "displayName": "Native (Ubuntu) - Debug + ThreadSanitizer",
-      "inherits": "base",
+      "inherits": "native-linux-debug",
       "binaryDir": "build/native-linux-tsan",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "SANITIZER": "tsan"
-      }
+      "cacheVariables": { "SANITIZER": "tsan" }
     },
     {
       "name": "native-linux-ubsan",
       "displayName": "Native (Ubuntu) - Debug + UBSanitizer",
-      "inherits": "base",
+      "inherits": "native-linux-debug",
       "binaryDir": "build/native-linux-ubsan",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "SANITIZER": "ubsan"
-      }
+      "cacheVariables": { "SANITIZER": "ubsan" }
     },
     {
       "name": "native-linux-coverage",
@@ -104,11 +95,8 @@
     {
       "name": "native-linux-static",
       "displayName": "Native (Ubuntu) - Debug for scan-build static analysis",
-      "inherits": "base",
-      "binaryDir": "build/native-linux-static",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
+      "inherits": "native-linux-debug",
+      "binaryDir": "build/native-linux-static"
     },
 
     {

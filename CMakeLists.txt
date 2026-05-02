@@ -154,6 +154,13 @@ option(APEX_BUILD_TOOLS "Build CLI tools (Rust, Python, Shell)" ON)
 find_package(CUDAToolkit QUIET)
 
 if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPILER))
+  # Match nvcc's host compiler to CMAKE_CXX_COMPILER. Without this, nvcc
+  # picks gcc by default — mixing C++ and CUDA TUs across two toolchains
+  # produces incompatible runtime libraries (notably libasan vs libclang_rt.asan).
+  if (NOT DEFINED CMAKE_CUDA_HOST_COMPILER AND CMAKE_CXX_COMPILER)
+    set(CMAKE_CUDA_HOST_COMPILER "${CMAKE_CXX_COMPILER}" CACHE FILEPATH "")
+  endif ()
+
   enable_language(CUDA)
 
   set(CUDA_ARCHS
