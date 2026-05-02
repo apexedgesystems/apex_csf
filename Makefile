@@ -48,8 +48,10 @@ PRE_COMMIT_INSTALL ?= no
 # ------------------------------------------------------------------------------
 
 # Native x86_64
-HOST_DEBUG_PRESET   ?= native-linux-debug
-HOST_RELEASE_PRESET ?= native-linux-release
+HOST_DEBUG_PRESET        ?= native-linux-debug
+HOST_RELEASE_PRESET      ?= native-linux-release
+HOST_CUDA_DEBUG_PRESET   ?= native-linux-cuda-debug
+HOST_CUDA_RELEASE_PRESET ?= native-linux-cuda-release
 
 # Jetson (aarch64 + CUDA)
 JETSON_DEBUG_PRESET   ?= jetson-aarch64-debug
@@ -81,8 +83,10 @@ C2000_DEBUG_PRESET   ?= c2000-baremetal-debug
 # Build Directories (derived from preset names)
 # ------------------------------------------------------------------------------
 
-HOST_DEBUG_DIR     := build/$(HOST_DEBUG_PRESET)
-HOST_RELEASE_DIR   := build/$(HOST_RELEASE_PRESET)
+HOST_DEBUG_DIR        := build/$(HOST_DEBUG_PRESET)
+HOST_RELEASE_DIR      := build/$(HOST_RELEASE_PRESET)
+HOST_CUDA_DEBUG_DIR   := build/$(HOST_CUDA_DEBUG_PRESET)
+HOST_CUDA_RELEASE_DIR := build/$(HOST_CUDA_RELEASE_PRESET)
 JETSON_DEBUG_DIR   := build/$(JETSON_DEBUG_PRESET)
 JETSON_RELEASE_DIR := build/$(JETSON_RELEASE_PRESET)
 RPI_DEBUG_DIR      := build/$(RPI_DEBUG_PRESET)
@@ -141,8 +145,10 @@ help:
 	@printf '%s\n' "====================="
 	@printf '\n'
 	@printf '%s\n' "Native Builds:"
-	@printf '  %-28s %s\n' "make debug" "Build native debug (default)"
-	@printf '  %-28s %s\n' "make release" "Build native release"
+	@printf '  %-28s %s\n' "make debug" "Build native debug (default; CUDA auto-detect)"
+	@printf '  %-28s %s\n' "make release" "Build native release (CUDA auto-detect)"
+	@printf '  %-28s %s\n' "make cuda-debug" "Build native debug requiring CUDA"
+	@printf '  %-28s %s\n' "make cuda-release" "Build native release requiring CUDA"
 	@printf '  %-28s %s\n' "make docs" "Build Doxygen documentation"
 	@printf '  %-28s %s\n' "make configure" "Configure only (no build)"
 	@printf '\n'
@@ -294,6 +300,8 @@ docs: prep
 # Cross-Compilation and Firmware Builds (generated from templates)
 # ==============================================================================
 
+$(eval $(call _platform_targets,cuda-debug,native CUDA debug,$(HOST_CUDA_DEBUG_PRESET),$(HOST_CUDA_DEBUG_DIR)))
+$(eval $(call _platform_targets,cuda-release,native CUDA release,$(HOST_CUDA_RELEASE_PRESET),$(HOST_CUDA_RELEASE_DIR)))
 $(eval $(call _platform_targets,jetson-debug,Jetson debug,$(JETSON_DEBUG_PRESET),$(JETSON_DEBUG_DIR)))
 $(eval $(call _platform_targets,jetson-release,Jetson release,$(JETSON_RELEASE_PRESET),$(JETSON_RELEASE_DIR)))
 $(eval $(call _platform_targets,rpi-debug,Raspberry Pi debug,$(RPI_DEBUG_PRESET),$(RPI_DEBUG_DIR)))

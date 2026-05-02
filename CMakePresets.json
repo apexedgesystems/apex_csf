@@ -47,6 +47,21 @@
     },
 
     {
+      "name": "native-linux-cuda-debug",
+      "displayName": "Native (Ubuntu) - Debug + CUDA (required)",
+      "inherits": "native-linux-debug",
+      "binaryDir": "build/native-linux-cuda-debug",
+      "cacheVariables": { "APEX_REQUIRE_CUDA": "ON" }
+    },
+    {
+      "name": "native-linux-cuda-release",
+      "displayName": "Native (Ubuntu) - Release + CUDA (required)",
+      "inherits": "native-linux-release",
+      "binaryDir": "build/native-linux-cuda-release",
+      "cacheVariables": { "APEX_REQUIRE_CUDA": "ON" }
+    },
+
+    {
       "name": "native-linux-asan",
       "displayName": "Native (Ubuntu) - Debug + AddressSanitizer",
       "inherits": "base",
@@ -308,6 +323,8 @@
   "testPresets": [
     { "name": "native-linux-debug",    "configurePreset": "native-linux-debug" },
     { "name": "native-linux-release",  "configurePreset": "native-linux-release" },
+    { "name": "native-linux-cuda-debug",   "configurePreset": "native-linux-cuda-debug" },
+    { "name": "native-linux-cuda-release", "configurePreset": "native-linux-cuda-release" },
     { "name": "native-linux-asan",     "configurePreset": "native-linux-asan" },
     { "name": "native-linux-tsan",     "configurePreset": "native-linux-tsan" },
     { "name": "native-linux-ubsan",    "configurePreset": "native-linux-ubsan" },

@@ -41,6 +41,8 @@ endef
 
 $(eval $(call _compose_target,debug,native debug,dev-cuda,debug))
 $(eval $(call _compose_target,release,native release,dev-cuda,release))
+$(eval $(call _compose_target,cuda-debug,native CUDA debug,dev-cuda,cuda-debug))
+$(eval $(call _compose_target,cuda-release,native CUDA release,dev-cuda,cuda-release))
 $(eval $(call _compose_target,docs,documentation,dev-cuda,docs))
 
 # ------------------------------------------------------------------------------
