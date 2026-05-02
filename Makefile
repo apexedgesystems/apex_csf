@@ -63,12 +63,19 @@ RPI_RELEASE_PRESET ?= rpi-aarch64-release
 RISCV_DEBUG_PRESET   ?= riscv64-linux-debug
 RISCV_RELEASE_PRESET ?= riscv64-linux-release
 
-# Bare-metal
-STM32_PRESET   ?= stm32-baremetal
-ARDUINO_PRESET ?= arduino-baremetal
-PICO_PRESET    ?= pico-baremetal
-ESP32_PRESET   ?= esp32-baremetal
-C2000_PRESET   ?= c2000-baremetal
+# Bare-metal (RelWithDebInfo profiles; *-debug variants below)
+STM32_PRESET         ?= stm32-baremetal
+ARDUINO_PRESET       ?= arduino-baremetal
+PICO_PRESET          ?= pico-baremetal
+ESP32_PRESET         ?= esp32-baremetal
+C2000_PRESET         ?= c2000-baremetal
+
+# Bare-metal debug variants (-Og -g3 / --opt_level=0, gdb-friendly)
+STM32_DEBUG_PRESET   ?= stm32-baremetal-debug
+ARDUINO_DEBUG_PRESET ?= arduino-baremetal-debug
+PICO_DEBUG_PRESET    ?= pico-baremetal-debug
+ESP32_DEBUG_PRESET   ?= esp32-baremetal-debug
+C2000_DEBUG_PRESET   ?= c2000-baremetal-debug
 
 # ------------------------------------------------------------------------------
 # Build Directories (derived from preset names)
@@ -87,6 +94,12 @@ ARDUINO_DIR        := build/arduino
 PICO_DIR           := build/pico
 ESP32_DIR          := build/esp32
 C2000_DIR          := build/c2000
+
+STM32_DEBUG_DIR    := build/stm32-debug
+ARDUINO_DEBUG_DIR  := build/arduino-debug
+PICO_DEBUG_DIR     := build/pico-debug
+ESP32_DEBUG_DIR    := build/esp32-debug
+C2000_DEBUG_DIR    := build/c2000-debug
 
 # ==============================================================================
 # Build Macros
@@ -140,11 +153,16 @@ help:
 	@printf '  %-28s %s\n' "make rpi-release" "Build for Raspberry Pi release"
 	@printf '  %-28s %s\n' "make riscv-debug" "Build for RISC-V 64"
 	@printf '  %-28s %s\n' "make riscv-release" "Build for RISC-V 64 release"
-	@printf '  %-28s %s\n' "make stm32" "Build STM32 bare-metal firmware"
-	@printf '  %-28s %s\n' "make arduino" "Build Arduino bare-metal firmware"
-	@printf '  %-28s %s\n' "make pico" "Build Pico (RP2040) firmware"
-	@printf '  %-28s %s\n' "make esp32" "Build ESP32 (ESP-IDF) firmware"
-	@printf '  %-28s %s\n' "make c2000" "Build C2000 (TI F28004x) firmware"
+	@printf '  %-28s %s\n' "make stm32" "Build STM32 firmware (RelWithDebInfo)"
+	@printf '  %-28s %s\n' "make stm32-debug" "Build STM32 firmware (debug, -Og -g3)"
+	@printf '  %-28s %s\n' "make arduino" "Build Arduino firmware (RelWithDebInfo)"
+	@printf '  %-28s %s\n' "make arduino-debug" "Build Arduino firmware (debug, -Og -g3)"
+	@printf '  %-28s %s\n' "make pico" "Build Pico (RP2040) firmware (RelWithDebInfo)"
+	@printf '  %-28s %s\n' "make pico-debug" "Build Pico firmware (debug, -Og -g3)"
+	@printf '  %-28s %s\n' "make esp32" "Build ESP32 firmware (RelWithDebInfo)"
+	@printf '  %-28s %s\n' "make esp32-debug" "Build ESP32 firmware (debug, -Og -g3)"
+	@printf '  %-28s %s\n' "make c2000" "Build C2000 firmware (RelWithDebInfo)"
+	@printf '  %-28s %s\n' "make c2000-debug" "Build C2000 firmware (debug, --opt_level=0)"
 	@printf '\n'
 	@printf '%s\n' "Testing:"
 	@printf '  %-28s %s\n' "make test" "Run all C++ tests (serial)"
@@ -283,12 +301,16 @@ $(eval $(call _platform_targets,rpi-release,Raspberry Pi release,$(RPI_RELEASE_P
 $(eval $(call _platform_targets,riscv-debug,RISC-V 64 debug,$(RISCV_DEBUG_PRESET),$(RISCV_DEBUG_DIR)))
 $(eval $(call _platform_targets,riscv-release,RISC-V 64 release,$(RISCV_RELEASE_PRESET),$(RISCV_RELEASE_DIR)))
 $(eval $(call _platform_targets,stm32,STM32 firmware,$(STM32_PRESET),$(STM32_DIR)))
+$(eval $(call _platform_targets,stm32-debug,STM32 firmware (debug),$(STM32_DEBUG_PRESET),$(STM32_DEBUG_DIR)))
 $(eval $(call _platform_targets,arduino,Arduino firmware,$(ARDUINO_PRESET),$(ARDUINO_DIR)))
+$(eval $(call _platform_targets,arduino-debug,Arduino firmware (debug),$(ARDUINO_DEBUG_PRESET),$(ARDUINO_DEBUG_DIR)))
 $(eval $(call _platform_targets,pico,Pico firmware,$(PICO_PRESET),$(PICO_DIR)))
+$(eval $(call _platform_targets,pico-debug,Pico firmware (debug),$(PICO_DEBUG_PRESET),$(PICO_DEBUG_DIR)))
 $(eval $(call _platform_targets,esp32,ESP32 firmware,$(ESP32_PRESET),$(ESP32_DIR)))
+$(eval $(call _platform_targets,esp32-debug,ESP32 firmware (debug),$(ESP32_DEBUG_PRESET),$(ESP32_DEBUG_DIR)))
 # C2000 uses a custom build target to avoid compiling non-TI-compatible libraries.
 # Only the firmware target is built (not all project targets).
-.PHONY: c2000 configure-c2000
+.PHONY: c2000 c2000-debug configure-c2000 configure-c2000-debug
 c2000: prep
 	$(call log,build,Configuring C2000 firmware)
 	@cmake --preset $(C2000_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
@@ -298,6 +320,15 @@ c2000: prep
 configure-c2000: prep
 	@cmake --preset $(C2000_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
 	@ln -sf $(C2000_DIR)/compile_commands.json compile_commands.json
+c2000-debug: prep
+	$(call log,build,Configuring C2000 firmware (debug))
+	@cmake --preset $(C2000_DEBUG_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
+	$(call log,build,Building C2000 firmware (debug))
+	@cmake --build --preset $(C2000_DEBUG_PRESET) --target firmware -j$(NUM_JOBS)
+	@ln -sf $(C2000_DEBUG_DIR)/compile_commands.json compile_commands.json
+configure-c2000-debug: prep
+	@cmake --preset $(C2000_DEBUG_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
+	@ln -sf $(C2000_DEBUG_DIR)/compile_commands.json compile_commands.json
 
 # ==============================================================================
 # Configure-Only (native)

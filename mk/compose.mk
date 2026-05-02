@@ -82,10 +82,15 @@ $(eval $(call _compose_target,riscv-release,RISC-V 64 release,dev-riscv64,riscv-
 # ------------------------------------------------------------------------------
 
 $(eval $(call _compose_target,stm32,STM32 firmware,dev-stm32,stm32))
+$(eval $(call _compose_target,stm32-debug,STM32 firmware (debug),dev-stm32,stm32-debug))
 $(eval $(call _compose_target,arduino,Arduino firmware,dev-arduino,arduino))
+$(eval $(call _compose_target,arduino-debug,Arduino firmware (debug),dev-arduino,arduino-debug))
 $(eval $(call _compose_target,pico,Pico firmware,dev-pico,pico))
+$(eval $(call _compose_target,pico-debug,Pico firmware (debug),dev-pico,pico-debug))
 $(eval $(call _compose_target,esp32,ESP32 firmware,dev-esp32,esp32))
+$(eval $(call _compose_target,esp32-debug,ESP32 firmware (debug),dev-esp32,esp32-debug))
 $(eval $(call _compose_target,c2000,C2000 firmware,dev-c2000,c2000))
+$(eval $(call _compose_target,c2000-debug,C2000 firmware (debug),dev-c2000,c2000-debug))
 
 # ------------------------------------------------------------------------------
 # Size Analysis (bloaty)

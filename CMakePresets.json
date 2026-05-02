@@ -180,6 +180,13 @@
         "APEX_HAL_PLATFORM": "stm32"
       }
     },
+    {
+      "name": "stm32-baremetal-debug",
+      "displayName": "STM32 (L476) - Bare-metal Debug (-Og -g3)",
+      "inherits": "stm32-baremetal",
+      "binaryDir": "build/stm32-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
 
     {
       "name": "zephyr-arm",
@@ -204,6 +211,13 @@
         "APEX_HAL_PLATFORM": "avr"
       }
     },
+    {
+      "name": "arduino-baremetal-debug",
+      "displayName": "Arduino Uno - Bare-metal Debug (-Og -g3)",
+      "inherits": "arduino-baremetal",
+      "binaryDir": "build/arduino-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
 
     {
       "name": "pico-baremetal",
@@ -215,6 +229,13 @@
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "APEX_HAL_PLATFORM": "pico"
       }
+    },
+    {
+      "name": "pico-baremetal-debug",
+      "displayName": "Pico (RP2040) - Bare-metal Debug (-Og -g3)",
+      "inherits": "pico-baremetal",
+      "binaryDir": "build/pico-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
     },
 
     {
@@ -228,6 +249,13 @@
         "APEX_HAL_PLATFORM": "esp32"
       }
     },
+    {
+      "name": "esp32-baremetal-debug",
+      "displayName": "ESP32-S3 - Bare-metal Debug (-Og -g3)",
+      "inherits": "esp32-baremetal",
+      "binaryDir": "build/esp32-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    },
 
     {
       "name": "c2000-baremetal",
@@ -239,6 +267,13 @@
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "APEX_HAL_PLATFORM": "c2000"
       }
+    },
+    {
+      "name": "c2000-baremetal-debug",
+      "displayName": "TI C2000 F28004x - Bare-metal Debug (--opt_level=0)",
+      "inherits": "c2000-baremetal",
+      "binaryDir": "build/c2000-debug",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
     }
   ],
 
@@ -258,11 +293,16 @@
     { "name": "riscv64-linux-debug",   "configurePreset": "riscv64-linux-debug" },
     { "name": "riscv64-linux-release", "configurePreset": "riscv64-linux-release" },
     { "name": "stm32-baremetal",       "configurePreset": "stm32-baremetal" },
+    { "name": "stm32-baremetal-debug", "configurePreset": "stm32-baremetal-debug" },
     { "name": "zephyr-arm",            "configurePreset": "zephyr-arm" },
     { "name": "arduino-baremetal",     "configurePreset": "arduino-baremetal" },
+    { "name": "arduino-baremetal-debug","configurePreset": "arduino-baremetal-debug" },
     { "name": "pico-baremetal",        "configurePreset": "pico-baremetal" },
+    { "name": "pico-baremetal-debug",  "configurePreset": "pico-baremetal-debug" },
     { "name": "esp32-baremetal",       "configurePreset": "esp32-baremetal" },
-    { "name": "c2000-baremetal",      "configurePreset": "c2000-baremetal" }
+    { "name": "esp32-baremetal-debug", "configurePreset": "esp32-baremetal-debug" },
+    { "name": "c2000-baremetal",       "configurePreset": "c2000-baremetal" },
+    { "name": "c2000-baremetal-debug", "configurePreset": "c2000-baremetal-debug" }
   ],
 
   "testPresets": [
