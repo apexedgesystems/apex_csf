@@ -33,9 +33,15 @@ set(INSTALL_GTEST
 )
 fetchcontent_makeavailable(googletest)
 
-# Disable test registration for FetchContent dependencies. Vernier and Seeker
-# test themselves in their own CI -- we only consume their libraries and tools.
+# Suppress vernier/seeker tests and docs during their fetch. Save apex_csf's
+# own settings first; restore after.
+set(_apex_save_BUILD_TESTING "${BUILD_TESTING}")
+set(_apex_save_PROJECT_BUILD_DOCS "${PROJECT_BUILD_DOCS}")
 set(BUILD_TESTING
+    OFF
+    CACHE BOOL "" FORCE
+)
+set(PROJECT_BUILD_DOCS
     OFF
     CACHE BOOL "" FORCE
 )
@@ -49,10 +55,6 @@ fetchcontent_declare(
 )
 set(VERNIER_BUILD_TOOLS
     ON
-    CACHE BOOL "" FORCE
-)
-set(PROJECT_BUILD_DOCS
-    OFF
     CACHE BOOL "" FORCE
 )
 fetchcontent_makeavailable(vernier)
@@ -70,9 +72,15 @@ set(SEEKER_BUILD_TOOLS
 )
 fetchcontent_makeavailable(seeker)
 
-# Re-enable testing for apex_csf's own tests.
+# Restore apex_csf's settings.
 set(BUILD_TESTING
-    ON
+    "${_apex_save_BUILD_TESTING}"
     CACHE BOOL "" FORCE
 )
+set(PROJECT_BUILD_DOCS
+    "${_apex_save_PROJECT_BUILD_DOCS}"
+    CACHE BOOL "" FORCE
+)
+unset(_apex_save_BUILD_TESTING)
+unset(_apex_save_PROJECT_BUILD_DOCS)
 include(CTest)
