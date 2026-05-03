@@ -8,11 +8,12 @@ if (APEX_PLATFORM_BAREMETAL)
 endif ()
 
 # ------------------------------------------------------------------------------
-# Sources (4 test files)
+# Sources (5 test files)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/Esp32NvsFlash_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Esp32Pps_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Esp32TimerTickSource_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Esp32Uart_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Esp32UsbCdc_uTest.cpp"
