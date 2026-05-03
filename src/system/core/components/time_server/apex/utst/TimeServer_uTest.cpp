@@ -411,6 +411,84 @@ TEST(TimeServer, TransitionsToFreerunAfterHoldoverLimit) {
   EXPECT_EQ(h.server().currentTnt().valid, static_cast<std::uint8_t>(TimeValid::FREERUN));
 }
 
+/** @test FREERUN entry latches the wall clock as the new epoch anchor. */
+TEST(TimeServer, FreerunLatchesWallClock) {
+  // Stand up a stub server with both steady and wall clocks injected so
+  // we can drive each independently. Synthetic wall clock starts at
+  // a deterministic UTC value (1700000000s past Unix epoch).
+  static std::int64_t syntheticSteady = 0;
+  static std::int64_t syntheticWall = 1'700'000'000LL * NS_PER_SEC;
+  TimeServer s;
+  s.setSteadyClock({+[](void*) noexcept -> std::int64_t { return syntheticSteady; }, nullptr});
+  s.setWallClock({+[](void*) noexcept -> std::int64_t { return syntheticWall; }, nullptr});
+
+  TimeServerTunableParams tprm;
+  tprm.driftFilterTaps = 4;
+  tprm.maxStalenessUs = 1'500'000;
+  tprm.holdoverLimitS = 5;
+  s.loadTprm(tprm);
+  ASSERT_EQ(s.init(), 0U);
+
+  // Pair a stale reference + edge.
+  SetReferenceTime ref{};
+  ref.epochNs = 100 * NS_PER_SEC; // arbitrary stale reference
+  s.handleSetReferenceTime(ref);
+
+  MockPps pps;
+  (void)pps.init({});
+  s.setPpsSource(&pps);
+
+  syntheticSteady = NS_PER_SEC;
+  pps.injectEdge(NS_PER_SEC);
+  s.tick(0);
+
+  // Advance steady past holdoverLimitS (5s) but keep the wall clock
+  // close to its starting value (so the latch is observable).
+  syntheticSteady = NS_PER_SEC + 6 * NS_PER_SEC; // 7s steady
+  syntheticWall = 1'700'000'000LL * NS_PER_SEC + 7 * NS_PER_SEC;
+  s.tick(1);
+
+  ASSERT_EQ(s.currentTnt().valid, static_cast<std::uint8_t>(TimeValid::FREERUN));
+
+  // FREERUN should have re-anchored: epochNs ~= syntheticWall at the
+  // moment of transition. computeUtcNs at the same steady instant
+  // returns the latched wall clock (within one ns -- the latch is
+  // exact in the synthetic timeline).
+  EXPECT_EQ(s.computeUtcNs(syntheticSteady),
+            1'700'000'000LL * NS_PER_SEC + 7 * NS_PER_SEC);
+
+  // Source is now ONBOARD (FREERUN's effective source).
+  EXPECT_EQ(s.currentTnt().source, static_cast<std::uint8_t>(TimeSource::ONBOARD));
+}
+
+/** @test FREERUN without a wall-clock delegate keeps the stale anchor. */
+TEST(TimeServer, FreerunWithoutWallClockKeepsStaleAnchor) {
+  // Like the test above but no setWallClock(). FREERUN still triggers
+  // (the valid bit is the consumer's signal), the epoch is unchanged
+  // from the last edge, and quality drops to COARSE.
+  TimeServerHarness h;
+  TimeServerTunableParams tprm;
+  tprm.driftFilterTaps = 4;
+  tprm.maxStalenessUs = 1'500'000;
+  tprm.holdoverLimitS = 5;
+  h.loadTprm(tprm);
+
+  h.tick();
+  SetReferenceTime ref{};
+  ref.epochNs = 100 * NS_PER_SEC;
+  h.server().handleSetReferenceTime(ref);
+  h.setSteadyNow(NS_PER_SEC);
+  h.injectAndTick(NS_PER_SEC);
+  const std::int64_t staleEpoch = h.server().currentTnt().epochNs;
+
+  h.setSteadyNow(NS_PER_SEC + 6 * NS_PER_SEC);
+  h.tick();
+
+  EXPECT_EQ(h.server().currentTnt().valid, static_cast<std::uint8_t>(TimeValid::FREERUN));
+  // Epoch unchanged -- no wall clock to latch.
+  EXPECT_EQ(h.server().currentTnt().epochNs, staleEpoch);
+}
+
 /** @test Recovery: an edge after a STALE transition returns to VALID. */
 TEST(TimeServer, RecoversToValidAfterStale) {
   TimeServerHarness h;

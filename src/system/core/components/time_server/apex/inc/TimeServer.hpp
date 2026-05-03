@@ -81,6 +81,14 @@ public:
   /// without owning the bus.
   using BroadcastTntDelegate = apex::concurrency::Delegate<void, const TimeAtNextTone&>;
 
+  /// Delegate for reading the host's wall-clock UTC in nanoseconds. Used
+  /// only on the FREERUN transition: TimeServer latches CLOCK_REALTIME (or
+  /// the platform equivalent) once as the new epoch anchor, so post-PPS
+  /// holdover doesn't keep advancing UTC from a long-stale reference.
+  /// On bare metal where no wall clock exists, leave this unset and
+  /// FREERUN will keep the stale anchor (quality already reflects this).
+  using WallClockDelegate = apex::concurrency::Delegate<std::int64_t>;
+
   TimeServer() noexcept;
   ~TimeServer() override = default;
 
@@ -114,6 +122,12 @@ public:
    * @note RT-safe: stores function pointer pair.
    */
   void setBroadcastDelegate(BroadcastTntDelegate delegate) noexcept { broadcastTnt_ = delegate; }
+
+  /**
+   * @brief Set the wall-clock delegate used to anchor FREERUN.
+   * @note Optional. If unset, FREERUN keeps the previous (stale) anchor.
+   */
+  void setWallClock(WallClockDelegate delegate) noexcept { wallClock_ = delegate; }
 
   /// Bring the base-class file-loading overload into scope alongside our
   /// in-memory struct overload below.
@@ -222,6 +236,15 @@ public:
    */
   [[nodiscard]] static SteadyClockDelegate defaultSteadyClock() noexcept;
 
+  /**
+   * @brief Default wall-clock delegate suitable for setWallClock.
+   * @return Delegate that calls clock_gettime(CLOCK_REALTIME) and returns
+   *         nanoseconds since the Unix epoch.
+   * @note POSIX-only. NTP discipline (when active) keeps this within
+   *       ~10 ms of UTC, which is the FREERUN accuracy goal.
+   */
+  [[nodiscard]] static WallClockDelegate defaultWallClock() noexcept;
+
 protected:
   /// Lifecycle hook called from CoreComponentBase::init(). Registers the
   /// OUTPUT and TUNABLE_PARAM blocks with the registry so consumers can
@@ -244,6 +267,7 @@ private:
   apex::hal::IPps* pps_ = nullptr;
   SteadyClockDelegate steadyClock_;
   BroadcastTntDelegate broadcastTnt_;
+  WallClockDelegate wallClock_;
 
   // Configuration
   TimeServerTunableParams tprm_;

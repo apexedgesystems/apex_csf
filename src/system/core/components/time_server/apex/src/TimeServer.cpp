@@ -207,10 +207,25 @@ void TimeServer::checkStaleness(std::int64_t nowNs) noexcept {
 
   if (sinceLastEdgeNs > holdoverLimitNs) {
     if (valid_ != TimeValid::FREERUN) {
+      // One-shot anchor: latch the host's wall clock now so subsequent
+      // computeUtcNs() interpolations advance from a fresh epoch instead
+      // of from a long-stale lastEdgeEpochNs. NTP-disciplined hosts give
+      // us ~10ms accuracy here, which is the documented FREERUN goal.
+      // If no wall-clock delegate is wired (e.g. bare metal), keep the
+      // stale anchor -- the quality bit already reflects the degradation.
+      if (wallClock_) {
+        const std::int64_t walNs = wallClock_();
+        if (walNs > 0) {
+          lastEdgeEpochNs_ = walNs;
+          lastEdgeLocalNs_ = nowNs;
+          haveReference_ = true;
+          source_ = TimeSource::ONBOARD;
+        }
+      }
       valid_ = TimeValid::FREERUN;
       // Quality drops; correlation is now monotonic-only with no PPS to
-      // re-anchor against. epochNs continues to advance from the last
-      // known value but loses ground steadily to drift.
+      // re-anchor against. epochNs continues to advance from the latched
+      // anchor but loses ground steadily to local-oscillator drift.
       if (quality_ != TimeQuality::UNKNOWN) {
         quality_ = TimeQuality::COARSE;
       }
@@ -397,6 +412,12 @@ std::int64_t defaultSteadyClockTrampoline(void* /*ctx*/) noexcept {
   return static_cast<std::int64_t>(now.tv_sec) * NS_PER_SECOND + now.tv_nsec;
 }
 
+std::int64_t defaultWallClockTrampoline(void* /*ctx*/) noexcept {
+  struct timespec now {};
+  clock_gettime(CLOCK_REALTIME, &now);
+  return static_cast<std::int64_t>(now.tv_sec) * NS_PER_SECOND + now.tv_nsec;
+}
+
 } // namespace
 
 apex::time::TimeProviderDelegate TimeServer::utcTimeProvider() noexcept {
@@ -405,6 +426,10 @@ apex::time::TimeProviderDelegate TimeServer::utcTimeProvider() noexcept {
 
 TimeServer::SteadyClockDelegate TimeServer::defaultSteadyClock() noexcept {
   return {&defaultSteadyClockTrampoline, nullptr};
+}
+
+TimeServer::WallClockDelegate TimeServer::defaultWallClock() noexcept {
+  return {&defaultWallClockTrampoline, nullptr};
 }
 
 } // namespace time_server

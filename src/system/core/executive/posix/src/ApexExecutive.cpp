@@ -584,6 +584,7 @@ RunResult ApexExecutive::run() noexcept {
   // and the ATS time provider returns 0 -- AT_TIME triggers wait until
   // an external caller wires up a real PPS source.
   timeServer_.setSteadyClock(system_core::time_server::TimeServer::defaultSteadyClock());
+  timeServer_.setWallClock(system_core::time_server::TimeServer::defaultWallClock());
   {
     const std::uint8_t TIME_SERVER_INIT = timeServer_.init();
     if (TIME_SERVER_INIT != 0) {
