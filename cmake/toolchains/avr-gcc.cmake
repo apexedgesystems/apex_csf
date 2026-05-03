@@ -6,8 +6,8 @@
 # Compiler: avr-gcc (from Ubuntu gcc-avr package)
 #
 # Usage:
-#   cmake --preset arduino-baremetal
-#   cmake --build --preset arduino-baremetal
+#   cmake --preset mcu-arduino-relwithdebinfo
+#   cmake --build --preset mcu-arduino-relwithdebinfo
 # ==============================================================================
 
 # Bare-metal AVR (no OS)

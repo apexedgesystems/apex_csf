@@ -10,7 +10,7 @@
 #   - No CUDA (unlike Jetson toolchain)
 #
 # Usage:
-#   cmake --preset rpi-aarch64-release
+#   cmake --preset cross-rpi-release
 #   cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/rpi-aarch64.cmake ..
 #
 # ==============================================================================

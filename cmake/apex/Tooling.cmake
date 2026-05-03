@@ -14,6 +14,28 @@ if (PROJECT_BUILD_DOCS AND NOT TARGET docs)
 endif ()
 
 # ------------------------------------------------------------------------------
+# doxygen-awesome-css theme (jothepro/doxygen-awesome-css)
+# ------------------------------------------------------------------------------
+# Lazy fetch: only fires when an apex_add_doxygen call needs the theme path.
+function (_apex_fetch_doxygen_awesome)
+  if (DEFINED DOXYGEN_AWESOME_CSS_DIR)
+    return()
+  endif ()
+  include(FetchContent)
+  fetchcontent_declare(
+    doxygen_awesome_css
+    GIT_REPOSITORY https://github.com/jothepro/doxygen-awesome-css.git
+    GIT_TAG v2.3.4
+    GIT_SHALLOW TRUE
+  )
+  fetchcontent_makeavailable(doxygen_awesome_css)
+  set(DOXYGEN_AWESOME_CSS_DIR
+      "${doxygen_awesome_css_SOURCE_DIR}"
+      CACHE INTERNAL "Path to doxygen-awesome-css source"
+  )
+endfunction ()
+
+# ------------------------------------------------------------------------------
 # apex_add_doxygen(<target>
 #                  [README <path>] [SRC <dir>] [INC <dir>] [TST <dir>]
 #                  [DOCS <dir>] [TOOLS <dir>] [TEMPLATES <dir>]
@@ -78,6 +100,9 @@ function (apex_add_doxygen _target)
     message(WARNING "Doxygen not found; skipping docs for '${_target}'")
     return()
   endif ()
+
+  # Lazy-fetch the doxygen-awesome theme (no-op after first call)
+  _apex_fetch_doxygen_awesome()
 
   # Template variables
   set(LIB_NAME "${_target}")

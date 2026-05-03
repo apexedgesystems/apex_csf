@@ -5,7 +5,7 @@
 # Supports both serial and parallel execution modes with TTY output and logging.
 #
 # Note: Performance tests (ptst/) are not in CTest. Run directly:
-#   ./build/native-linux-debug/bin/ptests/LibraryName_PTEST
+#   ./build/hosted-x86_64-debug/bin/ptests/LibraryName_PTEST
 # ==============================================================================
 
 ifndef TEST_MK_GUARD

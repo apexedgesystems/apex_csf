@@ -6,8 +6,8 @@
 # Compiler: xtensa-esp-elf-gcc (from ESP-IDF toolchain)
 #
 # Usage:
-#   cmake --preset esp32-baremetal
-#   cmake --build --preset esp32-baremetal
+#   cmake --preset mcu-esp32-relwithdebinfo
+#   cmake --build --preset mcu-esp32-relwithdebinfo
 #
 # The ESP-IDF framework (when available in the Docker container) extends
 # this toolchain with component libraries, linker scripts, sdkconfig, and

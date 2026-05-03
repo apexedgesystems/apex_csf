@@ -28,7 +28,7 @@ ssh kalex@raspberrypi.local 'sudo rm -rf ~/apex && mkdir ~/apex'
 rsync -a build/release/ApexHilDemo/rpi/ kalex@raspberrypi.local:~/apex/
 
 # 6. Copy TestPlugin_v1.so (for RELOAD_LIBRARY testing)
-scp build/rpi-aarch64-release/test_plugins/TestPlugin_v1.so kalex@raspberrypi.local:~/apex/bank_a/libs/TestPlugin_0.so
+scp build/cross-rpi-release/test_plugins/TestPlugin_v1.so kalex@raspberrypi.local:~/apex/bank_a/libs/TestPlugin_0.so
 
 # 7. Copy STM32 firmware to Pi
 scp build/release/ApexHilDemo/stm32/firmware/*.bin kalex@raspberrypi.local:~/apex/

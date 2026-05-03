@@ -166,7 +166,7 @@ endfunction ()
 # ------------------------------------------------------------------------------
 function (apex_add_library)
   cmake_parse_arguments(
-    AL "BAREMETAL" "NAME;TYPE;INC" "SRC;DEPS_PUBLIC;DEPS_PRIVATE;REQUIRES" ${ARGN}
+    AL "BAREMETAL;NO_PCH" "NAME;TYPE;INC" "SRC;DEPS_PUBLIC;DEPS_PRIVATE;REQUIRES" ${ARGN}
   )
   apex_require(AL_NAME AL_TYPE AL_INC AL_SRC)
 
@@ -218,6 +218,10 @@ function (apex_add_library)
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   )
   install(DIRECTORY "${AL_INC}/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+
+  if (NOT AL_NO_PCH)
+    apex_pch_apply(${AL_NAME})
+  endif ()
 
   if (APEX_TARGETS_VERBOSE)
     list(LENGTH AL_SRC _src_count)

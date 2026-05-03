@@ -16,7 +16,7 @@ visualization and operations interface generation.
 make tools-py
 
 # Source environment and run
-cd build/native-linux-debug
+cd build/hosted-x86_64-debug
 source .env
 mc-plot --help
 ```

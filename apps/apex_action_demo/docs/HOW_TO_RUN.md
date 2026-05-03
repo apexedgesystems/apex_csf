@@ -23,12 +23,12 @@ or Raspberry Pi.
 make compose-debug
 
 # Run (auto-shutdown after 30 seconds)
-./build/native-linux-debug/bin/ApexActionDemo \
+./build/hosted-x86_64-debug/bin/ApexActionDemo \
   --config apps/apex_action_demo/tprm/master.tprm \
   --shutdown-after 30
 
 # Run indefinitely (Ctrl+C to stop)
-./build/native-linux-debug/bin/ApexActionDemo \
+./build/hosted-x86_64-debug/bin/ApexActionDemo \
   --config apps/apex_action_demo/tprm/master.tprm
 ```
 
@@ -76,7 +76,7 @@ make apex-data-db
 # Generate Zenith target directory
 make zenith-target APP=ApexActionDemo
 
-# Output: build/native-linux-debug/zenith_targets/ApexActionDemo/
+# Output: build/hosted-x86_64-debug/zenith_targets/ApexActionDemo/
 ```
 
 Copy the output to `zenith/targets/<target-name>/` and add a `[[targets]]`
@@ -95,7 +95,7 @@ All runtime parameters are configured via TPRM TOML files in
 ## TPRM Compilation
 
 ```bash
-TOOLS=build/native-linux-debug/bin/tools/rust
+TOOLS=build/hosted-x86_64-debug/bin/tools/rust
 DIR=apps/apex_action_demo/tprm
 
 # Compile each TOML to binary

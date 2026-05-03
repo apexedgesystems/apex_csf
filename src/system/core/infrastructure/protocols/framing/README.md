@@ -268,11 +268,11 @@ Run tests using the standard Docker workflow:
 docker compose run --rm -T dev-cuda make debug
 
 # Run all framing tests
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L framing
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L framing
 
 # Run specific protocol tests
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L slip
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L cobs
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L slip
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L cobs
 ```
 
 ### Test Coverage

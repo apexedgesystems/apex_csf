@@ -132,6 +132,21 @@ RUN ln -sf /usr/bin/clang-format-21 /usr/local/bin/clang-format && \
     ln -sf /usr/bin/clang++-21      /usr/local/bin/clang++
 
 # ==============================================================================
+# Bloaty - Binary Size Analysis
+# ==============================================================================
+# Built from source: not packaged for Ubuntu 24.04. Tracks master tip via
+# shallow clone. CMAKE_POLICY_VERSION_MINIMUM=3.5 satisfies upstream submodule
+# policy floors. Must come AFTER the LLVM block — bloaty needs a C++ compiler.
+RUN git clone --recursive --depth 1 https://github.com/google/bloaty.git /tmp/bloaty && \
+    CC=clang CXX=clang++ \
+    cmake -S /tmp/bloaty -B /tmp/bloaty/build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && \
+    cmake --build /tmp/bloaty/build -j && \
+    cmake --install /tmp/bloaty/build && \
+    rm -rf /tmp/bloaty
+
+# ==============================================================================
 # CMake
 # ==============================================================================
 # Distro version is too old, so we install from Kitware.
@@ -169,6 +184,14 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       black==${BLACK_VERSION} \
       cmakelang==${CMAKELANG_VERSION} \
       poetry
+
+# ==============================================================================
+# ninjatracing - Convert .ninja_log to chrome-tracing JSON
+# ==============================================================================
+# Single Python script from nico/ninjatracing — not packaged on PyPI.
+RUN wget --progress=dot:giga -O /usr/local/bin/ninjatracing \
+      https://raw.githubusercontent.com/nico/ninjatracing/main/ninjatracing && \
+    chmod +x /usr/local/bin/ninjatracing
 
 # ==============================================================================
 # Rust Toolchain
@@ -214,7 +237,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libgoogle-perftools-dev \
       libunwind-dev \
       valgrind \
-      bpftrace
+      bpftrace \
+      rr
 
 # ==============================================================================
 # SuiteSparse (KLU sparse solver)

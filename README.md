@@ -183,9 +183,9 @@ make compose-testp
 ### Build Without Docker
 
 ```bash
-cmake --preset native-linux-debug
-cmake --build --preset native-linux-debug -j$(nproc)
-ctest --test-dir build/native-linux-debug --output-on-failure
+cmake --preset hosted-x86_64-debug
+cmake --build --preset hosted-x86_64-debug -j$(nproc)
+ctest --test-dir build/hosted-x86_64-debug --output-on-failure
 ```
 
 ### Cross-Compile
@@ -350,7 +350,7 @@ make compose-testp
 make test-rust
 make test-py
 
-# Code coverage (reports: build/native-linux-debug/coverage/*/html/index.html)
+# Code coverage (reports: build/hosted-x86_64-debug/coverage/*/html/index.html)
 make compose-coverage
 
 # Sanitizers

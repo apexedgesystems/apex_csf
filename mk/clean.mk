@@ -98,8 +98,21 @@ clean-rust: clean-rust-build clean-rust-local
 clean: clean-ninja clean-upx clean-docs clean-py clean-rust coverage-clean
 	$(call log,clean,Done)
 
-# Deep clean - remove entire build directory
-distclean: clean-py-src clean-rust-local
+# Refuse distclean when non-default build dirs are present unless SURE=1.
+# Runs as a prerequisite so rust/py cleanups don't fire until the guard passes.
+distclean-guard:
+	@if [ -d build ]; then \
+	  non_default=$$(ls build 2>/dev/null | grep -vE '^hosted-' || true); \
+	  if [ -n "$$non_default" ] && [ "$(SURE)" != "1" ]; then \
+	    printf '$(TERM_RED)[distclean]$(TERM_RESET) cross-build dirs present:\n'; \
+	    printf '%s\n' $$non_default | sed 's|^|  build/|'; \
+	    printf 'Refusing without SURE=1. Run: make distclean SURE=1\n'; \
+	    exit 1; \
+	  fi; \
+	fi
+
+# Deep clean - remove entire build directory.
+distclean: distclean-guard clean-py-src clean-rust-local
 	$(call log,clean,Removing build/ and compile_commands.json)
 	@rm -rf build/ compile_commands.json
 
@@ -107,7 +120,7 @@ distclean: clean-py-src clean-rust-local
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: clean clean-ninja clean-upx clean-docs distclean
+.PHONY: clean clean-ninja clean-upx clean-docs distclean distclean-guard
 .PHONY: clean-py clean-py-src clean-py-build
 .PHONY: clean-rust clean-rust-build clean-rust-local
 

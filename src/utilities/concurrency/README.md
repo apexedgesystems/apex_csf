@@ -915,7 +915,7 @@ docker compose run --rm -T dev-cuda make debug
 docker compose run --rm -T dev-cuda make debug
 
 # Run concurrency tests
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L concurrency
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L concurrency
 ```
 
 ### Test Organization

@@ -20,7 +20,7 @@ NUM_JOBS ?= $(shell nproc --all 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || 
 LLVM_VER ?= 21
 
 # Default build directory (native debug)
-BUILD_DIR ?= build/native-linux-debug
+BUILD_DIR ?= build/hosted-x86_64-debug
 
 # ------------------------------------------------------------------------------
 # Logging Utilities

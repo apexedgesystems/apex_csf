@@ -53,6 +53,6 @@ make zenith-target APP=ApexActionDemo
 make zenith-validate APP=ApexActionDemo HOST=192.168.1.119
 
 # Copy to zenith
-cp -r build/native-linux-debug/zenith_targets/ApexActionDemo/* \
+cp -r build/hosted-x86_64-debug/zenith_targets/ApexActionDemo/* \
   /path/to/zenith/targets/pi-action-demo/
 ```

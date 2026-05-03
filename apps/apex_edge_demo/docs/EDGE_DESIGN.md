@@ -18,7 +18,7 @@ sub-millisecond jitter across extended soak tests.
 | GPU          | Ada (SM 89), tensor cores, FP64, 64-bit atomics |
 | CUDA arch    | sm_89 (CUDA_ARCHS="89")                         |
 | Sysroot      | /opt/sysroots/jetson-thor/usr                   |
-| CMake preset | jetson-aarch64-release                          |
+| CMake preset | cross-jetson-release                          |
 
 ## Architecture Overview
 
@@ -398,15 +398,15 @@ make compose-debug
 
 # Run short test
 docker compose run --rm -T dev-cuda bash -c '
-  rm -rf build/native-linux-debug/bin/.apex_fs
-  timeout 320 ./build/native-linux-debug/bin/ApexEdgeDemo \
+  rm -rf build/hosted-x86_64-debug/bin/.apex_fs
+  timeout 320 ./build/hosted-x86_64-debug/bin/ApexEdgeDemo \
     --config apps/apex_edge_demo/tprm/master.tprm \
     --shutdown-after 300
 '
 
 # Check results
-grep "Frame overruns" build/native-linux-debug/bin/.apex_fs/logs/system.log
-grep "GPU" build/native-linux-debug/bin/.apex_fs/logs/system_monitor.log
+grep "Frame overruns" build/hosted-x86_64-debug/bin/.apex_fs/logs/system.log
+grep "GPU" build/hosted-x86_64-debug/bin/.apex_fs/logs/system_monitor.log
 ```
 
 ## Test Coverage

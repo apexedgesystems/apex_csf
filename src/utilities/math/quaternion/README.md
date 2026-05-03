@@ -232,7 +232,7 @@ Run tests using the standard Docker workflow:
 docker compose run --rm -T dev-cuda make debug
 
 # Run quaternion tests
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L quaternion
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L quaternion
 ```
 
 ### Test Organization

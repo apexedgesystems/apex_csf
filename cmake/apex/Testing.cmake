@@ -35,7 +35,7 @@ function (apex_add_gtest)
   endif ()
 
   cmake_parse_arguments(
-    GT "TIMING_ALL;NO_COVERAGE"
+    GT "TIMING_ALL;NO_COVERAGE;NO_PCH"
     "TARGET;INC;WORKING_DIR;RESOURCE_LOCK;COVERAGE_FOR;REQUIRES_THREADS"
     "SOURCES;CUDA;LINK;LABELS;TIMING_TESTS;TIMING_PATTERNS" ${ARGN}
   )
@@ -43,6 +43,10 @@ function (apex_add_gtest)
 
   add_executable(${GT_TARGET})
   target_sources(${GT_TARGET} PRIVATE ${GT_SOURCES})
+
+  if (NOT GT_NO_PCH)
+    apex_pch_apply(${GT_TARGET} TEST)
+  endif ()
 
   if (GT_INC)
     target_include_directories(${GT_TARGET} PRIVATE "${GT_INC}")
@@ -252,7 +256,7 @@ endfunction ()
 # Performance tests are for benchmarking and should be run manually.
 #
 # The executable is placed in bin/ptests/ and can be run manually with:
-#   ./build/native-linux-debug/bin/ptests/TestName --csv results.csv
+#   ./build/hosted-x86_64-debug/bin/ptests/TestName --csv results.csv
 #
 # Features:
 #   - Output to bin/ptests/
@@ -378,7 +382,7 @@ endfunction ()
 # special hardware).
 #
 # The executable is placed in bin/dtests/ and can be run manually with:
-#   ./build/native-linux-debug/bin/dtests/TestName --gtest_filter="*Pattern*"
+#   ./build/hosted-x86_64-debug/bin/dtests/TestName --gtest_filter="*Pattern*"
 #
 # Arguments:
 #   TARGET          <n>              required

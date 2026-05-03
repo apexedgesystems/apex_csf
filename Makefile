@@ -22,6 +22,8 @@ include mk/tools.mk
 include mk/firmware.mk
 include mk/compose.mk
 include mk/release.mk
+include mk/size.mk
+include mk/profile.mk
 include mk/clean.mk
 
 # ==============================================================================
@@ -47,45 +49,62 @@ PRE_COMMIT_INSTALL ?= no
 # ------------------------------------------------------------------------------
 
 # Native x86_64
-HOST_DEBUG_PRESET   ?= native-linux-debug
-HOST_RELEASE_PRESET ?= native-linux-release
+HOST_DEBUG_PRESET        ?= hosted-x86_64-debug
+HOST_RELEASE_PRESET      ?= hosted-x86_64-release
+HOST_CUDA_DEBUG_PRESET   ?= hosted-x86_64-cuda-debug
+HOST_CUDA_RELEASE_PRESET ?= hosted-x86_64-cuda-release
 
 # Jetson (aarch64 + CUDA)
-JETSON_DEBUG_PRESET   ?= jetson-aarch64-debug
-JETSON_RELEASE_PRESET ?= jetson-aarch64-release
+JETSON_DEBUG_PRESET   ?= cross-jetson-debug
+JETSON_RELEASE_PRESET ?= cross-jetson-release
 
 # Raspberry Pi (aarch64)
-RPI_DEBUG_PRESET   ?= rpi-aarch64-debug
-RPI_RELEASE_PRESET ?= rpi-aarch64-release
+RPI_DEBUG_PRESET   ?= cross-rpi-debug
+RPI_RELEASE_PRESET ?= cross-rpi-release
 
 # RISC-V 64
-RISCV_DEBUG_PRESET   ?= riscv64-linux-debug
-RISCV_RELEASE_PRESET ?= riscv64-linux-release
+RISCV_DEBUG_PRESET   ?= cross-riscv64-debug
+RISCV_RELEASE_PRESET ?= cross-riscv64-release
 
-# Bare-metal
-STM32_PRESET   ?= stm32-baremetal
-ARDUINO_PRESET ?= arduino-baremetal
-PICO_PRESET    ?= pico-baremetal
-ESP32_PRESET   ?= esp32-baremetal
-C2000_PRESET   ?= c2000-baremetal
+# Bare-metal (RelWithDebInfo profiles; *-debug variants below)
+STM32_PRESET         ?= mcu-stm32-relwithdebinfo
+ARDUINO_PRESET       ?= mcu-arduino-relwithdebinfo
+PICO_PRESET          ?= mcu-pico-relwithdebinfo
+ESP32_PRESET         ?= mcu-esp32-relwithdebinfo
+C2000_PRESET         ?= mcu-c2000-relwithdebinfo
+
+# Bare-metal debug variants (-Og -g3 / --opt_level=0, gdb-friendly)
+STM32_DEBUG_PRESET   ?= mcu-stm32-debug
+ARDUINO_DEBUG_PRESET ?= mcu-arduino-debug
+PICO_DEBUG_PRESET    ?= mcu-pico-debug
+ESP32_DEBUG_PRESET   ?= mcu-esp32-debug
+C2000_DEBUG_PRESET   ?= mcu-c2000-debug
 
 # ------------------------------------------------------------------------------
 # Build Directories (derived from preset names)
 # ------------------------------------------------------------------------------
 
-HOST_DEBUG_DIR     := build/$(HOST_DEBUG_PRESET)
-HOST_RELEASE_DIR   := build/$(HOST_RELEASE_PRESET)
+HOST_DEBUG_DIR        := build/$(HOST_DEBUG_PRESET)
+HOST_RELEASE_DIR      := build/$(HOST_RELEASE_PRESET)
+HOST_CUDA_DEBUG_DIR   := build/$(HOST_CUDA_DEBUG_PRESET)
+HOST_CUDA_RELEASE_DIR := build/$(HOST_CUDA_RELEASE_PRESET)
 JETSON_DEBUG_DIR   := build/$(JETSON_DEBUG_PRESET)
 JETSON_RELEASE_DIR := build/$(JETSON_RELEASE_PRESET)
 RPI_DEBUG_DIR      := build/$(RPI_DEBUG_PRESET)
 RPI_RELEASE_DIR    := build/$(RPI_RELEASE_PRESET)
 RISCV_DEBUG_DIR    := build/$(RISCV_DEBUG_PRESET)
 RISCV_RELEASE_DIR  := build/$(RISCV_RELEASE_PRESET)
-STM32_DIR          := build/stm32
-ARDUINO_DIR        := build/arduino
-PICO_DIR           := build/pico
-ESP32_DIR          := build/esp32
-C2000_DIR          := build/c2000
+STM32_DIR          := build/mcu-stm32-relwithdebinfo
+ARDUINO_DIR        := build/mcu-arduino-relwithdebinfo
+PICO_DIR           := build/mcu-pico-relwithdebinfo
+ESP32_DIR          := build/mcu-esp32-relwithdebinfo
+C2000_DIR          := build/mcu-c2000-relwithdebinfo
+
+STM32_DEBUG_DIR    := build/mcu-stm32-debug
+ARDUINO_DEBUG_DIR  := build/mcu-arduino-debug
+PICO_DEBUG_DIR     := build/mcu-pico-debug
+ESP32_DEBUG_DIR    := build/mcu-esp32-debug
+C2000_DEBUG_DIR    := build/mcu-c2000-debug
 
 # ==============================================================================
 # Build Macros
@@ -98,14 +117,14 @@ define _build
 	@cmake --preset $(2) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
 	$(call log,build,Building $(1))
 	@cmake --build --preset $(2) -j$(NUM_JOBS)
-	@ln -sf $(3)/compile_commands.json compile_commands.json 2>/dev/null || true
+	@ln -sf $(3)/compile_commands.json compile_commands.json
 endef
 
 # _configure: Configure a CMake preset (no build)
 # Usage: $(call _configure,preset,build_dir)
 define _configure
 	@cmake --preset $(1) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
-	@ln -sf $(2)/compile_commands.json compile_commands.json 2>/dev/null || true
+	@ln -sf $(2)/compile_commands.json compile_commands.json
 endef
 
 # _platform_targets: Generate build and configure targets for a platform
@@ -127,8 +146,10 @@ help:
 	@printf '%s\n' "====================="
 	@printf '\n'
 	@printf '%s\n' "Native Builds:"
-	@printf '  %-28s %s\n' "make debug" "Build native debug (default)"
-	@printf '  %-28s %s\n' "make release" "Build native release"
+	@printf '  %-28s %s\n' "make debug" "Build native debug (default; CUDA auto-detect)"
+	@printf '  %-28s %s\n' "make release" "Build native release (CUDA auto-detect)"
+	@printf '  %-28s %s\n' "make cuda-debug" "Build native debug requiring CUDA"
+	@printf '  %-28s %s\n' "make cuda-release" "Build native release requiring CUDA"
 	@printf '  %-28s %s\n' "make docs" "Build Doxygen documentation"
 	@printf '  %-28s %s\n' "make configure" "Configure only (no build)"
 	@printf '\n'
@@ -139,11 +160,16 @@ help:
 	@printf '  %-28s %s\n' "make rpi-release" "Build for Raspberry Pi release"
 	@printf '  %-28s %s\n' "make riscv-debug" "Build for RISC-V 64"
 	@printf '  %-28s %s\n' "make riscv-release" "Build for RISC-V 64 release"
-	@printf '  %-28s %s\n' "make stm32" "Build STM32 bare-metal firmware"
-	@printf '  %-28s %s\n' "make arduino" "Build Arduino bare-metal firmware"
-	@printf '  %-28s %s\n' "make pico" "Build Pico (RP2040) firmware"
-	@printf '  %-28s %s\n' "make esp32" "Build ESP32 (ESP-IDF) firmware"
-	@printf '  %-28s %s\n' "make c2000" "Build C2000 (TI F28004x) firmware"
+	@printf '  %-28s %s\n' "make stm32" "Build STM32 firmware (RelWithDebInfo)"
+	@printf '  %-28s %s\n' "make stm32-debug" "Build STM32 firmware (debug, -Og -g3)"
+	@printf '  %-28s %s\n' "make arduino" "Build Arduino firmware (RelWithDebInfo)"
+	@printf '  %-28s %s\n' "make arduino-debug" "Build Arduino firmware (debug, -Og -g3)"
+	@printf '  %-28s %s\n' "make pico" "Build Pico (RP2040) firmware (RelWithDebInfo)"
+	@printf '  %-28s %s\n' "make pico-debug" "Build Pico firmware (debug, -Og -g3)"
+	@printf '  %-28s %s\n' "make esp32" "Build ESP32 firmware (RelWithDebInfo)"
+	@printf '  %-28s %s\n' "make esp32-debug" "Build ESP32 firmware (debug, -Og -g3)"
+	@printf '  %-28s %s\n' "make c2000" "Build C2000 firmware (RelWithDebInfo)"
+	@printf '  %-28s %s\n' "make c2000-debug" "Build C2000 firmware (debug, --opt_level=0)"
 	@printf '\n'
 	@printf '%s\n' "Testing:"
 	@printf '  %-28s %s\n' "make test" "Run all C++ tests (serial)"
@@ -155,6 +181,11 @@ help:
 	@printf '  %-28s %s\n' "make tools-cpp" "Build C++ tools only"
 	@printf '  %-28s %s\n' "make tools-py" "Build Python tools only"
 	@printf '  %-28s %s\n' "make tools-rust" "Build Rust tools only"
+	@printf '\n'
+	@printf '%s\n' "Profiling (chrome://tracing format):"
+	@printf '  %-28s %s\n' "make profile-configure" "CMake configure-time hotspots"
+	@printf '  %-28s %s\n' "make profile-build" "Ninja build-time hotspots (after make debug)"
+	@printf '  %-28s %s\n' "make profile-clean" "Remove profile JSON output"
 	@printf '\n'
 	@printf '%s\n' "Quality:"
 	@printf '  %-28s %s\n' "make format" "Auto-fix formatting issues"
@@ -177,6 +208,16 @@ help:
 	@printf '  %-28s %s\n' "make release APP=<name>" "Build + package all platforms for an app"
 	@printf '  %-28s %s\n' "make release-all" "Release all registered apps"
 	@printf '  %-28s %s\n' "make release-clean" "Remove release/ directory"
+	@printf '\n'
+	@printf '%s\n' "Size Analysis (bloaty):"
+	@printf '  %-28s %s\n' "make size FILE=<path>" "Bloaty size breakdown of any binary"
+	@printf '  %-28s %s\n' "make size-stm32 FW=<n>" "Bloaty on stm32 firmware ELF"
+	@printf '  %-28s %s\n' "make size-arduino FW=<n>" "Bloaty on arduino firmware ELF"
+	@printf '  %-28s %s\n' "make size-pico FW=<n>" "Bloaty on pico firmware ELF"
+	@printf '  %-28s %s\n' "make size-esp32 FW=<n>" "Bloaty on esp32 firmware ELF"
+	@printf '  %-28s %s\n' "make size-c2000 FW=<n>" "Bloaty on c2000 firmware ELF"
+	@printf '  %-28s %s\n' "make size-app APP=<n>" "Bloaty on native release app"
+	@printf '  %-28s %s\n' "make size-diff NEW=. OLD=." "Bloaty diff between two binaries"
 	@printf '\n'
 	@printf '%s\n' "Firmware:"
 	@printf '  %-28s %s\n' "make stm32-flash" "Flash STM32 firmware via ST-Link"
@@ -222,7 +263,7 @@ help:
 	@printf '\n'
 	@printf '%s\n' "Cleanup:"
 	@printf '  %-28s %s\n' "make clean" "Clean build artifacts"
-	@printf '  %-28s %s\n' "make distclean" "Remove build/ entirely"
+	@printf '  %-28s %s\n' "make distclean" "Remove build/ entirely (SURE=1 if cross-builds present)"
 	@printf '  %-28s %s\n' "make docker-clean" "Clean Docker dangling images"
 	@printf '  %-28s %s\n' "make docker-prune" "Remove all apex.* images"
 	@printf '\n'
@@ -265,6 +306,8 @@ docs: prep
 # Cross-Compilation and Firmware Builds (generated from templates)
 # ==============================================================================
 
+$(eval $(call _platform_targets,cuda-debug,native CUDA debug,$(HOST_CUDA_DEBUG_PRESET),$(HOST_CUDA_DEBUG_DIR)))
+$(eval $(call _platform_targets,cuda-release,native CUDA release,$(HOST_CUDA_RELEASE_PRESET),$(HOST_CUDA_RELEASE_DIR)))
 $(eval $(call _platform_targets,jetson-debug,Jetson debug,$(JETSON_DEBUG_PRESET),$(JETSON_DEBUG_DIR)))
 $(eval $(call _platform_targets,jetson-release,Jetson release,$(JETSON_RELEASE_PRESET),$(JETSON_RELEASE_DIR)))
 $(eval $(call _platform_targets,rpi-debug,Raspberry Pi debug,$(RPI_DEBUG_PRESET),$(RPI_DEBUG_DIR)))
@@ -272,21 +315,34 @@ $(eval $(call _platform_targets,rpi-release,Raspberry Pi release,$(RPI_RELEASE_P
 $(eval $(call _platform_targets,riscv-debug,RISC-V 64 debug,$(RISCV_DEBUG_PRESET),$(RISCV_DEBUG_DIR)))
 $(eval $(call _platform_targets,riscv-release,RISC-V 64 release,$(RISCV_RELEASE_PRESET),$(RISCV_RELEASE_DIR)))
 $(eval $(call _platform_targets,stm32,STM32 firmware,$(STM32_PRESET),$(STM32_DIR)))
+$(eval $(call _platform_targets,stm32-debug,STM32 firmware (debug),$(STM32_DEBUG_PRESET),$(STM32_DEBUG_DIR)))
 $(eval $(call _platform_targets,arduino,Arduino firmware,$(ARDUINO_PRESET),$(ARDUINO_DIR)))
+$(eval $(call _platform_targets,arduino-debug,Arduino firmware (debug),$(ARDUINO_DEBUG_PRESET),$(ARDUINO_DEBUG_DIR)))
 $(eval $(call _platform_targets,pico,Pico firmware,$(PICO_PRESET),$(PICO_DIR)))
+$(eval $(call _platform_targets,pico-debug,Pico firmware (debug),$(PICO_DEBUG_PRESET),$(PICO_DEBUG_DIR)))
 $(eval $(call _platform_targets,esp32,ESP32 firmware,$(ESP32_PRESET),$(ESP32_DIR)))
+$(eval $(call _platform_targets,esp32-debug,ESP32 firmware (debug),$(ESP32_DEBUG_PRESET),$(ESP32_DEBUG_DIR)))
 # C2000 uses a custom build target to avoid compiling non-TI-compatible libraries.
 # Only the firmware target is built (not all project targets).
-.PHONY: c2000 configure-c2000
+.PHONY: c2000 c2000-debug configure-c2000 configure-c2000-debug
 c2000: prep
 	$(call log,build,Configuring C2000 firmware)
 	@cmake --preset $(C2000_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
 	$(call log,build,Building C2000 firmware)
 	@cmake --build --preset $(C2000_PRESET) --target firmware -j$(NUM_JOBS)
-	@ln -sf $(C2000_DIR)/compile_commands.json compile_commands.json 2>/dev/null || true
+	@ln -sf $(C2000_DIR)/compile_commands.json compile_commands.json
 configure-c2000: prep
 	@cmake --preset $(C2000_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
-	@ln -sf $(C2000_DIR)/compile_commands.json compile_commands.json 2>/dev/null || true
+	@ln -sf $(C2000_DIR)/compile_commands.json compile_commands.json
+c2000-debug: prep
+	$(call log,build,Configuring C2000 firmware (debug))
+	@cmake --preset $(C2000_DEBUG_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
+	$(call log,build,Building C2000 firmware (debug))
+	@cmake --build --preset $(C2000_DEBUG_PRESET) --target firmware -j$(NUM_JOBS)
+	@ln -sf $(C2000_DEBUG_DIR)/compile_commands.json compile_commands.json
+configure-c2000-debug: prep
+	@cmake --preset $(C2000_DEBUG_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
+	@ln -sf $(C2000_DEBUG_DIR)/compile_commands.json compile_commands.json
 
 # ==============================================================================
 # Configure-Only (native)

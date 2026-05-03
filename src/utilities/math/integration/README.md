@@ -349,10 +349,10 @@ Run tests using the standard Docker workflow:
 docker compose run --rm -T dev-cuda make debug
 
 # Run unit tests
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L integration
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L integration
 
 # Run specific test
-docker compose run --rm -T dev-cuda ./build/native-linux-debug/bin/tests/TestMathIntegration
+docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/tests/TestMathIntegration
 ```
 
 ### Test Organization

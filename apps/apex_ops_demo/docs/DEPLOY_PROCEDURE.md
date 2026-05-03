@@ -50,7 +50,7 @@ make zenith-target APP=ApexOpsDemo
 make zenith-validate APP=ApexOpsDemo HOST=192.168.1.119
 
 # Copy to zenith
-cp -r build/native-linux-debug/zenith_targets/ApexOpsDemo/* \
+cp -r build/hosted-x86_64-debug/zenith_targets/ApexOpsDemo/* \
   /path/to/zenith/targets/pi-ops-demo/
 ```
 
@@ -63,7 +63,7 @@ For running two instances on the same host (different ports):
 # Instance B: port 9001 (requires modified interface TPRM)
 
 # Build port-9001 TPRM for instance B
-TOOLS=build/native-linux-debug/bin/tools/rust
+TOOLS=build/hosted-x86_64-debug/bin/tools/rust
 cp apps/apex_ops_demo/tprm/toml/interface.toml /tmp/interface_b.toml
 sed -i 's/value = 9000/value = 9001/' /tmp/interface_b.toml
 $TOOLS/cfg2bin --config /tmp/interface_b.toml --output /tmp/interface_b.tprm

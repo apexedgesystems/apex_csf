@@ -36,5 +36,9 @@ COPY --chown=${HOST_UID}:${HOST_GID} . .
 # ==============================================================================
 # Build Release Artifacts
 # ==============================================================================
-RUN make distclean 2>/dev/null || true && \
-    eval ${BUILD_CMD}
+# Cache mount on /ccache (CCACHE_DIR set in parent dev image). Cache key
+# defaults to target path, so all builder-* images share the cache.
+RUN --mount=type=cache,target=/ccache,uid=${HOST_UID},gid=${HOST_GID} \
+    make distclean 2>/dev/null || true && \
+    eval ${BUILD_CMD} && \
+    ccache -s 2>/dev/null || true

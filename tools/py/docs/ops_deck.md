@@ -44,14 +44,14 @@ The generated Markdown deck contains:
 
 ```bash
 # Generate deck to stdout
-ops-deck --db build/native-linux-debug/apex_data_db | less
+ops-deck --db build/hosted-x86_64-debug/apex_data_db | less
 
 # Write deck to file
-ops-deck --db build/native-linux-debug/apex_data_db --output ApexHilDemo-deck.md
+ops-deck --db build/hosted-x86_64-debug/apex_data_db --output ApexHilDemo-deck.md
 
 # Run apex-data-db first if dictionaries are not yet generated
 make apex-data-db
-ops-deck --db build/native-linux-debug/apex_data_db --output deck.md
+ops-deck --db build/hosted-x86_64-debug/apex_data_db --output deck.md
 ```
 
 ---

@@ -12,7 +12,7 @@ Monte Carlo tolerance analysis.
 make compose-debug
 ```
 
-The executable is at `build/native-linux-debug/bin/ApexMcDemo`.
+The executable is at `build/hosted-x86_64-debug/bin/ApexMcDemo`.
 
 ---
 
@@ -22,7 +22,7 @@ The executable is at `build/native-linux-debug/bin/ApexMcDemo`.
 
 ```bash
 docker compose run --rm -T dev-cuda bash -c '
-  ./build/native-linux-debug/bin/ApexMcDemo
+  ./build/hosted-x86_64-debug/bin/ApexMcDemo
 '
 ```
 
@@ -30,7 +30,7 @@ docker compose run --rm -T dev-cuda bash -c '
 
 ```bash
 docker compose run --rm -T dev-cuda bash -c '
-  ./build/native-linux-debug/bin/ApexMcDemo \
+  ./build/hosted-x86_64-debug/bin/ApexMcDemo \
     --runs 50000 \
     --seed 42 \
     --csv apps/apex_mc_demo/results/run_1/results.csv \
@@ -58,7 +58,7 @@ docker compose run --rm -T dev-cuda bash -c '
 make compose-tools-py
 ```
 
-This installs `mc-plot` to `build/native-linux-debug/bin/tools/py/`.
+This installs `mc-plot` to `build/hosted-x86_64-debug/bin/tools/py/`.
 
 ---
 
@@ -66,7 +66,7 @@ This installs `mc-plot` to `build/native-linux-debug/bin/tools/py/`.
 
 ```bash
 docker compose run --rm -T dev-cuda bash -c '
-  cd build/native-linux-debug
+  cd build/hosted-x86_64-debug
   source .env
 
   # Full report (all 14 plots)
@@ -109,7 +109,7 @@ tar xzf run_1.tar.gz   # Extracts run_1/ with CSVs and PNGs
 They were generated with:
 
 ```bash
-BIN=./build/native-linux-debug/bin/ApexMcDemo
+BIN=./build/hosted-x86_64-debug/bin/ApexMcDemo
 RESULTS=apps/apex_mc_demo/results
 
 # Run 1: baseline (seed=42, 50K runs)
@@ -144,8 +144,8 @@ make compose-testp
 
 # Or target specific test suites
 docker compose run --rm -T dev-cuda bash -c '
-  ./build/native-linux-debug/bin/tests/TestSystemCoreMonteCarlo
-  ./build/native-linux-debug/bin/tests/TestSimAnalogRegulator
+  ./build/hosted-x86_64-debug/bin/tests/TestSystemCoreMonteCarlo
+  ./build/hosted-x86_64-debug/bin/tests/TestSimAnalogRegulator
 '
 ```
 
@@ -190,7 +190,7 @@ docker compose run --rm -T dev-cuda bash -c '
 
 | Problem                      | Fix                                                                     |
 | ---------------------------- | ----------------------------------------------------------------------- |
-| `mc-plot: command not found` | Run `make compose-tools-py` then `source build/native-linux-debug/.env` |
+| `mc-plot: command not found` | Run `make compose-tools-py` then `source build/hosted-x86_64-debug/.env` |
 | `No module named matplotlib` | Python tools not built. Run `make compose-tools-py`                     |
 | CSV is empty                 | Check `--csv` path is writable                                          |
 | All yields 100%              | Tolerances may be too tight. Check model parameters                     |

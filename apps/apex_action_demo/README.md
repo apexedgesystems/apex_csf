@@ -35,5 +35,5 @@ make compose-debug
 ## Running
 
 ```bash
-./build/native-linux-debug/bin/ApexActionDemo [--fs-root .apex_fs]
+./build/hosted-x86_64-debug/bin/ApexActionDemo [--fs-root .apex_fs]
 ```

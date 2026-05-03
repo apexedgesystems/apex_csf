@@ -41,7 +41,11 @@ endef
 
 $(eval $(call _compose_target,debug,native debug,dev-cuda,debug))
 $(eval $(call _compose_target,release,native release,dev-cuda,release))
+$(eval $(call _compose_target,cuda-debug,native CUDA debug,dev-cuda,cuda-debug))
+$(eval $(call _compose_target,cuda-release,native CUDA release,dev-cuda,cuda-release))
 $(eval $(call _compose_target,docs,documentation,dev-cuda,docs))
+$(eval $(call _compose_target,profile-configure,configure profile,dev-cuda,profile-configure))
+$(eval $(call _compose_target,profile-build,build profile,dev-cuda,profile-build))
 
 # ------------------------------------------------------------------------------
 # Testing and Quality (dev-cuda)
@@ -82,10 +86,47 @@ $(eval $(call _compose_target,riscv-release,RISC-V 64 release,dev-riscv64,riscv-
 # ------------------------------------------------------------------------------
 
 $(eval $(call _compose_target,stm32,STM32 firmware,dev-stm32,stm32))
+$(eval $(call _compose_target,stm32-debug,STM32 firmware (debug),dev-stm32,stm32-debug))
 $(eval $(call _compose_target,arduino,Arduino firmware,dev-arduino,arduino))
+$(eval $(call _compose_target,arduino-debug,Arduino firmware (debug),dev-arduino,arduino-debug))
 $(eval $(call _compose_target,pico,Pico firmware,dev-pico,pico))
+$(eval $(call _compose_target,pico-debug,Pico firmware (debug),dev-pico,pico-debug))
 $(eval $(call _compose_target,esp32,ESP32 firmware,dev-esp32,esp32))
+$(eval $(call _compose_target,esp32-debug,ESP32 firmware (debug),dev-esp32,esp32-debug))
 $(eval $(call _compose_target,c2000,C2000 firmware,dev-c2000,c2000))
+$(eval $(call _compose_target,c2000-debug,C2000 firmware (debug),dev-c2000,c2000-debug))
+
+# ------------------------------------------------------------------------------
+# Size Analysis (bloaty)
+# ------------------------------------------------------------------------------
+# bloaty lives in apex.base. Route through dev-cuda.
+
+.PHONY: compose-size compose-size-stm32 compose-size-arduino compose-size-pico
+.PHONY: compose-size-esp32 compose-size-c2000 compose-size-app compose-size-diff
+
+compose-size:
+	$(call _compose_run,size,dev-cuda,size,FILE="$(FILE)" DIM="$(DIM)" N="$(N)")
+
+compose-size-stm32:
+	$(call _compose_run,size-stm32,dev-cuda,size-stm32,FW="$(FW)" DIM="$(DIM)" N="$(N)")
+
+compose-size-arduino:
+	$(call _compose_run,size-arduino,dev-cuda,size-arduino,FW="$(FW)" DIM="$(DIM)" N="$(N)")
+
+compose-size-pico:
+	$(call _compose_run,size-pico,dev-cuda,size-pico,FW="$(FW)" DIM="$(DIM)" N="$(N)")
+
+compose-size-esp32:
+	$(call _compose_run,size-esp32,dev-cuda,size-esp32,FW="$(FW)" DIM="$(DIM)" N="$(N)")
+
+compose-size-c2000:
+	$(call _compose_run,size-c2000,dev-cuda,size-c2000,FW="$(FW)" DIM="$(DIM)" N="$(N)")
+
+compose-size-app:
+	$(call _compose_run,size-app,dev-cuda,size-app,APP="$(APP)" DIM="$(DIM)" N="$(N)")
+
+compose-size-diff:
+	$(call _compose_run,size-diff,dev-cuda,size-diff,NEW="$(NEW)" OLD="$(OLD)" DIM="$(DIM)" N="$(N)")
 
 # ------------------------------------------------------------------------------
 # Firmware Flash and Reset

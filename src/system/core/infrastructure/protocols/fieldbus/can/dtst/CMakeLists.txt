@@ -4,7 +4,7 @@
 # Requires vcan kernel module and physical CAN hardware.
 #
 #   sudo modprobe vcan
-#   ./build/native-linux-debug/bin/dtests/CanBus_Dev
+#   ./build/hosted-x86_64-debug/bin/dtests/CanBus_Dev
 # ==============================================================================
 
 # ------------------------------------------------------------------------------

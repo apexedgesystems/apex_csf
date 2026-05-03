@@ -10,7 +10,7 @@
 #   - Linker flags for CUDA cross-library resolution
 #
 # Usage:
-#   cmake --preset jetson-aarch64-release
+#   cmake --preset cross-jetson-release
 #   cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/jetson-aarch64.cmake ..
 #
 # ==============================================================================

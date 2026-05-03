@@ -5,9 +5,9 @@ cmake_minimum_required(VERSION 3.24)
 # ==============================================================================
 #
 # Build examples:
-#   cmake --preset native-linux-debug
-#   cmake --preset native-linux-release
-#   cmake --preset jetson-aarch64-release
+#   cmake --preset hosted-x86_64-debug
+#   cmake --preset hosted-x86_64-release
+#   cmake --preset cross-jetson-release
 #
 # Options:
 #   -DCUDA_ARCHS="89"           Ada only (fast)
@@ -30,8 +30,14 @@ project(
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
+# Build-tier classification (hosted / cross-linux / baremetal / rtos)
+include(apex/Tiers)
+
 # Build acceleration (ccache, fast linker, split DWARF)
 include(apex/BuildAcceleration)
+
+# Precompiled headers (hosted builds only; auto-skipped for bare-metal)
+include(apex/Pch)
 
 # Coverage initialization
 include(apex/Coverage)
@@ -40,20 +46,13 @@ apex_coverage_init()
 # ------------------------------------------------------------------------------
 # Platform detection
 # ------------------------------------------------------------------------------
-# APEX_PLATFORM_BAREMETAL: True when targeting bare-metal (no OS)
-# Must be set early, before add_subdirectory(src) which checks it
-if (CMAKE_SYSTEM_NAME STREQUAL "Generic")
-  set(APEX_PLATFORM_BAREMETAL
-      TRUE
-      CACHE INTERNAL "Bare-metal platform detected"
-  )
-  message(STATUS "[apex] Bare-metal platform detected")
-else ()
-  set(APEX_PLATFORM_BAREMETAL
-      FALSE
-      CACHE INTERNAL "Not a bare-metal platform"
-  )
-endif ()
+# APEX_PLATFORM_BAREMETAL is a derived alias of APEX_TIER.
+apex_tier_is("baremetal" _is_baremetal)
+set(APEX_PLATFORM_BAREMETAL
+    ${_is_baremetal}
+    CACHE INTERNAL "Alias: APEX_TIER STREQUAL baremetal"
+)
+unset(_is_baremetal)
 
 # APEX_HAL_PLATFORM: Which HAL platform to build (stm32, avr, pico, esp32)
 # Set explicitly via preset or -DAPEX_HAL_PLATFORM=stm32
@@ -155,6 +154,16 @@ option(APEX_BUILD_TOOLS "Build CLI tools (Rust, Python, Shell)" ON)
 find_package(CUDAToolkit QUIET)
 
 if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPILER))
+  # Match nvcc's host compiler to CMAKE_CXX_COMPILER. Without this, nvcc
+  # picks gcc by default — mixing C++ and CUDA TUs across two toolchains
+  # produces incompatible runtime libraries (notably libasan vs libclang_rt.asan).
+  if (NOT DEFINED CMAKE_CUDA_HOST_COMPILER AND CMAKE_CXX_COMPILER)
+    set(CMAKE_CUDA_HOST_COMPILER
+        "${CMAKE_CXX_COMPILER}"
+        CACHE FILEPATH ""
+    )
+  endif ()
+
   enable_language(CUDA)
 
   set(CUDA_ARCHS

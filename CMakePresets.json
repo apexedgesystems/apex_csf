@@ -1,20 +1,24 @@
 {
   "version": 6,
-  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
-
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 24,
+    "patch": 0
+  },
   "configurePresets": [
     {
       "name": "base",
       "hidden": true,
       "generator": "Ninja",
-      "cacheVariables": { "CMAKE_EXPORT_COMPILE_COMMANDS": "ON" }
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
     },
-
     {
-      "name": "native-linux-debug",
+      "name": "hosted-x86_64-debug",
       "displayName": "Native (Ubuntu) - Debug",
       "inherits": "base",
-      "binaryDir": "build/native-linux-debug",
+      "binaryDir": "build/hosted-x86_64-debug",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_C_COMPILER": "clang-21",
@@ -22,10 +26,10 @@
       }
     },
     {
-      "name": "native-linux-profile",
+      "name": "hosted-x86_64-profile",
       "displayName": "Native (Ubuntu) - Profile (gperftools/perf-friendly)",
       "inherits": "base",
-      "binaryDir": "build/native-linux-profile",
+      "binaryDir": "build/hosted-x86_64-profile",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "CMAKE_C_COMPILER": "clang-21",
@@ -35,22 +39,82 @@
       }
     },
     {
-      "name": "native-linux-release",
+      "name": "hosted-x86_64-release",
       "displayName": "Native (Ubuntu) - Release",
       "inherits": "base",
-      "binaryDir": "build/native-linux-release",
+      "binaryDir": "build/hosted-x86_64-release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "CMAKE_C_COMPILER": "clang-21",
         "CMAKE_CXX_COMPILER": "clang++-21"
       }
     },
-
     {
-      "name": "jetson-aarch64-debug",
+      "name": "hosted-x86_64-cuda-debug",
+      "displayName": "Native (Ubuntu) - Debug + CUDA (required)",
+      "inherits": "hosted-x86_64-debug",
+      "binaryDir": "build/hosted-x86_64-cuda-debug",
+      "cacheVariables": {
+        "APEX_REQUIRE_CUDA": "ON"
+      }
+    },
+    {
+      "name": "hosted-x86_64-cuda-release",
+      "displayName": "Native (Ubuntu) - Release + CUDA (required)",
+      "inherits": "hosted-x86_64-release",
+      "binaryDir": "build/hosted-x86_64-cuda-release",
+      "cacheVariables": {
+        "APEX_REQUIRE_CUDA": "ON"
+      }
+    },
+    {
+      "name": "hosted-x86_64-asan",
+      "displayName": "Native (Ubuntu) - Debug + AddressSanitizer",
+      "inherits": "hosted-x86_64-debug",
+      "binaryDir": "build/hosted-x86_64-asan",
+      "cacheVariables": {
+        "SANITIZER": "asan"
+      }
+    },
+    {
+      "name": "hosted-x86_64-tsan",
+      "displayName": "Native (Ubuntu) - Debug + ThreadSanitizer",
+      "inherits": "hosted-x86_64-debug",
+      "binaryDir": "build/hosted-x86_64-tsan",
+      "cacheVariables": {
+        "SANITIZER": "tsan"
+      }
+    },
+    {
+      "name": "hosted-x86_64-ubsan",
+      "displayName": "Native (Ubuntu) - Debug + UBSanitizer",
+      "inherits": "hosted-x86_64-debug",
+      "binaryDir": "build/hosted-x86_64-ubsan",
+      "cacheVariables": {
+        "SANITIZER": "ubsan"
+      }
+    },
+    {
+      "name": "hosted-x86_64-coverage",
+      "displayName": "Native (Ubuntu) - Debug + Coverage (LLVM source-based)",
+      "inherits": "hosted-x86_64-debug",
+      "binaryDir": "build/hosted-x86_64-coverage",
+      "cacheVariables": {
+        "ENABLE_COVERAGE": "ON",
+        "APEX_COVERAGE_LLVM_VERSION": "21"
+      }
+    },
+    {
+      "name": "hosted-x86_64-static",
+      "displayName": "Native (Ubuntu) - Debug for scan-build static analysis",
+      "inherits": "hosted-x86_64-debug",
+      "binaryDir": "build/hosted-x86_64-static"
+    },
+    {
+      "name": "cross-jetson-debug",
       "displayName": "Jetson AGX Thor (aarch64) - Debug",
       "inherits": "base",
-      "binaryDir": "build/jetson-aarch64-debug",
+      "binaryDir": "build/cross-jetson-debug",
       "toolchainFile": "cmake/toolchains/jetson-aarch64.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -60,10 +124,10 @@
       }
     },
     {
-      "name": "jetson-aarch64-release",
+      "name": "cross-jetson-release",
       "displayName": "Jetson AGX Thor (aarch64) - Release",
       "inherits": "base",
-      "binaryDir": "build/jetson-aarch64-release",
+      "binaryDir": "build/cross-jetson-release",
       "toolchainFile": "cmake/toolchains/jetson-aarch64.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
@@ -72,12 +136,11 @@
         "APEX_REQUIRE_CUDA": "ON"
       }
     },
-
     {
-      "name": "rpi-aarch64-debug",
+      "name": "cross-rpi-debug",
       "displayName": "Raspberry Pi (aarch64) - Debug",
       "inherits": "base",
-      "binaryDir": "build/rpi-aarch64-debug",
+      "binaryDir": "build/cross-rpi-debug",
       "toolchainFile": "cmake/toolchains/rpi-aarch64.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -85,22 +148,21 @@
       }
     },
     {
-      "name": "rpi-aarch64-release",
+      "name": "cross-rpi-release",
       "displayName": "Raspberry Pi (aarch64) - Release",
       "inherits": "base",
-      "binaryDir": "build/rpi-aarch64-release",
+      "binaryDir": "build/cross-rpi-release",
       "toolchainFile": "cmake/toolchains/rpi-aarch64.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_TESTING": "OFF"
       }
     },
-
     {
-      "name": "riscv64-linux-debug",
+      "name": "cross-riscv64-debug",
       "displayName": "RISC-V 64 (Linux) - Debug",
       "inherits": "base",
-      "binaryDir": "build/riscv64-linux-debug",
+      "binaryDir": "build/cross-riscv64-debug",
       "toolchainFile": "cmake/toolchains/riscv64-linux-gnu.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -108,112 +170,354 @@
       }
     },
     {
-      "name": "riscv64-linux-release",
+      "name": "cross-riscv64-release",
       "displayName": "RISC-V 64 (Linux) - Release",
       "inherits": "base",
-      "binaryDir": "build/riscv64-linux-release",
+      "binaryDir": "build/cross-riscv64-release",
       "toolchainFile": "cmake/toolchains/riscv64-linux-gnu.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_TESTING": "OFF"
       }
     },
-
     {
-      "name": "stm32-baremetal",
+      "name": "mcu-stm32-relwithdebinfo",
       "displayName": "STM32 (L476) - Bare-metal",
       "inherits": "base",
-      "binaryDir": "build/stm32",
+      "binaryDir": "build/mcu-stm32-relwithdebinfo",
       "toolchainFile": "cmake/toolchains/stm32-gcc.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "APEX_HAL_PLATFORM": "stm32"
       }
     },
-
     {
-      "name": "zephyr-arm",
+      "name": "mcu-stm32-debug",
+      "displayName": "STM32 (L476) - Bare-metal Debug (-Og -g3)",
+      "inherits": "mcu-stm32-relwithdebinfo",
+      "binaryDir": "build/mcu-stm32-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "rtos-zephyr-nucleo-l476rg",
       "displayName": "Zephyr RTOS (ARM)",
       "inherits": "base",
-      "binaryDir": "build/zephyr-arm",
+      "binaryDir": "build/rtos-zephyr-nucleo-l476rg",
       "toolchainFile": "cmake/toolchains/zephyr.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "ZEPHYR_BOARD": "nucleo_l476rg"
       }
     },
-
     {
-      "name": "arduino-baremetal",
+      "name": "mcu-arduino-relwithdebinfo",
       "displayName": "Arduino Uno (ATmega328P) - Bare-metal",
       "inherits": "base",
-      "binaryDir": "build/arduino",
+      "binaryDir": "build/mcu-arduino-relwithdebinfo",
       "toolchainFile": "cmake/toolchains/avr-gcc.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "APEX_HAL_PLATFORM": "avr"
       }
     },
-
     {
-      "name": "pico-baremetal",
+      "name": "mcu-arduino-debug",
+      "displayName": "Arduino Uno - Bare-metal Debug (-Og -g3)",
+      "inherits": "mcu-arduino-relwithdebinfo",
+      "binaryDir": "build/mcu-arduino-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "mcu-pico-relwithdebinfo",
       "displayName": "Pico (RP2040) - Bare-metal",
       "inherits": "base",
-      "binaryDir": "build/pico",
+      "binaryDir": "build/mcu-pico-relwithdebinfo",
       "toolchainFile": "cmake/toolchains/pico-gcc.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "APEX_HAL_PLATFORM": "pico"
       }
     },
-
     {
-      "name": "esp32-baremetal",
+      "name": "mcu-pico-debug",
+      "displayName": "Pico (RP2040) - Bare-metal Debug (-Og -g3)",
+      "inherits": "mcu-pico-relwithdebinfo",
+      "binaryDir": "build/mcu-pico-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "mcu-esp32-relwithdebinfo",
       "displayName": "ESP32-S3 (Xtensa LX7) - Bare-metal (ESP-IDF)",
       "inherits": "base",
-      "binaryDir": "build/esp32",
+      "binaryDir": "build/mcu-esp32-relwithdebinfo",
       "toolchainFile": "cmake/toolchains/esp32-gcc.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "APEX_HAL_PLATFORM": "esp32"
       }
     },
-
     {
-      "name": "c2000-baremetal",
+      "name": "mcu-esp32-debug",
+      "displayName": "ESP32-S3 - Bare-metal Debug (-Og -g3)",
+      "inherits": "mcu-esp32-relwithdebinfo",
+      "binaryDir": "build/mcu-esp32-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "mcu-c2000-relwithdebinfo",
       "displayName": "TI C2000 F28004x (C28x DSP) - Bare-metal",
       "inherits": "base",
-      "binaryDir": "build/c2000",
+      "binaryDir": "build/mcu-c2000-relwithdebinfo",
       "toolchainFile": "cmake/toolchains/c2000-cgt.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo",
         "APEX_HAL_PLATFORM": "c2000"
       }
+    },
+    {
+      "name": "mcu-c2000-debug",
+      "displayName": "TI C2000 F28004x - Bare-metal Debug (--opt_level=0)",
+      "inherits": "mcu-c2000-relwithdebinfo",
+      "binaryDir": "build/mcu-c2000-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
     }
   ],
-
   "buildPresets": [
-    { "name": "native-linux-debug",    "configurePreset": "native-linux-debug" },
-    { "name": "native-linux-profile",  "configurePreset": "native-linux-profile" },
-    { "name": "native-linux-release",  "configurePreset": "native-linux-release" },
-    { "name": "jetson-aarch64-debug",  "configurePreset": "jetson-aarch64-debug" },
-    { "name": "jetson-aarch64-release", "configurePreset": "jetson-aarch64-release" },
-    { "name": "rpi-aarch64-debug",     "configurePreset": "rpi-aarch64-debug" },
-    { "name": "rpi-aarch64-release",   "configurePreset": "rpi-aarch64-release" },
-    { "name": "riscv64-linux-debug",   "configurePreset": "riscv64-linux-debug" },
-    { "name": "riscv64-linux-release", "configurePreset": "riscv64-linux-release" },
-    { "name": "stm32-baremetal",       "configurePreset": "stm32-baremetal" },
-    { "name": "zephyr-arm",            "configurePreset": "zephyr-arm" },
-    { "name": "arduino-baremetal",     "configurePreset": "arduino-baremetal" },
-    { "name": "pico-baremetal",        "configurePreset": "pico-baremetal" },
-    { "name": "esp32-baremetal",       "configurePreset": "esp32-baremetal" },
-    { "name": "c2000-baremetal",      "configurePreset": "c2000-baremetal" }
+    {
+      "name": "hosted-x86_64-debug",
+      "configurePreset": "hosted-x86_64-debug"
+    },
+    {
+      "name": "hosted-x86_64-profile",
+      "configurePreset": "hosted-x86_64-profile"
+    },
+    {
+      "name": "hosted-x86_64-release",
+      "configurePreset": "hosted-x86_64-release"
+    },
+    {
+      "name": "hosted-x86_64-asan",
+      "configurePreset": "hosted-x86_64-asan"
+    },
+    {
+      "name": "hosted-x86_64-tsan",
+      "configurePreset": "hosted-x86_64-tsan"
+    },
+    {
+      "name": "hosted-x86_64-ubsan",
+      "configurePreset": "hosted-x86_64-ubsan"
+    },
+    {
+      "name": "hosted-x86_64-coverage",
+      "configurePreset": "hosted-x86_64-coverage"
+    },
+    {
+      "name": "hosted-x86_64-static",
+      "configurePreset": "hosted-x86_64-static"
+    },
+    {
+      "name": "cross-jetson-debug",
+      "configurePreset": "cross-jetson-debug"
+    },
+    {
+      "name": "cross-jetson-release",
+      "configurePreset": "cross-jetson-release"
+    },
+    {
+      "name": "cross-rpi-debug",
+      "configurePreset": "cross-rpi-debug"
+    },
+    {
+      "name": "cross-rpi-release",
+      "configurePreset": "cross-rpi-release"
+    },
+    {
+      "name": "cross-riscv64-debug",
+      "configurePreset": "cross-riscv64-debug"
+    },
+    {
+      "name": "cross-riscv64-release",
+      "configurePreset": "cross-riscv64-release"
+    },
+    {
+      "name": "mcu-stm32-relwithdebinfo",
+      "configurePreset": "mcu-stm32-relwithdebinfo"
+    },
+    {
+      "name": "mcu-stm32-debug",
+      "configurePreset": "mcu-stm32-debug"
+    },
+    {
+      "name": "rtos-zephyr-nucleo-l476rg",
+      "configurePreset": "rtos-zephyr-nucleo-l476rg"
+    },
+    {
+      "name": "mcu-arduino-relwithdebinfo",
+      "configurePreset": "mcu-arduino-relwithdebinfo"
+    },
+    {
+      "name": "mcu-arduino-debug",
+      "configurePreset": "mcu-arduino-debug"
+    },
+    {
+      "name": "mcu-pico-relwithdebinfo",
+      "configurePreset": "mcu-pico-relwithdebinfo"
+    },
+    {
+      "name": "mcu-pico-debug",
+      "configurePreset": "mcu-pico-debug"
+    },
+    {
+      "name": "mcu-esp32-relwithdebinfo",
+      "configurePreset": "mcu-esp32-relwithdebinfo"
+    },
+    {
+      "name": "mcu-esp32-debug",
+      "configurePreset": "mcu-esp32-debug"
+    },
+    {
+      "name": "mcu-c2000-relwithdebinfo",
+      "configurePreset": "mcu-c2000-relwithdebinfo"
+    },
+    {
+      "name": "mcu-c2000-debug",
+      "configurePreset": "mcu-c2000-debug"
+    }
   ],
-
   "testPresets": [
-    { "name": "native-linux-debug",    "configurePreset": "native-linux-debug" },
-    { "name": "native-linux-release",  "configurePreset": "native-linux-release" },
-    { "name": "jetson-aarch64-debug",  "configurePreset": "jetson-aarch64-debug" },
-    { "name": "jetson-aarch64-release", "configurePreset": "jetson-aarch64-release" }
+    {
+      "name": "hosted-x86_64-debug",
+      "configurePreset": "hosted-x86_64-debug"
+    },
+    {
+      "name": "hosted-x86_64-release",
+      "configurePreset": "hosted-x86_64-release"
+    },
+    {
+      "name": "hosted-x86_64-cuda-debug",
+      "configurePreset": "hosted-x86_64-cuda-debug"
+    },
+    {
+      "name": "hosted-x86_64-cuda-release",
+      "configurePreset": "hosted-x86_64-cuda-release"
+    },
+    {
+      "name": "hosted-x86_64-asan",
+      "configurePreset": "hosted-x86_64-asan"
+    },
+    {
+      "name": "hosted-x86_64-tsan",
+      "configurePreset": "hosted-x86_64-tsan"
+    },
+    {
+      "name": "hosted-x86_64-ubsan",
+      "configurePreset": "hosted-x86_64-ubsan"
+    },
+    {
+      "name": "hosted-x86_64-coverage",
+      "configurePreset": "hosted-x86_64-coverage"
+    },
+    {
+      "name": "cross-jetson-debug",
+      "configurePreset": "cross-jetson-debug"
+    },
+    {
+      "name": "cross-jetson-release",
+      "configurePreset": "cross-jetson-release"
+    }
+  ],
+  "workflowPresets": [
+    {
+      "name": "native-debug",
+      "displayName": "Native debug: configure + build + test",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "hosted-x86_64-debug"
+        },
+        {
+          "type": "build",
+          "name": "hosted-x86_64-debug"
+        },
+        {
+          "type": "test",
+          "name": "hosted-x86_64-debug"
+        }
+      ]
+    },
+    {
+      "name": "native-release",
+      "displayName": "Native release: configure + build",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "hosted-x86_64-release"
+        },
+        {
+          "type": "build",
+          "name": "hosted-x86_64-release"
+        }
+      ]
+    },
+    {
+      "name": "native-asan",
+      "displayName": "Native AddressSanitizer: configure + build + test",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "hosted-x86_64-asan"
+        },
+        {
+          "type": "build",
+          "name": "hosted-x86_64-asan"
+        },
+        {
+          "type": "test",
+          "name": "hosted-x86_64-asan"
+        }
+      ]
+    },
+    {
+      "name": "native-coverage",
+      "displayName": "Native coverage: configure + build + test (Coverage label)",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "hosted-x86_64-coverage"
+        },
+        {
+          "type": "build",
+          "name": "hosted-x86_64-coverage"
+        },
+        {
+          "type": "test",
+          "name": "hosted-x86_64-coverage"
+        }
+      ]
+    },
+    {
+      "name": "jetson-release",
+      "displayName": "Jetson release: configure + build",
+      "steps": [
+        {
+          "type": "configure",
+          "name": "cross-jetson-release"
+        },
+        {
+          "type": "build",
+          "name": "cross-jetson-release"
+        }
+      ]
+    }
   ]
 }

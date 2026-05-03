@@ -21,7 +21,7 @@ make compose-testp
 
 # 3. Run GPU tests explicitly (CUDA container)
 docker compose run --rm -T dev-cuda bash -c \
-  'cd build/native-linux-debug && ctest --test-dir . -L gpu_compute -j4'
+  'cd build/hosted-x86_64-debug && ctest --test-dir . -L gpu_compute -j4'
 
 # 4. Build release (cross-compile aarch64 + package)
 make release APP=ApexEdgeDemo
@@ -77,11 +77,11 @@ The Thor scheduler TPRM is packed into `master_thor.tprm` (for Thor-specific tun
 
 ```bash
 # Regenerate native master.tprm (after TOML edits)
-./build/native-linux-debug/bin/tools/rust/cfg2bin \
+./build/hosted-x86_64-debug/bin/tools/rust/cfg2bin \
   --batch apps/apex_edge_demo/tprm/toml \
   --output apps/apex_edge_demo/tprm
 
-./build/native-linux-debug/bin/tools/rust/tprm_pack pack \
+./build/hosted-x86_64-debug/bin/tools/rust/tprm_pack pack \
   -e 0x000000:apps/apex_edge_demo/tprm/executive.tprm \
   -e 0x000100:apps/apex_edge_demo/tprm/scheduler.tprm \
   -e 0x000500:apps/apex_edge_demo/tprm/action.tprm \
@@ -93,11 +93,11 @@ The Thor scheduler TPRM is packed into `master_thor.tprm` (for Thor-specific tun
   -o apps/apex_edge_demo/tprm/master.tprm
 
 # Regenerate Thor master_thor.tprm
-./build/native-linux-debug/bin/tools/rust/cfg2bin \
+./build/hosted-x86_64-debug/bin/tools/rust/cfg2bin \
   --batch apps/apex_edge_demo/tprm/toml/thor \
   --output apps/apex_edge_demo/tprm/thor
 
-./build/native-linux-debug/bin/tools/rust/tprm_pack pack \
+./build/hosted-x86_64-debug/bin/tools/rust/tprm_pack pack \
   -e 0x000000:apps/apex_edge_demo/tprm/thor/executive.tprm \
   -e 0x000100:apps/apex_edge_demo/tprm/thor/scheduler.tprm \
   -e 0x000500:apps/apex_edge_demo/tprm/action.tprm \

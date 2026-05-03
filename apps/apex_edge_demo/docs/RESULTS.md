@@ -153,7 +153,7 @@ make compose-testp
 
 # Run (10 minutes)
 docker compose run --rm -T dev-cuda bash -c '
-  cd build/native-linux-debug
+  cd build/hosted-x86_64-debug
   rm -rf .apex_fs
   bin/ApexEdgeDemo \
     --config /home/kalex/workspace/apps/apex_edge_demo/tprm/master.tprm \
@@ -161,7 +161,7 @@ docker compose run --rm -T dev-cuda bash -c '
 
 # Analyze
 python3 apps/apex_edge_demo/scripts/analyze_soak.py \
-  build/native-linux-debug/.apex_fs/
+  build/hosted-x86_64-debug/.apex_fs/
 ```
 
 ### Thor Run
