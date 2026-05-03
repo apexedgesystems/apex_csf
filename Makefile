@@ -23,6 +23,7 @@ include mk/firmware.mk
 include mk/compose.mk
 include mk/release.mk
 include mk/size.mk
+include mk/profile.mk
 include mk/clean.mk
 
 # ==============================================================================
@@ -180,6 +181,11 @@ help:
 	@printf '  %-28s %s\n' "make tools-cpp" "Build C++ tools only"
 	@printf '  %-28s %s\n' "make tools-py" "Build Python tools only"
 	@printf '  %-28s %s\n' "make tools-rust" "Build Rust tools only"
+	@printf '\n'
+	@printf '%s\n' "Profiling (chrome://tracing format):"
+	@printf '  %-28s %s\n' "make profile-configure" "CMake configure-time hotspots"
+	@printf '  %-28s %s\n' "make profile-build" "Ninja build-time hotspots (after make debug)"
+	@printf '  %-28s %s\n' "make profile-clean" "Remove profile JSON output"
 	@printf '\n'
 	@printf '%s\n' "Quality:"
 	@printf '  %-28s %s\n' "make format" "Auto-fix formatting issues"

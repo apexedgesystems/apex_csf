@@ -186,6 +186,14 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       poetry
 
 # ==============================================================================
+# ninjatracing - Convert .ninja_log to chrome-tracing JSON
+# ==============================================================================
+# Single Python script from nico/ninjatracing — not packaged on PyPI.
+RUN wget --progress=dot:giga -O /usr/local/bin/ninjatracing \
+      https://raw.githubusercontent.com/nico/ninjatracing/main/ninjatracing && \
+    chmod +x /usr/local/bin/ninjatracing
+
+# ==============================================================================
 # Rust Toolchain
 # ==============================================================================
 # Install Rust via rustup to /opt/rust for system-wide access.

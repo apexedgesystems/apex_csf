@@ -44,6 +44,8 @@ $(eval $(call _compose_target,release,native release,dev-cuda,release))
 $(eval $(call _compose_target,cuda-debug,native CUDA debug,dev-cuda,cuda-debug))
 $(eval $(call _compose_target,cuda-release,native CUDA release,dev-cuda,cuda-release))
 $(eval $(call _compose_target,docs,documentation,dev-cuda,docs))
+$(eval $(call _compose_target,profile-configure,configure profile,dev-cuda,profile-configure))
+$(eval $(call _compose_target,profile-build,build profile,dev-cuda,profile-build))
 
 # ------------------------------------------------------------------------------
 # Testing and Quality (dev-cuda)
