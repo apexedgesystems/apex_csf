@@ -72,7 +72,7 @@ jobs:
           echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
 
       - name: Login to ghcr.io
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -117,7 +117,7 @@ jobs:
           ls -la build/release/ 2>/dev/null || true
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           name: Apex CSF ${{ steps.version.outputs.version }}
           draft: false
