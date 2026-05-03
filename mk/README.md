@@ -163,33 +163,33 @@ service, passing through `VERBOSE` and `CMAKE_EXTRA_ARGS`.
 
 Override at invocation: `make debug NUM_JOBS=8 VERBOSE=1`
 
-| Variable           | Default                    | Description                                  |
-| ------------------ | -------------------------- | -------------------------------------------- |
-| `NUM_JOBS`         | Auto (nproc)               | Parallel job count                           |
-| `VERBOSE`          | 0                          | Set to 1 for CMake per-target output         |
+| Variable           | Default                     | Description                                  |
+| ------------------ | --------------------------- | -------------------------------------------- |
+| `NUM_JOBS`         | Auto (nproc)                | Parallel job count                           |
+| `VERBOSE`          | 0                           | Set to 1 for CMake per-target output         |
 | `BUILD_DIR`        | `build/hosted-x86_64-debug` | Build directory for test/coverage/sanitizers |
-| `LLVM_VER`         | 21                         | LLVM/Clang version for coverage              |
-| `CMAKE_EXTRA_ARGS` | (empty)                    | Extra CMake arguments passed through         |
-| `APP`              | (empty)                    | App name for release/package targets         |
+| `LLVM_VER`         | 21                          | LLVM/Clang version for coverage              |
+| `CMAKE_EXTRA_ARGS` | (empty)                     | Extra CMake arguments passed through         |
+| `APP`              | (empty)                     | App name for release/package targets         |
 
 ### CMake Presets
 
 Targets use presets from `CMakePresets.json`:
 
-| Make Target      | CMake Preset             |
-| ---------------- | ------------------------ |
-| `debug`          | `hosted-x86_64-debug`     |
-| `release`        | `hosted-x86_64-release`   |
-| `jetson-debug`   | `cross-jetson-debug`   |
-| `jetson-release` | `cross-jetson-release` |
-| `rpi-debug`      | `cross-rpi-debug`      |
-| `rpi-release`    | `cross-rpi-release`    |
-| `riscv-debug`    | `cross-riscv64-debug`    |
-| `riscv-release`  | `cross-riscv64-release`  |
-| `stm32`          | `mcu-stm32-relwithdebinfo`        |
-| `arduino`        | `mcu-arduino-relwithdebinfo`      |
-| `pico`           | `mcu-pico-relwithdebinfo`         |
-| `esp32`          | `mcu-esp32-relwithdebinfo`        |
+| Make Target      | CMake Preset                 |
+| ---------------- | ---------------------------- |
+| `debug`          | `hosted-x86_64-debug`        |
+| `release`        | `hosted-x86_64-release`      |
+| `jetson-debug`   | `cross-jetson-debug`         |
+| `jetson-release` | `cross-jetson-release`       |
+| `rpi-debug`      | `cross-rpi-debug`            |
+| `rpi-release`    | `cross-rpi-release`          |
+| `riscv-debug`    | `cross-riscv64-debug`        |
+| `riscv-release`  | `cross-riscv64-release`      |
+| `stm32`          | `mcu-stm32-relwithdebinfo`   |
+| `arduino`        | `mcu-arduino-relwithdebinfo` |
+| `pico`           | `mcu-pico-relwithdebinfo`    |
+| `esp32`          | `mcu-esp32-relwithdebinfo`   |
 
 ## Usage Examples
 

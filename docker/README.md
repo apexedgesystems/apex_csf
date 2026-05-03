@@ -79,14 +79,14 @@ FlameGraph, google-perftools, bpftrace.
 
 ### Builder Images
 
-| Image                  | Output                          | Description              |
-| ---------------------- | ------------------------------- | ------------------------ |
-| `apex.builder.cpu`     | `build/hosted-x86_64-release/`   | x86_64 release artifacts |
-| `apex.builder.cuda`    | `build/hosted-x86_64-release/`   | x86_64 + CUDA artifacts  |
-| `apex.builder.jetson`  | `build/cross-jetson-release/` | Jetson release artifacts |
-| `apex.builder.rpi`     | `build/cross-rpi-release/`    | Raspberry Pi artifacts   |
-| `apex.builder.riscv64` | `build/cross-riscv64-release/`  | RISC-V 64 artifacts      |
-| `apex.builder.stm32`   | `build/stm32/firmware/`         | STM32 firmware artifacts |
+| Image                  | Output                         | Description              |
+| ---------------------- | ------------------------------ | ------------------------ |
+| `apex.builder.cpu`     | `build/hosted-x86_64-release/` | x86_64 release artifacts |
+| `apex.builder.cuda`    | `build/hosted-x86_64-release/` | x86_64 + CUDA artifacts  |
+| `apex.builder.jetson`  | `build/cross-jetson-release/`  | Jetson release artifacts |
+| `apex.builder.rpi`     | `build/cross-rpi-release/`     | Raspberry Pi artifacts   |
+| `apex.builder.riscv64` | `build/cross-riscv64-release/` | RISC-V 64 artifacts      |
+| `apex.builder.stm32`   | `build/stm32/firmware/`        | STM32 firmware artifacts |
 
 ### Final Image
 

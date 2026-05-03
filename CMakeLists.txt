@@ -158,7 +158,10 @@ if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPIL
   # picks gcc by default — mixing C++ and CUDA TUs across two toolchains
   # produces incompatible runtime libraries (notably libasan vs libclang_rt.asan).
   if (NOT DEFINED CMAKE_CUDA_HOST_COMPILER AND CMAKE_CXX_COMPILER)
-    set(CMAKE_CUDA_HOST_COMPILER "${CMAKE_CXX_COMPILER}" CACHE FILEPATH "")
+    set(CMAKE_CUDA_HOST_COMPILER
+        "${CMAKE_CXX_COMPILER}"
+        CACHE FILEPATH ""
+    )
   endif ()
 
   enable_language(CUDA)
