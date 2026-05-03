@@ -1,0 +1,25 @@
+# app_data.toml - ApexTimeDemo application descriptor for Zenith target generation
+#
+# Pure-SIL TimeServer demonstration: PPS edge ingest, UTC correlation, TNT
+# broadcast, ATS AT_TIME triggers, and graceful degradation / recovery.
+# Wires a MockPps + built-in GPS simulator thread so no real /dev/pps0 is
+# needed. Used for Zenith ops-client development against the TimeServer
+# command surface.
+#
+# Core components (Executive, Scheduler, FileSystem, Registry, Interface,
+# Action, TimeServer) are auto-included by the target generator at their
+# standard UIDs. Only declare app-specific component instances below.
+
+application = "ApexTimeDemo"
+description = "PPS time-distribution demo with MockPps GPS simulator."
+
+[protocol]
+transport = "TCP"
+framing = "SLIP"
+port = 9000
+
+[[components]]
+name = "SystemMonitor"
+fullUid = "0x00C800"
+type = "SUPPORT"
+notes = "CPU/memory/FD health monitoring."
