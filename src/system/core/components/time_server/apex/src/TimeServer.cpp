@@ -6,6 +6,7 @@
 #include "src/system/core/components/time_server/apex/inc/TimeServer.hpp"
 
 #include <algorithm>
+#include <ctime>
 
 namespace system_core {
 namespace time_server {
@@ -298,6 +299,43 @@ std::int64_t TimeServer::computeUtcNs(std::int64_t steadyNowNs) const noexcept {
     return 0;
   }
   return lastEdgeEpochNs_ + (steadyNowNs - lastEdgeLocalNs_);
+}
+
+/* ----------------------------- TimeProvider plumbing ----------------------------- */
+
+namespace {
+
+std::uint64_t utcTimeProviderTrampoline(void* ctx) noexcept {
+  auto* ts = static_cast<TimeServer*>(ctx);
+  if (ts == nullptr) {
+    return 0;
+  }
+  // We need a steady-clock reading in the same domain TimeServer was wired
+  // with. Read it via clock_gettime here -- the ATS engine calls this
+  // delegate per tick, so coupling the delegate to ::clock_gettime keeps
+  // the call path branch-free and self-contained.
+  struct timespec now {};
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  const std::int64_t steadyNowNs =
+      static_cast<std::int64_t>(now.tv_sec) * NS_PER_SECOND + now.tv_nsec;
+  const std::int64_t utcNs = ts->computeUtcNs(steadyNowNs);
+  return static_cast<std::uint64_t>(utcNs / 1000); // ns -> us for ATS
+}
+
+std::int64_t defaultSteadyClockTrampoline(void* /*ctx*/) noexcept {
+  struct timespec now {};
+  clock_gettime(CLOCK_MONOTONIC, &now);
+  return static_cast<std::int64_t>(now.tv_sec) * NS_PER_SECOND + now.tv_nsec;
+}
+
+} // namespace
+
+apex::time::TimeProviderDelegate TimeServer::utcTimeProvider() noexcept {
+  return {&utcTimeProviderTrampoline, this};
+}
+
+TimeServer::SteadyClockDelegate TimeServer::defaultSteadyClock() noexcept {
+  return {&defaultSteadyClockTrampoline, nullptr};
 }
 
 } // namespace time_server

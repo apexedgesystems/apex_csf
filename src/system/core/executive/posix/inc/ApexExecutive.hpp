@@ -33,6 +33,7 @@
 #include "src/system/core/components/registry/apex/inc/ApexRegistry.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerMultiThread.hpp"
 #include "src/system/core/components/action/apex/inc/ActionComponent.hpp"
+#include "src/system/core/components/time_server/apex/inc/TimeServer.hpp"
 #include "src/system/core/components/interface/apex/inc/ApexInterface.hpp"
 #include "src/utilities/compatibility/inc/compat_concurrency.hpp"
 #include "src/utilities/helpers/inc/Utilities.hpp"
@@ -295,6 +296,18 @@ protected:
   }
 
   /**
+   * @brief Get the time server for application-level wiring (PPS source,
+   *        broadcast delegate).
+   * @return Reference to TimeServer.
+   * @note By default the executive runs TimeServer with no PPS source and
+   *       no broadcast delegate. Applications wire those in via this
+   *       accessor before runtime.
+   */
+  [[nodiscard]] system_core::time_server::TimeServer& timeServer() noexcept {
+    return timeServer_;
+  }
+
+  /**
    * @brief Register a component with the executive.
    *
    * Performs collision detection, registry registration, component log initialization,
@@ -439,6 +452,9 @@ private:
 
   // Action engine (watchpoints, sequences, data-write orchestration)
   system_core::action::ActionComponent actionComp_;
+
+  // Time server (PPS-driven UTC distribution, sole time authority)
+  system_core::time_server::TimeServer timeServer_;
 
   // Signal handling
   sigset_t signalSet_{};

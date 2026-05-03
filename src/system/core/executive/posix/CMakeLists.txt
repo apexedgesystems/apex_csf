@@ -46,6 +46,7 @@ apex_add_library(
   system_core_action
   system_core_registry
   system_core_interface
+  system_core_time_server
   fmt::fmt
   DEPS_PRIVATE
   system_core_scheduler

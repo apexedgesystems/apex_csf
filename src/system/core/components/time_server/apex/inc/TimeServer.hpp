@@ -40,6 +40,7 @@
 #include "src/system/core/hal/base/IPps.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/CoreComponentBase.hpp"
 #include "src/utilities/concurrency/inc/Delegate.hpp"
+#include "src/utilities/time/inc/TimeBase.hpp"
 
 #include <cstdint>
 
@@ -168,6 +169,23 @@ public:
 
   /** @brief Compute current UTC by interpolation. Returns 0 if no correlation. */
   [[nodiscard]] std::int64_t computeUtcNs(std::int64_t steadyNowNs) const noexcept;
+
+  /**
+   * @brief Build a TimeProviderDelegate that returns current UTC microseconds
+   *        for use as ActionComponent's ATS time source.
+   * @return Delegate wired to read this TimeServer (no copy; pointer to *this).
+   * @note RT-safe: the delegate's call path is O(1) -- one steady-clock read,
+   *       one subtract, one divide. Returns 0 microseconds if correlation is
+   *       not yet established (ATS AT_TIME triggers will wait).
+   */
+  [[nodiscard]] apex::time::TimeProviderDelegate utcTimeProvider() noexcept;
+
+  /**
+   * @brief Default monotonic-clock delegate suitable for setSteadyClock.
+   * @return Delegate that calls clock_gettime(CLOCK_MONOTONIC).
+   * @note POSIX-only.
+   */
+  [[nodiscard]] static SteadyClockDelegate defaultSteadyClock() noexcept;
 
 protected:
   /// Lifecycle hook called from CoreComponentBase::init(). No work to do
