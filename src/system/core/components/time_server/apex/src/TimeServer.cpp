@@ -79,8 +79,15 @@ void TimeServer::tick(std::uint32_t currentCycle) noexcept {
     publish();
   }
 
-  // Poll PPS for a new edge.
-  if (pps_ != nullptr) {
+  // Mode-specific frame work. PRIMARY and SECONDARY both consume a local
+  // PPS source; the difference is purely operational (where the reference
+  // time comes from). RELAY does no per-tick work -- updates arrive via
+  // the OP_ACCEPT_REMOTE_TNT command. PTP_SYNC and CAN_SYNC read their
+  // sync source each tick when wired.
+  const TimeServerMode mode = static_cast<TimeServerMode>(tprm_.mode);
+  const bool isPpsMode = (mode == TimeServerMode::PRIMARY || mode == TimeServerMode::SECONDARY);
+
+  if (isPpsMode && pps_ != nullptr) {
     std::int64_t edgeNs = 0;
     const apex::hal::PpsStatus st = pps_->readCapture(edgeNs);
     if (st == apex::hal::PpsStatus::OK) {
@@ -89,8 +96,9 @@ void TimeServer::tick(std::uint32_t currentCycle) noexcept {
   }
 
   // Even with no edge this frame, staleness can advance. Use the steady
-  // clock to detect long silences.
-  if (steadyClock_) {
+  // clock to detect long silences. PPS modes care; the others manage
+  // their own sync-source health checks.
+  if (isPpsMode && steadyClock_) {
     checkStaleness(now());
   }
 }

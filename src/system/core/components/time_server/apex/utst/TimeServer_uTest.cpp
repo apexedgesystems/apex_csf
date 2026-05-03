@@ -637,6 +637,53 @@ TEST(TimeServer, NextToneDriftAdjusted) {
   EXPECT_GT(nextTone - lastEpoch, NS_PER_SEC); // drift-adjusted upward
 }
 
+/* ----------------------------- Mode dispatch ----------------------------- */
+
+/** @test SECONDARY mode behaves like PRIMARY for PPS+reference correlation. */
+TEST(TimeServer, SecondaryModeAcceptsReferenceLikePrimary) {
+  TimeServerHarness h;
+  TimeServerTunableParams tprm;
+  tprm.mode = static_cast<std::uint8_t>(system_core::time_server::TimeServerMode::SECONDARY);
+  tprm.driftFilterTaps = 4;
+  h.loadTprm(tprm);
+
+  h.tick();
+
+  // Reference comes from a forwarded remote-PRIMARY TNT, but the
+  // SET_REFERENCE_TIME path is unchanged.
+  SetReferenceTime ref{};
+  ref.epochNs = 9 * NS_PER_SEC;
+  ref.source = static_cast<std::uint8_t>(TimeSource::ONBOARD);
+  h.server().handleSetReferenceTime(ref);
+
+  h.setSteadyNow(NS_PER_SEC);
+  h.injectAndTick(NS_PER_SEC);
+
+  EXPECT_EQ(h.server().currentTnt().valid, static_cast<std::uint8_t>(TimeValid::VALID));
+  EXPECT_EQ(h.server().currentTnt().quality, static_cast<std::uint8_t>(TimeQuality::FINE));
+  EXPECT_EQ(h.server().currentTnt().epochNs, 9 * NS_PER_SEC);
+}
+
+/** @test RELAY/PTP_SYNC/CAN_SYNC modes skip the local PPS poll. */
+TEST(TimeServer, NonPpsModesSkipPpsPolling) {
+  for (auto mode : {system_core::time_server::TimeServerMode::RELAY,
+                    system_core::time_server::TimeServerMode::PTP_SYNC,
+                    system_core::time_server::TimeServerMode::CAN_SYNC}) {
+    TimeServerHarness h;
+    TimeServerTunableParams tprm;
+    tprm.mode = static_cast<std::uint8_t>(mode);
+    h.loadTprm(tprm);
+    h.tick();
+
+    // Inject what would be a valid PPS edge in PRIMARY mode. Should be
+    // ignored: pulse count stays 0 and valid stays NONE.
+    h.setSteadyNow(NS_PER_SEC);
+    h.injectAndTick(NS_PER_SEC);
+    EXPECT_EQ(h.server().currentTnt().ppsCount, 0U);
+    EXPECT_EQ(h.server().currentTnt().valid, static_cast<std::uint8_t>(TimeValid::NONE));
+  }
+}
+
 /* ----------------------------- IInternalBus broadcast ----------------------------- */
 
 namespace {
