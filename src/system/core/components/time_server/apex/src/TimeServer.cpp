@@ -5,7 +5,10 @@
 
 #include "src/system/core/components/time_server/apex/inc/TimeServer.hpp"
 
+#include "src/system/core/infrastructure/system_component/base/inc/CommandResult.hpp"
+
 #include <algorithm>
+#include <cstring>
 #include <ctime>
 
 namespace system_core {
@@ -307,6 +310,52 @@ void TimeServer::resetCorrelation() noexcept {
   tnt_.valid = output_.correlationValid;
   tnt_.quality = output_.timeQuality;
   tnt_.source = output_.timeSource;
+}
+
+/* ----------------------------- Bus command dispatch ----------------------------- */
+
+std::uint8_t TimeServer::handleCommand(std::uint16_t opcode,
+                                       apex::compat::rospan<std::uint8_t> payload,
+                                       std::vector<std::uint8_t>& response) noexcept {
+  using system_component::CommandResult;
+
+  switch (opcode) {
+  case OP_SET_REFERENCE_TIME: {
+    if (payload.size() < sizeof(SetReferenceTime)) {
+      return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+    }
+    SetReferenceTime cmd{};
+    std::memcpy(&cmd, payload.data(), sizeof(cmd));
+    handleSetReferenceTime(cmd);
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case OP_GET_TIME_STATUS: {
+    // Snapshot the current OUTPUT block as the response payload.
+    response.resize(sizeof(TimeServerOutput));
+    std::memcpy(response.data(), &output_, sizeof(TimeServerOutput));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case OP_SET_TIME_MANUAL: {
+    if (payload.size() < sizeof(SetTimeManual)) {
+      return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+    }
+    SetTimeManual cmd{};
+    std::memcpy(&cmd, payload.data(), sizeof(cmd));
+    handleSetTimeManual(cmd);
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case OP_RESET_CORRELATION: {
+    resetCorrelation();
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  default:
+    // Defer to base class for common 0x0080-0x00FF opcodes.
+    return SystemComponentBase::handleCommand(opcode, payload, response);
+  }
 }
 
 /* ----------------------------- Interpolation ----------------------------- */

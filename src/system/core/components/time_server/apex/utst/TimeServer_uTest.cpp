@@ -11,10 +11,13 @@
 #include "src/system/core/components/time_server/apex/inc/TimeServer.hpp"
 #include "src/system/core/components/time_server/apex/inc/TimeServerData.hpp"
 #include "src/system/core/hal/mock/inc/MockPps.hpp"
+#include "src/system/core/infrastructure/system_component/base/inc/CommandResult.hpp"
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 using apex::hal::MockPps;
@@ -553,6 +556,119 @@ TEST(TimeServer, NextToneDriftAdjusted) {
   const std::int64_t lastEpoch = h.server().output().utcEpochNs;
   EXPECT_GT(nextTone, lastEpoch);
   EXPECT_GT(nextTone - lastEpoch, NS_PER_SEC); // drift-adjusted upward
+}
+
+/* ----------------------------- handleCommand opcode dispatch ----------------------------- */
+
+namespace {
+template <typename T> apex::compat::rospan<std::uint8_t> asPayload(const T& obj) noexcept {
+  return apex::compat::rospan<std::uint8_t>(reinterpret_cast<const std::uint8_t*>(&obj),
+                                            sizeof(T));
+}
+} // namespace
+
+/** @test SET_REFERENCE_TIME opcode applies the reference. */
+TEST(TimeServer, HandleCommandSetReferenceTime) {
+  TimeServerHarness h;
+  h.tick();
+
+  SetReferenceTime ref{};
+  ref.epochNs = 42 * NS_PER_SEC;
+  ref.source = static_cast<std::uint8_t>(TimeSource::GPS);
+  std::vector<std::uint8_t> response;
+
+  EXPECT_EQ(h.server().handleCommand(TimeServer::OP_SET_REFERENCE_TIME,
+                                     asPayload(ref), response),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::SUCCESS));
+
+  // Edge applies the pending reference.
+  h.setSteadyNow(NS_PER_SEC);
+  h.injectAndTick(NS_PER_SEC);
+  EXPECT_EQ(h.server().currentTnt().epochNs, 42 * NS_PER_SEC);
+}
+
+/** @test SET_REFERENCE_TIME with short payload returns INVALID_PAYLOAD. */
+TEST(TimeServer, HandleCommandSetReferenceTimeShortPayloadRejected) {
+  TimeServer s;
+  std::array<std::uint8_t, 4> shortBuf{};
+  std::vector<std::uint8_t> response;
+
+  EXPECT_EQ(s.handleCommand(TimeServer::OP_SET_REFERENCE_TIME,
+                            apex::compat::rospan<std::uint8_t>(shortBuf.data(), shortBuf.size()),
+                            response),
+            static_cast<std::uint8_t>(
+                system_core::system_component::CommandResult::INVALID_PAYLOAD));
+}
+
+/** @test GET_TIME_STATUS returns the current OUTPUT block. */
+TEST(TimeServer, HandleCommandGetTimeStatus) {
+  TimeServerHarness h;
+  h.tick();
+  SetReferenceTime ref{};
+  ref.epochNs = 7 * NS_PER_SEC;
+  h.server().handleSetReferenceTime(ref);
+  h.setSteadyNow(NS_PER_SEC);
+  h.injectAndTick(NS_PER_SEC);
+
+  std::vector<std::uint8_t> response;
+  EXPECT_EQ(h.server().handleCommand(TimeServer::OP_GET_TIME_STATUS,
+                                     apex::compat::rospan<std::uint8_t>(), response),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::SUCCESS));
+  ASSERT_EQ(response.size(), sizeof(system_core::time_server::TimeServerOutput));
+
+  system_core::time_server::TimeServerOutput out{};
+  std::memcpy(&out, response.data(), sizeof(out));
+  EXPECT_EQ(out.utcEpochNs, 7 * NS_PER_SEC);
+  EXPECT_EQ(out.ppsCount, 1U);
+  EXPECT_EQ(out.correlationValid, static_cast<std::uint8_t>(TimeValid::VALID));
+}
+
+/** @test SET_TIME_MANUAL applies UTC immediately. */
+TEST(TimeServer, HandleCommandSetTimeManual) {
+  TimeServerHarness h;
+  h.tick();
+  h.setSteadyNow(10 * NS_PER_SEC);
+
+  SetTimeManual cmd{};
+  cmd.epochNs = 999 * NS_PER_SEC;
+  std::vector<std::uint8_t> response;
+
+  EXPECT_EQ(h.server().handleCommand(TimeServer::OP_SET_TIME_MANUAL,
+                                     asPayload(cmd), response),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::SUCCESS));
+
+  EXPECT_EQ(h.server().currentTnt().epochNs, 999 * NS_PER_SEC);
+  EXPECT_EQ(h.server().currentTnt().source, static_cast<std::uint8_t>(TimeSource::MANUAL));
+}
+
+/** @test RESET_CORRELATION wipes state. */
+TEST(TimeServer, HandleCommandResetCorrelation) {
+  TimeServerHarness h;
+  h.tick();
+  SetReferenceTime ref{};
+  h.server().handleSetReferenceTime(ref);
+  h.setSteadyNow(NS_PER_SEC);
+  h.injectAndTick(NS_PER_SEC);
+  ASSERT_EQ(h.server().currentTnt().valid, static_cast<std::uint8_t>(TimeValid::VALID));
+
+  std::vector<std::uint8_t> response;
+  EXPECT_EQ(h.server().handleCommand(TimeServer::OP_RESET_CORRELATION,
+                                     apex::compat::rospan<std::uint8_t>(), response),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::SUCCESS));
+
+  EXPECT_EQ(h.server().currentTnt().valid, static_cast<std::uint8_t>(TimeValid::NONE));
+}
+
+/** @test Unknown opcode delegates to the base class (NOT_IMPLEMENTED for 0x0700+). */
+TEST(TimeServer, HandleCommandUnknownOpcode) {
+  TimeServer s;
+  std::vector<std::uint8_t> response;
+  // 0x0700 is in the component-specific range but not one TimeServer claims.
+  // Base class returns NOT_IMPLEMENTED for unknown opcodes outside its range.
+  const std::uint8_t result = s.handleCommand(0x0700, apex::compat::rospan<std::uint8_t>(),
+                                              response);
+  EXPECT_NE(result, static_cast<std::uint8_t>(
+                        system_core::system_component::CommandResult::SUCCESS));
 }
 
 /** @test Glitch count survives across resetStats-equivalent resetCorrelation. */

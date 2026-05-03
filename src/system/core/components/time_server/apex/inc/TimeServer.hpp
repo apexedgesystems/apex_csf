@@ -39,10 +39,12 @@
 #include "src/system/core/components/time_server/apex/inc/TimeServerData.hpp"
 #include "src/system/core/hal/base/IPps.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/CoreComponentBase.hpp"
+#include "src/utilities/compatibility/inc/compat_span.hpp"
 #include "src/utilities/concurrency/inc/Delegate.hpp"
 #include "src/utilities/time/inc/TimeBase.hpp"
 
 #include <cstdint>
+#include <vector>
 
 namespace system_core {
 namespace time_server {
@@ -154,6 +156,29 @@ public:
    * @note RT-safe.
    */
   void resetCorrelation() noexcept;
+
+  /* ----------------------------- Bus command opcodes ----------------------------- */
+
+  /// SET_REFERENCE_TIME -- payload: SetReferenceTime, no response.
+  static constexpr std::uint16_t OP_SET_REFERENCE_TIME = 0x0601;
+  /// TIME_AT_NEXT_TONE -- outbound broadcast only; never received as a command.
+  static constexpr std::uint16_t OP_TIME_AT_NEXT_TONE = 0x0602;
+  /// GET_TIME_STATUS -- no payload, response: TimeServerOutput.
+  static constexpr std::uint16_t OP_GET_TIME_STATUS = 0x0603;
+  /// SET_TIME_MANUAL -- payload: SetTimeManual, no response.
+  static constexpr std::uint16_t OP_SET_TIME_MANUAL = 0x0604;
+  /// RESET_CORRELATION -- no payload, no response.
+  static constexpr std::uint16_t OP_RESET_CORRELATION = 0x0605;
+
+  /**
+   * @brief Dispatch a bus command to the appropriate handler.
+   * @return CommandResult::SUCCESS on ACK, NOT_IMPLEMENTED for unknown
+   *         opcodes (delegates to the base class for common opcodes
+   *         0x0080-0x00FF), INVALID_PAYLOAD for malformed payloads.
+   */
+  [[nodiscard]] std::uint8_t handleCommand(std::uint16_t opcode,
+                                           apex::compat::rospan<std::uint8_t> payload,
+                                           std::vector<std::uint8_t>& response) noexcept override;
 
   /* ----------------------------- Inspection ----------------------------- */
 
