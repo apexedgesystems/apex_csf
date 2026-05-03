@@ -10,8 +10,10 @@ include(apex/All)
 # Sources (2 test files)
 # ------------------------------------------------------------------------------
 
-set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/C2000Uart_uTest.cpp"
-                      "${CMAKE_CURRENT_SOURCE_DIR}/C2000TimerTickSource_uTest.cpp"
+set(UNIT_TEST_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/C2000Pps_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/C2000TimerTickSource_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/C2000Uart_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------
