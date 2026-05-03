@@ -18,6 +18,23 @@ constexpr std::int64_t NS_PER_SECOND = 1'000'000'000LL;
 
 } // namespace
 
+/* ----------------------------- doInit (registry registration) ----------------------------- */
+
+std::uint8_t TimeServer::doInit() noexcept {
+  // Register OUTPUT (current correlation state) and TUNABLE_PARAM (TPRM).
+  // Consumers reach these through the registry by (componentId, category, name)
+  // so they don't need a direct TimeServer reference. registerData() returns
+  // false only on capacity overflow (MAX_DATA_PER_COMPONENT), which is a
+  // build-time bound for our 2 entries.
+  if (!registerData(data::DataCategory::OUTPUT, "output", &output_, sizeof(output_))) {
+    return 1;
+  }
+  if (!registerData(data::DataCategory::TUNABLE_PARAM, "tunables", &tprm_, sizeof(tprm_))) {
+    return 1;
+  }
+  return 0;
+}
+
 /* ----------------------------- Construction ----------------------------- */
 
 TimeServer::TimeServer() noexcept {

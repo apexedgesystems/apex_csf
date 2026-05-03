@@ -55,7 +55,9 @@ namespace time_server {
  */
 class TimeServer : public system_component::CoreComponentBase {
 public:
-  /// Component type identifier (6 = TimeServer, system component range 1-100).
+  /// Component type identifier. Audited 2026-05-03 against the core range:
+  /// 0 Executive, 1 Scheduler, 2 FileSystem, 3 Registry, 4 Interface,
+  /// 5 ActionComponent, 6 TimeServer (this). 200+ is the support range.
   static constexpr std::uint16_t COMPONENT_ID = 6;
 
   /// Component name for collision detection.
@@ -196,10 +198,12 @@ public:
   [[nodiscard]] static SteadyClockDelegate defaultSteadyClock() noexcept;
 
 protected:
-  /// Lifecycle hook called from CoreComponentBase::init(). No work to do
-  /// here -- TimeServer's correlation state is established by the first
+  /// Lifecycle hook called from CoreComponentBase::init(). Registers the
+  /// OUTPUT and TUNABLE_PARAM blocks with the registry so consumers can
+  /// discover them by category + name without holding a TimeServer
+  /// pointer. The correlation state itself is established by the first
   /// successful PPS edge plus reference, not at init().
-  [[nodiscard]] std::uint8_t doInit() noexcept override { return 0; }
+  [[nodiscard]] std::uint8_t doInit() noexcept override;
 
 private:
   void processEdge(std::int64_t edgeLocalNs, std::uint32_t edgePulseCount) noexcept;

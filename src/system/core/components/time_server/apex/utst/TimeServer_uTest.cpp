@@ -116,6 +116,38 @@ TEST(TimeServer, ComponentIdentity) {
   EXPECT_STREQ(s.label(), "TIME");
 }
 
+/* ----------------------------- Registry registration ----------------------------- */
+
+/** @test doInit registers OUTPUT and TUNABLE_PARAM data blocks. */
+TEST(TimeServer, InitRegistersOutputAndTunables) {
+  TimeServer s;
+  ASSERT_EQ(s.dataCount(), 0U); // nothing before init
+
+  ASSERT_EQ(s.init(), 0U);
+
+  // OUTPUT block + TUNABLE_PARAM block.
+  ASSERT_EQ(s.dataCount(), 2U);
+
+  bool sawOutput = false;
+  bool sawTunables = false;
+  for (std::size_t i = 0; i < s.dataCount(); ++i) {
+    const auto* d = s.dataDescriptor(i);
+    ASSERT_NE(d, nullptr);
+    if (d->category == system_core::data::DataCategory::OUTPUT) {
+      sawOutput = true;
+      EXPECT_STREQ(d->name, "output");
+      EXPECT_EQ(d->ptr, static_cast<const void*>(&s.output()));
+      EXPECT_EQ(d->size, sizeof(system_core::time_server::TimeServerOutput));
+    } else if (d->category == system_core::data::DataCategory::TUNABLE_PARAM) {
+      sawTunables = true;
+      EXPECT_STREQ(d->name, "tunables");
+      EXPECT_EQ(d->size, sizeof(system_core::time_server::TimeServerTunableParams));
+    }
+  }
+  EXPECT_TRUE(sawOutput);
+  EXPECT_TRUE(sawTunables);
+}
+
 /** @test tick() with no PPS source and no broadcast delegate is safe. */
 TEST(TimeServer, TickWithoutWiringIsSafe) {
   TimeServer s;
