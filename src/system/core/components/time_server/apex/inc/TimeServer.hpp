@@ -89,6 +89,30 @@ public:
   /// FREERUN will keep the stale anchor (quality already reflects this).
   using WallClockDelegate = apex::concurrency::Delegate<std::int64_t>;
 
+  /**
+   * @struct CanSyncEvent
+   * @brief One-shot CAN hardware-timestamped sync frame for CAN_SYNC mode.
+   *
+   * `present == true` -> a fresh sync frame is available; epochNs/localNs
+   * are valid. `present == false` -> no new event since the last poll;
+   * the timestamps are unspecified.
+   *
+   * The "delegate boundary" pattern intentionally pushes the CAN HAL
+   * extension (hardware-timestamp readout) outside TimeServer. Wiring up
+   * a real CAN_SYNC source requires an ICan implementation that exposes
+   * frame timestamps; that is out of scope for this branch and tracked
+   * separately. TimeServer is fully ready to consume one when available.
+   */
+  struct CanSyncEvent {
+    std::int64_t epochNs = 0;  ///< Network-time UTC carried in the sync frame.
+    std::int64_t localNs = 0;  ///< Receiver's hardware timestamp at frame arrival.
+    bool present = false;      ///< True if a new sync event is available this tick.
+  };
+
+  /// Delegate that polls a CAN-sync source. Tick reads it once per frame
+  /// in CAN_SYNC mode and anchors the correlation if `present` is set.
+  using CanSyncDelegate = apex::concurrency::Delegate<CanSyncEvent>;
+
   TimeServer() noexcept;
   ~TimeServer() override = default;
 
@@ -128,6 +152,14 @@ public:
    * @note Optional. If unset, FREERUN keeps the previous (stale) anchor.
    */
   void setWallClock(WallClockDelegate delegate) noexcept { wallClock_ = delegate; }
+
+  /**
+   * @brief Set the CAN-sync source delegate used in CAN_SYNC mode.
+   * @note Optional. CAN_SYNC mode is a no-op until both this delegate
+   *       is wired AND the underlying CAN HAL exposes frame
+   *       timestamps; the latter is out of scope for this branch.
+   */
+  void setCanSyncSource(CanSyncDelegate delegate) noexcept { canSync_ = delegate; }
 
   /// Bring the base-class file-loading overload into scope alongside our
   /// in-memory struct overload below.
@@ -276,6 +308,7 @@ protected:
 private:
   void processEdge(std::int64_t edgeLocalNs, std::uint32_t edgePulseCount) noexcept;
   void tickPtpSync() noexcept;
+  void tickCanSync() noexcept;
   [[nodiscard]] bool isIntervalValid(std::int64_t intervalNs) const noexcept;
   std::int32_t pushDriftSample(std::int64_t intervalNs) noexcept;
   void updateNextTonePrediction() noexcept;
@@ -289,6 +322,7 @@ private:
   SteadyClockDelegate steadyClock_;
   BroadcastTntDelegate broadcastTnt_;
   WallClockDelegate wallClock_;
+  CanSyncDelegate canSync_;
 
   // Configuration
   TimeServerTunableParams tprm_;

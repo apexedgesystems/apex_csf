@@ -102,6 +102,12 @@ void TimeServer::tick(std::uint32_t currentCycle) noexcept {
     tickPtpSync();
   }
 
+  // CAN_SYNC: poll the CAN HW-timestamp delegate. No-op if unwired
+  // (the underlying ICan extension is a separate work item).
+  if (mode == TimeServerMode::CAN_SYNC && canSync_ && steadyClock_) {
+    tickCanSync();
+  }
+
   // Even with no edge this frame, staleness can advance. Use the steady
   // clock to detect long silences. PPS modes care; the others manage
   // their own sync-source health checks.
@@ -360,6 +366,44 @@ void TimeServer::tickPtpSync() noexcept {
   // scheduler's frame rate. Each "tone" we publish increments
   // totalPpsCount_ to keep gap-detection semantics consistent with the
   // PPS modes.
+  if (!havePublishMark_ || (localNs - lastPublishLocalNs_) >= NS_PER_SECOND) {
+    ++totalPpsCount_;
+    lastPublishLocalNs_ = localNs;
+    havePublishMark_ = true;
+    updateNextTonePrediction();
+    publish();
+  }
+}
+
+/* ----------------------------- CAN_SYNC mode ----------------------------- */
+
+void TimeServer::tickCanSync() noexcept {
+  // The delegate boundary keeps TimeServer ignorant of the CAN HAL: a
+  // CAN_SYNC source extracts hardware-timestamped sync frames and
+  // surfaces them to TimeServer through the delegate. If no event is
+  // available this frame the delegate returns present=false and we do
+  // nothing.
+  const CanSyncEvent ev = canSync_();
+  if (!ev.present) {
+    return;
+  }
+
+  // CAN HW timestamping is in the 1-10 us range (ticket table). Quality
+  // FINE is the right cap; we don't promote to PRECISE because there's
+  // no drift estimator running in this mode (the CAN sync frame IS the
+  // anchor; sub-frame interpolation rides the local steady clock).
+  lastEdgeEpochNs_ = ev.epochNs;
+  lastEdgeLocalNs_ = ev.localNs;
+  haveLastEdge_ = true;
+  haveReference_ = true;
+  source_ = TimeSource::ONBOARD;
+  valid_ = TimeValid::VALID;
+  if (quality_ != TimeQuality::PRECISE) {
+    quality_ = TimeQuality::FINE;
+  }
+
+  // Pace broadcasts to ~1 Hz like PTP_SYNC.
+  const std::int64_t localNs = now();
   if (!havePublishMark_ || (localNs - lastPublishLocalNs_) >= NS_PER_SECOND) {
     ++totalPpsCount_;
     lastPublishLocalNs_ = localNs;

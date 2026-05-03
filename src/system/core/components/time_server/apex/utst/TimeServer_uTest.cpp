@@ -784,6 +784,57 @@ TEST(TimeServer, PtpSyncTickAnchorsAndPublishes) {
   EXPECT_GT(tnts.size(), broadcastsAfterFirst);
 }
 
+/** @test CAN_SYNC: tick polls the CAN sync delegate and anchors. */
+TEST(TimeServer, CanSyncAnchorsFromDelegate) {
+  static std::int64_t synthSteady = 0;
+  static TimeServer::CanSyncEvent nextEvent;
+  TimeServer s;
+  s.setSteadyClock({+[](void*) noexcept -> std::int64_t { return synthSteady; }, nullptr});
+  s.setCanSyncSource({+[](void*) noexcept -> TimeServer::CanSyncEvent {
+                        TimeServer::CanSyncEvent e = nextEvent;
+                        nextEvent.present = false; // consume on read
+                        return e;
+                      },
+                      nullptr});
+
+  TimeServerTunableParams tprm;
+  tprm.mode = static_cast<std::uint8_t>(system_core::time_server::TimeServerMode::CAN_SYNC);
+  s.loadTprm(tprm);
+  ASSERT_EQ(s.init(), 0U);
+
+  // No event yet: tick is a no-op for CAN_SYNC anchoring.
+  synthSteady = NS_PER_SEC;
+  nextEvent = {};
+  s.tick(0);
+  EXPECT_EQ(s.currentTnt().valid, static_cast<std::uint8_t>(TimeValid::NONE));
+
+  // Event present: anchor and publish.
+  nextEvent = {.epochNs = 1'700'000'000LL * NS_PER_SEC,
+               .localNs = NS_PER_SEC,
+               .present = true};
+  synthSteady = NS_PER_SEC;
+  s.tick(1);
+  EXPECT_EQ(s.currentTnt().valid, static_cast<std::uint8_t>(TimeValid::VALID));
+  EXPECT_EQ(s.currentTnt().quality, static_cast<std::uint8_t>(TimeQuality::FINE));
+  EXPECT_EQ(s.currentTnt().epochNs, 1'700'000'000LL * NS_PER_SEC);
+  EXPECT_EQ(s.currentTnt().localNs, NS_PER_SEC);
+}
+
+/** @test CAN_SYNC mode is a no-op without a wired delegate. */
+TEST(TimeServer, CanSyncWithoutDelegateIsNoop) {
+  TimeServerHarness h;
+  TimeServerTunableParams tprm;
+  tprm.mode = static_cast<std::uint8_t>(system_core::time_server::TimeServerMode::CAN_SYNC);
+  h.loadTprm(tprm);
+  h.tick();
+  // No CAN delegate wired -> valid stays NONE forever.
+  for (int i = 1; i <= 10; ++i) {
+    h.setSteadyNow(static_cast<std::int64_t>(i) * NS_PER_SEC);
+    h.tick(static_cast<std::uint32_t>(i));
+  }
+  EXPECT_EQ(h.server().currentTnt().valid, static_cast<std::uint8_t>(TimeValid::NONE));
+}
+
 /** @test RELAY/PTP_SYNC/CAN_SYNC modes skip the local PPS poll. */
 TEST(TimeServer, NonPpsModesSkipPpsPolling) {
   for (auto mode : {system_core::time_server::TimeServerMode::RELAY,
