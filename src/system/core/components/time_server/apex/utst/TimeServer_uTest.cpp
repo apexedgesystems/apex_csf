@@ -23,6 +23,15 @@
 
 using apex::hal::MockPps;
 using apex::hal::PpsStatus;
+
+namespace {
+/// Reinterpret an arbitrary trivially-copyable struct as a read-only span,
+/// suitable for passing as a handleCommand payload.
+template <typename T> apex::compat::rospan<std::uint8_t> asPayload(const T& obj) noexcept {
+  return apex::compat::rospan<std::uint8_t>(reinterpret_cast<const std::uint8_t*>(&obj),
+                                            sizeof(T));
+}
+} // namespace
 using system_core::time_server::SetReferenceTime;
 using system_core::time_server::SetTimeManual;
 using system_core::time_server::TimeAtNextTone;
@@ -664,6 +673,71 @@ TEST(TimeServer, SecondaryModeAcceptsReferenceLikePrimary) {
   EXPECT_EQ(h.server().currentTnt().epochNs, 9 * NS_PER_SEC);
 }
 
+/** @test RELAY: ACCEPT_REMOTE_TNT establishes correlation without a local PPS. */
+TEST(TimeServer, RelayModeAcceptsRemoteTnt) {
+  TimeServerHarness h;
+  TimeServerTunableParams tprm;
+  tprm.mode = static_cast<std::uint8_t>(system_core::time_server::TimeServerMode::RELAY);
+  h.loadTprm(tprm);
+  h.tick();
+
+  // Build a synthetic remote TNT from a notional primary.
+  TimeAtNextTone remote{};
+  remote.epochNs = 1'700'000'000LL * NS_PER_SEC;
+  remote.localNs = 42 * NS_PER_SEC; // remote-local, irrelevant to us
+  remote.driftPpb = 250;
+  remote.ppsCount = 12345;
+  remote.source = static_cast<std::uint8_t>(TimeSource::GPS);
+  remote.quality = static_cast<std::uint8_t>(TimeQuality::PRECISE);
+  remote.valid = static_cast<std::uint8_t>(TimeValid::VALID);
+
+  h.setSteadyNow(5 * NS_PER_SEC);
+  h.server().handleAcceptRemoteTnt(remote);
+
+  // Local correlation now uses remote epoch + local steady_clock.
+  EXPECT_EQ(h.server().currentTnt().epochNs, remote.epochNs);
+  EXPECT_EQ(h.server().currentTnt().localNs, 5 * NS_PER_SEC);
+  // Quality is capped at COARSE in RELAY mode regardless of remote claim.
+  EXPECT_EQ(h.server().currentTnt().quality, static_cast<std::uint8_t>(TimeQuality::COARSE));
+  EXPECT_EQ(h.server().currentTnt().valid, static_cast<std::uint8_t>(TimeValid::VALID));
+  // computeUtcNs interpolates from the relay anchor.
+  EXPECT_EQ(h.server().computeUtcNs(5 * NS_PER_SEC + 250'000'000LL),
+            remote.epochNs + 250'000'000LL);
+}
+
+/** @test handleAcceptRemoteTnt is a no-op outside RELAY mode. */
+TEST(TimeServer, AcceptRemoteTntIgnoredInPrimaryMode) {
+  TimeServerHarness h; // default PRIMARY
+  h.tick();
+
+  TimeAtNextTone remote{};
+  remote.epochNs = 999 * NS_PER_SEC;
+  h.server().handleAcceptRemoteTnt(remote);
+
+  EXPECT_EQ(h.server().currentTnt().epochNs, 0); // unchanged
+  EXPECT_EQ(h.server().currentTnt().valid, static_cast<std::uint8_t>(TimeValid::NONE));
+}
+
+/** @test OP_ACCEPT_REMOTE_TNT opcode dispatch carries the TNT through. */
+TEST(TimeServer, HandleCommandAcceptRemoteTnt) {
+  TimeServerHarness h;
+  TimeServerTunableParams tprm;
+  tprm.mode = static_cast<std::uint8_t>(system_core::time_server::TimeServerMode::RELAY);
+  h.loadTprm(tprm);
+  h.tick();
+
+  TimeAtNextTone remote{};
+  remote.epochNs = 50 * NS_PER_SEC;
+  remote.source = static_cast<std::uint8_t>(TimeSource::GPS);
+
+  h.setSteadyNow(2 * NS_PER_SEC);
+  std::vector<std::uint8_t> response;
+  EXPECT_EQ(h.server().handleCommand(TimeServer::OP_ACCEPT_REMOTE_TNT,
+                                     asPayload(remote), response),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::SUCCESS));
+  EXPECT_EQ(h.server().currentTnt().epochNs, 50 * NS_PER_SEC);
+}
+
 /** @test RELAY/PTP_SYNC/CAN_SYNC modes skip the local PPS poll. */
 TEST(TimeServer, NonPpsModesSkipPpsPolling) {
   for (auto mode : {system_core::time_server::TimeServerMode::RELAY,
@@ -756,13 +830,6 @@ TEST(TimeServer, BroadcastUsesInternalBus) {
 }
 
 /* ----------------------------- handleCommand opcode dispatch ----------------------------- */
-
-namespace {
-template <typename T> apex::compat::rospan<std::uint8_t> asPayload(const T& obj) noexcept {
-  return apex::compat::rospan<std::uint8_t>(reinterpret_cast<const std::uint8_t*>(&obj),
-                                            sizeof(T));
-}
-} // namespace
 
 /** @test SET_REFERENCE_TIME opcode applies the reference. */
 TEST(TimeServer, HandleCommandSetReferenceTime) {

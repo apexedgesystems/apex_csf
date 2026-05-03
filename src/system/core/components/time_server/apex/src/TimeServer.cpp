@@ -321,6 +321,40 @@ void TimeServer::handleSetTimeManual(const SetTimeManual& cmd) noexcept {
   publish();
 }
 
+void TimeServer::handleAcceptRemoteTnt(const TimeAtNextTone& remote) noexcept {
+  // RELAY mode only -- ignore in PRIMARY/SECONDARY/PTP/CAN where the
+  // local sync source is authoritative.
+  if (static_cast<TimeServerMode>(tprm_.mode) != TimeServerMode::RELAY) {
+    return;
+  }
+  if (!steadyClock_) {
+    return;
+  }
+
+  // Anchor at receipt: remote epoch becomes our published epoch, local
+  // steady_clock at receipt is the interpolation origin. Network link
+  // latency lives entirely inside this offset; we don't try to estimate
+  // and remove it. The published quality bit reflects that uncertainty.
+  const std::int64_t nowNs = now();
+  lastEdgeEpochNs_ = remote.epochNs;
+  lastEdgeLocalNs_ = nowNs;
+  lastEdgePulseCount_ = remote.ppsCount;
+  haveLastEdge_ = true;
+  haveReference_ = true;
+  ++totalPpsCount_;
+
+  // Drift estimate, source, and ppsCount come from the remote TNT.
+  driftPpb_ = remote.driftPpb;
+  source_ = static_cast<TimeSource>(remote.source);
+  valid_ = TimeValid::VALID;
+  // Cap quality: even if the remote claims PRECISE, RELAY adds link
+  // latency (table: 0.1-5ms). COARSE is the realistic accuracy class.
+  quality_ = TimeQuality::COARSE;
+
+  updateNextTonePrediction();
+  publish();
+}
+
 void TimeServer::resetCorrelation() noexcept {
   refPending_ = false;
   haveReference_ = false;
@@ -385,6 +419,16 @@ std::uint8_t TimeServer::handleCommand(std::uint16_t opcode,
 
   case OP_RESET_CORRELATION: {
     resetCorrelation();
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case OP_ACCEPT_REMOTE_TNT: {
+    if (payload.size() < sizeof(TimeAtNextTone)) {
+      return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+    }
+    TimeAtNextTone remote{};
+    std::memcpy(&remote, payload.data(), sizeof(remote));
+    handleAcceptRemoteTnt(remote);
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 

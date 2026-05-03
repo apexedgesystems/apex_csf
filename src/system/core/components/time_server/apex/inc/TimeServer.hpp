@@ -171,6 +171,23 @@ public:
    */
   void resetCorrelation() noexcept;
 
+  /**
+   * @brief Accept a remote primary's TNT in RELAY mode.
+   *
+   * RELAY mode has no local PPS source; correlation is established by
+   * latching the local steady clock at the moment a remote TNT is
+   * received. Quality is capped at COARSE because the network link
+   * latency between primary and relay (UART, Ethernet SW stack, etc.)
+   * is the dominant error term -- typically 0.1-5 ms per the ticket
+   * table.
+   *
+   * Has no effect outside RELAY mode (caller can still dispatch the
+   * opcode; TimeServer just ignores it).
+   *
+   * @note RT-safe.
+   */
+  void handleAcceptRemoteTnt(const TimeAtNextTone& remote) noexcept;
+
   /* ----------------------------- Bus command opcodes ----------------------------- */
 
   /// SET_REFERENCE_TIME -- payload: SetReferenceTime, no response.
@@ -183,6 +200,9 @@ public:
   static constexpr std::uint16_t OP_SET_TIME_MANUAL = 0x0604;
   /// RESET_CORRELATION -- no payload, no response.
   static constexpr std::uint16_t OP_RESET_CORRELATION = 0x0605;
+  /// ACCEPT_REMOTE_TNT -- payload: TimeAtNextTone (a remote primary's TNT).
+  /// Used by RELAY mode to ingest TNT received over the network. No response.
+  static constexpr std::uint16_t OP_ACCEPT_REMOTE_TNT = 0x0606;
 
   /**
    * @brief Dispatch a bus command to the appropriate handler.
