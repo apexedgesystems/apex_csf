@@ -505,7 +505,7 @@ Run tests using the standard Docker workflow:
 docker compose run --rm -T dev-cuda make debug
 
 # Run linalg tests
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L linalg
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L linalg
 ```
 
 ### Test Organization

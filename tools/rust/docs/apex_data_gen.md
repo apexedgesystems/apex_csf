@@ -33,7 +33,7 @@ apex_data_gen --manifest <path> --output <path> [--pretty]
 # Generate struct dictionaries into the build directory
 apex_data_gen \
   --manifest apps/apex_hil_demo/apex_data.toml \
-  --output build/native-linux-debug/apex_data_db
+  --output build/hosted-x86_64-debug/apex_data_db
 
 # Inspect a single component's output
 apex_data_gen \

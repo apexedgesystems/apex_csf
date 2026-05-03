@@ -227,10 +227,10 @@ Run tests using the standard Docker workflow:
 docker compose run --rm -T dev-cuda make debug
 
 # Run CRC tests only
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L crc
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L crc
 
 # Run performance tests
-docker compose run --rm -T dev-cuda ./build/native-linux-debug/bin/ptests/TestChecksumsCrc_PTEST
+docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/ptests/TestChecksumsCrc_PTEST
 ```
 
 ### Test Organization

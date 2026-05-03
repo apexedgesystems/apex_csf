@@ -137,7 +137,7 @@ make compose-debug
 make compose-testp
 
 # Run batch_stats tests only
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -R BatchStats
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -R BatchStats
 ```
 
 ### Test Organization

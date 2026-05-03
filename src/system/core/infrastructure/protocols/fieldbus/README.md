@@ -119,10 +119,10 @@ Run all fieldbus tests:
 docker compose run --rm -T dev-cuda make debug
 
 # Run all fieldbus tests
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L fieldbus
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L fieldbus
 
 # Run CAN-specific tests
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -R FieldbusCan
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -R FieldbusCan
 ```
 
 ### Test Requirements

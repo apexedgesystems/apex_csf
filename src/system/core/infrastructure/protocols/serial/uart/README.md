@@ -410,7 +410,7 @@ adapter.attachTrace(rtSafeCallback, sysLog.get());
 docker compose run --rm -T dev-cuda make debug
 
 # Run UART library tests
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -R Uart
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -R Uart
 ```
 
 ### Test Coverage
@@ -433,7 +433,7 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -R
 
 ```bash
 # Run performance benchmarks
-./build/native-linux-debug/bin/ptests/ProtocolsSerialUart_PTEST --csv results.csv
+./build/hosted-x86_64-debug/bin/ptests/ProtocolsSerialUart_PTEST --csv results.csv
 ```
 
 ---

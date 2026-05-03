@@ -83,7 +83,7 @@ rsync -a build/release/ApexHilDemo/rpi/ kalex@raspberrypi.local:~/apex/
 ### 6. Copy TestPlugin_v1.so (for RELOAD_LIBRARY test)
 
 ```bash
-scp build/rpi-aarch64-release/test_plugins/TestPlugin_v1.so \
+scp build/cross-rpi-release/test_plugins/TestPlugin_v1.so \
     kalex@raspberrypi.local:~/apex/bank_a/libs/TestPlugin_0.so
 ```
 

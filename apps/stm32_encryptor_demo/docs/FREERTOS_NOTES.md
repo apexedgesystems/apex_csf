@@ -312,7 +312,7 @@ docker compose run --rm -T dev-stm32 make stm32
 
 # FreeRTOS
 docker compose run --rm -T dev-stm32 bash -c \
-  'cmake --preset stm32-baremetal -DAPEX_USE_FREERTOS=ON && cmake --build --preset stm32-baremetal -j$(nproc)'
+  'cmake --preset mcu-stm32-relwithdebinfo -DAPEX_USE_FREERTOS=ON && cmake --build --preset mcu-stm32-relwithdebinfo -j$(nproc)'
 ```
 
 ## Verification

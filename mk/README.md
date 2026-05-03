@@ -167,7 +167,7 @@ Override at invocation: `make debug NUM_JOBS=8 VERBOSE=1`
 | ------------------ | -------------------------- | -------------------------------------------- |
 | `NUM_JOBS`         | Auto (nproc)               | Parallel job count                           |
 | `VERBOSE`          | 0                          | Set to 1 for CMake per-target output         |
-| `BUILD_DIR`        | `build/native-linux-debug` | Build directory for test/coverage/sanitizers |
+| `BUILD_DIR`        | `build/hosted-x86_64-debug` | Build directory for test/coverage/sanitizers |
 | `LLVM_VER`         | 21                         | LLVM/Clang version for coverage              |
 | `CMAKE_EXTRA_ARGS` | (empty)                    | Extra CMake arguments passed through         |
 | `APP`              | (empty)                    | App name for release/package targets         |
@@ -178,18 +178,18 @@ Targets use presets from `CMakePresets.json`:
 
 | Make Target      | CMake Preset             |
 | ---------------- | ------------------------ |
-| `debug`          | `native-linux-debug`     |
-| `release`        | `native-linux-release`   |
-| `jetson-debug`   | `jetson-aarch64-debug`   |
-| `jetson-release` | `jetson-aarch64-release` |
-| `rpi-debug`      | `rpi-aarch64-debug`      |
-| `rpi-release`    | `rpi-aarch64-release`    |
-| `riscv-debug`    | `riscv64-linux-debug`    |
-| `riscv-release`  | `riscv64-linux-release`  |
-| `stm32`          | `stm32-baremetal`        |
-| `arduino`        | `arduino-baremetal`      |
-| `pico`           | `pico-baremetal`         |
-| `esp32`          | `esp32-baremetal`        |
+| `debug`          | `hosted-x86_64-debug`     |
+| `release`        | `hosted-x86_64-release`   |
+| `jetson-debug`   | `cross-jetson-debug`   |
+| `jetson-release` | `cross-jetson-release` |
+| `rpi-debug`      | `cross-rpi-debug`      |
+| `rpi-release`    | `cross-rpi-release`    |
+| `riscv-debug`    | `cross-riscv64-debug`    |
+| `riscv-release`  | `cross-riscv64-release`  |
+| `stm32`          | `mcu-stm32-relwithdebinfo`        |
+| `arduino`        | `mcu-arduino-relwithdebinfo`      |
+| `pico`           | `mcu-pico-relwithdebinfo`         |
+| `esp32`          | `mcu-esp32-relwithdebinfo`        |
 
 ## Usage Examples
 
@@ -255,7 +255,7 @@ make ubsan
 make coverage
 
 # View report
-open build/native-linux-debug/coverage/*/html/index.html
+open build/hosted-x86_64-debug/coverage/*/html/index.html
 ```
 
 ### Cross-Compilation
@@ -277,14 +277,14 @@ make jetson-release
 
 ```
 build/
-+-- native-linux-debug/       # make debug
++-- hosted-x86_64-debug/       # make debug
 |   +-- bin/                  # Executables
 |   +-- lib/                  # Libraries
 |   +-- compile_commands.json # For IDE/clangd
 |   \-- coverage/             # Coverage reports
-+-- native-linux-release/     # make release
-+-- jetson-aarch64-release/   # make jetson-release
-+-- rpi-aarch64-release/      # make rpi-release
++-- hosted-x86_64-release/     # make release
++-- cross-jetson-release/   # make jetson-release
++-- cross-rpi-release/      # make rpi-release
 +-- stm32/                    # make stm32
 |   \-- firmware/             # .elf, .bin, .hex
 \-- ...
@@ -383,7 +383,7 @@ Ensure you're in the project root (where `Makefile` is located).
 The test targets set `LD_LIBRARY_PATH` automatically. If running ctest manually:
 
 ```bash
-cd build/native-linux-debug
+cd build/hosted-x86_64-debug
 LD_LIBRARY_PATH=$PWD/lib:$LD_LIBRARY_PATH ctest
 ```
 
@@ -398,7 +398,7 @@ LD_LIBRARY_PATH=$PWD/lib:$LD_LIBRARY_PATH ctest
 Sanitizers add overhead. For quick iteration:
 
 ```bash
-cd build/native-linux-debug
+cd build/hosted-x86_64-debug
 LD_LIBRARY_PATH=$PWD/lib ctest -R MySpecificTest
 ```
 
@@ -409,7 +409,7 @@ LD_LIBRARY_PATH=$PWD/lib ctest -R MySpecificTest
 make ccache-stats
 
 # Verify it's configured
-grep CMAKE_CXX_COMPILER_LAUNCHER build/native-linux-debug/CMakeCache.txt
+grep CMAKE_CXX_COMPILER_LAUNCHER build/hosted-x86_64-debug/CMakeCache.txt
 ```
 
 ### Pre-commit Hooks

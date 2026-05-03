@@ -243,7 +243,7 @@ make compose-debug
 make compose-testp
 
 # Run SystemMonitor tests only
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L support
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L support
 ```
 
 ### Test Organization

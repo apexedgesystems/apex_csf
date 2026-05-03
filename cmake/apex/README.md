@@ -326,7 +326,7 @@ are consumed by `mk/release.mk` for multi-platform release packaging.
 ### Jetson (aarch64)
 
 ```bash
-cmake --preset jetson-aarch64-debug
+cmake --preset cross-jetson-debug
 ```
 
 The toolchain automatically:

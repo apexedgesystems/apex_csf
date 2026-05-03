@@ -24,7 +24,7 @@ custom target that produces a self-contained, relocatable build directory.
 ### Directory Layout (Build Output)
 
 ```
-build/native-linux-debug/
+build/hosted-x86_64-debug/
 +-- .env                        # Environment setup (PATH includes rust tools)
 +-- bin/
 |   \-- tools/
@@ -176,7 +176,7 @@ Only PATH is needed to find the binaries.
 ### Content
 
 ```bash
-# build/native-linux-debug/.env
+# build/hosted-x86_64-debug/.env
 export PATH="$PWD/bin/tools/py:$PATH"
 export PYTHONPATH="$PWD/lib/python:$PYTHONPATH"
 export PATH="$PWD/bin/tools/rust:$PATH"
@@ -193,7 +193,7 @@ export PATH="$PWD/bin/tools/rust:$PATH"
 make tools-rust
 
 # Enter build directory and source .env
-cd build/native-linux-debug
+cd build/hosted-x86_64-debug
 source .env
 
 # Now tools work
@@ -207,10 +207,10 @@ Because `.env` uses `$PWD`, the build directory is relocatable:
 
 ```bash
 # Copy build directory to another machine
-scp -r build/native-linux-debug user@remote:/opt/apex/
+scp -r build/hosted-x86_64-debug user@remote:/opt/apex/
 
 # On remote machine
-cd /opt/apex/native-linux-debug
+cd /opt/apex/hosted-x86_64-debug
 source .env
 serial_dev_checker --help  # Works!
 ```
@@ -316,7 +316,7 @@ make distclean
 make tools-rust
 
 # Verify tools work
-cd build/native-linux-debug
+cd build/hosted-x86_64-debug
 source .env
 serial_dev_checker --help
 ```

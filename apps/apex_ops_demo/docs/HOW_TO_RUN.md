@@ -19,12 +19,12 @@ any Linux host or Raspberry Pi.
 make compose-debug
 
 # Run (auto-shutdown after 30 seconds)
-./build/native-linux-debug/bin/ApexOpsDemo \
+./build/hosted-x86_64-debug/bin/ApexOpsDemo \
   --config apps/apex_ops_demo/tprm/master.tprm \
   --shutdown-after 30
 
 # Run indefinitely (Ctrl+C to stop)
-./build/native-linux-debug/bin/ApexOpsDemo \
+./build/hosted-x86_64-debug/bin/ApexOpsDemo \
   --config apps/apex_ops_demo/tprm/master.tprm
 ```
 
@@ -72,7 +72,7 @@ make apex-data-db
 # Generate Zenith target directory
 make zenith-target APP=ApexOpsDemo
 
-# Output: build/native-linux-debug/zenith_targets/ApexOpsDemo/
+# Output: build/hosted-x86_64-debug/zenith_targets/ApexOpsDemo/
 #   app_manifest.json   Component list + protocol config
 #   commands.json       Opcode table
 #   telemetry.json      Default plot layouts (customize as needed)
@@ -105,7 +105,7 @@ Individual TOML files are compiled to binary with `cfg2bin`, then packed
 into a single archive with `tprm_pack`:
 
 ```bash
-TOOLS=build/native-linux-debug/bin/tools/rust
+TOOLS=build/hosted-x86_64-debug/bin/tools/rust
 DIR=apps/apex_ops_demo/tprm
 
 # Compile each TOML to binary

@@ -140,7 +140,7 @@ make compose-debug
 make compose-testp
 
 # Run conv_filter tests only
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -R ConvFilter
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -R ConvFilter
 ```
 
 ### Test Organization

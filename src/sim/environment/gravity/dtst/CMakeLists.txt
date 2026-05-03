@@ -5,7 +5,7 @@
 # data files (EGM2008 coefficients) and are NOT registered with CTest.
 #
 # Run manually:
-#   ./build/native-linux-debug/bin/devtests/SimEnvironmentGravity_Dev
+#   ./build/hosted-x86_64-debug/bin/devtests/SimEnvironmentGravity_Dev
 #
 # ==============================================================================
 

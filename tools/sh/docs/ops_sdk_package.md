@@ -55,14 +55,14 @@ ops_sdk/<app>-ops-sdk.tar.gz
 ```bash
 # Generate struct dictionaries, then package SDK
 make apex-data-db
-ops_sdk_package.sh --app ApexHilDemo --build-dir build/native-linux-debug
+ops_sdk_package.sh --app ApexHilDemo --build-dir build/hosted-x86_64-debug
 
 # Via Make convenience target
 make ops-sdk APP=ApexHilDemo
 
 # Custom port documented in the generated README
 ops_sdk_package.sh --app ApexHilDemo \
-  --build-dir build/native-linux-debug \
+  --build-dir build/hosted-x86_64-debug \
   --port 9100
 ```
 

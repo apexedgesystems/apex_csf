@@ -391,12 +391,12 @@ Run tests using the standard Docker workflow:
 docker compose run --rm -T dev-cuda make debug
 
 # Run all network protocol tests
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -R "Tcp|Udp|Unix"
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -R "Tcp|Udp|Unix"
 
 # Run specific protocol tests
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -R TcpSocket
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -R UdpSocket
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -R UnixSocket
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -R TcpSocket
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -R UdpSocket
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -R UnixSocket
 ```
 
 ### Test Organization

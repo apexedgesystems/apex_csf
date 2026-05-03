@@ -32,7 +32,7 @@ make compose-testp
 
 # 3. Run (10 seconds)
 docker compose run --rm -T dev-cuda bash -c '
-  cd build/native-linux-debug
+  cd build/hosted-x86_64-debug
   rm -rf .apex_fs
   bin/ApexEdgeDemo \
     --config apps/apex_edge_demo/tprm/master.tprm \
@@ -40,13 +40,13 @@ docker compose run --rm -T dev-cuda bash -c '
 
 # 4. Check results
 docker compose run --rm -T dev-cuda bash -c '
-  cd build/native-linux-debug
+  cd build/hosted-x86_64-debug
   grep -E "cycles|overrun|completion" .apex_fs/system.log
   tail -3 .apex_fs/logs/models/*.log'
 
 # 5. Analyze (optional)
 python3 apps/apex_edge_demo/scripts/analyze_soak.py \
-  build/native-linux-debug/.apex_fs/
+  build/hosted-x86_64-debug/.apex_fs/
 ```
 
 ## Thor Deployment

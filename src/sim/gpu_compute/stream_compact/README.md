@@ -131,7 +131,7 @@ make compose-debug
 make compose-testp
 
 # Run stream_compact tests only
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -R StreamCompact
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -R StreamCompact
 ```
 
 ### Test Organization

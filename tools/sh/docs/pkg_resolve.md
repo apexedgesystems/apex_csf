@@ -54,26 +54,26 @@ The `run.sh` launch script reads the active bank marker, sets
 
 ```bash
 # Package an application
-pkg_resolve.sh --app ApexHilDemo --build-dir build/rpi-aarch64-release
+pkg_resolve.sh --app ApexHilDemo --build-dir build/cross-rpi-release
 
 # Include TPRM configuration
 pkg_resolve.sh --app ApexHilDemo \
-  --build-dir build/rpi-aarch64-release \
+  --build-dir build/cross-rpi-release \
   --tprm apps/apex_hil_demo/tprm/master.tprm
 
 # Package with watchdog
 pkg_resolve.sh --app ApexHilDemo \
-  --build-dir build/rpi-aarch64-release \
+  --build-dir build/cross-rpi-release \
   --extra-bin ApexWatchdog \
   --tprm apps/apex_hil_demo/tprm/master.tprm
 
 # Dry run (resolve only, print dependencies)
 pkg_resolve.sh --app ApexHilDemo \
-  --build-dir build/rpi-aarch64-release \
+  --build-dir build/cross-rpi-release \
   --dry-run --verbose
 
 # Cross-compiled binary with explicit readelf
 pkg_resolve.sh --app ApexHilDemo \
-  --build-dir build/rpi-aarch64-release \
+  --build-dir build/cross-rpi-release \
   --readelf aarch64-linux-gnu-readelf
 ```

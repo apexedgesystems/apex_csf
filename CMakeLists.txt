@@ -5,9 +5,9 @@ cmake_minimum_required(VERSION 3.24)
 # ==============================================================================
 #
 # Build examples:
-#   cmake --preset native-linux-debug
-#   cmake --preset native-linux-release
-#   cmake --preset jetson-aarch64-release
+#   cmake --preset hosted-x86_64-debug
+#   cmake --preset hosted-x86_64-release
+#   cmake --preset cross-jetson-release
 #
 # Options:
 #   -DCUDA_ARCHS="89"           Ada only (fast)

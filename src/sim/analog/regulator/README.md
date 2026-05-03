@@ -161,7 +161,7 @@ make compose-debug
 make compose-testp
 
 # Run regulator tests only
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L sim
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L sim
 ```
 
 ### Test Organization

@@ -380,7 +380,7 @@ make compose-debug
 make compose-testp
 
 # Run CAN library tests only
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -L can
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L can
 ```
 
 ### Test Organization

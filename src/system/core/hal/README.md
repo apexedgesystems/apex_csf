@@ -465,7 +465,7 @@ defines. When defined:
 make compose-testp
 
 # Run only HAL tests
-docker compose run --rm -T dev-cuda ctest --test-dir build/native-linux-debug -R TestHal
+docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -R TestHal
 ```
 
 ### Test Targets

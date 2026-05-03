@@ -54,11 +54,11 @@ After editing any TOML source file, regenerate the binary TPRMs and repack:
 
 ```bash
 # Native master.tprm
-./build/native-linux-debug/bin/tools/rust/cfg2bin \
+./build/hosted-x86_64-debug/bin/tools/rust/cfg2bin \
   --batch apps/apex_edge_demo/tprm/toml \
   --output apps/apex_edge_demo/tprm
 
-./build/native-linux-debug/bin/tools/rust/tprm_pack pack \
+./build/hosted-x86_64-debug/bin/tools/rust/tprm_pack pack \
   -e 0x000000:apps/apex_edge_demo/tprm/executive.tprm \
   -e 0x000100:apps/apex_edge_demo/tprm/scheduler.tprm \
   -e 0x000500:apps/apex_edge_demo/tprm/action.tprm \
@@ -70,11 +70,11 @@ After editing any TOML source file, regenerate the binary TPRMs and repack:
   -o apps/apex_edge_demo/tprm/master.tprm
 
 # Thor master_thor.tprm
-./build/native-linux-debug/bin/tools/rust/cfg2bin \
+./build/hosted-x86_64-debug/bin/tools/rust/cfg2bin \
   --batch apps/apex_edge_demo/tprm/toml/thor \
   --output apps/apex_edge_demo/tprm/thor
 
-./build/native-linux-debug/bin/tools/rust/tprm_pack pack \
+./build/hosted-x86_64-debug/bin/tools/rust/tprm_pack pack \
   -e 0x000000:apps/apex_edge_demo/tprm/thor/executive.tprm \
   -e 0x000100:apps/apex_edge_demo/tprm/thor/scheduler.tprm \
   -e 0x000500:apps/apex_edge_demo/tprm/action.tprm \

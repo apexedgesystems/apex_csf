@@ -10,7 +10,7 @@
 #   make compose-rpi-debug
 #
 # Run:
-#   ./build/native-linux-debug/bin/ApexHilDemo \
+#   ./build/hosted-x86_64-debug/bin/ApexHilDemo \
 #     --config apps/apex_hil_demo/tprm/master.tprm --shutdown-after 5
 # ==============================================================================
 

@@ -9,8 +9,8 @@
 #   make compose-debug
 #
 # Run:
-#   ./build/native-linux-debug/bin/ApexMcDemo
-#   ./build/native-linux-debug/bin/ApexMcDemo --runs 100000 --csv results.csv
+#   ./build/hosted-x86_64-debug/bin/ApexMcDemo
+#   ./build/hosted-x86_64-debug/bin/ApexMcDemo --runs 100000 --csv results.csv
 # ==============================================================================
 
 include(apex/All)

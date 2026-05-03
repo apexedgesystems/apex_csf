@@ -8,7 +8,7 @@
 #   make compose-debug
 #
 # Run:
-#   ./build/native-linux-debug/bin/ApexEdgeDemo \
+#   ./build/hosted-x86_64-debug/bin/ApexEdgeDemo \
 #     --config apps/apex_edge_demo/tprm/master.tprm --shutdown-after 10
 # ==============================================================================
 
