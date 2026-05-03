@@ -301,6 +301,13 @@ std::int64_t TimeServer::computeUtcNs(std::int64_t steadyNowNs) const noexcept {
   return lastEdgeEpochNs_ + (steadyNowNs - lastEdgeLocalNs_);
 }
 
+std::int64_t TimeServer::currentUtcNs() const noexcept {
+  if (!steadyClock_ || !haveReference_ || !haveLastEdge_) {
+    return 0;
+  }
+  return computeUtcNs(steadyClock_());
+}
+
 /* ----------------------------- TimeProvider plumbing ----------------------------- */
 
 namespace {
@@ -310,15 +317,11 @@ std::uint64_t utcTimeProviderTrampoline(void* ctx) noexcept {
   if (ts == nullptr) {
     return 0;
   }
-  // We need a steady-clock reading in the same domain TimeServer was wired
-  // with. Read it via clock_gettime here -- the ATS engine calls this
-  // delegate per tick, so coupling the delegate to ::clock_gettime keeps
-  // the call path branch-free and self-contained.
-  struct timespec now {};
-  clock_gettime(CLOCK_MONOTONIC, &now);
-  const std::int64_t steadyNowNs =
-      static_cast<std::int64_t>(now.tv_sec) * NS_PER_SECOND + now.tv_nsec;
-  const std::int64_t utcNs = ts->computeUtcNs(steadyNowNs);
+  // currentUtcNs() reads through TimeServer's configured steady-clock
+  // delegate, so a test driving synthetic time gets deterministic UTC out
+  // of the provider. The executive's default delegate is
+  // clock_gettime(CLOCK_MONOTONIC) so production sees real wall time.
+  const std::int64_t utcNs = ts->currentUtcNs();
   return static_cast<std::uint64_t>(utcNs / 1000); // ns -> us for ATS
 }
 

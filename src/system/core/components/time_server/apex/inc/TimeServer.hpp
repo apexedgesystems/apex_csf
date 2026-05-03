@@ -171,12 +171,20 @@ public:
   [[nodiscard]] std::int64_t computeUtcNs(std::int64_t steadyNowNs) const noexcept;
 
   /**
+   * @brief Compute current UTC nanoseconds using the configured steady-clock
+   *        delegate. Returns 0 if no correlation or no steady clock wired.
+   * @note RT-safe: O(1) -- one delegate call, one subtract, one add.
+   */
+  [[nodiscard]] std::int64_t currentUtcNs() const noexcept;
+
+  /**
    * @brief Build a TimeProviderDelegate that returns current UTC microseconds
    *        for use as ActionComponent's ATS time source.
    * @return Delegate wired to read this TimeServer (no copy; pointer to *this).
-   * @note RT-safe: the delegate's call path is O(1) -- one steady-clock read,
-   *       one subtract, one divide. Returns 0 microseconds if correlation is
-   *       not yet established (ATS AT_TIME triggers will wait).
+   * @note RT-safe: O(1). The delegate uses TimeServer's configured steady
+   *       clock, so a test that drives a synthetic SteadyClockDelegate sees
+   *       deterministic UTC values out of the time provider too. Returns 0
+   *       microseconds if correlation is not yet established.
    */
   [[nodiscard]] apex::time::TimeProviderDelegate utcTimeProvider() noexcept;
 
