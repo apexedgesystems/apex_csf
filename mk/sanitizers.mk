@@ -17,9 +17,9 @@ SANITIZERS_MK_GUARD := 1
 # Note: Sanitizers are native-only. Cross-compiled and bare-metal targets
 # don't support runtime sanitizer instrumentation.
 
-ASAN_PRESET    ?= native-linux-asan
-TSAN_PRESET    ?= native-linux-tsan
-UBSAN_PRESET   ?= native-linux-ubsan
+ASAN_PRESET    ?= hosted-x86_64-asan
+TSAN_PRESET    ?= hosted-x86_64-tsan
+UBSAN_PRESET   ?= hosted-x86_64-ubsan
 
 ASAN_DIR       := build/$(ASAN_PRESET)
 TSAN_DIR       := build/$(TSAN_PRESET)

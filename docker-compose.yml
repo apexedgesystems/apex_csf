@@ -253,7 +253,7 @@ services:
       args:
         <<: *build-args
         DEV_IMAGE: apex.dev.rpi
-        BUILD_CMD: "cmake --preset rpi-aarch64-release && cmake --build --preset rpi-aarch64-release -j$(nproc)"
+        BUILD_CMD: "cmake --preset cross-rpi-release && cmake --build --preset cross-rpi-release -j$(nproc)"
 
   builder-riscv64:
     image: apex.builder.riscv64
@@ -263,7 +263,7 @@ services:
       args:
         <<: *build-args
         DEV_IMAGE: apex.dev.riscv64
-        BUILD_CMD: "cmake --preset riscv64-linux-release && cmake --build --preset riscv64-linux-release -j$(nproc)"
+        BUILD_CMD: "cmake --preset cross-riscv64-release && cmake --build --preset cross-riscv64-release -j$(nproc)"
 
   builder-stm32:
     image: apex.builder.stm32

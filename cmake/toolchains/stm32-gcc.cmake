@@ -6,8 +6,8 @@
 # Compiler: arm-none-eabi-gcc (from ARM GNU Toolchain)
 #
 # Usage:
-#   cmake --preset stm32-baremetal
-#   cmake --build --preset stm32-baremetal
+#   cmake --preset mcu-stm32-relwithdebinfo
+#   cmake --build --preset mcu-stm32-relwithdebinfo
 # ==============================================================================
 
 # Bare-metal ARM (no OS)

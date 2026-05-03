@@ -256,7 +256,7 @@ endfunction ()
 # Performance tests are for benchmarking and should be run manually.
 #
 # The executable is placed in bin/ptests/ and can be run manually with:
-#   ./build/native-linux-debug/bin/ptests/TestName --csv results.csv
+#   ./build/hosted-x86_64-debug/bin/ptests/TestName --csv results.csv
 #
 # Features:
 #   - Output to bin/ptests/
@@ -382,7 +382,7 @@ endfunction ()
 # special hardware).
 #
 # The executable is placed in bin/dtests/ and can be run manually with:
-#   ./build/native-linux-debug/bin/dtests/TestName --gtest_filter="*Pattern*"
+#   ./build/hosted-x86_64-debug/bin/dtests/TestName --gtest_filter="*Pattern*"
 #
 # Arguments:
 #   TARGET          <n>              required

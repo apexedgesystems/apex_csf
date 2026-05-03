@@ -6,8 +6,8 @@
 # Compiler: TI cl2000 (C2000 Code Generation Tools)
 #
 # Usage:
-#   cmake --preset c2000-baremetal
-#   cmake --build --preset c2000-baremetal
+#   cmake --preset mcu-c2000-relwithdebinfo
+#   cmake --build --preset mcu-c2000-relwithdebinfo
 #
 # Environment:
 #   C2000_CGT_ROOT  - TI CGT install path (default: /opt/ti/c2000-cgt)

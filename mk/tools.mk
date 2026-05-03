@@ -205,7 +205,7 @@ zenith-validate: zenith-target
 # Static Analysis
 # ------------------------------------------------------------------------------
 
-STATIC_PRESET ?= native-linux-static
+STATIC_PRESET ?= hosted-x86_64-static
 STATIC_DIR    := build/$(STATIC_PRESET)
 
 # Static analysis with Clang's scan-build. Uses its own preset/build dir so

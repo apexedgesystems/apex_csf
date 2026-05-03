@@ -49,36 +49,36 @@ PRE_COMMIT_INSTALL ?= no
 # ------------------------------------------------------------------------------
 
 # Native x86_64
-HOST_DEBUG_PRESET        ?= native-linux-debug
-HOST_RELEASE_PRESET      ?= native-linux-release
-HOST_CUDA_DEBUG_PRESET   ?= native-linux-cuda-debug
-HOST_CUDA_RELEASE_PRESET ?= native-linux-cuda-release
+HOST_DEBUG_PRESET        ?= hosted-x86_64-debug
+HOST_RELEASE_PRESET      ?= hosted-x86_64-release
+HOST_CUDA_DEBUG_PRESET   ?= hosted-x86_64-cuda-debug
+HOST_CUDA_RELEASE_PRESET ?= hosted-x86_64-cuda-release
 
 # Jetson (aarch64 + CUDA)
-JETSON_DEBUG_PRESET   ?= jetson-aarch64-debug
-JETSON_RELEASE_PRESET ?= jetson-aarch64-release
+JETSON_DEBUG_PRESET   ?= cross-jetson-debug
+JETSON_RELEASE_PRESET ?= cross-jetson-release
 
 # Raspberry Pi (aarch64)
-RPI_DEBUG_PRESET   ?= rpi-aarch64-debug
-RPI_RELEASE_PRESET ?= rpi-aarch64-release
+RPI_DEBUG_PRESET   ?= cross-rpi-debug
+RPI_RELEASE_PRESET ?= cross-rpi-release
 
 # RISC-V 64
-RISCV_DEBUG_PRESET   ?= riscv64-linux-debug
-RISCV_RELEASE_PRESET ?= riscv64-linux-release
+RISCV_DEBUG_PRESET   ?= cross-riscv64-debug
+RISCV_RELEASE_PRESET ?= cross-riscv64-release
 
 # Bare-metal (RelWithDebInfo profiles; *-debug variants below)
-STM32_PRESET         ?= stm32-baremetal
-ARDUINO_PRESET       ?= arduino-baremetal
-PICO_PRESET          ?= pico-baremetal
-ESP32_PRESET         ?= esp32-baremetal
-C2000_PRESET         ?= c2000-baremetal
+STM32_PRESET         ?= mcu-stm32-relwithdebinfo
+ARDUINO_PRESET       ?= mcu-arduino-relwithdebinfo
+PICO_PRESET          ?= mcu-pico-relwithdebinfo
+ESP32_PRESET         ?= mcu-esp32-relwithdebinfo
+C2000_PRESET         ?= mcu-c2000-relwithdebinfo
 
 # Bare-metal debug variants (-Og -g3 / --opt_level=0, gdb-friendly)
-STM32_DEBUG_PRESET   ?= stm32-baremetal-debug
-ARDUINO_DEBUG_PRESET ?= arduino-baremetal-debug
-PICO_DEBUG_PRESET    ?= pico-baremetal-debug
-ESP32_DEBUG_PRESET   ?= esp32-baremetal-debug
-C2000_DEBUG_PRESET   ?= c2000-baremetal-debug
+STM32_DEBUG_PRESET   ?= mcu-stm32-debug
+ARDUINO_DEBUG_PRESET ?= mcu-arduino-debug
+PICO_DEBUG_PRESET    ?= mcu-pico-debug
+ESP32_DEBUG_PRESET   ?= mcu-esp32-debug
+C2000_DEBUG_PRESET   ?= mcu-c2000-debug
 
 # ------------------------------------------------------------------------------
 # Build Directories (derived from preset names)
@@ -94,17 +94,17 @@ RPI_DEBUG_DIR      := build/$(RPI_DEBUG_PRESET)
 RPI_RELEASE_DIR    := build/$(RPI_RELEASE_PRESET)
 RISCV_DEBUG_DIR    := build/$(RISCV_DEBUG_PRESET)
 RISCV_RELEASE_DIR  := build/$(RISCV_RELEASE_PRESET)
-STM32_DIR          := build/stm32
-ARDUINO_DIR        := build/arduino
-PICO_DIR           := build/pico
-ESP32_DIR          := build/esp32
-C2000_DIR          := build/c2000
+STM32_DIR          := build/mcu-stm32-relwithdebinfo
+ARDUINO_DIR        := build/mcu-arduino-relwithdebinfo
+PICO_DIR           := build/mcu-pico-relwithdebinfo
+ESP32_DIR          := build/mcu-esp32-relwithdebinfo
+C2000_DIR          := build/mcu-c2000-relwithdebinfo
 
-STM32_DEBUG_DIR    := build/stm32-debug
-ARDUINO_DEBUG_DIR  := build/arduino-debug
-PICO_DEBUG_DIR     := build/pico-debug
-ESP32_DEBUG_DIR    := build/esp32-debug
-C2000_DEBUG_DIR    := build/c2000-debug
+STM32_DEBUG_DIR    := build/mcu-stm32-debug
+ARDUINO_DEBUG_DIR  := build/mcu-arduino-debug
+PICO_DEBUG_DIR     := build/mcu-pico-debug
+ESP32_DEBUG_DIR    := build/mcu-esp32-debug
+C2000_DEBUG_DIR    := build/mcu-c2000-debug
 
 # ==============================================================================
 # Build Macros

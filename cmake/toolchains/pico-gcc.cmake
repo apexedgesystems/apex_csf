@@ -6,8 +6,8 @@
 # Compiler: arm-none-eabi-gcc (from ARM GNU Toolchain)
 #
 # Usage:
-#   cmake --preset pico-baremetal
-#   cmake --build --preset pico-baremetal
+#   cmake --preset mcu-pico-relwithdebinfo
+#   cmake --build --preset mcu-pico-relwithdebinfo
 #
 # The Pico SDK (when available in the Docker container) extends this
 # toolchain with boot stage 2, linker scripts, and UF2 generation.

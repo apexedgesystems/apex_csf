@@ -102,7 +102,7 @@ clean: clean-ninja clean-upx clean-docs clean-py clean-rust coverage-clean
 # Runs as a prerequisite so rust/py cleanups don't fire until the guard passes.
 distclean-guard:
 	@if [ -d build ]; then \
-	  non_default=$$(ls build 2>/dev/null | grep -vE '^native-linux-' || true); \
+	  non_default=$$(ls build 2>/dev/null | grep -vE '^hosted-' || true); \
 	  if [ -n "$$non_default" ] && [ "$(SURE)" != "1" ]; then \
 	    printf '$(TERM_RED)[distclean]$(TERM_RESET) cross-build dirs present:\n'; \
 	    printf '%s\n' $$non_default | sed 's|^|  build/|'; \

@@ -17,7 +17,7 @@ COVERAGE_MK_GUARD := 1
 # Note: Coverage is native-only. Cross-compiled and bare-metal targets
 # don't support host-side coverage instrumentation.
 
-COVERAGE_PRESET ?= native-linux-coverage
+COVERAGE_PRESET ?= hosted-x86_64-coverage
 COVERAGE_DIR    := build/$(COVERAGE_PRESET)
 
 # ------------------------------------------------------------------------------

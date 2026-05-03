@@ -7,7 +7,7 @@
 #   - Supports SiFive boards, StarFive VisionFive, Milk-V, etc.
 #
 # Usage:
-#   cmake --preset riscv64-linux-release
+#   cmake --preset cross-riscv64-release
 #   cmake -DCMAKE_TOOLCHAIN_FILE=cmake/toolchains/riscv64-linux-gnu.cmake ..
 #
 # ==============================================================================
