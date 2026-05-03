@@ -6,6 +6,7 @@
 #include "src/system/core/components/time_server/apex/inc/TimeServer.hpp"
 
 #include "src/system/core/infrastructure/system_component/base/inc/CommandResult.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -264,6 +265,18 @@ void TimeServer::publish() noexcept {
   tnt_.valid = output_.correlationValid;
   tnt_.flags = flags_;
 
+  // Production path: broadcast through the IInternalBus the executive wired
+  // into us during registerComponent(). postBroadcastCommand delivers the
+  // TNT to every other registered component as opcode OP_TIME_AT_NEXT_TONE.
+  if (auto* bus = internalBus()) {
+    apex::compat::rospan<std::uint8_t> payload(reinterpret_cast<const std::uint8_t*>(&tnt_),
+                                               sizeof(tnt_));
+    (void)bus->postBroadcastCommand(fullUid(), OP_TIME_AT_NEXT_TONE, payload);
+  }
+
+  // Test seam: the broadcast delegate gives unit tests a way to capture
+  // every TNT without standing up an IInternalBus implementation. In
+  // production both paths fire; in tests typically only this one does.
   if (broadcastTnt_) {
     broadcastTnt_(tnt_);
   }

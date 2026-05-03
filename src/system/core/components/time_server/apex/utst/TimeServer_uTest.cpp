@@ -12,6 +12,7 @@
 #include "src/system/core/components/time_server/apex/inc/TimeServerData.hpp"
 #include "src/system/core/hal/mock/inc/MockPps.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/CommandResult.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
 
 #include <gtest/gtest.h>
 
@@ -634,6 +635,77 @@ TEST(TimeServer, NextToneDriftAdjusted) {
   const std::int64_t lastEpoch = h.server().output().utcEpochNs;
   EXPECT_GT(nextTone, lastEpoch);
   EXPECT_GT(nextTone - lastEpoch, NS_PER_SEC); // drift-adjusted upward
+}
+
+/* ----------------------------- IInternalBus broadcast ----------------------------- */
+
+namespace {
+
+/// Capturing IInternalBus stub used to verify TimeServer's TNT broadcast
+/// path goes through postBroadcastCommand with the right opcode + payload.
+class CapturingInternalBus final : public system_core::system_component::IInternalBus {
+public:
+  struct Broadcast {
+    std::uint32_t srcFullUid;
+    std::uint16_t opcode;
+    std::vector<std::uint8_t> payload;
+  };
+
+  std::vector<Broadcast> broadcasts;
+
+  [[nodiscard]] bool postInternalCommand(std::uint32_t, std::uint32_t, std::uint16_t,
+                                         apex::compat::rospan<std::uint8_t>) noexcept override {
+    return true;
+  }
+  [[nodiscard]] bool postInternalTelemetry(std::uint32_t, std::uint16_t,
+                                           apex::compat::rospan<std::uint8_t>) noexcept override {
+    return true;
+  }
+  [[nodiscard]] std::size_t
+  postMulticastCommand(std::uint32_t, apex::compat::rospan<std::uint32_t>, std::uint16_t,
+                       apex::compat::rospan<std::uint8_t>) noexcept override {
+    return 0;
+  }
+  [[nodiscard]] std::size_t
+  postBroadcastCommand(std::uint32_t srcFullUid, std::uint16_t opcode,
+                       apex::compat::rospan<std::uint8_t> payload) noexcept override {
+    Broadcast b;
+    b.srcFullUid = srcFullUid;
+    b.opcode = opcode;
+    b.payload.assign(payload.data(), payload.data() + payload.size());
+    broadcasts.push_back(std::move(b));
+    return 1;
+  }
+};
+
+class BusExposingTimeServer final : public TimeServer {
+public:
+  using TimeServer::TimeServer;
+  using system_core::system_component::SystemComponentBase::setInternalBus;
+};
+
+} // namespace
+
+/** @test TNT broadcast lands on the wired IInternalBus. */
+TEST(TimeServer, BroadcastUsesInternalBus) {
+  CapturingInternalBus bus;
+  BusExposingTimeServer s;
+  s.setInternalBus(&bus);
+  s.setSteadyClock(TimeServer::defaultSteadyClock());
+  ASSERT_EQ(s.init(), 0U);
+
+  // Tick once to fire the boot broadcast (NONE/UNKNOWN).
+  s.tick(0);
+  ASSERT_FALSE(bus.broadcasts.empty());
+  EXPECT_EQ(bus.broadcasts.front().opcode, TimeServer::OP_TIME_AT_NEXT_TONE);
+  EXPECT_EQ(bus.broadcasts.front().payload.size(),
+            sizeof(system_core::time_server::TimeAtNextTone));
+
+  // Decode the payload and confirm it matches the published TNT.
+  system_core::time_server::TimeAtNextTone roundtrip{};
+  std::memcpy(&roundtrip, bus.broadcasts.front().payload.data(), sizeof(roundtrip));
+  EXPECT_EQ(roundtrip.valid, static_cast<std::uint8_t>(TimeValid::NONE));
+  EXPECT_EQ(roundtrip.quality, static_cast<std::uint8_t>(TimeQuality::UNKNOWN));
 }
 
 /* ----------------------------- handleCommand opcode dispatch ----------------------------- */
