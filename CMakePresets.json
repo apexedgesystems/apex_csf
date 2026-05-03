@@ -319,5 +319,51 @@
     { "name": "native-linux-coverage", "configurePreset": "native-linux-coverage" },
     { "name": "jetson-aarch64-debug",  "configurePreset": "jetson-aarch64-debug" },
     { "name": "jetson-aarch64-release", "configurePreset": "jetson-aarch64-release" }
+  ],
+
+  "workflowPresets": [
+    {
+      "name": "native-debug",
+      "displayName": "Native debug: configure + build + test",
+      "steps": [
+        { "type": "configure", "name": "native-linux-debug" },
+        { "type": "build",     "name": "native-linux-debug" },
+        { "type": "test",      "name": "native-linux-debug" }
+      ]
+    },
+    {
+      "name": "native-release",
+      "displayName": "Native release: configure + build",
+      "steps": [
+        { "type": "configure", "name": "native-linux-release" },
+        { "type": "build",     "name": "native-linux-release" }
+      ]
+    },
+    {
+      "name": "native-asan",
+      "displayName": "Native AddressSanitizer: configure + build + test",
+      "steps": [
+        { "type": "configure", "name": "native-linux-asan" },
+        { "type": "build",     "name": "native-linux-asan" },
+        { "type": "test",      "name": "native-linux-asan" }
+      ]
+    },
+    {
+      "name": "native-coverage",
+      "displayName": "Native coverage: configure + build + test (Coverage label)",
+      "steps": [
+        { "type": "configure", "name": "native-linux-coverage" },
+        { "type": "build",     "name": "native-linux-coverage" },
+        { "type": "test",      "name": "native-linux-coverage" }
+      ]
+    },
+    {
+      "name": "jetson-release",
+      "displayName": "Jetson release: configure + build",
+      "steps": [
+        { "type": "configure", "name": "jetson-aarch64-release" },
+        { "type": "build",     "name": "jetson-aarch64-release" }
+      ]
+    }
   ]
 }
