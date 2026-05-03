@@ -33,11 +33,13 @@ current UTC by interpolating against the most recent TNT.
 | Question                                              | Answer                                                          |
 | ----------------------------------------------------- | --------------------------------------------------------------- |
 | How do I get current UTC?                             | Read `TimeAtNextTone.epochNs` and interpolate (see §4).         |
+| How do I subscribe via the registry instead of the bus? | Look up `(componentId=6, OUTPUT, "output")` for the OUTPUT block. |
 | How accurate is the correlation?                      | Sub-microsecond on a hosted Linux box with kernel PPS support.  |
 | What if the GPS receiver loses fix?                   | Quality drops to `COARSE`; UTC continues advancing on local clock. |
-| What if PPS stops entirely?                           | Goes to `STALE` then `FREERUN`; valid bit indicates trust level. |
+| What if PPS stops entirely?                           | Goes to `STALE` then `FREERUN`; valid bit indicates trust level. FREERUN re-anchors from `CLOCK_REALTIME`. |
 | Can ATS sequences trigger on UTC?                     | Yes, `actionComp.iface().timeProvider = ts.utcTimeProvider()`.   |
-| How do I supply the reference time from a GPS driver? | Send `SET_REFERENCE_TIME` command with the UTC at the PPS edge. |
+| How do I supply the reference time from a GPS driver? | Send `SET_REFERENCE_TIME` (opcode 0x0601) command with `SetReferenceTime` payload. |
+| What opcodes does TimeServer accept?                  | `SET_REFERENCE_TIME` 0x0601, `GET_TIME_STATUS` 0x0603, `SET_TIME_MANUAL` 0x0604, `RESET_CORRELATION` 0x0605. `TIME_AT_NEXT_TONE` 0x0602 is outbound broadcast. |
 
 ---
 
@@ -147,9 +149,17 @@ exec.timeServer().setBroadcastDelegate({myTntPublisherFn, &myBus});
 //    that sends SET_REFERENCE_TIME commands as it parses NMEA.
 ```
 
-The executive registers TimeServer automatically and ticks it each
-frame; the application only needs to wire the platform-specific PPS
-source and (optionally) the broadcast.
+The executive automatically:
+
+- Registers TimeServer as a core component (component ID 6).
+- Ticks it each frame in TaskExecution.
+- Wires `defaultSteadyClock()` (CLOCK_MONOTONIC) and `defaultWallClock()`
+  (CLOCK_REALTIME, used for the FREERUN re-anchor).
+- Wires `actionComp.iface().timeProvider = timeServer.utcTimeProvider()`
+  so ATS AT_TIME triggers fire on UTC.
+
+The application only needs to wire the platform-specific PPS source
+and (optionally) the broadcast delegate.
 
 ---
 
