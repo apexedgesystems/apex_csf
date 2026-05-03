@@ -15,6 +15,9 @@
  */
 
 #include "src/system/core/components/action/apex/inc/ActionComponent.hpp"
+#include "src/system/core/components/action/apex/inc/ActionInterface.hpp"
+#include "src/system/core/components/action/apex/inc/DataAction.hpp"
+#include "src/system/core/components/action/apex/inc/DataSequence.hpp"
 #include "src/system/core/components/time_server/apex/inc/TimeServer.hpp"
 #include "src/system/core/components/time_server/apex/inc/TimeServerData.hpp"
 #include "src/system/core/hal/mock/inc/MockPps.hpp"
@@ -208,4 +211,67 @@ TEST(TimeServerIntegration, EdgeProducesTntBroadcast) {
 
   EXPECT_GT(stub.tnts.size(), baseline);
   EXPECT_EQ(stub.tnts.back().ppsCount, 1U);
+}
+
+/* ----------------------------- ATS AT_TIME end-to-end ----------------------------- */
+
+/**
+ * @test Phase 3.3 closeout: an ATS sequence with an AT_TIME-style step
+ *       fires only once UTC crosses the target.
+ *
+ * Builds the smallest possible ATS sequence (one step, fixed delay), wires it
+ * through ActionInterface.timeProvider (which the executive sets to
+ * TimeServer.utcTimeProvider()), then drives synthetic time so UTC crosses
+ * the target. Asserts the action is enqueued only after the crossing.
+ */
+TEST(TimeServerIntegration, AtsAtTimeTriggersFireWhenUtcCrosses) {
+  ExecutiveStub stub;
+  stub.frame(0);
+
+  // Establish correlation at UTC=0 (epoch base), steady=1s, ppsCount=1.
+  SetReferenceTime ref{};
+  ref.epochNs = 0;
+  stub.timeServer.handleSetReferenceTime(ref);
+  stub.edgeAt(NS_PER_SEC, 1);
+  ASSERT_EQ(stub.actionComp.iface().timeProvider(), 0U);
+
+  // Build a 1-step ATS sequence in slot 0. Step delay = 5_000_000 us = 5 s
+  // UTC after sequence start. With sequence.startTime = 0, the step fires
+  // when timeProvider() >= 5_000_000.
+  auto& iface = stub.actionComp.iface();
+  iface.sequences[0] = system_core::data::DataSequence{};
+  auto& seq = iface.sequences[0];
+  seq.type = system_core::data::SequenceType::ATS;
+  seq.armed = true;
+  seq.stepCount = 1;
+  seq.sequenceId = 0xABCD;
+  seq.steps[0].delayCycles = 5'000'000U;                // 5 s in microseconds
+  seq.steps[0].action.trigger = system_core::data::ActionTrigger::AT_TIME;
+  seq.steps[0].action.triggerParam = 5'000'000U;
+  seq.steps[0].action.actionType = system_core::data::ActionType::COMMAND;
+  seq.steps[0].action.commandOpcode = 0x0001;
+
+  system_core::data::startSequence(seq, iface.timeProvider());
+  ASSERT_EQ(seq.status, system_core::data::SequenceStatus::WAITING);
+
+  // Cycle 1: UTC = 1s (steady=2s, edge at steady=1s with ref=0). Step still
+  // waiting -- 1s << 5s target.
+  stub.setSteadyNow(2 * NS_PER_SEC);
+  system_core::data::tickSequences(iface, 1);
+  EXPECT_EQ(seq.status, system_core::data::SequenceStatus::WAITING);
+  EXPECT_EQ(iface.actionCount, 0U);
+
+  // Cycle 4: UTC ~= 4.9s. Just under the threshold.
+  stub.setSteadyNow(NS_PER_SEC + 4'900'000'000LL);
+  system_core::data::tickSequences(iface, 4);
+  EXPECT_EQ(seq.status, system_core::data::SequenceStatus::WAITING);
+  EXPECT_EQ(iface.actionCount, 0U);
+
+  // Cycle 5: UTC = 5.1s. Past target -- step fires (action enqueued and
+  // sequence moves out of WAITING).
+  stub.setSteadyNow(NS_PER_SEC + 5'100'000'000LL);
+  system_core::data::tickSequences(iface, 5);
+  EXPECT_NE(seq.status, system_core::data::SequenceStatus::WAITING);
+  EXPECT_EQ(iface.actionCount, 1U);
+  EXPECT_EQ(iface.actions[0].commandOpcode, 0x0001);
 }
