@@ -8,13 +8,13 @@ if (APEX_PLATFORM_BAREMETAL)
 endif ()
 
 # ------------------------------------------------------------------------------
-# Sources (5 test files)
+# Sources (6 test files)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/ICan_uTest.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/IFlash_uTest.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/II2c_uTest.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/ISpi_uTest.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/IUart_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/II2c_uTest.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/IPps_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ISpi_uTest.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/IUart_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------
