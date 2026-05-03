@@ -8,7 +8,9 @@ include(apex/All)
 # Sources
 # ------------------------------------------------------------------------------
 
-set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/TimeServerData_uTest.cpp")
+set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/TimeServerData_uTest.cpp"
+                      "${CMAKE_CURRENT_SOURCE_DIR}/TimeServer_uTest.cpp"
+)
 
 # ------------------------------------------------------------------------------
 # Test Target
@@ -21,6 +23,7 @@ apex_add_gtest(
   ${UNIT_TEST_SOURCES}
   LINK
   system_core_time_server
+  hal_mock
   LABELS
   system
   core

@@ -16,7 +16,7 @@ apex_module(system_core_time_server)
 # Sources
 # ------------------------------------------------------------------------------
 
-set(CPP_SOURCES "${SRC_DIR}/TimeServerData.cpp")
+set(CPP_SOURCES "${SRC_DIR}/TimeServer.cpp" "${SRC_DIR}/TimeServerData.cpp")
 
 # ------------------------------------------------------------------------------
 # Library
@@ -32,6 +32,9 @@ apex_add_library(
   SRC
   ${CPP_SOURCES}
   DEPS_PUBLIC
+  hal_interface
+  system_core_system_component
+  utilities_concurrency
   utilities_time
 )
 
