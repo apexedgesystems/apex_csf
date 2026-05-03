@@ -13,6 +13,7 @@ endif ()
 
 set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/AvrEeprom_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/AvrPps_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AvrTimerTickSource_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AvrUart_uTest.cpp"
 )
