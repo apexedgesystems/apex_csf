@@ -738,6 +738,52 @@ TEST(TimeServer, HandleCommandAcceptRemoteTnt) {
   EXPECT_EQ(h.server().currentTnt().epochNs, 50 * NS_PER_SEC);
 }
 
+/** @test PTP_SYNC: tick reads wall clock and broadcasts at 1 Hz. */
+TEST(TimeServer, PtpSyncTickAnchorsAndPublishes) {
+  // Stand up TimeServer with synthetic steady + wall clocks so we drive
+  // the PTP_SYNC re-anchor cadence deterministically.
+  static std::int64_t synthSteady = 0;
+  static std::int64_t synthWall = 1'700'000'000LL * NS_PER_SEC;
+  TimeServer s;
+  s.setSteadyClock({+[](void*) noexcept -> std::int64_t { return synthSteady; }, nullptr});
+  s.setWallClock({+[](void*) noexcept -> std::int64_t { return synthWall; }, nullptr});
+
+  std::vector<TimeAtNextTone> tnts;
+  s.setBroadcastDelegate(
+      {+[](void* ctx, const TimeAtNextTone& tnt) noexcept {
+         static_cast<std::vector<TimeAtNextTone>*>(ctx)->push_back(tnt);
+       },
+       &tnts});
+
+  TimeServerTunableParams tprm;
+  tprm.mode = static_cast<std::uint8_t>(system_core::time_server::TimeServerMode::PTP_SYNC);
+  s.loadTprm(tprm);
+  ASSERT_EQ(s.init(), 0U);
+
+  // Tick at t=0: boot broadcast (NONE) + first PTP anchor.
+  synthSteady = 0;
+  s.tick(0);
+  ASSERT_GE(tnts.size(), 1U);
+  // After PTP anchor, valid=VALID, quality=FINE.
+  EXPECT_EQ(s.currentTnt().valid, static_cast<std::uint8_t>(TimeValid::VALID));
+  EXPECT_EQ(s.currentTnt().quality, static_cast<std::uint8_t>(TimeQuality::FINE));
+  EXPECT_EQ(s.currentTnt().epochNs, synthWall);
+
+  const std::size_t broadcastsAfterFirst = tnts.size();
+
+  // Tick 100 times within the same second: should NOT re-broadcast (1 Hz cap).
+  for (int i = 1; i <= 50; ++i) {
+    synthSteady = static_cast<std::int64_t>(i) * 10'000'000LL; // +10ms each
+    s.tick(static_cast<std::uint32_t>(i));
+  }
+  EXPECT_EQ(tnts.size(), broadcastsAfterFirst); // unchanged
+
+  // Tick after 1.1s elapsed: a fresh broadcast fires.
+  synthSteady = 1'100'000'000LL;
+  s.tick(110);
+  EXPECT_GT(tnts.size(), broadcastsAfterFirst);
+}
+
 /** @test RELAY/PTP_SYNC/CAN_SYNC modes skip the local PPS poll. */
 TEST(TimeServer, NonPpsModesSkipPpsPolling) {
   for (auto mode : {system_core::time_server::TimeServerMode::RELAY,

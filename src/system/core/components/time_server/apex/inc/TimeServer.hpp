@@ -275,6 +275,7 @@ protected:
 
 private:
   void processEdge(std::int64_t edgeLocalNs, std::uint32_t edgePulseCount) noexcept;
+  void tickPtpSync() noexcept;
   [[nodiscard]] bool isIntervalValid(std::int64_t intervalNs) const noexcept;
   std::int32_t pushDriftSample(std::int64_t intervalNs) noexcept;
   void updateNextTonePrediction() noexcept;
@@ -320,6 +321,12 @@ private:
   std::uint64_t metCycles_ = 0;
   std::uint32_t glitchCount_ = 0;
   std::uint32_t totalPpsCount_ = 0; // cumulative valid edges since boot
+
+  // Sub-edge cadence pacing for PTP_SYNC and CAN_SYNC: re-anchor each
+  // tick but only publish at 1 Hz so we match the broadcast cadence
+  // primary/secondary modes hit naturally.
+  std::int64_t lastPublishLocalNs_ = 0;
+  bool havePublishMark_ = false;
 
   // State
   TimeValid valid_ = TimeValid::NONE;

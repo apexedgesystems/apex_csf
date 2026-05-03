@@ -95,6 +95,13 @@ void TimeServer::tick(std::uint32_t currentCycle) noexcept {
     }
   }
 
+  // PTP_SYNC: read the (assumed) PTP-disciplined wall clock each tick.
+  // Re-anchor every tick but only publish at ~1 Hz to match the broadcast
+  // cadence consumers expect.
+  if (mode == TimeServerMode::PTP_SYNC && wallClock_ && steadyClock_) {
+    tickPtpSync();
+  }
+
   // Even with no edge this frame, staleness can advance. Use the steady
   // clock to detect long silences. PPS modes care; the others manage
   // their own sync-source health checks.
@@ -321,6 +328,47 @@ void TimeServer::handleSetTimeManual(const SetTimeManual& cmd) noexcept {
   publish();
 }
 
+/* ----------------------------- PTP_SYNC mode ----------------------------- */
+
+void TimeServer::tickPtpSync() noexcept {
+  // Lightweight PTP_SYNC interpretation per ticket Open Question #3:
+  // we read CLOCK_REALTIME (or whatever wallClock_ provides) and trust
+  // ptp4l / a similar daemon is keeping it disciplined. Hardware PHC
+  // (/dev/ptp0) reads via PTP_CLOCK_GETTIME would give better accuracy
+  // but require a separate dependency on the PTP user-space stack;
+  // that's a follow-up.
+  const std::int64_t epochNs = wallClock_();
+  if (epochNs <= 0) {
+    return;
+  }
+  const std::int64_t localNs = now();
+
+  // Re-anchor every tick: the disciplined wall clock IS our reference.
+  lastEdgeEpochNs_ = epochNs;
+  lastEdgeLocalNs_ = localNs;
+  haveLastEdge_ = true;
+  haveReference_ = true;
+  source_ = TimeSource::ONBOARD;
+  valid_ = TimeValid::VALID;
+  // Per the table: PTP HW gives 50ns-50us, software stack ~1us. FINE
+  // is the right quality cap for the lightweight interpretation.
+  if (quality_ != TimeQuality::PRECISE) {
+    quality_ = TimeQuality::FINE;
+  }
+
+  // Pace TNT broadcasts to ~1 Hz so we don't flood the bus at the
+  // scheduler's frame rate. Each "tone" we publish increments
+  // totalPpsCount_ to keep gap-detection semantics consistent with the
+  // PPS modes.
+  if (!havePublishMark_ || (localNs - lastPublishLocalNs_) >= NS_PER_SECOND) {
+    ++totalPpsCount_;
+    lastPublishLocalNs_ = localNs;
+    havePublishMark_ = true;
+    updateNextTonePrediction();
+    publish();
+  }
+}
+
 void TimeServer::handleAcceptRemoteTnt(const TimeAtNextTone& remote) noexcept {
   // RELAY mode only -- ignore in PRIMARY/SECONDARY/PTP/CAN where the
   // local sync source is authoritative.
@@ -368,6 +416,8 @@ void TimeServer::resetCorrelation() noexcept {
   driftPpb_ = 0;
   totalPpsCount_ = 0;
   glitchCount_ = 0;
+  lastPublishLocalNs_ = 0;
+  havePublishMark_ = false;
   flags_ = 0;
   valid_ = TimeValid::NONE;
   quality_ = TimeQuality::UNKNOWN;
