@@ -12,6 +12,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/TimeServerData_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/TimeServer_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/TimeServerIntegration_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TimeServerDistributed_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------

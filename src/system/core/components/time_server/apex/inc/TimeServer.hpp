@@ -98,10 +98,10 @@ public:
    * the timestamps are unspecified.
    *
    * The "delegate boundary" pattern intentionally pushes the CAN HAL
-   * extension (hardware-timestamp readout) outside TimeServer. Wiring up
-   * a real CAN_SYNC source requires an ICan implementation that exposes
-   * frame timestamps; that is out of scope for this branch and tracked
-   * separately. TimeServer is fully ready to consume one when available.
+   * extension (hardware-timestamp readout) outside TimeServer. Wiring
+   * up a real CAN_SYNC source requires an ICan implementation that
+   * exposes per-frame hardware timestamps. TimeServer consumes them
+   * through this struct without taking a dependency on the CAN HAL.
    */
   struct CanSyncEvent {
     std::int64_t epochNs = 0; ///< Network-time UTC carried in the sync frame.
@@ -155,9 +155,8 @@ public:
 
   /**
    * @brief Set the CAN-sync source delegate used in CAN_SYNC mode.
-   * @note Optional. CAN_SYNC mode is a no-op until both this delegate
-   *       is wired AND the underlying CAN HAL exposes frame
-   *       timestamps; the latter is out of scope for this branch.
+   * @note Optional. CAN_SYNC mode is a no-op until this delegate is
+   *       wired and an ICan implementation exposes frame timestamps.
    */
   void setCanSyncSource(CanSyncDelegate delegate) noexcept { canSync_ = delegate; }
 
@@ -210,8 +209,7 @@ public:
    * latching the local steady clock at the moment a remote TNT is
    * received. Quality is capped at COARSE because the network link
    * latency between primary and relay (UART, Ethernet SW stack, etc.)
-   * is the dominant error term -- typically 0.1-5 ms per the ticket
-   * table.
+   * is the dominant error term -- typically 0.1-5 ms.
    *
    * Has no effect outside RELAY mode (caller can still dispatch the
    * opcode; TimeServer just ignores it).

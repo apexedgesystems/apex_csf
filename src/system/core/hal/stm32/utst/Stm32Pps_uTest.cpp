@@ -6,8 +6,8 @@
  * confirm the header compiles cleanly on the host (APEX_HAL_STM32_MOCK
  * defined) and that the cycles -> nanoseconds conversion math works.
  *
- * Real EXTI / NVIC / DWT behavior cannot be verified without STM32
- * silicon; that is out of scope for unit tests.
+ * Real EXTI / NVIC / DWT behavior is exercised on hardware, not in
+ * these host-side unit tests.
  */
 
 #define APEX_HAL_STM32_MOCK 1

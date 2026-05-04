@@ -5,8 +5,8 @@
  * @brief Apex executive for the PPS time-distribution demo.
  *
  * Wires a MockPps source into the executive's TimeServer and spawns a
- * background "GPS simulator" thread that drives the four canonical
- * scenarios from the ticket:
+ * background "GPS simulator" thread that drives four canonical
+ * scenarios end-to-end:
  *
  *   t=0..3 s    Cold-start dark period: no edges, no reference -> NONE.
  *   t=3 s       Reference time arrives + first PPS edge -> VALID/FINE.
