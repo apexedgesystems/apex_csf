@@ -48,11 +48,6 @@ jobs:
 
     env:
       REGISTRY: ghcr.io/${{ github.repository }}
-      # Enable BuildKit so BUILDKIT_INLINE_CACHE in docker-compose.yml is
-      # honored. The resulting :latest tags then carry layer-cache metadata
-      # that ci.yml reads via cache-from on every PR build.
-      DOCKER_BUILDKIT: "1"
-      COMPOSE_DOCKER_CLI_BUILD: "1"
 
     steps:
       - name: Checkout

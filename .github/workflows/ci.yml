@@ -4,14 +4,6 @@
 # Runs format-check, debug build, and test suite inside Docker Compose
 # containers. Uses the CPU dev image. CUDA build paths are skipped when
 # CUDAToolkit_FOUND is false at configure time.
-#
-# Image build strategy:
-#   - apex.base and apex.dev.cpu are built via docker/build-push-action with a
-#     registry-stored BuildKit cache (the `:buildcache` tag on each image).
-#     Subsequent runs reuse layers from that cache, so unchanged Dockerfiles
-#     finish the image build in seconds instead of ~17 minutes per job.
-#   - The images are loaded into the runner's local docker daemon (load: true),
-#     so subsequent `docker compose run` calls find them by name.
 # ==============================================================================
 name: CI
 
@@ -26,7 +18,7 @@ concurrency:
 
 permissions:
   contents: read
-  packages: write
+  packages: read
 
 jobs:
   lint-build-test:
@@ -45,7 +37,6 @@ jobs:
         run: |
           touch ~/.gitconfig
           mkdir -p ~/.ssh
-          echo "USER=$USER" >> "$GITHUB_ENV"
           echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
           echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
 
@@ -56,36 +47,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx (host daemon)
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker
+      - name: Pull cached dev images
+        run: |
+          docker pull $REGISTRY/apex.base:latest    && docker tag $REGISTRY/apex.base:latest    apex.base    || true
+          docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
 
-      - name: Build apex.base (inline cache)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/base.Dockerfile
-          tags: apex.base:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/apex.base:latest
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-            USER=${{ env.USER }}
-            HOST_UID=${{ env.HOST_UID }}
-            HOST_GID=${{ env.HOST_GID }}
-
-      - name: Build apex.dev.cpu (inline cache)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/dev/cpu.Dockerfile
-          tags: apex.dev.cpu:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/apex.dev.cpu:latest
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-            USER=${{ env.USER }}
-            HOST_UID=${{ env.HOST_UID }}
-            HOST_GID=${{ env.HOST_GID }}
+      - name: Build base and dev images
+        run: |
+          docker compose build base
+          docker compose build dev
 
       - name: Format check
         run: docker compose run --rm -T dev make format-check
@@ -118,7 +88,6 @@ jobs:
         run: |
           touch ~/.gitconfig
           mkdir -p ~/.ssh
-          echo "USER=$USER" >> "$GITHUB_ENV"
           echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
           echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
 
@@ -129,36 +98,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up Docker Buildx (host daemon)
-        uses: docker/setup-buildx-action@v3
-        with:
-          driver: docker
+      - name: Pull cached dev images
+        run: |
+          docker pull $REGISTRY/apex.base:latest    && docker tag $REGISTRY/apex.base:latest    apex.base    || true
+          docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
 
-      - name: Build apex.base (inline cache)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/base.Dockerfile
-          tags: apex.base:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/apex.base:latest
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-            USER=${{ env.USER }}
-            HOST_UID=${{ env.HOST_UID }}
-            HOST_GID=${{ env.HOST_GID }}
-
-      - name: Build apex.dev.cpu (inline cache)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: docker/dev/cpu.Dockerfile
-          tags: apex.dev.cpu:latest
-          cache-from: type=registry,ref=${{ env.REGISTRY }}/apex.dev.cpu:latest
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
-            USER=${{ env.USER }}
-            HOST_UID=${{ env.HOST_UID }}
-            HOST_GID=${{ env.HOST_GID }}
+      - name: Build base and dev images
+        run: |
+          docker compose build base
+          docker compose build dev
 
       - name: AddressSanitizer
         run: docker compose run --rm -T dev make asan
