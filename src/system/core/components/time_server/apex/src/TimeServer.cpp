@@ -84,13 +84,13 @@ void TimeServer::tick(std::uint32_t currentCycle) noexcept {
   // time comes from). RELAY does no per-tick work -- updates arrive via
   // the OP_ACCEPT_REMOTE_TNT command. PTP_SYNC and CAN_SYNC read their
   // sync source each tick when wired.
-  const TimeServerMode mode = static_cast<TimeServerMode>(tprm_.mode);
-  const bool isPpsMode = (mode == TimeServerMode::PRIMARY || mode == TimeServerMode::SECONDARY);
+  const TimeServerMode MODE = static_cast<TimeServerMode>(tprm_.mode);
+  const bool IS_PPS_MODE = (MODE == TimeServerMode::PRIMARY || MODE == TimeServerMode::SECONDARY);
 
-  if (isPpsMode && pps_ != nullptr) {
+  if (IS_PPS_MODE && pps_ != nullptr) {
     std::int64_t edgeNs = 0;
-    const apex::hal::PpsStatus st = pps_->readCapture(edgeNs);
-    if (st == apex::hal::PpsStatus::OK) {
+    const apex::hal::PpsStatus ST = pps_->readCapture(edgeNs);
+    if (ST == apex::hal::PpsStatus::OK) {
       processEdge(edgeNs, pps_->pulseCount());
     }
   }
@@ -98,20 +98,20 @@ void TimeServer::tick(std::uint32_t currentCycle) noexcept {
   // PTP_SYNC: read the (assumed) PTP-disciplined wall clock each tick.
   // Re-anchor every tick but only publish at ~1 Hz to match the broadcast
   // cadence consumers expect.
-  if (mode == TimeServerMode::PTP_SYNC && wallClock_ && steadyClock_) {
+  if (MODE == TimeServerMode::PTP_SYNC && wallClock_ && steadyClock_) {
     tickPtpSync();
   }
 
   // CAN_SYNC: poll the CAN HW-timestamp delegate. No-op if unwired
   // (the underlying ICan extension is a separate work item).
-  if (mode == TimeServerMode::CAN_SYNC && canSync_ && steadyClock_) {
+  if (MODE == TimeServerMode::CAN_SYNC && canSync_ && steadyClock_) {
     tickCanSync();
   }
 
   // Even with no edge this frame, staleness can advance. Use the steady
   // clock to detect long silences. PPS modes care; the others manage
   // their own sync-source health checks.
-  if (isPpsMode && steadyClock_) {
+  if (IS_PPS_MODE && steadyClock_) {
     checkStaleness(now());
   }
 }
@@ -120,12 +120,12 @@ void TimeServer::tick(std::uint32_t currentCycle) noexcept {
 
 void TimeServer::processEdge(std::int64_t edgeLocalNs, std::uint32_t edgePulseCount) noexcept {
   if (haveLastEdge_) {
-    const std::int64_t intervalNs = edgeLocalNs - lastEdgeLocalNs_;
-    if (!isIntervalValid(intervalNs)) {
+    const std::int64_t INTERVAL_NS = edgeLocalNs - lastEdgeLocalNs_;
+    if (!isIntervalValid(INTERVAL_NS)) {
       ++glitchCount_;
       return;
     }
-    driftPpb_ = pushDriftSample(intervalNs);
+    driftPpb_ = pushDriftSample(INTERVAL_NS);
   }
 
   // Update edge bookkeeping.
@@ -174,19 +174,19 @@ bool TimeServer::isIntervalValid(std::int64_t intervalNs) const noexcept {
 
 std::int32_t TimeServer::pushDriftSample(std::int64_t intervalNs) noexcept {
   // 1 ns of interval deviation per second == 1 ppb.
-  const std::int32_t sample = static_cast<std::int32_t>(intervalNs - NS_PER_SECOND);
+  const std::int32_t SAMPLE = static_cast<std::int32_t>(intervalNs - NS_PER_SECOND);
 
   if (driftSamplesCount_ < tprm_.driftFilterTaps) {
-    driftSamples_[driftSamplesHead_] = sample;
+    driftSamples_[driftSamplesHead_] = SAMPLE;
     driftSamplesHead_ = (driftSamplesHead_ + 1) % tprm_.driftFilterTaps;
-    driftSampleSum_ += sample;
+    driftSampleSum_ += SAMPLE;
     ++driftSamplesCount_;
   } else {
-    const std::int32_t evicted = driftSamples_[driftSamplesHead_];
-    driftSamples_[driftSamplesHead_] = sample;
+    const std::int32_t EVICTED = driftSamples_[driftSamplesHead_];
+    driftSamples_[driftSamplesHead_] = SAMPLE;
     driftSamplesHead_ = (driftSamplesHead_ + 1) % tprm_.driftFilterTaps;
-    driftSampleSum_ += sample;
-    driftSampleSum_ -= evicted;
+    driftSampleSum_ += SAMPLE;
+    driftSampleSum_ -= EVICTED;
   }
 
   if (driftSamplesCount_ == 0) {
@@ -209,10 +209,10 @@ void TimeServer::updateNextTonePrediction() noexcept {
   }
   // Predict next edge as last + 1 s, drift-corrected.
   // drift_ppb = ns/s, so adjustment = drift_ppb (in ns).
-  const std::int64_t predictedAdvance = NS_PER_SECOND + driftPpb_;
+  const std::int64_t PREDICTED_ADVANCE = NS_PER_SECOND + driftPpb_;
   // Keep the published next-tone in sync with the most-recent confirmed edge.
   // We store the predicted UTC (epoch domain) for consumer use.
-  output_.nextToneEpochNs = lastEdgeEpochNs_ + predictedAdvance;
+  output_.nextToneEpochNs = lastEdgeEpochNs_ + PREDICTED_ADVANCE;
 }
 
 /* ----------------------------- Staleness / FREERUN ----------------------------- */
@@ -221,13 +221,13 @@ void TimeServer::checkStaleness(std::int64_t nowNs) noexcept {
   if (!haveLastEdge_) {
     return;
   }
-  const std::int64_t sinceLastEdgeNs = nowNs - lastEdgeLocalNs_;
-  const std::int64_t maxStalenessNs =
+  const std::int64_t SINCE_LAST_EDGE_NS = nowNs - lastEdgeLocalNs_;
+  const std::int64_t MAX_STALENESS_NS =
       static_cast<std::int64_t>(tprm_.maxStalenessUs) * 1000LL;
-  const std::int64_t holdoverLimitNs =
+  const std::int64_t HOLDOVER_LIMIT_NS =
       static_cast<std::int64_t>(tprm_.holdoverLimitS) * NS_PER_SECOND;
 
-  if (sinceLastEdgeNs > holdoverLimitNs) {
+  if (SINCE_LAST_EDGE_NS > HOLDOVER_LIMIT_NS) {
     if (valid_ != TimeValid::FREERUN) {
       // One-shot anchor: latch the host's wall clock now so subsequent
       // computeUtcNs() interpolations advance from a fresh epoch instead
@@ -236,9 +236,9 @@ void TimeServer::checkStaleness(std::int64_t nowNs) noexcept {
       // If no wall-clock delegate is wired (e.g. bare metal), keep the
       // stale anchor -- the quality bit already reflects the degradation.
       if (wallClock_) {
-        const std::int64_t walNs = wallClock_();
-        if (walNs > 0) {
-          lastEdgeEpochNs_ = walNs;
+        const std::int64_t WAL_NS = wallClock_();
+        if (WAL_NS > 0) {
+          lastEdgeEpochNs_ = WAL_NS;
           lastEdgeLocalNs_ = nowNs;
           haveReference_ = true;
           source_ = TimeSource::ONBOARD;
@@ -253,7 +253,7 @@ void TimeServer::checkStaleness(std::int64_t nowNs) noexcept {
       }
       publish();
     }
-  } else if (sinceLastEdgeNs > maxStalenessNs) {
+  } else if (SINCE_LAST_EDGE_NS > MAX_STALENESS_NS) {
     if (valid_ == TimeValid::VALID) {
       valid_ = TimeValid::STALE;
       publish();
@@ -316,8 +316,8 @@ void TimeServer::handleSetTimeManual(const SetTimeManual& cmd) noexcept {
   // Anchor the manual UTC at the current steady-clock moment so consumers
   // can interpolate immediately. Without a PPS edge, quality is COARSE and
   // there is no drift estimate.
-  const std::int64_t nowNs = steadyClock_ ? now() : 0;
-  lastEdgeLocalNs_ = nowNs;
+  const std::int64_t NOW_NS = steadyClock_ ? now() : 0;
+  lastEdgeLocalNs_ = NOW_NS;
   lastEdgeEpochNs_ = cmd.epochNs;
   lastEdgePulseCount_ = totalPpsCount_;
   haveLastEdge_ = true;
@@ -342,15 +342,15 @@ void TimeServer::tickPtpSync() noexcept {
   // disciplined. Hardware PHC (/dev/ptp0) reads via PTP_CLOCK_GETTIME would
   // give better accuracy but require a separate dependency on the PTP
   // user-space stack.
-  const std::int64_t epochNs = wallClock_();
-  if (epochNs <= 0) {
+  const std::int64_t EPOCH_NS = wallClock_();
+  if (EPOCH_NS <= 0) {
     return;
   }
-  const std::int64_t localNs = now();
+  const std::int64_t LOCAL_NS = now();
 
   // Re-anchor every tick: the disciplined wall clock IS our reference.
-  lastEdgeEpochNs_ = epochNs;
-  lastEdgeLocalNs_ = localNs;
+  lastEdgeEpochNs_ = EPOCH_NS;
+  lastEdgeLocalNs_ = LOCAL_NS;
   haveLastEdge_ = true;
   haveReference_ = true;
   source_ = TimeSource::ONBOARD;
@@ -365,9 +365,9 @@ void TimeServer::tickPtpSync() noexcept {
   // scheduler's frame rate. Each "tone" we publish increments
   // totalPpsCount_ to keep gap-detection semantics consistent with the
   // PPS modes.
-  if (!havePublishMark_ || (localNs - lastPublishLocalNs_) >= NS_PER_SECOND) {
+  if (!havePublishMark_ || (LOCAL_NS - lastPublishLocalNs_) >= NS_PER_SECOND) {
     ++totalPpsCount_;
-    lastPublishLocalNs_ = localNs;
+    lastPublishLocalNs_ = LOCAL_NS;
     havePublishMark_ = true;
     updateNextTonePrediction();
     publish();
@@ -382,8 +382,8 @@ void TimeServer::tickCanSync() noexcept {
   // surfaces them to TimeServer through the delegate. If no event is
   // available this frame the delegate returns present=false and we do
   // nothing.
-  const CanSyncEvent ev = canSync_();
-  if (!ev.present) {
+  const CanSyncEvent EV = canSync_();
+  if (!EV.present) {
     return;
   }
 
@@ -391,8 +391,8 @@ void TimeServer::tickCanSync() noexcept {
   // FINE is the right cap; we don't promote to PRECISE because there's
   // no drift estimator running in this mode (the CAN sync frame IS the
   // anchor; sub-frame interpolation rides the local steady clock).
-  lastEdgeEpochNs_ = ev.epochNs;
-  lastEdgeLocalNs_ = ev.localNs;
+  lastEdgeEpochNs_ = EV.epochNs;
+  lastEdgeLocalNs_ = EV.localNs;
   haveLastEdge_ = true;
   haveReference_ = true;
   source_ = TimeSource::ONBOARD;
@@ -402,10 +402,10 @@ void TimeServer::tickCanSync() noexcept {
   }
 
   // Pace broadcasts to ~1 Hz like PTP_SYNC.
-  const std::int64_t localNs = now();
-  if (!havePublishMark_ || (localNs - lastPublishLocalNs_) >= NS_PER_SECOND) {
+  const std::int64_t LOCAL_NS = now();
+  if (!havePublishMark_ || (LOCAL_NS - lastPublishLocalNs_) >= NS_PER_SECOND) {
     ++totalPpsCount_;
-    lastPublishLocalNs_ = localNs;
+    lastPublishLocalNs_ = LOCAL_NS;
     havePublishMark_ = true;
     updateNextTonePrediction();
     publish();
@@ -426,9 +426,9 @@ void TimeServer::handleAcceptRemoteTnt(const TimeAtNextTone& remote) noexcept {
   // steady_clock at receipt is the interpolation origin. Network link
   // latency lives entirely inside this offset; we don't try to estimate
   // and remove it. The published quality bit reflects that uncertainty.
-  const std::int64_t nowNs = now();
+  const std::int64_t NOW_NS = now();
   lastEdgeEpochNs_ = remote.epochNs;
-  lastEdgeLocalNs_ = nowNs;
+  lastEdgeLocalNs_ = NOW_NS;
   lastEdgePulseCount_ = remote.ppsCount;
   haveLastEdge_ = true;
   haveReference_ = true;
@@ -560,8 +560,8 @@ std::uint64_t utcTimeProviderTrampoline(void* ctx) noexcept {
   // delegate, so a test driving synthetic time gets deterministic UTC out
   // of the provider. The executive's default delegate is
   // clock_gettime(CLOCK_MONOTONIC) so production sees real wall time.
-  const std::int64_t utcNs = ts->currentUtcNs();
-  return static_cast<std::uint64_t>(utcNs / 1000); // ns -> us for ATS
+  const std::int64_t UTC_NS = ts->currentUtcNs();
+  return static_cast<std::uint64_t>(UTC_NS / 1000); // ns -> us for ATS
 }
 
 std::int64_t defaultSteadyClockTrampoline(void* /*ctx*/) noexcept {

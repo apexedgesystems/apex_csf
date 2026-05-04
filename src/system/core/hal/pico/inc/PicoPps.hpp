@@ -62,9 +62,9 @@ public:
     gpio_init(gpioPin_);
     gpio_set_dir(gpioPin_, GPIO_IN);
     gpio_pull_down(gpioPin_);
-    const uint32_t edgeMask =
+    const uint32_t EDGE_MASK =
         (config.edge == PpsEdge::RISING) ? GPIO_IRQ_EDGE_RISE : GPIO_IRQ_EDGE_FALL;
-    gpio_set_irq_enabled_with_callback(gpioPin_, edgeMask, true, &PicoPps::gpioCallback);
+    gpio_set_irq_enabled_with_callback(gpioPin_, EDGE_MASK, true, &PicoPps::gpioCallback);
 #endif
 
     latchedNs_.store(0, std::memory_order_relaxed);
@@ -125,8 +125,8 @@ private:
     if (instance_ == nullptr || gpio != instance_->gpioPin_) {
       return;
     }
-    const uint64_t nowUs = time_us_64();
-    instance_->latchedNs_.store(nowUs * 1000ULL, std::memory_order_relaxed);
+    const uint64_t NOW_US = time_us_64();
+    instance_->latchedNs_.store(NOW_US * 1000ULL, std::memory_order_relaxed);
     instance_->pulseCount_.fetch_add(1, std::memory_order_relaxed);
     instance_->newEdge_.store(true, std::memory_order_release);
   }

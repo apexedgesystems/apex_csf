@@ -122,8 +122,8 @@ private:
   /// pointer (this) through, so multi-instance is safe out of the box.
   static void IRAM_ATTR isrTrampoline(void* arg) noexcept {
     auto* self = static_cast<Esp32Pps*>(arg);
-    const int64_t nowUs = esp_timer_get_time();
-    self->latchedNs_.store(static_cast<uint64_t>(nowUs) * 1000ULL,
+    const int64_t NOW_US = esp_timer_get_time();
+    self->latchedNs_.store(static_cast<uint64_t>(NOW_US) * 1000ULL,
                            std::memory_order_relaxed);
     self->pulseCount_.fetch_add(1, std::memory_order_relaxed);
     self->newEdge_.store(true, std::memory_order_release);

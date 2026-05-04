@@ -191,11 +191,11 @@ public:
     if (!newEdge_.exchange(false, std::memory_order_acquire)) {
       return PpsStatus::NO_NEW_EDGE;
     }
-    const uint32_t cycles = latchedCycles_.load(std::memory_order_relaxed);
+    const uint32_t CYCLES = latchedCycles_.load(std::memory_order_relaxed);
 
     // cycles * 1e9 fits in uint64_t (max ~4.29e18, well under 1.8e19).
     timestampNs = static_cast<int64_t>(
-        (static_cast<uint64_t>(cycles) * 1'000'000'000ULL) / opts_.coreFreqHz);
+        (static_cast<uint64_t>(CYCLES) * 1'000'000'000ULL) / opts_.coreFreqHz);
 
     ++stats_.captureCount;
     return PpsStatus::OK;

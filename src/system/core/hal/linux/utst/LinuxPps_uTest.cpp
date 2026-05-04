@@ -96,10 +96,10 @@ protected:
     std::memset(fdata, 0, sizeof(*fdata));
 
     if (!stagedEdges_.empty()) {
-      const StagedEdge edge = stagedEdges_.front();
+      const StagedEdge EDGE = stagedEdges_.front();
       stagedEdges_.erase(stagedEdges_.begin());
-      fdata->info.assert_sequence = edge.assertSeq;
-      fdata->info.clear_sequence = edge.clearSeq;
+      fdata->info.assert_sequence = EDGE.assertSeq;
+      fdata->info.clear_sequence = EDGE.clearSeq;
     }
     // No staged edges: return zeroed fdata (no edge ever observed).
     return 0;

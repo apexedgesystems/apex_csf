@@ -140,11 +140,11 @@ public:
     if (!newEdge_) {
       return C2000_PPS_NO_NEW_EDGE;
     }
-    const uint32_t ticks = latchedTicks_;
+    const uint32_t TICKS = latchedTicks_;
     newEdge_ = false;
     // ticks * 1e9 fits in uint64 (4.29e9 max ticks * 1e9 = 4.29e18, under 1.8e19).
-    const uint64_t numer = (uint64_t)ticks * (uint64_t)1000000000U;
-    timestampNs = (int64_t)(numer / (uint64_t)cpuFreqHz_);
+    const uint64_t NUMER = (uint64_t)TICKS * (uint64_t)1000000000U;
+    timestampNs = (int64_t)(NUMER / (uint64_t)cpuFreqHz_);
     captureCount_ = captureCount_ + 1U;
     return C2000_PPS_OK;
   }

@@ -37,7 +37,10 @@ enum class TimeSource : std::uint8_t {
   SIM = 4,     ///< From simulation-injected time.
 };
 
-/** @brief Human-readable string for TimeSource. RT-safe. */
+/**
+ * @brief Human-readable string for TimeSource.
+ * @note RT-safe: O(1) switch over a small enum.
+ */
 const char* toString(TimeSource s) noexcept;
 
 /**
@@ -55,7 +58,10 @@ enum class TimeQuality : std::uint8_t {
   PRECISE = 3, ///< PPS + reference + stable drift estimate.
 };
 
-/** @brief Human-readable string for TimeQuality. RT-safe. */
+/**
+ * @brief Human-readable string for TimeQuality.
+ * @note RT-safe: O(1) switch over a small enum.
+ */
 const char* toString(TimeQuality q) noexcept;
 
 /**
@@ -69,7 +75,10 @@ enum class TimeValid : std::uint8_t {
   FREERUN = 3, ///< PPS lost, running on monotonic clock alone.
 };
 
-/** @brief Human-readable string for TimeValid. RT-safe. */
+/**
+ * @brief Human-readable string for TimeValid.
+ * @note RT-safe: O(1) switch over a small enum.
+ */
 const char* toString(TimeValid v) noexcept;
 
 /**
@@ -85,7 +94,10 @@ enum class TimeServerMode : std::uint8_t {
   RELAY = 4,     ///< No local PPS; relays TNT received over the network.
 };
 
-/** @brief Human-readable string for TimeServerMode. RT-safe. */
+/**
+ * @brief Human-readable string for TimeServerMode.
+ * @note RT-safe: O(1) switch over a small enum.
+ */
 const char* toString(TimeServerMode m) noexcept;
 
 /* ----------------------------- Flag bits for TNT.flags ----------------------------- */

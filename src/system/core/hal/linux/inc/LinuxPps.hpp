@@ -78,12 +78,12 @@ public:
       return PpsStatus::ERROR_INVALID_ARG;
     }
 
-    const int fd = sysOpen(devicePath_, O_RDWR);
-    if (fd < 0) {
+    const int FD = sysOpen(devicePath_, O_RDWR);
+    if (FD < 0) {
       return PpsStatus::ERROR_DEVICE;
     }
 
-    fd_ = fd;
+    fd_ = FD;
     config_ = config;
     initialized_ = true;
     lastSequence_ = 0;
@@ -110,26 +110,26 @@ public:
       return PpsStatus::ERROR_DEVICE;
     }
 
-    const uint32_t seq = (config_.edge == PpsEdge::RISING) ? fdata.info.assert_sequence
+    const uint32_t SEQ = (config_.edge == PpsEdge::RISING) ? fdata.info.assert_sequence
                                                            : fdata.info.clear_sequence;
 
     // First call after init: prime the sequence baseline without reporting
     // an edge so we don't synthesize one from whatever the kernel happened
     // to have latched before init().
     if (!haveLastSequence_) {
-      lastSequence_ = seq;
+      lastSequence_ = SEQ;
       haveLastSequence_ = true;
       return PpsStatus::NO_NEW_EDGE;
     }
-    if (seq == lastSequence_) {
+    if (SEQ == lastSequence_) {
       return PpsStatus::NO_NEW_EDGE;
     }
 
     // New edge(s) observed. Update the running pulse counter by the delta
     // (handles dropped/missed reads where >1 edge accumulated) and grab
     // CLOCK_MONOTONIC immediately for the local-domain timestamp.
-    pulseCount_ += static_cast<uint32_t>(seq - lastSequence_);
-    lastSequence_ = seq;
+    pulseCount_ += static_cast<uint32_t>(SEQ - lastSequence_);
+    lastSequence_ = SEQ;
 
     struct timespec ts{};
     if (sysClockGettime(CLOCK_MONOTONIC, &ts) < 0) {

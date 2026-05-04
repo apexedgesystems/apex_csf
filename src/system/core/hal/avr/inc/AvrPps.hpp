@@ -128,8 +128,8 @@ public:
     }
     // ticks * (1e9 / (F_CPU / prescaler)) = ticks * prescaler * 1e9 / F_CPU.
     // For 16 MHz / prescaler=1: 62.5 ns/tick. uint64 math to avoid overflow.
-    const uint64_t numer = static_cast<uint64_t>(ticks) * opts_.prescaler * 1'000'000'000ULL;
-    timestampNs = static_cast<int64_t>(numer / static_cast<uint64_t>(F_CPU));
+    const uint64_t NUMER = static_cast<uint64_t>(ticks) * opts_.prescaler * 1'000'000'000ULL;
+    timestampNs = static_cast<int64_t>(NUMER / static_cast<uint64_t>(F_CPU));
     ++stats_.captureCount;
     return PpsStatus::OK;
   }
@@ -146,8 +146,8 @@ public:
    */
   void inputCaptureIsr() noexcept {
 #ifndef APEX_HAL_AVR_MOCK
-    const uint16_t icr = ICR1;
-    latchedTicks_ = (static_cast<uint32_t>(overflowCount_) << 16) | icr;
+    const uint16_t ICR = ICR1;
+    latchedTicks_ = (static_cast<uint32_t>(overflowCount_) << 16) | ICR;
     pulseCount_ = static_cast<uint32_t>(pulseCount_ + 1U);
     newEdge_ = true;
 #endif
