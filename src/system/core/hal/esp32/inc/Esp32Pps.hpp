@@ -56,8 +56,7 @@ public:
     io.mode = GPIO_MODE_INPUT;
     io.pull_down_en = GPIO_PULLDOWN_ENABLE;
     io.pull_up_en = GPIO_PULLUP_DISABLE;
-    io.intr_type =
-        (config.edge == PpsEdge::RISING) ? GPIO_INTR_POSEDGE : GPIO_INTR_NEGEDGE;
+    io.intr_type = (config.edge == PpsEdge::RISING) ? GPIO_INTR_POSEDGE : GPIO_INTR_NEGEDGE;
     if (gpio_config(&io) != ESP_OK) {
       return PpsStatus::ERROR_DEVICE;
     }
@@ -123,8 +122,7 @@ private:
   static void IRAM_ATTR isrTrampoline(void* arg) noexcept {
     auto* self = static_cast<Esp32Pps*>(arg);
     const int64_t NOW_US = esp_timer_get_time();
-    self->latchedNs_.store(static_cast<uint64_t>(NOW_US) * 1000ULL,
-                           std::memory_order_relaxed);
+    self->latchedNs_.store(static_cast<uint64_t>(NOW_US) * 1000ULL, std::memory_order_relaxed);
     self->pulseCount_.fetch_add(1, std::memory_order_relaxed);
     self->newEdge_.store(true, std::memory_order_release);
   }

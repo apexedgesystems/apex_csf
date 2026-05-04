@@ -152,8 +152,8 @@ TEST(MockPps, ResetStatsKeepsPulseAndQueue) {
   pps.resetStats();
   EXPECT_EQ(pps.stats().captureCount, 0U);
   EXPECT_EQ(pps.stats().errorCount, 0U);
-  EXPECT_EQ(pps.pulseCount(), 2U);    // unchanged
-  EXPECT_EQ(pps.pendingEdges(), 1U);  // unchanged
+  EXPECT_EQ(pps.pulseCount(), 2U);   // unchanged
+  EXPECT_EQ(pps.pendingEdges(), 1U); // unchanged
 }
 
 /* ----------------------------- Error injection ----------------------------- */

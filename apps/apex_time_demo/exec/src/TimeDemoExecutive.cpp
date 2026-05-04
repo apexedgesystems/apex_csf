@@ -55,9 +55,8 @@ bool TimeDemoExecutive::registerComponents() noexcept {
   }
 
   if (log != nullptr) {
-    log->info("TIME_DEMO_EXEC",
-              fmt::format("Registered: timeServer={:#x} sysmon={:#x}",
-                          timeServer().fullUid(), sysMonitor_.fullUid()));
+    log->info("TIME_DEMO_EXEC", fmt::format("Registered: timeServer={:#x} sysmon={:#x}",
+                                            timeServer().fullUid(), sysMonitor_.fullUid()));
   }
   return true;
 }
@@ -88,8 +87,7 @@ void TimeDemoExecutive::runGpsSimulator() noexcept {
   const auto t0 = std::chrono::steady_clock::now();
   auto secondsSinceStart = [&]() -> int {
     return static_cast<int>(
-        std::chrono::duration_cast<std::chrono::seconds>(
-            std::chrono::steady_clock::now() - t0)
+        std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - t0)
             .count());
   };
 

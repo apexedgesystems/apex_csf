@@ -21,12 +21,7 @@ include(apex/All)
 # ------------------------------------------------------------------------------
 
 apex_add_interface_library(
-  NAME
-  hal_linux
-  INC
-  "${CMAKE_CURRENT_SOURCE_DIR}/inc"
-  DEPS_INTERFACE
-  hal_interface
+  NAME hal_linux INC "${CMAKE_CURRENT_SOURCE_DIR}/inc" DEPS_INTERFACE hal_interface
 )
 
 # Additional include for src/ path resolution

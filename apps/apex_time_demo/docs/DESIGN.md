@@ -30,6 +30,7 @@ scheduler frequency. A separate thread that sleeps 1 s between
 injections gives wall-clock pacing independent of frame rate.
 
 The thread:
+
 - Captures `this` so it can call `pps_.injectEdge()` and
   `timeServer().handleSetReferenceTime()`.
 - Reads `simRunning_` (atomic bool) each loop. Destructor sets it

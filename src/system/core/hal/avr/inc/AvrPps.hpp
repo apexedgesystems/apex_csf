@@ -157,9 +157,7 @@ public:
    * @brief Call from ISR(TIMER1_OVF_vect) in user code.
    * @note Maintains the 32-bit software extension of the 16-bit Timer1.
    */
-  void overflowIsr() noexcept {
-    overflowCount_ = static_cast<uint16_t>(overflowCount_ + 1U);
-  }
+  void overflowIsr() noexcept { overflowCount_ = static_cast<uint16_t>(overflowCount_ + 1U); }
 
 #ifdef APEX_HAL_AVR_MOCK
   /// Mock-build seam: simulate an ISR firing with a chosen tick value.

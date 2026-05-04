@@ -222,8 +222,7 @@ void TimeServer::checkStaleness(std::int64_t nowNs) noexcept {
     return;
   }
   const std::int64_t SINCE_LAST_EDGE_NS = nowNs - lastEdgeLocalNs_;
-  const std::int64_t MAX_STALENESS_NS =
-      static_cast<std::int64_t>(tprm_.maxStalenessUs) * 1000LL;
+  const std::int64_t MAX_STALENESS_NS = static_cast<std::int64_t>(tprm_.maxStalenessUs) * 1000LL;
   const std::int64_t HOLDOVER_LIMIT_NS =
       static_cast<std::int64_t>(tprm_.holdoverLimitS) * NS_PER_SECOND;
 
@@ -565,13 +564,13 @@ std::uint64_t utcTimeProviderTrampoline(void* ctx) noexcept {
 }
 
 std::int64_t defaultSteadyClockTrampoline(void* /*ctx*/) noexcept {
-  struct timespec now {};
+  struct timespec now{};
   clock_gettime(CLOCK_MONOTONIC, &now);
   return static_cast<std::int64_t>(now.tv_sec) * NS_PER_SECOND + now.tv_nsec;
 }
 
 std::int64_t defaultWallClockTrampoline(void* /*ctx*/) noexcept {
-  struct timespec now {};
+  struct timespec now{};
   clock_gettime(CLOCK_REALTIME, &now);
   return static_cast<std::int64_t>(now.tv_sec) * NS_PER_SECOND + now.tv_nsec;
 }

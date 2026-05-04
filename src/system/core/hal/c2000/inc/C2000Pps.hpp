@@ -59,42 +59,20 @@ class C2000Pps {
 public:
 #ifndef APEX_HAL_C2000_MOCK
   explicit C2000Pps(uint32_t ecapBase, uint32_t cpuFreqHz)
-      : ecapBase_(ecapBase),
-        cpuFreqHz_(cpuFreqHz),
-        latchedTicks_(0),
-        pulseCount_(0),
-        captureCount_(0),
-        errorCount_(0),
-        newEdge_(false),
-        initialized_(false) {}
+      : ecapBase_(ecapBase), cpuFreqHz_(cpuFreqHz), latchedTicks_(0), pulseCount_(0),
+        captureCount_(0), errorCount_(0), newEdge_(false), initialized_(false) {}
 
   explicit C2000Pps(uint32_t ecapBase)
-      : ecapBase_(ecapBase),
-        cpuFreqHz_(DEVICE_SYSCLK_FREQ),
-        latchedTicks_(0),
-        pulseCount_(0),
-        captureCount_(0),
-        errorCount_(0),
-        newEdge_(false),
-        initialized_(false) {}
+      : ecapBase_(ecapBase), cpuFreqHz_(DEVICE_SYSCLK_FREQ), latchedTicks_(0), pulseCount_(0),
+        captureCount_(0), errorCount_(0), newEdge_(false), initialized_(false) {}
 #else
   C2000Pps()
-      : cpuFreqHz_(100000000U),
-        latchedTicks_(0),
-        pulseCount_(0),
-        captureCount_(0),
-        errorCount_(0),
-        newEdge_(false),
-        initialized_(false) {}
+      : cpuFreqHz_(100000000U), latchedTicks_(0), pulseCount_(0), captureCount_(0), errorCount_(0),
+        newEdge_(false), initialized_(false) {}
 
   explicit C2000Pps(uint32_t /*ecapBase*/, uint32_t cpuFreqHz)
-      : cpuFreqHz_(cpuFreqHz),
-        latchedTicks_(0),
-        pulseCount_(0),
-        captureCount_(0),
-        errorCount_(0),
-        newEdge_(false),
-        initialized_(false) {}
+      : cpuFreqHz_(cpuFreqHz), latchedTicks_(0), pulseCount_(0), captureCount_(0), errorCount_(0),
+        newEdge_(false), initialized_(false) {}
 #endif
 
   /** @brief Initialize the eCAP module for input capture. */

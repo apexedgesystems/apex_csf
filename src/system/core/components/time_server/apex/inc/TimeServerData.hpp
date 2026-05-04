@@ -151,12 +151,12 @@ static_assert(sizeof(TimeAtNextTone) == 40, "TimeAtNextTone wire size must be 40
  * authoritative TNT broadcast.
  */
 struct SetReferenceTime {
-  std::int64_t epochNs;          ///< UTC at the associated PPS edge.
+  std::int64_t epochNs;            ///< UTC at the associated PPS edge.
   std::uint32_t referencePpsCount; ///< Provider's count of the associated edge (gap detection).
-  std::uint8_t source;           ///< TimeSource enum identifying the caller.
-  std::uint8_t quality;          ///< TimeQuality the provider claims.
-  std::uint8_t flags;            ///< Reserved.
-  std::uint8_t _reserved;        ///< Pad to 16 bytes.
+  std::uint8_t source;             ///< TimeSource enum identifying the caller.
+  std::uint8_t quality;            ///< TimeQuality the provider claims.
+  std::uint8_t flags;              ///< Reserved.
+  std::uint8_t _reserved;          ///< Pad to 16 bytes.
 };
 
 static_assert(sizeof(SetReferenceTime) == 16, "SetReferenceTime wire size must be 16 bytes");
@@ -211,17 +211,17 @@ static_assert(sizeof(TimeServerTunableParams) == 16,
  * for diagnostics (correlationOffsetNs, metCycles).
  */
 struct TimeServerOutput {
-  std::int64_t utcEpochNs;         ///< UTC at last confirmed PPS edge (= TNT.epochNs).
-  std::uint64_t metCycles;         ///< Mission Elapsed Time in scheduler cycles.
-  std::int64_t lastPpsLocalNs;     ///< Local steady_clock at last PPS edge.
-  std::int64_t correlationOffsetNs;///< UTC - local at last edge (utcEpochNs - lastPpsLocalNs).
-  std::int64_t nextToneEpochNs;    ///< Predicted UTC at next PPS edge.
-  std::int32_t driftEstimatePpb;   ///< Local oscillator drift, parts per billion.
-  std::uint32_t ppsCount;          ///< Total PPS edges received since boot.
-  std::uint8_t correlationValid;   ///< TimeValid enum.
-  std::uint8_t timeSource;         ///< TimeSource enum (active reference).
-  std::uint8_t timeQuality;        ///< TimeQuality enum.
-  std::uint8_t flags;              ///< TNT_FLAG_* bitfield.
+  std::int64_t utcEpochNs;          ///< UTC at last confirmed PPS edge (= TNT.epochNs).
+  std::uint64_t metCycles;          ///< Mission Elapsed Time in scheduler cycles.
+  std::int64_t lastPpsLocalNs;      ///< Local steady_clock at last PPS edge.
+  std::int64_t correlationOffsetNs; ///< UTC - local at last edge (utcEpochNs - lastPpsLocalNs).
+  std::int64_t nextToneEpochNs;     ///< Predicted UTC at next PPS edge.
+  std::int32_t driftEstimatePpb;    ///< Local oscillator drift, parts per billion.
+  std::uint32_t ppsCount;           ///< Total PPS edges received since boot.
+  std::uint8_t correlationValid;    ///< TimeValid enum.
+  std::uint8_t timeSource;          ///< TimeSource enum (active reference).
+  std::uint8_t timeQuality;         ///< TimeQuality enum.
+  std::uint8_t flags;               ///< TNT_FLAG_* bitfield.
 };
 
 static_assert(sizeof(TimeServerOutput) == 56, "TimeServerOutput wire size must be 56 bytes");

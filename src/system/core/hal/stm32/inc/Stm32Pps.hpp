@@ -66,8 +66,7 @@
 #include "stm32g4xx_hal.h"
 #elif defined(STM32H7xx) || defined(STM32H743xx)
 #include "stm32h7xx_hal.h"
-#elif defined(STM32F4xx) || defined(STM32F446xx) || defined(STM32F401xC) ||                       \
-    defined(STM32F411xE)
+#elif defined(STM32F4xx) || defined(STM32F446xx) || defined(STM32F401xC) || defined(STM32F411xE)
 #include "stm32f4xx_hal.h"
 #else
 // Allow compilation on host for portability checks (the code is gated
@@ -194,8 +193,8 @@ public:
     const uint32_t CYCLES = latchedCycles_.load(std::memory_order_relaxed);
 
     // cycles * 1e9 fits in uint64_t (max ~4.29e18, well under 1.8e19).
-    timestampNs = static_cast<int64_t>(
-        (static_cast<uint64_t>(CYCLES) * 1'000'000'000ULL) / opts_.coreFreqHz);
+    timestampNs =
+        static_cast<int64_t>((static_cast<uint64_t>(CYCLES) * 1'000'000'000ULL) / opts_.coreFreqHz);
 
     ++stats_.captureCount;
     return PpsStatus::OK;

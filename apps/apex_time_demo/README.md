@@ -7,22 +7,22 @@ backs a built-in GPS simulator thread that drives the scenarios.
 
 ## Components
 
-| Component       | Type     | Purpose                                          |
-| --------------- | -------- | ------------------------------------------------ |
-| TimeServer      | CORE     | Sole UTC authority (auto-registered by executive)|
-| MockPps         | HAL      | Software-driven PPS source (wired to TimeServer) |
-| SystemMonitor   | SUPPORT  | CPU / memory / FD health monitoring              |
+| Component     | Type    | Purpose                                           |
+| ------------- | ------- | ------------------------------------------------- |
+| TimeServer    | CORE    | Sole UTC authority (auto-registered by executive) |
+| MockPps       | HAL     | Software-driven PPS source (wired to TimeServer)  |
+| SystemMonitor | SUPPORT | CPU / memory / FD health monitoring               |
 
 ## Scenarios (driven by built-in GPS simulator)
 
-| t (s)   | Behavior                                               |
-| ------- | ------------------------------------------------------ |
+| t (s)   | Behavior                                                   |
+| ------- | ---------------------------------------------------------- |
 | 0 - 3   | Cold-start dark period: no edges, no reference, valid=NONE |
 | 3       | GPS fix acquired: SET_REFERENCE_TIME delivered, first edge |
-| 3 - 18  | 1 Hz edges; quality climbs NONE -> FINE -> PRECISE      |
-| 18 - 25 | Simulated PPS dropout; valid -> STALE -> FREERUN        |
-| 25      | resetCorrelation + fresh reference; valid -> FINE       |
-| 25+     | Resumed 1 Hz edges; PRECISE returns                     |
+| 3 - 18  | 1 Hz edges; quality climbs NONE -> FINE -> PRECISE         |
+| 18 - 25 | Simulated PPS dropout; valid -> STALE -> FREERUN           |
+| 25      | resetCorrelation + fresh reference; valid -> FINE          |
+| 25+     | Resumed 1 Hz edges; PRECISE returns                        |
 
 ## Building
 

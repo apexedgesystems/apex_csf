@@ -69,6 +69,7 @@ tail -F .apex_fs/logs/core/system.log | grep -E "(TIME_DEMO_EXEC|GPS_SIM|TIME)"
 ```
 
 Expected log entries:
+
 - `TIME_DEMO_EXEC: TimeServer init: SUCCESS`
 - `TIME_DEMO_EXEC: GPS simulator started.`
 - (~3 s in) `GPS_SIM: Fix acquired; reference time delivered.`

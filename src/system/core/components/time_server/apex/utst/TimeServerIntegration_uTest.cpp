@@ -117,13 +117,11 @@ TEST(TimeServerIntegration, TimeProviderReturnsUtcAfterPairing) {
   stub.edgeAt(5 * NS_PER_SEC, 1);
 
   // At the edge moment: UTC = 1700000000 s = 1700000000000000 us.
-  EXPECT_EQ(stub.actionComp.iface().timeProvider(),
-            1'700'000'000ULL * 1'000'000ULL);
+  EXPECT_EQ(stub.actionComp.iface().timeProvider(), 1'700'000'000ULL * 1'000'000ULL);
 
   // 250 ms later: UTC = epoch + 250 ms.
   stub.setSteadyNow(5 * NS_PER_SEC + 250'000'000LL);
-  EXPECT_EQ(stub.actionComp.iface().timeProvider(),
-            1'700'000'000ULL * 1'000'000ULL + 250'000ULL);
+  EXPECT_EQ(stub.actionComp.iface().timeProvider(), 1'700'000'000ULL * 1'000'000ULL + 250'000ULL);
 }
 
 /** @test Time provider tracks steady-clock advancement between edges. */
@@ -140,8 +138,7 @@ TEST(TimeServerIntegration, TimeProviderInterpolates) {
   // Each ms of steady advance == 1000 us of UTC.
   for (int ms = 1; ms <= 10; ++ms) {
     stub.setSteadyNow(NS_PER_SEC + static_cast<std::int64_t>(ms) * 1'000'000LL);
-    EXPECT_EQ(stub.actionComp.iface().timeProvider(),
-              static_cast<std::uint64_t>(ms) * 1000ULL);
+    EXPECT_EQ(stub.actionComp.iface().timeProvider(), static_cast<std::uint64_t>(ms) * 1000ULL);
   }
 }
 
@@ -153,26 +150,21 @@ TEST(TimeServerIntegration, BootConvergence) {
   stub.frame(0);
 
   // Boot: NONE.
-  EXPECT_EQ(stub.timeServer.currentTnt().valid,
-            static_cast<std::uint8_t>(TimeValid::NONE));
-  EXPECT_EQ(stub.timeServer.currentTnt().quality,
-            static_cast<std::uint8_t>(TimeQuality::UNKNOWN));
+  EXPECT_EQ(stub.timeServer.currentTnt().valid, static_cast<std::uint8_t>(TimeValid::NONE));
+  EXPECT_EQ(stub.timeServer.currentTnt().quality, static_cast<std::uint8_t>(TimeQuality::UNKNOWN));
 
   // Reference + 1st edge -> VALID/FINE.
   SetReferenceTime ref{};
   stub.timeServer.handleSetReferenceTime(ref);
   stub.edgeAt(NS_PER_SEC, 1);
-  EXPECT_EQ(stub.timeServer.currentTnt().valid,
-            static_cast<std::uint8_t>(TimeValid::VALID));
-  EXPECT_EQ(stub.timeServer.currentTnt().quality,
-            static_cast<std::uint8_t>(TimeQuality::FINE));
+  EXPECT_EQ(stub.timeServer.currentTnt().valid, static_cast<std::uint8_t>(TimeValid::VALID));
+  EXPECT_EQ(stub.timeServer.currentTnt().quality, static_cast<std::uint8_t>(TimeQuality::FINE));
 
   // 4 more edges fill the drift filter (TPRM driftFilterTaps = 4) -> PRECISE.
   for (int i = 2; i <= 5; ++i) {
     stub.edgeAt(static_cast<std::int64_t>(i) * NS_PER_SEC, static_cast<std::uint32_t>(i));
   }
-  EXPECT_EQ(stub.timeServer.currentTnt().quality,
-            static_cast<std::uint8_t>(TimeQuality::PRECISE));
+  EXPECT_EQ(stub.timeServer.currentTnt().quality, static_cast<std::uint8_t>(TimeQuality::PRECISE));
 }
 
 /** @test Time provider drops to 0 when correlation is reset. */
@@ -245,7 +237,7 @@ TEST(TimeServerIntegration, AtsAtTimeTriggersFireWhenUtcCrosses) {
   seq.armed = true;
   seq.stepCount = 1;
   seq.sequenceId = 0xABCD;
-  seq.steps[0].delayCycles = 5'000'000U;                // 5 s in microseconds
+  seq.steps[0].delayCycles = 5'000'000U; // 5 s in microseconds
   seq.steps[0].action.trigger = system_core::data::ActionTrigger::AT_TIME;
   seq.steps[0].action.triggerParam = 5'000'000U;
   seq.steps[0].action.actionType = system_core::data::ActionType::COMMAND;

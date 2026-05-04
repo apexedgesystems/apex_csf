@@ -53,14 +53,14 @@ exec.timeServer().setPpsSource(&pps);
 
 For MCU targets, use the matching platform impl:
 
-| Target | HAL class |
-|---|---|
-| Linux/Jetson/RPi | `apex::hal::LinuxPps` |
+| Target              | HAL class                    |
+| ------------------- | ---------------------------- |
+| Linux/Jetson/RPi    | `apex::hal::LinuxPps`        |
 | STM32 (L4/G4/H7/F4) | `apex::hal::stm32::Stm32Pps` |
-| RP2040 (Pico) | `apex::hal::pico::PicoPps` |
-| ESP32-S3 | `apex::hal::esp32::Esp32Pps` |
-| ATmega328P | `apex::hal::avr::AvrPps` |
-| TI F28004x | `apex::hal::c2000::C2000Pps` |
+| RP2040 (Pico)       | `apex::hal::pico::PicoPps`   |
+| ESP32-S3            | `apex::hal::esp32::Esp32Pps` |
+| ATmega328P          | `apex::hal::avr::AvrPps`     |
+| TI F28004x          | `apex::hal::c2000::C2000Pps` |
 
 ### 2.2 Wire the GPS reference (`SET_REFERENCE_TIME` command)
 
@@ -137,21 +137,23 @@ times. Multi-week missions; PPS must survive eclipse and warm-start.
 
 **Recommended config**:
 
-| Parameter | Value | Why |
-|---|---|---|
-| `mode` | PRIMARY | Single GPS receiver per spacecraft. |
-| `maxStalenessUs` | 1'200'000 | Tighter than default — image timestamps are mission-critical. |
-| `driftFilterTaps` | 32 | Smoother estimate over the long mission. |
-| `holdoverLimitS` | 600 | 10 min — allow GPS occlusion (eclipse) without going FREERUN. |
+| Parameter         | Value     | Why                                                           |
+| ----------------- | --------- | ------------------------------------------------------------- |
+| `mode`            | PRIMARY   | Single GPS receiver per spacecraft.                           |
+| `maxStalenessUs`  | 1'200'000 | Tighter than default — image timestamps are mission-critical. |
+| `driftFilterTaps` | 32        | Smoother estimate over the long mission.                      |
+| `holdoverLimitS`  | 600       | 10 min — allow GPS occlusion (eclipse) without going FREERUN. |
 
 **Component policy**:
+
 - Camera Driver: re-stamp each frame with `tnt.epochNs +
-  (frame_steady - tnt.localNs)` at exposure-end interrupt.
+(frame_steady - tnt.localNs)` at exposure-end interrupt.
 - Reject imaging operations below `quality=FINE`.
 - Log `quality` alongside every image timestamp for ground-side
   reconstruction quality assessment.
 
 **Wiring**:
+
 ```cpp
 // Battery-backed GPS module recommended for warm-start (1-5 s vs
 // 30-60 s cold acquisition).
@@ -165,13 +167,14 @@ gracefully. Ground commands may carry UTC timestamps.
 
 **Recommended config**:
 
-| Parameter | Value | Why |
-|---|---|---|
-| `mode` | PRIMARY (or RELAY in fleet) | Single rover: PRIMARY. Multi-rover: relay TNT to followers. |
-| `holdoverLimitS` | 30 | Most coverage gaps resolve within ~30 s. |
-| Wall-clock fallback | wired | FREERUN re-anchors from CLOCK_REALTIME (NTP-disciplined when available). |
+| Parameter           | Value                       | Why                                                                      |
+| ------------------- | --------------------------- | ------------------------------------------------------------------------ |
+| `mode`              | PRIMARY (or RELAY in fleet) | Single rover: PRIMARY. Multi-rover: relay TNT to followers.              |
+| `holdoverLimitS`    | 30                          | Most coverage gaps resolve within ~30 s.                                 |
+| Wall-clock fallback | wired                       | FREERUN re-anchors from CLOCK_REALTIME (NTP-disciplined when available). |
 
 **Component policy**:
+
 - Navigation: tolerate `quality=COARSE` — relative position math works
   on local clock; only absolute waypoints require FINE+.
 - Telemetry downlink: stamp packets with quality bit. Ground-side
@@ -184,12 +187,13 @@ on the LAN. May not have direct GPS at all.
 
 **Recommended config**:
 
-| Parameter | Value | Why |
-|---|---|---|
-| `mode` | PTP_SYNC | Trust ptp4l / chrony+PTP discipline of CLOCK_REALTIME. |
-| `maxStalenessUs` | (n/a) | PTP_SYNC re-anchors every tick from the disciplined wall clock. |
+| Parameter        | Value    | Why                                                             |
+| ---------------- | -------- | --------------------------------------------------------------- |
+| `mode`           | PTP_SYNC | Trust ptp4l / chrony+PTP discipline of CLOCK_REALTIME.          |
+| `maxStalenessUs` | (n/a)    | PTP_SYNC re-anchors every tick from the disciplined wall clock. |
 
 **Wiring**:
+
 ```cpp
 // PTP_SYNC mode: no PPS source needed. Just ensure ptp4l (or
 // equivalent) is running on the host so CLOCK_REALTIME stays
@@ -206,13 +210,14 @@ Followers receive TNT over UART / Ethernet / serial bus.
 
 **Recommended config**:
 
-| Node | Mode | Notes |
-|---|---|---|
-| Master | PRIMARY | Has GPS + PPS in. Broadcasts TNT. |
-| Follower (own PPS) | SECONDARY | Has its own PPS from a fan-out; uses master's TNT as the reference. < 1 us accuracy. |
-| Follower (no PPS) | RELAY | Receives full TNT over network; latches local steady_clock. 0.1-5 ms accuracy depending on link. |
+| Node               | Mode      | Notes                                                                                            |
+| ------------------ | --------- | ------------------------------------------------------------------------------------------------ |
+| Master             | PRIMARY   | Has GPS + PPS in. Broadcasts TNT.                                                                |
+| Follower (own PPS) | SECONDARY | Has its own PPS from a fan-out; uses master's TNT as the reference. < 1 us accuracy.             |
+| Follower (no PPS)  | RELAY     | Receives full TNT over network; latches local steady_clock. 0.1-5 ms accuracy depending on link. |
 
 **Wiring (RELAY)**:
+
 ```cpp
 // Bus consumer that receives the master's TNT forwards it to the
 // local TimeServer via OP_ACCEPT_REMOTE_TNT.
@@ -251,14 +256,14 @@ Before flight / deployment:
 
 ## 5. Common issues
 
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| `valid=NONE` after init() | No PPS source wired or `/dev/pps0` missing | Check `setPpsSource()` call; verify device tree / kernel module |
-| `quality=COARSE` indefinitely | PPS arriving but no `SET_REFERENCE_TIME` from GPS | Verify GpsDriver is parsing NMEA and posting the command |
-| Spurious `STALE` transitions | `maxStalenessUs` too tight | Bump to 1.5-2 s; PPS jitter on Linux can spike to ~10 ms |
-| Drift estimate stuck | Filter taps not yet filled | Wait `driftFilterTaps` × 1 s; quality auto-promotes to PRECISE |
-| ATS AT_TIME fires late | Time provider returns 0 (no correlation) | Check `valid` field on the latest TNT |
-| FREERUN UTC wildly wrong | Wall-clock not wired | Call `setWallClock(defaultWallClock())` — `ApexExecutive` does this by default; custom executives must replicate |
+| Symptom                       | Likely cause                                      | Fix                                                                                                              |
+| ----------------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `valid=NONE` after init()     | No PPS source wired or `/dev/pps0` missing        | Check `setPpsSource()` call; verify device tree / kernel module                                                  |
+| `quality=COARSE` indefinitely | PPS arriving but no `SET_REFERENCE_TIME` from GPS | Verify GpsDriver is parsing NMEA and posting the command                                                         |
+| Spurious `STALE` transitions  | `maxStalenessUs` too tight                        | Bump to 1.5-2 s; PPS jitter on Linux can spike to ~10 ms                                                         |
+| Drift estimate stuck          | Filter taps not yet filled                        | Wait `driftFilterTaps` × 1 s; quality auto-promotes to PRECISE                                                   |
+| ATS AT_TIME fires late        | Time provider returns 0 (no correlation)          | Check `valid` field on the latest TNT                                                                            |
+| FREERUN UTC wildly wrong      | Wall-clock not wired                              | Call `setWallClock(defaultWallClock())` — `ApexExecutive` does this by default; custom executives must replicate |
 
 ---
 

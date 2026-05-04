@@ -303,9 +303,7 @@ protected:
    *       no broadcast delegate. Applications wire those in via this
    *       accessor before runtime.
    */
-  [[nodiscard]] system_core::time_server::TimeServer& timeServer() noexcept {
-    return timeServer_;
-  }
+  [[nodiscard]] system_core::time_server::TimeServer& timeServer() noexcept { return timeServer_; }
 
   /**
    * @brief Register a component with the executive.

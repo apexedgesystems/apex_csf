@@ -23,9 +23,9 @@ using system_core::time_server::TimeServerOutput;
 using system_core::time_server::TimeServerTunableParams;
 using system_core::time_server::TimeSource;
 using system_core::time_server::TimeValid;
-using system_core::time_server::toString;
 using system_core::time_server::TNT_FLAG_LEAP_SECOND_PENDING;
 using system_core::time_server::TNT_FLAG_REF_SWITCHOVER;
+using system_core::time_server::toString;
 
 /* ----------------------------- Wire layout ----------------------------- */
 
@@ -33,17 +33,13 @@ using system_core::time_server::TNT_FLAG_REF_SWITCHOVER;
 TEST(TimeServerData, TntIs40Bytes) { EXPECT_EQ(sizeof(TimeAtNextTone), 40U); }
 
 /** @test SetReferenceTime is 16 bytes. */
-TEST(TimeServerData, SetReferenceTimeIs16Bytes) {
-  EXPECT_EQ(sizeof(SetReferenceTime), 16U);
-}
+TEST(TimeServerData, SetReferenceTimeIs16Bytes) { EXPECT_EQ(sizeof(SetReferenceTime), 16U); }
 
 /** @test SetTimeManual is 8 bytes. */
 TEST(TimeServerData, SetTimeManualIs8Bytes) { EXPECT_EQ(sizeof(SetTimeManual), 8U); }
 
 /** @test TimeServerTunableParams is 16 bytes. */
-TEST(TimeServerData, TunableParamsIs16Bytes) {
-  EXPECT_EQ(sizeof(TimeServerTunableParams), 16U);
-}
+TEST(TimeServerData, TunableParamsIs16Bytes) { EXPECT_EQ(sizeof(TimeServerTunableParams), 16U); }
 
 /** @test TimeServerOutput is 56 bytes. */
 TEST(TimeServerData, OutputIs56Bytes) { EXPECT_EQ(sizeof(TimeServerOutput), 56U); }

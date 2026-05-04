@@ -110,8 +110,8 @@ public:
       return PpsStatus::ERROR_DEVICE;
     }
 
-    const uint32_t SEQ = (config_.edge == PpsEdge::RISING) ? fdata.info.assert_sequence
-                                                           : fdata.info.clear_sequence;
+    const uint32_t SEQ =
+        (config_.edge == PpsEdge::RISING) ? fdata.info.assert_sequence : fdata.info.clear_sequence;
 
     // First call after init: prime the sequence baseline without reporting
     // an edge so we don't synthesize one from whatever the kernel happened
@@ -136,7 +136,8 @@ public:
       ++stats_.errorCount;
       return PpsStatus::ERROR_DEVICE;
     }
-    timestampNs = static_cast<int64_t>(ts.tv_sec) * 1'000'000'000LL + static_cast<int64_t>(ts.tv_nsec);
+    timestampNs =
+        static_cast<int64_t>(ts.tv_sec) * 1'000'000'000LL + static_cast<int64_t>(ts.tv_nsec);
     ++stats_.captureCount;
     return PpsStatus::OK;
   }

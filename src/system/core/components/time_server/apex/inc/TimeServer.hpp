@@ -104,9 +104,9 @@ public:
    * separately. TimeServer is fully ready to consume one when available.
    */
   struct CanSyncEvent {
-    std::int64_t epochNs = 0;  ///< Network-time UTC carried in the sync frame.
-    std::int64_t localNs = 0;  ///< Receiver's hardware timestamp at frame arrival.
-    bool present = false;      ///< True if a new sync event is available this tick.
+    std::int64_t epochNs = 0; ///< Network-time UTC carried in the sync frame.
+    std::int64_t localNs = 0; ///< Receiver's hardware timestamp at frame arrival.
+    bool present = false;     ///< True if a new sync event is available this tick.
   };
 
   /// Delegate that polls a CAN-sync source. Tick reads it once per frame

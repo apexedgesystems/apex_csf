@@ -28,8 +28,7 @@ namespace {
 /// Reinterpret an arbitrary trivially-copyable struct as a read-only span,
 /// suitable for passing as a handleCommand payload.
 template <typename T> apex::compat::rospan<std::uint8_t> asPayload(const T& obj) noexcept {
-  return apex::compat::rospan<std::uint8_t>(reinterpret_cast<const std::uint8_t*>(&obj),
-                                            sizeof(T));
+  return apex::compat::rospan<std::uint8_t>(reinterpret_cast<const std::uint8_t*>(&obj), sizeof(T));
 }
 } // namespace
 using system_core::time_server::SetReferenceTime;
@@ -506,8 +505,7 @@ TEST(TimeServer, FreerunLatchesWallClock) {
   // moment of transition. computeUtcNs at the same steady instant
   // returns the latched wall clock (within one ns -- the latch is
   // exact in the synthetic timeline).
-  EXPECT_EQ(s.computeUtcNs(syntheticSteady),
-            1'700'000'000LL * NS_PER_SEC + 7 * NS_PER_SEC);
+  EXPECT_EQ(s.computeUtcNs(syntheticSteady), 1'700'000'000LL * NS_PER_SEC + 7 * NS_PER_SEC);
 
   // Source is now ONBOARD (FREERUN's effective source).
   EXPECT_EQ(s.currentTnt().source, static_cast<std::uint8_t>(TimeSource::ONBOARD));
@@ -774,8 +772,7 @@ TEST(TimeServer, HandleCommandAcceptRemoteTnt) {
 
   h.setSteadyNow(2 * NS_PER_SEC);
   std::vector<std::uint8_t> response;
-  EXPECT_EQ(h.server().handleCommand(TimeServer::OP_ACCEPT_REMOTE_TNT,
-                                     asPayload(remote), response),
+  EXPECT_EQ(h.server().handleCommand(TimeServer::OP_ACCEPT_REMOTE_TNT, asPayload(remote), response),
             static_cast<std::uint8_t>(system_core::system_component::CommandResult::SUCCESS));
   EXPECT_EQ(h.server().currentTnt().epochNs, 50 * NS_PER_SEC);
 }
@@ -791,11 +788,10 @@ TEST(TimeServer, PtpSyncTickAnchorsAndPublishes) {
   s.setWallClock({+[](void*) noexcept -> std::int64_t { return synthWall; }, nullptr});
 
   std::vector<TimeAtNextTone> tnts;
-  s.setBroadcastDelegate(
-      {+[](void* ctx, const TimeAtNextTone& tnt) noexcept {
-         static_cast<std::vector<TimeAtNextTone>*>(ctx)->push_back(tnt);
-       },
-       &tnts});
+  s.setBroadcastDelegate({+[](void* ctx, const TimeAtNextTone& tnt) noexcept {
+                            static_cast<std::vector<TimeAtNextTone>*>(ctx)->push_back(tnt);
+                          },
+                          &tnts});
 
   TimeServerTunableParams tprm;
   tprm.mode = static_cast<std::uint8_t>(system_core::time_server::TimeServerMode::PTP_SYNC);
@@ -851,9 +847,7 @@ TEST(TimeServer, CanSyncAnchorsFromDelegate) {
   EXPECT_EQ(s.currentTnt().valid, static_cast<std::uint8_t>(TimeValid::NONE));
 
   // Event present: anchor and publish.
-  nextEvent = {.epochNs = 1'700'000'000LL * NS_PER_SEC,
-               .localNs = NS_PER_SEC,
-               .present = true};
+  nextEvent = {.epochNs = 1'700'000'000LL * NS_PER_SEC, .localNs = NS_PER_SEC, .present = true};
   synthSteady = NS_PER_SEC;
   s.tick(1);
   EXPECT_EQ(s.currentTnt().valid, static_cast<std::uint8_t>(TimeValid::VALID));
@@ -940,8 +934,8 @@ public:
 
 class BusExposingTimeServer final : public TimeServer {
 public:
-  using TimeServer::TimeServer;
   using system_core::system_component::SystemComponentBase::setInternalBus;
+  using TimeServer::TimeServer;
 };
 
 } // namespace
@@ -980,8 +974,7 @@ TEST(TimeServer, HandleCommandSetReferenceTime) {
   ref.source = static_cast<std::uint8_t>(TimeSource::GPS);
   std::vector<std::uint8_t> response;
 
-  EXPECT_EQ(h.server().handleCommand(TimeServer::OP_SET_REFERENCE_TIME,
-                                     asPayload(ref), response),
+  EXPECT_EQ(h.server().handleCommand(TimeServer::OP_SET_REFERENCE_TIME, asPayload(ref), response),
             static_cast<std::uint8_t>(system_core::system_component::CommandResult::SUCCESS));
 
   // Edge applies the pending reference.
@@ -996,11 +989,11 @@ TEST(TimeServer, HandleCommandSetReferenceTimeShortPayloadRejected) {
   std::array<std::uint8_t, 4> shortBuf{};
   std::vector<std::uint8_t> response;
 
-  EXPECT_EQ(s.handleCommand(TimeServer::OP_SET_REFERENCE_TIME,
-                            apex::compat::rospan<std::uint8_t>(shortBuf.data(), shortBuf.size()),
-                            response),
-            static_cast<std::uint8_t>(
-                system_core::system_component::CommandResult::INVALID_PAYLOAD));
+  EXPECT_EQ(
+      s.handleCommand(TimeServer::OP_SET_REFERENCE_TIME,
+                      apex::compat::rospan<std::uint8_t>(shortBuf.data(), shortBuf.size()),
+                      response),
+      static_cast<std::uint8_t>(system_core::system_component::CommandResult::INVALID_PAYLOAD));
 }
 
 /** @test SET_TIME_MANUAL with short payload returns INVALID_PAYLOAD. */
@@ -1009,11 +1002,11 @@ TEST(TimeServer, HandleCommandSetTimeManualShortPayloadRejected) {
   std::array<std::uint8_t, 4> shortBuf{};
   std::vector<std::uint8_t> response;
 
-  EXPECT_EQ(s.handleCommand(TimeServer::OP_SET_TIME_MANUAL,
-                            apex::compat::rospan<std::uint8_t>(shortBuf.data(), shortBuf.size()),
-                            response),
-            static_cast<std::uint8_t>(
-                system_core::system_component::CommandResult::INVALID_PAYLOAD));
+  EXPECT_EQ(
+      s.handleCommand(TimeServer::OP_SET_TIME_MANUAL,
+                      apex::compat::rospan<std::uint8_t>(shortBuf.data(), shortBuf.size()),
+                      response),
+      static_cast<std::uint8_t>(system_core::system_component::CommandResult::INVALID_PAYLOAD));
 }
 
 /** @test ACCEPT_REMOTE_TNT with short payload returns INVALID_PAYLOAD. */
@@ -1022,11 +1015,11 @@ TEST(TimeServer, HandleCommandAcceptRemoteTntShortPayloadRejected) {
   std::array<std::uint8_t, 4> shortBuf{};
   std::vector<std::uint8_t> response;
 
-  EXPECT_EQ(s.handleCommand(TimeServer::OP_ACCEPT_REMOTE_TNT,
-                            apex::compat::rospan<std::uint8_t>(shortBuf.data(), shortBuf.size()),
-                            response),
-            static_cast<std::uint8_t>(
-                system_core::system_component::CommandResult::INVALID_PAYLOAD));
+  EXPECT_EQ(
+      s.handleCommand(TimeServer::OP_ACCEPT_REMOTE_TNT,
+                      apex::compat::rospan<std::uint8_t>(shortBuf.data(), shortBuf.size()),
+                      response),
+      static_cast<std::uint8_t>(system_core::system_component::CommandResult::INVALID_PAYLOAD));
 }
 
 /** @test GET_TIME_STATUS returns the current OUTPUT block. */
@@ -1062,8 +1055,7 @@ TEST(TimeServer, HandleCommandSetTimeManual) {
   cmd.epochNs = 999 * NS_PER_SEC;
   std::vector<std::uint8_t> response;
 
-  EXPECT_EQ(h.server().handleCommand(TimeServer::OP_SET_TIME_MANUAL,
-                                     asPayload(cmd), response),
+  EXPECT_EQ(h.server().handleCommand(TimeServer::OP_SET_TIME_MANUAL, asPayload(cmd), response),
             static_cast<std::uint8_t>(system_core::system_component::CommandResult::SUCCESS));
 
   EXPECT_EQ(h.server().currentTnt().epochNs, 999 * NS_PER_SEC);
@@ -1094,10 +1086,10 @@ TEST(TimeServer, HandleCommandUnknownOpcode) {
   std::vector<std::uint8_t> response;
   // 0x0700 is in the component-specific range but not one TimeServer claims.
   // Base class returns NOT_IMPLEMENTED for unknown opcodes outside its range.
-  const std::uint8_t result = s.handleCommand(0x0700, apex::compat::rospan<std::uint8_t>(),
-                                              response);
-  EXPECT_NE(result, static_cast<std::uint8_t>(
-                        system_core::system_component::CommandResult::SUCCESS));
+  const std::uint8_t result =
+      s.handleCommand(0x0700, apex::compat::rospan<std::uint8_t>(), response);
+  EXPECT_NE(result,
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::SUCCESS));
 }
 
 /** @test computeUtcNs returns 0 before any reference is established. */
