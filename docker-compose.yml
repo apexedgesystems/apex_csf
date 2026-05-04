@@ -22,10 +22,16 @@ x-embedded: &embedded
   command: bash
 
 # Common build arguments
+#
+# BUILDKIT_INLINE_CACHE=1 tells BuildKit to embed layer-cache metadata in
+# the built image manifest. When the image is later pushed to a registry,
+# `cache-from: type=registry,ref=...` against that tag can skip unchanged
+# layers on subsequent builds. Local builds that never push are unaffected.
 x-build-args: &build-args
   USER: ${USER}
   HOST_UID: ${HOST_UID}
   HOST_GID: ${HOST_GID}
+  BUILDKIT_INLINE_CACHE: "1"
 
 services:
   # ============================================================================
