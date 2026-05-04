@@ -74,9 +74,8 @@ const char* toString(TimeValid v) noexcept;
 
 /**
  * @enum TimeServerMode
- * @brief Operating mode (TPRM-selected). PRIMARY is the only mode
- *        implemented in this branch; the rest are placeholders for the
- *        distributed-timing follow-up (Phase 4 of the ticket).
+ * @brief Operating mode (TPRM-selected). Selects which sync source
+ *        TimeServer treats as authoritative.
  */
 enum class TimeServerMode : std::uint8_t {
   PRIMARY = 0,   ///< Local PPS + onboard reference. Sole authority.

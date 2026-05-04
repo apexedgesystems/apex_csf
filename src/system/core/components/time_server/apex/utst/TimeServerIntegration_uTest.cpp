@@ -216,8 +216,8 @@ TEST(TimeServerIntegration, EdgeProducesTntBroadcast) {
 /* ----------------------------- ATS AT_TIME end-to-end ----------------------------- */
 
 /**
- * @test Phase 3.3 closeout: an ATS sequence with an AT_TIME-style step
- *       fires only once UTC crosses the target.
+ * @test An ATS sequence with an AT_TIME-style step fires only once UTC
+ *       crosses the target.
  *
  * Builds the smallest possible ATS sequence (one step, fixed delay), wires it
  * through ActionInterface.timeProvider (which the executive sets to

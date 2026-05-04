@@ -337,12 +337,11 @@ void TimeServer::handleSetTimeManual(const SetTimeManual& cmd) noexcept {
 /* ----------------------------- PTP_SYNC mode ----------------------------- */
 
 void TimeServer::tickPtpSync() noexcept {
-  // Lightweight PTP_SYNC interpretation per ticket Open Question #3:
-  // we read CLOCK_REALTIME (or whatever wallClock_ provides) and trust
-  // ptp4l / a similar daemon is keeping it disciplined. Hardware PHC
-  // (/dev/ptp0) reads via PTP_CLOCK_GETTIME would give better accuracy
-  // but require a separate dependency on the PTP user-space stack;
-  // that's a follow-up.
+  // Lightweight PTP_SYNC interpretation: read CLOCK_REALTIME (or whatever
+  // wallClock_ provides) and trust ptp4l or a similar daemon is keeping it
+  // disciplined. Hardware PHC (/dev/ptp0) reads via PTP_CLOCK_GETTIME would
+  // give better accuracy but require a separate dependency on the PTP
+  // user-space stack.
   const std::int64_t epochNs = wallClock_();
   if (epochNs <= 0) {
     return;

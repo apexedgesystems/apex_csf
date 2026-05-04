@@ -14,18 +14,21 @@ using apex::hal::c2000::C2000_PPS_NO_NEW_EDGE;
 using apex::hal::c2000::C2000_PPS_OK;
 using apex::hal::c2000::C2000Pps;
 
+/** @test Default-constructed C2000Pps reports uninitialized with zero pulses. */
 TEST(C2000Pps, DefaultUninitialized) {
   C2000Pps pps;
   EXPECT_FALSE(pps.isInitialized());
   EXPECT_EQ(pps.pulseCount(), 0U);
 }
 
+/** @test init() with a valid eCAP unit number returns OK. */
 TEST(C2000Pps, InitSucceeds) {
   C2000Pps pps;
   EXPECT_EQ(pps.init(1), C2000_PPS_OK);
   EXPECT_TRUE(pps.isInitialized());
 }
 
+/** @test readCapture() before init() reports ERROR_NOT_INIT. */
 TEST(C2000Pps, ReadCaptureBeforeInit) {
   C2000Pps pps;
   int64_t ts = -1;
@@ -53,6 +56,7 @@ TEST(C2000Pps, ConvertsTicksToNsAt200MHz) {
   EXPECT_EQ(ts, 5000);
 }
 
+/** @test Successfully consuming an edge clears the latched flag for the next read. */
 TEST(C2000Pps, ConsumeClearsFlag) {
   C2000Pps pps;
   ASSERT_EQ(pps.init(1), C2000_PPS_OK);
@@ -62,6 +66,7 @@ TEST(C2000Pps, ConsumeClearsFlag) {
   EXPECT_EQ(pps.readCapture(ts), C2000_PPS_NO_NEW_EDGE);
 }
 
+/** @test deinit() returns the driver to the uninitialized state. */
 TEST(C2000Pps, DeinitClearsInitialized) {
   C2000Pps pps;
   ASSERT_EQ(pps.init(1), C2000_PPS_OK);

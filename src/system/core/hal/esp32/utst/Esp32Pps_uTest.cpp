@@ -14,24 +14,28 @@ using apex::hal::PpsEdge;
 using apex::hal::PpsStatus;
 using apex::hal::esp32::Esp32Pps;
 
+/** @test Default-constructed Esp32Pps reports uninitialized with zero pulses. */
 TEST(Esp32Pps, DefaultUninitialized) {
   Esp32Pps pps(0);
   EXPECT_FALSE(pps.isInitialized());
   EXPECT_EQ(pps.pulseCount(), 0U);
 }
 
+/** @test init() with default config and a valid GPIO returns OK. */
 TEST(Esp32Pps, InitSucceeds) {
   Esp32Pps pps(4);
   EXPECT_EQ(pps.init({}), PpsStatus::OK);
   EXPECT_TRUE(pps.isInitialized());
 }
 
+/** @test readCapture() before init() reports ERROR_NOT_INIT. */
 TEST(Esp32Pps, ReadCaptureBeforeInit) {
   Esp32Pps pps(4);
   int64_t ts = -1;
   EXPECT_EQ(pps.readCapture(ts), PpsStatus::ERROR_NOT_INIT);
 }
 
+/** @test mockEdge takes esp_timer_get_time us and reports it as ns through readCapture. */
 TEST(Esp32Pps, MockEdgeConvertsUsToNs) {
   Esp32Pps pps(4);
   ASSERT_EQ(pps.init({}), PpsStatus::OK);
@@ -42,6 +46,7 @@ TEST(Esp32Pps, MockEdgeConvertsUsToNs) {
   EXPECT_EQ(pps.pulseCount(), 1U);
 }
 
+/** @test Successfully consuming an edge clears the latched flag for the next read. */
 TEST(Esp32Pps, ConsumeClearsFlag) {
   Esp32Pps pps(4);
   ASSERT_EQ(pps.init({}), PpsStatus::OK);
@@ -51,6 +56,7 @@ TEST(Esp32Pps, ConsumeClearsFlag) {
   EXPECT_EQ(pps.readCapture(ts), PpsStatus::NO_NEW_EDGE);
 }
 
+/** @test FALLING-edge configuration is accepted by init(). */
 TEST(Esp32Pps, FallingEdgeConfigStored) {
   Esp32Pps pps(4);
   PpsConfig cfg;
@@ -58,6 +64,7 @@ TEST(Esp32Pps, FallingEdgeConfigStored) {
   EXPECT_EQ(pps.init(cfg), PpsStatus::OK);
 }
 
+/** @test deinit() returns the driver to the uninitialized state. */
 TEST(Esp32Pps, DeinitClearsInitialized) {
   Esp32Pps pps(4);
   ASSERT_EQ(pps.init({}), PpsStatus::OK);

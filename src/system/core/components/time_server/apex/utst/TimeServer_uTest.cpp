@@ -121,6 +121,27 @@ TEST(TimeServer, DefaultStateNoneUnknown) {
   EXPECT_EQ(s.driftSampleCount(), 0U);
 }
 
+/** @test defaultSteadyClock returns a working CLOCK_MONOTONIC delegate. */
+TEST(TimeServer, DefaultSteadyClockNonZero) {
+  auto delegate = TimeServer::defaultSteadyClock();
+  ASSERT_TRUE(static_cast<bool>(delegate));
+  const std::int64_t a = delegate();
+  const std::int64_t b = delegate();
+  EXPECT_GT(a, 0);
+  EXPECT_GE(b, a); // monotonic
+}
+
+/** @test defaultWallClock returns a working CLOCK_REALTIME delegate. */
+TEST(TimeServer, DefaultWallClockNonZero) {
+  auto delegate = TimeServer::defaultWallClock();
+  ASSERT_TRUE(static_cast<bool>(delegate));
+  const std::int64_t value = delegate();
+  // Sanity: should be a Unix-epoch timestamp roughly near current era,
+  // i.e. > Jan 1 2020 in nanoseconds (1.577e18) and < Jan 1 2100 (4.1e18).
+  EXPECT_GT(value, 1'577'000'000'000'000'000LL);
+  EXPECT_LT(value, 4'100'000'000'000'000'000LL);
+}
+
 /** @test Component identity matches header constants. */
 TEST(TimeServer, ComponentIdentity) {
   TimeServer s;
@@ -304,6 +325,27 @@ TEST(TimeServer, DriftFilterTapsClamped) {
   // observable directly without an accessor, but the absence of a buffer
   // overrun confirms it.
   EXPECT_EQ(s.driftSampleCount(), 0U);
+}
+
+/** @test driftFilterTaps=0 in TPRM is clamped up to 1 (no zero-divide risk). */
+TEST(TimeServer, DriftFilterTapsZeroClampedToOne) {
+  TimeServerHarness h;
+  TimeServerTunableParams tprm;
+  tprm.driftFilterTaps = 0;
+  h.loadTprm(tprm);
+
+  h.tick();
+  SetReferenceTime ref{};
+  h.server().handleSetReferenceTime(ref);
+
+  // Two valid edges -- first primes correlation, second feeds a drift sample.
+  // With clamp to 1, sample count caps at 1; without clamp this would divide
+  // by zero in pushDriftSample's mean computation.
+  h.setSteadyNow(NS_PER_SEC);
+  h.injectAndTick(NS_PER_SEC);
+  h.setSteadyNow(2 * NS_PER_SEC);
+  h.injectAndTick(2 * NS_PER_SEC);
+  EXPECT_EQ(h.server().driftSampleCount(), 1U);
 }
 
 /* ----------------------------- Quality progression ----------------------------- */
@@ -961,6 +1003,32 @@ TEST(TimeServer, HandleCommandSetReferenceTimeShortPayloadRejected) {
                 system_core::system_component::CommandResult::INVALID_PAYLOAD));
 }
 
+/** @test SET_TIME_MANUAL with short payload returns INVALID_PAYLOAD. */
+TEST(TimeServer, HandleCommandSetTimeManualShortPayloadRejected) {
+  TimeServer s;
+  std::array<std::uint8_t, 4> shortBuf{};
+  std::vector<std::uint8_t> response;
+
+  EXPECT_EQ(s.handleCommand(TimeServer::OP_SET_TIME_MANUAL,
+                            apex::compat::rospan<std::uint8_t>(shortBuf.data(), shortBuf.size()),
+                            response),
+            static_cast<std::uint8_t>(
+                system_core::system_component::CommandResult::INVALID_PAYLOAD));
+}
+
+/** @test ACCEPT_REMOTE_TNT with short payload returns INVALID_PAYLOAD. */
+TEST(TimeServer, HandleCommandAcceptRemoteTntShortPayloadRejected) {
+  TimeServer s;
+  std::array<std::uint8_t, 4> shortBuf{};
+  std::vector<std::uint8_t> response;
+
+  EXPECT_EQ(s.handleCommand(TimeServer::OP_ACCEPT_REMOTE_TNT,
+                            apex::compat::rospan<std::uint8_t>(shortBuf.data(), shortBuf.size()),
+                            response),
+            static_cast<std::uint8_t>(
+                system_core::system_component::CommandResult::INVALID_PAYLOAD));
+}
+
 /** @test GET_TIME_STATUS returns the current OUTPUT block. */
 TEST(TimeServer, HandleCommandGetTimeStatus) {
   TimeServerHarness h;
@@ -1030,6 +1098,47 @@ TEST(TimeServer, HandleCommandUnknownOpcode) {
                                               response);
   EXPECT_NE(result, static_cast<std::uint8_t>(
                         system_core::system_component::CommandResult::SUCCESS));
+}
+
+/** @test computeUtcNs returns 0 before any reference is established. */
+TEST(TimeServer, ComputeUtcNsBeforeReferenceReturnsZero) {
+  TimeServer s;
+  ASSERT_EQ(s.init(), 0U);
+  EXPECT_EQ(s.computeUtcNs(NS_PER_SEC), 0);
+  EXPECT_EQ(s.currentUtcNs(), 0);
+}
+
+/** @test handleAcceptRemoteTnt with no steady-clock wired is a safe no-op. */
+TEST(TimeServer, HandleAcceptRemoteTntWithoutSteadyClockIsNoop) {
+  TimeServer s;
+  TimeServerTunableParams tprm;
+  tprm.mode = static_cast<std::uint8_t>(system_core::time_server::TimeServerMode::RELAY);
+  s.loadTprm(tprm);
+  ASSERT_EQ(s.init(), 0U);
+
+  TimeAtNextTone remote{};
+  remote.epochNs = 1'700'000'000LL * NS_PER_SEC;
+  remote.source = static_cast<std::uint8_t>(TimeSource::GPS);
+  s.handleAcceptRemoteTnt(remote);
+
+  EXPECT_EQ(s.currentTnt().valid, static_cast<std::uint8_t>(TimeValid::NONE));
+}
+
+/** @test PTP_SYNC tick treats epochNs<=0 from the wall clock as no anchor. */
+TEST(TimeServer, PtpSyncIgnoresNonPositiveWallClock) {
+  static std::int64_t synthSteady = 0;
+  TimeServer s;
+  s.setSteadyClock({+[](void*) noexcept -> std::int64_t { return synthSteady; }, nullptr});
+  s.setWallClock({+[](void*) noexcept -> std::int64_t { return 0; }, nullptr});
+
+  TimeServerTunableParams tprm;
+  tprm.mode = static_cast<std::uint8_t>(system_core::time_server::TimeServerMode::PTP_SYNC);
+  s.loadTprm(tprm);
+  ASSERT_EQ(s.init(), 0U);
+
+  synthSteady = NS_PER_SEC;
+  s.tick(0);
+  EXPECT_EQ(s.currentTnt().valid, static_cast<std::uint8_t>(TimeValid::NONE));
 }
 
 /** @test Glitch count survives across resetStats-equivalent resetCorrelation. */

@@ -27,6 +27,8 @@ apex_add_gtest(
   system_core_time_server
   system_core_action
   hal_mock
+  COVERAGE_FOR
+  system_core_time_server
   LABELS
   system
   core
