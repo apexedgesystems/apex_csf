@@ -21,11 +21,15 @@ x-embedded: &embedded
   privileged: true
   command: bash
 
-# Common build arguments
+# Common build arguments. BUILDKIT_INLINE_CACHE=1 embeds layer-cache
+# metadata in the built image manifest, so a `:latest` tag pushed from CI
+# can later be used as a cache source on subsequent builds without
+# rebuilding unchanged layers.
 x-build-args: &build-args
   USER: ${USER}
   HOST_UID: ${HOST_UID}
   HOST_GID: ${HOST_GID}
+  BUILDKIT_INLINE_CACHE: "1"
 
 services:
   # ============================================================================
@@ -36,6 +40,8 @@ services:
     build:
       context: .
       dockerfile: docker/base.Dockerfile
+      cache_from:
+        - apex.base:latest
       args:
         <<: *build-args
     profiles: ["build-only"]
@@ -49,6 +55,8 @@ services:
     build:
       context: .
       dockerfile: docker/dev/cpu.Dockerfile
+      cache_from:
+        - apex.dev.cpu:latest
       args:
         <<: *build-args
     hostname: apex-dev-cpu

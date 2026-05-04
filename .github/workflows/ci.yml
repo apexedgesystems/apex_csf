@@ -28,6 +28,10 @@ jobs:
 
     env:
       REGISTRY: ghcr.io/${{ github.repository }}
+      # Enable BuildKit so docker-compose.yml's cache_from + BUILDKIT_INLINE_CACHE
+      # actually take effect during `docker compose build`.
+      DOCKER_BUILDKIT: "1"
+      COMPOSE_DOCKER_CLI_BUILD: "1"
 
     steps:
       - name: Checkout
@@ -79,6 +83,10 @@ jobs:
 
     env:
       REGISTRY: ghcr.io/${{ github.repository }}
+      # Enable BuildKit so docker-compose.yml's cache_from + BUILDKIT_INLINE_CACHE
+      # actually take effect during `docker compose build`.
+      DOCKER_BUILDKIT: "1"
+      COMPOSE_DOCKER_CLI_BUILD: "1"
 
     steps:
       - name: Checkout
