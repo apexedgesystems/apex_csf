@@ -40,8 +40,6 @@ services:
     build:
       context: .
       dockerfile: docker/base.Dockerfile
-      cache_from:
-        - apex.base:latest
       args:
         <<: *build-args
     profiles: ["build-only"]
@@ -55,8 +53,6 @@ services:
     build:
       context: .
       dockerfile: docker/dev/cpu.Dockerfile
-      cache_from:
-        - apex.dev.cpu:latest
       args:
         <<: *build-args
     hostname: apex-dev-cpu
