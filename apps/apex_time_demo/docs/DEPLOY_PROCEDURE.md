@@ -44,9 +44,7 @@ cd ApexTimeDemo
 ## What is intentionally NOT here
 
 - **Real GPS integration**: the demo uses `MockPps`. Production apps
-  wire `LinuxPps`/`Stm32Pps`/etc. per the
-  [CUSTOMER_INTEGRATION.md](../../../src/system/core/components/time_server/CUSTOMER_INTEGRATION.md)
-  guide.
+  wire `LinuxPps` / `Stm32Pps` / etc. via TimeServer's `setPpsSource()`.
 - **TPRM authoring step**: the demo runs with TimeServer's default
   TPRM. Production deployments author a TPRM file and pass it via
   `--config`.

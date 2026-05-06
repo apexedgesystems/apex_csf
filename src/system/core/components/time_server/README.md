@@ -206,8 +206,7 @@ struct TimeServerOutput {
 ## 5. Performance
 
 Measured on x86_64 (atom + core hybrid), `--repeats 15`, 8 ptests in
-`TimeServer_PTEST`. CSV at
-`docs/optimization/0503/time_server/final/results.csv`.
+`TimeServer_PTEST`.
 
 | Test                     | Path                                        | Median |  Calls/s |   CV% |
 | ------------------------ | ------------------------------------------- | -----: | -------: | ----: |
@@ -222,9 +221,7 @@ Measured on x86_64 (atom + core hybrid), `--repeats 15`, 8 ptests in
 
 Microarchitecture (perf, `TickWithEdge`): 3.06-3.32 instructions per
 cycle, 0.10% branch miss rate, ~0.06% cache miss rate. No microarchitectural
-slack to exploit; baseline analysis in
-`docs/optimization/0503/time_server/baseline_analysis.md` documents the
-diminishing-returns recommendation.
+slack to exploit.
 
 **Memory footprint:** `TimeServer` instance ~600 bytes (256 B drift
 ring buffer + 56 B OUTPUT + 40 B TNT + delegates + correlation state).
@@ -316,7 +313,7 @@ HAL coverage: `TestHalInterface` (8), `TestHalMock` (18),
 
 ## 8. See Also
 
-- [`apps/apex_time_demo/README.md`](../../../../apps/apex_time_demo/README.md) -- standalone demo with GPS-simulator thread.
+- [`apps/apex_time_demo/README.md`](../../../../../apps/apex_time_demo/README.md) -- standalone demo with GPS-simulator thread.
 - [`src/system/core/hal/base/IPps.hpp`](../../hal/base/IPps.hpp) -- HAL contract.
 - [`src/system/core/hal/linux/inc/LinuxPps.hpp`](../../hal/linux/inc/LinuxPps.hpp) -- `/dev/pps[N]` impl.
 - [`src/system/core/hal/stm32/inc/Stm32Pps.hpp`](../../hal/stm32/inc/Stm32Pps.hpp) -- STM32 EXTI/DWT impl.
