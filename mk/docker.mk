@@ -76,11 +76,24 @@ shell-$(1): docker-$(1)
 	$$(call _docker_shell,$(1))
 endef
 
-# _builder_target: Generate docker-builder-<name> build target
-# $(1) = builder suffix, $(2) = dev service prerequisite
+# _builder_target: Generate docker-builder-<name> build target.
+# $(1) = builder suffix
+#
+# Builders compile the apex source against a dev image (e.g. apex.builder.cpu
+# uses apex.dev.cpu as its FROM). The dev image is treated as an external
+# input: builder targets do NOT carry docker-<dev> as a prerequisite. Callers
+# must ensure the required dev image is in the local docker daemon, either by:
+#
+#   - running `make docker-devs` first, or
+#   - pulling from the registry before invoking make (CI flow).
+#
+# This avoids the wasteful dev-image rebuild that would otherwise happen on
+# every `make artifacts` invocation in CI, where the dev images are already
+# pulled from ghcr.io. A first-time local build should use `make docker-all`,
+# which orders the dev/builder builds correctly.
 define _builder_target
 .PHONY: docker-builder-$(1)
-docker-builder-$(1): docker-$(2)
+docker-builder-$(1):
 	$$(call _docker_build,builder-$(1))
 endef
 
@@ -88,7 +101,15 @@ endef
 # Aggregate Targets
 # ------------------------------------------------------------------------------
 
-docker-all: docker-base docker-devs docker-builders docker-final
+# Top-down build for local developers starting from scratch. Each phase is
+# invoked recursively so the stages serialize even under parallel make:
+# builders no longer carry transitive dev-image prerequisites (see
+# _builder_target), so the explicit ordering belongs here.
+docker-all:
+	@$(MAKE) docker-base
+	@$(MAKE) docker-devs
+	@$(MAKE) docker-builders
+	@$(MAKE) docker-final
 	$(call log,docker,All images built)
 
 docker-devs: docker-dev docker-dev-cuda docker-dev-jetson \
@@ -131,16 +152,8 @@ $(foreach svc,dev-rpi dev-riscv64 dev-zephyr dev-stm32 dev-esp32 dev-pico \
 # Builder Images (generated from templates)
 # ------------------------------------------------------------------------------
 
-$(eval $(call _builder_target,cpu,dev))
-$(eval $(call _builder_target,cuda,dev-cuda))
-$(eval $(call _builder_target,jetson,dev-jetson))
-$(eval $(call _builder_target,rpi,dev-rpi))
-$(eval $(call _builder_target,riscv64,dev-riscv64))
-$(eval $(call _builder_target,stm32,dev-stm32))
-$(eval $(call _builder_target,arduino,dev-arduino))
-$(eval $(call _builder_target,pico,dev-pico))
-$(eval $(call _builder_target,esp32,dev-esp32))
-$(eval $(call _builder_target,c2000,dev-c2000))
+$(foreach b,cpu cuda jetson rpi riscv64 stm32 arduino pico esp32 c2000,\
+  $(eval $(call _builder_target,$(b))))
 
 # ------------------------------------------------------------------------------
 # Interactive Shells (generated from templates)

@@ -8,7 +8,7 @@ if (APEX_PLATFORM_BAREMETAL)
 endif ()
 
 # ------------------------------------------------------------------------------
-# Sources (8 test files)
+# Sources (9 test files)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
@@ -16,6 +16,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/Stm32Can_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Stm32Flash_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Stm32I2c_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Stm32Pps_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Stm32Spi_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Stm32SysTickSource_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Stm32TimerTickSource_uTest.cpp"

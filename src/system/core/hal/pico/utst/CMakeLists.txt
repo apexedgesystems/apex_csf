@@ -8,11 +8,12 @@ if (APEX_PLATFORM_BAREMETAL)
 endif ()
 
 # ------------------------------------------------------------------------------
-# Sources (4 test files)
+# Sources (5 test files)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/PicoFlash_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/PicoPps_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/PicoSysTickSource_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/PicoUart_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/PicoUsbCdc_uTest.cpp"

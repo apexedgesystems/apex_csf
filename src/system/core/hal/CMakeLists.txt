@@ -2,7 +2,9 @@
 # hal - Hardware Abstraction Layer
 #
 # Directory structure:
-#   base/  - Platform-agnostic interfaces (IUart, ICan, ISpi, II2c, IFlash)
+#   base/  - Platform-agnostic interfaces (IUart, ICan, ISpi, II2c, IFlash, IPps)
+#   mock/  - Software-driven mocks for deterministic testing
+#   linux/ - Linux/POSIX implementations (Ubuntu, Jetson, RPi, RISC-V)
 #   stm32/ - STM32 implementations (requires STM32 HAL)
 #   avr/   - AVR implementations (ATmega328P, avr-libc)
 #   pico/  - Raspberry Pi Pico implementations (Pico SDK)
@@ -10,6 +12,8 @@
 #
 # Libraries:
 #   hal_interface - Abstract interfaces (INTERFACE, header-only)
+#   hal_mock      - Mock implementations for tests (INTERFACE, header-only)
+#   hal_linux     - Linux implementations (INTERFACE, header-only)
 #   hal_stm32     - STM32 implementations (INTERFACE, header-only)
 #   hal_avr       - AVR implementations (INTERFACE, header-only)
 #   hal_pico      - Pico implementations (INTERFACE, header-only)
@@ -23,6 +27,17 @@
 # Base interfaces (always built)
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/base/CMakeLists.txt")
   add_subdirectory(base)
+endif ()
+
+# Mock implementations for deterministic host-side tests
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/mock/CMakeLists.txt")
+  add_subdirectory(mock)
+endif ()
+
+# Linux implementations (skipped on bare-metal builds via the subdir's
+# own APEX_PLATFORM_BAREMETAL guard).
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/linux/CMakeLists.txt")
+  add_subdirectory(linux)
 endif ()
 
 # Platform implementations: always added so mock-mode tests run on host.

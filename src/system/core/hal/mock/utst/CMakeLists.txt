@@ -1,33 +1,28 @@
 # ==============================================================================
-# Unit Tests: hal_c2000
-#
-# Mock-mode tests for C2000 HAL (host-side, no driverlib).
+# hal_mock Unit Tests
 # ==============================================================================
 
-include(apex/All)
+if (APEX_PLATFORM_BAREMETAL)
+  return()
+endif ()
 
 # ------------------------------------------------------------------------------
-# Sources (2 test files)
+# Sources
 # ------------------------------------------------------------------------------
 
-set(UNIT_TEST_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/C2000Pps_uTest.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/C2000TimerTickSource_uTest.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/C2000Uart_uTest.cpp"
-)
+set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/MockPps_uTest.cpp")
 
 # ------------------------------------------------------------------------------
-# Unit Tests
+# Test Executable
 # ------------------------------------------------------------------------------
 
 apex_add_gtest(
   TARGET
-  TestHalC2000
+  TestHalMock
   SOURCES
   ${UNIT_TEST_SOURCES}
   LINK
-  hal_c2000
+  hal_mock
   LABELS
   hal
-  c2000
 )

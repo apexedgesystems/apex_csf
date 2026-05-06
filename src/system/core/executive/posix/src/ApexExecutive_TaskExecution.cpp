@@ -221,6 +221,10 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
     // Execute scheduled tasks (core work)
     [[maybe_unused]] auto taskStatus = scheduler_.executeTasksOnTickMulti(tick);
 
+    // Tick TimeServer first so any PPS edge captured this frame updates the
+    // correlation before the action engine reads its time provider.
+    timeServer_.tick(static_cast<std::uint32_t>(taskCycles));
+
     // Run action engine: evaluate watchpoints, tick sequences, apply data-writes.
     // Runs after scheduler so it observes freshly-written task outputs.
     actionComp_.tick(static_cast<std::uint32_t>(taskCycles));

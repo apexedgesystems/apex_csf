@@ -1,33 +1,37 @@
 # ==============================================================================
-# Unit Tests: hal_c2000
-#
-# Mock-mode tests for C2000 HAL (host-side, no driverlib).
+# Unit Tests: system_core_time_server
 # ==============================================================================
 
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Sources (2 test files)
+# Sources
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/C2000Pps_uTest.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/C2000TimerTickSource_uTest.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/C2000Uart_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TimeServerData_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TimeServer_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TimeServerIntegration_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TimeServerDistributed_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------
-# Unit Tests
+# Test Target
 # ------------------------------------------------------------------------------
 
 apex_add_gtest(
   TARGET
-  TestHalC2000
+  TestSystemCoreTimeServer
   SOURCES
   ${UNIT_TEST_SOURCES}
   LINK
-  hal_c2000
+  system_core_time_server
+  system_core_action
+  hal_mock
+  COVERAGE_FOR
+  system_core_time_server
   LABELS
-  hal
-  c2000
+  system
+  core
+  time_server
 )

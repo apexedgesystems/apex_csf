@@ -4,6 +4,15 @@
 # Runs format-check, debug build, and test suite inside Docker Compose
 # containers. Uses the CPU dev image. CUDA build paths are skipped when
 # CUDAToolkit_FOUND is false at configure time.
+#
+# Image strategy:
+#   - The registry copies of apex.base:latest and apex.dev.cpu:latest are
+#     refreshed by docker-images.yml on every push to main that touches
+#     docker/**, so they already match main's Dockerfiles.
+#   - If this PR did not change docker/, the pulled :latest tags are
+#     correct as-is and we skip docker compose build entirely.
+#   - If this PR did change docker/, we fall back to docker compose build
+#     so the test suite runs against the PR's intended images.
 # ==============================================================================
 name: CI
 
@@ -32,6 +41,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Prepare environment
         run: |
@@ -52,7 +63,19 @@ jobs:
           docker pull $REGISTRY/apex.base:latest    && docker tag $REGISTRY/apex.base:latest    apex.base    || true
           docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
 
+      - name: Detect docker/ changes
+        id: docker
+        run: |
+          if git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD -- docker/ docker-compose.yml | grep -q .; then
+            echo "Dockerfile or compose change detected -- will rebuild images"
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No docker/ changes -- using registry :latest as-is"
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build base and dev images
+        if: steps.docker.outputs.rebuild == 'true'
         run: |
           docker compose build base
           docker compose build dev
@@ -83,6 +106,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Prepare environment
         run: |
@@ -103,7 +128,19 @@ jobs:
           docker pull $REGISTRY/apex.base:latest    && docker tag $REGISTRY/apex.base:latest    apex.base    || true
           docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
 
+      - name: Detect docker/ changes
+        id: docker
+        run: |
+          if git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD -- docker/ docker-compose.yml | grep -q .; then
+            echo "Dockerfile or compose change detected -- will rebuild images"
+            echo "rebuild=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No docker/ changes -- using registry :latest as-is"
+            echo "rebuild=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build base and dev images
+        if: steps.docker.outputs.rebuild == 'true'
         run: |
           docker compose build base
           docker compose build dev

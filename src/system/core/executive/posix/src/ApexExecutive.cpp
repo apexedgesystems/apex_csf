@@ -577,9 +577,32 @@ RunResult ApexExecutive::run() noexcept {
   registerCoreComponent(registry_);
   registerCoreComponent(*interface_);
 
+  // Wire and register TimeServer (sole time authority for the system).
+  // The PPS source and broadcast delegate are application concerns; the
+  // executive only wires the steady-clock dependency and registers the
+  // component. Without a PPS source, TimeServer broadcasts NONE/UNKNOWN
+  // and the ATS time provider returns 0 -- AT_TIME triggers wait until
+  // an external caller wires up a real PPS source.
+  timeServer_.setSteadyClock(system_core::time_server::TimeServer::defaultSteadyClock());
+  timeServer_.setWallClock(system_core::time_server::TimeServer::defaultWallClock());
+  {
+    const std::uint8_t TIME_SERVER_INIT = timeServer_.init();
+    if (TIME_SERVER_INIT != 0) {
+      sysLog_->error(label(), TIME_SERVER_INIT,
+                     fmt::format("TimeServer init FAILED: {}",
+                                 timeServer_.lastError() ? timeServer_.lastError() : "unknown"));
+    } else {
+      sysLog_->info(label(), "TimeServer init: SUCCESS");
+    }
+  }
+  registerCoreComponent(timeServer_);
+
   // Wire and register ActionComponent (watchpoints, sequences, data-write engine)
   actionComp_.setResolver(actionResolverFn, static_cast<void*>(&registry_));
   actionComp_.setCommandHandler(actionCommandHandlerFn, static_cast<void*>(&registry_));
+  // ATS AT_TIME triggers fire on UTC supplied by TimeServer (microseconds).
+  // Until correlation is established the delegate returns 0 and ATS waits.
+  actionComp_.iface().timeProvider = timeServer_.utcTimeProvider();
   {
     const std::uint8_t ACTION_INIT = actionComp_.init();
     if (ACTION_INIT != 0) {
