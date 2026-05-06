@@ -203,13 +203,13 @@ TEST(MosfetBsim3Meyer, TotalGateCapacitanceSanity) {
   const double Cox = MosfetBsim3::oxideCapDensity(p);
   const double CoxWL = Cox * p.W * p.L;
 
-  // Cutoff: total = Cgb ≈ CoxWL (plus 2*Cov for overlaps to source/drain)
+  // Cutoff: total = Cgb ~= CoxWL (plus 2*Cov for overlaps to source/drain)
   const auto cCut = MosfetBsim3::meyerCapacitances(0.0, 1.0, 0.0, p);
   const double totalCut = cCut.Cgs + cCut.Cgd + cCut.Cgb;
   EXPECT_GT(totalCut, CoxWL); // Cgb plus 2*Cov
   EXPECT_LT(totalCut, 1.5 * CoxWL); // not pathologically large
 
-  // Saturation: total ≈ (2/3)*CoxWL + 2*Cov (Cgs + Cgd_ov)
+  // Saturation: total ~= (2/3)*CoxWL + 2*Cov (Cgs + Cgd_ov)
   const auto cSat = MosfetBsim3::meyerCapacitances(p.Vth0 + 1.0, 5.0, 0.0, p);
   const double totalSat = cSat.Cgs + cSat.Cgd + cSat.Cgb;
   EXPECT_GT(totalSat, 0.6 * CoxWL);
@@ -218,7 +218,6 @@ TEST(MosfetBsim3Meyer, TotalGateCapacitanceSanity) {
 
 /* ========================== L2 Unblocker Probe ========================== */
 
-namespace {
 
 constexpr double KP = 5e-3;
 constexpr double VTH_ENH = 1.17;
@@ -234,7 +233,7 @@ MosfetBsim3Params make4004Params(double kpScaled, double vth) {
   p.W = 1.0; p.L = 1.0;
   p.Vth0 = vth;
   p.lambda = LAMBDA;
-  // 4004 process is 10 µm -- second-order effects are mild.
+  // 4004 process is 10 um -- second-order effects are mild.
   p.eta0 = 0.0;        // Negligible DIBL at long channel
   p.K1 = 0.0;          // Body effect disabled (vbs = 0)
   p.K2 = 0.0;
@@ -259,7 +258,7 @@ void stampPmosBsim3(MnaSystemSparse& mna, NetID drain, NetID gate, NetID source,
     eVSG = VD - VG;
     eVSD = VD - VS;
   }
-  // Note: BSIM3 in this implementation does NOT clamp Vgs/Vds to [0, ∞)
+  // Note: BSIM3 in this implementation does NOT clamp Vgs/Vds to [0, inf)
   // because the smooth Vgst_eff handles vgs < Vth analytically. Pass
   // signed values directly.
   const double vgsM = std::max(eVSG, 0.0);
@@ -302,7 +301,6 @@ double solveDc(std::size_t n, std::vector<double>& V,
   return V[2];
 }
 
-} // namespace
 
 /**
  * @test BSIM3 L2 unblocker probe: same depletion-load PMOS inverter

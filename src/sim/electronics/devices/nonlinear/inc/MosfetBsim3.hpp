@@ -67,7 +67,7 @@ using mna::NetID;
  * transition, DIBL, body effect, mobility degradation, channel-
  * length modulation. ~15 parameters vs full BSIM3's 100+.
  *
- * Defaults are calibrated for the Intel 4004's PMOS process (10 µm,
+ * Defaults are calibrated for the Intel 4004's PMOS process (10 um,
  * 1971). For other processes, override per-device.
  */
 struct MosfetBsim3Params {
@@ -95,7 +95,7 @@ struct MosfetBsim3Params {
   // Mobility degradation by vertical field
   double ua = 1e-9; ///< Linear mobility-degradation coefficient (m/V)
   double ub = 0.0;  ///< Quadratic mobility-degradation coefficient (m/V)^2
-  double tox = 50e-9; ///< Oxide thickness (m); 50 nm for 10 µm process
+  double tox = 50e-9; ///< Oxide thickness (m); 50 nm for 10 um process
 
   // Smooth Vds saturation transition width
   double delta = 0.01; ///< Vds smoothing parameter (V)
@@ -106,7 +106,7 @@ struct MosfetBsim3Params {
   // ============================================================================
   /// Lateral diffusion of source/drain under the gate (m). Sets the
   /// physical overlap capacitance Cgs_ov = Cgd_ov = Cox * W * Lov.
-  /// 4004 10 micron process: Lov ≈ 1 µm typical (~10% of L).
+  /// 4004 10 micron process: Lov ~= 1 um typical (~10% of L).
   double Lov = 1e-6;
 
   /// Whether to include Meyer intrinsic + overlap capacitances in the
@@ -177,11 +177,11 @@ struct MosfetBsim3 {
     const double x = (vgs - vth) / nVt;
     // log1p / expm1 + clamp to avoid overflow at large positive x.
     if (x > 50.0) {
-      // Strong inversion: Vgst_eff ≈ Vgs - Vth.
+      // Strong inversion: Vgst_eff ~= Vgs - Vth.
       return vgs - vth;
     }
     if (x < -50.0) {
-      // Deep weak inversion: Vgst_eff ≈ nVt * exp(x) ≈ 0.
+      // Deep weak inversion: Vgst_eff ~= nVt * exp(x) ~= 0.
       return nVt * std::exp(x);
     }
     return nVt * std::log1p(std::exp(x));
@@ -209,15 +209,15 @@ struct MosfetBsim3 {
   /**
    * @brief Saturation voltage with smooth transition.
    *
-   * Long-channel BSIM3: Vdsat ≈ Vgst_eff in strong inversion. In weak
-   * inversion, real BSIM3 has Vdsat ≈ ~2*Vt (a constant floor) so that
+   * Long-channel BSIM3: Vdsat ~= Vgst_eff in strong inversion. In weak
+   * inversion, real BSIM3 has Vdsat ~= ~2*Vt (a constant floor) so that
    * the channel saturates at a few thermal voltages, not at the
    * vanishing Vgst_eff. Without this floor the I-V degenerates to
-   * Id ∝ Vgst_eff² (exp(2x) scaling); with the floor Id ∝ Vgst_eff
-   * (exp(x) scaling) — the canonical exponential subthreshold.
+   * Id  proportional to  Vgst_eff^2 (exp(2x) scaling); with the floor Id  proportional to  Vgst_eff
+   * (exp(x) scaling) -- the canonical exponential subthreshold.
    *
-   * Smooth blend: sqrt(Vgst² + (2*Vt)²). Strong inv → Vgst_eff;
-   * weak inv → 2*Vt.
+   * Smooth blend: sqrt(Vgst^2 + (2*Vt)^2). Strong inv -> Vgst_eff;
+   * weak inv -> 2*Vt.
    */
   [[nodiscard]] static double saturationVoltage(double vgstEffVal,
                                                 const MosfetBsim3Params& p) noexcept {
@@ -250,7 +250,7 @@ struct MosfetBsim3 {
    *   mu_eff = mu0 / (1 + ua * (Vgst + 2*Vt) + ub * (Vgst + 2*Vt)^2)
    *
    * Reduces the effective Kp at high gate overdrive due to surface
-   * scattering. For 10 µm processes, ua/ub are small; effect is
+   * scattering. For 10 um processes, ua/ub are small; effect is
    * minor at 4004 operating voltages but included for completeness.
    */
   [[nodiscard]] static double mobilityFactor(double vgstEffVal,
@@ -286,23 +286,23 @@ struct MosfetBsim3 {
     const double vdsat = saturationVoltage(vgstEffVal, p);
     const double vdseffVal = vdsEff(vds, vdsat, p);
 
-    // BSIM3-style saturation current. Multiplicative form so Id → 0 as
-    // Vgst_eff → 0 (no current floor in deep weak inversion).
+    // BSIM3-style saturation current. Multiplicative form so Id -> 0 as
+    // Vgst_eff -> 0 (no current floor in deep weak inversion).
     //
     //   Id_sat = (beta/2) * Vgst_eff * (Vgst_eff + 2*n*Vt)
     //
-    //   Strong  (Vgst_eff >> n*Vt): Id_sat → 0.5*beta*Vgst². ✓
-    //   Weak    (Vgst_eff << n*Vt): Id_sat → beta * n*Vt * Vgst_eff.
+    //   Strong  (Vgst_eff >> n*Vt): Id_sat -> 0.5*beta*Vgst^2. OK
+    //   Weak    (Vgst_eff << n*Vt): Id_sat -> beta * n*Vt * Vgst_eff.
     //     With Vgst_eff = n*Vt * exp((Vgs-Vth)/(n*Vt)) in weak inv,
-    //     this gives Id ∝ exp((Vgs-Vth)/(n*Vt)) -- the canonical
+    //     this gives Id  proportional to  exp((Vgs-Vth)/(n*Vt)) -- the canonical
     //     subthreshold exponential the documented L2 design relies on.
-    //   Vgst_eff → 0:           Id_sat → 0. ✓
+    //   Vgst_eff -> 0:           Id_sat -> 0. OK
     const double n_vt_2 = 2.0 * p.n_factor * p.Vt;
     const double idSat = 0.5 * beta * vgstEffVal * (vgstEffVal + n_vt_2);
 
-    // Smooth linear-to-saturation transition: factor = 1 - (1-r)²
+    // Smooth linear-to-saturation transition: factor = 1 - (1-r)^2
     // where r = Vdseff / Vdsat ∈ [0, 1]. Equivalent to the textbook
-    // (Vgst*Vds - 0.5*Vds²) form when Vdseff < Vdsat. Reaches 1 at
+    // (Vgst*Vds - 0.5*Vds^2) form when Vdseff < Vdsat. Reaches 1 at
     // Vds = Vdsat (saturation).
     const double r = vdseffVal / std::max(vdsat, 1e-12);
     const double factor = r * (2.0 - r);
@@ -365,7 +365,7 @@ struct MosfetBsim3 {
    * source/drain diffusion):
    *   Cgs_ov = Cgd_ov = Cox * W * Lov
    *
-   * Cox = ε_ox / tox where ε_ox = 3.45e-11 F/m for thermal SiO2.
+   * Cox = eps_ox / tox where eps_ox = 3.45e-11 F/m for thermal SiO2.
    *
    * Reference: SPICE 2 / 3 source code; Tsividis "Operation and Modeling
    * of the MOS Transistor" Ch. 9. This is exactly the cap model that
@@ -380,17 +380,17 @@ struct MosfetBsim3 {
    *      cycle. For analog precision (e.g. switched-capacitor circuits)
    *      a charge-based model (BSIM3 full Qg/Qd/Qs) is required.
    *   2. No drain/source-substrate junction capacitance modeled here.
-   *      For the 4004, junction caps are ~0.1-0.5 fF/µm² and are absorbed
+   *      For the 4004, junction caps are ~0.1-0.5 fF/um^2 and are absorbed
    *      into the existing parasitic-cap stamp (CPARA_L1).
    *   3. Sharp transition between cutoff (channel off) and inversion (channel on)
    *      at Vgst=0 -- not smoothed. For NR convergence with small step
-   *      sizes this is generally OK; pathologically tight loops may need
-   *      smoothing via Vgst_eff (TODO if encountered).
+   *      sizes this is generally OK; pathologically tight loops would need
+   *      smoothing via Vgst_eff.
    *   4. No fringe / sidewall capacitance contributions; absorbed into
    *      the overlap cap parameter Lov.
    *
-   * Calibration target: 4004 10 µm process with tox=50 nm, Lov=1 µm.
-   *   Cox ≈ 0.69 fF/µm². W=10µm, L=10µm transistor: Cox*W*L ≈ 69 fF.
+   * Calibration target: 4004 10 um process with tox=50 nm, Lov=1 um.
+   *   Cox ~= 0.69 fF/um^2. W=10um, L=10um transistor: Cox*W*L ~= 69 fF.
    *   Cgs_ov = 0.69 * 10 * 1 = 6.9 fF.
    */
   struct MeyerCaps {
@@ -399,7 +399,7 @@ struct MosfetBsim3 {
     double Cgb; ///< Intrinsic gate-bulk cap (F).
   };
 
-  /// Oxide capacitance density (F/m²): Cox = ε_ox / tox.
+  /// Oxide capacitance density (F/m^2): Cox = eps_ox / tox.
   [[nodiscard]] static double oxideCapDensity(const MosfetBsim3Params& p) noexcept {
     constexpr double EPS_OX = 3.45e-11; // F/m, thermal SiO2
     return EPS_OX / std::max(p.tox, 1e-12);
@@ -453,8 +453,29 @@ struct MosfetBsim3 {
    */
   [[nodiscard]] static StampValues stampValues(double vgs, double vds, double vbs,
                                                const MosfetBsim3Params& p) noexcept {
-    return {current(vgs, vds, vbs, p), transconductance(vgs, vds, vbs, p),
-            outputConductance(vgs, vds, vbs, p), bodyTransconductance(vgs, vds, vbs, p)};
+    // Skip body transconductance (gmb) by default. Every current
+    // production caller uses vbs=0 and reads only id, gm, gds, so gmb
+    // is left at 0 (struct shape preserved). Eliminating the central-
+    // difference computation for gmb saves 2 of 7 current() evaluations
+    // per stamp. Callers that need gmb can use the explicit
+    // `bodyTransconductance(vgs, vds, vbs, p)` entry, or call
+    // `stampValuesWithBodyEffect` (below).
+    return {current(vgs, vds, vbs, p),
+            transconductance(vgs, vds, vbs, p),
+            outputConductance(vgs, vds, vbs, p),
+            /*gmb=*/0.0};
+  }
+
+  /// stampValues including body transconductance (gmb). Use this when a
+  /// caller actually needs dId/dVbs (analog circuits with non-zero
+  /// body bias). Adds 2 current() central-diff evaluations relative to
+  /// `stampValues`.
+  [[nodiscard]] static StampValues stampValuesWithBodyEffect(double vgs, double vds, double vbs,
+                                                             const MosfetBsim3Params& p) noexcept {
+    return {current(vgs, vds, vbs, p),
+            transconductance(vgs, vds, vbs, p),
+            outputConductance(vgs, vds, vbs, p),
+            bodyTransconductance(vgs, vds, vbs, p)};
   }
 };
 

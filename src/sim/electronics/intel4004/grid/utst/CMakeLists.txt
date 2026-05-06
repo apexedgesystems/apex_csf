@@ -17,6 +17,8 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/Level1Physics_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Level2Physics_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ComponentClassification_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/BootstrapCapsCompliance_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DatasheetCompliance_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------

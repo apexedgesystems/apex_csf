@@ -63,7 +63,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libssl-dev:arm64 \
       zlib1g-dev:arm64 \
       liblapacke-dev:arm64 \
-      libopenblas-dev:arm64
+      libopenblas-dev:arm64 \
+      libsuitesparse-dev:arm64
 
 # ==============================================================================
 # CUDA Cross-compilation (sbsa)
@@ -99,6 +100,14 @@ RUN set -euo pipefail && \
     test -f /usr/local/cuda/targets/aarch64-linux/include/cuda_runtime.h \
     || { find /usr/local -maxdepth 3 -type d -path '*/targets/*' -print || true; exit 1; } && \
     (command -v ldconfig >/dev/null 2>&1 && ldconfig || true)
+
+# ==============================================================================
+# Mold Linker for Cross-Compilation
+# ==============================================================================
+# GCC cross-compilers look for <triple>-ld.mold, not the system mold binary.
+# Symlink lets -fuse-ld=mold work with aarch64-linux-gnu-g++, which fixes
+# -gsplit-dwarf section group errors that occur with the default GNU ld.
+RUN ln -sfn /usr/bin/mold /usr/bin/aarch64-linux-gnu-ld.mold
 
 # Cross-compilation pkg-config paths
 ENV PKG_CONFIG_LIBDIR=${AARCH64_SYSROOT}/usr/lib/aarch64-linux-gnu/pkgconfig:${AARCH64_SYSROOT}/usr/lib/pkgconfig:${AARCH64_SYSROOT}/usr/share/pkgconfig

@@ -81,3 +81,39 @@ TEST(ComponentClassification, DynamicStorageExists) {
   EXPECT_GT(result.dynamicCount(), 0) << "Should have some dynamic storage";
   EXPECT_LT(result.dynamicCount(), 700) << "Dynamic shouldn't dominate";
 }
+
+/**
+ * @test Schematic-exact counts match Intel 4004 documented chip composition.
+ *
+ * Anchors the netlist to the Intel 4004 chip's documented characteristics:
+ *   - Total transistor count: 2242 (Intel datasheet says "2.3K transistors")
+ *   - Component classification derived from analysis of the original Intel
+ *     Rev G schematic (4004_schematic.pdf).
+ *
+ * If any of these change unexpectedly, either the netlist drifted or the
+ * classifier changed. Both warrant investigation.
+ */
+TEST(ComponentClassification, MatchesIntelSchematic) {
+  const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
+  Intel4004Grid grid;
+  auto circuit = grid.buildCircuit(NETLIST);
+
+  auto result = classifyComponents(grid);
+
+  // Total transistor count (Intel datasheet, schematic).
+  EXPECT_EQ(grid.transistors_.size(), 2242u)
+      << "Lajos netlist must contain exactly 2242 transistors per Intel 4004 spec";
+
+  // Per-component-type counts derived from the schematic.
+  EXPECT_EQ(result.norGateCount(), 1305u)
+      << "NOR gate members: 1305 (~58% of 2242)";
+  EXPECT_EQ(result.passGateCount(), 222u)
+      << "Pass gates: 222";
+  EXPECT_EQ(result.dynamicCount(), 610u)
+      << "Dynamic storage: 610 (272 NOR-output-gated + 338 latch feedback)";
+  EXPECT_EQ(result.loadCount(), 105u)
+      << "Standalone loads: 105 (depletion loads not in NOR gates)";
+
+  // All accounted for (no UNKNOWN class)
+  EXPECT_EQ(result.unknownCount(), 0u);
+}

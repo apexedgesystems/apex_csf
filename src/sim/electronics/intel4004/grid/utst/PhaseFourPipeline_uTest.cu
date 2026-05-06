@@ -45,7 +45,6 @@ namespace nl_cuda = sim::electronics::devices::nonlinear::cuda;
 using sim::electronics::devices::nonlinear::MosfetLevel1;
 using sim::electronics::devices::nonlinear::MosfetLevel1Params;
 
-namespace {
 
 constexpr int NET_COUNT = 17;
 constexpr int N_TRANSISTORS = 24;
@@ -296,7 +295,6 @@ void gpuPhaseFourIter(const Inputs& in, std::vector<double>& prevV, double& maxD
   cudaFree(dMaxDelta);
 }
 
-} // namespace
 
 /* ----------------------------- Tests ----------------------------- */
 

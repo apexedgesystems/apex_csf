@@ -10,6 +10,7 @@
 
 add_subdirectory(gpu_compute)
 add_subdirectory(analog)
+add_subdirectory(electronics)
 add_subdirectory(environment)
 
 # --- PORT: Uncomment as domains are ported ---

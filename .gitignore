@@ -48,3 +48,6 @@ tools/rust/dev/
 
 # Archived test results (kept locally, not committed)
 **/.archive/
+
+# Production applications (proprietary, not committed)
+apps/production/

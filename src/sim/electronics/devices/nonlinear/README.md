@@ -283,17 +283,18 @@ Exponential I-V: Every 60mV increase in Vbe → 10x increase in Ic (at 300K).
 
 ## Performance
 
-| Operation                                  | Latency        | Scale        |
-| ------------------------------------------ | -------------- | ------------ |
-| MosfetLevel1 current evaluation            | 7.6 ns/device  | 2242 devices |
-| MosfetLevel1 full NR stamp (Id+gm+gds+ieq) | 19.1 ns/device | 2242 devices |
-| DiodeShockley evaluation                   | 9.6 ns/diode   | 1000 diodes  |
-| BjtEbersMoll evaluation                    | 13.4 ns/BJT    | 500 BJTs     |
+| Operation                                       | Latency           | Scale         |
+| ----------------------------------------------- | ----------------- | ------------- |
+| MosfetLevel1 current evaluation                 |   9.2 ns/device   | 2242 devices  |
+| MosfetLevel1 full NR stamp (Id+gm+gds+ieq)      |  19.0 ns/device   | 2242 devices  |
+| MosfetLevel1 stampValues (combined NR entry)    |  11.4 ns/device   | 2242 devices  |
+| MosfetBsim3 stampValues (n=2.5 weak inversion)  | 279 ns/device     | 338 devices   |
+| DiodeShockley evaluation                        |   8.8 ns/diode    | 1000 diodes   |
+| BjtEbersMoll evaluation                         |  12.4 ns/BJT      |  500 BJTs     |
 
-MOSFET stamp throughput: 23.3K batches/s (2242 devices per batch). For the Intel
-4004 reference circuit (2242 MOSFETs), device evaluation costs 42.9 us per
-Newton-Raphson iteration, representing approximately 40% of total NR cost. The
-remaining 60% is linear algebra (MNA solve).
+For the Intel 4004 reference circuit, MosfetLevel1 stampValues at 2242 devices
+takes ~25 us per Newton-Raphson iteration; MosfetBsim3 stampValues for the 338
+cross-coupled latch transistors at L2 takes ~94 us per NR iteration.
 
 ## Testing
 

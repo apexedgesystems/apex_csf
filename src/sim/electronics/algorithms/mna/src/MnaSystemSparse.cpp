@@ -245,18 +245,18 @@ void MnaSystemSparse::buildCsc() {
   std::size_t nnzRaw = augCoo_.size();
 
   // Counting sort CSC construction: O(nnz + dim) instead of O(nnz log nnz).
-  // Phase 1: Count entries per column.
+  // Count entries per column.
   cscAp_.assign(dim + 2, 0);
   for (std::size_t i = 0; i < nnzRaw; ++i) {
     cscAp_[augCoo_[i].col + 1]++;
   }
 
-  // Phase 2: Prefix sum -> column pointers (pre-merge).
+  // Prefix sum -> column pointers (pre-merge).
   for (int c = 0; c < dim; ++c) {
     cscAp_[c + 1] += cscAp_[c];
   }
 
-  // Phase 3: Scatter entries into CSC arrays using column offsets.
+  // Scatter entries into CSC arrays using column offsets.
   cscAi_.resize(nnzRaw);
   cscAx_.resize(nnzRaw);
   colWork_.assign(cscAp_.begin(), cscAp_.begin() + dim);
@@ -266,7 +266,7 @@ void MnaSystemSparse::buildCsc() {
     cscAx_[pos] = augCoo_[i].value;
   }
 
-  // Phase 4: Per-column insertion sort by row + merge duplicates.
+  // Per-column insertion sort by row + merge duplicates.
   std::size_t writePos = 0;
   for (int c = 0; c < dim; ++c) {
     int colStart = cscAp_[c];

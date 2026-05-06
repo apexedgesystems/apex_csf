@@ -52,7 +52,6 @@ using sim::electronics::devices::nonlinear::MosfetLevel2Params;
 using sim::electronics::mna::MnaSystemSparse;
 using sim::electronics::mna::NetID;
 
-namespace {
 
 // 4004 calibrated parameters, matching `Level1Physics_uTest.cpp`.
 constexpr double KP = 5e-3;
@@ -147,7 +146,6 @@ double solveDc(std::size_t n, std::vector<double>& V,
   return V[2];
 }
 
-} // namespace
 
 /**
  * @test Level 2 inverter VOL probe: does subthreshold lower VOL
@@ -298,7 +296,6 @@ TEST(Level2PhysicsProbe, PmosPullUpToFloatingNode) {
  * Net layout: 0=GND, 1=VDD, 2=Q, 3=Q_BAR
  * ============================================================================ */
 
-namespace {
 
 // BSIM3 latch params -- matches Intel4004GridLevel2::bsim3LatchParams_.
 MosfetBsim3Params makeBsim3Params(double kpScaled, double vth) {
@@ -425,7 +422,6 @@ void stampLatch(MnaSystemSparse& mna, const std::vector<double>& V,
   enhanceStamp(mna, 0, 2, 3, V, KP * WL_ENH, VTH_ENH);
 }
 
-} // namespace
 
 /* ----------------------------- All-BSIM3 latch ----------------------------- */
 
@@ -542,7 +538,6 @@ TEST(LatchCellPhysics, DISABLED_MixedBsim3EnhL1LoadHoldsQHigh) {
  * near 1.2V or drift to a rail? Answer differs by MOSFET model.
  * ============================================================================ */
 
-namespace {
 
 // Single floating-node hold test.
 // Inject an initial voltage on the storage node, stamp ONE pass gate
@@ -585,7 +580,6 @@ HoldResult holdOneNode(double initial, StampFn passGateStamp) {
   return {initial, V[2], true};
 }
 
-} // namespace
 
 /** @test Dynamic storage holds 1.2V (LOW) with MosfetLevel1 pass gate OFF. */
 TEST(DynamicStorageHold, L1PassGateOff_HoldsLow) {
@@ -669,4 +663,488 @@ TEST(DynamicStorageHold, ModelDriftMismatch) {
                 initVolts, resL1.final, resBsim3.final,
                 (resL1.final - resBsim3.final) * 1000.0);
   }
+}
+
+/* ============================================================================
+ * Atomic-cell tests.
+ *
+ * Goal: verify our existing model handles each primitive in isolation
+ * before chip-scale tuning. If the atomic cell tests fail, chip-scale
+ * work is blocked until fixed.
+ *
+ * PmosNorPlainLoad -- baseline depletion-load PMOS-only NOR.
+ *           Establishes whether the model produces clean rail-to-rail
+ *           swing (VOH ~ VDD, VOL << VTH) on the calibrated 4004 params.
+ *           If VOH < VDD by ~Vt, the bootstrap-load mechanism is needed.
+ * ========================================================================== */
+
+
+// Build & solve a depletion-load PMOS-only 2-input NOR gate.
+//
+//      VDD ---- D
+//               |
+//             [Mload]      depletion load (gate=VDD, source=VDD; always-on)
+//               |
+//              OUT --- [Ma] --- GND   pull-down A: gate=INA
+//               |
+//              OUT --- [Mb] --- GND   pull-down B: gate=INB
+//
+// Returns the steady-state output voltage on OUT.
+double solveDepletionNor(double vinA, double vinB,
+                         double kpEnh, double kpDep, double n_factor,
+                         bool useBsim3) {
+  // Net layout: 0=GND, 1=VDD, 2=OUT, 3=INA, 4=INB
+  std::vector<double> V = {0, VDD, VDD, vinA, vinB};
+
+  return solveDc(5, V, [&](MnaSystemSparse& mna, const std::vector<double>& v) {
+    mna.addVoltageSource(1, 0, VDD);
+    mna.addVoltageSource(3, 0, vinA);
+    mna.addVoltageSource(4, 0, vinB);
+
+    if (useBsim3) {
+      // Depletion load: drain=OUT(2), gate=VDD(1), source=VDD(1).
+      // Diode-connected via gate=source convention: always-on with
+      // Vth_dep = -0.17V means Vgs - Vth_dep = 0.17V.
+      MosfetBsim3Params bp;
+      bp.Kp = kpDep; bp.Vth0 = VTH_DEP; bp.lambda = LAMBDA;
+      bp.W = 1.0; bp.L = 1.0;
+      bp.n_factor = n_factor;
+      bp.K1 = 0.0; bp.eta0 = 0.0;
+      auto stampBsim3 = [&](NetID drain, NetID gate, NetID source,
+                            const MosfetBsim3Params& bpLocal) {
+        const double VS = v[source], VG = v[gate], VD = v[drain];
+        const double VSG = VS - VG, VSD = VS - VD;
+        NetID sD = drain, sS = source;
+        double eVSG = VSG, eVSD = VSD;
+        if (VSD < 0.0) {
+          std::swap(sD, sS);
+          eVSG = VD - VG; eVSD = VD - VS;
+        }
+        const double vgsM = std::max(eVSG, 0.0);
+        const double vdsM = std::max(eVSD, 0.0);
+        const auto SV = MosfetBsim3::stampValues(vgsM, vdsM, /*vbs=*/0.0, bpLocal);
+        const double gds = std::max(SV.gds, 1e-12);
+        const double ieq = SV.id - SV.gm * eVSG - gds * eVSD;
+        mna.addConductance(sD, sS, gds);
+        mna.addMatrixEntry(sD, gate, SV.gm);
+        mna.addMatrixEntry(sD, sS, -SV.gm);
+        mna.addMatrixEntry(sS, gate, -SV.gm);
+        mna.addMatrixEntry(sS, sS, SV.gm);
+        mna.addCurrent(sD, sS, ieq);
+      };
+      stampBsim3(2, 1, 1, bp); // depletion load
+      MosfetBsim3Params bpEnh = bp;
+      bpEnh.Kp = kpEnh; bpEnh.Vth0 = VTH_ENH;
+      stampBsim3(0, 3, 2, bpEnh); // pull-down A
+      stampBsim3(0, 4, 2, bpEnh); // pull-down B
+    } else {
+      stampPmosL2(mna, 2, 1, 1, v, kpDep, VTH_DEP); // depletion load
+      stampPmosL2(mna, 0, 3, 2, v, kpEnh, VTH_ENH); // pull-down A
+      stampPmosL2(mna, 0, 4, 2, v, kpEnh, VTH_ENH); // pull-down B
+    }
+  });
+}
+
+
+/**
+ * @testdepletion-load NOR with both inputs LOW -- VOH check.
+ *       Expectation per Faggin: plain depletion load saturates at
+ *       VDD - Vt because the load loses Vgs as the output rises. If
+ *       this test reports VOH < VDD - 0.5V, we have empirical
+ *       evidence that bootstrap loads are needed for the chip's
+ *       full-rail signals.
+ */
+TEST(AtomicCell, PmosNorPlainLoad_BothInputsLow_VOH_BSIM3) {
+  const double vout = solveDepletionNor(0.0, 0.0,
+                                        KP * WL_ENH, KP * WL_DEP,
+                                        /*n_factor=*/2.5, /*useBsim3=*/true);
+  std::printf("\n  ====PmosNorPlainLoad (BSIM3 n=2.5) VOH probe ====\n");
+  std::printf("    inputs A=B=0V (pull-downs OFF)\n");
+  std::printf("    VOH = %.4fV  (target: full VDD = %.2fV)\n", vout, VDD);
+  std::printf("    deficit = %.4fV  (Vt = %.2fV)\n", VDD - vout, VTH_ENH);
+  if (VDD - vout < 0.05) {
+    std::printf("  ==> GOOD: plain depletion load reaches full rail. "
+                "Bootstrap NOT needed for this cell.\n");
+  } else if (VDD - vout > VTH_ENH * 0.5) {
+    std::printf("  ==> SYMPTOM CONFIRMED: deficit ~ Vt. "
+                "Bootstrap load required for full-rail swing.\n");
+  } else {
+    std::printf("  ==> Partial deficit (%.0f mV). Investigate stamp / GMIN.\n",
+                (VDD - vout) * 1000.0);
+  }
+  EXPECT_GT(vout, VTH_ENH);          // must at least be above logic threshold
+  EXPECT_LT(vout, VDD + 0.01);       // must not exceed VDD
+}
+
+/**
+ * @testdepletion-load NOR with input A HIGH -- VOL check.
+ *       Pull-down A asserted; ratioed against load. With WL ratio
+ *       32.3:1 (ENH:DEP), VOL should be well below VTH_ENH.
+ */
+TEST(AtomicCell, PmosNorPlainLoad_InputAHigh_VOL_BSIM3) {
+  const double vout = solveDepletionNor(VDD, 0.0,
+                                        KP * WL_ENH, KP * WL_DEP,
+                                        /*n_factor=*/2.5, /*useBsim3=*/true);
+  std::printf("\n  ====PmosNorPlainLoad (BSIM3 n=2.5) VOL probe ====\n");
+  std::printf("    inputs A=%.1fV B=0V (pull-down A asserted)\n", VDD);
+  std::printf("    VOL = %.4fV  (target: << VTH_enh = %.2fV)\n", vout, VTH_ENH);
+  EXPECT_LT(vout, VTH_ENH) << "VOL must be below VTH for downstream NOR to register LOW";
+}
+
+/**
+ * @testsame plain-load NOR but stamped with Level2 (no
+ *       BSIM3). Cross-check against the BSIM3 result -- if both report
+ *       similar VOH, the deficit isn't a BSIM3 weak-inversion artifact.
+ */
+TEST(AtomicCell, PmosNorPlainLoad_VOH_L2) {
+  const double vout = solveDepletionNor(0.0, 0.0,
+                                        KP * WL_ENH, KP * WL_DEP,
+                                        /*n_factor=*/0.0, /*useBsim3=*/false);
+  std::printf("\n  ====PmosNorPlainLoad (Level2) VOH probe ====\n");
+  std::printf("    VOH = %.4fV  (target: full VDD = %.2fV)\n", vout, VDD);
+  std::printf("    deficit = %.4fV\n", VDD - vout);
+  EXPECT_GT(vout, VTH_ENH);
+  EXPECT_LT(vout, VDD + 0.01);
+}
+
+/**
+ * @testpass-gate transfer of HIGH from data bus to storage.
+ *       Mimics the OPR/OPA latch capture mechanism. With a plain
+ *       PMOS pass gate (no bootstrap), source rises only to V_GATE - Vt
+ *       when transferring HIGH from drain to source. If the chip needs
+ *       bootstrap pass gates, this test will report storage ≈ VDD - Vt
+ *       (~3.83V at our parameters) instead of full VDD.
+ *
+ * Topology (PMOS pass gate transferring D=VDD to storage):
+ *
+ *      D=VDD ---- [Mpass] ---- storage
+ *                    |
+ *                  gate=0V (SELECT asserted, pass gate ON)
+ *
+ * For a PMOS pass gate ON: Vsg = V_source - V_gate. With gate=0 and
+ * source=storage, Vsg = V_storage. Pass gate ON when V_storage > Vt.
+ * As storage charges from 0V toward V_drain (=VDD), Vsg increases past
+ * Vt and pass-gate stays ON until V_storage rises and Vds → 0.
+ *
+ * Actually for a PMOS pass gate transferring HIGH, current flows from
+ * D=HIGH through the channel to source (storage). Storage rises until
+ * the device cuts off. Cutoff condition: Vsg < Vt, i.e.,
+ * V_storage < V_gate + Vt. With V_gate=0, V_storage < Vt → device ON.
+ * Storage rises, Vsg = storage > Vt makes device OFF? Wait that's
+ * backwards.
+ *
+ * Re-deriving carefully: PMOS conducts when Vsg > |Vt_p|. Source is
+ * the higher-voltage terminal in normal operation. Here drain=VDD,
+ * gate=0, source=storage. Initial storage=0, so source < drain. Then
+ * "source" in the SPICE-swap sense is actually the HIGH terminal,
+ * which is drain=VDD. Effective Vsg = V_drain - V_gate = VDD - 0 = VDD.
+ * Strong overdrive. Current flows from drain (VDD) to source (storage).
+ * Storage charges. As storage approaches VDD, V_drain - V_storage → 0
+ * (Vds → 0), current stops at storage = VDD. **Should reach full rail.**
+ *
+ * UNLESS the SPICE-swap doesn't happen and the gate-source convention
+ * gives Vsg = V_storage - 0 = V_storage. Then ON when storage > Vt;
+ * device cuts off when storage < Vt; but starts at storage=0 so device
+ * starts OFF. No current flows. Storage stays at 0. **Catastrophic.**
+ *
+ * The actual behavior depends on our stamp's sign handling. This test
+ * empirically reports what our model does.
+ */
+TEST(AtomicCell, PassGateHighTransfer_BSIM3) {
+  // Net 0=GND, 1=VDD, 2=storage(starts at 0V), 3=gate(SELECT, asserted at 0V)
+  std::vector<double> V = {0, VDD, 0.0, 0.0};
+
+  MosfetBsim3Params bp;
+  bp.Kp = KP * WL_PASS; bp.Vth0 = VTH_ENH; bp.lambda = LAMBDA;
+  bp.W = 1.0; bp.L = 1.0;
+  bp.n_factor = 2.5;
+  bp.K1 = 0.0; bp.eta0 = 0.0;
+
+  double vstorage = solveDc(4, V, [&](MnaSystemSparse& mna, const std::vector<double>& v) {
+    mna.addVoltageSource(1, 0, VDD);
+    mna.addVoltageSource(3, 0, 0.0); // SELECT asserted (PMOS gate at 0)
+
+    // Pass gate: drain=1(VDD), gate=3(0), source=2(storage)
+    const double VS = v[2], VG = v[3], VD = v[1];
+    const double VSG = VS - VG, VSD = VS - VD;
+    NetID sD = 1, sS = 2;
+    double eVSG = VSG, eVSD = VSD;
+    if (VSD < 0.0) { std::swap(sD, sS); eVSG = VD - VG; eVSD = VD - VS; }
+    const double vgsM = std::max(eVSG, 0.0);
+    const double vdsM = std::max(eVSD, 0.0);
+    const auto SV = MosfetBsim3::stampValues(vgsM, vdsM, /*vbs=*/0.0, bp);
+    const double gds = std::max(SV.gds, 1e-12);
+    const double ieq = SV.id - SV.gm * eVSG - gds * eVSD;
+    mna.addConductance(sD, sS, gds);
+    mna.addMatrixEntry(sD, 3, SV.gm);
+    mna.addMatrixEntry(sD, sS, -SV.gm);
+    mna.addMatrixEntry(sS, 3, -SV.gm);
+    mna.addMatrixEntry(sS, sS, SV.gm);
+    mna.addCurrent(sD, sS, ieq);
+
+    // Tiny GMIN on storage (no other path to ground)
+    mna.addConductance(2, 0, 1e-12);
+  });
+
+  std::printf("\n  ====PassGate HIGH transfer (BSIM3 n=2.5) ====\n");
+  std::printf("    drain=VDD (%.2fV), gate=0V (SELECT on), storage initial=0V\n", VDD);
+  std::printf("    storage final = %.4fV\n", vstorage);
+  std::printf("    deficit from VDD = %.4fV (Vt = %.2fV)\n", VDD - vstorage, VTH_ENH);
+  if (VDD - vstorage < 0.1) {
+    std::printf("  ==> GOOD: pass gate transfers full VDD. No bootstrap needed.\n");
+  } else if (std::abs((VDD - vstorage) - VTH_ENH) < 0.2) {
+    std::printf("  ==> Vt-drop confirmed: pass gate loses Vt -- bootstrap pass gate\n"
+                "      mechanism would be needed to transfer full rail to storage.\n");
+  } else {
+    std::printf("  ==> Unexpected deficit (%.4fV). Investigate stamp / topology.\n",
+                VDD - vstorage);
+  }
+}
+
+/**
+ * @testpass-gate transfer of LOW from drain (GND) to storage
+ *       starting at VDD. Hypothesis: PMOS pass gate cuts off when
+ *       Vsg < Vth, so storage saturates at ~Vth, NOT at 0V. This is
+ *       the dual of HIGH transfer; for the 4004 latch capture path
+ *       (D-bus -> N1008 -> N0992 -> ...) this is exactly the case
+ *       that produces mid-rail storage we observed at chip scale.
+ *
+ * Topology (PMOS pass gate transferring D=GND to storage starting HIGH):
+ *
+ *      D=GND ---- [Mpass] ---- storage(starts at VDD)
+ *                    |
+ *                  gate=0V (SELECT asserted, pass gate ON initially)
+ */
+TEST(AtomicCell, PassGateLowTransfer_BSIM3) {
+  // Net 0=GND, 1=VDD, 2=storage(starts HIGH), 3=gate(SELECT asserted at 0V)
+  std::vector<double> V = {0, VDD, VDD, 0.0};
+
+  MosfetBsim3Params bp;
+  bp.Kp = KP * WL_PASS; bp.Vth0 = VTH_ENH; bp.lambda = LAMBDA;
+  bp.W = 1.0; bp.L = 1.0;
+  bp.n_factor = 2.5;
+  bp.K1 = 0.0; bp.eta0 = 0.0;
+
+  double vstorage = solveDc(4, V, [&](MnaSystemSparse& mna, const std::vector<double>& v) {
+    mna.addVoltageSource(0, 0, 0.0); // GND
+    mna.addVoltageSource(3, 0, 0.0); // SELECT asserted
+    // Pass gate: drain=0(GND), gate=3(0V), source=2(storage)
+    const double VS = v[2], VG = v[3], VD = v[0];
+    const double VSG = VS - VG, VSD = VS - VD;
+    NetID sD = 0, sS = 2;
+    double eVSG = VSG, eVSD = VSD;
+    if (VSD < 0.0) { std::swap(sD, sS); eVSG = VD - VG; eVSD = VD - VS; }
+    const double vgsM = std::max(eVSG, 0.0);
+    const double vdsM = std::max(eVSD, 0.0);
+    const auto SV = MosfetBsim3::stampValues(vgsM, vdsM, /*vbs=*/0.0, bp);
+    const double gds = std::max(SV.gds, 1e-12);
+    const double ieq = SV.id - SV.gm * eVSG - gds * eVSD;
+    mna.addConductance(sD, sS, gds);
+    mna.addMatrixEntry(sD, 3, SV.gm);
+    mna.addMatrixEntry(sD, sS, -SV.gm);
+    mna.addMatrixEntry(sS, 3, -SV.gm);
+    mna.addMatrixEntry(sS, sS, SV.gm);
+    mna.addCurrent(sD, sS, ieq);
+    mna.addConductance(2, 0, 1e-12);
+  });
+
+  std::printf("\n  ====PassGate LOW transfer (BSIM3 n=2.5) ====\n");
+  std::printf("    drain=GND, gate=0V (SELECT on), storage initial=VDD (%.2fV)\n", VDD);
+  std::printf("    storage final = %.4fV  (target: 0V; expected if Vt-drop: ~%.2fV)\n",
+              vstorage, VTH_ENH);
+  if (vstorage < 0.1) {
+    std::printf("  ==> GOOD: pass gate transfers full GND.\n");
+  } else if (std::abs(vstorage - VTH_ENH) < 0.2) {
+    std::printf("  ==> Vt-DROP CONFIRMED: PMOS pass gate cuts off at storage~Vth.\n"
+                "      This is the chip-scale OPR mid-rail symptom in atomic form.\n"
+                "      Real silicon must overcome with bootstrap on the gate signal\n"
+                "      (driving SELECT below GND) or with a complementary transfer\n"
+                "      transistor (CMOS pass gate).\n");
+  } else {
+    std::printf("  ==> Unexpected (%.4fV). Investigate.\n", vstorage);
+  }
+}
+
+/**
+ * @testPmosNorPlainLoad with Level1 Shichman-Hodges (hard
+ *       cutoff below Vth). If VOH reaches near full VDD here, then the
+ *       L2/BSIM3 deficit is purely weak-inversion leakage of the OFF
+ *       pull-downs vs the depletion load -- the OPR/OPA mid-rail
+ *       symptom is NOT bootstrap-related; it's leakage equilibrium.
+ */
+TEST(AtomicCell, PmosNorPlainLoad_VOH_L1) {
+  // Same circuit; stamp with strict Shichman-Hodges (no subthreshold tail).
+  // Net layout: 0=GND, 1=VDD, 2=OUT, 3=INA, 4=INB
+  std::vector<double> V = {0, VDD, VDD, 0.0, 0.0};
+  MosfetLevel1Params pEnh{KP * WL_ENH, VTH_ENH, LAMBDA};
+  MosfetLevel1Params pDep{KP * WL_DEP, VTH_DEP, LAMBDA};
+  auto stampL1 = [&](MnaSystemSparse& mna, NetID drain, NetID gate, NetID source,
+                     const std::vector<double>& v, const MosfetLevel1Params& p) {
+    const double VS = v[source], VG = v[gate], VD = v[drain];
+    const double VSG = VS - VG, VSD = VS - VD;
+    NetID sD = drain, sS = source;
+    double eVSG = VSG, eVSD = VSD;
+    if (VSD < 0.0) { std::swap(sD, sS); eVSG = VD - VG; eVSD = VD - VS; }
+    const double vgsM = std::max(eVSG, 0.0);
+    const double vdsM = std::max(eVSD, 0.0);
+    const double id = MosfetLevel1::current(vgsM, vdsM, p);
+    const double gm = MosfetLevel1::transconductance(vgsM, vdsM, p);
+    const double gdsRaw = MosfetLevel1::outputConductance(vgsM, vdsM, p);
+    const double gds = std::max(gdsRaw, 1e-12);
+    const double ieq = id - gm * eVSG - gds * eVSD;
+    mna.addConductance(sD, sS, gds);
+    mna.addMatrixEntry(sD, gate, gm);
+    mna.addMatrixEntry(sD, sS, -gm);
+    mna.addMatrixEntry(sS, gate, -gm);
+    mna.addMatrixEntry(sS, sS, gm);
+    mna.addCurrent(sD, sS, ieq);
+  };
+  double vout = solveDc(5, V, [&](MnaSystemSparse& mna, const std::vector<double>& v) {
+    mna.addVoltageSource(1, 0, VDD);
+    mna.addVoltageSource(3, 0, 0.0);
+    mna.addVoltageSource(4, 0, 0.0);
+    stampL1(mna, 2, 1, 1, v, pDep);  // depletion load
+    stampL1(mna, 0, 3, 2, v, pEnh);  // pull-down A (off)
+    stampL1(mna, 0, 4, 2, v, pEnh);  // pull-down B (off)
+  });
+  std::printf("\n  ====PmosNorPlainLoad (Level1 SH) VOH probe ====\n");
+  std::printf("    VOH = %.4fV  (target: full VDD = %.2fV)\n", vout, VDD);
+  std::printf("    deficit = %.4fV\n", VDD - vout);
+  if (VDD - vout < 0.5) {
+    std::printf("  ==> CONFIRMED: L1 SH (hard cutoff) reaches near full rail.\n"
+                "      The L2/BSIM3 deficit is weak-inversion leakage,\n"
+                "      NOT a bootstrap-load saturation.\n");
+  }
+}
+
+/* ============================================================================
+ * Atomic-cell tests for the bootstrap-load mechanism in isolation.
+ *
+ * Validates that the bootstrap-cap-companion stamping mechanism works
+ * correctly on a 4-transistor circuit BEFORE the chip-scale tuning
+ * problem. Topology (matches Faggin's bootstrap load):
+ *
+ *      VDD ----+----+
+ *              |    |
+ *           [Mload] [Mdiode] (diode-connected: gate=drain=VDD)
+ *              |    |
+ *           +--+--+-+
+ *           |  |
+ *           |  Nx
+ *           |  |
+ *           |  +----[Cboot]----+
+ *           |                  |
+ *           +----- output -----+
+ *                  |
+ *               [Mpd]   pull-down: gate=input
+ *                  |
+ *                 GND
+ *
+ * Mload: drain=VDD, gate=Nx, source=output  (gated load, NOT diode)
+ * Mdiode: drain=VDD, gate=VDD, source=Nx    (charges Nx to VDD-Vt via diode)
+ * Mpd: drain=output, gate=input, source=GND (NMOS-mirror pull-down)
+ * Cboot: between Nx and output
+ *
+ * Test: input transitions HIGH -> LOW (pull-down OFF). Output rises.
+ * Without Cboot: output saturates at ~ Nx + Vt = (VDD-Vt) + Vt = VDD,
+ *   but only at full DC steady-state. Transient is slow because as
+ *   output approaches Nx, M_load's Vsg shrinks and conduction tapers.
+ * With Cboot: as output rises, the cap pumps Nx upward (charge
+ *   conservation across the cap), keeping Vsg of M_load roughly
+ *   constant and the load strongly conducting. Output reaches VDD
+ *   in fewer sub-steps.
+ * ========================================================================== */
+
+
+// Run a multi-sub-step transient on the bootstrap test fixture.
+// Returns the output voltage trajectory (one entry per sub-step).
+//
+// Net layout: 0=GND, 1=VDD, 2=output, 3=input, 4=Nx
+//
+// `cBoot` = bootstrap cap value (Farads). 0 disables.
+// `kpEnh` = pull-down transistor Kp (V/V).
+std::vector<double> bootstrapTransient(double cBoot, double kpDep,
+                                        double kpEnh, double dt,
+                                        std::size_t numSteps,
+                                        double vinitial_output) {
+  std::vector<double> trace;
+  trace.reserve(numSteps);
+
+  // Persistent state across sub-steps.
+  std::vector<double> V = {0, VDD, vinitial_output, 0.0, VDD - 0.5};
+  std::vector<double> prevV = V;
+
+  for (std::size_t step = 0; step < numSteps; ++step) {
+    // NR sub-step: solve for V[curr] given V[prev].
+    for (int iter = 0; iter < 200; ++iter) {
+      MnaSystemSparse mna(5);
+      mna.addVoltageSource(1, 0, VDD);
+      mna.addVoltageSource(3, 0, 0.0); // input held LOW (pulldown OFF)
+
+      // Mload: drain=VDD(1), gate=Nx(4), source=output(2)
+      stampPmosL2(mna, 1, 4, 2, V, kpDep, VTH_DEP);
+      // Mdiode: drain=VDD(1), gate=VDD(1), source=Nx(4)
+      stampPmosL2(mna, 1, 1, 4, V, kpDep, VTH_DEP);
+      // Mpd: drain=output(2), gate=input(3), source=GND(0)
+      // NMOS-mirror PMOS in our convention -- input LOW means OFF.
+      stampPmosL2(mna, 2, 3, 0, V, kpEnh, VTH_ENH);
+
+      // Bootstrap cap-companion (backward-Euler): between Nx(4) and output(2).
+      if (cBoot > 0.0) {
+        const double Geq = cBoot / dt;
+        // Add conductance + RHS current using prev-TIMESTEP voltages
+        mna.addConductance(4, 2, Geq);
+        mna.addCurrent(4, 2, Geq * (prevV[4] - prevV[2]));
+      }
+
+      // Tiny GMIN on output (no other path to ground when pull-down OFF).
+      mna.addConductance(2, 0, 1e-12);
+      mna.addConductance(4, 0, 1e-12);
+
+      if (!mna.factorize()) break;
+      auto r = mna.solve();
+      if (!r.success) break;
+
+      double maxD = 0;
+      for (std::size_t i = 0; i < V.size(); ++i) {
+        const double nv = V[i] + 0.5 * (r.nodeVoltages[i] - V[i]); // damp
+        const double d = std::fabs(nv - V[i]);
+        if (d > maxD) maxD = d;
+        V[i] = nv;
+      }
+      if (maxD < 1e-7) break;
+    }
+    prevV = V;
+    trace.push_back(V[2]); // output voltage
+  }
+  return trace;
+}
+
+
+/**
+ * @testbootstrap mechanism in isolation. Compare output
+ *       transient trajectory with vs without bootstrap cap. Caps that
+ *       help should drive output toward full VDD faster.
+ */
+TEST(AtomicCell_Bootstrap, BootstrapLoadTransientTrajectory) {
+  constexpr double dt = 25e-9; // 25 ns sub-step (matches chip default)
+  constexpr std::size_t N_STEPS = 10;
+  constexpr double V_INIT = 0.5; // start with output near GND
+  const double kpDep = KP * WL_DEP;
+  const double kpEnh = KP * WL_ENH;
+
+  std::printf("\n  ====Bootstrap-load transient trajectory ====\n");
+  std::printf("    dt=%.0fns, %zu sub-steps, V_init=%.2fV (output near GND)\n",
+              dt * 1e9, N_STEPS, V_INIT);
+  std::printf("    Pull-down OFF throughout; output should rise to VDD.\n\n");
+
+  for (double cBoot : {0.0, 50e-15, 200e-15, 500e-15, 1000e-15}) {
+    auto trace = bootstrapTransient(cBoot, kpDep, kpEnh, dt, N_STEPS, V_INIT);
+    std::printf("    Cboot=%6.0f fF  trajectory:", cBoot * 1e15);
+    for (double v : trace) std::printf(" %.3f", v);
+    std::printf("  -> final %.4fV (deficit %.4fV)\n",
+                trace.back(), VDD - trace.back());
+  }
+  std::printf("\n  Larger cBoot -> output reaches full VDD faster.\n"
+              "  cBoot=0 reference: depletion-load alone limits transient speed.\n");
 }

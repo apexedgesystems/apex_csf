@@ -8,11 +8,11 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Test Sources (2 files)
+# Test Sources
 # ------------------------------------------------------------------------------
 
 set(DEV_TEST_SOURCES Intel4004Grid_uTest.cpp Intel4004GridVsBehavioral_uTest.cpp
-                     Intel4004GridLevel2_uTest.cpp)
+                     Intel4004GridLevel2_uTest.cpp Intel4004OprDecode_dTest.cpp)
 
 # ------------------------------------------------------------------------------
 # Test Target

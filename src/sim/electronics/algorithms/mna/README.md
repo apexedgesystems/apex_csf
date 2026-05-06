@@ -473,27 +473,39 @@ Measured on x86_64 (clang-21, debug), Docker container, 15 repeats per data poin
 
 | Operation                     | Median (us) | Throughput   |
 | ----------------------------- | ----------- | ------------ |
-| Factorize + solve (150 nets)  | 65.5        | 15.3K/s      |
-| Cached solve only (150 nets)  | 1.5         | 683K/s       |
-| Stamp 2000 entries (150 nets) | 94.0        | 21M stamps/s |
+| Factorize + solve (150 nets)  | 104         | 9.6K/s       |
+| Cached solve only (150 nets)  | 1.5         | 689K/s       |
+| Stamp 2000 entries (150 nets) | 100         | 20M stamps/s |
 
 ### Dense LAPACK Solver (MnaSystem)
 
 | Operation            | Median (us) | Throughput |
 | -------------------- | ----------- | ---------- |
-| Full solve (10 nets) | 1.8         | 556K/s     |
-| Full solve (50 nets) | 18.7        | 54K/s      |
+| Full solve (10 nets) | 1.8         | 571K/s     |
+| Full solve (50 nets) | 18.3        | 55K/s      |
 
 ### Sparse Scaling
 
 | Nets | Factorize + Solve (us) |
 | ---- | ---------------------- |
-| 10   | 6.4                    |
-| 50   | 24.0                   |
-| 100  | 45.2                   |
-| 150  | 65.5                   |
-| 250  | 107.0                  |
-| 500  | 208.6                  |
+| 10   | 9.6                    |
+| 50   | 37.1                   |
+| 100  | 70.7                   |
+| 150  | 109                    |
+| 250  | 173                    |
+| 500  | 348                    |
+
+### Multi-threaded KLU (batched MC / parameter sweeps)
+
+For independent K-circuit batched workloads, `std::thread` work-stealing
+scales near-linearly through 8 cores. Per-circuit time on the Intel 4004
+matrix size (Dim ≈ 1081):
+
+| K (circuits) | T=1 (us) | T=8 (us) | Speedup |
+| ------------ | -------: | -------: | ------: |
+| 8            | 1.13     | 0.24     | 4.7×    |
+| 16           | 2.27     | 0.49     | 4.6×    |
+| 64           | 9.09     | 1.58     | 5.8×    |
 
 ### Dense vs Sparse Crossover
 
@@ -651,9 +663,3 @@ docker compose run --rm dev-cuda bash -c \
 - Modified Nodal Analysis theory: Standard EE textbooks
 - KLU solver: [SuiteSparse documentation](https://people.engr.tamu.edu/davis/suitesparse.html)
 - BLAS/LAPACK: [Netlib reference](https://www.netlib.org/)
-
-**Production Standards:**
-
-- `docs/standards/CODE_STANDARD.md` - C++ coding conventions
-- `docs/standards/CMAKE_GUIDE.md` - CMake structure
-- `docs/standards/README_GUIDE.md` - Documentation patterns

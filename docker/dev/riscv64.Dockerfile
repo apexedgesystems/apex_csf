@@ -59,6 +59,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libssl-dev:riscv64 \
       liblapacke-dev:riscv64 \
       libopenblas-dev:riscv64 \
+      libsuitesparse-dev:riscv64 \
       zlib1g-dev:riscv64
 
 # ==============================================================================
@@ -68,6 +69,11 @@ RUN mkdir -p /opt/sysroots/riscv64
 
 ENV CROSS_COMPILE=riscv64-linux-gnu-
 ENV RISCV_SYSROOT=/opt/sysroots/riscv64
+
+# ==============================================================================
+# Mold Linker for Cross-Compilation
+# ==============================================================================
+RUN ln -sfn /usr/bin/mold /usr/bin/riscv64-linux-gnu-ld.mold
 
 # ==============================================================================
 # Shell Prompt

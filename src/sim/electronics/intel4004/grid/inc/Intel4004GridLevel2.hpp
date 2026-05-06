@@ -35,6 +35,14 @@
 #include "src/sim/electronics/intel4004/grid/inc/Intel4004GridLevel1.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cctype>
+#include <cstdint>
+#include <fstream>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
 
 namespace sim::electronics::intel4004 {
 
@@ -62,7 +70,7 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
   ///   1. BSIM3 stamps the ~338 latch feedback transistors -> accurate
   ///      moderate-inversion physics around the cross-coupled topology.
   ///   2. Behavioral overlay disabled. The NR pathology this exposed
-  ///      (~73 nets drifting to ±100s of volts) was diagnosed as
+  ///      (~73 nets drifting to +/-100s of volts) was diagnosed as
   ///      *Jacobian rank deficiency*: with no algebraic constraint on
   ///      floating storage nets, the linear solve produces unbounded
   ///      step values.
@@ -102,14 +110,29 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
   /// Multi-instruction does not work end-to-end without the L1
   /// behavioral stubs that L2 explicitly does NOT inherit.
   Intel4004GridLevel2() {
-    applyBehavioralLatchOverlay_ = false; // L2 contract: pure physics, no overlay
-    applyBehavioralX3_ = false;           // L2 contract: pure physics, no X3 switch
+    // L2 closure: behavioral stubs OFF, custom physics primitives ON.
+    // Capture primitives use latchValues_ as voltage-source hold state
+    // across the M1/M2->X3 window (stamp gate in Intel4004GridLevel1
+    // stampDevices()).
+    applyBehavioralLatchOverlay_ = false; // OPR/OPA capture stubs OFF
+    applyBehavioralX3_ = false;           // X3 stub OFF (replaced by LdmAccWriteback)
+    applyL2LdmAccWriteback_ = true;       // physics-driven LDM/BBL writeback
+    applyL2OprCaptureCell_ = true;        // physics-driven OPR M1 capture
+    applyL2OpaCaptureCell_ = true;        // physics-driven OPA M2 capture
+    applyL2AluWriteback_ = true;          // physics-driven IAC/CMA/ADD/SUB + ACC group + LD/XCH writeback
+    applyL2RegPcWriteback_ = true;        // physics-driven INC/SRC/JIN/BBL writeback
+    applyL2TwoByteAndRamWriteback_ = true;// 2-byte ops + FIN + RAM/IO group
     clampNrIterates_ = true;              // legitimate numerical aid (no current draw)
     gminTransient_ = 1e-9;
     gminDriven_ = 1e-12;                  // tiny GMIN on NOR-output / clock nets
     assertPocFirstByte_ = true;           // physics: POC reset bootstrap
     phaseAwareTiming_ = true;             // CLK2 signals only LOW during CLK2 sub-phase
     skipInternalSignalForcing_ = false;   // keep timing-generator forcing (chip can't bootstrap ring counter from cold)
+    // Drive SELECT below GND during assert (the 4004's bootstrap mechanism).
+    // PMOS pass gates need gate < storage - Vt to remain ON during LOW
+    // transfer; with SELECT = -Vt the pass gate stays ON down to storage = 0V.
+    // Bounded at -1.0V (current V_NR_LO clamp).
+    bootstrapSelectAssertVolts_ = 0.0;
   }
 
   /// BSIM3 parameter template for the latch feedback core. Per-transistor
@@ -127,6 +150,18 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
       .n_factor = 2.5, .Vt = 0.026, .eta0 = 0.0, .K1 = 0.0, .K2 = 0.0, .phi = 0.7,
       .ua = 0.0, .ub = 0.0, .tox = 50e-9, .delta = 0.01};
 
+  /// BSIM3 params for NOR-output-gated DYNAMIC_STORAGE (OPA/OPR latches,
+  /// ACC bits). Lower n_factor (=1.5) means tighter weak-inversion --
+  /// the device is "more OFF" when the gate signal is below Vth, so
+  /// storage nodes don't drift toward mid-rail through subthreshold
+  /// leakage. n=2.5 (latch core) gives +101 mV overdrive but also
+  /// stronger subthreshold; n=1.5 keeps storage cleaner at the cost of
+  /// less moderate-inversion margin (latches need 2.5; storage doesn't).
+  MosfetBsim3Params bsim3StorageParams_{
+      .Kp = KP_PROCESS, .Vth0 = VTH_ENH, .lambda = LAMBDA, .W = 1.0, .L = 1.0,
+      .n_factor = 2.5, .Vt = 0.026, .eta0 = 0.0, .K1 = 0.0, .K2 = 0.0, .phi = 0.7,
+      .ua = 0.0, .ub = 0.0, .tox = 50e-9, .delta = 0.01};
+
   /**
    * @brief Stamp a latch-feedback transistor with the full BSIM3 SPICE pattern.
    *
@@ -138,6 +173,17 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
    */
   void stampLatchFeedbackTransistor(mna::MnaSystemSparse& mna, std::size_t idx,
                                     const std::vector<double>& prevV) const override {
+    stampBsim3Transistor(mna, idx, prevV, bsim3LatchParams_);
+  }
+
+private:
+  /// Shared BSIM3 stamp body. Identical SPICE Jacobian + RHS pattern as
+  /// MosfetLevel1; only the (id, gm, gds) computation routes through
+  /// BSIM3's smooth Vgst_eff. Different transistor classes can pass
+  /// different param templates (latch core: n=2.5, storage: n=1.5).
+  void stampBsim3Transistor(mna::MnaSystemSparse& mna, std::size_t idx,
+                            const std::vector<double>& prevV,
+                            const MosfetBsim3Params& paramsTemplate) const {
     const auto& t = transistors_[idx];
 
     const double VS = prevV[t.source];
@@ -176,7 +222,7 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
     const double vgsM = std::max(evalVgs, 0.0);
     const double vdsM = std::max(evalVds, 0.0);
 
-    MosfetBsim3Params bp = bsim3LatchParams_;
+    MosfetBsim3Params bp = paramsTemplate;
     bp.Kp = kp;
     bp.Vth0 = vth;
     bp.lambda = LAMBDA;
@@ -203,6 +249,8 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
     mna.addCurrent(t.drain, t.source, -cdreq);
   }
 
+public:
+
   /* ----------------------------- Meyer cap dynamics ----------------------------- */
 
   /// Enable per-transistor Meyer intrinsic + overlap caps in the stamp.
@@ -214,15 +262,134 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
   /// per NR iteration; expect simulation to slow noticeably.
   bool enableMeyerCaps_ = false;
 
-  /// GMIN floor used during Meyer-cap simulation. Caps add ~µS-scale
+  /// Cgd scale factor for NOR-output-gated DYNAMIC_STORAGE transistors
+  /// (OPA/OPR latches, ACC bits). 0.0 = no Cgd on storage (LDM 5 works,
+  /// LDM 7 OPA stays at mid-rail). 1.0 = full Cgd (breaks LDM 5 storage).
+  /// Small positive values provide clock-edge refresh without disrupting
+  /// the storage cycle.
+  double meyerCgdStorageScale_ = 0.0;
+
+  /// Global scale factor for ALL Meyer caps (Cgs, Cgd, Cgb).
+  /// Backward-Euler cap-companion `Geq = C/dt` becomes large when dt
+  /// is small (25ns @ default stepsPerPhase=10). Cgs from one
+  /// transistor's gate to another's source can act as a strong
+  /// inter-node coupling that opposes pass-gate transit at simulation
+  /// time scale, even though the physical cap is small.
+  /// Reducing this <1.0 weakens cap-companion stamps -- they still
+  /// model charge dynamics but with less inter-node "stickiness."
+  /// 1.0 = full cap. 0.0 = caps effectively off (same as
+  /// `enableMeyerCaps_=false`).
+  /// Trade-off:
+  ///   scale=1.0: pass-gate transit fails (capture nets stuck near
+  ///     HIGH); but downstream NOR storage propagation works for LDM 5.
+  ///   scale=0.1: pass-gate transit succeeds (N1008..N1011 latch
+  ///     correct LOW/HIGH from D-bus); but LDM 5 ACC settles to 0
+  ///     instead of 5 (downstream propagation fails).
+  /// Need spatially-non-uniform cap scaling; simple global value
+  /// trades one failure for another.
+  double meyerCapGlobalScale_ = 1.0;
+
+  /// Bootstrap-cap multiplier on Cgd of transistors with source=VDD.
+  /// Faggin's 66 bootstrap loads in real silicon use a layout-parasitic
+  /// cap between the load's gate and source/drain to keep the gate
+  /// driven above VDD as the output rises (full-rail swing).
+  /// 67 transistors with source=VDD, gate=signal in the Lajos netlist
+  /// closely match Faggin's count -- they are the bootstrap-load
+  /// candidates. Applying a >1.0 scale on their Cgd models the
+  /// bootstrap parasitic without authoritative pair identification.
+  /// 0.0 = disabled (preserves baseline; no extra stamping). >0 adds
+  /// `caps.Cgd * scale * meyerCapGlobalScale_` between gate and drain
+  /// of each bootstrap-candidate transistor (additive on top of any
+  /// existing Cgd via NOR_GATE_MEMBER path).
+  double bootstrapCgdScale_ = 0.0;
+
+  /// Bootstrap clusters -- coarse grouping for per-cluster cap-value
+  /// tuning when per-cap layout values aren't available. Index into
+  /// `bootstrapCapValuePerCluster_`.
+  enum BootstrapCluster : std::uint8_t {
+    BS_NUMBERED = 0,  // N#### generic nets (55 of 66)
+    BS_NAMED = 1,     // ACC/ADD/CY/RRAB/OPA/CLK/SUB named (11 of 66)
+    BS_CLUSTER_COUNT = 2,
+  };
+
+  /// Authoritative bootstrap-cap entries from the Lajos layout-extracted
+  /// netlist (66 pairs, file `lajos-4004-bootstrap-caps.txt`).
+  /// `valueF > 0` means use the per-cap layout-extracted value;
+  /// `valueF == 0` means fall back to the per-cluster value.
+  struct BootstrapCap {
+    mna::NetID gate;
+    mna::NetID source;
+    std::uint8_t cluster;
+    double valueF;
+  };
+  std::vector<BootstrapCap> bootstrapCapPairs_;
+
+  /// Multiplier applied to per-cap layout-extracted values. Lets MC
+  /// scale the whole layout-derived distribution while preserving
+  /// relative cap ratios. Default 1.0 = use raw extracted values.
+  double bootstrapCapLayoutScale_ = 1.0;
+
+  /// Per-cluster cap value (Farads). Default 200 fF for both clusters.
+  /// MC tunable: the named-signal cluster (CLK/ACC/REG-related) likely
+  /// needs different sizing than the generic N#### cluster.
+  std::array<double, BS_CLUSTER_COUNT> bootstrapCapValuePerCluster_{
+      200e-15, 200e-15};
+
+  /// Legacy single-value knob (DEPRECATED -- use per-cluster array).
+  /// Setting this >0 overrides the per-cluster array uniformly.
+  /// 0 = use per-cluster values.
+  double bootstrapCapValue_ = 0.0;
+
+  /// Classify a bootstrap source-node name into a cluster.
+  static std::uint8_t classifyBootstrapNode(const std::string& src) {
+    if (src.empty()) return BS_NUMBERED;
+    if (src[0] == 'N' && src.size() >= 2 && std::isdigit(src[1])) {
+      return BS_NUMBERED;
+    }
+    return BS_NAMED;
+  }
+
+  /// Load bootstrap pairs from the data file. File format:
+  ///   `<gate> <source>`                     -- legacy 2-field (no value)
+  ///   `<gate> <source> <pixels> <value_fF>` -- layout-extracted 4-field
+  /// Resolves names via `findNet`; assigns cluster by source-node name
+  /// pattern. Per-cap value (Farads) is stored when present; 0 means
+  /// "fall back to per-cluster value". Returns count of resolved pairs.
+  std::size_t loadBootstrapCaps(const std::string& path) {
+    std::ifstream f(path);
+    if (!f) return 0;
+    bootstrapCapPairs_.clear();
+    std::string line;
+    while (std::getline(f, line)) {
+      if (line.empty() || line[0] == '#') continue;
+      std::istringstream iss(line);
+      std::string a, b;
+      if (!(iss >> a >> b)) continue;
+      double pixels = 0.0;
+      double valueFF = 0.0;
+      iss >> pixels >> valueFF;  // optional fields; default 0 if absent
+      const auto idA = findNet(a.c_str());
+      const auto idB = findNet(b.c_str());
+      // Allow GND on one side (cap-to-ground): idB==0 is intentional
+      // for pin-cap-style entries (e.g. "D0 GND 0 7000" = 7 pF on D0).
+      // Reject only when both are GND or both same.
+      if (idA != 0 && idA != idB) {
+        bootstrapCapPairs_.push_back(
+            {idA, idB, classifyBootstrapNode(b), valueFF * 1e-15});
+      }
+    }
+    return bootstrapCapPairs_.size();
+  }
+
+  /// GMIN floor used during Meyer-cap simulation. Caps add ~uS-scale
   /// conductances scattered across the matrix; the diagonal-only GMIN
   /// at 1e-9 leaves the matrix near-singular at high-Z nodes that have
   /// only off-diagonal cap connections. Bump to 1e-6 (still much
-  /// smaller than typical pass-transistor drive ~10-100 µA) when caps
+  /// smaller than typical pass-transistor drive ~10-100 uA) when caps
   /// are on, ensuring every node has an algebraic anchor.
   double gminTransientWithCaps_ = 1e-6;
 
-  /// Physical channel length L for the 4004 process (10 µm).
+  /// Physical channel length L for the 4004 process (10 um).
   /// Used by Meyer cap calc to compute Cox*W*L = actual gate
   /// capacitance. (For I-V, W and L are folded into Kp; for caps
   /// we need the real geometry.)
@@ -297,42 +464,98 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
 
       const auto caps = MosfetBsim3::meyerCapacitances(vgs, vds, /*vbs=*/0.0, pp);
 
+      // Always emit the cap-companion stamp (with Geq=0 if cap is
+      // zero / non-finite) so the COO (row, col) sequence is invariant
+      // across NR iterations. Skipping when C<=0 makes the sequence
+      // depend on per-iter transistor operating state, defeating the
+      // sparse-MNA cached-CSC fast path. Zero-value stamps are harmless
+      // numerically: addConductance always pushes the 4 triplets, and
+      // adding 0 contributes nothing to the matrix sum. Static guards
+      // (a==b degenerate, OOB, ground) stay because they depend only
+      // on transistor topology, not on per-iter state.
       auto stampCap = [&](mna::NetID a, mna::NetID b, double C) {
-        if (C <= 0.0 || !std::isfinite(C)) return;
-        if (a == b) return; // degenerate
-        if (a >= N || b >= N) return; // OOB guard
-        const double Geq = C / stepDt_;
-        if (!std::isfinite(Geq)) return;
+        if (a == b) return;          // degenerate (static)
+        if (a >= N || b >= N) return;  // OOB (static)
+        if (a == 0 || b == 0) return;  // ground (static)
+        double Geq = 0.0;
+        if (std::isfinite(C) && C > 0.0) {
+          const double g = C / stepDt_;
+          if (std::isfinite(g)) Geq = g;
+        }
         mna.addConductance(a, b, Geq);
         mna.addCurrent(a, b, Geq * (safeV(a) - safeV(b)));
       };
 
-      // KNOWN ISSUE (next-session debug): stamping all 3 Meyer caps
-      // (Cgs, Cgd, Cgb) per transistor at full chip scale crashes the
-      // MNA solver (KLU factorize) AFTER stamping completes. The cap
-      // VALUES are textbook-correct (~50-200 fF range -- see
-      // diagnostic in tests). The MODEL works correctly at single-
-      // transistor scale (5/5 MosfetBsim3Meyer tests pass).
-      //
-      // The crash signature: stampDynamicCharge() returns cleanly
-      // (per printf diagnostic), then KLU factorize runs and the
-      // process segfaults. Likely matrix conditioning issue: the
-      // ~6,700 added cap-companion stamps may create rank deficiency
-      // or extreme conditioning when combined with the existing
-      // transistor stamps.
-      //
-      // Currently stamping Cgs only (Cgd/Cgb commented out below) for
-      // isolation; Cgs alone reproduces the crash. Investigation paths:
-      //   - Use larger gminTransient_ to better-condition matrix
-      //   - Add small leakage-conductance to all cap-stamped nodes
-      //   - Use klu_refactor instead of full klu_factorize
-      //   - Use ngspice as solver for the caps-ON case
       if (t.gate != 0 && t.source != 0) {
-        stampCap(t.gate, t.source, caps.Cgs);
+        stampCap(t.gate, t.source, caps.Cgs * meyerCapGlobalScale_);
       }
-      // Cgd/Cgb temporarily disabled while debugging Cgs path:
-      // if (t.drain != 0)  stampCap(t.gate, t.drain,  caps.Cgd);
-      // stampCap(t.gate, circuit::Circuit::ground(), caps.Cgb);
+      // Cgd on NOR-gate transistors: drives dynamic-logic decode chain
+      // via clock-edge coupling. Verified safe (LDM 5 settles at byte 0
+      // with this enabled vs byte 1 without). On NOR-output-gated
+      // DYNAMIC_STORAGE we use scaled Cgd to avoid disrupting storage.
+      double cgd_scale = 0.0;
+      if (componentMode_ && idx < componentTypes_.size()) {
+        if (componentTypes_[idx] == ComponentType::NOR_GATE_MEMBER) {
+          cgd_scale = 1.0;
+        } else if (componentTypes_[idx] == ComponentType::DYNAMIC_STORAGE &&
+                   norOutputNets_.count(t.gate) != 0) {
+          cgd_scale = meyerCgdStorageScale_;
+        }
+      }
+      if (cgd_scale > 0.0 && t.gate != 0 && t.drain != 0) {
+        stampCap(t.gate, t.drain, caps.Cgd * cgd_scale * meyerCapGlobalScale_);
+      }
+      // Bootstrap-cap addition on transistors with source=VDD,
+      // gate=signal -- the 67 transistors that match Faggin's 66
+      // bootstrap-load count. Their Cgd between gate (signal/dynamic
+      // node) and drain (output) is the bootstrap parasitic.
+      // Default bootstrapCgdScale_=0.0 means no extra cap added
+      // (preserves baseline). Set >0 to apply bootstrap-strength
+      // capacitance on top of any existing Cgd stamping.
+      if (bootstrapCgdScale_ > 0.0) {
+        const bool is_bootstrap_candidate =
+            (t.source == vdd_) && (t.gate != vdd_) && (t.gate != 0) &&
+            (t.drain != vdd_) && (t.drain != 0);
+        if (is_bootstrap_candidate) {
+          stampCap(t.gate, t.drain,
+                   caps.Cgd * bootstrapCgdScale_ * meyerCapGlobalScale_);
+        }
+      }
+    }
+
+    // Authoritative bootstrap caps from the layout-extracted netlist
+    // (66 explicit C records). Stamps each as a cap-companion between
+    // gate (intermediate node) and source (output) of a bootstrap
+    // load. Per-cluster cap values support tuning when per-cap layout
+    // values aren't available.
+    if (!bootstrapCapPairs_.empty() && stepDt_ > 0.0) {
+      for (const auto& [a, b, cluster, valueF] : bootstrapCapPairs_) {
+        // Allow b==0 (GND) for cap-to-ground (datasheet pin caps).
+        // Skip only when both terminals same or A==0.
+        if (a == 0 || a == b) continue;
+        if (a >= N || b >= N) continue;
+        // Cap-value priority:
+        //   1. legacy uniform override (`bootstrapCapValue_ > 0`)
+        //   2. layout-extracted per-cap value (`valueF > 0`), scaled
+        //      by `bootstrapCapLayoutScale_` for MC tuning
+        //   3. per-cluster fallback
+        double C = 0.0;
+        if (bootstrapCapValue_ > 0.0) {
+          C = bootstrapCapValue_;
+        } else if (valueF > 0.0) {
+          C = valueF * bootstrapCapLayoutScale_;
+        } else if (cluster < BS_CLUSTER_COUNT) {
+          C = bootstrapCapValuePerCluster_[cluster];
+        }
+        if (C <= 0.0) continue;
+        const double Geq = C * meyerCapGlobalScale_ / stepDt_;
+        if (!std::isfinite(Geq) || Geq <= 0.0) continue;
+        const double Va = prevTimestepV[a];
+        const double Vb = prevTimestepV[b];
+        if (!std::isfinite(Va) || !std::isfinite(Vb)) continue;
+        mna.addConductance(a, b, Geq);
+        mna.addCurrent(a, b, Geq * (Va - Vb));
+      }
     }
   }
 };

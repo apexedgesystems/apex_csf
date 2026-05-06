@@ -192,7 +192,6 @@ TEST_F(MosfetBatchCudaFixture, SoAMatchesCpu) {
   cudaFree(dGds);
 }
 
-namespace {
 
 // CPU reference for the fused stamp. Matches the kernel exactly so
 // parity is enforced at 1e-12 tolerance against the GPU path.
@@ -263,7 +262,6 @@ void cpuStampMosfetL1(const std::vector<nl_cuda::MosfetBias>& biases,
   }
 }
 
-} // namespace
 
 TEST_F(MosfetBatchCudaFixture, StampMosfetL1BatchMatchesCpu) {
   // Small deterministic circuit: 17 nets (net 0 = ground, 1..16 DOF),

@@ -65,7 +65,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libssl-dev:arm64 \
       zlib1g-dev:arm64 \
       liblapacke-dev:arm64 \
-      libopenblas-dev:arm64
+      libopenblas-dev:arm64 \
+      libsuitesparse-dev:arm64
 
 # ==============================================================================
 # Raspberry Pi Sysroot and Tools
@@ -91,6 +92,11 @@ RUN if [ -n "${USER}" ]; then \
       echo "${USER} ALL=(ALL) NOPASSWD: /usr/bin/perf, /usr/bin/bpftrace" > /etc/sudoers.d/profilers && \
       chmod 0440 /etc/sudoers.d/profilers; \
     fi
+
+# ==============================================================================
+# Mold Linker for Cross-Compilation
+# ==============================================================================
+RUN ln -sfn /usr/bin/mold /usr/bin/aarch64-linux-gnu-ld.mold
 
 # ==============================================================================
 # Shell Prompt
