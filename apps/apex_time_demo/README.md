@@ -44,5 +44,3 @@ Produces `build/hosted-x86_64-debug/bin/ApexTimeDemo`.
   on-target deployment notes.
 - [../../src/system/core/components/time_server/README.md](../../src/system/core/components/time_server/README.md)
   -- TimeServer component reference.
-- [../../src/system/core/components/time_server/CUSTOMER_INTEGRATION.md](../../src/system/core/components/time_server/CUSTOMER_INTEGRATION.md)
-  -- production integration playbook.

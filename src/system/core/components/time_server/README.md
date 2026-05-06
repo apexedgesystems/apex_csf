@@ -316,7 +316,6 @@ HAL coverage: `TestHalInterface` (8), `TestHalMock` (18),
 
 ## 8. See Also
 
-- [`CUSTOMER_INTEGRATION.md`](CUSTOMER_INTEGRATION.md) -- mission-profile setup guide.
 - [`apps/apex_time_demo/README.md`](../../../../apps/apex_time_demo/README.md) -- standalone demo with GPS-simulator thread.
 - [`src/system/core/hal/base/IPps.hpp`](../../hal/base/IPps.hpp) -- HAL contract.
 - [`src/system/core/hal/linux/inc/LinuxPps.hpp`](../../hal/linux/inc/LinuxPps.hpp) -- `/dev/pps[N]` impl.
