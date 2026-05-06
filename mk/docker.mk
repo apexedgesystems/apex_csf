@@ -43,36 +43,11 @@ REGISTRY ?=
 # Internal Helpers
 # ------------------------------------------------------------------------------
 
-# _service_to_image: Map a docker compose service name to its image tag.
-# Used by _docker_build to check whether a build can be skipped.
-# Usage: $(call _service_to_image,service)
-define _service_to_image
-$(strip $(if $(filter dev,$(1)),apex.dev.cpu,\
-$(if $(filter base,$(1)),apex.base,\
-$(if $(filter final,$(1)),apex.final,\
-$(if $(filter dev-%,$(1)),apex.dev.$(1:dev-%=%),\
-$(if $(filter builder-%,$(1)),apex.builder.$(1:builder-%=%),\
-apex.$(1)))))))
-endef
-
-# _docker_build: Build a docker compose service.
-#
-# When APEX_SKIP_DOCKER_REBUILD_IF_PRESENT=1 is set in the environment AND the
-# target image already exists locally, the build is skipped. CI pipelines opt
-# in to this after pulling cached :latest images from the registry to avoid
-# rebuilding dev images that already match the source. Local developer builds
-# default to always-rebuild so a Dockerfile edit picks up immediately.
-#
+# _docker_build: Build a docker compose service
 # Usage: $(call _docker_build,service)
 define _docker_build
-	@image="$(call _service_to_image,$(1))"; \
-	if [ "$(APEX_SKIP_DOCKER_REBUILD_IF_PRESENT)" = "1" ] && \
-	    docker image inspect "$$image" >/dev/null 2>&1; then \
-	  echo "[docker] $(1) -- $$image already present, skipping rebuild"; \
-	else \
-	  echo "[docker] Building $(1)"; \
-	  docker compose build $(1); \
-	fi
+	$(call log,docker,Building $(1))
+	@docker compose build $(1)
 endef
 
 # _docker_shell: Run an interactive shell in a docker compose service
