@@ -21,15 +21,11 @@ x-embedded: &embedded
   privileged: true
   command: bash
 
-# Common build arguments. BUILDKIT_INLINE_CACHE=1 embeds layer-cache
-# metadata in the built image manifest, so a `:latest` tag pushed from CI
-# can later be used as a cache source on subsequent builds without
-# rebuilding unchanged layers.
+# Common build arguments
 x-build-args: &build-args
   USER: ${USER}
   HOST_UID: ${HOST_UID}
   HOST_GID: ${HOST_GID}
-  BUILDKIT_INLINE_CACHE: "1"
 
 services:
   # ============================================================================

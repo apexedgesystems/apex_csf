@@ -37,8 +37,6 @@ jobs:
 
     env:
       REGISTRY: ghcr.io/${{ github.repository }}
-      DOCKER_BUILDKIT: "1"
-      COMPOSE_DOCKER_CLI_BUILD: "1"
 
     steps:
       - name: Checkout
@@ -104,8 +102,6 @@ jobs:
 
     env:
       REGISTRY: ghcr.io/${{ github.repository }}
-      DOCKER_BUILDKIT: "1"
-      COMPOSE_DOCKER_CLI_BUILD: "1"
 
     steps:
       - name: Checkout
