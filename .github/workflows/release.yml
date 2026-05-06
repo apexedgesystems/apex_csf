@@ -56,6 +56,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Free disk space
         run: |
@@ -88,6 +90,22 @@ jobs:
               docker tag $REGISTRY/$img:latest $img || true
           done
 
+      - name: Detect docker/ changes vs main
+        id: docker
+        run: |
+          # The registry's :latest tags are updated whenever main pushes a
+          # docker/ change. If this tag's docker/ matches main's docker/, the
+          # pulled images are correct and dev rebuilds inside `make artifacts`
+          # can be skipped. Hotfix tags off older commits will see a mismatch
+          # and fall through to the full rebuild.
+          if git diff --name-only origin/main HEAD -- docker/ docker-compose.yml | grep -q .; then
+            echo "Tag's docker/ differs from main -- dev images will rebuild"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "Tag's docker/ matches main -- dev rebuilds will be skipped"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Extract version from tag
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
@@ -104,9 +122,13 @@ jobs:
           echo "Version verified: $tag_version"
 
       - name: Build all platform artifacts
+        env:
+          APEX_SKIP_DOCKER_REBUILD_IF_PRESENT: ${{ steps.docker.outputs.skip == 'true' && '1' || '0' }}
         run: make artifacts VERSION=${{ steps.version.outputs.version }}
 
       - name: Build app release packages
+        env:
+          APEX_SKIP_DOCKER_REBUILD_IF_PRESENT: ${{ steps.docker.outputs.skip == 'true' && '1' || '0' }}
         run: |
           make release APP=ApexEdgeDemo
           make release APP=ApexHilDemo
