@@ -1,0 +1,48 @@
+# === indirect.4004 ===
+# Show the 4004's two indirect-addressing primitives in a single
+# program: `FIN P0` (Fetch INdirect) and `JIN P0` (Jump INdirect).
+#
+#   FIN P0  reads the byte at ROM address (PC[11:8] | R0:R1) and
+#           splits it into nibbles -- high nibble -> R0, low -> R1.
+#   JIN P0  jumps to ROM address (PC[11:8] | R0:R1).
+#
+# Both stay within the current 256-byte ROM page (the upper 4 bits
+# of PC are unchanged). Together they implement table dispatch:
+# look up an entry in a ROM table, then jump to the entry.
+#
+# Layout:
+#   0x00..0x05  main: load lookup address, FIN, JIN
+#   0x06..0x09  filler so the data byte lands at 0x0A
+#   0x0A        data byte (= 0x0E, the jump target)
+#   0x0B..0x0D  filler
+#   0x0E        target landing point
+#
+# After execution:
+#   ACC = 9     (loaded by LDM 9 at the JIN target)
+#   R0  = 0     (high nibble of the looked-up byte 0x0E)
+#   R1  = 14    (= 0xE, low nibble of the looked-up byte)
+
+# Main at 0x00
+20 0A    # FIM P0,0x0A   R0=0, R1=0xA (address of the data byte)
+30       # FIN P0        ROM[0x0A] = 0x0E -> R0=0, R1=0xE
+31       # JIN P0        PC = (0 | 0x0E) = 0x00E
+
+# Filler 0x04..0x09
+00       # NOP
+00       # NOP
+00       # NOP
+00       # NOP
+00       # NOP
+00       # NOP
+
+# Data byte at 0x0A: encodes "jump target = 0x0E"
+0E       # data: high=0, low=E
+
+# Filler 0x0B..0x0D
+00       # NOP
+00       # NOP
+00       # NOP
+
+# Jump target at 0x0E
+D9       # LDM 9         ACC = 9 (visibly different from the LDM byte
+         #               at the start so we can confirm we jumped here)

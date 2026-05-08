@@ -1,0 +1,28 @@
+# === bcd_add.4004 ===
+# Add two BCD digits and decimal-correct the result: 5 + 7 = 12 (BCD).
+#
+# Each 4-bit nibble holds a decimal digit 0-9. A binary add of 5 + 7
+# produces 0xC, which is not a valid BCD digit. The 4004's `DAA`
+# (Decimal Adjust Accumulator) instruction adds 6 if ACC > 9 (or if
+# CY is set), rolling into the next decimal column. The result is the
+# ones digit in ACC and the tens digit in CY, which we capture with
+# `TCC` (Transfer Carry and Clear).
+#
+# DAA was the 4004's signature calculator-era instruction -- the chip
+# was designed for the Busicom 141-PF desktop calculator (1971).
+#
+# After execution:
+#   R0  = 2     (ones digit of the BCD sum)
+#   R1  = 1     (tens digit of the BCD sum)
+#   ACC = 0
+#   CY  = 0     (TCC cleared it)
+
+F1   # CLC          carry = 0
+D5   # LDM 5        ACC = 5 (first BCD digit)
+B0   # XCH R0       R0 = 5
+D7   # LDM 7        ACC = 7 (second BCD digit)
+80   # ADD R0       ACC = 7 + 5 + CY = 0xC (binary), CY = 0
+FB   # DAA          ACC > 9 -> ACC += 6 = 0x12: ACC = 2, CY = 1
+B0   # XCH R0       R0 = 2 (ones digit), ACC = old R0 (5, discarded)
+F7   # TCC          ACC = CY = 1 (tens digit), CY = 0
+B1   # XCH R1       R1 = 1 (tens digit), ACC = old R1 = 0

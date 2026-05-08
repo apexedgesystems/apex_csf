@@ -1,0 +1,37 @@
+# === multiply.4004 ===
+# Multiply two small 4-bit numbers by repeated addition: 3 * 5 = 15.
+#
+# Algorithm:
+#   R0 = running sum (starts at 0)
+#   R1 = multiplicand (3)
+#   R2 = loop counter, pre-loaded with 16 - multiplier so that ISZ
+#        increments it `multiplier` times before wrapping to zero.
+#
+# Demonstrates the 4004's `ISZ Rn, addr` (Increment-and-Skip-if-Zero)
+# instruction -- the second 2-byte op besides JCN/JUN/JMS/FIM. ISZ is
+# the canonical 4004 idiom for fixed-count loops.
+#
+# After execution:
+#   ACC = 15    (the product)
+#   R0  = 15    (running sum after final iteration)
+#   R1  = 3     (multiplicand, unchanged)
+#   R2  = 0     (loop counter wrapped)
+
+# Setup
+F1       # CLC          carry = 0
+D0       # LDM 0
+B0       # XCH R0       R0 = 0 (running sum)
+D3       # LDM 3
+B1       # XCH R1       R1 = 3 (multiplicand)
+DB       # LDM 11       ACC = 16 - 5 = 11 (so 5 increments wrap to 0)
+B2       # XCH R2       R2 = 11 (loop counter)
+
+# Loop body at 0x07: ACC = R0 + R1; R0 = ACC
+F1       # CLC          clean carry-in for ADD
+A0       # LD R0        ACC = R0 (running sum)
+81       # ADD R1       ACC = R0 + R1
+B0       # XCH R0       R0 = ACC (new sum)
+72 07    # ISZ R2, 0x07 R2++; if R2 != 0, loop back to 0x07
+
+# Exit at 0x0D
+A0       # LD R0        ACC = R0 = product

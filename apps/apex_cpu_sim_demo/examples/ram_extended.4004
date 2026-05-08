@@ -1,0 +1,69 @@
+# === ram_extended.4004 ===
+# Tour the extended RAM and I/O instruction group, beyond the basic
+# `WRM` / `RDM` cycle shown in `ram_io.4004`:
+#
+#   ADM  - Add the active RAM main character to ACC (with carry-in).
+#          ACC = ACC + RAM[main] + CY.
+#   SBM  - Subtract the active RAM main character from ACC.
+#          ACC = ACC - RAM[main] - !CY.
+#   WR0  - Write ACC to status character 0 of the active RAM register.
+#          (Each 4002 RAM register holds 16 main chars + 4 status chars;
+#          status chars use a separate WRn / RDn pair per index.)
+#   RD0  - Read ACC from status character 0 of the active RAM register.
+#   WMP  - Write ACC to the RAM output port (the 4 external pins on the
+#          4002 RAM chip; visible to peripherals in real silicon). Does
+#          not modify ACC.
+#
+# Stages:
+#   1. Select bank 0, set the active address to chip 0 / reg 0 / char 0.
+#   2. WRM 5; LDM 3; CLC; ADM        -> ACC = 3 + 5 = 8       (R0)
+#   3. LDM 2; STC; SBM               -> ACC = 2 - 5 = 0xD     (R1)
+#   4. LDM 7; WR0; LDM 0; RD0         -> ACC = 7              (R2)
+#   5. LDM 9; WMP                    -> RAM output port = 9   (R3 from
+#                                       a follow-up XCH that observes
+#                                       ACC was preserved)
+#   6. LD R0                          -> ACC = 8 (the ADM result, for
+#                                       a clear final visible value)
+#
+# After execution:
+#   ACC = 8       (ADM result)
+#   R0  = 8       (ADM result)
+#   R1  = 13      (= 0xD; SBM 4-bit wrap of -3)
+#   R2  = 7       (WR0 / RD0 status-RAM round trip)
+#   R3  = 9       (the WMP-written value; WMP does not clobber ACC)
+
+# Setup: bank 0, address chip 0 / reg 0 / char 0
+F1       # CLC          carry = 0
+D0       # LDM 0
+FD       # DCL          select RAM bank 0
+20 00    # FIM P0,0x00  R0 = 0 (chip+reg), R1 = 0 (char)
+21       # SRC P0       set active RAM cell
+
+# Stage 1: WRM 5 + ADM (RAM-as-ADD operand)
+D5       # LDM 5
+E0       # WRM          RAM[main char 0] = 5
+D3       # LDM 3        ACC = 3
+F1       # CLC          clean carry-in
+EB       # ADM          ACC = 3 + RAM[main] + CY = 8
+B0       # XCH R0       R0 = 8
+
+# Stage 2: SBM (RAM-as-SUB operand)
+D2       # LDM 2        ACC = 2
+FA       # STC          CY = 1 (so SBM does not extra-borrow)
+E8       # SBM          ACC = 2 - 5 - 0 = -3 -> 0xD, CY = 0 (borrow)
+B1       # XCH R1       R1 = 0xD
+
+# Stage 3: Status RAM round trip (WR0 / RD0)
+D7       # LDM 7
+E4       # WR0          status char 0 = 7
+D0       # LDM 0        clear ACC
+EC       # RD0          ACC = status char 0 = 7
+B2       # XCH R2       R2 = 7
+
+# Stage 4: WMP writes a value to the RAM output port
+D9       # LDM 9        ACC = 9
+E1       # WMP          RAM output port = 9 (observable on real HW pins)
+B3       # XCH R3       R3 = 9 (proves WMP did not overwrite ACC)
+
+# Final: visible result
+A0       # LD R0        ACC = 8 (the ADM result)

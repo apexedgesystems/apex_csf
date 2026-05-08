@@ -1,0 +1,18 @@
+# === register_inc.4004 ===
+# Increment a register in place using `INC Rn` (single-byte, no carry
+# semantics). Unlike `IAC` which increments the accumulator and sets
+# CY on overflow, `INC Rn` just bumps the register and discards any
+# overflow.
+#
+# Demo: increment R0 three times (0 -> 1 -> 2 -> 3), then load it
+# into ACC.
+#
+# After execution:
+#   ACC = 3
+#   R0  = 3
+
+F1   # CLC          carry = 0
+60   # INC R0       R0 = 0 + 1 = 1
+60   # INC R0       R0 = 2
+60   # INC R0       R0 = 3
+A0   # LD R0        ACC = R0 = 3

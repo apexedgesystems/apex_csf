@@ -1,0 +1,48 @@
+# === kbp.4004 ===
+# Demonstrate `KBP` (Keyboard Process), the 4004's calculator-era
+# instruction that maps a one-hot 4-bit nibble to its bit position.
+#
+# KBP mapping:
+#   0x0 (no bits)        -> 0x0
+#   0x1 (bit 0)          -> 0x1
+#   0x2 (bit 1)          -> 0x2
+#   0x4 (bit 2)          -> 0x3
+#   0x8 (bit 3)          -> 0x4
+#   any other (multiple) -> 0xF (error code)
+#
+# In the Busicom 141-PF calculator, the keyboard scanner produced a
+# one-hot column code; KBP turned that into the column number for
+# table dispatch. This is the only 4004 instruction that does this
+# mapping in a single cycle.
+#
+# After execution:
+#   ACC = 4     (last successful KBP result; 0x8 -> 4)
+#   R0  = 3     (KBP of 0x4)
+#   R1  = 4     (KBP of 0x8)
+#   R2  = 15    (error code for multi-bit input 0x6)
+#   R3  = 0     (KBP of 0x0)
+
+F1   # CLC          carry = 0
+
+# Test 1: bit 2 set -> position 3
+D4   # LDM 4        ACC = 0b0100
+FC   # KBP          ACC = 3
+B0   # XCH R0       R0 = 3
+
+# Test 2: bit 3 set -> position 4
+D8   # LDM 8        ACC = 0b1000
+FC   # KBP          ACC = 4
+B1   # XCH R1       R1 = 4
+
+# Test 3: multiple bits -> 0xF (error)
+D6   # LDM 6        ACC = 0b0110 (bits 1 and 2 both set)
+FC   # KBP          ACC = 15 (error)
+B2   # XCH R2       R2 = 15
+
+# Test 4: no bits -> 0
+D0   # LDM 0        ACC = 0b0000
+FC   # KBP          ACC = 0
+B3   # XCH R3       R3 = 0
+
+# Final ACC for display
+A1   # LD R1        ACC = R1 = 4

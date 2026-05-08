@@ -1,0 +1,33 @@
+# === subroutine.4004 ===
+# Call a subroutine that increments R0 and returns: main reads R0=5,
+# calls inc_r0, reads R0=6.
+#
+# Demonstrates `JMS addr` (Jump to MainS subroutine) and `BBL d`
+# (Branch Back and Load). JMS pushes the return address (PC after the
+# 2-byte JMS) onto the 3-deep hardware stack and jumps. BBL pops the
+# stack into PC and loads the 4-bit literal into ACC. The 4004 stack
+# is hardware-fixed at 3 levels deep (no software-managed stack).
+#
+# Layout:
+#   0x00..0x05  main: load R0=5, JMS sub, then JUN past the program end
+#   0x08..0x0B  inc_r0 subroutine: read R0, IAC, write R0, BBL 0
+#
+# After execution:
+#   ACC = 6     (loaded from R0 after the subroutine returned)
+#   R0  = 6     (subroutine wrote the incremented value)
+
+# Main at 0x00
+D5       # LDM 5         ACC = 5
+B0       # XCH R0        R0 = 5
+50 08    # JMS 0x008     call inc_r0; pushes PC=0x04 onto the stack
+A0       # LD R0         ACC = R0 = 6 (post-subroutine)
+40 0C    # JUN 0x00C     jump past the program end so simulation halts
+
+# Padding so the subroutine entry lands at 0x08
+00       # NOP (filler at 0x07)
+
+# Subroutine inc_r0 at 0x08
+A0       # LD R0         ACC = R0
+F2       # IAC           ACC = R0 + 1
+B0       # XCH R0        R0 = ACC (incremented)
+C0       # BBL 0         pop return PC; ACC = 0 (literal)

@@ -1,0 +1,41 @@
+# === fibonacci.4004 ===
+# Compute fib(7) = 13 via two-register iteration.
+#
+# Sequence: 0, 1, 1, 2, 3, 5, 8, 13. Six iterations starting from
+# {a=0, b=1} produce {a=8, b=13}. Each iteration is t = a + b;
+# a = b; b = t. ACC stays small enough not to overflow the 4-bit
+# accumulator until fib(8) = 21.
+#
+# Demonstrates a multi-register state machine using ISZ as a fixed-
+# count loop and XCH as a swap-with-ACC primitive (the 4004 has no
+# direct register-to-register MOV).
+#
+# After execution:
+#   ACC = 13    (fib(7))
+#   R0  = 8     (fib(6), the previous a)
+#   R1  = 13    (fib(7), the running b)
+#   R2  = 0     (loop counter wrapped to zero)
+#   R3  = 13    (scratch t after final iteration)
+
+# Setup
+F1       # CLC          carry = 0
+D0       # LDM 0
+B0       # XCH R0       R0 = 0 (a)
+D1       # LDM 1
+B1       # XCH R1       R1 = 1 (b)
+DA       # LDM 10       ACC = 16 - 6 = 10 (six increments wrap to 0)
+B2       # XCH R2       R2 = 10 (loop counter)
+
+# Loop start at 0x07: t = a + b; a = b; b = t
+F1       # CLC          clean carry-in for ADD
+A0       # LD R0        ACC = a
+81       # ADD R1       ACC = a + b
+B3       # XCH R3       R3 = t (= a + b)
+A1       # LD R1        ACC = b
+B0       # XCH R0       R0 = b (new a)
+A3       # LD R3        ACC = t
+B1       # XCH R1       R1 = t (new b)
+72 07    # ISZ R2, 0x07 R2++; if R2 != 0, loop back to 0x07
+
+# Exit at 0x11
+A1       # LD R1        ACC = b = fib(7)

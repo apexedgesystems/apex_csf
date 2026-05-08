@@ -1,0 +1,30 @@
+# === ram_io.4004 ===
+# Write a value to RAM and read it back: writes 7 to RAM[bank=0,
+# chip=0, register=0, char=0] and reads it into ACC.
+#
+# Demonstrates the 4004's RAM/IO instruction group:
+#   `DCL`  -- Designate Command Line: select the RAM bank (0..3)
+#   `FIM`  -- Fetch IMmediate: load register pair P0 with the SRC
+#             address (chip+register in high nibble, character in low)
+#   `SRC`  -- Send Register Control: set the active RAM cell from P0
+#   `WRM`  -- Write accumulator into the active RAM main cell
+#   `RDM`  -- Read accumulator from the active RAM main cell
+#
+# In the Busicom 141-PF, this group implemented the calculator's
+# 16-digit display register storage. The 4001 ROM, 4002 RAM, and
+# 4003 shift-register chips on the same bus all responded to SRC.
+#
+# After execution:
+#   ACC = 7     (read back from RAM)
+#   R0  = 0     (high nibble of SRC address)
+#   R1  = 0     (low nibble of SRC address)
+
+F1       # CLC          carry = 0
+D0       # LDM 0
+FD       # DCL          select RAM bank 0
+20 00    # FIM P0,0x00  R0 = 0 (chip+reg), R1 = 0 (char)
+21       # SRC P0       set active RAM cell to bank0/chip0/reg0/char0
+D7       # LDM 7        ACC = 7
+E0       # WRM          RAM[active] = 7
+D0       # LDM 0        clear ACC to prove the read returns the stored value
+E9       # RDM          ACC = RAM[active] = 7

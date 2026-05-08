@@ -893,7 +893,69 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         case 0x9: { auto r=readReg(opa); unsigned d=acc+(~r&0xF)+(cy?1:0); writeAcc(d&0xF); writeCy(d>0xF); break; }
         case 0xA: writeAcc(readReg(opa)); break;
         case 0xB: writeAcc(readReg(opa)); break; // XCH ACC part
+        case 0xC: writeAcc(opa); break;          // BBL d: ACC = d (PC pop handled elsewhere)
         case 0xD: writeAcc(opa); break;
+        case 0xE: { // RAM/IO group, parallel-state-backed (matches L0).
+          // Address calculations match L0 / Intel 4002:
+          //   bank   = ramBank_ (DCL-set)
+          //   chip   = (srcAddress_ >> 6) & 0x3
+          //   reg    = (srcAddress_ >> 4) & 0xF
+          //   char   = srcAddress_ & 0xF
+          const std::size_t dataAddr =
+              (static_cast<std::size_t>(ramBank_ & 0x3) * 256u) + srcAddress_;
+          const std::size_t outAddr =
+              (static_cast<std::size_t>(ramBank_ & 0x3) * 4u) +
+              ((srcAddress_ >> 6) & 0x3);
+          auto statusAddr = [&](std::uint8_t reg) -> std::size_t {
+            const std::size_t base =
+                (static_cast<std::size_t>(ramBank_ & 0x3) * 64u) +
+                ((srcAddress_ >> 4) & 0xF) * 4u;
+            return base + (reg & 0x3);
+          };
+          switch (opa) {
+          case 0x0: // WRM
+            if (dataAddr < ramData_.size()) ramData_[dataAddr] = acc;
+            break;
+          case 0x1: // WMP
+            if (outAddr < ramOutput_.size()) ramOutput_[outAddr] = acc;
+            break;
+          case 0x2: // WRR (ROM port write -- no parallel state in our model)
+          case 0x3: // WPM (program RAM write -- no parallel state)
+            break;
+          case 0x4: case 0x5: case 0x6: case 0x7: { // WR0..WR3
+            const std::size_t a = statusAddr(opa & 0x3);
+            if (a < ramStatus_.size()) ramStatus_[a] = acc;
+            break;
+          }
+          case 0x8: { // SBM: ACC = ACC + ~RAM + CY
+            std::uint8_t mem = (dataAddr < ramData_.size()) ? ramData_[dataAddr] : 0;
+            unsigned diff = acc + (~mem & 0xF) + (cy ? 1u : 0u);
+            writeAcc(diff & 0xF);
+            writeCy(diff > 0xF);
+            break;
+          }
+          case 0x9: { // RDM
+            std::uint8_t mem = (dataAddr < ramData_.size()) ? ramData_[dataAddr] : 0;
+            writeAcc(mem & 0xF);
+            break;
+          }
+          case 0xA: writeAcc(0); break; // RDR (no ROM port wired; matches L0)
+          case 0xB: { // ADM: ACC = ACC + RAM + CY
+            std::uint8_t mem = (dataAddr < ramData_.size()) ? ramData_[dataAddr] : 0;
+            unsigned sum = acc + mem + (cy ? 1u : 0u);
+            writeAcc(sum & 0xF);
+            writeCy(sum > 0xF);
+            break;
+          }
+          case 0xC: case 0xD: case 0xE: case 0xF: { // RD0..RD3
+            const std::size_t a = statusAddr(opa & 0x3);
+            std::uint8_t mem = (a < ramStatus_.size()) ? ramStatus_[a] : 0;
+            writeAcc(mem & 0xF);
+            break;
+          }
+          }
+          break;
+        }
         case 0xF:
           switch (opa) {
           case 0x0: writeAcc(0); writeCy(false); break;

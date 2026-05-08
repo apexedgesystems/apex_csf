@@ -1,0 +1,16 @@
+# === register_pair.4004 ===
+# Load an 8-bit immediate into a register pair via FIM (Fetch IMmediate).
+# The 4004 stores register pairs as {even-numbered: high nibble,
+# odd-numbered: low nibble}, so FIM P0, 0x35 fills R0 with 3 and R1
+# with 5.
+#
+# This is one of the 4004's five 2-byte instructions; the assembled
+# program below has 2 bytes for one logical instruction.
+#
+# After execution:
+#   ACC = 0
+#   R0  = 3   (high nibble of 0x35)
+#   R1  = 5   (low nibble of 0x35)
+
+20   # FIM P0    Pair-0 fetch-immediate: opcode byte
+35   #           Immediate data byte: high=3 -> R0, low=5 -> R1

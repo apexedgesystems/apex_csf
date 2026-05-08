@@ -1,0 +1,12 @@
+# === add.4004 ===
+# Add two 4-bit numbers: 5 + 3 = 8.
+#
+# After execution:
+#   ACC = 8     (sum)
+#   R0  = 5     (first operand, parked while we load the second)
+#   CY  = 0     (no overflow out of the 4-bit accumulator)
+
+D5   # LDM 5     ACC = 5
+B0   # XCH R0    R0 <-> ACC: R0 = 5, ACC = 0
+D3   # LDM 3     ACC = 3
+80   # ADD R0    ACC = ACC + R0 + CY = 3 + 5 = 8
