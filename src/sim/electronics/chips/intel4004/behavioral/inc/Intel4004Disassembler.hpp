@@ -8,7 +8,7 @@
  * pointer. Handles both single-byte and two-byte instructions; the
  * returned length tells the caller how far to advance.
  *
- * The output mnemonic format matches Intel's 4004 datasheet table 8-18:
+ * Mnemonic format:
  *
  *   FIM P0, 0x35      (2-byte: fetch immediate)
  *   JCN C2, 0x10      (2-byte: jump on condition)

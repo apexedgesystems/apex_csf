@@ -414,8 +414,8 @@ protected:
    * @brief Drive data bus in PMOS convention.
    *
    * The 4004's internal D0-D3 nets use PMOS convention: logic 1 = LOW
-   * voltage, logic 0 = HIGH voltage. This matches the MCS-4 system where
-   * the ROM chip (4001) drives PMOS-inverted data onto the bus.
+   * voltage, logic 0 = HIGH voltage. PMOS-inverted data is driven onto
+   * the bus by the ROM chip (4001).
    */
   template <typename MnaSystemT>
   void driveBus(MnaSystemT& mna, const sim::electronics::algorithms::mna::NetID* nets, std::size_t bits,

@@ -290,13 +290,13 @@ public:
   double meyerCapGlobalScale_ = 1.0;
 
   /// Bootstrap-cap multiplier on Cgd of transistors with source=VDD.
-  /// Faggin's 66 bootstrap loads in real silicon use a layout-parasitic
-  /// cap between the load's gate and source/drain to keep the gate
-  /// driven above VDD as the output rises (full-rail swing).
-  /// 67 transistors with source=VDD, gate=signal in the Lajos netlist
-  /// closely match Faggin's count -- they are the bootstrap-load
-  /// candidates. Applying a >1.0 scale on their Cgd models the
-  /// bootstrap parasitic without authoritative pair identification.
+  /// Real-silicon bootstrap loads use a layout-parasitic cap between
+  /// the load's gate and source/drain to keep the gate driven above VDD
+  /// as the output rises (full-rail swing). 67 transistors in the
+  /// ingested netlist match the source=VDD, gate=signal pattern -- the
+  /// bootstrap-load candidates. Applying a >1.0 scale on their Cgd
+  /// models the bootstrap parasitic without authoritative pair
+  /// identification.
   /// 0.0 = disabled (preserves baseline; no extra stamping). >0 adds
   /// `caps.Cgd * scale * meyerCapGlobalScale_` between gate and drain
   /// of each bootstrap-candidate transistor (additive on top of any
@@ -312,8 +312,9 @@ public:
     BS_CLUSTER_COUNT = 2,
   };
 
-  /// Authoritative bootstrap-cap entries from the Lajos layout-extracted
-  /// netlist (66 pairs, file `lajos-4004-bootstrap-caps.txt`).
+  /// Authoritative bootstrap-cap entries from the ingested
+  /// layout-extracted netlist (66 pairs, file
+  /// `lajos-4004-bootstrap-caps.txt`).
   /// `valueF > 0` means use the per-cap layout-extracted value;
   /// `valueF == 0` means fall back to the per-cluster value.
   struct BootstrapCap {
@@ -506,9 +507,9 @@ public:
         stampCap(t.gate, t.drain, caps.Cgd * cgd_scale * meyerCapGlobalScale_);
       }
       // Bootstrap-cap addition on transistors with source=VDD,
-      // gate=signal -- the 67 transistors that match Faggin's 66
-      // bootstrap-load count. Their Cgd between gate (signal/dynamic
-      // node) and drain (output) is the bootstrap parasitic.
+      // gate=signal -- the 67 transistors classified as bootstrap-load
+      // candidates. Their Cgd between gate (signal/dynamic node) and
+      // drain (output) is the bootstrap parasitic.
       // Default bootstrapCgdScale_=0.0 means no extra cap added
       // (preserves baseline). Set >0 to apply bootstrap-strength
       // capacitance on top of any existing Cgd stamping.
@@ -530,7 +531,7 @@ public:
     // values aren't available.
     if (!bootstrapCapPairs_.empty() && stepDt_ > 0.0) {
       for (const auto& [a, b, cluster, valueF] : bootstrapCapPairs_) {
-        // Allow b==0 (GND) for cap-to-ground (datasheet pin caps).
+        // Allow b==0 (GND) for cap-to-ground (D-bus pin caps).
         // Skip only when both terminals same or A==0.
         if (a == 0 || a == b) continue;
         if (a >= N || b >= N) continue;

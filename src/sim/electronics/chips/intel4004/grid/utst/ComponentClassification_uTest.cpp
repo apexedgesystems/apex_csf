@@ -83,12 +83,11 @@ TEST(ComponentClassificationTest, DynamicStorageExists) {
 }
 
 /**
- * @test Schematic-exact counts match Intel 4004 documented chip composition.
+ * @test Schematic-exact counts match the ingested netlist.
  *
- * Anchors the netlist to the Intel 4004 chip's documented characteristics:
- *   - Total transistor count: 2242 (Intel datasheet says "2.3K transistors")
- *   - Component classification derived from analysis of the original Intel
- *     Rev G schematic (4004_schematic.pdf).
+ * Anchors the classifier to the ingested netlist:
+ *   - Total transistor count: 2242
+ *   - Per-component-type counts derived from connectivity analysis
  *
  * If any of these change unexpectedly, either the netlist drifted or the
  * classifier changed. Both warrant investigation.
@@ -100,9 +99,9 @@ TEST(ComponentClassificationTest, MatchesIntelSchematic) {
 
   auto result = classifyComponents(grid);
 
-  // Total transistor count (Intel datasheet, schematic).
+  // Total transistor count from the ingested netlist.
   EXPECT_EQ(grid.transistors_.size(), 2242u)
-      << "Lajos netlist must contain exactly 2242 transistors per Intel 4004 spec";
+      << "Ingested netlist must contain exactly 2242 transistors";
 
   // Per-component-type counts derived from the schematic.
   EXPECT_EQ(result.norGateCount(), 1305u)

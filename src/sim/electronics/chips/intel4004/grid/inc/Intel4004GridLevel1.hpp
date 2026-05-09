@@ -1063,7 +1063,7 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       //     0 CLB    1 CLC    2 IAC    3 CMC    4 CMA
       //     5 RAL    6 RAR    7 TCC    8 DAC    9 TCS
       //     A STC    B DAA    C KBP    D DCL
-      //   (E,F undefined per MCS-4 datasheet -> NOP)
+      //   (E,F undefined -> NOP)
       if (ms == 7 && applyL2AluWriteback_ && !isDataByteOfTwoByteOp) {
         const auto cyNet = findNet("CY");
         const algorithms::mna::NetID opaNets[4] = {
@@ -1210,7 +1210,7 @@ struct Intel4004GridLevel1 : Intel4004Grid {
             case 0xD: // DCL: ramBank = ACC & 0x7
               ramBank_ = accVal & 0x7;
               break;
-            default: break; // 0xE, 0xF: undefined per MCS-4
+            default: break; // 0xE, 0xF: undefined
           }
         }
 

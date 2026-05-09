@@ -18,7 +18,6 @@
  * - Gate extraction verified by MC calibration (427 gates, 26 unique types)
  * - Functional results cross-verified against Level 0 (behavioral) and
  *   Level 1 (binary switch)
- * - Timing cross-verified against Maruyama Verilog RTL reference
  */
 
 #include "src/sim/electronics/chips/intel4004/grid/inc/Intel4004Grid.hpp"

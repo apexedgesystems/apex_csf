@@ -402,11 +402,10 @@ struct MosfetLevel1 {
    * @return 0 = cutoff, 1 = linear, 2 = saturation.
    */
   /**
-   * @brief Limit Vgs change per NR iteration (from ngspice DEVfetlim).
+   * @brief Limit Vgs change per NR iteration.
    *
    * Prevents excessive gate voltage swings near threshold that cause
    * NR oscillation. Adapts step size based on distance from Vth.
-   * Direct translation from Berkeley SPICE3 / ngspice devsup.c.
    *
    * @note RT-safe (no allocations, pure math).
    */

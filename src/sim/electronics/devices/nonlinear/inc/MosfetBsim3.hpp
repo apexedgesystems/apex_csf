@@ -2,7 +2,7 @@
 #define APEX_MOSFETBSIM3_HPP
 /**
  * @file MosfetBsim3.hpp
- * @brief BSIM3v3 MOSFET model (Berkeley Short-channel IGFET Model v3).
+ * @brief BSIM3v3 MOSFET model.
  *
  * BSIM3 is the industry-standard MOSFET model for sub-micron processes
  * since 1996. Unlike Shichman-Hodges (Level 1) or SPICE Level 2 -- both
@@ -43,8 +43,6 @@
  *
  * This implementation is a *minimal* BSIM3 -- enough effects to fix
  * the latch feedback issue without the 100+ parameters of full BSIM3v3.
- * Reference: ngspice `src/spicelib/devices/bsim3/` (the canonical
- * implementation), and BSIM3v3.3 manual (UC Berkeley, 2005).
  *
  * RT-safety: RT-safe (static functions, no allocations).
  * Thread-safety: Safe (stateless, pure functions).
@@ -354,8 +352,7 @@ struct MosfetBsim3 {
    *
    *   Cutoff       (Vgst < 0):     Cgs=0,            Cgd=0,            Cgb=Cox*W*L
    *   Linear/triode (Vds < Vdsat): Cgs and Cgd via the standard Meyer
-   *                                interpolation (Tsividis Ch. 9 / SPICE
-   *                                Level 1-3 cap model):
+   *                                interpolation:
    *                                  Cgs = (2/3)*Cox*W*L * [1 - ((Vgst-Vds)/(2Vgst-Vds))^2]
    *                                  Cgd = (2/3)*Cox*W*L * [1 - (Vgst    /(2Vgst-Vds))^2]
    *                                Cgb = 0 (channel screens bulk in inversion)
@@ -367,12 +364,7 @@ struct MosfetBsim3 {
    *
    * Cox = eps_ox / tox where eps_ox = 3.45e-11 F/m for thermal SiO2.
    *
-   * Reference: SPICE 2 / 3 source code; Tsividis "Operation and Modeling
-   * of the MOS Transistor" Ch. 9. This is exactly the cap model that
-   * ngspice MOS levels 1/2/3 use, and is industry-standard for
-   * long-channel dynamic-logic simulation of vintage technologies.
-   *
-   * Documented limitations (per Tsividis):
+   * Documented limitations:
    *   1. Meyer caps are NOT charge-conservative. Each cap is computed
    *      independently from bias; the underlying Q is not a single-valued
    *      function of Vgs/Vds/Vbs. For digital logic with rail-to-rail

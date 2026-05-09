@@ -748,11 +748,10 @@ double solveDepletionNor(double vinA, double vinB,
 
 /**
  * @testdepletion-load NOR with both inputs LOW -- VOH check.
- *       Expectation per Faggin: plain depletion load saturates at
- *       VDD - Vt because the load loses Vgs as the output rises. If
- *       this test reports VOH < VDD - 0.5V, we have empirical
- *       evidence that bootstrap loads are needed for the chip's
- *       full-rail signals.
+ *       Plain depletion load saturates at VDD - Vt because the load
+ *       loses Vgs as the output rises. If this test reports
+ *       VOH < VDD - 0.5V, we have empirical evidence that bootstrap
+ *       loads are needed for the chip's full-rail signals.
  */
 TEST(AtomicCellTest, PmosNorPlainLoad_BothInputsLow_VOH_BSIM3) {
   const double VOUT = solveDepletionNor(0.0, 0.0,
@@ -1022,7 +1021,7 @@ TEST(AtomicCellTest, PmosNorPlainLoad_VOH_L1) {
  *
  * Validates that the bootstrap-cap-companion stamping mechanism works
  * correctly on a 4-transistor circuit BEFORE the chip-scale tuning
- * problem. Topology (matches Faggin's bootstrap load):
+ * problem. Topology of the bootstrap load:
  *
  *      VDD ----+----+
  *              |    |

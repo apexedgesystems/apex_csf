@@ -1,8 +1,8 @@
 /**
  * @file Intel4004OprDecode_dTest.cpp
- * @brief OPR latch bit-pattern compliance per Intel datasheet table 8-18.
+ * @brief OPR latch bit-pattern compliance for the Intel 4004 instruction set.
  *
- * For each of the 16 instruction classes, the datasheet table 8-18
+ * For each of the 16 instruction classes, the BASIC INSTRUCTIONS table
  * specifies the OPR field (D7-D4) bit pattern. After fetching the byte
  * at M1, OPR.0..3 must hold those bits. This test verifies fetch+decode
  * correctness for the entire instruction set at L1.
@@ -10,8 +10,6 @@
  * Active-low PMOS convention:
  *   - bit = 1 -> low voltage  (< VDD/2 = 2.5V)
  *   - bit = 0 -> high voltage (>= VDD/2 = 2.5V)
- *
- * Reference: Intel 4004 datasheet, page 8-18 (BASIC INSTRUCTIONS).
  */
 
 #include "src/sim/electronics/chips/intel4004/behavioral/inc/Intel4004Cpu.hpp"
@@ -36,11 +34,11 @@ static const std::string SPICE_PATH = INTEL4004_DATA_DIR "/lajos-4004.spice";
 
 struct InstructionClass {
   std::uint8_t opcode;       ///< representative opcode
-  std::uint8_t expectedOpr;  ///< OPR field bits per datasheet 8-18
+  std::uint8_t expectedOpr;  ///< expected OPR field bits (D7-D4)
   const char* mnemonic;
 };
 
-// Per datasheet 8-18 BASIC INSTRUCTIONS + 8-19 I/O & RAM INSTRUCTIONS:
+// 16 instruction classes covering BASIC + I/O & RAM groups.
 // OPR is the upper 4 bits (D7-D4) of the opcode.
 constexpr std::array<InstructionClass, 16> INSTRUCTION_CLASSES = {{
     {0x00, 0x0, "NOP"},   // OPR = 0000
@@ -68,7 +66,7 @@ constexpr std::size_t WARMUP = 16;
 
 /**
  * @test L1 OPR latch captures correct bit pattern for all 16 instruction
- *       classes per Intel datasheet table 8-18.
+ *       classes.
  *
  * For each instruction class, drive WARMUP NOPs + 1 byte of the test
  * opcode through L1 (with behavioral OPR sample stub active). Read
@@ -140,8 +138,6 @@ TEST(Intel4004L1, OprDecodeAllInstructionClasses) {
  * LDM N (opcode 0xD<N>) has OPR = 1101 (constant) and OPA = N (variable).
  * After M2 (low nibble fetch), OPA.0..3 must hold the bits of N.
  * This validates fetch+decode of the operand field across all 4-bit values.
- *
- * Reference: Intel 4004 datasheet, page 8-18 LDM row.
  */
 TEST(Intel4004L1, OpaDecodeAllImmediateValues) {
   const auto NETLIST = loadSpiceNetlist(SPICE_PATH);

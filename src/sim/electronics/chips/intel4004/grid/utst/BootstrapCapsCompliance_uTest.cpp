@@ -1,14 +1,13 @@
 /**
  * @file BootstrapCapsCompliance_uTest.cpp
- * @brief Verify bootstrap-cap data file matches Intel/Lajos refs.
+ * @brief Verify the bootstrap-cap data file matches the ingested layout
+ *        extraction.
  *
- * Anchored to:
- *   - Faggin's documented count: 66 bootstrap loads
- *     (insanity4004 + righto.com cross-references)
- *   - Lajos analyzer layout extraction: 66 C-records tagged "Bootstrap"
- *   - Intel datasheet (intel-4004.pdf 8-21): CDB = 7 pF data-bus pin cap
- *   - Layout extraction maps pixel area to fF via Cox = 6.9e-4 F/m^2
- *     and 1.5 um/pixel (verified against 12 mm^2 die size)
+ * Anchored to the ingested files
+ * `lajos-4004.spice` + `lajos-4004-bootstrap-caps.txt`:
+ *   - 66 bootstrap-load caps (C-records tagged "Bootstrap" in netlist).
+ *   - 4 D-bus pin caps (CDB = 7 pF on D0..D3).
+ *   - Pixel-to-fF mapping uses Cox = 6.9e-4 F/m^2 and 1.5 um/pixel.
  */
 
 #include "src/sim/electronics/chips/intel4004/grid/inc/Intel4004GridLevel2.hpp"
@@ -34,8 +33,8 @@ static const std::string CAPS_PATH =
  * @test Bootstrap caps data file is well-formed and produces expected counts.
  *
  * The file format is `<gate> <source> <pixels> <C_femtofarads>` per line.
- * 66 layout-extracted caps + 4 D-bus pin caps (datasheet CDB=7 pF) =
- * 70 total. All entries should resolve to valid net IDs.
+ * 66 layout-extracted caps + 4 D-bus pin caps (CDB=7 pF) = 70 total.
+ * All entries should resolve to valid net IDs.
  */
 TEST(BootstrapCapsTest, ExpectedCount) {
   const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
@@ -44,8 +43,8 @@ TEST(BootstrapCapsTest, ExpectedCount) {
 
   const std::size_t LOADED = grid.loadBootstrapCaps(CAPS_PATH);
 
-  // 66 layout-extracted caps (Faggin's documented count) + 4 D-bus pin
-  // caps (datasheet CDB=7 pF on D0..D3) = 70 expected.
+  // 66 layout-extracted caps + 4 D-bus pin caps (CDB=7 pF on D0..D3) =
+  // 70 expected.
   EXPECT_EQ(LOADED, 70u)
       << "Expected 66 layout caps + 4 D-bus pin caps = 70 total.\n"
       << "Got " << LOADED << ". Either file is missing entries or"
@@ -84,12 +83,12 @@ TEST(BootstrapCapsTest, FileFormat) {
 /**
  * @test Layout-extracted cap values are within physically plausible range.
  *
- * Per-cap values are extracted from Lajos's poly+diffusion BMPs using
+ * Per-cap values come from the ingested layout extraction using
  * Cox = 6.9e-4 F/m^2 (50 nm SiO2) and 1.5 um/pixel. Resulting range:
  * 5 fF to 1108 fF (median 405 fF). Values outside this range suggest
  * extraction or scaling errors.
  *
- * The 4 pin caps from datasheet are 7000 fF each (CDB=7 pF).
+ * The 4 D-bus pin caps are 7000 fF each (CDB=7 pF).
  */
 TEST(BootstrapCapsTest, ValueRange) {
   std::ifstream f(CAPS_PATH);
@@ -106,7 +105,7 @@ TEST(BootstrapCapsTest, ValueRange) {
     if (!(iss >> a >> b >> pixels >> valueFF)) continue;
 
     if (b == "GND" && valueFF > 5000.0) {
-      // Datasheet pin cap (7 pF = 7000 fF)
+      // D-bus pin cap (7 pF = 7000 fF)
       ++pinCaps;
       EXPECT_NEAR(valueFF, 7000.0, 100.0)
           << "D-bus pin cap should match CDB=7 pF: line '" << line << "'";
