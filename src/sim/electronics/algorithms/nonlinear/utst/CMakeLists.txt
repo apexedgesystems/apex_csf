@@ -2,9 +2,7 @@
 # Unit Tests: sim_electronics_algorithms_nonlinear
 # ==============================================================================
 
-set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_LIST_DIR}/NewtonRaphson_uTest.cpp"
-                      "${CMAKE_CURRENT_LIST_DIR}/DebugIteration.cpp"
-)
+set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_LIST_DIR}/NewtonRaphson_uTest.cpp")
 
 apex_add_gtest(
   TARGET

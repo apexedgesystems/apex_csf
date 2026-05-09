@@ -1,5 +1,5 @@
 /**
- * @file Intel4004GridLevel2_uTest.cpp
+ * @file Intel4004GridLevel2_dTest.cpp
  * @brief Verification tests for Intel4004GridLevel2: 100% physics path.
  *
  * L2 differs from L1 in two ways:

@@ -10,7 +10,7 @@ include(apex/All)
 # Test Sources
 # ------------------------------------------------------------------------------
 
-set(DEV_TEST_SOURCES MosfetLevel1Verification_Dev.cpp)
+set(DEV_TEST_SOURCES MosfetLevel1Verification_dTest.cpp)
 
 # ------------------------------------------------------------------------------
 # Test Target

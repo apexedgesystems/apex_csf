@@ -1,3 +1,9 @@
+/**
+ * @file MosfetLevel1Verification_dTest.cpp
+ * @brief Development test cross-checking MosfetLevel1 stamp values against
+ *        ngspice on identical bias points. Manual execution only.
+ */
+
 #include "src/sim/electronics/algorithms/spice/ngspice/inc/NgspiceWrapper.hpp"
 #include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1.hpp"
 

@@ -1,6 +1,7 @@
 /**
- * @file Intel4004GridVsBehavioral_uTest.cpp
- * @brief Production tests for Intel 4004 simulation at L0 and L1 fidelity.
+ * @file Intel4004GridVsBehavioral_dTest.cpp
+ * @brief Development tests cross-checking L1 transistor-level execution
+ *        against the L0 behavioral CPU at full program scope.
  *
  * Tests the two shipping levels:
  *   - L0: Behavioral CPU (Intel4004Cpu) - full programs, no transistor sim

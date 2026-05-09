@@ -1,6 +1,10 @@
 /**
- * @file Intel4004Grid_uTest.cpp
- * @brief Unit tests for the Intel 4004 transistor-level circuit assembly.
+ * @file Intel4004Grid_dTest.cpp
+ * @brief Development tests for the Intel 4004 transistor-level circuit assembly.
+ *
+ * Builds the full 2,242-transistor circuit and runs transient simulation;
+ * each test takes 50-70 seconds. Manual execution only (not run by `make
+ * test`).
  */
 
 #include "src/sim/electronics/chips/intel4004/grid/inc/Intel4004Grid.hpp"
