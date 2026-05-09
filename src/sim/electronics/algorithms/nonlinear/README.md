@@ -19,22 +19,22 @@ Newton-Raphson solver for circuits with nonlinear devices (diodes, transistors, 
 
 | Feature               | Status                 |
 | --------------------- | ---------------------- |
-| Newton-Raphson solver | ✅ Complete            |
-| Device interface      | ✅ Complete            |
-| Convergence criteria  | ✅ Complete            |
-| Damping               | ✅ Complete            |
-| Divergence detection  | ✅ Complete            |
-| Unit tests            | ✅ Complete (15 tests) |
-| Documentation         | ✅ Complete            |
-| CUDA acceleration     | 🚧 Future              |
+| Newton-Raphson solver | [OK] Complete            |
+| Device interface      | [OK] Complete            |
+| Convergence criteria  | [OK] Complete            |
+| Damping               | [OK] Complete            |
+| Divergence detection  | [OK] Complete            |
+| Unit tests            | [OK] Complete (15 tests) |
+| Documentation         | [OK] Complete            |
+| CUDA acceleration     |  Future              |
 
 ## Quick Start
 
 ```cpp
 #include "src/sim/electronics/algorithms/nonlinear/inc/NewtonRaphson.hpp"
 
-using sim::electronics::nonlinear::NewtonRaphsonSolver;
-using sim::electronics::nonlinear::NonlinearConfig;
+using sim::electronics::algorithms::nonlinear::NewtonRaphsonSolver;
+using sim::electronics::algorithms::nonlinear::NonlinearConfig;
 
 // 1. Create solver for circuit with N nets
 NewtonRaphsonSolver solver(netCount);
@@ -75,25 +75,25 @@ For a circuit with nonlinear devices, we seek the voltages **V** that satisfy:
 
 where **F** is the nodal residual (KCL at each node). Newton-Raphson linearizes this as:
 
-**J Δ**V = -**F**
+**J delta**V = -**F**
 
 where **J** is the Jacobian matrix (dF/dV). The solver iterates:
 
 1. **Linearize** all devices at current operating point **V**
 2. **Stamp** linearized conductances and currents into MNA system
-3. **Solve** MNA system to get voltage update **ΔV**
-4. **Update** voltages: **V** ← **V** + α**ΔV** (α = damping factor)
-5. **Check convergence**: if |**ΔV**| < tolerance, done; else repeat
+3. **Solve** MNA system to get voltage update **deltaV**
+4. **Update** voltages: **V** <- **V** + alpha**deltaV** (alpha = damping factor)
+5. **Check convergence**: if |**deltaV**| < tolerance, done; else repeat
 
 ### Convergence Criteria
 
-The solver checks three criteria (any satisfied → converged):
+The solver checks three criteria (any satisfied -> converged):
 
 | Criterion        | Formula                                        | Description                   |
 | ---------------- | ---------------------------------------------- | ----------------------------- |
-| Absolute voltage | max(\|ΔV\|) < `voltageTolerance`               | All voltage changes small     |
+| Absolute voltage | max(\|deltaV\|) < `voltageTolerance`               | All voltage changes small     |
 | Absolute current | max(\|I_residual\|) < `currentTolerance`       | All KCL residuals small       |
-| Relative voltage | max(\|ΔV\|) / max(\|V\|) < `relativeTolerance` | Relative voltage change small |
+| Relative voltage | max(\|deltaV\|) / max(\|V\|) < `relativeTolerance` | Relative voltage change small |
 
 **Default tolerances:**
 
@@ -105,9 +105,9 @@ The solver checks three criteria (any satisfied → converged):
 
 Newton-Raphson can oscillate when far from the solution. Damping reduces the step size:
 
-**V** ← **V** + α**ΔV**
+**V** <- **V** + alpha**deltaV**
 
-where α ∈ (0, 1] is the damping factor. Default: α = 0.5 for first 5 iterations, then α = 1.0.
+where alpha in (0, 1] is the damping factor. Default: alpha = 0.5 for first 5 iterations, then alpha = 1.0.
 
 ## Device Interface
 
@@ -131,14 +131,14 @@ public:
 
 ### Linearization
 
-Given a device I-V curve **I(V)**, linearization at operating point **V₀** gives:
+Given a device I-V curve **I(V)**, linearization at operating point **V0** gives:
 
-**I(V) ≈ I(V₀) + g(V₀) · (V - V₀)**
+**I(V) ~= I(V0) + g(V0) * (V - V0)**
 
-where **g(V₀) = dI/dV |<sub>V₀</sub>** is the small-signal conductance. This becomes a Norton equivalent circuit:
+where **g(V0) = dI/dV |<sub>V0</sub>** is the small-signal conductance. This becomes a Norton equivalent circuit:
 
-- **Conductance**: g(V₀) (parallel)
-- **Current source**: I<sub>eq</sub> = I(V₀) - g(V₀)·V₀ (parallel)
+- **Conductance**: g(V0) (parallel)
+- **Current source**: I<sub>eq</sub> = I(V0) - g(V0)*V0 (parallel)
 
 ### Example Device: Ideal Diode
 
@@ -169,7 +169,7 @@ public:
 private:
   NetID anode_, cathode_;
   double Is_;  // Saturation current
-  double Vt_;  // Thermal voltage (kT/q ≈ 26 mV at 300K)
+  double Vt_;  // Thermal voltage (kT/q ~= 26 mV at 300K)
 };
 ```
 
@@ -320,11 +320,11 @@ __global__ void evaluateDevicesKernel(const Device* devices,
 
 | Component                        | RT-Safe?               | Notes                                         |
 | -------------------------------- | ---------------------- | --------------------------------------------- |
-| `NewtonRaphsonSolver::solve()`   | ⚠️ With pre-allocation | MNA allocates on first call, reuses workspace |
-| `NonlinearDevice::current()`     | ✅ Yes                 | Pure computation, no allocation               |
-| `NonlinearDevice::conductance()` | ✅ Yes                 | Pure computation, no allocation               |
-| `NonlinearDeviceSet::stampAll()` | ✅ Yes                 | Iterates existing devices, no allocation      |
-| `NonlinearConfig`                | ✅ Yes                 | POD struct                                    |
+| `NewtonRaphsonSolver::solve()`   | ! With pre-allocation | MNA allocates on first call, reuses workspace |
+| `NonlinearDevice::current()`     | [OK] Yes                 | Pure computation, no allocation               |
+| `NonlinearDevice::conductance()` | [OK] Yes                 | Pure computation, no allocation               |
+| `NonlinearDeviceSet::stampAll()` | [OK] Yes                 | Iterates existing devices, no allocation      |
+| `NonlinearConfig`                | [OK] Yes                 | POD struct                                    |
 
 **Making solve() RT-safe:**
 
@@ -364,7 +364,7 @@ solver.devices().addDevice(std::make_shared<DiodeModel>(2, 1));
 solver.setLinearStampCallback([t](MnaSystem& mna) {
   double vAC = 10.0 * std::sin(2 * M_PI * 60 * t);  // 60 Hz, 10V peak
   mna.addVoltageSource(1, 0, vAC);
-  mna.addResistor(2, 0, 1000.0);  // 1 kΩ load
+  mna.addResistor(2, 0, 1000.0);  // 1 kOhm load
 });
 
 // Solve at each time step

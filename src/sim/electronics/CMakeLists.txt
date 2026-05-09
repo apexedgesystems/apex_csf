@@ -7,14 +7,17 @@
 # Modular architecture with clean layer separation.
 #
 # Layers:
-#   1. algorithms/   - Solvers (MNA, transient, nonlinear, spice/ngspice)
-#   2. devices/      - Device physics (MOSFETs, resistors, capacitors, companions)
+#   1. algorithms/   - Solvers (MNA, transient, nonlinear, companions, spice)
+#   2. devices/      - Device physics (R/L/C, diodes, MOSFETs, BJTs, JFETs)
 #   3. circuit/      - Circuit assembly API (general construction wrapper)
 #
-# Models (built on top of layers 1-3):
-#   filters/         - Analog filter circuits (RC low-pass, ...)
-#   gates/           - Digital logic gates and adders
-#   intel4004/       - Intel 4004 microprocessor (behavioral + L1 transistor)
+# Topologies (pre-built circuits, built on top of layers 1-3):
+#   topologies/gates/      - CMOS logic gates (boolean + transistor)
+#   topologies/filters/    - Analog filter circuits (RC low-pass, ...)
+#   topologies/amplifiers/ - Amplifier topologies (BJT common-emitter, ...)
+#
+# Chip-scale assemblies (each chip is its own multi-fidelity stack):
+#   chips/intel4004/       - Intel 4004 microprocessor (L0 / Lg / L1 / L2)
 #
 # ==============================================================================
 
@@ -27,10 +30,8 @@ add_subdirectory(devices)
 add_subdirectory(circuit)
 
 # ------------------------------------------------------------------------------
-# Models
+# Topologies + chip-scale assemblies
 # ------------------------------------------------------------------------------
 
-add_subdirectory(amplifiers)
-add_subdirectory(filters)
-add_subdirectory(gates)
-add_subdirectory(intel4004)
+add_subdirectory(topologies)
+add_subdirectory(chips)

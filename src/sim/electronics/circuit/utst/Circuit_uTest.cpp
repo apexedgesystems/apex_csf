@@ -20,18 +20,18 @@
 using sim::electronics::circuit::Circuit;
 using sim::electronics::circuit::CircuitNet;
 using sim::electronics::devices::linear::ResistorModel;
-using sim::electronics::mna::MnaSystem;
-using sim::electronics::mna::NetID;
-using sim::electronics::transient::IntegrationMethod;
-using sim::electronics::transient::TransientConfig;
-using sim::electronics::transient::TransientResult;
-using sim::electronics::transient::TransientState;
-using sim::electronics::transient::TransientStatus;
+using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::NetID;
+using sim::electronics::algorithms::transient::IntegrationMethod;
+using sim::electronics::algorithms::transient::TransientConfig;
+using sim::electronics::algorithms::transient::TransientResult;
+using sim::electronics::algorithms::transient::TransientState;
+using sim::electronics::algorithms::transient::TransientStatus;
 
 /* ----------------------------- Default Construction ----------------------------- */
 
 /** @test Default-constructed circuit has one net (ground) and no stamps. */
-TEST(Circuit, DefaultConstruction) {
+TEST(CircuitTest, DefaultConstruction) {
   Circuit ckt;
   EXPECT_EQ(ckt.netCount(), 1u) << "Fresh circuit has ground (net 0) only";
   EXPECT_EQ(ckt.stampCount(), 0u);
@@ -41,7 +41,7 @@ TEST(Circuit, DefaultConstruction) {
 /* ----------------------------- Net Allocation ----------------------------- */
 
 /** @test addNet returns incrementing IDs starting at 1. */
-TEST(Circuit, AddNetReturnsIncrementingIds) {
+TEST(CircuitTest, AddNetReturnsIncrementingIds) {
   Circuit ckt;
   CircuitNet n1 = ckt.addNet();
   CircuitNet n2 = ckt.addNet();
@@ -52,7 +52,7 @@ TEST(Circuit, AddNetReturnsIncrementingIds) {
 }
 
 /** @test addNet with name stores the name and returns incrementing IDs. */
-TEST(Circuit, AddNetWithNameStoresName) {
+TEST(CircuitTest, AddNetWithNameStoresName) {
   Circuit ckt;
   CircuitNet vcc = ckt.addNet("VCC");
   CircuitNet out = ckt.addNet("OUT");
@@ -63,10 +63,10 @@ TEST(Circuit, AddNetWithNameStoresName) {
 }
 
 /** @test ground always returns 0. */
-TEST(Circuit, GroundReturnsZero) { EXPECT_EQ(Circuit::ground(), 0u); }
+TEST(CircuitTest, GroundReturnsZero) { EXPECT_EQ(Circuit::ground(), 0u); }
 
 /** @test netCount tracks total nets including ground. */
-TEST(Circuit, NetCountIncludesGround) {
+TEST(CircuitTest, NetCountIncludesGround) {
   Circuit ckt;
   EXPECT_EQ(ckt.netCount(), 1u);
   ckt.addNet();
@@ -76,14 +76,14 @@ TEST(Circuit, NetCountIncludesGround) {
 }
 
 /** @test netName returns empty for unnamed nets. */
-TEST(Circuit, NetNameEmptyForUnnamed) {
+TEST(CircuitTest, NetNameEmptyForUnnamed) {
   Circuit ckt;
   ckt.addNet(); // unnamed, id=1
   EXPECT_TRUE(ckt.netName(1).empty());
 }
 
 /** @test netName returns empty for out-of-range IDs. */
-TEST(Circuit, NetNameEmptyForOutOfRange) {
+TEST(CircuitTest, NetNameEmptyForOutOfRange) {
   Circuit ckt;
   EXPECT_TRUE(ckt.netName(999).empty());
 }
@@ -91,7 +91,7 @@ TEST(Circuit, NetNameEmptyForOutOfRange) {
 /* ----------------------------- Stamp Registration ----------------------------- */
 
 /** @test addStamp increments stamp count. */
-TEST(Circuit, AddStampIncrementsCount) {
+TEST(CircuitTest, AddStampIncrementsCount) {
   Circuit ckt;
   EXPECT_EQ(ckt.stampCount(), 0u);
 
@@ -105,7 +105,7 @@ TEST(Circuit, AddStampIncrementsCount) {
 /* ----------------------------- Companion Management ----------------------------- */
 
 /** @test addCapacitor adds to companion set and returns index. */
-TEST(Circuit, AddCapacitorReturnsIndex) {
+TEST(CircuitTest, AddCapacitorReturnsIndex) {
   Circuit ckt;
   CircuitNet a = ckt.addNet();
   std::size_t idx0 = ckt.addCapacitor(a.id, Circuit::ground(), 1e-6);
@@ -115,7 +115,7 @@ TEST(Circuit, AddCapacitorReturnsIndex) {
 }
 
 /** @test addInductor adds to companion set and returns index. */
-TEST(Circuit, AddInductorReturnsIndex) {
+TEST(CircuitTest, AddInductorReturnsIndex) {
   Circuit ckt;
   CircuitNet a = ckt.addNet();
   std::size_t idx0 = ckt.addInductor(a.id, Circuit::ground(), 1e-3);
@@ -125,7 +125,7 @@ TEST(Circuit, AddInductorReturnsIndex) {
 }
 
 /** @test companions() returns mutable and const references. */
-TEST(Circuit, CompanionsAccessors) {
+TEST(CircuitTest, CompanionsAccessors) {
   Circuit ckt;
   CircuitNet a = ckt.addNet();
   ckt.addCapacitor(a.id, Circuit::ground(), 1e-6);
@@ -135,15 +135,15 @@ TEST(Circuit, CompanionsAccessors) {
   EXPECT_EQ(mutableSet.capacitorCount(), 1u);
 
   // Const access
-  const Circuit& constCkt = ckt;
-  const auto& constSet = constCkt.companions();
-  EXPECT_EQ(constSet.capacitorCount(), 1u);
+  const Circuit& CONST_CKT = ckt;
+  const auto& CONST_SET = CONST_CKT.companions();
+  EXPECT_EQ(CONST_SET.capacitorCount(), 1u);
 }
 
 /* ----------------------------- Build Lifecycle ----------------------------- */
 
 /** @test isBuilt is false before build, true after. */
-TEST(Circuit, IsBuiltLifecycle) {
+TEST(CircuitTest, IsBuiltLifecycle) {
   Circuit ckt;
   ckt.addNet();
   EXPECT_FALSE(ckt.isBuilt());
@@ -153,7 +153,7 @@ TEST(Circuit, IsBuiltLifecycle) {
 }
 
 /** @test Calling build multiple times rebuilds the solver. */
-TEST(Circuit, BuildMultipleTimes) {
+TEST(CircuitTest, BuildMultipleTimes) {
   Circuit ckt;
   ckt.addNet();
   ckt.build();
@@ -166,7 +166,7 @@ TEST(Circuit, BuildMultipleTimes) {
 /* ----------------------------- Reset ----------------------------- */
 
 /** @test resetSolver clears built state. */
-TEST(Circuit, ResetSolverClearsBuiltState) {
+TEST(CircuitTest, ResetSolverClearsBuiltState) {
   Circuit ckt;
   ckt.addNet();
   ckt.build();
@@ -177,7 +177,7 @@ TEST(Circuit, ResetSolverClearsBuiltState) {
 }
 
 /** @test resetSolver preserves nets, stamps, and companions. */
-TEST(Circuit, ResetSolverPreservesCircuitDefinition) {
+TEST(CircuitTest, ResetSolverPreservesCircuitDefinition) {
   Circuit ckt;
   CircuitNet a = ckt.addNet("A");
   ckt.addStamp([](MnaSystem&, double, const std::vector<double>&) {});
@@ -194,7 +194,7 @@ TEST(Circuit, ResetSolverPreservesCircuitDefinition) {
 /* ----------------------------- Solver Access ----------------------------- */
 
 /** @test solver() auto-builds if not already built. */
-TEST(Circuit, SolverAutoBuild) {
+TEST(CircuitTest, SolverAutoBuild) {
   Circuit ckt;
   ckt.addNet();
   EXPECT_FALSE(ckt.isBuilt());
@@ -206,7 +206,7 @@ TEST(Circuit, SolverAutoBuild) {
 /* ----------------------------- DC Operating Point ----------------------------- */
 
 /** @test computeDC solves a resistive voltage divider. */
-TEST(Circuit, ComputeDcVoltageDivider) {
+TEST(CircuitTest, ComputeDcVoltageDivider) {
   // 5V source -> R1=1k -> node A -> R2=1k -> ground
   // Expected V(A) = 2.5V
   Circuit ckt;
@@ -246,7 +246,7 @@ TEST(Circuit, ComputeDcVoltageDivider) {
 /* ----------------------------- Single Step ----------------------------- */
 
 /** @test step advances simulation by one time step. */
-TEST(Circuit, StepSingleTimeStep) {
+TEST(CircuitTest, StepSingleTimeStep) {
   // Simple RC: Vsrc=5V -> R=1k -> node_out -> C=1uF -> gnd
   // tau = R*C = 1ms
   Circuit ckt;
@@ -280,7 +280,7 @@ TEST(Circuit, StepSingleTimeStep) {
 /* ----------------------------- Transient Simulation ----------------------------- */
 
 /** @test simulate runs a full RC transient and converges to steady state. */
-TEST(Circuit, SimulateRcConvergesToSteadyState) {
+TEST(CircuitTest, SimulateRcConvergesToSteadyState) {
   // RC circuit: Vsrc=5V -> R=1k -> node_out -> C=1uF -> gnd
   // tau = 1ms. After 5*tau = 5ms, V_out should be ~5V.
   Circuit ckt;
@@ -315,7 +315,7 @@ TEST(Circuit, SimulateRcConvergesToSteadyState) {
 }
 
 /** @test simulate auto-builds if not already built. */
-TEST(Circuit, SimulateAutoBuild) {
+TEST(CircuitTest, SimulateAutoBuild) {
   Circuit ckt;
   CircuitNet nodeIn = ckt.addNet("IN");
   CircuitNet nodeOut = ckt.addNet("OUT");
@@ -339,7 +339,7 @@ TEST(Circuit, SimulateAutoBuild) {
 }
 
 /** @test simulate with history records all time points. */
-TEST(Circuit, SimulateWithHistory) {
+TEST(CircuitTest, SimulateWithHistory) {
   Circuit ckt;
   CircuitNet nodeIn = ckt.addNet("IN");
 
@@ -361,7 +361,7 @@ TEST(Circuit, SimulateWithHistory) {
 /* ----------------------------- Step Auto-Build ----------------------------- */
 
 /** @test step auto-builds if not already built. */
-TEST(Circuit, StepAutoBuild) {
+TEST(CircuitTest, StepAutoBuild) {
   Circuit ckt;
   CircuitNet nodeIn = ckt.addNet("IN");
 
@@ -382,7 +382,7 @@ TEST(Circuit, StepAutoBuild) {
 /* ----------------------------- ComputeDC Auto-Build ----------------------------- */
 
 /** @test computeDC auto-builds if not already built. */
-TEST(Circuit, ComputeDcAutoBuild) {
+TEST(CircuitTest, ComputeDcAutoBuild) {
   Circuit ckt;
   CircuitNet nodeIn = ckt.addNet("IN");
 
@@ -404,7 +404,7 @@ TEST(Circuit, ComputeDcAutoBuild) {
 /* ----------------------------- Stamp Count ----------------------------- */
 
 /** @test stampCount returns zero for fresh circuit. */
-TEST(Circuit, StampCountZeroInitially) {
+TEST(CircuitTest, StampCountZeroInitially) {
   Circuit ckt;
   EXPECT_EQ(ckt.stampCount(), 0u);
 }

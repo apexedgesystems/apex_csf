@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_MNA_STAMPCONTEXT_HPP
-#define APEX_SIM_ELECTRONICS_MNA_STAMPCONTEXT_HPP
+#ifndef APEX_STAMPCONTEXT_HPP
+#define APEX_STAMPCONTEXT_HPP
 /**
  * @file StampContext.hpp
  * @brief Context structure for MNA matrix stamping operations.
@@ -11,7 +11,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace sim::electronics::mna {
+namespace sim::electronics::algorithms::mna {
 
 /**
  * @brief Context for stamping circuit elements into an MNA system.
@@ -265,6 +265,6 @@ private:
   double* matvecAx_ = nullptr;          ///< Output Ax accumulator for matvec mode (nullable).
 };
 
-} // namespace sim::electronics::mna
+} // namespace sim::electronics::algorithms::mna
 
-#endif // APEX_SIM_ELECTRONICS_MNA_STAMPCONTEXT_HPP
+#endif // APEX_STAMPCONTEXT_HPP

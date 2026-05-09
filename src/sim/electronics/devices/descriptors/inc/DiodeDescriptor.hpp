@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_DIODEDESCRIPTOR_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_DIODEDESCRIPTOR_HPP
+#ifndef APEX_DIODEDESCRIPTOR_HPP
+#define APEX_DIODEDESCRIPTOR_HPP
 /**
  * @file DiodeDescriptor.hpp
  * @brief Diode topology descriptor (connectivity only, no physics).
@@ -14,7 +14,7 @@
 
 namespace sim::electronics::devices::descriptors {
 
-using mna::NetID;
+using algorithms::mna::NetID;
 
 /**
  * @brief Diode topology descriptor.
@@ -50,4 +50,4 @@ struct DiodeDescriptor {
 
 } // namespace sim::electronics::devices::descriptors
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_DIODEDESCRIPTOR_HPP
+#endif // APEX_DIODEDESCRIPTOR_HPP

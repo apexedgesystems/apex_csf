@@ -1,6 +1,6 @@
 # Modified Nodal Analysis (MNA) Solvers
 
-**Namespace:** `sim::electronics::mna`
+**Namespace:** `sim::electronics::algorithms::mna`
 **Platform:** Linux (CUDA optional)
 **C++ Standard:** C++23
 
@@ -28,7 +28,7 @@ High-performance Modified Nodal Analysis solvers for circuit simulation. Provide
 ```cpp
 #include "src/sim/electronics/mna/inc/MnaSystemSparse.hpp"
 
-using namespace sim::electronics::mna;
+using namespace sim::electronics::algorithms::mna;
 
 // Create sparse MNA system for 1000-net circuit
 MnaSystemSparse mna(1000);
@@ -73,7 +73,7 @@ make compose-testp  # Verify tests pass
 - Dense DC: 31x speedup over baseline (104.7ms -> 3.33ms)
 - Dense AC: 5-10x speedup from LAPACK zgesv vs naive complex Gaussian
 - Sparse DC: 25x speedup over baseline (138.2ms -> 5.57ms)
-- Cached LU: O(n²) back-substitution vs O(n³) full solve (massive win for sweeps)
+- Cached LU: O(n^2) back-substitution vs O(n^3) full solve (massive win for sweeps)
 - RT-safe with pre-allocated workspace (both DC and AC)
 
 **Applications:**
@@ -165,7 +165,7 @@ GPU-accelerated batch MNA solver for small-medium matrices (8-64 dimensions). Lo
 ```cpp
 #include "src/sim/electronics/mna/inc/MnaBatchCuda.cuh"
 
-using namespace sim::electronics::mna::cuda;
+using namespace sim::electronics::algorithms::mna::cuda;
 
 MnaBatchWorkspace workspace;
 workspace.prepare(dim, batchSize);
@@ -224,7 +224,7 @@ ctx.stampVoltageSource(pos, neg, v); // Voltage source
 ```cpp
 #include "src/sim/electronics/mna/inc/MnaSystemSparse.hpp"
 
-using namespace sim::electronics::mna;
+using namespace sim::electronics::algorithms::mna;
 
 // Setup (NOT RT-safe)
 const std::size_t netCount = 500;
@@ -269,7 +269,7 @@ for (std::size_t step = 0; step < steps; ++step) {
 ```cpp
 #include "src/sim/electronics/mna/inc/AcMnaSystem.hpp"
 
-using namespace sim::electronics::mna;
+using namespace sim::electronics::algorithms::mna;
 
 const std::size_t netCount = 50;
 const NetID input = 1, output = 10;
@@ -316,7 +316,7 @@ for (std::size_t i = 0; i < points; ++i) {
 ```cpp
 #include "src/sim/electronics/mna/inc/AcMnaSystem.hpp"
 
-using namespace sim::electronics::mna;
+using namespace sim::electronics::algorithms::mna;
 
 const std::size_t netCount = 50;
 const NetID input = 1, output = 10;
@@ -409,7 +409,7 @@ for (std::size_t i = 0; i < points; ++i) {
 ```cpp
 #include "src/sim/electronics/mna/inc/MnaBatchCuda.cuh"
 
-using namespace sim::electronics::mna::cuda;
+using namespace sim::electronics::algorithms::mna::cuda;
 
 const std::size_t dim = 32;
 const std::size_t batchSize = 1000;  // 1000 Monte Carlo trials
@@ -439,7 +439,7 @@ bool success = solveBatch32x32(workspace, hA.data(), hb.data(), batchSize, strea
 ```cpp
 #include "src/sim/electronics/mna/inc/MnaSystem.hpp"
 
-using namespace sim::electronics::mna;
+using namespace sim::electronics::algorithms::mna;
 
 // SETUP PHASE (NOT RT-safe - run once at initialization)
 const std::size_t netCount = 100;
@@ -499,13 +499,13 @@ Measured on x86_64 (clang-21, debug), Docker container, 15 repeats per data poin
 
 For independent K-circuit batched workloads, `std::thread` work-stealing
 scales near-linearly through 8 cores. Per-circuit time on the Intel 4004
-matrix size (Dim ≈ 1081):
+matrix size (Dim ~= 1081):
 
 | K (circuits) | T=1 (us) | T=8 (us) | Speedup |
 | ------------ | -------: | -------: | ------: |
-| 8            | 1.13     | 0.24     | 4.7×    |
-| 16           | 2.27     | 0.49     | 4.6×    |
-| 64           | 9.09     | 1.58     | 5.8×    |
+| 8            | 1.13     | 0.24     | 4.7x    |
+| 16           | 2.27     | 0.49     | 4.6x    |
+| 64           | 9.09     | 1.58     | 5.8x    |
 
 ### Dense vs Sparse Crossover
 
@@ -542,20 +542,20 @@ mna.solve();
 
 | Operation                | RT-Safe? | Notes                             |
 | ------------------------ | -------- | --------------------------------- |
-| `addConductance()`       | ✅ Yes   | Pure stamping, no allocations     |
-| `addCurrentSource()`     | ✅ Yes   | Pure stamping, no allocations     |
-| `clearStamps()`          | ✅ Yes   | Zeros matrix, preserves structure |
-| `solve()` with workspace | ✅ Yes   | No allocations in hot path        |
+| `addConductance()`       | [OK] Yes   | Pure stamping, no allocations     |
+| `addCurrentSource()`     | [OK] Yes   | Pure stamping, no allocations     |
+| `clearStamps()`          | [OK] Yes   | Zeros matrix, preserves structure |
+| `solve()` with workspace | [OK] Yes   | No allocations in hot path        |
 
 ### NOT RT-Safe
 
 | Operation                   | RT-Safe? | Notes                             |
 | --------------------------- | -------- | --------------------------------- |
-| MNA construction            | ❌ No    | Allocates matrices                |
-| `solve()` without workspace | ❌ No    | Allocates internally              |
-| Resizing                    | ❌ No    | Reallocates matrices              |
-| First `clear()`             | ❌ No    | Destroys factorization cache      |
-| GPU batch solving           | ❌ No    | Kernel launches, memory transfers |
+| MNA construction            | [X] No    | Allocates matrices                |
+| `solve()` without workspace | [X] No    | Allocates internally              |
+| Resizing                    | [X] No    | Reallocates matrices              |
+| First `clear()`             | [X] No    | Destroys factorization cache      |
+| GPU batch solving           | [X] No    | Kernel launches, memory transfers |
 
 ### RT-Safe Usage Pattern
 

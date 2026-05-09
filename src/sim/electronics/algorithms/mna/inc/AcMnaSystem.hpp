@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_MNA_ACMNASYSTEM_HPP
-#define APEX_SIM_ELECTRONICS_MNA_ACMNASYSTEM_HPP
+#ifndef APEX_ACMNASYSTEM_HPP
+#define APEX_ACMNASYSTEM_HPP
 /**
  * @file AcMnaSystem.hpp
  * @brief AC (frequency domain) Modified Nodal Analysis solver.
@@ -28,7 +28,7 @@
 #include <string>
 #include <vector>
 
-namespace sim::electronics::mna {
+namespace sim::electronics::algorithms::mna {
 
 /* ----------------------------- Types ----------------------------- */
 
@@ -972,6 +972,6 @@ inline double findCutoffFrequency(const AcSweepResult& sweep) {
   return -1.0; // Cutoff not found in range
 }
 
-} // namespace sim::electronics::mna
+} // namespace sim::electronics::algorithms::mna
 
-#endif // APEX_SIM_ELECTRONICS_MNA_ACMNASYSTEM_HPP
+#endif // APEX_ACMNASYSTEM_HPP

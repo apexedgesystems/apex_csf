@@ -11,17 +11,17 @@
 
 #include <cmath>
 
-using sim::electronics::devices::companions::CapacitorCompanion;
-using sim::electronics::devices::companions::CompanionSet;
-using sim::electronics::devices::companions::InductorCompanion;
-using sim::electronics::mna::MnaSystem;
-using sim::electronics::mna::MnaSystemSparse;
-using sim::electronics::transient::IntegrationMethod;
-using sim::electronics::transient::TransientConfig;
-using sim::electronics::transient::TransientResult;
-using sim::electronics::transient::TransientSolver;
-using sim::electronics::transient::TransientState;
-using sim::electronics::transient::TransientStatus;
+using sim::electronics::algorithms::companions::CapacitorCompanion;
+using sim::electronics::algorithms::companions::CompanionSet;
+using sim::electronics::algorithms::companions::InductorCompanion;
+using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::MnaSystemSparse;
+using sim::electronics::algorithms::transient::IntegrationMethod;
+using sim::electronics::algorithms::transient::TransientConfig;
+using sim::electronics::algorithms::transient::TransientResult;
+using sim::electronics::algorithms::transient::TransientSolver;
+using sim::electronics::algorithms::transient::TransientState;
+using sim::electronics::algorithms::transient::TransientStatus;
 
 /* ----------------------------- Constants ----------------------------- */
 
@@ -30,7 +30,7 @@ static constexpr double VDD = 5.0;
 /* ----------------------------- TransientConfig Tests ----------------------------- */
 
 /** @test TransientConfig default values. */
-TEST(TransientConfig, DefaultValues) {
+TEST(TransientConfigTest, DefaultValues) {
   TransientConfig config;
 
   EXPECT_DOUBLE_EQ(config.tStart, 0.0);
@@ -42,7 +42,7 @@ TEST(TransientConfig, DefaultValues) {
 }
 
 /** @test TransientConfig step count calculation. */
-TEST(TransientConfig, StepCount) {
+TEST(TransientConfigTest, StepCount) {
   TransientConfig config;
   config.tStart = 0.0;
   config.tEnd = 1.0;
@@ -53,7 +53,7 @@ TEST(TransientConfig, StepCount) {
 }
 
 /** @test TransientConfig integration order. */
-TEST(TransientConfig, IntegrationOrder) {
+TEST(TransientConfigTest, IntegrationOrder) {
   TransientConfig config;
 
   config.method = IntegrationMethod::BACKWARD_EULER;
@@ -69,7 +69,7 @@ TEST(TransientConfig, IntegrationOrder) {
 /* ----------------------------- CompanionModels Tests ----------------------------- */
 
 /** @test CapacitorCompanion equivalent values. */
-TEST(CapacitorCompanion, EquivalentValues) {
+TEST(CapacitorCompanionTest, EquivalentValues) {
   CapacitorCompanion cap;
   cap.posNet = 1;
   cap.negNet = 0;
@@ -87,7 +87,7 @@ TEST(CapacitorCompanion, EquivalentValues) {
 }
 
 /** @test InductorCompanion equivalent values. */
-TEST(InductorCompanion, EquivalentValues) {
+TEST(InductorCompanionTest, EquivalentValues) {
   InductorCompanion ind;
   ind.posNet = 1;
   ind.negNet = 0;
@@ -104,7 +104,7 @@ TEST(InductorCompanion, EquivalentValues) {
 }
 
 /** @test CompanionSet add and access. */
-TEST(CompanionSet, AddAndAccess) {
+TEST(CompanionSetTest, AddAndAccess) {
   CompanionSet set;
 
   std::size_t capIdx = set.addCapacitor(1, 0, 1e-6);
@@ -122,7 +122,7 @@ TEST(CompanionSet, AddAndAccess) {
 /* ----------------------------- Simple Transient Tests ----------------------------- */
 
 /** @test Basic transient simulation with just a voltage source. */
-TEST(TransientSolver, VoltageSourceOnly) {
+TEST(TransientSolverTest, VoltageSourceOnly) {
   // Simple circuit: just a voltage source
   // Nets: 0=Gnd, 1=Vdd
   TransientSolver solver(2);
@@ -146,7 +146,7 @@ TEST(TransientSolver, VoltageSourceOnly) {
 }
 
 /** @test Capacitor holds voltage when isolated. */
-TEST(TransientSolver, CapacitorHoldsVoltage) {
+TEST(TransientSolverTest, CapacitorHoldsVoltage) {
   // Capacitor pre-charged to 3V, no discharge path
   // Should maintain voltage
   TransientSolver solver(2);
@@ -186,7 +186,7 @@ TEST(TransientSolver, CapacitorHoldsVoltage) {
  *
  * Just verify that voltage increases over time and approaches Vdd.
  */
-TEST(TransientSolver, RCChargingQualitative) {
+TEST(TransientSolverTest, RCChargingQualitative) {
   double R = 1000.0;  // 1k ohm
   double C = 1e-6;    // 1 uF
   double TAU = R * C; // 1 ms
@@ -227,7 +227,7 @@ TEST(TransientSolver, RCChargingQualitative) {
 }
 
 /** @test RC circuit starting from DC operating point. */
-TEST(TransientSolver, RCWithDCOpPoint) {
+TEST(TransientSolverTest, RCWithDCOpPoint) {
   double C = 1e-6;
   double R = 1000.0;
   double G = 1.0 / R;
@@ -264,7 +264,7 @@ TEST(TransientSolver, RCWithDCOpPoint) {
  *
  * At steady state, inductor is a short, so Vout -> 0.
  */
-TEST(TransientSolver, RLStepResponseQualitative) {
+TEST(TransientSolverTest, RLStepResponseQualitative) {
   double R = 100.0;   // 100 ohm
   double L = 10e-3;   // 10 mH
   double TAU = L / R; // 100 us
@@ -295,8 +295,8 @@ TEST(TransientSolver, RLStepResponseQualitative) {
   EXPECT_LT(std::abs(vMidFinal), 1.0) << "Voltage should approach 0";
 
   // Inductor current should approach Vdd/R
-  const auto& ind = solver.companions().inductor(0);
-  double iFinal = ind.prevCurrent;
+  const auto& IND = solver.companions().inductor(0);
+  double iFinal = IND.prevCurrent;
   double iExpected = VDD / R;
   EXPECT_GT(iFinal, 0.5 * iExpected) << "Current should be building up";
 }
@@ -309,14 +309,14 @@ TEST(TransientSolver, RLStepResponseQualitative) {
  * Circuit: Vdd -- R -- Vout -- C -- Gnd
  *
  * Validates backward Euler integration accuracy by checking voltage at
- * specific time constants. For RC charging: V(t) = Vdd * (1 - e^(-t/τ))
- * where τ = R*C.
+ * specific time constants. For RC charging: V(t) = Vdd * (1 - e^(-t/tau))
+ * where tau = R*C.
  *
- * At t=τ:  V ≈ 0.632 * Vdd
- * At t=2τ: V ≈ 0.865 * Vdd
- * At t=3τ: V ≈ 0.950 * Vdd
+ * At t=tau:  V ~= 0.632 * Vdd
+ * At t=2tau: V ~= 0.865 * Vdd
+ * At t=3tau: V ~= 0.950 * Vdd
  */
-TEST(TransientSolver, RCChargingQuantitative) {
+TEST(TransientSolverTest, RCChargingQuantitative) {
   double R = 1000.0;  // 1k ohm
   double C = 1e-6;    // 1 uF
   double TAU = R * C; // 1 ms
@@ -342,8 +342,8 @@ TEST(TransientSolver, RCChargingQuantitative) {
   ASSERT_TRUE(result.success) << result.errorMessage;
   ASSERT_GT(result.history.size(), 300);
 
-  // Find voltage at t = 1τ, 2τ, 3τ
-  // V(t) = Vdd * (1 - exp(-t/τ))
+  // Find voltage at t = 1tau, 2tau, 3tau
+  // V(t) = Vdd * (1 - exp(-t/tau))
   auto findVoltageAtTime = [&](double targetTime) -> double {
     for (const auto& state : result.history) {
       if (std::abs(state.time - targetTime) < config.tStep / 2.0) {
@@ -365,11 +365,11 @@ TEST(TransientSolver, RCChargingQuantitative) {
   // Backward Euler is first-order accurate and energy dissipative
   // Use 5% tolerance to account for numerical integration error
   EXPECT_NEAR(v1tau, expected1tau, 0.05 * VDD)
-      << "Voltage at 1τ should match exponential (tolerance 5%)";
+      << "Voltage at 1tau should match exponential (tolerance 5%)";
   EXPECT_NEAR(v2tau, expected2tau, 0.05 * VDD)
-      << "Voltage at 2τ should match exponential (tolerance 5%)";
+      << "Voltage at 2tau should match exponential (tolerance 5%)";
   EXPECT_NEAR(v3tau, expected3tau, 0.05 * VDD)
-      << "Voltage at 3τ should match exponential (tolerance 5%)";
+      << "Voltage at 3tau should match exponential (tolerance 5%)";
 }
 
 /**
@@ -378,13 +378,13 @@ TEST(TransientSolver, RCChargingQuantitative) {
  * Circuit: Vdd -- R -- Vout -- L -- Gnd
  *
  * Validates inductor current buildup matches expected exponential:
- * I(t) = (Vdd/R) * (1 - e^(-t/τ)) where τ = L/R.
+ * I(t) = (Vdd/R) * (1 - e^(-t/tau)) where tau = L/R.
  *
- * At t=τ:  I ≈ 0.632 * I_steady
- * At t=2τ: I ≈ 0.865 * I_steady
- * At t=3τ: I ≈ 0.950 * I_steady
+ * At t=tau:  I ~= 0.632 * I_steady
+ * At t=2tau: I ~= 0.865 * I_steady
+ * At t=3tau: I ~= 0.950 * I_steady
  */
-TEST(TransientSolver, RLCurrentQuantitative) {
+TEST(TransientSolverTest, RLCurrentQuantitative) {
   double R = 100.0;          // 100 ohm
   double L = 10e-3;          // 10 mH
   double TAU = L / R;        // 100 us
@@ -444,17 +444,17 @@ TEST(TransientSolver, RLCurrentQuantitative) {
   // Backward Euler is first-order accurate
   // Use 5% tolerance to account for numerical integration error
   EXPECT_NEAR(i1tau, expected1tau, 0.05 * I_STEADY)
-      << "Current at 1τ should match exponential (tolerance 5%)";
+      << "Current at 1tau should match exponential (tolerance 5%)";
   EXPECT_NEAR(i2tau, expected2tau, 0.05 * I_STEADY)
-      << "Current at 2τ should match exponential (tolerance 5%)";
+      << "Current at 2tau should match exponential (tolerance 5%)";
   EXPECT_NEAR(i3tau, expected3tau, 0.05 * I_STEADY)
-      << "Current at 3τ should match exponential (tolerance 5%)";
+      << "Current at 3tau should match exponential (tolerance 5%)";
 }
 
 /* ----------------------------- Accessor Tests ----------------------------- */
 
 /** @test time() returns current simulation time after run. */
-TEST(TransientSolver, TimeAccessor) {
+TEST(TransientSolverTest, TimeAccessor) {
   TransientSolver solver(2);
   solver.setStampCallback([](MnaSystem& mna, double /*time*/) { mna.addVoltageSource(1, 0, VDD); });
 
@@ -474,7 +474,7 @@ TEST(TransientSolver, TimeAccessor) {
 }
 
 /** @test netCount() returns construction-time net count. */
-TEST(TransientSolver, NetCountAccessor) {
+TEST(TransientSolverTest, NetCountAccessor) {
   TransientSolver solver2(2);
   EXPECT_EQ(solver2.netCount(), 2u);
 
@@ -483,7 +483,7 @@ TEST(TransientSolver, NetCountAccessor) {
 }
 
 /** @test integrationMethod() / setIntegrationMethod() round-trip. */
-TEST(TransientSolver, IntegrationMethodAccessor) {
+TEST(TransientSolverTest, IntegrationMethodAccessor) {
   TransientSolver solver(2);
 
   // Default is backward Euler
@@ -500,7 +500,7 @@ TEST(TransientSolver, IntegrationMethodAccessor) {
 }
 
 /** @test prevVoltages() populated after transient run. */
-TEST(TransientSolver, PrevVoltagesAccessor) {
+TEST(TransientSolverTest, PrevVoltagesAccessor) {
   TransientSolver solver(3);
 
   double C = 1e-6;
@@ -536,7 +536,7 @@ TEST(TransientSolver, PrevVoltagesAccessor) {
 /* ----------------------------- Error Handling Tests ----------------------------- */
 
 /** @test Invalid configuration handling. */
-TEST(TransientSolver, InvalidConfig) {
+TEST(TransientSolverTest, InvalidConfig) {
   TransientSolver solver(3);
 
   TransientConfig config;
@@ -549,7 +549,7 @@ TEST(TransientSolver, InvalidConfig) {
 }
 
 /** @test Solver reset. */
-TEST(TransientSolver, Reset) {
+TEST(TransientSolverTest, Reset) {
   TransientSolver solver(3);
   solver.companions().addCapacitor(1, 0, 1e-6);
 
@@ -573,7 +573,7 @@ TEST(TransientSolver, Reset) {
 /* ----------------------------- Integration Method Tests ----------------------------- */
 
 /** @test Trapezoidal integration - capacitor equivalent values. */
-TEST(CapacitorCompanion, TrapezoidalEquivalentValues) {
+TEST(CapacitorCompanionTest, TrapezoidalEquivalentValues) {
   CapacitorCompanion cap;
   cap.posNet = 1;
   cap.negNet = 0;
@@ -601,7 +601,7 @@ TEST(CapacitorCompanion, TrapezoidalEquivalentValues) {
  * while the inductor is V=L*dI/dt -- the trapezoidal averaging applies to a
  * different quantity in each case.
  */
-TEST(InductorCompanion, TrapezoidalEquivalentValues) {
+TEST(InductorCompanionTest, TrapezoidalEquivalentValues) {
   InductorCompanion ind;
   ind.posNet = 1;
   ind.negNet = 0;
@@ -619,7 +619,7 @@ TEST(InductorCompanion, TrapezoidalEquivalentValues) {
 }
 
 /** @test GEAR2 integration - capacitor equivalent values. */
-TEST(CapacitorCompanion, Gear2EquivalentValues) {
+TEST(CapacitorCompanionTest, Gear2EquivalentValues) {
   CapacitorCompanion cap;
   cap.posNet = 1;
   cap.negNet = 0;
@@ -639,7 +639,7 @@ TEST(CapacitorCompanion, Gear2EquivalentValues) {
 }
 
 /** @test GEAR2 integration - inductor equivalent values. */
-TEST(InductorCompanion, Gear2EquivalentValues) {
+TEST(InductorCompanionTest, Gear2EquivalentValues) {
   InductorCompanion ind;
   ind.posNet = 1;
   ind.negNet = 0;
@@ -664,7 +664,7 @@ TEST(InductorCompanion, Gear2EquivalentValues) {
  * Trapezoidal is second-order accurate, so it should match the analytical
  * solution more closely than backward Euler (first-order).
  */
-TEST(TransientSolver, RCChargingTrapezoidal) {
+TEST(TransientSolverTest, RCChargingTrapezoidal) {
   double R = 1000.0;  // 1k ohm
   double C = 1e-6;    // 1 uF
   double TAU = R * C; // 1 ms
@@ -691,7 +691,7 @@ TEST(TransientSolver, RCChargingTrapezoidal) {
   ASSERT_TRUE(result.success) << result.errorMessage;
   ASSERT_GT(result.history.size(), 200);
 
-  // Find voltage at t = 1τ
+  // Find voltage at t = 1tau
   auto findVoltageAtTime = [&](double targetTime) -> double {
     for (const auto& state : result.history) {
       if (std::abs(state.time - targetTime) < config.tStep / 2.0) {
@@ -718,7 +718,7 @@ TEST(TransientSolver, RCChargingTrapezoidal) {
  * Backward Euler is energy-dissipative: amplitude decays over time even
  * without resistance. This is a numerical artifact of the method.
  */
-TEST(TransientSolver, LCOscillatorBackwardEulerDecay) {
+TEST(TransientSolverTest, LCOscillatorBackwardEulerDecay) {
   double L = 1e-3;                       // 1 mH
   double C = 1e-6;                       // 1 uF
   double V0 = 5.0;                       // Initial capacitor voltage
@@ -783,7 +783,7 @@ TEST(TransientSolver, LCOscillatorBackwardEulerDecay) {
  * Trapezoidal is energy-conserving: amplitude should remain constant over time.
  * This is the key advantage of trapezoidal for oscillatory circuits.
  */
-TEST(TransientSolver, LCOscillatorTrapezoidalConservation) {
+TEST(TransientSolverTest, LCOscillatorTrapezoidalConservation) {
   double L = 1e-3;                       // 1 mH
   double C = 1e-6;                       // 1 uF
   double V0 = 5.0;                       // Initial capacitor voltage
@@ -833,7 +833,7 @@ TEST(TransientSolver, LCOscillatorTrapezoidalConservation) {
     }
   }
 
-  // Trapezoidal should conserve energy: last peak ≈ first peak
+  // Trapezoidal should conserve energy: last peak ~= first peak
   // Allow 5% tolerance for numerical error accumulation
   EXPECT_NEAR(lastPeak, firstPeak, 0.05 * V0)
       << "Trapezoidal should conserve energy (amplitude constant)";
@@ -860,7 +860,7 @@ TEST(TransientSolver, LCOscillatorTrapezoidalConservation) {
  * Compares backward Euler vs trapezoidal integration. Trapezoidal should
  * show slower amplitude decay (more accurate energy tracking).
  */
-TEST(TransientSolver, RLCOscillatorMethodComparison) {
+TEST(TransientSolverTest, RLCOscillatorMethodComparison) {
   double L = 1e-3;   // 1 mH
   double C = 1e-6;   // 1 uF
   double R = 1000.0; // 1k ohm (Q ~ 31.6, lightly damped)
@@ -927,11 +927,11 @@ TEST(TransientSolver, RLCOscillatorMethodComparison) {
  *
  * Circuit: Vdd -- R_large -- Vout -- C_small -- Gnd
  *
- * Stiff system with fast time constant (small τ = R*C). GEAR2 (BDF2) is
+ * Stiff system with fast time constant (small tau = R*C). GEAR2 (BDF2) is
  * L-stable, providing better damping of high-frequency oscillations than
  * backward Euler or trapezoidal for stiff problems.
  */
-TEST(TransientSolver, Gear2StiffRCCircuit) {
+TEST(TransientSolverTest, Gear2StiffRCCircuit) {
   double R = 100.0;   // 100 ohm (relatively large for small C)
   double C = 1e-9;    // 1 nF (small capacitor)
   double TAU = R * C; // 100 ns (fast time constant)
@@ -981,7 +981,7 @@ TEST(TransientSolver, Gear2StiffRCCircuit) {
  * Verifies that update() correctly shifts history (prev2 = prev, prev = new)
  * for GEAR2 integration.
  */
-TEST(CompanionModels, HistoryUpdateShifting) {
+TEST(CompanionModelsTest, HistoryUpdateShifting) {
   // Test capacitor history update
   CapacitorCompanion cap;
   cap.capacitance = 1e-6;
@@ -1013,7 +1013,7 @@ TEST(CompanionModels, HistoryUpdateShifting) {
  * Exercises the setSparse(true) + statefulStampCallbackSparse path.
  * Uses same RC circuit as dense tests for comparison.
  */
-TEST(TransientSolver, SparseRCCharging) {
+TEST(TransientSolverTest, SparseRCCharging) {
   double R = 1000.0;
   double C = 1e-6;
   double TAU = R * C;
@@ -1052,7 +1052,7 @@ TEST(TransientSolver, SparseRCCharging) {
  *
  * Exercises computeDC() sparse path (useSparse_ && statefulStampCallbackSparse_).
  */
-TEST(TransientSolver, SparseDCOpPoint) {
+TEST(TransientSolverTest, SparseDCOpPoint) {
   double R = 1000.0;
   double C = 1e-6;
 
@@ -1091,7 +1091,7 @@ TEST(TransientSolver, SparseDCOpPoint) {
  * Enables setCachedLU(true) and verifies the RC charging result
  * matches the non-cached path.
  */
-TEST(TransientSolver, CachedLURCCharging) {
+TEST(TransientSolverTest, CachedLURCCharging) {
   double R = 1000.0;
   double C = 1e-6;
   double TAU = R * C;
@@ -1128,7 +1128,7 @@ TEST(TransientSolver, CachedLURCCharging) {
  * the captureLU path after the first solve and the re-factorization
  * path after invalidation.
  */
-TEST(TransientSolver, CachedLUInvalidateAndContinue) {
+TEST(TransientSolverTest, CachedLUInvalidateAndContinue) {
   double R = 1000.0;
   double C = 1e-6;
 
@@ -1176,7 +1176,7 @@ TEST(TransientSolver, CachedLUInvalidateAndContinue) {
  * Exercises stepDual() with two alternating stamp configurations
  * (simulating clock HIGH/LOW toggling).
  */
-TEST(TransientSolver, DualLUStepping) {
+TEST(TransientSolverTest, DualLUStepping) {
   double R = 1000.0;
   double C = 1e-6;
 
@@ -1208,7 +1208,7 @@ TEST(TransientSolver, DualLUStepping) {
 }
 
 /** @test stepDual with invalid state index returns error. */
-TEST(TransientSolver, DualLUInvalidStateIndex) {
+TEST(TransientSolverTest, DualLUInvalidStateIndex) {
   TransientSolver solver(3);
   solver.setDualLU(true);
   solver.setStampCallback([](MnaSystem& mna, double /*time*/) { mna.addVoltageSource(1, 0, VDD); });
@@ -1233,7 +1233,7 @@ TEST(TransientSolver, DualLUInvalidStateIndex) {
  * Sets alwaysReanalyze to force NR iteration path, then verifies
  * the limit callback is invoked.
  */
-TEST(TransientSolver, NrLimitCallbackInvoked) {
+TEST(TransientSolverTest, NrLimitCallbackInvoked) {
   double R = 1000.0;
   double C = 1e-6;
 
@@ -1271,7 +1271,7 @@ TEST(TransientSolver, NrLimitCallbackInvoked) {
  * Verifies that the pre-batch callback fires once per timestep and
  * receives the correct dt value.
  */
-TEST(TransientSolver, NrPreBatchCallbackInvoked) {
+TEST(TransientSolverTest, NrPreBatchCallbackInvoked) {
   double R = 1000.0;
   double C = 1e-6;
 
@@ -1312,7 +1312,7 @@ TEST(TransientSolver, NrPreBatchCallbackInvoked) {
  *
  * Exercises the statefulStampCallback_ path in invokeStampCallback.
  */
-TEST(TransientSolver, StatefulStampCallbackReceivesPrevVoltages) {
+TEST(TransientSolverTest, StatefulStampCallbackReceivesPrevVoltages) {
   double R = 1000.0;
   double C = 1e-6;
   double TAU = R * C;
@@ -1357,7 +1357,7 @@ TEST(TransientSolver, StatefulStampCallbackReceivesPrevVoltages) {
  * For DC: capacitors are open, inductors are shorted.
  * An RL circuit at DC should have full current flowing through the inductor.
  */
-TEST(TransientSolver, ComputeDCWithInductor) {
+TEST(TransientSolverTest, ComputeDCWithInductor) {
   double R = 100.0;
   double L = 10e-3;
 
@@ -1383,7 +1383,7 @@ TEST(TransientSolver, ComputeDCWithInductor) {
 /**
  * @test computeDC with sparse solver path.
  */
-TEST(TransientSolver, ComputeDCSparse) {
+TEST(TransientSolverTest, ComputeDCSparse) {
   double R = 1000.0;
 
   TransientSolver solver(3);
@@ -1422,7 +1422,7 @@ TEST(TransientSolver, ComputeDCSparse) {
  * Exercises the full Newton-Raphson iteration loop in the sparse path,
  * including NaN protection and 5V damping logic.
  */
-TEST(TransientSolver, SparseNRIterationConverges) {
+TEST(TransientSolverTest, SparseNRIterationConverges) {
   double R = 1000.0;
   double C = 1e-6;
   double TAU = R * C;
@@ -1460,7 +1460,7 @@ TEST(TransientSolver, SparseNRIterationConverges) {
  *
  * Verifies the mutual exclusion between dual-LU and single cached-LU.
  */
-TEST(TransientSolver, DualLUDisablesSingleCache) {
+TEST(TransientSolverTest, DualLUDisablesSingleCache) {
   TransientSolver solver(3);
 
   solver.setCachedLU(true);

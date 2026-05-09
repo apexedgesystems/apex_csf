@@ -21,7 +21,7 @@ static constexpr double EPSILON = 1e-12; // Tolerance for floating-point compari
 /* ----------------------------- Parameters ----------------------------- */
 
 /** @test Default parameters are reasonable. */
-TEST(BjtEbersMoll, DefaultParameters) {
+TEST(BjtEbersMollTest, DefaultParameters) {
   BjtEbersMollParams params;
 
   EXPECT_DOUBLE_EQ(params.Is, 1e-14);
@@ -31,7 +31,7 @@ TEST(BjtEbersMoll, DefaultParameters) {
 }
 
 /** @test Custom parameters. */
-TEST(BjtEbersMoll, CustomParameters) {
+TEST(BjtEbersMollTest, CustomParameters) {
   BjtEbersMollParams params{.Is = 1e-15, .Bf = 200.0, .Br = 2.0, .Vt = 0.025};
 
   EXPECT_DOUBLE_EQ(params.Is, 1e-15);
@@ -43,7 +43,7 @@ TEST(BjtEbersMoll, CustomParameters) {
 /* ----------------------------- Cutoff Region ----------------------------- */
 
 /** @test Cutoff region (both junctions reverse-biased). */
-TEST(BjtEbersMoll, CutoffRegion) {
+TEST(BjtEbersMollTest, CutoffRegion) {
   BjtEbersMollParams params;
 
   // Vbe = -1V, Vbc = -5V (both reverse-biased)
@@ -58,7 +58,7 @@ TEST(BjtEbersMoll, CutoffRegion) {
 }
 
 /** @test Cutoff region current magnitude. */
-TEST(BjtEbersMoll, CutoffCurrentMagnitude) {
+TEST(BjtEbersMollTest, CutoffCurrentMagnitude) {
   BjtEbersMollParams params;
 
   double ic = BjtEbersMoll::collectorCurrent(0.0, 0.0, params);
@@ -72,7 +72,7 @@ TEST(BjtEbersMoll, CutoffCurrentMagnitude) {
 /* ----------------------------- Forward Active Region ----------------------------- */
 
 /** @test Forward active region (BE forward, BC reverse). */
-TEST(BjtEbersMoll, ForwardActiveRegion) {
+TEST(BjtEbersMollTest, ForwardActiveRegion) {
   BjtEbersMollParams params;
 
   // Vbe = 0.7V (forward), Vbc = -5.0V (reverse)
@@ -88,7 +88,7 @@ TEST(BjtEbersMoll, ForwardActiveRegion) {
 }
 
 /** @test Forward active current gain (beta = Ic/Ib). */
-TEST(BjtEbersMoll, ForwardActiveCurrentGain) {
+TEST(BjtEbersMollTest, ForwardActiveCurrentGain) {
   BjtEbersMollParams params{.Is = 1e-14, .Bf = 100.0};
 
   // Forward active: Vbe = 0.7V, Vbc = -5.0V
@@ -104,7 +104,7 @@ TEST(BjtEbersMoll, ForwardActiveCurrentGain) {
 /* ----------------------------- Saturation Region ----------------------------- */
 
 /** @test Saturation region (both junctions forward-biased). */
-TEST(BjtEbersMoll, SaturationRegion) {
+TEST(BjtEbersMollTest, SaturationRegion) {
   BjtEbersMollParams params;
 
   // Vbe = 0.7V (forward), Vbc = 0.5V (forward, but less than Vbe)
@@ -119,7 +119,7 @@ TEST(BjtEbersMoll, SaturationRegion) {
 }
 
 /** @test Saturation reduces collector current. */
-TEST(BjtEbersMoll, SaturationReducesIc) {
+TEST(BjtEbersMollTest, SaturationReducesIc) {
   BjtEbersMollParams params;
 
   // Forward active: Vbe = 0.7V, Vbc = -5.0V
@@ -135,7 +135,7 @@ TEST(BjtEbersMoll, SaturationReducesIc) {
 /* ----------------------------- Reverse Active Region ----------------------------- */
 
 /** @test Reverse active region (BE reverse, BC forward). */
-TEST(BjtEbersMoll, ReverseActiveRegion) {
+TEST(BjtEbersMollTest, ReverseActiveRegion) {
   BjtEbersMollParams params;
 
   // Vbe = -5.0V (reverse), Vbc = 0.7V (forward)
@@ -152,7 +152,7 @@ TEST(BjtEbersMoll, ReverseActiveRegion) {
 /* ----------------------------- Kirchhoff Current Law ----------------------------- */
 
 /** @test Kirchhoff: Ie = -(Ic + Ib). */
-TEST(BjtEbersMoll, KirchhoffCurrentLaw) {
+TEST(BjtEbersMollTest, KirchhoffCurrentLaw) {
   BjtEbersMollParams params;
 
   // Test in forward active region
@@ -168,7 +168,7 @@ TEST(BjtEbersMoll, KirchhoffCurrentLaw) {
 }
 
 /** @test Kirchhoff in all regions. */
-TEST(BjtEbersMoll, KirchhoffAllRegions) {
+TEST(BjtEbersMollTest, KirchhoffAllRegions) {
   BjtEbersMollParams params;
 
   // Test multiple operating points
@@ -196,7 +196,7 @@ TEST(BjtEbersMoll, KirchhoffAllRegions) {
 /* ----------------------------- Transconductances ----------------------------- */
 
 /** @test Transconductance gm = dIc/dVbe. */
-TEST(BjtEbersMoll, TransconductanceForwardActive) {
+TEST(BjtEbersMollTest, TransconductanceForwardActive) {
   BjtEbersMollParams params;
 
   // Forward active: Vbe = 0.7V, Vbc = -5.0V
@@ -209,7 +209,7 @@ TEST(BjtEbersMoll, TransconductanceForwardActive) {
 }
 
 /** @test Output conductance go = dIc/dVbc. */
-TEST(BjtEbersMoll, OutputConductance) {
+TEST(BjtEbersMollTest, OutputConductance) {
   BjtEbersMollParams params;
 
   double go = BjtEbersMoll::outputConductance(0.7, -5.0, params);
@@ -221,7 +221,7 @@ TEST(BjtEbersMoll, OutputConductance) {
 }
 
 /** @test Base-emitter conductance gbe = dIb/dVbe. */
-TEST(BjtEbersMoll, BaseConductanceBE) {
+TEST(BjtEbersMollTest, BaseConductanceBE) {
   BjtEbersMollParams params;
 
   double gbe = BjtEbersMoll::baseConductanceBE(0.7, -5.0, params);
@@ -233,7 +233,7 @@ TEST(BjtEbersMoll, BaseConductanceBE) {
 }
 
 /** @test Base-collector conductance gbc = dIb/dVbc. */
-TEST(BjtEbersMoll, BaseConductanceBC) {
+TEST(BjtEbersMollTest, BaseConductanceBC) {
   BjtEbersMollParams params;
 
   double gbc = BjtEbersMoll::baseConductanceBC(0.7, -5.0, params);
@@ -247,38 +247,38 @@ TEST(BjtEbersMoll, BaseConductanceBC) {
 /* ----------------------------- Numerical Derivative Validation ----------------------------- */
 
 /** @test Transconductance matches numerical derivative dIc/dVbe. */
-TEST(BjtEbersMoll, TransconductanceNumericalDerivative) {
+TEST(BjtEbersMollTest, TransconductanceNumericalDerivative) {
   BjtEbersMollParams params;
-  const double vbe = 0.7;
-  const double vbc = -5.0;
-  const double dvbe = 1e-8;
+  const double VBE = 0.7;
+  const double VBC = -5.0;
+  const double DVBE = 1e-8;
 
   // Analytical transconductance
-  double gmAnalytical = BjtEbersMoll::transconductance(vbe, vbc, params);
+  double gmAnalytical = BjtEbersMoll::transconductance(VBE, VBC, params);
 
   // Numerical derivative: dIc/dVbe ~= (Ic(vbe+dvbe) - Ic(vbe-dvbe)) / (2*dvbe)
-  double ic1 = BjtEbersMoll::collectorCurrent(vbe - dvbe, vbc, params);
-  double ic2 = BjtEbersMoll::collectorCurrent(vbe + dvbe, vbc, params);
-  double gmNumerical = (ic2 - ic1) / (2.0 * dvbe);
+  double ic1 = BjtEbersMoll::collectorCurrent(VBE - DVBE, VBC, params);
+  double ic2 = BjtEbersMoll::collectorCurrent(VBE + DVBE, VBC, params);
+  double gmNumerical = (ic2 - ic1) / (2.0 * DVBE);
 
   // Should match within 1%
   EXPECT_NEAR(gmAnalytical, gmNumerical, std::abs(gmNumerical) * 0.01);
 }
 
 /** @test Output conductance matches numerical derivative dIc/dVbc. */
-TEST(BjtEbersMoll, OutputConductanceNumericalDerivative) {
+TEST(BjtEbersMollTest, OutputConductanceNumericalDerivative) {
   BjtEbersMollParams params;
-  const double vbe = 0.7;
-  const double vbc = -5.0;
-  const double dvbc = 1e-8;
+  const double VBE = 0.7;
+  const double VBC = -5.0;
+  const double DVBC = 1e-8;
 
   // Analytical output conductance
-  double goAnalytical = BjtEbersMoll::outputConductance(vbe, vbc, params);
+  double goAnalytical = BjtEbersMoll::outputConductance(VBE, VBC, params);
 
   // Numerical derivative: dIc/dVbc ~= (Ic(vbc+dvbc) - Ic(vbc-dvbc)) / (2*dvbc)
-  double ic1 = BjtEbersMoll::collectorCurrent(vbe, vbc - dvbc, params);
-  double ic2 = BjtEbersMoll::collectorCurrent(vbe, vbc + dvbc, params);
-  double goNumerical = (ic2 - ic1) / (2.0 * dvbc);
+  double ic1 = BjtEbersMoll::collectorCurrent(VBE, VBC - DVBC, params);
+  double ic2 = BjtEbersMoll::collectorCurrent(VBE, VBC + DVBC, params);
+  double goNumerical = (ic2 - ic1) / (2.0 * DVBC);
 
   // Use absolute tolerance for near-zero values, relative for larger values
   double tolerance = std::max(std::abs(goNumerical) * 0.01, 1e-20);
@@ -286,38 +286,38 @@ TEST(BjtEbersMoll, OutputConductanceNumericalDerivative) {
 }
 
 /** @test Base-emitter conductance matches numerical derivative dIb/dVbe. */
-TEST(BjtEbersMoll, BaseConductanceBENumericalDerivative) {
+TEST(BjtEbersMollTest, BaseConductanceBENumericalDerivative) {
   BjtEbersMollParams params;
-  const double vbe = 0.7;
-  const double vbc = -5.0;
-  const double dvbe = 1e-8;
+  const double VBE = 0.7;
+  const double VBC = -5.0;
+  const double DVBE = 1e-8;
 
   // Analytical base-emitter conductance
-  double gbeAnalytical = BjtEbersMoll::baseConductanceBE(vbe, vbc, params);
+  double gbeAnalytical = BjtEbersMoll::baseConductanceBE(VBE, VBC, params);
 
   // Numerical derivative: dIb/dVbe ~= (Ib(vbe+dvbe) - Ib(vbe-dvbe)) / (2*dvbe)
-  double ib1 = BjtEbersMoll::baseCurrent(vbe - dvbe, vbc, params);
-  double ib2 = BjtEbersMoll::baseCurrent(vbe + dvbe, vbc, params);
-  double gbeNumerical = (ib2 - ib1) / (2.0 * dvbe);
+  double ib1 = BjtEbersMoll::baseCurrent(VBE - DVBE, VBC, params);
+  double ib2 = BjtEbersMoll::baseCurrent(VBE + DVBE, VBC, params);
+  double gbeNumerical = (ib2 - ib1) / (2.0 * DVBE);
 
   // Should match within 1%
   EXPECT_NEAR(gbeAnalytical, gbeNumerical, std::abs(gbeNumerical) * 0.01);
 }
 
 /** @test Base-collector conductance matches numerical derivative dIb/dVbc. */
-TEST(BjtEbersMoll, BaseConductanceBCNumericalDerivative) {
+TEST(BjtEbersMollTest, BaseConductanceBCNumericalDerivative) {
   BjtEbersMollParams params;
-  const double vbe = 0.7;
-  const double vbc = -5.0;
-  const double dvbc = 1e-8;
+  const double VBE = 0.7;
+  const double VBC = -5.0;
+  const double DVBC = 1e-8;
 
   // Analytical base-collector conductance
-  double gbcAnalytical = BjtEbersMoll::baseConductanceBC(vbe, vbc, params);
+  double gbcAnalytical = BjtEbersMoll::baseConductanceBC(VBE, VBC, params);
 
   // Numerical derivative: dIb/dVbc ~= (Ib(vbc+dvbc) - Ib(vbc-dvbc)) / (2*dvbc)
-  double ib1 = BjtEbersMoll::baseCurrent(vbe, vbc - dvbc, params);
-  double ib2 = BjtEbersMoll::baseCurrent(vbe, vbc + dvbc, params);
-  double gbcNumerical = (ib2 - ib1) / (2.0 * dvbc);
+  double ib1 = BjtEbersMoll::baseCurrent(VBE, VBC - DVBC, params);
+  double ib2 = BjtEbersMoll::baseCurrent(VBE, VBC + DVBC, params);
+  double gbcNumerical = (ib2 - ib1) / (2.0 * DVBC);
 
   // Use absolute tolerance for near-zero values, relative for larger values
   double tolerance = std::max(std::abs(gbcNumerical) * 0.01, 1e-20);
@@ -327,7 +327,7 @@ TEST(BjtEbersMoll, BaseConductanceBCNumericalDerivative) {
 /* ----------------------------- Region Detection ----------------------------- */
 
 /** @test Region detection: cutoff. */
-TEST(BjtEbersMoll, RegionCutoff) {
+TEST(BjtEbersMollTest, RegionCutoff) {
   BjtEbersMollParams params;
 
   int r1 = BjtEbersMoll::region(-1.0, -5.0, params);
@@ -340,7 +340,7 @@ TEST(BjtEbersMoll, RegionCutoff) {
 }
 
 /** @test Region detection: forward active. */
-TEST(BjtEbersMoll, RegionForwardActive) {
+TEST(BjtEbersMollTest, RegionForwardActive) {
   BjtEbersMollParams params;
 
   int r = BjtEbersMoll::region(0.7, -5.0, params);
@@ -349,7 +349,7 @@ TEST(BjtEbersMoll, RegionForwardActive) {
 }
 
 /** @test Region detection: reverse active. */
-TEST(BjtEbersMoll, RegionReverseActive) {
+TEST(BjtEbersMollTest, RegionReverseActive) {
   BjtEbersMollParams params;
 
   int r = BjtEbersMoll::region(-5.0, 0.7, params);
@@ -358,7 +358,7 @@ TEST(BjtEbersMoll, RegionReverseActive) {
 }
 
 /** @test Region detection: saturation. */
-TEST(BjtEbersMoll, RegionSaturation) {
+TEST(BjtEbersMollTest, RegionSaturation) {
   BjtEbersMollParams params;
 
   int r = BjtEbersMoll::region(0.7, 0.6, params);
@@ -369,7 +369,7 @@ TEST(BjtEbersMoll, RegionSaturation) {
 /* ----------------------------- Stamping ----------------------------- */
 
 /** @test Stamp cutoff state. */
-TEST(BjtEbersMoll, StampCutoff) {
+TEST(BjtEbersMollTest, StampCutoff) {
   MnaSystem mna(4);
   BjtEbersMollParams params;
   const NetID COLLECTOR = 1;
@@ -382,7 +382,7 @@ TEST(BjtEbersMoll, StampCutoff) {
 }
 
 /** @test Stamp forward active state. */
-TEST(BjtEbersMoll, StampForwardActive) {
+TEST(BjtEbersMollTest, StampForwardActive) {
   MnaSystem mna(4);
   BjtEbersMollParams params;
   const NetID COLLECTOR = 1;
@@ -395,7 +395,7 @@ TEST(BjtEbersMoll, StampForwardActive) {
 }
 
 /** @test Stamp saturation state. */
-TEST(BjtEbersMoll, StampSaturation) {
+TEST(BjtEbersMollTest, StampSaturation) {
   MnaSystem mna(4);
   BjtEbersMollParams params;
   const NetID COLLECTOR = 1;
@@ -410,12 +410,12 @@ TEST(BjtEbersMoll, StampSaturation) {
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test Exponential Vbe dependence (Ic vs Vbe). */
-TEST(BjtEbersMoll, ExponentialVbeDependence) {
+TEST(BjtEbersMollTest, ExponentialVbeDependence) {
   BjtEbersMollParams params;
-  const double vbc = -5.0; // Fixed (reverse-biased)
+  const double VBC = -5.0; // Fixed (reverse-biased)
 
-  double ic1 = BjtEbersMoll::collectorCurrent(0.6, vbc, params);
-  double ic2 = BjtEbersMoll::collectorCurrent(0.66, vbc, params); // +60mV
+  double ic1 = BjtEbersMoll::collectorCurrent(0.6, VBC, params);
+  double ic2 = BjtEbersMoll::collectorCurrent(0.66, VBC, params); // +60mV
 
   double ratio = ic2 / ic1;
 
@@ -424,7 +424,7 @@ TEST(BjtEbersMoll, ExponentialVbeDependence) {
 }
 
 /** @test Current gain beta = Ic/Ib varies with Bf. */
-TEST(BjtEbersMoll, CurrentGainVariation) {
+TEST(BjtEbersMollTest, CurrentGainVariation) {
   BjtEbersMollParams lowGain{.Is = 1e-14, .Bf = 50.0};
   BjtEbersMollParams highGain{.Is = 1e-14, .Bf = 200.0};
 
@@ -442,7 +442,7 @@ TEST(BjtEbersMoll, CurrentGainVariation) {
 }
 
 /** @test Temperature effect (via Vt). */
-TEST(BjtEbersMoll, TemperatureEffect) {
+TEST(BjtEbersMollTest, TemperatureEffect) {
   // Room temperature (300K): Vt ~= 26mV
   BjtEbersMollParams roomTemp{.Is = 1e-14, .Bf = 100.0, .Br = 1.0, .Vt = 0.026};
 
@@ -457,7 +457,7 @@ TEST(BjtEbersMoll, TemperatureEffect) {
 }
 
 /** @test Saturation voltage (Vce_sat). */
-TEST(BjtEbersMoll, SaturationVoltage) {
+TEST(BjtEbersMollTest, SaturationVoltage) {
   BjtEbersMollParams params;
 
   // In saturation: Vce = Vbe - Vbc
@@ -469,7 +469,7 @@ TEST(BjtEbersMoll, SaturationVoltage) {
 }
 
 /** @test Early effect (output resistance variation). */
-TEST(BjtEbersMoll, EarlyEffect) {
+TEST(BjtEbersMollTest, EarlyEffect) {
   BjtEbersMollParams params;
 
   // Forward active with different Vbc
@@ -482,7 +482,7 @@ TEST(BjtEbersMoll, EarlyEffect) {
 }
 
 /** @test High injection (Vbe >> Vt). */
-TEST(BjtEbersMoll, HighInjection) {
+TEST(BjtEbersMollTest, HighInjection) {
   BjtEbersMollParams params;
 
   double ic = BjtEbersMoll::collectorCurrent(0.9, -5.0, params);
@@ -492,7 +492,7 @@ TEST(BjtEbersMoll, HighInjection) {
 }
 
 /** @test Low injection (Vbe near threshold). */
-TEST(BjtEbersMoll, LowInjection) {
+TEST(BjtEbersMollTest, LowInjection) {
   BjtEbersMollParams params;
 
   double ic = BjtEbersMoll::collectorCurrent(0.55, -5.0, params);

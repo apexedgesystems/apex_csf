@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_TRANSIENT_TRANSIENTSOLVER_TPP
-#define APEX_SIM_ELECTRONICS_TRANSIENT_TRANSIENTSOLVER_TPP
+#ifndef APEX_TRANSIENTSOLVER_TPP
+#define APEX_TRANSIENTSOLVER_TPP
 /**
  * @file TransientSolver.tpp
  * @brief TransientSolver implementation.
@@ -7,7 +7,7 @@
 
 #include "src/sim/electronics/algorithms/transient/inc/TransientSolver.hpp"
 
-namespace sim::electronics::transient {
+namespace sim::electronics::algorithms::transient {
 
 /* ----------------------------- Construction ----------------------------- */
 
@@ -757,6 +757,6 @@ inline TransientResult TransientSolver::run(const TransientConfig& config, bool 
   return result;
 }
 
-} // namespace sim::electronics::transient
+} // namespace sim::electronics::algorithms::transient
 
-#endif // APEX_SIM_ELECTRONICS_TRANSIENT_TRANSIENTSOLVER_TPP
+#endif // APEX_TRANSIENTSOLVER_TPP

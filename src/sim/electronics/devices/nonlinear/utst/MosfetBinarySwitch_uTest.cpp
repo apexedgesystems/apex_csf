@@ -15,7 +15,7 @@ using sim::electronics::devices::nonlinear::NetID;
 /* ----------------------------- Parameters ----------------------------- */
 
 /** @test Default parameters are reasonable. */
-TEST(MosfetBinarySwitch, DefaultParameters) {
+TEST(MosfetBinarySwitchTest, DefaultParameters) {
   MosfetBinarySwitchParams params;
 
   EXPECT_DOUBLE_EQ(params.Vth, 0.7);
@@ -24,7 +24,7 @@ TEST(MosfetBinarySwitch, DefaultParameters) {
 }
 
 /** @test Custom parameters. */
-TEST(MosfetBinarySwitch, CustomParameters) {
+TEST(MosfetBinarySwitchTest, CustomParameters) {
   MosfetBinarySwitchParams params{.Vth = 1.0, .Ron = 100.0, .Roff = 1e10};
 
   EXPECT_DOUBLE_EQ(params.Vth, 1.0);
@@ -35,7 +35,7 @@ TEST(MosfetBinarySwitch, CustomParameters) {
 /* ----------------------------- Resistance ----------------------------- */
 
 /** @test OFF state resistance (Vgs < Vth). */
-TEST(MosfetBinarySwitch, OffStateResistance) {
+TEST(MosfetBinarySwitchTest, OffStateResistance) {
   MosfetBinarySwitchParams params;
 
   double r = MosfetBinarySwitch::resistance(0.0, params); // Well below Vth
@@ -43,7 +43,7 @@ TEST(MosfetBinarySwitch, OffStateResistance) {
 }
 
 /** @test ON state resistance (Vgs > Vth). */
-TEST(MosfetBinarySwitch, OnStateResistance) {
+TEST(MosfetBinarySwitchTest, OnStateResistance) {
   MosfetBinarySwitchParams params;
 
   double r = MosfetBinarySwitch::resistance(5.0, params); // Well above Vth
@@ -51,7 +51,7 @@ TEST(MosfetBinarySwitch, OnStateResistance) {
 }
 
 /** @test Resistance at threshold (edge case). */
-TEST(MosfetBinarySwitch, ThresholdResistance) {
+TEST(MosfetBinarySwitchTest, ThresholdResistance) {
   MosfetBinarySwitchParams params{.Vth = 1.0};
 
   // Exactly at threshold: should be OFF (Vgs > Vth is false)
@@ -68,7 +68,7 @@ TEST(MosfetBinarySwitch, ThresholdResistance) {
 }
 
 /** @test Negative gate voltage (reverse bias). */
-TEST(MosfetBinarySwitch, NegativeGateVoltage) {
+TEST(MosfetBinarySwitchTest, NegativeGateVoltage) {
   MosfetBinarySwitchParams params;
 
   double r = MosfetBinarySwitch::resistance(-1.0, params);
@@ -78,7 +78,7 @@ TEST(MosfetBinarySwitch, NegativeGateVoltage) {
 /* ----------------------------- State Detection ----------------------------- */
 
 /** @test isOn() returns true when Vgs > Vth. */
-TEST(MosfetBinarySwitch, IsOnAboveThreshold) {
+TEST(MosfetBinarySwitchTest, IsOnAboveThreshold) {
   MosfetBinarySwitchParams params{.Vth = 1.0};
 
   EXPECT_TRUE(MosfetBinarySwitch::isOn(5.0, params));
@@ -87,7 +87,7 @@ TEST(MosfetBinarySwitch, IsOnAboveThreshold) {
 }
 
 /** @test isOn() returns false when Vgs <= Vth. */
-TEST(MosfetBinarySwitch, IsOnBelowThreshold) {
+TEST(MosfetBinarySwitchTest, IsOnBelowThreshold) {
   MosfetBinarySwitchParams params{.Vth = 1.0};
 
   EXPECT_FALSE(MosfetBinarySwitch::isOn(0.0, params));
@@ -97,7 +97,7 @@ TEST(MosfetBinarySwitch, IsOnBelowThreshold) {
 }
 
 /** @test isOn() with negative gate voltage. */
-TEST(MosfetBinarySwitch, IsOnNegativeVoltage) {
+TEST(MosfetBinarySwitchTest, IsOnNegativeVoltage) {
   MosfetBinarySwitchParams params;
 
   EXPECT_FALSE(MosfetBinarySwitch::isOn(-1.0, params));
@@ -107,28 +107,28 @@ TEST(MosfetBinarySwitch, IsOnNegativeVoltage) {
 /* ----------------------------- Stamping ----------------------------- */
 
 /** @test Stamp OFF state (high resistance). */
-TEST(MosfetBinarySwitch, StampOffState) {
+TEST(MosfetBinarySwitchTest, StampOffState) {
   MnaSystem mna(3);
   MosfetBinarySwitchParams params;
   const NetID DRAIN = 1;
   const NetID SOURCE = 0;
-  const double vgs = 0.0; // Below Vth
+  const double VGS = 0.0; // Below Vth
 
-  MosfetBinarySwitch::stamp(mna, DRAIN, SOURCE, vgs, params);
+  MosfetBinarySwitch::stamp(mna, DRAIN, SOURCE, VGS, params);
 
   // Should stamp high resistance (low conductance)
   // Detailed matrix checks would require exposing internal state
 }
 
 /** @test Stamp ON state (low resistance). */
-TEST(MosfetBinarySwitch, StampOnState) {
+TEST(MosfetBinarySwitchTest, StampOnState) {
   MnaSystem mna(3);
   MosfetBinarySwitchParams params;
   const NetID DRAIN = 1;
   const NetID SOURCE = 0;
-  const double vgs = 5.0; // Above Vth
+  const double VGS = 5.0; // Above Vth
 
-  MosfetBinarySwitch::stamp(mna, DRAIN, SOURCE, vgs, params);
+  MosfetBinarySwitch::stamp(mna, DRAIN, SOURCE, VGS, params);
 
   // Should stamp low resistance (high conductance)
 }
@@ -136,7 +136,7 @@ TEST(MosfetBinarySwitch, StampOnState) {
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test Resistance ratio OFF/ON. */
-TEST(MosfetBinarySwitch, ResistanceRatio) {
+TEST(MosfetBinarySwitchTest, ResistanceRatio) {
   MosfetBinarySwitchParams params{.Vth = 1.0, .Ron = 100.0, .Roff = 1e8};
 
   double rOn = MosfetBinarySwitch::resistance(5.0, params);
@@ -147,7 +147,7 @@ TEST(MosfetBinarySwitch, ResistanceRatio) {
 }
 
 /** @test Low threshold voltage (enhancement mode). */
-TEST(MosfetBinarySwitch, EnhancementMode) {
+TEST(MosfetBinarySwitchTest, EnhancementMode) {
   MosfetBinarySwitchParams params{.Vth = 0.5}; // Low Vth
 
   EXPECT_FALSE(MosfetBinarySwitch::isOn(0.4, params)); // OFF
@@ -155,7 +155,7 @@ TEST(MosfetBinarySwitch, EnhancementMode) {
 }
 
 /** @test High threshold voltage (depletion mode-like). */
-TEST(MosfetBinarySwitch, HighThreshold) {
+TEST(MosfetBinarySwitchTest, HighThreshold) {
   MosfetBinarySwitchParams params{.Vth = 2.0}; // High Vth
 
   EXPECT_FALSE(MosfetBinarySwitch::isOn(1.5, params)); // OFF
@@ -163,7 +163,7 @@ TEST(MosfetBinarySwitch, HighThreshold) {
 }
 
 /** @test Very low Ron (ideal switch). */
-TEST(MosfetBinarySwitch, IdealSwitch) {
+TEST(MosfetBinarySwitchTest, IdealSwitch) {
   MosfetBinarySwitchParams params{.Vth = 1.0, .Ron = 0.1, .Roff = 1e12};
 
   double rOn = MosfetBinarySwitch::resistance(5.0, params);
@@ -174,7 +174,7 @@ TEST(MosfetBinarySwitch, IdealSwitch) {
 }
 
 /** @test Digital logic compatibility (TTL levels). */
-TEST(MosfetBinarySwitch, TTLLevels) {
+TEST(MosfetBinarySwitchTest, TTLLevels) {
   MosfetBinarySwitchParams params{.Vth = 1.4}; // TTL threshold ~= 1.4V
 
   // TTL LOW (0-0.8V): OFF
@@ -187,7 +187,7 @@ TEST(MosfetBinarySwitch, TTLLevels) {
 }
 
 /** @test CMOS logic compatibility (3.3V/5V). */
-TEST(MosfetBinarySwitch, CMOSLevels) {
+TEST(MosfetBinarySwitchTest, CMOSLevels) {
   MosfetBinarySwitchParams params{.Vth = 0.7}; // CMOS threshold ~= 0.5-1.0V
 
   // CMOS 5V LOW (0-1.5V): mostly OFF

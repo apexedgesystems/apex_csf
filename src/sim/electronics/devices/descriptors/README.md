@@ -29,9 +29,9 @@ This separation provides:
 using namespace sim::electronics::devices::descriptors;
 
 // Define circuit topology
-ResistorDescriptor r1{VDD, OUTPUT, 10e3};    // 10kΩ pullup
+ResistorDescriptor r1{VDD, OUTPUT, 10e3};    // 10kOhm pullup
 CapacitorDescriptor c1{OUTPUT, GND, 100e-12}; // 100pF decoupling
-InductorDescriptor l1{VDD, OUTPUT, 10e-6};   // 10µH filter
+InductorDescriptor l1{VDD, OUTPUT, 10e-6};   // 10uH filter
 
 // Physics models use descriptors
 ResistorModel::stamp(mna, r1.posNet, r1.negNet, r1.resistance);
@@ -56,8 +56,8 @@ struct ResistorDescriptor {
 };
 
 // Examples
-ResistorDescriptor pullup{VDD, OUTPUT, 10e3};     // 10kΩ
-ResistorDescriptor series{INPUT, OUTPUT, 100.0};  // 100Ω
+ResistorDescriptor pullup{VDD, OUTPUT, 10e3};     // 10kOhm
+ResistorDescriptor series{INPUT, OUTPUT, 100.0};  // 100Ohm
 ```
 
 ### CapacitorDescriptor
@@ -73,7 +73,7 @@ struct CapacitorDescriptor {
 
 // Examples
 CapacitorDescriptor decoupling{VDD, GND, 100e-9};  // 100nF
-CapacitorDescriptor coupling{IN, OUT, 1e-6};       // 1µF
+CapacitorDescriptor coupling{IN, OUT, 1e-6};       // 1uF
 ```
 
 ### InductorDescriptor
@@ -88,7 +88,7 @@ struct InductorDescriptor {
 };
 
 // Examples
-InductorDescriptor filter{VDD, OUTPUT, 10e-6};  // 10µH
+InductorDescriptor filter{VDD, OUTPUT, 10e-6};  // 10uH
 InductorDescriptor choke{INPUT, GND, 1e-3};     // 1mH
 ```
 
@@ -147,7 +147,7 @@ TEST(Netlist, Connectivity) {
 
 ## Design Principles
 
-### ✅ Descriptors ARE
+### [OK] Descriptors ARE
 
 - **Pure topology**: NetIDs and device parameters only
 - **Stateless**: No simulation state (voltages, currents)
@@ -155,7 +155,7 @@ TEST(Netlist, Connectivity) {
 - **RT-safe**: Can be used in real-time contexts
 - **Thread-safe**: No shared mutable state
 
-### ❌ Descriptors are NOT
+### [X] Descriptors are NOT
 
 - **Physics models**: No I-V curves, no stamping code
 - **Components**: No runtime behavior
@@ -221,4 +221,4 @@ ninja sim_electronics_devices_descriptors_uTest
 
 ---
 
-**Status**: Complete ✅ (Phase 2 of Layer 2 implementation)
+**Status**: Complete [OK] (Phase 2 of Layer 2 implementation)

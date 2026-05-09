@@ -21,7 +21,7 @@ static constexpr double EPSILON = 1e-9; // Tolerance for floating-point comparis
 /* ----------------------------- Parameters ----------------------------- */
 
 /** @test Default parameters are reasonable. */
-TEST(MosfetLevel1, DefaultParameters) {
+TEST(MosfetLevel1Test, DefaultParameters) {
   MosfetLevel1Params params;
 
   EXPECT_DOUBLE_EQ(params.Kp, 100e-6);
@@ -30,7 +30,7 @@ TEST(MosfetLevel1, DefaultParameters) {
 }
 
 /** @test Custom parameters. */
-TEST(MosfetLevel1, CustomParameters) {
+TEST(MosfetLevel1Test, CustomParameters) {
   MosfetLevel1Params params{.Kp = 50e-6, .Vth = 1.0, .lambda = 0.02};
 
   EXPECT_DOUBLE_EQ(params.Kp, 50e-6);
@@ -41,7 +41,7 @@ TEST(MosfetLevel1, CustomParameters) {
 /* ----------------------------- I-V Characteristic ----------------------------- */
 
 /** @test Cutoff region (Vgs < Vth). */
-TEST(MosfetLevel1, CutoffRegion) {
+TEST(MosfetLevel1Test, CutoffRegion) {
   MosfetLevel1Params params;
 
   double id1 = MosfetLevel1::current(0.0, 2.0, params); // Vgs = 0V
@@ -54,7 +54,7 @@ TEST(MosfetLevel1, CutoffRegion) {
 }
 
 /** @test Linear region (Vgs > Vth, Vds < Vgst). */
-TEST(MosfetLevel1, LinearRegion) {
+TEST(MosfetLevel1Test, LinearRegion) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
 
   // Vgs = 1.5V, Vgst = 0.8V, Vds = 0.5V < Vgst
@@ -68,7 +68,7 @@ TEST(MosfetLevel1, LinearRegion) {
 }
 
 /** @test Saturation region (Vgs > Vth, Vds >= Vgst). */
-TEST(MosfetLevel1, SaturationRegion) {
+TEST(MosfetLevel1Test, SaturationRegion) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
 
   // Vgs = 1.5V, Vgst = 0.8V, Vds = 2.0V > Vgst
@@ -81,7 +81,7 @@ TEST(MosfetLevel1, SaturationRegion) {
 }
 
 /** @test Saturation region boundary (Vds = Vgst). */
-TEST(MosfetLevel1, SaturationBoundary) {
+TEST(MosfetLevel1Test, SaturationBoundary) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
 
   // Vgs = 1.5V, Vgst = 0.8V, Vds = 0.8V (exactly at boundary)
@@ -93,7 +93,7 @@ TEST(MosfetLevel1, SaturationBoundary) {
 }
 
 /** @test Channel-length modulation (lambda > 0). */
-TEST(MosfetLevel1, ChannelLengthModulation) {
+TEST(MosfetLevel1Test, ChannelLengthModulation) {
   MosfetLevel1Params ideal{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.0};
   MosfetLevel1Params realistic{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02};
 
@@ -109,7 +109,7 @@ TEST(MosfetLevel1, ChannelLengthModulation) {
 /* ----------------------------- Transconductance (gm) ----------------------------- */
 
 /** @test Transconductance in cutoff. */
-TEST(MosfetLevel1, TransconductanceCutoff) {
+TEST(MosfetLevel1Test, TransconductanceCutoff) {
   MosfetLevel1Params params;
 
   double gm = MosfetLevel1::transconductance(0.5, 2.0, params); // Vgs < Vth
@@ -118,7 +118,7 @@ TEST(MosfetLevel1, TransconductanceCutoff) {
 }
 
 /** @test Transconductance in linear region. */
-TEST(MosfetLevel1, TransconductanceLinear) {
+TEST(MosfetLevel1Test, TransconductanceLinear) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
 
   // Vgs = 1.5V, Vds = 0.5V (linear region)
@@ -129,7 +129,7 @@ TEST(MosfetLevel1, TransconductanceLinear) {
 }
 
 /** @test Transconductance in saturation region. */
-TEST(MosfetLevel1, TransconductanceSaturation) {
+TEST(MosfetLevel1Test, TransconductanceSaturation) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
 
   // Vgs = 1.5V, Vds = 2.0V (saturation region)
@@ -140,19 +140,19 @@ TEST(MosfetLevel1, TransconductanceSaturation) {
 }
 
 /** @test Transconductance matches numerical derivative. */
-TEST(MosfetLevel1, TransconductanceNumericalDerivative) {
+TEST(MosfetLevel1Test, TransconductanceNumericalDerivative) {
   MosfetLevel1Params params;
-  const double vgs = 1.5;
-  const double vds = 2.0;
-  const double dvgs = 1e-6;
+  const double VGS = 1.5;
+  const double VDS = 2.0;
+  const double DVGS = 1e-6;
 
   // Analytical transconductance
-  double gmAnalytical = MosfetLevel1::transconductance(vgs, vds, params);
+  double gmAnalytical = MosfetLevel1::transconductance(VGS, VDS, params);
 
   // Numerical derivative: dId/dVgs ~= (Id(vgs+dvgs) - Id(vgs-dvgs)) / (2*dvgs)
-  double id1 = MosfetLevel1::current(vgs - dvgs, vds, params);
-  double id2 = MosfetLevel1::current(vgs + dvgs, vds, params);
-  double gmNumerical = (id2 - id1) / (2.0 * dvgs);
+  double id1 = MosfetLevel1::current(VGS - DVGS, VDS, params);
+  double id2 = MosfetLevel1::current(VGS + DVGS, VDS, params);
+  double gmNumerical = (id2 - id1) / (2.0 * DVGS);
 
   // Should match within 1%
   EXPECT_NEAR(gmAnalytical, gmNumerical, std::abs(gmNumerical) * 0.01);
@@ -161,7 +161,7 @@ TEST(MosfetLevel1, TransconductanceNumericalDerivative) {
 /* ----------------------------- Output Conductance (gds) ----------------------------- */
 
 /** @test Output conductance in cutoff. */
-TEST(MosfetLevel1, OutputConductanceCutoff) {
+TEST(MosfetLevel1Test, OutputConductanceCutoff) {
   MosfetLevel1Params params;
 
   double gds = MosfetLevel1::outputConductance(0.5, 2.0, params); // Vgs < Vth
@@ -170,7 +170,7 @@ TEST(MosfetLevel1, OutputConductanceCutoff) {
 }
 
 /** @test Output conductance in saturation with lambda = 0. */
-TEST(MosfetLevel1, OutputConductanceSaturationIdeal) {
+TEST(MosfetLevel1Test, OutputConductanceSaturationIdeal) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.0};
 
   // Vgs = 1.5V, Vds = 2.0V (saturation, ideal)
@@ -181,7 +181,7 @@ TEST(MosfetLevel1, OutputConductanceSaturationIdeal) {
 }
 
 /** @test Output conductance in saturation with lambda > 0. */
-TEST(MosfetLevel1, OutputConductanceSaturationRealistic) {
+TEST(MosfetLevel1Test, OutputConductanceSaturationRealistic) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02};
 
   // Vgs = 1.5V, Vds = 2.0V (saturation, realistic)
@@ -193,7 +193,7 @@ TEST(MosfetLevel1, OutputConductanceSaturationRealistic) {
 }
 
 /** @test Output conductance in linear region. */
-TEST(MosfetLevel1, OutputConductanceLinear) {
+TEST(MosfetLevel1Test, OutputConductanceLinear) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
 
   // Vgs = 1.5V, Vds = 0.5V (linear region)
@@ -204,19 +204,19 @@ TEST(MosfetLevel1, OutputConductanceLinear) {
 }
 
 /** @test Output conductance matches numerical derivative. */
-TEST(MosfetLevel1, OutputConductanceNumericalDerivative) {
+TEST(MosfetLevel1Test, OutputConductanceNumericalDerivative) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02};
-  const double vgs = 1.5;
-  const double vds = 2.0;
-  const double dvds = 1e-6;
+  const double VGS = 1.5;
+  const double VDS = 2.0;
+  const double DVDS = 1e-6;
 
   // Analytical output conductance
-  double gdsAnalytical = MosfetLevel1::outputConductance(vgs, vds, params);
+  double gdsAnalytical = MosfetLevel1::outputConductance(VGS, VDS, params);
 
   // Numerical derivative: dId/dVds ~= (Id(vds+dvds) - Id(vds-dvds)) / (2*dvds)
-  double id1 = MosfetLevel1::current(vgs, vds - dvds, params);
-  double id2 = MosfetLevel1::current(vgs, vds + dvds, params);
-  double gdsNumerical = (id2 - id1) / (2.0 * dvds);
+  double id1 = MosfetLevel1::current(VGS, VDS - DVDS, params);
+  double id2 = MosfetLevel1::current(VGS, VDS + DVDS, params);
+  double gdsNumerical = (id2 - id1) / (2.0 * DVDS);
 
   // Should match within 1%
   EXPECT_NEAR(gdsAnalytical, gdsNumerical, std::abs(gdsNumerical) * 0.01);
@@ -235,7 +235,7 @@ TEST(MosfetLevel1, OutputConductanceNumericalDerivative) {
  * The subthreshold smoothing region was added during ngspice calibration to
  * fix the Jacobian discontinuity at Vth that broke NR convergence.
  */
-TEST(MosfetLevel1, RegionCutoff) {
+TEST(MosfetLevel1Test, RegionCutoff) {
   MosfetLevel1Params params; // Vth=0.7, Vsmooth=0.1 (defaults)
 
   // vgs = 0 < Vth - Vsmooth = 0.6  -> deep cutoff
@@ -257,7 +257,7 @@ TEST(MosfetLevel1, RegionCutoff) {
  * The cutoff condition is `vgs <= Vth - Vsmooth`, so with Vsmooth=0 the
  * boundary `vgs == Vth` evaluates as deep cutoff (inclusive).
  */
-TEST(MosfetLevel1, RegionCutoffHard) {
+TEST(MosfetLevel1Test, RegionCutoffHard) {
   MosfetLevel1Params params{.Vth = 0.7, .Vsmooth = 0.0};
 
   // No smoothing window: anything <= Vth is deep cutoff
@@ -271,7 +271,7 @@ TEST(MosfetLevel1, RegionCutoffHard) {
 }
 
 /** @test Region detection: linear. */
-TEST(MosfetLevel1, RegionLinear) {
+TEST(MosfetLevel1Test, RegionLinear) {
   MosfetLevel1Params params{.Vth = 0.7};
 
   // Vgs = 1.5V, Vgst = 0.8V, Vds = 0.5V < Vgst
@@ -281,7 +281,7 @@ TEST(MosfetLevel1, RegionLinear) {
 }
 
 /** @test Region detection: saturation. */
-TEST(MosfetLevel1, RegionSaturation) {
+TEST(MosfetLevel1Test, RegionSaturation) {
   MosfetLevel1Params params{.Vth = 0.7};
 
   // Vgs = 1.5V, Vgst = 0.8V, Vds = 2.0V > Vgst
@@ -291,7 +291,7 @@ TEST(MosfetLevel1, RegionSaturation) {
 }
 
 /** @test Region detection: linear-saturation boundary. */
-TEST(MosfetLevel1, RegionBoundary) {
+TEST(MosfetLevel1Test, RegionBoundary) {
   MosfetLevel1Params params{.Vth = 0.7};
 
   // Vgs = 1.5V, Vgst = 0.8V, Vds = 0.8V (exactly at boundary)
@@ -303,7 +303,7 @@ TEST(MosfetLevel1, RegionBoundary) {
 /* ----------------------------- Stamping ----------------------------- */
 
 /** @test Stamp cutoff state. */
-TEST(MosfetLevel1, StampCutoff) {
+TEST(MosfetLevel1Test, StampCutoff) {
   MnaSystem mna(4);
   MosfetLevel1Params params;
   const NetID DRAIN = 1;
@@ -316,7 +316,7 @@ TEST(MosfetLevel1, StampCutoff) {
 }
 
 /** @test Stamp linear region. */
-TEST(MosfetLevel1, StampLinear) {
+TEST(MosfetLevel1Test, StampLinear) {
   MnaSystem mna(4);
   MosfetLevel1Params params;
   const NetID DRAIN = 1;
@@ -329,7 +329,7 @@ TEST(MosfetLevel1, StampLinear) {
 }
 
 /** @test Stamp saturation region. */
-TEST(MosfetLevel1, StampSaturation) {
+TEST(MosfetLevel1Test, StampSaturation) {
   MnaSystem mna(4);
   MosfetLevel1Params params;
   const NetID DRAIN = 1;
@@ -344,16 +344,16 @@ TEST(MosfetLevel1, StampSaturation) {
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test Output characteristics (Id vs Vds for fixed Vgs). */
-TEST(MosfetLevel1, OutputCharacteristics) {
+TEST(MosfetLevel1Test, OutputCharacteristics) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
-  const double vgs = 1.5; // Fixed Vgs
+  const double VGS = 1.5; // Fixed Vgs
 
-  double id1 = MosfetLevel1::current(vgs, 0.1, params);
-  double id2 = MosfetLevel1::current(vgs, 0.3, params);
-  double id3 = MosfetLevel1::current(vgs, 0.5, params);
-  double id4 = MosfetLevel1::current(vgs, 0.8, params); // Boundary
-  double id5 = MosfetLevel1::current(vgs, 1.5, params); // Saturation
-  double id6 = MosfetLevel1::current(vgs, 3.0, params); // Deep saturation
+  double id1 = MosfetLevel1::current(VGS, 0.1, params);
+  double id2 = MosfetLevel1::current(VGS, 0.3, params);
+  double id3 = MosfetLevel1::current(VGS, 0.5, params);
+  double id4 = MosfetLevel1::current(VGS, 0.8, params); // Boundary
+  double id5 = MosfetLevel1::current(VGS, 1.5, params); // Saturation
+  double id6 = MosfetLevel1::current(VGS, 3.0, params); // Deep saturation
 
   // Linear region: current increases with Vds
   EXPECT_LT(id1, id2);
@@ -366,15 +366,15 @@ TEST(MosfetLevel1, OutputCharacteristics) {
 }
 
 /** @test Transfer characteristics (Id vs Vgs for fixed Vds). */
-TEST(MosfetLevel1, TransferCharacteristics) {
+TEST(MosfetLevel1Test, TransferCharacteristics) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
-  const double vds = 2.0; // Fixed Vds (saturation)
+  const double VDS = 2.0; // Fixed Vds (saturation)
 
-  double id1 = MosfetLevel1::current(0.5, vds, params); // Below Vth
-  double id2 = MosfetLevel1::current(0.7, vds, params); // At Vth
-  double id3 = MosfetLevel1::current(1.0, vds, params);
-  double id4 = MosfetLevel1::current(1.5, vds, params);
-  double id5 = MosfetLevel1::current(2.0, vds, params);
+  double id1 = MosfetLevel1::current(0.5, VDS, params); // Below Vth
+  double id2 = MosfetLevel1::current(0.7, VDS, params); // At Vth
+  double id3 = MosfetLevel1::current(1.0, VDS, params);
+  double id4 = MosfetLevel1::current(1.5, VDS, params);
+  double id5 = MosfetLevel1::current(2.0, VDS, params);
 
   // Below threshold: zero current
   EXPECT_DOUBLE_EQ(id1, 0.0);
@@ -405,7 +405,7 @@ TEST(MosfetLevel1, TransferCharacteristics) {
  *   4. Above-threshold current is much larger than smoothing-region current
  *   5. With Vsmooth=0 the model reverts to textbook hard cutoff
  */
-TEST(MosfetLevel1, SubthresholdCutoff) {
+TEST(MosfetLevel1Test, SubthresholdCutoff) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7}; // Vsmooth=0.1 default
 
   // Deep cutoff: vgs <= Vth - Vsmooth -> exactly zero
@@ -438,7 +438,7 @@ TEST(MosfetLevel1, SubthresholdCutoff) {
 }
 
 /** @test Hard cutoff: textbook Shichman-Hodges when Vsmooth is disabled. */
-TEST(MosfetLevel1, SubthresholdCutoffHard) {
+TEST(MosfetLevel1Test, SubthresholdCutoffHard) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .Vsmooth = 0.0};
 
   // With Vsmooth=0 the model has the original abrupt cutoff at Vth
@@ -447,13 +447,13 @@ TEST(MosfetLevel1, SubthresholdCutoffHard) {
 }
 
 /** @test Transconductance increases with Vgs in saturation. */
-TEST(MosfetLevel1, TransconductanceVsVgs) {
+TEST(MosfetLevel1Test, TransconductanceVsVgs) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
-  const double vds = 2.0; // Saturation
+  const double VDS = 2.0; // Saturation
 
-  double gm1 = MosfetLevel1::transconductance(1.0, vds, params);
-  double gm2 = MosfetLevel1::transconductance(1.5, vds, params);
-  double gm3 = MosfetLevel1::transconductance(2.0, vds, params);
+  double gm1 = MosfetLevel1::transconductance(1.0, VDS, params);
+  double gm2 = MosfetLevel1::transconductance(1.5, VDS, params);
+  double gm3 = MosfetLevel1::transconductance(2.0, VDS, params);
 
   // gm = Kp * Vgst (linear with Vgst in saturation)
   EXPECT_LT(gm1, gm2);
@@ -469,7 +469,7 @@ TEST(MosfetLevel1, TransconductanceVsVgs) {
 }
 
 /** @test Channel-length modulation increases gds. */
-TEST(MosfetLevel1, ChannelLengthModulationGds) {
+TEST(MosfetLevel1Test, ChannelLengthModulationGds) {
   MosfetLevel1Params ideal{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.0};
   MosfetLevel1Params realistic{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02};
 
@@ -484,7 +484,7 @@ TEST(MosfetLevel1, ChannelLengthModulationGds) {
 }
 
 /** @test Weak MOSFET (low Kp). */
-TEST(MosfetLevel1, WeakMosfet) {
+TEST(MosfetLevel1Test, WeakMosfet) {
   MosfetLevel1Params params{.Kp = 20e-6, .Vth = 0.7}; // Low Kp
 
   double id = MosfetLevel1::current(1.5, 2.0, params);
@@ -494,7 +494,7 @@ TEST(MosfetLevel1, WeakMosfet) {
 }
 
 /** @test Strong MOSFET (high Kp). */
-TEST(MosfetLevel1, StrongMosfet) {
+TEST(MosfetLevel1Test, StrongMosfet) {
   MosfetLevel1Params params{.Kp = 200e-6, .Vth = 0.7}; // High Kp
 
   double id = MosfetLevel1::current(1.5, 2.0, params);
@@ -504,7 +504,7 @@ TEST(MosfetLevel1, StrongMosfet) {
 }
 
 /** @test Low threshold voltage (depletion mode). */
-TEST(MosfetLevel1, DepletionMode) {
+TEST(MosfetLevel1Test, DepletionMode) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = -0.5}; // Negative Vth
 
   // Even at Vgs = 0, MOSFET is ON
@@ -514,7 +514,7 @@ TEST(MosfetLevel1, DepletionMode) {
 }
 
 /** @test High threshold voltage (enhancement mode). */
-TEST(MosfetLevel1, EnhancementMode) {
+TEST(MosfetLevel1Test, EnhancementMode) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 1.5}; // High Vth
 
   // At Vgs = 1.0V, MOSFET is OFF
@@ -529,7 +529,7 @@ TEST(MosfetLevel1, EnhancementMode) {
 /* ----------------------------- Voltage Limiting (fetlim) ----------------------------- */
 
 /** @test fetlim limits large positive jumps above threshold. */
-TEST(MosfetLevel1, FetlimAboveThresholdLargePositiveJump) {
+TEST(MosfetLevel1Test, FetlimAboveThresholdLargePositiveJump) {
   const double VTO = 0.7;
 
   // vold well above vtox (vto + 3.5 = 4.2), large positive jump
@@ -545,7 +545,7 @@ TEST(MosfetLevel1, FetlimAboveThresholdLargePositiveJump) {
 }
 
 /** @test fetlim limits large negative jumps above threshold, above vtox. */
-TEST(MosfetLevel1, FetlimAboveThresholdLargeNegativeJump) {
+TEST(MosfetLevel1Test, FetlimAboveThresholdLargeNegativeJump) {
   const double VTO = 0.7;
 
   // vold above vtox, large negative jump but vnew still above vtox
@@ -559,7 +559,7 @@ TEST(MosfetLevel1, FetlimAboveThresholdLargeNegativeJump) {
 }
 
 /** @test fetlim limits negative jump above vtox when vnew stays above vtox. */
-TEST(MosfetLevel1, FetlimAboveVtoxNegativeJumpStaysAbove) {
+TEST(MosfetLevel1Test, FetlimAboveVtoxNegativeJumpStaysAbove) {
   const double VTO = 0.7;
   double vold = 10.0;
   // vtstlo = |10.0 - 0.7| + 1 = 10.3
@@ -573,7 +573,7 @@ TEST(MosfetLevel1, FetlimAboveVtoxNegativeJumpStaysAbove) {
 }
 
 /** @test fetlim between vto and vtox: negative jump clamps to vto - 0.5. */
-TEST(MosfetLevel1, FetlimBetweenVtoAndVtoxNegativeJump) {
+TEST(MosfetLevel1Test, FetlimBetweenVtoAndVtoxNegativeJump) {
   const double VTO = 0.7;
 
   // vold between vto and vtox
@@ -587,7 +587,7 @@ TEST(MosfetLevel1, FetlimBetweenVtoAndVtoxNegativeJump) {
 }
 
 /** @test fetlim between vto and vtox: positive jump clamps to vto + 4.0. */
-TEST(MosfetLevel1, FetlimBetweenVtoAndVtoxPositiveJump) {
+TEST(MosfetLevel1Test, FetlimBetweenVtoAndVtoxPositiveJump) {
   const double VTO = 0.7;
 
   // vold between vto and vtox
@@ -601,7 +601,7 @@ TEST(MosfetLevel1, FetlimBetweenVtoAndVtoxPositiveJump) {
 }
 
 /** @test fetlim below threshold: large negative jump is limited. */
-TEST(MosfetLevel1, FetlimBelowThresholdNegativeJump) {
+TEST(MosfetLevel1Test, FetlimBelowThresholdNegativeJump) {
   const double VTO = 0.7;
 
   // vold below threshold
@@ -616,7 +616,7 @@ TEST(MosfetLevel1, FetlimBelowThresholdNegativeJump) {
 }
 
 /** @test fetlim below threshold: positive jump below vtemp is limited by vtstlo. */
-TEST(MosfetLevel1, FetlimBelowThresholdPositiveJumpSmall) {
+TEST(MosfetLevel1Test, FetlimBelowThresholdPositiveJumpSmall) {
   const double VTO = 0.7;
 
   // vold below threshold
@@ -636,7 +636,7 @@ TEST(MosfetLevel1, FetlimBelowThresholdPositiveJumpSmall) {
 }
 
 /** @test fetlim small changes pass through unmodified. */
-TEST(MosfetLevel1, FetlimSmallChange) {
+TEST(MosfetLevel1Test, FetlimSmallChange) {
   const double VTO = 0.7;
 
   // Above threshold, small change
@@ -656,7 +656,7 @@ TEST(MosfetLevel1, FetlimSmallChange) {
 /* ----------------------------- Voltage Limiting (limvds) ----------------------------- */
 
 /** @test limvds limits upward jump when vold >= 3.5. */
-TEST(MosfetLevel1, LimvdsHighVoldUpwardJump) {
+TEST(MosfetLevel1Test, LimvdsHighVoldUpwardJump) {
   // vold >= 3.5, large upward jump
   double limited = MosfetLevel1::limvds(100.0, 5.0);
 
@@ -665,7 +665,7 @@ TEST(MosfetLevel1, LimvdsHighVoldUpwardJump) {
 }
 
 /** @test limvds limits downward jump below 3.5 when vold >= 3.5. */
-TEST(MosfetLevel1, LimvdsHighVoldDownwardJump) {
+TEST(MosfetLevel1Test, LimvdsHighVoldDownwardJump) {
   // vold >= 3.5, vnew drops below 3.5
   double limited = MosfetLevel1::limvds(0.5, 4.0);
 
@@ -674,7 +674,7 @@ TEST(MosfetLevel1, LimvdsHighVoldDownwardJump) {
 }
 
 /** @test limvds limits upward jump when vold < 3.5. */
-TEST(MosfetLevel1, LimvdsLowVoldUpwardJump) {
+TEST(MosfetLevel1Test, LimvdsLowVoldUpwardJump) {
   // vold < 3.5, vnew jumps up
   double limited = MosfetLevel1::limvds(20.0, 1.0);
 
@@ -683,7 +683,7 @@ TEST(MosfetLevel1, LimvdsLowVoldUpwardJump) {
 }
 
 /** @test limvds limits downward jump when vold < 3.5. */
-TEST(MosfetLevel1, LimvdsLowVoldDownwardJump) {
+TEST(MosfetLevel1Test, LimvdsLowVoldDownwardJump) {
   // vold < 3.5, vnew drops below -0.5
   double limited = MosfetLevel1::limvds(-5.0, 1.0);
 
@@ -692,7 +692,7 @@ TEST(MosfetLevel1, LimvdsLowVoldDownwardJump) {
 }
 
 /** @test limvds passes through small changes. */
-TEST(MosfetLevel1, LimvdsSmallChange) {
+TEST(MosfetLevel1Test, LimvdsSmallChange) {
   // Within limits at high vold
   double limited = MosfetLevel1::limvds(5.5, 5.0);
   EXPECT_NEAR(limited, 5.5, 1e-12);
@@ -705,7 +705,7 @@ TEST(MosfetLevel1, LimvdsSmallChange) {
 /* ----------------------------- Smooth Transition Region ----------------------------- */
 
 /** @test Current in smooth transition region matches expected quadratic. */
-TEST(MosfetLevel1, SmoothTransitionCurrent) {
+TEST(MosfetLevel1Test, SmoothTransitionCurrent) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
 
   // Midpoint of smoothing window: vgs = 0.65, ratio = 0.5
@@ -721,7 +721,7 @@ TEST(MosfetLevel1, SmoothTransitionCurrent) {
 }
 
 /** @test Transconductance in smooth transition matches analytical derivative. */
-TEST(MosfetLevel1, SmoothTransitionTransconductance) {
+TEST(MosfetLevel1Test, SmoothTransitionTransconductance) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
 
   double vgs = 0.65;
@@ -737,7 +737,7 @@ TEST(MosfetLevel1, SmoothTransitionTransconductance) {
 }
 
 /** @test Transconductance in smooth transition matches numerical derivative. */
-TEST(MosfetLevel1, SmoothTransitionTransconductanceNumerical) {
+TEST(MosfetLevel1Test, SmoothTransitionTransconductanceNumerical) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
 
   double vgs = 0.65;
@@ -753,7 +753,7 @@ TEST(MosfetLevel1, SmoothTransitionTransconductanceNumerical) {
 }
 
 /** @test Output conductance in smooth transition with lambda > 0. */
-TEST(MosfetLevel1, SmoothTransitionOutputConductance) {
+TEST(MosfetLevel1Test, SmoothTransitionOutputConductance) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
 
   double vgs = 0.65;
@@ -769,7 +769,7 @@ TEST(MosfetLevel1, SmoothTransitionOutputConductance) {
 }
 
 /** @test Output conductance in smooth transition matches numerical derivative. */
-TEST(MosfetLevel1, SmoothTransitionOutputConductanceNumerical) {
+TEST(MosfetLevel1Test, SmoothTransitionOutputConductanceNumerical) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
 
   double vgs = 0.65;
@@ -793,7 +793,7 @@ TEST(MosfetLevel1, SmoothTransitionOutputConductanceNumerical) {
  * intentional and bounded by id_at_th, which is negligible for typical
  * Vsmooth values.
  */
-TEST(MosfetLevel1, SmoothTransitionContinuity) {
+TEST(MosfetLevel1Test, SmoothTransitionContinuity) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
   double vds = 2.0;
 

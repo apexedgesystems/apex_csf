@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_LINEAR_RESISTORMODEL_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_LINEAR_RESISTORMODEL_HPP
+#ifndef APEX_RESISTORMODEL_HPP
+#define APEX_RESISTORMODEL_HPP
 /**
  * @file ResistorModel.hpp
  * @brief Linear resistor physics model (Ohm's law).
@@ -20,9 +20,9 @@
 
 namespace sim::electronics::devices::linear {
 
-using mna::MnaSystem;
-using mna::MnaSystemSparse;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::MnaSystemSparse;
+using algorithms::mna::NetID;
 
 /**
  * @brief Resistor model (Ohm's law).
@@ -87,4 +87,4 @@ struct ResistorModel {
 
 } // namespace sim::electronics::devices::linear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_LINEAR_RESISTORMODEL_HPP
+#endif // APEX_RESISTORMODEL_HPP

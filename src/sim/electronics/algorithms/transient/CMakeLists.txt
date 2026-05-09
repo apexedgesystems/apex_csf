@@ -20,15 +20,15 @@ apex_module(sim_electronics_algorithms_transient)
 set(CUDA_SOURCES "${SRC_DIR}/TransientCuda.cu")
 
 # ------------------------------------------------------------------------------
-# Interface Library (Header-Only)
+# Interface Library
 # ------------------------------------------------------------------------------
 
 apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
 
 target_link_libraries(
   ${LIB_NAME}
-  INTERFACE sim_electronics_mna
-            sim_electronics_devices_companions # Companion models (Layer 2 dependency)
+  INTERFACE sim_electronics_algorithms_mna
+            sim_electronics_algorithms_companions # Companion models (Layer 2 dependency)
             fmt::fmt utilities_compatibility
 )
 
@@ -44,7 +44,7 @@ apex_add_library_cuda(
   SRC
   ${CUDA_SOURCES}
   DEPS_PRIVATE
-  sim_electronics_mna_cuda
+  sim_electronics_algorithms_mna_cuda
 )
 apex_standard_optins(${LIB_NAME}_cuda)
 

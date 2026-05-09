@@ -14,18 +14,18 @@ include(apex/All)
 apex_module(sim_electronics_algorithms_nonlinear)
 
 # ------------------------------------------------------------------------------
-# Interface Library (Header-Only)
+# Interface Library
 # ------------------------------------------------------------------------------
 
 apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
 
 target_link_libraries(
   ${LIB_NAME}
-  INTERFACE sim_electronics_mna fmt::fmt utilities_compatibility
+  INTERFACE sim_electronics_algorithms_mna fmt::fmt utilities_compatibility
 )
 
 # ------------------------------------------------------------------------------
-# CUDA Acceleration (Optional)
+# CUDA Library (requires CUDA toolkit)
 # ------------------------------------------------------------------------------
 
 if (CMAKE_CUDA_COMPILER)

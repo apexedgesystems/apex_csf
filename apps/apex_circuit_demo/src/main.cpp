@@ -28,9 +28,9 @@
  *   ./ApexCircuitDemo --circuit rc-lowpass --vstep 3.3 --duration 5e-3
  */
 
-#include "src/sim/electronics/amplifiers/inc/BjtCommonEmitter.hpp"
-#include "src/sim/electronics/filters/inc/RcLowPass.hpp"
-#include "src/sim/electronics/gates/inc/CmosGateCircuits.hpp"
+#include "src/sim/electronics/topologies/amplifiers/inc/BjtCommonEmitter.hpp"
+#include "src/sim/electronics/topologies/filters/inc/RcLowPass.hpp"
+#include "src/sim/electronics/topologies/gates/inc/CmosGateCircuits.hpp"
 #include "src/sim/electronics/algorithms/transient/inc/TransientConfig.hpp"
 
 #include <fmt/format.h>
@@ -42,18 +42,18 @@
 #include <string>
 #include <vector>
 
-using sim::electronics::amplifiers::BjtCommonEmitter;
+using sim::electronics::topologies::amplifiers::BjtCommonEmitter;
 using sim::electronics::devices::nonlinear::MosfetLevel1Params;
-using sim::electronics::filters::RcLowPass;
-using sim::electronics::gates::CmosAndCircuit;
-using sim::electronics::gates::CmosInverterCircuit;
-using sim::electronics::gates::CmosNandCircuit;
-using sim::electronics::gates::CmosNorCircuit;
-using sim::electronics::gates::CmosOrCircuit;
-using sim::electronics::gates::CmosXnorCircuit;
-using sim::electronics::gates::CmosXorCircuit;
-using sim::electronics::transient::IntegrationMethod;
-using sim::electronics::transient::TransientState;
+using sim::electronics::topologies::filters::RcLowPass;
+using sim::electronics::topologies::gates::CmosAndCircuit;
+using sim::electronics::topologies::gates::CmosInverterCircuit;
+using sim::electronics::topologies::gates::CmosNandCircuit;
+using sim::electronics::topologies::gates::CmosNorCircuit;
+using sim::electronics::topologies::gates::CmosOrCircuit;
+using sim::electronics::topologies::gates::CmosXnorCircuit;
+using sim::electronics::topologies::gates::CmosXorCircuit;
+using sim::electronics::algorithms::transient::IntegrationMethod;
+using sim::electronics::algorithms::transient::TransientState;
 
 /* ----------------------------- Constants ----------------------------- */
 

@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_LINEAR_INDUCTORMODEL_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_LINEAR_INDUCTORMODEL_HPP
+#ifndef APEX_INDUCTORMODEL_HPP
+#define APEX_INDUCTORMODEL_HPP
 /**
  * @file InductorModel.hpp
  * @brief Linear inductor physics model (companion model).
@@ -18,12 +18,12 @@
  * Thread-safety: Safe (stateless, pure functions).
  */
 
-#include "src/sim/electronics/devices/companions/inc/CompanionModels.hpp"
+#include "src/sim/electronics/algorithms/companions/inc/CompanionModels.hpp"
 
 namespace sim::electronics::devices::linear {
 
-using companions::InductorCompanion;
-using transient::IntegrationMethod;
+using algorithms::companions::InductorCompanion;
+using algorithms::transient::IntegrationMethod;
 
 /**
  * @brief Inductor model (reactive element).
@@ -77,4 +77,4 @@ using Inductor = InductorCompanion;
 
 } // namespace sim::electronics::devices::linear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_LINEAR_INDUCTORMODEL_HPP
+#endif // APEX_INDUCTORMODEL_HPP

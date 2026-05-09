@@ -55,7 +55,7 @@ CmosNand nand{VDD, GND, INA, INB, OUTPUT, INTERNAL, 10e-6, 1e-6};
 EXPECT_EQ(CmosNand::truthTable(0, 0), 1);
 EXPECT_EQ(CmosNand::truthTable(0, 1), 1);
 EXPECT_EQ(CmosNand::truthTable(1, 0), 1);
-EXPECT_EQ(CmosNand::truthTable(1, 1), 0);  // Only 1,1 → 0
+EXPECT_EQ(CmosNand::truthTable(1, 1), 0);  // Only 1,1 -> 0
 ```
 
 ### CmosNor
@@ -71,7 +71,7 @@ using namespace sim::electronics::devices::composite;
 CmosNor nor{VDD, GND, INA, INB, OUTPUT, INTERNAL, 10e-6, 1e-6};
 
 // Truth table (digital verification)
-EXPECT_EQ(CmosNor::truthTable(0, 0), 1);  // Only 0,0 → 1
+EXPECT_EQ(CmosNor::truthTable(0, 0), 1);  // Only 0,0 -> 1
 EXPECT_EQ(CmosNor::truthTable(0, 1), 0);
 EXPECT_EQ(CmosNor::truthTable(1, 0), 0);
 EXPECT_EQ(CmosNor::truthTable(1, 1), 0);

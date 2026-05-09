@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_LINEAR_CAPACITORMODEL_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_LINEAR_CAPACITORMODEL_HPP
+#ifndef APEX_CAPACITORMODEL_HPP
+#define APEX_CAPACITORMODEL_HPP
 /**
  * @file CapacitorModel.hpp
  * @brief Linear capacitor physics model (companion model).
@@ -18,12 +18,12 @@
  * Thread-safety: Safe (stateless, pure functions).
  */
 
-#include "src/sim/electronics/devices/companions/inc/CompanionModels.hpp"
+#include "src/sim/electronics/algorithms/companions/inc/CompanionModels.hpp"
 
 namespace sim::electronics::devices::linear {
 
-using companions::CapacitorCompanion;
-using transient::IntegrationMethod;
+using algorithms::companions::CapacitorCompanion;
+using algorithms::transient::IntegrationMethod;
 
 /**
  * @brief Capacitor model (reactive element).
@@ -77,4 +77,4 @@ using Capacitor = CapacitorCompanion;
 
 } // namespace sim::electronics::devices::linear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_LINEAR_CAPACITORMODEL_HPP
+#endif // APEX_CAPACITORMODEL_HPP

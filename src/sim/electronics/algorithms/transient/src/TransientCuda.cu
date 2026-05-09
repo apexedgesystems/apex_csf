@@ -7,14 +7,14 @@
 
 #include <algorithm>
 
-namespace sim::electronics::transient::cuda {
+namespace sim::electronics::algorithms::transient::cuda {
 
 /* ----------------------------- CUDA Transient Step ----------------------------- */
 
-TransientStatus stepCuda(mna::cuda::MnaCudaWorkspace& cudaWs, mna::MnaSystem& mna,
+TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs, algorithms::mna::MnaSystem& mna,
                          CompanionSet& companions, const StampCallback& stampCallback, double dt,
                          double& time, std::vector<double>& prevVoltages,
-                         mna::MnaSolveWorkspace& workspace, TransientState& state) {
+                         algorithms::mna::MnaSolveWorkspace& workspace, TransientState& state) {
   // Check CUDA availability
   if (!available()) {
     return TransientStatus::ERROR_STEP_FAILED;
@@ -50,7 +50,7 @@ TransientStatus stepCuda(mna::cuda::MnaCudaWorkspace& cudaWs, mna::MnaSystem& mn
   mna.buildAugmentedMatrix(workspace.A.data(), workspace.b.data());
 
   // Solve on GPU
-  if (!mna::cuda::solveCuda(cudaWs, workspace.A.data(), workspace.b.data(), dim)) {
+  if (!algorithms::mna::cuda::solveCuda(cudaWs, workspace.A.data(), workspace.b.data(), dim)) {
     return TransientStatus::ERROR_STEP_FAILED; // GPU solve failed, use CPU
   }
 
@@ -73,10 +73,10 @@ TransientStatus stepCuda(mna::cuda::MnaCudaWorkspace& cudaWs, mna::MnaSystem& mn
   return TransientStatus::SUCCESS;
 }
 
-TransientStatus stepCuda(mna::cuda::MnaCudaWorkspace& cudaWs, mna::MnaSystem& mna,
+TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs, algorithms::mna::MnaSystem& mna,
                          CompanionSet& companions, const StatefulStampCallback& stampCallback,
                          double dt, double& time, std::vector<double>& prevVoltages,
-                         mna::MnaSolveWorkspace& workspace, TransientState& state) {
+                         algorithms::mna::MnaSolveWorkspace& workspace, TransientState& state) {
   // Check CUDA availability
   if (!available()) {
     return TransientStatus::ERROR_STEP_FAILED;
@@ -112,7 +112,7 @@ TransientStatus stepCuda(mna::cuda::MnaCudaWorkspace& cudaWs, mna::MnaSystem& mn
   mna.buildAugmentedMatrix(workspace.A.data(), workspace.b.data());
 
   // Solve on GPU
-  if (!mna::cuda::solveCuda(cudaWs, workspace.A.data(), workspace.b.data(), dim)) {
+  if (!algorithms::mna::cuda::solveCuda(cudaWs, workspace.A.data(), workspace.b.data(), dim)) {
     return TransientStatus::ERROR_STEP_FAILED; // GPU solve failed, use CPU
   }
 
@@ -135,4 +135,4 @@ TransientStatus stepCuda(mna::cuda::MnaCudaWorkspace& cudaWs, mna::MnaSystem& mn
   return TransientStatus::SUCCESS;
 }
 
-} // namespace sim::electronics::transient::cuda
+} // namespace sim::electronics::algorithms::transient::cuda

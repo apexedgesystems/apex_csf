@@ -19,7 +19,7 @@ using sim::electronics::devices::nonlinear::SchottkyDiodeParams;
 /* ----------------------------- Default Construction ----------------------------- */
 
 /** @test */
-TEST(SchottkyDiode, DefaultParameters) {
+TEST(SchottkyDiodeTest, DefaultParameters) {
   SchottkyDiodeParams params;
   EXPECT_DOUBLE_EQ(params.Is, 1e-12);
   EXPECT_DOUBLE_EQ(params.n, 1.0);
@@ -28,7 +28,7 @@ TEST(SchottkyDiode, DefaultParameters) {
 }
 
 /** @test */
-TEST(SchottkyDiode, CustomParameters) {
+TEST(SchottkyDiodeTest, CustomParameters) {
   SchottkyDiodeParams params{.Is = 5e-12, .n = 1.05, .Vt = 0.025, .Rs = 0.5};
   EXPECT_DOUBLE_EQ(params.Is, 5e-12);
   EXPECT_DOUBLE_EQ(params.n, 1.05);
@@ -39,181 +39,181 @@ TEST(SchottkyDiode, CustomParameters) {
 /* ----------------------------- Current Tests ----------------------------- */
 
 /** @test */
-TEST(SchottkyDiode, CurrentNoSeriesResistance) {
+TEST(SchottkyDiodeTest, CurrentNoSeriesResistance) {
   SchottkyDiodeParams params{.Rs = 0.0};
-  const double v = 0.3;
-  const double i = SchottkyDiode::current(v, params);
+  const double V = 0.3;
+  const double I = SchottkyDiode::current(V, params);
 
   // Should match Shockley equation when Rs=0
-  const double expected = params.Is * (std::exp(v / (params.n * params.Vt)) - 1.0);
-  EXPECT_NEAR(i, expected, std::abs(expected) * 1e-10);
+  const double EXPECTED = params.Is * (std::exp(V / (params.n * params.Vt)) - 1.0);
+  EXPECT_NEAR(I, EXPECTED, std::abs(EXPECTED) * 1e-10);
 }
 
 /** @test */
-TEST(SchottkyDiode, CurrentWithSeriesResistance) {
+TEST(SchottkyDiodeTest, CurrentWithSeriesResistance) {
   SchottkyDiodeParams params{.Is = 1e-12, .Rs = 0.5};
-  const double v = 0.3;
-  const double i = SchottkyDiode::current(v, params);
+  const double V = 0.3;
+  const double I = SchottkyDiode::current(V, params);
 
   // With series R, current should be lower than ideal
-  const double iIdeal = params.Is * (std::exp(v / (params.n * params.Vt)) - 1.0);
-  EXPECT_LT(i, iIdeal);
-  EXPECT_GT(i, 0.0);
+  const double I_IDEAL = params.Is * (std::exp(V / (params.n * params.Vt)) - 1.0);
+  EXPECT_LT(I, I_IDEAL);
+  EXPECT_GT(I, 0.0);
 }
 
 /** @test */
-TEST(SchottkyDiode, CurrentForwardBias) {
+TEST(SchottkyDiodeTest, CurrentForwardBias) {
   SchottkyDiodeParams params{.Is = 1e-9, .Rs = 0.5}; // Higher Is for mA at 0.3V
-  const double v = 0.3;                              // Lower Vf than silicon PN
-  const double i = SchottkyDiode::current(v, params);
+  const double V = 0.3;                              // Lower Vf than silicon PN
+  const double I = SchottkyDiode::current(V, params);
 
   // Should be in mA range for Schottky at 0.3V
-  EXPECT_GT(i, 1e-4);
-  EXPECT_LT(i, 1.0);
+  EXPECT_GT(I, 1e-4);
+  EXPECT_LT(I, 1.0);
 }
 
 /** @test */
-TEST(SchottkyDiode, CurrentReverseBias) {
+TEST(SchottkyDiodeTest, CurrentReverseBias) {
   SchottkyDiodeParams params{.Rs = 0.5};
-  const double v = -2.0;
-  const double i = SchottkyDiode::current(v, params);
+  const double V = -2.0;
+  const double I = SchottkyDiode::current(V, params);
 
   // Higher leakage than PN junction (larger Is)
-  EXPECT_LT(i, 0.0);
-  EXPECT_GT(i, -params.Is * 1.1);
+  EXPECT_LT(I, 0.0);
+  EXPECT_GT(I, -params.Is * 1.1);
 }
 
 /** @test */
-TEST(SchottkyDiode, CurrentZeroVoltage) {
+TEST(SchottkyDiodeTest, CurrentZeroVoltage) {
   SchottkyDiodeParams params{.Rs = 0.5};
-  const double v = 0.0;
-  const double i = SchottkyDiode::current(v, params);
+  const double V = 0.0;
+  const double I = SchottkyDiode::current(V, params);
 
-  EXPECT_NEAR(i, 0.0, params.Is);
+  EXPECT_NEAR(I, 0.0, params.Is);
 }
 
 /* ----------------------------- Conductance Tests ----------------------------- */
 
 /** @test */
-TEST(SchottkyDiode, ConductanceNoSeriesResistance) {
+TEST(SchottkyDiodeTest, ConductanceNoSeriesResistance) {
   SchottkyDiodeParams params{.Rs = 0.0};
-  const double v = 0.3;
-  const double g = SchottkyDiode::conductance(v, params);
+  const double V = 0.3;
+  const double G = SchottkyDiode::conductance(V, params);
 
   // Should match ideal diode conductance when Rs=0
-  const double expected =
-      (params.Is / (params.n * params.Vt)) * std::exp(v / (params.n * params.Vt));
-  EXPECT_NEAR(g, expected, std::abs(expected) * 1e-10);
+  const double EXPECTED =
+      (params.Is / (params.n * params.Vt)) * std::exp(V / (params.n * params.Vt));
+  EXPECT_NEAR(G, EXPECTED, std::abs(EXPECTED) * 1e-10);
 }
 
 /** @test */
-TEST(SchottkyDiode, ConductanceWithSeriesResistance) {
+TEST(SchottkyDiodeTest, ConductanceWithSeriesResistance) {
   SchottkyDiodeParams params{.Is = 1e-12, .Rs = 0.5};
-  const double v = 0.3;
-  const double g = SchottkyDiode::conductance(v, params);
+  const double V = 0.3;
+  const double G = SchottkyDiode::conductance(V, params);
 
   // With series R, conductance should be reduced: g = gj/(1 + gj*Rs)
-  const double gIdeal = (params.Is / (params.n * params.Vt)) * std::exp(v / (params.n * params.Vt));
-  EXPECT_LT(g, gIdeal);
-  EXPECT_GT(g, 0.0);
+  const double G_IDEAL = (params.Is / (params.n * params.Vt)) * std::exp(V / (params.n * params.Vt));
+  EXPECT_LT(G, G_IDEAL);
+  EXPECT_GT(G, 0.0);
 }
 
 /** @test */
-TEST(SchottkyDiode, ConductanceForwardBias) {
+TEST(SchottkyDiodeTest, ConductanceForwardBias) {
   SchottkyDiodeParams params{.Is = 1e-9, .Rs = 0.5}; // Higher Is for mA at 0.3V
-  const double v = 0.3;
-  const double g = SchottkyDiode::conductance(v, params);
+  const double V = 0.3;
+  const double G = SchottkyDiode::conductance(V, params);
 
-  EXPECT_GT(g, 1e-3); // Should be significant in forward bias
+  EXPECT_GT(G, 1e-3); // Should be significant in forward bias
 }
 
 /** @test */
-TEST(SchottkyDiode, ConductanceReverseBias) {
+TEST(SchottkyDiodeTest, ConductanceReverseBias) {
   SchottkyDiodeParams params{.Rs = 0.5};
-  const double v = -2.0;
-  const double g = SchottkyDiode::conductance(v, params);
+  const double V = -2.0;
+  const double G = SchottkyDiode::conductance(V, params);
 
-  EXPECT_GT(g, 0.0);
-  EXPECT_LT(g, 1e-9); // Very small in reverse bias
+  EXPECT_GT(G, 0.0);
+  EXPECT_LT(G, 1e-9); // Very small in reverse bias
 }
 
 /* ----------------------------- Numerical Jacobian ----------------------------- */
 
 /** @test */
-TEST(SchottkyDiode, ConductanceNumericalDerivativeNoRs) {
+TEST(SchottkyDiodeTest, ConductanceNumericalDerivativeNoRs) {
   SchottkyDiodeParams params{.Rs = 0.0};
-  const double v = 0.3;
-  const double dv = 1e-8;
+  const double V = 0.3;
+  const double DV = 1e-8;
 
-  const double gAnalytical = SchottkyDiode::conductance(v, params);
+  const double G_ANALYTICAL = SchottkyDiode::conductance(V, params);
 
-  const double i1 = SchottkyDiode::current(v - dv, params);
-  const double i2 = SchottkyDiode::current(v + dv, params);
-  const double gNumerical = (i2 - i1) / (2.0 * dv);
+  const double I1 = SchottkyDiode::current(V - DV, params);
+  const double I2 = SchottkyDiode::current(V + DV, params);
+  const double G_NUMERICAL = (I2 - I1) / (2.0 * DV);
 
-  EXPECT_NEAR(gAnalytical, gNumerical, std::abs(gNumerical) * 0.01);
+  EXPECT_NEAR(G_ANALYTICAL, G_NUMERICAL, std::abs(G_NUMERICAL) * 0.01);
 }
 
 /** @test */
-TEST(SchottkyDiode, ConductanceNumericalDerivativeWithRs) {
+TEST(SchottkyDiodeTest, ConductanceNumericalDerivativeWithRs) {
   SchottkyDiodeParams params{.Rs = 0.5};
-  const double v = 0.3;
-  const double dv = 1e-8;
+  const double V = 0.3;
+  const double DV = 1e-8;
 
-  const double gAnalytical = SchottkyDiode::conductance(v, params);
+  const double G_ANALYTICAL = SchottkyDiode::conductance(V, params);
 
-  const double i1 = SchottkyDiode::current(v - dv, params);
-  const double i2 = SchottkyDiode::current(v + dv, params);
-  const double gNumerical = (i2 - i1) / (2.0 * dv);
+  const double I1 = SchottkyDiode::current(V - DV, params);
+  const double I2 = SchottkyDiode::current(V + DV, params);
+  const double G_NUMERICAL = (I2 - I1) / (2.0 * DV);
 
-  EXPECT_NEAR(gAnalytical, gNumerical, std::abs(gNumerical) * 0.01);
+  EXPECT_NEAR(G_ANALYTICAL, G_NUMERICAL, std::abs(G_NUMERICAL) * 0.01);
 }
 
 /* ----------------------------- Stamping ----------------------------- */
 
 /** @test */
-TEST(SchottkyDiode, StampForwardBias) {
+TEST(SchottkyDiodeTest, StampForwardBias) {
   MnaSystem mna(3);
   SchottkyDiodeParams params{.Rs = 0.5};
-  const NetID anode = 1;
-  const NetID cathode = 2;
-  const double v = 0.3;
+  const NetID ANODE = 1;
+  const NetID CATHODE = 2;
+  const double V = 0.3;
 
   // Should stamp linearized conductance and current source
-  SchottkyDiode::stamp(mna, anode, cathode, v, params);
+  SchottkyDiode::stamp(mna, ANODE, CATHODE, V, params);
 }
 
 /** @test */
-TEST(SchottkyDiode, StampReverseBias) {
+TEST(SchottkyDiodeTest, StampReverseBias) {
   MnaSystem mna(3);
   SchottkyDiodeParams params{.Rs = 0.5};
-  const NetID anode = 1;
-  const NetID cathode = 2;
-  const double v = -2.0;
+  const NetID ANODE = 1;
+  const NetID CATHODE = 2;
+  const double V = -2.0;
 
   // Should stamp small conductance (reverse bias)
-  SchottkyDiode::stamp(mna, anode, cathode, v, params);
+  SchottkyDiode::stamp(mna, ANODE, CATHODE, V, params);
 }
 
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test */
-TEST(SchottkyDiode, LowerForwardVoltageThanSilicon) {
+TEST(SchottkyDiodeTest, LowerForwardVoltageThanSilicon) {
   SchottkyDiodeParams schottky{.Is = 1e-9, .Rs = 0.0}; // Schottky: much higher Is
   SchottkyDiodeParams silicon{.Is = 1e-14, .Rs = 0.0}; // Silicon PN: lower Is
 
   // At same current, Schottky should have lower voltage
-  const double targetCurrent = 1e-3; // 1mA
+  const double TARGET_CURRENT = 1e-3; // 1mA
 
   // Find voltage for each diode to reach 1mA
   double vSchottky = 0.0;
   double vSilicon = 0.0;
 
   for (double v = 0.0; v < 1.0; v += 0.01) {
-    if (vSchottky == 0.0 && SchottkyDiode::current(v, schottky) >= targetCurrent) {
+    if (vSchottky == 0.0 && SchottkyDiode::current(v, schottky) >= TARGET_CURRENT) {
       vSchottky = v;
     }
-    if (vSilicon == 0.0 && SchottkyDiode::current(v, silicon) >= targetCurrent) {
+    if (vSilicon == 0.0 && SchottkyDiode::current(v, silicon) >= TARGET_CURRENT) {
       vSilicon = v;
     }
     if (vSchottky > 0.0 && vSilicon > 0.0) {
@@ -228,43 +228,43 @@ TEST(SchottkyDiode, LowerForwardVoltageThanSilicon) {
 }
 
 /** @test */
-TEST(SchottkyDiode, HigherLeakageCurrentThanSilicon) {
+TEST(SchottkyDiodeTest, HigherLeakageCurrentThanSilicon) {
   SchottkyDiodeParams schottky{.Is = 1e-12}; // Typical Schottky
   SchottkyDiodeParams silicon{.Is = 1e-14};  // Typical silicon PN
 
-  const double v = -1.0; // Reverse bias
+  const double V = -1.0; // Reverse bias
 
-  const double iSchottky = SchottkyDiode::current(v, schottky);
-  const double iSilicon = SchottkyDiode::current(v, silicon);
+  const double I_SCHOTTKY = SchottkyDiode::current(V, schottky);
+  const double I_SILICON = SchottkyDiode::current(V, silicon);
 
   // Schottky should have higher reverse leakage (more negative)
-  EXPECT_LT(iSchottky, iSilicon);
-  EXPECT_NEAR(std::abs(iSchottky), schottky.Is, schottky.Is * 0.01);
-  EXPECT_NEAR(std::abs(iSilicon), silicon.Is, silicon.Is * 0.01);
+  EXPECT_LT(I_SCHOTTKY, I_SILICON);
+  EXPECT_NEAR(std::abs(I_SCHOTTKY), schottky.Is, schottky.Is * 0.01);
+  EXPECT_NEAR(std::abs(I_SILICON), silicon.Is, silicon.Is * 0.01);
 }
 
 /** @test */
-TEST(SchottkyDiode, SeriesResistanceReducesCurrent) {
+TEST(SchottkyDiodeTest, SeriesResistanceReducesCurrent) {
   SchottkyDiodeParams noRs{.Rs = 0.0};
   SchottkyDiodeParams withRs{.Rs = 1.0};
-  const double v = 0.3;
+  const double V = 0.3;
 
-  const double iNoRs = SchottkyDiode::current(v, noRs);
-  const double iWithRs = SchottkyDiode::current(v, withRs);
+  const double I_NO_RS = SchottkyDiode::current(V, noRs);
+  const double I_WITH_RS = SchottkyDiode::current(V, withRs);
 
   // Series resistance should reduce current
-  EXPECT_GT(iNoRs, iWithRs);
+  EXPECT_GT(I_NO_RS, I_WITH_RS);
 }
 
 /** @test */
-TEST(SchottkyDiode, SeriesResistanceReducesConductance) {
+TEST(SchottkyDiodeTest, SeriesResistanceReducesConductance) {
   SchottkyDiodeParams noRs{.Rs = 0.0};
   SchottkyDiodeParams withRs{.Rs = 1.0};
-  const double v = 0.3;
+  const double V = 0.3;
 
-  const double gNoRs = SchottkyDiode::conductance(v, noRs);
-  const double gWithRs = SchottkyDiode::conductance(v, withRs);
+  const double G_NO_RS = SchottkyDiode::conductance(V, noRs);
+  const double G_WITH_RS = SchottkyDiode::conductance(V, withRs);
 
   // Series resistance should reduce conductance
-  EXPECT_GT(gNoRs, gWithRs);
+  EXPECT_GT(G_NO_RS, G_WITH_RS);
 }

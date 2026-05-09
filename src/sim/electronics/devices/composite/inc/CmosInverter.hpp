@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_CMOSINVERTER_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_CMOSINVERTER_HPP
+#ifndef APEX_CMOSINVERTER_HPP
+#define APEX_CMOSINVERTER_HPP
 /**
  * @file CmosInverter.hpp
  * @brief CMOS Inverter (NOT gate) built from PMOS and NMOS transistors.
@@ -19,10 +19,10 @@
 namespace sim::electronics::devices::composite {
 
 using descriptors::MosfetDescriptor;
-using mna::MnaSystem;
-using mna::NetID;
-using nonlinear::MosfetLevel1;
-using nonlinear::MosfetLevel1Params;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
+using devices::nonlinear::MosfetLevel1;
+using devices::nonlinear::MosfetLevel1Params;
 
 /* ----------------------------- CmosInverter ----------------------------- */
 
@@ -108,4 +108,4 @@ struct CmosInverter {
 
 } // namespace sim::electronics::devices::composite
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_CMOSINVERTER_HPP
+#endif // APEX_CMOSINVERTER_HPP

@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_LINEAR_LINEARDEVICES_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_LINEAR_LINEARDEVICES_HPP
+#ifndef APEX_LINEARDEVICES_HPP
+#define APEX_LINEARDEVICES_HPP
 /**
  * @file LinearDevices.hpp
  * @brief Registry of all linear device models.
@@ -33,4 +33,4 @@
 #include "src/sim/electronics/devices/linear/inc/CapacitorModel.hpp"
 #include "src/sim/electronics/devices/linear/inc/InductorModel.hpp"
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_LINEAR_LINEARDEVICES_HPP
+#endif // APEX_LINEARDEVICES_HPP

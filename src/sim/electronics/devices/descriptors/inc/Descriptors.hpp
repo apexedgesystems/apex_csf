@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_DESCRIPTORS_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_DESCRIPTORS_HPP
+#ifndef APEX_DESCRIPTORS_HPP
+#define APEX_DESCRIPTORS_HPP
 /**
  * @file Descriptors.hpp
  * @brief Registry of all device topology descriptors.
@@ -35,4 +35,4 @@
 #include "src/sim/electronics/devices/descriptors/inc/DiodeDescriptor.hpp"
 #include "src/sim/electronics/devices/descriptors/inc/MosfetDescriptor.hpp"
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_DESCRIPTORS_HPP
+#endif // APEX_DESCRIPTORS_HPP

@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_INDUCTORDESCRIPTOR_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_INDUCTORDESCRIPTOR_HPP
+#ifndef APEX_INDUCTORDESCRIPTOR_HPP
+#define APEX_INDUCTORDESCRIPTOR_HPP
 /**
  * @file InductorDescriptor.hpp
  * @brief Inductor topology descriptor (pure topology, no physics).
@@ -16,7 +16,7 @@
 
 namespace sim::electronics::devices::descriptors {
 
-using mna::NetID;
+using algorithms::mna::NetID;
 
 /**
  * @brief Inductor topology descriptor.
@@ -44,4 +44,4 @@ struct InductorDescriptor {
 
 } // namespace sim::electronics::devices::descriptors
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_INDUCTORDESCRIPTOR_HPP
+#endif // APEX_INDUCTORDESCRIPTOR_HPP

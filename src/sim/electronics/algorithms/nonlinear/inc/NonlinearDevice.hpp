@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_NONLINEAR_NONLINEARDEVICE_HPP
-#define APEX_SIM_ELECTRONICS_NONLINEAR_NONLINEARDEVICE_HPP
+#ifndef APEX_NONLINEARDEVICE_HPP
+#define APEX_NONLINEARDEVICE_HPP
 /**
  * @file NonlinearDevice.hpp
  * @brief Abstract interface for nonlinear circuit elements.
@@ -22,10 +22,10 @@
 #include <memory>
 #include <vector>
 
-namespace sim::electronics::nonlinear {
+namespace sim::electronics::algorithms::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /* ----------------------------- NonlinearDevice ----------------------------- */
 
@@ -228,6 +228,6 @@ public:
   }
 };
 
-} // namespace sim::electronics::nonlinear
+} // namespace sim::electronics::algorithms::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_NONLINEAR_NONLINEARDEVICE_HPP
+#endif // APEX_NONLINEARDEVICE_HPP

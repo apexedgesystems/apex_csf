@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_MNA_MNASYSTEM_HPP
-#define APEX_SIM_ELECTRONICS_MNA_MNASYSTEM_HPP
+#ifndef APEX_MNASYSTEM_HPP
+#define APEX_MNASYSTEM_HPP
 /**
  * @file MnaSystem.hpp
  * @brief Modified Nodal Analysis solver for linear circuits.
@@ -25,7 +25,7 @@
 #include <string>
 #include <vector>
 
-namespace sim::electronics::mna {
+namespace sim::electronics::algorithms::mna {
 
 /**
  * @brief Result from MNA solve operation.
@@ -977,6 +977,6 @@ public:
   }
 };
 
-} // namespace sim::electronics::mna
+} // namespace sim::electronics::algorithms::mna
 
-#endif // APEX_SIM_ELECTRONICS_MNA_MNASYSTEM_HPP
+#endif // APEX_MNASYSTEM_HPP

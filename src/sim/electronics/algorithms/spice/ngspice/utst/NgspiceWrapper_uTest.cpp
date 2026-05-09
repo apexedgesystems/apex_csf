@@ -7,13 +7,13 @@
 
 #include <gtest/gtest.h>
 
-using sim::electronics::spice::ngspice::NgspiceStatus;
-using sim::electronics::spice::ngspice::NgspiceWrapper;
+using sim::electronics::algorithms::spice::ngspice::NgspiceStatus;
+using sim::electronics::algorithms::spice::ngspice::NgspiceWrapper;
 
 /* ----------------------- Default Construction --------------------------- */
 
 /** @test */
-TEST(NgspiceWrapper, DefaultConstruction) {
+TEST(NgspiceWrapperTest, DefaultConstruction) {
   NgspiceWrapper wrapper;
   // Should construct without error
   EXPECT_TRUE(true);
@@ -22,7 +22,7 @@ TEST(NgspiceWrapper, DefaultConstruction) {
 /* --------------------------- Enum Tests --------------------------------- */
 
 /** @test */
-TEST(NgspiceStatus, ToString) {
+TEST(NgspiceStatusTest, ToString) {
   EXPECT_STREQ(toString(NgspiceStatus::OK), "OK");
   EXPECT_STREQ(toString(NgspiceStatus::ERROR_NOT_INITIALIZED), "ERROR_NOT_INITIALIZED");
   EXPECT_STREQ(toString(NgspiceStatus::ERROR_NETLIST_LOAD_FAILED), "ERROR_NETLIST_LOAD_FAILED");
@@ -33,7 +33,7 @@ TEST(NgspiceStatus, ToString) {
 }
 
 /** @test Unknown status returns UNKNOWN string. */
-TEST(NgspiceStatus, ToStringUnknown) {
+TEST(NgspiceStatusTest, ToStringUnknown) {
   auto UNKNOWN_STATUS = static_cast<NgspiceStatus>(255);
   EXPECT_STREQ(toString(UNKNOWN_STATUS), "UNKNOWN");
 }
@@ -41,7 +41,7 @@ TEST(NgspiceStatus, ToStringUnknown) {
 /* -------------------------- Library Availability ------------------------ */
 
 /** @test */
-TEST(NgspiceWrapper, LibraryAvailability) {
+TEST(NgspiceWrapperTest, LibraryAvailability) {
   bool available = NgspiceWrapper::isLibngspiceAvailable();
 
 #if APEX_HAS_LIBNGSPICE
@@ -52,7 +52,7 @@ TEST(NgspiceWrapper, LibraryAvailability) {
 }
 
 /** @test */
-TEST(NgspiceWrapper, VersionString) {
+TEST(NgspiceWrapperTest, VersionString) {
   NgspiceWrapper wrapper;
   std::string version = wrapper.getVersion();
 
@@ -63,7 +63,7 @@ TEST(NgspiceWrapper, VersionString) {
 /* ------------------------- Netlist Loading ------------------------------ */
 
 /** @test */
-TEST(NgspiceWrapper, LoadNonexistentNetlist) {
+TEST(NgspiceWrapperTest, LoadNonexistentNetlist) {
   NgspiceWrapper wrapper;
   auto status = wrapper.loadNetlist("/nonexistent/path/circuit.sp");
 
@@ -72,7 +72,7 @@ TEST(NgspiceWrapper, LoadNonexistentNetlist) {
 }
 
 /** @test */
-TEST(NgspiceWrapper, LoadNetlistFromEmptyString) {
+TEST(NgspiceWrapperTest, LoadNetlistFromEmptyString) {
   NgspiceWrapper wrapper;
   auto status = wrapper.loadNetlistFromString("");
 
@@ -88,7 +88,7 @@ TEST(NgspiceWrapper, LoadNetlistFromEmptyString) {
 /* ----------------------- Simulation (Stub) ------------------------------ */
 
 /** @test */
-TEST(NgspiceWrapper, DcOperatingPointWithoutNetlist) {
+TEST(NgspiceWrapperTest, DcOperatingPointWithoutNetlist) {
   NgspiceWrapper wrapper;
   auto status = wrapper.runDcOperatingPoint();
 
@@ -101,7 +101,7 @@ TEST(NgspiceWrapper, DcOperatingPointWithoutNetlist) {
 }
 
 /** @test */
-TEST(NgspiceWrapper, TransientWithoutNetlist) {
+TEST(NgspiceWrapperTest, TransientWithoutNetlist) {
   NgspiceWrapper wrapper;
   auto status = wrapper.runTransient(1e-6, 1e-9);
 
@@ -116,7 +116,7 @@ TEST(NgspiceWrapper, TransientWithoutNetlist) {
 /* ----------------------- Result Extraction ------------------------------ */
 
 /** @test */
-TEST(NgspiceWrapper, GetNonexistentNodeVoltage) {
+TEST(NgspiceWrapperTest, GetNonexistentNodeVoltage) {
   NgspiceWrapper wrapper;
   double voltage = 0.0;
   auto status = wrapper.getNodeVoltage("NONEXISTENT", voltage);
@@ -125,7 +125,7 @@ TEST(NgspiceWrapper, GetNonexistentNodeVoltage) {
 }
 
 /** @test */
-TEST(NgspiceWrapper, GetAllNodeVoltagesEmpty) {
+TEST(NgspiceWrapperTest, GetAllNodeVoltagesEmpty) {
   NgspiceWrapper wrapper;
   auto& voltages = wrapper.getAllNodeVoltages();
 
@@ -134,7 +134,7 @@ TEST(NgspiceWrapper, GetAllNodeVoltagesEmpty) {
 }
 
 /** @test */
-TEST(NgspiceWrapper, GetNonexistentWaveform) {
+TEST(NgspiceWrapperTest, GetNonexistentWaveform) {
   NgspiceWrapper wrapper;
   std::vector<double> times, voltages;
   auto status = wrapper.getNodeWaveform("NONEXISTENT", times, voltages);
@@ -145,7 +145,7 @@ TEST(NgspiceWrapper, GetNonexistentWaveform) {
 /* ---------------------------- Clear ------------------------------------ */
 
 /** @test */
-TEST(NgspiceWrapper, Clear) {
+TEST(NgspiceWrapperTest, Clear) {
   NgspiceWrapper wrapper;
   wrapper.clear(); // Should not crash
 

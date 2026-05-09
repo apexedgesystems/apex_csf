@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_MNA_MNASYSTEM_CUDA_CUH
-#define APEX_SIM_ELECTRONICS_MNA_MNASYSTEM_CUDA_CUH
+#ifndef APEX_MNASYSTEMCUDA_CUH
+#define APEX_MNASYSTEMCUDA_CUH
 /**
  * @file MnaSystemCuda.cuh
  * @brief CUDA-accelerated MNA solver using cuSOLVER.
@@ -21,7 +21,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace sim::electronics::mna::cuda {
+namespace sim::electronics::algorithms::mna::cuda {
 
 /* ----------------------------- Availability ----------------------------- */
 
@@ -138,6 +138,6 @@ bool solveCudaDeviceResident(MnaCudaWorkspace& ws, double* dA, double* dB,
 bool solveBatchCuda(MnaCudaWorkspace& ws, const double* As, double* bs, std::size_t dim,
                     std::size_t batchSize) noexcept;
 
-} // namespace sim::electronics::mna::cuda
+} // namespace sim::electronics::algorithms::mna::cuda
 
-#endif // APEX_SIM_ELECTRONICS_MNA_MNASYSTEM_CUDA_CUH
+#endif // APEX_MNASYSTEMCUDA_CUH

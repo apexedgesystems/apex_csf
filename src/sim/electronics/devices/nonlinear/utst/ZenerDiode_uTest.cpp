@@ -19,7 +19,7 @@ using sim::electronics::devices::nonlinear::ZenerDiodeParams;
 /* ----------------------------- Default Construction ----------------------------- */
 
 /** @test */
-TEST(ZenerDiode, DefaultParameters) {
+TEST(ZenerDiodeTest, DefaultParameters) {
   ZenerDiodeParams params;
   EXPECT_DOUBLE_EQ(params.Is, 1e-14);
   EXPECT_DOUBLE_EQ(params.n, 1.0);
@@ -30,7 +30,7 @@ TEST(ZenerDiode, DefaultParameters) {
 }
 
 /** @test */
-TEST(ZenerDiode, CustomParameters) {
+TEST(ZenerDiodeTest, CustomParameters) {
   ZenerDiodeParams params{.Is = 1e-15, .n = 1.2, .Vt = 0.025, .Vz = 3.3, .Ibv = 5e-3, .Vbv = 0.05};
   EXPECT_DOUBLE_EQ(params.Is, 1e-15);
   EXPECT_DOUBLE_EQ(params.n, 1.2);
@@ -43,171 +43,171 @@ TEST(ZenerDiode, CustomParameters) {
 /* ----------------------------- Current Tests ----------------------------- */
 
 /** @test */
-TEST(ZenerDiode, CurrentForwardBias) {
+TEST(ZenerDiodeTest, CurrentForwardBias) {
   ZenerDiodeParams params;
-  const double v = 0.7; // Forward bias (silicon turn-on)
-  const double i = ZenerDiode::current(v, params);
+  const double V = 0.7; // Forward bias (silicon turn-on)
+  const double I = ZenerDiode::current(V, params);
 
   // Should be exponentially large (mA range)
-  EXPECT_GT(i, 1e-3);
-  EXPECT_LT(i, 1.0);
+  EXPECT_GT(I, 1e-3);
+  EXPECT_LT(I, 1.0);
 
   // Check exponential relationship
-  const double expected = params.Is * (std::exp(v / (params.n * params.Vt)) - 1.0);
-  EXPECT_NEAR(i, expected, std::abs(expected) * 1e-10);
+  const double EXPECTED = params.Is * (std::exp(V / (params.n * params.Vt)) - 1.0);
+  EXPECT_NEAR(I, EXPECTED, std::abs(EXPECTED) * 1e-10);
 }
 
 /** @test */
-TEST(ZenerDiode, CurrentReverseBias) {
+TEST(ZenerDiodeTest, CurrentReverseBias) {
   ZenerDiodeParams params;
-  const double v = -2.0; // Reverse bias (before breakdown)
-  const double i = ZenerDiode::current(v, params);
+  const double V = -2.0; // Reverse bias (before breakdown)
+  const double I = ZenerDiode::current(V, params);
 
   // Should be small negative (leakage current ~Is)
-  EXPECT_LT(i, 0.0);
-  EXPECT_GT(i, -params.Is * 1.1); // Close to -Is
+  EXPECT_LT(I, 0.0);
+  EXPECT_GT(I, -params.Is * 1.1); // Close to -Is
 }
 
 /** @test */
-TEST(ZenerDiode, CurrentBreakdown) {
+TEST(ZenerDiodeTest, CurrentBreakdown) {
   ZenerDiodeParams params{.Vz = 5.1, .Ibv = 1e-3};
-  const double v = -5.5; // Past breakdown voltage
-  const double i = ZenerDiode::current(v, params);
+  const double V = -5.5; // Past breakdown voltage
+  const double I = ZenerDiode::current(V, params);
 
   // Should be large negative (regulation current)
-  EXPECT_LT(i, -1e-4); // At least 100 uA
-  EXPECT_GT(i, -1.0);  // But not unreasonably large
+  EXPECT_LT(I, -1e-4); // At least 100 uA
+  EXPECT_GT(I, -1.0);  // But not unreasonably large
 }
 
 /** @test */
-TEST(ZenerDiode, CurrentAtBreakdownKnee) {
+TEST(ZenerDiodeTest, CurrentAtBreakdownKnee) {
   ZenerDiodeParams params{.Vz = 5.1, .Ibv = 1e-3};
-  const double v = -5.1; // Exactly at breakdown voltage
-  const double i = ZenerDiode::current(v, params);
+  const double V = -5.1; // Exactly at breakdown voltage
+  const double I = ZenerDiode::current(V, params);
 
   // Should be transition point (around -Ibv)
-  EXPECT_LT(i, 0.0);
-  EXPECT_GT(i, -params.Ibv * 10.0); // Within order of magnitude
+  EXPECT_LT(I, 0.0);
+  EXPECT_GT(I, -params.Ibv * 10.0); // Within order of magnitude
 }
 
 /** @test */
-TEST(ZenerDiode, CurrentZeroVoltage) {
+TEST(ZenerDiodeTest, CurrentZeroVoltage) {
   ZenerDiodeParams params;
-  const double v = 0.0;
-  const double i = ZenerDiode::current(v, params);
+  const double V = 0.0;
+  const double I = ZenerDiode::current(V, params);
 
   // Should be zero (no voltage, no current)
-  EXPECT_NEAR(i, 0.0, params.Is);
+  EXPECT_NEAR(I, 0.0, params.Is);
 }
 
 /* ----------------------------- Conductance Tests ----------------------------- */
 
 /** @test */
-TEST(ZenerDiode, ConductanceForwardBias) {
+TEST(ZenerDiodeTest, ConductanceForwardBias) {
   ZenerDiodeParams params;
-  const double v = 0.7;
-  const double g = ZenerDiode::conductance(v, params);
+  const double V = 0.7;
+  const double G = ZenerDiode::conductance(V, params);
 
   // Should be large (exponential)
-  EXPECT_GT(g, 1e-3); // At least 1 mS
+  EXPECT_GT(G, 1e-3); // At least 1 mS
 
   // Check analytical expression
-  const double nVt = params.n * params.Vt;
-  const double expected = (params.Is / nVt) * std::exp(v / nVt);
-  EXPECT_NEAR(g, expected, std::abs(expected) * 1e-10);
+  const double N_VT = params.n * params.Vt;
+  const double EXPECTED = (params.Is / N_VT) * std::exp(V / N_VT);
+  EXPECT_NEAR(G, EXPECTED, std::abs(EXPECTED) * 1e-10);
 }
 
 /** @test */
-TEST(ZenerDiode, ConductanceReverseBias) {
+TEST(ZenerDiodeTest, ConductanceReverseBias) {
   ZenerDiodeParams params;
-  const double v = -2.0;
-  const double g = ZenerDiode::conductance(v, params);
+  const double V = -2.0;
+  const double G = ZenerDiode::conductance(V, params);
 
   // Should be very small (reverse bias before breakdown)
-  EXPECT_GT(g, 0.0);
-  EXPECT_LT(g, 1e-9); // Less than 1 nS
+  EXPECT_GT(G, 0.0);
+  EXPECT_LT(G, 1e-9); // Less than 1 nS
 }
 
 /** @test */
-TEST(ZenerDiode, ConductanceBreakdown) {
+TEST(ZenerDiodeTest, ConductanceBreakdown) {
   ZenerDiodeParams params{.Vz = 5.1, .Ibv = 1e-3, .Vbv = 0.1};
-  const double v = -5.5; // Past breakdown
-  const double g = ZenerDiode::conductance(v, params);
+  const double V = -5.5; // Past breakdown
+  const double G = ZenerDiode::conductance(V, params);
 
   // Should be moderate (breakdown knee)
-  EXPECT_GT(g, 1e-6); // At least 1 uS
-  EXPECT_LT(g, 1.0);  // But not huge
+  EXPECT_GT(G, 1e-6); // At least 1 uS
+  EXPECT_LT(G, 1.0);  // But not huge
 
   // Check analytical expression
-  const double vExcess = v - (-params.Vz);
-  const double expected = (params.Ibv / params.Vbv) * std::exp(-vExcess / params.Vbv);
-  EXPECT_NEAR(g, expected, std::abs(expected) * 1e-10);
+  const double V_EXCESS = V - (-params.Vz);
+  const double EXPECTED = (params.Ibv / params.Vbv) * std::exp(-V_EXCESS / params.Vbv);
+  EXPECT_NEAR(G, EXPECTED, std::abs(EXPECTED) * 1e-10);
 }
 
 /** @test */
-TEST(ZenerDiode, ConductanceAlwaysPositive) {
+TEST(ZenerDiodeTest, ConductanceAlwaysPositive) {
   ZenerDiodeParams params;
 
   // Test across all regions
   for (double v = -10.0; v <= 1.0; v += 0.5) {
-    const double g = ZenerDiode::conductance(v, params);
-    EXPECT_GT(g, 0.0) << "Conductance must be positive at V=" << v;
+    const double G = ZenerDiode::conductance(v, params);
+    EXPECT_GT(G, 0.0) << "Conductance must be positive at V=" << v;
   }
 }
 
 /* ----------------------------- Numerical Jacobian ----------------------------- */
 
 /** @test */
-TEST(ZenerDiode, ConductanceNumericalDerivativeForward) {
+TEST(ZenerDiodeTest, ConductanceNumericalDerivativeForward) {
   ZenerDiodeParams params;
-  const double v = 0.7;
-  const double dv = 1e-8;
+  const double V = 0.7;
+  const double DV = 1e-8;
 
-  const double gAnalytical = ZenerDiode::conductance(v, params);
+  const double G_ANALYTICAL = ZenerDiode::conductance(V, params);
 
-  const double i1 = ZenerDiode::current(v - dv, params);
-  const double i2 = ZenerDiode::current(v + dv, params);
-  const double gNumerical = (i2 - i1) / (2.0 * dv);
+  const double I1 = ZenerDiode::current(V - DV, params);
+  const double I2 = ZenerDiode::current(V + DV, params);
+  const double G_NUMERICAL = (I2 - I1) / (2.0 * DV);
 
-  EXPECT_NEAR(gAnalytical, gNumerical, std::abs(gNumerical) * 0.01);
+  EXPECT_NEAR(G_ANALYTICAL, G_NUMERICAL, std::abs(G_NUMERICAL) * 0.01);
 }
 
 /** @test */
-TEST(ZenerDiode, ConductanceNumericalDerivativeReverse) {
+TEST(ZenerDiodeTest, ConductanceNumericalDerivativeReverse) {
   ZenerDiodeParams params;
-  const double v = -2.0;
-  const double dv = 1e-8;
+  const double V = -2.0;
+  const double DV = 1e-8;
 
-  const double gAnalytical = ZenerDiode::conductance(v, params);
+  const double G_ANALYTICAL = ZenerDiode::conductance(V, params);
 
-  const double i1 = ZenerDiode::current(v - dv, params);
-  const double i2 = ZenerDiode::current(v + dv, params);
-  const double gNumerical = (i2 - i1) / (2.0 * dv);
+  const double I1 = ZenerDiode::current(V - DV, params);
+  const double I2 = ZenerDiode::current(V + DV, params);
+  const double G_NUMERICAL = (I2 - I1) / (2.0 * DV);
 
   // Use absolute tolerance for near-zero conductances
-  const double tolerance = std::max(std::abs(gNumerical) * 0.01, 1e-20);
-  EXPECT_NEAR(gAnalytical, gNumerical, tolerance);
+  const double TOLERANCE = std::max(std::abs(G_NUMERICAL) * 0.01, 1e-20);
+  EXPECT_NEAR(G_ANALYTICAL, G_NUMERICAL, TOLERANCE);
 }
 
 /** @test */
-TEST(ZenerDiode, ConductanceNumericalDerivativeBreakdown) {
+TEST(ZenerDiodeTest, ConductanceNumericalDerivativeBreakdown) {
   ZenerDiodeParams params{.Vz = 5.1, .Ibv = 1e-3, .Vbv = 0.1};
-  const double v = -5.5;
-  const double dv = 1e-8;
+  const double V = -5.5;
+  const double DV = 1e-8;
 
-  const double gAnalytical = ZenerDiode::conductance(v, params);
+  const double G_ANALYTICAL = ZenerDiode::conductance(V, params);
 
-  const double i1 = ZenerDiode::current(v - dv, params);
-  const double i2 = ZenerDiode::current(v + dv, params);
-  const double gNumerical = (i2 - i1) / (2.0 * dv);
+  const double I1 = ZenerDiode::current(V - DV, params);
+  const double I2 = ZenerDiode::current(V + DV, params);
+  const double G_NUMERICAL = (I2 - I1) / (2.0 * DV);
 
-  EXPECT_NEAR(gAnalytical, gNumerical, std::abs(gNumerical) * 0.01);
+  EXPECT_NEAR(G_ANALYTICAL, G_NUMERICAL, std::abs(G_NUMERICAL) * 0.01);
 }
 
 /* ----------------------------- Region Detection ----------------------------- */
 
 /** @test */
-TEST(ZenerDiode, RegionBreakdown) {
+TEST(ZenerDiodeTest, RegionBreakdown) {
   ZenerDiodeParams params{.Vz = 5.1};
   EXPECT_EQ(ZenerDiode::region(-6.0, params), 0); // Breakdown
   EXPECT_EQ(ZenerDiode::region(-5.5, params), 0); // Breakdown
@@ -215,7 +215,7 @@ TEST(ZenerDiode, RegionBreakdown) {
 }
 
 /** @test */
-TEST(ZenerDiode, RegionReverse) {
+TEST(ZenerDiodeTest, RegionReverse) {
   ZenerDiodeParams params{.Vz = 5.1};
   EXPECT_EQ(ZenerDiode::region(-5.0, params), 1); // Reverse
   EXPECT_EQ(ZenerDiode::region(-3.0, params), 1); // Reverse
@@ -223,7 +223,7 @@ TEST(ZenerDiode, RegionReverse) {
 }
 
 /** @test */
-TEST(ZenerDiode, RegionForward) {
+TEST(ZenerDiodeTest, RegionForward) {
   ZenerDiodeParams params{.Vz = 5.1};
   EXPECT_EQ(ZenerDiode::region(0.0, params), 2); // Forward (V >= 0)
   EXPECT_EQ(ZenerDiode::region(0.3, params), 2); // Forward
@@ -234,95 +234,95 @@ TEST(ZenerDiode, RegionForward) {
 /* ----------------------------- Stamping ----------------------------- */
 
 /** @test */
-TEST(ZenerDiode, StampForwardBias) {
+TEST(ZenerDiodeTest, StampForwardBias) {
   MnaSystem mna(3);
   ZenerDiodeParams params;
-  const NetID anode = 1;
-  const NetID cathode = 2;
-  const double v = 0.7;
+  const NetID ANODE = 1;
+  const NetID CATHODE = 2;
+  const double V = 0.7;
 
   // Should stamp linearized conductance and current source
-  ZenerDiode::stamp(mna, anode, cathode, v, params);
+  ZenerDiode::stamp(mna, ANODE, CATHODE, V, params);
 }
 
 /** @test */
-TEST(ZenerDiode, StampBreakdown) {
+TEST(ZenerDiodeTest, StampBreakdown) {
   MnaSystem mna(3);
   ZenerDiodeParams params{.Vz = 5.1, .Ibv = 1e-3};
-  const NetID anode = 1;
-  const NetID cathode = 2;
-  const double v = -5.5;
+  const NetID ANODE = 1;
+  const NetID CATHODE = 2;
+  const double V = -5.5;
 
   // Should stamp breakdown region conductance
-  ZenerDiode::stamp(mna, anode, cathode, v, params);
+  ZenerDiode::stamp(mna, ANODE, CATHODE, V, params);
 }
 
 /** @test */
-TEST(ZenerDiode, StampGroundedCathode) {
+TEST(ZenerDiodeTest, StampGroundedCathode) {
   MnaSystem mna(3);
   ZenerDiodeParams params;
-  const NetID anode = 1;
-  const NetID cathode = 0; // Ground
-  const double v = 0.7;
+  const NetID ANODE = 1;
+  const NetID CATHODE = 0; // Ground
+  const double V = 0.7;
 
   // Should handle grounded cathode correctly
-  ZenerDiode::stamp(mna, anode, cathode, v, params);
+  ZenerDiode::stamp(mna, ANODE, CATHODE, V, params);
 }
 
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test */
-TEST(ZenerDiode, BreakdownVoltageRegulation) {
+TEST(ZenerDiodeTest, BreakdownVoltageRegulation) {
   ZenerDiodeParams params{.Vz = 5.1, .Ibv = 1e-3, .Vbv = 0.1};
 
   // Test that breakdown voltage is around -Vz
-  const double v1 = -5.0; // Just before breakdown
-  const double v2 = -5.2; // Just after breakdown
+  const double V1 = -5.0; // Just before breakdown
+  const double V2 = -5.2; // Just after breakdown
 
-  const double i1 = ZenerDiode::current(v1, params);
-  const double i2 = ZenerDiode::current(v2, params);
+  const double I1 = ZenerDiode::current(V1, params);
+  const double I2 = ZenerDiode::current(V2, params);
 
   // Current should increase dramatically across breakdown
-  EXPECT_GT(std::abs(i2), std::abs(i1) * 10.0);
+  EXPECT_GT(std::abs(I2), std::abs(I1) * 10.0);
 }
 
 /** @test */
-TEST(ZenerDiode, ForwardSameAsDiode) {
+TEST(ZenerDiodeTest, ForwardSameAsDiode) {
   ZenerDiodeParams zenerParams;
-  const double v = 0.6;
+  const double V = 0.6;
 
-  const double iZener = ZenerDiode::current(v, zenerParams);
-  const double iDiode = zenerParams.Is * (std::exp(v / (zenerParams.n * zenerParams.Vt)) - 1.0);
+  const double I_ZENER = ZenerDiode::current(V, zenerParams);
+  const double I_DIODE = zenerParams.Is * (std::exp(V / (zenerParams.n * zenerParams.Vt)) - 1.0);
 
   // Forward bias should match standard diode equation
-  EXPECT_NEAR(iZener, iDiode, std::abs(iDiode) * 1e-10);
+  EXPECT_NEAR(I_ZENER, I_DIODE, std::abs(I_DIODE) * 1e-10);
 }
 
 /** @test */
-TEST(ZenerDiode, BreakdownSharpness) {
+TEST(ZenerDiodeTest, BreakdownSharpness) {
   ZenerDiodeParams sharpParams{.Vz = 5.1, .Ibv = 1e-3, .Vbv = 0.05};  // Sharp
   ZenerDiodeParams gradualParams{.Vz = 5.1, .Ibv = 1e-3, .Vbv = 0.2}; // Gradual
 
-  const double v = -5.5; // Past breakdown
+  const double V = -5.5; // Past breakdown
 
-  const double iSharp = ZenerDiode::current(v, sharpParams);
-  const double iGradual = ZenerDiode::current(v, gradualParams);
+  const double I_SHARP = ZenerDiode::current(V, sharpParams);
+  const double I_GRADUAL = ZenerDiode::current(V, gradualParams);
 
   // Sharp breakdown should have larger current at same voltage
-  EXPECT_GT(std::abs(iSharp), std::abs(iGradual));
+  EXPECT_GT(std::abs(I_SHARP), std::abs(I_GRADUAL));
 }
 
 /** @test */
-TEST(ZenerDiode, ZenerVoltageParameter) {
+TEST(ZenerDiodeTest, ZenerVoltageParameter) {
   ZenerDiodeParams params3V{.Vz = 3.3, .Ibv = 1e-3, .Vbv = 0.1};
   ZenerDiodeParams params5V{.Vz = 5.1, .Ibv = 1e-3, .Vbv = 0.1};
 
   // 3.3V Zener should break down at -3.3V
-  const double i3V_before = ZenerDiode::current(-3.2, params3V);
-  const double i3V_after = ZenerDiode::current(-3.4, params3V);
-  EXPECT_GT(std::abs(i3V_after), std::abs(i3V_before) * 10.0);
+  const double I3_V_BEFORE = ZenerDiode::current(-3.2, params3V);
+  const double I3_V_AFTER = ZenerDiode::current(-3.4, params3V);
+  EXPECT_GT(std::abs(I3_V_AFTER), std::abs(I3_V_BEFORE) * 10.0);
 
   // 5.1V Zener should NOT break down at -3.4V
-  const double i5V = ZenerDiode::current(-3.4, params5V);
-  EXPECT_LT(std::abs(i5V), 1e-10); // Still in reverse region
+  const double I5_V = ZenerDiode::current(-3.4, params5V);
+  EXPECT_LT(std::abs(I5_V), 1e-10); // Still in reverse region
 }

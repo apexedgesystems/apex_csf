@@ -11,13 +11,13 @@ using sim::electronics::devices::composite::CmosInverter;
 using sim::electronics::devices::composite::CmosNand;
 using sim::electronics::devices::composite::CmosNor;
 using sim::electronics::devices::nonlinear::MosfetLevel1Params;
-using sim::electronics::mna::MnaSystem;
-using sim::electronics::mna::NetID;
+using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::NetID;
 
 /* ----------------------------- CmosInverter ----------------------------- */
 
 /** @test */
-TEST(CmosInverter, Construction) {
+TEST(CmosInverterTest, Construction) {
   const NetID VDD = 1, GND = 0, INPUT = 2, OUTPUT = 3;
   const double W = 10e-6, L = 1e-6;
 
@@ -49,7 +49,7 @@ TEST(CmosInverter, Construction) {
  * model with positive Vth (no sign-inversion), so it also contributes when
  * Vgs_pmos = Vin - VDD = 0 falls in the subthreshold smoothing window.
  */
-TEST(CmosInverter, StampProducesNonzeroEntries) {
+TEST(CmosInverterTest, StampProducesNonzeroEntries) {
   const NetID VDD = 1, GND = 0, INPUT = 2, OUTPUT = 3;
   const double W = 10e-6, L = 1e-6;
   const std::size_t NET_COUNT = 5; // 0..4
@@ -97,19 +97,19 @@ TEST(CmosInverter, StampProducesNonzeroEntries) {
 }
 
 /** @test */
-TEST(CmosInverter, TruthTableInput0) {
+TEST(CmosInverterTest, TruthTableInput0) {
   const int RESULT = CmosInverter::truthTable(0);
   EXPECT_EQ(RESULT, 1);
 }
 
 /** @test */
-TEST(CmosInverter, TruthTableInput1) {
+TEST(CmosInverterTest, TruthTableInput1) {
   const int RESULT = CmosInverter::truthTable(1);
   EXPECT_EQ(RESULT, 0);
 }
 
 /** @test */
-TEST(CmosInverter, TruthTableAllCombinations) {
+TEST(CmosInverterTest, TruthTableAllCombinations) {
   // NOT gate: OUT = ~IN
   EXPECT_EQ(CmosInverter::truthTable(0), 1);
   EXPECT_EQ(CmosInverter::truthTable(1), 0);
@@ -118,7 +118,7 @@ TEST(CmosInverter, TruthTableAllCombinations) {
 /* ----------------------------- CmosNand ----------------------------- */
 
 /** @test */
-TEST(CmosNand, Construction) {
+TEST(CmosNandTest, Construction) {
   const NetID VDD = 1, GND = 0, INA = 2, INB = 3, OUTPUT = 4, INTERNAL = 5;
   const double W = 10e-6, L = 1e-6;
 
@@ -159,31 +159,31 @@ TEST(CmosNand, Construction) {
 }
 
 /** @test */
-TEST(CmosNand, TruthTable00) {
+TEST(CmosNandTest, TruthTable00) {
   const int RESULT = CmosNand::truthTable(0, 0);
   EXPECT_EQ(RESULT, 1);
 }
 
 /** @test */
-TEST(CmosNand, TruthTable01) {
+TEST(CmosNandTest, TruthTable01) {
   const int RESULT = CmosNand::truthTable(0, 1);
   EXPECT_EQ(RESULT, 1);
 }
 
 /** @test */
-TEST(CmosNand, TruthTable10) {
+TEST(CmosNandTest, TruthTable10) {
   const int RESULT = CmosNand::truthTable(1, 0);
   EXPECT_EQ(RESULT, 1);
 }
 
 /** @test */
-TEST(CmosNand, TruthTable11) {
+TEST(CmosNandTest, TruthTable11) {
   const int RESULT = CmosNand::truthTable(1, 1);
   EXPECT_EQ(RESULT, 0);
 }
 
 /** @test */
-TEST(CmosNand, TruthTableAllCombinations) {
+TEST(CmosNandTest, TruthTableAllCombinations) {
   // NAND gate: OUT = ~(A & B)
   EXPECT_EQ(CmosNand::truthTable(0, 0), 1);
   EXPECT_EQ(CmosNand::truthTable(0, 1), 1);
@@ -194,7 +194,7 @@ TEST(CmosNand, TruthTableAllCombinations) {
 /* ----------------------------- CmosNor ----------------------------- */
 
 /** @test */
-TEST(CmosNor, Construction) {
+TEST(CmosNorTest, Construction) {
   const NetID VDD = 1, GND = 0, INA = 2, INB = 3, OUTPUT = 4, INTERNAL = 5;
   const double W = 10e-6, L = 1e-6;
 
@@ -235,31 +235,31 @@ TEST(CmosNor, Construction) {
 }
 
 /** @test */
-TEST(CmosNor, TruthTable00) {
+TEST(CmosNorTest, TruthTable00) {
   const int RESULT = CmosNor::truthTable(0, 0);
   EXPECT_EQ(RESULT, 1);
 }
 
 /** @test */
-TEST(CmosNor, TruthTable01) {
+TEST(CmosNorTest, TruthTable01) {
   const int RESULT = CmosNor::truthTable(0, 1);
   EXPECT_EQ(RESULT, 0);
 }
 
 /** @test */
-TEST(CmosNor, TruthTable10) {
+TEST(CmosNorTest, TruthTable10) {
   const int RESULT = CmosNor::truthTable(1, 0);
   EXPECT_EQ(RESULT, 0);
 }
 
 /** @test */
-TEST(CmosNor, TruthTable11) {
+TEST(CmosNorTest, TruthTable11) {
   const int RESULT = CmosNor::truthTable(1, 1);
   EXPECT_EQ(RESULT, 0);
 }
 
 /** @test */
-TEST(CmosNor, TruthTableAllCombinations) {
+TEST(CmosNorTest, TruthTableAllCombinations) {
   // NOR gate: OUT = ~(A | B)
   EXPECT_EQ(CmosNor::truthTable(0, 0), 1);
   EXPECT_EQ(CmosNor::truthTable(0, 1), 0);
@@ -270,7 +270,7 @@ TEST(CmosNor, TruthTableAllCombinations) {
 /* ----------------------------- Universal Gates ----------------------------- */
 
 /** @test */
-TEST(CmosComposite, NandIsUniversalGate) {
+TEST(CmosCompositeTest, NandIsUniversalGate) {
   // NAND can implement all basic gates:
 
   // NOT: OUT = A NAND A
@@ -290,7 +290,7 @@ TEST(CmosComposite, NandIsUniversalGate) {
 }
 
 /** @test */
-TEST(CmosComposite, NorIsUniversalGate) {
+TEST(CmosCompositeTest, NorIsUniversalGate) {
   // NOR can implement all basic gates:
 
   // NOT: OUT = A NOR A

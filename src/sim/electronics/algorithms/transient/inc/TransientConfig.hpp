@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_TRANSIENT_TRANSIENTCONFIG_HPP
-#define APEX_SIM_ELECTRONICS_TRANSIENT_TRANSIENTCONFIG_HPP
+#ifndef APEX_TRANSIENTCONFIG_HPP
+#define APEX_TRANSIENTCONFIG_HPP
 /**
  * @file TransientConfig.hpp
  * @brief Configuration structures for transient circuit simulation.
@@ -11,7 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace sim::electronics::transient {
+namespace sim::electronics::algorithms::transient {
 
 /* ----------------------------- IntegrationMethod ----------------------------- */
 
@@ -152,6 +152,6 @@ enum class TransientStatus : std::uint8_t {
   ERROR_MATRIX_SINGULAR = 6     ///< MNA matrix is singular.
 };
 
-} // namespace sim::electronics::transient
+} // namespace sim::electronics::algorithms::transient
 
-#endif // APEX_SIM_ELECTRONICS_TRANSIENT_TRANSIENTCONFIG_HPP
+#endif // APEX_TRANSIENTCONFIG_HPP

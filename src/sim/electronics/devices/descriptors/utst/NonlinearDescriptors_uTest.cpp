@@ -10,12 +10,12 @@
 using sim::electronics::devices::descriptors::BjtDescriptor;
 using sim::electronics::devices::descriptors::DiodeDescriptor;
 using sim::electronics::devices::descriptors::MosfetDescriptor;
-using sim::electronics::mna::NetID;
+using sim::electronics::algorithms::mna::NetID;
 
 /* ----------------------------- DiodeDescriptor ----------------------------- */
 
 /** @test */
-TEST(DiodeDescriptor, DefaultConstruction) {
+TEST(DiodeDescriptorTest, DefaultConstruction) {
   DiodeDescriptor d;
   EXPECT_EQ(d.anodeNet, 0U);
   EXPECT_EQ(d.cathodeNet, 0U);
@@ -23,7 +23,7 @@ TEST(DiodeDescriptor, DefaultConstruction) {
 }
 
 /** @test */
-TEST(DiodeDescriptor, ParameterizedConstruction) {
+TEST(DiodeDescriptorTest, ParameterizedConstruction) {
   const NetID ANODE = 5;
   const NetID CATHODE = 10;
   const double AREA = 2.5;
@@ -36,7 +36,7 @@ TEST(DiodeDescriptor, ParameterizedConstruction) {
 }
 
 /** @test */
-TEST(DiodeDescriptor, DefaultArea) {
+TEST(DiodeDescriptorTest, DefaultArea) {
   DiodeDescriptor d{1, 2};
 
   EXPECT_EQ(d.anodeNet, 1U);
@@ -45,13 +45,13 @@ TEST(DiodeDescriptor, DefaultArea) {
 }
 
 /** @test */
-TEST(DiodeDescriptor, LargeAreaScaling) {
+TEST(DiodeDescriptorTest, LargeAreaScaling) {
   DiodeDescriptor d{1, 2, 10.0};
   EXPECT_DOUBLE_EQ(d.area, 10.0);
 }
 
 /** @test */
-TEST(DiodeDescriptor, SmallAreaScaling) {
+TEST(DiodeDescriptorTest, SmallAreaScaling) {
   DiodeDescriptor d{1, 2, 0.1};
   EXPECT_DOUBLE_EQ(d.area, 0.1);
 }
@@ -59,7 +59,7 @@ TEST(DiodeDescriptor, SmallAreaScaling) {
 /* ----------------------------- MosfetDescriptor ----------------------------- */
 
 /** @test */
-TEST(MosfetDescriptor, DefaultConstruction) {
+TEST(MosfetDescriptorTest, DefaultConstruction) {
   MosfetDescriptor m;
   EXPECT_EQ(m.drainNet, 0U);
   EXPECT_EQ(m.gateNet, 0U);
@@ -70,7 +70,7 @@ TEST(MosfetDescriptor, DefaultConstruction) {
 }
 
 /** @test */
-TEST(MosfetDescriptor, ParameterizedConstruction) {
+TEST(MosfetDescriptorTest, ParameterizedConstruction) {
   const NetID DRAIN = 1;
   const NetID GATE = 2;
   const NetID SOURCE = 3;
@@ -89,7 +89,7 @@ TEST(MosfetDescriptor, ParameterizedConstruction) {
 }
 
 /** @test */
-TEST(MosfetDescriptor, PmosConfiguration) {
+TEST(MosfetDescriptorTest, PmosConfiguration) {
   const NetID VDD = 5;
   const NetID INPUT = 10;
   const NetID OUTPUT = 15;
@@ -103,7 +103,7 @@ TEST(MosfetDescriptor, PmosConfiguration) {
 }
 
 /** @test */
-TEST(MosfetDescriptor, NmosConfiguration) {
+TEST(MosfetDescriptorTest, NmosConfiguration) {
   const NetID GND = 0;
   const NetID INPUT = 10;
   const NetID OUTPUT = 15;
@@ -117,30 +117,30 @@ TEST(MosfetDescriptor, NmosConfiguration) {
 }
 
 /** @test */
-TEST(MosfetDescriptor, MinimumGeometry) {
+TEST(MosfetDescriptorTest, MinimumGeometry) {
   MosfetDescriptor m{1, 2, 3, 4, 0.18e-6, 0.18e-6};
   EXPECT_DOUBLE_EQ(m.W, 0.18e-6);
   EXPECT_DOUBLE_EQ(m.L, 0.18e-6);
 }
 
 /** @test */
-TEST(MosfetDescriptor, LargeGeometry) {
+TEST(MosfetDescriptorTest, LargeGeometry) {
   MosfetDescriptor m{1, 2, 3, 4, 100e-6, 10e-6};
   EXPECT_DOUBLE_EQ(m.W, 100e-6);
   EXPECT_DOUBLE_EQ(m.L, 10e-6);
 }
 
 /** @test */
-TEST(MosfetDescriptor, AspectRatio) {
+TEST(MosfetDescriptorTest, AspectRatio) {
   MosfetDescriptor m{1, 2, 3, 4, 20e-6, 2e-6};
-  const double aspectRatio = m.W / m.L;
-  EXPECT_DOUBLE_EQ(aspectRatio, 10.0);
+  const double ASPECT_RATIO = m.W / m.L;
+  EXPECT_DOUBLE_EQ(ASPECT_RATIO, 10.0);
 }
 
 /* ----------------------------- BjtDescriptor ----------------------------- */
 
 /** @test */
-TEST(BjtDescriptor, DefaultConstruction) {
+TEST(BjtDescriptorTest, DefaultConstruction) {
   BjtDescriptor q;
   EXPECT_EQ(q.collectorNet, 0U);
   EXPECT_EQ(q.baseNet, 0U);
@@ -149,7 +149,7 @@ TEST(BjtDescriptor, DefaultConstruction) {
 }
 
 /** @test */
-TEST(BjtDescriptor, ParameterizedConstruction) {
+TEST(BjtDescriptorTest, ParameterizedConstruction) {
   const NetID COLLECTOR = 5;
   const NetID BASE = 10;
   const NetID EMITTER = 15;
@@ -164,7 +164,7 @@ TEST(BjtDescriptor, ParameterizedConstruction) {
 }
 
 /** @test */
-TEST(BjtDescriptor, DefaultArea) {
+TEST(BjtDescriptorTest, DefaultArea) {
   BjtDescriptor q{1, 2, 3};
 
   EXPECT_EQ(q.collectorNet, 1U);
@@ -174,7 +174,7 @@ TEST(BjtDescriptor, DefaultArea) {
 }
 
 /** @test */
-TEST(BjtDescriptor, NpnConfiguration) {
+TEST(BjtDescriptorTest, NpnConfiguration) {
   const NetID VDD = 5;
   const NetID BASE = 10;
   const NetID GND = 0;
@@ -187,7 +187,7 @@ TEST(BjtDescriptor, NpnConfiguration) {
 }
 
 /** @test */
-TEST(BjtDescriptor, PnpConfiguration) {
+TEST(BjtDescriptorTest, PnpConfiguration) {
   const NetID VDD = 5;
   const NetID BASE = 10;
   const NetID OUTPUT = 15;
@@ -200,13 +200,13 @@ TEST(BjtDescriptor, PnpConfiguration) {
 }
 
 /** @test */
-TEST(BjtDescriptor, LargeAreaScaling) {
+TEST(BjtDescriptorTest, LargeAreaScaling) {
   BjtDescriptor q{1, 2, 3, 5.0};
   EXPECT_DOUBLE_EQ(q.area, 5.0);
 }
 
 /** @test */
-TEST(BjtDescriptor, SmallAreaScaling) {
+TEST(BjtDescriptorTest, SmallAreaScaling) {
   BjtDescriptor q{1, 2, 3, 0.25};
   EXPECT_DOUBLE_EQ(q.area, 0.25);
 }

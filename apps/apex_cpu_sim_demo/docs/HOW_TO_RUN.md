@@ -166,7 +166,7 @@ Program (1 bytes):
   CY  = 0
 
 --- L1: Transistor Circuit (L0/L1 hybrid) ---
-  Loading netlist: src/sim/electronics/intel4004/netlist/data/lajos-4004.spice
+  Loading netlist: src/sim/electronics/chips/intel4004/netlist/data/lajos-4004.spice
   Transistors: 2242
   Warmup NOPs per byte: 16
 
@@ -184,8 +184,8 @@ Program (1 bytes):
 
 ```
 --- L2: Engineered Physics (L0/L2 hybrid) ---
-  Loading netlist:        src/sim/electronics/intel4004/netlist/data/lajos-4004.spice
-  Loading bootstrap caps: src/sim/electronics/intel4004/netlist/data/lajos-4004-bootstrap-caps.txt
+  Loading netlist:        src/sim/electronics/chips/intel4004/netlist/data/lajos-4004.spice
+  Loading bootstrap caps: src/sim/electronics/chips/intel4004/netlist/data/lajos-4004-bootstrap-caps.txt
   Transistors: 2242 (338 latch core via BSIM3)
   Meyer caps: ON (intrinsic + overlap on every device)
   Warmup NOPs per byte: 16

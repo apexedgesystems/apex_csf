@@ -43,7 +43,7 @@ apex_add_library(
   SRC
   ${LIB_SOURCES}
   DEPS_PUBLIC
-  sim_electronics_mna
+  sim_electronics_algorithms_mna
   utilities_compatibility
   ${NGSPICE_DEPS}
 )

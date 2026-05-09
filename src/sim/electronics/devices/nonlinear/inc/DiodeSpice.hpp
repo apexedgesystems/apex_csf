@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_DIODESPICE_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_DIODESPICE_HPP
+#ifndef APEX_DIODESPICE_HPP
+#define APEX_DIODESPICE_HPP
 /**
  * @file DiodeSpice.hpp
  * @brief SPICE-level diode model with series resistance and junction capacitance.
@@ -27,8 +27,8 @@
 
 namespace sim::electronics::devices::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /**
  * @brief SPICE-level diode model parameters.
@@ -188,4 +188,4 @@ struct DiodeSpice {
 
 } // namespace sim::electronics::devices::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_DIODESPICE_HPP
+#endif // APEX_DIODESPICE_HPP

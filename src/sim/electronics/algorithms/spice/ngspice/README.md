@@ -30,7 +30,7 @@ libngspice is not found, only fixture-based verification is available.
 ```cpp
 #include "src/sim/electronics/algorithms/spice/ngspice/inc/NgspiceWrapper.hpp"
 
-using sim::electronics::spice::ngspice::NgspiceWrapper;
+using sim::electronics::algorithms::spice::ngspice::NgspiceWrapper;
 
 if (NgspiceWrapper::isLibngspiceAvailable())
 {
@@ -194,14 +194,14 @@ EXPECT_NEAR(ourVoltage, fixtureVoltage, 0.01);  // 0.01V tolerance
 
 | Feature                    | Status                                     |
 | -------------------------- | ------------------------------------------ |
-| Directory structure        | ✅ Complete                                |
-| CMake integration          | ✅ Complete                                |
-| Header interface           | ✅ Complete                                |
-| Stub implementation        | ✅ Complete                                |
-| Unit tests (12)            | ✅ All passing                             |
-| libngspice detection       | ✅ Complete                                |
-| Runtime integration        | ⏳ Stubbed (requires libngspice API calls) |
-| Fixture-based verification | ⏳ Planned                                 |
+| Directory structure        | [OK] Complete                                |
+| CMake integration          | [OK] Complete                                |
+| Header interface           | [OK] Complete                                |
+| Stub implementation        | [OK] Complete                                |
+| Unit tests (12)            | [OK] All passing                             |
+| libngspice detection       | [OK] Complete                                |
+| Runtime integration        | (pending) Stubbed (requires libngspice API calls) |
+| Fixture-based verification | (pending) Planned                                 |
 
 **Next steps:**
 

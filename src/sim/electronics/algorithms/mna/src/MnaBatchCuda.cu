@@ -22,7 +22,7 @@
 #include <cmath>
 #endif
 
-namespace sim::electronics::mna::cuda {
+namespace sim::electronics::algorithms::mna::cuda {
 
 /* ----------------------------- Constants ----------------------------- */
 
@@ -1095,7 +1095,7 @@ bool solveBatchCustom(MnaBatchWorkspace& ws, const double* As, double* bs, std::
                                                static_cast<double*>(ws.db), intBatch,
                                                static_cast<bool*>(ws.dSuccess));
   } else if (dim == 16) {
-    // TPB = 64 — same rationale as dim=8. Each thread owns one full
+    // TPB = 64 -- same rationale as dim=8. Each thread owns one full
     // 16x16 system in local memory; smaller blocks keep enough grid
     // parallelism for typical batch sizes.
     constexpr int TPB_16 = 64;
@@ -1351,4 +1351,4 @@ LaunchConfig getLaunchConfigF32(std::size_t dim, std::size_t batch) noexcept {
   return cfg;
 }
 
-} // namespace sim::electronics::mna::cuda
+} // namespace sim::electronics::algorithms::mna::cuda

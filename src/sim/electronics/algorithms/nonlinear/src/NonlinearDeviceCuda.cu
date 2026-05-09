@@ -19,7 +19,7 @@
 
 #include <cuda_runtime.h>
 
-namespace sim::electronics::nonlinear::cuda {
+namespace sim::electronics::algorithms::nonlinear::cuda {
 
 /* ----------------------------- Device Evaluation Kernels ----------------------------- */
 
@@ -196,4 +196,4 @@ void stampDevicesCuda(const DeviceParams* d_deviceParams, const double* d_curren
   // Note: Caller should check cudaGetLastError() and cudaDeviceSynchronize()
 }
 
-} // namespace sim::electronics::nonlinear::cuda
+} // namespace sim::electronics::algorithms::nonlinear::cuda

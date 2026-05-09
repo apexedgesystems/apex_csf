@@ -40,9 +40,9 @@ apex_add_app(
   SRC
   ${APP_SOURCES}
   LINK
-  sim_electronics_gates
-  sim_electronics_filters
-  sim_electronics_amplifiers
+  sim_electronics_topologies_gates
+  sim_electronics_topologies_filters
+  sim_electronics_topologies_amplifiers
   sim_electronics_circuit
   sim_electronics_algorithms_transient
   fmt::fmt

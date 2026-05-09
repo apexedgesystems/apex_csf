@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_COMPOSITEDEVICES_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_COMPOSITEDEVICES_HPP
+#ifndef APEX_COMPOSITEDEVICES_HPP
+#define APEX_COMPOSITEDEVICES_HPP
 /**
  * @file CompositeDevices.hpp
  * @brief Registry header for all composite device models.
@@ -15,4 +15,4 @@
 #include "src/sim/electronics/devices/composite/inc/CmosNand.hpp"
 #include "src/sim/electronics/devices/composite/inc/CmosNor.hpp"
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_COMPOSITEDEVICES_HPP
+#endif // APEX_COMPOSITEDEVICES_HPP

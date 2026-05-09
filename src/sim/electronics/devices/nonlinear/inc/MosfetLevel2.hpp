@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETLEVEL2_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETLEVEL2_HPP
+#ifndef APEX_MOSFETLEVEL2_HPP
+#define APEX_MOSFETLEVEL2_HPP
 /**
  * @file MosfetLevel2.hpp
  * @brief SPICE Level 2 MOSFET model with geometry-dependent effects.
@@ -31,8 +31,8 @@
 
 namespace sim::electronics::devices::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /**
  * @brief SPICE Level 2 MOSFET parameters.
@@ -308,4 +308,4 @@ struct MosfetLevel2 {
 
 } // namespace sim::electronics::devices::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETLEVEL2_HPP
+#endif // APEX_MOSFETLEVEL2_HPP

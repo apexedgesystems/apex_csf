@@ -10,8 +10,8 @@
 
 #include <cmath>
 
-using sim::electronics::mna::MnaSystem;
-using sim::electronics::mna::MnaSystemSparse;
+using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::MnaSystemSparse;
 
 /* ----------------------------- Helper ----------------------------- */
 
@@ -25,7 +25,7 @@ static constexpr double TOL = 1e-9;
  *        Current: I = 10V / 30 ohm = 0.333A
  *        V_middle = I * R1 = 0.333A * 10 ohm = 3.33V
  */
-TEST(MnaSystemSparse, VoltageDivider_MatchesExpected) {
+TEST(MnaSystemSparseTest, VoltageDivider_MatchesExpected) {
   // 3 nets: ground (0), middle (1), top (2)
   MnaSystemSparse mna(3);
 
@@ -56,7 +56,7 @@ TEST(MnaSystemSparse, VoltageDivider_MatchesExpected) {
  * @brief Single 10 ohm resistor between 5V supply and ground.
  *        Expected current: 5V / 10 ohm = 0.5A (negative = into voltage source)
  */
-TEST(MnaSystemSparse, SimplestCircuit_OneResistor) {
+TEST(MnaSystemSparseTest, SimplestCircuit_OneResistor) {
   // 2 nets: ground (0), top (1)
   MnaSystemSparse mna(2);
 
@@ -83,7 +83,7 @@ TEST(MnaSystemSparse, SimplestCircuit_OneResistor) {
  * @brief Two 10 ohm resistors in parallel (equivalent 5 ohm) with 10V supply.
  *        Total current: 10V / 5 ohm = 2A (negative = into source)
  */
-TEST(MnaSystemSparse, ParallelResistors_EquivalentConductance) {
+TEST(MnaSystemSparseTest, ParallelResistors_EquivalentConductance) {
   // 2 nets: ground (0), top (1)
   MnaSystemSparse mna(2);
 
@@ -112,7 +112,7 @@ TEST(MnaSystemSparse, ParallelResistors_EquivalentConductance) {
  *        addCurrent(0, 1, 1.0) means +1A into node 0, -1A into node 1.
  *        This drives current from ground into node 1, making V[1] negative.
  */
-TEST(MnaSystemSparse, CurrentSource_ComputesVoltage) {
+TEST(MnaSystemSparseTest, CurrentSource_ComputesVoltage) {
   // 2 nets: ground (0), top (1)
   MnaSystemSparse mna(2);
 
@@ -137,7 +137,7 @@ TEST(MnaSystemSparse, CurrentSource_ComputesVoltage) {
  * @test MnaSystemSparse_MatchesDense_VoltageDivider
  * @brief Sparse and dense MNA solvers should produce identical results.
  */
-TEST(MnaSystemSparse, MatchesDense_VoltageDivider) {
+TEST(MnaSystemSparseTest, MatchesDense_VoltageDivider) {
   // Build same circuit with sparse and dense
   MnaSystemSparse sparse(3);
   MnaSystem dense(3);
@@ -180,7 +180,7 @@ TEST(MnaSystemSparse, MatchesDense_VoltageDivider) {
  * @test MnaSystemSparse_ClearAndReuse_ProducesSameResult
  * @brief Clear stamps, rebuild circuit, solve again.
  */
-TEST(MnaSystemSparse, ClearAndReuse_ProducesSameResult) {
+TEST(MnaSystemSparseTest, ClearAndReuse_ProducesSameResult) {
   MnaSystemSparse mna(3);
 
   mna.addConductance(0, 1, 1.0 / 10.0);
@@ -210,7 +210,7 @@ TEST(MnaSystemSparse, ClearAndReuse_ProducesSameResult) {
  * @test MnaSystemSparse_SolveWithoutFactorize_Fails
  * @brief Calling solve() before factorize() should fail gracefully.
  */
-TEST(MnaSystemSparse, SolveWithoutFactorize_Fails) {
+TEST(MnaSystemSparseTest, SolveWithoutFactorize_Fails) {
   MnaSystemSparse mna(2);
   mna.addConductance(0, 1, 1.0 / 10.0);
   mna.addVoltageSource(1, 0, 5.0);
@@ -227,7 +227,7 @@ TEST(MnaSystemSparse, SolveWithoutFactorize_Fails) {
  * @test MnaSystemSparse_SolveInto_WritesToBuffers
  * @brief solveInto() should write results to pre-allocated buffers.
  */
-TEST(MnaSystemSparse, SolveInto_WritesToBuffers) {
+TEST(MnaSystemSparseTest, SolveInto_WritesToBuffers) {
   MnaSystemSparse mna(3);
   mna.addConductance(0, 1, 1.0 / 10.0);
   mna.addConductance(1, 2, 1.0 / 20.0);
@@ -252,7 +252,7 @@ TEST(MnaSystemSparse, SolveInto_WritesToBuffers) {
  * @test MnaSystemSparse_NnzCount_ReflectsStamps
  * @brief nnz() should return number of non-zero entries stamped.
  */
-TEST(MnaSystemSparse, NnzCount_ReflectsStamps) {
+TEST(MnaSystemSparseTest, NnzCount_ReflectsStamps) {
   MnaSystemSparse mna(3);
 
   // Initial: 0 entries

@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_NONLINEAR_NONLINEARDEVICECUDA_CUH
-#define APEX_SIM_ELECTRONICS_NONLINEAR_NONLINEARDEVICECUDA_CUH
+#ifndef APEX_NONLINEARDEVICECUDA_CUH
+#define APEX_NONLINEARDEVICECUDA_CUH
 /**
  * @file NonlinearDeviceCuda.cuh
  * @brief CUDA interface for parallel nonlinear device evaluation.
@@ -22,7 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace sim::electronics::nonlinear::cuda {
+namespace sim::electronics::algorithms::nonlinear::cuda {
 
 /* ----------------------------- Device Types ----------------------------- */
 
@@ -106,6 +106,6 @@ void stampDevicesCuda(const DeviceParams* d_deviceParams, const double* d_curren
                       const double* d_conductances, const double* d_nodeVoltages,
                       double* d_G_matrix, double* d_I_vector, int netCount, int deviceCount);
 
-} // namespace sim::electronics::nonlinear::cuda
+} // namespace sim::electronics::algorithms::nonlinear::cuda
 
-#endif // APEX_SIM_ELECTRONICS_NONLINEAR_NONLINEARDEVICECUDA_CUH
+#endif // APEX_NONLINEARDEVICECUDA_CUH

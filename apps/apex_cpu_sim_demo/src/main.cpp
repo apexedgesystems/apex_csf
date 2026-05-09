@@ -38,14 +38,14 @@
  *   ./ApexCpuSimDemo --bootstrap-caps PATH        # custom L2 bootstrap caps
  */
 
-#include "src/sim/electronics/intel4004/behavioral/inc/Intel4004Cpu.hpp"
-#include "src/sim/electronics/intel4004/behavioral/inc/Intel4004Disassembler.hpp"
-#include "src/sim/electronics/intel4004/behavioral/inc/Intel4004Instructions.hpp"
-#include "src/sim/electronics/intel4004/behavioral/inc/Intel4004Programs.hpp"
-#include "src/sim/electronics/intel4004/grid/inc/Intel4004Grid.hpp"
-#include "src/sim/electronics/intel4004/grid/inc/Intel4004GridLevel1.hpp"
-#include "src/sim/electronics/intel4004/grid/inc/Intel4004GridLevel2.hpp"
-#include "src/sim/electronics/intel4004/netlist/inc/SpiceNetlistParser.hpp"
+#include "src/sim/electronics/chips/intel4004/behavioral/inc/Intel4004Cpu.hpp"
+#include "src/sim/electronics/chips/intel4004/behavioral/inc/Intel4004Disassembler.hpp"
+#include "src/sim/electronics/chips/intel4004/behavioral/inc/Intel4004Instructions.hpp"
+#include "src/sim/electronics/chips/intel4004/behavioral/inc/Intel4004Programs.hpp"
+#include "src/sim/electronics/chips/intel4004/grid/inc/Intel4004Grid.hpp"
+#include "src/sim/electronics/chips/intel4004/grid/inc/Intel4004GridLevel1.hpp"
+#include "src/sim/electronics/chips/intel4004/grid/inc/Intel4004GridLevel2.hpp"
+#include "src/sim/electronics/chips/intel4004/netlist/inc/SpiceNetlistParser.hpp"
 
 #include <fmt/format.h>
 
@@ -62,13 +62,13 @@
 #include <string>
 #include <vector>
 
-using sim::electronics::intel4004::DisassembledInstruction;
-using sim::electronics::intel4004::Intel4004Cpu;
-using sim::electronics::intel4004::Intel4004GridLevel1;
-using sim::electronics::intel4004::Intel4004GridLevel2;
-using sim::electronics::intel4004::Intel4004Netlist;
-using sim::electronics::intel4004::disassemble;
-using sim::electronics::intel4004::loadSpiceNetlist;
+using sim::electronics::chips::intel4004::DisassembledInstruction;
+using sim::electronics::chips::intel4004::Intel4004Cpu;
+using sim::electronics::chips::intel4004::Intel4004GridLevel1;
+using sim::electronics::chips::intel4004::Intel4004GridLevel2;
+using sim::electronics::chips::intel4004::Intel4004Netlist;
+using sim::electronics::chips::intel4004::disassemble;
+using sim::electronics::chips::intel4004::loadSpiceNetlist;
 
 /* ----------------------------- Constants ----------------------------- */
 
@@ -77,11 +77,11 @@ static constexpr std::size_t DEFAULT_WARMUP_NOPS = 16;
 
 /// Default netlist path relative to the project root.
 static constexpr const char* DEFAULT_NETLIST_PATH =
-    "src/sim/electronics/intel4004/netlist/data/lajos-4004.spice";
+    "src/sim/electronics/chips/intel4004/netlist/data/lajos-4004.spice";
 
 /// Default bootstrap-cap data file relative to the project root.
 static constexpr const char* DEFAULT_BOOTSTRAP_CAPS_PATH =
-    "src/sim/electronics/intel4004/netlist/data/lajos-4004-bootstrap-caps.txt";
+    "src/sim/electronics/chips/intel4004/netlist/data/lajos-4004-bootstrap-caps.txt";
 
 /// Default sub-steps per machine phase at L2 (caps need finer dt).
 static constexpr std::size_t L2_STEPS_PER_PHASE = 5;
@@ -612,7 +612,7 @@ int main(int argc, char* argv[]) {
   } else if (!ARGS.program.empty()) {
     program = parseHexProgram(ARGS.program);
   } else {
-    using namespace sim::electronics::intel4004;
+    using namespace sim::electronics::chips::intel4004;
     program.assign(PROGRAM_LDM.begin(), PROGRAM_LDM.end());
   }
 

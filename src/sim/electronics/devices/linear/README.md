@@ -30,13 +30,13 @@ Static conductance stamping (Ohm's law).
 using namespace sim::electronics::devices::linear;
 
 // Calculate conductance
-double g = ResistorModel::conductance(1000.0);  // 1kΩ → 1mS
+double g = ResistorModel::conductance(1000.0);  // 1kOhm -> 1mS
 
 // Calculate current
-double i = ResistorModel::current(5.0, 1000.0);  // 5V / 1kΩ = 5mA
+double i = ResistorModel::current(5.0, 1000.0);  // 5V / 1kOhm = 5mA
 
 // Stamp into MNA system
-ResistorModel::stamp(mna, VDD, OUTPUT, 10e3);  // 10kΩ resistor
+ResistorModel::stamp(mna, VDD, OUTPUT, 10e3);  // 10kOhm resistor
 ```
 
 ### CapacitorModel
@@ -49,10 +49,10 @@ Reactive element using companion model from companions library.
 using namespace sim::electronics::devices::linear;
 
 // Calculate reactance (for AC analysis)
-double xc = CapacitorModel::reactance(1e-6, 1000.0);  // 1µF at 1kHz
+double xc = CapacitorModel::reactance(1e-6, 1000.0);  // 1uF at 1kHz
 
 // Transient simulation (uses companion model)
-CapacitorCompanion cap{OUTPUT, GND, 1e-6};  // 1µF capacitor
+CapacitorCompanion cap{OUTPUT, GND, 1e-6};  // 1uF capacitor
 cap.stamp(mna, dt, IntegrationMethod::BACKWARD_EULER);
 auto result = mna.solve();
 double voltage = result.voltages[OUTPUT] - result.voltages[GND];
@@ -114,14 +114,14 @@ void simulateVoltageDivider() {
   MnaSystem mna(3);
 
   // Voltage divider: VDD --(R1)-- OUTPUT --(R2)-- GND
-  ResistorModel::stamp(mna, VDD, OUTPUT, 10e3);  // R1 = 10kΩ
-  ResistorModel::stamp(mna, OUTPUT, GND, 10e3);  // R2 = 10kΩ
+  ResistorModel::stamp(mna, VDD, OUTPUT, 10e3);  // R1 = 10kOhm
+  ResistorModel::stamp(mna, OUTPUT, GND, 10e3);  // R2 = 10kOhm
 
   // Voltage source: VDD = 5V
   mna.stampVoltageSource(VDD, GND, 5.0);
 
   auto result = mna.solve();
-  // result.voltages[OUTPUT] ≈ 2.5V (half of 5V)
+  // result.voltages[OUTPUT] ~= 2.5V (half of 5V)
 }
 ```
 
@@ -135,12 +135,12 @@ using namespace sim::electronics::devices::linear;
 
 void simulateRcFilter() {
   constexpr NetID INPUT = 1, OUTPUT = 2, GND = 0;
-  constexpr double dt = 1e-6;  // 1 µs timestep
+  constexpr double dt = 1e-6;  // 1 us timestep
 
   MnaSystem mna(3);
 
   // Resistor (static stamping, once before time loop)
-  ResistorModel::stamp(mna, INPUT, OUTPUT, 1000.0);  // 1kΩ
+  ResistorModel::stamp(mna, INPUT, OUTPUT, 1000.0);  // 1kOhm
 
   // Capacitor (dynamic, re-stamp each timestep)
   CapacitorCompanion cap{OUTPUT, GND, 1e-9};  // 1nF
@@ -162,7 +162,7 @@ void simulateRcFilter() {
     double vout = result.voltages[OUTPUT];
     cap.update(vout, dt);
 
-    // vout will exponentially approach 5V with time constant RC = 1µs
+    // vout will exponentially approach 5V with time constant RC = 1us
   }
 }
 ```
@@ -171,8 +171,8 @@ void simulateRcFilter() {
 
 ## Dependencies
 
-- `sim_electronics_mna` - MNA system and stamping functions
-- `sim_electronics_transient` - Companion models for C, L
+- `sim_electronics_algorithms_mna` - MNA system and stamping functions
+- `sim_electronics_algorithms_transient` - Companion models for C, L
 - `utilities_compatibility` - C++17/20/23 compatibility
 
 ---
@@ -203,7 +203,7 @@ make compose-testp
 - Capacitor: Reactance calculation, impedance
 - Inductor: Reactance calculation, impedance
 
-**Companion model tests:** See `sim_electronics_transient_uTest` for full
+**Companion model tests:** See `sim_electronics_algorithms_transient_uTest` for full
 companion model validation (integration methods, state update, convergence).
 
 ---

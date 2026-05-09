@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_ALGORITHMS_TRANSIENT_TRANSIENTCUDA_CUH
-#define APEX_SIM_ELECTRONICS_ALGORITHMS_TRANSIENT_TRANSIENTCUDA_CUH
+#ifndef APEX_TRANSIENTCUDA_CUH
+#define APEX_TRANSIENTCUDA_CUH
 /**
  * @file TransientCuda.cuh
  * @brief CUDA-accelerated transient simulation utilities.
@@ -26,7 +26,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace sim::electronics::transient::cuda {
+namespace sim::electronics::algorithms::transient::cuda {
 
 /* ----------------------------- CUDA Availability ----------------------------- */
 
@@ -35,7 +35,7 @@ namespace sim::electronics::transient::cuda {
  * @return true if cuSOLVER is available, false otherwise.
  * @note RT-SAFE: pure constexpr.
  */
-inline constexpr bool available() noexcept { return mna::cuda::available(); }
+inline constexpr bool available() noexcept { return algorithms::mna::cuda::available(); }
 
 /* ----------------------------- CUDA Transient Step ----------------------------- */
 
@@ -60,21 +60,21 @@ inline constexpr bool available() noexcept { return mna::cuda::available(); }
  *
  * @note NOT RT-SAFE: involves GPU memory transfers and kernel launches.
  */
-TransientStatus stepCuda(mna::cuda::MnaCudaWorkspace& cudaWs, mna::MnaSystem& mna,
+TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs, algorithms::mna::MnaSystem& mna,
                          CompanionSet& companions, const StampCallback& stampCallback, double dt,
                          double& time, std::vector<double>& prevVoltages,
-                         mna::MnaSolveWorkspace& workspace, TransientState& state);
+                         algorithms::mna::MnaSolveWorkspace& workspace, TransientState& state);
 
 /**
  * @brief Overload for stateful stamp callback.
  *
  * Same as stepCuda() but uses StatefulStampCallback that receives prevVoltages.
  */
-TransientStatus stepCuda(mna::cuda::MnaCudaWorkspace& cudaWs, mna::MnaSystem& mna,
+TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs, algorithms::mna::MnaSystem& mna,
                          CompanionSet& companions, const StatefulStampCallback& stampCallback,
                          double dt, double& time, std::vector<double>& prevVoltages,
-                         mna::MnaSolveWorkspace& workspace, TransientState& state);
+                         algorithms::mna::MnaSolveWorkspace& workspace, TransientState& state);
 
-} // namespace sim::electronics::transient::cuda
+} // namespace sim::electronics::algorithms::transient::cuda
 
-#endif // APEX_SIM_ELECTRONICS_ALGORITHMS_TRANSIENT_TRANSIENTCUDA_CUH
+#endif // APEX_TRANSIENTCUDA_CUH

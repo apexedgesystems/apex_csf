@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_RESISTORDESCRIPTOR_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_RESISTORDESCRIPTOR_HPP
+#ifndef APEX_RESISTORDESCRIPTOR_HPP
+#define APEX_RESISTORDESCRIPTOR_HPP
 /**
  * @file ResistorDescriptor.hpp
  * @brief Resistor topology descriptor (pure topology, no physics).
@@ -21,7 +21,7 @@
 
 namespace sim::electronics::devices::descriptors {
 
-using mna::NetID;
+using algorithms::mna::NetID;
 
 /**
  * @brief Resistor topology descriptor.
@@ -46,4 +46,4 @@ struct ResistorDescriptor {
 
 } // namespace sim::electronics::devices::descriptors
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_RESISTORDESCRIPTOR_HPP
+#endif // APEX_RESISTORDESCRIPTOR_HPP

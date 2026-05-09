@@ -12,7 +12,7 @@
 
 #include <cstring>
 
-namespace sim::electronics::mna::cuda {
+namespace sim::electronics::algorithms::mna::cuda {
 
 /* ----------------------------- Workspace Management ----------------------------- */
 
@@ -238,4 +238,4 @@ bool solveBatchCuda(MnaCudaWorkspace& ws, const double* As, double* bs, std::siz
 #endif
 }
 
-} // namespace sim::electronics::mna::cuda
+} // namespace sim::electronics::algorithms::mna::cuda

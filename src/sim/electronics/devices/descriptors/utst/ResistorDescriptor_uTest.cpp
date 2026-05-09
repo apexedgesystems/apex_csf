@@ -12,7 +12,7 @@ using sim::electronics::devices::descriptors::ResistorDescriptor;
 /* ----------------------------- Construction ----------------------------- */
 
 /** @test Default construction with designated initializers. */
-TEST(ResistorDescriptor, DesignatedInitializers) {
+TEST(ResistorDescriptorTest, DesignatedInitializers) {
   ResistorDescriptor r{.posNet = 1, .negNet = 0, .resistance = 1000.0};
 
   EXPECT_EQ(r.posNet, 1u);
@@ -21,7 +21,7 @@ TEST(ResistorDescriptor, DesignatedInitializers) {
 }
 
 /** @test Positional construction. */
-TEST(ResistorDescriptor, PositionalConstruction) {
+TEST(ResistorDescriptorTest, PositionalConstruction) {
   ResistorDescriptor r{5, 2, 4700.0};
 
   EXPECT_EQ(r.posNet, 5u);
@@ -30,7 +30,7 @@ TEST(ResistorDescriptor, PositionalConstruction) {
 }
 
 /** @test Zero resistance (short circuit). */
-TEST(ResistorDescriptor, ZeroResistance) {
+TEST(ResistorDescriptorTest, ZeroResistance) {
   ResistorDescriptor r{1, 0, 0.0};
 
   EXPECT_EQ(r.posNet, 1u);
@@ -39,7 +39,7 @@ TEST(ResistorDescriptor, ZeroResistance) {
 }
 
 /** @test Large resistance values. */
-TEST(ResistorDescriptor, LargeResistance) {
+TEST(ResistorDescriptorTest, LargeResistance) {
   ResistorDescriptor r{3, 0, 1e6}; // 1 M ohm
 
   EXPECT_DOUBLE_EQ(r.resistance, 1e6);
@@ -48,7 +48,7 @@ TEST(ResistorDescriptor, LargeResistance) {
 /* ----------------------------- Standard Values ----------------------------- */
 
 /** @test E12 series resistor values (common). */
-TEST(ResistorDescriptor, E12Series) {
+TEST(ResistorDescriptorTest, E12Series) {
   ResistorDescriptor r10{1, 0, 10.0};
   ResistorDescriptor r12{1, 0, 12.0};
   ResistorDescriptor r15{1, 0, 15.0};
@@ -68,7 +68,7 @@ TEST(ResistorDescriptor, E12Series) {
 }
 
 /** @test Common decade multiples. */
-TEST(ResistorDescriptor, CommonValues) {
+TEST(ResistorDescriptorTest, CommonValues) {
   ResistorDescriptor r100{1, 0, 100.0};  // 100 ohm
   ResistorDescriptor r1k{1, 0, 1e3};     // 1k ohm
   ResistorDescriptor r10k{1, 0, 10e3};   // 10k ohm
@@ -85,7 +85,7 @@ TEST(ResistorDescriptor, CommonValues) {
 /* ----------------------------- Topology ----------------------------- */
 
 /** @test Same net (degenerate case). */
-TEST(ResistorDescriptor, SameNet) {
+TEST(ResistorDescriptorTest, SameNet) {
   ResistorDescriptor r{5, 5, 1000.0};
 
   EXPECT_EQ(r.posNet, r.negNet);
@@ -93,7 +93,7 @@ TEST(ResistorDescriptor, SameNet) {
 }
 
 /** @test Ground referenced. */
-TEST(ResistorDescriptor, GroundReferenced) {
+TEST(ResistorDescriptorTest, GroundReferenced) {
   ResistorDescriptor r{10, 0, 10e3};
 
   EXPECT_EQ(r.posNet, 10u);
@@ -101,7 +101,7 @@ TEST(ResistorDescriptor, GroundReferenced) {
 }
 
 /** @test Floating (neither terminal at ground). */
-TEST(ResistorDescriptor, Floating) {
+TEST(ResistorDescriptorTest, Floating) {
   ResistorDescriptor r{7, 3, 2200.0};
 
   EXPECT_EQ(r.posNet, 7u);

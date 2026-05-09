@@ -8,10 +8,11 @@
 # topology-independent.
 #
 # Libraries:
-#   - mna/        - Modified Nodal Analysis (DC, AC, sparse/dense solvers)
-#   - transient/  - Time-domain integration (backward Euler, trapezoidal, GEAR2)
-#   - nonlinear/  - Newton-Raphson nonlinear solver for diodes, transistors
-#   - spice/      - SPICE integration (ngspice wrapper for verification)
+#   - mna/         - Modified Nodal Analysis (DC, AC, sparse/dense solvers)
+#   - transient/   - Time-domain integration (backward Euler, trapezoidal, GEAR2)
+#   - nonlinear/   - Newton-Raphson nonlinear solver for diodes, transistors
+#   - companions/  - Time-domain companion models (Geq + Ieq stamps for C, L)
+#   - spice/       - SPICE integration (ngspice wrapper for verification)
 #
 # ==============================================================================
 
@@ -22,4 +23,5 @@
 add_subdirectory(mna)
 add_subdirectory(transient)
 add_subdirectory(nonlinear)
+add_subdirectory(companions)
 add_subdirectory(spice)

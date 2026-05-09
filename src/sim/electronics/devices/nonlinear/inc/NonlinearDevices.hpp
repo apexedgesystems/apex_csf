@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_NONLINEARDEVICES_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_NONLINEARDEVICES_HPP
+#ifndef APEX_NONLINEARDEVICES_HPP
+#define APEX_NONLINEARDEVICES_HPP
 /**
  * @file NonlinearDevices.hpp
  * @brief Registry header for all nonlinear device models.
@@ -32,4 +32,4 @@
 #include "src/sim/electronics/devices/nonlinear/inc/SchottkyDiode.hpp"
 #include "src/sim/electronics/devices/nonlinear/inc/ZenerDiode.hpp"
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_NONLINEARDEVICES_HPP
+#endif // APEX_NONLINEARDEVICES_HPP

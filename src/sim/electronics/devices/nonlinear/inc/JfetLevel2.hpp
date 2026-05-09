@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_JFETLEVEL2_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_JFETLEVEL2_HPP
+#ifndef APEX_JFETLEVEL2_HPP
+#define APEX_JFETLEVEL2_HPP
 /**
  * @file JfetLevel2.hpp
  * @brief Advanced JFET model with gate capacitance and improved saturation.
@@ -31,8 +31,8 @@
 
 namespace sim::electronics::devices::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /**
  * @brief JFET Level 2 model parameters.
@@ -235,4 +235,4 @@ struct JfetLevel2 {
 
 } // namespace sim::electronics::devices::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_JFETLEVEL2_HPP
+#endif // APEX_JFETLEVEL2_HPP

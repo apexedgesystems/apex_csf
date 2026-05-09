@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_ALGORITHMS_SPICE_NGSPICE_NGSPICE_WRAPPER_HPP
-#define APEX_SIM_ELECTRONICS_ALGORITHMS_SPICE_NGSPICE_NGSPICE_WRAPPER_HPP
+#ifndef APEX_NGSPICEWRAPPER_HPP
+#define APEX_NGSPICEWRAPPER_HPP
 
 /**
  * @file NgspiceWrapper.hpp
@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace sim::electronics::spice::ngspice {
+namespace sim::electronics::algorithms::spice::ngspice {
 
 /* ----------------------------- NgspiceStatus ---------------------------- */
 
@@ -174,6 +174,6 @@ private:
   std::vector<double> timePoints_{};
 };
 
-} // namespace sim::electronics::spice::ngspice
+} // namespace sim::electronics::algorithms::spice::ngspice
 
-#endif // APEX_SIM_ELECTRONICS_ALGORITHMS_SPICE_NGSPICE_NGSPICE_WRAPPER_HPP
+#endif // APEX_NGSPICEWRAPPER_HPP

@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_CIRCUIT_CIRCUIT_HPP
-#define APEX_SIM_ELECTRONICS_CIRCUIT_CIRCUIT_HPP
+#ifndef APEX_CIRCUIT_HPP
+#define APEX_CIRCUIT_HPP
 /**
  * @file Circuit.hpp
  * @brief Common circuit construction and simulation API.
@@ -41,7 +41,7 @@
 #include "src/sim/electronics/algorithms/mna/inc/Types.hpp"
 #include "src/sim/electronics/algorithms/transient/inc/TransientConfig.hpp"
 #include "src/sim/electronics/algorithms/transient/inc/TransientSolver.hpp"
-#include "src/sim/electronics/devices/companions/inc/CompanionModels.hpp"
+#include "src/sim/electronics/algorithms/companions/inc/CompanionModels.hpp"
 
 #include <cstddef>
 #include <functional>
@@ -52,13 +52,13 @@
 
 namespace sim::electronics::circuit {
 
-using sim::electronics::devices::companions::CompanionSet;
-using sim::electronics::mna::MnaSystem;
-using sim::electronics::transient::TransientConfig;
-using sim::electronics::transient::TransientResult;
-using sim::electronics::transient::TransientSolver;
-using sim::electronics::transient::TransientState;
-using sim::electronics::transient::TransientStatus;
+using sim::electronics::algorithms::companions::CompanionSet;
+using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::transient::TransientConfig;
+using sim::electronics::algorithms::transient::TransientResult;
+using sim::electronics::algorithms::transient::TransientSolver;
+using sim::electronics::algorithms::transient::TransientState;
+using sim::electronics::algorithms::transient::TransientStatus;
 
 /* ----------------------------- CircuitNet ----------------------------- */
 
@@ -69,7 +69,7 @@ using sim::electronics::transient::TransientStatus;
  * passed directly to MNA stamping functions.
  */
 struct CircuitNet {
-  sim::electronics::mna::NetID id; ///< Underlying net identifier (0 = ground).
+  sim::electronics::algorithms::mna::NetID id; ///< Underlying net identifier (0 = ground).
 };
 
 /* ----------------------------- Circuit ----------------------------- */
@@ -120,7 +120,7 @@ public:
    * @note NOT RT-safe: allocates string storage.
    */
   CircuitNet addNet(std::string_view name) {
-    sim::electronics::mna::NetID id = nextNetId_++;
+    sim::electronics::algorithms::mna::NetID id = nextNetId_++;
     if (id >= netNames_.size()) {
       netNames_.resize(id + 1);
     }
@@ -132,7 +132,7 @@ public:
    * @brief Get the ground net.
    * @return NetID 0 (always ground).
    */
-  [[nodiscard]] static constexpr sim::electronics::mna::NetID ground() noexcept { return 0; }
+  [[nodiscard]] static constexpr sim::electronics::algorithms::mna::NetID ground() noexcept { return 0; }
 
   /**
    * @brief Get the current net count (including ground).
@@ -145,7 +145,7 @@ public:
    * @param id Net ID to query.
    * @return Net name, or empty string if unnamed or out of range.
    */
-  [[nodiscard]] std::string_view netName(sim::electronics::mna::NetID id) const noexcept {
+  [[nodiscard]] std::string_view netName(sim::electronics::algorithms::mna::NetID id) const noexcept {
     if (id < netNames_.size()) {
       return netNames_[id];
     }
@@ -189,7 +189,7 @@ public:
    *
    * @note NOT RT-safe: may reallocate companion storage.
    */
-  std::size_t addCapacitor(sim::electronics::mna::NetID pos, sim::electronics::mna::NetID neg,
+  std::size_t addCapacitor(sim::electronics::algorithms::mna::NetID pos, sim::electronics::algorithms::mna::NetID neg,
                            double farads) {
     return companions_.addCapacitor(pos, neg, farads);
   }
@@ -203,7 +203,7 @@ public:
    *
    * @note NOT RT-safe: may reallocate companion storage.
    */
-  std::size_t addInductor(sim::electronics::mna::NetID pos, sim::electronics::mna::NetID neg,
+  std::size_t addInductor(sim::electronics::algorithms::mna::NetID pos, sim::electronics::algorithms::mna::NetID neg,
                           double henries) {
     return companions_.addInductor(pos, neg, henries);
   }
@@ -348,7 +348,7 @@ public:
   }
 
 private:
-  sim::electronics::mna::NetID nextNetId_ = 1; ///< Next available net ID (0 is ground).
+  sim::electronics::algorithms::mna::NetID nextNetId_ = 1; ///< Next available net ID (0 is ground).
   std::vector<std::string> netNames_;          ///< Optional net names for diagnostics.
   std::vector<StampFn> stamps_;                ///< Registered stamp functions.
   CompanionSet companions_;                    ///< Reactive element companions.
@@ -358,4 +358,4 @@ private:
 
 } // namespace sim::electronics::circuit
 
-#endif // APEX_SIM_ELECTRONICS_CIRCUIT_CIRCUIT_HPP
+#endif // APEX_CIRCUIT_HPP

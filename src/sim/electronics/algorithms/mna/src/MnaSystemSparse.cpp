@@ -9,7 +9,7 @@
 #include <cassert>
 #include <cstring>
 
-namespace sim::electronics::mna {
+namespace sim::electronics::algorithms::mna {
 
 /* ----------------------------- Constructor ----------------------------- */
 
@@ -560,4 +560,4 @@ void MnaSystemSparse::clearStamps() {
   // NOTE: factorized_ is NOT reset - cached LU factors remain valid
 }
 
-} // namespace sim::electronics::mna
+} // namespace sim::electronics::algorithms::mna

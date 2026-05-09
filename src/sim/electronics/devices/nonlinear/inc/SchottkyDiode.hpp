@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_SCHOTTKYDIODE_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_SCHOTTKYDIODE_HPP
+#ifndef APEX_SCHOTTKYDIODE_HPP
+#define APEX_SCHOTTKYDIODE_HPP
 /**
  * @file SchottkyDiode.hpp
  * @brief Schottky barrier diode model (metal-semiconductor junction).
@@ -31,8 +31,8 @@
 
 namespace sim::electronics::devices::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /**
  * @brief Schottky diode model parameters.
@@ -160,4 +160,4 @@ struct SchottkyDiode {
 
 } // namespace sim::electronics::devices::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_SCHOTTKYDIODE_HPP
+#endif // APEX_SCHOTTKYDIODE_HPP

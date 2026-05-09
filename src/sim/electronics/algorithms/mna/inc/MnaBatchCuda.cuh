@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_MNA_MNABATCH_CUDA_CUH
-#define APEX_SIM_ELECTRONICS_MNA_MNABATCH_CUDA_CUH
+#ifndef APEX_MNABATCHCUDA_CUH
+#define APEX_MNABATCHCUDA_CUH
 /**
  * @file MnaBatchCuda.cuh
  * @brief Custom CUDA kernels for batch MNA solving.
@@ -28,7 +28,7 @@
 
 #include <cstddef>
 
-namespace sim::electronics::mna::cuda {
+namespace sim::electronics::algorithms::mna::cuda {
 
 /* ----------------------------- Availability ----------------------------- */
 
@@ -212,6 +212,6 @@ bool solveBatchCustomF32(MnaBatchWorkspaceF32& ws, const float* As, float* bs, s
  */
 LaunchConfig getLaunchConfigF32(std::size_t dim, std::size_t batch) noexcept;
 
-} // namespace sim::electronics::mna::cuda
+} // namespace sim::electronics::algorithms::mna::cuda
 
-#endif // APEX_SIM_ELECTRONICS_MNA_MNABATCH_CUDA_CUH
+#endif // APEX_MNABATCHCUDA_CUH

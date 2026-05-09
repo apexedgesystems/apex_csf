@@ -30,11 +30,11 @@
 #define LOCAL_HAS_CUDA_RUNTIME 0
 #endif
 
-namespace cuda = sim::electronics::mna::cuda;
+namespace cuda = sim::electronics::algorithms::mna::cuda;
 
 /* ----------------------------- Test Fixture ----------------------------- */
 
-class MnaBatchCudaFixture : public ::testing::Test {
+class MnaBatchCudaTest : public ::testing::Test {
 protected:
   void SetUp() override {
     if (!::apex::compat::cuda::runtimeAvailable()) {
@@ -81,13 +81,13 @@ static void buildBatchKnownSystems(std::size_t dim, std::size_t batch, std::vect
 /* ----------------------------- Availability Tests ----------------------------- */
 
 /** @test batchAvailable returns consistent value */
-TEST(MnaBatchCudaTest, Availability) {
+TEST(MnaBatchCudaSupportTest, Availability) {
   bool avail = cuda::batchAvailable();
   EXPECT_EQ(avail, cuda::batchAvailable());
 }
 
 /** @test isSupportedDim returns true for 8, 16, 32, 64 */
-TEST(MnaBatchCudaTest, SupportedDimensions) {
+TEST(MnaBatchCudaSupportTest, SupportedDimensions) {
   EXPECT_FALSE(cuda::isSupportedDim(4));
   EXPECT_TRUE(cuda::isSupportedDim(8));
   EXPECT_FALSE(cuda::isSupportedDim(12));
@@ -102,7 +102,7 @@ TEST(MnaBatchCudaTest, SupportedDimensions) {
 /* ----------------------------- Workspace Tests ----------------------------- */
 
 /** @test Workspace prepare and release */
-TEST_F(MnaBatchCudaFixture, WorkspacePrepareRelease) {
+TEST_F(MnaBatchCudaTest, WorkspacePrepareRelease) {
   cuda::MnaBatchWorkspace ws;
   EXPECT_FALSE(ws.initialized);
 
@@ -117,7 +117,7 @@ TEST_F(MnaBatchCudaFixture, WorkspacePrepareRelease) {
 }
 
 /** @test Workspace reallocation */
-TEST_F(MnaBatchCudaFixture, WorkspaceReallocation) {
+TEST_F(MnaBatchCudaTest, WorkspaceReallocation) {
   cuda::MnaBatchWorkspace ws;
 
   EXPECT_TRUE(ws.prepare(16, 100));
@@ -133,7 +133,7 @@ TEST_F(MnaBatchCudaFixture, WorkspaceReallocation) {
 /* ----------------------------- Correctness Tests ----------------------------- */
 
 /** @test 8x8 batch solve correctness */
-TEST_F(MnaBatchCudaFixture, Solve8x8_Correctness) {
+TEST_F(MnaBatchCudaTest, Solve8x8_Correctness) {
   constexpr std::size_t DIM = 8;
   constexpr std::size_t BATCH = 200;
 
@@ -156,7 +156,7 @@ TEST_F(MnaBatchCudaFixture, Solve8x8_Correctness) {
 }
 
 /** @test 16x16 batch solve correctness */
-TEST_F(MnaBatchCudaFixture, Solve16x16_Correctness) {
+TEST_F(MnaBatchCudaTest, Solve16x16_Correctness) {
   constexpr std::size_t DIM = 16;
   constexpr std::size_t BATCH = 100;
 
@@ -179,7 +179,7 @@ TEST_F(MnaBatchCudaFixture, Solve16x16_Correctness) {
 }
 
 /** @test 32x32 batch solve correctness */
-TEST_F(MnaBatchCudaFixture, Solve32x32_Correctness) {
+TEST_F(MnaBatchCudaTest, Solve32x32_Correctness) {
   constexpr std::size_t DIM = 32;
   constexpr std::size_t BATCH = 50;
 
@@ -202,7 +202,7 @@ TEST_F(MnaBatchCudaFixture, Solve32x32_Correctness) {
 }
 
 /** @test 64x64 batch solve correctness */
-TEST_F(MnaBatchCudaFixture, Solve64x64_Correctness) {
+TEST_F(MnaBatchCudaTest, Solve64x64_Correctness) {
   constexpr std::size_t DIM = 64;
   constexpr std::size_t BATCH = 20;
 
@@ -227,7 +227,7 @@ TEST_F(MnaBatchCudaFixture, Solve64x64_Correctness) {
 /* ----------------------------- Launch Config Tests ----------------------------- */
 
 /** @test getLaunchConfig returns valid config */
-TEST_F(MnaBatchCudaFixture, LaunchConfig) {
+TEST_F(MnaBatchCudaTest, LaunchConfig) {
   auto cfg8 = cuda::getLaunchConfig(8, 1000);
   EXPECT_GT(cfg8.gridX, 0u);
   EXPECT_GT(cfg8.blockX, 0u);
@@ -284,7 +284,7 @@ static void buildBatchKnownSystemsF32(std::size_t dim, std::size_t batch, std::v
 }
 
 /** @test FP32 workspace prepare and release */
-TEST_F(MnaBatchCudaFixture, WorkspaceF32_PrepareRelease) {
+TEST_F(MnaBatchCudaTest, WorkspaceF32_PrepareRelease) {
   cuda::MnaBatchWorkspaceF32 ws;
   EXPECT_FALSE(ws.initialized);
 
@@ -299,7 +299,7 @@ TEST_F(MnaBatchCudaFixture, WorkspaceF32_PrepareRelease) {
 }
 
 /** @test 8x8 FP32 batch solve correctness */
-TEST_F(MnaBatchCudaFixture, Solve8x8F32_Correctness) {
+TEST_F(MnaBatchCudaTest, Solve8x8F32_Correctness) {
   constexpr std::size_t DIM = 8;
   constexpr std::size_t BATCH = 200;
 
@@ -323,7 +323,7 @@ TEST_F(MnaBatchCudaFixture, Solve8x8F32_Correctness) {
 }
 
 /** @test 16x16 FP32 batch solve correctness */
-TEST_F(MnaBatchCudaFixture, Solve16x16F32_Correctness) {
+TEST_F(MnaBatchCudaTest, Solve16x16F32_Correctness) {
   constexpr std::size_t DIM = 16;
   constexpr std::size_t BATCH = 100;
 
@@ -346,7 +346,7 @@ TEST_F(MnaBatchCudaFixture, Solve16x16F32_Correctness) {
 }
 
 /** @test 32x32 FP32 batch solve correctness */
-TEST_F(MnaBatchCudaFixture, Solve32x32F32_Correctness) {
+TEST_F(MnaBatchCudaTest, Solve32x32F32_Correctness) {
   constexpr std::size_t DIM = 32;
   constexpr std::size_t BATCH = 50;
 
@@ -369,7 +369,7 @@ TEST_F(MnaBatchCudaFixture, Solve32x32F32_Correctness) {
 }
 
 /** @test 64x64 FP32 batch solve correctness */
-TEST_F(MnaBatchCudaFixture, Solve64x64F32_Correctness) {
+TEST_F(MnaBatchCudaTest, Solve64x64F32_Correctness) {
   constexpr std::size_t DIM = 64;
   constexpr std::size_t BATCH = 20;
 
@@ -392,7 +392,7 @@ TEST_F(MnaBatchCudaFixture, Solve64x64F32_Correctness) {
 }
 
 /** @test getLaunchConfigF32 returns valid config */
-TEST_F(MnaBatchCudaFixture, LaunchConfigF32) {
+TEST_F(MnaBatchCudaTest, LaunchConfigF32) {
   auto cfg8 = cuda::getLaunchConfigF32(8, 1000);
   EXPECT_GT(cfg8.gridX, 0u);
   EXPECT_GT(cfg8.blockX, 0u);

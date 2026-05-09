@@ -1,5 +1,5 @@
 # ==============================================================================
-# Unit Tests: sim_electronics_mna
+# Unit Tests: sim_electronics_algorithms_mna
 #
 # Dense (LAPACK) and sparse (KLU) MNA solver verification. Tests cover
 # voltage dividers, current injection, parallel resistors, voltage sources,
@@ -26,7 +26,7 @@ apex_add_gtest(
   SOURCES
   ${UNIT_TEST_SOURCES}
   LINK
-  sim_electronics_mna
+  sim_electronics_algorithms_mna
   LABELS
   sim
   electronics
@@ -37,7 +37,7 @@ apex_add_gtest(
 # CUDA Tests (requires CUDA toolkit)
 # ------------------------------------------------------------------------------
 
-if (TARGET sim_electronics_mna_cuda AND CMAKE_CUDA_COMPILER)
+if (TARGET sim_electronics_algorithms_mna_cuda AND CMAKE_CUDA_COMPILER)
   set(CUDA_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/MnaBatchCuda_uTest.cu")
 
   apex_add_gtest(
@@ -46,7 +46,7 @@ if (TARGET sim_electronics_mna_cuda AND CMAKE_CUDA_COMPILER)
     SOURCES
     ${CUDA_TEST_SOURCES}
     LINK
-    sim_electronics_mna_cuda
+    sim_electronics_algorithms_mna_cuda
     LABELS
     sim
     electronics

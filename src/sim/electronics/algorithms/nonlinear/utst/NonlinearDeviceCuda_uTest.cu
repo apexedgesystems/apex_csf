@@ -15,9 +15,9 @@
 #include <cmath>
 #include <vector>
 
-using sim::electronics::nonlinear::cuda::DeviceParams;
-using sim::electronics::nonlinear::cuda::DeviceType;
-using sim::electronics::nonlinear::cuda::evaluateDevicesCuda;
+using sim::electronics::algorithms::nonlinear::cuda::DeviceParams;
+using sim::electronics::algorithms::nonlinear::cuda::DeviceType;
+using sim::electronics::algorithms::nonlinear::cuda::evaluateDevicesCuda;
 
 /* ----------------------------- Helper Functions ----------------------------- */
 
@@ -36,7 +36,7 @@ using sim::electronics::nonlinear::cuda::evaluateDevicesCuda;
 /* ----------------------------- Diode Tests ----------------------------- */
 
 /** @test Evaluate single diode on GPU. */
-TEST(NonlinearDeviceCuda, SingleDiodeEvaluation) {
+TEST(NonlinearDeviceCudaTest, SingleDiodeEvaluation) {
   // Device: Diode with Is=1e-12, Vt=0.026
   DeviceParams dev;
   dev.type = DeviceType::DIODE;
@@ -93,7 +93,7 @@ TEST(NonlinearDeviceCuda, SingleDiodeEvaluation) {
 }
 
 /** @test Evaluate multiple diodes in parallel. */
-TEST(NonlinearDeviceCuda, MultipleDiodesParallel) {
+TEST(NonlinearDeviceCudaTest, MultipleDiodesParallel) {
   constexpr int N = 1000; // 1000 diodes
 
   // Create device array
@@ -165,7 +165,7 @@ TEST(NonlinearDeviceCuda, MultipleDiodesParallel) {
 /* ----------------------------- Nonlinear Resistor Tests ----------------------------- */
 
 /** @test Evaluate nonlinear resistor on GPU. */
-TEST(NonlinearDeviceCuda, NonlinearResistorEvaluation) {
+TEST(NonlinearDeviceCudaTest, NonlinearResistorEvaluation) {
   // Device: Nonlinear resistor with G0=0.01, alpha=1e-4
   DeviceParams dev;
   dev.type = DeviceType::NONLINEAR_RESISTOR;
@@ -223,7 +223,7 @@ TEST(NonlinearDeviceCuda, NonlinearResistorEvaluation) {
 /* ----------------------------- Performance Tests ----------------------------- */
 
 /** @test Benchmark large-scale parallel evaluation. */
-TEST(NonlinearDeviceCuda, LargeScalePerformance) {
+TEST(NonlinearDeviceCudaTest, LargeScalePerformance) {
   constexpr int N = 10000; // 10,000 devices
 
   // Create device array (mix of diodes and nonlinear resistors)

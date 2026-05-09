@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_MNA_TYPES_HPP
-#define APEX_SIM_ELECTRONICS_MNA_TYPES_HPP
+#ifndef APEX_TYPES_HPP
+#define APEX_TYPES_HPP
 /**
  * @file Types.hpp
  * @brief Core type aliases for circuit simulation (InstanceID, NetID).
@@ -7,7 +7,7 @@
 
 #include <cstdint>
 
-namespace sim::electronics::mna {
+namespace sim::electronics::algorithms::mna {
 
 /**
  * @brief Unique identifier for a placed component instance.
@@ -23,6 +23,6 @@ using InstanceID = std::uint32_t;
  */
 using NetID = std::uint32_t;
 
-} // namespace sim::electronics::mna
+} // namespace sim::electronics::algorithms::mna
 
-#endif // APEX_SIM_ELECTRONICS_MNA_TYPES_HPP
+#endif // APEX_TYPES_HPP

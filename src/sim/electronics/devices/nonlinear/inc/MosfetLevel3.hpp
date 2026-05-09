@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETLEVEL3_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETLEVEL3_HPP
+#ifndef APEX_MOSFETLEVEL3_HPP
+#define APEX_MOSFETLEVEL3_HPP
 /**
  * @file MosfetLevel3.hpp
  * @brief SPICE Level 3 MOSFET model with advanced short-channel effects.
@@ -31,8 +31,8 @@
 
 namespace sim::electronics::devices::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /**
  * @brief SPICE Level 3 MOSFET parameters.
@@ -297,4 +297,4 @@ struct MosfetLevel3 {
 
 } // namespace sim::electronics::devices::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETLEVEL3_HPP
+#endif // APEX_MOSFETLEVEL3_HPP

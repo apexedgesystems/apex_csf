@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_CMOSNOR_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_CMOSNOR_HPP
+#ifndef APEX_CMOSNOR_HPP
+#define APEX_CMOSNOR_HPP
 /**
  * @file CmosNor.hpp
  * @brief CMOS NOR gate built from 4 MOSFETs (2 PMOS series, 2 NMOS parallel).
@@ -19,10 +19,10 @@
 namespace sim::electronics::devices::composite {
 
 using descriptors::MosfetDescriptor;
-using mna::MnaSystem;
-using mna::NetID;
-using nonlinear::MosfetLevel1;
-using nonlinear::MosfetLevel1Params;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
+using devices::nonlinear::MosfetLevel1;
+using devices::nonlinear::MosfetLevel1Params;
 
 /* -------------------------------- CmosNor ------------------------------- */
 
@@ -101,4 +101,4 @@ struct CmosNor {
 
 } // namespace sim::electronics::devices::composite
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_CMOSNOR_HPP
+#endif // APEX_CMOSNOR_HPP

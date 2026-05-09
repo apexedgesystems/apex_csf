@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_BJTDESCRIPTOR_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_BJTDESCRIPTOR_HPP
+#ifndef APEX_BJTDESCRIPTOR_HPP
+#define APEX_BJTDESCRIPTOR_HPP
 /**
  * @file BjtDescriptor.hpp
  * @brief BJT topology descriptor (connectivity only, no physics).
@@ -15,7 +15,7 @@
 
 namespace sim::electronics::devices::descriptors {
 
-using mna::NetID;
+using algorithms::mna::NetID;
 
 /**
  * @brief BJT topology descriptor.
@@ -56,4 +56,4 @@ struct BjtDescriptor {
 
 } // namespace sim::electronics::devices::descriptors
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_BJTDESCRIPTOR_HPP
+#endif // APEX_BJTDESCRIPTOR_HPP

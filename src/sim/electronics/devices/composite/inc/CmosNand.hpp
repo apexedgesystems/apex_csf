@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_CMOSNAND_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_CMOSNAND_HPP
+#ifndef APEX_CMOSNAND_HPP
+#define APEX_CMOSNAND_HPP
 /**
  * @file CmosNand.hpp
  * @brief CMOS NAND gate built from 4 MOSFETs (2 PMOS parallel, 2 NMOS series).
@@ -19,10 +19,10 @@
 namespace sim::electronics::devices::composite {
 
 using descriptors::MosfetDescriptor;
-using mna::MnaSystem;
-using mna::NetID;
-using nonlinear::MosfetLevel1;
-using nonlinear::MosfetLevel1Params;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
+using devices::nonlinear::MosfetLevel1;
+using devices::nonlinear::MosfetLevel1Params;
 
 /* ------------------------------- CmosNand ------------------------------- */
 
@@ -101,4 +101,4 @@ struct CmosNand {
 
 } // namespace sim::electronics::devices::composite
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_CMOSNAND_HPP
+#endif // APEX_CMOSNAND_HPP

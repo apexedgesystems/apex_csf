@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_ZENERDIODE_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_ZENERDIODE_HPP
+#ifndef APEX_ZENERDIODE_HPP
+#define APEX_ZENERDIODE_HPP
 /**
  * @file ZenerDiode.hpp
  * @brief Zener diode model with breakdown characteristics.
@@ -26,8 +26,8 @@
 
 namespace sim::electronics::devices::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /**
  * @brief Zener diode model parameters.
@@ -181,4 +181,4 @@ struct ZenerDiode {
 
 } // namespace sim::electronics::devices::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_ZENERDIODE_HPP
+#endif // APEX_ZENERDIODE_HPP

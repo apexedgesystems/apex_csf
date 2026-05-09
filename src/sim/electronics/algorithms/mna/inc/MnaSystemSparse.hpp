@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_MNA_MNASYSTEMSPARSE_HPP
-#define APEX_SIM_ELECTRONICS_MNA_MNASYSTEMSPARSE_HPP
+#ifndef APEX_MNASYSTEMSPARSE_HPP
+#define APEX_MNASYSTEMSPARSE_HPP
 /**
  * @file MnaSystemSparse.hpp
  * @brief Sparse MNA solver using KLU (SuiteSparse).
@@ -30,7 +30,7 @@ extern "C" {
 #include <string>
 #include <vector>
 
-namespace sim::electronics::mna {
+namespace sim::electronics::algorithms::mna {
 
 /**
  * @brief Result from sparse MNA solve operation.
@@ -381,6 +381,6 @@ private:
   void buildRhsVector();
 };
 
-} // namespace sim::electronics::mna
+} // namespace sim::electronics::algorithms::mna
 
-#endif // APEX_SIM_ELECTRONICS_MNA_MNASYSTEMSPARSE_HPP
+#endif // APEX_MNASYSTEMSPARSE_HPP

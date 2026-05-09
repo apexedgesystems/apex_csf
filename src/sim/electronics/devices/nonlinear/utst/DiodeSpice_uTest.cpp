@@ -19,7 +19,7 @@ using sim::electronics::devices::nonlinear::NetID;
 /* ----------------------------- Default Construction ----------------------------- */
 
 /** @test */
-TEST(DiodeSpice, DefaultParameters) {
+TEST(DiodeSpiceTest, DefaultParameters) {
   DiodeSpiceParams params;
   EXPECT_DOUBLE_EQ(params.Is, 1e-14);
   EXPECT_DOUBLE_EQ(params.n, 1.0);
@@ -31,7 +31,7 @@ TEST(DiodeSpice, DefaultParameters) {
 }
 
 /** @test */
-TEST(DiodeSpice, CustomParameters) {
+TEST(DiodeSpiceTest, CustomParameters) {
   DiodeSpiceParams params{.Is = 1e-15, .n = 1.2, .Vt = 0.025, .Rs = 2.0, .Cj0 = 10e-12};
   EXPECT_DOUBLE_EQ(params.Is, 1e-15);
   EXPECT_DOUBLE_EQ(params.n, 1.2);
@@ -43,252 +43,252 @@ TEST(DiodeSpice, CustomParameters) {
 /* ----------------------------- Current Tests ----------------------------- */
 
 /** @test */
-TEST(DiodeSpice, CurrentNoSeriesResistance) {
+TEST(DiodeSpiceTest, CurrentNoSeriesResistance) {
   DiodeSpiceParams params{.Rs = 0.0};
-  const double v = 0.7;
-  const double i = DiodeSpice::current(v, params);
+  const double V = 0.7;
+  const double I = DiodeSpice::current(V, params);
 
   // Should match DiodeShockley when Rs=0
-  const double expected = params.Is * (std::exp(v / (params.n * params.Vt)) - 1.0);
-  EXPECT_NEAR(i, expected, std::abs(expected) * 1e-10);
+  const double EXPECTED = params.Is * (std::exp(V / (params.n * params.Vt)) - 1.0);
+  EXPECT_NEAR(I, EXPECTED, std::abs(EXPECTED) * 1e-10);
 }
 
 /** @test */
-TEST(DiodeSpice, CurrentWithSeriesResistance) {
+TEST(DiodeSpiceTest, CurrentWithSeriesResistance) {
   DiodeSpiceParams params{.Is = 1e-14, .Rs = 1.0};
-  const double v = 0.7;
-  const double i = DiodeSpice::current(v, params);
+  const double V = 0.7;
+  const double I = DiodeSpice::current(V, params);
 
   // With series R, current should be lower than ideal
-  const double iIdeal = params.Is * (std::exp(v / (params.n * params.Vt)) - 1.0);
-  EXPECT_LT(i, iIdeal);
-  EXPECT_GT(i, 0.0);
+  const double I_IDEAL = params.Is * (std::exp(V / (params.n * params.Vt)) - 1.0);
+  EXPECT_LT(I, I_IDEAL);
+  EXPECT_GT(I, 0.0);
 }
 
 /** @test */
-TEST(DiodeSpice, CurrentForwardBias) {
+TEST(DiodeSpiceTest, CurrentForwardBias) {
   DiodeSpiceParams params{.Rs = 0.5};
-  const double v = 0.7;
-  const double i = DiodeSpice::current(v, params);
+  const double V = 0.7;
+  const double I = DiodeSpice::current(V, params);
 
   // Should be in mA range for silicon at 0.7V
-  EXPECT_GT(i, 1e-4);
-  EXPECT_LT(i, 1.0);
+  EXPECT_GT(I, 1e-4);
+  EXPECT_LT(I, 1.0);
 }
 
 /** @test */
-TEST(DiodeSpice, CurrentReverseBias) {
+TEST(DiodeSpiceTest, CurrentReverseBias) {
   DiodeSpiceParams params{.Rs = 0.5};
-  const double v = -2.0;
-  const double i = DiodeSpice::current(v, params);
+  const double V = -2.0;
+  const double I = DiodeSpice::current(V, params);
 
   // Should be small negative (leakage current)
-  EXPECT_LT(i, 0.0);
-  EXPECT_GT(i, -params.Is * 1.1);
+  EXPECT_LT(I, 0.0);
+  EXPECT_GT(I, -params.Is * 1.1);
 }
 
 /** @test */
-TEST(DiodeSpice, CurrentZeroVoltage) {
+TEST(DiodeSpiceTest, CurrentZeroVoltage) {
   DiodeSpiceParams params{.Rs = 0.5};
-  const double v = 0.0;
-  const double i = DiodeSpice::current(v, params);
+  const double V = 0.0;
+  const double I = DiodeSpice::current(V, params);
 
-  EXPECT_NEAR(i, 0.0, params.Is);
+  EXPECT_NEAR(I, 0.0, params.Is);
 }
 
 /* ----------------------------- Conductance Tests ----------------------------- */
 
 /** @test */
-TEST(DiodeSpice, ConductanceNoSeriesResistance) {
+TEST(DiodeSpiceTest, ConductanceNoSeriesResistance) {
   DiodeSpiceParams params{.Rs = 0.0};
-  const double v = 0.7;
-  const double g = DiodeSpice::conductance(v, params);
+  const double V = 0.7;
+  const double G = DiodeSpice::conductance(V, params);
 
   // Should match ideal diode conductance when Rs=0
-  const double expected =
-      (params.Is / (params.n * params.Vt)) * std::exp(v / (params.n * params.Vt));
-  EXPECT_NEAR(g, expected, std::abs(expected) * 1e-10);
+  const double EXPECTED =
+      (params.Is / (params.n * params.Vt)) * std::exp(V / (params.n * params.Vt));
+  EXPECT_NEAR(G, EXPECTED, std::abs(EXPECTED) * 1e-10);
 }
 
 /** @test */
-TEST(DiodeSpice, ConductanceWithSeriesResistance) {
+TEST(DiodeSpiceTest, ConductanceWithSeriesResistance) {
   DiodeSpiceParams params{.Is = 1e-14, .Rs = 1.0};
-  const double v = 0.7;
-  const double g = DiodeSpice::conductance(v, params);
+  const double V = 0.7;
+  const double G = DiodeSpice::conductance(V, params);
 
   // With series R, conductance should be reduced: g = gj/(1 + gj*Rs)
-  const double gIdeal = (params.Is / (params.n * params.Vt)) * std::exp(v / (params.n * params.Vt));
-  EXPECT_LT(g, gIdeal);
-  EXPECT_GT(g, 0.0);
+  const double G_IDEAL = (params.Is / (params.n * params.Vt)) * std::exp(V / (params.n * params.Vt));
+  EXPECT_LT(G, G_IDEAL);
+  EXPECT_GT(G, 0.0);
 }
 
 /** @test */
-TEST(DiodeSpice, ConductanceForwardBias) {
+TEST(DiodeSpiceTest, ConductanceForwardBias) {
   DiodeSpiceParams params{.Rs = 0.5};
-  const double v = 0.7;
-  const double g = DiodeSpice::conductance(v, params);
+  const double V = 0.7;
+  const double G = DiodeSpice::conductance(V, params);
 
-  EXPECT_GT(g, 1e-3); // Should be significant in forward bias
+  EXPECT_GT(G, 1e-3); // Should be significant in forward bias
 }
 
 /** @test */
-TEST(DiodeSpice, ConductanceReverseBias) {
+TEST(DiodeSpiceTest, ConductanceReverseBias) {
   DiodeSpiceParams params{.Rs = 0.5};
-  const double v = -2.0;
-  const double g = DiodeSpice::conductance(v, params);
+  const double V = -2.0;
+  const double G = DiodeSpice::conductance(V, params);
 
-  EXPECT_GT(g, 0.0);
-  EXPECT_LT(g, 1e-9); // Very small in reverse bias
+  EXPECT_GT(G, 0.0);
+  EXPECT_LT(G, 1e-9); // Very small in reverse bias
 }
 
 /* ----------------------------- Numerical Jacobian ----------------------------- */
 
 /** @test */
-TEST(DiodeSpice, ConductanceNumericalDerivativeNoRs) {
+TEST(DiodeSpiceTest, ConductanceNumericalDerivativeNoRs) {
   DiodeSpiceParams params{.Rs = 0.0};
-  const double v = 0.7;
-  const double dv = 1e-8;
+  const double V = 0.7;
+  const double DV = 1e-8;
 
-  const double gAnalytical = DiodeSpice::conductance(v, params);
+  const double G_ANALYTICAL = DiodeSpice::conductance(V, params);
 
-  const double i1 = DiodeSpice::current(v - dv, params);
-  const double i2 = DiodeSpice::current(v + dv, params);
-  const double gNumerical = (i2 - i1) / (2.0 * dv);
+  const double I1 = DiodeSpice::current(V - DV, params);
+  const double I2 = DiodeSpice::current(V + DV, params);
+  const double G_NUMERICAL = (I2 - I1) / (2.0 * DV);
 
-  EXPECT_NEAR(gAnalytical, gNumerical, std::abs(gNumerical) * 0.01);
+  EXPECT_NEAR(G_ANALYTICAL, G_NUMERICAL, std::abs(G_NUMERICAL) * 0.01);
 }
 
 /** @test */
-TEST(DiodeSpice, ConductanceNumericalDerivativeWithRs) {
+TEST(DiodeSpiceTest, ConductanceNumericalDerivativeWithRs) {
   DiodeSpiceParams params{.Rs = 1.0};
-  const double v = 0.7;
-  const double dv = 1e-8;
+  const double V = 0.7;
+  const double DV = 1e-8;
 
-  const double gAnalytical = DiodeSpice::conductance(v, params);
+  const double G_ANALYTICAL = DiodeSpice::conductance(V, params);
 
-  const double i1 = DiodeSpice::current(v - dv, params);
-  const double i2 = DiodeSpice::current(v + dv, params);
-  const double gNumerical = (i2 - i1) / (2.0 * dv);
+  const double I1 = DiodeSpice::current(V - DV, params);
+  const double I2 = DiodeSpice::current(V + DV, params);
+  const double G_NUMERICAL = (I2 - I1) / (2.0 * DV);
 
-  EXPECT_NEAR(gAnalytical, gNumerical, std::abs(gNumerical) * 0.01);
+  EXPECT_NEAR(G_ANALYTICAL, G_NUMERICAL, std::abs(G_NUMERICAL) * 0.01);
 }
 
 /* ----------------------------- Stamping ----------------------------- */
 
 /** @test */
-TEST(DiodeSpice, StampForwardBias) {
+TEST(DiodeSpiceTest, StampForwardBias) {
   MnaSystem mna(3);
   DiodeSpiceParams params{.Rs = 0.5};
-  const NetID anode = 1;
-  const NetID cathode = 2;
-  const double v = 0.7;
+  const NetID ANODE = 1;
+  const NetID CATHODE = 2;
+  const double V = 0.7;
 
   // Should stamp linearized conductance and current source
-  DiodeSpice::stamp(mna, anode, cathode, v, params);
+  DiodeSpice::stamp(mna, ANODE, CATHODE, V, params);
 }
 
 /** @test */
-TEST(DiodeSpice, StampReverseBias) {
+TEST(DiodeSpiceTest, StampReverseBias) {
   MnaSystem mna(3);
   DiodeSpiceParams params{.Rs = 0.5};
-  const NetID anode = 1;
-  const NetID cathode = 2;
-  const double v = -2.0;
+  const NetID ANODE = 1;
+  const NetID CATHODE = 2;
+  const double V = -2.0;
 
   // Should stamp small conductance (reverse bias)
-  DiodeSpice::stamp(mna, anode, cathode, v, params);
+  DiodeSpice::stamp(mna, ANODE, CATHODE, V, params);
 }
 
 /* ----------------------------- Junction Capacitance ----------------------------- */
 
 /** @test */
-TEST(DiodeSpice, JunctionCapacitanceZeroBias) {
+TEST(DiodeSpiceTest, JunctionCapacitanceZeroBias) {
   DiodeSpiceParams params{.Cj0 = 10e-12, .Vj = 0.7, .M = 0.5};
-  const double v = 0.0;
-  const double c = DiodeSpice::junctionCapacitance(v, params);
+  const double V = 0.0;
+  const double C = DiodeSpice::junctionCapacitance(V, params);
 
   // At zero bias, C = Cj0
-  EXPECT_DOUBLE_EQ(c, params.Cj0);
+  EXPECT_DOUBLE_EQ(C, params.Cj0);
 }
 
 /** @test */
-TEST(DiodeSpice, JunctionCapacitanceReverseBias) {
+TEST(DiodeSpiceTest, JunctionCapacitanceReverseBias) {
   DiodeSpiceParams params{.Cj0 = 10e-12, .Vj = 0.7, .M = 0.5};
-  const double v = -1.0;
-  const double c = DiodeSpice::junctionCapacitance(v, params);
+  const double V = -1.0;
+  const double C = DiodeSpice::junctionCapacitance(V, params);
 
   // Reverse bias: C = Cj0 / (1 - V/Vj)^M -> should be less than Cj0
-  EXPECT_LT(c, params.Cj0);
-  EXPECT_GT(c, 0.0);
+  EXPECT_LT(C, params.Cj0);
+  EXPECT_GT(C, 0.0);
 }
 
 /** @test */
-TEST(DiodeSpice, JunctionCapacitanceForwardBias) {
+TEST(DiodeSpiceTest, JunctionCapacitanceForwardBias) {
   DiodeSpiceParams params{.Cj0 = 10e-12, .Vj = 0.7, .M = 0.5};
-  const double v = 0.5;
-  const double c = DiodeSpice::junctionCapacitance(v, params);
+  const double V = 0.5;
+  const double C = DiodeSpice::junctionCapacitance(V, params);
 
   // Forward bias: C increases (capacitance higher)
-  EXPECT_GT(c, params.Cj0);
+  EXPECT_GT(C, params.Cj0);
 }
 
 /** @test */
-TEST(DiodeSpice, JunctionCapacitanceGradingCoefficient) {
+TEST(DiodeSpiceTest, JunctionCapacitanceGradingCoefficient) {
   DiodeSpiceParams abrupt{.Cj0 = 10e-12, .Vj = 0.7, .M = 0.33}; // Abrupt junction
   DiodeSpiceParams linear{.Cj0 = 10e-12, .Vj = 0.7, .M = 0.5};  // Linear junction
-  const double v = -1.0;
+  const double V = -1.0;
 
-  const double cAbrupt = DiodeSpice::junctionCapacitance(v, abrupt);
-  const double cLinear = DiodeSpice::junctionCapacitance(v, linear);
+  const double C_ABRUPT = DiodeSpice::junctionCapacitance(V, abrupt);
+  const double C_LINEAR = DiodeSpice::junctionCapacitance(V, linear);
 
   // Different grading coefficients give different capacitances
-  EXPECT_NE(cAbrupt, cLinear);
+  EXPECT_NE(C_ABRUPT, C_LINEAR);
 }
 
 /** @test */
-TEST(DiodeSpice, JunctionCapacitanceNoCj0) {
+TEST(DiodeSpiceTest, JunctionCapacitanceNoCj0) {
   DiodeSpiceParams params{.Cj0 = 0.0};
-  const double v = 0.5;
-  const double c = DiodeSpice::junctionCapacitance(v, params);
+  const double V = 0.5;
+  const double C = DiodeSpice::junctionCapacitance(V, params);
 
   // No junction capacitance specified
-  EXPECT_DOUBLE_EQ(c, 0.0);
+  EXPECT_DOUBLE_EQ(C, 0.0);
 }
 
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test */
-TEST(DiodeSpice, SeriesResistanceReducesCurrent) {
+TEST(DiodeSpiceTest, SeriesResistanceReducesCurrent) {
   DiodeSpiceParams noRs{.Rs = 0.0};
   DiodeSpiceParams withRs{.Rs = 2.0};
-  const double v = 0.7;
+  const double V = 0.7;
 
-  const double iNoRs = DiodeSpice::current(v, noRs);
-  const double iWithRs = DiodeSpice::current(v, withRs);
+  const double I_NO_RS = DiodeSpice::current(V, noRs);
+  const double I_WITH_RS = DiodeSpice::current(V, withRs);
 
   // Series resistance should reduce current
-  EXPECT_GT(iNoRs, iWithRs);
+  EXPECT_GT(I_NO_RS, I_WITH_RS);
 }
 
 /** @test */
-TEST(DiodeSpice, SeriesResistanceReducesConductance) {
+TEST(DiodeSpiceTest, SeriesResistanceReducesConductance) {
   DiodeSpiceParams noRs{.Rs = 0.0};
   DiodeSpiceParams withRs{.Rs = 2.0};
-  const double v = 0.7;
+  const double V = 0.7;
 
-  const double gNoRs = DiodeSpice::conductance(v, noRs);
-  const double gWithRs = DiodeSpice::conductance(v, withRs);
+  const double G_NO_RS = DiodeSpice::conductance(V, noRs);
+  const double G_WITH_RS = DiodeSpice::conductance(V, withRs);
 
   // Series resistance should reduce conductance
-  EXPECT_GT(gNoRs, gWithRs);
+  EXPECT_GT(G_NO_RS, G_WITH_RS);
 }
 
 /** @test */
-TEST(DiodeSpice, HighSeriesResistanceLimitsCurrent) {
+TEST(DiodeSpiceTest, HighSeriesResistanceLimitsCurrent) {
   DiodeSpiceParams params{.Is = 1e-14, .Rs = 100.0}; // Very high Rs
-  const double v = 5.0;                              // High forward voltage
-  const double i = DiodeSpice::current(v, params);
+  const double V = 5.0;                              // High forward voltage
+  const double I = DiodeSpice::current(V, params);
 
   // With high Rs, current is limited even at high voltage
-  EXPECT_LT(i, 0.1); // Less than 100mA
+  EXPECT_LT(I, 0.1); // Less than 100mA
 }

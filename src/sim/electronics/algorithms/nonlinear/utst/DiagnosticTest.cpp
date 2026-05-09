@@ -8,12 +8,12 @@
 #include <gtest/gtest.h>
 #include <iostream>
 
-using sim::electronics::mna::MnaSystem;
-using sim::electronics::mna::NetID;
-using sim::electronics::nonlinear::NewtonRaphsonSolver;
-using sim::electronics::nonlinear::NonlinearConfig;
-using sim::electronics::nonlinear::NonlinearDevice;
-using sim::electronics::nonlinear::NonlinearResult;
+using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::NetID;
+using sim::electronics::algorithms::nonlinear::NewtonRaphsonSolver;
+using sim::electronics::algorithms::nonlinear::NonlinearConfig;
+using sim::electronics::algorithms::nonlinear::NonlinearDevice;
+using sim::electronics::algorithms::nonlinear::NonlinearResult;
 
 /* ----------------------------- File Helpers ----------------------------- */
 

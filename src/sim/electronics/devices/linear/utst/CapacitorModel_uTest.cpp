@@ -19,20 +19,20 @@ constexpr double PI = 3.141592653589793;
 /* ----------------------------- Reactance Tests ----------------------------- */
 
 /** @test Reactance calculation (Xc = 1/(2*pi*f*C)). */
-TEST(CapacitorModel, Reactance) {
+TEST(CapacitorModelTest, Reactance) {
   constexpr double C = 1e-6;   // 1 uF
-  constexpr double f = 1000.0; // 1 kHz
+  constexpr double F = 1000.0; // 1 kHz
 
-  double xc = CapacitorModel::reactance(C, f);
+  double xc = CapacitorModel::reactance(C, F);
 
   // Xc = 1 / (2 * pi * 1000 * 1e-6) ~ 159.15  ohm
-  double expected = 1.0 / (2.0 * PI * f * C);
+  double expected = 1.0 / (2.0 * PI * F * C);
   EXPECT_NEAR(xc, expected, TOLERANCE);
   EXPECT_NEAR(xc, 159.15, 0.01); // Approximate value
 }
 
 /** @test Reactance at different frequencies. */
-TEST(CapacitorModel, ReactanceVsFrequency) {
+TEST(CapacitorModelTest, ReactanceVsFrequency) {
   constexpr double C = 100e-9; // 100 nF
 
   // At 1 kHz
@@ -45,12 +45,12 @@ TEST(CapacitorModel, ReactanceVsFrequency) {
 }
 
 /** @test Impedance equals reactance for ideal capacitor. */
-TEST(CapacitorModel, ImpedanceEqualsReactance) {
+TEST(CapacitorModelTest, ImpedanceEqualsReactance) {
   constexpr double C = 1e-6;
-  constexpr double f = 1000.0;
+  constexpr double F = 1000.0;
 
-  double xc = CapacitorModel::reactance(C, f);
-  double z = CapacitorModel::impedance(C, f);
+  double xc = CapacitorModel::reactance(C, F);
+  double z = CapacitorModel::impedance(C, F);
 
   EXPECT_NEAR(z, xc, TOLERANCE);
 }
@@ -58,7 +58,7 @@ TEST(CapacitorModel, ImpedanceEqualsReactance) {
 /* ----------------------------- Standard Values ----------------------------- */
 
 /** @test Verify reactance for common capacitor values. */
-TEST(CapacitorModel, StandardValues) {
+TEST(CapacitorModelTest, StandardValues) {
   // 100 pF at 1 MHz
   double xc_100pF = CapacitorModel::reactance(100e-12, 1e6);
   EXPECT_NEAR(xc_100pF, 1591.5, 0.1);

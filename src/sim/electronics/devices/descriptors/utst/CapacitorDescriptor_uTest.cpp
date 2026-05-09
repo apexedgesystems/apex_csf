@@ -12,7 +12,7 @@ using sim::electronics::devices::descriptors::CapacitorDescriptor;
 /* ----------------------------- Construction ----------------------------- */
 
 /** @test Default construction with designated initializers. */
-TEST(CapacitorDescriptor, DesignatedInitializers) {
+TEST(CapacitorDescriptorTest, DesignatedInitializers) {
   CapacitorDescriptor c{.posNet = 3, .negNet = 0, .capacitance = 1e-6};
 
   EXPECT_EQ(c.posNet, 3u);
@@ -21,7 +21,7 @@ TEST(CapacitorDescriptor, DesignatedInitializers) {
 }
 
 /** @test Positional construction. */
-TEST(CapacitorDescriptor, PositionalConstruction) {
+TEST(CapacitorDescriptorTest, PositionalConstruction) {
   CapacitorDescriptor c{5, 2, 100e-12};
 
   EXPECT_EQ(c.posNet, 5u);
@@ -32,7 +32,7 @@ TEST(CapacitorDescriptor, PositionalConstruction) {
 /* ----------------------------- Standard Values ----------------------------- */
 
 /** @test Picofarad range (typical coupling/parasitic). */
-TEST(CapacitorDescriptor, PicofaradRange) {
+TEST(CapacitorDescriptorTest, PicofaradRange) {
   CapacitorDescriptor c1{1, 0, 1e-12};     // 1pF
   CapacitorDescriptor c10{1, 0, 10e-12};   // 10pF
   CapacitorDescriptor c100{1, 0, 100e-12}; // 100pF
@@ -43,7 +43,7 @@ TEST(CapacitorDescriptor, PicofaradRange) {
 }
 
 /** @test Nanofarad range (typical decoupling). */
-TEST(CapacitorDescriptor, NanofaradRange) {
+TEST(CapacitorDescriptorTest, NanofaradRange) {
   CapacitorDescriptor c1{1, 0, 1e-9};     // 1nF
   CapacitorDescriptor c10{1, 0, 10e-9};   // 10nF
   CapacitorDescriptor c100{1, 0, 100e-9}; // 100nF (0.1uF)
@@ -54,7 +54,7 @@ TEST(CapacitorDescriptor, NanofaradRange) {
 }
 
 /** @test Microfarad range (typical bulk/electrolytic). */
-TEST(CapacitorDescriptor, MicrofaradRange) {
+TEST(CapacitorDescriptorTest, MicrofaradRange) {
   CapacitorDescriptor c1{1, 0, 1e-6};     // 1uF
   CapacitorDescriptor c10{1, 0, 10e-6};   // 10uF
   CapacitorDescriptor c100{1, 0, 100e-6}; // 100uF
@@ -65,7 +65,7 @@ TEST(CapacitorDescriptor, MicrofaradRange) {
 }
 
 /** @test Millifarad range (supercapacitors). */
-TEST(CapacitorDescriptor, MillifaradRange) {
+TEST(CapacitorDescriptorTest, MillifaradRange) {
   CapacitorDescriptor c{1, 0, 1e-3}; // 1mF
 
   EXPECT_DOUBLE_EQ(c.capacitance, 1e-3);
@@ -74,7 +74,7 @@ TEST(CapacitorDescriptor, MillifaradRange) {
 /* ----------------------------- Topology ----------------------------- */
 
 /** @test Ground referenced (common). */
-TEST(CapacitorDescriptor, GroundReferenced) {
+TEST(CapacitorDescriptorTest, GroundReferenced) {
   CapacitorDescriptor c{10, 0, 10e-6};
 
   EXPECT_EQ(c.posNet, 10u);
@@ -82,7 +82,7 @@ TEST(CapacitorDescriptor, GroundReferenced) {
 }
 
 /** @test Floating (AC coupling). */
-TEST(CapacitorDescriptor, Floating) {
+TEST(CapacitorDescriptorTest, Floating) {
   CapacitorDescriptor c{7, 3, 1e-6};
 
   EXPECT_EQ(c.posNet, 7u);
@@ -92,7 +92,7 @@ TEST(CapacitorDescriptor, Floating) {
 }
 
 /** @test Same net (degenerate, but valid topology). */
-TEST(CapacitorDescriptor, SameNet) {
+TEST(CapacitorDescriptorTest, SameNet) {
   CapacitorDescriptor c{5, 5, 100e-12};
 
   EXPECT_EQ(c.posNet, c.negNet);

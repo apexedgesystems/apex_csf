@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_JFETSHICHMAN_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_JFETSHICHMAN_HPP
+#ifndef APEX_JFETSHICHMAN_HPP
+#define APEX_JFETSHICHMAN_HPP
 /**
  * @file JfetShichman.hpp
  * @brief Junction Field-Effect Transistor (JFET) Shichman-Hodges model.
@@ -25,8 +25,8 @@
 
 namespace sim::electronics::devices::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /**
  * @brief JFET Shichman-Hodges model parameters.
@@ -219,4 +219,4 @@ struct JfetShichman {
 
 } // namespace sim::electronics::devices::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_JFETSHICHMAN_HPP
+#endif // APEX_JFETSHICHMAN_HPP

@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_BJTEBERSMOLL_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_BJTEBERSMOLL_HPP
+#ifndef APEX_BJTEBERSMOLL_HPP
+#define APEX_BJTEBERSMOLL_HPP
 /**
  * @file BjtEbersMoll.hpp
  * @brief BJT Ebers-Moll model (bipolar junction transistor, 4-region operation).
@@ -34,8 +34,8 @@
 
 namespace sim::electronics::devices::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /**
  * @brief BJT Ebers-Moll model parameters.
@@ -288,4 +288,4 @@ struct BjtEbersMoll {
 
 } // namespace sim::electronics::devices::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_BJTEBERSMOLL_HPP
+#endif // APEX_BJTEBERSMOLL_HPP

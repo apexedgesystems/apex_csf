@@ -9,15 +9,15 @@
 
 #include <cmath>
 
-using sim::electronics::mna::MnaResult;
-using sim::electronics::mna::MnaSystem;
-using sim::electronics::mna::NetID;
-using sim::electronics::nonlinear::NewtonRaphsonSolver;
-using sim::electronics::nonlinear::NonlinearConfig;
-using sim::electronics::nonlinear::NonlinearDevice;
-using sim::electronics::nonlinear::NonlinearDeviceSet;
-using sim::electronics::nonlinear::NonlinearResult;
-using sim::electronics::nonlinear::NonlinearStatus;
+using sim::electronics::algorithms::mna::MnaResult;
+using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::NetID;
+using sim::electronics::algorithms::nonlinear::NewtonRaphsonSolver;
+using sim::electronics::algorithms::nonlinear::NonlinearConfig;
+using sim::electronics::algorithms::nonlinear::NonlinearDevice;
+using sim::electronics::algorithms::nonlinear::NonlinearDeviceSet;
+using sim::electronics::algorithms::nonlinear::NonlinearResult;
+using sim::electronics::algorithms::nonlinear::NonlinearStatus;
 
 /* ----------------------------- Test Devices ----------------------------- */
 
@@ -87,7 +87,7 @@ private:
 /* ----------------------------- Default Construction ----------------------------- */
 
 /** @test Solver constructs with correct net count. */
-TEST(NewtonRaphsonSolver, DefaultConstruction) {
+TEST(NewtonRaphsonSolverTest, DefaultConstruction) {
   NewtonRaphsonSolver solver(10);
   EXPECT_EQ(solver.netCount(), 10u);
 }
@@ -95,7 +95,7 @@ TEST(NewtonRaphsonSolver, DefaultConstruction) {
 /* ----------------------------- Enum Tests ----------------------------- */
 
 /** @test Status enum toString conversion. */
-TEST(NonlinearStatus, ToString) {
+TEST(NonlinearStatusTest, ToString) {
   EXPECT_STREQ(toString(NonlinearStatus::SUCCESS), "SUCCESS");
   EXPECT_STREQ(toString(NonlinearStatus::ERROR_MAX_ITERATIONS), "ERROR_MAX_ITERATIONS");
   EXPECT_STREQ(toString(NonlinearStatus::ERROR_SINGULAR_MATRIX), "ERROR_SINGULAR_MATRIX");
@@ -106,7 +106,7 @@ TEST(NonlinearStatus, ToString) {
 /* ----------------------------- Configuration Tests ----------------------------- */
 
 /** @test Convergence criteria with absolute voltage tolerance. */
-TEST(NonlinearConfig, AbsoluteVoltageTolerance) {
+TEST(NonlinearConfigTest, AbsoluteVoltageTolerance) {
   NonlinearConfig config;
   config.voltageTolerance = 1e-6;
   config.currentTolerance = 1e-20;  // Disable current criterion
@@ -118,7 +118,7 @@ TEST(NonlinearConfig, AbsoluteVoltageTolerance) {
 }
 
 /** @test Convergence criteria with absolute current tolerance. */
-TEST(NonlinearConfig, AbsoluteCurrentTolerance) {
+TEST(NonlinearConfigTest, AbsoluteCurrentTolerance) {
   NonlinearConfig config;
   config.currentTolerance = 1e-9;
   config.voltageTolerance = 1e-20;  // Disable voltage criterion
@@ -130,7 +130,7 @@ TEST(NonlinearConfig, AbsoluteCurrentTolerance) {
 }
 
 /** @test Convergence criteria with relative voltage tolerance. */
-TEST(NonlinearConfig, RelativeVoltageTolerance) {
+TEST(NonlinearConfigTest, RelativeVoltageTolerance) {
   NonlinearConfig config;
   config.relativeTolerance = 1e-3;
   config.voltageTolerance = 1e-20; // Disable absolute check
@@ -144,7 +144,7 @@ TEST(NonlinearConfig, RelativeVoltageTolerance) {
 }
 
 /** @test Invalid configuration detection. */
-TEST(NewtonRaphsonSolver, InvalidConfiguration) {
+TEST(NewtonRaphsonSolverTest, InvalidConfiguration) {
   NewtonRaphsonSolver solver(5);
 
   NonlinearConfig config;
@@ -158,7 +158,7 @@ TEST(NewtonRaphsonSolver, InvalidConfiguration) {
 /* ----------------------------- Device Set Tests ----------------------------- */
 
 /** @test deviceCount() matches after adding devices. */
-TEST(NonlinearDeviceSet, DeviceCount) {
+TEST(NonlinearDeviceSetTest, DeviceCount) {
   NonlinearDeviceSet devices;
   EXPECT_EQ(devices.deviceCount(), 0u);
 
@@ -173,31 +173,31 @@ TEST(NonlinearDeviceSet, DeviceCount) {
 }
 
 /** @test device() accessor returns correct device (const and non-const). */
-TEST(NonlinearDeviceSet, DeviceAccessor) {
+TEST(NonlinearDeviceSetTest, DeviceAccessor) {
   NonlinearDeviceSet devices;
   devices.addDevice(std::make_unique<NonlinearResistor>(1, 0, 100.0));
   devices.addDevice(std::make_unique<DiodeModel>(3, 0));
 
   // Non-const accessor
-  NonlinearDevice& d0 = devices.device(0);
-  EXPECT_EQ(d0.posNet(), 1u);
-  EXPECT_EQ(d0.negNet(), 0u);
+  NonlinearDevice& D0 = devices.device(0);
+  EXPECT_EQ(D0.posNet(), 1u);
+  EXPECT_EQ(D0.negNet(), 0u);
 
   NonlinearDevice& d1 = devices.device(1);
   EXPECT_EQ(d1.posNet(), 3u);
   EXPECT_EQ(d1.negNet(), 0u);
 
   // Const accessor
-  const NonlinearDeviceSet& cref = devices;
-  const NonlinearDevice& cd0 = cref.device(0);
-  EXPECT_EQ(cd0.posNet(), 1u);
+  const NonlinearDeviceSet& CREF = devices;
+  const NonlinearDevice& CD0 = CREF.device(0);
+  EXPECT_EQ(CD0.posNet(), 1u);
 
-  const NonlinearDevice& cd1 = cref.device(1);
-  EXPECT_EQ(cd1.posNet(), 3u);
+  const NonlinearDevice& CD1 = CREF.device(1);
+  EXPECT_EQ(CD1.posNet(), 3u);
 }
 
 /** @test updateAllStates() completes without error after solving. */
-TEST(NonlinearDeviceSet, UpdateAllStates) {
+TEST(NonlinearDeviceSetTest, UpdateAllStates) {
   NonlinearDeviceSet devices;
   devices.addDevice(std::make_unique<NonlinearResistor>(1, 0, 100.0));
   devices.addDevice(std::make_unique<DiodeModel>(2, 0));
@@ -208,7 +208,7 @@ TEST(NonlinearDeviceSet, UpdateAllStates) {
 }
 
 /** @test NonlinearDevice::updateState() default implementation is callable. */
-TEST(NonlinearDevice, UpdateStateDefault) {
+TEST(NonlinearDeviceTest, UpdateStateDefault) {
   // NonlinearResistor does not override updateState(), so it uses the default no-op
   NonlinearResistor resistor(1, 0, 100.0);
   // Call twice at different voltages to confirm no side effects
@@ -220,7 +220,7 @@ TEST(NonlinearDevice, UpdateStateDefault) {
 }
 
 /** @test Add and stamp nonlinear resistor. */
-TEST(NonlinearDeviceSet, AddNonlinearResistor) {
+TEST(NonlinearDeviceSetTest, AddNonlinearResistor) {
   NonlinearDeviceSet devices;
 
   auto resistor = std::make_unique<NonlinearResistor>(1, 0, 100.0);
@@ -240,7 +240,7 @@ TEST(NonlinearDeviceSet, AddNonlinearResistor) {
 }
 
 /** @test Clear device set. */
-TEST(NonlinearDeviceSet, ClearDevices) {
+TEST(NonlinearDeviceSetTest, ClearDevices) {
   NonlinearDeviceSet devices;
   devices.addDevice(std::make_unique<NonlinearResistor>(1, 0, 100.0));
   devices.addDevice(std::make_unique<NonlinearResistor>(2, 0, 200.0));
@@ -253,7 +253,7 @@ TEST(NonlinearDeviceSet, ClearDevices) {
 /* ----------------------------- Accessor Tests ----------------------------- */
 
 /** @test voltages() returns converged node voltages after solve. */
-TEST(NewtonRaphsonSolver, VoltagesAccessor) {
+TEST(NewtonRaphsonSolverTest, VoltagesAccessor) {
   NewtonRaphsonSolver solver(2);
 
   solver.devices().addDevice(std::make_unique<NonlinearResistor>(1, 0, 100.0));
@@ -263,25 +263,25 @@ TEST(NewtonRaphsonSolver, VoltagesAccessor) {
   NonlinearResult result = solver.solve(config);
   ASSERT_TRUE(result.success());
 
-  const std::vector<double>& v = solver.voltages();
-  ASSERT_EQ(v.size(), 2u);
-  EXPECT_NEAR(v[1], 5.0, 1e-5);
+  const std::vector<double>& V = solver.voltages();
+  ASSERT_EQ(V.size(), 2u);
+  EXPECT_NEAR(V[1], 5.0, 1e-5);
 }
 
 /** @test const devices() accessor returns same data. */
-TEST(NewtonRaphsonSolver, ConstDevicesAccessor) {
+TEST(NewtonRaphsonSolverTest, ConstDevicesAccessor) {
   NewtonRaphsonSolver solver(2);
   solver.devices().addDevice(std::make_unique<NonlinearResistor>(1, 0, 100.0));
 
-  const NewtonRaphsonSolver& cref = solver;
-  EXPECT_EQ(cref.devices().deviceCount(), 1u);
-  EXPECT_EQ(cref.devices().device(0).posNet(), 1u);
+  const NewtonRaphsonSolver& CREF = solver;
+  EXPECT_EQ(CREF.devices().deviceCount(), 1u);
+  EXPECT_EQ(CREF.devices().device(0).posNet(), 1u);
 }
 
 /* ----------------------------- Solver Convergence Tests ----------------------------- */
 
 /** @test Simple nonlinear resistor convergence. */
-TEST(NewtonRaphsonSolver, NonlinearResistorConvergence) {
+TEST(NewtonRaphsonSolverTest, NonlinearResistorConvergence) {
   // Circuit: V1 (5V) -- NonlinearResistor (I=V^2/100) -- GND
   // Expected: Node 1 = 5V (clamped by voltage source)
 
@@ -311,7 +311,7 @@ TEST(NewtonRaphsonSolver, NonlinearResistorConvergence) {
 }
 
 /** @test Diode circuit convergence. */
-TEST(NewtonRaphsonSolver, DiodeCircuitConvergence) {
+TEST(NewtonRaphsonSolverTest, DiodeCircuitConvergence) {
   // Circuit: V1 (0.7V) -- Diode -- GND
   // Expected: Forward-biased diode conducts current
 
@@ -333,7 +333,7 @@ TEST(NewtonRaphsonSolver, DiodeCircuitConvergence) {
 }
 
 /** @test Convergence with initial guess. */
-TEST(NewtonRaphsonSolver, InitialGuessConvergence) {
+TEST(NewtonRaphsonSolverTest, InitialGuessConvergence) {
   NewtonRaphsonSolver solver(2);
 
   solver.devices().addDevice(std::make_unique<NonlinearResistor>(1, 0, 100.0));
@@ -355,7 +355,7 @@ TEST(NewtonRaphsonSolver, InitialGuessConvergence) {
 /* ----------------------------- Damping Tests ----------------------------- */
 
 /** @test Damping improves oscillatory convergence. */
-TEST(NewtonRaphsonSolver, DampingOscillatoryConvergence) {
+TEST(NewtonRaphsonSolverTest, DampingOscillatoryConvergence) {
   // Circuit with multiple nonlinear resistors that might oscillate
   NewtonRaphsonSolver solver(3);
 
@@ -391,7 +391,7 @@ TEST(NewtonRaphsonSolver, DampingOscillatoryConvergence) {
 /* ----------------------------- Failure Tests ----------------------------- */
 
 /** @test Maximum iterations exceeded. */
-TEST(NewtonRaphsonSolver, MaxIterationsExceeded) {
+TEST(NewtonRaphsonSolverTest, MaxIterationsExceeded) {
   NewtonRaphsonSolver solver(2);
 
   // Add very nonlinear device
@@ -409,7 +409,7 @@ TEST(NewtonRaphsonSolver, MaxIterationsExceeded) {
 }
 
 /** @test Convergence with unstable initial guess. */
-TEST(NewtonRaphsonSolver, UnstableInitialGuessRecovery) {
+TEST(NewtonRaphsonSolverTest, UnstableInitialGuessRecovery) {
   // Circuit with large initial voltage error - should still converge with damping
   NewtonRaphsonSolver solver(2);
 
@@ -432,7 +432,7 @@ TEST(NewtonRaphsonSolver, UnstableInitialGuessRecovery) {
 /* ----------------------------- Reset Tests ----------------------------- */
 
 /** @test Reset clears solver state. */
-TEST(NewtonRaphsonSolver, ResetClearsState) {
+TEST(NewtonRaphsonSolverTest, ResetClearsState) {
   NewtonRaphsonSolver solver(2);
 
   solver.devices().addDevice(std::make_unique<NonlinearResistor>(1, 0, 100.0));
@@ -455,7 +455,7 @@ TEST(NewtonRaphsonSolver, ResetClearsState) {
 /* ----------------------------- Determinism Tests ----------------------------- */
 
 /** @test Repeated solves produce identical results. */
-TEST(NewtonRaphsonSolver, RepeatedSolvesDeterminism) {
+TEST(NewtonRaphsonSolverTest, RepeatedSolvesDeterminism) {
   NewtonRaphsonSolver solver(2);
 
   solver.devices().addDevice(std::make_unique<DiodeModel>(1, 0));

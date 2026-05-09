@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_NONLINEAR_NEWTONRAPHSON_HPP
-#define APEX_SIM_ELECTRONICS_NONLINEAR_NEWTONRAPHSON_HPP
+#ifndef APEX_NEWTONRAPHSON_HPP
+#define APEX_NEWTONRAPHSON_HPP
 /**
  * @file NewtonRaphson.hpp
  * @brief Newton-Raphson nonlinear solver for circuit simulation.
@@ -31,11 +31,11 @@
 #include <functional>
 #include <vector>
 
-namespace sim::electronics::nonlinear {
+namespace sim::electronics::algorithms::nonlinear {
 
-using mna::MnaResult;
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaResult;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /* ----------------------------- StampCallback ----------------------------- */
 
@@ -200,8 +200,8 @@ private:
   [[nodiscard]] double computeKclResidual() const noexcept;
 };
 
-} // namespace sim::electronics::nonlinear
+} // namespace sim::electronics::algorithms::nonlinear
 
 #include "src/sim/electronics/algorithms/nonlinear/src/NewtonRaphson.tpp"
 
-#endif // APEX_SIM_ELECTRONICS_NONLINEAR_NEWTONRAPHSON_HPP
+#endif // APEX_NEWTONRAPHSON_HPP

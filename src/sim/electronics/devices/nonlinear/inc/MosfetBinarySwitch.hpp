@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETBINARYSWITCH_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETBINARYSWITCH_HPP
+#ifndef APEX_MOSFETBINARYSWITCH_HPP
+#define APEX_MOSFETBINARYSWITCH_HPP
 /**
  * @file MosfetBinarySwitch.hpp
  * @brief Binary switch MOSFET model (digital circuits, fast simulation).
@@ -21,8 +21,8 @@
 
 namespace sim::electronics::devices::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /**
  * @brief Binary switch MOSFET parameters.
@@ -105,4 +105,4 @@ struct MosfetBinarySwitch {
 
 } // namespace sim::electronics::devices::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETBINARYSWITCH_HPP
+#endif // APEX_MOSFETBINARYSWITCH_HPP

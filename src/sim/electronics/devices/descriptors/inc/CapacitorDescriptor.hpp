@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_CAPACITORDESCRIPTOR_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_CAPACITORDESCRIPTOR_HPP
+#ifndef APEX_CAPACITORDESCRIPTOR_HPP
+#define APEX_CAPACITORDESCRIPTOR_HPP
 /**
  * @file CapacitorDescriptor.hpp
  * @brief Capacitor topology descriptor (pure topology, no physics).
@@ -16,7 +16,7 @@
 
 namespace sim::electronics::devices::descriptors {
 
-using mna::NetID;
+using algorithms::mna::NetID;
 
 /**
  * @brief Capacitor topology descriptor.
@@ -44,4 +44,4 @@ struct CapacitorDescriptor {
 
 } // namespace sim::electronics::devices::descriptors
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_CAPACITORDESCRIPTOR_HPP
+#endif // APEX_CAPACITORDESCRIPTOR_HPP

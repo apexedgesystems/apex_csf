@@ -47,7 +47,7 @@ DiodeShockleyParams params{
 // Compute current at 0.7V forward bias
 double vDiode = 0.7;
 double iDiode = DiodeShockley::current(vDiode, params);
-// iDiode ≈ 5 mA (typical silicon turn-on)
+// iDiode ~= 5 mA (typical silicon turn-on)
 
 // Stamp into MNA system for Newton-Raphson
 MnaSystem mna(3);
@@ -71,7 +71,7 @@ ZenerDiodeParams params{
 // Reverse bias beyond breakdown (regulation region)
 double vZener = -5.5;
 double iZener = ZenerDiode::current(vZener, params);
-// iZener ≈ -1 mA (regulated current)
+// iZener ~= -1 mA (regulated current)
 
 // Stamp into MNA system for Newton-Raphson
 MnaSystem mna(3);
@@ -96,7 +96,7 @@ JfetShichmanParams params{
 double vgs = -0.5;  // Gate voltage
 double vds = 5.0;   // Drain-source voltage
 double id = JfetShichman::current(vgs, vds, params);
-// id ≈ 2.25 mA (constant current source)
+// id ~= 2.25 mA (constant current source)
 
 // Stamp into MNA system for Newton-Raphson
 MnaSystem mna(4);
@@ -123,7 +123,7 @@ bool on = MosfetBinarySwitch::isOn(vgs, params);  // true
 
 // Stamp as resistor (no Newton-Raphson needed)
 double rds = MosfetBinarySwitch::resistance(vgs, params);
-// rds = 500 Ω (ON state)
+// rds = 500 Ohm (ON state)
 ```
 
 ### MOSFET Analog Model (Accurate)
@@ -146,7 +146,7 @@ double vds = 2.0;  // Drain-source voltage
 
 // Compute drain current
 double id = MosfetLevel1::current(vgs, vds, params);
-// id ≈ 32 µA (saturation region)
+// id ~= 32 uA (saturation region)
 
 // Compute transconductances for Newton-Raphson
 double gm = MosfetLevel1::transconductance(vgs, vds, params);   // dId/dVgs
@@ -178,7 +178,7 @@ double vbc = -5.0; // Base-collector voltage (reverse-biased)
 // Compute currents
 double ic = BjtEbersMoll::collectorCurrent(vbe, vbc, params);
 double ib = BjtEbersMoll::baseCurrent(vbe, vbc, params);
-double beta = ic / ib;  // Current gain ≈ 100
+double beta = ic / ib;  // Current gain ~= 100
 
 // Compute transconductances for Newton-Raphson
 double gm = BjtEbersMoll::transconductance(vbe, vbc, params);  // dIc/dVbe
@@ -256,8 +256,8 @@ Matches SPICE diode model with exponential I-V characteristic:
 
 Digital approximation for fast simulation:
 
-- ON: Vgs > Vth → Rds = Ron (typically 100-1000 Ω)
-- OFF: Vgs < Vth → Rds = Roff (typically 10M-1G Ω)
+- ON: Vgs > Vth -> Rds = Ron (typically 100-1000 Ohm)
+- OFF: Vgs < Vth -> Rds = Roff (typically 10M-1G Ohm)
 - No smooth transition (binary switch)
 
 ### MosfetLevel1
@@ -274,12 +274,12 @@ Channel-length modulation: `Id * (1 + lambda * Vds)` for non-ideal output resist
 
 SPICE-compatible Ebers-Moll model with four operating regions:
 
-- Cutoff: Both junctions reverse-biased (Vbe < 0.6V, Vbc < 0.6V) → Ic ≈ 0, Ib ≈ 0
-- Forward Active: BE forward, BC reverse (Vbe > 0.6V, Vbc < 0) → Ic = Is \* exp(Vbe/Vt), beta = Ic/Ib ≈ Bf
-- Reverse Active: BE reverse, BC forward (Vbe < 0, Vbc > 0.6V) → Ic < 0 (reverse current)
-- Saturation: Both junctions forward (Vbe > 0.6V, Vbc > 0) → Ic reduced, Vce_sat ≈ 0.2V
+- Cutoff: Both junctions reverse-biased (Vbe < 0.6V, Vbc < 0.6V) -> Ic ~= 0, Ib ~= 0
+- Forward Active: BE forward, BC reverse (Vbe > 0.6V, Vbc < 0) -> Ic = Is \* exp(Vbe/Vt), beta = Ic/Ib ~= Bf
+- Reverse Active: BE reverse, BC forward (Vbe < 0, Vbc > 0.6V) -> Ic < 0 (reverse current)
+- Saturation: Both junctions forward (Vbe > 0.6V, Vbc > 0) -> Ic reduced, Vce_sat ~= 0.2V
 
-Exponential I-V: Every 60mV increase in Vbe → 10x increase in Ic (at 300K).
+Exponential I-V: Every 60mV increase in Vbe -> 10x increase in Ic (at 300K).
 
 ## Performance
 
@@ -317,12 +317,12 @@ make compose-testp
 
 ```
 Layer 1 (Algorithms)         Layer 2 (Device Models)        Layer 3 (Applications)
-┌─────────────────────┐      ┌─────────────────────┐       ┌─────────────────────┐
-│ MNA Solver          │◄─────│ BjtEbersMoll        │◄──────│ LM741 Op-Amp        │
-│ Newton-Raphson      │      │ DiodeShockley       │       │ Low-Pass Filter     │
-│ Transient Solver    │      │ MosfetLevel1        │       │ CMOS Op-Amp         │
-│                     │      │ MosfetBinarySwitch  │       │ Intel 4004 Grid     │
-└─────────────────────┘      └─────────────────────┘       └─────────────────────┘
++---------------------+      +---------------------+       +---------------------+
+| MNA Solver          |<------| BjtEbersMoll        |<-------| LM741 Op-Amp        |
+| Newton-Raphson      |      | DiodeShockley       |       | Low-Pass Filter     |
+| Transient Solver    |      | MosfetLevel1        |       | CMOS Op-Amp         |
+|                     |      | MosfetBinarySwitch  |       | Intel 4004 Grid     |
++---------------------+      +---------------------+       +---------------------+
 ```
 
 ## See Also
@@ -331,4 +331,4 @@ Layer 1 (Algorithms)         Layer 2 (Device Models)        Layer 3 (Application
 - `../companions/README.md` - Numerical integration wrappers for reactive devices
 - `../descriptors/README.md` - Topology descriptors (no physics)
 - `../../algorithms/mna/README.md` - MNA solver (Layer 1)
-- `../../algorithms/newton_raphson/README.md` - Nonlinear solver (Layer 1)
+- `../../algorithms/nonlinear/README.md` - Nonlinear solver (Layer 1)

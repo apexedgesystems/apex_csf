@@ -1,5 +1,5 @@
 # ==============================================================================
-# Module: sim_electronics_mna
+# Module: sim_electronics_algorithms_mna
 #
 # Modified Nodal Analysis (MNA) systems for circuit simulation.
 # Provides optimized dense (BLAS/LAPACK) and sparse (KLU) solvers with
@@ -10,7 +10,7 @@
 # ==============================================================================
 
 include(apex/All)
-apex_module(sim_electronics_mna)
+apex_module(sim_electronics_algorithms_mna)
 
 # ------------------------------------------------------------------------------
 # Sources

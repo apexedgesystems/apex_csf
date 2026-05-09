@@ -15,7 +15,7 @@
 #include <ngspice/sharedspice.h>
 #endif
 
-namespace sim::electronics::spice::ngspice {
+namespace sim::electronics::algorithms::spice::ngspice {
 
 /* ----------------------------- NgspiceStatus ---------------------------- */
 
@@ -322,4 +322,4 @@ void NgspiceWrapper::clear() noexcept {
 #endif
 }
 
-} // namespace sim::electronics::spice::ngspice
+} // namespace sim::electronics::algorithms::spice::ngspice

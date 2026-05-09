@@ -45,10 +45,10 @@ apex_add_app(
   SRC
   ${APP_SOURCES}
   LINK
-  sim_electronics_intel4004_grid
-  sim_electronics_intel4004_netlist
+  sim_electronics_chips_intel4004_grid
+  sim_electronics_chips_intel4004_netlist
   sim_electronics_devices_nonlinear
-  sim_electronics_mna
+  sim_electronics_algorithms_mna
   fmt::fmt
   REQUIRES
   POSIX

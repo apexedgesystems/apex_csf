@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_GATECONSTANTS_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_GATECONSTANTS_HPP
+#ifndef APEX_GATECONSTANTS_HPP
+#define APEX_GATECONSTANTS_HPP
 /**
  * @file GateConstants.hpp
  * @brief Shared constants for CMOS gate simulation.
@@ -20,4 +20,4 @@ static constexpr double DEFAULT_RDS_OFF = 1e9;
 
 } // namespace sim::electronics::devices::composite
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_COMPOSITE_GATECONSTANTS_HPP
+#endif // APEX_GATECONSTANTS_HPP

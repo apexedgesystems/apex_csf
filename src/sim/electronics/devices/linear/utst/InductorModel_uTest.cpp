@@ -19,20 +19,20 @@ constexpr double PI = 3.141592653589793;
 /* ----------------------------- Reactance Tests ----------------------------- */
 
 /** @test Reactance calculation (XL = 2*pi*f*L). */
-TEST(InductorModel, Reactance) {
+TEST(InductorModelTest, Reactance) {
   constexpr double L = 1e-3;   // 1 mH
-  constexpr double f = 1000.0; // 1 kHz
+  constexpr double F = 1000.0; // 1 kHz
 
-  double xl = InductorModel::reactance(L, f);
+  double xl = InductorModel::reactance(L, F);
 
   // XL = 2 * pi * 1000 * 1e-3 ~ 6.283  ohm
-  double expected = 2.0 * PI * f * L;
+  double expected = 2.0 * PI * F * L;
   EXPECT_NEAR(xl, expected, TOLERANCE);
   EXPECT_NEAR(xl, 6.283, 0.001); // Approximate value
 }
 
 /** @test Reactance at different frequencies. */
-TEST(InductorModel, ReactanceVsFrequency) {
+TEST(InductorModelTest, ReactanceVsFrequency) {
   constexpr double L = 100e-6; // 100 uH
 
   // At 1 kHz
@@ -45,12 +45,12 @@ TEST(InductorModel, ReactanceVsFrequency) {
 }
 
 /** @test Impedance equals reactance for ideal inductor. */
-TEST(InductorModel, ImpedanceEqualsReactance) {
+TEST(InductorModelTest, ImpedanceEqualsReactance) {
   constexpr double L = 1e-3;
-  constexpr double f = 1000.0;
+  constexpr double F = 1000.0;
 
-  double xl = InductorModel::reactance(L, f);
-  double z = InductorModel::impedance(L, f);
+  double xl = InductorModel::reactance(L, F);
+  double z = InductorModel::impedance(L, F);
 
   EXPECT_NEAR(z, xl, TOLERANCE);
 }
@@ -58,7 +58,7 @@ TEST(InductorModel, ImpedanceEqualsReactance) {
 /* ----------------------------- Standard Values ----------------------------- */
 
 /** @test Verify reactance for common inductor values. */
-TEST(InductorModel, StandardValues) {
+TEST(InductorModelTest, StandardValues) {
   // 1 uH at 1 MHz
   double xl_1uH = InductorModel::reactance(1e-6, 1e6);
   EXPECT_NEAR(xl_1uH, 6.283, 0.001);
@@ -75,7 +75,7 @@ TEST(InductorModel, StandardValues) {
 /* ----------------------------- Reactance vs Frequency Linearity ----------------------------- */
 
 /** @test Verify linear relationship between reactance and frequency. */
-TEST(InductorModel, ReactanceFrequencyLinearity) {
+TEST(InductorModelTest, ReactanceFrequencyLinearity) {
   constexpr double L = 1e-3;
 
   double xl_100Hz = InductorModel::reactance(L, 100.0);

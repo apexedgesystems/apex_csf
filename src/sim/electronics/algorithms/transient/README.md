@@ -2,7 +2,7 @@
 
 Time-domain circuit simulation engine with multiple integration methods for reactive elements (capacitors, inductors).
 
-**Status:** ✅ Production-ready
+**Status:** [OK] Production-ready
 **Tests:** 21/21 passing (unit tests cover all integration methods)
 **RT-Safety:** Header-only core is RT-safe with pre-allocated workspace
 **Performance:** GPU acceleration for companion evaluation (10,000+ elements)
@@ -15,18 +15,18 @@ Time-domain circuit simulation engine with multiple integration methods for reac
 ```cpp
 #include "src/sim/electronics/algorithms/transient/inc/TransientSolver.hpp"
 
-using namespace sim::electronics::transient;
+using namespace sim::electronics::algorithms::transient;
 
 // 1. Create solver
 TransientSolver solver(netCount);
 
 // 2. Add reactive elements
-solver.companions().addCapacitor(nodeA, nodeB, 1e-6); // 1μF
+solver.companions().addCapacitor(nodeA, nodeB, 1e-6); // 1uF
 solver.companions().addInductor(nodeC, nodeD, 1e-3);  // 1mH
 
 // 3. Set stamp callback for resistors, sources
 solver.setStampCallback([](MnaSystem& mna, double time) {
-  mna.stampConductance(1, 0, 1e3);     // 1kΩ resistor
+  mna.stampConductance(1, 0, 1e3);     // 1kOhm resistor
   mna.stampVoltageSource(0, 2, 0, 5.0); // 5V source
 });
 
@@ -34,7 +34,7 @@ solver.setStampCallback([](MnaSystem& mna, double time) {
 TransientConfig config{
   .tStart = 0.0,
   .tEnd = 1e-3,      // 1ms
-  .tStep = 1e-6,     // 1μs steps
+  .tStep = 1e-6,     // 1us steps
   .method = IntegrationMethod::TRAPEZOIDAL  // Energy-conserving (oscillators)
   // Options: BACKWARD_EULER (fast, stable), TRAPEZOIDAL (accurate), GEAR2 (stiff)
 };
@@ -168,7 +168,7 @@ config.method = IntegrationMethod::GEAR2;
 ```cpp
 #include "src/sim/electronics/algorithms/transient/inc/TransientCuda.cuh"
 
-using namespace sim::electronics::transient;
+using namespace sim::electronics::algorithms::transient;
 
 // 1. Prepare GPU workspace
 mna::cuda::MnaCudaWorkspace cudaWs;
@@ -207,7 +207,7 @@ For circuits with **10,000+ capacitors/inductors**, parallel companion evaluatio
 ```cpp
 #include "src/sim/electronics/algorithms/transient/inc/CompanionSetCuda.hpp"
 
-using namespace sim::electronics::transient;
+using namespace sim::electronics::algorithms::transient;
 
 CompanionSet companions;
 // ... add 10,000 capacitors ...
@@ -299,7 +299,7 @@ solver.setSparse(true);
 
 - 10-50x speedup over dense LAPACK
 - Only processes non-zero entries
-- Example: 150-net Apex4Grid (2% fill) → 5.6ms vs 138ms
+- Example: 150-net Apex4Grid (2% fill) -> 5.6ms vs 138ms
 
 ### Cached LU
 
@@ -312,7 +312,7 @@ solver.setCachedLU(true);
 **Benefits:**
 
 - 6-8x speedup via LU reuse
-- O(n²) back-substitution vs O(n³) factorization
+- O(n^2) back-substitution vs O(n^3) factorization
 - **Important:** Call `invalidateCache()` if topology changes
 
 ### Dual-LU Caching
@@ -330,7 +330,7 @@ solver.stepDual(dt, stateIdx, state);
 **Benefits:**
 
 - Caches LU factors for both states
-- O(n²) once both factorized
+- O(n^2) once both factorized
 - Ideal for clock-driven digital circuits
 
 ---
@@ -367,12 +367,12 @@ solver.setStatefulStampCallback(
 
 | Function                          | RT-Safe | Notes                          |
 | --------------------------------- | ------- | ------------------------------ |
-| `TransientSolver()`               | ❌      | Allocates workspace            |
-| `addCapacitor()`, `addInductor()` | ❌      | Resizes internal vectors       |
-| `setStampCallback()`              | ✅      | Copies function object (small) |
-| `run()`                           | ❌      | May allocate history           |
-| `step()`                          | ✅      | **If workspace pre-allocated** |
-| `computeDC()`                     | ✅      | Uses pre-allocated workspace   |
+| `TransientSolver()`               | [X]      | Allocates workspace            |
+| `addCapacitor()`, `addInductor()` | [X]      | Resizes internal vectors       |
+| `setStampCallback()`              | [OK]      | Copies function object (small) |
+| `run()`                           | [X]      | May allocate history           |
+| `step()`                          | [OK]      | **If workspace pre-allocated** |
+| `computeDC()`                     | [OK]      | Uses pre-allocated workspace   |
 
 **RT-safe workflow:**
 
@@ -389,18 +389,18 @@ solver.setStatefulStampCallback(
 ```cpp
 TransientSolver solver(2); // Nodes: 0=GND, 1=V_out
 
-// RC circuit: V_in --[1kΩ]-- V_out --[1μF]-- GND
+// RC circuit: V_in --[1kOhm]-- V_out --[1uF]-- GND
 solver.companions().addCapacitor(1, 0, 1e-6);
 solver.setStampCallback([](MnaSystem& mna, double time) {
   mna.stampVoltageSource(0, 0, 0, 5.0);  // 5V step
-  mna.stampConductance(0, 1, 1e3);       // 1kΩ
+  mna.stampConductance(0, 1, 1e3);       // 1kOhm
 });
 
 TransientConfig config{.tStart = 0.0, .tEnd = 5e-3, .timeStep = 1e-5};
 auto result = solver.run(config, true);
 
-// Time constant: τ = R*C = 1ms
-// V_out(t) = 5*(1 - e^(-t/τ))
+// Time constant: tau = R*C = 1ms
+// V_out(t) = 5*(1 - e^(-t/tau))
 ```
 
 ### RLC Oscillator
@@ -408,16 +408,16 @@ auto result = solver.run(config, true);
 ```cpp
 TransientSolver solver(2);
 
-// Series RLC: V_in --[10Ω]--[1mH]-- V_out --[100nF]-- GND
+// Series RLC: V_in --[10Ohm]--[1mH]-- V_out --[100nF]-- GND
 solver.companions().addInductor(0, 1, 1e-3);
 solver.companions().addCapacitor(1, 0, 100e-9);
 solver.setStampCallback([](MnaSystem& mna, double time) {
   mna.stampVoltageSource(0, 0, 0, 10.0); // 10V step
-  mna.stampConductance(0, 1, 10.0);      // 10Ω damping
+  mna.stampConductance(0, 1, 10.0);      // 10Ohm damping
 });
 
-// Natural frequency: ω₀ = 1/√(LC) ≈ 31.6 kHz
-// Damping ratio: ζ = R√(C/L)/2 ≈ 0.158 (underdamped)
+// Natural frequency: omega0 = 1/sqrt(LC) ~= 31.6 kHz
+// Damping ratio: zeta = Rsqrt(C/L)/2 ~= 0.158 (underdamped)
 
 TransientConfig config{.tStart = 0.0, .tEnd = 1e-4, .timeStep = 1e-7};
 auto result = solver.run(config, true);

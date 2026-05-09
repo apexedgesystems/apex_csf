@@ -21,7 +21,7 @@ static constexpr double EPSILON = 1e-9; // Tolerance for floating-point comparis
 /* ----------------------------- Parameters ----------------------------- */
 
 /** @test Default parameters are reasonable. */
-TEST(DiodeShockley, DefaultParameters) {
+TEST(DiodeShockleyTest, DefaultParameters) {
   DiodeShockleyParams params;
 
   EXPECT_DOUBLE_EQ(params.Is, 1e-14);
@@ -30,7 +30,7 @@ TEST(DiodeShockley, DefaultParameters) {
 }
 
 /** @test Custom parameters. */
-TEST(DiodeShockley, CustomParameters) {
+TEST(DiodeShockleyTest, CustomParameters) {
   DiodeShockleyParams params{.Is = 1e-12, .n = 1.5, .Vt = 0.025};
 
   EXPECT_DOUBLE_EQ(params.Is, 1e-12);
@@ -41,7 +41,7 @@ TEST(DiodeShockley, CustomParameters) {
 /* ----------------------------- I-V Characteristic ----------------------------- */
 
 /** @test Zero bias current (reverse saturation). */
-TEST(DiodeShockley, ZeroBiasCurrent) {
+TEST(DiodeShockleyTest, ZeroBiasCurrent) {
   DiodeShockleyParams params;
   double i = DiodeShockley::current(0.0, params);
 
@@ -50,7 +50,7 @@ TEST(DiodeShockley, ZeroBiasCurrent) {
 }
 
 /** @test Reverse bias current approaches -Is. */
-TEST(DiodeShockley, ReverseBiasCurrent) {
+TEST(DiodeShockleyTest, ReverseBiasCurrent) {
   DiodeShockleyParams params;
 
   // At large reverse bias, I -> -Is
@@ -59,7 +59,7 @@ TEST(DiodeShockley, ReverseBiasCurrent) {
 }
 
 /** @test Forward bias current (exponential region). */
-TEST(DiodeShockley, ForwardBiasCurrent) {
+TEST(DiodeShockleyTest, ForwardBiasCurrent) {
   DiodeShockleyParams params;
 
   // At 0.7V forward bias (typical silicon diode)
@@ -71,7 +71,7 @@ TEST(DiodeShockley, ForwardBiasCurrent) {
 }
 
 /** @test Current-voltage monotonicity. */
-TEST(DiodeShockley, MonotonicIV) {
+TEST(DiodeShockleyTest, MonotonicIV) {
   DiodeShockleyParams params;
 
   double i1 = DiodeShockley::current(0.5, params);
@@ -84,7 +84,7 @@ TEST(DiodeShockley, MonotonicIV) {
 }
 
 /** @test Ideality factor effect. */
-TEST(DiodeShockley, IdealityFactor) {
+TEST(DiodeShockleyTest, IdealityFactor) {
   DiodeShockleyParams ideal{.Is = 1e-14, .n = 1.0, .Vt = 0.026};
   DiodeShockleyParams nonIdeal{.Is = 1e-14, .n = 2.0, .Vt = 0.026};
 
@@ -98,7 +98,7 @@ TEST(DiodeShockley, IdealityFactor) {
 /* ----------------------------- Conductance (Jacobian) ----------------------------- */
 
 /** @test Conductance at zero bias. */
-TEST(DiodeShockley, ZeroBiasConductance) {
+TEST(DiodeShockleyTest, ZeroBiasConductance) {
   DiodeShockleyParams params;
   double g = DiodeShockley::conductance(0.0, params);
 
@@ -108,7 +108,7 @@ TEST(DiodeShockley, ZeroBiasConductance) {
 }
 
 /** @test Conductance increases with forward bias. */
-TEST(DiodeShockley, ForwardBiasConductance) {
+TEST(DiodeShockleyTest, ForwardBiasConductance) {
   DiodeShockleyParams params;
 
   double g1 = DiodeShockley::conductance(0.5, params);
@@ -121,18 +121,18 @@ TEST(DiodeShockley, ForwardBiasConductance) {
 }
 
 /** @test Conductance matches numerical derivative. */
-TEST(DiodeShockley, ConductanceNumericalDerivative) {
+TEST(DiodeShockleyTest, ConductanceNumericalDerivative) {
   DiodeShockleyParams params;
-  const double v = 0.6;
-  const double dv = 1e-6;
+  const double V = 0.6;
+  const double DV = 1e-6;
 
   // Analytical conductance
-  double gAnalytical = DiodeShockley::conductance(v, params);
+  double gAnalytical = DiodeShockley::conductance(V, params);
 
   // Numerical derivative: dI/dV ~= (I(v+dv) - I(v-dv)) / (2*dv)
-  double i1 = DiodeShockley::current(v - dv, params);
-  double i2 = DiodeShockley::current(v + dv, params);
-  double gNumerical = (i2 - i1) / (2.0 * dv);
+  double i1 = DiodeShockley::current(V - DV, params);
+  double i2 = DiodeShockley::current(V + DV, params);
+  double gNumerical = (i2 - i1) / (2.0 * DV);
 
   // Should match within 1%
   EXPECT_NEAR(gAnalytical, gNumerical, std::abs(gNumerical) * 0.01);
@@ -141,28 +141,28 @@ TEST(DiodeShockley, ConductanceNumericalDerivative) {
 /* ----------------------------- Stamping ----------------------------- */
 
 /** @test Stamp into MNA system. */
-TEST(DiodeShockley, Stamp) {
+TEST(DiodeShockleyTest, Stamp) {
   MnaSystem mna(3);
   DiodeShockleyParams params;
   const NetID ANODE = 1;
   const NetID CATHODE = 0;
-  const double vDiode = 0.6;
+  const double V_DIODE = 0.6;
 
-  DiodeShockley::stamp(mna, ANODE, CATHODE, vDiode, params);
+  DiodeShockley::stamp(mna, ANODE, CATHODE, V_DIODE, params);
 
   // Should not throw and should modify MNA system
   // (Detailed MNA matrix checks would require exposing internal state)
 }
 
 /** @test Stamp with reverse bias. */
-TEST(DiodeShockley, StampReverseBias) {
+TEST(DiodeShockleyTest, StampReverseBias) {
   MnaSystem mna(3);
   DiodeShockleyParams params;
   const NetID ANODE = 1;
   const NetID CATHODE = 0;
-  const double vDiode = -0.5; // Reverse bias
+  const double V_DIODE = -0.5; // Reverse bias
 
-  DiodeShockley::stamp(mna, ANODE, CATHODE, vDiode, params);
+  DiodeShockley::stamp(mna, ANODE, CATHODE, V_DIODE, params);
 
   // Should handle negative voltages without issue
 }
@@ -170,7 +170,7 @@ TEST(DiodeShockley, StampReverseBias) {
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test Silicon diode turn-on voltage. */
-TEST(DiodeShockley, SiliconTurnOnVoltage) {
+TEST(DiodeShockleyTest, SiliconTurnOnVoltage) {
   DiodeShockleyParams params; // Default = silicon diode
 
   // Below 0.6V: relatively low current
@@ -183,7 +183,7 @@ TEST(DiodeShockley, SiliconTurnOnVoltage) {
 }
 
 /** @test Temperature effect (via Vt). */
-TEST(DiodeShockley, TemperatureEffect) {
+TEST(DiodeShockleyTest, TemperatureEffect) {
   // Room temperature (300K): Vt ~= 26mV
   DiodeShockleyParams roomTemp{.Is = 1e-14, .n = 1.0, .Vt = 0.026};
 
@@ -198,7 +198,7 @@ TEST(DiodeShockley, TemperatureEffect) {
 }
 
 /** @test Exponential scaling with voltage. */
-TEST(DiodeShockley, ExponentialScaling) {
+TEST(DiodeShockleyTest, ExponentialScaling) {
   DiodeShockleyParams params;
 
   // Current should scale exponentially: every 60mV decade in ideal diode

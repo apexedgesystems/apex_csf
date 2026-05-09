@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_TRANSIENT_TRANSIENTSOLVER_HPP
-#define APEX_SIM_ELECTRONICS_TRANSIENT_TRANSIENTSOLVER_HPP
+#ifndef APEX_TRANSIENTSOLVER_HPP
+#define APEX_TRANSIENTSOLVER_HPP
 /**
  * @file TransientSolver.hpp
  * @brief Time-domain circuit simulation engine.
@@ -20,7 +20,7 @@
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystemSparse.hpp"
-#include "src/sim/electronics/devices/companions/inc/CompanionModels.hpp"
+#include "src/sim/electronics/algorithms/companions/inc/CompanionModels.hpp"
 #include "src/sim/electronics/algorithms/transient/inc/TransientConfig.hpp"
 
 #include <cmath>
@@ -29,15 +29,15 @@
 #include <memory>
 #include <vector>
 
-namespace sim::electronics::transient {
+namespace sim::electronics::algorithms::transient {
 
-using devices::companions::CompanionSet;
-using mna::MnaFactorizedWorkspace;
-using mna::MnaResult;
-using mna::MnaSolveWorkspace;
-using mna::MnaSystem;
-using mna::MnaSystemSparse;
-using mna::NetID;
+using algorithms::companions::CompanionSet;
+using algorithms::mna::MnaFactorizedWorkspace;
+using algorithms::mna::MnaResult;
+using algorithms::mna::MnaSolveWorkspace;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::MnaSystemSparse;
+using algorithms::mna::NetID;
 
 /* ----------------------------- StampCallback ----------------------------- */
 
@@ -460,8 +460,8 @@ private:
   TransientStatus solveDualCachedStep(double dt, int stateIdx, TransientState& state);
 };
 
-} // namespace sim::electronics::transient
+} // namespace sim::electronics::algorithms::transient
 
 #include "src/sim/electronics/algorithms/transient/src/TransientSolver.tpp"
 
-#endif // APEX_SIM_ELECTRONICS_TRANSIENT_TRANSIENTSOLVER_HPP
+#endif // APEX_TRANSIENTSOLVER_HPP

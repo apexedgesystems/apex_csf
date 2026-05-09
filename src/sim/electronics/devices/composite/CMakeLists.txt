@@ -12,7 +12,7 @@ include(apex/All)
 apex_module(sim_electronics_devices_composite)
 
 # ------------------------------------------------------------------------------
-# Interface Library (Header-Only)
+# Interface Library
 # ------------------------------------------------------------------------------
 
 apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
@@ -20,7 +20,7 @@ apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
 target_link_libraries(
   ${LIB_NAME}
   INTERFACE sim_electronics_devices_descriptors sim_electronics_devices_nonlinear
-            sim_electronics_mna utilities_compatibility
+            sim_electronics_algorithms_mna utilities_compatibility
 )
 
 # ------------------------------------------------------------------------------

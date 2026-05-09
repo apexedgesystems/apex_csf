@@ -26,7 +26,7 @@ using sim::electronics::devices::nonlinear::MosfetLevel1Params;
 
 /* ----------------------------- Fixture ----------------------------- */
 
-class MosfetBatchCudaFixture : public ::testing::Test {
+class MosfetBatchCudaTest : public ::testing::Test {
 protected:
   void SetUp() override {
     if (!apex::compat::cuda::runtimeAvailable()) {
@@ -56,18 +56,18 @@ static std::vector<nl_cuda::MosfetBias> buildBiases(std::size_t count) {
 /* ----------------------------- Uniform-Params Parity ----------------------------- */
 
 /** @test Uniform-params GPU batch matches CPU stampValues element-wise. */
-TEST_F(MosfetBatchCudaFixture, UniformMatchesCpu) {
+TEST_F(MosfetBatchCudaTest, UniformMatchesCpu) {
   const std::size_t N = 4096;
   const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
 
-  const auto biases = buildBiases(N);
+  const auto BIASES = buildBiases(N);
 
   nl_cuda::MosfetBias* dBiases = nullptr;
   nl_cuda::MosfetStamp* dStamps = nullptr;
   ASSERT_EQ(cudaMalloc(&dBiases, N * sizeof(nl_cuda::MosfetBias)), cudaSuccess);
   ASSERT_EQ(cudaMalloc(&dStamps, N * sizeof(nl_cuda::MosfetStamp)), cudaSuccess);
 
-  ASSERT_EQ(cudaMemcpy(dBiases, biases.data(), N * sizeof(nl_cuda::MosfetBias),
+  ASSERT_EQ(cudaMemcpy(dBiases, BIASES.data(), N * sizeof(nl_cuda::MosfetBias),
                        cudaMemcpyHostToDevice),
             cudaSuccess);
 
@@ -80,10 +80,10 @@ TEST_F(MosfetBatchCudaFixture, UniformMatchesCpu) {
             cudaSuccess);
 
   for (std::size_t i = 0; i < N; ++i) {
-    const auto cpuSv = MosfetLevel1::stampValues(biases[i].vgs, biases[i].vds, PARAMS);
-    EXPECT_NEAR(gpuStamps[i].id, cpuSv.id, 1e-12) << "id mismatch at i=" << i;
-    EXPECT_NEAR(gpuStamps[i].gm, cpuSv.gm, 1e-12) << "gm mismatch at i=" << i;
-    EXPECT_NEAR(gpuStamps[i].gds, cpuSv.gds, 1e-12) << "gds mismatch at i=" << i;
+    const auto CPU_SV = MosfetLevel1::stampValues(BIASES[i].vgs, BIASES[i].vds, PARAMS);
+    EXPECT_NEAR(gpuStamps[i].id, CPU_SV.id, 1e-12) << "id mismatch at i=" << i;
+    EXPECT_NEAR(gpuStamps[i].gm, CPU_SV.gm, 1e-12) << "gm mismatch at i=" << i;
+    EXPECT_NEAR(gpuStamps[i].gds, CPU_SV.gds, 1e-12) << "gds mismatch at i=" << i;
   }
 
   cudaFree(dBiases);
@@ -93,9 +93,9 @@ TEST_F(MosfetBatchCudaFixture, UniformMatchesCpu) {
 /* ----------------------------- Per-Device-Params Parity ----------------------------- */
 
 /** @test Per-device-params GPU batch matches CPU stampValues element-wise. */
-TEST_F(MosfetBatchCudaFixture, PerDeviceMatchesCpu) {
+TEST_F(MosfetBatchCudaTest, PerDeviceMatchesCpu) {
   const std::size_t N = 2242; // size of the Intel 4004 transistor set
-  const auto biases = buildBiases(N);
+  const auto BIASES = buildBiases(N);
 
   // Emulate W/L binning: Kp varies per device; Vth alternates enhancement / depletion.
   std::vector<MosfetLevel1Params> params(N);
@@ -113,7 +113,7 @@ TEST_F(MosfetBatchCudaFixture, PerDeviceMatchesCpu) {
   ASSERT_EQ(cudaMalloc(&dParams, N * sizeof(MosfetLevel1Params)), cudaSuccess);
   ASSERT_EQ(cudaMalloc(&dStamps, N * sizeof(nl_cuda::MosfetStamp)), cudaSuccess);
 
-  ASSERT_EQ(cudaMemcpy(dBiases, biases.data(), N * sizeof(nl_cuda::MosfetBias),
+  ASSERT_EQ(cudaMemcpy(dBiases, BIASES.data(), N * sizeof(nl_cuda::MosfetBias),
                        cudaMemcpyHostToDevice),
             cudaSuccess);
   ASSERT_EQ(
@@ -129,10 +129,10 @@ TEST_F(MosfetBatchCudaFixture, PerDeviceMatchesCpu) {
             cudaSuccess);
 
   for (std::size_t i = 0; i < N; ++i) {
-    const auto cpuSv = MosfetLevel1::stampValues(biases[i].vgs, biases[i].vds, params[i]);
-    EXPECT_NEAR(gpuStamps[i].id, cpuSv.id, 1e-12) << "id mismatch at i=" << i;
-    EXPECT_NEAR(gpuStamps[i].gm, cpuSv.gm, 1e-12) << "gm mismatch at i=" << i;
-    EXPECT_NEAR(gpuStamps[i].gds, cpuSv.gds, 1e-12) << "gds mismatch at i=" << i;
+    const auto CPU_SV = MosfetLevel1::stampValues(BIASES[i].vgs, BIASES[i].vds, params[i]);
+    EXPECT_NEAR(gpuStamps[i].id, CPU_SV.id, 1e-12) << "id mismatch at i=" << i;
+    EXPECT_NEAR(gpuStamps[i].gm, CPU_SV.gm, 1e-12) << "gm mismatch at i=" << i;
+    EXPECT_NEAR(gpuStamps[i].gds, CPU_SV.gds, 1e-12) << "gds mismatch at i=" << i;
   }
 
   cudaFree(dBiases);
@@ -140,9 +140,10 @@ TEST_F(MosfetBatchCudaFixture, PerDeviceMatchesCpu) {
   cudaFree(dStamps);
 }
 
-TEST_F(MosfetBatchCudaFixture, SoAMatchesCpu) {
+/** @test SoA-layout GPU batch matches CPU stampValues element-wise. */
+TEST_F(MosfetBatchCudaTest, SoAMatchesCpu) {
   const std::size_t N = 2242;
-  const auto biases = buildBiases(N);
+  const auto BIASES = buildBiases(N);
 
   std::vector<MosfetLevel1Params> params(N);
   for (std::size_t i = 0; i < N; ++i) {
@@ -163,7 +164,7 @@ TEST_F(MosfetBatchCudaFixture, SoAMatchesCpu) {
   ASSERT_EQ(cudaMalloc(&dGm, N * sizeof(double)), cudaSuccess);
   ASSERT_EQ(cudaMalloc(&dGds, N * sizeof(double)), cudaSuccess);
 
-  ASSERT_EQ(cudaMemcpy(dBiases, biases.data(), N * sizeof(nl_cuda::MosfetBias),
+  ASSERT_EQ(cudaMemcpy(dBiases, BIASES.data(), N * sizeof(nl_cuda::MosfetBias),
                        cudaMemcpyHostToDevice),
             cudaSuccess);
   ASSERT_EQ(
@@ -179,10 +180,10 @@ TEST_F(MosfetBatchCudaFixture, SoAMatchesCpu) {
   ASSERT_EQ(cudaMemcpy(gds.data(), dGds, N * sizeof(double), cudaMemcpyDeviceToHost), cudaSuccess);
 
   for (std::size_t i = 0; i < N; ++i) {
-    const auto cpuSv = MosfetLevel1::stampValues(biases[i].vgs, biases[i].vds, params[i]);
-    EXPECT_NEAR(id[i], cpuSv.id, 1e-12) << "id mismatch at i=" << i;
-    EXPECT_NEAR(gm[i], cpuSv.gm, 1e-12) << "gm mismatch at i=" << i;
-    EXPECT_NEAR(gds[i], cpuSv.gds, 1e-12) << "gds mismatch at i=" << i;
+    const auto CPU_SV = MosfetLevel1::stampValues(BIASES[i].vgs, BIASES[i].vds, params[i]);
+    EXPECT_NEAR(id[i], CPU_SV.id, 1e-12) << "id mismatch at i=" << i;
+    EXPECT_NEAR(gm[i], CPU_SV.gm, 1e-12) << "gm mismatch at i=" << i;
+    EXPECT_NEAR(gds[i], CPU_SV.gds, 1e-12) << "gds mismatch at i=" << i;
   }
 
   cudaFree(dBiases);
@@ -263,7 +264,8 @@ void cpuStampMosfetL1(const std::vector<nl_cuda::MosfetBias>& biases,
 }
 
 
-TEST_F(MosfetBatchCudaFixture, StampMosfetL1BatchMatchesCpu) {
+/** @test Batched MOSFET-L1 stamp on GPU matches CPU per-device assembly. */
+TEST_F(MosfetBatchCudaTest, StampMosfetL1BatchMatchesCpu) {
   // Small deterministic circuit: 17 nets (net 0 = ground, 1..16 DOF),
   // 64 MOSFETs scattered over nets 1..16 with reproducible params.
   constexpr int NET_COUNT = 17;
@@ -277,9 +279,9 @@ TEST_F(MosfetBatchCudaFixture, StampMosfetL1BatchMatchesCpu) {
   // Spread VSG/VSD around threshold with both signs of VSD so both
   // SPICE modes are exercised.
   for (int i = 0; i < N_TRANSISTORS; ++i) {
-    const double vsg = 0.5 + 0.05 * static_cast<double>(i % 31);
-    const double vsd = (i % 3 == 0) ? -0.4 + 0.02 * i : 0.2 + 0.03 * i;
-    biases[i] = {vsg, vsd};
+    const double VSG = 0.5 + 0.05 * static_cast<double>(i % 31);
+    const double VSD = (i % 3 == 0) ? -0.4 + 0.02 * i : 0.2 + 0.03 * i;
+    biases[i] = {VSG, VSD};
     params[i] = {.Kp = 5e-3 * (1.0 + 0.001 * i), .Vth = 1.17, .lambda = 0.03, .Vsmooth = 0.1};
     nets[i] = {1 + (i * 5 + 3) % (NET_COUNT - 1), 1 + (i * 7 + 2) % (NET_COUNT - 1),
                1 + (i * 11 + 5) % (NET_COUNT - 1)};
@@ -344,7 +346,8 @@ TEST_F(MosfetBatchCudaFixture, StampMosfetL1BatchMatchesCpu) {
   cudaFree(dI);
 }
 
-TEST_F(MosfetBatchCudaFixture, NrUpdateAndLimit_NoLimit) {
+/** @test NR update applies a 1x scale when max delta is below the limit. */
+TEST_F(MosfetBatchCudaTest, NrUpdateAndLimit_NoLimit) {
   // Case: max delta below the limit -> should apply 1x scale.
   constexpr int N = 1121;
   constexpr double LIMIT = 5.0;
@@ -390,7 +393,8 @@ TEST_F(MosfetBatchCudaFixture, NrUpdateAndLimit_NoLimit) {
   cudaFree(dMaxDelta);
 }
 
-TEST_F(MosfetBatchCudaFixture, NrUpdateAndLimit_Limited) {
+/** @test NR update scales deltas uniformly when max delta exceeds the limit. */
+TEST_F(MosfetBatchCudaTest, NrUpdateAndLimit_Limited) {
   // Case: max delta exceeds the limit -> should scale all deltas.
   constexpr int N = 1121;
   constexpr double LIMIT = 5.0;
@@ -406,7 +410,7 @@ TEST_F(MosfetBatchCudaFixture, NrUpdateAndLimit_Limited) {
     expectedMax = std::max(expectedMax, std::fabs(next[i] - prev[i]));
   }
   ASSERT_GT(expectedMax, LIMIT);
-  const double scale = LIMIT / expectedMax;
+  const double SCALE = LIMIT / expectedMax;
 
   double *dNewV = nullptr, *dPrevV = nullptr, *dMaxDelta = nullptr;
   ASSERT_EQ(cudaMalloc(&dNewV, N * sizeof(double)), cudaSuccess);
@@ -433,7 +437,7 @@ TEST_F(MosfetBatchCudaFixture, NrUpdateAndLimit_Limited) {
   // Each prev[i] should have moved by scale * (next[i] - prev[i]).
   // Since prev was 0.0, gpuOut[i] == scale * next[i].
   for (int i = 0; i < N; ++i) {
-    EXPECT_NEAR(gpuOut[i], scale * next[i], 1e-12) << "i=" << i;
+    EXPECT_NEAR(gpuOut[i], SCALE * next[i], 1e-12) << "i=" << i;
   }
 
   cudaFree(dNewV);

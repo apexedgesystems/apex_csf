@@ -17,14 +17,14 @@
 #include <cmath>
 #include <vector>
 
-using sim::electronics::devices::companions::CompanionSet;
-using sim::electronics::mna::MnaSolveWorkspace;
-using sim::electronics::mna::MnaSystem;
-using sim::electronics::mna::cuda::MnaCudaWorkspace;
-using sim::electronics::transient::TransientState;
-using sim::electronics::transient::TransientStatus;
-using sim::electronics::transient::cuda::available;
-using sim::electronics::transient::cuda::stepCuda;
+using sim::electronics::algorithms::companions::CompanionSet;
+using sim::electronics::algorithms::mna::MnaSolveWorkspace;
+using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::cuda::MnaCudaWorkspace;
+using sim::electronics::algorithms::transient::TransientState;
+using sim::electronics::algorithms::transient::TransientStatus;
+using sim::electronics::algorithms::transient::cuda::available;
+using sim::electronics::algorithms::transient::cuda::stepCuda;
 
 /* ----------------------------- Helper Functions ----------------------------- */
 
@@ -47,7 +47,7 @@ static constexpr double VDD = 5.0;
 /* ----------------------------- CPU Fallback Tests ----------------------------- */
 
 /** @test Small RC circuit falls back to CPU (below 100-net threshold). */
-TEST(TransientCuda, SmallCircuitFallsBackToCPU) {
+TEST(TransientCudaTest, SmallCircuitFallsBackToCPU) {
   // 3-net RC circuit: Gnd(0), Vdd(1), Vout(2)
   // Forces CPU fallback path
   MnaSystem mna(3);
@@ -57,7 +57,7 @@ TEST(TransientCuda, SmallCircuitFallsBackToCPU) {
   double R = 1000.0;
   double G = 1.0 / R;
 
-  sim::electronics::transient::StampCallback stampCb = [G](MnaSystem& m, double /*time*/) {
+  sim::electronics::algorithms::transient::StampCallback stampCb = [G](MnaSystem& m, double /*time*/) {
     m.addVoltageSource(1, 0, VDD);
     m.addConductance(1, 2, G);
   };
@@ -86,7 +86,7 @@ TEST(TransientCuda, SmallCircuitFallsBackToCPU) {
 }
 
 /** @test Stateful stamp callback also falls back for small circuits. */
-TEST(TransientCuda, StatefulCallbackSmallCircuitFallback) {
+TEST(TransientCudaTest, StatefulCallbackSmallCircuitFallback) {
   MnaSystem mna(3);
   CompanionSet companions;
   companions.addCapacitor(2, 0, 1e-6);
@@ -94,7 +94,7 @@ TEST(TransientCuda, StatefulCallbackSmallCircuitFallback) {
   double R = 1000.0;
   double G = 1.0 / R;
 
-  sim::electronics::transient::StatefulStampCallback stampCb =
+  sim::electronics::algorithms::transient::StatefulStampCallback stampCb =
       [G](MnaSystem& m, double /*time*/, const std::vector<double>& /*prevV*/) {
         m.addVoltageSource(1, 0, VDD);
         m.addConductance(1, 2, G);
@@ -121,16 +121,16 @@ TEST(TransientCuda, StatefulCallbackSmallCircuitFallback) {
 /* ----------------------------- Availability Tests ----------------------------- */
 
 /** @test available() returns consistent value. */
-TEST(TransientCuda, AvailabilityConsistent) {
+TEST(TransientCudaTest, AvailabilityConsistent) {
   // available() should match MNA CUDA availability
   bool transientAvail = available();
-  bool mnaAvail = sim::electronics::mna::cuda::available();
+  bool mnaAvail = sim::electronics::algorithms::mna::cuda::available();
   EXPECT_EQ(transientAvail, mnaAvail)
       << "Transient CUDA availability should match MNA CUDA availability";
 }
 
 /** @test Uninitialized workspace rejects any dimension. */
-TEST(TransientCuda, UninitializedWorkspaceCannotHandle) {
+TEST(TransientCudaTest, UninitializedWorkspaceCannotHandle) {
   MnaCudaWorkspace cudaWs;
   EXPECT_FALSE(cudaWs.canHandle(1));
   EXPECT_FALSE(cudaWs.canHandle(100));
@@ -139,14 +139,14 @@ TEST(TransientCuda, UninitializedWorkspaceCannotHandle) {
 /* ----------------------------- GPU Path Tests ----------------------------- */
 
 /** @test stepCuda with uninitialized workspace returns error. */
-TEST(TransientCuda, UninitializedWorkspaceReturnsError) {
+TEST(TransientCudaTest, UninitializedWorkspaceReturnsError) {
   // Create a circuit large enough to pass the 100-net threshold check
   // but with uninitialized workspace, so GPU path cannot proceed.
   constexpr std::size_t NET_COUNT = 110;
   MnaSystem mna(NET_COUNT);
   CompanionSet companions;
 
-  sim::electronics::transient::StampCallback stampCb = [](MnaSystem& /*m*/, double /*time*/) {};
+  sim::electronics::algorithms::transient::StampCallback stampCb = [](MnaSystem& /*m*/, double /*time*/) {};
 
   // Workspace not prepared (initialized = false)
   MnaCudaWorkspace cudaWs;

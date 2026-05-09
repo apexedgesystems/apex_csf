@@ -21,8 +21,8 @@ The same API is used by every circuit model in this library:
 
 | Model                               | Construction                         |
 | ----------------------------------- | ------------------------------------ |
-| [filters](../filters/README.md)     | RC low-pass via 1 resistor + 1 cap   |
-| [gates](../gates/README.md)         | Logic gate truth tables              |
+| [filters](../topologies/filters/README.md)     | RC low-pass via 1 resistor + 1 cap   |
+| [gates](../topologies/gates/README.md)         | Logic gate truth tables              |
 | [intel4004](../intel4004/README.md) | 2,242-transistor PMOS microprocessor |
 
 **RT-safety:** Construction is NOT RT-safe (allocates). After `build()`, time
@@ -38,7 +38,7 @@ underlying solver is configured with cached LU.
 #include "src/sim/electronics/algorithms/transient/inc/TransientConfig.hpp"
 
 using sim::electronics::circuit::Circuit;
-using sim::electronics::transient::TransientConfig;
+using sim::electronics::algorithms::transient::TransientConfig;
 
 Circuit circuit;
 
@@ -138,9 +138,9 @@ circuit.addStamp([=, &params](auto& mna, double, const auto& prev) {
 
 | Library                                | Why                           |
 | -------------------------------------- | ----------------------------- |
-| `sim_electronics_mna`                  | MNA matrix assembly + solve   |
+| `sim_electronics_algorithms_mna`                  | MNA matrix assembly + solve   |
 | `sim_electronics_algorithms_transient` | Time stepping + integration   |
-| `sim_electronics_devices_companions`   | Capacitor/inductor companions |
+| `sim_electronics_algorithms_companions`   | Capacitor/inductor companions |
 
 Header-only library. No source files. All consumers link
 `sim_electronics_circuit` as an INTERFACE dependency.
@@ -183,9 +183,9 @@ Direct unit tests live in the consumers:
 
 ## See Also
 
-- [filters](../filters/README.md) -- analog filter models built on Circuit
-- [gates](../gates/README.md) -- digital logic models
+- [filters](../topologies/filters/README.md) -- analog filter models built on Circuit
+- [gates](../topologies/gates/README.md) -- digital logic models
 - [intel4004](../intel4004/README.md) -- microprocessor model
 - [algorithms/mna](../algorithms/mna/README.md) -- underlying linear solver
 - [algorithms/transient](../algorithms/transient/README.md) -- time-stepping
-- [devices/companions](../devices/companions/inc/CompanionModels.hpp) -- reactive element discretization
+- [algorithms/companions](../algorithms/companions/inc/CompanionModels.hpp) -- reactive element discretization

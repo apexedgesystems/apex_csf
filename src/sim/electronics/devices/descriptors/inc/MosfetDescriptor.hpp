@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_MOSFETDESCRIPTOR_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_MOSFETDESCRIPTOR_HPP
+#ifndef APEX_MOSFETDESCRIPTOR_HPP
+#define APEX_MOSFETDESCRIPTOR_HPP
 /**
  * @file MosfetDescriptor.hpp
  * @brief MOSFET topology descriptor (connectivity only, no physics).
@@ -14,7 +14,7 @@
 
 namespace sim::electronics::devices::descriptors {
 
-using mna::NetID;
+using algorithms::mna::NetID;
 
 /**
  * @brief MOSFET topology descriptor.
@@ -61,4 +61,4 @@ struct MosfetDescriptor {
 
 } // namespace sim::electronics::devices::descriptors
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_DESCRIPTORS_MOSFETDESCRIPTOR_HPP
+#endif // APEX_MOSFETDESCRIPTOR_HPP

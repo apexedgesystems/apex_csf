@@ -17,10 +17,10 @@
 #include <cmath>
 #include <numbers>
 
-using sim::electronics::mna::AcMnaSystem;
-using sim::electronics::mna::Complex;
-using sim::electronics::mna::frequencySweep;
-using sim::electronics::mna::NetID;
+using sim::electronics::algorithms::mna::AcMnaSystem;
+using sim::electronics::algorithms::mna::Complex;
+using sim::electronics::algorithms::mna::frequencySweep;
+using sim::electronics::algorithms::mna::NetID;
 
 /* ----------------------------- Constants ----------------------------- */
 
@@ -42,7 +42,7 @@ constexpr double PHASE_TOL = 3.0; // 3 degree tolerance
 /* ----------------------------- Basic AC MNA ----------------------------- */
 
 /** @test Verify pure resistive circuit at any frequency. */
-TEST(AcMna, ResistiveCircuit_FrequencyIndependent) {
+TEST(AcMnaTest, ResistiveCircuit_FrequencyIndependent) {
   // Voltage divider: 5V -> R1=1k -> Vout -> R2=1k -> GND
   constexpr NetID GND = 0, VIN = 1, VOUT = 2;
 
@@ -67,7 +67,7 @@ TEST(AcMna, ResistiveCircuit_FrequencyIndependent) {
 }
 
 /** @test Verify capacitor impedance varies with frequency. */
-TEST(AcMna, CapacitorImpedance) {
+TEST(AcMnaTest, CapacitorImpedance) {
   // Simple RC: Vin -> R=1k -> Vout -> C=1uF -> GND
   constexpr NetID GND = 0, VIN = 1, VOUT = 2;
 
@@ -103,7 +103,7 @@ TEST(AcMna, CapacitorImpedance) {
 /* ----------------------------- Low-Pass RC Filter ----------------------------- */
 
 /** @test Low-pass RC filter at cutoff frequency: -3dB, -45 degrees. */
-TEST(AcFilter, LowPassRC_AtCutoff) {
+TEST(AcFilterTest, LowPassRC_AtCutoff) {
   // Low-pass: Vin -> R -> Vout -> C -> GND
   constexpr NetID GND = 0, VIN = 1, VOUT = 2;
 
@@ -130,7 +130,7 @@ TEST(AcFilter, LowPassRC_AtCutoff) {
 }
 
 /** @test Low-pass RC filter well below cutoff: ~0dB, ~0 degrees. */
-TEST(AcFilter, LowPassRC_BelowCutoff) {
+TEST(AcFilterTest, LowPassRC_BelowCutoff) {
   constexpr NetID GND = 0, VIN = 1, VOUT = 2;
   double freq = FC_RC / 10.0; // One decade below
 
@@ -151,7 +151,7 @@ TEST(AcFilter, LowPassRC_BelowCutoff) {
 }
 
 /** @test Low-pass RC filter well above cutoff: -20dB/decade slope. */
-TEST(AcFilter, LowPassRC_AboveCutoff) {
+TEST(AcFilterTest, LowPassRC_AboveCutoff) {
   constexpr NetID GND = 0, VIN = 1, VOUT = 2;
   double freq = FC_RC * 10.0; // One decade above
 
@@ -174,7 +174,7 @@ TEST(AcFilter, LowPassRC_AboveCutoff) {
 /* ----------------------------- High-Pass RC Filter ----------------------------- */
 
 /** @test High-pass RC filter at cutoff frequency. */
-TEST(AcFilter, HighPassRC_AtCutoff) {
+TEST(AcFilterTest, HighPassRC_AtCutoff) {
   // High-pass: Vin -> C -> Vout -> R -> GND
   constexpr NetID GND = 0, VIN = 1, VOUT = 2;
 
@@ -201,7 +201,7 @@ TEST(AcFilter, HighPassRC_AtCutoff) {
 /* ----------------------------- Frequency Sweep ----------------------------- */
 
 /** @test Frequency sweep finds correct cutoff frequency. */
-TEST(AcSweep, LowPassRC_FindCutoff) {
+TEST(AcSweepTest, LowPassRC_FindCutoff) {
   constexpr NetID GND = 0, VIN = 1, VOUT = 2;
 
   auto sweep = frequencySweep(3, VIN, VOUT, V_IN,
@@ -223,7 +223,7 @@ TEST(AcSweep, LowPassRC_FindCutoff) {
 }
 
 /** @test Frequency sweep generates valid Bode plot data. */
-TEST(AcSweep, BodePlotData) {
+TEST(AcSweepTest, BodePlotData) {
   constexpr NetID GND = 0, VIN = 1, VOUT = 2;
 
   auto sweep = frequencySweep(3, VIN, VOUT, V_IN,
@@ -253,7 +253,7 @@ TEST(AcSweep, BodePlotData) {
 /* ----------------------------- Inductor Tests ----------------------------- */
 
 /** @test Inductor impedance increases with frequency. */
-TEST(AcMna, InductorImpedance) {
+TEST(AcMnaTest, InductorImpedance) {
   // RL circuit: Vin -> R=1k -> Vout -> L=1mH -> GND
   constexpr NetID GND = 0, VIN = 1, VOUT = 2;
 
@@ -291,7 +291,7 @@ TEST(AcMna, InductorImpedance) {
 /* ----------------------------- RLC Circuit ----------------------------- */
 
 /** @test Series RLC resonance. */
-TEST(AcMna, SeriesRLC_Resonance) {
+TEST(AcMnaTest, SeriesRLC_Resonance) {
   // Series RLC: Vin -> R -> L -> C -> GND, measure across R
   // Resonant freq: f0 = 1/(2*pi*sqrt(LC))
   // At resonance, L and C cancel, leaving only R

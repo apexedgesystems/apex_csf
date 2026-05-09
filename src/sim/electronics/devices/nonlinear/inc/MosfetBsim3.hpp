@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETBSIM3_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETBSIM3_HPP
+#ifndef APEX_MOSFETBSIM3_HPP
+#define APEX_MOSFETBSIM3_HPP
 /**
  * @file MosfetBsim3.hpp
  * @brief BSIM3v3 MOSFET model (Berkeley Short-channel IGFET Model v3).
@@ -57,8 +57,8 @@
 
 namespace sim::electronics::devices::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /**
  * @brief Minimal BSIM3 parameters.
@@ -301,7 +301,7 @@ struct MosfetBsim3 {
     const double idSat = 0.5 * beta * vgstEffVal * (vgstEffVal + n_vt_2);
 
     // Smooth linear-to-saturation transition: factor = 1 - (1-r)^2
-    // where r = Vdseff / Vdsat ∈ [0, 1]. Equivalent to the textbook
+    // where r = Vdseff / Vdsat in [0, 1]. Equivalent to the textbook
     // (Vgst*Vds - 0.5*Vds^2) form when Vdseff < Vdsat. Reaches 1 at
     // Vds = Vdsat (saturation).
     const double r = vdseffVal / std::max(vdsat, 1e-12);
@@ -481,4 +481,4 @@ struct MosfetBsim3 {
 
 } // namespace sim::electronics::devices::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETBSIM3_HPP
+#endif // APEX_MOSFETBSIM3_HPP

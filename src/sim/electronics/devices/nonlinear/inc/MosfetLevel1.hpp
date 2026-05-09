@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETLEVEL1_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETLEVEL1_HPP
+#ifndef APEX_MOSFETLEVEL1_HPP
+#define APEX_MOSFETLEVEL1_HPP
 /**
  * @file MosfetLevel1.hpp
  * @brief MOSFET Level 1 model (Shichman-Hodges 3-region analog model).
@@ -28,8 +28,8 @@
 
 namespace sim::electronics::devices::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /**
  * @brief MOSFET Level 1 model parameters.
@@ -496,4 +496,4 @@ struct MosfetLevel1 {
 
 } // namespace sim::electronics::devices::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_MOSFETLEVEL1_HPP
+#endif // APEX_MOSFETLEVEL1_HPP

@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_DIODESHOCKLEY_HPP
-#define APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_DIODESHOCKLEY_HPP
+#ifndef APEX_DIODESHOCKLEY_HPP
+#define APEX_DIODESHOCKLEY_HPP
 /**
  * @file DiodeShockley.hpp
  * @brief Shockley diode model (exponential I-V characteristic).
@@ -25,8 +25,8 @@
 
 namespace sim::electronics::devices::nonlinear {
 
-using mna::MnaSystem;
-using mna::NetID;
+using algorithms::mna::MnaSystem;
+using algorithms::mna::NetID;
 
 /**
  * @brief Shockley diode model parameters.
@@ -133,4 +133,4 @@ struct DiodeShockley {
 
 } // namespace sim::electronics::devices::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_DEVICES_NONLINEAR_DIODESHOCKLEY_HPP
+#endif // APEX_DIODESHOCKLEY_HPP

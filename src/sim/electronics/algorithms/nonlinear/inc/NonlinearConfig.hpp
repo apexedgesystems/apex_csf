@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_NONLINEAR_NONLINEARCONFIG_HPP
-#define APEX_SIM_ELECTRONICS_NONLINEAR_NONLINEARCONFIG_HPP
+#ifndef APEX_NONLINEARCONFIG_HPP
+#define APEX_NONLINEARCONFIG_HPP
 /**
  * @file NonlinearConfig.hpp
  * @brief Configuration and status codes for Newton-Raphson nonlinear solver.
@@ -12,7 +12,7 @@
 #include <cstdint>
 #include <string>
 
-namespace sim::electronics::nonlinear {
+namespace sim::electronics::algorithms::nonlinear {
 
 /* ----------------------------- NonlinearConfig ----------------------------- */
 
@@ -119,6 +119,6 @@ struct NonlinearResult {
   [[nodiscard]] bool success() const noexcept { return status == NonlinearStatus::SUCCESS; }
 };
 
-} // namespace sim::electronics::nonlinear
+} // namespace sim::electronics::algorithms::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_NONLINEAR_NONLINEARCONFIG_HPP
+#endif // APEX_NONLINEARCONFIG_HPP

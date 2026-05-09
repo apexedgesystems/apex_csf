@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_ELECTRONICS_NONLINEAR_NEWTONRAPHSON_TPP
-#define APEX_SIM_ELECTRONICS_NONLINEAR_NEWTONRAPHSON_TPP
+#ifndef APEX_NEWTONRAPHSON_TPP
+#define APEX_NEWTONRAPHSON_TPP
 /**
  * @file NewtonRaphson.tpp
  * @brief NewtonRaphsonSolver implementation.
@@ -7,7 +7,7 @@
 
 #include "src/sim/electronics/algorithms/nonlinear/inc/NewtonRaphson.hpp"
 
-namespace sim::electronics::nonlinear {
+namespace sim::electronics::algorithms::nonlinear {
 
 /* ----------------------------- Construction ----------------------------- */
 
@@ -196,6 +196,6 @@ inline double NewtonRaphsonSolver::computeKclResidual() const noexcept {
   return maxResidual;
 }
 
-} // namespace sim::electronics::nonlinear
+} // namespace sim::electronics::algorithms::nonlinear
 
-#endif // APEX_SIM_ELECTRONICS_NONLINEAR_NEWTONRAPHSON_TPP
+#endif // APEX_NEWTONRAPHSON_TPP

@@ -216,8 +216,8 @@ TEST(MosfetLevel1, VerifyChannelModulation) {
 
 /* =================== ngspice Comparison Tests =========================== */
 
-using sim::electronics::spice::ngspice::NgspiceStatus;
-using sim::electronics::spice::ngspice::NgspiceWrapper;
+using sim::electronics::algorithms::spice::ngspice::NgspiceStatus;
+using sim::electronics::algorithms::spice::ngspice::NgspiceWrapper;
 
 /**
  * @test

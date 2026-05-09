@@ -10,8 +10,8 @@
 #include <cmath>
 
 using sim::electronics::devices::linear::ResistorModel;
-using sim::electronics::mna::MnaSystem;
-using sim::electronics::mna::MnaSystemSparse;
+using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::MnaSystemSparse;
 
 /* ----------------------------- Helper Functions ----------------------------- */
 
@@ -20,7 +20,7 @@ constexpr double TOLERANCE = 1e-12;
 /* ----------------------------- Conductance Tests ----------------------------- */
 
 /** @test Conductance calculation (Ohm's law: G = 1/R). */
-TEST(ResistorModel, Conductance) {
+TEST(ResistorModelTest, Conductance) {
   EXPECT_NEAR(ResistorModel::conductance(1000.0), 0.001, TOLERANCE); // 1k ohm -> 1mS
   EXPECT_NEAR(ResistorModel::conductance(100.0), 0.01, TOLERANCE);   // 100 ohm -> 10mS
   EXPECT_NEAR(ResistorModel::conductance(10.0), 0.1, TOLERANCE);     // 10 ohm -> 100mS
@@ -28,7 +28,7 @@ TEST(ResistorModel, Conductance) {
 }
 
 /** @test Conductance is reciprocal of resistance. */
-TEST(ResistorModel, ConductanceReciprocal) {
+TEST(ResistorModelTest, ConductanceReciprocal) {
   constexpr double R = 4700.0; // 4.7k ohm
   double g = ResistorModel::conductance(R);
   EXPECT_NEAR(1.0 / g, R, TOLERANCE);
@@ -37,26 +37,26 @@ TEST(ResistorModel, ConductanceReciprocal) {
 /* ----------------------------- Current Tests ----------------------------- */
 
 /** @test Current calculation (Ohm's law: I = V/R). */
-TEST(ResistorModel, Current) {
+TEST(ResistorModelTest, Current) {
   EXPECT_NEAR(ResistorModel::current(5.0, 1000.0), 0.005, TOLERANCE); // 5V / 1k ohm = 5mA
   EXPECT_NEAR(ResistorModel::current(3.3, 100.0), 0.033, TOLERANCE);  // 3.3V / 100 ohm = 33mA
   EXPECT_NEAR(ResistorModel::current(1.0, 10.0), 0.1, TOLERANCE);     // 1V / 10 ohm = 100mA
 }
 
 /** @test Zero voltage yields zero current. */
-TEST(ResistorModel, ZeroVoltage) {
+TEST(ResistorModelTest, ZeroVoltage) {
   EXPECT_NEAR(ResistorModel::current(0.0, 1000.0), 0.0, TOLERANCE);
 }
 
 /** @test Negative voltage yields negative current. */
-TEST(ResistorModel, NegativeVoltage) {
+TEST(ResistorModelTest, NegativeVoltage) {
   EXPECT_NEAR(ResistorModel::current(-5.0, 1000.0), -0.005, TOLERANCE);
 }
 
 /* ----------------------------- Stamping Tests (Dense) ----------------------------- */
 
 /** @test Stamp resistor into dense MNA system. */
-TEST(ResistorModel, StampDense) {
+TEST(ResistorModelTest, StampDense) {
   constexpr std::size_t NET_COUNT = 3;
   constexpr int VDD = 1;
   constexpr int OUTPUT = 2;
@@ -79,7 +79,7 @@ TEST(ResistorModel, StampDense) {
 }
 
 /** @test Stamp multiple resistors (series resistance check). */
-TEST(ResistorModel, SeriesResistance) {
+TEST(ResistorModelTest, SeriesResistance) {
   constexpr std::size_t NET_COUNT = 4;
   constexpr int VDD = 1;
   constexpr int MID1 = 2;
@@ -108,7 +108,7 @@ TEST(ResistorModel, SeriesResistance) {
 /* ----------------------------- Stamping Tests (Sparse) ----------------------------- */
 
 /** @test Stamp resistor into sparse MNA system. */
-TEST(ResistorModel, StampSparse) {
+TEST(ResistorModelTest, StampSparse) {
   constexpr std::size_t NET_COUNT = 3;
   constexpr int VDD = 1;
   constexpr int OUTPUT = 2;
@@ -134,7 +134,7 @@ TEST(ResistorModel, StampSparse) {
 /* ----------------------------- Ohm's Law Validation ----------------------------- */
 
 /** @test Verify Ohm's law consistency (V = I * R). */
-TEST(ResistorModel, OhmsLawConsistency) {
+TEST(ResistorModelTest, OhmsLawConsistency) {
   constexpr double V = 5.0;
   constexpr double R = 1000.0;
 
@@ -145,7 +145,7 @@ TEST(ResistorModel, OhmsLawConsistency) {
 }
 
 /** @test Verify conductance-current relationship (I = G * V). */
-TEST(ResistorModel, ConductanceCurrentRelationship) {
+TEST(ResistorModelTest, ConductanceCurrentRelationship) {
   constexpr double V = 3.3;
   constexpr double R = 470.0;
 
