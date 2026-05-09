@@ -5,12 +5,8 @@
  * Coverage: each operating region (deep weak inversion, moderate
  * inversion, strong inversion linear, strong inversion saturation),
  * smooth transitions across boundaries, derivatives consistent with
- * numerical differentiation of `current()`.
- *
- * Then: the L2 unblocker scenario -- does BSIM3 with calibrated 4004
- * params drive the depletion-load PMOS NOR's VOL below VTH_enh?
- * (Subthreshold alone via MosfetLevel2 was previously shown not to
- * fix this; the smooth Vgst_eff blending in BSIM3 should.)
+ * numerical differentiation of `current()`, and the Meyer
+ * intrinsic-capacitance model across cutoff / linear / saturation.
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystemSparse.hpp"
@@ -302,85 +298,3 @@ double solveDc(std::size_t n, std::vector<double>& V,
 }
 
 
-/**
- * @test BSIM3 L2 unblocker probe: same depletion-load PMOS inverter
- *       topology as the prior Level1 / Level2 tests, asking whether
- *       BSIM3's smooth Vgst_eff drives VOL below VTH_enh = 1.170V.
- *
- * If yes -> BSIM3 is the correct fix for the L2 latch feedback issue.
- * If no  -> the analysis was wrong; look at the latch topology
- *           directly (cross-coupled pair, not a single inverter).
- */
-TEST(MosfetBsim3ProbeTest, InverterVolL2Unblocker) {
-  std::vector<double> V = {0, VDD, 2.0, 0};
-
-  double vout = solveDc(4, V, [](MnaSystemSparse& mna, const std::vector<double>& v) {
-    mna.addVoltageSource(1, 0, VDD);
-    mna.addVoltageSource(3, 0, 0.0);
-    stampPmosBsim3(mna, 2, 1, 1, v, KP * WL_DEP, VTH_DEP);
-    stampPmosBsim3(mna, 0, 3, 2, v, KP * WL_ENH, VTH_ENH);
-  });
-
-  const double OVERDRIVE = VTH_ENH - vout;
-  std::printf("\n  ==== BSIM3 L2 Unblocker Probe ====\n");
-  std::printf("    VOL_BSIM3:   %.4fV\n", vout);
-  std::printf("    VTH_enh:     %.4fV\n", VTH_ENH);
-  std::printf("    Overdrive:   %.4fV  (positive = latch can resolve)\n", OVERDRIVE);
-  std::printf("    L1 reference: VOL=1.2010V, overdrive=-30 mV\n");
-  if (OVERDRIVE > 0.0) {
-    std::printf("  ==> BSIM3 unblocks L2.\n");
-  } else {
-    std::printf("  ==> BSIM3 alone does NOT unblock with this topology.\n");
-    std::printf("      Means the analysis is in the latch (cross-coupled), not the inverter.\n");
-  }
-
-  EXPECT_GT(vout, 0.0);
-  EXPECT_LT(vout, VDD);
-}
-
-/**
- * @test BSIM3 L2 unblocker probe with `n_factor` swept across the
- *       physical range [1.0 .. 2.5] to see how much weak-inversion
- *       broadening drops VOL.
- */
-TEST(MosfetBsim3ProbeTest, NFactorSweep) {
-  std::printf("\n  ==== BSIM3 n_factor sweep ====\n");
-  std::printf("    n_factor    VOL    Overdrive\n");
-  for (double n : {1.0, 1.2, 1.5, 1.8, 2.0, 2.2, 2.5, 3.0}) {
-    std::vector<double> V = {0, VDD, 2.0, 0};
-    auto pmosWithN = [n](MnaSystemSparse& mna, NetID drain, NetID gate, NetID source,
-                         const std::vector<double>& v, double kpScaled, double vth) {
-      auto p = make4004Params(kpScaled, vth);
-      p.n_factor = n;
-      const double VS = v[source], VD = v[drain], VG = v[gate];
-      const double VSG = VS - VG, VSD = VS - VD;
-      NetID sD = drain, sS = source;
-      double eVSG = VSG, eVSD = VSD;
-      if (VSD < 0.0) {
-        std::swap(sD, sS);
-        eVSG = VD - VG;
-        eVSD = VD - VS;
-      }
-      const double VGS_M = std::max(eVSG, 0.0);
-      const double VDS_M = std::max(eVSD, 0.0);
-      const double ID = MosfetBsim3::current(VGS_M, VDS_M, 0.0, p);
-      const double GM = MosfetBsim3::transconductance(VGS_M, VDS_M, 0.0, p);
-      const double GDS = std::max(MosfetBsim3::outputConductance(VGS_M, VDS_M, 0.0, p), 1e-12);
-      const double IEQ = ID - GM * eVSG - GDS * eVSD;
-      mna.addConductance(sD, sS, GDS);
-      mna.addMatrixEntry(sD, gate, GM);
-      mna.addMatrixEntry(sD, sS, -GM);
-      mna.addMatrixEntry(sS, gate, -GM);
-      mna.addMatrixEntry(sS, sS, GM);
-      mna.addCurrent(sD, sS, IEQ);
-    };
-    double vout = solveDc(4, V, [&](MnaSystemSparse& mna, const std::vector<double>& v) {
-      mna.addVoltageSource(1, 0, VDD);
-      mna.addVoltageSource(3, 0, 0.0);
-      pmosWithN(mna, 2, 1, 1, v, KP * WL_DEP, VTH_DEP);
-      pmosWithN(mna, 0, 3, 2, v, KP * WL_ENH, VTH_ENH);
-    });
-    std::printf("    %.2f      %.4fV   %+.4fV %s\n", n, vout, VTH_ENH - vout,
-                (VTH_ENH - vout) > 0.0 ? "<-- POSITIVE" : "");
-  }
-}
