@@ -241,11 +241,12 @@ struct BjtEbersMoll {
     const double IC_EQ = IC - GM * vbe - GO * vbc;
     const double IB_EQ = IB - GBE * vbe - GBC * vbc;
 
-    // Stamp collector current: Ic controlled by Vbe and Vbc
-    // NOTE: addConductance stamps symmetrically. For production use, the BJT
-    // stamp should use asymmetric addGEntry for the VCCS terms. The symmetric
-    // stamp works for per-device testing but produces incorrect MNA solutions
-    // for circuit-level DC operating point. See MISSING_FEATURES.md.
+    // Stamp collector current: Ic controlled by Vbe and Vbc.
+    // KNOWN LIMITATION: addConductance stamps symmetrically, which is
+    // incorrect for the VCCS (transconductance) terms below. The
+    // symmetric stamp is sufficient for per-device tests but does not
+    // converge at circuit-level DC. A proper asymmetric stamp via
+    // addGEntry is required to enable circuit-level BJT DC tests.
     mna.addConductance(collectorNet, baseNet, GM);       // dIc/dVbe term
     mna.addConductance(collectorNet, emitterNet, -GM);   // -dIc/dVbe term
     mna.addConductance(collectorNet, baseNet, GO);       // dIc/dVbc term
