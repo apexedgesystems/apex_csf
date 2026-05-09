@@ -429,6 +429,7 @@ Performance benchmarking uses
 | Library                                              | Namespace                   | Description                                                                       |
 | ---------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------- |
 | [monte_carlo](src/system/core/monte_carlo/README.md) | `apex::monte_carlo`         | Header-only batch Monte Carlo execution across a thread pool                      |
+| [electronics](src/sim/electronics/README.md)         | `sim::electronics`          | Multi-fidelity circuit simulation: MNA solvers (KLU sparse, dense, batched CUDA), Newton-Raphson, transient with companion models, device physics (R/L/C, diodes, MOSFET levels 1-3 / BSIM3, JFETs, BJTs), pre-built topologies (CMOS gates, RC filters, BJT amps), chip-scale assemblies (Intel 4004 L0/Lg/L1/L2) |
 | [gravity](src/sim/environment/gravity/README.md)     | `sim::environment::gravity` | Spherical harmonic gravity (EGM2008 degree 2190, GRGM1200A degree 1200) with CUDA |
 | [regulator](src/sim/analog/regulator/README.md)      | `sim::analog`               | LDO voltage regulator model for Monte Carlo tolerance analysis                    |
 
