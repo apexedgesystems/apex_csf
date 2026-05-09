@@ -14,7 +14,10 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstddef>
+#include <limits>
 
 using sim::electronics::topologies::filters::RcLowPass;
 using sim::electronics::algorithms::transient::IntegrationMethod;
@@ -147,4 +150,99 @@ TEST(RcLowPassTest, MagnitudeResponseLimits) {
   EXPECT_NEAR(filter.analyticalMagnitudeResponse(0.0), 1.0, 1e-9);
   // Very high frequency: |H| -> 0
   EXPECT_LT(filter.analyticalMagnitudeResponse(1e9), 0.001);
+}
+
+/* ----------------------------- Transient Frequency Response ----------------------------- */
+
+namespace {
+
+/// Drive the filter with a unit-amplitude sine wave at frequency `freqHz`,
+/// settle for `settleTau` time constants, then measure peak-to-peak of the
+/// output over one full period. Returns measured gain (vout_pp / 2.0).
+double measureTransientGain(RcLowPass& filter, double freqHz, double dt,
+                            double settleTau) {
+  filter.build();
+  filter.setInputVoltage(0.0);
+  TransientState state;
+  state.resize(filter.circuit().netCount(), 0);
+  filter.circuit().computeDC(state);
+  filter.circuit().solver().setIntegrationMethod(IntegrationMethod::TRAPEZOIDAL);
+
+  const double OMEGA = 2.0 * M_PI * freqHz;
+  const double SETTLE_TIME = settleTau * filter.tau();
+  const auto SETTLE_STEPS = static_cast<std::size_t>(SETTLE_TIME / dt);
+
+  // Settle.
+  double t = 0.0;
+  for (std::size_t i = 0; i < SETTLE_STEPS; ++i) {
+    t += dt;
+    filter.setInputVoltage(std::sin(OMEGA * t));
+    filter.circuit().solver().step(dt, state);
+  }
+
+  // Measure peak-to-peak over one full period.
+  const double PERIOD = 1.0 / freqHz;
+  const auto MEASURE_STEPS = static_cast<std::size_t>(PERIOD / dt) + 1;
+  double vMin = std::numeric_limits<double>::infinity();
+  double vMax = -std::numeric_limits<double>::infinity();
+  for (std::size_t i = 0; i < MEASURE_STEPS; ++i) {
+    t += dt;
+    filter.setInputVoltage(std::sin(OMEGA * t));
+    filter.circuit().solver().step(dt, state);
+    const double V_OUT = state.nodeVoltages[filter.outNet()];
+    vMin = std::min(vMin, V_OUT);
+    vMax = std::max(vMax, V_OUT);
+  }
+  return (vMax - vMin) / 2.0;
+}
+
+} // namespace
+
+/** @test Sine input below cutoff passes through with near-unity gain. */
+TEST(RcLowPassTest, TransientFrequencyResponseBelowCutoff) {
+  // R=1k, C=1uF -> fc ~ 159 Hz. Test at f=10 Hz (~16x below cutoff).
+  RcLowPass filter(1e3, 1e-6);
+  const double F = 10.0;
+  const double MEASURED = measureTransientGain(filter, F, /*dt=*/100e-6,
+                                               /*settleTau=*/8.0);
+  const double EXPECTED = filter.analyticalMagnitudeResponse(F);
+  EXPECT_NEAR(MEASURED, EXPECTED, 0.02)
+      << "Below-cutoff gain should match analytical: expected " << EXPECTED
+      << ", measured " << MEASURED;
+}
+
+/** @test Sine input at cutoff frequency produces -3 dB (0.707) gain. */
+TEST(RcLowPassTest, TransientFrequencyResponseAtCutoff) {
+  RcLowPass filter(1e3, 1e-6);
+  const double F = filter.cutoffHz();
+  const double MEASURED = measureTransientGain(filter, F, /*dt=*/10e-6,
+                                               /*settleTau=*/8.0);
+  // Expected: 1/sqrt(2) ~ 0.7071. Allow 5% for trapezoidal numerical error.
+  EXPECT_NEAR(MEASURED, 1.0 / std::sqrt(2.0), 0.04)
+      << "At cutoff, gain should be -3 dB (0.7071); measured " << MEASURED;
+}
+
+/** @test Sine input above cutoff is attenuated according to 1/(omega*tau) roll-off. */
+TEST(RcLowPassTest, TransientFrequencyResponseAboveCutoff) {
+  RcLowPass filter(1e3, 1e-6);
+  // 10x above cutoff: |H| ~= 1/sqrt(101) ~ 0.0995
+  const double F = 10.0 * filter.cutoffHz();
+  const double MEASURED = measureTransientGain(filter, F, /*dt=*/2e-6,
+                                               /*settleTau=*/8.0);
+  const double EXPECTED = filter.analyticalMagnitudeResponse(F);
+  EXPECT_NEAR(MEASURED, EXPECTED, 0.02)
+      << "Above-cutoff gain should match analytical: expected " << EXPECTED
+      << ", measured " << MEASURED;
+}
+
+/** @test Frequency response is monotonically decreasing across the swept range. */
+TEST(RcLowPassTest, TransientFrequencyResponseMonotonic) {
+  RcLowPass filter(1e3, 1e-6);
+  // Sweep three frequencies spanning the cutoff: 0.1*fc, fc, 10*fc.
+  const double FC = filter.cutoffHz();
+  const double LOW = measureTransientGain(filter, 0.1 * FC, 100e-6, 8.0);
+  const double MID = measureTransientGain(filter, FC, 10e-6, 8.0);
+  const double HIGH = measureTransientGain(filter, 10.0 * FC, 2e-6, 8.0);
+  EXPECT_GT(LOW, MID) << "Gain at 0.1*fc must exceed gain at fc";
+  EXPECT_GT(MID, HIGH) << "Gain at fc must exceed gain at 10*fc";
 }
