@@ -4,6 +4,7 @@
 
 set(TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/CapacitorDescriptor_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/DescriptorRoundTrip_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/InductorDescriptor_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/NonlinearDescriptors_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ResistorDescriptor_uTest.cpp"
@@ -16,6 +17,8 @@ apex_add_gtest(
   ${TEST_SOURCES}
   LINK
   sim_electronics_devices_descriptors
+  sim_electronics_algorithms_companions
+  sim_electronics_devices_nonlinear
   COVERAGE_FOR
   sim_electronics_devices_descriptors
   LABELS
