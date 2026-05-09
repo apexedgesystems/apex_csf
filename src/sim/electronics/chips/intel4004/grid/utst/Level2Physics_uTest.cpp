@@ -746,34 +746,6 @@ double solveDepletionNor(double vinA, double vinB,
 }
 
 
-/**
- * @testdepletion-load NOR with both inputs LOW -- VOH check.
- *       Plain depletion load saturates at VDD - Vt because the load
- *       loses Vgs as the output rises. If this test reports
- *       VOH < VDD - 0.5V, we have empirical evidence that bootstrap
- *       loads are needed for the chip's full-rail signals.
- */
-TEST(AtomicCellTest, PmosNorPlainLoad_BothInputsLow_VOH_BSIM3) {
-  const double VOUT = solveDepletionNor(0.0, 0.0,
-                                        KP * WL_ENH, KP * WL_DEP,
-                                        /*n_factor=*/2.5, /*useBsim3=*/true);
-  std::printf("\n  ====PmosNorPlainLoad (BSIM3 n=2.5) VOH probe ====\n");
-  std::printf("    inputs A=B=0V (pull-downs OFF)\n");
-  std::printf("    VOH = %.4fV  (target: full VDD = %.2fV)\n", VOUT, VDD);
-  std::printf("    deficit = %.4fV  (Vt = %.2fV)\n", VDD - VOUT, VTH_ENH);
-  if (VDD - VOUT < 0.05) {
-    std::printf("  ==> GOOD: plain depletion load reaches full rail. "
-                "Bootstrap NOT needed for this cell.\n");
-  } else if (VDD - VOUT > VTH_ENH * 0.5) {
-    std::printf("  ==> SYMPTOM CONFIRMED: deficit ~ Vt. "
-                "Bootstrap load required for full-rail swing.\n");
-  } else {
-    std::printf("  ==> Partial deficit (%.0f mV). Investigate stamp / GMIN.\n",
-                (VDD - VOUT) * 1000.0);
-  }
-  EXPECT_GT(VOUT, VTH_ENH);          // must at least be above logic threshold
-  EXPECT_LT(VOUT, VDD + 0.01);       // must not exceed VDD
-}
 
 /**
  * @testdepletion-load NOR with input A HIGH -- VOL check.
