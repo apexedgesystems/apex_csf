@@ -7,9 +7,17 @@ CLAUDE.md
 /release/
 compile_commands.json
 
+# Coverage / profiling output
+*.profraw
+*.profdata
+
+# Editor backups
+*.bak
+
 # Temporary files
 /tmp/
 *.log
+/*.csv
 
 # Performance tests (run manually, not committed)
 **/ptst/
