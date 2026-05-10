@@ -240,14 +240,25 @@ TEST(MosfetBsim3Test, DVgstEffDVgsEarlyReturnAtExtremes) {
   EXPECT_DOUBLE_EQ(MosfetBsim3::dVgstEff_dVgs(/*vgs=*/-100.0, /*vth=*/0.0, P), 0.0);
 }
 
-/** @test bodyTransconductance produces a non-positive gmb (back-bias reduces |Id|). */
-TEST(MosfetBsim3Test, BodyTransconductanceSignIsNonPositive) {
+/** @test bodyTransconductance has the sign predicted by NMOS body-effect physics.
+ *
+ * For an NMOS with body-effect coefficient K1 > 0, the threshold equation is
+ *   Vth(Vbs) = Vth0 + K1 * (sqrt(2*phi_F - Vbs) - sqrt(2*phi_F))
+ * so dVth/dVbs < 0 (more-negative Vbs raises Vth). At a fixed Vgs above Vth,
+ * Id drops when Vth rises, so dId/dVbs > 0: forward body bias (Vbs toward
+ * zero from negative) increases Id. The model's bodyTransconductance is
+ * exactly that derivative, so it must be strictly positive in active region.
+ */
+TEST(MosfetBsim3Test, BodyTransconductancePositiveInActiveRegion) {
   const MosfetBsim3Params P;
-  // Forward-active NMOS biased above Vth with a small Vbs.
+  // Sanity: the default params model an NMOS body effect (K1 > 0).
+  ASSERT_GT(P.K1, 0.0);
+
+  // Strong inversion, saturated, slight reverse body bias.
   const double GMB = MosfetBsim3::bodyTransconductance(/*vgs=*/2.0, /*vds=*/3.0, /*vbs=*/-0.1, P);
-  // For NMOS with K1 > 0, increasing Vbs from negative toward 0 lowers Vth
-  // which raises Id, so dId/dVbs >= 0. Just assert it is finite and a real number.
   EXPECT_TRUE(std::isfinite(GMB));
+  EXPECT_GT(GMB, 0.0)
+      << "Expected dId/dVbs > 0 for NMOS in active region with K1>0; got " << GMB;
 }
 
 /** @test stampValuesWithBodyEffect returns the same id/gm/gds as stampValues plus a finite gmb. */
