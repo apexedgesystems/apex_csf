@@ -1,6 +1,13 @@
 /**
  * @file MnaSystemSparse_uTest.cpp
  * @brief Unit tests for sparse MNA solver.
+ *
+ * Covers stamping, factorize/solve, the cached-pattern fast paths
+ * (refactorize, refactorizeInPlace, tripletsMatch, updateRhs), and
+ * accessor invariants.
+ *
+ * Tests are platform-agnostic: they assert circuit invariants (KCL,
+ * superposition) rather than exact KLU internals.
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
@@ -269,4 +276,144 @@ TEST(MnaSystemSparseTest, NnzCount_ReflectsStamps) {
   // Clear resets
   mna.clear();
   EXPECT_EQ(mna.nnz(), 0u);
+}
+
+/* ----------------------------- Refactorize / updateRhs fast paths ----------------------------- */
+
+/** @test refactorize() after factorize() preserves the solution when triplets are unchanged. */
+TEST(MnaSystemSparseTest, RefactorizePreservesSolutionWithSamePattern) {
+  MnaSystemSparse mna(3);
+  mna.addConductance(1, 2, 1.0 / 1000.0);
+  mna.addConductance(2, 0, 1.0 / 1000.0);
+  mna.addVoltageSource(1, 0, 10.0);
+  ASSERT_TRUE(mna.factorize());
+  EXPECT_TRUE(mna.isPatternAnalyzed());
+
+  const auto FIRST = mna.solve();
+  ASSERT_TRUE(FIRST.success);
+
+  // Restamp same structure and call refactorize -- pattern is unchanged.
+  mna.clearStamps();
+  mna.addConductance(1, 2, 1.0 / 1000.0);
+  mna.addConductance(2, 0, 1.0 / 1000.0);
+  mna.addVoltageSource(1, 0, 10.0);
+  ASSERT_TRUE(mna.refactorize());
+
+  const auto SECOND = mna.solve();
+  ASSERT_TRUE(SECOND.success);
+  for (std::size_t i = 0; i < FIRST.nodeVoltages.size(); ++i) {
+    EXPECT_NEAR(SECOND.nodeVoltages[i], FIRST.nodeVoltages[i], TOL);
+  }
+}
+
+/** @test refactorize() picks up new conductance values when stamps change. */
+TEST(MnaSystemSparseTest, RefactorizeReflectsUpdatedValues) {
+  MnaSystemSparse mna(3);
+  mna.addConductance(1, 2, 1.0 / 1000.0);
+  mna.addConductance(2, 0, 1.0 / 1000.0);
+  mna.addVoltageSource(1, 0, 10.0);
+  ASSERT_TRUE(mna.factorize());
+  const auto BEFORE = mna.solve();
+  ASSERT_TRUE(BEFORE.success);
+
+  // Change the bottom resistor to 3 kohm so the divider ratio changes.
+  mna.clearStamps();
+  mna.addConductance(1, 2, 1.0 / 1000.0);
+  mna.addConductance(2, 0, 1.0 / 3000.0);
+  mna.addVoltageSource(1, 0, 10.0);
+  ASSERT_TRUE(mna.refactorize());
+  const auto AFTER = mna.solve();
+  ASSERT_TRUE(AFTER.success);
+
+  // V_mid moved from 5V (equal divider) toward 7.5V (3:1 divider).
+  EXPECT_GT(AFTER.nodeVoltages[2], BEFORE.nodeVoltages[2] + 1.0);
+}
+
+/** @test refactorizeInPlace() produces the same result as refactorize(). */
+TEST(MnaSystemSparseTest, RefactorizeInPlaceMatchesRefactorize) {
+  MnaSystemSparse ref(3);
+  ref.addConductance(1, 2, 1.0 / 1000.0);
+  ref.addConductance(2, 0, 1.0 / 1000.0);
+  ref.addVoltageSource(1, 0, 5.0);
+  ASSERT_TRUE(ref.factorize());
+  ASSERT_TRUE(ref.refactorize());
+  const auto VIA_REFACTOR = ref.solve();
+  ASSERT_TRUE(VIA_REFACTOR.success);
+
+  MnaSystemSparse inp(3);
+  inp.addConductance(1, 2, 1.0 / 1000.0);
+  inp.addConductance(2, 0, 1.0 / 1000.0);
+  inp.addVoltageSource(1, 0, 5.0);
+  ASSERT_TRUE(inp.factorize());
+  ASSERT_TRUE(inp.refactorizeInPlace());
+  const auto VIA_INPLACE = inp.solve();
+  ASSERT_TRUE(VIA_INPLACE.success);
+
+  for (std::size_t i = 0; i < VIA_REFACTOR.nodeVoltages.size(); ++i) {
+    EXPECT_NEAR(VIA_INPLACE.nodeVoltages[i], VIA_REFACTOR.nodeVoltages[i], TOL);
+  }
+}
+
+/** @test tripletsMatch() is true after factorize when stamps are unchanged. */
+TEST(MnaSystemSparseTest, TripletsMatchAfterFactorize) {
+  MnaSystemSparse mna(3);
+  mna.addConductance(1, 2, 1.0 / 1000.0);
+  mna.addConductance(2, 0, 1.0 / 1000.0);
+  mna.addVoltageSource(1, 0, 5.0);
+  ASSERT_TRUE(mna.factorize());
+
+  EXPECT_TRUE(mna.tripletsMatch());
+
+  // Re-stamping with the exact same values keeps the match true.
+  mna.clearStamps();
+  mna.addConductance(1, 2, 1.0 / 1000.0);
+  mna.addConductance(2, 0, 1.0 / 1000.0);
+  mna.addVoltageSource(1, 0, 5.0);
+  EXPECT_TRUE(mna.tripletsMatch());
+}
+
+/** @test tripletsMatch() becomes false when conductance values change. */
+TEST(MnaSystemSparseTest, TripletsMatchFalseAfterValueChange) {
+  MnaSystemSparse mna(3);
+  mna.addConductance(1, 2, 1.0 / 1000.0);
+  mna.addConductance(2, 0, 1.0 / 1000.0);
+  mna.addVoltageSource(1, 0, 5.0);
+  ASSERT_TRUE(mna.factorize());
+
+  // Change one value -- triplet vector now differs from the cached copy.
+  mna.clearStamps();
+  mna.addConductance(1, 2, 1.0 / 1000.0);
+  mna.addConductance(2, 0, 1.0 / 2000.0);
+  mna.addVoltageSource(1, 0, 5.0);
+  EXPECT_FALSE(mna.tripletsMatch());
+}
+
+/** @test updateRhs() reuses LU factors to apply a new RHS without re-factorization. */
+TEST(MnaSystemSparseTest, UpdateRhsReusesFactors) {
+  MnaSystemSparse mna(3);
+  mna.addConductance(1, 2, 1.0 / 1000.0);
+  mna.addConductance(2, 0, 1.0 / 1000.0);
+  mna.addVoltageSource(1, 0, 10.0);
+  ASSERT_TRUE(mna.factorize());
+  const auto AT_10V = mna.solve();
+  ASSERT_TRUE(AT_10V.success);
+
+  // Same matrix, different supply -- only the RHS changes. Voltage-source
+  // values affect b_, not the triplet matrix A_, so tripletsMatch() must
+  // remain true (the precondition for updateRhs).
+  mna.clearStamps();
+  mna.addConductance(1, 2, 1.0 / 1000.0);
+  mna.addConductance(2, 0, 1.0 / 1000.0);
+  mna.addVoltageSource(1, 0, 20.0);
+  ASSERT_TRUE(mna.tripletsMatch());
+  mna.updateRhs();
+  EXPECT_TRUE(mna.isFactorized());
+
+  const auto AT_20V = mna.solve();
+  ASSERT_TRUE(AT_20V.success);
+
+  // Linear: doubling the supply doubles every node voltage.
+  for (std::size_t i = 0; i < AT_10V.nodeVoltages.size(); ++i) {
+    EXPECT_NEAR(AT_20V.nodeVoltages[i], 2.0 * AT_10V.nodeVoltages[i], TOL);
+  }
 }
