@@ -15,6 +15,7 @@ include(apex/All)
 set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/MnaSystemSparse_uTest.cpp"
                       "${CMAKE_CURRENT_SOURCE_DIR}/MnaSystem_uTest.cpp"
                       "${CMAKE_CURRENT_SOURCE_DIR}/AcMnaSystem_uTest.cpp"
+                      "${CMAKE_CURRENT_SOURCE_DIR}/StampContext_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------
