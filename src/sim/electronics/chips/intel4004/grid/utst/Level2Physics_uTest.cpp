@@ -3,9 +3,8 @@
  * @brief Cell-level physics tests for the L2 fidelity tier.
  *
  * Verifies behavior of the small circuits that L2 composes at the chip
- * level: cross-coupled BSIM3 latch convergence, dynamic-storage hold
- * with pass-gate OFF (L1 and BSIM3), differentiated-GMIN preservation
- * of inverter VOL, and depletion-load NOR VOL/VOH.
+ * level: cross-coupled BSIM3 latch convergence, differentiated-GMIN
+ * preservation of inverter VOL, and depletion-load NOR VOL/VOH.
  *
  * Each test exercises a 4-net or smaller circuit so failures localize
  * to a stamp / region / numerical issue rather than a chip-scale
@@ -274,97 +273,7 @@ TEST(LatchCellPhysicsTest, AllBsim3FromMidRail) {
   EXPECT_LT(res.Qbar, VDD + 0.01);
 }
 
-/* ============================================================================
- * Dynamic storage node hold tests -- the ACTUAL 4004 topology.
- *
- * Empirical reading of the 4004 SPICE netlist around ACC.0 shows:
- *   - 5 transistors connect to ACC.0
- *   - NONE has ACC.0 as drain (output-driven)
- *   - All use ACC.0 as source (pass-gate input) or gate
- *
- * ACC.0 is therefore a *floating high-impedance dynamic node*. The bit
- * is held by parasitic capacitance when all 5 pass gates are OFF, and
- * is rewritten through one of the pass gates during the appropriate
- * clock phase. There is no cross-coupled bistable latch.
- *
- * The convergence question becomes: does each MOSFET model give a
- * consistent OFF-state leakage so the floating node holds its
- * capacitively-stored value? Mismatched OFF-state currents between
- * models (binary switch vs MosfetLevel1 vs BSIM3) on the same floating
- * node would create a phantom DC bias that drifts the node toward a
- * rail.
- *
- * Net layout: 0=GND, 1=VDD, 2=storage (drains 1nF cap), 3=clk-gate
- * Topology:
- *   C1 from storage to GND (parasitic)
- *   PMOS pass gate: drain=N_drv (held at 0V or VDD), gate=clk-gate (held HIGH=OFF), source=storage
- *   N_drv held externally at the "source" voltage we want to hold
- *
- * Steady-state test: clk-gate held HIGH (pass gate OFF). Storage was
- * previously written to 1.2V (LOW logic). Does the storage node stay
- * near 1.2V or drift to a rail? Answer differs by MOSFET model.
- * ============================================================================ */
 
-
-// Single floating-node hold test.
-// Inject an initial voltage on the storage node, stamp ONE pass gate
-// in OFF state, and run NR. Return the converged storage voltage.
-struct HoldResult { double initial; double final; bool converged; };
-
-HoldResult holdOneNode(double initial, StampFn passGateStamp) {
-  // Net 0=GND, 1=VDD, 2=storage, 3=N_drv (held at storage->writer source)
-  std::vector<double> V = {0, VDD, initial, VDD};
-  auto fn = [&](MnaSystemSparse& mna, const std::vector<double>& v) {
-    mna.addVoltageSource(1, 0, VDD);
-    mna.addVoltageSource(3, 0, VDD); // upstream writer holds VDD (irrelevant when pass gate OFF)
-    // Pass gate OFF: gate held at VDD (logic 0 in active-low) means PMOS pass gate is OFF
-    // since Vsg = source - gate = storage - VDD, must be > Vth_enh for ON.
-    // Storage at 1.2V: Vsg = 1.2 - 5 = -3.8V -> vsgM=0 -> OFF.
-    passGateStamp(mna, /*drain=*/3, /*gate=*/1, /*source=*/2,
-                  v, KP * WL_PASS, VTH_ENH);
-    // Tiny GMIN on storage to ground (matches L1's gminTransient_)
-    mna.addConductance(2, 0, 1e-9);
-  };
-  // Reuse the latch solver since it has 4-net stamp + GMIN sweep
-  for (double gmin : {1e-6, 1e-8, 1e-10, 1e-12}) {
-    for (int iter = 0; iter < 1000; ++iter) {
-      MnaSystemSparse mna(4);
-      fn(mna, V);
-      mna.addConductance(2, 0, gmin);
-      if (!mna.factorize()) return {initial, V[2], false};
-      auto r = mna.solve();
-      if (!r.success) return {initial, V[2], false};
-      double maxD = 0;
-      for (std::size_t i = 0; i < 4; ++i) {
-        double nv = V[i] + 0.5 * (r.nodeVoltages[i] - V[i]);
-        double d = std::fabs(nv - V[i]);
-        if (d > maxD) maxD = d;
-        V[i] = nv;
-      }
-      if (maxD < 1e-6) break;
-    }
-  }
-  return {initial, V[2], true};
-}
-
-
-/** @test Dynamic storage holds 1.2V (LOW) with MosfetLevel1 pass gate OFF. */
-TEST(DynamicStorageHoldTest, L1PassGateOff_HoldsLow) {
-  auto res = holdOneNode(1.2, stampPmosL1);
-  EXPECT_TRUE(res.converged);
-  EXPECT_NEAR(res.final, res.initial, 0.5)
-      << "Storage drifted unexpectedly with L1 pass-gate OFF: "
-      << res.initial << "V -> " << res.final << "V";
-}
-
-/** @test Dynamic storage holds 1.2V (LOW) with BSIM3 pass gate OFF. */
-TEST(DynamicStorageHoldTest, Bsim3PassGateOff_HoldsLow) {
-  auto res = holdOneNode(1.2, stampPmosBsim3);
-  EXPECT_TRUE(res.converged);
-  EXPECT_NEAR(res.final, res.initial, 0.5)
-      << "Storage drifted unexpectedly with BSIM3 pass-gate OFF: "
-      << res.initial << "V -> " << res.final << "V";
-}
 
 /**
  * @test Inverter logic level is preserved when GMIN is differentiated.

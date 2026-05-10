@@ -383,8 +383,6 @@ TEST_F(PhaseFourPipelineTest, ScatterTable_Intel4004_AllClassified) {
     EXPECT_GT(p.Kp, 0.0);
   }
 
-  std::printf("Intel 4004 scatter table: L1=%zu BSW=%zu DEP=%zu total=%zu netCount=%zu\n",
-              table.l1Count, table.binarySwitchCount, table.depletionLoadCount, TOTAL, NET_COUNT);
 }
 
 /** @test Five Phase-4 iterations keep CPU and GPU prevV/maxDelta in lockstep. */

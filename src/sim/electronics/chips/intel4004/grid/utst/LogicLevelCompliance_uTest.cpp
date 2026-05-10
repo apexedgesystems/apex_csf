@@ -76,9 +76,6 @@ TEST(LogicLevelComplianceTest, NorGateVolFormula) {
   // with "no load -> slightly below loaded floor".
   EXPECT_LT(VOL, 2.0)
       << "Unloaded VOL must be well below loaded MAX of 3.33V";
-
-  std::printf("  Analytical VOL = %.4f V (loaded range: %.2f-%.2f V)\n",
-              VOL, SPEC_VOL_LOADED_MIN, SPEC_VOL_LOADED_MAX);
 }
 
 /**
@@ -99,9 +96,6 @@ TEST(LogicLevelComplianceTest, NorGateVohWithinSpecRange) {
       << "VOH must be at least Vss-0.5V";
   EXPECT_LE(VOH_MODEL, SPEC_VOH_MAX + 0.01)
       << "VOH cannot exceed Vss";
-
-  std::printf("  Model VOH = %.4f V (spec range: %.2f-%.2f V)\n",
-              VOH_MODEL, SPEC_VOH_MIN, SPEC_VOH_MAX);
 }
 
 /**
@@ -125,12 +119,7 @@ TEST(LogicLevelComplianceTest, ReadThresholdIsInForbiddenZone) {
   EXPECT_GT(READ_THRESHOLD, SPEC_VIL_MAX)
       << "Read threshold above VIL_MAX (otherwise we'd false-positive on VIL signals)";
   EXPECT_LT(READ_THRESHOLD, SPEC_VIH_MIN)
-      << "Read threshold below VIH_MIN (otherwise we'd false-negative on VIH signals)";
-
-  std::printf("  Read threshold = %.2f V (forbidden zone: %.2f-%.2f V)\n",
-              READ_THRESHOLD, SPEC_VIL_MAX, SPEC_VIH_MIN);
-  std::printf("  Any V_signal in this range is electrically invalid\n");
-}
+      << "Read threshold below VIH_MIN (otherwise we'd false-negative on VIH signals)";}
 
 /**
  * @test Driver-strength sanity: WL_OUTPUT_DRIVER produces a current that's
@@ -161,9 +150,6 @@ TEST(LogicLevelComplianceTest, OutputDriverProducesDriverCurrent) {
   // Sanity upper bound: not crazy huge (would imply Kp wildly miscalibrated)
   EXPECT_LT(I_DRIVER, 1.0)
       << "Output driver current >1A suggests Kp/WL miscalibration";
-
-  std::printf("  Model output driver current = %.1f mA (real silicon spec: IOL >= 8 mA)\n",
-              I_DRIVER * 1e3);
 }
 
 /**
@@ -180,7 +166,4 @@ TEST(LogicLevelComplianceTest, ScaledThresholdRatioMatchesRealSilicon) {
 
   EXPECT_NEAR(SCALED_RATIO, REAL_RATIO, 0.02)
       << "Scaled Vt/VDD ratio must approximate real silicon's";
-
-  std::printf("  Vt/VDD ratio: model=%.4f, real silicon~%.4f\n",
-              SCALED_RATIO, REAL_RATIO);
 }

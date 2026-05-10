@@ -42,8 +42,6 @@ static double analyticalVol(double kpEnh, double vthEnh, double kpDep, double vt
 /** @test Show VOL for current parameters - explains why we get 1.5V. */
 TEST(Level1ParamsTest, CurrentParametersVol) {
   double vol = analyticalVol(5e-3, 1.0, 3.125e-4, -2.0);
-  std::cout << "  Current params: VOL = " << vol << "V (Vth_e=1.0, Kp_e=5e-3, "
-            << "Kp_d=3.125e-4, Vth_d=-2.0)\n";
   EXPECT_NEAR(vol, 1.5, 0.1) << "Should match our NR and ngspice result";
 }
 
@@ -52,18 +50,14 @@ TEST(Level1ParamsTest, VthSweepForCleanLogic) {
   double kpEnh = 5e-3;
   double kpDep = 3.125e-4;
   double vthDep = -2.0;
-
-  std::cout << "  Vth_enh sweep (Kp_enh=5e-3, Kp_d=3.125e-4, Vth_d=-2.0):\n";
   for (double vthE = 0.1; vthE <= 1.0; vthE += 0.1) {
     double vol = analyticalVol(kpEnh, vthE, kpDep, vthDep);
-    std::cout << "    Vth_e=" << vthE << "V  =>  VOL=" << vol << "V\n";
   }
 
   // Find the threshold that gives VOL = 0.5V
   // 0.5 = Vth_e + 2 * sqrt(3.125e-4 / 5e-3) = Vth_e + 0.5
   // Vth_e = 0.0  ... but that's unphysical
   double volAt03 = analyticalVol(kpEnh, 0.3, kpDep, vthDep);
-  std::cout << "  => Vth_e=0.3V gives VOL=" << volAt03 << "V\n";
   EXPECT_LT(volAt03, 1.0) << "Lower Vth should give lower VOL";
 }
 
@@ -72,12 +66,9 @@ TEST(Level1ParamsTest, KpRatioSweep) {
   double vthEnh = 1.0;
   double vthDep = -2.0;
   double kpEnh = 5e-3;
-
-  std::cout << "  Kp ratio sweep (Vth_e=1.0, Vth_d=-2.0, Kp_e=5e-3):\n";
   for (double ratio : {1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 500.0, 1000.0}) {
     double kpDep = kpEnh / ratio;
     double vol = analyticalVol(kpEnh, vthEnh, kpDep, vthDep);
-    std::cout << "    Kp_e/Kp_d=" << ratio << "  =>  VOL=" << vol << "V\n";
   }
 }
 
@@ -100,12 +91,6 @@ TEST(Level1ParamsTest, Real4004Parameters) {
 
   double vol = analyticalVol(kpEnh, vthEnh, kpDep, vthDep);
   double volRatio = vol / 15.0; // Fraction of VDD
-
-  std::cout << "  Real 4004 estimate (VDD=15V):\n";
-  std::cout << "    Enhancement: Kp=20uA/V^2, Vth=2.0V\n";
-  std::cout << "    Depletion:   Kp=8uA/V^2, Vth=-4.0V\n";
-  std::cout << "    VOL = " << vol << "V (" << (volRatio * 100.0) << "% of VDD)\n";
-
   // With these params, VOL should be well below VDD/2
   // 30% VOL/VDD is typical for depletion-load PMOS logic.
   // With VDD=15V: VOL~4.5V, threshold~7.5V => 3V noise margin. Workable.
@@ -119,11 +104,5 @@ TEST(Level1ParamsTest, Real4004Parameters) {
   double vthDep5V = vthDep * (5.0 / 15.0);
   double vol5V = analyticalVol(kpEnh, vthEnh5V, kpDep, vthDep5V);
   double volRatio5V = vol5V / 5.0;
-
-  std::cout << "  Scaled to VDD=5V:\n";
-  std::cout << "    Enhancement: Kp=20uA/V^2, Vth=" << vthEnh5V << "V\n";
-  std::cout << "    Depletion:   Kp=8uA/V^2, Vth=" << vthDep5V << "V\n";
-  std::cout << "    VOL = " << vol5V << "V (" << (volRatio5V * 100.0) << "% of VDD)\n";
-
   EXPECT_LT(volRatio5V, 0.35) << "Scaled params should maintain same VOL/VDD ratio";
 }

@@ -144,8 +144,6 @@ TEST(Level1PhysicsTest, InverterInputLow) {
     // Enhancement: drain=GND, gate=IN, source=OUT
     stampPmos(mna, 0, 3, 2, v, KP * WL_ENH, VTH_ENH);
   });
-
-  std::printf("  Our solver: %.4fV, ngspice: 1.2010V\n", vout);
   EXPECT_NEAR(vout, 1.201, 0.1) << "Should match ngspice within 100mV";
 }
 
@@ -159,8 +157,6 @@ TEST(Level1PhysicsTest, InverterInputHigh) {
     stampPmos(mna, 2, 1, 1, v, KP * WL_DEP, VTH_DEP);
     stampPmos(mna, 0, 3, 2, v, KP * WL_ENH, VTH_ENH);
   });
-
-  std::printf("  Our solver: %.4fV, ngspice: 5.0000V\n", vout);
   EXPECT_NEAR(vout, 5.0, 0.1) << "Should match ngspice within 100mV";
 }
 
@@ -208,11 +204,7 @@ TEST(Level1PhysicsTest, TwoStageChain) {
       if (maxD < 1e-6)
         break;
     }
-  }
-
-  std::printf("  Our: OUT1=%.4fV OUT2=%.4fV\n", V[3], V[4]);
-  std::printf("  ngspice: OUT1=1.2010V OUT2=2.4010V\n");
-  EXPECT_NEAR(V[3], 1.201, 0.2) << "OUT1 should match ngspice";
+  }  EXPECT_NEAR(V[3], 1.201, 0.2) << "OUT1 should match ngspice";
   EXPECT_NEAR(V[4], 2.401, 0.5) << "OUT2 should match ngspice";
 }
 

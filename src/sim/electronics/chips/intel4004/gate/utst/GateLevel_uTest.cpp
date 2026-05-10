@@ -50,8 +50,6 @@ TEST(GateLevelExtractionTest, GateLogicCoverage) {
 
   EXPECT_GT(withLogic, 350) << "Too few gates with logic transistors";
   EXPECT_LT(standalone, 100) << "Too many standalone loads";
-
-  std::cout << "  Gates with logic: " << withLogic << ", standalone loads: " << standalone << "\n";
 }
 
 /** @test Gate types span INV through NOR15 (matching MC calibration results). */
@@ -148,12 +146,6 @@ TEST(GateLevelExtractionTest, DynamicVsStatic) {
       ++staticCount;
     }
   }
-
-  std::cout << "  Dynamic gates (output -> pass gate): " << dynamicCount << "\n";
-  std::cout << "  Static gates: " << staticCount << "\n";
-  std::cout << "  Total: " << gl.gates_.size() << "\n";
-  std::cout << "  Pass gates: " << gl.passGates_.size() << "\n";
-
   EXPECT_GT(dynamicCount, 0) << "Should have some dynamic gates";
   EXPECT_GT(staticCount, 0) << "Should have some static gates";
 }

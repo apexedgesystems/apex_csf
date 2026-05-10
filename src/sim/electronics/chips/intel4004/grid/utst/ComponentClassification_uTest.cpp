@@ -35,14 +35,7 @@ TEST(ComponentClassificationTest, AllClassified) {
 
   std::size_t total =
       result.norGateCount() + result.passGateCount() + result.dynamicCount() + result.loadCount();
-  EXPECT_EQ(total, grid.transistors_.size()) << "Counts should sum to total";
-
-  std::cout << "  NOR gate members: " << result.norGateCount() << "\n";
-  std::cout << "  Pass gates: " << result.passGateCount() << "\n";
-  std::cout << "  Dynamic storage: " << result.dynamicCount() << "\n";
-  std::cout << "  Standalone loads: " << result.loadCount() << "\n";
-  std::cout << "  Total: " << total << "\n";
-}
+  EXPECT_EQ(total, grid.transistors_.size()) << "Counts should sum to total";}
 
 /** @test NOR gate member count roughly matches gate extraction (427 gates x ~4 transistors). */
 TEST(ComponentClassificationTest, NorGateCount) {
