@@ -32,8 +32,9 @@
  * @note NOT RT-safe (allocates during initialization).
  */
 
-#include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1.hpp"
 #include "src/sim/electronics/algorithms/mna/inc/Types.hpp"
+#include "src/sim/electronics/chips/intel4004/grid/inc/Intel4004Components.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1.hpp"
 
 #include <cmath>
 #include <unordered_map>

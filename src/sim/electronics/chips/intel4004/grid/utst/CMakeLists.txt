@@ -8,7 +8,7 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Sources (4 files)
+# Sources (8 files)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
@@ -19,6 +19,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/ComponentClassification_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/BootstrapCapsCompliance_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/LogicLevelCompliance_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/PmosDynamicLatch_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------

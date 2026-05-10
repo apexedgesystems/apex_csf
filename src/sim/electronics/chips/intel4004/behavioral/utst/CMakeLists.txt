@@ -7,10 +7,13 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Sources (1 file)
+# Sources (2 files)
 # ------------------------------------------------------------------------------
 
-set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Intel4004Cpu_uTest.cpp")
+set(UNIT_TEST_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/Intel4004Cpu_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Intel4004Disassembler_uTest.cpp"
+)
 
 # ------------------------------------------------------------------------------
 # Unit Tests
@@ -23,6 +26,7 @@ apex_add_gtest(
   ${UNIT_TEST_SOURCES}
   LINK
   sim_electronics_chips_intel4004_behavioral
+  fmt::fmt
   LABELS
   sim
   electronics

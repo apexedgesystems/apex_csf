@@ -75,7 +75,7 @@ __device__ inline double inductorGeq(double L, double dt, IntegrationMethod meth
   case IntegrationMethod::BACKWARD_EULER:
     return dt / L;
   case IntegrationMethod::TRAPEZOIDAL:
-    return 2.0 * dt / L;
+    return dt / (2.0 * L);
   case IntegrationMethod::GEAR2:
     return 1.5 * dt / L;
   }
@@ -98,7 +98,7 @@ __device__ inline double inductorIeq(double iPrev, double iPrev2, double vPrev, 
   case IntegrationMethod::BACKWARD_EULER:
     return iPrev;
   case IntegrationMethod::TRAPEZOIDAL:
-    return iPrev + (dt / L) * vPrev;
+    return iPrev + (dt / (2.0 * L)) * vPrev;
   case IntegrationMethod::GEAR2:
     return 2.0 * iPrev - 0.5 * iPrev2;
   }

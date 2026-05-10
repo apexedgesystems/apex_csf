@@ -324,3 +324,115 @@ TEST(AcMnaTest, SeriesRLC_Resonance) {
     EXPECT_NEAR(std::abs(vAcrossR), V_IN, 0.05);
   }
 }
+
+/* ----------------------------- Direct API coverage ----------------------------- */
+
+/** @test setFrequency / omega round-trip */
+TEST(AcMnaTest, SetFrequencyMatchesOmega) {
+  AcMnaSystem ac(2);
+  ac.setFrequency(1000.0);
+  EXPECT_NEAR(ac.omega(), 2.0 * std::numbers::pi * 1000.0, 1e-9);
+
+  ac.setFrequency(1e6);
+  EXPECT_NEAR(ac.omega(), 2.0 * std::numbers::pi * 1e6, 1.0);
+}
+
+/** @test addVoltageSource returns sequential indices and increments voltageSourceCount */
+TEST(AcMnaTest, AddVoltageSourceReturnsSequentialIndex) {
+  AcMnaSystem ac(4);
+  EXPECT_EQ(ac.voltageSourceCount(), 0u);
+  EXPECT_EQ(ac.addVoltageSource(1, 0, Complex(1.0, 0.0)), 0u);
+  EXPECT_EQ(ac.voltageSourceCount(), 1u);
+  EXPECT_EQ(ac.addVoltageSource(2, 0, Complex(0.0, 1.0)), 1u);
+  EXPECT_EQ(ac.voltageSourceCount(), 2u);
+  EXPECT_EQ(ac.addVoltageSource(3, 0, Complex(0.5, 0.5)), 2u);
+  EXPECT_EQ(ac.voltageSourceCount(), 3u);
+}
+
+/** @test netCount accessor reflects construction */
+TEST(AcMnaTest, NetCountReflectsConstruction) {
+  const AcMnaSystem AC{8};
+  EXPECT_EQ(AC.netCount(), 8u);
+}
+
+/** @test clear() resets the matrix between sweeps */
+TEST(AcMnaTest, ClearResetsMatrix) {
+  AcMnaSystem ac(3, 2.0 * std::numbers::pi * 1000.0);
+  ac.stampConductance(1, 0, 1.0 / R_1K);
+  ac.stampCapacitor(2, 0, C_1UF);
+  ac.addVoltageSource(1, 0, Complex(V_IN, 0.0));
+  EXPECT_TRUE(ac.solve().success);
+
+  ac.clear();
+  EXPECT_EQ(ac.voltageSourceCount(), 0u);
+
+  ac.setFrequency(2.0 * std::numbers::pi * 10000.0);
+  ac.stampConductance(1, 0, 1.0 / R_1K);
+  ac.stampCapacitor(2, 0, C_1UF);
+  ac.addVoltageSource(1, 0, Complex(V_IN, 0.0));
+  EXPECT_TRUE(ac.solve().success);
+}
+
+/** @test clearCurrents leaves admittance matrix intact but zeroes RHS */
+TEST(AcMnaTest, ClearCurrentsLeavesAdmittanceIntact) {
+  AcMnaSystem ac(2, 2.0 * std::numbers::pi * 1000.0);
+  ac.stampConductance(1, 0, 1.0 / R_1K);
+  ac.stampCurrent(1, 0, Complex(1e-3, 0.0));
+  ac.clearCurrents();
+  ac.addVoltageSource(1, 0, Complex(V_IN, 0.0));
+  EXPECT_TRUE(ac.solve().success);
+}
+
+/** @test Cached factorize + solveFactorized matches single-shot solve */
+TEST(AcMnaTest, FactorizedSolveMatchesSingleShot) {
+  constexpr NetID GND = 0, VIN = 1, VOUT = 2;
+  constexpr double OMEGA = 2.0 * std::numbers::pi * 100.0;
+
+  AcMnaSystem ac1(3, OMEGA);
+  ac1.stampConductance(VIN, VOUT, 1.0 / R_1K);
+  ac1.stampCapacitor(VOUT, GND, C_1UF);
+  ac1.addVoltageSource(VIN, GND, Complex(V_IN, 0.0));
+  const auto SHOT = ac1.solve();
+  ASSERT_TRUE(SHOT.success);
+
+  AcMnaSystem ac2(3, OMEGA);
+  ac2.stampConductance(VIN, VOUT, 1.0 / R_1K);
+  ac2.stampCapacitor(VOUT, GND, C_1UF);
+  ac2.addVoltageSource(VIN, GND, Complex(V_IN, 0.0));
+
+  sim::electronics::algorithms::mna::AcMnaFactorizedWorkspace ws;
+  ws.prepare(8);
+  ASSERT_TRUE(ac2.factorize(ws));
+  EXPECT_TRUE(ws.isFactorized());
+
+  std::vector<Complex> nodeV(3);
+  std::vector<Complex> vsrcCurr(1);
+  ASSERT_TRUE(ac2.solveFactorized(ws, nodeV.data(), vsrcCurr.data()));
+
+  EXPECT_NEAR(std::abs(nodeV[VOUT] - SHOT.nodeVoltages[VOUT]), 0.0, 1e-9);
+}
+
+/** @test invalidate() forces a fresh factorization */
+TEST(AcMnaTest, FactorizedWorkspaceInvalidate) {
+  sim::electronics::algorithms::mna::AcMnaFactorizedWorkspace ws;
+  ws.prepare(4);
+  EXPECT_FALSE(ws.isFactorized());
+
+  AcMnaSystem ac(2, 2.0 * std::numbers::pi * 100.0);
+  ac.stampConductance(1, 0, 1.0 / R_1K);
+  ac.addVoltageSource(1, 0, Complex(V_IN, 0.0));
+  ASSERT_TRUE(ac.factorize(ws));
+  EXPECT_TRUE(ws.isFactorized());
+
+  ws.invalidate();
+  EXPECT_FALSE(ws.isFactorized());
+}
+
+/** @test Solve workspace canHandle reports capacity correctly */
+TEST(AcMnaTest, SolveWorkspaceCapacityCheck) {
+  sim::electronics::algorithms::mna::AcMnaSolveWorkspace ws;
+  ws.prepare(8);
+  EXPECT_TRUE(ws.canHandle(8));
+  EXPECT_TRUE(ws.canHandle(4));
+  EXPECT_FALSE(ws.canHandle(9));
+}
