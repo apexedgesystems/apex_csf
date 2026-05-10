@@ -819,3 +819,113 @@ TEST(MosfetLevel1Test, SmoothTransitionContinuity) {
   double id_above_th = MosfetLevel1::current(0.8, vds, params);
   EXPECT_GT(id_above_th, id_at_th);
 }
+
+/* ----------------------------- stampNmos / stampPmos ----------------------------- */
+
+/** @test stampNmos with full circuit context (drain + gate driven, source grounded) solves */
+TEST(MosfetLevel1Test, StampNmosInCircuitConverges) {
+  // Net 0=GND, 1=drain (driven), 2=gate (driven), 3=source(=GND).
+  MnaSystem mna(/*netCount=*/4);
+  const std::vector<double> PREV_V = {0.0, 5.0, 3.0, 0.0};
+  const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
+  MosfetLevel1::stampNmos(mna, /*drain=*/1, /*gate=*/2, /*source=*/3, PREV_V, PARAMS);
+  mna.addVoltageSource(/*pos=*/1, /*neg=*/0, /*v=*/5.0);
+  mna.addVoltageSource(/*pos=*/2, /*neg=*/0, /*v=*/3.0);
+  mna.addVoltageSource(/*pos=*/3, /*neg=*/0, /*v=*/0.0);
+  EXPECT_TRUE(mna.solve().success);
+}
+
+/** @test stampNmos with reversed VDS still produces a valid solve */
+TEST(MosfetLevel1Test, StampNmosHandlesReverseVds) {
+  MnaSystem mna(4);
+  const std::vector<double> PREV_V = {0.0, 0.0, 5.0, 5.0};
+  const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
+  MosfetLevel1::stampNmos(mna, /*drain=*/1, /*gate=*/2, /*source=*/3, PREV_V, PARAMS);
+  mna.addVoltageSource(1, 0, 0.0);
+  mna.addVoltageSource(2, 0, 5.0);
+  mna.addVoltageSource(3, 0, 5.0);
+  EXPECT_TRUE(mna.solve().success);
+}
+
+/** @test stampPmos in circuit context (source=VDD, gate driven, drain pulled) solves */
+TEST(MosfetLevel1Test, StampPmosInCircuitConverges) {
+  MnaSystem mna(4);
+  const std::vector<double> PREV_V = {0.0, 5.0, 0.0, 4.0};
+  const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
+  MosfetLevel1::stampPmos(mna, /*source=*/1, /*gate=*/2, /*drain=*/3, PREV_V, PARAMS);
+  mna.addVoltageSource(1, 0, 5.0);
+  mna.addVoltageSource(2, 0, 0.0);
+  mna.addVoltageSource(3, 0, 4.0);
+  EXPECT_TRUE(mna.solve().success);
+}
+
+/** @test stampPmos with reversed VSD still produces a valid solve */
+TEST(MosfetLevel1Test, StampPmosHandlesReverseVsd) {
+  MnaSystem mna(4);
+  const std::vector<double> PREV_V = {0.0, 1.0, 0.0, 5.0};
+  const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
+  MosfetLevel1::stampPmos(mna, /*source=*/1, /*gate=*/2, /*drain=*/3, PREV_V, PARAMS);
+  mna.addVoltageSource(1, 0, 1.0);
+  mna.addVoltageSource(2, 0, 0.0);
+  mna.addVoltageSource(3, 0, 5.0);
+  EXPECT_TRUE(mna.solve().success);
+}
+
+/* ----------------------------- fetlim() NR damping ----------------------------- */
+
+/** @test fetlim returns vnew unchanged below threshold with a small step */
+TEST(MosfetLevel1Test, FetlimSmallStepBelowThresholdPasses) {
+  EXPECT_DOUBLE_EQ(MosfetLevel1::fetlim(0.6, 0.5, 1.0), 0.6);
+}
+
+/** @test fetlim caps a large upward step from below threshold */
+TEST(MosfetLevel1Test, FetlimClampsLargeUpwardJumpAtThreshold) {
+  const double LIMITED = MosfetLevel1::fetlim(/*vnew=*/5.0, /*vold=*/0.5, /*vto=*/1.0);
+  EXPECT_LT(LIMITED, 5.0);
+  EXPECT_GE(LIMITED, 0.5);
+}
+
+/** @test fetlim limits downward jump from above-threshold */
+TEST(MosfetLevel1Test, FetlimLimitsDownwardJumpAboveThreshold) {
+  const double VTO = 1.0;
+  const double LIMITED = MosfetLevel1::fetlim(/*vnew=*/0.0, /*vold=*/5.0, VTO);
+  EXPECT_GE(LIMITED, VTO - 0.5);
+  EXPECT_LE(LIMITED, 5.0);
+}
+
+/** @test fetlim caps large upward step deep in saturation */
+TEST(MosfetLevel1Test, FetlimLimitsLargeUpwardStepInSaturation) {
+  const double VOLD = 5.0;
+  const double LIMITED = MosfetLevel1::fetlim(/*vnew=*/100.0, VOLD, /*vto=*/1.0);
+  EXPECT_GT(LIMITED, VOLD);
+  EXPECT_LT(LIMITED, 100.0);
+}
+
+/* ----------------------------- limvds() NR damping ----------------------------- */
+
+/** @test limvds caps upward jump when vold >= 3.5 (3*vold + 2) */
+TEST(MosfetLevel1Test, LimvdsClampsUpwardWhenVoldHigh) {
+  EXPECT_NEAR(MosfetLevel1::limvds(/*vnew=*/100.0, /*vold=*/5.0),
+              3.0 * 5.0 + 2.0, 1e-12);
+}
+
+/** @test limvds clamps a large downward jump to 2.0 floor when vold high */
+TEST(MosfetLevel1Test, LimvdsClampsDownwardWhenVoldHigh) {
+  EXPECT_DOUBLE_EQ(MosfetLevel1::limvds(0.0, 5.0), 2.0);
+}
+
+/** @test limvds caps upward at 4.0 when vold < 3.5 */
+TEST(MosfetLevel1Test, LimvdsCapsUpwardWhenVoldLow) {
+  EXPECT_DOUBLE_EQ(MosfetLevel1::limvds(100.0, 2.0), 4.0);
+}
+
+/** @test limvds clamps downward to -0.5 when vold < 3.5 */
+TEST(MosfetLevel1Test, LimvdsClampsDownwardWhenVoldLow) {
+  EXPECT_DOUBLE_EQ(MosfetLevel1::limvds(-10.0, 2.0), -0.5);
+}
+
+/** @test limvds passes through values inside the bounds */
+TEST(MosfetLevel1Test, LimvdsPassesValuesInsideBounds) {
+  EXPECT_DOUBLE_EQ(MosfetLevel1::limvds(2.0, 2.0), 2.0);
+  EXPECT_DOUBLE_EQ(MosfetLevel1::limvds(3.0, 2.5), 3.0);
+}
