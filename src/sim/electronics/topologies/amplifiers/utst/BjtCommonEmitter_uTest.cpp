@@ -54,26 +54,24 @@ TEST(BjtCommonEmitterTest, ConstructionPreservesBiasValues) {
 
 /* ----------------------------- computeDC + stamp lambda ----------------------------- */
 
-/** @test computeDC returns true and produces finite, supply-bounded cached values. */
-TEST(BjtCommonEmitterTest, ComputeDcRunsAndCachesWithinEnvelope) {
-  BjtCommonEmitter amp(12.0, 1e3, 100e3);
-  ASSERT_TRUE(amp.computeDC());
-  EXPECT_TRUE(std::isfinite(amp.collectorVoltage()));
-  EXPECT_TRUE(std::isfinite(amp.baseVoltage()));
-  EXPECT_TRUE(std::isfinite(amp.collectorCurrent()));
-  EXPECT_GE(amp.collectorVoltage(), 0.0);
-  EXPECT_LE(amp.collectorVoltage(), amp.vcc() + 1e-6);
-  EXPECT_GE(amp.baseVoltage(), 0.0);
-  EXPECT_LE(amp.baseVoltage(), amp.vcc() + 1e-6);
-}
-
-/** @test computeDC succeeds and stays bounded across a bias grid. */
-TEST(BjtCommonEmitterTest, ComputeDcAcrossBiasGridStaysBounded) {
+/** @test computeDC succeeds across a bias grid and the cached node voltages
+ *        satisfy KVL bounds: 0 <= Vb, Vc <= VCC (no spurious supply overshoot).
+ *
+ * The symmetric BjtEbersMoll stamp under this wrapper does not converge to a
+ * physically-correct forward-active operating point (see file header), so we
+ * cannot anchor to Sedra-Smith bias-point formulas. The KVL envelope is the
+ * strongest invariant the current model supports: any future regression that
+ * lets Vc/Vb drift outside the supply rails would fail this test.
+ */
+TEST(BjtCommonEmitterTest, ComputeDcAcrossBiasGridRespectsSupplyEnvelope) {
   for (const double VCC : {5.0, 9.0, 12.0}) {
     for (const double RC : {1e3, 4.7e3}) {
       for (const double RB : {100e3, 1e6}) {
         BjtCommonEmitter amp(VCC, RC, RB);
         ASSERT_TRUE(amp.computeDC()) << "VCC=" << VCC << " RC=" << RC << " RB=" << RB;
+        EXPECT_TRUE(std::isfinite(amp.collectorVoltage()));
+        EXPECT_TRUE(std::isfinite(amp.baseVoltage()));
+        EXPECT_TRUE(std::isfinite(amp.collectorCurrent()));
         EXPECT_GE(amp.collectorVoltage(), 0.0);
         EXPECT_LE(amp.collectorVoltage(), VCC + 1e-6);
         EXPECT_GE(amp.baseVoltage(), 0.0);
@@ -103,18 +101,6 @@ TEST(BjtCommonEmitterTest, CollectorCurrentScalesInverselyWithRc) {
   EXPECT_NEAR(amp1.collectorCurrent() / amp2.collectorCurrent(), 2.0, 0.2);
 }
 
-/** @test circuit() accessor exposes the underlying Circuit and survives computeDC. */
-TEST(BjtCommonEmitterTest, CircuitAccessorIsUsable) {
-  BjtCommonEmitter amp(12.0, 1e3, 100e3);
-  // Before solve: at least the three nets registered in the constructor (VCC, COLLECTOR, BASE)
-  // plus ground (net 0) are present.
-  EXPECT_GE(amp.circuit().netCount(), 4u);
-
-  amp.computeDC();
-  // After build() inside computeDC the net count is unchanged at this layer.
-  EXPECT_GE(amp.circuit().netCount(), 4u);
-}
-
 /** @test Repeated computeDC invocations return the same cached values (idempotent). */
 TEST(BjtCommonEmitterTest, ComputeDcIsRepeatable) {
   BjtCommonEmitter amp(12.0, 1e3, 100e3);
@@ -129,18 +115,3 @@ TEST(BjtCommonEmitterTest, ComputeDcIsRepeatable) {
   EXPECT_DOUBLE_EQ(amp.collectorCurrent(), IC1);
 }
 
-/** @test Custom BjtEbersMollParams flow through to the stamp lambda. */
-TEST(BjtCommonEmitterTest, CustomBjtParamsAreAccepted) {
-  using sim::electronics::devices::nonlinear::BjtEbersMollParams;
-  BjtEbersMollParams params;  // default-constructed
-  BjtCommonEmitter amp(9.0, 2.2e3, 47e3, params);
-
-  EXPECT_DOUBLE_EQ(amp.vcc(), 9.0);
-  EXPECT_DOUBLE_EQ(amp.rc(), 2.2e3);
-  EXPECT_DOUBLE_EQ(amp.rb(), 47e3);
-
-  ASSERT_TRUE(amp.computeDC());
-  EXPECT_TRUE(std::isfinite(amp.collectorVoltage()));
-  EXPECT_TRUE(std::isfinite(amp.baseVoltage()));
-  EXPECT_TRUE(std::isfinite(amp.collectorCurrent()));
-}

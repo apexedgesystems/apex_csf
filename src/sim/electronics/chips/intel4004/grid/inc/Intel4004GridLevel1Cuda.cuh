@@ -13,8 +13,7 @@
  * single-4004 scale) because per-iter `cudaDeviceSynchronize` + H2D/
  * D2H transfers of the bias and stamp arrays dominate the tiny
  * 2242-device kernel body. Only full GPU residence recovers the math
- * time advantage. See
- * `docs/optimization/0419/sim_electronics_devices_nonlinear_cuda/phase4a_driver/analysis.md`.
+ * time advantage.
  *
  * Scaffold status: declaration only. Implementation will iterate
  * across follow-up sessions, adding the device-resident NR loop,

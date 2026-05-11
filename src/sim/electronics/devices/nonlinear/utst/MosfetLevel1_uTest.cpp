@@ -822,53 +822,93 @@ TEST(MosfetLevel1Test, SmoothTransitionContinuity) {
 
 /* ----------------------------- stampNmos / stampPmos ----------------------------- */
 
-/** @test stampNmos with full circuit context (drain + gate driven, source grounded) solves */
-TEST(MosfetLevel1Test, StampNmosInCircuitConverges) {
-  // Net 0=GND, 1=drain (driven), 2=gate (driven), 3=source(=GND).
-  MnaSystem mna(/*netCount=*/4);
+/** @test stampNmos saturation drain current matches Shichman-Hodges:
+ *        Id = (Kp/2) * (Vgs-Vth)^2 * (1 + lambda*Vds).
+ *
+ * Reference: SPICE Level 1 MOSFET model (Shichman-Hodges 1968). With prev_v
+ * at the pinning voltage-source values, the linearized companion stamp
+ * evaluates exactly at the operating point.
+ */
+TEST(MosfetLevel1Test, StampNmosInSaturationMatchesShichmanHodges) {
+  const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
+  // Vgs = 3 - 0 = 3, Vds = 5 - 0 = 5; saturation: Vds > Vgs - Vth = 2.3.
   const std::vector<double> PREV_V = {0.0, 5.0, 3.0, 0.0};
-  const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
+
+  MnaSystem mna(/*netCount=*/4);
   MosfetLevel1::stampNmos(mna, /*drain=*/1, /*gate=*/2, /*source=*/3, PREV_V, PARAMS);
-  mna.addVoltageSource(/*pos=*/1, /*neg=*/0, /*v=*/5.0);
-  mna.addVoltageSource(/*pos=*/2, /*neg=*/0, /*v=*/3.0);
-  mna.addVoltageSource(/*pos=*/3, /*neg=*/0, /*v=*/0.0);
-  EXPECT_TRUE(mna.solve().success);
+  const std::size_t DRAIN_VS = mna.addVoltageSource(/*pos=*/1, /*neg=*/0, /*v=*/5.0);
+  mna.addVoltageSource(2, 0, 3.0);
+  mna.addVoltageSource(3, 0, 0.0);
+
+  const auto R = mna.solve();
+  ASSERT_TRUE(R.success);
+
+  const double VGST = 3.0 - PARAMS.Vth;
+  const double EXPECTED_ID = 0.5 * PARAMS.Kp * VGST * VGST * (1.0 + PARAMS.lambda * 5.0);
+  EXPECT_NEAR(std::abs(R.branchCurrents[DRAIN_VS]), EXPECTED_ID, 1e-9)
+      << "Vgs=3, Vds=5, Vth=0.7 -> Id_sat = " << EXPECTED_ID << " A";
 }
 
-/** @test stampNmos with reversed VDS still produces a valid solve */
-TEST(MosfetLevel1Test, StampNmosHandlesReverseVds) {
-  MnaSystem mna(4);
-  const std::vector<double> PREV_V = {0.0, 0.0, 5.0, 5.0};
+/** @test stampNmos with Vgs below Vth produces effectively zero drain current
+ *        (cutoff region of Shichman-Hodges). */
+TEST(MosfetLevel1Test, StampNmosCutoffHasNegligibleDrainCurrent) {
   const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-  MosfetLevel1::stampNmos(mna, /*drain=*/1, /*gate=*/2, /*source=*/3, PREV_V, PARAMS);
-  mna.addVoltageSource(1, 0, 0.0);
-  mna.addVoltageSource(2, 0, 5.0);
-  mna.addVoltageSource(3, 0, 5.0);
-  EXPECT_TRUE(mna.solve().success);
+  // Vgs = 0.3 < Vth = 0.7 -> cutoff, modulo Vsmooth subthreshold rounding.
+  const std::vector<double> PREV_V = {0.0, 5.0, 0.3, 0.0};
+
+  MnaSystem mna(4);
+  MosfetLevel1::stampNmos(mna, 1, 2, 3, PREV_V, PARAMS);
+  const std::size_t DRAIN_VS = mna.addVoltageSource(1, 0, 5.0);
+  mna.addVoltageSource(2, 0, 0.3);
+  mna.addVoltageSource(3, 0, 0.0);
+
+  const auto R = mna.solve();
+  ASSERT_TRUE(R.success);
+  // Subthreshold |Id| is bounded by ~Kp*Vsmooth^2 = 100e-6 * 0.01 = 1 uA;
+  // 5 uA gives headroom for the smooth-transition shoulder.
+  EXPECT_LT(std::abs(R.branchCurrents[DRAIN_VS]), 5e-6);
 }
 
-/** @test stampPmos in circuit context (source=VDD, gate driven, drain pulled) solves */
-TEST(MosfetLevel1Test, StampPmosInCircuitConverges) {
-  MnaSystem mna(4);
-  const std::vector<double> PREV_V = {0.0, 5.0, 0.0, 4.0};
+/** @test stampPmos saturation drain current matches Shichman-Hodges (PMOS sign
+ *        convention, magnitude only): |Id| = (Kp/2)*Vsgt^2*(1 + lambda*Vsd). */
+TEST(MosfetLevel1Test, StampPmosInSaturationMatchesShichmanHodges) {
   const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
+  // Source=5, gate=0 -> Vsg = 5 (strongly on). Drain=1 -> Vsd = 4 > Vsg-Vth = 4.3? no, 5-0.7=4.3, Vsd=4
+  // So linear region. Pick drain=0 for clean saturation: Vsd=5 > Vsg-Vth=4.3.
+  const std::vector<double> PREV_V = {0.0, 5.0, 0.0, 0.0};
+
+  MnaSystem mna(4);
   MosfetLevel1::stampPmos(mna, /*source=*/1, /*gate=*/2, /*drain=*/3, PREV_V, PARAMS);
   mna.addVoltageSource(1, 0, 5.0);
   mna.addVoltageSource(2, 0, 0.0);
-  mna.addVoltageSource(3, 0, 4.0);
-  EXPECT_TRUE(mna.solve().success);
+  const std::size_t DRAIN_VS = mna.addVoltageSource(3, 0, 0.0);
+
+  const auto R = mna.solve();
+  ASSERT_TRUE(R.success);
+
+  const double VSG = 5.0;
+  const double VSD = 5.0;
+  const double VSGT = VSG - PARAMS.Vth;
+  const double EXPECTED_ID = 0.5 * PARAMS.Kp * VSGT * VSGT * (1.0 + PARAMS.lambda * VSD);
+  EXPECT_NEAR(std::abs(R.branchCurrents[DRAIN_VS]), EXPECTED_ID, 1e-9)
+      << "Vsg=5, Vsd=5, Vth=0.7 -> |Id_sat| = " << EXPECTED_ID << " A";
 }
 
-/** @test stampPmos with reversed VSD still produces a valid solve */
-TEST(MosfetLevel1Test, StampPmosHandlesReverseVsd) {
-  MnaSystem mna(4);
-  const std::vector<double> PREV_V = {0.0, 1.0, 0.0, 5.0};
+/** @test stampPmos with Vsg below Vth produces effectively zero drain current. */
+TEST(MosfetLevel1Test, StampPmosCutoffHasNegligibleDrainCurrent) {
   const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-  MosfetLevel1::stampPmos(mna, /*source=*/1, /*gate=*/2, /*drain=*/3, PREV_V, PARAMS);
-  mna.addVoltageSource(1, 0, 1.0);
+  // Source=0.5, gate=0 -> Vsg = 0.5 < Vth = 0.7 -> cutoff.
+  const std::vector<double> PREV_V = {0.0, 0.5, 0.0, 0.0};
+
+  MnaSystem mna(4);
+  MosfetLevel1::stampPmos(mna, 1, 2, 3, PREV_V, PARAMS);
+  mna.addVoltageSource(1, 0, 0.5);
   mna.addVoltageSource(2, 0, 0.0);
-  mna.addVoltageSource(3, 0, 5.0);
-  EXPECT_TRUE(mna.solve().success);
+  const std::size_t DRAIN_VS = mna.addVoltageSource(3, 0, 0.0);
+
+  const auto R = mna.solve();
+  ASSERT_TRUE(R.success);
+  EXPECT_LT(std::abs(R.branchCurrents[DRAIN_VS]), 5e-6);
 }
 
 /* ----------------------------- fetlim() NR damping ----------------------------- */
@@ -878,27 +918,26 @@ TEST(MosfetLevel1Test, FetlimSmallStepBelowThresholdPasses) {
   EXPECT_DOUBLE_EQ(MosfetLevel1::fetlim(0.6, 0.5, 1.0), 0.6);
 }
 
-/** @test fetlim caps a large upward step from below threshold */
-TEST(MosfetLevel1Test, FetlimClampsLargeUpwardJumpAtThreshold) {
-  const double LIMITED = MosfetLevel1::fetlim(/*vnew=*/5.0, /*vold=*/0.5, /*vto=*/1.0);
-  EXPECT_LT(LIMITED, 5.0);
-  EXPECT_GE(LIMITED, 0.5);
+/** @test fetlim upward jump crossing Vth (vold below): clamped to vto + 0.5 per
+ *        ngspice devsup.c MOSlim "Vgs upward crossing" branch. */
+TEST(MosfetLevel1Test, FetlimClampsUpwardCrossingThresholdToVtoPlusHalf) {
+  // vnew=5, vold=0.5, vto=1 -> vold < vto, delv > 0, vnew > vto + 0.5 -> clamp to vto+0.5.
+  EXPECT_DOUBLE_EQ(MosfetLevel1::fetlim(/*vnew=*/5.0, /*vold=*/0.5, /*vto=*/1.0), 1.5);
 }
 
-/** @test fetlim limits downward jump from above-threshold */
-TEST(MosfetLevel1Test, FetlimLimitsDownwardJumpAboveThreshold) {
-  const double VTO = 1.0;
-  const double LIMITED = MosfetLevel1::fetlim(/*vnew=*/0.0, /*vold=*/5.0, VTO);
-  EXPECT_GE(LIMITED, VTO - 0.5);
-  EXPECT_LE(LIMITED, 5.0);
+/** @test fetlim downward jump from above-Vth: vnew = max(vnew, vto + 2.0) per
+ *        ngspice devsup.c MOSlim "above-Vtox, downward, vnew below Vtox" branch. */
+TEST(MosfetLevel1Test, FetlimDownwardJumpAboveVtoxClampsToVtoPlusTwo) {
+  // vnew=0, vold=5, vto=1 -> vtox=4.5, vold>=vtox, delv<0, vnew<vtox -> max(vnew, vto+2.0).
+  EXPECT_DOUBLE_EQ(MosfetLevel1::fetlim(/*vnew=*/0.0, /*vold=*/5.0, /*vto=*/1.0), 3.0);
 }
 
-/** @test fetlim caps large upward step deep in saturation */
-TEST(MosfetLevel1Test, FetlimLimitsLargeUpwardStepInSaturation) {
-  const double VOLD = 5.0;
-  const double LIMITED = MosfetLevel1::fetlim(/*vnew=*/100.0, VOLD, /*vto=*/1.0);
-  EXPECT_GT(LIMITED, VOLD);
-  EXPECT_LT(LIMITED, 100.0);
+/** @test fetlim large upward step deep in saturation: clamped to vold + vtsthi
+ *        where vtsthi = |2*(vold-vto)| + 2, per ngspice devsup.c MOSlim. */
+TEST(MosfetLevel1Test, FetlimLargeUpwardStepInSaturationClampsToVoldPlusVtsthi) {
+  // vnew=100, vold=5, vto=1 -> vtox=4.5, vold>=vtox, delv>0, vtsthi=|2*(5-1)|+2=10.
+  // delv=95 >= vtsthi=10, so vnew = vold + vtsthi = 5 + 10 = 15.
+  EXPECT_DOUBLE_EQ(MosfetLevel1::fetlim(/*vnew=*/100.0, /*vold=*/5.0, /*vto=*/1.0), 15.0);
 }
 
 /* ----------------------------- limvds() NR damping ----------------------------- */

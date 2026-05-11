@@ -356,31 +356,80 @@ TEST(AcMnaTest, NetCountReflectsConstruction) {
 }
 
 /** @test clear() resets the matrix between sweeps */
+/** @test clear() resets Y_, I_, and voltageSources_ so a subsequent solve at a
+ *        new frequency reflects that frequency, not the cached state from before.
+ *
+ * Topology: VIN -> R -> VOUT -> C -> GND (textbook RC low-pass, fc = 1/(2*pi*R*C)
+ * = 159 Hz for R=1k, C=1uF). For a 1st-order low-pass:
+ *   - At f = 100 Hz (below cutoff): |H| > 0.5 (light attenuation)
+ *   - At f = 5 kHz (>=30x cutoff): |H| < 0.05 (heavy attenuation)
+ * The post-clear solve must produce a magnitude consistent with the NEW
+ * frequency, not the prior one.
+ */
 TEST(AcMnaTest, ClearResetsMatrix) {
-  AcMnaSystem ac(3, 2.0 * std::numbers::pi * 1000.0);
-  ac.stampConductance(1, 0, 1.0 / R_1K);
-  ac.stampCapacitor(2, 0, C_1UF);
-  ac.addVoltageSource(1, 0, Complex(V_IN, 0.0));
-  EXPECT_TRUE(ac.solve().success);
+  constexpr NetID VIN_NET = 1, VOUT = 2;
+  constexpr double F_LOW = 100.0;
+  constexpr double F_HIGH = 5000.0;
+
+  AcMnaSystem ac(3, 2.0 * std::numbers::pi * F_LOW);
+  ac.stampConductance(VIN_NET, VOUT, 1.0 / R_1K);
+  ac.stampCapacitor(VOUT, 0, C_1UF);
+  ac.addVoltageSource(VIN_NET, 0, Complex(V_IN, 0.0));
+  const auto LOW = ac.solve();
+  ASSERT_TRUE(LOW.success);
+  const double MAG_LOW = std::abs(LOW.nodeVoltages[VOUT]);
 
   ac.clear();
   EXPECT_EQ(ac.voltageSourceCount(), 0u);
 
-  ac.setFrequency(2.0 * std::numbers::pi * 10000.0);
-  ac.stampConductance(1, 0, 1.0 / R_1K);
-  ac.stampCapacitor(2, 0, C_1UF);
-  ac.addVoltageSource(1, 0, Complex(V_IN, 0.0));
-  EXPECT_TRUE(ac.solve().success);
+  ac.setFrequency(2.0 * std::numbers::pi * F_HIGH);
+  ac.stampConductance(VIN_NET, VOUT, 1.0 / R_1K);
+  ac.stampCapacitor(VOUT, 0, C_1UF);
+  ac.addVoltageSource(VIN_NET, 0, Complex(V_IN, 0.0));
+  const auto HIGH = ac.solve();
+  ASSERT_TRUE(HIGH.success);
+  const double MAG_HIGH = std::abs(HIGH.nodeVoltages[VOUT]);
+
+  // 100 Hz is below the cutoff -> the filter passes most of the input.
+  EXPECT_GT(MAG_LOW, 0.5);
+  // 5 kHz is >= 30x cutoff -> heavy attenuation by the new frequency.
+  EXPECT_LT(MAG_HIGH, 0.1);
+  // And the post-clear result must reflect the new frequency, not the cached one.
+  EXPECT_LT(MAG_HIGH, MAG_LOW * 0.2);
 }
 
-/** @test clearCurrents leaves admittance matrix intact but zeroes RHS */
+/** @test clearCurrents() leaves the admittance (G + j*w*C) matrix intact: a
+ *        follow-up solve driven only by a voltage source produces the same
+ *        nodal answer as if no prior current source had been stamped.
+ *
+ * Topology: VIN -> R -> VOUT -> C -> GND. Reference: textbook RC low-pass.
+ */
 TEST(AcMnaTest, ClearCurrentsLeavesAdmittanceIntact) {
-  AcMnaSystem ac(2, 2.0 * std::numbers::pi * 1000.0);
-  ac.stampConductance(1, 0, 1.0 / R_1K);
-  ac.stampCurrent(1, 0, Complex(1e-3, 0.0));
+  constexpr NetID VIN_NET = 1, VOUT = 2;
+  constexpr double FREQ = 100.0;
+  const double OMEGA = 2.0 * std::numbers::pi * FREQ;
+
+  // Reference: never stamp a current source.
+  AcMnaSystem ref(3, OMEGA);
+  ref.stampConductance(VIN_NET, VOUT, 1.0 / R_1K);
+  ref.stampCapacitor(VOUT, 0, C_1UF);
+  ref.addVoltageSource(VIN_NET, 0, Complex(V_IN, 0.0));
+  const auto REF_R = ref.solve();
+  ASSERT_TRUE(REF_R.success);
+
+  // Same topology, but stamp + clear a current source first.
+  AcMnaSystem ac(3, OMEGA);
+  ac.stampConductance(VIN_NET, VOUT, 1.0 / R_1K);
+  ac.stampCapacitor(VOUT, 0, C_1UF);
+  ac.stampCurrent(VIN_NET, 0, Complex(1e-3, 0.0));
   ac.clearCurrents();
-  ac.addVoltageSource(1, 0, Complex(V_IN, 0.0));
-  EXPECT_TRUE(ac.solve().success);
+  ac.addVoltageSource(VIN_NET, 0, Complex(V_IN, 0.0));
+  const auto AC_R = ac.solve();
+  ASSERT_TRUE(AC_R.success);
+
+  // The admittance was unchanged; the cleared current should have no residual
+  // effect; node voltages must match the reference solve.
+  EXPECT_NEAR(std::abs(AC_R.nodeVoltages[VOUT] - REF_R.nodeVoltages[VOUT]), 0.0, 1e-12);
 }
 
 /** @test Cached factorize + solveFactorized matches single-shot solve */

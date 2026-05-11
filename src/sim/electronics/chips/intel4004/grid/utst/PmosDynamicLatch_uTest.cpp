@@ -15,6 +15,7 @@
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <limits>
 #include <unordered_set>
 #include <vector>
 
@@ -61,6 +62,18 @@ ScenarioState singleStorageScenario(NetID drain, NetID gate, NetID source) {
   s.grid = singleStorageGrid(drain, gate, source);
   s.types = {ComponentType::DYNAMIC_STORAGE};
   return s;
+}
+
+/// Read back the latched voltage the manager holds for `net` by stamping into
+/// an MNA system and locating the voltage source whose positive terminal is
+/// `net`. NaN if not registered.
+double readLatchVoltage(PmosDynamicLatchManager& mgr, std::size_t mnaSize, NetID net) {
+  MnaSystem mna(mnaSize);
+  mgr.stamp(mna);
+  for (const auto& VS : mna.voltageSources()) {
+    if (VS.pos == net) return VS.v;
+  }
+  return std::numeric_limits<double>::quiet_NaN();
 }
 
 }
@@ -141,60 +154,58 @@ TEST(PmosDynamicLatchManagerTest, InitializeIsIdempotent) {
 
 /* ----------------------------- updateCharges() ----------------------------- */
 
-/** @test updateCharges with all-OFF transistors leaves voltage unchanged */
+/** @test updateCharges leaves node voltage unchanged when the pass gate is OFF.
+ *
+ * With both drain/source forced to 4.0V and gate held at VDD=5V, Vsg = max(node,
+ * other) - gate = 4-5 = -1 <= 0, so the PMOS pass-gate is OFF in the model's
+ * formulation (line 169 of PmosDynamicLatch.hpp). iNet = 0 -> dv = 0 -> voltage
+ * unchanged.
+ */
 TEST(PmosDynamicLatchManagerTest, UpdateChargesNoCurrentLeavesVoltageStable) {
-  auto S = singleStorageScenario(2, 3, 4);
+  auto S = singleStorageScenario(/*drain=*/2, /*gate=*/3, /*source=*/4);
   PmosDynamicLatchManager mgr;
   mgr.initialize(S.grid, 0, S.types, S.norOutputNets);
 
-  // Drive both terminals to VDD and gate to VDD -- PMOS pass gate is OFF
-  // (Vsg = source - gate = 0).
-  std::vector<double> prev(8, VDD);
-  prev[0] = 0.0; // GND
-
   mgr.forceNodeVoltage(2, 4.0);
   mgr.forceNodeVoltage(4, 4.0);
+  std::vector<double> prev(8, VDD); // gate at VDD turns PMOS off
+  prev[0] = 0.0;
   mgr.updateCharges(prev, /*dt=*/1e-9, VDD);
 
-  // Voltages should remain near 4.0 (no current flow).
-  // We don't have a public reader for individual nodes; instead, stamp into
-  // an MNA system and read back via the matrix's voltage source rows.
-  MnaSystem mna(/*netCount=*/8);
-  mgr.stamp(mna);
-  // Two voltage sources (one per node) added -- can't easily read voltages
-  // back, but confirm stamp() didn't crash and node count is correct.
-  EXPECT_EQ(mgr.nodeCount(), 2u);
+  EXPECT_DOUBLE_EQ(readLatchVoltage(mgr, 8, 2), 4.0);
+  EXPECT_DOUBLE_EQ(readLatchVoltage(mgr, 8, 4), 4.0);
 }
 
-/** @test updateCharges clamps voltage to [0, VDD] */
+/** @test updateCharges clamps node voltage to VDD when above the rail.
+ *
+ * Lines 195-196 of PmosDynamicLatch.hpp: after integrating dv the manager
+ * clamps node.voltage to [0, vdd]. Forcing a node to VDD+5 and stepping with
+ * zero current still triggers the rail clamp on the cached voltage.
+ */
 TEST(PmosDynamicLatchManagerTest, UpdateChargesClampsToRails) {
   auto S = singleStorageScenario(2, 3, 4);
   PmosDynamicLatchManager mgr;
   mgr.initialize(S.grid, 0, S.types, S.norOutputNets);
 
-  // Force a node above VDD -- should clamp on next update.
   mgr.forceNodeVoltage(2, /*above-rail*/ VDD + 5.0);
-  std::vector<double> prev(8, 0.0);
-  prev[1] = VDD;
+  std::vector<double> prev(8, VDD); // gate at VDD -> PMOS off, no current
+  prev[0] = 0.0;
   mgr.updateCharges(prev, 1e-9, VDD);
 
-  // Stamp into MNA; node 2's source value should be clamped to VDD (not 10V).
-  MnaSystem mna(8);
-  mgr.stamp(mna);
-  // The voltage source's RHS holds the clamped voltage. Read via MnaSystem
-  // accessors not directly, but we can re-init and just verify the manager
-  // didn't keep a >VDD value indirectly: forcing a node and updating is a
-  // single round-trip, so checking that update() wrote into a sane range
-  // requires a direct accessor. The clamp is asserted by the absence of a
-  // crash + the matrix solver later not blowing up.
-  SUCCEED();
+  EXPECT_DOUBLE_EQ(readLatchVoltage(mgr, 8, 2), VDD);
 }
 
-/** @test updateCharges respects per-step delta limit (|dv| <= 0.5V) */
+/** @test updateCharges limits |dv| per step to 0.5V even under unphysically large
+ *        I*dt/C contributions.
+ *
+ * Lines 189-190 of PmosDynamicLatch.hpp clamp dv to [-0.5, 0.5]. With node at
+ * 2.0V, the other terminal at 0V, gate at 0V (strong Vsg = 2), and dt=1e-3 with
+ * the default 100 fF cap, the raw step would be enormous; the limiter caps it
+ * at 0.5V/step. Direction: PMOS conducts source->drain, node 2 is the high
+ * terminal so current LEAVES it (line 179), so voltage steps DOWN by 0.5V.
+ */
 TEST(PmosDynamicLatchManagerTest, UpdateChargesLimitsPerStepDelta) {
-  // With a strongly biased transistor and a tiny capacitance, a raw
-  // I*dt/C step would be enormous. The manager limits |dv| to 0.5V/step.
-  auto S = singleStorageScenario(2, 3, 4);
+  auto S = singleStorageScenario(/*drain=*/2, /*gate=*/3, /*source=*/4);
   PmosDynamicLatchManager mgr;
   mgr.initialize(S.grid, 0, S.types, S.norOutputNets);
 
@@ -202,12 +213,13 @@ TEST(PmosDynamicLatchManagerTest, UpdateChargesLimitsPerStepDelta) {
   mgr.forceNodeVoltage(4, 0.0);
   std::vector<double> prev(8, 0.0);
   prev[1] = VDD;
-  // Strong gate pull (gate at 0V -> Vsg = source - 0 = large for PMOS).
-  prev[3] = 0.0;
-  mgr.updateCharges(prev, /*dt=*/1e-3, VDD); // unrealistically large dt
+  prev[3] = 0.0; // gate
+  prev[4] = 0.0; // source = the other terminal
+  mgr.updateCharges(prev, /*dt=*/1e-3, VDD); // unphysically large dt
 
-  // The clamp prevents runaway -- the manager's nodeCount must be unchanged.
-  EXPECT_EQ(mgr.nodeCount(), 2u);
+  // Without the limiter, dv would be huge -> clamped to rail. With the
+  // limiter, |dv| <= 0.5V, so node 2 falls to 2.0 - 0.5 = 1.5V.
+  EXPECT_NEAR(readLatchVoltage(mgr, 8, 2), 1.5, 1e-9);
 }
 
 /* ----------------------------- forceNodeVoltage() + stamp() ----------------------------- */
