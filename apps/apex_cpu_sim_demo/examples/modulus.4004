@@ -1,0 +1,38 @@
+# === modulus.4004 ===
+# Compute 13 mod 5 = 3 by repeated subtraction.
+#
+# Algorithm:
+#   R0 = dividend, R1 = divisor
+#   loop: while (R0 >= R1) { R0 -= R1 }
+#   exit: ACC = R0 holds the remainder
+#
+# Demonstrates 4004 control flow: JCN (jump-on-condition) for borrow
+# detection, JUN (jump-unconditional) for the loop back-edge, and the
+# STC/SUB idiom that prevents the SUB instruction's `- !CY` term from
+# silently introducing an extra borrow.
+#
+# After execution:
+#   ACC = 3     (remainder of 13 / 5)
+#   R0  = 3     (loop terminator: last value before borrow)
+#   R1  = 5     (divisor, unchanged)
+#   CY  = 0     (final SUB borrowed)
+
+# Setup
+F1       # CLC          carry = 0 (initial)
+DD       # LDM 13       ACC = 13
+B0       # XCH R0       R0 = 13
+D5       # LDM 5
+B1       # XCH R1       R1 = 5
+
+# Loop start at 0x05
+FA       # STC          set CY=1 so the next SUB does ACC = R0 - R1 (no extra borrow)
+A0       # LD R0        ACC = R0
+91       # SUB R1       ACC = R0 - R1; CY=1 means no borrow, CY=0 means borrow
+1A 0F    # JCN !CY,0x0F if a borrow happened, jump to exit at 0x0F
+B0       # XCH R0       no borrow: write ACC back into R0
+40 05    # JUN 0x005    jump back to loop start
+00       # NOP padding
+00       # NOP padding
+
+# Exit at 0x0F
+A0       # LD R0        ACC = R0 = remainder

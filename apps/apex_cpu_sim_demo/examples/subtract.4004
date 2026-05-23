@@ -1,0 +1,17 @@
+# === subtract.4004 ===
+# 4-bit subtract that crosses zero: 4 - 9 = -6 (= 0xA in 4-bit two's-complement).
+#
+# 4004 SUB semantics: ACC = ACC - Rn - !CY. CLC first sets CY = 0 so the
+# instruction is a clean borrow-aware subtract. After execution CY = 1
+# means "no borrow", CY = 0 means "borrow occurred".
+#
+# After execution:
+#   ACC = 10    (= 0xA, 4-bit wrap of -6)
+#   R0  = 9     (the subtrahend)
+#   CY  = 0     (a borrow occurred)
+
+F1   # CLC       Clear carry so SUB doesn't include a stale borrow.
+D9   # LDM 9     ACC = 9
+B0   # XCH R0    R0 = 9, ACC = 0
+D4   # LDM 4     ACC = 4
+90   # SUB R0    ACC = 4 - 9 - !CY = -6 -> 0xA, CY cleared (borrow)

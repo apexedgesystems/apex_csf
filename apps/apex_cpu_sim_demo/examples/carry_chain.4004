@@ -1,0 +1,11 @@
+# === carry_chain.4004 ===
+# Demonstrate the 4004's carry-out semantics. IAC on 0xF wraps to 0 and
+# sets CY = 1. The next instruction (CLC) shows how to drop the carry.
+#
+# After execution:
+#   ACC = 0     (wrapped from 0xF + 1)
+#   CY  = 0     (CLC cleared the carry-out)
+
+DF   # LDM 15    ACC = 0xF (max 4-bit unsigned)
+F2   # IAC       ACC = 0, CY = 1 (carry-out of bit 3)
+F1   # CLC       CY = 0 (drop the carry; ACC unchanged)

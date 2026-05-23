@@ -23,6 +23,17 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/production/CMakeLists.txt")
 endif ()
 
 # ------------------------------------------------------------------------------
+# Electronics Simulation Demos
+# ------------------------------------------------------------------------------
+
+add_subdirectory(apex_cpu_sim_demo)
+add_subdirectory(apex_circuit_demo)
+
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/production/CMakeLists.txt")
+  add_subdirectory(production)
+endif ()
+
+# ------------------------------------------------------------------------------
 # Bare-metal Firmware
 # ------------------------------------------------------------------------------
 

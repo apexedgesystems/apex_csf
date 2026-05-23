@@ -1,0 +1,28 @@
+# === twos_complement.4004 ===
+# Compute the ones-complement and two's-complement of a 4-bit value.
+# Input: 5
+#
+#   ones-complement (CMA): flips every bit. ~5 = 0xA = 0b1010
+#   two's-complement:      ones-complement + 1. -5 (mod 16) = 0xB
+#
+# Together this demonstrates how the 4004 represents negative numbers
+# in 4-bit two's-complement: -1 = 0xF, -2 = 0xE, ..., -5 = 0xB. The
+# only single-instruction transformation involved is `CMA` (Complement
+# Accumulator); the +1 step uses the regular `IAC` already shown in
+# the increment / multiply / fibonacci examples.
+#
+# After execution:
+#   ACC = 11    (= 0xB, two's-complement of 5)
+#   R0  = 10    (= 0xA, ones-complement of 5)
+#   R1  = 11    (= 0xB, two's-complement of 5)
+
+F1   # CLC          carry = 0
+D5   # LDM 5        ACC = 5
+F4   # CMA          ACC = ~5 & 0xF = 0xA (ones-complement)
+B0   # XCH R0       R0 = 0xA, ACC = 0
+
+D5   # LDM 5        ACC = 5
+F4   # CMA          ACC = 0xA
+F2   # IAC          ACC = 0xB (two's-complement of 5)
+B1   # XCH R1       R1 = 0xB, ACC = 0
+A1   # LD R1        ACC = 0xB (just for the final visible value)

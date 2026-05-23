@@ -1,0 +1,43 @@
+# === bit_count.4004 ===
+# Count the number of 1-bits (population count) in a 4-bit nibble.
+# Input: 0xB = 0b1011 -> expected popcount = 3.
+#
+# Algorithm:
+#   for 4 iterations: CLC, then RAR rotates the LSB into CY (and a
+#   zero into bit 3). If CY is set the bit was 1, so increment R1.
+#
+# Demonstrates `RAR` for shifting-out bits and `JCN` testing the
+# carry as a per-bit branch. The CLC before each RAR keeps the rotate
+# behaving as a pure shift-right (otherwise the CY-from-the-previous-
+# iteration would re-enter as bit 3).
+#
+# After execution:
+#   ACC = 3     (popcount of 0xB)
+#   R0  = 0     (input shifted out completely)
+#   R1  = 3     (running count)
+#   R2  = 0     (loop counter wrapped)
+
+# Setup
+F1       # CLC          carry = 0
+DB       # LDM 11       ACC = 0xB = 0b1011 (the value to count)
+B0       # XCH R0       R0 = 0xB
+D0       # LDM 0
+B1       # XCH R1       R1 = 0 (running count)
+DC       # LDM 12       ACC = 16 - 4 = 12
+B2       # XCH R2       R2 = 12 (loop counter)
+
+# Loop start at 0x07
+F1       # CLC          clear carry so RAR is pure shift right
+A0       # LD R0        ACC = R0
+F6       # RAR          ACC >>= 1; LSB -> CY; 0 -> bit 3
+B0       # XCH R0       R0 = shifted value, ACC = old R0
+1A 10    # JCN !CY,0x10 if the rotated-out bit was 0, skip the increment
+A1       # LD R1
+F2       # IAC          increment the count
+B1       # XCH R1       R1++
+
+# Loop tail at 0x10
+72 07    # ISZ R2,0x07  R2++; loop back if not zero
+
+# Exit
+A1       # LD R1        ACC = popcount

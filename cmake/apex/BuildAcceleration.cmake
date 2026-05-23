@@ -57,19 +57,22 @@ endif ()
 # ------------------------------------------------------------------------------
 option(APEX_USE_FAST_LINKER "Use mold/lld if available" ON)
 
-if (APEX_USE_FAST_LINKER AND NOT CMAKE_CROSSCOMPILING)
-  # Cross-compilation uses the toolchain's linker
+if (APEX_USE_FAST_LINKER)
   set(_LINKER_FOUND FALSE)
 
   # Try mold first (fastest, open source)
   if (NOT _LINKER_FOUND)
     find_program(_MOLD_LINKER mold)
     if (_MOLD_LINKER)
-      # Verify compiler supports -fuse-ld=mold
-      include(CheckCXXCompilerFlag)
-      set(CMAKE_REQUIRED_LINK_OPTIONS "-fuse-ld=mold")
-      check_cxx_compiler_flag("" _MOLD_WORKS)
-      unset(CMAKE_REQUIRED_LINK_OPTIONS)
+      # Verify compiler supports -fuse-ld=mold (skip test when cross-compiling
+      # because the test binary can't execute on the host)
+      set(_MOLD_WORKS ${CMAKE_CROSSCOMPILING})
+      if (NOT _MOLD_WORKS)
+        include(CheckCXXCompilerFlag)
+        set(CMAKE_REQUIRED_LINK_OPTIONS "-fuse-ld=mold")
+        check_cxx_compiler_flag("" _MOLD_WORKS)
+        unset(CMAKE_REQUIRED_LINK_OPTIONS)
+      endif ()
 
       if (_MOLD_WORKS)
         add_link_options("-fuse-ld=mold")

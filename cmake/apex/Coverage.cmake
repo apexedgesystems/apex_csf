@@ -272,9 +272,12 @@ foreach (_mapping IN LISTS COVERAGE_MAPPINGS)
     continue()
   endif ()
 
-  if (NOT EXISTS "${_lib_so}")
-    message(WARNING "[Coverage] Library not found: ${_lib_so}")
-    continue()
+  # For header-only (INTERFACE) libraries there is no .so -- the coverage
+  # data is compiled into the test binary itself.  Use -object only when
+  # the shared library exists; otherwise llvm-cov reads the test binary.
+  set(_object_args "")
+  if (EXISTS "${_lib_so}")
+    set(_object_args "-object=${_lib_so}")
   endif ()
 
   set(_out "${OUTPUT_DIR}/${_lib}")
@@ -287,7 +290,7 @@ foreach (_mapping IN LISTS COVERAGE_MAPPINGS)
       "-format=html"
       "-output-dir=${_out}/html"
       "-ignore-filename-regex=${IGNORE_REGEX}"
-      "-object=${_lib_so}"
+      ${_object_args}
     OUTPUT_QUIET ERROR_QUIET
   )
 
@@ -296,7 +299,7 @@ foreach (_mapping IN LISTS COVERAGE_MAPPINGS)
     COMMAND "${LLVM_COV}" report "${_test_exe}"
       "-instr-profile=${_profdata}"
       "-ignore-filename-regex=${IGNORE_REGEX}"
-      "-object=${_lib_so}"
+      ${_object_args}
     OUTPUT_FILE "${_out}/summary.txt"
   )
 
@@ -305,7 +308,7 @@ foreach (_mapping IN LISTS COVERAGE_MAPPINGS)
     COMMAND "${LLVM_COV}" export "${_test_exe}"
       "-instr-profile=${_profdata}"
       "-ignore-filename-regex=${IGNORE_REGEX}"
-      "-object=${_lib_so}"
+      ${_object_args}
       "-format=lcov"
     OUTPUT_FILE "${_out}/lcov.info"
     ERROR_QUIET

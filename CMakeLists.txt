@@ -174,7 +174,11 @@ if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPIL
   set(CMAKE_CUDA_STANDARD 20)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
-  option(CUDA_KEEP_INTERMEDIATES "Keep NVCC intermediate files" ON)
+  # OFF by default: a single shared --keep-dir causes parallel CUDA target
+  # builds to race on cmake_device_link.reg.c, producing cross-target
+  # __cudaRegisterLinkedBinary / __fatbinwrap link errors. Opt in only when
+  # debugging nvcc intermediates.
+  option(CUDA_KEEP_INTERMEDIATES "Keep NVCC intermediate files" OFF)
   set(_nvcc_keep "")
   if (CUDA_KEEP_INTERMEDIATES)
     set(NVCC_TMP_DIR "${CMAKE_BINARY_DIR}/nvcc")

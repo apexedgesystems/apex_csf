@@ -1,0 +1,52 @@
+# === flag_ops.4004 ===
+# Tour the four flag-and-accumulator instructions not exercised by
+# the other examples:
+#
+#   CLB  - Clear Both: ACC = 0 and CY = 0 in one cycle
+#   CMC  - Complement Carry: flip CY
+#   DAC  - Decrement ACC: ACC = ACC - 1 (CY = 1 means no borrow)
+#   TCS  - Transfer Carry Subtract: ACC = 9 (CY=0) or 10 (CY=1),
+#          then CY = 0. Used to seed BCD subtract correction.
+#
+# Stages:
+#   1. STC + LDM 10 + CLB  -> verify CLB clears both ACC and CY
+#   2. STC + CMC + CMC     -> verify CMC toggles CY
+#   3. LDM 5 + DAC          -> verify DAC computes 5 - 1 = 4
+#   4. STC + TCS            -> ACC = 10 (CY-was-1 case)
+#   5. CLC + TCS            -> ACC = 9  (CY-was-0 case)
+#
+# After execution:
+#   ACC = 9     (last TCS result)
+#   R0  = 0     (post-CLB)
+#   R1  = 4     (post-DAC)
+#   R2  = 10    (TCS with CY=1)
+#   R3  = 9     (TCS with CY=0)
+
+# Stage 1: CLB
+FA   # STC          CY = 1
+DA   # LDM 10       ACC = 10
+F0   # CLB          ACC = 0, CY = 0 (this is the test)
+B0   # XCH R0       R0 = 0 (capture)
+
+# Stage 2: CMC toggles CY (no observable register change, but
+# subsequent stages depend on the resulting CY)
+FA   # STC          CY = 1
+F3   # CMC          CY = 0
+F3   # CMC          CY = 1
+
+# Stage 3: DAC decrements ACC by 1
+F1   # CLC          deterministic CY-in
+D5   # LDM 5
+F8   # DAC          ACC = 5 - 1 = 4 (CY = 1 means no borrow)
+B1   # XCH R1       R1 = 4
+
+# Stage 4: TCS with CY = 1
+FA   # STC
+F9   # TCS          ACC = 10, CY = 0
+B2   # XCH R2       R2 = 10
+
+# Stage 5: TCS with CY = 0
+F1   # CLC
+F9   # TCS          ACC = 9, CY = 0
+B3   # XCH R3       R3 = 9
+A3   # LD R3        ACC = 9 (final visible)

@@ -7,12 +7,24 @@ CLAUDE.md
 /release/
 compile_commands.json
 
+# Coverage / profiling output
+*.profraw
+*.profdata
+
+# Editor backups
+*.bak
+
 # Temporary files
 /tmp/
 *.log
+/*.csv
 
 # Performance tests (run manually, not committed)
 **/ptst/
+
+# Exception: electronics ptests are version-controlled
+!src/sim/electronics/**/ptst/
+!src/sim/electronics/**/ptst/**
 
 # Design docs and future proposals (internal only)
 docs/
@@ -48,3 +60,6 @@ tools/rust/dev/
 
 # Archived test results (kept locally, not committed)
 **/.archive/
+
+# Production applications (proprietary, not committed)
+apps/production/

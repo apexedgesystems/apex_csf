@@ -77,7 +77,7 @@ fetchcontent_declare(
   seeker
   SYSTEM
   GIT_REPOSITORY https://github.com/apexedgesystems/seeker.git
-  GIT_TAG v1.0.0
+  GIT_TAG v1.0.1
 )
 set(SEEKER_BUILD_TOOLS
     ON

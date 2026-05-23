@@ -1,0 +1,14 @@
+# === increment.4004 ===
+# Chain three accumulator increments: 7 + 1 + 1 + 1 = 10.
+#
+# IAC adds 1 to ACC and sets CY on overflow out of the 4-bit accumulator.
+# Three IACs in a row demonstrate compounding without touching a register.
+#
+# After execution:
+#   ACC = 10    (= 0xA)
+#   CY  = 0     (no overflow on the third IAC; 0x9 + 1 = 0xA)
+
+D7   # LDM 7     ACC = 7
+F2   # IAC       ACC = 8
+F2   # IAC       ACC = 9
+F2   # IAC       ACC = 10

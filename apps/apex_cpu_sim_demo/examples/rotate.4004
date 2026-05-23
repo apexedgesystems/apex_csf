@@ -1,0 +1,19 @@
+# === rotate.4004 ===
+# Compute 1 << 3 = 8 by chaining `RAL` (Rotate Accumulator Left through
+# carry). Each RAL shifts ACC left by 1: bit 3 goes to CY, and the old
+# CY goes into bit 0. Starting from ACC=1 with CY=0, three RALs walk
+# the set bit 1 -> 2 -> 4 -> 8.
+#
+# Demonstrates the 4004's rotate-through-carry primitives. RAL is the
+# accumulator's only left-shift; combined with `RAR` (its right-shift
+# counterpart) it covers all bit-manipulation needs the 4004 has.
+#
+# After execution:
+#   ACC = 8     (= 0b1000)
+#   CY  = 0     (the carried-out bit returned to 0 on the third shift)
+
+F1   # CLC          carry = 0 (so RAL behaves as a pure shift left)
+D1   # LDM 1        ACC = 0b0001
+F5   # RAL          ACC = 0b0010 = 2
+F5   # RAL          ACC = 0b0100 = 4
+F5   # RAL          ACC = 0b1000 = 8
