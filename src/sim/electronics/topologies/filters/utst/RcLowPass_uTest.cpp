@@ -19,11 +19,11 @@
 #include <cstddef>
 #include <limits>
 
-using sim::electronics::topologies::filters::RcLowPass;
 using sim::electronics::algorithms::transient::IntegrationMethod;
 using sim::electronics::algorithms::transient::TransientConfig;
 using sim::electronics::algorithms::transient::TransientState;
 using sim::electronics::algorithms::transient::TransientStatus;
+using sim::electronics::topologies::filters::RcLowPass;
 
 /* ----------------------------- Construction Tests ----------------------------- */
 
@@ -159,8 +159,7 @@ namespace {
 /// Drive the filter with a unit-amplitude sine wave at frequency `freqHz`,
 /// settle for `settleTau` time constants, then measure peak-to-peak of the
 /// output over one full period. Returns measured gain (vout_pp / 2.0).
-double measureTransientGain(RcLowPass& filter, double freqHz, double dt,
-                            double settleTau) {
+double measureTransientGain(RcLowPass& filter, double freqHz, double dt, double settleTau) {
   filter.build();
   filter.setInputVoltage(0.0);
   TransientState state;
@@ -206,9 +205,8 @@ TEST(RcLowPassTest, TransientFrequencyResponseBelowCutoff) {
   const double MEASURED = measureTransientGain(filter, F, /*dt=*/100e-6,
                                                /*settleTau=*/8.0);
   const double EXPECTED = filter.analyticalMagnitudeResponse(F);
-  EXPECT_NEAR(MEASURED, EXPECTED, 0.02)
-      << "Below-cutoff gain should match analytical: expected " << EXPECTED
-      << ", measured " << MEASURED;
+  EXPECT_NEAR(MEASURED, EXPECTED, 0.02) << "Below-cutoff gain should match analytical: expected "
+                                        << EXPECTED << ", measured " << MEASURED;
 }
 
 /** @test Sine input at cutoff frequency produces -3 dB (0.707) gain. */
@@ -230,9 +228,8 @@ TEST(RcLowPassTest, TransientFrequencyResponseAboveCutoff) {
   const double MEASURED = measureTransientGain(filter, F, /*dt=*/2e-6,
                                                /*settleTau=*/8.0);
   const double EXPECTED = filter.analyticalMagnitudeResponse(F);
-  EXPECT_NEAR(MEASURED, EXPECTED, 0.02)
-      << "Above-cutoff gain should match analytical: expected " << EXPECTED
-      << ", measured " << MEASURED;
+  EXPECT_NEAR(MEASURED, EXPECTED, 0.02) << "Above-cutoff gain should match analytical: expected "
+                                        << EXPECTED << ", measured " << MEASURED;
 }
 
 /** @test Frequency response is monotonically decreasing across the swept range. */

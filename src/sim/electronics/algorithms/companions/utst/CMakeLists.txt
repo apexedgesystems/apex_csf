@@ -4,13 +4,13 @@
 
 include(apex/All)
 
-set(TEST_SOURCES CompanionModels_uTest.cpp CompanionSet_uTest.cpp)
+set(UNIT_TEST_SOURCES CompanionModels_uTest.cpp CompanionSet_uTest.cpp)
 
 apex_add_gtest(
   TARGET
   TestSimElectronicsAlgorithmsCompanions
   SOURCES
-  ${TEST_SOURCES}
+  ${UNIT_TEST_SOURCES}
   LINK
   sim_electronics_algorithms_companions
   LABELS
@@ -41,7 +41,7 @@ if (TARGET sim_electronics_algorithms_companions_cuda AND CMAKE_CUDA_COMPILER)
     cuda
   )
   set_target_properties(
-    TestSimElectronicsAlgorithmsCompanionsCuda
-    PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON
+    TestSimElectronicsAlgorithmsCompanionsCuda PROPERTIES CUDA_SEPARABLE_COMPILATION ON
+                                                          CUDA_RESOLVE_DEVICE_SYMBOLS ON
   )
 endif ()

@@ -1,76 +1,175 @@
-# sim_electronics_topologies_amplifiers
+# Amplifiers Module
 
-BJT amplifier circuit models built on the electronics simulation framework.
+**Namespace:** `sim::electronics::topologies::amplifiers`
+**Platform:** Linux-only
+**C++ Standard:** C++23
 
-## Overview
+Pre-built BJT amplifier circuit topologies that compose the Circuit API
+with the `BjtEbersMoll` device model.
 
-Header-only library providing pre-built amplifier topologies that compose the
-Circuit API with nonlinear device models to simulate transistor-level behavior.
+---
 
-## Modules
+## Table of Contents
 
-| Module             | Description                             | RT-safe             |
-| ------------------ | --------------------------------------- | ------------------- |
-| `BjtCommonEmitter` | Fixed-bias NPN common-emitter amplifier | After `computeDC()` |
+1. [Overview](#1-overview)
+2. [Quick Reference](#2-quick-reference)
+3. [Design Principles](#3-design-principles)
+4. [Module Reference](#4-module-reference)
+   - [BjtCommonEmitter](#bjtcommonemitter)
+5. [Common Patterns](#5-common-patterns)
+6. [Real-Time Considerations](#6-real-time-considerations)
+7. [CLI Tools](#7-cli-tools)
+8. [Example: Common-Emitter Bias Point](#8-example-common-emitter-bias-point)
+9. [See Also](#9-see-also)
 
-## Dependencies
+---
 
-| Library                             | Purpose                             |
-| ----------------------------------- | ----------------------------------- |
-| `sim_electronics_circuit`           | Circuit construction and solver API |
-| `sim_electronics_devices_nonlinear` | BJT Ebers-Moll device model         |
+## 1. Overview
 
-## Quick Start
+| Question                                          | Module                                   |
+| ------------------------------------------------- | ---------------------------------------- |
+| How do I simulate a common-emitter amplifier?     | `BjtCommonEmitter`                       |
+| How do I find the DC bias point of a BJT circuit? | `BjtCommonEmitter::computeDC`            |
+| Which BJT model is used internally?               | `BjtEbersMoll` (in `devices/nonlinear/`) |
+
+---
+
+## 2. Quick Reference
 
 ```cpp
 #include "src/sim/electronics/topologies/amplifiers/inc/BjtCommonEmitter.hpp"
 
 using sim::electronics::topologies::amplifiers::BjtCommonEmitter;
 
-// VCC=12V, RC=470 ohm, RB=100k ohm
+BjtCommonEmitter amp(/*VCC=*/12.0, /*RC=*/470.0, /*RB=*/100e3);
+amp.computeDC();
+const double VC = amp.collectorVoltage();
+```
+
+---
+
+## 3. Design Principles
+
+| Annotation      | Meaning                                                      |
+| --------------- | ------------------------------------------------------------ |
+| **RT-safe**     | No allocation, bounded execution, safe for real-time loops   |
+| **NOT RT-safe** | May allocate or have unbounded I/O; call from non-RT context |
+
+- **Header-only.** All amplifier classes live in headers and compose the
+  shared Circuit construction API.
+- **Cached operating point.** `computeDC` populates accessors
+  (`collectorVoltage`, `collectorCurrent`, `baseVoltage`); accessors are
+  RT-safe and idempotent.
+- **No exceptions.** `computeDC` returns a `bool` for convergence; the
+  cached fields stay at their last successful value otherwise.
+
+---
+
+## 4. Module Reference
+
+### BjtCommonEmitter
+
+**Header:** `BjtCommonEmitter.hpp`
+**Purpose:** Fixed-bias NPN common-emitter amplifier.
+
+#### API
+
+```cpp
+BjtCommonEmitter(double vcc, double rc, double rb);
+
+[[nodiscard]] bool   computeDC();
+
+[[nodiscard]] double vcc() const noexcept;
+[[nodiscard]] double rc()  const noexcept;
+[[nodiscard]] double rb()  const noexcept;
+
+[[nodiscard]] double collectorVoltage() const noexcept;
+[[nodiscard]] double baseVoltage()      const noexcept;
+[[nodiscard]] double collectorCurrent() const noexcept;
+```
+
+`computeDC` is NOT RT-safe (Newton-Raphson solve). All getters are RT-safe.
+
+---
+
+## 5. Common Patterns
+
+### Parameter Sweep
+
+```cpp
+for (const double VCC : {5.0, 9.0, 12.0}) {
+  BjtCommonEmitter amp(VCC, /*RC=*/470.0, /*RB=*/100e3);
+  if (amp.computeDC()) {
+    fmt::print("VCC={:.1f}  V_C={:.4f}\n", VCC, amp.collectorVoltage());
+  }
+}
+```
+
+### Bias-Region Probe
+
+```cpp
 BjtCommonEmitter amp(12.0, 470.0, 100e3);
 amp.computeDC();
-
-double vc = amp.collectorVoltage();  // Collector voltage
-double ic = amp.collectorCurrent();  // Collector current (A)
-double vb = amp.baseVoltage();       // Base voltage (~0.7V)
+const double V_CE = amp.collectorVoltage() - /*VE=*/0.0;
+const bool   SATURATED = V_CE < 0.2;
 ```
 
-## Question-to-Module Matrix
+---
 
-| Question                                          | Module                                   |
-| ------------------------------------------------- | ---------------------------------------- |
-| How do I simulate a common-emitter amplifier?     | `BjtCommonEmitter`                       |
-| How do I find the DC bias point of a BJT circuit? | `BjtCommonEmitter::computeDC()`          |
-| What BJT model is used internally?                | `BjtEbersMoll` (in `devices/nonlinear/`) |
+## 6. Real-Time Considerations
 
-## Performance
+### RT-Safe Functions
 
-| Operation                              | Latency  | Notes                                        |
-| -------------------------------------- | -------- | -------------------------------------------- |
-| `BjtCommonEmitter` construction        | 0.6 us   | 3 net allocations + stamp callback registry  |
-| `BjtCommonEmitter::computeDC()`        | 142 us   | Newton-Raphson DC solve of the 3-net circuit |
+- All accessors (`vcc`, `rc`, `rb`, `collectorVoltage`, `baseVoltage`,
+  `collectorCurrent`).
 
-DC solve cost is dominated by LAPACK BLAS routines (dense LU factor +
-triangular solves on the augmented MNA matrix). For batched parameter
-sweeps, the per-call overhead amortizes well.
+### NOT RT-Safe Functions
 
-## Demo
+- Constructor (registers stamp callbacks).
+- `computeDC` (Newton-Raphson solve with potential workspace allocation).
 
-The `apex_circuit_demo` app exercises this library via
-`--circuit common-emitter`:
+### Recommended Configuration
 
-```bash
-./build/native-linux-debug/bin/ApexCircuitDemo --circuit common-emitter
-./build/native-linux-debug/bin/ApexCircuitDemo --circuit common-emitter --vcc 9 --rb-base 47e3
+- Run `computeDC` during configuration; query accessors inside the RT
+  loop. For sweeps, batch the `computeDC` calls outside the loop.
+
+---
+
+## 7. CLI Tools
+
+- `apex_circuit_demo --circuit common-emitter` exercises this module and
+  reports `V_B`, `V_C`, `V_CE`, `I_C`, `I_B`, plus a region check
+  (cutoff / saturation / active). See
+  [apps/apex_circuit_demo](../../../../apps/apex_circuit_demo/).
+
+---
+
+## 8. Example: Common-Emitter Bias Point
+
+```cpp
+#include "src/sim/electronics/topologies/amplifiers/inc/BjtCommonEmitter.hpp"
+
+#include <fmt/core.h>
+
+int main() {
+  using sim::electronics::topologies::amplifiers::BjtCommonEmitter;
+
+  BjtCommonEmitter amp(/*VCC=*/12.0, /*RC=*/470.0, /*RB=*/100e3);
+  if (!amp.computeDC()) {
+    fmt::print("DC solve failed\n");
+    return 1;
+  }
+  fmt::print("V_B = {:.4f} V\n", amp.baseVoltage());
+  fmt::print("V_C = {:.4f} V\n", amp.collectorVoltage());
+  fmt::print("I_C = {:.4e} A\n", amp.collectorCurrent());
+  return 0;
+}
 ```
 
-The demo reports the DC operating point (V_B, V_C, V_CE, I_C, I_B) and a
-region check (cutoff / saturation / active) so you can quickly explore
-how supply and bias resistor values move the operating point around.
+---
 
-## See Also
+## 9. See Also
 
-- [Circuit](../../circuit/README.md) -- the construction API
-- [devices/nonlinear/BjtEbersMoll](../../devices/nonlinear/README.md) -- the BJT model used internally
-- `apps/apex_circuit_demo/` -- example consumer (`--circuit common-emitter`)
+- [Circuit](../../circuit/README.md) - Construction API
+- [devices/nonlinear/BjtEbersMoll](../../devices/nonlinear/README.md) - BJT model used internally
+- [apps/apex_circuit_demo](../../../../apps/apex_circuit_demo/) - Example consumer (`--circuit common-emitter`)

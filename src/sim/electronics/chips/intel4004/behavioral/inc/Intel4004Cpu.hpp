@@ -295,7 +295,7 @@ public:
    * @return 8-bit value (high:low nibble).
    * @note RT-safe: Pure arithmetic.
    */
-  std::uint8_t getRegisterPairValue(std::uint8_t pair) const noexcept {
+  [[nodiscard]] std::uint8_t getRegisterPairValue(std::uint8_t pair) const noexcept {
     const std::uint8_t IDX = (pair & 0x7) * 2;
     return static_cast<std::uint8_t>((registers[IDX] << 4) | registers[IDX + 1]);
   }
@@ -327,17 +327,17 @@ private:
 
   /* ----------------------------- RAM Address Helpers ----------------------------- */
 
-  std::size_t ramDataAddr() const noexcept {
+  [[nodiscard]] std::size_t ramDataAddr() const noexcept {
     return static_cast<std::size_t>((ramBank & 0x3) * 256) + srcAddress;
   }
 
-  std::size_t ramStatusAddr(std::uint8_t statusReg) const noexcept {
+  [[nodiscard]] std::size_t ramStatusAddr(std::uint8_t statusReg) const noexcept {
     const std::size_t BASE =
         static_cast<std::size_t>((ramBank & 0x3) * 64) + ((srcAddress >> 4) & 0xF) * 4;
     return BASE + (statusReg & 0x3);
   }
 
-  std::size_t ramOutputAddr() const noexcept {
+  [[nodiscard]] std::size_t ramOutputAddr() const noexcept {
     return static_cast<std::size_t>((ramBank & 0x3) * 4) + ((srcAddress >> 6) & 0x3);
   }
 

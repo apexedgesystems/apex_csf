@@ -60,14 +60,14 @@ using devices::nonlinear::MosfetLevel1Params;
  */
 struct DynamicLatchNode {
   algorithms::mna::NetID net = 0;
-  double voltage = 5.0;       ///< Current node voltage (initialized to VDD = precharged)
+  double voltage = 5.0;         ///< Current node voltage (initialized to VDD = precharged)
   double capacitance = 100e-15; ///< Node parasitic capacitance (F)
 
   struct ConnectedTransistor {
     algorithms::mna::NetID otherTerminal; ///< The other drain/source terminal
     algorithms::mna::NetID gate;          ///< Gate terminal
     MosfetLevel1Params params;
-    bool isDeplLoad = false;  ///< Depletion load (always-ON pull toward VDD)
+    bool isDeplLoad = false; ///< Depletion load (always-ON pull toward VDD)
   };
   std::vector<ConnectedTransistor> transistors;
 };
@@ -85,7 +85,7 @@ struct DynamicLatchNode {
 struct PmosDynamicLatchManager {
 
   /// Evaluate time for one clock phase (used for current integration).
-  double evalTime = 25e-9;  // 25ns default (quarter of 1us machine state)
+  double evalTime = 25e-9; // 25ns default (quarter of 1us machine state)
 
   /**
    * @brief Initialize from the grid's transistor list and component classification.
@@ -93,7 +93,7 @@ struct PmosDynamicLatchManager {
    * Creates a DynamicLatchNode for each net touched by DYNAMIC_STORAGE
    * transistors whose gate is NOT a NOR output (the latch feedback core).
    */
-  void initialize(const auto& grid, const auto& classification, const auto& componentTypes,
+  void initialize(const auto& grid, const auto& /*classification*/, const auto& componentTypes,
                   const auto& norOutputNets) {
     nodes_.clear();
     nodeMap_.clear();
@@ -102,15 +102,17 @@ struct PmosDynamicLatchManager {
 
     // Find latch core nets: dynamic storage transistors whose gate is NOT a NOR output
     for (std::size_t i = 0; i < grid.transistors_.size(); ++i) {
-      if (componentTypes[i] != ComponentType::DYNAMIC_STORAGE) continue;
-      if (norOutputNets.count(grid.transistors_[i].gate)) continue; // NOR-gated = Level 1
+      if (componentTypes[i] != ComponentType::DYNAMIC_STORAGE)
+        continue;
+      if (norOutputNets.count(grid.transistors_[i].gate))
+        continue; // NOR-gated = Level 1
 
-      const auto& t = grid.transistors_[i];
+      const auto& T = grid.transistors_[i];
 
       // Determine effective Kp from W/L bin
       double kp = 5e-3 * 3.23; // Default enhancement
       double vth = 1.17;
-      if (t.isDiodeLoad || (t.gate == vdd && (t.drain == vdd || t.source == vdd))) {
+      if (T.isDiodeLoad || (T.gate == vdd && (T.drain == vdd || T.source == vdd))) {
         kp = 5e-3 * 0.10;
         vth = -0.17;
       }
@@ -118,7 +120,8 @@ struct PmosDynamicLatchManager {
 
       // Register both terminals as latch nodes
       auto registerNode = [&](algorithms::mna::NetID nodeNet, algorithms::mna::NetID otherNet) {
-        if (nodeNet == 0 || nodeNet == vdd) return;
+        if (nodeNet == 0 || nodeNet == vdd)
+          return;
         if (nodeMap_.count(nodeNet) == 0) {
           nodeMap_[nodeNet] = nodes_.size();
           DynamicLatchNode node;
@@ -127,11 +130,10 @@ struct PmosDynamicLatchManager {
           nodes_.push_back(node);
         }
         auto& node = nodes_[nodeMap_[nodeNet]];
-        node.transistors.push_back({otherNet, t.gate, params,
-                                    t.isDiodeLoad || (t.gate == vdd)});
+        node.transistors.push_back({otherNet, T.gate, params, T.isDiodeLoad || (T.gate == vdd)});
       };
-      registerNode(t.drain, t.source);
-      registerNode(t.source, t.drain);
+      registerNode(T.drain, T.source);
+      registerNode(T.source, T.drain);
     }
   }
 
@@ -156,9 +158,8 @@ struct PmosDynamicLatchManager {
         double vOther = (tr.otherTerminal > 0 && tr.otherTerminal < prevV.size())
                             ? prevV[tr.otherTerminal]
                             : (tr.otherTerminal == 0 ? 0.0 : vdd);
-        double vGate = (tr.gate > 0 && tr.gate < prevV.size())
-                            ? prevV[tr.gate]
-                            : (tr.gate == 0 ? 0.0 : vdd);
+        double vGate =
+            (tr.gate > 0 && tr.gate < prevV.size()) ? prevV[tr.gate] : (tr.gate == 0 ? 0.0 : vdd);
 
         // PMOS: current flows from higher to lower potential terminal
         double vHigh = std::max(vNode, vOther);
@@ -166,7 +167,8 @@ struct PmosDynamicLatchManager {
         double vsg = vHigh - vGate;
         double vsd = vHigh - vLow;
 
-        if (vsg <= 0.0) continue; // Gate above source = OFF
+        if (vsg <= 0.0)
+          continue; // Gate above source = OFF
 
         double vsgC = std::max(vsg, 0.0);
         double vsdC = std::max(vsd, 0.0);
@@ -186,14 +188,18 @@ struct PmosDynamicLatchManager {
       double dv = iNet * dt / node.capacitance;
 
       // Limit voltage change per step for stability
-      if (dv > 0.5) dv = 0.5;
-      if (dv < -0.5) dv = -0.5;
+      if (dv > 0.5)
+        dv = 0.5;
+      if (dv < -0.5)
+        dv = -0.5;
 
       node.voltage += dv;
 
       // Clamp to rail
-      if (node.voltage < 0.0) node.voltage = 0.0;
-      if (node.voltage > vdd) node.voltage = vdd;
+      if (node.voltage < 0.0)
+        node.voltage = 0.0;
+      if (node.voltage > vdd)
+        node.voltage = vdd;
     }
   }
 
@@ -203,8 +209,7 @@ struct PmosDynamicLatchManager {
    * Forces each latch node to its charge-computed voltage. This prevents
    * the NR solver from finding the DC metastable mid-rail point.
    */
-  template <typename MnaSystemT>
-  void stamp(MnaSystemT& mna) const {
+  template <typename MnaSystemT> void stamp(MnaSystemT& mna) const {
     for (const auto& node : nodes_) {
       mna.addVoltageSource(node.net, 0, node.voltage);
     }

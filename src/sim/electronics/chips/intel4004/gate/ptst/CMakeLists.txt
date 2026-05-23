@@ -29,5 +29,6 @@ apex_add_ptest(
 
 target_compile_definitions(
   Intel4004Gate_PTEST
-  PRIVATE INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/chips/intel4004/netlist/data"
+  PRIVATE
+    INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/chips/intel4004/netlist/data"
 )

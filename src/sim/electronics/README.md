@@ -1,159 +1,190 @@
 # sim_electronics
 
-Apex's electronics simulation suite -- everything needed to build and analyse
-analog and digital circuits at user-selectable fidelity, from a single-line
-boolean truth table up to full BSIM3 transistor physics.
+**Namespace:** `sim::electronics`
+**Platform:** Linux-only (CUDA optional)
+**C++ Standard:** C++23
 
-## Layout
+Apex's electronics simulation suite. Provides everything needed to build
+and analyse analog and digital circuits at user-selectable fidelity,
+from a single-line boolean truth table up to full BSIM3 transistor
+physics.
 
+---
+
+## Table of Contents
+
+1. [Quick Links](#1-quick-links)
+2. [Design Principles](#2-design-principles)
+3. [Domains](#3-domains)
+4. [Building](#4-building)
+5. [Dependencies](#5-dependencies)
+6. [Testing](#6-testing)
+7. [See Also](#7-see-also)
+
+---
+
+## 1. Quick Links
+
+| Domain                       | Purpose                       | Key Modules                                                                                                                                                                                                                   |
+| ---------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [algorithms](algorithms/)    | Numerical methods             | [mna](algorithms/mna/README.md), [nonlinear](algorithms/nonlinear/README.md), [transient](algorithms/transient/README.md), [companions](algorithms/companions/README.md), [spice/ngspice](algorithms/spice/ngspice/README.md) |
+| [circuit](circuit/README.md) | Construction + simulation API | `Circuit`, `CircuitNet`                                                                                                                                                                                                       |
+| [devices](devices/)          | Physical device models        | [linear](devices/linear/README.md), [nonlinear](devices/nonlinear/README.md), [composite](devices/composite/README.md), [descriptors](devices/descriptors/README.md)                                                          |
+| [topologies](topologies/)    | Pre-built circuits            | [gates](topologies/gates/README.md), [filters](topologies/filters/README.md), [amplifiers](topologies/amplifiers/README.md)                                                                                                   |
+| [chips](chips/)              | Chip-scale assemblies         | [intel4004](chips/intel4004/README.md)                                                                                                                                                                                        |
+
+---
+
+## 2. Design Principles
+
+| Annotation      | Meaning                                                      |
+| --------------- | ------------------------------------------------------------ |
+| **RT-safe**     | No allocation, bounded execution, safe for real-time loops   |
+| **NOT RT-safe** | May allocate or have unbounded I/O; call from non-RT context |
+
+- **Solve / device / topology split.** `algorithms/` is _how to solve_,
+  `devices/` is _what is being solved_, `topologies/` is _ready-made
+  circuits_, `chips/` is _chip-scale assemblies_. Companion models live
+  under `algorithms/` because they are a numerical method (discretizing
+  `I = C dV/dt`), not a physical device.
+- **Multi-fidelity.** Each device family ships a ladder of models so the
+  caller picks the speed / accuracy trade-off, and every level uses the
+  same `Circuit` API so swapping fidelity is a parameter change, not a
+  rewrite.
+- **Header-only where possible.** Algorithms, devices, topologies, and
+  the Circuit API are all header-only. CUDA backends are the only
+  compiled components.
+- **No exceptions in stamps.** Every device stamp is `noexcept` and
+  reports failures through the solver's status enum so the Newton-Raphson
+  loop never unwinds.
+
+---
+
+## 3. Domains
+
+### algorithms/
+
+| Module                                              | Role                                                                        |
+| --------------------------------------------------- | --------------------------------------------------------------------------- |
+| [mna](algorithms/mna/README.md)                     | Modified Nodal Analysis solver (sparse KLU, dense LAPACK, AC, batched CUDA) |
+| [nonlinear](algorithms/nonlinear/README.md)         | Newton-Raphson framework used by every nonlinear device stamp               |
+| [transient](algorithms/transient/README.md)         | Time-domain integration loop (Backward Euler / Trapezoidal / GEAR2)         |
+| [companions](algorithms/companions/README.md)       | `Geq` + `Ieq` companion stamps for capacitors and inductors                 |
+| [spice/ngspice](algorithms/spice/ngspice/README.md) | NGSPICE bridge for cross-validation (verification only)                     |
+
+### circuit/
+
+The [Circuit](circuit/README.md) module is the user-facing builder. It
+allocates nets, registers stamp callbacks for primitive elements, and
+delegates simulation to the algorithms layer. Every model in `devices/`,
+`topologies/`, and `chips/` composes the Circuit API.
+
+### devices/
+
+| Module                                       | Captures                                                   |
+| -------------------------------------------- | ---------------------------------------------------------- |
+| [linear](devices/linear/README.md)           | R / L / C primitives plus reactance / impedance helpers    |
+| [nonlinear](devices/nonlinear/README.md)     | Diodes, MOSFETs (binary switch through BSIM3), JFETs, BJTs |
+| [composite](devices/composite/README.md)     | CMOS composite primitives (Inverter, NAND, NOR)            |
+| [descriptors](devices/descriptors/README.md) | Topology-only descriptors with no attached physics         |
+
+#### MOSFET ladder
+
+| Header                   | Fidelity                                       | Pick when                                              |
+| ------------------------ | ---------------------------------------------- | ------------------------------------------------------ |
+| `MosfetBinarySwitch.hpp` | ON / OFF switch                                | Initialization, warmup, digital-only logic             |
+| `MosfetLevel1.hpp`       | Shichman-Hodges 3-region                       | General analog work                                    |
+| `MosfetLevel2.hpp`       | SPICE Level 2 (geometry + velocity saturation) | Short-channel circuits                                 |
+| `MosfetLevel3.hpp`       | SPICE Level 3 (DIBL + short-channel)           | Sub-micron / low-voltage analog                        |
+| `MosfetBsim3.hpp`        | BSIM3 (smooth `Vgst_eff` across all regions)   | Moderate-inversion accuracy (Intel 4004 L2 latch core) |
+
+#### Diode ladder
+
+| Header              | Fidelity                             | Use when                           |
+| ------------------- | ------------------------------------ | ---------------------------------- |
+| `DiodeShockley.hpp` | Exponential I-V                      | Rectifiers, clamps, basic analog   |
+| `DiodeSpice.hpp`    | SPICE diode (series R, junction cap) | Power diodes, accurate transient   |
+| `SchottkyDiode.hpp` | Schottky barrier diode               | Fast rectifiers, low-voltage power |
+| `ZenerDiode.hpp`    | Forward + breakdown regions          | Voltage regulators / references    |
+
+#### JFET / BJT
+
+| Header             | Fidelity                          | Use when                                    |
+| ------------------ | --------------------------------- | ------------------------------------------- |
+| `JfetShichman.hpp` | Shichman-Hodges 3-region          | Precision op-amps, analog switches          |
+| `JfetLevel2.hpp`   | Adds gate leakage and capacitance | High-frequency / low-noise amplifiers       |
+| `BjtEbersMoll.hpp` | Ebers-Moll 4-parameter            | Op-amps and the `BjtCommonEmitter` topology |
+
+### topologies/
+
+| Module                                        | Topologies                                                                                    |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| [gates](topologies/gates/README.md)           | Boolean and transistor-level NOT / AND / OR / NAND / NOR / XOR / XNOR plus half / full adders |
+| [filters](topologies/filters/README.md)       | `RcLowPass` (closed-form helpers + simulated step / magnitude response)                       |
+| [amplifiers](topologies/amplifiers/README.md) | `BjtCommonEmitter` (fixed-bias NPN common-emitter amplifier)                                  |
+
+### chips/
+
+| Chip                                   | Levels                                                                                             |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| [intel4004](chips/intel4004/README.md) | L0 functional CPU, L1 component hybrid, L2 engineered physics, L3 pure physics (future aspiration) |
+
+---
+
+## 4. Building
+
+The suite is included as a sub-library of the Apex build. Linking is by
+target name:
+
+```cmake
+target_link_libraries(my_target
+  PRIVATE
+    sim_electronics_circuit
+    sim_electronics_algorithms_mna
+    sim_electronics_algorithms_transient
+    sim_electronics_devices_nonlinear
+)
 ```
-src/sim/electronics/
-  algorithms/           Numerics (everything used to *solve* a circuit)
-    mna/                Modified Nodal Analysis (sparse + dense + AC + batch)
-    nonlinear/          Newton-Raphson framework
-    transient/          Time-domain integration loop (Backward-Euler / GEAR2)
-    companions/         Time-domain companion models (Geq + Ieq stamps for C, L)
-    spice/ngspice/      NGSPICE bridge for cross-validation (verification only)
-  circuit/              Circuit composition API (addNet / addConductance / addCapacitor / ...)
-  devices/              Physics (everything that *is* a device)
-    linear/             R / L / C device classes + reactance / impedance helpers
-    nonlinear/          Diodes, MOSFETs, BJTs, JFETs (full fidelity ladder)
-    composite/          Multi-transistor primitives (CmosInverter / CmosNand / CmosNor)
-    descriptors/        Parameter descriptor types
-  topologies/           Pre-built circuits assembled from the above
-    gates/              CMOS logic gates -- boolean and transistor-level
-    filters/            Filter topologies (RC low-pass, ...)
-    amplifiers/         Amplifier topologies (BJT common-emitter, ...)
-  intel4004/            Chip-specific (Intel 4004 microprocessor)
-    behavioral/         ISA-level CPU model (L0)
-    gate/               ~427-gate event-driven model (Lg)
-    grid/               Transistor-level (L1 + L2)
-    netlist/            SPICE netlist parser for the Lajos-extracted 4004
+
+CUDA backends (e.g. `sim_electronics_algorithms_mna_cuda`,
+`sim_electronics_devices_nonlinear_cuda`) are built when the project's
+CUDA toolkit is detected. Every CUDA target compiles to a no-op when the
+toolkit is absent so consumers can link unconditionally.
+
+---
+
+## 5. Dependencies
+
+| Dependency                      | Purpose                                                                |
+| ------------------------------- | ---------------------------------------------------------------------- |
+| LAPACK / BLAS                   | Dense MNA solve (`dgesv`, `dgetrf`, `dgetrs`)                          |
+| KLU (SuiteSparse)               | Sparse MNA solve                                                       |
+| CUDA Toolkit (cuSOLVER, cuBLAS) | Optional GPU acceleration                                              |
+| libngspice                      | Optional, used only by `algorithms/spice/ngspice` for cross-validation |
+| `fmt`                           | String formatting in examples and CLI tools                            |
+
+---
+
+## 6. Testing
+
+Run the standard Docker workflow:
+
+```bash
+make compose-debug
+make compose-testp
 ```
 
-The split is intentional: **`algorithms/` = how to solve, `devices/` = what's
-being solved, `topologies/` = ready-made circuits, `intel4004/` = chip-scale
-assembly.** Companion models live under `algorithms/` because they're a
-numerical method (Backward-Euler discretization of `I = C dV/dt`), not a
-physical device.
+Filter by label:
 
-## How to construct a custom circuit
-
-The composition pattern customers reuse is the same across every demo:
-
-```cpp
-#include "src/sim/electronics/circuit/inc/Circuit.hpp"
-#include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1.hpp"
-// (or whichever device model fits your fidelity / accuracy needs)
-
-// 1. Pick a device model.
-MosfetLevel1Params nmos{.Kp = 120e-6, .Vth = 0.7, .lambda = 0.02};
-
-// 2. Build a circuit topology with the Circuit API.
-sim::electronics::circuit::Circuit ckt;
-auto VDD = ckt.addNet("VDD").id;
-auto OUT = ckt.addNet("OUT").id;
-ckt.addStamp([&](MnaSystem& mna, double, const std::vector<double>& v) {
-  // ... add conductances + device stamps ...
-});
-
-// 3. Drive an analysis.
-ckt.computeDC(state);                    // DC operating point
-// or:
-ckt.solver().step(dt, state);            // transient sub-step
+```bash
+docker compose run --rm -T dev-cuda \
+  ctest --test-dir build/native-linux-debug -L sim_electronics
 ```
 
-`apps/apex_circuit_demo` ships a ready-to-customize example covering three
-common patterns -- digital (CMOS gates), passive analog (RC filter), and
-active analog (BJT common-emitter) -- so a customer building their own
-circuit has a working starting point.
+---
 
-## Fidelity tiers (pick the right tool)
+## 7. See Also
 
-The suite is intentionally multi-fidelity. Faster models trade physical
-accuracy for speed; higher-fidelity models surface short-channel,
-moderate-inversion, and dynamic-charge effects.
-
-### Logic gates (`topologies/gates/`)
-
-| Header                                          | Fidelity                | Latency / gate | Use when |
-|-------------------------------------------------|-------------------------|---------------:|----------|
-| `topologies/gates/inc/LogicGates.hpp`           | Boolean truth table     | ~6 ns          | Pure logic verification, design-time correctness, fast sweeps |
-| `topologies/gates/inc/CmosGateCircuits.hpp`     | Transistor-level (MOSFET Level 1) | ~us | Transfer-characteristic / VOH / VOL / NM analysis with real physics |
-
-### MOSFET (`devices/nonlinear/`)
-
-| Header                  | Fidelity                                       | Pick when |
-|-------------------------|------------------------------------------------|-----------|
-| `MosfetBinarySwitch.hpp`| ON/OFF switch (no I-V curve)                   | Initialization / warmup; digital-only logic |
-| `MosfetLevel1.hpp`      | Shichman-Hodges 3-region                       | General analog circuit work; balance of speed and accuracy |
-| `MosfetLevel2.hpp`      | SPICE Level 2 (geometry + velocity saturation) | Short-channel circuits where Level 1 misses |
-| `MosfetLevel3.hpp`      | SPICE Level 3 (DIBL + short-channel)           | Sub-micron / low-voltage analog |
-| `MosfetBsim3.hpp`       | BSIM3 (smooth `Vgst_eff` across all regions)   | Moderate-inversion accuracy; required for the Intel 4004 L2 latch core |
-
-### Diode (`devices/nonlinear/`)
-
-| Header              | Fidelity                                | Use when |
-|---------------------|-----------------------------------------|----------|
-| `DiodeShockley.hpp` | Pure exponential I-V (Shockley equation)| Rectifiers, clamps, basic analog |
-| `DiodeSpice.hpp`    | SPICE diode (series R, junction cap)    | Power diodes, accurate transient |
-| `SchottkyDiode.hpp` | Schottky barrier diode                  | Fast rectifiers, low-voltage power |
-| `ZenerDiode.hpp`    | Zener diode with breakdown region       | Voltage regulators, references |
-
-### JFET (`devices/nonlinear/`)
-
-| Header             | Fidelity                              | Use when |
-|--------------------|---------------------------------------|----------|
-| `JfetShichman.hpp` | Shichman-Hodges 3-region              | Precision op-amps, analog switches |
-| `JfetLevel2.hpp`   | Adds gate leakage and capacitance     | High-frequency / low-noise amplifiers |
-
-### BJT (`devices/nonlinear/`)
-
-| Header              | Fidelity                       | Use when |
-|---------------------|--------------------------------|----------|
-| `BjtEbersMoll.hpp`  | Ebers-Moll (4-parameter)       | Op-amps, analog amplifiers, the `BjtCommonEmitter` topology |
-
-### Intel 4004 (`intel4004/`)
-
-| Level | Library                          | Latency / byte | What it captures |
-|-------|----------------------------------|---------------:|------------------|
-| L0    | `intel4004/behavioral/`          | sub-us         | ISA-level instruction execution (truth-table) |
-| Lg    | `intel4004/gate/`                | ms-range       | ~427 extracted NOR gates with event-driven propagation |
-| L1    | `intel4004/grid/` (Level 1)      | ~2.5 s         | Full transistor circuit, Shichman-Hodges + behavioral overlay |
-| L2    | `intel4004/grid/` (Level 2)      | ~3-5 s         | BSIM3 latches + Meyer caps + bootstrap caps, no behavioral overlay |
-
-## Solvers and numerics (`algorithms/`)
-
-| Library                       | Role |
-|-------------------------------|------|
-| `algorithms/mna/`             | MNA solver; sparse (KLU), dense (LAPACK), AC, multi-thread parallel KLU, batched CUDA |
-| `algorithms/nonlinear/`       | Newton-Raphson framework (used by every nonlinear device stamp) |
-| `algorithms/transient/`       | Backward-Euler time integration on top of MNA + companions |
-| `algorithms/spice/ngspice/`   | NGSPICE bridge -- verification only, used by dtests to cross-check our models against the reference SPICE engine. Not consumed by any production app. |
-
-## Linear devices (`devices/linear/`) and Companions (`algorithms/companions/`)
-
-Linear (`R`, `L`, `C`) elements have two complementary surfaces:
-
-- **`devices/linear/{Resistor,Capacitor,Inductor}Model.hpp`** -- analytical /
-  frequency-domain helpers: `reactance(C, f)`, `impedance(L, f)`, etc. Useful
-  for AC / Bode work without running a transient sim.
-- **`algorithms/companions/CompanionModels.hpp`** -- time-domain companion
-  models: `CapacitorCompanion`, `InductorCompanion` -- the `Geq + Ieq`
-  stamps consumed by the transient solver each sub-step.
-
-Both surfaces share parameters; the model class re-exports the companion
-type for convenience (`using Capacitor = CapacitorCompanion`).
-
-## Demo apps
-
-| App                  | What it shows                                  |
-|----------------------|------------------------------------------------|
-| `apex_circuit_demo`  | `--circuit gates` / `rc-lowpass` / `common-emitter` -- the reference customer-facing template for building custom circuits |
-| `apex_cpu_sim_demo`  | Intel 4004 CPU at L0 / L1 / L2; ships 19 example `.4004` programs that span the full ISA |
-
-## See also
-
-- `apps/apex_circuit_demo/docs/HOW_TO_RUN.md` -- 3-step composition pattern + flag reference
-- `apps/apex_cpu_sim_demo/docs/HOW_TO_RUN.md` -- fidelity-level ladder + example programs
-- Per-library READMEs under each subdirectory for API details and per-device tables
+- [apps/apex_circuit_demo](../../../apps/apex_circuit_demo/) - Reference template for building custom circuits (`gates`, `rc-lowpass`, `common-emitter`)
+- [apps/apex_cpu_sim_demo](../../../apps/apex_cpu_sim_demo/) - Intel 4004 CPU demo across L0 / L1 / L2 plus the example `.4004` programs
+- Per-module READMEs (linked from [Section 3](#3-domains)) for API details and per-device tables

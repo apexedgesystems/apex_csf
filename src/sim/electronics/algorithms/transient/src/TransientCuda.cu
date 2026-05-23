@@ -11,9 +11,10 @@ namespace sim::electronics::algorithms::transient::cuda {
 
 /* ----------------------------- CUDA Transient Step ----------------------------- */
 
-TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs, algorithms::mna::MnaSystem& mna,
-                         CompanionSet& companions, const StampCallback& stampCallback, double dt,
-                         double& time, std::vector<double>& prevVoltages,
+TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs,
+                         algorithms::mna::MnaSystem& mna, CompanionSet& companions,
+                         const StampCallback& stampCallback, double dt, double& time,
+                         std::vector<double>& prevVoltages,
                          algorithms::mna::MnaSolveWorkspace& workspace, TransientState& state) {
   // Check CUDA availability
   if (!available()) {
@@ -73,9 +74,10 @@ TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs, algori
   return TransientStatus::SUCCESS;
 }
 
-TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs, algorithms::mna::MnaSystem& mna,
-                         CompanionSet& companions, const StatefulStampCallback& stampCallback,
-                         double dt, double& time, std::vector<double>& prevVoltages,
+TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs,
+                         algorithms::mna::MnaSystem& mna, CompanionSet& companions,
+                         const StatefulStampCallback& stampCallback, double dt, double& time,
+                         std::vector<double>& prevVoltages,
                          algorithms::mna::MnaSolveWorkspace& workspace, TransientState& state) {
   // Check CUDA availability
   if (!available()) {

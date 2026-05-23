@@ -74,7 +74,7 @@ struct AcMnaSolveWorkspace {
    * @brief Check if workspace can handle given dimension.
    * @note RT-safe.
    */
-  bool canHandle(std::size_t dim) const noexcept { return dim <= maxDim; }
+  [[nodiscard]] bool canHandle(std::size_t dim) const noexcept { return dim <= maxDim; }
 };
 
 /**
@@ -120,7 +120,7 @@ struct AcMnaFactorizedWorkspace {
    * @brief Check if factorization is cached and valid.
    * @note RT-safe.
    */
-  bool isFactorized() const noexcept { return factorized; }
+  [[nodiscard]] bool isFactorized() const noexcept { return factorized; }
 
   /**
    * @brief Invalidate cached factorization.
@@ -181,7 +181,7 @@ public:
    * @brief Get angular frequency.
    * @note RT-safe.
    */
-  double omega() const noexcept { return omega_; }
+  [[nodiscard]] double omega() const noexcept { return omega_; }
 
   /**
    * @brief Stamp a conductance (real admittance) between two nets.
@@ -254,7 +254,7 @@ public:
    *
    * @note NOT RT-safe: allocates matrix and result vectors.
    */
-  AcMnaResult solve() const {
+  [[nodiscard]] AcMnaResult solve() const {
     AcMnaResult result;
 
     std::size_t n = netCount_;
@@ -348,15 +348,15 @@ public:
    * @brief Get number of nets in the system.
    * @note RT-safe.
    */
-  std::size_t netCount() const noexcept { return netCount_; }
+  [[nodiscard]] std::size_t netCount() const noexcept { return netCount_; }
 
   /**
    * @brief Get number of voltage sources stamped.
    * @note RT-safe.
    */
-  std::size_t voltageSourceCount() const noexcept { return voltageSources_.size(); }
+  [[nodiscard]] std::size_t voltageSourceCount() const noexcept { return voltageSources_.size(); }
 
-  /* ----------------------- Cached LU Solve API ----------------------- */
+  /* ----------------------------- Cached LU Solve API ----------------------------- */
 
   /**
    * @brief Factorize the current circuit matrix (one-time cost).
@@ -369,7 +369,7 @@ public:
    *
    * @note NOT RT-safe: performs O(n^3) complex LU factorization.
    */
-  bool factorize(AcMnaFactorizedWorkspace& ws) const noexcept {
+  [[nodiscard]] bool factorize(AcMnaFactorizedWorkspace& ws) const noexcept {
     std::size_t n = netCount_;
     std::size_t m = voltageSources_.size();
     std::size_t dim = n + m;
@@ -428,7 +428,7 @@ private:
     Complex voltage;
   };
 
-  /* ----------------------- Allocating Solve Methods ----------------------- */
+  /* ----------------------------- Allocating Solve Methods ----------------------------- */
 
 #if COMPAT_HAVE_LAPACKE
   /**
@@ -451,24 +451,24 @@ private:
     // Build column-major A: A_col[col * dim + row] = Y[row][col]
     for (std::size_t r = 0; r < n; ++r) {
       for (std::size_t c = 0; c < n; ++c) {
-        const Complex& yVal = baseY[r][c];
-        A[c * dim + r] = lapack_make_complex_double(yVal.real(), yVal.imag());
+        const Complex& Y_VAL = baseY[r][c];
+        A[c * dim + r] = lapack_make_complex_double(Y_VAL.real(), Y_VAL.imag());
       }
-      const Complex& iVal = baseI[r];
-      b[r] = lapack_make_complex_double(iVal.real(), iVal.imag());
+      const Complex& I_VAL = baseI[r];
+      b[r] = lapack_make_complex_double(I_VAL.real(), I_VAL.imag());
     }
 
     // Stamp voltage source contributions (column-major)
     for (std::size_t k = 0; k < m; ++k) {
-      const auto& vs = vsrc[k];
+      const auto& VS = vsrc[k];
       std::size_t srcCol = n + k;
       std::size_t srcRow = n + k;
 
-      A[srcCol * dim + vs.pos] = lapack_make_complex_double(1.0, 0.0);
-      A[srcCol * dim + vs.neg] = lapack_make_complex_double(-1.0, 0.0);
-      A[vs.pos * dim + srcRow] = lapack_make_complex_double(1.0, 0.0);
-      A[vs.neg * dim + srcRow] = lapack_make_complex_double(-1.0, 0.0);
-      b[srcRow] = lapack_make_complex_double(vs.voltage.real(), vs.voltage.imag());
+      A[srcCol * dim + VS.pos] = lapack_make_complex_double(1.0, 0.0);
+      A[srcCol * dim + VS.neg] = lapack_make_complex_double(-1.0, 0.0);
+      A[VS.pos * dim + srcRow] = lapack_make_complex_double(1.0, 0.0);
+      A[VS.neg * dim + srcRow] = lapack_make_complex_double(-1.0, 0.0);
+      b[srcRow] = lapack_make_complex_double(VS.voltage.real(), VS.voltage.imag());
     }
 
     // Ground constraint (zero row 0 in column-major)
@@ -535,16 +535,16 @@ private:
 
     // Stamp voltage sources
     for (std::size_t k = 0; k < m; ++k) {
-      const auto& vs = vsrc[k];
+      const auto& VS = vsrc[k];
       std::size_t srcCol = n + k;
       std::size_t srcRow = n + k;
 
-      aug[vs.pos][srcCol] += Complex(1.0, 0.0);
-      aug[vs.neg][srcCol] -= Complex(1.0, 0.0);
+      aug[VS.pos][srcCol] += Complex(1.0, 0.0);
+      aug[VS.neg][srcCol] -= Complex(1.0, 0.0);
 
-      aug[srcRow][vs.pos] = Complex(1.0, 0.0);
-      aug[srcRow][vs.neg] = Complex(-1.0, 0.0);
-      aug[srcRow][dim] = vs.voltage;
+      aug[srcRow][VS.pos] = Complex(1.0, 0.0);
+      aug[srcRow][VS.neg] = Complex(-1.0, 0.0);
+      aug[srcRow][dim] = VS.voltage;
     }
 
     // Ground constraint: V[0] = 0
@@ -607,7 +607,7 @@ private:
     return result;
   }
 
-  /* ----------------------- Cached LU Methods ----------------------- */
+  /* ----------------------------- Cached LU Methods ----------------------------- */
 
 #if COMPAT_HAVE_LAPACKE
   /**
@@ -626,20 +626,20 @@ private:
 
     for (std::size_t r = 0; r < n; ++r) {
       for (std::size_t c = 0; c < n; ++c) {
-        const Complex& yVal = baseY[r][c];
-        LU[c * dim + r] = lapack_make_complex_double(yVal.real(), yVal.imag());
+        const Complex& Y_VAL = baseY[r][c];
+        LU[c * dim + r] = lapack_make_complex_double(Y_VAL.real(), Y_VAL.imag());
       }
     }
 
     for (std::size_t k = 0; k < m; ++k) {
-      const auto& vs = vsrc[k];
+      const auto& VS = vsrc[k];
       std::size_t srcCol = n + k;
       std::size_t srcRow = n + k;
 
-      LU[srcCol * dim + vs.pos] = lapack_make_complex_double(1.0, 0.0);
-      LU[srcCol * dim + vs.neg] = lapack_make_complex_double(-1.0, 0.0);
-      LU[vs.pos * dim + srcRow] = lapack_make_complex_double(1.0, 0.0);
-      LU[vs.neg * dim + srcRow] = lapack_make_complex_double(-1.0, 0.0);
+      LU[srcCol * dim + VS.pos] = lapack_make_complex_double(1.0, 0.0);
+      LU[srcCol * dim + VS.neg] = lapack_make_complex_double(-1.0, 0.0);
+      LU[VS.pos * dim + srcRow] = lapack_make_complex_double(1.0, 0.0);
+      LU[VS.neg * dim + srcRow] = lapack_make_complex_double(-1.0, 0.0);
     }
 
     // Ground constraint (zero row 0 in column-major)
@@ -677,12 +677,12 @@ private:
 
     // Build RHS vector
     for (std::size_t i = 0; i < n; ++i) {
-      const Complex& iVal = baseI[i];
-      b[i] = lapack_make_complex_double(iVal.real(), iVal.imag());
+      const Complex& I_VAL = baseI[i];
+      b[i] = lapack_make_complex_double(I_VAL.real(), I_VAL.imag());
     }
     for (std::size_t k = 0; k < m; ++k) {
-      const Complex& vVal = vsrc[k].voltage;
-      b[n + k] = lapack_make_complex_double(vVal.real(), vVal.imag());
+      const Complex& V_VAL = vsrc[k].voltage;
+      b[n + k] = lapack_make_complex_double(V_VAL.real(), V_VAL.imag());
     }
 
     // Ground constraint
@@ -716,7 +716,7 @@ private:
   }
 #endif
 
-  /* ----------------------- RT-Safe Solve Methods ----------------------- */
+  /* ----------------------------- RT-Safe Solve Methods ----------------------------- */
 
 #if COMPAT_HAVE_LAPACKE
   /**
@@ -738,21 +738,21 @@ private:
     // Build COLUMN-MAJOR complex admittance matrix
     for (std::size_t r = 0; r < n; ++r) {
       for (std::size_t c = 0; c < n; ++c) {
-        const Complex& yVal = baseY[r][c];
-        A[c * dim + r] = lapack_make_complex_double(yVal.real(), yVal.imag());
+        const Complex& Y_VAL = baseY[r][c];
+        A[c * dim + r] = lapack_make_complex_double(Y_VAL.real(), Y_VAL.imag());
       }
     }
 
     // Stamp voltage source contributions (column-major indexing)
     for (std::size_t k = 0; k < m; ++k) {
-      const auto& vs = vsrc[k];
+      const auto& VS = vsrc[k];
       std::size_t srcCol = n + k;
       std::size_t srcRow = n + k;
 
-      A[srcCol * dim + vs.pos] = lapack_make_complex_double(1.0, 0.0);
-      A[srcCol * dim + vs.neg] = lapack_make_complex_double(-1.0, 0.0);
-      A[vs.pos * dim + srcRow] = lapack_make_complex_double(1.0, 0.0);
-      A[vs.neg * dim + srcRow] = lapack_make_complex_double(-1.0, 0.0);
+      A[srcCol * dim + VS.pos] = lapack_make_complex_double(1.0, 0.0);
+      A[srcCol * dim + VS.neg] = lapack_make_complex_double(-1.0, 0.0);
+      A[VS.pos * dim + srcRow] = lapack_make_complex_double(1.0, 0.0);
+      A[VS.neg * dim + srcRow] = lapack_make_complex_double(-1.0, 0.0);
     }
 
     // Ground constraint: zero row 0 in column-major
@@ -765,12 +765,12 @@ private:
 
     // Build RHS vector
     for (std::size_t i = 0; i < n; ++i) {
-      const Complex& iVal = baseI[i];
-      b[i] = lapack_make_complex_double(iVal.real(), iVal.imag());
+      const Complex& I_VAL = baseI[i];
+      b[i] = lapack_make_complex_double(I_VAL.real(), I_VAL.imag());
     }
     for (std::size_t k = 0; k < m; ++k) {
-      const Complex& vVal = vsrc[k].voltage;
-      b[n + k] = lapack_make_complex_double(vVal.real(), vVal.imag());
+      const Complex& V_VAL = vsrc[k].voltage;
+      b[n + k] = lapack_make_complex_double(V_VAL.real(), V_VAL.imag());
     }
     if (COMPAT_LIKELY(n > 0)) {
       b[0] = lapack_make_complex_double(0.0, 0.0);
@@ -819,15 +819,15 @@ private:
     }
 
     for (std::size_t k = 0; k < m; ++k) {
-      const auto& vs = vsrc[k];
+      const auto& VS = vsrc[k];
       std::size_t srcCol = n + k;
       std::size_t srcRow = n + k;
 
-      aug[vs.pos][srcCol] += Complex(1.0, 0.0);
-      aug[vs.neg][srcCol] -= Complex(1.0, 0.0);
-      aug[srcRow][vs.pos] = Complex(1.0, 0.0);
-      aug[srcRow][vs.neg] = Complex(-1.0, 0.0);
-      aug[srcRow][dim] = vs.voltage;
+      aug[VS.pos][srcCol] += Complex(1.0, 0.0);
+      aug[VS.neg][srcCol] -= Complex(1.0, 0.0);
+      aug[srcRow][VS.pos] = Complex(1.0, 0.0);
+      aug[srcRow][VS.neg] = Complex(-1.0, 0.0);
+      aug[srcRow][dim] = VS.voltage;
     }
 
     if (n > 0) {

@@ -97,8 +97,8 @@ struct MosfetLevel1 {
    *
    * @note RT-safe (pure math, no allocations).
    */
-  [[nodiscard]] SIM_HD_FI static StampValues stampValues(double vgs, double vds,
-                                                      const MosfetLevel1Params& params) noexcept {
+  [[nodiscard]] SIM_HD_FI static StampValues
+  stampValues(double vgs, double vds, const MosfetLevel1Params& params) noexcept {
     if (vgs <= params.Vth - params.Vsmooth) {
       return {0.0, 0.0, 0.0};
     }
@@ -153,9 +153,8 @@ struct MosfetLevel1 {
 
     // Subthreshold smoothing region: exponential transition to zero
     if (vgs < params.Vth && params.Vsmooth > 0.0) {
-      // Current at threshold (vgst=0, saturation boundary)
-      // Use a small virtual overdrive to avoid zero current at exact threshold
-      constexpr double VT = 0.026; // Thermal voltage
+      // Current at threshold (vgst=0, saturation boundary). Use a small
+      // virtual overdrive to avoid zero current at exact threshold.
       double vgst_eff = vgs - (params.Vth - params.Vsmooth);
       double ratio = vgst_eff / params.Vsmooth; // 0 at deep cutoff, 1 at Vth
       // Quadratic smoothing: id = id_threshold * ratio^2

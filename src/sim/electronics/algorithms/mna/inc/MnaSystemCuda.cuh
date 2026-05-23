@@ -75,7 +75,9 @@ struct MnaCudaWorkspace {
    * @brief Check if workspace can handle dimension.
    * @note RT-SAFE.
    */
-  bool canHandle(std::size_t dim) const noexcept { return initialized && dim <= maxDim; }
+  [[nodiscard]] bool canHandle(std::size_t dim) const noexcept {
+    return initialized && dim <= maxDim;
+  }
 };
 
 /* ----------------------------- GPU Solve API ----------------------------- */

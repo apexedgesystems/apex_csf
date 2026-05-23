@@ -67,9 +67,9 @@ TEST_F(MosfetBatchCudaTest, UniformMatchesCpu) {
   ASSERT_EQ(cudaMalloc(&dBiases, N * sizeof(nl_cuda::MosfetBias)), cudaSuccess);
   ASSERT_EQ(cudaMalloc(&dStamps, N * sizeof(nl_cuda::MosfetStamp)), cudaSuccess);
 
-  ASSERT_EQ(cudaMemcpy(dBiases, BIASES.data(), N * sizeof(nl_cuda::MosfetBias),
-                       cudaMemcpyHostToDevice),
-            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(dBiases, BIASES.data(), N * sizeof(nl_cuda::MosfetBias), cudaMemcpyHostToDevice),
+      cudaSuccess);
 
   ASSERT_TRUE(nl_cuda::evalStampBatchUniform(dBiases, PARAMS, dStamps, N));
   ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
@@ -113,9 +113,9 @@ TEST_F(MosfetBatchCudaTest, PerDeviceMatchesCpu) {
   ASSERT_EQ(cudaMalloc(&dParams, N * sizeof(MosfetLevel1Params)), cudaSuccess);
   ASSERT_EQ(cudaMalloc(&dStamps, N * sizeof(nl_cuda::MosfetStamp)), cudaSuccess);
 
-  ASSERT_EQ(cudaMemcpy(dBiases, BIASES.data(), N * sizeof(nl_cuda::MosfetBias),
-                       cudaMemcpyHostToDevice),
-            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(dBiases, BIASES.data(), N * sizeof(nl_cuda::MosfetBias), cudaMemcpyHostToDevice),
+      cudaSuccess);
   ASSERT_EQ(
       cudaMemcpy(dParams, params.data(), N * sizeof(MosfetLevel1Params), cudaMemcpyHostToDevice),
       cudaSuccess);
@@ -164,9 +164,9 @@ TEST_F(MosfetBatchCudaTest, SoAMatchesCpu) {
   ASSERT_EQ(cudaMalloc(&dGm, N * sizeof(double)), cudaSuccess);
   ASSERT_EQ(cudaMalloc(&dGds, N * sizeof(double)), cudaSuccess);
 
-  ASSERT_EQ(cudaMemcpy(dBiases, BIASES.data(), N * sizeof(nl_cuda::MosfetBias),
-                       cudaMemcpyHostToDevice),
-            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(dBiases, BIASES.data(), N * sizeof(nl_cuda::MosfetBias), cudaMemcpyHostToDevice),
+      cudaSuccess);
   ASSERT_EQ(
       cudaMemcpy(dParams, params.data(), N * sizeof(MosfetLevel1Params), cudaMemcpyHostToDevice),
       cudaSuccess);
@@ -193,7 +193,6 @@ TEST_F(MosfetBatchCudaTest, SoAMatchesCpu) {
   cudaFree(dGds);
 }
 
-
 // CPU reference for the fused stamp. Matches the kernel exactly so
 // parity is enforced at 1e-12 tolerance against the GPU path.
 void cpuStampMosfetL1(const std::vector<nl_cuda::MosfetBias>& biases,
@@ -201,68 +200,69 @@ void cpuStampMosfetL1(const std::vector<nl_cuda::MosfetBias>& biases,
                       const std::vector<nl_cuda::MosfetNets>& nets, std::vector<double>& G,
                       std::vector<double>& I, int netCount, double gmin) {
   auto addIfNode = [&](int row, int col, double v) {
-    if (row <= 0 || col <= 0 || row >= netCount || col >= netCount) return;
+    if (row <= 0 || col <= 0 || row >= netCount || col >= netCount)
+      return;
     G[row * netCount + col] += v;
   };
   auto addIfRow = [&](int row, double v) {
-    if (row <= 0 || row >= netCount) return;
+    if (row <= 0 || row >= netCount)
+      return;
     I[row] += v;
   };
 
   const std::size_t N = biases.size();
   for (std::size_t i = 0; i < N; ++i) {
-    const double vsg = biases[i].vgs;
-    const double vsd = biases[i].vds;
+    const double VSG = biases[i].vgs;
+    const double VSD = biases[i].vds;
     int xnrm, xrev;
     double evalVgs, evalVds;
-    if (vsd >= 0.0) {
+    if (VSD >= 0.0) {
       xnrm = 1;
       xrev = 0;
-      evalVgs = vsg;
-      evalVds = vsd;
+      evalVgs = VSG;
+      evalVds = VSD;
     } else {
       xnrm = 0;
       xrev = 1;
-      evalVgs = vsg - vsd;
-      evalVds = -vsd;
+      evalVgs = VSG - VSD;
+      evalVds = -VSD;
     }
-    const double vgsE = std::max(evalVgs, 0.0);
-    const double vdsE = std::max(evalVds, 0.0);
-    const auto sv = MosfetLevel1::stampValues(vgsE, vdsE, params[i]);
-    const double id = sv.id, gm = sv.gm, gdsDev = sv.gds;
-    const double gdsStamp = std::max(gdsDev, gmin);
+    const double VGS_E = std::max(evalVgs, 0.0);
+    const double VDS_E = std::max(evalVds, 0.0);
+    const auto SV = MosfetLevel1::stampValues(VGS_E, VDS_E, params[i]);
+    const double ID = SV.id, gm = SV.gm, gdsDev = SV.gds;
+    const double GDS_STAMP = std::max(gdsDev, gmin);
 
     double cdreq;
     if (xnrm == 1) {
-      cdreq = -(id - gdsDev * vsd - gm * vsg);
+      cdreq = -(ID - gdsDev * VSD - gm * VSG);
     } else {
-      cdreq = (id - gdsDev * (-vsd) - gm * (vsg - vsd));
+      cdreq = (ID - gdsDev * (-VSD) - gm * (VSG - VSD));
     }
 
-    const int d = nets[i].drain;
-    const int g = nets[i].gate;
-    const int s = nets[i].source;
+    const int D = nets[i].drain;
+    const int G = nets[i].gate;
+    const int S = nets[i].source;
 
-    addIfNode(d, d, gdsStamp);
-    addIfNode(s, s, gdsStamp);
-    addIfNode(d, s, -gdsStamp);
-    addIfNode(s, d, -gdsStamp);
+    addIfNode(D, D, GDS_STAMP);
+    addIfNode(S, S, GDS_STAMP);
+    addIfNode(D, S, -GDS_STAMP);
+    addIfNode(S, D, -GDS_STAMP);
 
-    const double xrevGm = xrev * gm;
-    const double xnrmGm = xnrm * gm;
-    const double xDelta = (xnrm - xrev) * gm;
-    addIfNode(d, d, xrevGm);
-    addIfNode(s, s, xnrmGm);
-    addIfNode(d, g, xDelta);
-    addIfNode(d, s, -xnrmGm);
-    addIfNode(s, g, -xDelta);
-    addIfNode(s, d, -xrevGm);
+    const double XREV_GM = xrev * gm;
+    const double XNRM_GM = xnrm * gm;
+    const double X_DELTA = (xnrm - xrev) * gm;
+    addIfNode(D, D, XREV_GM);
+    addIfNode(S, S, XNRM_GM);
+    addIfNode(D, G, X_DELTA);
+    addIfNode(D, S, -XNRM_GM);
+    addIfNode(S, G, -X_DELTA);
+    addIfNode(S, D, -XREV_GM);
 
-    addIfRow(d, -cdreq);
-    addIfRow(s, cdreq);
+    addIfRow(D, -cdreq);
+    addIfRow(S, cdreq);
   }
 }
-
 
 /** @test Batched MOSFET-L1 stamp on GPU matches CPU per-device assembly. */
 TEST_F(MosfetBatchCudaTest, StampMosfetL1BatchMatchesCpu) {
@@ -316,8 +316,8 @@ TEST_F(MosfetBatchCudaTest, StampMosfetL1BatchMatchesCpu) {
                        cudaMemcpyHostToDevice),
             cudaSuccess);
 
-  ASSERT_TRUE(nl_cuda::stampMosfetL1Batch(dBiases, dParams, dNets, dG, dI, N_TRANSISTORS,
-                                          NET_COUNT, GMIN));
+  ASSERT_TRUE(
+      nl_cuda::stampMosfetL1Batch(dBiases, dParams, dNets, dG, dI, N_TRANSISTORS, NET_COUNT, GMIN));
   ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
   std::vector<double> gpuG(NET_COUNT * NET_COUNT);

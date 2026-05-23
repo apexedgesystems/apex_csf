@@ -1,214 +1,234 @@
-# Linear Device Models
+# Linear Devices Module
 
-Linear device physics models (resistor, capacitor, inductor) for circuit simulation.
-Part of Layer 2 (Device Models) in the electronics simulation library.
+**Namespace:** `sim::electronics::devices::linear`
+**Platform:** Linux-only
+**C++ Standard:** C++23
 
----
-
-## Overview
-
-Linear devices are exact (no approximations, no Newton-Raphson iterations) with a
-single fidelity level that covers all simulation needs:
-
-- **Resistor:** Ohm's law (V = I\*R), static stamping
-- **Capacitor:** Reactive element, companion model for transient simulation
-- **Inductor:** Reactive element, companion model for transient simulation
-
-**RT-safety:** All models are RT-safe (static functions, no allocations).
+Linear device physics (resistor, capacitor, inductor) for the circuit
+solver. Static stamps for resistors; companion-model wrappers for
+capacitors and inductors.
 
 ---
 
-## Models
+## Table of Contents
+
+1. [Overview](#1-overview)
+2. [Quick Reference](#2-quick-reference)
+3. [Design Principles](#3-design-principles)
+4. [Module Reference](#4-module-reference)
+   - [ResistorModel](#resistormodel)
+   - [CapacitorModel](#capacitormodel)
+   - [InductorModel](#inductormodel)
+   - [LinearDevices](#lineardevices) - Registry header
+5. [Common Patterns](#5-common-patterns)
+6. [Real-Time Considerations](#6-real-time-considerations)
+7. [CLI Tools](#7-cli-tools)
+8. [Example: Voltage Divider DC Solve](#8-example-voltage-divider-dc-solve)
+9. [See Also](#9-see-also)
+
+---
+
+## 1. Overview
+
+| Question                                               | API                                                                          |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| How do I stamp a resistor into an MNA system?          | `ResistorModel::stamp`                                                       |
+| What conductance does a resistor present?              | `ResistorModel::conductance`                                                 |
+| What current does a resistor carry at a given voltage? | `ResistorModel::current`                                                     |
+| What is a capacitor's reactance at a given frequency?  | `CapacitorModel::reactance`                                                  |
+| What is an inductor's reactance at a given frequency?  | `InductorModel::reactance`                                                   |
+| How do I stamp C / L in transient simulation?          | `CapacitorCompanion::stamp` / `InductorCompanion::stamp` (companions module) |
+
+---
+
+## 2. Quick Reference
+
+```cpp
+#include "src/sim/electronics/devices/linear/inc/LinearDevices.hpp"
+
+using namespace sim::electronics::devices::linear;
+using sim::electronics::algorithms::companions::CapacitorCompanion;
+using sim::electronics::algorithms::companions::InductorCompanion;
+
+ResistorModel::stamp(mna, /*a=*/1, /*b=*/0, /*R=*/10e3);
+
+CapacitorCompanion cap{/*pos=*/2, /*neg=*/0, /*C=*/1e-9};
+cap.stamp(mna, dt, IntegrationMethod::BACKWARD_EULER);
+```
+
+---
+
+## 3. Design Principles
+
+| Annotation      | Meaning                                                      |
+| --------------- | ------------------------------------------------------------ |
+| **RT-safe**     | No allocation, bounded execution, safe for real-time loops   |
+| **NOT RT-safe** | May allocate or have unbounded I/O; call from non-RT context |
+
+- **Linear == exact.** All three devices have closed-form behavior. No
+  Newton-Raphson iterations or convergence concerns.
+- **Static helpers.** `ResistorModel`, `CapacitorModel`, and
+  `InductorModel` are stateless utility namespaces. The dynamic state
+  (Vprev, Iprev) lives on the companion structs defined in the companions
+  module.
+- **Stamping is RT-safe.** `stamp` only writes into the MNA system; the
+  underlying matrix is pre-sized.
+
+---
+
+## 4. Module Reference
 
 ### ResistorModel
 
-Static conductance stamping (Ohm's law).
+**Header:** `ResistorModel.hpp`
+**Purpose:** Ohm's law helpers and MNA stamping.
+
+#### API
 
 ```cpp
-#include "src/sim/electronics/devices/linear/inc/ResistorModel.hpp"
+[[nodiscard]] static double conductance(double resistance) noexcept;
+[[nodiscard]] static double current(double voltage, double resistance) noexcept;
 
-using namespace sim::electronics::devices::linear;
+static void stamp(MnaSystem& mna, NetID a, NetID b, double resistance);
+static void stamp(MnaSystemSparse& mna, NetID a, NetID b, double resistance);
+```
 
-// Calculate conductance
-double g = ResistorModel::conductance(1000.0);  // 1kOhm -> 1mS
+#### Usage
 
-// Calculate current
-double i = ResistorModel::current(5.0, 1000.0);  // 5V / 1kOhm = 5mA
-
-// Stamp into MNA system
-ResistorModel::stamp(mna, VDD, OUTPUT, 10e3);  // 10kOhm resistor
+```cpp
+const double G = ResistorModel::conductance(10e3); // 1e-4 S
+ResistorModel::stamp(mna, /*a=*/1, /*b=*/0, /*R=*/10e3);
 ```
 
 ### CapacitorModel
 
-Reactive element using companion model from companions library.
+**Header:** `CapacitorModel.hpp`
+**Purpose:** Reactance helper for AC analysis. Transient stamping is
+delegated to `CapacitorCompanion` in the companions module.
+
+#### API
 
 ```cpp
-#include "src/sim/electronics/devices/linear/inc/CapacitorModel.hpp"
+[[nodiscard]] static double reactance(double capacitance, double frequencyHz) noexcept;
+```
 
-using namespace sim::electronics::devices::linear;
+#### Usage
 
-// Calculate reactance (for AC analysis)
-double xc = CapacitorModel::reactance(1e-6, 1000.0);  // 1uF at 1kHz
-
-// Transient simulation (uses companion model)
-CapacitorCompanion cap{OUTPUT, GND, 1e-6};  // 1uF capacitor
-cap.stamp(mna, dt, IntegrationMethod::BACKWARD_EULER);
-auto result = mna.solve();
-double voltage = result.voltages[OUTPUT] - result.voltages[GND];
-cap.update(voltage, dt);  // Update state for next timestep
+```cpp
+const double X_C = CapacitorModel::reactance(/*C=*/1e-6, /*f=*/1e3);
 ```
 
 ### InductorModel
 
-Reactive element using companion model from companions library.
+**Header:** `InductorModel.hpp`
+**Purpose:** Reactance helper for AC analysis. Transient stamping is
+delegated to `InductorCompanion` in the companions module.
+
+#### API
 
 ```cpp
-#include "src/sim/electronics/devices/linear/inc/InductorModel.hpp"
-
-using namespace sim::electronics::devices::linear;
-
-// Calculate reactance (for AC analysis)
-double xl = InductorModel::reactance(1e-3, 1000.0);  // 1mH at 1kHz
-
-// Transient simulation (uses companion model)
-InductorCompanion ind{VDD, OUTPUT, 1e-3};  // 1mH inductor
-ind.stamp(mna, dt, IntegrationMethod::BACKWARD_EULER);
-auto result = mna.solve();
-double voltage = result.voltages[VDD] - result.voltages[OUTPUT];
-ind.update(voltage, dt);  // Update state for next timestep
+[[nodiscard]] static double reactance(double inductance, double frequencyHz) noexcept;
 ```
+
+#### Usage
+
+```cpp
+const double X_L = InductorModel::reactance(/*L=*/1e-3, /*f=*/1e3);
+```
+
+### LinearDevices
+
+**Header:** `LinearDevices.hpp`
+**Purpose:** Single include that brings in all three models plus the
+companion-model types from `algorithms/companions`.
 
 ---
 
-## Registry Header
+## 5. Common Patterns
 
-Import all linear models at once:
+### Static Voltage Divider
 
 ```cpp
-#include "src/sim/electronics/devices/linear/inc/LinearDevices.hpp"
-
-using namespace sim::electronics::devices::linear;
-
-// All models available:
-ResistorModel::stamp(mna, a, b, R);
-CapacitorCompanion cap{a, b, C};
-InductorCompanion ind{a, b, L};
+ResistorModel::stamp(mna, VDD, OUT, 10e3);
+ResistorModel::stamp(mna, OUT, GND, 10e3);
+mna.addVoltageSource(VDD, GND, 5.0);
 ```
 
----
-
-## Usage Examples
-
-### Voltage Divider (DC)
+### RC Low-Pass in a Transient Loop
 
 ```cpp
-#include "src/sim/electronics/devices/linear/inc/LinearDevices.hpp"
-#include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
-
-using namespace sim::electronics::devices::linear;
-
-void simulateVoltageDivider() {
-  constexpr NetID VDD = 1, OUTPUT = 2, GND = 0;
-
-  MnaSystem mna(3);
-
-  // Voltage divider: VDD --(R1)-- OUTPUT --(R2)-- GND
-  ResistorModel::stamp(mna, VDD, OUTPUT, 10e3);  // R1 = 10kOhm
-  ResistorModel::stamp(mna, OUTPUT, GND, 10e3);  // R2 = 10kOhm
-
-  // Voltage source: VDD = 5V
-  mna.stampVoltageSource(VDD, GND, 5.0);
-
-  auto result = mna.solve();
-  // result.voltages[OUTPUT] ~= 2.5V (half of 5V)
+CapacitorCompanion cap{OUT, GND, 1e-9};
+for (double t = 0.0; t < tEnd; t += dt) {
+  mna.clear();
+  ResistorModel::stamp(mna, IN, OUT, 1e3);
+  cap.stamp(mna, dt, IntegrationMethod::BACKWARD_EULER);
+  mna.addVoltageSource(IN, GND, vIn(t));
+  mna.solve(solution);
+  cap.update(solution[OUT], dt);
 }
 ```
 
-### RC Low-Pass Filter (Transient)
+### Frequency-Domain Magnitude
 
 ```cpp
-#include "src/sim/electronics/devices/linear/inc/LinearDevices.hpp"
+const double F     = 1e3;
+const double X_C   = CapacitorModel::reactance(1e-6, F);
+const double X_L   = InductorModel::reactance(1e-3, F);
+const double MAG_Z = std::hypot(X_L - X_C, /*R=*/100.0);
+```
+
+---
+
+## 6. Real-Time Considerations
+
+### RT-Safe Functions
+
+- All static helpers (`conductance`, `current`, `reactance`).
+- `ResistorModel::stamp` once the MNA system has been sized.
+
+### NOT RT-Safe Functions
+
+- None within this module. Capacitor and inductor companion updates may
+  resize history vectors when `addCapacitor` / `addInductor` is called
+  on the companions module's `CompanionSet`; that should happen outside
+  the RT loop.
+
+---
+
+## 7. CLI Tools
+
+None.
+
+---
+
+## 8. Example: Voltage Divider DC Solve
+
+```cpp
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/linear/inc/LinearDevices.hpp"
 
-using namespace sim::electronics::devices::linear;
+#include <fmt/core.h>
 
-void simulateRcFilter() {
-  constexpr NetID INPUT = 1, OUTPUT = 2, GND = 0;
-  constexpr double dt = 1e-6;  // 1 us timestep
+int main() {
+  using namespace sim::electronics;
 
-  MnaSystem mna(3);
+  const algorithms::mna::NetID VDD = 1, OUT = 2, GND = 0;
 
-  // Resistor (static stamping, once before time loop)
-  ResistorModel::stamp(mna, INPUT, OUTPUT, 1000.0);  // 1kOhm
+  algorithms::mna::MnaSystem mna(/*nodeCount=*/3);
+  devices::linear::ResistorModel::stamp(mna, VDD, OUT, 10e3);
+  devices::linear::ResistorModel::stamp(mna, OUT, GND, 10e3);
+  mna.addVoltageSource(VDD, GND, 5.0);
 
-  // Capacitor (dynamic, re-stamp each timestep)
-  CapacitorCompanion cap{OUTPUT, GND, 1e-9};  // 1nF
-
-  // Time loop
-  for (int step = 0; step < 1000; ++step) {
-    mna.clearStamps();  // Clear previous timestep
-
-    // Re-stamp resistor and capacitor
-    ResistorModel::stamp(mna, INPUT, OUTPUT, 1000.0);
-    cap.stamp(mna, dt);
-
-    // Input voltage (step function)
-    double vin = (step < 100) ? 0.0 : 5.0;
-    mna.stampVoltageSource(INPUT, GND, vin);
-
-    // Solve and update
-    auto result = mna.solve();
-    double vout = result.voltages[OUTPUT];
-    cap.update(vout, dt);
-
-    // vout will exponentially approach 5V with time constant RC = 1us
-  }
+  const auto RESULT = mna.solve();
+  fmt::print("V(out) = {:.6f} V\n", RESULT.nodeVoltages[OUT]);
+  return 0;
 }
 ```
 
 ---
 
-## Dependencies
+## 9. See Also
 
-- `sim_electronics_algorithms_mna` - MNA system and stamping functions
-- `sim_electronics_algorithms_transient` - Companion models for C, L
-- `utilities_compatibility` - C++17/20/23 compatibility
-
----
-
-## Performance
-
-| Operation                 | Latency          | Scale           |
-| ------------------------- | ---------------- | --------------- |
-| Resistor stamp (into MNA) | 48.0 ns/resistor | 1000 resistors  |
-| Conductance calculation   | 1.86 ns/eval     | 10K evaluations |
-
-Batch throughput: 20.8K resistor-stamp batches/s. Pipeline efficiency is 3.59
-IPC. The stamp cost is dominated by MNA triplet storage, not the conductance
-arithmetic (single fdiv).
-
-## Testing
-
-Run unit tests:
-
-```bash
-make compose-testp
-# Tests: sim_electronics_devices_linear_uTest
-```
-
-**Test coverage:**
-
-- Resistor: Ohm's law, conductance, stamping (dense, sparse)
-- Capacitor: Reactance calculation, impedance
-- Inductor: Reactance calculation, impedance
-
-**Companion model tests:** See `sim_electronics_algorithms_transient_uTest` for full
-companion model validation (integration methods, state update, convergence).
-
----
-
-## See Also
-
-- **Companion Models:** `../companions/README.md` - Companion models library
-- **MNA Library:** `../../algorithms/mna/README.md` - MNA system usage
+- [Descriptors](../descriptors/README.md) - Topology-only descriptions of the same primitives
+- [Companions](../../algorithms/companions/README.md) - Transient integration wrappers for C / L
+- [MNA library](../../algorithms/mna/README.md) - Circuit solver

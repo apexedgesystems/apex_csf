@@ -12,7 +12,8 @@ include(apex/All)
 # ------------------------------------------------------------------------------
 
 set(DEV_TEST_SOURCES Intel4004Grid_dTest.cpp Intel4004GridVsBehavioral_dTest.cpp
-                     Intel4004GridLevel2_dTest.cpp Intel4004OprDecode_dTest.cpp)
+                     Intel4004GridLevel2_dTest.cpp Intel4004OprDecode_dTest.cpp
+)
 
 # ------------------------------------------------------------------------------
 # Test Target
@@ -32,5 +33,6 @@ apex_add_devtest(
 
 target_compile_definitions(
   Intel4004Grid_Dev
-  PRIVATE INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/chips/intel4004/netlist/data"
+  PRIVATE
+    INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/chips/intel4004/netlist/data"
 )

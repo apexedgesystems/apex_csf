@@ -1,224 +1,251 @@
-# Device Topology Descriptors
+# Descriptors Module
 
-Pure topology descriptions for circuit devices. Descriptors specify **connectivity
-and parameters only** - no physics, no simulation code.
+**Namespace:** `sim::electronics::devices::descriptors`
+**Platform:** Linux-only
+**C++ Standard:** C++23
 
-## Purpose
+Pure topology descriptions for circuit devices. Descriptors carry net IDs and
+parameters only - no physics, no stamping, no simulation state.
 
-Descriptors enable **separation of topology from physics** in the Layer 2 device
-model architecture:
+---
+
+## Table of Contents
+
+1. [Overview](#1-overview)
+2. [Quick Reference](#2-quick-reference)
+3. [Design Principles](#3-design-principles)
+4. [Module Reference](#4-module-reference)
+   - [ResistorDescriptor](#resistordescriptor)
+   - [CapacitorDescriptor](#capacitordescriptor)
+   - [InductorDescriptor](#inductordescriptor)
+   - [MosfetDescriptor](#mosfetdescriptor)
+   - [Descriptors](#descriptors) - Aggregate registry header
+5. [Common Patterns](#5-common-patterns)
+6. [Real-Time Considerations](#6-real-time-considerations)
+7. [CLI Tools](#7-cli-tools)
+8. [Example: Topology-First Netlist Build](#8-example-topology-first-netlist-build)
+9. [See Also](#9-see-also)
+
+---
+
+## 1. Overview
+
+| Question                                      | Descriptor            |
+| --------------------------------------------- | --------------------- |
+| How do I describe a resistor's connectivity?  | `ResistorDescriptor`  |
+| How do I describe a capacitor's connectivity? | `CapacitorDescriptor` |
+| How do I describe an inductor's connectivity? | `InductorDescriptor`  |
+| How do I describe a MOSFET's connectivity?    | `MosfetDescriptor`    |
+| How do I import every descriptor at once?     | `Descriptors.hpp`     |
 
 | Concept        | Responsibility                 | Example                          |
 | -------------- | ------------------------------ | -------------------------------- |
 | **Descriptor** | Topology (NetIDs + parameters) | `ResistorDescriptor{1, 0, 10e3}` |
 | **Model**      | Physics (I-V curves, stamping) | `ResistorModel::stamp(...)`      |
-| **Component**  | Descriptor + Model (future)    | `Resistor{desc, model}`          |
 
-This separation provides:
+Pairing a descriptor with a model produces a stamped device. Descriptors are
+deliberately model-agnostic so the same topology can drive different fidelity
+physics without rewriting the circuit.
 
-1. **Fidelity switching**: Same circuit, different physics accuracy
-2. **Netlist parsing**: Parse topology independent of choosing physics models
-3. **Test isolation**: Verify connectivity without running simulation
-4. **Grid construction**: Build circuit structure separate from simulation policy
+---
 
-## Quick Start
+## 2. Quick Reference
 
 ```cpp
 #include "src/sim/electronics/devices/descriptors/inc/Descriptors.hpp"
 
 using namespace sim::electronics::devices::descriptors;
 
-// Define circuit topology
-ResistorDescriptor r1{VDD, OUTPUT, 10e3};    // 10kOhm pullup
-CapacitorDescriptor c1{OUTPUT, GND, 100e-12}; // 100pF decoupling
-InductorDescriptor l1{VDD, OUTPUT, 10e-6};   // 10uH filter
-
-// Physics models use descriptors
-ResistorModel::stamp(mna, r1.posNet, r1.negNet, r1.resistance);
-
-CapacitorCompanion cap;
-cap.posNet = c1.posNet;
-cap.negNet = c1.negNet;
-cap.capacitance = c1.capacitance;
+ResistorDescriptor pullup   {/*pos=*/1, /*neg=*/2, /*R=*/10e3};
+CapacitorDescriptor decap   {/*pos=*/2, /*neg=*/0, /*C=*/100e-12};
+InductorDescriptor filter   {/*pos=*/1, /*neg=*/2, /*L=*/10e-6};
 ```
 
-## Available Descriptors
+---
+
+## 3. Design Principles
+
+| Annotation      | Meaning                                                      |
+| --------------- | ------------------------------------------------------------ |
+| **RT-safe**     | No allocation, bounded execution, safe for real-time loops   |
+| **NOT RT-safe** | May allocate or have unbounded I/O; call from non-RT context |
+
+Descriptors **are**:
+
+- Pure topology (NetIDs + scalar parameters).
+- Stateless: no voltages, currents, or history.
+- Trivial: aggregate-initializable structs, no allocations.
+- RT-safe: usable from any context.
+- Thread-safe: no shared mutable state.
+
+Descriptors **are not**:
+
+- Physics models. No I-V curves and no stamping code.
+- Stateful devices. Voltages and currents belong to the solver workspace.
+- PCB layout. No footprints or physical placement.
+- Parameter wrappers. Values are stored as-is; runtime tuning is a model
+  concern.
+
+---
+
+## 4. Module Reference
 
 ### ResistorDescriptor
 
-Two-terminal resistor topology.
+**Header:** `ResistorDescriptor.hpp`
+**Purpose:** Two-terminal resistor topology.
 
 ```cpp
 struct ResistorDescriptor {
-  NetID posNet;       // Positive terminal
-  NetID negNet;       // Negative terminal
-  double resistance;  // Ohms
+  NetID posNet;       ///< Positive terminal
+  NetID negNet;       ///< Negative terminal
+  double resistance;  ///< Ohms
 };
-
-// Examples
-ResistorDescriptor pullup{VDD, OUTPUT, 10e3};     // 10kOhm
-ResistorDescriptor series{INPUT, OUTPUT, 100.0};  // 100Ohm
 ```
 
 ### CapacitorDescriptor
 
-Two-terminal capacitor topology.
+**Header:** `CapacitorDescriptor.hpp`
+**Purpose:** Two-terminal capacitor topology.
 
 ```cpp
 struct CapacitorDescriptor {
-  NetID posNet;        // Positive terminal
-  NetID negNet;        // Negative terminal
-  double capacitance;  // Farads
+  NetID posNet;
+  NetID negNet;
+  double capacitance; ///< Farads
 };
-
-// Examples
-CapacitorDescriptor decoupling{VDD, GND, 100e-9};  // 100nF
-CapacitorDescriptor coupling{IN, OUT, 1e-6};       // 1uF
 ```
 
 ### InductorDescriptor
 
-Two-terminal inductor topology.
+**Header:** `InductorDescriptor.hpp`
+**Purpose:** Two-terminal inductor topology.
 
 ```cpp
 struct InductorDescriptor {
-  NetID posNet;       // Positive terminal
-  NetID negNet;       // Negative terminal
-  double inductance;  // Henries
+  NetID posNet;
+  NetID negNet;
+  double inductance; ///< Henries
 };
-
-// Examples
-InductorDescriptor filter{VDD, OUTPUT, 10e-6};  // 10uH
-InductorDescriptor choke{INPUT, GND, 1e-3};     // 1mH
 ```
 
-## Usage Patterns
+### MosfetDescriptor
 
-### Netlist Parsing
+**Header:** `MosfetDescriptor.hpp`
+**Purpose:** Four-terminal MOSFET topology (drain, gate, source, body).
 
 ```cpp
-// Parse SPICE netlist into descriptors
-std::vector<ResistorDescriptor> resistors;
-std::vector<CapacitorDescriptor> capacitors;
+struct MosfetDescriptor {
+  NetID drainNet;
+  NetID gateNet;
+  NetID sourceNet;
+  NetID bodyNet;
+  double width;    ///< Meters
+  double length;   ///< Meters
+};
+```
 
-for (const auto& line : netlistLines) {
-  if (line.starts_with("R")) {
-    resistors.push_back(parseResistor(line));
-  } else if (line.starts_with("C")) {
-    capacitors.push_back(parseCapacitor(line));
+### Descriptors
+
+**Header:** `Descriptors.hpp`
+**Purpose:** Single include that brings in every descriptor type.
+
+---
+
+## 5. Common Patterns
+
+### Netlist-Driven Construction
+
+```cpp
+std::vector<ResistorDescriptor> resistors;
+for (const auto& LINE : netlistLines) {
+  if (LINE.starts_with("R")) {
+    resistors.push_back(parseResistor(LINE));
   }
 }
-
-// Later: apply physics model selection
-for (const auto& r : resistors) {
-  ResistorModel::stamp(mna, r.posNet, r.negNet, r.resistance);
+for (const auto& R : resistors) {
+  ResistorModel::stamp(mna, R.posNet, R.negNet, R.resistance);
 }
 ```
 
 ### Fidelity Switching
 
 ```cpp
-// Same circuit topology, different physics accuracy
-std::vector<MosfetDescriptor> transistors = parseNetlist("circuit.spice");
+const std::vector<MosfetDescriptor> TRANSISTORS = parseNetlist("circuit.spice");
 
-// Fast verification (binary switch)
-for (const auto& m : transistors) {
-  MosfetBinarySwitch::stamp(mna, m);
+for (const auto& M : TRANSISTORS) {
+  MosfetBinarySwitch::stamp(mna, M); // fast verification
 }
-
-// Accurate verification (Level 1 model)
-for (const auto& m : transistors) {
-  MosfetLevel1::stamp(mna, m);
+// ... or ...
+for (const auto& M : TRANSISTORS) {
+  MosfetLevel1::stamp(mna, M);       // analog accuracy
 }
 ```
 
-### Test Isolation
+### Connectivity-Only Tests
 
 ```cpp
 TEST(Netlist, Connectivity) {
-  auto descriptors = parseNetlist("test.spice");
-
-  // Verify topology without running simulation
-  EXPECT_EQ(descriptors[0].posNet, VDD);
-  EXPECT_EQ(descriptors[0].negNet, OUTPUT);
-  EXPECT_DOUBLE_EQ(descriptors[0].resistance, 10e3);
+  const auto DESCS = parseNetlist("test.spice");
+  EXPECT_EQ(DESCS[0].posNet, VDD);
+  EXPECT_EQ(DESCS[0].negNet, OUTPUT);
+  EXPECT_DOUBLE_EQ(DESCS[0].resistance, 10e3);
 }
 ```
 
-## Design Principles
+---
 
-### [OK] Descriptors ARE
+## 6. Real-Time Considerations
 
-- **Pure topology**: NetIDs and device parameters only
-- **Stateless**: No simulation state (voltages, currents)
-- **Lightweight**: Trivial structs, no allocations
-- **RT-safe**: Can be used in real-time contexts
-- **Thread-safe**: No shared mutable state
+### RT-Safe Functions
 
-### [X] Descriptors are NOT
+- All descriptor construction and copy operations (POD types).
 
-- **Physics models**: No I-V curves, no stamping code
-- **Components**: No runtime behavior
-- **Stateful**: No voltage/current state
-- **PCB layout**: No footprints or physical placement
-- **Parameterized**: Device parameters are fixed (not tunable at runtime)
+### NOT RT-Safe Functions
 
-## Integration with Physics Models
-
-Descriptors are **consumed by physics models**, not the other way around:
-
-```cpp
-// Descriptor: topology only
-ResistorDescriptor r{VDD, OUTPUT, 10e3};
-
-// Model: physics only (uses descriptor data)
-ResistorModel::stamp(mna, r.posNet, r.negNet, r.resistance);
-
-// Future: Component = Descriptor + Model
-Resistor component{r, ResistorModel{}};
-```
-
-## Files
-
-| File                          | Purpose                  |
-| ----------------------------- | ------------------------ |
-| `inc/ResistorDescriptor.hpp`  | Resistor topology        |
-| `inc/CapacitorDescriptor.hpp` | Capacitor topology       |
-| `inc/InductorDescriptor.hpp`  | Inductor topology        |
-| `inc/Descriptors.hpp`         | Registry (single import) |
-| `utst/*_uTest.cpp`            | Unit tests (27 tests)    |
-
-## Performance
-
-| Operation                    | Latency           | Scale            |
-| ---------------------------- | ----------------- | ---------------- |
-| MOSFET descriptor creation   | 6.2 ns/descriptor | 2242 descriptors |
-| Resistor descriptor creation | 4.5 ns/descriptor | 1000 descriptors |
-
-Batch throughput: 71.7K MOSFET batches/s, 221.6K resistor batches/s. Pipeline
-efficiency is 2.44 IPC with negligible overhead compared to physics models.
-Descriptors are pure data containers -- construction cost is dominated by the
-models that consume them.
-
-## Testing
-
-```bash
-# Build tests
-cd build/native-linux-debug
-ninja sim_electronics_devices_descriptors_uTest
-
-# Run tests
-./bin/tests/sim_electronics_devices_descriptors_uTest
-```
-
-**Test coverage**: 27 tests covering construction, parameter ranges, and topology patterns.
-
-## See Also
-
-- **Linear Models**: `../linear/README.md` - Physics models using descriptors
-- **Companions**: `../companions/README.md` - Transient integration wrappers
-- **MNA Library**: `../../algorithms/mna/README.md` - Circuit solver
+- None within this module; allocation and I/O happen in the consumers
+  (netlist parser, MNA system, transient solver).
 
 ---
 
-**Status**: Complete [OK] (Phase 2 of Layer 2 implementation)
+## 7. CLI Tools
+
+None.
+
+---
+
+## 8. Example: Topology-First Netlist Build
+
+```cpp
+#include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/descriptors/inc/Descriptors.hpp"
+#include "src/sim/electronics/devices/linear/inc/ResistorModel.hpp"
+
+#include <fmt/core.h>
+
+int main() {
+  using namespace sim::electronics;
+
+  const algorithms::mna::NetID VDD = 1, OUT = 2, GND = 0;
+
+  devices::descriptors::ResistorDescriptor r1{VDD, OUT, 10e3};
+  devices::descriptors::CapacitorDescriptor c1{OUT, GND, 100e-12};
+
+  algorithms::mna::MnaSystem mna(/*nodeCount=*/3);
+  devices::linear::ResistorModel::stamp(mna, r1.posNet, r1.negNet, r1.resistance);
+
+  fmt::print("R1 spans nets {} - {} with {} Ohm\n",
+             r1.posNet, r1.negNet, r1.resistance);
+  fmt::print("C1 spans nets {} - {} with {} F\n",
+             c1.posNet, c1.negNet, c1.capacitance);
+  return 0;
+}
+```
+
+---
+
+## 9. See Also
+
+- [Linear models](../linear/README.md) - Physics for resistors / capacitors / inductors
+- [Companions](../../algorithms/companions/README.md) - Transient integration wrappers
+- [MNA library](../../algorithms/mna/README.md) - Circuit solver

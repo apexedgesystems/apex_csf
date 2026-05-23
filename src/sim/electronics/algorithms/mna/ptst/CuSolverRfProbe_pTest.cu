@@ -57,7 +57,6 @@
     }                                                                                              \
   } while (0)
 
-
 constexpr int N = 1121;
 constexpr int N_TRANSISTORS = 2242;
 constexpr double GMIN = 1e-3;
@@ -72,18 +71,20 @@ void buildSparseMna(std::vector<double>& dense, std::vector<double>& rhs) {
   std::uniform_int_distribution<int> netDist(1, N - 1);
   std::uniform_real_distribution<double> gDist(1e-4, 5e-3);
   auto add = [&](int r, int c, double v) {
-    if (r <= 0 || c <= 0 || r >= N || c >= N) return;
+    if (r <= 0 || c <= 0 || r >= N || c >= N)
+      return;
     dense[r * N + c] += v;
   };
   for (int i = 0; i < N_TRANSISTORS; ++i) {
-    const int d = netDist(rng);
-    const int s = netDist(rng);
-    if (d == s) continue;
-    const double g = gDist(rng);
-    add(d, d, g);
-    add(s, s, g);
-    add(d, s, -g);
-    add(s, d, -g);
+    const int D = netDist(rng);
+    const int S = netDist(rng);
+    if (D == S)
+      continue;
+    const double G = gDist(rng);
+    add(D, D, G);
+    add(S, S, G);
+    add(D, S, -G);
+    add(S, D, -G);
   }
   for (int i = 1; i < N; ++i) {
     dense[i * N + i] += GMIN;
@@ -100,16 +101,15 @@ void denseToCsr(const std::vector<double>& dense, std::vector<int>& rowPtr,
   for (int r = 0; r < N; ++r) {
     rowPtr[r] = static_cast<int>(colIdx.size());
     for (int c = 0; c < N; ++c) {
-      const double v = dense[r * N + c];
-      if (v != 0.0) {
+      const double V = dense[r * N + c];
+      if (V != 0.0) {
         colIdx.push_back(c);
-        values.push_back(v);
+        values.push_back(V);
       }
     }
   }
   rowPtr[N] = static_cast<int>(colIdx.size());
 }
-
 
 namespace ub = vernier::bench;
 
@@ -125,11 +125,11 @@ PERF_TEST(CuSolverRf, RefactorAndSolve_Dim1121) {
   std::vector<int> hColIndA;
   std::vector<double> hValA;
   denseToCsr(dense, hRowPtrA, hColIndA, hValA);
-  const int nnzA = static_cast<int>(hColIndA.size());
+  const int NNZ_A = static_cast<int>(hColIndA.size());
 
   std::printf("\n=== cusolverRf Probe at Dim%d ===\n", N);
-  std::printf("  NNZ_A = %d  (%.2f%% density)\n", nnzA,
-              100.0 * nnzA / static_cast<double>(N * N));
+  std::printf("  NNZ_A = %d  (%.2f%% density)\n", NNZ_A,
+              100.0 * NNZ_A / static_cast<double>(N * N));
 
   // === 2. Compute AMD reordering (critical for MNA-style matrices) ===
   cusolverSpHandle_t spHandle = nullptr;
@@ -142,42 +142,44 @@ PERF_TEST(CuSolverRf, RefactorAndSolve_Dim1121) {
 
   // AMD permutation -- reduces fill-in massively for MNA matrices.
   std::vector<int> hPerm(N);
-  CHECK_CUSOLVER(cusolverSpXcsrsymamdHost(spHandle, N, nnzA, descrA, hRowPtrA.data(),
+  CHECK_CUSOLVER(cusolverSpXcsrsymamdHost(spHandle, N, NNZ_A, descrA, hRowPtrA.data(),
                                           hColIndA.data(), hPerm.data()));
 
   // Apply the permutation to A: A' = P A P^T (used as both P and Q).
   // We mutate the CSR pattern in place per cusolverSpXcsrpermHost.
   std::vector<int> hRowPtrAP = hRowPtrA;
   std::vector<int> hColIndAP = hColIndA;
-  std::vector<int> permMap(nnzA);
+  std::vector<int> permMap(NNZ_A);
   size_t permBufBytes = 0;
-  CHECK_CUSOLVER(cusolverSpXcsrperm_bufferSizeHost(spHandle, N, N, nnzA, descrA,
-                                                   hRowPtrAP.data(), hColIndAP.data(),
-                                                   hPerm.data(), hPerm.data(), &permBufBytes));
+  CHECK_CUSOLVER(cusolverSpXcsrperm_bufferSizeHost(spHandle, N, N, NNZ_A, descrA, hRowPtrAP.data(),
+                                                   hColIndAP.data(), hPerm.data(), hPerm.data(),
+                                                   &permBufBytes));
   std::vector<char> permBuf(permBufBytes);
-  for (int i = 0; i < nnzA; ++i) permMap[i] = i;
-  CHECK_CUSOLVER(cusolverSpXcsrpermHost(spHandle, N, N, nnzA, descrA, hRowPtrAP.data(),
+  for (int i = 0; i < NNZ_A; ++i)
+    permMap[i] = i;
+  CHECK_CUSOLVER(cusolverSpXcsrpermHost(spHandle, N, N, NNZ_A, descrA, hRowPtrAP.data(),
                                         hColIndAP.data(), hPerm.data(), hPerm.data(),
                                         permMap.data(), permBuf.data()));
   // Reorder values: hValAP[i] = hValA[permMap[i]].
-  std::vector<double> hValAP(nnzA);
-  for (int i = 0; i < nnzA; ++i) hValAP[i] = hValA[permMap[i]];
+  std::vector<double> hValAP(NNZ_A);
+  for (int i = 0; i < NNZ_A; ++i)
+    hValAP[i] = hValA[permMap[i]];
 
   csrluInfoHost_t luInfo = nullptr;
   CHECK_CUSOLVER(cusolverSpCreateCsrluInfoHost(&luInfo));
 
   // Symbolic analysis on the PERMUTED matrix.
-  CHECK_CUSOLVER(cusolverSpXcsrluAnalysisHost(spHandle, N, nnzA, descrA, hRowPtrAP.data(),
+  CHECK_CUSOLVER(cusolverSpXcsrluAnalysisHost(spHandle, N, NNZ_A, descrA, hRowPtrAP.data(),
                                               hColIndAP.data(), luInfo));
 
   size_t internalBytes = 0, workBytes = 0;
-  CHECK_CUSOLVER(cusolverSpDcsrluBufferInfoHost(spHandle, N, nnzA, descrA, hValAP.data(),
+  CHECK_CUSOLVER(cusolverSpDcsrluBufferInfoHost(spHandle, N, NNZ_A, descrA, hValAP.data(),
                                                 hRowPtrAP.data(), hColIndAP.data(), luInfo,
                                                 &internalBytes, &workBytes));
   std::vector<char> workBuf(workBytes);
 
   // Numerical factor on the permuted matrix.
-  CHECK_CUSOLVER(cusolverSpDcsrluFactorHost(spHandle, N, nnzA, descrA, hValAP.data(),
+  CHECK_CUSOLVER(cusolverSpDcsrluFactorHost(spHandle, N, NNZ_A, descrA, hValAP.data(),
                                             hRowPtrAP.data(), hColIndAP.data(), luInfo,
                                             /*pivot_threshold=*/0.1, workBuf.data()));
 
@@ -185,7 +187,7 @@ PERF_TEST(CuSolverRf, RefactorAndSolve_Dim1121) {
   int nnzL = 0, nnzU = 0;
   CHECK_CUSOLVER(cusolverSpXcsrluNnzHost(spHandle, &nnzL, &nnzU, luInfo));
   std::printf("  NNZ_L = %d, NNZ_U = %d  (fill-in %.2fx vs A)\n", nnzL, nnzU,
-              static_cast<double>(nnzL + nnzU) / nnzA);
+              static_cast<double>(nnzL + nnzU) / NNZ_A);
 
   std::vector<int> hRowPtrL(N + 1), hColIndL(nnzL);
   std::vector<double> hValL(nnzL);
@@ -207,10 +209,9 @@ PERF_TEST(CuSolverRf, RefactorAndSolve_Dim1121) {
   cusparseSetMatFillMode(descrU, CUSPARSE_FILL_MODE_UPPER);
   cusparseSetMatDiagType(descrU, CUSPARSE_DIAG_TYPE_NON_UNIT);
 
-  CHECK_CUSOLVER(cusolverSpDcsrluExtractHost(spHandle, hP.data(), hQ.data(), descrL,
-                                             hValL.data(), hRowPtrL.data(), hColIndL.data(),
-                                             descrU, hValU.data(), hRowPtrU.data(),
-                                             hColIndU.data(), luInfo, workBuf.data()));
+  CHECK_CUSOLVER(cusolverSpDcsrluExtractHost(
+      spHandle, hP.data(), hQ.data(), descrL, hValL.data(), hRowPtrL.data(), hColIndL.data(),
+      descrU, hValU.data(), hRowPtrU.data(), hColIndU.data(), luInfo, workBuf.data()));
 
   // The L/U from cusolverSp factor the *permuted* A (P_amd * A * P_amd^T).
   // Compose the AMD permutation with the inner LU pivot perms so that
@@ -228,8 +229,8 @@ PERF_TEST(CuSolverRf, RefactorAndSolve_Dim1121) {
   CHECK_CUSOLVER(cusolverRfCreate(&rfHandle));
   CHECK_CUSOLVER(cusolverRfSetResetValuesFastMode(rfHandle, CUSOLVERRF_RESET_VALUES_FAST_MODE_ON));
 
-  CHECK_CUSOLVER(cusolverRfSetupHost(N, nnzA, hRowPtrA.data(), hColIndA.data(), hValA.data(),
-                                     nnzL, hRowPtrL.data(), hColIndL.data(), hValL.data(), nnzU,
+  CHECK_CUSOLVER(cusolverRfSetupHost(N, NNZ_A, hRowPtrA.data(), hColIndA.data(), hValA.data(), nnzL,
+                                     hRowPtrL.data(), hColIndL.data(), hValL.data(), nnzU,
                                      hRowPtrU.data(), hColIndU.data(), hValU.data(), hPFull.data(),
                                      hQFull.data(), rfHandle));
 
@@ -239,16 +240,16 @@ PERF_TEST(CuSolverRf, RefactorAndSolve_Dim1121) {
   int *dRowPtrA = nullptr, *dColIndA = nullptr, *dP = nullptr, *dQ = nullptr;
   double *dValA = nullptr, *dB = nullptr, *dT = nullptr;
   CHECK_CUDA(cudaMalloc(&dRowPtrA, (N + 1) * sizeof(int)));
-  CHECK_CUDA(cudaMalloc(&dColIndA, nnzA * sizeof(int)));
-  CHECK_CUDA(cudaMalloc(&dValA, nnzA * sizeof(double)));
+  CHECK_CUDA(cudaMalloc(&dColIndA, NNZ_A * sizeof(int)));
+  CHECK_CUDA(cudaMalloc(&dValA, NNZ_A * sizeof(double)));
   CHECK_CUDA(cudaMalloc(&dP, N * sizeof(int)));
   CHECK_CUDA(cudaMalloc(&dQ, N * sizeof(int)));
   CHECK_CUDA(cudaMalloc(&dB, N * sizeof(double)));
   CHECK_CUDA(cudaMalloc(&dT, N * sizeof(double)));
 
   CHECK_CUDA(cudaMemcpy(dRowPtrA, hRowPtrA.data(), (N + 1) * sizeof(int), cudaMemcpyHostToDevice));
-  CHECK_CUDA(cudaMemcpy(dColIndA, hColIndA.data(), nnzA * sizeof(int), cudaMemcpyHostToDevice));
-  CHECK_CUDA(cudaMemcpy(dValA, hValA.data(), nnzA * sizeof(double), cudaMemcpyHostToDevice));
+  CHECK_CUDA(cudaMemcpy(dColIndA, hColIndA.data(), NNZ_A * sizeof(int), cudaMemcpyHostToDevice));
+  CHECK_CUDA(cudaMemcpy(dValA, hValA.data(), NNZ_A * sizeof(double), cudaMemcpyHostToDevice));
   CHECK_CUDA(cudaMemcpy(dP, hPFull.data(), N * sizeof(int), cudaMemcpyHostToDevice));
   CHECK_CUDA(cudaMemcpy(dQ, hQFull.data(), N * sizeof(int), cudaMemcpyHostToDevice));
 
@@ -260,13 +261,13 @@ PERF_TEST(CuSolverRf, RefactorAndSolve_Dim1121) {
   auto runFn = [&] {
     // Perturb the A values modestly (each iter sees slightly new values,
     // matching the NR pattern). Structure stays identical.
-    for (int i = 0; i < nnzA; ++i) {
+    for (int i = 0; i < NNZ_A; ++i) {
       hValAPerturbed[i] = hValA[i] * (1.0 + perturb(perturbRng));
     }
-    cudaMemcpy(dValA, hValAPerturbed.data(), nnzA * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(dValA, hValAPerturbed.data(), NNZ_A * sizeof(double), cudaMemcpyHostToDevice);
     cudaMemcpy(dB, rhs.data(), N * sizeof(double), cudaMemcpyHostToDevice);
 
-    cusolverRfResetValues(N, nnzA, dRowPtrA, dColIndA, dValA, dP, dQ, rfHandle);
+    cusolverRfResetValues(N, NNZ_A, dRowPtrA, dColIndA, dValA, dP, dQ, rfHandle);
     cusolverRfRefactor(rfHandle);
     cusolverRfSolve(rfHandle, dP, dQ, /*nrhs=*/1, dT, /*ldt=*/N, dB, /*ldxf=*/N);
     cudaDeviceSynchronize();
@@ -283,8 +284,13 @@ PERF_TEST(CuSolverRf, RefactorAndSolve_Dim1121) {
               PER_ITER_US < 543.0 ? "(GPU sparse beats CPU)" : "(CPU sparse still wins)");
 
   // === Cleanup ===
-  cudaFree(dRowPtrA); cudaFree(dColIndA); cudaFree(dValA); cudaFree(dP); cudaFree(dQ);
-  cudaFree(dB); cudaFree(dT);
+  cudaFree(dRowPtrA);
+  cudaFree(dColIndA);
+  cudaFree(dValA);
+  cudaFree(dP);
+  cudaFree(dQ);
+  cudaFree(dB);
+  cudaFree(dT);
   cusolverRfDestroy(rfHandle);
   cusparseDestroyMatDescr(descrL);
   cusparseDestroyMatDescr(descrU);

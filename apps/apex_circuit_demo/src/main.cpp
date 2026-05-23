@@ -42,8 +42,10 @@
 #include <string>
 #include <vector>
 
-using sim::electronics::topologies::amplifiers::BjtCommonEmitter;
+using sim::electronics::algorithms::transient::IntegrationMethod;
+using sim::electronics::algorithms::transient::TransientState;
 using sim::electronics::devices::nonlinear::MosfetLevel1Params;
+using sim::electronics::topologies::amplifiers::BjtCommonEmitter;
 using sim::electronics::topologies::filters::RcLowPass;
 using sim::electronics::topologies::gates::CmosAndCircuit;
 using sim::electronics::topologies::gates::CmosInverterCircuit;
@@ -52,8 +54,6 @@ using sim::electronics::topologies::gates::CmosNorCircuit;
 using sim::electronics::topologies::gates::CmosOrCircuit;
 using sim::electronics::topologies::gates::CmosXnorCircuit;
 using sim::electronics::topologies::gates::CmosXorCircuit;
-using sim::electronics::algorithms::transient::IntegrationMethod;
-using sim::electronics::algorithms::transient::TransientState;
 
 /* ----------------------------- Constants ----------------------------- */
 
@@ -148,18 +148,18 @@ static CliArgs parseArgs(int argc, char* argv[]) {
   CliArgs args;
   for (int i = 1; i < argc; ++i) {
     if (std::strcmp(argv[i], "--circuit") == 0 && i + 1 < argc) {
-      const std::string kind = argv[++i];
-      if (kind == "gates") {
+      const std::string KIND = argv[++i];
+      if (KIND == "gates") {
         args.circuit = CircuitKind::GATES;
-      } else if (kind == "rc-lowpass" || kind == "filter") {
+      } else if (KIND == "rc-lowpass" || KIND == "filter") {
         args.circuit = CircuitKind::RC_LOWPASS;
-      } else if (kind == "common-emitter" || kind == "bjt-ce") {
+      } else if (KIND == "common-emitter" || KIND == "bjt-ce") {
         args.circuit = CircuitKind::COMMON_EMITTER;
       } else {
         fmt::print(stderr,
                    "ERROR: unknown --circuit '{}' "
                    "(expected: gates, rc-lowpass, common-emitter)\n",
-                   kind);
+                   KIND);
         std::exit(1);
       }
     } else if (std::strcmp(argv[i], "--r") == 0 && i + 1 < argc) {
@@ -189,8 +189,8 @@ static CliArgs parseArgs(int argc, char* argv[]) {
 /* ----------------------------- File Helpers ----------------------------- */
 
 /// Print a 1-input gate's voltage transfer characteristic.
-static void printOneInputGate(const char* name, int transistors,
-                              CmosInverterCircuit& gate, double vdd) {
+static void printOneInputGate(const char* name, int transistors, CmosInverterCircuit& gate,
+                              double vdd) {
   fmt::print("\n  {} ({} MOSFETs):\n", name, transistors);
   fmt::print("    Vin (V)  | Vout (V)\n");
   fmt::print("    ---------+---------\n");
@@ -227,10 +227,10 @@ static int runGates() {
   fmt::print("  CMOS Digital Logic Gates\n");
   fmt::print("  Transistor-Level Circuit Simulation\n");
   fmt::print("=======================================================\n");
-  fmt::print("  VDD = {:.1f}V, NMOS Kp = {:.0f} uA/V^2, PMOS Kp = {:.0f} uA/V^2\n",
-             GATE_VDD, NMOS_PARAMS.Kp * 1e6, PMOS_PARAMS.Kp * 1e6);
-  fmt::print("  Vth = {:.1f}V, W = {:.0f} um, L = {:.0f} um\n",
-             NMOS_PARAMS.Vth, GATE_W * 1e6, GATE_L * 1e6);
+  fmt::print("  VDD = {:.1f}V, NMOS Kp = {:.0f} uA/V^2, PMOS Kp = {:.0f} uA/V^2\n", GATE_VDD,
+             NMOS_PARAMS.Kp * 1e6, PMOS_PARAMS.Kp * 1e6);
+  fmt::print("  Vth = {:.1f}V, W = {:.0f} um, L = {:.0f} um\n", NMOS_PARAMS.Vth, GATE_W * 1e6,
+             GATE_L * 1e6);
 
   CmosInverterCircuit inv(GATE_VDD, GATE_W, GATE_L, NMOS_PARAMS, PMOS_PARAMS);
   inv.build();
@@ -379,9 +379,9 @@ static int runCommonEmitter(const CliArgs& args) {
 
   // Region check: NPN BJT in active region requires V_BE >= ~0.6V and V_CE > V_BE.
   const double VBE = VB; // emitter at GND
-  const char* REGION = (VBE < 0.55)              ? "cutoff (V_BE too low)"
-                       : (VCE < VBE)             ? "saturation (V_CE < V_BE)"
-                       : (VCE > 0.1 * args.vcc)  ? "active (linear amplification)"
+  const char* REGION = (VBE < 0.55)             ? "cutoff (V_BE too low)"
+                       : (VCE < VBE)            ? "saturation (V_CE < V_BE)"
+                       : (VCE > 0.1 * args.vcc) ? "active (linear amplification)"
                                                 : "near-saturation";
   fmt::print("\n  Operating region: {}\n", REGION);
 

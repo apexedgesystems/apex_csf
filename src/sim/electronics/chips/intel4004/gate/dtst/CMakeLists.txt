@@ -30,5 +30,6 @@ apex_add_devtest(
 
 target_compile_definitions(
   Intel4004GateLevel_Dev
-  PRIVATE INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/chips/intel4004/netlist/data"
+  PRIVATE
+    INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/chips/intel4004/netlist/data"
 )

@@ -15,7 +15,7 @@
 using sim::electronics::devices::nonlinear::MosfetLevel1;
 using sim::electronics::devices::nonlinear::MosfetLevel1Params;
 
-/* ----------------------- NMOS I-V Verification -------------------------- */
+/* ----------------------------- NMOS I-V Verification ----------------------------- */
 
 /**
  * @test
@@ -117,7 +117,7 @@ TEST(MosfetLevel1, VerifyNmosAgainstAnalytical) {
   EXPECT_LT(ids, 200e-6) << "Current too high (> 0.2 mA)";
 }
 
-/* ---------------------- Linear Region Verification ---------------------- */
+/* ----------------------------- Linear Region Verification ----------------------------- */
 
 /**
  * @test
@@ -146,7 +146,7 @@ TEST(MosfetLevel1, VerifyLinearRegion) {
   EXPECT_NEAR(ids, expectedIds, expectedIds * 1e-10);
 }
 
-/* ----------------------- Cutoff Region Verification --------------------- */
+/* ----------------------------- Cutoff Region Verification ----------------------------- */
 
 /**
  * @test
@@ -171,7 +171,7 @@ TEST(MosfetLevel1, VerifyCutoffRegion) {
   EXPECT_EQ(ids, 0.0) << "Current should be zero in cutoff";
 }
 
-/* --------------------- Channel Modulation Verification ------------------ */
+/* ----------------------------- Channel Modulation Verification ----------------------------- */
 
 /**
  * @test

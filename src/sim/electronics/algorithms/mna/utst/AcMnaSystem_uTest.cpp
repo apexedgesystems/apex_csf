@@ -355,11 +355,10 @@ TEST(AcMnaTest, NetCountReflectsConstruction) {
   EXPECT_EQ(AC.netCount(), 8u);
 }
 
-/** @test clear() resets the matrix between sweeps */
 /** @test clear() resets Y_, I_, and voltageSources_ so a subsequent solve at a
  *        new frequency reflects that frequency, not the cached state from before.
  *
- * Topology: VIN -> R -> VOUT -> C -> GND (textbook RC low-pass, fc = 1/(2*pi*R*C)
+ * Topology: VIN -> R -> VOUT -> C -> GND (RC low-pass, fc = 1/(2*pi*R*C)
  * = 159 Hz for R=1k, C=1uF). For a 1st-order low-pass:
  *   - At f = 100 Hz (below cutoff): |H| > 0.5 (light attenuation)
  *   - At f = 5 kHz (>=30x cutoff): |H| < 0.05 (heavy attenuation)
@@ -402,7 +401,7 @@ TEST(AcMnaTest, ClearResetsMatrix) {
  *        follow-up solve driven only by a voltage source produces the same
  *        nodal answer as if no prior current source had been stamped.
  *
- * Topology: VIN -> R -> VOUT -> C -> GND. Reference: textbook RC low-pass.
+ * Topology: VIN -> R -> VOUT -> C -> GND (RC low-pass).
  */
 TEST(AcMnaTest, ClearCurrentsLeavesAdmittanceIntact) {
   constexpr NetID VIN_NET = 1, VOUT = 2;

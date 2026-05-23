@@ -16,9 +16,9 @@
 #include <cmath>
 #include <vector>
 
-using sim::electronics::algorithms::mna::MnaSystem;
 using sim::electronics::algorithms::mna::MnaFactorizedWorkspace;
 using sim::electronics::algorithms::mna::MnaSolveWorkspace;
+using sim::electronics::algorithms::mna::MnaSystem;
 using sim::electronics::algorithms::mna::NetID;
 
 namespace {
@@ -158,7 +158,8 @@ TEST(MnaSystemTest, SolveIntoWritesToBuffers) {
   EXPECT_NEAR(nodeV[2], 2.0, TOL);
 }
 
-/* ----------------------------- clear() / clearCurrents() / clearRHS() ----------------------------- */
+/* ----------------------------- clear() / clearCurrents() / clearRHS()
+ * ----------------------------- */
 
 /** @test clear() resets the matrix and voltage-source list, allowing reuse */
 TEST(MnaSystemTest, ClearResetsAndAllowsReuse) {

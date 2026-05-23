@@ -92,7 +92,7 @@ struct MnaBatchWorkspace {
   /**
    * @brief Check if workspace can handle dimension and batch.
    */
-  bool canHandle(std::size_t dim, std::size_t batch) const noexcept {
+  [[nodiscard]] bool canHandle(std::size_t dim, std::size_t batch) const noexcept {
     return initialized && dim <= maxDim && batch <= maxBatchSize;
   }
 };
@@ -155,7 +155,7 @@ struct MnaBatchWorkspaceF32 {
   /**
    * @brief Check if workspace can handle dimension and batch.
    */
-  bool canHandle(std::size_t dim, std::size_t batch) const noexcept {
+  [[nodiscard]] bool canHandle(std::size_t dim, std::size_t batch) const noexcept {
     return initialized && dim <= maxDim && batch <= maxBatchSize;
   }
 };

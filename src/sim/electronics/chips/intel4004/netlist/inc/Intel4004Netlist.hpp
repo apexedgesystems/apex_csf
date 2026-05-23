@@ -49,11 +49,11 @@ struct Intel4004Netlist {
 
   /// Number of transistors in the netlist.
   /// @note RT-safe: Bounded O(1) accessor.
-  std::size_t transistorCount() const noexcept { return transistors.size(); }
+  [[nodiscard]] std::size_t transistorCount() const noexcept { return transistors.size(); }
 
   /// Number of unique nets in the netlist.
   /// @note RT-safe: Bounded O(1) accessor.
-  std::size_t netCount() const noexcept { return uniqueNets.size(); }
+  [[nodiscard]] std::size_t netCount() const noexcept { return uniqueNets.size(); }
 
   /**
    * @brief Check if a named net exists in the netlist.
@@ -61,7 +61,7 @@ struct Intel4004Netlist {
    * @return true if found.
    * @note NOT RT-safe: Linear search over unique nets.
    */
-  bool hasNet(const std::string& name) const {
+  [[nodiscard]] bool hasNet(const std::string& name) const {
     for (const auto& net : uniqueNets) {
       if (net == name) {
         return true;

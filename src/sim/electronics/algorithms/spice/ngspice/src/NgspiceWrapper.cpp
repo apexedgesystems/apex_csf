@@ -17,7 +17,7 @@
 
 namespace sim::electronics::algorithms::spice::ngspice {
 
-/* ----------------------------- NgspiceStatus ---------------------------- */
+/* ----------------------------- NgspiceStatus ----------------------------- */
 
 const char* toString(NgspiceStatus status) noexcept {
   switch (status) {
@@ -37,7 +37,7 @@ const char* toString(NgspiceStatus status) noexcept {
   return "UNKNOWN";
 }
 
-/* --------------------------- File Helpers ------------------------------- */
+/* ----------------------------- File Helpers ----------------------------- */
 
 static bool readFileToString(const std::string& path, std::string& content) {
   std::ifstream file(path);
@@ -53,7 +53,7 @@ static bool readFileToString(const std::string& path, std::string& content) {
 
 #if APEX_HAS_LIBNGSPICE
 
-/* ----------------------- ngspice Callbacks ------------------------------ */
+/* ----------------------------- ngspice Callbacks ----------------------------- */
 
 static int ngspiceSendChar(char* /*output*/, int /*id*/, void* /*userData*/) {
   // Suppress ngspice output (set to fprintf for debugging)
@@ -76,7 +76,7 @@ static int ngspiceSendInitData(pvecinfoall /*data*/, int /*id*/, void* /*userDat
 
 static int ngspiceBGThreadRunning(NG_BOOL /*running*/, int /*id*/, void* /*userData*/) { return 0; }
 
-/* -------------------- ngspice Result Extraction ------------------------- */
+/* ----------------------------- ngspice Result Extraction ----------------------------- */
 
 static void extractNodeVoltages(std::unordered_map<std::string, double>& nodeVoltages) {
   nodeVoltages.clear();
@@ -108,7 +108,7 @@ static void extractNodeVoltages(std::unordered_map<std::string, double>& nodeVol
 
 #endif // APEX_HAS_LIBNGSPICE
 
-/* ------------------------- NgspiceWrapper Methods ----------------------- */
+/* ----------------------------- NgspiceWrapper Methods ----------------------------- */
 
 NgspiceWrapper::NgspiceWrapper() noexcept {
   // initialized_ tracks whether a netlist has been loaded (not just library
@@ -123,7 +123,7 @@ NgspiceWrapper::NgspiceWrapper() noexcept {
 
 NgspiceWrapper::~NgspiceWrapper() noexcept { clear(); }
 
-/* -------------------------- Netlist Loading ----------------------------- */
+/* ----------------------------- Netlist Loading ----------------------------- */
 
 NgspiceStatus NgspiceWrapper::loadNetlist(const std::string& netlistPath) noexcept {
   if (!isLibngspiceAvailable()) {
@@ -174,7 +174,7 @@ NgspiceStatus NgspiceWrapper::loadNetlistFromString(const std::string& netlistCo
 #endif
 }
 
-/* ----------------------------- Simulation ------------------------------- */
+/* ----------------------------- Simulation ----------------------------- */
 
 NgspiceStatus NgspiceWrapper::runDcOperatingPoint() noexcept {
   if (!isLibngspiceAvailable()) {
@@ -263,7 +263,7 @@ NgspiceStatus NgspiceWrapper::runTransient(double tstop, double tstep) noexcept 
 #endif
 }
 
-/* ------------------------ Result Extraction ----------------------------- */
+/* ----------------------------- Result Extraction ----------------------------- */
 
 NgspiceStatus NgspiceWrapper::getNodeVoltage(const std::string& nodeName,
                                              double& voltage) const noexcept {
@@ -293,7 +293,7 @@ NgspiceStatus NgspiceWrapper::getNodeWaveform(const std::string& nodeName,
   return NgspiceStatus::OK;
 }
 
-/* ------------------------------ Utilities ------------------------------- */
+/* ----------------------------- Utilities ----------------------------- */
 
 bool NgspiceWrapper::isLibngspiceAvailable() noexcept {
 #if APEX_HAS_LIBNGSPICE

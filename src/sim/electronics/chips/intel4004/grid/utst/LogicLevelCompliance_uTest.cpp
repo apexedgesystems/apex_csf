@@ -26,27 +26,19 @@
 using sim::electronics::chips::intel4004::Intel4004GridLevel1;
 using sim::electronics::chips::intel4004::loadSpiceNetlist;
 
-
 // Spec ranges, scaled to 5V supply
 constexpr double VDD = 5.0;
-constexpr double VSS = 0.0;
 
 // VOH (logic 0 = HIGH voltage in active-low PMOS): output should be
 // within 0.5V of Vss at our 5V scale (= 4.5V to 5.0V from GND).
 constexpr double SPEC_VOH_MIN = 4.5;
 constexpr double SPEC_VOH_MAX = 5.0;
 
-// VOL (logic 1 = LOW voltage) at IOL=0.5mA load: 1.17V to 3.33V from GND
-// at our 5V scale. Unloaded VOL goes lower (we observe 1.201V).
-constexpr double SPEC_VOL_LOADED_MAX = 3.33;
-constexpr double SPEC_VOL_LOADED_MIN = 1.17;
-
 // VIH input: must be > 4.5V at our 5V scale.
 constexpr double SPEC_VIH_MIN = 4.5;
 
 // VIL input: must be < 1.83V at our 5V scale.
 constexpr double SPEC_VIL_MAX = 1.83;
-
 
 /**
  * @test Analytical NOR gate VOL matches the expected ratio formula.
@@ -74,8 +66,7 @@ TEST(LogicLevelComplianceTest, NorGateVolFormula) {
   // VOL must be at or below the unloaded floor of the loaded spec range.
   // Our 1.20V is below the loaded MIN of 1.17V by ~30 mV -- consistent
   // with "no load -> slightly below loaded floor".
-  EXPECT_LT(VOL, 2.0)
-      << "Unloaded VOL must be well below loaded MAX of 3.33V";
+  EXPECT_LT(VOL, 2.0) << "Unloaded VOL must be well below loaded MAX of 3.33V";
 }
 
 /**
@@ -92,10 +83,8 @@ TEST(LogicLevelComplianceTest, NorGateVohWithinSpecRange) {
   // electrically equivalent to VOH >= 4.5V.
   const double VOH_MODEL = 5.0;
 
-  EXPECT_GE(VOH_MODEL, SPEC_VOH_MIN)
-      << "VOH must be at least Vss-0.5V";
-  EXPECT_LE(VOH_MODEL, SPEC_VOH_MAX + 0.01)
-      << "VOH cannot exceed Vss";
+  EXPECT_GE(VOH_MODEL, SPEC_VOH_MIN) << "VOH must be at least Vss-0.5V";
+  EXPECT_LE(VOH_MODEL, SPEC_VOH_MAX + 0.01) << "VOH cannot exceed Vss";
 }
 
 /**
@@ -119,7 +108,8 @@ TEST(LogicLevelComplianceTest, ReadThresholdIsInForbiddenZone) {
   EXPECT_GT(READ_THRESHOLD, SPEC_VIL_MAX)
       << "Read threshold above VIL_MAX (otherwise we'd false-positive on VIL signals)";
   EXPECT_LT(READ_THRESHOLD, SPEC_VIH_MIN)
-      << "Read threshold below VIH_MIN (otherwise we'd false-negative on VIH signals)";}
+      << "Read threshold below VIH_MIN (otherwise we'd false-negative on VIH signals)";
+}
 
 /**
  * @test Driver-strength sanity: WL_OUTPUT_DRIVER produces a current that's
@@ -138,18 +128,16 @@ TEST(LogicLevelComplianceTest, OutputDriverProducesDriverCurrent) {
   const double Kp = Grid::KP_PROCESS;
   const double WL = Grid::WL_OUTPUT_DRIVER;
   const double VTH = Grid::VTH_ENH;
-  const double Vov = VDD - VTH;  // overdrive at full Vgs
+  const double Vov = VDD - VTH; // overdrive at full Vgs
 
   // Saturation current at Vgs = VDD, Vds large
   const double I_DRIVER = 0.5 * Kp * WL * Vov * Vov;
 
   // Our scaled 5V model gives 14x real-chip current (Kp scaled up to keep
   // Vt/VDD ratio constant). What matters: it's a DRIVER, not a load.
-  EXPECT_GT(I_DRIVER, 1e-3)
-      << "Output driver should source >1mA at full Vgs";
+  EXPECT_GT(I_DRIVER, 1e-3) << "Output driver should source >1mA at full Vgs";
   // Sanity upper bound: not crazy huge (would imply Kp wildly miscalibrated)
-  EXPECT_LT(I_DRIVER, 1.0)
-      << "Output driver current >1A suggests Kp/WL miscalibration";
+  EXPECT_LT(I_DRIVER, 1.0) << "Output driver current >1A suggests Kp/WL miscalibration";
 }
 
 /**

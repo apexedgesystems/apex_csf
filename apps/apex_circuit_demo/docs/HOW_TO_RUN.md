@@ -78,18 +78,18 @@ docker compose run --rm -T dev-cuda bash -c '
 
 ### CLI flags
 
-| Flag                  | Default | Description                                                          |
-| --------------------- | ------- | -------------------------------------------------------------------- |
-| `--circuit KIND`      | `gates` | Circuit to simulate (`gates`, `rc-lowpass`, `common-emitter`)         |
-| `--r OHMS`            | `1e3`   | RC filter resistance (`rc-lowpass`)                                   |
-| `--c FARADS`          | `1e-6`  | RC filter capacitance (`rc-lowpass`)                                  |
-| `--vstep VOLTS`       | `5.0`   | RC step input voltage (`rc-lowpass`)                                  |
-| `--duration SEC`      | `5e-3`  | RC simulation duration (`rc-lowpass`)                                 |
-| `--steps N`           | `100`   | RC report rows (`rc-lowpass`)                                         |
-| `--vcc VOLTS`         | `12`    | Common-emitter supply voltage                                         |
-| `--rc-collector OHMS` | `1e3`   | Common-emitter collector resistor                                     |
-| `--rb-base OHMS`      | `100e3` | Common-emitter base resistor                                          |
-| `-h, --help`          |         | Show help                                                             |
+| Flag                  | Default | Description                                                   |
+| --------------------- | ------- | ------------------------------------------------------------- |
+| `--circuit KIND`      | `gates` | Circuit to simulate (`gates`, `rc-lowpass`, `common-emitter`) |
+| `--r OHMS`            | `1e3`   | RC filter resistance (`rc-lowpass`)                           |
+| `--c FARADS`          | `1e-6`  | RC filter capacitance (`rc-lowpass`)                          |
+| `--vstep VOLTS`       | `5.0`   | RC step input voltage (`rc-lowpass`)                          |
+| `--duration SEC`      | `5e-3`  | RC simulation duration (`rc-lowpass`)                         |
+| `--steps N`           | `100`   | RC report rows (`rc-lowpass`)                                 |
+| `--vcc VOLTS`         | `12`    | Common-emitter supply voltage                                 |
+| `--rc-collector OHMS` | `1e3`   | Common-emitter collector resistor                             |
+| `--rb-base OHMS`      | `100e3` | Common-emitter base resistor                                  |
+| `-h, --help`          |         | Show help                                                     |
 
 ---
 
@@ -109,15 +109,15 @@ boolean 0/1.
 
 Gate transistor counts:
 
-| Gate | MOSFETs | Composition                  |
-| ---- | ------: | ---------------------------- |
-| NOT  |       2 | 1 PMOS + 1 NMOS              |
+| Gate | MOSFETs | Composition                     |
+| ---- | ------: | ------------------------------- |
+| NOT  |       2 | 1 PMOS + 1 NMOS                 |
 | NAND |       4 | 2 PMOS parallel + 2 NMOS series |
 | NOR  |       4 | 2 PMOS series + 2 NMOS parallel |
-| AND  |       6 | NAND + NOT buffer            |
-| OR   |       6 | NOR + NOT buffer             |
-| XOR  |      16 | 4 NAND gates                 |
-| XNOR |      18 | XOR + NOT buffer             |
+| AND  |       6 | NAND + NOT buffer               |
+| OR   |       6 | NOR + NOT buffer                |
+| XOR  |      16 | 4 NAND gates                    |
+| XNOR |      18 | XOR + NOT buffer                |
 
 ### `--circuit rc-lowpass`
 

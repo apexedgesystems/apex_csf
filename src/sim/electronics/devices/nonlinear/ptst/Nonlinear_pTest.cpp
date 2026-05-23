@@ -167,8 +167,8 @@ PERF_TEST(NonlinearPerf, MosfetLevel1StampValues_2242) {
     for (int i = 0; i < perf.cycles(); ++i) {
       double sum = 0.0;
       for (const auto& b : BIASES) {
-        const auto sv = MosfetLevel1::stampValues(b.vgs, b.vds, params);
-        sum += sv.id - sv.gm * b.vgs - sv.gds * b.vds;
+        const auto SV = MosfetLevel1::stampValues(b.vgs, b.vds, params);
+        sum += SV.id - SV.gm * b.vgs - SV.gds * b.vds;
       }
       sink = sum;
     }
@@ -178,8 +178,8 @@ PERF_TEST(NonlinearPerf, MosfetLevel1StampValues_2242) {
       [&] {
         double sum = 0.0;
         for (const auto& b : BIASES) {
-          const auto sv = MosfetLevel1::stampValues(b.vgs, b.vds, params);
-          sum += sv.id - sv.gm * b.vgs - sv.gds * b.vds;
+          const auto SV = MosfetLevel1::stampValues(b.vgs, b.vds, params);
+          sum += SV.id - SV.gm * b.vgs - SV.gds * b.vds;
         }
         sink = sum;
       },
@@ -209,10 +209,21 @@ PERF_TEST(NonlinearPerf, MosfetBsim3StampValues_338) {
   const auto BIASES = generateMosfetBias(COUNT);
   // Match Intel4004GridLevel2::bsim3LatchParams_ exactly (the L2
   // production template).
-  MosfetBsim3Params params{
-      .Kp = 5e-3,    .Vth0 = 1.17, .lambda = 0.03, .W = 1.0,    .L = 1.0,
-      .n_factor = 2.5, .Vt = 0.026, .eta0 = 0.0,  .K1 = 0.0,   .K2 = 0.0,
-      .phi = 0.7,    .ua = 0.0,    .ub = 0.0,     .tox = 50e-9, .delta = 0.01};
+  MosfetBsim3Params params{.Kp = 5e-3,
+                           .Vth0 = 1.17,
+                           .lambda = 0.03,
+                           .W = 1.0,
+                           .L = 1.0,
+                           .n_factor = 2.5,
+                           .Vt = 0.026,
+                           .eta0 = 0.0,
+                           .K1 = 0.0,
+                           .K2 = 0.0,
+                           .phi = 0.7,
+                           .ua = 0.0,
+                           .ub = 0.0,
+                           .tox = 50e-9,
+                           .delta = 0.01};
   volatile double sink = 0.0;
 
   std::printf("\n=== MosfetBsim3 stampValues (n=2.5 weak-inv, %zu devices) ===\n", COUNT);
@@ -221,8 +232,8 @@ PERF_TEST(NonlinearPerf, MosfetBsim3StampValues_338) {
     for (int i = 0; i < perf.cycles(); ++i) {
       double sum = 0.0;
       for (const auto& b : BIASES) {
-        const auto sv = MosfetBsim3::stampValues(b.vgs, b.vds, /*vbs=*/0.0, params);
-        sum += sv.id - sv.gm * b.vgs - sv.gds * b.vds;
+        const auto SV = MosfetBsim3::stampValues(b.vgs, b.vds, /*vbs=*/0.0, params);
+        sum += SV.id - SV.gm * b.vgs - SV.gds * b.vds;
       }
       sink = sum;
     }
@@ -232,8 +243,8 @@ PERF_TEST(NonlinearPerf, MosfetBsim3StampValues_338) {
       [&] {
         double sum = 0.0;
         for (const auto& b : BIASES) {
-          const auto sv = MosfetBsim3::stampValues(b.vgs, b.vds, /*vbs=*/0.0, params);
-          sum += sv.id - sv.gm * b.vgs - sv.gds * b.vds;
+          const auto SV = MosfetBsim3::stampValues(b.vgs, b.vds, /*vbs=*/0.0, params);
+          sum += SV.id - SV.gm * b.vgs - SV.gds * b.vds;
         }
         sink = sum;
       },

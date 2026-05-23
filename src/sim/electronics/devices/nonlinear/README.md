@@ -1,334 +1,275 @@
-# Nonlinear Device Models
+# Nonlinear Devices Module
 
-Physics-based models for nonlinear circuit elements (diodes, MOSFETs, BJTs) with smooth I-V curves and derivatives for Newton-Raphson solvers.
+**Namespace:** `sim::electronics::devices::nonlinear`
+**Platform:** Linux-only
+**C++ Standard:** C++23
 
-## Overview
+Physics-based models for nonlinear circuit elements (diodes, MOSFETs,
+JFETs, BJTs) with smooth I-V curves and analytic / numeric derivatives
+suitable for Newton-Raphson stamping.
 
-This library provides **Layer 2** device physics models for transient circuit simulation. Each model implements:
+---
 
-- Current computation (I-V characteristic)
-- Conductance computation (dI/dV for Newton-Raphson)
-- MNA stamping (linearized around operating point)
+## Table of Contents
 
-These models are used by Layer 3 applications (circuit grids, netlists) combined with Layer 1 algorithms (MNA, Newton-Raphson, transient solver).
+1. [Overview](#1-overview)
+2. [Quick Reference](#2-quick-reference)
+3. [Design Principles](#3-design-principles)
+4. [Module Reference](#4-module-reference)
+   - [Diode family](#diode-family) - Shockley, SPICE, Schottky, Zener
+   - [JFET family](#jfet-family) - Shichman, Level 2
+   - [MOSFET family](#mosfet-family) - Binary switch, Level 1, Level 2, Level 3, BSIM3
+   - [BJT family](#bjt-family) - Ebers-Moll
+5. [Common Patterns](#5-common-patterns)
+6. [Real-Time Considerations](#6-real-time-considerations)
+7. [CLI Tools](#7-cli-tools)
+8. [Example: Diode Forward Bias](#8-example-diode-forward-bias)
+9. [See Also](#9-see-also)
 
-## Available Models
+---
 
-| Model              | Description                                | Use Case                              | Tests |
-| ------------------ | ------------------------------------------ | ------------------------------------- | ----- |
-| BjtEbersMoll       | Bipolar junction transistor (Ebers-Moll)   | Op-amps, analog amplifiers            | 33    |
-| DiodeShockley      | Exponential I-V (Shockley equation)        | Rectifiers, clamps, analog circuits   | 15    |
-| DiodeSpice         | SPICE diode with series R and junction cap | Accurate transient, power diodes      | 23    |
-| SchottkyDiode      | Schottky barrier diode (fast switching)    | Fast rectifiers, low-voltage power    | 19    |
-| ZenerDiode         | Zener diode with breakdown                 | Voltage regulation, references        | 24    |
-| JfetShichman       | Junction FET (Shichman-Hodges 3-region)    | Precision op-amps, analog switches    | 28    |
-| JfetLevel2         | Advanced JFET (gate leakage, capacitance)  | High-frequency, low-noise amplifiers  | 24    |
-| MosfetBinarySwitch | Digital switch (ON/OFF only)               | Digital logic, fast simulation        | 17    |
-| MosfetLevel1       | Shichman-Hodges 3-region model             | Analog circuits, accurate transient   | 32    |
-| MosfetLevel2       | SPICE Level 2 (geometry, velocity sat)     | Short-channel, body-effect circuits   | 29    |
-| MosfetLevel3       | SPICE Level 3 (DIBL, short-channel)        | Submicron devices, low-voltage analog | 25    |
+## 1. Overview
 
-## Usage Example
+| Question                                                     | Model                                                          |
+| ------------------------------------------------------------ | -------------------------------------------------------------- |
+| How do I model a generic forward-biased diode?               | `DiodeShockley`                                                |
+| How do I model a SPICE diode with series R and junction cap? | `DiodeSpice`                                                   |
+| How do I model a Schottky diode?                             | `SchottkyDiode`                                                |
+| How do I model a Zener regulator?                            | `ZenerDiode`                                                   |
+| How do I model a JFET?                                       | `JfetShichman` (3-region) or `JfetLevel2` (gate leakage / cap) |
+| How do I model a digital MOSFET switch?                      | `MosfetBinarySwitch`                                           |
+| How do I model an analog MOSFET?                             | `MosfetLevel1` (Shichman-Hodges)                               |
+| How do I capture short-channel effects?                      | `MosfetLevel2` or `MosfetLevel3`                               |
+| How do I model moderate-inversion conduction?                | `MosfetBsim3`                                                  |
+| How do I model a bipolar transistor?                         | `BjtEbersMoll`                                                 |
 
-### Diode Forward Bias
+### Selection by Circuit Type
+
+| Circuit Type           | Model                                 | Why                                              |
+| ---------------------- | ------------------------------------- | ------------------------------------------------ |
+| Intel 4004 CPU         | `MosfetBinarySwitch` / `MosfetLevel1` | Digital logic, 2,242 transistors, speed critical |
+| Bipolar op-amp (LM741) | `BjtEbersMoll`                        | 4-region BJT model                               |
+| CMOS op-amp            | `MosfetLevel1` / `MosfetBsim3`        | Smooth I-V plus moderate-inversion behavior      |
+| Power supply rectifier | `DiodeShockley` / `DiodeSpice`        | Exponential diode characteristic                 |
+| Voltage reference      | `ZenerDiode`                          | Breakdown-region regulation                      |
+
+---
+
+## 2. Quick Reference
 
 ```cpp
 #include "src/sim/electronics/devices/nonlinear/inc/DiodeShockley.hpp"
 
-using namespace sim::electronics::devices::nonlinear;
+using sim::electronics::devices::nonlinear::DiodeShockley;
+using sim::electronics::devices::nonlinear::DiodeShockleyParams;
 
-// Silicon diode parameters
-DiodeShockleyParams params{
-  .Is = 1e-14,  // Saturation current
-  .n = 1.0,     // Ideality factor
-  .Vt = 0.026   // Thermal voltage (300K)
-};
-
-// Compute current at 0.7V forward bias
-double vDiode = 0.7;
-double iDiode = DiodeShockley::current(vDiode, params);
-// iDiode ~= 5 mA (typical silicon turn-on)
-
-// Stamp into MNA system for Newton-Raphson
-MnaSystem mna(3);
-DiodeShockley::stamp(mna, anodeNet, cathodeNet, vDiode, params);
+DiodeShockleyParams params{.Is = 1e-14, .n = 1.0, .Vt = 0.026};
+const double I = DiodeShockley::current(/*v=*/0.7, params);
+DiodeShockley::stamp(mna, anodeNet, cathodeNet, /*vDiode=*/0.7, params);
 ```
 
-### Zener Diode Voltage Regulator
+---
+
+## 3. Design Principles
+
+| Annotation      | Meaning                                                      |
+| --------------- | ------------------------------------------------------------ |
+| **RT-safe**     | No allocation, bounded execution, safe for real-time loops   |
+| **NOT RT-safe** | May allocate or have unbounded I/O; call from non-RT context |
+
+- **Static helpers, not classes.** Each model is a stateless `struct` /
+  namespace with static `current`, `stamp`, and derivative helpers. The
+  caller owns terminal voltages and net IDs.
+- **Linearization on demand.** Every model exposes the Norton equivalent
+  needed by Newton-Raphson stamping (`I_device = G * V + Ieq`).
+- **No exceptions.** Out-of-range inputs return finite numbers (clamped
+  exponents) so the matrix stamp never produces NaNs.
+- **RT-safe everywhere.** Stamping into a pre-sized MNA system performs
+  only arithmetic.
+
+---
+
+## 4. Module Reference
+
+### Diode family
+
+**Headers:** `DiodeShockley.hpp`, `DiodeSpice.hpp`, `SchottkyDiode.hpp`,
+`ZenerDiode.hpp`
+
+| Model           | Captures                                  | Notes                          |
+| --------------- | ----------------------------------------- | ------------------------------ |
+| `DiodeShockley` | Forward exponential, reverse saturation   | Basic Is / n / Vt model        |
+| `DiodeSpice`    | Adds series R, junction capacitance       | Closer to SPICE behavior       |
+| `SchottkyDiode` | Lower turn-on, fast reverse recovery      | Suitable for low-voltage power |
+| `ZenerDiode`    | Forward conduction plus reverse breakdown | Vz, Ibv, Vbv parameters        |
+
+Each model provides:
 
 ```cpp
-#include "src/sim/electronics/devices/nonlinear/inc/ZenerDiode.hpp"
+[[nodiscard]] static double current(double v, const Params& p) noexcept;
+[[nodiscard]] static double conductance(double v, const Params& p) noexcept;
 
-using namespace sim::electronics::devices::nonlinear;
-
-// 5.1V Zener regulator
-ZenerDiodeParams params{
-  .Vz = 5.1,     // Breakdown voltage
-  .Ibv = 1e-3,   // Breakdown knee current
-  .Vbv = 0.1     // Breakdown sharpness
-};
-
-// Reverse bias beyond breakdown (regulation region)
-double vZener = -5.5;
-double iZener = ZenerDiode::current(vZener, params);
-// iZener ~= -1 mA (regulated current)
-
-// Stamp into MNA system for Newton-Raphson
-MnaSystem mna(3);
-ZenerDiode::stamp(mna, anodeNet, cathodeNet, vZener, params);
+static void stamp(MnaSystem& mna, NetID anode, NetID cathode,
+                  double vDiode, const Params& p);
 ```
 
-### JFET Precision Op-Amp Input
+### JFET family
+
+**Headers:** `JfetShichman.hpp`, `JfetLevel2.hpp`
+
+| Model          | Captures                          |
+| -------------- | --------------------------------- |
+| `JfetShichman` | Three-region Shichman-Hodges I-V  |
+| `JfetLevel2`   | Adds gate-leakage and capacitance |
 
 ```cpp
-#include "src/sim/electronics/devices/nonlinear/inc/JfetShichman.hpp"
-
-using namespace sim::electronics::devices::nonlinear;
-
-// N-channel JFET (e.g., 2N5457, J201)
-JfetShichmanParams params{
-  .Beta = 1e-3,  // Transconductance parameter
-  .Vp = -2.0,    // Pinch-off voltage
-  .lambda = 0.01 // Channel-length modulation
-};
-
-// Saturation region (typical operating point)
-double vgs = -0.5;  // Gate voltage
-double vds = 5.0;   // Drain-source voltage
-double id = JfetShichman::current(vgs, vds, params);
-// id ~= 2.25 mA (constant current source)
-
-// Stamp into MNA system for Newton-Raphson
-MnaSystem mna(4);
-JfetShichman::stamp(mna, drainNet, gateNet, sourceNet, vgs, vds, params);
+[[nodiscard]] static double current(double vgs, double vds, const Params& p) noexcept;
+static void stamp(MnaSystem& mna, NetID drain, NetID gate, NetID source,
+                  double vgs, double vds, const Params& p);
 ```
 
-### MOSFET Digital Switch (Fast)
+### MOSFET family
+
+**Headers:** `MosfetBinarySwitch.hpp`, `MosfetLevel1.hpp`, `MosfetLevel2.hpp`,
+`MosfetLevel3.hpp`, `MosfetBsim3.hpp`
+
+| Model                | Captures                       | When to use                          |
+| -------------------- | ------------------------------ | ------------------------------------ |
+| `MosfetBinarySwitch` | ON / OFF resistor only         | Fastest digital simulation           |
+| `MosfetLevel1`       | Shichman-Hodges 3-region       | Default analog model                 |
+| `MosfetLevel2`       | Geometry, velocity saturation  | Short-channel analog                 |
+| `MosfetLevel3`       | DIBL, short-channel effects    | Submicron / low-voltage              |
+| `MosfetBsim3`        | Moderate-inversion, Meyer caps | Cross-coupled latches, dynamic logic |
+
+All MOSFET models provide `current`, `transconductance`, `outputConductance`
+(plus `bodyTransconductance` for the bias-aware models), and a `stamp` entry
+point that writes the linearized stamp into an `MnaSystem` or
+`MnaSystemSparse`. `MosfetLevel1BatchCuda.cuh` exposes a CUDA batch
+evaluator for large device arrays.
+
+### BJT family
+
+**Header:** `BjtEbersMoll.hpp`
 
 ```cpp
-#include "src/sim/electronics/devices/nonlinear/inc/MosfetBinarySwitch.hpp"
+[[nodiscard]] static double collectorCurrent(double vbe, double vbc, const Params& p) noexcept;
+[[nodiscard]] static double baseCurrent     (double vbe, double vbc, const Params& p) noexcept;
+[[nodiscard]] static double transconductance(double vbe, double vbc, const Params& p) noexcept;
+[[nodiscard]] static double outputConductance(double vbe, double vbc, const Params& p) noexcept;
 
-using namespace sim::electronics::devices::nonlinear;
-
-// Digital MOSFET (for CPU simulation)
-MosfetBinarySwitchParams params{
-  .Vth = 0.7,    // Threshold voltage
-  .Ron = 500.0,  // On-resistance
-  .Roff = 1e9    // Off-resistance
-};
-
-// Check if MOSFET is ON
-double vgs = 1.5;  // Gate voltage
-bool on = MosfetBinarySwitch::isOn(vgs, params);  // true
-
-// Stamp as resistor (no Newton-Raphson needed)
-double rds = MosfetBinarySwitch::resistance(vgs, params);
-// rds = 500 Ohm (ON state)
+static void stamp(MnaSystem& mna, NetID collector, NetID base, NetID emitter,
+                  double vbe, double vbc, const Params& p);
 ```
 
-### MOSFET Analog Model (Accurate)
+Operating regions (forward / reverse active, saturation, cutoff) emerge
+from the Ebers-Moll equations; the stamp linearizes around the current
+(vbe, vbc) operating point for Newton-Raphson.
+
+---
+
+## 5. Common Patterns
+
+### Linearized Newton-Raphson Stamp
 
 ```cpp
-#include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1.hpp"
-
-using namespace sim::electronics::devices::nonlinear;
-
-// NMOS transistor parameters
-MosfetLevel1Params params{
-  .Kp = 100e-6,   // Transconductance parameter
-  .Vth = 0.7,     // Threshold voltage
-  .lambda = 0.02  // Channel-length modulation
-};
-
-// Operating point
-double vgs = 1.5;  // Gate-source voltage
-double vds = 2.0;  // Drain-source voltage
-
-// Compute drain current
-double id = MosfetLevel1::current(vgs, vds, params);
-// id ~= 32 uA (saturation region)
-
-// Compute transconductances for Newton-Raphson
-double gm = MosfetLevel1::transconductance(vgs, vds, params);   // dId/dVgs
-double gds = MosfetLevel1::outputConductance(vgs, vds, params); // dId/dVds
-
-// Stamp into MNA system
-MosfetLevel1::stamp(mna, drainNet, gateNet, sourceNet, vgs, vds, params);
-```
-
-### BJT Amplifier (Op-Amp Stage)
-
-```cpp
-#include "src/sim/electronics/devices/nonlinear/inc/BjtEbersMoll.hpp"
-
-using namespace sim::electronics::devices::nonlinear;
-
-// NPN transistor parameters (e.g., 2N2222, 2N3904)
-BjtEbersMollParams params{
-  .Is = 1e-14,   // Saturation current
-  .Bf = 100.0,   // Forward current gain (beta)
-  .Br = 1.0,     // Reverse current gain
-  .Vt = 0.026    // Thermal voltage (300K)
-};
-
-// Operating point (forward active region)
-double vbe = 0.7;  // Base-emitter voltage
-double vbc = -5.0; // Base-collector voltage (reverse-biased)
-
-// Compute currents
-double ic = BjtEbersMoll::collectorCurrent(vbe, vbc, params);
-double ib = BjtEbersMoll::baseCurrent(vbe, vbc, params);
-double beta = ic / ib;  // Current gain ~= 100
-
-// Compute transconductances for Newton-Raphson
-double gm = BjtEbersMoll::transconductance(vbe, vbc, params);  // dIc/dVbe
-double go = BjtEbersMoll::outputConductance(vbe, vbc, params); // dIc/dVbc
-
-// Stamp into MNA system
-BjtEbersMoll::stamp(mna, collectorNet, baseNet, emitterNet, vbe, vbc, params);
-```
-
-## Fidelity Switching
-
-Different models provide speed vs accuracy trade-offs:
-
-| Circuit Type   | Model              | Why                                              |
-| -------------- | ------------------ | ------------------------------------------------ |
-| Intel 4004 CPU | MosfetBinarySwitch | Digital logic, 2,242 transistors, speed critical |
-| Op-amp (LM741) | BjtEbersMoll       | Bipolar op-amps use BJTs, 4-region model         |
-| CMOS op-amp    | MosfetLevel1       | Analog MOSFET behavior, smooth I-V curves        |
-| Power supply   | DiodeShockley      | Exponential diode characteristic                 |
-
-## Newton-Raphson Integration
-
-All models provide linearized stamping for Newton-Raphson iteration:
-
-```
-I_device = G * V + Ieq
-```
-
-Where:
-
-- `G` = small-signal conductance (dI/dV)
-- `Ieq` = equivalent current source (I - G\*V)
-
-This allows the nonlinear device to be solved iteratively:
-
-```cpp
-// Newton-Raphson loop (Layer 1 algorithm)
 for (int iter = 0; iter < maxIter; ++iter) {
-  mna.clearStamps();
-
-  // Stamp all devices (Layer 2 models)
-  DiodeShockley::stamp(mna, anode, cathode, vDiode, params);
-  MosfetLevel1::stamp(mna, drain, gate, source, vgs, vds, params);
-
-  // Solve linear system (Layer 1 algorithm)
-  mna.solve();
-
-  // Update voltages for next iteration
-  vDiode = mna.voltage(anode) - mna.voltage(cathode);
-  // ...
+  mna.clear();
+  DiodeShockley::stamp(mna, anode, cathode, vDiode, diodeParams);
+  MosfetLevel1::stamp(mna, drain, gate, source, vgs, vds, mosfetParams);
+  const auto RESULT = mna.solve();
+  vDiode = RESULT.nodeVoltages[anode] - RESULT.nodeVoltages[cathode];
+  vgs    = RESULT.nodeVoltages[gate]  - RESULT.nodeVoltages[source];
+  vds    = RESULT.nodeVoltages[drain] - RESULT.nodeVoltages[source];
 }
 ```
 
-## RT-Safety Annotations
+### MOSFET Operating-Point Probe
 
-All models in this library are **RT-safe**:
+```cpp
+const double VGS = 1.5;
+const double VDS = 2.0;
+MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02};
 
-- Static functions (no state)
-- No allocations (pure math)
-- Deterministic execution (no branching on runtime data)
-
-Safe for use in hard real-time contexts.
-
-## Physical Accuracy
-
-### DiodeShockley
-
-Matches SPICE diode model with exponential I-V characteristic:
-
-- Forward bias: Exponential turn-on at ~0.6-0.7V (silicon)
-- Reverse bias: Saturates at -Is (reverse saturation current)
-- Temperature: Controlled via Vt = kT/q
-
-### MosfetBinarySwitch
-
-Digital approximation for fast simulation:
-
-- ON: Vgs > Vth -> Rds = Ron (typically 100-1000 Ohm)
-- OFF: Vgs < Vth -> Rds = Roff (typically 10M-1G Ohm)
-- No smooth transition (binary switch)
-
-### MosfetLevel1
-
-SPICE Level 1 Shichman-Hodges model with three regions:
-
-- Cutoff: `Vgs < Vth` -> `Id = 0`
-- Linear: `Vgs > Vth, Vds < Vgst` -> `Id = Kp * (Vgst * Vds - 0.5 * Vds^2)`
-- Saturation: `Vgs > Vth, Vds >= Vgst` -> `Id = 0.5 * Kp * Vgst^2`
-
-Channel-length modulation: `Id * (1 + lambda * Vds)` for non-ideal output resistance.
-
-### BjtEbersMoll
-
-SPICE-compatible Ebers-Moll model with four operating regions:
-
-- Cutoff: Both junctions reverse-biased (Vbe < 0.6V, Vbc < 0.6V) -> Ic ~= 0, Ib ~= 0
-- Forward Active: BE forward, BC reverse (Vbe > 0.6V, Vbc < 0) -> Ic = Is \* exp(Vbe/Vt), beta = Ic/Ib ~= Bf
-- Reverse Active: BE reverse, BC forward (Vbe < 0, Vbc > 0.6V) -> Ic < 0 (reverse current)
-- Saturation: Both junctions forward (Vbe > 0.6V, Vbc > 0) -> Ic reduced, Vce_sat ~= 0.2V
-
-Exponential I-V: Every 60mV increase in Vbe -> 10x increase in Ic (at 300K).
-
-## Performance
-
-| Operation                                       | Latency           | Scale         |
-| ----------------------------------------------- | ----------------- | ------------- |
-| MosfetLevel1 current evaluation                 |   9.2 ns/device   | 2242 devices  |
-| MosfetLevel1 full NR stamp (Id+gm+gds+ieq)      |  19.0 ns/device   | 2242 devices  |
-| MosfetLevel1 stampValues (combined NR entry)    |  11.4 ns/device   | 2242 devices  |
-| MosfetBsim3 stampValues (n=2.5 weak inversion)  | 279 ns/device     | 338 devices   |
-| DiodeShockley evaluation                        |   8.8 ns/diode    | 1000 diodes   |
-| BjtEbersMoll evaluation                         |  12.4 ns/BJT      |  500 BJTs     |
-
-For the Intel 4004 reference circuit, MosfetLevel1 stampValues at 2242 devices
-takes ~25 us per Newton-Raphson iteration; MosfetBsim3 stampValues for the 338
-cross-coupled latch transistors at L2 takes ~94 us per NR iteration.
-
-## Testing
-
-All models have comprehensive unit tests covering:
-
-- I-V characteristic (all operating regions)
-- Transconductances (dI/dV)
-- Numerical Jacobian validation (analytical matches numerical derivative)
-- Physical behavior (output/transfer characteristics)
-- MNA stamping
-
-Run tests:
-
-```bash
-make compose-testp
-# sim_electronics_devices_nonlinear_uTest: 269 tests (33 BJT + 15 diode + 23 spice + 19 schottky + 24 zener + 28 jfet1 + 24 jfet2 + 17 binary + 32 level1 + 29 level2 + 25 level3)
+const double ID  = MosfetLevel1::current(VGS, VDS, PARAMS);
+const double GM  = MosfetLevel1::transconductance(VGS, VDS, PARAMS);
+const double GDS = MosfetLevel1::outputConductance(VGS, VDS, PARAMS);
 ```
 
-## Architecture
+### Zener Regulator
 
-```
-Layer 1 (Algorithms)         Layer 2 (Device Models)        Layer 3 (Applications)
-+---------------------+      +---------------------+       +---------------------+
-| MNA Solver          |<------| BjtEbersMoll        |<-------| LM741 Op-Amp        |
-| Newton-Raphson      |      | DiodeShockley       |       | Low-Pass Filter     |
-| Transient Solver    |      | MosfetLevel1        |       | CMOS Op-Amp         |
-|                     |      | MosfetBinarySwitch  |       | Intel 4004 Grid     |
-+---------------------+      +---------------------+       +---------------------+
+```cpp
+ZenerDiodeParams params{.Vz = 5.1, .Ibv = 1e-3, .Vbv = 0.1};
+ZenerDiode::stamp(mna, anode, cathode, /*vDiode=*/-5.5, params);
 ```
 
-## See Also
+---
 
-- `../linear/README.md` - Linear device models (R, L, C)
-- `../companions/README.md` - Numerical integration wrappers for reactive devices
-- `../descriptors/README.md` - Topology descriptors (no physics)
-- `../../algorithms/mna/README.md` - MNA solver (Layer 1)
-- `../../algorithms/nonlinear/README.md` - Nonlinear solver (Layer 1)
+## 6. Real-Time Considerations
+
+### RT-Safe Functions
+
+- Every `current`, `conductance`, `transconductance`, `outputConductance`,
+  and `stamp` entry point. All take POD parameter structs and do no
+  allocation.
+
+### NOT RT-Safe Functions
+
+- The CUDA batch path (`MosfetLevel1BatchCuda`) performs device allocation
+  and host-device transfers.
+
+### Recommended Configuration
+
+- Build parameter structs once during configuration and pass them by
+  const reference through the RT loop.
+- For dynamic-logic circuits (e.g. Intel 4004 latch core), prefer
+  `MosfetBsim3` so moderate-inversion conduction is captured rather than
+  rounded to zero.
+
+---
+
+## 7. CLI Tools
+
+None.
+
+---
+
+## 8. Example: Diode Forward Bias
+
+```cpp
+#include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/DiodeShockley.hpp"
+
+#include <fmt/core.h>
+
+int main() {
+  using namespace sim::electronics;
+
+  const algorithms::mna::NetID ANODE = 1, CATHODE = 0;
+
+  algorithms::mna::MnaSystem mna(/*nodeCount=*/2);
+  devices::nonlinear::DiodeShockleyParams params{
+      .Is = 1e-14, .n = 1.0, .Vt = 0.026};
+
+  double vDiode = 0.7;
+  for (int iter = 0; iter < 20; ++iter) {
+    mna.clear();
+    devices::nonlinear::DiodeShockley::stamp(mna, ANODE, CATHODE, vDiode, params);
+    mna.addCurrent(ANODE, CATHODE, /*Is=*/1e-3);
+    const auto RESULT = mna.solve();
+    vDiode = RESULT.nodeVoltages[ANODE] - RESULT.nodeVoltages[CATHODE];
+  }
+
+  fmt::print("v(diode) = {:.6f} V\n", vDiode);
+  return 0;
+}
+```
+
+---
+
+## 9. See Also
+
+- [Linear devices](../linear/README.md) - R / L / C primitives
+- [Composite devices](../composite/README.md) - CMOS gates built from MOSFETs
+- [Descriptors](../descriptors/README.md) - Topology-only device descriptions
+- [Nonlinear solver](../../algorithms/nonlinear/README.md) - Newton-Raphson driver
+- [MNA library](../../algorithms/mna/README.md) - Linear system

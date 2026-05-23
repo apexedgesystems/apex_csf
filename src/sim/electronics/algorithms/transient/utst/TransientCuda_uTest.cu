@@ -57,7 +57,8 @@ TEST(TransientCudaTest, SmallCircuitFallsBackToCPU) {
   double R = 1000.0;
   double G = 1.0 / R;
 
-  sim::electronics::algorithms::transient::StampCallback stampCb = [G](MnaSystem& m, double /*time*/) {
+  sim::electronics::algorithms::transient::StampCallback stampCb = [G](MnaSystem& m,
+                                                                       double /*time*/) {
     m.addVoltageSource(1, 0, VDD);
     m.addConductance(1, 2, G);
   };
@@ -146,7 +147,8 @@ TEST(TransientCudaTest, UninitializedWorkspaceReturnsError) {
   MnaSystem mna(NET_COUNT);
   CompanionSet companions;
 
-  sim::electronics::algorithms::transient::StampCallback stampCb = [](MnaSystem& /*m*/, double /*time*/) {};
+  sim::electronics::algorithms::transient::StampCallback stampCb = [](MnaSystem& /*m*/,
+                                                                      double /*time*/) {};
 
   // Workspace not prepared (initialized = false)
   MnaCudaWorkspace cudaWs;

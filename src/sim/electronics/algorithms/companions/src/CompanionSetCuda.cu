@@ -125,10 +125,10 @@ __global__ void evaluateCapacitorsKernel(const CapacitorCompanion* capacitors, d
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (idx < n) {
-    const auto& cap = capacitors[idx];
-    geqOut[idx] = capacitorGeq(cap.capacitance, dt, method);
+    const auto& CAP = capacitors[idx];
+    geqOut[idx] = capacitorGeq(CAP.capacitance, dt, method);
     ieqOut[idx] =
-        capacitorIeq(cap.capacitance, cap.prevVoltage, cap.prev2Voltage, cap.current, dt, method);
+        capacitorIeq(CAP.capacitance, CAP.prevVoltage, CAP.prev2Voltage, CAP.current, dt, method);
   }
 }
 
@@ -150,10 +150,10 @@ __global__ void evaluateInductorsKernel(const InductorCompanion* inductors, doub
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (idx < n) {
-    const auto& ind = inductors[idx];
-    geqOut[idx] = inductorGeq(ind.inductance, dt, method);
+    const auto& IND = inductors[idx];
+    geqOut[idx] = inductorGeq(IND.inductance, dt, method);
     ieqOut[idx] =
-        inductorIeq(ind.prevCurrent, ind.prev2Current, ind.voltage, ind.inductance, dt, method);
+        inductorIeq(IND.prevCurrent, IND.prev2Current, IND.voltage, IND.inductance, dt, method);
   }
 }
 
@@ -176,7 +176,6 @@ void evaluateCapacitorsCuda(const CapacitorCompanion* capacitors, int n, double 
   if (n == 0)
     return;
 
-  // Allocate device memory
   CapacitorCompanion* dCapacitors = nullptr;
   double* dGeq = nullptr;
   double* dIeq = nullptr;
@@ -185,19 +184,15 @@ void evaluateCapacitorsCuda(const CapacitorCompanion* capacitors, int n, double 
   cudaMalloc(&dGeq, n * sizeof(double));
   cudaMalloc(&dIeq, n * sizeof(double));
 
-  // Copy capacitors to device
   cudaMemcpy(dCapacitors, capacitors, n * sizeof(CapacitorCompanion), cudaMemcpyHostToDevice);
 
-  // Launch kernel
   int threadsPerBlock = 256;
   int blocks = (n + threadsPerBlock - 1) / threadsPerBlock;
   evaluateCapacitorsKernel<<<blocks, threadsPerBlock>>>(dCapacitors, dGeq, dIeq, n, dt, method);
 
-  // Copy results back to host
   cudaMemcpy(geqOut, dGeq, n * sizeof(double), cudaMemcpyDeviceToHost);
   cudaMemcpy(ieqOut, dIeq, n * sizeof(double), cudaMemcpyDeviceToHost);
 
-  // Free device memory
   cudaFree(dCapacitors);
   cudaFree(dGeq);
   cudaFree(dIeq);
@@ -220,7 +215,6 @@ void evaluateInductorsCuda(const InductorCompanion* inductors, int n, double dt,
   if (n == 0)
     return;
 
-  // Allocate device memory
   InductorCompanion* dInductors = nullptr;
   double* dGeq = nullptr;
   double* dIeq = nullptr;
@@ -229,19 +223,15 @@ void evaluateInductorsCuda(const InductorCompanion* inductors, int n, double dt,
   cudaMalloc(&dGeq, n * sizeof(double));
   cudaMalloc(&dIeq, n * sizeof(double));
 
-  // Copy inductors to device
   cudaMemcpy(dInductors, inductors, n * sizeof(InductorCompanion), cudaMemcpyHostToDevice);
 
-  // Launch kernel
   int threadsPerBlock = 256;
   int blocks = (n + threadsPerBlock - 1) / threadsPerBlock;
   evaluateInductorsKernel<<<blocks, threadsPerBlock>>>(dInductors, dGeq, dIeq, n, dt, method);
 
-  // Copy results back to host
   cudaMemcpy(geqOut, dGeq, n * sizeof(double), cudaMemcpyDeviceToHost);
   cudaMemcpy(ieqOut, dIeq, n * sizeof(double), cudaMemcpyDeviceToHost);
 
-  // Free device memory
   cudaFree(dInductors);
   cudaFree(dGeq);
   cudaFree(dIeq);

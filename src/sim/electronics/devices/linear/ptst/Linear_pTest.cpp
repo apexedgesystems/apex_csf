@@ -20,8 +20,8 @@
 #include <cstdio>
 
 namespace ub = vernier::bench;
-using sim::electronics::devices::linear::ResistorModel;
 using sim::electronics::algorithms::mna::MnaSystemSparse;
+using sim::electronics::devices::linear::ResistorModel;
 
 /* ----------------------------- Resistor Stamping ----------------------------- */
 

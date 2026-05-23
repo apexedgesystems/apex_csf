@@ -91,8 +91,8 @@ struct MosfetBsim3Params {
   double phi = 0.7; ///< Surface potential at strong inversion (V)
 
   // Mobility degradation by vertical field
-  double ua = 1e-9; ///< Linear mobility-degradation coefficient (m/V)
-  double ub = 0.0;  ///< Quadratic mobility-degradation coefficient (m/V)^2
+  double ua = 1e-9;   ///< Linear mobility-degradation coefficient (m/V)
+  double ub = 0.0;    ///< Quadratic mobility-degradation coefficient (m/V)^2
   double tox = 50e-9; ///< Oxide thickness (m); 50 nm for 10 um process
 
   // Smooth Vds saturation transition width
@@ -147,8 +147,8 @@ struct MosfetBsim3 {
                                                const MosfetBsim3Params& p) noexcept {
     double vth = p.Vth0;
     // Body effect.
-    const double phiMinusVbs = std::max(p.phi - vbs, 1e-12);
-    vth += p.K1 * (std::sqrt(phiMinusVbs) - std::sqrt(p.phi));
+    const double PHI_MINUS_VBS = std::max(p.phi - vbs, 1e-12);
+    vth += p.K1 * (std::sqrt(PHI_MINUS_VBS) - std::sqrt(p.phi));
     vth -= p.K2 * vbs;
     // DIBL: Vth decreases with positive Vds.
     vth -= p.eta0 * std::max(vds, 0.0);
@@ -169,20 +169,19 @@ struct MosfetBsim3 {
    * latch feedback core a continuous derivative across the operating
    * point (Shichman-Hodges has a derivative discontinuity at Vth).
    */
-  [[nodiscard]] static double vgstEff(double vgs, double vth,
-                                      const MosfetBsim3Params& p) noexcept {
-    const double nVt = p.n_factor * p.Vt;
-    const double x = (vgs - vth) / nVt;
+  [[nodiscard]] static double vgstEff(double vgs, double vth, const MosfetBsim3Params& p) noexcept {
+    const double N_VT = p.n_factor * p.Vt;
+    const double x = (vgs - vth) / N_VT;
     // log1p / expm1 + clamp to avoid overflow at large positive x.
     if (x > 50.0) {
       // Strong inversion: Vgst_eff ~= Vgs - Vth.
       return vgs - vth;
     }
     if (x < -50.0) {
-      // Deep weak inversion: Vgst_eff ~= nVt * exp(x) ~= 0.
-      return nVt * std::exp(x);
+      // Deep weak inversion: Vgst_eff ~= N_VT * exp(x) ~= 0.
+      return N_VT * std::exp(x);
     }
-    return nVt * std::log1p(std::exp(x));
+    return N_VT * std::log1p(std::exp(x));
   }
 
   /**
@@ -194,10 +193,12 @@ struct MosfetBsim3 {
    */
   [[nodiscard]] static double dVgstEff_dVgs(double vgs, double vth,
                                             const MosfetBsim3Params& p) noexcept {
-    const double nVt = p.n_factor * p.Vt;
-    const double x = (vgs - vth) / nVt;
-    if (x > 50.0) return 1.0;
-    if (x < -50.0) return 0.0;
+    const double N_VT = p.n_factor * p.Vt;
+    const double x = (vgs - vth) / N_VT;
+    if (x > 50.0)
+      return 1.0;
+    if (x < -50.0)
+      return 0.0;
     // sigmoid(x) = 1 / (1 + exp(-x))
     return 1.0 / (1.0 + std::exp(-x));
   }
@@ -219,8 +220,8 @@ struct MosfetBsim3 {
    */
   [[nodiscard]] static double saturationVoltage(double vgstEffVal,
                                                 const MosfetBsim3Params& p) noexcept {
-    const double floor2vt = 2.0 * p.Vt;
-    return std::sqrt(vgstEffVal * vgstEffVal + floor2vt * floor2vt);
+    const double FLOOR2VT = 2.0 * p.Vt;
+    return std::sqrt(vgstEffVal * vgstEffVal + FLOOR2VT * FLOOR2VT);
   }
 
   /**
@@ -234,10 +235,10 @@ struct MosfetBsim3 {
    */
   [[nodiscard]] static double vdsEff(double vds, double vdsat,
                                      const MosfetBsim3Params& p) noexcept {
-    const double dlt = std::max(p.delta, 1e-9);
-    const double a = vdsat - vds - dlt;
-    const double r = std::sqrt(a * a + 4.0 * dlt * std::max(vdsat, 1e-12));
-    return vdsat - 0.5 * (a + r);
+    const double DLT = std::max(p.delta, 1e-9);
+    const double A = vdsat - vds - DLT;
+    const double R = std::sqrt(A * A + 4.0 * DLT * std::max(vdsat, 1e-12));
+    return vdsat - 0.5 * (A + R);
   }
 
   /* ----------------------------- Mobility degradation ----------------------------- */
@@ -253,8 +254,8 @@ struct MosfetBsim3 {
    */
   [[nodiscard]] static double mobilityFactor(double vgstEffVal,
                                              const MosfetBsim3Params& p) noexcept {
-    const double e = (vgstEffVal + 2.0 * p.Vt) / p.tox;
-    return 1.0 / (1.0 + p.ua * e + p.ub * e * e);
+    const double E = (vgstEffVal + 2.0 * p.Vt) / p.tox;
+    return 1.0 / (1.0 + p.ua * E + p.ub * E * E);
   }
 
   /* ----------------------------- Drain current ----------------------------- */
@@ -274,49 +275,46 @@ struct MosfetBsim3 {
    */
   [[nodiscard]] static double current(double vgs, double vds, double vbs,
                                       const MosfetBsim3Params& p) noexcept {
-    const double vth = thresholdVoltage(vds, vbs, p);
-    const double vgstEffVal = vgstEff(vgs, vth, p);
-    if (vgstEffVal <= 0.0) {
+    const double VTH = thresholdVoltage(vds, vbs, p);
+    const double VGST_EFF_VAL = vgstEff(vgs, VTH, p);
+    if (VGST_EFF_VAL <= 0.0) {
       return 0.0;
     }
-    const double mu = mobilityFactor(vgstEffVal, p);
-    const double beta = p.Kp * p.W / p.L * mu;
-    const double vdsat = saturationVoltage(vgstEffVal, p);
-    const double vdseffVal = vdsEff(vds, vdsat, p);
+    const double MU = mobilityFactor(VGST_EFF_VAL, p);
+    const double BETA = p.Kp * p.W / p.L * MU;
+    const double VDSAT = saturationVoltage(VGST_EFF_VAL, p);
+    const double VDSEFF_VAL = vdsEff(vds, VDSAT, p);
 
     // BSIM3-style saturation current. Multiplicative form so Id -> 0 as
     // Vgst_eff -> 0 (no current floor in deep weak inversion).
     //
-    //   Id_sat = (beta/2) * Vgst_eff * (Vgst_eff + 2*n*Vt)
+    //   Id_sat = (BETA/2) * Vgst_eff * (Vgst_eff + 2*n*Vt)
     //
-    //   Strong  (Vgst_eff >> n*Vt): Id_sat -> 0.5*beta*Vgst^2. OK
-    //   Weak    (Vgst_eff << n*Vt): Id_sat -> beta * n*Vt * Vgst_eff.
+    //   Strong  (Vgst_eff >> n*Vt): Id_sat -> 0.5*BETA*Vgst^2. OK
+    //   Weak    (Vgst_eff << n*Vt): Id_sat -> BETA * n*Vt * Vgst_eff.
     //     With Vgst_eff = n*Vt * exp((Vgs-Vth)/(n*Vt)) in weak inv,
     //     this gives Id  proportional to  exp((Vgs-Vth)/(n*Vt)) -- the canonical
     //     subthreshold exponential the documented L2 design relies on.
     //   Vgst_eff -> 0:           Id_sat -> 0. OK
-    const double n_vt_2 = 2.0 * p.n_factor * p.Vt;
-    const double idSat = 0.5 * beta * vgstEffVal * (vgstEffVal + n_vt_2);
+    const double N_VT_2 = 2.0 * p.n_factor * p.Vt;
+    const double ID_SAT = 0.5 * BETA * VGST_EFF_VAL * (VGST_EFF_VAL + N_VT_2);
 
-    // Smooth linear-to-saturation transition: factor = 1 - (1-r)^2
-    // where r = Vdseff / Vdsat in [0, 1]. Equivalent to the textbook
-    // (Vgst*Vds - 0.5*Vds^2) form when Vdseff < Vdsat. Reaches 1 at
+    // Smooth linear-to-saturation transition: FACTOR = 1 - (1-R)^2 where
+    // R = Vdseff / Vdsat in [0, 1]. Equivalent to the
+    // (Vgst*Vds - 0.5*Vds^2) form when Vdseff < Vdsat, and reaches 1 at
     // Vds = Vdsat (saturation).
-    const double r = vdseffVal / std::max(vdsat, 1e-12);
-    const double factor = r * (2.0 - r);
+    const double R = VDSEFF_VAL / std::max(VDSAT, 1e-12);
+    const double FACTOR = R * (2.0 - R);
 
     // Channel-length modulation in saturation only.
-    const double clm = 1.0 + p.lambda * std::max(vds - vdseffVal, 0.0);
-    return idSat * factor * clm;
+    const double CLM = 1.0 + p.lambda * std::max(vds - VDSEFF_VAL, 0.0);
+    return ID_SAT * FACTOR * CLM;
   }
 
   /* ----------------------------- Derivatives ----------------------------- */
 
   /**
-   * @brief gm = dId / dVgs via numerical differentiation.
-   *
-   * For the first cut, use central difference. Future pass can
-   * replace with analytical derivative once the model is validated.
+   * @brief gm = dId / dVgs via central-difference numerical differentiation.
    */
   [[nodiscard]] static double transconductance(double vgs, double vds, double vbs,
                                                const MosfetBsim3Params& p) noexcept {
@@ -345,8 +343,8 @@ struct MosfetBsim3 {
   /* ----------------------------- Meyer capacitance model ----------------------------- */
 
   /**
-   * @brief Intrinsic + overlap MOSFET gate capacitances per the Meyer
-   *        model (the textbook predecessor to BSIM3's full charge model).
+   * @brief Intrinsic + overlap MOSFET gate capacitances per the Meyer model
+   *        (the bias-dependent precursor to BSIM3's full charge model).
    *
    * Three regions depending on operating point:
    *
@@ -399,13 +397,13 @@ struct MosfetBsim3 {
 
   /// Meyer intrinsic + overlap capacitances at the given bias.
   [[nodiscard]] static MeyerCaps meyerCapacitances(double vgs, double vds, double vbs,
-                                                    const MosfetBsim3Params& p) noexcept {
+                                                   const MosfetBsim3Params& p) noexcept {
     const double Cox = oxideCapDensity(p);
     const double CoxWL = Cox * p.W * p.L;
     const double Cov = Cox * p.W * p.Lov;
 
-    const double vth = thresholdVoltage(vds, vbs, p);
-    const double Vgst = vgs - vth;
+    const double VTH = thresholdVoltage(vds, vbs, p);
+    const double Vgst = vgs - VTH;
 
     // Cutoff: gate cap to bulk only.
     if (Vgst <= 0.0) {
@@ -415,14 +413,12 @@ struct MosfetBsim3 {
     const double Vdsat = std::max(Vgst, 1e-12); // long-channel approx
     if (vds <= Vdsat) {
       // Linear/triode region.
-      const double denom = std::max(2.0 * Vgst - vds, 1e-12);
-      const double a = (Vgst - vds) / denom;
-      const double b = Vgst / denom;
-      const double Cgs_int = (2.0 / 3.0) * CoxWL * (1.0 - a * a);
-      const double Cgd_int = (2.0 / 3.0) * CoxWL * (1.0 - b * b);
-      return {std::max(Cgs_int, 0.0) + Cov,
-              std::max(Cgd_int, 0.0) + Cov,
-              0.0};
+      const double DENOM = std::max(2.0 * Vgst - vds, 1e-12);
+      const double A = (Vgst - vds) / DENOM;
+      const double B = Vgst / DENOM;
+      const double Cgs_int = (2.0 / 3.0) * CoxWL * (1.0 - A * A);
+      const double Cgd_int = (2.0 / 3.0) * CoxWL * (1.0 - B * B);
+      return {std::max(Cgs_int, 0.0) + Cov, std::max(Cgd_int, 0.0) + Cov, 0.0};
     }
 
     // Saturation: only Cgs intrinsic (channel pinched off at drain end).
@@ -452,8 +448,7 @@ struct MosfetBsim3 {
     // per stamp. Callers that need gmb can use the explicit
     // `bodyTransconductance(vgs, vds, vbs, p)` entry, or call
     // `stampValuesWithBodyEffect` (below).
-    return {current(vgs, vds, vbs, p),
-            transconductance(vgs, vds, vbs, p),
+    return {current(vgs, vds, vbs, p), transconductance(vgs, vds, vbs, p),
             outputConductance(vgs, vds, vbs, p),
             /*gmb=*/0.0};
   }
@@ -464,10 +459,8 @@ struct MosfetBsim3 {
   /// `stampValues`.
   [[nodiscard]] static StampValues stampValuesWithBodyEffect(double vgs, double vds, double vbs,
                                                              const MosfetBsim3Params& p) noexcept {
-    return {current(vgs, vds, vbs, p),
-            transconductance(vgs, vds, vbs, p),
-            outputConductance(vgs, vds, vbs, p),
-            bodyTransconductance(vgs, vds, vbs, p)};
+    return {current(vgs, vds, vbs, p), transconductance(vgs, vds, vbs, p),
+            outputConductance(vgs, vds, vbs, p), bodyTransconductance(vgs, vds, vbs, p)};
   }
 };
 

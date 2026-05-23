@@ -29,14 +29,14 @@
 
 namespace sim::electronics::topologies::gates {
 
-using circuit::Circuit;
-using circuit::CircuitNet;
-using devices::nonlinear::MosfetLevel1;
-using devices::nonlinear::MosfetLevel1Params;
 using algorithms::mna::MnaSystem;
 using algorithms::mna::NetID;
 using algorithms::transient::TransientState;
 using algorithms::transient::TransientStatus;
+using circuit::Circuit;
+using circuit::CircuitNet;
+using devices::nonlinear::MosfetLevel1;
+using devices::nonlinear::MosfetLevel1Params;
 
 /* ----------------------------- Constants ----------------------------- */
 

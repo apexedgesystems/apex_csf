@@ -35,12 +35,12 @@
 
 namespace sim::electronics::topologies::amplifiers {
 
-using devices::nonlinear::BjtEbersMoll;
-using devices::nonlinear::BjtEbersMollParams;
 using algorithms::mna::MnaSystem;
 using algorithms::mna::NetID;
 using algorithms::transient::TransientState;
 using algorithms::transient::TransientStatus;
+using devices::nonlinear::BjtEbersMoll;
+using devices::nonlinear::BjtEbersMollParams;
 
 /* ----------------------------- BjtCommonEmitter ----------------------------- */
 

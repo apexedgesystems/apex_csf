@@ -21,9 +21,9 @@
 #include <vector>
 
 namespace ub = vernier::bench;
+using sim::electronics::algorithms::mna::NetID;
 using sim::electronics::devices::descriptors::MosfetDescriptor;
 using sim::electronics::devices::descriptors::ResistorDescriptor;
-using sim::electronics::algorithms::mna::NetID;
 
 /* ----------------------------- Construction ----------------------------- */
 

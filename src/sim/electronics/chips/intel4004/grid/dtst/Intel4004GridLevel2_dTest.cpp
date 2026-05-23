@@ -50,12 +50,9 @@ TEST(Intel4004L2Test, ConstructionIsIndependent) {
       << "L2 contract: OPR/OPA capture stubs replaced by capture primitives";
   EXPECT_FALSE(grid.applyBehavioralX3_)
       << "L2 contract: X3 stub replaced by LdmAccWriteback primitive";
-  EXPECT_TRUE(grid.applyL2LdmAccWriteback_)
-      << "L2 contract: LdmAccWriteback primitive enabled";
-  EXPECT_TRUE(grid.applyL2OprCaptureCell_)
-      << "L2 contract: OprCaptureCell primitive enabled";
-  EXPECT_TRUE(grid.applyL2OpaCaptureCell_)
-      << "L2 contract: OpaCaptureCell primitive enabled";
+  EXPECT_TRUE(grid.applyL2LdmAccWriteback_) << "L2 contract: LdmAccWriteback primitive enabled";
+  EXPECT_TRUE(grid.applyL2OprCaptureCell_) << "L2 contract: OprCaptureCell primitive enabled";
+  EXPECT_TRUE(grid.applyL2OpaCaptureCell_) << "L2 contract: OpaCaptureCell primitive enabled";
   EXPECT_TRUE(grid.applyL2AluWriteback_)
       << "L2 contract: AluWriteback primitive enabled (IAC/CMA/ADD/SUB)";
 
@@ -124,13 +121,13 @@ TEST(Intel4004L2Test, SimulateConvergesWithOverlayOff) {
   double maxAbs = 0.0;
   for (std::size_t i = 1; i < state.nodeVoltages.size(); ++i) {
     const double V = state.nodeVoltages[i];
-    if (!std::isfinite(V) || V < V_LO || V > V_HI) ++outOfRange;
-    if (std::isfinite(V) && std::fabs(V) > maxAbs) maxAbs = std::fabs(V);
+    if (!std::isfinite(V) || V < V_LO || V > V_HI)
+      ++outOfRange;
+    if (std::isfinite(V) && std::fabs(V) > maxAbs)
+      maxAbs = std::fabs(V);
   }
-  EXPECT_EQ(outOfRange, 0u)
-      << "L2 default config must converge without OOB nets";
-  EXPECT_LE(maxAbs, V_HI)
-      << "L2 max|v| = " << maxAbs << " exceeds rail tolerance " << V_HI;
+  EXPECT_EQ(outOfRange, 0u) << "L2 default config must converge without OOB nets";
+  EXPECT_LE(maxAbs, V_HI) << "L2 max|v| = " << maxAbs << " exceeds rail tolerance " << V_HI;
 
   const std::uint8_t L2_ACC = grid.readAccumulator(state.nodeVoltages);
   std::printf("L2 100%% physics steady-state: %zu OOB, max|v|=%.4fV, "
@@ -169,8 +166,7 @@ TEST(Intel4004L2Test, LatchStampDelegatesToBsim3) {
   using sim::electronics::devices::nonlinear::MosfetBsim3;
   using sim::electronics::devices::nonlinear::MosfetBsim3Params;
   MosfetBsim3Params bp = grid.bsim3LatchParams_;
-  bp.Kp = Intel4004GridLevel2::KP_PROCESS *
-          Intel4004GridLevel2::WL_ENHANCEMENT_LOGIC;
+  bp.Kp = Intel4004GridLevel2::KP_PROCESS * Intel4004GridLevel2::WL_ENHANCEMENT_LOGIC;
   const auto SV = MosfetBsim3::stampValues(/*vgs=*/5.0, /*vds=*/3.8,
                                            /*vbs=*/0.0, bp);
   EXPECT_GT(SV.id, 0.0) << "Strong inversion should give positive Id";
@@ -212,7 +208,8 @@ TEST(Intel4004L2Test, CoexistsWithLevel1) {
 
 /* ----------------------------- Parameter probe ----------------------------- */
 
-/* ----------------------------- L2 PURE-PHYSICS multi-instruction parity ----------------------------- */
+/* ----------------------------- L2 PURE-PHYSICS multi-instruction parity
+ * ----------------------------- */
 
 /**
  * @test L2 multi-instruction parity vs L0 -- runs a 1-byte-op-only
@@ -226,21 +223,21 @@ TEST(Intel4004L2Test, MultiInstructionParityVsL0) {
   // Program: a sequence of 1-byte ops. Each L0/L2 step pair is checked.
   // Stack seeded for BBL at the end.
   const std::uint8_t PROG[] = {
-      0xD5,  // LDM 5      ACC=5
-      0xF2,  // IAC         ACC=6, CY=0
-      0xF4,  // CMA         ACC=9
-      0xFA,  // STC         CY=1
-      0xF3,  // CMC         CY=0
-      0xF5,  // RAL         ACC=(9<<1)|0=12=C, CY=1
-      0xF6,  // RAR         ACC=(C>>1)|(1<<3)=14=E, CY=0
-      0xF0,  // CLB         ACC=0, CY=0
-      0xD2,  // LDM 2       ACC=2
-      0xB0,  // XCH R0      ACC<->R0
-      0xD7,  // LDM 7
-      0x80,  // ADD R0      ACC = 7 + R0 + 0
-      0x60,  // INC R0
-      0xA0,  // LD R0       ACC = R0
-      0xC3,  // BBL 3       ACC=3, PC=stack[0]
+      0xD5, // LDM 5      ACC=5
+      0xF2, // IAC         ACC=6, CY=0
+      0xF4, // CMA         ACC=9
+      0xFA, // STC         CY=1
+      0xF3, // CMC         CY=0
+      0xF5, // RAL         ACC=(9<<1)|0=12=C, CY=1
+      0xF6, // RAR         ACC=(C>>1)|(1<<3)=14=E, CY=0
+      0xF0, // CLB         ACC=0, CY=0
+      0xD2, // LDM 2       ACC=2
+      0xB0, // XCH R0      ACC<->R0
+      0xD7, // LDM 7
+      0x80, // ADD R0      ACC = 7 + R0 + 0
+      0x60, // INC R0
+      0xA0, // LD R0       ACC = R0
+      0xC3, // BBL 3       ACC=3, PC=stack[0]
   };
   constexpr std::size_t N = sizeof(PROG);
 
@@ -250,9 +247,11 @@ TEST(Intel4004L2Test, MultiInstructionParityVsL0) {
   {
     Intel4004Cpu cpu;
     std::vector<std::uint8_t> rom(0x1000, 0x00);
-    for (std::size_t i = 0; i < N; ++i) rom[i] = PROG[i];
+    for (std::size_t i = 0; i < N; ++i)
+      rom[i] = PROG[i];
     cpu.loadProgram(rom.data(), rom.size());
-    cpu.stack[0] = 0; cpu.sp = 1; // for BBL
+    cpu.stack[0] = 0;
+    cpu.sp = 1; // for BBL
     for (std::size_t i = 0; i < N; ++i) {
       cpu.step();
       l0Acc[i] = static_cast<std::uint8_t>(cpu.accumulator);
@@ -267,16 +266,16 @@ TEST(Intel4004L2Test, MultiInstructionParityVsL0) {
   const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
   constexpr std::size_t WARMUP = 32;
   std::vector<std::uint8_t> rom(WARMUP + N, 0x00);
-  for (std::size_t i = 0; i < N; ++i) rom[WARMUP + i] = PROG[i];
+  for (std::size_t i = 0; i < N; ++i)
+    rom[WARMUP + i] = PROG[i];
 
   Intel4004GridLevel2 grid;
   grid.enableMeyerCaps_ = true;
   grid.gminTransient_ = grid.gminTransientWithCaps_;
   auto circuit = grid.buildCircuit(NETLIST);
 
-  auto state = grid.simulateLevel1FromScratch(
-      circuit, rom.data(), rom.size(), WARMUP, 0,
-      /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
+  auto state = grid.simulateLevel1FromScratch(circuit, rom.data(), rom.size(), WARMUP, 0,
+                                              /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
 
   // Seed initial state to match L0 (registers default to 0).
   grid.forceAccLogic(state.nodeVoltages, 0);
@@ -295,14 +294,12 @@ TEST(Intel4004L2Test, MultiInstructionParityVsL0) {
     const std::uint8_t R0 = grid.readRegister(state.nodeVoltages, 0);
     const std::uint8_t R1 = grid.readRegister(state.nodeVoltages, 1);
 
-    const bool MATCH = A == l0Acc[i] && CY == l0Cy[i] &&
-                       R0 == l0R0[i] && R1 == l0R1[i];
-    std::printf("  %2zu    0x%02X    %X  %d  %X  %X       %X  %d  %X  %X    %s\n",
-                i, PROG[i],
-                l0Acc[i], l0Cy[i] ? 1 : 0, l0R0[i], l0R1[i],
-                A, CY ? 1 : 0, R0, R1,
+    const bool MATCH = A == l0Acc[i] && CY == l0Cy[i] && R0 == l0R0[i] && R1 == l0R1[i];
+    std::printf("  %2zu    0x%02X    %X  %d  %X  %X       %X  %d  %X  %X    %s\n", i, PROG[i],
+                l0Acc[i], l0Cy[i] ? 1 : 0, l0R0[i], l0R1[i], A, CY ? 1 : 0, R0, R1,
                 MATCH ? "PASS" : "FAIL");
-    if (MATCH) ++passed;
+    if (MATCH)
+      ++passed;
     EXPECT_EQ(A, l0Acc[i]) << "byte " << i << " ACC";
     EXPECT_EQ(CY, l0Cy[i]) << "byte " << i << " CY";
     EXPECT_EQ(R0, l0R0[i]) << "byte " << i << " R0";
@@ -311,25 +308,27 @@ TEST(Intel4004L2Test, MultiInstructionParityVsL0) {
   std::printf("\n  Multi-instruction parity vs L0: %zu/%zu PASS\n", passed, N);
 }
 
-
 /// Run program PROG at both L0 (reference) and L2 (full primitives ON);
 /// at every L0 step boundary assert L2 state matches L0.
 ///   - Compares ACC, CY, all 16 registers, RAM[srcAddress] (if used),
 ///     output port, and PC after each step.
 ///   - Returns the number of step-checks that passed.
-struct ParityRunResult { std::size_t passed; std::size_t total; };
+struct ParityRunResult {
+  std::size_t passed;
+  std::size_t total;
+};
 
-ParityRunResult runParityProgram(
-    const std::vector<std::uint8_t>& prog,
-    const char* label) {
+ParityRunResult runParityProgram(const std::vector<std::uint8_t>& prog, const char* label) {
   // L0 reference: step through, capture state at each step boundary.
   Intel4004Cpu cpu;
   std::vector<std::uint8_t> rom(0x1000, 0x00);
-  for (std::size_t i = 0; i < prog.size(); ++i) rom[i] = prog[i];
+  for (std::size_t i = 0; i < prog.size(); ++i)
+    rom[i] = prog[i];
   cpu.loadProgram(rom.data(), rom.size());
 
   struct Snap {
-    std::uint8_t acc; bool cy;
+    std::uint8_t acc;
+    bool cy;
     std::array<std::uint8_t, 16> regs;
     std::uint16_t pc;
     std::uint8_t srcAddr, ramBank;
@@ -360,22 +359,23 @@ ParityRunResult runParityProgram(
     s.ramDataAtC0 = cpu.ramData[0xC0];
     s.bytesConsumed = cpu.pc;
     snaps.push_back(s);
-    if (cpu.pc == 0) break; // PC wrapped to 0 = halt sentinel
+    if (cpu.pc == 0)
+      break; // PC wrapped to 0 = halt sentinel
   }
 
   // L2 run.
   static const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
   constexpr std::size_t WARMUP = 32;
   std::vector<std::uint8_t> romL2(WARMUP + prog.size(), 0x00);
-  for (std::size_t i = 0; i < prog.size(); ++i) romL2[WARMUP + i] = prog[i];
+  for (std::size_t i = 0; i < prog.size(); ++i)
+    romL2[WARMUP + i] = prog[i];
 
   Intel4004GridLevel2 grid;
   grid.enableMeyerCaps_ = true;
   grid.gminTransient_ = grid.gminTransientWithCaps_;
   auto circuit = grid.buildCircuit(NETLIST);
-  auto state = grid.simulateLevel1FromScratch(
-      circuit, romL2.data(), romL2.size(), WARMUP, 0,
-      /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
+  auto state = grid.simulateLevel1FromScratch(circuit, romL2.data(), romL2.size(), WARMUP, 0,
+                                              /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
 
   // Skip warmup from L2's ROM view so PC=0 -> prog[0].
   grid.setRomBuffer(romL2.data() + WARMUP, romL2.size() - WARMUP);
@@ -394,50 +394,51 @@ ParityRunResult runParityProgram(
   for (std::size_t b = 0; b < prog.size(); ++b) {
     grid.traceExecuteByte(circuit, state, prog[b], nullptr);
     if (snapIdx < snaps.size() && (b + 1) == snaps[snapIdx].bytesConsumed) {
-      const auto& l0 = snaps[snapIdx];
-      const std::uint8_t a = grid.readAccumulator(state.nodeVoltages);
-      const bool cy = grid.readCarry(state.nodeVoltages);
+      const auto& L0 = snaps[snapIdx];
+      const std::uint8_t A = grid.readAccumulator(state.nodeVoltages);
+      const bool CY = grid.readCarry(state.nodeVoltages);
       std::array<std::uint8_t, 16> regs{};
       for (unsigned r = 0; r < 16; ++r)
         regs[r] = grid.readRegister(state.nodeVoltages, r);
-      const std::uint16_t pc = grid.readPc(state.nodeVoltages);
-      const std::uint8_t src = grid.srcAddress_;
-      const std::uint8_t bank = grid.ramBank_;
+      const std::uint16_t PC = grid.readPc(state.nodeVoltages);
+      const std::uint8_t SRC = grid.srcAddress_;
+      const std::uint8_t BANK = grid.ramBank_;
 
       // Linear-byte helper is used for non-jumping programs only.
       // L2 PC doesn't auto-advance for non-jump instructions, so we
       // re-seed it from L0 each step rather than comparing.
-      bool match = a == l0.acc && cy == l0.cy &&
-                   src == l0.srcAddr && bank == l0.ramBank;
+      bool match = A == L0.acc && CY == L0.cy && SRC == L0.srcAddr && BANK == L0.ramBank;
       for (unsigned r = 0; match && r < 16; ++r)
-        match = (regs[r] == l0.regs[r]);
+        match = (regs[r] == L0.regs[r]);
       if (match)
-        match = grid.ramData_[0x00] == l0.ramDataAt00 &&
-                grid.ramData_[0x40] == l0.ramDataAt40 &&
-                grid.ramData_[0x80] == l0.ramDataAt80 &&
-                grid.ramData_[0xC0] == l0.ramDataAtC0 &&
-                grid.ramStatus_[0] == l0.ramStatusAt0;
+        match = grid.ramData_[0x00] == L0.ramDataAt00 && grid.ramData_[0x40] == L0.ramDataAt40 &&
+                grid.ramData_[0x80] == L0.ramDataAt80 && grid.ramData_[0xC0] == L0.ramDataAtC0 &&
+                grid.ramStatus_[0] == L0.ramStatusAt0;
       if (match)
         for (std::size_t i = 0; i < 16; ++i)
-          if (grid.ramOutput_[i] != l0.ramOutput[i]) { match = false; break; }
+          if (grid.ramOutput_[i] != L0.ramOutput[i]) {
+            match = false;
+            break;
+          }
 
       if (!match) {
-        std::printf("  step %2zu byte %3zu op=0x%02X  FAIL  L0[acc=%X cy=%d src=%02X bank=%d]  L2[acc=%X cy=%d src=%02X bank=%d]\n",
-                    snapIdx, b + 1, prog[b],
-                    l0.acc, l0.cy ? 1 : 0, l0.srcAddr, l0.ramBank,
-                    a, cy ? 1 : 0, src, bank);
+        std::printf("  step %2zu byte %3zu op=0x%02X  FAIL  L0[acc=%X CY=%d SRC=%02X BANK=%d]  "
+                    "L2[acc=%X CY=%d SRC=%02X BANK=%d]\n",
+                    snapIdx, b + 1, prog[b], L0.acc, L0.cy ? 1 : 0, L0.srcAddr, L0.ramBank, A,
+                    CY ? 1 : 0, SRC, BANK);
       }
       ++total;
-      if (match) ++passed;
-      EXPECT_EQ(a, l0.acc) << label << " step " << snapIdx << " ACC";
-      EXPECT_EQ(cy, l0.cy) << label << " step " << snapIdx << " CY";
-      EXPECT_EQ(src, l0.srcAddr) << label << " step " << snapIdx << " SRC";
-      EXPECT_EQ(bank, l0.ramBank) << label << " step " << snapIdx << " BANK";
+      if (match)
+        ++passed;
+      EXPECT_EQ(A, L0.acc) << label << " step " << snapIdx << " ACC";
+      EXPECT_EQ(CY, L0.cy) << label << " step " << snapIdx << " CY";
+      EXPECT_EQ(SRC, L0.srcAddr) << label << " step " << snapIdx << " SRC";
+      EXPECT_EQ(BANK, L0.ramBank) << label << " step " << snapIdx << " BANK";
       for (unsigned r = 0; r < 16; ++r)
-        EXPECT_EQ(regs[r], l0.regs[r]) << label << " step " << snapIdx << " R" << r;
+        EXPECT_EQ(regs[r], L0.regs[r]) << label << " step " << snapIdx << " R" << r;
       // Re-seed L2 PC from L0 PC so jump-aware primitives still work.
-      grid.forcePcLevel(state.nodeVoltages, 0, l0.pc);
-      (void)pc;
+      grid.forcePcLevel(state.nodeVoltages, 0, L0.pc);
+      (void)PC;
       ++snapIdx;
     }
   }
@@ -450,13 +451,12 @@ ParityRunResult runParityProgram(
 /// in PC order, then assert L2 state == L0 state. Handles backward
 /// jumps, conditional branches, subroutine calls -- anything where
 /// linear-byte iteration would walk off the program path.
-ParityRunResult runPcDrivenParityProgram(
-    const std::vector<std::uint8_t>& prog,
-    std::size_t maxSteps,
-    const char* label) {
+ParityRunResult runPcDrivenParityProgram(const std::vector<std::uint8_t>& prog,
+                                         std::size_t maxSteps, const char* label) {
   Intel4004Cpu cpu;
   std::vector<std::uint8_t> rom(0x1000, 0x00);
-  for (std::size_t i = 0; i < prog.size(); ++i) rom[i] = prog[i];
+  for (std::size_t i = 0; i < prog.size(); ++i)
+    rom[i] = prog[i];
   cpu.loadProgram(rom.data(), rom.size());
 
   static const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
@@ -464,15 +464,15 @@ ParityRunResult runPcDrivenParityProgram(
   // L2 ROM = warmup NOPs + the program. romBuffer skips warmup so
   // L2's PC=0 maps to prog[0].
   std::vector<std::uint8_t> romL2(WARMUP + 0x1000, 0x00);
-  for (std::size_t i = 0; i < prog.size(); ++i) romL2[WARMUP + i] = prog[i];
+  for (std::size_t i = 0; i < prog.size(); ++i)
+    romL2[WARMUP + i] = prog[i];
 
   Intel4004GridLevel2 grid;
   grid.enableMeyerCaps_ = true;
   grid.gminTransient_ = grid.gminTransientWithCaps_;
   auto circuit = grid.buildCircuit(NETLIST);
-  auto state = grid.simulateLevel1FromScratch(
-      circuit, romL2.data(), romL2.size(), WARMUP, 0,
-      /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
+  auto state = grid.simulateLevel1FromScratch(circuit, romL2.data(), romL2.size(), WARMUP, 0,
+                                              /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
   grid.setRomBuffer(romL2.data() + WARMUP, romL2.size() - WARMUP);
   grid.resetParallelCpuState();
   grid.forceAccLogic(state.nodeVoltages, 0);
@@ -487,74 +487,74 @@ ParityRunResult runPcDrivenParityProgram(
   std::printf("\n  --- %s (PC-driven) ---\n", label);
   std::size_t passed = 0, total = 0;
   for (std::size_t step = 0; step < maxSteps; ++step) {
-    const std::uint16_t prePc = cpu.pc;
-    if (prePc >= prog.size()) break; // off the end of the program
-    const std::uint8_t opcode = rom[prePc];
-    const std::uint8_t opr = (opcode >> 4) & 0xF;
-    const std::uint8_t opa = opcode & 0xF;
-    const bool twoByte = (opr == 0x1 || opr == 0x4 || opr == 0x5 ||
-                          opr == 0x7 || (opr == 0x2 && (opa & 1) == 0));
+    const std::uint16_t PRE_PC = cpu.pc;
+    if (PRE_PC >= prog.size())
+      break; // off the end of the program
+    const std::uint8_t OPCODE = rom[PRE_PC];
+    const std::uint8_t OPR = (OPCODE >> 4) & 0xF;
+    const std::uint8_t OPA = OPCODE & 0xF;
+    const bool TWO_BYTE =
+        (OPR == 0x1 || OPR == 0x4 || OPR == 0x5 || OPR == 0x7 || (OPR == 0x2 && (OPA & 1) == 0));
 
     // Run L0 one step.
     cpu.step();
-    const std::uint16_t postPc = cpu.pc;
-    const std::uint16_t expectedPc = (prePc + (twoByte ? 2 : 1)) & 0xFFF;
-    const bool isJump = (postPc != expectedPc);
+    const std::uint16_t POST_PC = cpu.pc;
+    const std::uint16_t EXPECTED_PC = (PRE_PC + (TWO_BYTE ? 2 : 1)) & 0xFFF;
+    const bool IS_JUMP = (POST_PC != EXPECTED_PC);
 
     // Drive L2 from the same pre-PC, feeding the bytes L0 just consumed.
-    grid.forcePcLevel(state.nodeVoltages, 0, prePc);
-    grid.traceExecuteByte(circuit, state, rom[prePc], nullptr);
-    if (twoByte) {
-      grid.traceExecuteByte(circuit, state,
-                            rom[(prePc + 1) & 0xFFF], nullptr);
+    grid.forcePcLevel(state.nodeVoltages, 0, PRE_PC);
+    grid.traceExecuteByte(circuit, state, rom[PRE_PC], nullptr);
+    if (TWO_BYTE) {
+      grid.traceExecuteByte(circuit, state, rom[(PRE_PC + 1) & 0xFFF], nullptr);
     }
 
     // Compare state.
-    const std::uint8_t a = grid.readAccumulator(state.nodeVoltages);
-    const bool cy = grid.readCarry(state.nodeVoltages);
+    const std::uint8_t A = grid.readAccumulator(state.nodeVoltages);
+    const bool CY = grid.readCarry(state.nodeVoltages);
     std::array<std::uint8_t, 16> regs{};
     for (unsigned r = 0; r < 16; ++r)
       regs[r] = grid.readRegister(state.nodeVoltages, r);
-    const std::uint16_t pc = grid.readPc(state.nodeVoltages);
-    const std::uint8_t bank = grid.ramBank_;
-    const std::uint8_t src = grid.srcAddress_;
+    const std::uint16_t PC = grid.readPc(state.nodeVoltages);
+    const std::uint8_t BANK = grid.ramBank_;
+    const std::uint8_t SRC = grid.srcAddress_;
 
     // PC: for non-jump instructions our PC physics doesn't auto-advance,
-    // so we only compare PC on jump instructions where a primitive must
-    // write it. After comparing, we re-seed L2.PC = L0.PC for the next
+    // so we only compare PC on jump instructions where A primitive must
+    // write it. After comparing, we re-seed L2.pc = L0.pc for the next
     // iteration so the simulation stays aligned regardless.
-    bool match = a == cpu.accumulator && cy == cpu.carry &&
-                 bank == cpu.ramBank && src == cpu.srcAddress;
+    bool match =
+        A == cpu.accumulator && CY == cpu.carry && BANK == cpu.ramBank && SRC == cpu.srcAddress;
     for (unsigned r = 0; match && r < 16; ++r)
       match = (regs[r] == cpu.registers[r]);
-    if (isJump) match = match && (pc == cpu.pc);
+    if (IS_JUMP)
+      match = match && (PC == cpu.pc);
 
     ++total;
-    if (match) ++passed;
+    if (match)
+      ++passed;
     if (!match) {
-      std::printf("  step %2zu pre_pc=%03X op=0x%02X jmp=%d  FAIL  L0[acc=%X cy=%d pc=%03X bank=%d src=%02X]  L2[acc=%X cy=%d pc=%03X bank=%d src=%02X]\n",
-                  step, prePc, opcode, isJump ? 1 : 0,
-                  cpu.accumulator, cpu.carry ? 1 : 0, cpu.pc, cpu.ramBank, cpu.srcAddress,
-                  a, cy ? 1 : 0, pc, bank, src);
+      std::printf("  step %2zu pre_pc=%03X op=0x%02X jmp=%d  FAIL  L0[acc=%X CY=%d PC=%03X BANK=%d "
+                  "SRC=%02X]  L2[acc=%X CY=%d PC=%03X BANK=%d SRC=%02X]\n",
+                  step, PRE_PC, OPCODE, IS_JUMP ? 1 : 0, cpu.accumulator, cpu.carry ? 1 : 0, cpu.pc,
+                  cpu.ramBank, cpu.srcAddress, A, CY ? 1 : 0, PC, BANK, SRC);
     }
-    EXPECT_EQ(a, cpu.accumulator) << label << " step " << step << " ACC";
-    EXPECT_EQ(cy, cpu.carry) << label << " step " << step << " CY";
-    if (isJump) {
-      EXPECT_EQ(pc, cpu.pc) << label << " step " << step << " PC (jump)";
+    EXPECT_EQ(A, cpu.accumulator) << label << " step " << step << " ACC";
+    EXPECT_EQ(CY, cpu.carry) << label << " step " << step << " CY";
+    if (IS_JUMP) {
+      EXPECT_EQ(PC, cpu.pc) << label << " step " << step << " PC (jump)";
     }
-    EXPECT_EQ(bank, cpu.ramBank) << label << " step " << step << " BANK";
-    EXPECT_EQ(src, cpu.srcAddress) << label << " step " << step << " SRC";
+    EXPECT_EQ(BANK, cpu.ramBank) << label << " step " << step << " BANK";
+    EXPECT_EQ(SRC, cpu.srcAddress) << label << " step " << step << " SRC";
     for (unsigned r = 0; r < 16; ++r)
-      EXPECT_EQ(regs[r], cpu.registers[r])
-          << label << " step " << step << " R" << r;
+      EXPECT_EQ(regs[r], cpu.registers[r]) << label << " step " << step << " R" << r;
 
-    // Re-seed L2.PC = L0.PC for next iteration.
+    // Re-seed L2.pc = L0.pc for next iteration.
     grid.forcePcLevel(state.nodeVoltages, 0, cpu.pc);
   }
   std::printf("  %s: %zu/%zu PASS\n", label, passed, total);
   return {passed, total};
 }
-
 
 /**
  * @test L2 vs L0 parity on all 16 RAM/IO opcodes individually. Each
@@ -568,37 +568,37 @@ TEST(Intel4004L2Test, ProductionTests_AllRamIoOps) {
   // then check what L0 expects.
   const std::vector<std::uint8_t> PROG = {
       // setup: R0=0, R1=0 -> srcAddr=0x00
-      0x20, 0x00,  // FIM RP0, 0x00
-      0x21,        // SRC RP0
-      0xD5,        // LDM 5
-      0xE0,        // WRM            ; ramData[0]=5
-      0xD7,        // LDM 7
-      0xE1,        // WMP            ; ramOutput[0]=7
-      0xD3,        // LDM 3
-      0xE4,        // WR0            ; ramStatus[0]=3
-      0xD2,        // LDM 2
-      0xE5,        // WR1            ; ramStatus[1]=2
-      0xD8,        // LDM 8
-      0xE6,        // WR2            ; ramStatus[2]=8
-      0xD9,        // LDM 9
-      0xE7,        // WR3            ; ramStatus[3]=9
-      0xD0,        // LDM 0
-      0xE9,        // RDM            ; ACC = ramData[0] = 5
-      0xFA,        // STC
-      0xE8,        // SBM            ; ACC = 5 + ~5 + 1 = 0x11 -> 1, cy=1
-      0xD0,        // LDM 0
-      0xEB,        // ADM            ; ACC = 0 + 5 + 1 = 6, cy=0
-      0xD0,        // LDM 0
-      0xEC,        // RD0            ; ACC = 3
-      0xD0,        // LDM 0
-      0xED,        // RD1            ; ACC = 2
-      0xD0,        // LDM 0
-      0xEE,        // RD2            ; ACC = 8
-      0xD0,        // LDM 0
-      0xEF,        // RD3            ; ACC = 9
-      0xE2,        // WRR            ; ROM port write (no parallel state)
-      0xE3,        // WPM            ; program RAM (no-op)
-      0xEA,        // RDR            ; ACC = 0 (ROM port read returns 0)
+      0x20, 0x00, // FIM RP0, 0x00
+      0x21,       // SRC RP0
+      0xD5,       // LDM 5
+      0xE0,       // WRM            ; ramData[0]=5
+      0xD7,       // LDM 7
+      0xE1,       // WMP            ; ramOutput[0]=7
+      0xD3,       // LDM 3
+      0xE4,       // WR0            ; ramStatus[0]=3
+      0xD2,       // LDM 2
+      0xE5,       // WR1            ; ramStatus[1]=2
+      0xD8,       // LDM 8
+      0xE6,       // WR2            ; ramStatus[2]=8
+      0xD9,       // LDM 9
+      0xE7,       // WR3            ; ramStatus[3]=9
+      0xD0,       // LDM 0
+      0xE9,       // RDM            ; ACC = ramData[0] = 5
+      0xFA,       // STC
+      0xE8,       // SBM            ; ACC = 5 + ~5 + 1 = 0x11 -> 1, cy=1
+      0xD0,       // LDM 0
+      0xEB,       // ADM            ; ACC = 0 + 5 + 1 = 6, cy=0
+      0xD0,       // LDM 0
+      0xEC,       // RD0            ; ACC = 3
+      0xD0,       // LDM 0
+      0xED,       // RD1            ; ACC = 2
+      0xD0,       // LDM 0
+      0xEE,       // RD2            ; ACC = 8
+      0xD0,       // LDM 0
+      0xEF,       // RD3            ; ACC = 9
+      0xE2,       // WRR            ; ROM port write (no parallel state)
+      0xE3,       // WPM            ; program RAM (no-op)
+      0xEA,       // RDR            ; ACC = 0 (ROM port read returns 0)
   };
   auto r = runParityProgram(PROG, "AllRamIoOps");
   EXPECT_EQ(r.passed, r.total);
@@ -624,8 +624,7 @@ TEST(Intel4004L2Test, ProductionTests_SubroutineRoundtrip) {
   prog[0x010] = 0xD7;
   prog[0x011] = 0xF2;
   prog[0x012] = 0xC8;
-  auto r = runPcDrivenParityProgram(prog, /*maxSteps=*/8,
-                                    "SubroutineRoundtrip");
+  auto r = runPcDrivenParityProgram(prog, /*maxSteps=*/8, "SubroutineRoundtrip");
   EXPECT_EQ(r.passed, r.total);
 }
 
@@ -645,12 +644,15 @@ TEST(Intel4004L2Test, ProductionTests_NestedJms) {
   // 0x060: D9 (LDM 9)        deepest: ACC=9
   // 0x061: C1 (BBL 1) return-3
   std::vector<std::uint8_t> prog(0x80, 0x00);
-  prog[0x000] = 0x50; prog[0x001] = 0x20;
+  prog[0x000] = 0x50;
+  prog[0x001] = 0x20;
   prog[0x002] = 0xD5;
-  prog[0x020] = 0x50; prog[0x021] = 0x40;
+  prog[0x020] = 0x50;
+  prog[0x021] = 0x40;
   prog[0x022] = 0xF2;
   prog[0x023] = 0xC7;
-  prog[0x040] = 0x50; prog[0x041] = 0x60;
+  prog[0x040] = 0x50;
+  prog[0x041] = 0x60;
   prog[0x042] = 0xF0;
   prog[0x043] = 0xC3;
   prog[0x060] = 0xD9;
@@ -678,9 +680,11 @@ TEST(Intel4004L2Test, ProductionTests_IszLoop) {
   //                  ; iter4: R0 F->0, no jump (PC continues to 0x005)
   // 0x005: F0        ; CLB after loop
   std::vector<std::uint8_t> prog(0x20, 0x00);
-  prog[0x000] = 0x20; prog[0x001] = 0xC0;
+  prog[0x000] = 0x20;
+  prog[0x001] = 0xC0;
   prog[0x002] = 0xF2;
-  prog[0x003] = 0x70; prog[0x004] = 0x02;
+  prog[0x003] = 0x70;
+  prog[0x004] = 0x02;
   prog[0x005] = 0xF0;
   // Steps: FIM, IAC, ISZ-jump (R0=D), IAC, ISZ-jump (R0=E), IAC, ISZ-jump (R0=F),
   // IAC, ISZ-no-jump (R0=0), CLB. = 10 steps
@@ -694,22 +698,22 @@ TEST(Intel4004L2Test, ProductionTests_IszLoop) {
  */
 TEST(Intel4004L2Test, ProductionTests_BankSwitchedRam) {
   const std::vector<std::uint8_t> PROG = {
-      0x20, 0x00,  // FIM RP0, 0x00 (R0=0, R1=0 -> srcAddr=0x00)
-      0x21,        // SRC RP0
-      0xD0,        // LDM 0
-      0xFD,        // DCL: ramBank = ACC & 0x7 = 0
-      0xD3,        // LDM 3
-      0xE0,        // WRM            ; bank0 ramData[0]=3
-      0xD1,        // LDM 1
-      0xFD,        // DCL: ramBank = 1
-      0xD7,        // LDM 7
-      0xE0,        // WRM            ; bank1 ramData[256]=7
-      0xD0,        // LDM 0
-      0xE9,        // RDM            ; ACC = bank1 ramData[256] = 7
-      0xD0,        // LDM 0
-      0xFD,        // DCL: ramBank = 0
-      0xD0,        // LDM 0
-      0xE9,        // RDM            ; ACC = bank0 ramData[0] = 3
+      0x20, 0x00, // FIM RP0, 0x00 (R0=0, R1=0 -> srcAddr=0x00)
+      0x21,       // SRC RP0
+      0xD0,       // LDM 0
+      0xFD,       // DCL: ramBank = ACC & 0x7 = 0
+      0xD3,       // LDM 3
+      0xE0,       // WRM            ; bank0 ramData[0]=3
+      0xD1,       // LDM 1
+      0xFD,       // DCL: ramBank = 1
+      0xD7,       // LDM 7
+      0xE0,       // WRM            ; bank1 ramData[256]=7
+      0xD0,       // LDM 0
+      0xE9,       // RDM            ; ACC = bank1 ramData[256] = 7
+      0xD0,       // LDM 0
+      0xFD,       // DCL: ramBank = 0
+      0xD0,       // LDM 0
+      0xE9,       // RDM            ; ACC = bank0 ramData[0] = 3
   };
   auto r = runParityProgram(PROG, "BankSwitchedRam");
   EXPECT_EQ(r.passed, r.total);
@@ -749,16 +753,20 @@ TEST(Intel4004L2Test, ProductionTests_JcnAllConditions) {
   // 0x030: F1 CLC       (CY=0)
   // 0x031: 1A 00        JCN A=invert+CY, 0x00 -- taken (CY=0 inverted)
   std::vector<std::uint8_t> prog(0x40, 0x00);
-  prog[0x000] = 0xD0;                       // LDM 0
-  prog[0x001] = 0x14; prog[0x002] = 0x0A;   // JCN 4, 0x0A (taken)
-  prog[0x003] = 0xF0;                       // CLB (skipped)
-  prog[0x00A] = 0xD5;                       // LDM 5
-  prog[0x00B] = 0x14; prog[0x00C] = 0x20;   // JCN 4, 0x20 (not taken)
-  prog[0x00D] = 0xFA;                       // STC -> CY=1
-  prog[0x00E] = 0x12; prog[0x00F] = 0x30;   // JCN 2, 0x30 (taken)
-  prog[0x010] = 0xF0;                       // CLB (skipped)
-  prog[0x030] = 0xF1;                       // CLC -> CY=0
-  prog[0x031] = 0x1A; prog[0x032] = 0x00;   // JCN A (inv+CY), 0x00 (taken)
+  prog[0x000] = 0xD0; // LDM 0
+  prog[0x001] = 0x14;
+  prog[0x002] = 0x0A; // JCN 4, 0x0A (taken)
+  prog[0x003] = 0xF0; // CLB (skipped)
+  prog[0x00A] = 0xD5; // LDM 5
+  prog[0x00B] = 0x14;
+  prog[0x00C] = 0x20; // JCN 4, 0x20 (not taken)
+  prog[0x00D] = 0xFA; // STC -> CY=1
+  prog[0x00E] = 0x12;
+  prog[0x00F] = 0x30; // JCN 2, 0x30 (taken)
+  prog[0x010] = 0xF0; // CLB (skipped)
+  prog[0x030] = 0xF1; // CLC -> CY=0
+  prog[0x031] = 0x1A;
+  prog[0x032] = 0x00; // JCN A (inv+CY), 0x00 (taken)
   // After taking back to 0x000, LDM 0 etc. We'll just take a few more
   // steps and stop.
   auto r = runPcDrivenParityProgram(prog, /*maxSteps=*/12, "JcnAllConditions");
@@ -773,21 +781,23 @@ TEST(Intel4004L2Test, ProductionTests_BcdAdd) {
   // Add 0x37 + 0x25 = 0x62 (BCD).
   // Plan: load digits into registers, add low-nibbles + DAA, add hi-nibbles + DAA + carry.
   const std::vector<std::uint8_t> PROG = {
-      0x20, 0x37,  // FIM RP0, 0x37 (R0=3, R1=7 -- first BCD value 37)
-      0x22, 0x25,  // FIM RP1, 0x25 (R2=2, R3=5 -- second BCD value 25)
-      0xF0,        // CLB             (ACC=0, CY=0)
-      0xA1,        // LD R1           (ACC=7)
-      0x83,        // ADD R3          (ACC=7+5+0=12, cy=0; but DAA needs CY|ACC>9 -> +6)
-      0xFB,        // DAA             (ACC=12+6=18 -> 8, cy=1)
-      0xB1,        // XCH R1          (R1=8, ACC was 8 -> R1=8, ACC=7? No - swap: R1<-ACC=8, ACC<-old R1=7)
+      0x20,
+      0x37, // FIM RP0, 0x37 (R0=3, R1=7 -- first BCD value 37)
+      0x22,
+      0x25, // FIM RP1, 0x25 (R2=2, R3=5 -- second BCD value 25)
+      0xF0, // CLB             (ACC=0, CY=0)
+      0xA1, // LD R1           (ACC=7)
+      0x83, // ADD R3          (ACC=7+5+0=12, cy=0; but DAA needs CY|ACC>9 -> +6)
+      0xFB, // DAA             (ACC=12+6=18 -> 8, cy=1)
+      0xB1, // XCH R1          (R1=8, ACC was 8 -> R1=8, ACC=7? No - swap: R1<-ACC=8, ACC<-old R1=7)
       // Wait, after DAA ACC=8 cy=1. XCH R1: R1<-ACC=8, ACC<-old R1=7. Hmm but R1 was 7.
       // OK, R1 now = 8 (low BCD digit of result).
-      0xA0,        // LD R0           (ACC=3)
-      0x82,        // ADD R2          (ACC=3+2+1=6, cy=0)
-      0xFB,        // DAA             (ACC<=9, no carry: no change)
-      0xB0,        // XCH R0          (R0<-6, ACC<-3)
-      // Result is in R0 R1 = 0x68? Hmm 37+25 should be 62. Let me re-check.
-      // 37 + 25:
+      0xA0, // LD R0           (ACC=3)
+      0x82, // ADD R2          (ACC=3+2+1=6, cy=0)
+      0xFB, // DAA             (ACC<=9, no carry: no change)
+      0xB0, // XCH R0          (R0<-6, ACC<-3)
+            // Result is in R0 R1 = 0x68? Hmm 37+25 should be 62. Let me re-check.
+            // 37 + 25:
       //   low: 7+5 = 12 (decimal). DAA: since 12>9 (or hex-result>=10), add 6 -> 18 -> hex 0x12
       //   So low result = 2, carry to high = 1.
       //   high: 3 + 2 + 1 = 6. No DAA fix needed.
@@ -805,7 +815,6 @@ TEST(Intel4004L2Test, ProductionTests_BcdAdd) {
   auto r = runParityProgram(PROG, "BcdAdd");
   EXPECT_EQ(r.passed, r.total);
 }
-
 
 /**
  * @test Full L2 vs L0 parity across the full opcode coverage. Runs a
@@ -834,23 +843,23 @@ TEST(Intel4004L2Test, FullCoverageParityVsL0) {
   //   JUN 0x123         ; PC=0x123
   // Layout the program in ROM at WARMUP offset.
   const std::uint8_t PROG[] = {
-      0x20, 0x42,  // FIM RP0, 0x42  -- R0=4, R1=2
-      0x24, 0x55,  // FIM RP2, 0x55  -- R4=5, R5=5
-      0xD5,        // LDM 5
-      0x81,        // ADD R1
-      0x21,        // SRC RP0
-      0xE0,        // WRM
-      0xD0,        // LDM 0
-      0xE9,        // RDM
-      0xFA,        // STC
-      0xEB,        // ADM
-      0xE4,        // WR0
-      0xD0,        // LDM 0
-      0xEC,        // RD0
-      0x60,        // INC R0
-      0x14, 0x00,  // JCN ACC==0, 0x00 (not taken; ACC=F now)
-      0xF2,        // IAC -- F+1 = 0, CY=1
-      0x40, 0x00,  // JUN 0x000
+      0x20, 0x42, // FIM RP0, 0x42  -- R0=4, R1=2
+      0x24, 0x55, // FIM RP2, 0x55  -- R4=5, R5=5
+      0xD5,       // LDM 5
+      0x81,       // ADD R1
+      0x21,       // SRC RP0
+      0xE0,       // WRM
+      0xD0,       // LDM 0
+      0xE9,       // RDM
+      0xFA,       // STC
+      0xEB,       // ADM
+      0xE4,       // WR0
+      0xD0,       // LDM 0
+      0xEC,       // RD0
+      0x60,       // INC R0
+      0x14, 0x00, // JCN ACC==0, 0x00 (not taken; ACC=F now)
+      0xF2,       // IAC -- F+1 = 0, CY=1
+      0x40, 0x00, // JUN 0x000
   };
   constexpr std::size_t N = sizeof(PROG);
 
@@ -859,12 +868,14 @@ TEST(Intel4004L2Test, FullCoverageParityVsL0) {
   // capture state per step but mark byte boundaries.
   Intel4004Cpu cpu;
   std::vector<std::uint8_t> rom(0x1000, 0x00);
-  for (std::size_t i = 0; i < N; ++i) rom[i] = PROG[i];
+  for (std::size_t i = 0; i < N; ++i)
+    rom[i] = PROG[i];
   cpu.loadProgram(rom.data(), rom.size());
 
   // Track L0 state at each step boundary.
   struct L0Snap {
-    std::uint8_t acc; bool cy;
+    std::uint8_t acc;
+    bool cy;
     std::array<std::uint8_t, 16> regs;
     std::uint16_t pc;
     std::uint8_t srcAddr;
@@ -874,7 +885,6 @@ TEST(Intel4004L2Test, FullCoverageParityVsL0) {
   };
   std::vector<L0Snap> l0Snaps;
   while (cpu.pc < N) {
-    const std::uint16_t PC_BEFORE = cpu.pc;
     cpu.step();
     L0Snap s{};
     s.acc = static_cast<std::uint8_t>(cpu.accumulator);
@@ -889,23 +899,25 @@ TEST(Intel4004L2Test, FullCoverageParityVsL0) {
     s.bytesConsumed = cpu.pc - 0; // since started at 0
     l0Snaps.push_back(s);
     // Stop after the JUN we put in (it sets PC=0).
-    if (s.pc == 0) break;
-    if (l0Snaps.size() > 50) break; // safety
+    if (s.pc == 0)
+      break;
+    if (l0Snaps.size() > 50)
+      break; // safety
   }
 
   // L2 run.
   const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
   constexpr std::size_t WARMUP = 32;
   std::vector<std::uint8_t> romL2(WARMUP + N, 0x00);
-  for (std::size_t i = 0; i < N; ++i) romL2[WARMUP + i] = PROG[i];
+  for (std::size_t i = 0; i < N; ++i)
+    romL2[WARMUP + i] = PROG[i];
 
   Intel4004GridLevel2 grid;
   grid.enableMeyerCaps_ = true;
   grid.gminTransient_ = grid.gminTransientWithCaps_;
   auto circuit = grid.buildCircuit(NETLIST);
-  auto state = grid.simulateLevel1FromScratch(
-      circuit, romL2.data(), romL2.size(), WARMUP, 0,
-      /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
+  auto state = grid.simulateLevel1FromScratch(circuit, romL2.data(), romL2.size(), WARMUP, 0,
+                                              /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
   grid.resetParallelCpuState();
   grid.forceAccLogic(state.nodeVoltages, 0);
   grid.forceCarry(state.nodeVoltages, false);
@@ -929,24 +941,22 @@ TEST(Intel4004L2Test, FullCoverageParityVsL0) {
       const std::uint8_t R1 = grid.readRegister(state.nodeVoltages, 1);
       const std::uint8_t R4 = grid.readRegister(state.nodeVoltages, 4);
       const std::uint8_t R5 = grid.readRegister(state.nodeVoltages, 5);
-      const std::uint8_t RAM_AT42 =
-          (0x42 < grid.ramData_.size()) ? grid.ramData_[0x42] : 0;
-      const std::uint8_t RAM_STAT0 =
-          (0 < grid.ramStatus_.size()) ? grid.ramStatus_[((grid.ramBank_ & 0x3) * 64u) +
-                                                          ((grid.srcAddress_ >> 4) & 0xF) * 4u]
-                                       : 0;
-      bool match = A == L0.acc && CY == L0.cy && R0 == L0.regs[0] &&
-                   R1 == L0.regs[1] && R4 == L0.regs[4] && R5 == L0.regs[5] &&
-                   RAM_AT42 == L0.ramAt42 && RAM_STAT0 == L0.ramStatusAt0;
+      const std::uint8_t RAM_AT42 = (0x42 < grid.ramData_.size()) ? grid.ramData_[0x42] : 0;
+      const std::uint8_t RAM_STAT0 = (0 < grid.ramStatus_.size())
+                                         ? grid.ramStatus_[((grid.ramBank_ & 0x3) * 64u) +
+                                                           ((grid.srcAddress_ >> 4) & 0xF) * 4u]
+                                         : 0;
+      bool match = A == L0.acc && CY == L0.cy && R0 == L0.regs[0] && R1 == L0.regs[1] &&
+                   R4 == L0.regs[4] && R5 == L0.regs[5] && RAM_AT42 == L0.ramAt42 &&
+                   RAM_STAT0 == L0.ramStatusAt0;
       std::printf("  %2zu     %3zu    0x%02X   L0[%X %d %X %X %X %X %X %X]  "
                   "L2[%X %d %X %X %X %X %X %X]  %s\n",
-                  l0Idx, b + 1, PROG[b],
-                  L0.acc, L0.cy ? 1 : 0, L0.regs[0], L0.regs[1],
-                  L0.regs[4], L0.regs[5], L0.ramAt42, L0.ramStatusAt0,
-                  A, CY ? 1 : 0, R0, R1, R4, R5, RAM_AT42, RAM_STAT0,
-                  match ? "PASS" : "FAIL");
+                  l0Idx, b + 1, PROG[b], L0.acc, L0.cy ? 1 : 0, L0.regs[0], L0.regs[1], L0.regs[4],
+                  L0.regs[5], L0.ramAt42, L0.ramStatusAt0, A, CY ? 1 : 0, R0, R1, R4, R5, RAM_AT42,
+                  RAM_STAT0, match ? "PASS" : "FAIL");
       ++totalChecks;
-      if (match) ++passed;
+      if (match)
+        ++passed;
       EXPECT_EQ(A, L0.acc) << "step " << l0Idx << " ACC";
       EXPECT_EQ(CY, L0.cy) << "step " << l0Idx << " CY";
       EXPECT_EQ(R0, L0.regs[0]) << "step " << l0Idx << " R0";
@@ -958,8 +968,8 @@ TEST(Intel4004L2Test, FullCoverageParityVsL0) {
       ++l0Idx;
     }
   }
-  std::printf("\n  Full coverage parity vs L0: %zu/%zu PASS (across %zu L0 steps)\n",
-              passed, totalChecks, l0Snaps.size());
+  std::printf("\n  Full coverage parity vs L0: %zu/%zu PASS (across %zu L0 steps)\n", passed,
+              totalChecks, l0Snaps.size());
 }
 
 /**
@@ -975,29 +985,29 @@ TEST(Intel4004L2Test, JunJmsIszFinVsL0) {
 
   auto runOne = [&](const std::vector<std::uint8_t>& prog,
                     std::function<void(Intel4004Cpu&)> seedL0,
-                    std::function<void(Intel4004GridLevel2&,
-                                       std::vector<double>&)> seedL2,
-                    std::function<bool(const Intel4004Cpu&,
-                                        const Intel4004GridLevel2&,
-                                        const std::vector<double>&)> compare) {
+                    std::function<void(Intel4004GridLevel2&, std::vector<double>&)> seedL2,
+                    std::function<bool(const Intel4004Cpu&, const Intel4004GridLevel2&,
+                                       const std::vector<double>&)>
+                        compare) {
     // L0
     Intel4004Cpu cpu;
     std::vector<std::uint8_t> rom(0x1000, 0x00);
-    for (std::size_t i = 0; i < prog.size(); ++i) rom[i] = prog[i];
+    for (std::size_t i = 0; i < prog.size(); ++i)
+      rom[i] = prog[i];
     cpu.loadProgram(rom.data(), rom.size());
     seedL0(cpu);
     cpu.step();
 
     // L2
     std::vector<std::uint8_t> romL2(WARMUP + prog.size(), 0x00);
-    for (std::size_t i = 0; i < prog.size(); ++i) romL2[WARMUP + i] = prog[i];
+    for (std::size_t i = 0; i < prog.size(); ++i)
+      romL2[WARMUP + i] = prog[i];
     Intel4004GridLevel2 grid;
     grid.enableMeyerCaps_ = true;
     grid.gminTransient_ = grid.gminTransientWithCaps_;
     auto circuit = grid.buildCircuit(NETLIST);
-    auto state = grid.simulateLevel1FromScratch(
-        circuit, romL2.data(), romL2.size(), WARMUP, 0,
-        /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
+    auto state = grid.simulateLevel1FromScratch(circuit, romL2.data(), romL2.size(), WARMUP, 0,
+                                                /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
     grid.resetParallelCpuState();
     grid.forceAccLogic(state.nodeVoltages, 0);
     grid.forceCarry(state.nodeVoltages, false);
@@ -1011,34 +1021,29 @@ TEST(Intel4004L2Test, JunJmsIszFinVsL0) {
     // Override ROM buffer to skip the warmup NOPs so L2's PC=0 maps to
     // prog[0], matching L0's view of ROM (where PC=0 maps to rom[0]).
     grid.setRomBuffer(romL2.data() + WARMUP, romL2.size() - WARMUP);
-    for (auto byte : prog) grid.traceExecuteByte(circuit, state, byte, nullptr);
+    for (auto byte : prog)
+      grid.traceExecuteByte(circuit, state, byte, nullptr);
 
     return compare(cpu, grid, state.nodeVoltages);
   };
 
   // JUN 0x123 -> PC = 0x123
   EXPECT_TRUE(runOne(
-      {0x41, 0x23},
-      [](Intel4004Cpu& cpu) {},
-      [](Intel4004GridLevel2&, std::vector<double>&) {},
-      [](const Intel4004Cpu& cpu, const Intel4004GridLevel2& g,
-         const std::vector<double>& v) {
+      {0x41, 0x23}, [](Intel4004Cpu&) {}, [](Intel4004GridLevel2&, std::vector<double>&) {},
+      [](const Intel4004Cpu& cpu, const Intel4004GridLevel2& g, const std::vector<double>& v) {
         const std::uint16_t PC = g.readPc(v);
-        std::printf("  JUN  L0 pc=%03X  L2 pc=%03X  %s\n",
-                    cpu.pc, PC, (cpu.pc == PC) ? "PASS" : "FAIL");
+        std::printf("  JUN  L0 pc=%03X  L2 pc=%03X  %s\n", cpu.pc, PC,
+                    (cpu.pc == PC) ? "PASS" : "FAIL");
         return cpu.pc == PC;
       }));
 
   // JMS 0x456 -> push return, PC = 0x456. Test that L2 PC matches L0.
   EXPECT_TRUE(runOne(
-      {0x54, 0x56},
-      [](Intel4004Cpu& cpu) {},
-      [](Intel4004GridLevel2&, std::vector<double>&) {},
-      [](const Intel4004Cpu& cpu, const Intel4004GridLevel2& g,
-         const std::vector<double>& v) {
+      {0x54, 0x56}, [](Intel4004Cpu&) {}, [](Intel4004GridLevel2&, std::vector<double>&) {},
+      [](const Intel4004Cpu& cpu, const Intel4004GridLevel2& g, const std::vector<double>& v) {
         const std::uint16_t PC = g.readPc(v);
-        std::printf("  JMS  L0 pc=%03X  L2 pc=%03X  %s\n",
-                    cpu.pc, PC, (cpu.pc == PC) ? "PASS" : "FAIL");
+        std::printf("  JMS  L0 pc=%03X  L2 pc=%03X  %s\n", cpu.pc, PC,
+                    (cpu.pc == PC) ? "PASS" : "FAIL");
         return cpu.pc == PC;
       }));
 
@@ -1046,33 +1051,24 @@ TEST(Intel4004L2Test, JunJmsIszFinVsL0) {
   EXPECT_TRUE(runOne(
       {0x70, 0x80}, // ISZ R0, target=0x080
       [](Intel4004Cpu& cpu) { cpu.registers[0] = 5; },
-      [](Intel4004GridLevel2& g, std::vector<double>& v) {
-        g.forceRegisterValue(v, 0, 5);
-      },
-      [](const Intel4004Cpu& cpu, const Intel4004GridLevel2& g,
-         const std::vector<double>& v) {
+      [](Intel4004GridLevel2& g, std::vector<double>& v) { g.forceRegisterValue(v, 0, 5); },
+      [](const Intel4004Cpu& cpu, const Intel4004GridLevel2& g, const std::vector<double>& v) {
         const std::uint16_t PC = g.readPc(v);
         const std::uint8_t R0 = g.readRegister(v, 0);
-        std::printf("  ISZ  L0[r0=%X pc=%03X]  L2[r0=%X pc=%03X]  %s\n",
-                    cpu.registers[0], cpu.pc, R0, PC,
-                    (cpu.pc == PC && cpu.registers[0] == R0) ? "PASS" : "FAIL");
+        std::printf("  ISZ  L0[r0=%X pc=%03X]  L2[r0=%X pc=%03X]  %s\n", cpu.registers[0], cpu.pc,
+                    R0, PC, (cpu.pc == PC && cpu.registers[0] == R0) ? "PASS" : "FAIL");
         return cpu.pc == PC && cpu.registers[0] == R0;
       }));
 
   // ISZ R0 with R0=0xF (wraps to 0, no jump) -> PC = next instruction
   EXPECT_TRUE(runOne(
-      {0x70, 0x80},
-      [](Intel4004Cpu& cpu) { cpu.registers[0] = 0xF; },
-      [](Intel4004GridLevel2& g, std::vector<double>& v) {
-        g.forceRegisterValue(v, 0, 0xF);
-      },
-      [](const Intel4004Cpu& cpu, const Intel4004GridLevel2& g,
-         const std::vector<double>& v) {
+      {0x70, 0x80}, [](Intel4004Cpu& cpu) { cpu.registers[0] = 0xF; },
+      [](Intel4004GridLevel2& g, std::vector<double>& v) { g.forceRegisterValue(v, 0, 0xF); },
+      [](const Intel4004Cpu& cpu, const Intel4004GridLevel2& g, const std::vector<double>& v) {
         const std::uint16_t PC = g.readPc(v);
         const std::uint8_t R0 = g.readRegister(v, 0);
-        std::printf("  ISZ-no-jump  L0[r0=%X pc=%03X]  L2[r0=%X pc=%03X]  %s\n",
-                    cpu.registers[0], cpu.pc, R0, PC,
-                    cpu.registers[0] == R0 ? "PASS" : "FAIL");
+        std::printf("  ISZ-no-jump  L0[r0=%X pc=%03X]  L2[r0=%X pc=%03X]  %s\n", cpu.registers[0],
+                    cpu.pc, R0, PC, cpu.registers[0] == R0 ? "PASS" : "FAIL");
         // L2 doesn't model PC increment, so we only check r0 match here.
         return cpu.registers[0] == R0;
       }));
@@ -1084,7 +1080,8 @@ TEST(Intel4004L2Test, JunJmsIszFinVsL0) {
   // ROM at offset 0x08 should be the data byte.
   std::vector<std::uint8_t> prog;
   prog.push_back(0x32); // FIN R2 at offset 0
-  while (prog.size() < 8) prog.push_back(0x00);
+  while (prog.size() < 8)
+    prog.push_back(0x00);
   prog.push_back(0xAB); // data byte at offset 8
   EXPECT_TRUE(runOne(
       prog,
@@ -1096,14 +1093,13 @@ TEST(Intel4004L2Test, JunJmsIszFinVsL0) {
         g.forceRegisterValue(v, 0, 0);
         g.forceRegisterValue(v, 1, 0x8);
       },
-      [](const Intel4004Cpu& cpu, const Intel4004GridLevel2& g,
-         const std::vector<double>& v) {
+      [](const Intel4004Cpu& cpu, const Intel4004GridLevel2& g, const std::vector<double>& v) {
         // FIN R2 (opcode 0x32) writes to register pair 1 = (R2, R3).
         // Data byte 0xAB -> R2 = A, R3 = B.
         const std::uint8_t R2 = g.readRegister(v, 2);
         const std::uint8_t R3 = g.readRegister(v, 3);
-        std::printf("  FIN  L0[r2=%X r3=%X]  L2[r2=%X r3=%X]  %s\n",
-                    cpu.registers[2], cpu.registers[3], R2, R3,
+        std::printf("  FIN  L0[r2=%X r3=%X]  L2[r2=%X r3=%X]  %s\n", cpu.registers[2],
+                    cpu.registers[3], R2, R3,
                     (cpu.registers[2] == R2 && cpu.registers[3] == R3) ? "PASS" : "FAIL");
         return cpu.registers[2] == R2 && cpu.registers[3] == R3;
       }));

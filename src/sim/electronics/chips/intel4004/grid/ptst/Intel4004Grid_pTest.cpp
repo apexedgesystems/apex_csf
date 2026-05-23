@@ -30,16 +30,17 @@
 #include <string>
 
 namespace ub = vernier::bench;
-using sim::electronics::circuit::Circuit;
 using sim::electronics::chips::intel4004::Intel4004GridLevel1;
 using sim::electronics::chips::intel4004::Intel4004GridLevel2;
 using sim::electronics::chips::intel4004::Intel4004Netlist;
 using sim::electronics::chips::intel4004::loadSpiceNetlist;
+using sim::electronics::circuit::Circuit;
 
 #ifdef INTEL4004_DATA_DIR
 static const std::string SPICE_PATH = std::string(INTEL4004_DATA_DIR) + "/lajos-4004.spice";
 #else
-static const std::string SPICE_PATH = "src/sim/electronics/chips/intel4004/netlist/data/lajos-4004.spice";
+static const std::string SPICE_PATH =
+    "src/sim/electronics/chips/intel4004/netlist/data/lajos-4004.spice";
 #endif
 
 static const Intel4004Netlist& cachedNetlist() {
@@ -205,9 +206,8 @@ PERF_TEST(GridPerf, GridSimulateByteLevel2) {
     grid.gminTransient_ = grid.gminTransientWithCaps_;
     auto circuit = grid.buildCircuit(NETLIST);
     grid.loadBootstrapCaps(CAPS_PATH);
-    auto state = grid.simulateLevel1FromScratch(
-        circuit, rom.data(), rom.size(), WARMUP_NOPS, 0,
-        /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
+    auto state = grid.simulateLevel1FromScratch(circuit, rom.data(), rom.size(), WARMUP_NOPS, 0,
+                                                /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
     grid.traceExecuteByte(circuit, state, 0xD5, nullptr);
     sink = grid.readAccumulator(state.nodeVoltages);
   });
@@ -219,9 +219,8 @@ PERF_TEST(GridPerf, GridSimulateByteLevel2) {
         grid.gminTransient_ = grid.gminTransientWithCaps_;
         auto circuit = grid.buildCircuit(NETLIST);
         grid.loadBootstrapCaps(CAPS_PATH);
-        auto state = grid.simulateLevel1FromScratch(
-            circuit, rom.data(), rom.size(), WARMUP_NOPS, 0,
-            /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
+        auto state = grid.simulateLevel1FromScratch(circuit, rom.data(), rom.size(), WARMUP_NOPS, 0,
+                                                    /*clockPeriod=*/1e-6, /*stepsPerPhase=*/5);
         grid.traceExecuteByte(circuit, state, 0xD5, nullptr);
         sink = grid.readAccumulator(state.nodeVoltages);
       },

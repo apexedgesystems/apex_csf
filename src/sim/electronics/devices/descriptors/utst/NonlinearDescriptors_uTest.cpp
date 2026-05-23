@@ -7,10 +7,10 @@
 
 #include <gtest/gtest.h>
 
+using sim::electronics::algorithms::mna::NetID;
 using sim::electronics::devices::descriptors::BjtDescriptor;
 using sim::electronics::devices::descriptors::DiodeDescriptor;
 using sim::electronics::devices::descriptors::MosfetDescriptor;
-using sim::electronics::algorithms::mna::NetID;
 
 /* ----------------------------- DiodeDescriptor ----------------------------- */
 

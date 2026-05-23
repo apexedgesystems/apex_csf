@@ -15,8 +15,8 @@
 #include <cstdint>
 
 using sim::electronics::chips::intel4004::accGroupMnemonic;
-using sim::electronics::chips::intel4004::DisassembledInstruction;
 using sim::electronics::chips::intel4004::disassemble;
+using sim::electronics::chips::intel4004::DisassembledInstruction;
 using sim::electronics::chips::intel4004::ioRamMnemonic;
 
 namespace {
@@ -30,7 +30,7 @@ DisassembledInstruction disasm(std::initializer_list<std::uint8_t> bytes) {
   return disassemble(buf.data(), bytes.size());
 }
 
-}
+} // namespace
 
 /* ----------------------------- Edge cases ----------------------------- */
 
@@ -176,9 +176,9 @@ TEST(Intel4004DisassemblerTest, TwoByteWithOneByteRemainingFallsBackToMarker) {
 
 /** @test E-group decodes via ioRamMnemonic for all 16 OPAs */
 TEST(Intel4004DisassemblerTest, IoRamGroupDecode) {
-  const std::array<const char*, 16> EXPECTED = {
-      "WRM", "WMP", "WRR", "WPM", "WR0", "WR1", "WR2", "WR3",
-      "SBM", "RDM", "RDR", "ADM", "RD0", "RD1", "RD2", "RD3"};
+  const std::array<const char*, 16> EXPECTED = {"WRM", "WMP", "WRR", "WPM", "WR0", "WR1",
+                                                "WR2", "WR3", "SBM", "RDM", "RDR", "ADM",
+                                                "RD0", "RD1", "RD2", "RD3"};
   for (std::uint8_t opa = 0; opa < 16; ++opa) {
     const auto R = disasm({static_cast<std::uint8_t>(0xE0 | opa)});
     EXPECT_EQ(R.mnemonic, EXPECTED[opa]);
@@ -196,9 +196,8 @@ TEST(Intel4004DisassemblerTest, IoRamMnemonicHandlesOutOfRange) {
 
 /** @test F-group decodes via accGroupMnemonic for all defined OPAs */
 TEST(Intel4004DisassemblerTest, AccGroupDecode) {
-  const std::array<const char*, 14> EXPECTED = {
-      "CLB", "CLC", "IAC", "CMC", "CMA", "RAL", "RAR",
-      "TCC", "DAC", "TCS", "STC", "DAA", "KBP", "DCL"};
+  const std::array<const char*, 14> EXPECTED = {"CLB", "CLC", "IAC", "CMC", "CMA", "RAL", "RAR",
+                                                "TCC", "DAC", "TCS", "STC", "DAA", "KBP", "DCL"};
   for (std::uint8_t opa = 0; opa < EXPECTED.size(); ++opa) {
     const auto R = disasm({static_cast<std::uint8_t>(0xF0 | opa)});
     EXPECT_EQ(R.mnemonic, EXPECTED[opa]);

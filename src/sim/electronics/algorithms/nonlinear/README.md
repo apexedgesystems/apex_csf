@@ -1,429 +1,383 @@
-# Nonlinear Circuit Solver
+# Nonlinear Module
 
-Newton-Raphson solver for circuits with nonlinear devices (diodes, transistors, tunnel diodes, etc.). Computes DC operating points by iteratively linearizing devices around the current voltage estimate and solving with Modified Nodal Analysis (MNA).
+**Namespace:** `sim::electronics::algorithms::nonlinear`
+**Platform:** Linux-only (CUDA optional)
+**C++ Standard:** C++23
 
-## Features
+Newton-Raphson DC operating-point solver for circuits with nonlinear devices.
+Iteratively linearizes each device around the current voltage estimate and
+solves the resulting linear system with the MNA library.
 
-- **Newton-Raphson iteration** - Quadratic convergence near solution
-- **Device abstraction** - Supports any device implementing `NonlinearDevice` interface
-- **Adaptive damping** - Prevents oscillation in first N iterations
-- **Multiple convergence criteria** - Absolute voltage, absolute current, relative error
-- **Divergence detection** - Catches unbounded voltages (unstable circuits)
-- **Initial guess support** - Accelerate convergence with good starting point
-- **RT-safe core** - Pre-allocated workspace for embedded systems
-- **CUDA readiness** - Device evaluation is embarrassingly parallel (future)
+---
 
-## Status
+## Table of Contents
 
-**Production Ready** - Full feature set, comprehensive tests, complete documentation.
+1. [Overview](#1-overview)
+2. [Quick Reference](#2-quick-reference)
+3. [Design Principles](#3-design-principles)
+4. [Module Reference](#4-module-reference)
+   - [NonlinearDevice](#nonlineardevice) - Device interface
+   - [NonlinearDeviceSet](#nonlineardeviceset) - Device collection
+   - [NewtonRaphsonSolver](#newtonraphsonsolver) - Iterative solver
+   - [NonlinearConfig](#nonlinearconfig) - Solver knobs
+   - [NonlinearStatus](#nonlinearstatus) - Result codes
+   - [NonlinearDeviceCuda](#nonlineardevicecuda) - GPU batch evaluation
+5. [Common Patterns](#5-common-patterns)
+6. [Real-Time Considerations](#6-real-time-considerations)
+7. [CLI Tools](#7-cli-tools)
+8. [Example: Diode Rectifier DC Point](#8-example-diode-rectifier-dc-point)
+9. [See Also](#9-see-also)
 
-| Feature               | Status                 |
-| --------------------- | ---------------------- |
-| Newton-Raphson solver | [OK] Complete            |
-| Device interface      | [OK] Complete            |
-| Convergence criteria  | [OK] Complete            |
-| Damping               | [OK] Complete            |
-| Divergence detection  | [OK] Complete            |
-| Unit tests            | [OK] Complete (15 tests) |
-| Documentation         | [OK] Complete            |
-| CUDA acceleration     |  Future              |
+---
 
-## Quick Start
+## 1. Overview
+
+| Question                                                              | API                                           |
+| --------------------------------------------------------------------- | --------------------------------------------- |
+| How do I solve a circuit's DC operating point with nonlinear devices? | `NewtonRaphsonSolver::solve`                  |
+| How do I plug in a new device model?                                  | Implement `NonlinearDevice`                   |
+| How do I add many devices at once?                                    | `NonlinearDeviceSet::addDevice`               |
+| How do I stamp the linear part of the circuit?                        | `NewtonRaphsonSolver::setLinearStampCallback` |
+| How do I tune convergence?                                            | `NonlinearConfig`                             |
+| How do I read the iteration result?                                   | `NonlinearResult`                             |
+| What does a non-success status mean?                                  | `NonlinearStatus`                             |
+| How do I batch-evaluate I(V) on a GPU?                                | `cuda::evaluateDevicesCuda`                   |
+
+---
+
+## 2. Quick Reference
+
+**Header:** `src/sim/electronics/algorithms/nonlinear/inc/NewtonRaphson.hpp`
 
 ```cpp
-#include "src/sim/electronics/algorithms/nonlinear/inc/NewtonRaphson.hpp"
+using namespace sim::electronics::algorithms::nonlinear;
 
-using sim::electronics::algorithms::nonlinear::NewtonRaphsonSolver;
-using sim::electronics::algorithms::nonlinear::NonlinearConfig;
-
-// 1. Create solver for circuit with N nets
-NewtonRaphsonSolver solver(netCount);
-
-// 2. Add nonlinear devices
-solver.devices().addDevice(std::make_shared<DiodeModel>(anode, cathode));
-
-// 3. Set linear stamp callback (resistors, voltage sources)
+NewtonRaphsonSolver solver(/*netCount=*/3);
+solver.devices().addDevice(std::make_shared<DiodeModel>(/*anode=*/2, /*cathode=*/0));
 solver.setLinearStampCallback([](MnaSystem& mna) {
-  mna.addResistor(1, 0, 1000.0);
-  mna.addVoltageSource(2, 0, 5.0);
+  mna.addVoltageSource(1, 0, 5.0);
+  mna.addConductance(1, 2, 1.0 / 1000.0);
 });
 
-// 4. Configure convergence
 NonlinearConfig config;
 config.maxIterations = 20;
-config.voltageTolerance = 1e-6;
-
-// 5. Solve for operating point
 NonlinearResult result = solver.solve(config);
-
-if (result.success()) {
-  std::cout << "Converged in " << result.iterations << " iterations\n";
-  std::cout << "Node voltages: ";
-  for (double v : result.nodeVoltages) {
-    std::cout << v << " ";
-  }
-}
 ```
 
-## Algorithm Overview
+---
 
-### Newton-Raphson Method
+## 3. Design Principles
 
-For a circuit with nonlinear devices, we seek the voltages **V** that satisfy:
+| Annotation      | Meaning                                                      |
+| --------------- | ------------------------------------------------------------ |
+| **RT-safe**     | No allocation, bounded execution, safe for real-time loops   |
+| **NOT RT-safe** | May allocate or have unbounded I/O; call from non-RT context |
 
-**F(V) = 0**
+- **Device abstraction.** Any model that exposes `current(V)` and
+  `conductance(V)` plugs into the solver without recompilation of the core.
+- **Linearization is local.** Each iteration replaces every nonlinear device
+  with its Norton equivalent (`g(V0), I(V0) - g(V0) * V0`), then asks the MNA
+  library to solve the linear system.
+- **Damping is opt-in but on by default.** Halving the first five Newton
+  steps prevents oscillation when the initial guess is far from the answer.
+- **Three convergence criteria.** Any of absolute voltage, absolute current
+  residual, or relative voltage change terminates the loop, which catches
+  both well-scaled and badly-scaled circuits.
+- **Divergence is detectable.** Voltages above 1e6 V short-circuit the
+  iteration with `ERROR_VOLTAGE_DIVERGENCE` rather than running to
+  `maxIterations`.
 
-where **F** is the nodal residual (KCL at each node). Newton-Raphson linearizes this as:
+---
 
-**J delta**V = -**F**
+## 4. Module Reference
 
-where **J** is the Jacobian matrix (dF/dV). The solver iterates:
+### NonlinearDevice
 
-1. **Linearize** all devices at current operating point **V**
-2. **Stamp** linearized conductances and currents into MNA system
-3. **Solve** MNA system to get voltage update **deltaV**
-4. **Update** voltages: **V** <- **V** + alpha**deltaV** (alpha = damping factor)
-5. **Check convergence**: if |**deltaV**| < tolerance, done; else repeat
+**Header:** `NonlinearDevice.hpp`
+**Purpose:** Polymorphic interface every nonlinear device implements.
 
-### Convergence Criteria
-
-The solver checks three criteria (any satisfied -> converged):
-
-| Criterion        | Formula                                        | Description                   |
-| ---------------- | ---------------------------------------------- | ----------------------------- |
-| Absolute voltage | max(\|deltaV\|) < `voltageTolerance`               | All voltage changes small     |
-| Absolute current | max(\|I_residual\|) < `currentTolerance`       | All KCL residuals small       |
-| Relative voltage | max(\|deltaV\|) / max(\|V\|) < `relativeTolerance` | Relative voltage change small |
-
-**Default tolerances:**
-
-- `voltageTolerance = 1e-6` V
-- `currentTolerance = 1e-9` A
-- `relativeTolerance = 1e-3` (0.1%)
-
-### Damping
-
-Newton-Raphson can oscillate when far from the solution. Damping reduces the step size:
-
-**V** <- **V** + alpha**deltaV**
-
-where alpha in (0, 1] is the damping factor. Default: alpha = 0.5 for first 5 iterations, then alpha = 1.0.
-
-## Device Interface
-
-All nonlinear devices implement the `NonlinearDevice` interface:
+#### API
 
 ```cpp
 class NonlinearDevice {
 public:
-  // Terminal nets
   [[nodiscard]] virtual NetID posNet() const noexcept = 0;
   [[nodiscard]] virtual NetID negNet() const noexcept = 0;
 
-  // I-V characteristic
   [[nodiscard]] virtual double current(double vTerminal) const noexcept = 0;
   [[nodiscard]] virtual double conductance(double vTerminal) const noexcept = 0;
 
-  // Linearized stamp (provided by base class)
   void stampLinearized(MnaSystem& mna, double vTerminal) const;
 };
 ```
 
-### Linearization
+The Norton equivalent stamped by `stampLinearized` is:
 
-Given a device I-V curve **I(V)**, linearization at operating point **V0** gives:
+```
+g_eq = g(V0)
+i_eq = I(V0) - g(V0) * V0
+```
 
-**I(V) ~= I(V0) + g(V0) * (V - V0)**
+### NonlinearDeviceSet
 
-where **g(V0) = dI/dV |<sub>V0</sub>** is the small-signal conductance. This becomes a Norton equivalent circuit:
+**Header:** `NonlinearDevice.hpp`
+**Purpose:** Owns the list of devices for a circuit and stamps them in bulk.
 
-- **Conductance**: g(V0) (parallel)
-- **Current source**: I<sub>eq</sub> = I(V0) - g(V0)*V0 (parallel)
-
-### Example Device: Ideal Diode
+#### API
 
 ```cpp
-class DiodeModel : public NonlinearDevice {
-public:
-  DiodeModel(NetID anode, NetID cathode,
-             double saturationCurrent = 1e-12,
-             double thermalVoltage = 0.026)
-      : anode_(anode), cathode_(cathode),
-        Is_(saturationCurrent), Vt_(thermalVoltage) {}
+void addDevice(std::shared_ptr<NonlinearDevice> device);
+void clear();
 
-  [[nodiscard]] NetID posNet() const noexcept override { return anode_; }
-  [[nodiscard]] NetID negNet() const noexcept override { return cathode_; }
+void stampAllLinearized(MnaSystem& mna,
+                        const std::vector<double>& nodeVoltages) const;
 
-  // Shockley equation: I = Is * (exp(V/Vt) - 1)
-  [[nodiscard]] double current(double V) const noexcept override {
-    double expArg = std::min(V / Vt_, 40.0);  // Limit to prevent overflow
-    return Is_ * (std::exp(expArg) - 1.0);
-  }
+[[nodiscard]] const std::vector<std::shared_ptr<NonlinearDevice>>& devices() const;
+```
 
-  // Small-signal conductance: g = dI/dV = (Is/Vt) * exp(V/Vt)
-  [[nodiscard]] double conductance(double V) const noexcept override {
-    double expArg = std::min(V / Vt_, 40.0);
-    return (Is_ / Vt_) * std::exp(expArg);
-  }
+### NewtonRaphsonSolver
 
-private:
-  NetID anode_, cathode_;
-  double Is_;  // Saturation current
-  double Vt_;  // Thermal voltage (kT/q ~= 26 mV at 300K)
+**Header:** `NewtonRaphson.hpp`
+**Purpose:** Newton-Raphson iteration driver.
+
+#### Key Types
+
+```cpp
+struct NonlinearResult {
+  std::vector<double> nodeVoltages;
+  NonlinearStatus status = NonlinearStatus::ERROR_INVALID_CONFIG;
+  std::size_t iterations = 0;
+  double finalError = 0.0;
+  std::string errorMessage;
+  [[nodiscard]] bool success() const noexcept;
 };
 ```
 
-## Configuration
+#### API
+
+```cpp
+explicit NewtonRaphsonSolver(std::size_t netCount);
+
+NonlinearDeviceSet& devices() noexcept;
+
+void setLinearStampCallback(std::function<void(MnaSystem&)> cb);
+void setInitialGuess(std::vector<double> v) noexcept;
+
+[[nodiscard]] NonlinearResult solve(const NonlinearConfig& config);
+void reset() noexcept;
+```
+
+`solve` is NOT RT-safe on its first call (constructs an MNA system).
+Subsequent calls reuse the same workspace.
+
+### NonlinearConfig
+
+**Header:** `NonlinearConfig.hpp`
+**Purpose:** Convergence and damping knobs.
 
 ```cpp
 struct NonlinearConfig {
-  std::size_t maxIterations = 20;  // Maximum Newton-Raphson iterations
-  double voltageTolerance = 1e-6;  // Voltage convergence (Volts)
-  double currentTolerance = 1e-9;  // Current convergence (Amps)
-  double relativeTolerance = 1e-3; // Relative error tolerance
+  std::size_t maxIterations    = 20;
+  double      voltageTolerance = 1e-6;  // Volts
+  double      currentTolerance = 1e-9;  // Amps
+  double      relativeTolerance = 1e-3;
 
-  bool enableDamping = true;         // Enable damping for oscillatory convergence
-  double dampingFactor = 0.5;        // Damping factor (0.5 = half-step update)
-  std::size_t dampingIterations = 5; // Apply damping for first N iterations
+  bool        enableDamping    = true;
+  double      dampingFactor    = 0.5;
+  std::size_t dampingIterations = 5;
 };
 ```
 
-### Tuning Parameters
+| Knob               | Tight        | Relaxed      |
+| ------------------ | ------------ | ------------ |
+| `voltageTolerance` | `1e-9` V     | `1e-3` V     |
+| `currentTolerance` | `1e-12` A    | `1e-6` A     |
+| `maxIterations`    | 50           | 10           |
+| `dampingFactor`    | 0.3 (stable) | 0.7 (faster) |
 
-| Parameter          | Tight Tolerances  | Relaxed Tolerances |
-| ------------------ | ----------------- | ------------------ |
-| `voltageTolerance` | 1e-9 V            | 1e-3 V             |
-| `currentTolerance` | 1e-12 A           | 1e-6 A             |
-| `maxIterations`    | 50                | 10                 |
-| `dampingFactor`    | 0.3 (more stable) | 0.7 (faster)       |
+### NonlinearStatus
 
-**Rule of thumb:**
-
-- Digital circuits (saturated devices): relaxed tolerances OK
-- Precision analog (op-amps, ADCs): tight tolerances required
-- Stiff devices (tunnel diodes, SCRs): enable damping, increase iterations
-
-## Status Codes
+**Header:** `NonlinearConfig.hpp`
+**Purpose:** Result code for `NonlinearResult`.
 
 ```cpp
-enum class NonlinearStatus : uint8_t {
-  SUCCESS = 0,                // Converged successfully
-  ERROR_MAX_ITERATIONS = 1,   // Failed to converge within iteration limit
-  ERROR_SINGULAR_MATRIX = 2,  // Jacobian matrix is singular (no solution)
-  ERROR_VOLTAGE_DIVERGENCE = 3, // Voltages diverging (unstable circuit)
-  ERROR_INVALID_CONFIG = 4    // Invalid configuration parameters
+enum class NonlinearStatus : std::uint8_t {
+  SUCCESS = 0,
+  ERROR_MAX_ITERATIONS,
+  ERROR_SINGULAR_MATRIX,
+  ERROR_VOLTAGE_DIVERGENCE,
+  ERROR_INVALID_CONFIG,
 };
 ```
 
-### Troubleshooting
+| Status                     | Cause                                    | Mitigation                                                 |
+| -------------------------- | ---------------------------------------- | ---------------------------------------------------------- |
+| `ERROR_MAX_ITERATIONS`     | Poor initial guess, tolerances too tight | Increase `maxIterations`, relax tolerances, enable damping |
+| `ERROR_SINGULAR_MATRIX`    | Floating net or all-zero conductance     | Add ground connection, check device models                 |
+| `ERROR_VOLTAGE_DIVERGENCE` | Negative-resistance or unstable model    | Check device polarity, reduce supply magnitudes            |
+| `ERROR_INVALID_CONFIG`     | `maxIterations == 0`                     | Set `maxIterations > 0`                                    |
 
-| Status                     | Likely Cause                          | Fix                                                        |
-| -------------------------- | ------------------------------------- | ---------------------------------------------------------- |
-| `ERROR_MAX_ITERATIONS`     | Poor initial guess, tight tolerances  | Increase `maxIterations`, relax tolerances, enable damping |
-| `ERROR_SINGULAR_MATRIX`    | Floating net, zero conductance        | Add ground connection, check device models                 |
-| `ERROR_VOLTAGE_DIVERGENCE` | Negative resistance, unstable circuit | Check device models, reduce voltage source magnitude       |
-| `ERROR_INVALID_CONFIG`     | `maxIterations = 0`                   | Set `maxIterations > 0`                                    |
+### NonlinearDeviceCuda
 
-## Advanced Usage
+**Header:** `NonlinearDeviceCuda.cuh`
+**Purpose:** GPU batch evaluation of `I(V)` and `g(V)` plus parallel
+Norton-equivalent stamping.
 
-### Initial Guess
-
-Provide a good initial guess to accelerate convergence:
+#### API
 
 ```cpp
-// Solve first with simplified model (all diodes OFF)
-solver.solve(config);
+void evaluateDevicesCuda(const DeviceParams* d_deviceParams,
+                         const double* d_nodeVoltages,
+                         double* d_currents,
+                         double* d_conductances,
+                         int deviceCount);
 
-// Use result as initial guess for full model
-solver.setInitialGuess(result.nodeVoltages);
-solver.devices().addDevice(complexDevice);
-solver.solve(config);  // Converges faster
+void stampDevicesCuda(const DeviceParams* d_deviceParams,
+                      const double* d_currents,
+                      const double* d_conductances,
+                      const double* d_nodeVoltages,
+                      double* d_G_matrix,
+                      double* d_I_vector,
+                      int netCount,
+                      int deviceCount);
 ```
 
-### Transient Analysis Integration
+Both functions operate on device pointers and require the caller to manage
+host-device transfers. NOT RT-safe.
 
-Use Newton-Raphson at each time step for circuits with reactive + nonlinear elements:
+---
+
+## 5. Common Patterns
+
+### One-Shot DC Point
+
+```cpp
+NewtonRaphsonSolver solver(netCount);
+solver.devices().addDevice(diode);
+solver.setLinearStampCallback(stampLinear);
+const NonlinearResult RESULT = solver.solve(config);
+if (RESULT.success()) {
+  for (double v : RESULT.nodeVoltages) { /* ... */ }
+}
+```
+
+### Warm-Started Re-Solve
+
+```cpp
+const NonlinearResult INITIAL = solver.solve(config);
+solver.setInitialGuess(INITIAL.nodeVoltages);
+solver.devices().addDevice(secondDiode);
+const NonlinearResult REFINED = solver.solve(config);
+```
+
+### Coupling with Transient Integration
 
 ```cpp
 TransientSolver transient(netCount);
 NewtonRaphsonSolver nonlinear(netCount);
+transient.companions().addCapacitor(/* ... */);
+nonlinear.devices().addDevice(/* ... */);
 
-// Add reactive elements to transient solver
-transient.companions().addCapacitor(...);
-
-// Add nonlinear devices to Newton-Raphson solver
-nonlinear.devices().addDiode(...);
-
-// At each time step:
-for (double t = 0; t < tEnd; t += dt) {
-  // 1. Stamp companion models (linearized reactive elements)
-  transient.companions().stampAll(mna, dt, method);
-
-  // 2. Stamp linear elements
-  stampResistors(mna);
-
-  // 3. Solve nonlinear system
+for (double t = 0.0; t < tEnd; t += dt) {
   nonlinear.setLinearStampCallback([&](MnaSystem& mna) {
     transient.companions().stampAll(mna, dt, method);
     stampResistors(mna);
   });
-  NonlinearResult result = nonlinear.solve(config);
-
-  // 4. Update companion states
-  transient.companions().updateAll(result.nodeVoltages, dt);
+  const auto RESULT = nonlinear.solve(config);
+  transient.companions().updateAll(RESULT.nodeVoltages, dt);
 }
 ```
 
-### Device Collections
+---
 
-Use `NonlinearDeviceSet` to manage multiple devices:
+## 6. Real-Time Considerations
+
+### RT-Safe Functions
+
+- `NonlinearDevice::current`, `conductance` (pure arithmetic)
+- `NonlinearDeviceSet::stampAllLinearized`
+- `NewtonRaphsonSolver::solve` after the first call (workspace cached)
+
+### NOT RT-Safe Functions
+
+- `NewtonRaphsonSolver` construction and first `solve` (allocates MNA workspace)
+- `NonlinearDeviceSet::addDevice` (grows the device vector)
+- `cuda::evaluateDevicesCuda`, `cuda::stampDevicesCuda` (device alloc + copy)
+
+### Recommended Configuration
+
+- Run a warmup `solve` outside the RT loop to allocate the MNA workspace.
+- Pre-size the device set; do not add or remove devices during the loop.
+- For stiff devices (tunnel diodes, SCRs), enable damping and raise
+  `maxIterations`.
+
+---
+
+## 7. CLI Tools
+
+None.
+
+---
+
+## 8. Example: Diode Rectifier DC Point
 
 ```cpp
-NonlinearDeviceSet devices;
+#include "src/sim/electronics/algorithms/nonlinear/inc/NewtonRaphson.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
 
-// Add multiple diodes
-for (int i = 0; i < 10; ++i) {
-  devices.addDevice(std::make_shared<DiodeModel>(i+1, 0));
-}
+#include <fmt/core.h>
+#include <memory>
 
-// Stamp all devices at once
-std::vector<double> voltages = getCurrentOperatingPoint();
-devices.stampAllLinearized(mna, voltages);
+using namespace sim::electronics::algorithms;
 
-// Clear all devices
-devices.clear();
-```
+class DiodeModel : public nonlinear::NonlinearDevice {
+public:
+  DiodeModel(mna::NetID anode, mna::NetID cathode)
+      : anode_(anode), cathode_(cathode) {}
 
-## CUDA Acceleration (Future)
+  [[nodiscard]] mna::NetID posNet() const noexcept override { return anode_; }
+  [[nodiscard]] mna::NetID negNet() const noexcept override { return cathode_; }
 
-Device evaluation is embarrassingly parallel - each device computes `I(V)` and `g(V)` independently:
-
-```cpp
-// Future: Evaluate 10,000+ devices in parallel on GPU
-__global__ void evaluateDevicesKernel(const Device* devices,
-                                      const double* voltages,
-                                      double* currents,
-                                      double* conductances,
-                                      int n) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
-  if (idx < n) {
-    double V = voltages[devices[idx].posNet()] - voltages[devices[idx].negNet()];
-    currents[idx] = devices[idx].current(V);
-    conductances[idx] = devices[idx].conductance(V);
+  [[nodiscard]] double current(double v) const noexcept override {
+    const double EXP_ARG = std::min(v / VT_, 40.0);
+    return IS_ * (std::exp(EXP_ARG) - 1.0);
   }
-}
-```
+  [[nodiscard]] double conductance(double v) const noexcept override {
+    const double EXP_ARG = std::min(v / VT_, 40.0);
+    return (IS_ / VT_) * std::exp(EXP_ARG);
+  }
 
-**Performance benefit**: For circuits with 10,000+ nonlinear devices, GPU evaluation provides ~100x speedup over sequential CPU evaluation.
-
-## RT-Safety
-
-| Component                        | RT-Safe?               | Notes                                         |
-| -------------------------------- | ---------------------- | --------------------------------------------- |
-| `NewtonRaphsonSolver::solve()`   | ! With pre-allocation | MNA allocates on first call, reuses workspace |
-| `NonlinearDevice::current()`     | [OK] Yes                 | Pure computation, no allocation               |
-| `NonlinearDevice::conductance()` | [OK] Yes                 | Pure computation, no allocation               |
-| `NonlinearDeviceSet::stampAll()` | [OK] Yes                 | Iterates existing devices, no allocation      |
-| `NonlinearConfig`                | [OK] Yes                 | POD struct                                    |
-
-**Making solve() RT-safe:**
-
-1. Call `solve()` once at initialization to allocate MNA workspace
-2. Call `reset()` to clear state
-3. Subsequent `solve()` calls reuse workspace (RT-safe)
-
-## Performance
-
-NR solve throughput (debug build, clang-21, 15-repeat median):
-
-| Circuit                   | Median (us) | Throughput | CV%  |
-| ------------------------- | ----------- | ---------- | ---- |
-| Single diode (3 nets)     | 3.0         | 335K/s     | 1.1% |
-| Diode voltage divider (4) | 3.4         | 292K/s     | 2.3% |
-| Three-diode chain (5)     | 4.6         | 219K/s     | 4.1% |
-| NL resistor network (3)   | 9.1         | 110K/s     | 2.3% |
-| Re-solve with warm start  | 6.7         | 150K/s     | 0.8% |
-
-Pipeline: 2.75 IPC, 0.08% branch miss. MNA LAPACK dense solve is 35.6% of
-NR iteration cost. Device evaluation is ~3% (negligible). Scaling: iteration
-count is O(1) with number of devices (local convergence). MNA solve dominates:
-O(n^3) dense, O(n) sparse (n = number of nets).
-
-## Examples
-
-### Diode Rectifier
-
-```cpp
-// Half-wave rectifier: AC source -> Diode -> Load resistor
-NewtonRaphsonSolver solver(3);  // GND, AC source, diode output
-
-// Add diode
-solver.devices().addDevice(std::make_shared<DiodeModel>(2, 1));
-
-// Add load resistor and AC source
-solver.setLinearStampCallback([t](MnaSystem& mna) {
-  double vAC = 10.0 * std::sin(2 * M_PI * 60 * t);  // 60 Hz, 10V peak
-  mna.addVoltageSource(1, 0, vAC);
-  mna.addResistor(2, 0, 1000.0);  // 1 kOhm load
-});
-
-// Solve at each time step
-for (double t = 0; t < 1.0/60; t += 1e-6) {
-  NonlinearResult result = solver.solve(config);
-  // result.nodeVoltages[2] = rectified output
-}
-```
-
-### BJT Common-Emitter Amplifier
-
-```cpp
-// Requires BJT device model (Ebers-Moll or Gummel-Poon)
-class BjtModel : public NonlinearDevice {
-  // Implement current() and conductance() for base-emitter junction
+private:
+  mna::NetID anode_, cathode_;
+  static constexpr double IS_ = 1e-12;
+  static constexpr double VT_ = 0.026;
 };
 
-NewtonRaphsonSolver solver(5);  // GND, VCC, base, collector, emitter
+int main() {
+  nonlinear::NewtonRaphsonSolver solver(/*netCount=*/3);
+  solver.devices().addDevice(std::make_shared<DiodeModel>(/*anode=*/2, /*cathode=*/0));
 
-solver.devices().addDevice(std::make_shared<BjtModel>(base, emitter, collector));
+  solver.setLinearStampCallback([](mna::MnaSystem& m) {
+    m.addVoltageSource(1, 0, 5.0);
+    m.addConductance(1, 2, 1.0 / 1000.0);
+  });
 
-solver.setLinearStampCallback([](MnaSystem& mna) {
-  mna.addVoltageSource(vccNet, 0, 12.0);  // VCC = 12V
-  mna.addResistor(collectorNet, vccNet, 1000.0);  // RC
-  mna.addResistor(baseNet, 0, 10000.0);  // RB
-});
+  nonlinear::NonlinearConfig config;
+  config.maxIterations = 20;
 
-NonlinearResult result = solver.solve(config);
-// DC operating point computed
+  const nonlinear::NonlinearResult RESULT = solver.solve(config);
+  if (RESULT.success()) {
+    fmt::print("converged in {} iterations\n", RESULT.iterations);
+    fmt::print("v(diode anode) = {:.6f} V\n", RESULT.nodeVoltages[2]);
+  }
+  return 0;
+}
 ```
 
-## Testing
+---
 
-```bash
-# Run all nonlinear solver tests
-make compose-testp --gtest_filter="*NewtonRaphson*"
+## 9. See Also
 
-# Run specific test
-make compose-testp --gtest_filter="NewtonRaphsonSolver.DiodeCircuitConvergence"
-```
-
-15 comprehensive tests covering:
-
-- Device interface and stamping
-- Convergence criteria (absolute, relative)
-- Damping effectiveness
-- Failure modes (max iterations, divergence, singular matrix)
-- Initial guess acceleration
-- Determinism (repeated solves)
-
-## References
-
-- **Algorithm**: "Computer Methods for Circuit Analysis and Design" - Vlach & Singhal
-- **SPICE Implementation**: "The SPICE Book" - Vladimirescu
-- **Convergence Theory**: "Numerical Methods for Unconstrained Optimization" - Dennis & Schnabel
-- **Device Models**: "Device Electronics for Integrated Circuits" - Muller & Kamins
-
-## See Also
-
-- [MNA Solver](../mna/README.md) - Modified Nodal Analysis (linear solver)
-- [Transient Solver](../transient/README.md) - Time-domain integration
-- [Companion Models](../transient/README.md#companion-models) - Reactive element discretization
+- [MNA library](../mna/README.md) - Linear system construction and solve
+- [Transient solver](../transient/README.md) - Time-stepping with reactive elements
+- [Nonlinear device models](../../devices/nonlinear/README.md) - Concrete device implementations

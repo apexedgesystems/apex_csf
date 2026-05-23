@@ -22,8 +22,7 @@ apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
 
 target_link_libraries(
   ${LIB_NAME}
-  INTERFACE sim_electronics_devices_composite
-            sim_electronics_circuit
+  INTERFACE sim_electronics_devices_composite sim_electronics_circuit
 )
 
 # ------------------------------------------------------------------------------

@@ -14,10 +14,6 @@ using sim::electronics::devices::nonlinear::MosfetLevel1;
 using sim::electronics::devices::nonlinear::MosfetLevel1Params;
 using sim::electronics::devices::nonlinear::NetID;
 
-/* ----------------------------- Constants ----------------------------- */
-
-static constexpr double EPSILON = 1e-9; // Tolerance for floating-point comparison
-
 /* ----------------------------- Parameters ----------------------------- */
 
 /** @test Default parameters are reasonable. */
@@ -253,9 +249,9 @@ TEST(MosfetLevel1Test, RegionCutoff) {
 
 /** @test Region detection: hard cutoff when Vsmooth is disabled.
  *
- * Setting Vsmooth=0 reverts to textbook Shichman-Hodges with hard cutoff at Vth.
- * The cutoff condition is `vgs <= Vth - Vsmooth`, so with Vsmooth=0 the
- * boundary `vgs == Vth` evaluates as deep cutoff (inclusive).
+ * Setting Vsmooth=0 reverts to the original Shichman-Hodges form with hard
+ * cutoff at Vth. The cutoff condition is `vgs <= Vth - Vsmooth`, so with
+ * Vsmooth=0 the boundary `vgs == Vth` evaluates as deep cutoff (inclusive).
  */
 TEST(MosfetLevel1Test, RegionCutoffHard) {
   MosfetLevel1Params params{.Vth = 0.7, .Vsmooth = 0.0};
@@ -403,7 +399,7 @@ TEST(MosfetLevel1Test, TransferCharacteristics) {
  *   2. Smoothing region produces small but nonzero current
  *   3. Smoothing is monotonic (current grows with vgs in the window)
  *   4. Above-threshold current is much larger than smoothing-region current
- *   5. With Vsmooth=0 the model reverts to textbook hard cutoff
+ *   5. With Vsmooth=0 the model reverts to a hard cutoff at Vth
  */
 TEST(MosfetLevel1Test, SubthresholdCutoff) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7}; // Vsmooth=0.1 default
@@ -437,7 +433,7 @@ TEST(MosfetLevel1Test, SubthresholdCutoff) {
       << "Smoothing leakage should be << current with substantial overdrive";
 }
 
-/** @test Hard cutoff: textbook Shichman-Hodges when Vsmooth is disabled. */
+/** @test Hard cutoff: original Shichman-Hodges form when Vsmooth is disabled. */
 TEST(MosfetLevel1Test, SubthresholdCutoffHard) {
   MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .Vsmooth = 0.0};
 
@@ -822,12 +818,11 @@ TEST(MosfetLevel1Test, SmoothTransitionContinuity) {
 
 /* ----------------------------- stampNmos / stampPmos ----------------------------- */
 
-/** @test stampNmos saturation drain current matches Shichman-Hodges:
- *        Id = (Kp/2) * (Vgs-Vth)^2 * (1 + lambda*Vds).
+/** @test stampNmos saturation drain current matches the SPICE Level 1
+ *        Shichman-Hodges formula: Id = (Kp/2) * (Vgs-Vth)^2 * (1 + lambda*Vds).
  *
- * Reference: SPICE Level 1 MOSFET model (Shichman-Hodges 1968). With prev_v
- * at the pinning voltage-source values, the linearized companion stamp
- * evaluates exactly at the operating point.
+ * With prev_v at the pinning voltage-source values, the linearized companion
+ * stamp evaluates exactly at the operating point.
  */
 TEST(MosfetLevel1Test, StampNmosInSaturationMatchesShichmanHodges) {
   const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
@@ -873,8 +868,8 @@ TEST(MosfetLevel1Test, StampNmosCutoffHasNegligibleDrainCurrent) {
  *        convention, magnitude only): |Id| = (Kp/2)*Vsgt^2*(1 + lambda*Vsd). */
 TEST(MosfetLevel1Test, StampPmosInSaturationMatchesShichmanHodges) {
   const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-  // Source=5, gate=0 -> Vsg = 5 (strongly on). Drain=1 -> Vsd = 4 > Vsg-Vth = 4.3? no, 5-0.7=4.3, Vsd=4
-  // So linear region. Pick drain=0 for clean saturation: Vsd=5 > Vsg-Vth=4.3.
+  // Source=5, gate=0 -> Vsg = 5 (strongly on). Drain=1 -> Vsd = 4 > Vsg-Vth = 4.3? no, 5-0.7=4.3,
+  // Vsd=4 So linear region. Pick drain=0 for clean saturation: Vsd=5 > Vsg-Vth=4.3.
   const std::vector<double> PREV_V = {0.0, 5.0, 0.0, 0.0};
 
   MnaSystem mna(4);
@@ -944,8 +939,7 @@ TEST(MosfetLevel1Test, FetlimLargeUpwardStepInSaturationClampsToVoldPlusVtsthi) 
 
 /** @test limvds caps upward jump when vold >= 3.5 (3*vold + 2) */
 TEST(MosfetLevel1Test, LimvdsClampsUpwardWhenVoldHigh) {
-  EXPECT_NEAR(MosfetLevel1::limvds(/*vnew=*/100.0, /*vold=*/5.0),
-              3.0 * 5.0 + 2.0, 1e-12);
+  EXPECT_NEAR(MosfetLevel1::limvds(/*vnew=*/100.0, /*vold=*/5.0), 3.0 * 5.0 + 2.0, 1e-12);
 }
 
 /** @test limvds clamps a large downward jump to 2.0 floor when vold high */

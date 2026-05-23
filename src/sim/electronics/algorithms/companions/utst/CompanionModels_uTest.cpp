@@ -59,8 +59,7 @@ TEST(CapacitorCompanionGeqTest, BackwardEulerFormula) {
   CapacitorCompanion cap{};
   cap.capacitance = 1e-6; // 1 uF
   const double DT = 1e-3;
-  EXPECT_NEAR(cap.geq(DT, IntegrationMethod::BACKWARD_EULER),
-              cap.capacitance / DT, TOL);
+  EXPECT_NEAR(cap.geq(DT, IntegrationMethod::BACKWARD_EULER), cap.capacitance / DT, TOL);
 }
 
 /** @test Capacitor Trapezoidal Geq is 2C/dt */
@@ -68,8 +67,7 @@ TEST(CapacitorCompanionGeqTest, TrapezoidalFormula) {
   CapacitorCompanion cap{};
   cap.capacitance = 1e-6;
   const double DT = 1e-3;
-  EXPECT_NEAR(cap.geq(DT, IntegrationMethod::TRAPEZOIDAL),
-              2.0 * cap.capacitance / DT, TOL);
+  EXPECT_NEAR(cap.geq(DT, IntegrationMethod::TRAPEZOIDAL), 2.0 * cap.capacitance / DT, TOL);
 }
 
 /** @test Capacitor GEAR2 Geq is 1.5*C/dt (BDF2) */
@@ -77,8 +75,7 @@ TEST(CapacitorCompanionGeqTest, Gear2Formula) {
   CapacitorCompanion cap{};
   cap.capacitance = 1e-6;
   const double DT = 1e-3;
-  EXPECT_NEAR(cap.geq(DT, IntegrationMethod::GEAR2),
-              1.5 * cap.capacitance / DT, TOL);
+  EXPECT_NEAR(cap.geq(DT, IntegrationMethod::GEAR2), 1.5 * cap.capacitance / DT, TOL);
 }
 
 /** @test Capacitor Geq scales linearly with capacitance and inversely with dt */
@@ -125,8 +122,7 @@ TEST(CapacitorCompanionIeqTest, Gear2Formula) {
   cap.prevVoltage = 0.5;
   cap.prev2Voltage = 0.3;
   const double DT = 1e-4;
-  const double EXPECTED =
-      (cap.capacitance / DT) * (2.0 * cap.prevVoltage - 0.5 * cap.prev2Voltage);
+  const double EXPECTED = (cap.capacitance / DT) * (2.0 * cap.prevVoltage - 0.5 * cap.prev2Voltage);
   EXPECT_NEAR(cap.ieq(DT, IntegrationMethod::GEAR2), EXPECTED, TOL);
 }
 
@@ -179,8 +175,7 @@ TEST(InductorCompanionGeqTest, BackwardEulerFormula) {
   InductorCompanion ind{};
   ind.inductance = 1e-3; // 1 mH
   const double DT = 1e-6;
-  EXPECT_NEAR(ind.geq(DT, IntegrationMethod::BACKWARD_EULER),
-              DT / ind.inductance, TOL);
+  EXPECT_NEAR(ind.geq(DT, IntegrationMethod::BACKWARD_EULER), DT / ind.inductance, TOL);
 }
 
 /** @test Inductor Trapezoidal Geq is dt/(2L) */
@@ -188,8 +183,7 @@ TEST(InductorCompanionGeqTest, TrapezoidalFormula) {
   InductorCompanion ind{};
   ind.inductance = 1e-3;
   const double DT = 1e-6;
-  EXPECT_NEAR(ind.geq(DT, IntegrationMethod::TRAPEZOIDAL),
-              DT / (2.0 * ind.inductance), TOL);
+  EXPECT_NEAR(ind.geq(DT, IntegrationMethod::TRAPEZOIDAL), DT / (2.0 * ind.inductance), TOL);
 }
 
 /** @test Inductor GEAR2 Geq is 1.5*dt/L */
@@ -197,8 +191,7 @@ TEST(InductorCompanionGeqTest, Gear2Formula) {
   InductorCompanion ind{};
   ind.inductance = 1e-3;
   const double DT = 1e-6;
-  EXPECT_NEAR(ind.geq(DT, IntegrationMethod::GEAR2),
-              1.5 * DT / ind.inductance, TOL);
+  EXPECT_NEAR(ind.geq(DT, IntegrationMethod::GEAR2), 1.5 * DT / ind.inductance, TOL);
 }
 
 /* ----------------------------- InductorCompanion Ieq ----------------------------- */
@@ -208,8 +201,7 @@ TEST(InductorCompanionIeqTest, BackwardEulerFormula) {
   InductorCompanion ind{};
   ind.inductance = 1e-3;
   ind.prevCurrent = 0.05; // 50 mA
-  EXPECT_DOUBLE_EQ(ind.ieq(1e-6, IntegrationMethod::BACKWARD_EULER),
-                   ind.prevCurrent);
+  EXPECT_DOUBLE_EQ(ind.ieq(1e-6, IntegrationMethod::BACKWARD_EULER), ind.prevCurrent);
 }
 
 /** @test Inductor Trapezoidal Ieq folds in previous voltage */
@@ -219,8 +211,7 @@ TEST(InductorCompanionIeqTest, TrapezoidalFormula) {
   ind.prevCurrent = 0.05;
   ind.voltage = 0.1;
   const double DT = 1e-6;
-  const double EXPECTED =
-      ind.prevCurrent + (DT / (2.0 * ind.inductance)) * ind.voltage;
+  const double EXPECTED = ind.prevCurrent + (DT / (2.0 * ind.inductance)) * ind.voltage;
   EXPECT_NEAR(ind.ieq(DT, IntegrationMethod::TRAPEZOIDAL), EXPECTED, TOL);
 }
 

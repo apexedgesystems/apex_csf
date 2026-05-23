@@ -39,7 +39,7 @@ if (TARGET sim_electronics_devices_nonlinear_cuda AND CMAKE_CUDA_COMPILER)
   )
 
   set_target_properties(
-    MosfetLevel1BatchCuda_PTEST PROPERTIES CUDA_SEPARABLE_COMPILATION ON
-                                           CUDA_RESOLVE_DEVICE_SYMBOLS ON
+    MosfetLevel1BatchCuda_PTEST PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS
+                                                                         ON
   )
 endif ()

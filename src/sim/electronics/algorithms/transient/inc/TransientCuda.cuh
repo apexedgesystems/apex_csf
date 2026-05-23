@@ -60,9 +60,10 @@ inline constexpr bool available() noexcept { return algorithms::mna::cuda::avail
  *
  * @note NOT RT-SAFE: involves GPU memory transfers and kernel launches.
  */
-TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs, algorithms::mna::MnaSystem& mna,
-                         CompanionSet& companions, const StampCallback& stampCallback, double dt,
-                         double& time, std::vector<double>& prevVoltages,
+TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs,
+                         algorithms::mna::MnaSystem& mna, CompanionSet& companions,
+                         const StampCallback& stampCallback, double dt, double& time,
+                         std::vector<double>& prevVoltages,
                          algorithms::mna::MnaSolveWorkspace& workspace, TransientState& state);
 
 /**
@@ -70,9 +71,10 @@ TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs, algori
  *
  * Same as stepCuda() but uses StatefulStampCallback that receives prevVoltages.
  */
-TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs, algorithms::mna::MnaSystem& mna,
-                         CompanionSet& companions, const StatefulStampCallback& stampCallback,
-                         double dt, double& time, std::vector<double>& prevVoltages,
+TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs,
+                         algorithms::mna::MnaSystem& mna, CompanionSet& companions,
+                         const StatefulStampCallback& stampCallback, double dt, double& time,
+                         std::vector<double>& prevVoltages,
                          algorithms::mna::MnaSolveWorkspace& workspace, TransientState& state);
 
 } // namespace sim::electronics::algorithms::transient::cuda

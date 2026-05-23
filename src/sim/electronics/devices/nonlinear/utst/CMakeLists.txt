@@ -2,7 +2,7 @@
 # Unit Tests: sim_electronics_devices_nonlinear
 # ==============================================================================
 
-set(TEST_SOURCES
+set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/BjtEbersMoll_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DiodeShockley_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DiodeSpice_uTest.cpp"
@@ -21,7 +21,7 @@ apex_add_gtest(
   TARGET
   sim_electronics_devices_nonlinear_uTest
   SOURCES
-  ${TEST_SOURCES}
+  ${UNIT_TEST_SOURCES}
   LINK
   sim_electronics_devices_nonlinear
   COVERAGE_FOR

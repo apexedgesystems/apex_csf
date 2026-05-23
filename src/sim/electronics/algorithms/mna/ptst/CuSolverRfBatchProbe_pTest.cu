@@ -52,7 +52,6 @@
     }                                                                                              \
   } while (0)
 
-
 constexpr int N = 1121;
 constexpr int N_TRANSISTORS = 2242;
 constexpr double GMIN = 1e-3;
@@ -64,15 +63,20 @@ void buildSparseMna(std::vector<double>& dense, std::vector<double>& rhs) {
   std::uniform_int_distribution<int> netDist(1, N - 1);
   std::uniform_real_distribution<double> gDist(1e-4, 5e-3);
   auto add = [&](int r, int c, double v) {
-    if (r <= 0 || c <= 0 || r >= N || c >= N) return;
+    if (r <= 0 || c <= 0 || r >= N || c >= N)
+      return;
     dense[r * N + c] += v;
   };
   for (int i = 0; i < N_TRANSISTORS; ++i) {
-    const int d = netDist(rng);
-    const int s = netDist(rng);
-    if (d == s) continue;
-    const double g = gDist(rng);
-    add(d, d, g); add(s, s, g); add(d, s, -g); add(s, d, -g);
+    const int D = netDist(rng);
+    const int S = netDist(rng);
+    if (D == S)
+      continue;
+    const double G = gDist(rng);
+    add(D, D, G);
+    add(S, S, G);
+    add(D, S, -G);
+    add(S, D, -G);
   }
   for (int i = 1; i < N; ++i) {
     dense[i * N + i] += GMIN;
@@ -89,13 +93,15 @@ void denseToCsr(const std::vector<double>& dense, std::vector<int>& rowPtr,
   for (int r = 0; r < N; ++r) {
     rowPtr[r] = static_cast<int>(colIdx.size());
     for (int c = 0; c < N; ++c) {
-      const double v = dense[r * N + c];
-      if (v != 0.0) { colIdx.push_back(c); values.push_back(v); }
+      const double V = dense[r * N + c];
+      if (V != 0.0) {
+        colIdx.push_back(c);
+        values.push_back(V);
+      }
     }
   }
   rowPtr[N] = static_cast<int>(colIdx.size());
 }
-
 
 namespace ub = vernier::bench;
 
@@ -108,11 +114,11 @@ static void runBatchCase(PerfHarness& perf, int batchSize, const char* label) {
   std::vector<int> hRowPtrA, hColIndA;
   std::vector<double> hValA;
   denseToCsr(dense, hRowPtrA, hColIndA, hValA);
-  const int nnzA = static_cast<int>(hColIndA.size());
+  const int NNZ_A = static_cast<int>(hColIndA.size());
 
   std::printf("\n=== cusolverRfBatch %s (batchSize=%d, Dim%d) ===\n", label, batchSize, N);
-  std::printf("  NNZ_A = %d  (%.2f%% density)\n", nnzA,
-              100.0 * nnzA / static_cast<double>(N * N));
+  std::printf("  NNZ_A = %d  (%.2f%% density)\n", NNZ_A,
+              100.0 * NNZ_A / static_cast<double>(N * N));
 
   // === 2. AMD reorder, factor permuted A, extract L/U ===
   cusolverSpHandle_t spHandle = nullptr;
@@ -123,41 +129,43 @@ static void runBatchCase(PerfHarness& perf, int batchSize, const char* label) {
   cusparseSetMatIndexBase(descrA, CUSPARSE_INDEX_BASE_ZERO);
 
   std::vector<int> hPerm(N);
-  CHECK_CUSOLVER(cusolverSpXcsrsymamdHost(spHandle, N, nnzA, descrA, hRowPtrA.data(),
+  CHECK_CUSOLVER(cusolverSpXcsrsymamdHost(spHandle, N, NNZ_A, descrA, hRowPtrA.data(),
                                           hColIndA.data(), hPerm.data()));
 
   std::vector<int> hRowPtrAP = hRowPtrA;
   std::vector<int> hColIndAP = hColIndA;
-  std::vector<int> permMap(nnzA);
+  std::vector<int> permMap(NNZ_A);
   size_t permBufBytes = 0;
-  CHECK_CUSOLVER(cusolverSpXcsrperm_bufferSizeHost(spHandle, N, N, nnzA, descrA,
-                                                   hRowPtrAP.data(), hColIndAP.data(),
-                                                   hPerm.data(), hPerm.data(), &permBufBytes));
+  CHECK_CUSOLVER(cusolverSpXcsrperm_bufferSizeHost(spHandle, N, N, NNZ_A, descrA, hRowPtrAP.data(),
+                                                   hColIndAP.data(), hPerm.data(), hPerm.data(),
+                                                   &permBufBytes));
   std::vector<char> permBuf(permBufBytes);
-  for (int i = 0; i < nnzA; ++i) permMap[i] = i;
-  CHECK_CUSOLVER(cusolverSpXcsrpermHost(spHandle, N, N, nnzA, descrA, hRowPtrAP.data(),
+  for (int i = 0; i < NNZ_A; ++i)
+    permMap[i] = i;
+  CHECK_CUSOLVER(cusolverSpXcsrpermHost(spHandle, N, N, NNZ_A, descrA, hRowPtrAP.data(),
                                         hColIndAP.data(), hPerm.data(), hPerm.data(),
                                         permMap.data(), permBuf.data()));
-  std::vector<double> hValAP(nnzA);
-  for (int i = 0; i < nnzA; ++i) hValAP[i] = hValA[permMap[i]];
+  std::vector<double> hValAP(NNZ_A);
+  for (int i = 0; i < NNZ_A; ++i)
+    hValAP[i] = hValA[permMap[i]];
 
   csrluInfoHost_t luInfo = nullptr;
   CHECK_CUSOLVER(cusolverSpCreateCsrluInfoHost(&luInfo));
-  CHECK_CUSOLVER(cusolverSpXcsrluAnalysisHost(spHandle, N, nnzA, descrA, hRowPtrAP.data(),
+  CHECK_CUSOLVER(cusolverSpXcsrluAnalysisHost(spHandle, N, NNZ_A, descrA, hRowPtrAP.data(),
                                               hColIndAP.data(), luInfo));
   size_t internalBytes = 0, workBytes = 0;
-  CHECK_CUSOLVER(cusolverSpDcsrluBufferInfoHost(spHandle, N, nnzA, descrA, hValAP.data(),
+  CHECK_CUSOLVER(cusolverSpDcsrluBufferInfoHost(spHandle, N, NNZ_A, descrA, hValAP.data(),
                                                 hRowPtrAP.data(), hColIndAP.data(), luInfo,
                                                 &internalBytes, &workBytes));
   std::vector<char> workBuf(workBytes);
-  CHECK_CUSOLVER(cusolverSpDcsrluFactorHost(spHandle, N, nnzA, descrA, hValAP.data(),
+  CHECK_CUSOLVER(cusolverSpDcsrluFactorHost(spHandle, N, NNZ_A, descrA, hValAP.data(),
                                             hRowPtrAP.data(), hColIndAP.data(), luInfo, 0.1,
                                             workBuf.data()));
 
   int nnzL = 0, nnzU = 0;
   CHECK_CUSOLVER(cusolverSpXcsrluNnzHost(spHandle, &nnzL, &nnzU, luInfo));
   std::printf("  NNZ_L = %d, NNZ_U = %d  (fill-in %.2fx vs A)\n", nnzL, nnzU,
-              static_cast<double>(nnzL + nnzU) / nnzA);
+              static_cast<double>(nnzL + nnzU) / NNZ_A);
 
   std::vector<int> hRowPtrL(N + 1), hColIndL(nnzL);
   std::vector<double> hValL(nnzL);
@@ -179,10 +187,9 @@ static void runBatchCase(PerfHarness& perf, int batchSize, const char* label) {
   cusparseSetMatFillMode(descrU, CUSPARSE_FILL_MODE_UPPER);
   cusparseSetMatDiagType(descrU, CUSPARSE_DIAG_TYPE_NON_UNIT);
 
-  CHECK_CUSOLVER(cusolverSpDcsrluExtractHost(spHandle, hP.data(), hQ.data(), descrL,
-                                             hValL.data(), hRowPtrL.data(), hColIndL.data(),
-                                             descrU, hValU.data(), hRowPtrU.data(),
-                                             hColIndU.data(), luInfo, workBuf.data()));
+  CHECK_CUSOLVER(cusolverSpDcsrluExtractHost(
+      spHandle, hP.data(), hQ.data(), descrL, hValL.data(), hRowPtrL.data(), hColIndL.data(),
+      descrU, hValU.data(), hRowPtrU.data(), hColIndU.data(), luInfo, workBuf.data()));
 
   // Work in the AMD-permuted frame: cusolverRf sees the permuted A
   // as its "input A", and L * U = P_inner * A_perm * Q_inner^T is
@@ -198,12 +205,13 @@ static void runBatchCase(PerfHarness& perf, int batchSize, const char* label) {
   std::mt19937 rng(0xC0FFEEu);
   std::uniform_real_distribution<double> jitter(-0.02, 0.02);
   for (int b = 1; b < batchSize; ++b) {
-    for (int i = 0; i < nnzA; ++i) {
+    for (int i = 0; i < NNZ_A; ++i) {
       hValAPerCircuit[b][i] = hValAP[i] * (1.0 + jitter(rng));
     }
   }
   std::vector<double*> hValAPtrs(batchSize);
-  for (int b = 0; b < batchSize; ++b) hValAPtrs[b] = hValAPerCircuit[b].data();
+  for (int b = 0; b < batchSize; ++b)
+    hValAPtrs[b] = hValAPerCircuit[b].data();
 
   // Stream-parallel approach: K independent cusolverRf handles, each
   // its own implicit CUDA stream. Run K independent refactor+solve
@@ -214,24 +222,23 @@ static void runBatchCase(PerfHarness& perf, int batchSize, const char* label) {
   std::vector<cusolverRfHandle_t> rfHandles(batchSize, nullptr);
   for (int b = 0; b < batchSize; ++b) {
     CHECK_CUSOLVER(cusolverRfCreate(&rfHandles[b]));
-    CHECK_CUSOLVER(cusolverRfSetResetValuesFastMode(rfHandles[b],
-                                                    CUSOLVERRF_RESET_VALUES_FAST_MODE_ON));
-    CHECK_CUSOLVER(cusolverRfSetupHost(N, nnzA, hRowPtrAP.data(), hColIndAP.data(),
-                                       hValAPerCircuit[b].data(), nnzL, hRowPtrL.data(),
-                                       hColIndL.data(), hValL.data(), nnzU, hRowPtrU.data(),
-                                       hColIndU.data(), hValU.data(), hP.data(), hQ.data(),
-                                       rfHandles[b]));
+    CHECK_CUSOLVER(
+        cusolverRfSetResetValuesFastMode(rfHandles[b], CUSOLVERRF_RESET_VALUES_FAST_MODE_ON));
+    CHECK_CUSOLVER(cusolverRfSetupHost(
+        N, NNZ_A, hRowPtrAP.data(), hColIndAP.data(), hValAPerCircuit[b].data(), nnzL,
+        hRowPtrL.data(), hColIndL.data(), hValL.data(), nnzU, hRowPtrU.data(), hColIndU.data(),
+        hValU.data(), hP.data(), hQ.data(), rfHandles[b]));
     CHECK_CUSOLVER(cusolverRfAnalyze(rfHandles[b]));
   }
 
   // === 4. Move per-circuit A values + RHS to device ===
-  // Layout: dValA holds [batchSize x nnzA] doubles; dValAPtrs[b] = dValA + b*nnzA.
+  // Layout: dValA holds [batchSize x NNZ_A] doubles; dValAPtrs[b] = dValA + b*NNZ_A.
   // Layout: dB holds [batchSize x N] doubles; dBPtrs[b] = dB + b*N.
   int *dRowPtrA = nullptr, *dColIndA = nullptr, *dP = nullptr, *dQ = nullptr;
   double *dValA = nullptr, *dB = nullptr, *dT = nullptr;
   CHECK_CUDA(cudaMalloc(&dRowPtrA, (N + 1) * sizeof(int)));
-  CHECK_CUDA(cudaMalloc(&dColIndA, nnzA * sizeof(int)));
-  CHECK_CUDA(cudaMalloc(&dValA, batchSize * nnzA * sizeof(double)));
+  CHECK_CUDA(cudaMalloc(&dColIndA, NNZ_A * sizeof(int)));
+  CHECK_CUDA(cudaMalloc(&dValA, batchSize * NNZ_A * sizeof(double)));
   CHECK_CUDA(cudaMalloc(&dP, N * sizeof(int)));
   CHECK_CUDA(cudaMalloc(&dQ, N * sizeof(int)));
   CHECK_CUDA(cudaMalloc(&dB, batchSize * N * sizeof(double)));
@@ -239,7 +246,7 @@ static void runBatchCase(PerfHarness& perf, int batchSize, const char* label) {
   CHECK_CUDA(cudaMalloc(&dT, 2 * batchSize * N * sizeof(double)));
 
   CHECK_CUDA(cudaMemcpy(dRowPtrA, hRowPtrAP.data(), (N + 1) * sizeof(int), cudaMemcpyHostToDevice));
-  CHECK_CUDA(cudaMemcpy(dColIndA, hColIndAP.data(), nnzA * sizeof(int), cudaMemcpyHostToDevice));
+  CHECK_CUDA(cudaMemcpy(dColIndA, hColIndAP.data(), NNZ_A * sizeof(int), cudaMemcpyHostToDevice));
   CHECK_CUDA(cudaMemcpy(dP, hP.data(), N * sizeof(int), cudaMemcpyHostToDevice));
   CHECK_CUDA(cudaMemcpy(dQ, hQ.data(), N * sizeof(int), cudaMemcpyHostToDevice));
 
@@ -247,7 +254,7 @@ static void runBatchCase(PerfHarness& perf, int batchSize, const char* label) {
   std::vector<double*> hDValAPtrs(batchSize);
   std::vector<double*> hDBPtrs(batchSize);
   for (int b = 0; b < batchSize; ++b) {
-    hDValAPtrs[b] = dValA + b * nnzA;
+    hDValAPtrs[b] = dValA + b * NNZ_A;
     hDBPtrs[b] = dB + b * N;
   }
   double **dValAPtrs = nullptr, **dBPtrs = nullptr;
@@ -255,8 +262,8 @@ static void runBatchCase(PerfHarness& perf, int batchSize, const char* label) {
   CHECK_CUDA(cudaMalloc(&dBPtrs, batchSize * sizeof(double*)));
   CHECK_CUDA(cudaMemcpy(dValAPtrs, hDValAPtrs.data(), batchSize * sizeof(double*),
                         cudaMemcpyHostToDevice));
-  CHECK_CUDA(cudaMemcpy(dBPtrs, hDBPtrs.data(), batchSize * sizeof(double*),
-                        cudaMemcpyHostToDevice));
+  CHECK_CUDA(
+      cudaMemcpy(dBPtrs, hDBPtrs.data(), batchSize * sizeof(double*), cudaMemcpyHostToDevice));
 
   // === 5. Per-iter loop: ResetValues + Refactor + Solve for the whole batch ===
   std::mt19937 perturbRng(0xDADA00u);
@@ -265,22 +272,22 @@ static void runBatchCase(PerfHarness& perf, int batchSize, const char* label) {
   auto runFn = [&] {
     // Perturb each circuit's permuted values modestly per iter (NR pattern).
     for (int b = 0; b < batchSize; ++b) {
-      for (int i = 0; i < nnzA; ++i) {
+      for (int i = 0; i < NNZ_A; ++i) {
         hValAPerCircuit[b][i] = hValAP[i] * (1.0 + perturb(perturbRng));
       }
     }
     // Single H2D for the whole batch (contiguous).
-    std::vector<double> flatVals(batchSize * nnzA);
+    std::vector<double> flatVals(batchSize * NNZ_A);
     for (int b = 0; b < batchSize; ++b) {
-      std::copy(hValAPerCircuit[b].begin(), hValAPerCircuit[b].end(),
-                flatVals.begin() + b * nnzA);
+      std::copy(hValAPerCircuit[b].begin(), hValAPerCircuit[b].end(), flatVals.begin() + b * NNZ_A);
     }
-    cudaMemcpy(dValA, flatVals.data(), batchSize * nnzA * sizeof(double), cudaMemcpyHostToDevice);
+    cudaMemcpy(dValA, flatVals.data(), batchSize * NNZ_A * sizeof(double), cudaMemcpyHostToDevice);
 
     // RHS: replicate the same RHS across all circuits for simplicity.
     // Permute the RHS to match the AMD-permuted A frame: b_perm[hPerm[i]] = b[i].
     std::vector<double> rhsPerm(N, 0.0);
-    for (int i = 0; i < N; ++i) rhsPerm[hPerm[i]] = rhs[i];
+    for (int i = 0; i < N; ++i)
+      rhsPerm[hPerm[i]] = rhs[i];
     std::vector<double> flatB(batchSize * N);
     for (int b = 0; b < batchSize; ++b) {
       std::copy(rhsPerm.begin(), rhsPerm.end(), flatB.begin() + b * N);
@@ -289,7 +296,7 @@ static void runBatchCase(PerfHarness& perf, int batchSize, const char* label) {
 
     // K independent refactor+solve calls; runtime overlaps them on streams.
     for (int b = 0; b < batchSize; ++b) {
-      cusolverRfResetValues(N, nnzA, dRowPtrA, dColIndA, dValA + b * nnzA, dP, dQ, rfHandles[b]);
+      cusolverRfResetValues(N, NNZ_A, dRowPtrA, dColIndA, dValA + b * NNZ_A, dP, dQ, rfHandles[b]);
       cusolverRfRefactor(rfHandles[b]);
       cusolverRfSolve(rfHandles[b], dP, dQ, /*nrhs=*/1, dT + b * N, /*ldt=*/N, dB + b * N,
                       /*ldxf=*/N);
@@ -309,9 +316,17 @@ static void runBatchCase(PerfHarness& perf, int batchSize, const char* label) {
               PER_ITER_US < CPU_SERIAL_US ? "(GPU batch wins)" : "(CPU still wins)");
 
   // Cleanup
-  cudaFree(dRowPtrA); cudaFree(dColIndA); cudaFree(dValA); cudaFree(dP); cudaFree(dQ);
-  cudaFree(dB); cudaFree(dT); cudaFree(dValAPtrs); cudaFree(dBPtrs);
-  for (auto h : rfHandles) cusolverRfDestroy(h);
+  cudaFree(dRowPtrA);
+  cudaFree(dColIndA);
+  cudaFree(dValA);
+  cudaFree(dP);
+  cudaFree(dQ);
+  cudaFree(dB);
+  cudaFree(dT);
+  cudaFree(dValAPtrs);
+  cudaFree(dBPtrs);
+  for (auto h : rfHandles)
+    cusolverRfDestroy(h);
   cusparseDestroyMatDescr(descrL);
   cusparseDestroyMatDescr(descrU);
   cusparseDestroyMatDescr(descrA);
@@ -319,8 +334,17 @@ static void runBatchCase(PerfHarness& perf, int batchSize, const char* label) {
   cusolverSpDestroy(spHandle);
 }
 
-PERF_TEST(CuSolverRfBatch, K2)   { UB_PERF_GUARD(perf); runBatchCase(perf, 2,   "K2");   }
-PERF_TEST(CuSolverRfBatch, K4)   { UB_PERF_GUARD(perf); runBatchCase(perf, 4,   "K4");   }
-PERF_TEST(CuSolverRfBatch, K16)  { UB_PERF_GUARD(perf); runBatchCase(perf, 16,  "K16");  }
+PERF_TEST(CuSolverRfBatch, K2) {
+  UB_PERF_GUARD(perf);
+  runBatchCase(perf, 2, "K2");
+}
+PERF_TEST(CuSolverRfBatch, K4) {
+  UB_PERF_GUARD(perf);
+  runBatchCase(perf, 4, "K4");
+}
+PERF_TEST(CuSolverRfBatch, K16) {
+  UB_PERF_GUARD(perf);
+  runBatchCase(perf, 16, "K16");
+}
 
 PERF_MAIN()

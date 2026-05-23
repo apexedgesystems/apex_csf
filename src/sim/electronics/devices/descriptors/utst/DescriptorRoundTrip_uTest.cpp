@@ -93,7 +93,7 @@ TEST(DescriptorRoundTripTest, ResistorConductanceMatchesReciprocal) {
 
 /** @test DiodeShockley reads the descriptor's bias and returns positive forward current. */
 TEST(DescriptorRoundTripTest, DiodeForwardBiasProducesPositiveCurrent) {
-  const DiodeDescriptor DESC{/*anode=*/1, /*cathode=*/0};
+  const DiodeDescriptor DESC{/*ANODE=*/1, /*cathode=*/0};
   const DiodeShockleyParams PARAMS{};
   const double V_FORWARD = 0.7; // typical Si turn-on
   const double I = DiodeShockley::current(V_FORWARD, PARAMS);
@@ -120,10 +120,8 @@ TEST(DescriptorRoundTripTest, MosfetGeometryFlowsToStampValues) {
 
   // Stamp values at a known forward-active bias should be positive
   // when the threshold is met.
-  const MosfetLevel1Params PARAMS{.Kp = 100e-6 * WL_RATIO,
-                                  .Vth = 0.7,
-                                  .lambda = 0.02,
-                                  .Vsmooth = 0.1};
+  const MosfetLevel1Params PARAMS{
+      .Kp = 100e-6 * WL_RATIO, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
   const auto SV = MosfetLevel1::stampValues(/*vgs=*/3.0, /*vds=*/3.0, PARAMS);
   EXPECT_GT(SV.id, 0.0);
   EXPECT_GT(SV.gm, 0.0);

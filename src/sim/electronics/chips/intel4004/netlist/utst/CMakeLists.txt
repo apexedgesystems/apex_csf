@@ -33,5 +33,6 @@ apex_add_gtest(
 
 target_compile_definitions(
   TestSimElectronicsIntel4004Netlist
-  PRIVATE INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/chips/intel4004/netlist/data"
+  PRIVATE
+    INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/chips/intel4004/netlist/data"
 )

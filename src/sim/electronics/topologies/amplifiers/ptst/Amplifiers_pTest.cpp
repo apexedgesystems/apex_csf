@@ -19,8 +19,8 @@
 #include <cstdio>
 
 namespace ub = vernier::bench;
-using sim::electronics::topologies::amplifiers::BjtCommonEmitter;
 using sim::electronics::devices::nonlinear::BjtEbersMollParams;
+using sim::electronics::topologies::amplifiers::BjtCommonEmitter;
 
 /* ----------------------------- BjtCeBuild ----------------------------- */
 
@@ -49,8 +49,8 @@ PERF_TEST(AmplifiersPerf, BjtCeBuild) {
       },
       "amp_ce_build");
 
-  std::printf("  3-net amp build: %.2f us/build  (CV=%.1f%%)\n",
-              result.stats.median, result.stats.cv * 100.0);
+  std::printf("  3-net amp build: %.2f us/build  (CV=%.1f%%)\n", result.stats.median,
+              result.stats.cv * 100.0);
 }
 
 /* ----------------------------- BjtCeDcOp ----------------------------- */
@@ -85,8 +85,8 @@ PERF_TEST(AmplifiersPerf, BjtCeDcOp) {
       },
       "amp_ce_dc_op");
 
-  std::printf("  3-net amp DC solve: %.2f us/solve  (CV=%.1f%%)\n",
-              result.stats.median, result.stats.cv * 100.0);
+  std::printf("  3-net amp DC solve: %.2f us/solve  (CV=%.1f%%)\n", result.stats.median,
+              result.stats.cv * 100.0);
 }
 
 PERF_MAIN()

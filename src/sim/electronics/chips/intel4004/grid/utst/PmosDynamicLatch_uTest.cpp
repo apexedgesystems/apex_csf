@@ -71,12 +71,13 @@ double readLatchVoltage(PmosDynamicLatchManager& mgr, std::size_t mnaSize, NetID
   MnaSystem mna(mnaSize);
   mgr.stamp(mna);
   for (const auto& VS : mna.voltageSources()) {
-    if (VS.pos == net) return VS.v;
+    if (VS.pos == net)
+      return VS.v;
   }
   return std::numeric_limits<double>::quiet_NaN();
 }
 
-}
+} // namespace
 
 /* ----------------------------- Default Construction ----------------------------- */
 
@@ -213,8 +214,8 @@ TEST(PmosDynamicLatchManagerTest, UpdateChargesLimitsPerStepDelta) {
   mgr.forceNodeVoltage(4, 0.0);
   std::vector<double> prev(8, 0.0);
   prev[1] = VDD;
-  prev[3] = 0.0; // gate
-  prev[4] = 0.0; // source = the other terminal
+  prev[3] = 0.0;                             // gate
+  prev[4] = 0.0;                             // source = the other terminal
   mgr.updateCharges(prev, /*dt=*/1e-3, VDD); // unphysically large dt
 
   // Without the limiter, dv would be huge -> clamped to rail. With the

@@ -23,10 +23,10 @@
 #include <cmath>
 #include <string>
 
-using sim::electronics::devices::nonlinear::MosfetLevel1Params;
-using sim::electronics::topologies::gates::CmosInverterCircuit;
 using sim::electronics::algorithms::spice::ngspice::NgspiceStatus;
 using sim::electronics::algorithms::spice::ngspice::NgspiceWrapper;
+using sim::electronics::devices::nonlinear::MosfetLevel1Params;
+using sim::electronics::topologies::gates::CmosInverterCircuit;
 
 /* ----------------------------- Constants ----------------------------- */
 
@@ -50,19 +50,17 @@ static std::string buildInverterNetlist(double vin) {
   const double NMOS_KP = NMOS_PARAMS.Kp * L / W;
   const double PMOS_KP = PMOS_PARAMS.Kp * L / W;
 
-  return fmt::format(
-      "CMOS Inverter Verification\n"
-      "VDD vdd 0 {:.1f}\n"
-      "VIN in 0 {:.6f}\n"
-      "M1 out in vdd vdd PMOD W={:.0e} L={:.0e}\n"
-      "M2 out in 0 0 NMOD W={:.0e} L={:.0e}\n"
-      ".model PMOD PMOS (LEVEL=1 VTO={:.4f} KP={:.6e} LAMBDA={:.4f})\n"
-      ".model NMOD NMOS (LEVEL=1 VTO={:.4f} KP={:.6e} LAMBDA={:.4f})\n"
-      ".op\n"
-      ".end\n",
-      VDD, vin, W, L, W, L,
-      -PMOS_PARAMS.Vth, PMOS_KP, PMOS_PARAMS.lambda,
-      NMOS_PARAMS.Vth, NMOS_KP, NMOS_PARAMS.lambda);
+  return fmt::format("CMOS Inverter Verification\n"
+                     "VDD vdd 0 {:.1f}\n"
+                     "VIN in 0 {:.6f}\n"
+                     "M1 out in vdd vdd PMOD W={:.0e} L={:.0e}\n"
+                     "M2 out in 0 0 NMOD W={:.0e} L={:.0e}\n"
+                     ".model PMOD PMOS (LEVEL=1 VTO={:.4f} KP={:.6e} LAMBDA={:.4f})\n"
+                     ".model NMOD NMOS (LEVEL=1 VTO={:.4f} KP={:.6e} LAMBDA={:.4f})\n"
+                     ".op\n"
+                     ".end\n",
+                     VDD, vin, W, L, W, L, -PMOS_PARAMS.Vth, PMOS_KP, PMOS_PARAMS.lambda,
+                     NMOS_PARAMS.Vth, NMOS_KP, NMOS_PARAMS.lambda);
 }
 
 /* ----------------------------- Tests ----------------------------- */
@@ -94,11 +92,10 @@ TEST(CmosInverterVsNgspice, InputLow) {
   status = ngspice.getNodeVoltage("out", NGSPICE_VOUT);
   ASSERT_EQ(status, NgspiceStatus::OK) << "Failed to read output voltage";
 
-  fmt::print("  Input = {:.1f}V: ours = {:.6f}V, ngspice = {:.6f}V, diff = {:.6f}V\n",
-             VIN, OUR_VOUT, NGSPICE_VOUT, std::abs(OUR_VOUT - NGSPICE_VOUT));
+  fmt::print("  Input = {:.1f}V: ours = {:.6f}V, ngspice = {:.6f}V, diff = {:.6f}V\n", VIN,
+             OUR_VOUT, NGSPICE_VOUT, std::abs(OUR_VOUT - NGSPICE_VOUT));
 
-  EXPECT_NEAR(OUR_VOUT, NGSPICE_VOUT, 0.1)
-      << "Inverter output should match ngspice within 100mV";
+  EXPECT_NEAR(OUR_VOUT, NGSPICE_VOUT, 0.1) << "Inverter output should match ngspice within 100mV";
 }
 
 /** @test CMOS inverter: our circuit model vs ngspice at input = VDD. */
@@ -126,11 +123,10 @@ TEST(CmosInverterVsNgspice, InputHigh) {
   status = ngspice.getNodeVoltage("out", NGSPICE_VOUT);
   ASSERT_EQ(status, NgspiceStatus::OK);
 
-  fmt::print("  Input = {:.1f}V: ours = {:.6f}V, ngspice = {:.6f}V, diff = {:.6f}V\n",
-             VIN, OUR_VOUT, NGSPICE_VOUT, std::abs(OUR_VOUT - NGSPICE_VOUT));
+  fmt::print("  Input = {:.1f}V: ours = {:.6f}V, ngspice = {:.6f}V, diff = {:.6f}V\n", VIN,
+             OUR_VOUT, NGSPICE_VOUT, std::abs(OUR_VOUT - NGSPICE_VOUT));
 
-  EXPECT_NEAR(OUR_VOUT, NGSPICE_VOUT, 0.1)
-      << "Inverter output should match ngspice within 100mV";
+  EXPECT_NEAR(OUR_VOUT, NGSPICE_VOUT, 0.1) << "Inverter output should match ngspice within 100mV";
 }
 
 /** @test CMOS inverter: transfer curve sweep vs ngspice. */
@@ -169,8 +165,8 @@ TEST(CmosInverterVsNgspice, TransferCurve) {
     double DIFF = std::abs(OUR_VOUT - NGSPICE_VOUT);
     maxDiff = std::max(maxDiff, DIFF);
 
-    fmt::print("    {:>7.2f} | {:>9.4f} | {:>11.4f} | {:>8.1f}\n",
-               VIN, OUR_VOUT, NGSPICE_VOUT, DIFF * 1000.0);
+    fmt::print("    {:>7.2f} | {:>9.4f} | {:>11.4f} | {:>8.1f}\n", VIN, OUR_VOUT, NGSPICE_VOUT,
+               DIFF * 1000.0);
   }
 
   fmt::print("    Max difference: {:.1f} mV\n", maxDiff * 1000.0);

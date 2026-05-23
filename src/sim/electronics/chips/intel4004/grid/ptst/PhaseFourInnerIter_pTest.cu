@@ -36,7 +36,6 @@ namespace nl_cuda = sim::electronics::devices::nonlinear::cuda;
 using sim::electronics::devices::nonlinear::MosfetLevel1;
 using sim::electronics::devices::nonlinear::MosfetLevel1Params;
 
-
 constexpr int NET_COUNT = 1121;
 constexpr int N_TRANSISTORS = 2242;
 constexpr double GMIN = 1e-12;
@@ -57,8 +56,8 @@ struct Persistent {
 
 void buildInputs(Persistent& P, std::vector<nl_cuda::MosfetNets>& hNets,
                  std::vector<MosfetLevel1Params>& hParams,
-                 std::vector<nl_cuda::MosfetBias>& hBiases,
-                 std::vector<double>& hPrevV, std::vector<double>& hDiagBias) {
+                 std::vector<nl_cuda::MosfetBias>& hBiases, std::vector<double>& hPrevV,
+                 std::vector<double>& hDiagBias) {
   std::mt19937 rng(0xFEED4004u);
   std::uniform_int_distribution<int> netDist(1, NET_COUNT - 1);
   std::uniform_real_distribution<double> voltDist(-1.0, 2.5);
@@ -110,7 +109,6 @@ void freeDevice(Persistent& P) {
   cudaFree(P.dDiagBias);
 }
 
-
 /**
  * @brief One NR iter: memset dG / dI, stamp, add diagonal bias +
  *        ground anchor (via a copy of dDiagBias), solve, update.
@@ -157,8 +155,8 @@ PERF_GPU_TEST(PhaseFourInner, FullNrIter_Dim1121) {
     cudaMemcpyAsync(P.dG, P.dDiagBias, NET_COUNT * NET_COUNT * sizeof(double),
                     cudaMemcpyDeviceToDevice, s);
     cudaMemsetAsync(P.dI, 0, NET_COUNT * sizeof(double), s);
-    nl_cuda::stampMosfetL1Batch(P.dBiases, P.dParams, P.dNets, P.dG, P.dI, N_TRANSISTORS,
-                                NET_COUNT, GMIN, s);
+    nl_cuda::stampMosfetL1Batch(P.dBiases, P.dParams, P.dNets, P.dG, P.dI, N_TRANSISTORS, NET_COUNT,
+                                GMIN, s);
     mna_cuda::solveCudaDeviceResident(P.ws, P.dG, P.dI, NET_COUNT);
     nl_cuda::nrUpdateAndLimit(P.dI, P.dPrevV, P.dMaxDelta, NET_COUNT, NR_LIMIT, s);
   };
@@ -192,10 +190,10 @@ PERF_GPU_TEST(PhaseFourInner, FullNrIter_Dim1121) {
   cudaEventElapsedTime(&ms, evStart, evStop);
   cudaEventDestroy(evStart);
   cudaEventDestroy(evStop);
-  const double usPerIter = (ms * 1000.0) / static_cast<double>(N_CHECK);
+  const double US_PER_ITER = (ms * 1000.0) / static_cast<double>(N_CHECK);
   std::printf("  per-iter (host wall / %d iters):  %.2f us  "
               "(projected 150 iters/byte -> %.2f ms/byte)\n",
-              N_CHECK, usPerIter, usPerIter * 150.0 / 1000.0);
+              N_CHECK, US_PER_ITER, US_PER_ITER * 150.0 / 1000.0);
 
   freeDevice(P);
 }

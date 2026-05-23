@@ -21,7 +21,7 @@
 
 namespace sim::electronics::algorithms::spice::ngspice {
 
-/* ----------------------------- NgspiceStatus ---------------------------- */
+/* ----------------------------- NgspiceStatus ----------------------------- */
 
 enum class NgspiceStatus : std::uint8_t {
   OK = 0,
@@ -34,10 +34,10 @@ enum class NgspiceStatus : std::uint8_t {
 
 const char* toString(NgspiceStatus status) noexcept;
 
-/* ----------------------------- NgspiceWrapper --------------------------- */
+/* ----------------------------- NgspiceWrapper ----------------------------- */
 
 struct NgspiceWrapper {
-  /* ---------------------------- Construction ---------------------------- */
+  /* ----------------------------- Construction ----------------------------- */
 
   /**
    * Initialize ngspice library and register callbacks.
@@ -59,7 +59,7 @@ struct NgspiceWrapper {
   NgspiceWrapper(NgspiceWrapper&&) = delete;
   NgspiceWrapper& operator=(NgspiceWrapper&&) = delete;
 
-  /* -------------------------- Netlist Loading --------------------------- */
+  /* ----------------------------- Netlist Loading ----------------------------- */
 
   /**
    * Load SPICE netlist from file.
@@ -81,7 +81,7 @@ struct NgspiceWrapper {
    */
   [[nodiscard]] NgspiceStatus loadNetlistFromString(const std::string& netlistContent) noexcept;
 
-  /* --------------------------- Simulation ------------------------------- */
+  /* ----------------------------- Simulation ----------------------------- */
 
   /**
    * Run DC operating point analysis.
@@ -103,7 +103,7 @@ struct NgspiceWrapper {
    */
   [[nodiscard]] NgspiceStatus runTransient(double tstop, double tstep) noexcept;
 
-  /* -------------------------- Result Extraction ------------------------- */
+  /* ----------------------------- Result Extraction ----------------------------- */
 
   /**
    * Get node voltage from last simulation.
@@ -140,7 +140,7 @@ struct NgspiceWrapper {
                                               std::vector<double>& times,
                                               std::vector<double>& voltages) const noexcept;
 
-  /* ---------------------------- Utilities ------------------------------- */
+  /* ----------------------------- Utilities ----------------------------- */
 
   /**
    * Check if libngspice is available at runtime.

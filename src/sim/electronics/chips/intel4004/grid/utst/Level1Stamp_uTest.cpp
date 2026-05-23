@@ -1,21 +1,12 @@
 /**
  * @file Level1Stamp_uTest.cpp
- * @brief Validation of MosfetLevel1 NR stamp + solve.
+ * @brief Sanity checks for the MosfetLevel1 device model used by
+ *        Intel4004GridLevel1.
  *
- * The four SinglePmos/PmosInverter tests that previously lived here exercised
- * an obsolete by-hand stamping pattern (the same one in MosfetLevel1::stamp(),
- * which uses symmetric addConductance for the asymmetric gm transconductance).
- * Production L1 simulation never uses that pattern -- Intel4004GridLevel1 has
- * its own ngspice-validated stamp using addMatrixEntry on MnaSystemSparse.
- *
- * The production stamp is validated by Level1Physics_uTest, which compares
- * single-gate DC operating points 0.0000V against ngspice. That is the
- * authoritative end-to-end check; the by-hand tests added no extra coverage
- * and the broken ones flagged the wrong stamping pattern, not a real bug.
- *
- * If a future change wants to revisit MosfetLevel1::stamp() it should also
- * delete CmosInverter::stamp() (its only caller, itself dead) or rewrite
- * both to use the production ngspice pattern with addMatrixEntry.
+ * End-to-end DC accuracy (per-gate match against ngspice) is verified in
+ * Level1Physics_uTest.cpp; this file exercises the device model itself for
+ * representative bias points so any regression in Id / gm / gds shows up
+ * before the larger circuit-level tests run.
  */
 
 #include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1.hpp"

@@ -23,14 +23,14 @@
 #include <vector>
 
 namespace ub = vernier::bench;
-using sim::electronics::circuit::Circuit;
-using sim::electronics::circuit::CircuitNet;
-using sim::electronics::devices::linear::ResistorModel;
 using sim::electronics::algorithms::mna::MnaSystem;
 using sim::electronics::algorithms::mna::NetID;
 using sim::electronics::algorithms::transient::TransientConfig;
 using sim::electronics::algorithms::transient::TransientState;
 using sim::electronics::algorithms::transient::TransientStatus;
+using sim::electronics::circuit::Circuit;
+using sim::electronics::circuit::CircuitNet;
+using sim::electronics::devices::linear::ResistorModel;
 
 /* ----------------------------- CircuitBuildSolve ----------------------------- */
 

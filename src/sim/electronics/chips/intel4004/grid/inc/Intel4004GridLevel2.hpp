@@ -119,15 +119,16 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
     applyL2LdmAccWriteback_ = true;       // physics-driven LDM/BBL writeback
     applyL2OprCaptureCell_ = true;        // physics-driven OPR M1 capture
     applyL2OpaCaptureCell_ = true;        // physics-driven OPA M2 capture
-    applyL2AluWriteback_ = true;          // physics-driven IAC/CMA/ADD/SUB + ACC group + LD/XCH writeback
-    applyL2RegPcWriteback_ = true;        // physics-driven INC/SRC/JIN/BBL writeback
-    applyL2TwoByteAndRamWriteback_ = true;// 2-byte ops + FIN + RAM/IO group
-    clampNrIterates_ = true;              // legitimate numerical aid (no current draw)
+    applyL2AluWriteback_ = true;   // physics-driven IAC/CMA/ADD/SUB + ACC group + LD/XCH writeback
+    applyL2RegPcWriteback_ = true; // physics-driven INC/SRC/JIN/BBL writeback
+    applyL2TwoByteAndRamWriteback_ = true; // 2-byte ops + FIN + RAM/IO group
+    clampNrIterates_ = true;               // legitimate numerical aid (no current draw)
     gminTransient_ = 1e-9;
-    gminDriven_ = 1e-12;                  // tiny GMIN on NOR-output / clock nets
-    assertPocFirstByte_ = true;           // physics: POC reset bootstrap
-    phaseAwareTiming_ = true;             // CLK2 signals only LOW during CLK2 sub-phase
-    skipInternalSignalForcing_ = false;   // keep timing-generator forcing (chip can't bootstrap ring counter from cold)
+    gminDriven_ = 1e-12;        // tiny GMIN on NOR-output / clock nets
+    assertPocFirstByte_ = true; // physics: POC reset bootstrap
+    phaseAwareTiming_ = true;   // CLK2 signals only LOW during CLK2 sub-phase
+    skipInternalSignalForcing_ =
+        false; // keep timing-generator forcing (chip can't bootstrap ring counter from cold)
     // Drive SELECT below GND during assert (the 4004's bootstrap mechanism).
     // PMOS pass gates need gate < storage - Vt to remain ON during LOW
     // transfer; with SELECT = -Vt the pass gate stays ON down to storage = 0V.
@@ -145,10 +146,21 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
   ///   n=3.0 -> +141 mV (deeper but n is on the high side of typical)
   /// 10-micron PMOS with thick (50 nm) gate oxide can support n around
   /// 2.0-3.0 due to depletion-region capacitance / interface states.
-  MosfetBsim3Params bsim3LatchParams_{
-      .Kp = KP_PROCESS, .Vth0 = VTH_ENH, .lambda = LAMBDA, .W = 1.0, .L = 1.0,
-      .n_factor = 2.5, .Vt = 0.026, .eta0 = 0.0, .K1 = 0.0, .K2 = 0.0, .phi = 0.7,
-      .ua = 0.0, .ub = 0.0, .tox = 50e-9, .delta = 0.01};
+  MosfetBsim3Params bsim3LatchParams_{.Kp = KP_PROCESS,
+                                      .Vth0 = VTH_ENH,
+                                      .lambda = LAMBDA,
+                                      .W = 1.0,
+                                      .L = 1.0,
+                                      .n_factor = 2.5,
+                                      .Vt = 0.026,
+                                      .eta0 = 0.0,
+                                      .K1 = 0.0,
+                                      .K2 = 0.0,
+                                      .phi = 0.7,
+                                      .ua = 0.0,
+                                      .ub = 0.0,
+                                      .tox = 50e-9,
+                                      .delta = 0.01};
 
   /// BSIM3 params for NOR-output-gated DYNAMIC_STORAGE (OPA/OPR latches,
   /// ACC bits). Lower n_factor (=1.5) means tighter weak-inversion --
@@ -157,10 +169,21 @@ struct Intel4004GridLevel2 : Intel4004GridLevel1 {
   /// leakage. n=2.5 (latch core) gives +101 mV overdrive but also
   /// stronger subthreshold; n=1.5 keeps storage cleaner at the cost of
   /// less moderate-inversion margin (latches need 2.5; storage doesn't).
-  MosfetBsim3Params bsim3StorageParams_{
-      .Kp = KP_PROCESS, .Vth0 = VTH_ENH, .lambda = LAMBDA, .W = 1.0, .L = 1.0,
-      .n_factor = 2.5, .Vt = 0.026, .eta0 = 0.0, .K1 = 0.0, .K2 = 0.0, .phi = 0.7,
-      .ua = 0.0, .ub = 0.0, .tox = 50e-9, .delta = 0.01};
+  MosfetBsim3Params bsim3StorageParams_{.Kp = KP_PROCESS,
+                                        .Vth0 = VTH_ENH,
+                                        .lambda = LAMBDA,
+                                        .W = 1.0,
+                                        .L = 1.0,
+                                        .n_factor = 2.5,
+                                        .Vt = 0.026,
+                                        .eta0 = 0.0,
+                                        .K1 = 0.0,
+                                        .K2 = 0.0,
+                                        .phi = 0.7,
+                                        .ua = 0.0,
+                                        .ub = 0.0,
+                                        .tox = 50e-9,
+                                        .delta = 0.01};
 
   /**
    * @brief Stamp a latch-feedback transistor with the full BSIM3 SPICE pattern.
@@ -184,20 +207,20 @@ private:
   void stampBsim3Transistor(algorithms::mna::MnaSystemSparse& mna, std::size_t idx,
                             const std::vector<double>& prevV,
                             const MosfetBsim3Params& paramsTemplate) const {
-    const auto& t = transistors_[idx];
+    const auto& T = transistors_[idx];
 
-    const double VS = prevV[t.source];
-    const double VD = prevV[t.drain];
-    const double VG = prevV[t.gate];
+    const double VS = prevV[T.source];
+    const double VD = prevV[T.drain];
+    const double VG = prevV[T.gate];
 
-    const double kp = transistorKp_[idx];
-    const double vth = sameVtoMode_ ? VTH_ENH : (t.isDiodeLoad ? VTH_DEP : VTH_ENH);
+    const double KP = transistorKp_[idx];
+    const double VTH = sameVtoMode_ ? VTH_ENH : (T.isDiodeLoad ? VTH_DEP : VTH_ENH);
 
     double VSG = VS - VG;
     double VSD = VS - VD;
 
     if (idx < prevVsg_.size()) {
-      VSG = MosfetLevel1::fetlim(VSG, prevVsg_[idx], vth);
+      VSG = MosfetLevel1::fetlim(VSG, prevVsg_[idx], VTH);
       VSD = MosfetLevel1::limvds(VSD, prevVsd_[idx]);
     }
     prevVsg_[idx] = VSG;
@@ -206,51 +229,52 @@ private:
     int xnrm, xrev;
     double evalVgs, evalVds;
     if (VSD >= 0.0) {
-      xnrm = 1; xrev = 0;
+      xnrm = 1;
+      xrev = 0;
       evalVgs = VSG;
       evalVds = VSD;
     } else {
-      xnrm = 0; xrev = 1;
+      xnrm = 0;
+      xrev = 1;
       evalVgs = VD - VG;
       evalVds = VD - VS;
       if (idx < prevVsg_.size()) {
-        evalVgs = MosfetLevel1::fetlim(evalVgs, prevVsg_[idx], vth);
+        evalVgs = MosfetLevel1::fetlim(evalVgs, prevVsg_[idx], VTH);
         evalVds = MosfetLevel1::limvds(evalVds, prevVsd_[idx]);
       }
     }
 
-    const double vgsM = std::max(evalVgs, 0.0);
-    const double vdsM = std::max(evalVds, 0.0);
+    const double VGS_M = std::max(evalVgs, 0.0);
+    const double VDS_M = std::max(evalVds, 0.0);
 
     MosfetBsim3Params bp = paramsTemplate;
-    bp.Kp = kp;
-    bp.Vth0 = vth;
+    bp.Kp = KP;
+    bp.Vth0 = VTH;
     bp.lambda = LAMBDA;
-    const auto SV = MosfetBsim3::stampValues(vgsM, vdsM, /*vbs=*/0.0, bp);
-    const double id = SV.id;
-    const double gm = SV.gm;
-    const double gdsDevice = SV.gds;
-    const double gdsStamp = std::max(gdsDevice, G_MIN);
+    const auto SV = MosfetBsim3::stampValues(VGS_M, VDS_M, /*vbs=*/0.0, bp);
+    const double ID = SV.id;
+    const double GM = SV.gm;
+    const double GDS_DEVICE = SV.gds;
+    const double GDS_STAMP = std::max(GDS_DEVICE, G_MIN);
 
     double cdreq;
     if (xnrm == 1) {
-      cdreq = -(id - gdsDevice * VSD - gm * VSG);
+      cdreq = -(ID - GDS_DEVICE * VSD - GM * VSG);
     } else {
-      cdreq = (id - gdsDevice * (-VSD) - gm * (VD - VG));
+      cdreq = (ID - GDS_DEVICE * (-VSD) - GM * (VD - VG));
     }
 
-    mna.addConductance(t.drain, t.source, gdsStamp);
-    mna.addMatrixEntry(t.drain, t.drain, xrev * gm);
-    mna.addMatrixEntry(t.source, t.source, xnrm * gm);
-    mna.addMatrixEntry(t.drain, t.gate, (xnrm - xrev) * gm);
-    mna.addMatrixEntry(t.drain, t.source, -static_cast<double>(xnrm) * gm);
-    mna.addMatrixEntry(t.source, t.gate, -(xnrm - xrev) * gm);
-    mna.addMatrixEntry(t.source, t.drain, -static_cast<double>(xrev) * gm);
-    mna.addCurrent(t.drain, t.source, -cdreq);
+    mna.addConductance(T.drain, T.source, GDS_STAMP);
+    mna.addMatrixEntry(T.drain, T.drain, xrev * GM);
+    mna.addMatrixEntry(T.source, T.source, xnrm * GM);
+    mna.addMatrixEntry(T.drain, T.gate, (xnrm - xrev) * GM);
+    mna.addMatrixEntry(T.drain, T.source, -static_cast<double>(xnrm) * GM);
+    mna.addMatrixEntry(T.source, T.gate, -(xnrm - xrev) * GM);
+    mna.addMatrixEntry(T.source, T.drain, -static_cast<double>(xrev) * GM);
+    mna.addCurrent(T.drain, T.source, -cdreq);
   }
 
 public:
-
   /* ----------------------------- Meyer cap dynamics ----------------------------- */
 
   /// Enable per-transistor Meyer intrinsic + overlap caps in the stamp.
@@ -307,8 +331,8 @@ public:
   /// tuning when per-cap layout values aren't available. Index into
   /// `bootstrapCapValuePerCluster_`.
   enum BootstrapCluster : std::uint8_t {
-    BS_NUMBERED = 0,  // N#### generic nets (55 of 66)
-    BS_NAMED = 1,     // ACC/ADD/CY/RRAB/OPA/CLK/SUB named (11 of 66)
+    BS_NUMBERED = 0, // N#### generic nets (55 of 66)
+    BS_NAMED = 1,    // ACC/ADD/CY/RRAB/OPA/CLK/SUB named (11 of 66)
     BS_CLUSTER_COUNT = 2,
   };
 
@@ -333,17 +357,17 @@ public:
   /// Per-cluster cap value (Farads). Default 200 fF for both clusters.
   /// MC tunable: the named-signal cluster (CLK/ACC/REG-related) likely
   /// needs different sizing than the generic N#### cluster.
-  std::array<double, BS_CLUSTER_COUNT> bootstrapCapValuePerCluster_{
-      200e-15, 200e-15};
+  std::array<double, BS_CLUSTER_COUNT> bootstrapCapValuePerCluster_{200e-15, 200e-15};
 
-  /// Legacy single-value knob (DEPRECATED -- use per-cluster array).
-  /// Setting this >0 overrides the per-cluster array uniformly.
-  /// 0 = use per-cluster values.
+  /// Uniform-value override for the per-cluster array.
+  /// Setting this >0 overrides the per-cluster array with a single value
+  /// applied to every cluster. 0 = use per-cluster values.
   double bootstrapCapValue_ = 0.0;
 
   /// Classify a bootstrap source-node name into a cluster.
   static std::uint8_t classifyBootstrapNode(const std::string& src) {
-    if (src.empty()) return BS_NUMBERED;
+    if (src.empty())
+      return BS_NUMBERED;
     if (src[0] == 'N' && src.size() >= 2 && std::isdigit(src[1])) {
       return BS_NUMBERED;
     }
@@ -351,32 +375,34 @@ public:
   }
 
   /// Load bootstrap pairs from the data file. File format:
-  ///   `<gate> <source>`                     -- legacy 2-field (no value)
-  ///   `<gate> <source> <pixels> <value_fF>` -- layout-extracted 4-field
+  ///   `<gate> <source>`                     -- 2-field (no value, cluster default)
+  ///   `<gate> <source> <pixels> <value_fF>` -- 4-field with layout-extracted value
   /// Resolves names via `findNet`; assigns cluster by source-node name
   /// pattern. Per-cap value (Farads) is stored when present; 0 means
   /// "fall back to per-cluster value". Returns count of resolved pairs.
   std::size_t loadBootstrapCaps(const std::string& path) {
     std::ifstream f(path);
-    if (!f) return 0;
+    if (!f)
+      return 0;
     bootstrapCapPairs_.clear();
     std::string line;
     while (std::getline(f, line)) {
-      if (line.empty() || line[0] == '#') continue;
+      if (line.empty() || line[0] == '#')
+        continue;
       std::istringstream iss(line);
       std::string a, b;
-      if (!(iss >> a >> b)) continue;
+      if (!(iss >> a >> b))
+        continue;
       double pixels = 0.0;
       double valueFF = 0.0;
-      iss >> pixels >> valueFF;  // optional fields; default 0 if absent
-      const auto idA = findNet(a.c_str());
-      const auto idB = findNet(b.c_str());
-      // Allow GND on one side (cap-to-ground): idB==0 is intentional
+      iss >> pixels >> valueFF; // optional fields; default 0 if absent
+      const auto ID_A = findNet(a.c_str());
+      const auto ID_B = findNet(b.c_str());
+      // Allow GND on one side (cap-to-ground): ID_B==0 is intentional
       // for pin-cap-style entries (e.g. "D0 GND 0 7000" = 7 pF on D0).
       // Reject only when both are GND or both same.
-      if (idA != 0 && idA != idB) {
-        bootstrapCapPairs_.push_back(
-            {idA, idB, classifyBootstrapNode(b), valueFF * 1e-15});
+      if (ID_A != 0 && ID_A != ID_B) {
+        bootstrapCapPairs_.push_back({ID_A, ID_B, classifyBootstrapNode(b), valueFF * 1e-15});
       }
     }
     return bootstrapCapPairs_.size();
@@ -399,11 +425,23 @@ public:
   /// Meyer cap parameters template. Process-level constants only;
   /// per-transistor W is derived in stampDynamicCharge from the
   /// calibrated W/L bin (transistorKp_ / KP_PROCESS).
-  MosfetBsim3Params meyerCapParams_{
-      .Kp = KP_PROCESS, .Vth0 = VTH_ENH, .lambda = LAMBDA, .W = L_PHYSICAL, .L = L_PHYSICAL,
-      .n_factor = 2.5, .Vt = 0.026, .eta0 = 0.0, .K1 = 0.0, .K2 = 0.0, .phi = 0.7,
-      .ua = 0.0, .ub = 0.0, .tox = 50e-9, .delta = 0.01,
-      .Lov = 1e-6, .include_caps = true};
+  MosfetBsim3Params meyerCapParams_{.Kp = KP_PROCESS,
+                                    .Vth0 = VTH_ENH,
+                                    .lambda = LAMBDA,
+                                    .W = L_PHYSICAL,
+                                    .L = L_PHYSICAL,
+                                    .n_factor = 2.5,
+                                    .Vt = 0.026,
+                                    .eta0 = 0.0,
+                                    .K1 = 0.0,
+                                    .K2 = 0.0,
+                                    .phi = 0.7,
+                                    .ua = 0.0,
+                                    .ub = 0.0,
+                                    .tox = 50e-9,
+                                    .delta = 0.01,
+                                    .Lov = 1e-6,
+                                    .include_caps = true};
 
   /**
    * @brief Per-transistor Meyer cap-companion stamping for dynamic logic.
@@ -425,12 +463,15 @@ public:
    */
   void stampDynamicCharge(algorithms::mna::MnaSystemSparse& mna,
                           const std::vector<double>& prevTimestepV) const override {
-    if (!enableMeyerCaps_) return;
-    if (stepDt_ <= 0.0) return;
-    if (prevTimestepV.empty()) return;
+    if (!enableMeyerCaps_)
+      return;
+    if (stepDt_ <= 0.0)
+      return;
+    if (prevTimestepV.empty())
+      return;
 
-    if (transistorKp_.empty()) computeTransistorKp();
-
+    if (transistorKp_.empty())
+      computeTransistorKp();
 
     const std::size_t N = prevTimestepV.size();
     auto safeV = [&](algorithms::mna::NetID n) -> double {
@@ -438,23 +479,25 @@ public:
     };
 
     for (std::size_t idx = 0; idx < transistors_.size(); ++idx) {
-      const auto& t = transistors_[idx];
+      const auto& T = transistors_[idx];
       // Skip if any terminal is invalid.
-      if (t.gate == 0 && t.source == 0 && t.drain == 0) continue;
+      if (T.gate == 0 && T.source == 0 && T.drain == 0)
+        continue;
       // Skip clock-gated transistors; clocks are externally forced.
-      if (t.gate == clk1Net_ || t.gate == clk2Net_) continue;
+      if (T.gate == clk1Net_ || T.gate == clk2Net_)
+        continue;
 
-      const double VS = safeV(t.source);
-      const double VD = safeV(t.drain);
-      const double VG = safeV(t.gate);
+      const double VS = safeV(T.source);
+      const double VD = safeV(T.drain);
+      const double VG = safeV(T.gate);
       const double VSG = VS - VG;
       const double VSD = VS - VD;
-      const double vgs = std::max(VSG, 0.0);
-      const double vds = std::max(VSD, 0.0);
+      const double VGS = std::max(VSG, 0.0);
+      const double VDS = std::max(VSD, 0.0);
 
       MosfetBsim3Params pp = meyerCapParams_;
       pp.Kp = transistorKp_[idx];
-      pp.Vth0 = sameVtoMode_ ? VTH_ENH : (t.isDiodeLoad ? VTH_DEP : VTH_ENH);
+      pp.Vth0 = sameVtoMode_ ? VTH_ENH : (T.isDiodeLoad ? VTH_DEP : VTH_ENH);
       // Per-transistor physical W from calibrated W/L bin:
       //   transistorKp_[i] = KP_PROCESS * (W/L)_i
       //   (W/L)_i = transistorKp_[i] / KP_PROCESS
@@ -463,7 +506,7 @@ public:
       pp.W = WL_ratio * L_PHYSICAL;
       pp.L = L_PHYSICAL;
 
-      const auto caps = MosfetBsim3::meyerCapacitances(vgs, vds, /*vbs=*/0.0, pp);
+      const auto CAPS = MosfetBsim3::meyerCapacitances(VGS, VDS, /*vbs=*/0.0, pp);
 
       // Always emit the cap-companion stamp (with Geq=0 if cap is
       // zero / non-finite) so the COO (row, col) sequence is invariant
@@ -475,20 +518,24 @@ public:
       // (a==b degenerate, OOB, ground) stay because they depend only
       // on transistor topology, not on per-iter state.
       auto stampCap = [&](algorithms::mna::NetID a, algorithms::mna::NetID b, double C) {
-        if (a == b) return;          // degenerate (static)
-        if (a >= N || b >= N) return;  // OOB (static)
-        if (a == 0 || b == 0) return;  // ground (static)
+        if (a == b)
+          return; // degenerate (static)
+        if (a >= N || b >= N)
+          return; // OOB (static)
+        if (a == 0 || b == 0)
+          return; // ground (static)
         double Geq = 0.0;
         if (std::isfinite(C) && C > 0.0) {
-          const double g = C / stepDt_;
-          if (std::isfinite(g)) Geq = g;
+          const double G = C / stepDt_;
+          if (std::isfinite(G))
+            Geq = G;
         }
         mna.addConductance(a, b, Geq);
         mna.addCurrent(a, b, Geq * (safeV(a) - safeV(b)));
       };
 
-      if (t.gate != 0 && t.source != 0) {
-        stampCap(t.gate, t.source, caps.Cgs * meyerCapGlobalScale_);
+      if (T.gate != 0 && T.source != 0) {
+        stampCap(T.gate, T.source, CAPS.Cgs * meyerCapGlobalScale_);
       }
       // Cgd on NOR-gate transistors: drives dynamic-logic decode chain
       // via clock-edge coupling. Verified safe (LDM 5 settles at byte 0
@@ -499,12 +546,12 @@ public:
         if (componentTypes_[idx] == ComponentType::NOR_GATE_MEMBER) {
           cgd_scale = 1.0;
         } else if (componentTypes_[idx] == ComponentType::DYNAMIC_STORAGE &&
-                   norOutputNets_.count(t.gate) != 0) {
+                   norOutputNets_.count(T.gate) != 0) {
           cgd_scale = meyerCgdStorageScale_;
         }
       }
-      if (cgd_scale > 0.0 && t.gate != 0 && t.drain != 0) {
-        stampCap(t.gate, t.drain, caps.Cgd * cgd_scale * meyerCapGlobalScale_);
+      if (cgd_scale > 0.0 && T.gate != 0 && T.drain != 0) {
+        stampCap(T.gate, T.drain, CAPS.Cgd * cgd_scale * meyerCapGlobalScale_);
       }
       // Bootstrap-cap addition on transistors with source=VDD,
       // gate=signal -- the 67 transistors classified as bootstrap-load
@@ -514,12 +561,10 @@ public:
       // (preserves baseline). Set >0 to apply bootstrap-strength
       // capacitance on top of any existing Cgd stamping.
       if (bootstrapCgdScale_ > 0.0) {
-        const bool is_bootstrap_candidate =
-            (t.source == vdd_) && (t.gate != vdd_) && (t.gate != 0) &&
-            (t.drain != vdd_) && (t.drain != 0);
-        if (is_bootstrap_candidate) {
-          stampCap(t.gate, t.drain,
-                   caps.Cgd * bootstrapCgdScale_ * meyerCapGlobalScale_);
+        const bool IS_BOOTSTRAP_CANDIDATE = (T.source == vdd_) && (T.gate != vdd_) &&
+                                            (T.gate != 0) && (T.drain != vdd_) && (T.drain != 0);
+        if (IS_BOOTSTRAP_CANDIDATE) {
+          stampCap(T.gate, T.drain, CAPS.Cgd * bootstrapCgdScale_ * meyerCapGlobalScale_);
         }
       }
     }
@@ -533,10 +578,12 @@ public:
       for (const auto& [a, b, cluster, valueF] : bootstrapCapPairs_) {
         // Allow b==0 (GND) for cap-to-ground (D-bus pin caps).
         // Skip only when both terminals same or A==0.
-        if (a == 0 || a == b) continue;
-        if (a >= N || b >= N) continue;
+        if (a == 0 || a == b)
+          continue;
+        if (a >= N || b >= N)
+          continue;
         // Cap-value priority:
-        //   1. legacy uniform override (`bootstrapCapValue_ > 0`)
+        //   1. uniform override (`bootstrapCapValue_ > 0`)
         //   2. layout-extracted per-cap value (`valueF > 0`), scaled
         //      by `bootstrapCapLayoutScale_` for MC tuning
         //   3. per-cluster fallback
@@ -548,12 +595,15 @@ public:
         } else if (cluster < BS_CLUSTER_COUNT) {
           C = bootstrapCapValuePerCluster_[cluster];
         }
-        if (C <= 0.0) continue;
+        if (C <= 0.0)
+          continue;
         const double Geq = C * meyerCapGlobalScale_ / stepDt_;
-        if (!std::isfinite(Geq) || Geq <= 0.0) continue;
+        if (!std::isfinite(Geq) || Geq <= 0.0)
+          continue;
         const double Va = prevTimestepV[a];
         const double Vb = prevTimestepV[b];
-        if (!std::isfinite(Va) || !std::isfinite(Vb)) continue;
+        if (!std::isfinite(Va) || !std::isfinite(Vb))
+          continue;
         mna.addConductance(a, b, Geq);
         mna.addCurrent(a, b, Geq * (Va - Vb));
       }

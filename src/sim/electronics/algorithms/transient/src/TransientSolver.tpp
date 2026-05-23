@@ -60,8 +60,8 @@ inline TransientStatus TransientSolver::computeDC(TransientState& state) {
 
     // Inductors: short circuit (stamp as very high conductance)
     for (std::size_t i = 0; i < companions_.inductorCount(); ++i) {
-      const auto& ind = companions_.inductor(i);
-      sparseDc.addConductance(ind.posNet, ind.negNet, 1000.0);
+      const auto& IND = companions_.inductor(i);
+      sparseDc.addConductance(IND.posNet, IND.negNet, 1000.0);
     }
 
     if (!sparseDc.factorize()) {
@@ -84,8 +84,8 @@ inline TransientStatus TransientSolver::computeDC(TransientState& state) {
 
     // Inductors: short circuit (stamp as very high conductance)
     for (std::size_t i = 0; i < companions_.inductorCount(); ++i) {
-      const auto& ind = companions_.inductor(i);
-      mna.addConductance(ind.posNet, ind.negNet, 1000.0);
+      const auto& IND = companions_.inductor(i);
+      mna.addConductance(IND.posNet, IND.negNet, 1000.0);
     }
 
     MnaResult result = mna.solve();
@@ -292,9 +292,9 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
   // Build MNA system.
   // Stamp conductances directly into LAPACK workspace (column-major)
   // to eliminate intermediate G_ allocation and copy overhead.
-  const std::size_t ld = workspace_.maxDim;
-  std::memset(workspace_.A.data(), 0, ld * ld * sizeof(double));
-  MnaSystem mna(netCount_, workspace_.A.data(), ld);
+  const std::size_t LD = workspace_.maxDim;
+  std::memset(workspace_.A.data(), 0, LD * LD * sizeof(double));
+  MnaSystem mna(netCount_, workspace_.A.data(), LD);
 
   // Stamp static elements (resistors, sources)
   invokeStampCallback(mna, time_ + dt);
@@ -326,15 +326,13 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
   // Track previous voltages for stateful stamp callbacks
   prevVoltages_ = state.nodeVoltages;
 
-  // Update companion models with new solution
   companions_.updateAll(state.nodeVoltages, dt);
 
-  // Advance time
   time_ += dt;
 
-  // Cache the LU for future steps if optimization enabled.
-  // captureLU copies the LU factors that dgesv already computed in workspace_.A,
-  // avoiding a separate O(n^3) buildAndFactorize call.
+  // captureLU copies the LU factors that dgesv already computed in
+  // workspace_.A, avoiding a separate O(n^3) buildAndFactorize call on the
+  // next step.
   if (useCachedLU_) {
     std::size_t dim = n + m;
     captureLU(dt, dim);
@@ -372,13 +370,13 @@ inline bool TransientSolver::buildAndFactorize(double dt) {
 /* ----------------------------- Capture LU from Workspace ----------------------------- */
 
 inline void TransientSolver::captureLU(double dt, std::size_t dim) {
-  const std::size_t ld = workspace_.maxDim;
+  const std::size_t LD = workspace_.maxDim;
 
-  // Copy LU factors from workspace (stride ld) to factorized workspace (stride dim).
+  // Copy LU factors from workspace (stride LD) to factorized workspace (stride dim).
   // After dgesv, workspace_.A contains the LU decomposition in column-major format.
   // The factorized workspace uses stride = dim, so we copy column by column.
   for (std::size_t c = 0; c < dim; ++c) {
-    std::memcpy(factorizedWs_.LU.data() + c * dim, workspace_.A.data() + c * ld,
+    std::memcpy(factorizedWs_.LU.data() + c * dim, workspace_.A.data() + c * LD,
                 dim * sizeof(double));
   }
   std::memcpy(factorizedWs_.ipiv.data(), workspace_.ipiv.data(), dim * sizeof(int));
@@ -432,14 +430,14 @@ inline TransientStatus TransientSolver::solveCachedStep(double dt, TransientStat
   }
 
   // 4. Augment Ax with voltage source and ground constraint contributions
-  const auto& vsrc = mna.voltageSources();
+  const auto& VSRC = mna.voltageSources();
   for (std::size_t k = 0; k < m; ++k) {
-    const auto& vs = vsrc[k];
-    // Column n+k has +1 at vs.pos, -1 at vs.neg
-    ax[vs.pos] += x[n + k];
-    ax[vs.neg] -= x[n + k];
+    const auto& VS = VSRC[k];
+    // Column n+k has +1 at VS.pos, -1 at VS.neg
+    ax[VS.pos] += x[n + k];
+    ax[VS.neg] -= x[n + k];
     // Row n+k: KVL constraint V_pos - V_neg
-    ax[n + k] = x[vs.pos] - x[vs.neg];
+    ax[n + k] = x[VS.pos] - x[VS.neg];
   }
   // Ground constraint: row 0 is [1 0 0...0], so Ax[0] = x[0]
   if (COMPAT_LIKELY(n > 0)) {
@@ -448,12 +446,12 @@ inline TransientStatus TransientSolver::solveCachedStep(double dt, TransientStat
 
   // 5. Build residual r = b - Ax directly into factorizedWs_.b
   double* __restrict__ r = factorizedWs_.b.data();
-  const double* __restrict__ iData = mna.currentVector().data();
+  const double* __restrict__ I_DATA = mna.currentVector().data();
   for (std::size_t i = 0; i < n; ++i) {
-    r[i] = iData[i] - ax[i];
+    r[i] = I_DATA[i] - ax[i];
   }
   for (std::size_t k = 0; k < m; ++k) {
-    r[n + k] = vsrc[k].v - ax[n + k];
+    r[n + k] = VSRC[k].v - ax[n + k];
   }
   // Ground: b[0]=0, so r[0] = 0 - Ax[0]
   if (COMPAT_LIKELY(n > 0)) {
@@ -542,8 +540,8 @@ inline TransientStatus TransientSolver::solveCachedStepSparse(double dt, Transie
   sparseMna_->computeMatvec(xBuf.data(), axBuf.data(), dim);
 
   // 3. Build RHS b
-  const auto& iData = sparseMna_->currentVector();
-  const auto& vsrc = sparseMna_->voltageSources();
+  const auto& I_DATA = sparseMna_->currentVector();
+  const auto& VSRC = sparseMna_->voltageSources();
 
   // 4. Compute residual r = b - Ax
   //    Reuse workspace_.b for residual (we no longer need x_prev in it)
@@ -555,11 +553,11 @@ inline TransientStatus TransientSolver::solveCachedStepSparse(double dt, Transie
 
   // Current injection rows
   for (std::size_t i = 0; i < n; ++i) {
-    rBuf[i] = iData[i] - axBuf[i];
+    rBuf[i] = I_DATA[i] - axBuf[i];
   }
   // Voltage source rows
   for (std::size_t k = 0; k < m; ++k) {
-    rBuf[n + k] = vsrc[k].v - axBuf[n + k];
+    rBuf[n + k] = VSRC[k].v - axBuf[n + k];
   }
   // Ground constraint: b[0] = 0, so r[0] = 0 - ax[0] = -ax[0]
   if (COMPAT_LIKELY(n > 0)) {

@@ -67,7 +67,7 @@ std::vector<InductorCompanion> buildInductors(std::size_t n) {
   return inds;
 }
 
-}
+} // namespace
 
 /* ----------------------------- Capacitor Geq/Ieq parity ----------------------------- */
 
@@ -88,7 +88,8 @@ TEST_F(CompanionSetCudaTest, CapacitorBackwardEulerMatchesCpu) {
 /** @test GPU capacitor evaluation matches CPU under Trapezoidal */
 TEST_F(CompanionSetCudaTest, CapacitorTrapezoidalMatchesCpu) {
   auto caps = buildCaps(/*n=*/512);
-  for (auto& c : caps) c.current = 1e-4 * c.capacitance; // non-zero current term
+  for (auto& c : caps)
+    c.current = 1e-4 * c.capacitance; // non-zero current term
   const double DT = 1e-6;
   std::vector<double> geq(caps.size()), ieq(caps.size());
   evaluateCapacitorsCuda(caps.data(), static_cast<int>(caps.size()), DT,
@@ -105,8 +106,8 @@ TEST_F(CompanionSetCudaTest, CapacitorGear2MatchesCpu) {
   const auto CAPS = buildCaps(/*n=*/100);
   const double DT = 5e-7;
   std::vector<double> geq(CAPS.size()), ieq(CAPS.size());
-  evaluateCapacitorsCuda(CAPS.data(), static_cast<int>(CAPS.size()), DT,
-                         IntegrationMethod::GEAR2, geq.data(), ieq.data());
+  evaluateCapacitorsCuda(CAPS.data(), static_cast<int>(CAPS.size()), DT, IntegrationMethod::GEAR2,
+                         geq.data(), ieq.data());
 
   for (std::size_t i = 0; i < CAPS.size(); ++i) {
     EXPECT_NEAR(geq[i], CAPS[i].geq(DT, IntegrationMethod::GEAR2), TOL);
@@ -133,7 +134,8 @@ TEST_F(CompanionSetCudaTest, InductorBackwardEulerMatchesCpu) {
 /** @test GPU inductor evaluation matches CPU under Trapezoidal */
 TEST_F(CompanionSetCudaTest, InductorTrapezoidalMatchesCpu) {
   auto inds = buildInductors(/*n=*/300);
-  for (auto& i : inds) i.voltage = 1e-3; // non-zero voltage history
+  for (auto& i : inds)
+    i.voltage = 1e-3; // non-zero voltage history
   const double DT = 1e-7;
   std::vector<double> geq(inds.size()), ieq(inds.size());
   evaluateInductorsCuda(inds.data(), static_cast<int>(inds.size()), DT,
@@ -150,8 +152,8 @@ TEST_F(CompanionSetCudaTest, InductorGear2MatchesCpu) {
   const auto INDS = buildInductors(/*n=*/64);
   const double DT = 1e-7;
   std::vector<double> geq(INDS.size()), ieq(INDS.size());
-  evaluateInductorsCuda(INDS.data(), static_cast<int>(INDS.size()), DT,
-                        IntegrationMethod::GEAR2, geq.data(), ieq.data());
+  evaluateInductorsCuda(INDS.data(), static_cast<int>(INDS.size()), DT, IntegrationMethod::GEAR2,
+                        geq.data(), ieq.data());
 
   for (std::size_t i = 0; i < INDS.size(); ++i) {
     EXPECT_NEAR(geq[i], INDS[i].geq(DT, IntegrationMethod::GEAR2), TOL);
@@ -164,10 +166,10 @@ TEST_F(CompanionSetCudaTest, InductorGear2MatchesCpu) {
 /** @test n=0 invocation is a safe no-op */
 TEST_F(CompanionSetCudaTest, ZeroCountIsNoOp) {
   std::vector<double> geq, ieq;
-  evaluateCapacitorsCuda(nullptr, 0, 1e-6,
-                         IntegrationMethod::BACKWARD_EULER, geq.data(), ieq.data());
-  evaluateInductorsCuda(nullptr, 0, 1e-6,
-                        IntegrationMethod::BACKWARD_EULER, geq.data(), ieq.data());
+  evaluateCapacitorsCuda(nullptr, 0, 1e-6, IntegrationMethod::BACKWARD_EULER, geq.data(),
+                         ieq.data());
+  evaluateInductorsCuda(nullptr, 0, 1e-6, IntegrationMethod::BACKWARD_EULER, geq.data(),
+                        ieq.data());
   SUCCEED();
 }
 

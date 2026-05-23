@@ -7,12 +7,12 @@
 
 #include <gtest/gtest.h>
 
+using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::NetID;
 using sim::electronics::devices::composite::CmosInverter;
 using sim::electronics::devices::composite::CmosNand;
 using sim::electronics::devices::composite::CmosNor;
 using sim::electronics::devices::nonlinear::MosfetLevel1Params;
-using sim::electronics::algorithms::mna::MnaSystem;
-using sim::electronics::algorithms::mna::NetID;
 
 /* ----------------------------- CmosInverter ----------------------------- */
 

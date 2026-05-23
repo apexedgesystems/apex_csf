@@ -220,8 +220,8 @@ TEST(Intel4004L1Test, LdmAccumulatorSingleInstruction) {
     auto rv = [&](const std::string& name) { return grid.readNetVoltage(v, name); };
     if (clkPhase == 1) { // CLK2 phase (when latches activate)
       std::printf("  %s: ACC.0=%.2f OPA.0=%.2f D0=%.2f OPA-IB=%.2f SC&M22=%.2f N1006=%.2f\n",
-                  MS_NAMES[ms], rv("ACC.0"), rv("OPA.0"), rv("D0"),
-                  rv("OPA-IB"), rv("SC&M22&CLK2"), rv("N1006"));
+                  MS_NAMES[ms], rv("ACC.0"), rv("OPA.0"), rv("D0"), rv("OPA-IB"), rv("SC&M22&CLK2"),
+                  rv("N1006"));
     }
   };
   grid.traceExecuteByte(circuit, state, 0xD5, tracePhase);
@@ -308,7 +308,8 @@ TEST(Intel4004L1Test, IacSingleInstruction) {
   { // Seed L1 from behavioral warmup state
     Intel4004Cpu warmupCpu;
     warmupCpu.loadProgram(WARMUP_PROG, sizeof(WARMUP_PROG));
-    for (std::size_t i = 0; i < sizeof(WARMUP_PROG); ++i) warmupCpu.step();
+    for (std::size_t i = 0; i < sizeof(WARMUP_PROG); ++i)
+      warmupCpu.step();
     grid.seedFromBehavioral(grid, warmupCpu.accumulator, warmupCpu.carry,
                             warmupCpu.registers.data());
   }
@@ -352,7 +353,8 @@ TEST(Intel4004L1Test, CmaSingleInstruction) {
   {
     Intel4004Cpu warmupCpu;
     warmupCpu.loadProgram(WARMUP_PROG, sizeof(WARMUP_PROG));
-    for (std::size_t i = 0; i < sizeof(WARMUP_PROG); ++i) warmupCpu.step();
+    for (std::size_t i = 0; i < sizeof(WARMUP_PROG); ++i)
+      warmupCpu.step();
     grid.seedFromBehavioral(grid, warmupCpu.accumulator, warmupCpu.carry,
                             warmupCpu.registers.data());
   }
@@ -509,7 +511,8 @@ TEST(Intel4004L1Test, MultiInstructionLdmNopLdm) {
       auto& spv = circuit.solver().prevVoltages();
       for (int bit = 0; bit < 4; ++bit) {
         auto net = grid.accNets_[bit];
-        if (net > 0 && net < spv.size()) spv[net] = state.nodeVoltages[net];
+        if (net > 0 && net < spv.size())
+          spv[net] = state.nodeVoltages[net];
       }
     }
     grid.traceExecuteByte(circuit, state, PROG[b], nullptr);
@@ -658,7 +661,8 @@ TEST(Intel4004L1Test, MultiInstructionLdmIacCma) {
       auto& spv = circuit.solver().prevVoltages();
       for (int bit = 0; bit < 4; ++bit) {
         auto net = grid.accNets_[bit];
-        if (net > 0 && net < spv.size()) spv[net] = state.nodeVoltages[net];
+        if (net > 0 && net < spv.size())
+          spv[net] = state.nodeVoltages[net];
       }
     }
     grid.traceExecuteByte(circuit, state, PROG[b], nullptr);

@@ -503,9 +503,9 @@ matrix size (Dim ~= 1081):
 
 | K (circuits) | T=1 (us) | T=8 (us) | Speedup |
 | ------------ | -------: | -------: | ------: |
-| 8            | 1.13     | 0.24     | 4.7x    |
-| 16           | 2.27     | 0.49     | 4.6x    |
-| 64           | 9.09     | 1.58     | 5.8x    |
+| 8            |     1.13 |     0.24 |    4.7x |
+| 16           |     2.27 |     0.49 |    4.6x |
+| 64           |     9.09 |     1.58 |    5.8x |
 
 ### Dense vs Sparse Crossover
 
@@ -542,20 +542,20 @@ mna.solve();
 
 | Operation                | RT-Safe? | Notes                             |
 | ------------------------ | -------- | --------------------------------- |
-| `addConductance()`       | [OK] Yes   | Pure stamping, no allocations     |
-| `addCurrentSource()`     | [OK] Yes   | Pure stamping, no allocations     |
-| `clearStamps()`          | [OK] Yes   | Zeros matrix, preserves structure |
-| `solve()` with workspace | [OK] Yes   | No allocations in hot path        |
+| `addConductance()`       | [OK] Yes | Pure stamping, no allocations     |
+| `addCurrentSource()`     | [OK] Yes | Pure stamping, no allocations     |
+| `clearStamps()`          | [OK] Yes | Zeros matrix, preserves structure |
+| `solve()` with workspace | [OK] Yes | No allocations in hot path        |
 
 ### NOT RT-Safe
 
 | Operation                   | RT-Safe? | Notes                             |
 | --------------------------- | -------- | --------------------------------- |
-| MNA construction            | [X] No    | Allocates matrices                |
-| `solve()` without workspace | [X] No    | Allocates internally              |
-| Resizing                    | [X] No    | Reallocates matrices              |
-| First `clear()`             | [X] No    | Destroys factorization cache      |
-| GPU batch solving           | [X] No    | Kernel launches, memory transfers |
+| MNA construction            | [X] No   | Allocates matrices                |
+| `solve()` without workspace | [X] No   | Allocates internally              |
+| Resizing                    | [X] No   | Reallocates matrices              |
+| First `clear()`             | [X] No   | Destroys factorization cache      |
+| GPU batch solving           | [X] No   | Kernel launches, memory transfers |
 
 ### RT-Safe Usage Pattern
 
@@ -647,10 +647,6 @@ docker compose run --rm dev-cuda bash -c \
 
 ## 10. See Also
 
-**Optimization:**
-
-- `../../../optimization/sim_electronics/apex4_grid/summary.md` - Performance optimization history (25 passes)
-
 **Related Modules:**
 
 - `../devices/` - Layer 2: Device physics models (MOSFETs, resistors, capacitors)
@@ -660,6 +656,5 @@ docker compose run --rm dev-cuda bash -c \
 
 **External References:**
 
-- Modified Nodal Analysis theory: Standard EE textbooks
 - KLU solver: [SuiteSparse documentation](https://people.engr.tamu.edu/davis/suitesparse.html)
 - BLAS/LAPACK: [Netlib reference](https://www.netlib.org/)

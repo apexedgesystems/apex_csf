@@ -34,9 +34,9 @@
 
 namespace sim::electronics::topologies::filters {
 
-using devices::linear::ResistorModel;
 using algorithms::mna::MnaSystem;
 using algorithms::mna::NetID;
+using devices::linear::ResistorModel;
 
 /* ----------------------------- RcLowPass ----------------------------- */
 
@@ -84,7 +84,8 @@ struct RcLowPass {
   /// @note NOT RT-safe.
   void build() { circuit_.build(); }
 
-  /// Set the input voltage (DC for now; PWL/sine inputs in future).
+  /// Set the input voltage. The input is held constant across the run;
+  /// PWL or sinusoidal stimuli would require a source wrapper.
   /// @note RT-safe.
   void setInputVoltage(double v) noexcept { inputV_ = v; }
 

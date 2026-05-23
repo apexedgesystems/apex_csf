@@ -1,228 +1,207 @@
-# NgspiceWrapper
+# Ngspice Module
 
-**Purpose:** Wrapper for libngspice to provide golden reference simulations for
-device model verification.
+**Namespace:** `sim::electronics::algorithms::spice::ngspice`
+**Platform:** Linux-only
+**C++ Standard:** C++23
 
-**RT-Safety:** NOT RT-SAFE (calls external library, allocates dynamically)
-
----
-
-## Overview
-
-This library provides a C++ interface to ngspice (industry-standard SPICE
-simulator) for verifying device models against proven implementations. It
-supports two verification strategies:
-
-1. **Runtime integration** - Link against libngspice, run simulations at
-   runtime
-2. **Fixture-based verification** - Compare against pre-generated reference
-   data
-
-The wrapper automatically detects libngspice availability at compile time. If
-libngspice is not found, only fixture-based verification is available.
+C++ wrapper around libngspice for golden-reference SPICE simulations used to
+validate the project's native device models.
 
 ---
 
-## Quick Start
+## Table of Contents
 
-### Check libngspice Availability
+1. [Overview](#1-overview)
+2. [Quick Reference](#2-quick-reference)
+3. [Design Principles](#3-design-principles)
+4. [Module Reference](#4-module-reference)
+   - [NgspiceWrapper](#ngspicewrapper) - libngspice wrapper
+5. [Common Patterns](#5-common-patterns)
+6. [Real-Time Considerations](#6-real-time-considerations)
+7. [CLI Tools](#7-cli-tools)
+8. [Example: Verify a MOSFET Model](#8-example-verify-a-mosfet-model)
+9. [See Also](#9-see-also)
+
+---
+
+## 1. Overview
+
+| Question                                 | Module / API                              |
+| ---------------------------------------- | ----------------------------------------- |
+| Is libngspice linked at build time?      | `NgspiceWrapper::isLibngspiceAvailable()` |
+| How do I load a netlist from a file?     | `NgspiceWrapper::loadNetlist`             |
+| How do I load a netlist from a string?   | `NgspiceWrapper::loadNetlistFromString`   |
+| How do I run a DC operating point?       | `NgspiceWrapper::runDcOperatingPoint`     |
+| How do I run a transient?                | `NgspiceWrapper::runTransient`            |
+| How do I read a single node voltage?     | `NgspiceWrapper::getNodeVoltage`          |
+| How do I read every node voltage?        | `NgspiceWrapper::getAllNodeVoltages`      |
+| How do I read a transient waveform?      | `NgspiceWrapper::getNodeWaveform`         |
+| What does an `NgspiceStatus` value mean? | `toString(NgspiceStatus)`                 |
+
+---
+
+## 2. Quick Reference
+
+**Header:** `src/sim/electronics/algorithms/spice/ngspice/inc/NgspiceWrapper.hpp`
 
 ```cpp
 #include "src/sim/electronics/algorithms/spice/ngspice/inc/NgspiceWrapper.hpp"
 
 using sim::electronics::algorithms::spice::ngspice::NgspiceWrapper;
+using sim::electronics::algorithms::spice::ngspice::NgspiceStatus;
 
-if (NgspiceWrapper::isLibngspiceAvailable())
-{
-  // Runtime integration available
-}
-else
-{
-  // Use fixture-based verification
+NgspiceWrapper ngspice;
+if (ngspice.loadNetlist("circuit.sp") == NgspiceStatus::OK &&
+    ngspice.runDcOperatingPoint() == NgspiceStatus::OK) {
+  double vout = 0.0;
+  ngspice.getNodeVoltage("OUT", vout);
 }
 ```
 
-### Run DC Operating Point
+---
+
+## 3. Design Principles
+
+| Annotation      | Meaning                                                      |
+| --------------- | ------------------------------------------------------------ |
+| **RT-safe**     | No allocation, bounded execution, safe for real-time loops   |
+| **NOT RT-safe** | May allocate or have unbounded I/O; call from non-RT context |
+
+- **Verification only.** This module is a comparison tool for device-model
+  validation, not a production solver. Use the native MNA stack for runtime
+  simulation.
+- **Optional dependency.** libngspice is detected at build time via
+  `APEX_HAS_LIBNGSPICE`. When unavailable, the API returns
+  `ERROR_LIBNGSPICE_NOT_AVAILABLE` so callers can degrade to fixture-based
+  verification.
+- **Status enums over exceptions.** Every entry point returns
+  `NgspiceStatus`; no operation throws on circuit errors.
+
+---
+
+## 4. Module Reference
+
+### NgspiceWrapper
+
+**Header:** `NgspiceWrapper.hpp`
+**Purpose:** C++ facade over libngspice's shared-library API.
+
+#### Key Types
 
 ```cpp
-NgspiceWrapper wrapper;
+enum class NgspiceStatus : std::uint8_t {
+  OK = 0,
+  ERROR_NOT_INITIALIZED,
+  ERROR_NETLIST_LOAD_FAILED,
+  ERROR_SIMULATION_FAILED,
+  ERROR_NODE_NOT_FOUND,
+  ERROR_LIBNGSPICE_NOT_AVAILABLE,
+};
 
-// Load netlist
-auto status = wrapper.loadNetlist("circuit.sp");
-if (status != NgspiceStatus::OK) { /* handle error */ }
-
-// Run DC analysis
-status = wrapper.runDcOperatingPoint();
-if (status != NgspiceStatus::OK) { /* handle error */ }
-
-// Extract node voltage
-double voltage = 0.0;
-status = wrapper.getNodeVoltage("OUT", voltage);
-if (status == NgspiceStatus::OK)
-{
-  std::cout << "OUT = " << voltage << " V\n";
-}
+const char* toString(NgspiceStatus status) noexcept;
 ```
 
-### Run Transient Analysis
+#### API
+
+| Method                             | Description                             | RT-Safe |
+| ---------------------------------- | --------------------------------------- | ------- |
+| `isLibngspiceAvailable()` (static) | Whether libngspice is linked            | Yes     |
+| `loadNetlist(path)`                | Load a netlist from a file              | No      |
+| `loadNetlistFromString(s)`         | Load a netlist from an in-memory string | No      |
+| `runDcOperatingPoint()`            | Run a `.op` analysis                    | No      |
+| `runTransient(tStop, tStep)`       | Run a transient analysis                | No      |
+| `getNodeVoltage(name, v)`          | Read one node's DC voltage              | No      |
+| `getAllNodeVoltages()`             | Read every node's DC voltage            | No      |
+| `getNodeWaveform(name, ts, vs)`    | Read a transient waveform               | No      |
+| `getVersion()`                     | Return libngspice's version string      | No      |
+| `clear()`                          | Reset wrapper state                     | No      |
+
+#### Data Sources
+
+- libngspice via `<ngspice/sharedspice.h>` when `APEX_HAS_LIBNGSPICE` is set.
+
+---
+
+## 5. Common Patterns
+
+### Detect libngspice at Startup
 
 ```cpp
-NgspiceWrapper wrapper;
-wrapper.loadNetlist("rc_circuit.sp");
-
-// Run transient: 1us total, 1ns timestep
-wrapper.runTransient(1e-6, 1e-9);
-
-// Extract waveform
-std::vector<double> times, voltages;
-wrapper.getNodeWaveform("OUT", times, voltages);
-
-// Plot or analyze waveform
-for (size_t i = 0; i < times.size(); ++i)
-{
-  std::cout << times[i] << "\t" << voltages[i] << "\n";
+if (!NgspiceWrapper::isLibngspiceAvailable()) {
+  // Use fixture-based verification instead.
+  return;
 }
 ```
 
----
+### DC Operating Point
 
-## Verification Strategies
-
-### Strategy 1: Runtime Integration (libngspice)
-
-**Pros:**
-
-- Immediate verification (no manual ngspice runs)
-- Exact comparison (same netlist, same parameters)
-- Integrated into unit tests
-
-**Cons:**
-
-- Requires libngspice-dev installed
-- Adds external dependency
-- NOT RT-safe
-
-**Usage:**
-
-```bash
-# Install libngspice (Ubuntu/Debian)
-apt-get install libngspice0-dev
-
-# Build with libngspice support
-make compose-debug  # Automatically detects libngspice
+```cpp
+NgspiceWrapper ng;
+if (ng.loadNetlist("circuit.sp") != NgspiceStatus::OK) {
+  return;
+}
+if (ng.runDcOperatingPoint() != NgspiceStatus::OK) {
+  return;
+}
+double vout = 0.0;
+ng.getNodeVoltage("OUT", vout);
 ```
 
-### Strategy 2: Fixture-Based Verification
+### Transient Waveform
 
-**Pros:**
+```cpp
+NgspiceWrapper ng;
+ng.loadNetlist("rc_circuit.sp");
+ng.runTransient(/*tStop=*/1e-6, /*tStep=*/1e-9);
 
-- No external dependencies required
-- Can version-control reference data
-- Fast (no runtime ngspice calls)
-
-**Cons:**
-
-- Manual ngspice runs required
-- Reference data may become stale
-- Two-step verification process
-
-**Usage:**
-
-```bash
-# 1. Generate reference data (manual)
-ngspice -b circuit.sp -o reference.txt
-
-# 2. Parse reference data into test fixtures (C++ array)
-# See circuits/cpu/intel4004/verification/ for examples
-
-# 3. Compare against our simulator in unit tests
-EXPECT_NEAR(ourVoltage, fixtureVoltage, 0.01);  // 0.01V tolerance
+std::vector<double> ts, vs;
+ng.getNodeWaveform("OUT", ts, vs);
 ```
 
 ---
 
-## API Reference
+## 6. Real-Time Considerations
 
-### Netlist Loading
+### RT-Safe Functions
 
-| Method                       | Description                    | RT-Safe |
-| ---------------------------- | ------------------------------ | ------- |
-| `loadNetlist(path)`          | Load SPICE netlist from file   | NO      |
-| `loadNetlistFromString(str)` | Load SPICE netlist from string | NO      |
+- `NgspiceWrapper::isLibngspiceAvailable()` - trivial accessor.
 
-### Simulation
+### NOT RT-Safe Functions
 
-| Method                       | Description                     | RT-Safe |
-| ---------------------------- | ------------------------------- | ------- |
-| `runDcOperatingPoint()`      | Run DC operating point analysis | NO      |
-| `runTransient(tstop, tstep)` | Run transient analysis          | NO      |
+- Every method that touches libngspice (`loadNetlist`, `runDcOperatingPoint`,
+  `runTransient`, `getNodeVoltage`, `getNodeWaveform`, `clear`, `getVersion`).
+  libngspice allocates, performs I/O, and runs unbounded numerical solves.
 
-### Result Extraction
+### Recommended Configuration
 
-| Method                                   | Description             | RT-Safe |
-| ---------------------------------------- | ----------------------- | ------- |
-| `getNodeVoltage(name, voltage)`          | Get single node voltage | NO      |
-| `getAllNodeVoltages()`                   | Get all node voltages   | NO      |
-| `getNodeWaveform(name, times, voltages)` | Get transient waveform  | NO      |
-
-### Utilities
-
-| Method                             | Description                      | RT-Safe |
-| ---------------------------------- | -------------------------------- | ------- |
-| `isLibngspiceAvailable()` (static) | Check if libngspice is available | YES     |
-| `getVersion()`                     | Get ngspice version string       | NO      |
-| `clear()`                          | Clear all simulation state       | NO      |
+- Use only for offline verification, never inside a real-time loop.
+- Compare against the native MNA solver in unit tests with a tolerance set by
+  the expected device-model accuracy (typically 1% for first-order devices).
 
 ---
 
-## Status Codes
+## 7. CLI Tools
 
-| Code                             | Description                                        |
-| -------------------------------- | -------------------------------------------------- |
-| `OK`                             | Operation succeeded                                |
-| `ERROR_NOT_INITIALIZED`          | Wrapper not initialized                            |
-| `ERROR_NETLIST_LOAD_FAILED`      | Failed to load netlist                             |
-| `ERROR_SIMULATION_FAILED`        | Simulation failed                                  |
-| `ERROR_NODE_NOT_FOUND`           | Requested node doesn't exist                       |
-| `ERROR_LIBNGSPICE_NOT_AVAILABLE` | libngspice not available (compile-time or runtime) |
+None.
 
 ---
 
-## Implementation Status
-
-**Current state:** Stub implementation with infrastructure complete.
-
-| Feature                    | Status                                     |
-| -------------------------- | ------------------------------------------ |
-| Directory structure        | [OK] Complete                                |
-| CMake integration          | [OK] Complete                                |
-| Header interface           | [OK] Complete                                |
-| Stub implementation        | [OK] Complete                                |
-| Unit tests (12)            | [OK] All passing                             |
-| libngspice detection       | [OK] Complete                                |
-| Runtime integration        | (pending) Stubbed (requires libngspice API calls) |
-| Fixture-based verification | (pending) Planned                                 |
-
-**Next steps:**
-
-1. Implement actual libngspice calls (ngSpice_Init, ngSpice_Circ, ngSpice_Command)
-2. Implement result extraction (node voltages, waveforms)
-3. Create Intel 4004 verification tests comparing MosfetLevel1 vs ngspice
-4. Generate reference data fixtures for CI/CD environments without libngspice
-
----
-
-## Example: Verify MosfetLevel1 Device Model
+## 8. Example: Verify a MOSFET Model
 
 ```cpp
 #include "src/sim/electronics/algorithms/spice/ngspice/inc/NgspiceWrapper.hpp"
 #include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1.hpp"
-#include <gtest/gtest.h>
 
-TEST(MosfetLevel1, VerifyAgainstNgspice)
-{
-  // 1. Create SPICE netlist for single MOSFET
-  std::string netlist = R"(
+#include <gtest/gtest.h>
+#include <string>
+
+using sim::electronics::algorithms::spice::ngspice::NgspiceStatus;
+using sim::electronics::algorithms::spice::ngspice::NgspiceWrapper;
+using sim::electronics::devices::nonlinear::MosfetLevel1;
+using sim::electronics::devices::nonlinear::MosfetLevel1Params;
+
+TEST(MosfetLevel1, MatchesNgspiceAtFixedBias) {
+  const std::string NETLIST = R"(
     MOSFET Level 1 Test Circuit
     M1 2 1 0 0 NMOS L=1u W=10u
     .model NMOS NMOS (VTO=0.7 KP=100u LAMBDA=0.02)
@@ -232,51 +211,31 @@ TEST(MosfetLevel1, VerifyAgainstNgspice)
     .end
   )";
 
-  // 2. Run ngspice simulation
   NgspiceWrapper ngspice;
-  ASSERT_EQ(ngspice.loadNetlistFromString(netlist), NgspiceStatus::OK);
+  ASSERT_EQ(ngspice.loadNetlistFromString(NETLIST), NgspiceStatus::OK);
   ASSERT_EQ(ngspice.runDcOperatingPoint(), NgspiceStatus::OK);
 
-  double ngspiceVds = 0.0, ngspiceIds = 0.0;
-  ASSERT_EQ(ngspice.getNodeVoltage("2", ngspiceVds), NgspiceStatus::OK);
-  // Extract IDS from ngspice results
+  double ngspiceIds = 0.0;
+  ngspice.getNodeVoltage("2", ngspiceIds);
 
-  // 3. Run our MosfetLevel1 model
-  MosfetLevel1Params params;
-  params.vto    = 0.7;
-  params.kp     = 100e-6;
-  params.lambda = 0.02;
-  params.w      = 10e-6;
-  params.l      = 1e-6;
+  MosfetLevel1Params PARAMS;
+  PARAMS.vto    = 0.7;
+  PARAMS.kp     = 100e-6;
+  PARAMS.lambda = 0.02;
+  PARAMS.w      = 10e-6;
+  PARAMS.l      = 1e-6;
 
-  MosfetLevel1 mosfet(params);
-  double       ourIds = mosfet.current(2.0, 5.0, 0.0); // VGS, VDS, VBS
+  MosfetLevel1 mosfet(PARAMS);
+  const double OUR_IDS = mosfet.current(/*Vgs=*/2.0, /*Vds=*/5.0, /*Vbs=*/0.0);
 
-  // 4. Compare results (should match within 1% for single device)
-  EXPECT_NEAR(ourIds, ngspiceIds, ngspiceIds * 0.01);
+  EXPECT_NEAR(OUR_IDS, ngspiceIds, ngspiceIds * 0.01);
 }
 ```
 
 ---
 
-## Performance
+## 9. See Also
 
-NgspiceWrapper is a verification tool -- performance is dominated by libngspice
-internals. Our wrapper adds zero measurable overhead.
-
-| Operation                | Median (us) | CV%   | Notes                  |
-| ------------------------ | ----------- | ----- | ---------------------- |
-| Init/shutdown            | 192.5       | 3.7%  | ngSpice_Init + cleanup |
-| DC op (resistor divider) | 402.9       | 12.2% | Load + solve + extract |
-
-For comparison, the native MNA solver handles the same 3-net circuit in 3 us --
-ngspice is 130x slower due to full SPICE engine initialization (including
-loading all built-in device models). Pipeline: 2.21 IPC, 0.62% branch miss.
-
----
-
-## See Also
-
-- **Device Models:** `../../devices/nonlinear/` - Models being verified
-- **Intel 4004 Verification:** `../../intel4004/grid/` - L1 NOR gate validation against ngspice (0.0000V per-gate)
-- **ngspice Manual:** <https://ngspice.sourceforge.io/docs.html>
+- [Nonlinear device models](../../../devices/nonlinear/README.md) - Models verified against this wrapper
+- [Intel 4004 grid](../../../chips/intel4004/grid/README.md) - Per-gate validation against ngspice
+- [ngspice manual](https://ngspice.sourceforge.io/docs.html)

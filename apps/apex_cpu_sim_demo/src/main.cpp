@@ -62,12 +62,12 @@
 #include <string>
 #include <vector>
 
+using sim::electronics::chips::intel4004::disassemble;
 using sim::electronics::chips::intel4004::DisassembledInstruction;
 using sim::electronics::chips::intel4004::Intel4004Cpu;
 using sim::electronics::chips::intel4004::Intel4004GridLevel1;
 using sim::electronics::chips::intel4004::Intel4004GridLevel2;
 using sim::electronics::chips::intel4004::Intel4004Netlist;
-using sim::electronics::chips::intel4004::disassemble;
 using sim::electronics::chips::intel4004::loadSpiceNetlist;
 
 /* ----------------------------- Constants ----------------------------- */
@@ -97,8 +97,8 @@ static constexpr const char* EXAMPLE_EXTENSION = ".4004";
 struct CliArgs {
   std::string netlistPath;
   std::string bootstrapCapsPath;
-  std::string program;        ///< Program as space-separated hex bytes.
-  std::string exampleName;    ///< Example file (basename or full path).
+  std::string program;     ///< Program as space-separated hex bytes.
+  std::string exampleName; ///< Example file (basename or full path).
   std::vector<std::string> probeNets;
   int level = 1;
   std::size_t warmupNops = DEFAULT_WARMUP_NOPS;
@@ -191,10 +191,11 @@ static std::vector<std::uint8_t> parseHexProgram(const std::string& hex) {
 /// returned as-is; bare names are resolved against the canonical
 /// examples directory.
 static std::string resolveExamplePath(const std::string& name) {
-  const bool LOOKS_LIKE_PATH = name.find('/') != std::string::npos ||
-                               name.size() >= 5 &&
-                                   name.substr(name.size() - 5) == EXAMPLE_EXTENSION;
-  if (LOOKS_LIKE_PATH) return name;
+  const bool LOOKS_LIKE_PATH =
+      name.find('/') != std::string::npos ||
+      (name.size() >= 5 && name.substr(name.size() - 5) == EXAMPLE_EXTENSION);
+  if (LOOKS_LIKE_PATH)
+    return name;
   return std::string(DEFAULT_EXAMPLES_DIR) + "/" + name + EXAMPLE_EXTENSION;
 }
 
@@ -218,7 +219,8 @@ static LoadedExample loadExampleProgram(const std::string& path) {
   bool inHeader = true;
   while (std::getline(f, line)) {
     // Strip a CRLF.
-    if (!line.empty() && line.back() == '\r') line.pop_back();
+    if (!line.empty() && line.back() == '\r')
+      line.pop_back();
 
     // Find a `#` comment; everything before it is code, everything
     // after is comment. A line starting with `#` is comment-only.
@@ -234,8 +236,10 @@ static LoadedExample loadExampleProgram(const std::string& path) {
 
     // Trim whitespace from code.
     auto isSpace = [](unsigned char c) { return std::isspace(c) != 0; };
-    while (!code.empty() && isSpace(code.front())) code.erase(code.begin());
-    while (!code.empty() && isSpace(code.back())) code.pop_back();
+    while (!code.empty() && isSpace(code.front()))
+      code.erase(code.begin());
+    while (!code.empty() && isSpace(code.back()))
+      code.pop_back();
 
     // Header rule: while we still haven't seen any code bytes, every
     // commented line contributes to the description.
@@ -250,7 +254,8 @@ static LoadedExample loadExampleProgram(const std::string& path) {
       }
       continue;
     }
-    if (!code.empty()) inHeader = false;
+    if (!code.empty())
+      inHeader = false;
 
     // Parse hex tokens from the code portion.
     std::istringstream iss(code);
@@ -294,18 +299,21 @@ static std::size_t listExamples() {
     const std::string FRAMED_TITLE = f.stem().string() + EXAMPLE_EXTENSION;
     while (std::getline(in, line)) {
       auto first = line.find_first_not_of(" \t");
-      if (first == std::string::npos) continue;
-      if (line[first] != '#') break; // hit code, no hint found
+      if (first == std::string::npos)
+        continue;
+      if (line[first] != '#')
+        break; // hit code, no hint found
       // Skip leading `#` and `=` framing characters.
       auto start = line.find_first_not_of("#= \t", first);
-      if (start == std::string::npos) continue;
+      if (start == std::string::npos)
+        continue;
       std::string candidate = line.substr(start);
-      while (!candidate.empty() &&
-             (candidate.back() == '=' ||
-              std::isspace(static_cast<unsigned char>(candidate.back())))) {
+      while (!candidate.empty() && (candidate.back() == '=' ||
+                                    std::isspace(static_cast<unsigned char>(candidate.back())))) {
         candidate.pop_back();
       }
-      if (candidate == FRAMED_TITLE) continue; // skip "=== name.4004 ===" header
+      if (candidate == FRAMED_TITLE)
+        continue; // skip "=== name.4004 ===" header
       hint = candidate;
       break;
     }
@@ -315,8 +323,7 @@ static std::size_t listExamples() {
 }
 
 /// Build a per-byte ROM: warmupNops NOPs followed by a single program byte.
-static std::vector<std::uint8_t> buildWarmupRom(std::uint8_t programByte,
-                                                std::size_t warmupNops) {
+static std::vector<std::uint8_t> buildWarmupRom(std::uint8_t programByte, std::size_t warmupNops) {
   std::vector<std::uint8_t> full(warmupNops + 1);
   std::fill(full.begin(), full.begin() + warmupNops, 0x00);
   full[warmupNops] = programByte;
@@ -359,9 +366,8 @@ static void printProbes(Grid& grid, const std::vector<double>& voltages,
 
 static const std::vector<std::string>& defaultProbeNets() {
   static const std::vector<std::string> NETS = {
-      "ACC.0", "ACC.1", "ACC.2", "ACC.3", "CY",    "D0",    "D1",
-      "D2",    "D3",    "SYNC",  "M12",   "M22",   "OPA.0", "OPA.1",
-      "OPA.2", "OPA.3", "OPR.0", "OPR.1", "OPR.2", "OPR.3"};
+      "ACC.0", "ACC.1", "ACC.2", "ACC.3", "CY",    "D0",    "D1",    "D2",    "D3",    "SYNC",
+      "M12",   "M22",   "OPA.0", "OPA.1", "OPA.2", "OPA.3", "OPR.0", "OPR.1", "OPR.2", "OPR.3"};
   return NETS;
 }
 
@@ -391,8 +397,7 @@ struct L0Snapshot {
 /// loaded ROM, the CPU halts, or the safety step cap is hit. Returns
 /// per-byte snapshots (ACC + CY + R0..R15) for L1/L2 hybrid seeding;
 /// for non-linear programs later iterations overwrite earlier slots.
-static std::vector<L0Snapshot> runL0(const std::vector<std::uint8_t>& program,
-                                     Intel4004Cpu& cpu) {
+static std::vector<L0Snapshot> runL0(const std::vector<std::uint8_t>& program, Intel4004Cpu& cpu) {
   fmt::print("--- L0: Behavioral CPU ---\n");
   cpu.loadProgram(program.data(), program.size());
 
@@ -408,12 +413,14 @@ static std::vector<L0Snapshot> runL0(const std::vector<std::uint8_t>& program,
     // between the call site and the jump target for control-flow ops.
     const std::size_t REMAINING = program.size() - PREV_PC;
     const auto INSTR = disassemble(program.data() + PREV_PC, REMAINING);
-    if (!cpu.step()) break;
+    if (!cpu.step())
+      break;
     L0Snapshot snap;
     snap.acc = cpu.accumulator;
     snap.carry = cpu.carry;
     snap.visited = true;
-    for (int r = 0; r < 16; ++r) snap.registers[r] = cpu.registers[r];
+    for (int r = 0; r < 16; ++r)
+      snap.registers[r] = cpu.registers[r];
     snap.ramData = cpu.ramData;
     snap.ramStatus = cpu.ramStatus;
     snap.ramOutput = cpu.ramOutput;
@@ -442,8 +449,7 @@ static std::vector<L0Snapshot> runL0(const std::vector<std::uint8_t>& program,
 /// runL2 to ensure each per-byte simulation starts from the same
 /// state L0 had after executing the previous byte.
 template <class Grid>
-static void seedFromL0(Grid& grid, std::vector<double>& voltages,
-                       const L0Snapshot& snap) {
+static void seedFromL0(Grid& grid, std::vector<double>& voltages, const L0Snapshot& snap) {
   grid.forceAccLogic(voltages, snap.acc);
   grid.forceCarry(voltages, snap.carry);
   for (int r = 0; r < 16; ++r) {
@@ -495,7 +501,8 @@ static int runL1(const CliArgs& args, const Intel4004Netlist& netlist,
       const auto NET = grid.accNets_[bit];
       if (NET > 0 && NET < state.nodeVoltages.size()) {
         const double V = state.nodeVoltages[NET];
-        if (std::isnan(V) || std::isinf(V)) healthy = false;
+        if (std::isnan(V) || std::isinf(V))
+          healthy = false;
       }
     }
 
@@ -507,7 +514,8 @@ static int runL1(const CliArgs& args, const Intel4004Netlist& netlist,
     // Never-visited filler bytes (jump-over targets, padding) leave
     // prevState unchanged so the next visited byte gets the most recent
     // valid L0 snapshot.
-    if (l0PerByte[b].visited) prevState = l0PerByte[b];
+    if (l0PerByte[b].visited)
+      prevState = l0PerByte[b];
 
     if (b == program.size() - 1) {
       fmt::print("\n--- Net Voltages (final byte, L1 state) ---\n");
@@ -544,9 +552,9 @@ static int runL2(const CliArgs& args, const Intel4004Netlist& netlist,
     auto circuit = grid.buildCircuit(netlist);
     grid.loadBootstrapCaps(args.bootstrapCapsPath);
 
-    auto state = grid.simulateLevel1FromScratch(
-        circuit, rom.data(), rom.size(), args.warmupNops, /*programBytes=*/0,
-        /*clockPeriod=*/1e-6, L2_STEPS_PER_PHASE);
+    auto state = grid.simulateLevel1FromScratch(circuit, rom.data(), rom.size(), args.warmupNops,
+                                                /*programBytes=*/0,
+                                                /*clockPeriod=*/1e-6, L2_STEPS_PER_PHASE);
     seedFromL0(grid, state.nodeVoltages, prevState);
 
     grid.traceExecuteByte(circuit, state, program[b], nullptr);
@@ -556,7 +564,8 @@ static int runL2(const CliArgs& args, const Intel4004Netlist& netlist,
       const auto NET = grid.accNets_[bit];
       if (NET > 0 && NET < state.nodeVoltages.size()) {
         const double V = state.nodeVoltages[NET];
-        if (std::isnan(V) || std::isinf(V)) healthy = false;
+        if (std::isnan(V) || std::isinf(V))
+          healthy = false;
       }
     }
 
@@ -568,7 +577,8 @@ static int runL2(const CliArgs& args, const Intel4004Netlist& netlist,
     // Never-visited filler bytes (jump-over targets, padding) leave
     // prevState unchanged so the next visited byte gets the most recent
     // valid L0 snapshot.
-    if (l0PerByte[b].visited) prevState = l0PerByte[b];
+    if (l0PerByte[b].visited)
+      prevState = l0PerByte[b];
 
     if (b == program.size() - 1) {
       fmt::print("\n--- Net Voltages (final byte, L2 state) ---\n");

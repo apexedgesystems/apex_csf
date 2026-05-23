@@ -18,6 +18,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <limits>
 
 using sim::electronics::devices::nonlinear::MosfetLevel1;
 using sim::electronics::devices::nonlinear::MosfetLevel1Params;
@@ -50,8 +51,11 @@ TEST(Level1ParamsTest, VthSweepForCleanLogic) {
   double kpEnh = 5e-3;
   double kpDep = 3.125e-4;
   double vthDep = -2.0;
+  double prevVol = -std::numeric_limits<double>::infinity();
   for (double vthE = 0.1; vthE <= 1.0; vthE += 0.1) {
     double vol = analyticalVol(kpEnh, vthE, kpDep, vthDep);
+    EXPECT_GE(vol, prevVol - 1e-9) << "VOL should be non-decreasing in Vth_enh";
+    prevVol = vol;
   }
 
   // Find the threshold that gives VOL = 0.5V
@@ -66,9 +70,12 @@ TEST(Level1ParamsTest, KpRatioSweep) {
   double vthEnh = 1.0;
   double vthDep = -2.0;
   double kpEnh = 5e-3;
+  double prevVol = std::numeric_limits<double>::infinity();
   for (double ratio : {1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0, 500.0, 1000.0}) {
     double kpDep = kpEnh / ratio;
     double vol = analyticalVol(kpEnh, vthEnh, kpDep, vthDep);
+    EXPECT_LE(vol, prevVol + 1e-9) << "Weaker depletion load should not raise VOL";
+    prevVol = vol;
   }
 }
 

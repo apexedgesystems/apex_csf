@@ -76,8 +76,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// uniform GMIN (gminDriven_=0). L2 disables the behavioral stubs and
   /// adds legitimate numerical aids; the L2 contract is full physics
   /// with no behavioral stubs.
-  bool applyBehavioralLatchOverlay_ = true;  ///< L2 sets false: pure physics, no overlay.
-  bool applyBehavioralX3_ = true;            ///< L2 sets false: pure physics, no X3 switch.
+  bool applyBehavioralLatchOverlay_ = true; ///< L2 sets false: pure physics, no overlay.
+  bool applyBehavioralX3_ = true;           ///< L2 sets false: pure physics, no X3 switch.
 
   /// L2 custom primitive: `LdmAccWriteback`.
   ///
@@ -172,8 +172,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// OPR + OPA, but the chip's ALU/PC/stack writeback chain doesn't
   /// converge in our solver. Default false. L2 sets true.
   bool applyL2RegPcWriteback_ = false;
-  bool clampNrIterates_ = false;             ///< L2 sets true: NR voltage clamp (no current).
-  double gminDriven_ = 0.0;                  ///< L2 sets >0: tiny GMIN on NOR-output/clock nets.
+  bool clampNrIterates_ = false; ///< L2 sets true: NR voltage clamp (no current).
+  double gminDriven_ = 0.0;      ///< L2 sets >0: tiny GMIN on NOR-output/clock nets.
   static constexpr double V_NR_LO = -1.0;
   static constexpr double V_NR_HI = 6.0;
 
@@ -223,9 +223,9 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   double bootstrapSelectAssertVolts_ = 0.0;
 
   /// Initial voltage for non-VDD nets in `simulateLevel1FromScratch`.
-  /// L1 default = 0V (preserves legacy behavior). L2 can probe whether
-  /// chip-scale instability comes from cold-start initialization vs
-  /// steady-state physics by setting this to VDD or VDD/2.
+  /// L1 default = 0 V. L2 can probe whether chip-scale instability comes
+  /// from cold-start initialization vs steady-state physics by setting
+  /// this to VDD or VDD/2.
   double initialNetVolts_ = 0.0;
 
   /// Parasitic capacitance for Level 1 model.
@@ -298,27 +298,27 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     for (auto& [name, id] : netMap_) {
       // Match: "OPA.<digit>", "~OPA.<digit>", "ACC.<digit>",
       // "OPR.<digit>", "~OPR.<digit>".
-      const auto isLatchName = [](const std::string& n) {
-        const std::string body = n.starts_with("~") ? n.substr(1) : n;
-        if (body.size() < 5) return false;
-        if (body.starts_with("OPA.") || body.starts_with("OPR.") ||
-            body.starts_with("ACC.")) {
-          return body.size() == 5 && std::isdigit(body[4]);
+      const auto IS_LATCH_NAME = [](const std::string& n) {
+        const std::string BODY = n.starts_with("~") ? n.substr(1) : n;
+        if (BODY.size() < 5)
+          return false;
+        if (BODY.starts_with("OPA.") || BODY.starts_with("OPR.") || BODY.starts_with("ACC.")) {
+          return BODY.size() == 5 && std::isdigit(BODY[4]);
         }
         return false;
       };
-      if (isLatchName(name)) latchStorage.insert(id);
+      if (IS_LATCH_NAME(name))
+        latchStorage.insert(id);
     }
 
-    const auto vddId = findNet("VDD");
-    const auto gndId = findNet("GND");
+    const auto VDD_ID = findNet("VDD");
+    const auto GND_ID = findNet("GND");
 
-    const double wlLatchDriver = (latchDriverWLOverride_ > 0.0)
-                                     ? latchDriverWLOverride_
-                                     : WL_LATCH_DRIVER;
+    const double WL_LATCH_DRIVER_EFF =
+        (latchDriverWLOverride_ > 0.0) ? latchDriverWLOverride_ : WL_LATCH_DRIVER;
 
     for (std::size_t i = 0; i < transistors_.size(); ++i) {
-      const auto& t = transistors_[i];
+      const auto& T = transistors_[i];
       double wl;
 
       // Cross-coupled latch member: one terminal is on a latch
@@ -326,31 +326,30 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       // GND). These are the latch's pull-up/pull-down transistors
       // and must NOT be boosted -- boosting them strengthens the
       // hold, defeating the driver upgrade.
-      const bool drainIsRail = (t.drain == vddId || t.drain == gndId);
-      const bool sourceIsRail = (t.source == vddId || t.source == gndId);
-      const bool drainOnStorage = latchStorage.count(t.drain) > 0;
-      const bool sourceOnStorage = latchStorage.count(t.source) > 0;
-      const bool isLatchMember = (drainOnStorage && sourceIsRail) ||
-                                 (sourceOnStorage && drainIsRail);
+      const bool DRAIN_IS_RAIL = (T.drain == VDD_ID || T.drain == GND_ID);
+      const bool SOURCE_IS_RAIL = (T.source == VDD_ID || T.source == GND_ID);
+      const bool DRAIN_ON_STORAGE = latchStorage.count(T.drain) > 0;
+      const bool SOURCE_ON_STORAGE = latchStorage.count(T.source) > 0;
+      const bool IS_LATCH_MEMBER =
+          (DRAIN_ON_STORAGE && SOURCE_IS_RAIL) || (SOURCE_ON_STORAGE && DRAIN_IS_RAIL);
 
       // Latch driver check fires *before* padNet check: a pass
       // transistor between D-bus and OPA.x is classified as a
       // latch driver (the latch dominates the duty), not a generic
       // pad driver. Order: depletion -> latch driver -> padNet ->
       // clock pass -> default.
-      const bool isLatchDriverCandidate =
-          (drainOnStorage || sourceOnStorage) && !isLatchMember &&
-          !latchStorage.count(t.gate);
+      const bool IS_LATCH_DRIVER_CANDIDATE = (DRAIN_ON_STORAGE || SOURCE_ON_STORAGE) &&
+                                             !IS_LATCH_MEMBER && !latchStorage.count(T.gate);
 
-      if (t.isDiodeLoad) {
+      if (T.isDiodeLoad) {
         wl = WL_DEPLETION_LOAD;
-      } else if (t.isLoad && !t.isDiodeLoad) {
+      } else if (T.isLoad && !T.isDiodeLoad) {
         wl = WL_DEPLETION_CASCADED;
-      } else if (isLatchDriverCandidate) {
-        wl = wlLatchDriver;
-      } else if (padNets.count(t.drain) || padNets.count(t.source)) {
+      } else if (IS_LATCH_DRIVER_CANDIDATE) {
+        wl = WL_LATCH_DRIVER_EFF;
+      } else if (padNets.count(T.drain) || padNets.count(T.source)) {
         wl = WL_OUTPUT_DRIVER;
-      } else if (timingNets.count(t.gate)) {
+      } else if (timingNets.count(T.gate)) {
         wl = WL_PASS_GATE_CLOCK;
       } else {
         wl = WL_ENHANCEMENT_LOGIC;
@@ -394,8 +393,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// instructions that touch them. Real silicon stores these in
   /// dynamic latches just like ACC/registers; we model them as plain
   /// integer state because they aren't on the data path of any test.
-  mutable std::uint8_t ramBank_ = 0;     ///< Set by DCL (lower 3 bits of ACC).
-  mutable std::uint8_t srcAddress_ = 0;  ///< Set by SRC (register pair value).
+  mutable std::uint8_t ramBank_ = 0;    ///< Set by DCL (lower 3 bits of ACC).
+  mutable std::uint8_t srcAddress_ = 0; ///< Set by SRC (register pair value).
 
   /// 2-byte instruction state. The chip's M1/M2 fetch handles 2-byte
   /// instructions across two machine cycles; in our tracing API each
@@ -513,12 +512,11 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         fv(scNetLocal, 0.0);
         // CLK2-phase timing signals X1/X2/X3 etc. drive logic NORs;
         // their assert voltage is plain GND (no bootstrap).
-        const bool clk2_active = !clk2High_;
+        const bool CLK2_ACTIVE = !clk2High_;
         for (std::size_t i = 0; i < 8; ++i) {
-          const bool assert_low = phaseAwareTiming_
-              ? (machineState_ == i && clk2_active)
-              : (machineState_ == i);
-          fv(timingNets_[i], assert_low ? 0.0 : VDD_VOLTAGE);
+          const bool ASSERT_LOW =
+              phaseAwareTiming_ ? (machineState_ == i && CLK2_ACTIVE) : (machineState_ == i);
+          fv(timingNets_[i], ASSERT_LOW ? 0.0 : VDD_VOLTAGE);
         }
         fv(syncNet_, (machineState_ <= 2) ? VDD_VOLTAGE : 0.0);
         // Data-capture pass-gate SELECTs (M12, M22) gate PMOS pass
@@ -526,11 +524,11 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         // (N1008..N1011 for OPR, etc.). Without bootstrap, PMOS
         // cuts off at storage = Vt; with assertVolts < -Vt, pass
         // gate stays ON down to storage = 0V (full LOW transfer).
-        // L1 default = 0V (legacy); L2 may set < 0V.
-        const double captureSelectVolts = bootstrapSelectAssertVolts_;
-        fv(scM12Clk2Net, ((machineState_ == 3) && !clk2High_) ? captureSelectVolts : VDD_VOLTAGE);
-        fv(scM22Clk2Net, ((machineState_ == 4) && !clk2High_) ? captureSelectVolts : VDD_VOLTAGE);
-        fv(opaIbNet, (machineState_ == 4) ? captureSelectVolts : VDD_VOLTAGE);
+        // L1 default = 0 V; L2 may set < 0 V to enable the bootstrap below ground.
+        const double CAPTURE_SELECT_VOLTS = bootstrapSelectAssertVolts_;
+        fv(scM12Clk2Net, ((machineState_ == 3) && !clk2High_) ? CAPTURE_SELECT_VOLTS : VDD_VOLTAGE);
+        fv(scM22Clk2Net, ((machineState_ == 4) && !clk2High_) ? CAPTURE_SELECT_VOLTS : VDD_VOLTAGE);
+        fv(opaIbNet, (machineState_ == 4) ? CAPTURE_SELECT_VOLTS : VDD_VOLTAGE);
       }
 
       // Power-On Clear protocol: assert POC LOW for the first pocBytes_
@@ -557,18 +555,17 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       // abstracts the cascade with a sample-and-encode operation whose
       // inputs are physics-driven (D-bus + capture-gate).
       if (applyL2OprCaptureCell_ && machineState_ == 3 && dataBusDriving_) {
-        const algorithms::mna::NetID opr[4] = {findNet("OPR.0"), findNet("OPR.1"),
-                                    findNet("OPR.2"), findNet("OPR.3")};
+        const algorithms::mna::NetID opr[4] = {findNet("OPR.0"), findNet("OPR.1"), findNet("OPR.2"),
+                                               findNet("OPR.3")};
         for (int b = 0; b < 4; ++b) {
-          if (opr[b] > 0 && opr[b] < v.size() &&
-              dataBusNets_[b] < v.size()) {
+          if (opr[b] > 0 && opr[b] < v.size() && dataBusNets_[b] < v.size()) {
             // Read physics D-bus voltage, encode into OPR via active-low.
-            const double vDbus = v[dataBusNets_[b]];
-            const double encoded = (vDbus < VDD_VOLTAGE * 0.5)
-                                       ? 0.0   // logic 1 -> LOW
-                                       : VDD_VOLTAGE; // logic 0 -> HIGH
-            v[opr[b]] = encoded;
-            if (!latchValues_.empty()) latchValues_[opr[b]] = encoded;
+            const double V_DBUS = v[dataBusNets_[b]];
+            const double ENCODED = (V_DBUS < VDD_VOLTAGE * 0.5) ? 0.0          // logic 1 -> LOW
+                                                                : VDD_VOLTAGE; // logic 0 -> HIGH
+            v[opr[b]] = ENCODED;
+            if (!latchValues_.empty())
+              latchValues_[opr[b]] = ENCODED;
           }
         }
       }
@@ -578,17 +575,15 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       // physics-driven D-bus voltages -> encode into OPA.0..3. Same
       // engineering justification as OprCaptureCell.
       if (applyL2OpaCaptureCell_ && machineState_ == 4 && dataBusDriving_) {
-        const algorithms::mna::NetID opa[4] = {findNet("OPA.0"), findNet("OPA.1"),
-                                    findNet("OPA.2"), findNet("OPA.3")};
+        const algorithms::mna::NetID opa[4] = {findNet("OPA.0"), findNet("OPA.1"), findNet("OPA.2"),
+                                               findNet("OPA.3")};
         for (int b = 0; b < 4; ++b) {
-          if (opa[b] > 0 && opa[b] < v.size() &&
-              dataBusNets_[b] < v.size()) {
-            const double vDbus = v[dataBusNets_[b]];
-            const double encoded = (vDbus < VDD_VOLTAGE * 0.5)
-                                       ? 0.0
-                                       : VDD_VOLTAGE;
-            v[opa[b]] = encoded;
-            if (!latchValues_.empty()) latchValues_[opa[b]] = encoded;
+          if (opa[b] > 0 && opa[b] < v.size() && dataBusNets_[b] < v.size()) {
+            const double V_DBUS = v[dataBusNets_[b]];
+            const double ENCODED = (V_DBUS < VDD_VOLTAGE * 0.5) ? 0.0 : VDD_VOLTAGE;
+            v[opa[b]] = ENCODED;
+            if (!latchValues_.empty())
+              latchValues_[opa[b]] = ENCODED;
           }
         }
       }
@@ -600,8 +595,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       if (applyBehavioralLatchOverlay_ && !latchValues_.empty()) {
         // M1: latch high nibble from data bus into OPR (opcode register)
         if (machineState_ == 3 && dataBusDriving_) {
-          algorithms::mna::NetID oprNets[] = {findNet("OPR.0"), findNet("OPR.1"),
-                                  findNet("OPR.2"), findNet("OPR.3")};
+          algorithms::mna::NetID oprNets[] = {findNet("OPR.0"), findNet("OPR.1"), findNet("OPR.2"),
+                                              findNet("OPR.3")};
           for (int b = 0; b < 4; ++b) {
             if (oprNets[b] > 0) {
               double val = ((dataBusDrive_ >> b) & 1) ? 0.0 : VDD_VOLTAGE;
@@ -612,8 +607,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         }
         // M2: latch low nibble from data bus into OPA
         if (machineState_ == 4 && dataBusDriving_) {
-          algorithms::mna::NetID opaNets[] = {findNet("OPA.0"), findNet("OPA.1"),
-                                  findNet("OPA.2"), findNet("OPA.3")};
+          algorithms::mna::NetID opaNets[] = {findNet("OPA.0"), findNet("OPA.1"), findNet("OPA.2"),
+                                              findNet("OPA.3")};
           for (int b = 0; b < 4; ++b) {
             if (opaNets[b] > 0) {
               double val = ((dataBusDrive_ >> b) & 1) ? 0.0 : VDD_VOLTAGE;
@@ -626,13 +621,14 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         // after X3 sub-steps complete (not inside NR callback).
         if (false) { // disabled -- see executeInstruction() below
           // Read 4-bit value from latch
-          auto readLatch4 = [&](const char* n0, const char* n1,
-                                const char* n2, const char* n3) -> std::uint8_t {
+          auto readLatch4 = [&](const char* n0, const char* n1, const char* n2,
+                                const char* n3) -> std::uint8_t {
             algorithms::mna::NetID nets[] = {findNet(n0), findNet(n1), findNet(n2), findNet(n3)};
             std::uint8_t val = 0;
             for (int b = 0; b < 4; ++b) {
               if (nets[b] > 0 && latchValues_.count(nets[b])) {
-                if (latchValues_[nets[b]] < VDD_VOLTAGE * 0.5) val |= (1 << b);
+                if (latchValues_[nets[b]] < VDD_VOLTAGE * 0.5)
+                  val |= (1 << b);
               }
             }
             return val;
@@ -674,7 +670,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
               for (int b = 0; b < 4; ++b) {
                 auto net = regNets_[opa][b];
                 if (net > 0 && latchValues_.count(net))
-                  if (latchValues_[net] < VDD_VOLTAGE * 0.5) regVal |= (1 << b);
+                  if (latchValues_[net] < VDD_VOLTAGE * 0.5)
+                    regVal |= (1 << b);
               }
             }
             unsigned sum = acc + regVal + (cy ? 1 : 0);
@@ -688,7 +685,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
               for (int b = 0; b < 4; ++b) {
                 auto net = regNets_[opa][b];
                 if (net > 0 && latchValues_.count(net))
-                  if (latchValues_[net] < VDD_VOLTAGE * 0.5) regVal |= (1 << b);
+                  if (latchValues_[net] < VDD_VOLTAGE * 0.5)
+                    regVal |= (1 << b);
               }
             }
             unsigned diff = acc + (~regVal & 0xF) + (cy ? 1 : 0);
@@ -703,7 +701,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
               for (int b = 0; b < 4; ++b) {
                 auto net = regNets_[opa][b];
                 if (net > 0 && latchValues_.count(net)) {
-                  if (latchValues_[net] < VDD_VOLTAGE * 0.5) regVal |= (1 << b);
+                  if (latchValues_[net] < VDD_VOLTAGE * 0.5)
+                    regVal |= (1 << b);
                 }
               }
             }
@@ -762,7 +761,7 @@ struct Intel4004GridLevel1 : Intel4004Grid {
               writeCy(true);
               break;
             default:
-              break; // DAA, KBP, DCL: not yet implemented
+              break; // DAA, KBP, DCL fall through to no-op at this level
             }
             break;
           default:
@@ -786,9 +785,12 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       // Optional plug-in (default off): post-iteration voltage clamp to rails.
       if (clampNrIterates_) {
         for (std::size_t i = 1; i < v.size(); ++i) {
-          if (i == vdd_) continue;
-          if (v[i] < V_NR_LO) v[i] = V_NR_LO;
-          else if (v[i] > V_NR_HI) v[i] = V_NR_HI;
+          if (i == vdd_)
+            continue;
+          if (v[i] < V_NR_LO)
+            v[i] = V_NR_LO;
+          else if (v[i] > V_NR_HI)
+            v[i] = V_NR_HI;
         }
       }
     };
@@ -848,13 +850,14 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       // After X3 phase: execute instruction behaviorally.
       // OPR was latched during M1, OPA during M2. Now decode and execute.
       if (ms == 7 && applyBehavioralX3_ && !latchValues_.empty()) {
-        auto readLatch4 = [&](const char* n0, const char* n1,
-                              const char* n2, const char* n3) -> std::uint8_t {
+        auto readLatch4 = [&](const char* n0, const char* n1, const char* n2,
+                              const char* n3) -> std::uint8_t {
           algorithms::mna::NetID nets[] = {findNet(n0), findNet(n1), findNet(n2), findNet(n3)};
           std::uint8_t val = 0;
           for (int b = 0; b < 4; ++b)
             if (nets[b] > 0 && latchValues_.count(nets[b]))
-              if (latchValues_[nets[b]] < VDD_VOLTAGE * 0.5) val |= (1 << b);
+              if (latchValues_[nets[b]] < VDD_VOLTAGE * 0.5)
+                val |= (1 << b);
           return val;
         };
         auto writeAcc = [&](std::uint8_t val) {
@@ -867,10 +870,14 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         };
         auto cyNet = findNet("CY");
         auto readCy = [&]() -> bool {
-          return (cyNet > 0 && latchValues_.count(cyNet)) ? latchValues_[cyNet] < VDD_VOLTAGE * 0.5 : false;
+          return (cyNet > 0 && latchValues_.count(cyNet)) ? latchValues_[cyNet] < VDD_VOLTAGE * 0.5
+                                                          : false;
         };
         auto writeCy = [&](bool cy) {
-          if (cyNet > 0) { latchValues_[cyNet] = cy ? 0.0 : VDD_VOLTAGE; state.nodeVoltages[cyNet] = latchValues_[cyNet]; }
+          if (cyNet > 0) {
+            latchValues_[cyNet] = cy ? 0.0 : VDD_VOLTAGE;
+            state.nodeVoltages[cyNet] = latchValues_[cyNet];
+          }
         };
         auto readReg = [&](std::uint8_t idx) -> std::uint8_t {
           std::uint8_t val = 0;
@@ -878,7 +885,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
             for (int b = 0; b < 4; ++b) {
               auto net = regNets_[idx][b];
               if (net > 0 && latchValues_.count(net))
-                if (latchValues_[net] < VDD_VOLTAGE * 0.5) val |= (1 << b);
+                if (latchValues_[net] < VDD_VOLTAGE * 0.5)
+                  val |= (1 << b);
             }
           return val;
         };
@@ -889,67 +897,95 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         bool cy = readCy();
 
         switch (opr) {
-        case 0x8: { unsigned s = acc + readReg(opa) + (cy?1:0); writeAcc(s&0xF); writeCy(s>0xF); break; }
-        case 0x9: { auto r=readReg(opa); unsigned d=acc+(~r&0xF)+(cy?1:0); writeAcc(d&0xF); writeCy(d>0xF); break; }
-        case 0xA: writeAcc(readReg(opa)); break;
-        case 0xB: writeAcc(readReg(opa)); break; // XCH ACC part
-        case 0xC: writeAcc(opa); break;          // BBL d: ACC = d (PC pop handled elsewhere)
-        case 0xD: writeAcc(opa); break;
+        case 0x8: {
+          unsigned s = acc + readReg(opa) + (cy ? 1 : 0);
+          writeAcc(s & 0xF);
+          writeCy(s > 0xF);
+          break;
+        }
+        case 0x9: {
+          auto r = readReg(opa);
+          unsigned d = acc + (~r & 0xF) + (cy ? 1 : 0);
+          writeAcc(d & 0xF);
+          writeCy(d > 0xF);
+          break;
+        }
+        case 0xA:
+          writeAcc(readReg(opa));
+          break;
+        case 0xB:
+          writeAcc(readReg(opa));
+          break; // XCH ACC part
+        case 0xC:
+          writeAcc(opa);
+          break; // BBL d: ACC = d (PC pop handled elsewhere)
+        case 0xD:
+          writeAcc(opa);
+          break;
         case 0xE: { // RAM/IO group, parallel-state-backed (matches L0).
           // Address calculations match L0 / Intel 4002:
           //   bank   = ramBank_ (DCL-set)
           //   chip   = (srcAddress_ >> 6) & 0x3
           //   reg    = (srcAddress_ >> 4) & 0xF
           //   char   = srcAddress_ & 0xF
-          const std::size_t dataAddr =
+          const std::size_t DATA_ADDR =
               (static_cast<std::size_t>(ramBank_ & 0x3) * 256u) + srcAddress_;
-          const std::size_t outAddr =
-              (static_cast<std::size_t>(ramBank_ & 0x3) * 4u) +
-              ((srcAddress_ >> 6) & 0x3);
+          const std::size_t OUT_ADDR =
+              (static_cast<std::size_t>(ramBank_ & 0x3) * 4u) + ((srcAddress_ >> 6) & 0x3);
           auto statusAddr = [&](std::uint8_t reg) -> std::size_t {
-            const std::size_t base =
-                (static_cast<std::size_t>(ramBank_ & 0x3) * 64u) +
-                ((srcAddress_ >> 4) & 0xF) * 4u;
-            return base + (reg & 0x3);
+            const std::size_t BASE =
+                (static_cast<std::size_t>(ramBank_ & 0x3) * 64u) + ((srcAddress_ >> 4) & 0xF) * 4u;
+            return BASE + (reg & 0x3);
           };
           switch (opa) {
           case 0x0: // WRM
-            if (dataAddr < ramData_.size()) ramData_[dataAddr] = acc;
+            if (DATA_ADDR < ramData_.size())
+              ramData_[DATA_ADDR] = acc;
             break;
           case 0x1: // WMP
-            if (outAddr < ramOutput_.size()) ramOutput_[outAddr] = acc;
+            if (OUT_ADDR < ramOutput_.size())
+              ramOutput_[OUT_ADDR] = acc;
             break;
           case 0x2: // WRR (ROM port write -- no parallel state in our model)
           case 0x3: // WPM (program RAM write -- no parallel state)
             break;
-          case 0x4: case 0x5: case 0x6: case 0x7: { // WR0..WR3
-            const std::size_t a = statusAddr(opa & 0x3);
-            if (a < ramStatus_.size()) ramStatus_[a] = acc;
+          case 0x4:
+          case 0x5:
+          case 0x6:
+          case 0x7: { // WR0..WR3
+            const std::size_t A = statusAddr(opa & 0x3);
+            if (A < ramStatus_.size())
+              ramStatus_[A] = acc;
             break;
           }
           case 0x8: { // SBM: ACC = ACC + ~RAM + CY
-            std::uint8_t mem = (dataAddr < ramData_.size()) ? ramData_[dataAddr] : 0;
+            std::uint8_t mem = (DATA_ADDR < ramData_.size()) ? ramData_[DATA_ADDR] : 0;
             unsigned diff = acc + (~mem & 0xF) + (cy ? 1u : 0u);
             writeAcc(diff & 0xF);
             writeCy(diff > 0xF);
             break;
           }
           case 0x9: { // RDM
-            std::uint8_t mem = (dataAddr < ramData_.size()) ? ramData_[dataAddr] : 0;
+            std::uint8_t mem = (DATA_ADDR < ramData_.size()) ? ramData_[DATA_ADDR] : 0;
             writeAcc(mem & 0xF);
             break;
           }
-          case 0xA: writeAcc(0); break; // RDR (no ROM port wired; matches L0)
+          case 0xA:
+            writeAcc(0);
+            break;    // RDR (no ROM port wired; matches L0)
           case 0xB: { // ADM: ACC = ACC + RAM + CY
-            std::uint8_t mem = (dataAddr < ramData_.size()) ? ramData_[dataAddr] : 0;
+            std::uint8_t mem = (DATA_ADDR < ramData_.size()) ? ramData_[DATA_ADDR] : 0;
             unsigned sum = acc + mem + (cy ? 1u : 0u);
             writeAcc(sum & 0xF);
             writeCy(sum > 0xF);
             break;
           }
-          case 0xC: case 0xD: case 0xE: case 0xF: { // RD0..RD3
-            const std::size_t a = statusAddr(opa & 0x3);
-            std::uint8_t mem = (a < ramStatus_.size()) ? ramStatus_[a] : 0;
+          case 0xC:
+          case 0xD:
+          case 0xE:
+          case 0xF: { // RD0..RD3
+            const std::size_t A = statusAddr(opa & 0x3);
+            std::uint8_t mem = (A < ramStatus_.size()) ? ramStatus_[A] : 0;
             writeAcc(mem & 0xF);
             break;
           }
@@ -958,20 +994,54 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         }
         case 0xF:
           switch (opa) {
-          case 0x0: writeAcc(0); writeCy(false); break;
-          case 0x1: writeCy(false); break;
-          case 0x2: { unsigned s=acc+1; writeAcc(s&0xF); writeCy(s>0xF); break; }
-          case 0x3: writeCy(!cy); break;
-          case 0x4: writeAcc(~acc&0xF); break;
-          case 0x5: { unsigned r=(acc<<1)|(cy?1:0); writeAcc(r&0xF); writeCy((r>>4)&1); break; }
-          case 0x6: { unsigned r=acc|(cy?0x10:0); writeAcc((r>>1)&0xF); writeCy(r&1); break; }
-          case 0x7: writeAcc(cy?1:0); writeCy(false); break;
-          case 0x9: writeAcc(cy?10:9); writeCy(false); break;
-          case 0xA: writeCy(true); break;
-          default: break;
+          case 0x0:
+            writeAcc(0);
+            writeCy(false);
+            break;
+          case 0x1:
+            writeCy(false);
+            break;
+          case 0x2: {
+            unsigned s = acc + 1;
+            writeAcc(s & 0xF);
+            writeCy(s > 0xF);
+            break;
+          }
+          case 0x3:
+            writeCy(!cy);
+            break;
+          case 0x4:
+            writeAcc(~acc & 0xF);
+            break;
+          case 0x5: {
+            unsigned r = (acc << 1) | (cy ? 1 : 0);
+            writeAcc(r & 0xF);
+            writeCy((r >> 4) & 1);
+            break;
+          }
+          case 0x6: {
+            unsigned r = acc | (cy ? 0x10 : 0);
+            writeAcc((r >> 1) & 0xF);
+            writeCy(r & 1);
+            break;
+          }
+          case 0x7:
+            writeAcc(cy ? 1 : 0);
+            writeCy(false);
+            break;
+          case 0x9:
+            writeAcc(cy ? 10 : 9);
+            writeCy(false);
+            break;
+          case 0xA:
+            writeCy(true);
+            break;
+          default:
+            break;
           }
           break;
-        default: break;
+        default:
+          break;
         }
       }
 
@@ -991,42 +1061,38 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       // All X3 writeback primitives must suppress themselves when this
       // byte is the data half of a pending 2-byte instruction. The
       // 2-byte primitive completes the op and clears pendingTwoByteOpr_.
-      const bool isDataByteOfTwoByteOp = (pendingTwoByteOpr_ != 0);
+      const bool IS_DATA_BYTE_OF_TWO_BYTE_OP = (pendingTwoByteOpr_ != 0);
 
-      if (ms == 7 && applyL2LdmAccWriteback_ && !isDataByteOfTwoByteOp) {
-        const auto writeAccNet = findNet("WRITE_ACC(1)");
-        const auto ldmBblNet = findNet("LDM/BBL");
-        const algorithms::mna::NetID opaNets[4] = {
-            findNet("OPA.0"), findNet("OPA.1"),
-            findNet("OPA.2"), findNet("OPA.3")};
-        const algorithms::mna::NetID oprNets[4] = {
-            findNet("OPR.0"), findNet("OPR.1"),
-            findNet("OPR.2"), findNet("OPR.3")};
+      if (ms == 7 && applyL2LdmAccWriteback_ && !IS_DATA_BYTE_OF_TWO_BYTE_OP) {
+        const auto WRITE_ACC_NET = findNet("WRITE_ACC(1)");
+        const auto LDM_BBL_NET = findNet("LDM/BBL");
+        const algorithms::mna::NetID opaNets[4] = {findNet("OPA.0"), findNet("OPA.1"),
+                                                   findNet("OPA.2"), findNet("OPA.3")};
+        const algorithms::mna::NetID oprNets[4] = {findNet("OPR.0"), findNet("OPR.1"),
+                                                   findNet("OPR.2"), findNet("OPR.3")};
 
-        if (writeAccNet > 0 && ldmBblNet > 0) {
-          const double vWriteAcc = state.nodeVoltages[writeAccNet];
-          const double vLdmBbl = state.nodeVoltages[ldmBblNet];
+        if (WRITE_ACC_NET > 0 && LDM_BBL_NET > 0) {
+          const double V_WRITE_ACC = state.nodeVoltages[WRITE_ACC_NET];
+          const double V_LDM_BBL = state.nodeVoltages[LDM_BBL_NET];
           // Both signals asserted in PMOS active-low (LOW voltage = logic 1)
-          const bool writeAccAsserted = (vWriteAcc < VDD_VOLTAGE * 0.5);
-          const bool ldmBblAsserted = (vLdmBbl < VDD_VOLTAGE * 0.5);
+          const bool WRITE_ACC_ASSERTED = (V_WRITE_ACC < VDD_VOLTAGE * 0.5);
+          const bool LDM_BBL_ASSERTED = (V_LDM_BBL < VDD_VOLTAGE * 0.5);
           // Cross-check OPR bit pattern: LDM = 1101, BBL = 1100, both
           // share OPR[3:1] = 110. The downstream LDM/BBL decode net
           // can't always be trusted in our model (cascade convergence
           // issues for non-LDM instructions); OPR is captured cleanly
           // by OprCaptureCell at M1.
           auto oprBit = [&](int b) {
-            return oprNets[b] > 0 &&
-                   oprNets[b] < state.nodeVoltages.size() &&
+            return oprNets[b] > 0 && oprNets[b] < state.nodeVoltages.size() &&
                    state.nodeVoltages[oprNets[b]] < VDD_VOLTAGE * 0.5;
           };
-          const bool oprIsLdmOrBbl = oprBit(3) && oprBit(2) && !oprBit(1);
+          const bool OPR_IS_LDM_OR_BBL = oprBit(3) && oprBit(2) && !oprBit(1);
 
-          if (writeAccAsserted && ldmBblAsserted && oprIsLdmOrBbl) {
+          if (WRITE_ACC_ASSERTED && LDM_BBL_ASSERTED && OPR_IS_LDM_OR_BBL) {
             // Decode OPA voltages -> digital value (active-low)
             std::uint8_t opaVal = 0;
             for (int b = 0; b < 4; ++b) {
-              if (opaNets[b] > 0 &&
-                  opaNets[b] < state.nodeVoltages.size()) {
+              if (opaNets[b] > 0 && opaNets[b] < state.nodeVoltages.size()) {
                 if (state.nodeVoltages[opaNets[b]] < VDD_VOLTAGE * 0.5)
                   opaVal |= (1u << b);
               }
@@ -1035,11 +1101,10 @@ struct Intel4004GridLevel1 : Intel4004Grid {
             // Force ACC voltages to encode opaVal
             for (int b = 0; b < 4; ++b) {
               if (accNets_[b] > 0 && accNets_[b] < state.nodeVoltages.size()) {
-                const double vv =
-                    (opaVal & (1u << b)) ? 0.0 : VDD_VOLTAGE;
-                state.nodeVoltages[accNets_[b]] = vv;
+                const double VV = (opaVal & (1u << b)) ? 0.0 : VDD_VOLTAGE;
+                state.nodeVoltages[accNets_[b]] = VV;
                 // Mirror to latchValues_ for any downstream stub reads
-                latchValues_[accNets_[b]] = vv;
+                latchValues_[accNets_[b]] = VV;
               }
             }
           }
@@ -1064,14 +1129,12 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       //     5 RAL    6 RAR    7 TCC    8 DAC    9 TCS
       //     A STC    B DAA    C KBP    D DCL
       //   (E,F undefined -> NOP)
-      if (ms == 7 && applyL2AluWriteback_ && !isDataByteOfTwoByteOp) {
-        const auto cyNet = findNet("CY");
-        const algorithms::mna::NetID opaNets[4] = {
-            findNet("OPA.0"), findNet("OPA.1"),
-            findNet("OPA.2"), findNet("OPA.3")};
-        const algorithms::mna::NetID oprNets[4] = {
-            findNet("OPR.0"), findNet("OPR.1"),
-            findNet("OPR.2"), findNet("OPR.3")};
+      if (ms == 7 && applyL2AluWriteback_ && !IS_DATA_BYTE_OF_TWO_BYTE_OP) {
+        const auto CY_NET = findNet("CY");
+        const algorithms::mna::NetID opaNets[4] = {findNet("OPA.0"), findNet("OPA.1"),
+                                                   findNet("OPA.2"), findNet("OPA.3")};
+        const algorithms::mna::NetID oprNets[4] = {findNet("OPR.0"), findNet("OPR.1"),
+                                                   findNet("OPR.2"), findNet("OPR.3")};
 
         auto readNibbleAt = [&](const algorithms::mna::NetID* nets) -> std::uint8_t {
           std::uint8_t v = 0;
@@ -1086,9 +1149,9 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         auto writeNibbleAt = [&](const algorithms::mna::NetID* nets, std::uint8_t val) {
           for (int b = 0; b < 4; ++b) {
             if (nets[b] > 0 && nets[b] < state.nodeVoltages.size()) {
-              const double vv = (val & (1u << b)) ? 0.0 : VDD_VOLTAGE;
-              state.nodeVoltages[nets[b]] = vv;
-              latchValues_[nets[b]] = vv;
+              const double VV = (val & (1u << b)) ? 0.0 : VDD_VOLTAGE;
+              state.nodeVoltages[nets[b]] = VV;
+              latchValues_[nets[b]] = VV;
             }
           }
         };
@@ -1100,137 +1163,171 @@ struct Intel4004GridLevel1 : Intel4004Grid {
           }
         };
 
-        const std::uint8_t opr = readNibbleAt(oprNets);
-        const std::uint8_t opa = readNibbleAt(opaNets);
-        const std::uint8_t accVal = readNibbleAt(accNets_.data());
-        const bool cyVal = (cyNet > 0 && cyNet < state.nodeVoltages.size())
-            ? (state.nodeVoltages[cyNet] < VDD_VOLTAGE * 0.5)
-            : false;
+        const std::uint8_t OPR = readNibbleAt(oprNets);
+        const std::uint8_t OPA = readNibbleAt(opaNets);
+        const std::uint8_t ACC_VAL = readNibbleAt(accNets_.data());
+        const bool CY_VAL = (CY_NET > 0 && CY_NET < state.nodeVoltages.size())
+                                ? (state.nodeVoltages[CY_NET] < VDD_VOLTAGE * 0.5)
+                                : false;
 
-        std::uint8_t newAcc = accVal;
-        bool newCy = cyVal;
+        std::uint8_t newAcc = ACC_VAL;
+        bool newCy = CY_VAL;
         bool writeAcc = false;
         bool writeCy = false;
         bool writeReg = false;
         std::uint8_t newReg = 0;
 
-        if (opr == 0x8) { // ADD r: ACC = ACC + R[r] + CY
-          algorithms::mna::NetID rNets[4]; regNets(opa, rNets);
-          const std::uint8_t regVal = readNibbleAt(rNets);
-          const std::uint16_t SUM = static_cast<std::uint16_t>(accVal) + regVal +
-                                    (cyVal ? 1u : 0u);
+        if (OPR == 0x8) { // ADD r: ACC = ACC + R[r] + CY
+          algorithms::mna::NetID rNets[4];
+          regNets(OPA, rNets);
+          const std::uint8_t REG_VAL = readNibbleAt(rNets);
+          const std::uint16_t SUM =
+              static_cast<std::uint16_t>(ACC_VAL) + REG_VAL + (CY_VAL ? 1u : 0u);
           newAcc = static_cast<std::uint8_t>(SUM & 0xF);
           newCy = (SUM > 0xF);
           writeAcc = writeCy = true;
-        } else if (opr == 0x9) { // SUB r: ACC = ACC + ~R[r] + CY
-          algorithms::mna::NetID rNets[4]; regNets(opa, rNets);
-          const std::uint8_t regVal = readNibbleAt(rNets);
-          const std::uint16_t DIFF = static_cast<std::uint16_t>(accVal) +
-                                     ((~regVal) & 0xF) + (cyVal ? 1u : 0u);
+        } else if (OPR == 0x9) { // SUB r: ACC = ACC + ~R[r] + CY
+          algorithms::mna::NetID rNets[4];
+          regNets(OPA, rNets);
+          const std::uint8_t REG_VAL = readNibbleAt(rNets);
+          const std::uint16_t DIFF =
+              static_cast<std::uint16_t>(ACC_VAL) + ((~REG_VAL) & 0xF) + (CY_VAL ? 1u : 0u);
           newAcc = static_cast<std::uint8_t>(DIFF & 0xF);
           newCy = (DIFF > 0xF);
           writeAcc = writeCy = true;
-        } else if (opr == 0xA) { // LD r: ACC = R[r]
-          algorithms::mna::NetID rNets[4]; regNets(opa, rNets);
+        } else if (OPR == 0xA) { // LD r: ACC = R[r]
+          algorithms::mna::NetID rNets[4];
+          regNets(OPA, rNets);
           newAcc = readNibbleAt(rNets);
           writeAcc = true;
-        } else if (opr == 0xB) { // XCH r: ACC <-> R[r]
-          algorithms::mna::NetID rNets[4]; regNets(opa, rNets);
-          const std::uint8_t regVal = readNibbleAt(rNets);
-          newAcc = regVal;
-          newReg = accVal;
+        } else if (OPR == 0xB) { // XCH r: ACC <-> R[r]
+          algorithms::mna::NetID rNets[4];
+          regNets(OPA, rNets);
+          const std::uint8_t REG_VAL = readNibbleAt(rNets);
+          newAcc = REG_VAL;
+          newReg = ACC_VAL;
           writeAcc = writeReg = true;
           writeNibbleAt(rNets, newReg);
-        } else if (opr == 0xF) {
-          switch (opa) {
-            case 0x0: // CLB
-              newAcc = 0; newCy = false; writeAcc = writeCy = true; break;
-            case 0x1: // CLC
-              newCy = false; writeCy = true; break;
-            case 0x2: { // IAC
-              const std::uint16_t SUM = static_cast<std::uint16_t>(accVal) + 1;
+        } else if (OPR == 0xF) {
+          switch (OPA) {
+          case 0x0: // CLB
+            newAcc = 0;
+            newCy = false;
+            writeAcc = writeCy = true;
+            break;
+          case 0x1: // CLC
+            newCy = false;
+            writeCy = true;
+            break;
+          case 0x2: { // IAC
+            const std::uint16_t SUM = static_cast<std::uint16_t>(ACC_VAL) + 1;
+            newAcc = static_cast<std::uint8_t>(SUM & 0xF);
+            newCy = (SUM > 0xF);
+            writeAcc = writeCy = true;
+            break;
+          }
+          case 0x3: // CMC
+            newCy = !CY_VAL;
+            writeCy = true;
+            break;
+          case 0x4: // CMA
+            newAcc = static_cast<std::uint8_t>((~ACC_VAL) & 0xF);
+            writeAcc = true;
+            break;
+          case 0x5: { // RAL: rotate ACC left through CY
+            const std::uint8_t OLD_CY = CY_VAL ? 1u : 0u;
+            newCy = (ACC_VAL & 0x8) != 0;
+            newAcc = static_cast<std::uint8_t>(((ACC_VAL << 1) | OLD_CY) & 0xF);
+            writeAcc = writeCy = true;
+            break;
+          }
+          case 0x6: { // RAR: rotate ACC right through CY
+            const std::uint8_t OLD_CY = CY_VAL ? 1u : 0u;
+            newCy = (ACC_VAL & 0x1) != 0;
+            newAcc = static_cast<std::uint8_t>((ACC_VAL >> 1) | (OLD_CY << 3));
+            writeAcc = writeCy = true;
+            break;
+          }
+          case 0x7: // TCC: ACC = CY ? 1 : 0; CY = 0
+            newAcc = CY_VAL ? 1u : 0u;
+            newCy = false;
+            writeAcc = writeCy = true;
+            break;
+          case 0x8: { // DAC: ACC = ACC - 1 (= ACC + 0xF)
+            const std::uint16_t DIFF = static_cast<std::uint16_t>(ACC_VAL) + 0xF;
+            newAcc = static_cast<std::uint8_t>(DIFF & 0xF);
+            newCy = (DIFF > 0xF);
+            writeAcc = writeCy = true;
+            break;
+          }
+          case 0x9: // TCS: ACC = CY ? 10 : 9; CY = 0
+            newAcc = CY_VAL ? 10u : 9u;
+            newCy = false;
+            writeAcc = writeCy = true;
+            break;
+          case 0xA: // STC: CY = 1
+            newCy = true;
+            writeCy = true;
+            break;
+          case 0xB: { // DAA: if (ACC > 9 || CY) ACC += 6, only sets CY
+            if (ACC_VAL > 9 || CY_VAL) {
+              const std::uint16_t SUM = static_cast<std::uint16_t>(ACC_VAL) + 6;
               newAcc = static_cast<std::uint8_t>(SUM & 0xF);
-              newCy = (SUM > 0xF);
-              writeAcc = writeCy = true;
-              break;
-            }
-            case 0x3: // CMC
-              newCy = !cyVal; writeCy = true; break;
-            case 0x4: // CMA
-              newAcc = static_cast<std::uint8_t>((~accVal) & 0xF);
-              writeAcc = true; break;
-            case 0x5: { // RAL: rotate ACC left through CY
-              const std::uint8_t oldCy = cyVal ? 1u : 0u;
-              newCy = (accVal & 0x8) != 0;
-              newAcc = static_cast<std::uint8_t>(((accVal << 1) | oldCy) & 0xF);
-              writeAcc = writeCy = true;
-              break;
-            }
-            case 0x6: { // RAR: rotate ACC right through CY
-              const std::uint8_t oldCy = cyVal ? 1u : 0u;
-              newCy = (accVal & 0x1) != 0;
-              newAcc = static_cast<std::uint8_t>((accVal >> 1) | (oldCy << 3));
-              writeAcc = writeCy = true;
-              break;
-            }
-            case 0x7: // TCC: ACC = CY ? 1 : 0; CY = 0
-              newAcc = cyVal ? 1u : 0u; newCy = false;
-              writeAcc = writeCy = true; break;
-            case 0x8: { // DAC: ACC = ACC - 1 (= ACC + 0xF)
-              const std::uint16_t DIFF = static_cast<std::uint16_t>(accVal) + 0xF;
-              newAcc = static_cast<std::uint8_t>(DIFF & 0xF);
-              newCy = (DIFF > 0xF);
-              writeAcc = writeCy = true;
-              break;
-            }
-            case 0x9: // TCS: ACC = CY ? 10 : 9; CY = 0
-              newAcc = cyVal ? 10u : 9u; newCy = false;
-              writeAcc = writeCy = true; break;
-            case 0xA: // STC: CY = 1
-              newCy = true; writeCy = true; break;
-            case 0xB: { // DAA: if (ACC > 9 || CY) ACC += 6, only sets CY
-              if (accVal > 9 || cyVal) {
-                const std::uint16_t SUM = static_cast<std::uint16_t>(accVal) + 6;
-                newAcc = static_cast<std::uint8_t>(SUM & 0xF);
-                if (SUM > 0xF) { newCy = true; writeCy = true; }
-                writeAcc = true;
+              if (SUM > 0xF) {
+                newCy = true;
+                writeCy = true;
               }
+              writeAcc = true;
+            }
+            break;
+          }
+          case 0xC: // KBP: 1-of-4 decode, else 0xF
+            switch (ACC_VAL) {
+            case 0x0:
+              newAcc = 0;
+              break;
+            case 0x1:
+              newAcc = 1;
+              break;
+            case 0x2:
+              newAcc = 2;
+              break;
+            case 0x4:
+              newAcc = 3;
+              break;
+            case 0x8:
+              newAcc = 4;
+              break;
+            default:
+              newAcc = 0xF;
               break;
             }
-            case 0xC: // KBP: 1-of-4 decode, else 0xF
-              switch (accVal) {
-                case 0x0: newAcc = 0; break;
-                case 0x1: newAcc = 1; break;
-                case 0x2: newAcc = 2; break;
-                case 0x4: newAcc = 3; break;
-                case 0x8: newAcc = 4; break;
-                default:  newAcc = 0xF; break;
-              }
-              writeAcc = true; break;
-            case 0xD: // DCL: ramBank = ACC & 0x7
-              ramBank_ = accVal & 0x7;
-              break;
-            default: break; // 0xE, 0xF: undefined
+            writeAcc = true;
+            break;
+          case 0xD: // DCL: ramBank = ACC & 0x7
+            ramBank_ = ACC_VAL & 0x7;
+            break;
+          default:
+            break; // 0xE, 0xF: undefined
           }
         }
 
-        if (writeAcc) writeNibbleAt(accNets_.data(), newAcc);
-        if (writeCy && cyNet > 0 && cyNet < state.nodeVoltages.size()) {
-          const double vv = newCy ? 0.0 : VDD_VOLTAGE;
-          state.nodeVoltages[cyNet] = vv;
-          latchValues_[cyNet] = vv;
+        if (writeAcc)
+          writeNibbleAt(accNets_.data(), newAcc);
+        if (writeCy && CY_NET > 0 && CY_NET < state.nodeVoltages.size()) {
+          const double VV = newCy ? 0.0 : VDD_VOLTAGE;
+          state.nodeVoltages[CY_NET] = VV;
+          latchValues_[CY_NET] = VV;
         }
       }
 
       // L2 custom primitive: RegPcWriteback (INC, SRC, JIN, BBL).
       // Fires at end of X3. Dispatches on physics-captured OPR + OPA.
-      if (ms == 7 && applyL2RegPcWriteback_ && !isDataByteOfTwoByteOp) {
-        const algorithms::mna::NetID opaNets[4] = {
-            findNet("OPA.0"), findNet("OPA.1"),
-            findNet("OPA.2"), findNet("OPA.3")};
-        const algorithms::mna::NetID oprNets[4] = {
-            findNet("OPR.0"), findNet("OPR.1"),
-            findNet("OPR.2"), findNet("OPR.3")};
+      if (ms == 7 && applyL2RegPcWriteback_ && !IS_DATA_BYTE_OF_TWO_BYTE_OP) {
+        const algorithms::mna::NetID opaNets[4] = {findNet("OPA.0"), findNet("OPA.1"),
+                                                   findNet("OPA.2"), findNet("OPA.3")};
+        const algorithms::mna::NetID oprNets[4] = {findNet("OPR.0"), findNet("OPR.1"),
+                                                   findNet("OPR.2"), findNet("OPR.3")};
 
         auto readNibble = [&](const algorithms::mna::NetID* n) -> std::uint8_t {
           std::uint8_t v = 0;
@@ -1244,9 +1341,9 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         auto writeNibble = [&](const algorithms::mna::NetID* n, std::uint8_t val) {
           for (int b = 0; b < 4; ++b) {
             if (n[b] > 0 && n[b] < state.nodeVoltages.size()) {
-              const double vv = (val & (1u << b)) ? 0.0 : VDD_VOLTAGE;
-              state.nodeVoltages[n[b]] = vv;
-              latchValues_[n[b]] = vv;
+              const double VV = (val & (1u << b)) ? 0.0 : VDD_VOLTAGE;
+              state.nodeVoltages[n[b]] = VV;
+              latchValues_[n[b]] = VV;
             }
           }
         };
@@ -1276,56 +1373,60 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         auto writePc12 = [&](const algorithms::mna::NetID* n, std::uint16_t val) {
           for (int b = 0; b < 12; ++b) {
             if (n[b] > 0 && n[b] < state.nodeVoltages.size()) {
-              const double vv = (val & (1u << b)) ? 0.0 : VDD_VOLTAGE;
-              state.nodeVoltages[n[b]] = vv;
-              latchValues_[n[b]] = vv;
+              const double VV = (val & (1u << b)) ? 0.0 : VDD_VOLTAGE;
+              state.nodeVoltages[n[b]] = VV;
+              latchValues_[n[b]] = VV;
             }
           }
         };
 
-        const std::uint8_t opr = readNibble(oprNets);
-        const std::uint8_t opa = readNibble(opaNets);
+        const std::uint8_t OPR = readNibble(oprNets);
+        const std::uint8_t OPA = readNibble(opaNets);
 
-        if (opr == 0x6) { // INC r: R[r]++
-          algorithms::mna::NetID rN[4]; regNets(opa, rN);
-          const std::uint8_t r = readNibble(rN);
-          writeNibble(rN, static_cast<std::uint8_t>((r + 1) & 0xF));
-        } else if (opr == 0x2 && (opa & 0x1)) { // SRC r: srcAddress_ = RP[r>>1]
-          const unsigned pair = (opa >> 1) & 0x7;
+        if (OPR == 0x6) { // INC R: R[R]++
+          algorithms::mna::NetID rN[4];
+          regNets(OPA, rN);
+          const std::uint8_t R = readNibble(rN);
+          writeNibble(rN, static_cast<std::uint8_t>((R + 1) & 0xF));
+        } else if (OPR == 0x2 && (OPA & 0x1)) { // SRC R: srcAddress_ = RP[R>>1]
+          const unsigned PAIR = (OPA >> 1) & 0x7;
           algorithms::mna::NetID hi[4], lo[4];
-          regNets(2u * pair, hi);
-          regNets(2u * pair + 1u, lo);
-          const std::uint8_t hiVal = readNibble(hi);
-          const std::uint8_t loVal = readNibble(lo);
-          srcAddress_ = static_cast<std::uint8_t>((hiVal << 4) | loVal);
-        } else if (opr == 0x3 && (opa & 0x1)) { // JIN r: PC[7:0] = RP[r>>1]
-          const unsigned pair = (opa >> 1) & 0x7;
+          regNets(2u * PAIR, hi);
+          regNets(2u * PAIR + 1u, lo);
+          const std::uint8_t HI_VAL = readNibble(hi);
+          const std::uint8_t LO_VAL = readNibble(lo);
+          srcAddress_ = static_cast<std::uint8_t>((HI_VAL << 4) | LO_VAL);
+        } else if (OPR == 0x3 && (OPA & 0x1)) { // JIN r: PC[7:0] = RP[r>>1]
+          const unsigned PAIR = (OPA >> 1) & 0x7;
           algorithms::mna::NetID hi[4], lo[4];
-          regNets(2u * pair, hi);
-          regNets(2u * pair + 1u, lo);
-          const std::uint8_t addr =
+          regNets(2u * PAIR, hi);
+          regNets(2u * PAIR + 1u, lo);
+          const std::uint8_t ADDR =
               static_cast<std::uint8_t>((readNibble(hi) << 4) | readNibble(lo));
-          algorithms::mna::NetID pc0[12]; pcNets(0, pc0);
-          const std::uint16_t curPc = readPc12(pc0);
-          const std::uint16_t newPc = (curPc & 0xF00) | addr;
-          writePc12(pc0, newPc);
-        } else if (opr == 0xC) { // BBL N: pop stack, ACC = N
+          algorithms::mna::NetID pc0[12];
+          pcNets(0, pc0);
+          const std::uint16_t CUR_PC = readPc12(pc0);
+          const std::uint16_t NEW_PC = (CUR_PC & 0xF00) | ADDR;
+          writePc12(pc0, NEW_PC);
+        } else if (OPR == 0xC) { // BBL N: pop stack, ACC = N
           algorithms::mna::NetID pc0[12], pc1[12], pc2[12], pc3[12];
-          pcNets(0, pc0); pcNets(1, pc1); pcNets(2, pc2); pcNets(3, pc3);
-          const std::uint16_t v1 = readPc12(pc1);
-          const std::uint16_t v2 = readPc12(pc2);
-          const std::uint16_t v3 = readPc12(pc3);
-          writePc12(pc0, v1);
-          writePc12(pc1, v2);
-          writePc12(pc2, v3);
+          pcNets(0, pc0);
+          pcNets(1, pc1);
+          pcNets(2, pc2);
+          pcNets(3, pc3);
+          const std::uint16_t V1 = readPc12(pc1);
+          const std::uint16_t V2 = readPc12(pc2);
+          const std::uint16_t V3 = readPc12(pc3);
+          writePc12(pc0, V1);
+          writePc12(pc1, V2);
+          writePc12(pc2, V3);
           writePc12(pc3, 0);
           // ACC = N (the OPA field). Same active-low encoding as ALU writes.
           for (int b = 0; b < 4; ++b) {
-            if (accNets_[b] > 0 &&
-                accNets_[b] < state.nodeVoltages.size()) {
-              const double vv = (opa & (1u << b)) ? 0.0 : VDD_VOLTAGE;
-              state.nodeVoltages[accNets_[b]] = vv;
-              latchValues_[accNets_[b]] = vv;
+            if (accNets_[b] > 0 && accNets_[b] < state.nodeVoltages.size()) {
+              const double VV = (OPA & (1u << b)) ? 0.0 : VDD_VOLTAGE;
+              state.nodeVoltages[accNets_[b]] = VV;
+              latchValues_[accNets_[b]] = VV;
             }
           }
         }
@@ -1335,13 +1436,11 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       // Handles the remaining opcodes: 2-byte ops (FIM/JCN/JUN/JMS/ISZ),
       // FIN (1-byte but reads ROM), and the RAM/IO group (OPR=0xE).
       if (ms == 7 && applyL2TwoByteAndRamWriteback_) {
-        const auto cyNet = findNet("CY");
-        const algorithms::mna::NetID opaNets[4] = {
-            findNet("OPA.0"), findNet("OPA.1"),
-            findNet("OPA.2"), findNet("OPA.3")};
-        const algorithms::mna::NetID oprNets[4] = {
-            findNet("OPR.0"), findNet("OPR.1"),
-            findNet("OPR.2"), findNet("OPR.3")};
+        const auto CY_NET = findNet("CY");
+        const algorithms::mna::NetID opaNets[4] = {findNet("OPA.0"), findNet("OPA.1"),
+                                                   findNet("OPA.2"), findNet("OPA.3")};
+        const algorithms::mna::NetID oprNets[4] = {findNet("OPR.0"), findNet("OPR.1"),
+                                                   findNet("OPR.2"), findNet("OPR.3")};
 
         auto readNibble = [&](const algorithms::mna::NetID* n) -> std::uint8_t {
           std::uint8_t v = 0;
@@ -1355,9 +1454,9 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         auto writeNibble = [&](const algorithms::mna::NetID* n, std::uint8_t val) {
           for (int b = 0; b < 4; ++b) {
             if (n[b] > 0 && n[b] < state.nodeVoltages.size()) {
-              const double vv = (val & (1u << b)) ? 0.0 : VDD_VOLTAGE;
-              state.nodeVoltages[n[b]] = vv;
-              latchValues_[n[b]] = vv;
+              const double VV = (val & (1u << b)) ? 0.0 : VDD_VOLTAGE;
+              state.nodeVoltages[n[b]] = VV;
+              latchValues_[n[b]] = VV;
             }
           }
         };
@@ -1387,88 +1486,94 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         auto writePc12 = [&](const algorithms::mna::NetID* n, std::uint16_t val) {
           for (int b = 0; b < 12; ++b) {
             if (n[b] > 0 && n[b] < state.nodeVoltages.size()) {
-              const double vv = (val & (1u << b)) ? 0.0 : VDD_VOLTAGE;
-              state.nodeVoltages[n[b]] = vv;
-              latchValues_[n[b]] = vv;
+              const double VV = (val & (1u << b)) ? 0.0 : VDD_VOLTAGE;
+              state.nodeVoltages[n[b]] = VV;
+              latchValues_[n[b]] = VV;
             }
           }
         };
         auto pushPc = [&](std::uint16_t pushedReturn) {
           algorithms::mna::NetID pc0[12], pc1[12], pc2[12], pc3[12];
-          pcNets(0, pc0); pcNets(1, pc1); pcNets(2, pc2); pcNets(3, pc3);
+          pcNets(0, pc0);
+          pcNets(1, pc1);
+          pcNets(2, pc2);
+          pcNets(3, pc3);
           // Real chip: stack = {PC1, PC2, PC3}; PC0 is working PC.
           // JMS pushes return address into stack: PC3<-PC2, PC2<-PC1,
           // PC1<-returnAddr (from the caller's perspective, the stack
           // has 3 levels and JMS pushes the post-JMS PC onto level 1).
-          const std::uint16_t v1 = readPc12(pc1);
-          const std::uint16_t v2 = readPc12(pc2);
-          writePc12(pc3, v2);
-          writePc12(pc2, v1);
+          const std::uint16_t V1 = readPc12(pc1);
+          const std::uint16_t V2 = readPc12(pc2);
+          writePc12(pc3, V2);
+          writePc12(pc2, V1);
           writePc12(pc1, pushedReturn);
         };
 
-        const std::uint8_t opr = readNibble(oprNets);
-        const std::uint8_t opa = readNibble(opaNets);
-        const std::uint8_t accVal = readNibble(accNets_.data());
-        const bool cyVal = (cyNet > 0 && cyNet < state.nodeVoltages.size())
-            ? (state.nodeVoltages[cyNet] < VDD_VOLTAGE * 0.5)
-            : false;
+        const std::uint8_t OPR = readNibble(oprNets);
+        const std::uint8_t OPA = readNibble(opaNets);
+        const std::uint8_t ACC_VAL = readNibble(accNets_.data());
+        const bool CY_VAL = (CY_NET > 0 && CY_NET < state.nodeVoltages.size())
+                                ? (state.nodeVoltages[CY_NET] < VDD_VOLTAGE * 0.5)
+                                : false;
 
         if (pendingTwoByteOpr_ != 0) {
           // SECOND byte of a 2-byte instruction. The captured OPR/OPA
           // here represent the data byte's high/low nibbles. Combine
-          // them as the data byte: dataByte = (OPR << 4) | OPA.
-          const std::uint8_t dataByte =
-              static_cast<std::uint8_t>((opr << 4) | opa);
-          const std::uint8_t firstOpr = pendingTwoByteOpr_;
-          const std::uint8_t firstOpa = pendingTwoByteOpa_;
+          // them as the data byte: DATA_BYTE = (OPR << 4) | OPA.
+          const std::uint8_t DATA_BYTE = static_cast<std::uint8_t>((OPR << 4) | OPA);
+          const std::uint8_t FIRST_OPR = pendingTwoByteOpr_;
+          const std::uint8_t FIRST_OPA = pendingTwoByteOpa_;
 
-          algorithms::mna::NetID pc0[12]; pcNets(0, pc0);
-          const std::uint16_t curPc = readPc12(pc0);
+          algorithms::mna::NetID pc0[12];
+          pcNets(0, pc0);
+          const std::uint16_t CUR_PC = readPc12(pc0);
 
-          if (firstOpr == 0x1) { // JCN: jump on condition (data byte = ADDR_LO)
-            // Conditions encoded in firstOpa bits:
+          if (FIRST_OPR == 0x1) { // JCN: jump on condition (data byte = ADDR_LO)
+            // Conditions encoded in FIRST_OPA bits:
             //   bit 3 (8): invert
             //   bit 2 (4): jump if ACC == 0
             //   bit 1 (2): jump if CY == 1
             //   bit 0 (1): jump if !TestPin (we model TestPin as 0)
             bool cond = false;
-            if (firstOpa & 0x4) cond = cond || (accVal == 0);
-            if (firstOpa & 0x2) cond = cond || cyVal;
-            if (firstOpa & 0x1) cond = cond || true; // !testPin (test=0)
-            if (firstOpa & 0x8) cond = !cond;
+            if (FIRST_OPA & 0x4)
+              cond = cond || (ACC_VAL == 0);
+            if (FIRST_OPA & 0x2)
+              cond = cond || CY_VAL;
+            if (FIRST_OPA & 0x1)
+              cond = cond || true; // !testPin (test=0)
+            if (FIRST_OPA & 0x8)
+              cond = !cond;
             if (cond) {
-              writePc12(pc0, (curPc & 0xF00) | dataByte);
+              writePc12(pc0, (CUR_PC & 0xF00) | DATA_BYTE);
             }
-          } else if (firstOpr == 0x2) { // FIM: load reg pair from data byte
-            const unsigned pair = (firstOpa >> 1) & 0x7;
+          } else if (FIRST_OPR == 0x2) { // FIM: load reg PAIR from data byte
+            const unsigned PAIR = (FIRST_OPA >> 1) & 0x7;
             algorithms::mna::NetID hi[4], lo[4];
-            regNets(2u * pair, hi);
-            regNets(2u * pair + 1u, lo);
-            writeNibble(hi, static_cast<std::uint8_t>((dataByte >> 4) & 0xF));
-            writeNibble(lo, static_cast<std::uint8_t>(dataByte & 0xF));
-          } else if (firstOpr == 0x4) { // JUN: PC = (firstOpa<<8) | dataByte
-            const std::uint16_t target =
-                static_cast<std::uint16_t>((firstOpa << 8) | dataByte);
-            writePc12(pc0, target & 0xFFF);
-          } else if (firstOpr == 0x5) { // JMS: push return, jump
-            const std::uint16_t target =
-                static_cast<std::uint16_t>((firstOpa << 8) | dataByte);
+            regNets(2u * PAIR, hi);
+            regNets(2u * PAIR + 1u, lo);
+            writeNibble(hi, static_cast<std::uint8_t>((DATA_BYTE >> 4) & 0xF));
+            writeNibble(lo, static_cast<std::uint8_t>(DATA_BYTE & 0xF));
+          } else if (FIRST_OPR == 0x4) { // JUN: PC = (FIRST_OPA<<8) | DATA_BYTE
+            const std::uint16_t TARGET = static_cast<std::uint16_t>((FIRST_OPA << 8) | DATA_BYTE);
+            writePc12(pc0, TARGET & 0xFFF);
+          } else if (FIRST_OPR == 0x5) { // JMS: push return, jump
+            const std::uint16_t TARGET = static_cast<std::uint16_t>((FIRST_OPA << 8) | DATA_BYTE);
             // Return address = JMS_start + 2 (post-fetch PC, points to
-            // the byte after the data byte). curPc here is whatever PC
+            // the byte after the data byte). CUR_PC here is whatever PC
             // was forced at start of the step (= JMS_start) since our
             // model doesn't auto-advance PC during fetch. Real chip
             // pushes the post-fetch PC, so we add 2 explicitly.
-            const std::uint16_t returnAddr = (curPc + 2) & 0xFFF;
-            pushPc(returnAddr);
-            writePc12(pc0, target & 0xFFF);
-          } else if (firstOpr == 0x7) { // ISZ: R[r]++; if R != 0 jump to dataByte
-            algorithms::mna::NetID rN[4]; regNets(firstOpa, rN);
-            const std::uint8_t r = readNibble(rN);
-            const std::uint8_t newR = static_cast<std::uint8_t>((r + 1) & 0xF);
-            writeNibble(rN, newR);
-            if (newR != 0) {
-              writePc12(pc0, (curPc & 0xF00) | dataByte);
+            const std::uint16_t RETURN_ADDR = (CUR_PC + 2) & 0xFFF;
+            pushPc(RETURN_ADDR);
+            writePc12(pc0, TARGET & 0xFFF);
+          } else if (FIRST_OPR == 0x7) { // ISZ: R[R]++; if R != 0 jump to DATA_BYTE
+            algorithms::mna::NetID rN[4];
+            regNets(FIRST_OPA, rN);
+            const std::uint8_t R = readNibble(rN);
+            const std::uint8_t NEW_R = static_cast<std::uint8_t>((R + 1) & 0xF);
+            writeNibble(rN, NEW_R);
+            if (NEW_R != 0) {
+              writePc12(pc0, (CUR_PC & 0xF00) | DATA_BYTE);
             }
           }
           // Clear pending state after completing the 2-byte op.
@@ -1477,108 +1582,112 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         } else {
           // FIRST byte. Set pending if it's a 2-byte op; otherwise
           // dispatch FIN or RAM/IO immediately.
-          if (opr == 0x1 || opr == 0x4 || opr == 0x5 || opr == 0x7 ||
-              (opr == 0x2 && (opa & 0x1) == 0)) {
-            pendingTwoByteOpr_ = opr;
-            pendingTwoByteOpa_ = opa;
-          } else if (opr == 0x3 && (opa & 0x1) == 0) {
+          if (OPR == 0x1 || OPR == 0x4 || OPR == 0x5 || OPR == 0x7 ||
+              (OPR == 0x2 && (OPA & 0x1) == 0)) {
+            pendingTwoByteOpr_ = OPR;
+            pendingTwoByteOpa_ = OPA;
+          } else if (OPR == 0x3 && (OPA & 0x1) == 0) {
             // FIN r: R-pair[r] = ROM[(PC & 0xF00) | RP[0]]
             if (romBuffer_ && romBufferSize_ > 0) {
               algorithms::mna::NetID r0Hi[4], r0Lo[4];
               regNets(0, r0Hi);
               regNets(1, r0Lo);
-              const std::uint8_t rp0 =
+              const std::uint8_t RP0 =
                   static_cast<std::uint8_t>((readNibble(r0Hi) << 4) | readNibble(r0Lo));
-              algorithms::mna::NetID pc0[12]; pcNets(0, pc0);
-              const std::uint16_t curPc = readPc12(pc0);
-              const std::uint16_t romAddr = ((curPc & 0xF00) | rp0) & 0xFFF;
-              if (romAddr < romBufferSize_) {
-                const std::uint8_t dataByte = romBuffer_[romAddr];
-                const unsigned pair = (opa >> 1) & 0x7;
+              algorithms::mna::NetID pc0[12];
+              pcNets(0, pc0);
+              const std::uint16_t CUR_PC = readPc12(pc0);
+              const std::uint16_t ROM_ADDR = ((CUR_PC & 0xF00) | RP0) & 0xFFF;
+              if (ROM_ADDR < romBufferSize_) {
+                const std::uint8_t DATA_BYTE = romBuffer_[ROM_ADDR];
+                const unsigned PAIR = (OPA >> 1) & 0x7;
                 algorithms::mna::NetID hi[4], lo[4];
-                regNets(2u * pair, hi);
-                regNets(2u * pair + 1u, lo);
-                writeNibble(hi, static_cast<std::uint8_t>((dataByte >> 4) & 0xF));
-                writeNibble(lo, static_cast<std::uint8_t>(dataByte & 0xF));
+                regNets(2u * PAIR, hi);
+                regNets(2u * PAIR + 1u, lo);
+                writeNibble(hi, static_cast<std::uint8_t>((DATA_BYTE >> 4) & 0xF));
+                writeNibble(lo, static_cast<std::uint8_t>(DATA_BYTE & 0xF));
               }
             }
-          } else if (opr == 0xE) {
-            // RAM/IO group. opcode = (0xE << 4) | opa
+          } else if (OPR == 0xE) {
+            // RAM/IO group. opcode = (0xE << 4) | OPA
             // Address helpers -- match L0's scheme:
-            const std::size_t dataAddr =
-                ((ramBank_ & 0x3) * 256u) + srcAddress_;
-            const std::size_t outAddr =
-                ((ramBank_ & 0x3) * 4u) + ((srcAddress_ >> 6) & 0x3);
+            const std::size_t DATA_ADDR = ((ramBank_ & 0x3) * 256u) + srcAddress_;
+            const std::size_t OUT_ADDR = ((ramBank_ & 0x3) * 4u) + ((srcAddress_ >> 6) & 0x3);
             auto statusAddr = [&](std::uint8_t reg) -> std::size_t {
-              const std::size_t base =
-                  ((ramBank_ & 0x3) * 64u) + ((srcAddress_ >> 4) & 0xF) * 4u;
-              return base + (reg & 0x3);
+              const std::size_t BASE = ((ramBank_ & 0x3) * 64u) + ((srcAddress_ >> 4) & 0xF) * 4u;
+              return BASE + (reg & 0x3);
             };
 
-            switch (opa) {
-              case 0x0: // WRM
-                if (dataAddr < ramData_.size())
-                  ramData_[dataAddr] = accVal & 0xF;
-                break;
-              case 0x1: // WMP
-                if (outAddr < ramOutput_.size())
-                  ramOutput_[outAddr] = accVal & 0xF;
-                break;
-              case 0x2: // WRR (ROM port write -- no parallel state)
-              case 0x3: // WPM (program RAM write -- no parallel state)
-                break;
-              case 0x4: case 0x5: case 0x6: case 0x7: { // WR0..WR3
-                const std::size_t a = statusAddr(opa & 0x3);
-                if (a < ramStatus_.size())
-                  ramStatus_[a] = accVal & 0xF;
-                break;
+            switch (OPA) {
+            case 0x0: // WRM
+              if (DATA_ADDR < ramData_.size())
+                ramData_[DATA_ADDR] = ACC_VAL & 0xF;
+              break;
+            case 0x1: // WMP
+              if (OUT_ADDR < ramOutput_.size())
+                ramOutput_[OUT_ADDR] = ACC_VAL & 0xF;
+              break;
+            case 0x2: // WRR (ROM port write -- no parallel state)
+            case 0x3: // WPM (program RAM write -- no parallel state)
+              break;
+            case 0x4:
+            case 0x5:
+            case 0x6:
+            case 0x7: { // WR0..WR3
+              const std::size_t A = statusAddr(OPA & 0x3);
+              if (A < ramStatus_.size())
+                ramStatus_[A] = ACC_VAL & 0xF;
+              break;
+            }
+            case 0x8: { // SBM: ACC = ACC + ~RAM + CY
+              std::uint8_t mem = 0;
+              if (DATA_ADDR < ramData_.size())
+                mem = ramData_[DATA_ADDR];
+              const std::uint16_t DIFF =
+                  static_cast<std::uint16_t>(ACC_VAL) + ((~mem) & 0xF) + (CY_VAL ? 1u : 0u);
+              writeNibble(accNets_.data(), static_cast<std::uint8_t>(DIFF & 0xF));
+              if (CY_NET > 0 && CY_NET < state.nodeVoltages.size()) {
+                const double VV = (DIFF > 0xF) ? 0.0 : VDD_VOLTAGE;
+                state.nodeVoltages[CY_NET] = VV;
+                latchValues_[CY_NET] = VV;
               }
-              case 0x8: { // SBM: ACC = ACC + ~RAM + CY
-                std::uint8_t mem = 0;
-                if (dataAddr < ramData_.size()) mem = ramData_[dataAddr];
-                const std::uint16_t DIFF =
-                    static_cast<std::uint16_t>(accVal) +
-                    ((~mem) & 0xF) + (cyVal ? 1u : 0u);
-                writeNibble(accNets_.data(),
-                            static_cast<std::uint8_t>(DIFF & 0xF));
-                if (cyNet > 0 && cyNet < state.nodeVoltages.size()) {
-                  const double vv = (DIFF > 0xF) ? 0.0 : VDD_VOLTAGE;
-                  state.nodeVoltages[cyNet] = vv;
-                  latchValues_[cyNet] = vv;
-                }
-                break;
+              break;
+            }
+            case 0x9: { // RDM
+              std::uint8_t mem = 0;
+              if (DATA_ADDR < ramData_.size())
+                mem = ramData_[DATA_ADDR];
+              writeNibble(accNets_.data(), mem & 0xF);
+              break;
+            }
+            case 0xA: // RDR (ROM port read returns 0 in L0)
+              writeNibble(accNets_.data(), 0);
+              break;
+            case 0xB: { // ADM: ACC = ACC + RAM + CY
+              std::uint8_t mem = 0;
+              if (DATA_ADDR < ramData_.size())
+                mem = ramData_[DATA_ADDR];
+              const std::uint16_t SUM =
+                  static_cast<std::uint16_t>(ACC_VAL) + mem + (CY_VAL ? 1u : 0u);
+              writeNibble(accNets_.data(), static_cast<std::uint8_t>(SUM & 0xF));
+              if (CY_NET > 0 && CY_NET < state.nodeVoltages.size()) {
+                const double VV = (SUM > 0xF) ? 0.0 : VDD_VOLTAGE;
+                state.nodeVoltages[CY_NET] = VV;
+                latchValues_[CY_NET] = VV;
               }
-              case 0x9: { // RDM
-                std::uint8_t mem = 0;
-                if (dataAddr < ramData_.size()) mem = ramData_[dataAddr];
-                writeNibble(accNets_.data(), mem & 0xF);
-                break;
-              }
-              case 0xA: // RDR (ROM port read returns 0 in L0)
-                writeNibble(accNets_.data(), 0);
-                break;
-              case 0xB: { // ADM: ACC = ACC + RAM + CY
-                std::uint8_t mem = 0;
-                if (dataAddr < ramData_.size()) mem = ramData_[dataAddr];
-                const std::uint16_t SUM =
-                    static_cast<std::uint16_t>(accVal) + mem +
-                    (cyVal ? 1u : 0u);
-                writeNibble(accNets_.data(),
-                            static_cast<std::uint8_t>(SUM & 0xF));
-                if (cyNet > 0 && cyNet < state.nodeVoltages.size()) {
-                  const double vv = (SUM > 0xF) ? 0.0 : VDD_VOLTAGE;
-                  state.nodeVoltages[cyNet] = vv;
-                  latchValues_[cyNet] = vv;
-                }
-                break;
-              }
-              case 0xC: case 0xD: case 0xE: case 0xF: { // RD0..RD3
-                const std::size_t a = statusAddr(opa & 0x3);
-                std::uint8_t mem = 0;
-                if (a < ramStatus_.size()) mem = ramStatus_[a];
-                writeNibble(accNets_.data(), mem & 0xF);
-                break;
-              }
+              break;
+            }
+            case 0xC:
+            case 0xD:
+            case 0xE:
+            case 0xF: { // RD0..RD3
+              const std::size_t A = statusAddr(OPA & 0x3);
+              std::uint8_t mem = 0;
+              if (A < ramStatus_.size())
+                mem = ramStatus_[A];
+              writeNibble(accNets_.data(), mem & 0xF);
+              break;
+            }
             }
           }
         }
@@ -1597,13 +1706,13 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   void forceAccLogic(std::vector<double>& v, std::uint8_t logicValue) {
     for (int b = 0; b < 4; ++b) {
       if (accNets_[b] > 0 && accNets_[b] < v.size()) {
-        const double vv = (logicValue & (1 << b)) ? 0.0 : VDD_VOLTAGE;
-        v[accNets_[b]] = vv;
+        const double VV = (logicValue & (1 << b)) ? 0.0 : VDD_VOLTAGE;
+        v[accNets_[b]] = VV;
         // Always pin into latchValues_; the voltage-source stamp uses it
         // to hold ACC across the byte at L2 (otherwise chip-internal ALU
         // physics would walk it off the seeded value before primitives
         // read at end of X3).
-        latchValues_[accNets_[b]] = vv;
+        latchValues_[accNets_[b]] = VV;
       }
     }
   }
@@ -1611,40 +1720,38 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   /// Seed register file slot R{reg} with logic value (0..15) for L2+
   /// multi-instruction tests that need a known register state without
   /// running a real FIM/SRC/etc instruction.
-  void forceRegisterValue(std::vector<double>& v, unsigned reg,
-                          std::uint8_t logicValue) {
+  void forceRegisterValue(std::vector<double>& v, unsigned reg, std::uint8_t logicValue) {
     char name[8];
     for (int b = 0; b < 4; ++b) {
       std::snprintf(name, sizeof(name), "R%u.%d", reg, b);
-      const auto net = findNet(name);
-      if (net > 0 && net < v.size()) {
-        v[net] = (logicValue & (1 << b)) ? 0.0 : VDD_VOLTAGE;
-        latchValues_[net] = v[net];
+      const auto NET = findNet(name);
+      if (NET > 0 && NET < v.size()) {
+        v[NET] = (logicValue & (1 << b)) ? 0.0 : VDD_VOLTAGE;
+        latchValues_[NET] = v[NET];
       }
     }
   }
 
   /// Seed CY for L2+ tests that need a known carry going into ADD/SUB/etc.
   void forceCarry(std::vector<double>& v, bool carry) {
-    const auto cy = findNet("CY");
-    if (cy > 0 && cy < v.size()) {
-      v[cy] = carry ? 0.0 : VDD_VOLTAGE;
-      latchValues_[cy] = v[cy];
+    const auto CY = findNet("CY");
+    if (CY > 0 && CY < v.size()) {
+      v[CY] = carry ? 0.0 : VDD_VOLTAGE;
+      latchValues_[CY] = v[CY];
     }
   }
 
   /// Seed PC level (0 = working PC, 1/2/3 = stack levels) to a 12-bit
   /// value. PCx.0 is LSB, PCx.11 is MSB. Active-low encoding (bit=1
   /// -> 0V).
-  void forcePcLevel(std::vector<double>& v, unsigned level,
-                    std::uint16_t value) {
+  void forcePcLevel(std::vector<double>& v, unsigned level, std::uint16_t value) {
     char nm[8];
     for (int b = 0; b < 12; ++b) {
       std::snprintf(nm, sizeof(nm), "PC%u.%d", level, b);
-      const auto net = findNet(nm);
-      if (net > 0 && net < v.size()) {
-        v[net] = (value & (1u << b)) ? 0.0 : VDD_VOLTAGE;
-        latchValues_[net] = v[net];
+      const auto NET = findNet(nm);
+      if (NET > 0 && NET < v.size()) {
+        v[NET] = (value & (1u << b)) ? 0.0 : VDD_VOLTAGE;
+        latchValues_[NET] = v[NET];
       }
     }
   }
@@ -1655,8 +1762,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     std::uint16_t val = 0;
     for (int b = 0; b < 12; ++b) {
       std::snprintf(nm, sizeof(nm), "PC0.%d", b);
-      const auto net = findNet(nm);
-      if (net > 0 && net < v.size() && v[net] < VDD_VOLTAGE * 0.5) {
+      const auto NET = findNet(nm);
+      if (NET > 0 && NET < v.size() && v[NET] < VDD_VOLTAGE * 0.5) {
         val |= (1u << b);
       }
     }
@@ -1683,14 +1790,13 @@ struct Intel4004GridLevel1 : Intel4004Grid {
   }
 
   /// Read R[reg] (single 4-bit register).
-  [[nodiscard]] std::uint8_t readRegister(const std::vector<double>& v,
-                                          unsigned reg) const {
+  [[nodiscard]] std::uint8_t readRegister(const std::vector<double>& v, unsigned reg) const {
     char nm[8];
     std::uint8_t val = 0;
     for (int b = 0; b < 4; ++b) {
       std::snprintf(nm, sizeof(nm), "R%u.%d", reg, b);
-      const auto net = findNet(nm);
-      if (net > 0 && net < v.size() && v[net] < VDD_VOLTAGE * 0.5) {
+      const auto NET = findNet(nm);
+      if (NET > 0 && NET < v.size() && v[NET] < VDD_VOLTAGE * 0.5) {
         val |= (1u << b);
       }
     }
@@ -1707,33 +1813,34 @@ struct Intel4004GridLevel1 : Intel4004Grid {
    * Must be called AFTER buildCircuit() but BEFORE simulate().
    */
   void enableSparseModeLevel1(circuit::Circuit& circuit) {
-    circuit.solver().setStatefulStampCallbackSparse(
-        [this](algorithms::mna::MnaSystemSparse& mna, double /*time*/, const std::vector<double>& prevV) {
-          // Cap companion IEQ = GEQ * V_{n-1} MUST use the previous timestep
-          // voltage (constant during NR), NOT the NR iterate. If the NR iterate
-          // diverges, using it for cap IEQ creates a positive feedback loop:
-          //   diverged V -> large IEQ -> more divergence -> larger IEQ -> infinity
-          //
-          // The stamp callback count tracks NR iterations. On count 0 (first
-          // call of a new timestep), capture prevV as the timestep voltage.
-          // On subsequent calls (NR iterations 1+), use the captured value.
-          // The count is reset externally via resetStampCount() between timesteps.
-          if (prevTimestepV_.size() != prevV.size() || stampCallCount_ == 0) {
-            prevTimestepV_ = prevV;
-          }
-          ++stampCallCount_;
+    circuit.solver().setStatefulStampCallbackSparse([this](algorithms::mna::MnaSystemSparse& mna,
+                                                           double /*time*/,
+                                                           const std::vector<double>& prevV) {
+      // Cap companion IEQ = GEQ * V_{n-1} MUST use the previous timestep
+      // voltage (constant during NR), NOT the NR iterate. If the NR iterate
+      // diverges, using it for cap IEQ creates a positive feedback loop:
+      //   diverged V -> large IEQ -> more divergence -> larger IEQ -> infinity
+      //
+      // The stamp callback count tracks NR iterations. On count 0 (first
+      // call of a new timestep), capture prevV as the timestep voltage.
+      // On subsequent calls (NR iterations 1+), use the captured value.
+      // The count is reset externally via resetStampCount() between timesteps.
+      if (prevTimestepV_.size() != prevV.size() || stampCallCount_ == 0) {
+        prevTimestepV_ = prevV;
+      }
+      ++stampCallCount_;
 
-          mna.addVoltageSource(vdd_, circuit::Circuit::ground(), VDD_VOLTAGE);
-          stampTransistorsLevel1(mna, prevV); // MOSFETs linearize around NR iterate
-          stampExternalIO(mna);
-          stampParasiticCapsLevel1(mna, prevTimestepV_); // Caps use previous TIMESTEP (constant)
-          stampGmin(mna, prevV.size());
-          // Plug-in hook for derived levels: per-transistor charge / cap
-          // dynamics. Default no-op preserves L1 behavior; L2 overrides
-          // to stamp Meyer caps on every transistor for dynamic-logic
-          // simulation. See stampDynamicCharge() below.
-          stampDynamicCharge(mna, prevTimestepV_);
-        });
+      mna.addVoltageSource(vdd_, circuit::Circuit::ground(), VDD_VOLTAGE);
+      stampTransistorsLevel1(mna, prevV); // MOSFETs linearize around NR iterate
+      stampExternalIO(mna);
+      stampParasiticCapsLevel1(mna, prevTimestepV_); // Caps use previous TIMESTEP (constant)
+      stampGmin(mna, prevV.size());
+      // Plug-in hook for derived levels: per-transistor charge / cap
+      // dynamics. Default no-op preserves L1 behavior; L2 overrides
+      // to stamp Meyer caps on every transistor for dynamic-logic
+      // simulation. See stampDynamicCharge() below.
+      stampDynamicCharge(mna, prevTimestepV_);
+    });
     circuit.solver().setSparse(true);
     circuit.solver().setAlwaysReanalyze(true);
 
@@ -1777,9 +1884,12 @@ struct Intel4004GridLevel1 : Intel4004Grid {
             // weak GMIN so pass-transistor drive isn't overpowered.
             if (clampNrIterates_) {
               for (std::size_t i = 1; i < newV.size(); ++i) {
-                if (i == vdd_) continue;
-                if (newV[i] < V_NR_LO) newV[i] = V_NR_LO;
-                else if (newV[i] > V_NR_HI) newV[i] = V_NR_HI;
+                if (i == vdd_)
+                  continue;
+                if (newV[i] < V_NR_LO)
+                  newV[i] = V_NR_LO;
+                else if (newV[i] > V_NR_HI)
+                  newV[i] = V_NR_HI;
               }
             }
           });
@@ -1923,15 +2033,14 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     clk1High_ = true;
     clk2High_ = true;
     bytesFetched_ = 0;
-    behavioralTiming_ = true; // Drive timing signals (was missing!)
+    behavioralTiming_ = true; // Drive timing signals.
 
-    // Initial voltage for non-VDD nets. L1 default = 0V (matches binary
-    // switch path). L2 may override (e.g. to VDD/2 or VDD) to test
-    // whether the chip-scale instability comes from cold-start
-    // initialization rather than steady-state physics. Real silicon
-    // has dynamic nodes precharged via earlier clock cycles; our
-    // FromScratch model has no such pre-charge unless we initialize
-    // explicitly.
+    // Initial voltage for non-VDD nets. L1 default = 0 V (matches the
+    // binary switch path). L2 may override (e.g. VDD/2 or VDD) to probe
+    // whether chip-scale instability comes from cold-start initialization
+    // rather than steady-state physics. Real silicon precharges dynamic
+    // nodes via clock cycles, but FromScratch has no such pre-charge
+    // unless we initialize explicitly.
     for (std::size_t i = 1; i < NET_COUNT; ++i) {
       state.nodeVoltages[i] = (i == vdd_) ? VDD_VOLTAGE : initialNetVolts_;
     }
@@ -1992,18 +2101,18 @@ struct Intel4004GridLevel1 : Intel4004Grid {
    */
   virtual void stampLatchFeedbackTransistor(algorithms::mna::MnaSystemSparse& mna, std::size_t idx,
                                             const std::vector<double>& prevV) const {
-    const auto& t = transistors_[idx];
-    const auto& bp = bsParams_;
-    double vs = std::max(prevV[t.drain], prevV[t.source]);
-    double vgs = prevV[t.gate] - vs;
+    const auto& T = transistors_[idx];
+    const auto& BP = bsParams_;
+    double vs = std::max(prevV[T.drain], prevV[T.source]);
+    double vgs = prevV[T.gate] - vs;
     double gds;
-    if (vgs < -bp.vth - bp.subthMargin)
-      gds = bp.gOn;
-    else if (vgs > -bp.vth + bp.subthMargin)
-      gds = bp.gOff;
+    if (vgs < -BP.vth - BP.subthMargin)
+      gds = BP.gOn;
+    else if (vgs > -BP.vth + BP.subthMargin)
+      gds = BP.gOff;
     else
-      gds = bp.gSubth;
-    mna.addConductance(t.drain, t.source, gds);
+      gds = BP.gSubth;
+    mna.addConductance(T.drain, T.source, gds);
   }
 
   /**
@@ -2022,7 +2131,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
    * @return true if the override stamped the transistor (skip L1 stamp).
    *         false to fall through to the default L1 stamp.
    */
-  virtual bool stampStorageTransistor(algorithms::mna::MnaSystemSparse& /*mna*/, std::size_t /*idx*/,
+  virtual bool stampStorageTransistor(algorithms::mna::MnaSystemSparse& /*mna*/,
+                                      std::size_t /*idx*/,
                                       const std::vector<double>& /*prevV*/) const {
     return false; // L1 default: use standard L1 stamp.
   }
@@ -2088,15 +2198,15 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     if (componentMode_ && componentTypes_.empty()) {
       auto classification = classifyComponents(*this);
       componentTypes_ = std::move(classification.types);
-      if (norOutputNets_.empty()) buildNorOutputSet();
+      if (norOutputNets_.empty())
+        buildNorOutputSet();
       // Initialize latch stored values from prevV (captures warmup state).
       // ACC bits are initialized from readAccumulator (digital readback)
       // because binary switch warmup may leave marginal analog voltages.
       if (latchValues_.empty()) {
         // ACC: use initialAcc_ override if set, otherwise digital readback
-        std::uint8_t warmupAcc = (initialAcc_ >= 0)
-            ? static_cast<std::uint8_t>(initialAcc_ & 0xF)
-            : readAccumulator(prevV);
+        std::uint8_t warmupAcc = (initialAcc_ >= 0) ? static_cast<std::uint8_t>(initialAcc_ & 0xF)
+                                                    : readAccumulator(prevV);
         // (latch init for ACC, carry, then remaining nets below)
         for (int b = 0; b < 4; ++b) {
           if (accNets_[b] != 0 && accNets_[b] != vdd_) {
@@ -2126,26 +2236,26 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     }
 
     for (std::size_t idx = 0; idx < transistors_.size(); ++idx) {
-      const auto& t = transistors_[idx];
+      const auto& T = transistors_[idx];
 
       // Skip transistors connected to clock nets (CLK1, CLK2).
       // Clocks are external inputs driven behaviorally. Level 1 stamps
-      // on CLK-connected transistors add gm column entries that fight
+      // on CLK-connected transistors add GM column entries that fight
       // the behavioral clock drive.
-      if (componentMode_ && (t.gate == clk1Net_ || t.gate == clk2Net_)) {
+      if (componentMode_ && (T.gate == clk1Net_ || T.gate == clk2Net_)) {
         // Use binary switch for clock-gated transistors
-        const auto& bp = bsParams_;
-        double vs = std::max(prevV[t.drain], prevV[t.source]);
-        double vgs = prevV[t.gate] - vs;
+        const auto& BP = bsParams_;
+        double vs = std::max(prevV[T.drain], prevV[T.source]);
+        double vgs = prevV[T.gate] - vs;
         double gds;
-        if (vgs < -bp.vth - bp.subthMargin) {
-          gds = bp.gOn;
-        } else if (vgs > -bp.vth + bp.subthMargin) {
-          gds = bp.gOff;
+        if (vgs < -BP.vth - BP.subthMargin) {
+          gds = BP.gOn;
+        } else if (vgs > -BP.vth + BP.subthMargin) {
+          gds = BP.gOff;
         } else {
-          gds = bp.gSubth;
+          gds = BP.gSubth;
         }
-        mna.addConductance(t.drain, t.source, gds);
+        mna.addConductance(T.drain, T.source, gds);
         continue;
       }
 
@@ -2156,9 +2266,9 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       if (componentMode_ && !componentTypes_.empty()) {
         auto ctype = componentTypes_[idx];
         if (ctype == ComponentType::STANDALONE_LOAD ||
-            (ctype == ComponentType::NOR_GATE_MEMBER && t.isDiodeLoad)) {
+            (ctype == ComponentType::NOR_GATE_MEMBER && T.isDiodeLoad)) {
           // Depletion loads: fixed conductance (always-ON pull-up)
-          mna.addConductance(t.drain, t.source, bsParams_.gLoad);
+          mna.addConductance(T.drain, T.source, bsParams_.gLoad);
           continue;
         }
         if (ctype == ComponentType::DYNAMIC_STORAGE) {
@@ -2167,8 +2277,9 @@ struct Intel4004GridLevel1 : Intel4004Grid {
           // into BSIM3 by overriding stampStorageTransistor (returns
           // true to indicate it stamped); L1 default returns false and
           // execution falls through to the standard Level 1 stamp.
-          if (norOutputNets_.count(t.gate)) {
-            if (stampStorageTransistor(mna, idx, prevV)) continue;
+          if (norOutputNets_.count(T.gate)) {
+            if (stampStorageTransistor(mna, idx, prevV))
+              continue;
             // L1 default: fall through to Level 1 stamp below.
           } else {
             // Latch feedback core: dispatched to a virtual hook so a
@@ -2187,9 +2298,9 @@ struct Intel4004GridLevel1 : Intel4004Grid {
         // NOR_GATE_MEMBER: falls through to Level 1 stamp below
       }
 
-      // Resistive load mode (legacy, used when componentMode_ is false)
-      if (resistiveLoads_ && t.isDiodeLoad) {
-        mna.addConductance(t.drain, t.source, bsParams_.gLoad);
+      // Resistive load mode, used when componentMode_ is false.
+      if (resistiveLoads_ && T.isDiodeLoad) {
+        mna.addConductance(T.drain, T.source, bsParams_.gLoad);
         continue;
       }
 
@@ -2199,14 +2310,14 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       // labels but set mode based on VDS sign. Normal mode (VDS>=0):
       // drain at higher potential. Reverse mode (VDS<0): drain at lower.
       // The stamp positions stay the same - only VALUES change via xnrm/xrev.
-      const double VS = prevV[t.source];
-      const double VD = prevV[t.drain];
-      const double VG = prevV[t.gate];
+      const double VS = prevV[T.source];
+      const double VD = prevV[T.drain];
+      const double VG = prevV[T.gate];
 
       // Per-transistor parameters from calibrated W/L bins.
       // sameVtoMode_ = true: all transistors use VTH_ENH (proven for ACC=5).
       double kp = transistorKp_[idx];
-      double vth = sameVtoMode_ ? VTH_ENH : (t.isDiodeLoad ? VTH_DEP : VTH_ENH);
+      double vth = sameVtoMode_ ? VTH_ENH : (T.isDiodeLoad ? VTH_DEP : VTH_ENH);
       MosfetLevel1Params PARAMS{.Kp = kp, .Vth = vth, .lambda = LAMBDA};
 
       // PMOS voltages in NMOS-mirror convention (positive when ON)
@@ -2246,33 +2357,33 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       double vgsM = std::max(evalVgs, 0.0);
       double vdsM = std::max(evalVds, 0.0);
       const auto SV = MosfetLevel1::stampValues(vgsM, vdsM, PARAMS);
-      const double id = SV.id;
-      const double gm = SV.gm;
-      const double gdsDevice = SV.gds;
-      const double gdsStamp = std::max(gdsDevice, G_MIN);
+      const double ID = SV.id;
+      const double GM = SV.gm;
+      const double GDS_DEVICE = SV.gds;
+      const double GDS_STAMP = std::max(GDS_DEVICE, G_MIN);
 
       // Compensation current uses DEVICE gds, not G_MIN-augmented.
       // G_MIN is a numerical stabilizer; including it in cdreq cancels it.
       double cdreq;
       if (xnrm == 1) {
-        cdreq = -(id - gdsDevice * VSD - gm * VSG);
+        cdreq = -(ID - GDS_DEVICE * VSD - GM * VSG);
       } else {
-        cdreq = (id - gdsDevice * (-VSD) - gm * (VD - VG));
+        cdreq = (ID - GDS_DEVICE * (-VSD) - GM * (VD - VG));
       }
 
       // MOSFET Jacobian stamp. Positions use netlist terminals.
-      // DP=t.drain, SP=t.source. xnrm/xrev control gm distribution.
-      mna.addConductance(t.drain, t.source, gdsStamp);         // Symmetric gds
-      mna.addMatrixEntry(t.drain, t.drain, xrev * gm);         // DPdp += xrev*gm
-      mna.addMatrixEntry(t.source, t.source, xnrm * gm);       // SPsp += xnrm*gm
-      mna.addMatrixEntry(t.drain, t.gate, (xnrm - xrev) * gm); // DPg += (xnrm-xrev)*gm
-      mna.addMatrixEntry(t.drain, t.source, -static_cast<double>(xnrm) * gm); // DPsp += -xnrm*gm
-      mna.addMatrixEntry(t.source, t.gate, -(xnrm - xrev) * gm); // SPg += -(xnrm-xrev)*gm
-      mna.addMatrixEntry(t.source, t.drain, -static_cast<double>(xrev) * gm); // SPdp += -xrev*gm
+      // DP=T.drain, SP=T.source. xnrm/xrev control GM distribution.
+      mna.addConductance(T.drain, T.source, GDS_STAMP);        // Symmetric gds
+      mna.addMatrixEntry(T.drain, T.drain, xrev * GM);         // DPdp += xrev*GM
+      mna.addMatrixEntry(T.source, T.source, xnrm * GM);       // SPsp += xnrm*GM
+      mna.addMatrixEntry(T.drain, T.gate, (xnrm - xrev) * GM); // DPg += (xnrm-xrev)*GM
+      mna.addMatrixEntry(T.drain, T.source, -static_cast<double>(xnrm) * GM); // DPsp += -xnrm*GM
+      mna.addMatrixEntry(T.source, T.gate, -(xnrm - xrev) * GM); // SPg += -(xnrm-xrev)*GM
+      mna.addMatrixEntry(T.source, T.drain, -static_cast<double>(xrev) * GM); // SPdp += -xrev*GM
 
       // RHS: -cdreq at drain, +cdreq at source
       // Our addCurrent(a, b, val): I[a]+=val, I[b]-=val
-      mna.addCurrent(t.drain, t.source, -cdreq);
+      mna.addCurrent(T.drain, T.source, -cdreq);
     }
 
     // Stamp behavioral latches for dynamic storage nodes.
@@ -2288,12 +2399,10 @@ struct Intel4004GridLevel1 : Intel4004Grid {
     // is on. Capture primitives write captured values into latchValues_
     // and rely on this stamp to hold them across machine states until
     // X3 reads them (M1->M2->X3 hold window for OPR/OPA).
-    const bool stampLatchHold =
-        (applyBehavioralLatchOverlay_ ||
-         applyL2OprCaptureCell_ ||
-         applyL2OpaCaptureCell_) &&
+    const bool STAMP_LATCH_HOLD =
+        (applyBehavioralLatchOverlay_ || applyL2OprCaptureCell_ || applyL2OpaCaptureCell_) &&
         componentMode_ && !latchValues_.empty();
-    if (stampLatchHold) {
+    if (STAMP_LATCH_HOLD) {
       for (auto& [net, storedV] : latchValues_) {
         mna.addVoltageSource(net, 0, storedV);
       }
@@ -2345,8 +2454,7 @@ struct Intel4004GridLevel1 : Intel4004Grid {
       double gmin = gminTransient_;
       // Driven nets (NOR outputs, clocks) get a smaller GMIN if configured,
       // so strong gminTransient_ on floating nets doesn't distort logic levels.
-      if (gminDriven_ > 0.0 &&
-          (norOutputNets_.count(n) || n == clk1Net_ || n == clk2Net_)) {
+      if (gminDriven_ > 0.0 && (norOutputNets_.count(n) || n == clk1Net_ || n == clk2Net_)) {
         gmin = gminDriven_;
       }
       mna.addConductance(n, circuit::Circuit::ground(), gmin);

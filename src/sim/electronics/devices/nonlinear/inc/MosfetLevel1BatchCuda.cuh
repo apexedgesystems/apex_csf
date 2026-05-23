@@ -128,8 +128,8 @@ bool evalStampBatch(const MosfetBias* dBiases, const MosfetLevel1Params* dParams
  *
  * @note NOT RT-safe: launches a CUDA kernel.
  */
-bool evalStampBatchSoA(const MosfetBias* dBiases, const MosfetLevel1Params* dParams,
-                       double* dId, double* dGm, double* dGds, std::size_t count,
+bool evalStampBatchSoA(const MosfetBias* dBiases, const MosfetLevel1Params* dParams, double* dId,
+                       double* dGm, double* dGds, std::size_t count,
                        void* stream = nullptr) noexcept;
 
 /**
@@ -165,8 +165,7 @@ bool evalStampBatchSoA(const MosfetBias* dBiases, const MosfetLevel1Params* dPar
  */
 bool stampMosfetL1Batch(const MosfetBias* dBiases, const MosfetLevel1Params* dParams,
                         const MosfetNets* dNets, double* dG, double* dI, std::size_t count,
-                        std::size_t netCount, double gmin = 1e-12,
-                        void* stream = nullptr) noexcept;
+                        std::size_t netCount, double gmin = 1e-12, void* stream = nullptr) noexcept;
 
 /**
  * @brief Apply NR limiting and update node voltages on device.
@@ -255,8 +254,7 @@ public:
    *                   `setParams` call).
    * @return true on success.
    */
-  bool evalBatch(const MosfetBias* hostBiases, MosfetStamp* hostStamps,
-                 std::size_t count) noexcept;
+  bool evalBatch(const MosfetBias* hostBiases, MosfetStamp* hostStamps, std::size_t count) noexcept;
 
   /**
    * @brief True if the driver is initialised and CUDA is available.

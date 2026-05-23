@@ -21,7 +21,8 @@ using sim::electronics::chips::intel4004::loadSpiceNetlist;
 #ifdef INTEL4004_DATA_DIR
 static const std::string SPICE_PATH = INTEL4004_DATA_DIR "/lajos-4004.spice";
 #else
-static const std::string SPICE_PATH = "src/sim/electronics/chips/intel4004/netlist/data/lajos-4004.spice";
+static const std::string SPICE_PATH =
+    "src/sim/electronics/chips/intel4004/netlist/data/lajos-4004.spice";
 #endif
 
 static constexpr std::size_t WARMUP_NOPS = 16;

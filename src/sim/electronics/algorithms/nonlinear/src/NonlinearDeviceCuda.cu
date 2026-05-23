@@ -35,41 +35,40 @@ namespace sim::electronics::algorithms::nonlinear::cuda {
  * @param conductances Output: device conductances.
  * @param n Number of devices.
  */
-__global__ __launch_bounds__(256, 6) void evaluateDevicesKernel(
-    const DeviceParams* deviceParams, const double* nodeVoltages, double* currents,
-    double* conductances, int n) {
+__global__ __launch_bounds__(256, 6) void evaluateDevicesKernel(const DeviceParams* deviceParams,
+                                                                const double* nodeVoltages,
+                                                                double* currents,
+                                                                double* conductances, int n) {
   int idx = blockIdx.x * blockDim.x + threadIdx.x;
   if (idx >= n) {
     return;
   }
 
-  const DeviceParams& dev = deviceParams[idx];
+  const DeviceParams& DEV = deviceParams[idx];
 
-  // Compute terminal voltage
-  double vPos = nodeVoltages[dev.posNet];
-  double vNeg = nodeVoltages[dev.negNet];
+  double vPos = nodeVoltages[DEV.posNet];
+  double vNeg = nodeVoltages[DEV.negNet];
   double vTerminal = vPos - vNeg;
 
-  // Evaluate device based on type
   double i = 0.0;
   double g = 0.0;
 
-  switch (dev.type) {
+  switch (DEV.type) {
   case DeviceType::DIODE:
-    // Shockley equation: I = Is * (exp(V/Vt) - 1)
+    // Shockley diode: I = Is * (exp(V/Vt) - 1).
     {
-      double expArg = fmin(vTerminal / dev.params[1], 40.0); // Limit to prevent overflow
+      double expArg = fmin(vTerminal / DEV.params[1], 40.0); // Limit to prevent overflow
       double expVal = exp(expArg);
-      i = dev.params[0] * (expVal - 1.0);           // Is * (exp(V/Vt) - 1)
-      g = (dev.params[0] / dev.params[1]) * expVal; // (Is/Vt) * exp(V/Vt)
+      i = DEV.params[0] * (expVal - 1.0);           // Is * (exp(V/Vt) - 1)
+      g = (DEV.params[0] / DEV.params[1]) * expVal; // (Is/Vt) * exp(V/Vt)
     }
     break;
 
   case DeviceType::NONLINEAR_RESISTOR:
     // Cubic: I = G0*V + alpha*V^3
     {
-      double G0 = dev.params[0];
-      double alpha = dev.params[1];
+      double G0 = DEV.params[0];
+      double alpha = DEV.params[1];
       double V2 = vTerminal * vTerminal;
       double V3 = V2 * vTerminal;
       i = G0 * vTerminal + alpha * V3; // G0*V + alpha*V^3
@@ -78,11 +77,11 @@ __global__ __launch_bounds__(256, 6) void evaluateDevicesKernel(
     break;
 
   case DeviceType::BJT_NPN:
-    // Ebers-Moll model (simplified single-junction for now)
-    // Full BJT requires multi-terminal support
+    // Single-junction Ebers-Moll: requires multi-terminal support for the
+    // full model, so the GPU path approximates with one diode equation.
     {
-      double Is = dev.params[0];
-      double Vt = dev.params[1];
+      double Is = DEV.params[0];
+      double Vt = DEV.params[1];
       double expArg = fmin(vTerminal / Vt, 40.0);
       double expVal = exp(expArg);
       i = Is * (expVal - 1.0);
@@ -91,11 +90,11 @@ __global__ __launch_bounds__(256, 6) void evaluateDevicesKernel(
     break;
 
   case DeviceType::MOSFET_N:
-    // Level 1 MOSFET (Shichman-Hodges)
-    // Requires Vgs, Vds - multi-terminal support needed
-    // Placeholder for now
+    // Level 1 MOSFET requires Vgs and Vds; the single-terminal GPU path
+    // contributes zero current and a tiny conductance to keep the matrix
+    // non-singular.
     i = 0.0;
-    g = 1e-12; // Small conductance to avoid singularity
+    g = 1e-12;
     break;
 
   default:
@@ -136,35 +135,32 @@ __global__ __launch_bounds__(256, 6) void stampDevicesKernel(
     return;
   }
 
-  const DeviceParams& dev = deviceParams[idx];
+  const DeviceParams& DEV = deviceParams[idx];
   double g = conductances[idx];
   double i = currents[idx];
 
-  // Compute terminal voltage and Norton equivalent current
-  double vPos = nodeVoltages[dev.posNet];
-  double vNeg = nodeVoltages[dev.negNet];
+  double vPos = nodeVoltages[DEV.posNet];
+  double vNeg = nodeVoltages[DEV.negNet];
   double vTerminal = vPos - vNeg;
   double iEq = i - g * vTerminal; // Norton equivalent: ieq = I(V) - g*V
 
-  // Stamp conductance into G matrix (G[pos][pos] += g, G[neg][neg] += g, etc.)
-  // Using atomicAdd for thread safety when multiple devices share nodes
-  if (dev.posNet > 0 && dev.posNet < netCount) {
-    atomicAdd(&G_matrix[dev.posNet * netCount + dev.posNet], g);
+  // atomicAdd guards against multiple devices sharing a node.
+  if (DEV.posNet > 0 && DEV.posNet < netCount) {
+    atomicAdd(&G_matrix[DEV.posNet * netCount + DEV.posNet], g);
   }
-  if (dev.negNet > 0 && dev.negNet < netCount) {
-    atomicAdd(&G_matrix[dev.negNet * netCount + dev.negNet], g);
+  if (DEV.negNet > 0 && DEV.negNet < netCount) {
+    atomicAdd(&G_matrix[DEV.negNet * netCount + DEV.negNet], g);
   }
-  if (dev.posNet > 0 && dev.negNet > 0 && dev.posNet < netCount && dev.negNet < netCount) {
-    atomicAdd(&G_matrix[dev.posNet * netCount + dev.negNet], -g);
-    atomicAdd(&G_matrix[dev.negNet * netCount + dev.posNet], -g);
+  if (DEV.posNet > 0 && DEV.negNet > 0 && DEV.posNet < netCount && DEV.negNet < netCount) {
+    atomicAdd(&G_matrix[DEV.posNet * netCount + DEV.negNet], -g);
+    atomicAdd(&G_matrix[DEV.negNet * netCount + DEV.posNet], -g);
   }
 
-  // Stamp current into I vector
-  if (dev.posNet > 0 && dev.posNet < netCount) {
-    atomicAdd(&I_vector[dev.posNet], iEq);
+  if (DEV.posNet > 0 && DEV.posNet < netCount) {
+    atomicAdd(&I_vector[DEV.posNet], iEq);
   }
-  if (dev.negNet > 0 && dev.negNet < netCount) {
-    atomicAdd(&I_vector[dev.negNet], -iEq);
+  if (DEV.negNet > 0 && DEV.negNet < netCount) {
+    atomicAdd(&I_vector[DEV.negNet], -iEq);
   }
 }
 

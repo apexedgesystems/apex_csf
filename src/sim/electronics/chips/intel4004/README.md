@@ -6,59 +6,58 @@
 
 Intel 4004 microprocessor model at **four fidelity levels** with explicit
 authority models and clear physics fractions per level. Each level has a
-documented scope and use case; lower levels remain useful after higher
-ones arrive.
+documented scope and use case; lower levels remain useful for fast
+verification when higher levels are too expensive.
 
 The 1971 4004 was the first commercially available microprocessor:
 2,242 PMOS transistors, 16 4-bit registers, 46 instructions, 12-bit address
 space. The full SPICE netlist (`netlist/data/lajos-4004.spice`) is the
-Kintli/Silverman reverse-engineered transistor topology.
+Kintli / Silverman reverse-engineered transistor topology.
 
 ---
 
 ## Levels at a Glance
 
-| Level | Name | Where | Authority | Speed | Status |
-|-------|------|-------|-----------|-------|--------|
-| **L0** | Functional CPU | `Intel4004Cpu` (`behavioral/`) | self (ISA truth) | ~1 us / instruction | Done -- 41 tests |
-| **L1** | Component Hybrid | `Intel4004GridLevel1` (`grid/`) | L0-authoritative | ~1-2 s / byte | Done, frozen -- 10/10 tests |
-| **L2** | Engineered Physics | `Intel4004GridLevel2` (`grid/`) | physics-authoritative + custom primitives | minutes / byte | **Full instruction set covered.** All 46 opcodes have L2 == L0 parity verified byte-for-byte: 1-byte ops (LDM, ACC group, ADD/SUB/LD/XCH/INC/SRC/JIN/BBL/FIN/NOP), 2-byte ops (FIM/JCN/JUN/JMS/ISZ), and the 16-op RAM/IO group (WRM/WMP/WRR/WPM/WR0-3/SBM/RDM/RDR/ADM/RD0-3) |
-| **L3** | Pure Physics | (future) | physics-authoritative pure | tens of minutes / byte | Future aspiration |
+| Level  | Name               | Where                           | Authority                                 | Speed                  |
+| ------ | ------------------ | ------------------------------- | ----------------------------------------- | ---------------------- |
+| **L0** | Functional CPU     | `Intel4004Cpu` (`behavioral/`)  | self (ISA truth)                          | ~1 us / instruction    |
+| **L1** | Component Hybrid   | `Intel4004GridLevel1` (`grid/`) | L0-authoritative                          | ~1-2 s / byte          |
+| **L2** | Engineered Physics | `Intel4004GridLevel2` (`grid/`) | physics-authoritative + custom primitives | minutes / byte         |
+| **L3** | Pure Physics       | (future aspiration)             | physics-authoritative pure                | tens of minutes / byte |
 
 ### Authority models -- the key distinction
 
 - **L0** is its own authority -- pure C++ ISA simulation against the MCS-4 spec.
 - **L1** is **L0-authoritative**: the chip's transistor voltages are
   visualized, but register state (ACC, OPR, OPA) is forced from L0's truth
-  via 5 *behavioral stubs* during specific phases. The transistor view is
-  faithful for *what L0 computed*; physics doesn't drive register state.
+  via 5 _behavioral stubs_ during specific phases. The transistor view is
+  faithful for _what L0 computed_; physics does not drive register state.
 - **L2** is **physics-authoritative**: register state emerges from physics.
-  We found that some 4004 subcircuits -- the cross-coupled latch core, the
-  3-stage Vth-drop cascades for OPR/OPA capture, the multi-stage ALU
-  writeback chain -- don't converge in our NR solver (and don't converge
-  in stock ngspice either, on the full chip from t=0). For those, we
-  swap in a **custom primitive** that reads physics-driven inputs (D-bus
-  voltages, OPR/OPA bits, ACC, register file, CY, decode signals),
-  computes the deterministic operation the chip's design dictates, and
-  writes the result onto the storage nets. The primitives' inputs and
-  outputs stay physics; only the non-converging interior is abstracted.
-  Implication: any net read or written by a primitive carries its
-  uncertainty into the result, and any subcircuit not on a primitive's
-  read/write list is fully physics.
+  Some 4004 subcircuits -- the cross-coupled latch core, the 3-stage
+  Vth-drop cascades for OPR / OPA capture, the multi-stage ALU writeback
+  chain -- do not converge in our NR solver (and do not converge in stock
+  ngspice either on the full chip from t=0). For those, a **custom
+  primitive** reads physics-driven inputs (D-bus voltages, OPR / OPA bits,
+  ACC, register file, CY, decode signals), computes the deterministic
+  operation the chip's design dictates, and writes the result onto the
+  storage nets. Primitive inputs and outputs remain physics-driven; only
+  the non-converging interior is abstracted. Any net read or written by a
+  primitive carries its uncertainty into the result, and any subcircuit not
+  on a primitive's read / write list is fully physics-driven.
 - **L3** is **pure physics**: no abstractions. Currently a future aspiration
   -- requires multi-week to multi-month work on body-effect Vth, finer
-  integration, possibly chip-specific MOSFET variants.
+  integration, and possibly chip-specific MOSFET variants.
 
 ---
 
 ## Sub-libraries
 
-| Library                                | Header                               | Purpose                                        |
-| -------------------------------------- | ------------------------------------ | ---------------------------------------------- |
-| `sim_electronics_chips_intel4004_netlist`    | `netlist/inc/SpiceNetlistParser.hpp` | Parse `lajos-4004.spice` -> `Intel4004Netlist` |
-| `sim_electronics_chips_intel4004_behavioral` | `behavioral/inc/Intel4004Cpu.hpp`    | L0 functional CPU (46 opcodes)                 |
-| `sim_electronics_chips_intel4004_grid`       | `grid/inc/Intel4004GridLevel1.hpp`<br>`grid/inc/Intel4004GridLevel2.hpp` | L1 component hybrid + L2 engineered physics |
-| `sim_electronics_chips_intel4004_gate`       | `gate/inc/Intel4004GateLevel.hpp`    | NOR/pass gate topology extraction (used by L1) |
+| Library                                      | Header                                                                   | Purpose                                        |
+| -------------------------------------------- | ------------------------------------------------------------------------ | ---------------------------------------------- |
+| `sim_electronics_chips_intel4004_netlist`    | `netlist/inc/SpiceNetlistParser.hpp`                                     | Parse `lajos-4004.spice` -> `Intel4004Netlist` |
+| `sim_electronics_chips_intel4004_behavioral` | `behavioral/inc/Intel4004Cpu.hpp`                                        | L0 functional CPU (46 opcodes)                 |
+| `sim_electronics_chips_intel4004_grid`       | `grid/inc/Intel4004GridLevel1.hpp`<br>`grid/inc/Intel4004GridLevel2.hpp` | L1 component hybrid + L2 engineered physics    |
+| `sim_electronics_chips_intel4004_gate`       | `gate/inc/Intel4004GateLevel.hpp`                                        | NOR/pass gate topology extraction (used by L1) |
 
 All libraries are header-only. L2 inherits from L1 (overriding only the
 latch-feedback stamp + adding custom primitives); L1 inherits from a
@@ -107,13 +106,13 @@ machine-state phases.
 
 ### L1's 5 behavioral stubs (the 15% L0-authoritative fraction)
 
-| Stub | What it forces | When |
-|------|----------------|------|
-| Dynamic storage latch | Sample-and-hold voltages on dynamic nets | per-byte |
-| OPR sample (M1) | Forces OPR.0..3 from `dataBusDrive_` | machineState_ == 3 |
-| OPA sample (M2) | Forces OPA.0..3 from `dataBusDrive_` | machineState_ == 4 |
-| ACC write (X3) | Behaviorally executes the instruction (LDM/IAC/CMA/ADD/SUB/LD/etc.) and writes ACC | end of X3 |
-| Register seed | Seeds R0-R15 from L0 at byte boundaries | byte boundary |
+| Stub                  | What it forces                                                                     | When                |
+| --------------------- | ---------------------------------------------------------------------------------- | ------------------- |
+| Dynamic storage latch | Sample-and-hold voltages on dynamic nets                                           | per-byte            |
+| OPR sample (M1)       | Forces OPR.0..3 from `dataBusDrive_`                                               | machineState\_ == 3 |
+| OPA sample (M2)       | Forces OPA.0..3 from `dataBusDrive_`                                               | machineState\_ == 4 |
+| ACC write (X3)        | Behaviorally executes the instruction (LDM/IAC/CMA/ADD/SUB/LD/etc.) and writes ACC | end of X3           |
+| Register seed         | Seeds R0-R15 from L0 at byte boundaries                                            | byte boundary       |
 
 These stubs are why L1 works for all 46 instructions: L0 is computing the
 truth, L1 is making the transistors look right.
@@ -192,6 +191,7 @@ primitive abstractions:
    our solver, and the multi-stage writeback chain doesn't converge.
    Decision: dispatch on physics-captured OPR + OPA bits, apply the
    chip's deterministic operation, write the result. Three primitives:
+
    - `LdmAccWriteback` for LDM/BBL
    - `AluWriteback` for the full ACC group (IAC/CMA/CLB/CLC/CMC/STC/
      RAL/RAR/TCC/TCS/DAA/DAC/KBP/DCL) and register-operand ops (ADD/
@@ -213,12 +213,10 @@ Implication: any net read or written by a primitive carries its
 uncertainty into the result; any subcircuit not on a primitive's
 read/write list is fully physics-driven.
 
-### Status
+### Primitives
 
-**L2 == L0 across the full MCS-4 instruction set.** All five L1
-behavioral stubs are off; the cross-coupled latch core runs BSIM3,
-and six custom primitives handle capture + writeback physics-
-authoritatively:
+L2 disables every L1 behavioral stub. The cross-coupled latch core runs
+BSIM3, and six custom primitives handle capture and writeback:
 
 - `OprCaptureCell` -- samples physics-driven D-bus into OPR at M1
 - `OpaCaptureCell` -- samples physics-driven D-bus into OPA at M2
@@ -243,37 +241,11 @@ flight, all other primitives suppress themselves on the data byte
 (via the `pendingTwoByteOpr_` gate) so the data byte's nibbles aren't
 mistakenly treated as a new opcode.
 
-End-to-end verification at full L2 (no behavioral stubs, all primitives on):
-
-**Per-opcode and per-group parity:**
-
-| Test | Result |
-|------|--------|
-| `FullL2_AllPrimitives_Ldm` | 16/16 LDM N |
-| `AluWriteback.StageA_AccGroupVsL0` | 32/32 across CLB/CLC/CMC/STC/TCC/TCS/RAL/RAR/DAC/DAA/KBP/DCL/LD/XCH/IAC/CMA/ADD/SUB |
-| `RegPcWriteback.StageB_RegPcVsL0` | 8/8 across INC/SRC/JIN/BBL |
-| `MultiInstructionParityVsL0` | 15/15 byte-by-byte L2 == L0 across mixed 1-byte program |
-| `FullCoverageParityVsL0` | 16/16 across FIM, JCN, WRM/WMP/WR0/RDM/ADM/RD0, INC, ADD, IAC, LDM, STC, SRC |
-| `JunJmsIszFinVsL0` | 5/5: JUN, JMS, ISZ-taken, ISZ-not-taken, FIN-reads-ROM |
-
-**Production-scenario parity** (PC-driven harness following L0's actual
-control flow, including backward jumps, subroutine pushes/pops, bank
-switches):
-
-| Test | Result | What it covers |
-|------|--------|----------------|
-| `ProductionTests_AllRamIoOps` | 16/16 | Every one of the 16 RAM/IO opcodes (WMP/WRR/WPM/WR0-3/SBM/RDM/RDR/ADM/RD0-3) exercised individually |
-| `ProductionTests_SubroutineRoundtrip` | 8/8 | JMS push, sub body, BBL pop, post-return state |
-| `ProductionTests_NestedJms` | 12/12 | Three-deep stack push, BBL all the way back |
-| `ProductionTests_IszLoop` | 12/12 | Backward-jump loop iterating R0 from 0xC through wrap |
-| `ProductionTests_JcnAllConditions` | 12/12 | Multiple JCN condition masks (ACC=0, CY=1, inverted) including taken and not-taken |
-| `ProductionTests_BankSwitchedRam` | 16/16 | DCL bank 0 write, DCL bank 1 write, read both banks back |
-| `ProductionTests_BcdAdd` | 11/11 | Realistic BCD add 0x37+0x25=0x62 using DAA |
-
-The L2 coverage is end-to-end programmatic: L2 produces the same
-ACC, CY, all 16 registers, RAM data (across multiple banks), RAM
-status, RAM output, srcAddress, ramBank, and post-jump PC as L0 at
-every L0 step boundary across all of the above tests.
+L2 reproduces L0 state -- ACC, CY, the sixteen registers, RAM data
+across banks, RAM status, RAM output, srcAddress, ramBank, and post-jump
+PC -- at every L0 step boundary, including JMS / BBL stack handling,
+ISZ backward-jump loops, DCL bank switching, and BCD addition through
+DAA.
 
 ### Usage
 
@@ -326,7 +298,7 @@ N0999 cross-coupled inverter pair -> OPR.x/~OPR.x cross-coupled inverter
 pair), while OPA is a single-stage cell with one direct pass-gate from
 D-bus. With BSIM3 weak-inversion at `n_factor=2.5` (+101 mV overdrive
 per cell) the OPA cells flip cleanly; the OPR cells need to flip
-*twice in series* and the second flip lands in the metastable region.
+_twice in series_ and the second flip lands in the metastable region.
 Sweeping `n_factor` from 2.5 through 4.0 produces non-monotonic results
 (some bits flip, others regress) -- increasing overdrive shifts the
 metastable balance points without reliably resolving the flip. Same
@@ -340,15 +312,15 @@ disable the L2 custom primitives.
 
 ## Tests
 
-| Target                                  | Type | Coverage                                                                         |
-| --------------------------------------- | ---- | -------------------------------------------------------------------------------- |
-| `TestSimElectronicsIntel4004Behavioral` | utst | All 46 opcodes, register file, stack, carry                                      |
-| `TestSimElectronicsIntel4004Netlist`    | utst | SPICE netlist parser vs `lajos-4004.spice` fixture                               |
-| `TestSimElectronicsIntel4004Grid`       | utst | L1/L2 stamps, schematic-anchored counts, datasheet compliance, BSIM3 verification |
-| `TestSimElectronicsIntel4004Gate`       | utst | Gate extraction, NOR evaluation, propagation, accessors, execution               |
+| Target                                  | Type | Coverage                                                                                                                             |
+| --------------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `TestSimElectronicsIntel4004Behavioral` | utst | All 46 opcodes, register file, stack, carry                                                                                          |
+| `TestSimElectronicsIntel4004Netlist`    | utst | SPICE netlist parser vs `lajos-4004.spice` fixture                                                                                   |
+| `TestSimElectronicsIntel4004Grid`       | utst | L1/L2 stamps, schematic-anchored counts, datasheet compliance, BSIM3 verification                                                    |
+| `TestSimElectronicsIntel4004Gate`       | utst | Gate extraction, NOR evaluation, propagation, accessors, execution                                                                   |
 | `Intel4004Grid_Dev`                     | dtst | L0+L1 multi-instruction, L2 phased plan, OPR/OPA decode, full instruction set parity vs L0 (single-byte, 2-byte, RAM/IO), divergence |
-| `Intel4004GateLevel_Dev`                | dtst | Gate-level execution comparison vs L0                                            |
-| `Intel4004Gate_PTEST`                   | ptst | Gate extraction and propagation throughput                                       |
+| `Intel4004GateLevel_Dev`                | dtst | Gate-level execution comparison vs L0                                                                                                |
+| `Intel4004Gate_PTEST`                   | ptst | Gate extraction and propagation throughput                                                                                           |
 
 ```bash
 make compose-debug
@@ -370,19 +342,19 @@ ctest --test-dir build/native-linux-debug -R Intel4004
 ```
 
 The demo prints L0 and L1 ACC for every byte, with a final per-net voltage
-table from the last byte's L1 state. L2 demo wiring is future work.
+table from the last byte's L1 state.
 
 ---
 
 ## Dependencies
 
-| Library                                | Used by                                |
-| -------------------------------------- | -------------------------------------- |
-| `sim_electronics_circuit`              | `grid/`, `gate/`                       |
-| `sim_electronics_devices_composite`    | `grid/`                                |
-| `sim_electronics_devices_nonlinear`    | `grid/` (MosfetLevel1, MosfetBsim3)    |
-| `sim_electronics_chips_intel4004_netlist`    | `grid/`, `gate/`                       |
-| `sim_electronics_chips_intel4004_behavioral` | `grid/` (L0-authoritative for L1)      |
+| Library                                      | Used by                             |
+| -------------------------------------------- | ----------------------------------- |
+| `sim_electronics_circuit`                    | `grid/`, `gate/`                    |
+| `sim_electronics_devices_composite`          | `grid/`                             |
+| `sim_electronics_devices_nonlinear`          | `grid/` (MosfetLevel1, MosfetBsim3) |
+| `sim_electronics_chips_intel4004_netlist`    | `grid/`, `gate/`                    |
+| `sim_electronics_chips_intel4004_behavioral` | `grid/` (L0-authoritative for L1)   |
 
 ---
 
@@ -390,28 +362,28 @@ table from the last byte's L1 state. L2 demo wiring is future work.
 
 ### Behavioral CPU (L0)
 
-| Metric             | Value                       |
-| ------------------ | --------------------------- |
-| Step throughput    | ~7.7M steps/s (NOP, debug)  |
-| Step latency       | ~16 ns/step (NOP)           |
-| Per-instruction    | ~45 ns/instr (with reset)   |
-| IPC                | 3.41                        |
+| Metric          | Value                      |
+| --------------- | -------------------------- |
+| Step throughput | ~7.7M steps/s (NOP, debug) |
+| Step latency    | ~16 ns/step (NOP)          |
+| Per-instruction | ~45 ns/instr (with reset)  |
+| IPC             | 3.41                       |
 
 ### Grid (L1)
 
-| Metric               | Value                                  |
-| -------------------- | -------------------------------------- |
-| Circuit build        | ~1.2 ms (2,242 tx, ~1,081 nets)        |
-| L1 single-byte       | ~2.5 s (16 NOP warm-up + 1 L1 byte)    |
-| DC solve             | ~3.0 ms (stamp 2242 tx + KLU)          |
+| Metric         | Value                               |
+| -------------- | ----------------------------------- |
+| Circuit build  | ~1.2 ms (2,242 tx, ~1,081 nets)     |
+| L1 single-byte | ~2.5 s (16 NOP warm-up + 1 L1 byte) |
+| DC solve       | ~3.0 ms (stamp 2242 tx + KLU)       |
 
 ### Grid (L2)
 
-| Metric                                 | Value                              |
-| -------------------------------------- | ---------------------------------- |
+| Metric                                 | Value                                                                    |
+| -------------------------------------- | ------------------------------------------------------------------------ |
 | L2 single-byte (cold, includes warmup) | ~4.6 s (32-NOP warmup + BSIM3 + Meyer caps + bootstrap caps + 1 L2 byte) |
-| L2 multi-byte (warmup amortized)       | ~0.7-0.8 s per byte                |
-| L2 vs L1 byte cost                     | ~1.9x (L1 ~2.5 s, L2 ~4.6 s)       |
+| L2 multi-byte (warmup amortized)       | ~0.7-0.8 s per byte                                                      |
+| L2 vs L1 byte cost                     | ~1.9x (L1 ~2.5 s, L2 ~4.6 s)                                             |
 
 ---
 

@@ -14,13 +14,13 @@
 #include <gtest/gtest.h>
 #include <string>
 
-using sim::electronics::circuit::Circuit;
+using sim::electronics::algorithms::transient::TransientState;
+using sim::electronics::algorithms::transient::TransientStatus;
 using sim::electronics::chips::intel4004::Intel4004Grid;
 using sim::electronics::chips::intel4004::Intel4004GridLevel1;
 using sim::electronics::chips::intel4004::Intel4004Netlist;
 using sim::electronics::chips::intel4004::loadSpiceNetlist;
-using sim::electronics::algorithms::transient::TransientState;
-using sim::electronics::algorithms::transient::TransientStatus;
+using sim::electronics::circuit::Circuit;
 
 /* ----------------------------- Helpers ----------------------------- */
 
@@ -154,9 +154,8 @@ TEST(Intel4004GridTest, DcAddAccControl) {
   double addAcc = grid.readNetVoltage(state.nodeVoltages, "ADD-ACC");
   double writeAcc = grid.readNetVoltage(state.nodeVoltages, "WRITE_ACC(1)");
   double n0477 = grid.readNetVoltage(state.nodeVoltages, "N0477");
-  std::printf("  L1 DC: ADD-ACC=%.4f  WRITE_ACC(1)=%.4f  N0477=%.4f\n",
-              addAcc, writeAcc, n0477);
-  std::printf("  VDD net=%zu  gLoad=%.3e\n", grid.vdd_, grid.bsParams_.gLoad);
+  std::printf("  L1 DC: ADD-ACC=%.4f  WRITE_ACC(1)=%.4f  N0477=%.4f\n", addAcc, writeAcc, n0477);
+  std::printf("  VDD net=%u  gLoad=%.3e\n", grid.vdd_, grid.bsParams_.gLoad);
 
   // ADD-ACC should be HIGH (inactive, pulled up by depletion load)
   // when both pull-downs are inactive
@@ -187,12 +186,15 @@ TEST(Intel4004GridTest, DcVoltageDistribution) {
   int nearVdd = 0, nearGnd = 0, midRail = 0;
   for (std::size_t i = 1; i < state.nodeVoltages.size(); ++i) {
     double v = state.nodeVoltages[i];
-    if (v > 4.0) ++nearVdd;
-    else if (v < 1.0) ++nearGnd;
-    else ++midRail;
+    if (v > 4.0)
+      ++nearVdd;
+    else if (v < 1.0)
+      ++nearGnd;
+    else
+      ++midRail;
   }
-  std::printf("    Nodes: %d near VDD (>4V), %d near GND (<1V), %d mid-rail (1-4V)\n",
-              nearVdd, nearGnd, midRail);
+  std::printf("    Nodes: %d near VDD (>4V), %d near GND (<1V), %d mid-rail (1-4V)\n", nearVdd,
+              nearGnd, midRail);
 
   // A healthy CMOS/PMOS circuit should have most nodes near VDD or GND
   // Mid-rail equilibrium would show most nodes between 1-4V
@@ -255,8 +257,8 @@ TEST(Intel4004GridTest, BinarySwitchLdmAcc5) {
 
   auto state = grid.simulate(circuit, rom.data(), rom.size(), rom.size());
 
-  std::printf("  Binary-switch LDM 5 (%zu transistors, %zu bytes):\n",
-              grid.transistorCount(), rom.size());
+  std::printf("  Binary-switch LDM 5 (%zu transistors, %zu bytes):\n", grid.transistorCount(),
+              rom.size());
   for (int i = 0; i < 4; ++i) {
     double v = grid.readNetVoltage(state.nodeVoltages, "ACC." + std::to_string(i));
     std::printf("    ACC.%d = %.4fV\n", i, v);

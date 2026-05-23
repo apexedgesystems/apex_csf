@@ -113,7 +113,8 @@ TEST(SchottkyDiodeTest, ConductanceWithSeriesResistance) {
   const double G = SchottkyDiode::conductance(V, params);
 
   // With series R, conductance should be reduced: g = gj/(1 + gj*Rs)
-  const double G_IDEAL = (params.Is / (params.n * params.Vt)) * std::exp(V / (params.n * params.Vt));
+  const double G_IDEAL =
+      (params.Is / (params.n * params.Vt)) * std::exp(V / (params.n * params.Vt));
   EXPECT_LT(G, G_IDEAL);
   EXPECT_GT(G, 0.0);
 }

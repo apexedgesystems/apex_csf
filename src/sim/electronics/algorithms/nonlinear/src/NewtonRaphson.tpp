@@ -25,23 +25,19 @@ inline void NewtonRaphsonSolver::reset() noexcept {
 inline NonlinearResult NewtonRaphsonSolver::solve(const NonlinearConfig& config) {
   NonlinearResult result;
 
-  // Validate configuration
   if (config.maxIterations == 0) {
     result.status = NonlinearStatus::ERROR_INVALID_CONFIG;
     result.errorMessage = "maxIterations must be > 0";
     return result;
   }
 
-  // Ensure voltages vector is sized
   if (voltages_.size() != netCount_) {
     voltages_.resize(netCount_, 0.0);
   }
 
-  // Newton-Raphson iteration
   std::vector<double> deltaV(netCount_, 0.0);
 
   for (std::size_t iter = 0; iter < config.maxIterations; ++iter) {
-    // Perform single iteration
     bool ok = iterate(config, iter, deltaV);
 
     if (!ok) {
@@ -51,27 +47,22 @@ inline NonlinearResult NewtonRaphsonSolver::solve(const NonlinearConfig& config)
       return result;
     }
 
-    // Apply damping if enabled
     if (config.enableDamping && iter < config.dampingIterations) {
       applyDamping(deltaV, config.dampingFactor);
     }
 
-    // Update voltages
     for (std::size_t i = 0; i < netCount_; ++i) {
       voltages_[i] += deltaV[i];
     }
 
-    // Compute convergence metrics
     double maxDeltaV = computeMaxDelta(deltaV);
     double maxVoltage = 0.0;
     for (double v : voltages_) {
       maxVoltage = std::max(maxVoltage, std::abs(v));
     }
 
-    // Compute KCL residual (actual current error)
     double maxResidual = computeKclResidual();
 
-    // Check convergence
     if (config.isConverged(maxDeltaV, maxResidual, maxVoltage)) {
       result.status = NonlinearStatus::SUCCESS;
       result.iterations = iter + 1;
@@ -80,7 +71,8 @@ inline NonlinearResult NewtonRaphsonSolver::solve(const NonlinearConfig& config)
       return result;
     }
 
-    // Check for divergence (voltages growing unbounded)
+    // Voltages above 1e6 V are treated as divergence; the MNA matrix is
+    // ill-conditioned long before any physical circuit reaches this range.
     if (maxVoltage > 1e6) {
       result.status = NonlinearStatus::ERROR_VOLTAGE_DIVERGENCE;
       result.errorMessage = "Voltages diverging (max = " + std::to_string(maxVoltage) + "V)";
@@ -92,7 +84,6 @@ inline NonlinearResult NewtonRaphsonSolver::solve(const NonlinearConfig& config)
     result.finalError = maxDeltaV;
   }
 
-  // Failed to converge within iteration limit
   result.status = NonlinearStatus::ERROR_MAX_ITERATIONS;
   result.errorMessage =
       "Failed to converge after " + std::to_string(config.maxIterations) + " iterations";
@@ -106,29 +97,25 @@ inline NonlinearResult NewtonRaphsonSolver::solve(const NonlinearConfig& config)
 
 inline bool NewtonRaphsonSolver::iterate(const NonlinearConfig& config, std::size_t iteration,
                                          std::vector<double>& deltaV) {
-  (void)config;    // Unused in this implementation
-  (void)iteration; // Unused in this implementation
+  (void)config;
+  (void)iteration;
 
-  // Build MNA system for current operating point
   MnaSystem mna(netCount_);
 
-  // Stamp linear elements (resistors, voltage sources)
   if (linearStampCallback_) {
     linearStampCallback_(mna);
   }
 
-  // Stamp linearized nonlinear devices
   devices_.stampAllLinearized(mna, voltages_);
 
-  // Solve for voltage update: J * delta(V) = -F
-  // MNA solve gives us the voltages directly, so we compute delta as V_new - V_old
+  // J * delta(V) = -F. The MNA solve returns absolute voltages, so the
+  // Newton update is the difference against the current iterate.
   MnaResult result = mna.solve();
 
   if (!result.success) {
     return false;
   }
 
-  // Compute voltage update
   for (std::size_t i = 0; i < netCount_; ++i) {
     if (i < result.nodeVoltages.size()) {
       deltaV[i] = result.nodeVoltages[i] - voltages_[i];
@@ -152,9 +139,9 @@ NewtonRaphsonSolver::computeMaxDelta(const std::vector<double>& deltaV) const no
 }
 
 inline double NewtonRaphsonSolver::computeMaxResidual(const MnaSystem& mna) const noexcept {
-  const auto& current = mna.currentVector();
+  const auto& CURRENT = mna.currentVector();
   double maxResidual = 0.0;
-  for (double i : current) {
+  for (double i : CURRENT) {
     maxResidual = std::max(maxResidual, std::abs(i));
   }
   return maxResidual;
@@ -168,17 +155,14 @@ inline void NewtonRaphsonSolver::applyDamping(std::vector<double>& deltaV,
 }
 
 inline double NewtonRaphsonSolver::computeKclResidual() const noexcept {
-  // Compute KCL residual by evaluating device currents at current voltages
   std::vector<double> netCurrents(netCount_, 0.0);
 
-  // Sum device currents at each net
   for (const auto& device : devices_.devices()) {
     NetID pos = device->posNet();
     NetID neg = device->negNet();
     double vTerminal = voltages_[pos] - voltages_[neg];
     double current = device->current(vTerminal);
 
-    // Current flows from pos to neg
     if (pos < netCount_) {
       netCurrents[pos] -= current;
     }
@@ -187,7 +171,7 @@ inline double NewtonRaphsonSolver::computeKclResidual() const noexcept {
     }
   }
 
-  // Find maximum residual (excluding GND net 0)
+  // Skip net 0 (ground) so the residual does not include the constrained node.
   double maxResidual = 0.0;
   for (std::size_t i = 1; i < netCount_; ++i) {
     maxResidual = std::max(maxResidual, std::abs(netCurrents[i]));

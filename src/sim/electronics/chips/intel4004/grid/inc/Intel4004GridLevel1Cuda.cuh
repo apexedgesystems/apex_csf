@@ -2,32 +2,28 @@
 #define APEX_INTEL4004GRIDLEVEL1CUDA_CUH
 /**
  * @file Intel4004GridLevel1Cuda.cuh
- * @brief Fully GPU-resident Intel 4004 Level 1 NR loop (scaffold).
+ * @brief Device-resident state and entry points for running the Intel 4004
+ *        Level 1 Newton-Raphson loop end-to-end on the GPU: stamp, solve,
+ *        and voltage update without leaving device memory. One host
+ *        synchronisation per NR convergence, not per iteration.
  *
- * This sidecar holds the state and entry points for running the
- * Intel 4004 L1 Newton-Raphson loop on the device end-to-end: stamp,
- * solve, and voltage update all without leaving GPU memory. One host
- * synchronisation per NR convergence, not per iteration.
- *
- * The CPU-driven hybrid pattern was measured to lose (0.66x vs CPU at
- * single-4004 scale) because per-iter `cudaDeviceSynchronize` + H2D/
- * D2H transfers of the bias and stamp arrays dominate the tiny
- * 2242-device kernel body. Only full GPU residence recovers the math
- * time advantage.
- *
- * Scaffold status: declaration only. Implementation will iterate
- * across follow-up sessions, adding the device-resident NR loop,
- * MOSFET stamp->scatter, and the GPU solve path incrementally.
+ * The CPU-driven hybrid pattern measures at 0.66x of the CPU path at
+ * single-4004 scale because per-iteration `cudaDeviceSynchronize` plus
+ * H2D / D2H transfers of the bias and stamp arrays dominate the tiny
+ * 2242-device kernel body. Only full GPU residence recovers the math-time
+ * advantage.
  */
 
+// Project headers
+#include "src/sim/electronics/chips/intel4004/grid/inc/Intel4004GridLevel1.hpp"
+#include "src/sim/electronics/algorithms/transient/inc/TransientConfig.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1BatchCuda.cuh"
+
+// C++ standard headers
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
-
-#include "src/sim/electronics/algorithms/transient/inc/TransientConfig.hpp"
-#include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1BatchCuda.cuh"
-#include "src/sim/electronics/chips/intel4004/grid/inc/Intel4004GridLevel1.hpp"
 
 namespace sim::electronics::chips::intel4004::cuda {
 
@@ -107,9 +103,9 @@ struct Intel4004Level1CudaState {
  * same device matrix via a small transfer.
  */
 enum class Phase4TransistorClass : std::uint8_t {
-  L1_STAMP,           ///< Full Level 1 MOSFET physics (stamp kernel target).
-  BINARY_SWITCH,      ///< Clock-gated or latch-core (fixed gds).
-  DEPLETION_LOAD,     ///< Always-on pull-up (fixed conductance).
+  L1_STAMP,       ///< Full Level 1 MOSFET physics (stamp kernel target).
+  BINARY_SWITCH,  ///< Clock-gated or latch-core (fixed gds).
+  DEPLETION_LOAD, ///< Always-on pull-up (fixed conductance).
 };
 
 /**
@@ -117,12 +113,12 @@ enum class Phase4TransistorClass : std::uint8_t {
  */
 struct Phase4ScatterTable {
   std::vector<sim::electronics::devices::nonlinear::cuda::MosfetNets>
-      nets;                                         ///< Per-L1 transistor (drain, gate, source).
+      nets; ///< Per-L1 transistor (drain, gate, source).
   std::vector<sim::electronics::devices::nonlinear::MosfetLevel1Params>
-      params;                                       ///< Per-L1 transistor Kp/Vth/lambda/Vsmooth.
-  std::vector<std::size_t> l1Indices;               ///< Index in grid.transistors_.
-  std::vector<Phase4TransistorClass> classes;       ///< Classification of every transistor.
-  std::size_t l1Count = 0;                          ///< Count of L1-eligible transistors.
+      params;                                 ///< Per-L1 transistor Kp/Vth/lambda/Vsmooth.
+  std::vector<std::size_t> l1Indices;         ///< Index in grid.transistors_.
+  std::vector<Phase4TransistorClass> classes; ///< Classification of every transistor.
+  std::size_t l1Count = 0;                    ///< Count of L1-eligible transistors.
   std::size_t binarySwitchCount = 0;
   std::size_t depletionLoadCount = 0;
 };
@@ -178,10 +174,10 @@ public:
    *                            the only field populated in this scaffold.
    * @return true on success.
    */
-  [[nodiscard]] bool simulateByte(const std::uint8_t* rom, std::size_t romSize,
-                                  std::size_t warmupInstructions,
-                                  std::size_t programInstructions,
-                                  sim::electronics::algorithms::transient::TransientState& outState) noexcept;
+  [[nodiscard]] bool
+  simulateByte(const std::uint8_t* rom, std::size_t romSize, std::size_t warmupInstructions,
+               std::size_t programInstructions,
+               sim::electronics::algorithms::transient::TransientState& outState) noexcept;
 
   [[nodiscard]] bool ready() const noexcept;
 

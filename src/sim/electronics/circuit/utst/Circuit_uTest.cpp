@@ -17,9 +17,6 @@
 #include <cmath>
 #include <vector>
 
-using sim::electronics::circuit::Circuit;
-using sim::electronics::circuit::CircuitNet;
-using sim::electronics::devices::linear::ResistorModel;
 using sim::electronics::algorithms::mna::MnaSystem;
 using sim::electronics::algorithms::mna::NetID;
 using sim::electronics::algorithms::transient::IntegrationMethod;
@@ -27,6 +24,9 @@ using sim::electronics::algorithms::transient::TransientConfig;
 using sim::electronics::algorithms::transient::TransientResult;
 using sim::electronics::algorithms::transient::TransientState;
 using sim::electronics::algorithms::transient::TransientStatus;
+using sim::electronics::circuit::Circuit;
+using sim::electronics::circuit::CircuitNet;
+using sim::electronics::devices::linear::ResistorModel;
 
 /* ----------------------------- Default Construction ----------------------------- */
 

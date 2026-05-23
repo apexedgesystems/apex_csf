@@ -31,7 +31,6 @@
 #include <random>
 #include <vector>
 
-
 constexpr int NET_COUNT = 1121;
 constexpr int N_TRANSISTORS = 2242;
 constexpr double GMIN = 1e-3;
@@ -48,19 +47,21 @@ void buildSparseLikeMna(std::vector<double>& dense, std::vector<double>& rhs) {
   std::uniform_real_distribution<double> gDist(1e-4, 5e-3);
 
   auto add = [&](int r, int c, double v) {
-    if (r <= 0 || c <= 0 || r >= NET_COUNT || c >= NET_COUNT) return;
+    if (r <= 0 || c <= 0 || r >= NET_COUNT || c >= NET_COUNT)
+      return;
     dense[r * NET_COUNT + c] += v;
   };
 
   for (int i = 0; i < N_TRANSISTORS; ++i) {
-    const int d = netDist(rng);
-    const int s = netDist(rng);
-    if (d == s) continue;
-    const double g = gDist(rng);
-    add(d, d, g);
-    add(s, s, g);
-    add(d, s, -g);
-    add(s, d, -g);
+    const int D = netDist(rng);
+    const int S = netDist(rng);
+    if (D == S)
+      continue;
+    const double G = gDist(rng);
+    add(D, D, G);
+    add(S, S, G);
+    add(D, S, -G);
+    add(S, D, -G);
   }
 
   // GMIN-to-ground diagonal bias + ground anchor.
@@ -80,16 +81,15 @@ void denseToCsr(const std::vector<double>& dense, std::vector<int>& rowPtr,
   for (int r = 0; r < NET_COUNT; ++r) {
     rowPtr[r] = static_cast<int>(colIdx.size());
     for (int c = 0; c < NET_COUNT; ++c) {
-      const double v = dense[r * NET_COUNT + c];
-      if (v != 0.0) {
+      const double V = dense[r * NET_COUNT + c];
+      if (V != 0.0) {
         colIdx.push_back(c);
-        values.push_back(v);
+        values.push_back(V);
       }
     }
   }
   rowPtr[NET_COUNT] = static_cast<int>(colIdx.size());
 }
-
 
 namespace ub = vernier::bench;
 
@@ -105,10 +105,10 @@ PERF_TEST(CuSolverSp, OneShotLU_Dim1121) {
   std::vector<double> values;
   denseToCsr(dense, rowPtr, colIdx, values);
 
-  const int nnz = static_cast<int>(colIdx.size());
+  const int NNZ = static_cast<int>(colIdx.size());
   std::printf("\n=== CuSolverSp Probe at Dim%d ===\n", NET_COUNT);
-  std::printf("  NNZ = %d  (%.2f%% density)\n", nnz,
-              100.0 * nnz / static_cast<double>(NET_COUNT * NET_COUNT));
+  std::printf("  NNZ = %d  (%.2f%% density)\n", NNZ,
+              100.0 * NNZ / static_cast<double>(NET_COUNT * NET_COUNT));
 
   cusolverSpHandle_t handle = nullptr;
   ASSERT_EQ(cusolverSpCreate(&handle), CUSOLVER_STATUS_SUCCESS);
@@ -123,7 +123,7 @@ PERF_TEST(CuSolverSp, OneShotLU_Dim1121) {
   auto runFn = [&] {
     // `cusolverSpDcsrlsvluHost` does reorder (symrcm) + symbolic
     // factor + numerical factor + solve in one host-driven call.
-    cusolverSpDcsrlsvluHost(handle, NET_COUNT, nnz, descr, values.data(), rowPtr.data(),
+    cusolverSpDcsrlsvluHost(handle, NET_COUNT, NNZ, descr, values.data(), rowPtr.data(),
                             colIdx.data(), rhs.data(), 1e-12, 0, solution.data(), &singularity);
   };
 

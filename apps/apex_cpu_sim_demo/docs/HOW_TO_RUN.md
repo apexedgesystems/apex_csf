@@ -72,18 +72,18 @@ docker compose run --rm -T dev-cuda bash -c '
 
 ### CLI flags
 
-| Flag                    | Default          | Description                                              |
-| ----------------------- | ---------------- | -------------------------------------------------------- |
-| `--level N`             | `1`              | `0` = L0 behavioral, `1` = L0 + L1 hybrid, `2` = L0 + L2 |
-| `--behavioral-only`     | -                | Alias for `--level 0`                                    |
-| `--netlist PATH`        | built-in 4004    | Path to SPICE netlist file                               |
-| `--bootstrap-caps PATH` | built-in caps    | Bootstrap-cap data file (L2 only)                        |
-| `--program "HEX"`       | LDM 5            | Program as space-separated hex bytes                     |
-| `--example NAME`        | -                | Load a canned example by name or path (see Section 7)    |
-| `--list-examples`       | -                | List the canned examples and exit                        |
-| `--probe NET`           | 20 default nets  | Probe a net name (repeatable, L1/L2 only)                |
-| `--warmup N`            | `16`             | Warmup NOP count for L1/L2 timing stabilization          |
-| `-h, --help`            |                  | Show help                                                |
+| Flag                    | Default         | Description                                              |
+| ----------------------- | --------------- | -------------------------------------------------------- |
+| `--level N`             | `1`             | `0` = L0 behavioral, `1` = L0 + L1 hybrid, `2` = L0 + L2 |
+| `--behavioral-only`     | -               | Alias for `--level 0`                                    |
+| `--netlist PATH`        | built-in 4004   | Path to SPICE netlist file                               |
+| `--bootstrap-caps PATH` | built-in caps   | Bootstrap-cap data file (L2 only)                        |
+| `--program "HEX"`       | LDM 5           | Program as space-separated hex bytes                     |
+| `--example NAME`        | -               | Load a canned example by name or path (see Section 7)    |
+| `--list-examples`       | -               | List the canned examples and exit                        |
+| `--probe NET`           | 20 default nets | Probe a net name (repeatable, L1/L2 only)                |
+| `--warmup N`            | `16`            | Warmup NOP count for L1/L2 timing stabilization          |
+| `-h, --help`            |                 | Show help                                                |
 
 ---
 
@@ -91,7 +91,7 @@ docker compose run --rm -T dev-cuda bash -c '
 
 | Level | Per-byte cost | Physics                                              | Use when                                                |
 | ----- | ------------: | ---------------------------------------------------- | ------------------------------------------------------- |
-| L0    |       sub-us  | Behavioral CPU (truth-table opcodes)                 | You need fast functional execution                      |
+| L0    |        sub-us | Behavioral CPU (truth-table opcodes)                 | You need fast functional execution                      |
 | L1    |        ~2.5 s | Shichman-Hodges + binary switch + behavioral overlay | You want transistor voltages with stable per-byte state |
 | L2    |        ~4.6 s | BSIM3 + Meyer caps + bootstrap caps, overlay OFF     | You want physics-resolved decode chain + latch dynamics |
 
@@ -253,12 +253,12 @@ docker compose run --rm -T dev-cuda bash -c '
 '
 ```
 
-| Step | Hex | Mnemonic | Effect                |
-| ---- | --- | -------- | --------------------- |
-| 0    | D5  | LDM 5    | ACC = 5               |
-| 1    | B0  | XCH R0   | R0 <-> ACC (R0 = 5)   |
-| 2    | D3  | LDM 3    | ACC = 3               |
-| 3    | 80  | ADD R0   | ACC = ACC + R0 = 8    |
+| Step | Hex | Mnemonic | Effect              |
+| ---- | --- | -------- | ------------------- |
+| 0    | D5  | LDM 5    | ACC = 5             |
+| 1    | B0  | XCH R0   | R0 <-> ACC (R0 = 5) |
+| 2    | D3  | LDM 3    | ACC = 3             |
+| 3    | 80  | ADD R0   | ACC = ACC + R0 = 8  |
 
 Expected: `ACC = 8`, `R0 = 5`, `CY = 0`.
 
@@ -271,13 +271,13 @@ docker compose run --rm -T dev-cuda bash -c '
 '
 ```
 
-| Step | Hex | Mnemonic | Effect                                        |
-| ---- | --- | -------- | --------------------------------------------- |
-| 0    | F1  | CLC      | CY = 0                                        |
-| 1    | D9  | LDM 9    | ACC = 9                                       |
-| 2    | B0  | XCH R0   | R0 = 9, ACC = 0                               |
-| 3    | D4  | LDM 4    | ACC = 4                                       |
-| 4    | 90  | SUB R0   | ACC = ACC - R0 - !CY = 4 - 9 - 1 = -6 = 0xA  |
+| Step | Hex | Mnemonic | Effect                                      |
+| ---- | --- | -------- | ------------------------------------------- |
+| 0    | F1  | CLC      | CY = 0                                      |
+| 1    | D9  | LDM 9    | ACC = 9                                     |
+| 2    | B0  | XCH R0   | R0 = 9, ACC = 0                             |
+| 3    | D4  | LDM 4    | ACC = 4                                     |
+| 4    | 90  | SUB R0   | ACC = ACC - R0 - !CY = 4 - 9 - 1 = -6 = 0xA |
 
 Expected: `ACC = 10` (4-bit wrap of -6), `CY = 0` (the 4004 sets `CY=1`
 on no-borrow; here a borrow occurred).
@@ -291,10 +291,10 @@ docker compose run --rm -T dev-cuda bash -c '
 '
 ```
 
-| Step | Hex | Mnemonic | Effect    |
-| ---- | --- | -------- | --------- |
-| 0    | D7  | LDM 7    | ACC = 7   |
-| 1-3  | F2  | IAC      | ACC += 1  |
+| Step | Hex | Mnemonic | Effect   |
+| ---- | --- | -------- | -------- |
+| 0    | D7  | LDM 7    | ACC = 7  |
+| 1-3  | F2  | IAC      | ACC += 1 |
 
 Expected: `ACC = 10`.
 
@@ -341,7 +341,7 @@ instruction.
 
 > **Tip:** for control-flow programs (`JCN`, `JUN`, `JMS`, `ISZ`, `FIN`)
 > use `--level 0` to verify behavior in seconds, then promote to `--level
-> 1` or `--level 2` for transistor-level inspection of a specific byte.
+1` or `--level 2` for transistor-level inspection of a specific byte.
 
 ---
 
@@ -385,27 +385,27 @@ needed.
 
 ### Shipped examples
 
-| Name            | Demonstrates                                                       |
-| --------------- | ------------------------------------------------------------------ |
-| `add`           | Two-register addition (5 + 3 = 8)                                  |
-| `subtract`      | 4-bit borrow semantics (4 - 9 = 0xA, CY = 0)                       |
-| `increment`     | Accumulator increment chain (`IAC`)                                |
-| `carry_chain`   | 4-bit overflow + `CLC` to drop carry                               |
-| `register_pair` | 2-byte `FIM` loading R0:R1 = 3:5 from `0x35`                       |
-| `modulus`       | Repeated subtraction loop (13 % 5 = 3) using JCN + JUN             |
-| `multiply`      | Repeated addition with ISZ count-up loop (3 * 5 = 15)              |
-| `bcd_add`       | Two BCD digits + `DAA` + `TCC` (5 + 7 = 12 BCD: ones=2, tens=1)    |
-| `subroutine`    | `JMS` / `BBL` roundtrip through a 3-deep hardware stack            |
-| `fibonacci`     | Multi-register state machine: fib(7) = 13                          |
-| `rotate`        | `RAL` chain that walks a single bit: 1 -> 2 -> 4 -> 8              |
-| `bit_count`     | Popcount of 0xB via `RAR` + `JCN` per-bit test (= 3)               |
-| `kbp`           | `KBP` (Keyboard Process) one-hot to bit-position mapping           |
-| `ram_io`        | `DCL` + `SRC` + `WRM` + `RDM` write-then-read-back to RAM         |
-| `indirect`      | `FIN` (table lookup) + `JIN` (computed jump) within a ROM page     |
-| `twos_complement` | `CMA` (1's complement) + `IAC` to negate a 4-bit value           |
-| `register_inc`  | `INC R` register-direct increment (vs `IAC` on the accumulator)    |
-| `flag_ops`      | `CLB` + `CMC` + `DAC` + `TCS` flag/accumulator manipulation        |
-| `ram_extended`  | `ADM` + `SBM` + `WR0` / `RD0` + `WMP`: RAM-operand math, status RAM, RAM port |
+| Name              | Demonstrates                                                                  |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `add`             | Two-register addition (5 + 3 = 8)                                             |
+| `subtract`        | 4-bit borrow semantics (4 - 9 = 0xA, CY = 0)                                  |
+| `increment`       | Accumulator increment chain (`IAC`)                                           |
+| `carry_chain`     | 4-bit overflow + `CLC` to drop carry                                          |
+| `register_pair`   | 2-byte `FIM` loading R0:R1 = 3:5 from `0x35`                                  |
+| `modulus`         | Repeated subtraction loop (13 % 5 = 3) using JCN + JUN                        |
+| `multiply`        | Repeated addition with ISZ count-up loop (3 \* 5 = 15)                        |
+| `bcd_add`         | Two BCD digits + `DAA` + `TCC` (5 + 7 = 12 BCD: ones=2, tens=1)               |
+| `subroutine`      | `JMS` / `BBL` roundtrip through a 3-deep hardware stack                       |
+| `fibonacci`       | Multi-register state machine: fib(7) = 13                                     |
+| `rotate`          | `RAL` chain that walks a single bit: 1 -> 2 -> 4 -> 8                         |
+| `bit_count`       | Popcount of 0xB via `RAR` + `JCN` per-bit test (= 3)                          |
+| `kbp`             | `KBP` (Keyboard Process) one-hot to bit-position mapping                      |
+| `ram_io`          | `DCL` + `SRC` + `WRM` + `RDM` write-then-read-back to RAM                     |
+| `indirect`        | `FIN` (table lookup) + `JIN` (computed jump) within a ROM page                |
+| `twos_complement` | `CMA` (1's complement) + `IAC` to negate a 4-bit value                        |
+| `register_inc`    | `INC R` register-direct increment (vs `IAC` on the accumulator)               |
+| `flag_ops`        | `CLB` + `CMC` + `DAC` + `TCS` flag/accumulator manipulation                   |
+| `ram_extended`    | `ADM` + `SBM` + `WR0` / `RD0` + `WMP`: RAM-operand math, status RAM, RAM port |
 
 ### Running on real silicon (or any ROM-driven 4004 system)
 
@@ -449,11 +449,11 @@ make compose-testp
 
 ## Troubleshooting
 
-| Problem                       | Fix                                                                       |
-| ----------------------------- | ------------------------------------------------------------------------- |
-| `--level must be 0, 1, or 2`  | Only levels 0, 1, and 2 are supported                                     |
-| L1/L2 shows `[NaN/Inf]`       | Circuit convergence issue; try increasing `--warmup`                      |
-| L1 ACC differs from L0        | Expected for some opcodes (charge retention limitation; see L2)           |
+| Problem                       | Fix                                                                                      |
+| ----------------------------- | ---------------------------------------------------------------------------------------- |
+| `--level must be 0, 1, or 2`  | Only levels 0, 1, and 2 are supported                                                    |
+| L1/L2 shows `[NaN/Inf]`       | Circuit convergence issue; try increasing `--warmup`                                     |
+| L1 ACC differs from L0        | Expected for some opcodes (charge retention limitation; see L2)                          |
 | L2 takes forever              | Each byte ~3-5 s; multi-byte programs scale linearly. Use `--level 1` for fast iteration |
-| `Bootstrap caps file missing` | Provide `--bootstrap-caps PATH` or run from project root for the default  |
-| Netlist not found             | Verify `--netlist` path relative to working directory                     |
+| `Bootstrap caps file missing` | Provide `--bootstrap-caps PATH` or run from project root for the default                 |
+| Netlist not found             | Verify `--netlist` path relative to working directory                                    |

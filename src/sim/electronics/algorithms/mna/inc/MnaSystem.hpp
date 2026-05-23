@@ -67,7 +67,7 @@ struct MnaSolveWorkspace {
    * @brief Check if workspace can handle given dimension.
    * @note RT-safe.
    */
-  bool canHandle(std::size_t dim) const noexcept { return dim <= maxDim; }
+  [[nodiscard]] bool canHandle(std::size_t dim) const noexcept { return dim <= maxDim; }
 };
 
 /**
@@ -109,7 +109,7 @@ struct MnaFactorizedWorkspace {
    * @brief Check if factorization is cached and valid.
    * @note RT-safe.
    */
-  bool isFactorized() const noexcept { return factorized; }
+  [[nodiscard]] bool isFactorized() const noexcept { return factorized; }
 
   /**
    * @brief Invalidate cached factorization.
@@ -227,14 +227,14 @@ public:
    *
    * @note NOT RT-safe: allocates matrix and result vectors.
    */
-  MnaResult solve() const {
+  [[nodiscard]] MnaResult solve() const {
     MnaResult result;
 
-    const auto& baseG = ctx_.g();
-    const auto& baseI = ctx_.i();
+    const auto& BASE_G = ctx_.g();
+    const auto& BASE_I = ctx_.i();
     std::size_t n = ctx_.netCount();
-    const auto& vsrc = ctx_.voltageSources();
-    std::size_t m = vsrc.size();
+    const auto& VSRC = ctx_.voltageSources();
+    std::size_t m = VSRC.size();
     std::size_t dim = n + m;
 
     if (dim == 0) {
@@ -244,10 +244,10 @@ public:
 
 #if COMPAT_HAVE_LAPACKE
     // LAPACK-accelerated path: use dgesv for LU solve
-    return solveLapack(baseG, baseI, vsrc, n, m, dim);
+    return solveLapack(BASE_G, BASE_I, VSRC, n, m, dim);
 #else
     // Fallback: naive Gaussian elimination
-    return solveNaive(baseG, baseI, vsrc, n, m, dim);
+    return solveNaive(BASE_G, BASE_I, VSRC, n, m, dim);
 #endif
   }
 
@@ -267,8 +267,8 @@ public:
   bool solveInto(MnaSolveWorkspace& ws, double* nodeVoltages,
                  double* branchCurrents) const noexcept {
     std::size_t n = ctx_.netCount();
-    const auto& vsrc = ctx_.voltageSources();
-    std::size_t m = vsrc.size();
+    const auto& VSRC = ctx_.voltageSources();
+    std::size_t m = VSRC.size();
     std::size_t dim = n + m;
 
     if (dim == 0) {
@@ -281,11 +281,11 @@ public:
 
 #if COMPAT_HAVE_LAPACKE
     if (ctx_.hasExternalMatrix()) {
-      return solveIntoLapackDirect(ws, ctx_.i(), vsrc, n, m, dim, nodeVoltages, branchCurrents);
+      return solveIntoLapackDirect(ws, ctx_.i(), VSRC, n, m, dim, nodeVoltages, branchCurrents);
     }
-    return solveIntoLapack(ws, ctx_.g(), ctx_.i(), vsrc, n, m, dim, nodeVoltages, branchCurrents);
+    return solveIntoLapack(ws, ctx_.g(), ctx_.i(), VSRC, n, m, dim, nodeVoltages, branchCurrents);
 #else
-    return solveIntoNaive(ws, ctx_.g(), ctx_.i(), vsrc, n, m, dim, nodeVoltages, branchCurrents);
+    return solveIntoNaive(ws, ctx_.g(), ctx_.i(), VSRC, n, m, dim, nodeVoltages, branchCurrents);
 #endif
   }
 
@@ -320,7 +320,7 @@ public:
    */
   void clearRHS() noexcept { ctx_.clearRHS(); }
 
-  /* ----------------------- Augmented Matrix Build ----------------------- */
+  /* ----------------------------- Augmented Matrix Build ----------------------------- */
 
   /**
    * @brief Build the augmented MNA matrix for external solvers.
@@ -334,27 +334,27 @@ public:
    * @note RT-safe if output arrays are pre-allocated.
    */
   void buildAugmentedMatrix(double* __restrict__ A, double* __restrict__ b) const noexcept {
-    const double* __restrict__ gData = ctx_.g().data();
-    const double* __restrict__ iData = ctx_.i().data();
+    const double* __restrict__ G_DATA = ctx_.g().data();
+    const double* __restrict__ I_DATA = ctx_.i().data();
     std::size_t n = ctx_.netCount();
-    const auto& vsrc = ctx_.voltageSources();
-    std::size_t m = vsrc.size();
+    const auto& VSRC = ctx_.voltageSources();
+    std::size_t m = VSRC.size();
     std::size_t dim = n + m;
 
     for (std::size_t r = 0; r < n; ++r) {
-      std::memcpy(A + r * dim, gData + r * n, n * sizeof(double));
-      b[r] = iData[r];
+      std::memcpy(A + r * dim, G_DATA + r * n, n * sizeof(double));
+      b[r] = I_DATA[r];
     }
 
     for (std::size_t k = 0; k < m; ++k) {
-      const auto& vs = vsrc[k];
+      const auto& VS = VSRC[k];
       std::size_t srcCol = n + k;
       std::size_t srcRow = n + k;
-      A[vs.pos * dim + srcCol] += 1.0;
-      A[vs.neg * dim + srcCol] -= 1.0;
-      A[srcRow * dim + vs.pos] = 1.0;
-      A[srcRow * dim + vs.neg] = -1.0;
-      b[srcRow] = vs.v;
+      A[VS.pos * dim + srcCol] += 1.0;
+      A[VS.neg * dim + srcCol] -= 1.0;
+      A[srcRow * dim + VS.pos] = 1.0;
+      A[srcRow * dim + VS.neg] = -1.0;
+      b[srcRow] = VS.v;
     }
 
     if (COMPAT_LIKELY(n > 0)) {
@@ -368,11 +368,11 @@ public:
    * @brief Get augmented matrix dimension (nets + voltage sources).
    * @note RT-safe.
    */
-  std::size_t augmentedDim() const noexcept {
+  [[nodiscard]] std::size_t augmentedDim() const noexcept {
     return ctx_.netCount() + ctx_.voltageSources().size();
   }
 
-  /* ----------------------- Cached LU Solve API ----------------------- */
+  /* ----------------------------- Cached LU Solve API ----------------------------- */
 
   /**
    * @brief Factorize the current circuit matrix (one-time cost).
@@ -385,12 +385,12 @@ public:
    *
    * @note NOT RT-safe: performs O(n^3) LU factorization.
    */
-  bool factorize(MnaFactorizedWorkspace& ws) const noexcept {
-    const auto& baseG = ctx_.g();
-    const auto& baseI = ctx_.i();
+  [[nodiscard]] bool factorize(MnaFactorizedWorkspace& ws) const noexcept {
+    const auto& BASE_G = ctx_.g();
+    const auto& BASE_I = ctx_.i();
     std::size_t n = ctx_.netCount();
-    const auto& vsrc = ctx_.voltageSources();
-    std::size_t m = vsrc.size();
+    const auto& VSRC = ctx_.voltageSources();
+    std::size_t m = VSRC.size();
     std::size_t dim = n + m;
 
     if (dim == 0 || dim > ws.maxDim) {
@@ -401,7 +401,7 @@ public:
     ws.factorized = false;
 
 #if COMPAT_HAVE_LAPACKE
-    return factorizeLapack(ws, baseG, baseI, vsrc, n, m, dim);
+    return factorizeLapack(ws, BASE_G, BASE_I, VSRC, n, m, dim);
 #else
     // Naive fallback doesn't support caching well - just mark as not factorized
     return false;
@@ -427,14 +427,14 @@ public:
       return false;
     }
 
-    const auto& baseI = ctx_.i();
-    const auto& vsrc = ctx_.voltageSources();
+    const auto& BASE_I = ctx_.i();
+    const auto& VSRC = ctx_.voltageSources();
     std::size_t n = ctx_.netCount();
-    std::size_t m = vsrc.size();
+    std::size_t m = VSRC.size();
     std::size_t dim = ws.dim;
 
 #if COMPAT_HAVE_LAPACKE
-    return solveFactorizedLapack(ws, baseI, vsrc, n, m, dim, nodeVoltages, branchCurrents);
+    return solveFactorizedLapack(ws, BASE_I, VSRC, n, m, dim, nodeVoltages, branchCurrents);
 #else
     (void)nodeVoltages;
     (void)branchCurrents;
@@ -445,7 +445,7 @@ public:
 private:
   using VoltageSource = StampContext::VoltageSource;
 
-  /* ----------------------- Allocating Solve Methods ----------------------- */
+  /* ----------------------------- Allocating Solve Methods ----------------------------- */
 
   /**
    * @brief LAPACK-accelerated solve using dgesv (column-major, direct LAPACK).
@@ -461,29 +461,29 @@ private:
     std::vector<double> b(dim, 0.0);
     std::vector<lapack_int> ipiv(dim);
 
-    const double* __restrict__ gData = baseG.data();
-    const double* __restrict__ iData = baseI.data();
+    const double* __restrict__ G_DATA = baseG.data();
+    const double* __restrict__ I_DATA = baseI.data();
 
     // Build column-major A: A_col[col * dim + row] = G[row * n + col]
     for (std::size_t r = 0; r < n; ++r) {
-      const double* __restrict__ gRow = gData + r * n;
+      const double* __restrict__ G_ROW = G_DATA + r * n;
       for (std::size_t c = 0; c < n; ++c) {
-        A[c * dim + r] = gRow[c];
+        A[c * dim + r] = G_ROW[c];
       }
-      b[r] = iData[r];
+      b[r] = I_DATA[r];
     }
 
     // Stamp voltage source contributions (column-major)
     for (std::size_t k = 0; k < m; ++k) {
-      const auto& vs = vsrc[k];
+      const auto& VS = vsrc[k];
       std::size_t srcCol = n + k;
       std::size_t srcRow = n + k;
 
-      A[srcCol * dim + vs.pos] += 1.0;
-      A[srcCol * dim + vs.neg] -= 1.0;
-      A[vs.pos * dim + srcRow] = 1.0;
-      A[vs.neg * dim + srcRow] = -1.0;
-      b[srcRow] = vs.v;
+      A[srcCol * dim + VS.pos] += 1.0;
+      A[srcCol * dim + VS.neg] -= 1.0;
+      A[VS.pos * dim + srcRow] = 1.0;
+      A[VS.neg * dim + srcRow] = -1.0;
+      b[srcRow] = VS.v;
     }
 
     // Ground constraint (zero row 0 in column-major)
@@ -540,16 +540,16 @@ private:
 
     // Stamp voltage source contributions
     for (std::size_t k = 0; k < m; ++k) {
-      const auto& vs = vsrc[k];
+      const auto& VS = vsrc[k];
       std::size_t srcCol = n + k;
       std::size_t srcRow = n + k;
 
-      aug[vs.pos][srcCol] += 1.0;
-      aug[vs.neg][srcCol] -= 1.0;
+      aug[VS.pos][srcCol] += 1.0;
+      aug[VS.neg][srcCol] -= 1.0;
 
-      aug[srcRow][vs.pos] = 1.0;
-      aug[srcRow][vs.neg] = -1.0;
-      aug[srcRow][dim] = vs.v;
+      aug[srcRow][VS.pos] = 1.0;
+      aug[srcRow][VS.neg] = -1.0;
+      aug[srcRow][dim] = VS.v;
     }
 
     // Ground constraint
@@ -611,7 +611,7 @@ private:
     return result;
   }
 
-  /* ----------------------- Cached LU Methods ----------------------- */
+  /* ----------------------------- Cached LU Methods ----------------------------- */
 
 #if COMPAT_HAVE_LAPACKE
   /**
@@ -622,27 +622,27 @@ private:
                        std::size_t dim) const noexcept {
 
     double* __restrict__ LU = ws.LU.data();
-    const double* __restrict__ gData = baseG.data();
+    const double* __restrict__ G_DATA = baseG.data();
 
     // Zero and build column-major matrix
     std::memset(LU, 0, dim * dim * sizeof(double));
 
     for (std::size_t r = 0; r < n; ++r) {
-      const double* __restrict__ gRow = gData + r * n;
+      const double* __restrict__ G_ROW = G_DATA + r * n;
       for (std::size_t c = 0; c < n; ++c) {
-        LU[c * dim + r] = gRow[c];
+        LU[c * dim + r] = G_ROW[c];
       }
     }
 
     for (std::size_t k = 0; k < m; ++k) {
-      const auto& vs = vsrc[k];
+      const auto& VS = vsrc[k];
       std::size_t srcCol = n + k;
       std::size_t srcRow = n + k;
 
-      LU[srcCol * dim + vs.pos] += 1.0;
-      LU[srcCol * dim + vs.neg] -= 1.0;
-      LU[vs.pos * dim + srcRow] = 1.0;
-      LU[vs.neg * dim + srcRow] = -1.0;
+      LU[srcCol * dim + VS.pos] += 1.0;
+      LU[srcCol * dim + VS.neg] -= 1.0;
+      LU[VS.pos * dim + srcRow] = 1.0;
+      LU[VS.neg * dim + srcRow] = -1.0;
     }
 
     // Ground constraint (zero row 0 in column-major)
@@ -676,10 +676,10 @@ private:
                                         double* __restrict__ branchCurrents) const noexcept {
 
     double* __restrict__ b = ws.b.data();
-    const double* __restrict__ iData = baseI.data();
+    const double* __restrict__ I_DATA = baseI.data();
 
     // Build RHS vector
-    std::memcpy(b, iData, n * sizeof(double));
+    std::memcpy(b, I_DATA, n * sizeof(double));
     for (std::size_t k = 0; k < m; ++k) {
       b[n + k] = vsrc[k].v;
     }
@@ -708,7 +708,7 @@ private:
   }
 #endif
 
-  /* ----------------------- RT-Safe Solve Methods ----------------------- */
+  /* ----------------------------- RT-Safe Solve Methods ----------------------------- */
 
   /**
    * @brief RT-safe LAPACK solve using pre-allocated workspace.
@@ -724,8 +724,8 @@ private:
 
     double* __restrict__ A = ws.A.data();
     double* __restrict__ b = ws.b.data();
-    const double* __restrict__ gData = baseG.data();
-    const double* __restrict__ iData = baseI.data();
+    const double* __restrict__ G_DATA = baseG.data();
+    const double* __restrict__ I_DATA = baseI.data();
 
     // Zero the workspace (reuse without allocation)
     std::memset(A, 0, dim * dim * sizeof(double));
@@ -735,25 +735,25 @@ private:
     // can be written directly as column-major A without reorder for the G block.
     // We iterate in G_ row order for sequential reads.
     for (std::size_t r = 0; r < n; ++r) {
-      const double* __restrict__ gRow = gData + r * n;
+      const double* __restrict__ G_ROW = G_DATA + r * n;
       for (std::size_t c = 0; c < n; ++c) {
-        A[c * dim + r] = gRow[c];
+        A[c * dim + r] = G_ROW[c];
       }
     }
 
     // Stamp voltage source contributions (column-major indexing)
     for (std::size_t k = 0; k < m; ++k) {
-      const auto& vs = vsrc[k];
+      const auto& VS = vsrc[k];
       std::size_t srcCol = n + k;
       std::size_t srcRow = n + k;
 
-      // KCL: current from voltage source (column srcCol, rows vs.pos/vs.neg)
-      A[srcCol * dim + vs.pos] += 1.0;
-      A[srcCol * dim + vs.neg] -= 1.0;
+      // KCL: current from voltage source (column srcCol, rows VS.pos/VS.neg)
+      A[srcCol * dim + VS.pos] += 1.0;
+      A[srcCol * dim + VS.neg] -= 1.0;
 
       // KVL: V_pos - V_neg = v (row srcRow = column srcRow in A^T)
-      A[vs.pos * dim + srcRow] = 1.0;
-      A[vs.neg * dim + srcRow] = -1.0;
+      A[VS.pos * dim + srcRow] = 1.0;
+      A[VS.neg * dim + srcRow] = -1.0;
     }
 
     // Ground constraint: row 0 -> zero row 0 in column-major = zero element [0] in each column
@@ -765,7 +765,7 @@ private:
     }
 
     // Build RHS vector
-    std::memcpy(b, iData, n * sizeof(double));
+    std::memcpy(b, I_DATA, n * sizeof(double));
     for (std::size_t k = 0; k < m; ++k) {
       b[n + k] = vsrc[k].v;
     }
@@ -805,20 +805,20 @@ private:
 
     double* __restrict__ A = ws.A.data();
     double* __restrict__ b = ws.b.data();
-    const double* __restrict__ iData = baseI.data();
+    const double* __restrict__ I_DATA = baseI.data();
     const std::size_t LD = ctx_.externalDim();
 
     // Conductances already stamped into A by stamp callbacks (column-major, stride LD).
     // Stamp voltage source contributions (column-major with stride LD).
     for (std::size_t k = 0; k < m; ++k) {
-      const auto& vs = vsrc[k];
+      const auto& VS = vsrc[k];
       std::size_t srcCol = n + k;
       std::size_t srcRow = n + k;
 
-      A[srcCol * LD + vs.pos] += 1.0;
-      A[srcCol * LD + vs.neg] -= 1.0;
-      A[vs.pos * LD + srcRow] = 1.0;
-      A[vs.neg * LD + srcRow] = -1.0;
+      A[srcCol * LD + VS.pos] += 1.0;
+      A[srcCol * LD + VS.neg] -= 1.0;
+      A[VS.pos * LD + srcRow] = 1.0;
+      A[VS.neg * LD + srcRow] = -1.0;
     }
 
     // Ground constraint: zero row 0 across all active columns
@@ -830,7 +830,7 @@ private:
     }
 
     // Build RHS vector
-    std::memcpy(b, iData, n * sizeof(double));
+    std::memcpy(b, I_DATA, n * sizeof(double));
     for (std::size_t k = 0; k < m; ++k) {
       b[n + k] = vsrc[k].v;
     }
@@ -879,15 +879,15 @@ private:
     }
 
     for (std::size_t k = 0; k < m; ++k) {
-      const auto& vs = vsrc[k];
+      const auto& VS = vsrc[k];
       std::size_t srcCol = n + k;
       std::size_t srcRow = n + k;
 
-      aug[vs.pos][srcCol] += 1.0;
-      aug[vs.neg][srcCol] -= 1.0;
-      aug[srcRow][vs.pos] = 1.0;
-      aug[srcRow][vs.neg] = -1.0;
-      aug[srcRow][dim] = vs.v;
+      aug[VS.pos][srcCol] += 1.0;
+      aug[VS.neg][srcCol] -= 1.0;
+      aug[srcRow][VS.pos] = 1.0;
+      aug[srcRow][VS.neg] = -1.0;
+      aug[srcRow][dim] = VS.v;
     }
 
     if (n > 0) {
@@ -948,31 +948,33 @@ public:
    * @brief Get number of nets in the system.
    * @note RT-safe.
    */
-  std::size_t netCount() const noexcept { return ctx_.netCount(); }
+  [[nodiscard]] std::size_t netCount() const noexcept { return ctx_.netCount(); }
 
   /**
    * @brief Get number of voltage sources stamped.
    * @note RT-safe.
    */
-  std::size_t voltageSourceCount() const noexcept { return ctx_.voltageSources().size(); }
+  [[nodiscard]] std::size_t voltageSourceCount() const noexcept {
+    return ctx_.voltageSources().size();
+  }
 
   /**
    * @brief Get the conductance matrix (G).
    * @note RT-safe.
    */
-  const StampContext::Matrix& conductanceMatrix() const noexcept { return ctx_.g(); }
+  [[nodiscard]] const StampContext::Matrix& conductanceMatrix() const noexcept { return ctx_.g(); }
 
   /**
    * @brief Get the current injection vector (I).
    * @note RT-safe.
    */
-  const StampContext::Vector& currentVector() const noexcept { return ctx_.i(); }
+  [[nodiscard]] const StampContext::Vector& currentVector() const noexcept { return ctx_.i(); }
 
   /**
    * @brief Get voltage source descriptors.
    * @note RT-safe.
    */
-  const std::vector<StampContext::VoltageSource>& voltageSources() const noexcept {
+  [[nodiscard]] const std::vector<StampContext::VoltageSource>& voltageSources() const noexcept {
     return ctx_.voltageSources();
   }
 };

@@ -19,17 +19,12 @@
 #include <cmath>
 #include <vector>
 
-using sim::electronics::devices::nonlinear::MosfetLevel1;
-using sim::electronics::devices::nonlinear::MosfetLevel1Params;
 using sim::electronics::algorithms::mna::MnaSystemSparse;
 using sim::electronics::algorithms::mna::NetID;
+using sim::electronics::devices::nonlinear::MosfetLevel1;
+using sim::electronics::devices::nonlinear::MosfetLevel1Params;
 
 // Calibrated parameters validated to 0.0000V against reference simulator
-static constexpr double KP_OLD = 5e-3; // Old uniform Kp
-static constexpr double VTH_OLD = 1.0; // Old Vth
-static constexpr double LAMBDA_OLD = 0.02;
-
-// Calibrated parameters
 static constexpr double KP = 5e-3;
 static constexpr double VTH_ENH = 1.17;
 static constexpr double VTH_DEP = -0.17;
@@ -204,7 +199,8 @@ TEST(Level1PhysicsTest, TwoStageChain) {
       if (maxD < 1e-6)
         break;
     }
-  }  EXPECT_NEAR(V[3], 1.201, 0.2) << "OUT1 should match ngspice";
+  }
+  EXPECT_NEAR(V[3], 1.201, 0.2) << "OUT1 should match ngspice";
   EXPECT_NEAR(V[4], 2.401, 0.5) << "OUT2 should match ngspice";
 }
 
@@ -221,7 +217,11 @@ static void stampPmosFixed(MnaSystemSparse& mna, NetID drain, NetID gate, NetID 
   double VSG = VS - VG, VSD = VS - VD;
   NetID sD = drain, sS = source;
   double eVSG = VSG, eVSD = VSD;
-  if (VSD < 0.0) { std::swap(sD, sS); eVSG = VD - VG; eVSD = VD - VS; }
+  if (VSD < 0.0) {
+    std::swap(sD, sS);
+    eVSG = VD - VG;
+    eVSD = VD - VS;
+  }
   double vsgM = std::max(eVSG, 0.0), vsdM = std::max(eVSD, 0.0);
   double id = MosfetLevel1::current(vsgM, vsdM, params);
   double gm = MosfetLevel1::transconductance(vsgM, vsdM, params);
@@ -229,8 +229,10 @@ static void stampPmosFixed(MnaSystemSparse& mna, NetID drain, NetID gate, NetID 
   double gdsStamp = std::max(gdsDevice, 1e-12);
   double ieq = id - gm * eVSG - gdsDevice * eVSD;
   mna.addConductance(sD, sS, gdsStamp);
-  mna.addMatrixEntry(sD, gate, gm);  mna.addMatrixEntry(sD, sS, -gm);
-  mna.addMatrixEntry(sS, gate, -gm); mna.addMatrixEntry(sS, sS, gm);
+  mna.addMatrixEntry(sD, gate, gm);
+  mna.addMatrixEntry(sD, sS, -gm);
+  mna.addMatrixEntry(sS, gate, -gm);
+  mna.addMatrixEntry(sS, sS, gm);
   mna.addCurrent(sD, sS, ieq);
 }
 
@@ -239,19 +241,24 @@ static double solveNR(std::size_t n, std::vector<double>& V,
   for (int iter = 0; iter < 200; ++iter) {
     MnaSystemSparse mna(n);
     fn(mna);
-    if (!mna.factorize()) return -1;
+    if (!mna.factorize())
+      return -1;
     auto r = mna.solve();
-    if (!r.success) return -1;
+    if (!r.success)
+      return -1;
     double mx = 0;
     for (std::size_t i = 0; i < n; ++i) {
       double delta = r.nodeVoltages[i] - V[i];
       // Damped NR: limit voltage change to 2V per iteration
-      if (delta > 2.0) delta = 2.0;
-      if (delta < -2.0) delta = -2.0;
+      if (delta > 2.0)
+        delta = 2.0;
+      if (delta < -2.0)
+        delta = -2.0;
       V[i] += delta;
       mx = std::max(mx, std::fabs(delta));
     }
-    if (mx < 1e-9) break;
+    if (mx < 1e-9)
+      break;
   }
   return 0;
 }
@@ -262,10 +269,10 @@ TEST(Level1PhysicsTest, PassGateOnTransfer) {
   std::vector<double> V = {0, VDD, 0, 0, 0};
   solveNR(5, V, [&](MnaSystemSparse& mna) {
     mna.addVoltageSource(1, 0, VDD);
-    mna.addVoltageSource(2, 0, 0.0); // gate ON
-    stampPmosFixed(mna, 1, 1, 3, V, KP*WL_DEP, VTH_DEP);  // depletion load
-    stampPmosFixed(mna, 3, 0, 0, V, KP*WL_ENH, VTH_ENH);  // pull-down ON
-    stampPmosFixed(mna, 3, 2, 4, V, KP*WL_PASS, VTH_ENH);  // pass gate
+    mna.addVoltageSource(2, 0, 0.0);                        // gate ON
+    stampPmosFixed(mna, 1, 1, 3, V, KP * WL_DEP, VTH_DEP);  // depletion load
+    stampPmosFixed(mna, 3, 0, 0, V, KP * WL_ENH, VTH_ENH);  // pull-down ON
+    stampPmosFixed(mna, 3, 2, 4, V, KP * WL_PASS, VTH_ENH); // pass gate
     mna.addConductance(3, 0, GMIN_NODE);
     mna.addConductance(4, 0, GMIN_NODE);
   });
@@ -280,9 +287,9 @@ TEST(Level1PhysicsTest, PassGateOffIsolation) {
   solveNR(5, V, [&](MnaSystemSparse& mna) {
     mna.addVoltageSource(1, 0, VDD);
     mna.addVoltageSource(2, 0, VDD); // gate OFF
-    stampPmosFixed(mna, 1, 1, 3, V, KP*WL_DEP, VTH_DEP);
-    stampPmosFixed(mna, 3, 1, 0, V, KP*WL_ENH, VTH_ENH); // pull-down OFF
-    stampPmosFixed(mna, 3, 2, 4, V, KP*WL_PASS, VTH_ENH);
+    stampPmosFixed(mna, 1, 1, 3, V, KP * WL_DEP, VTH_DEP);
+    stampPmosFixed(mna, 3, 1, 0, V, KP * WL_ENH, VTH_ENH); // pull-down OFF
+    stampPmosFixed(mna, 3, 2, 4, V, KP * WL_PASS, VTH_ENH);
     mna.addConductance(3, 0, GMIN_NODE);
     mna.addConductance(4, 0, GMIN_NODE);
   });
@@ -298,26 +305,29 @@ TEST(Level1PhysicsTest, PassGateSelectivity) {
   // Net 0=GND, 1=VDD, 2=CTRL_A(ON), 3=CTRL_B(OFF), 4=CTRL_C(OFF),
   //     5=SRC_A(1.2V), 6=SRC_B(5V), 7=SRC_C(5V), 8=STORAGE
   // Initial guess: VDD/2 for internal nodes (standard SPICE practice)
-  std::vector<double> V(9, VDD/2.0); V[0] = 0; V[1] = VDD;
+  std::vector<double> V(9, VDD / 2.0);
+  V[0] = 0;
+  V[1] = VDD;
   solveNR(9, V, [&](MnaSystemSparse& mna) {
     mna.addVoltageSource(1, 0, VDD);
-    mna.addVoltageSource(2, 0, 0.0);   // A ON
-    mna.addVoltageSource(3, 0, VDD);   // B OFF
-    mna.addVoltageSource(4, 0, VDD);   // C OFF
+    mna.addVoltageSource(2, 0, 0.0); // A ON
+    mna.addVoltageSource(3, 0, VDD); // B OFF
+    mna.addVoltageSource(4, 0, VDD); // C OFF
     // Source A: NOR at VOL
-    stampPmosFixed(mna, 1, 1, 5, V, KP*WL_DEP, VTH_DEP);
-    stampPmosFixed(mna, 5, 0, 0, V, KP*WL_ENH, VTH_ENH);
+    stampPmosFixed(mna, 1, 1, 5, V, KP * WL_DEP, VTH_DEP);
+    stampPmosFixed(mna, 5, 0, 0, V, KP * WL_ENH, VTH_ENH);
     // Source B: NOR at VDD
-    stampPmosFixed(mna, 1, 1, 6, V, KP*WL_DEP, VTH_DEP);
-    stampPmosFixed(mna, 6, 1, 0, V, KP*WL_ENH, VTH_ENH);
+    stampPmosFixed(mna, 1, 1, 6, V, KP * WL_DEP, VTH_DEP);
+    stampPmosFixed(mna, 6, 1, 0, V, KP * WL_ENH, VTH_ENH);
     // Source C: NOR at VDD
-    stampPmosFixed(mna, 1, 1, 7, V, KP*WL_DEP, VTH_DEP);
-    stampPmosFixed(mna, 7, 1, 0, V, KP*WL_ENH, VTH_ENH);
+    stampPmosFixed(mna, 1, 1, 7, V, KP * WL_DEP, VTH_DEP);
+    stampPmosFixed(mna, 7, 1, 0, V, KP * WL_ENH, VTH_ENH);
     // Three pass gates
-    stampPmosFixed(mna, 5, 2, 8, V, KP*WL_PASS, VTH_ENH); // ON
-    stampPmosFixed(mna, 6, 3, 8, V, KP*WL_PASS, VTH_ENH); // OFF
-    stampPmosFixed(mna, 7, 4, 8, V, KP*WL_PASS, VTH_ENH); // OFF
-    for (int n : {5,6,7,8}) mna.addConductance(n, 0, GMIN_NODE);
+    stampPmosFixed(mna, 5, 2, 8, V, KP * WL_PASS, VTH_ENH); // ON
+    stampPmosFixed(mna, 6, 3, 8, V, KP * WL_PASS, VTH_ENH); // OFF
+    stampPmosFixed(mna, 7, 4, 8, V, KP * WL_PASS, VTH_ENH); // OFF
+    for (int n : {5, 6, 7, 8})
+      mna.addConductance(n, 0, GMIN_NODE);
   });
   EXPECT_NEAR(V[8], V[5], 0.1) << "Storage should follow active source A";
   EXPECT_GT(std::fabs(V[8] - V[6]), 1.0) << "Storage should NOT follow inactive B";

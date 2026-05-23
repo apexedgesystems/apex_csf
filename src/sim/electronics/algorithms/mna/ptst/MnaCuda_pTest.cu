@@ -93,11 +93,11 @@ static void runBatchCase(std::size_t dim, std::size_t batch, const char* label) 
   std::vector<double> bsGpu(bsTemplate.size());
 
   // Vernier wants a launch config to compute occupancy.
-  const auto cfg = mna_cuda::getLaunchConfig(dim, batch);
-  const dim3 grid(static_cast<unsigned>(cfg.gridX), static_cast<unsigned>(cfg.gridY),
-                  static_cast<unsigned>(cfg.gridZ));
-  const dim3 block(static_cast<unsigned>(cfg.blockX), static_cast<unsigned>(cfg.blockY),
-                   static_cast<unsigned>(cfg.blockZ));
+  const auto CFG = mna_cuda::getLaunchConfig(dim, batch);
+  const dim3 grid(static_cast<unsigned>(CFG.gridX), static_cast<unsigned>(CFG.gridY),
+                  static_cast<unsigned>(CFG.gridZ));
+  const dim3 block(static_cast<unsigned>(CFG.blockX), static_cast<unsigned>(CFG.blockY),
+                   static_cast<unsigned>(CFG.blockZ));
 
   std::printf("\n=== MnaBatchCuda %s (dim=%zu, batch=%zu) ===\n", label, dim, batch);
 
@@ -178,7 +178,8 @@ static void runBatchCpu(std::size_t dim, std::size_t batch) {
   auto runOnce = [&] {
     bs = bsTemplate;
     for (std::size_t k = 0; k < batch; ++k) {
-      for (std::size_t i = 0; i < dim * dim; ++i) workA[i] = As[k * dim * dim + i];
+      for (std::size_t i = 0; i < dim * dim; ++i)
+        workA[i] = As[k * dim * dim + i];
       LAPACKE_dgesv(LAPACK_ROW_MAJOR, N, 1, workA.data(), N, ipiv.data(), bs.data() + k * dim, 1);
     }
   };
@@ -202,8 +203,8 @@ static void runSingleCpu(std::size_t dim) {
   auto runOnce = [&] {
     workA = A;
     b = bTemplate;
-    LAPACKE_dgesv(LAPACK_ROW_MAJOR, static_cast<int>(dim), 1, workA.data(),
-                  static_cast<int>(dim), ipiv.data(), b.data(), 1);
+    LAPACKE_dgesv(LAPACK_ROW_MAJOR, static_cast<int>(dim), 1, workA.data(), static_cast<int>(dim),
+                  ipiv.data(), b.data(), 1);
   };
   perf.warmup(runOnce);
   perf.measured(runOnce, "cpu_single_solve");

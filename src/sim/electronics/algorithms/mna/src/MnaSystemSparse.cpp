@@ -131,14 +131,18 @@ void MnaSystemSparse::buildCscFromCachedPattern() {
   // since each vsource produces unique (row,col) pairs outside the triplet set).
   const std::size_t N_VS = vsources_.size();
   for (std::size_t i = 0; i < N_VS; ++i) {
-    int posRow = vsourceCscIdx_[4 * i + 0];      // (pos, vsRow) = 1.0
-    int posSym = vsourceCscIdx_[4 * i + 1];      // (vsRow, pos) = 1.0
-    int negRow = vsourceCscIdx_[4 * i + 2];      // (neg, vsRow) = -1.0
-    int negSym = vsourceCscIdx_[4 * i + 3];      // (vsRow, neg) = -1.0
-    if (posRow >= 0) AX[posRow] = 1.0;
-    if (posSym >= 0) AX[posSym] = 1.0;
-    if (negRow >= 0) AX[negRow] = -1.0;
-    if (negSym >= 0) AX[negSym] = -1.0;
+    int posRow = vsourceCscIdx_[4 * i + 0]; // (pos, vsRow) = 1.0
+    int posSym = vsourceCscIdx_[4 * i + 1]; // (vsRow, pos) = 1.0
+    int negRow = vsourceCscIdx_[4 * i + 2]; // (neg, vsRow) = -1.0
+    int negSym = vsourceCscIdx_[4 * i + 3]; // (vsRow, neg) = -1.0
+    if (posRow >= 0)
+      AX[posRow] = 1.0;
+    if (posSym >= 0)
+      AX[posSym] = 1.0;
+    if (negRow >= 0)
+      AX[negRow] = -1.0;
+    if (negSym >= 0)
+      AX[negSym] = -1.0;
   }
 
   // Ground diagonal entry {0,0,1.0}.
@@ -194,9 +198,8 @@ void MnaSystemSparse::recordCscPattern() {
     int start = cscAp_[0];
     int end = cscAp_[1];
     auto it = std::lower_bound(cscAi_.begin() + start, cscAi_.begin() + end, 0);
-    groundCscIdx_ = (it != cscAi_.begin() + end && *it == 0)
-                        ? static_cast<int>(it - cscAi_.begin())
-                        : -1;
+    groundCscIdx_ =
+        (it != cscAi_.begin() + end && *it == 0) ? static_cast<int>(it - cscAi_.begin()) : -1;
   } else {
     groundCscIdx_ = -1;
   }
@@ -226,15 +229,15 @@ void MnaSystemSparse::buildCsc() {
 
   // Voltage source stamps (skip ground-connected)
   for (std::size_t i = 0; i < m; ++i) {
-    const auto& vs = vsources_[i];
+    const auto& VS = vsources_[i];
     auto vsRow = static_cast<int>(n + i);
-    auto posInt = static_cast<int>(vs.pos);
-    auto negInt = static_cast<int>(vs.neg);
-    if (vs.pos != 0) {
+    auto posInt = static_cast<int>(VS.pos);
+    auto negInt = static_cast<int>(VS.neg);
+    if (VS.pos != 0) {
       augCoo_.push_back({posInt, vsRow, 1.0});
       augCoo_.push_back({vsRow, posInt, 1.0});
     }
-    if (vs.neg != 0) {
+    if (VS.neg != 0) {
       augCoo_.push_back({negInt, vsRow, -1.0});
       augCoo_.push_back({vsRow, negInt, -1.0});
     }
@@ -338,7 +341,8 @@ bool MnaSystemSparse::factorize() {
   // Hot path: every NR iter inside `TransientSolver::solveStep`
   // calls factorize(); without this fast-path, every iter pays the
   // full `klu_analyze` + `klu_factor` cost.
-  if (kluSymbolic_ != nullptr && kluNumeric_ != nullptr && cachedVsourceCount_ == vsources_.size()) {
+  if (kluSymbolic_ != nullptr && kluNumeric_ != nullptr &&
+      cachedVsourceCount_ == vsources_.size()) {
     int ok = klu_refactor(cscAp_.data(), cscAi_.data(), cscAx_.data(), kluSymbolic_, kluNumeric_,
                           &kluCommon_);
     if (ok) {
@@ -522,12 +526,12 @@ void MnaSystemSparse::computeMatvec(const double* x, double* ax, std::size_t dim
   }
 
   for (std::size_t i = 0; i < m; ++i) {
-    const auto& vs = vsources_[i];
+    const auto& VS = vsources_[i];
     std::size_t vsRow = n + i;
-    ax[vs.pos] += x[vsRow];
-    ax[vs.neg] -= x[vsRow];
-    ax[vsRow] += x[vs.pos];
-    ax[vsRow] -= x[vs.neg];
+    ax[VS.pos] += x[vsRow];
+    ax[VS.neg] -= x[vsRow];
+    ax[vsRow] += x[VS.pos];
+    ax[vsRow] -= x[VS.neg];
   }
 
   if (n > 0) {

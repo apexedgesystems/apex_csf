@@ -4,13 +4,13 @@
 
 include(apex/All)
 
-set(TEST_SOURCES Transient_uTest.cpp)
+set(UNIT_TEST_SOURCES Transient_uTest.cpp)
 
 apex_add_gtest(
   TARGET
   TestSimElectronicsAlgorithmsTransient
   SOURCES
-  ${TEST_SOURCES}
+  ${UNIT_TEST_SOURCES}
   LINK
   sim_electronics_algorithms_transient
   LABELS

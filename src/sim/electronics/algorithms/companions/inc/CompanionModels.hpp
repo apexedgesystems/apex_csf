@@ -26,7 +26,6 @@
  * - Companion models use value semantics (POD-like structs)
  * - geq() and ieq() methods are constexpr-compatible for GPU kernels
  * - stamp() methods can be batched for parallel execution on GPU
- * - Future: CompanionSetCuda with parallel stamp kernels in .cu file
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
@@ -301,7 +300,7 @@ struct InductorCompanion {
  * Integration method selection guidelines:
  * - BACKWARD_EULER: Fast, stable, but energy dissipative (use for digital circuits)
  * - TRAPEZOIDAL: Slower, energy conserving (use for analog oscillators, filters)
- * - GEAR2: Best for stiff systems (future: requires history implementation)
+ * - GEAR2: Best for stiff systems
  */
 class CompanionSet {
 public:
@@ -456,11 +455,11 @@ public:
       cap.prevVoltage = vPos - vNeg;
       cap.current = 0.0; // No current in steady state
     }
-    // Inductors: steady-state current would require additional info
-    // For now, assume zero initial current
+    // Inductor steady-state current is not derivable from node voltages alone;
+    // initial current is left at zero.
   }
 
-  /* ----------------------- Accessors ----------------------- */
+  /* ----------------------------- Accessors ----------------------------- */
 
   [[nodiscard]] std::size_t capacitorCount() const noexcept { return capacitors_.size(); }
 

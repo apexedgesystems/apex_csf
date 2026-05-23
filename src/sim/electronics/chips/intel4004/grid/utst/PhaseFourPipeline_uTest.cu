@@ -45,7 +45,6 @@ namespace nl_cuda = sim::electronics::devices::nonlinear::cuda;
 using sim::electronics::devices::nonlinear::MosfetLevel1;
 using sim::electronics::devices::nonlinear::MosfetLevel1Params;
 
-
 constexpr int NET_COUNT = 17;
 constexpr int N_TRANSISTORS = 24;
 constexpr double GMIN = 1e-12;
@@ -72,11 +71,9 @@ Inputs buildInputs(double voltageScale) {
   // Gate is always a different net than drain/source so both VGS and
   // VDS vary per transistor.
   for (int i = 0; i < N_TRANSISTORS; ++i) {
-    in.nets[i] = {1 + (i * 5 + 3) % (NET_COUNT - 1),
-                  1 + (i * 7 + 2) % (NET_COUNT - 1),
+    in.nets[i] = {1 + (i * 5 + 3) % (NET_COUNT - 1), 1 + (i * 7 + 2) % (NET_COUNT - 1),
                   1 + (i * 11 + 5) % (NET_COUNT - 1)};
-    in.params[i] = {.Kp = 5e-3 * (1.0 + 0.001 * i), .Vth = 0.3, .lambda = 0.03,
-                    .Vsmooth = 0.1};
+    in.params[i] = {.Kp = 5e-3 * (1.0 + 0.001 * i), .Vth = 0.3, .lambda = 0.03, .Vsmooth = 0.1};
   }
 
   // Non-trivial initial voltages so the first NR iter produces a
@@ -96,64 +93,66 @@ void cpuPhaseFourIter(const Inputs& in, std::vector<double>& prevV, double& maxD
   std::vector<double> I(NET_COUNT, 0.0);
 
   auto addIfNode = [&](int row, int col, double v) {
-    if (row <= 0 || col <= 0 || row >= NET_COUNT || col >= NET_COUNT) return;
+    if (row <= 0 || col <= 0 || row >= NET_COUNT || col >= NET_COUNT)
+      return;
     G[row * NET_COUNT + col] += v;
   };
   auto addIfRow = [&](int row, double v) {
-    if (row <= 0 || row >= NET_COUNT) return;
+    if (row <= 0 || row >= NET_COUNT)
+      return;
     I[row] += v;
   };
 
   for (int i = 0; i < N_TRANSISTORS; ++i) {
-    const int d = in.nets[i].drain;
-    const int g = in.nets[i].gate;
-    const int s = in.nets[i].source;
-    const double vsg = prevV[s] - prevV[g];
-    const double vsd = prevV[s] - prevV[d];
+    const int D = in.nets[i].drain;
+    const int G = in.nets[i].gate;
+    const int S = in.nets[i].source;
+    const double VSG = prevV[S] - prevV[G];
+    const double VSD = prevV[S] - prevV[D];
 
     int xnrm, xrev;
     double evalVgs, evalVds;
-    if (vsd >= 0.0) {
+    if (VSD >= 0.0) {
       xnrm = 1;
       xrev = 0;
-      evalVgs = vsg;
-      evalVds = vsd;
+      evalVgs = VSG;
+      evalVds = VSD;
     } else {
       xnrm = 0;
       xrev = 1;
-      evalVgs = vsg - vsd;
-      evalVds = -vsd;
+      evalVgs = VSG - VSD;
+      evalVds = -VSD;
     }
-    const double vgsE = std::max(evalVgs, 0.0);
-    const double vdsE = std::max(evalVds, 0.0);
-    const auto sv = MosfetLevel1::stampValues(vgsE, vdsE, in.params[i]);
-    const double id = sv.id, gm = sv.gm, gdsDev = sv.gds;
-    const double gdsStamp = std::max(gdsDev, GMIN);
+    const double VGS_E = std::max(evalVgs, 0.0);
+    const double VDS_E = std::max(evalVds, 0.0);
+    const auto SV = MosfetLevel1::stampValues(VGS_E, VDS_E, in.params[i]);
+    const double ID = SV.id, gm = SV.gm, gdsDev = SV.gds;
+    const double GDS_STAMP = std::max(gdsDev, GMIN);
 
     double cdreq;
     if (xnrm == 1) {
-      cdreq = -(id - gdsDev * vsd - gm * vsg);
+      cdreq = -(ID - gdsDev * VSD - gm * VSG);
     } else {
-      cdreq = (id - gdsDev * (-vsd) - gm * (vsg - vsd));
+      cdreq = (ID - gdsDev * (-VSD) - gm * (VSG - VSD));
     }
 
-    addIfNode(d, d, gdsStamp);
-    addIfNode(s, s, gdsStamp);
-    addIfNode(d, s, -gdsStamp);
-    addIfNode(s, d, -gdsStamp);
+    addIfNode(D, D, GDS_STAMP);
+    addIfNode(S, S, GDS_STAMP);
+    addIfNode(D, S, -GDS_STAMP);
+    addIfNode(S, D, -GDS_STAMP);
 
-    const double xrevGm = xrev * gm;
-    const double xnrmGm = xnrm * gm;
-    const double xDelta = (xnrm - xrev) * gm;
-    addIfNode(d, d, xrevGm);
-    addIfNode(s, s, xnrmGm);
-    addIfNode(d, g, xDelta);
-    addIfNode(d, s, -xnrmGm);
-    addIfNode(s, g, -xDelta);
-    addIfNode(s, d, -xrevGm);
+    const double XREV_GM = xrev * gm;
+    const double XNRM_GM = xnrm * gm;
+    const double X_DELTA = (xnrm - xrev) * gm;
+    addIfNode(D, D, XREV_GM);
+    addIfNode(S, S, XNRM_GM);
+    addIfNode(D, G, X_DELTA);
+    addIfNode(D, S, -XNRM_GM);
+    addIfNode(S, G, -X_DELTA);
+    addIfNode(S, D, -XREV_GM);
 
-    addIfRow(d, -cdreq);
-    addIfRow(s, cdreq);
+    addIfRow(D, -cdreq);
+    addIfRow(S, cdreq);
   }
 
   // Add GMIN-to-ground diagonal bias so the matrix is well-conditioned
@@ -173,19 +172,20 @@ void cpuPhaseFourIter(const Inputs& in, std::vector<double>& prevV, double& maxD
   // Solve G * x = I via LAPACKE.
   std::vector<int> ipiv(NET_COUNT);
   std::vector<double> b = I;
-  int info = LAPACKE_dgesv(LAPACK_ROW_MAJOR, NET_COUNT, 1, G.data(), NET_COUNT, ipiv.data(),
-                           b.data(), 1);
+  int info =
+      LAPACKE_dgesv(LAPACK_ROW_MAJOR, NET_COUNT, 1, G.data(), NET_COUNT, ipiv.data(), b.data(), 1);
   ASSERT_EQ(info, 0) << "LAPACKE_dgesv failed on CPU reference";
 
   // Compute max |delta|, then apply NR limit, write back into prevV.
   maxDeltaOut = 0.0;
   for (int i = 0; i < NET_COUNT; ++i) {
-    const double d = std::fabs(b[i] - prevV[i]);
-    if (d > maxDeltaOut) maxDeltaOut = d;
+    const double D = std::fabs(b[i] - prevV[i]);
+    if (D > maxDeltaOut)
+      maxDeltaOut = D;
   }
-  const double scale = (maxDeltaOut > NR_LIMIT) ? (NR_LIMIT / maxDeltaOut) : 1.0;
+  const double SCALE = (maxDeltaOut > NR_LIMIT) ? (NR_LIMIT / maxDeltaOut) : 1.0;
   for (int i = 0; i < NET_COUNT; ++i) {
-    prevV[i] += scale * (b[i] - prevV[i]);
+    prevV[i] += SCALE * (b[i] - prevV[i]);
   }
 }
 
@@ -232,23 +232,23 @@ void gpuPhaseFourIter(const Inputs& in, std::vector<double>& prevV, double& maxD
   ASSERT_EQ(cudaMemset(dI, 0, NET_COUNT * sizeof(double)), cudaSuccess);
 
   // === Step 2: stamp + scatter ===
-  ASSERT_TRUE(nl_cuda::stampMosfetL1Batch(dBiases, dParams, dNets, dG, dI, N_TRANSISTORS,
-                                          NET_COUNT, GMIN));
+  ASSERT_TRUE(
+      nl_cuda::stampMosfetL1Batch(dBiases, dParams, dNets, dG, dI, N_TRANSISTORS, NET_COUNT, GMIN));
   ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
 
   // Add GMIN-to-ground diagonal bias (matches CPU reference). Pull G
   // to host, mutate, push back. In the real Phase 4 pipeline this is
   // one host-side pre-stamp memset + scatter; here keep it simple.
   std::vector<double> Gfull(NET_COUNT * NET_COUNT);
-  ASSERT_EQ(cudaMemcpy(Gfull.data(), dG, NET_COUNT * NET_COUNT * sizeof(double),
-                       cudaMemcpyDeviceToHost),
-            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(Gfull.data(), dG, NET_COUNT * NET_COUNT * sizeof(double), cudaMemcpyDeviceToHost),
+      cudaSuccess);
   for (int j = 1; j < NET_COUNT; ++j) {
     Gfull[j * NET_COUNT + j] += DIAG_GMIN;
   }
-  ASSERT_EQ(cudaMemcpy(dG, Gfull.data(), NET_COUNT * NET_COUNT * sizeof(double),
-                       cudaMemcpyHostToDevice),
-            cudaSuccess);
+  ASSERT_EQ(
+      cudaMemcpy(dG, Gfull.data(), NET_COUNT * NET_COUNT * sizeof(double), cudaMemcpyHostToDevice),
+      cudaSuccess);
 
   // Anchor ground (row 0 / col 0) to match the CPU reference.
   // Simpler than a device kernel: read G[0,:] and G[:,0] to host, mutate, push back.
@@ -267,8 +267,8 @@ void gpuPhaseFourIter(const Inputs& in, std::vector<double>& prevV, double& maxD
                          &Gcol0[j], sizeof(double), cudaMemcpyHostToDevice),
               cudaSuccess);
   }
-  const double zero = 0.0;
-  ASSERT_EQ(cudaMemcpy(dI, &zero, sizeof(double), cudaMemcpyHostToDevice), cudaSuccess);
+  const double ZERO = 0.0;
+  ASSERT_EQ(cudaMemcpy(dI, &ZERO, sizeof(double), cudaMemcpyHostToDevice), cudaSuccess);
 
   // === Step 3: cuSOLVER solve, in place (dI becomes x) ===
   mna_cuda::MnaCudaWorkspace ws;
@@ -294,7 +294,6 @@ void gpuPhaseFourIter(const Inputs& in, std::vector<double>& prevV, double& maxD
   cudaFree(dPrevV);
   cudaFree(dMaxDelta);
 }
-
 
 /* ----------------------------- Tests ----------------------------- */
 
@@ -326,16 +325,17 @@ TEST_F(PhaseFourPipelineTest, OneIter_SmallVoltages_NoLimit) {
 #ifdef INTEL4004_DATA_DIR
 static const std::string SPICE_PATH = INTEL4004_DATA_DIR "/lajos-4004.spice";
 #else
-static const std::string SPICE_PATH = "src/sim/electronics/chips/intel4004/netlist/data/lajos-4004.spice";
+static const std::string SPICE_PATH =
+    "src/sim/electronics/chips/intel4004/netlist/data/lajos-4004.spice";
 #endif
 
 /** @test Phase-4 scatter table classifies every Intel 4004 transistor (L1 + binary + depletion). */
 TEST_F(PhaseFourPipelineTest, ScatterTable_Intel4004_AllClassified) {
   using sim::electronics::chips::intel4004::classifyComponents;
   using sim::electronics::chips::intel4004::Intel4004GridLevel1;
+  using sim::electronics::chips::intel4004::loadSpiceNetlist;
   using sim::electronics::chips::intel4004::cuda::Phase4TransistorClass;
   using sim::electronics::chips::intel4004::cuda::populateScatterTable;
-  using sim::electronics::chips::intel4004::loadSpiceNetlist;
 
   const auto NETLIST = loadSpiceNetlist(SPICE_PATH);
   Intel4004GridLevel1 grid;
@@ -382,7 +382,6 @@ TEST_F(PhaseFourPipelineTest, ScatterTable_Intel4004_AllClassified) {
   for (const auto& p : table.params) {
     EXPECT_GT(p.Kp, 0.0);
   }
-
 }
 
 /** @test Five Phase-4 iterations keep CPU and GPU prevV/maxDelta in lockstep. */

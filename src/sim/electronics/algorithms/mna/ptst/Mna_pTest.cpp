@@ -353,7 +353,8 @@ static void runParallelKluCase(std::size_t numCircuits, unsigned numThreads, con
 
   auto runFn = [&] {
     if (numThreads <= 1) {
-      for (std::size_t k = 0; k < numCircuits; ++k) solveOne(k);
+      for (std::size_t k = 0; k < numCircuits; ++k)
+        solveOne(k);
       return;
     }
     std::vector<std::thread> workers;
@@ -363,12 +364,14 @@ static void runParallelKluCase(std::size_t numCircuits, unsigned numThreads, con
       workers.emplace_back([&] {
         while (true) {
           std::size_t k = nextIdx.fetch_add(1, std::memory_order_relaxed);
-          if (k >= numCircuits) break;
+          if (k >= numCircuits)
+            break;
           solveOne(k);
         }
       });
     }
-    for (auto& w : workers) w.join();
+    for (auto& w : workers)
+      w.join();
   };
 
   perf.warmup(runFn);
@@ -383,8 +386,8 @@ static void runParallelKluCase(std::size_t numCircuits, unsigned numThreads, con
   }
 }
 
-PERF_TEST(MnaParallelKlu, K8_T1)  { runParallelKluCase(8,  1, "K8_T1");  }
-PERF_TEST(MnaParallelKlu, K8_T8)  { runParallelKluCase(8,  8, "K8_T8");  }
+PERF_TEST(MnaParallelKlu, K8_T1) { runParallelKluCase(8, 1, "K8_T1"); }
+PERF_TEST(MnaParallelKlu, K8_T8) { runParallelKluCase(8, 8, "K8_T8"); }
 PERF_TEST(MnaParallelKlu, K16_T1) { runParallelKluCase(16, 1, "K16_T1"); }
 PERF_TEST(MnaParallelKlu, K16_T8) { runParallelKluCase(16, 8, "K16_T8"); }
 PERF_TEST(MnaParallelKlu, K64_T1) { runParallelKluCase(64, 1, "K64_T1"); }

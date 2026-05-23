@@ -58,10 +58,10 @@ TEST(BjtCommonEmitterTest, ConstructionPreservesBiasValues) {
  *        satisfy KVL bounds: 0 <= Vb, Vc <= VCC (no spurious supply overshoot).
  *
  * The symmetric BjtEbersMoll stamp under this wrapper does not converge to a
- * physically-correct forward-active operating point (see file header), so we
- * cannot anchor to Sedra-Smith bias-point formulas. The KVL envelope is the
- * strongest invariant the current model supports: any future regression that
- * lets Vc/Vb drift outside the supply rails would fail this test.
+ * physically-correct forward-active operating point (see file header), so the
+ * test cannot anchor to forward-active bias-point formulas. The KVL envelope
+ * is the strongest invariant the model supports: any regression that lets
+ * Vc/Vb drift outside the supply rails would fail this test.
  */
 TEST(BjtCommonEmitterTest, ComputeDcAcrossBiasGridRespectsSupplyEnvelope) {
   for (const double VCC : {5.0, 9.0, 12.0}) {
@@ -83,11 +83,10 @@ TEST(BjtCommonEmitterTest, ComputeDcAcrossBiasGridRespectsSupplyEnvelope) {
 
 /** @test Collector current scales 1/RC for fixed VCC: doubling RC halves ic.
  *
- * This is Ohm's law against the cached collector voltage. Since the current
+ * This is Ohm's law against the cached collector voltage. Because the
  * symmetric BjtEbersMoll stamp converges to a Vc that does not depend on RC,
  * the test verifies the wrapper's KCL relation IC = (VCC - Vc)/RC holds
- * across RC sweeps (and exposes any future regression where ic stops
- * tracking RC).
+ * across RC sweeps, and would fail if ic stopped tracking RC.
  */
 TEST(BjtCommonEmitterTest, CollectorCurrentScalesInverselyWithRc) {
   BjtCommonEmitter amp1(12.0, /*RC=*/1e3, 100e3);
@@ -97,7 +96,7 @@ TEST(BjtCommonEmitterTest, CollectorCurrentScalesInverselyWithRc) {
 
   // Doubling RC roughly halves ic when Vc is approximately stable (the
   // symmetric-stamp Vc is bias-independent in this model, so the ratio is
-  // exact). Tolerate 10% for any future Vc drift.
+  // exact). The 10% tolerance allows for any small Vc drift.
   EXPECT_NEAR(amp1.collectorCurrent() / amp2.collectorCurrent(), 2.0, 0.2);
 }
 
@@ -114,4 +113,3 @@ TEST(BjtCommonEmitterTest, ComputeDcIsRepeatable) {
   EXPECT_DOUBLE_EQ(amp.baseVoltage(), VB1);
   EXPECT_DOUBLE_EQ(amp.collectorCurrent(), IC1);
 }
-

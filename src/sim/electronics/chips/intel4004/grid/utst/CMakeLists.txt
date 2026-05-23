@@ -42,7 +42,8 @@ apex_add_gtest(
 
 target_compile_definitions(
   TestSimElectronicsIntel4004Grid
-  PRIVATE INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/chips/intel4004/netlist/data"
+  PRIVATE
+    INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/chips/intel4004/netlist/data"
 )
 
 # ------------------------------------------------------------------------------
@@ -69,10 +70,11 @@ if (TARGET sim_electronics_chips_intel4004_grid_cuda AND CMAKE_CUDA_COMPILER)
   )
   set_target_properties(
     sim_electronics_chips_intel4004_grid_cuda_uTest PROPERTIES CUDA_SEPARABLE_COMPILATION ON
-                                                          CUDA_RESOLVE_DEVICE_SYMBOLS ON
+                                                               CUDA_RESOLVE_DEVICE_SYMBOLS ON
   )
   target_compile_definitions(
     sim_electronics_chips_intel4004_grid_cuda_uTest
-    PRIVATE INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/chips/intel4004/netlist/data"
+    PRIVATE
+      INTEL4004_DATA_DIR="${PROJECT_SOURCE_DIR}/src/sim/electronics/chips/intel4004/netlist/data"
   )
 endif ()

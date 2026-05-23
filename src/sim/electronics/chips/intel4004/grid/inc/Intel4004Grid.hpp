@@ -41,12 +41,12 @@
 
 namespace sim::electronics::chips::intel4004 {
 
-using sim::electronics::circuit::Circuit;
-using sim::electronics::circuit::CircuitNet;
 using sim::electronics::algorithms::mna::MnaSystem;
 using sim::electronics::algorithms::mna::NetID;
 using sim::electronics::algorithms::transient::TransientState;
 using sim::electronics::algorithms::transient::TransientStatus;
+using sim::electronics::circuit::Circuit;
+using sim::electronics::circuit::CircuitNet;
 
 /* ----------------------------- ResolvedTransistor ----------------------------- */
 
@@ -142,7 +142,7 @@ struct Intel4004Grid {
   sim::electronics::algorithms::mna::NetID syncNet_ = 0;      ///< SYNC: HIGH during A1-A3.
   sim::electronics::algorithms::mna::NetID execCtrlNet_ = 0;  ///< ~(X31&~CLK2): execute-phase ctrl.
   sim::electronics::algorithms::mna::NetID execCtrl2Net_ = 0; ///< ~(X21&~CLK2): another exec ctrl.
-  bool behavioralTiming_ = false;                 ///< Drive timing signals behaviorally.
+  bool behavioralTiming_ = false; ///< Drive timing signals behaviorally.
 
   /// All compound timing signal NetIDs. Cached during cacheExternalNets().
   struct CompoundTimingNets {
@@ -163,18 +163,19 @@ struct Intel4004Grid {
 
   /* ----------------------------- Internal State Nets ----------------------------- */
 
-  sim::electronics::algorithms::mna::NetID cyNet_ = 0;                                ///< CY (carry flag).
-  std::array<std::array<sim::electronics::algorithms::mna::NetID, 4>, 16> regNets_{}; ///< R0.0-R15.3.
-  std::array<sim::electronics::algorithms::mna::NetID, 12> pcNets_{};                 ///< PC0.0-PC0.11.
+  sim::electronics::algorithms::mna::NetID cyNet_ = 0; ///< CY (carry flag).
+  std::array<std::array<sim::electronics::algorithms::mna::NetID, 4>, 16>
+      regNets_{};                                                     ///< R0.0-R15.3.
+  std::array<sim::electronics::algorithms::mna::NetID, 12> pcNets_{}; ///< PC0.0-PC0.11.
 
   /* ----------------------------- Simulation State ----------------------------- */
 
-  std::uint8_t machineState_ = 0;      ///< 0-7 = A1..X3.
-  bool clk1High_ = false;              ///< Current CLK1 level.
-  bool clk2High_ = false;              ///< Current CLK2 level.
-  std::uint8_t dataBusDrive_ = 0;      ///< Nibble to drive on D0-D3 during M1/M2.
-  bool dataBusDriving_ = false;        ///< True when ROM is driving the bus.
-  std::size_t bytesFetched_ = 0;       ///< ROM bytes served so far.
+  std::uint8_t machineState_ = 0; ///< 0-7 = A1..X3.
+  bool clk1High_ = false;         ///< Current CLK1 level.
+  bool clk2High_ = false;         ///< Current CLK2 level.
+  std::uint8_t dataBusDrive_ = 0; ///< Nibble to drive on D0-D3 during M1/M2.
+  bool dataBusDriving_ = false;   ///< True when ROM is driving the bus.
+  std::size_t bytesFetched_ = 0;  ///< ROM bytes served so far.
 
 public:
   std::uint16_t lastCapturedAddr_ = 0; ///< Address read from D0-D3 during A1-A3.
@@ -418,15 +419,16 @@ protected:
    * the bus by the ROM chip (4001).
    */
   template <typename MnaSystemT>
-  void driveBus(MnaSystemT& mna, const sim::electronics::algorithms::mna::NetID* nets, std::size_t bits,
-                std::uint32_t value) const {
+  void driveBus(MnaSystemT& mna, const sim::electronics::algorithms::mna::NetID* nets,
+                std::size_t bits, std::uint32_t value) const {
     for (std::size_t i = 0; i < bits; ++i) {
       driveNet(mna, nets[i], ((value >> i) & 1) == 0); // PMOS: 1=LOW, 0=HIGH
     }
   }
 
   static std::uint32_t readBus(const std::vector<double>& v,
-                               const sim::electronics::algorithms::mna::NetID* nets, std::size_t bits) {
+                               const sim::electronics::algorithms::mna::NetID* nets,
+                               std::size_t bits) {
     std::uint32_t val = 0;
     for (std::size_t i = 0; i < bits; ++i) {
       if (nets[i] < v.size() && v[nets[i]] > (devices::composite::DEFAULT_VDD / 2.0)) {
@@ -443,7 +445,8 @@ protected:
    * high voltage (> VDD/2) = logic 0, low voltage (< VDD/2) = logic 1.
    */
   static std::uint32_t readBusPmos(const std::vector<double>& v,
-                                   const sim::electronics::algorithms::mna::NetID* nets, std::size_t bits) {
+                                   const sim::electronics::algorithms::mna::NetID* nets,
+                                   std::size_t bits) {
     std::uint32_t val = 0;
     for (std::size_t i = 0; i < bits; ++i) {
       if (nets[i] < v.size() && v[nets[i]] < (devices::composite::DEFAULT_VDD / 2.0)) {
@@ -480,12 +483,12 @@ protected:
   /// (2) gate is NOT a storage net (gate is a control/timing signal).
   /// This excludes NOR pull-downs where the storage net is the gate terminal.
 public:
-  bool isStoragePassGate(std::size_t idx) const {
+  [[nodiscard]] bool isStoragePassGate(std::size_t idx) const {
     if (storageNets_.empty())
       buildStorageNetSet();
-    const auto& t = transistors_[idx];
-    bool touchesStorage = storageNets_.count(t.drain) || storageNets_.count(t.source);
-    bool gateIsStorage = storageNets_.count(t.gate);
+    const auto& T = transistors_[idx];
+    bool touchesStorage = storageNets_.count(T.drain) || storageNets_.count(T.source);
+    bool gateIsStorage = storageNets_.count(T.gate);
     return touchesStorage && !gateIsStorage;
   }
 
@@ -687,7 +690,7 @@ protected:
     }
   }
 
-  sim::electronics::algorithms::mna::NetID resolveNet(const std::string& name) const {
+  [[nodiscard]] sim::electronics::algorithms::mna::NetID resolveNet(const std::string& name) const {
     auto it = netMap_.find(name);
     return (it != netMap_.end()) ? it->second : 0;
   }
@@ -695,10 +698,10 @@ protected:
   /* ----------------------------- Stamp Registration ----------------------------- */
 
   void registerStamps(Circuit& circuit) {
-    circuit.addStamp(
-        [this](sim::electronics::algorithms::mna::MnaSystem& mna, double, const std::vector<double>&) {
-          mna.addVoltageSource(vdd_, Circuit::ground(), VDD_VOLTAGE);
-        });
+    circuit.addStamp([this](sim::electronics::algorithms::mna::MnaSystem& mna, double,
+                            const std::vector<double>&) {
+      mna.addVoltageSource(vdd_, Circuit::ground(), VDD_VOLTAGE);
+    });
 
     circuit.addStamp([this](sim::electronics::algorithms::mna::MnaSystem& mna, double /*time*/,
                             const std::vector<double>& prevV) {
@@ -719,26 +722,26 @@ protected:
   template <typename MnaSystemT>
   void stampTransistors(MnaSystemT& mna, const std::vector<double>& prevV) const {
     for (std::size_t idx = 0; idx < transistors_.size(); ++idx) {
-      const auto& t = transistors_[idx];
+      const auto& T = transistors_[idx];
 
       // Binary switch: three-region conductance model.
       // Uses bsParams_ for MC-tunable parameters (defaults match static constexpr).
-      const auto& bp = bsParams_;
-      double vs = std::max(prevV[t.drain], prevV[t.source]);
-      double vgs = prevV[t.gate] - vs;
+      const auto& BP = bsParams_;
+      double vs = std::max(prevV[T.drain], prevV[T.source]);
+      double vgs = prevV[T.gate] - vs;
 
       double gds;
-      if (t.isDiodeLoad) {
-        gds = bp.gLoad;
-      } else if (vgs < -bp.vth - bp.subthMargin) {
-        gds = t.isLoad ? bp.gLoad : bp.gOn;
-      } else if (vgs > -bp.vth + bp.subthMargin) {
-        gds = bp.gOff;
+      if (T.isDiodeLoad) {
+        gds = BP.gLoad;
+      } else if (vgs < -BP.vth - BP.subthMargin) {
+        gds = T.isLoad ? BP.gLoad : BP.gOn;
+      } else if (vgs > -BP.vth + BP.subthMargin) {
+        gds = BP.gOff;
       } else {
-        gds = bp.gSubth;
+        gds = BP.gSubth;
       }
 
-      mna.addConductance(t.drain, t.source, gds);
+      mna.addConductance(T.drain, T.source, gds);
     }
   }
 
@@ -763,9 +766,6 @@ protected:
       // timingNets1_[i] = CLK1-phase signal (computed from compound nets)
       //
       // Active = LOW in PMOS convention.
-      bool clk1Active = !clk1High_;
-      bool clk2Active = !clk2High_;
-      bool sync = (machineState_ <= 2);
       std::uint8_t ms = machineState_;
 
       for (std::size_t i = 0; i < 8; ++i) {
@@ -800,10 +800,9 @@ protected:
         driveNet(mna, scM12Clk2, !m1Active);
       }
 
-      // Note: execute control (~(X31&~CLK2)) is left to the transistors.
-      // Driving it behaviorally breaks single-instruction execution.
-      // SC&M22&CLK2 also left to transistors for now (behavioral latch
-      // handles OPA storage).
+      // Execute control (~(X31&~CLK2)) and SC&M22&CLK2 are left to the
+      // transistors: driving them behaviorally breaks single-instruction
+      // execution, and the behavioral latch already handles OPA storage.
     }
   }
 
@@ -849,8 +848,8 @@ protected:
         std::memcpy(prevSubV.data(), state.nodeVoltages.data(), netCount * sizeof(double));
       }
       // Fresh factorize each sub-step: with 1080 nets and parasitic caps,
-      // transistors near threshold can flip between steps, invalidating the
-      // cached LU. Correctness over caching for now.
+      // transistors near threshold can flip between steps and invalidate
+      // the cached LU. Correctness wins over caching here.
       circuit.solver().invalidateCache();
       circuit.step(dt, state);
       if (useConvergence && s >= 1) {
@@ -974,11 +973,10 @@ protected:
       ++bytesFetched_;
 
       // L1+ instruction-boundary refresh: force ACC and CY nodes to clean
-      // rail voltages (0V or 5V) based on current readback. This prevents
-      // charge leakage between instruction cycles. The binary switch model
-      // can't retain charge on dynamic storage nodes (confirmed by MC sweep,
-      // entry #16). This refresh mimics the real chip's precharge/evaluate
-      // cycle that restores logic levels each clock cycle.
+      // rail voltages (0 V or 5 V) based on current readback. The binary
+      // switch model cannot retain charge on dynamic storage nodes, so this
+      // refresh mimics the real chip's precharge / evaluate cycle that
+      // restores logic levels each clock cycle.
       if (refreshStorage_) {
         std::uint8_t acc = readAccumulator(state.nodeVoltages);
         for (int bit = 0; bit < 4; ++bit) {

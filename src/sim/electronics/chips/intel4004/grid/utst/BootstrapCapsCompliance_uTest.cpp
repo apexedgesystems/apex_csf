@@ -45,10 +45,9 @@ TEST(BootstrapCapsTest, ExpectedCount) {
 
   // 66 layout-extracted caps + 4 D-bus pin caps (CDB=7 pF on D0..D3) =
   // 70 expected.
-  EXPECT_EQ(LOADED, 70u)
-      << "Expected 66 layout caps + 4 D-bus pin caps = 70 total.\n"
-      << "Got " << LOADED << ". Either file is missing entries or"
-      << " findNet failed to resolve some net names.";
+  EXPECT_EQ(LOADED, 70u) << "Expected 66 layout caps + 4 D-bus pin caps = 70 total.\n"
+                         << "Got " << LOADED << ". Either file is missing entries or"
+                         << " findNet failed to resolve some net names.";
 }
 
 /**
@@ -70,8 +69,7 @@ TEST(BootstrapCapsTest, FileFormat) {
     std::string a, b;
     double pixels = 0.0, valueFF = 0.0;
     if (iss >> a >> b >> pixels >> valueFF) {
-      EXPECT_GT(valueFF, 0.0)
-          << "Cap value must be positive: '" << line << "'";
+      EXPECT_GT(valueFF, 0.0) << "Cap value must be positive: '" << line << "'";
       ++valid;
     }
   }
@@ -98,11 +96,13 @@ TEST(BootstrapCapsTest, ValueRange) {
   std::size_t pinCaps = 0;
   std::string line;
   while (std::getline(f, line)) {
-    if (line.empty() || line[0] == '#') continue;
+    if (line.empty() || line[0] == '#')
+      continue;
     std::istringstream iss(line);
     std::string a, b;
     double pixels = 0.0, valueFF = 0.0;
-    if (!(iss >> a >> b >> pixels >> valueFF)) continue;
+    if (!(iss >> a >> b >> pixels >> valueFF))
+      continue;
 
     if (b == "GND" && valueFF > 5000.0) {
       // D-bus pin cap (7 pF = 7000 fF)
@@ -119,8 +119,7 @@ TEST(BootstrapCapsTest, ValueRange) {
   EXPECT_EQ(pinCaps, 4u) << "Expected 4 D-bus pin caps (D0/D1/D2/D3)";
 
   // Layout extraction observes 5 fF to 1108 fF.
-  EXPECT_GE(minLayout, 1.0)
-      << "Smallest layout cap < 1 fF suggests extraction error";
+  EXPECT_GE(minLayout, 1.0) << "Smallest layout cap < 1 fF suggests extraction error";
   EXPECT_LE(maxLayout, 2000.0)
       << "Largest layout cap > 2 pF suggests flood-fill leak (extraction error)";
 }
@@ -140,13 +139,16 @@ TEST(BootstrapCapsTest, OpaIbCapPresent) {
   bool foundAccAdac = false;
   std::string line;
   while (std::getline(f, line)) {
-    if (line.empty() || line[0] == '#') continue;
-    if (line.find(" OPA-IB ") != std::string::npos) foundOpaIb = true;
-    if (line.find(" ACC-ADAC ") != std::string::npos) foundAccAdac = true;
+    if (line.empty() || line[0] == '#')
+      continue;
+    if (line.find(" OPA-IB ") != std::string::npos)
+      foundOpaIb = true;
+    if (line.find(" ACC-ADAC ") != std::string::npos)
+      foundAccAdac = true;
   }
 
   EXPECT_TRUE(foundOpaIb) << "OPA-IB cap (OPA latch capture gate) missing";
   EXPECT_TRUE(foundAccAdac) << "ACC-ADAC cap (ALU output bus gate) missing";
 }
 
-#endif  // INTEL4004_DATA_DIR
+#endif // INTEL4004_DATA_DIR

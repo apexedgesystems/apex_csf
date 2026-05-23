@@ -18,9 +18,9 @@
 
 namespace sim::electronics::devices::composite {
 
-using descriptors::MosfetDescriptor;
 using algorithms::mna::MnaSystem;
 using algorithms::mna::NetID;
+using descriptors::MosfetDescriptor;
 using devices::nonlinear::MosfetLevel1;
 using devices::nonlinear::MosfetLevel1Params;
 

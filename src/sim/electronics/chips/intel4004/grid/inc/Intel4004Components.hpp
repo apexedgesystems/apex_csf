@@ -59,11 +59,11 @@ struct ComponentClassification {
   std::vector<ComponentType> types; ///< Per-transistor component type.
   std::size_t counts[5] = {};       ///< Count per type.
 
-  std::size_t norGateCount() const { return counts[0]; }
+  [[nodiscard]] std::size_t norGateCount() const { return counts[0]; }
   std::size_t passGateCount() const { return counts[1]; }
-  std::size_t dynamicCount() const { return counts[2]; }
+  [[nodiscard]] std::size_t dynamicCount() const { return counts[2]; }
   std::size_t loadCount() const { return counts[3]; }
-  std::size_t unknownCount() const { return counts[4]; }
+  [[nodiscard]] std::size_t unknownCount() const { return counts[4]; }
 };
 
 /* ----------------------------- Classification ----------------------------- */
@@ -89,9 +89,9 @@ inline ComponentClassification classifyComponents(const Intel4004Grid& grid) {
   // Step 1: Find all depletion-loaded nets (NOR gate output nets)
   std::unordered_set<algorithms::mna::NetID> norOutputNets;
   for (std::size_t i = 0; i < grid.transistors_.size(); ++i) {
-    const auto& t = grid.transistors_[i];
-    if (t.isDiodeLoad) {
-      algorithms::mna::NetID outNet = (t.drain == vdd) ? t.source : t.drain;
+    const auto& T = grid.transistors_[i];
+    if (T.isDiodeLoad) {
+      algorithms::mna::NetID outNet = (T.drain == vdd) ? T.source : T.drain;
       if (outNet != 0)
         norOutputNets.insert(outNet);
       result.types[i] = ComponentType::STANDALONE_LOAD;
@@ -115,13 +115,13 @@ inline ComponentClassification classifyComponents(const Intel4004Grid& grid) {
     if (result.types[i] != ComponentType::UNKNOWN)
       continue; // Already classified
 
-    const auto& t = grid.transistors_[i];
+    const auto& T = grid.transistors_[i];
 
     // Check if drain or source connects to a NOR output net
-    bool touchesNorOutput = norOutputNets.count(t.drain) || norOutputNets.count(t.source);
+    bool touchesNorOutput = norOutputNets.count(T.drain) || norOutputNets.count(T.source);
 
     // Check if gate is a timing signal
-    bool gatedByTiming = timingNets.count(t.gate);
+    bool gatedByTiming = timingNets.count(T.gate);
 
     if (touchesNorOutput && !gatedByTiming) {
       // Enhancement pull-down in a NOR gate
@@ -141,14 +141,14 @@ inline ComponentClassification classifyComponents(const Intel4004Grid& grid) {
   // Reclassify standalone loads that have NOR gate members -> they're NOR loads
   for (std::size_t i = 0; i < grid.transistors_.size(); ++i) {
     if (result.types[i] == ComponentType::STANDALONE_LOAD) {
-      const auto& t = grid.transistors_[i];
-      algorithms::mna::NetID outNet = (t.drain == vdd) ? t.source : t.drain;
+      const auto& T = grid.transistors_[i];
+      algorithms::mna::NetID outNet = (T.drain == vdd) ? T.source : T.drain;
       // Check if any NOR_GATE_MEMBER connects to this output
       bool hasMembers = false;
       for (std::size_t j = 0; j < grid.transistors_.size(); ++j) {
         if (result.types[j] == ComponentType::NOR_GATE_MEMBER) {
-          const auto& m = grid.transistors_[j];
-          if (m.drain == outNet || m.source == outNet) {
+          const auto& M = grid.transistors_[j];
+          if (M.drain == outNet || M.source == outNet) {
             hasMembers = true;
             break;
           }

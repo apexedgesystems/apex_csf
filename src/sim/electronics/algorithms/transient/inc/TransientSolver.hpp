@@ -106,7 +106,7 @@ using StatefulStampCallbackSparse =
  * Performance optimizations:
  * - Cached LU factorization for constant-topology circuits
  * - Sparse LU solver (Eigen::SparseLU or KLU) for low-fill matrices
- * - CUDA acceleration via MnaSystemCuda (future: companion batch stamping)
+ * - CUDA acceleration via MnaSystemCuda
  */
 class TransientSolver {
 public:

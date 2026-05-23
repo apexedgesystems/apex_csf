@@ -35,13 +35,13 @@ namespace sim::electronics::chips::intel4004 {
 /* ----------------------------- Gate ----------------------------- */
 
 struct Gate {
-  std::size_t loadTransistorIdx;         ///< Depletion load transistor index.
-  std::vector<std::size_t> logicIndices; ///< Enhancement transistor indices.
-  algorithms::mna::NetID outputNet;                  ///< Output net (between load and logic).
-  std::vector<algorithms::mna::NetID> inputNets;     ///< Input nets (logic transistor gates).
+  std::size_t loadTransistorIdx;                 ///< Depletion load transistor index.
+  std::vector<std::size_t> logicIndices;         ///< Enhancement transistor indices.
+  algorithms::mna::NetID outputNet;              ///< Output net (between load and logic).
+  std::vector<algorithms::mna::NetID> inputNets; ///< Input nets (logic transistor gates).
 
   /// Gate type string for display/categorization.
-  std::string typeString() const {
+  [[nodiscard]] std::string typeString() const {
     if (logicIndices.size() == 1)
       return "INV";
     return "NOR" + std::to_string(logicIndices.size());
@@ -52,10 +52,10 @@ struct Gate {
 /// When the clock signal is LOW (active in PMOS), source value passes to drain.
 /// When HIGH (inactive), the connection is open (held by parasitic capacitance).
 struct PassGate {
-  std::size_t transistorIdx; ///< Index into grid transistors.
-  algorithms::mna::NetID clockNet;       ///< Gate signal (clock/timing).
-  algorithms::mna::NetID sourceNet;      ///< Data source.
-  algorithms::mna::NetID drainNet;       ///< Data destination.
+  std::size_t transistorIdx;        ///< Index into grid transistors.
+  algorithms::mna::NetID clockNet;  ///< Gate signal (clock/timing).
+  algorithms::mna::NetID sourceNet; ///< Data source.
+  algorithms::mna::NetID drainNet;  ///< Data destination.
 };
 
 /* ----------------------------- Intel4004GateLevel ----------------------------- */
@@ -94,14 +94,14 @@ public:
 
   /* ----------------------------- Accessors ----------------------------- */
 
-  std::size_t gateCount() const { return gates_.size(); }
+  [[nodiscard]] std::size_t gateCount() const { return gates_.size(); }
   std::size_t netCount() const { return netCount_; }
 
   /// Get net state (HIGH/LOW).
-  bool netValue(algorithms::mna::NetID net) const { return netState_[net]; }
+  [[nodiscard]] bool netValue(algorithms::mna::NetID net) const { return netState_[net]; }
 
   /// Read accumulator as 4-bit value.
-  std::uint8_t readAccumulator() const {
+  [[nodiscard]] std::uint8_t readAccumulator() const {
     std::uint8_t acc = 0;
     for (int bit = 0; bit < 4; ++bit) {
       auto net = grid_.accNets_[bit];
@@ -113,7 +113,7 @@ public:
   }
 
   /// Read carry flag.
-  bool readCarry() const {
+  [[nodiscard]] bool readCarry() const {
     auto net = grid_.cyNet_;
     return (net > 0) && !netState_[net];
   }
@@ -133,11 +133,11 @@ public:
     // std::vector<unsigned int> does not inline the iterator operators
     // (~20% self-time in operator== / operator++ / operator*). Direct
     // indexing produces a single load per iteration.
-    const auto* inputs = gate.inputNets.data();
+    const auto* INPUTS = gate.inputNets.data();
     const std::size_t N = gate.inputNets.size();
-    const auto* state = netState.data();
+    const auto* STATE = netState.data();
     for (std::size_t i = 0; i < N; ++i) {
-      if (!state[inputs[i]]) {
+      if (!STATE[INPUTS[i]]) {
         return LOW;
       }
     }
@@ -310,9 +310,10 @@ public:
 private:
   std::size_t netCount_ = 0;
   algorithms::mna::NetID vdd_ = 0;
-  std::vector<std::uint8_t> netState_; ///< Current logic state per net (0/1).
-  std::set<algorithms::mna::NetID> timingNets_;  ///< Nets driven by clock/timing signals.
-  std::set<algorithms::mna::NetID> dynamicNets_; ///< Nets only driven by pass gates (need state hold).
+  std::vector<std::uint8_t> netState_;          ///< Current logic state per net (0/1).
+  std::set<algorithms::mna::NetID> timingNets_; ///< Nets driven by clock/timing signals.
+  std::set<algorithms::mna::NetID>
+      dynamicNets_; ///< Nets only driven by pass gates (need state hold).
 
   /// For each net, which gates have it as an input (for event-driven eval).
   std::vector<std::vector<std::size_t>> fanoutMap_;
@@ -343,25 +344,25 @@ private:
     gates_.reserve(500);
 
     for (std::size_t i = 0; i < grid_.transistors_.size(); ++i) {
-      const auto& load = grid_.transistors_[i];
-      if (!load.isDiodeLoad)
+      const auto& LOAD = grid_.transistors_[i];
+      if (!LOAD.isDiodeLoad)
         continue;
 
       Gate gate;
       gate.loadTransistorIdx = i;
-      gate.outputNet = (load.drain == vdd_) ? load.source : load.drain;
+      gate.outputNet = (LOAD.drain == vdd_) ? LOAD.source : LOAD.drain;
 
       for (std::size_t j = 0; j < grid_.transistors_.size(); ++j) {
         if (j == i)
           continue;
-        const auto& t = grid_.transistors_[j];
-        if (t.isDiodeLoad || t.isLoad)
+        const auto& T = grid_.transistors_[j];
+        if (T.isDiodeLoad || T.isLoad)
           continue;
 
-        if (t.drain == gate.outputNet || t.source == gate.outputNet) {
+        if (T.drain == gate.outputNet || T.source == gate.outputNet) {
           gate.logicIndices.push_back(j);
 
-          algorithms::mna::NetID inputNet = t.gate;
+          algorithms::mna::NetID inputNet = T.gate;
           if (inputNet != 0 && inputNet != vdd_) {
             bool found = false;
             for (auto n : gate.inputNets) {
@@ -387,13 +388,13 @@ private:
     // Enhancement transistors gated by timing signals act as pass gates,
     // transferring data between pipeline stages on specific clock edges.
     for (std::size_t i = 0; i < grid_.transistors_.size(); ++i) {
-      const auto& t = grid_.transistors_[i];
-      if (t.isDiodeLoad || t.isLoad)
+      const auto& T = grid_.transistors_[i];
+      if (T.isDiodeLoad || T.isLoad)
         continue;
 
-      if (timingNets_.count(t.gate)) {
-        if (t.drain != 0 && t.source != 0 && t.drain != vdd_ && t.source != vdd_) {
-          passGates_.push_back({i, t.gate, t.source, t.drain});
+      if (timingNets_.count(T.gate)) {
+        if (T.drain != 0 && T.source != 0 && T.drain != vdd_ && T.source != vdd_) {
+          passGates_.push_back({i, T.gate, T.source, T.drain});
         }
       }
     }

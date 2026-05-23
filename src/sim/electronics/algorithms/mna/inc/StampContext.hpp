@@ -64,7 +64,7 @@ public:
    *       the lifetime of this context.
    */
   StampContext(std::size_t netCount, const double* x, double* ax)
-      : netCount_(netCount), I_(netCount, 0.0), vsources_(), matvecX_(x), matvecAx_(ax) {}
+      : netCount_(netCount), I_(netCount, 0.0), vsources_(), MATVEC_X_(x), matvecAx_(ax) {}
 
   /* ----------------------------- Stamping API ----------------------------- */
 
@@ -74,12 +74,12 @@ public:
    */
   void stampConductance(NetID a, NetID b, double g) {
     assert(a < netCount_ && b < netCount_);
-    if (matvecX_) {
+    if (MATVEC_X_) {
       // Matvec mode: accumulate g*(x[a]-x[b]) into Ax directly
       if (a == b) {
-        matvecAx_[a] += g * matvecX_[a];
+        matvecAx_[a] += g * MATVEC_X_[a];
       } else {
-        double gDiff = g * (matvecX_[a] - matvecX_[b]);
+        double gDiff = g * (MATVEC_X_[a] - MATVEC_X_[b]);
         matvecAx_[a] += gDiff;
         matvecAx_[b] -= gDiff;
       }
@@ -122,8 +122,8 @@ public:
    */
   void stampGEntry(NetID row, NetID col, double value) {
     assert(row < netCount_ && col < netCount_);
-    if (matvecX_) {
-      matvecAx_[row] += value * matvecX_[col];
+    if (MATVEC_X_) {
+      matvecAx_[row] += value * MATVEC_X_[col];
     } else if (extA_) {
       extA_[col * extDim_ + row] += value; // column-major: A[row, col]
     } else {
@@ -158,19 +158,19 @@ public:
    * @brief Access conductance matrix.
    * @note RT-safe.
    */
-  const Matrix& g() const noexcept { return G_; }
+  [[nodiscard]] const Matrix& g() const noexcept { return G_; }
 
   /**
    * @brief Access current injection vector.
    * @note RT-safe.
    */
-  const Vector& i() const noexcept { return I_; }
+  [[nodiscard]] const Vector& i() const noexcept { return I_; }
 
   /**
    * @brief Number of nets (matrix dimension).
    * @note RT-safe.
    */
-  std::size_t netCount() const noexcept { return netCount_; }
+  [[nodiscard]] std::size_t netCount() const noexcept { return netCount_; }
 
   /**
    * @brief Descriptor for an ideal voltage source.
@@ -185,7 +185,9 @@ public:
    * @brief Retrieve all stamped ideal voltage sources.
    * @note RT-safe.
    */
-  const std::vector<VoltageSource>& voltageSources() const noexcept { return vsources_; }
+  [[nodiscard]] const std::vector<VoltageSource>& voltageSources() const noexcept {
+    return vsources_;
+  }
 
   /* ----------------------------- Mutation ----------------------------- */
 
@@ -207,13 +209,13 @@ public:
    * @brief Check if stamping directly into external matrix.
    * @note RT-safe.
    */
-  bool hasExternalMatrix() const noexcept { return extA_ != nullptr; }
+  [[nodiscard]] bool hasExternalMatrix() const noexcept { return extA_ != nullptr; }
 
   /**
    * @brief Get external matrix leading dimension.
    * @note RT-safe. Only meaningful when hasExternalMatrix() is true.
    */
-  std::size_t externalDim() const noexcept { return extDim_; }
+  [[nodiscard]] std::size_t externalDim() const noexcept { return extDim_; }
 
   /**
    * @brief Clear only current injections for RHS rebuild.
@@ -261,7 +263,7 @@ private:
   std::vector<VoltageSource> vsources_; ///< Recorded voltage sources.
   double* extA_ = nullptr;              ///< External column-major LAPACK workspace (nullable).
   std::size_t extDim_ = 0;              ///< Augmented dimension of external workspace.
-  const double* matvecX_ = nullptr;     ///< Input vector for matvec mode (nullable).
+  const double* MATVEC_X_ = nullptr;    ///< Input vector for matvec mode (nullable).
   double* matvecAx_ = nullptr;          ///< Output Ax accumulator for matvec mode (nullable).
 };
 

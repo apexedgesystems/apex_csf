@@ -73,8 +73,8 @@ static void runKernelOnly(std::size_t count, bool perDevice, const char* label) 
 
   UB_PERF_GPU_GUARD(perf);
 
-  const auto biases = buildBiases(count);
-  const auto paramsArr = buildParams(count);
+  const auto BIASES = buildBiases(count);
+  const auto PARAMS_ARR = buildParams(count);
   const MosfetLevel1Params UNIFORM{.Kp = 5e-3, .Vth = 1.17, .lambda = 0.03, .Vsmooth = 0.1};
 
   nl_cuda::MosfetBias* dBiases = nullptr;
@@ -82,12 +82,13 @@ static void runKernelOnly(std::size_t count, bool perDevice, const char* label) 
   nl_cuda::MosfetStamp* dStamps = nullptr;
   cudaMalloc(&dBiases, count * sizeof(nl_cuda::MosfetBias));
   cudaMalloc(&dStamps, count * sizeof(nl_cuda::MosfetStamp));
-  if (perDevice) cudaMalloc(&dParams, count * sizeof(MosfetLevel1Params));
+  if (perDevice)
+    cudaMalloc(&dParams, count * sizeof(MosfetLevel1Params));
 
-  // One-time H2D for biases + params (amortises across many iterations in a real NR loop).
-  cudaMemcpy(dBiases, biases.data(), count * sizeof(nl_cuda::MosfetBias), cudaMemcpyHostToDevice);
+  // One-time H2D for BIASES + params (amortises across many iterations in a real NR loop).
+  cudaMemcpy(dBiases, BIASES.data(), count * sizeof(nl_cuda::MosfetBias), cudaMemcpyHostToDevice);
   if (perDevice) {
-    cudaMemcpy(dParams, paramsArr.data(), count * sizeof(MosfetLevel1Params),
+    cudaMemcpy(dParams, PARAMS_ARR.data(), count * sizeof(MosfetLevel1Params),
                cudaMemcpyHostToDevice);
   }
 
@@ -101,13 +102,12 @@ static void runKernelOnly(std::size_t count, bool perDevice, const char* label) 
     }
   };
 
-  const auto cfg = nl_cuda::getLaunchConfig(count);
-  const dim3 grid(static_cast<unsigned>(cfg.gridSize), 1, 1);
-  const dim3 block(static_cast<unsigned>(cfg.blockSize), 1, 1);
+  const auto CFG = nl_cuda::getLaunchConfig(count);
+  const dim3 grid(static_cast<unsigned>(CFG.gridSize), 1, 1);
+  const dim3 block(static_cast<unsigned>(CFG.blockSize), 1, 1);
 
   perf.cudaWarmup(kernelFn);
-  auto result =
-      perf.cudaKernel(kernelFn, "mosfet_kernel").withLaunchConfig(grid, block).measure();
+  auto result = perf.cudaKernel(kernelFn, "mosfet_kernel").withLaunchConfig(grid, block).measure();
 
   std::printf("  kernel: %.2f us  (%.2f ns/device)  occupancy=%.0f%%\n",
               result.stats.kernelTimeMedianUs,
@@ -116,7 +116,8 @@ static void runKernelOnly(std::size_t count, bool perDevice, const char* label) 
 
   cudaFree(dBiases);
   cudaFree(dStamps);
-  if (dParams) cudaFree(dParams);
+  if (dParams)
+    cudaFree(dParams);
 }
 
 PERF_GPU_TEST(MosfetBatchCudaKernel, Uniform_2242) { runKernelOnly(2242, false, "Uniform_2242"); }
@@ -142,8 +143,8 @@ static void runSoAKernelOnly(std::size_t count, const char* label) {
 
   UB_PERF_GPU_GUARD(perf);
 
-  const auto biases = buildBiases(count);
-  const auto paramsArr = buildParams(count);
+  const auto BIASES = buildBiases(count);
+  const auto PARAMS_ARR = buildParams(count);
 
   nl_cuda::MosfetBias* dBiases = nullptr;
   MosfetLevel1Params* dParams = nullptr;
@@ -156,8 +157,8 @@ static void runSoAKernelOnly(std::size_t count, const char* label) {
   cudaMalloc(&dGm, count * sizeof(double));
   cudaMalloc(&dGds, count * sizeof(double));
 
-  cudaMemcpy(dBiases, biases.data(), count * sizeof(nl_cuda::MosfetBias), cudaMemcpyHostToDevice);
-  cudaMemcpy(dParams, paramsArr.data(), count * sizeof(MosfetLevel1Params),
+  cudaMemcpy(dBiases, BIASES.data(), count * sizeof(nl_cuda::MosfetBias), cudaMemcpyHostToDevice);
+  cudaMemcpy(dParams, PARAMS_ARR.data(), count * sizeof(MosfetLevel1Params),
              cudaMemcpyHostToDevice);
 
   std::printf("\n=== MosfetBatchCuda SoA KernelOnly %s (N=%zu) ===\n", label, count);
@@ -166,13 +167,12 @@ static void runSoAKernelOnly(std::size_t count, const char* label) {
     nl_cuda::evalStampBatchSoA(dBiases, dParams, dId, dGm, dGds, count, s);
   };
 
-  const auto cfg = nl_cuda::getLaunchConfig(count);
-  const dim3 grid(static_cast<unsigned>(cfg.gridSize), 1, 1);
-  const dim3 block(static_cast<unsigned>(cfg.blockSize), 1, 1);
+  const auto CFG = nl_cuda::getLaunchConfig(count);
+  const dim3 grid(static_cast<unsigned>(CFG.gridSize), 1, 1);
+  const dim3 block(static_cast<unsigned>(CFG.blockSize), 1, 1);
 
   perf.cudaWarmup(kernelFn);
-  auto result =
-      perf.cudaKernel(kernelFn, "mosfet_soa").withLaunchConfig(grid, block).measure();
+  auto result = perf.cudaKernel(kernelFn, "mosfet_soa").withLaunchConfig(grid, block).measure();
 
   std::printf("  kernel: %.2f us  (%.2f ns/device)  occupancy=%.0f%%\n",
               result.stats.kernelTimeMedianUs,
@@ -216,8 +216,8 @@ static void runFusedStamp(std::size_t count, std::size_t netCount, const char* l
   }
   UB_PERF_GPU_GUARD(perf);
 
-  const auto biases = buildBiases(count);
-  const auto paramsArr = buildParams(count);
+  const auto BIASES = buildBiases(count);
+  const auto PARAMS_ARR = buildParams(count);
 
   // Synthetic net assignment: scatter transistors across netCount-1 nets
   // (net 0 reserved for ground). Matches the real-circuit pattern of
@@ -239,8 +239,8 @@ static void runFusedStamp(std::size_t count, std::size_t netCount, const char* l
   cudaMalloc(&dNets, count * sizeof(nl_cuda::MosfetNets));
   cudaMalloc(&dG, netCount * netCount * sizeof(double));
   cudaMalloc(&dI, netCount * sizeof(double));
-  cudaMemcpy(dBiases, biases.data(), count * sizeof(nl_cuda::MosfetBias), cudaMemcpyHostToDevice);
-  cudaMemcpy(dParams, paramsArr.data(), count * sizeof(MosfetLevel1Params),
+  cudaMemcpy(dBiases, BIASES.data(), count * sizeof(nl_cuda::MosfetBias), cudaMemcpyHostToDevice);
+  cudaMemcpy(dParams, PARAMS_ARR.data(), count * sizeof(MosfetLevel1Params),
              cudaMemcpyHostToDevice);
   cudaMemcpy(dNets, nets.data(), count * sizeof(nl_cuda::MosfetNets), cudaMemcpyHostToDevice);
 
@@ -253,9 +253,9 @@ static void runFusedStamp(std::size_t count, std::size_t netCount, const char* l
     nl_cuda::stampMosfetL1Batch(dBiases, dParams, dNets, dG, dI, count, netCount, 1e-12, s);
   };
 
-  const auto cfg = nl_cuda::getLaunchConfig(count);
-  const dim3 grid(static_cast<unsigned>(cfg.gridSize), 1, 1);
-  const dim3 block(static_cast<unsigned>(cfg.blockSize), 1, 1);
+  const auto CFG = nl_cuda::getLaunchConfig(count);
+  const dim3 grid(static_cast<unsigned>(CFG.gridSize), 1, 1);
+  const dim3 block(static_cast<unsigned>(CFG.blockSize), 1, 1);
 
   perf.cudaWarmup(kernelFn);
   auto result =
@@ -283,12 +283,14 @@ PERF_GPU_TEST(MosfetBatchCudaKernel, FusedStamp_K16) {
 /* ----------------------------- NR Update + Limiter ----------------------------- */
 
 PERF_GPU_TEST(MosfetBatchCudaKernel, NrUpdate_1121) {
-  if (!nl_cuda::available()) GTEST_SKIP() << "CUDA unavailable.";
+  if (!nl_cuda::available())
+    GTEST_SKIP() << "CUDA unavailable.";
   UB_PERF_GPU_GUARD(perf);
 
   constexpr int N = 1121;
   std::vector<double> prev(N, 0.0), next(N);
-  for (int i = 0; i < N; ++i) next[i] = 0.05 * std::sin(0.01 * i);
+  for (int i = 0; i < N; ++i)
+    next[i] = 0.05 * std::sin(0.01 * i);
 
   double *dNewV = nullptr, *dPrevV = nullptr, *dMaxDelta = nullptr;
   cudaMalloc(&dNewV, N * sizeof(double));
@@ -299,13 +301,16 @@ PERF_GPU_TEST(MosfetBatchCudaKernel, NrUpdate_1121) {
 
   std::printf("\n=== MosfetBatchCuda NrUpdate (N=%d) ===\n", N);
 
-  auto kernelFn = [&](cudaStream_t s) { nl_cuda::nrUpdateAndLimit(dNewV, dPrevV, dMaxDelta, N, 5.0, s); };
+  auto kernelFn = [&](cudaStream_t s) {
+    nl_cuda::nrUpdateAndLimit(dNewV, dPrevV, dMaxDelta, N, 5.0, s);
+  };
 
   const dim3 grid(((N + 255) / 256), 1, 1);
   const dim3 block(256, 1, 1);
 
   perf.cudaWarmup(kernelFn);
-  auto result = perf.cudaKernel(kernelFn, "mosfet_nr_update").withLaunchConfig(grid, block).measure();
+  auto result =
+      perf.cudaKernel(kernelFn, "mosfet_nr_update").withLaunchConfig(grid, block).measure();
 
   std::printf("  kernel: %.2f us  occupancy=%.0f%%\n", result.stats.kernelTimeMedianUs,
               result.stats.occupancy.achievedOccupancy * 100.0);
@@ -315,7 +320,8 @@ PERF_GPU_TEST(MosfetBatchCudaKernel, NrUpdate_1121) {
   cudaFree(dMaxDelta);
 }
 
-/* ----------------------------- End-to-End (with declared transfers) ----------------------------- */
+/* ----------------------------- End-to-End (with declared transfers) -----------------------------
+ */
 
 static void runWithTransfers(std::size_t count, bool perDevice, const char* label) {
   if (!nl_cuda::available()) {
@@ -324,8 +330,8 @@ static void runWithTransfers(std::size_t count, bool perDevice, const char* labe
 
   UB_PERF_GPU_GUARD(perf);
 
-  const auto biases = buildBiases(count);
-  const auto paramsArr = buildParams(count);
+  const auto BIASES = buildBiases(count);
+  const auto PARAMS_ARR = buildParams(count);
   const MosfetLevel1Params UNIFORM{.Kp = 5e-3, .Vth = 1.17, .lambda = 0.03, .Vsmooth = 0.1};
 
   nl_cuda::MosfetBias* dBiases = nullptr;
@@ -335,7 +341,7 @@ static void runWithTransfers(std::size_t count, bool perDevice, const char* labe
   cudaMalloc(&dStamps, count * sizeof(nl_cuda::MosfetStamp));
   if (perDevice) {
     cudaMalloc(&dParams, count * sizeof(MosfetLevel1Params));
-    cudaMemcpy(dParams, paramsArr.data(), count * sizeof(MosfetLevel1Params),
+    cudaMemcpy(dParams, PARAMS_ARR.data(), count * sizeof(MosfetLevel1Params),
                cudaMemcpyHostToDevice);
   }
 
@@ -351,18 +357,17 @@ static void runWithTransfers(std::size_t count, bool perDevice, const char* labe
     }
   };
 
-  const auto cfg = nl_cuda::getLaunchConfig(count);
-  const dim3 grid(static_cast<unsigned>(cfg.gridSize), 1, 1);
-  const dim3 block(static_cast<unsigned>(cfg.blockSize), 1, 1);
+  const auto CFG = nl_cuda::getLaunchConfig(count);
+  const dim3 grid(static_cast<unsigned>(CFG.gridSize), 1, 1);
+  const dim3 block(static_cast<unsigned>(CFG.blockSize), 1, 1);
 
   perf.cudaWarmup(kernelFn);
-  auto result = perf.cudaKernel(kernelFn, "mosfet_e2e")
-                    .withLaunchConfig(grid, block)
-                    .withHostToDevice(biases.data(), dBiases,
-                                      count * sizeof(nl_cuda::MosfetBias))
-                    .withDeviceToHost(dStamps, stampsOut.data(),
-                                      count * sizeof(nl_cuda::MosfetStamp))
-                    .measure();
+  auto result =
+      perf.cudaKernel(kernelFn, "mosfet_e2e")
+          .withLaunchConfig(grid, block)
+          .withHostToDevice(BIASES.data(), dBiases, count * sizeof(nl_cuda::MosfetBias))
+          .withDeviceToHost(dStamps, stampsOut.data(), count * sizeof(nl_cuda::MosfetStamp))
+          .measure();
 
   std::printf("  kernel: %.2f us  H2D: %.2f us (%.1f GB/s)  D2H: %.2f us (%.1f GB/s)\n",
               result.stats.kernelTimeMedianUs, result.stats.transfers.h2dTimeUs,
@@ -371,7 +376,8 @@ static void runWithTransfers(std::size_t count, bool perDevice, const char* labe
 
   cudaFree(dBiases);
   cudaFree(dStamps);
-  if (dParams) cudaFree(dParams);
+  if (dParams)
+    cudaFree(dParams);
 }
 
 PERF_GPU_TEST(MosfetBatchCudaE2E, Uniform_2242) { runWithTransfers(2242, false, "Uniform_2242"); }
@@ -409,10 +415,10 @@ PERF_TEST(MosfetStampDriver, NrLoopPattern_4004) {
 
   UB_PERF_GUARD(perf);
 
-  constexpr std::size_t COUNT = 2242;     // Intel 4004 transistor count
-  constexpr int NR_ITERS = 150;           // ~ NR iters per byte (CPU measurement)
-  const auto biasesSource = buildBiases(COUNT);
-  const auto params = buildParams(COUNT);
+  constexpr std::size_t COUNT = 2242; // Intel 4004 transistor count
+  constexpr int NR_ITERS = 150;       // ~ NR iters per byte (CPU measurement)
+  const auto BIASES_SOURCE = buildBiases(COUNT);
+  const auto PARAMS = buildParams(COUNT);
 
   // Pinned host buffers for max PCIe throughput on H2D/D2H. Pageable
   // memory caps at ~5-7 GB/s; pinned hits 25+ GB/s.
@@ -420,11 +426,11 @@ PERF_TEST(MosfetStampDriver, NrLoopPattern_4004) {
   nl_cuda::MosfetStamp* stamps = nullptr;
   cudaMallocHost(&biases, COUNT * sizeof(nl_cuda::MosfetBias));
   cudaMallocHost(&stamps, COUNT * sizeof(nl_cuda::MosfetStamp));
-  std::memcpy(biases, biasesSource.data(), COUNT * sizeof(nl_cuda::MosfetBias));
+  std::memcpy(biases, BIASES_SOURCE.data(), COUNT * sizeof(nl_cuda::MosfetBias));
 
-  // Persistent-buffer GPU driver, params uploaded once.
+  // Persistent-buffer GPU driver, PARAMS uploaded once.
   nl_cuda::MosfetStampDriver driver(COUNT);
-  if (!driver.ready() || !driver.setParams(params.data(), COUNT)) {
+  if (!driver.ready() || !driver.setParams(PARAMS.data(), COUNT)) {
     cudaFreeHost(biases);
     cudaFreeHost(stamps);
     GTEST_SKIP() << "Driver init failed.";
@@ -443,10 +449,10 @@ PERF_TEST(MosfetStampDriver, NrLoopPattern_4004) {
   auto cpuLoop = [&] {
     for (int it = 0; it < NR_ITERS; ++it) {
       for (std::size_t i = 0; i < COUNT; ++i) {
-        const auto sv = MosfetLevel1::stampValues(biases[i].vgs, biases[i].vds, params[i]);
-        cpuStamps[i].id = sv.id;
-        cpuStamps[i].gm = sv.gm;
-        cpuStamps[i].gds = sv.gds;
+        const auto SV = MosfetLevel1::stampValues(biases[i].vgs, biases[i].vds, PARAMS[i]);
+        cpuStamps[i].id = SV.id;
+        cpuStamps[i].gm = SV.gm;
+        cpuStamps[i].gds = SV.gds;
       }
     }
   };

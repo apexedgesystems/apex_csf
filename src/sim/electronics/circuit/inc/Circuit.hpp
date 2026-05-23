@@ -132,7 +132,9 @@ public:
    * @brief Get the ground net.
    * @return NetID 0 (always ground).
    */
-  [[nodiscard]] static constexpr sim::electronics::algorithms::mna::NetID ground() noexcept { return 0; }
+  [[nodiscard]] static constexpr sim::electronics::algorithms::mna::NetID ground() noexcept {
+    return 0;
+  }
 
   /**
    * @brief Get the current net count (including ground).
@@ -145,7 +147,8 @@ public:
    * @param id Net ID to query.
    * @return Net name, or empty string if unnamed or out of range.
    */
-  [[nodiscard]] std::string_view netName(sim::electronics::algorithms::mna::NetID id) const noexcept {
+  [[nodiscard]] std::string_view
+  netName(sim::electronics::algorithms::mna::NetID id) const noexcept {
     if (id < netNames_.size()) {
       return netNames_[id];
     }
@@ -189,8 +192,8 @@ public:
    *
    * @note NOT RT-safe: may reallocate companion storage.
    */
-  std::size_t addCapacitor(sim::electronics::algorithms::mna::NetID pos, sim::electronics::algorithms::mna::NetID neg,
-                           double farads) {
+  std::size_t addCapacitor(sim::electronics::algorithms::mna::NetID pos,
+                           sim::electronics::algorithms::mna::NetID neg, double farads) {
     return companions_.addCapacitor(pos, neg, farads);
   }
 
@@ -203,8 +206,8 @@ public:
    *
    * @note NOT RT-safe: may reallocate companion storage.
    */
-  std::size_t addInductor(sim::electronics::algorithms::mna::NetID pos, sim::electronics::algorithms::mna::NetID neg,
-                          double henries) {
+  std::size_t addInductor(sim::electronics::algorithms::mna::NetID pos,
+                          sim::electronics::algorithms::mna::NetID neg, double henries) {
     return companions_.addInductor(pos, neg, henries);
   }
 
@@ -349,11 +352,11 @@ public:
 
 private:
   sim::electronics::algorithms::mna::NetID nextNetId_ = 1; ///< Next available net ID (0 is ground).
-  std::vector<std::string> netNames_;          ///< Optional net names for diagnostics.
-  std::vector<StampFn> stamps_;                ///< Registered stamp functions.
-  CompanionSet companions_;                    ///< Reactive element companions.
-  std::unique_ptr<TransientSolver> solver_;    ///< Underlying solver (created by build()).
-  bool built_ = false;                         ///< True after build() called.
+  std::vector<std::string> netNames_;                      ///< Optional net names for diagnostics.
+  std::vector<StampFn> stamps_;                            ///< Registered stamp functions.
+  CompanionSet companions_;                                ///< Reactive element companions.
+  std::unique_ptr<TransientSolver> solver_; ///< Underlying solver (created by build()).
+  bool built_ = false;                      ///< True after build() called.
 };
 
 } // namespace sim::electronics::circuit

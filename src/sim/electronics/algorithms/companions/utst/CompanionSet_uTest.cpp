@@ -33,11 +33,9 @@ double g(const MnaSystem& mna, std::size_t row, std::size_t col) {
   return mna.conductanceMatrix()[row * mna.netCount() + col];
 }
 
-double rhs(const MnaSystem& mna, std::size_t row) {
-  return mna.currentVector()[row];
-}
+double rhs(const MnaSystem& mna, std::size_t row) { return mna.currentVector()[row]; }
 
-}
+} // namespace
 
 /* ----------------------------- Default Construction ----------------------------- */
 
@@ -110,7 +108,8 @@ TEST(CompanionSetTest, StampAllStampsInductorBackwardEuler) {
   EXPECT_NEAR(rhs(mna, 1), -0.05, TOL);
 }
 
-/* ----------------------------- stampConductanceAll / stampCurrentAll ----------------------------- */
+/* ----------------------------- stampConductanceAll / stampCurrentAll -----------------------------
+ */
 
 /** @test Conductance-only and current-only stamps reconstruct full stamp */
 TEST(CompanionSetTest, ConductanceAndCurrentDecompositionMatchesFullStamp) {

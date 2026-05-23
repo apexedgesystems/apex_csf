@@ -25,19 +25,20 @@ constexpr int BLOCK_SIZE = 256;
 /**
  * @brief One thread per device. Params passed by value in a register.
  */
-__global__ __launch_bounds__(256, 6) void kStampBatchUniform(
-    const MosfetBias* __restrict__ biases, MosfetLevel1Params params,
-    MosfetStamp* __restrict__ stamps, int count) {
+__global__ __launch_bounds__(256, 6) void kStampBatchUniform(const MosfetBias* __restrict__ biases,
+                                                             MosfetLevel1Params params,
+                                                             MosfetStamp* __restrict__ stamps,
+                                                             int count) {
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= count) {
     return;
   }
-  const MosfetBias b = biases[i];
-  const auto sv = MosfetLevel1::stampValues(b.vgs, b.vds, params);
+  const MosfetBias B = biases[i];
+  const auto SV = MosfetLevel1::stampValues(B.vgs, B.vds, params);
   MosfetStamp out;
-  out.id = sv.id;
-  out.gm = sv.gm;
-  out.gds = sv.gds;
+  out.id = SV.id;
+  out.gm = SV.gm;
+  out.gds = SV.gds;
   stamps[i] = out;
 }
 
@@ -46,20 +47,21 @@ __global__ __launch_bounds__(256, 6) void kStampBatchUniform(
 /**
  * @brief One thread per device. Params read from global memory per thread.
  */
-__global__ __launch_bounds__(256, 6) void kStampBatchPerDevice(
-    const MosfetBias* __restrict__ biases, const MosfetLevel1Params* __restrict__ params,
-    MosfetStamp* __restrict__ stamps, int count) {
+__global__
+__launch_bounds__(256, 6) void kStampBatchPerDevice(const MosfetBias* __restrict__ biases,
+                                                    const MosfetLevel1Params* __restrict__ params,
+                                                    MosfetStamp* __restrict__ stamps, int count) {
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= count) {
     return;
   }
-  const MosfetBias b = biases[i];
-  const MosfetLevel1Params p = params[i]; // coalesced 32B / thread
-  const auto sv = MosfetLevel1::stampValues(b.vgs, b.vds, p);
+  const MosfetBias B = biases[i];
+  const MosfetLevel1Params P = params[i]; // coalesced 32B / thread
+  const auto SV = MosfetLevel1::stampValues(B.vgs, B.vds, P);
   MosfetStamp out;
-  out.id = sv.id;
-  out.gm = sv.gm;
-  out.gds = sv.gds;
+  out.id = SV.id;
+  out.gm = SV.gm;
+  out.gds = SV.gds;
   stamps[i] = out;
 }
 
@@ -77,12 +79,12 @@ __global__ __launch_bounds__(256, 6) void kStampBatchPerDeviceSoA(
   if (i >= count) {
     return;
   }
-  const MosfetBias b = biases[i];
-  const MosfetLevel1Params p = params[i];
-  const auto sv = MosfetLevel1::stampValues(b.vgs, b.vds, p);
-  idOut[i] = sv.id;
-  gmOut[i] = sv.gm;
-  gdsOut[i] = sv.gds;
+  const MosfetBias B = biases[i];
+  const MosfetLevel1Params P = params[i];
+  const auto SV = MosfetLevel1::stampValues(B.vgs, B.vds, P);
+  idOut[i] = SV.id;
+  gmOut[i] = SV.gm;
+  gdsOut[i] = SV.gds;
 }
 
 /* ----------------------------- Fused Stamp + Scatter ----------------------------- */
@@ -113,78 +115,78 @@ __device__ __forceinline__ void atomicAddIfRow(double* I, int row, int netCount,
 
 __global__ __launch_bounds__(256, 6) void kStampMosfetL1Batch(
     const MosfetBias* __restrict__ biases, const MosfetLevel1Params* __restrict__ params,
-    const MosfetNets* __restrict__ nets, double* __restrict__ G, double* __restrict__ I,
-    int count, int netCount, double gmin) {
+    const MosfetNets* __restrict__ nets, double* __restrict__ G, double* __restrict__ I, int count,
+    int netCount, double gmin) {
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= count) {
     return;
   }
 
-  const MosfetBias b = biases[i];
-  const MosfetLevel1Params p = params[i];
+  const MosfetBias B = biases[i];
+  const MosfetLevel1Params P = params[i];
   const MosfetNets n = nets[i];
 
   // SPICE mode selection by VDS sign. VSG / VSD are already the
   // NMOS-mirror-convention inputs the CPU path passes in (bias is
   // computed by the host before the launch).
-  const double vsg = b.vgs; // Here: vgs == VSG in the PMOS mirror.
-  const double vsd = b.vds; // And: vds == VSD.
+  const double VSG = B.vgs; // Here: vgs == VSG in the PMOS mirror.
+  const double VSD = B.vds; // And: vds == VSD.
 
   int xnrm, xrev;
   double evalVgs, evalVds;
-  if (vsd >= 0.0) {
+  if (VSD >= 0.0) {
     xnrm = 1;
     xrev = 0;
-    evalVgs = vsg;
-    evalVds = vsd;
+    evalVgs = VSG;
+    evalVds = VSD;
   } else {
     xnrm = 0;
     xrev = 1;
-    evalVgs = vsg - vsd; // VD - VG = VSG - VSD (in the mirror frame).
-    evalVds = -vsd;
+    evalVgs = VSG - VSD; // VD - VG = VSG - VSD (in the mirror frame).
+    evalVds = -VSD;
   }
 
-  const double vgsEval = fmax(evalVgs, 0.0);
-  const double vdsEval = fmax(evalVds, 0.0);
-  const auto sv = MosfetLevel1::stampValues(vgsEval, vdsEval, p);
-  const double id = sv.id;
-  const double gm = sv.gm;
-  const double gdsDev = sv.gds;
-  const double gdsStamp = fmax(gdsDev, gmin);
+  const double VGS_EVAL = fmax(evalVgs, 0.0);
+  const double VDS_EVAL = fmax(evalVds, 0.0);
+  const auto SV = MosfetLevel1::stampValues(VGS_EVAL, VDS_EVAL, P);
+  const double ID = SV.id;
+  const double GM = SV.gm;
+  const double GDS_DEV = SV.gds;
+  const double GDS_STAMP = fmax(GDS_DEV, gmin);
 
-  // Compensation current: CPU uses cdreq = -(id - gds*VSD - gm*VSG) for
-  // xnrm==1, else cdreq = (id - gds*(-VSD) - gm*(VD-VG)). Match exactly.
+  // Compensation current: CPU uses cdreq = -(ID - gds*VSD - GM*VSG) for
+  // xnrm==1, else cdreq = (ID - gds*(-VSD) - GM*(VD-VG)). Match exactly.
   double cdreq;
   if (xnrm == 1) {
-    cdreq = -(id - gdsDev * vsd - gm * vsg);
+    cdreq = -(ID - GDS_DEV * VSD - GM * VSG);
   } else {
-    cdreq = (id - gdsDev * (-vsd) - gm * (vsg - vsd));
+    cdreq = (ID - GDS_DEV * (-VSD) - GM * (VSG - VSD));
   }
 
-  const int d = n.drain;
-  const int g = n.gate;
-  const int s = n.source;
+  const int D = n.drain;
+  const int GATE = n.gate;
+  const int S = n.source;
 
-  // Symmetric gds (matches addConductance(d, s, gdsStamp)).
-  atomicAddIfNode(G, d, d, netCount, gdsStamp);
-  atomicAddIfNode(G, s, s, netCount, gdsStamp);
-  atomicAddIfNode(G, d, s, netCount, -gdsStamp);
-  atomicAddIfNode(G, s, d, netCount, -gdsStamp);
+  // Symmetric gds (matches addConductance(D, S, GDS_STAMP)).
+  atomicAddIfNode(G, D, D, netCount, GDS_STAMP);
+  atomicAddIfNode(G, S, S, netCount, GDS_STAMP);
+  atomicAddIfNode(G, D, S, netCount, -GDS_STAMP);
+  atomicAddIfNode(G, S, D, netCount, -GDS_STAMP);
 
-  // gm coupling, xnrm/xrev distribution.
-  const double xrevGm = xrev * gm;
-  const double xnrmGm = xnrm * gm;
-  const double xDelta = (xnrm - xrev) * gm;
-  atomicAddIfNode(G, d, d, netCount, xrevGm);
-  atomicAddIfNode(G, s, s, netCount, xnrmGm);
-  atomicAddIfNode(G, d, g, netCount, xDelta);
-  atomicAddIfNode(G, d, s, netCount, -xnrmGm);
-  atomicAddIfNode(G, s, g, netCount, -xDelta);
-  atomicAddIfNode(G, s, d, netCount, -xrevGm);
+  // GM coupling, xnrm/xrev distribution.
+  const double XREV_GM = xrev * GM;
+  const double XNRM_GM = xnrm * GM;
+  const double X_DELTA = (xnrm - xrev) * GM;
+  atomicAddIfNode(G, D, D, netCount, XREV_GM);
+  atomicAddIfNode(G, S, S, netCount, XNRM_GM);
+  atomicAddIfNode(G, D, GATE, netCount, X_DELTA);
+  atomicAddIfNode(G, D, S, netCount, -XNRM_GM);
+  atomicAddIfNode(G, S, GATE, netCount, -X_DELTA);
+  atomicAddIfNode(G, S, D, netCount, -XREV_GM);
 
-  // RHS: I[drain] -= cdreq ; I[source] += cdreq (matches addCurrent(d, s, -cdreq)).
-  atomicAddIfRow(I, d, netCount, -cdreq);
-  atomicAddIfRow(I, s, netCount, cdreq);
+  // RHS: I[drain] -= cdreq ; I[source] += cdreq (matches addCurrent(D, S, -cdreq)).
+  atomicAddIfRow(I, D, netCount, -cdreq);
+  atomicAddIfRow(I, S, netCount, cdreq);
 }
 
 /* ----------------------------- NR update + convergence reduction ----------------------------- */
@@ -202,34 +204,36 @@ __device__ __forceinline__ void atomicMaxDouble(double* addr, double value) {
   do {
     expected = oldBits;
     double current = __longlong_as_double(static_cast<long long>(expected));
-    if (current >= value) return;
-    unsigned long long desired =
-        static_cast<unsigned long long>(__double_as_longlong(value));
+    if (current >= value)
+      return;
+    unsigned long long desired = static_cast<unsigned long long>(__double_as_longlong(value));
     oldBits = atomicCAS(asUll, expected, desired);
   } while (oldBits != expected);
 }
 
-__global__ __launch_bounds__(256, 6) void kNrMaxDelta(
-    const double* __restrict__ newV, const double* __restrict__ prevV, double* maxDelta, int n) {
+__global__ __launch_bounds__(256, 6) void kNrMaxDelta(const double* __restrict__ newV,
+                                                      const double* __restrict__ prevV,
+                                                      double* maxDelta, int n) {
   extern __shared__ double sdata[];
-  const int tid = threadIdx.x;
-  const int i = blockIdx.x * blockDim.x + tid;
+  const int TID = threadIdx.x;
+  const int i = blockIdx.x * blockDim.x + TID;
 
   double my = 0.0;
   if (i < n) {
     my = fabs(newV[i] - prevV[i]);
   }
-  sdata[tid] = my;
+  sdata[TID] = my;
   __syncthreads();
 
   for (int offset = blockDim.x / 2; offset > 0; offset >>= 1) {
-    if (tid < offset) {
-      double other = sdata[tid + offset];
-      if (other > sdata[tid]) sdata[tid] = other;
+    if (TID < offset) {
+      double other = sdata[TID + offset];
+      if (other > sdata[TID])
+        sdata[TID] = other;
     }
     __syncthreads();
   }
-  if (tid == 0) {
+  if (TID == 0) {
     atomicMaxDouble(maxDelta, sdata[0]);
   }
 }
@@ -245,11 +249,12 @@ __global__ __launch_bounds__(256, 6) void kNrMaxDelta(
 __global__ void kNrApplyLimit(const double* __restrict__ newV, double* prevV,
                               const double* maxDelta, int n, double limit) {
   const int i = blockIdx.x * blockDim.x + threadIdx.x;
-  if (i >= n) return;
-  const double m = *maxDelta;
-  const double scale = (m > limit) ? (limit / m) : 1.0;
-  const double delta = newV[i] - prevV[i];
-  prevV[i] += scale * delta;
+  if (i >= n)
+    return;
+  const double M = *maxDelta;
+  const double SCALE = (M > limit) ? (limit / M) : 1.0;
+  const double DELTA = newV[i] - prevV[i];
+  prevV[i] += SCALE * DELTA;
 }
 
 } // namespace
@@ -261,11 +266,10 @@ bool evalStampBatchUniform(const MosfetBias* dBiases, const MosfetLevel1Params& 
   if (dBiases == nullptr || dStamps == nullptr || count == 0) {
     return false;
   }
-  const int threads = BLOCK_SIZE;
-  const int blocks = static_cast<int>((count + threads - 1) / threads);
-  const cudaStream_t s = static_cast<cudaStream_t>(stream);
-  kStampBatchUniform<<<blocks, threads, 0, s>>>(dBiases, params, dStamps,
-                                                static_cast<int>(count));
+  const int THREADS = BLOCK_SIZE;
+  const int BLOCKS = static_cast<int>((count + THREADS - 1) / THREADS);
+  const cudaStream_t S = static_cast<cudaStream_t>(stream);
+  kStampBatchUniform<<<BLOCKS, THREADS, 0, S>>>(dBiases, params, dStamps, static_cast<int>(count));
   return cudaPeekAtLastError() == cudaSuccess;
 }
 
@@ -274,25 +278,24 @@ bool evalStampBatch(const MosfetBias* dBiases, const MosfetLevel1Params* dParams
   if (dBiases == nullptr || dParams == nullptr || dStamps == nullptr || count == 0) {
     return false;
   }
-  const int threads = BLOCK_SIZE;
-  const int blocks = static_cast<int>((count + threads - 1) / threads);
-  const cudaStream_t s = static_cast<cudaStream_t>(stream);
-  kStampBatchPerDevice<<<blocks, threads, 0, s>>>(dBiases, dParams, dStamps,
+  const int THREADS = BLOCK_SIZE;
+  const int BLOCKS = static_cast<int>((count + THREADS - 1) / THREADS);
+  const cudaStream_t S = static_cast<cudaStream_t>(stream);
+  kStampBatchPerDevice<<<BLOCKS, THREADS, 0, S>>>(dBiases, dParams, dStamps,
                                                   static_cast<int>(count));
   return cudaPeekAtLastError() == cudaSuccess;
 }
 
-bool evalStampBatchSoA(const MosfetBias* dBiases, const MosfetLevel1Params* dParams,
-                       double* dId, double* dGm, double* dGds, std::size_t count,
-                       void* stream) noexcept {
+bool evalStampBatchSoA(const MosfetBias* dBiases, const MosfetLevel1Params* dParams, double* dId,
+                       double* dGm, double* dGds, std::size_t count, void* stream) noexcept {
   if (dBiases == nullptr || dParams == nullptr || dId == nullptr || dGm == nullptr ||
       dGds == nullptr || count == 0) {
     return false;
   }
-  const int threads = BLOCK_SIZE;
-  const int blocks = static_cast<int>((count + threads - 1) / threads);
-  const cudaStream_t s = static_cast<cudaStream_t>(stream);
-  kStampBatchPerDeviceSoA<<<blocks, threads, 0, s>>>(dBiases, dParams, dId, dGm, dGds,
+  const int THREADS = BLOCK_SIZE;
+  const int BLOCKS = static_cast<int>((count + THREADS - 1) / THREADS);
+  const cudaStream_t S = static_cast<cudaStream_t>(stream);
+  kStampBatchPerDeviceSoA<<<BLOCKS, THREADS, 0, S>>>(dBiases, dParams, dId, dGm, dGds,
                                                      static_cast<int>(count));
   return cudaPeekAtLastError() == cudaSuccess;
 }
@@ -304,12 +307,11 @@ bool stampMosfetL1Batch(const MosfetBias* dBiases, const MosfetLevel1Params* dPa
       dI == nullptr || count == 0 || netCount == 0) {
     return false;
   }
-  const int threads = BLOCK_SIZE;
-  const int blocks = static_cast<int>((count + threads - 1) / threads);
-  const cudaStream_t s = static_cast<cudaStream_t>(stream);
-  kStampMosfetL1Batch<<<blocks, threads, 0, s>>>(dBiases, dParams, dNets, dG, dI,
-                                                 static_cast<int>(count),
-                                                 static_cast<int>(netCount), gmin);
+  const int THREADS = BLOCK_SIZE;
+  const int BLOCKS = static_cast<int>((count + THREADS - 1) / THREADS);
+  const cudaStream_t S = static_cast<cudaStream_t>(stream);
+  kStampMosfetL1Batch<<<BLOCKS, THREADS, 0, S>>>(
+      dBiases, dParams, dNets, dG, dI, static_cast<int>(count), static_cast<int>(netCount), gmin);
   return cudaPeekAtLastError() == cudaSuccess;
 }
 
@@ -318,17 +320,19 @@ bool nrUpdateAndLimit(const double* dNewV, double* dPrevV, double* dMaxDelta, st
   if (dNewV == nullptr || dPrevV == nullptr || dMaxDelta == nullptr || n == 0) {
     return false;
   }
-  const int threads = BLOCK_SIZE;
-  const int blocks = static_cast<int>((n + threads - 1) / threads);
-  const cudaStream_t s = static_cast<cudaStream_t>(stream);
+  const int THREADS = BLOCK_SIZE;
+  const int BLOCKS = static_cast<int>((n + THREADS - 1) / THREADS);
+  const cudaStream_t S = static_cast<cudaStream_t>(stream);
 
   // Reset max-delta accumulator, then reduce.
-  if (cudaMemsetAsync(dMaxDelta, 0, sizeof(double), s) != cudaSuccess) return false;
-  kNrMaxDelta<<<blocks, threads, threads * sizeof(double), s>>>(dNewV, dPrevV, dMaxDelta,
+  if (cudaMemsetAsync(dMaxDelta, 0, sizeof(double), S) != cudaSuccess)
+    return false;
+  kNrMaxDelta<<<BLOCKS, THREADS, THREADS * sizeof(double), S>>>(dNewV, dPrevV, dMaxDelta,
                                                                 static_cast<int>(n));
-  if (cudaPeekAtLastError() != cudaSuccess) return false;
+  if (cudaPeekAtLastError() != cudaSuccess)
+    return false;
 
-  kNrApplyLimit<<<blocks, threads, 0, s>>>(dNewV, dPrevV, dMaxDelta, static_cast<int>(n), limit);
+  kNrApplyLimit<<<BLOCKS, THREADS, 0, S>>>(dNewV, dPrevV, dMaxDelta, static_cast<int>(n), limit);
   return cudaPeekAtLastError() == cudaSuccess;
 }
 
@@ -366,9 +370,12 @@ MosfetStampDriver::MosfetStampDriver(std::size_t maxCount) noexcept : maxCount_(
 }
 
 MosfetStampDriver::~MosfetStampDriver() noexcept {
-  if (dBiases_ != nullptr) cudaFree(dBiases_);
-  if (dParams_ != nullptr) cudaFree(dParams_);
-  if (dStamps_ != nullptr) cudaFree(dStamps_);
+  if (dBiases_ != nullptr)
+    cudaFree(dBiases_);
+  if (dParams_ != nullptr)
+    cudaFree(dParams_);
+  if (dStamps_ != nullptr)
+    cudaFree(dStamps_);
 }
 
 bool MosfetStampDriver::ready() const noexcept {

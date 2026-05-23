@@ -9,9 +9,9 @@
 
 #include <cmath>
 
-using sim::electronics::devices::linear::ResistorModel;
 using sim::electronics::algorithms::mna::MnaSystem;
 using sim::electronics::algorithms::mna::MnaSystemSparse;
+using sim::electronics::devices::linear::ResistorModel;
 
 /* ----------------------------- Helper Functions ----------------------------- */
 

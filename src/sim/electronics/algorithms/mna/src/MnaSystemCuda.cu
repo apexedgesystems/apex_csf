@@ -19,20 +19,17 @@ namespace sim::electronics::algorithms::mna::cuda {
 bool MnaCudaWorkspace::prepare(std::size_t dim) noexcept {
 #if COMPAT_HAVE_CUSOLVER
   if (initialized && dim <= maxDim) {
-    return true; // Already prepared for this size
+    return true;
   }
 
-  // Release any existing allocations
   release();
 
-  // Create cuSOLVER handle
   cusolverDnHandle_t handle = nullptr;
   if (cusolverDnCreate(&handle) != CUSOLVER_STATUS_SUCCESS) {
     return false;
   }
   solverHandle = handle;
 
-  // Allocate device memory
   std::size_t matrixBytes = dim * dim * sizeof(double);
   std::size_t vectorBytes = dim * sizeof(double);
   std::size_t pivotBytes = dim * sizeof(int);
@@ -123,7 +120,6 @@ bool solveCuda(MnaCudaWorkspace& ws, const double* A, double* b, std::size_t dim
   std::size_t matrixBytes = dim * dim * sizeof(double);
   std::size_t vectorBytes = dim * sizeof(double);
 
-  // Copy matrix and RHS to device
   if (cudaMemcpy(ws.dA, A, matrixBytes, cudaMemcpyHostToDevice) != cudaSuccess) {
     return false;
   }
@@ -131,34 +127,30 @@ bool solveCuda(MnaCudaWorkspace& ws, const double* A, double* b, std::size_t dim
     return false;
   }
 
-  // LU factorization
   if (cusolverDnDgetrf(handle, n, n, static_cast<double*>(ws.dA), n, static_cast<double*>(ws.dWork),
                        ws.dIpiv, static_cast<int*>(ws.dInfo)) != CUSOLVER_STATUS_SUCCESS) {
     return false;
   }
 
-  // Check for singular matrix
   int info = 0;
   if (cudaMemcpy(&info, ws.dInfo, sizeof(int), cudaMemcpyDeviceToHost) != cudaSuccess) {
     return false;
   }
   if (info != 0) {
-    return false; // Singular matrix
-  }
-
-  // Back-substitution
-  // Use CUBLAS_OP_T because the caller provides row-major A, but cuSOLVER
-  // interprets flat memory as column-major. Row-major A stored flat equals
-  // column-major A^T, so dgetrf factorized A^T. Using CUBLAS_OP_T in dgetrs
-  // solves (A^T)^T * x = A * x = b, which is the correct system.
-  if (cusolverDnDgetrs(handle, CUBLAS_OP_T, n,
-                       1, // One RHS
-                       static_cast<const double*>(ws.dA), n, ws.dIpiv, static_cast<double*>(ws.db),
-                       n, static_cast<int*>(ws.dInfo)) != CUSOLVER_STATUS_SUCCESS) {
     return false;
   }
 
-  // Copy solution back to host
+  // CUBLAS_OP_T is required because the caller hands us a row-major A, but
+  // cuSOLVER treats flat memory as column-major. Row-major A laid out flat is
+  // the same as column-major A^T, so dgetrf factorized A^T; CUBLAS_OP_T in
+  // dgetrs therefore solves A * x = b as intended.
+  if (cusolverDnDgetrs(handle, CUBLAS_OP_T, n,
+                       /*nrhs=*/1, static_cast<const double*>(ws.dA), n, ws.dIpiv,
+                       static_cast<double*>(ws.db), n,
+                       static_cast<int*>(ws.dInfo)) != CUSOLVER_STATUS_SUCCESS) {
+    return false;
+  }
+
   if (cudaMemcpy(b, ws.db, vectorBytes, cudaMemcpyDeviceToHost) != cudaSuccess) {
     return false;
   }
@@ -183,13 +175,11 @@ bool solveCudaDeviceResident(MnaCudaWorkspace& ws, double* dA, double* dB,
   cusolverDnHandle_t handle = static_cast<cusolverDnHandle_t>(ws.solverHandle);
   int n = static_cast<int>(dim);
 
-  // LU factorize dA in place.
   if (cusolverDnDgetrf(handle, n, n, dA, n, static_cast<double*>(ws.dWork), ws.dIpiv,
                        static_cast<int*>(ws.dInfo)) != CUSOLVER_STATUS_SUCCESS) {
     return false;
   }
 
-  // Check for singular matrix.
   int info = 0;
   if (cudaMemcpy(&info, ws.dInfo, sizeof(int), cudaMemcpyDeviceToHost) != cudaSuccess) {
     return false;
@@ -198,7 +188,8 @@ bool solveCudaDeviceResident(MnaCudaWorkspace& ws, double* dA, double* dB,
     return false;
   }
 
-  // Back-substitute (CUBLAS_OP_T to match row-major convention).
+  // CUBLAS_OP_T compensates for the row-major / column-major mismatch (see
+  // solveCuda above for the full derivation).
   if (cusolverDnDgetrs(handle, CUBLAS_OP_T, n, 1, dA, n, ws.dIpiv, dB, n,
                        static_cast<int*>(ws.dInfo)) != CUSOLVER_STATUS_SUCCESS) {
     return false;
@@ -217,8 +208,8 @@ bool solveCudaDeviceResident(MnaCudaWorkspace& ws, double* dA, double* dB,
 bool solveBatchCuda(MnaCudaWorkspace& ws, const double* As, double* bs, std::size_t dim,
                     std::size_t batchSize) noexcept {
 #if COMPAT_HAVE_CUSOLVER
-  // For now, solve each system sequentially on GPU
-  // Future optimization: use cuSOLVER batch APIs or custom kernels
+  // Sequential per-system dispatch on a shared workspace. Specialized batch
+  // kernels live in MnaBatchCuda for small fixed-size systems.
   std::size_t matrixSize = dim * dim;
   std::size_t vectorSize = dim;
 

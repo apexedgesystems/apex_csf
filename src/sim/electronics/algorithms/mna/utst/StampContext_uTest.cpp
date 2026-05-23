@@ -98,8 +98,10 @@ TEST(StampContextTest, ClearResetsAllState) {
   ctx.stampVoltageSource(2, 0, 1.0);
 
   ctx.clear();
-  for (const double V : ctx.g()) EXPECT_NEAR(V, 0.0, STAMP_TOL);
-  for (const double V : ctx.i()) EXPECT_NEAR(V, 0.0, STAMP_TOL);
+  for (const double V : ctx.g())
+    EXPECT_NEAR(V, 0.0, STAMP_TOL);
+  for (const double V : ctx.i())
+    EXPECT_NEAR(V, 0.0, STAMP_TOL);
   EXPECT_TRUE(ctx.voltageSources().empty());
 }
 

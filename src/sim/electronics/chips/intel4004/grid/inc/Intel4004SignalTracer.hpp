@@ -34,11 +34,11 @@ namespace sim::electronics::chips::intel4004 {
 /* ----------------------------- TraceNode ----------------------------- */
 
 struct TraceNode {
-  std::string name;             ///< Net name.
-  algorithms::mna::NetID netId = 0;         ///< Internal net ID.
-  int depth = 0;                ///< Hops from starting net.
-  std::string connection;       ///< How we got here (e.g., "via M123 gate").
-  std::vector<double> voltages; ///< Voltage at each snapshot.
+  std::string name;                 ///< Net name.
+  algorithms::mna::NetID netId = 0; ///< Internal net ID.
+  int depth = 0;                    ///< Hops from starting net.
+  std::string connection;           ///< How we got here (e.g., "via M123 gate").
+  std::vector<double> voltages;     ///< Voltage at each snapshot.
 };
 
 /* ----------------------------- Intel4004SignalTracer ----------------------------- */
@@ -94,7 +94,7 @@ struct Intel4004SignalTracer {
 
       // Find all transistors connected to this net
       for (std::size_t ti = 0; ti < grid_.transistors_.size(); ++ti) {
-        const auto& t = grid_.transistors_[ti];
+        const auto& T = grid_.transistors_[ti];
         std::string mName = "M" + std::to_string(ti);
 
         // Check each terminal
@@ -114,17 +114,17 @@ struct Intel4004SignalTracer {
           bfs.push({neighbor, depth + 1});
         };
 
-        if (t.drain == currentNet) {
-          tryAdd(t.source, mName + " D->S");
-          tryAdd(t.gate, mName + " D->G");
+        if (T.drain == currentNet) {
+          tryAdd(T.source, mName + " D->S");
+          tryAdd(T.gate, mName + " D->G");
         }
-        if (t.source == currentNet) {
-          tryAdd(t.drain, mName + " S->D");
-          tryAdd(t.gate, mName + " S->G");
+        if (T.source == currentNet) {
+          tryAdd(T.drain, mName + " S->D");
+          tryAdd(T.gate, mName + " S->G");
         }
-        if (t.gate == currentNet) {
-          tryAdd(t.drain, mName + " G->D");
-          tryAdd(t.source, mName + " G->S");
+        if (T.gate == currentNet) {
+          tryAdd(T.drain, mName + " G->D");
+          tryAdd(T.source, mName + " G->S");
         }
       }
     }
