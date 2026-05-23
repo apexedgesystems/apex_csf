@@ -1,19 +1,10 @@
 /**
  * @file Intel4004GridLevel1Cuda.cu
- * @brief Device-state container and scatter-table populator for the
- *        GPU-resident Intel 4004 L1 NR loop.
- *
- * The constructor and destructor manage the persistent device state.
- * `populateScatterTable` builds the per-transistor classification used by
- * the GPU stamp kernels. The `simulateByte` entry point reports
- * unsupported (returns false); callers fall back to the CPU
- * `Intel4004GridLevel1::simulateLevel1` path.
+ * @brief Scatter-table populator for the GPU Intel 4004 L1 path.
  */
 
 #include "src/sim/electronics/chips/intel4004/grid/inc/Intel4004GridLevel1Cuda.cuh"
 #include "src/sim/electronics/chips/intel4004/grid/inc/Intel4004Components.hpp"
-
-#include <cuda_runtime.h>
 
 namespace sim::electronics::chips::intel4004::cuda {
 
@@ -81,54 +72,6 @@ Phase4ScatterTable populateScatterTable(const Intel4004GridLevel1& grid) {
   }
 
   return out;
-}
-
-Intel4004GridLevel1Cuda::Intel4004GridLevel1Cuda(Intel4004GridLevel1& /*grid*/) noexcept {
-  state_.ready = false;
-}
-
-Intel4004GridLevel1Cuda::~Intel4004GridLevel1Cuda() noexcept {
-  if (state_.dA != nullptr)
-    cudaFree(state_.dA);
-  if (state_.db != nullptr)
-    cudaFree(state_.db);
-  if (state_.dX != nullptr)
-    cudaFree(state_.dX);
-  if (state_.dPrevV != nullptr)
-    cudaFree(state_.dPrevV);
-  if (state_.dBiases != nullptr)
-    cudaFree(state_.dBiases);
-  if (state_.dParams != nullptr)
-    cudaFree(state_.dParams);
-  if (state_.dId != nullptr)
-    cudaFree(state_.dId);
-  if (state_.dGm != nullptr)
-    cudaFree(state_.dGm);
-  if (state_.dGds != nullptr)
-    cudaFree(state_.dGds);
-  if (state_.dScatterGRows != nullptr)
-    cudaFree(state_.dScatterGRows);
-  if (state_.dScatterGCols != nullptr)
-    cudaFree(state_.dScatterGCols);
-  if (state_.dScatterIRows != nullptr)
-    cudaFree(state_.dScatterIRows);
-  if (state_.dSolverWork != nullptr)
-    cudaFree(state_.dSolverWork);
-  if (state_.dPivot != nullptr)
-    cudaFree(state_.dPivot);
-  if (state_.dInfo != nullptr)
-    cudaFree(state_.dInfo);
-}
-
-bool Intel4004GridLevel1Cuda::ready() const noexcept { return state_.ready; }
-
-bool Intel4004GridLevel1Cuda::simulateByte(
-    const std::uint8_t* /*rom*/, std::size_t /*romSize*/, std::size_t /*warmupInstructions*/,
-    std::size_t /*programInstructions*/,
-    sim::electronics::algorithms::transient::TransientState& /*outState*/) noexcept {
-  // The GPU-resident NR loop is not active on this path. Callers fall back
-  // to `Intel4004GridLevel1::simulateLevel1` (CPU).
-  return false;
 }
 
 } // namespace sim::electronics::chips::intel4004::cuda

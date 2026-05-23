@@ -19,7 +19,6 @@ capacitors and inductors.
    - [ResistorModel](#resistormodel)
    - [CapacitorModel](#capacitormodel)
    - [InductorModel](#inductormodel)
-   - [LinearDevices](#lineardevices) - Registry header
 5. [Common Patterns](#5-common-patterns)
 6. [Real-Time Considerations](#6-real-time-considerations)
 7. [CLI Tools](#7-cli-tools)
@@ -44,7 +43,8 @@ capacitors and inductors.
 ## 2. Quick Reference
 
 ```cpp
-#include "src/sim/electronics/devices/linear/inc/LinearDevices.hpp"
+#include "src/sim/electronics/devices/linear/inc/ResistorModel.hpp"
+#include "src/sim/electronics/algorithms/companions/inc/CompanionModels.hpp"
 
 using namespace sim::electronics::devices::linear;
 using sim::electronics::algorithms::companions::CapacitorCompanion;
@@ -136,12 +136,6 @@ delegated to `InductorCompanion` in the companions module.
 const double X_L = InductorModel::reactance(/*L=*/1e-3, /*f=*/1e3);
 ```
 
-### LinearDevices
-
-**Header:** `LinearDevices.hpp`
-**Purpose:** Single include that brings in all three models plus the
-companion-model types from `algorithms/companions`.
-
 ---
 
 ## 5. Common Patterns
@@ -205,7 +199,7 @@ None.
 
 ```cpp
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
-#include "src/sim/electronics/devices/linear/inc/LinearDevices.hpp"
+#include "src/sim/electronics/devices/linear/inc/ResistorModel.hpp"
 
 #include <fmt/core.h>
 

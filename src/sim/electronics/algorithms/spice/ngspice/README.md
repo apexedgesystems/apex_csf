@@ -237,5 +237,5 @@ TEST(MosfetLevel1, MatchesNgspiceAtFixedBias) {
 ## 9. See Also
 
 - [Nonlinear device models](../../../devices/nonlinear/README.md) - Models verified against this wrapper
-- [Intel 4004 grid](../../../chips/intel4004/grid/README.md) - Per-gate validation against ngspice
+- [Intel 4004](../../../chips/intel4004/README.md) - Per-gate validation against ngspice
 - [ngspice manual](https://ngspice.sourceforge.io/docs.html)

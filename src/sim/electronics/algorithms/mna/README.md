@@ -26,7 +26,7 @@ High-performance Modified Nodal Analysis solvers for circuit simulation. Provide
 ## 1. Quick Start
 
 ```cpp
-#include "src/sim/electronics/mna/inc/MnaSystemSparse.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/MnaSystemSparse.hpp"
 
 using namespace sim::electronics::algorithms::mna;
 
@@ -95,7 +95,7 @@ make compose-testp  # Verify tests pass
 Dense MNA solver using BLAS/LAPACK cached LU factorization. 76% of time spent in optimized BLAS/LAPACK routines.
 
 ```cpp
-#include "src/sim/electronics/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
 
 MnaSystem mna(netCount);
 mna.addConductance(a, b, g);
@@ -116,7 +116,7 @@ auto result = mna.solve();  // O(n^3) first solve, O(n^2) cached
 Sparse MNA solver using KLU (SuiteSparse). Direct CSC construction, counting sort assembly. Within 1.6x of dense performance at 150 nets, scales better for larger circuits.
 
 ```cpp
-#include "src/sim/electronics/mna/inc/MnaSystemSparse.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/MnaSystemSparse.hpp"
 
 MnaSystemSparse mna(netCount);
 mna.addConductance(a, b, g);
@@ -137,7 +137,7 @@ auto result = mna.solve();  // Sparse LU factorization
 AC MNA solver with complex impedances. Supports frequency sweeps for analog circuit design.
 
 ```cpp
-#include "src/sim/electronics/mna/inc/AcMnaSystem.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/AcMnaSystem.hpp"
 
 AcMnaSystem mna(netCount, omega);
 
@@ -163,7 +163,7 @@ auto result = mna.solveAc();  // Complex node voltages
 GPU-accelerated batch MNA solver for small-medium matrices (8-64 dimensions). Lower overhead than cuSOLVER for small systems.
 
 ```cpp
-#include "src/sim/electronics/mna/inc/MnaBatchCuda.cuh"
+#include "src/sim/electronics/algorithms/mna/inc/MnaBatchCuda.cuh"
 
 using namespace sim::electronics::algorithms::mna::cuda;
 
@@ -188,7 +188,7 @@ solveBatch32x32(workspace, hA, hb, batchSize, stream);
 Helper for stamping circuit elements into MNA matrices. Used internally by MnaSystem/MnaSystemSparse.
 
 ```cpp
-#include "src/sim/electronics/mna/inc/StampContext.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/StampContext.hpp"
 
 StampContext ctx(netCount);
 ctx.stampConductance(a, b, g);       // Resistor
@@ -222,7 +222,7 @@ ctx.stampVoltageSource(pos, neg, v); // Voltage source
 **Use case:** Digital circuits, transistor-level CPUs, dynamic analog
 
 ```cpp
-#include "src/sim/electronics/mna/inc/MnaSystemSparse.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/MnaSystemSparse.hpp"
 
 using namespace sim::electronics::algorithms::mna;
 
@@ -267,7 +267,7 @@ for (std::size_t step = 0; step < steps; ++step) {
 **Option A: Basic sweep (allocates per frequency)**
 
 ```cpp
-#include "src/sim/electronics/mna/inc/AcMnaSystem.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/AcMnaSystem.hpp"
 
 using namespace sim::electronics::algorithms::mna;
 
@@ -314,7 +314,7 @@ for (std::size_t i = 0; i < points; ++i) {
 **Option B: RT-safe sweep with workspace (no allocation in loop)**
 
 ```cpp
-#include "src/sim/electronics/mna/inc/AcMnaSystem.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/AcMnaSystem.hpp"
 
 using namespace sim::electronics::algorithms::mna;
 
@@ -407,7 +407,7 @@ for (std::size_t i = 0; i < points; ++i) {
 **Requires:** `APEX_USE_CUDA=ON`
 
 ```cpp
-#include "src/sim/electronics/mna/inc/MnaBatchCuda.cuh"
+#include "src/sim/electronics/algorithms/mna/inc/MnaBatchCuda.cuh"
 
 using namespace sim::electronics::algorithms::mna::cuda;
 
@@ -437,7 +437,7 @@ bool success = solveBatch32x32(workspace, hA.data(), hb.data(), batchSize, strea
 **Use case:** Hardware-in-the-loop, real-time control loops
 
 ```cpp
-#include "src/sim/electronics/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
 
 using namespace sim::electronics::algorithms::mna;
 

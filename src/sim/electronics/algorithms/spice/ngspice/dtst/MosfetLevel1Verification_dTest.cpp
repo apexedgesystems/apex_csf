@@ -21,7 +21,7 @@ using sim::electronics::devices::nonlinear::MosfetLevel1Params;
  * @test
  * Verify MosfetLevel1 NMOS against analytical Shichman-Hodges equations.
  *
- * Test circuit (SPICE netlist: fixtures/mosfet_level1_verification.sp):
+ * Test circuit:
  *   M1 drain gate 0 0 NMOS W=10u L=1u
  *   VDS = 5.0V, VGS = 2.0V
  *
@@ -29,13 +29,8 @@ using sim::electronics::devices::nonlinear::MosfetLevel1Params;
  *   VTO (Vth) = 0.7V
  *   KP = 100u A/V^2
  *   LAMBDA = 0.02 1/V
- *
- * This test verifies our implementation matches the analytical equations.
- * After generating ngspice reference data, we can add comparison against
- * ngspice output.
  */
 TEST(MosfetLevel1, VerifyNmosAgainstAnalytical) {
-  // 1. MOSFET parameters (from .sp file)
   MosfetLevel1Params params;
   params.Kp = 100e-6;   // Transconductance parameter (A/V^2)
   params.Vth = 0.7;     // Threshold voltage (V)

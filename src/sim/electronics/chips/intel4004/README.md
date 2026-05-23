@@ -400,7 +400,7 @@ verification.
 
 ## See Also
 
-- [Circuit](../circuit/README.md) -- construction API
-- [devices/nonlinear](../devices/nonlinear/README.md) -- MosfetLevel1, MosfetBsim3
-- [algorithms/spice/ngspice](../algorithms/spice/ngspice/README.md) -- ngspice integration used for L1 validation
+- [Circuit](../../circuit/README.md) -- construction API
+- [devices/nonlinear](../../devices/nonlinear/README.md) -- MosfetLevel1, MosfetBsim3
+- [algorithms/spice/ngspice](../../algorithms/spice/ngspice/README.md) -- ngspice integration used for L1 validation
 - `apps/apex_cpu_sim_demo/` -- end-to-end demo
