@@ -433,7 +433,7 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 
 ```bash
 # Run performance benchmarks
-./build/hosted-x86_64-debug/bin/ptests/ProtocolsSerialUart_PTEST --csv results.csv
+./build/hosted-x86_64-debug/bin/ptests/UartAdapter_PTEST --csv results.csv
 ```
 
 ---

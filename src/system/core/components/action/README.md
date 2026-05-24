@@ -236,7 +236,7 @@ callgrind, and perf. Two optimization passes applied.
 | Target                  | Tests | Description                                                                 |
 | ----------------------- | ----- | --------------------------------------------------------------------------- |
 | `TestSystemCoreAction`  | 275   | Watchpoints, groups, sequences, notifications, catalogs, computed functions |
-| `ActionInterface_PTEST` | 17    | Pipeline throughput, cascade fire, catalog lookup, trigger path             |
+| `ActionInterface_PTEST` | 20    | Pipeline throughput, cascade fire, catalog lookup, trigger path             |
 
 ---
 
