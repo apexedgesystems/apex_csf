@@ -19,13 +19,6 @@ compile_commands.json
 *.log
 /*.csv
 
-# Performance tests (run manually, not committed)
-**/ptst/
-
-# Exception: electronics ptests are version-controlled
-!src/sim/electronics/**/ptst/
-!src/sim/electronics/**/ptst/**
-
 # Design docs and future proposals (internal only)
 docs/
 **/docs/design/

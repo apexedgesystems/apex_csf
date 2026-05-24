@@ -274,7 +274,7 @@ docker compose run --rm -T dev-cuda make debug
 docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L legendre
 
 # Run performance tests
-docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/ptests/MathLegendre_PTEST
+docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/ptests/LegendrePbar_PTEST
 ```
 
 ### Test Organization
@@ -286,7 +286,7 @@ docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/ptests/MathL
 | `LegendrePbarTriangle_uTest.cpp`    | CPU triangle computation      | 12    |
 | `LegendrePbarDerivatives_uTest.cpp` | Derivative computation        | 6     |
 | `LegendrePbarCuda_uTest.cu`         | GPU/CPU parity                | 12    |
-| `LegendrePbar_pTest.cpp`            | Performance benchmarks        | 10    |
+| `LegendrePbar_pTest.cpp`            | Performance benchmarks        | 9     |
 
 ---
 

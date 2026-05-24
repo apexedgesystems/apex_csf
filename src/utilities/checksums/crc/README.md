@@ -230,7 +230,7 @@ docker compose run --rm -T dev-cuda make debug
 docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L crc
 
 # Run performance tests
-docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/ptests/TestChecksumsCrc_PTEST
+docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/ptests/Crc_PTEST
 ```
 
 ### Test Organization
