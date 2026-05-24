@@ -12,6 +12,7 @@ GENERATE_XML           = YES
 GENERATE_TREEVIEW      = YES
 SEARCHENGINE           = YES
 MARKDOWN_SUPPORT       = YES
+MARKDOWN_ID_STYLE      = GITHUB
 
 # doxygen-awesome-css theme (https://jothepro.github.io/doxygen-awesome-css/)
 DISABLE_INDEX          = NO
