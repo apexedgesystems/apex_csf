@@ -148,5 +148,5 @@ jobs:
       - name: AddressSanitizer
         run: docker compose run --rm -T dev make asan
 
-      - name: Build documentation
-        run: docker compose run --rm -T dev make docs
+      - name: Build documentation (zero-warning gate)
+        run: docker compose run --rm -T dev make docs-check
