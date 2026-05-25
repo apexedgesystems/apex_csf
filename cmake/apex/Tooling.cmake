@@ -111,6 +111,7 @@ function (apex_add_doxygen _target)
   # Stash all the per-target state in GLOBAL properties for apex_finalize_doxygen.
   set_property(GLOBAL APPEND PROPERTY APEX_DOXYGEN_LIBS "${_target}")
   set_property(GLOBAL PROPERTY APEX_DOXYGEN_${_target}_REGISTERED TRUE)
+  set_property(GLOBAL PROPERTY APEX_DOXYGEN_${_target}_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
   set_property(GLOBAL PROPERTY APEX_DOXYGEN_${_target}_SRC "${DOX_SRC}")
   set_property(GLOBAL PROPERTY APEX_DOXYGEN_${_target}_INC "${DOX_INC}")
   set_property(GLOBAL PROPERTY APEX_DOXYGEN_${_target}_TST "${DOX_TST}")
@@ -172,6 +173,39 @@ function (apex_finalize_doxygen)
         continue()
       endif ()
       get_filename_component(_dir "${_readme}" DIRECTORY)
+
+      # Prefer to ATTACH this orphan README to a sole descendant lib instead
+      # of creating a synthetic scope. That collapses the "<lib>" vs
+      # "<lib> (overview)" duality on the landing page when a lib lives in a
+      # sub-subdir whose parent owns the prose README. Rules:
+      #   - The descendant lib's source dir must be a strict child of _dir.
+      #   - `*_cuda` siblings are ignored for the count (they share the parent
+      #     lib's source dir and would otherwise prevent the merge).
+      #   - Exactly one qualifying lib -> attach. Zero or two-or-more -> synth.
+      set(_descendants "")
+      foreach (_lib IN LISTS _libs)
+        if (_lib MATCHES "_cuda$")
+          continue()
+        endif ()
+        get_property(_lib_src GLOBAL PROPERTY APEX_DOXYGEN_${_lib}_SOURCE_DIR)
+        if (_lib_src
+            AND NOT _lib_src STREQUAL "${_dir}"
+            AND _lib_src MATCHES "^${_dir}/"
+        )
+          list(APPEND _descendants "${_lib}")
+        endif ()
+      endforeach ()
+
+      list(LENGTH _descendants _ndesc)
+      if (_ndesc EQUAL 1)
+        # Attach the parent README to that sole real lib. Its prose lands on
+        # the user-facing landing-page entry instead of in a synth scope.
+        list(GET _descendants 0 _adoptee)
+        set_property(GLOBAL PROPERTY APEX_DOXYGEN_${_adoptee}_README "${_readme}")
+        list(APPEND _covered_readmes "${_readme}")
+        continue()
+      endif ()
+
       file(RELATIVE_PATH _rel "${CMAKE_SOURCE_DIR}/${_root}" "${_dir}")
       string(REPLACE "/" "_" _synth "${_root}_${_rel}")
       if (NOT _synth)
