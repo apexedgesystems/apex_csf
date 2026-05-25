@@ -315,3 +315,11 @@ endif ()
 if (NOT APEX_PLATFORM_BAREMETAL)
   apex_finalize_data_manifests()
 endif ()
+
+# ------------------------------------------------------------------------------
+# Doxygen (cross-library tag-file resolution)
+# ------------------------------------------------------------------------------
+# Materializes per-library doxygen targets after every apex_add_doxygen() call
+# has registered. Two-pass build: pass 1 produces tag files, pass 2 reads every
+# sibling's tag file so cross-module markdown links resolve.
+apex_finalize_doxygen()

@@ -20,6 +20,9 @@ apex_add_interface_library(NAME hal_interface INC "${CMAKE_CURRENT_SOURCE_DIR}" 
 # Opt-ins (coverage, doxygen, UPX)
 # ------------------------------------------------------------------------------
 
+# Headers are flat at ${CMAKE_CURRENT_SOURCE_DIR}, not in inc/. Override the
+# doxygen default before apex_standard_optins so docs see the actual headers.
+apex_add_doxygen(hal_interface INC "${CMAKE_CURRENT_SOURCE_DIR}")
 apex_standard_optins(hal_interface)
 
 # ------------------------------------------------------------------------------
