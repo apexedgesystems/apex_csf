@@ -89,14 +89,17 @@ jobs:
       - name: Run C++ tests
         run: docker compose run --rm -T dev make testp
 
+      - name: Build documentation (zero-warning gate)
+        run: docker compose run --rm -T dev make docs-check
+
       - name: Run Rust tests
         run: docker compose run --rm -T dev make test-rust
 
       - name: Run Python tests
         run: docker compose run --rm -T dev make test-py
 
-  sanitize-and-docs:
-    name: Sanitize, Docs
+  sanitize:
+    name: Sanitize
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
@@ -147,6 +150,3 @@ jobs:
 
       - name: AddressSanitizer
         run: docker compose run --rm -T dev make asan
-
-      - name: Build documentation (zero-warning gate)
-        run: docker compose run --rm -T dev make docs-check
