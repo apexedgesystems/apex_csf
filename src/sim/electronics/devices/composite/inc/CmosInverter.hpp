@@ -74,9 +74,12 @@ struct CmosInverter {
   /**
    * @brief Stamp inverter into MNA system.
    * @param mna MNA system to stamp into.
+   * @param pmos_desc PMOS transistor descriptor (net IDs and geometry).
+   * @param nmos_desc NMOS transistor descriptor (net IDs and geometry).
    * @param vdd VDD voltage.
    * @param vin Input voltage.
-   * @param params MOSFET model parameters.
+   * @param params_nmos NMOS Level-1 model parameters.
+   * @param params_pmos PMOS Level-1 model parameters.
    */
   static void stamp(MnaSystem& mna, const MosfetDescriptor& pmos_desc,
                     const MosfetDescriptor& nmos_desc, double vdd, double vin,

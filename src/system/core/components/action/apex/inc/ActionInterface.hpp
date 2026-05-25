@@ -299,6 +299,7 @@ inline void removeAction(ActionInterface& iface, std::uint8_t index) noexcept {
  * @param iface ActionInterface to evaluate.
  * @param[out] firedEvents Array to receive fired event IDs.
  * @param maxEvents Capacity of firedEvents array.
+ * @param currentCycle Current tick/cycle counter (used for cadence gating).
  * @return Number of events fired this cycle.
  * @note RT-safe: O(WATCHPOINT_TABLE_SIZE).
  */

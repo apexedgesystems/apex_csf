@@ -110,11 +110,6 @@ public:
   [[nodiscard]] const char* label() const noexcept override { return "EXECUTIVE_DEFAULT"; }
 
   /**
-   * @brief Update clock frequency dynamically.
-   * @param newFrequency New frequency in Hz.
-   */
-
-  /**
    * @brief Request system pause (takes effect after current frame completes).
    */
   void pause() noexcept;

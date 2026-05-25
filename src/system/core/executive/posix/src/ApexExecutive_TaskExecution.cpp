@@ -51,22 +51,10 @@ struct TimingPoints {
   std::int64_t tickNs{0}; ///< Clock tick timestamp (for latency).
 };
 
-/**
- * @brief Convert nanoseconds to milliseconds.
- * @param ns Time in nanoseconds.
- * @return Time in milliseconds (fractional).
- */
 inline constexpr double nsToMs(std::int64_t ns) noexcept {
   return static_cast<double>(ns) / 1'000'000.0;
 }
 
-/**
- * @brief Compute profiling metrics from timing points.
- * @param tp Timing points captured during loop.
- * @param tick Current tick being executed.
- * @param outBuf Output buffer for formatted string (must be >=256 bytes).
- * @return Pointer to outBuf (for convenience).
- */
 inline char* computeProfilingMetrics(const TimingPoints& tp, std::uint16_t tick,
                                      char* outBuf) noexcept {
   const double tickToExecMs = (tp.tickNs > 0) ? nsToMs(tp.t1Ns - tp.tickNs) : -1.0;

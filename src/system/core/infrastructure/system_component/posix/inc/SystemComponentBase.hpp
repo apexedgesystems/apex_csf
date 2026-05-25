@@ -216,7 +216,10 @@ public:
 
   /**
    * @brief Load tunable parameters from TPRM directory.
-   * @param tprmDir Directory containing extracted TPRM files.
+   *
+   * The directory argument (containing extracted TPRM files) is unnamed in the
+   * default override.
+   *
    * @return true on success, false if load failed (component uses defaults).
    * @note Uses componentId() to generate filename: "{componentId:06x}.tprm".
    * @note Default implementation does nothing (component has no TPRM).
@@ -240,7 +243,10 @@ public:
 
   /**
    * @brief Look up a schedulable task by UID.
-   * @param uid Task identifier within this component.
+   *
+   * The UID argument (task identifier within this component) is unnamed in the
+   * default override.
+   *
    * @return Pointer to SchedulableTask, or nullptr if not found.
    * @note Override in components that own tasks (e.g., SimModelBase).
    * @note Default returns nullptr (component has no tasks).
@@ -251,7 +257,9 @@ public:
 
   /**
    * @brief Get a sequence group by index.
-   * @param idx Group index.
+   *
+   * The group-index argument is unnamed in the default override.
+   *
    * @return Pointer to SequenceGroup, or nullptr if not found.
    * @note Override in components that use sequencing.
    * @note Default returns nullptr (component has no sequence groups).

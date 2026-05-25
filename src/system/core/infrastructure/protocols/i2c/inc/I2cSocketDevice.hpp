@@ -17,7 +17,7 @@
  *     [status:1]
  *
  *   Read request:
- *     [addr:2 LE][wLen:2 LE = 0][rLen:2 LE][<no payload>]
+ *     [addr:2 LE][wLen:2 LE = 0][rLen:2 LE][no payload]
  *   Response:
  *     [status:1][rData:rLen]
  *

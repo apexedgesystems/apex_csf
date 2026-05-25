@@ -84,8 +84,10 @@ static inline void stampNmos(MnaSystem& mna, NetID drainNet, NetID gateNet, NetI
  *
  * @param circuit Circuit instance (build() called automatically if needed).
  * @param state TransientState for solution storage.
- * @param netCount Number of nets to check for convergence.
  * @return Final status after NR convergence.
+ *
+ * @note The trailing `std::size_t` argument is unused; the net count is read
+ *       from the circuit via `circuit.netCount()`.
  */
 static inline TransientStatus solveNRConverge(Circuit& circuit, TransientState& state,
                                               std::size_t /*netCount*/) {
@@ -156,10 +158,12 @@ struct CmosInverterCircuit {
   /**
    * @brief Construct a circuit-level CMOS inverter.
    * @param vdd Supply voltage in volts.
-   * @param W Channel width for both transistors (meters).
-   * @param L Channel length for both transistors (meters).
    * @param nmosParams NMOS transistor parameters.
    * @param pmosParams PMOS transistor parameters (Vth positive).
+   *
+   * @note The two `double` arguments between `vdd` and `nmosParams` are the
+   *       channel width and length (meters); they are accepted for calling-
+   *       convention stability but not consumed by the constructor.
    */
   CmosInverterCircuit(double vdd, double /*W*/, double /*L*/, const MosfetLevel1Params& nmosParams,
                       const MosfetLevel1Params& pmosParams) noexcept

@@ -117,7 +117,10 @@ public:
 
   /**
    * @brief Load tunable parameters from TPRM file.
-   * @param tprmDir Directory containing extracted TPRM files.
+   *
+   * The directory argument (containing extracted TPRM files) is unnamed in the
+   * default override.
+   *
    * @return true on success, false if no TPRM found or load failed (uses defaults).
    * @pre Must call setInstanceIndex() first to assign UID.
    * @note Override in derived class to load component-specific TPRM.

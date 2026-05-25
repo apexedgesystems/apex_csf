@@ -393,18 +393,15 @@ struct MosfetLevel1 {
   }
 
   /**
-   * @brief Determine operating region for diagnostic purposes.
-   *
-   * @param vgs Gate-source voltage in volts.
-   * @param vds Drain-source voltage in volts.
-   * @param params MOSFET physical parameters.
-   * @return 0 = cutoff, 1 = linear, 2 = saturation.
-   */
-  /**
    * @brief Limit Vgs change per NR iteration.
    *
    * Prevents excessive gate voltage swings near threshold that cause
    * NR oscillation. Adapts step size based on distance from Vth.
+   *
+   * @param vnew Candidate gate-source voltage from current NR step.
+   * @param vold Gate-source voltage from previous NR iteration.
+   * @param vto Threshold voltage of the device.
+   * @return Limited gate-source voltage.
    *
    * @note RT-safe (no allocations, pure math).
    */

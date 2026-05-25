@@ -65,7 +65,10 @@ public:
 
   /**
    * @brief Install USB Serial/JTAG driver with ring buffers.
-   * @param config Ignored (USB CDC does not use baud/parity/stop settings).
+   *
+   * The UartConfig argument is ignored (USB CDC does not use baud/parity/stop
+   * settings); the parameter is unnamed in the signature.
+   *
    * @return OK on success.
    */
   [[nodiscard]] UartStatus init(const UartConfig& /*config*/) noexcept override {

@@ -331,6 +331,7 @@ public:
   /**
    * @brief Read index register Rn (4-bit) from node voltages.
    * @param idx Register index (0-15).
+   * @param voltages Solved node-voltage vector.
    *
    * Uses PMOS-inverted readback.
    */

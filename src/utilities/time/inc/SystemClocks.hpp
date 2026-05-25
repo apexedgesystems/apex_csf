@@ -33,7 +33,10 @@ namespace time {
 
 /**
  * @brief Get monotonic time in microseconds (CLOCK_MONOTONIC).
- * @param ctx Unused (pass nullptr).
+ *
+ * The void* argument is unused (pass nullptr); it exists to match the generic
+ * clock-source signature and is unnamed in the body.
+ *
  * @return Microseconds since boot. Not affected by NTP or settimeofday.
  * @note RT-safe: O(1), vDSO on Linux.
  */
@@ -48,7 +51,10 @@ inline std::uint64_t monotonicMicroseconds(void* /*ctx*/) noexcept {
 
 /**
  * @brief Get UTC time in microseconds (CLOCK_REALTIME).
- * @param ctx Unused (pass nullptr).
+ *
+ * The void* argument is unused (pass nullptr); it exists to match the generic
+ * clock-source signature and is unnamed in the body.
+ *
  * @return Microseconds since Unix epoch (1970-01-01T00:00:00Z).
  * @note NOT monotonic: subject to NTP adjustments and leap seconds.
  * @note RT-safe: O(1), vDSO on Linux.

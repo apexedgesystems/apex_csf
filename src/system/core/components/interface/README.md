@@ -143,7 +143,7 @@ Measured on x86_64 (clang-21, -O2), Docker container, 15 repeats per data point,
 
 | Function                          | Self-Time | Type                          |
 | --------------------------------- | --------- | ----------------------------- |
-| `_Mod_range_hashing::operator`    | 7.2%      | CPU-bound (hash table lookup) |
+| `_Mod_range_hashing::operator()`  | 7.2%      | CPU-bound (hash table lookup) |
 | `LockFreeQueue::tryPop`           | 5.4%      | CPU-bound (queue operations)  |
 | `_Hashtable::_M_find_before_node` | 4.2%      | CPU-bound (hash chain walk)   |
 

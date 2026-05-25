@@ -31,7 +31,7 @@ static constexpr std::size_t CHUNK_HEADER_SIZE = 2; // uint16_t chunkIndex
 
 /* ----------------------------- FileTransferHandler Methods ----------------------------- */
 
-FileTransferHandler::FileTransferHandler(fs::path fsRoot) noexcept
+FileTransferHandler::FileTransferHandler(std::filesystem::path fsRoot) noexcept
     : fsRoot_(std::move(fsRoot)), stageDir_(fsRoot_ / "stage"), stagePath_(stageDir_ / "pending") {}
 
 FileTransferHandler::~FileTransferHandler() { resetState(); }
