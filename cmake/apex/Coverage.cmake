@@ -144,6 +144,15 @@ function (apex_coverage_register _test _lib)
   endif ()
 
   set_property(GLOBAL APPEND PROPERTY APEX_COVERAGE_MAPPINGS "${_test}:${_lib}")
+
+  # Stash the lib's source dir so the landing page can group it by area
+  # (derived from filesystem layout, not hardcoded names).
+  if (TARGET ${_lib})
+    get_target_property(_src ${_lib} SOURCE_DIR)
+    if (_src)
+      set_property(GLOBAL APPEND PROPERTY APEX_COVERAGE_LIB_SOURCES "${_lib}|${_src}")
+    endif ()
+  endif ()
 endfunction ()
 
 # ------------------------------------------------------------------------------
@@ -171,9 +180,28 @@ function (_apex_coverage_finalize)
 
   file(MAKE_DIRECTORY "${APEX_COVERAGE_OUTPUT_DIR}")
 
+  # Compute area per lib from filesystem layout (dir under src/ or apps/).
+  # This is the only place the build infra encodes layout, and it only knows
+  # about the top-level roots -- everything beneath is auto-discovered.
+  get_property(_lib_sources GLOBAL PROPERTY APEX_COVERAGE_LIB_SOURCES)
+  set(_lib_areas "")
+  foreach (_entry IN LISTS _lib_sources)
+    string(REPLACE "|" ";" _parts "${_entry}")
+    list(GET _parts 0 _lib)
+    list(GET _parts 1 _src)
+    file(RELATIVE_PATH _rel "${CMAKE_SOURCE_DIR}" "${_src}")
+    if (_rel MATCHES "^([^/]+)/([^/]+)")
+      # Area is "<root>/<group>" purely so libs sharing a root sort
+      # contiguously on the landing page. We don't care what those root
+      # names are -- they just keep apps from being interleaved with
+      # library areas alphabetically. Display strips the root prefix.
+      list(APPEND _lib_areas "${_lib}|${CMAKE_MATCH_1}/${CMAKE_MATCH_2}")
+    endif ()
+  endforeach ()
+
   # Write manifest
   set(_manifest "${APEX_COVERAGE_OUTPUT_DIR}/manifest.cmake")
-  _apex_coverage_write_manifest("${_manifest}" "${_mappings}")
+  _apex_coverage_write_manifest("${_manifest}" "${_mappings}" "${_lib_areas}")
 
   # Write generator script
   set(_generator "${APEX_COVERAGE_OUTPUT_DIR}/generate_report.cmake")
@@ -201,11 +229,16 @@ endfunction ()
 # ------------------------------------------------------------------------------
 # Internal: Write manifest
 # ------------------------------------------------------------------------------
-function (_apex_coverage_write_manifest _file _mappings)
+function (_apex_coverage_write_manifest _file _mappings _lib_areas)
   set(_content "# Coverage manifest (auto-generated)\n")
   string(APPEND _content "set(COVERAGE_MAPPINGS\n")
   foreach (_m IN LISTS _mappings)
     string(APPEND _content "  \"${_m}\"\n")
+  endforeach ()
+  string(APPEND _content ")\n")
+  string(APPEND _content "set(COVERAGE_LIB_AREAS\n")
+  foreach (_a IN LISTS _lib_areas)
+    string(APPEND _content "  \"${_a}\"\n")
   endforeach ()
   string(APPEND _content ")\n")
   string(APPEND _content "set(LLVM_PROFDATA \"${APEX_LLVM_PROFDATA}\")\n")
@@ -319,14 +352,15 @@ endforeach ()
 
 # ------------------------------------------------------------------------------
 # Landing page: aggregate per-library coverage into one index.html grouped by
-# area (Utilities / Simulation / System Core / Applications / Other). Parses
-# each lib's summary.txt TOTAL line for the four %-coverage numbers.
+# area. Each lib's area is derived from its filesystem position (the dir name
+# directly under src/ or apps/), passed through via COVERAGE_LIB_AREAS in the
+# manifest. The page has zero hardcoded module names -- new top-level dirs
+# show up as new sections automatically.
+#
+# Areas live in dynamically-named buckets: ${_grp_<area>} holds the entries
+# for area <area>. ${_areas} tracks which area names we've seen.
 # ------------------------------------------------------------------------------
-set(_grp_utilities "")
-set(_grp_sim "")
-set(_grp_system "")
-set(_grp_apps "")
-set(_grp_other "")
+set(_areas "")
 
 set(_repo_regions_t 0)
 set(_repo_regions_m 0)
@@ -387,25 +421,32 @@ foreach (_summary IN LISTS _summaries)
     math(EXPR _repo_lines_m "${_repo_lines_m} + ${_l_missed}")
   endif ()
 
-  set(_entry "${_lib_name}|${_region_pct}|${_func_pct}|${_line_pct}|${_branch_pct}")
-  if (_lib_name MATCHES "^utilities")
-    list(APPEND _grp_utilities "${_entry}")
-  elseif (_lib_name MATCHES "^sim")
-    list(APPEND _grp_sim "${_entry}")
-  elseif (_lib_name MATCHES "^(system_core|executive|scheduler|hal|filesystem|system_component)")
-    list(APPEND _grp_system "${_entry}")
-  elseif (_lib_name MATCHES "^apex_|^apps_")
-    list(APPEND _grp_apps "${_entry}")
-  else ()
-    list(APPEND _grp_other "${_entry}")
+  # Look up filesystem-derived area for this lib (computed at configure time).
+  # Strip _cuda suffix so CUDA variants group with their host counterparts.
+  string(REGEX REPLACE "_cuda$" "" _area_key "${_lib_name}")
+  set(_area "other")
+  foreach (_la IN LISTS COVERAGE_LIB_AREAS)
+    string(REPLACE "|" ";" _lap "${_la}")
+    list(GET _lap 0 _lap_key)
+    list(GET _lap 1 _lap_val)
+    if (_lap_key STREQUAL _area_key OR _lap_key STREQUAL _lib_name)
+      set(_area "${_lap_val}")
+      break ()
+    endif ()
+  endforeach ()
+
+  if (NOT "${_area}" IN_LIST _areas)
+    list(APPEND _areas "${_area}")
   endif ()
+  list(APPEND _grp_${_area} "${_lib_name}|${_region_pct}|${_func_pct}|${_line_pct}|${_branch_pct}")
 endforeach ()
 
-list(SORT _grp_utilities)
-list(SORT _grp_sim)
-list(SORT _grp_system)
-list(SORT _grp_apps)
-list(SORT _grp_other)
+# Sort areas alphabetically, with "other" forced last.
+list(SORT _areas)
+if ("other" IN_LIST _areas)
+  list(REMOVE_ITEM _areas "other")
+  list(APPEND _areas "other")
+endif ()
 
 # Aggregate region / line %
 set(_repo_region_pct "n/a")
@@ -466,14 +507,27 @@ set(_html "<!DOCTYPE html>
 </table>
 ")
 
-foreach (_group_pair IN ITEMS "Utilities|_grp_utilities" "Simulation|_grp_sim" "System Core|_grp_system" "Applications|_grp_apps" "Other|_grp_other")
-  string(REPLACE "|" ";" _kv "${_group_pair}")
-  list(GET _kv 0 _title)
-  list(GET _kv 1 _varname)
-  set(_libs_in_group ${${_varname}})
+foreach (_area IN LISTS _areas)
+  set(_libs_in_group ${_grp_${_area}})
   if (NOT _libs_in_group)
-    continue()
+    continue ()
   endif ()
+  list(SORT _libs_in_group)
+
+  # Display title: strip root sort prefix, snake_case -> "Title Case".
+  # "other" -> "Other".
+  string(REGEX REPLACE "^[^/]+/" "" _area_display "${_area}")
+  string(REPLACE "_" ";" _words "${_area_display}")
+  set(_title "")
+  foreach (_w IN LISTS _words)
+    string(SUBSTRING "${_w}" 0 1 _head)
+    string(SUBSTRING "${_w}" 1 -1 _tail)
+    string(TOUPPER "${_head}" _head)
+    if (_title)
+      string(APPEND _title " ")
+    endif ()
+    string(APPEND _title "${_head}${_tail}")
+  endforeach ()
 
   string(APPEND _html "<h2>${_title}</h2>
 <table>

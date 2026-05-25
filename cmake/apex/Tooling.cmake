@@ -217,6 +217,7 @@ function (apex_finalize_doxygen)
       endif ()
       set_property(GLOBAL APPEND PROPERTY APEX_DOXYGEN_LIBS "${_synth}")
       set_property(GLOBAL PROPERTY APEX_DOXYGEN_${_synth}_REGISTERED TRUE)
+      set_property(GLOBAL PROPERTY APEX_DOXYGEN_${_synth}_SOURCE_DIR "${_dir}")
       set_property(GLOBAL PROPERTY APEX_DOXYGEN_${_synth}_README "${_readme}")
       # Pull in a sibling docs/ folder if present so links like
       # [Foo](docs/FOO.md) resolve within this scope.
@@ -394,37 +395,39 @@ endfunction ()
 # _apex_write_docs_index(<libs>)
 #
 # Generate the project-level docs landing page at ${CMAKE_BINARY_DIR}/docs/
-# index.html. Lists every registered library grouped by area (utilities, sim,
-# system, apps), each linking into its per-library doxygen output. Re-written
-# at configure time whenever the registered-lib set changes.
+# index.html. Areas are derived from each lib's source-dir position (the
+# directory directly under src/ or apps/) -- the page has zero hardcoded
+# module names, so new top-level dirs show up as new sections automatically.
+# Re-written at configure time whenever the registered-lib set changes.
 # ------------------------------------------------------------------------------
 function (_apex_write_docs_index _libs)
-  set(_grp_utilities "")
-  set(_grp_sim "")
-  set(_grp_system "")
-  set(_grp_apps "")
-  set(_grp_other "")
-
+  # Per-area buckets are dynamic: _grp_<area> holds libs for area <area>.
+  # Area for each lib is derived from its SOURCE_DIR position (the dir
+  # directly under src/ or apps/).
+  set(_areas "")
   foreach (_lib IN LISTS _libs)
-    string(REGEX REPLACE "^src_" "" _key "${_lib}")
-    if (_key MATCHES "^utilities")
-      list(APPEND _grp_utilities "${_lib}")
-    elseif (_key MATCHES "^sim")
-      list(APPEND _grp_sim "${_lib}")
-    elseif (_key MATCHES "^(system_core|executive|scheduler|hal|filesystem|system_component)")
-      list(APPEND _grp_system "${_lib}")
-    elseif (_lib MATCHES "^apps_")
-      list(APPEND _grp_apps "${_lib}")
-    else ()
-      list(APPEND _grp_other "${_lib}")
+    get_property(_src GLOBAL PROPERTY APEX_DOXYGEN_${_lib}_SOURCE_DIR)
+    set(_area "other")
+    if (_src)
+      file(RELATIVE_PATH _rel "${CMAKE_SOURCE_DIR}" "${_src}")
+      if (_rel MATCHES "^([^/]+)/([^/]+)")
+        # Area is "<root>/<group>" purely so libs sharing a root sort
+        # contiguously on the landing page. We don't care what those root
+        # names are -- they just keep apps from being interleaved with
+        # library areas alphabetically. Display strips the root prefix.
+        set(_area "${CMAKE_MATCH_1}/${CMAKE_MATCH_2}")
+      endif ()
     endif ()
+    if (NOT "${_area}" IN_LIST _areas)
+      list(APPEND _areas "${_area}")
+    endif ()
+    list(APPEND _grp_${_area} "${_lib}")
   endforeach ()
-
-  list(SORT _grp_utilities)
-  list(SORT _grp_sim)
-  list(SORT _grp_system)
-  list(SORT _grp_apps)
-  list(SORT _grp_other)
+  list(SORT _areas)
+  if ("other" IN_LIST _areas)
+    list(REMOVE_ITEM _areas "other")
+    list(APPEND _areas "other")
+  endif ()
 
   set(_index "${CMAKE_BINARY_DIR}/docs/index.html")
   set(_html
@@ -451,18 +454,26 @@ function (_apex_write_docs_index _libs)
 "
   )
 
-  foreach (_group_pair IN
-           ITEMS "Utilities;_grp_utilities" "Simulation;_grp_sim" "System Core;_grp_system"
-                 "Applications;_grp_apps" "Other;_grp_other"
-  )
-    string(REPLACE ";" ";" _kv "${_group_pair}")
-    list(GET _kv 0 _title)
-    list(GET _kv 1 _varname)
-    set(_libs_in_group ${${_varname}})
-
+  foreach (_area IN LISTS _areas)
+    set(_libs_in_group ${_grp_${_area}})
     if (NOT _libs_in_group)
       continue()
     endif ()
+    list(SORT _libs_in_group)
+
+    # Display title: strip root sort prefix, snake_case -> "Title Case".
+    string(REGEX REPLACE "^[^/]+/" "" _area_display "${_area}")
+    string(REPLACE "_" ";" _words "${_area_display}")
+    set(_title "")
+    foreach (_w IN LISTS _words)
+      string(SUBSTRING "${_w}" 0 1 _head)
+      string(SUBSTRING "${_w}" 1 -1 _tail)
+      string(TOUPPER "${_head}" _head)
+      if (_title)
+        string(APPEND _title " ")
+      endif ()
+      string(APPEND _title "${_head}${_tail}")
+    endforeach ()
 
     string(APPEND _html "<h2>${_title}</h2>\n<ul>\n")
     foreach (_lib IN LISTS _libs_in_group)
