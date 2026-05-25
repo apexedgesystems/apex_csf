@@ -150,3 +150,14 @@ jobs:
 
       - name: Build documentation (zero-warning gate)
         run: docker compose run --rm -T dev make docs-check
+
+      - name: Code coverage (threshold gate)
+        run: docker compose run --rm -T dev make coverage-check
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/hosted-x86_64-coverage/coverage/
+          retention-days: 14
