@@ -1,0 +1,66 @@
+# ==============================================================================
+# Coverage -- nightly LLVM coverage build + threshold gate
+#
+# Runs once per day on main (and on demand via workflow_dispatch). Coverage
+# builds the project with `-fprofile-instr-generate -fcoverage-mapping` flags
+# from scratch in a separate preset, runs every test, and renders per-library
+# HTML reports + a landing page. The gate enforces aggregate thresholds.
+#
+# Coverage is intentionally NOT part of per-PR CI: every PR push would add a
+# fourth full-build pipeline (debug + asan + docs already there), roughly
+# doubling CI runner minutes. A daily run catches drift within 24h while
+# keeping the per-PR pipeline lean.
+# ==============================================================================
+name: Coverage
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # 07:00 UTC daily (~midnight Pacific)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  coverage:
+    name: LLVM coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      REGISTRY: ghcr.io/${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Prepare environment
+        run: |
+          touch ~/.gitconfig
+          mkdir -p ~/.ssh
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull cached dev images
+        run: |
+          docker pull $REGISTRY/apex.base:latest    && docker tag $REGISTRY/apex.base:latest    apex.base    || true
+          docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
+
+      - name: Coverage (threshold gate)
+        run: docker compose run --rm -T dev make coverage-check
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/hosted-x86_64-coverage/coverage/
+          retention-days: 14
