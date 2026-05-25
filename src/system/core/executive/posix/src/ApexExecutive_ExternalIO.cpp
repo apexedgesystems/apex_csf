@@ -35,11 +35,6 @@ static constexpr std::size_t CMD_BUFFER_SIZE = 128;
  */
 enum class Command : std::uint8_t { NONE = 0, PAUSE, RESUME, FAST_FORWARD, QUIT, UNKNOWN };
 
-/**
- * @brief Parse single-character command efficiently.
- * @param c Character to parse.
- * @return Parsed command type.
- */
 inline Command parseCommandChar(char c) noexcept {
   // Convert to lowercase via bitwise OR with 0x20
   const char lc = c | 0x20;
@@ -58,12 +53,6 @@ inline Command parseCommandChar(char c) noexcept {
   }
 }
 
-/**
- * @brief Trim whitespace from buffer in-place (modifies buffer).
- * @param buf Buffer to trim.
- * @param len Current length.
- * @return New length after trimming.
- */
 inline std::size_t trimWhitespace(char* buf, std::size_t len) noexcept {
   if (len == 0)
     return 0;

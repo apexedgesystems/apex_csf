@@ -9,7 +9,7 @@
  * kernel latches a precise edge timestamp inside the ISR (within ~1-10us
  * of the physical edge); userspace then samples its own monotonic clock
  * within a few microseconds of consuming the latch. The returned
- * timestamp is in the same monotonic domain as ::clock_gettime
+ * timestamp is in the same monotonic domain as `clock_gettime`
  * (CLOCK_MONOTONIC), so TimeServer can interpolate against it directly.
  *
  * The /dev/pps[N] device is created by the kernel PPS subsystem
@@ -163,18 +163,18 @@ protected:
   /* ----------------------------- Test seams ----------------------------- */
 
   /**
-   * @brief Open a device. Defaults to ::open. Override for tests.
+   * @brief Open a device. Defaults to `open`. Override for tests.
    * @return File descriptor on success, -1 on failure.
    */
   virtual int sysOpen(const char* path, int flags) noexcept { return ::open(path, flags); }
 
   /**
-   * @brief Close a device. Defaults to ::close.
+   * @brief Close a device. Defaults to `close`.
    */
   virtual int sysClose(int fd) noexcept { return ::close(fd); }
 
   /**
-   * @brief Issue an ioctl. Defaults to ::ioctl.
+   * @brief Issue an ioctl. Defaults to `ioctl`.
    * @note The third argument is `void*` rather than the C variadic form
    *       so that test overrides can inspect or mutate it without
    *       wrestling with va_list.
@@ -184,7 +184,7 @@ protected:
   }
 
   /**
-   * @brief Read the monotonic clock. Defaults to ::clock_gettime.
+   * @brief Read the monotonic clock. Defaults to `clock_gettime`.
    */
   virtual int sysClockGettime(clockid_t clkId, struct timespec* tsOut) noexcept {
     return ::clock_gettime(clkId, tsOut);

@@ -562,7 +562,7 @@ RunResult ApexExecutive::run() noexcept {
   // Register executive health packet as OUTPUT for INSPECT readback.
   // The packet is populated on each GET_HEALTH call and on each INSPECT read.
   {
-    getHealthPacket(); // Populate initial snapshot.
+    (void)getHealthPacket(); // Populate initial snapshot (return value unused).
     auto status = registry_.registerData(fullUid(), system_core::data::DataCategory::OUTPUT,
                                          "health", &healthPacket_, sizeof(ExecutiveHealthPacket));
     if (system_core::registry::isError(status)) {

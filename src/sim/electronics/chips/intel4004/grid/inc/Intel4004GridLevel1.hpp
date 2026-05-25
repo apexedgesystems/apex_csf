@@ -2152,10 +2152,10 @@ struct Intel4004GridLevel1 : Intel4004Grid {
    * (clock-edge coupling through Cgd, refresh through gate-source
    * caps, etc.). See `Intel4004GridLevel2::stampDynamicCharge`.
    *
-   * @param mna           NR-iteration MNA system to stamp into.
-   * @param prevTimestepV Voltages from the PREVIOUS timestep (constant
-   *                      during NR), needed for the cap-companion
-   *                      backward-Euler current source term.
+   * Args (first is the NR-iteration MNA system to stamp into; second is
+   * voltages from the PREVIOUS timestep, constant during NR, needed for
+   * the cap-companion backward-Euler current source term) are unused
+   * in the default L1 implementation.
    */
   virtual void stampDynamicCharge(algorithms::mna::MnaSystemSparse& /*mna*/,
                                   const std::vector<double>& /*prevTimestepV*/) const {

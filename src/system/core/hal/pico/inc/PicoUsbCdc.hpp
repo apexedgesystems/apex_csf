@@ -74,7 +74,10 @@ public:
 
   /**
    * @brief Mark USB CDC as ready for I/O.
-   * @param config Ignored (USB CDC does not use baud/parity/stop settings).
+   *
+   * The UartConfig argument is ignored (USB CDC does not use baud/parity/stop
+   * settings); the parameter is unnamed in the signature.
+   *
    * @return OK on success.
    * @note Requires stdio_init_all() to have been called first.
    */

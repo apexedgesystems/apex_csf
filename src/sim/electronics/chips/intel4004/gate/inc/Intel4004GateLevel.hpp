@@ -248,8 +248,7 @@ public:
    * Drives timing signals, propagates gates for both CLK1 and CLK2 phases.
    *
    * @param machineState State index (0=A1 through 7=X3).
-   * @param rom ROM data for bus drive during M1/M2.
-   * @param romByte Current byte being fetched.
+   * @param romByte Current byte being fetched (drives bus during M1/M2).
    * @return Total propagation rounds.
    */
   std::size_t executeMachineState(std::uint8_t machineState, std::uint8_t romByte) {

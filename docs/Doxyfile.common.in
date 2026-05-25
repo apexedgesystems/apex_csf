@@ -1,17 +1,18 @@
 PROJECT_NAME           = @LIB_NAME@
 OUTPUT_DIRECTORY       = @DOCS_DIR@
+HTML_OUTPUT            = .
 
 INPUT                  = @SRC_DIR@ @INC_DIR@ @TST_DIR@ @DOCS_SRC_DIR@ @TOOLS_DIR@ @TEMPLATES_DIR@ @EXTRA_DIRS@ @README_FILE@
 USE_MDFILE_AS_MAINPAGE = @README_FILE@
 
 RECURSIVE              = YES
 
-GENERATE_HTML          = YES
 GENERATE_LATEX         = NO
 GENERATE_XML           = YES
 GENERATE_TREEVIEW      = YES
 SEARCHENGINE           = YES
 MARKDOWN_SUPPORT       = YES
+MARKDOWN_ID_STYLE      = GITHUB
 
 # doxygen-awesome-css theme (https://jothepro.github.io/doxygen-awesome-css/)
 DISABLE_INDEX          = NO
@@ -31,12 +32,14 @@ INLINE_SOURCES         = YES
 
 HAVE_DOT               = YES
 DOT_IMAGE_FORMAT       = png
-DOT_GRAPH_MAX_NODES    = 50
+DOT_GRAPH_MAX_NODES    = 100
 
 STRIP_FROM_PATH        = @CMAKE_SOURCE_DIR@
 
 QUIET                  = YES
-WARN_IF_DOC_ERROR      = YES
+WARN_IF_DOC_ERROR      = @WARN_IF_DOC_ERROR@
 
 FILE_PATTERNS          = *.cpp *.hpp *.tpp *.cu *.cuh *.md
-GENERATE_TAGFILE       = @DOCS_DIR@/@LIB_NAME@.tag
+GENERATE_HTML          = @GENERATE_HTML@
+GENERATE_TAGFILE       = @GENERATE_TAGFILE_VALUE@
+TAGFILES               = @TAGFILES_LIST@

@@ -8,7 +8,7 @@
  *  - `apex::compat::is_unsigned_v<T>` : true for unsigned integer types.
  *  - `apex::compat::is_same_v<T, U>`  : true when T and U are the same type.
  *
- * Maps to std::is_unsigned_v / std::is_same_v when <type_traits> is available,
+ * Maps to std::is_unsigned_v / std::is_same_v when `<type_traits>` is available,
  * otherwise provides constexpr variable templates via template specialization.
  *
  * @note RT-safe (compile-time only, no runtime cost).

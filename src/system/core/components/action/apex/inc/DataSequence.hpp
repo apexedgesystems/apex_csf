@@ -312,7 +312,7 @@ struct DataSequence {
 /**
  * @brief Start a sequence from step 0.
  * @param seq Sequence to start (modified: status, currentStep, delayRemaining, runCount).
- * @param currentCycle Current scheduler cycle (captured as startCycle for ATS).
+ * @param startRef Start reference timestamp (scheduler cycle or microseconds, used as ATS origin).
  * @note RT-safe: O(1).
  *
  * If already running, restarts from step 0 (preemptive restart).

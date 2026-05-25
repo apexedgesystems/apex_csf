@@ -302,6 +302,18 @@ docs: prep
 	@cmake --preset $(HOST_DEBUG_PRESET) $(CMAKE_VERBOSE_FLAG)
 	@cmake --build --preset $(HOST_DEBUG_PRESET) --target docs -j$(NUM_JOBS)
 
+# Same as `docs` but fails if doxygen emits any warning. Use as the CI gate.
+docs-check: prep
+	$(call log,build,Checking documentation (zero-warning gate))
+	@cmake --preset $(HOST_DEBUG_PRESET) $(CMAKE_VERBOSE_FLAG)
+	@cmake --build --preset $(HOST_DEBUG_PRESET) --target docs -j$(NUM_JOBS) 2>&1 | tee "$(HOST_DEBUG_DIR)/.docs-check.log"
+	@bad=$$(grep -E '^/[^:]+: ?(warning:|error:)|^[^/]*: ?warning:' "$(HOST_DEBUG_DIR)/.docs-check.log" | grep -v -E '^/usr/|/_deps/' || true); \
+	  if [ -n "$$bad" ]; then \
+	    printf '$(TERM_RED)[docs-check]$(TERM_RESET) doxygen emitted warnings:\n%s\n' "$$bad"; \
+	    exit 1; \
+	  fi
+	$(call log,docs-check,OK -- zero doxygen warnings)
+
 # ==============================================================================
 # Cross-Compilation and Firmware Builds (generated from templates)
 # ==============================================================================

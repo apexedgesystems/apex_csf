@@ -153,6 +153,7 @@ struct Intel4004SignalTracer {
 
   /**
    * @brief Capture a voltage snapshot for all traced nodes.
+   * @param nodeVoltages Current MNA node-voltage vector (indexed by net ID).
    * @param label Description of this snapshot (e.g., "After LDM 5, state M1").
    */
   void snapshot(const std::vector<double>& nodeVoltages, const std::string& label = "") {

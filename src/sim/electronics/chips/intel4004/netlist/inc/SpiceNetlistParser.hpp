@@ -5,7 +5,8 @@
  * @brief Parser for SPICE3-format transistor netlists.
  *
  * Reads the lajos-4004.spice netlist format:
- *   M<id> <drain> <gate> <source> <bulk> <model>
+ *
+ *     M<id> <drain> <gate> <source> <bulk> <model>
  *
  * Example lines:
  *   M0 N0385 N0770 GND GND efet
