@@ -49,9 +49,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull cached dev images
+      - name: Pull cached dev image
         run: |
-          docker pull $REGISTRY/apex.base:latest    && docker tag $REGISTRY/apex.base:latest    apex.base    || true
           docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
 
       - name: Coverage (threshold gate)
