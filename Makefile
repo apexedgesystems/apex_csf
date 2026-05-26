@@ -239,6 +239,7 @@ help:
 	@printf '  %-28s %s\n' "make compose-coverage" "Coverage report via dev-cuda"
 	@printf '  %-28s %s\n' "make compose-format" "Format code via dev-cuda"
 	@printf '  %-28s %s\n' "make compose-tools" "Build all tools via dev-cuda"
+	@printf '  %-28s %s\n' "make compose-bench" "Run Vernier bench inside the dev container; pass BENCH_ARGS='...'"
 	@printf '  %-28s %s\n' "make compose-stm32" "STM32 firmware via dev-stm32"
 	@printf '  %-28s %s\n' "make compose-stm32-flash" "Flash STM32 via dev-stm32"
 	@printf '  %-28s %s\n' "make compose-arduino" "Arduino firmware via dev-arduino"

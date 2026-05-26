@@ -223,10 +223,12 @@ ENV FLAMEGRAPH_DIR=/opt/FlameGraph
 # ==============================================================================
 # Profiling Tools
 # ==============================================================================
-# linux-tools: perf (may not match host kernel; mount host tools if needed)
-# google-perftools: CPU/heap profiler, tcmalloc
-# valgrind: callgrind instruction-level profiler
-# bpftrace: Dynamic tracing (requires privileged container)
+# linux-tools:        perf (may not match host kernel; mount host tools if needed)
+# google-perftools:   CPU/heap profiler, tcmalloc
+# valgrind:           callgrind, massif, memcheck (vernier backends)
+# bpftrace:           dynamic tracing + off-CPU (vernier offcpu backend)
+# heaptrack:          low-overhead heap profiler (vernier heaptrack backend)
+# libjemalloc2/-dev:  sampling heap profiler (vernier jemalloc backend, jeprof)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
@@ -238,6 +240,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libunwind-dev \
       valgrind \
       bpftrace \
+      heaptrack \
+      libjemalloc2 \
+      libjemalloc-dev \
       rr
 
 # ==============================================================================

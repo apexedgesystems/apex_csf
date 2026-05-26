@@ -71,6 +71,28 @@ $(eval $(call _compose_target,tools-py,Python tools,dev-cuda,tools-py))
 $(eval $(call _compose_target,tools-rust,Rust tools,dev-cuda,tools-rust))
 
 # ------------------------------------------------------------------------------
+# Vernier bench wrapper
+#
+# Source the build's .env so `bench` (and the other Vernier CLI tools) are on
+# PATH, then forward BENCH_ARGS verbatim. Example:
+#   make compose-bench BENCH_ARGS='doctor build/hosted-x86_64-debug/bin/ptests/SLIPFraming_PTEST'
+#   make compose-bench BENCH_ARGS='profile-all SLIPFraming_PTEST --quick \
+#                                  --out _slip_runs --profilers gperf,callgrind'
+#   make compose-bench BENCH_ARGS='run SLIPFraming_PTEST -- --profile massif \
+#                                  --cycles 100 --gtest_filter=*EncodeClean*'
+#
+# Bypasses _compose_run because the inner invocation is a sourced shell
+# command, not `make <target>`. Cwd is the project root so bench's
+# short-name resolver finds binaries under build/*/bin/{ptests,tests,examples}.
+# ------------------------------------------------------------------------------
+
+.PHONY: compose-bench
+compose-bench:
+	$(call log,compose,bench [dev-cuda])
+	@docker compose run --rm -T dev-cuda bash -c \
+	  '. $(BUILD_DIR)/.env && bench $(BENCH_ARGS)'
+
+# ------------------------------------------------------------------------------
 # Cross-Compilation
 # ------------------------------------------------------------------------------
 
