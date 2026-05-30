@@ -1,0 +1,26 @@
+# .bench.yaml -- Vernier benchmarking defaults.
+#
+# Defaults for `bench run` / `bench profile-all` when the matching CLI flag
+# is omitted. Validated with `bench config-validate`.
+
+# Iterations per repeat (--cycles N). Profiling runs override this per backend
+# (sampling profilers want more cycles; valgrind tools want very few).
+cycles: 10000
+
+# Measurement repeats (--repeats N). 10 keeps CV low for the baseline CSV.
+repeats: 10
+
+# Default artifact root. Profiling sweeps pass --profile-output-dir explicitly
+# to route under docs/optimization/<date>/<lib>/profiling/.
+profile_output_dir: bench-out
+
+# Skip inherently noisy / long sweep tests in the baseline pass.
+gtest_filter: "-*Large*:-*PayloadScaling*:-*Sweep*"
+
+# Short-name resolver: `bench run SLIPFraming_PTEST` walks these.
+bin_roots:
+  - build/*
+bin_subdirs:
+  - bin/ptests
+  - bin/tests
+  - bin/examples

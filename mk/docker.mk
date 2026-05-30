@@ -27,6 +27,9 @@ export COMPOSE_DOCKER_CLI_BUILD := 1
 export USER     := $(shell id -un)
 export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
+# Host's running kernel -- the dev image installs the matching linux-tools so
+# `perf` works (perf must match the running kernel; linux-tools-generic drifts).
+export HOST_KERNEL := $(shell uname -r)
 
 # Artifact output directory
 DOCKER_OUT_DIR := output
