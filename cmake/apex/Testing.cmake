@@ -1,11 +1,83 @@
 # ==============================================================================
 # apex/Testing.cmake - Test infrastructure and coverage support
 # ==============================================================================
+#
+# Three test types, each a distinct build config. All three build a
+# GTest/GMock executable from the shared core (_apex_test_executable); they
+# differ only in the wrapper's added config:
+#
+#   Type  Dir         CTest?  Coverage  PCH  Extra                 Helper
+#   ----  ----------  ------  --------  ---  --------------------  -----------------
+#   utst  bin/utests/ yes     yes       yes  labels/timing/locks   apex_add_gtest
+#   ptst  bin/ptests/ no      no        no   gperftools + vernier  apex_add_ptest
+#                                            + rpath fixup
+#   dtst  bin/dtests/ no      no        no   (none)                apex_add_devtest
+#
+# - utst: unit tests -- exercise one class/function in isolation. Registered
+#         with CTest and run by `make test`.
+# - ptst: performance/benchmark tests -- measure throughput/latency. Run
+#         manually (bin/ptests/<name>), never gated in CI.
+# - dtst: component-level tests -- exercise a whole component or its
+#         integration with others, too coarse/slow for the unit gate. Run
+#         manually (bin/dtests/<name>).
+# ==============================================================================
 
 include_guard(GLOBAL)
 
 # ------------------------------------------------------------------------------
-# apex_add_gtest(...)
+# _apex_test_executable(TARGET <t> OUTDIR <subdir> SOURCES <src...>
+#                       [INC <dir>] [CUDA <cu...>] [LINK <libs...>]
+#                       [EXTRA_LINK <libs...>] [PCH])
+#
+# Shared core for every test type: create a GTest/GMock-linked executable,
+# attach CUDA sources, and route the binary to bin/<OUTDIR>/. What each test
+# type adds on top (CTest registration, coverage, rpath, perf libs) lives in
+# the public wrapper below -- that is what makes the types distinct.
+# ------------------------------------------------------------------------------
+function (_apex_test_executable)
+  cmake_parse_arguments(TE "PCH" "TARGET;INC;OUTDIR" "SOURCES;CUDA;LINK;EXTRA_LINK" ${ARGN})
+
+  add_executable(${TE_TARGET})
+  target_sources(${TE_TARGET} PRIVATE ${TE_SOURCES})
+
+  if (TE_PCH)
+    apex_pch_apply(${TE_TARGET} TEST)
+  endif ()
+
+  if (TE_INC)
+    target_include_directories(${TE_TARGET} PRIVATE "${TE_INC}")
+  endif ()
+
+  if (TE_CUDA
+      AND CUDAToolkit_FOUND
+      AND CMAKE_CUDA_COMPILER
+  )
+    apex_cuda_sources(${TE_TARGET} FILES ${TE_CUDA})
+  endif ()
+
+  # GTest linkage (resolved once project-wide; this is a fallback).
+  if (NOT TARGET GTest::gtest_main)
+    find_package(GTest QUIET CONFIG)
+    if (NOT TARGET GTest::gtest_main)
+      find_package(GTest QUIET)
+    endif ()
+    if (NOT TARGET GTest::gtest_main)
+      message(FATAL_ERROR "_apex_test_executable: GTest::gtest_main not found")
+    endif ()
+  endif ()
+
+  target_link_libraries(
+    ${TE_TARGET} PRIVATE GTest::gtest_main GTest::gmock ${TE_LINK} ${TE_EXTRA_LINK}
+  )
+
+  set_target_properties(
+    ${TE_TARGET} PROPERTIES RUNTIME_OUTPUT_DIRECTORY
+                            "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${TE_OUTDIR}"
+  )
+endfunction ()
+
+# ------------------------------------------------------------------------------
+# apex_add_gtest(...)  -- UNIT test (utst/), registered with CTest
 #
 # Add a GoogleTest-based test target with coverage and timing controls.
 #
@@ -23,6 +95,7 @@ include_guard(GLOBAL)
 #   WORKING_DIR     <dir>            optional
 #   RESOURCE_LOCK   <n>              optional
 #   NO_COVERAGE                      optional flag (skip coverage)
+#   NO_PCH                           optional flag (skip precompiled headers)
 #   TIMING_ALL                       optional flag
 #   TIMING_TESTS    <names...>       optional
 #   TIMING_PATTERNS <regex...>       optional
@@ -41,40 +114,25 @@ function (apex_add_gtest)
   )
   apex_require(GT_TARGET GT_SOURCES)
 
-  add_executable(${GT_TARGET})
-  target_sources(${GT_TARGET} PRIVATE ${GT_SOURCES})
-
-  if (NOT GT_NO_PCH)
-    apex_pch_apply(${GT_TARGET} TEST)
+  # Unit-test config: bin/utests/, precompiled headers on by default.
+  set(_pch "PCH")
+  if (GT_NO_PCH)
+    set(_pch "")
   endif ()
-
-  if (GT_INC)
-    target_include_directories(${GT_TARGET} PRIVATE "${GT_INC}")
-  endif ()
-
-  # CUDA sources
-  if (GT_CUDA
-      AND CUDAToolkit_FOUND
-      AND CMAKE_CUDA_COMPILER
-  )
-    apex_cuda_sources(${GT_TARGET} FILES ${GT_CUDA})
-  endif ()
-
-  # GTest linkage
-  if (NOT TARGET GTest::gtest_main)
-    find_package(GTest QUIET CONFIG)
-    if (NOT TARGET GTest::gtest_main)
-      find_package(GTest QUIET)
-    endif ()
-    if (NOT TARGET GTest::gtest_main)
-      message(FATAL_ERROR "apex_add_gtest: GTest::gtest_main not found")
-    endif ()
-  endif ()
-
-  target_link_libraries(${GT_TARGET} PRIVATE GTest::gtest_main GTest::gmock ${GT_LINK})
-
-  set_target_properties(
-    ${GT_TARGET} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests"
+  _apex_test_executable(
+    TARGET
+    ${GT_TARGET}
+    OUTDIR
+    utests
+    SOURCES
+    ${GT_SOURCES}
+    CUDA
+    ${GT_CUDA}
+    LINK
+    ${GT_LINK}
+    INC
+    "${GT_INC}"
+    ${_pch}
   )
 
   # Coverage instrumentation (auto-detect from LINK or use COVERAGE_FOR override)
@@ -250,7 +308,7 @@ function (apex_add_gtest)
 endfunction ()
 
 # ------------------------------------------------------------------------------
-# apex_add_ptest(...)
+# apex_add_ptest(...)  -- PERFORMANCE test (ptests/), NOT registered with CTest
 #
 # Add a performance test executable that is built but NOT registered with CTest.
 # Performance tests are for benchmarking and should be run manually.
@@ -260,8 +318,9 @@ endfunction ()
 #
 # Features:
 #   - Output to bin/ptests/
-#   - Auto-links benchmarking library if available
+#   - Auto-links benchmarking library (Vernier) if available
 #   - Auto-links gperftools if available
+#   - RPATH fixup so the binary finds project shared libs from bin/ptests/
 #
 # Arguments:
 #   TARGET          <n>              required
@@ -280,53 +339,34 @@ function (apex_add_ptest)
   cmake_parse_arguments(PT "" "TARGET;INC" "SOURCES;CUDA;LINK;LABELS" ${ARGN})
   apex_require(PT_TARGET PT_SOURCES)
 
-  add_executable(${PT_TARGET})
-  target_sources(${PT_TARGET} PRIVATE ${PT_SOURCES})
-
-  if (PT_INC)
-    target_include_directories(${PT_TARGET} PRIVATE "${PT_INC}")
-  endif ()
-
-  # CUDA sources
-  if (PT_CUDA
-      AND CUDAToolkit_FOUND
-      AND CMAKE_CUDA_COMPILER
-  )
-    apex_cuda_sources(${PT_TARGET} FILES ${PT_CUDA})
-  endif ()
-
-  # GTest linkage
-  if (NOT TARGET GTest::gtest_main)
-    find_package(GTest QUIET CONFIG)
-    if (NOT TARGET GTest::gtest_main)
-      find_package(GTest QUIET)
-    endif ()
-    if (NOT TARGET GTest::gtest_main)
-      message(FATAL_ERROR "apex_add_ptest: GTest::gtest_main not found")
-    endif ()
-  endif ()
-
-  # Build link list
-  set(_link ${PT_LINK})
-
-  # gperftools (optional)
+  # Perf-test extra links: gperftools (optional) + Vernier bench (if present).
+  set(_perf_link "")
   find_library(GPERF_PROFILER_LIB NAMES profiler)
   find_library(GPERF_TCMALLOC_LIB NAMES tcmalloc)
   if (GPERF_PROFILER_LIB)
-    list(APPEND _link "${GPERF_PROFILER_LIB}")
+    list(APPEND _perf_link "${GPERF_PROFILER_LIB}")
   endif ()
   if (GPERF_TCMALLOC_LIB)
-    list(APPEND _link "${GPERF_TCMALLOC_LIB}")
+    list(APPEND _perf_link "${GPERF_TCMALLOC_LIB}")
   endif ()
+  list(APPEND _perf_link $<$<TARGET_EXISTS:vernier::bench>:vernier::bench>)
 
-  # Benchmarking library (Vernier, imported via FetchContent)
-  list(APPEND _link $<$<TARGET_EXISTS:vernier::bench>:vernier::bench>)
-
-  target_link_libraries(${PT_TARGET} PRIVATE GTest::gtest_main GTest::gmock ${_link})
-
-  # Output directory
-  set_target_properties(
-    ${PT_TARGET} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/ptests"
+  # Perf-test config: bin/ptests/, perf libs, no PCH/coverage.
+  _apex_test_executable(
+    TARGET
+    ${PT_TARGET}
+    OUTDIR
+    ptests
+    SOURCES
+    ${PT_SOURCES}
+    CUDA
+    ${PT_CUDA}
+    LINK
+    ${PT_LINK}
+    INC
+    "${PT_INC}"
+    EXTRA_LINK
+    ${_perf_link}
   )
 
   # RPATH fixup for ptests layout
@@ -375,11 +415,11 @@ function (apex_add_ptest)
 endfunction ()
 
 # ------------------------------------------------------------------------------
-# apex_add_devtest(...)
+# apex_add_devtest(...)  -- COMPONENT-LEVEL test (dtests/), NOT registered with CTest
 #
-# Add a development/integration test executable that is built but NOT registered
-# with CTest. These tests require manual execution (e.g., external data files,
-# special hardware).
+# Add a component-level test executable that is built but NOT registered with
+# CTest. These exercise a whole component (or its integration with others) and
+# are too coarse or slow for the unit gate, so they run manually.
 #
 # The executable is placed in bin/dtests/ and can be run manually with:
 #   ./build/hosted-x86_64-debug/bin/dtests/TestName --gtest_filter="*Pattern*"
@@ -400,36 +440,20 @@ function (apex_add_devtest)
   cmake_parse_arguments(DT "" "TARGET;INC" "SOURCES;CUDA;LINK" ${ARGN})
   apex_require(DT_TARGET DT_SOURCES)
 
-  add_executable(${DT_TARGET})
-  target_sources(${DT_TARGET} PRIVATE ${DT_SOURCES})
-
-  if (DT_INC)
-    target_include_directories(${DT_TARGET} PRIVATE "${DT_INC}")
-  endif ()
-
-  # CUDA sources
-  if (DT_CUDA
-      AND CUDAToolkit_FOUND
-      AND CMAKE_CUDA_COMPILER
-  )
-    apex_cuda_sources(${DT_TARGET} FILES ${DT_CUDA})
-  endif ()
-
-  # GTest linkage
-  if (NOT TARGET GTest::gtest_main)
-    find_package(GTest QUIET CONFIG)
-    if (NOT TARGET GTest::gtest_main)
-      find_package(GTest QUIET)
-    endif ()
-    if (NOT TARGET GTest::gtest_main)
-      message(FATAL_ERROR "apex_add_devtest: GTest::gtest_main not found")
-    endif ()
-  endif ()
-
-  target_link_libraries(${DT_TARGET} PRIVATE GTest::gtest_main GTest::gmock ${DT_LINK})
-
-  set_target_properties(
-    ${DT_TARGET} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/dtests"
+  # Dev-test config: bin/dtests/, plain (no PCH/coverage/CTest).
+  _apex_test_executable(
+    TARGET
+    ${DT_TARGET}
+    OUTDIR
+    dtests
+    SOURCES
+    ${DT_SOURCES}
+    CUDA
+    ${DT_CUDA}
+    LINK
+    ${DT_LINK}
+    INC
+    "${DT_INC}"
   )
 
   # NOTE: No gtest_add_tests() - dev tests are not registered with CTest

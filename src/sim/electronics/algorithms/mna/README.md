@@ -619,7 +619,7 @@ make compose-testp
 
 # Run specific test suite
 docker compose run --rm dev-cuda bash -c \
-  './build/native-linux-debug/bin/tests/TestSimElectronicsMna'
+  './build/native-linux-debug/bin/utests/TestSimElectronicsMna'
 ```
 
 **Test coverage:**

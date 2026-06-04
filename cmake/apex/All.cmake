@@ -28,8 +28,10 @@ include(apex/Coverage)
 # Testing infrastructure
 include(apex/Testing)
 
-# Tooling (docs, UPX, clang-tidy)
-include(apex/Tooling)
+# Documentation (Doxygen), UPX compression, clang-tidy for CUDA
+include(apex/Docs)
+include(apex/Upx)
+include(apex/ClangTidy)
 
 # Data definitions (struct dictionaries for C2)
 include(apex/DataDefinitions)

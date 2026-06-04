@@ -30,7 +30,9 @@ All modules are included via `All.cmake` in strict dependency order:
 | `Targets.cmake`           | `apex_add_library`, `apex_add_app`, `apex_add_tool`   |
 | `Coverage.cmake`          | Code coverage instrumentation and reporting           |
 | `Testing.cmake`           | GTest/GMock, performance tests, development tests     |
-| `Tooling.cmake`           | Doxygen, clang-tidy, UPX compression                  |
+| `Docs.cmake`              | Doxygen per-library HTML + docs landing page          |
+| `Upx.cmake`               | UPX-compressed artifact copies                        |
+| `ClangTidy.cmake`         | clang-tidy for CUDA sources                           |
 | `DataDefinitions.cmake`   | Struct dictionary manifest registration               |
 | `Packaging.cmake`         | Application deployment packaging (`package_<APP>`)    |
 | `Firmware.cmake`          | Bare-metal firmware targets (STM32, AVR, Pico, ESP32) |
@@ -190,7 +192,7 @@ Test output directories:
 
 | Function           | Output Directory | In CTest |
 | ------------------ | ---------------- | -------- |
-| `apex_add_gtest`   | `bin/tests/`     | Yes      |
+| `apex_add_gtest`   | `bin/utests/`    | Yes      |
 | `apex_add_ptest`   | `bin/ptests/`    | No       |
 | `apex_add_devtest` | `bin/dtests/`    | No       |
 
@@ -364,9 +366,9 @@ build/
     MyApp           # Production apps (apex_add_app)
     MyApp.upx       # UPX-compressed copy
     tools/          # Internal tools (apex_add_tool)
-    tests/          # Unit tests
+    utests/         # Unit tests
     ptests/         # Performance tests
-    dtests/         # Development tests
+    dtests/         # Component-level tests
   lib/              # Shared/static libraries
   firmware/         # Bare-metal firmware (.elf, .bin, .hex)
   docs/             # Doxygen output

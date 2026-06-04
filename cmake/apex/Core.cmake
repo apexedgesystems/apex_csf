@@ -43,10 +43,13 @@ endfunction ()
 #   README_FILE = ${CMAKE_CURRENT_SOURCE_DIR}/README.md
 #
 # Test directory conventions:
-#   utst/ - Unit tests (run with make test)
-#   ptst/ - Performance tests (run with make test, longer duration)
-#   dtst/ - Development tests (manual execution only, external dependencies)
-#   tst/  - General test bucket (legacy)
+#   utst/ - Unit tests: one class/function in isolation, registered with CTest
+#           and run by `make test`.
+#   ptst/ - Performance/benchmark tests: measure throughput/latency, run
+#           manually (bin/ptests/), never gated in CI.
+#   dtst/ - Component-level tests: a whole component or its integration with
+#           others, too coarse/slow for the unit gate, run manually (bin/dtests/).
+#   tst/  - General test bucket (legacy; prefer utst/ptst/dtst for new modules).
 #
 # All directories are optional. CMakeLists should check EXISTS before adding.
 # ------------------------------------------------------------------------------
@@ -113,7 +116,6 @@ endfunction ()
 # apex_standard_optins(<target>)
 #
 # Apply standard opt-in features to a target:
-#   - apex_enable_coverage (Debug only, respects ENABLE_COVERAGE)
 #   - apex_add_doxygen (respects PROJECT_BUILD_DOCS)
 #   - apex_add_upx_copy (respects ENABLE_UPX)
 #   - apex_clang_tidy_cuda (if target has CUDA sources, respects ENABLE_CLANG_TIDY)
@@ -126,9 +128,6 @@ function (apex_standard_optins _target)
   if (NOT TARGET "${_target}")
     return()
   endif ()
-
-  # Coverage instrumentation
-  apex_enable_coverage(${_target})
 
   # Doxygen documentation
   apex_add_doxygen(${_target})
@@ -158,9 +157,9 @@ endfunction ()
 # Add test subdirectories that exist. Each argument names a test directory
 # kind whose path variable was set by apex_module():
 #   utst  -> ${UTST_DIR}    Unit tests (registered with CTest)
-#   ptst  -> ${PTST_DIR}    Performance tests (manual execution)
-#   dtst  -> ${DTST_DIR}    Development tests (manual execution)
-#   tst   -> ${TST_DIR}     General test bucket
+#   ptst  -> ${PTST_DIR}    Performance/benchmark tests (manual execution)
+#   dtst  -> ${DTST_DIR}    Component-level tests (manual execution)
+#   tst   -> ${TST_DIR}     General test bucket (legacy)
 #
 # Skipped on bare-metal builds (tests require host execution).
 #
@@ -192,20 +191,4 @@ function (apex_add_test_subdirs)
       add_subdirectory("${_kind}")
     endif ()
   endforeach ()
-endfunction ()
-
-# ------------------------------------------------------------------------------
-# Internal: Status/verbose helpers
-# ------------------------------------------------------------------------------
-
-# One-liner status (respects APEX_VERBOSE)
-function (_apex_status _msg)
-  if (APEX_VERBOSE)
-    message(STATUS "[apex] ${_msg}")
-  endif ()
-endfunction ()
-
-# Always-print status
-function (_apex_info _msg)
-  message(STATUS "[apex] ${_msg}")
 endfunction ()

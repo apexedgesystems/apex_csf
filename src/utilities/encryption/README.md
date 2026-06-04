@@ -234,7 +234,7 @@ docker compose run --rm -T dev-cuda make test
 
 # Run encryption tests only
 docker compose run --rm -T dev-cuda \
-  ./build/hosted-x86_64-debug/bin/tests/TestUtilitiesEncryption
+  ./build/hosted-x86_64-debug/bin/utests/TestUtilitiesEncryption
 ```
 
 ### Performance
