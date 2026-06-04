@@ -301,11 +301,11 @@ adapter.setTraceEnabled(true);
 
 ## 7. Testing
 
-| Directory | Type              | Tests | Runs with `make test`  |
-| --------- | ----------------- | ----- | ---------------------- |
-| `utst/`   | Unit tests        | 74    | Yes                    |
-| `dtst/`   | Development tests | 1     | No (hardware required) |
-| `ptst/`   | Performance tests | 6     | No (manual)            |
+| Directory | Type                  | Tests | Runs with `make test`  |
+| --------- | --------------------- | ----- | ---------------------- |
+| `utst/`   | Unit tests            | 74    | Yes                    |
+| `dtst/`   | Component-level tests | 1     | No (hardware required) |
+| `ptst/`   | Performance tests     | 6     | No (manual)            |
 
 ---
 

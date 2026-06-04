@@ -29,7 +29,7 @@ All modules are included via `All.cmake` in strict dependency order:
 | `Cuda.cmake`              | CUDA sources, NVML, CUPTI integration                 |
 | `Targets.cmake`           | `apex_add_library`, `apex_add_app`, `apex_add_tool`   |
 | `Coverage.cmake`          | Code coverage instrumentation and reporting           |
-| `Testing.cmake`           | GTest/GMock, performance tests, development tests     |
+| `Testing.cmake`           | GTest/GMock unit, performance, and component tests    |
 | `Docs.cmake`              | Doxygen per-library HTML + docs landing page          |
 | `Upx.cmake`               | UPX-compressed artifact copies                        |
 | `ClangTidy.cmake`         | clang-tidy for CUDA sources                           |
@@ -180,7 +180,7 @@ apex_add_ptest(
   TIMING_ALL            # Serialize all tests
 )
 
-# Development tests (external deps, not in CTest)
+# Component-level tests (not in CTest, run manually)
 apex_add_devtest(
   TARGET   MyLib_Dev
   SOURCES  dev_foo.cpp
