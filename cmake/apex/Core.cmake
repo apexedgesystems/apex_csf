@@ -36,7 +36,6 @@ endfunction ()
 #   LIB_NAME    = <name>
 #   SRC_DIR     = ${CMAKE_CURRENT_SOURCE_DIR}/src
 #   INC_DIR     = ${CMAKE_CURRENT_SOURCE_DIR}/inc
-#   TST_DIR     = ${CMAKE_CURRENT_SOURCE_DIR}/tst
 #   UTST_DIR    = ${CMAKE_CURRENT_SOURCE_DIR}/utst
 #   PTST_DIR    = ${CMAKE_CURRENT_SOURCE_DIR}/ptst
 #   DTST_DIR    = ${CMAKE_CURRENT_SOURCE_DIR}/dtst
@@ -49,7 +48,6 @@ endfunction ()
 #           manually (bin/ptests/), never gated in CI.
 #   dtst/ - Component-level tests: a whole component or its integration with
 #           others, too coarse/slow for the unit gate, run manually (bin/dtests/).
-#   tst/  - General test bucket (legacy; prefer utst/ptst/dtst for new modules).
 #
 # All directories are optional. CMakeLists should check EXISTS before adding.
 # ------------------------------------------------------------------------------
@@ -64,10 +62,6 @@ function (apex_module _name)
   )
   set(INC_DIR
       "${CMAKE_CURRENT_SOURCE_DIR}/inc"
-      PARENT_SCOPE
-  )
-  set(TST_DIR
-      "${CMAKE_CURRENT_SOURCE_DIR}/tst"
       PARENT_SCOPE
   )
   set(UTST_DIR
@@ -159,14 +153,12 @@ endfunction ()
 #   utst  -> ${UTST_DIR}    Unit tests (registered with CTest)
 #   ptst  -> ${PTST_DIR}    Performance/benchmark tests (manual execution)
 #   dtst  -> ${DTST_DIR}    Component-level tests (manual execution)
-#   tst   -> ${TST_DIR}     General test bucket (legacy)
 #
 # Skipped on bare-metal builds (tests require host execution).
 #
 # Example:
 #   apex_add_test_subdirs(utst ptst)       # Unit + perf tests
-#   apex_add_test_subdirs(utst ptst dtst)  # Unit + perf + dev tests
-#   apex_add_test_subdirs(tst)             # General bucket only
+#   apex_add_test_subdirs(utst ptst dtst)  # Unit + perf + component tests
 # ------------------------------------------------------------------------------
 function (apex_add_test_subdirs)
   if (APEX_PLATFORM_BAREMETAL)
@@ -180,8 +172,6 @@ function (apex_add_test_subdirs)
       set(_dir "${PTST_DIR}")
     elseif (_kind STREQUAL "dtst")
       set(_dir "${DTST_DIR}")
-    elseif (_kind STREQUAL "tst")
-      set(_dir "${TST_DIR}")
     else ()
       message(WARNING "apex_add_test_subdirs: unknown kind '${_kind}'")
       continue()

@@ -566,7 +566,7 @@ if (r.status == ce::Status::NEED_MORE) {
 
 | Directory | Type | Tests              | Runs with `make test` |
 | --------- | ---- | ------------------ | --------------------- |
-| `tst/`    | Unit | 4 files (65 tests) | Yes                   |
+| `utst/`   | Unit | 4 files (65 tests) | Yes                   |
 | `ptst/`   | Perf | 8                  | No (manual)           |
 
 ---

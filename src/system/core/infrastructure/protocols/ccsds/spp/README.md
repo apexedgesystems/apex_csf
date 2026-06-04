@@ -459,7 +459,7 @@ if (r.status == cs::Status::NEED_MORE) {
 
 | Directory | Type | Tests   | Runs with `make test` |
 | --------- | ---- | ------- | --------------------- |
-| `tst/`    | Unit | 5 files | Yes                   |
+| `utst/`   | Unit | 5 files | Yes                   |
 | `ptst/`   | Perf | 8       | No (manual)           |
 
 ---

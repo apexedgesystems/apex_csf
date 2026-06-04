@@ -387,7 +387,7 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 
 | Directory | Type | Files | Runs with `make test` |
 | --------- | ---- | ----- | --------------------- |
-| `tst/`    | Unit | 12    | Yes                   |
+| `utst/`   | Unit | 12    | Yes                   |
 | `ptst/`   | Perf | 1     | No (manual)           |
 
 ### Expected Output

@@ -227,11 +227,11 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 
 ### Test Organization
 
-| Directory | Tests | Description       |
-| --------- | ----- | ----------------- |
-| `utst/`   | 53    | Unit tests        |
-| `tst/`    | 10    | Dev tests         |
-| `ptst/`   | 20    | Performance tests |
+| Directory | Tests | Description           |
+| --------- | ----- | --------------------- |
+| `utst/`   | 53    | Unit tests            |
+| `dtst/`   | 10    | Component-level tests |
+| `ptst/`   | 20    | Performance tests     |
 
 ### Expected Output
 

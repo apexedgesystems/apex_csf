@@ -35,10 +35,6 @@ apex_standard_optins(${LIB_NAME})
 # Subdirectories
 # ------------------------------------------------------------------------------
 
-if (EXISTS "${TST_DIR}/CMakeLists.txt")
-  add_subdirectory(tst)
-endif ()
-
 if (EXISTS "${UTST_DIR}/CMakeLists.txt")
   add_subdirectory(utst)
 endif ()

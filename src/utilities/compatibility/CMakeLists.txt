@@ -33,4 +33,4 @@ apex_standard_optins(${LIB_NAME})
 # Subdirectories
 # ------------------------------------------------------------------------------
 
-apex_add_test_subdirs(utst ptst tst)
+apex_add_test_subdirs(utst ptst)
