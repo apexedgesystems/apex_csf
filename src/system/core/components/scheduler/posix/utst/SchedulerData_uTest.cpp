@@ -296,18 +296,25 @@ TEST(SchedulerDataTest, FullTprmBufferLayout) {
   std::memcpy(buffer.data() + sizeof(header), &task1, sizeof(task1));
   std::memcpy(buffer.data() + sizeof(header) + sizeof(task1), &task2, sizeof(task2));
 
-  // Read back and verify
-  auto* readHeader = reinterpret_cast<SchedulerTprmHeader*>(buffer.data());
-  EXPECT_EQ(readHeader->numPools, 1);
-  EXPECT_EQ(readHeader->workersPerPool, 8);
-  EXPECT_EQ(readHeader->numTasks, 2);
+  // Read back via memcpy. The buffer is a packed byte layout, so the task
+  // entries sit at an offset that is not 4-byte aligned; reinterpret_cast onto
+  // it would bind references to misaligned addresses. Copy out into aligned
+  // locals, mirroring how the entries were written.
+  SchedulerTprmHeader readHeader;
+  std::memcpy(&readHeader, buffer.data(), sizeof(readHeader));
+  EXPECT_EQ(readHeader.numPools, 1);
+  EXPECT_EQ(readHeader.workersPerPool, 8);
+  EXPECT_EQ(readHeader.numTasks, 2);
 
-  auto* entries = reinterpret_cast<SchedulerTaskEntry*>(buffer.data() + sizeof(header));
-  EXPECT_EQ(entries[0].fullUid, 0x00006500u);
-  EXPECT_EQ(entries[0].sequenceGroup, 0);
-  EXPECT_FALSE(isUnsequenced(entries[0].sequenceGroup));
+  SchedulerTaskEntry entry0;
+  SchedulerTaskEntry entry1;
+  std::memcpy(&entry0, buffer.data() + sizeof(header), sizeof(entry0));
+  std::memcpy(&entry1, buffer.data() + sizeof(header) + sizeof(task1), sizeof(entry1));
+  EXPECT_EQ(entry0.fullUid, 0x00006500u);
+  EXPECT_EQ(entry0.sequenceGroup, 0);
+  EXPECT_FALSE(isUnsequenced(entry0.sequenceGroup));
 
-  EXPECT_EQ(entries[1].fullUid, 0x00006600u);
-  EXPECT_EQ(entries[1].sequenceGroup, NO_SEQUENCE_GROUP);
-  EXPECT_TRUE(isUnsequenced(entries[1].sequenceGroup));
+  EXPECT_EQ(entry1.fullUid, 0x00006600u);
+  EXPECT_EQ(entry1.sequenceGroup, NO_SEQUENCE_GROUP);
+  EXPECT_TRUE(isUnsequenced(entry1.sequenceGroup));
 }

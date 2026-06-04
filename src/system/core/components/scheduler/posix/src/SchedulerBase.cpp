@@ -520,14 +520,18 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   entries_.clear();
   schedule_.clear();
 
-  const auto* taskEntries =
-      reinterpret_cast<const SchedulerTaskEntry*>(tprmData.data() + sizeof(SchedulerTprmHeader));
+  const std::uint8_t* taskEntryBytes = tprmData.data() + sizeof(SchedulerTprmHeader);
 
   std::uint8_t skippedComponents = 0;
   std::uint8_t skippedTasks = 0;
 
   for (std::uint8_t i = 0; i < header->numTasks; ++i) {
-    const auto& entry = taskEntries[i];
+    // The tprm is a packed byte buffer; task entries sit at an offset that is
+    // not naturally aligned for SchedulerTaskEntry. Copy each entry into an
+    // aligned local rather than binding a reference to misaligned storage
+    // (undefined behavior). This path is init-time, not the per-tick hot path.
+    SchedulerTaskEntry entry;
+    std::memcpy(&entry, taskEntryBytes + i * sizeof(SchedulerTaskEntry), sizeof(entry));
 
     // Lookup component by full UID
     auto* component = componentResolver_->getComponent(entry.fullUid);
