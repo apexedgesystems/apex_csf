@@ -174,8 +174,7 @@ if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPIL
         set(_apex_cuda_host "${APEX_CUDA_HOST_CLANG}")
         message(STATUS "CUDA ${CUDAToolkit_VERSION} does not support clang "
                        "${CMAKE_CXX_COMPILER_VERSION}; using ${_apex_cuda_host} "
-                       "as the CUDA host compiler (C++ build stays on "
-                       "${CMAKE_CXX_COMPILER})"
+                       "as the CUDA host compiler (C++ build stays on " "${CMAKE_CXX_COMPILER})"
         )
       else ()
         message(WARNING "CUDA ${CUDAToolkit_VERSION} does not support clang "
