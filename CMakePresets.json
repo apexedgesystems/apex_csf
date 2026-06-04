@@ -77,6 +77,15 @@
       }
     },
     {
+      "name": "hosted-x86_64-asan-ubsan",
+      "displayName": "Native (Ubuntu) - Debug + Address+UB Sanitizer",
+      "inherits": "hosted-x86_64-debug",
+      "binaryDir": "build/hosted-x86_64-asan-ubsan",
+      "cacheVariables": {
+        "SANITIZER": "asan,ubsan"
+      }
+    },
+    {
       "name": "hosted-x86_64-tsan",
       "displayName": "Native (Ubuntu) - Debug + ThreadSanitizer",
       "inherits": "hosted-x86_64-debug",
@@ -318,6 +327,10 @@
       "configurePreset": "hosted-x86_64-asan"
     },
     {
+      "name": "hosted-x86_64-asan-ubsan",
+      "configurePreset": "hosted-x86_64-asan-ubsan"
+    },
+    {
       "name": "hosted-x86_64-tsan",
       "configurePreset": "hosted-x86_64-tsan"
     },
@@ -448,6 +461,16 @@
       "environment": {
         "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-asan/lib:$penv{LD_LIBRARY_PATH}",
         "ASAN_OPTIONS": "protect_shadow_gap=0:detect_leaks=0"
+      }
+    },
+    {
+      "name": "hosted-x86_64-asan-ubsan",
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-asan-ubsan",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-asan-ubsan/lib:$penv{LD_LIBRARY_PATH}",
+        "ASAN_OPTIONS": "protect_shadow_gap=0:detect_leaks=0",
+        "UBSAN_OPTIONS": "print_stacktrace=1"
       }
     },
     {

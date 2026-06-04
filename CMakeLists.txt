@@ -204,25 +204,60 @@ endif ()
 # ------------------------------------------------------------------------------
 # Sanitizers
 # ------------------------------------------------------------------------------
+# Sanitizers compose as a set: asan -> address, tsan -> thread, ubsan ->
+# undefined. The only hard incompatibility is address + thread (conflicting
+# shadow-memory models -- the compiler rejects them together); undefined
+# combines with either. So build the -fsanitize argument from the requested
+# set and validate the one illegal pair, rather than enumerating combinations.
+#
+# SANITIZER accepts a ; or , separated list, e.g. "asan" or "asan,ubsan".
 set(SANITIZER
     ""
-    CACHE STRING "Enable sanitizer: asan | tsan | ubsan"
+    CACHE STRING "Sanitizers: ; or , separated list of asan | tsan | ubsan"
 )
 
 if (SANITIZER
     AND NOT CMAKE_CROSSCOMPILING
     AND NOT APEX_PLATFORM_BAREMETAL
 )
-  if (SANITIZER STREQUAL "asan")
-    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
-    add_link_options(-fsanitize=address -fno-omit-frame-pointer)
-  elseif (SANITIZER STREQUAL "tsan")
-    add_compile_options(-fsanitize=thread)
-    add_link_options(-fsanitize=thread)
-  elseif (SANITIZER STREQUAL "ubsan")
-    add_compile_options(-fsanitize=undefined)
-    add_link_options(-fsanitize=undefined)
+  string(REPLACE "," ";" _san_req "${SANITIZER}")
+  list(REMOVE_DUPLICATES _san_req)
+
+  # Map each requested sanitizer to its -fsanitize check name.
+  set(_san_checks "")
+  foreach (_s IN LISTS _san_req)
+    if (_s STREQUAL "asan")
+      list(APPEND _san_checks address)
+    elseif (_s STREQUAL "tsan")
+      list(APPEND _san_checks thread)
+    elseif (_s STREQUAL "ubsan")
+      list(APPEND _san_checks undefined)
+    else ()
+      message(FATAL_ERROR "SANITIZER: unknown '${_s}' (expected asan, tsan, or ubsan)")
+    endif ()
+  endforeach ()
+
+  if ("address" IN_LIST _san_checks AND "thread" IN_LIST _san_checks)
+    message(FATAL_ERROR "SANITIZER: asan and tsan are mutually exclusive")
   endif ()
+
+  list(JOIN _san_checks "," _san_fsanitize)
+  set(_san_flags "-fsanitize=${_san_fsanitize}")
+
+  # Frame pointers keep stack traces readable under AddressSanitizer.
+  if ("address" IN_LIST _san_checks)
+    list(APPEND _san_flags -fno-omit-frame-pointer)
+  endif ()
+
+  # UBSan gates: undefined behavior aborts (and fails the test) instead of
+  # logging and continuing.
+  if ("undefined" IN_LIST _san_checks)
+    list(APPEND _san_flags -fno-sanitize-recover=undefined)
+  endif ()
+
+  add_compile_options(${_san_flags})
+  add_link_options(${_san_flags})
+  message(STATUS "[Sanitizer] -fsanitize=${_san_fsanitize}")
 endif ()
 
 # ------------------------------------------------------------------------------
