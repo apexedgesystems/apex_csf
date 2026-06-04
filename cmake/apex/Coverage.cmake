@@ -26,16 +26,6 @@ set(APEX_COVERAGE_IGNORE_REGEX
 )
 
 # ------------------------------------------------------------------------------
-# apex_enable_coverage(<target>)
-#
-# No-op for backward compatibility. Coverage is now opt-in via COVERAGE_FOR
-# parameter in apex_add_gtest(). Called by apex_standard_optins.
-# ------------------------------------------------------------------------------
-function (apex_enable_coverage _target)
-  # Coverage instrumentation is handled by apex_add_gtest COVERAGE_FOR
-endfunction ()
-
-# ------------------------------------------------------------------------------
 # Internal state
 # ------------------------------------------------------------------------------
 

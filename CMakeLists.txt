@@ -151,6 +151,8 @@ option(APEX_BUILD_TOOLS "Build CLI tools (Rust, Python, Shell)" ON)
 # ------------------------------------------------------------------------------
 # CUDA (optional)
 # ------------------------------------------------------------------------------
+option(APEX_REQUIRE_CUDA "Fail configure if CUDA is required but not found" OFF)
+
 find_package(CUDAToolkit QUIET)
 
 if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPILER))
@@ -193,6 +195,10 @@ if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPIL
   set(CMAKE_CUDA_FLAGS_MINSIZEREL "${CMAKE_CUDA_FLAGS_MINSIZEREL} -DNDEBUG")
 
   add_compile_definitions($<$<COMPILE_LANGUAGE:CUDA>:FMT_USE_BITINT=0>)
+elseif (APEX_REQUIRE_CUDA)
+  message(FATAL_ERROR "APEX_REQUIRE_CUDA is ON but no usable CUDA toolkit was found. "
+                      "Install the CUDA toolkit or configure with a non-CUDA preset."
+  )
 endif ()
 
 # ------------------------------------------------------------------------------

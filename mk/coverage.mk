@@ -33,7 +33,7 @@ COVERAGE_MIN_REGION ?= 60
 coverage: prep
 	$(call _build,Coverage,$(COVERAGE_PRESET),$(COVERAGE_DIR))
 	$(call log,coverage,Running coverage tests)
-	@cd "$(COVERAGE_DIR)" && $(call with_lib_path,ctest -L Coverage -j1 --no-tests=ignore --output-on-failure) || true
+	@ctest --preset $(COVERAGE_PRESET) -L Coverage -j1 || true
 	$(call log,coverage,Generating reports)
 	@cmake --build "$(COVERAGE_DIR)" --target coverage-report
 

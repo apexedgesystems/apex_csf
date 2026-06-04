@@ -94,17 +94,17 @@ RPI_DEBUG_DIR      := build/$(RPI_DEBUG_PRESET)
 RPI_RELEASE_DIR    := build/$(RPI_RELEASE_PRESET)
 RISCV_DEBUG_DIR    := build/$(RISCV_DEBUG_PRESET)
 RISCV_RELEASE_DIR  := build/$(RISCV_RELEASE_PRESET)
-STM32_DIR          := build/mcu-stm32-relwithdebinfo
-ARDUINO_DIR        := build/mcu-arduino-relwithdebinfo
-PICO_DIR           := build/mcu-pico-relwithdebinfo
-ESP32_DIR          := build/mcu-esp32-relwithdebinfo
-C2000_DIR          := build/mcu-c2000-relwithdebinfo
+STM32_DIR          := build/$(STM32_PRESET)
+ARDUINO_DIR        := build/$(ARDUINO_PRESET)
+PICO_DIR           := build/$(PICO_PRESET)
+ESP32_DIR          := build/$(ESP32_PRESET)
+C2000_DIR          := build/$(C2000_PRESET)
 
-STM32_DEBUG_DIR    := build/mcu-stm32-debug
-ARDUINO_DEBUG_DIR  := build/mcu-arduino-debug
-PICO_DEBUG_DIR     := build/mcu-pico-debug
-ESP32_DEBUG_DIR    := build/mcu-esp32-debug
-C2000_DEBUG_DIR    := build/mcu-c2000-debug
+STM32_DEBUG_DIR    := build/$(STM32_DEBUG_PRESET)
+ARDUINO_DEBUG_DIR  := build/$(ARDUINO_DEBUG_PRESET)
+PICO_DEBUG_DIR     := build/$(PICO_DEBUG_PRESET)
+ESP32_DEBUG_DIR    := build/$(ESP32_DEBUG_PRESET)
+C2000_DEBUG_DIR    := build/$(C2000_DEBUG_PRESET)
 
 # ==============================================================================
 # Build Macros
@@ -389,6 +389,6 @@ ccache-clear:
 # Phony Declarations
 # ==============================================================================
 
-.PHONY: help prep debug docs
+.PHONY: help prep debug docs docs-check
 .PHONY: configure configure-release
 .PHONY: ccache-stats ccache-clear

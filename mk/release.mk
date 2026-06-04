@@ -109,7 +109,7 @@ PLATFORM_jetson_BUILD    := jetson-release
 PLATFORM_jetson_DIR       = $(JETSON_RELEASE_DIR)
 
 PLATFORM_riscv64_SERVICE := dev-riscv64
-PLATFORM_riscv64_BUILD   := riscv64-release
+PLATFORM_riscv64_BUILD   := riscv-release
 PLATFORM_riscv64_DIR      = $(RISCV_RELEASE_DIR)
 
 PLATFORM_c2000_SERVICE   := dev-c2000

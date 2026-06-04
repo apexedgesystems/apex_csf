@@ -25,21 +25,23 @@ ASAN_DIR       := build/$(ASAN_PRESET)
 TSAN_DIR       := build/$(TSAN_PRESET)
 UBSAN_DIR      := build/$(UBSAN_PRESET)
 
-# protect_shadow_gap=0 avoids ASan/CUDA virtual-memory conflict.
-# detect_leaks=0 disables LSan (noisy against CUDA's persistent allocations).
-ASAN_RUN_OPTIONS ?= protect_shadow_gap=0:detect_leaks=0
+# Test-execution environment (LD_LIBRARY_PATH, and ASAN_OPTIONS for asan) lives
+# in the CMake testPresets so `ctest --preset hosted-x86_64-asan` is
+# self-sufficient. The asan preset sets ASAN_OPTIONS=protect_shadow_gap=0
+# (avoids the ASan/CUDA virtual-memory conflict) :detect_leaks=0 (disables
+# LSan, noisy against CUDA's persistent allocations).
 
 # ------------------------------------------------------------------------------
 # Internal Helpers
 # ------------------------------------------------------------------------------
 
-# _sanitizer_run: configure, build, and test with a sanitizer preset
-# Usage: $(call _sanitizer_run,tag,display_name,preset,build_dir,extra_env)
-# extra_env is prefixed verbatim onto the ctest invocation (e.g. ASAN_OPTIONS=...).
+# _sanitizer_run: configure, build, and test with a sanitizer preset.
+# Usage: $(call _sanitizer_run,tag,display_name,preset,build_dir)
+# Test env comes from the CMake testPreset of the same name.
 define _sanitizer_run
 	$(call _build,$(2),$(3),$(4))
 	$(call log,$(1),Running tests)
-	@cd "$(4)" && $(5) $(call with_lib_path,ctest --output-on-failure)
+	@ctest --preset $(3)
 endef
 
 # ------------------------------------------------------------------------------
@@ -48,15 +50,15 @@ endef
 
 # AddressSanitizer - detects memory errors (use-after-free, buffer overflow)
 asan: prep
-	$(call _sanitizer_run,asan,AddressSanitizer,$(ASAN_PRESET),$(ASAN_DIR),ASAN_OPTIONS="$(ASAN_RUN_OPTIONS)")
+	$(call _sanitizer_run,asan,AddressSanitizer,$(ASAN_PRESET),$(ASAN_DIR))
 
 # ThreadSanitizer - detects data races
 tsan: prep
-	$(call _sanitizer_run,tsan,ThreadSanitizer,$(TSAN_PRESET),$(TSAN_DIR),)
+	$(call _sanitizer_run,tsan,ThreadSanitizer,$(TSAN_PRESET),$(TSAN_DIR))
 
 # UndefinedBehaviorSanitizer - detects undefined behavior
 ubsan: prep
-	$(call _sanitizer_run,ubsan,UBSanitizer,$(UBSAN_PRESET),$(UBSAN_DIR),)
+	$(call _sanitizer_run,ubsan,UBSanitizer,$(UBSAN_PRESET),$(UBSAN_DIR))
 
 # ------------------------------------------------------------------------------
 # Phony Declarations

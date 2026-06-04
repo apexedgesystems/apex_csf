@@ -192,25 +192,3 @@ endif ()
 #
 # Or share across targets:
 #   target_precompile_headers(mylib REUSE_FROM common_pch_target)
-
-# ------------------------------------------------------------------------------
-# Summary
-# ------------------------------------------------------------------------------
-function (apex_print_acceleration_summary)
-  message(STATUS "")
-  message(STATUS "Build Acceleration")
-  if (CMAKE_C_COMPILER_LAUNCHER)
-    message(STATUS "  Compiler Cache : ${CMAKE_C_COMPILER_LAUNCHER}")
-  else ()
-    message(STATUS "  Compiler Cache : (none - install ccache for faster rebuilds)")
-  endif ()
-  # Linker is harder to detect after the fact, rely on earlier message
-  if (APEX_USE_SPLIT_DWARF AND (CMAKE_BUILD_TYPE STREQUAL "Debug" OR CMAKE_BUILD_TYPE STREQUAL
-                                                                     "RelWithDebInfo")
-  )
-    message(STATUS "  Split DWARF    : enabled")
-  endif ()
-  if (CMAKE_UNITY_BUILD)
-    message(STATUS "  Unity Build    : enabled")
-  endif ()
-endfunction ()

@@ -40,6 +40,28 @@ VERSION ?= $(shell sed -n 's/.*VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' CMakeL
 REGISTRY ?=
 
 # ------------------------------------------------------------------------------
+# Dev Image Registry (single source of truth)
+# ------------------------------------------------------------------------------
+# Every dev shell service. The image name is apex.dev.<suffix> (suffix is 'cpu'
+# for the base 'dev' service, else the text after 'dev-'). The base image each
+# one builds FROM differs:
+#   dev, dev-cuda  -> base
+#   dev-jetson     -> dev-cuda  (aarch64 + CUDA cross)
+#   all others     -> dev       (CPU)
+#
+# The build target list (docker-devs), the per-service build/shell targets, and
+# the registry push/pull list are all derived from this -- add a platform once.
+DEV_SERVICES := dev dev-cuda dev-jetson dev-rpi dev-riscv64 dev-zephyr \
+                dev-stm32 dev-esp32 dev-pico dev-arduino dev-atmega328pb \
+                dev-pic32 dev-c2000
+
+# _dev_base: the base image a dev service builds from
+_dev_base = $(if $(filter dev dev-cuda,$(1)),docker-base,$(if $(filter dev-jetson,$(1)),docker-dev-cuda,docker-dev))
+
+# _dev_image: image name for a dev service (apex.dev.cpu for 'dev', else apex.dev.<x>)
+_dev_image = apex.dev.$(if $(filter dev,$(1)),cpu,$(patsubst dev-%,%,$(1)))
+
+# ------------------------------------------------------------------------------
 # Internal Helpers
 # ------------------------------------------------------------------------------
 
@@ -112,11 +134,7 @@ docker-all:
 	@$(MAKE) docker-final
 	$(call log,docker,All images built)
 
-docker-devs: docker-dev docker-dev-cuda docker-dev-jetson \
-             docker-dev-rpi docker-dev-riscv64 docker-dev-zephyr \
-             docker-dev-stm32 docker-dev-esp32 docker-dev-pico \
-             docker-dev-arduino docker-dev-atmega328pb docker-dev-pic32 \
-             docker-dev-c2000
+docker-devs: $(foreach s,$(DEV_SERVICES),docker-$(s))
 	$(call log,docker,All dev images built)
 
 docker-builders: docker-builder-cpu docker-builder-cuda docker-builder-jetson \
@@ -135,18 +153,13 @@ docker-base:
 # ------------------------------------------------------------------------------
 # Development Shell Images (generated from templates)
 # ------------------------------------------------------------------------------
-# Dependency structure:
+# Dependency structure (see _dev_base):
 #   base -> dev, dev-cuda
 #   dev-cuda -> dev-jetson
 #   dev (CPU) -> all other dev images
 
-$(eval $(call _dev_target,dev,docker-base))
-$(eval $(call _dev_target,dev-cuda,docker-base))
-$(eval $(call _dev_target,dev-jetson,docker-dev-cuda))
-
-$(foreach svc,dev-rpi dev-riscv64 dev-zephyr dev-stm32 dev-esp32 dev-pico \
-              dev-arduino dev-atmega328pb dev-pic32 dev-c2000,\
-  $(eval $(call _dev_target,$(svc),docker-dev)))
+$(foreach s,$(DEV_SERVICES),\
+  $(eval $(call _dev_target,$(s),$(call _dev_base,$(s)))))
 
 # ------------------------------------------------------------------------------
 # Builder Images (generated from templates)
@@ -159,10 +172,7 @@ $(foreach b,cpu cuda jetson rpi riscv64 stm32 arduino pico esp32 c2000,\
 # Interactive Shells (generated from templates)
 # ------------------------------------------------------------------------------
 
-$(foreach svc,dev dev-cuda dev-jetson dev-rpi dev-riscv64 dev-zephyr \
-              dev-stm32 dev-esp32 dev-pico dev-arduino dev-atmega328pb \
-              dev-pic32 dev-c2000,\
-  $(eval $(call _shell_target,$(svc))))
+$(foreach s,$(DEV_SERVICES),$(eval $(call _shell_target,$(s))))
 
 # ------------------------------------------------------------------------------
 # Final Packager
@@ -199,11 +209,7 @@ artifacts: docker-final
 # Registry Push / Pull (dev images only -- builders are never cached)
 # ------------------------------------------------------------------------------
 
-_DEV_IMAGES := apex.base \
-               apex.dev.cpu apex.dev.cuda apex.dev.jetson \
-               apex.dev.rpi apex.dev.riscv64 \
-               apex.dev.stm32 apex.dev.esp32 apex.dev.pico \
-               apex.dev.arduino apex.dev.c2000
+_DEV_IMAGES := apex.base $(foreach s,$(DEV_SERVICES),$(call _dev_image,$(s)))
 
 docker-push-devs: docker-devs
 	@test -n "$(REGISTRY)" || \

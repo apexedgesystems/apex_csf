@@ -33,22 +33,23 @@ PY_LIB_DIR   := $(BUILD_DIR)/lib/python
 # ------------------------------------------------------------------------------
 # CTest Command Presets
 # ------------------------------------------------------------------------------
+# Test-execution config (LD_LIBRARY_PATH, output-on-failure, no-tests-ignore)
+# lives in the CMake testPresets; Make selects only the label subset and the
+# serial/parallel strategy. TEST_PRESET is the testPreset name (== build-dir
+# basename, which equals the preset name by convention).
+
+TEST_PRESET ?= $(notdir $(BUILD_DIR))
+LOG_FILE    := $(BUILD_DIR)/$(TEST_LOG)
 
 # All tests except Coverage, serial execution
 # Note: Perf tests are not in CTest (use bin/ptests/* directly)
-CTEST_ALL_SERIAL := ctest \
-  -LE "$(COVERAGE_LABEL)" \
-  -j1 --no-tests=ignore --output-on-failure
+CTEST_ALL_SERIAL := ctest --preset $(TEST_PRESET) -LE "$(COVERAGE_LABEL)" -j1
 
 # All tests except Coverage and Timing, parallel execution
-CTEST_ALL_PARALLEL := ctest \
-  -LE "$(COVERAGE_LABEL)|$(TIMING_LABEL)" \
-  -j$(NUM_JOBS) --no-tests=ignore
+CTEST_ALL_PARALLEL := ctest --preset $(TEST_PRESET) -LE "$(COVERAGE_LABEL)|$(TIMING_LABEL)" -j$(NUM_JOBS)
 
 # Timing tests only, serial execution
-CTEST_TIMING_SERIAL := ctest \
-  -L "$(TIMING_LABEL)" \
-  -j1 --no-tests=ignore --output-on-failure
+CTEST_TIMING_SERIAL := ctest --preset $(TEST_PRESET) -L "$(TIMING_LABEL)" -j1
 
 # ------------------------------------------------------------------------------
 # Internal Helpers
@@ -57,7 +58,7 @@ CTEST_TIMING_SERIAL := ctest \
 # Log section header (outputs to stdout, caller handles tee)
 # Usage: $(call _test_header,title)
 define _test_header
-printf '%s\nctest: %s\ndir: %s\n%s\n' "============================================================" "$(1)" "$$PWD" "------------------------------------------------------------"
+printf '%s\nctest: %s\ndir: %s\n%s\n' "============================================================" "$(1)" "$(BUILD_DIR)" "------------------------------------------------------------"
 endef
 
 # Log section footer (outputs to stdout, caller handles tee)
@@ -73,21 +74,21 @@ endef
 # All tests (serial) - excludes Coverage and Perf labels
 test: debug
 	$(call log,test,Running all tests (serial))
-	@cd "$(BUILD_DIR)" && : > "$(TEST_LOG)"
-	@cd "$(BUILD_DIR)" && $(call _test_header,ALL (serial) - excluding: $(COVERAGE_LABEL)) | tee -a "$(TEST_LOG)"
-	@cd "$(BUILD_DIR)" && bash -o pipefail -c '$(call with_lib_path,$(CTEST_ALL_SERIAL)) 2>&1 | tee -a "$(TEST_LOG)"'
-	@cd "$(BUILD_DIR)" && $(call _test_footer,all (serial),$(TEST_LOG)) | tee -a "$(TEST_LOG)"
+	@: > "$(LOG_FILE)"
+	@$(call _test_header,ALL (serial) - excluding: $(COVERAGE_LABEL)) | tee -a "$(LOG_FILE)"
+	@bash -o pipefail -c '$(CTEST_ALL_SERIAL) 2>&1 | tee -a "$(LOG_FILE)"'
+	@$(call _test_footer,all (serial),$(LOG_FILE)) | tee -a "$(LOG_FILE)"
 
 # Parallel tests - runs non-timing parallel, then timing serial
 testp: debug
 	$(call log,test,Running tests (parallel + timing serial))
-	@cd "$(BUILD_DIR)" && : > "$(TEST_LOG)"
-	@cd "$(BUILD_DIR)" && $(call _test_header,NON-TIMING (parallel -j$(NUM_JOBS))) | tee -a "$(TEST_LOG)"
-	@cd "$(BUILD_DIR)" && bash -o pipefail -c '$(call with_lib_path,$(CTEST_ALL_PARALLEL)) 2>&1 | tee -a "$(TEST_LOG)"'
-	@cd "$(BUILD_DIR)" && printf '\n' | tee -a "$(TEST_LOG)"
-	@cd "$(BUILD_DIR)" && $(call _test_header,TIMING (serial)) | tee -a "$(TEST_LOG)"
-	@cd "$(BUILD_DIR)" && bash -o pipefail -c '$(call with_lib_path,$(CTEST_TIMING_SERIAL)) 2>&1 | tee -a "$(TEST_LOG)"'
-	@cd "$(BUILD_DIR)" && $(call _test_footer,parallel + timing,$(TEST_LOG)) | tee -a "$(TEST_LOG)"
+	@: > "$(LOG_FILE)"
+	@$(call _test_header,NON-TIMING (parallel -j$(NUM_JOBS))) | tee -a "$(LOG_FILE)"
+	@bash -o pipefail -c '$(CTEST_ALL_PARALLEL) 2>&1 | tee -a "$(LOG_FILE)"'
+	@printf '\n' | tee -a "$(LOG_FILE)"
+	@$(call _test_header,TIMING (serial)) | tee -a "$(LOG_FILE)"
+	@bash -o pipefail -c '$(CTEST_TIMING_SERIAL) 2>&1 | tee -a "$(LOG_FILE)"'
+	@$(call _test_footer,parallel + timing,$(LOG_FILE)) | tee -a "$(LOG_FILE)"
 
 # Python tools unit tests (runs from source, no build dependency)
 test-py:

@@ -215,7 +215,7 @@ static: prep
 	$(call log,static,Running scan-build)
 	@cd "$(STATIC_DIR)" && scan-build --status-bugs ninja -j$(NUM_JOBS)
 	$(call log,static,Running tests to verify)
-	@cd "$(STATIC_DIR)" && $(call with_lib_path,ctest --output-on-failure)
+	@ctest --preset $(STATIC_PRESET)
 
 # ------------------------------------------------------------------------------
 # Phony Declarations
