@@ -83,11 +83,19 @@ jobs:
       - name: Format check
         run: docker compose run --rm -T dev make format-check
 
+      # End state: this primary build moves to the dev-cuda image once the CUDA
+      # test device guards land (GPU tests self-skip without a device) and the
+      # CUDA toolchain builds again -- so the .cu surface is compile + link
+      # verified on every PR (CUDA is core), GPU tests skipping cleanly. Until
+      # then it builds CPU-only in dev.
       - name: Build (debug)
         run: docker compose run --rm -T dev make debug
 
       - name: Run C++ tests
         run: docker compose run --rm -T dev make testp
+
+      - name: Demo smoke test (reuses debug build)
+        run: docker compose run --rm -T dev make smoke APP=apex_mc_demo
 
       - name: Build documentation (zero-warning gate)
         run: docker compose run --rm -T dev make docs-check
@@ -148,5 +156,5 @@ jobs:
           docker compose build base
           docker compose build dev
 
-      - name: AddressSanitizer
-        run: docker compose run --rm -T dev make asan
+      - name: Address + UB Sanitizer
+        run: docker compose run --rm -T dev make asan-ubsan

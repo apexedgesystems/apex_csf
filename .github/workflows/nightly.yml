@@ -1,0 +1,131 @@
+# ==============================================================================
+# Nightly -- heavier checks that run once per day on main, off the PR path.
+#
+# Jobs run in parallel, so wall-clock is the slowest job, not the sum. These
+# are the "needs its own build" checks deliberately kept out of per-PR CI to
+# keep the gate fast:
+#   - coverage : LLVM source-based coverage + aggregate threshold gate.
+#   - tsan     : ThreadSanitizer (data races) -- its own instrumented build.
+#   - static   : clang static analyzer (scan-build), advisory.
+#
+# Each job pulls the CPU dev image from the registry (see ci.yml for the image
+# strategy) and runs a single make target in it.
+# ==============================================================================
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # 07:00 UTC daily (~midnight Pacific)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  coverage:
+    name: LLVM coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      REGISTRY: ghcr.io/${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Prepare environment
+        run: |
+          touch ~/.gitconfig
+          mkdir -p ~/.ssh
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull cached dev image
+        run: |
+          docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
+
+      - name: Coverage (threshold gate)
+        run: docker compose run --rm -T dev make coverage-check
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/hosted-x86_64-coverage/coverage/
+          retention-days: 14
+
+  tsan:
+    name: ThreadSanitizer
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      REGISTRY: ghcr.io/${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Prepare environment
+        run: |
+          touch ~/.gitconfig
+          mkdir -p ~/.ssh
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull cached dev image
+        run: |
+          docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
+
+      - name: ThreadSanitizer
+        run: docker compose run --rm -T dev make tsan
+
+  static:
+    name: Static analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    env:
+      REGISTRY: ghcr.io/${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Prepare environment
+        run: |
+          touch ~/.gitconfig
+          mkdir -p ~/.ssh
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull cached dev image
+        run: |
+          docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
+
+      - name: Static analysis (scan-build)
+        run: docker compose run --rm -T dev make static

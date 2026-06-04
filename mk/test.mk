@@ -101,9 +101,30 @@ test-rust:
 	@cd tools/rust && cargo test
 
 # ------------------------------------------------------------------------------
+# Demo smoke tests
+# ------------------------------------------------------------------------------
+# Run app smoke scripts (apps/<app>/scripts/smoke.sh) against the built
+# binaries. The build system stays generic: it knows only the convention and
+# passes APEX_BIN_DIR; each script owns its app-specific run and verification.
+#
+# CI passes APP=<name> so the gate runs ONLY the smoke it intends -- never
+# "every app that happens to ship a script" (a GPU/hardware demo's smoke must
+# not be pulled into the CPU gate). With no APP, runs all discovered scripts as
+# a local convenience only. Reuses the debug build (no separate build).
+
+APP_SMOKE_SCRIPTS := $(if $(APP),apps/$(APP)/scripts/smoke.sh,$(wildcard apps/*/scripts/smoke.sh))
+
+smoke: debug
+	@for s in $(APP_SMOKE_SCRIPTS); do \
+	  test -f "$$s" || { echo "smoke: no such script: $$s"; exit 1; }; \
+	  $(call log,smoke,$$s); \
+	  APEX_BIN_DIR="$(HOST_DEBUG_DIR)/bin" bash "$$s" || exit 1; \
+	done
+
+# ------------------------------------------------------------------------------
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: test testp test-py test-rust
+.PHONY: test testp test-py test-rust smoke
 
 endif  # TEST_MK_GUARD
