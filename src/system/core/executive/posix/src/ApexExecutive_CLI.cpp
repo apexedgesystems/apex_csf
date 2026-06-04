@@ -136,6 +136,25 @@ std::uint8_t ApexExecutive::processArgs() noexcept {
     shutdownConfig_.targetClockCycle = std::stoull(std::string(parsedArgs_[SHUTDOWN_CYCLE][0]));
   }
 
+  // Infer the shutdown mode from the timing argument(s) when no explicit
+  // --shutdown-mode was given, so "--shutdown-after N" exits after N seconds
+  // on its own (as documented) rather than being silently ignored under the
+  // default SIGNAL_ONLY mode.
+  if (!parsedArgs_.count(SHUTDOWN_MODE)) {
+    const int provided = (parsedArgs_.count(SHUTDOWN_AFTER) ? 1 : 0) +
+                         (parsedArgs_.count(SHUTDOWN_AT) ? 1 : 0) +
+                         (parsedArgs_.count(SHUTDOWN_CYCLE) ? 1 : 0);
+    if (provided > 1) {
+      shutdownConfig_.mode = ShutdownConfig::COMBINED;
+    } else if (parsedArgs_.count(SHUTDOWN_AFTER)) {
+      shutdownConfig_.mode = ShutdownConfig::RELATIVE_TIME;
+    } else if (parsedArgs_.count(SHUTDOWN_AT)) {
+      shutdownConfig_.mode = ShutdownConfig::SCHEDULED;
+    } else if (parsedArgs_.count(SHUTDOWN_CYCLE)) {
+      shutdownConfig_.mode = ShutdownConfig::CLOCK_CYCLE;
+    }
+  }
+
   // ===== Parse Archive Configuration =====
   if (parsedArgs_.count(SKIP_CLEANUP)) {
     shutdownConfig_.skipCleanup = true;
