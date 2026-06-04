@@ -64,7 +64,7 @@ fetchcontent_declare(
   vernier
   SYSTEM
   GIT_REPOSITORY https://github.com/apexedgesystems/vernier.git
-  GIT_TAG dev/general-improvements
+  GIT_TAG v1.0.2
 )
 set(VERNIER_BUILD_TOOLS
     ON
