@@ -11,8 +11,13 @@
 FROM apex.base:latest
 
 ARG USER
+# The toolkit's CUDA minor must not exceed what the host driver provides.
+# Apps built a minor ahead of the driver still run via forward-compat, but
+# nsys cannot trace them -- its CUDA activity capture silently yields nothing
+# (ncu and in-process CUPTI are unaffected). Pin to the lowest CUDA minor the
+# target fleet's drivers report from nvidia-smi.
 ARG CUDA_VERSION_MAJOR=13
-ARG CUDA_VERSION_MINOR=1
+ARG CUDA_VERSION_MINOR=0
 
 LABEL org.opencontainers.image.title="apex.dev.cuda" \
       org.opencontainers.image.description="CUDA shell for Apex CSF"

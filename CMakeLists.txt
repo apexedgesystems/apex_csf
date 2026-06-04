@@ -158,8 +158,35 @@ if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPIL
   # picks gcc by default — mixing C++ and CUDA TUs across two toolchains
   # produces incompatible runtime libraries (notably libasan vs libclang_rt.asan).
   if (NOT DEFINED CMAKE_CUDA_HOST_COMPILER AND CMAKE_CXX_COMPILER)
+    set(_apex_cuda_host "${CMAKE_CXX_COMPILER}")
+
+    # nvcc enforces a maximum supported host-compiler version: CUDA toolkits
+    # before 13.1 reject clang >= 21. When the C++ compiler is newer than the
+    # toolkit accepts, step the CUDA host compiler down to a supported clang
+    # (not gcc) so the C++ and CUDA TUs still share one runtime. The wider C++
+    # build keeps using CMAKE_CXX_COMPILER unchanged.
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+        AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "21"
+        AND CUDAToolkit_VERSION VERSION_LESS "13.1"
+    )
+      find_program(APEX_CUDA_HOST_CLANG NAMES clang++-20)
+      if (APEX_CUDA_HOST_CLANG)
+        set(_apex_cuda_host "${APEX_CUDA_HOST_CLANG}")
+        message(STATUS "CUDA ${CUDAToolkit_VERSION} does not support clang "
+                       "${CMAKE_CXX_COMPILER_VERSION}; using ${_apex_cuda_host} "
+                       "as the CUDA host compiler (C++ build stays on "
+                       "${CMAKE_CXX_COMPILER})"
+        )
+      else ()
+        message(WARNING "CUDA ${CUDAToolkit_VERSION} does not support clang "
+                        "${CMAKE_CXX_COMPILER_VERSION} and clang++-20 was not "
+                        "found; CUDA configuration may fail"
+        )
+      endif ()
+    endif ()
+
     set(CMAKE_CUDA_HOST_COMPILER
-        "${CMAKE_CXX_COMPILER}"
+        "${_apex_cuda_host}"
         CACHE FILEPATH ""
     )
   endif ()
