@@ -38,8 +38,6 @@ namespace spp = protocols::ccsds::spp;
 
 namespace {
 
-inline const ub::PerfConfig& getCfg() { return ub::detail::getPerfConfig(); }
-
 /**
  * @brief Build a valid SPP packet into a buffer.
  */
@@ -79,7 +77,6 @@ std::vector<std::uint8_t> buildPacketStream(std::size_t packetCount, std::size_t
  */
 PERF_TEST(SppPack, Small8B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 64> outBuf{};
   std::array<std::uint8_t, 8> payload{};
@@ -114,7 +111,6 @@ PERF_TEST(SppPack, Small8B) {
  */
 PERF_TEST(SppPack, Medium64B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 128> outBuf{};
   std::array<std::uint8_t, 64> payload{};
@@ -149,7 +145,6 @@ PERF_TEST(SppPack, Medium64B) {
  */
 PERF_TEST(SppPack, Large1KB) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 2048> outBuf{};
   std::array<std::uint8_t, 1024> payload{};
@@ -186,7 +181,6 @@ PERF_TEST(SppPack, Large1KB) {
  */
 PERF_TEST(SppView, Create64B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 128> pktBuf{};
   const std::size_t PKT_LEN = buildTestPacket(64, pktBuf.data(), pktBuf.size());
@@ -219,7 +213,6 @@ PERF_TEST(SppView, Create64B) {
  */
 PERF_TEST(SppView, PeekAPID) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 128> pktBuf{};
   const std::size_t PKT_LEN = buildTestPacket(64, pktBuf.data(), pktBuf.size());
@@ -253,7 +246,6 @@ PERF_TEST(SppView, PeekAPID) {
  */
 PERF_TEST(SppProcessor, Single64B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 128> pktBuf{};
   const std::size_t PKT_LEN = buildTestPacket(64, pktBuf.data(), pktBuf.size());
@@ -296,7 +288,6 @@ PERF_TEST(SppProcessor, Single64B) {
  */
 PERF_TEST(SppProcessor, Burst10x64B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto STREAM = buildPacketStream(10, 64);
   const apex::compat::bytes_span STREAM_SPAN{STREAM.data(), STREAM.size()};
@@ -339,7 +330,6 @@ PERF_TEST(SppProcessor, Burst10x64B) {
  */
 PERF_TEST(SppOverhead, Counters) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   spp::ProcessorDefault proc;
 

@@ -180,7 +180,6 @@ inline std::unique_ptr<SchedulerMultiThread> makeScheduler(const Shape& sh) {
  */
 PERF_TEST(SchedulerMtPerf, EmptyTickOverhead) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   const Shape SH = loadShape();
   auto sched = makeScheduler(SH);
@@ -219,8 +218,7 @@ PERF_TEST(SchedulerMtPerf, ManyNoWork) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 500); // Cap at 500 iterations
   cfg.repeats = std::min(cfg.repeats, 5); // Cap at 5 repeats
-  ub::PerfCase perf{"SchedulerMtPerf.ManyNoWork", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SchedulerMtPerf.ManyNoWork", cfg);
 
   const Shape SH = loadShape();
   auto sched = makeScheduler(SH);
@@ -290,8 +288,7 @@ PERF_TEST(SchedulerMtPerf, ManyLightWork) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 500); // Cap at 500 iterations
   cfg.repeats = std::min(cfg.repeats, 5); // Cap at 5 repeats
-  ub::PerfCase perf{"SchedulerMtPerf.ManyLightWork", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SchedulerMtPerf.ManyLightWork", cfg);
 
   const Shape SH = loadShape();
   auto sched = makeScheduler(SH);
@@ -365,8 +362,7 @@ PERF_TEST(SchedulerMtPerf, ThreadScaling) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 500); // Cap at 500 iterations
   cfg.repeats = std::min(cfg.repeats, 5); // Cap at 5 repeats
-  ub::PerfCase perf{"SchedulerMtPerf.ThreadScaling", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SchedulerMtPerf.ThreadScaling", cfg);
 
   const Shape SH = loadShape();
   const std::size_t N = static_cast<std::size_t>(SH.tasks);
@@ -429,8 +425,7 @@ PERF_TEST(SchedulerMtPerf, TaskCountScaling) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 200); // Cap at 200 iterations
   cfg.repeats = std::min(cfg.repeats, 5); // Cap at 5 repeats
-  ub::PerfCase perf{"SchedulerMtPerf.TaskCountScaling", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SchedulerMtPerf.TaskCountScaling", cfg);
 
   const Shape SH = loadShape();
 
@@ -496,8 +491,7 @@ PERF_TEST(SchedulerMtPerf, ConcurrentExecutionStress) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 200); // Cap at 200 iterations
   cfg.repeats = std::min(cfg.repeats, 5); // Cap at 5 repeats
-  ub::PerfCase perf{"SchedulerMtPerf.ConcurrentExecutionStress", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SchedulerMtPerf.ConcurrentExecutionStress", cfg);
 
   const Shape SH = loadShape();
   auto sched = makeScheduler(SH);
@@ -555,8 +549,7 @@ PERF_TEST(SchedulerMtPerf, AddTaskSetupCost) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 100); // Cap at 100 iterations
   cfg.repeats = std::min(cfg.repeats, 5); // Cap at 5 repeats
-  ub::PerfCase perf{"SchedulerMtPerf.AddTaskSetupCost", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SchedulerMtPerf.AddTaskSetupCost", cfg);
 
   const Shape SH = loadShape();
   std::mt19937_64 rng(SH.seed);
@@ -623,8 +616,7 @@ PERF_TEST(SchedulerMtPerf, InitOnlyCost) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 100); // Cap at 100 iterations
   cfg.repeats = std::min(cfg.repeats, 5); // Cap at 5 repeats
-  ub::PerfCase perf{"SchedulerMtPerf.InitOnlyCost", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SchedulerMtPerf.InitOnlyCost", cfg);
 
   const Shape SH = loadShape();
 
@@ -657,7 +649,6 @@ PERF_TEST(SchedulerMtPerf, InitOnlyCost) {
  */
 PERF_TEST(SchedulerMtPerf, AddTaskWarmCost) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   const Shape SH = loadShape();
   auto sched = makeScheduler(SH);
@@ -713,8 +704,7 @@ PERF_TEST(SchedulerMtPerf, SequencedChain4) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 200); // Reduced - we add wait overhead
   cfg.repeats = std::min(cfg.repeats, 5);
-  ub::PerfCase perf{"SchedulerMtPerf.SequencedChain4", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SchedulerMtPerf.SequencedChain4", cfg);
 
   const Shape SH = loadShape();
   auto sched = makeScheduler(SH);

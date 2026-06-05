@@ -64,7 +64,6 @@ inline std::vector<std::uint16_t> makeRegisters(std::size_t count) {
  */
 PERF_TEST(ModbusFrameBuild, ReadHoldingRegisters) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   modbus::FrameBuffer frame;
 
@@ -93,7 +92,6 @@ PERF_TEST(ModbusFrameBuild, ReadHoldingRegisters) {
  */
 PERF_TEST(ModbusFrameBuild, WriteMultipleRegisters) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t REG_COUNT = 10;
   const auto regs = makeRegisters(REG_COUNT);
@@ -125,7 +123,6 @@ PERF_TEST(ModbusFrameBuild, WriteMultipleRegisters) {
  */
 PERF_TEST(ModbusFrameBuild, ReadCoils) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   modbus::FrameBuffer frame;
 
@@ -153,7 +150,6 @@ PERF_TEST(ModbusFrameBuild, ReadCoils) {
  */
 PERF_TEST(ModbusFrameBuild, WriteSingleRegister) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   modbus::FrameBuffer frame;
 
@@ -184,7 +180,6 @@ PERF_TEST(ModbusFrameBuild, WriteSingleRegister) {
  */
 PERF_TEST(ModbusCrc, SmallFrame) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 6> frame = {0x01, 0x03, 0x00, 0x00, 0x00, 0x0A};
 
@@ -211,7 +206,6 @@ PERF_TEST(ModbusCrc, SmallFrame) {
  */
 PERF_TEST(ModbusCrc, MaxFrame) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 254> frame{};
   for (std::size_t i = 0; i < frame.size(); ++i) {
@@ -242,7 +236,6 @@ PERF_TEST(ModbusCrc, MaxFrame) {
  */
 PERF_TEST(ModbusCrc, Throughput) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 1024> buffer{};
   for (std::size_t i = 0; i < buffer.size(); ++i) {
@@ -276,7 +269,6 @@ PERF_TEST(ModbusCrc, Throughput) {
  */
 PERF_TEST(ModbusParse, ReadHoldingRegistersResponse) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 25> response = {0x01, 0x03, 0x14, 0x00, 0x01, 0x00, 0x02, 0x00, 0x03,
                                            0x00, 0x04, 0x00, 0x05, 0x00, 0x06, 0x00, 0x07, 0x00,
@@ -413,8 +405,6 @@ protected:
     return 0;
   }
 
-  const ub::PerfConfig& getCfg() { return ub::detail::getPerfConfig(); }
-
   uart::PtyPair pty_;
   std::unique_ptr<uart::UartAdapter> adapter_;
   std::unique_ptr<modbus::ModbusRtuTransport> transport_;
@@ -430,8 +420,7 @@ protected:
 TEST_F(ModbusTransactionFixture, ReadHoldingRegisters) {
   ub::PerfConfig cfg = getCfg();
   std::string testName = "ModbusTransactionFixture.ReadHoldingRegisters";
-  ub::PerfCase perf{testName, cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
   std::array<std::uint16_t, 10> values{};
 
@@ -461,8 +450,7 @@ TEST_F(ModbusTransactionFixture, ReadHoldingRegisters) {
 TEST_F(ModbusTransactionFixture, WriteSingleRegister) {
   ub::PerfConfig cfg = getCfg();
   std::string testName = "ModbusTransactionFixture.WriteSingleRegister";
-  ub::PerfCase perf{testName, cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
@@ -490,8 +478,7 @@ TEST_F(ModbusTransactionFixture, WriteSingleRegister) {
 TEST_F(ModbusTransactionFixture, Throughput) {
   ub::PerfConfig cfg = getCfg();
   std::string testName = "ModbusTransactionFixture.Throughput";
-  ub::PerfCase perf{testName, cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
   std::array<std::uint16_t, 10> values{};
 
@@ -523,8 +510,7 @@ TEST_F(ModbusTransactionFixture, Throughput) {
 TEST_F(ModbusTransactionFixture, LatencyDistribution) {
   ub::PerfConfig cfg = getCfg();
   std::string testName = "ModbusTransactionFixture.LatencyDistribution";
-  ub::PerfCase perf{testName, cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
   std::array<std::uint16_t, 10> values{};
 
@@ -558,7 +544,6 @@ TEST_F(ModbusTransactionFixture, LatencyDistribution) {
  */
 PERF_TEST(ModbusOverhead, VsRawUart) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   uart::PtyPair pty;
   ASSERT_EQ(pty.open(), uart::Status::SUCCESS);

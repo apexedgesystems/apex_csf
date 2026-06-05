@@ -103,7 +103,6 @@ template <typename T> inline std::vector<T> generateRandomTs(int count, unsigned
  */
 PERF_TEST(QuaternionPerf, CpuMultiply_Medium) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int BATCH = BATCH_MEDIUM;
   auto QS_A = generateRandomQuaternions<double>(BATCH);
@@ -146,7 +145,6 @@ PERF_TEST(QuaternionPerf, CpuMultiply_Medium) {
  */
 PERF_TEST(QuaternionPerf, CpuRotate_Medium) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int BATCH = BATCH_MEDIUM;
   auto QS = generateRandomQuaternions<double>(BATCH);
@@ -185,7 +183,6 @@ PERF_TEST(QuaternionPerf, CpuRotate_Medium) {
  */
 PERF_TEST(QuaternionPerf, CpuSlerp_Medium) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int BATCH = BATCH_MEDIUM;
   auto QS_A = generateRandomQuaternions<double>(BATCH);
@@ -229,7 +226,6 @@ PERF_TEST(QuaternionPerf, CpuSlerp_Medium) {
  */
 PERF_TEST(QuaternionPerf, CpuToRotMat_Medium) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int BATCH = BATCH_MEDIUM;
   auto QS = generateRandomQuaternions<double>(BATCH);

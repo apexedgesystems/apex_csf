@@ -149,7 +149,6 @@ inline std::unique_ptr<SchedulerSingleThread> makeScheduler(std::uint16_t ffreq)
  */
 PERF_TEST(SchedulerPerf, EmptyTickOverhead) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   const Shape SH = loadShape();
   auto sched = makeScheduler(SH.ffreq);
@@ -190,7 +189,6 @@ PERF_TEST(SchedulerPerf, EmptyTickOverhead) {
  */
 PERF_TEST(SchedulerPerf, ManyNoWork) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   const Shape SH = loadShape();
   auto sched = makeScheduler(SH.ffreq);
@@ -264,7 +262,6 @@ PERF_TEST(SchedulerPerf, ManyNoWork) {
  */
 PERF_TEST(SchedulerPerf, ManyLightWork) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   const Shape SH = loadShape();
   auto sched = makeScheduler(SH.ffreq);
@@ -332,8 +329,7 @@ PERF_TEST(SchedulerPerf, AddTaskSetupCost) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 100); // Cap at 100 iterations
   cfg.repeats = std::min(cfg.repeats, 5); // Cap at 5 repeats
-  ub::PerfCase perf{"SchedulerPerf.AddTaskSetupCost", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SchedulerPerf.AddTaskSetupCost", cfg);
 
   const Shape SH = loadShape();
 
@@ -417,8 +413,7 @@ PERF_TEST(SchedulerPerf, TaskCountScaling) {
     cfg.msgBytes = static_cast<int>(taskCount); // Use msgBytes to track task count
 
     std::string testName = "SchedulerPerf.TaskCountScaling/" + std::to_string(taskCount);
-    ub::PerfCase perf{testName, cfg};
-    ub::attachProfilerHooks(perf, cfg);
+    auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
     auto sched = makeScheduler(SH.ffreq);
     const std::size_t N = static_cast<std::size_t>(taskCount);

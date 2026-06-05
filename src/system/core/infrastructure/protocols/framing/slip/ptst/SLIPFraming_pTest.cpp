@@ -75,7 +75,6 @@ inline std::vector<std::uint8_t> makeRealisticPayload(std::size_t n) {
  */
 PERF_TEST(SLIPFramingPerf, EncodeClean) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makeCleanPayload(PAYLOAD_SIZE);
@@ -110,7 +109,6 @@ PERF_TEST(SLIPFramingPerf, EncodeClean) {
  */
 PERF_TEST(SLIPFramingPerf, EncodeWorstCase) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makeWorstCasePayload(PAYLOAD_SIZE);
@@ -145,7 +143,6 @@ PERF_TEST(SLIPFramingPerf, EncodeWorstCase) {
  */
 PERF_TEST(SLIPFramingPerf, EncodeRealistic) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makeRealisticPayload(PAYLOAD_SIZE);
@@ -176,7 +173,6 @@ PERF_TEST(SLIPFramingPerf, EncodeRealistic) {
  */
 PERF_TEST(SLIPFramingPerf, DecodeClean) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makeCleanPayload(PAYLOAD_SIZE);
@@ -225,7 +221,6 @@ PERF_TEST(SLIPFramingPerf, DecodeClean) {
  */
 PERF_TEST(SLIPFramingPerf, DecodeWorstCase) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makeWorstCasePayload(PAYLOAD_SIZE);
@@ -266,7 +261,6 @@ PERF_TEST(SLIPFramingPerf, DecodeWorstCase) {
  */
 PERF_TEST(SLIPFramingPerf, DecodeStreaming) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makeRealisticPayload(PAYLOAD_SIZE);
@@ -325,7 +319,6 @@ PERF_TEST(SLIPFramingPerf, DecodeStreaming) {
  */
 PERF_TEST(SLIPFramingPerf, DecodeMultiFrame) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t FRAME_SIZE = static_cast<std::size_t>(getCfg().msgBytes) / 10;
   std::vector<std::uint8_t> stream;
@@ -377,15 +370,12 @@ PERF_TEST(SLIPFramingPerf, DecodeMultiFrame) {
         ASSERT_EQ(frameCount, 10);
       },
       "decode-multiframe");
-
-  const double TOTAL_SIZE = FRAME_SIZE * 10;
 }
 
 /* ----------------------------- Payload Size Sweep ----------------------------- */
 
 class SLIPPayloadSweep : public ::testing::TestWithParam<std::size_t> {
 protected:
-  const ub::PerfConfig& getCfg() { return ub::detail::getPerfConfig(); }
 };
 
 /**
@@ -398,8 +388,7 @@ TEST_P(SLIPPayloadSweep, EncodeSweep) {
   cfg.msgBytes = static_cast<int>(PAYLOAD_SIZE);
 
   std::string testName = "SLIPPayloadSweep.EncodeSweep/" + std::to_string(PAYLOAD_SIZE);
-  ub::PerfCase perf{testName, cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
   const auto payload = makeCleanPayload(PAYLOAD_SIZE);
   std::vector<std::uint8_t> encoded(payload.size() * 2 + 2);
@@ -434,8 +423,7 @@ TEST_P(SLIPPayloadSweep, DecodeSweep) {
   cfg.msgBytes = static_cast<int>(PAYLOAD_SIZE);
 
   std::string testName = "SLIPPayloadSweep.DecodeSweep/" + std::to_string(PAYLOAD_SIZE);
-  ub::PerfCase perf{testName, cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
   const auto payload = makeCleanPayload(PAYLOAD_SIZE);
 
@@ -483,7 +471,6 @@ INSTANTIATE_TEST_SUITE_P(PayloadSizes, SLIPPayloadSweep,
  */
 PERF_TEST(SLIPCache, EncodeCacheL1) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   constexpr std::size_t L1_SIZE = 16 * 1024;
   const auto payload = makeCleanPayload(L1_SIZE);
@@ -514,7 +501,6 @@ PERF_TEST(SLIPCache, EncodeCacheL1) {
  */
 PERF_TEST(SLIPCache, EncodeCacheL3) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   constexpr std::size_t L3_SIZE = 1 * 1024 * 1024;
   const auto payload = makeCleanPayload(L3_SIZE);
@@ -545,7 +531,6 @@ PERF_TEST(SLIPCache, EncodeCacheL3) {
  */
 PERF_TEST(SLIPCache, EncodeCacheRAM) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   constexpr std::size_t RAM_SIZE = 4 * 1024 * 1024;
   const auto payload = makeCleanPayload(RAM_SIZE);
@@ -578,7 +563,6 @@ PERF_TEST(SLIPCache, EncodeCacheRAM) {
  */
 PERF_TEST(SLIPConfig, EncodeDelimiterComparison) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makeCleanPayload(PAYLOAD_SIZE);
@@ -652,7 +636,6 @@ PERF_TEST(SLIPConfig, EncodeDelimiterComparison) {
  */
 PERF_TEST(SLIPComparison, EncodeVsDecodePerformance) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makeCleanPayload(PAYLOAD_SIZE);
