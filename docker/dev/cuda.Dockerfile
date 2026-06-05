@@ -82,6 +82,22 @@ RUN ln -sf /usr/local/cuda/targets/x86_64-linux/lib/stubs/libnvidia-ml.so \
     ldconfig
 
 # ==============================================================================
+# cuDSS (NVIDIA Direct Sparse Solver)
+# ==============================================================================
+# GPU sparse-LU direct solver used by the MNA cuDSS probes. Not packaged in the
+# CUDA apt repo, so install the redistributable archive into the CUDA prefix so
+# cudss.h, libcudss.so and the CMake package config are all on the default paths.
+ARG CUDSS_VERSION=0.8.0.10
+RUN wget -qO /tmp/cudss.tar.xz \
+      "https://developer.download.nvidia.com/compute/cudss/redist/libcudss/linux-x86_64/libcudss-linux-x86_64-${CUDSS_VERSION}_cuda${CUDA_VERSION_MAJOR}-archive.tar.xz" && \
+    mkdir -p /tmp/cudss && \
+    tar -xf /tmp/cudss.tar.xz -C /tmp/cudss --strip-components=1 && \
+    cp -a /tmp/cudss/include/. /usr/local/cuda/include/ && \
+    cp -a /tmp/cudss/lib/. /usr/local/cuda/lib64/ && \
+    ldconfig && \
+    rm -rf /tmp/cudss /tmp/cudss.tar.xz
+
+# ==============================================================================
 # Shell Prompt
 # ==============================================================================
 RUN echo 'if [ -n "$PS1" ]; then export PS1="\[\e[1;32m\][CUDA] \u@\h:\w \$\[\e[0m\] "; fi' \
