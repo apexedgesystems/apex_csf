@@ -213,6 +213,15 @@ if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPIL
   endif ()
 
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr ${_nvcc_keep}")
+
+  # nvcc forwards C/C++ *link* flags (e.g. the fast-linker -fuse-ld=lld from
+  # BuildAcceleration, which CUDA targets need at link) to the clang host
+  # compiler at compile time, where they are "unused during compilation".
+  # Silence only that class for the CUDA host compile; it does not mask any
+  # real diagnostic in .cu translation units.
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-Wno-unused-command-line-argument")
+  endif ()
   set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -G")
   set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} -lineinfo -DNDEBUG")
   set(CMAKE_CUDA_FLAGS_RELEASE "${CMAKE_CUDA_FLAGS_RELEASE} --use_fast_math -DNDEBUG")
