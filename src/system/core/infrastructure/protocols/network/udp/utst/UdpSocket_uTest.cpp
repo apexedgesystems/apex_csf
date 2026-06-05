@@ -550,6 +550,13 @@ TEST(UdpSocketServerClientTest, ClientProcessEventsWithCallbacks) {
   ClientReadbackCtx cbCtx{&client};
   client.setOnReadable(apex::concurrency::Delegate<void>{clientReadableCallback, &cbCtx});
 
+  // Send the datagram before starting the client IO thread, so write() (main)
+  // and processEvents() (IO thread) never touch the client concurrently. The
+  // server's echo is buffered by the kernel until the IO thread reads it.
+  std::array<uint8_t, 2> pkt = {0x77, 0x88};
+  std::string writeErr;
+  client.write(apex::compat::bytes_span(pkt.data(), pkt.size()), 0, writeErr);
+
   std::atomic_bool cliExit{false};
   std::thread cliThread([&]() {
     while (!cliExit.load(std::memory_order_relaxed)) {
@@ -557,23 +564,21 @@ TEST(UdpSocketServerClientTest, ClientProcessEventsWithCallbacks) {
     }
   });
 
-  std::array<uint8_t, 2> pkt = {0x77, 0x88};
-  std::string writeErr;
-  client.write(apex::compat::bytes_span(pkt.data(), pkt.size()), 0, writeErr);
-
   const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
   while (cbCtx.fired.load() == 0 && std::chrono::steady_clock::now() < DEADLINE)
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
 
   EXPECT_GT(cbCtx.fired.load(), 0);
 
+  // Join the IO threads before stopping, so teardown never races a
+  // processEvents call on the same socket.
   cliExit = true;
-  client.stop();
   cliThread.join();
+  client.stop();
 
   srvExit = true;
-  server.stop();
   srvThread.join();
+  server.stop();
 }
 
 /**
