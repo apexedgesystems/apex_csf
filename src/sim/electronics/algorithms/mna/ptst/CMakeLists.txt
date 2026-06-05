@@ -41,37 +41,35 @@ if (TARGET sim_electronics_algorithms_mna_cuda AND CMAKE_CUDA_COMPILER)
     MnaCuda_PTEST PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON
   )
 
-  # cuSolverSp probe (Phase 4 sparse-LU exploration; links cusolver + cusparse directly)
+  # cuDSS sparse-LU probes (successors to the deprecated cuSolverSp/Rf probes).
+  # cuDSS does reordering + symbolic factorization internally (ANALYSIS), then
+  # re-uses it for new values (REFACTORIZATION) -- the Phase 4 Newton pattern.
   apex_add_ptest(
-    TARGET CuSolverSpProbe_PTEST SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/CuSolverSpProbe_pTest.cu"
+    TARGET CudssOneShotProbe_PTEST SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/CudssOneShotProbe_pTest.cu"
     LINK sim_electronics_algorithms_mna_cuda
   )
-  target_link_libraries(CuSolverSpProbe_PTEST PRIVATE CUDA::cudart CUDA::cusolver CUDA::cusparse)
+  target_link_libraries(CudssOneShotProbe_PTEST PRIVATE CUDA::cudart cudss)
   set_target_properties(
-    CuSolverSpProbe_PTEST PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON
+    CudssOneShotProbe_PTEST PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON
   )
 
-  # cusolverRf probe (analyse-once + refactor-per-iter; the right API for Phase 4 NR loops)
   apex_add_ptest(
-    TARGET CuSolverRfProbe_PTEST SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/CuSolverRfProbe_pTest.cu"
-    LINK sim_electronics_algorithms_mna_cuda
-  )
-  target_link_libraries(CuSolverRfProbe_PTEST PRIVATE CUDA::cudart CUDA::cusolver CUDA::cusparse)
-  set_target_properties(
-    CuSolverRfProbe_PTEST PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON
-  )
-
-  # cusolverRfBatch probe (K parallel circuits; Monte Carlo / parameter sweep target)
-  apex_add_ptest(
-    TARGET CuSolverRfBatchProbe_PTEST SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/CuSolverRfBatchProbe_pTest.cu" LINK
+    TARGET CudssRefactorProbe_PTEST SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/CudssRefactorProbe_pTest.cu" LINK
     sim_electronics_algorithms_mna_cuda
   )
-  target_link_libraries(
-    CuSolverRfBatchProbe_PTEST PRIVATE CUDA::cudart CUDA::cusolver CUDA::cusparse
-  )
+  target_link_libraries(CudssRefactorProbe_PTEST PRIVATE CUDA::cudart cudss)
   set_target_properties(
-    CuSolverRfBatchProbe_PTEST PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS
-                                                                        ON
+    CudssRefactorProbe_PTEST PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS
+                                                                      ON
+  )
+
+  apex_add_ptest(
+    TARGET CudssBatchProbe_PTEST SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/CudssBatchProbe_pTest.cu"
+    LINK sim_electronics_algorithms_mna_cuda
+  )
+  target_link_libraries(CudssBatchProbe_PTEST PRIVATE CUDA::cudart cudss)
+  set_target_properties(
+    CudssBatchProbe_PTEST PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON
   )
 endif ()

@@ -306,6 +306,14 @@
       "configurePreset": "hosted-x86_64-release"
     },
     {
+      "name": "hosted-x86_64-cuda-debug",
+      "configurePreset": "hosted-x86_64-cuda-debug"
+    },
+    {
+      "name": "hosted-x86_64-cuda-release",
+      "configurePreset": "hosted-x86_64-cuda-release"
+    },
+    {
       "name": "hosted-x86_64-asan",
       "configurePreset": "hosted-x86_64-asan"
     },

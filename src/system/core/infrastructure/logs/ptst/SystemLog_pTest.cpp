@@ -61,7 +61,6 @@ struct TempFileGuard {
  */
 PERF_TEST(SyncMode, SingleThreadThroughput) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto PATH = ub::uniqTempFile("logs_sync_st");
   TempFileGuard cleanup{PATH};
@@ -90,7 +89,6 @@ PERF_TEST(SyncMode, SingleThreadThroughput) {
  */
 PERF_CONTENTION(SyncMode, MultiThreadContention) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto PATH = ub::uniqTempFile("logs_sync_mt");
   TempFileGuard cleanup{PATH};
@@ -119,7 +117,6 @@ PERF_CONTENTION(SyncMode, MultiThreadContention) {
  */
 PERF_TEST(AsyncMode, SingleThreadThroughput) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto PATH = ub::uniqTempFile("logs_async_st");
   TempFileGuard cleanup{PATH};
@@ -152,7 +149,6 @@ PERF_TEST(AsyncMode, SingleThreadThroughput) {
  */
 PERF_CONTENTION(AsyncMode, MultiThreadContention) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto PATH = ub::uniqTempFile("logs_async_mt");
   TempFileGuard cleanup{PATH};
@@ -183,7 +179,6 @@ PERF_CONTENTION(AsyncMode, MultiThreadContention) {
  */
 PERF_TEST(SkipPath, BelowThreshold) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto PATH = ub::uniqTempFile("logs_skip");
   TempFileGuard cleanup{PATH};
@@ -214,7 +209,6 @@ PERF_TEST(SkipPath, BelowThreshold) {
  */
 PERF_TEST(Payload, SizeSensitivity) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto PATH = ub::uniqTempFile("logs_payload");
   TempFileGuard cleanup{PATH};

@@ -65,7 +65,6 @@ inline std::vector<T> generateRandomMatrices3x3(int count, unsigned seed = 42) {
  */
 PERF_TEST(LinalgPerf, CpuGemm3x3_Small) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int BATCH = BATCH_SMALL;
   const auto AS = generateRandomMatrices3x3<double>(BATCH);
@@ -106,7 +105,6 @@ PERF_TEST(LinalgPerf, CpuGemm3x3_Small) {
  */
 PERF_TEST(LinalgPerf, CpuGemm3x3_Medium) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int BATCH = BATCH_MEDIUM;
   const auto AS = generateRandomMatrices3x3<double>(BATCH);
@@ -149,7 +147,6 @@ PERF_TEST(LinalgPerf, CpuGemm3x3_Medium) {
  */
 PERF_TEST(LinalgPerf, CpuInverse3x3_Medium) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int BATCH = BATCH_MEDIUM;
   auto AS = generateRandomMatrices3x3<double>(BATCH);
@@ -429,7 +426,6 @@ PERF_GPU_COMPARISON(LinalgPerf, CpuVsGpu_Inverse3x3) {
  */
 PERF_TEST(LinalgPerf, CpuGemm_16x16) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int N = 16;
   constexpr int COUNT = 1000;
@@ -478,7 +474,6 @@ PERF_TEST(LinalgPerf, CpuGemm_16x16) {
  */
 PERF_TEST(LinalgPerf, CpuGemm_64x64) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int N = 64;
   constexpr int COUNT = 100;

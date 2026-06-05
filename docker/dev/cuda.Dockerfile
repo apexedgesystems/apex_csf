@@ -11,8 +11,13 @@
 FROM apex.base:latest
 
 ARG USER
+# The toolkit's CUDA minor must not exceed what the host driver provides.
+# Apps built a minor ahead of the driver still run via forward-compat, but
+# nsys cannot trace them -- its CUDA activity capture silently yields nothing
+# (ncu and in-process CUPTI are unaffected). Pin to the lowest CUDA minor the
+# target fleet's drivers report from nvidia-smi.
 ARG CUDA_VERSION_MAJOR=13
-ARG CUDA_VERSION_MINOR=1
+ARG CUDA_VERSION_MINOR=0
 
 LABEL org.opencontainers.image.title="apex.dev.cuda" \
       org.opencontainers.image.description="CUDA shell for Apex CSF"
@@ -75,6 +80,22 @@ RUN nsys --version 2>/dev/null || echo "nsys installed (requires GPU at runtime)
 RUN ln -sf /usr/local/cuda/targets/x86_64-linux/lib/stubs/libnvidia-ml.so \
            /usr/local/cuda/targets/x86_64-linux/lib/libnvidia-ml.so && \
     ldconfig
+
+# ==============================================================================
+# cuDSS (NVIDIA Direct Sparse Solver)
+# ==============================================================================
+# GPU sparse-LU direct solver used by the MNA cuDSS probes. Not packaged in the
+# CUDA apt repo, so install the redistributable archive into the CUDA prefix so
+# cudss.h, libcudss.so and the CMake package config are all on the default paths.
+ARG CUDSS_VERSION=0.8.0.10
+RUN wget -qO /tmp/cudss.tar.xz \
+      "https://developer.download.nvidia.com/compute/cudss/redist/libcudss/linux-x86_64/libcudss-linux-x86_64-${CUDSS_VERSION}_cuda${CUDA_VERSION_MAJOR}-archive.tar.xz" && \
+    mkdir -p /tmp/cudss && \
+    tar -xf /tmp/cudss.tar.xz -C /tmp/cudss --strip-components=1 && \
+    cp -a /tmp/cudss/include/. /usr/local/cuda/include/ && \
+    cp -a /tmp/cudss/lib/. /usr/local/cuda/lib64/ && \
+    ldconfig && \
+    rm -rf /tmp/cudss /tmp/cudss.tar.xz
 
 # ==============================================================================
 # Shell Prompt

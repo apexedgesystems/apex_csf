@@ -158,8 +158,34 @@ if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPIL
   # picks gcc by default — mixing C++ and CUDA TUs across two toolchains
   # produces incompatible runtime libraries (notably libasan vs libclang_rt.asan).
   if (NOT DEFINED CMAKE_CUDA_HOST_COMPILER AND CMAKE_CXX_COMPILER)
+    set(_apex_cuda_host "${CMAKE_CXX_COMPILER}")
+
+    # nvcc enforces a maximum supported host-compiler version: CUDA toolkits
+    # before 13.1 reject clang >= 21. When the C++ compiler is newer than the
+    # toolkit accepts, step the CUDA host compiler down to a supported clang
+    # (not gcc) so the C++ and CUDA TUs still share one runtime. The wider C++
+    # build keeps using CMAKE_CXX_COMPILER unchanged.
+    if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+        AND CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL "21"
+        AND CUDAToolkit_VERSION VERSION_LESS "13.1"
+    )
+      find_program(APEX_CUDA_HOST_CLANG NAMES clang++-20)
+      if (APEX_CUDA_HOST_CLANG)
+        set(_apex_cuda_host "${APEX_CUDA_HOST_CLANG}")
+        message(STATUS "CUDA ${CUDAToolkit_VERSION} does not support clang "
+                       "${CMAKE_CXX_COMPILER_VERSION}; using ${_apex_cuda_host} "
+                       "as the CUDA host compiler (C++ build stays on " "${CMAKE_CXX_COMPILER})"
+        )
+      else ()
+        message(WARNING "CUDA ${CUDAToolkit_VERSION} does not support clang "
+                        "${CMAKE_CXX_COMPILER_VERSION} and clang++-20 was not "
+                        "found; CUDA configuration may fail"
+        )
+      endif ()
+    endif ()
+
     set(CMAKE_CUDA_HOST_COMPILER
-        "${CMAKE_CXX_COMPILER}"
+        "${_apex_cuda_host}"
         CACHE FILEPATH ""
     )
   endif ()
@@ -187,6 +213,15 @@ if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPIL
   endif ()
 
   set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} --expt-relaxed-constexpr ${_nvcc_keep}")
+
+  # nvcc forwards C/C++ *link* flags (e.g. the fast-linker -fuse-ld=lld from
+  # BuildAcceleration, which CUDA targets need at link) to the clang host
+  # compiler at compile time, where they are "unused during compilation".
+  # Silence only that class for the CUDA host compile; it does not mask any
+  # real diagnostic in .cu translation units.
+  if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -Xcompiler=-Wno-unused-command-line-argument")
+  endif ()
   set(CMAKE_CUDA_FLAGS_DEBUG "${CMAKE_CUDA_FLAGS_DEBUG} -G")
   set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "${CMAKE_CUDA_FLAGS_RELWITHDEBINFO} -lineinfo -DNDEBUG")
   set(CMAKE_CUDA_FLAGS_RELEASE "${CMAKE_CUDA_FLAGS_RELEASE} --use_fast_math -DNDEBUG")

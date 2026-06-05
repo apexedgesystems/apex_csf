@@ -34,7 +34,6 @@ namespace ub = vernier::bench;
  */
 PERF_TEST(RcLowPassPerf, Dc) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   volatile double sink = 0.0;
 
@@ -78,7 +77,6 @@ PERF_TEST(RcLowPassPerf, Dc) {
  */
 PERF_TEST(RcLowPassPerf, Step) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int STEPS = 100;
   constexpr double DT = 10e-6;
@@ -137,7 +135,6 @@ PERF_TEST(RcLowPassPerf, Step) {
  */
 PERF_TEST(RcLowPassPerf, Analytical) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   sim::electronics::topologies::filters::RcLowPass filter(1e3, 1e-6);
   constexpr int POINTS = 1000;

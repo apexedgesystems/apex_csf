@@ -38,8 +38,6 @@ using apex::protocols::TraceDirection;
 
 namespace {
 
-inline const ub::PerfConfig& getCfg() { return ub::detail::getPerfConfig(); }
-
 /**
  * @brief Helper to set up loopback and adapter for tests.
  */
@@ -74,7 +72,6 @@ struct TestContext {
  */
 PERF_TEST(RfcommWrite, Small64B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -122,7 +119,6 @@ PERF_TEST(RfcommWrite, Small64B) {
  */
 PERF_TEST(RfcommWrite, Large4KB) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -167,7 +163,6 @@ PERF_TEST(RfcommWrite, Large4KB) {
  */
 PERF_TEST(RfcommRead, Latency) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -209,7 +204,6 @@ PERF_TEST(RfcommRead, Latency) {
  */
 PERF_TEST(RfcommRoundTrip, Echo) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -267,7 +261,6 @@ PERF_TEST(RfcommRoundTrip, Echo) {
  */
 PERF_TEST(RfcommOverhead, Stats) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -302,7 +295,6 @@ PERF_TEST(RfcommOverhead, Stats) {
  */
 PERF_TEST(RfcommOverhead, ByteTrace) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());

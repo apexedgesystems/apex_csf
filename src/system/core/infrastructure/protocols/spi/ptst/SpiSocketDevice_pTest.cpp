@@ -39,8 +39,6 @@ namespace sp = apex::protocols::spi;
 
 namespace {
 
-inline const ub::PerfConfig& getCfg() { return ub::detail::getPerfConfig(); }
-
 /**
  * @brief Create a socketpair and return both fds.
  */
@@ -138,7 +136,6 @@ struct TestContext {
  */
 PERF_TEST(SpiTransfer, Small64B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -177,7 +174,6 @@ PERF_TEST(SpiTransfer, Small64B) {
  */
 PERF_TEST(SpiTransfer, Medium1KB) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -215,7 +211,6 @@ PERF_TEST(SpiTransfer, Medium1KB) {
  */
 PERF_TEST(SpiTransfer, Large4KB) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -255,7 +250,6 @@ PERF_TEST(SpiTransfer, Large4KB) {
  */
 PERF_TEST(SpiWrite, Only64B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -295,7 +289,6 @@ PERF_TEST(SpiWrite, Only64B) {
  */
 PERF_TEST(SpiRead, Only64B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -334,7 +327,6 @@ PERF_TEST(SpiRead, Only64B) {
  */
 PERF_TEST(SpiOverhead, Stats) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());

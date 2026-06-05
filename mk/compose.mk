@@ -73,6 +73,49 @@ $(eval $(call _compose_target,tools-py,Python tools,dev-cuda,tools-py))
 $(eval $(call _compose_target,tools-rust,Rust tools,dev-cuda,tools-rust))
 
 # ------------------------------------------------------------------------------
+# Vernier bench wrapper
+#
+# Source the build's .env so `bench` (and the other Vernier CLI tools) are on
+# PATH, then forward BENCH_ARGS verbatim. Example:
+#   make compose-bench BENCH_ARGS='doctor build/hosted-x86_64-debug/bin/ptests/SLIPFraming_PTEST'
+#   make compose-bench BENCH_ARGS='profile-all SLIPFraming_PTEST --quick \
+#                                  --out _slip_runs --profilers gperf,callgrind'
+#   make compose-bench BENCH_ARGS='run SLIPFraming_PTEST -- --profile massif \
+#                                  --cycles 100 --gtest_filter=*EncodeClean*'
+#
+# Bypasses _compose_run because the inner invocation is a sourced shell
+# command, not `make <target>`. Cwd is the project root so bench's
+# short-name resolver finds binaries under build/*/bin/{ptests,tests,examples}.
+#
+# Session prep (idempotent, best-effort) makes the privileged backends ready
+# without manual setup: lower perf_event_paranoid (perf) and mount debugfs +
+# tracefs (bpftrace, offcpu). The container is privileged with NOPASSWD sudo.
+#
+# Backends that need the bench PROCESS itself to run as root -- bpftrace,
+# offcpu, rapl -- take BENCH_SUDO=1, which runs bench under sudo (env + tool
+# PATH preserved). Everything else runs as the mapped user.
+#   make compose-bench BENCH_SUDO=1 BENCH_ARGS='run Foo --profile offcpu -- ...'
+# ------------------------------------------------------------------------------
+
+ifdef BENCH_SUDO
+  _bench_cmd  := sudo -E $$(command -v bench)
+  # bench ran as root -> hand artifacts back to the host user.
+  _bench_post := ; sudo chown -R $(HOST_UID):$(HOST_GID) docs bench-out $(BUILD_DIR) 2>/dev/null || true
+else
+  _bench_cmd  := bench
+  _bench_post :=
+endif
+
+.PHONY: compose-bench
+compose-bench:
+	$(call log,compose,bench [dev-cuda])
+	@docker compose run --rm -T dev-cuda bash -c \
+	  'sudo sysctl -w kernel.perf_event_paranoid=1 >/dev/null 2>&1 || true; \
+	   sudo mount -t debugfs none /sys/kernel/debug 2>/dev/null || true; \
+	   sudo mount -t tracefs nodev /sys/kernel/debug/tracing 2>/dev/null || true; \
+	   . $(BUILD_DIR)/.env && $(_bench_cmd) $(BENCH_ARGS)$(_bench_post)'
+
+# ------------------------------------------------------------------------------
 # Cross-Compilation
 # ------------------------------------------------------------------------------
 

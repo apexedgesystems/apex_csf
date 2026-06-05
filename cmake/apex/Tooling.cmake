@@ -342,7 +342,14 @@ function (apex_finalize_doxygen)
 
     if (TARGET "${_target}")
       get_target_property(_tgt_type "${_target}" TYPE)
-      if (NOT _tgt_type STREQUAL "INTERFACE_LIBRARY" AND NOT _tgt_type STREQUAL "OBJECT_LIBRARY")
+      # Only file-producing targets have a $<TARGET_FILE:>; INTERFACE / OBJECT /
+      # UTILITY targets (e.g. a custom docs target) do not, and referencing it
+      # for them aborts generation.
+      if (_tgt_type STREQUAL "EXECUTABLE"
+          OR _tgt_type STREQUAL "STATIC_LIBRARY"
+          OR _tgt_type STREQUAL "SHARED_LIBRARY"
+          OR _tgt_type STREQUAL "MODULE_LIBRARY"
+      )
         list(APPEND _html_deps "$<TARGET_FILE:${_target}>")
       endif ()
     endif ()

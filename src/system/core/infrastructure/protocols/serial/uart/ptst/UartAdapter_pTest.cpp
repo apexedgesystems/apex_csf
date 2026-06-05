@@ -66,7 +66,6 @@ inline void drainPty(uart::PtyPair& pty) {
  */
 PERF_TEST(UartThroughput, WriteClean) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makePayload(PAYLOAD_SIZE);
@@ -115,7 +114,6 @@ PERF_TEST(UartThroughput, WriteClean) {
  */
 PERF_TEST(UartThroughput, ReadClean) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makePayload(PAYLOAD_SIZE);
@@ -168,7 +166,6 @@ PERF_TEST(UartThroughput, ReadClean) {
  */
 PERF_TEST(UartThroughput, LoopbackRoundTrip) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makePayload(PAYLOAD_SIZE);
@@ -246,7 +243,6 @@ PERF_TEST(UartThroughput, LoopbackRoundTrip) {
  */
 PERF_TEST(UartThroughput, WriteBurst) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   constexpr std::size_t BURST_SIZE = 8;
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
@@ -292,7 +288,6 @@ PERF_TEST(UartThroughput, WriteBurst) {
  */
 PERF_TEST(UartThroughput, SmallWrites) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   constexpr std::size_t SMALL_SIZE = 8;
   const auto payload = makePayload(SMALL_SIZE);
@@ -330,7 +325,6 @@ PERF_TEST(UartThroughput, SmallWrites) {
  */
 PERF_TEST(UartThroughput, LargeWrites) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   constexpr std::size_t LARGE_SIZE = 16 * 1024;
   const auto payload = makePayload(LARGE_SIZE);
@@ -369,7 +363,6 @@ PERF_TEST(UartThroughput, LargeWrites) {
 
 class UartPayloadSweep : public ::testing::TestWithParam<std::size_t> {
 protected:
-  const ub::PerfConfig& getCfg() { return ub::detail::getPerfConfig(); }
 };
 
 /**
@@ -382,8 +375,7 @@ TEST_P(UartPayloadSweep, WriteSweep) {
   cfg.msgBytes = static_cast<int>(PAYLOAD_SIZE);
 
   std::string testName = "UartPayloadSweep.WriteSweep/" + std::to_string(PAYLOAD_SIZE);
-  ub::PerfCase perf{testName, cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
   const auto payload = makePayload(PAYLOAD_SIZE);
 
@@ -424,8 +416,7 @@ TEST_P(UartPayloadSweep, ReadSweep) {
   cfg.msgBytes = static_cast<int>(PAYLOAD_SIZE);
 
   std::string testName = "UartPayloadSweep.ReadSweep/" + std::to_string(PAYLOAD_SIZE);
-  ub::PerfCase perf{testName, cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
   const auto payload = makePayload(PAYLOAD_SIZE);
 
@@ -470,7 +461,6 @@ INSTANTIATE_TEST_SUITE_P(PayloadSizes, UartPayloadSweep,
  */
 PERF_TEST(UartLatency, WriteDistribution) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makePayload(PAYLOAD_SIZE);
@@ -512,7 +502,6 @@ PERF_TEST(UartLatency, WriteDistribution) {
  */
 PERF_TEST(UartLatency, ReadDistribution) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makePayload(PAYLOAD_SIZE);
@@ -558,7 +547,6 @@ PERF_TEST(UartLatency, ReadDistribution) {
  */
 PERF_TEST(UartLatency, RoundTrip) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makePayload(PAYLOAD_SIZE);
@@ -613,7 +601,6 @@ PERF_TEST(UartLatency, RoundTrip) {
  */
 PERF_TEST(UartConfig, ConfigureOverhead) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   uart::PtyPair pty;
   ASSERT_EQ(pty.open(), uart::Status::SUCCESS);
@@ -644,7 +631,6 @@ PERF_TEST(UartConfig, ConfigureOverhead) {
  */
 PERF_TEST(UartConfig, FlushOverhead) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   uart::PtyPair pty;
   ASSERT_EQ(pty.open(), uart::Status::SUCCESS);
@@ -677,7 +663,6 @@ PERF_TEST(UartConfig, FlushOverhead) {
  */
 PERF_TEST(UartComparison, WriteVsRead) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::size_t PAYLOAD_SIZE = static_cast<std::size_t>(getCfg().msgBytes);
   const auto payload = makePayload(PAYLOAD_SIZE);

@@ -125,7 +125,6 @@ ssize_t syncRead(UnixSocketClient& client, apex::compat::bytes_span buf, int tim
  */
 PERF_TEST(UnixSocketPerf, EchoLatencySmall) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr size_t PAYLOAD_SIZE = 64;
   const std::string SOCK_PATH = uniqueSocketPath("echo_small");
@@ -172,7 +171,6 @@ PERF_TEST(UnixSocketPerf, EchoLatencySmall) {
  */
 PERF_TEST(UnixSocketPerf, EchoLatencyMedium) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr size_t PAYLOAD_SIZE = 1024;
   const std::string SOCK_PATH = uniqueSocketPath("echo_medium");
@@ -228,7 +226,6 @@ PERF_TEST(UnixSocketPerf, EchoLatencyMedium) {
  */
 PERF_TEST(UnixSocketPerf, EchoLatencyLarge) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr size_t PAYLOAD_SIZE = 16 * 1024;
   const std::string SOCK_PATH = uniqueSocketPath("echo_large");
@@ -319,7 +316,6 @@ void unixDrainCallback(void* ctx, int clientfd) noexcept {
  */
 PERF_TEST(UnixSocketPerf, WriteThroughput) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr size_t PAYLOAD_SIZE = 1024;
   const std::string SOCK_PATH = uniqueSocketPath("write_tp");
@@ -384,7 +380,6 @@ PERF_TEST(UnixSocketPerf, WriteThroughput) {
  */
 PERF_TEST(UnixSocketPerf, MultiClientEcho) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr size_t PAYLOAD_SIZE = 256;
   constexpr size_t NUM_CLIENTS = 4;
@@ -446,7 +441,6 @@ PERF_TEST(UnixSocketPerf, MultiClientEcho) {
  */
 PERF_TEST(UnixSocketPerf, PayloadScaling) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   const std::string SOCK_PATH = uniqueSocketPath("scaling");
 

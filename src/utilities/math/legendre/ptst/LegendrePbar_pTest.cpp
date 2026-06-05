@@ -69,7 +69,6 @@ inline std::size_t triIdx(int n, int m) noexcept {
  */
 PERF_TEST(LegendrePbarPerf, CpuN50) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int N = 50;
   constexpr double X = 0.3;
@@ -104,7 +103,6 @@ PERF_TEST(LegendrePbarPerf, CpuN50) {
  */
 PERF_TEST(LegendrePbarPerf, CpuN100) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int N = 100;
   constexpr double X = 0.3;
@@ -134,7 +132,6 @@ PERF_TEST(LegendrePbarPerf, CpuN100) {
  */
 PERF_TEST(LegendrePbarPerf, CpuN180) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int N = 180;
   constexpr double X = 0.3;
@@ -164,7 +161,6 @@ PERF_TEST(LegendrePbarPerf, CpuN180) {
  */
 PERF_TEST(LegendrePbarPerf, CpuN360) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int N = 360;
   constexpr double X = 0.3;
@@ -198,7 +194,6 @@ PERF_TEST(LegendrePbarPerf, CpuN360) {
  */
 PERF_TEST(LegendrePbarPerf, CpuCachedN180) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int N = 180;
   constexpr double X = 0.3;
@@ -237,7 +232,6 @@ PERF_TEST(LegendrePbarPerf, CpuCachedN180) {
  */
 PERF_TEST(LegendrePbarPerf, CpuRawBufferN180) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr int N = 180;
   constexpr double X = 0.3;

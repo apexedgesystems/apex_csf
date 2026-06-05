@@ -84,7 +84,6 @@ protected:
  */
 PERF_TEST(SystemComponentPerf, ActiveParamsSmall) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   BenchComponent<SmallParams> c;
   SmallParams p{2.0, 1.0, 1, 0};
@@ -114,7 +113,6 @@ PERF_TEST(SystemComponentPerf, ActiveParamsSmall) {
  */
 PERF_TEST(SystemComponentPerf, ActiveParamsMedium) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   BenchComponent<MediumParams> c;
   MediumParams p{};
@@ -144,7 +142,6 @@ PERF_TEST(SystemComponentPerf, ActiveParamsMedium) {
  */
 PERF_TEST(SystemComponentPerf, ActiveParamsLarge) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   BenchComponent<LargeParams> c;
   LargeParams p{};
@@ -176,7 +173,6 @@ PERF_TEST(SystemComponentPerf, ActiveParamsLarge) {
  */
 PERF_TEST(SystemComponentPerf, LoadSmall) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   BenchComponent<SmallParams> c;
   SmallParams p{2.0, 1.0, 1, 0};
@@ -209,7 +205,6 @@ PERF_TEST(SystemComponentPerf, LoadSmall) {
  */
 PERF_TEST(SystemComponentPerf, LoadMedium) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   BenchComponent<MediumParams> c;
   MediumParams p{};
@@ -242,7 +237,6 @@ PERF_TEST(SystemComponentPerf, LoadMedium) {
  */
 PERF_TEST(SystemComponentPerf, LoadLarge) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   BenchComponent<LargeParams> c;
   LargeParams p{};
@@ -277,7 +271,6 @@ PERF_TEST(SystemComponentPerf, LoadLarge) {
  */
 PERF_TEST(SystemComponentPerf, ApplySmall) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   BenchComponent<SmallParams> c;
   SmallParams p1{1.0, 0.0, 0, 0};
@@ -315,7 +308,6 @@ PERF_TEST(SystemComponentPerf, ApplySmall) {
  */
 PERF_TEST(SystemComponentPerf, RollbackSmall) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   BenchComponent<SmallParams> c;
   SmallParams p1{1.0, 0.0, 0, 0};
@@ -353,7 +345,6 @@ PERF_TEST(SystemComponentPerf, RollbackSmall) {
  */
 PERF_TEST(SystemComponentPerf, FullInitCycle) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   SmallParams p{1.0, 0.0, 0, 0};
 
@@ -394,8 +385,7 @@ PERF_TEST(SystemComponentPerf, ParamSizeScaling) {
   std::printf("%s\n", std::string(45, '-').c_str());
 
   {
-    ub::PerfCase perf{"SystemComponentPerf.ParamSizeScaling/24B", CFG};
-    ub::attachProfilerHooks(perf, CFG);
+    auto perf = ub::makePerfCaseWithProfiler("SystemComponentPerf.ParamSizeScaling/24B", CFG);
 
     BenchComponent<SmallParams> c;
     SmallParams p{1.0, 0.0, 0, 0};
@@ -420,8 +410,7 @@ PERF_TEST(SystemComponentPerf, ParamSizeScaling) {
   }
 
   {
-    ub::PerfCase perf{"SystemComponentPerf.ParamSizeScaling/88B", CFG};
-    ub::attachProfilerHooks(perf, CFG);
+    auto perf = ub::makePerfCaseWithProfiler("SystemComponentPerf.ParamSizeScaling/88B", CFG);
 
     BenchComponent<MediumParams> c;
     MediumParams p{};
@@ -446,8 +435,7 @@ PERF_TEST(SystemComponentPerf, ParamSizeScaling) {
   }
 
   {
-    ub::PerfCase perf{"SystemComponentPerf.ParamSizeScaling/320B", CFG};
-    ub::attachProfilerHooks(perf, CFG);
+    auto perf = ub::makePerfCaseWithProfiler("SystemComponentPerf.ParamSizeScaling/320B", CFG);
 
     BenchComponent<LargeParams> c;
     LargeParams p{};

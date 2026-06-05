@@ -223,10 +223,12 @@ ENV FLAMEGRAPH_DIR=/opt/FlameGraph
 # ==============================================================================
 # Profiling Tools
 # ==============================================================================
-# linux-tools: perf (may not match host kernel; mount host tools if needed)
-# google-perftools: CPU/heap profiler, tcmalloc
-# valgrind: callgrind instruction-level profiler
-# bpftrace: Dynamic tracing (requires privileged container)
+# linux-tools:        perf (common wrapper + generic; host-matched added below)
+# google-perftools:   CPU/heap profiler, tcmalloc
+# valgrind:           callgrind, massif, memcheck (vernier backends)
+# bpftrace:           dynamic tracing + off-CPU (vernier offcpu backend)
+# heaptrack:          low-overhead heap profiler (vernier heaptrack backend)
+# libjemalloc2/-dev:  sampling heap profiler (vernier jemalloc backend, jeprof)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
@@ -238,7 +240,30 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       libunwind-dev \
       valgrind \
       bpftrace \
+      heaptrack \
+      libjemalloc2 \
+      libjemalloc-dev \
       rr
+
+# Host-kernel-matched perf. linux-tools-generic tracks the latest kernel, which
+# drifts ahead of the host's RUNNING kernel; perf needs the exact match. Install
+# linux-tools-${HOST_KERNEL} (uname -r from the makefile) so `--profile perf`
+# works out of the box. Tolerant: warns rather than fails if that version isn't
+# in the archive (e.g. building on a host whose kernel isn't published).
+#
+# ARG declared here (not at the top) so a host-kernel bump only invalidates this
+# layer + the cheap tail, not the whole base image.
+ARG HOST_KERNEL
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    if [ -n "${HOST_KERNEL}" ]; then \
+      apt-get update && \
+      DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+        "linux-tools-${HOST_KERNEL}" \
+      || echo "WARN: linux-tools-${HOST_KERNEL} unavailable; perf may not match the host kernel"; \
+    else \
+      echo "WARN: HOST_KERNEL build-arg empty; perf may not match the host kernel"; \
+    fi
 
 # ==============================================================================
 # SuiteSparse (KLU sparse solver)

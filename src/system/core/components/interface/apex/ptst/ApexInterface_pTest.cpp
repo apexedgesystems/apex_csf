@@ -48,8 +48,6 @@ using system_core::interface::QueueManager;
 
 namespace {
 
-inline const ub::PerfConfig& getCfg() { return ub::detail::getPerfConfig(); }
-
 /// Build a valid APROTO packet with payload into buf. Returns bytes written.
 inline std::size_t buildTestPacket(std::uint8_t* buf, std::size_t bufSize,
                                    const std::uint8_t* payload, std::size_t payloadLen) {
@@ -76,7 +74,6 @@ inline std::size_t buildFramedPacket(std::uint8_t* frameBuf, std::size_t frameBu
 /** @brief Measure BufferPool acquire/release cycle (no payload copy). */
 PERF_TEST(BufferPoolPerf, AcquireReleaseCycle) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   BufferPool pool(128, 4096);
 
@@ -92,7 +89,6 @@ PERF_TEST(BufferPoolPerf, AcquireReleaseCycle) {
 /** @brief Measure acquire + memcpy + release (simulates real payload fill). */
 PERF_TEST(BufferPoolPerf, AcquireCopyRelease) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   BufferPool pool(128, 4096);
   std::array<std::uint8_t, 256> payload{};
@@ -117,7 +113,6 @@ PERF_TEST(BufferPoolPerf, AcquireCopyRelease) {
 /** @brief Measure acquire/release under contention (exhaust and refill cycle). */
 PERF_TEST(BufferPoolPerf, BatchAcquireRelease) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   constexpr std::size_t BATCH_SIZE = 32;
   BufferPool pool(BATCH_SIZE, 512);
@@ -141,7 +136,6 @@ PERF_TEST(BufferPoolPerf, BatchAcquireRelease) {
 /** @brief Measure refcount decrement path (multicast release). */
 PERF_TEST(BufferPoolPerf, RefcountRelease) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   BufferPool pool(128, 512);
 
@@ -164,7 +158,6 @@ PERF_TEST(BufferPoolPerf, RefcountRelease) {
 /** @brief Measure SPSCQueue push/pop throughput with MessageBuffer pointers. */
 PERF_TEST(QueuePerf, SPSCPushPop) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   apex::concurrency::SPSCQueue<MessageBuffer*> queue(128);
   BufferPool pool(128, 512);
@@ -184,7 +177,6 @@ PERF_TEST(QueuePerf, SPSCPushPop) {
 /** @brief Measure LockFreeQueue (MPMC) push/pop with MessageBuffer pointers. */
 PERF_TEST(QueuePerf, MPMCPushPop) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   apex::concurrency::LockFreeQueue<MessageBuffer*> queue(128);
   BufferPool pool(128, 512);
@@ -204,7 +196,6 @@ PERF_TEST(QueuePerf, MPMCPushPop) {
 /** @brief Measure QueueManager lookup by fullUid (hash map access). */
 PERF_TEST(QueuePerf, QueueManagerLookup) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   QueueManager mgr;
   // Register 12 components (realistic executive setup).
@@ -230,7 +221,6 @@ PERF_TEST(QueuePerf, QueueManagerLookup) {
 /** @brief Measure postInternalCommand throughput (acquire + copy + push). */
 PERF_TEST(InternalBusPerf, PostInternalCommand) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   ApexInterface iface;
   // Allocate queues for target component (no socket config needed for internal bus).
@@ -266,7 +256,6 @@ PERF_TEST(InternalBusPerf, PostInternalCommand) {
 /** @brief Measure postInternalTelemetry throughput. */
 PERF_TEST(InternalBusPerf, PostInternalTelemetry) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   ApexInterface iface;
   constexpr std::uint32_t SRC_UID = 0x006500;
@@ -296,7 +285,6 @@ PERF_TEST(InternalBusPerf, PostInternalTelemetry) {
 /** @brief Measure multicast command to 4 recipients. */
 PERF_TEST(InternalBusPerf, MulticastCommand4) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   ApexInterface iface;
   std::array<std::uint32_t, 4> targets = {0x006500, 0x006600, 0x006700, 0x006800};
@@ -329,7 +317,6 @@ PERF_TEST(InternalBusPerf, MulticastCommand4) {
 /** @brief Measure broadcast command to 8 recipients. */
 PERF_TEST(InternalBusPerf, BroadcastCommand8) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   ApexInterface iface;
   std::array<std::uint32_t, 9> uids = {0x000100, 0x006500, 0x006600, 0x006601, 0x006700,
@@ -362,7 +349,6 @@ PERF_TEST(InternalBusPerf, BroadcastCommand8) {
 /** @brief Benchmark APROTO header-only encoding. */
 PERF_TEST(AprotoCodecPerf, EncodeHeaderOnly) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 64> buf{};
   aproto::AprotoHeader hdr = aproto::buildHeader(0x006500, 0x0001, 0, 0);
@@ -379,7 +365,6 @@ PERF_TEST(AprotoCodecPerf, EncodeHeaderOnly) {
 /** @brief Benchmark APROTO header-only decoding. */
 PERF_TEST(AprotoCodecPerf, DecodeHeaderOnly) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 64> buf{};
   std::size_t written = 0;
@@ -399,7 +384,6 @@ PERF_TEST(AprotoCodecPerf, DecodeHeaderOnly) {
 /** @brief Benchmark APROTO encode + decode round-trip with 64B payload. */
 PERF_TEST(AprotoCodecPerf, RoundTrip64B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 128> buf{};
   std::array<std::uint8_t, 64> payload{};
@@ -423,7 +407,6 @@ PERF_TEST(AprotoCodecPerf, RoundTrip64B) {
 /** @brief Benchmark APROTO encode with 1KB payload (data copy dominated). */
 PERF_TEST(AprotoCodecPerf, Encode1KB) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 2048> buf{};
   std::array<std::uint8_t, 1024> payload{};
@@ -448,7 +431,6 @@ PERF_TEST(AprotoCodecPerf, Encode1KB) {
 /** @brief Benchmark SLIP encoding of 22-byte APROTO packet (header + 8B payload). */
 PERF_TEST(SlipFramingPerf, EncodeSmallPacket) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 64> packet{};
   std::array<std::uint8_t, 8> payload{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
@@ -468,7 +450,6 @@ PERF_TEST(SlipFramingPerf, EncodeSmallPacket) {
 /** @brief Benchmark SLIP decode of framed APROTO packet. */
 PERF_TEST(SlipFramingPerf, DecodeSmallPacket) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 8> payload{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
   std::array<std::uint8_t, 256> frameBuf{};
@@ -492,7 +473,6 @@ PERF_TEST(SlipFramingPerf, DecodeSmallPacket) {
 /** @brief Full RX pipeline: SLIP decode -> APROTO parse -> buffer acquire + copy. */
 PERF_TEST(InterfacePerf, RxPipeline) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   BufferPool pool(128, 4096);
 
@@ -540,7 +520,6 @@ PERF_TEST(InterfacePerf, RxPipeline) {
 /** @brief Full TX pipeline: buffer read -> APROTO encode -> SLIP frame. */
 PERF_TEST(InterfacePerf, TxPipeline) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   BufferPool pool(128, 4096);
 
@@ -581,7 +560,6 @@ PERF_TEST(InterfacePerf, TxPipeline) {
 /** @brief Full internal bus round-trip: post command -> queue -> drain -> dispatch. */
 PERF_TEST(InterfacePerf, InternalBusRoundTrip) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   // Simulate the full path using raw pool + queue (without socket overhead).
   BufferPool pool(128, 4096);
