@@ -179,7 +179,11 @@ bool AsyncLogBackend::tryLog(std::string_view msg) noexcept {
     const std::size_t prevDepth = queueDepth_.fetch_add(1, std::memory_order_relaxed);
 
     if (prevDepth == 0) {
-      // Queue was empty, I/O thread likely sleeping - wake it
+      // Queue was empty, I/O thread likely sleeping. Notify under the lock so
+      // the wakeup cannot be lost in the window between the worker checking its
+      // predicate (queueDepth_) and parking on the CV. queueDepth_ stays
+      // lock-free; only the empty->non-empty transition takes the lock.
+      std::lock_guard<std::mutex> lock(stopMutex_);
       stopCv_.notify_one();
     }
 
@@ -201,8 +205,11 @@ void AsyncLogBackend::ioThreadLoop() noexcept {
       writeEntry(entry);
       entriesWritten_.fetch_add(1, std::memory_order_relaxed);
 
-      // If queue just became empty, notify any waiters (flush())
+      // If queue just became empty, notify any waiters (flush()). Notify under
+      // the lock so a flush() wakeup cannot be lost between its queueDepth_
+      // check and parking on the CV.
       if (prevDepth == 1) {
+        std::lock_guard<std::mutex> lock(stopMutex_);
         stopCv_.notify_all();
       }
 
