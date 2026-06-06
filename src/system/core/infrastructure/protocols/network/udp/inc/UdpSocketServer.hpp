@@ -101,7 +101,7 @@ public:
    */
   uint8_t init(std::optional<std::reference_wrapper<std::string>> error = std::nullopt);
 
-  ~UdpSocketServer();
+  ~UdpSocketServer() override;
 
   // --------------------------------------------------------------------------
   // Nonblocking I/O helpers (no internal waits)

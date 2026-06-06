@@ -230,7 +230,7 @@ PERF_TEST(UnixSocketPerf, EchoLatencyLarge) {
   UB_PERF_GUARD(perf);
   ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
-  constexpr size_t PAYLOAD_SIZE = 16 * 1024;
+  constexpr size_t PAYLOAD_SIZE = static_cast<const size_t>(16 * 1024);
   const std::string SOCK_PATH = uniqueSocketPath("echo_large");
 
   EchoServerFixture server(SOCK_PATH);

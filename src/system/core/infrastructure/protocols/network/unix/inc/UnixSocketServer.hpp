@@ -91,7 +91,7 @@ public:
    */
   uint8_t init(bool unlinkExisting = true, std::string* error = nullptr);
 
-  ~UnixSocketServer();
+  ~UnixSocketServer() override;
 
   // --------------------------------------------------------------------------
   // Nonblocking I/O helpers (STREAM mode - per-connection)

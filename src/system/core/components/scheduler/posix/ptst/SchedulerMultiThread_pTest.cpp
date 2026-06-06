@@ -28,6 +28,7 @@
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -252,9 +253,9 @@ PERF_TEST(SchedulerMtPerf, ManyNoWork) {
   // Enhanced memory profile accounting
   const size_t TASK_PTR = sizeof(SchedulableTask*);
   const size_t TASK_META = 64; // Cache line per task (metadata)
-  const size_t WORKER_STACK =
-      std::thread::hardware_concurrency() * 8192; // Conservative stack estimate
-  const size_t COHERENCY = N * 64;                // Cache line bouncing (pessimistic)
+  const size_t WORKER_STACK = static_cast<const size_t>(std::thread::hardware_concurrency() *
+                                                        8192); // Conservative stack estimate
+  const size_t COHERENCY = N * 64;                             // Cache line bouncing (pessimistic)
 
   ub::MemoryProfile memProfile{.bytesRead = N * (TASK_PTR + TASK_META) + WORKER_STACK + COHERENCY,
                                .bytesWritten = N * sizeof(std::uint8_t), // Result codes
@@ -323,7 +324,7 @@ PERF_TEST(SchedulerMtPerf, ManyLightWork) {
 
   // Memory profile with work included
   const size_t TASK_META = sizeof(SchedulableTask*) + 64;
-  const size_t WORKER_STACK = std::thread::hardware_concurrency() * 8192;
+  const size_t WORKER_STACK = static_cast<const size_t>(std::thread::hardware_concurrency() * 8192);
   const size_t COHERENCY = N * 64;
 
   ub::MemoryProfile memProfile{.bytesRead = N * TASK_META + WORKER_STACK + COHERENCY,

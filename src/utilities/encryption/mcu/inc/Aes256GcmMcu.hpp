@@ -23,6 +23,8 @@
 #include <stdint.h>
 #include <string.h>
 
+#include <cstddef>
+
 #ifdef __AVR__
 #include <avr/pgmspace.h>
 #endif
@@ -175,7 +177,7 @@ inline void mixColumns(uint8_t* s) {
 inline void addRoundKey(uint8_t* state, const uint32_t* rk, int round) {
   for (int col = 0; col < 4; ++col) {
     const uint32_t W = rk[round * 4 + col];
-    state[4 * col] ^= static_cast<uint8_t>(W >> 24);
+    state[static_cast<ptrdiff_t>(4 * col)] ^= static_cast<uint8_t>(W >> 24);
     state[4 * col + 1] ^= static_cast<uint8_t>(W >> 16);
     state[4 * col + 2] ^= static_cast<uint8_t>(W >> 8);
     state[4 * col + 3] ^= static_cast<uint8_t>(W);
@@ -190,7 +192,7 @@ inline void addRoundKey(uint8_t* state, const uint32_t* rk, int round) {
  */
 inline void aes256KeyExpand(const uint8_t key[32], uint32_t rk[60]) {
   for (int i = 0; i < 8; ++i) {
-    rk[i] = (static_cast<uint32_t>(key[4 * i]) << 24) |
+    rk[i] = (static_cast<uint32_t>(key[static_cast<ptrdiff_t>(4 * i)]) << 24) |
             (static_cast<uint32_t>(key[4 * i + 1]) << 16) |
             (static_cast<uint32_t>(key[4 * i + 2]) << 8) | static_cast<uint32_t>(key[4 * i + 3]);
   }

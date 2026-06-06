@@ -830,7 +830,7 @@ TEST(MosfetLevel1Test, StampNmosInSaturationMatchesShichmanHodges) {
   const std::vector<double> PREV_V = {0.0, 5.0, 3.0, 0.0};
 
   MnaSystem mna(/*netCount=*/4);
-  MosfetLevel1::stampNmos(mna, /*drain=*/1, /*gate=*/2, /*source=*/3, PREV_V, PARAMS);
+  MosfetLevel1::stampNmos(mna, /*drainNet=*/1, /*gateNet=*/2, /*sourceNet=*/3, PREV_V, PARAMS);
   const std::size_t DRAIN_VS = mna.addVoltageSource(/*pos=*/1, /*neg=*/0, /*v=*/5.0);
   mna.addVoltageSource(2, 0, 3.0);
   mna.addVoltageSource(3, 0, 0.0);
@@ -873,7 +873,7 @@ TEST(MosfetLevel1Test, StampPmosInSaturationMatchesShichmanHodges) {
   const std::vector<double> PREV_V = {0.0, 5.0, 0.0, 0.0};
 
   MnaSystem mna(4);
-  MosfetLevel1::stampPmos(mna, /*source=*/1, /*gate=*/2, /*drain=*/3, PREV_V, PARAMS);
+  MosfetLevel1::stampPmos(mna, /*sourceNet=*/1, /*gateNet=*/2, /*drainNet=*/3, PREV_V, PARAMS);
   mna.addVoltageSource(1, 0, 5.0);
   mna.addVoltageSource(2, 0, 0.0);
   const std::size_t DRAIN_VS = mna.addVoltageSource(3, 0, 0.0);

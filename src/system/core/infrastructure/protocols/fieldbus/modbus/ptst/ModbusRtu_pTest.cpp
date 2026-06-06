@@ -385,7 +385,7 @@ protected:
 
     if (FC == 0x03 && reqLen >= 8) {
       const std::uint16_t QUANTITY = (static_cast<std::uint16_t>(request[4]) << 8) | request[5];
-      const std::size_t BYTE_COUNT = QUANTITY * 2;
+      const std::size_t BYTE_COUNT = static_cast<const std::size_t>(QUANTITY * 2);
 
       response[0] = UNIT_ADDRESS;
       response[1] = FC;

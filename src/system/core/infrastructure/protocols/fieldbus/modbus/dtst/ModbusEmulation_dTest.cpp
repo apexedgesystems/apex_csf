@@ -24,6 +24,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <cstddef>
 #include <cstring>
 #include <thread>
 
@@ -306,7 +307,7 @@ private:
     }
 
     // Build response
-    const std::size_t BYTE_COUNT = QUANTITY * 2;
+    const std::size_t BYTE_COUNT = static_cast<const std::size_t>(QUANTITY * 2);
     if (3 + BYTE_COUNT > respCapacity) {
       return 0;
     }
@@ -345,7 +346,7 @@ private:
                                     modbus::ExceptionCode::ILLEGAL_DATA_ADDRESS);
     }
 
-    const std::size_t BYTE_COUNT = QUANTITY * 2;
+    const std::size_t BYTE_COUNT = static_cast<const std::size_t>(QUANTITY * 2);
     if (3 + BYTE_COUNT > respCapacity) {
       return 0;
     }

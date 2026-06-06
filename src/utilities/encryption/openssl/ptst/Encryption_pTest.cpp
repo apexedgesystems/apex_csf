@@ -805,7 +805,7 @@ PERF_TEST(Kdf, HkdfThroughput) {
 PERF_TEST(Sha256, LargePayload) {
   UB_PERF_GUARD(perf);
 
-  const size_t PAYLOAD_SIZE = 16 * 1024 * 1024; // 16MB
+  const size_t PAYLOAD_SIZE = static_cast<const size_t>(16 * 1024 * 1024); // 16MB
   auto data = generateTestData(PAYLOAD_SIZE);
 
   enc::Sha256Hash hasher;

@@ -75,7 +75,6 @@ struct TransientConfig {
     case IntegrationMethod::BACKWARD_EULER:
       return 1;
     case IntegrationMethod::TRAPEZOIDAL:
-      return 2;
     case IntegrationMethod::GEAR2:
       return 2;
     }

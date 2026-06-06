@@ -79,7 +79,7 @@ public:
    */
   uint8_t init(std::string* error = nullptr);
 
-  ~UnixSocketClient();
+  ~UnixSocketClient() override;
 
   // --------------------------------------------------------------------------
   // Nonblocking I/O

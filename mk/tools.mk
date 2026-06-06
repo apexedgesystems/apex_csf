@@ -207,15 +207,17 @@ zenith-validate: zenith-target
 
 STATIC_PRESET ?= hosted-x86_64-static
 STATIC_DIR    := build/$(STATIC_PRESET)
+CLANG_TIDY    ?= run-clang-tidy-21
 
-# Static analysis with Clang's scan-build. Uses its own preset/build dir so
-# scan-build's wrapped object files don't pollute the normal debug build.
+# Static analysis with clang-tidy. The static preset disables precompiled
+# headers, so the analyzer runs straight off compile_commands.json with no
+# build step. .clang-tidy picks the checks and gates the clean set via
+# WarningsAsErrors; modernize-avoid-c-arrays stays advisory. Only first-party
+# sources under src/ are scanned -- fetched dependencies are excluded.
 static: prep
 	$(call _configure,$(STATIC_PRESET),$(STATIC_DIR))
-	$(call log,static,Running scan-build)
-	@cd "$(STATIC_DIR)" && scan-build --status-bugs ninja -j$(NUM_JOBS)
-	$(call log,static,Running tests to verify)
-	@ctest --preset $(STATIC_PRESET)
+	$(call log,static,Running clang-tidy)
+	@$(CLANG_TIDY) -p "$(STATIC_DIR)" -quiet "$(CURDIR)/src/.*\.(cpp|cc)$$"
 
 # ------------------------------------------------------------------------------
 # Phony Declarations

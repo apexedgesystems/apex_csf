@@ -187,6 +187,7 @@ TEST_F(LatchTest, MultipleThreadsCountDown) {
   Latch latch(THREAD_COUNT);
 
   std::vector<std::thread> threads;
+  threads.reserve(THREAD_COUNT);
   for (int i = 0; i < THREAD_COUNT; ++i) {
     threads.emplace_back([&]() { latch.countDown(); });
   }
@@ -206,6 +207,7 @@ TEST_F(LatchTest, MultipleWaitersReleased) {
   std::atomic<int> released{0};
 
   std::vector<std::thread> waiters;
+  waiters.reserve(WAITER_COUNT);
   for (int i = 0; i < WAITER_COUNT; ++i) {
     waiters.emplace_back([&]() {
       latch.wait();
@@ -235,6 +237,7 @@ TEST_F(LatchTest, WorkerCoordination) {
   std::atomic<int> workDone{0};
 
   std::vector<std::thread> workers;
+  workers.reserve(WORKER_COUNT);
   for (int i = 0; i < WORKER_COUNT; ++i) {
     workers.emplace_back([&]() {
       startLatch.wait(); // Wait for start signal

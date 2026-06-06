@@ -104,7 +104,7 @@ public:
   /**
    * @brief Destructor cleans up resources.
    */
-  ~TcpSocketClient();
+  ~TcpSocketClient() override;
 
   /**
    * @brief Enables or disables lightweight logging.

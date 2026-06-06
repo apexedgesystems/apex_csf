@@ -441,6 +441,7 @@ PERF_TEST(Latch, CountdownLatency) {
 
     auto start = std::chrono::steady_clock::now();
 
+    threads.reserve(NUM_THREADS);
     for (int t = 0; t < NUM_THREADS; ++t) {
       threads.emplace_back([&latch] { latch.arriveAndWait(); });
     }
@@ -506,6 +507,7 @@ PERF_TEST(Barrier, PhaseThroughput) {
 
     auto start = std::chrono::steady_clock::now();
 
+    threads.reserve(NUM_THREADS);
     for (int t = 0; t < NUM_THREADS; ++t) {
       threads.emplace_back([&barrier, &stop] {
         for (int p = 0; p < PHASES_PER_REP && !stop.load(std::memory_order_relaxed); ++p) {

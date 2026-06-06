@@ -171,6 +171,7 @@ TEST_F(SemaphoreTest, ConcurrentAcquireRelease) {
 
   // Start consumer threads
   std::vector<std::thread> consumers;
+  consumers.reserve(THREAD_COUNT);
   for (int i = 0; i < THREAD_COUNT; ++i) {
     consumers.emplace_back([&]() {
       for (int j = 0; j < ITERATIONS; ++j) {
@@ -203,6 +204,7 @@ TEST_F(SemaphoreTest, ResourcePoolLimiting) {
   std::atomic<int> maxHeld{0};
 
   std::vector<std::thread> workers;
+  workers.reserve(THREAD_COUNT);
   for (int i = 0; i < THREAD_COUNT; ++i) {
     workers.emplace_back([&]() {
       for (int j = 0; j < 100; ++j) {

@@ -6,7 +6,7 @@
 # keep the gate fast:
 #   - coverage : LLVM source-based coverage + aggregate threshold gate.
 #   - tsan     : ThreadSanitizer (data races) -- its own instrumented build.
-#   - static   : clang static analyzer (scan-build), advisory.
+#   - static   : clang-tidy static analysis, gates the clean check set.
 #
 # Each job pulls the CPU dev image from the registry (see ci.yml for the image
 # strategy) and runs a single make target in it.
@@ -127,5 +127,5 @@ jobs:
         run: |
           docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
 
-      - name: Static analysis (scan-build)
+      - name: Static analysis (clang-tidy)
         run: docker compose run --rm -T dev make static

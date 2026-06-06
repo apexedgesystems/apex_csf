@@ -332,7 +332,7 @@ PERF_TEST(UartThroughput, LargeWrites) {
   UB_PERF_GUARD(perf);
   ub::attachProfilerHooks(perf, getCfg());
 
-  constexpr std::size_t LARGE_SIZE = 16 * 1024;
+  constexpr std::size_t LARGE_SIZE = static_cast<const std::size_t>(16 * 1024);
   const auto payload = makePayload(LARGE_SIZE);
 
   uart::PtyPair pty;

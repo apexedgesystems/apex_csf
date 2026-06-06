@@ -115,9 +115,12 @@
     },
     {
       "name": "hosted-x86_64-static",
-      "displayName": "Native (Ubuntu) - Debug for scan-build static analysis",
+      "displayName": "Native (Ubuntu) - Debug for clang-tidy static analysis",
       "inherits": "hosted-x86_64-debug",
-      "binaryDir": "build/hosted-x86_64-static"
+      "binaryDir": "build/hosted-x86_64-static",
+      "cacheVariables": {
+        "CMAKE_DISABLE_PRECOMPILE_HEADERS": "ON"
+      }
     },
     {
       "name": "cross-jetson-debug",

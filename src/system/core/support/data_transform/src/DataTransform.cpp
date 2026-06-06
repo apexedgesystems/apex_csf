@@ -8,6 +8,7 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
 #include "src/utilities/helpers/inc/Files.hpp"
 
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
@@ -429,8 +430,8 @@ bool DataTransform::applyEntry(std::uint8_t index) noexcept {
       char before[24]{};
       char after[24]{};
       for (std::uint8_t b = 0; b < LOG_LEN; ++b) {
-        std::snprintf(before + b * 2, 3, "%02X", beforeBytes[b]);
-        std::snprintf(after + b * 2, 3, "%02X", targetBytes[b]);
+        std::snprintf(before + static_cast<ptrdiff_t>(b * 2), 3, "%02X", beforeBytes[b]);
+        std::snprintf(after + static_cast<ptrdiff_t>(b * 2), 3, "%02X", targetBytes[b]);
       }
 
       char buf[160];

@@ -302,7 +302,7 @@ inline uint8_t skew3Into(const ArrayBase<T, DV>& v, ArrayBase<T, DM>& out) noexc
   }
 
   // Extract vector components
-  const T X = (v.rows() == 3) ? v(0, 0) : v(0, 0);
+  const T X = v(0, 0); // same element in both column (3x1) and row (1x3) layout
   const T Y = (v.rows() == 3) ? v(1, 0) : v(0, 1);
   const T Z = (v.rows() == 3) ? v(2, 0) : v(0, 2);
 

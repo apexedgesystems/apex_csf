@@ -110,6 +110,7 @@ TEST_F(BarrierTest, MultipleThreadsSynchronize) {
   std::atomic<int> passedCount{0};
 
   std::vector<std::thread> threads;
+  threads.reserve(THREAD_COUNT);
   for (int i = 0; i < THREAD_COUNT; ++i) {
     threads.emplace_back([&]() {
       arrivedCount.fetch_add(1, std::memory_order_relaxed);
@@ -135,6 +136,7 @@ TEST_F(BarrierTest, ReusableAcrossPhases) {
   std::atomic<int> totalPhases{0};
 
   std::vector<std::thread> threads;
+  threads.reserve(THREAD_COUNT);
   for (int i = 0; i < THREAD_COUNT; ++i) {
     threads.emplace_back([&]() {
       for (int p = 0; p < PHASE_COUNT; ++p) {
@@ -183,6 +185,7 @@ TEST_F(BarrierTest, PhasedComputation) {
   std::mutex dataMutex;
 
   std::vector<std::thread> threads;
+  threads.reserve(THREAD_COUNT);
   for (int i = 0; i < THREAD_COUNT; ++i) {
     threads.emplace_back([&, i]() {
       for (int iter = 0; iter < ITERATIONS; ++iter) {

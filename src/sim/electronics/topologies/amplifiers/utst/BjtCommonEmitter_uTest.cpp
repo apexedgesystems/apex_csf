@@ -89,8 +89,8 @@ TEST(BjtCommonEmitterTest, ComputeDcAcrossBiasGridRespectsSupplyEnvelope) {
  * across RC sweeps, and would fail if ic stopped tracking RC.
  */
 TEST(BjtCommonEmitterTest, CollectorCurrentScalesInverselyWithRc) {
-  BjtCommonEmitter amp1(12.0, /*RC=*/1e3, 100e3);
-  BjtCommonEmitter amp2(12.0, /*RC=*/2e3, 100e3);
+  BjtCommonEmitter amp1(12.0, /*rcOhms=*/1e3, 100e3);
+  BjtCommonEmitter amp2(12.0, /*rcOhms=*/2e3, 100e3);
   ASSERT_TRUE(amp1.computeDC());
   ASSERT_TRUE(amp2.computeDC());
 

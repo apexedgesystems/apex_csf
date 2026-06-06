@@ -481,7 +481,7 @@ INSTANTIATE_TEST_SUITE_P(PayloadSizes, COBSPayloadSweep,
 PERF_TEST(COBSCache, EncodeCacheL1) {
   UB_PERF_GUARD(perf);
 
-  constexpr std::size_t PAYLOAD_SIZE = 16 * 1024;
+  constexpr std::size_t PAYLOAD_SIZE = static_cast<const std::size_t>(16 * 1024);
   auto payload = generateRealisticPayload(PAYLOAD_SIZE);
   std::vector<std::uint8_t> encoded(PAYLOAD_SIZE * 3);
 
@@ -512,7 +512,7 @@ PERF_TEST(COBSCache, EncodeCacheL1) {
 PERF_TEST(COBSCache, EncodeCacheL3) {
   UB_PERF_GUARD(perf);
 
-  constexpr std::size_t PAYLOAD_SIZE = 1024 * 1024;
+  constexpr std::size_t PAYLOAD_SIZE = static_cast<const std::size_t>(1024 * 1024);
   auto payload = generateRealisticPayload(PAYLOAD_SIZE);
   std::vector<std::uint8_t> encoded(PAYLOAD_SIZE * 3);
 
@@ -532,7 +532,7 @@ PERF_TEST(COBSCache, EncodeCacheL3) {
       },
       "encode_L3");
 
-  std::printf("\n[EncodeL3] %zu MB\n", PAYLOAD_SIZE / (1024 * 1024));
+  std::printf("\n[EncodeL3] %zu MB\n", PAYLOAD_SIZE / (static_cast<std::size_t>(1024 * 1024)));
   std::printf("  Throughput: %.2f MB/s\n", (result.callsPerSecond * PAYLOAD_SIZE) / 1e6);
   std::printf("  Jitter (CV%%): %.1f%%\n", result.stats.cv * 100);
 }
@@ -543,7 +543,7 @@ PERF_TEST(COBSCache, EncodeCacheL3) {
 PERF_TEST(COBSCache, EncodeCacheRAM) {
   UB_PERF_GUARD(perf);
 
-  constexpr std::size_t PAYLOAD_SIZE = 4 * 1024 * 1024;
+  constexpr std::size_t PAYLOAD_SIZE = static_cast<const std::size_t>(4 * 1024 * 1024);
   auto payload = generateRealisticPayload(PAYLOAD_SIZE);
   std::vector<std::uint8_t> encoded(PAYLOAD_SIZE * 3);
 
@@ -563,7 +563,7 @@ PERF_TEST(COBSCache, EncodeCacheRAM) {
       },
       "encode_RAM");
 
-  std::printf("\n[EncodeRAM] %zu MB\n", PAYLOAD_SIZE / (1024 * 1024));
+  std::printf("\n[EncodeRAM] %zu MB\n", PAYLOAD_SIZE / (static_cast<std::size_t>(1024 * 1024)));
   std::printf("  Throughput: %.2f MB/s\n", (result.callsPerSecond * PAYLOAD_SIZE) / 1e6);
   std::printf("  Jitter (CV%%): %.1f%%\n", result.stats.cv * 100);
 }

@@ -78,11 +78,9 @@ enum class ComponentType : uint8_t {
 [[nodiscard]] inline const char* logSubdir(ComponentType type) noexcept {
   switch (type) {
   case ComponentType::EXECUTIVE:
-    return "core";
   case ComponentType::CORE:
     return "core";
   case ComponentType::SW_MODEL:
-    return "models";
   case ComponentType::HW_MODEL:
     return "models";
   case ComponentType::SUPPORT:

@@ -132,6 +132,7 @@ TEST(CompatConcurrency, AtomicWait_NotifyAll) {
   constexpr int numWaiters = 3;
 
   std::vector<std::thread> waiters;
+  waiters.reserve(numWaiters);
   for (int i = 0; i < numWaiters; ++i) {
     waiters.emplace_back([&]() {
       waitersReady.fetch_add(1);

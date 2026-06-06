@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -175,7 +176,7 @@ TEST(HkdfTest, BufferApi) {
 
 /** @test Output too long returns ERROR_OUTPUT_TOO_LONG. */
 TEST(HkdfTest, OutputTooLong) {
-  const std::size_t MAX_SHA256 = 255 * 32; // 8160 bytes
+  const std::size_t MAX_SHA256 = static_cast<const std::size_t>(255 * 32); // 8160 bytes
   std::vector<uint8_t> okm;
 
   const auto STATUS =

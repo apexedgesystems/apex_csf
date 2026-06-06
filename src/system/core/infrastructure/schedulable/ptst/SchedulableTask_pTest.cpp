@@ -243,7 +243,7 @@ PERF_TEST(SchedulableTaskPerf, CallableAccessor) {
 PERF_TEST(SchedulableTaskCache, L1FitDispatch) {
   UB_PERF_GUARD(perf);
 
-  constexpr std::size_t L1_SIZE = 32 * 1024;
+  constexpr std::size_t L1_SIZE = static_cast<const std::size_t>(32 * 1024);
   constexpr std::size_t TASK_SIZE = sizeof(SchedulableTask);
   constexpr std::size_t NUM_TASKS = (L1_SIZE / TASK_SIZE) / 2;
 

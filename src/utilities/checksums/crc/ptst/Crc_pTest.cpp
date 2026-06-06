@@ -418,7 +418,7 @@ PERF_TEST(Crc32Iscsi, HardwareVsSoftware) {
 PERF_TEST(Crc32Iscsi, HardwareThroughput) {
   UB_PERF_GUARD(perf);
 
-  const size_t PAYLOAD_SIZE = 16 * 1024 * 1024; // 16MB
+  const size_t PAYLOAD_SIZE = static_cast<const size_t>(16 * 1024 * 1024); // 16MB
   auto data = generateTestData(PAYLOAD_SIZE);
 
   crc::Crc32IscsiHardware calc;
@@ -476,7 +476,8 @@ PERF_TEST(Crc32Iscsi, HardwareThroughput) {
 PERF_TEST(Crc32Table, MemoryBandwidth) {
   UB_PERF_GUARD(perf);
 
-  const size_t PAYLOAD_SIZE = 4 * 1024 * 1024; // 4MB - large enough to exceed L3
+  const size_t PAYLOAD_SIZE =
+      static_cast<const size_t>(4 * 1024 * 1024); // 4MB - large enough to exceed L3
   auto data = generateTestData(PAYLOAD_SIZE);
 
   crc::Crc32IsoHdlcTable calc;
