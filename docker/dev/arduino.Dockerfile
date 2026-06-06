@@ -41,7 +41,7 @@ RUN curl -fsSL "https://downloads.arduino.cc/arduino-cli/arduino-cli_${ARDUINO_C
 RUN arduino-cli config init && \
     arduino-cli core update-index && \
     arduino-cli core install arduino:avr && \
-    AVR_GCC_DIR=$(find /root/.arduino15/packages/arduino/tools/avr-gcc -maxdepth 1 -mindepth 1 -type d | head -1) && \
+    AVR_GCC_DIR=$(find /root/.arduino15/packages/arduino/tools/avr-gcc -maxdepth 1 -mindepth 1 -type d | { head -n1; cat >/dev/null; }) && \
     cp -a "${AVR_GCC_DIR}" /opt/avr-toolchain && \
     rm -rf /root/.arduino15
 
@@ -65,9 +65,12 @@ RUN echo 'if [ -n "$PS1" ]; then export PS1="\[\e[1;31m\][ARDUINO] \u@\h:\w \$\[
 # ==============================================================================
 # Validation
 # ==============================================================================
-RUN avr-gcc --version | head -1 && \
+# `| head -1` alone races SIGPIPE under pipefail (writer dies as head closes ->
+# exit 141); draining with `cat` lets the tool finish, so pipefail still catches
+# a genuinely missing/broken tool instead of masking it.
+RUN avr-gcc --version | { head -n1; cat >/dev/null; } && \
     avr-g++ -dumpversion && \
-    avrdude -? 2>&1 | head -1 && \
+    avrdude -? 2>&1 | { head -n1; cat >/dev/null; } && \
     echo "Arduino image validation: OK"
 
 USER ${USER}

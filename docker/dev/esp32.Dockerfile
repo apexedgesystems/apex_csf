@@ -64,8 +64,10 @@ RUN echo 'if [ -n "$PS1" ]; then export PS1="\[\e[1;35m\][ESP32] \u@\h:\w \$\[\e
 # ==============================================================================
 # Validation
 # ==============================================================================
+# drain after head so the writer never SIGPIPEs (pipefail would turn that into
+# a spurious 141); pipefail still catches a missing/broken tool.
 RUN esptool.py version && \
-    /opt/xtensa-bin/xtensa-esp-elf-gcc --version | head -1 && \
+    /opt/xtensa-bin/xtensa-esp-elf-gcc --version | { head -n1; cat >/dev/null; } && \
     /opt/idf-venv/bin/python -m kconfgen --help >/dev/null 2>&1 && \
     echo "ESP32 image validation: OK (ESP-IDF ${ESP_IDF_VERSION})"
 

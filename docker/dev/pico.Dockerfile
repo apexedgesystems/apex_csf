@@ -70,8 +70,10 @@ RUN echo 'if [ -n "$PS1" ]; then export PS1="\[\e[1;37m\][PICO] \u@\h:\w \$\[\e[
 # ==============================================================================
 # Validation
 # ==============================================================================
+# drain after head so the writer never SIGPIPEs (pipefail would turn that into
+# a spurious 141); pipefail still catches a missing/broken tool.
 RUN arm-none-eabi-gcc --version && \
-    arm-none-eabi-ld --version | head -1 && \
+    arm-none-eabi-ld --version | { head -n1; cat >/dev/null; } && \
     /usr/local/bin/picotool version && \
     echo "Pico image validation: OK"
 
