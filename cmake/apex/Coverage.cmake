@@ -95,8 +95,8 @@ function (apex_coverage_init)
     target_compile_options(
       apex_coverage_flags
       INTERFACE $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CXX>>: -fprofile-instr-generate
-                -fcoverage-mapping> $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:C>>:
-                -fprofile-instr-generate -fcoverage-mapping>
+                -fcoverage-mapping -fcoverage-mcdc> $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:C>>:
+                -fprofile-instr-generate -fcoverage-mapping -fcoverage-mcdc>
     )
 
     # Link options conditional on Clang linker (CUDA links with GCC)
@@ -237,7 +237,9 @@ function (_apex_coverage_write_manifest _file _mappings _lib_areas)
   string(APPEND _content "set(IGNORE_REGEX \"${APEX_COVERAGE_IGNORE_REGEX}\")\n")
   string(APPEND _content "set(BUILD_DIR \"${CMAKE_BINARY_DIR}\")\n")
   string(APPEND _content "set(LIB_DIR \"${CMAKE_LIBRARY_OUTPUT_DIRECTORY}\")\n")
-  string(APPEND _content "set(TEST_DIR \"${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tests\")\n")
+  # Coverage is measured from unit tests only; they live in bin/utests/ (the
+  # per-test-type output dir). ptest/dtest do not register coverage mappings.
+  string(APPEND _content "set(TEST_DIR \"${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/utests\")\n")
   file(
     GENERATE
     OUTPUT "${_file}"
@@ -281,7 +283,14 @@ endif ()
 
 message(STATUS "[Coverage] Merged: ${_profdata}")
 
-# Generate per-module reports
+# Per-library TEXT summaries (fast) + accumulate binaries for one merged HTML.
+# Rationale: rendering per-library HTML re-rendered every shared header once per
+# library (combinatorial blow-up, dozens of minutes). The per-library *text*
+# summary is cheap and drives the landing-page table; the annotated HTML is
+# generated ONCE below over all binaries, so each source file is rendered a
+# single time.
+set(_merge_main "")
+set(_merge_objs "")
 foreach (_mapping IN LISTS COVERAGE_MAPPINGS)
   string(REPLACE ":" ";" _parts "${_mapping}")
   list(GET _parts 0 _test)
@@ -303,24 +312,41 @@ foreach (_mapping IN LISTS COVERAGE_MAPPINGS)
     set(_object_args "-object=${_lib_so}")
   endif ()
 
-  set(_out "${OUTPUT_DIR}/lib${_lib}")
-  file(MAKE_DIRECTORY "${_out}/html")
+  # Accumulate binaries for the single merged HTML report: the first test
+  # binary is the positional main, every other binary and every .so is an
+  # -object so the merged report covers the whole tree.
+  if (NOT _merge_main)
+    set(_merge_main "${_test_exe}")
+  else ()
+    list(APPEND _merge_objs "-object=${_test_exe}")
+  endif ()
+  if (EXISTS "${_lib_so}")
+    list(APPEND _merge_objs "-object=${_lib_so}")
+  endif ()
 
-  # HTML report
+  set(_out "${OUTPUT_DIR}/lib${_lib}")
+  file(MAKE_DIRECTORY "${_out}")
+
+  # Per-test profile: measure a library's coverage from its OWN unit test only.
+  # This is both faster (a tiny profile instead of re-reading the full merged
+  # one for all 80+ tests) and more accurate for unit coverage (a library is
+  # not credited for lines another test happened to exercise). The global
+  # merged profile is used only for the single annotated HTML report below.
+  file(GLOB _test_profraw "${BUILD_DIR}/${_test}*.profraw")
+  if (NOT _test_profraw)
+    message(WARNING "[Coverage] No profraw for ${_test}; skipping per-lib summary")
+    continue()
+  endif ()
+  set(_test_profdata "${_out}/${_test}.profdata")
   execute_process(
-    COMMAND "${LLVM_COV}" show "${_test_exe}"
-      "-instr-profile=${_profdata}"
-      "-format=html"
-      "-output-dir=${_out}/html"
-      "-ignore-filename-regex=${IGNORE_REGEX}"
-      ${_object_args}
-    OUTPUT_QUIET ERROR_QUIET
+    COMMAND "${LLVM_PROFDATA}" merge -sparse ${_test_profraw} -o "${_test_profdata}"
   )
 
-  # Text summary
+  # Text summary (drives the landing-page table)
   execute_process(
     COMMAND "${LLVM_COV}" report "${_test_exe}"
-      "-instr-profile=${_profdata}"
+      "-instr-profile=${_test_profdata}"
+      "-show-mcdc-summary"
       "-ignore-filename-regex=${IGNORE_REGEX}"
       ${_object_args}
     OUTPUT_FILE "${_out}/summary.txt"
@@ -329,16 +355,30 @@ foreach (_mapping IN LISTS COVERAGE_MAPPINGS)
   # LCOV for CI
   execute_process(
     COMMAND "${LLVM_COV}" export "${_test_exe}"
-      "-instr-profile=${_profdata}"
+      "-instr-profile=${_test_profdata}"
       "-ignore-filename-regex=${IGNORE_REGEX}"
       ${_object_args}
       "-format=lcov"
     OUTPUT_FILE "${_out}/lcov.info"
     ERROR_QUIET
   )
-
-  message(STATUS "[Coverage] Generated: ${_out}/html/index.html")
 endforeach ()
+
+# One merged annotated HTML report over every binary -- each source file is
+# rendered exactly once (the big speed-up vs per-library HTML).
+if (_merge_main)
+  file(MAKE_DIRECTORY "${OUTPUT_DIR}/html")
+  execute_process(
+    COMMAND "${LLVM_COV}" show "${_merge_main}" ${_merge_objs}
+      "-instr-profile=${_profdata}"
+      "-format=html"
+      "-show-mcdc"
+      "-output-dir=${OUTPUT_DIR}/html"
+      "-ignore-filename-regex=${IGNORE_REGEX}"
+    OUTPUT_QUIET ERROR_QUIET
+  )
+  message(STATUS "[Coverage] Annotated report: ${OUTPUT_DIR}/html/index.html")
+endif ()
 
 # ------------------------------------------------------------------------------
 # Landing page: aggregate per-library coverage into one index.html grouped by
@@ -381,6 +421,7 @@ foreach (_summary IN LISTS _summaries)
   set(_func_pct "")
   set(_line_pct "")
   set(_branch_pct "")
+  set(_mcdc_pct "")
   if (_nfields GREATER_EQUAL 1)
     list(GET _all 0 _region_pct)
   endif ()
@@ -393,6 +434,11 @@ foreach (_summary IN LISTS _summaries)
   if (_nfields GREATER_EQUAL 4)
     list(GET _all 3 _branch_pct)
   endif ()
+  # MC/DC % appended last by -show-mcdc-summary (does not shift the columns
+  # above, so the region/line gate parsing is unaffected).
+  if (_nfields GREATER_EQUAL 5)
+    list(GET _all 4 _mcdc_pct)
+  endif ()
 
   # Roll up raw region+line totals for the aggregate (functions/branches vary
   # in meaning across compilation units; line and region are the bedrock).
@@ -404,9 +450,13 @@ foreach (_summary IN LISTS _summaries)
     math(EXPR _repo_regions_t "${_repo_regions_t} + ${_r_total}")
     math(EXPR _repo_regions_m "${_repo_regions_m} + ${_r_missed}")
   endif ()
-  if (_nnums GREATER_EQUAL 8)
-    list(GET _nums 6 _l_total)
-    list(GET _nums 7 _l_missed)
+  # Line total/missed are the 9th/10th integers on the TOTAL row. Each cover%
+  # ("NN.NN%") contributes two integer runs, so after regions(0,1) + region%
+  # (2,3) + functions(4,5) + function%(6,7) the line counts land at indices 8,9.
+  # (Previously read 6,7 -- the function-% digits -- which understated lines.)
+  if (_nnums GREATER_EQUAL 10)
+    list(GET _nums 8 _l_total)
+    list(GET _nums 9 _l_missed)
     math(EXPR _repo_lines_t "${_repo_lines_t} + ${_l_total}")
     math(EXPR _repo_lines_m "${_repo_lines_m} + ${_l_missed}")
   endif ()
@@ -428,7 +478,7 @@ foreach (_summary IN LISTS _summaries)
   if (NOT "${_area}" IN_LIST _areas)
     list(APPEND _areas "${_area}")
   endif ()
-  list(APPEND _grp_${_area} "${_lib_name}|${_region_pct}|${_func_pct}|${_line_pct}|${_branch_pct}")
+  list(APPEND _grp_${_area} "${_lib_name}|${_region_pct}|${_func_pct}|${_line_pct}|${_branch_pct}|${_mcdc_pct}")
 endforeach ()
 
 # Sort areas alphabetically, with "other" forced last.
@@ -488,6 +538,7 @@ set(_html "<!DOCTYPE html>
 <body>
 <h1>apex_csf coverage</h1>
 <p>Per-library LLVM source-based coverage. Run <code>make compose-coverage</code> to refresh.</p>
+<p><a href=\"html/index.html\">&#8594; Full annotated source report</a> (line-by-line coverage, branches, and MC/DC).</p>
 <table>
   <tr class=\"aggregate\">
     <td>All libraries (aggregate)</td>
@@ -521,7 +572,7 @@ foreach (_area IN LISTS _areas)
 
   string(APPEND _html "<h2>${_title}</h2>
 <table>
-  <tr><th>Library</th><th>Regions</th><th>Functions</th><th>Lines</th><th>Branches</th></tr>
+  <tr><th>Library</th><th>Regions</th><th>Functions</th><th>Lines</th><th>Branches</th><th>MC/DC</th></tr>
 ")
   foreach (_entry IN LISTS _libs_in_group)
     string(REPLACE "|" ";" _parts "${_entry}")
@@ -530,6 +581,11 @@ foreach (_area IN LISTS _areas)
     list(GET _parts 2 _f)
     list(GET _parts 3 _l)
     list(GET _parts 4 _b)
+    set(_m "")
+    list(LENGTH _parts _nparts)
+    if (_nparts GREATER_EQUAL 6)
+      list(GET _parts 5 _m)
+    endif ()
 
     # Per-cell badge class — each number gets its own tier.
     set(_cls_r "na")
@@ -553,11 +609,12 @@ foreach (_area IN LISTS _areas)
     endforeach ()
 
     string(APPEND _html "  <tr>
-    <td class=\"lib\"><a href=\"lib${_name}/html/index.html\">${_name}</a></td>
+    <td class=\"lib\">${_name}</td>
     <td class=\"num\"><span class=\"badge ${_cls_r}\">${_r}</span></td>
     <td class=\"num\">${_f}</td>
     <td class=\"num\"><span class=\"badge ${_cls_l}\">${_l}</span></td>
     <td class=\"num\">${_b}</td>
+    <td class=\"num\">${_m}</td>
   </tr>
 ")
   endforeach ()
