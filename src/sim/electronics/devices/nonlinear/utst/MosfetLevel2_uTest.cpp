@@ -362,7 +362,7 @@ TEST(MosfetLevel2Test, MobilityDegradationEffect) {
 TEST(MosfetLevel2Test, VelocitySaturationEffect) {
   MosfetLevel2Params high_field{.E_crit = 1e5}; // Low critical field (more saturation)
   MosfetLevel2Params low_field{.E_crit = 1e7};  // High critical field (less saturation)
-  const double VGS = 3.0, vds = 5.0, vbs = 0.0;
+  const double VGS = 3.0;
 
   const double VDSAT_HIGH = MosfetLevel2::drainSaturationVoltage(VGS, 0.7, high_field);
   const double VDSAT_LOW = MosfetLevel2::drainSaturationVoltage(VGS, 0.7, low_field);

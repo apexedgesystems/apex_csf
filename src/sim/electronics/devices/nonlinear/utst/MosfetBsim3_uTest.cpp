@@ -287,13 +287,7 @@ TEST(MosfetBsim3Test, StampValuesWithBodyEffectMatchesBaseAndAddsGmb) {
 
 /* ========================== L2 Unblocker Probe ========================== */
 
-constexpr double KP = 5e-3;
-constexpr double VTH_ENH = 1.17;
-constexpr double VTH_DEP = -0.17;
 constexpr double LAMBDA = 0.03;
-constexpr double VDD = 5.0;
-constexpr double WL_DEP = 0.10;
-constexpr double WL_ENH = 3.23;
 
 MosfetBsim3Params make4004Params(double kpScaled, double vth) {
   MosfetBsim3Params p;

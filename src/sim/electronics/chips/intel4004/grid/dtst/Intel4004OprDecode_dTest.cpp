@@ -625,18 +625,24 @@ TEST(Intel4004L2_RegPcWriteback, StageB_RegPcVsL0) {
                 L2.r2, L2.pc, L2.srcAddress, match ? "PASS" : "FAIL");
     if (match)
       ++passed;
-    if (c.checkAcc)
+    if (c.checkAcc) {
       EXPECT_EQ(L2.acc, L0.acc) << c.mnemonic << " ACC";
-    if (c.checkR0)
+    }
+    if (c.checkR0) {
       EXPECT_EQ(L2.r0, L0.r0) << c.mnemonic << " R0";
-    if (c.checkR1)
+    }
+    if (c.checkR1) {
       EXPECT_EQ(L2.r1, L0.r1) << c.mnemonic << " R1";
-    if (c.checkR2)
+    }
+    if (c.checkR2) {
       EXPECT_EQ(L2.r2, L0.r2) << c.mnemonic << " R2";
-    if (c.checkPc)
+    }
+    if (c.checkPc) {
       EXPECT_EQ(L2.pc, L0.pc) << c.mnemonic << " PC";
-    if (c.checkSrc)
+    }
+    if (c.checkSrc) {
       EXPECT_EQ(L2.srcAddress, L0.srcAddress) << c.mnemonic << " SRC";
+    }
   }
   std::printf("\n  Stage B vs L0: %zu/%zu PASS\n", passed, total);
 }
