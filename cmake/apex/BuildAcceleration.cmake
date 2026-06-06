@@ -57,7 +57,10 @@ endif ()
 # ------------------------------------------------------------------------------
 option(APEX_USE_FAST_LINKER "Use mold/lld if available" ON)
 
-if (APEX_USE_FAST_LINKER)
+# Bare-metal toolchains (CMAKE_SYSTEM_NAME=Generic: stm32/esp32/pico/arduino/
+# c2000) ship their own linker and reject -fuse-ld=mold; the cross-compile path
+# below assumes mold works without probing, so skip the fast linker for them.
+if (APEX_USE_FAST_LINKER AND NOT (CMAKE_SYSTEM_NAME STREQUAL "Generic"))
   set(_LINKER_FOUND FALSE)
 
   # Try mold first (fastest, open source)
