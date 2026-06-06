@@ -40,7 +40,7 @@ CHECKS_ALL := $(sort $(CHECKS_SANITIZER) $(CHECKS_STATIC) $(CHECKS_SECURITY) \
 # gate    = per-PR (kept fast; reuses the gate build where possible)
 # nightly = scheduled, heavier checks with their own builds
 
-CHECKS_GATE    := asan-ubsan
+CHECKS_GATE    := asan-ubsan static gitleaks
 CHECKS_NIGHTLY := tsan static cppcheck coverage-check hardened trivy gitleaks osv semgrep
 
 # ------------------------------------------------------------------------------

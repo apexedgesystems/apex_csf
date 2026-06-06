@@ -33,11 +33,12 @@ sbom: | $(SECURITY_DIR)
 	@trivy fs --format cyclonedx --output $(SECURITY_DIR)/sbom.cdx.json --skip-dirs build .
 	$(call log_ok,sbom,wrote $(SECURITY_DIR)/sbom.cdx.json)
 
-# gitleaks: secret scanning. Exits non-zero on findings; `|| true` keeps it
-# advisory -- drop it to gate.
+# gitleaks: secret scanning. GATING -- clean today via the .gitleaks.toml
+# allowlist (crypto test vectors), so it only fails on a newly introduced
+# secret. Runs on the PR gate and nightly.
 gitleaks:
 	$(call log,gitleaks,Scanning for secrets)
-	@gitleaks detect --source . --no-banner --redact || true
+	@gitleaks detect --source . --no-banner --redact
 
 # osv-scanner: dependency CVEs from lockfiles (Cargo.lock, poetry, ...). Respects
 # .gitignore, so build/ vendored crates are skipped. `|| true` keeps it advisory.
