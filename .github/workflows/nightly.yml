@@ -1,15 +1,13 @@
 # ==============================================================================
 # Nightly -- heavier checks that run once per day on main, off the PR path.
 #
-# Jobs run in parallel, so wall-clock is the slowest job, not the sum. These
-# are the "needs its own build" checks deliberately kept out of per-PR CI to
-# keep the gate fast:
-#   - coverage : LLVM source-based coverage + aggregate threshold gate.
-#   - tsan     : ThreadSanitizer (data races) -- its own instrumented build.
-#   - static   : clang-tidy static analysis, gates the clean check set.
+# The set of checks is the single source of truth in mk/checks.mk
+# (CHECKS_NIGHTLY); `make print-nightly-checks` emits it as a JSON array that
+# drives the matrix below. To add or drop a nightly check, edit the registry --
+# no change to this workflow is needed.
 #
-# Each job pulls the CPU dev image from the registry (see ci.yml for the image
-# strategy) and runs a single make target in it.
+# Each matrix leg pulls the CPU dev image and runs one `make <check>` in it.
+# fail-fast is off so one failing check never cancels the others.
 # ==============================================================================
 name: Nightly
 
@@ -23,10 +21,29 @@ permissions:
   packages: read
 
 jobs:
-  coverage:
-    name: LLVM coverage
+  set-matrix:
+    name: Resolve nightly checks
+    runs-on: ubuntu-latest
+    outputs:
+      checks: ${{ steps.list.outputs.checks }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Read nightly checks from registry
+        id: list
+        run: echo "checks=$(make -s print-nightly-checks)" >> "$GITHUB_OUTPUT"
+
+  check:
+    name: ${{ matrix.check }}
+    needs: set-matrix
     runs-on: ubuntu-latest
     timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      matrix:
+        check: ${{ fromJSON(needs.set-matrix.outputs.checks) }}
 
     env:
       REGISTRY: ghcr.io/${{ github.repository }}
@@ -35,97 +52,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Prepare environment
-        run: |
-          touch ~/.gitconfig
-          mkdir -p ~/.ssh
-          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
-          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
-
-      - name: Login to ghcr.io
-        uses: docker/login-action@v4
+      - name: Set up dev image
+        uses: ./.github/actions/dev-setup
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ env.REGISTRY }}
+          actor: ${{ github.actor }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull cached dev image
-        run: |
-          docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
-
-      - name: Coverage (threshold gate)
-        run: docker compose run --rm -T dev make coverage-check
+      - name: Run ${{ matrix.check }}
+        run: docker compose run --rm -T dev make ${{ matrix.check }}
 
       - name: Upload coverage report
-        if: always()
+        if: ${{ always() && matrix.check == 'coverage-check' }}
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: build/hosted-x86_64-coverage/coverage/
           retention-days: 14
-
-  tsan:
-    name: ThreadSanitizer
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-
-    env:
-      REGISTRY: ghcr.io/${{ github.repository }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Prepare environment
-        run: |
-          touch ~/.gitconfig
-          mkdir -p ~/.ssh
-          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
-          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
-
-      - name: Login to ghcr.io
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull cached dev image
-        run: |
-          docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
-
-      - name: ThreadSanitizer
-        run: docker compose run --rm -T dev make tsan
-
-  static:
-    name: Static analysis
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-
-    env:
-      REGISTRY: ghcr.io/${{ github.repository }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Prepare environment
-        run: |
-          touch ~/.gitconfig
-          mkdir -p ~/.ssh
-          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
-          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
-
-      - name: Login to ghcr.io
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull cached dev image
-        run: |
-          docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
-
-      - name: Static analysis (clang-tidy)
-        run: docker compose run --rm -T dev make static

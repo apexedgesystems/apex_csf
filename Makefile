@@ -19,6 +19,7 @@ include mk/docker.mk
 include mk/format.mk
 include mk/sanitizers.mk
 include mk/tools.mk
+include mk/checks.mk
 include mk/firmware.mk
 include mk/compose.mk
 include mk/release.mk
@@ -191,10 +192,12 @@ help:
 	@printf '  %-28s %s\n' "make format" "Auto-fix formatting issues"
 	@printf '  %-28s %s\n' "make format-check" "Check formatting (no fixes)"
 	@printf '  %-28s %s\n' "make coverage" "Generate code coverage report"
-	@printf '  %-28s %s\n' "make static" "Run static analysis (scan-build)"
+	@printf '  %-28s %s\n' "make static" "Run static analysis (clang-tidy)"
 	@printf '  %-28s %s\n' "make asan" "Build and test with AddressSanitizer"
 	@printf '  %-28s %s\n' "make tsan" "Build and test with ThreadSanitizer"
 	@printf '  %-28s %s\n' "make ubsan" "Build and test with UBSanitizer"
+	@printf '  %-28s %s\n' "make checks-nightly" "Run every check the nightly runs"
+	@printf '  %-28s %s\n' "make list-checks" "List all checks by category and CI tier"
 	@printf '\n'
 	@printf '%s\n' "Integration Artifacts:"
 	@printf '  %-28s %s\n' "make ops-artifacts" "Generate all ops artifacts (struct dicts + templates + deck)"
