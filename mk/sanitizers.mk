@@ -68,9 +68,22 @@ asan-ubsan: prep
 	$(call _sanitizer_run,asan+ubsan,Address+UBSanitizer,$(ASAN_UBSAN_PRESET),$(ASAN_UBSAN_DIR))
 
 # ------------------------------------------------------------------------------
+# Hardened build
+# ------------------------------------------------------------------------------
+# Release build with defense-in-depth mitigations (FORTIFY_SOURCE=3, libstdc++
+# assertions, stack/CF protection, auto-var-init). Builds and runs the full
+# suite so the assertions and fortified calls exercise real paths.
+
+HARDENED_PRESET ?= hosted-x86_64-hardened
+HARDENED_DIR    := build/$(HARDENED_PRESET)
+
+hardened: prep
+	$(call _sanitizer_run,hardened,Hardened,$(HARDENED_PRESET),$(HARDENED_DIR))
+
+# ------------------------------------------------------------------------------
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: asan tsan ubsan asan-ubsan
+.PHONY: asan tsan ubsan asan-ubsan hardened
 
 endif  # SANITIZERS_MK_GUARD

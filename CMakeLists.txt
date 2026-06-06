@@ -261,6 +261,32 @@ if (SANITIZER
 endif ()
 
 # ------------------------------------------------------------------------------
+# Hardened build (defense-in-depth; release-based, native only)
+# ------------------------------------------------------------------------------
+# Compile- and link-time mitigations that turn latent memory/UB issues into
+# immediate, diagnosable failures. _FORTIFY_SOURCE needs optimization, so the
+# hardened preset is release-based. Native only -- cross/bare-metal toolchains
+# do not provide these consistently. C++ only, matching the warnings policy.
+option(HARDENED "Enable hardening flags (FORTIFY, libstdc++ assertions, stack/CF protection)" OFF)
+if (HARDENED AND NOT CMAKE_CROSSCOMPILING AND NOT APEX_PLATFORM_BAREMETAL)
+  set(_harden_flags
+      -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 # glibc buffer-overflow checks (needs -O)
+      -D_GLIBCXX_ASSERTIONS                 # libstdc++ precondition checks (bounds, ...)
+      -fstack-protector-strong              # stack canaries
+      -fstack-clash-protection              # large-stack probing
+      -fcf-protection=full                  # control-flow integrity (CET; no-op pre-CET)
+      -ftrivial-auto-var-init=zero          # zero otherwise-uninitialized locals
+  )
+  # Wrap each flag in its own genex -- a ;-list inside one genex gets split by
+  # add_compile_options, mangling the first and last entries.
+  foreach (_hf IN LISTS _harden_flags)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${_hf}>)
+  endforeach ()
+  add_link_options(LINKER:-z,relro LINKER:-z,now)
+  message(STATUS "[Hardened] FORTIFY_SOURCE=3, _GLIBCXX_ASSERTIONS, stack/CF protection, auto-var-init")
+endif ()
+
+# ------------------------------------------------------------------------------
 # Build parallelism and output directories
 # ------------------------------------------------------------------------------
 execute_process(

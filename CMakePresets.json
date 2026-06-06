@@ -123,6 +123,15 @@
       }
     },
     {
+      "name": "hosted-x86_64-hardened",
+      "displayName": "Native (Ubuntu) - Release + hardening mitigations",
+      "inherits": "hosted-x86_64-release",
+      "binaryDir": "build/hosted-x86_64-hardened",
+      "cacheVariables": {
+        "HARDENED": "ON"
+      }
+    },
+    {
       "name": "cross-jetson-debug",
       "displayName": "Jetson AGX Thor (aarch64) - Debug",
       "inherits": "base",
@@ -350,6 +359,10 @@
       "configurePreset": "hosted-x86_64-static"
     },
     {
+      "name": "hosted-x86_64-hardened",
+      "configurePreset": "hosted-x86_64-hardened"
+    },
+    {
       "name": "cross-jetson-debug",
       "configurePreset": "cross-jetson-debug"
     },
@@ -506,6 +519,14 @@
       "configurePreset": "hosted-x86_64-static",
       "environment": {
         "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-static/lib:$penv{LD_LIBRARY_PATH}"
+      }
+    },
+    {
+      "name": "hosted-x86_64-hardened",
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-hardened",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-hardened/lib:$penv{LD_LIBRARY_PATH}"
       }
     },
     {
