@@ -1,0 +1,45 @@
+# Dependabot: automated dependency-update PRs across the repo's ecosystems.
+# Updates are grouped per ecosystem to keep review controlled (flight-code
+# goal: deliberate, reviewable dependency changes -- not a PR firehose).
+version: 2
+
+updates:
+  # GitHub Actions used by the workflows
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # Rust tooling (tools/rust)
+  - package-ecosystem: cargo
+    directory: /tools/rust
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        update-types: ["minor", "patch"]
+
+  # Python tooling (tools/py, poetry)
+  - package-ecosystem: pip
+    directory: /tools/py
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        update-types: ["minor", "patch"]
+
+  # Base images referenced by the Dockerfiles (e.g. ubuntu:24.04). Internal
+  # FROM apex.base layers are not updatable here; image CVEs are also caught by
+  # the trivy scan.
+  - package-ecosystem: docker
+    directories:
+      - /docker
+      - /docker/dev
+    schedule:
+      interval: weekly
+    groups:
+      docker:
+        patterns: ["*"]

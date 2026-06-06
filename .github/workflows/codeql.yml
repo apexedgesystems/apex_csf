@@ -1,0 +1,54 @@
+# ==============================================================================
+# CodeQL -- GitHub's semantic security analysis. Results land in the repo's
+# Security tab (code scanning alerts), advisory and non-blocking.
+#
+# build-mode: none is used for C/C++ so CodeQL extracts the database from source
+# without tracing compilation -- the real build happens inside the dev container,
+# which a runner-side compiler trace cannot observe. Less precise than a traced
+# build, but it sidesteps the container entirely and needs no image.
+# ==============================================================================
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: "0 8 * * 1"   # weekly, Monday 08:00 UTC
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: c-cpp
+            build-mode: none
+          - language: python
+            build-mode: none
+          - language: actions
+            build-mode: none
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+
+      - name: Analyze
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{ matrix.language }}"
