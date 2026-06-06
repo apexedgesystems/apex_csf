@@ -19,6 +19,7 @@ include mk/docker.mk
 include mk/format.mk
 include mk/sanitizers.mk
 include mk/tools.mk
+include mk/security.mk
 include mk/checks.mk
 include mk/firmware.mk
 include mk/compose.mk

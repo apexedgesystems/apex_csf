@@ -26,8 +26,8 @@ CHECKS_MK_GUARD := 1
 # ------------------------------------------------------------------------------
 
 CHECKS_SANITIZER := asan tsan ubsan asan-ubsan
-CHECKS_STATIC    := static
-CHECKS_SECURITY  :=
+CHECKS_STATIC    := static cppcheck
+CHECKS_SECURITY  := trivy gitleaks osv semgrep
 CHECKS_HARDENING :=
 CHECKS_COVERAGE  := coverage-check
 
@@ -41,7 +41,7 @@ CHECKS_ALL := $(sort $(CHECKS_SANITIZER) $(CHECKS_STATIC) $(CHECKS_SECURITY) \
 # nightly = scheduled, heavier checks with their own builds
 
 CHECKS_GATE    := asan-ubsan
-CHECKS_NIGHTLY := tsan static coverage-check
+CHECKS_NIGHTLY := tsan static cppcheck coverage-check trivy gitleaks osv semgrep
 
 # ------------------------------------------------------------------------------
 # Aggregate targets -- run a whole category or tier

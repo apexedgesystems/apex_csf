@@ -219,10 +219,24 @@ static: prep
 	$(call log,static,Running clang-tidy)
 	@$(CLANG_TIDY) -p "$(STATIC_DIR)" -quiet "$(CURDIR)/src/.*\.(cpp|cc)$$"
 
+# cppcheck: an independent static-analysis engine that catches different defects
+# than clang-tidy (warning/style/performance/portability). Advisory for now --
+# it reports but does not fail the build; add --error-exitcode=1 to gate. build/
+# is excluded. The MISRA addon is intentionally NOT used: it implements MISRA C
+# 2012, which is noise against this C++23 codebase; real MISRA C++ conformance
+# needs a dedicated tool and is tracked separately.
+cppcheck: prep
+	$(call log,cppcheck,Running cppcheck static analysis)
+	@cppcheck --enable=warning,style,performance,portability \
+	  --std=c++23 --language=c++ --inline-suppr --quiet \
+	  --suppress=missingInclude --suppress=missingIncludeSystem \
+	  --suppress=unmatchedSuppression --suppress=syntaxError \
+	  -i build src
+
 # ------------------------------------------------------------------------------
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: static tools apex-data-db tprm-templates ops-deck ops-artifacts ops-sdk zenith-target zenith-validate
+.PHONY: static cppcheck tools apex-data-db tprm-templates ops-deck ops-artifacts ops-sdk zenith-target zenith-validate
 
 endif  # TOOLS_MK_GUARD
