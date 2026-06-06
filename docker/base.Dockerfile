@@ -138,7 +138,7 @@ RUN ln -sf /usr/bin/clang-format-21 /usr/local/bin/clang-format && \
 # shallow clone. CMAKE_POLICY_VERSION_MINIMUM=3.5 satisfies upstream submodule
 # policy floors. Must come AFTER the LLVM block — bloaty needs a C++ compiler.
 RUN git clone --recursive --depth 1 https://github.com/google/bloaty.git /tmp/bloaty && \
-    CC=clang CXX=clang++ \
+    CC=clang CXX=clang++ CFLAGS=-Wno-deprecated-non-prototype \
     cmake -S /tmp/bloaty -B /tmp/bloaty/build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
           -DCMAKE_POLICY_VERSION_MINIMUM=3.5 && \

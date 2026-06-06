@@ -850,7 +850,7 @@ std::uint8_t ActionComponent::handleCommand(std::uint16_t opcode,
     if (entry->blockCount > data::CATALOG_MAX_BLOCKS) {
       entry->blockCount = static_cast<std::uint8_t>(data::CATALOG_MAX_BLOCKS);
     }
-    for (std::uint8_t i = 0; i < entry->blockCount && (3 + (i + 1) * 2) <= payload.size(); ++i) {
+    for (std::uint8_t i = 0; i < entry->blockCount && (3U + (i + 1U) * 2U) <= payload.size(); ++i) {
       std::memcpy(&entry->blocks[i], payload.data() + 3 + i * 2, 2);
     }
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);

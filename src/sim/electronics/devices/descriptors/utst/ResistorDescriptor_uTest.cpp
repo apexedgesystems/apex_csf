@@ -63,7 +63,16 @@ TEST(ResistorDescriptorTest, E12Series) {
   ResistorDescriptor r82{1, 0, 82.0};
 
   EXPECT_DOUBLE_EQ(r10.resistance, 10.0);
+  EXPECT_DOUBLE_EQ(r12.resistance, 12.0);
+  EXPECT_DOUBLE_EQ(r15.resistance, 15.0);
+  EXPECT_DOUBLE_EQ(r18.resistance, 18.0);
+  EXPECT_DOUBLE_EQ(r22.resistance, 22.0);
+  EXPECT_DOUBLE_EQ(r27.resistance, 27.0);
+  EXPECT_DOUBLE_EQ(r33.resistance, 33.0);
+  EXPECT_DOUBLE_EQ(r39.resistance, 39.0);
   EXPECT_DOUBLE_EQ(r47.resistance, 47.0);
+  EXPECT_DOUBLE_EQ(r56.resistance, 56.0);
+  EXPECT_DOUBLE_EQ(r68.resistance, 68.0);
   EXPECT_DOUBLE_EQ(r82.resistance, 82.0);
 }
 

@@ -295,7 +295,7 @@ PERF_TEST(SpinLock, Uncontended) {
   auto result = perf.throughputLoop(
       [&] {
         lock.lock();
-        ++sink;
+        sink = sink + 1;
         lock.unlock();
       },
       "lock_unlock");
