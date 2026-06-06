@@ -57,9 +57,11 @@ RUN echo 'if [ -n "$PS1" ]; then export PS1="\[\e[1;33m\][STM32] \u@\h:\w \$\[\e
 # ==============================================================================
 # Validation
 # ==============================================================================
+# drain after head so the writer never SIGPIPEs (pipefail would turn that into
+# a spurious 141); pipefail still catches a missing/broken tool.
 RUN arm-none-eabi-gcc --version && \
     st-flash --version && \
-    openocd --version 2>&1 | head -1 && \
+    openocd --version 2>&1 | { head -n1; cat >/dev/null; } && \
     echo "STM32 image validation: OK"
 
 USER ${USER}

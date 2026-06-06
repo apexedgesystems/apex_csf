@@ -307,7 +307,7 @@ RUN echo "Validating base image..." && \
     clang --version && \
     ccache --version && \
     mold --version && \
-    upx --version | head -1 && \
+    upx --version | { head -n1; cat >/dev/null; } && \
     hadolint --version && \
     shfmt --version && \
     rustc --version && \
