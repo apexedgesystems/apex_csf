@@ -73,7 +73,10 @@ CheckOptions:
     }
 
   # Macros: UPPER_CASE
-  - { key: readability-identifier-naming.MacroDefinitionCase, value: UPPER_CASE }
+  - {
+      key: readability-identifier-naming.MacroDefinitionCase,
+      value: UPPER_CASE,
+    }
 
   # Keep tests & mains from getting noisy
   - { key: readability-identifier-naming.IgnoreMainLikeFunctions, value: true }

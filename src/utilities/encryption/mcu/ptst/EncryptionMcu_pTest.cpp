@@ -67,9 +67,9 @@ PERF_TEST(Aes256GcmMcu, EncryptThroughput) {
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      mcu::aes256GcmEncrypt(key.data(), nonce.data(), aad.data(),
-                            static_cast<uint32_t>(aad.size()), plaintext.data(),
-                            static_cast<uint32_t>(plaintext.size()), ciphertext.data(), tag.data());
+      mcu::aes256GcmEncrypt(key.data(), nonce.data(), aad.data(), static_cast<uint32_t>(aad.size()),
+                            plaintext.data(), static_cast<uint32_t>(plaintext.size()),
+                            ciphertext.data(), tag.data());
     }
   });
 
@@ -117,9 +117,9 @@ PERF_TEST(Aes256GcmMcu, DecryptThroughput) {
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      mcu::aes256GcmDecrypt(key.data(), nonce.data(), aad.data(),
-                            static_cast<uint32_t>(aad.size()), ciphertext.data(),
-                            static_cast<uint32_t>(ciphertext.size()), tag.data(), decrypted.data());
+      mcu::aes256GcmDecrypt(key.data(), nonce.data(), aad.data(), static_cast<uint32_t>(aad.size()),
+                            ciphertext.data(), static_cast<uint32_t>(ciphertext.size()), tag.data(),
+                            decrypted.data());
     }
   });
 

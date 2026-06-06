@@ -67,7 +67,7 @@ bool parseClampedU32(std::string_view arg, std::uint32_t& out) noexcept {
   return true;
 }
 
-}  // namespace
+} // namespace
 
 using system_core::system_component::isAtsEntry;
 using system_core::system_component::isRtsEntry;

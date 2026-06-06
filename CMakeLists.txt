@@ -246,8 +246,9 @@ if (SANITIZER
 
   # RTSan instruments via function interception that conflicts with the
   # asan/tsan shadow-memory runtimes; keep it in its own build.
-  if ("realtime" IN_LIST _san_checks AND ("address" IN_LIST _san_checks OR "thread"
-                                          IN_LIST _san_checks))
+  if ("realtime" IN_LIST _san_checks AND ("address" IN_LIST _san_checks OR "thread" IN_LIST
+                                                                           _san_checks)
+  )
     message(FATAL_ERROR "SANITIZER: rtsan cannot combine with asan or tsan")
   endif ()
 
@@ -278,14 +279,18 @@ endif ()
 # hardened preset is release-based. Native only -- cross/bare-metal toolchains
 # do not provide these consistently. C++ only, matching the warnings policy.
 option(HARDENED "Enable hardening flags (FORTIFY, libstdc++ assertions, stack/CF protection)" OFF)
-if (HARDENED AND NOT CMAKE_CROSSCOMPILING AND NOT APEX_PLATFORM_BAREMETAL)
+if (HARDENED
+    AND NOT CMAKE_CROSSCOMPILING
+    AND NOT APEX_PLATFORM_BAREMETAL
+)
   set(_harden_flags
-      -U_FORTIFY_SOURCE -D_FORTIFY_SOURCE=3 # glibc buffer-overflow checks (needs -O)
-      -D_GLIBCXX_ASSERTIONS                 # libstdc++ precondition checks (bounds, ...)
-      -fstack-protector-strong              # stack canaries
-      -fstack-clash-protection              # large-stack probing
-      -fcf-protection=full                  # control-flow integrity (CET; no-op pre-CET)
-      -ftrivial-auto-var-init=zero          # zero otherwise-uninitialized locals
+      -U_FORTIFY_SOURCE
+      -D_FORTIFY_SOURCE=3 # glibc buffer-overflow checks (needs -O)
+      -D_GLIBCXX_ASSERTIONS # libstdc++ precondition checks (bounds, ...)
+      -fstack-protector-strong # stack canaries
+      -fstack-clash-protection # large-stack probing
+      -fcf-protection=full # control-flow integrity (CET; no-op pre-CET)
+      -ftrivial-auto-var-init=zero # zero otherwise-uninitialized locals
   )
   # Wrap each flag in its own genex -- a ;-list inside one genex gets split by
   # add_compile_options, mangling the first and last entries.
@@ -293,7 +298,9 @@ if (HARDENED AND NOT CMAKE_CROSSCOMPILING AND NOT APEX_PLATFORM_BAREMETAL)
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${_hf}>)
   endforeach ()
   add_link_options(LINKER:-z,relro LINKER:-z,now)
-  message(STATUS "[Hardened] FORTIFY_SOURCE=3, _GLIBCXX_ASSERTIONS, stack/CF protection, auto-var-init")
+  message(
+    STATUS "[Hardened] FORTIFY_SOURCE=3, _GLIBCXX_ASSERTIONS, stack/CF protection, auto-var-init"
+  )
 endif ()
 
 # ------------------------------------------------------------------------------
@@ -378,20 +385,22 @@ endif ()
 # paths from landing. Domain-inherent noisy classes (sign-conversion,
 # float-equal) are left out as they fight legitimate patterns in this tree.
 if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "TI")
-  foreach (_wf IN ITEMS
-           -Wshadow
-           -Wold-style-cast
-           -Wimplicit-int-conversion
-           -Wshorten-64-to-32
-           -Wdouble-promotion
-           -Werror=unused-variable
-           -Werror=unused-const-variable
-           -Werror=deprecated-volatile
-           -Werror=shadow
-           -Werror=old-style-cast
-           -Werror=implicit-int-conversion
-           -Werror=shorten-64-to-32
-           -Werror=double-promotion)
+  foreach (
+    _wf IN
+    ITEMS -Wshadow
+          -Wold-style-cast
+          -Wimplicit-int-conversion
+          -Wshorten-64-to-32
+          -Wdouble-promotion
+          -Werror=unused-variable
+          -Werror=unused-const-variable
+          -Werror=deprecated-volatile
+          -Werror=shadow
+          -Werror=old-style-cast
+          -Werror=implicit-int-conversion
+          -Werror=shorten-64-to-32
+          -Werror=double-promotion
+  )
     add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${_wf}>)
   endforeach ()
 endif ()

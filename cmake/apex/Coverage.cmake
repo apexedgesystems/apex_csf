@@ -94,9 +94,14 @@ function (apex_coverage_init)
 
     target_compile_options(
       apex_coverage_flags
-      INTERFACE $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CXX>>: -fprofile-instr-generate
-                -fcoverage-mapping -fcoverage-mcdc> $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:C>>:
-                -fprofile-instr-generate -fcoverage-mapping -fcoverage-mcdc>
+      INTERFACE $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:CXX>>:
+                -fprofile-instr-generate
+                -fcoverage-mapping
+                -fcoverage-mcdc>
+                $<$<AND:$<CONFIG:Debug>,$<COMPILE_LANGUAGE:C>>:
+                -fprofile-instr-generate
+                -fcoverage-mapping
+                -fcoverage-mcdc>
     )
 
     # Link options conditional on Clang linker (CUDA links with GCC)

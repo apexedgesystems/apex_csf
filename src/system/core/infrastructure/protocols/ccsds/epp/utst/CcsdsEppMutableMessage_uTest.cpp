@@ -124,7 +124,8 @@ TEST(MutableEppMessageTest, Pack4OctetHeader) {
   // Byte 1: userDefined=0xA, protocolIde=0x5 = 0xA5
   EXPECT_EQ(data[1], 0xA5);
   // Bytes 2-3: packet length = 6
-  std::uint16_t pktLen = static_cast<std::uint16_t>((static_cast<std::uint16_t>(data[2]) << 8) | data[3]);
+  std::uint16_t pktLen =
+      static_cast<std::uint16_t>((static_cast<std::uint16_t>(data[2]) << 8) | data[3]);
   EXPECT_EQ(pktLen, 6U);
 }
 
@@ -153,7 +154,8 @@ TEST(MutableEppMessageTest, Pack8OctetHeader) {
   // Byte 1: userDefined=0x3, protocolIde=0xC = 0x3C
   EXPECT_EQ(data[1], 0x3C);
   // Bytes 2-3: CCSDS defined = 0x5678
-  std::uint16_t defined = static_cast<std::uint16_t>((static_cast<std::uint16_t>(data[2]) << 8) | data[3]);
+  std::uint16_t defined =
+      static_cast<std::uint16_t>((static_cast<std::uint16_t>(data[2]) << 8) | data[3]);
   EXPECT_EQ(defined, 0x5678);
   // Bytes 4-7: packet length = 12
   std::uint32_t pktLen = (static_cast<std::uint32_t>(data[4]) << 24) |

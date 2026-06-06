@@ -24,10 +24,12 @@ protected:
 
     const std::uint16_t PD = static_cast<std::uint16_t>(dataFieldLen - 1);
 
-    hdr[0] = static_cast<std::uint8_t>((version << SPP_VERSION_SHIFT) | (type ? SPP_TYPE_BIT_MASK : 0) |
-             (secHdr ? SPP_SECHDR_BIT_MASK : 0) | ((apid >> 8) & SPP_APID_UPPER_MASK3));
+    hdr[0] = static_cast<std::uint8_t>(
+        (version << SPP_VERSION_SHIFT) | (type ? SPP_TYPE_BIT_MASK : 0) |
+        (secHdr ? SPP_SECHDR_BIT_MASK : 0) | ((apid >> 8) & SPP_APID_UPPER_MASK3));
     hdr[1] = apid & 0xFF;
-    hdr[2] = static_cast<std::uint8_t>((seqFlags << SPP_SEQFLAGS_SHIFT) | ((seqCount >> 8) & SPP_SEQCOUNT_UPPER6_MASK));
+    hdr[2] = static_cast<std::uint8_t>((seqFlags << SPP_SEQFLAGS_SHIFT) |
+                                       ((seqCount >> 8) & SPP_SEQCOUNT_UPPER6_MASK));
     hdr[3] = seqCount & 0xFF;
     hdr[4] = (PD >> 8) & 0xFF;
     hdr[5] = PD & 0xFF;

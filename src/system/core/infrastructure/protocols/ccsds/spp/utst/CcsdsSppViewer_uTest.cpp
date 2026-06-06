@@ -371,20 +371,23 @@ TEST(PacketViewerTest, SequenceGapDetection) {
   SecondaryHeaderConfig cfg{};
 
   // Packet 1: seqCount = 100
-  auto primary1 = buildPrimaryHeader(0, false, false, 0x100, 0, 100, static_cast<std::uint16_t>(payload.size()));
+  auto primary1 = buildPrimaryHeader(0, false, false, 0x100, 0, 100,
+                                     static_cast<std::uint16_t>(payload.size()));
   auto packet1 = createPacket(primary1, {}, payload);
   auto view1 = PacketViewer::create(apex::compat::bytes_span{packet1.data(), packet1.size()}, cfg);
   ASSERT_TRUE(view1.has_value());
 
   // Packet 2: seqCount = 101 (no gap)
-  auto primary2 = buildPrimaryHeader(0, false, false, 0x100, 0, 101, static_cast<std::uint16_t>(payload.size()));
+  auto primary2 = buildPrimaryHeader(0, false, false, 0x100, 0, 101,
+                                     static_cast<std::uint16_t>(payload.size()));
   auto packet2 = createPacket(primary2, {}, payload);
   auto view2 = PacketViewer::create(apex::compat::bytes_span{packet2.data(), packet2.size()}, cfg);
   ASSERT_TRUE(view2.has_value());
   EXPECT_FALSE(view2->hasSequenceGap(100)); // Expected 101, got 101
 
   // Packet 3: seqCount = 105 (gap of 3 packets)
-  auto primary3 = buildPrimaryHeader(0, false, false, 0x100, 0, 105, static_cast<std::uint16_t>(payload.size()));
+  auto primary3 = buildPrimaryHeader(0, false, false, 0x100, 0, 105,
+                                     static_cast<std::uint16_t>(payload.size()));
   auto packet3 = createPacket(primary3, {}, payload);
   auto view3 = PacketViewer::create(apex::compat::bytes_span{packet3.data(), packet3.size()}, cfg);
   ASSERT_TRUE(view3.has_value());
@@ -401,14 +404,16 @@ TEST(PacketViewerTest, SequenceCountWraparound) {
   SecondaryHeaderConfig cfg{};
 
   // Packet at max sequence count (0x3FFF = 16383)
-  auto primary1 = buildPrimaryHeader(0, false, false, 0x100, 0, 0x3FFF, static_cast<std::uint16_t>(payload.size()));
+  auto primary1 = buildPrimaryHeader(0, false, false, 0x100, 0, 0x3FFF,
+                                     static_cast<std::uint16_t>(payload.size()));
   auto packet1 = createPacket(primary1, {}, payload);
   auto view1 = PacketViewer::create(apex::compat::bytes_span{packet1.data(), packet1.size()}, cfg);
   ASSERT_TRUE(view1.has_value());
   EXPECT_EQ(view1->pri.sequenceCount(), 0x3FFF);
 
   // Next packet wraps to 0
-  auto primary2 = buildPrimaryHeader(0, false, false, 0x100, 0, 0, static_cast<std::uint16_t>(payload.size()));
+  auto primary2 =
+      buildPrimaryHeader(0, false, false, 0x100, 0, 0, static_cast<std::uint16_t>(payload.size()));
   auto packet2 = createPacket(primary2, {}, payload);
   auto view2 = PacketViewer::create(apex::compat::bytes_span{packet2.data(), packet2.size()}, cfg);
   ASSERT_TRUE(view2.has_value());
