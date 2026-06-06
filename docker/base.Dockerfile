@@ -4,7 +4,7 @@
 # Usage:
 #   docker compose build base
 # ==============================================================================
-FROM ubuntu:24.04
+FROM ubuntu:26.04
 
 # Build-time arguments
 ARG USER
