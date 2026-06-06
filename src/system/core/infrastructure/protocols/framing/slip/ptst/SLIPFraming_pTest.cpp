@@ -472,7 +472,7 @@ INSTANTIATE_TEST_SUITE_P(PayloadSizes, SLIPPayloadSweep,
 PERF_TEST(SLIPCache, EncodeCacheL1) {
   UB_PERF_GUARD(perf);
 
-  constexpr std::size_t L1_SIZE = 16 * 1024;
+  constexpr std::size_t L1_SIZE = static_cast<const std::size_t>(16 * 1024);
   const auto payload = makeCleanPayload(L1_SIZE);
   std::vector<std::uint8_t> encoded(payload.size() * 2 + 2);
 
@@ -502,7 +502,7 @@ PERF_TEST(SLIPCache, EncodeCacheL1) {
 PERF_TEST(SLIPCache, EncodeCacheL3) {
   UB_PERF_GUARD(perf);
 
-  constexpr std::size_t L3_SIZE = 1 * 1024 * 1024;
+  constexpr std::size_t L3_SIZE = static_cast<const std::size_t>(1 * 1024 * 1024);
   const auto payload = makeCleanPayload(L3_SIZE);
   std::vector<std::uint8_t> encoded(payload.size() * 2 + 2);
 
@@ -532,7 +532,7 @@ PERF_TEST(SLIPCache, EncodeCacheL3) {
 PERF_TEST(SLIPCache, EncodeCacheRAM) {
   UB_PERF_GUARD(perf);
 
-  constexpr std::size_t RAM_SIZE = 4 * 1024 * 1024;
+  constexpr std::size_t RAM_SIZE = static_cast<const std::size_t>(4 * 1024 * 1024);
   const auto payload = makeCleanPayload(RAM_SIZE);
   std::vector<std::uint8_t> encoded(payload.size() * 2 + 2);
 

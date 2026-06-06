@@ -378,7 +378,8 @@ PERF_TEST(Egm2008Init, OrderScaling) {
   std::printf("%-6s %12s\n", "Order", "us/init");
   std::printf("%s\n", std::string(20, '-').c_str());
 
-  for (std::int16_t n : {10, 50, 100, 180}) {
+  for (std::int16_t n : {static_cast<std::int16_t>(10), static_cast<std::int16_t>(50),
+                         static_cast<std::int16_t>(100), static_cast<std::int16_t>(180)}) {
     DenseSynthSource src(n);
     Egm2008Params params{GM, A, n};
 

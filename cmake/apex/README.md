@@ -29,8 +29,10 @@ All modules are included via `All.cmake` in strict dependency order:
 | `Cuda.cmake`              | CUDA sources, NVML, CUPTI integration                 |
 | `Targets.cmake`           | `apex_add_library`, `apex_add_app`, `apex_add_tool`   |
 | `Coverage.cmake`          | Code coverage instrumentation and reporting           |
-| `Testing.cmake`           | GTest/GMock, performance tests, development tests     |
-| `Tooling.cmake`           | Doxygen, clang-tidy, UPX compression                  |
+| `Testing.cmake`           | GTest/GMock unit, performance, and component tests    |
+| `Docs.cmake`              | Doxygen per-library HTML + docs landing page          |
+| `Upx.cmake`               | UPX-compressed artifact copies                        |
+| `ClangTidy.cmake`         | clang-tidy for CUDA sources                           |
 | `DataDefinitions.cmake`   | Struct dictionary manifest registration               |
 | `Packaging.cmake`         | Application deployment packaging (`package_<APP>`)    |
 | `Firmware.cmake`          | Bare-metal firmware targets (STM32, AVR, Pico, ESP32) |
@@ -70,6 +72,7 @@ cmake -DCMAKE_BUILD_TYPE=Release  # Full optimization, NDEBUG defined
 cmake -DSANITIZER=asan   # Address sanitizer
 cmake -DSANITIZER=tsan   # Thread sanitizer
 cmake -DSANITIZER=ubsan  # Undefined behavior sanitizer
+cmake -DSANITIZER=rtsan  # Realtime sanitizer (blocking calls in RT code)
 ```
 
 ## Target Creation
@@ -178,7 +181,7 @@ apex_add_ptest(
   TIMING_ALL            # Serialize all tests
 )
 
-# Development tests (external deps, not in CTest)
+# Component-level tests (not in CTest, run manually)
 apex_add_devtest(
   TARGET   MyLib_Dev
   SOURCES  dev_foo.cpp
@@ -190,7 +193,7 @@ Test output directories:
 
 | Function           | Output Directory | In CTest |
 | ------------------ | ---------------- | -------- |
-| `apex_add_gtest`   | `bin/tests/`     | Yes      |
+| `apex_add_gtest`   | `bin/utests/`    | Yes      |
 | `apex_add_ptest`   | `bin/ptests/`    | No       |
 | `apex_add_devtest` | `bin/dtests/`    | No       |
 
@@ -364,9 +367,9 @@ build/
     MyApp           # Production apps (apex_add_app)
     MyApp.upx       # UPX-compressed copy
     tools/          # Internal tools (apex_add_tool)
-    tests/          # Unit tests
+    utests/         # Unit tests
     ptests/         # Performance tests
-    dtests/         # Development tests
+    dtests/         # Component-level tests
   lib/              # Shared/static libraries
   firmware/         # Bare-metal firmware (.elf, .bin, .hex)
   docs/             # Doxygen output

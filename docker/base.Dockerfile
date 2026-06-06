@@ -17,6 +17,10 @@ ARG SHFMT_VERSION=v3.12.0
 ARG BLACK_VERSION=26.1.0
 ARG CMAKELANG_VERSION=0.6.13
 ARG PRE_COMMIT_VERSION=4.5.1
+ARG GITLEAKS_VERSION=8.30.1
+ARG OSV_SCANNER_VERSION=2.3.8
+ARG TRIVY_VERSION=0.71.0
+ARG SEMGREP_VERSION=1.165.0
 
 LABEL org.opencontainers.image.title="apex.base" \
       org.opencontainers.image.description="Base tooling layer for Apex CSF C++ development" \
@@ -192,6 +196,50 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 RUN wget --progress=dot:giga -O /usr/local/bin/ninjatracing \
       https://raw.githubusercontent.com/nico/ninjatracing/main/ninjatracing && \
     chmod +x /usr/local/bin/ninjatracing
+
+# ==============================================================================
+# Static Analysis and Security
+# ==============================================================================
+# A second static-analysis engine, a bounded model checker, and supply-chain /
+# secret / SAST scanners. Each is exposed as a `make` check target (mk/checks.mk)
+# and runs in this container, so local and CI runs are identical.
+#
+#   cppcheck    : independent static analyzer (+ bundled MISRA C++ addon)
+#   cbmc        : bounded model checker -- proves absence of overflow/OOB/assert
+#   trivy       : vulnerability + secret + SBOM (CycloneDX/SPDX) scanner
+#   gitleaks    : secret scanner
+#   osv-scanner : dependency vulnerability scanner (OSV database)
+#   semgrep     : pattern-based SAST
+# (mull mutation testing is deferred: no LLVM-21 release build yet.)
+
+# cppcheck + cbmc from the distro
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      cppcheck \
+      cbmc
+
+# trivy (pinned) via the upstream install script
+RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
+      sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}"
+
+# gitleaks: static binary from GitHub releases
+RUN wget --progress=dot:giga -O /tmp/gitleaks.tar.gz \
+      "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" && \
+    tar -C /usr/local/bin -xzf /tmp/gitleaks.tar.gz gitleaks && \
+    chmod +x /usr/local/bin/gitleaks && \
+    rm /tmp/gitleaks.tar.gz
+
+# osv-scanner: static binary from GitHub releases
+RUN wget --progress=dot:giga -O /usr/local/bin/osv-scanner \
+      "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64" && \
+    chmod +x /usr/local/bin/osv-scanner
+
+# semgrep: pattern SAST (pip, matching the Python-tools convention above)
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install --no-cache-dir --break-system-packages \
+      semgrep==${SEMGREP_VERSION}
 
 # ==============================================================================
 # Rust Toolchain

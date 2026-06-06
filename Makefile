@@ -19,6 +19,8 @@ include mk/docker.mk
 include mk/format.mk
 include mk/sanitizers.mk
 include mk/tools.mk
+include mk/security.mk
+include mk/checks.mk
 include mk/firmware.mk
 include mk/compose.mk
 include mk/release.mk
@@ -94,17 +96,17 @@ RPI_DEBUG_DIR      := build/$(RPI_DEBUG_PRESET)
 RPI_RELEASE_DIR    := build/$(RPI_RELEASE_PRESET)
 RISCV_DEBUG_DIR    := build/$(RISCV_DEBUG_PRESET)
 RISCV_RELEASE_DIR  := build/$(RISCV_RELEASE_PRESET)
-STM32_DIR          := build/mcu-stm32-relwithdebinfo
-ARDUINO_DIR        := build/mcu-arduino-relwithdebinfo
-PICO_DIR           := build/mcu-pico-relwithdebinfo
-ESP32_DIR          := build/mcu-esp32-relwithdebinfo
-C2000_DIR          := build/mcu-c2000-relwithdebinfo
+STM32_DIR          := build/$(STM32_PRESET)
+ARDUINO_DIR        := build/$(ARDUINO_PRESET)
+PICO_DIR           := build/$(PICO_PRESET)
+ESP32_DIR          := build/$(ESP32_PRESET)
+C2000_DIR          := build/$(C2000_PRESET)
 
-STM32_DEBUG_DIR    := build/mcu-stm32-debug
-ARDUINO_DEBUG_DIR  := build/mcu-arduino-debug
-PICO_DEBUG_DIR     := build/mcu-pico-debug
-ESP32_DEBUG_DIR    := build/mcu-esp32-debug
-C2000_DEBUG_DIR    := build/mcu-c2000-debug
+STM32_DEBUG_DIR    := build/$(STM32_DEBUG_PRESET)
+ARDUINO_DEBUG_DIR  := build/$(ARDUINO_DEBUG_PRESET)
+PICO_DEBUG_DIR     := build/$(PICO_DEBUG_PRESET)
+ESP32_DEBUG_DIR    := build/$(ESP32_DEBUG_PRESET)
+C2000_DEBUG_DIR    := build/$(C2000_DEBUG_PRESET)
 
 # ==============================================================================
 # Build Macros
@@ -191,10 +193,12 @@ help:
 	@printf '  %-28s %s\n' "make format" "Auto-fix formatting issues"
 	@printf '  %-28s %s\n' "make format-check" "Check formatting (no fixes)"
 	@printf '  %-28s %s\n' "make coverage" "Generate code coverage report"
-	@printf '  %-28s %s\n' "make static" "Run static analysis (scan-build)"
+	@printf '  %-28s %s\n' "make static" "Run static analysis (clang-tidy)"
 	@printf '  %-28s %s\n' "make asan" "Build and test with AddressSanitizer"
 	@printf '  %-28s %s\n' "make tsan" "Build and test with ThreadSanitizer"
 	@printf '  %-28s %s\n' "make ubsan" "Build and test with UBSanitizer"
+	@printf '  %-28s %s\n' "make checks-nightly" "Run every check the nightly runs"
+	@printf '  %-28s %s\n' "make list-checks" "List all checks by category and CI tier"
 	@printf '\n'
 	@printf '%s\n' "Integration Artifacts:"
 	@printf '  %-28s %s\n' "make ops-artifacts" "Generate all ops artifacts (struct dicts + templates + deck)"
@@ -390,6 +394,6 @@ ccache-clear:
 # Phony Declarations
 # ==============================================================================
 
-.PHONY: help prep debug docs
+.PHONY: help prep debug docs docs-check
 .PHONY: configure configure-release
 .PHONY: ccache-stats ccache-clear

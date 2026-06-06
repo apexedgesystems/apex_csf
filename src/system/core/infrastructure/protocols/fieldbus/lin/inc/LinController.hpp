@@ -119,7 +119,7 @@ public:
   /**
    * @brief Destructor.
    */
-  ~LinController() = default;
+  ~LinController() override = default;
 
   // Non-copyable, non-movable (holds reference to UART)
   LinController(const LinController&) = delete;

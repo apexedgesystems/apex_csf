@@ -13,6 +13,8 @@
 
 #include <fmt/core.h>
 
+#include <limits>
+
 // Use Status enum without qualification
 using enum executive::Status;
 
@@ -72,7 +74,13 @@ std::uint8_t ApexExecutive::processArgs() noexcept {
   // ===== Parse Profiling Configuration =====
   if (parsedArgs_.count(ENABLE_PROFILING)) {
     if (parsedArgs_.count(PROFILE_INTERVAL)) {
-      profilingState_.sampleEveryN = std::stoul(std::string(parsedArgs_[PROFILE_INTERVAL][0]));
+      const unsigned long sampleEveryN = std::stoul(std::string(parsedArgs_[PROFILE_INTERVAL][0]));
+      if (sampleEveryN > std::numeric_limits<std::uint32_t>::max()) {
+        setStatus(static_cast<std::uint8_t>(ERROR_ARG_PARSE_FAIL));
+        sysLog_->error(label(), status(), "Profile interval exceeds 32-bit range");
+        return status();
+      }
+      profilingState_.sampleEveryN = static_cast<std::uint32_t>(sampleEveryN);
     } else {
       profilingState_.sampleEveryN = 1;
     }
@@ -97,7 +105,13 @@ std::uint8_t ApexExecutive::processArgs() noexcept {
   }
 
   if (parsedArgs_.count(STARTUP_DELAY)) {
-    startupConfig_.delaySeconds = std::stoul(std::string(parsedArgs_[STARTUP_DELAY][0]));
+    const unsigned long delaySeconds = std::stoul(std::string(parsedArgs_[STARTUP_DELAY][0]));
+    if (delaySeconds > std::numeric_limits<std::uint32_t>::max()) {
+      setStatus(static_cast<std::uint8_t>(ERROR_ARG_PARSE_FAIL));
+      sysLog_->error(label(), status(), "Startup delay exceeds 32-bit range");
+      return status();
+    }
+    startupConfig_.delaySeconds = static_cast<std::uint32_t>(delaySeconds);
   }
 
   if (parsedArgs_.count(START_AT)) {
@@ -129,11 +143,36 @@ std::uint8_t ApexExecutive::processArgs() noexcept {
   }
 
   if (parsedArgs_.count(SHUTDOWN_AFTER)) {
-    shutdownConfig_.relativeSeconds = std::stoul(std::string(parsedArgs_[SHUTDOWN_AFTER][0]));
+    const unsigned long relativeSeconds = std::stoul(std::string(parsedArgs_[SHUTDOWN_AFTER][0]));
+    if (relativeSeconds > std::numeric_limits<std::uint32_t>::max()) {
+      setStatus(static_cast<std::uint8_t>(ERROR_ARG_PARSE_FAIL));
+      sysLog_->error(label(), status(), "Shutdown-after seconds exceeds 32-bit range");
+      return status();
+    }
+    shutdownConfig_.relativeSeconds = static_cast<std::uint32_t>(relativeSeconds);
   }
 
   if (parsedArgs_.count(SHUTDOWN_CYCLE)) {
     shutdownConfig_.targetClockCycle = std::stoull(std::string(parsedArgs_[SHUTDOWN_CYCLE][0]));
+  }
+
+  // Infer the shutdown mode from the timing argument(s) when no explicit
+  // --shutdown-mode was given, so "--shutdown-after N" exits after N seconds
+  // on its own (as documented) rather than being silently ignored under the
+  // default SIGNAL_ONLY mode.
+  if (!parsedArgs_.count(SHUTDOWN_MODE)) {
+    const int provided = (parsedArgs_.count(SHUTDOWN_AFTER) ? 1 : 0) +
+                         (parsedArgs_.count(SHUTDOWN_AT) ? 1 : 0) +
+                         (parsedArgs_.count(SHUTDOWN_CYCLE) ? 1 : 0);
+    if (provided > 1) {
+      shutdownConfig_.mode = ShutdownConfig::COMBINED;
+    } else if (parsedArgs_.count(SHUTDOWN_AFTER)) {
+      shutdownConfig_.mode = ShutdownConfig::RELATIVE_TIME;
+    } else if (parsedArgs_.count(SHUTDOWN_AT)) {
+      shutdownConfig_.mode = ShutdownConfig::SCHEDULED;
+    } else if (parsedArgs_.count(SHUTDOWN_CYCLE)) {
+      shutdownConfig_.mode = ShutdownConfig::CLOCK_CYCLE;
+    }
   }
 
   // ===== Parse Archive Configuration =====
@@ -152,7 +191,13 @@ std::uint8_t ApexExecutive::processArgs() noexcept {
 
   // ===== Parse Watchdog Configuration =====
   if (parsedArgs_.count(WATCHDOG_INTERVAL)) {
-    watchdogState_.intervalMs = std::stoul(std::string(parsedArgs_[WATCHDOG_INTERVAL][0]));
+    const unsigned long intervalMs = std::stoul(std::string(parsedArgs_[WATCHDOG_INTERVAL][0]));
+    if (intervalMs > std::numeric_limits<std::uint32_t>::max()) {
+      setStatus(static_cast<std::uint8_t>(ERROR_ARG_PARSE_FAIL));
+      sysLog_->error(label(), status(), "Watchdog interval exceeds 32-bit range");
+      return status();
+    }
+    watchdogState_.intervalMs = static_cast<std::uint32_t>(intervalMs);
     if (watchdogState_.intervalMs < 100) {
       setStatus(static_cast<std::uint8_t>(ERROR_ARG_PARSE_FAIL));
       sysLog_->error(label(), status(), "Watchdog interval must be >= 100 ms");
@@ -175,7 +220,13 @@ std::uint8_t ApexExecutive::processArgs() noexcept {
   }
 
   if (parsedArgs_.count(RT_MAX_LAG)) {
-    rtConfig_.maxLagTicks = std::stoul(std::string(parsedArgs_[RT_MAX_LAG][0]));
+    const unsigned long maxLagTicks = std::stoul(std::string(parsedArgs_[RT_MAX_LAG][0]));
+    if (maxLagTicks > std::numeric_limits<std::uint32_t>::max()) {
+      setStatus(static_cast<std::uint8_t>(ERROR_ARG_PARSE_FAIL));
+      sysLog_->error(label(), status(), "RT max-lag ticks exceeds 32-bit range");
+      return status();
+    }
+    rtConfig_.maxLagTicks = static_cast<std::uint32_t>(maxLagTicks);
   }
 
   // ===== Validate Shutdown Configuration =====

@@ -352,7 +352,7 @@ docker compose run --rm -T dev-cuda make debug
 docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -L integration
 
 # Run specific test
-docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/tests/TestMathIntegration
+docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/utests/TestMathIntegration
 ```
 
 ### Test Organization

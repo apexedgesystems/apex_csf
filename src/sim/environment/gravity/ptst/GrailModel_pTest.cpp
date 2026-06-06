@@ -281,7 +281,7 @@ PERF_TEST(GrailInit, OrderScaling) {
   std::printf("%-6s %12s\n", "Order", "us/init");
   std::printf("%s\n", std::string(20, '-').c_str());
 
-  for (std::int16_t n : {60, 180}) {
+  for (std::int16_t n : {static_cast<std::int16_t>(60), static_cast<std::int16_t>(180)}) {
     DenseSynthSource src(n);
     GrailParams params{LUNAR_GM, LUNAR_A, n};
 

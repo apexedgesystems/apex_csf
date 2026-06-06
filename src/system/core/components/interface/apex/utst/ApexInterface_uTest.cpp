@@ -316,10 +316,12 @@ TEST(ApexInterfaceTest, AprotoNoopOverSlip) {
   ASSERT_TRUE(readAndDecodeSlipFrame(cli, response, 500)) << "ACK timeout";
   EXPECT_TRUE(validateAckResponse(response, OPCODE, SEQ, 0)) << "Invalid ACK";
 
+  // Stop and join the poller before shutdown, so shutdown() does not race the
+  // in-flight pollSockets()/tryDequeueTxMessage() on the TX SPSC queue.
   run = false;
+  poller.join();
   auto shutStatus = iface.shutdown();
   EXPECT_EQ(shutStatus, Status::SUCCESS);
-  poller.join();
 }
 
 /** @test APROTO PING command over SLIP echoes payload back. */
@@ -389,10 +391,12 @@ TEST(ApexInterfaceTest, AprotoPingOverSlip) {
                                               pingPayload.size());
   EXPECT_EQ(echoedPayload, pingPayload);
 
+  // Stop and join the poller before shutdown, so shutdown() does not race the
+  // in-flight pollSockets()/tryDequeueTxMessage() on the TX SPSC queue.
   run = false;
+  poller.join();
   auto shutStatus = iface.shutdown();
   EXPECT_EQ(shutStatus, Status::SUCCESS);
-  poller.join();
 }
 
 /** @test APROTO NOOP command over COBS returns ACK.
@@ -447,10 +451,12 @@ TEST(ApexInterfaceTest, DISABLED_AprotoNoopOverCobs) {
   ASSERT_TRUE(readAndDecodeCobsFrame(cli, response, 500, 3s)) << "ACK timeout";
   EXPECT_TRUE(validateAckResponse(response, OPCODE, SEQ, 0)) << "Invalid ACK";
 
+  // Stop and join the poller before shutdown, so shutdown() does not race the
+  // in-flight pollSockets()/tryDequeueTxMessage() on the TX SPSC queue.
   run = false;
+  poller.join();
   auto shutStatus = iface.shutdown();
   EXPECT_EQ(shutStatus, Status::SUCCESS);
-  poller.join();
 }
 
 /** @test Command to unknown component returns NAK with component-not-found status. */
@@ -500,8 +506,10 @@ TEST(ApexInterfaceTest, AprotoUnknownComponentNak) {
   ASSERT_TRUE(readAndDecodeSlipFrame(cli, response, 200)) << "NAK timeout";
   EXPECT_TRUE(validateAckResponse(response, COMP_OPCODE, SEQ, 3)) << "Expected NAK with status 3";
 
+  // Stop and join the poller before shutdown, so shutdown() does not race the
+  // in-flight pollSockets()/tryDequeueTxMessage() on the TX SPSC queue.
   run = false;
+  poller.join();
   auto shutStatus = iface.shutdown();
   EXPECT_EQ(shutStatus, Status::SUCCESS);
-  poller.join();
 }

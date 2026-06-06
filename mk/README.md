@@ -75,7 +75,7 @@ Configure-only variants available: `configure-jetson`, `configure-rpi`, etc.
 | `make format`       | Auto-fix formatting (clang-format, cmake-format, etc.) |
 | `make format-check` | Check formatting without fixing                        |
 | `make coverage`     | Generate code coverage report                          |
-| `make static`       | Run static analysis (scan-build)                       |
+| `make static`       | Run static analysis (clang-tidy)                       |
 | `make asan`         | Build and test with AddressSanitizer                   |
 | `make tsan`         | Build and test with ThreadSanitizer                    |
 | `make ubsan`        | Build and test with UndefinedBehaviorSanitizer         |

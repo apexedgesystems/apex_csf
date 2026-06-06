@@ -119,6 +119,7 @@ TEST_F(SpinLockTest, MutualExclusion) {
   constexpr int ITERATIONS = 10000;
 
   std::vector<std::thread> threads;
+  threads.reserve(THREAD_COUNT);
   for (int i = 0; i < THREAD_COUNT; ++i) {
     threads.emplace_back([&]() {
       for (int j = 0; j < ITERATIONS; ++j) {
@@ -143,6 +144,7 @@ TEST_F(SpinLockTest, ProtectsDataIntegrity) {
   constexpr int ITEMS_PER_THREAD = 1000;
 
   std::vector<std::thread> threads;
+  threads.reserve(THREAD_COUNT);
   for (int i = 0; i < THREAD_COUNT; ++i) {
     threads.emplace_back([&, i]() {
       for (int j = 0; j < ITEMS_PER_THREAD; ++j) {
@@ -168,6 +170,7 @@ TEST_F(SpinLockTest, TryLockUnderContention) {
   constexpr int ATTEMPTS = 1000;
 
   std::vector<std::thread> threads;
+  threads.reserve(THREAD_COUNT);
   for (int i = 0; i < THREAD_COUNT; ++i) {
     threads.emplace_back([&]() {
       for (int j = 0; j < ATTEMPTS; ++j) {
@@ -202,6 +205,7 @@ TEST_F(SpinLockTest, HighContentionStress) {
   constexpr std::size_t ITERATIONS = 50000;
 
   std::vector<std::thread> threads;
+  threads.reserve(THREAD_COUNT);
   for (int i = 0; i < THREAD_COUNT; ++i) {
     threads.emplace_back([&]() {
       for (std::size_t j = 0; j < ITERATIONS; ++j) {

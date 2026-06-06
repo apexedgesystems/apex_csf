@@ -295,11 +295,11 @@ fm::Status status = fm::buildReadHoldingRegistersRequest(frame, 1, 0, 10);
 
 ## 7. Testing
 
-| Directory | Type              | Tests | Runs with `make test` |
-| --------- | ----------------- | ----- | --------------------- |
-| `utst/`   | Unit tests        | 132   | Yes                   |
-| `ptst/`   | Performance tests | 12    | No (manual)           |
-| `dtst/`   | Development tests | 16    | No (manual)           |
+| Directory | Type                  | Tests | Runs with `make test` |
+| --------- | --------------------- | ----- | --------------------- |
+| `utst/`   | Unit tests            | 132   | Yes                   |
+| `ptst/`   | Performance tests     | 12    | No (manual)           |
+| `dtst/`   | Component-level tests | 16    | No (manual)           |
 
 ---
 

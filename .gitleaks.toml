@@ -1,0 +1,12 @@
+# gitleaks configuration for apex_csf.
+# Extends the upstream default ruleset and allowlists known non-secrets.
+title = "apex_csf"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Cryptography unit tests embed published test vectors (keys, IVs, tags) that are not real secrets"
+paths = [
+  '''src/utilities/encryption/.*/(utst|ptst|dtst)/.*''',
+]

@@ -229,7 +229,8 @@ TEST(EppMsgTest, Create4OctetPacket) {
   // Byte 1: userDefined=0xA, protocolIde=0x0 = 0xA0
   EXPECT_EQ(data[1], 0xA0);
   // Bytes 2-3: packet length = 9
-  std::uint16_t pktLen = (static_cast<std::uint16_t>(data[2]) << 8) | data[3];
+  std::uint16_t pktLen =
+      static_cast<std::uint16_t>((static_cast<std::uint16_t>(data[2]) << 8) | data[3]);
   EXPECT_EQ(pktLen, 9U);
   // Bytes 4-8: payload
   std::vector<std::uint8_t> extracted(data.begin() + 4, data.end());
@@ -255,7 +256,8 @@ TEST(EppMsgTest, Create8OctetPacket) {
   // Byte 1: userDefined=0x3, protocolIde=0x0 = 0x30
   EXPECT_EQ(data[1], 0x30);
   // Bytes 2-3: CCSDS defined = 0x1234
-  std::uint16_t defined = (static_cast<std::uint16_t>(data[2]) << 8) | data[3];
+  std::uint16_t defined =
+      static_cast<std::uint16_t>((static_cast<std::uint16_t>(data[2]) << 8) | data[3]);
   EXPECT_EQ(defined, 0x1234);
   // Bytes 4-7: packet length = 15
   std::uint32_t pktLen = (static_cast<std::uint32_t>(data[4]) << 24) |

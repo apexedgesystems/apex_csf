@@ -20,6 +20,8 @@
 
 #include <atomic>
 
+#include "src/utilities/compatibility/inc/compat_rt_attrs.hpp"
+
 namespace apex {
 namespace concurrency {
 
@@ -59,27 +61,27 @@ public:
    *
    * @note RT-safe for short hold times: Bounded by hold duration.
    */
-  void lock() noexcept;
+  void lock() noexcept APEX_NONBLOCKING;
 
   /**
    * @brief Try to acquire without spinning.
    * @return True if acquired, false if already locked.
    * @note RT-safe: Single atomic operation.
    */
-  [[nodiscard]] bool tryLock() noexcept;
+  [[nodiscard]] bool tryLock() noexcept APEX_NONBLOCKING;
 
   /**
    * @brief Release the lock.
    * @note RT-safe: Single atomic operation.
    */
-  void unlock() noexcept;
+  void unlock() noexcept APEX_NONBLOCKING;
 
   /**
    * @brief Check if lock is currently held (approximate).
    * @return True if locked.
    * @note RT-safe: Single atomic load.
    */
-  [[nodiscard]] bool isLocked() const noexcept;
+  [[nodiscard]] bool isLocked() const noexcept APEX_NONBLOCKING;
 
 private:
   std::atomic_flag flag_ = ATOMIC_FLAG_INIT;

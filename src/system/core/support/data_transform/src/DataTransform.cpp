@@ -8,6 +8,7 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
 #include "src/utilities/helpers/inc/Files.hpp"
 
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <fcntl.h>
@@ -429,8 +430,8 @@ bool DataTransform::applyEntry(std::uint8_t index) noexcept {
       char before[24]{};
       char after[24]{};
       for (std::uint8_t b = 0; b < LOG_LEN; ++b) {
-        std::snprintf(before + b * 2, 3, "%02X", beforeBytes[b]);
-        std::snprintf(after + b * 2, 3, "%02X", targetBytes[b]);
+        std::snprintf(before + static_cast<ptrdiff_t>(b * 2), 3, "%02X", beforeBytes[b]);
+        std::snprintf(after + static_cast<ptrdiff_t>(b * 2), 3, "%02X", targetBytes[b]);
       }
 
       char buf[160];
@@ -616,8 +617,8 @@ std::uint8_t DataTransform::handleCommand(std::uint16_t opcode,
                               (static_cast<std::uint32_t>(payload[3]) << 16) |
                               (static_cast<std::uint32_t>(payload[4]) << 24);
     const auto CAT = static_cast<data::DataCategory>(payload[5]);
-    const std::uint16_t OFF =
-        static_cast<std::uint16_t>(payload[6]) | (static_cast<std::uint16_t>(payload[7]) << 8);
+    const std::uint16_t OFF = static_cast<std::uint16_t>(
+        static_cast<std::uint16_t>(payload[6]) | (static_cast<std::uint16_t>(payload[7]) << 8));
     const std::uint8_t LEN = payload[8];
     entries_[INDEX].target = {UID, CAT, OFF, LEN};
     {

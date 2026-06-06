@@ -153,6 +153,7 @@ Status ModbusRtuTransport::receiveResponse(FrameBuffer& frame, int timeoutMs) no
       expectedLength = 3 + frame.data[2] + 2; // Header + data + CRC
       break;
 
+    // NOLINTNEXTLINE(bugprone-branch-clone): distinct response frames, same length
     case FunctionCode::WRITE_SINGLE_COIL:
     case FunctionCode::WRITE_SINGLE_REGISTER:
       // Echo responses: [Unit] [FC] [Addr] [Value] [CRC] = 8 bytes

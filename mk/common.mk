@@ -56,16 +56,6 @@ define log_err
 endef
 
 # ------------------------------------------------------------------------------
-# Environment Wrappers
-# ------------------------------------------------------------------------------
-# Usage: $(call with_lib_path,command)
-#   Runs command with LD_LIBRARY_PATH set to include build/lib
-
-define with_lib_path
-env LD_LIBRARY_PATH="$$PWD/lib:$$LD_LIBRARY_PATH" $(1)
-endef
-
-# ------------------------------------------------------------------------------
 # Path Utilities
 # ------------------------------------------------------------------------------
 

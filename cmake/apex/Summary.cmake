@@ -4,8 +4,6 @@
 
 include_guard(GLOBAL)
 
-option(APEX_SUMMARY_VERBOSE "Print extra details in configure summary" OFF)
-
 # ------------------------------------------------------------------------------
 # Internal helpers
 # ------------------------------------------------------------------------------

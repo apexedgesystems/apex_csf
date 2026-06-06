@@ -57,7 +57,7 @@ struct SphericalHarmonicParams {
 class SphericalHarmonicModel : public GravityModelBase {
 public:
   SphericalHarmonicModel() noexcept = default;
-  virtual ~SphericalHarmonicModel() = default;
+  ~SphericalHarmonicModel() override = default;
 
   // Non-copyable, movable
   SphericalHarmonicModel(const SphericalHarmonicModel&) = delete;

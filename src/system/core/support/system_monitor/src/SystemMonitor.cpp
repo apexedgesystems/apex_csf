@@ -38,6 +38,7 @@
 #include "src/gpu/inc/GpuMemoryStatus.hpp" // getGpuMemoryStatus (NOT RT-safe, init only)
 #endif
 
+#include <cstddef>
 #include <cstring>
 
 #include <new>
@@ -291,20 +292,21 @@ void SystemMonitor::logSnapshot() noexcept {
   // Memory
   const double RAM_GB =
       static_cast<double>(snapshot_.memory.totalRamBytes) / (1024.0 * 1024.0 * 1024.0);
-  log->info(label(), fmt::format("Memory: {:.1f}GB swap={}MB swappiness={} overcommit={}", RAM_GB,
-                                 snapshot_.memory.totalSwapBytes / (1024 * 1024),
-                                 snapshot_.memory.swappiness, snapshot_.memory.overcommitMemory));
+  log->info(label(),
+            fmt::format("Memory: {:.1f}GB swap={}MB swappiness={} overcommit={}", RAM_GB,
+                        snapshot_.memory.totalSwapBytes / (static_cast<std::uint64_t>(1024 * 1024)),
+                        snapshot_.memory.swappiness, snapshot_.memory.overcommitMemory));
 
-  log->info(
-      label(),
-      fmt::format(
-          "  memlock={}{} fd_limit={}/{} rt_sched={}",
-          snapshot_.memory.memlockUnlimited ? "unlimited" : "",
-          snapshot_.memory.memlockUnlimited
-              ? ""
-              : fmt::format("{}MB", snapshot_.memory.memlockSoftBytes / (1024 * 1024)).c_str(),
-          snapshot_.memory.fdSoftLimit, snapshot_.memory.fdHardLimit,
-          snapshot_.memory.canUseRtScheduling ? "yes" : "no"));
+  log->info(label(),
+            fmt::format("  memlock={}{} fd_limit={}/{} rt_sched={}",
+                        snapshot_.memory.memlockUnlimited ? "unlimited" : "",
+                        snapshot_.memory.memlockUnlimited
+                            ? ""
+                            : fmt::format("{}MB", snapshot_.memory.memlockSoftBytes /
+                                                      (static_cast<std::uint64_t>(1024 * 1024)))
+                                  .c_str(),
+                        snapshot_.memory.fdSoftLimit, snapshot_.memory.fdHardLimit,
+                        snapshot_.memory.canUseRtScheduling ? "yes" : "no"));
 
   // GPU
   if (snapshot_.gpu.available) {

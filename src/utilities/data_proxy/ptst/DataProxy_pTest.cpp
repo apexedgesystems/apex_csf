@@ -130,7 +130,7 @@ PERF_TEST(ByteMaskProxy, MaskSizeScaling) {
   std::printf("%-12s %12s %12s\n", "Mask Size", "ops/s", "ns/call");
   std::printf("%s\n", std::string(40, '-').c_str());
 
-  for (std::uint8_t maskLen : {1, 4, 8, 16, 32}) {
+  for (std::uint8_t maskLen : std::array<std::uint8_t, 5>{1, 4, 8, 16, 32}) {
     ByteMaskProxy proxy;
     (void)proxy.pushZeroMask(0, maskLen);
     data.fill(0xFF);

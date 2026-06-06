@@ -258,6 +258,7 @@ inline constexpr bool isTwoByteInstruction(std::uint8_t byte) {
     return true; // JCN
   case 0x2:
     return (byte & 0x1) == 0; // FIM (even), SRC is 1-byte (odd)
+  // NOLINTNEXTLINE(bugprone-branch-clone): per-opcode ISA rows, kept distinct
   case 0x4:
     return true; // JUN
   case 0x5:

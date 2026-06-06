@@ -33,7 +33,9 @@ using apex::math::linalg::test::tol;
 TEST(ArrayGemmTest, Gemm_RowMajor_Float) {
   using value_t = float;
 
-  std::vector<value_t> aBuf(2 * 3), bBuf(3 * 2), cBuf(2 * 2, value_t(0)), refBuf(2 * 2, value_t(0));
+  std::vector<value_t> aBuf(static_cast<std::size_t>(2 * 3)), bBuf(static_cast<std::size_t>(3 * 2)),
+      cBuf(static_cast<std::size_t>(2 * 2), value_t(0)),
+      refBuf(static_cast<std::size_t>(2 * 2), value_t(0));
   auto a = makeRowView(aBuf, 2, 3);
   auto b = makeRowView(bBuf, 3, 2);
   auto c = makeRowView(cBuf, 2, 2);
@@ -60,7 +62,8 @@ TEST(ArrayGemmTest, Gemm_RowMajor_Float) {
 TEST(ArrayGemmTest, Gemm_RowMajor_Double_AlphaBeta) {
   using value_t = double;
 
-  std::vector<value_t> aBuf(2 * 2), bBuf(2 * 2), cBuf(2 * 2), refBuf(2 * 2);
+  std::vector<value_t> aBuf(static_cast<std::size_t>(2 * 2)), bBuf(static_cast<std::size_t>(2 * 2)),
+      cBuf(static_cast<std::size_t>(2 * 2)), refBuf(static_cast<std::size_t>(2 * 2));
   auto a = makeRowView(aBuf, 2, 2);
   auto b = makeRowView(bBuf, 2, 2);
   auto c = makeRowView(cBuf, 2, 2);
@@ -90,7 +93,8 @@ TEST(ArrayGemmTest, Gemm_RowMajor_Double_AlphaBeta) {
 TEST(ArrayGemmTest, Gemm_ShapeMismatch) {
   using value_t = double;
 
-  std::vector<value_t> aBuf(2 * 3), bBuf(2 * 2), cBuf(2 * 2, value_t(0));
+  std::vector<value_t> aBuf(static_cast<std::size_t>(2 * 3)), bBuf(static_cast<std::size_t>(2 * 2)),
+      cBuf(static_cast<std::size_t>(2 * 2), value_t(0));
   auto a = makeRowView(aBuf, 2, 3);
   auto b = makeRowView(bBuf, 2, 2);
   auto c = makeRowView(cBuf, 2, 2);
@@ -106,7 +110,8 @@ TEST(ArrayGemmTest, Gemm_ShapeMismatch) {
 TEST(ArrayGemmTest, Gemm_LayoutMismatch) {
   using value_t = float;
 
-  std::vector<value_t> aBuf(2 * 3), bBuf(3 * 2), cBuf(2 * 2, value_t(0));
+  std::vector<value_t> aBuf(static_cast<std::size_t>(2 * 3)), bBuf(static_cast<std::size_t>(3 * 2)),
+      cBuf(static_cast<std::size_t>(2 * 2), value_t(0));
   auto a = makeRowView(aBuf, 2, 3);
   auto b = makeColView(bBuf, 3, 2);
   auto c = makeRowView(cBuf, 2, 2);

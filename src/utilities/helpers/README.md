@@ -324,7 +324,7 @@ docker compose run --rm -T dev-cuda make clean debug
 
 ## 6. Testing
 
-Tests are in `tst/` with comprehensive coverage:
+Tests are in `utst/` with comprehensive coverage:
 
 ```bash
 # Run all tests

@@ -207,20 +207,36 @@ zenith-validate: zenith-target
 
 STATIC_PRESET ?= hosted-x86_64-static
 STATIC_DIR    := build/$(STATIC_PRESET)
+CLANG_TIDY    ?= run-clang-tidy-21
 
-# Static analysis with Clang's scan-build. Uses its own preset/build dir so
-# scan-build's wrapped object files don't pollute the normal debug build.
+# Static analysis with clang-tidy. The static preset disables precompiled
+# headers, so the analyzer runs straight off compile_commands.json with no
+# build step. .clang-tidy picks the checks and gates the clean set via
+# WarningsAsErrors; modernize-avoid-c-arrays stays advisory. Only first-party
+# sources under src/ are scanned -- fetched dependencies are excluded.
 static: prep
 	$(call _configure,$(STATIC_PRESET),$(STATIC_DIR))
-	$(call log,static,Running scan-build)
-	@cd "$(STATIC_DIR)" && scan-build --status-bugs ninja -j$(NUM_JOBS)
-	$(call log,static,Running tests to verify)
-	@cd "$(STATIC_DIR)" && $(call with_lib_path,ctest --output-on-failure)
+	$(call log,static,Running clang-tidy)
+	@$(CLANG_TIDY) -p "$(STATIC_DIR)" -quiet "$(CURDIR)/src/.*\.(cpp|cc)$$"
+
+# cppcheck: an independent static-analysis engine that catches different defects
+# than clang-tidy (warning/style/performance/portability). Advisory for now --
+# it reports but does not fail the build; add --error-exitcode=1 to gate. build/
+# is excluded. The MISRA addon is intentionally NOT used: it implements MISRA C
+# 2012, which is noise against this C++23 codebase; real MISRA C++ conformance
+# needs a dedicated tool and is tracked separately.
+cppcheck: prep
+	$(call log,cppcheck,Running cppcheck static analysis)
+	@cppcheck --enable=warning,style,performance,portability \
+	  --std=c++23 --language=c++ --inline-suppr --quiet \
+	  --suppress=missingInclude --suppress=missingIncludeSystem \
+	  --suppress=unmatchedSuppression --suppress=syntaxError \
+	  -i build src
 
 # ------------------------------------------------------------------------------
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: static tools apex-data-db tprm-templates ops-deck ops-artifacts ops-sdk zenith-target zenith-validate
+.PHONY: static cppcheck tools apex-data-db tprm-templates ops-deck ops-artifacts ops-sdk zenith-target zenith-validate
 
 endif  # TOOLS_MK_GUARD

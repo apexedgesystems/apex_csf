@@ -17,6 +17,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <vector>
 
 using sim::electronics::algorithms::mna::NetID;
@@ -162,7 +163,7 @@ TEST(StampContextTest, ExternalMatrixConstructorAdvertisesMode) {
 
 /** @test stampConductance writes column-major into the external matrix */
 TEST(StampContextTest, StampConductanceWritesIntoExternalMatrixColumnMajor) {
-  std::vector<double> A(4 * 4, 0.0);
+  std::vector<double> A(static_cast<std::size_t>(4 * 4), 0.0);
   StampContext ctx(3, A.data(), 4);
   ctx.stampConductance(/*a=*/1, /*b=*/2, /*g=*/0.5);
 

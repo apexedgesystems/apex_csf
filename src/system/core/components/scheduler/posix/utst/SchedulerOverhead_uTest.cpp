@@ -61,6 +61,7 @@ public:
     taskStartTimes_[0] = std::chrono::steady_clock::now();
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     taskEndTimes_[0] = std::chrono::steady_clock::now();
+    tasksCompleted_.fetch_add(1, std::memory_order_release);
     return 0;
   }
 
@@ -68,6 +69,7 @@ public:
     taskStartTimes_[1] = std::chrono::steady_clock::now();
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
     taskEndTimes_[1] = std::chrono::steady_clock::now();
+    tasksCompleted_.fetch_add(1, std::memory_order_release);
     return 0;
   }
 
@@ -75,6 +77,7 @@ public:
     taskStartTimes_[2] = std::chrono::steady_clock::now();
     std::this_thread::sleep_for(std::chrono::milliseconds(2));
     taskEndTimes_[2] = std::chrono::steady_clock::now();
+    tasksCompleted_.fetch_add(1, std::memory_order_release);
     return 0;
   }
 
@@ -82,6 +85,7 @@ public:
     taskStartTimes_[3] = std::chrono::steady_clock::now();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
     taskEndTimes_[3] = std::chrono::steady_clock::now();
+    tasksCompleted_.fetch_add(1, std::memory_order_release);
     return 0;
   }
 
@@ -89,6 +93,7 @@ public:
     taskStartTimes_[4] = std::chrono::steady_clock::now();
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
     taskEndTimes_[4] = std::chrono::steady_clock::now();
+    tasksCompleted_.fetch_add(1, std::memory_order_release);
     return 0;
   }
 
@@ -102,6 +107,7 @@ protected:
 
   std::chrono::steady_clock::time_point taskStartTimes_[5];
   std::chrono::steady_clock::time_point taskEndTimes_[5];
+  std::atomic<std::size_t> tasksCompleted_{0};
 };
 
 /**
@@ -142,8 +148,17 @@ TEST_F(SchedulerOverheadTest, ParallelTasksOverhead) {
 
   ASSERT_EQ(status, Status::SUCCESS);
 
-  // Wait for async tasks to complete
-  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  // Wait for all dispatched tasks to finish. This establishes happens-before
+  // on their time-array writes via the release/acquire on tasksCompleted_; a
+  // sleep is not a synchronization edge. Bounded so a stuck task fails the
+  // test instead of hanging.
+  {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (tasksCompleted_.load(std::memory_order_acquire) < 5) {
+      ASSERT_LT(std::chrono::steady_clock::now(), deadline) << "tasks did not complete in time";
+      std::this_thread::yield();
+    }
+  }
 
   double schedulerTime = toMs(schedEnd - schedStart);
 

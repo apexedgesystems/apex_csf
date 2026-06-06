@@ -200,6 +200,17 @@ Scenario: Containerized services, variable CPU allocation
 | Sensor data logger       | RingBuffer                 | Single thread reads and writes                    |
 | Message broker           | LockFreeQueue              | Multiple publishers and subscribers               |
 
+### Sanitizer-Enforced RT Contracts
+
+`SpinLock`'s methods are tagged with the `APEX_NONBLOCKING` shim
+(`compat_rt_attrs.hpp`), which expands to `[[clang::nonblocking]]` under Clang
+and to nothing elsewhere. A `-fsanitize=realtime` build (`make rtsan`) then
+verifies at runtime that nothing reached from those methods allocates, locks, or
+makes a blocking syscall -- so a regression that sneaks a blocking call into a
+spin path fails a test rather than a deadline. The annotation is opt-in per
+primitive; more RT paths gain it as their `T`-independent nonblocking-ness is
+established.
+
 ---
 
 ## 4. Module Reference

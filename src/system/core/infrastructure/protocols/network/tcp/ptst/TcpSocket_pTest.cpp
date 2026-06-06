@@ -218,7 +218,7 @@ PERF_TEST(TcpSocketPerf, EchoLatencyMedium) {
 PERF_TEST(TcpSocketPerf, EchoLatencyLarge) {
   UB_PERF_GUARD(perf);
 
-  constexpr size_t PAYLOAD_SIZE = 16 * 1024;
+  constexpr size_t PAYLOAD_SIZE = static_cast<const size_t>(16 * 1024);
   const std::string IP = "127.0.0.1";
   const std::string PORT = "19102";
 

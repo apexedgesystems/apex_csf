@@ -33,6 +33,7 @@
 #include "src/sim/electronics/chips/intel4004/grid/inc/Intel4004Grid.hpp"
 
 #include <algorithm>
+#include <cstddef>
 #include <functional>
 #include <map>
 #include <unordered_set>
@@ -910,12 +911,14 @@ struct Intel4004GridLevel1 : Intel4004Grid {
           writeCy(d > 0xF);
           break;
         }
+        // NOLINTNEXTLINE(bugprone-branch-clone): LD (0xA) vs XCH (0xB), distinct opcodes
         case 0xA:
           writeAcc(readReg(opa));
           break;
         case 0xB:
           writeAcc(readReg(opa));
           break; // XCH ACC part
+        // NOLINTNEXTLINE(bugprone-branch-clone): BBL (0xC) vs LDM (0xD), distinct opcodes
         case 0xC:
           writeAcc(opa);
           break; // BBL d: ACC = d (PC pop handled elsewhere)
@@ -933,8 +936,8 @@ struct Intel4004GridLevel1 : Intel4004Grid {
           const std::size_t OUT_ADDR =
               (static_cast<std::size_t>(ramBank_ & 0x3) * 4u) + ((srcAddress_ >> 6) & 0x3);
           auto statusAddr = [&](std::uint8_t reg) -> std::size_t {
-            const std::size_t BASE =
-                (static_cast<std::size_t>(ramBank_ & 0x3) * 64u) + ((srcAddress_ >> 4) & 0xF) * 4u;
+            const std::size_t BASE = (static_cast<std::size_t>(ramBank_ & 0x3) * 64u) +
+                                     static_cast<std::size_t>(((srcAddress_ >> 4) & 0xF) * 4u);
             return BASE + (reg & 0x3);
           };
           switch (opa) {

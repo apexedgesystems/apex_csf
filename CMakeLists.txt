@@ -14,7 +14,7 @@ cmake_minimum_required(VERSION 3.24)
 #   -DCUDA_ARCHS="80;86;89"     Ampere + Ada
 #   -DENABLE_COVERAGE=ON        Enable coverage (Debug + Clang only)
 #   -DENABLE_CLANG_TIDY=ON      Enable clang-tidy
-#   -DSANITIZER=asan|tsan|ubsan Enable sanitizers
+#   -DSANITIZER=asan|tsan|ubsan|rtsan Enable sanitizers
 #
 # ==============================================================================
 
@@ -151,6 +151,8 @@ option(APEX_BUILD_TOOLS "Build CLI tools (Rust, Python, Shell)" ON)
 # ------------------------------------------------------------------------------
 # CUDA (optional)
 # ------------------------------------------------------------------------------
+option(APEX_REQUIRE_CUDA "Fail configure if CUDA is required but not found" OFF)
+
 find_package(CUDAToolkit QUIET)
 
 if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPILER))
@@ -228,30 +230,112 @@ if (CUDAToolkit_FOUND AND (NOT CMAKE_CROSSCOMPILING OR DEFINED CMAKE_CUDA_COMPIL
   set(CMAKE_CUDA_FLAGS_MINSIZEREL "${CMAKE_CUDA_FLAGS_MINSIZEREL} -DNDEBUG")
 
   add_compile_definitions($<$<COMPILE_LANGUAGE:CUDA>:FMT_USE_BITINT=0>)
+elseif (APEX_REQUIRE_CUDA)
+  message(FATAL_ERROR "APEX_REQUIRE_CUDA is ON but no usable CUDA toolkit was found. "
+                      "Install the CUDA toolkit or configure with a non-CUDA preset."
+  )
 endif ()
 
 # ------------------------------------------------------------------------------
 # Sanitizers
 # ------------------------------------------------------------------------------
+# Sanitizers compose as a set: asan -> address, tsan -> thread, ubsan ->
+# undefined, rtsan -> realtime. undefined combines with any of the others; the
+# illegal pairs are address+thread and realtime+(address|thread), since those
+# runtimes use conflicting shadow-memory / interception models. So build the
+# -fsanitize argument from the requested set and validate the illegal pairs,
+# rather than enumerating combinations.
+#
+# SANITIZER accepts a ; or , separated list, e.g. "asan" or "asan,ubsan".
 set(SANITIZER
     ""
-    CACHE STRING "Enable sanitizer: asan | tsan | ubsan"
+    CACHE STRING "Sanitizers: ; or , separated list of asan | tsan | ubsan | rtsan"
 )
 
 if (SANITIZER
     AND NOT CMAKE_CROSSCOMPILING
     AND NOT APEX_PLATFORM_BAREMETAL
 )
-  if (SANITIZER STREQUAL "asan")
-    add_compile_options(-fsanitize=address -fno-omit-frame-pointer)
-    add_link_options(-fsanitize=address -fno-omit-frame-pointer)
-  elseif (SANITIZER STREQUAL "tsan")
-    add_compile_options(-fsanitize=thread)
-    add_link_options(-fsanitize=thread)
-  elseif (SANITIZER STREQUAL "ubsan")
-    add_compile_options(-fsanitize=undefined)
-    add_link_options(-fsanitize=undefined)
+  string(REPLACE "," ";" _san_req "${SANITIZER}")
+  list(REMOVE_DUPLICATES _san_req)
+
+  # Map each requested sanitizer to its -fsanitize check name.
+  set(_san_checks "")
+  foreach (_s IN LISTS _san_req)
+    if (_s STREQUAL "asan")
+      list(APPEND _san_checks address)
+    elseif (_s STREQUAL "tsan")
+      list(APPEND _san_checks thread)
+    elseif (_s STREQUAL "ubsan")
+      list(APPEND _san_checks undefined)
+    elseif (_s STREQUAL "rtsan")
+      list(APPEND _san_checks realtime)
+    else ()
+      message(FATAL_ERROR "SANITIZER: unknown '${_s}' (expected asan, tsan, ubsan, or rtsan)")
+    endif ()
+  endforeach ()
+
+  if ("address" IN_LIST _san_checks AND "thread" IN_LIST _san_checks)
+    message(FATAL_ERROR "SANITIZER: asan and tsan are mutually exclusive")
   endif ()
+
+  # RTSan instruments via function interception that conflicts with the
+  # asan/tsan shadow-memory runtimes; keep it in its own build.
+  if ("realtime" IN_LIST _san_checks AND ("address" IN_LIST _san_checks OR "thread" IN_LIST
+                                                                           _san_checks)
+  )
+    message(FATAL_ERROR "SANITIZER: rtsan cannot combine with asan or tsan")
+  endif ()
+
+  list(JOIN _san_checks "," _san_fsanitize)
+  set(_san_flags "-fsanitize=${_san_fsanitize}")
+
+  # Frame pointers keep stack traces readable under AddressSanitizer.
+  if ("address" IN_LIST _san_checks)
+    list(APPEND _san_flags -fno-omit-frame-pointer)
+  endif ()
+
+  # UBSan gates: undefined behavior aborts (and fails the test) instead of
+  # logging and continuing.
+  if ("undefined" IN_LIST _san_checks)
+    list(APPEND _san_flags -fno-sanitize-recover=undefined)
+  endif ()
+
+  add_compile_options(${_san_flags})
+  add_link_options(${_san_flags})
+  message(STATUS "[Sanitizer] -fsanitize=${_san_fsanitize}")
+endif ()
+
+# ------------------------------------------------------------------------------
+# Hardened build (defense-in-depth; release-based, native only)
+# ------------------------------------------------------------------------------
+# Compile- and link-time mitigations that turn latent memory/UB issues into
+# immediate, diagnosable failures. _FORTIFY_SOURCE needs optimization, so the
+# hardened preset is release-based. Native only -- cross/bare-metal toolchains
+# do not provide these consistently. C++ only, matching the warnings policy.
+option(HARDENED "Enable hardening flags (FORTIFY, libstdc++ assertions, stack/CF protection)" OFF)
+if (HARDENED
+    AND NOT CMAKE_CROSSCOMPILING
+    AND NOT APEX_PLATFORM_BAREMETAL
+)
+  set(_harden_flags
+      -U_FORTIFY_SOURCE
+      -D_FORTIFY_SOURCE=3 # glibc buffer-overflow checks (needs -O)
+      -D_GLIBCXX_ASSERTIONS # libstdc++ precondition checks (bounds, ...)
+      -fstack-protector-strong # stack canaries
+      -fstack-clash-protection # large-stack probing
+      -fcf-protection=full # control-flow integrity (CET; no-op pre-CET)
+      -ftrivial-auto-var-init=zero # zero otherwise-uninitialized locals
+  )
+  # Wrap each flag in its own genex -- a ;-list inside one genex gets split by
+  # add_compile_options, mangling the first and last entries.
+  foreach (_hf IN LISTS _harden_flags)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${_hf}>)
+  endforeach ()
+  add_link_options(LINKER:-z,relro LINKER:-z,now)
+  message(
+    STATUS "[Hardened] FORTIFY_SOURCE=3, _GLIBCXX_ASSERTIONS, stack/CF protection, auto-var-init"
+  )
 endif ()
 
 # ------------------------------------------------------------------------------
@@ -318,6 +402,42 @@ if (ENABLE_CLANG_TIDY)
   else ()
     message(WARNING "ENABLE_CLANG_TIDY=ON but clang-tidy not found")
   endif ()
+endif ()
+
+# ------------------------------------------------------------------------------
+# Gated warnings (first-party code only)
+# ------------------------------------------------------------------------------
+# Gate a curated set of warnings as errors -- but only for our own sources, so
+# dependency builds are never gated (ExternalDependencies were configured above;
+# our subdirs are added below). Each flag gets its own generator expression
+# because a semicolon-list inside one $<...> is split by add_compile_options.
+#
+# The numeric-narrowing classes (implicit-int-conversion / shorten-64-to-32 /
+# double-promotion) are gated only after every existing site was reviewed and
+# resolved individually -- each cast records why the value is provably in range,
+# and the genuinely unbounded CLI parses now clamp-and-warn instead of silently
+# truncating. They are NOT silenced wholesale; the gate keeps new truncation
+# paths from landing. Domain-inherent noisy classes (sign-conversion,
+# float-equal) are left out as they fight legitimate patterns in this tree.
+if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "TI")
+  foreach (
+    _wf IN
+    ITEMS -Wshadow
+          -Wold-style-cast
+          -Wimplicit-int-conversion
+          -Wshorten-64-to-32
+          -Wdouble-promotion
+          -Werror=unused-variable
+          -Werror=unused-const-variable
+          -Werror=deprecated-volatile
+          -Werror=shadow
+          -Werror=old-style-cast
+          -Werror=implicit-int-conversion
+          -Werror=shorten-64-to-32
+          -Werror=double-promotion
+  )
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${_wf}>)
+  endforeach ()
 endif ()
 
 # ------------------------------------------------------------------------------

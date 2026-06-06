@@ -174,7 +174,7 @@ TEST(CanStatsAdapter, RecvIncrementsCounters) {
   tx.data[0] = 0xAA;
   tx.data[1] = 0xBB;
   tx.data[2] = 0xCC;
-  ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), (ssize_t)sizeof(tx));
+  ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), static_cast<ssize_t>(sizeof(tx)));
 
   // Receive on adapter
   CanFrame rx{};
@@ -186,7 +186,7 @@ TEST(CanStatsAdapter, RecvIncrementsCounters) {
 
   // Send another frame
   tx.can_dlc = 6;
-  ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), (ssize_t)sizeof(tx));
+  ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), static_cast<ssize_t>(sizeof(tx)));
   EXPECT_EQ(adapter.recv(rx, 500), Status::SUCCESS);
 
   s = adapter.stats();

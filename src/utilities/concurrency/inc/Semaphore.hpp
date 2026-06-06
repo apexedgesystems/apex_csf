@@ -18,9 +18,9 @@
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <cstddef>
-#include <mutex>
+#include <cstdint>
+#include <thread>
 
 namespace apex {
 namespace concurrency {
@@ -41,7 +41,7 @@ public:
   /**
    * @brief Construct a semaphore with initial count.
    * @param initial Initial count (default 0).
-   * @note NOT RT-safe: May allocate internally (mutex, CV).
+   * @note Trivial: holds a single atomic counter, no internal allocation.
    */
   explicit Semaphore(std::size_t initial = 0) noexcept;
 
@@ -93,39 +93,44 @@ public:
   [[nodiscard]] std::size_t count() const;
 
 private:
-  mutable std::mutex mutex_;
-  std::condition_variable cv_;
-  std::atomic<std::size_t> count_;
+  // 32-bit so wait()/notify() use the native futex directly (a 64-bit counter
+  // would route through libstdc++'s slower proxy waiter-pool). Permit counts
+  // are bounded by the (small) queue capacity, so 32 bits is ample.
+  std::atomic<std::uint32_t> count_;
+
+  // Number of threads parked in acquire(). release() only issues a futex
+  // wake when this is non-zero, so the hot path (busy pool, no waiters) pays
+  // just an atomic add + load -- no notify call. seq_cst on count_/waiters_
+  // forms a Dekker handshake that keeps the wakeup from being lost.
+  std::atomic<std::uint32_t> waiters_{0};
 };
 
 /* ----------------------------- Template Implementations ----------------------------- */
 
 template <class Rep, class Period>
 bool Semaphore::tryAcquireFor(const std::chrono::duration<Rep, Period>& timeout) {
-  // Fast path: try atomic first.
-  std::size_t current = count_.load(std::memory_order_relaxed);
-  while (current > 0) {
-    if (count_.compare_exchange_weak(current, current - 1, std::memory_order_acquire,
-                                     std::memory_order_relaxed)) {
-      return true;
-    }
+  // Fast path: try atomic decrement first.
+  if (tryAcquire()) {
+    return true;
   }
 
-  // Slow path: wait with timeout.
-  std::unique_lock<std::mutex> lk(mutex_);
-  if (!cv_.wait_for(lk, timeout, [this]() { return count_.load(std::memory_order_relaxed) > 0; })) {
-    return false; // Timeout
-  }
-
-  // Try to acquire after wakeup.
-  current = count_.load(std::memory_order_relaxed);
-  while (current > 0) {
-    if (count_.compare_exchange_weak(current, current - 1, std::memory_order_acquire,
-                                     std::memory_order_relaxed)) {
+  // Slow path: poll with bounded exponential backoff until the deadline.
+  // atomic::wait has no timed overload, so a timed acquire polls rather than
+  // parks. This path is never on a hot path (the thread pool only ever calls
+  // the untimed acquire()), so the small poll overhead is acceptable.
+  const auto deadline = std::chrono::steady_clock::now() + timeout;
+  std::chrono::nanoseconds backoff{500};
+  const std::chrono::nanoseconds maxBackoff{std::chrono::microseconds(100)};
+  while (std::chrono::steady_clock::now() < deadline) {
+    if (tryAcquire()) {
       return true;
     }
+    std::this_thread::sleep_for(backoff);
+    if (backoff < maxBackoff) {
+      backoff *= 2;
+    }
   }
-  return false; // Lost race after wakeup
+  return tryAcquire(); // final attempt at the deadline
 }
 
 } // namespace concurrency

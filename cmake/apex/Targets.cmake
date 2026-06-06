@@ -78,6 +78,45 @@ function (_apex_check_requirements result_var)
 endfunction ()
 
 # ------------------------------------------------------------------------------
+# _apex_gate(<out_skip> NAME <n> [BAREMETAL <bool>] [REQUIRES <reqs...>])
+#
+# Shared target-factory preamble. Sets <out_skip> TRUE when the target must be
+# skipped on the current platform -- either a default-POSIX target on a
+# bare-metal build (no BAREMETAL flag), or one whose explicit REQUIRES are
+# unmet. Each factory calls this and returns early on skip.
+# ------------------------------------------------------------------------------
+function (_apex_gate _out_skip)
+  cmake_parse_arguments(G "" "NAME;BAREMETAL" "REQUIRES" ${ARGN})
+  set(${_out_skip}
+      FALSE
+      PARENT_SCOPE
+  )
+
+  # Default: require POSIX unless the BAREMETAL flag is set.
+  if (NOT G_BAREMETAL AND APEX_PLATFORM_BAREMETAL)
+    if (APEX_TARGETS_VERBOSE)
+      message(STATUS "[apex] SKIP ${G_NAME} (bare-metal, no BAREMETAL flag)")
+    endif ()
+    set(${_out_skip}
+        TRUE
+        PARENT_SCOPE
+    )
+    return()
+  endif ()
+
+  # Check explicit platform requirements.
+  if (G_REQUIRES)
+    _apex_check_requirements(_satisfied NAME ${G_NAME} REQUIRES ${G_REQUIRES})
+    if (NOT _satisfied)
+      set(${_out_skip}
+          TRUE
+          PARENT_SCOPE
+      )
+    endif ()
+  endif ()
+endfunction ()
+
+# ------------------------------------------------------------------------------
 # apex_add_interface_library(...)
 #
 # Define a header-only module as an INTERFACE target.
@@ -99,22 +138,17 @@ function (apex_add_interface_library)
   cmake_parse_arguments(IL "BAREMETAL" "NAME;INC" "DEPS_INTERFACE;DEFS;FEATURES;REQUIRES" ${ARGN})
   apex_require(IL_NAME IL_INC)
 
-  # Default: require POSIX unless BAREMETAL flag is set
-  set(_reqs ${IL_REQUIRES})
-  if (NOT IL_BAREMETAL AND APEX_PLATFORM_BAREMETAL)
-    # Skip on bare-metal unless explicitly opted in
-    if (APEX_TARGETS_VERBOSE)
-      message(STATUS "[apex] SKIP ${IL_NAME} (bare-metal, no BAREMETAL flag)")
-    endif ()
+  _apex_gate(
+    _skip
+    NAME
+    ${IL_NAME}
+    BAREMETAL
+    "${IL_BAREMETAL}"
+    REQUIRES
+    ${IL_REQUIRES}
+  )
+  if (_skip)
     return()
-  endif ()
-
-  # Check explicit platform requirements
-  if (_reqs)
-    _apex_check_requirements(_satisfied NAME ${IL_NAME} REQUIRES ${_reqs})
-    if (NOT _satisfied)
-      return()
-    endif ()
   endif ()
 
   add_library(${IL_NAME} INTERFACE)
@@ -170,22 +204,17 @@ function (apex_add_library)
   )
   apex_require(AL_NAME AL_TYPE AL_INC AL_SRC)
 
-  # Default: require POSIX unless BAREMETAL flag is set
-  set(_reqs ${AL_REQUIRES})
-  if (NOT AL_BAREMETAL AND APEX_PLATFORM_BAREMETAL)
-    # Skip on bare-metal unless explicitly opted in
-    if (APEX_TARGETS_VERBOSE)
-      message(STATUS "[apex] SKIP ${AL_NAME} (bare-metal, no BAREMETAL flag)")
-    endif ()
+  _apex_gate(
+    _skip
+    NAME
+    ${AL_NAME}
+    BAREMETAL
+    "${AL_BAREMETAL}"
+    REQUIRES
+    ${AL_REQUIRES}
+  )
+  if (_skip)
     return()
-  endif ()
-
-  # Check explicit platform requirements
-  if (_reqs)
-    _apex_check_requirements(_satisfied NAME ${AL_NAME} REQUIRES ${_reqs})
-    if (NOT _satisfied)
-      return()
-    endif ()
   endif ()
 
   # Force STATIC when bare-metal or APEX_STATIC_LINK is set
@@ -319,22 +348,17 @@ function (apex_add_app)
   )
   apex_require(APP_NAME APP_SRC)
 
-  # Default: require POSIX unless BAREMETAL flag is set
-  set(_reqs ${APP_REQUIRES})
-  if (NOT APP_BAREMETAL AND APEX_PLATFORM_BAREMETAL)
-    # Skip on bare-metal unless explicitly opted in
-    if (APEX_TARGETS_VERBOSE)
-      message(STATUS "[apex] SKIP ${APP_NAME} (bare-metal, no BAREMETAL flag)")
-    endif ()
+  _apex_gate(
+    _skip
+    NAME
+    ${APP_NAME}
+    BAREMETAL
+    "${APP_BAREMETAL}"
+    REQUIRES
+    ${APP_REQUIRES}
+  )
+  if (_skip)
     return()
-  endif ()
-
-  # Check explicit platform requirements
-  if (_reqs)
-    _apex_check_requirements(_satisfied NAME ${APP_NAME} REQUIRES ${_reqs})
-    if (NOT _satisfied)
-      return()
-    endif ()
   endif ()
 
   set(_args
@@ -398,22 +422,17 @@ function (apex_add_tool)
   )
   apex_require(TOOL_NAME TOOL_SRC)
 
-  # Default: require POSIX unless BAREMETAL flag is set
-  set(_reqs ${TOOL_REQUIRES})
-  if (NOT TOOL_BAREMETAL AND APEX_PLATFORM_BAREMETAL)
-    # Skip on bare-metal unless explicitly opted in
-    if (APEX_TARGETS_VERBOSE)
-      message(STATUS "[apex] SKIP ${TOOL_NAME} (bare-metal, no BAREMETAL flag)")
-    endif ()
+  _apex_gate(
+    _skip
+    NAME
+    ${TOOL_NAME}
+    BAREMETAL
+    "${TOOL_BAREMETAL}"
+    REQUIRES
+    ${TOOL_REQUIRES}
+  )
+  if (_skip)
     return()
-  endif ()
-
-  # Check explicit platform requirements
-  if (_reqs)
-    _apex_check_requirements(_satisfied NAME ${TOOL_NAME} REQUIRES ${_reqs})
-    if (NOT _satisfied)
-      return()
-    endif ()
   endif ()
 
   set(_args

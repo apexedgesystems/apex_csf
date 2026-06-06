@@ -192,7 +192,8 @@ PERF_TEST(MnaDense, LapackSolve_Small) {
           for (const auto& s : STAMPS) {
             mna.addConductance(s.a, s.b, s.g);
           }
-          mna.addVoltageSource(N - 1, 0, 5.0);
+          mna.addVoltageSource(static_cast<sim::electronics::algorithms::mna::NetID>(N - 1), 0,
+                               5.0);
           auto r = mna.solve();
           sink = r.nodeVoltages[1];
         },
@@ -229,7 +230,8 @@ PERF_TEST(MnaSparse, Scaling) {
           for (const auto& s : STAMPS) {
             mna.addConductance(s.a, s.b, s.g);
           }
-          mna.addVoltageSource(N - 1, 0, 5.0);
+          mna.addVoltageSource(static_cast<sim::electronics::algorithms::mna::NetID>(N - 1), 0,
+                               5.0);
           mna.factorize();
           auto r = mna.solve();
           sink = r.nodeVoltages[1];

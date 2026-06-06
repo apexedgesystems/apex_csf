@@ -675,11 +675,13 @@ inline void applyArmControl(ActionInterface& iface, const DataAction& action) no
   switch (action.trigger) {
   case ActionTrigger::IMMEDIATE:
     return true;
+  // NOLINTNEXTLINE(bugprone-branch-clone): distinct triggers, same check today
   case ActionTrigger::AT_CYCLE:
     return currentCycle >= action.triggerParam;
   case ActionTrigger::AFTER_CYCLES:
     // triggerParam was set relative; check if elapsed
     return currentCycle >= action.triggerParam;
+  // NOLINTNEXTLINE(bugprone-branch-clone): distinct triggers, same result today
   case ActionTrigger::AT_TIME:
     // Time-based triggers handled externally (sim time != cycle count)
     return false;

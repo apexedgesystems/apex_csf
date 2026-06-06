@@ -700,9 +700,15 @@ private:
       return false;
     }
 
-    // Extract results
-    std::memcpy(nodeVoltages, b, n * sizeof(double));
-    std::memcpy(branchCurrents, b + n, m * sizeof(double));
+    // Extract results. Guard the copies: an empty partition (n or m == 0)
+    // yields a null output pointer, and memcpy(nullptr, ..., 0) is undefined
+    // behavior even at zero length. A zero-size copy is also wasted work.
+    if (n > 0) {
+      std::memcpy(nodeVoltages, b, n * sizeof(double));
+    }
+    if (m > 0) {
+      std::memcpy(branchCurrents, b + n, m * sizeof(double));
+    }
 
     return true;
   }
@@ -783,9 +789,15 @@ private:
       return false;
     }
 
-    // Extract results
-    std::memcpy(nodeVoltages, b, n * sizeof(double));
-    std::memcpy(branchCurrents, b + n, m * sizeof(double));
+    // Extract results. Guard the copies: an empty partition (n or m == 0)
+    // yields a null output pointer, and memcpy(nullptr, ..., 0) is undefined
+    // behavior even at zero length. A zero-size copy is also wasted work.
+    if (n > 0) {
+      std::memcpy(nodeVoltages, b, n * sizeof(double));
+    }
+    if (m > 0) {
+      std::memcpy(branchCurrents, b + n, m * sizeof(double));
+    }
 
     return true;
   }
@@ -849,9 +861,15 @@ private:
       return false;
     }
 
-    // Extract results
-    std::memcpy(nodeVoltages, b, n * sizeof(double));
-    std::memcpy(branchCurrents, b + n, m * sizeof(double));
+    // Extract results. Guard the copies: an empty partition (n or m == 0)
+    // yields a null output pointer, and memcpy(nullptr, ..., 0) is undefined
+    // behavior even at zero length. A zero-size copy is also wasted work.
+    if (n > 0) {
+      std::memcpy(nodeVoltages, b, n * sizeof(double));
+    }
+    if (m > 0) {
+      std::memcpy(branchCurrents, b + n, m * sizeof(double));
+    }
 
     return true;
   }

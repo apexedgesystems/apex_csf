@@ -332,8 +332,8 @@ private:
   }
 
   [[nodiscard]] std::size_t ramStatusAddr(std::uint8_t statusReg) const noexcept {
-    const std::size_t BASE =
-        static_cast<std::size_t>((ramBank & 0x3) * 64) + ((srcAddress >> 4) & 0xF) * 4;
+    const std::size_t BASE = static_cast<std::size_t>((ramBank & 0x3) * 64) +
+                             static_cast<std::size_t>(((srcAddress >> 4) & 0xF) * 4);
     return BASE + (statusReg & 0x3);
   }
 
@@ -351,6 +351,7 @@ private:
     case WMP:
       ramOutput[ramOutputAddr()] = accumulator;
       break;
+    // NOLINTNEXTLINE(bugprone-branch-clone): distinct IO ops, both external no-ops
     case WRR:
       break; // ROM port write (external, no-op in behavioral model)
     case WPM:

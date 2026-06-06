@@ -77,6 +77,15 @@
       }
     },
     {
+      "name": "hosted-x86_64-asan-ubsan",
+      "displayName": "Native (Ubuntu) - Debug + Address+UB Sanitizer",
+      "inherits": "hosted-x86_64-debug",
+      "binaryDir": "build/hosted-x86_64-asan-ubsan",
+      "cacheVariables": {
+        "SANITIZER": "asan,ubsan"
+      }
+    },
+    {
       "name": "hosted-x86_64-tsan",
       "displayName": "Native (Ubuntu) - Debug + ThreadSanitizer",
       "inherits": "hosted-x86_64-debug",
@@ -95,6 +104,15 @@
       }
     },
     {
+      "name": "hosted-x86_64-rtsan",
+      "displayName": "Native (Ubuntu) - Debug + RealtimeSanitizer",
+      "inherits": "hosted-x86_64-debug",
+      "binaryDir": "build/hosted-x86_64-rtsan",
+      "cacheVariables": {
+        "SANITIZER": "rtsan"
+      }
+    },
+    {
       "name": "hosted-x86_64-coverage",
       "displayName": "Native (Ubuntu) - Debug + Coverage (LLVM source-based)",
       "inherits": "hosted-x86_64-debug",
@@ -106,9 +124,21 @@
     },
     {
       "name": "hosted-x86_64-static",
-      "displayName": "Native (Ubuntu) - Debug for scan-build static analysis",
+      "displayName": "Native (Ubuntu) - Debug for clang-tidy static analysis",
       "inherits": "hosted-x86_64-debug",
-      "binaryDir": "build/hosted-x86_64-static"
+      "binaryDir": "build/hosted-x86_64-static",
+      "cacheVariables": {
+        "CMAKE_DISABLE_PRECOMPILE_HEADERS": "ON"
+      }
+    },
+    {
+      "name": "hosted-x86_64-hardened",
+      "displayName": "Native (Ubuntu) - Release + hardening mitigations",
+      "inherits": "hosted-x86_64-release",
+      "binaryDir": "build/hosted-x86_64-hardened",
+      "cacheVariables": {
+        "HARDENED": "ON"
+      }
     },
     {
       "name": "cross-jetson-debug",
@@ -318,6 +348,10 @@
       "configurePreset": "hosted-x86_64-asan"
     },
     {
+      "name": "hosted-x86_64-asan-ubsan",
+      "configurePreset": "hosted-x86_64-asan-ubsan"
+    },
+    {
       "name": "hosted-x86_64-tsan",
       "configurePreset": "hosted-x86_64-tsan"
     },
@@ -326,12 +360,20 @@
       "configurePreset": "hosted-x86_64-ubsan"
     },
     {
+      "name": "hosted-x86_64-rtsan",
+      "configurePreset": "hosted-x86_64-rtsan"
+    },
+    {
       "name": "hosted-x86_64-coverage",
       "configurePreset": "hosted-x86_64-coverage"
     },
     {
       "name": "hosted-x86_64-static",
       "configurePreset": "hosted-x86_64-static"
+    },
+    {
+      "name": "hosted-x86_64-hardened",
+      "configurePreset": "hosted-x86_64-hardened"
     },
     {
       "name": "cross-jetson-debug",
@@ -404,128 +446,119 @@
   ],
   "testPresets": [
     {
+      "name": "_test-base",
+      "hidden": true,
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "ignore", "timeout": 300 }
+    },
+    {
       "name": "hosted-x86_64-debug",
-      "configurePreset": "hosted-x86_64-debug"
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-debug",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-debug/lib:$penv{LD_LIBRARY_PATH}"
+      }
     },
     {
       "name": "hosted-x86_64-release",
-      "configurePreset": "hosted-x86_64-release"
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-release",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-release/lib:$penv{LD_LIBRARY_PATH}"
+      }
     },
     {
       "name": "hosted-x86_64-cuda-debug",
-      "configurePreset": "hosted-x86_64-cuda-debug"
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-cuda-debug",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-cuda-debug/lib:$penv{LD_LIBRARY_PATH}"
+      }
     },
     {
       "name": "hosted-x86_64-cuda-release",
-      "configurePreset": "hosted-x86_64-cuda-release"
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-cuda-release",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-cuda-release/lib:$penv{LD_LIBRARY_PATH}"
+      }
     },
     {
       "name": "hosted-x86_64-asan",
-      "configurePreset": "hosted-x86_64-asan"
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-asan",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-asan/lib:$penv{LD_LIBRARY_PATH}",
+        "ASAN_OPTIONS": "protect_shadow_gap=0:detect_leaks=0"
+      }
+    },
+    {
+      "name": "hosted-x86_64-asan-ubsan",
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-asan-ubsan",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-asan-ubsan/lib:$penv{LD_LIBRARY_PATH}",
+        "ASAN_OPTIONS": "protect_shadow_gap=0:detect_leaks=0",
+        "UBSAN_OPTIONS": "print_stacktrace=1"
+      }
     },
     {
       "name": "hosted-x86_64-tsan",
-      "configurePreset": "hosted-x86_64-tsan"
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-tsan",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-tsan/lib:$penv{LD_LIBRARY_PATH}"
+      }
     },
     {
       "name": "hosted-x86_64-ubsan",
-      "configurePreset": "hosted-x86_64-ubsan"
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-ubsan",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-ubsan/lib:$penv{LD_LIBRARY_PATH}"
+      }
+    },
+    {
+      "name": "hosted-x86_64-rtsan",
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-rtsan",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-rtsan/lib:$penv{LD_LIBRARY_PATH}"
+      }
     },
     {
       "name": "hosted-x86_64-coverage",
-      "configurePreset": "hosted-x86_64-coverage"
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-coverage",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-coverage/lib:$penv{LD_LIBRARY_PATH}"
+      }
+    },
+    {
+      "name": "hosted-x86_64-static",
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-static",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-static/lib:$penv{LD_LIBRARY_PATH}"
+      }
+    },
+    {
+      "name": "hosted-x86_64-hardened",
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-hardened",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-hardened/lib:$penv{LD_LIBRARY_PATH}"
+      }
     },
     {
       "name": "cross-jetson-debug",
+      "inherits": "_test-base",
       "configurePreset": "cross-jetson-debug"
     },
     {
       "name": "cross-jetson-release",
+      "inherits": "_test-base",
       "configurePreset": "cross-jetson-release"
-    }
-  ],
-  "workflowPresets": [
-    {
-      "name": "native-debug",
-      "displayName": "Native debug: configure + build + test",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "hosted-x86_64-debug"
-        },
-        {
-          "type": "build",
-          "name": "hosted-x86_64-debug"
-        },
-        {
-          "type": "test",
-          "name": "hosted-x86_64-debug"
-        }
-      ]
-    },
-    {
-      "name": "native-release",
-      "displayName": "Native release: configure + build",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "hosted-x86_64-release"
-        },
-        {
-          "type": "build",
-          "name": "hosted-x86_64-release"
-        }
-      ]
-    },
-    {
-      "name": "native-asan",
-      "displayName": "Native AddressSanitizer: configure + build + test",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "hosted-x86_64-asan"
-        },
-        {
-          "type": "build",
-          "name": "hosted-x86_64-asan"
-        },
-        {
-          "type": "test",
-          "name": "hosted-x86_64-asan"
-        }
-      ]
-    },
-    {
-      "name": "native-coverage",
-      "displayName": "Native coverage: configure + build + test (Coverage label)",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "hosted-x86_64-coverage"
-        },
-        {
-          "type": "build",
-          "name": "hosted-x86_64-coverage"
-        },
-        {
-          "type": "test",
-          "name": "hosted-x86_64-coverage"
-        }
-      ]
-    },
-    {
-      "name": "jetson-release",
-      "displayName": "Jetson release: configure + build",
-      "steps": [
-        {
-          "type": "configure",
-          "name": "cross-jetson-release"
-        },
-        {
-          "type": "build",
-          "name": "cross-jetson-release"
-        }
-      ]
     }
   ]
 }

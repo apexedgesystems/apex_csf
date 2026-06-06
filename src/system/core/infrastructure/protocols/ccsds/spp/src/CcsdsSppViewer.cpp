@@ -168,8 +168,9 @@ static void parseCdsTimeCode(apex::compat::bytes_span data, common::TimeCodeForm
 
   // Parse submilliseconds if present (16-bit big-endian, optional per CCSDS 301.0-B-4)
   if (data.size() >= MS_OFFSET + 4 + 2) {
-    result.submilliseconds = (static_cast<std::uint16_t>(data[MS_OFFSET + 4]) << 8) |
-                             (static_cast<std::uint16_t>(data[MS_OFFSET + 5]));
+    result.submilliseconds =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(data[MS_OFFSET + 4]) << 8) |
+                                   (static_cast<std::uint16_t>(data[MS_OFFSET + 5])));
   }
 
   result.epoch = common::TimeEpoch::CCSDS;

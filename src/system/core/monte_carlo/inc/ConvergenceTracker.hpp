@@ -38,6 +38,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <limits>
 
 namespace apex {
 namespace monte_carlo {
@@ -206,8 +207,8 @@ public:
     count_ = 0;
     mean_ = 0.0;
     m2_ = 0.0;
-    min_ = INFINITY;
-    max_ = -INFINITY;
+    min_ = std::numeric_limits<double>::infinity();
+    max_ = -std::numeric_limits<double>::infinity();
   }
 
 private:
@@ -216,8 +217,8 @@ private:
   std::uint32_t count_{0};
   double mean_{0.0};
   double m2_{0.0}; ///< Welford's sum of squared deviations.
-  double min_{INFINITY};
-  double max_{-INFINITY};
+  double min_{std::numeric_limits<double>::infinity()};
+  double max_{-std::numeric_limits<double>::infinity()};
 };
 
 } // namespace monte_carlo

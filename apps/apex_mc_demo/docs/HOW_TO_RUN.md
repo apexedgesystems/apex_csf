@@ -144,8 +144,8 @@ make compose-testp
 
 # Or target specific test suites
 docker compose run --rm -T dev-cuda bash -c '
-  ./build/hosted-x86_64-debug/bin/tests/TestSystemCoreMonteCarlo
-  ./build/hosted-x86_64-debug/bin/tests/TestSimAnalogRegulator
+  ./build/hosted-x86_64-debug/bin/utests/TestSystemCoreMonteCarlo
+  ./build/hosted-x86_64-debug/bin/utests/TestSimAnalogRegulator
 '
 ```
 

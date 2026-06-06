@@ -10,6 +10,7 @@
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 #include "src/utilities/helpers/inc/Files.hpp"
 
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 
@@ -851,7 +852,7 @@ std::uint8_t ActionComponent::handleCommand(std::uint16_t opcode,
       entry->blockCount = static_cast<std::uint8_t>(data::CATALOG_MAX_BLOCKS);
     }
     for (std::uint8_t i = 0; i < entry->blockCount && (3U + (i + 1U) * 2U) <= payload.size(); ++i) {
-      std::memcpy(&entry->blocks[i], payload.data() + 3 + i * 2, 2);
+      std::memcpy(&entry->blocks[i], payload.data() + 3 + static_cast<ptrdiff_t>(i * 2), 2);
     }
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }

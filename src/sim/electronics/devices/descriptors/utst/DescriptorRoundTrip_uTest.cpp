@@ -112,7 +112,7 @@ TEST(DescriptorRoundTripTest, DiodeForwardBiasProducesPositiveCurrent) {
 
 /** @test MosfetLevel1 stamp produces non-zero conductance using descriptor geometry. */
 TEST(DescriptorRoundTripTest, MosfetGeometryFlowsToStampValues) {
-  const MosfetDescriptor DESC{1, 2, 3, 0, /*W=*/2e-6, /*L=*/1e-6};
+  const MosfetDescriptor DESC{1, 2, 3, 0, /*width=*/2e-6, /*length=*/1e-6};
   // W/L = 2 -- we expect the device-level Kp_eff to scale linearly when
   // the model is configured with descriptor geometry.
   const double WL_RATIO = DESC.W / DESC.L;

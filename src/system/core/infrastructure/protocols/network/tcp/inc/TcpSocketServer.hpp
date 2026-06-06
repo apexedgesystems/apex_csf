@@ -189,7 +189,7 @@ public:
    */
   void stop();
 
-  ~TcpSocketServer();
+  ~TcpSocketServer() override;
 
   /**
    * @brief Retrieves the set of currently connected client file descriptors.

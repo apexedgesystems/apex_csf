@@ -1,0 +1,71 @@
+# ==============================================================================
+# Nightly -- heavier checks that run once per day on main, off the PR path.
+#
+# The set of checks is the single source of truth in mk/checks.mk
+# (CHECKS_NIGHTLY); `make print-nightly-checks` emits it as a JSON array that
+# drives the matrix below. To add or drop a nightly check, edit the registry --
+# no change to this workflow is needed.
+#
+# Each matrix leg pulls the CPU dev image and runs one `make <check>` in it.
+# fail-fast is off so one failing check never cancels the others.
+# ==============================================================================
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 7 * * *"   # 07:00 UTC daily (~midnight Pacific)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  set-matrix:
+    name: Resolve nightly checks
+    runs-on: ubuntu-latest
+    outputs:
+      checks: ${{ steps.list.outputs.checks }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Read nightly checks from registry
+        id: list
+        run: echo "checks=$(make -s print-nightly-checks)" >> "$GITHUB_OUTPUT"
+
+  check:
+    name: ${{ matrix.check }}
+    needs: set-matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    strategy:
+      fail-fast: false
+      matrix:
+        check: ${{ fromJSON(needs.set-matrix.outputs.checks) }}
+
+    env:
+      REGISTRY: ghcr.io/${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up dev image
+        uses: ./.github/actions/dev-setup
+        with:
+          registry: ${{ env.REGISTRY }}
+          actor: ${{ github.actor }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run ${{ matrix.check }}
+        run: docker compose run --rm -T dev make ${{ matrix.check }}
+
+      - name: Upload coverage report
+        if: ${{ always() && matrix.check == 'coverage-check' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: build/hosted-x86_64-coverage/coverage/
+          retention-days: 14

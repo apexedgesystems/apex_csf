@@ -90,7 +90,7 @@ public:
   uint8_t init(UdpSocketMode mode = UdpSocketMode::CONNECTED,
                std::optional<std::reference_wrapper<std::string>> error = std::nullopt);
 
-  ~UdpSocketClient();
+  ~UdpSocketClient() override;
 
   // --------------------------------------------------------------------------
   // Nonblocking I/O helpers (no internal waits)

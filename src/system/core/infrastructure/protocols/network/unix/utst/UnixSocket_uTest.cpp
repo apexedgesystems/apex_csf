@@ -299,6 +299,15 @@ TEST(UnixSocketServerTest, Statistics) {
   EchoContext echoCtx{&server};
   server.setOnClientReadable(apex::concurrency::Delegate<void, int>{echoCallback, &echoCtx});
 
+  // stats() is only safe on the thread that drives processEvents (the server
+  // is a single-threaded reactor). Read initial stats before the IO thread
+  // starts, and the remaining stats after it is joined, so no stats read ever
+  // races a stat update from processEvents.
+  ConnectionStats initialStats = server.stats();
+  EXPECT_EQ(initialStats.bytesRx, 0U);
+  EXPECT_EQ(initialStats.bytesTx, 0U);
+  EXPECT_GT(initialStats.connectedAtNs, 0);
+
   std::atomic_bool ioExit{false};
   std::thread ioThread([&]() {
     while (!ioExit.load(std::memory_order_relaxed)) {
@@ -306,14 +315,6 @@ TEST(UnixSocketServerTest, Statistics) {
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
   });
-
-  std::this_thread::sleep_for(std::chrono::milliseconds(10));
-
-  // Initial stats should be zero (except connectedAtNs)
-  ConnectionStats initialStats = server.stats();
-  EXPECT_EQ(initialStats.bytesRx, 0U);
-  EXPECT_EQ(initialStats.bytesTx, 0U);
-  EXPECT_GT(initialStats.connectedAtNs, 0);
 
   // Connect and send data
   {
@@ -335,7 +336,12 @@ TEST(UnixSocketServerTest, Statistics) {
 
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
-  // Check stats
+  // Stop and join the IO thread before reading stats: the join makes the reads
+  // happen-after every processEvents stat update, with no concurrent access.
+  ioExit = true;
+  ioThread.join();
+  server.stop();
+
   ConnectionStats finalStats = server.stats();
   EXPECT_EQ(finalStats.bytesRx, 100U);
   EXPECT_EQ(finalStats.bytesTx, 100U);
@@ -343,15 +349,10 @@ TEST(UnixSocketServerTest, Statistics) {
   EXPECT_EQ(finalStats.packetsTx, 1U);
   EXPECT_GT(finalStats.lastActivityNs, initialStats.connectedAtNs);
 
-  // Reset stats
   server.resetStats();
   ConnectionStats resetStats = server.stats();
   EXPECT_EQ(resetStats.bytesRx, 0U);
   EXPECT_EQ(resetStats.bytesTx, 0U);
-
-  ioExit = true;
-  server.stop();
-  ioThread.join();
 }
 
 /* ----------------------------- Additional Tests ----------------------------- */

@@ -244,6 +244,7 @@ TEST_F(LockFreeQueueTest, MultipleProducersSingleConsumer) {
 
   // Producer threads
   std::vector<std::thread> producers;
+  producers.reserve(PRODUCER_COUNT);
   for (int p = 0; p < PRODUCER_COUNT; ++p) {
     producers.emplace_back([&, p]() {
       for (int i = 0; i < ITEMS_PER_PRODUCER; ++i) {
@@ -283,6 +284,7 @@ TEST_F(LockFreeQueueTest, MultipleProducersMultipleConsumers) {
 
   // Consumer threads
   std::vector<std::thread> consumers;
+  consumers.reserve(CONSUMER_COUNT);
   for (int c = 0; c < CONSUMER_COUNT; ++c) {
     consumers.emplace_back([&]() {
       int value;
@@ -300,6 +302,7 @@ TEST_F(LockFreeQueueTest, MultipleProducersMultipleConsumers) {
 
   // Producer threads
   std::vector<std::thread> producers;
+  producers.reserve(PRODUCER_COUNT);
   for (int p = 0; p < PRODUCER_COUNT; ++p) {
     producers.emplace_back([&, p]() {
       for (int i = 0; i < ITEMS_PER_PRODUCER; ++i) {

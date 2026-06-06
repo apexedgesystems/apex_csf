@@ -162,8 +162,9 @@ inline bool verifyCrc(const std::uint8_t* frame, std::size_t len) noexcept {
   }
   const std::size_t DATA_LEN = len - Constants::CRC_SIZE;
   const std::uint16_t CALCULATED = calculateCrc(frame, DATA_LEN);
-  const std::uint16_t RECEIVED = static_cast<std::uint16_t>(frame[DATA_LEN]) |
-                                 (static_cast<std::uint16_t>(frame[DATA_LEN + 1]) << 8);
+  const std::uint16_t RECEIVED =
+      static_cast<std::uint16_t>(static_cast<std::uint16_t>(frame[DATA_LEN]) |
+                                 (static_cast<std::uint16_t>(frame[DATA_LEN + 1]) << 8));
   return CALCULATED == RECEIVED;
 }
 

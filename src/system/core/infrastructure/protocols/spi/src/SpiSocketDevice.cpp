@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <cerrno>
 #include <cstring>
+#include <limits>
 #include <unistd.h>
 
 namespace apex {
@@ -78,7 +79,10 @@ Status SpiSocketDevice::transfer(const std::uint8_t* txData, std::uint8_t* rxDat
   }
 
   // Send request header: [length:4 LE]
-  std::uint32_t lenLE = length;
+  if (length > std::numeric_limits<std::uint32_t>::max()) {
+    return Status::ERROR_INVALID_ARG;
+  }
+  std::uint32_t lenLE = static_cast<std::uint32_t>(length);
   if (!sendAll(&lenLE, sizeof(lenLE))) {
     ++stats_.transferErrors;
     return Status::ERROR_IO;

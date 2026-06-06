@@ -51,8 +51,8 @@ TEST(CompanionSetDefaultTest, DefaultIsEmpty) {
 /** @test addCapacitor stores parameters and returns sequential index */
 TEST(CompanionSetTest, AddCapacitorReturnsSequentialIndex) {
   CompanionSet set;
-  EXPECT_EQ(set.addCapacitor(/*pos=*/1, /*neg=*/2, /*C=*/1e-6), 0u);
-  EXPECT_EQ(set.addCapacitor(/*pos=*/3, /*neg=*/0, /*C=*/2e-6), 1u);
+  EXPECT_EQ(set.addCapacitor(/*posNet=*/1, /*negNet=*/2, /*capacitance=*/1e-6), 0u);
+  EXPECT_EQ(set.addCapacitor(/*posNet=*/3, /*negNet=*/0, /*capacitance=*/2e-6), 1u);
   EXPECT_EQ(set.capacitorCount(), 2u);
 
   const auto& C0 = set.capacitor(0);
@@ -64,8 +64,8 @@ TEST(CompanionSetTest, AddCapacitorReturnsSequentialIndex) {
 /** @test addInductor stores parameters and returns sequential index */
 TEST(CompanionSetTest, AddInductorReturnsSequentialIndex) {
   CompanionSet set;
-  EXPECT_EQ(set.addInductor(/*pos=*/1, /*neg=*/2, /*L=*/1e-3), 0u);
-  EXPECT_EQ(set.addInductor(/*pos=*/4, /*neg=*/0, /*L=*/5e-3), 1u);
+  EXPECT_EQ(set.addInductor(/*posNet=*/1, /*negNet=*/2, /*inductance=*/1e-3), 0u);
+  EXPECT_EQ(set.addInductor(/*posNet=*/4, /*negNet=*/0, /*inductance=*/5e-3), 1u);
   EXPECT_EQ(set.inductorCount(), 2u);
 
   const auto& I1 = set.inductor(1);
@@ -79,10 +79,10 @@ TEST(CompanionSetTest, AddInductorReturnsSequentialIndex) {
 /** @test stampAll writes capacitor Geq + Ieq into the MNA system */
 TEST(CompanionSetTest, StampAllStampsCapacitorBackwardEuler) {
   CompanionSet set;
-  set.addCapacitor(/*pos=*/1, /*neg=*/0, /*C=*/1e-6);
+  set.addCapacitor(/*posNet=*/1, /*negNet=*/0, /*capacitance=*/1e-6);
   set.capacitor(0).prevVoltage = 0.5;
 
-  MnaSystem mna(/*nodeCount=*/2);
+  MnaSystem mna(/*netCount=*/2);
   const double DT = 1e-3;
   set.stampAll(mna, DT, IntegrationMethod::BACKWARD_EULER);
 
@@ -95,10 +95,10 @@ TEST(CompanionSetTest, StampAllStampsCapacitorBackwardEuler) {
 /** @test stampAll writes inductor Geq + Ieq into the MNA system */
 TEST(CompanionSetTest, StampAllStampsInductorBackwardEuler) {
   CompanionSet set;
-  set.addInductor(/*pos=*/1, /*neg=*/0, /*L=*/1e-3);
+  set.addInductor(/*posNet=*/1, /*negNet=*/0, /*inductance=*/1e-3);
   set.inductor(0).prevCurrent = 0.05; // 50 mA
 
-  MnaSystem mna(/*nodeCount=*/2);
+  MnaSystem mna(/*netCount=*/2);
   const double DT = 1e-6;
   set.stampAll(mna, DT, IntegrationMethod::BACKWARD_EULER);
 
@@ -114,14 +114,14 @@ TEST(CompanionSetTest, StampAllStampsInductorBackwardEuler) {
 /** @test Conductance-only and current-only stamps reconstruct full stamp */
 TEST(CompanionSetTest, ConductanceAndCurrentDecompositionMatchesFullStamp) {
   CompanionSet set;
-  set.addCapacitor(/*pos=*/1, /*neg=*/0, /*C=*/1e-6);
-  set.addInductor(/*pos=*/2, /*neg=*/0, /*L=*/1e-3);
+  set.addCapacitor(/*posNet=*/1, /*negNet=*/0, /*capacitance=*/1e-6);
+  set.addInductor(/*posNet=*/2, /*negNet=*/0, /*inductance=*/1e-3);
   set.capacitor(0).prevVoltage = 0.7;
   set.inductor(0).prevCurrent = 0.02;
 
   const double DT = 1e-4;
-  MnaSystem fullMna(/*nodeCount=*/3);
-  MnaSystem splitMna(/*nodeCount=*/3);
+  MnaSystem fullMna(/*netCount=*/3);
+  MnaSystem splitMna(/*netCount=*/3);
 
   set.stampAll(fullMna, DT, IntegrationMethod::BACKWARD_EULER);
   set.stampConductanceAll(splitMna, DT, IntegrationMethod::BACKWARD_EULER);
@@ -138,7 +138,7 @@ TEST(CompanionSetTest, ConductanceAndCurrentDecompositionMatchesFullStamp) {
 /** @test updateAll advances each capacitor's prevVoltage from solved nodes */
 TEST(CompanionSetTest, UpdateAllAdvancesCapacitorState) {
   CompanionSet set;
-  set.addCapacitor(/*pos=*/1, /*neg=*/0, /*C=*/1e-6);
+  set.addCapacitor(/*posNet=*/1, /*negNet=*/0, /*capacitance=*/1e-6);
   set.capacitor(0).prevVoltage = 0.0;
 
   const std::vector<double> V = {0.0, 0.5, 0.0};
@@ -152,7 +152,7 @@ TEST(CompanionSetTest, UpdateAllAdvancesCapacitorState) {
 /** @test updateAll advances each inductor's prevCurrent integral */
 TEST(CompanionSetTest, UpdateAllAdvancesInductorState) {
   CompanionSet set;
-  set.addInductor(/*pos=*/1, /*neg=*/0, /*L=*/1e-3);
+  set.addInductor(/*posNet=*/1, /*negNet=*/0, /*inductance=*/1e-3);
   set.inductor(0).prevCurrent = 0.0;
 
   const std::vector<double> V = {0.0, 0.1, 0.0};
@@ -168,8 +168,8 @@ TEST(CompanionSetTest, UpdateAllAdvancesInductorState) {
 /** @test reset zeros every companion's history */
 TEST(CompanionSetTest, ResetZerosAllHistory) {
   CompanionSet set;
-  set.addCapacitor(/*pos=*/1, /*neg=*/0, /*C=*/1e-6);
-  set.addInductor(/*pos=*/2, /*neg=*/0, /*L=*/1e-3);
+  set.addCapacitor(/*posNet=*/1, /*negNet=*/0, /*capacitance=*/1e-6);
+  set.addInductor(/*posNet=*/2, /*negNet=*/0, /*inductance=*/1e-3);
   set.capacitor(0).prevVoltage = 1.0;
   set.capacitor(0).prev2Voltage = 0.5;
   set.capacitor(0).current = 1e-3;
@@ -192,7 +192,7 @@ TEST(CompanionSetTest, ResetZerosAllHistory) {
 /** @test initializeFromDC seeds capacitor prevVoltage from node voltages */
 TEST(CompanionSetTest, InitializeFromDCSeedsCapacitorVoltage) {
   CompanionSet set;
-  set.addCapacitor(/*pos=*/2, /*neg=*/1, /*C=*/1e-6);
+  set.addCapacitor(/*posNet=*/2, /*negNet=*/1, /*capacitance=*/1e-6);
   set.capacitor(0).current = 1e-4; // any non-zero starting current
 
   const std::vector<double> V_DC = {0.0, 0.7, 1.5}; // node 0=GND, 1=0.7V, 2=1.5V
@@ -209,15 +209,15 @@ TEST(CompanionSetTest, InitializeFromDCSeedsCapacitorVoltage) {
 /** @test stampAll is deterministic across repeated calls */
 TEST(CompanionSetDeterminismTest, StampAllIsRepeatable) {
   CompanionSet set;
-  set.addCapacitor(/*pos=*/1, /*neg=*/0, /*C=*/2e-9);
+  set.addCapacitor(/*posNet=*/1, /*negNet=*/0, /*capacitance=*/2e-9);
   set.capacitor(0).prevVoltage = 0.3;
 
   const double DT = 1e-6;
-  MnaSystem first(/*nodeCount=*/2);
+  MnaSystem first(/*netCount=*/2);
   set.stampAll(first, DT, IntegrationMethod::TRAPEZOIDAL);
 
   for (int i = 0; i < 5; ++i) {
-    MnaSystem repeat(/*nodeCount=*/2);
+    MnaSystem repeat(/*netCount=*/2);
     set.stampAll(repeat, DT, IntegrationMethod::TRAPEZOIDAL);
     EXPECT_DOUBLE_EQ(g(first, 1, 1), g(repeat, 1, 1));
     EXPECT_DOUBLE_EQ(rhs(first, 1), rhs(repeat, 1));

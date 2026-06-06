@@ -55,13 +55,14 @@ $(eval $(call _compose_target,profile-build,build profile,dev-cuda,profile-build
 $(eval $(call _compose_target,test,tests (serial),dev-cuda,test))
 $(eval $(call _compose_target,testp,tests (parallel),dev-cuda,testp))
 $(eval $(call _compose_target,coverage,coverage,dev-cuda,coverage))
-$(eval $(call _compose_target,coverage-check,coverage (threshold gate),dev-cuda,coverage-check))
 $(eval $(call _compose_target,format,format (auto-fix),dev-cuda,format))
 $(eval $(call _compose_target,format-check,format (check only),dev-cuda,format-check))
-$(eval $(call _compose_target,static,static analysis,dev-cuda,static))
-$(eval $(call _compose_target,asan,AddressSanitizer,dev-cuda,asan))
-$(eval $(call _compose_target,tsan,ThreadSanitizer,dev-cuda,tsan))
-$(eval $(call _compose_target,ubsan,UBSanitizer,dev-cuda,ubsan))
+
+# Compose wrappers for every registered check (mk/checks.mk), plus sbom, are
+# generated from the registry: each `make <check>` gets a matching
+# `make compose-<check>` automatically, so adding a check needs no edit here.
+# Covers the sanitizers, static analyzers, coverage, and security scanners.
+$(foreach c,$(CHECKS_ALL) sbom,$(eval $(call _compose_target,$(c),$(c) (dev-cuda),dev-cuda,$(c))))
 
 # ------------------------------------------------------------------------------
 # Tools (dev-cuda)

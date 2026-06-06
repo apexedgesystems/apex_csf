@@ -422,8 +422,8 @@ private:
     // Verify CRC-16/XMODEM
     const std::size_t PAYLOAD_LEN = len - 2;
     apex::checksums::crc::Crc16XmodemTable crc;
-    const std::uint16_t EXPECTED =
-        (static_cast<std::uint16_t>(data[PAYLOAD_LEN]) << 8) | data[PAYLOAD_LEN + 1];
+    const std::uint16_t EXPECTED = static_cast<std::uint16_t>(
+        (static_cast<std::uint16_t>(data[PAYLOAD_LEN]) << 8) | data[PAYLOAD_LEN + 1]);
     std::uint16_t computed = 0;
     crc.calculate(data, PAYLOAD_LEN, computed);
 
