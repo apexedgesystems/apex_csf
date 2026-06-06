@@ -93,7 +93,6 @@ inline double nsToUs(std::uint64_t ns) { return static_cast<double>(ns) / 1000.0
  */
 PERF_TEST(SeqOverhead, WaitForPhase_FastPath) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   std::atomic<int> counter{5};
   const int PHASE = 3; // Counter (5) >= phase (3), so fast path
@@ -117,7 +116,6 @@ PERF_TEST(SeqOverhead, WaitForPhase_FastPath) {
  */
 PERF_TEST(SeqOverhead, AdvancePhase_Cost) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   std::atomic<int> counter{1};
   const int MAX_PHASE = 4;
@@ -150,8 +148,7 @@ PERF_TEST(SeqOverhead, WaitForPhase_SpinPath) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 1000); // Limited iterations due to thread spawning
   cfg.repeats = std::min(cfg.repeats, 5);
-  ub::PerfCase perf{"SeqOverhead.WaitForPhase_SpinPath", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SeqOverhead.WaitForPhase_SpinPath", cfg);
 
   std::atomic<int> counter{1};
   const int WAIT_PHASE = 2;
@@ -212,8 +209,7 @@ PERF_TEST(SeqOverhead, Chain4_MinimalWork) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 200);
   cfg.repeats = std::min(cfg.repeats, 5);
-  ub::PerfCase perf{"SeqOverhead.Chain4_MinimalWork", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SeqOverhead.Chain4_MinimalWork", cfg);
 
   auto sched = makeScheduler(100);
   SequenceGroup seq(4);
@@ -324,8 +320,7 @@ PERF_TEST(SeqOverhead, Chain4_ModelTest2Timing) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 50); // Slow due to 9ms+ per iteration
   cfg.repeats = std::min(cfg.repeats, 3);
-  ub::PerfCase perf{"SeqOverhead.Chain4_ModelTest2Timing", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SeqOverhead.Chain4_ModelTest2Timing", cfg);
 
   auto sched = makeScheduler(100);
   SequenceGroup seq(4);
@@ -456,8 +451,7 @@ PERF_TEST(SeqOverhead, SequencedVsNonSequenced) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 200);
   cfg.repeats = std::min(cfg.repeats, 5);
-  ub::PerfCase perf{"SeqOverhead.SequencedVsNonSequenced", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SeqOverhead.SequencedVsNonSequenced", cfg);
 
   // Shared completion counter for non-sequenced tasks
   std::atomic<int> completionCount{0};
@@ -596,8 +590,7 @@ PERF_TEST(SeqOverhead, ThreadPoolDispatchLatency) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
   cfg.cycles = std::min(cfg.cycles, 500);
   cfg.repeats = std::min(cfg.repeats, 5);
-  ub::PerfCase perf{"SeqOverhead.ThreadPoolDispatchLatency", cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler("SeqOverhead.ThreadPoolDispatchLatency", cfg);
 
   auto sched = makeScheduler(100);
 

@@ -26,6 +26,7 @@ x-build-args: &build-args
   USER: ${USER}
   HOST_UID: ${HOST_UID}
   HOST_GID: ${HOST_GID}
+  HOST_KERNEL: ${HOST_KERNEL:-}
 
 services:
   # ============================================================================

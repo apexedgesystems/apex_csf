@@ -43,8 +43,10 @@ RUN echo 'if [ -n "$PS1" ]; then export PS1="\[\e[1;31m\][AVR] \u@\h:\w \$\[\e[0
 # ==============================================================================
 # Validation
 # ==============================================================================
+# drain after head so the writer never SIGPIPEs (pipefail would turn that into
+# a spurious 141); pipefail still catches a missing/broken tool.
 RUN avr-gcc --version && \
-    avrdude -? 2>&1 | head -1 && \
+    avrdude -? 2>&1 | { head -n1; cat >/dev/null; } && \
     echo "ATmega328PB image validation: OK"
 
 USER ${USER}

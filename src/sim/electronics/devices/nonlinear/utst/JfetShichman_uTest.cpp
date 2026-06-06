@@ -252,8 +252,7 @@ TEST(JfetShichmanTest, RegionCutoff) {
 /** @test */
 TEST(JfetShichmanTest, RegionLinear) {
   JfetShichmanParams params{.Vp = -2.0};
-  const double VGS = -0.5;
-  [[maybe_unused]] const double VGST = VGS - params.Vp; // 1.5
+  const double VGS = -0.5; // VGST = VGS - Vp = 1.5; the Vds values below are all < it
 
   EXPECT_EQ(JfetShichman::region(VGS, 0.5, params), 1); // Vds < Vgst
   EXPECT_EQ(JfetShichman::region(VGS, 1.0, params), 1); // Vds < Vgst

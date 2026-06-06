@@ -52,7 +52,6 @@ inline const ub::PerfConfig& getCfg() { return ub::detail::getPerfConfig(); }
  */
 PERF_TEST(LinFrameBuild, Header) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   lin::FrameBuffer buffer;
 
@@ -80,7 +79,6 @@ PERF_TEST(LinFrameBuild, Header) {
  */
 PERF_TEST(LinFrameBuild, Response8Bytes) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::uint8_t PID = lin::calculatePid(0x10);
   const std::array<std::uint8_t, 8> DATA = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
@@ -112,7 +110,6 @@ PERF_TEST(LinFrameBuild, Response8Bytes) {
  */
 PERF_TEST(LinFrameBuild, FullFrame) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::array<std::uint8_t, 4> DATA = {0xDE, 0xAD, 0xBE, 0xEF};
   lin::FrameBuffer buffer;
@@ -146,7 +143,6 @@ PERF_TEST(LinFrameBuild, FullFrame) {
  */
 PERF_TEST(LinPid, Calculate) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
@@ -174,7 +170,6 @@ PERF_TEST(LinPid, Calculate) {
  */
 PERF_TEST(LinPid, Verify) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   std::array<std::uint8_t, 64> pids{};
   for (std::uint8_t i = 0; i < 64; ++i) {
@@ -209,7 +204,6 @@ PERF_TEST(LinPid, Verify) {
  */
 PERF_TEST(LinChecksum, Classic) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::array<std::uint8_t, 8> DATA = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
   const std::uint8_t PID = lin::calculatePid(0x10);
@@ -239,7 +233,6 @@ PERF_TEST(LinChecksum, Classic) {
  */
 PERF_TEST(LinChecksum, Enhanced) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::array<std::uint8_t, 8> DATA = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
   const std::uint8_t PID = lin::calculatePid(0x10);
@@ -269,7 +262,6 @@ PERF_TEST(LinChecksum, Enhanced) {
  */
 PERF_TEST(LinChecksum, Verify) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::array<std::uint8_t, 8> DATA = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
   const std::uint8_t PID = lin::calculatePid(0x10);
@@ -303,7 +295,6 @@ PERF_TEST(LinChecksum, Verify) {
  */
 PERF_TEST(LinParse, FullFrame) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   lin::FrameBuffer buffer;
   const std::array<std::uint8_t, 4> DATA = {0xDE, 0xAD, 0xBE, 0xEF};
@@ -336,7 +327,6 @@ PERF_TEST(LinParse, FullFrame) {
  */
 PERF_TEST(LinParse, Response) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const std::uint8_t PID = lin::calculatePid(0x30);
   lin::FrameBuffer buffer;
@@ -415,8 +405,6 @@ protected:
     (void)pty_.close();
   }
 
-  const ub::PerfConfig& getCfg() { return ub::detail::getPerfConfig(); }
-
   uart::PtyPair pty_;
   std::unique_ptr<uart::UartAdapter> adapter_;
   std::unique_ptr<lin::LinController> controller_;
@@ -430,8 +418,7 @@ protected:
 TEST_F(LinTransactionFixture, SendHeaderLatency) {
   ub::PerfConfig cfg = getCfg();
   std::string testName = "LinTransactionFixture.SendHeaderLatency";
-  ub::PerfCase perf{testName, cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
   perf.warmup([&] {
     for (int i = 0; i < std::min(perf.cycles(), 100); ++i) {
@@ -456,8 +443,7 @@ TEST_F(LinTransactionFixture, SendHeaderLatency) {
 TEST_F(LinTransactionFixture, SendFrameLatency) {
   ub::PerfConfig cfg = getCfg();
   std::string testName = "LinTransactionFixture.SendFrameLatency";
-  ub::PerfCase perf{testName, cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
   const std::array<std::uint8_t, 4> DATA = {0xDE, 0xAD, 0xBE, 0xEF};
 
@@ -484,8 +470,7 @@ TEST_F(LinTransactionFixture, SendFrameLatency) {
 TEST_F(LinTransactionFixture, ProtocolOverhead) {
   ub::PerfConfig cfg = getCfg();
   std::string testName = "LinTransactionFixture.ProtocolOverhead";
-  ub::PerfCase perf{testName, cfg};
-  ub::attachProfilerHooks(perf, cfg);
+  auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
   std::array<std::uint8_t, 7> rawFrame = {0x55, 0xD0, 0xDE, 0xAD, 0xBE, 0xEF, 0x00};
 

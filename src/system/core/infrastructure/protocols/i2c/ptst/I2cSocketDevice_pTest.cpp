@@ -38,8 +38,6 @@ namespace ic = apex::protocols::i2c;
 
 namespace {
 
-inline const ub::PerfConfig& getCfg() { return ub::detail::getPerfConfig(); }
-
 /**
  * @brief Create a socketpair and return both fds.
  */
@@ -164,7 +162,6 @@ struct TestContext {
  */
 PERF_TEST(I2cWrite, Small8B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -204,7 +201,6 @@ PERF_TEST(I2cWrite, Small8B) {
  */
 PERF_TEST(I2cWrite, Medium64B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -246,7 +242,6 @@ PERF_TEST(I2cWrite, Medium64B) {
  */
 PERF_TEST(I2cRead, Small8B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -285,7 +280,6 @@ PERF_TEST(I2cRead, Small8B) {
  */
 PERF_TEST(I2cRead, Medium64B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -326,7 +320,6 @@ PERF_TEST(I2cRead, Medium64B) {
  */
 PERF_TEST(I2cWriteRead, Register) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());
@@ -368,7 +361,6 @@ PERF_TEST(I2cWriteRead, Register) {
  */
 PERF_TEST(I2cOverhead, Stats) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   TestContext ctx;
   ASSERT_TRUE(ctx.setup());

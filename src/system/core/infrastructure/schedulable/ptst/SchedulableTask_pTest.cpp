@@ -347,8 +347,7 @@ PERF_TEST(SchedulableTaskScaling, TaskCountSweep) {
   for (std::size_t taskCount : TASK_COUNTS) {
     ub::PerfConfig cfg = ub::detail::getPerfConfig();
     std::string testName = "SchedulableTaskScaling.TaskCountSweep/" + std::to_string(taskCount);
-    ub::PerfCase perf{testName, cfg};
-    ub::attachProfilerHooks(perf, cfg);
+    auto perf = ub::makePerfCaseWithProfiler(testName, cfg);
 
     std::vector<TaskContext> contexts(taskCount);
     std::vector<std::unique_ptr<SchedulableTask>> tasks;

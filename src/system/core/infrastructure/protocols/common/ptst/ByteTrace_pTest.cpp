@@ -34,8 +34,6 @@ using apex::protocols::TraceDirection;
 
 namespace {
 
-inline const ub::PerfConfig& getCfg() { return ub::detail::getPerfConfig(); }
-
 /** @brief Concrete subclass exposing protected invokeTrace for benchmarking. */
 class BenchTrace : public ByteTrace {
 public:
@@ -63,7 +61,6 @@ inline std::array<std::uint8_t, 256> makeTestData() {
  */
 PERF_TEST(ByteTraceFormat, FormatHex4B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto DATA = makeTestData();
   char buf[128];
@@ -87,7 +84,6 @@ PERF_TEST(ByteTraceFormat, FormatHex4B) {
  */
 PERF_TEST(ByteTraceFormat, FormatHex32B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto DATA = makeTestData();
   char buf[256];
@@ -111,7 +107,6 @@ PERF_TEST(ByteTraceFormat, FormatHex32B) {
  */
 PERF_TEST(ByteTraceFormat, FormatHex64B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto DATA = makeTestData();
   char buf[512];
@@ -136,7 +131,6 @@ PERF_TEST(ByteTraceFormat, FormatHex64B) {
  */
 PERF_TEST(ByteTraceFormat, FormatHexTruncated) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto DATA = makeTestData();
   char buf[128];
@@ -163,7 +157,6 @@ PERF_TEST(ByteTraceFormat, FormatHexTruncated) {
  */
 PERF_TEST(ByteTraceMessage, Message4B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto DATA = makeTestData();
   char buf[256];
@@ -189,7 +182,6 @@ PERF_TEST(ByteTraceMessage, Message4B) {
  */
 PERF_TEST(ByteTraceMessage, Message32B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   const auto DATA = makeTestData();
   char buf[512];
@@ -217,7 +209,6 @@ PERF_TEST(ByteTraceMessage, Message32B) {
  */
 PERF_TEST(ByteTraceOverhead, InvokeEnabled) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, getCfg());
 
   BenchTrace trace;
   trace.attachTrace(noopCallback);

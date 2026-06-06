@@ -55,7 +55,6 @@ inline std::uint32_t envU32(const char* name, std::uint32_t dflt) noexcept {
 /** @brief Tick overhead with zero registered tasks. */
 PERF_TEST(McuSchedulerPerf, EmptyTickOverhead) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   system_core::scheduler::mcu::McuScheduler<> sched(100);
   (void)sched.init();
@@ -77,7 +76,6 @@ PERF_TEST(McuSchedulerPerf, EmptyTickOverhead) {
 /** @brief Tick cost with 8 no-op tasks at full rate. */
 PERF_TEST(McuSchedulerPerf, NoopTasks8) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   system_core::scheduler::mcu::McuScheduler<8> sched(100);
   for (std::uint8_t i = 0; i < 8; ++i) {
@@ -100,7 +98,6 @@ PERF_TEST(McuSchedulerPerf, NoopTasks8) {
 /** @brief Tick cost with 32 no-op tasks at full rate. */
 PERF_TEST(McuSchedulerPerf, NoopTasks32) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   system_core::scheduler::mcu::McuScheduler<32> sched(100);
   for (std::uint8_t i = 0; i < 32; ++i) {
@@ -125,7 +122,6 @@ PERF_TEST(McuSchedulerPerf, NoopTasks32) {
 /** @brief Tick cost with 8 tasks doing light spin work. */
 PERF_TEST(McuSchedulerPerf, LightWork8) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   const std::uint32_t SPIN = envU32("SPIN", 64);
   std::uint32_t spinCtx[8];
@@ -156,7 +152,6 @@ PERF_TEST(McuSchedulerPerf, LightWork8) {
 /** @brief Tick cost with mixed rate groups (100/50/10/1 Hz). */
 PERF_TEST(McuSchedulerPerf, RateDecimation) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   system_core::scheduler::mcu::McuScheduler<16> sched(100);
 
@@ -192,7 +187,6 @@ PERF_TEST(McuSchedulerPerf, RateDecimation) {
 /** @brief Cost of populating 32 tasks via addTask(). */
 PERF_TEST(McuSchedulerPerf, AddTaskCost) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
@@ -221,7 +215,6 @@ PERF_TEST(McuSchedulerPerf, AddTaskCost) {
 /** @brief Cost of init() priority sort with 32 reverse-ordered tasks. */
 PERF_TEST(McuSchedulerPerf, InitSortCost) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, perf.config());
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {

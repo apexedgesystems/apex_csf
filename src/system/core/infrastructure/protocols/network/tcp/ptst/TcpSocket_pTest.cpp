@@ -114,7 +114,6 @@ std::vector<uint8_t> generatePayload(size_t size) {
  */
 PERF_TEST(TcpSocketPerf, EchoLatencySmall) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr size_t PAYLOAD_SIZE = 64;
   const std::string IP = "127.0.0.1";
@@ -162,7 +161,6 @@ PERF_TEST(TcpSocketPerf, EchoLatencySmall) {
  */
 PERF_TEST(TcpSocketPerf, EchoLatencyMedium) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr size_t PAYLOAD_SIZE = 1024;
   const std::string IP = "127.0.0.1";
@@ -219,7 +217,6 @@ PERF_TEST(TcpSocketPerf, EchoLatencyMedium) {
  */
 PERF_TEST(TcpSocketPerf, EchoLatencyLarge) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr size_t PAYLOAD_SIZE = static_cast<const size_t>(16 * 1024);
   const std::string IP = "127.0.0.1";
@@ -307,7 +304,6 @@ void tcpDrainCallback(void* ctx, int clientfd) noexcept {
  */
 PERF_TEST(TcpSocketPerf, WriteThroughput) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr size_t PAYLOAD_SIZE = 1024;
   const std::string IP = "127.0.0.1";
@@ -375,7 +371,6 @@ PERF_TEST(TcpSocketPerf, WriteThroughput) {
  */
 PERF_TEST(TcpSocketPerf, MultiClientEcho) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   constexpr size_t PAYLOAD_SIZE = 256;
   constexpr size_t NUM_CLIENTS = 4;
@@ -439,7 +434,6 @@ PERF_TEST(TcpSocketPerf, MultiClientEcho) {
  */
 PERF_TEST(TcpSocketPerf, PayloadScaling) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   const std::string IP = "127.0.0.1";
   const std::string PORT = "19105";

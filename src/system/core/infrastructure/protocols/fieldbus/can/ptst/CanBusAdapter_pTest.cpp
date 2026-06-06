@@ -115,7 +115,6 @@ CanFrame makeFrame(std::uint32_t id, std::uint8_t dlc, std::uint8_t pattern = 0x
  */
 PERF_TEST(CanBusPerf, LoopbackLatency1B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   VCanFixture fixture(uniqueVcanName("LoopLat1"));
   ASSERT_TRUE(fixture.setup()) << "Failed to setup vcan";
@@ -151,7 +150,6 @@ PERF_TEST(CanBusPerf, LoopbackLatency1B) {
  */
 PERF_TEST(CanBusPerf, LoopbackLatency8B) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   VCanFixture fixture(uniqueVcanName("LoopLat8"));
   ASSERT_TRUE(fixture.setup()) << "Failed to setup vcan";
@@ -195,7 +193,6 @@ PERF_TEST(CanBusPerf, LoopbackLatency8B) {
  */
 PERF_TEST(CanBusPerf, SendThroughput) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   VCanFixture fixture(uniqueVcanName("SendThru"));
   ASSERT_TRUE(fixture.setup()) << "Failed to setup vcan";
@@ -230,7 +227,6 @@ PERF_TEST(CanBusPerf, SendThroughput) {
  */
 PERF_TEST(CanBusPerf, BatchRecvComparison) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   VCanFixture fixture(uniqueVcanName("BatchRecv"));
   ASSERT_TRUE(fixture.setup()) << "Failed to setup vcan";
@@ -326,7 +322,6 @@ void eventLoopCallback(void* ctx, CANBusAdapter* adapter, std::uint32_t) noexcep
  */
 PERF_TEST(CanBusPerf, EventLoopOverhead) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   VCanFixture fixture(uniqueVcanName("EventLoop"));
   ASSERT_TRUE(fixture.setup()) << "Failed to setup vcan";
@@ -383,7 +378,6 @@ PERF_TEST(CanBusPerf, EventLoopOverhead) {
  */
 PERF_TEST(CanBusPerf, ConfigurationComparison) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   VCanInterface vcan(uniqueVcanName("ConfigCmp"), true, true);
   ASSERT_TRUE(vcan.setup()) << "Failed to setup vcan";
@@ -430,7 +424,6 @@ PERF_TEST(CanBusPerf, ConfigurationComparison) {
  */
 PERF_TEST(CanBusPerf, StatsOverhead) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   VCanFixture fixture(uniqueVcanName("StatsOH"));
   ASSERT_TRUE(fixture.setup()) << "Failed to setup vcan";
@@ -476,7 +469,6 @@ PERF_TEST(CanBusPerf, StatsOverhead) {
  */
 PERF_TEST(CanBusPerf, PayloadScaling) {
   UB_PERF_GUARD(perf);
-  ub::attachProfilerHooks(perf, ub::detail::getPerfConfig());
 
   VCanFixture fixture(uniqueVcanName("PayloadScale"));
   ASSERT_TRUE(fixture.setup()) << "Failed to setup vcan";
