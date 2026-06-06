@@ -72,6 +72,7 @@ cmake -DCMAKE_BUILD_TYPE=Release  # Full optimization, NDEBUG defined
 cmake -DSANITIZER=asan   # Address sanitizer
 cmake -DSANITIZER=tsan   # Thread sanitizer
 cmake -DSANITIZER=ubsan  # Undefined behavior sanitizer
+cmake -DSANITIZER=rtsan  # Realtime sanitizer (blocking calls in RT code)
 ```
 
 ## Target Creation

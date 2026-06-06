@@ -20,11 +20,13 @@ SANITIZERS_MK_GUARD := 1
 ASAN_PRESET       ?= hosted-x86_64-asan
 TSAN_PRESET       ?= hosted-x86_64-tsan
 UBSAN_PRESET      ?= hosted-x86_64-ubsan
+RTSAN_PRESET      ?= hosted-x86_64-rtsan
 ASAN_UBSAN_PRESET ?= hosted-x86_64-asan-ubsan
 
 ASAN_DIR       := build/$(ASAN_PRESET)
 TSAN_DIR       := build/$(TSAN_PRESET)
 UBSAN_DIR      := build/$(UBSAN_PRESET)
+RTSAN_DIR      := build/$(RTSAN_PRESET)
 ASAN_UBSAN_DIR := build/$(ASAN_UBSAN_PRESET)
 
 # Test-execution environment (LD_LIBRARY_PATH, and ASAN_OPTIONS for asan) lives
@@ -62,6 +64,12 @@ tsan: prep
 ubsan: prep
 	$(call _sanitizer_run,ubsan,UBSanitizer,$(UBSAN_PRESET),$(UBSAN_DIR))
 
+# RealtimeSanitizer - detects blocking calls (malloc/locks/syscalls) inside
+# functions marked [[clang::nonblocking]]. Only annotated RT primitives are
+# checked; the rest of the suite runs normally.
+rtsan: prep
+	$(call _sanitizer_run,rtsan,RealtimeSanitizer,$(RTSAN_PRESET),$(RTSAN_DIR))
+
 # Address + UndefinedBehavior in one build (compatible sanitizers). This is the
 # combination the CI gate runs: ASan catches memory errors, UBSan rides along.
 asan-ubsan: prep
@@ -84,6 +92,6 @@ hardened: prep
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: asan tsan ubsan asan-ubsan hardened
+.PHONY: asan tsan ubsan rtsan asan-ubsan hardened
 
 endif  # SANITIZERS_MK_GUARD

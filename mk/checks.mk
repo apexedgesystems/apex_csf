@@ -25,7 +25,7 @@ CHECKS_MK_GUARD := 1
 # Registry -- categories (each entry is a make target defined elsewhere)
 # ------------------------------------------------------------------------------
 
-CHECKS_SANITIZER := asan tsan ubsan asan-ubsan
+CHECKS_SANITIZER := asan tsan ubsan rtsan asan-ubsan
 CHECKS_STATIC    := static cppcheck
 CHECKS_SECURITY  := trivy gitleaks osv semgrep
 CHECKS_HARDENING := hardened
@@ -41,7 +41,7 @@ CHECKS_ALL := $(sort $(CHECKS_SANITIZER) $(CHECKS_STATIC) $(CHECKS_SECURITY) \
 # nightly = scheduled, heavier checks with their own builds
 
 CHECKS_GATE    := asan-ubsan static gitleaks
-CHECKS_NIGHTLY := tsan static cppcheck coverage-check hardened trivy gitleaks osv semgrep
+CHECKS_NIGHTLY := tsan rtsan static cppcheck coverage-check hardened trivy gitleaks osv semgrep
 
 # ------------------------------------------------------------------------------
 # Aggregate targets -- run a whole category or tier

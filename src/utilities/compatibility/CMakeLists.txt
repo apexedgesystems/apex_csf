@@ -10,6 +10,7 @@
 #   compat_span.hpp         - bytes_span, rospan<T> (C++20)
 #   compat_concurrency.hpp  - Atomic wait/notify (C++20)
 #   compat_attributes.hpp   - Compiler hints (LIKELY, HOT)
+#   compat_rt_attrs.hpp     - RT function-effect attrs (RealtimeSanitizer)
 #   compat_cuda_*.hpp       - CUDA device annotations, error handling
 #   compat_openssl.hpp      - OpenSSL 1.1.1/3.x provider handling
 # ==============================================================================

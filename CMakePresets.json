@@ -104,6 +104,15 @@
       }
     },
     {
+      "name": "hosted-x86_64-rtsan",
+      "displayName": "Native (Ubuntu) - Debug + RealtimeSanitizer",
+      "inherits": "hosted-x86_64-debug",
+      "binaryDir": "build/hosted-x86_64-rtsan",
+      "cacheVariables": {
+        "SANITIZER": "rtsan"
+      }
+    },
+    {
       "name": "hosted-x86_64-coverage",
       "displayName": "Native (Ubuntu) - Debug + Coverage (LLVM source-based)",
       "inherits": "hosted-x86_64-debug",
@@ -351,6 +360,10 @@
       "configurePreset": "hosted-x86_64-ubsan"
     },
     {
+      "name": "hosted-x86_64-rtsan",
+      "configurePreset": "hosted-x86_64-rtsan"
+    },
+    {
       "name": "hosted-x86_64-coverage",
       "configurePreset": "hosted-x86_64-coverage"
     },
@@ -503,6 +516,14 @@
       "configurePreset": "hosted-x86_64-ubsan",
       "environment": {
         "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-ubsan/lib:$penv{LD_LIBRARY_PATH}"
+      }
+    },
+    {
+      "name": "hosted-x86_64-rtsan",
+      "inherits": "_test-base",
+      "configurePreset": "hosted-x86_64-rtsan",
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-rtsan/lib:$penv{LD_LIBRARY_PATH}"
       }
     },
     {

@@ -14,7 +14,7 @@ cmake_minimum_required(VERSION 3.24)
 #   -DCUDA_ARCHS="80;86;89"     Ampere + Ada
 #   -DENABLE_COVERAGE=ON        Enable coverage (Debug + Clang only)
 #   -DENABLE_CLANG_TIDY=ON      Enable clang-tidy
-#   -DSANITIZER=asan|tsan|ubsan Enable sanitizers
+#   -DSANITIZER=asan|tsan|ubsan|rtsan Enable sanitizers
 #
 # ==============================================================================
 
@@ -205,15 +205,16 @@ endif ()
 # Sanitizers
 # ------------------------------------------------------------------------------
 # Sanitizers compose as a set: asan -> address, tsan -> thread, ubsan ->
-# undefined. The only hard incompatibility is address + thread (conflicting
-# shadow-memory models -- the compiler rejects them together); undefined
-# combines with either. So build the -fsanitize argument from the requested
-# set and validate the one illegal pair, rather than enumerating combinations.
+# undefined, rtsan -> realtime. undefined combines with any of the others; the
+# illegal pairs are address+thread and realtime+(address|thread), since those
+# runtimes use conflicting shadow-memory / interception models. So build the
+# -fsanitize argument from the requested set and validate the illegal pairs,
+# rather than enumerating combinations.
 #
 # SANITIZER accepts a ; or , separated list, e.g. "asan" or "asan,ubsan".
 set(SANITIZER
     ""
-    CACHE STRING "Sanitizers: ; or , separated list of asan | tsan | ubsan"
+    CACHE STRING "Sanitizers: ; or , separated list of asan | tsan | ubsan | rtsan"
 )
 
 if (SANITIZER
@@ -232,13 +233,22 @@ if (SANITIZER
       list(APPEND _san_checks thread)
     elseif (_s STREQUAL "ubsan")
       list(APPEND _san_checks undefined)
+    elseif (_s STREQUAL "rtsan")
+      list(APPEND _san_checks realtime)
     else ()
-      message(FATAL_ERROR "SANITIZER: unknown '${_s}' (expected asan, tsan, or ubsan)")
+      message(FATAL_ERROR "SANITIZER: unknown '${_s}' (expected asan, tsan, ubsan, or rtsan)")
     endif ()
   endforeach ()
 
   if ("address" IN_LIST _san_checks AND "thread" IN_LIST _san_checks)
     message(FATAL_ERROR "SANITIZER: asan and tsan are mutually exclusive")
+  endif ()
+
+  # RTSan instruments via function interception that conflicts with the
+  # asan/tsan shadow-memory runtimes; keep it in its own build.
+  if ("realtime" IN_LIST _san_checks AND ("address" IN_LIST _san_checks OR "thread"
+                                          IN_LIST _san_checks))
+    message(FATAL_ERROR "SANITIZER: rtsan cannot combine with asan or tsan")
   endif ()
 
   list(JOIN _san_checks "," _san_fsanitize)
