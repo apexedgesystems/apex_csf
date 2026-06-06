@@ -881,8 +881,8 @@ PERF_TEST(SchedulerMtPerf, SequencingOverhead) {
     // Sequential phases: 1, 2, 3, 4
     seq.addTask(*task, i + 1);
 
-    TaskConfig cfg(schedSeq->fundamentalFreq(), 1, 0);
-    ASSERT_EQ(schedSeq->addTask(*task, cfg, &seq), Status::SUCCESS);
+    TaskConfig taskCfg(schedSeq->fundamentalFreq(), 1, 0);
+    ASSERT_EQ(schedSeq->addTask(*task, taskCfg, &seq), Status::SUCCESS);
     tasksSeq.push_back(std::move(task));
   }
 

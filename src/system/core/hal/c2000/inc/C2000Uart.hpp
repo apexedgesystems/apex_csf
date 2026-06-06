@@ -79,7 +79,7 @@ public:
 
   void print(const char* str) {
     while (*str) {
-      putch((uint16_t)*str);
+      putch(static_cast<uint16_t>(*str));
       str++;
     }
   }

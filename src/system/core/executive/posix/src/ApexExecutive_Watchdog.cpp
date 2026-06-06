@@ -90,9 +90,9 @@ void ApexExecutive::emitHeartbeat() noexcept {
       std::cout << fmt::format("[WATCHDOG] {} | Clock: {} | Tasks: {} | Overruns: {}\n", STATUS,
                                CLOCK_NOW, TASK_NOW, OVERRUNS);
     } else {
-      const std::uint64_t LAG = (CLOCK_NOW > TASK_NOW) ? (CLOCK_NOW - TASK_NOW) : 0;
+      const std::uint64_t DISPLAY_LAG = (CLOCK_NOW > TASK_NOW) ? (CLOCK_NOW - TASK_NOW) : 0;
       std::cout << fmt::format("[WATCHDOG] {} | Clock: {} | Tasks: {} | Lag: {} | Overruns: {}\n",
-                               STATUS, CLOCK_NOW, TASK_NOW, LAG, OVERRUNS);
+                               STATUS, CLOCK_NOW, TASK_NOW, DISPLAY_LAG, OVERRUNS);
     }
   }
 }

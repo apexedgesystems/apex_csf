@@ -237,7 +237,7 @@ TEST(CanEventLoopPoll, PollInvokesCallbackOnData) {
   struct can_frame tx{};
   tx.can_id = 0x100;
   tx.can_dlc = 4;
-  ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), (ssize_t)sizeof(tx));
+  ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), static_cast<ssize_t>(sizeof(tx)));
 
   // Poll should invoke callback
   int dispatched = loop.poll(100);

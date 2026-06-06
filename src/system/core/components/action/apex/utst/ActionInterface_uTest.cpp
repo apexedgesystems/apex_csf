@@ -1038,9 +1038,9 @@ TEST(ActionInterface, EventSequenceHandlerCalledOnNoMatch) {
   wp.armed = true;
 
   // No resident sequence with eventId=42 — handler should be called
-  std::uint16_t handlerEventId = 0;
-  std::uint32_t handlerCallCount = 0;
-  auto handlerFn = [](void* ctx, std::uint16_t eventId) {
+  [[maybe_unused]] std::uint16_t handlerEventId = 0;
+  [[maybe_unused]] std::uint32_t handlerCallCount = 0;
+  [[maybe_unused]] auto handlerFn = [](void* ctx, std::uint16_t eventId) {
     auto* counter = static_cast<std::uint32_t*>(ctx);
     ++(*counter);
     // Store eventId in the word after the counter

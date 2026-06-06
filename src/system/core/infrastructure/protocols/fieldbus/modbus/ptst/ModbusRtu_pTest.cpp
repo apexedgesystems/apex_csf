@@ -363,9 +363,9 @@ protected:
       auto status = pty_.readMaster(rxBuffer.data(), rxBuffer.size(), bytesRead, 10);
 
       if (status == uart::Status::SUCCESS && bytesRead >= 4) {
-        const std::uint16_t RECEIVED_CRC =
+        const std::uint16_t RECEIVED_CRC = static_cast<std::uint16_t>(
             static_cast<std::uint16_t>(rxBuffer[bytesRead - 2]) |
-            (static_cast<std::uint16_t>(rxBuffer[bytesRead - 1]) << 8);
+            (static_cast<std::uint16_t>(rxBuffer[bytesRead - 1]) << 8));
         const std::uint16_t CALC_CRC = modbus::calculateCrc(rxBuffer.data(), bytesRead - 2);
 
         if (RECEIVED_CRC == CALC_CRC && rxBuffer[0] == UNIT_ADDRESS) {
@@ -384,7 +384,8 @@ protected:
     const std::uint8_t FC = request[1];
 
     if (FC == 0x03 && reqLen >= 8) {
-      const std::uint16_t QUANTITY = (static_cast<std::uint16_t>(request[4]) << 8) | request[5];
+      const std::uint16_t QUANTITY = static_cast<std::uint16_t>(
+          (static_cast<std::uint16_t>(request[4]) << 8) | request[5]);
       const std::size_t BYTE_COUNT = static_cast<const std::size_t>(QUANTITY * 2);
 
       response[0] = UNIT_ADDRESS;

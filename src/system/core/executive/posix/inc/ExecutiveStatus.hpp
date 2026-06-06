@@ -55,6 +55,7 @@ enum class Status : std::uint8_t {
   WARN_TPRM_LOAD_FAIL,
   WARN_SWAP_FAILED,
   WARN_QUEUE_ALLOC_FAIL,
+  WARN_CLI_ARG_CLAMPED,
 
   // Marker --------------------------------------------------------------------
   EOE_EXECUTIVE

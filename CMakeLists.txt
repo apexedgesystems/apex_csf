@@ -353,6 +353,40 @@ if (ENABLE_CLANG_TIDY)
 endif ()
 
 # ------------------------------------------------------------------------------
+# Gated warnings (first-party code only)
+# ------------------------------------------------------------------------------
+# Gate a curated set of warnings as errors -- but only for our own sources, so
+# dependency builds are never gated (ExternalDependencies were configured above;
+# our subdirs are added below). Each flag gets its own generator expression
+# because a semicolon-list inside one $<...> is split by add_compile_options.
+#
+# The numeric-narrowing classes (implicit-int-conversion / shorten-64-to-32 /
+# double-promotion) are gated only after every existing site was reviewed and
+# resolved individually -- each cast records why the value is provably in range,
+# and the genuinely unbounded CLI parses now clamp-and-warn instead of silently
+# truncating. They are NOT silenced wholesale; the gate keeps new truncation
+# paths from landing. Domain-inherent noisy classes (sign-conversion,
+# float-equal) are left out as they fight legitimate patterns in this tree.
+if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "TI")
+  foreach (_wf IN ITEMS
+           -Wshadow
+           -Wold-style-cast
+           -Wimplicit-int-conversion
+           -Wshorten-64-to-32
+           -Wdouble-promotion
+           -Werror=unused-variable
+           -Werror=unused-const-variable
+           -Werror=deprecated-volatile
+           -Werror=shadow
+           -Werror=old-style-cast
+           -Werror=implicit-int-conversion
+           -Werror=shorten-64-to-32
+           -Werror=double-promotion)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${_wf}>)
+  endforeach ()
+endif ()
+
+# ------------------------------------------------------------------------------
 # Subdirectories
 # ------------------------------------------------------------------------------
 

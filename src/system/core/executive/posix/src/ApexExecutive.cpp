@@ -44,12 +44,31 @@ using enum executive::Status;
 #include <ctime>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
 #include <fmt/core.h>
 
 using namespace executive;
+
+namespace {
+
+// Parse an unsigned CLI argument into a 32-bit field, saturating at UINT32_MAX
+// rather than letting the implicit narrowing silently truncate an out-of-range
+// value. Returns true when the parsed value fit without saturation.
+bool parseClampedU32(std::string_view arg, std::uint32_t& out) noexcept {
+  const unsigned long parsed = std::stoul(std::string(arg));
+  if (parsed > std::numeric_limits<std::uint32_t>::max()) {
+    out = std::numeric_limits<std::uint32_t>::max();
+    return false;
+  }
+  out = static_cast<std::uint32_t>(parsed);
+  return true;
+}
+
+}  // namespace
+
 using system_core::system_component::isAtsEntry;
 using system_core::system_component::isRtsEntry;
 using system_core::system_component::PackedTprmReader;
@@ -1165,7 +1184,11 @@ void ApexExecutive::applyCliOverrides() noexcept {
   }
 
   if (parsedArgs_.count(RT_MAX_LAG)) {
-    rtConfig_.maxLagTicks = std::stoul(std::string(parsedArgs_[RT_MAX_LAG][0]));
+    if (!parseClampedU32(parsedArgs_[RT_MAX_LAG][0], rtConfig_.maxLagTicks)) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
+                       fmt::format("--rt-max-lag exceeds 32-bit range; clamped to {} ticks",
+                                   rtConfig_.maxLagTicks));
+    }
   }
 
   // Startup mode override
@@ -1181,7 +1204,11 @@ void ApexExecutive::applyCliOverrides() noexcept {
   }
 
   if (parsedArgs_.count(STARTUP_DELAY)) {
-    startupConfig_.delaySeconds = std::stoul(std::string(parsedArgs_[STARTUP_DELAY][0]));
+    if (!parseClampedU32(parsedArgs_[STARTUP_DELAY][0], startupConfig_.delaySeconds)) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
+                       fmt::format("--startup-delay exceeds 32-bit range; clamped to {} s",
+                                   startupConfig_.delaySeconds));
+    }
   }
 
   if (parsedArgs_.count(START_AT)) {
@@ -1209,7 +1236,11 @@ void ApexExecutive::applyCliOverrides() noexcept {
   }
 
   if (parsedArgs_.count(SHUTDOWN_AFTER)) {
-    shutdownConfig_.relativeSeconds = std::stoul(std::string(parsedArgs_[SHUTDOWN_AFTER][0]));
+    if (!parseClampedU32(parsedArgs_[SHUTDOWN_AFTER][0], shutdownConfig_.relativeSeconds)) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
+                       fmt::format("--shutdown-after exceeds 32-bit range; clamped to {} s",
+                                   shutdownConfig_.relativeSeconds));
+    }
   }
 
   if (parsedArgs_.count(SHUTDOWN_CYCLE)) {
@@ -1246,13 +1277,21 @@ void ApexExecutive::applyCliOverrides() noexcept {
 
   // Watchdog interval override
   if (parsedArgs_.count(WATCHDOG_INTERVAL)) {
-    watchdogState_.intervalMs = std::stoul(std::string(parsedArgs_[WATCHDOG_INTERVAL][0]));
+    if (!parseClampedU32(parsedArgs_[WATCHDOG_INTERVAL][0], watchdogState_.intervalMs)) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
+                       fmt::format("--watchdog-interval exceeds 32-bit range; clamped to {} ms",
+                                   watchdogState_.intervalMs));
+    }
   }
 
   // Profiling override
   if (parsedArgs_.count(ENABLE_PROFILING)) {
     if (parsedArgs_.count(PROFILE_INTERVAL)) {
-      profilingState_.sampleEveryN = std::stoul(std::string(parsedArgs_[PROFILE_INTERVAL][0]));
+      if (!parseClampedU32(parsedArgs_[PROFILE_INTERVAL][0], profilingState_.sampleEveryN)) {
+        sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
+                         fmt::format("--profile-interval exceeds 32-bit range; clamped to {}",
+                                     profilingState_.sampleEveryN));
+      }
     } else {
       profilingState_.sampleEveryN = 1;
     }

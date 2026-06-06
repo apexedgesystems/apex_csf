@@ -293,8 +293,8 @@ TEST(MosfetLevel3Test, ShortChannelEffect) {
   const auto [W_short, L_short] =
       MosfetLevel3::effectiveDimensions(short_channel.W, short_channel.L, short_channel);
 
-  const double CURRENT_DENSITY_LONG = ID_LONG / (W_long / L_long);
-  const double CURRENT_DENSITY_SHORT = ID_SHORT / (W_short / L_short);
+  [[maybe_unused]] const double CURRENT_DENSITY_LONG = ID_LONG / (W_long / L_long);
+  [[maybe_unused]] const double CURRENT_DENSITY_SHORT = ID_SHORT / (W_short / L_short);
 
   EXPECT_GT(ID_SHORT, ID_LONG);
 }

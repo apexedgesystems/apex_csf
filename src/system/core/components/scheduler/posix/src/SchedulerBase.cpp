@@ -351,7 +351,7 @@ void SchedulerBase::logScheduleLayout(std::string_view modeDescription) noexcept
 
   componentLog()->info(label(), "Task Frequency Distribution:");
   for (const auto& [freq, count] : freqDist) {
-    double period_ms = 1000.0 / freq;
+    double period_ms = 1000.0 / static_cast<double>(freq);
     componentLog()->info(
         label(), fmt::format("  {:.1f} Hz ({:.1f} ms): {} task(s)", freq, period_ms, count));
   }

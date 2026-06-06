@@ -211,8 +211,9 @@ private:
     }
 
     // Verify CRC
-    const std::uint16_t RECEIVED_CRC = static_cast<std::uint16_t>(request[reqLen - 2]) |
-                                       (static_cast<std::uint16_t>(request[reqLen - 1]) << 8);
+    const std::uint16_t RECEIVED_CRC =
+        static_cast<std::uint16_t>(static_cast<std::uint16_t>(request[reqLen - 2]) |
+                                   (static_cast<std::uint16_t>(request[reqLen - 1]) << 8));
     const std::uint16_t CALC_CRC = modbus::calculateCrc(request, reqLen - 2);
     if (RECEIVED_CRC != CALC_CRC) {
       return 0; // Silent discard on CRC error
@@ -291,8 +292,10 @@ private:
 
     const std::uint8_t UNIT = request[0];
     const std::uint8_t FC = request[1];
-    const std::uint16_t START_ADDR = (static_cast<std::uint16_t>(request[2]) << 8) | request[3];
-    const std::uint16_t QUANTITY = (static_cast<std::uint16_t>(request[4]) << 8) | request[5];
+    const std::uint16_t START_ADDR =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[2]) << 8) | request[3]);
+    const std::uint16_t QUANTITY =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[4]) << 8) | request[5]);
 
     // Validate quantity
     if (QUANTITY == 0 || QUANTITY > 125) {
@@ -333,8 +336,10 @@ private:
 
     const std::uint8_t UNIT = request[0];
     const std::uint8_t FC = request[1];
-    const std::uint16_t START_ADDR = (static_cast<std::uint16_t>(request[2]) << 8) | request[3];
-    const std::uint16_t QUANTITY = (static_cast<std::uint16_t>(request[4]) << 8) | request[5];
+    const std::uint16_t START_ADDR =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[2]) << 8) | request[3]);
+    const std::uint16_t QUANTITY =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[4]) << 8) | request[5]);
 
     if (QUANTITY == 0 || QUANTITY > 125) {
       return buildExceptionResponse(response, respCapacity, UNIT, FC,
@@ -372,8 +377,10 @@ private:
 
     const std::uint8_t UNIT = request[0];
     const std::uint8_t FC = request[1];
-    const std::uint16_t START_ADDR = (static_cast<std::uint16_t>(request[2]) << 8) | request[3];
-    const std::uint16_t QUANTITY = (static_cast<std::uint16_t>(request[4]) << 8) | request[5];
+    const std::uint16_t START_ADDR =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[2]) << 8) | request[3]);
+    const std::uint16_t QUANTITY =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[4]) << 8) | request[5]);
 
     if (QUANTITY == 0 || QUANTITY > 2000) {
       return buildExceptionResponse(response, respCapacity, UNIT, FC,
@@ -420,8 +427,10 @@ private:
 
     const std::uint8_t UNIT = request[0];
     const std::uint8_t FC = request[1];
-    const std::uint16_t START_ADDR = (static_cast<std::uint16_t>(request[2]) << 8) | request[3];
-    const std::uint16_t QUANTITY = (static_cast<std::uint16_t>(request[4]) << 8) | request[5];
+    const std::uint16_t START_ADDR =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[2]) << 8) | request[3]);
+    const std::uint16_t QUANTITY =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[4]) << 8) | request[5]);
 
     if (QUANTITY == 0 || QUANTITY > 2000) {
       return buildExceptionResponse(response, respCapacity, UNIT, FC,
@@ -467,8 +476,10 @@ private:
 
     const std::uint8_t UNIT = request[0];
     const std::uint8_t FC = request[1];
-    const std::uint16_t REG_ADDR = (static_cast<std::uint16_t>(request[2]) << 8) | request[3];
-    const std::uint16_t VALUE = (static_cast<std::uint16_t>(request[4]) << 8) | request[5];
+    const std::uint16_t REG_ADDR =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[2]) << 8) | request[3]);
+    const std::uint16_t VALUE =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[4]) << 8) | request[5]);
 
     if (REG_ADDR >= NUM_HOLDING_REGISTERS) {
       return buildExceptionResponse(response, respCapacity, UNIT, FC,
@@ -494,8 +505,10 @@ private:
 
     const std::uint8_t UNIT = request[0];
     const std::uint8_t FC = request[1];
-    const std::uint16_t COIL_ADDR = (static_cast<std::uint16_t>(request[2]) << 8) | request[3];
-    const std::uint16_t VALUE = (static_cast<std::uint16_t>(request[4]) << 8) | request[5];
+    const std::uint16_t COIL_ADDR =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[2]) << 8) | request[3]);
+    const std::uint16_t VALUE =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[4]) << 8) | request[5]);
 
     if (COIL_ADDR >= NUM_COILS) {
       return buildExceptionResponse(response, respCapacity, UNIT, FC,
@@ -533,8 +546,10 @@ private:
 
     const std::uint8_t UNIT = request[0];
     const std::uint8_t FC = request[1];
-    const std::uint16_t START_ADDR = (static_cast<std::uint16_t>(request[2]) << 8) | request[3];
-    const std::uint16_t QUANTITY = (static_cast<std::uint16_t>(request[4]) << 8) | request[5];
+    const std::uint16_t START_ADDR =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[2]) << 8) | request[3]);
+    const std::uint16_t QUANTITY =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[4]) << 8) | request[5]);
     const std::uint8_t BYTE_COUNT = request[6];
 
     if (QUANTITY == 0 || QUANTITY > 123 || BYTE_COUNT != QUANTITY * 2) {
@@ -553,8 +568,8 @@ private:
 
     // Write the registers
     for (std::uint16_t i = 0; i < QUANTITY; ++i) {
-      holdingRegisters_[START_ADDR + i] =
-          (static_cast<std::uint16_t>(request[7 + i * 2]) << 8) | request[7 + i * 2 + 1];
+      holdingRegisters_[START_ADDR + i] = static_cast<std::uint16_t>(
+          (static_cast<std::uint16_t>(request[7 + i * 2]) << 8) | request[7 + i * 2 + 1]);
     }
 
     // Response: unit + fc + startAddr + quantity
@@ -578,8 +593,10 @@ private:
 
     const std::uint8_t UNIT = request[0];
     const std::uint8_t FC = request[1];
-    const std::uint16_t START_ADDR = (static_cast<std::uint16_t>(request[2]) << 8) | request[3];
-    const std::uint16_t QUANTITY = (static_cast<std::uint16_t>(request[4]) << 8) | request[5];
+    const std::uint16_t START_ADDR =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[2]) << 8) | request[3]);
+    const std::uint16_t QUANTITY =
+        static_cast<std::uint16_t>((static_cast<std::uint16_t>(request[4]) << 8) | request[5]);
     const std::uint8_t BYTE_COUNT = request[6];
 
     const std::size_t EXPECTED_BYTES = (QUANTITY + 7) / 8;

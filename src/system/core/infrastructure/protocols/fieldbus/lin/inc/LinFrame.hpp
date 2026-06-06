@@ -101,7 +101,7 @@ inline constexpr std::uint8_t calculatePid(std::uint8_t id) noexcept {
   const std::uint8_t ID = id & Constants::ID_MASK;
   const std::uint8_t P0 = calculateP0(ID);
   const std::uint8_t P1 = calculateP1(ID);
-  return ID | (P0 << 6) | (P1 << 7);
+  return static_cast<std::uint8_t>(ID | (P0 << 6) | (P1 << 7));
 }
 
 /**

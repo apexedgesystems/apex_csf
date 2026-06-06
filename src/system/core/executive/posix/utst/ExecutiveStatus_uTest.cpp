@@ -145,6 +145,6 @@ TEST(ExecutiveStatus, ErrorCodesStartAfterSystemComponentBase) {
 /** @test EOE_EXECUTIVE is the final marker. */
 TEST(ExecutiveStatus, EoeExecutiveIsFinalMarker) {
   const auto EOE = static_cast<std::uint8_t>(executive::Status::EOE_EXECUTIVE);
-  const auto LAST_WARN = static_cast<std::uint8_t>(executive::Status::WARN_QUEUE_ALLOC_FAIL);
+  const auto LAST_WARN = static_cast<std::uint8_t>(executive::Status::WARN_CLI_ARG_CLAMPED);
   EXPECT_EQ(EOE, LAST_WARN + 1);
 }

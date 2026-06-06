@@ -378,7 +378,7 @@ PERF_TEST(SLIPFramingPerf, DecodeMultiFrame) {
       },
       "decode-multiframe");
 
-  const double TOTAL_SIZE = FRAME_SIZE * 10;
+  [[maybe_unused]] const double TOTAL_SIZE = FRAME_SIZE * 10;
 }
 
 /* ----------------------------- Payload Size Sweep ----------------------------- */

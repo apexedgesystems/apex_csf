@@ -65,7 +65,7 @@ TEST(CanBusAdapterBatch, RecvBatchSingleFrame) {
   tx.data[1] = 0xBB;
   tx.data[2] = 0xCC;
   tx.data[3] = 0xDD;
-  ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), (ssize_t)sizeof(tx));
+  ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), static_cast<ssize_t>(sizeof(tx)));
 
   // Receive via batch
   std::array<CanFrame, 10> buffer{};
@@ -102,7 +102,7 @@ TEST(CanBusAdapterBatch, RecvBatchMultipleFrames) {
     tx.can_dlc = 2;
     tx.data[0] = static_cast<uint8_t>(i);
     tx.data[1] = static_cast<uint8_t>(i * 2);
-    ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), (ssize_t)sizeof(tx));
+    ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), static_cast<ssize_t>(sizeof(tx)));
   }
 
   // Small delay to ensure frames are in kernel buffer
@@ -142,7 +142,7 @@ TEST(CanBusAdapterBatch, RecvBatchRespectsMaxFrames) {
     tx.can_id = static_cast<canid_t>(0x300 + i);
     tx.can_dlc = 1;
     tx.data[0] = static_cast<uint8_t>(i);
-    ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), (ssize_t)sizeof(tx));
+    ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), static_cast<ssize_t>(sizeof(tx)));
   }
 
   usleep(10000); // 10ms
@@ -224,7 +224,7 @@ TEST(CanBusAdapterBatch, RecvBatchUpdatesStats) {
     struct can_frame tx{};
     tx.can_id = static_cast<canid_t>(0x400 + i);
     tx.can_dlc = 4;
-    ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), (ssize_t)sizeof(tx));
+    ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), static_cast<ssize_t>(sizeof(tx)));
   }
 
   usleep(10000);

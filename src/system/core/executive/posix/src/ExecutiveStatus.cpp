@@ -63,6 +63,8 @@ const char* toString(Status s) noexcept {
     return "WARN_SWAP_FAILED";
   case Status::WARN_QUEUE_ALLOC_FAIL:
     return "WARN_QUEUE_ALLOC_FAIL";
+  case Status::WARN_CLI_ARG_CLAMPED:
+    return "WARN_CLI_ARG_CLAMPED";
 
   // Marker
   case Status::EOE_EXECUTIVE:

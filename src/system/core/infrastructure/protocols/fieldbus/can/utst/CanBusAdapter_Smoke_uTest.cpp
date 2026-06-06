@@ -52,7 +52,7 @@ TEST(CanBusAdapterSmoke, CreationAndBasicWriteRead) {
   // Assert (read on external socket)
   struct can_frame rx{};
   ssize_t n = ::read(extSock, &rx, sizeof(rx));
-  ASSERT_EQ(n, (ssize_t)sizeof(rx));
+  ASSERT_EQ(n, static_cast<ssize_t>(sizeof(rx)));
   EXPECT_EQ(rx.can_id, 0x000u);
   EXPECT_EQ(rx.can_dlc, tx.dlc);
   EXPECT_EQ(std::memcmp(rx.data, tx.data.data(), tx.dlc), 0);
@@ -82,7 +82,7 @@ TEST(CanBusAdapterSmoke, SlaveToMasterRead) {
   tx.can_dlc = static_cast<__u8>(std::strlen(payload));
   std::memcpy(tx.data, payload, tx.can_dlc);
 
-  ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), (ssize_t)sizeof(tx));
+  ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), static_cast<ssize_t>(sizeof(tx)));
 
   // Act
   CanFrame rx{};
@@ -123,7 +123,7 @@ TEST(CanBusAdapterSmoke, WriteReadZeroLengthPayload) {
 
   // Assert
   struct can_frame rx{};
-  ASSERT_EQ(::read(extSock, &rx, sizeof(rx)), (ssize_t)sizeof(rx));
+  ASSERT_EQ(::read(extSock, &rx, sizeof(rx)), static_cast<ssize_t>(sizeof(rx)));
   EXPECT_EQ(rx.can_id, 0x055u);
   EXPECT_EQ(rx.can_dlc, 0);
   ::close(extSock);
@@ -158,7 +158,7 @@ TEST(CanBusAdapterSmoke, WriteReadExtendedId) {
 
   // Assert
   struct can_frame rx{};
-  ASSERT_EQ(::read(extSock, &rx, sizeof(rx)), (ssize_t)sizeof(rx));
+  ASSERT_EQ(::read(extSock, &rx, sizeof(rx)), static_cast<ssize_t>(sizeof(rx)));
   // driver encodes extended IDs with CAN_EFF_FLAG; the raw id bits sit under CAN_EFF_MASK
   EXPECT_TRUE((rx.can_id & CAN_EFF_FLAG) != 0);
   EXPECT_EQ(rx.can_id & CAN_EFF_MASK, EXT_ID);
@@ -193,7 +193,7 @@ TEST(CanBusAdapterSmoke, WriteReadRemoteFrame) {
 
   // Assert
   struct can_frame rx{};
-  ASSERT_EQ(::read(extSock, &rx, sizeof(rx)), (ssize_t)sizeof(rx));
+  ASSERT_EQ(::read(extSock, &rx, sizeof(rx)), static_cast<ssize_t>(sizeof(rx)));
   EXPECT_TRUE((rx.can_id & CAN_RTR_FLAG) != 0);
   EXPECT_EQ(rx.can_id & CAN_SFF_MASK, 0x222u);
   EXPECT_EQ(rx.can_dlc, 4);
@@ -223,7 +223,7 @@ TEST(CanBusAdapterSmoke, FiltersDropUnmatchedFramesWouldBlock) {
   tx.can_dlc = 2;
   tx.data[0] = 0xAB;
   tx.data[1] = 0xCD;
-  ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), (ssize_t)sizeof(tx));
+  ASSERT_EQ(::write(extSock, &tx, sizeof(tx)), static_cast<ssize_t>(sizeof(tx)));
 
   // Act: adapter should not see the frame due to filter → WOULD_BLOCK.
   CanFrame rx{};

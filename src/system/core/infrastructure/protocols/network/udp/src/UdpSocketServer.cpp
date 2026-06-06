@@ -83,7 +83,7 @@ uint8_t UdpSocketServer::init(std::optional<std::reference_wrapper<std::string>>
 #if defined(SO_BINDTODEVICE)
     if (!bindDevice_.empty()) {
       (void)::setsockopt(SOCK, SOL_SOCKET, SO_BINDTODEVICE, bindDevice_.c_str(),
-                         bindDevice_.size());
+                         static_cast<socklen_t>(bindDevice_.size()));
     }
 #endif
 

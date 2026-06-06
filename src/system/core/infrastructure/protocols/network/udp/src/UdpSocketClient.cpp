@@ -86,7 +86,7 @@ uint8_t UdpSocketClient::init(UdpSocketMode mode,
 #if defined(SO_BINDTODEVICE)
     if (!bindDevice_.empty()) {
       (void)::setsockopt(SOCK, SOL_SOCKET, SO_BINDTODEVICE, bindDevice_.c_str(),
-                         bindDevice_.size());
+                         static_cast<socklen_t>(bindDevice_.size()));
     }
 #endif
 #if defined(SO_BROADCAST)

@@ -67,15 +67,18 @@ PERF_TEST(Aes256GcmMcu, EncryptThroughput) {
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      mcu::aes256GcmEncrypt(key.data(), nonce.data(), aad.data(), aad.size(), plaintext.data(),
-                            plaintext.size(), ciphertext.data(), tag.data());
+      mcu::aes256GcmEncrypt(key.data(), nonce.data(), aad.data(),
+                            static_cast<uint32_t>(aad.size()), plaintext.data(),
+                            static_cast<uint32_t>(plaintext.size()), ciphertext.data(), tag.data());
     }
   });
 
   auto result = perf.throughputLoop(
       [&] {
-        mcu::aes256GcmEncrypt(key.data(), nonce.data(), aad.data(), aad.size(), plaintext.data(),
-                              plaintext.size(), ciphertext.data(), tag.data());
+        mcu::aes256GcmEncrypt(key.data(), nonce.data(), aad.data(),
+                              static_cast<uint32_t>(aad.size()), plaintext.data(),
+                              static_cast<uint32_t>(plaintext.size()), ciphertext.data(),
+                              tag.data());
       },
       "encrypt-256B");
 
@@ -106,22 +109,26 @@ PERF_TEST(Aes256GcmMcu, DecryptThroughput) {
   // Encrypt first to get valid ciphertext + tag
   std::vector<uint8_t> ciphertext(PAYLOAD);
   std::array<uint8_t, mcu::GCM_TAG_LEN> tag{};
-  mcu::aes256GcmEncrypt(key.data(), nonce.data(), aad.data(), aad.size(), plaintext.data(),
-                        plaintext.size(), ciphertext.data(), tag.data());
+  mcu::aes256GcmEncrypt(key.data(), nonce.data(), aad.data(), static_cast<uint32_t>(aad.size()),
+                        plaintext.data(), static_cast<uint32_t>(plaintext.size()),
+                        ciphertext.data(), tag.data());
 
   std::vector<uint8_t> decrypted(PAYLOAD);
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      mcu::aes256GcmDecrypt(key.data(), nonce.data(), aad.data(), aad.size(), ciphertext.data(),
-                            ciphertext.size(), tag.data(), decrypted.data());
+      mcu::aes256GcmDecrypt(key.data(), nonce.data(), aad.data(),
+                            static_cast<uint32_t>(aad.size()), ciphertext.data(),
+                            static_cast<uint32_t>(ciphertext.size()), tag.data(), decrypted.data());
     }
   });
 
   auto result = perf.throughputLoop(
       [&] {
-        mcu::aes256GcmDecrypt(key.data(), nonce.data(), aad.data(), aad.size(), ciphertext.data(),
-                              ciphertext.size(), tag.data(), decrypted.data());
+        mcu::aes256GcmDecrypt(key.data(), nonce.data(), aad.data(),
+                              static_cast<uint32_t>(aad.size()), ciphertext.data(),
+                              static_cast<uint32_t>(ciphertext.size()), tag.data(),
+                              decrypted.data());
       },
       "decrypt-256B");
 

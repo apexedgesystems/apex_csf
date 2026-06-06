@@ -50,16 +50,16 @@ TEST(ResistorDescriptorTest, LargeResistance) {
 /** @test E12 series resistor values (common). */
 TEST(ResistorDescriptorTest, E12Series) {
   ResistorDescriptor r10{1, 0, 10.0};
-  ResistorDescriptor r12{1, 0, 12.0};
-  ResistorDescriptor r15{1, 0, 15.0};
-  ResistorDescriptor r18{1, 0, 18.0};
-  ResistorDescriptor r22{1, 0, 22.0};
-  ResistorDescriptor r27{1, 0, 27.0};
-  ResistorDescriptor r33{1, 0, 33.0};
-  ResistorDescriptor r39{1, 0, 39.0};
+  [[maybe_unused]] ResistorDescriptor r12{1, 0, 12.0};
+  [[maybe_unused]] ResistorDescriptor r15{1, 0, 15.0};
+  [[maybe_unused]] ResistorDescriptor r18{1, 0, 18.0};
+  [[maybe_unused]] ResistorDescriptor r22{1, 0, 22.0};
+  [[maybe_unused]] ResistorDescriptor r27{1, 0, 27.0};
+  [[maybe_unused]] ResistorDescriptor r33{1, 0, 33.0};
+  [[maybe_unused]] ResistorDescriptor r39{1, 0, 39.0};
   ResistorDescriptor r47{1, 0, 47.0};
-  ResistorDescriptor r56{1, 0, 56.0};
-  ResistorDescriptor r68{1, 0, 68.0};
+  [[maybe_unused]] ResistorDescriptor r56{1, 0, 56.0};
+  [[maybe_unused]] ResistorDescriptor r68{1, 0, 68.0};
   ResistorDescriptor r82{1, 0, 82.0};
 
   EXPECT_DOUBLE_EQ(r10.resistance, 10.0);

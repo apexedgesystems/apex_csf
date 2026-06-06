@@ -617,8 +617,8 @@ std::uint8_t DataTransform::handleCommand(std::uint16_t opcode,
                               (static_cast<std::uint32_t>(payload[3]) << 16) |
                               (static_cast<std::uint32_t>(payload[4]) << 24);
     const auto CAT = static_cast<data::DataCategory>(payload[5]);
-    const std::uint16_t OFF =
-        static_cast<std::uint16_t>(payload[6]) | (static_cast<std::uint16_t>(payload[7]) << 8);
+    const std::uint16_t OFF = static_cast<std::uint16_t>(
+        static_cast<std::uint16_t>(payload[6]) | (static_cast<std::uint16_t>(payload[7]) << 8));
     const std::uint8_t LEN = payload[8];
     entries_[INDEX].target = {UID, CAT, OFF, LEN};
     {

@@ -196,11 +196,11 @@ Status ModbusTcpTransport::receiveMbapFrame(FrameBuffer& frame, int timeoutMs) n
 
   // Parse MBAP header
   const std::uint16_t RX_TRANSACTION_ID =
-      (static_cast<std::uint16_t>(mbapHeader[0]) << 8) | mbapHeader[1];
+      static_cast<std::uint16_t>((static_cast<std::uint16_t>(mbapHeader[0]) << 8) | mbapHeader[1]);
   const std::uint16_t PROTOCOL_ID =
-      (static_cast<std::uint16_t>(mbapHeader[2]) << 8) | mbapHeader[3];
+      static_cast<std::uint16_t>((static_cast<std::uint16_t>(mbapHeader[2]) << 8) | mbapHeader[3]);
   const std::uint16_t MBAP_LENGTH =
-      (static_cast<std::uint16_t>(mbapHeader[4]) << 8) | mbapHeader[5];
+      static_cast<std::uint16_t>((static_cast<std::uint16_t>(mbapHeader[4]) << 8) | mbapHeader[5]);
 
   // Validate protocol ID
   if (PROTOCOL_ID != Constants::MBAP_PROTOCOL_ID) {

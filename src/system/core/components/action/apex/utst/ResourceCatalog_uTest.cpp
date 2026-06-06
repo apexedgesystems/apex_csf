@@ -81,7 +81,9 @@ TEST(ResourceCatalog, WatchpointCatalogDuplicate) {
 TEST(ResourceCatalog, WatchpointCatalogSortedLookup) {
   WatchpointCatalog cat;
 
-  for (std::uint16_t id : {50, 10, 30, 20, 40}) {
+  for (std::uint16_t id : {static_cast<std::uint16_t>(50), static_cast<std::uint16_t>(10),
+                           static_cast<std::uint16_t>(30), static_cast<std::uint16_t>(20),
+                           static_cast<std::uint16_t>(40)}) {
     WatchpointDef def{};
     def.watchpointId = id;
     def.eventId = id;
@@ -89,7 +91,9 @@ TEST(ResourceCatalog, WatchpointCatalogSortedLookup) {
   }
 
   EXPECT_EQ(cat.size(), 5U);
-  for (std::uint16_t id : {10, 20, 30, 40, 50}) {
+  for (std::uint16_t id : {static_cast<std::uint16_t>(10), static_cast<std::uint16_t>(20),
+                           static_cast<std::uint16_t>(30), static_cast<std::uint16_t>(40),
+                           static_cast<std::uint16_t>(50)}) {
     const auto* found = cat.findById(id);
     ASSERT_NE(found, nullptr);
     EXPECT_EQ(found->eventId, id);
