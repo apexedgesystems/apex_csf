@@ -1,0 +1,84 @@
+# ==============================================================================
+# docker-compose.ci-cache.yml -- CI-only registry build-cache overlay
+#
+# Layered on top of docker-compose.yml in the Docker Images workflow only:
+#   docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build <svc>
+#
+# It adds registry layer caching without touching the base compose file, so
+# local `make compose-*` builds are unaffected (no registry cache pulls during
+# day-to-day development). cache_to uses the inline exporter, which embeds cache
+# metadata in the pushed image -- this works with the default builder, so no
+# docker-container buildx driver setup is needed in CI.
+#
+# REGISTRY (ghcr.io/<owner>/<repo>) is provided by the workflow environment.
+# cache_from is best-effort: a missing ref (first build) is silently ignored.
+# ==============================================================================
+x-inline-cache: &inline-cache
+  - type=inline
+
+services:
+  base:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.base:latest
+      cache_to: *inline-cache
+
+  dev:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.dev.cpu:latest
+      cache_to: *inline-cache
+
+  dev-cuda:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.dev.cuda:latest
+      cache_to: *inline-cache
+
+  dev-jetson:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.dev.jetson:latest
+      cache_to: *inline-cache
+
+  dev-rpi:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.dev.rpi:latest
+      cache_to: *inline-cache
+
+  dev-riscv64:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.dev.riscv64:latest
+      cache_to: *inline-cache
+
+  dev-stm32:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.dev.stm32:latest
+      cache_to: *inline-cache
+
+  dev-esp32:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.dev.esp32:latest
+      cache_to: *inline-cache
+
+  dev-pico:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.dev.pico:latest
+      cache_to: *inline-cache
+
+  dev-arduino:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.dev.arduino:latest
+      cache_to: *inline-cache
+
+  dev-c2000:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.dev.c2000:latest
+      cache_to: *inline-cache

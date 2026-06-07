@@ -1,26 +1,29 @@
 # ==============================================================================
-# Docker Images -- Build and push dev images to ghcr.io
+# Docker Images -- Build and push dev images to ghcr.io (data-driven DAG)
 #
-# Dev and base images are infrastructure: they change only when a Dockerfile
-# changes (toolchain version bump, new SDK, new system package). This workflow
-# builds and caches them so CI and release jobs never rebuild toolchains.
+# The whole image graph is one data table in the detect job (GRAPH below): each
+# row is image | compose-service | parent-image | tier | dockerfile. detect
+# diffs docker/, marks an image for rebuild if its own Dockerfile changed or any
+# ancestor rebuilds, and emits one matrix per topological tier containing only
+# the changed images. The build runs as N generic tier jobs (tier0 -> tier1 ->
+# tier2), each a matrix that calls the shared docker-build-push composite.
 #
-# Triggers:
-#   - Push to main when docker/ changes  (path filter = free git diff check)
-#   - Manual dispatch with optional force_rebuild flag
+# Adding a target = add ONE row to GRAPH (and a compose service). No new job.
+# A deeper graph (a new tier) = copy a tier job. Build order is guaranteed by
+# `needs` between tiers; selectivity by the per-image rebuild flags -- the two
+# stay decoupled, which a single buildx-bake job cannot do without forcing
+# parent rebuilds.
 #
-# Selectivity:
-#   - base.Dockerfile changed  -> rebuild everything (base is parent of all)
-#   - dev/cpu.Dockerfile       -> rebuild cpu + all cpu-dependent images
-#   - dev/cuda.Dockerfile      -> rebuild cuda + jetson
-#   - dev/<x>.Dockerfile       -> rebuild only that image
-#   - No Dockerfile changed    -> each image is pulled from registry (no build)
+# Selectivity (unchanged from the original sequential workflow):
+#   base.Dockerfile      -> everything (base is the root)
+#   dev/cpu.Dockerfile   -> cpu + all cpu-children
+#   dev/cuda.Dockerfile  -> cuda + jetson
+#   dev/<leaf>.Dockerfile-> only that leaf
+#   unrelated docker/ change -> nothing
 #
-# Images pushed (tagged :latest and :{git-sha}):
-#   apex.base
-#   apex.dev.cpu   apex.dev.cuda   apex.dev.jetson
-#   apex.dev.rpi   apex.dev.riscv64
-#   apex.dev.stm32 apex.dev.esp32  apex.dev.pico  apex.dev.arduino  apex.dev.c2000
+# Each non-root build pulls its parent image first (a fresh runner has no local
+# parent to build FROM) and builds through the CI cache overlay
+# (docker-compose.ci-cache.yml). Images are pushed :latest and :{sha}.
 # ==============================================================================
 name: Docker Images
 
@@ -40,227 +43,146 @@ permissions:
   contents: read
   packages: write
 
+env:
+  REGISTRY: ghcr.io/${{ github.repository }}
+
 jobs:
-  build-and-push:
-    name: Build and Push Dev Images
+  # ----------------------------------------------------------------------------
+  # Resolve the image graph and emit one matrix per tier of changed images.
+  # ----------------------------------------------------------------------------
+  detect:
+    name: Detect changed images
     runs-on: ubuntu-latest
-    timeout-minutes: 240
-
-    env:
-      REGISTRY: ghcr.io/${{ github.repository }}
-
+    outputs:
+      tier0: ${{ steps.d.outputs.tier0 }}
+      tier1: ${{ steps.d.outputs.tier1 }}
+      tier2: ${{ steps.d.outputs.tier2 }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 2
 
-      - name: Prepare environment
+      - name: Resolve rebuild graph
+        id: d
+        env:
+          FORCE: ${{ github.event.inputs.force_rebuild }}
         run: |
-          touch ~/.gitconfig
-          mkdir -p ~/.ssh
-          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
-          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+          set -euo pipefail
 
-      - name: Login to ghcr.io
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          # image | compose-service | parent-image | tier | dockerfile
+          GRAPH="
+          apex.base|base||0|docker/base.Dockerfile
+          apex.dev.cpu|dev|apex.base|1|docker/dev/cpu.Dockerfile
+          apex.dev.cuda|dev-cuda|apex.base|1|docker/dev/cuda.Dockerfile
+          apex.dev.jetson|dev-jetson|apex.dev.cuda|2|docker/dev/jetson.Dockerfile
+          apex.dev.rpi|dev-rpi|apex.dev.cpu|2|docker/dev/rpi.Dockerfile
+          apex.dev.riscv64|dev-riscv64|apex.dev.cpu|2|docker/dev/riscv64.Dockerfile
+          apex.dev.stm32|dev-stm32|apex.dev.cpu|2|docker/dev/stm32.Dockerfile
+          apex.dev.esp32|dev-esp32|apex.dev.cpu|2|docker/dev/esp32.Dockerfile
+          apex.dev.pico|dev-pico|apex.dev.cpu|2|docker/dev/pico.Dockerfile
+          apex.dev.arduino|dev-arduino|apex.dev.cpu|2|docker/dev/arduino.Dockerfile
+          apex.dev.c2000|dev-c2000|apex.dev.cpu|2|docker/dev/c2000.Dockerfile
+          "
+          MAX_TIER=2
 
-      # Compute per-image rebuild flags and export to GITHUB_ENV so each
-      # subsequent step can read them as plain shell variables.
-      - name: Detect changed Dockerfiles
-        run: |
-          FORCE="${{ github.event.inputs.force_rebuild }}"
           DIFF=$(git diff --name-only HEAD~1 HEAD -- docker/ 2>/dev/null || echo "docker/base.Dockerfile")
-          echo "Changed docker files: $DIFF"
+          echo "Changed docker files:"; echo "$DIFF"
 
-          changed() { echo "$DIFF" | grep -qF "$1" && echo "true" || echo "false"; }
+          rows=$(echo "$GRAPH" | sed 's/^[[:space:]]*//' | grep -v '^$')
+          declare -A RB
 
-          BASE=$(changed "base.Dockerfile")
-          CPU=$(changed  "dev/cpu.Dockerfile")
-          CUDA=$(changed "dev/cuda.Dockerfile")
-
-          # base change cascades to everything; force_rebuild overrides all
-          if [ "$FORCE" = "true" ] || [ "$BASE" = "true" ]; then
-            for v in BASE CPU CUDA JETSON RPI RISCV64 STM32 ESP32 PICO ARDUINO C2000; do
-              echo "REBUILD_${v}=true" >> "$GITHUB_ENV"
-            done
-            exit 0
-          fi
-
-          echo "REBUILD_BASE=false"   >> "$GITHUB_ENV"
-
-          # cpu change cascades to all cpu-dependent images
-          for img in CPU RPI RISCV64 STM32 ESP32 PICO ARDUINO C2000; do
-            lower=$(echo "$img" | tr '[:upper:]' '[:lower:]')
-            rebuild=$(changed "dev/${lower}.Dockerfile")
-            [ "$CPU" = "true" ] && rebuild=true
-            echo "REBUILD_${img}=${rebuild}" >> "$GITHUB_ENV"
+          # Decide rebuild tier-by-tier so each parent is resolved before its child.
+          for tier in $(seq 0 "$MAX_TIER"); do
+            while IFS='|' read -r image svc parent t df; do
+              [ "$t" = "$tier" ] || continue
+              r=false
+              if [ "${FORCE:-false}" = true ] \
+                 || printf '%s\n' "$DIFF" | grep -qF "$df" \
+                 || { [ -n "$parent" ] && [ "${RB[$parent]:-false}" = true ]; }; then
+                r=true
+              fi
+              RB[$image]=$r
+            done <<< "$rows"
           done
 
-          # cuda change cascades to jetson
-          JETSON=$(changed "dev/jetson.Dockerfile")
-          [ "$CUDA" = "true" ] && JETSON=true
-          echo "REBUILD_CUDA=${CUDA}"     >> "$GITHUB_ENV"
-          echo "REBUILD_JETSON=${JETSON}" >> "$GITHUB_ENV"
+          # Emit one JSON matrix array per tier of the images that will rebuild.
+          for tier in $(seq 0 "$MAX_TIER"); do
+            items=()
+            while IFS='|' read -r image svc parent t df; do
+              [ "$t" = "$tier" ] || continue
+              if [ "${RB[$image]}" = true ]; then
+                items+=("{\"service\":\"${svc}\",\"image\":\"${image}\",\"parent\":\"${parent}\"}")
+              fi
+            done <<< "$rows"
+            json="[$(IFS=,; echo "${items[*]:-}")]"
+            echo "tier${tier}=${json}" >> "$GITHUB_OUTPUT"
+            echo "tier${tier}: ${json}"
+          done
 
-      # --------------------------------------------------------------------------
-      # Base image (parent of all)
-      # --------------------------------------------------------------------------
-      - name: apex.base
-        run: |
-          if [ "$REBUILD_BASE" = "true" ]; then
-            docker compose build base
-            docker tag apex.base $REGISTRY/apex.base:latest
-            docker tag apex.base $REGISTRY/apex.base:${{ github.sha }}
-            docker push $REGISTRY/apex.base:latest
-            docker push $REGISTRY/apex.base:${{ github.sha }}
-          else
-            docker pull $REGISTRY/apex.base:latest
-            docker tag $REGISTRY/apex.base:latest apex.base
-          fi
+  # ----------------------------------------------------------------------------
+  # One generic job per tier; each builds its changed images concurrently.
+  # tierN needs tier(N-1) so parents are pushed before children pull them.
+  # ----------------------------------------------------------------------------
+  tier0:
+    name: ${{ matrix.img.image }}
+    needs: detect
+    if: ${{ needs.detect.outputs.tier0 != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        img: ${{ fromJSON(needs.detect.outputs.tier0) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/docker-build-push
+        with:
+          service: ${{ matrix.img.service }}
+          image: ${{ matrix.img.image }}
+          parent: ${{ matrix.img.parent }}
+          registry: ${{ env.REGISTRY }}
+          sha: ${{ github.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      # --------------------------------------------------------------------------
-      # CPU and CUDA dev images (both inherit from base, independent of each other)
-      # --------------------------------------------------------------------------
-      - name: apex.dev.cpu
-        run: |
-          if [ "$REBUILD_CPU" = "true" ]; then
-            docker compose build dev
-            docker tag apex.dev.cpu $REGISTRY/apex.dev.cpu:latest
-            docker tag apex.dev.cpu $REGISTRY/apex.dev.cpu:${{ github.sha }}
-            docker push $REGISTRY/apex.dev.cpu:latest
-            docker push $REGISTRY/apex.dev.cpu:${{ github.sha }}
-          else
-            docker pull $REGISTRY/apex.dev.cpu:latest
-            docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu
-          fi
+  tier1:
+    name: ${{ matrix.img.image }}
+    needs: [detect, tier0]
+    if: ${{ always() && needs.detect.outputs.tier1 != '[]' && needs.tier0.result != 'failure' && needs.tier0.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        img: ${{ fromJSON(needs.detect.outputs.tier1) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/docker-build-push
+        with:
+          service: ${{ matrix.img.service }}
+          image: ${{ matrix.img.image }}
+          parent: ${{ matrix.img.parent }}
+          registry: ${{ env.REGISTRY }}
+          sha: ${{ github.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: apex.dev.cuda
-        run: |
-          if [ "$REBUILD_CUDA" = "true" ]; then
-            docker compose build dev-cuda
-            docker tag apex.dev.cuda $REGISTRY/apex.dev.cuda:latest
-            docker tag apex.dev.cuda $REGISTRY/apex.dev.cuda:${{ github.sha }}
-            docker push $REGISTRY/apex.dev.cuda:latest
-            docker push $REGISTRY/apex.dev.cuda:${{ github.sha }}
-          else
-            docker pull $REGISTRY/apex.dev.cuda:latest
-            docker tag $REGISTRY/apex.dev.cuda:latest apex.dev.cuda
-          fi
-
-      # --------------------------------------------------------------------------
-      # Jetson (inherits from cuda)
-      # --------------------------------------------------------------------------
-      - name: apex.dev.jetson
-        run: |
-          if [ "$REBUILD_JETSON" = "true" ]; then
-            docker compose build dev-jetson
-            docker tag apex.dev.jetson $REGISTRY/apex.dev.jetson:latest
-            docker tag apex.dev.jetson $REGISTRY/apex.dev.jetson:${{ github.sha }}
-            docker push $REGISTRY/apex.dev.jetson:latest
-            docker push $REGISTRY/apex.dev.jetson:${{ github.sha }}
-          else
-            docker pull $REGISTRY/apex.dev.jetson:latest
-            docker tag $REGISTRY/apex.dev.jetson:latest apex.dev.jetson
-          fi
-
-      # --------------------------------------------------------------------------
-      # Linux cross-compile images (inherit from cpu)
-      # --------------------------------------------------------------------------
-      - name: apex.dev.rpi
-        run: |
-          if [ "$REBUILD_RPI" = "true" ]; then
-            docker compose build dev-rpi
-            docker tag apex.dev.rpi $REGISTRY/apex.dev.rpi:latest
-            docker tag apex.dev.rpi $REGISTRY/apex.dev.rpi:${{ github.sha }}
-            docker push $REGISTRY/apex.dev.rpi:latest
-            docker push $REGISTRY/apex.dev.rpi:${{ github.sha }}
-          else
-            docker pull $REGISTRY/apex.dev.rpi:latest
-            docker tag $REGISTRY/apex.dev.rpi:latest apex.dev.rpi
-          fi
-
-      - name: apex.dev.riscv64
-        run: |
-          if [ "$REBUILD_RISCV64" = "true" ]; then
-            docker compose build dev-riscv64
-            docker tag apex.dev.riscv64 $REGISTRY/apex.dev.riscv64:latest
-            docker tag apex.dev.riscv64 $REGISTRY/apex.dev.riscv64:${{ github.sha }}
-            docker push $REGISTRY/apex.dev.riscv64:latest
-            docker push $REGISTRY/apex.dev.riscv64:${{ github.sha }}
-          else
-            docker pull $REGISTRY/apex.dev.riscv64:latest
-            docker tag $REGISTRY/apex.dev.riscv64:latest apex.dev.riscv64
-          fi
-
-      # --------------------------------------------------------------------------
-      # Firmware images (inherit from cpu, independent of each other)
-      # --------------------------------------------------------------------------
-      - name: apex.dev.stm32
-        run: |
-          if [ "$REBUILD_STM32" = "true" ]; then
-            docker compose build dev-stm32
-            docker tag apex.dev.stm32 $REGISTRY/apex.dev.stm32:latest
-            docker tag apex.dev.stm32 $REGISTRY/apex.dev.stm32:${{ github.sha }}
-            docker push $REGISTRY/apex.dev.stm32:latest
-            docker push $REGISTRY/apex.dev.stm32:${{ github.sha }}
-          else
-            docker pull $REGISTRY/apex.dev.stm32:latest
-            docker tag $REGISTRY/apex.dev.stm32:latest apex.dev.stm32
-          fi
-
-      - name: apex.dev.esp32
-        run: |
-          if [ "$REBUILD_ESP32" = "true" ]; then
-            docker compose build dev-esp32
-            docker tag apex.dev.esp32 $REGISTRY/apex.dev.esp32:latest
-            docker tag apex.dev.esp32 $REGISTRY/apex.dev.esp32:${{ github.sha }}
-            docker push $REGISTRY/apex.dev.esp32:latest
-            docker push $REGISTRY/apex.dev.esp32:${{ github.sha }}
-          else
-            docker pull $REGISTRY/apex.dev.esp32:latest
-            docker tag $REGISTRY/apex.dev.esp32:latest apex.dev.esp32
-          fi
-
-      - name: apex.dev.pico
-        run: |
-          if [ "$REBUILD_PICO" = "true" ]; then
-            docker compose build dev-pico
-            docker tag apex.dev.pico $REGISTRY/apex.dev.pico:latest
-            docker tag apex.dev.pico $REGISTRY/apex.dev.pico:${{ github.sha }}
-            docker push $REGISTRY/apex.dev.pico:latest
-            docker push $REGISTRY/apex.dev.pico:${{ github.sha }}
-          else
-            docker pull $REGISTRY/apex.dev.pico:latest
-            docker tag $REGISTRY/apex.dev.pico:latest apex.dev.pico
-          fi
-
-      - name: apex.dev.arduino
-        run: |
-          if [ "$REBUILD_ARDUINO" = "true" ]; then
-            docker compose build dev-arduino
-            docker tag apex.dev.arduino $REGISTRY/apex.dev.arduino:latest
-            docker tag apex.dev.arduino $REGISTRY/apex.dev.arduino:${{ github.sha }}
-            docker push $REGISTRY/apex.dev.arduino:latest
-            docker push $REGISTRY/apex.dev.arduino:${{ github.sha }}
-          else
-            docker pull $REGISTRY/apex.dev.arduino:latest
-            docker tag $REGISTRY/apex.dev.arduino:latest apex.dev.arduino
-          fi
-
-      - name: apex.dev.c2000
-        run: |
-          if [ "$REBUILD_C2000" = "true" ]; then
-            docker compose build dev-c2000
-            docker tag apex.dev.c2000 $REGISTRY/apex.dev.c2000:latest
-            docker tag apex.dev.c2000 $REGISTRY/apex.dev.c2000:${{ github.sha }}
-            docker push $REGISTRY/apex.dev.c2000:latest
-            docker push $REGISTRY/apex.dev.c2000:${{ github.sha }}
-          else
-            docker pull $REGISTRY/apex.dev.c2000:latest
-            docker tag $REGISTRY/apex.dev.c2000:latest apex.dev.c2000
-          fi
+  tier2:
+    name: ${{ matrix.img.image }}
+    needs: [detect, tier1]
+    if: ${{ always() && needs.detect.outputs.tier2 != '[]' && needs.tier1.result != 'failure' && needs.tier1.result != 'cancelled' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        img: ${{ fromJSON(needs.detect.outputs.tier2) }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/docker-build-push
+        with:
+          service: ${{ matrix.img.service }}
+          image: ${{ matrix.img.image }}
+          parent: ${{ matrix.img.parent }}
+          registry: ${{ env.REGISTRY }}
+          sha: ${{ github.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
