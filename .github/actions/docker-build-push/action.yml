@@ -52,6 +52,10 @@ runs:
       shell: bash
       env:
         REGISTRY: ${{ inputs.registry }}
+        PARENT: ${{ inputs.parent }}
+        SERVICE: ${{ inputs.service }}
+        IMAGE: ${{ inputs.image }}
+        SHA: ${{ inputs.sha }}
         DOCKER_BUILDKIT: "1"
         COMPOSE_DOCKER_CLI_BUILD: "1"
       run: |
@@ -60,17 +64,17 @@ runs:
         # A fresh runner has no local parent image, so the Dockerfile FROM
         # (e.g. apex.dev.cpu:latest) cannot resolve. Pull the parent from the
         # registry and tag it to the local name the Dockerfile expects.
-        if [ -n "${{ inputs.parent }}" ]; then
-          echo "Pulling parent ${{ inputs.parent }}:latest from registry"
-          docker pull "$REGISTRY/${{ inputs.parent }}:latest"
-          docker tag "$REGISTRY/${{ inputs.parent }}:latest" "${{ inputs.parent }}:latest"
+        if [ -n "$PARENT" ]; then
+          echo "Pulling parent $PARENT:latest from registry"
+          docker pull "$REGISTRY/$PARENT:latest"
+          docker tag "$REGISTRY/$PARENT:latest" "$PARENT:latest"
         fi
 
         # Build with the CI cache overlay (registry cache_from + inline cache_to).
         docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml \
-          build ${{ inputs.service }}
+          build "$SERVICE"
 
-        for tag in latest "${{ inputs.sha }}"; do
-          docker tag "${{ inputs.image }}" "$REGISTRY/${{ inputs.image }}:${tag}"
-          docker push "$REGISTRY/${{ inputs.image }}:${tag}"
+        for tag in latest "$SHA"; do
+          docker tag "$IMAGE" "$REGISTRY/$IMAGE:${tag}"
+          docker push "$REGISTRY/$IMAGE:${tag}"
         done

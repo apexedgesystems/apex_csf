@@ -113,6 +113,10 @@ RUN ln -sfn /usr/bin/mold /usr/bin/aarch64-linux-gnu-ld.mold
 ENV PKG_CONFIG_LIBDIR=${AARCH64_SYSROOT}/usr/lib/aarch64-linux-gnu/pkgconfig:${AARCH64_SYSROOT}/usr/lib/pkgconfig:${AARCH64_SYSROOT}/usr/share/pkgconfig
 ENV PKG_CONFIG_SYSROOT_DIR=${AARCH64_SYSROOT}
 
+# Drop privileges once root-only setup is done; the prompt and validation
+# steps below need no root.
+USER ${USER}
+
 # ==============================================================================
 # Shell Prompt
 # ==============================================================================
@@ -126,5 +130,4 @@ RUN aarch64-linux-gnu-gcc --version && \
     nvcc --version && \
     echo "Jetson image validation: OK"
 
-USER ${USER}
 WORKDIR /home/${USER}

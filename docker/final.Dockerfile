@@ -25,7 +25,7 @@
 #   docker compose build final
 #   make artifacts
 # ==============================================================================
-FROM busybox:latest
+FROM busybox:1.37.0
 
 ARG USER
 ARG VERSION=0.0.0
@@ -74,6 +74,10 @@ RUN tar -czf "apex-csf-${VERSION}-x86_64-linux.tar.gz"      ./cpu/      && \
     tar -czf "apex-csf-${VERSION}-c2000.tar.gz"             ./c2000/    && \
     tar -czf "apex-tools-${VERSION}-x86_64-linux.tar.gz"    ./tools-bin/ && \
     cp ./tools-py/*.whl "apex_py_tools-${VERSION}-py3-none-any.whl"
+
+# Run as the unprivileged busybox 'nobody'; artifacts are built above and the
+# default command only lists them.
+USER nobody
 
 # ==============================================================================
 # Default: List Available Artifacts

@@ -51,15 +51,20 @@ runs:
 
     - name: Pull cached images
       shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        TAG: ${{ steps.img.outputs.tag }}
       run: |
-        docker pull ${{ inputs.registry }}/apex.base:latest \
-          && docker tag ${{ inputs.registry }}/apex.base:latest apex.base || true
-        docker pull ${{ inputs.registry }}/${{ steps.img.outputs.tag }}:latest \
-          && docker tag ${{ inputs.registry }}/${{ steps.img.outputs.tag }}:latest ${{ steps.img.outputs.tag }} || true
+        docker pull "$REGISTRY/apex.base:latest" \
+          && docker tag "$REGISTRY/apex.base:latest" apex.base || true
+        docker pull "$REGISTRY/$TAG:latest" \
+          && docker tag "$REGISTRY/$TAG:latest" "$TAG" || true
 
     - name: Rebuild images from Dockerfiles
       if: inputs.rebuild == 'true'
       shell: bash
+      env:
+        SERVICE: ${{ inputs.service }}
       run: |
         docker compose build base
-        docker compose build ${{ inputs.service }}
+        docker compose build "$SERVICE"
