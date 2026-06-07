@@ -358,8 +358,11 @@ struct MutableSppMessageFactory {
     if (includeSecondary && secondaryHeader)
       msg.secHdr = *secondaryHeader;
 
-    // Accept empty span only if secondary header contributes bytes.
-    if ((msg.payloadCount == 0) && !(msg.secHdr && msg.secHdr->length() != 0u)) {
+    // Accept empty span only if secondary header contributes bytes. The
+    // secondary-header presence is hoisted to a named condition so the guard
+    // reads as two independent checks.
+    const bool secHdrHasBytes = msg.secHdr && msg.secHdr->length() != 0u;
+    if ((msg.payloadCount == 0) && !secHdrHasBytes) {
       return std::nullopt;
     }
     return msg;
@@ -389,8 +392,11 @@ struct MutableSppMessageFactory {
     if (includeSecondary && secondaryHeader)
       msg.secHdr = *secondaryHeader;
 
-    // Accept empty payload only if secondary header contributes bytes.
-    if ((msg.payloadCount == 0) && !(msg.secHdr && msg.secHdr->length() != 0u)) {
+    // Accept empty payload only if secondary header contributes bytes. The
+    // secondary-header presence is hoisted to a named condition so the guard
+    // reads as two independent checks.
+    const bool secHdrHasBytes = msg.secHdr && msg.secHdr->length() != 0u;
+    if ((msg.payloadCount == 0) && !secHdrHasBytes) {
       return std::nullopt;
     }
     return msg;
