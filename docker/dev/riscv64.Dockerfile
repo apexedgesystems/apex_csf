@@ -75,6 +75,10 @@ ENV RISCV_SYSROOT=/opt/sysroots/riscv64
 # ==============================================================================
 RUN ln -sfn /usr/bin/mold /usr/bin/riscv64-linux-gnu-ld.mold
 
+# Drop privileges once root-only setup is done; the prompt and validation
+# steps below need no root.
+USER ${USER}
+
 # ==============================================================================
 # Shell Prompt
 # ==============================================================================
@@ -88,5 +92,4 @@ RUN riscv64-linux-gnu-gcc --version && \
     qemu-riscv64-static --version && \
     echo "RISC-V image validation: OK"
 
-USER ${USER}
 WORKDIR /home/${USER}

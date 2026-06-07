@@ -61,6 +61,10 @@ RUN cd /opt/ti && \
 
 ENV PATH="/opt/ti/uniflash:${PATH}"
 
+# Drop privileges once root-only setup is done; the prompt and validation
+# steps below need no root.
+USER ${USER}
+
 # ==============================================================================
 # Shell Prompt
 # ==============================================================================
@@ -73,7 +77,6 @@ RUN echo 'if [ -n "$PS1" ]; then export PS1="\[\e[1;33m\][C2000] \u@\h:\w \$\[\e
 RUN cl2000 --version && \
     echo "C2000 image validation: OK"
 
-USER ${USER}
 WORKDIR /home/${USER}
 
 # ==============================================================================

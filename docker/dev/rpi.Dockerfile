@@ -98,6 +98,10 @@ RUN if [ -n "${USER}" ]; then \
 # ==============================================================================
 RUN ln -sfn /usr/bin/mold /usr/bin/aarch64-linux-gnu-ld.mold
 
+# Drop privileges once root-only setup is done; the prompt and validation
+# steps below need no root.
+USER ${USER}
+
 # ==============================================================================
 # Shell Prompt
 # ==============================================================================
@@ -110,5 +114,4 @@ RUN echo 'if [ -n "$PS1" ]; then export PS1="\[\e[1;35m\][RPI] \u@\h:\w \$\[\e[0
 RUN aarch64-linux-gnu-gcc --version && \
     echo "Raspberry Pi image validation: OK"
 
-USER ${USER}
 WORKDIR /home/${USER}
