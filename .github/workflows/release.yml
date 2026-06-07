@@ -1,25 +1,24 @@
 # ==============================================================================
-# Release -- Build artifacts and publish to GitHub Releases
+# Release -- Build artifacts and publish to GitHub Releases (parallel builders)
 #
-# Triggered by pushing a version tag (v*). Builds all platform artifacts
-# through the full Docker pipeline and attaches them to the GitHub Release.
+# Two stages, mirroring the Docker Images DAG so the SDK-heavy firmware builders
+# don't contend on one runner:
 #
-# workflow_dispatch builds only builder-cpu and publishes nothing -- it exists
-# to exercise/validate the release build (and its ccache) without cutting a real
-# release.
+#   builders (matrix, one runner each) -- compile apex for each target into
+#     apex.builder.<t>, with a per-target ccache (buildkit-cache-dance keeps the
+#     /ccache BuildKit mount warm across runs), and push the image to ghcr.
+#   package (fan-in)                   -- pull the 10 builder images, assemble
+#     the final image (COPY --from each builder), extract artifacts, build the
+#     app packages, and publish the GitHub Release.
 #
-# ccache: the 10 builder images compile the apex source with a BuildKit cache
-# mount (docker/builder.Dockerfile). That mount is empty on a fresh runner, so
-# buildkit-cache-dance restores it from / saves it to actions/cache, keeping the
-# release builders' compiler cache warm across runs. A cache miss only means a
-# cold compile (ccache is content-addressed), never a wrong build.
+# Triggers:
+#   tag v*            -- full release: build, extract, package, publish.
+#   workflow_dispatch -- build all builders + assemble final, publish NOTHING.
+#                        Exercises the whole parallel path (and the ccache)
+#                        without cutting a release.
 #
-# Artifact inventory (14 packages): see the Create GitHub Release step.
-#
-# Build flow:
-#   make artifacts            -- Docker multi-stage: all builders -> final -> extract
-#   make release-all          -- POSIX app packaging via pkg_resolve.sh (reuses
-#                                dev images already built by make artifacts)
+# A ccache miss only means a cold compile -- ccache is content-addressed, so a
+# stale or empty cache can never produce a wrong build.
 # ==============================================================================
 name: Release
 
@@ -31,17 +30,25 @@ on:
 
 permissions:
   contents: write
-  packages: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository }}
 
 jobs:
-  build-artifacts:
-    name: Build Release Artifacts
+  # ----------------------------------------------------------------------------
+  # Compile each target's builder image in parallel; push to ghcr for the
+  # package job to assemble from. Per-target ccache via buildkit-cache-dance.
+  # ----------------------------------------------------------------------------
+  builders:
+    name: builder-${{ matrix.builder }}
     runs-on: ubuntu-latest
-    timeout-minutes: 240
-
-    env:
-      REGISTRY: ghcr.io/${{ github.repository }}
-
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        builder:
+          [cpu, cuda, jetson, rpi, riscv64, stm32, arduino, pico, esp32, c2000]
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -67,35 +74,95 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull cached dev images
+      - name: Pull builder's dev image (the FROM)
+        env:
+          DEV: apex.dev.${{ matrix.builder }}
         run: |
-          for img in apex.base apex.dev.cpu apex.dev.cuda apex.dev.jetson \
-                     apex.dev.rpi apex.dev.riscv64 \
-                     apex.dev.stm32 apex.dev.esp32 apex.dev.pico \
-                     apex.dev.arduino apex.dev.c2000; do
-            docker pull $REGISTRY/$img:latest && \
-              docker tag $REGISTRY/$img:latest $img || true
-          done
+          docker pull "$REGISTRY/apex.base:latest" \
+            && docker tag "$REGISTRY/apex.base:latest" apex.base || true
+          docker pull "$REGISTRY/$DEV:latest" \
+            && docker tag "$REGISTRY/$DEV:latest" "$DEV" || true
 
-      # ccache for the builder compiles: restore the BuildKit /ccache mount from
-      # the cache, and (post-job) save it back. A miss just compiles cold.
       - name: Restore builder ccache
         uses: actions/cache@v4
         with:
-          path: .ccache-release
-          key: ccache-release-${{ github.sha }}
+          path: .ccache
+          key: ccache-builder-${{ matrix.builder }}-${{ github.sha }}
           restore-keys: |
-            ccache-release-
+            ccache-builder-${{ matrix.builder }}-
+      - name: Prepare ccache dir
+        run: mkdir -p .ccache
       - name: Inject ccache into the build mount
         uses: reproducible-containers/buildkit-cache-dance@v3
+        continue-on-error: true
         with:
           cache-map: |
-            { ".ccache-release": "/ccache" }
+            { ".ccache": "/ccache" }
 
-      # --- workflow_dispatch: validate the build + ccache only (no publish) ---
-      - name: Build builder-cpu (validate cache, no publish)
+      - name: Build builder image
+        run: make docker-builder-${{ matrix.builder }}
+
+      - name: Push builder image
+        env:
+          IMG: apex.builder.${{ matrix.builder }}
+        run: |
+          docker tag "$IMG" "$REGISTRY/$IMG:latest"
+          docker push "$REGISTRY/$IMG:latest"
+
+  # ----------------------------------------------------------------------------
+  # Assemble the final image from the pushed builders, extract, package, publish.
+  # ----------------------------------------------------------------------------
+  package:
+    name: Package and release
+    needs: builders
+    if: ${{ needs.builders.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/share/boost /usr/local/graalvm /usr/local/.ghcup
+          sudo docker image prune -af
+          df -h /
+
+      - name: Prepare environment
+        run: |
+          touch ~/.gitconfig
+          mkdir -p ~/.ssh
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull builder images
+        run: |
+          for b in cpu cuda jetson rpi riscv64 stm32 arduino pico esp32 c2000; do
+            img="apex.builder.$b"
+            docker pull "$REGISTRY/$img:latest" \
+              && docker tag "$REGISTRY/$img:latest" "$img" || true
+          done
+
+      - name: Pull dev images (for app packaging)
+        run: |
+          for img in apex.base apex.dev.cpu apex.dev.cuda apex.dev.jetson \
+                     apex.dev.rpi apex.dev.stm32; do
+            docker pull "$REGISTRY/$img:latest" \
+              && docker tag "$REGISTRY/$img:latest" "$img" || true
+          done
+
+      # --- workflow_dispatch: assemble final to validate the path (no publish) ---
+      - name: Assemble final image (validate, no publish)
         if: github.event_name == 'workflow_dispatch'
-        run: make docker-builder-cpu
+        run: make docker-final VERSION=0.0.0-ci
 
       # --- tag push: full release ---
       - name: Extract version from tag
