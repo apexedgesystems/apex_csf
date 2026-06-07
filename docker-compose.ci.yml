@@ -1,0 +1,16 @@
+# ==============================================================================
+# docker-compose.ci.yml - CI runtime overlay
+#
+# Applied on top of docker-compose.yml in the CI workflow (via COMPOSE_FILE).
+# It drops dev-cuda's GPU device reservation so the container starts on a
+# GitHub runner, which has no GPU: the CUDA toolchain still compiles and links
+# the .cu surface without a device, and make testp's GPU probe excludes the
+# cuda-labeled tests there.
+#
+# Local runs use docker-compose.yml alone and keep the reservation, so a
+# developer with a GPU still gets device access in dev-cuda.
+# ==============================================================================
+
+services:
+  dev-cuda:
+    deploy: !reset null

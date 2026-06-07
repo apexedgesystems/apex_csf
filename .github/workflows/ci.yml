@@ -37,6 +37,10 @@ jobs:
 
     env:
       REGISTRY: ghcr.io/${{ github.repository }}
+      # Overlay docker-compose.ci.yml so dev-cuda starts without a GPU on the
+      # runner (it drops dev-cuda's device reservation). Affects only dev-cuda;
+      # the dev (CPU) steps are unchanged.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
 
     steps:
       - name: Checkout
@@ -60,8 +64,9 @@ jobs:
 
       - name: Pull cached dev images
         run: |
-          docker pull $REGISTRY/apex.base:latest    && docker tag $REGISTRY/apex.base:latest    apex.base    || true
-          docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
+          docker pull $REGISTRY/apex.base:latest     && docker tag $REGISTRY/apex.base:latest     apex.base     || true
+          docker pull $REGISTRY/apex.dev.cpu:latest  && docker tag $REGISTRY/apex.dev.cpu:latest  apex.dev.cpu  || true
+          docker pull $REGISTRY/apex.dev.cuda:latest && docker tag $REGISTRY/apex.dev.cuda:latest apex.dev.cuda || true
 
       - name: Detect docker/ changes
         id: docker
@@ -74,11 +79,12 @@ jobs:
             echo "rebuild=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build base and dev images
+      - name: Build base, dev, and dev-cuda images
         if: steps.docker.outputs.rebuild == 'true'
         run: |
           docker compose build base
           docker compose build dev
+          docker compose build dev-cuda
 
       - name: Format check
         run: docker compose run --rm -T dev make format-check
@@ -86,22 +92,24 @@ jobs:
       - name: Secret scan (gitleaks)
         run: docker compose run --rm -T dev make gitleaks
 
-      # End state: this primary build moves to the dev-cuda image once the CUDA
-      # test device guards land (GPU tests self-skip without a device) and the
-      # CUDA toolchain builds again -- so the .cu surface is compile + link
-      # verified on every PR (CUDA is core), GPU tests skipping cleanly. Until
-      # then it builds CPU-only in dev.
-      - name: Build (debug)
-        run: docker compose run --rm -T dev make debug
+      # The primary build runs in dev-cuda so the whole .cu surface is compile
+      # and link verified on every PR (CUDA is core). The runner has no GPU, so
+      # the docker-compose.ci.yml overlay drops dev-cuda's device reservation to
+      # let the container start, and make testp's GPU probe excludes the
+      # cuda-labeled tests (they run on a GPU host via make testp-cuda). debug,
+      # testp, smoke, and docs-check share the dev-cuda build directory; gitleaks
+      # and the tool tests stay on the CPU dev image.
+      - name: Build (debug, CUDA)
+        run: docker compose run --rm -T dev-cuda make debug
 
       - name: Run C++ tests
-        run: docker compose run --rm -T dev make testp
+        run: docker compose run --rm -T dev-cuda make testp
 
       - name: Demo smoke test (reuses debug build)
-        run: docker compose run --rm -T dev make smoke APP=apex_mc_demo
+        run: docker compose run --rm -T dev-cuda make smoke APP=apex_mc_demo
 
       - name: Build documentation (zero-warning gate)
-        run: docker compose run --rm -T dev make docs-check
+        run: docker compose run --rm -T dev-cuda make docs-check
 
       - name: Run Rust tests
         run: docker compose run --rm -T dev make test-rust
