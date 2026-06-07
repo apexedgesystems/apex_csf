@@ -282,8 +282,28 @@ docker-validate: docker-lint
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
+# ------------------------------------------------------------------------------
+# Release path drift guard
+# ------------------------------------------------------------------------------
+# final.Dockerfile COPYs each platform from build/<preset-dir>; those names must
+# track CMakePresets.json. When a preset was renamed and final was not, the
+# release silently broke -- caught only by actually running it. This static check
+# fails fast if any final.Dockerfile build/<dir> is not a real preset binaryDir,
+# so drift is caught in the gate, not on a release tag.
+check-release-paths:
+	@final_dirs=$$(grep -E 'COPY --from' docker/final.Dockerfile | grep -oE 'build/[A-Za-z0-9._-]+' | sed 's#build/##' | sort -u); \
+	preset_dirs=$$(grep -oE 'build/[A-Za-z0-9._-]+' CMakePresets.json | sed 's#build/##' | sort -u); \
+	missing=""; \
+	for d in $$final_dirs; do printf '%s\n' "$$preset_dirs" | grep -qx "$$d" || missing="$$missing $$d"; done; \
+	if [ -n "$$missing" ]; then \
+	  printf '[check-release-paths] final.Dockerfile build dirs with no matching CMakePresets binaryDir:%s\n' "$$missing" >&2; \
+	  printf 'Known preset dirs:\n%s\n' "$$preset_dirs" >&2; \
+	  exit 1; \
+	fi; \
+	printf '[check-release-paths] OK -- all final.Dockerfile build paths match a preset\n'
+
 .PHONY: docker-all docker-devs docker-builders docker-base docker-final artifacts
-.PHONY: docker-push-devs docker-pull-devs
+.PHONY: docker-push-devs docker-pull-devs check-release-paths
 .PHONY: docker-clean docker-clean-deep docker-prune docker-disk-usage
 .PHONY: docker-lint docker-validate
 

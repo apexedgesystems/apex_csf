@@ -99,6 +99,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           service: dev
           rebuild: ${{ needs.changes.outputs.docker }}
+      - name: Check release paths (final.Dockerfile vs presets)
+        run: make check-release-paths
       - name: Format check
         run: docker compose run --rm -T dev make format-check
       - name: Secret scan (gitleaks)
