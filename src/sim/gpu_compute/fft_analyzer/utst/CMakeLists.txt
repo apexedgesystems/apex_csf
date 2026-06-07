@@ -37,6 +37,8 @@ if (CUDAToolkit_FOUND
     AND TARGET sim_gpu_compute_fft_analyzer_cuda
     AND _CUFFT_LINK
 )
+  # Kernel and model tests both link the _cuda sidecar, so both are labeled
+  # cuda; the test runner excludes them where no GPU is present.
   apex_add_gtest(
     TARGET
     TestSimGpuComputeFFTAnalyzerKernel
@@ -50,6 +52,7 @@ if (CUDAToolkit_FOUND
     sim
     gpu_compute
     fft_analyzer
+    cuda
   )
 
   apex_add_gtest(
@@ -66,6 +69,7 @@ if (CUDAToolkit_FOUND
     sim
     gpu_compute
     fft_analyzer
+    cuda
   )
 else ()
   apex_add_gtest(

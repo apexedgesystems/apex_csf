@@ -175,7 +175,9 @@ help:
 	@printf '\n'
 	@printf '%s\n' "Testing:"
 	@printf '  %-28s %s\n' "make test" "Run all C++ tests (serial)"
-	@printf '  %-28s %s\n' "make testp" "Run C++ tests (parallel + timing serial)"
+	@printf '  %-28s %s\n' "make testp" "Run C++ tests (parallel; CUDA set if GPU present)"
+	@printf '  %-28s %s\n' "make testp-cpu" "Run C++ tests, excluding the CUDA set"
+	@printf '  %-28s %s\n' "make testp-cuda" "Run only the CUDA tests (needs a GPU)"
 	@printf '  %-28s %s\n' "make test-py" "Run Python tools tests"
 	@printf '\n'
 	@printf '%s\n' "Tools:"

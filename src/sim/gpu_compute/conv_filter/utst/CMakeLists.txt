@@ -17,6 +17,8 @@ set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/ConvFilterModel_uTest.cpp")
 # ------------------------------------------------------------------------------
 
 if (CUDAToolkit_FOUND AND TARGET sim_gpu_compute_conv_filter_cuda)
+  # Kernel and model tests both link the _cuda sidecar, so both are labeled
+  # cuda; the test runner excludes them where no GPU is present.
   apex_add_gtest(
     TARGET
     TestSimGpuComputeConvFilterKernel
@@ -29,6 +31,7 @@ if (CUDAToolkit_FOUND AND TARGET sim_gpu_compute_conv_filter_cuda)
     sim
     gpu_compute
     conv_filter
+    cuda
   )
 
   apex_add_gtest(
@@ -44,6 +47,7 @@ if (CUDAToolkit_FOUND AND TARGET sim_gpu_compute_conv_filter_cuda)
     sim
     gpu_compute
     conv_filter
+    cuda
   )
 else ()
   apex_add_gtest(

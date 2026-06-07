@@ -1,0 +1,76 @@
+name: docker-build-push
+description: >
+  Build one dev image via docker compose (with the CI registry cache overlay),
+  pulling its parent image first so the FROM layers resolve on a fresh runner,
+  then tag and push :latest and :{sha} to ghcr.io.
+
+inputs:
+  service:
+    description: Compose service to build (e.g. dev, dev-cuda, dev-rpi).
+    required: true
+  image:
+    description: Image name produced by that service (e.g. apex.dev.cpu).
+    required: true
+  parent:
+    description: >
+      Local parent image name to pull from the registry before building so the
+      Dockerfile FROM resolves (e.g. apex.base, apex.dev.cpu). Empty for base.
+    required: false
+    default: ""
+  registry:
+    description: Registry prefix, e.g. ghcr.io/<owner>/<repo>.
+    required: true
+  sha:
+    description: Commit SHA to use as the immutable image tag.
+    required: true
+  token:
+    description: Token with packages:write for ghcr.io login.
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Prepare environment
+      shell: bash
+      run: |
+        touch ~/.gitconfig
+        mkdir -p ~/.ssh
+        {
+          echo "HOST_UID=$(id -u)"
+          echo "HOST_GID=$(id -g)"
+          echo "USER=${USER:-runner}"
+        } >> "$GITHUB_ENV"
+
+    - name: Login to ghcr.io
+      uses: docker/login-action@v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.token }}
+
+    - name: Build and push ${{ inputs.image }}
+      shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
+        DOCKER_BUILDKIT: "1"
+        COMPOSE_DOCKER_CLI_BUILD: "1"
+      run: |
+        set -euo pipefail
+
+        # A fresh runner has no local parent image, so the Dockerfile FROM
+        # (e.g. apex.dev.cpu:latest) cannot resolve. Pull the parent from the
+        # registry and tag it to the local name the Dockerfile expects.
+        if [ -n "${{ inputs.parent }}" ]; then
+          echo "Pulling parent ${{ inputs.parent }}:latest from registry"
+          docker pull "$REGISTRY/${{ inputs.parent }}:latest"
+          docker tag "$REGISTRY/${{ inputs.parent }}:latest" "${{ inputs.parent }}:latest"
+        fi
+
+        # Build with the CI cache overlay (registry cache_from + inline cache_to).
+        docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml \
+          build ${{ inputs.service }}
+
+        for tag in latest "${{ inputs.sha }}"; do
+          docker tag "${{ inputs.image }}" "$REGISTRY/${{ inputs.image }}:${tag}"
+          docker push "$REGISTRY/${{ inputs.image }}:${tag}"
+        done
