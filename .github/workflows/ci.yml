@@ -76,7 +76,9 @@ jobs:
             esac
           done <<< "$files"
           if [ "$allflag" = true ]; then cpp=true; rust=true; py=true; fi
-          docker=$(printf '%s\n' "$files" | grep -qE '^(docker/|docker-compose)' && echo true || echo false)
+          # Image rebuild is needed only for Dockerfile or base-compose (build:)
+          # changes -- not the CI compose overlays, which are runtime-only.
+          docker=$(printf '%s\n' "$files" | grep -qE '^docker/|^docker-compose\.yml$' && echo true || echo false)
           printf 'cpp=%s\nrust=%s\npy=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$docker" | tee -a "$GITHUB_OUTPUT"
 
   lint:
