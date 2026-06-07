@@ -12,8 +12,8 @@
 #include "src/utilities/math/legendre/inc/PbarTriangle.hpp"       // CPU reference (triangle)
 #include "src/utilities/math/legendre/inc/PbarTriangleCuda.cuh"   // CUDA device API
 
-#include "src/utilities/compatibility/inc/compat_cuda_blas.hpp"  // runtimeAvailable()
-#include "src/utilities/compatibility/inc/compat_cuda_error.hpp" // isSuccess(...)
+#include "src/utilities/compatibility/inc/compat_cuda_blas.hpp"  // Layout, cudaStream_t
+#include "src/utilities/compatibility/inc/compat_cuda_error.hpp" // deviceAvailable(), isSuccess(...)
 
 #include <gtest/gtest.h>
 
@@ -89,8 +89,8 @@ static std::vector<double> gpuTriangleDevice(int nMax, double x) {
 class CudaLegendreFixture : public ::testing::Test {
 protected:
   void SetUp() override {
-    if (!::apex::compat::cuda::runtimeAvailable()) {
-      GTEST_SKIP() << "CUDA runtime or device not available.";
+    if (!::apex::compat::cuda::deviceAvailable()) {
+      GTEST_SKIP() << "CUDA device not available.";
     }
   }
 };

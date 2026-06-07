@@ -37,8 +37,8 @@ namespace cuda = sim::electronics::algorithms::mna::cuda;
 class MnaBatchCudaTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    if (!::apex::compat::cuda::runtimeAvailable()) {
-      GTEST_SKIP() << "CUDA runtime or device not available.";
+    if (!::apex::compat::cuda::deviceAvailable()) {
+      GTEST_SKIP() << "CUDA device not available.";
     }
   }
 };

@@ -15,6 +15,7 @@
 #include "src/sim/electronics/algorithms/companions/inc/CompanionModels.hpp"
 #include "src/sim/electronics/algorithms/companions/inc/CompanionSetCuda.hpp"
 #include "src/utilities/compatibility/inc/compat_cuda_blas.hpp"
+#include "src/utilities/compatibility/inc/compat_cuda_error.hpp" // deviceAvailable()
 
 #include <gtest/gtest.h>
 
@@ -35,8 +36,8 @@ constexpr double TOL = 1e-12;
 class CompanionSetCudaTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    if (!apex::compat::cuda::runtimeAvailable()) {
-      GTEST_SKIP() << "CUDA runtime not available.";
+    if (!apex::compat::cuda::deviceAvailable()) {
+      GTEST_SKIP() << "CUDA device not available.";
     }
   }
 };

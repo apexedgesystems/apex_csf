@@ -19,6 +19,7 @@
  */
 
 #include "src/system/core/infrastructure/schedulable/inc/SchedulableTaskCUDA.cuh"
+#include "src/utilities/compatibility/inc/compat_cuda_error.hpp" // deviceAvailable()
 #include "src/utilities/concurrency/inc/Delegate.hpp"
 
 #include <cuda_runtime.h>
@@ -69,6 +70,9 @@ TEST(SchedulableTaskCUDATest, DefaultCompletionState) {
 
 /** @test Verifies stream can be set and retrieved. */
 TEST(SchedulableTaskCUDATest, SetAndGetStream) {
+  if (!::apex::compat::cuda::deviceAvailable()) {
+    GTEST_SKIP() << "CUDA device not available.";
+  }
   cudaStream_t stream;
   ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
 
@@ -83,6 +87,9 @@ TEST(SchedulableTaskCUDATest, SetAndGetStream) {
 
 /** @test Verifies stream can be changed. */
 TEST(SchedulableTaskCUDATest, ChangeStream) {
+  if (!::apex::compat::cuda::deviceAvailable()) {
+    GTEST_SKIP() << "CUDA device not available.";
+  }
   cudaStream_t stream1, stream2;
   ASSERT_EQ(cudaStreamCreate(&stream1), cudaSuccess);
   ASSERT_EQ(cudaStreamCreate(&stream2), cudaSuccess);
@@ -104,6 +111,9 @@ TEST(SchedulableTaskCUDATest, ChangeStream) {
 
 /** @test Verifies recordCompletion and isComplete work together. */
 TEST(SchedulableTaskCUDATest, RecordAndCheckCompletion) {
+  if (!::apex::compat::cuda::deviceAvailable()) {
+    GTEST_SKIP() << "CUDA device not available.";
+  }
   cudaStream_t stream;
   ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
 
@@ -140,6 +150,9 @@ TEST(SchedulableTaskCUDATest, ResetCompletion) {
 
 /** @test Verifies waitComplete works with actual GPU work. */
 TEST(SchedulableTaskCUDATest, WaitCompleteWithGPUWork) {
+  if (!::apex::compat::cuda::deviceAvailable()) {
+    GTEST_SKIP() << "CUDA device not available.";
+  }
   cudaStream_t stream;
   ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
 
@@ -196,6 +209,9 @@ TEST(SchedulableTaskCUDATest, ExecuteResetsCompletionState) {
 
 /** @test Verifies move constructor transfers ownership. */
 TEST(SchedulableTaskCUDATest, MoveConstructor) {
+  if (!::apex::compat::cuda::deviceAvailable()) {
+    GTEST_SKIP() << "CUDA device not available.";
+  }
   cudaStream_t stream;
   ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
 
@@ -220,6 +236,9 @@ TEST(SchedulableTaskCUDATest, MoveConstructor) {
 
 /** @test Verifies move assignment transfers ownership. */
 TEST(SchedulableTaskCUDATest, MoveAssignment) {
+  if (!::apex::compat::cuda::deviceAvailable()) {
+    GTEST_SKIP() << "CUDA device not available.";
+  }
   cudaStream_t stream;
   ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
 

@@ -83,6 +83,29 @@ inline std::uint8_t toStatus(::cudaError_t e) noexcept { return (e == ::cudaSucc
  */
 inline bool isSuccess(::cudaError_t e) noexcept { return e == ::cudaSuccess; }
 
+/**
+ * @brief Whether a usable CUDA device is present at run time.
+ *
+ * Distinct from the compile-time runtimeAvailable() (toolkit present at build):
+ * this queries the driver via cudaGetDeviceCount, so a host that has the CUDA
+ * toolkit but no GPU returns false. The result is cached on first call -- the
+ * device set is fixed for the process lifetime and test guards call this often.
+ *
+ * @note First call performs a driver query (not RT-safe); cached thereafter.
+ */
+inline bool deviceAvailable() noexcept {
+  static const bool AVAILABLE = [] {
+    int count = 0;
+    const ::cudaError_t e = ::cudaGetDeviceCount(&count);
+    if (e != ::cudaSuccess) {
+      (void)::cudaGetLastError(); // clear the sticky error so later CUDA calls aren't poisoned
+      return false;
+    }
+    return count > 0;
+  }();
+  return AVAILABLE;
+}
+
 /* ------------------------- Error Callback (RT) ------------------------- */
 
 // ---- Error Callback (optional, for RT systems) ----
@@ -171,6 +194,14 @@ inline std::uint8_t toStatus(cuda_stub_error e) noexcept {
  * @note RT-safe (pure calculation).
  */
 inline bool isSuccess(cuda_stub_error e) noexcept { return e == cuda_stub_error::success; }
+
+/**
+ * @brief Whether a usable CUDA device is present at run time (stub: never).
+ *
+ * Host build has no CUDA runtime, so there is no device. Mirrors the
+ * runtime-header overload so test guards compile and skip uniformly.
+ */
+inline bool deviceAvailable() noexcept { return false; }
 
 // Stub macros compile and indicate failure so callers can skip/abort.
 #define COMPAT_CUDA_TRY_RETURN(expr)                                                               \

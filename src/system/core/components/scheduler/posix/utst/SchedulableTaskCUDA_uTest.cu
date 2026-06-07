@@ -10,6 +10,7 @@
  */
 
 #include "src/system/core/infrastructure/schedulable/inc/SchedulableTaskCUDA.cuh"
+#include "src/utilities/compatibility/inc/compat_cuda_error.hpp" // deviceAvailable()
 #include "src/system/core/components/scheduler/posix/inc/TaskBuilder.hpp"
 
 #include <atomic>
@@ -47,6 +48,9 @@ protected:
   std::shared_ptr<std::atomic<int>> counter_;
 
   void SetUp() override {
+    if (!::apex::compat::cuda::deviceAvailable()) {
+      GTEST_SKIP() << "CUDA device not available.";
+    }
     cudaStreamCreate(&mockStream_);
     counter_ = std::make_shared<std::atomic<int>>(0);
   }
