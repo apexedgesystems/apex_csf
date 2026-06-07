@@ -22,6 +22,7 @@ TEST_MK_GUARD := 1
 # Test labels (must match CMake test properties)
 COVERAGE_LABEL ?= Coverage
 TIMING_LABEL   ?= Timing
+CUDA_LABEL     ?= cuda
 
 # Log files
 TEST_LOG ?= ctest.log
@@ -41,15 +42,25 @@ PY_LIB_DIR   := $(BUILD_DIR)/lib/python
 TEST_PRESET ?= $(notdir $(BUILD_DIR))
 LOG_FILE    := $(BUILD_DIR)/$(TEST_LOG)
 
-# All tests except Coverage, serial execution
-# Note: Perf tests are not in CTest (use bin/ptests/* directly)
-CTEST_ALL_SERIAL := ctest --preset $(TEST_PRESET) -LE "$(COVERAGE_LABEL)" -j1
+# CUDA-labeled tests link the NVIDIA driver and only load where a GPU is
+# present, so the default run drops them on a driverless host (an explicit
+# testp-cuda still selects them). HAVE_GPU is non-empty when a device is
+# visible; override it (make testp HAVE_GPU=) to force the CPU-only set.
+HAVE_GPU := $(shell nvidia-smi -L >/dev/null 2>&1 && echo 1)
+CUDA_LE  := $(if $(HAVE_GPU),,|$(CUDA_LABEL))
 
-# All tests except Coverage and Timing, parallel execution
-CTEST_ALL_PARALLEL := ctest --preset $(TEST_PRESET) -LE "$(COVERAGE_LABEL)|$(TIMING_LABEL)" -j$(NUM_JOBS)
+# All tests except Coverage (and CUDA where no GPU), serial execution
+# Note: Perf tests are not in CTest (use bin/ptests/* directly)
+CTEST_ALL_SERIAL := ctest --preset $(TEST_PRESET) -LE "$(COVERAGE_LABEL)$(CUDA_LE)" -j1
+
+# All tests except Coverage and Timing (and CUDA where no GPU), parallel
+CTEST_ALL_PARALLEL := ctest --preset $(TEST_PRESET) -LE "$(COVERAGE_LABEL)|$(TIMING_LABEL)$(CUDA_LE)" -j$(NUM_JOBS)
 
 # Timing tests only, serial execution
 CTEST_TIMING_SERIAL := ctest --preset $(TEST_PRESET) -L "$(TIMING_LABEL)" -j1
+
+# CUDA-labeled tests only, parallel execution (needs a GPU at runtime)
+CTEST_CUDA_PARALLEL := ctest --preset $(TEST_PRESET) -L "$(CUDA_LABEL)" -LE "$(COVERAGE_LABEL)" -j$(NUM_JOBS)
 
 # ------------------------------------------------------------------------------
 # Internal Helpers
@@ -90,6 +101,18 @@ testp: debug
 	@bash -o pipefail -c '$(CTEST_TIMING_SERIAL) 2>&1 | tee -a "$(LOG_FILE)"'
 	@$(call _test_footer,parallel + timing,$(LOG_FILE)) | tee -a "$(LOG_FILE)"
 
+# CPU tests only - force-excludes the cuda set regardless of GPU presence
+testp-cpu:
+	@$(MAKE) --no-print-directory testp HAVE_GPU=
+
+# CUDA tests only - selects the cuda-labeled set (needs a GPU at runtime)
+testp-cuda: debug
+	$(call log,test,Running CUDA tests (parallel))
+	@: > "$(LOG_FILE)"
+	@$(call _test_header,CUDA (parallel -j$(NUM_JOBS))) | tee -a "$(LOG_FILE)"
+	@bash -o pipefail -c '$(CTEST_CUDA_PARALLEL) 2>&1 | tee -a "$(LOG_FILE)"'
+	@$(call _test_footer,cuda (parallel),$(LOG_FILE)) | tee -a "$(LOG_FILE)"
+
 # Python tools unit tests (runs from source, no build dependency)
 test-py:
 	$(call log,test,Running Python tools tests)
@@ -125,6 +148,6 @@ smoke: debug
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: test testp test-py test-rust smoke
+.PHONY: test testp testp-cpu testp-cuda test-py test-rust smoke
 
 endif  # TEST_MK_GUARD

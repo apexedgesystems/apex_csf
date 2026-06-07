@@ -54,6 +54,8 @@ $(eval $(call _compose_target,profile-build,build profile,dev-cuda,profile-build
 
 $(eval $(call _compose_target,test,tests (serial),dev-cuda,test))
 $(eval $(call _compose_target,testp,tests (parallel),dev-cuda,testp))
+$(eval $(call _compose_target,testp-cpu,tests (parallel, no CUDA),dev-cuda,testp-cpu))
+$(eval $(call _compose_target,testp-cuda,CUDA tests (parallel),dev-cuda,testp-cuda))
 $(eval $(call _compose_target,coverage,coverage,dev-cuda,coverage))
 $(eval $(call _compose_target,format,format (auto-fix),dev-cuda,format))
 $(eval $(call _compose_target,format-check,format (check only),dev-cuda,format-check))
