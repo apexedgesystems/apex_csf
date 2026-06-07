@@ -32,6 +32,8 @@ runs:
 
     - name: Pull cached dev image
       shell: bash
+      env:
+        REGISTRY: ${{ inputs.registry }}
       run: |
-        docker pull ${{ inputs.registry }}/apex.dev.cpu:latest \
-          && docker tag ${{ inputs.registry }}/apex.dev.cpu:latest apex.dev.cpu || true
+        docker pull "$REGISTRY/apex.dev.cpu:latest" \
+          && docker tag "$REGISTRY/apex.dev.cpu:latest" apex.dev.cpu || true
