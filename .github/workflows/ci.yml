@@ -4,8 +4,9 @@
 # Change-scoped: a "changes" job classifies the PR diff, and the expensive jobs
 # run only when their area changed. A tools/rust or tools/py change (e.g. a
 # Dependabot bump) does not rebuild the C++/CUDA surface; a docs-only change
-# runs lint alone. Anything under .github/, mk/, docker/, or the CMake build
-# files is treated as cross-cutting and runs everything.
+# runs lint alone. Scope-down is opt-in per known subtree: cross-cutting paths
+# (.github/, mk/, docker/, the CMake build files) and any unrecognized path run
+# the full suite, so a missed filter never silently drops coverage.
 #
 # Image strategy (see .github/actions/dev-setup): jobs pull the registry
 # :latest dev image, which docker-images.yml keeps current with main. When the
@@ -60,16 +61,23 @@ jobs:
           fi
           files=$(git diff --name-only "origin/${{ github.event.pull_request.base.ref }}...HEAD")
           printf 'changed files:\n%s\n' "$files"
-          g() { printf '%s\n' "$files" | grep -qE "$1" && echo true || echo false; }
-          docker=$(g '^(docker/|docker-compose)')
-          # Cross-cutting areas force the full suite.
-          if [ "$(g '^(\.github/|mk/|docker/|docker-compose)')" = true ]; then
-            cpp=true; rust=true; py=true
-          else
-            cpp=$(g '^(src/|apps/|cmake/|CMakeLists\.txt|CMakePresets\.json)')
-            rust=$(g '^tools/rust/')
-            py=$(g '^tools/py/')
-          fi
+          # Scope DOWN only for changes confined to known-isolated areas; any
+          # unrecognized path (root configs, new top-level dirs, build/CI infra)
+          # falls through to the full suite, so coverage is never silently lost.
+          cpp=false; rust=false; py=false; allflag=false
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              tools/rust/*) rust=true ;;
+              tools/py/*)   py=true ;;
+              src/*|apps/*|cmake/*|CMakeLists.txt|CMakePresets.json) cpp=true ;;
+              *.md|docs/*)  : ;;
+              .github/*|mk/*|docker/*|docker-compose*) allflag=true ;;
+              *)            allflag=true ;;
+            esac
+          done <<< "$files"
+          if [ "$allflag" = true ]; then cpp=true; rust=true; py=true; fi
+          docker=$(printf '%s\n' "$files" | grep -qE '^(docker/|docker-compose)' && echo true || echo false)
           printf 'cpp=%s\nrust=%s\npy=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$docker" | tee -a "$GITHUB_OUTPUT"
 
   lint:
