@@ -43,3 +43,13 @@ updates:
     groups:
       docker:
         patterns: ["*"]
+    ignore:
+      # Base-OS bumps (e.g. ubuntu 24.04 -> 26.04) are deliberate, fully
+      # re-verified migrations: the toolchain and the LLVM / NVIDIA-CUDA apt
+      # repos must publish for the new release first, so a bot bump just breaks
+      # the image build. We own that migration. Patch updates within a release
+      # are still allowed (security).
+      - dependency-name: "ubuntu"
+        update-types:
+          - version-update:semver-major
+          - version-update:semver-minor
