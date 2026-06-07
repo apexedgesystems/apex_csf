@@ -181,7 +181,13 @@ $(foreach s,$(DEV_SERVICES),$(eval $(call _shell_target,$(s))))
 # Final Packager
 # ------------------------------------------------------------------------------
 
-docker-final: docker-builders
+# final COPYs from all 10 builder images. Like the builders treat their dev
+# image as an external input, final treats the builder images as external (no
+# docker-builders prerequisite), so CI can build the builders on separate
+# runners (release.yml) and have a downstream job assemble final from the pulled
+# images without rebuilding them. Local first-time builds use `make docker-all`
+# (or run `make docker-builders` first), which orders the stages explicitly.
+docker-final:
 	$(call log,docker,Building final image (VERSION=$(VERSION)))
 	@docker compose build --build-arg VERSION=$(VERSION) final
 
