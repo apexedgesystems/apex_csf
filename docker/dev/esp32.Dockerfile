@@ -43,8 +43,11 @@ ENV IDF_TOOLS_PATH=/opt/espressif
 RUN set -euo pipefail && \
     mkdir -p "${IDF_TOOLS_PATH}" && \
     git clone --branch "${ESP_IDF_VERSION}" --depth 1 --recursive --shallow-submodules \
-      https://github.com/espressif/esp-idf.git "${IDF_PATH}" && \
-    cd "${IDF_PATH}" && ./install.sh && \
+      https://github.com/espressif/esp-idf.git "${IDF_PATH}"
+
+WORKDIR ${IDF_PATH}
+RUN set -euo pipefail && \
+    ./install.sh && \
     chmod -R a+rX "${IDF_TOOLS_PATH}"
 
 # ==============================================================================

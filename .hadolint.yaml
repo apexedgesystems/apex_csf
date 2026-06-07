@@ -16,14 +16,6 @@ ignored:
   # Justification: We control all base images locally
   - DL4001
 
-  # DL3003: Use WORKDIR to switch directories
-  # Justification: Some cd commands are within RUN for clarity
-  - DL3003
-
-  # SC2046: Quote to prevent word splitting
-  # Justification: Intentional word splitting in some shell commands
-  - SC2046
-
 # Trusted registries (no warning for untagged pulls)
 trustedRegistries:
   - docker.io

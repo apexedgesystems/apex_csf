@@ -47,9 +47,10 @@ RUN set -euo pipefail && \
     mkdir -p /opt && \
     tar -xf /tmp/zephyr-sdk.tar.xz -C /opt && \
     mv /opt/zephyr-sdk-${ZEPHYR_SDK_VERSION} ${ZEPHYR_SDK_INSTALL_DIR} && \
-    rm /tmp/zephyr-sdk.tar.xz && \
-    cd ${ZEPHYR_SDK_INSTALL_DIR} && \
-    ./setup.sh -h -c
+    rm /tmp/zephyr-sdk.tar.xz
+
+WORKDIR ${ZEPHYR_SDK_INSTALL_DIR}
+RUN ./setup.sh -h -c
 
 # ==============================================================================
 # West (Zephyr Meta-tool)

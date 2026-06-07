@@ -1,0 +1,25 @@
+# .trivyignore -- deliberate, justified suppressions for `make trivy`
+# (trivy fs --scanners vuln,secret,misconfig, see mk/security.mk).
+#
+# Only rules that genuinely do not apply to this repo's images are listed.
+# Each entry records WHY. Reviewed 2026-06-07. Anything fixable in the
+# Dockerfiles was fixed rather than suppressed (root user, RUN cd, busybox tag).
+
+# AVD-DS-0026 -- "Add HEALTHCHECK instruction in your Dockerfile"
+# Every image here is an interactive dev shell or a one-shot build/packaging
+# stage -- none is a long-running service an orchestrator would probe, so a
+# HEALTHCHECK would be inert. Not applicable.
+AVD-DS-0026
+
+# AVD-DS-0001 -- "Specify a tag in the 'FROM' statement"
+# Remaining hits are intra-pipeline parents (apex.base, apex.dev.cpu,
+# apex.dev.cuda) referenced by the :latest tag this repo's own Docker Images
+# workflow builds and pushes; there is no upstream version/digest to pin. The
+# only external base (busybox) IS pinned -- see docker/final.Dockerfile.
+AVD-DS-0001
+
+# AVD-DS-0014 -- "Shouldn't use both curl and wget"
+# docker/base.Dockerfile intentionally ships both: downstream toolchain
+# installers (TI, Espressif, Zephyr, vendor scripts) each hard-code one or the
+# other. Stylistic (LOW); diverging would break installer expectations.
+AVD-DS-0014

@@ -24,6 +24,9 @@ LABEL org.opencontainers.image.title="apex.dev.cuda" \
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
+# base now ends as the unprivileged user; re-assert root for the toolkit install.
+USER root
+
 # ==============================================================================
 # NVIDIA CUDA Toolkit (replaces nvidia/cuda base image)
 # ==============================================================================
@@ -97,6 +100,10 @@ RUN wget -qO /tmp/cudss.tar.xz \
     ldconfig && \
     rm -rf /tmp/cudss /tmp/cudss.tar.xz
 
+# Drop privileges once root-only setup is done; the prompt and validation
+# steps below need no root.
+USER ${USER}
+
 # ==============================================================================
 # Shell Prompt
 # ==============================================================================
@@ -109,5 +116,4 @@ RUN echo 'if [ -n "$PS1" ]; then export PS1="\[\e[1;32m\][CUDA] \u@\h:\w \$\[\e[
 RUN nvcc --version && \
     echo "CUDA image validation: OK"
 
-USER ${USER}
 WORKDIR /home/${USER}

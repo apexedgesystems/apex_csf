@@ -362,4 +362,7 @@ RUN echo "Validating base image..." && \
     cargo --version && \
     echo "Base image validation: OK"
 
+# Default to the unprivileged user; downstream images that need root for
+# package installs re-assert USER root and switch back themselves.
+USER ${USER}
 WORKDIR /home/${USER}

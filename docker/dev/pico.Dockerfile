@@ -43,8 +43,7 @@ ENV PATH="/opt/arm-gnu-toolchain/bin:${PATH}"
 # Pico SDK
 # ==============================================================================
 RUN git clone --depth=1 -b "${PICO_SDK_VERSION}" https://github.com/raspberrypi/pico-sdk.git /opt/pico-sdk && \
-    cd /opt/pico-sdk && \
-    git submodule update --init
+    git -C /opt/pico-sdk submodule update --init
 
 ENV PICO_SDK_PATH=/opt/pico-sdk
 
@@ -52,11 +51,10 @@ ENV PICO_SDK_PATH=/opt/pico-sdk
 # Flash Tools (picotool)
 # ==============================================================================
 RUN git clone https://github.com/raspberrypi/picotool.git /tmp/picotool && \
-    cd /tmp/picotool && \
-    mkdir -p build && cd build && \
-    cmake .. -DPICO_SDK_PATH="${PICO_SDK_PATH}" -DCMAKE_INSTALL_PREFIX=/usr/local && \
-    make -j"$(nproc)" && \
-    make install && \
+    cmake -S /tmp/picotool -B /tmp/picotool/build \
+      -DPICO_SDK_PATH="${PICO_SDK_PATH}" -DCMAKE_INSTALL_PREFIX=/usr/local && \
+    cmake --build /tmp/picotool/build -j"$(nproc)" && \
+    cmake --install /tmp/picotool/build && \
     ldconfig && \
     rm -rf /tmp/picotool
 
