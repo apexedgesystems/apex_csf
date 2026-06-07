@@ -30,12 +30,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       ca-certificates wget libusb-1.0-0
 
 RUN mkdir -p /opt/ti && \
-    cd /opt/ti && \
-    wget --progress=dot:giga -O cgt-installer.bin \
+    wget --progress=dot:giga -O /opt/ti/cgt-installer.bin \
       "https://dr-download.ti.com/software-development/ide-configuration-compiler-or-debugger/MD-xqxJ05PLfM/${TI_CGT_VERSION}/ti_cgt_c2000_${TI_CGT_VERSION}_linux-x64_installer.bin" && \
-    chmod +x cgt-installer.bin && \
-    ./cgt-installer.bin --mode unattended --prefix /opt/ti && \
-    rm -f cgt-installer.bin && \
+    chmod +x /opt/ti/cgt-installer.bin && \
+    /opt/ti/cgt-installer.bin --mode unattended --prefix /opt/ti && \
+    rm -f /opt/ti/cgt-installer.bin && \
     ln -sfn /opt/ti/ti-cgt-c2000_${TI_CGT_VERSION} /opt/ti/c2000-cgt
 
 ENV PATH="/opt/ti/c2000-cgt/bin:${PATH}"
@@ -44,20 +43,19 @@ ENV C2000_CGT_ROOT="/opt/ti/c2000-cgt"
 # ==============================================================================
 # C2000Ware SDK
 # ==============================================================================
-RUN cd /opt/ti && \
-    git clone --depth 1 https://github.com/TexasInstruments/c2000ware-core-sdk.git
+RUN git clone --depth 1 https://github.com/TexasInstruments/c2000ware-core-sdk.git \
+      /opt/ti/c2000ware-core-sdk
 
 ENV C2000WARE_ROOT="/opt/ti/c2000ware-core-sdk"
 
 # ==============================================================================
 # UniFlash Programming Tool
 # ==============================================================================
-RUN cd /opt/ti && \
-    wget --progress=dot:giga -O uniflash-installer.run \
+RUN wget --progress=dot:giga -O /opt/ti/uniflash-installer.run \
       "https://dr-download.ti.com/software-development/software-programming-tool/MD-QeJBJLj8gq/${UNIFLASH_VERSION%.*}/uniflash_sl.${UNIFLASH_VERSION}.run" && \
-    chmod +x uniflash-installer.run && \
-    ./uniflash-installer.run --mode unattended --prefix /opt/ti/uniflash && \
-    rm -f uniflash-installer.run
+    chmod +x /opt/ti/uniflash-installer.run && \
+    /opt/ti/uniflash-installer.run --mode unattended --prefix /opt/ti/uniflash && \
+    rm -f /opt/ti/uniflash-installer.run
 
 ENV PATH="/opt/ti/uniflash:${PATH}"
 

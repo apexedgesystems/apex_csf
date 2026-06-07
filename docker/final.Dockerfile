@@ -25,7 +25,7 @@
 #   docker compose build final
 #   make artifacts
 # ==============================================================================
-FROM busybox:latest
+FROM busybox:1.37.0
 
 ARG USER
 ARG VERSION=0.0.0
