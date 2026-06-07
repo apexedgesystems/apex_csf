@@ -7,10 +7,19 @@
 # the .cu surface without a device, and make testp's GPU probe excludes the
 # cuda-labeled tests there.
 #
-# Local runs use docker-compose.yml alone and keep the reservation, so a
-# developer with a GPU still gets device access in dev-cuda.
+# It also binds /ccache to a host directory (./.ccache) instead of the
+# apex-ccache named volume, so actions/cache can persist the compiler cache
+# across runs -- runners are ephemeral, so the named volume is cold every run.
+#
+# Local runs use docker-compose.yml alone: GPU reservation kept, and ccache in
+# the apex-ccache named volume.
 # ==============================================================================
 
 services:
+  dev:
+    volumes:
+      - ./.ccache:/ccache
   dev-cuda:
     deploy: !reset null
+    volumes:
+      - ./.ccache:/ccache

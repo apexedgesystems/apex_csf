@@ -57,3 +57,4 @@ tools/rust/dev/
 
 # Production applications (proprietary, not committed)
 apps/production/
+.ccache/
