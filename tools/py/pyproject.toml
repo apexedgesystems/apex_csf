@@ -40,7 +40,7 @@ black = "^25.1.0"
 flake8 = "^7.1.2"
 mypy = "^2.1.0"
 isort = "^8.0.1"
-flake8-bugbear = "^24.12.12"
+flake8-bugbear = "^25.11.29"
 flake8-comprehensions = "^3.16.0"
 flake8-docstrings = "^1.7.0"
 
