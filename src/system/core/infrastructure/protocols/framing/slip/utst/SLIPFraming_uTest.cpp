@@ -248,9 +248,8 @@ TEST(DecodeTest, MultipleFrames) {
     frames.push_back(buf);
   }
 
-  ASSERT_EQ(frames.size(), 2u);
-  EXPECT_EQ(frames[0], pkt0);
-  EXPECT_EQ(frames[1], pkt1);
+  const std::vector<std::vector<uint8_t>> expected{pkt0, pkt1};
+  EXPECT_EQ(frames, expected);
 }
 
 /* ----------------------------- Error Handling Tests ----------------------------- */
