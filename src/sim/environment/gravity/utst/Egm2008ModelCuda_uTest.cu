@@ -11,7 +11,7 @@
 #include "src/sim/environment/gravity/inc/earth/Egm2008Model.hpp"
 #include "src/sim/environment/gravity/inc/earth/Egm2008ModelCuda.cuh"
 
-#include "src/utilities/compatibility/inc/compat_cuda_error.hpp" // deviceAvailable()
+#include "src/utilities/compatibility/inc/compat_cuda_blas.hpp" // runtimeAvailable()
 
 #include <cmath>
 
@@ -94,14 +94,14 @@ public:
 
 /* ----------------------------- File Helpers ----------------------------- */
 
-static bool cudaAvailable() { return apex::compat::cuda::deviceAvailable(); }
+static bool cudaAvailable() { return apex::compat::cuda::runtimeAvailable(); }
 
 /* ----------------------------- Initialization Tests ----------------------------- */
 
 /** @test CUDA model initializes correctly with tiny coefficient source. */
 TEST(Egm2008ModelCudaTest, InitWithTinySource) {
   if (!cudaAvailable()) {
-    GTEST_SKIP() << "CUDA device not available.";
+    GTEST_SKIP() << "CUDA runtime not available";
   }
 
   TinySourceJ2 src;
@@ -123,7 +123,7 @@ TEST(Egm2008ModelCudaTest, InitWithTinySource) {
 /** @test N=0 GPU matches CPU for central potential. */
 TEST(Egm2008ModelCudaTest, N0ParityWithCpu) {
   if (!cudaAvailable()) {
-    GTEST_SKIP() << "CUDA device not available.";
+    GTEST_SKIP() << "CUDA runtime not available";
   }
 
   TinySourceN0 src;
@@ -158,7 +158,7 @@ TEST(Egm2008ModelCudaTest, N0ParityWithCpu) {
 /** @test J2 GPU matches CPU for zonal gravity field. */
 TEST(Egm2008ModelCudaTest, J2ParityWithCpu) {
   if (!cudaAvailable()) {
-    GTEST_SKIP() << "CUDA device not available.";
+    GTEST_SKIP() << "CUDA runtime not available";
   }
 
   TinySourceJ2 src;
@@ -213,7 +213,7 @@ TEST(Egm2008ModelCudaTest, J2ParityWithCpu) {
 /** @test N=4 GPU matches CPU with sectoral/tesseral terms. */
 TEST(Egm2008ModelCudaTest, N4ParityWithCpu) {
   if (!cudaAvailable()) {
-    GTEST_SKIP() << "CUDA device not available.";
+    GTEST_SKIP() << "CUDA runtime not available";
   }
 
   TinySourceN4 src;
@@ -250,7 +250,7 @@ TEST(Egm2008ModelCudaTest, N4ParityWithCpu) {
 /** @test Batch evaluation returns same results as single evaluation. */
 TEST(Egm2008ModelCudaTest, BatchEvaluationParity) {
   if (!cudaAvailable()) {
-    GTEST_SKIP() << "CUDA device not available.";
+    GTEST_SKIP() << "CUDA runtime not available";
   }
 
   TinySourceJ2 src;
@@ -295,7 +295,7 @@ TEST(Egm2008ModelCudaTest, BatchEvaluationParity) {
 /** @test Potential-only batch evaluation works correctly. */
 TEST(Egm2008ModelCudaTest, PotentialOnlyBatch) {
   if (!cudaAvailable()) {
-    GTEST_SKIP() << "CUDA device not available.";
+    GTEST_SKIP() << "CUDA runtime not available";
   }
 
   TinySourceJ2 src;
@@ -331,7 +331,7 @@ TEST(Egm2008ModelCudaTest, PotentialOnlyBatch) {
 /** @test Model handles single position batch correctly. */
 TEST(Egm2008ModelCudaTest, SinglePositionBatch) {
   if (!cudaAvailable()) {
-    GTEST_SKIP() << "CUDA device not available.";
+    GTEST_SKIP() << "CUDA runtime not available";
   }
 
   TinySourceJ2 src;
@@ -356,7 +356,7 @@ TEST(Egm2008ModelCudaTest, SinglePositionBatch) {
 /** @test Destroy and reinitialize works correctly. */
 TEST(Egm2008ModelCudaTest, DestroyAndReinit) {
   if (!cudaAvailable()) {
-    GTEST_SKIP() << "CUDA device not available.";
+    GTEST_SKIP() << "CUDA runtime not available";
   }
 
   TinySourceJ2 src;

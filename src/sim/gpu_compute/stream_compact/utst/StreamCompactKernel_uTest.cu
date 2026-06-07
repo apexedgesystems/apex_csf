@@ -33,8 +33,8 @@ using sim::gpu_compute::cuda::streamCompactCuda;
 class StreamCompactKernelFixture : public ::testing::Test {
 protected:
   void SetUp() override {
-    if (!::apex::compat::cuda::deviceAvailable()) {
-      GTEST_SKIP() << "CUDA device not available.";
+    if (!::apex::compat::cuda::runtimeAvailable()) {
+      GTEST_SKIP() << "CUDA runtime or device not available.";
     }
   }
 };

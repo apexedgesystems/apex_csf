@@ -300,8 +300,8 @@ void gpuPhaseFourIter(const Inputs& in, std::vector<double>& prevV, double& maxD
 class PhaseFourPipelineTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    if (!apex::compat::cuda::deviceAvailable()) {
-      GTEST_SKIP() << "CUDA device not available.";
+    if (!apex::compat::cuda::runtimeAvailable()) {
+      GTEST_SKIP() << "CUDA runtime not available.";
     }
   }
 };

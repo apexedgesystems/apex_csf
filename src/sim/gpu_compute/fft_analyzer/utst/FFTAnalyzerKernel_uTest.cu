@@ -38,8 +38,8 @@ static constexpr float K_PI = 3.14159265358979f;
 class FFTAnalyzerKernelFixture : public ::testing::Test {
 protected:
   void SetUp() override {
-    if (!::apex::compat::cuda::deviceAvailable()) {
-      GTEST_SKIP() << "CUDA device not available.";
+    if (!::apex::compat::cuda::runtimeAvailable()) {
+      GTEST_SKIP() << "CUDA runtime or device not available.";
     }
   }
 };

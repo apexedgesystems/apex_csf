@@ -8,8 +8,6 @@
 
 #include "src/sim/electronics/algorithms/nonlinear/inc/NonlinearDeviceCuda.cuh"
 
-#include "src/utilities/compatibility/inc/compat_cuda_error.hpp" // deviceAvailable()
-
 #include <gtest/gtest.h>
 
 #include <cuda_runtime.h>
@@ -39,9 +37,6 @@ using sim::electronics::algorithms::nonlinear::cuda::evaluateDevicesCuda;
 
 /** @test Evaluate single diode on GPU. */
 TEST(NonlinearDeviceCudaTest, SingleDiodeEvaluation) {
-  if (!::apex::compat::cuda::deviceAvailable()) {
-    GTEST_SKIP() << "CUDA device not available.";
-  }
   // Device: Diode with Is=1e-12, Vt=0.026
   DeviceParams dev;
   dev.type = DeviceType::DIODE;
@@ -99,9 +94,6 @@ TEST(NonlinearDeviceCudaTest, SingleDiodeEvaluation) {
 
 /** @test Evaluate multiple diodes in parallel. */
 TEST(NonlinearDeviceCudaTest, MultipleDiodesParallel) {
-  if (!::apex::compat::cuda::deviceAvailable()) {
-    GTEST_SKIP() << "CUDA device not available.";
-  }
   constexpr int N = 1000; // 1000 diodes
 
   // Create device array
@@ -174,9 +166,6 @@ TEST(NonlinearDeviceCudaTest, MultipleDiodesParallel) {
 
 /** @test Evaluate nonlinear resistor on GPU. */
 TEST(NonlinearDeviceCudaTest, NonlinearResistorEvaluation) {
-  if (!::apex::compat::cuda::deviceAvailable()) {
-    GTEST_SKIP() << "CUDA device not available.";
-  }
   // Device: Nonlinear resistor with G0=0.01, alpha=1e-4
   DeviceParams dev;
   dev.type = DeviceType::NONLINEAR_RESISTOR;
@@ -235,9 +224,6 @@ TEST(NonlinearDeviceCudaTest, NonlinearResistorEvaluation) {
 
 /** @test Benchmark large-scale parallel evaluation. */
 TEST(NonlinearDeviceCudaTest, LargeScalePerformance) {
-  if (!::apex::compat::cuda::deviceAvailable()) {
-    GTEST_SKIP() << "CUDA device not available.";
-  }
   constexpr int N = 10000; // 10,000 devices
 
   // Create device array (mix of diodes and nonlinear resistors)

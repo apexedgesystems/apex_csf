@@ -37,8 +37,8 @@ static constexpr float K_TOL = 1e-4f;
 class ConvFilterKernelFixture : public ::testing::Test {
 protected:
   void SetUp() override {
-    if (!::apex::compat::cuda::deviceAvailable()) {
-      GTEST_SKIP() << "CUDA device not available.";
+    if (!::apex::compat::cuda::runtimeAvailable()) {
+      GTEST_SKIP() << "CUDA runtime or device not available.";
     }
   }
 };
