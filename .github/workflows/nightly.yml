@@ -47,6 +47,9 @@ jobs:
 
     env:
       REGISTRY: ghcr.io/${{ github.repository }}
+      # Bind /ccache to a host dir so actions/cache keeps the compiling checks
+      # (tsan, rtsan, coverage-check, hardened, static, ...) warm across nights.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
 
     steps:
       - name: Checkout
@@ -58,6 +61,16 @@ jobs:
           registry: ${{ env.REGISTRY }}
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-nightly-${{ matrix.check }}-${{ github.sha }}
+          restore-keys: |
+            ccache-nightly-${{ matrix.check }}-
+      - name: Prepare ccache dir
+        run: mkdir -p .ccache
 
       - name: Run ${{ matrix.check }}
         run: docker compose run --rm -T dev make ${{ matrix.check }}
