@@ -36,7 +36,7 @@ mc-plot = "apex_tools.mc.mc_plot:main"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.6.0"
-black = "^25.1.0"
+black = "^26.5.1"
 flake8 = "^7.1.2"
 mypy = "^2.1.0"
 isort = "^8.0.1"
