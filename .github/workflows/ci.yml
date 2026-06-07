@@ -54,12 +54,11 @@ jobs:
       - name: Classify changed files
         id: f
         run: |
-          # workflow_dispatch (or any non-PR event) has no diff base: run all.
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
-            printf 'cpp=true\nrust=true\npy=true\ndocker=true\n' | tee -a "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          files=$(git diff --name-only "origin/${{ github.event.pull_request.base.ref }}...HEAD")
+          # Diff against the PR base, or origin/main for a manual dispatch, so a
+          # dispatch scopes (and rebuilds images) exactly as the PR would --
+          # never a blanket image rebuild just because there is no PR context.
+          base="${{ github.event.pull_request.base.ref || 'main' }}"
+          files=$(git diff --name-only "origin/$base...HEAD")
           printf 'changed files:\n%s\n' "$files"
           # Scope DOWN only for changes confined to known-isolated areas; any
           # unrecognized path (root configs, new top-level dirs, build/CI infra)
