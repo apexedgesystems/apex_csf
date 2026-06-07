@@ -4,29 +4,17 @@
 # Triggered by pushing a version tag (v*). Builds all platform artifacts
 # through the full Docker pipeline and attaches them to the GitHub Release.
 #
-# Artifact inventory (14 packages):
+# workflow_dispatch builds only builder-cpu and publishes nothing -- it exists
+# to exercise/validate the release build (and its ccache) without cutting a real
+# release.
 #
-#   Library packages (5) -- for downstream projects consuming apex as a library
-#     apex-csf-{VER}-x86_64-linux.tar.gz
-#     apex-csf-{VER}-x86_64-linux-cuda.tar.gz
-#     apex-csf-{VER}-aarch64-jetson.tar.gz
-#     apex-csf-{VER}-aarch64-rpi.tar.gz
-#     apex-csf-{VER}-riscv64-linux.tar.gz
+# ccache: the 10 builder images compile the apex source with a BuildKit cache
+# mount (docker/builder.Dockerfile). That mount is empty on a fresh runner, so
+# buildkit-cache-dance restores it from / saves it to actions/cache, keeping the
+# release builders' compiler cache warm across runs. A cache miss only means a
+# cold compile (ccache is content-addressed), never a wrong build.
 #
-#   Tool packages (2) -- CLI tools for operators and developers
-#     apex-tools-{VER}-x86_64-linux.tar.gz    (Rust + C++ CLI tools)
-#     apex_py_tools-{VER}-py3-none-any.whl    (Python tools wheel)
-#
-#   Firmware packages (5) -- bare-metal binaries per MCU target
-#     stm32_encryptor_demo-{VER}-stm32.tar.gz
-#     arduino_encryptor_demo-{VER}-arduino.tar.gz
-#     pico_encryptor_demo-{VER}-pico.tar.gz
-#     esp32_encryptor_demo-{VER}-esp32.tar.gz
-#     c2000_encryptor_demo-{VER}-c2000.tar.gz
-#
-#   App packages (2) -- POSIX deployments with resolved ELF dependencies
-#     ApexEdgeDemo.tar.gz    (Jetson: executive + GPU compute models)
-#     ApexHilDemo.tar.gz     (RPi POSIX + STM32 firmware bundle)
+# Artifact inventory (14 packages): see the Create GitHub Release step.
 #
 # Build flow:
 #   make artifacts            -- Docker multi-stage: all builders -> final -> extract
@@ -39,6 +27,7 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -88,11 +77,34 @@ jobs:
               docker tag $REGISTRY/$img:latest $img || true
           done
 
+      # ccache for the builder compiles: restore the BuildKit /ccache mount from
+      # the cache, and (post-job) save it back. A miss just compiles cold.
+      - name: Restore builder ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache-release
+          key: ccache-release-${{ github.sha }}
+          restore-keys: |
+            ccache-release-
+      - name: Inject ccache into the build mount
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        with:
+          cache-map: |
+            { ".ccache-release": "/ccache" }
+
+      # --- workflow_dispatch: validate the build + ccache only (no publish) ---
+      - name: Build builder-cpu (validate cache, no publish)
+        if: github.event_name == 'workflow_dispatch'
+        run: make docker-builder-cpu
+
+      # --- tag push: full release ---
       - name: Extract version from tag
+        if: startsWith(github.ref, 'refs/tags/')
         id: version
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Verify version matches CMakeLists.txt
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           cmake_version=$(sed -n 's/.*VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' \
             CMakeLists.txt | head -1)
@@ -104,19 +116,23 @@ jobs:
           echo "Version verified: $tag_version"
 
       - name: Build all platform artifacts
+        if: startsWith(github.ref, 'refs/tags/')
         run: make artifacts VERSION=${{ steps.version.outputs.version }}
 
       - name: Build app release packages
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           make release APP=ApexEdgeDemo
           make release APP=ApexHilDemo
 
       - name: List artifacts
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           ls -la output/
           ls -la build/release/ 2>/dev/null || true
 
       - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v3
         with:
           name: Apex CSF ${{ steps.version.outputs.version }}
