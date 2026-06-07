@@ -24,13 +24,28 @@ set(CUDA_TEST_SOURCES ArrayCuda_uTest.cu)
 # Test Executable
 # ------------------------------------------------------------------------------
 
-if (CUDAToolkit_FOUND)
+# CPU tests: separate binary, no _cuda linkage -> runs on any host.
+apex_add_gtest(
+  TARGET
+  TestLinalgArray
+  SOURCES
+  ${UNIT_TEST_SOURCES}
+  LINK
+  utilities_math_linalg
+  LABELS
+  utilities
+  math
+  linalg
+)
+
+# CUDA tests: separate binary linking the _cuda sidecar (keeps the CPU tests
+# above driver-free). Labeled cuda so the test runner can exclude them where
+# no GPU is present.
+if (CUDAToolkit_FOUND AND TARGET utilities_math_linalg_cuda)
   apex_add_gtest(
     TARGET
-    TestLinalgArray
+    TestLinalgArrayCuda
     SOURCES
-    ${UNIT_TEST_SOURCES}
-    CUDA
     ${CUDA_TEST_SOURCES}
     LINK
     utilities_math_linalg
@@ -39,18 +54,9 @@ if (CUDAToolkit_FOUND)
     utilities
     math
     linalg
+    cuda
   )
-else ()
-  apex_add_gtest(
-    TARGET
-    TestLinalgArray
-    SOURCES
-    ${UNIT_TEST_SOURCES}
-    LINK
-    utilities_math_linalg
-    LABELS
-    utilities
-    math
-    linalg
+  set_target_properties(
+    TestLinalgArrayCuda PROPERTIES CUDA_SEPARABLE_COMPILATION ON CUDA_RESOLVE_DEVICE_SYMBOLS ON
   )
 endif ()
