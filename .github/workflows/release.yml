@@ -168,19 +168,24 @@ jobs:
       - name: Extract version from tag
         if: startsWith(github.ref, 'refs/tags/')
         id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          version="${GITHUB_REF_NAME#v}"   # 0.0.1, or 0.0.1-rc1 for a pre-release
+          base="${version%%-*}"            # X.Y.Z with any -suffix stripped
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          if [ "$version" = "$base" ]; then echo "prerelease=false"; else echo "prerelease=true"; fi >> "$GITHUB_OUTPUT"
 
       - name: Verify version matches CMakeLists.txt
         if: startsWith(github.ref, 'refs/tags/')
         run: |
           cmake_version=$(sed -n 's/.*VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' \
             CMakeLists.txt | head -1)
-          tag_version="${{ steps.version.outputs.version }}"
-          if [ "$cmake_version" != "$tag_version" ]; then
-            echo "ERROR: Tag version ($tag_version) does not match CMakeLists.txt ($cmake_version)"
+          tag_base="${{ steps.version.outputs.base }}"
+          if [ "$cmake_version" != "$tag_base" ]; then
+            echo "ERROR: Tag version ($tag_base) does not match CMakeLists.txt ($cmake_version)"
             exit 1
           fi
-          echo "Version verified: $tag_version"
+          echo "Version verified: ${{ steps.version.outputs.version }} (base $tag_base)"
 
       - name: Build all platform artifacts
         if: startsWith(github.ref, 'refs/tags/')
@@ -204,7 +209,7 @@ jobs:
         with:
           name: Apex CSF ${{ steps.version.outputs.version }}
           draft: false
-          prerelease: false
+          prerelease: ${{ steps.version.outputs.prerelease }}
           generate_release_notes: true
           files: |
             output/apex-csf-${{ steps.version.outputs.version }}-x86_64-linux.tar.gz
