@@ -1,21 +1,30 @@
 # ==============================================================================
 # Release -- Build artifacts and publish to GitHub Releases (parallel builders)
 #
-# Two stages, mirroring the Docker Images DAG so the SDK-heavy firmware builders
-# don't contend on one runner:
+# Three jobs; the dispatch rehearsal and a tag release run the SAME steps, so a
+# green rehearsal is proof the next tag will publish:
 #
 #   builders (matrix, one runner each) -- compile apex for each target into
-#     apex.builder.<t>, with a per-target ccache (buildkit-cache-dance keeps the
-#     /ccache BuildKit mount warm across runs), and push the image to ghcr.
-#   package (fan-in)                   -- pull the 10 builder images, assemble
-#     the final image (COPY --from each builder), extract artifacts, build the
-#     app packages, and publish the GitHub Release.
+#     apex.builder.<t> and push it to ghcr tagged with the commit sha, so the
+#     fan-in assembles exactly this run's images; a concurrent run can never
+#     swap binaries underneath us.
+#   apps (parallel with the builders)  -- build the app release packages in the
+#     platform dev images (they compile from source and consume no builder
+#     image) and upload the tarballs as a workflow artifact.
+#   package (fan-in)                   -- pull this run's builder images,
+#     assemble the final image (COPY --from each builder), extract the platform
+#     artifacts, and -- only on a tag push -- publish the GitHub Release with
+#     the app tarballs attached.
 #
 # Triggers:
-#   tag v*            -- full release: build, extract, package, publish.
-#   workflow_dispatch -- build all builders + assemble final, publish NOTHING.
-#                        Exercises the whole parallel path (and the ccache)
-#                        without cutting a release.
+#   tag v*            -- full release: everything below, then publish.
+#   workflow_dispatch -- everything EXCEPT publish. The publish step is gated
+#                        on the push event, not the ref, so dispatching on a
+#                        tag ref is still only a rehearsal. VERSION falls back
+#                        to 0.0.0-ci.
+#
+# Runs are serialized by a non-cancelling concurrency group: overlapping runs
+# would race on the shared ccache keys, and releases should land one at a time.
 #
 # A ccache miss only means a cold compile -- ccache is content-addressed, so a
 # stale or empty cache can never produce a wrong build.
@@ -29,8 +38,10 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
+
+concurrency:
+  group: release
 
 env:
   REGISTRY: ghcr.io/${{ github.repository }}
@@ -44,6 +55,9 @@ jobs:
     name: builder-${{ matrix.builder }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: false
       matrix:
@@ -74,14 +88,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The dev image is the builder's FROM and the only image input
+      # (docker/builder.Dockerfile); a failed pull must fail here, not as a
+      # confusing BuildKit error two steps later.
       - name: Pull builder's dev image (the FROM)
         env:
           DEV: apex.dev.${{ matrix.builder }}
         run: |
-          docker pull "$REGISTRY/apex.base:latest" \
-            && docker tag "$REGISTRY/apex.base:latest" apex.base || true
-          docker pull "$REGISTRY/$DEV:latest" \
-            && docker tag "$REGISTRY/$DEV:latest" "$DEV" || true
+          docker pull "$REGISTRY/$DEV:latest"
+          docker tag "$REGISTRY/$DEV:latest" "$DEV"
 
       - name: Restore builder ccache
         uses: actions/cache@v4
@@ -102,22 +117,26 @@ jobs:
       - name: Build builder image
         run: make docker-builder-${{ matrix.builder }}
 
-      - name: Push builder image
+      - name: Push builder image (immutable per-run tag)
         env:
           IMG: apex.builder.${{ matrix.builder }}
         run: |
-          docker tag "$IMG" "$REGISTRY/$IMG:latest"
-          docker push "$REGISTRY/$IMG:latest"
+          docker tag "$IMG" "$REGISTRY/$IMG:$GITHUB_SHA"
+          docker push "$REGISTRY/$IMG:$GITHUB_SHA"
 
   # ----------------------------------------------------------------------------
-  # Assemble the final image from the pushed builders, extract, package, publish.
+  # Build the app release packages in parallel with the builders: make release
+  # compiles the apps from source inside the platform dev images and consumes
+  # no builder output, so serializing it behind the matrix only delays its
+  # verdict (this step alone sank v0.0.1-rc1 and -rc2, ~40 minutes in).
   # ----------------------------------------------------------------------------
-  package:
-    name: Package and release
-    needs: builders
-    if: ${{ needs.builders.result == 'success' }}
+  apps:
+    name: App release packages
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: read
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -143,68 +162,121 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull builder images
+      # Exactly the dev images the packaged apps build in (apps/*/release.mk:
+      # ApexEdgeDemo -> jetson, ApexHilDemo -> rpi stm32, via the
+      # PLATFORM_*_SERVICE map in mk/release.mk).
+      - name: Pull platform dev images
+        run: |
+          for img in apex.dev.jetson apex.dev.rpi apex.dev.stm32; do
+            docker pull "$REGISTRY/$img:latest"
+            docker tag "$REGISTRY/$img:latest" "$img"
+          done
+
+      - name: Build app release packages
+        run: |
+          make release APP=ApexEdgeDemo
+          make release APP=ApexHilDemo
+
+      - name: Upload app packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-packages
+          path: build/release/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # ----------------------------------------------------------------------------
+  # Assemble the final image from this run's builders, extract, publish.
+  # ----------------------------------------------------------------------------
+  package:
+    name: Package and release
+    needs: [builders, apps]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: write
+      packages: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/share/boost /usr/local/graalvm /usr/local/.ghcup
+          sudo docker image prune -af
+          df -h /
+
+      - name: Prepare environment
+        run: |
+          touch ~/.gitconfig
+          mkdir -p ~/.ssh
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Pull the images the builders pushed for THIS commit and retag to the
+      # local names final.Dockerfile COPY --from's. Pulls are strict: a missing
+      # image means the handoff is broken and the run must stop here.
+      - name: Pull this run's builder images
         run: |
           for b in cpu cuda jetson rpi riscv64 stm32 arduino pico esp32 c2000; do
             img="apex.builder.$b"
-            docker pull "$REGISTRY/$img:latest" \
-              && docker tag "$REGISTRY/$img:latest" "$img" || true
+            docker pull "$REGISTRY/$img:$GITHUB_SHA"
+            docker tag "$REGISTRY/$img:$GITHUB_SHA" "$img"
           done
 
-      - name: Pull dev images (for app packaging)
-        run: |
-          for img in apex.base apex.dev.cpu apex.dev.cuda apex.dev.jetson \
-                     apex.dev.rpi apex.dev.stm32; do
-            docker pull "$REGISTRY/$img:latest" \
-              && docker tag "$REGISTRY/$img:latest" "$img" || true
-          done
-
-      # --- workflow_dispatch: assemble final to validate the path (no publish) ---
-      - name: Assemble final image (validate, no publish)
-        if: github.event_name == 'workflow_dispatch'
-        run: make docker-final VERSION=0.0.0-ci
-
-      # --- tag push: full release ---
-      - name: Extract version from tag
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Determine version
         id: version
         run: |
-          version="${GITHUB_REF_NAME#v}"   # 0.0.1, or 0.0.1-rc1 for a pre-release
-          base="${version%%-*}"            # X.Y.Z with any -suffix stripped
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"   # 0.0.1, or 0.0.1-rc1 for a pre-release
+          else
+            version="0.0.0-ci"               # rehearsal: same steps, throwaway version
+          fi
+          base="${version%%-*}"              # X.Y.Z with any -suffix stripped
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "base=$base" >> "$GITHUB_OUTPUT"
           if [ "$version" = "$base" ]; then echo "prerelease=false"; else echo "prerelease=true"; fi >> "$GITHUB_OUTPUT"
 
       - name: Verify version matches CMakeLists.txt
         if: startsWith(github.ref, 'refs/tags/')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG_BASE: ${{ steps.version.outputs.base }}
         run: |
           cmake_version=$(sed -n 's/.*VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' \
             CMakeLists.txt | head -1)
-          tag_base="${{ steps.version.outputs.base }}"
-          if [ "$cmake_version" != "$tag_base" ]; then
-            echo "ERROR: Tag version ($tag_base) does not match CMakeLists.txt ($cmake_version)"
+          if [ "$cmake_version" != "$TAG_BASE" ]; then
+            echo "ERROR: Tag version ($TAG_BASE) does not match CMakeLists.txt ($cmake_version)"
             exit 1
           fi
-          echo "Version verified: ${{ steps.version.outputs.version }} (base $tag_base)"
+          echo "Version verified: $VERSION (base $TAG_BASE)"
 
       - name: Build all platform artifacts
-        if: startsWith(github.ref, 'refs/tags/')
-        run: make artifacts VERSION=${{ steps.version.outputs.version }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: make artifacts VERSION="$VERSION"
 
-      - name: Build app release packages
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          make release APP=ApexEdgeDemo
-          make release APP=ApexHilDemo
+      - name: Download app packages
+        uses: actions/download-artifact@v8
+        with:
+          name: app-packages
+          path: build/release
 
       - name: List artifacts
-        if: startsWith(github.ref, 'refs/tags/')
         run: |
           ls -la output/
-          ls -la build/release/ 2>/dev/null || true
+          ls -la build/release/
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
           name: Apex CSF ${{ steps.version.outputs.version }}
