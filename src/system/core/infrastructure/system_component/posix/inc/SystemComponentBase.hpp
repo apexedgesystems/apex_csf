@@ -54,10 +54,10 @@ class IInternalBus;
 /* ----------------------------- Constants ----------------------------- */
 
 /// Maximum length for component name (including null terminator).
-constexpr std::size_t COMPONENT_NAME_MAX_LEN = 32;
+inline constexpr std::size_t COMPONENT_NAME_MAX_LEN = 32;
 
 /// Maximum data descriptors per component.
-constexpr std::size_t MAX_DATA_PER_COMPONENT = 16;
+inline constexpr std::size_t MAX_DATA_PER_COMPONENT = 16;
 
 /* ----------------------------- DataDescriptor ----------------------------- */
 

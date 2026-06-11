@@ -426,7 +426,17 @@ endif ()
 # Clang build -- the gate every change passes through -- carries the full set.
 # Probing replaces a hand-maintained per-compiler list, so a flag can never reach
 # a compiler that rejects it. -Werror=<w> both enables the warning and gates it.
+#
+# One flag needs a behavior probe, not a spelling probe: both compilers accept
+# -Wunused-const-variable, but GCC's version (at every level) also fires for
+# constants defined in *included headers* -- a non-local failure mode the host
+# Clang gate can never reproduce, since Clang restricts the warning to the main
+# file. It aborted the v0.0.1-rc2 jetson app build from a header owned by
+# another module. So that flag is gated only where an unused header constant
+# demonstrably survives it.
 include(CheckCXXCompilerFlag)
+include(CheckCXXSourceCompiles)
+include(CMakePushCheckState)
 if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "TI")
   foreach (
     _w IN
@@ -436,7 +446,6 @@ if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "TI")
           implicit-int-conversion
           shorten-64-to-32
           unused-variable
-          unused-const-variable
           deprecated-volatile
   )
     string(MAKE_C_IDENTIFIER "APEX_HAVE_W_${_w}" _have)
@@ -445,6 +454,27 @@ if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "TI")
       add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror=${_w}>)
     endif ()
   endforeach ()
+
+  # Behavior probe for unused-const-variable (see the comment block above): an
+  # unused constant in an included header must compile cleanly under the gated
+  # flag, or the gate would fail on code outside the TU being compiled. A
+  # compiler that rejects the spelling outright also fails the probe, so this
+  # subsumes the spelling check.
+  file(WRITE "${CMAKE_BINARY_DIR}/apex_probe/apex_unused_const_probe.hpp"
+       "constexpr int kApexProbeUnusedConst = 1;\n")
+  cmake_push_check_state(RESET)
+  set(CMAKE_REQUIRED_FLAGS "-Werror=unused-const-variable")
+  set(CMAKE_REQUIRED_INCLUDES "${CMAKE_BINARY_DIR}/apex_probe")
+  check_cxx_source_compiles(
+    "
+    #include <apex_unused_const_probe.hpp>
+    int main() { return 0; }
+    "
+    APEX_W_UNUSED_CONST_IS_MAIN_FILE_ONLY)
+  cmake_pop_check_state()
+  if (APEX_W_UNUSED_CONST_IS_MAIN_FILE_ONLY)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror=unused-const-variable>)
+  endif ()
 endif ()
 
 # ------------------------------------------------------------------------------
