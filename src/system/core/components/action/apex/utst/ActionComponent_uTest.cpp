@@ -15,6 +15,8 @@
 
 /* ----------------------------- Test Helpers ----------------------------- */
 
+namespace {
+
 struct TestBlock {
   std::array<std::uint8_t, 64> bytes{};
 };
@@ -47,6 +49,8 @@ static void testCmdHandler(void* ctx, std::uint32_t uid, std::uint16_t opcode,
   c->lastOpcode = opcode;
   ++c->callCount;
 }
+
+} // namespace
 
 /* ----------------------------- Default Construction ----------------------------- */
 

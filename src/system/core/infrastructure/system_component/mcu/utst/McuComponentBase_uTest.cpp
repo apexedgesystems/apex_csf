@@ -7,6 +7,8 @@
 
 #include <gtest/gtest.h>
 
+namespace {
+
 /**
  * @brief Concrete test component for McuComponentBase testing.
  */
@@ -42,6 +44,8 @@ private:
   int doInitCallCount_{0};
   int doResetCallCount_{0};
 };
+
+} // namespace
 
 /* ----------------------------- Default Construction ----------------------------- */
 
