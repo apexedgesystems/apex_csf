@@ -279,10 +279,6 @@ docker-validate: docker-lint
 	@docker compose config --quiet
 
 # ------------------------------------------------------------------------------
-# Phony Declarations
-# ------------------------------------------------------------------------------
-
-# ------------------------------------------------------------------------------
 # Release path drift guard
 # ------------------------------------------------------------------------------
 # final.Dockerfile COPYs each platform from build/<preset-dir>; those names must
@@ -301,6 +297,10 @@ check-release-paths:
 	  exit 1; \
 	fi; \
 	printf '[check-release-paths] OK -- all final.Dockerfile build paths match a preset\n'
+
+# ------------------------------------------------------------------------------
+# Phony Declarations
+# ------------------------------------------------------------------------------
 
 .PHONY: docker-all docker-devs docker-builders docker-base docker-final artifacts
 .PHONY: docker-push-devs docker-pull-devs check-release-paths
