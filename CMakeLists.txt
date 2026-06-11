@@ -419,24 +419,31 @@ endif ()
 # truncating. They are NOT silenced wholesale; the gate keeps new truncation
 # paths from landing. Domain-inherent noisy classes (sign-conversion,
 # float-equal) are left out as they fight legitimate patterns in this tree.
+# Each warning is probed against the active compiler and gated as an error only
+# if that compiler accepts the spelling. Clang-only names (implicit-int-conversion,
+# shorten-64-to-32, deprecated-volatile) are skipped on the GCC cross-toolchains
+# (aarch64/arm/riscv64 g++) instead of aborting their configure, while the host
+# Clang build -- the gate every change passes through -- carries the full set.
+# Probing replaces a hand-maintained per-compiler list, so a flag can never reach
+# a compiler that rejects it. -Werror=<w> both enables the warning and gates it.
+include(CheckCXXCompilerFlag)
 if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "TI")
   foreach (
-    _wf IN
-    ITEMS -Wshadow
-          -Wold-style-cast
-          -Wimplicit-int-conversion
-          -Wshorten-64-to-32
-          -Wdouble-promotion
-          -Werror=unused-variable
-          -Werror=unused-const-variable
-          -Werror=deprecated-volatile
-          -Werror=shadow
-          -Werror=old-style-cast
-          -Werror=implicit-int-conversion
-          -Werror=shorten-64-to-32
-          -Werror=double-promotion
+    _w IN
+    ITEMS shadow
+          old-style-cast
+          double-promotion
+          implicit-int-conversion
+          shorten-64-to-32
+          unused-variable
+          unused-const-variable
+          deprecated-volatile
   )
-    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${_wf}>)
+    string(MAKE_C_IDENTIFIER "APEX_HAVE_W_${_w}" _have)
+    check_cxx_compiler_flag("-W${_w}" ${_have})
+    if (${_have})
+      add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror=${_w}>)
+    endif ()
   endforeach ()
 endif ()
 
