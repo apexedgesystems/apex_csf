@@ -58,7 +58,10 @@ jobs:
           # dispatch scopes (and rebuilds images) exactly as the PR would --
           # never a blanket image rebuild just because there is no PR context.
           base="${{ github.event.pull_request.base.ref || 'main' }}"
-          files=$(git diff --name-only "origin/$base...HEAD")
+          # --no-renames: a rename lists both sides, so a file moving OUT of a
+          # scoped area still classifies as a change to that area; default
+          # rename detection would emit only the destination path.
+          files=$(git diff --name-only --no-renames "origin/$base...HEAD")
           printf 'changed files:\n%s\n' "$files"
           # Scope DOWN only for changes confined to known-isolated areas; any
           # unrecognized path (root configs, new top-level dirs, build/CI infra)
@@ -75,6 +78,11 @@ jobs:
               *)            allflag=true ;;
             esac
           done <<< "$files"
+          # An empty diff (e.g. a dispatch on main itself) classifies nothing
+          # and would yield a green lint-only run; treat it as cross-cutting so
+          # a manual run is always a full run. docker stays diff-driven -- an
+          # empty diff never forces an image rebuild.
+          if [ -z "$files" ]; then allflag=true; fi
           if [ "$allflag" = true ]; then cpp=true; rust=true; py=true; fi
           # Image rebuild is needed only for Dockerfile or base-compose (build:)
           # changes -- not the CI compose overlays, which are runtime-only.
