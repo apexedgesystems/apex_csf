@@ -107,12 +107,23 @@ jobs:
             ccache-builder-${{ matrix.builder }}-
       - name: Prepare ccache dir
         run: mkdir -p .ccache
+      # The injected mount must carry the SAME uid/gid options as
+      # builder.Dockerfile's cache mount: BuildKit forks cache identity on
+      # differing mount options, so a plain map injects into (and extracts
+      # from) a cache the build never sees. continue-on-error stays: extraction
+      # runs as a post step, and a cache hiccup after a successful build must
+      # not fail the release; the in-build ccache -s line is the hit-rate
+      # signal.
+      - name: Compose ccache cache map (mount identity must match)
+        id: ccache-map
+        run: |
+          printf 'map={ ".ccache": { "target": "/ccache", "uid": "%s", "gid": "%s" } }\n' \
+            "$(id -u)" "$(id -g)" >> "$GITHUB_OUTPUT"
       - name: Inject ccache into the build mount
         uses: reproducible-containers/buildkit-cache-dance@v3
         continue-on-error: true
         with:
-          cache-map: |
-            { ".ccache": "/ccache" }
+          cache-map: ${{ steps.ccache-map.outputs.map }}
 
       - name: Build builder image
         run: make docker-builder-${{ matrix.builder }}
