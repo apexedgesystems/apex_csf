@@ -26,13 +26,18 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       checks: ${{ steps.list.outputs.checks }}
+      ccache: ${{ steps.list.outputs.ccache }}
+      builders: ${{ steps.list.outputs.builders }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Read nightly checks from registry
+      - name: Read nightly checks and builder targets from the registries
         id: list
-        run: echo "checks=$(make -s print-nightly-checks)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "checks=$(make -s print-nightly-checks)" >> "$GITHUB_OUTPUT"
+          echo "ccache=$(make -s print-ccache-checks)" >> "$GITHUB_OUTPUT"
+          echo "builders=$(make -s print-builder-targets)" >> "$GITHUB_OUTPUT"
 
   check:
     name: ${{ matrix.check }}
@@ -62,7 +67,12 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Only the legs that compile C++ through ccache persist one
+      # (CHECKS_CCACHE in mk/checks.mk); the scanner and tooling legs would
+      # mint empty ~200-byte cache entries every night. Exact membership via
+      # fromJSON -- substring matching would make tsan match rtsan.
       - name: Restore ccache
+        if: contains(fromJSON(needs.set-matrix.outputs.ccache), matrix.check)
         uses: actions/cache@v4
         with:
           path: .ccache
@@ -70,6 +80,7 @@ jobs:
           restore-keys: |
             ccache-nightly-${{ matrix.check }}-
       - name: Prepare ccache dir
+        if: contains(fromJSON(needs.set-matrix.outputs.ccache), matrix.check)
         run: mkdir -p .ccache
 
       - name: Run ${{ matrix.check }}
@@ -82,3 +93,76 @@ jobs:
           name: coverage-report
           path: build/hosted-x86_64-coverage/coverage/
           retention-days: 14
+
+  # ----------------------------------------------------------------------------
+  # Warm the release builders' ccache from main. Actions cache scopes restores
+  # to the requesting ref plus the default branch, so entries saved by tag or
+  # branch runs are invisible to the next tag -- only main-scoped entries make
+  # a release build warm. This matrix compiles each builder image nightly
+  # (no push) with the same cache keys release.yml uses, which also makes it
+  # the daily canary for the cross release-tree compiles that otherwise run
+  # only at tag time.
+  # ----------------------------------------------------------------------------
+  builder-warm:
+    name: warm-${{ matrix.builder }}
+    needs: set-matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    strategy:
+      fail-fast: false
+      matrix:
+        builder: ${{ fromJSON(needs.set-matrix.outputs.builders) }}
+
+    env:
+      REGISTRY: ghcr.io/${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Prepare environment
+        run: |
+          touch ~/.gitconfig
+          mkdir -p ~/.ssh
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull builder's dev image (the FROM)
+        env:
+          DEV: apex.dev.${{ matrix.builder }}
+        run: |
+          docker pull "$REGISTRY/$DEV:latest"
+          docker tag "$REGISTRY/$DEV:latest" "$DEV"
+
+      - name: Restore builder ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-builder-${{ matrix.builder }}-${{ github.sha }}
+          restore-keys: |
+            ccache-builder-${{ matrix.builder }}-
+      - name: Prepare ccache dir
+        run: mkdir -p .ccache
+      # Mount identity must match builder.Dockerfile's uid/gid cache mount --
+      # see release.yml for the full note.
+      - name: Compose ccache cache map (mount identity must match)
+        id: ccache-map
+        run: |
+          printf 'map={ ".ccache": { "target": "/ccache", "uid": "%s", "gid": "%s" } }\n' \
+            "$(id -u)" "$(id -g)" >> "$GITHUB_OUTPUT"
+      - name: Inject ccache into the build mount
+        uses: reproducible-containers/buildkit-cache-dance@v3
+        continue-on-error: true
+        with:
+          cache-map: ${{ steps.ccache-map.outputs.map }}
+
+      - name: Build builder image (warm only, no push)
+        run: make docker-builder-${{ matrix.builder }}

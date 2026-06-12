@@ -163,6 +163,11 @@ jobs:
         run: docker compose run --rm -T dev-cuda make smoke APP=apex_mc_demo
       - name: Build documentation (zero-warning gate)
         run: docker compose run --rm -T dev-cuda make docs-check
+      # Hit rate of the persisted cache, in the job log where a regression
+      # (key drift, broken bind) is visible -- a broken cache layer once ran
+      # silent for five release runs.
+      - name: ccache stats
+        run: docker compose run --rm -T dev-cuda ccache -s | tail -n 8
 
   rust:
     name: Rust tool tests
@@ -240,6 +245,8 @@ jobs:
         run: mkdir -p .ccache
       - name: Address + UB Sanitizer
         run: docker compose run --rm -T dev make asan-ubsan
+      - name: ccache stats
+        run: docker compose run --rm -T dev ccache -s | tail -n 8
 
   static-analysis:
     name: Static analysis
@@ -247,8 +254,6 @@ jobs:
     if: needs.changes.outputs.cpp == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    env:
-      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -262,14 +267,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           service: dev
           rebuild: ${{ needs.changes.outputs.docker }}
-      - name: Restore ccache
-        uses: actions/cache@v4
-        with:
-          path: .ccache
-          key: ccache-static-${{ github.sha }}
-          restore-keys: |
-            ccache-static-
-      - name: Prepare ccache dir
-        run: mkdir -p .ccache
+      # No ccache here: clang-tidy does not compile through the launcher --
+      # every cache this job ever saved was ~191 bytes (see CHECKS_CCACHE in
+      # mk/checks.mk for the same rule on nightly legs).
       - name: clang-tidy (gated checks)
         run: docker compose run --rm -T dev make static
