@@ -146,6 +146,27 @@ APP_REGISTRY :=
 RELEASE_DIR := build/release
 
 # ==============================================================================
+# Released Apps
+# ==============================================================================
+# The subset of APP_REGISTRY that ships in a GitHub Release. The release.yml
+# apps matrix derives from this via print-release-apps: one CI job per app,
+# each pulling exactly the dev images its platforms build in.
+# ==============================================================================
+
+RELEASE_APPS := ApexEdgeDemo ApexHilDemo
+
+# dev-<x> compose service -> apex.dev.<x> image name
+_svc_image = apex.$(subst -,.,$(1))
+_app_images = $(foreach p,$(APP_$(1)_PLATFORMS),$(call _svc_image,$(PLATFORM_$(p)_SERVICE)))
+
+# Emit RELEASE_APPS as a JSON array of {app, images} objects for the CI matrix.
+print-release-apps:
+	@printf '%s\n' '$(foreach a,$(RELEASE_APPS),{"app":"$(a)"$(_comma) "images":"$(strip $(call _app_images,$(a)))"})' \
+	  | sed 's/} {/}, {/g; s/^/[/; s/$$/]/'
+
+.PHONY: print-release-apps
+
+# ==============================================================================
 # Generated Targets
 # ==============================================================================
 # For each app/platform combination, generate a _release-<APP>-<platform>

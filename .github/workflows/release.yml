@@ -57,12 +57,15 @@ jobs:
     timeout-minutes: 5
     outputs:
       list: ${{ steps.list.outputs.list }}
+      apps: ${{ steps.list.outputs.apps }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Read builder targets from registry
+      - name: Read builder targets and released apps from the registries
         id: list
-        run: echo "list=$(make -s print-builder-targets)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "list=$(make -s print-builder-targets)" >> "$GITHUB_OUTPUT"
+          echo "apps=$(make -s print-release-apps)" >> "$GITHUB_OUTPUT"
 
   # ----------------------------------------------------------------------------
   # Compile each target's builder image in parallel; push to ghcr for the
@@ -153,18 +156,25 @@ jobs:
           docker push "$REGISTRY/$IMG:$GITHUB_SHA"
 
   # ----------------------------------------------------------------------------
-  # Build the app release packages in parallel with the builders: make release
-  # compiles the apps from source inside the platform dev images and consumes
-  # no builder output, so serializing it behind the matrix only delays its
-  # verdict (this step alone sank v0.0.1-rc1 and -rc2, ~40 minutes in).
+  # Build each released app's packages in parallel with the builders and with
+  # each other: make release APP=<a> compiles from source inside the platform
+  # dev images and consumes no builder output, so wall-clock is the slowest
+  # app, not the sum (serial app packaging sank v0.0.1-rc1 and -rc2 ~40
+  # minutes in). Matrix and per-app image lists come from mk/release.mk
+  # RELEASE_APPS via print-release-apps.
   # ----------------------------------------------------------------------------
   apps:
-    name: App release packages
+    name: apps-${{ matrix.app }}
+    needs: targets
     runs-on: ubuntu-latest
     timeout-minutes: 120
     permissions:
       contents: read
       packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.targets.outputs.apps) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -190,26 +200,25 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Exactly the dev images the packaged apps build in (apps/*/release.mk:
-      # ApexEdgeDemo -> jetson, ApexHilDemo -> rpi stm32, via the
-      # PLATFORM_*_SERVICE map in mk/release.mk).
-      - name: Pull platform dev images
+      - name: Pull this app's platform dev images
+        env:
+          IMAGES: ${{ matrix.images }}
         run: |
-          for img in apex.dev.jetson apex.dev.rpi apex.dev.stm32; do
+          for img in $IMAGES; do
             docker pull "$REGISTRY/$img:latest"
             docker tag "$REGISTRY/$img:latest" "$img"
           done
 
-      - name: Build app release packages
-        run: |
-          make release APP=ApexEdgeDemo
-          make release APP=ApexHilDemo
+      - name: Build app release package
+        env:
+          APP: ${{ matrix.app }}
+        run: make release APP="$APP"
 
-      - name: Upload app packages
+      - name: Upload app package
         uses: actions/upload-artifact@v7
         with:
-          name: app-packages
-          path: build/release/*.tar.gz
+          name: app-package-${{ matrix.app }}
+          path: build/release/${{ matrix.app }}.tar.gz
           if-no-files-found: error
           retention-days: 7
 
@@ -295,7 +304,8 @@ jobs:
       - name: Download app packages
         uses: actions/download-artifact@v8
         with:
-          name: app-packages
+          pattern: app-package-*
+          merge-multiple: true
           path: build/release
 
       - name: List artifacts
