@@ -405,7 +405,7 @@ if (ENABLE_CLANG_TIDY)
 endif ()
 
 # ------------------------------------------------------------------------------
-# Gated warnings (first-party code only)
+# Gated warnings (first-party code only, gate toolchain only)
 # ------------------------------------------------------------------------------
 # Gate a curated set of warnings as errors -- but only for our own sources, so
 # dependency builds are never gated (ExternalDependencies were configured above;
@@ -419,25 +419,19 @@ endif ()
 # truncating. They are NOT silenced wholesale; the gate keeps new truncation
 # paths from landing. Domain-inherent noisy classes (sign-conversion,
 # float-equal) are left out as they fight legitimate patterns in this tree.
-# Each warning is probed against the active compiler and gated as an error only
-# if that compiler accepts the spelling. Clang-only names (implicit-int-conversion,
-# shorten-64-to-32, deprecated-volatile) are skipped on the GCC cross-toolchains
-# (aarch64/arm/riscv64 g++) instead of aborting their configure, while the host
-# Clang build -- the gate every change passes through -- carries the full set.
-# Probing replaces a hand-maintained per-compiler list, so a flag can never reach
-# a compiler that rejects it. -Werror=<w> both enables the warning and gates it.
 #
-# One flag needs a behavior probe, not a spelling probe: both compilers accept
-# -Wunused-const-variable, but GCC's version (at every level) also fires for
-# constants defined in *included headers* -- a non-local failure mode the host
-# Clang gate can never reproduce, since Clang restricts the warning to the main
-# file. It aborted the v0.0.1-rc2 jetson app build from a header owned by
-# another module. So that flag is gated only where an unused header constant
-# demonstrably survives it.
-include(CheckCXXCompilerFlag)
-include(CheckCXXSourceCompiles)
-include(CMakePushCheckState)
-if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "TI")
+# The gate runs ONLY under Clang -- the toolchain of the PR gate that every
+# change passes through. Cross-toolchain builds still print warnings but never
+# fail on them, because the same warning name can check different things per
+# compiler: GCC's -Wunused-const-variable reaches into included headers at
+# every level, and GCC's -Wshadow includes class members; Clang's do neither.
+# A -Werror gate on a compiler the PR gate does not run lets a release tag
+# fail on a diagnostic no PR could have surfaced, and that killed three
+# release attempts in a row (v0.0.1-rc1: clang-only spellings rejected by
+# g++; rc2: a header constant; the first full rehearsal: member shadows).
+# Enforcement parity is the contract: PR-green implies release-green. GCC's
+# extra diagnostics remain available in cross-build logs as plain warnings.
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   foreach (
     _w IN
     ITEMS shadow
@@ -446,35 +440,11 @@ if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "TI")
           implicit-int-conversion
           shorten-64-to-32
           unused-variable
+          unused-const-variable
           deprecated-volatile
   )
-    string(MAKE_C_IDENTIFIER "APEX_HAVE_W_${_w}" _have)
-    check_cxx_compiler_flag("-W${_w}" ${_have})
-    if (${_have})
-      add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror=${_w}>)
-    endif ()
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror=${_w}>)
   endforeach ()
-
-  # Behavior probe for unused-const-variable (see the comment block above): an
-  # unused constant in an included header must compile cleanly under the gated
-  # flag, or the gate would fail on code outside the TU being compiled. A
-  # compiler that rejects the spelling outright also fails the probe, so this
-  # subsumes the spelling check.
-  file(WRITE "${CMAKE_BINARY_DIR}/apex_probe/apex_unused_const_probe.hpp"
-       "constexpr int kApexProbeUnusedConst = 1;\n")
-  cmake_push_check_state(RESET)
-  set(CMAKE_REQUIRED_FLAGS "-Werror=unused-const-variable")
-  set(CMAKE_REQUIRED_INCLUDES "${CMAKE_BINARY_DIR}/apex_probe")
-  check_cxx_source_compiles(
-    "
-    #include <apex_unused_const_probe.hpp>
-    int main() { return 0; }
-    "
-    APEX_W_UNUSED_CONST_IS_MAIN_FILE_ONLY)
-  cmake_pop_check_state()
-  if (APEX_W_UNUSED_CONST_IS_MAIN_FILE_ONLY)
-    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror=unused-const-variable>)
-  endif ()
 endif ()
 
 # ------------------------------------------------------------------------------
