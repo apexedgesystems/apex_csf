@@ -35,10 +35,16 @@ COPY --chown=${HOST_UID}:${HOST_GID} . .
 # ==============================================================================
 # Cache mount on /ccache (CCACHE_DIR set in parent dev image). Cache key
 # defaults to target path, so all builder-* images share the cache.
+#
+# Grouping matters: && and || bind with equal precedence left-to-right, so an
+# ungrouped trailing `|| true` (for the best-effort ccache stats) would also
+# swallow a BUILD_CMD failure -- builders then push partial build trees as
+# green. Only distclean and the stats line are best-effort; the build itself
+# must fail the image build.
 RUN --mount=type=cache,target=/ccache,uid=${HOST_UID},gid=${HOST_GID} \
-    make distclean 2>/dev/null || true && \
-    eval ${BUILD_CMD} && \
-    ccache -s 2>/dev/null || true
+    { make distclean 2>/dev/null || true; } && \
+    eval "${BUILD_CMD}" && \
+    { ccache -s 2>/dev/null || true; }
 
 # ==============================================================================
 # Export Stage -- build tree only
