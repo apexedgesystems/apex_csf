@@ -146,6 +146,9 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           service: dev-cuda
           rebuild: ${{ needs.changes.outputs.docker }}
+      # Second restore key: the nightly debug leg saves main-scoped entries,
+      # the only ones a brand-new PR's first push can see (ccache is
+      # content-addressed, so a partial-match cache only helps, never hurts).
       - name: Restore ccache
         uses: actions/cache@v4
         with:
@@ -153,6 +156,7 @@ jobs:
           key: ccache-build-test-${{ github.sha }}
           restore-keys: |
             ccache-build-test-
+            ccache-nightly-debug-
       - name: Prepare ccache dir
         run: mkdir -p .ccache
       - name: Build (debug, CUDA)
@@ -241,6 +245,7 @@ jobs:
           key: ccache-sanitize-${{ github.sha }}
           restore-keys: |
             ccache-sanitize-
+            ccache-nightly-asan-ubsan-
       - name: Prepare ccache dir
         run: mkdir -p .ccache
       - name: Address + UB Sanitizer
