@@ -60,11 +60,17 @@ runs:
         docker pull "$REGISTRY/$TAG:latest" \
           && docker tag "$REGISTRY/$TAG:latest" "$TAG" || true
 
+    # Build through the registry layer cache (docker-compose.ci-cache.yml,
+    # the same overlay docker-build-push uses): the pulled :latest images
+    # carry inline cache metadata, so only the layers an image-input change
+    # actually invalidated are rebuilt -- not the whole SDK stack from
+    # scratch, in every job that asked for a rebuild.
     - name: Rebuild images from Dockerfiles
       if: inputs.rebuild == 'true'
       shell: bash
       env:
         SERVICE: ${{ inputs.service }}
+        REGISTRY: ${{ inputs.registry }}
       run: |
-        docker compose build base
-        docker compose build "$SERVICE"
+        docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build base
+        docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build "$SERVICE"
