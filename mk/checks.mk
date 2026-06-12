@@ -41,7 +41,11 @@ CHECKS_ALL := $(sort $(CHECKS_SANITIZER) $(CHECKS_STATIC) $(CHECKS_SECURITY) \
 # nightly = scheduled, heavier checks with their own builds
 
 CHECKS_GATE    := asan-ubsan static gitleaks
-CHECKS_NIGHTLY := tsan rtsan static cppcheck coverage-check hardened trivy gitleaks osv semgrep
+# test-rust/test-py ride nightly because PR CI runs them only when tools/rust
+# or tools/py changed -- nightly re-proves them on main (C++ tests are already
+# re-proven nightly through the coverage-check/tsan/rtsan builds).
+CHECKS_NIGHTLY := tsan rtsan static cppcheck coverage-check hardened trivy \
+                  gitleaks osv semgrep test-rust test-py
 
 # ------------------------------------------------------------------------------
 # Aggregate targets -- run a whole category or tier
