@@ -84,12 +84,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
-                      /usr/local/share/boost /usr/local/graalvm /usr/local/.ghcup
-          sudo docker image prune -af
-          df -h /
+      # Runners ship ~109 GB free (run 27317390046 builder-cpu: 36 G used of
+      # 145 G); the old purge reclaimed ~1.8 GB for 21-63 s per job across 12
+      # jobs. Keep only the visibility line; re-add a purge if df ever shows
+      # pressure.
+      - name: Report disk space
+        run: df -h /
 
       - name: Prepare environment
         run: |
@@ -169,12 +169,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
-                      /usr/local/share/boost /usr/local/graalvm /usr/local/.ghcup
-          sudo docker image prune -af
-          df -h /
+      # Runners ship ~109 GB free (run 27317390046 builder-cpu: 36 G used of
+      # 145 G); the old purge reclaimed ~1.8 GB for 21-63 s per job across 12
+      # jobs. Keep only the visibility line; re-add a purge if df ever shows
+      # pressure.
+      - name: Report disk space
+        run: df -h /
 
       - name: Prepare environment
         run: |
@@ -228,12 +228,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
-                      /usr/local/share/boost /usr/local/graalvm /usr/local/.ghcup
-          sudo docker image prune -af
-          df -h /
+      # Runners ship ~109 GB free (run 27317390046 builder-cpu: 36 G used of
+      # 145 G); the old purge reclaimed ~1.8 GB for 21-63 s per job across 12
+      # jobs. Keep only the visibility line; re-add a purge if df ever shows
+      # pressure.
+      - name: Report disk space
+        run: df -h /
 
       - name: Prepare environment
         run: |
