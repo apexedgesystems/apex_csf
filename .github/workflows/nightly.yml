@@ -184,6 +184,14 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Package names come from the make registries (print-ghcr-packages), not
+      # the org package-list endpoint: GITHUB_TOKEN cannot enumerate org
+      # packages, and a failed enumeration inside a pipeline reads as "nothing
+      # to do". Per-package 404s are fine (image not published yet); any other
+      # API failure is fatal so a permission problem can never pass silently.
       - name: Delete untagged and stale builder versions
         run: |
           set -euo pipefail
@@ -191,13 +199,22 @@ jobs:
           repo="${GITHUB_REPOSITORY#*/}"
           cutoff=$(date -u -d '14 days ago' +%FT%TZ)
           deleted=0; kept=0
-          while IFS= read -r pkg; do
+          for name in $(make -s print-ghcr-packages); do
+            pkg="$repo/$name"
             enc=$(printf '%s' "$pkg" | sed 's|/|%2F|g')
+            if ! versions=$(gh api --paginate "/orgs/$org/packages/container/$enc/versions" \
+                              --jq '.[] | [.id, .created_at, (.metadata.container.tags | join(" "))] | @tsv' 2>&1); then
+              case "$versions" in
+                *"HTTP 404"*|*"Not Found"*) echo "skip $pkg (not published)"; continue ;;
+                *) echo "::error::listing $pkg failed: $versions"; exit 1 ;;
+              esac
+            fi
+            [ -n "$versions" ] || continue
             while IFS=$'\t' read -r id created tags; do
               del=false
               if [ -z "$tags" ]; then
                 del=true                       # untagged: stranded digest
-              elif [ "${pkg#"$repo"/apex.builder.}" != "$pkg" ]; then
+              elif [ "${name#apex.builder.}" != "$name" ]; then
                 # builder package: delete only if EVERY tag is a 40-hex sha
                 # and the version is older than the cutoff
                 if [ "$created" \< "$cutoff" ] \
@@ -212,8 +229,12 @@ jobs:
               else
                 kept=$((kept+1))
               fi
-            done < <(gh api --paginate "/orgs/$org/packages/container/$enc/versions" \
-                       --jq '.[] | [.id, .created_at, (.metadata.container.tags | join(" "))] | @tsv')
-          done < <(gh api --paginate "/orgs/$org/packages?package_type=container" --jq '.[].name' \
-                     | grep -E "^$repo/apex\.")
+            done <<< "$versions"
+          done
           echo "ghcr-gc: deleted $deleted version(s), kept $kept"
+          # A registry with published images and zero visible versions means
+          # the token cannot see them -- fail loudly rather than report clean.
+          if [ "$deleted" -eq 0 ] && [ "$kept" -eq 0 ]; then
+            echo "::error::no package versions visible to the token"
+            exit 1
+          fi

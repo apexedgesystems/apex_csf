@@ -316,12 +316,19 @@ check-release-paths:
 print-builder-targets:
 	@printf '%s\n' '$(call _json_array,$(BUILDER_TARGETS))'
 
+# Every ghcr package this repo publishes, one per line -- drives the nightly
+# ghcr-gc job, so a new dev service or builder target is collected without a
+# workflow edit.
+print-ghcr-packages:
+	@printf '%s\n' $(_DEV_IMAGES) $(patsubst %,apex.builder.%,$(BUILDER_TARGETS))
+
 # ------------------------------------------------------------------------------
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
 .PHONY: docker-all docker-devs docker-builders docker-base docker-final artifacts
 .PHONY: docker-push-devs docker-pull-devs check-release-paths print-builder-targets
+.PHONY: print-ghcr-packages
 .PHONY: docker-clean docker-clean-deep docker-prune docker-disk-usage
 .PHONY: docker-lint docker-validate
 
