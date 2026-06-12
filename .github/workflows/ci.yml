@@ -84,9 +84,15 @@ jobs:
           # empty diff never forces an image rebuild.
           if [ -z "$files" ]; then allflag=true; fi
           if [ "$allflag" = true ]; then cpp=true; rust=true; py=true; fi
-          # Image rebuild is needed only for Dockerfile or base-compose (build:)
-          # changes -- not the CI compose overlays, which are runtime-only.
-          docker=$(printf '%s\n' "$files" | grep -qE '^docker/|^docker-compose\.yml$' && echo true || echo false)
+          # Image rebuild is needed only when a dev-image input changes: the
+          # base/dev Dockerfiles or the base compose (build args/contexts).
+          # docker/builder.Dockerfile and docker/final.Dockerfile feed only the
+          # release pipe (no PR CI job builds them), and the CI compose
+          # overlays are runtime-only -- none of those warrant rebuilding the
+          # dev images the jobs run in. The base/dev Dockerfiles COPY nothing
+          # from the build context, so the Dockerfiles themselves are the
+          # complete input set.
+          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/|^docker-compose\.yml$' && echo true || echo false)
           printf 'cpp=%s\nrust=%s\npy=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$docker" | tee -a "$GITHUB_OUTPUT"
 
   lint:
