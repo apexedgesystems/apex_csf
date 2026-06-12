@@ -102,7 +102,7 @@ jobs:
           echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
 
       - name: Login to ghcr.io
-        uses: docker/login-action@v4
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -140,7 +140,7 @@ jobs:
           printf 'map={ ".ccache": { "target": "/ccache", "uid": "%s", "gid": "%s" } }\n' \
             "$(id -u)" "$(id -g)" >> "$GITHUB_OUTPUT"
       - name: Inject ccache into the build mount
-        uses: reproducible-containers/buildkit-cache-dance@v3
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3
         continue-on-error: true
         with:
           cache-map: ${{ steps.ccache-map.outputs.map }}
@@ -194,7 +194,7 @@ jobs:
           echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
 
       - name: Login to ghcr.io
-        uses: docker/login-action@v4
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -252,7 +252,7 @@ jobs:
           echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
 
       - name: Login to ghcr.io
-        uses: docker/login-action@v4
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -315,7 +315,7 @@ jobs:
 
       - name: Create GitHub Release
         if: github.event_name == 'push'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
           name: Apex CSF ${{ steps.version.outputs.version }}
           draft: false
