@@ -13,15 +13,12 @@
 # ==============================================================================
 ARG DEV_IMAGE=apex.dev.cpu
 
-FROM ${DEV_IMAGE}:latest
+FROM ${DEV_IMAGE}:latest AS build
 
 ARG USER
 ARG HOST_UID
 ARG HOST_GID
 ARG BUILD_CMD="make release"
-
-LABEL org.opencontainers.image.title="apex.builder" \
-      org.opencontainers.image.description="Release artifact builder"
 
 ENV CONTAINER=yes
 
@@ -42,3 +39,20 @@ RUN --mount=type=cache,target=/ccache,uid=${HOST_UID},gid=${HOST_GID} \
     make distclean 2>/dev/null || true && \
     eval ${BUILD_CMD} && \
     ccache -s 2>/dev/null || true
+
+# ==============================================================================
+# Export Stage -- build tree only
+# ==============================================================================
+# The only consumer of a builder image is final.Dockerfile's
+# COPY --from=apex.builder.<t>:latest /home/<user>/workspace/build/<dir>, so
+# the shipped image carries just the build tree at that same path. The
+# SDK-heavy dev toolchain and source stay in the discarded build stage:
+# pushing/pulling 10 builders moves gigabytes less through ghcr per release.
+FROM scratch
+
+ARG USER
+
+LABEL org.opencontainers.image.title="apex.builder" \
+      org.opencontainers.image.description="Release artifact builder (build tree export)"
+
+COPY --from=build /home/${USER}/workspace/build /home/${USER}/workspace/build
