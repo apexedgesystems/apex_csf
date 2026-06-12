@@ -87,10 +87,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      # Runners ship ~109 GB free (run 27317390046 builder-cpu: 36 G used of
-      # 145 G); the old purge reclaimed ~1.8 GB for 21-63 s per job across 12
-      # jobs. Keep only the visibility line; re-add a purge if df ever shows
-      # pressure.
+      # No purge here: these jobs measured green at the stock ~89 GB-free
+      # baseline (run 27388041846); only the package fan-in needs more. The
+      # report keeps a capacity squeeze diagnosable from the run that hit it.
       - name: Report disk space
         run: df -h /
 
@@ -179,10 +178,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      # Runners ship ~109 GB free (run 27317390046 builder-cpu: 36 G used of
-      # 145 G); the old purge reclaimed ~1.8 GB for 21-63 s per job across 12
-      # jobs. Keep only the visibility line; re-add a purge if df ever shows
-      # pressure.
+      # No purge here: these jobs measured green at the stock ~89 GB-free
+      # baseline (run 27388041846); only the package fan-in needs more. The
+      # report keeps a capacity squeeze diagnosable from the run that hit it.
       - name: Report disk space
         run: df -h /
 
@@ -237,12 +235,16 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      # Runners ship ~109 GB free (run 27317390046 builder-cpu: 36 G used of
-      # 145 G); the old purge reclaimed ~1.8 GB for 21-63 s per job across 12
-      # jobs. Keep only the visibility line; re-add a purge if df ever shows
-      # pressure.
-      - name: Report disk space
-        run: df -h /
+      # This job genuinely needs the headroom: it extracts all ten builder
+      # trees and duplicates them into the final image's layers. Stock runners
+      # start ~89 GB free; the purge buys ~20 GB (rc2 ran at 109 GB free and
+      # fit; run 27388041846 ran at 89 GB without it and filled the disk).
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
+                      /usr/local/share/boost /usr/local/graalvm /usr/local/.ghcup
+          sudo docker image prune -af
+          df -h /
 
       - name: Prepare environment
         run: |
