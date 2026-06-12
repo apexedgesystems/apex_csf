@@ -105,6 +105,10 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      # Host-side static check, no image needed -- run it before the image
+      # pull so release-path drift is the fastest failure in the pipeline.
+      - name: Check release paths (final.Dockerfile vs presets)
+        run: make check-release-paths
       - name: Set up dev image
         uses: ./.github/actions/dev-setup
         with:
@@ -113,8 +117,6 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
           service: dev
           rebuild: ${{ needs.changes.outputs.docker }}
-      - name: Check release paths (final.Dockerfile vs presets)
-        run: make check-release-paths
       - name: Format check
         run: docker compose run --rm -T dev make format-check
       - name: Secret scan (gitleaks)
