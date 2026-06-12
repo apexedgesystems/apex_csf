@@ -58,6 +58,12 @@ DEV_SERVICES := dev dev-cuda dev-jetson dev-rpi dev-riscv64 dev-zephyr \
                 dev-stm32 dev-esp32 dev-pico dev-arduino dev-atmega328pb \
                 dev-pic32 dev-c2000
 
+# Release builder targets: one apex.builder.<t> image per entry. The
+# docker-builders aggregate, the per-target build rules, the release.yml
+# builders matrix (via print-builder-targets), and the check-release-paths
+# COPY coverage are all derived from this -- add a target once.
+BUILDER_TARGETS := cpu cuda jetson rpi riscv64 stm32 arduino pico esp32 c2000
+
 # _dev_base: the base image a dev service builds from
 _dev_base = $(if $(filter dev dev-cuda,$(1)),docker-base,$(if $(filter dev-jetson,$(1)),docker-dev-cuda,docker-dev))
 
@@ -140,10 +146,7 @@ docker-all:
 docker-devs: $(foreach s,$(DEV_SERVICES),docker-$(s))
 	$(call log,docker,All dev images built)
 
-docker-builders: docker-builder-cpu docker-builder-cuda docker-builder-jetson \
-                 docker-builder-rpi docker-builder-riscv64 \
-                 docker-builder-stm32 docker-builder-arduino \
-                 docker-builder-pico docker-builder-esp32 docker-builder-c2000
+docker-builders: $(patsubst %,docker-builder-%,$(BUILDER_TARGETS))
 	$(call log,docker,All builder images built)
 
 # ------------------------------------------------------------------------------
@@ -168,7 +171,7 @@ $(foreach s,$(DEV_SERVICES),\
 # Builder Images (generated from templates)
 # ------------------------------------------------------------------------------
 
-$(foreach b,cpu cuda jetson rpi riscv64 stm32 arduino pico esp32 c2000,\
+$(foreach b,$(BUILDER_TARGETS),\
   $(eval $(call _builder_target,$(b))))
 
 # ------------------------------------------------------------------------------
@@ -282,10 +285,12 @@ docker-validate: docker-lint
 # Release path drift guard
 # ------------------------------------------------------------------------------
 # final.Dockerfile COPYs each platform from build/<preset-dir>; those names must
-# track CMakePresets.json. When a preset was renamed and final was not, the
-# release silently broke -- caught only by actually running it. This static check
-# fails fast if any final.Dockerfile build/<dir> is not a real preset binaryDir,
-# so drift is caught in the gate, not on a release tag.
+# track CMakePresets.json, and every BUILDER_TARGETS entry must have a COPY line
+# collecting it. When a preset was renamed and final was not, the release
+# silently broke -- caught only by actually running it; a target added to the
+# list but not to final.Dockerfile would ship a release missing that platform.
+# This static check fails fast on both drift classes, in the gate, not on a
+# release tag.
 check-release-paths:
 	@final_dirs=$$(grep -E 'COPY --from' docker/final.Dockerfile | grep -oE 'build/[A-Za-z0-9._-]+' | sed 's#build/##' | sort -u); \
 	preset_dirs=$$(grep -oE 'build/[A-Za-z0-9._-]+' CMakePresets.json | sed 's#build/##' | sort -u); \
@@ -296,14 +301,27 @@ check-release-paths:
 	  printf 'Known preset dirs:\n%s\n' "$$preset_dirs" >&2; \
 	  exit 1; \
 	fi; \
-	printf '[check-release-paths] OK -- all final.Dockerfile build paths match a preset\n'
+	uncollected=""; \
+	for t in $(BUILDER_TARGETS); do \
+	  grep -q "COPY --from=apex.builder.$$t:" docker/final.Dockerfile || uncollected="$$uncollected $$t"; \
+	done; \
+	if [ -n "$$uncollected" ]; then \
+	  printf '[check-release-paths] BUILDER_TARGETS with no COPY --from in final.Dockerfile:%s\n' "$$uncollected" >&2; \
+	  exit 1; \
+	fi; \
+	printf '[check-release-paths] OK -- final.Dockerfile covers all builder targets with preset-valid paths\n'
+
+# Emit BUILDER_TARGETS as a JSON array for the release.yml builders matrix
+# (same pattern as mk/checks.mk print-nightly-checks for the nightly matrix).
+print-builder-targets:
+	@printf '%s\n' '$(call _json_array,$(BUILDER_TARGETS))'
 
 # ------------------------------------------------------------------------------
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
 .PHONY: docker-all docker-devs docker-builders docker-base docker-final artifacts
-.PHONY: docker-push-devs docker-pull-devs check-release-paths
+.PHONY: docker-push-devs docker-pull-devs check-release-paths print-builder-targets
 .PHONY: docker-clean docker-clean-deep docker-prune docker-disk-usage
 .PHONY: docker-lint docker-validate
 

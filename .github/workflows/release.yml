@@ -48,11 +48,29 @@ env:
 
 jobs:
   # ----------------------------------------------------------------------------
+  # Resolve the builder matrix from mk/docker.mk BUILDER_TARGETS -- the single
+  # source of truth for the release target set (nightly.yml pattern).
+  # ----------------------------------------------------------------------------
+  targets:
+    name: Resolve builder targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Read builder targets from registry
+        id: list
+        run: echo "list=$(make -s print-builder-targets)" >> "$GITHUB_OUTPUT"
+
+  # ----------------------------------------------------------------------------
   # Compile each target's builder image in parallel; push to ghcr for the
   # package job to assemble from. Per-target ccache via buildkit-cache-dance.
   # ----------------------------------------------------------------------------
   builders:
     name: builder-${{ matrix.builder }}
+    needs: targets
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
@@ -61,8 +79,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        builder:
-          [cpu, cuda, jetson, rpi, riscv64, stm32, arduino, pico, esp32, c2000]
+        builder: ${{ fromJSON(needs.targets.outputs.list) }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -237,7 +254,7 @@ jobs:
       # image means the handoff is broken and the run must stop here.
       - name: Pull this run's builder images
         run: |
-          for b in cpu cuda jetson rpi riscv64 stm32 arduino pico esp32 c2000; do
+          for b in $(make -s print-builder-targets | jq -r '.[]'); do
             img="apex.builder.$b"
             docker pull "$REGISTRY/$img:$GITHUB_SHA"
             docker tag "$REGISTRY/$img:$GITHUB_SHA" "$img"
