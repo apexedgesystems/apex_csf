@@ -166,3 +166,54 @@ jobs:
 
       - name: Build builder image (warm only, no push)
         run: make docker-builder-${{ matrix.builder }}
+
+  # ----------------------------------------------------------------------------
+  # ghcr garbage collection. Re-pushing :latest dev images strands the previous
+  # digest as an untagged version (never auto-collected), and release runs
+  # leave one sha-tagged apex.builder.* set per run. Deletes untagged versions
+  # of this repo's apex.* packages, plus builder versions whose tags are all
+  # commit shas older than 14 days (recent shas stay so a failed release run
+  # can be re-run against its images).
+  # ----------------------------------------------------------------------------
+  ghcr-gc:
+    name: ghcr garbage collection
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      packages: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Delete untagged and stale builder versions
+        run: |
+          set -euo pipefail
+          org="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          cutoff=$(date -u -d '14 days ago' +%FT%TZ)
+          deleted=0; kept=0
+          while IFS= read -r pkg; do
+            enc=$(printf '%s' "$pkg" | sed 's|/|%2F|g')
+            while IFS=$'\t' read -r id created tags; do
+              del=false
+              if [ -z "$tags" ]; then
+                del=true                       # untagged: stranded digest
+              elif [ "${pkg#"$repo"/apex.builder.}" != "$pkg" ]; then
+                # builder package: delete only if EVERY tag is a 40-hex sha
+                # and the version is older than the cutoff
+                if [ "$created" \< "$cutoff" ] \
+                   && ! printf '%s\n' $tags | grep -qvE '^[0-9a-f]{40}$'; then
+                  del=true
+                fi
+              fi
+              if [ "$del" = true ]; then
+                gh api --method DELETE "/orgs/$org/packages/container/$enc/versions/$id"
+                echo "deleted $pkg version $id (created $created, tags: ${tags:-none})"
+                deleted=$((deleted+1))
+              else
+                kept=$((kept+1))
+              fi
+            done < <(gh api --paginate "/orgs/$org/packages/container/$enc/versions" \
+                       --jq '.[] | [.id, .created_at, (.metadata.container.tags | join(" "))] | @tsv')
+          done < <(gh api --paginate "/orgs/$org/packages?package_type=container" --jq '.[].name' \
+                     | grep -E "^$repo/apex\.")
+          echo "ghcr-gc: deleted $deleted version(s), kept $kept"
