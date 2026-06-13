@@ -60,9 +60,35 @@ DEV_SERVICES := dev dev-cuda dev-jetson dev-rpi dev-riscv64 dev-zephyr \
 
 # Release builder targets: one apex.builder.<t> image per entry. The
 # docker-builders aggregate, the per-target build rules, the release.yml
-# builders matrix (via print-builder-targets), and the check-release-paths
-# COPY coverage are all derived from this -- add a target once.
+# builders matrix (via print-builder-targets), the artifact-<t> extraction
+# targets, and the check-release-paths COPY coverage are all derived from
+# this -- add a target once (plus its ARTIFACT_NAME/_DIR pair below).
 BUILDER_TARGETS := cpu cuda jetson rpi riscv64 stm32 arduino pico esp32 c2000
+
+# Per-target artifact naming and build tree, mirroring final.Dockerfile's
+# COPY sources and tarball names exactly (check-release-paths asserts the
+# dirs against CMakePresets; the names feed apex-csf-<VERSION>-<name>.tar.gz).
+ARTIFACT_NAME_cpu     := x86_64-linux
+ARTIFACT_NAME_cuda    := x86_64-linux-cuda
+ARTIFACT_NAME_jetson  := aarch64-jetson
+ARTIFACT_NAME_rpi     := aarch64-rpi
+ARTIFACT_NAME_riscv64 := riscv64-linux
+ARTIFACT_NAME_stm32   := stm32
+ARTIFACT_NAME_arduino := arduino
+ARTIFACT_NAME_pico    := pico
+ARTIFACT_NAME_esp32   := esp32
+ARTIFACT_NAME_c2000   := c2000
+
+ARTIFACT_DIR_cpu     := hosted-x86_64-release
+ARTIFACT_DIR_cuda    := hosted-x86_64-release
+ARTIFACT_DIR_jetson  := cross-jetson-release
+ARTIFACT_DIR_rpi     := cross-rpi-release
+ARTIFACT_DIR_riscv64 := cross-riscv64-release
+ARTIFACT_DIR_stm32   := mcu-stm32-relwithdebinfo
+ARTIFACT_DIR_arduino := mcu-arduino-relwithdebinfo
+ARTIFACT_DIR_pico    := mcu-pico-relwithdebinfo
+ARTIFACT_DIR_esp32   := mcu-esp32-relwithdebinfo
+ARTIFACT_DIR_c2000   := mcu-c2000-relwithdebinfo
 
 # _dev_base: the base image a dev service builds from
 _dev_base = $(if $(filter dev dev-cuda,$(1)),docker-base,$(if $(filter dev-jetson,$(1)),docker-dev-cuda,docker-dev))
@@ -197,6 +223,50 @@ docker-final:
 # ------------------------------------------------------------------------------
 # Artifact Extraction
 # ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+# Per-target artifact extraction (no final image required)
+# ------------------------------------------------------------------------------
+# artifact-<t> pulls one platform's tarball straight out of apex.builder.<t>,
+# producing the same name and layout as the final-image path below. CI release
+# builders use this so every tree is tarred on the runner that built it -- the
+# fan-in never materializes ten build trees on one disk (run 27390083508
+# filled a 145 GB runner doing exactly that). `make artifacts` (final image +
+# extraction) remains the local all-at-once path.
+
+define _artifact_target
+.PHONY: artifact-$(1)
+artifact-$(1):
+	$$(call log,docker,Extracting $(1) artifact (VERSION=$$(VERSION)))
+	@mkdir -p $$(DOCKER_OUT_DIR)/.stage-$(1)
+	@CID=$$$$(docker create apex.builder.$(1) noop) && \
+	  docker cp "$$$$CID:/home/$$(USER)/workspace/build/$$(ARTIFACT_DIR_$(1))" \
+	    "$$(DOCKER_OUT_DIR)/.stage-$(1)/$(1)" && \
+	  tar -czf "$$(DOCKER_OUT_DIR)/apex-csf-$$(VERSION)-$$(ARTIFACT_NAME_$(1)).tar.gz" \
+	    -C "$$(DOCKER_OUT_DIR)/.stage-$(1)" "./$(1)" && \
+	  docker rm "$$$$CID" >/dev/null && rm -rf "$$(DOCKER_OUT_DIR)/.stage-$(1)"
+	$$(call log_ok,docker,apex-csf-$$(VERSION)-$$(ARTIFACT_NAME_$(1)).tar.gz)
+endef
+
+$(foreach t,$(BUILDER_TARGETS),$(eval $(call _artifact_target,$(t))))
+
+# CLI tools + python wheel ride the cpu builder (same sources final.Dockerfile
+# collects from apex.builder.cpu).
+.PHONY: artifact-tools
+artifact-tools:
+	$(call log,docker,Extracting tools artifact (VERSION=$(VERSION)))
+	@mkdir -p $(DOCKER_OUT_DIR)/.stage-tools
+	@CID=$$(docker create apex.builder.cpu noop) && \
+	  docker cp "$$CID:/home/$(USER)/workspace/build/$(ARTIFACT_DIR_cpu)/bin/tools" \
+	    "$(DOCKER_OUT_DIR)/.stage-tools/tools-bin" && \
+	  docker cp "$$CID:/home/$(USER)/workspace/build/$(ARTIFACT_DIR_cpu)/apex_csf-wheels" \
+	    "$(DOCKER_OUT_DIR)/.stage-tools/tools-py" && \
+	  tar -czf "$(DOCKER_OUT_DIR)/apex-tools-$(VERSION)-x86_64-linux.tar.gz" \
+	    -C "$(DOCKER_OUT_DIR)/.stage-tools" "./tools-bin" && \
+	  cp "$(DOCKER_OUT_DIR)"/.stage-tools/tools-py/*.whl \
+	    "$(DOCKER_OUT_DIR)/apex_py_tools-$(VERSION)-py3-none-any.whl" && \
+	  docker rm "$$CID" >/dev/null && rm -rf "$(DOCKER_OUT_DIR)/.stage-tools"
+	$(call log_ok,docker,apex-tools-$(VERSION)-x86_64-linux.tar.gz + wheel)
 
 artifacts: docker-final
 	$(call log,docker,Extracting artifacts to $(DOCKER_OUT_DIR)/ (VERSION=$(VERSION)))

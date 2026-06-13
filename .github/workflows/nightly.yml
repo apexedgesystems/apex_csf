@@ -169,11 +169,11 @@ jobs:
 
   # ----------------------------------------------------------------------------
   # ghcr garbage collection. Re-pushing :latest dev images strands the previous
-  # digest as an untagged version (never auto-collected), and release runs
-  # leave one sha-tagged apex.builder.* set per run. Deletes untagged versions
-  # of this repo's apex.* packages, plus builder versions whose tags are all
-  # commit shas older than 14 days (recent shas stay so a failed release run
-  # can be re-run against its images).
+  # digest as an untagged version (never auto-collected), and earlier release
+  # flows left sha-tagged apex.builder.* sets behind (the release pipe now
+  # hands off via workflow artifacts, not ghcr). Deletes untagged versions of
+  # this repo's apex.* packages, plus builder versions whose tags are all
+  # commit shas older than 14 days.
   # ----------------------------------------------------------------------------
   ghcr-gc:
     name: ghcr garbage collection
