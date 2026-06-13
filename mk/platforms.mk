@@ -124,6 +124,18 @@ P_pic32_ROLE          := skeleton
 P_pic32_SERVICE       := dev-pic32
 P_pic32_BASE          := cpu
 
+# Build-log display names for the generated cross/firmware make targets. Purely
+# cosmetic (the "[build] Configuring <X>" log line); the debug target appends
+# " (debug)". The debug make-target name is derived: <TARGET sans -release>-debug.
+P_jetson_DISPLAY  := Jetson
+P_rpi_DISPLAY     := Raspberry Pi
+P_riscv64_DISPLAY := RISC-V 64
+P_stm32_DISPLAY   := STM32 firmware
+P_arduino_DISPLAY := Arduino firmware
+P_pico_DISPLAY    := Pico firmware
+P_esp32_DISPLAY   := ESP32 firmware
+P_c2000_DISPLAY   := C2000 firmware
+
 # ------------------------------------------------------------------------------
 # Derived helpers
 # ------------------------------------------------------------------------------

@@ -114,12 +114,13 @@ C2000_DEBUG_DIR    := build/$(C2000_DEBUG_PRESET)
 # ==============================================================================
 
 # _build: Configure and build a CMake preset
-# Usage: $(call _build,display_name,preset,build_dir)
+# Usage: $(call _build,display_name,preset,build_dir[,cmake_target])
+# $(4) optional: restrict the build to one cmake target (e.g. c2000 -> firmware).
 define _build
 	$(call log,build,Configuring $(1))
 	@cmake --preset $(2) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
 	$(call log,build,Building $(1))
-	@cmake --build --preset $(2) -j$(NUM_JOBS)
+	@cmake --build --preset $(2)$(if $(4), --target $(4)) -j$(NUM_JOBS)
 	@ln -sf $(3)/compile_commands.json compile_commands.json
 endef
 
@@ -131,11 +132,12 @@ define _configure
 endef
 
 # _platform_targets: Generate build and configure targets for a platform
-# $(1) = target name, $(2) = display name, $(3) = preset, $(4) = build dir
+# $(1) = target name, $(2) = display name, $(3) = preset, $(4) = build dir,
+# $(5) = optional cmake target to restrict the build to.
 define _platform_targets
 .PHONY: $(1) configure-$(1)
 $(1): prep
-	$$(call _build,$(2),$(3),$(4))
+	$$(call _build,$(2),$(3),$(4),$(5))
 configure-$(1): prep
 	$$(call _configure,$(3),$(4))
 endef
@@ -328,41 +330,16 @@ docs-check: prep
 
 $(eval $(call _platform_targets,cuda-debug,native CUDA debug,$(HOST_CUDA_DEBUG_PRESET),$(HOST_CUDA_DEBUG_DIR)))
 $(eval $(call _platform_targets,cuda-release,native CUDA release,$(HOST_CUDA_RELEASE_PRESET),$(HOST_CUDA_RELEASE_DIR)))
-$(eval $(call _platform_targets,jetson-debug,Jetson debug,$(JETSON_DEBUG_PRESET),$(JETSON_DEBUG_DIR)))
-$(eval $(call _platform_targets,jetson-release,Jetson release,$(JETSON_RELEASE_PRESET),$(JETSON_RELEASE_DIR)))
-$(eval $(call _platform_targets,rpi-debug,Raspberry Pi debug,$(RPI_DEBUG_PRESET),$(RPI_DEBUG_DIR)))
-$(eval $(call _platform_targets,rpi-release,Raspberry Pi release,$(RPI_RELEASE_PRESET),$(RPI_RELEASE_DIR)))
-$(eval $(call _platform_targets,riscv-debug,RISC-V 64 debug,$(RISCV_DEBUG_PRESET),$(RISCV_DEBUG_DIR)))
-$(eval $(call _platform_targets,riscv-release,RISC-V 64 release,$(RISCV_RELEASE_PRESET),$(RISCV_RELEASE_DIR)))
-$(eval $(call _platform_targets,stm32,STM32 firmware,$(STM32_PRESET),$(STM32_DIR)))
-$(eval $(call _platform_targets,stm32-debug,STM32 firmware (debug),$(STM32_DEBUG_PRESET),$(STM32_DEBUG_DIR)))
-$(eval $(call _platform_targets,arduino,Arduino firmware,$(ARDUINO_PRESET),$(ARDUINO_DIR)))
-$(eval $(call _platform_targets,arduino-debug,Arduino firmware (debug),$(ARDUINO_DEBUG_PRESET),$(ARDUINO_DEBUG_DIR)))
-$(eval $(call _platform_targets,pico,Pico firmware,$(PICO_PRESET),$(PICO_DIR)))
-$(eval $(call _platform_targets,pico-debug,Pico firmware (debug),$(PICO_DEBUG_PRESET),$(PICO_DEBUG_DIR)))
-$(eval $(call _platform_targets,esp32,ESP32 firmware,$(ESP32_PRESET),$(ESP32_DIR)))
-$(eval $(call _platform_targets,esp32-debug,ESP32 firmware (debug),$(ESP32_DEBUG_PRESET),$(ESP32_DEBUG_DIR)))
-# C2000 uses a custom build target to avoid compiling non-TI-compatible libraries.
-# Only the firmware target is built (not all project targets).
-.PHONY: c2000 c2000-debug configure-c2000 configure-c2000-debug
-c2000: prep
-	$(call log,build,Configuring C2000 firmware)
-	@cmake --preset $(C2000_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
-	$(call log,build,Building C2000 firmware)
-	@cmake --build --preset $(C2000_PRESET) --target firmware -j$(NUM_JOBS)
-	@ln -sf $(C2000_DIR)/compile_commands.json compile_commands.json
-configure-c2000: prep
-	@cmake --preset $(C2000_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
-	@ln -sf $(C2000_DIR)/compile_commands.json compile_commands.json
-c2000-debug: prep
-	$(call log,build,Configuring C2000 firmware (debug))
-	@cmake --preset $(C2000_DEBUG_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
-	$(call log,build,Building C2000 firmware (debug))
-	@cmake --build --preset $(C2000_DEBUG_PRESET) --target firmware -j$(NUM_JOBS)
-	@ln -sf $(C2000_DEBUG_DIR)/compile_commands.json compile_commands.json
-configure-c2000-debug: prep
-	@cmake --preset $(C2000_DEBUG_PRESET) $(CMAKE_VERBOSE_FLAG) $(CMAKE_EXTRA_ARGS)
-	@ln -sf $(C2000_DEBUG_DIR)/compile_commands.json compile_commands.json
+# Cross-compile + firmware build/configure targets, generated from the platform
+# registry (mk/platforms.mk): each emits <target>, <target>-debug, and their
+# configure- variants. c2000 restricts the build to its firmware target via the
+# BUILDTGT field (was a hand-written special case). The debug target name is the
+# primary with -release stripped and -debug appended. Host stays hand-written
+# above: cuda's dev-target preset differs from its release-artifact preset, and
+# cpu is the default-goal debug/release.
+$(foreach p,$(filter-out cpu cuda,$(PLAT_BUILDERS)),\
+  $(eval $(call _platform_targets,$(P_$(p)_TARGET),$(P_$(p)_DISPLAY),$(P_$(p)_PRESET),build/$(P_$(p)_PRESET),$(P_$(p)_BUILDTGT)))\
+  $(eval $(call _platform_targets,$(patsubst %-release,%,$(P_$(p)_TARGET))-debug,$(P_$(p)_DISPLAY) (debug),$(P_$(p)_DEBUG),build/$(P_$(p)_DEBUG),$(P_$(p)_BUILDTGT))))
 
 # ==============================================================================
 # Configure-Only (native)
