@@ -40,10 +40,15 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 ENV IDF_PATH=/opt/esp-idf
 ENV IDF_TOOLS_PATH=/opt/espressif
 
+# esp-idf is cloned as root but the firmware build runs as the mapped host user;
+# without this git refuses to read the tree ("dubious ownership") and IDF_VER
+# falls back to HEAD-HASH-NOTFOUND. The wildcard covers esp-idf's deep nested
+# submodule tree, not just the top level -- safe in a single-purpose build image.
 RUN set -euo pipefail && \
     mkdir -p "${IDF_TOOLS_PATH}" && \
     git clone --branch "${ESP_IDF_VERSION}" --depth 1 --recursive --shallow-submodules \
-      https://github.com/espressif/esp-idf.git "${IDF_PATH}"
+      https://github.com/espressif/esp-idf.git "${IDF_PATH}" && \
+    git config --system --add safe.directory '*'
 
 WORKDIR ${IDF_PATH}
 RUN set -euo pipefail && \
