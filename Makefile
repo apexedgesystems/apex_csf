@@ -13,6 +13,7 @@ MAKEFLAGS += --no-print-directory
 # ==============================================================================
 
 include mk/common.mk
+include mk/platforms.mk
 include mk/test.mk
 include mk/coverage.mk
 include mk/docker.mk
