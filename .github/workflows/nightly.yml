@@ -94,6 +94,17 @@ jobs:
           path: build/hosted-x86_64-coverage/coverage/
           retention-days: 14
 
+      - name: Upload tooling coverage report
+        if: ${{ always() && (matrix.check == 'coverage-rust' || matrix.check == 'coverage-py') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-${{ matrix.check }}
+          path: |
+            tools/py/coverage-py.xml
+            tools/rust/coverage-rust.lcov
+          if-no-files-found: ignore
+          retention-days: 14
+
   # ----------------------------------------------------------------------------
   # Warm the release builders' ccache from main. Actions cache scopes restores
   # to the requesting ref plus the default branch, so entries saved by tag or

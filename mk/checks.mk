@@ -41,16 +41,18 @@ CHECKS_ALL := $(sort $(CHECKS_SANITIZER) $(CHECKS_STATIC) $(CHECKS_SECURITY) \
 # nightly = scheduled, heavier checks with their own builds
 
 CHECKS_GATE    := asan-ubsan static gitleaks
-# test-rust/test-py ride nightly because PR CI runs them only when tools/rust
-# or tools/py changed -- nightly re-proves them on main (C++ tests are already
-# re-proven nightly through the coverage-check/tsan/rtsan builds).
+# coverage-rust/coverage-py ride nightly because PR CI runs the tooling tests
+# only when tools/rust or tools/py changed; the nightly leg re-proves them on
+# main AND measures coverage (it runs the same suites under instrumentation, so
+# it subsumes the plain test-rust/test-py the gate uses). C++ tests are already
+# re-proven nightly through the coverage-check/tsan/rtsan builds.
 # debug/asan-ubsan ride nightly to seed the PR gate's ccache from main:
 # Actions cache restores only see same-ref + default-branch entries, so these
 # are the only entries a brand-new PR's first push can warm-start from (the
 # gate jobs carry ccache-nightly-* fallback restore-keys). asan-ubsan doubles
 # as the nightly re-proof of the gate sanitizer on main.
 CHECKS_NIGHTLY := tsan rtsan static cppcheck coverage-check hardened trivy \
-                  gitleaks osv semgrep test-rust test-py debug asan-ubsan
+                  gitleaks osv semgrep coverage-rust coverage-py debug asan-ubsan
 # Checks whose make target compiles C++ through ccache. Drives which nightly
 # legs persist a cache -- the scanners and tooling tests would mint empty
 # entries, and static (clang-tidy) does not compile through the launcher

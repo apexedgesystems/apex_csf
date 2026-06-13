@@ -43,6 +43,7 @@ isort = "^8.0.1"
 flake8-bugbear = "^25.11.29"
 flake8-comprehensions = "^3.16.0"
 flake8-docstrings = "^1.7.0"
+pytest-cov = "^7.0.0"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

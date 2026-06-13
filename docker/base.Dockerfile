@@ -248,11 +248,17 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Using /opt avoids permission issues when COPY --from overlays onto CUDA images.
 # Includes: rustc, cargo, clippy (linter), rustfmt (formatter)
 ARG RUST_VERSION=stable
+# cargo-llvm-cov: prebuilt binary (taiki-e) driving `make coverage-rust`.
+# Pinned; llvm-tools-preview supplies the profdata tooling it uses.
+ARG CARGO_LLVM_COV_VERSION=0.8.7
 ENV RUSTUP_HOME=/opt/rust/rustup \
     CARGO_HOME=/opt/rust/cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     sh -s -- -y --default-toolchain ${RUST_VERSION} --profile minimal && \
-    /opt/rust/cargo/bin/rustup component add clippy rustfmt && \
+    /opt/rust/cargo/bin/rustup component add clippy rustfmt llvm-tools-preview && \
+    curl --proto '=https' --tlsv1.2 -fsSL \
+      "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v${CARGO_LLVM_COV_VERSION}/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz" \
+      | tar xzf - -C /opt/rust/cargo/bin && \
     chmod -R a+rwX /opt/rust
 ENV PATH="/opt/rust/cargo/bin:$PATH"
 
