@@ -354,20 +354,32 @@ docker-validate: docker-lint
 # ------------------------------------------------------------------------------
 # Release path drift guard
 # ------------------------------------------------------------------------------
-# final.Dockerfile COPYs each platform from build/<preset-dir>; those names must
-# track CMakePresets.json, and every BUILDER_TARGETS entry must have a COPY line
-# collecting it. When a preset was renamed and final was not, the release
-# silently broke -- caught only by actually running it; a target added to the
-# list but not to final.Dockerfile would ship a release missing that platform.
-# This static check fails fast on both drift classes, in the gate, not on a
+# Each platform's build tree lives at build/<preset-dir>, and two surfaces name
+# those dirs: the release pipe extracts via ARTIFACT_DIR_<t> (make artifact-<t>),
+# and final.Dockerfile COPYs the same dirs for the local `make artifacts` path.
+# Both must track CMakePresets.json, and every BUILDER_TARGETS entry must map to
+# a real preset dir and be collected by final.Dockerfile. A preset rename that
+# misses any surface broke the release silently -- caught only by running it.
+# This static check fails fast on all three drift classes, in the gate, not on a
 # release tag.
 check-release-paths:
-	@final_dirs=$$(grep -E 'COPY --from' docker/final.Dockerfile | grep -oE 'build/[A-Za-z0-9._-]+' | sed 's#build/##' | sort -u); \
-	preset_dirs=$$(grep -oE 'build/[A-Za-z0-9._-]+' CMakePresets.json | sed 's#build/##' | sort -u); \
+	@preset_dirs=$$(grep -oE 'build/[A-Za-z0-9._-]+' CMakePresets.json | sed 's#build/##' | sort -u); \
+	final_dirs=$$(grep -E 'COPY --from' docker/final.Dockerfile | grep -oE 'build/[A-Za-z0-9._-]+' | sed 's#build/##' | sort -u); \
 	missing=""; \
 	for d in $$final_dirs; do printf '%s\n' "$$preset_dirs" | grep -qx "$$d" || missing="$$missing $$d"; done; \
 	if [ -n "$$missing" ]; then \
 	  printf '[check-release-paths] final.Dockerfile build dirs with no matching CMakePresets binaryDir:%s\n' "$$missing" >&2; \
+	  printf 'Known preset dirs:\n%s\n' "$$preset_dirs" >&2; \
+	  exit 1; \
+	fi; \
+	bad_artifact=""; \
+	for pair in $(foreach t,$(BUILDER_TARGETS),$(t)=$(ARTIFACT_DIR_$(t))); do \
+	  t=$${pair%%=*}; d=$${pair#*=}; \
+	  if [ -z "$$d" ]; then bad_artifact="$$bad_artifact $$t(unset)"; \
+	  elif ! printf '%s\n' "$$preset_dirs" | grep -qx "$$d"; then bad_artifact="$$bad_artifact $$t($$d)"; fi; \
+	done; \
+	if [ -n "$$bad_artifact" ]; then \
+	  printf '[check-release-paths] ARTIFACT_DIR_<t> with no matching CMakePresets binaryDir:%s\n' "$$bad_artifact" >&2; \
 	  printf 'Known preset dirs:\n%s\n' "$$preset_dirs" >&2; \
 	  exit 1; \
 	fi; \
@@ -379,7 +391,7 @@ check-release-paths:
 	  printf '[check-release-paths] BUILDER_TARGETS with no COPY --from in final.Dockerfile:%s\n' "$$uncollected" >&2; \
 	  exit 1; \
 	fi; \
-	printf '[check-release-paths] OK -- final.Dockerfile covers all builder targets with preset-valid paths\n'
+	printf '[check-release-paths] OK -- ARTIFACT_DIR + final.Dockerfile cover all builder targets with preset-valid paths\n'
 
 # Emit BUILDER_TARGETS as a JSON array for the release.yml builders matrix
 # (same pattern as mk/checks.mk print-nightly-checks for the nightly matrix).
