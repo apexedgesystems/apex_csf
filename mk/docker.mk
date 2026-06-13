@@ -243,9 +243,13 @@ artifact-$(1):
 	@CID=$$$$(docker create apex.builder.$(1) noop) && \
 	  docker cp "$$$$CID:/home/$$(USER)/workspace/build/$$(ARTIFACT_DIR_$(1))" \
 	    "$$(DOCKER_OUT_DIR)/.stage-$(1)/$(1)" && \
-	  tar -czf "$$(DOCKER_OUT_DIR)/apex-csf-$$(VERSION)-$$(ARTIFACT_NAME_$(1)).tar.gz" \
-	    -C "$$(DOCKER_OUT_DIR)/.stage-$(1)" "./$(1)" && \
-	  docker rm "$$$$CID" >/dev/null && rm -rf "$$(DOCKER_OUT_DIR)/.stage-$(1)"
+	  docker rm "$$$$CID" >/dev/null
+	@find "$$(DOCKER_OUT_DIR)/.stage-$(1)/$(1)" -type f \( -path '*/bin/*' -o -path '*/firmware/*' \) -print -quit | grep -q . \
+	  || { printf '$$(TERM_RED)[artifact-$(1)]$$(TERM_RESET) no runnable files under bin/ or firmware/ in build/$$(ARTIFACT_DIR_$(1)) (trim whitelist or build output broken)\n' >&2; \
+	       rm -rf "$$(DOCKER_OUT_DIR)/.stage-$(1)"; exit 1; }
+	@tar -czf "$$(DOCKER_OUT_DIR)/apex-csf-$$(VERSION)-$$(ARTIFACT_NAME_$(1)).tar.gz" \
+	    -C "$$(DOCKER_OUT_DIR)/.stage-$(1)" "./$(1)"
+	@rm -rf "$$(DOCKER_OUT_DIR)/.stage-$(1)"
 	$$(call log_ok,docker,apex-csf-$$(VERSION)-$$(ARTIFACT_NAME_$(1)).tar.gz)
 endef
 
@@ -262,11 +266,18 @@ artifact-tools:
 	    "$(DOCKER_OUT_DIR)/.stage-tools/tools-bin" && \
 	  docker cp "$$CID:/home/$(USER)/workspace/build/$(ARTIFACT_DIR_cpu)/apex_csf-wheels" \
 	    "$(DOCKER_OUT_DIR)/.stage-tools/tools-py" && \
-	  tar -czf "$(DOCKER_OUT_DIR)/apex-tools-$(VERSION)-x86_64-linux.tar.gz" \
-	    -C "$(DOCKER_OUT_DIR)/.stage-tools" "./tools-bin" && \
-	  cp "$(DOCKER_OUT_DIR)"/.stage-tools/tools-py/*.whl \
-	    "$(DOCKER_OUT_DIR)/apex_py_tools-$(VERSION)-py3-none-any.whl" && \
-	  docker rm "$$CID" >/dev/null && rm -rf "$(DOCKER_OUT_DIR)/.stage-tools"
+	  docker rm "$$CID" >/dev/null
+	@find "$(DOCKER_OUT_DIR)/.stage-tools/tools-bin" -type f -print -quit | grep -q . \
+	  || { printf '$(TERM_RED)[artifact-tools]$(TERM_RESET) no files under bin/tools (tools build output broken)\n' >&2; \
+	       rm -rf "$(DOCKER_OUT_DIR)/.stage-tools"; exit 1; }
+	@ls "$(DOCKER_OUT_DIR)"/.stage-tools/tools-py/*.whl >/dev/null 2>&1 \
+	  || { printf '$(TERM_RED)[artifact-tools]$(TERM_RESET) no python wheel in apex_csf-wheels (wheel build broken)\n' >&2; \
+	       rm -rf "$(DOCKER_OUT_DIR)/.stage-tools"; exit 1; }
+	@tar -czf "$(DOCKER_OUT_DIR)/apex-tools-$(VERSION)-x86_64-linux.tar.gz" \
+	    -C "$(DOCKER_OUT_DIR)/.stage-tools" "./tools-bin"
+	@cp "$(DOCKER_OUT_DIR)"/.stage-tools/tools-py/*.whl \
+	    "$(DOCKER_OUT_DIR)/apex_py_tools-$(VERSION)-py3-none-any.whl"
+	@rm -rf "$(DOCKER_OUT_DIR)/.stage-tools"
 	$(call log_ok,docker,apex-tools-$(VERSION)-x86_64-linux.tar.gz + wheel)
 
 artifacts: docker-final
