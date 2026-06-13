@@ -229,10 +229,11 @@ docker-final:
 # ------------------------------------------------------------------------------
 # artifact-<t> pulls one platform's tarball straight out of apex.builder.<t>,
 # producing the same name and layout as the final-image path below. CI release
-# builders use this so every tree is tarred on the runner that built it -- the
-# fan-in never materializes ten build trees on one disk (run 27390083508
-# filled a 145 GB runner doing exactly that). `make artifacts` (final image +
-# extraction) remains the local all-at-once path.
+# builders use this so every tree is tarred on the runner that built it,
+# keeping the fan-in from collecting all ten build trees on one disk -- a full
+# per-platform tree is large enough that ten at once exhausts a runner.
+# `make artifacts` (final image + extraction) remains the local all-at-once
+# path.
 
 define _artifact_target
 .PHONY: artifact-$(1)

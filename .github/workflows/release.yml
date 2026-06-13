@@ -9,11 +9,11 @@
 #     against CMakeLists.txt before any build spends a minute.
 #   builders (matrix, one runner each) -- compile apex for each target into
 #     apex.builder.<t>, extract that platform's tarball on the same runner
-#     (make artifact-<t>), and upload it as a workflow artifact. Build trees
-#     never leave the runner that built them: materializing all ten on the
-#     fan-in filled a 145 GB disk (run 27390083508). Workflow artifacts are
-#     run-scoped, so the fan-in consumes exactly this run's outputs without
-#     any registry handoff to race on.
+#     (make artifact-<t>), and upload it as a workflow artifact. Each build
+#     tree stays on the runner that built it; a full per-platform tree is
+#     large enough that collecting all ten on the fan-in runner would exhaust
+#     its disk. Workflow artifacts are run-scoped, so the fan-in consumes
+#     exactly this run's outputs with no registry handoff to race on.
 #   apps (parallel with the builders)  -- build the app release packages in the
 #     platform dev images (they compile from source and consume no builder
 #     image) and upload the tarballs the same way.
@@ -120,12 +120,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      # No purge here: these jobs measured green at the stock ~89 GB-free
-      # baseline (run 27388041846); only the package fan-in needs more. The
-      # report keeps a capacity squeeze diagnosable from the run that hit it.
-      - name: Report disk space
-        run: df -h /
-
       - name: Prepare environment
         run: |
           touch ~/.gitconfig
@@ -201,10 +195,11 @@ jobs:
   # ----------------------------------------------------------------------------
   # Build each released app's packages in parallel with the builders and with
   # each other: make release APP=<a> compiles from source inside the platform
-  # dev images and consumes no builder output, so wall-clock is the slowest
-  # app, not the sum (serial app packaging sank v0.0.1-rc1 and -rc2 ~40
-  # minutes in). Matrix and per-app image lists come from mk/release.mk
-  # RELEASE_APPS via print-release-apps.
+  # dev images and consumes no builder output, so it has no data dependency on
+  # the matrix -- running the apps serially or behind the builders would add
+  # their full compile time to the critical path for nothing. Matrix and
+  # per-app image lists come from mk/release.mk RELEASE_APPS via
+  # print-release-apps.
   # ----------------------------------------------------------------------------
   apps:
     name: apps-${{ matrix.app }}
@@ -221,12 +216,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      # No purge here: these jobs measured green at the stock ~89 GB-free
-      # baseline (run 27388041846); only the package fan-in needs more. The
-      # report keeps a capacity squeeze diagnosable from the run that hit it.
-      - name: Report disk space
-        run: df -h /
 
       - name: Prepare environment
         run: |

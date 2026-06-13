@@ -426,11 +426,11 @@ endif ()
 # compiler: GCC's -Wunused-const-variable reaches into included headers at
 # every level, and GCC's -Wshadow includes class members; Clang's do neither.
 # A -Werror gate on a compiler the PR gate does not run lets a release tag
-# fail on a diagnostic no PR could have surfaced, and that killed three
-# release attempts in a row (v0.0.1-rc1: clang-only spellings rejected by
-# g++; rc2: a header constant; the first full rehearsal: member shadows).
-# Enforcement parity is the contract: PR-green implies release-green. GCC's
-# extra diagnostics remain available in cross-build logs as plain warnings.
+# fail on a diagnostic no PR could surface -- unrecognized flag spellings,
+# header-scoped constants, and member shadows are all classes GCC flags and
+# Clang does not. Enforcement parity is the contract: PR-green implies
+# release-green. GCC's extra diagnostics remain available in cross-build logs
+# as plain warnings.
 if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   foreach (
     _w IN
