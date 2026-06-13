@@ -221,7 +221,10 @@ def run_checkout(args: argparse.Namespace) -> int:
         with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
             f.write(dl_data)
             dl_upload_file = f.name
-        dl_download_file = tempfile.mktemp(suffix=".bin")
+        # Pre-create the destination securely (same idiom as the upload above);
+        # recv_file overwrites it via Path.write_bytes.
+        with tempfile.NamedTemporaryFile(suffix=".bin", delete=False) as f:
+            dl_download_file = f.name
         try:
             result = c2.send_file(dl_upload_file, "test/download_roundtrip.bin", chunk_size=2048)
             check("Upload for download test", result["status"] == 0, result["status_name"])
