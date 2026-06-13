@@ -119,30 +119,14 @@ compose-bench:
 	   . $(BUILD_DIR)/.env && $(_bench_cmd) $(BENCH_ARGS)$(_bench_post)'
 
 # ------------------------------------------------------------------------------
-# Cross-Compilation
+# Cross-compile + firmware compose wrappers (generated from the platform registry)
 # ------------------------------------------------------------------------------
+# compose-<target> runs `make <target>` inside the platform's dev service. Host
+# wrappers (compose-debug/release/cuda-*) are in the Native Builds section above.
 
-$(eval $(call _compose_target,jetson-debug,Jetson debug,dev-jetson,jetson-debug))
-$(eval $(call _compose_target,jetson-release,Jetson release,dev-jetson,jetson-release))
-$(eval $(call _compose_target,rpi-debug,Raspberry Pi debug,dev-rpi,rpi-debug))
-$(eval $(call _compose_target,rpi-release,Raspberry Pi release,dev-rpi,rpi-release))
-$(eval $(call _compose_target,riscv-debug,RISC-V 64 debug,dev-riscv64,riscv-debug))
-$(eval $(call _compose_target,riscv-release,RISC-V 64 release,dev-riscv64,riscv-release))
-
-# ------------------------------------------------------------------------------
-# Firmware Build Targets
-# ------------------------------------------------------------------------------
-
-$(eval $(call _compose_target,stm32,STM32 firmware,dev-stm32,stm32))
-$(eval $(call _compose_target,stm32-debug,STM32 firmware (debug),dev-stm32,stm32-debug))
-$(eval $(call _compose_target,arduino,Arduino firmware,dev-arduino,arduino))
-$(eval $(call _compose_target,arduino-debug,Arduino firmware (debug),dev-arduino,arduino-debug))
-$(eval $(call _compose_target,pico,Pico firmware,dev-pico,pico))
-$(eval $(call _compose_target,pico-debug,Pico firmware (debug),dev-pico,pico-debug))
-$(eval $(call _compose_target,esp32,ESP32 firmware,dev-esp32,esp32))
-$(eval $(call _compose_target,esp32-debug,ESP32 firmware (debug),dev-esp32,esp32-debug))
-$(eval $(call _compose_target,c2000,C2000 firmware,dev-c2000,c2000))
-$(eval $(call _compose_target,c2000-debug,C2000 firmware (debug),dev-c2000,c2000-debug))
+$(foreach p,$(filter-out cpu cuda,$(PLAT_BUILDERS)),\
+  $(eval $(call _compose_target,$(P_$(p)_TARGET),$(P_$(p)_DISPLAY),$(P_$(p)_SERVICE),$(P_$(p)_TARGET)))\
+  $(eval $(call _compose_target,$(patsubst %-release,%,$(P_$(p)_TARGET))-debug,$(P_$(p)_DISPLAY) (debug),$(P_$(p)_SERVICE),$(patsubst %-release,%,$(P_$(p)_TARGET))-debug)))
 
 # ------------------------------------------------------------------------------
 # Size Analysis (bloaty)
