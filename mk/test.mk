@@ -123,6 +123,22 @@ test-rust:
 	$(call log,test,Running Rust tools tests)
 	@cd tools/rust && cargo test
 
+# Tooling coverage (nightly). Each runs its tool test suite under coverage
+# instrumentation and emits a human-readable summary plus a machine report,
+# so the nightly leg both gates (tests still fail the job) and measures. The
+# PR gate keeps the lighter test-py/test-rust. exit 5 = pytest "no tests".
+coverage-py:
+	$(call log,coverage,Measuring Python tools coverage)
+	@cd "$(PY_TOOLS_DIR)" && poetry install --no-interaction && \
+	  (poetry run pytest --cov=apex_tools --cov-report=term-missing \
+	    --cov-report=xml:coverage-py.xml || test $$? -eq 5)
+
+coverage-rust:
+	$(call log,coverage,Measuring Rust tools coverage)
+	@cd tools/rust && cargo llvm-cov --no-report && \
+	  cargo llvm-cov report --lcov --output-path coverage-rust.lcov && \
+	  cargo llvm-cov report
+
 # ------------------------------------------------------------------------------
 # Demo smoke tests
 # ------------------------------------------------------------------------------
@@ -148,6 +164,6 @@ smoke: debug
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: test testp testp-cpu testp-cuda test-py test-rust smoke
+.PHONY: test testp testp-cpu testp-cuda test-py test-rust coverage-py coverage-rust smoke
 
 endif  # TEST_MK_GUARD

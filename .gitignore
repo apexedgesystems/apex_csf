@@ -58,3 +58,8 @@ tools/rust/dev/
 # Production applications (proprietary, not committed)
 apps/production/
 .ccache/
+
+# Tooling coverage reports (nightly artifacts)
+.coverage
+coverage-py.xml
+coverage-rust.lcov
