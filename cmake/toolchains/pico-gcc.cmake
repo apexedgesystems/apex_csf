@@ -18,6 +18,9 @@ set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR arm)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
+# HAL platform (root CMakeLists adds APEX_PLATFORM_<X>); -D override still wins.
+set(APEX_HAL_PLATFORM "pico" CACHE STRING "HAL platform selected by this toolchain")
+
 # ASM compile rule - must include DEFINES and INCLUDES for Pico SDK assembly
 # files that use #include directives (boot_stage2, irq_handler_chain)
 set(CMAKE_ASM_COMPILE_OBJECT

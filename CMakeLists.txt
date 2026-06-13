@@ -54,42 +54,15 @@ set(APEX_PLATFORM_BAREMETAL
 )
 unset(_is_baremetal)
 
-# APEX_HAL_PLATFORM: Which HAL platform to build (stm32, avr, pico, esp32)
-# Set explicitly via preset or -DAPEX_HAL_PLATFORM=stm32
-# Auto-detected from toolchain file name when not set
+# APEX_HAL_PLATFORM: which HAL platform to build (stm32 | avr | pico | esp32 |
+# c2000; empty = none). The firmware toolchains declare it themselves
+# (cmake/toolchains/*.cmake set it as a cache entry, processed during the
+# project() call above), so it is already set by the time we read it here. An
+# explicit -DAPEX_HAL_PLATFORM still overrides; host builds leave it empty.
 set(APEX_HAL_PLATFORM
     ""
     CACHE STRING "HAL platform: stm32 | avr | pico | esp32 | c2000 (empty = none)"
 )
-if (APEX_HAL_PLATFORM STREQUAL "" AND CMAKE_TOOLCHAIN_FILE)
-  get_filename_component(_tc_name "${CMAKE_TOOLCHAIN_FILE}" NAME)
-  if (_tc_name MATCHES "stm32")
-    set(APEX_HAL_PLATFORM
-        "stm32"
-        CACHE STRING "" FORCE
-    )
-  elseif (_tc_name MATCHES "avr")
-    set(APEX_HAL_PLATFORM
-        "avr"
-        CACHE STRING "" FORCE
-    )
-  elseif (_tc_name MATCHES "pico")
-    set(APEX_HAL_PLATFORM
-        "pico"
-        CACHE STRING "" FORCE
-    )
-  elseif (_tc_name MATCHES "esp32")
-    set(APEX_HAL_PLATFORM
-        "esp32"
-        CACHE STRING "" FORCE
-    )
-  elseif (_tc_name MATCHES "c2000")
-    set(APEX_HAL_PLATFORM
-        "c2000"
-        CACHE STRING "" FORCE
-    )
-  endif ()
-endif ()
 if (NOT APEX_HAL_PLATFORM STREQUAL "")
   message(STATUS "[apex] HAL platform: ${APEX_HAL_PLATFORM}")
   string(TOUPPER "${APEX_HAL_PLATFORM}" _HAL_UPPER)
