@@ -24,7 +24,10 @@ set(CMAKE_SYSTEM_PROCESSOR c2000)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 # HAL platform (root CMakeLists adds APEX_PLATFORM_<X>); -D override still wins.
-set(APEX_HAL_PLATFORM "c2000" CACHE STRING "HAL platform selected by this toolchain")
+set(APEX_HAL_PLATFORM
+    "c2000"
+    CACHE STRING "HAL platform selected by this toolchain"
+)
 
 # ------------------------------------------------------------------------------
 # CGT Root
