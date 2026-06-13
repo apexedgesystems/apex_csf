@@ -85,10 +85,12 @@ jobs:
           apex.dev.pico|dev-pico|apex.dev.cpu|2|docker/dev/pico.Dockerfile
           apex.dev.arduino|dev-arduino|apex.dev.cpu|2|docker/dev/arduino.Dockerfile
           apex.dev.c2000|dev-c2000|apex.dev.cpu|2|docker/dev/c2000.Dockerfile
-          apex.dev.zephyr|dev-zephyr|apex.dev.cpu|2|docker/dev/zephyr.Dockerfile
-          apex.dev.atmega328pb|dev-atmega328pb|apex.dev.cpu|2|docker/dev/atmega328pb.Dockerfile
-          apex.dev.pic32|dev-pic32|apex.dev.cpu|2|docker/dev/pic32.Dockerfile
           "
+          # zephyr, atmega328pb, and pic32 are intentionally absent: they are
+          # dev-shell-only platforms -- no shipping artifact uses them and their
+          # toolchains are unmaintained against the current base -- so CI does
+          # not build or publish them. Build one locally with
+          # make docker-dev-<name> if a developer needs the shell.
           MAX_TIER=2
 
           # Diff the whole pushed range (a rebase-merge lands several commits;

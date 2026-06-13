@@ -83,20 +83,5 @@ services:
         - ${REGISTRY}/apex.dev.c2000:latest
       cache_to: *inline-cache
 
-  dev-zephyr:
-    build:
-      cache_from:
-        - ${REGISTRY}/apex.dev.zephyr:latest
-      cache_to: *inline-cache
-
-  dev-atmega328pb:
-    build:
-      cache_from:
-        - ${REGISTRY}/apex.dev.atmega328pb:latest
-      cache_to: *inline-cache
-
-  dev-pic32:
-    build:
-      cache_from:
-        - ${REGISTRY}/apex.dev.pic32:latest
-      cache_to: *inline-cache
+  # zephyr / atmega328pb / pic32 are dev-shell-only platforms that CI does not
+  # build, so they carry no registry-cache overlay here.
