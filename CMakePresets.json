@@ -217,8 +217,7 @@
       "binaryDir": "build/mcu-stm32-relwithdebinfo",
       "toolchainFile": "cmake/toolchains/stm32-gcc.cmake",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "APEX_HAL_PLATFORM": "stm32"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     },
     {
@@ -248,8 +247,7 @@
       "binaryDir": "build/mcu-arduino-relwithdebinfo",
       "toolchainFile": "cmake/toolchains/avr-gcc.cmake",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "APEX_HAL_PLATFORM": "avr"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     },
     {
@@ -268,8 +266,7 @@
       "binaryDir": "build/mcu-pico-relwithdebinfo",
       "toolchainFile": "cmake/toolchains/pico-gcc.cmake",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "APEX_HAL_PLATFORM": "pico"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     },
     {
@@ -288,8 +285,7 @@
       "binaryDir": "build/mcu-esp32-relwithdebinfo",
       "toolchainFile": "cmake/toolchains/esp32-gcc.cmake",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "APEX_HAL_PLATFORM": "esp32"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     },
     {
@@ -308,8 +304,7 @@
       "binaryDir": "build/mcu-c2000-relwithdebinfo",
       "toolchainFile": "cmake/toolchains/c2000-cgt.cmake",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
-        "APEX_HAL_PLATFORM": "c2000"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }
     },
     {

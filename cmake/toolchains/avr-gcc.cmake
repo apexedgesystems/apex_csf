@@ -15,6 +15,9 @@ set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR avr)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
+# HAL platform (root CMakeLists adds APEX_PLATFORM_<X>); -D override still wins.
+set(APEX_HAL_PLATFORM "avr" CACHE STRING "HAL platform selected by this toolchain")
+
 # ------------------------------------------------------------------------------
 # Compilers
 # ------------------------------------------------------------------------------
