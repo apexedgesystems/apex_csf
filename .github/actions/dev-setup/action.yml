@@ -1,5 +1,8 @@
 name: Dev image setup
-description: Prepare the environment, log in to ghcr.io, and pull the cached CPU dev image.
+description: >
+  Prepare the environment, log in to ghcr.io, and make a dev image available --
+  pulled from the registry cache, or rebuilt from the Dockerfiles when the PR
+  changed docker/.
 
 inputs:
   registry:
@@ -11,6 +14,12 @@ inputs:
   token:
     description: GITHUB_TOKEN used for registry login
     required: true
+  service:
+    description: Compose service to prepare (dev or dev-cuda)
+    default: dev
+  rebuild:
+    description: Rebuild base and the service image from the Dockerfiles instead of using the pulled cache
+    default: "false"
 
 runs:
   using: composite
@@ -24,16 +33,44 @@ runs:
         echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
 
     - name: Login to ghcr.io
-      uses: docker/login-action@v4
+      uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
       with:
         registry: ghcr.io
         username: ${{ inputs.actor }}
         password: ${{ inputs.token }}
 
-    - name: Pull cached dev image
+    - name: Resolve image tag
+      id: img
+      shell: bash
+      run: |
+        case "${{ inputs.service }}" in
+          dev)      echo "tag=apex.dev.cpu"  >> "$GITHUB_OUTPUT" ;;
+          dev-cuda) echo "tag=apex.dev.cuda" >> "$GITHUB_OUTPUT" ;;
+          *) echo "dev-setup: unknown service '${{ inputs.service }}'" >&2; exit 1 ;;
+        esac
+
+    - name: Pull cached images
       shell: bash
       env:
         REGISTRY: ${{ inputs.registry }}
+        TAG: ${{ steps.img.outputs.tag }}
       run: |
-        docker pull "$REGISTRY/apex.dev.cpu:latest" \
-          && docker tag "$REGISTRY/apex.dev.cpu:latest" apex.dev.cpu || true
+        docker pull "$REGISTRY/apex.base:latest" \
+          && docker tag "$REGISTRY/apex.base:latest" apex.base || true
+        docker pull "$REGISTRY/$TAG:latest" \
+          && docker tag "$REGISTRY/$TAG:latest" "$TAG" || true
+
+    # Build through the registry layer cache (docker-compose.ci-cache.yml,
+    # the same overlay docker-build-push uses): the pulled :latest images
+    # carry inline cache metadata, so only the layers an image-input change
+    # actually invalidated are rebuilt -- not the whole SDK stack from
+    # scratch, in every job that asked for a rebuild.
+    - name: Rebuild images from Dockerfiles
+      if: inputs.rebuild == 'true'
+      shell: bash
+      env:
+        SERVICE: ${{ inputs.service }}
+        REGISTRY: ${{ inputs.registry }}
+      run: |
+        docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build base
+        docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build "$SERVICE"

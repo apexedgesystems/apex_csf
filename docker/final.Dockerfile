@@ -38,26 +38,26 @@ WORKDIR /output
 # ==============================================================================
 # Collect Framework Builds -- POSIX Targets
 # ==============================================================================
-COPY --from=apex.builder.cpu:latest     /home/${USER}/workspace/build/native-linux-release/    ./cpu/
-COPY --from=apex.builder.cuda:latest    /home/${USER}/workspace/build/native-linux-release/    ./cuda/
-COPY --from=apex.builder.jetson:latest  /home/${USER}/workspace/build/jetson-aarch64-release/  ./jetson/
-COPY --from=apex.builder.rpi:latest     /home/${USER}/workspace/build/rpi-aarch64-release/     ./rpi/
-COPY --from=apex.builder.riscv64:latest /home/${USER}/workspace/build/riscv64-linux-release/   ./riscv64/
+COPY --from=apex.builder.cpu:latest     /home/${USER}/workspace/build/hosted-x86_64-release/  ./cpu/
+COPY --from=apex.builder.cuda:latest    /home/${USER}/workspace/build/hosted-x86_64-release/  ./cuda/
+COPY --from=apex.builder.jetson:latest  /home/${USER}/workspace/build/cross-jetson-release/   ./jetson/
+COPY --from=apex.builder.rpi:latest     /home/${USER}/workspace/build/cross-rpi-release/      ./rpi/
+COPY --from=apex.builder.riscv64:latest /home/${USER}/workspace/build/cross-riscv64-release/  ./riscv64/
 
 # ==============================================================================
 # Collect Framework Builds -- MCU Targets
 # ==============================================================================
-COPY --from=apex.builder.stm32:latest   /home/${USER}/workspace/build/stm32/   ./stm32/
-COPY --from=apex.builder.arduino:latest /home/${USER}/workspace/build/arduino/ ./arduino/
-COPY --from=apex.builder.pico:latest    /home/${USER}/workspace/build/pico/    ./pico/
-COPY --from=apex.builder.esp32:latest   /home/${USER}/workspace/build/esp32/   ./esp32/
-COPY --from=apex.builder.c2000:latest   /home/${USER}/workspace/build/c2000/   ./c2000/
+COPY --from=apex.builder.stm32:latest   /home/${USER}/workspace/build/mcu-stm32-relwithdebinfo/   ./stm32/
+COPY --from=apex.builder.arduino:latest /home/${USER}/workspace/build/mcu-arduino-relwithdebinfo/ ./arduino/
+COPY --from=apex.builder.pico:latest    /home/${USER}/workspace/build/mcu-pico-relwithdebinfo/    ./pico/
+COPY --from=apex.builder.esp32:latest   /home/${USER}/workspace/build/mcu-esp32-relwithdebinfo/   ./esp32/
+COPY --from=apex.builder.c2000:latest   /home/${USER}/workspace/build/mcu-c2000-relwithdebinfo/   ./c2000/
 
 # ==============================================================================
 # Collect CLI Tools from CPU Builder
 # ==============================================================================
-COPY --from=apex.builder.cpu:latest /home/${USER}/workspace/build/native-linux-release/bin/tools/ ./tools-bin/
-COPY --from=apex.builder.cpu:latest /home/${USER}/workspace/build/native-linux-release/apex_csf-wheels/ ./tools-py/
+COPY --from=apex.builder.cpu:latest /home/${USER}/workspace/build/hosted-x86_64-release/bin/tools/ ./tools-bin/
+COPY --from=apex.builder.cpu:latest /home/${USER}/workspace/build/hosted-x86_64-release/apex_csf-wheels/ ./tools-py/
 
 # ==============================================================================
 # Create Distribution Tarballs

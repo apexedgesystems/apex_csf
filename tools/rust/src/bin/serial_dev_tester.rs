@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use clap::Parser;
 use rand::distr::Alphanumeric;
-use rand::Rng;
+use rand::RngExt;
 use serde::Deserialize;
 
 use apex_rust_tools::serial::{

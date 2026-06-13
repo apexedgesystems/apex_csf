@@ -1,18 +1,21 @@
 # ==============================================================================
-# CI -- Build, test, and lint on push/PR to main
+# CI -- lint, build, and test on PRs to main
 #
-# Runs format-check, debug build, and test suite inside Docker Compose
-# containers. Uses the CPU dev image. CUDA build paths are skipped when
-# CUDAToolkit_FOUND is false at configure time.
+# Change-scoped: a "changes" job classifies the PR diff, and the expensive jobs
+# run only when their area changed. A tools/rust or tools/py change (e.g. a
+# Dependabot bump) does not rebuild the C++/CUDA surface; a docs-only change
+# runs lint alone. Scope-down is opt-in per known subtree: cross-cutting paths
+# (.github/, mk/, docker/, the CMake build files) and any unrecognized path run
+# the full suite, so a missed filter never silently drops coverage.
 #
-# Image strategy:
-#   - The registry copies of apex.base:latest and apex.dev.cpu:latest are
-#     refreshed by docker-images.yml on every push to main that touches
-#     docker/**, so they already match main's Dockerfiles.
-#   - If this PR did not change docker/, the pulled :latest tags are
-#     correct as-is and we skip docker compose build entirely.
-#   - If this PR did change docker/, we fall back to docker compose build
-#     so the test suite runs against the PR's intended images.
+# Image strategy (see .github/actions/dev-setup): jobs pull the registry
+# :latest dev image, which docker-images.yml keeps current with main. When the
+# PR itself changes docker/, the affected image is rebuilt from the Dockerfiles
+# instead so tests run against the PR's intended image.
+#
+# The build/test/smoke/docs chain runs in dev-cuda so the .cu surface is compile
+# and link verified; docker-compose.ci.yml drops the GPU reservation so it
+# starts on the GPU-less runner, and make testp excludes the cuda-labeled tests.
 # ==============================================================================
 name: CI
 
@@ -29,196 +32,248 @@ permissions:
   contents: read
   packages: read
 
+env:
+  REGISTRY: ghcr.io/${{ github.repository }}
+
 jobs:
-  lint-build-test:
-    name: Lint, Build, Test
+  changes:
+    name: Detect changed areas
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-
-    env:
-      REGISTRY: ghcr.io/${{ github.repository }}
-      # Overlay docker-compose.ci.yml so dev-cuda starts without a GPU on the
-      # runner (it drops dev-cuda's device reservation). Affects only dev-cuda;
-      # the dev (CPU) steps are unchanged.
-      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
-
+    timeout-minutes: 5
+    outputs:
+      cpp: ${{ steps.f.outputs.cpp }}
+      rust: ${{ steps.f.outputs.rust }}
+      py: ${{ steps.f.outputs.py }}
+      docker: ${{ steps.f.outputs.docker }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Prepare environment
+      - name: Classify changed files
+        id: f
         run: |
-          touch ~/.gitconfig
-          mkdir -p ~/.ssh
-          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
-          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+          # Diff against the PR base, or origin/main for a manual dispatch, so a
+          # dispatch scopes (and rebuilds images) exactly as the PR would --
+          # never a blanket image rebuild just because there is no PR context.
+          base="${{ github.event.pull_request.base.ref || 'main' }}"
+          # --no-renames: a rename lists both sides, so a file moving OUT of a
+          # scoped area still classifies as a change to that area; default
+          # rename detection would emit only the destination path.
+          files=$(git diff --name-only --no-renames "origin/$base...HEAD")
+          printf 'changed files:\n%s\n' "$files"
+          # Scope DOWN only for changes confined to known-isolated areas; any
+          # unrecognized path (root configs, new top-level dirs, build/CI infra)
+          # falls through to the full suite, so coverage is never silently lost.
+          cpp=false; rust=false; py=false; allflag=false
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            case "$file" in
+              tools/rust/*) rust=true ;;
+              tools/py/*)   py=true ;;
+              src/*|apps/*|cmake/*|CMakeLists.txt|CMakePresets.json) cpp=true ;;
+              *.md|docs/*)  : ;;
+              .github/*|mk/*|docker/*|docker-compose*) allflag=true ;;
+              *)            allflag=true ;;
+            esac
+          done <<< "$files"
+          # An empty diff (e.g. a dispatch on main itself) classifies nothing
+          # and would yield a green lint-only run; treat it as cross-cutting so
+          # a manual run is always a full run. docker stays diff-driven -- an
+          # empty diff never forces an image rebuild.
+          if [ -z "$files" ]; then allflag=true; fi
+          if [ "$allflag" = true ]; then cpp=true; rust=true; py=true; fi
+          # Image rebuild is needed only when a dev-image input changes: the
+          # base/dev Dockerfiles or the base compose (build args/contexts).
+          # docker/builder.Dockerfile and docker/final.Dockerfile feed only the
+          # release pipe (no PR CI job builds them), and the CI compose
+          # overlays are runtime-only -- none of those warrant rebuilding the
+          # dev images the jobs run in. The base/dev Dockerfiles COPY nothing
+          # from the build context, so the Dockerfiles themselves are the
+          # complete input set.
+          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/|^docker-compose\.yml$' && echo true || echo false)
+          printf 'cpp=%s\nrust=%s\npy=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$docker" | tee -a "$GITHUB_OUTPUT"
 
-      - name: Login to ghcr.io
-        uses: docker/login-action@v4
+  lint:
+    name: Lint and secret scan
+    needs: changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull cached dev images
-        run: |
-          docker pull $REGISTRY/apex.base:latest     && docker tag $REGISTRY/apex.base:latest     apex.base     || true
-          docker pull $REGISTRY/apex.dev.cpu:latest  && docker tag $REGISTRY/apex.dev.cpu:latest  apex.dev.cpu  || true
-          docker pull $REGISTRY/apex.dev.cuda:latest && docker tag $REGISTRY/apex.dev.cuda:latest apex.dev.cuda || true
-
-      - name: Detect docker/ changes
-        id: docker
-        run: |
-          if git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD -- docker/ docker-compose.yml | grep -q .; then
-            echo "Dockerfile or compose change detected -- will rebuild images"
-            echo "rebuild=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No docker/ changes -- using registry :latest as-is"
-            echo "rebuild=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build base, dev, and dev-cuda images
-        if: steps.docker.outputs.rebuild == 'true'
-        run: |
-          docker compose build base
-          docker compose build dev
-          docker compose build dev-cuda
-
+          fetch-depth: 0
+      # Host-side static check, no image needed -- run it before the image
+      # pull so release-path drift is the fastest failure in the pipeline.
+      - name: Check release paths (final.Dockerfile vs presets)
+        run: make check-release-paths
+      - name: Set up dev image
+        uses: ./.github/actions/dev-setup
+        with:
+          registry: ${{ env.REGISTRY }}
+          actor: ${{ github.actor }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          service: dev
+          rebuild: ${{ needs.changes.outputs.docker }}
       - name: Format check
         run: docker compose run --rm -T dev make format-check
-
       - name: Secret scan (gitleaks)
         run: docker compose run --rm -T dev make gitleaks
 
-      # The primary build runs in dev-cuda so the whole .cu surface is compile
-      # and link verified on every PR (CUDA is core). The runner has no GPU, so
-      # the docker-compose.ci.yml overlay drops dev-cuda's device reservation to
-      # let the container start, and make testp's GPU probe excludes the
-      # cuda-labeled tests (they run on a GPU host via make testp-cuda). debug,
-      # testp, smoke, and docs-check share the dev-cuda build directory; gitleaks
-      # and the tool tests stay on the CPU dev image.
+  build-test:
+    name: Build and test (CUDA)
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      # Overlay docker-compose.ci.yml so dev-cuda starts without a GPU on the
+      # runner (drops its device reservation); make testp excludes the
+      # cuda-labeled tests.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up dev-cuda image
+        uses: ./.github/actions/dev-setup
+        with:
+          registry: ${{ env.REGISTRY }}
+          actor: ${{ github.actor }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          service: dev-cuda
+          rebuild: ${{ needs.changes.outputs.docker }}
+      # Second restore key: the nightly debug leg saves main-scoped entries,
+      # the only ones a brand-new PR's first push can see (ccache is
+      # content-addressed, so a partial-match cache only helps, never hurts).
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-build-test-${{ github.sha }}
+          restore-keys: |
+            ccache-build-test-
+            ccache-nightly-debug-
+      - name: Prepare ccache dir
+        run: mkdir -p .ccache
       - name: Build (debug, CUDA)
         run: docker compose run --rm -T dev-cuda make debug
-
       - name: Run C++ tests
         run: docker compose run --rm -T dev-cuda make testp
-
       - name: Demo smoke test (reuses debug build)
         run: docker compose run --rm -T dev-cuda make smoke APP=apex_mc_demo
-
       - name: Build documentation (zero-warning gate)
         run: docker compose run --rm -T dev-cuda make docs-check
+      # Hit rate of the persisted cache, in the job log where a regression
+      # (key drift, broken bind) is visible -- a broken cache layer once ran
+      # silent for five release runs.
+      - name: ccache stats
+        run: docker compose run --rm -T dev-cuda ccache -s | tail -n 8
 
+  rust:
+    name: Rust tool tests
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up dev image
+        uses: ./.github/actions/dev-setup
+        with:
+          registry: ${{ env.REGISTRY }}
+          actor: ${{ github.actor }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          service: dev
+          rebuild: ${{ needs.changes.outputs.docker }}
       - name: Run Rust tests
         run: docker compose run --rm -T dev make test-rust
 
+  py:
+    name: Python tool tests
+    needs: changes
+    if: needs.changes.outputs.py == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Set up dev image
+        uses: ./.github/actions/dev-setup
+        with:
+          registry: ${{ env.REGISTRY }}
+          actor: ${{ github.actor }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          service: dev
+          rebuild: ${{ needs.changes.outputs.docker }}
       - name: Run Python tests
         run: docker compose run --rm -T dev make test-py
 
   sanitize:
     name: Sanitize
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
     env:
-      REGISTRY: ghcr.io/${{ github.repository }}
-
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Prepare environment
-        run: |
-          touch ~/.gitconfig
-          mkdir -p ~/.ssh
-          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
-          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
-
-      - name: Login to ghcr.io
-        uses: docker/login-action@v4
+      - name: Set up dev image
+        uses: ./.github/actions/dev-setup
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull cached dev images
-        run: |
-          docker pull $REGISTRY/apex.base:latest    && docker tag $REGISTRY/apex.base:latest    apex.base    || true
-          docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
-
-      - name: Detect docker/ changes
-        id: docker
-        run: |
-          if git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD -- docker/ docker-compose.yml | grep -q .; then
-            echo "Dockerfile or compose change detected -- will rebuild images"
-            echo "rebuild=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No docker/ changes -- using registry :latest as-is"
-            echo "rebuild=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build base and dev images
-        if: steps.docker.outputs.rebuild == 'true'
-        run: |
-          docker compose build base
-          docker compose build dev
-
+          registry: ${{ env.REGISTRY }}
+          actor: ${{ github.actor }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          service: dev
+          rebuild: ${{ needs.changes.outputs.docker }}
+      - name: Restore ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-sanitize-${{ github.sha }}
+          restore-keys: |
+            ccache-sanitize-
+            ccache-nightly-asan-ubsan-
+      - name: Prepare ccache dir
+        run: mkdir -p .ccache
       - name: Address + UB Sanitizer
         run: docker compose run --rm -T dev make asan-ubsan
+      - name: ccache stats
+        run: docker compose run --rm -T dev ccache -s | tail -n 8
 
   static-analysis:
     name: Static analysis
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
-
-    env:
-      REGISTRY: ghcr.io/${{ github.repository }}
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-
-      - name: Prepare environment
-        run: |
-          touch ~/.gitconfig
-          mkdir -p ~/.ssh
-          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
-          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
-
-      - name: Login to ghcr.io
-        uses: docker/login-action@v4
+      - name: Set up dev image
+        uses: ./.github/actions/dev-setup
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Pull cached dev images
-        run: |
-          docker pull $REGISTRY/apex.base:latest    && docker tag $REGISTRY/apex.base:latest    apex.base    || true
-          docker pull $REGISTRY/apex.dev.cpu:latest && docker tag $REGISTRY/apex.dev.cpu:latest apex.dev.cpu || true
-
-      - name: Detect docker/ changes
-        id: docker
-        run: |
-          if git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD -- docker/ docker-compose.yml | grep -q .; then
-            echo "Dockerfile or compose change detected -- will rebuild images"
-            echo "rebuild=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "No docker/ changes -- using registry :latest as-is"
-            echo "rebuild=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Build base and dev images
-        if: steps.docker.outputs.rebuild == 'true'
-        run: |
-          docker compose build base
-          docker compose build dev
-
+          registry: ${{ env.REGISTRY }}
+          actor: ${{ github.actor }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          service: dev
+          rebuild: ${{ needs.changes.outputs.docker }}
+      # No ccache here: clang-tidy does not compile through the launcher --
+      # every cache this job ever saved was ~191 bytes (see CHECKS_CCACHE in
+      # mk/checks.mk for the same rule on nightly legs).
       - name: clang-tidy (gated checks)
         run: docker compose run --rm -T dev make static

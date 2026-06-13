@@ -58,6 +58,38 @@ DEV_SERVICES := dev dev-cuda dev-jetson dev-rpi dev-riscv64 dev-zephyr \
                 dev-stm32 dev-esp32 dev-pico dev-arduino dev-atmega328pb \
                 dev-pic32 dev-c2000
 
+# Release builder targets: one apex.builder.<t> image per entry. The
+# docker-builders aggregate, the per-target build rules, the release.yml
+# builders matrix (via print-builder-targets), the artifact-<t> extraction
+# targets, and the check-release-paths COPY coverage are all derived from
+# this -- add a target once (plus its ARTIFACT_NAME/_DIR pair below).
+BUILDER_TARGETS := cpu cuda jetson rpi riscv64 stm32 arduino pico esp32 c2000
+
+# Per-target artifact naming and build tree, mirroring final.Dockerfile's
+# COPY sources and tarball names exactly (check-release-paths asserts the
+# dirs against CMakePresets; the names feed apex-csf-<VERSION>-<name>.tar.gz).
+ARTIFACT_NAME_cpu     := x86_64-linux
+ARTIFACT_NAME_cuda    := x86_64-linux-cuda
+ARTIFACT_NAME_jetson  := aarch64-jetson
+ARTIFACT_NAME_rpi     := aarch64-rpi
+ARTIFACT_NAME_riscv64 := riscv64-linux
+ARTIFACT_NAME_stm32   := stm32
+ARTIFACT_NAME_arduino := arduino
+ARTIFACT_NAME_pico    := pico
+ARTIFACT_NAME_esp32   := esp32
+ARTIFACT_NAME_c2000   := c2000
+
+ARTIFACT_DIR_cpu     := hosted-x86_64-release
+ARTIFACT_DIR_cuda    := hosted-x86_64-release
+ARTIFACT_DIR_jetson  := cross-jetson-release
+ARTIFACT_DIR_rpi     := cross-rpi-release
+ARTIFACT_DIR_riscv64 := cross-riscv64-release
+ARTIFACT_DIR_stm32   := mcu-stm32-relwithdebinfo
+ARTIFACT_DIR_arduino := mcu-arduino-relwithdebinfo
+ARTIFACT_DIR_pico    := mcu-pico-relwithdebinfo
+ARTIFACT_DIR_esp32   := mcu-esp32-relwithdebinfo
+ARTIFACT_DIR_c2000   := mcu-c2000-relwithdebinfo
+
 # _dev_base: the base image a dev service builds from
 _dev_base = $(if $(filter dev dev-cuda,$(1)),docker-base,$(if $(filter dev-jetson,$(1)),docker-dev-cuda,docker-dev))
 
@@ -140,10 +172,7 @@ docker-all:
 docker-devs: $(foreach s,$(DEV_SERVICES),docker-$(s))
 	$(call log,docker,All dev images built)
 
-docker-builders: docker-builder-cpu docker-builder-cuda docker-builder-jetson \
-                 docker-builder-rpi docker-builder-riscv64 \
-                 docker-builder-stm32 docker-builder-arduino \
-                 docker-builder-pico docker-builder-esp32 docker-builder-c2000
+docker-builders: $(patsubst %,docker-builder-%,$(BUILDER_TARGETS))
 	$(call log,docker,All builder images built)
 
 # ------------------------------------------------------------------------------
@@ -168,7 +197,7 @@ $(foreach s,$(DEV_SERVICES),\
 # Builder Images (generated from templates)
 # ------------------------------------------------------------------------------
 
-$(foreach b,cpu cuda jetson rpi riscv64 stm32 arduino pico esp32 c2000,\
+$(foreach b,$(BUILDER_TARGETS),\
   $(eval $(call _builder_target,$(b))))
 
 # ------------------------------------------------------------------------------
@@ -181,13 +210,64 @@ $(foreach s,$(DEV_SERVICES),$(eval $(call _shell_target,$(s))))
 # Final Packager
 # ------------------------------------------------------------------------------
 
-docker-final: docker-builders
+# final COPYs from all 10 builder images. Like the builders treat their dev
+# image as an external input, final treats the builder images as external (no
+# docker-builders prerequisite), so CI can build the builders on separate
+# runners (release.yml) and have a downstream job assemble final from the pulled
+# images without rebuilding them. Local first-time builds use `make docker-all`
+# (or run `make docker-builders` first), which orders the stages explicitly.
+docker-final:
 	$(call log,docker,Building final image (VERSION=$(VERSION)))
 	@docker compose build --build-arg VERSION=$(VERSION) final
 
 # ------------------------------------------------------------------------------
 # Artifact Extraction
 # ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+# Per-target artifact extraction (no final image required)
+# ------------------------------------------------------------------------------
+# artifact-<t> pulls one platform's tarball straight out of apex.builder.<t>,
+# producing the same name and layout as the final-image path below. CI release
+# builders use this so every tree is tarred on the runner that built it,
+# keeping the fan-in from collecting all ten build trees on one disk -- a full
+# per-platform tree is large enough that ten at once exhausts a runner.
+# `make artifacts` (final image + extraction) remains the local all-at-once
+# path.
+
+define _artifact_target
+.PHONY: artifact-$(1)
+artifact-$(1):
+	$$(call log,docker,Extracting $(1) artifact (VERSION=$$(VERSION)))
+	@mkdir -p $$(DOCKER_OUT_DIR)/.stage-$(1)
+	@CID=$$$$(docker create apex.builder.$(1) noop) && \
+	  docker cp "$$$$CID:/home/$$(USER)/workspace/build/$$(ARTIFACT_DIR_$(1))" \
+	    "$$(DOCKER_OUT_DIR)/.stage-$(1)/$(1)" && \
+	  tar -czf "$$(DOCKER_OUT_DIR)/apex-csf-$$(VERSION)-$$(ARTIFACT_NAME_$(1)).tar.gz" \
+	    -C "$$(DOCKER_OUT_DIR)/.stage-$(1)" "./$(1)" && \
+	  docker rm "$$$$CID" >/dev/null && rm -rf "$$(DOCKER_OUT_DIR)/.stage-$(1)"
+	$$(call log_ok,docker,apex-csf-$$(VERSION)-$$(ARTIFACT_NAME_$(1)).tar.gz)
+endef
+
+$(foreach t,$(BUILDER_TARGETS),$(eval $(call _artifact_target,$(t))))
+
+# CLI tools + python wheel ride the cpu builder (same sources final.Dockerfile
+# collects from apex.builder.cpu).
+.PHONY: artifact-tools
+artifact-tools:
+	$(call log,docker,Extracting tools artifact (VERSION=$(VERSION)))
+	@mkdir -p $(DOCKER_OUT_DIR)/.stage-tools
+	@CID=$$(docker create apex.builder.cpu noop) && \
+	  docker cp "$$CID:/home/$(USER)/workspace/build/$(ARTIFACT_DIR_cpu)/bin/tools" \
+	    "$(DOCKER_OUT_DIR)/.stage-tools/tools-bin" && \
+	  docker cp "$$CID:/home/$(USER)/workspace/build/$(ARTIFACT_DIR_cpu)/apex_csf-wheels" \
+	    "$(DOCKER_OUT_DIR)/.stage-tools/tools-py" && \
+	  tar -czf "$(DOCKER_OUT_DIR)/apex-tools-$(VERSION)-x86_64-linux.tar.gz" \
+	    -C "$(DOCKER_OUT_DIR)/.stage-tools" "./tools-bin" && \
+	  cp "$(DOCKER_OUT_DIR)"/.stage-tools/tools-py/*.whl \
+	    "$(DOCKER_OUT_DIR)/apex_py_tools-$(VERSION)-py3-none-any.whl" && \
+	  docker rm "$$CID" >/dev/null && rm -rf "$(DOCKER_OUT_DIR)/.stage-tools"
+	$(call log_ok,docker,apex-tools-$(VERSION)-x86_64-linux.tar.gz + wheel)
 
 artifacts: docker-final
 	$(call log,docker,Extracting artifacts to $(DOCKER_OUT_DIR)/ (VERSION=$(VERSION)))
@@ -273,11 +353,65 @@ docker-validate: docker-lint
 	@docker compose config --quiet
 
 # ------------------------------------------------------------------------------
+# Release path drift guard
+# ------------------------------------------------------------------------------
+# Each platform's build tree lives at build/<preset-dir>, and two surfaces name
+# those dirs: the release pipe extracts via ARTIFACT_DIR_<t> (make artifact-<t>),
+# and final.Dockerfile COPYs the same dirs for the local `make artifacts` path.
+# Both must track CMakePresets.json, and every BUILDER_TARGETS entry must map to
+# a real preset dir and be collected by final.Dockerfile. A preset rename that
+# misses any surface broke the release silently -- caught only by running it.
+# This static check fails fast on all three drift classes, in the gate, not on a
+# release tag.
+check-release-paths:
+	@preset_dirs=$$(grep -oE 'build/[A-Za-z0-9._-]+' CMakePresets.json | sed 's#build/##' | sort -u); \
+	final_dirs=$$(grep -E 'COPY --from' docker/final.Dockerfile | grep -oE 'build/[A-Za-z0-9._-]+' | sed 's#build/##' | sort -u); \
+	missing=""; \
+	for d in $$final_dirs; do printf '%s\n' "$$preset_dirs" | grep -qx "$$d" || missing="$$missing $$d"; done; \
+	if [ -n "$$missing" ]; then \
+	  printf '[check-release-paths] final.Dockerfile build dirs with no matching CMakePresets binaryDir:%s\n' "$$missing" >&2; \
+	  printf 'Known preset dirs:\n%s\n' "$$preset_dirs" >&2; \
+	  exit 1; \
+	fi; \
+	bad_artifact=""; \
+	for pair in $(foreach t,$(BUILDER_TARGETS),$(t)=$(ARTIFACT_DIR_$(t))); do \
+	  t=$${pair%%=*}; d=$${pair#*=}; \
+	  if [ -z "$$d" ]; then bad_artifact="$$bad_artifact $$t(unset)"; \
+	  elif ! printf '%s\n' "$$preset_dirs" | grep -qx "$$d"; then bad_artifact="$$bad_artifact $$t($$d)"; fi; \
+	done; \
+	if [ -n "$$bad_artifact" ]; then \
+	  printf '[check-release-paths] ARTIFACT_DIR_<t> with no matching CMakePresets binaryDir:%s\n' "$$bad_artifact" >&2; \
+	  printf 'Known preset dirs:\n%s\n' "$$preset_dirs" >&2; \
+	  exit 1; \
+	fi; \
+	uncollected=""; \
+	for t in $(BUILDER_TARGETS); do \
+	  grep -q "COPY --from=apex.builder.$$t:" docker/final.Dockerfile || uncollected="$$uncollected $$t"; \
+	done; \
+	if [ -n "$$uncollected" ]; then \
+	  printf '[check-release-paths] BUILDER_TARGETS with no COPY --from in final.Dockerfile:%s\n' "$$uncollected" >&2; \
+	  exit 1; \
+	fi; \
+	printf '[check-release-paths] OK -- ARTIFACT_DIR + final.Dockerfile cover all builder targets with preset-valid paths\n'
+
+# Emit BUILDER_TARGETS as a JSON array for the release.yml builders matrix
+# (same pattern as mk/checks.mk print-nightly-checks for the nightly matrix).
+print-builder-targets:
+	@printf '%s\n' '$(call _json_array,$(BUILDER_TARGETS))'
+
+# Every ghcr package this repo publishes, one per line -- drives the nightly
+# ghcr-gc job, so a new dev service or builder target is collected without a
+# workflow edit.
+print-ghcr-packages:
+	@printf '%s\n' $(_DEV_IMAGES) $(patsubst %,apex.builder.%,$(BUILDER_TARGETS))
+
+# ------------------------------------------------------------------------------
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
 .PHONY: docker-all docker-devs docker-builders docker-base docker-final artifacts
-.PHONY: docker-push-devs docker-pull-devs
+.PHONY: docker-push-devs docker-pull-devs check-release-paths print-builder-targets
+.PHONY: print-ghcr-packages
 .PHONY: docker-clean docker-clean-deep docker-prune docker-disk-usage
 .PHONY: docker-lint docker-validate
 

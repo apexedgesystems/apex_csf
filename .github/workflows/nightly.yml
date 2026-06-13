@@ -26,13 +26,18 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       checks: ${{ steps.list.outputs.checks }}
+      ccache: ${{ steps.list.outputs.ccache }}
+      builders: ${{ steps.list.outputs.builders }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Read nightly checks from registry
+      - name: Read nightly checks and builder targets from the registries
         id: list
-        run: echo "checks=$(make -s print-nightly-checks)" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "checks=$(make -s print-nightly-checks)" >> "$GITHUB_OUTPUT"
+          echo "ccache=$(make -s print-ccache-checks)" >> "$GITHUB_OUTPUT"
+          echo "builders=$(make -s print-builder-targets)" >> "$GITHUB_OUTPUT"
 
   check:
     name: ${{ matrix.check }}
@@ -47,6 +52,9 @@ jobs:
 
     env:
       REGISTRY: ghcr.io/${{ github.repository }}
+      # Bind /ccache to a host dir so actions/cache keeps the CHECKS_CCACHE
+      # legs (tsan, rtsan, coverage-check, hardened) warm across nights.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
 
     steps:
       - name: Checkout
@@ -59,6 +67,22 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Only the legs that compile C++ through ccache persist one
+      # (CHECKS_CCACHE in mk/checks.mk); the scanner and tooling legs would
+      # mint empty ~200-byte cache entries every night. Exact membership via
+      # fromJSON -- substring matching would make tsan match rtsan.
+      - name: Restore ccache
+        if: contains(fromJSON(needs.set-matrix.outputs.ccache), matrix.check)
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-nightly-${{ matrix.check }}-${{ github.sha }}
+          restore-keys: |
+            ccache-nightly-${{ matrix.check }}-
+      - name: Prepare ccache dir
+        if: contains(fromJSON(needs.set-matrix.outputs.ccache), matrix.check)
+        run: mkdir -p .ccache
+
       - name: Run ${{ matrix.check }}
         run: docker compose run --rm -T dev make ${{ matrix.check }}
 
@@ -69,3 +93,148 @@ jobs:
           name: coverage-report
           path: build/hosted-x86_64-coverage/coverage/
           retention-days: 14
+
+  # ----------------------------------------------------------------------------
+  # Warm the release builders' ccache from main. Actions cache scopes restores
+  # to the requesting ref plus the default branch, so entries saved by tag or
+  # branch runs are invisible to the next tag -- only main-scoped entries make
+  # a release build warm. This matrix compiles each builder image nightly
+  # (no push) with the same cache keys release.yml uses, which also makes it
+  # the daily canary for the cross release-tree compiles that otherwise run
+  # only at tag time.
+  # ----------------------------------------------------------------------------
+  builder-warm:
+    name: warm-${{ matrix.builder }}
+    needs: set-matrix
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    strategy:
+      fail-fast: false
+      matrix:
+        builder: ${{ fromJSON(needs.set-matrix.outputs.builders) }}
+
+    env:
+      REGISTRY: ghcr.io/${{ github.repository }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Prepare environment
+        run: |
+          touch ~/.gitconfig
+          mkdir -p ~/.ssh
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull builder's dev image (the FROM)
+        env:
+          DEV: apex.dev.${{ matrix.builder }}
+        run: |
+          docker pull "$REGISTRY/$DEV:latest"
+          docker tag "$REGISTRY/$DEV:latest" "$DEV"
+
+      - name: Restore builder ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-builder-${{ matrix.builder }}-${{ github.sha }}
+          restore-keys: |
+            ccache-builder-${{ matrix.builder }}-
+      - name: Prepare ccache dir
+        run: mkdir -p .ccache
+      # Mount identity must match builder.Dockerfile's uid/gid cache mount --
+      # see release.yml for the full note.
+      - name: Compose ccache cache map (mount identity must match)
+        id: ccache-map
+        run: |
+          printf 'map={ ".ccache": { "target": "/ccache", "uid": "%s", "gid": "%s" } }\n' \
+            "$(id -u)" "$(id -g)" >> "$GITHUB_OUTPUT"
+      - name: Inject ccache into the build mount
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3
+        continue-on-error: true
+        with:
+          cache-map: ${{ steps.ccache-map.outputs.map }}
+
+      - name: Build builder image (warm only, no push)
+        run: make docker-builder-${{ matrix.builder }}
+
+  # ----------------------------------------------------------------------------
+  # ghcr garbage collection. Re-pushing :latest dev images strands the previous
+  # digest as an untagged version (never auto-collected), and earlier release
+  # flows left sha-tagged apex.builder.* sets behind (the release pipe now
+  # hands off via workflow artifacts, not ghcr). Deletes untagged versions of
+  # this repo's apex.* packages, plus builder versions whose tags are all
+  # commit shas older than 14 days.
+  # ----------------------------------------------------------------------------
+  ghcr-gc:
+    name: ghcr garbage collection
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      packages: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # Package names come from the make registries (print-ghcr-packages), not
+      # the org package-list endpoint: GITHUB_TOKEN cannot enumerate org
+      # packages, and a failed enumeration inside a pipeline reads as "nothing
+      # to do". Per-package 404s are fine (image not published yet); any other
+      # API failure is fatal so a permission problem can never pass silently.
+      - name: Delete untagged and stale builder versions
+        run: |
+          set -euo pipefail
+          org="${GITHUB_REPOSITORY%%/*}"
+          repo="${GITHUB_REPOSITORY#*/}"
+          cutoff=$(date -u -d '14 days ago' +%FT%TZ)
+          deleted=0; kept=0
+          for name in $(make -s print-ghcr-packages); do
+            pkg="$repo/$name"
+            enc=$(printf '%s' "$pkg" | sed 's|/|%2F|g')
+            if ! versions=$(gh api --paginate "/orgs/$org/packages/container/$enc/versions" \
+                              --jq '.[] | [.id, .created_at, (.metadata.container.tags | join(" "))] | @tsv' 2>&1); then
+              case "$versions" in
+                *"HTTP 404"*|*"Not Found"*) echo "skip $pkg (not published)"; continue ;;
+                *) echo "::error::listing $pkg failed: $versions"; exit 1 ;;
+              esac
+            fi
+            [ -n "$versions" ] || continue
+            while IFS=$'\t' read -r id created tags; do
+              del=false
+              if [ -z "$tags" ]; then
+                del=true                       # untagged: stranded digest
+              elif [ "${name#apex.builder.}" != "$name" ]; then
+                # builder package: delete only if EVERY tag is a 40-hex sha
+                # and the version is older than the cutoff
+                if [ "$created" \< "$cutoff" ] \
+                   && ! printf '%s\n' $tags | grep -qvE '^[0-9a-f]{40}$'; then
+                  del=true
+                fi
+              fi
+              if [ "$del" = true ]; then
+                gh api --method DELETE "/orgs/$org/packages/container/$enc/versions/$id"
+                echo "deleted $pkg version $id (created $created, tags: ${tags:-none})"
+                deleted=$((deleted+1))
+              else
+                kept=$((kept+1))
+              fi
+            done <<< "$versions"
+          done
+          echo "ghcr-gc: deleted $deleted version(s), kept $kept"
+          # A registry with published images and zero visible versions means
+          # the token cannot see them -- fail loudly rather than report clean.
+          if [ "$deleted" -eq 0 ] && [ "$kept" -eq 0 ]; then
+            echo "::error::no package versions visible to the token"
+            exit 1
+          fi

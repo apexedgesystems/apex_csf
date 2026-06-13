@@ -32,6 +32,7 @@ on:
     branches: [main]
     paths:
       - docker/**
+      - docker-compose.yml
   workflow_dispatch:
     inputs:
       force_rebuild:
@@ -61,12 +62,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Resolve rebuild graph
         id: d
         env:
           FORCE: ${{ github.event.inputs.force_rebuild }}
+          BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
 
@@ -83,11 +85,31 @@ jobs:
           apex.dev.pico|dev-pico|apex.dev.cpu|2|docker/dev/pico.Dockerfile
           apex.dev.arduino|dev-arduino|apex.dev.cpu|2|docker/dev/arduino.Dockerfile
           apex.dev.c2000|dev-c2000|apex.dev.cpu|2|docker/dev/c2000.Dockerfile
+          apex.dev.zephyr|dev-zephyr|apex.dev.cpu|2|docker/dev/zephyr.Dockerfile
+          apex.dev.atmega328pb|dev-atmega328pb|apex.dev.cpu|2|docker/dev/atmega328pb.Dockerfile
+          apex.dev.pic32|dev-pic32|apex.dev.cpu|2|docker/dev/pic32.Dockerfile
           "
           MAX_TIER=2
 
-          DIFF=$(git diff --name-only HEAD~1 HEAD -- docker/ 2>/dev/null || echo "docker/base.Dockerfile")
-          echo "Changed docker files:"; echo "$DIFF"
+          # Diff the whole pushed range (a rebase-merge lands several commits;
+          # HEAD~1 would see only the last). event.before is zeros on the
+          # first push / force-push edge cases -- fall back to HEAD~1, and to
+          # rebuild-everything if no range resolves.
+          if [ -n "${BEFORE:-}" ] && [ "${BEFORE}" != "0000000000000000000000000000000000000000" ] \
+             && git rev-parse -q --verify "${BEFORE}^{commit}" >/dev/null; then
+            RANGE="${BEFORE}..HEAD"
+          else
+            RANGE="HEAD~1..HEAD"
+          fi
+          DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml 2>/dev/null || echo "docker/base.Dockerfile")
+          echo "Changed docker files (${RANGE}):"; echo "$DIFF"
+
+          # The base compose carries the build args/contexts every image build
+          # consumes (x-build-args) -- a change there invalidates the whole
+          # graph, same as force_rebuild.
+          if printf '%s\n' "$DIFF" | grep -qx "docker-compose.yml"; then
+            FORCE=true
+          fi
 
           rows=$(echo "$GRAPH" | sed 's/^[[:space:]]*//' | grep -v '^$')
           declare -A RB

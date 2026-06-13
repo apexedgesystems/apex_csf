@@ -405,7 +405,7 @@ if (ENABLE_CLANG_TIDY)
 endif ()
 
 # ------------------------------------------------------------------------------
-# Gated warnings (first-party code only)
+# Gated warnings (first-party code only, gate toolchain only)
 # ------------------------------------------------------------------------------
 # Gate a curated set of warnings as errors -- but only for our own sources, so
 # dependency builds are never gated (ExternalDependencies were configured above;
@@ -419,24 +419,31 @@ endif ()
 # truncating. They are NOT silenced wholesale; the gate keeps new truncation
 # paths from landing. Domain-inherent noisy classes (sign-conversion,
 # float-equal) are left out as they fight legitimate patterns in this tree.
-if (NOT CMAKE_CXX_COMPILER_ID STREQUAL "TI")
+#
+# The gate runs ONLY under Clang -- the toolchain of the PR gate that every
+# change passes through. Cross-toolchain builds still print warnings but never
+# fail on them, because the same warning name can check different things per
+# compiler: GCC's -Wunused-const-variable reaches into included headers at
+# every level, and GCC's -Wshadow includes class members; Clang's do neither.
+# A -Werror gate on a compiler the PR gate does not run lets a release tag
+# fail on a diagnostic no PR could surface -- unrecognized flag spellings,
+# header-scoped constants, and member shadows are all classes GCC flags and
+# Clang does not. Enforcement parity is the contract: PR-green implies
+# release-green. GCC's extra diagnostics remain available in cross-build logs
+# as plain warnings.
+if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
   foreach (
-    _wf IN
-    ITEMS -Wshadow
-          -Wold-style-cast
-          -Wimplicit-int-conversion
-          -Wshorten-64-to-32
-          -Wdouble-promotion
-          -Werror=unused-variable
-          -Werror=unused-const-variable
-          -Werror=deprecated-volatile
-          -Werror=shadow
-          -Werror=old-style-cast
-          -Werror=implicit-int-conversion
-          -Werror=shorten-64-to-32
-          -Werror=double-promotion
+    _w IN
+    ITEMS shadow
+          old-style-cast
+          double-promotion
+          implicit-int-conversion
+          shorten-64-to-32
+          unused-variable
+          unused-const-variable
+          deprecated-volatile
   )
-    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:${_wf}>)
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Werror=${_w}>)
   endforeach ()
 endif ()
 

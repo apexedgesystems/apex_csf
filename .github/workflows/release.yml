@@ -1,37 +1,38 @@
 # ==============================================================================
-# Release -- Build artifacts and publish to GitHub Releases
+# Release -- Build artifacts and publish to GitHub Releases (parallel builders)
 #
-# Triggered by pushing a version tag (v*). Builds all platform artifacts
-# through the full Docker pipeline and attaches them to the GitHub Release.
+# Four jobs; the dispatch rehearsal and a tag release run the SAME steps, so a
+# green rehearsal is proof the next tag will publish:
 #
-# Artifact inventory (14 packages):
+#   targets                            -- resolve the builder/app matrices from
+#     the make registries, derive VERSION from the ref, and verify a tag
+#     against CMakeLists.txt before any build spends a minute.
+#   builders (matrix, one runner each) -- compile apex for each target into
+#     apex.builder.<t>, extract that platform's tarball on the same runner
+#     (make artifact-<t>), and upload it as a workflow artifact. Each build
+#     tree stays on the runner that built it; a full per-platform tree is
+#     large enough that collecting all ten on the fan-in runner would exhaust
+#     its disk. Workflow artifacts are run-scoped, so the fan-in consumes
+#     exactly this run's outputs with no registry handoff to race on.
+#   apps (parallel with the builders)  -- build the app release packages in the
+#     platform dev images (they compile from source and consume no builder
+#     image) and upload the tarballs the same way.
+#   package (fan-in)                   -- download the platform and app
+#     artifacts and -- only on a tag push -- publish the GitHub Release. No
+#     docker, no image pulls, no assembly.
 #
-#   Library packages (5) -- for downstream projects consuming apex as a library
-#     apex-csf-{VER}-x86_64-linux.tar.gz
-#     apex-csf-{VER}-x86_64-linux-cuda.tar.gz
-#     apex-csf-{VER}-aarch64-jetson.tar.gz
-#     apex-csf-{VER}-aarch64-rpi.tar.gz
-#     apex-csf-{VER}-riscv64-linux.tar.gz
+# Triggers:
+#   tag v*            -- full release: everything below, then publish.
+#   workflow_dispatch -- everything EXCEPT publish. The publish step is gated
+#                        on the push event, not the ref, so dispatching on a
+#                        tag ref is still only a rehearsal. VERSION falls back
+#                        to 0.0.0-ci.
 #
-#   Tool packages (2) -- CLI tools for operators and developers
-#     apex-tools-{VER}-x86_64-linux.tar.gz    (Rust + C++ CLI tools)
-#     apex_py_tools-{VER}-py3-none-any.whl    (Python tools wheel)
+# Runs are serialized by a non-cancelling concurrency group: overlapping runs
+# would race on the shared ccache keys, and releases should land one at a time.
 #
-#   Firmware packages (5) -- bare-metal binaries per MCU target
-#     stm32_encryptor_demo-{VER}-stm32.tar.gz
-#     arduino_encryptor_demo-{VER}-arduino.tar.gz
-#     pico_encryptor_demo-{VER}-pico.tar.gz
-#     esp32_encryptor_demo-{VER}-esp32.tar.gz
-#     c2000_encryptor_demo-{VER}-c2000.tar.gz
-#
-#   App packages (2) -- POSIX deployments with resolved ELF dependencies
-#     ApexEdgeDemo.tar.gz    (Jetson: executive + GPU compute models)
-#     ApexHilDemo.tar.gz     (RPi POSIX + STM32 firmware bundle)
-#
-# Build flow:
-#   make artifacts            -- Docker multi-stage: all builders -> final -> extract
-#   make release-all          -- POSIX app packaging via pkg_resolve.sh (reuses
-#                                dev images already built by make artifacts)
+# A ccache miss only means a cold compile -- ccache is content-addressed, so a
+# stale or empty cache can never produce a wrong build.
 # ==============================================================================
 name: Release
 
@@ -39,30 +40,85 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 permissions:
-  contents: write
-  packages: read
+  contents: read
+
+concurrency:
+  group: release
+
+env:
+  REGISTRY: ghcr.io/${{ github.repository }}
 
 jobs:
-  build-artifacts:
-    name: Build Release Artifacts
+  # ----------------------------------------------------------------------------
+  # Resolve the builder matrix from mk/docker.mk BUILDER_TARGETS -- the single
+  # source of truth for the release target set (nightly.yml pattern).
+  # ----------------------------------------------------------------------------
+  targets:
+    name: Resolve targets and version
     runs-on: ubuntu-latest
-    timeout-minutes: 240
-
-    env:
-      REGISTRY: ghcr.io/${{ github.repository }}
-
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+      apps: ${{ steps.list.outputs.apps }}
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-
-      - name: Free disk space
+      - name: Read builder targets and released apps from the registries
+        id: list
         run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc \
-                      /usr/local/share/boost /usr/local/graalvm /usr/local/.ghcup
-          sudo docker image prune -af
-          df -h /
+          echo "list=$(make -s print-builder-targets)" >> "$GITHUB_OUTPUT"
+          echo "apps=$(make -s print-release-apps)" >> "$GITHUB_OUTPUT"
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"   # 0.0.1, or 0.0.1-rc1 for a pre-release
+          else
+            version="0.0.0-ci"               # rehearsal: same steps, throwaway version
+          fi
+          base="${version%%-*}"              # X.Y.Z with any -suffix stripped
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          if [ "$version" = "$base" ]; then echo "prerelease=false"; else echo "prerelease=true"; fi >> "$GITHUB_OUTPUT"
+      # Fail a mismatched tag here, in seconds, not after ten builds.
+      - name: Verify version matches CMakeLists.txt
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          TAG_BASE: ${{ steps.version.outputs.base }}
+        run: |
+          cmake_version=$(sed -n 's/.*VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' \
+            CMakeLists.txt | head -1)
+          if [ "$cmake_version" != "$TAG_BASE" ]; then
+            echo "ERROR: Tag version ($TAG_BASE) does not match CMakeLists.txt ($cmake_version)"
+            exit 1
+          fi
+          echo "Version verified: $VERSION (base $TAG_BASE)"
+
+  # ----------------------------------------------------------------------------
+  # Compile each target's builder image in parallel; push to ghcr for the
+  # package job to assemble from. Per-target ccache via buildkit-cache-dance.
+  # ----------------------------------------------------------------------------
+  builders:
+    name: builder-${{ matrix.builder }}
+    needs: targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        builder: ${{ fromJSON(needs.targets.outputs.list) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
 
       - name: Prepare environment
         run: |
@@ -72,69 +128,183 @@ jobs:
           echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
 
       - name: Login to ghcr.io
-        uses: docker/login-action@v4
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull cached dev images
+      # The dev image is the builder's FROM and the only image input
+      # (docker/builder.Dockerfile); a failed pull must fail here, not as a
+      # confusing BuildKit error two steps later.
+      - name: Pull builder's dev image (the FROM)
+        env:
+          DEV: apex.dev.${{ matrix.builder }}
         run: |
-          for img in apex.base apex.dev.cpu apex.dev.cuda apex.dev.jetson \
-                     apex.dev.rpi apex.dev.riscv64 \
-                     apex.dev.stm32 apex.dev.esp32 apex.dev.pico \
-                     apex.dev.arduino apex.dev.c2000; do
-            docker pull $REGISTRY/$img:latest && \
-              docker tag $REGISTRY/$img:latest $img || true
+          docker pull "$REGISTRY/$DEV:latest"
+          docker tag "$REGISTRY/$DEV:latest" "$DEV"
+
+      - name: Restore builder ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: ccache-builder-${{ matrix.builder }}-${{ github.sha }}
+          restore-keys: |
+            ccache-builder-${{ matrix.builder }}-
+      - name: Prepare ccache dir
+        run: mkdir -p .ccache
+      # The injected mount must carry the SAME uid/gid options as
+      # builder.Dockerfile's cache mount: BuildKit forks cache identity on
+      # differing mount options, so a plain map injects into (and extracts
+      # from) a cache the build never sees. continue-on-error stays: extraction
+      # runs as a post step, and a cache hiccup after a successful build must
+      # not fail the release; the in-build ccache -s line is the hit-rate
+      # signal.
+      - name: Compose ccache cache map (mount identity must match)
+        id: ccache-map
+        run: |
+          printf 'map={ ".ccache": { "target": "/ccache", "uid": "%s", "gid": "%s" } }\n' \
+            "$(id -u)" "$(id -g)" >> "$GITHUB_OUTPUT"
+      - name: Inject ccache into the build mount
+        uses: reproducible-containers/buildkit-cache-dance@5422eac04292c961a382e0f584ea0f03ad9da723 # v3
+        continue-on-error: true
+        with:
+          cache-map: ${{ steps.ccache-map.outputs.map }}
+
+      - name: Build builder image
+        run: make docker-builder-${{ matrix.builder }}
+
+      # Tar this platform's tree here, on the runner that built it; the cpu
+      # builder also carries the CLI tools and the python wheel.
+      - name: Extract platform artifact
+        env:
+          VERSION: ${{ needs.targets.outputs.version }}
+          BUILDER: ${{ matrix.builder }}
+        run: |
+          make "artifact-$BUILDER" VERSION="$VERSION"
+          if [ "$BUILDER" = cpu ]; then make artifact-tools VERSION="$VERSION"; fi
+
+      - name: Upload platform artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: platform-${{ matrix.builder }}
+          path: output/
+          if-no-files-found: error
+          retention-days: 7
+
+  # ----------------------------------------------------------------------------
+  # Build each released app's packages in parallel with the builders and with
+  # each other: make release APP=<a> compiles from source inside the platform
+  # dev images and consumes no builder output, so it has no data dependency on
+  # the matrix -- running the apps serially or behind the builders would add
+  # their full compile time to the critical path for nothing. Matrix and
+  # per-app image lists come from mk/release.mk RELEASE_APPS via
+  # print-release-apps.
+  # ----------------------------------------------------------------------------
+  apps:
+    name: apps-${{ matrix.app }}
+    needs: targets
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.targets.outputs.apps) }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Prepare environment
+        run: |
+          touch ~/.gitconfig
+          mkdir -p ~/.ssh
+          echo "HOST_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "HOST_GID=$(id -g)" >> "$GITHUB_ENV"
+
+      - name: Login to ghcr.io
+        uses: docker/login-action@650006c6eb7dba73a995cc03b0b2d7f5ca915bee # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull this app's platform dev images
+        env:
+          IMAGES: ${{ matrix.images }}
+        run: |
+          for img in $IMAGES; do
+            docker pull "$REGISTRY/$img:latest"
+            docker tag "$REGISTRY/$img:latest" "$img"
           done
 
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+      - name: Build app release package
+        env:
+          APP: ${{ matrix.app }}
+        run: make release APP="$APP"
 
-      - name: Verify version matches CMakeLists.txt
-        run: |
-          cmake_version=$(sed -n 's/.*VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' \
-            CMakeLists.txt | head -1)
-          tag_version="${{ steps.version.outputs.version }}"
-          if [ "$cmake_version" != "$tag_version" ]; then
-            echo "ERROR: Tag version ($tag_version) does not match CMakeLists.txt ($cmake_version)"
-            exit 1
-          fi
-          echo "Version verified: $tag_version"
+      - name: Upload app package
+        uses: actions/upload-artifact@v7
+        with:
+          name: app-package-${{ matrix.app }}
+          path: build/release/${{ matrix.app }}.tar.gz
+          if-no-files-found: error
+          retention-days: 7
 
-      - name: Build all platform artifacts
-        run: make artifacts VERSION=${{ steps.version.outputs.version }}
+  # ----------------------------------------------------------------------------
+  # Pure artifact fan-in: download what the builders and apps uploaded, publish
+  # on a tag push. No docker, no image pulls, no assembly -- nothing here can
+  # fill a disk or race a registry.
+  # ----------------------------------------------------------------------------
+  package:
+    name: Package and release
+    needs: [targets, builders, apps]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    steps:
+      - name: Download platform artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: platform-*
+          merge-multiple: true
+          path: output
 
-      - name: Build app release packages
-        run: |
-          make release APP=ApexEdgeDemo
-          make release APP=ApexHilDemo
+      - name: Download app packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: app-package-*
+          merge-multiple: true
+          path: build/release
 
       - name: List artifacts
         run: |
           ls -la output/
-          ls -la build/release/ 2>/dev/null || true
+          ls -la build/release/
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v3
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
         with:
-          name: Apex CSF ${{ steps.version.outputs.version }}
+          name: Apex CSF ${{ needs.targets.outputs.version }}
           draft: false
-          prerelease: false
+          prerelease: ${{ needs.targets.outputs.prerelease }}
           generate_release_notes: true
           files: |
-            output/apex-csf-${{ steps.version.outputs.version }}-x86_64-linux.tar.gz
-            output/apex-csf-${{ steps.version.outputs.version }}-x86_64-linux-cuda.tar.gz
-            output/apex-csf-${{ steps.version.outputs.version }}-aarch64-jetson.tar.gz
-            output/apex-csf-${{ steps.version.outputs.version }}-aarch64-rpi.tar.gz
-            output/apex-csf-${{ steps.version.outputs.version }}-riscv64-linux.tar.gz
-            output/apex-csf-${{ steps.version.outputs.version }}-stm32.tar.gz
-            output/apex-csf-${{ steps.version.outputs.version }}-arduino.tar.gz
-            output/apex-csf-${{ steps.version.outputs.version }}-pico.tar.gz
-            output/apex-csf-${{ steps.version.outputs.version }}-esp32.tar.gz
-            output/apex-csf-${{ steps.version.outputs.version }}-c2000.tar.gz
-            output/apex-tools-${{ steps.version.outputs.version }}-x86_64-linux.tar.gz
-            output/apex_py_tools-${{ steps.version.outputs.version }}-py3-none-any.whl
+            output/apex-csf-${{ needs.targets.outputs.version }}-x86_64-linux.tar.gz
+            output/apex-csf-${{ needs.targets.outputs.version }}-x86_64-linux-cuda.tar.gz
+            output/apex-csf-${{ needs.targets.outputs.version }}-aarch64-jetson.tar.gz
+            output/apex-csf-${{ needs.targets.outputs.version }}-aarch64-rpi.tar.gz
+            output/apex-csf-${{ needs.targets.outputs.version }}-riscv64-linux.tar.gz
+            output/apex-csf-${{ needs.targets.outputs.version }}-stm32.tar.gz
+            output/apex-csf-${{ needs.targets.outputs.version }}-arduino.tar.gz
+            output/apex-csf-${{ needs.targets.outputs.version }}-pico.tar.gz
+            output/apex-csf-${{ needs.targets.outputs.version }}-esp32.tar.gz
+            output/apex-csf-${{ needs.targets.outputs.version }}-c2000.tar.gz
+            output/apex-tools-${{ needs.targets.outputs.version }}-x86_64-linux.tar.gz
+            output/apex_py_tools-${{ needs.targets.outputs.version }}-py3-none-any.whl
             build/release/ApexEdgeDemo.tar.gz
             build/release/ApexHilDemo.tar.gz
