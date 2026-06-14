@@ -20,17 +20,15 @@ COVERAGE_MK_GUARD := 1
 COVERAGE_PRESET ?= hosted-x86_64-coverage
 COVERAGE_DIR    := build/$(COVERAGE_PRESET)
 
-# Minimum aggregate coverage required by `make coverage-check`. Floors sit just
-# below the currently-observed numbers so the gate guards against regressions
-# without firing spuriously -- ratchet up over time, never down.
-#
-# These reflect the per-unit-test measure (each library by its own unit test).
-# The earlier 60/50 were aspirational and never actually enforced -- coverage
-# reported n/a on clean builds until the bin/utests path fix, so the gate always
-# passed. Converting to the union-of-all-unit-tests measure will raise these
-# (tracked in the coverage-consolidation ticket).
-COVERAGE_MIN_LINE   ?= 28
-COVERAGE_MIN_REGION ?= 45
+# Minimum aggregate coverage required by `make coverage-check`. The aggregate is
+# the union of the per-library measure: each library is scored against its own
+# sources only, so each file counts once and shared headers are not multiplied
+# across the libraries that include them. Floors sit a few points below the
+# observed region/line numbers -- tight enough to catch a regression, with margin
+# for normal churn. Ratchet up over time, never down; `?=` allows a per-run
+# override.
+COVERAGE_MIN_LINE   ?= 55
+COVERAGE_MIN_REGION ?= 58
 
 # ------------------------------------------------------------------------------
 # Targets
