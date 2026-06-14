@@ -299,11 +299,11 @@ $(eval $(call _platform_targets,cuda-debug,native CUDA debug,$(HOST_CUDA_DEBUG_P
 $(eval $(call _platform_targets,cuda-release,native CUDA release,$(HOST_CUDA_RELEASE_PRESET),$(HOST_CUDA_RELEASE_DIR)))
 # Cross-compile + firmware build/configure targets, generated from the platform
 # registry (mk/platforms.mk): each emits <target>, <target>-debug, and their
-# configure- variants. c2000 restricts the build to its firmware target via the
-# BUILDTGT field (was a hand-written special case). The debug target name is the
-# primary with -release stripped and -debug appended. Host stays hand-written
-# above: cuda's dev-target preset differs from its release-artifact preset, and
-# cpu is the default-goal debug/release.
+# configure- variants. A platform's BUILDTGT field restricts its build to one
+# cmake target (c2000 -> firmware). The debug target name is the primary with
+# -release stripped and -debug appended. Host targets are hand-written above:
+# cuda's dev-target preset differs from its release-artifact preset, and cpu is
+# the default-goal debug/release.
 $(foreach p,$(filter-out cpu cuda,$(PLAT_BUILDERS)),\
   $(eval $(call _platform_targets,$(P_$(p)_TARGET),$(P_$(p)_DISPLAY),$(P_$(p)_PRESET),build/$(P_$(p)_PRESET),$(P_$(p)_BUILDTGT)))\
   $(eval $(call _platform_targets,$(patsubst %-release,%,$(P_$(p)_TARGET))-debug,$(P_$(p)_DISPLAY) (debug),$(P_$(p)_DEBUG),build/$(P_$(p)_DEBUG),$(P_$(p)_BUILDTGT))))
