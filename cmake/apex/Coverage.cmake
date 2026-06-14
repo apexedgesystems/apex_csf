@@ -196,7 +196,11 @@ function (_apex_coverage_finalize)
 
   # Write manifest
   set(_manifest "${APEX_COVERAGE_OUTPUT_DIR}/manifest.cmake")
-  _apex_coverage_write_manifest("${_manifest}" "${_mappings}" "${_lib_areas}")
+  # Per-library source dirs (dedup: a lib registered by several tests appears
+  # once) let each library's report scope to its own sources.
+  set(_lib_dirs "${_lib_sources}")
+  list(REMOVE_DUPLICATES _lib_dirs)
+  _apex_coverage_write_manifest("${_manifest}" "${_mappings}" "${_lib_areas}" "${_lib_dirs}")
 
   # Write generator script
   set(_generator "${APEX_COVERAGE_OUTPUT_DIR}/generate_report.cmake")
@@ -224,7 +228,7 @@ endfunction ()
 # ------------------------------------------------------------------------------
 # Internal: Write manifest
 # ------------------------------------------------------------------------------
-function (_apex_coverage_write_manifest _file _mappings _lib_areas)
+function (_apex_coverage_write_manifest _file _mappings _lib_areas _lib_dirs)
   set(_content "# Coverage manifest (auto-generated)\n")
   string(APPEND _content "set(COVERAGE_MAPPINGS\n")
   foreach (_m IN LISTS _mappings)
@@ -234,6 +238,12 @@ function (_apex_coverage_write_manifest _file _mappings _lib_areas)
   string(APPEND _content "set(COVERAGE_LIB_AREAS\n")
   foreach (_a IN LISTS _lib_areas)
     string(APPEND _content "  \"${_a}\"\n")
+  endforeach ()
+  string(APPEND _content ")\n")
+  # lib|abs-source-dir, used to scope each library's report to its own sources.
+  string(APPEND _content "set(COVERAGE_LIB_SOURCES\n")
+  foreach (_s IN LISTS _lib_dirs)
+    string(APPEND _content "  \"${_s}\"\n")
   endforeach ()
   string(APPEND _content ")\n")
   string(APPEND _content "set(LLVM_PROFDATA \"${APEX_LLVM_PROFDATA}\")\n")
@@ -294,75 +304,124 @@ message(STATUS "[Coverage] Merged: ${_profdata}")
 # summary is cheap and drives the landing-page table; the annotated HTML is
 # generated ONCE below over all binaries, so each source file is rendered a
 # single time.
-set(_merge_main "")
-set(_merge_objs "")
+# lib -> own source dir, so each report can be scoped to the library's files.
+foreach (_entry IN LISTS COVERAGE_LIB_SOURCES)
+  string(REPLACE "|" ";" _sp "${_entry}")
+  list(GET _sp 0 _slib)
+  list(GET _sp 1 _sdir)
+  set("_SRCDIR_${_slib}" "${_sdir}")
+endforeach ()
+
+# Group the (test:lib) mappings by library. A library exercised by several test
+# suites has several mappings; crediting it from one test's profile under-reports
+# it (last-writer-wins), and pairing a single test's profile against the merged
+# binary set drops shared inline/template functions whose structural hash differs
+# per binary ("mismatched data"). Each library's report is therefore built from
+# ALL its registered tests' profiles, with those test binaries passed as -object
+# so every covered function's hash is present, and scoped to the library's own
+# source dir so it is never credited for headers it merely includes from other
+# libraries.
+set(_libs "")
 foreach (_mapping IN LISTS COVERAGE_MAPPINGS)
   string(REPLACE ":" ";" _parts "${_mapping}")
   list(GET _parts 0 _test)
   list(GET _parts 1 _lib)
-
-  set(_test_exe "${TEST_DIR}/${_test}")
-  set(_lib_so "${LIB_DIR}/lib${_lib}.so")
-
-  if (NOT EXISTS "${_test_exe}")
-    message(WARNING "[Coverage] Test not found: ${_test_exe}")
-    continue()
+  if (NOT "${_lib}" IN_LIST _libs)
+    list(APPEND _libs "${_lib}")
   endif ()
+  list(APPEND "_TESTS_${_lib}" "${_test}")
+endforeach ()
 
-  # For header-only (INTERFACE) libraries there is no .so -- the coverage
-  # data is compiled into the test binary itself.  Use -object only when
-  # the shared library exists; otherwise llvm-cov reads the test binary.
+# Binaries for the single merged annotated HTML (rendered once below over the
+# whole tree): first test binary is the positional main, the rest plus every
+# .so are -object.
+set(_merge_main "")
+set(_merge_objs "")
+
+foreach (_lib IN LISTS _libs)
+  set(_lib_so "${LIB_DIR}/lib${_lib}.so")
+  # Header-only (INTERFACE) libs have no .so; coverage lives in the test binary.
   set(_object_args "")
   if (EXISTS "${_lib_so}")
     set(_object_args "-object=${_lib_so}")
   endif ()
 
-  # Accumulate binaries for the single merged HTML report: the first test
-  # binary is the positional main, every other binary and every .so is an
-  # -object so the merged report covers the whole tree.
-  if (NOT _merge_main)
-    set(_merge_main "${_test_exe}")
-  else ()
-    list(APPEND _merge_objs "-object=${_test_exe}")
-  endif ()
+  # Gather this library's registered tests: accumulate every test's profraw into
+  # one scoped profile, and every test binary beyond the first as an -object.
+  set(_lib_profraw "")
+  set(_lib_objs "")
+  set(_primary "")
+  foreach (_test IN LISTS "_TESTS_${_lib}")
+    set(_test_exe "${TEST_DIR}/${_test}")
+    if (NOT EXISTS "${_test_exe}")
+      message(WARNING "[Coverage] Test not found: ${_test_exe}")
+      continue()
+    endif ()
+    file(GLOB _tp "${BUILD_DIR}/${_test}*.profraw")
+    if (NOT _tp)
+      message(WARNING "[Coverage] No profraw for ${_test}")
+      continue()
+    endif ()
+    list(APPEND _lib_profraw ${_tp})
+    if (NOT _primary)
+      set(_primary "${_test_exe}")
+    else ()
+      list(APPEND _lib_objs "-object=${_test_exe}")
+    endif ()
+    # Feed the merged-HTML binary set.
+    if (NOT _merge_main)
+      set(_merge_main "${_test_exe}")
+    else ()
+      list(APPEND _merge_objs "-object=${_test_exe}")
+    endif ()
+  endforeach ()
   if (EXISTS "${_lib_so}")
     list(APPEND _merge_objs "-object=${_lib_so}")
   endif ()
 
-  set(_out "${OUTPUT_DIR}/lib${_lib}")
-  file(MAKE_DIRECTORY "${_out}")
-
-  # Per-test profile: measure a library's coverage from its OWN unit test only.
-  # This is both faster (a tiny profile instead of re-reading the full merged
-  # one for all 80+ tests) and more accurate for unit coverage (a library is
-  # not credited for lines another test happened to exercise). The global
-  # merged profile is used only for the single annotated HTML report below.
-  file(GLOB _test_profraw "${BUILD_DIR}/${_test}*.profraw")
-  if (NOT _test_profraw)
-    message(WARNING "[Coverage] No profraw for ${_test}; skipping per-lib summary")
+  if (NOT _primary OR NOT _lib_profraw)
+    message(STATUS "[Coverage] lib${_lib}: no usable test profile; skipping summary")
     continue()
   endif ()
-  set(_test_profdata "${_out}/${_test}.profdata")
+
+  set(_out "${OUTPUT_DIR}/lib${_lib}")
+  file(MAKE_DIRECTORY "${_out}")
+  set(_lib_profdata "${_out}/lib${_lib}.profdata")
   execute_process(
-    COMMAND "${LLVM_PROFDATA}" merge -sparse ${_test_profraw} -o "${_test_profdata}"
+    COMMAND "${LLVM_PROFDATA}" merge -sparse ${_lib_profraw} -o "${_lib_profdata}"
   )
 
-  # Text summary (drives the landing-page table)
+  # Scope the report to the library's own source dir when known, so its number
+  # reflects only its files -- not headers it pulls in from other libraries.
+  set(_scope "")
+  if (DEFINED "_SRCDIR_${_lib}")
+    set(_scope "${_SRCDIR_${_lib}}")
+  endif ()
+
+  # Text summary (drives the landing-page table). stderr is quieted: merging a
+  # multi-test library's profiles leaves a few header functions whose structural
+  # hash differs across the merged binaries, which llvm-cov notes as "N functions
+  # have mismatched data". It is a small, understood residue -- the matching
+  # records are still applied, so the counted coverage is unaffected -- and it
+  # would otherwise clutter every run with non-actionable warnings.
   execute_process(
-    COMMAND "${LLVM_COV}" report "${_test_exe}"
-      "-instr-profile=${_test_profdata}"
+    COMMAND "${LLVM_COV}" report "${_primary}" ${_lib_objs}
+      "-instr-profile=${_lib_profdata}"
       "-show-mcdc-summary"
       "-ignore-filename-regex=${IGNORE_REGEX}"
       ${_object_args}
+      ${_scope}
     OUTPUT_FILE "${_out}/summary.txt"
+    ERROR_QUIET
   )
 
   # LCOV for CI
   execute_process(
-    COMMAND "${LLVM_COV}" export "${_test_exe}"
-      "-instr-profile=${_test_profdata}"
+    COMMAND "${LLVM_COV}" export "${_primary}" ${_lib_objs}
+      "-instr-profile=${_lib_profdata}"
       "-ignore-filename-regex=${IGNORE_REGEX}"
       ${_object_args}
+      ${_scope}
       "-format=lcov"
     OUTPUT_FILE "${_out}/lcov.info"
     ERROR_QUIET
