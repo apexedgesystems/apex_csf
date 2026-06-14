@@ -1,0 +1,25 @@
+name: Reclaim runner disk
+description: >
+  Free disk on the GitHub-hosted runner by removing preinstalled SDKs the build
+  does not use (~20-30 GB). The heavy CUDA-image jobs pull a multi-GB dev image
+  and compile a full debug tree, which runs near the runner's disk ceiling and
+  ENOSPCs on tighter-than-average runners. These jobs run everything inside the
+  dev container, so the host toolcaches are safe to remove.
+
+runs:
+  using: composite
+  steps:
+    - name: Reclaim disk
+      shell: bash
+      run: |
+        before=$(df -P / | awk 'NR==2{print $4}')
+        sudo rm -rf \
+          /opt/hostedtoolcache \
+          /usr/local/lib/android \
+          /usr/share/dotnet \
+          /opt/ghc /usr/local/.ghcup \
+          /usr/local/share/powershell \
+          2>/dev/null || true
+        after=$(df -P / | awk 'NR==2{print $4}')
+        printf 'reclaim-disk: free %s KB -> %s KB (+%s KB)\n' \
+          "$before" "$after" "$((after - before))"

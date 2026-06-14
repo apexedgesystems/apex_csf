@@ -135,6 +135,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      # The builder pulls a multi-GB dev image (jetson is FROM dev-cuda) and
+      # compiles a full tree; reclaim host SDKs to avoid ENOSPC (warm-jetson).
+      - name: Reclaim disk
+        uses: ./.github/actions/reclaim-disk
+
       - name: Prepare environment
         run: |
           touch ~/.gitconfig
