@@ -51,63 +51,30 @@ PRE_COMMIT_INSTALL ?= no
 # CMake Preset Names (must match CMakePresets.json)
 # ------------------------------------------------------------------------------
 
-# Native x86_64
+# Native x86_64 + CUDA host presets. Host targets (debug/release, cuda-*) are
+# hand-written below; cross and firmware targets derive their presets from the
+# platform registry (mk/platforms.mk), so only the host presets live here.
 HOST_DEBUG_PRESET        ?= hosted-x86_64-debug
 HOST_RELEASE_PRESET      ?= hosted-x86_64-release
 HOST_CUDA_DEBUG_PRESET   ?= hosted-x86_64-cuda-debug
 HOST_CUDA_RELEASE_PRESET ?= hosted-x86_64-cuda-release
 
-# Jetson (aarch64 + CUDA)
-JETSON_DEBUG_PRESET   ?= cross-jetson-debug
-JETSON_RELEASE_PRESET ?= cross-jetson-release
-
-# Raspberry Pi (aarch64)
-RPI_DEBUG_PRESET   ?= cross-rpi-debug
-RPI_RELEASE_PRESET ?= cross-rpi-release
-
-# RISC-V 64
-RISCV_DEBUG_PRESET   ?= cross-riscv64-debug
-RISCV_RELEASE_PRESET ?= cross-riscv64-release
-
-# Bare-metal (RelWithDebInfo profiles; *-debug variants below)
-STM32_PRESET         ?= mcu-stm32-relwithdebinfo
-ARDUINO_PRESET       ?= mcu-arduino-relwithdebinfo
-PICO_PRESET          ?= mcu-pico-relwithdebinfo
-ESP32_PRESET         ?= mcu-esp32-relwithdebinfo
-C2000_PRESET         ?= mcu-c2000-relwithdebinfo
-
-# Bare-metal debug variants (-Og -g3 / --opt_level=0, gdb-friendly)
-STM32_DEBUG_PRESET   ?= mcu-stm32-debug
-ARDUINO_DEBUG_PRESET ?= mcu-arduino-debug
-PICO_DEBUG_PRESET    ?= mcu-pico-debug
-ESP32_DEBUG_PRESET   ?= mcu-esp32-debug
-C2000_DEBUG_PRESET   ?= mcu-c2000-debug
-
 # ------------------------------------------------------------------------------
-# Build Directories (derived from preset names)
+# Build Directories
 # ------------------------------------------------------------------------------
 
 HOST_DEBUG_DIR        := build/$(HOST_DEBUG_PRESET)
 HOST_RELEASE_DIR      := build/$(HOST_RELEASE_PRESET)
 HOST_CUDA_DEBUG_DIR   := build/$(HOST_CUDA_DEBUG_PRESET)
 HOST_CUDA_RELEASE_DIR := build/$(HOST_CUDA_RELEASE_PRESET)
-JETSON_DEBUG_DIR   := build/$(JETSON_DEBUG_PRESET)
-JETSON_RELEASE_DIR := build/$(JETSON_RELEASE_PRESET)
-RPI_DEBUG_DIR      := build/$(RPI_DEBUG_PRESET)
-RPI_RELEASE_DIR    := build/$(RPI_RELEASE_PRESET)
-RISCV_DEBUG_DIR    := build/$(RISCV_DEBUG_PRESET)
-RISCV_RELEASE_DIR  := build/$(RISCV_RELEASE_PRESET)
-STM32_DIR          := build/$(STM32_PRESET)
-ARDUINO_DIR        := build/$(ARDUINO_PRESET)
-PICO_DIR           := build/$(PICO_PRESET)
-ESP32_DIR          := build/$(ESP32_PRESET)
-C2000_DIR          := build/$(C2000_PRESET)
 
-STM32_DEBUG_DIR    := build/$(STM32_DEBUG_PRESET)
-ARDUINO_DEBUG_DIR  := build/$(ARDUINO_DEBUG_PRESET)
-PICO_DEBUG_DIR     := build/$(PICO_DEBUG_PRESET)
-ESP32_DEBUG_DIR    := build/$(ESP32_DEBUG_PRESET)
-C2000_DEBUG_DIR    := build/$(C2000_DEBUG_PRESET)
+# Firmware build-dir shorthands used by mk/size.mk and mk/firmware.mk, derived
+# from the platform registry.
+STM32_DIR   := build/$(P_stm32_PRESET)
+ARDUINO_DIR := build/$(P_arduino_PRESET)
+PICO_DIR    := build/$(P_pico_PRESET)
+ESP32_DIR   := build/$(P_esp32_PRESET)
+C2000_DIR   := build/$(P_c2000_PRESET)
 
 # ==============================================================================
 # Build Macros
