@@ -117,6 +117,26 @@ distclean: distclean-guard clean-py-src clean-rust-local
 	@rm -rf build/ compile_commands.json
 
 # ------------------------------------------------------------------------------
+# Per-Platform Clean (generated from the platform registry, mk/platforms.mk)
+# ------------------------------------------------------------------------------
+# clean-<platform> removes that platform's release + debug build trees -- handy
+# for reclaiming disk without a full distclean. Host (cpu/cuda) build dirs are
+# covered by clean/distclean; skeletons have no build tree.
+_CLEAN_PLATFORMS := $(filter-out cpu cuda,$(PLAT_BUILDERS))
+
+define _clean_platform_target
+.PHONY: clean-$(1)
+clean-$(1):
+	$$(call log,clean,Removing $(1) build trees)
+	@rm -rf build/$(P_$(1)_PRESET) $(if $(P_$(1)_DEBUG),build/$(P_$(1)_DEBUG))
+endef
+$(foreach p,$(_CLEAN_PLATFORMS),$(eval $(call _clean_platform_target,$(p))))
+
+.PHONY: clean-cross
+clean-cross: $(foreach p,$(_CLEAN_PLATFORMS),clean-$(p))
+	$(call log,clean,All cross/firmware build trees removed)
+
+# ------------------------------------------------------------------------------
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
