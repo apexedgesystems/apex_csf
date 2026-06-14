@@ -138,8 +138,8 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      # Full debug tree + per-test PCH in the CUDA image runs near the runner's
-      # disk ceiling; reclaim host SDKs to avoid ENOSPC on tight runners.
+      # This job builds the full debug tree in the CUDA image and needs disk
+      # headroom; the host SDKs are unused inside the container, so reclaim first.
       - name: Reclaim disk
         uses: ./.github/actions/reclaim-disk
       - name: Set up dev-cuda image

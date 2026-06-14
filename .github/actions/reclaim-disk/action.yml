@@ -1,10 +1,9 @@
 name: Reclaim runner disk
 description: >
-  Free disk on the GitHub-hosted runner by removing preinstalled SDKs the build
-  does not use (~20-30 GB). The heavy CUDA-image jobs pull a multi-GB dev image
-  and compile a full debug tree, which runs near the runner's disk ceiling and
-  ENOSPCs on tighter-than-average runners. These jobs run everything inside the
-  dev container, so the host toolcaches are safe to remove.
+  Free disk on the GitHub-hosted runner by removing preinstalled host SDKs the
+  build does not use (~20-30 GB). The heavy CUDA-image jobs build a full tree
+  inside the dev container and need the headroom; the host toolcaches go unused
+  there, so removing them is safe.
 
 runs:
   using: composite
