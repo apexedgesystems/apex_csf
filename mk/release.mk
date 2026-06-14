@@ -87,46 +87,21 @@ package-clean:
 # ==============================================================================
 # Platform Registry
 # ==============================================================================
-# Maps platform short names to Docker Compose service, Make build target,
-# and build directory. Build directories reuse the variables from Makefile
-# (HOST_RELEASE_DIR, RPI_RELEASE_DIR, etc.) for single-source-of-truth.
+# Maps app-release platform names to Docker Compose service, Make build target,
+# and build directory. The cross-compile and firmware entries derive from the
+# platform registry (mk/platforms.mk). `native` is hand-written: it builds the
+# host release tree (build/hosted-x86_64-release) on the dev-cuda image via the
+# `release` target -- a hybrid that doesn't map to a single registry row.
 # ==============================================================================
 
 PLATFORM_native_SERVICE  := dev-cuda
 PLATFORM_native_BUILD    := release
-PLATFORM_native_DIR       = $(HOST_RELEASE_DIR)
+PLATFORM_native_DIR      := build/$(P_cpu_PRESET)
 
-PLATFORM_rpi_SERVICE     := dev-rpi
-PLATFORM_rpi_BUILD       := rpi-release
-PLATFORM_rpi_DIR          = $(RPI_RELEASE_DIR)
-
-PLATFORM_stm32_SERVICE   := dev-stm32
-PLATFORM_stm32_BUILD     := stm32
-PLATFORM_stm32_DIR        = $(STM32_DIR)
-
-PLATFORM_jetson_SERVICE  := dev-jetson
-PLATFORM_jetson_BUILD    := jetson-release
-PLATFORM_jetson_DIR       = $(JETSON_RELEASE_DIR)
-
-PLATFORM_riscv64_SERVICE := dev-riscv64
-PLATFORM_riscv64_BUILD   := riscv-release
-PLATFORM_riscv64_DIR      = $(RISCV_RELEASE_DIR)
-
-PLATFORM_c2000_SERVICE   := dev-c2000
-PLATFORM_c2000_BUILD     := c2000
-PLATFORM_c2000_DIR        = $(C2000_DIR)
-
-PLATFORM_arduino_SERVICE := dev-arduino
-PLATFORM_arduino_BUILD   := arduino
-PLATFORM_arduino_DIR      = $(ARDUINO_DIR)
-
-PLATFORM_pico_SERVICE    := dev-pico
-PLATFORM_pico_BUILD      := pico
-PLATFORM_pico_DIR         = $(PICO_DIR)
-
-PLATFORM_esp32_SERVICE   := dev-esp32
-PLATFORM_esp32_BUILD     := esp32
-PLATFORM_esp32_DIR        = $(ESP32_DIR)
+$(foreach p,$(filter-out cpu cuda,$(PLAT_BUILDERS)),\
+  $(eval PLATFORM_$(p)_SERVICE := $(P_$(p)_SERVICE))\
+  $(eval PLATFORM_$(p)_BUILD   := $(P_$(p)_TARGET))\
+  $(eval PLATFORM_$(p)_DIR     := build/$(P_$(p)_PRESET)))
 
 # ==============================================================================
 # App Manifests (auto-discovered from apps/*/release.mk)

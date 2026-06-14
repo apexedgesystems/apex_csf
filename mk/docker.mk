@@ -52,46 +52,23 @@ REGISTRY ?=
 #   dev-jetson     -> dev-cuda  (aarch64 + CUDA cross)
 #   all others     -> dev       (CPU)
 #
-# The build target list (docker-devs), the per-service build/shell targets, and
-# the registry push/pull list are all derived from this -- add a platform once.
-DEV_SERVICES := dev dev-cuda dev-jetson dev-rpi dev-riscv64 dev-zephyr \
-                dev-stm32 dev-esp32 dev-pico dev-arduino dev-atmega328pb \
-                dev-pic32 dev-c2000
+# Platform-derived lists -- all sourced from mk/platforms.mk (single source of
+# truth). DEV_SERVICES drives docker-devs + per-service build/shell + push/pull;
+# BUILDER_TARGETS drives docker-builders, the per-target build rules, the
+# release.yml matrix (print-builder-targets), artifact-<t>, and
+# check-release-paths. ARTIFACT_NAME/_DIR feed apex-csf-<VERSION>-<name>.tar.gz
+# and the docker cp source dir (= the preset binaryDir). Add a platform in
+# mk/platforms.mk, not here.
+DEV_SERVICES    := $(foreach p,$(PLATFORMS),$(P_$(p)_SERVICE))
+BUILDER_TARGETS := $(PLAT_BUILDERS)
+$(foreach t,$(BUILDER_TARGETS),$(eval ARTIFACT_NAME_$(t) := $(P_$(t)_ARTIFACT)))
+$(foreach t,$(BUILDER_TARGETS),$(eval ARTIFACT_DIR_$(t)  := $(P_$(t)_PRESET)))
 
-# Release builder targets: one apex.builder.<t> image per entry. The
-# docker-builders aggregate, the per-target build rules, the release.yml
-# builders matrix (via print-builder-targets), the artifact-<t> extraction
-# targets, and the check-release-paths COPY coverage are all derived from
-# this -- add a target once (plus its ARTIFACT_NAME/_DIR pair below).
-BUILDER_TARGETS := cpu cuda jetson rpi riscv64 stm32 arduino pico esp32 c2000
-
-# Per-target artifact naming and build tree, mirroring final.Dockerfile's
-# COPY sources and tarball names exactly (check-release-paths asserts the
-# dirs against CMakePresets; the names feed apex-csf-<VERSION>-<name>.tar.gz).
-ARTIFACT_NAME_cpu     := x86_64-linux
-ARTIFACT_NAME_cuda    := x86_64-linux-cuda
-ARTIFACT_NAME_jetson  := aarch64-jetson
-ARTIFACT_NAME_rpi     := aarch64-rpi
-ARTIFACT_NAME_riscv64 := riscv64-linux
-ARTIFACT_NAME_stm32   := stm32
-ARTIFACT_NAME_arduino := arduino
-ARTIFACT_NAME_pico    := pico
-ARTIFACT_NAME_esp32   := esp32
-ARTIFACT_NAME_c2000   := c2000
-
-ARTIFACT_DIR_cpu     := hosted-x86_64-release
-ARTIFACT_DIR_cuda    := hosted-x86_64-release
-ARTIFACT_DIR_jetson  := cross-jetson-release
-ARTIFACT_DIR_rpi     := cross-rpi-release
-ARTIFACT_DIR_riscv64 := cross-riscv64-release
-ARTIFACT_DIR_stm32   := mcu-stm32-relwithdebinfo
-ARTIFACT_DIR_arduino := mcu-arduino-relwithdebinfo
-ARTIFACT_DIR_pico    := mcu-pico-relwithdebinfo
-ARTIFACT_DIR_esp32   := mcu-esp32-relwithdebinfo
-ARTIFACT_DIR_c2000   := mcu-c2000-relwithdebinfo
-
-# _dev_base: the base image a dev service builds from
-_dev_base = $(if $(filter dev dev-cuda,$(1)),docker-base,$(if $(filter dev-jetson,$(1)),docker-dev-cuda,docker-dev))
+# Base-image hierarchy from mk/platforms.mk (P_<p>_BASE): build a service ->
+# base-keyword (base|cpu|cuda) lookup, then map the keyword to its docker target.
+$(foreach p,$(PLATFORMS),$(eval _DEVBASE_$(P_$(p)_SERVICE) := $(P_$(p)_BASE)))
+# _dev_base: the docker target for a dev service's base image.
+_dev_base = $(patsubst base,docker-base,$(patsubst cuda,docker-dev-cuda,$(patsubst cpu,docker-dev,$(_DEVBASE_$(1)))))
 
 # _dev_image: image name for a dev service (apex.dev.cpu for 'dev', else apex.dev.<x>)
 _dev_image = apex.dev.$(if $(filter dev,$(1)),cpu,$(patsubst dev-%,%,$(1)))
@@ -160,7 +137,7 @@ endef
 
 # Top-down build for local developers starting from scratch. Each phase is
 # invoked recursively so the stages serialize even under parallel make:
-# builders no longer carry transitive dev-image prerequisites (see
+# builders do not carry transitive dev-image prerequisites (see
 # _builder_target), so the explicit ordering belongs here.
 docker-all:
 	@$(MAKE) docker-base
