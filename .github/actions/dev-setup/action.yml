@@ -42,11 +42,13 @@ runs:
     - name: Resolve image tag
       id: img
       shell: bash
+      env:
+        SERVICE: ${{ inputs.service }}
       run: |
-        case "${{ inputs.service }}" in
+        case "$SERVICE" in
           dev)      echo "tag=apex.dev.cpu"  >> "$GITHUB_OUTPUT" ;;
           dev-cuda) echo "tag=apex.dev.cuda" >> "$GITHUB_OUTPUT" ;;
-          *) echo "dev-setup: unknown service '${{ inputs.service }}'" >&2; exit 1 ;;
+          *) echo "dev-setup: unknown service '$SERVICE'" >&2; exit 1 ;;
         esac
 
     - name: Pull cached images
