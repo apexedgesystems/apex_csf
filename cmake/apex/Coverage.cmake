@@ -276,6 +276,21 @@ if (NOT DEFINED MANIFEST)
 endif ()
 include("${MANIFEST}")
 
+# Format covered/count as an "NN.NN%" string (integer math; "-" when count 0).
+function (_pct _v _c _out)
+  if (_c GREATER 0)
+    math(EXPR _p "(${_v} * 10000) / ${_c}")
+    math(EXPR _hi "${_p} / 100")
+    math(EXPR _lo "${_p} % 100")
+    if (_lo LESS 10)
+      set(_lo "0${_lo}")
+    endif ()
+    set(${_out} "${_hi}.${_lo}%" PARENT_SCOPE)
+  else ()
+    set(${_out} "-" PARENT_SCOPE)
+  endif ()
+endfunction ()
+
 # Find .profraw files
 file(GLOB_RECURSE _profraw "${BUILD_DIR}/*.profraw")
 list(LENGTH _profraw _count)
@@ -298,150 +313,167 @@ endif ()
 
 message(STATUS "[Coverage] Merged: ${_profdata}")
 
-# Per-library TEXT summaries (fast) + accumulate binaries for one merged HTML.
-# Rationale: rendering per-library HTML re-rendered every shared header once per
-# library (combinatorial blow-up, dozens of minutes). The per-library *text*
-# summary is cheap and drives the landing-page table; the annotated HTML is
-# generated ONCE below over all binaries, so each source file is rendered a
-# single time.
-# lib -> own source dir, so each report can be scoped to the library's files.
+# Single-pass union coverage.
+#
+# Every covered file is measured once, from the merged profile of all unit tests
+# (the union): a library is credited for every test that exercises its code, and
+# each source file is counted exactly once -- no per-include header duplication,
+# no per-test under-crediting. One `llvm-cov export` emits per-file summaries for
+# the whole tree; the per-library table and the aggregate are both derived from
+# it by attributing each file to the library whose source directory owns it.
+#
+# lib -> own source dir; the longest dir that prefixes a file path owns the file.
+set(_lib_dirs "")
 foreach (_entry IN LISTS COVERAGE_LIB_SOURCES)
   string(REPLACE "|" ";" _sp "${_entry}")
   list(GET _sp 0 _slib)
   list(GET _sp 1 _sdir)
   set("_SRCDIR_${_slib}" "${_sdir}")
+  list(APPEND _lib_dirs "${_slib}")
 endforeach ()
 
-# Group the (test:lib) mappings by library. A library exercised by several test
-# suites has several mappings; crediting it from one test's profile under-reports
-# it (last-writer-wins), and pairing a single test's profile against the merged
-# binary set drops shared inline/template functions whose structural hash differs
-# per binary ("mismatched data"). Each library's report is therefore built from
-# ALL its registered tests' profiles, with those test binaries passed as -object
-# so every covered function's hash is present, and scoped to the library's own
-# source dir so it is never credited for headers it merely includes from other
-# libraries.
-set(_libs "")
+# Object set: every instrumented unit-test binary (unique) plus its shared
+# library. The first test is llvm-cov's positional binary, the rest are -object;
+# passing every binary lets each covered function resolve regardless of which
+# test exercised it.
+set(_all_tests "")
+set(_reg_libs "")
 foreach (_mapping IN LISTS COVERAGE_MAPPINGS)
   string(REPLACE ":" ";" _parts "${_mapping}")
   list(GET _parts 0 _test)
   list(GET _parts 1 _lib)
-  if (NOT "${_lib}" IN_LIST _libs)
-    list(APPEND _libs "${_lib}")
+  if (NOT "${_test}" IN_LIST _all_tests)
+    list(APPEND _all_tests "${_test}")
   endif ()
-  list(APPEND "_TESTS_${_lib}" "${_test}")
+  if (NOT "${_lib}" IN_LIST _reg_libs)
+    list(APPEND _reg_libs "${_lib}")
+  endif ()
 endforeach ()
 
-# Binaries for the single merged annotated HTML (rendered once below over the
-# whole tree): first test binary is the positional main, the rest plus every
-# .so are -object.
-set(_merge_main "")
-set(_merge_objs "")
-
-foreach (_lib IN LISTS _libs)
-  set(_lib_so "${LIB_DIR}/lib${_lib}.so")
-  # Header-only (INTERFACE) libs have no .so; coverage lives in the test binary.
-  set(_object_args "")
-  if (EXISTS "${_lib_so}")
-    set(_object_args "-object=${_lib_so}")
-  endif ()
-
-  # Gather this library's registered tests: accumulate every test's profraw into
-  # one scoped profile, and every test binary beyond the first as an -object.
-  set(_lib_profraw "")
-  set(_lib_objs "")
-  set(_primary "")
-  foreach (_test IN LISTS "_TESTS_${_lib}")
-    set(_test_exe "${TEST_DIR}/${_test}")
-    if (NOT EXISTS "${_test_exe}")
-      message(WARNING "[Coverage] Test not found: ${_test_exe}")
-      continue()
-    endif ()
-    file(GLOB _tp "${BUILD_DIR}/${_test}*.profraw")
-    if (NOT _tp)
-      message(WARNING "[Coverage] No profraw for ${_test}")
-      continue()
-    endif ()
-    list(APPEND _lib_profraw ${_tp})
-    if (NOT _primary)
-      set(_primary "${_test_exe}")
-    else ()
-      list(APPEND _lib_objs "-object=${_test_exe}")
-    endif ()
-    # Feed the merged-HTML binary set.
-    if (NOT _merge_main)
-      set(_merge_main "${_test_exe}")
-    else ()
-      list(APPEND _merge_objs "-object=${_test_exe}")
-    endif ()
-  endforeach ()
-  if (EXISTS "${_lib_so}")
-    list(APPEND _merge_objs "-object=${_lib_so}")
-  endif ()
-
-  if (NOT _primary OR NOT _lib_profraw)
-    message(STATUS "[Coverage] lib${_lib}: no usable test profile; skipping summary")
+set(_main "")
+set(_objs "")
+foreach (_test IN LISTS _all_tests)
+  set(_test_exe "${TEST_DIR}/${_test}")
+  if (NOT EXISTS "${_test_exe}")
+    message(WARNING "[Coverage] Test not found: ${_test_exe}")
     continue()
   endif ()
-
-  set(_out "${OUTPUT_DIR}/lib${_lib}")
-  file(MAKE_DIRECTORY "${_out}")
-  set(_lib_profdata "${_out}/lib${_lib}.profdata")
-  execute_process(
-    COMMAND "${LLVM_PROFDATA}" merge -sparse ${_lib_profraw} -o "${_lib_profdata}"
-  )
-
-  # Scope the report to the library's own source dir when known, so its number
-  # reflects only its files -- not headers it pulls in from other libraries.
-  set(_scope "")
-  if (DEFINED "_SRCDIR_${_lib}")
-    set(_scope "${_SRCDIR_${_lib}}")
+  if (NOT _main)
+    set(_main "${_test_exe}")
+  else ()
+    list(APPEND _objs "-object=${_test_exe}")
   endif ()
+endforeach ()
+foreach (_lib IN LISTS _reg_libs)
+  set(_lib_so "${LIB_DIR}/lib${_lib}.so")
+  # Header-only (INTERFACE) libs have no .so; their code lives in the test binary.
+  if (EXISTS "${_lib_so}")
+    list(APPEND _objs "-object=${_lib_so}")
+  endif ()
+endforeach ()
+if (NOT _main)
+  message(FATAL_ERROR "[Coverage] No usable test binaries for the report")
+endif ()
 
-  # Text summary (drives the landing-page table). stderr is quieted: merging a
-  # multi-test library's profiles leaves a few header functions whose structural
-  # hash differs across the merged binaries, which llvm-cov notes as "N functions
-  # have mismatched data". It is a small, understood residue -- the matching
-  # records are still applied, so the counted coverage is unaffected -- and it
-  # would otherwise clutter every run with non-actionable warnings.
-  execute_process(
-    COMMAND "${LLVM_COV}" report "${_primary}" ${_lib_objs}
-      "-instr-profile=${_lib_profdata}"
-      "-show-mcdc-summary"
-      "-ignore-filename-regex=${IGNORE_REGEX}"
-      ${_object_args}
-      ${_scope}
-    OUTPUT_FILE "${_out}/summary.txt"
-    ERROR_QUIET
-  )
+# One annotated HTML report over every binary -- each source file rendered once.
+file(MAKE_DIRECTORY "${OUTPUT_DIR}/html")
+execute_process(
+  COMMAND "${LLVM_COV}" show "${_main}" ${_objs}
+    "-instr-profile=${_profdata}"
+    "-format=html"
+    "-show-mcdc"
+    "-output-dir=${OUTPUT_DIR}/html"
+    "-ignore-filename-regex=${IGNORE_REGEX}"
+  OUTPUT_QUIET ERROR_QUIET
+)
+message(STATUS "[Coverage] Annotated report: ${OUTPUT_DIR}/html/index.html")
 
-  # LCOV for CI
-  execute_process(
-    COMMAND "${LLVM_COV}" export "${_primary}" ${_lib_objs}
-      "-instr-profile=${_lib_profdata}"
-      "-ignore-filename-regex=${IGNORE_REGEX}"
-      ${_object_args}
-      ${_scope}
-      "-format=lcov"
-    OUTPUT_FILE "${_out}/lcov.info"
-    ERROR_QUIET
-  )
+# One aggregate LCOV export over the union (downloadable with the report
+# artifact; consumed by no workflow today, but kept as a standard interchange
+# format for external coverage tooling).
+execute_process(
+  COMMAND "${LLVM_COV}" export "${_main}" ${_objs}
+    "-instr-profile=${_profdata}"
+    "-ignore-filename-regex=${IGNORE_REGEX}"
+    "-format=lcov"
+  OUTPUT_FILE "${OUTPUT_DIR}/lcov.info"
+  ERROR_QUIET
+)
+
+# One per-file summary export drives every per-library and aggregate number.
+# stderr is quieted: a whole-tree union over every binary reports functions whose
+# structural hash differs across the binaries they were inlined into ("N
+# functions have mismatched data"). The matching records are still applied, so
+# the counted coverage is unaffected (the export totals equal an independent
+# union report); the warning would otherwise be non-actionable noise every run.
+set(_summary_json "${OUTPUT_DIR}/summary.json")
+execute_process(
+  COMMAND "${LLVM_COV}" export "${_main}" ${_objs}
+    "-instr-profile=${_profdata}"
+    "-ignore-filename-regex=${IGNORE_REGEX}"
+    "-summary-only" "-format=text"
+  OUTPUT_FILE "${_summary_json}"
+  RESULT_VARIABLE _rc
+  ERROR_QUIET
+)
+if (NOT _rc EQUAL 0)
+  message(FATAL_ERROR "[Coverage] summary export failed")
+endif ()
+
+# Attribute each file's per-metric counts to its owning library. Files under no
+# registered library's source dir are pooled under "__unattributed__" so they
+# still count in the aggregate and are reported, never silently dropped.
+file(READ "${_summary_json}" _json)
+string(JSON _nfiles LENGTH "${_json}" "data" 0 "files")
+set(_metrics regions functions lines branches mcdc)
+set(_seen_libs "")
+math(EXPR _last "${_nfiles} - 1")
+foreach (_i RANGE ${_last})
+  string(JSON _fn GET "${_json}" "data" 0 "files" ${_i} "filename")
+  string(JSON _s GET "${_json}" "data" 0 "files" ${_i} "summary")
+
+  # Owning library = longest source dir that is a path prefix of this file.
+  set(_owner "__unattributed__")
+  set(_owner_len 0)
+  foreach (_lib IN LISTS _lib_dirs)
+    set(_d "${_SRCDIR_${_lib}}")
+    string(FIND "${_fn}" "${_d}/" _at)
+    if (_at EQUAL 0)
+      string(LENGTH "${_d}" _dl)
+      if (_dl GREATER _owner_len)
+        set(_owner "${_lib}")
+        set(_owner_len ${_dl})
+      endif ()
+    endif ()
+  endforeach ()
+
+  if (NOT "${_owner}" IN_LIST _seen_libs)
+    list(APPEND _seen_libs "${_owner}")
+    foreach (_m IN LISTS _metrics)
+      set("_L_${_owner}_${_m}_c" 0)
+      set("_L_${_owner}_${_m}_v" 0)
+    endforeach ()
+  endif ()
+  foreach (_m IN LISTS _metrics)
+    string(JSON _c ERROR_VARIABLE _e GET "${_s}" "${_m}" "count")
+    if (_e)
+      set(_c 0)
+    endif ()
+    string(JSON _v ERROR_VARIABLE _e GET "${_s}" "${_m}" "covered")
+    if (_e)
+      set(_v 0)
+    endif ()
+    math(EXPR _nc "${_L_${_owner}_${_m}_c} + ${_c}")
+    math(EXPR _nv "${_L_${_owner}_${_m}_v} + ${_v}")
+    set("_L_${_owner}_${_m}_c" "${_nc}")
+    set("_L_${_owner}_${_m}_v" "${_nv}")
+  endforeach ()
 endforeach ()
 
-# One merged annotated HTML report over every binary -- each source file is
-# rendered exactly once (the big speed-up vs per-library HTML).
-if (_merge_main)
-  file(MAKE_DIRECTORY "${OUTPUT_DIR}/html")
-  execute_process(
-    COMMAND "${LLVM_COV}" show "${_merge_main}" ${_merge_objs}
-      "-instr-profile=${_profdata}"
-      "-format=html"
-      "-show-mcdc"
-      "-output-dir=${OUTPUT_DIR}/html"
-      "-ignore-filename-regex=${IGNORE_REGEX}"
-    OUTPUT_QUIET ERROR_QUIET
-  )
-  message(STATUS "[Coverage] Annotated report: ${OUTPUT_DIR}/html/index.html")
+if ("__unattributed__" IN_LIST _seen_libs)
+  set(_uname "__unattributed__")
+  message(STATUS "[Coverage] ${_L_${_uname}_lines_c} lines across files under no registered "
+    "library counted in the aggregate (shown as the 'unattributed' row).")
 endif ()
 
 # ------------------------------------------------------------------------------
@@ -456,88 +488,35 @@ endif ()
 # ------------------------------------------------------------------------------
 set(_areas "")
 
-set(_repo_regions_t 0)
-set(_repo_regions_m 0)
-set(_repo_lines_t 0)
-set(_repo_lines_m 0)
+# Per-library table rows from the attribution accumulators. Each metric's % is
+# covered/count for the files the library owns. The "unattributed" pool (files
+# under no registered library) renders as its own row under "other".
+foreach (_lib IN LISTS _seen_libs)
+  _pct("${_L_${_lib}_regions_v}" "${_L_${_lib}_regions_c}" _region_pct)
+  _pct("${_L_${_lib}_functions_v}" "${_L_${_lib}_functions_c}" _func_pct)
+  _pct("${_L_${_lib}_lines_v}" "${_L_${_lib}_lines_c}" _line_pct)
+  _pct("${_L_${_lib}_branches_v}" "${_L_${_lib}_branches_c}" _branch_pct)
+  _pct("${_L_${_lib}_mcdc_v}" "${_L_${_lib}_mcdc_c}" _mcdc_pct)
 
-file(GLOB _summaries "${OUTPUT_DIR}/lib*/summary.txt")
-foreach (_summary IN LISTS _summaries)
-  get_filename_component(_lib_dir "${_summary}" DIRECTORY)
-  get_filename_component(_lib_dirname "${_lib_dir}" NAME)
-  string(REGEX REPLACE "^lib" "" _lib_name "${_lib_dirname}")
-
-  file(READ "${_summary}" _content)
-  string(REGEX MATCH "TOTAL[^\n]*" _total "${_content}")
-  if (NOT _total)
-    continue()
+  if (_lib STREQUAL "__unattributed__")
+    set(_lib_name "unattributed")
+    set(_area "other")
+  else ()
+    set(_lib_name "${_lib}")
+    # Filesystem-derived area (computed at configure time). Strip _cuda suffix so
+    # CUDA variants group with their host counterparts.
+    string(REGEX REPLACE "_cuda$" "" _area_key "${_lib_name}")
+    set(_area "other")
+    foreach (_la IN LISTS COVERAGE_LIB_AREAS)
+      string(REPLACE "|" ";" _lap "${_la}")
+      list(GET _lap 0 _lap_key)
+      list(GET _lap 1 _lap_val)
+      if (_lap_key STREQUAL _area_key OR _lap_key STREQUAL _lib_name)
+        set(_area "${_lap_val}")
+        break ()
+      endif ()
+    endforeach ()
   endif ()
-
-  # Cover columns are at positions 4, 7, 10, 13 (1-indexed) on the TOTAL row;
-  # the line looks like:
-  #   TOTAL  <regions> <missed> <cover%> <functions> <missed> <cover%> <lines>
-  #          <missed> <cover%> <branches> <missed> <cover%>
-  # Branches column may be `-` when there is no branch data.
-  string(REGEX MATCHALL "[0-9]+\\.[0-9]+%|-" _all "${_total}")
-  list(LENGTH _all _nfields)
-
-  set(_region_pct "")
-  set(_func_pct "")
-  set(_line_pct "")
-  set(_branch_pct "")
-  set(_mcdc_pct "")
-  if (_nfields GREATER_EQUAL 1)
-    list(GET _all 0 _region_pct)
-  endif ()
-  if (_nfields GREATER_EQUAL 2)
-    list(GET _all 1 _func_pct)
-  endif ()
-  if (_nfields GREATER_EQUAL 3)
-    list(GET _all 2 _line_pct)
-  endif ()
-  if (_nfields GREATER_EQUAL 4)
-    list(GET _all 3 _branch_pct)
-  endif ()
-  # MC/DC % appended last by -show-mcdc-summary (does not shift the columns
-  # above, so the region/line gate parsing is unaffected).
-  if (_nfields GREATER_EQUAL 5)
-    list(GET _all 4 _mcdc_pct)
-  endif ()
-
-  # Roll up raw region+line totals for the aggregate (functions/branches vary
-  # in meaning across compilation units; line and region are the bedrock).
-  string(REGEX MATCHALL "[0-9]+" _nums "${_total}")
-  list(LENGTH _nums _nnums)
-  if (_nnums GREATER_EQUAL 2)
-    list(GET _nums 0 _r_total)
-    list(GET _nums 1 _r_missed)
-    math(EXPR _repo_regions_t "${_repo_regions_t} + ${_r_total}")
-    math(EXPR _repo_regions_m "${_repo_regions_m} + ${_r_missed}")
-  endif ()
-  # Line total/missed are the 9th/10th integers on the TOTAL row. Each cover%
-  # ("NN.NN%") contributes two integer runs, so after regions(0,1) + region%
-  # (2,3) + functions(4,5) + function%(6,7) the line counts land at indices 8,9.
-  # (Previously read 6,7 -- the function-% digits -- which understated lines.)
-  if (_nnums GREATER_EQUAL 10)
-    list(GET _nums 8 _l_total)
-    list(GET _nums 9 _l_missed)
-    math(EXPR _repo_lines_t "${_repo_lines_t} + ${_l_total}")
-    math(EXPR _repo_lines_m "${_repo_lines_m} + ${_l_missed}")
-  endif ()
-
-  # Look up filesystem-derived area for this lib (computed at configure time).
-  # Strip _cuda suffix so CUDA variants group with their host counterparts.
-  string(REGEX REPLACE "_cuda$" "" _area_key "${_lib_name}")
-  set(_area "other")
-  foreach (_la IN LISTS COVERAGE_LIB_AREAS)
-    string(REPLACE "|" ";" _lap "${_la}")
-    list(GET _lap 0 _lap_key)
-    list(GET _lap 1 _lap_val)
-    if (_lap_key STREQUAL _area_key OR _lap_key STREQUAL _lib_name)
-      set(_area "${_lap_val}")
-      break ()
-    endif ()
-  endforeach ()
 
   if (NOT "${_area}" IN_LIST _areas)
     list(APPEND _areas "${_area}")
@@ -552,27 +531,19 @@ if ("other" IN_LIST _areas)
   list(APPEND _areas "other")
 endif ()
 
-# Aggregate region / line %
-set(_repo_region_pct "n/a")
-set(_repo_line_pct "n/a")
-if (_repo_regions_t GREATER 0)
-  math(EXPR _repo_region_cov "(${_repo_regions_t} - ${_repo_regions_m}) * 10000 / ${_repo_regions_t}")
-  math(EXPR _hi "${_repo_region_cov} / 100")
-  math(EXPR _lo "${_repo_region_cov} % 100")
-  if (_lo LESS 10)
-    set(_lo "0${_lo}")
-  endif ()
-  set(_repo_region_pct "${_hi}.${_lo}%")
-endif ()
-if (_repo_lines_t GREATER 0)
-  math(EXPR _repo_line_cov "(${_repo_lines_t} - ${_repo_lines_m}) * 10000 / ${_repo_lines_t}")
-  math(EXPR _hi "${_repo_line_cov} / 100")
-  math(EXPR _lo "${_repo_line_cov} % 100")
-  if (_lo LESS 10)
-    set(_lo "0${_lo}")
-  endif ()
-  set(_repo_line_pct "${_hi}.${_lo}%")
-endif ()
+# Aggregate region / line / MC/DC from the export's tree-wide totals -- every
+# file counted once. Taken from the totals object rather than re-summed, so the
+# headline number cannot drift from the per-file data.
+string(JSON _tot GET "${_json}" "data" 0 "totals")
+string(JSON _agg_rv ERROR_VARIABLE _e GET "${_tot}" "regions" "covered")
+string(JSON _agg_rc ERROR_VARIABLE _e GET "${_tot}" "regions" "count")
+string(JSON _agg_lv ERROR_VARIABLE _e GET "${_tot}" "lines" "covered")
+string(JSON _agg_lc ERROR_VARIABLE _e GET "${_tot}" "lines" "count")
+string(JSON _agg_mv ERROR_VARIABLE _e GET "${_tot}" "mcdc" "covered")
+string(JSON _agg_mc ERROR_VARIABLE _e GET "${_tot}" "mcdc" "count")
+_pct("${_agg_rv}" "${_agg_rc}" _repo_region_pct)
+_pct("${_agg_lv}" "${_agg_lc}" _repo_line_pct)
+_pct("${_agg_mv}" "${_agg_mc}" _repo_mcdc_pct)
 
 # Render HTML
 set(_html "<!DOCTYPE html>
@@ -608,6 +579,7 @@ set(_html "<!DOCTYPE html>
     <td>All libraries (aggregate)</td>
     <td class=\"num\">${_repo_region_pct} regions</td>
     <td class=\"num\">${_repo_line_pct} lines</td>
+    <td class=\"num\">${_repo_mcdc_pct} MC/DC</td>
   </tr>
 </table>
 ")
@@ -692,15 +664,25 @@ string(APPEND _html "</body>
 
 file(WRITE "${OUTPUT_DIR}/index.html" "${_html}")
 message(STATUS "[Coverage] Landing page: ${OUTPUT_DIR}/index.html")
-message(STATUS "[Coverage] Aggregate: ${_repo_region_pct} regions, ${_repo_line_pct} lines")
+message(STATUS "[Coverage] Aggregate: ${_repo_region_pct} regions, ${_repo_line_pct} lines, ${_repo_mcdc_pct} MC/DC")
+
+# Count of libraries actually scored (the unattributed pool is not a library).
+set(_lib_count 0)
+foreach (_lib IN LISTS _seen_libs)
+  if (NOT _lib STREQUAL "__unattributed__")
+    math(EXPR _lib_count "${_lib_count} + 1")
+  endif ()
+endforeach ()
 
 # Machine-readable status file for the coverage-check gate.
 string(REGEX REPLACE "%" "" _repo_region_num "${_repo_region_pct}")
 string(REGEX REPLACE "%" "" _repo_line_num "${_repo_line_pct}")
+string(REGEX REPLACE "%" "" _repo_mcdc_num "${_repo_mcdc_pct}")
 file(WRITE "${OUTPUT_DIR}/.coverage-status"
 "REGION_COVERAGE=${_repo_region_num}
 LINE_COVERAGE=${_repo_line_num}
-LIB_COUNT=${_count}
+MCDC_COVERAGE=${_repo_mcdc_num}
+LIB_COUNT=${_lib_count}
 ")
 
 message(STATUS "[Coverage] Reports: ${OUTPUT_DIR}")
