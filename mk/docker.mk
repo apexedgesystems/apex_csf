@@ -64,8 +64,11 @@ BUILDER_TARGETS := $(PLAT_BUILDERS)
 $(foreach t,$(BUILDER_TARGETS),$(eval ARTIFACT_NAME_$(t) := $(P_$(t)_ARTIFACT)))
 $(foreach t,$(BUILDER_TARGETS),$(eval ARTIFACT_DIR_$(t)  := $(P_$(t)_PRESET)))
 
-# _dev_base: the base image a dev service builds from
-_dev_base = $(if $(filter dev dev-cuda,$(1)),docker-base,$(if $(filter dev-jetson,$(1)),docker-dev-cuda,docker-dev))
+# Base-image hierarchy from mk/platforms.mk (P_<p>_BASE): build a service ->
+# base-keyword (base|cpu|cuda) lookup, then map the keyword to its docker target.
+$(foreach p,$(PLATFORMS),$(eval _DEVBASE_$(P_$(p)_SERVICE) := $(P_$(p)_BASE)))
+# _dev_base: the docker target for a dev service's base image.
+_dev_base = $(patsubst base,docker-base,$(patsubst cuda,docker-dev-cuda,$(patsubst cpu,docker-dev,$(_DEVBASE_$(1)))))
 
 # _dev_image: image name for a dev service (apex.dev.cpu for 'dev', else apex.dev.<x>)
 _dev_image = apex.dev.$(if $(filter dev,$(1)),cpu,$(patsubst dev-%,%,$(1)))
