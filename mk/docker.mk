@@ -137,7 +137,7 @@ endef
 
 # Top-down build for local developers starting from scratch. Each phase is
 # invoked recursively so the stages serialize even under parallel make:
-# builders no longer carry transitive dev-image prerequisites (see
+# builders do not carry transitive dev-image prerequisites (see
 # _builder_target), so the explicit ordering belongs here.
 docker-all:
 	@$(MAKE) docker-base
