@@ -240,6 +240,7 @@ help:
 	@printf '\n'
 	@printf '%s\n' "Cleanup:"
 	@printf '  %-28s %s\n' "make clean" "Clean build artifacts"
+	@printf '  %-28s %s\n' "make clean-<platform>" "Remove one platform's build trees (clean-cross = all)"
 	@printf '  %-28s %s\n' "make distclean" "Remove build/ entirely (SURE=1 if cross-builds present)"
 	@printf '  %-28s %s\n' "make docker-clean" "Clean Docker dangling images"
 	@printf '  %-28s %s\n' "make docker-prune" "Remove all apex.* images"
