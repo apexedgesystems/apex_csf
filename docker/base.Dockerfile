@@ -1,10 +1,23 @@
 # ==============================================================================
-# base.Dockerfile - Shared build tools, compilers, formatters, and profilers
+# base.Dockerfile - Tiered base images
+#
+# build-base : compile + link + test the release artifacts. The 10 release
+#              builders and the build-test gate inherit only this.
+# dev-base   : build-base + tooling (scanners, formatters, profilers, docs).
+#              The dev shells (`apex.base` consumers) inherit this.
+#
+# The `base` compose service builds the dev-base target, so `apex.base` carries
+# the full toolset and every current consumer is unaffected.
 #
 # Usage:
-#   docker compose build base
+#   docker compose build base                       # -> apex.base (dev-base)
+#   docker build --target build-base -f this .      # -> the lean compile/test tier
 # ==============================================================================
-FROM ubuntu:24.04
+
+# ==============================================================================
+# Stage: build-base - compile, link, and test the release artifacts
+# ==============================================================================
+FROM ubuntu:24.04 AS build-base
 
 # Build-time arguments
 ARG USER
@@ -12,25 +25,16 @@ ARG HOST_UID
 ARG HOST_GID
 ARG CMAKE_VERSION=4.2.3
 ARG UPX_VERSION=5.1.0
-ARG HADOLINT_VERSION=v2.14.0
-ARG SHFMT_VERSION=v3.12.0
-ARG BLACK_VERSION=26.1.0
-ARG CMAKELANG_VERSION=0.6.13
-ARG PRE_COMMIT_VERSION=4.5.1
-ARG GITLEAKS_VERSION=8.30.1
-ARG OSV_SCANNER_VERSION=2.3.8
-ARG TRIVY_VERSION=0.71.0
-ARG SEMGREP_VERSION=1.165.0
 
-LABEL org.opencontainers.image.title="apex.base" \
-      org.opencontainers.image.description="Base tooling layer for Apex CSF C++ development" \
+LABEL org.opencontainers.image.title="apex.build-base" \
+      org.opencontainers.image.description="Compile/link/test tier for Apex CSF C++ builders" \
       org.opencontainers.image.vendor="Apex"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Environment Configuration
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # pip: disable caching (we use BuildKit cache mounts instead)
 ENV PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on \
@@ -58,42 +62,41 @@ ENV CCACHE_DIR=/ccache \
 # Mount a host volume here to persist cache across container runs.
 RUN mkdir -p /ccache && chmod 1777 /ccache
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # System Packages
-# ==============================================================================
-# Core build tools and libraries. BuildKit cache mounts speed up rebuilds.
+# ------------------------------------------------------------------------------
+# Compile toolchain, the libraries the build links, and the utilities the test
+# gate needs at runtime. BuildKit cache mounts speed up rebuilds.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      # Networking and certificates
+      # Networking and certificates (downloads below)
       wget curl lsb-release gnupg ca-certificates \
-      # Editor and version control
-      vim git \
+      # Version control (FetchContent clones at configure time)
+      git \
       # Build systems
       make cmake ninja-build \
       # Compiler acceleration (ccache=object cache, mold=fast linker)
       ccache mold \
-      # Python for build scripts and formatters
+      # Python for build scripts and the python tools
       python3 python3-pip python3-venv \
-      # Documentation
-      doxygen graphviz \
-      # System utilities
-      sudo socat iproute2 ssh openssh-client \
-      # CAN bus and capabilities (embedded/automotive)
-      can-utils libcap2-bin \
-      # Hardware interface libraries
+      # Privilege (sudoers entry below; profiling parity in dev-base)
+      sudo \
+      # Test-gate runtime: socat emulation, vcan setup (ip), capabilities
+      socat iproute2 libcap2-bin \
+      # Hardware interface libraries (bluetooth/gpio protocol modules link these)
       libbluetooth-dev libgpiod2 \
-      # Math/crypto libraries
+      # Math/crypto libraries (encryption + linalg link these)
       libssl-dev liblapacke-dev libopenblas-dev \
       # Archive and file utilities
       xz-utils file
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # UPX - Executable Packer
-# ==============================================================================
-# Compresses executables for smaller deployment artifacts.
-# Distro version is outdated, so we install from GitHub.
+# ------------------------------------------------------------------------------
+# Compresses release executables. Distro version is outdated, so install from
+# GitHub.
 RUN wget --progress=dot:giga -O /tmp/upx.tar.xz \
       "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz" && \
     tar -C /tmp -xJf /tmp/upx.tar.xz && \
@@ -101,14 +104,11 @@ RUN wget --progress=dot:giga -O /tmp/upx.tar.xz \
     chmod +x /usr/local/bin/upx && \
     rm -rf /tmp/upx.tar.xz "/tmp/upx-${UPX_VERSION}-amd64_linux"
 
-# ==============================================================================
-# LLVM/Clang Toolchain
-# ==============================================================================
-#   - Clang 21: Latest features (default)
-#   - Clang 20: Stable fallback
-# Each includes: compiler, analyzer, tidy, format, runtime libs.
-
-# Add LLVM apt repository with scoped GPG key (signed-by restricts key to this repo)
+# ------------------------------------------------------------------------------
+# LLVM/Clang apt repository
+# ------------------------------------------------------------------------------
+# Scoped GPG key (signed-by restricts the key to this repo). Shared by the
+# compilers here and the analysis tooling in dev-base.
 RUN install -d -m 0755 /etc/apt/keyrings && \
     wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | \
       gpg --dearmor -o /etc/apt/keyrings/llvm.gpg && \
@@ -117,30 +117,182 @@ RUN install -d -m 0755 /etc/apt/keyrings && \
     echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] http://apt.llvm.org/$(lsb_release -sc)/ llvm-toolchain-$(lsb_release -sc)-20 main" \
       >> /etc/apt/sources.list.d/llvm.list
 
-# Install Clang versions
+# Compilers: Clang 21 (primary) + Clang 20 (CUDA host-compiler fallback), the
+# sanitizer runtimes, the linker, and the C++ runtime. Analysis/format tooling
+# (tidy, format, lldb, lcov, iwyu, gdb) lives in dev-base.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      # Clang 21 (primary)
-      clang-21 llvm-21 clang-tidy-21 clang-tools-21 clang-format-21 libclang-rt-21-dev \
-      # Clang 20 (stable)
-      clang-20 llvm-20 clang-tidy-20 clang-tools-20 clang-format-20 libclang-rt-20-dev \
-      # Shared LLVM tools
-      lld lldb libc++-dev libc++abi-dev lcov iwyu gdb
+      clang-21 llvm-21 libclang-rt-21-dev \
+      clang-20 llvm-20 libclang-rt-20-dev \
+      lld libc++-dev libc++abi-dev
 
-# Unversioned symlinks default to Clang 21
+# Unversioned compiler symlinks default to Clang 21
+RUN ln -sf /usr/bin/clang-21  /usr/local/bin/clang && \
+    ln -sf /usr/bin/clang++-21 /usr/local/bin/clang++
+
+# ------------------------------------------------------------------------------
+# CMake
+# ------------------------------------------------------------------------------
+# Distro version is too old, so we install from Kitware.
+RUN wget --progress=dot:giga \
+      "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh" && \
+    chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh && \
+    ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local && \
+    rm cmake-${CMAKE_VERSION}-linux-x86_64.sh
+
+# ------------------------------------------------------------------------------
+# Rust Toolchain
+# ------------------------------------------------------------------------------
+# Install Rust via rustup to /opt/rust for system-wide access.
+# Using /opt avoids permission issues when COPY --from overlays onto CUDA images.
+# Includes: rustc, cargo, clippy (linter), rustfmt (formatter). The coverage
+# driver (cargo-llvm-cov) is added in dev-base.
+ARG RUST_VERSION=stable
+ENV RUSTUP_HOME=/opt/rust/rustup \
+    CARGO_HOME=/opt/rust/cargo
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain ${RUST_VERSION} --profile minimal && \
+    /opt/rust/cargo/bin/rustup component add clippy rustfmt llvm-tools-preview && \
+    chmod -R a+rwX /opt/rust
+ENV PATH="/opt/rust/cargo/bin:$PATH"
+
+# ------------------------------------------------------------------------------
+# Poetry - Python package manager for the python tools (`make tools-py`)
+# ------------------------------------------------------------------------------
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install --no-cache-dir --break-system-packages poetry
+
+# ------------------------------------------------------------------------------
+# ptest profiler link libraries
+# ------------------------------------------------------------------------------
+# The perf tests link tcmalloc/profiler when present (find_library in
+# cmake/apex/Testing.cmake), so the link-time libs ship in build-base for parity
+# with the dev build. The profiler binaries/backends live in dev-base.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      libgoogle-perftools-dev \
+      libunwind-dev
+
+# ------------------------------------------------------------------------------
+# SuiteSparse (KLU sparse solver) - required by the MNA solver
+# ------------------------------------------------------------------------------
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      libsuitesparse-dev
+
+# ------------------------------------------------------------------------------
+# ngspice (SPICE reference simulator) - linked by the electronics sim backend
+# ------------------------------------------------------------------------------
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      libngspice0-dev \
+      ngspice
+
+# ------------------------------------------------------------------------------
+# User Setup
+# ------------------------------------------------------------------------------
+# Centralized here so every downstream image (builders and dev shells) inherits
+# the correct user.
+RUN userdel -r ubuntu 2>/dev/null || true && \
+    groupdel ubuntu 2>/dev/null || true && \
+    groupadd -g ${HOST_GID} ${USER} 2>/dev/null || true && \
+    useradd -m -u ${HOST_UID} -g ${HOST_GID} -s /bin/bash -p "*" ${USER} 2>/dev/null || true && \
+    echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    chown -R ${HOST_UID}:${HOST_GID} /home/${USER} && \
+    usermod -aG dialout "${USER}"
+
+# ------------------------------------------------------------------------------
+# Cleanup and Validation
+# ------------------------------------------------------------------------------
+RUN rm -rf /usr/local/man /tmp/*
+
+RUN echo "Validating build-base image..." && \
+    cmake --version && \
+    clang --version && \
+    clang++ --version && \
+    ccache --version && \
+    mold --version && \
+    upx --version | { head -n1; cat >/dev/null; } && \
+    rustc --version && \
+    cargo --version && \
+    echo "build-base image validation: OK"
+
+# Default to the unprivileged user; downstream images that need root for
+# package installs re-assert USER root and switch back themselves.
+USER ${USER}
+WORKDIR /home/${USER}
+
+# ==============================================================================
+# Stage: dev-base - build-base + tooling (scanners, formatters, profilers, docs)
+# ==============================================================================
+FROM build-base AS dev-base
+
+ARG USER
+ARG HADOLINT_VERSION=v2.14.0
+ARG SHFMT_VERSION=v3.12.0
+ARG BLACK_VERSION=26.1.0
+ARG CMAKELANG_VERSION=0.6.13
+ARG PRE_COMMIT_VERSION=4.5.1
+ARG GITLEAKS_VERSION=8.30.1
+ARG OSV_SCANNER_VERSION=2.3.8
+ARG TRIVY_VERSION=0.71.0
+ARG SEMGREP_VERSION=1.165.0
+# cargo-llvm-cov: prebuilt binary (taiki-e) driving `make coverage-rust`.
+# Pinned; llvm-tools-preview (from build-base) supplies the profdata tooling.
+ARG CARGO_LLVM_COV_VERSION=0.8.7
+
+LABEL org.opencontainers.image.title="apex.base" \
+      org.opencontainers.image.description="Base tooling layer for Apex CSF C++ development" \
+      org.opencontainers.image.vendor="Apex"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+USER root
+
+# ------------------------------------------------------------------------------
+# Dev System Packages
+# ------------------------------------------------------------------------------
+# Editor, docs generation, shell access, and manual CAN tooling.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      vim \
+      doxygen graphviz \
+      ssh openssh-client \
+      can-utils
+
+# ------------------------------------------------------------------------------
+# LLVM/Clang analysis and format tooling
+# ------------------------------------------------------------------------------
+# tidy/format/tools for both clang versions, the LLVM debugger, coverage, and
+# include-what-you-use. The compilers themselves live in build-base.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      clang-tidy-21 clang-tools-21 clang-format-21 \
+      clang-tidy-20 clang-tools-20 clang-format-20 \
+      lldb lcov iwyu gdb
+
+# Unversioned tooling symlinks default to Clang 21
 RUN ln -sf /usr/bin/clang-format-21 /usr/local/bin/clang-format && \
-    ln -sf /usr/bin/clang-tidy-21   /usr/local/bin/clang-tidy && \
-    ln -sf /usr/bin/clang-21        /usr/local/bin/clang && \
-    ln -sf /usr/bin/clang++-21      /usr/local/bin/clang++
+    ln -sf /usr/bin/clang-tidy-21   /usr/local/bin/clang-tidy
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Bloaty - Binary Size Analysis
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Built from source: not packaged for Ubuntu 24.04. Tracks master tip via
 # shallow clone. CMAKE_POLICY_VERSION_MINIMUM=3.5 satisfies upstream submodule
-# policy floors. Must come AFTER the LLVM block — bloaty needs a C++ compiler.
+# policy floors.
 RUN git clone --recursive --depth 1 https://github.com/google/bloaty.git /tmp/bloaty && \
     CC=clang CXX=clang++ CFLAGS=-Wno-deprecated-non-prototype \
     cmake -S /tmp/bloaty -B /tmp/bloaty/build -G Ninja \
@@ -150,19 +302,9 @@ RUN git clone --recursive --depth 1 https://github.com/google/bloaty.git /tmp/bl
     cmake --install /tmp/bloaty/build && \
     rm -rf /tmp/bloaty
 
-# ==============================================================================
-# CMake
-# ==============================================================================
-# Distro version is too old, so we install from Kitware.
-RUN wget --progress=dot:giga \
-      "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh" && \
-    chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh && \
-    ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local && \
-    rm cmake-${CMAKE_VERSION}-linux-x86_64.sh
-
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Linters and Formatters
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Static binaries for speed and reproducibility.
 
 # hadolint: Dockerfile linter
@@ -175,31 +317,29 @@ RUN wget --progress=dot:giga -O /usr/local/bin/shfmt \
       "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64" && \
     chmod +x /usr/local/bin/shfmt
 
-# ==============================================================================
-# Python Tools
-# ==============================================================================
+# ------------------------------------------------------------------------------
+# Python Formatters and Hooks
+# ------------------------------------------------------------------------------
 # pre-commit: Git hook framework
 # black: Python formatter
 # cmakelang: CMake formatter (cmake-format, cmake-lint)
-# poetry: Python package manager
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --no-cache-dir --break-system-packages \
       pre-commit==${PRE_COMMIT_VERSION} \
       black==${BLACK_VERSION} \
-      cmakelang==${CMAKELANG_VERSION} \
-      poetry
+      cmakelang==${CMAKELANG_VERSION}
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # ninjatracing - Convert .ninja_log to chrome-tracing JSON
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Single Python script from nico/ninjatracing — not packaged on PyPI.
 RUN wget --progress=dot:giga -O /usr/local/bin/ninjatracing \
       https://raw.githubusercontent.com/nico/ninjatracing/main/ninjatracing && \
     chmod +x /usr/local/bin/ninjatracing
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Static Analysis and Security
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # A second static-analysis engine, a bounded model checker, and supply-chain /
 # secret / SAST scanners. Each is exposed as a `make` check target (mk/checks.mk)
 # and runs in this container, so local and CI runs are identical.
@@ -241,30 +381,19 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --no-cache-dir --break-system-packages \
       semgrep==${SEMGREP_VERSION}
 
-# ==============================================================================
-# Rust Toolchain
-# ==============================================================================
-# Install Rust via rustup to /opt/rust for system-wide access.
-# Using /opt avoids permission issues when COPY --from overlays onto CUDA images.
-# Includes: rustc, cargo, clippy (linter), rustfmt (formatter)
-ARG RUST_VERSION=stable
-# cargo-llvm-cov: prebuilt binary (taiki-e) driving `make coverage-rust`.
-# Pinned; llvm-tools-preview supplies the profdata tooling it uses.
-ARG CARGO_LLVM_COV_VERSION=0.8.7
-ENV RUSTUP_HOME=/opt/rust/rustup \
-    CARGO_HOME=/opt/rust/cargo
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-    sh -s -- -y --default-toolchain ${RUST_VERSION} --profile minimal && \
-    /opt/rust/cargo/bin/rustup component add clippy rustfmt llvm-tools-preview && \
-    curl --proto '=https' --tlsv1.2 -fsSL \
+# ------------------------------------------------------------------------------
+# cargo-llvm-cov - Rust coverage driver (`make coverage-rust`)
+# ------------------------------------------------------------------------------
+# chmod only the new binary: build-base already opened /opt/rust tree-wide, and a
+# repeat -R here would copy the whole toolchain into this layer.
+RUN curl --proto '=https' --tlsv1.2 -fsSL \
       "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v${CARGO_LLVM_COV_VERSION}/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz" \
       | tar xzf - -C /opt/rust/cargo/bin && \
-    chmod -R a+rwX /opt/rust
-ENV PATH="/opt/rust/cargo/bin:$PATH"
+    chmod a+rwX /opt/rust/cargo/bin/cargo-llvm-cov
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # FlameGraph
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Brendan Gregg's scripts for visualizing profiler output as SVG flame graphs.
 RUN git clone --depth 1 https://github.com/brendangregg/FlameGraph.git /opt/FlameGraph && \
     ln -s /opt/FlameGraph/flamegraph.pl /usr/local/bin/flamegraph.pl && \
@@ -274,11 +403,11 @@ RUN git clone --depth 1 https://github.com/brendangregg/FlameGraph.git /opt/Flam
 
 ENV FLAMEGRAPH_DIR=/opt/FlameGraph
 
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Profiling Tools
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # linux-tools:        perf (common wrapper + generic; host-matched added below)
-# google-perftools:   CPU/heap profiler, tcmalloc
+# google-perftools:   pprof CPU/heap profiler driver (tcmalloc lib is in build-base)
 # valgrind:           callgrind, massif, memcheck (vernier backends)
 # bpftrace:           dynamic tracing + off-CPU (vernier offcpu backend)
 # heaptrack:          low-overhead heap profiler (vernier heaptrack backend)
@@ -290,8 +419,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       linux-tools-common \
       linux-tools-generic \
       google-perftools \
-      libgoogle-perftools-dev \
-      libunwind-dev \
       valgrind \
       bpftrace \
       heaptrack \
@@ -306,7 +433,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # in the archive (e.g. building on a host whose kernel isn't published).
 #
 # ARG declared here (not at the top) so a host-kernel bump only invalidates this
-# layer + the cheap tail, not the whole base image.
+# layer + the cheap tail, not the whole dev-base image.
 ARG HOST_KERNEL
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
@@ -319,54 +446,18 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       echo "WARN: HOST_KERNEL build-arg empty; perf may not match the host kernel"; \
     fi
 
-# ==============================================================================
-# SuiteSparse (KLU sparse solver)
-# ==============================================================================
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      libsuitesparse-dev
-
-# ==============================================================================
-# ngspice (SPICE reference simulator)
-# ==============================================================================
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      libngspice0-dev \
-      ngspice
-
-# ==============================================================================
-# User Setup
-# ==============================================================================
-# Centralized here so every downstream image inherits the correct user.
-# Dev images no longer need to repeat this block.
-RUN userdel -r ubuntu 2>/dev/null || true && \
-    groupdel ubuntu 2>/dev/null || true && \
-    groupadd -g ${HOST_GID} ${USER} 2>/dev/null || true && \
-    useradd -m -u ${HOST_UID} -g ${HOST_GID} -s /bin/bash -p "*" ${USER} 2>/dev/null || true && \
-    echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
-    chown -R ${HOST_UID}:${HOST_GID} /home/${USER} && \
-    usermod -aG dialout "${USER}"
-
-# ==============================================================================
+# ------------------------------------------------------------------------------
 # Cleanup and Validation
-# ==============================================================================
+# ------------------------------------------------------------------------------
 RUN rm -rf /usr/local/man /tmp/*
 
-RUN echo "Validating base image..." && \
-    cmake --version && \
-    clang --version && \
-    ccache --version && \
-    mold --version && \
-    upx --version | { head -n1; cat >/dev/null; } && \
+RUN echo "Validating dev-base image..." && \
+    clang-tidy --version && \
+    clang-format --version && \
     hadolint --version && \
     shfmt --version && \
-    rustc --version && \
-    cargo --version && \
-    echo "Base image validation: OK"
+    semgrep --version && \
+    echo "dev-base image validation: OK"
 
 # Default to the unprivileged user; downstream images that need root for
 # package installs re-assert USER root and switch back themselves.
