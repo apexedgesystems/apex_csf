@@ -37,6 +37,7 @@ services:
     build:
       context: .
       dockerfile: docker/base.Dockerfile
+      target: dev-base
       args:
         <<: *build-args
     profiles: ["build-only"]
