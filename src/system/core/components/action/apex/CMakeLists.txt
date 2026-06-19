@@ -53,4 +53,4 @@ apex_add_data_manifest()
 # Subdirectories
 # ------------------------------------------------------------------------------
 
-apex_add_test_subdirs(utst ptst)
+apex_add_test_subdirs()

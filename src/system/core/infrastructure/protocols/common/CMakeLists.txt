@@ -24,4 +24,4 @@ apex_standard_optins(system_core_protocols_common)
 # Subdirectories
 # ------------------------------------------------------------------------------
 
-apex_add_test_subdirs(utst ptst)
+apex_add_test_subdirs()
