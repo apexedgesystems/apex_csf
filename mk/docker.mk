@@ -282,6 +282,11 @@ artifacts: docker-final
 
 _DEV_IMAGES := apex.base $(foreach s,$(DEV_SERVICES),$(call _dev_image,$(s)))
 
+# Lean build tiers published to ghcr alongside the dev images (the CI gate and
+# the builders compile in them). Tracked so ghcr-gc collects their untagged
+# digests the same way it does the dev images'.
+_BUILD_TIER_IMAGES := apex.build-base apex.cuda-build
+
 docker-push-devs: docker-devs
 	@test -n "$(REGISTRY)" || \
 	  { printf '$(TERM_RED)[docker]$(TERM_RESET) REGISTRY is not set. Use: make docker-push-devs REGISTRY=ghcr.io/owner/repo\n'; exit 1; }
@@ -391,7 +396,7 @@ print-builder-targets:
 # ghcr-gc job, so a new dev service or builder target is collected without a
 # workflow edit.
 print-ghcr-packages:
-	@printf '%s\n' $(_DEV_IMAGES) $(patsubst %,apex.builder.%,$(BUILDER_TARGETS))
+	@printf '%s\n' $(_DEV_IMAGES) $(_BUILD_TIER_IMAGES) $(patsubst %,apex.builder.%,$(BUILDER_TARGETS))
 
 # ------------------------------------------------------------------------------
 # Phony Declarations

@@ -154,10 +154,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull builder's dev image (the FROM)
-        env:
-          DEV: apex.dev.${{ matrix.builder }}
+      # The builder's FROM is its compose DEV_IMAGE, not always apex.dev.<arch>:
+      # the lean tiers route builder-cuda to apex.cuda-build and builder-cpu to
+      # apex.build-base. Read it from compose so this tracks any retiering.
+      - name: Pull builder's base image (the FROM)
         run: |
+          DEV=$(docker compose config "builder-${{ matrix.builder }}" 2>/dev/null \
+                | sed -nE 's/.*DEV_IMAGE:[[:space:]]*"?([^"]+)"?.*/\1/p' | head -1)
+          [ -n "$DEV" ] || DEV="apex.dev.${{ matrix.builder }}"
+          echo "builder-${{ matrix.builder }} compiles FROM $DEV"
           docker pull "$REGISTRY/$DEV:latest"
           docker tag "$REGISTRY/$DEV:latest" "$DEV"
 
