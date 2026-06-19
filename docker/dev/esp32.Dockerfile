@@ -48,11 +48,16 @@ RUN set -euo pipefail && \
     mkdir -p "${IDF_TOOLS_PATH}" && \
     git clone --branch "${ESP_IDF_VERSION}" --depth 1 --recursive --shallow-submodules \
       https://github.com/espressif/esp-idf.git "${IDF_PATH}" && \
-    git config --system --add safe.directory '*'
+    git config --system --add safe.directory '*' && \
+    rm -rf "${IDF_PATH}/examples" "${IDF_PATH}/docs"
 
 WORKDIR ${IDF_PATH}
+# apex targets esp32s3 (Xtensa) -- CONFIG_IDF_TARGET. install.sh still stages the
+# riscv32-esp-elf toolchain (2.1 GB, for the c-series RISC-V *main* cores, not the
+# s3 ULP which uses esp32ulp-elf), so drop it plus the download archives.
 RUN set -euo pipefail && \
-    ./install.sh && \
+    ./install.sh esp32s3 && \
+    rm -rf "${IDF_TOOLS_PATH}/tools/riscv32-esp-elf" "${IDF_TOOLS_PATH}/dist" && \
     chmod -R a+rX "${IDF_TOOLS_PATH}"
 
 # ==============================================================================

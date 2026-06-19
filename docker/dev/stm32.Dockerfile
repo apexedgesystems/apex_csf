@@ -43,7 +43,11 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN git clone --recursive --depth 1 \
       https://github.com/STMicroelectronics/STM32CubeF4.git /opt/STM32CubeF4 && \
     git clone --recursive --depth 1 \
-      https://github.com/STMicroelectronics/STM32CubeL4.git /opt/STM32CubeL4
+      https://github.com/STMicroelectronics/STM32CubeL4.git /opt/STM32CubeL4 && \
+    rm -rf /opt/STM32CubeF4/Projects /opt/STM32CubeF4/Documentation \
+           /opt/STM32CubeF4/Utilities /opt/STM32CubeF4/.git \
+           /opt/STM32CubeL4/Projects /opt/STM32CubeL4/Documentation \
+           /opt/STM32CubeL4/Utilities /opt/STM32CubeL4/.git
 
 ENV STM32CUBE_F4_PATH="/opt/STM32CubeF4"
 ENV STM32CUBE_L4_PATH="/opt/STM32CubeL4"

@@ -44,7 +44,10 @@ ENV C2000_CGT_ROOT="/opt/ti/c2000-cgt"
 # C2000Ware SDK
 # ==============================================================================
 RUN git clone --depth 1 https://github.com/TexasInstruments/c2000ware-core-sdk.git \
-      /opt/ti/c2000ware-core-sdk
+      /opt/ti/c2000ware-core-sdk && \
+    rm -rf /opt/ti/c2000ware-core-sdk/.git \
+           /opt/ti/c2000ware-core-sdk/utilities \
+           /opt/ti/c2000ware-core-sdk/docs
 
 ENV C2000WARE_ROOT="/opt/ti/c2000ware-core-sdk"
 
