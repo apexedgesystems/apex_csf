@@ -117,15 +117,17 @@ RUN install -d -m 0755 /etc/apt/keyrings && \
     echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] http://apt.llvm.org/$(lsb_release -sc)/ llvm-toolchain-$(lsb_release -sc)-20 main" \
       >> /etc/apt/sources.list.d/llvm.list
 
-# Compilers: Clang 21 (primary) + Clang 20 (CUDA host-compiler fallback), the
-# sanitizer runtimes, the linker, and the C++ runtime. Analysis/format tooling
-# (tidy, format, lldb, lcov, iwyu, gdb) lives in dev-base.
+# Compilers: full Clang 21 stack (primary) plus only the clang-20 driver, which
+# CMake selects as the CUDA host compiler when the toolkit is a clang major
+# behind (CMakeLists.txt). The rest of the 20 stack -- llvm-20, the sanitizer
+# runtimes, and the 20 analysis/format tooling -- has no consumer. Plus the
+# linker and the C++ runtime. The 21 analysis/format tooling lives in dev-base.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
       clang-21 llvm-21 libclang-rt-21-dev \
-      clang-20 llvm-20 libclang-rt-20-dev \
+      clang-20 \
       lld libc++-dev libc++abi-dev
 
 # Unversioned compiler symlinks default to Clang 21. cc/c++ also point at clang
@@ -277,14 +279,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # ------------------------------------------------------------------------------
 # LLVM/Clang analysis and format tooling
 # ------------------------------------------------------------------------------
-# tidy/format/tools for both clang versions, the LLVM debugger, coverage, and
+# clang-21 tidy/format/tools, the LLVM debugger, coverage, and
 # include-what-you-use. The compilers themselves live in build-base.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
       clang-tidy-21 clang-tools-21 clang-format-21 \
-      clang-tidy-20 clang-tools-20 clang-format-20 \
       lldb lcov iwyu gdb
 
 # Unversioned tooling symlinks default to Clang 21

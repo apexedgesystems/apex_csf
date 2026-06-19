@@ -66,7 +66,7 @@ function (apex_clang_tidy_cuda _target)
   # Find clang-tidy
   set(_tidy_exe "${CMAKE_CXX_CLANG_TIDY}")
   if (NOT _tidy_exe)
-    find_program(_tidy_exe NAMES clang-tidy clang-tidy-21 clang-tidy-20)
+    find_program(_tidy_exe NAMES clang-tidy clang-tidy-21)
   endif ()
   if (NOT _tidy_exe)
     return()
