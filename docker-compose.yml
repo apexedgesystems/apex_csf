@@ -123,6 +123,7 @@ services:
       dockerfile: docker/dev/jetson.Dockerfile
       args:
         <<: *build-args
+        BASE: apex.dev.cuda
     hostname: apex-dev-jetson
     privileged: true
     environment:
@@ -276,6 +277,18 @@ services:
               count: all
               capabilities: [gpu]
 
+  # Lean jetson build tier: the jetson cross stack on cuda-build (no Nsight/JRE/
+  # GTK), for the release builder. dev-jetson keeps the full dev.cuda toolkit.
+  build-jetson:
+    image: apex.build.jetson
+    build:
+      context: .
+      dockerfile: docker/dev/jetson.Dockerfile
+      args:
+        <<: *build-args
+        BASE: apex.cuda-build
+    profiles: ["build-only"]
+
   builder-jetson:
     image: apex.builder.jetson
     build:
@@ -283,7 +296,7 @@ services:
       dockerfile: docker/builder.Dockerfile
       args:
         <<: *build-args
-        DEV_IMAGE: apex.dev.jetson
+        DEV_IMAGE: apex.build.jetson
         BUILD_CMD: "make jetson-release"
 
   builder-rpi:

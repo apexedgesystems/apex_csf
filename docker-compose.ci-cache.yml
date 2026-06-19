@@ -55,6 +55,12 @@ services:
         - ${REGISTRY}/apex.dev.jetson:latest
       cache_to: *inline-cache
 
+  build-jetson:
+    build:
+      cache_from:
+        - ${REGISTRY}/apex.build.jetson:latest
+      cache_to: *inline-cache
+
   dev-rpi:
     build:
       cache_from:
