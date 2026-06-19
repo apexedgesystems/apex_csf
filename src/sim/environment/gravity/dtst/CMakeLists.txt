@@ -15,7 +15,9 @@ include(apex/All)
 # Sources
 # ------------------------------------------------------------------------------
 
-set(DEV_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/00_Egm2008MaxFidelity_dTest.cpp")
+set(DEV_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/00_Egm2008MaxFidelity_dTest.cpp"
+                     "${CMAKE_CURRENT_SOURCE_DIR}/01_HorizonProceduralGravity_dTest.cpp"
+)
 
 set(CUDA_DEV_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/00_Egm2008CudaTiming_dTest.cu")
 
