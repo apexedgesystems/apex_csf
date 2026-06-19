@@ -51,6 +51,7 @@ runs:
           dev)        tag=apex.dev.cpu;    parent=apex.base;       parent_svc=base ;;
           dev-cuda)   tag=apex.dev.cuda;   parent=apex.base;       parent_svc=base ;;
           cuda-build) tag=apex.cuda-build; parent=apex.build-base; parent_svc=build-base ;;
+          build-base) tag=apex.build-base; parent=;               parent_svc=build-base ;;
           *) echo "dev-setup: unknown service '$SERVICE'" >&2; exit 1 ;;
         esac
         {
@@ -66,8 +67,11 @@ runs:
         TAG: ${{ steps.img.outputs.tag }}
         PARENT: ${{ steps.img.outputs.parent }}
       run: |
-        docker pull "$REGISTRY/$PARENT:latest" \
-          && docker tag "$REGISTRY/$PARENT:latest" "$PARENT" || true
+        # A root tier (build-base) has no parent to pull.
+        if [ -n "$PARENT" ]; then
+          docker pull "$REGISTRY/$PARENT:latest" \
+            && docker tag "$REGISTRY/$PARENT:latest" "$PARENT" || true
+        fi
         docker pull "$REGISTRY/$TAG:latest" \
           && docker tag "$REGISTRY/$TAG:latest" "$TAG" || true
 
@@ -84,5 +88,9 @@ runs:
         PARENT_SVC: ${{ steps.img.outputs.parent_svc }}
         REGISTRY: ${{ inputs.registry }}
       run: |
-        docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build "$PARENT_SVC"
+        # Build the parent first so the service's FROM resolves -- unless the
+        # service is its own root (build-base), in which case build it once.
+        if [ "$PARENT_SVC" != "$SERVICE" ]; then
+          docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build "$PARENT_SVC"
+        fi
         docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build "$SERVICE"

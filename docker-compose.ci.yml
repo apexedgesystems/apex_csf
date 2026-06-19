@@ -19,6 +19,10 @@ services:
   dev:
     volumes:
       - ./.ccache:/ccache
+  # Lean tier for the rust/python/sanitize jobs; sanitize persists ccache.
+  build-base:
+    volumes:
+      - ./.ccache:/ccache
   dev-cuda:
     deploy: !reset null
     volumes:
