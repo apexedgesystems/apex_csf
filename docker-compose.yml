@@ -42,6 +42,18 @@ services:
         <<: *build-args
     profiles: ["build-only"]
 
+  # Lean compile/link/test tier (no scanners/profilers/docs). Builders and the
+  # CI build-test gate inherit this instead of the full dev-base.
+  build-base:
+    image: apex.build-base
+    build:
+      context: .
+      dockerfile: docker/base.Dockerfile
+      target: build-base
+      args:
+        <<: *build-args
+    profiles: ["build-only"]
+
   # ============================================================================
   # Interactive development shells - Primary
   # ============================================================================
@@ -65,6 +77,8 @@ services:
       dockerfile: docker/dev/cuda.Dockerfile
       args:
         <<: *build-args
+        BASE: apex.base
+        INSTALL_NSIGHT: "1"
     hostname: apex-dev-cuda
     privileged: true
     deploy:
@@ -77,6 +91,24 @@ services:
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+    command: bash
+
+  # Lean CUDA build tier: the CUDA layer on build-base, no Nsight. The CI
+  # build-test gate and builder-cuda compile/link/test the .cu surface here
+  # without dev-base's tooling or the profilers. Runs GPU-less (the gate's
+  # testp excludes cuda-labeled tests); dev-cuda keeps the GPU + Nsight.
+  cuda-build:
+    <<: *common
+    image: apex.cuda-build
+    build:
+      context: .
+      dockerfile: docker/dev/cuda.Dockerfile
+      args:
+        <<: *build-args
+        BASE: apex.build-base
+        INSTALL_NSIGHT: "0"
+    hostname: apex-cuda-build
+    privileged: true
     command: bash
 
   dev-jetson:
@@ -227,7 +259,7 @@ services:
       dockerfile: docker/builder.Dockerfile
       args:
         <<: *build-args
-        DEV_IMAGE: apex.dev.cuda
+        DEV_IMAGE: apex.cuda-build
         BUILD_CMD: "make release CMAKE_EXTRA_ARGS='-DAPEX_BUILD_TOOLS=OFF'"
     deploy:
       resources:

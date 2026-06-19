@@ -129,9 +129,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      # Overlay docker-compose.ci.yml so dev-cuda starts without a GPU on the
-      # runner (drops its device reservation); make testp excludes the
-      # cuda-labeled tests.
+      # Overlay docker-compose.ci.yml for the host ccache bind. cuda-build has
+      # no GPU reservation; make testp excludes the cuda-labeled tests on the
+      # GPU-less runner.
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     steps:
       - name: Checkout
@@ -142,13 +142,13 @@ jobs:
       # headroom; the host SDKs are unused inside the container, so reclaim first.
       - name: Reclaim disk
         uses: ./.github/actions/reclaim-disk
-      - name: Set up dev-cuda image
+      - name: Set up cuda-build image
         uses: ./.github/actions/dev-setup
         with:
           registry: ${{ env.REGISTRY }}
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          service: dev-cuda
+          service: cuda-build
           rebuild: ${{ needs.changes.outputs.docker }}
       # Second restore key: the nightly debug leg saves main-scoped entries,
       # the only ones a brand-new PR's first push can see (ccache is
@@ -164,18 +164,16 @@ jobs:
       - name: Prepare ccache dir
         run: mkdir -p .ccache
       - name: Build (debug, CUDA)
-        run: docker compose run --rm -T dev-cuda make debug
+        run: docker compose run --rm -T cuda-build make debug
       - name: Run C++ tests
-        run: docker compose run --rm -T dev-cuda make testp
+        run: docker compose run --rm -T cuda-build make testp
       - name: Demo smoke test (reuses debug build)
-        run: docker compose run --rm -T dev-cuda make smoke APP=apex_mc_demo
-      - name: Build documentation (zero-warning gate)
-        run: docker compose run --rm -T dev-cuda make docs-check
+        run: docker compose run --rm -T cuda-build make smoke APP=apex_mc_demo
       # Hit rate of the persisted cache, in the job log where a regression
       # (key drift, broken bind) is visible -- a broken cache layer once ran
       # silent for five release runs.
       - name: ccache stats
-        run: docker compose run --rm -T dev-cuda ccache -s | tail -n 8
+        run: docker compose run --rm -T cuda-build ccache -s | tail -n 8
 
   rust:
     name: Rust tool tests
@@ -281,3 +279,7 @@ jobs:
       # mk/checks.mk for the same rule on nightly legs).
       - name: clang-tidy (gated checks)
         run: docker compose run --rm -T dev make static
+      # Doxygen lives in dev-base, not the lean cuda-build gate, so the docs
+      # zero-warning gate runs here rather than in build-test.
+      - name: Build documentation (zero-warning gate)
+        run: docker compose run --rm -T dev make docs-check

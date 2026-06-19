@@ -1,14 +1,18 @@
 # ==============================================================================
-# dev/cuda.Dockerfile - CUDA shell with Nsight profiling tools
+# dev/cuda.Dockerfile - CUDA layer, tiered by BASE
 #
-# Installs CUDA toolkit from NVIDIA apt repos directly into apex.base.
-# No more COPY --from overlay, so ENV, symlinks, and user accounts are preserved.
+# Installs the CUDA toolkit from NVIDIA apt repos onto the selected base:
+#   BASE=apex.base       -> apex.dev.cuda   (dev-base + CUDA + Nsight)
+#   BASE=apex.build-base -> apex.cuda-build (build-base + CUDA, no Nsight)
+# Nsight (INSTALL_NSIGHT=1) is the dev/profiling tier only; the lean cuda-build
+# tier the CI gate and builders use sets INSTALL_NSIGHT=0.
 #
 # Usage:
 #   make shell-dev-cuda
 #   docker compose run dev-cuda
 # ==============================================================================
-FROM apex.base:latest
+ARG BASE=apex.base
+FROM ${BASE}:latest
 
 ARG USER
 # The toolkit's CUDA minor must not exceed what the host driver provides.
@@ -19,8 +23,13 @@ ARG USER
 ARG CUDA_VERSION_MAJOR=13
 ARG CUDA_VERSION_MINOR=0
 
-LABEL org.opencontainers.image.title="apex.dev.cuda" \
-      org.opencontainers.image.description="CUDA shell for Apex CSF"
+# Tier selector: 1 = dev (full cuda-toolkit metapackage + Nsight, for the dev
+# shell and the optimization workflow); 0 = lean cuda-build (CUDA build
+# components only -- nvcc + the libraries the .cu surface links -- dropping
+# Nsight, cuda-gdb, the JRE/GTK GUI stack, docs, and the sanitizer).
+ARG INSTALL_NSIGHT=1
+
+LABEL org.opencontainers.image.description="CUDA layer for Apex CSF"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -32,20 +41,38 @@ USER root
 # ==============================================================================
 # Install cuda-keyring for apt authentication, then the full toolkit.
 # This is exactly what the nvidia/cuda Docker image does internally.
-RUN wget -O /tmp/cuda-keyring.deb \
+RUN wget -qO /tmp/cuda-keyring.deb \
       https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/x86_64/cuda-keyring_1.1-1_all.deb && \
     dpkg -i /tmp/cuda-keyring.deb && \
     rm /tmp/cuda-keyring.deb
 
+# Dev tier installs the full toolkit metapackage (Nsight, cuda-gdb, samples,
+# docs, JRE/GTK -- ~7 GB). The lean cuda-build tier installs only the build
+# components the apex .cu surface compiles and links against: nvcc, the runtime
+# + driver headers, NVTX/CUPTI/NVML, and the math libraries. cuDSS is added
+# from its archive below; toolkit-config-common provides the /usr/local/cuda
+# symlink the ENV and stub steps rely on.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    v="${CUDA_VERSION_MAJOR}-${CUDA_VERSION_MINOR}" && \
     apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      cuda-toolkit-${CUDA_VERSION_MAJOR}-${CUDA_VERSION_MINOR}
+    if [ "${INSTALL_NSIGHT}" = "1" ]; then \
+      DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+        "cuda-toolkit-${v}"; \
+    else \
+      DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+        "cuda-nvcc-${v}" "cuda-cudart-dev-${v}" "cuda-nvrtc-dev-${v}" \
+        "cuda-driver-dev-${v}" "cuda-cupti-dev-${v}" "cuda-nvml-dev-${v}" \
+        "cuda-nvtx-${v}" "cuda-toolkit-${v}-config-common" \
+        "libcublas-dev-${v}" "libcusolver-dev-${v}" "libcufft-dev-${v}" \
+        "libcusparse-dev-${v}"; \
+    fi
 
-# CUDA environment (mirrors nvidia/cuda image ENV)
+# CUDA environment (mirrors nvidia/cuda image ENV). The base sets no
+# LD_LIBRARY_PATH, so set it outright rather than self-appending an empty value
+# (which would leave a trailing colon -- i.e. CWD -- on the search path).
 ENV PATH="/usr/local/cuda/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
+ENV LD_LIBRARY_PATH="/usr/local/cuda/lib64"
 ENV LIBRARY_PATH="/usr/local/cuda/lib64/stubs"
 ENV CUDA_VERSION=${CUDA_VERSION_MAJOR}.${CUDA_VERSION_MINOR}
 
@@ -58,23 +85,28 @@ ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
 
 # ==============================================================================
-# Nsight Systems (Nsight Compute already included via cuda-toolkit)
+# Nsight Systems -- dev/profiling tier only
 # ==============================================================================
 # nsight-systems-cli comes from the devtools repo (not in cuda-toolkit).
-# nsight-compute (ncu) is already installed as cuda-nsight-compute-<ver>.
+# nsight-compute (ncu) ships inside cuda-toolkit. The lean cuda-build tier
+# (INSTALL_NSIGHT=0) carries neither nsys nor the devtools repo: the optimization
+# workflow that needs them runs in dev-cuda.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    wget -qO - https://developer.download.nvidia.com/devtools/repos/ubuntu2404/amd64/nvidia.pub | \
-      gpg --dearmor -o /usr/share/keyrings/nvidia-devtools.gpg && \
-    echo "deb [signed-by=/usr/share/keyrings/nvidia-devtools.gpg] https://developer.download.nvidia.com/devtools/repos/ubuntu2404/amd64/ /" \
-      > /etc/apt/sources.list.d/nvidia-devtools.list && \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      nsight-systems-cli
-
-RUN nsys --version 2>/dev/null || echo "nsys installed (requires GPU at runtime)" && \
-    ncu --version 2>/dev/null || echo "ncu installed (requires GPU at runtime)"
+    if [ "${INSTALL_NSIGHT}" = "1" ]; then \
+      apt-get update && \
+      wget -qO - https://developer.download.nvidia.com/devtools/repos/ubuntu2404/amd64/nvidia.pub | \
+        gpg --dearmor -o /usr/share/keyrings/nvidia-devtools.gpg && \
+      echo "deb [signed-by=/usr/share/keyrings/nvidia-devtools.gpg] https://developer.download.nvidia.com/devtools/repos/ubuntu2404/amd64/ /" \
+        > /etc/apt/sources.list.d/nvidia-devtools.list && \
+      apt-get update && \
+      DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+        nsight-systems-cli && \
+      { nsys --version 2>/dev/null || echo "nsys installed (requires GPU at runtime)"; } && \
+      { ncu --version 2>/dev/null || echo "ncu installed (requires GPU at runtime)"; } ; \
+    else \
+      echo "Skipping Nsight (lean cuda-build tier)"; \
+    fi
 
 # ==============================================================================
 # NVML Stub

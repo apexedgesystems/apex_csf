@@ -16,6 +16,11 @@ ignored:
   # Justification: We control all base images locally
   - DL4001
 
+  # DL3007: Using latest tag
+  # Justification: dev/builder images FROM our own apex.*:latest -- the image
+  # graph is locally built and tagged :latest by design (same as DL4001).
+  - DL3007
+
 # Trusted registries (no warning for untagged pulls)
 trustedRegistries:
   - docker.io

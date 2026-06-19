@@ -15,7 +15,7 @@ inputs:
     description: GITHUB_TOKEN used for registry login
     required: true
   service:
-    description: Compose service to prepare (dev or dev-cuda)
+    description: Compose service to prepare (dev, dev-cuda, or cuda-build)
     default: dev
   rebuild:
     description: Rebuild base and the service image from the Dockerfiles instead of using the pulled cache
@@ -45,20 +45,29 @@ runs:
       env:
         SERVICE: ${{ inputs.service }}
       run: |
+        # tag = image the service produces; parent = its FROM image; parent_svc
+        # = the compose service that builds that parent (for the rebuild path).
         case "$SERVICE" in
-          dev)      echo "tag=apex.dev.cpu"  >> "$GITHUB_OUTPUT" ;;
-          dev-cuda) echo "tag=apex.dev.cuda" >> "$GITHUB_OUTPUT" ;;
+          dev)        tag=apex.dev.cpu;    parent=apex.base;       parent_svc=base ;;
+          dev-cuda)   tag=apex.dev.cuda;   parent=apex.base;       parent_svc=base ;;
+          cuda-build) tag=apex.cuda-build; parent=apex.build-base; parent_svc=build-base ;;
           *) echo "dev-setup: unknown service '$SERVICE'" >&2; exit 1 ;;
         esac
+        {
+          echo "tag=$tag"
+          echo "parent=$parent"
+          echo "parent_svc=$parent_svc"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Pull cached images
       shell: bash
       env:
         REGISTRY: ${{ inputs.registry }}
         TAG: ${{ steps.img.outputs.tag }}
+        PARENT: ${{ steps.img.outputs.parent }}
       run: |
-        docker pull "$REGISTRY/apex.base:latest" \
-          && docker tag "$REGISTRY/apex.base:latest" apex.base || true
+        docker pull "$REGISTRY/$PARENT:latest" \
+          && docker tag "$REGISTRY/$PARENT:latest" "$PARENT" || true
         docker pull "$REGISTRY/$TAG:latest" \
           && docker tag "$REGISTRY/$TAG:latest" "$TAG" || true
 
@@ -72,7 +81,8 @@ runs:
       shell: bash
       env:
         SERVICE: ${{ inputs.service }}
+        PARENT_SVC: ${{ steps.img.outputs.parent_svc }}
         REGISTRY: ${{ inputs.registry }}
       run: |
-        docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build base
+        docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build "$PARENT_SVC"
         docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build "$SERVICE"

@@ -204,7 +204,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN userdel -r ubuntu 2>/dev/null || true && \
     groupdel ubuntu 2>/dev/null || true && \
     groupadd -g ${HOST_GID} ${USER} 2>/dev/null || true && \
-    useradd -m -u ${HOST_UID} -g ${HOST_GID} -s /bin/bash -p "*" ${USER} 2>/dev/null || true && \
+    useradd -l -m -u ${HOST_UID} -g ${HOST_GID} -s /bin/bash -p "*" ${USER} 2>/dev/null || true && \
     echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
     chown -R ${HOST_UID}:${HOST_GID} /home/${USER} && \
     usermod -aG dialout "${USER}"
