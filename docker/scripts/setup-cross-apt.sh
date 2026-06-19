@@ -14,7 +14,7 @@ arch="${1:?usage: setup-cross-apt <debian-arch>}"
 
 # Native amd64 repos -- replace the deb822 default so the [arch=] pins apply.
 rm -f /etc/apt/sources.list.d/ubuntu.sources
-cat > /etc/apt/sources.list <<'EOF'
+cat >/etc/apt/sources.list <<'EOF'
 deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse
 deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse
 deb [arch=amd64] http://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse
@@ -24,6 +24,6 @@ EOF
 # Foreign arch -- all suites live on ports.ubuntu.com.
 for suite in "" -updates -security -backports; do
   echo "deb [arch=${arch}] http://ports.ubuntu.com/ubuntu-ports noble${suite} main restricted universe multiverse"
-done > "/etc/apt/sources.list.d/ubuntu-${arch}-ports.list"
+done >"/etc/apt/sources.list.d/ubuntu-${arch}-ports.list"
 
 dpkg --add-architecture "${arch}"
