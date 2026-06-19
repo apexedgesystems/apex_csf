@@ -35,10 +35,18 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # ------------------------------------------------------------------------------
 # Environment Configuration
 # ------------------------------------------------------------------------------
-# pip: disable caching (we use BuildKit cache mounts instead)
+# Build-time dependency fetches (pip/poetry from PyPI, cargo from crates.io) are
+# the build's only compile-time network dependency. Transient transport flakes
+# there -- HTTP/2 framing resets, read timeouts -- have failed release builds, so
+# make the fetches resilient: bounded retries, a longer timeout, and plain
+# HTTP/1.1 for cargo (sidesteps the HTTP/2 framing-layer resets seen against
+# crates.io). pip caching stays off (BuildKit cache mounts handle reuse).
 ENV PIP_NO_CACHE_DIR=off \
     PIP_DISABLE_PIP_VERSION_CHECK=on \
-    PIP_DEFAULT_TIMEOUT=100
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=5 \
+    CARGO_NET_RETRY=5 \
+    CARGO_HTTP_MULTIPLEXING=false
 
 # Container detection flag for scripts that behave differently in containers
 ENV CONTAINER=yes
