@@ -35,28 +35,16 @@ ENV PKG_CONFIG_LIBDIR=${AARCH64_SYSROOT}/usr/lib/aarch64-linux-gnu/pkgconfig:${A
 ENV PKG_CONFIG_SYSROOT_DIR=${AARCH64_SYSROOT}
 
 # ==============================================================================
-# Multi-arch Apt Sources
+# Multi-arch Apt Sources (shared: native amd64 + arm64 ports, dpkg arch)
 # ==============================================================================
-RUN rm -f /etc/apt/sources.list.d/ubuntu.sources && \
-    printf '%s\n' \
-      'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse' \
-      'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse' \
-      'deb [arch=amd64] http://security.ubuntu.com/ubuntu noble-security main restricted universe multiverse' \
-      'deb [arch=amd64] http://archive.ubuntu.com/ubuntu noble-backports main restricted universe multiverse' \
-      > /etc/apt/sources.list && \
-    printf '%s\n' \
-      'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble main restricted universe multiverse' \
-      'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-updates main restricted universe multiverse' \
-      'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-security main restricted universe multiverse' \
-      'deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports noble-backports main restricted universe multiverse' \
-      > /etc/apt/sources.list.d/ubuntu-arm64-ports.list
+COPY --chmod=0755 docker/scripts/setup-cross-apt.sh /usr/local/bin/setup-cross-apt
+RUN setup-cross-apt arm64
 
 # ==============================================================================
 # ARM64 Sysroot Libraries
 # ==============================================================================
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    dpkg --add-architecture arm64 && \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
       libgoogle-perftools-dev:arm64 \
