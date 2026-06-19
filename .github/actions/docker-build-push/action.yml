@@ -78,3 +78,7 @@ runs:
           docker tag "$IMAGE" "$REGISTRY/$IMAGE:${tag}"
           docker push "$REGISTRY/$IMAGE:${tag}"
         done
+
+        # Size visibility: surface the built image size so bloat regressions show
+        # up in the build log (the way the artifact floor catches empty tarballs).
+        echo "::notice title=image size::${IMAGE} = $(docker images "$IMAGE" --format '{{.Size}}')"

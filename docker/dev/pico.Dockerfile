@@ -43,7 +43,8 @@ ENV PATH="/opt/arm-gnu-toolchain/bin:${PATH}"
 # Pico SDK
 # ==============================================================================
 RUN git clone --depth=1 -b "${PICO_SDK_VERSION}" https://github.com/raspberrypi/pico-sdk.git /opt/pico-sdk && \
-    git -C /opt/pico-sdk submodule update --init
+    git -C /opt/pico-sdk submodule update --init && \
+    rm -rf /opt/pico-sdk/.git
 
 ENV PICO_SDK_PATH=/opt/pico-sdk
 
