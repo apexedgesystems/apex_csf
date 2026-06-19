@@ -23,3 +23,8 @@ services:
     deploy: !reset null
     volumes:
       - ./.ccache:/ccache
+  # cuda-build has no GPU reservation to drop; it only needs the host ccache
+  # bind so the build-test gate's compiler cache persists across runs.
+  cuda-build:
+    volumes:
+      - ./.ccache:/ccache
