@@ -128,9 +128,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       clang-20 llvm-20 libclang-rt-20-dev \
       lld libc++-dev libc++abi-dev
 
-# Unversioned compiler symlinks default to Clang 21
+# Unversioned compiler symlinks default to Clang 21. cc/c++ also point at clang
+# so cargo and other tools that default to `cc` have a C/C++ driver -- the lean
+# tier ships no gcc, and apex builds with clang regardless.
 RUN ln -sf /usr/bin/clang-21  /usr/local/bin/clang && \
-    ln -sf /usr/bin/clang++-21 /usr/local/bin/clang++
+    ln -sf /usr/bin/clang++-21 /usr/local/bin/clang++ && \
+    ln -sf /usr/bin/clang-21  /usr/local/bin/cc && \
+    ln -sf /usr/bin/clang++-21 /usr/local/bin/c++
 
 # ------------------------------------------------------------------------------
 # CMake

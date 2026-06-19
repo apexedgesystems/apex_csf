@@ -186,16 +186,16 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Set up dev image
+      - name: Set up build-base image
         uses: ./.github/actions/dev-setup
         with:
           registry: ${{ env.REGISTRY }}
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          service: dev
+          service: build-base
           rebuild: ${{ needs.changes.outputs.docker }}
       - name: Run Rust tests
-        run: docker compose run --rm -T dev make test-rust
+        run: docker compose run --rm -T build-base make test-rust
 
   py:
     name: Python tool tests
@@ -208,16 +208,16 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Set up dev image
+      - name: Set up build-base image
         uses: ./.github/actions/dev-setup
         with:
           registry: ${{ env.REGISTRY }}
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          service: dev
+          service: build-base
           rebuild: ${{ needs.changes.outputs.docker }}
       - name: Run Python tests
-        run: docker compose run --rm -T dev make test-py
+        run: docker compose run --rm -T build-base make test-py
 
   sanitize:
     name: Sanitize
@@ -232,13 +232,13 @@ jobs:
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - name: Set up dev image
+      - name: Set up build-base image
         uses: ./.github/actions/dev-setup
         with:
           registry: ${{ env.REGISTRY }}
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          service: dev
+          service: build-base
           rebuild: ${{ needs.changes.outputs.docker }}
       - name: Restore ccache
         uses: actions/cache@v4
@@ -251,9 +251,9 @@ jobs:
       - name: Prepare ccache dir
         run: mkdir -p .ccache
       - name: Address + UB Sanitizer
-        run: docker compose run --rm -T dev make asan-ubsan
+        run: docker compose run --rm -T build-base make asan-ubsan
       - name: ccache stats
-        run: docker compose run --rm -T dev ccache -s | tail -n 8
+        run: docker compose run --rm -T build-base ccache -s | tail -n 8
 
   static-analysis:
     name: Static analysis

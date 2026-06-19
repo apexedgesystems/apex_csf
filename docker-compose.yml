@@ -43,8 +43,11 @@ services:
     profiles: ["build-only"]
 
   # Lean compile/link/test tier (no scanners/profilers/docs). Builders and the
-  # CI build-test gate inherit this instead of the full dev-base.
+  # CI build-test gate inherit this; the lean CI tool/test jobs (rust, python,
+  # sanitize) also run directly in it instead of the full dev-base -- they need
+  # only rust/cargo, poetry/python, and clang + the sanitizer runtimes.
   build-base:
+    <<: *common
     image: apex.build-base
     build:
       context: .
@@ -52,7 +55,8 @@ services:
       target: build-base
       args:
         <<: *build-args
-    profiles: ["build-only"]
+    privileged: true
+    command: bash
 
   # ============================================================================
   # Interactive development shells - Primary
