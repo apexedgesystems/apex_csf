@@ -253,7 +253,10 @@ services:
       dockerfile: docker/builder.Dockerfile
       args:
         <<: *build-args
-        DEV_IMAGE: apex.dev.cpu
+        # Compile against the lean build-base, not dev-base: the CPU release
+        # build (make release && make tools) needs only the compile toolchain,
+        # rust, and poetry -- all in build-base, none of dev-base's tooling.
+        DEV_IMAGE: apex.build-base
         BUILD_CMD: "make release && make tools"
 
   builder-cuda:
