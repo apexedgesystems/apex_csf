@@ -7,12 +7,15 @@
 #   make shell-dev-jetson
 #   docker compose run dev-jetson
 # ==============================================================================
-FROM apex.dev.cuda:latest
+# BASE selects the CUDA tier: apex.dev.cuda (full toolkit + Nsight, for the dev
+# shell) or apex.cuda-build (lean, for the release builder). Both carry the
+# cuda-keyring + CUDA components the aarch64 cross install below needs.
+ARG BASE=apex.dev.cuda
+FROM ${BASE}:latest
 
 ARG USER
 
-LABEL org.opencontainers.image.title="apex.dev.jetson" \
-      org.opencontainers.image.description="CUDA + AArch64 cross-compilation shell for Jetson"
+LABEL org.opencontainers.image.description="CUDA + AArch64 cross-compilation for Jetson"
 
 USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]

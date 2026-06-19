@@ -285,7 +285,7 @@ _DEV_IMAGES := apex.base $(foreach s,$(DEV_SERVICES),$(call _dev_image,$(s)))
 # Lean build tiers published to ghcr alongside the dev images (the CI gate and
 # the builders compile in them). Tracked so ghcr-gc collects their untagged
 # digests the same way it does the dev images'.
-_BUILD_TIER_IMAGES := apex.build-base apex.cuda-build
+_BUILD_TIER_IMAGES := apex.build-base apex.cuda-build apex.build.jetson
 
 docker-push-devs: docker-devs
 	@test -n "$(REGISTRY)" || \

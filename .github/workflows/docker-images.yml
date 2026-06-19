@@ -84,6 +84,7 @@ jobs:
           apex.dev.cuda|dev-cuda|apex.base|1|docker/dev/cuda.Dockerfile
           apex.cuda-build|cuda-build|apex.build-base|1|docker/dev/cuda.Dockerfile
           apex.dev.jetson|dev-jetson|apex.dev.cuda|2|docker/dev/jetson.Dockerfile
+          apex.build.jetson|build-jetson|apex.cuda-build|2|docker/dev/jetson.Dockerfile
           apex.dev.rpi|dev-rpi|apex.dev.cpu|2|docker/dev/rpi.Dockerfile
           apex.dev.riscv64|dev-riscv64|apex.dev.cpu|2|docker/dev/riscv64.Dockerfile
           apex.dev.stm32|dev-stm32|apex.dev.cpu|2|docker/dev/stm32.Dockerfile
