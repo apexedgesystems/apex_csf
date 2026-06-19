@@ -21,65 +21,7 @@ include(apex/All)
 option(APEX_USE_FREERTOS "Build with FreeRTOS (vTaskDelayUntil tick source)" OFF)
 
 # ------------------------------------------------------------------------------
-# STM32CubeL4 SDK Path
-# ------------------------------------------------------------------------------
-
-set(STM32CUBE_PATH "$ENV{STM32CUBE_L4_PATH}")
-if (NOT STM32CUBE_PATH)
-  set(STM32CUBE_PATH "/opt/STM32CubeL4")
-endif ()
-
-# ------------------------------------------------------------------------------
-# STM32 HAL Sources (from STM32CubeL4)
-# ------------------------------------------------------------------------------
-
-set(STM32_HAL_DIR "${STM32CUBE_PATH}/Drivers/STM32L4xx_HAL_Driver")
-
-set(STM32_HAL_SOURCES
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal.c"
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal_cortex.c"
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal_flash.c"
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal_flash_ex.c"
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal_gpio.c"
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal_rcc.c"
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal_rcc_ex.c"
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal_pwr.c"
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal_pwr_ex.c"
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal_dma.c"
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal_dma_ex.c"
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal_uart.c"
-    "${STM32_HAL_DIR}/Src/stm32l4xx_hal_uart_ex.c"
-)
-
-# CMSIS files (system + official GCC startup)
-set(CMSIS_DIR "${STM32CUBE_PATH}/Drivers/CMSIS/Device/ST/STM32L4xx")
-set(STM32_SYSTEM_SOURCES "${CMSIS_DIR}/Source/Templates/system_stm32l4xx.c"
-                         "${CMSIS_DIR}/Source/Templates/gcc/startup_stm32l476xx.s"
-)
-
-# STM32Cube include paths
-set(STM32_INC "${STM32CUBE_PATH}/Drivers/CMSIS/Include" "${CMSIS_DIR}/Include"
-              "${STM32_HAL_DIR}/Inc"
-)
-
-# ------------------------------------------------------------------------------
-# FreeRTOS Kernel Sources (from STM32CubeL4, when enabled)
-# ------------------------------------------------------------------------------
-
-if (APEX_USE_FREERTOS)
-  set(FREERTOS_DIR "${STM32CUBE_PATH}/Middlewares/Third_Party/FreeRTOS/Source")
-
-  set(FREERTOS_SOURCES
-      "${FREERTOS_DIR}/tasks.c" "${FREERTOS_DIR}/list.c" "${FREERTOS_DIR}/queue.c"
-      "${FREERTOS_DIR}/timers.c" "${FREERTOS_DIR}/portable/GCC/ARM_CM4F/port.c"
-      "${FREERTOS_DIR}/portable/MemMang/heap_4.c"
-  )
-
-  set(FREERTOS_INC "${FREERTOS_DIR}/include" "${FREERTOS_DIR}/portable/GCC/ARM_CM4F")
-endif ()
-
-# ------------------------------------------------------------------------------
-# Application Sources (5 files)
+# Application Sources
 # ------------------------------------------------------------------------------
 
 set(APP_SOURCES
@@ -90,51 +32,78 @@ set(APP_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cxx_stubs.cpp"
 )
 
+set(APP_INC "${CMAKE_CURRENT_SOURCE_DIR}/inc" "${CMAKE_SOURCE_DIR}/src/system/core/hal/base"
+            "${CMAKE_SOURCE_DIR}/src/system/core/hal/stm32/inc"
+)
+set(APP_DEFS "")
+
+# ------------------------------------------------------------------------------
+# FreeRTOS Kernel Sources (optional middleware, from STM32CubeL4)
+# ------------------------------------------------------------------------------
+#
+# FreeRTOS is an opt-in middleware rather than part of the core HAL/CMSIS stack,
+# so it stays here instead of in apex_add_firmware_with_stm32().
+
+if (APEX_USE_FREERTOS)
+  set(STM32CUBE_PATH "$ENV{STM32CUBE_L4_PATH}")
+  if (NOT STM32CUBE_PATH)
+    set(STM32CUBE_PATH "/opt/STM32CubeL4")
+  endif ()
+  set(FREERTOS_DIR "${STM32CUBE_PATH}/Middlewares/Third_Party/FreeRTOS/Source")
+
+  list(
+    APPEND
+    APP_SOURCES
+    "${FREERTOS_DIR}/tasks.c"
+    "${FREERTOS_DIR}/list.c"
+    "${FREERTOS_DIR}/queue.c"
+    "${FREERTOS_DIR}/timers.c"
+    "${FREERTOS_DIR}/portable/GCC/ARM_CM4F/port.c"
+    "${FREERTOS_DIR}/portable/MemMang/heap_4.c"
+  )
+  list(APPEND APP_INC "${FREERTOS_DIR}/include" "${FREERTOS_DIR}/portable/GCC/ARM_CM4F")
+  list(APPEND APP_DEFS APEX_USE_FREERTOS)
+endif ()
+
 # ------------------------------------------------------------------------------
 # Firmware Target
 # ------------------------------------------------------------------------------
 
-set(FIRMWARE_SRC ${APP_SOURCES} ${STM32_HAL_SOURCES} ${STM32_SYSTEM_SOURCES})
-set(FIRMWARE_INC "${CMAKE_CURRENT_SOURCE_DIR}/inc" "${CMAKE_SOURCE_DIR}/src/system/core/hal/base"
-                 "${CMAKE_SOURCE_DIR}/src/system/core/hal/stm32/inc"
-)
-set(FIRMWARE_DEFS "")
-
-if (APEX_USE_FREERTOS)
-  list(APPEND FIRMWARE_SRC ${FREERTOS_SOURCES})
-  list(APPEND FIRMWARE_INC ${FREERTOS_INC})
-  list(APPEND FIRMWARE_DEFS APEX_USE_FREERTOS)
-endif ()
-
-apex_add_firmware(
+apex_add_firmware_with_stm32(
   NAME
   stm32_encryptor_demo
-  SRC
-  ${FIRMWARE_SRC}
-  LINKER_SCRIPT
-  "${CMAKE_CURRENT_SOURCE_DIR}/STM32L476RG.ld"
+  CUBE
+  L4
   MCU
   STM32L476xx
+  STARTUP
+  startup_stm32l476xx
+  HAL_MODULES
+  cortex
+  flash
+  flash_ex
+  gpio
+  rcc
+  rcc_ex
+  pwr
+  pwr_ex
+  dma
+  dma_ex
+  uart
+  uart_ex
+  LINKER_SCRIPT
+  "${CMAKE_CURRENT_SOURCE_DIR}/STM32L476RG.ld"
+  SRC
+  ${APP_SOURCES}
   INC
-  ${FIRMWARE_INC}
+  ${APP_INC}
   LINK
   executive_mcu
   encryption_mcu
   system_core_protocols_framing_slip
   utilities_checksums_crc
   DEFS
-  ${FIRMWARE_DEFS}
+  ${APP_DEFS}
 )
-
-# Suppress warnings from ST vendor headers
-target_include_directories(stm32_encryptor_demo SYSTEM PRIVATE ${STM32_INC})
-
-if (APEX_USE_FREERTOS)
-  target_include_directories(stm32_encryptor_demo SYSTEM PRIVATE ${FREERTOS_INC})
-endif ()
-
-# ------------------------------------------------------------------------------
-# Finalize
-# ------------------------------------------------------------------------------
 
 apex_finalize_firmware()

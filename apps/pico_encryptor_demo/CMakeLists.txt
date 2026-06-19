@@ -19,29 +19,7 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Pico SDK Initialization
-# ------------------------------------------------------------------------------
-
-set(PICO_SDK_PATH
-    "$ENV{PICO_SDK_PATH}"
-    CACHE PATH "Pico SDK path"
-)
-if (NOT PICO_SDK_PATH)
-  set(PICO_SDK_PATH "/opt/pico-sdk")
-endif ()
-
-if (EXISTS "${PICO_SDK_PATH}/pico_sdk_init.cmake")
-  include("${PICO_SDK_PATH}/pico_sdk_init.cmake")
-  pico_sdk_init()
-  set(PICO_SDK_AVAILABLE TRUE)
-  message(STATUS "[pico_encryptor_demo] Pico SDK found at ${PICO_SDK_PATH}")
-else ()
-  set(PICO_SDK_AVAILABLE FALSE)
-  message(WARNING "[pico_encryptor_demo] Pico SDK not found at ${PICO_SDK_PATH}")
-endif ()
-
-# ------------------------------------------------------------------------------
-# Application Sources (5 files)
+# Application Sources
 # ------------------------------------------------------------------------------
 
 set(APP_SOURCES
@@ -56,7 +34,7 @@ set(APP_SOURCES
 # Firmware Target
 # ------------------------------------------------------------------------------
 
-apex_add_firmware(
+apex_add_firmware_with_pico(
   NAME
   pico_encryptor_demo
   SRC
@@ -70,36 +48,15 @@ apex_add_firmware(
   encryption_mcu
   system_core_protocols_framing_slip
   utilities_checksums_crc
+  PICO_LIBS
+  pico_stdlib
+  hardware_uart
+  hardware_flash
+  hardware_gpio
+  hardware_timer
+  hardware_clocks
+  hardware_irq
+  hardware_sync
 )
-
-# ------------------------------------------------------------------------------
-# Pico SDK Integration (when SDK is available in Docker container)
-# ------------------------------------------------------------------------------
-
-if (PICO_SDK_AVAILABLE)
-  target_link_libraries(
-    pico_encryptor_demo
-    PRIVATE pico_stdlib
-            hardware_uart
-            hardware_flash
-            hardware_gpio
-            hardware_timer
-            hardware_clocks
-            hardware_irq
-            hardware_sync
-  )
-
-  # USB CDC enabled for picotool remote BOOTSEL (standard flash workflow)
-  # UART stdio disabled (we manage UART directly)
-  pico_enable_stdio_usb(pico_encryptor_demo 1)
-  pico_enable_stdio_uart(pico_encryptor_demo 0)
-
-  # Generate .uf2, .hex, .bin, .map, .dis
-  pico_add_extra_outputs(pico_encryptor_demo)
-endif ()
-
-# ------------------------------------------------------------------------------
-# Finalize
-# ------------------------------------------------------------------------------
 
 apex_finalize_firmware()

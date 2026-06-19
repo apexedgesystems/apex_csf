@@ -2,8 +2,10 @@
 # apex/Firmware.cmake - Bare-metal firmware target factory
 # ==============================================================================
 #
-# Provides apex_add_firmware() for creating bare-metal executables.
-# Active only when CMAKE_SYSTEM_NAME is "Generic" (bare-metal toolchain).
+# Provides apex_add_firmware() for creating bare-metal executables, plus
+# apex_add_firmware_with_<vendor>() wrappers that assemble each vendor's SDK
+# sources, includes, and link wiring so apps declare only their chip and the
+# modules they use. Active only when CMAKE_SYSTEM_NAME is "Generic".
 #
 # Supported platforms (via APEX_HAL_PLATFORM):
 #   stm32  - ARM Cortex-M: custom linker script, -nostartfiles/-nostdlib, .bin+.hex
@@ -12,8 +14,9 @@
 #   esp32  - ESP32-S3: ESP-IDF provides startup, linker, FreeRTOS, NVS
 #   c2000  - TI C28x DSP: TI CGT compiler, .cmd linker script, .hex via hex2000
 #
-# All platform-specific configuration (HAL sources, RTOS sources, linker
-# scripts, include paths) belongs in the application CMakeLists.txt.
+# apex_add_firmware() stays vendor-agnostic: an app can call it directly (AVR
+# needs no SDK) or go through a with_<vendor> wrapper. Vendor SDK assembly lives
+# in the wrapper; app-specific middleware (e.g. FreeRTOS) stays in the app.
 # ==============================================================================
 
 include_guard(GLOBAL)
@@ -318,6 +321,238 @@ function (apex_add_firmware)
         "[apex] FIRMWARE ${FW_NAME} mcu='${FW_MCU}' srcs=${_src_count} platform=${APEX_HAL_PLATFORM}"
     )
   endif ()
+endfunction ()
+
+# ------------------------------------------------------------------------------
+# apex_add_firmware_with_stm32(...)
+#
+# apex_add_firmware() plus the STM32Cube HAL/CMSIS source + include assembly, so
+# an STM32 app declares only its chip and the HAL modules it uses instead of
+# repeating the ~70-line vendor preamble. The Cube tree is found via
+# STM32CUBE_<CUBE>_PATH (default /opt/STM32Cube<CUBE>).
+#
+# Arguments:
+#   NAME          <target>          required
+#   SRC           <files...>        required (app sources)
+#   CUBE          <F4|L4>           required (STM32Cube edition)
+#   MCU           <define>          required (e.g. STM32L476xx)
+#   STARTUP       <name>            required (gcc startup, e.g. startup_stm32l476xx)
+#   HAL_MODULES   <names...>        required (e.g. uart dma gpio; the base
+#                                   stm32<fam>xx_hal.c is always included)
+#   LINKER_SCRIPT <path>            required
+#   LINK/INC/DEFS <...>             optional (forwarded to apex_add_firmware)
+# ------------------------------------------------------------------------------
+function (apex_add_firmware_with_stm32)
+  cmake_parse_arguments(
+    ST "" "NAME;CUBE;MCU;STARTUP;LINKER_SCRIPT" "SRC;HAL_MODULES;LINK;INC;DEFS" ${ARGN}
+  )
+  apex_require(
+    ST_NAME
+    ST_SRC
+    ST_CUBE
+    ST_MCU
+    ST_STARTUP
+    ST_LINKER_SCRIPT
+    ST_HAL_MODULES
+  )
+
+  set(_cube "$ENV{STM32CUBE_${ST_CUBE}_PATH}")
+  if (NOT _cube)
+    set(_cube "/opt/STM32Cube${ST_CUBE}")
+  endif ()
+  string(TOLOWER "${ST_CUBE}" _fam) # L4 -> l4
+
+  set(_hal "${_cube}/Drivers/STM32${ST_CUBE}xx_HAL_Driver")
+  set(_cmsis "${_cube}/Drivers/CMSIS/Device/ST/STM32${ST_CUBE}xx")
+
+  set(_vendor_src
+      "${_hal}/Src/stm32${_fam}xx_hal.c" "${_cmsis}/Source/Templates/system_stm32${_fam}xx.c"
+      "${_cmsis}/Source/Templates/gcc/${ST_STARTUP}.s"
+  )
+  foreach (_m IN LISTS ST_HAL_MODULES)
+    list(APPEND _vendor_src "${_hal}/Src/stm32${_fam}xx_hal_${_m}.c")
+  endforeach ()
+
+  apex_add_firmware(
+    NAME
+    ${ST_NAME}
+    SRC
+    ${ST_SRC}
+    ${_vendor_src}
+    LINKER_SCRIPT
+    "${ST_LINKER_SCRIPT}"
+    MCU
+    ${ST_MCU}
+    INC
+    ${ST_INC}
+    LINK
+    ${ST_LINK}
+    DEFS
+    ${ST_DEFS}
+  )
+
+  # ST vendor headers are warning-noisy -- include them as SYSTEM.
+  target_include_directories(
+    ${ST_NAME} SYSTEM PRIVATE "${_cube}/Drivers/CMSIS/Include" "${_cmsis}/Include" "${_hal}/Inc"
+  )
+endfunction ()
+
+# ------------------------------------------------------------------------------
+# apex_add_firmware_with_c2000(...)
+#
+# apex_add_firmware() plus the C2000Ware device + driverlib wiring: the
+# codestart bootstrap, driverlib include paths, the pre-compiled driverlib
+# archive, and the codestart entry point. The C2000Ware tree is found via
+# C2000WARE_ROOT (default /opt/ti/c2000ware-core-sdk). Device-specific local
+# files (e.g. a patched device.c) stay in the app's SRC.
+#
+# Arguments:
+#   NAME          <target>          required
+#   SRC           <files...>        required (app sources + local device.c)
+#   DEVICE        <family>          required (e.g. f28004x)
+#   MCU           <define>          required (board define, e.g. _LAUNCHXL_F280049C)
+#   LINKER_SCRIPT <path>            required
+#   INC/LINK/DEFS <...>             optional (forwarded to apex_add_firmware)
+# ------------------------------------------------------------------------------
+function (apex_add_firmware_with_c2000)
+  cmake_parse_arguments(C2 "" "NAME;DEVICE;MCU;LINKER_SCRIPT" "SRC;INC;LINK;DEFS" ${ARGN})
+  apex_require(C2_NAME C2_SRC C2_DEVICE C2_MCU C2_LINKER_SCRIPT)
+
+  set(_root "$ENV{C2000WARE_ROOT}")
+  if (NOT _root)
+    set(_root "/opt/ti/c2000ware-core-sdk")
+  endif ()
+
+  set(_common "${_root}/device_support/${C2_DEVICE}/common")
+  set(_driverlib "${_root}/driverlib/${C2_DEVICE}/driverlib")
+
+  apex_add_firmware(
+    NAME
+    ${C2_NAME}
+    SRC
+    ${C2_SRC}
+    "${_common}/source/${C2_DEVICE}_codestartbranch.asm"
+    LINKER_SCRIPT
+    "${C2_LINKER_SCRIPT}"
+    MCU
+    ${C2_MCU}
+    INC
+    ${C2_INC}
+    "${_common}/include"
+    "${_driverlib}"
+    "${_driverlib}/inc"
+    LINK
+    ${C2_LINK}
+    DEFS
+    ${C2_DEFS}
+  )
+
+  # Entry point matches the codestart label in <device>_codestartbranch.asm, and
+  # the pre-compiled driverlib archive provides GPIO/SysCtl/SCI/CAN/Timer/Flash.
+  target_link_options(
+    ${C2_NAME} PRIVATE "-ecode_start" "-l${_driverlib}/ccs/Release/driverlib_coff.lib"
+  )
+endfunction ()
+
+# ------------------------------------------------------------------------------
+# apex_add_firmware_with_pico(...)
+#
+# apex_add_firmware() plus the Pico SDK handshake: SDK init, the hardware
+# library links, stdio routing, and the .uf2/.hex/.bin/.map/.dis outputs. The
+# SDK is found via PICO_SDK_PATH (default /opt/pico-sdk). This app is only ever
+# configured inside the pico cross build, where the SDK is present.
+#
+# Arguments:
+#   NAME      <target>          required
+#   SRC       <files...>        required
+#   PICO_LIBS <libs...>         optional (Pico SDK libs, e.g. pico_stdlib
+#                               hardware_uart hardware_flash)
+#   INC/LINK  <...>             optional (forwarded to apex_add_firmware)
+# ------------------------------------------------------------------------------
+function (apex_add_firmware_with_pico)
+  cmake_parse_arguments(P "" "NAME" "SRC;INC;LINK;PICO_LIBS" ${ARGN})
+  apex_require(P_NAME P_SRC)
+
+  set(PICO_SDK_PATH
+      "$ENV{PICO_SDK_PATH}"
+      CACHE PATH "Pico SDK path"
+  )
+  if (NOT PICO_SDK_PATH)
+    set(PICO_SDK_PATH "/opt/pico-sdk")
+  endif ()
+  include("${PICO_SDK_PATH}/pico_sdk_init.cmake")
+  pico_sdk_init()
+
+  apex_add_firmware(
+    NAME
+    ${P_NAME}
+    SRC
+    ${P_SRC}
+    INC
+    ${P_INC}
+    LINK
+    ${P_LINK}
+  )
+
+  if (P_PICO_LIBS)
+    target_link_libraries(${P_NAME} PRIVATE ${P_PICO_LIBS})
+  endif ()
+
+  # USB CDC enabled for picotool remote BOOTSEL (standard flash workflow); UART
+  # stdio disabled because the app drives the UARTs directly.
+  pico_enable_stdio_usb(${P_NAME} 1)
+  pico_enable_stdio_uart(${P_NAME} 0)
+  pico_add_extra_outputs(${P_NAME})
+endfunction ()
+
+# ------------------------------------------------------------------------------
+# apex_add_firmware_with_esp32(...)
+#
+# apex_add_firmware() plus the ESP-IDF handshake: the IDF build process for the
+# esp32s3 target, the idf:: component links, and the bootloader/partition image
+# generation. IDF is found via IDF_PATH. This app is only ever configured inside
+# the esp32 cross build, where IDF is present.
+#
+# Arguments:
+#   NAME       <target>         required
+#   SRC        <files...>       required
+#   COMPONENTS <names...>       required (IDF components to build, e.g. freertos
+#                               driver nvs_flash esp_timer esptool_py)
+#   IDF_LIBS   <libs...>        optional (idf:: targets to link)
+#   INC/LINK   <...>            optional (forwarded to apex_add_firmware)
+# ------------------------------------------------------------------------------
+function (apex_add_firmware_with_esp32)
+  cmake_parse_arguments(E "" "NAME" "SRC;INC;LINK;COMPONENTS;IDF_LIBS" ${ARGN})
+  apex_require(E_NAME E_SRC E_COMPONENTS)
+
+  include($ENV{IDF_PATH}/tools/cmake/idf.cmake)
+  idf_build_process(
+    "esp32s3"
+    COMPONENTS
+    ${E_COMPONENTS}
+    SDKCONFIG
+    "${CMAKE_BINARY_DIR}/sdkconfig"
+    SDKCONFIG_DEFAULTS
+    "${CMAKE_CURRENT_SOURCE_DIR}/sdkconfig.defaults"
+    BUILD_DIR
+    "${CMAKE_BINARY_DIR}"
+  )
+
+  apex_add_firmware(
+    NAME
+    ${E_NAME}
+    SRC
+    ${E_SRC}
+    INC
+    ${E_INC}
+    LINK
+    ${E_LINK}
+  )
+
+  if (E_IDF_LIBS)
+    target_link_libraries(${E_NAME} PRIVATE ${E_IDF_LIBS})
+  endif ()
+  idf_build_executable(${E_NAME})
 endfunction ()
 
 # ------------------------------------------------------------------------------
