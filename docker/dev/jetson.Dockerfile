@@ -21,17 +21,12 @@ USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # ==============================================================================
-# AArch64 Cross-compilation Toolchain (was toolchain/aarch64.Dockerfile)
+# AArch64 Cross-compilation Toolchain
 # ==============================================================================
+COPY --chmod=0755 docker/scripts/setup-cross-toolchain.sh /usr/local/bin/setup-cross-toolchain
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      crossbuild-essential-arm64 \
-      binutils-aarch64-linux-gnu \
-      pkg-config \
-      qemu-user-static \
-      file
+    setup-cross-toolchain arm64
 
 ENV AARCH64_SYSROOT=/usr/aarch64-linux-gnu
 
@@ -42,20 +37,12 @@ COPY --chmod=0755 docker/scripts/setup-cross-apt.sh /usr/local/bin/setup-cross-a
 RUN setup-cross-apt arm64
 
 # ==============================================================================
-# ARM64 Sysroot Libraries
+# ARM64 Sysroot Libraries + mold cross-linker
 # ==============================================================================
+COPY --chmod=0755 docker/scripts/setup-sysroot.sh /usr/local/bin/setup-sysroot
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      libgoogle-perftools-dev:arm64 \
-      libtcmalloc-minimal4:arm64 \
-      libunwind-dev:arm64 \
-      libssl-dev:arm64 \
-      zlib1g-dev:arm64 \
-      liblapacke-dev:arm64 \
-      libopenblas-dev:arm64 \
-      libsuitesparse-dev:arm64
+    setup-sysroot arm64 aarch64-linux-gnu
 
 # ==============================================================================
 # CUDA Cross-compilation (sbsa)
@@ -91,14 +78,6 @@ RUN set -euo pipefail && \
     test -f /usr/local/cuda/targets/aarch64-linux/include/cuda_runtime.h \
     || { find /usr/local -maxdepth 3 -type d -path '*/targets/*' -print || true; exit 1; } && \
     (command -v ldconfig >/dev/null 2>&1 && ldconfig || true)
-
-# ==============================================================================
-# Mold Linker for Cross-Compilation
-# ==============================================================================
-# GCC cross-compilers look for <triple>-ld.mold, not the system mold binary.
-# Symlink lets -fuse-ld=mold work with aarch64-linux-gnu-g++, which fixes
-# -gsplit-dwarf section group errors that occur with the default GNU ld.
-RUN ln -sfn /usr/bin/mold /usr/bin/aarch64-linux-gnu-ld.mold
 
 # Cross-compilation pkg-config paths
 ENV PKG_CONFIG_LIBDIR=${AARCH64_SYSROOT}/usr/lib/aarch64-linux-gnu/pkgconfig:${AARCH64_SYSROOT}/usr/lib/pkgconfig:${AARCH64_SYSROOT}/usr/share/pkgconfig
