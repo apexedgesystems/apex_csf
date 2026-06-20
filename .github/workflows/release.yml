@@ -67,7 +67,7 @@ jobs:
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
       - name: Read builder targets and released apps from the registries
         id: list
         run: |
@@ -118,7 +118,7 @@ jobs:
         builder: ${{ fromJSON(needs.targets.outputs.list) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Prepare environment
         run: |
@@ -150,7 +150,7 @@ jobs:
           docker tag "$REGISTRY/$DEV:latest" "$DEV"
 
       - name: Restore builder ccache
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: .ccache
           key: ccache-builder-${{ matrix.builder }}-${{ github.sha }}
@@ -220,7 +220,7 @@ jobs:
         include: ${{ fromJSON(needs.targets.outputs.apps) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Prepare environment
         run: |
@@ -292,7 +292,7 @@ jobs:
 
       - name: Create GitHub Release
         if: github.event_name == 'push'
-        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda # v3
+        uses: softprops/action-gh-release@718ea10b132b3b2eba29c1007bb80653f286566b # v3
         with:
           name: Apex CSF ${{ needs.targets.outputs.version }}
           draft: false
