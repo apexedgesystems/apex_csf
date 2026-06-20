@@ -43,6 +43,65 @@ enable_language(ASM)
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
+# _apex_firmware_postbuild(<target> COMMENT <str> [BIN] [HEX]
+#                          [SIZE_FORMAT <fmt>] [SIZE_MCU <mcu>])
+#
+# Shared POST_BUILD step for the GCC-based platforms: optional objcopy to .bin
+# and/or .hex followed by a size report, emitted as one custom command. BIN/HEX
+# use ${CMAKE_OBJCOPY}; the size report uses ${CMAKE_SIZE} (--format=<fmt> when
+# given, plus --mcu=<mcu> for the avr format). c2000 keeps its own postbuild --
+# it uses the TI ofd2000/hex2000 tools, not the GCC binutils.
+# ------------------------------------------------------------------------------
+function (_apex_firmware_postbuild _target)
+  cmake_parse_arguments(PB "BIN;HEX" "COMMENT;SIZE_FORMAT;SIZE_MCU" "" ${ARGN})
+
+  set(_elf "${CMAKE_BINARY_DIR}/firmware/${_target}.elf")
+
+  # objcopy steps run before the (always-present) size report. They are
+  # collected as extra COMMANDs prepended to the literal size COMMAND below.
+  set(_objcopy)
+  if (PB_BIN)
+    list(
+      APPEND
+      _objcopy
+      COMMAND
+      ${CMAKE_OBJCOPY}
+      -O
+      binary
+      ${_elf}
+      "${CMAKE_BINARY_DIR}/firmware/${_target}.bin"
+    )
+  endif ()
+  if (PB_HEX)
+    list(
+      APPEND
+      _objcopy
+      COMMAND
+      ${CMAKE_OBJCOPY}
+      -O
+      ihex
+      ${_elf}
+      "${CMAKE_BINARY_DIR}/firmware/${_target}.hex"
+    )
+  endif ()
+
+  set(_size_args)
+  if (PB_SIZE_MCU)
+    set(_size_args --format=${PB_SIZE_FORMAT} --mcu=${PB_SIZE_MCU})
+  elseif (PB_SIZE_FORMAT)
+    set(_size_args --format=${PB_SIZE_FORMAT})
+  endif ()
+
+  add_custom_command(
+    TARGET ${_target}
+    POST_BUILD ${_objcopy}
+    COMMAND ${CMAKE_SIZE} ${_size_args} ${_elf}
+    COMMENT "${PB_COMMENT}"
+    VERBATIM
+  )
+endfunction ()
+
+# ------------------------------------------------------------------------------
 # _apex_firmware_stm32(<target> <linker_script> <mcu>)
 #
 # STM32 (ARM Cortex-M): custom linker script, -nostdlib, .bin + .hex.
@@ -78,17 +137,14 @@ function (_apex_firmware_stm32 _target _linker_script _mcu)
   set_target_properties(${_target} PROPERTIES LINK_DEPENDS "${_linker_script}")
 
   # Post-build: .bin + .hex + berkeley size
-  set(_elf "${CMAKE_BINARY_DIR}/firmware/${_target}.elf")
-  set(_bin "${CMAKE_BINARY_DIR}/firmware/${_target}.bin")
-  set(_hex "${CMAKE_BINARY_DIR}/firmware/${_target}.hex")
-  add_custom_command(
-    TARGET ${_target}
-    POST_BUILD
-    COMMAND ${CMAKE_OBJCOPY} -O binary ${_elf} ${_bin}
-    COMMAND ${CMAKE_OBJCOPY} -O ihex ${_elf} ${_hex}
-    COMMAND ${CMAKE_SIZE} --format=berkeley ${_elf}
-    COMMENT "[firmware] Generating ${_target}.bin and ${_target}.hex"
-    VERBATIM
+  _apex_firmware_postbuild(
+    ${_target}
+    BIN
+    HEX
+    SIZE_FORMAT
+    berkeley
+    COMMENT
+    "[firmware] Generating ${_target}.bin and ${_target}.hex"
   )
 endfunction ()
 
@@ -103,26 +159,19 @@ function (_apex_firmware_avr _target _mcu)
   target_link_options(${_target} PRIVATE -Wl,-Map=${CMAKE_CURRENT_BINARY_DIR}/${_target}.map)
 
   # Post-build: .hex + size report (with MCU percentages when MCU is provided)
-  set(_elf "${CMAKE_BINARY_DIR}/firmware/${_target}.elf")
-  set(_hex "${CMAKE_BINARY_DIR}/firmware/${_target}.hex")
   if (_mcu)
-    add_custom_command(
-      TARGET ${_target}
-      POST_BUILD
-      COMMAND ${CMAKE_OBJCOPY} -O ihex ${_elf} ${_hex}
-      COMMAND ${CMAKE_SIZE} --format=avr --mcu=${_mcu} ${_elf}
-      COMMENT "[firmware] Generating ${_target}.hex (AVR ${_mcu})"
-      VERBATIM
+    _apex_firmware_postbuild(
+      ${_target}
+      HEX
+      SIZE_FORMAT
+      avr
+      SIZE_MCU
+      ${_mcu}
+      COMMENT
+      "[firmware] Generating ${_target}.hex (AVR ${_mcu})"
     )
   else ()
-    add_custom_command(
-      TARGET ${_target}
-      POST_BUILD
-      COMMAND ${CMAKE_OBJCOPY} -O ihex ${_elf} ${_hex}
-      COMMAND ${CMAKE_SIZE} ${_elf}
-      COMMENT "[firmware] Generating ${_target}.hex (AVR)"
-      VERBATIM
-    )
+    _apex_firmware_postbuild(${_target} HEX COMMENT "[firmware] Generating ${_target}.hex (AVR)")
   endif ()
 endfunction ()
 
@@ -137,13 +186,8 @@ function (_apex_firmware_pico _target)
   # INTERFACE target properties on pico_stdlib.
 
   # Post-build: size report only (SDK generates .uf2, .bin, .hex, .map, .dis)
-  set(_elf "${CMAKE_BINARY_DIR}/firmware/${_target}.elf")
-  add_custom_command(
-    TARGET ${_target}
-    POST_BUILD
-    COMMAND ${CMAKE_SIZE} --format=berkeley ${_elf}
-    COMMENT "[firmware] ${_target} size report (Pico RP2040)"
-    VERBATIM
+  _apex_firmware_postbuild(
+    ${_target} SIZE_FORMAT berkeley COMMENT "[firmware] ${_target} size report (Pico RP2040)"
   )
 endfunction ()
 
@@ -159,13 +203,8 @@ function (_apex_firmware_esp32 _target)
   # idf_build_executable() called in the app CMakeLists.txt.
 
   # Post-build: size report only (ESP-IDF generates .bin via esptool)
-  set(_elf "${CMAKE_BINARY_DIR}/firmware/${_target}.elf")
-  add_custom_command(
-    TARGET ${_target}
-    POST_BUILD
-    COMMAND ${CMAKE_SIZE} --format=berkeley ${_elf}
-    COMMENT "[firmware] ${_target} size report (ESP32-S3)"
-    VERBATIM
+  _apex_firmware_postbuild(
+    ${_target} SIZE_FORMAT berkeley COMMENT "[firmware] ${_target} size report (ESP32-S3)"
   )
 endfunction ()
 
