@@ -111,6 +111,17 @@ jobs:
             RANGE="HEAD~1..HEAD"
           fi
           DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml 2>/dev/null || echo "docker/base.Dockerfile")
+
+          # A change to a shared script under docker/scripts/ must rebuild every
+          # image whose Dockerfile COPYs it. The COPY line is the source of truth
+          # for that dependency, so fold each changed script's consuming
+          # Dockerfiles into DIFF -- the per-image match below then selects them
+          # (with the usual parent cascade), no separate script-to-image table.
+          for script in $(printf '%s\n' "$DIFF" | grep '^docker/scripts/' || true); do
+            consumers=$(grep -rlF "$script" docker --include='*.Dockerfile' 2>/dev/null || true)
+            [ -n "$consumers" ] && DIFF=$(printf '%s\n%s' "$DIFF" "$consumers")
+          done
+
           echo "Changed docker files (${RANGE}):"; echo "$DIFF"
 
           # The base compose carries the build args/contexts every image build
