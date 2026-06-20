@@ -67,4 +67,4 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tools/CMakeLists.txt")
   add_subdirectory(tools)
 endif ()
 
-apex_add_test_subdirs(utst ptst dtst)
+apex_add_test_subdirs()

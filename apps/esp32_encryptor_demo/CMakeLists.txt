@@ -20,37 +20,7 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# ESP-IDF Initialization (similar to Pico SDK's pico_sdk_init())
-# ------------------------------------------------------------------------------
-
-if (DEFINED ENV{IDF_PATH})
-  include($ENV{IDF_PATH}/tools/cmake/idf.cmake)
-
-  idf_build_process(
-    "esp32s3"
-    COMPONENTS
-    freertos
-    driver
-    nvs_flash
-    esp_timer
-    esptool_py
-    SDKCONFIG
-    "${CMAKE_BINARY_DIR}/sdkconfig"
-    SDKCONFIG_DEFAULTS
-    "${CMAKE_CURRENT_LIST_DIR}/sdkconfig.defaults"
-    BUILD_DIR
-    "${CMAKE_BINARY_DIR}"
-  )
-
-  set(ESP_IDF_AVAILABLE TRUE)
-  message(STATUS "[esp32_encryptor_demo] ESP-IDF found at $ENV{IDF_PATH}")
-else ()
-  set(ESP_IDF_AVAILABLE FALSE)
-  message(WARNING "[esp32_encryptor_demo] ESP-IDF not found (IDF_PATH not set)")
-endif ()
-
-# ------------------------------------------------------------------------------
-# Application Sources (4 files)
+# Application Sources
 # ------------------------------------------------------------------------------
 
 set(APP_SOURCES
@@ -64,7 +34,7 @@ set(APP_SOURCES
 # Firmware Target
 # ------------------------------------------------------------------------------
 
-apex_add_firmware(
+apex_add_firmware_with_esp32(
   NAME
   esp32_encryptor_demo
   SRC
@@ -78,22 +48,17 @@ apex_add_firmware(
   encryption_mcu
   system_core_protocols_framing_slip
   utilities_checksums_crc
+  COMPONENTS
+  freertos
+  driver
+  nvs_flash
+  esp_timer
+  esptool_py
+  IDF_LIBS
+  idf::freertos
+  idf::driver
+  idf::nvs_flash
+  idf::esp_timer
 )
-
-# ------------------------------------------------------------------------------
-# ESP-IDF Integration (when IDF is available in Docker container)
-# ------------------------------------------------------------------------------
-
-if (ESP_IDF_AVAILABLE)
-  target_link_libraries(
-    esp32_encryptor_demo PRIVATE idf::freertos idf::driver idf::nvs_flash idf::esp_timer
-  )
-
-  idf_build_executable(esp32_encryptor_demo)
-endif ()
-
-# ------------------------------------------------------------------------------
-# Finalize
-# ------------------------------------------------------------------------------
 
 apex_finalize_firmware()

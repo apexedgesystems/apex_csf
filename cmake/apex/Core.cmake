@@ -146,26 +146,36 @@ function (apex_standard_optins _target)
 endfunction ()
 
 # ------------------------------------------------------------------------------
-# apex_add_test_subdirs(<dir_kind>...)
+# apex_add_test_subdirs([<dir_kind>...])
 #
-# Add test subdirectories that exist. Each argument names a test directory
-# kind whose path variable was set by apex_module():
+# Add test subdirectories that exist. Each named kind maps to a path variable
+# set by apex_module():
 #   utst  -> ${UTST_DIR}    Unit tests (registered with CTest)
 #   ptst  -> ${PTST_DIR}    Performance/benchmark tests (manual execution)
 #   dtst  -> ${DTST_DIR}    Component-level tests (manual execution)
 #
+# Called with no arguments, it auto-discovers all standard kinds and adds
+# whichever have a CMakeLists.txt -- the conventional usage, so a module gains
+# or drops a test tier just by adding/removing the directory. Explicit kinds
+# remain accepted for the rare case of opting a present directory out.
+#
 # Skipped on bare-metal builds (tests require host execution).
 #
 # Example:
-#   apex_add_test_subdirs(utst ptst)       # Unit + perf tests
-#   apex_add_test_subdirs(utst ptst dtst)  # Unit + perf + component tests
+#   apex_add_test_subdirs()           # auto-discover utst/ptst/dtst
+#   apex_add_test_subdirs(utst)       # unit tests only, even if ptst exists
 # ------------------------------------------------------------------------------
 function (apex_add_test_subdirs)
   if (APEX_PLATFORM_BAREMETAL)
     return()
   endif ()
 
-  foreach (_kind IN LISTS ARGN)
+  set(_kinds ${ARGN})
+  if (NOT _kinds)
+    set(_kinds utst ptst dtst)
+  endif ()
+
+  foreach (_kind IN LISTS _kinds)
     if (_kind STREQUAL "utst")
       set(_dir "${UTST_DIR}")
     elseif (_kind STREQUAL "ptst")
