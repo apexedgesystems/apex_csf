@@ -22,6 +22,16 @@ LLVM_VER ?= 21
 # Default build directory (native debug)
 BUILD_DIR ?= build/hosted-x86_64-debug
 
+# Validate integer overrides up front so a typo fails with a clear message
+# instead of a cryptic downstream error (NUM_JOBS feeds -j; LLVM_VER feeds
+# clang-<N> tool paths).
+define _require_pos_int
+$(if $(shell printf '%s' '$($(1))' | grep -qE '^[1-9][0-9]*$$' || echo BAD),\
+  $(error $(1) must be a positive integer, got '$($(1))'))
+endef
+$(eval $(call _require_pos_int,NUM_JOBS))
+$(eval $(call _require_pos_int,LLVM_VER))
+
 # ------------------------------------------------------------------------------
 # Logging Utilities
 # ------------------------------------------------------------------------------
