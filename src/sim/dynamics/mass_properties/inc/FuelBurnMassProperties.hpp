@@ -2,40 +2,46 @@
 #define APEX_SIM_DYNAMICS_MASS_PROPERTIES_FUEL_BURN_HPP
 /**
  * @file FuelBurnMassProperties.hpp
- * @brief Time-varying mass / CG / inertia from TSFC-driven fuel burn.
+ * @brief A fuel tank as a time-varying mass *source*.
  *
- * Models a vehicle that loses mass at a rate proportional to the
- * thrust it produces:
+ * Models a fuel tank that loses mass at a rate proportional to the
+ * thrust it feeds:
  *
- *   mdot_fuel = -TSFC * T_total
+ *   mdot_fuel = TSFC * T_total
  *
  * where TSFC is the thrust-specific fuel consumption (kg of fuel per
  * newton of thrust per second) and T_total is the summed thrust of all
  * engines: a thirstier engine, or more of them, burns mass faster.
  *
- *   m(t)   = m_empty + fuel(t)
- *   CG(t)  = CG_empty + (CG_full - CG_empty) * (fuel / fuel_capacity)
- *   I(t)   = I_empty + (I_full - I_empty) * (fuel / fuel_capacity)
+ * The tank is a `DynamicMassSource`: it holds its own parameters (tank
+ * location, full-fuel own-inertia, capacity, TSFC) and its current fuel
+ * state, and reports its *current* contribution via `current()`:
  *
- * Linear interpolation is a reasonable first-order approximation for
- * fuel-tank mass distribution that doesn't shift dramatically (i.e.,
- * symmetric main wing tanks burned in proportion). Real aircraft burn
- * tanks in a CG-managed sequence, which this model does not represent.
+ *   current() = { mass = fuel(t), cg = tank location,
+ *                 inertia = I_fuel_full * (fuel / capacity) }
  *
- * The struct defaults below are illustrative, notional values for an
- * unnamed vehicle; set the TSFC, mass endpoints, CG endpoints, and
- * inertia tensors per the specific vehicle being simulated.
+ * It does NOT pretend to be the whole vehicle. A whole vehicle is
  *
- * Inertia tensor scaling: linear with fuel mass is a coarse
- * approximation -- the inertia of liquid fuel about the CG depends on
- * tank geometry (parallel-axis offset), which the linear scaling
- * ignores.
+ *   MassAccumulator acc;
+ *   acc.add(dryStructure);
+ *   acc.add(fuelTank);
+ *   auto vehicle = acc.result();
  *
- * Coupling back to the controller: as mass + CG + inertia change, the
- * trim condition at steady flight drifts. The outer-loop holds integrate
- * that slow drift and re-trim automatically.
+ * which combines the tank with the dry structure (and any other sources)
+ * to produce whole-vehicle mass / CG / inertia about the net CG -- with
+ * the parallel-axis cross terms a real CG shift creates.
+ *
+ * The fuel's own inertia scales with its current mass fraction (a coarse
+ * but monotone approximation -- the true tensor depends on tank geometry
+ * as the level drops). The parallel-axis offset between the tank CG and
+ * the vehicle CG is handled exactly by `MassAccumulator`, not here.
+ *
+ * All defaults are illustrative, notional values for an unnamed vehicle;
+ * set the TSFC, capacity, tank location, and the full-tank inertia per
+ * the specific vehicle being simulated.
  */
 
+#include "src/sim/dynamics/mass_properties/inc/MassProperties.hpp"
 #include "src/sim/dynamics/rigid_body/inc/PointMass3D.hpp"   // Vec3
 #include "src/sim/dynamics/rigid_body/inc/RigidBody6DOF.hpp" // InertiaTensor
 
@@ -44,11 +50,11 @@ namespace sim::dynamics::mass_properties {
 /* ------------------------------ Params ------------------------------ */
 
 /**
- * Fuel-burn + mass-property reference configuration.
+ * Fuel-tank reference configuration.
  *
- * `*_full` and `*_empty` define the two endpoints of the linear
- * interpolation. The simulator linearly interpolates by current fuel
- * fraction (0 = empty, 1 = full).
+ * The tank has a fixed location and a full-tank inertia (about its own
+ * CG); the current fuel mass and its inertia scale down toward zero as
+ * fuel burns.
  */
 struct FuelBurnMassPropertiesParams {
   // All defaults are illustrative, notional values for an unnamed
@@ -57,95 +63,95 @@ struct FuelBurnMassPropertiesParams {
   // ---- Fuel burn rate ----
   double TSFC_kg_per_N_s = 2.0e-5; // notional thrust-specific fuel consumption
 
-  // ---- Mass endpoints ----
-  double m_empty_kg = 1000.0;       // notional empty mass
+  // ---- Tank capacity ----
   double fuel_capacity_kg = 1000.0; // notional max usable fuel
 
-  // ---- CG endpoints (body-frame offset from reference, m) ----
-  // CG_full means CG when tanks are full. CG_empty when tanks are empty.
+  // ---- Tank location (body-frame offset from reference, m) ----
   // Convention: +x forward, +y right, +z down (standard body axes).
-  // CG migrates forward (+x) as fuel burns in this notional example.
-  sim::dynamics::rigid_body::Vec3 cg_full_m = {0.0, 0.0, 0.0};
-  sim::dynamics::rigid_body::Vec3 cg_empty_m = {0.1, 0.0, 0.0};
+  rigid_body::Vec3 cg_tank_m = {0.0, 0.0, 0.0};
 
-  // ---- Inertia tensor endpoints ----
-  // I_full when tanks are full (heavier -> larger I). I_empty when empty.
-  // Both in body axes about the *current* CG (we approximate the small
-  // CG offset by ignoring the parallel-axis correction).
-  // Notional: simple diagonal-ish tensor; empty ~60% of full.
-  sim::dynamics::rigid_body::InertiaTensor I_full = {1000.0, 2000.0, 3000.0, 0.0};
-  sim::dynamics::rigid_body::InertiaTensor I_empty = {600.0, 1200.0, 1800.0, 0.0};
+  // ---- Fuel inertia at full tank (about the fuel's own CG) ----
+  // The fuel's own-CG inertia at full tank; it scales linearly with the
+  // current fuel fraction (coarse but monotone). The parallel-axis term
+  // to the vehicle CG is applied by `MassAccumulator`, not here.
+  rigid_body::InertiaTensor I_fuel_full = {100.0, 200.0, 300.0, 0.0};
 };
 
-/* ------------------------------ State ------------------------------ */
-
-/** Internal fuel + bookkeeping. */
-struct FuelBurnMassPropertiesState {
-  double fuel_kg = 1000.0;           ///< current fuel mass; full at start (= fuel_capacity)
-  double fuel_burned_total_kg = 0.0; ///< cumulative -- diagnostic
-};
-
-/* ------------------------------ Result ------------------------------ */
-
-/** Per-step mass-property snapshot. */
-struct FuelBurnMassPropertiesResult {
-  double m_total_kg;                               ///< m_empty + fuel
-  sim::dynamics::rigid_body::Vec3 cg_offset_m;     ///< body-frame CG offset
-  sim::dynamics::rigid_body::InertiaTensor I_body; ///< body-frame inertia
-  double fuel_kg;                                  ///< echoed from state
-  double fuel_fraction;                            ///< fuel / fuel_capacity in [0, 1]
-  double m_dot_fuel_kg_s;                          ///< instantaneous burn rate (positive = burning)
-};
-
-/* ------------------------------ Driver ------------------------------ */
+/* ------------------------------ Source ------------------------------ */
 
 /**
- * Advance one tick of fuel burn + recompute mass / CG / inertia.
+ * A fuel tank as a `DynamicMassSource`.
  *
- * @param  s              state (mutated in place)
- * @param  p              parameters
- * @param  T_total_N      total thrust from all engines this tick (positive)
- * @param  dt_s           step (s)
- * @return current m, CG, I, fuel, mdot_fuel
+ * Holds the tank parameters plus the current fuel state. `current()`
+ * reports the tank as a `MassContributor`; `step` advances the burn.
+ *
+ * @var params               tank reference configuration (location, inertia, TSFC)
+ * @var fuel_kg              current usable fuel mass (kg)
+ * @var fuel_burned_total_kg cumulative fuel burned (kg) -- diagnostic
+ * @var last_m_dot_fuel_kg_s instantaneous burn rate from the last `step` -- diagnostic
  */
-inline FuelBurnMassPropertiesResult stepFuelBurn(FuelBurnMassPropertiesState& s,
-                                                 const FuelBurnMassPropertiesParams& p,
-                                                 double T_total_N, double dt_s) {
-  // ---- Fuel burn step (forward Euler -- fuel burn is slow vs dt) ----
-  if (T_total_N < 0.0)
-    T_total_N = 0.0; // negative thrust = no burn (idealization)
-  const double m_dot_fuel = p.TSFC_kg_per_N_s * T_total_N;
-  const double burned_this_step = m_dot_fuel * dt_s;
+struct FuelTankMassSource : DynamicMassSource {
+  FuelBurnMassPropertiesParams params;
+  double fuel_kg = 1000.0;
+  double fuel_burned_total_kg = 0.0;
+  double last_m_dot_fuel_kg_s = 0.0;
 
-  // Drain fuel; clamp to zero (engines flame out at empty in real life,
-  // but we just stop burning here).
-  if (burned_this_step >= s.fuel_kg) {
-    // Fuel just ran out this step.
-    s.fuel_burned_total_kg += s.fuel_kg;
-    s.fuel_kg = 0.0;
-  } else {
-    s.fuel_kg -= burned_this_step;
-    s.fuel_burned_total_kg += burned_this_step;
+  /** Current fuel fraction in [0, 1] (0 when capacity is non-positive). */
+  [[nodiscard]] double fuelFraction() const noexcept {
+    return (params.fuel_capacity_kg > 0.0) ? fuel_kg / params.fuel_capacity_kg : 0.0;
   }
 
-  // ---- Linear interpolation at current fuel fraction ----
-  const double frac = (p.fuel_capacity_kg > 0.0) ? s.fuel_kg / p.fuel_capacity_kg : 0.0;
+  /**
+   * Report the current fuel as a contributor.
+   *
+   *   mass     = current fuel mass
+   *   cg       = tank location
+   *   inertia  = full-tank fuel inertia scaled by the current fuel fraction
+   */
+  [[nodiscard]] MassContributor current() const noexcept override {
+    const double frac = fuelFraction();
+    MassContributor c;
+    c.mass_kg = fuel_kg;
+    c.cg_m = params.cg_tank_m;
+    c.inertia_about_own_cg =
+        rigid_body::InertiaTensor{params.I_fuel_full.Ixx * frac, params.I_fuel_full.Iyy * frac,
+                                  params.I_fuel_full.Izz * frac, params.I_fuel_full.Ixz * frac,
+                                  params.I_fuel_full.Ixy * frac, params.I_fuel_full.Iyz * frac};
+    return c;
+  }
 
-  FuelBurnMassPropertiesResult r;
-  r.m_total_kg = p.m_empty_kg + s.fuel_kg;
-  r.cg_offset_m =
-      sim::dynamics::rigid_body::Vec3{p.cg_empty_m.x + (p.cg_full_m.x - p.cg_empty_m.x) * frac,
-                                      p.cg_empty_m.y + (p.cg_full_m.y - p.cg_empty_m.y) * frac,
-                                      p.cg_empty_m.z + (p.cg_full_m.z - p.cg_empty_m.z) * frac};
-  r.I_body.Ixx = p.I_empty.Ixx + (p.I_full.Ixx - p.I_empty.Ixx) * frac;
-  r.I_body.Iyy = p.I_empty.Iyy + (p.I_full.Iyy - p.I_empty.Iyy) * frac;
-  r.I_body.Izz = p.I_empty.Izz + (p.I_full.Izz - p.I_empty.Izz) * frac;
-  r.I_body.Ixz = p.I_empty.Ixz + (p.I_full.Ixz - p.I_empty.Ixz) * frac;
-  r.fuel_kg = s.fuel_kg;
-  r.fuel_fraction = frac;
-  r.m_dot_fuel_kg_s = (s.fuel_kg > 0.0) ? m_dot_fuel : 0.0;
-  return r;
-}
+  /**
+   * Advance one tick of fuel burn.
+   *
+   *   mdot_fuel = TSFC * T_total       (negative thrust -> no burn)
+   *   fuel_kg  -= mdot_fuel * dt       (clamped at 0; engines just stop)
+   *
+   * After running out the burn rate reported is 0 (flame-out idealization).
+   *
+   * @param thrust_N  total thrust from all engines this tick (positive)
+   * @param dt        step (s)
+   * @return instantaneous burn rate this tick (kg/s; 0 if empty/idle)
+   */
+  double step(double thrust_N, double dt) noexcept {
+    if (thrust_N < 0.0) {
+      thrust_N = 0.0; // negative thrust = no burn (idealization)
+    }
+    const double m_dot_fuel = params.TSFC_kg_per_N_s * thrust_N;
+    const double burned_this_step = m_dot_fuel * dt;
+
+    if (burned_this_step >= fuel_kg) {
+      // Fuel just ran out this step (or was already empty).
+      fuel_burned_total_kg += fuel_kg;
+      fuel_kg = 0.0;
+    } else {
+      fuel_kg -= burned_this_step;
+      fuel_burned_total_kg += burned_this_step;
+    }
+
+    last_m_dot_fuel_kg_s = (fuel_kg > 0.0) ? m_dot_fuel : 0.0;
+    return last_m_dot_fuel_kg_s;
+  }
+};
 
 } // namespace sim::dynamics::mass_properties
 

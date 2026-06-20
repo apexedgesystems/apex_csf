@@ -22,8 +22,10 @@
  * flight-sim trick: the additive error per step is O(dt^2), the
  * normalization recovers unit-magnitude).
  *
- * Inertia tensor models the canonical aircraft xz-symmetry case
- * (Ixx, Iyy, Izz, Ixz only); set Ixz = 0 for full diagonal symmetry.
+ * Inertia tensor is the full body-frame symmetric tensor
+ * (Ixx, Iyy, Izz, Ixz, Ixy, Iyz). It reduces to the canonical aircraft
+ * xz-symmetry case when Ixy = Iyz = 0, and to diagonal when all products
+ * of inertia are 0.
  */
 
 #include "src/sim/dynamics/integrators/inc/RK4.hpp"
@@ -50,37 +52,56 @@ inline double norm(const Vec3& a) { return std::sqrt(dot(a, a)); }
 /* ----------------------------- InertiaTensor ----------------------------- */
 
 /**
- * Body-frame inertia tensor for an aircraft with xz-plane symmetry:
+ * Full body-frame symmetric inertia tensor.
  *
- *      [ Ixx    0   -Ixz ]
- *  I = [  0    Iyy    0  ]   the off-diagonal Ixz is the only cross term a
- *      [-Ixz    0    Izz ]   left-right (xz-plane) symmetric airframe carries
+ * Products of inertia use the positive convention (stored positive,
+ * entering the matrix negated):
  *
- * Set Ixz = 0 for diagonal-only inertia (e.g., a sphere or a body with
- * full xz + xy + yz symmetry).
+ *      [ Ixx  -Ixy  -Ixz ]
+ *  I = [-Ixy   Iyy  -Iyz ]
+ *      [-Ixz  -Iyz   Izz ]
+ *
+ * Member order keeps Ixz fourth so existing xz-symmetric aggregate
+ * inits like `InertiaTensor{Ixx, Iyy, Izz, Ixz}` still mean Ixz with
+ * Ixy = Iyz = 0. The full form reduces exactly to the old xz-symmetric
+ * behavior when Ixy = Iyz = 0, and to diagonal when all products are 0.
+ *
+ * Storing the full tensor makes this parallel-axis-friendly: a
+ * parallel-axis shift introduces Ixy / Iyz cross terms that the old
+ * 4-term form could not represent. See `mass_properties::aggregate`.
  */
 struct InertiaTensor {
   double Ixx = 1.0;
   double Iyy = 1.0;
   double Izz = 1.0;
   double Ixz = 0.0;
+  double Ixy = 0.0;
+  double Iyz = 0.0;
 
-  /** Compute I * omega (matrix-vector product). */
-  Vec3 multiply(const Vec3& w) const {
-    return {Ixx * w.x - Ixz * w.z, Iyy * w.y, Izz * w.z - Ixz * w.x};
+  /** Compute I * omega (matrix-vector product) for the full tensor. */
+  [[nodiscard]] Vec3 multiply(const Vec3& w) const {
+    return {Ixx * w.x - Ixy * w.y - Ixz * w.z, -Ixy * w.x + Iyy * w.y - Iyz * w.z,
+            -Ixz * w.x - Iyz * w.y + Izz * w.z};
   }
 
   /**
-   * Solve I * omega_dot = b for omega_dot.
+   * Solve I * omega_dot = b for omega_dot via the symmetric 3x3 adjugate.
    *
-   * Decouples into a 1x1 (y) and a 2x2 (xz) system thanks to xz-symmetry:
-   *   y:  omega_dot_y = b_y / Iyy
-   *   xz: [Ixx -Ixz; -Ixz Izz] * [omega_dot_x; omega_dot_z] = [b_x; b_z]
-   *       det = Ixx*Izz - Ixz^2  (>0 for any physical inertia tensor)
+   * Matrix entries: a11=Ixx, a12=-Ixy, a13=-Ixz, a22=Iyy, a23=-Iyz,
+   * a33=Izz. The cofactors below form the (symmetric) inverse; det > 0
+   * for any physical (positive-definite) inertia tensor.
    */
-  Vec3 solve(const Vec3& b) const {
-    const double det = Ixx * Izz - Ixz * Ixz;
-    return {(Izz * b.x + Ixz * b.z) / det, b.y / Iyy, (Ixz * b.x + Ixx * b.z) / det};
+  [[nodiscard]] Vec3 solve(const Vec3& b) const {
+    const double a11 = Ixx, a12 = -Ixy, a13 = -Ixz, a22 = Iyy, a23 = -Iyz, a33 = Izz;
+    const double c11 = a22 * a33 - a23 * a23;
+    const double c12 = -(a12 * a33 - a23 * a13);
+    const double c13 = a12 * a23 - a22 * a13;
+    const double c22 = a11 * a33 - a13 * a13;
+    const double c23 = -(a11 * a23 - a12 * a13);
+    const double c33 = a11 * a22 - a12 * a12;
+    const double det = a11 * c11 + a12 * c12 + a13 * c13;
+    return {(c11 * b.x + c12 * b.y + c13 * b.z) / det, (c12 * b.x + c22 * b.y + c23 * b.z) / det,
+            (c13 * b.x + c23 * b.y + c33 * b.z) / det};
   }
 };
 

@@ -40,9 +40,7 @@ using sim::dynamics::disturbance::DrydenTurbulenceParams;
 using sim::dynamics::disturbance::DrydenTurbulenceState;
 using sim::dynamics::disturbance::stepDryden;
 using sim::dynamics::integrators::stepRK4;
-using sim::dynamics::mass_properties::FuelBurnMassPropertiesParams;
-using sim::dynamics::mass_properties::FuelBurnMassPropertiesState;
-using sim::dynamics::mass_properties::stepFuelBurn;
+using sim::dynamics::mass_properties::FuelTankMassSource;
 using sim::dynamics::rigid_body::InertiaTensor;
 using sim::dynamics::rigid_body::PointMass3DState;
 using sim::dynamics::rigid_body::RigidBody6DOFState;
@@ -175,25 +173,24 @@ PERF_TEST(RigidBody6DOFStep, Throughput) {
 PERF_TEST(FuelBurnStep, Throughput) {
   UB_PERF_GUARD(perf);
 
-  FuelBurnMassPropertiesParams p;
   const double thrust = 290000.0;
   const double dt = 0.02;
 
   perf.warmup([&] {
-    FuelBurnMassPropertiesState s;
+    FuelTankMassSource tank;
     for (int i = 0; i < perf.cycles(); ++i) {
-      (void)stepFuelBurn(s, p, thrust, dt);
+      (void)tank.step(thrust, dt);
     }
   });
 
   volatile double sink = 0.0;
-  FuelBurnMassPropertiesState s;
+  FuelTankMassSource tank;
   auto result = perf.throughputLoop(
       [&] {
-        const auto r = stepFuelBurn(s, p, thrust, dt);
-        sink += r.m_total_kg;
-        if (s.fuel_kg <= 0.0) {
-          s = FuelBurnMassPropertiesState{}; // refuel so the workload is steady
+        tank.step(thrust, dt);
+        sink += tank.fuel_kg;
+        if (tank.fuel_kg <= 0.0) {
+          tank = FuelTankMassSource{}; // refuel so the workload is steady
         }
       },
       "fuelburn_step");

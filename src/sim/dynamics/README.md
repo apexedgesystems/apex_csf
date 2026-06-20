@@ -19,33 +19,40 @@ models.
 4. [Module Reference](#module-reference)
    - [Integrators](#integrators) - ForwardEuler, RK4
    - [Rigid Body](#rigid-body) - PointMass3D, RigidBody6DOF
-   - [Mass Properties](#mass-properties) - FuelBurnMassProperties
+   - [Mass Properties](#mass-properties) - MassAccumulator, FuelTankMassSource
+   - [Force / Moment](#force--moment) - ForceMomentAccumulator, ForceMomentSource
    - [Disturbance](#disturbance) - DrydenTurbulence
+   - [Vehicle Step](#vehicle-step) - aggregate-consuming 6-DOF overload
 5. [Real-Time Considerations](#real-time-considerations)
 6. [See Also](#see-also)
 
 ## Overview
 
-| Question                                                           | Module                         |
-| ------------------------------------------------------------------ | ------------------------------ |
-| How do I advance a state vector one tick?                          | `stepRK4` / `stepForwardEuler` |
-| Which integrator should I use for attitude dynamics?               | `RK4` (4th order)              |
-| How do I model a translating point mass?                           | `PointMass3D`                  |
-| How do I model full 6-DOF flight with attitude?                    | `RigidBody6DOF`                |
-| How do I apply forces and moments in the body frame?               | `rigidBody6DOFDerivative`      |
-| How do I solve `I * omega_dot = b` for an aircraft inertia tensor? | `InertiaTensor::solve`         |
-| How does mass / CG / inertia change as fuel burns?                 | `FuelBurnMassProperties`       |
-| How do I inject realistic atmospheric turbulence?                  | `DrydenTurbulence`             |
-| How do I keep turbulence reproducible across runs?                 | `DrydenRng` (seeded)           |
+| Question                                                           | Module                                    |
+| ------------------------------------------------------------------ | ----------------------------------------- |
+| How do I advance a state vector one tick?                          | `stepRK4` / `stepForwardEuler`            |
+| Which integrator should I use for attitude dynamics?               | `RK4` (4th order)                         |
+| How do I model a translating point mass?                           | `PointMass3D`                             |
+| How do I model full 6-DOF flight with attitude?                    | `RigidBody6DOF`                           |
+| How do I apply forces and moments in the body frame?               | `rigidBody6DOFDerivative`                 |
+| How do I solve `I * omega_dot = b` for an aircraft inertia tensor? | `InertiaTensor::solve`                    |
+| How do I combine per-part mass / CG / inertia into a whole body?   | `MassAccumulator`                         |
+| How does mass / CG / inertia change as fuel burns?                 | `FuelTankMassSource`                      |
+| How do I sum forces-at-points into a net force + moment?           | `ForceMomentAccumulator`                  |
+| How do I step 6-DOF straight from the aggregates?                  | `stepRigidBody6DOF(state, mp, fm, t, dt)` |
+| How do I inject realistic atmospheric turbulence?                  | `DrydenTurbulence`                        |
+| How do I keep turbulence reproducible across runs?                 | `DrydenRng` (seeded)                      |
 
 ## Quick Reference
 
-| Subdomain          | Library                        | Provides                                                                                                                                  |
-| ------------------ | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `integrators/`     | `sim_dynamics_integrators`     | `stepForwardEuler` (1st order), `stepRK4` (4th order) -- generic ODE step functions templated on a `State` with `operator+` / `operator*` |
-| `rigid_body/`      | `sim_dynamics_rigid_body`      | `PointMass3D` (6-state translational), `RigidBody6DOF` (13-state: position, body velocity, quaternion attitude, body angular velocity)    |
-| `mass_properties/` | `sim_dynamics_mass_properties` | `FuelBurnMassProperties` -- TSFC-driven fuel burn with linear CG and inertia interpolation                                                |
-| `disturbance/`     | `sim_dynamics_disturbance`     | `DrydenTurbulence` -- 3-axis MIL-HDBK-1797 gust model                                                                                     |
+| Subdomain          | Library                        | Provides                                                                                                                                   |
+| ------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `integrators/`     | `sim_dynamics_integrators`     | `stepForwardEuler` (1st order), `stepRK4` (4th order) -- generic ODE step functions templated on a `State` with `operator+` / `operator*`  |
+| `rigid_body/`      | `sim_dynamics_rigid_body`      | `PointMass3D` (6-state translational), `RigidBody6DOF` (13-state: position, body velocity, quaternion attitude, body angular velocity)     |
+| `mass_properties/` | `sim_dynamics_mass_properties` | `MassAccumulator` (parallel-axis whole-body mass props), `MassPropsSource` / `StaticMassSource` / `FuelTankMassSource` (composition layer) |
+| `force_moment/`    | `sim_dynamics_force_moment`    | `ForceMomentAccumulator` (net force + moment about a point), `ForceMomentSource` / `StaticForceMomentSource` / `DynamicForceMomentSource`  |
+| `disturbance/`     | `sim_dynamics_disturbance`     | `DrydenTurbulence` -- 3-axis MIL-HDBK-1797 gust model                                                                                      |
+| `inc/` (facade)    | `sim_dynamics`                 | `VehicleStep.hpp` -- `stepRigidBody6DOF` overload consuming the aggregates                                                                 |
 
 All libraries are header-only (interface) targets. Headers live in each
 subdomain's `inc/` under the `sim::dynamics::<subdomain>` namespace.
@@ -91,15 +98,17 @@ stepRK4(y, f, /*t*/ 0.0, /*dt*/ 0.01);   // RT-safe: no allocation
 (inertial position, body velocity, body-to-inertial unit quaternion, body
 angular velocity) and integrates the full nonlinear body-axis EOM: the
 body-to-inertial kinematic transform, the transport-theorem velocity term,
-the quaternion rate, and Euler's equation with an xz-symmetric
-`InertiaTensor`. The attitude quaternion is renormalized
-once per step to recover from the small additive drift the RK4 stages
-introduce.
+the quaternion rate, and Euler's equation with a full symmetric
+`InertiaTensor`. The tensor stores `{Ixx, Iyy, Izz, Ixz, Ixy, Iyz}` (Ixz
+fourth, so legacy xz-symmetric `{Ixx, Iyy, Izz, Ixz}` inits still mean
+Ixz with Ixy = Iyz = 0); `solve` uses the symmetric 3x3 adjugate. The
+attitude quaternion is renormalized once per step to recover from the
+small additive drift the RK4 stages introduce.
 
 ```cpp
 RigidBody6DOFState s;
 s.velocity_body = Vec3{235.0, 0.0, 0.0};
-InertiaTensor I{Ixx, Iyy, Izz, Ixz};
+InertiaTensor I{Ixx, Iyy, Izz, Ixz}; // or full: {Ixx,Iyy,Izz,Ixz,Ixy,Iyz}
 auto force  = [](double, const RigidBody6DOFState&) { return Vec3{thrust, 0, 0}; };
 auto moment = [](double, const RigidBody6DOFState&) { return Vec3{0, 0, 0}; };
 stepRigidBody6DOF(s, force, moment, mass_kg, I, t, dt);  // 50 Hz tick
@@ -107,14 +116,77 @@ stepRigidBody6DOF(s, force, moment, mass_kg, I, t, dt);  // 50 Hz tick
 
 ### Mass Properties
 
-**Header:** `mass_properties/inc/FuelBurnMassProperties.hpp`
-**Purpose:** Time-varying mass / CG / inertia from fuel burn.
+**Headers:** `mass_properties/inc/MassProperties.hpp`,
+`mass_properties/inc/FuelBurnMassProperties.hpp`
+**Purpose:** Compositional whole-body mass / CG / inertia, with a fuel
+tank as one time-varying contributor.
 
-`stepFuelBurn` drains fuel at the thrust-specific rate `mdot = TSFC * thrust`
-and linearly interpolates mass, CG offset, and inertia between full-fuel and
-empty-fuel reference endpoints. Fuel is clamped at zero
-(no negative fuel) and burn stops at exhaustion. Struct defaults are
-illustrative, notional values; set them per the vehicle being simulated.
+`MassAccumulator` stacks `MassContributor`s (each with its mass, its CG in
+a common body frame, and its inertia about its _own_ CG) and/or
+`MassPropsSource`s; `result()` combines them into the total mass, the
+mass-weighted CG, and the inertia about that net CG via the parallel-axis
+theorem (which is why the tensor carries the full Ixy / Iyz cross terms).
+
+Add fixed parts with `add(const MassContributor&)` and live parts with
+`add(const MassPropsSource&)`. A `MassPropsSource` reports its `current()`
+contribution; `StaticMassSource` wraps a fixed part (dry structure,
+ballast), and `DynamicMassSource` is the base for time- or state-varying
+parts. `result()` samples each source's `current()` afresh on every call,
+so a draining tank or shifting payload is reflected between ticks. Sources
+are referenced non-owningly.
+
+`FuelTankMassSource` is a `DynamicMassSource`: it holds the tank
+parameters plus the current fuel state; `step(thrust_N, dt)` drains fuel
+at `mdot = TSFC * thrust` (clamped at zero, burn stops at exhaustion), and
+`current()` reports the fuel as a `MassContributor` (mass = current fuel,
+CG = tank location, inertia scaled by fuel fraction). The tank never
+pretends to be the whole vehicle. Struct defaults are illustrative,
+notional values; set them per the vehicle being simulated.
+
+```cpp
+StaticMassSource dry;  dry.c = {/* mass, cg, own inertia */};
+FuelTankMassSource tank;  tank.params = {/* TSFC, capacity, cg, I_full */};
+tank.step(thrust, dt);                  // advance the burn
+MassAccumulator mass;
+mass.add(dry);
+mass.add(tank);
+auto vehicle = mass.result();           // whole-body mass props
+// vehicle.mass_kg, vehicle.cg_m, vehicle.inertia_about_cg
+```
+
+### Force / Moment
+
+**Header:** `force_moment/inc/ForceMoment.hpp`
+**Purpose:** Compositional force/moment aggregation -- the symmetric
+pattern to mass properties.
+
+`ForceMomentAccumulator` stacks `AppliedForce`s (each a force at a point,
+plus an optional pure couple) and/or `ForceMomentSource`s; `resultAbout(about)`
+combines them into a net `ForceMoment` (force + moment about a reference
+point):
+
+```
+force  = sum( part.force )
+moment = sum( part.moment + (part.point_m - about) x part.force )
+```
+
+A force applied off the reference point induces a moment `r x F`; pure
+couples add directly and are point-independent. As with mass properties, a
+source layer sits on top: `ForceMomentSource::current()` reports the applied
+load now, `StaticForceMomentSource` wraps a fixed load, `DynamicForceMomentSource`
+is the base for varying loads (a throttled engine, an aero force).
+`resultAbout()` samples each source afresh on every call. Take the moment
+about the same CG used for the inertia tensor to feed Euler's equations
+consistently.
+
+```cpp
+StaticForceMomentSource engine; engine.f = {Vec3{thrust,0,0}, cg, Vec3{}};
+ForceMomentAccumulator loads;
+loads.add(engine);
+loads.add(aero);
+auto fm = loads.resultAbout(mp.cg_m);
+// fm.force, fm.moment about mp.cg_m
+```
 
 ### Disturbance
 
@@ -129,6 +201,31 @@ each axis matches its `sigma` intensity. `DrydenRng` holds the generator
 separately so runs are reproducible from a seed. Output freezes (no division by
 airspeed) when `V < 1 m/s` or `dt <= 0`.
 
+### Vehicle Step
+
+**Header:** `inc/VehicleStep.hpp` (library `sim_dynamics`)
+**Purpose:** Step 6-DOF straight from the compositional aggregates.
+
+`rigid_body` deliberately depends on neither `mass_properties` nor
+`force_moment`. This domain-level facade includes all three and adds a
+`stepRigidBody6DOF` overload taking the aggregated mass properties and net
+force/moment, forwarding to the callback-based step with `force = fm.force`,
+`moment = fm.moment`, `mass = mp.mass_kg`, `I = mp.inertia_about_cg`.
+
+```cpp
+mass_properties::MassAccumulator mass;
+mass.add(dry);
+mass.add(tank);
+const auto mp = mass.result();
+
+force_moment::ForceMomentAccumulator loads;
+loads.add(engine);
+loads.add(aero);
+const auto fm = loads.resultAbout(mp.cg_m);
+
+stepRigidBody6DOF(state, mp, fm, t, dt);  // one RK4 tick
+```
+
 ## Real-Time Considerations
 
 ### RT-Safe Functions
@@ -142,7 +239,7 @@ derived from benchmark throughput):
 - `stepRigidBody6DOF` -- ~341 ns/step (~3 M steps/s); the heaviest step
   (13 states, quaternion + Euler equations evaluated at four RK4 stages),
   compute-bound at IPC ~3.4 with negligible branch/cache misses
-- `stepFuelBurn` -- ~21 ns/step (~47 M steps/s)
+- `FuelTankMassSource::step` -- ~21 ns/step (~47 M steps/s)
 - `stepDryden` -- ~387 ns/step (~3 M steps/s); dominated by the three Gaussian
   RNG draws per step, not the filter arithmetic
 
@@ -154,8 +251,8 @@ a microsecond, a negligible fraction of the frame budget.
 - `DrydenRng` is per-instance; give each vehicle its own seeded generator for
   independent, reproducible gust streams.
 - Mass and the inertia tensor are held constant across a single integrator
-  step; recompute them between ticks via `FuelBurnMassProperties` if modeling
-  fuel burn.
+  step; recompute them between ticks via `FuelTankMassSource::step` +
+  `MassAccumulator::result` if modeling fuel burn.
 
 ## See Also
 

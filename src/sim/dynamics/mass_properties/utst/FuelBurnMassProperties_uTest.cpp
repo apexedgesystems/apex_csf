@@ -1,68 +1,71 @@
 /**
  * @file FuelBurnMassProperties_uTest.cpp
- * @brief Unit tests for fuel-burn-driven mass / CG / inertia.
+ * @brief Unit tests for the fuel-tank-as-DynamicMassSource model.
  *
  * Coverage (all tests use explicit, vehicle-agnostic params):
- *   1. Zero thrust -> no fuel burn (and m / CG / I unchanged)
- *   2. Constant thrust over dt -> fuel decreases by TSFC*T*dt
- *   3. Fuel runs out: fuel_kg -> 0, m_dot -> 0, no negative fuel
- *   4. CG migrates linearly with fuel fraction
- *   5. Inertia tensor scales linearly with fuel fraction
- *   6. m_total = m_empty + fuel at all times
- *   7. Fuel can't go negative even with very large dt (clamp)
+ *   1. Zero / negative thrust -> no fuel burn (clamp, no refill)
+ *   2. Constant thrust over dt -> fuel decreases by TSFC*T*dt (exact)
+ *   3. Fuel runs out: fuel_kg -> 0, m_dot -> 0, no negative fuel (clamp)
+ *   4. current() mass = current fuel, CG = tank location
+ *   5. current() inertia scales linearly with fuel fraction
+ *   6. Whole-vehicle mass props come from a MassAccumulator of {dry, tank}
+ *
+ * Proof test 8 (hand-computed, tol 1e-9) lives at the bottom.
  */
 
 #include "src/sim/dynamics/mass_properties/inc/FuelBurnMassProperties.hpp"
+#include "src/sim/dynamics/mass_properties/inc/MassProperties.hpp"
 
 #include <cmath>
 
 #include <gtest/gtest.h>
 
-using sim::dynamics::mass_properties::FuelBurnMassPropertiesParams;
-using sim::dynamics::mass_properties::FuelBurnMassPropertiesResult;
-using sim::dynamics::mass_properties::FuelBurnMassPropertiesState;
-using sim::dynamics::mass_properties::stepFuelBurn;
+using sim::dynamics::mass_properties::FuelTankMassSource;
+using sim::dynamics::mass_properties::MassAccumulator;
+using sim::dynamics::mass_properties::StaticMassSource;
+using sim::dynamics::rigid_body::InertiaTensor;
 using sim::dynamics::rigid_body::Vec3;
+
+namespace {
+constexpr double kTol = 1e-9;
+} // namespace
 
 /* ----------------------------- Negative thrust clamp ----------------------------- */
 
 /** @test Negative total thrust is clamped to zero burn (no fuel "regained"). */
 TEST(FuelBurnTest, NegativeThrustDoesNotBurnOrRefill) {
-  FuelBurnMassPropertiesParams p;
-  FuelBurnMassPropertiesState s;
-  const double fuel0 = s.fuel_kg;
+  FuelTankMassSource tank;
+  const double fuel0 = tank.fuel_kg;
 
-  const auto r = stepFuelBurn(s, p, /*T*/ -50000.0, /*dt*/ 1.0);
-  EXPECT_DOUBLE_EQ(r.m_dot_fuel_kg_s, 0.0);
-  EXPECT_DOUBLE_EQ(s.fuel_kg, fuel0); // no burn, and no spurious refill
-  EXPECT_DOUBLE_EQ(s.fuel_burned_total_kg, 0.0);
+  const double m_dot = tank.step(/*thrust*/ -50000.0, /*dt*/ 1.0);
+  EXPECT_DOUBLE_EQ(m_dot, 0.0);
+  EXPECT_DOUBLE_EQ(tank.fuel_kg, fuel0); // no burn, and no spurious refill
+  EXPECT_DOUBLE_EQ(tank.fuel_burned_total_kg, 0.0);
 }
 
 /** @test A zero fuel-capacity config yields a 0 fuel fraction (no divide-by-zero). */
 TEST(FuelBurnTest, ZeroCapacityGivesZeroFraction) {
-  FuelBurnMassPropertiesParams p;
-  p.fuel_capacity_kg = 0.0; // exercise the capacity-guard else branch
-  FuelBurnMassPropertiesState s;
-  s.fuel_kg = 0.0;
+  FuelTankMassSource tank;
+  tank.params.fuel_capacity_kg = 0.0; // exercise the capacity-guard else branch
+  tank.fuel_kg = 0.0;
 
-  const auto r = stepFuelBurn(s, p, /*T*/ 0.0, /*dt*/ 0.0);
-  EXPECT_DOUBLE_EQ(r.fuel_fraction, 0.0);
-  EXPECT_TRUE(std::isfinite(r.cg_offset_m.x));
-  EXPECT_TRUE(std::isfinite(r.I_body.Ixx));
+  EXPECT_DOUBLE_EQ(tank.fuelFraction(), 0.0);
+  const auto c = tank.current();
+  EXPECT_TRUE(std::isfinite(c.cg_m.x));
+  EXPECT_TRUE(std::isfinite(c.inertia_about_own_cg.Ixx));
 }
 
 /* ----------------------------- Zero thrust ----------------------------- */
 
 TEST(FuelBurnTest, ZeroThrustNoBurn) {
-  FuelBurnMassPropertiesParams p;
-  FuelBurnMassPropertiesState s;
-  const double fuel0 = s.fuel_kg;
+  FuelTankMassSource tank;
+  const double fuel0 = tank.fuel_kg;
 
   for (int i = 0; i < 1000; ++i) {
-    stepFuelBurn(s, p, /*T*/ 0.0, /*dt*/ 0.1);
+    tank.step(/*thrust*/ 0.0, /*dt*/ 0.1);
   }
-  EXPECT_DOUBLE_EQ(s.fuel_kg, fuel0);
-  EXPECT_DOUBLE_EQ(s.fuel_burned_total_kg, 0.0);
+  EXPECT_DOUBLE_EQ(tank.fuel_kg, fuel0);
+  EXPECT_DOUBLE_EQ(tank.fuel_burned_total_kg, 0.0);
 }
 
 /* ----------------------------- TSFC closed-form ----------------------------- */
@@ -70,21 +73,20 @@ TEST(FuelBurnTest, ZeroThrustNoBurn) {
 TEST(FuelBurnTest, ConstantThrustBurnsAtTSFCTimesT) {
   // mdot_fuel = TSFC * T, so over n constant-thrust steps the fuel burned is
   // exactly TSFC * T * (n*dt). Verify the integrator against that closed form.
-  FuelBurnMassPropertiesParams p;
-  p.TSFC_kg_per_N_s = 2.0e-5; // pick a concrete number
-  FuelBurnMassPropertiesState s;
+  FuelTankMassSource tank;
+  tank.params.TSFC_kg_per_N_s = 2.0e-5; // pick a concrete number
 
   const double T_total_N = 200000.0; // N
   const double dt = 0.1;
   const int n_steps = 1000; // 100 sec total
 
   for (int i = 0; i < n_steps; ++i) {
-    stepFuelBurn(s, p, T_total_N, dt);
+    tank.step(T_total_N, dt);
   }
   // Expected fuel burned = TSFC * T * t = 2e-5 * 200000 * 100 = 400 kg
-  const double expected_burned = p.TSFC_kg_per_N_s * T_total_N * dt * n_steps;
-  EXPECT_NEAR(s.fuel_burned_total_kg, expected_burned, 0.001);
-  EXPECT_NEAR(p.fuel_capacity_kg - s.fuel_kg, expected_burned, 0.001);
+  const double expected_burned = tank.params.TSFC_kg_per_N_s * T_total_N * dt * n_steps;
+  EXPECT_NEAR(tank.fuel_burned_total_kg, expected_burned, 0.001);
+  EXPECT_NEAR(tank.params.fuel_capacity_kg - tank.fuel_kg, expected_burned, 0.001);
 }
 
 /* ----------------------------- Endurance closed-form ----------------------------- */
@@ -92,21 +94,21 @@ TEST(FuelBurnTest, ConstantThrustBurnsAtTSFCTimesT) {
 TEST(FuelBurnTest, EnduranceMatchesFuelOverBurnRate) {
   // With explicit, vehicle-agnostic params, time-to-empty should equal
   // fuel_capacity / (TSFC * T) for constant thrust. Verify the model.
-  FuelBurnMassPropertiesParams p;
-  p.TSFC_kg_per_N_s = 2.0e-5;
-  p.fuel_capacity_kg = 1000.0;
-  FuelBurnMassPropertiesState s;
-  s.fuel_kg = p.fuel_capacity_kg;
+  FuelTankMassSource tank;
+  tank.params.TSFC_kg_per_N_s = 2.0e-5;
+  tank.params.fuel_capacity_kg = 1000.0;
+  tank.fuel_kg = tank.params.fuel_capacity_kg;
 
   const double T_total_N = 100000.0;
   const double dt = 1.0;
   // mdot = 2e-5 * 1e5 = 2.0 kg/s ; endurance = 1000 / 2.0 = 500 s.
-  const double expected_s = p.fuel_capacity_kg / (p.TSFC_kg_per_N_s * T_total_N);
+  const double expected_s =
+      tank.params.fuel_capacity_kg / (tank.params.TSFC_kg_per_N_s * T_total_N);
 
   int t_to_empty = 0;
   for (int t = 1; t <= 10000; ++t) {
-    stepFuelBurn(s, p, T_total_N, dt);
-    if (s.fuel_kg <= 0.0) {
+    tank.step(T_total_N, dt);
+    if (tank.fuel_kg <= 0.0) {
       t_to_empty = t;
       break;
     }
@@ -118,98 +120,184 @@ TEST(FuelBurnTest, EnduranceMatchesFuelOverBurnRate) {
 
 TEST(FuelBurnTest, FuelExhaustionStopsBurn) {
   // Drain fuel completely, then verify burn stops + fuel stays 0.
-  FuelBurnMassPropertiesParams p;
-  FuelBurnMassPropertiesState s;
-  s.fuel_kg = 100.0; // start with very little fuel
+  FuelTankMassSource tank;
+  tank.fuel_kg = 100.0; // start with very little fuel
 
   // Burn lots of fuel fast.
   const double T_total_N = 500000.0;
   const double dt = 1.0;
   for (int i = 0; i < 100; ++i) {
-    stepFuelBurn(s, p, T_total_N, dt);
+    tank.step(T_total_N, dt);
   }
-  EXPECT_DOUBLE_EQ(s.fuel_kg, 0.0);
-  EXPECT_LE(s.fuel_burned_total_kg, 100.0 + 1e-9); // can't burn more than was there
+  EXPECT_DOUBLE_EQ(tank.fuel_kg, 0.0);
+  EXPECT_LE(tank.fuel_burned_total_kg, 100.0 + 1e-9); // can't burn more than was there
 
   // Continue burning -- should be a no-op now.
-  const auto r = stepFuelBurn(s, p, T_total_N, dt);
-  EXPECT_DOUBLE_EQ(r.m_dot_fuel_kg_s, 0.0);
-  EXPECT_DOUBLE_EQ(r.fuel_kg, 0.0);
+  const double m_dot = tank.step(T_total_N, dt);
+  EXPECT_DOUBLE_EQ(m_dot, 0.0);
+  EXPECT_DOUBLE_EQ(tank.fuel_kg, 0.0);
+  EXPECT_DOUBLE_EQ(tank.current().mass_kg, 0.0);
 }
 
 TEST(FuelBurnTest, FuelCannotGoNegativeWithLargeDt) {
-  FuelBurnMassPropertiesParams p;
-  FuelBurnMassPropertiesState s;
+  FuelTankMassSource tank;
   // Single huge dt that would overshoot fuel_kg by 10x.
-  stepFuelBurn(s, p, /*T*/ 1.0e6, /*dt*/ 100000.0);
-  EXPECT_GE(s.fuel_kg, 0.0);
-  EXPECT_DOUBLE_EQ(s.fuel_kg, 0.0);
+  tank.step(/*thrust*/ 1.0e6, /*dt*/ 100000.0);
+  EXPECT_GE(tank.fuel_kg, 0.0);
+  EXPECT_DOUBLE_EQ(tank.fuel_kg, 0.0);
 }
 
-/* ----------------------------- CG migration ----------------------------- */
+/* ----------------------------- Contributor shape ----------------------------- */
 
-TEST(FuelBurnTest, CGMigratesLinearlyWithFuelFraction) {
-  FuelBurnMassPropertiesParams p;
-  // Distinct full / empty CGs so we can detect the interpolation.
-  p.cg_full_m = Vec3{0.0, 0.0, 0.0};
-  p.cg_empty_m = Vec3{1.0, 0.0, 0.0}; // 1 m forward shift when empty
-  FuelBurnMassPropertiesState s;      // starts at full
+TEST(FuelBurnTest, ContributorMassIsCurrentFuelAtTankLocation) {
+  FuelTankMassSource tank;
+  tank.params.cg_tank_m = Vec3{1.5, -0.25, 0.3};
+  tank.fuel_kg = 0.5 * tank.params.fuel_capacity_kg;
 
-  // Full fuel (frac=1): CG = cg_full = (0, 0, 0)
-  auto r0 = stepFuelBurn(s, p, /*T*/ 0.0, /*dt*/ 0.0); // no burn
-  EXPECT_NEAR(r0.cg_offset_m.x, 0.0, 1e-12);
-
-  // Burn down to half fuel.
-  s.fuel_kg = 0.5 * p.fuel_capacity_kg;
-  auto r_half = stepFuelBurn(s, p, /*T*/ 0.0, /*dt*/ 0.0);
-  EXPECT_NEAR(r_half.cg_offset_m.x, 0.5, 1e-12); // halfway between 0 and 1
-
-  // Empty.
-  s.fuel_kg = 0.0;
-  auto r_empty = stepFuelBurn(s, p, /*T*/ 0.0, /*dt*/ 0.0);
-  EXPECT_NEAR(r_empty.cg_offset_m.x, 1.0, 1e-12);
+  const auto c = tank.current();
+  EXPECT_DOUBLE_EQ(c.mass_kg, tank.fuel_kg);
+  EXPECT_DOUBLE_EQ(c.cg_m.x, 1.5);
+  EXPECT_DOUBLE_EQ(c.cg_m.y, -0.25);
+  EXPECT_DOUBLE_EQ(c.cg_m.z, 0.3);
 }
 
 /* ----------------------------- Inertia scaling ----------------------------- */
 
-TEST(FuelBurnTest, InertiaScalesLinearlyWithFuelFraction) {
-  FuelBurnMassPropertiesParams p;
-  // Distinct full / empty tensors so the interpolation is observable.
-  p.I_full = sim::dynamics::rigid_body::InertiaTensor{100.0, 200.0, 300.0, 0.0};
-  p.I_empty = sim::dynamics::rigid_body::InertiaTensor{10.0, 20.0, 30.0, 0.0};
-  FuelBurnMassPropertiesState s; // starts full
+TEST(FuelBurnTest, FuelInertiaScalesLinearlyWithFuelFraction) {
+  FuelTankMassSource tank;
+  tank.params.I_fuel_full = InertiaTensor{100.0, 200.0, 300.0, 0.0};
+  // tank starts full
 
-  // Full fuel (default state): I = I_full
-  auto r0 = stepFuelBurn(s, p, /*T*/ 0.0, /*dt*/ 0.0);
-  EXPECT_NEAR(r0.I_body.Ixx, p.I_full.Ixx, 1e-6);
-  EXPECT_NEAR(r0.I_body.Iyy, p.I_full.Iyy, 1e-6);
-
-  // Empty
-  s.fuel_kg = 0.0;
-  auto r_empty = stepFuelBurn(s, p, /*T*/ 0.0, /*dt*/ 0.0);
-  EXPECT_NEAR(r_empty.I_body.Ixx, p.I_empty.Ixx, 1e-6);
-  EXPECT_NEAR(r_empty.I_body.Iyy, p.I_empty.Iyy, 1e-6);
+  // Full fuel (frac = 1): I = I_fuel_full
+  auto c_full = tank.current();
+  EXPECT_NEAR(c_full.inertia_about_own_cg.Ixx, tank.params.I_fuel_full.Ixx, kTol);
+  EXPECT_NEAR(c_full.inertia_about_own_cg.Iyy, tank.params.I_fuel_full.Iyy, kTol);
 
   // Half fuel
-  s.fuel_kg = 0.5 * p.fuel_capacity_kg;
-  auto r_half = stepFuelBurn(s, p, /*T*/ 0.0, /*dt*/ 0.0);
-  EXPECT_NEAR(r_half.I_body.Ixx, 0.5 * (p.I_full.Ixx + p.I_empty.Ixx), 1e-6);
-  EXPECT_NEAR(r_half.I_body.Iyy, 0.5 * (p.I_full.Iyy + p.I_empty.Iyy), 1e-6);
+  tank.fuel_kg = 0.5 * tank.params.fuel_capacity_kg;
+  auto c_half = tank.current();
+  EXPECT_NEAR(c_half.inertia_about_own_cg.Ixx, 0.5 * tank.params.I_fuel_full.Ixx, kTol);
+  EXPECT_NEAR(c_half.inertia_about_own_cg.Izz, 0.5 * tank.params.I_fuel_full.Izz, kTol);
+
+  // Empty
+  tank.fuel_kg = 0.0;
+  auto c_empty = tank.current();
+  EXPECT_NEAR(c_empty.inertia_about_own_cg.Ixx, 0.0, kTol);
 }
 
-/* ----------------------------- m = m_empty + fuel invariant ----------------------------- */
+/* ----------------------------- Whole-vehicle via MassAccumulator ----------------------------- */
 
-TEST(FuelBurnTest, TotalMassEqualsEmptyPlusFuel) {
-  FuelBurnMassPropertiesParams p;
-  p.m_empty_kg = 5000.0;
-  p.fuel_capacity_kg = 2000.0;
-  FuelBurnMassPropertiesState s;
+TEST(FuelBurnTest, WholeVehicleMassPropsFromAggregate) {
+  // Dry structure: 1000 kg at origin, own inertia diagonal.
+  StaticMassSource dry;
+  dry.c.mass_kg = 1000.0;
+  dry.c.cg_m = Vec3{0.0, 0.0, 0.0};
+  dry.c.inertia_about_own_cg = InertiaTensor{2000.0, 4000.0, 6000.0, 0.0};
 
-  for (double burn_amount : {0.0, 500.0, 1500.0, 2000.0}) {
-    s.fuel_kg = p.fuel_capacity_kg - burn_amount;
-    if (s.fuel_kg < 0.0)
-      s.fuel_kg = 0.0;
-    auto r = stepFuelBurn(s, p, /*T*/ 0.0, /*dt*/ 0.0);
-    EXPECT_NEAR(r.m_total_kg, p.m_empty_kg + s.fuel_kg, 1e-9);
-  }
+  FuelTankMassSource tank;
+  tank.params.fuel_capacity_kg = 1000.0;
+  tank.params.cg_tank_m = Vec3{2.0, 0.0, 0.0}; // tank 2 m forward of structure CG
+  tank.params.I_fuel_full = InertiaTensor{100.0, 200.0, 300.0, 0.0};
+  // tank full -> 1000 kg fuel
+
+  MassAccumulator acc;
+  acc.add(dry);
+  acc.add(tank);
+  const auto agg = acc.result();
+
+  // Total mass = 1000 dry + 1000 fuel.
+  EXPECT_NEAR(agg.mass_kg, 2000.0, kTol);
+  // CG: (1000*0 + 1000*2) / 2000 = 1.0 m forward.
+  EXPECT_NEAR(agg.cg_m.x, 1.0, kTol);
+  EXPECT_NEAR(agg.cg_m.y, 0.0, kTol);
+  EXPECT_NEAR(agg.cg_m.z, 0.0, kTol);
+
+  // Izz about net CG: own (6000 + 300) + parallel-axis on x-offsets
+  // dry at d.x=-1: 1000*1 = 1000 ; fuel at d.x=+1: 1000*1 = 1000.
+  EXPECT_NEAR(agg.inertia_about_cg.Izz, 6000.0 + 300.0 + 2000.0, kTol);
+}
+
+/* ----------------------------- PROOF 8: fuel-fraction reflected after burn
+ * ----------------------------- */
+
+/**
+ * @test Proof 8 (hand-computed, tol 1e-9).
+ *
+ * Tank: capacity 1000 kg, full (1000 kg), I_fuel_full = {100,200,300,...},
+ * cg = (2,0,0). TSFC = 2e-5. Step thrust 100000 N for dt = 100 s:
+ *   burned = 2e-5 * 100000 * 100 = 200 kg -> fuel_kg = 800 kg, frac = 0.8.
+ *
+ * After the burn:
+ *   current().mass_kg   == 800
+ *   current().inertia   == 0.8 * I_fuel_full  (Ixx=80, Iyy=160, Izz=240)
+ * Full vs partially-burned differ exactly by the fraction.
+ *
+ * Whole vehicle = MassAccumulator of {dry, tank}, hand-computed below.
+ */
+TEST(FuelBurnProof, FuelFractionReflectedAfterBurnAndWholeVehicle) {
+  FuelTankMassSource tank;
+  tank.params.TSFC_kg_per_N_s = 2.0e-5;
+  tank.params.fuel_capacity_kg = 1000.0;
+  tank.params.cg_tank_m = Vec3{2.0, 0.0, 0.0};
+  tank.params.I_fuel_full = InertiaTensor{100.0, 200.0, 300.0, 0.0};
+
+  // Snapshot full state before burning.
+  const auto c_full = tank.current();
+  EXPECT_NEAR(c_full.mass_kg, 1000.0, kTol);
+  EXPECT_NEAR(c_full.inertia_about_own_cg.Ixx, 100.0, kTol);
+  EXPECT_NEAR(c_full.inertia_about_own_cg.Iyy, 200.0, kTol);
+  EXPECT_NEAR(c_full.inertia_about_own_cg.Izz, 300.0, kTol);
+
+  // Burn 200 kg: thrust 100000 N for 100 s.
+  tank.step(/*thrust*/ 100000.0, /*dt*/ 100.0);
+  EXPECT_NEAR(tank.fuel_kg, 800.0, kTol);
+  EXPECT_NEAR(tank.fuelFraction(), 0.8, kTol);
+
+  const auto c_part = tank.current();
+  EXPECT_NEAR(c_part.mass_kg, 800.0, kTol);
+  EXPECT_NEAR(c_part.inertia_about_own_cg.Ixx, 80.0, kTol);  // 0.8 * 100
+  EXPECT_NEAR(c_part.inertia_about_own_cg.Iyy, 160.0, kTol); // 0.8 * 200
+  EXPECT_NEAR(c_part.inertia_about_own_cg.Izz, 240.0, kTol); // 0.8 * 300
+
+  // Full vs partial differ exactly by the burned fraction.
+  EXPECT_NEAR(c_full.mass_kg - c_part.mass_kg, 200.0, kTol);
+  EXPECT_NEAR(c_part.inertia_about_own_cg.Izz, 0.8 * c_full.inertia_about_own_cg.Izz, kTol);
+
+  // Whole vehicle: dry 1000 kg at origin + tank 800 kg at x=2.
+  StaticMassSource dry;
+  dry.c.mass_kg = 1000.0;
+  dry.c.cg_m = Vec3{0.0, 0.0, 0.0};
+  dry.c.inertia_about_own_cg = InertiaTensor{2000.0, 4000.0, 6000.0, 0.0};
+
+  MassAccumulator acc;
+  acc.add(dry);
+  acc.add(tank);
+  const auto agg = acc.result();
+
+  // Mass = 1800. CG.x = (1000*0 + 800*2) / 1800 = 1600/1800 = 0.888888...
+  EXPECT_NEAR(agg.mass_kg, 1800.0, kTol);
+  EXPECT_NEAR(agg.cg_m.x, 1600.0 / 1800.0, kTol);
+  EXPECT_NEAR(agg.cg_m.y, 0.0, kTol);
+  EXPECT_NEAR(agg.cg_m.z, 0.0, kTol);
+
+  // Izz about net CG:
+  //   own: 6000 (dry) + 240 (tank, scaled) = 6240
+  //   parallel-axis on x offsets:
+  //     dry  at d.x = 0 - 8/9 = -8/9 : 1000 * (8/9)^2
+  //     tank at d.x = 2 - 8/9 = 10/9 :  800 * (10/9)^2
+  const double cgx = 1600.0 / 1800.0; // = 8/9
+  const double dry_dx = 0.0 - cgx;
+  const double tank_dx = 2.0 - cgx;
+  const double expected_Izz = 6240.0 + 1000.0 * dry_dx * dry_dx + 800.0 * tank_dx * tank_dx;
+  EXPECT_NEAR(agg.inertia_about_cg.Izz, expected_Izz, kTol);
+
+  // Equivalence: the source path matches feeding sampled values as fixed
+  // contributors to a MassAccumulator.
+  MassAccumulator acc_values;
+  acc_values.add(dry.current());
+  acc_values.add(tank.current());
+  const auto agg_values = acc_values.result();
+  EXPECT_NEAR(agg.mass_kg, agg_values.mass_kg, kTol);
+  EXPECT_NEAR(agg.cg_m.x, agg_values.cg_m.x, kTol);
+  EXPECT_NEAR(agg.inertia_about_cg.Izz, agg_values.inertia_about_cg.Izz, kTol);
 }

@@ -1,11 +1,12 @@
 # ==============================================================================
 # Module: sim_dynamics_mass_properties
 #
-# Time-varying mass / CG / inertia tensor for vehicles that burn fuel.
-# Provides FuelBurnMassProperties -- TSFC-driven fuel burn rate,
-# linear CG migration between full-fuel and empty-fuel reference points,
-# linear inertia scaling. Wraps sim::dynamics::rigid_body::InertiaTensor
-# for the tensor type.
+# Compositional mass / CG / inertia for multi-part vehicles.
+# Provides MassProperties::aggregate -- combines per-part MassContributors
+# (mass, CG, own-CG inertia) into whole-body mass, mass-weighted CG, and
+# the inertia about the net CG via the parallel-axis theorem. FuelBurn
+# exposes a TSFC-driven fuel tank as one such (time-varying) contributor.
+# Wraps sim::dynamics::rigid_body::InertiaTensor (full symmetric tensor).
 # ==============================================================================
 
 include(apex/All)
