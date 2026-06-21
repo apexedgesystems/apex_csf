@@ -312,17 +312,22 @@ reads this file and invokes `apex_data_gen` to produce JSON struct dictionaries.
 ## Packaging
 
 Apps registered via `apex_add_app()` get `package_<APP>` custom targets created
-by `apex_finalize_packages()`. Each target invokes `pkg_resolve.sh` (shell
-script) to:
+by `apex_finalize_packages()`, which stage a deployable bundle from CMake install
+components:
 
-1. BFS-walk the binary's ELF `DT_NEEDED` entries via `readelf`
-2. Resolve shared library dependencies against the build `lib/` directory
-3. Stage `bin/<APP>` + `lib/*.so` (with symlink chains) into `packages/<APP>/`
-4. Include TPRM configuration and generate a launch script (`run.sh`)
-5. Create a deployable tarball
+1. Derive the app's shared-library closure from the **build graph** (its
+   transitive link targets), not a post-hoc `readelf` walk -- deterministic and
+   cross-architecture-trivial.
+2. `install(COMPONENT <APP>)` rules stage the binary, that closure (runtime
+   symlink chains), any extra bins, the TPRM, and a launcher into the canonical
+   `bank_a/{bin,libs,tprm}` + `run.sh` layout.
+3. `package_<APP>` runs `cmake --install --component <APP>` into `packages/<APP>`
+   and tars it.
 
-TPRM paths are registered per-app via `apex_set_app_tprm()`. These targets
-are consumed by `mk/release.mk` for multi-platform release packaging.
+Per-app deployable inputs are declared next to the app: `apex_set_app_tprm()`
+for the TPRM and `apex_set_app_extra_bins()` for additional executables (e.g. the
+watchdog). These targets are consumed by `mk/release.mk` for multi-platform
+release packaging.
 
 ## Cross-Compilation
 
