@@ -73,9 +73,12 @@ PERF_TEST(RigidBody6DOFStep, Throughput) {
 
   auto force = [](double, const RigidBody6DOFState&) { return Vec3{1000.0, 0.0, 0.0}; };
   auto moment = [](double, const RigidBody6DOFState&) { return Vec3{10.0, 5.0, 2.0}; };
-  const InertiaTensor I{24675886.0, 44877562.0, 67384138.0, 1315143.0};
-  const double mass = 300000.0;
-  const double dt = 0.02; // 50 Hz aircraft tick
+  // Notional large-vehicle inertia (xz-symmetric, with an Ixz cross term so the
+  // solve exercises the off-diagonal path) -- representative magnitudes, not a
+  // specific airframe.
+  const InertiaTensor I{2.0e7, 4.0e7, 6.0e7, 1.0e6};
+  const double mass = 250000.0;
+  const double dt = 0.02; // 50 Hz tick
 
   perf.warmup([&] {
     RigidBody6DOFState s;
