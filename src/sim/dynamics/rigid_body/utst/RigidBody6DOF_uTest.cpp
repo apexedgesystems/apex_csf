@@ -295,6 +295,45 @@ TEST(InertiaTensorTest, SolveInvertsMultiply) {
   }
 }
 
+/* ----------------------------- force-free symmetric top ----------------------------- */
+
+/**
+ * @test A force-free body spun about its symmetry axis precesses its transverse
+ * angular velocity (in the body frame) at the analytic rate
+ *   omega_p = Omega * (I_axial - I_transverse) / I_transverse,
+ * with the transverse components tracing (w0*cos, w0*sin) at constant magnitude
+ * and constant axial rate. This validates the full Euler-equation coupling
+ * (omega x I omega) and the integrator together against a closed-form solution.
+ */
+TEST(RigidBody6DOFTest, ForceFreeSymmetricTopPrecessesAtAnalyticRate) {
+  const double I_t = 2.0; // transverse moment (Ixx = Iyy)
+  const double I_a = 3.0; // axial moment (Izz; symmetry / spin axis)
+  const InertiaTensor I{I_t, I_t, I_a, 0.0};
+
+  const double omega_spin = 10.0;                       // axial rate (rad/s)
+  const double w0 = 0.1;                                // initial transverse rate
+  const double lambda = omega_spin * (I_a - I_t) / I_t; // analytic precession rate
+
+  RigidBody6DOFState s;
+  s.angular_velocity_body = Vec3{w0, 0.0, omega_spin};
+
+  const double dt = 1.0e-4;
+  const int n = 3142; // ~ a quarter precession period (pi / (2*lambda))
+  for (int i = 0; i < n; ++i) {
+    stepRigidBody6DOF(s, zeroVec3(), zeroVec3(), 1.0, I, i * dt, dt);
+  }
+  const double t = n * dt;
+
+  // Transverse components follow (w0 cos(lambda t), w0 sin(lambda t)).
+  EXPECT_NEAR(s.angular_velocity_body.x, w0 * std::cos(lambda * t), 1e-4);
+  EXPECT_NEAR(s.angular_velocity_body.y, w0 * std::sin(lambda * t), 1e-4);
+  // Axial rate and transverse magnitude are invariants of force-free spin.
+  EXPECT_NEAR(s.angular_velocity_body.z, omega_spin, 1e-9);
+  EXPECT_NEAR(std::sqrt(s.angular_velocity_body.x * s.angular_velocity_body.x +
+                        s.angular_velocity_body.y * s.angular_velocity_body.y),
+              w0, 1e-6);
+}
+
 /* ----------------------------- cross / dot / norm sanity ----------------------------- */
 
 TEST(Vec3HelpersTest, CrossDotNormBasics) {
