@@ -12,6 +12,7 @@
 #include "src/sim/dynamics/rigid_body/inc/RigidBody6DOF.hpp"
 
 #include <initializer_list>
+#include <memory>
 
 #include <gtest/gtest.h>
 
@@ -247,4 +248,47 @@ TEST(MassPropertiesProof, StaticSourceCurrentAndAccumulator) {
   EXPECT_NEAR(agg_src.inertia_about_cg.Ixx, agg_val.inertia_about_cg.Ixx, kTol);
   EXPECT_NEAR(agg_src.inertia_about_cg.Iyy, agg_val.inertia_about_cg.Iyy, kTol);
   EXPECT_NEAR(agg_src.inertia_about_cg.Izz, agg_val.inertia_about_cg.Izz, kTol);
+}
+
+/* ----------------------------- Defensive / lifecycle ----------------------------- */
+
+// A body with no mass (empty, or only massless markers) returns the default
+// instead of dividing by the zero total: mass 0, CG at the origin, and the
+// identity inertia tensor (the InertiaTensor default, which keeps a downstream
+// solve() invertible rather than singular). This guard keeps an unconfigured
+// vehicle well-defined rather than producing NaNs.
+TEST(MassPropertiesProof, ZeroMassReturnsDefault) {
+  MassAccumulator acc;
+  acc.add(point(0.0, Vec3{5.0, -2.0, 1.0})); // a massless reference marker
+  const auto agg = acc.result();
+
+  EXPECT_NEAR(agg.mass_kg, 0.0, kTol);
+  EXPECT_NEAR(agg.cg_m.x, 0.0, kTol);
+  EXPECT_NEAR(agg.cg_m.y, 0.0, kTol);
+  EXPECT_NEAR(agg.cg_m.z, 0.0, kTol);
+  EXPECT_NEAR(agg.inertia_about_cg.Ixx, 1.0, kTol);
+  EXPECT_NEAR(agg.inertia_about_cg.Iyy, 1.0, kTol);
+  EXPECT_NEAR(agg.inertia_about_cg.Izz, 1.0, kTol);
+  EXPECT_NEAR(agg.inertia_about_cg.Ixz, 0.0, kTol);
+}
+
+// clear() drops every fixed contributor and source, so an accumulator reused
+// across a rebuild starts empty again.
+TEST(MassPropertiesProof, ClearResetsAccumulator) {
+  MassAccumulator acc;
+  acc.add(point(3.0, Vec3{1.0, 0.0, 0.0}));
+  acc.add(point(2.0, Vec3{-1.0, 0.0, 0.0}));
+  ASSERT_NEAR(acc.result().mass_kg, 5.0, kTol);
+
+  acc.clear();
+  EXPECT_NEAR(acc.result().mass_kg, 0.0, kTol);
+}
+
+// A source owned through the base interface destructs cleanly -- the virtual
+// destructor is what lets callers hold heterogeneous sources polymorphically.
+TEST(MassPropertiesProof, SourceDestructsThroughBasePointer) {
+  std::unique_ptr<sim::dynamics::mass_properties::MassPropsSource> src =
+      std::make_unique<StaticMassSource>();
+  src.reset(); // exercises ~MassPropsSource through the base pointer
+  EXPECT_EQ(src, nullptr);
 }

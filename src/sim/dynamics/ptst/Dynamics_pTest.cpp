@@ -23,8 +23,11 @@
 
 #include "src/bench/inc/Perf.hpp"
 #include "src/sim/dynamics/disturbance/inc/DrydenTurbulence.hpp"
+#include "src/sim/dynamics/force_moment/inc/ForceMoment.hpp"
+#include "src/sim/dynamics/inc/VehicleStep.hpp"
 #include "src/sim/dynamics/integrators/inc/RK4.hpp"
 #include "src/sim/dynamics/mass_properties/inc/FuelBurnMassProperties.hpp"
+#include "src/sim/dynamics/mass_properties/inc/MassProperties.hpp"
 #include "src/sim/dynamics/rigid_body/inc/PointMass3D.hpp"
 #include "src/sim/dynamics/rigid_body/inc/RigidBody6DOF.hpp"
 
@@ -39,8 +42,14 @@ using sim::dynamics::disturbance::DrydenRng;
 using sim::dynamics::disturbance::DrydenTurbulenceParams;
 using sim::dynamics::disturbance::DrydenTurbulenceState;
 using sim::dynamics::disturbance::stepDryden;
+using sim::dynamics::force_moment::AppliedForce;
+using sim::dynamics::force_moment::ForceMoment;
+using sim::dynamics::force_moment::ForceMomentAccumulator;
 using sim::dynamics::integrators::stepRK4;
+using sim::dynamics::mass_properties::AggregateMassProperties;
 using sim::dynamics::mass_properties::FuelTankMassSource;
+using sim::dynamics::mass_properties::MassAccumulator;
+using sim::dynamics::mass_properties::MassContributor;
 using sim::dynamics::rigid_body::InertiaTensor;
 using sim::dynamics::rigid_body::PointMass3DState;
 using sim::dynamics::rigid_body::RigidBody6DOFState;
@@ -229,6 +238,166 @@ PERF_TEST(DrydenStep, Throughput) {
 
   std::printf("\n[Dryden] step: %.0f steps/s (%.4f us/step)\n", result.callsPerSecond,
               1.0e6 / result.callsPerSecond);
+}
+
+/* ----------------------- Compositional accumulation ----------------------- */
+
+// A representative small vehicle's mass build-up: dry structure plus four
+// offset contributors (two engines, payload, a draining fuel tank). The
+// per-tick cost is one `result()` -- re-sample the sources and run the
+// parallel-axis combine to whole-vehicle mass / CG / inertia. The fuel tank
+// is a live source so the stack genuinely re-evaluates each tick.
+PERF_TEST(MassAccumulatorResult, Throughput) {
+  UB_PERF_GUARD(perf);
+
+  FuelTankMassSource tank;
+  tank.params.cg_tank_m = Vec3{-2.0, 0.0, 0.5};
+
+  const MassContributor structure{8000.0, Vec3{0.5, 0.0, 0.0},
+                                  InertiaTensor{4.0e4, 6.0e4, 8.0e4, 0.0}};
+  const MassContributor engineL{1200.0, Vec3{-3.0, -4.0, 1.0},
+                                InertiaTensor{300.0, 300.0, 200.0, 0.0}};
+  const MassContributor engineR{1200.0, Vec3{-3.0, 4.0, 1.0},
+                                InertiaTensor{300.0, 300.0, 200.0, 0.0}};
+  const MassContributor payload{2500.0, Vec3{1.5, 0.0, 0.2},
+                                InertiaTensor{5.0e3, 5.0e3, 5.0e3, 0.0}};
+
+  auto build = [&] {
+    MassAccumulator acc;
+    acc.add(structure);
+    acc.add(engineL);
+    acc.add(engineR);
+    acc.add(payload);
+    acc.add(tank);
+    return acc;
+  };
+
+  perf.warmup([&] {
+    auto acc = build();
+    for (int i = 0; i < perf.cycles(); ++i) {
+      const auto mp = acc.result();
+      (void)mp;
+    }
+  });
+
+  volatile double sink = 0.0;
+  auto acc = build();
+  auto result = perf.throughputLoop(
+      [&] {
+        const AggregateMassProperties mp = acc.result();
+        sink += mp.mass_kg + mp.cg_m.x + mp.inertia_about_cg.Ixx;
+      },
+      "mass_accumulate");
+
+  std::printf("\n[MassAccumulator] result (5 parts): %.0f stacks/s (%.4f us/stack)\n",
+              result.callsPerSecond, 1.0e6 / result.callsPerSecond);
+}
+
+// The force side of a tick: net force + moment about the CG from five applied
+// loads (gravity, aero at the aerodynamic center, two engine thrusts at their
+// mount points, a control-surface couple). Each `resultAbout()` runs the
+// force analogue of parallel-axis -- moment transfer of every offset force.
+PERF_TEST(ForceMomentAccumulatorResult, Throughput) {
+  UB_PERF_GUARD(perf);
+
+  const Vec3 cg{0.3, 0.0, 0.1};
+  const AppliedForce gravity{Vec3{0.0, 0.0, 1.3e5}, cg, Vec3{}};
+  const AppliedForce aero{Vec3{-4.0e4, 0.0, -2.0e5}, Vec3{0.6, 0.0, 0.0}, Vec3{}};
+  const AppliedForce thrustL{Vec3{6.0e4, 0.0, 0.0}, Vec3{-3.0, -4.0, 1.0}, Vec3{}};
+  const AppliedForce thrustR{Vec3{6.0e4, 0.0, 0.0}, Vec3{-3.0, 4.0, 1.0}, Vec3{}};
+  const AppliedForce surface{Vec3{}, Vec3{}, Vec3{0.0, 1.5e4, 0.0}}; // pure couple
+
+  auto build = [&] {
+    ForceMomentAccumulator acc;
+    acc.add(gravity);
+    acc.add(aero);
+    acc.add(thrustL);
+    acc.add(thrustR);
+    acc.add(surface);
+    return acc;
+  };
+
+  perf.warmup([&] {
+    auto acc = build();
+    for (int i = 0; i < perf.cycles(); ++i) {
+      const auto fm = acc.resultAbout(cg);
+      (void)fm;
+    }
+  });
+
+  volatile double sink = 0.0;
+  auto acc = build();
+  auto result = perf.throughputLoop(
+      [&] {
+        const ForceMoment fm = acc.resultAbout(cg);
+        sink += fm.force.x + fm.moment.y;
+      },
+      "force_moment_accumulate");
+
+  std::printf("\n[ForceMomentAccumulator] resultAbout (5 loads): %.0f stacks/s (%.4f us/stack)\n",
+              result.callsPerSecond, 1.0e6 / result.callsPerSecond);
+}
+
+// The end-to-end per-tick path through the compositional facade: re-stack the
+// mass, re-stack the forces about the current CG, then take one 6-DOF RK4 step
+// from the two aggregates. The vehicle is wired once (the intended usage); the
+// tick re-samples the sources, so this measures the steady-state per-tick cost
+// of the stitch-and-stack path, which is allocation-free.
+PERF_TEST(VehicleStepComposed, Throughput) {
+  UB_PERF_GUARD(perf);
+
+  FuelTankMassSource tank;
+  tank.params.cg_tank_m = Vec3{-2.0, 0.0, 0.5};
+  const MassContributor structure{8000.0, Vec3{0.5, 0.0, 0.0},
+                                  InertiaTensor{4.0e4, 6.0e4, 8.0e4, 0.0}};
+  const MassContributor payload{2500.0, Vec3{1.5, 0.0, 0.2},
+                                InertiaTensor{5.0e3, 5.0e3, 5.0e3, 0.0}};
+
+  const AppliedForce gravity{Vec3{0.0, 0.0, 1.3e5}, Vec3{}, Vec3{}};
+  const AppliedForce thrust{Vec3{1.2e5, 0.0, 0.0}, Vec3{-3.0, 0.0, 1.0}, Vec3{}};
+  const AppliedForce aero{Vec3{-4.0e4, 0.0, -2.0e5}, Vec3{0.6, 0.0, 0.0}, Vec3{}};
+
+  const double dt = 0.01;
+
+  // Wire the vehicle once; the fuel tank is a live source the tick re-samples.
+  MassAccumulator mass;
+  mass.add(structure);
+  mass.add(payload);
+  mass.add(tank);
+
+  ForceMomentAccumulator forces;
+  forces.add(gravity);
+  forces.add(thrust);
+  forces.add(aero);
+
+  auto step = [&](RigidBody6DOFState& s, double t) {
+    const AggregateMassProperties mp = mass.result();
+    const ForceMoment fm = forces.resultAbout(mp.cg_m);
+    stepRigidBody6DOF(s, mp, fm, t, dt);
+  };
+
+  perf.warmup([&] {
+    RigidBody6DOFState s;
+    for (int i = 0; i < perf.cycles(); ++i) {
+      step(s, i * dt);
+    }
+  });
+
+  RigidBody6DOFState s;
+  auto result = perf.throughputLoop(
+      [&, t = 0.0]() mutable {
+        step(s, t);
+        t += dt;
+        if (!std::isfinite(s.position_inertial.x)) {
+          s = RigidBody6DOFState{};
+          t = 0.0;
+        }
+      },
+      "vehicle_step_composed");
+
+  std::printf("\n[VehicleStep] composed tick (stack mass+forces, 6DOF step): "
+              "%.0f ticks/s (%.4f us/tick)\n",
+              result.callsPerSecond, 1.0e6 / result.callsPerSecond);
 }
 
 PERF_MAIN()

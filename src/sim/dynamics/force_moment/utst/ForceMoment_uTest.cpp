@@ -13,6 +13,8 @@
 #include "src/sim/dynamics/force_moment/inc/ForceMoment.hpp"
 #include "src/sim/dynamics/rigid_body/inc/PointMass3D.hpp"
 
+#include <memory>
+
 #include <gtest/gtest.h>
 
 using sim::dynamics::force_moment::AppliedForce;
@@ -187,4 +189,35 @@ TEST(ForceMomentProof, SourceAggregationMatchesValueAggregation) {
   EXPECT_NEAR(src_result.moment.x, 1.0, kTol);
   EXPECT_NEAR(src_result.moment.y, 20.0, kTol);
   EXPECT_NEAR(src_result.moment.z, 10.0, kTol);
+}
+
+/* ----------------------------- Defensive / lifecycle ----------------------------- */
+
+/**
+ * @test clear() drops every fixed load and source, so an accumulator reused
+ * across a rebuild starts with zero net force and moment.
+ */
+TEST(ForceMomentProof, ClearResetsAccumulator) {
+  ForceMomentAccumulator acc;
+  acc.add(AppliedForce{Vec3{10.0, 0.0, 0.0}, Vec3{1.0, 0.0, 0.0}, Vec3{}});
+  acc.add(AppliedForce{Vec3{0.0, 5.0, 0.0}, Vec3{}, Vec3{}});
+  ASSERT_NEAR(acc.resultAbout(Vec3{}).force.x, 10.0, kTol);
+
+  acc.clear();
+  const ForceMoment empty = acc.resultAbout(Vec3{});
+  EXPECT_NEAR(empty.force.x, 0.0, kTol);
+  EXPECT_NEAR(empty.force.y, 0.0, kTol);
+  EXPECT_NEAR(empty.moment.z, 0.0, kTol);
+}
+
+/**
+ * @test A source owned through the base interface destructs cleanly -- the
+ * virtual destructor is what lets callers hold heterogeneous loads
+ * polymorphically.
+ */
+TEST(ForceMomentProof, SourceDestructsThroughBasePointer) {
+  std::unique_ptr<sim::dynamics::force_moment::ForceMomentSource> src =
+      std::make_unique<StaticForceMomentSource>();
+  src.reset(); // exercises ~ForceMomentSource through the base pointer
+  EXPECT_EQ(src, nullptr);
 }
