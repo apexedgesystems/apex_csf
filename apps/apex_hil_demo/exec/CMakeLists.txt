@@ -53,3 +53,10 @@ apex_add_app(
   REQUIRES
   POSIX
 )
+
+# ------------------------------------------------------------------------------
+# Deployable bundle: TPRM config + the watchdog supervisor ship alongside the
+# executive in bank_a (the canonical ApexFileSystem layout).
+# ------------------------------------------------------------------------------
+apex_set_app_tprm(ApexHilDemo apps/apex_hil_demo/tprm/master_1khz.tprm)
+apex_set_app_extra_bins(ApexHilDemo ApexWatchdog)

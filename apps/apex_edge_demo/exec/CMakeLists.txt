@@ -81,3 +81,7 @@ endif ()
 if (TARGET sim_gpu_compute_stream_compact_cuda)
   target_link_libraries(ApexEdgeDemo PRIVATE sim_gpu_compute_stream_compact_cuda)
 endif ()
+
+# Deployable bundle: ship the Thor-tuned TPRM config in bank_a (canonical
+# ApexFileSystem layout).
+apex_set_app_tprm(ApexEdgeDemo apps/apex_edge_demo/tprm/master_thor.tprm)
