@@ -99,10 +99,10 @@ Configure-only variants available: `configure-jetson`, `configure-rpi`, etc.
 | `make release-clean`      | Remove `release/` directory              |
 
 Apps declare their platforms in `apps/<app>/release.mk`. The release target
-builds each platform via Docker Compose, packages POSIX binaries with shared
-library dependencies (via `pkg_resolve.sh`), copies firmware artifacts for
-bare-metal targets, and creates a combined tarball. POSIX packages include
-TPRM configuration and a launch script.
+builds each platform via Docker Compose, packages POSIX binaries with their
+shared-library closure (via the CMake `package_<APP>` install-component target),
+copies firmware artifacts for bare-metal targets, and creates a combined
+tarball. POSIX packages include TPRM configuration and a launch script.
 
 Output structure:
 

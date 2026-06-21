@@ -206,7 +206,7 @@ F Prime statically links everything into a single monolithic binary.
 | Build tool        | CMake + Ninja                                   | CMake + Make                | CMake + Ninja + FPP + Python            |
 | Code generation   | apex_data_gen (struct dictionaries, optional)   | None (manual CCSDS headers) | FPP compiler (mandatory, generates C++) |
 | Cross-compile     | Docker-based toolchains (one command)           | Manual toolchain setup      | fprime-util + ARM toolchains            |
-| Package/deploy    | pkg_resolve.sh (auto ELF dependency resolution) | Manual file staging         | fprime-util install                     |
+| Package/deploy    | CMake install components (graph-derived closure) | Manual file staging         | fprime-util install                     |
 | Language standard | C++23                                           | C99                         | C++11 (generated code)                  |
 | Test framework    | Google Test (integrated, parallel + serial)     | UT Assert (cFS-provided)    | Google Test (via fprime-util)           |
 

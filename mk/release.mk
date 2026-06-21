@@ -21,8 +21,8 @@
 # How it works:
 #   1. For each platform in the app's manifest:
 #      a. Build via Docker Compose (reuses existing compose build targets)
-#      b. POSIX: build + package in one step via ninja package_<APP>
-#         (pkg_resolve.sh resolves ELF deps, stages bin/lib/tprm/run.sh)
+#      b. POSIX: build + package via the CMake package_<APP> target
+#         (cmake --install stages bank_a/{bin,libs,tprm} + run.sh)
 #      c. Firmware: copy .elf/.bin/.hex from build dir
 #   2. Aggregate all platforms into release/<APP>/
 #   3. Create combined tarball
@@ -33,16 +33,17 @@
 #
 #     APP_REGISTRY += MyApp
 #     APP_MyApp_PLATFORMS              := rpi stm32
-#     APP_MyApp_TPRM                   := apps/my_app/tprm/master.tprm
 #     APP_MyApp_rpi_TYPE               := posix
 #     APP_MyApp_rpi_BINARY             := MyApp
 #     APP_MyApp_stm32_TYPE             := firmware
 #     APP_MyApp_stm32_BINARY           := my_firmware
 #
-#   TYPE=posix:    ELF executable with shared library dependencies.
-#                  Uses pkg_resolve.sh (via CMake package_<APP> target) for
-#                  BFS dependency resolution against the build lib/ directory.
-#                  Includes TPRM config and a launch script in the package.
+#   The deployable's TPRM and any extra bins are declared in CMake next to the
+#   app (apex_set_app_tprm / apex_set_app_extra_bins), not in this manifest.
+#
+#   TYPE=posix:    ELF executable with shared library dependencies. The CMake
+#                  package_<APP> target stages the app, its graph-derived shared
+#                  library closure, the TPRM, and a launch script into bank_a.
 #
 #   TYPE=firmware: Bare-metal firmware with no shared library dependencies.
 #                  Copies .elf/.bin/.hex from the build firmware/ directory.
@@ -62,22 +63,20 @@ APP ?=
 # ==============================================================================
 # Low-Level Packaging (runs inside Docker container)
 # ==============================================================================
-# Invoked by the POSIX release template via _compose_run. Calls pkg_resolve.sh
-# directly for ELF dependency resolution, TPRM staging, and launch script
-# generation. TPRM path comes from the app's release manifest (APP_<name>_TPRM).
+# Invoked by the POSIX release template via _compose_run. Builds the app's
+# package_<APP> target, which stages the deployable bundle from CMake install
+# components (bank_a/{bin,libs,tprm} + run.sh) and tars it. The library closure,
+# TPRM, and extra bins are declared in CMake (apex_finalize_packages +
+# apex_set_app_tprm / apex_set_app_extra_bins), so nothing platform-specific is
+# threaded through here.
 # ==============================================================================
-
-TPRM ?=
-EXTRA_BINS ?=
 
 package:
 	@test -n "$(APP)" || \
 	  { printf '$(TERM_RED)[package]$(TERM_RESET) APP not set. Usage: make package APP=<name>\n'; exit 1; }
 	@test -d "$(BUILD_DIR)" || \
 	  { printf '$(TERM_RED)[package]$(TERM_RESET) BUILD_DIR not found: $(BUILD_DIR)\n'; exit 1; }
-	@bash tools/sh/bin/pkg_resolve.sh --app "$(APP)" --build-dir "$(BUILD_DIR)" \
-	  $(if $(TPRM),--tprm "$(TPRM)") \
-	  $(foreach bin,$(EXTRA_BINS),--extra-bin "$(bin)")
+	@cmake --build "$(BUILD_DIR)" --target package_$(APP)
 
 package-clean:
 	$(call log,package,Cleaning packages from $(BUILD_DIR))
@@ -154,15 +153,16 @@ print-release-apps:
 # $(1) = app name, $(2) = platform
 #
 # 1. Build via Docker Compose (cmake --build)
-# 2. Package via ninja package_<APP> (pkg_resolve.sh resolves ELF deps,
-#    stages bin/lib, includes TPRM, generates run.sh)
+# 2. Package via the CMake package_<APP> target (cmake --install stages
+#    bank_a/{bin,libs,tprm} + run.sh from install components; TPRM and extra
+#    bins are declared in CMake, not threaded through here)
 # 3. Copy staged package into release/ directory
 # ------------------------------------------------------------------------------
 define _RELEASE_POSIX_template
 .PHONY: _release-$(1)-$(2)
 _release-$(1)-$(2):
 	$$(call _compose_run,release build $(2),$(PLATFORM_$(2)_SERVICE),$(PLATFORM_$(2)_BUILD))
-	$$(call _compose_run,release package $(2),$(PLATFORM_$(2)_SERVICE),package,APP=$(APP_$(1)_$(2)_BINARY) BUILD_DIR=$$(PLATFORM_$(2)_DIR) TPRM=$(APP_$(1)_TPRM) EXTRA_BINS="$(APP_$(1)_$(2)_EXTRA_BINS)")
+	$$(call _compose_run,release package $(2),$(PLATFORM_$(2)_SERVICE),package,APP=$(APP_$(1)_$(2)_BINARY) BUILD_DIR=$$(PLATFORM_$(2)_DIR))
 	@mkdir -p $(RELEASE_DIR)/$(1)/$(2)
 	@cp -a $$(PLATFORM_$(2)_DIR)/packages/$(APP_$(1)_$(2)_BINARY)/. $(RELEASE_DIR)/$(1)/$(2)/
 endef
