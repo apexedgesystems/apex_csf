@@ -74,6 +74,16 @@ jobs:
               tools/py/*)   py=true ;;
               src/*|apps/*|cmake/*|CMakeLists.txt|CMakePresets.json) cpp=true ;;
               *.md|docs/*)  : ;;
+              # Dev-image inputs the gate jobs actually run in (base; the cpu dev
+              # image used by lint/static; the cuda image used by build-test) plus
+              # the base compose -- a change here can alter every build.
+              docker/base.Dockerfile|docker/dev/cpu.Dockerfile|docker/dev/cuda.Dockerfile|docker-compose.yml) allflag=true ;;
+              # Leaf cross/firmware images and the scripts they COPY are built and
+              # verified post-merge (docker-images.yml) + locally, and no gate job
+              # runs in them, so a change confined here needs only lint -- not the
+              # full C++/rust/py suite. (Lint always runs; it hadolints/shellchecks
+              # these.)
+              docker/dev/*|docker/scripts/*) : ;;
               .github/*|mk/*|docker/*|docker-compose*) allflag=true ;;
               *)            allflag=true ;;
             esac
@@ -84,15 +94,15 @@ jobs:
           # empty diff never forces an image rebuild.
           if [ -z "$files" ]; then allflag=true; fi
           if [ "$allflag" = true ]; then cpp=true; rust=true; py=true; fi
-          # Image rebuild is needed only when a dev-image input changes: the
-          # base/dev Dockerfiles or the base compose (build args/contexts).
-          # docker/builder.Dockerfile and docker/final.Dockerfile feed only the
-          # release pipe (no PR CI job builds them), and the CI compose
-          # overlays are runtime-only -- none of those warrant rebuilding the
-          # dev images the jobs run in. The base/dev Dockerfiles COPY nothing
-          # from the build context, so the Dockerfiles themselves are the
-          # complete input set.
-          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/|^docker-compose\.yml$' && echo true || echo false)
+          # Rebuild only when a dev image a gate job RUNS IN changes: base
+          # (build-base/dev-base), the cpu dev image (lint/static), the cuda image
+          # (build-test), or the base compose (build args/contexts). Leaf
+          # cross/firmware Dockerfiles and docker/scripts feed only images built
+          # post-merge (docker-images.yml) that no PR job runs in; builder/final
+          # feed the release pipe; CI compose overlays are runtime-only. None of
+          # those warrant rebuilding a gate image. The gate Dockerfiles COPY only
+          # docker/scripts (cross-only), so the listed inputs are complete.
+          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$' && echo true || echo false)
           printf 'cpp=%s\nrust=%s\npy=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$docker" | tee -a "$GITHUB_OUTPUT"
 
   lint:

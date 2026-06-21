@@ -16,17 +16,12 @@ USER root
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # ==============================================================================
-# RISC-V Cross Toolchain (was toolchain/riscv64.Dockerfile)
+# RISC-V Cross Toolchain
 # ==============================================================================
+COPY --chmod=0755 docker/scripts/setup-cross-toolchain.sh /usr/local/bin/setup-cross-toolchain
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      gcc-riscv64-linux-gnu \
-      g++-riscv64-linux-gnu \
-      binutils-riscv64-linux-gnu \
-      qemu-user-static \
-      file
+    setup-cross-toolchain riscv64
 
 # ==============================================================================
 # Multi-arch Apt Sources (shared: native amd64 + riscv64 ports, dpkg arch)
@@ -35,20 +30,12 @@ COPY --chmod=0755 docker/scripts/setup-cross-apt.sh /usr/local/bin/setup-cross-a
 RUN setup-cross-apt riscv64
 
 # ==============================================================================
-# RISC-V Sysroot Libraries
+# RISC-V Sysroot Libraries + mold cross-linker
 # ==============================================================================
+COPY --chmod=0755 docker/scripts/setup-sysroot.sh /usr/local/bin/setup-sysroot
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      libgoogle-perftools-dev:riscv64 \
-      libtcmalloc-minimal4t64:riscv64 \
-      libunwind-dev:riscv64 \
-      libssl-dev:riscv64 \
-      liblapacke-dev:riscv64 \
-      libopenblas-dev:riscv64 \
-      libsuitesparse-dev:riscv64 \
-      zlib1g-dev:riscv64
+    setup-sysroot riscv64 riscv64-linux-gnu
 
 # ==============================================================================
 # RISC-V Sysroot
@@ -57,11 +44,6 @@ RUN mkdir -p /opt/sysroots/riscv64
 
 ENV CROSS_COMPILE=riscv64-linux-gnu-
 ENV RISCV_SYSROOT=/opt/sysroots/riscv64
-
-# ==============================================================================
-# Mold Linker for Cross-Compilation
-# ==============================================================================
-RUN ln -sfn /usr/bin/mold /usr/bin/riscv64-linux-gnu-ld.mold
 
 # Drop privileges once root-only setup is done; the prompt and validation
 # steps below need no root.
