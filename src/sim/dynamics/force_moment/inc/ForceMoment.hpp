@@ -60,12 +60,25 @@ struct ForceMoment {
 namespace detail {
 
 /**
- * Combine applied forces into a net force + net moment about `about`.
+ * Fold one applied force into a running net about `about`:
  *
- *   force  = sum( part.force )
- *   moment = sum( part.moment + (part.point_m - about) x part.force )
+ *   force  += part.force
+ *   moment += part.moment + (part.point_m - about) x part.force
  *
- * Internal helper behind `ForceMomentAccumulator::resultAbout`.
+ * The single combine step, shared by the value-list and accumulator paths
+ * so the moment-transfer formula lives in one place.
+ */
+inline void accumulate(ForceMoment& out, const AppliedForce& part,
+                       const rigid_body::Vec3& about) noexcept {
+  out.force = out.force + part.force;
+  const rigid_body::Vec3 r = part.point_m - about;
+  out.moment = out.moment + part.moment + rigid_body::cross(r, part.force);
+}
+
+/**
+ * Combine a vector of applied forces into a net force + net moment about
+ * `about`. Convenience wrapper for value-list callers; the hot path folds
+ * through `accumulate` directly to stay allocation-free.
  *
  * @param parts  applied forces (force-at-point + optional couple)
  * @param about  reference point the net moment is taken about (m)
@@ -75,10 +88,7 @@ namespace detail {
                                          const rigid_body::Vec3& about) noexcept {
   ForceMoment out;
   for (const auto& part : parts) {
-    out.force = out.force + part.force;
-    const rigid_body::Vec3 r = part.point_m - about;
-    const rigid_body::Vec3 induced = rigid_body::cross(r, part.force);
-    out.moment = out.moment + part.moment + induced;
+    accumulate(out, part, about);
   }
   return out;
 }
@@ -147,15 +157,16 @@ public:
    * @return net force + net moment about `about`
    */
   [[nodiscard]] ForceMoment resultAbout(const rigid_body::Vec3& about) const noexcept {
-    std::vector<AppliedForce> parts;
-    parts.reserve(sources_.size() + fixed_.size());
+    ForceMoment out;
     for (const auto* src : sources_) {
       if (src != nullptr) {
-        parts.push_back(src->current());
+        detail::accumulate(out, src->current(), about);
       }
     }
-    parts.insert(parts.end(), fixed_.begin(), fixed_.end());
-    return detail::combine(parts, about);
+    for (const auto& f : fixed_) {
+      detail::accumulate(out, f, about);
+    }
+    return out;
   }
 
   /** Drop all fixed loads and sources. */

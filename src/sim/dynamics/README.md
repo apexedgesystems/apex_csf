@@ -243,6 +243,16 @@ derived from benchmark throughput):
 - `stepDryden` -- ~387 ns/step (~3 M steps/s); dominated by the three Gaussian
   RNG draws per step, not the filter arithmetic
 
+The compositional accumulators are also RT-safe and **allocate nothing per
+call** -- wire the vehicle once, then re-sample each tick. Costs scale with the
+number of contributors/loads (figures for a five-part vehicle):
+
+- `MassAccumulator::result` -- ~0.11 us (~9 M stacks/s); single-pass
+  parallel-axis combine, no temporary container
+- `ForceMomentAccumulator::resultAbout` -- ~0.09 us (~11 M stacks/s)
+- full composed tick (re-stack mass + forces, then one 6-DOF step) -- ~0.49 us
+  (~2 M ticks/s)
+
 At a 100 Hz tick a full 6-DOF + fuel + turbulence vehicle update is well under
 a microsecond, a negligible fraction of the frame budget.
 

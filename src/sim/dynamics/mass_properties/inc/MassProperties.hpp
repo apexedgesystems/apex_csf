@@ -55,70 +55,86 @@ struct AggregateMassProperties {
 namespace detail {
 
 /**
- * Combine contributors into whole-body mass / CG / inertia-about-net-CG.
+ * Single-pass accumulator for whole-body mass / CG / inertia-about-net-CG.
  *
- * Algorithm:
- *   M  = sum(m_i)
- *   cg = sum(m_i * cg_i) / M
- *   For each part, with displacement d = cg_i - cg, the net inertia is
- *   the sum of each part's own-CG inertia plus the parallel-axis term
- *   for a body of mass m_i at offset d.
+ * Each contributor is folded in exactly once, referenced to the body-frame
+ * origin: its mass, its first moment (m * cg), and its inertia about the
+ * origin (own-CG inertia plus the parallel-axis term from its CG to the
+ * origin) are summed. `finalize()` then divides out the CG and shifts the
+ * summed inertia from the origin to the net CG with the reverse
+ * parallel-axis term for the whole body.
  *
- * If total mass is non-positive the result is the zero/identity default
- * (mass 0, CG at origin, identity inertia) so callers never divide by
- * zero.
+ * Referencing every part to a fixed point (the origin) -- rather than to
+ * the net CG, which is not known until all parts are seen -- is what lets
+ * the whole body combine in a single visit with no intermediate storage,
+ * so the hot path never allocates. The result is algebraically identical
+ * to shifting each part individually to the net CG.
  *
- * Internal helper behind `MassAccumulator::result`.
+ *   I_about_cg = sum_i [ J_i + m_i*PA(cg_i - 0) ] - M*PA(cg - 0)
+ *              = sum_i [ J_i + m_i*PA(cg_i - cg) ]
+ *
+ * where PA(d) is the parallel-axis tensor for offset d and the equality
+ * follows from cg = sum(m_i cg_i) / M.
+ *
+ * If total mass is non-positive, `finalize()` returns the zero/identity
+ * default (mass 0, CG at origin, identity inertia) so callers never divide
+ * by zero.
+ */
+struct MassAggregator {
+  double total_mass = 0.0;
+  rigid_body::Vec3 first_moment{}; // sum(m_i * cg_i)
+  rigid_body::InertiaTensor about_origin{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+  /** Fold one contributor in, referenced to the origin. */
+  void add(const MassContributor& part) noexcept {
+    const double m = part.mass_kg;
+    const rigid_body::Vec3 r = part.cg_m;
+    total_mass += m;
+    first_moment = first_moment + r * m;
+    about_origin.Ixx += part.inertia_about_own_cg.Ixx + m * (r.y * r.y + r.z * r.z);
+    about_origin.Iyy += part.inertia_about_own_cg.Iyy + m * (r.x * r.x + r.z * r.z);
+    about_origin.Izz += part.inertia_about_own_cg.Izz + m * (r.x * r.x + r.y * r.y);
+    about_origin.Ixz += part.inertia_about_own_cg.Ixz + m * r.x * r.z;
+    about_origin.Ixy += part.inertia_about_own_cg.Ixy + m * r.x * r.y;
+    about_origin.Iyz += part.inertia_about_own_cg.Iyz + m * r.y * r.z;
+  }
+
+  /** Resolve the net mass / CG / inertia-about-CG from the running sums. */
+  [[nodiscard]] AggregateMassProperties finalize() const noexcept {
+    AggregateMassProperties out;
+    if (total_mass <= 0.0) {
+      return out; // zero mass, origin CG, identity inertia
+    }
+    out.mass_kg = total_mass;
+    out.cg_m = first_moment * (1.0 / total_mass);
+    const rigid_body::Vec3 c = out.cg_m;
+    // Shift the summed inertia from the origin to the net CG.
+    out.inertia_about_cg =
+        rigid_body::InertiaTensor{about_origin.Ixx - total_mass * (c.y * c.y + c.z * c.z),
+                                  about_origin.Iyy - total_mass * (c.x * c.x + c.z * c.z),
+                                  about_origin.Izz - total_mass * (c.x * c.x + c.y * c.y),
+                                  about_origin.Ixz - total_mass * c.x * c.z,
+                                  about_origin.Ixy - total_mass * c.x * c.y,
+                                  about_origin.Iyz - total_mass * c.y * c.z};
+    return out;
+  }
+};
+
+/**
+ * Combine a vector of contributors. Convenience wrapper over
+ * `MassAggregator` for value-list callers; the hot path uses the
+ * aggregator directly to stay allocation-free.
  *
  * @param  parts  contributors (own-CG inertia each)
  * @return aggregate mass / CG / inertia about the net CG
  */
 [[nodiscard]] inline AggregateMassProperties
 aggregate(const std::vector<MassContributor>& parts) noexcept {
-  AggregateMassProperties out;
-
-  // ---- Total mass ----
-  double total_mass = 0.0;
+  MassAggregator agg;
   for (const auto& part : parts) {
-    total_mass += part.mass_kg;
+    agg.add(part);
   }
-  if (total_mass <= 0.0) {
-    return out; // zero mass, origin CG, identity inertia
-  }
-  out.mass_kg = total_mass;
-
-  // ---- Mass-weighted CG ----
-  rigid_body::Vec3 weighted{};
-  for (const auto& part : parts) {
-    weighted = weighted + part.cg_m * part.mass_kg;
-  }
-  out.cg_m = weighted * (1.0 / total_mass);
-
-  // ---- Inertia about the net CG (own inertia + parallel-axis) ----
-  // Accumulate own-inertia components first ...
-  rigid_body::InertiaTensor net{0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-  for (const auto& part : parts) {
-    net.Ixx += part.inertia_about_own_cg.Ixx;
-    net.Iyy += part.inertia_about_own_cg.Iyy;
-    net.Izz += part.inertia_about_own_cg.Izz;
-    net.Ixz += part.inertia_about_own_cg.Ixz;
-    net.Ixy += part.inertia_about_own_cg.Ixy;
-    net.Iyz += part.inertia_about_own_cg.Iyz;
-  }
-  // ... then add the parallel-axis deltas for each part's offset.
-  for (const auto& part : parts) {
-    const double m = part.mass_kg;
-    const rigid_body::Vec3 d = part.cg_m - out.cg_m;
-    net.Ixx += m * (d.y * d.y + d.z * d.z);
-    net.Iyy += m * (d.x * d.x + d.z * d.z);
-    net.Izz += m * (d.x * d.x + d.y * d.y);
-    net.Ixy += m * d.x * d.y;
-    net.Ixz += m * d.x * d.z;
-    net.Iyz += m * d.y * d.z;
-  }
-  out.inertia_about_cg = net;
-
-  return out;
+  return agg.finalize();
 }
 
 } // namespace detail
@@ -189,15 +205,16 @@ public:
    * @return aggregate mass / CG / inertia about the net CG
    */
   [[nodiscard]] AggregateMassProperties result() const noexcept {
-    std::vector<MassContributor> parts;
-    parts.reserve(sources_.size() + fixed_.size());
+    detail::MassAggregator agg;
     for (const auto* src : sources_) {
       if (src != nullptr) {
-        parts.push_back(src->current());
+        agg.add(src->current());
       }
     }
-    parts.insert(parts.end(), fixed_.begin(), fixed_.end());
-    return detail::aggregate(parts);
+    for (const auto& c : fixed_) {
+      agg.add(c);
+    }
+    return agg.finalize();
   }
 
   /** Drop all fixed contributors and sources. */
