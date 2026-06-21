@@ -28,20 +28,20 @@ models.
 
 ## Overview
 
-| Question                                                           | Module                                    |
-| ------------------------------------------------------------------ | ----------------------------------------- |
-| How do I advance a state vector one tick?                          | `stepRK4` / `stepForwardEuler`            |
-| Which integrator should I use for attitude dynamics?               | `RK4` (4th order)                         |
-| How do I model a translating point mass?                           | `PointMass3D`                             |
-| How do I model full 6-DOF flight with attitude?                    | `RigidBody6DOF`                           |
-| How do I apply forces and moments in the body frame?               | `rigidBody6DOFDerivative`                 |
-| How do I solve `I * omega_dot = b` for an aircraft inertia tensor? | `InertiaTensor::solve`                    |
-| How do I combine per-part mass / CG / inertia into a whole body?   | `MassAccumulator`                         |
-| How does mass / CG / inertia change as fuel burns?                 | `FuelTankMassSource`                      |
-| How do I sum forces-at-points into a net force + moment?           | `ForceMomentAccumulator`                  |
-| How do I step 6-DOF straight from the aggregates?                  | `stepRigidBody6DOF(state, mp, fm, t, dt)` |
-| How do I inject realistic atmospheric turbulence?                  | `DrydenTurbulence`                        |
-| How do I keep turbulence reproducible across runs?                 | `DrydenRng` (seeded)                      |
+| Question                                                           | Module                                |
+| ------------------------------------------------------------------ | ------------------------------------- |
+| How do I advance a state vector one tick?                          | `stepRK4` / `stepForwardEuler`        |
+| Which integrator should I use for attitude dynamics?               | `RK4` (4th order)                     |
+| How do I model a translating point mass?                           | `PointMass3D`                         |
+| How do I model full 6-DOF flight with attitude?                    | `RigidBody6DOF`                       |
+| How do I apply forces and moments in the body frame?               | `rigidBody6DOFDerivative`             |
+| How do I solve `I * omega_dot = b` for an aircraft inertia tensor? | `InertiaTensor::solve`                |
+| How do I combine per-part mass / CG / inertia into a whole body?   | `MassAccumulator`                     |
+| How does mass / CG / inertia change as fuel burns?                 | `FuelTankMassSource`                  |
+| How do I sum forces-at-points into a net force + moment?           | `ForceMomentAccumulator`              |
+| How do I step 6-DOF straight from the aggregates?                  | `vehicle::step(state, mp, fm, t, dt)` |
+| How do I inject realistic atmospheric turbulence?                  | `DrydenTurbulence`                    |
+| How do I keep turbulence reproducible across runs?                 | `DrydenRng` (seeded)                  |
 
 ## Quick Reference
 
@@ -52,10 +52,12 @@ models.
 | `mass_properties/` | `sim_dynamics_mass_properties` | `MassAccumulator` (parallel-axis whole-body mass props), `MassPropsSource` / `StaticMassSource` / `FuelTankMassSource` (composition layer) |
 | `force_moment/`    | `sim_dynamics_force_moment`    | `ForceMomentAccumulator` (net force + moment about a point), `ForceMomentSource` / `StaticForceMomentSource` / `DynamicForceMomentSource`  |
 | `disturbance/`     | `sim_dynamics_disturbance`     | `DrydenTurbulence` -- 3-axis MIL-HDBK-1797 gust model                                                                                      |
-| `inc/` (facade)    | `sim_dynamics`                 | `VehicleStep.hpp` -- `stepRigidBody6DOF` overload consuming the aggregates                                                                 |
+| `vehicle/`         | `sim_dynamics_vehicle`         | `vehicle::step` -- the assembled vehicle: 6-DOF step consuming the mass + force/moment aggregates (`VehicleStep.hpp`)                      |
 
 All libraries are header-only (interface) targets. Headers live in each
-subdomain's `inc/` under the `sim::dynamics::<subdomain>` namespace.
+subdomain's `inc/` under the `sim::dynamics::<subdomain>` namespace. Each
+subdomain owns its own `utst/` and `ptst/`; the domain root holds only this
+README and the subdirectory list.
 
 ## Design Principles
 
@@ -203,13 +205,13 @@ airspeed) when `V < 1 m/s` or `dt <= 0`.
 
 ### Vehicle Step
 
-**Header:** `inc/VehicleStep.hpp` (library `sim_dynamics`)
+**Header:** `vehicle/inc/VehicleStep.hpp` (library `sim_dynamics_vehicle`)
 **Purpose:** Step 6-DOF straight from the compositional aggregates.
 
 `rigid_body` deliberately depends on neither `mass_properties` nor
-`force_moment`. This domain-level facade includes all three and adds a
-`stepRigidBody6DOF` overload taking the aggregated mass properties and net
-force/moment, forwarding to the callback-based step with `force = fm.force`,
+`force_moment`. The `vehicle` module sits above all three (the assembled
+vehicle) and adds `vehicle::step`, taking the aggregated mass properties and
+net force/moment, forwarding to the callback-based step with `force = fm.force`,
 `moment = fm.moment`, `mass = mp.mass_kg`, `I = mp.inertia_about_cg`.
 
 ```cpp
@@ -223,7 +225,7 @@ loads.add(engine);
 loads.add(aero);
 const auto fm = loads.resultAbout(mp.cg_m);
 
-stepRigidBody6DOF(state, mp, fm, t, dt);  // one RK4 tick
+vehicle::step(state, mp, fm, t, dt);  // one RK4 tick
 ```
 
 ## Real-Time Considerations

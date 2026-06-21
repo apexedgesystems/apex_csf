@@ -1,20 +1,20 @@
 /**
  * @file VehicleStep_uTest.cpp
- * @brief Consistency proof for the aggregate-consuming stepRigidBody6DOF
- *        overload (VehicleStep.hpp).
+ * @brief Consistency proof for the aggregate-consuming vehicle::step
+ *        (VehicleStep.hpp).
  *
- * The overload that takes (AggregateMassProperties, ForceMoment) must
- * produce exactly the same trajectory as the callback-based step fed the
- * unpacked force / moment / mass / inertia. We verify this for a known
- * load: a body force plus an off-CG force whose induced moment we
- * aggregate via the force/moment layer. Tolerance 1e-12 (bit-for-bit same
- * code path).
+ * `vehicle::step`, which takes (AggregateMassProperties, ForceMoment), must
+ * produce exactly the same trajectory as the callback-based
+ * `rigid_body::stepRigidBody6DOF` fed the unpacked force / moment / mass /
+ * inertia. We verify this for a known load: a body force plus an off-CG force
+ * whose induced moment we aggregate via the force/moment layer. Tolerance
+ * 1e-12 (bit-for-bit same code path).
  */
 
 #include "src/sim/dynamics/force_moment/inc/ForceMoment.hpp"
-#include "src/sim/dynamics/inc/VehicleStep.hpp"
 #include "src/sim/dynamics/mass_properties/inc/MassProperties.hpp"
 #include "src/sim/dynamics/rigid_body/inc/RigidBody6DOF.hpp"
+#include "src/sim/dynamics/vehicle/inc/VehicleStep.hpp"
 
 #include <gtest/gtest.h>
 
@@ -38,8 +38,8 @@ RigidBody6DOFState makeState() {
 }
 } // namespace
 
-/** @test The aggregate overload equals the callback path step-for-step. */
-TEST(VehicleStepProof, AggregateOverloadMatchesCallbackPath) {
+/** @test vehicle::step equals the callback path step-for-step. */
+TEST(VehicleStepProof, AggregateStepMatchesCallbackPath) {
   // Mass properties: 1500 kg, full symmetric inertia about CG.
   AggregateMassProperties mp;
   mp.mass_kg = 1500.0;
@@ -58,9 +58,9 @@ TEST(VehicleStepProof, AggregateOverloadMatchesCallbackPath) {
   const double t = 0.0;
   const double dt = 0.02;
 
-  // Path 1: aggregate-consuming overload.
+  // Path 1: aggregate-consuming vehicle::step.
   RigidBody6DOFState s1 = makeState();
-  stepRigidBody6DOF(s1, mp, fm, t, dt);
+  sim::dynamics::vehicle::step(s1, mp, fm, t, dt);
 
   // Path 2: callback overload with the unpacked force / moment / mass / I.
   RigidBody6DOFState s2 = makeState();

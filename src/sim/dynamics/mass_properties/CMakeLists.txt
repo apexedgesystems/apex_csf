@@ -21,4 +21,4 @@ target_link_libraries(
 
 apex_standard_optins(${LIB_NAME})
 
-apex_add_test_subdirs(utst)
+apex_add_test_subdirs(utst ptst)
