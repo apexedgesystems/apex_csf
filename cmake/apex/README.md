@@ -122,8 +122,9 @@ apex_add_app(
 )
 ```
 
-Apps output to `bin/` and automatically get UPX compression enabled. Each app
-is registered for release packaging via `apex_finalize_packages()`.
+Apps output to `bin/` and automatically get UPX compression enabled. Defining an
+app does not, by itself, make it deployable -- declare a deployment with
+`apex_add_deployment()` to package it (see [Packaging](#packaging)).
 
 ### Tools (Internal Utilities)
 
@@ -341,9 +342,37 @@ Defining an executable with `apex_add_app()` does not, by itself, make it a
 deployment -- packaging is declared explicitly. `mk/release.mk` consumes the
 `package_<NAME>` targets for multi-platform release packaging.
 
-A future `apex_add_bundle()` will consolidate multiple deployments + custom tools
-+ support files into one shippable artifact; it is not needed while each app is a
-single deployment.
+### Bundles
+
+`apex_add_bundle()` is the level above a deployment: it consolidates several
+deployments + custom tools + arbitrary support files (docs, configs) into one
+shippable tarball -- for a system that ships more than one apex filesystem at
+once.
+
+```cmake
+apex_add_bundle(
+  NAME        GroundStation
+  DEPLOYMENTS ApexOpsDemo ApexActionDemo   # each its own apex filesystem
+  TOOLS       my_cli_tool                  # extra executables (+ their closures)
+  FILES       docs/OPERATIONS.md           # arbitrary support files/dirs
+)
+ninja package_GroundStation
+```
+
+`package_<NAME>` stages each deployment into its own subdir (reusing that
+deployment's component), tools under `tools/{bin,libs}`, and files at the bundle
+root, then tars it:
+
+```
+GroundStation/ApexOpsDemo/run.sh + bank_a/{bin,libs,tprm}
+GroundStation/ApexActionDemo/run.sh + bank_a/{bin,libs,tprm}
+GroundStation/tools/bin/my_cli_tool + tools/libs/*.so*
+GroundStation/docs/OPERATIONS.md
+```
+
+A multi-executive deployment (an executive + its watchdog) is _not_ a bundle --
+those share one `bank_a` and are declared with `EXECS`. A bundle is for distinct
+filesystems shipped together.
 
 ## Cross-Compilation
 

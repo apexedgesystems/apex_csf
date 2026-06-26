@@ -24,9 +24,17 @@
 #   make package APP=ApexHilDemo
 #   make release APP=ApexHilDemo
 #
-# A future apex_add_bundle() will consolidate multiple deployments + custom tools
-# + support files into one shippable artifact (see the deployment-bundles
-# ticket). It is not needed while each app is a single deployment.
+# apex_add_bundle() is the level above: it consolidates several deployments +
+# custom tools + arbitrary support files (docs, configs) into one shippable
+# tarball -- for a system that ships more than one apex filesystem at once.
+#
+#   apex_add_bundle(
+#     NAME        GroundStation
+#     DEPLOYMENTS ApexOpsDemo ApexActionDemo   # each its own apex filesystem
+#     TOOLS       my_cli_tool                  # extra executables (+ their libs)
+#     FILES       docs/OPERATIONS.md           # arbitrary support files/dirs
+#   )
+#   ninja package_GroundStation
 # ==============================================================================
 
 include_guard(GLOBAL)
@@ -44,6 +52,25 @@ function (apex_add_deployment)
   set_property(GLOBAL APPEND PROPERTY APEX_DEPLOYMENTS "${D_NAME}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_EXECS "${D_EXECS}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_TPRM "${D_TPRM}")
+endfunction ()
+
+# ------------------------------------------------------------------------------
+# apex_add_bundle(NAME <name> DEPLOYMENTS <dep>... [TOOLS <target>...] [FILES <path>...])
+#
+# Declare a shippable artifact that consolidates several deployments plus custom
+# tools and support files. NAME is the bundle/dir (and the package_<NAME>
+# target). DEPLOYMENTS are apex_add_deployment() names, each staged into its own
+# subdir. TOOLS are extra executable targets (staged with their shared-lib
+# closures under tools/). FILES are arbitrary files/dirs (docs, configs) staged
+# at the bundle root.
+# ------------------------------------------------------------------------------
+function (apex_add_bundle)
+  cmake_parse_arguments(B "" "NAME" "DEPLOYMENTS;TOOLS;FILES" ${ARGN})
+  apex_require(B_NAME B_DEPLOYMENTS)
+  set_property(GLOBAL APPEND PROPERTY APEX_BUNDLES "${B_NAME}")
+  set_property(GLOBAL PROPERTY APEX_BUNDLE_${B_NAME}_DEPLOYMENTS "${B_DEPLOYMENTS}")
+  set_property(GLOBAL PROPERTY APEX_BUNDLE_${B_NAME}_TOOLS "${B_TOOLS}")
+  set_property(GLOBAL PROPERTY APEX_BUNDLE_${B_NAME}_FILES "${B_FILES}")
 endfunction ()
 
 # ------------------------------------------------------------------------------
@@ -189,5 +216,112 @@ function (apex_finalize_packages)
     math(EXPR _count "${_count} + 1")
   endforeach ()
 
-  message(STATUS "[apex] Registered ${_count} deployment package target(s)")
+  # --------------------------------------------------------------------------
+  # Bundles: consolidate several deployments + tools + support files into one
+  # tarball. Each deployment is staged into its own subdir (reusing its
+  # component); tools go under tools/ with their closures; files land at the root.
+  # --------------------------------------------------------------------------
+  get_property(_bundles GLOBAL PROPERTY APEX_BUNDLES)
+  set(_bcount 0)
+  set(_pkgroot "${CMAKE_BINARY_DIR}/packages")
+
+  foreach (_bname IN LISTS _bundles)
+    get_property(_bdeps GLOBAL PROPERTY APEX_BUNDLE_${_bname}_DEPLOYMENTS)
+    get_property(_btools GLOBAL PROPERTY APEX_BUNDLE_${_bname}_TOOLS)
+    get_property(_bfiles GLOBAL PROPERTY APEX_BUNDLE_${_bname}_FILES)
+    set(_comp "bundle_${_bname}")
+    set(_has_extra FALSE)
+    set(_bdepends "")
+
+    # Tools: binary + shared-lib closure under tools/.
+    set(_toollibs "")
+    foreach (_t IN LISTS _btools)
+      if (TARGET ${_t})
+        install(TARGETS ${_t} RUNTIME DESTINATION tools/bin COMPONENT ${_comp})
+        _apex_collect_shared_deps(${_t} _tl)
+        list(APPEND _toollibs ${_tl})
+        list(APPEND _bdepends ${_t})
+        set(_has_extra TRUE)
+      endif ()
+    endforeach ()
+    list(REMOVE_DUPLICATES _toollibs)
+    if (_toollibs)
+      install(
+        TARGETS ${_toollibs}
+        LIBRARY DESTINATION tools/libs
+                NAMELINK_SKIP
+                COMPONENT ${_comp}
+      )
+    endif ()
+
+    # Support files/dirs (docs, configs) at the bundle root.
+    foreach (_f IN LISTS _bfiles)
+      if (IS_DIRECTORY "${CMAKE_SOURCE_DIR}/${_f}")
+        install(
+          DIRECTORY "${CMAKE_SOURCE_DIR}/${_f}"
+          DESTINATION .
+          COMPONENT ${_comp}
+        )
+      else ()
+        install(
+          FILES "${CMAKE_SOURCE_DIR}/${_f}"
+          DESTINATION .
+          COMPONENT ${_comp}
+        )
+      endif ()
+      set(_has_extra TRUE)
+    endforeach ()
+
+    # Stage each deployment into its own subdir (reuse its per-deployment
+    # component), then the bundle's own tools/files component at the root.
+    set(_subinstalls "")
+    foreach (_d IN LISTS _bdeps)
+      list(
+        APPEND
+        _subinstalls
+        COMMAND
+        ${CMAKE_COMMAND}
+        --install
+        "${CMAKE_BINARY_DIR}"
+        --component
+        ${_d}
+        --prefix
+        "${_pkgroot}/${_bname}/${_d}"
+      )
+      get_property(_dexecs GLOBAL PROPERTY APEX_DEPLOY_${_d}_EXECS)
+      foreach (_e IN LISTS _dexecs)
+        if (TARGET ${_e})
+          list(APPEND _bdepends ${_e})
+        endif ()
+      endforeach ()
+    endforeach ()
+    if (_has_extra)
+      list(
+        APPEND
+        _subinstalls
+        COMMAND
+        ${CMAKE_COMMAND}
+        --install
+        "${CMAKE_BINARY_DIR}"
+        --component
+        ${_comp}
+        --prefix
+        "${_pkgroot}/${_bname}"
+      )
+    endif ()
+
+    add_custom_target(
+      package_${_bname}
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${_pkgroot}"
+      COMMAND ${CMAKE_COMMAND} -E rm -rf "${_pkgroot}/${_bname}" ${_subinstalls}
+      COMMAND ${CMAKE_COMMAND} -E chdir "${_pkgroot}" ${CMAKE_COMMAND} -E tar czf "${_bname}.tar.gz"
+              "${_bname}"
+      DEPENDS ${_bdepends}
+      COMMENT "[bundle] ${_bname} -> ${_bdeps}"
+      VERBATIM
+    )
+    math(EXPR _bcount "${_bcount} + 1")
+  endforeach ()
+
+  message(STATUS "[apex] Registered ${_count} deployment + ${_bcount} bundle package target(s)")
 endfunction ()
