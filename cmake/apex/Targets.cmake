@@ -393,8 +393,8 @@ function (apex_add_app)
 
   _apex_add_executable(${_args})
 
-  # Register for deferred package_<APP> target creation
-  _apex_register_packagable_app(${APP_NAME})
+  # Packaging is declared explicitly per deployment via apex_add_deployment();
+  # defining an executable is not, by itself, a deployment.
 endfunction ()
 
 # ------------------------------------------------------------------------------

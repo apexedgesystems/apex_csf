@@ -55,8 +55,15 @@ apex_add_app(
 )
 
 # ------------------------------------------------------------------------------
-# Deployable bundle: TPRM config + the watchdog supervisor ship alongside the
-# executive in bank_a (the canonical ApexFileSystem layout).
+# Deployment: the executive and the watchdog that supervises it share one apex
+# filesystem (they OTA together).
 # ------------------------------------------------------------------------------
-apex_set_app_tprm(ApexHilDemo apps/apex_hil_demo/tprm/master_1khz.tprm)
-apex_set_app_extra_bins(ApexHilDemo ApexWatchdog)
+apex_add_deployment(
+  NAME
+  ApexHilDemo
+  EXECS
+  ApexHilDemo
+  ApexWatchdog
+  TPRM
+  apps/apex_hil_demo/tprm/master_1khz.tprm
+)

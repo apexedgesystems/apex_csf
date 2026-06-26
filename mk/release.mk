@@ -38,8 +38,8 @@
 #     APP_MyApp_stm32_TYPE             := firmware
 #     APP_MyApp_stm32_BINARY           := my_firmware
 #
-#   The deployable's TPRM and any extra bins are declared in CMake next to the
-#   app (apex_set_app_tprm / apex_set_app_extra_bins), not in this manifest.
+#   The deployable's executives and TPRM are declared in CMake next to the app
+#   (apex_add_deployment), not in this manifest.
 #
 #   TYPE=posix:    ELF executable with shared library dependencies. The CMake
 #                  package_<APP> target stages the app, its graph-derived shared
@@ -65,10 +65,9 @@ APP ?=
 # ==============================================================================
 # Invoked by the POSIX release template via _compose_run. Builds the app's
 # package_<APP> target, which stages the deployable bundle from CMake install
-# components (bank_a/{bin,libs,tprm} + run.sh) and tars it. The library closure,
-# TPRM, and extra bins are declared in CMake (apex_finalize_packages +
-# apex_set_app_tprm / apex_set_app_extra_bins), so nothing platform-specific is
-# threaded through here.
+# components (bank_a/{bin,libs,tprm} + run.sh) and tars it. The executives,
+# library closure, and TPRM are declared in CMake (apex_add_deployment +
+# apex_finalize_packages), so nothing platform-specific is threaded through here.
 # ==============================================================================
 
 package:

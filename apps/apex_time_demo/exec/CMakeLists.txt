@@ -30,3 +30,6 @@ apex_add_app(
   REQUIRES
   POSIX
 )
+
+# Deployment: single executive (no TPRM).
+apex_add_deployment(NAME ApexTimeDemo EXECS ApexTimeDemo)

@@ -1,57 +1,49 @@
 # ==============================================================================
-# apex/Packaging.cmake - Application packaging via CMake install components
+# apex/Packaging.cmake - Deployable packaging via CMake install components
 # ==============================================================================
 #
-# Each app registered via apex_add_app() gets a deployable bundle derived from
-# the build graph: the app binary, its transitive project shared-library closure,
-# a bank-aware run.sh launcher, and (if registered) its TPRM config -- staged in
-# the on-device ApexFileSystem layout (bank_a/{bin,libs,tprm} + run.sh).
+# A *deployment* is one apex filesystem: bank_a/{bin,libs,tprm} + a generic
+# run.sh launcher, holding one or more executives that share that bank (e.g. an
+# executive and the watchdog that supervises it -- they OTA together). Every
+# deployable app declares one with apex_add_deployment(), the same way whether it
+# ships one executive or several. apex_finalize_packages() emits the per-app
+# install(COMPONENT) rules and a package_<NAME> target (cmake --install + tar).
 #
-# The library closure comes from the CMake link graph, not a post-hoc ELF/readelf
-# walk: the libraries are our own targets, so the graph is the authoritative
-# closure -- deterministic and cross-architecture-trivial (no readelf needed).
+# The shared-library closure is derived from the build graph (the executives'
+# transitive link targets), not a readelf walk -- the libraries are our own
+# targets, so the graph is the authoritative closure: deterministic and
+# cross-architecture-trivial (no readelf, no resolution hints).
 #
-# Usage (automatic -- apps registered via apex_add_app() are packaged):
-#   ninja package_ApexHilDemo      # cmake --install --component + tarball
+# Usage:
+#   apex_add_deployment(
+#     NAME  ApexHilDemo
+#     EXECS ApexHilDemo ApexWatchdog      # one or more; they share one bank_a
+#     TPRM  apps/apex_hil_demo/tprm/master_1khz.tprm   # optional
+#   )
+#   ninja package_ApexHilDemo        # cmake --install --component + tarball
 #   make package APP=ApexHilDemo
 #   make release APP=ApexHilDemo
 #
-# Architecture:
-#   1. apex_add_app() calls _apex_register_packagable_app() to track the name
-#   2. apex_set_app_tprm() optionally registers a TPRM archive path
-#   3. apex_finalize_packages() (root, after all targets exist) emits the
-#      per-app install(COMPONENT) rules and a thin package_<APP> target that runs
-#      cmake --install + tar.
+# A future apex_add_bundle() will consolidate multiple deployments + custom tools
+# + support files into one shippable artifact (see the deployment-bundles
+# ticket). It is not needed while each app is a single deployment.
 # ==============================================================================
 
 include_guard(GLOBAL)
 
 # ------------------------------------------------------------------------------
-# _apex_register_packagable_app(app_name)
+# apex_add_deployment(NAME <name> EXECS <exec>... [TPRM <path>])
 #
-# Track an app for deferred package rule creation. Called by apex_add_app().
+# Declare a deployable apex filesystem. NAME is the bundle/dir (and the
+# package_<NAME> target). EXECS are the executive targets that share its bank_a
+# (any number). TPRM is the optional master config staged as bank_a/tprm/master.tprm.
 # ------------------------------------------------------------------------------
-function (_apex_register_packagable_app app_name)
-  set_property(GLOBAL APPEND PROPERTY APEX_PACKAGABLE_APPS "${app_name}")
-endfunction ()
-
-# ------------------------------------------------------------------------------
-# apex_set_app_tprm(app_name tprm_path)
-#
-# Register a TPRM master archive for an app, included as bank_a/tprm/master.tprm.
-# ------------------------------------------------------------------------------
-function (apex_set_app_tprm app_name tprm_path)
-  set_property(GLOBAL PROPERTY APEX_APP_TPRM_${app_name} "${tprm_path}")
-endfunction ()
-
-# ------------------------------------------------------------------------------
-# apex_set_app_extra_bins(app_name bin...)
-#
-# Register additional executables to ship in an app's bundle (e.g. the watchdog
-# supervisor). Their own shared-lib closures are unioned into bank_a/libs.
-# ------------------------------------------------------------------------------
-function (apex_set_app_extra_bins app_name)
-  set_property(GLOBAL PROPERTY APEX_APP_EXTRA_BINS_${app_name} "${ARGN}")
+function (apex_add_deployment)
+  cmake_parse_arguments(D "" "NAME;TPRM" "EXECS" ${ARGN})
+  apex_require(D_NAME D_EXECS)
+  set_property(GLOBAL APPEND PROPERTY APEX_DEPLOYMENTS "${D_NAME}")
+  set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_EXECS "${D_EXECS}")
+  set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_TPRM "${D_TPRM}")
 endfunction ()
 
 # ------------------------------------------------------------------------------
@@ -110,100 +102,92 @@ endfunction ()
 # ------------------------------------------------------------------------------
 # apex_finalize_packages()
 #
-# Emit install(COMPONENT) rules + a package_<APP> target for every registered
-# app. Call once at the end of the root CMakeLists.txt (after all targets and
-# their links exist, so the closure walk sees the full graph).
+# Emit install(COMPONENT) rules + a package_<NAME> target for every declared
+# deployment. Call once at the end of the root CMakeLists.txt (after all targets
+# and their links exist, so the closure walk sees the full graph).
 #
-# Per app, component <APP> installs into the deploy prefix:
-#   bank_a/bin/<APP>             the binary
-#   bank_a/libs/*.so*            the project shared-lib closure (runtime chain)
-#   bank_a/tprm/master.tprm      TPRM config (if registered)
-#   run.sh                       bank-aware launcher
+# Per deployment, component <NAME> installs into the deploy prefix:
+#   bank_a/bin/<exec>...         the executives
+#   bank_a/libs/*.so*            the union of their project shared-lib closures
+#   bank_a/tprm/master.tprm      TPRM config (if declared)
+#   run.sh                       the generic bank-aware launcher
 #
-# package_<APP> runs `cmake --install --component <APP>` into packages/<APP> and
-# tars it to packages/<APP>.tar.gz.
+# package_<NAME> runs `cmake --install --component <NAME>` into packages/<NAME>
+# and tars it to packages/<NAME>.tar.gz.
 # ------------------------------------------------------------------------------
 function (apex_finalize_packages)
-  get_property(_apps GLOBAL PROPERTY APEX_PACKAGABLE_APPS)
-  if (NOT _apps)
+  get_property(_deps GLOBAL PROPERTY APEX_DEPLOYMENTS)
+  if (NOT _deps)
     return()
   endif ()
 
   set(_launcher "${CMAKE_SOURCE_DIR}/cmake/apex/assets/run.sh")
+  set(_count 0)
 
-  foreach (_app IN LISTS _apps)
-    # Skip if the app target wasn't created (e.g., requirements not met)
-    if (NOT TARGET ${_app})
+  foreach (_name IN LISTS _deps)
+    get_property(_execs GLOBAL PROPERTY APEX_DEPLOY_${_name}_EXECS)
+    get_property(_tprm GLOBAL PROPERTY APEX_DEPLOY_${_name}_TPRM)
+
+    # Only executives whose targets exist (requirements may skip some platforms).
+    set(_present "")
+    foreach (_e IN LISTS _execs)
+      if (TARGET ${_e})
+        list(APPEND _present ${_e})
+      endif ()
+    endforeach ()
+    if (NOT _present)
       continue()
     endif ()
 
-    # Binaries (the app + any registered extra bins, e.g. the watchdog) into
-    # bank_a/bin; the union of their project shared-lib closures into bank_a/libs.
-    # NAMELINK_SKIP ships the runtime chain (lib.so.N -> lib.so.N.M.P), not the
-    # dev namelink (lib.so).
-    set(_bins ${_app})
-    get_property(_extra GLOBAL PROPERTY APEX_APP_EXTRA_BINS_${_app})
-    if (_extra)
-      list(APPEND _bins ${_extra})
-    endif ()
-
+    # Executives into bank_a/bin; the union of their shared-lib closures into
+    # bank_a/libs. NAMELINK_SKIP ships the runtime SOVERSION chain, not the dev
+    # namelink.
     set(_libs "")
-    foreach (_bin IN LISTS _bins)
-      if (NOT TARGET ${_bin})
-        message(WARNING "[apex] package ${_app}: extra bin '${_bin}' is not a target; skipping")
-        continue()
-      endif ()
-      install(TARGETS ${_bin} RUNTIME DESTINATION bank_a/bin COMPONENT ${_app})
-      _apex_collect_shared_deps(${_bin} _binlibs)
-      list(APPEND _libs ${_binlibs})
+    foreach (_e IN LISTS _present)
+      install(TARGETS ${_e} RUNTIME DESTINATION bank_a/bin COMPONENT ${_name})
+      _apex_collect_shared_deps(${_e} _execlibs)
+      list(APPEND _libs ${_execlibs})
     endforeach ()
-
     list(REMOVE_DUPLICATES _libs)
     if (_libs)
       install(
         TARGETS ${_libs}
         LIBRARY DESTINATION bank_a/libs
                 NAMELINK_SKIP
-                COMPONENT ${_app}
+                COMPONENT ${_name}
       )
     endif ()
+
     install(
       PROGRAMS "${_launcher}"
       DESTINATION .
-      COMPONENT ${_app}
+      COMPONENT ${_name}
     )
 
-    get_property(_tprm GLOBAL PROPERTY APEX_APP_TPRM_${_app})
     if (_tprm)
       install(
         FILES "${CMAKE_SOURCE_DIR}/${_tprm}"
         DESTINATION bank_a/tprm
         RENAME master.tprm
-        COMPONENT ${_app}
+        COMPONENT ${_name}
       )
     endif ()
 
-    # Thin packaging target: stage the component, then tar it.
     set(_pkgroot "${CMAKE_BINARY_DIR}/packages")
     add_custom_target(
-      package_${_app}
+      package_${_name}
       COMMAND ${CMAKE_COMMAND} -E make_directory "${_pkgroot}"
-      COMMAND ${CMAKE_COMMAND} -E rm -rf "${_pkgroot}/${_app}"
-      COMMAND ${CMAKE_COMMAND} --install "${CMAKE_BINARY_DIR}" --component ${_app} --prefix
-              "${_pkgroot}/${_app}"
-      COMMAND ${CMAKE_COMMAND} -E chdir "${_pkgroot}" ${CMAKE_COMMAND} -E tar czf "${_app}.tar.gz"
-              "${_app}"
-      DEPENDS ${_app}
-      COMMENT "[package] ${_app} -> cmake --install (bank_a + run.sh)"
+      COMMAND ${CMAKE_COMMAND} -E rm -rf "${_pkgroot}/${_name}"
+      COMMAND ${CMAKE_COMMAND} --install "${CMAKE_BINARY_DIR}" --component ${_name} --prefix
+              "${_pkgroot}/${_name}"
+      COMMAND ${CMAKE_COMMAND} -E chdir "${_pkgroot}" ${CMAKE_COMMAND} -E tar czf "${_name}.tar.gz"
+              "${_name}"
+      DEPENDS ${_present}
+      COMMENT "[package] ${_name} -> cmake --install (bank_a + run.sh)"
       VERBATIM
     )
-
-    if (APEX_TARGETS_VERBOSE)
-      list(LENGTH _libs _n)
-      message(STATUS "[apex] PACKAGE package_${_app} (graph closure: ${_n} libs)")
-    endif ()
+    math(EXPR _count "${_count} + 1")
   endforeach ()
 
-  list(LENGTH _apps _count)
-  message(STATUS "[apex] Registered ${_count} package target(s)")
+  message(STATUS "[apex] Registered ${_count} deployment package target(s)")
 endfunction ()

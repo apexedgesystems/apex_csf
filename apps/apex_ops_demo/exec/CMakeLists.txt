@@ -38,5 +38,5 @@ apex_add_app(
   POSIX
 )
 
-# Deployable bundle: ship the TPRM config in bank_a (canonical ApexFileSystem).
-apex_set_app_tprm(ApexOpsDemo apps/apex_ops_demo/tprm/master.tprm)
+# Deployment: single executive.
+apex_add_deployment(NAME ApexOpsDemo EXECS ApexOpsDemo TPRM apps/apex_ops_demo/tprm/master.tprm)

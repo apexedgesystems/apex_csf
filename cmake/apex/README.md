@@ -311,23 +311,39 @@ reads this file and invokes `apex_data_gen` to produce JSON struct dictionaries.
 
 ## Packaging
 
-Apps registered via `apex_add_app()` get `package_<APP>` custom targets created
-by `apex_finalize_packages()`, which stage a deployable bundle from CMake install
-components:
+A **deployment** is one apex filesystem -- `bank_a/{bin,libs,tprm}` + a generic
+`run.sh` -- holding one or more executives that share that bank (e.g. an
+executive and the watchdog that supervises it). Declare one per deployable app
+with `apex_add_deployment()`, the same way whether it ships one executive or
+several:
 
-1. Derive the app's shared-library closure from the **build graph** (its
+```cmake
+apex_add_deployment(
+  NAME  ApexHilDemo
+  EXECS ApexHilDemo ApexWatchdog      # one or more; they share one bank_a
+  TPRM  apps/apex_hil_demo/tprm/master_1khz.tprm   # optional
+)
+```
+
+`apex_finalize_packages()` (called once at the end of the root `CMakeLists.txt`)
+turns each declared deployment into a `package_<NAME>` target:
+
+1. Derive each executive's shared-library closure from the **build graph** (its
    transitive link targets), not a post-hoc `readelf` walk -- deterministic and
    cross-architecture-trivial.
-2. `install(COMPONENT <APP>)` rules stage the binary, that closure (runtime
-   symlink chains), any extra bins, the TPRM, and a launcher into the canonical
-   `bank_a/{bin,libs,tprm}` + `run.sh` layout.
-3. `package_<APP>` runs `cmake --install --component <APP>` into `packages/<APP>`
-   and tars it.
+2. `install(COMPONENT <NAME>)` rules stage the executives, the union of their
+   closures (runtime symlink chains), the TPRM, and the launcher into the
+   canonical `bank_a/{bin,libs,tprm}` + `run.sh` layout.
+3. `package_<NAME>` runs `cmake --install --component <NAME>` into
+   `packages/<NAME>` and tars it.
 
-Per-app deployable inputs are declared next to the app: `apex_set_app_tprm()`
-for the TPRM and `apex_set_app_extra_bins()` for additional executables (e.g. the
-watchdog). These targets are consumed by `mk/release.mk` for multi-platform
-release packaging.
+Defining an executable with `apex_add_app()` does not, by itself, make it a
+deployment -- packaging is declared explicitly. `mk/release.mk` consumes the
+`package_<NAME>` targets for multi-platform release packaging.
+
+A future `apex_add_bundle()` will consolidate multiple deployments + custom tools
++ support files into one shippable artifact; it is not needed while each app is a
+single deployment.
 
 ## Cross-Compilation
 
