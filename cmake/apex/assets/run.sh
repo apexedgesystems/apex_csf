@@ -1,20 +1,23 @@
 #!/bin/bash
-# Apex deployable launch script
+# Apex POSIX deployable launcher
 #
-# Reads the active bank marker, sets LD_LIBRARY_PATH to the active bank's
-# libs/ directory, and runs the specified binary with the active bank's
-# master.tprm config. The deployment directory IS the filesystem root.
+# Generic launcher for an apex filesystem bundle: resolves the active bank, sets
+# LD_LIBRARY_PATH to its libs/, and runs an executive with the active bank's
+# master.tprm config, treating the deployment directory as the filesystem root.
 #
-# Direct mode:
-#   ./run.sh <executive> [extra-args...]
-#   sudo ./run.sh ApexHilDemo --skip-cleanup
+# Works for any executive -- the two apex defaults (the ApexExecutive-derived
+# posix executive and the ApexWatchdog supervisor) and custom ones built on the
+# same infrastructure -- by convention, not by hardcoded names:
 #
-# Watchdog mode:
-#   ./run.sh ApexWatchdog [watchdog-args...] -- <executive> [extra-args...]
-#   sudo ./run.sh ApexWatchdog --max-crashes 5 -- ApexHilDemo --skip-cleanup
+#   Direct:      ./run.sh <executive> [args...]
+#                ./run.sh ApexHilDemo --skip-cleanup
 #
-# In watchdog mode, --fs-root and --config are injected into the executive
-# args (after --), not into the watchdog args.
+#   Supervised:  ./run.sh <supervisor> [sup-args...] -- <executive> [args...]
+#                ./run.sh ApexWatchdog --max-crashes 5 -- ApexHilDemo --skip-cleanup
+#
+# Mode is chosen by the presence of `--`: with it, the first binary is a
+# supervisor and the apex flags (--fs-root/--config) are injected into the child
+# (after `--`); without it, they are injected into the binary directly.
 
 set -euo pipefail
 
@@ -28,8 +31,8 @@ fi
 BANK_DIR="$SCRIPT_DIR/bank_${ACTIVE_BANK}"
 
 if [[ $# -lt 1 ]]; then
-  echo "Usage: ./run.sh <binary> [extra-args...]"
-  echo "       ./run.sh ApexWatchdog [wd-args...] -- <executive> [extra-args...]"
+  echo "Usage: ./run.sh <executive> [args...]"
+  echo "       ./run.sh <supervisor> [sup-args...] -- <executive> [args...]"
   echo ""
   echo "Active bank: $ACTIVE_BANK"
   echo "Available:"
@@ -54,29 +57,38 @@ TPRM_CONFIG="$BANK_DIR/tprm/master.tprm"
 
 cd "$SCRIPT_DIR"
 
-# Watchdog mode: split args at --, resolve child binary, inject exec flags.
-if [[ "$BIN_NAME" == "ApexWatchdog" ]]; then
-  WD_ARGS=()
+# Supervised mode: a `--` separates the supervisor's own args from the child
+# executive it launches. Inject the apex flags into the child, not the
+# supervisor. Name-agnostic: works for ApexWatchdog or any custom supervisor.
+HAS_SEP=false
+for arg in "$@"; do
+  if [[ "$arg" == "--" ]]; then
+    HAS_SEP=true
+    break
+  fi
+done
+
+if $HAS_SEP; then
+  SUP_ARGS=()
   CHILD_ARGS=()
   found_sep=false
   for arg in "$@"; do
-    if [[ "$arg" == "--" ]]; then
+    if [[ "$arg" == "--" ]] && ! $found_sep; then
       found_sep=true
       continue
     fi
     if $found_sep; then
       CHILD_ARGS+=("$arg")
     else
-      WD_ARGS+=("$arg")
+      SUP_ARGS+=("$arg")
     fi
   done
 
-  if ! $found_sep || [[ ${#CHILD_ARGS[@]} -lt 1 ]]; then
-    echo "Watchdog mode requires: ApexWatchdog [wd-args...] -- <executive> [extra-args...]"
+  if [[ ${#CHILD_ARGS[@]} -lt 1 ]]; then
+    echo "Supervised mode requires a child executive after '--'"
     exit 1
   fi
 
-  # Resolve child executable name to bank path
   CHILD_NAME="${CHILD_ARGS[0]}"
   CHILD_BIN="$BANK_DIR/bin/$CHILD_NAME"
   if [[ ! -x "$CHILD_BIN" ]]; then
@@ -84,10 +96,10 @@ if [[ "$BIN_NAME" == "ApexWatchdog" ]]; then
     exit 1
   fi
 
-  # Replace child name with resolved path, inject --fs-root and --config
-  exec "$APP_BIN" "${WD_ARGS[@]}" \
+  # Resolve the child to its bank path and inject --fs-root/--config into it.
+  exec "$APP_BIN" "${SUP_ARGS[@]}" \
     -- "$CHILD_BIN" --fs-root . --config "$TPRM_CONFIG" "${CHILD_ARGS[@]:1}"
 fi
 
-# Direct mode: run binary with --fs-root and --config.
+# Direct mode: run the executive with --fs-root and --config.
 exec "$APP_BIN" --fs-root . --config "$TPRM_CONFIG" "$@"
