@@ -13,7 +13,7 @@
  */
 
 #include "src/bench/inc/Perf.hpp"
-#include "src/sim/dynamics/force_moment/inc/ForceMoment.hpp"
+#include "src/sim/dynamics/wrench/inc/Wrench.hpp"
 #include "src/sim/dynamics/mass_properties/inc/FuelBurnMassProperties.hpp"
 #include "src/sim/dynamics/mass_properties/inc/MassProperties.hpp"
 #include "src/sim/dynamics/rigid_body/inc/RigidBody6DOF.hpp"
@@ -26,9 +26,6 @@
 
 namespace ub = vernier::bench;
 
-using sim::dynamics::force_moment::AppliedForce;
-using sim::dynamics::force_moment::ForceMoment;
-using sim::dynamics::force_moment::ForceMomentAccumulator;
 using sim::dynamics::mass_properties::AggregateMassProperties;
 using sim::dynamics::mass_properties::FuelTankMassSource;
 using sim::dynamics::mass_properties::MassAccumulator;
@@ -36,6 +33,9 @@ using sim::dynamics::mass_properties::MassContributor;
 using sim::dynamics::rigid_body::InertiaTensor;
 using sim::dynamics::rigid_body::RigidBody6DOFState;
 using sim::dynamics::rigid_body::Vec3;
+using sim::dynamics::wrench::AppliedWrench;
+using sim::dynamics::wrench::Wrench;
+using sim::dynamics::wrench::WrenchAccumulator;
 
 // The end-to-end per-tick path through the compositional facade: re-stack the
 // mass, re-stack the forces about the current CG, then take one 6-DOF RK4 step
@@ -52,9 +52,9 @@ PERF_TEST(VehicleStepComposed, Throughput) {
   const MassContributor payload{2500.0, Vec3{1.5, 0.0, 0.2},
                                 InertiaTensor{5.0e3, 5.0e3, 5.0e3, 0.0}};
 
-  const AppliedForce gravity{Vec3{0.0, 0.0, 1.3e5}, Vec3{}, Vec3{}};
-  const AppliedForce thrust{Vec3{1.2e5, 0.0, 0.0}, Vec3{-3.0, 0.0, 1.0}, Vec3{}};
-  const AppliedForce aero{Vec3{-4.0e4, 0.0, -2.0e5}, Vec3{0.6, 0.0, 0.0}, Vec3{}};
+  const AppliedWrench gravity{Vec3{0.0, 0.0, 1.3e5}, Vec3{}, Vec3{}};
+  const AppliedWrench thrust{Vec3{1.2e5, 0.0, 0.0}, Vec3{-3.0, 0.0, 1.0}, Vec3{}};
+  const AppliedWrench aero{Vec3{-4.0e4, 0.0, -2.0e5}, Vec3{0.6, 0.0, 0.0}, Vec3{}};
 
   const double dt = 0.01;
 
@@ -64,14 +64,14 @@ PERF_TEST(VehicleStepComposed, Throughput) {
   mass.add(payload);
   mass.add(tank);
 
-  ForceMomentAccumulator forces;
+  WrenchAccumulator forces;
   forces.add(gravity);
   forces.add(thrust);
   forces.add(aero);
 
   auto stepTick = [&](RigidBody6DOFState& s, double t) {
     const AggregateMassProperties mp = mass.result();
-    const ForceMoment fm = forces.resultAbout(mp.cg_m);
+    const Wrench fm = forces.resultAbout(mp.cg_m);
     sim::dynamics::vehicle::step(s, mp, fm, t, dt);
   };
 

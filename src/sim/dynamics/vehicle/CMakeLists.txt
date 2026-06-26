@@ -3,7 +3,7 @@
 #
 # The assembled vehicle: steps the 6-DOF rigid body from composed mass
 # properties + net force/moment. Sits above the leaf modules (it includes
-# rigid_body + mass_properties + force_moment) so those stay free of any
+# rigid_body + mass_properties + wrench) so those stay free of any
 # upward dependency -- one-directional includes, no cycles.
 # ==============================================================================
 
@@ -14,7 +14,7 @@ apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
 
 target_link_libraries(
   ${LIB_NAME}
-  INTERFACE sim_dynamics_rigid_body sim_dynamics_mass_properties sim_dynamics_force_moment
+  INTERFACE sim_dynamics_rigid_body sim_dynamics_mass_properties sim_dynamics_wrench
 )
 
 apex_standard_optins(${LIB_NAME})

@@ -1,20 +1,20 @@
 # ==============================================================================
-# Unit Tests: sim_dynamics_force_moment
+# Unit Tests: sim_dynamics_wrench
 # ==============================================================================
 
 include(apex/All)
 
-set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/ForceMoment_uTest.cpp")
+set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Wrench_uTest.cpp")
 
 apex_add_gtest(
   TARGET
-  TestSimDynamicsForceMoment
+  TestSimDynamicsWrench
   SOURCES
   ${UNIT_TEST_SOURCES}
   LINK
-  sim_dynamics_force_moment
+  sim_dynamics_wrench
   LABELS
   sim
   dynamics
-  force_moment
+  wrench
 )

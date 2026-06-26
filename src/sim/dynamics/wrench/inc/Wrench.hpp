@@ -1,12 +1,12 @@
-#ifndef APEX_SIM_DYNAMICS_FORCE_MOMENT_FORCE_MOMENT_HPP
-#define APEX_SIM_DYNAMICS_FORCE_MOMENT_FORCE_MOMENT_HPP
+#ifndef APEX_SIM_DYNAMICS_WRENCH_WRENCH_HPP
+#define APEX_SIM_DYNAMICS_WRENCH_WRENCH_HPP
 /**
- * @file ForceMoment.hpp
+ * @file Wrench.hpp
  * @brief Compositional force/moment aggregation -- the symmetric pattern
  *        to mass_properties.
  *
  * Where `mass_properties::MassAccumulator` stacks per-part mass / CG /
- * inertia into whole-body mass properties, `ForceMomentAccumulator` stacks
+ * inertia into whole-body mass properties, `WrenchAccumulator` stacks
  * per-source applied forces (each at a point, plus an optional pure couple)
  * into the net force and net moment about a chosen reference point.
  *
@@ -25,9 +25,9 @@
 
 #include <vector>
 
-namespace sim::dynamics::force_moment {
+namespace sim::dynamics::wrench {
 
-/* ------------------------------ AppliedForce ------------------------------ */
+/* ------------------------------ AppliedWrench ------------------------------ */
 
 /**
  * A force applied at a point, plus an optional pure couple.
@@ -38,13 +38,13 @@ namespace sim::dynamics::force_moment {
  *               independent of the reference point (a couple is the same
  *               about any point)
  */
-struct AppliedForce {
+struct AppliedWrench {
   rigid_body::Vec3 force{};
   rigid_body::Vec3 point_m{};
   rigid_body::Vec3 moment{};
 };
 
-/* ------------------------------ ForceMoment ------------------------------ */
+/* ------------------------------ Wrench ------------------------------ */
 
 /**
  * Net force + net moment about a reference point.
@@ -52,7 +52,7 @@ struct AppliedForce {
  * @var force   sum of applied forces (N), body frame
  * @var moment  net moment about the reference point (N*m), body frame
  */
-struct ForceMoment {
+struct Wrench {
   rigid_body::Vec3 force{};
   rigid_body::Vec3 moment{};
 };
@@ -68,7 +68,7 @@ namespace detail {
  * The single combine step, shared by the value-list and accumulator paths
  * so the moment-transfer formula lives in one place.
  */
-inline void accumulate(ForceMoment& out, const AppliedForce& part,
+inline void accumulate(Wrench& out, const AppliedWrench& part,
                        const rigid_body::Vec3& about) noexcept {
   out.force = out.force + part.force;
   const rigid_body::Vec3 r = part.point_m - about;
@@ -84,9 +84,9 @@ inline void accumulate(ForceMoment& out, const AppliedForce& part,
  * @param about  reference point the net moment is taken about (m)
  * @return net force + net moment about `about`
  */
-[[nodiscard]] inline ForceMoment combine(const std::vector<AppliedForce>& parts,
-                                         const rigid_body::Vec3& about) noexcept {
-  ForceMoment out;
+[[nodiscard]] inline Wrench combine(const std::vector<AppliedWrench>& parts,
+                                    const rigid_body::Vec3& about) noexcept {
+  Wrench out;
   for (const auto& part : parts) {
     accumulate(out, part, about);
   }
@@ -100,23 +100,23 @@ inline void accumulate(ForceMoment& out, const AppliedForce& part,
 /**
  * Composition layer over the value combiner, mirroring `MassPropsSource`.
  *
- * A `ForceMomentSource` reports the force/couple it applies *now*. This
+ * A `WrenchSource` reports the force/couple it applies *now*. This
  * decouples "what applies a load" (a fixed strut, a throttled engine, an
  * aero surface) from "how loads combine". Sources are referenced
  * non-owningly; the caller owns the lifetimes and the sampling order.
  */
-struct ForceMomentSource {
-  virtual ~ForceMomentSource() = default;
-  [[nodiscard]] virtual AppliedForce current() const noexcept = 0;
+struct WrenchSource {
+  virtual ~WrenchSource() = default;
+  [[nodiscard]] virtual AppliedWrench current() const noexcept = 0;
 };
 
 /**
  * A fixed applied force (a static strut load, ballast pull, a calibrated
- * test force): `current()` always returns the stored `AppliedForce`.
+ * test force): `current()` always returns the stored `AppliedWrench`.
  */
-struct StaticForceMomentSource : ForceMomentSource {
-  AppliedForce f;
-  [[nodiscard]] AppliedForce current() const noexcept override { return f; }
+struct StaticWrenchSource : WrenchSource {
+  AppliedWrench f;
+  [[nodiscard]] AppliedWrench current() const noexcept override { return f; }
 };
 
 /**
@@ -124,14 +124,14 @@ struct StaticForceMomentSource : ForceMomentSource {
  * engine, an aero force that tracks angle of attack). Concrete dynamic
  * sources derive from this and override `current()`.
  */
-struct DynamicForceMomentSource : ForceMomentSource {};
+struct DynamicWrenchSource : WrenchSource {};
 
 /* ------------------------------ Accumulator ------------------------------ */
 
 /**
  * Public stacking API for force/moment composition.
  *
- * Stack fixed `AppliedForce`s and/or `ForceMomentSource`s, then call
+ * Stack fixed `AppliedWrench`s and/or `WrenchSource`s, then call
  * `resultAbout()` to sample the sources and combine everything into the
  * net force + net moment about a reference point. Sources are sampled at
  * each `resultAbout()` call, so a load that varies between ticks is
@@ -141,13 +141,13 @@ struct DynamicForceMomentSource : ForceMomentSource {};
  * lifetimes. A null source pointer is skipped (defensive: a partially
  * wired vehicle still produces a well-defined result).
  */
-class ForceMomentAccumulator {
+class WrenchAccumulator {
 public:
   /** Add a fixed applied force (force-at-point + optional couple). */
-  void add(const AppliedForce& f) { fixed_.push_back(f); }
+  void add(const AppliedWrench& f) { fixed_.push_back(f); }
 
   /** Add a source, re-sampled each `resultAbout()`. */
-  void add(const ForceMomentSource& s) { sources_.push_back(&s); }
+  void add(const WrenchSource& s) { sources_.push_back(&s); }
 
   /**
    * Sample every source, append the fixed loads, and combine into the net
@@ -156,8 +156,8 @@ public:
    * @param about  reference point the net moment is taken about (m)
    * @return net force + net moment about `about`
    */
-  [[nodiscard]] ForceMoment resultAbout(const rigid_body::Vec3& about) const noexcept {
-    ForceMoment out;
+  [[nodiscard]] Wrench resultAbout(const rigid_body::Vec3& about) const noexcept {
+    Wrench out;
     for (const auto* src : sources_) {
       if (src != nullptr) {
         detail::accumulate(out, src->current(), about);
@@ -176,10 +176,10 @@ public:
   }
 
 private:
-  std::vector<AppliedForce> fixed_;
-  std::vector<const ForceMomentSource*> sources_;
+  std::vector<AppliedWrench> fixed_;
+  std::vector<const WrenchSource*> sources_;
 };
 
-} // namespace sim::dynamics::force_moment
+} // namespace sim::dynamics::wrench
 
-#endif // APEX_SIM_DYNAMICS_FORCE_MOMENT_FORCE_MOMENT_HPP
+#endif // APEX_SIM_DYNAMICS_WRENCH_WRENCH_HPP
