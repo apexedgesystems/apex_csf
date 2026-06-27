@@ -24,6 +24,7 @@ supplied by the application.
 4. [Module Reference](#module-reference)
    - [PolarAero](#polaraero) - parabolic drag polar
    - [StabilityDerivativeAero](#stabilityderivativeaero) - linearized derivatives
+   - [AeroModel ladder + wrench contributor](#aeromodel-ladder--wrench-contributor)
 5. [Real-Time Considerations](#real-time-considerations)
 6. [See Also](#see-also)
 
@@ -94,6 +95,34 @@ StabilityDerivativeAeroParams p;    // illustrative jet-transport defaults
 ControlInputs delta;                // elevator / aileron / rudder (rad)
 auto r = evaluateStabilityDerivative(p, v_body, w_body, delta, /*rho*/ 0.41);
 // r.force_body, r.moment_body  -> the body-frame aerodynamic wrench
+```
+
+### AeroModel ladder + wrench contributor
+
+**Header:** `inc/AeroModel.hpp`
+**Purpose:** Wrap the evaluators behind one swappable interface and plug them
+into the dynamics wrench stack.
+
+`AeroModel::aeroWrench` returns the body-frame aerodynamic wrench for a flight
+state. Concrete rungs trade fidelity for cost -- `ConstantAero` (fixed/zero),
+`PolarAeroModel` (lift + drag), `StabilityDerivativeModel` (full force +
+moment) -- and a caller can add a rung by implementing `AeroModel` (nothing in
+the ladder is closed). `AeroWrenchSource` adapts any model into a
+`wrench::WrenchSource`, tagged `WrenchKind::Aerodynamic`, so aerodynamics
+stacks into the `WrenchAccumulator` like any other contributor. The model
+reports its force at the body origin and its moment as the couple about it; the
+accumulator transfers the force to the CG, so the model stays CG-agnostic.
+
+```cpp
+StabilityDerivativeModel model;          // pick a fidelity rung
+AeroWrenchSource aero;
+aero.model = &model;                     // wire the live inputs
+aero.v_body = &state.velocity_body; aero.w_body = &state.angular_velocity_body;
+aero.controls = &controls; aero.rho_kg_m3 = &rho;
+
+WrenchAccumulator loads;
+loads.add(aero);                         // ... plus thrust, gravity, ...
+const auto fm = loads.resultAbout(mp.cg_m);
 ```
 
 ## Real-Time Considerations

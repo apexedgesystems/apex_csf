@@ -98,14 +98,36 @@ inline void accumulate(Wrench& out, const AppliedWrench& part,
 /* ------------------------------ Source layer ------------------------------ */
 
 /**
+ * Physical origin of a wrench contributor -- characterization metadata for
+ * telemetry, grouping, and the vehicle init log. It never drives behavior
+ * (there is no dispatch on kind; behavior is the source's `current()`).
+ * `External` is the catch-all for user-defined / experimental contributors.
+ */
+enum class WrenchKind {
+  Aerodynamic,  // lift, drag, side force, aero moments (air)
+  Hydrodynamic, // buoyancy + hydro drag (water)
+  Propulsion,   // engine / motor / main-thruster thrust
+  Gravity,      // weight
+  Contact,      // ground reaction, landing gear, collision
+  Actuator,     // reaction wheel, CMG, magnetorquer, attitude RCS
+  External,     // tether, tow, dock, user-defined / catch-all
+};
+
+/**
  * Composition layer over the value combiner, mirroring `MassPropsSource`.
  *
  * A `WrenchSource` reports the force/couple it applies *now*. This
  * decouples "what applies a load" (a fixed strut, a throttled engine, an
  * aero surface) from "how loads combine". Sources are referenced
  * non-owningly; the caller owns the lifetimes and the sampling order.
+ *
+ * `kind` and `name` are characterization-only -- they label the contributor
+ * for telemetry and the vehicle init log; neither affects the combined result.
  */
 struct WrenchSource {
+  WrenchKind kind = WrenchKind::External; // physical origin (characterization)
+  const char* name = "";                  // instance label, e.g. "engine_1"
+
   virtual ~WrenchSource() = default;
   [[nodiscard]] virtual AppliedWrench current() const noexcept = 0;
 };

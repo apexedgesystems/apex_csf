@@ -15,6 +15,7 @@
  */
 
 #include "src/bench/inc/Perf.hpp"
+#include "src/sim/aerodynamics/inc/AeroModel.hpp"
 #include "src/sim/aerodynamics/inc/PolarAero.hpp"
 #include "src/sim/aerodynamics/inc/StabilityDerivativeAero.hpp"
 
@@ -88,6 +89,45 @@ PERF_TEST(StabilityDerivativeAeroEval, Throughput) {
 
   std::printf("\n[StabilityDerivativeAero] evaluate: %.0f evals/s (%.4f us/eval)\n",
               result.callsPerSecond, 1.0e6 / result.callsPerSecond);
+}
+
+/* ----------------------------- AeroWrenchSource (contributor path) -----------------------------
+ */
+
+// The full per-tick contributor path: polymorphic AeroModel dispatch through
+// the WrenchSource adapter, as the dynamics WrenchAccumulator would sample it.
+PERF_TEST(AeroWrenchSourceCurrent, Throughput) {
+  UB_PERF_GUARD(perf);
+
+  sim::aerodynamics::StabilityDerivativeModel model;
+  const Vec3 v_body{240.0, 2.0, 8.0};
+  const Vec3 w_body{0.02, 0.01, 0.015};
+  const ControlInputs delta{};
+  const double rho = 0.5258;
+
+  sim::aerodynamics::AeroWrenchSource src;
+  src.model = &model;
+  src.v_body = &v_body;
+  src.w_body = &w_body;
+  src.controls = &delta;
+  src.rho_kg_m3 = &rho;
+
+  perf.warmup([&] {
+    for (int i = 0; i < perf.cycles(); ++i) {
+      (void)src.current();
+    }
+  });
+
+  volatile double sink = 0.0;
+  auto result = perf.throughputLoop(
+      [&] {
+        const auto a = src.current();
+        sink += a.force.x + a.moment.y;
+      },
+      "aero_wrench_source_current");
+
+  std::printf("\n[AeroWrenchSource] current: %.0f evals/s (%.4f us/eval)\n", result.callsPerSecond,
+              1.0e6 / result.callsPerSecond);
 }
 
 PERF_MAIN()

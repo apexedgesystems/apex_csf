@@ -27,13 +27,9 @@ using sim::dynamics::wrench::WrenchAccumulator;
 namespace {
 constexpr double kTol = 1e-9;
 
-/** Combine a list of applied forces about `about` via the accumulator. */
+/** Combine a list of applied forces about `about` via the value-list wrapper. */
 Wrench combine(std::initializer_list<AppliedWrench> parts, const Vec3& about) {
-  WrenchAccumulator acc;
-  for (const auto& p : parts) {
-    acc.add(p);
-  }
-  return acc.resultAbout(about);
+  return sim::dynamics::wrench::detail::combine(std::vector<AppliedWrench>(parts), about);
 }
 } // namespace
 
