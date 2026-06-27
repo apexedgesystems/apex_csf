@@ -30,6 +30,7 @@ enum class Status : std::uint8_t {
   ERROR_FS_TAR_CREATE_FAIL,
   ERROR_FS_TAR_MOVE_FAIL,
   ERROR_INVALID_FS,
+  ERROR_FS_LOCKED, ///< Another executive already owns this filesystem root.
 
   // Marker --------------------------------------------------------------------
   EOE_FILESYSTEM

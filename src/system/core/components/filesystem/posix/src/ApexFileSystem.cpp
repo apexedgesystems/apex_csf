@@ -6,6 +6,11 @@
 #include "src/system/core/components/filesystem/posix/inc/ApexFileSystem.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
+#include <fcntl.h>
+#include <sys/file.h>
+#include <unistd.h>
+
+#include <cstdio>
 #include <ctime>
 
 #include <chrono>
@@ -40,6 +45,12 @@ ApexFileSystem::ApexFileSystem(std::filesystem::path fs, std::string name) noexc
 }
 
 ApexFileSystem::~ApexFileSystem() {
+  // Release the filesystem-root lock (the OS also releases it on process exit).
+  if (rootLockFd_ >= 0) {
+    ::close(rootLockFd_);
+    rootLockFd_ = -1;
+  }
+
   if (!autoCleanupOnDestroy_) {
     return;
   }
@@ -72,6 +83,32 @@ void ApexFileSystem::configureShutdownCleanup(bool enabled,
 }
 
 std::uint8_t ApexFileSystem::doInit() noexcept {
+  // One executive per filesystem: take an exclusive advisory lock on the root
+  // before touching it. Two executives sharing an fs-root would collide on
+  // system.log, the banks, and telemetry; the second one fails fast here instead
+  // of corrupting shared state. flock releases on close and on process exit
+  // (including a crash), leaving no stale lock, so a watchdog can restart the
+  // child cleanly. O_CLOEXEC keeps the lock fd out of any process the executive
+  // itself spawns.
+  {
+    std::error_code ec;
+    std::filesystem::create_directories(root(), ec); // root must exist to hold the lockfile
+    const std::filesystem::path LOCK_PATH = root() / FS_LOCK_FN;
+    rootLockFd_ = ::open(LOCK_PATH.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+    if (rootLockFd_ < 0 || ::flock(rootLockFd_, LOCK_EX | LOCK_NB) != 0) {
+      if (rootLockFd_ >= 0) {
+        ::close(rootLockFd_);
+        rootLockFd_ = -1;
+      }
+      // No component log exists yet; report the fatal refusal on stderr.
+      std::fprintf(stderr,
+                   "[ApexFileSystem] filesystem root '%s' is already in use by "
+                   "another executive; refusing to start.\n",
+                   root().string().c_str());
+      return static_cast<std::uint8_t>(Status::ERROR_FS_LOCKED);
+    }
+  }
+
   // Create non-banked directory structure (not RT-safe).
   const std::vector<std::filesystem::path> NON_BANKED_DIRS{
       tlmDir_,        logDir_,       coreLogDir_, modelLogDir_,
