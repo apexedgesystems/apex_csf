@@ -138,7 +138,8 @@ enum class Status : std::uint8_t {
   ERROR_FS_CREATION_FAIL,
   ERROR_FS_TAR_CREATE_FAIL,
   ERROR_FS_TAR_MOVE_FAIL,
-  ERROR_INVALID_FS
+  ERROR_INVALID_FS,
+  ERROR_FS_LOCKED       // Another executive already owns this filesystem root
 };
 ```
 
@@ -164,6 +165,12 @@ enum class FsyncPolicy : std::uint8_t {
 ### Dedicated Component Log
 
 `ApexFileSystem` creates a dedicated SYNC-mode log at `logs/filesystem.log` after initialization. SYNC mode with no I/O thread (~4KB vs ~2.1MB for async), appropriate for infrequent filesystem operations.
+
+### Single-Owner Lock
+
+`ApexFileSystem::init()` takes an exclusive advisory lock (`flock`) on `<root>/.apex_fs.lock` before creating any structure. One filesystem root may be owned by only **one** executive at a time -- a second executive on the same root fails fast with `ERROR_FS_LOCKED` instead of corrupting `system.log`, the banks, or telemetry. The lock releases on close and on process exit (including a crash), so no stale lock is left behind and a supervisor can restart the child cleanly. The lockfile name is fixed (`.apex_fs.lock`) and keyed on the root path, so distinct deployments never falsely conflict.
+
+This guarantee is specific to `ApexFileSystem` (the default deployment layout). A custom filesystem derived from `FileSystemBase` does **not** inherit it -- the base stays free of policy so custom executives can set up their root however they need.
 
 ---
 
@@ -297,7 +304,7 @@ fs.configureShutdownCleanup(true, "/archive/backups");
 
 | Directory     | Type                   | Tests | Runs with `make test` |
 | ------------- | ---------------------- | ----- | --------------------- |
-| `posix/utst/` | Unit tests             | 16    | Yes                   |
+| `posix/utst/` | Unit tests             | 34    | Yes                   |
 | `mcu/utst/`   | Unit tests             | 10    | Yes                   |
 | `posix/ptst/` | Performance benchmarks | 7     | No (manual)           |
 
@@ -306,9 +313,9 @@ fs.configureShutdownCleanup(true, "/archive/backups");
 | Component      | Test File                  | Tests  |
 | -------------- | -------------------------- | ------ |
 | FileSystemBase | `FileSystemBase_uTest.cpp` | 11     |
-| ApexFileSystem | `ApexFileSystem_uTest.cpp` | 5      |
+| ApexFileSystem | `ApexFileSystem_uTest.cpp` | 23     |
 | NullFileSystem | `NullFileSystem_uTest.cpp` | 10     |
-| **Total**      |                            | **26** |
+| **Total**      |                            | **44** |
 
 ---
 
