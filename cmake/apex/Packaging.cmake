@@ -3,22 +3,25 @@
 # ==============================================================================
 #
 # A *deployment* is one apex filesystem: bank_a/{bin,libs,tprm} + a generic
-# run.sh launcher, holding one or more executives that share that bank (e.g. an
-# executive and the watchdog that supervises it -- they OTA together). Every
-# deployable app declares one with apex_add_deployment(), the same way whether it
-# ships one executive or several. apex_finalize_packages() emits the per-app
-# install(COMPONENT) rules and a package_<NAME> target (cmake --install + tar).
+# run.sh launcher, owned by exactly ONE executive. One filesystem = one
+# --fs-root owner is the safety invariant: two executives sharing a filesystem
+# would collide on system.log, the banks, and telemetry, so the model does not
+# let you express that. A supervisor (the watchdog) is its own single-exec
+# deployment that launches another across filesystems -- it owns no filesystem.
+# apex_finalize_packages() emits the per-deployment install(COMPONENT) rules and
+# a package_<NAME> target (cmake --install + tar).
 #
-# The shared-library closure is derived from the build graph (the executives'
+# The shared-library closure is derived from the build graph (the executive's
 # transitive link targets), not a readelf walk -- the libraries are our own
 # targets, so the graph is the authoritative closure: deterministic and
-# cross-architecture-trivial (no readelf, no resolution hints).
+# cross-architecture-trivial (no readelf, no resolution hints). Deployed binaries
+# carry a $ORIGIN/../libs RPATH, so each deployment is self-contained.
 #
 # Usage:
 #   apex_add_deployment(
-#     NAME  ApexHilDemo
-#     EXECS ApexHilDemo ApexWatchdog      # one or more; they share one bank_a
-#     TPRM  apps/apex_hil_demo/tprm/master_1khz.tprm   # optional
+#     NAME ApexHilDemo
+#     EXEC ApexHilDemo                                 # exactly one executive
+#     TPRM apps/apex_hil_demo/tprm/master_1khz.tprm    # optional
 #   )
 #   ninja package_ApexHilDemo        # cmake --install --component + tarball
 #   make package APP=ApexHilDemo
@@ -40,17 +43,17 @@
 include_guard(GLOBAL)
 
 # ------------------------------------------------------------------------------
-# apex_add_deployment(NAME <name> EXECS <exec>... [TPRM <path>])
+# apex_add_deployment(NAME <name> EXEC <exec> [TPRM <path>])
 #
 # Declare a deployable apex filesystem. NAME is the bundle/dir (and the
-# package_<NAME> target). EXECS are the executive targets that share its bank_a
-# (any number). TPRM is the optional master config staged as bank_a/tprm/master.tprm.
+# package_<NAME> target). EXEC is the single executive target that owns the
+# filesystem. TPRM is the optional master config staged as bank_a/tprm/master.tprm.
 # ------------------------------------------------------------------------------
 function (apex_add_deployment)
-  cmake_parse_arguments(D "" "NAME;TPRM" "EXECS" ${ARGN})
-  apex_require(D_NAME D_EXECS)
+  cmake_parse_arguments(D "" "NAME;EXEC;TPRM" "" ${ARGN})
+  apex_require(D_NAME D_EXEC)
   set_property(GLOBAL APPEND PROPERTY APEX_DEPLOYMENTS "${D_NAME}")
-  set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_EXECS "${D_EXECS}")
+  set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_EXEC "${D_EXEC}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_TPRM "${D_TPRM}")
 endfunction ()
 
@@ -134,10 +137,10 @@ endfunction ()
 # and their links exist, so the closure walk sees the full graph).
 #
 # Per deployment, component <NAME> installs into the deploy prefix:
-#   bank_a/bin/<exec>...         the executives
-#   bank_a/libs/*.so*            the union of their project shared-lib closures
+#   bank_a/bin/<exec>            the single executive
+#   bank_a/libs/*.so*            its project shared-lib closure
 #   bank_a/tprm/master.tprm      TPRM config (if declared)
-#   run.sh                       the generic bank-aware launcher
+#   run.sh                       the generic launcher
 #
 # package_<NAME> runs `cmake --install --component <NAME>` into packages/<NAME>
 # and tars it to packages/<NAME>.tar.gz.
@@ -152,29 +155,18 @@ function (apex_finalize_packages)
   set(_count 0)
 
   foreach (_name IN LISTS _deps)
-    get_property(_execs GLOBAL PROPERTY APEX_DEPLOY_${_name}_EXECS)
+    get_property(_exec GLOBAL PROPERTY APEX_DEPLOY_${_name}_EXEC)
     get_property(_tprm GLOBAL PROPERTY APEX_DEPLOY_${_name}_TPRM)
 
-    # Only executives whose targets exist (requirements may skip some platforms).
-    set(_present "")
-    foreach (_e IN LISTS _execs)
-      if (TARGET ${_e})
-        list(APPEND _present ${_e})
-      endif ()
-    endforeach ()
-    if (NOT _present)
+    # Skip if the executive target does not exist (requirements may skip platforms).
+    if (NOT TARGET ${_exec})
       continue()
     endif ()
 
-    # Executives into bank_a/bin; the union of their shared-lib closures into
-    # bank_a/libs. NAMELINK_SKIP ships the runtime SOVERSION chain, not the dev
-    # namelink.
-    set(_libs "")
-    foreach (_e IN LISTS _present)
-      install(TARGETS ${_e} RUNTIME DESTINATION bank_a/bin COMPONENT ${_name})
-      _apex_collect_shared_deps(${_e} _execlibs)
-      list(APPEND _libs ${_execlibs})
-    endforeach ()
+    # The executive into bank_a/bin; its shared-lib closure into bank_a/libs.
+    # NAMELINK_SKIP ships the runtime SOVERSION chain, not the dev namelink.
+    install(TARGETS ${_exec} RUNTIME DESTINATION bank_a/bin COMPONENT ${_name})
+    _apex_collect_shared_deps(${_exec} _libs)
     list(REMOVE_DUPLICATES _libs)
     if (_libs)
       install(
@@ -209,7 +201,7 @@ function (apex_finalize_packages)
               "${_pkgroot}/${_name}"
       COMMAND ${CMAKE_COMMAND} -E chdir "${_pkgroot}" ${CMAKE_COMMAND} -E tar czf "${_name}.tar.gz"
               "${_name}"
-      DEPENDS ${_present}
+      DEPENDS ${_exec}
       COMMENT "[package] ${_name} -> cmake --install (bank_a + run.sh)"
       VERBATIM
     )
@@ -288,12 +280,10 @@ function (apex_finalize_packages)
         --prefix
         "${_pkgroot}/${_bname}/${_d}"
       )
-      get_property(_dexecs GLOBAL PROPERTY APEX_DEPLOY_${_d}_EXECS)
-      foreach (_e IN LISTS _dexecs)
-        if (TARGET ${_e})
-          list(APPEND _bdepends ${_e})
-        endif ()
-      endforeach ()
+      get_property(_dexec GLOBAL PROPERTY APEX_DEPLOY_${_d}_EXEC)
+      if (TARGET ${_dexec})
+        list(APPEND _bdepends ${_dexec})
+      endif ()
     endforeach ()
     if (_has_extra)
       list(

@@ -313,34 +313,54 @@ reads this file and invokes `apex_data_gen` to produce JSON struct dictionaries.
 ## Packaging
 
 A **deployment** is one apex filesystem -- `bank_a/{bin,libs,tprm}` + a generic
-`run.sh` -- holding one or more executives that share that bank (e.g. an
-executive and the watchdog that supervises it). Declare one per deployable app
-with `apex_add_deployment()`, the same way whether it ships one executive or
-several:
+`run.sh` -- owned by **exactly one executive**. That is the safety invariant:
+one filesystem, one `--fs-root` owner. Two executives in one filesystem would
+collide on `system.log`, the banks, and telemetry, so the model does not let you
+express that -- `EXEC` is singular.
 
 ```cmake
 apex_add_deployment(
-  NAME  ApexHilDemo
-  EXECS ApexHilDemo ApexWatchdog      # one or more; they share one bank_a
-  TPRM  apps/apex_hil_demo/tprm/master_1khz.tprm   # optional
+  NAME ApexHilDemo
+  EXEC ApexHilDemo                                # exactly one executive
+  TPRM apps/apex_hil_demo/tprm/master_1khz.tprm   # optional
 )
 ```
 
 `apex_finalize_packages()` (called once at the end of the root `CMakeLists.txt`)
 turns each declared deployment into a `package_<NAME>` target:
 
-1. Derive each executive's shared-library closure from the **build graph** (its
+1. Derive the executive's shared-library closure from the **build graph** (its
    transitive link targets), not a post-hoc `readelf` walk -- deterministic and
    cross-architecture-trivial.
-2. `install(COMPONENT <NAME>)` rules stage the executives, the union of their
-   closures (runtime symlink chains), the TPRM, and the launcher into the
-   canonical `bank_a/{bin,libs,tprm}` + `run.sh` layout.
+2. `install(COMPONENT <NAME>)` rules stage the executive, its closure (runtime
+   symlink chains), the TPRM, and the launcher into the canonical
+   `bank_a/{bin,libs,tprm}` + `run.sh` layout.
 3. `package_<NAME>` runs `cmake --install --component <NAME>` into
    `packages/<NAME>` and tars it.
+
+Deployed binaries carry a relative RPATH -- `$ORIGIN/../libs` on the executive,
+`$ORIGIN` on each shared library -- so a deployment is **self-contained**: every
+binary finds its own libs with no `LD_LIBRARY_PATH`, and one deployment can
+launch an executive in another.
 
 Defining an executable with `apex_add_app()` does not, by itself, make it a
 deployment -- packaging is declared explicitly. `mk/release.mk` consumes the
 `package_<NAME>` targets for multi-platform release packaging.
+
+### Supervisors (the watchdog)
+
+A supervisor like `ApexWatchdog` owns **no** filesystem -- it `exec`s and
+heartbeat-monitors an executive (via an inherited pipe, not the filesystem). So
+it is its own single-exec deployment, and it launches the executive of another
+deployment across filesystems:
+
+```bash
+./ApexWatchdog/run.sh --max-crashes 5 -- ../ApexHilDemo   # supervise a sibling
+```
+
+`run.sh` chooses the mode by the presence of `--`: without it, run this
+deployment's executive directly; with it, this deployment's executive is a
+supervisor and the token after `--` is the target deployment to launch.
 
 ### Bundles
 
@@ -370,9 +390,10 @@ GroundStation/tools/bin/my_cli_tool + tools/libs/*.so*
 GroundStation/docs/OPERATIONS.md
 ```
 
-A multi-executive deployment (an executive + its watchdog) is _not_ a bundle --
-those share one `bank_a` and are declared with `EXECS`. A bundle is for distinct
-filesystems shipped together.
+An executive and its watchdog are **two** deployments (two filesystems), shipped
+together in a bundle; the watchdog supervises the executive across them. A bundle
+is for distinct filesystems shipped as one artifact -- never for putting two
+executives in one filesystem.
 
 ## Cross-Compilation
 

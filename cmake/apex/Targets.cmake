@@ -226,6 +226,14 @@ function (apex_add_library)
   add_library(${AL_NAME} ${_type})
   add_library(apex::${AL_NAME} ALIAS ${AL_NAME})
 
+  # A deployed shared library sits beside its siblings in bank_a/libs, so a
+  # $ORIGIN RPATH lets it resolve its own dependencies there. Combined with the
+  # executive's $ORIGIN/../libs, the whole closure self-locates -- no
+  # LD_LIBRARY_PATH, and transitive deps resolve through each link's RUNPATH.
+  if (_type STREQUAL "SHARED")
+    set_target_properties(${AL_NAME} PROPERTIES INSTALL_RPATH "\$ORIGIN")
+  endif ()
+
   target_sources(${AL_NAME} PRIVATE ${AL_SRC})
   target_include_directories(
     ${AL_NAME} PUBLIC $<BUILD_INTERFACE:${AL_INC}> $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
@@ -307,6 +315,14 @@ function (_apex_add_executable)
   endif ()
 
   set_target_properties(${EXE_NAME} PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${EXE_OUTPUT_DIR}")
+
+  # Deployed binaries self-locate their shared libraries via a relative RPATH:
+  # the executive sits in <root>/bin and its libs in <root>/libs, so $ORIGIN/../libs
+  # resolves regardless of where the binary is launched from. This makes a
+  # deployment self-contained -- a supervisor in one filesystem can exec an
+  # executive in another and the executive still finds its own libs, with no
+  # LD_LIBRARY_PATH juggling.
+  set_target_properties(${EXE_NAME} PROPERTIES INSTALL_RPATH "\$ORIGIN/../libs")
 
   if (NOT EXE_NO_INSTALL)
     install(TARGETS ${EXE_NAME} RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
@@ -529,6 +545,11 @@ function (apex_add_library_cuda)
 
     add_library(${ACL_NAME} ${ACL_TYPE})
     add_library(apex::${ACL_NAME} ALIAS ${ACL_NAME})
+
+    # Self-locate sibling libs in bank_a/libs (see apex_add_library).
+    if (ACL_TYPE STREQUAL "SHARED")
+      set_target_properties(${ACL_NAME} PROPERTIES INSTALL_RPATH "\$ORIGIN")
+    endif ()
 
     if (ACL_INC)
       target_include_directories(${ACL_NAME} PRIVATE ${ACL_INC})

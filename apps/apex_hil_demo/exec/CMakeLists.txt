@@ -55,15 +55,8 @@ apex_add_app(
 )
 
 # ------------------------------------------------------------------------------
-# Deployment: the executive and the watchdog that supervises it share one apex
-# filesystem (they OTA together).
+# Deployment: the HIL executive owns its filesystem. The watchdog is its own
+# deployment (watchdog/) and supervises this one across filesystems; the
+# ApexHilSupervised bundle (see ../CMakeLists.txt) ships them together.
 # ------------------------------------------------------------------------------
-apex_add_deployment(
-  NAME
-  ApexHilDemo
-  EXECS
-  ApexHilDemo
-  ApexWatchdog
-  TPRM
-  apps/apex_hil_demo/tprm/master_1khz.tprm
-)
+apex_add_deployment(NAME ApexHilDemo EXEC ApexHilDemo TPRM apps/apex_hil_demo/tprm/master_1khz.tprm)

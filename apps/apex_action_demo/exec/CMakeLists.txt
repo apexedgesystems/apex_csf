@@ -40,5 +40,5 @@ apex_add_app(
 
 # Deployment: single executive.
 apex_add_deployment(
-  NAME ApexActionDemo EXECS ApexActionDemo TPRM apps/apex_action_demo/tprm/master.tprm
+  NAME ApexActionDemo EXEC ApexActionDemo TPRM apps/apex_action_demo/tprm/master.tprm
 )

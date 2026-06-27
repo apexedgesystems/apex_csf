@@ -32,4 +32,4 @@ apex_add_app(
 )
 
 # Deployment: single executive (no TPRM).
-apex_add_deployment(NAME ApexTimeDemo EXECS ApexTimeDemo)
+apex_add_deployment(NAME ApexTimeDemo EXEC ApexTimeDemo)

@@ -84,5 +84,5 @@ endif ()
 
 # Deployment: single executive with the Thor-tuned TPRM config.
 apex_add_deployment(
-  NAME ApexEdgeDemo EXECS ApexEdgeDemo TPRM apps/apex_edge_demo/tprm/master_thor.tprm
+  NAME ApexEdgeDemo EXEC ApexEdgeDemo TPRM apps/apex_edge_demo/tprm/master_thor.tprm
 )

@@ -27,3 +27,7 @@ apex_add_app(
   REQUIRES
   POSIX
 )
+
+# Deployment: the supervisor owns no apex filesystem -- it launches and monitors
+# an executive in another deployment across filesystems. No TPRM.
+apex_add_deployment(NAME ApexWatchdog EXEC ApexWatchdog)

@@ -21,5 +21,18 @@ elseif (NOT APEX_PLATFORM_BAREMETAL)
   add_subdirectory(exec)
   add_subdirectory(watchdog)
   add_subdirectory(test/plugin)
+
+  # Supervised stack: ship the executive and its watchdog as two isolated
+  # filesystems plus the operating doc, in one artifact. The watchdog supervises
+  # the executive across deployments (./ApexWatchdog/run.sh -- ../ApexHilDemo).
+  apex_add_bundle(
+    NAME
+    ApexHilSupervised
+    DEPLOYMENTS
+    ApexHilDemo
+    ApexWatchdog
+    FILES
+    apps/apex_hil_demo/docs/HOW_TO_RUN.md
+  )
 endif ()
 # Other bare-metal platforms: skip (HIL demo only supports STM32 firmware)
