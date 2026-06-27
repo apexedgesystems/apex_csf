@@ -27,7 +27,7 @@ ssh kalex@192.168.1.119 'sudo rm -rf ~/apex_c2_demo && mkdir ~/apex_c2_demo && \
 
 # 5. Start on Pi
 ssh kalex@192.168.1.119 'cd ~/apex_c2_demo/rpi && \
-  sudo ./run.sh ApexOpsDemo </dev/null &>/tmp/opsdemo.log &'
+  sudo ./run.sh </dev/null &>/tmp/opsdemo.log &'
 
 # 6. Verify
 ssh kalex@192.168.1.119 'pgrep ApexOpsDemo && sudo ss -tlnp | grep 9000'
