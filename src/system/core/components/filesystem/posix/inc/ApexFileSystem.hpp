@@ -46,6 +46,9 @@ static constexpr std::string_view FS_LOG_FN = "filesystem.log";
 /** @brief Dedicated swap log filename (created in LOG_DIR/core/). */
 static constexpr std::string_view SWAP_LOG_FN = "swap.log";
 
+/** @brief Lockfile in the filesystem root; enforces one executive per filesystem. */
+static constexpr std::string_view FS_LOCK_FN = ".apex_fs.lock";
+
 /** @brief Maximum archived component logs per component (FIFO pruning). */
 static constexpr std::size_t MAX_SWAP_ARCHIVES = 5;
 
@@ -227,6 +230,11 @@ private:
 
   bool autoCleanupOnDestroy_{false};
   std::filesystem::path customArchivePath_{};
+
+  /// Exclusive advisory lock fd on <root>/.apex_fs.lock, held for this object's
+  /// lifetime so only one executive can own a filesystem root. -1 when unheld.
+  /// Released automatically on close and on process exit (including crash).
+  int rootLockFd_{-1};
 };
 
 } // namespace filesystem

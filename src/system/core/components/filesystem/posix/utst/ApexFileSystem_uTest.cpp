@@ -419,3 +419,39 @@ TEST_F(ApexFileSystemTest, ArchiveUnderLogs) {
   EXPECT_TRUE(FILENAME.ends_with(".tar")) << "Got: " << FILENAME;
   EXPECT_EQ(FILENAME.size(), 24u); // "myfs_" (5) + "YYYYMMDD-HHMMSS" (15) + ".tar" (4)
 }
+
+/* ----------------------------- Filesystem-root lock ----------------------------- */
+
+/** @test A second executive on the same fs-root is refused (one owner per fs). */
+TEST_F(ApexFileSystemTest, SecondExecutiveOnSameRootIsRefused) {
+  ApexFileSystem first(root_);
+  ASSERT_EQ(first.init(), static_cast<std::uint8_t>(Status::SUCCESS));
+
+  // A second filesystem on the same root must fail fast, not corrupt state.
+  ApexFileSystem second(root_);
+  EXPECT_EQ(second.init(), static_cast<std::uint8_t>(Status::ERROR_FS_LOCKED));
+}
+
+/** @test The lock releases when the owner is destroyed, so a fresh owner can init. */
+TEST_F(ApexFileSystemTest, LockReleasesWhenOwnerDestroyed) {
+  {
+    ApexFileSystem first(root_);
+    ASSERT_EQ(first.init(), static_cast<std::uint8_t>(Status::SUCCESS));
+  } // first destroyed -> lock released (mirrors a watchdog restarting the child)
+
+  ApexFileSystem second(root_);
+  EXPECT_EQ(second.init(), static_cast<std::uint8_t>(Status::SUCCESS));
+}
+
+/** @test Locks are per-root: a different filesystem root is independently lockable. */
+TEST_F(ApexFileSystemTest, DifferentRootsLockIndependently) {
+  ApexFileSystem first(root_);
+  ASSERT_EQ(first.init(), static_cast<std::uint8_t>(Status::SUCCESS));
+
+  const fs::path OTHER = uniqTempDir("apexfs_root_other");
+  ApexFileSystem second(OTHER);
+  EXPECT_EQ(second.init(), static_cast<std::uint8_t>(Status::SUCCESS));
+
+  std::error_code ec;
+  fs::remove_all(OTHER, ec);
+}

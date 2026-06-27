@@ -20,6 +20,8 @@ const char* toString(Status s) noexcept {
     return "ERROR_FS_TAR_MOVE_FAIL";
   case Status::ERROR_INVALID_FS:
     return "ERROR_INVALID_FS";
+  case Status::ERROR_FS_LOCKED:
+    return "ERROR_FS_LOCKED";
   case Status::EOE_FILESYSTEM:
     return "EOE_FILESYSTEM";
   }
