@@ -5,7 +5,7 @@
  * @brief Vehicle-level 6-DOF step that consumes the compositional aggregates.
  *
  * `rigid_body` is the lowest layer and intentionally does not depend on
- * `mass_properties` or `force_moment`. This module sits one level up,
+ * `mass_properties` or `wrench`. This module sits one level up,
  * includes all three, and offers `vehicle::step` -- a 6-DOF step that takes
  * the aggregated mass properties and net force/moment produced by the
  * composition layers, so a caller that has built a vehicle from sources can
@@ -16,7 +16,7 @@
  *   mass.add(fuelTank);
  *   const auto mp = mass.result();
  *
- *   force_moment::ForceMomentAccumulator loads;
+ *   wrench::WrenchAccumulator loads;
  *   loads.add(engine);
  *   loads.add(aero);
  *   const auto fm = loads.resultAbout(mp.cg_m);
@@ -28,7 +28,7 @@
  * equations; that is the caller's responsibility.
  */
 
-#include "src/sim/dynamics/force_moment/inc/ForceMoment.hpp"
+#include "src/sim/dynamics/wrench/inc/Wrench.hpp"
 #include "src/sim/dynamics/mass_properties/inc/MassProperties.hpp"
 #include "src/sim/dynamics/rigid_body/inc/RigidBody6DOF.hpp"
 
@@ -51,8 +51,8 @@ namespace sim::dynamics::vehicle {
  * @param dt     step (s)
  */
 inline void step(rigid_body::RigidBody6DOFState& state,
-                 const mass_properties::AggregateMassProperties& mp,
-                 const force_moment::ForceMoment& fm, double t, double dt) {
+                 const mass_properties::AggregateMassProperties& mp, const wrench::Wrench& fm,
+                 double t, double dt) {
   const rigid_body::Vec3 force = fm.force;
   const rigid_body::Vec3 moment = fm.moment;
   rigid_body::stepRigidBody6DOF(

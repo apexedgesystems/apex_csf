@@ -20,7 +20,7 @@ models.
    - [Integrators](#integrators) - ForwardEuler, RK4
    - [Rigid Body](#rigid-body) - PointMass3D, RigidBody6DOF
    - [Mass Properties](#mass-properties) - MassAccumulator, FuelTankMassSource
-   - [Force / Moment](#force--moment) - ForceMomentAccumulator, ForceMomentSource
+   - [Wrench](#wrench) - WrenchAccumulator, WrenchSource
    - [Disturbance](#disturbance) - DrydenTurbulence
    - [Vehicle Step](#vehicle-step) - aggregate-consuming 6-DOF overload
 5. [Real-Time Considerations](#real-time-considerations)
@@ -38,7 +38,7 @@ models.
 | How do I solve `I * omega_dot = b` for an aircraft inertia tensor? | `InertiaTensor::solve`                |
 | How do I combine per-part mass / CG / inertia into a whole body?   | `MassAccumulator`                     |
 | How does mass / CG / inertia change as fuel burns?                 | `FuelTankMassSource`                  |
-| How do I sum forces-at-points into a net force + moment?           | `ForceMomentAccumulator`              |
+| How do I sum forces-at-points into a net force + moment?           | `WrenchAccumulator`                   |
 | How do I step 6-DOF straight from the aggregates?                  | `vehicle::step(state, mp, fm, t, dt)` |
 | How do I inject realistic atmospheric turbulence?                  | `DrydenTurbulence`                    |
 | How do I keep turbulence reproducible across runs?                 | `DrydenRng` (seeded)                  |
@@ -50,7 +50,7 @@ models.
 | `integrators/`     | `sim_dynamics_integrators`     | `stepForwardEuler` (1st order), `stepRK4` (4th order) -- generic ODE step functions templated on a `State` with `operator+` / `operator*`  |
 | `rigid_body/`      | `sim_dynamics_rigid_body`      | `PointMass3D` (6-state translational), `RigidBody6DOF` (13-state: position, body velocity, quaternion attitude, body angular velocity)     |
 | `mass_properties/` | `sim_dynamics_mass_properties` | `MassAccumulator` (parallel-axis whole-body mass props), `MassPropsSource` / `StaticMassSource` / `FuelTankMassSource` (composition layer) |
-| `force_moment/`    | `sim_dynamics_force_moment`    | `ForceMomentAccumulator` (net force + moment about a point), `ForceMomentSource` / `StaticForceMomentSource` / `DynamicForceMomentSource`  |
+| `wrench/`          | `sim_dynamics_wrench`          | `WrenchAccumulator` (net force + moment about a point), `WrenchSource` / `StaticWrenchSource` / `DynamicWrenchSource`                      |
 | `disturbance/`     | `sim_dynamics_disturbance`     | `DrydenTurbulence` -- 3-axis MIL-HDBK-1797 gust model                                                                                      |
 | `vehicle/`         | `sim_dynamics_vehicle`         | `vehicle::step` -- the assembled vehicle: 6-DOF step consuming the mass + force/moment aggregates (`VehicleStep.hpp`)                      |
 
@@ -156,15 +156,15 @@ auto vehicle = mass.result();           // whole-body mass props
 // vehicle.mass_kg, vehicle.cg_m, vehicle.inertia_about_cg
 ```
 
-### Force / Moment
+### Wrench
 
-**Header:** `force_moment/inc/ForceMoment.hpp`
-**Purpose:** Compositional force/moment aggregation -- the symmetric
-pattern to mass properties.
+**Header:** `wrench/inc/Wrench.hpp`
+**Purpose:** Compositional wrench (force + couple) aggregation -- the
+symmetric pattern to mass properties.
 
-`ForceMomentAccumulator` stacks `AppliedForce`s (each a force at a point,
-plus an optional pure couple) and/or `ForceMomentSource`s; `resultAbout(about)`
-combines them into a net `ForceMoment` (force + moment about a reference
+`WrenchAccumulator` stacks `AppliedWrench`s (each a force at a point,
+plus an optional pure couple) and/or `WrenchSource`s; `resultAbout(about)`
+combines them into a net `Wrench` (force + moment about a reference
 point):
 
 ```
@@ -174,16 +174,16 @@ moment = sum( part.moment + (part.point_m - about) x part.force )
 
 A force applied off the reference point induces a moment `r x F`; pure
 couples add directly and are point-independent. As with mass properties, a
-source layer sits on top: `ForceMomentSource::current()` reports the applied
-load now, `StaticForceMomentSource` wraps a fixed load, `DynamicForceMomentSource`
+source layer sits on top: `WrenchSource::current()` reports the applied
+load now, `StaticWrenchSource` wraps a fixed load, `DynamicWrenchSource`
 is the base for varying loads (a throttled engine, an aero force).
 `resultAbout()` samples each source afresh on every call. Take the moment
 about the same CG used for the inertia tensor to feed Euler's equations
 consistently.
 
 ```cpp
-StaticForceMomentSource engine; engine.f = {Vec3{thrust,0,0}, cg, Vec3{}};
-ForceMomentAccumulator loads;
+StaticWrenchSource engine; engine.f = {Vec3{thrust,0,0}, cg, Vec3{}};
+WrenchAccumulator loads;
 loads.add(engine);
 loads.add(aero);
 auto fm = loads.resultAbout(mp.cg_m);
@@ -209,7 +209,7 @@ airspeed) when `V < 1 m/s` or `dt <= 0`.
 **Purpose:** Step 6-DOF straight from the compositional aggregates.
 
 `rigid_body` deliberately depends on neither `mass_properties` nor
-`force_moment`. The `vehicle` module sits above all three (the assembled
+`wrench`. The `vehicle` module sits above all three (the assembled
 vehicle) and adds `vehicle::step`, taking the aggregated mass properties and
 net force/moment, forwarding to the callback-based step with `force = fm.force`,
 `moment = fm.moment`, `mass = mp.mass_kg`, `I = mp.inertia_about_cg`.
@@ -220,7 +220,7 @@ mass.add(dry);
 mass.add(tank);
 const auto mp = mass.result();
 
-force_moment::ForceMomentAccumulator loads;
+wrench::WrenchAccumulator loads;
 loads.add(engine);
 loads.add(aero);
 const auto fm = loads.resultAbout(mp.cg_m);
@@ -251,7 +251,7 @@ number of contributors/loads (figures for a five-part vehicle):
 
 - `MassAccumulator::result` -- ~0.11 us (~9 M stacks/s); single-pass
   parallel-axis combine, no temporary container
-- `ForceMomentAccumulator::resultAbout` -- ~0.09 us (~11 M stacks/s)
+- `WrenchAccumulator::resultAbout` -- ~0.09 us (~11 M stacks/s)
 - full composed tick (re-stack mass + forces, then one 6-DOF step) -- ~0.49 us
   (~2 M ticks/s)
 
