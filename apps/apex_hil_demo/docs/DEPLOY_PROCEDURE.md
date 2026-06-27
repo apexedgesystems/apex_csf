@@ -44,15 +44,17 @@ ssh kalex@raspberrypi.local 'sudo st-flash reset'
 #     CRITICAL: </dev/null prevents stdin CLI reader from getting garbage
 #     when SSH disconnects (p=PAUSE, q=QUIT).
 
-# Direct (no watchdog):
+# Direct (executive only): deploy the ApexHilDemo deployment into ~/apex.
 ssh kalex@raspberrypi.local 'cd ~/apex && \
   sudo rm -rf logs tlm rts ats db swap_history active_bank bank_b system.log profile.log .apex_fs && \
-  sudo ./run.sh ApexHilDemo --skip-cleanup </dev/null &'
+  sudo ./run.sh --skip-cleanup </dev/null &'
 
-# With watchdog (auto-restart on crash/hang):
-ssh kalex@raspberrypi.local 'cd ~/apex && \
-  sudo rm -rf logs tlm rts ats db swap_history active_bank bank_b system.log profile.log .apex_fs && \
-  sudo ./run.sh apex_watchdog -- ApexHilDemo --skip-cleanup </dev/null &'
+# Supervised (auto-restart on crash/hang): the watchdog is its own deployment,
+# shipped alongside the executive in the ApexHilSupervised bundle
+# (~/apex/ApexHilDemo/ + ~/apex/ApexWatchdog/). The watchdog supervises the
+# executive across filesystems (an inherited heartbeat pipe, not shared state):
+ssh kalex@raspberrypi.local 'cd ~/apex/ApexWatchdog && \
+  sudo ./run.sh --max-crashes 5 -- ../ApexHilDemo --skip-cleanup </dev/null &'
 
 # 11. Wait for system to start, then verify
 sleep 10
@@ -63,7 +65,7 @@ PYTHONPATH=tools/py/src python3 apps/apex_hil_demo/scripts/health.py --host rasp
 
 # 13. Stop via signal
 ssh kalex@raspberrypi.local 'sudo kill $(pgrep ApexHilDemo)'      # direct mode
-ssh kalex@raspberrypi.local 'sudo kill $(pgrep apex_watchdog)'    # watchdog mode
+ssh kalex@raspberrypi.local 'sudo kill $(pgrep ApexWatchdog)'     # supervised mode (kills the watchdog)
 
 # 14. Verify logs
 ssh kalex@raspberrypi.local 'sudo cat ~/apex/system.log'
@@ -96,14 +98,27 @@ empty non-blocking reads and is not a problem.
 
 ## Filesystem After Deploy + Run
 
+A deployment is one filesystem owned by exactly one executive. Direct mode
+deploys just the ApexHilDemo deployment:
+
+```
+~/apex/                          # the ApexHilDemo deployment
+  run.sh                       # launch script
+  bank_a/bin/ApexHilDemo       # the single executive (one --fs-root owner)
+  bank_a/libs/*.so*            # shared libraries (self-located via $ORIGIN RPATH)
+  bank_a/tprm/master.tprm     # TPRM config
+  bank_b/{bin,libs,tprm}/     # inactive bank (created by doInit; staging for OTA)
+  active_bank                  # active-bank marker
+  .apex_fs.lock                # single-owner lock (refuses a second executive)
+  system.log                   # system log
+```
+
+Supervised mode deploys the ApexHilSupervised bundle: two sibling deployments,
+each its own filesystem (the watchdog owns no config, so no `tprm`):
+
 ```
 ~/apex/
-  run.sh                       # launch script
-  bank_a/bin/ApexHilDemo       # executive binary
-  bank_a/bin/apex_watchdog     # watchdog supervisor
-  bank_a/libs/*.so*            # shared libraries
-  bank_a/tprm/master.tprm     # TPRM config
-  bank_b/{bin,libs,tprm}/     # inactive bank (created by doInit)
-  active_bank                  # marker file
-  system.log                   # system log
+  ApexHilDemo/   run.sh  bank_a/{bin/ApexHilDemo, libs, tprm}  ...
+  ApexWatchdog/  run.sh  bank_a/{bin/ApexWatchdog, libs}       ...
+  HOW_TO_RUN.md
 ```

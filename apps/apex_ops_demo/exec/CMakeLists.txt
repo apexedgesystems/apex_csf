@@ -37,3 +37,6 @@ apex_add_app(
   REQUIRES
   POSIX
 )
+
+# Deployment: single executive.
+apex_add_deployment(NAME ApexOpsDemo EXEC ApexOpsDemo TPRM apps/apex_ops_demo/tprm/master.tprm)

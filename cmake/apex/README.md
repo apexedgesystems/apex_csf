@@ -122,8 +122,9 @@ apex_add_app(
 )
 ```
 
-Apps output to `bin/` and automatically get UPX compression enabled. Each app
-is registered for release packaging via `apex_finalize_packages()`.
+Apps output to `bin/` and automatically get UPX compression enabled. Defining an
+app does not, by itself, make it deployable -- declare a deployment with
+`apex_add_deployment()` to package it (see [Packaging](#packaging)).
 
 ### Tools (Internal Utilities)
 
@@ -311,18 +312,88 @@ reads this file and invokes `apex_data_gen` to produce JSON struct dictionaries.
 
 ## Packaging
 
-Apps registered via `apex_add_app()` get `package_<APP>` custom targets created
-by `apex_finalize_packages()`. Each target invokes `pkg_resolve.sh` (shell
-script) to:
+A **deployment** is one apex filesystem -- `bank_a/{bin,libs,tprm}` + a generic
+`run.sh` -- owned by **exactly one executive**. That is the safety invariant:
+one filesystem, one `--fs-root` owner. Two executives in one filesystem would
+collide on `system.log`, the banks, and telemetry, so the model does not let you
+express that -- `EXEC` is singular.
 
-1. BFS-walk the binary's ELF `DT_NEEDED` entries via `readelf`
-2. Resolve shared library dependencies against the build `lib/` directory
-3. Stage `bin/<APP>` + `lib/*.so` (with symlink chains) into `packages/<APP>/`
-4. Include TPRM configuration and generate a launch script (`run.sh`)
-5. Create a deployable tarball
+```cmake
+apex_add_deployment(
+  NAME ApexHilDemo
+  EXEC ApexHilDemo                                # exactly one executive
+  TPRM apps/apex_hil_demo/tprm/master_1khz.tprm   # optional
+)
+```
 
-TPRM paths are registered per-app via `apex_set_app_tprm()`. These targets
-are consumed by `mk/release.mk` for multi-platform release packaging.
+`apex_finalize_packages()` (called once at the end of the root `CMakeLists.txt`)
+turns each declared deployment into a `package_<NAME>` target:
+
+1. Derive the executive's shared-library closure from the **build graph** (its
+   transitive link targets), not a post-hoc `readelf` walk -- deterministic and
+   cross-architecture-trivial.
+2. `install(COMPONENT <NAME>)` rules stage the executive, its closure (runtime
+   symlink chains), the TPRM, and the launcher into the canonical
+   `bank_a/{bin,libs,tprm}` + `run.sh` layout.
+3. `package_<NAME>` runs `cmake --install --component <NAME>` into
+   `packages/<NAME>` and tars it.
+
+Deployed binaries carry a relative RPATH -- `$ORIGIN/../libs` on the executive,
+`$ORIGIN` on each shared library -- so a deployment is **self-contained**: every
+binary finds its own libs with no `LD_LIBRARY_PATH`, and one deployment can
+launch an executive in another.
+
+Defining an executable with `apex_add_app()` does not, by itself, make it a
+deployment -- packaging is declared explicitly. `mk/release.mk` consumes the
+`package_<NAME>` targets for multi-platform release packaging.
+
+### Supervisors (the watchdog)
+
+A supervisor like `ApexWatchdog` owns **no** filesystem -- it `exec`s and
+heartbeat-monitors an executive (via an inherited pipe, not the filesystem). So
+it is its own single-exec deployment, and it launches the executive of another
+deployment across filesystems:
+
+```bash
+./ApexWatchdog/run.sh --max-crashes 5 -- ../ApexHilDemo   # supervise a sibling
+```
+
+`run.sh` chooses the mode by the presence of `--`: without it, run this
+deployment's executive directly; with it, this deployment's executive is a
+supervisor and the token after `--` is the target deployment to launch.
+
+### Bundles
+
+`apex_add_bundle()` is the level above a deployment: it consolidates several
+deployments + custom tools + arbitrary support files (docs, configs) into one
+shippable tarball -- for a system that ships more than one apex filesystem at
+once.
+
+```cmake
+apex_add_bundle(
+  NAME        GroundStation
+  DEPLOYMENTS ApexOpsDemo ApexActionDemo   # each its own apex filesystem
+  TOOLS       my_cli_tool                  # extra executables (+ their closures)
+  FILES       docs/OPERATIONS.md           # arbitrary support files/dirs
+)
+ninja package_GroundStation
+```
+
+`package_<NAME>` stages each deployment into its own subdir (reusing that
+deployment's component), tools under `tools/{bin,libs}`, and files at the bundle
+root, then tars it:
+
+```
+GroundStation/ApexOpsDemo/run.sh + bank_a/{bin,libs,tprm}
+GroundStation/ApexActionDemo/run.sh + bank_a/{bin,libs,tprm}
+GroundStation/tools/bin/my_cli_tool + tools/libs/*.so*
+GroundStation/docs/OPERATIONS.md
+```
+
+An executive and its watchdog are **two** deployments (two filesystems), shipped
+together in a bundle; the watchdog supervises the executive across them. A bundle
+is for distinct filesystems shipped as one artifact -- never for putting two
+executives in one filesystem.
 
 ## Cross-Compilation
 

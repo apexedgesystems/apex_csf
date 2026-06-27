@@ -31,7 +31,7 @@ scp apps/apex_action_demo/tprm/rts/*.rts kalex@192.168.1.119:~/apex_action/bank_
 
 # 7. Start on Pi
 ssh kalex@192.168.1.119 'cd ~/apex_action && \
-  sudo ./run.sh ApexActionDemo </dev/null &>/tmp/apex_action.log &'
+  sudo ./run.sh </dev/null &>/tmp/apex_action.log &'
 
 # 8. Verify
 ssh kalex@192.168.1.119 'pgrep ApexActionDemo && sudo ss -tlnp | grep 9000'

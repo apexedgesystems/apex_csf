@@ -37,7 +37,7 @@ rsync -a build/release/ApexEdgeDemo/jetson/ kalex@192.168.1.40:~/ApexEdgeDemo/
 #    CRITICAL: </dev/null prevents stdin CLI reader from getting garbage
 ssh kalex@192.168.1.40 'cd ~/ApexEdgeDemo && \
   rm -rf logs tlm db swap_history active_bank bank_b system.log profile.log heartbeat.csv .apex_fs && \
-  timeout 45 ./run.sh ApexEdgeDemo --shutdown-after 15 --skip-cleanup </dev/null'
+  timeout 45 ./run.sh --shutdown-after 15 --skip-cleanup </dev/null'
 
 # 8. Verify results
 ssh kalex@192.168.1.40 'cd ~/ApexEdgeDemo && \
@@ -54,7 +54,7 @@ ssh kalex@192.168.1.40 'cd ~/ApexEdgeDemo && \
 # 9. Long-running soak test (run in background)
 ssh kalex@192.168.1.40 'cd ~/ApexEdgeDemo && \
   rm -rf logs tlm db swap_history active_bank bank_b system.log profile.log heartbeat.csv .apex_fs && \
-  nohup ./run.sh ApexEdgeDemo --skip-cleanup </dev/null >stdout.log 2>&1 &'
+  nohup ./run.sh --skip-cleanup </dev/null >stdout.log 2>&1 &'
 
 # 10. Stop soak test
 ssh kalex@192.168.1.40 'kill $(pgrep ApexEdgeDemo)'

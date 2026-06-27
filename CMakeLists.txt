@@ -435,8 +435,8 @@ endif ()
 # ------------------------------------------------------------------------------
 # Packaging (package_<APP> targets)
 # ------------------------------------------------------------------------------
-# Create package_<APP> custom targets. Each target runs pkg_resolve.sh for
-# ELF dependency resolution, TPRM staging, and tarball creation.
+# Create package_<APP> custom targets. Each stages a deployable bundle via CMake
+# install components (graph-derived lib closure + TPRM + run.sh) and tars it.
 if (NOT APEX_PLATFORM_BAREMETAL)
   apex_finalize_packages()
 endif ()

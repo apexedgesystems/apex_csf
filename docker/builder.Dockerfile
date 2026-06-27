@@ -48,9 +48,9 @@ COPY --chown=${HOST_UID}:${HOST_GID} . .
 # CMakeFiles, _deps, and ninja state. Running it inside the same RUN keeps the
 # fat tree out of the layer entirely: the exported image, the platform
 # tarballs (make artifact-<t>), and final.Dockerfile's collection all see only
-# what someone on the platform needs to run. App-grade deployables remain the
-# pkg_resolve flow (make release APP=...); this is a subtractive filter, not
-# packaging.
+# what someone on the platform needs to run. App-grade deployables come from the
+# make release APP=... packaging (CMake install components); this is a
+# subtractive filter, not packaging.
 RUN --mount=type=cache,target=/ccache,uid=${HOST_UID},gid=${HOST_GID} \
     { make distclean 2>/dev/null || true; } && \
     eval "${BUILD_CMD}" && \

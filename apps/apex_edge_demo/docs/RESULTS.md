@@ -177,7 +177,7 @@ rsync -a build/release/ApexEdgeDemo/jetson/ kalex@192.168.1.40:~/ApexEdgeDemo/
 # Run on Thor (runs until killed)
 ssh kalex@192.168.1.40 'cd ~/ApexEdgeDemo && \
   sudo rm -rf logs tlm db swap_history system.log heartbeat.csv .apex_fs && \
-  sudo ./run.sh ApexEdgeDemo --skip-cleanup </dev/null'
+  sudo ./run.sh --skip-cleanup </dev/null'
 
 # Analyze
 python3 apps/apex_edge_demo/scripts/analyze_soak.py \

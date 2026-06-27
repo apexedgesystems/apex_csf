@@ -81,3 +81,8 @@ endif ()
 if (TARGET sim_gpu_compute_stream_compact_cuda)
   target_link_libraries(ApexEdgeDemo PRIVATE sim_gpu_compute_stream_compact_cuda)
 endif ()
+
+# Deployment: single executive with the Thor-tuned TPRM config.
+apex_add_deployment(
+  NAME ApexEdgeDemo EXEC ApexEdgeDemo TPRM apps/apex_edge_demo/tprm/master_thor.tprm
+)
