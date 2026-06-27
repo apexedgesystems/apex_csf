@@ -164,7 +164,7 @@ jobs:
       # the only ones a brand-new PR's first push can see (ccache is
       # content-addressed, so a partial-match cache only helps, never hurts).
       - name: Restore ccache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .ccache
           key: ccache-build-test-${{ github.sha }}
@@ -251,7 +251,7 @@ jobs:
           service: build-base
           rebuild: ${{ needs.changes.outputs.docker }}
       - name: Restore ccache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .ccache
           key: ccache-sanitize-${{ github.sha }}

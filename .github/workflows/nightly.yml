@@ -73,7 +73,7 @@ jobs:
       # fromJSON -- substring matching would make tsan match rtsan.
       - name: Restore ccache
         if: contains(fromJSON(needs.set-matrix.outputs.ccache), matrix.check)
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .ccache
           key: ccache-nightly-${{ matrix.check }}-${{ github.sha }}
@@ -167,7 +167,7 @@ jobs:
           docker tag "$REGISTRY/$DEV:latest" "$DEV"
 
       - name: Restore builder ccache
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .ccache
           key: ccache-builder-${{ matrix.builder }}-${{ github.sha }}
