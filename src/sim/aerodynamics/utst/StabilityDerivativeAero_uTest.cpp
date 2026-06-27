@@ -44,6 +44,7 @@ constexpr double kSmallAlpha = 0.04; // rad (~2.3 deg)
 
 /* ----------------------------- Safe-bail at low V ----------------------------- */
 
+/** @test Below the 1 m/s linearization floor, all forces and moments are zero. */
 TEST(StabilityDerivativeAeroTest, BailsCleanlyBelowOneMetersPerSecond) {
   const StabilityDerivativeAeroParams p{};
   // 0.5 m/s along body x - below the 1 m/s linearization floor.
@@ -59,6 +60,10 @@ TEST(StabilityDerivativeAeroTest, BailsCleanlyBelowOneMetersPerSecond) {
 
 /* ----------------------------- Level cruise sanity ----------------------------- */
 
+/**
+ * @test In small-alpha, zero-beta level cruise the lift matches the closed form
+ * L = q*S*CL with CL = CL_0 + CL_a*alpha, and the side force vanishes.
+ */
 TEST(StabilityDerivativeAeroTest, LevelCruiseLiftMatchesClosedForm) {
   const StabilityDerivativeAeroParams p{};
   // u along body x, no body-y, small w gives small alpha; beta = 0.
@@ -88,6 +93,10 @@ TEST(StabilityDerivativeAeroTest, LevelCruiseLiftMatchesClosedForm) {
 
 /* ----------------------------- Static stability signs ----------------------------- */
 
+/**
+ * @test Positive alpha yields a negative pitching moment (Cm_a < 0,
+ * longitudinal static stability) while lift grows with alpha.
+ */
 TEST(StabilityDerivativeAeroTest, PositiveAlphaProducesNegativePitchMoment) {
   // Cm_a < 0  =>  longitudinal static stability.
   const StabilityDerivativeAeroParams p{};
@@ -102,6 +111,11 @@ TEST(StabilityDerivativeAeroTest, PositiveAlphaProducesNegativePitchMoment) {
   EXPECT_GT(rp.L_N, r0.L_N);                     // lift grows with alpha
 }
 
+/**
+ * @test Positive sideslip yields weathervane stability: Cn_b > 0 (nose turns
+ * into the wind), Cl_b < 0 (raises the upwind wing), and CY_b < 0 (side force
+ * opposes the slip).
+ */
 TEST(StabilityDerivativeAeroTest, PositiveBetaProducesWeathervaneStability) {
   // Cn_b > 0 => positive yawing moment with positive sideslip (nose turns
   // into the wind => stable). Cl_b < 0 => negative roll (raises upwind wing).
@@ -120,6 +134,10 @@ TEST(StabilityDerivativeAeroTest, PositiveBetaProducesWeathervaneStability) {
 
 /* ----------------------------- Damping signs ----------------------------- */
 
+/**
+ * @test Roll, pitch, and yaw rate damping moments each oppose their rate
+ * (Cl_p, Cm_q, Cn_r < 0).
+ */
 TEST(StabilityDerivativeAeroTest, RollPitchYawDampingMomentsOpposeRates) {
   const StabilityDerivativeAeroParams p{};
   const double V = kV_cruise;
@@ -143,6 +161,10 @@ TEST(StabilityDerivativeAeroTest, RollPitchYawDampingMomentsOpposeRates) {
 
 /* ----------------------------- Control surfaces ----------------------------- */
 
+/**
+ * @test Elevator deflection moves the pitching moment monotonically: positive
+ * de gives a more negative (nose-down) moment and also adds lift via CL_de.
+ */
 TEST(StabilityDerivativeAeroTest, ElevatorMovesPitchMonotonically) {
   // Positive de (TE down) => negative pitching moment.
   const StabilityDerivativeAeroParams p{};
@@ -162,6 +184,7 @@ TEST(StabilityDerivativeAeroTest, ElevatorMovesPitchMonotonically) {
   EXPECT_GT(rp.L_N, r0.L_N); // de also adds lift via CL_de
 }
 
+/** @test Positive aileron deflection produces a positive roll moment (right-wing-down). */
 TEST(StabilityDerivativeAeroTest, AileronProducesPositiveRollMoment) {
   // Positive da => positive roll moment (right-wing-down).
   const StabilityDerivativeAeroParams p{};
@@ -174,6 +197,7 @@ TEST(StabilityDerivativeAeroTest, AileronProducesPositiveRollMoment) {
   EXPECT_GT(r.moment_body.x, r0.moment_body.x);
 }
 
+/** @test Positive rudder deflection (Cn_dr < 0) produces a negative yaw moment (nose left). */
 TEST(StabilityDerivativeAeroTest, RudderProducesNegativeYawMoment) {
   // Positive dr (TE-left) => Cn_dr<0 => negative yaw moment (nose left).
   const StabilityDerivativeAeroParams p{};
@@ -188,6 +212,7 @@ TEST(StabilityDerivativeAeroTest, RudderProducesNegativeYawMoment) {
 
 /* ----------------------------- Wind->body transform ----------------------------- */
 
+/** @test At alpha=beta=0 the wind->body rotation is identity: F_body = (-D, +Y, -L). */
 TEST(WindToBodyForcesTest, IdentityAtAlphaBetaZero) {
   // At alpha=beta=0, the rotation is identity; F_body = (-D, +Y, -L).
   const Vec3 f = windToBodyForces(/*L*/ 100.0, /*D*/ 50.0, /*Y*/ 30.0, /*alpha*/ 0.0, /*beta*/ 0.0);
@@ -196,6 +221,10 @@ TEST(WindToBodyForcesTest, IdentityAtAlphaBetaZero) {
   EXPECT_NEAR(f.z, -100.0, 1e-12);
 }
 
+/**
+ * @test With positive alpha the lift vector tilts forward in the body frame:
+ * Fx_body = -D*cos(alpha) + L*sin(alpha).
+ */
 TEST(WindToBodyForcesTest, PositiveAlphaTiltsLiftIntoBodyXForward) {
   // With +alpha, the lift vector tilts forward in the body frame:
   // Fx_body = -D*cos a + L*sin a.

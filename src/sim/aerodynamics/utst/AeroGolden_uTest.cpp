@@ -89,6 +89,10 @@ TEST(AeroGoldenTest, FlatPlateForwardLiftDrag) {
   EXPECT_NEAR(D, 2.07e4, 100.0);  // computed 2.0703e4
 }
 
+/**
+ * @test windToBodyForces round-trips body-axis (N', A') inputs to machine
+ * precision: rotating body->wind and back recovers (-A', 0, -N').
+ */
 TEST(AeroGoldenTest, WindToBodyRoundTripsExactly) {
   // Self-consistent round-trip: take body-axis (N', A') inputs, rotate
   // body->wind via the formula, then feed the unrounded wind-axis result back
@@ -152,6 +156,10 @@ TEST(AeroGoldenTest, FiniteWingLiftSlope) {
   EXPECT_NEAR(a_per_deg, 0.0857, 0.001); // 0.0857/deg
 }
 
+/**
+ * @test Finite-wing lift and induced drag at alpha=7 deg (alpha_L0 = -1.3 deg):
+ * CL = a*alpha_eff = 0.712 and CD_i = CL^2*(1+delta)/(pi*AR) = 0.0212.
+ */
 TEST(AeroGoldenTest, FiniteWingLiftAndInducedDrag) {
   const double a0 = 6.188;
   const double AR = 8.0;

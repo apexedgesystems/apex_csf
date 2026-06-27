@@ -35,6 +35,7 @@ constexpr double kRho_12km = 0.3045;
 
 /* ----------------------------- Idle floors ----------------------------- */
 
+/** @test At throttle=0 both spools decay to their idle floors (N1_idle, N2_idle). */
 TEST(Turbofan2SpoolTest, ThrottleZeroDecaysToIdleFloors) {
   Turbofan2SpoolState s;
   s.N1_pct = 80.0;
@@ -51,6 +52,7 @@ TEST(Turbofan2SpoolTest, ThrottleZeroDecaysToIdleFloors) {
 
 /* ----------------------------- Full throttle settle ----------------------------- */
 
+/** @test At throttle=1.0 both spools settle to 100%. */
 TEST(Turbofan2SpoolTest, ThrottleFullSettlesAtHundredPercent) {
   Turbofan2SpoolState s; // starts at idle (25, 60)
   const Turbofan2SpoolParams p;
@@ -64,6 +66,10 @@ TEST(Turbofan2SpoolTest, ThrottleFullSettlesAtHundredPercent) {
 
 /* ----------------------------- Spool time constants ----------------------------- */
 
+/**
+ * @test On a step throttle input, the 63.2% rise time of N2 matches its
+ * first-order time constant tau_N2.
+ */
 TEST(Turbofan2SpoolTest, N2RiseTimeMatchesTauN2) {
   // First-order lag: 63.2% rise time of a step input = tau.
   // Step from idle (60% N2) to throttle=1.0 (target 100%): swing = 40%.
@@ -87,6 +93,7 @@ TEST(Turbofan2SpoolTest, N2RiseTimeMatchesTauN2) {
   EXPECT_NEAR(t_at_85_3, 0.5, 0.075);
 }
 
+/** @test With its larger time constant, N1 lags N2 over a spool-up (N2 rises faster). */
 TEST(Turbofan2SpoolTest, N1LagsN2OverFullSpoolUp) {
   Turbofan2SpoolParams p;
   // Default tau_N1 = 2.0 s, tau_N2 = 0.5 s -- N1 should lag.
@@ -102,6 +109,7 @@ TEST(Turbofan2SpoolTest, N1LagsN2OverFullSpoolUp) {
 
 /* ----------------------------- Thrust scaling laws ----------------------------- */
 
+/** @test Thrust scales quadratically with N1: doubling N1 quadruples thrust. */
 TEST(Turbofan2SpoolTest, ThrustScalesQuadraticallyWithN1) {
   // T ~ mdot_air*(V_e - V_0). At fixed altitude, both mdot_air and V_e rise
   // with N1 -> roughly quadratic combined effect.
@@ -123,6 +131,10 @@ TEST(Turbofan2SpoolTest, ThrustScalesQuadraticallyWithN1) {
   EXPECT_NEAR(r_high.thrust_N / r_low.thrust_N, 4.0, 0.05);
 }
 
+/**
+ * @test Thrust drops with altitude per the density exponent:
+ * T(alt) = T(SL)*(rho_alt/rho_SL)^n.
+ */
 TEST(Turbofan2SpoolTest, ThrustDropsWithAltitudePerDensityExponent) {
   // T(alt) = T(SL)*(rho_alt/rho_SL)^n. At 12 km, rho=0.249*rho_SL -> factor
   // 0.249^0.7 = 0.379.
@@ -141,6 +153,7 @@ TEST(Turbofan2SpoolTest, ThrustDropsWithAltitudePerDensityExponent) {
   EXPECT_NEAR(expected_ratio, 0.379, 0.005); // hand-computed sanity
 }
 
+/** @test In vacuum (rho=0) the air-breathing engine produces zero thrust. */
 TEST(Turbofan2SpoolTest, VacuumGivesZeroThrust) {
   Turbofan2SpoolParams p;
   Turbofan2SpoolState s;
@@ -155,6 +168,7 @@ TEST(Turbofan2SpoolTest, VacuumGivesZeroThrust) {
 
 /* ----------------------------- Throttle clamping ----------------------------- */
 
+/** @test Throttle is clamped to [0, 1]: 2.0 behaves like 1.0 and -1.0 like 0.0. */
 TEST(Turbofan2SpoolTest, ThrottleClampsToZeroOneRange) {
   Turbofan2SpoolParams p;
   Turbofan2SpoolState s_over;
@@ -170,6 +184,10 @@ TEST(Turbofan2SpoolTest, ThrottleClampsToZeroOneRange) {
 
 /* ----------------------------- Rotor angular momentum ----------------------------- */
 
+/**
+ * @test Rotor angular momentum H = I_rotor*omega scales linearly with N1, since
+ * omega = (N1_pct/100)*N1_max_rpm*2*pi/60.
+ */
 TEST(Turbofan2SpoolTest, RotorAngularMomentumScalesLinearlyWithN1) {
   // H = I_rotor * omega; omega = (N1_pct/100) * N1_max_rpm * 2*pi/60. So
   // H is linear in N1_pct.
