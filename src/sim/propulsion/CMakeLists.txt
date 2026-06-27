@@ -12,6 +12,14 @@ apex_module(sim_propulsion)
 
 apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
 
+# PropulsionModel.hpp links propulsion's wrench + mass contributions:
+target_link_libraries(
+  ${LIB_NAME}
+  INTERFACE sim_dynamics_rigid_body # Vec3, cross
+            sim_dynamics_wrench # WrenchSource / AppliedWrench / WrenchKind
+            sim_dynamics_mass_properties # FuelTankMassSource (the fuel link)
+)
+
 apex_standard_optins(${LIB_NAME})
 
 apex_add_test_subdirs(utst ptst)

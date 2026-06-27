@@ -22,6 +22,7 @@ equations; a specific engine's parameters come from the application.
 4. [Module Reference](#module-reference)
    - [DensityScaledThrust](#densityscaledthrust) - empirical baseline
    - [Turbofan2Spool](#turbofan2spool) - two-spool dynamics
+   - [PropulsionModel ladder + PropulsionSystem](#propulsionmodel-ladder--propulsionsystem)
 5. [Real-Time Considerations](#real-time-considerations)
 6. [See Also](#see-also)
 
@@ -79,6 +80,41 @@ Turbofan2SpoolParams p;              // illustrative high-bypass defaults
 Turbofan2SpoolState s;               // starts at idle
 const auto r = stepTurbofan2Spool(s, p, /*throttle*/ 0.9, /*rho*/ 0.41, /*dt*/ 0.02);
 // r.thrust_N (per engine), r.N1_pct, r.N2_pct, r.H_rotor_kgm2_s
+```
+
+### PropulsionModel ladder + PropulsionSystem
+
+**Header:** `inc/PropulsionModel.hpp`
+**Purpose:** Wrap the engines behind one interface and link propulsion's two
+contributions.
+
+`PropulsionModel::step` advances an engine one tick and reports per-engine
+thrust (+ rotor angular momentum). The rungs are `ConstantThrust`,
+`DensityScaledThrustModel`, and `Turbofan2SpoolModel`; a caller adds a rung by
+implementing `PropulsionModel`.
+
+Propulsion spans **both** dynamics stacks, so `PropulsionSystem` is the link:
+
+- it **is** a `wrench::WrenchSource` (tagged `Propulsion`) -- the thrust force
+  at the mount plus the gyroscopic moment `H_rotor x omega_body`;
+- its `step()` computes thrust once and **drives the fuel tank's burn** from
+  that same thrust, so one quantity feeds the wrench and the mass side.
+
+The mass models stay in `mass_properties` (the depleting `FuelTankMassSource`,
+and a `StaticMassSource` for the engine/tank structure). The caller adds the
+system to the `WrenchAccumulator` and the fuel tank to the `MassAccumulator`.
+
+```cpp
+Turbofan2SpoolModel engine;
+FuelTankMassSource tank;             // the depleting fuel (mass side)
+PropulsionSystem prop;
+prop.model = &engine; prop.fuel = &tank;
+prop.omega_body = &state.angular_velocity_body;   // for the gyroscopic moment
+prop.engine_count = 4; prop.mount_m = {-30.0, 0.0, 2.0};
+
+prop.step(throttle, rho, dt);        // thrust -> wrench cache + fuel burn
+wrenchAcc.add(prop);                 // force side
+massAcc.add(tank);                   // mass side (same tank)
 ```
 
 ## Real-Time Considerations
