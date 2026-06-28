@@ -173,10 +173,69 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 ENV PATH="/opt/rust/cargo/bin:$PATH"
 
 # ------------------------------------------------------------------------------
+# Rust dependency cache (hermetic, offline release builds)
+# ------------------------------------------------------------------------------
+# Pre-fetch the rust tools' pinned dependencies into the shared cargo registry
+# so the release build -- and clean rebuilds -- never reach crates.io. A
+# crates.io outage, throttle, or yanked version can no longer fail a release,
+# and the fetch is paid once per dependency change instead of every build.
+#
+# Keyed on Cargo.lock: this layer rebuilds only when a dependency changes (the CI
+# image graph also watches tools/rust/Cargo.lock so the cache never goes stale).
+# --target restricts the fetch to the host triple the rust tools build for,
+# dropping ~330 MB of Windows/wasm crates that never compile here (~124 MB cached
+# vs ~454 MB unfiltered).
+COPY tools/rust/Cargo.toml tools/rust/Cargo.lock /tmp/rust-fetch/
+RUN cd /tmp/rust-fetch && \
+    cargo fetch --locked --target x86_64-unknown-linux-gnu && \
+    rm -rf /tmp/rust-fetch && \
+    chmod -R a+rwX /opt/rust/cargo
+
+# Opt this image's apex rust-tools build into offline mode against the cache
+# above: the release builders all derive from build-base, so the shipped tools
+# never touch crates.io. This is a private, apex-scoped flag -- NOT the global
+# CARGO_NET_OFFLINE -- so it cannot force a FetchContent dependency's own rust
+# build (e.g. vernier's tools, whose crates this cache does not carry) offline.
+# dev-base unsets it so interactive dependency work still resolves online.
+ENV APEX_RUST_OFFLINE=1
+
+# ------------------------------------------------------------------------------
+# FetchContent source cache (hermetic, offline configure)
+# ------------------------------------------------------------------------------
+# Clone the build's FetchContent dependencies (fmt, googletest, vernier, seeker)
+# at their pinned tags so `cmake` configures offline -- no GitHub at release time.
+# ExternalDependencies.cmake redirects FetchContent to these via APEX_DEPS_DIR.
+# Keyed on ExternalDependencies.cmake (the pinned-version source of truth); the CI
+# image graph watches it too, so a version bump rebuilds and re-clones.
+COPY ExternalDependencies.cmake /tmp/deps/ExternalDependencies.cmake
+COPY docker/scripts/bake-external-deps.sh /tmp/deps/bake-external-deps.sh
+RUN bash /tmp/deps/bake-external-deps.sh /tmp/deps/ExternalDependencies.cmake /opt/apex-deps && \
+    rm -rf /tmp/deps && \
+    chmod -R a+rwX /opt/apex-deps
+ENV APEX_DEPS_DIR=/opt/apex-deps
+
+# ------------------------------------------------------------------------------
 # Poetry - Python package manager for the python tools (`make tools-py`)
 # ------------------------------------------------------------------------------
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --no-cache-dir --break-system-packages poetry
+
+# ------------------------------------------------------------------------------
+# Python dependency wheelhouse (hermetic, offline python-tools build)
+# ------------------------------------------------------------------------------
+# Download the python tools' locked dependencies as wheels so the release build
+# installs them offline -- a PyPI outage/yank can no longer fail the build. The
+# tools build (tools/CMakeLists.txt) adds --no-index --find-links when
+# APEX_PIP_WHEELHOUSE is set. poetry build itself is already offline (poetry-core
+# is bundled). Keyed on poetry.lock; the CI image graph watches it too.
+COPY tools/py/pyproject.toml tools/py/poetry.lock /tmp/py-fetch/
+RUN pip3 install --no-cache-dir --break-system-packages poetry-plugin-export && \
+    cd /tmp/py-fetch && \
+    poetry export --format requirements.txt --output req.txt --without-hashes && \
+    pip3 download --no-cache-dir --requirement req.txt --dest /opt/apex-pip-wheels && \
+    rm -rf /tmp/py-fetch && \
+    chmod -R a+rwX /opt/apex-pip-wheels
+ENV APEX_PIP_WHEELHOUSE=/opt/apex-pip-wheels
 
 # ------------------------------------------------------------------------------
 # ptest profiler link libraries
@@ -248,6 +307,13 @@ WORKDIR /home/${USER}
 # Stage: dev-base - build-base + tooling (scanners, formatters, profilers, docs)
 # ==============================================================================
 FROM build-base AS dev-base
+
+# Interactive dev resolves dependencies online; the offline guarantee is for the
+# release builders (build-base tier), not the dev shell. The baked caches are
+# still inherited, so a clean dev build reuses them and only fetches genuinely
+# new crates/wheels.
+ENV APEX_RUST_OFFLINE= \
+    APEX_PIP_WHEELHOUSE=
 
 ARG USER
 ARG HADOLINT_VERSION=v2.14.0

@@ -33,6 +33,14 @@ on:
     paths:
       - docker/**
       - docker-compose.yml
+      # base.Dockerfile bakes the rust cargo cache + the FetchContent sources from
+      # these, so a bump must rebuild the image to refresh them (offline/hermetic
+      # builds depend on the baked copies).
+      - tools/rust/Cargo.lock
+      - tools/rust/Cargo.toml
+      - tools/py/poetry.lock
+      - tools/py/pyproject.toml
+      - ExternalDependencies.cmake
   workflow_dispatch:
     inputs:
       force_rebuild:
@@ -110,7 +118,7 @@ jobs:
           else
             RANGE="HEAD~1..HEAD"
           fi
-          DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml 2>/dev/null || echo "docker/base.Dockerfile")
+          DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml tools/rust/Cargo.lock tools/rust/Cargo.toml tools/py/poetry.lock tools/py/pyproject.toml ExternalDependencies.cmake 2>/dev/null || echo "docker/base.Dockerfile")
 
           # A change to a shared script under docker/scripts/ must rebuild every
           # image whose Dockerfile COPYs it. The COPY line is the source of truth
@@ -121,6 +129,15 @@ jobs:
             consumers=$(grep -rlF "$script" docker --include='*.Dockerfile' 2>/dev/null || true)
             [ -n "$consumers" ] && DIFF=$(printf '%s\n%s' "$DIFF" "$consumers")
           done
+
+          # base.Dockerfile bakes the rust cargo cache (tools/rust/Cargo.*), the
+          # python wheelhouse (tools/py/poetry.lock), and the FetchContent sources
+          # (ExternalDependencies.cmake), so a change to any must rebuild
+          # base/build-base to refresh them -- otherwise an offline build would run
+          # against a stale cache. Map those onto base.Dockerfile (cascades to all).
+          if printf '%s\n' "$DIFF" | grep -qE '^tools/rust/Cargo\.|^tools/py/(poetry\.lock|pyproject\.toml)|^ExternalDependencies\.cmake'; then
+            DIFF=$(printf '%s\n%s' "$DIFF" "docker/base.Dockerfile")
+          fi
 
           echo "Changed docker files (${RANGE}):"; echo "$DIFF"
 
