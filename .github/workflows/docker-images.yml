@@ -33,6 +33,10 @@ on:
     paths:
       - docker/**
       - docker-compose.yml
+      # base.Dockerfile bakes the rust dependency cache from these, so a bump
+      # must rebuild the image to refresh it (offline release builds depend on it).
+      - tools/rust/Cargo.lock
+      - tools/rust/Cargo.toml
   workflow_dispatch:
     inputs:
       force_rebuild:
@@ -110,7 +114,7 @@ jobs:
           else
             RANGE="HEAD~1..HEAD"
           fi
-          DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml 2>/dev/null || echo "docker/base.Dockerfile")
+          DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml tools/rust/Cargo.lock tools/rust/Cargo.toml 2>/dev/null || echo "docker/base.Dockerfile")
 
           # A change to a shared script under docker/scripts/ must rebuild every
           # image whose Dockerfile COPYs it. The COPY line is the source of truth
@@ -121,6 +125,15 @@ jobs:
             consumers=$(grep -rlF "$script" docker --include='*.Dockerfile' 2>/dev/null || true)
             [ -n "$consumers" ] && DIFF=$(printf '%s\n%s' "$DIFF" "$consumers")
           done
+
+          # base.Dockerfile bakes the rust dependency cache (COPY tools/rust/Cargo.*
+          # + cargo fetch), so a lock/manifest change must rebuild base/build-base
+          # to refresh the cache -- otherwise the offline release build would run
+          # against a stale cache. Map a Cargo change onto base.Dockerfile (which
+          # cascades to every child).
+          if printf '%s\n' "$DIFF" | grep -q '^tools/rust/Cargo\.'; then
+            DIFF=$(printf '%s\n%s' "$DIFF" "docker/base.Dockerfile")
+          fi
 
           echo "Changed docker files (${RANGE}):"; echo "$DIFF"
 

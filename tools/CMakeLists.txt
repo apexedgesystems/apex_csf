@@ -53,7 +53,11 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml")
   if (CARGO_EXECUTABLE)
     set(_RUST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/rust")
     set(_RUST_OUT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/rust")
-    set(_CARGO_HOME "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-rust-cargo")
+    # Inherit CARGO_HOME from the environment (the dev image bakes a pinned,
+    # offline-ready registry cache at /opt/rust/cargo; locally it is ~/.cargo).
+    # Sharing the registry cache -- not a fresh per-build one -- lets a clean
+    # build reuse the baked crates and lets the release build run offline
+    # (hermetic). The target dir stays per-build so compiled artifacts isolate.
     set(_CARGO_TARGET "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-rust-target")
     set(_RUST_STAMP "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/rust-tools.built")
 
@@ -69,7 +73,13 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml")
     file(
       WRITE "${_RUST_BUILD_SCRIPT}"
       "#!/bin/bash\nset -e\n"
-      "CARGO_HOME='${_CARGO_HOME}' '${CARGO_EXECUTABLE}' build --release"
+      # Build offline against the dev image's baked cargo cache when the image
+      # opts in (APEX_RUST_OFFLINE). Apex-scoped on purpose: it only gates this
+      # build, never a FetchContent dependency's own rust build. Local dev (no
+      # such env) builds online.
+      "OFFLINE=\n"
+      "if [ -n \"\${APEX_RUST_OFFLINE:-}\" ]; then OFFLINE=--offline; fi\n"
+      "'${CARGO_EXECUTABLE}' build --release \${OFFLINE}"
       " --manifest-path '${_RUST_SRC}/Cargo.toml' --target-dir '${_CARGO_TARGET}'"
       " ${_CARGO_FEATURES}\n"
       "mkdir -p '${_RUST_OUT}'\n"
