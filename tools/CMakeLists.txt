@@ -124,13 +124,18 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/py/pyproject.toml")
     file(
       WRITE "${_PY_BUILD_SCRIPT}"
       "#!/bin/bash\nset -e\n"
+      # Install the dependencies offline from the dev image's baked wheelhouse
+      # when present (APEX_PIP_WHEELHOUSE). poetry build itself is already offline
+      # (poetry-core is bundled). Local dev (no env) resolves online from PyPI.
+      "FINDLINKS=\n"
+      "if [ -n \"\${APEX_PIP_WHEELHOUSE:-}\" ]; then FINDLINKS=\"--no-index --find-links \${APEX_PIP_WHEELHOUSE}\"; fi\n"
       "mkdir -p '${_PY_OUT}' '${_PY_LIB}' '${_PY_WHEELS}'\n"
       "cd '${_PY_SRC}'\n"
       "'${POETRY_EXECUTABLE}' build --format wheel --output '${_PY_WHEELS}'\n"
       "'${PIP_EXECUTABLE}' install --quiet --no-deps --target '${_PY_LIB}' --upgrade ${_PY_WHEELS}/*.whl\n"
       "cp -f '${_PY_LIB}/bin'/* '${_PY_OUT}/' 2>/dev/null || true\n"
       "rm -rf '${_PY_LIB}/bin'\n"
-      "'${PIP_EXECUTABLE}' install --quiet --target '${_PY_LIB}' --upgrade ${_PY_WHEELS}/*.whl\n"
+      "'${PIP_EXECUTABLE}' install --quiet \${FINDLINKS} --target '${_PY_LIB}' --upgrade ${_PY_WHEELS}/*.whl\n"
       "rm -rf '${_PY_LIB}/bin'\n"
       "mkdir -p '${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps'\n"
       "touch '${_PY_STAMP}'\n"

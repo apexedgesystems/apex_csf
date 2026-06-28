@@ -221,6 +221,23 @@ RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --no-cache-dir --break-system-packages poetry
 
 # ------------------------------------------------------------------------------
+# Python dependency wheelhouse (hermetic, offline python-tools build)
+# ------------------------------------------------------------------------------
+# Download the python tools' locked dependencies as wheels so the release build
+# installs them offline -- a PyPI outage/yank can no longer fail the build. The
+# tools build (tools/CMakeLists.txt) adds --no-index --find-links when
+# APEX_PIP_WHEELHOUSE is set. poetry build itself is already offline (poetry-core
+# is bundled). Keyed on poetry.lock; the CI image graph watches it too.
+COPY tools/py/pyproject.toml tools/py/poetry.lock /tmp/py-fetch/
+RUN pip3 install --no-cache-dir --break-system-packages poetry-plugin-export && \
+    cd /tmp/py-fetch && \
+    poetry export --format requirements.txt --output req.txt --without-hashes && \
+    pip3 download --no-cache-dir --requirement req.txt --dest /opt/apex-pip-wheels && \
+    rm -rf /tmp/py-fetch && \
+    chmod -R a+rwX /opt/apex-pip-wheels
+ENV APEX_PIP_WHEELHOUSE=/opt/apex-pip-wheels
+
+# ------------------------------------------------------------------------------
 # ptest profiler link libraries
 # ------------------------------------------------------------------------------
 # The perf tests link tcmalloc/profiler when present (find_library in
@@ -292,9 +309,11 @@ WORKDIR /home/${USER}
 FROM build-base AS dev-base
 
 # Interactive dev resolves dependencies online; the offline guarantee is for the
-# release builders (build-base tier), not the dev shell. The baked cache is still
-# inherited, so a clean dev build reuses it and only fetches genuinely new crates.
-ENV APEX_RUST_OFFLINE=
+# release builders (build-base tier), not the dev shell. The baked caches are
+# still inherited, so a clean dev build reuses them and only fetches genuinely
+# new crates/wheels.
+ENV APEX_RUST_OFFLINE= \
+    APEX_PIP_WHEELHOUSE=
 
 ARG USER
 ARG HADOLINT_VERSION=v2.14.0
