@@ -3,7 +3,7 @@
  * @brief Unit tests for the PIDLoop primitive.
  */
 
-#include "src/sim/gnc/inc/PIDLoop.hpp"
+#include "src/sim/gnc/common/inc/PIDLoop.hpp"
 
 #include <gtest/gtest.h>
 

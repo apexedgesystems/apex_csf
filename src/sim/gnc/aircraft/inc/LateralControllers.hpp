@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_GNC_LATERAL_CONTROLLERS_HPP
-#define APEX_SIM_GNC_LATERAL_CONTROLLERS_HPP
+#ifndef APEX_SIM_GNC_AIRCRAFT_LATERAL_CONTROLLERS_HPP
+#define APEX_SIM_GNC_AIRCRAFT_LATERAL_CONTROLLERS_HPP
 /**
  * @file LateralControllers.hpp
  * @brief Lateral-directional autopilot loops: roll controller, heading hold,
@@ -18,9 +18,9 @@
  * as -2 deg).
  */
 
-#include "src/sim/gnc/inc/PIDLoop.hpp"
+#include "src/sim/gnc/common/inc/PIDLoop.hpp"
 
-namespace sim::gnc {
+namespace sim::gnc::aircraft {
 
 /* ---------------------- RollController ---------------------- */
 
@@ -194,6 +194,6 @@ private:
   double r_hp_prev_ = 0.0;
 };
 
-} // namespace sim::gnc
+} // namespace sim::gnc::aircraft
 
-#endif // APEX_SIM_GNC_LATERAL_CONTROLLERS_HPP
+#endif // APEX_SIM_GNC_AIRCRAFT_LATERAL_CONTROLLERS_HPP

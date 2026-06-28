@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_GNC_GUST_ALLEVIATION_HPP
-#define APEX_SIM_GNC_GUST_ALLEVIATION_HPP
+#ifndef APEX_SIM_GNC_AIRCRAFT_GUST_ALLEVIATION_HPP
+#define APEX_SIM_GNC_AIRCRAFT_GUST_ALLEVIATION_HPP
 /**
  * @file GustAlleviation.hpp
  * @brief Longitudinal gust alleviation: vertical-gust feedforward to elevator.
@@ -23,7 +23,7 @@
  * without removing it from the loop.
  */
 
-namespace sim::gnc {
+namespace sim::gnc::aircraft {
 
 struct GustAlleviationParams {
   /// Aero gain ratio CL_alpha / CL_delta_e (illustrative transport-class value).
@@ -69,6 +69,6 @@ private:
   GustAlleviationParams p_;
 };
 
-} // namespace sim::gnc
+} // namespace sim::gnc::aircraft
 
-#endif // APEX_SIM_GNC_GUST_ALLEVIATION_HPP
+#endif // APEX_SIM_GNC_AIRCRAFT_GUST_ALLEVIATION_HPP

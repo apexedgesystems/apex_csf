@@ -1,28 +1,47 @@
 # sim_gnc
 
-Guidance, navigation, and control laws for atmospheric vehicles. A generic PID
-primitive plus the named autopilot loops it composes. Header-only, parameterized,
-vehicle-agnostic, and MCU-safe -- a specific aircraft's gains come from the
-application.
+Guidance, navigation, and control. Organized by **vehicle class** so each class's
+algorithms are separable, over a shared layer of vehicle-agnostic primitives.
+Header-only, parameterized, and MCU-safe -- a specific vehicle's gains come from
+the application.
+
+## Structure
+
+```
+gnc/
+  common/    sim::gnc            -- vehicle-agnostic primitives (PIDLoop today;
+                                    future estimators / filters / allocators)
+  aircraft/  sim::gnc::aircraft  -- aircraft autopilot loops (atmospheric flight,
+                                    aero control surfaces)
+```
+
+Additional vehicle classes (spacecraft ADCS, rover path-following, ...) slot in as
+sibling subdirectories that compose `common`; an aircraft loop and a spacecraft
+attitude controller share the PID primitive but nothing else, so they live apart.
+`sim_gnc_aircraft` links `sim_gnc_common`.
 
 ## Contents
 
 1. [Design](#design)
-2. [Module reference](#module-reference)
-   - [PIDLoop](#pidloop) - the shared primitive
+2. [common: PIDLoop](#common-pidloop) - the shared primitive
+3. [aircraft loops](#aircraft-loops)
    - [Longitudinal loops](#longitudinal-loops) - pitch / altitude / speed
    - [Lateral loops](#lateral-loops) - roll / heading / yaw damper
    - [GustAlleviation](#gustalleviation) - vertical-gust feedforward
-3. [MCU compatibility](#mcu-compatibility)
-4. [Integration](#integration)
+4. [MCU compatibility](#mcu-compatibility)
+5. [Integration](#integration)
 
 ## Design
 
-`PIDLoop` is the shared building block: a single-input single-output PID with
-backward-Euler integration, first-difference derivative, output clamping, and
-conditional-integration anti-windup. The named loops compose it (and add their
-own clamps and sign conventions) rather than inheriting -- composition over a
-forced base, since each loop has its own physical inputs.
+`PIDLoop` (in `common`, `sim::gnc`) is the shared building block: a single-input
+single-output PID with backward-Euler integration, first-difference derivative,
+output clamping, and conditional-integration anti-windup. Vehicle-class loops
+compose it (and add their own clamps and sign conventions) rather than inheriting
+-- composition over a forced base, since each loop has its own physical inputs.
+
+The aircraft loops (in `aircraft`, `sim::gnc::aircraft`) assume aerodynamic
+control surfaces and atmospheric flight; that domain coupling is exactly why they
+are grouped apart from other vehicle classes.
 
 Loops cascade: an outer loop generates a reference an inner loop tracks
 (`AltitudeHold -> PitchAttitudeHold -> elevator`; `HeadingHold -> RollController
@@ -31,17 +50,20 @@ control outputs feed the aero `ControlInputs` directly. Default gains are
 illustrative transport-class starting values; re-tune per-aircraft via the gain
 setters.
 
-## Module reference
+## common: PIDLoop
 
-### PIDLoop
+**Header:** `common/inc/PIDLoop.hpp` (`sim::gnc`). `step(error, dt) -> u`. Gains
+`{Kp, Ki, Kd}` and optional `{u_min, u_max}` clamps; on saturation the integral
+update is reverted to prevent windup. `reset()` clears the integral + derivative
+history.
 
-**Header:** `inc/PIDLoop.hpp`. `step(error, dt) -> u`. Gains `{Kp, Ki, Kd}` and
-optional `{u_min, u_max}` clamps; on saturation the integral update is reverted
-to prevent windup. `reset()` clears the integral + derivative history.
+## aircraft loops
+
+Namespace `sim::gnc::aircraft`.
 
 ### Longitudinal loops
 
-**Header:** `inc/LongitudinalControllers.hpp`.
+**Header:** `aircraft/inc/LongitudinalControllers.hpp`.
 
 - `PitchAttitudeHold` -- `step(pitch_ref, pitch_actual, dt) -> elevator` (inner).
 - `AltitudeHold` -- `step(alt_ref, alt_actual, dt) -> pitch_ref` (outer).
@@ -49,7 +71,7 @@ to prevent windup. `reset()` clears the integral + derivative history.
 
 ### Lateral loops
 
-**Header:** `inc/LateralControllers.hpp`.
+**Header:** `aircraft/inc/LateralControllers.hpp`.
 
 - `RollController` -- `step(bank_ref, bank_actual, dt) -> aileron` (inner).
 - `HeadingHold` -- `step(heading_ref, heading_actual, dt) -> bank_ref` (outer),
@@ -59,7 +81,7 @@ to prevent windup. `reset()` clears the integral + derivative history.
 
 ### GustAlleviation
 
-**Header:** `inc/GustAlleviation.hpp`. `step(w_g, V) -> elevator`. Open-loop
+**Header:** `aircraft/inc/GustAlleviation.hpp`. `step(w_g, V) -> elevator`. Open-loop
 feedforward: a vertical gust induces `d_alpha = w_g/V`, cancelled by
 `elevator = -(CL_alpha/CL_delta_e) * d_alpha`. An authority fraction scales or
 disables it.

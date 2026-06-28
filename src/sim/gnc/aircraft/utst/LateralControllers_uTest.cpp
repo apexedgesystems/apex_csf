@@ -6,15 +6,15 @@
  * washout (rejects a steady turn rate, passes the transient; tau = 0 disables it).
  */
 
-#include "src/sim/gnc/inc/LateralControllers.hpp"
+#include "src/sim/gnc/aircraft/inc/LateralControllers.hpp"
 
 #include <cmath>
 
 #include <gtest/gtest.h>
 
-using sim::gnc::HeadingHold;
-using sim::gnc::RollController;
-using sim::gnc::YawDamper;
+using sim::gnc::aircraft::HeadingHold;
+using sim::gnc::aircraft::RollController;
+using sim::gnc::aircraft::YawDamper;
 
 /* ---------------------- RollController ---------------------- */
 

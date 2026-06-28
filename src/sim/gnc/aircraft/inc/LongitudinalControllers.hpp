@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_GNC_LONGITUDINAL_CONTROLLERS_HPP
-#define APEX_SIM_GNC_LONGITUDINAL_CONTROLLERS_HPP
+#ifndef APEX_SIM_GNC_AIRCRAFT_LONGITUDINAL_CONTROLLERS_HPP
+#define APEX_SIM_GNC_AIRCRAFT_LONGITUDINAL_CONTROLLERS_HPP
 /**
  * @file LongitudinalControllers.hpp
  * @brief Longitudinal autopilot loops: pitch attitude hold, altitude hold,
@@ -20,9 +20,9 @@
  * per-aircraft via the gain setters.
  */
 
-#include "src/sim/gnc/inc/PIDLoop.hpp"
+#include "src/sim/gnc/common/inc/PIDLoop.hpp"
 
-namespace sim::gnc {
+namespace sim::gnc::aircraft {
 
 /* ---------------------- PitchAttitudeHold ---------------------- */
 
@@ -173,6 +173,6 @@ private:
   double trim_throttle_ = 0.50;
 };
 
-} // namespace sim::gnc
+} // namespace sim::gnc::aircraft
 
-#endif // APEX_SIM_GNC_LONGITUDINAL_CONTROLLERS_HPP
+#endif // APEX_SIM_GNC_AIRCRAFT_LONGITUDINAL_CONTROLLERS_HPP

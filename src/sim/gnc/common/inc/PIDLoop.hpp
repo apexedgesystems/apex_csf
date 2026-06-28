@@ -1,5 +1,5 @@
-#ifndef APEX_SIM_GNC_PID_LOOP_HPP
-#define APEX_SIM_GNC_PID_LOOP_HPP
+#ifndef APEX_SIM_GNC_COMMON_PID_LOOP_HPP
+#define APEX_SIM_GNC_COMMON_PID_LOOP_HPP
 /**
  * @file PIDLoop.hpp
  * @brief Generic single-input single-output PID controller primitive.
@@ -92,4 +92,4 @@ private:
 
 } // namespace sim::gnc
 
-#endif // APEX_SIM_GNC_PID_LOOP_HPP
+#endif // APEX_SIM_GNC_COMMON_PID_LOOP_HPP

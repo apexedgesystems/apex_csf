@@ -6,12 +6,12 @@
  * saturation, the authority scale, and the low-V divide guard.
  */
 
-#include "src/sim/gnc/inc/GustAlleviation.hpp"
+#include "src/sim/gnc/aircraft/inc/GustAlleviation.hpp"
 
 #include <gtest/gtest.h>
 
-using sim::gnc::GustAlleviation;
-using sim::gnc::GustAlleviationParams;
+using sim::gnc::aircraft::GustAlleviation;
+using sim::gnc::aircraft::GustAlleviationParams;
 
 /** @test Zero gust gives zero command. */
 TEST(GustAlleviationTest, ZeroGustGivesZeroOutput) {

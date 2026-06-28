@@ -6,15 +6,15 @@
  * the throttle saturation floor/ceiling.
  */
 
-#include "src/sim/gnc/inc/LongitudinalControllers.hpp"
+#include "src/sim/gnc/aircraft/inc/LongitudinalControllers.hpp"
 
 #include <cmath>
 
 #include <gtest/gtest.h>
 
-using sim::gnc::AltitudeHold;
-using sim::gnc::PitchAttitudeHold;
-using sim::gnc::SpeedHold;
+using sim::gnc::aircraft::AltitudeHold;
+using sim::gnc::aircraft::PitchAttitudeHold;
+using sim::gnc::aircraft::SpeedHold;
 
 /* ---------------------- PitchAttitudeHold ---------------------- */
 
