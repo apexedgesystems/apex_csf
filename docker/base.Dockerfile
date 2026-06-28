@@ -117,9 +117,15 @@ RUN wget --progress=dot:giga -O /tmp/upx.tar.xz \
 # ------------------------------------------------------------------------------
 # Scoped GPG key (signed-by restricts the key to this repo). Shared by the
 # compilers here and the analysis tooling in dev-base.
+# Download the key to a file with retries (apt.llvm.org throttles/5xx-flakes on CI
+# runners) then dearmor -- a piped one-shot fails the whole layer on any transient
+# blip, and --retry-on-http-error avoids dearmoring an error page.
 RUN install -d -m 0755 /etc/apt/keyrings && \
-    wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | \
-      gpg --dearmor -o /etc/apt/keyrings/llvm.gpg && \
+    wget --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 \
+      --waitretry=15 --timeout=30 -qO /tmp/llvm-snapshot.gpg.key \
+      https://apt.llvm.org/llvm-snapshot.gpg.key && \
+    gpg --dearmor -o /etc/apt/keyrings/llvm.gpg /tmp/llvm-snapshot.gpg.key && \
+    rm -f /tmp/llvm-snapshot.gpg.key && \
     echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] http://apt.llvm.org/$(lsb_release -sc)/ llvm-toolchain-$(lsb_release -sc)-21 main" \
       >> /etc/apt/sources.list.d/llvm.list && \
     echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] http://apt.llvm.org/$(lsb_release -sc)/ llvm-toolchain-$(lsb_release -sc)-20 main" \
