@@ -83,7 +83,9 @@ fetchcontent_declare(
   vernier
   SYSTEM
   GIT_REPOSITORY https://github.com/apexedgesystems/vernier.git
-  GIT_TAG v1.0.2
+  # TEMPORARY: validate apex against the vernier 1.0.3 pre-release branch before
+  # the tag is cut. Revert to GIT_TAG v1.0.3 (immutable) once vernier ships.
+  GIT_TAG dev/build-ci-improvements
 )
 set(VERNIER_BUILD_TOOLS
     ON
