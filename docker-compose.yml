@@ -6,6 +6,12 @@ x-common: &common
     - ccache:/ccache
     - ~/.gitconfig:/home/${USER}/.gitconfig:ro
     - ~/.ssh:/home/${USER}/.ssh:ro
+  # Share the host's IPC namespace so POSIX shm regions + named semaphores
+  # created in the container are visible to host-side consumers. Required by
+  # the ShmRingBridge support component: apex publishes to a /dev/shm ring that
+  # an out-of-process consumer attaches to by name. Without this each side gets
+  # its own isolated /dev/shm tmpfs and the bridge silently runs FULL.
+  ipc: host
   tty: true
   stdin_open: true
 

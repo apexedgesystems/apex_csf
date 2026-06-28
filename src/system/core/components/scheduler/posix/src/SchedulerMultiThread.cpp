@@ -11,6 +11,7 @@
  */
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerMultiThread.hpp"
+#include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/SchedulableTask.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerStatus.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/SequenceGroup.hpp"
@@ -36,20 +37,54 @@ using schedulable::waitForPhase;
 SchedulerMultiThread::SchedulerMultiThread(std::uint16_t ffreq, const std::filesystem::path& logDir,
                                            const apex::concurrency::PoolConfig& poolConfig) noexcept
     : SchedulerBase(ffreq), logDir_(logDir) {
-  // Single pool with provided config
-  std::vector<PoolSpec> specs;
-  specs.push_back({"default", 0, poolConfig});
-  initPools(std::move(specs));
+  // Pool creation is deferred until doInit() so the TPRM workersPerPool value can
+  // drive the worker count. PoolSpec.numThreads = 0 means "use TPRM if loaded,
+  // else hardware_concurrency()".
+  pendingSpecs_.push_back({"default", 0, poolConfig});
 }
 
 SchedulerMultiThread::SchedulerMultiThread(std::uint16_t ffreq, const std::filesystem::path& logDir,
                                            std::vector<PoolSpec> pools) noexcept
     : SchedulerBase(ffreq), logDir_(logDir) {
   if (pools.empty()) {
-    // Default: single pool
     pools.push_back({"default", 0, {}});
   }
-  initPools(std::move(pools));
+  // Stash; doInit() applies TPRM overrides + spawns the worker pools.
+  pendingSpecs_ = std::move(pools);
+}
+
+void SchedulerMultiThread::resolveAndInitPoolsFromTprm() noexcept {
+  // Idempotent: subsequent calls (e.g. after a TPRM reload that does not resize
+  // pools) are no-ops once worker pools exist.
+  if (!pools_.empty()) {
+    return;
+  }
+  if (pendingSpecs_.empty()) {
+    return; // shouldn't happen -- the constructor always seeds one spec
+  }
+
+  // Pull workersPerPool from the loaded TPRM header if present. tprmRaw_ is
+  // populated by SchedulerBase::loadTprm before init runs. Pre-TPRM (e.g. unit
+  // tests that construct without loading) we skip this and let each
+  // PoolSpec.numThreads = 0 fall through to hardware_concurrency() inside
+  // initPools -- existing behavior is preserved.
+  std::uint8_t tprmWorkersPerPool = 0;
+  if (tprmRaw_.size() >= sizeof(SchedulerTprmHeader)) {
+    const auto* header = reinterpret_cast<const SchedulerTprmHeader*>(tprmRaw_.data());
+    tprmWorkersPerPool = header->workersPerPool;
+  }
+
+  // Per-pool override hierarchy:
+  //   1. caller-supplied PoolSpec.numThreads > 0 -> use it (explicit override)
+  //   2. TPRM workersPerPool > 0                 -> use it (declared config)
+  //   3. else fall through to hardware_concurrency() (initPools default)
+  for (auto& spec : pendingSpecs_) {
+    if (spec.numThreads == 0 && tprmWorkersPerPool > 0) {
+      spec.numThreads = tprmWorkersPerPool;
+    }
+  }
+
+  initPools(std::move(pendingSpecs_));
 }
 
 void SchedulerMultiThread::initPools(std::vector<PoolSpec> specs) noexcept {
@@ -93,6 +128,10 @@ bool SchedulerMultiThread::threadsRunning() const noexcept {
 
 std::uint8_t SchedulerMultiThread::doInit() noexcept {
   initSchedulerLog(logDir_);
+
+  // Spawn worker pools now that the TPRM header is available (loaded by
+  // SchedulerBase::loadTprm before doInit runs in the normal apex lifecycle).
+  resolveAndInitPoolsFromTprm();
 
   componentLog()->info(label(), "Multi-threaded scheduler constructed");
   componentLog()->info(label(), fmt::format("Fundamental frequency: {} Hz", ffreq_));
