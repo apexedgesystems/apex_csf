@@ -10,6 +10,25 @@ endif ()
 # Include the FetchContent module to manage external dependencies.
 include(FetchContent)
 
+# Hermetic builds: when the dev image has baked the dependency sources at their
+# pinned tags (docker/scripts/bake-external-deps.sh into $APEX_DEPS_DIR), point
+# FetchContent at the local copies so configure never reaches GitHub. Absent the
+# env (local dev), FetchContent clones normally. Names match the declarations
+# below; FetchContent uppercases them for FETCHCONTENT_SOURCE_DIR_<NAME>.
+if (DEFINED ENV{APEX_DEPS_DIR})
+  foreach (_apex_dep fmt googletest vernier seeker)
+    string(TOUPPER "${_apex_dep}" _apex_dep_uc)
+    if (EXISTS "$ENV{APEX_DEPS_DIR}/${_apex_dep}")
+      set(FETCHCONTENT_SOURCE_DIR_${_apex_dep_uc}
+          "$ENV{APEX_DEPS_DIR}/${_apex_dep}"
+          CACHE PATH "Baked source for ${_apex_dep} (hermetic build)" FORCE
+      )
+    endif ()
+  endforeach ()
+  unset(_apex_dep)
+  unset(_apex_dep_uc)
+endif ()
+
 # Declare and make the fmt library available.
 fetchcontent_declare(
   fmt

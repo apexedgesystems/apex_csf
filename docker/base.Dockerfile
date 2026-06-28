@@ -200,6 +200,21 @@ RUN cd /tmp/rust-fetch && \
 ENV APEX_RUST_OFFLINE=1
 
 # ------------------------------------------------------------------------------
+# FetchContent source cache (hermetic, offline configure)
+# ------------------------------------------------------------------------------
+# Clone the build's FetchContent dependencies (fmt, googletest, vernier, seeker)
+# at their pinned tags so `cmake` configures offline -- no GitHub at release time.
+# ExternalDependencies.cmake redirects FetchContent to these via APEX_DEPS_DIR.
+# Keyed on ExternalDependencies.cmake (the pinned-version source of truth); the CI
+# image graph watches it too, so a version bump rebuilds and re-clones.
+COPY ExternalDependencies.cmake /tmp/deps/ExternalDependencies.cmake
+COPY docker/scripts/bake-external-deps.sh /tmp/deps/bake-external-deps.sh
+RUN bash /tmp/deps/bake-external-deps.sh /tmp/deps/ExternalDependencies.cmake /opt/apex-deps && \
+    rm -rf /tmp/deps && \
+    chmod -R a+rwX /opt/apex-deps
+ENV APEX_DEPS_DIR=/opt/apex-deps
+
+# ------------------------------------------------------------------------------
 # Poetry - Python package manager for the python tools (`make tools-py`)
 # ------------------------------------------------------------------------------
 RUN --mount=type=cache,target=/root/.cache/pip \

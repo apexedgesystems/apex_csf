@@ -33,10 +33,12 @@ on:
     paths:
       - docker/**
       - docker-compose.yml
-      # base.Dockerfile bakes the rust dependency cache from these, so a bump
-      # must rebuild the image to refresh it (offline release builds depend on it).
+      # base.Dockerfile bakes the rust cargo cache + the FetchContent sources from
+      # these, so a bump must rebuild the image to refresh them (offline/hermetic
+      # builds depend on the baked copies).
       - tools/rust/Cargo.lock
       - tools/rust/Cargo.toml
+      - ExternalDependencies.cmake
   workflow_dispatch:
     inputs:
       force_rebuild:
@@ -114,7 +116,7 @@ jobs:
           else
             RANGE="HEAD~1..HEAD"
           fi
-          DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml tools/rust/Cargo.lock tools/rust/Cargo.toml 2>/dev/null || echo "docker/base.Dockerfile")
+          DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml tools/rust/Cargo.lock tools/rust/Cargo.toml ExternalDependencies.cmake 2>/dev/null || echo "docker/base.Dockerfile")
 
           # A change to a shared script under docker/scripts/ must rebuild every
           # image whose Dockerfile COPYs it. The COPY line is the source of truth
@@ -126,12 +128,12 @@ jobs:
             [ -n "$consumers" ] && DIFF=$(printf '%s\n%s' "$DIFF" "$consumers")
           done
 
-          # base.Dockerfile bakes the rust dependency cache (COPY tools/rust/Cargo.*
-          # + cargo fetch), so a lock/manifest change must rebuild base/build-base
-          # to refresh the cache -- otherwise the offline release build would run
-          # against a stale cache. Map a Cargo change onto base.Dockerfile (which
-          # cascades to every child).
-          if printf '%s\n' "$DIFF" | grep -q '^tools/rust/Cargo\.'; then
+          # base.Dockerfile bakes the rust cargo cache (tools/rust/Cargo.*) and the
+          # FetchContent sources (ExternalDependencies.cmake), so a change to either
+          # must rebuild base/build-base to refresh them -- otherwise an offline
+          # build would run against a stale cache. Map those onto base.Dockerfile
+          # (which cascades to every child).
+          if printf '%s\n' "$DIFF" | grep -qE '^tools/rust/Cargo\.|^ExternalDependencies\.cmake'; then
             DIFF=$(printf '%s\n%s' "$DIFF" "docker/base.Dockerfile")
           fi
 
