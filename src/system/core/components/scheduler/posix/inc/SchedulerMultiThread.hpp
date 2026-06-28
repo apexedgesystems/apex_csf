@@ -148,6 +148,15 @@ protected:
 private:
   void initPools(std::vector<PoolSpec> specs) noexcept;
 
+  // Resolve PoolSpec.numThreads for each pending spec using the hierarchy:
+  // caller-supplied non-zero > TPRM workersPerPool > hardware_concurrency().
+  // Then call initPools(). Idempotent: a second call no-ops once pools exist.
+  void resolveAndInitPoolsFromTprm() noexcept;
+
+  // Pool specs captured at construction. Consumed by doInit() once the TPRM has
+  // been loaded so workersPerPool can drive sizing.
+  std::vector<PoolSpec> pendingSpecs_;
+
   std::vector<std::unique_ptr<apex::concurrency::ThreadPool>> pools_;
   std::vector<std::unique_ptr<TaskCtxPool>> ctxPools_;
   std::vector<std::string> poolNames_;
