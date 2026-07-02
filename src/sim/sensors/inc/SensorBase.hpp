@@ -38,6 +38,7 @@ enum class SensorKind : std::uint8_t {
   Altimeter,
   Imu,
   Magnetometer,
+  Lidar,
   External, ///< user-defined / catch-all
 };
 

@@ -15,6 +15,7 @@ specific sensor's error figures come from the application.
    - [GPS](#gps) - GNSS position + velocity
    - [Pitot](#pitot) - indicated airspeed
    - [RadarAltimeter](#radaraltimeter) - height above ground
+   - [BoxClearanceLidar](#boxclearancelidar) - six-axis clearance to a box
 3. [Determinism](#determinism)
 4. [Integration](#integration)
 
@@ -89,6 +90,18 @@ Radar altimeter. `measureAGL(agl_true) -> RadarAltimeterMeasurement{agl_m, valid
 Multiplicative noise (~1% of true AGL) + bias, floored at the ground; beyond the
 range limit (~760 m civil) the measurement is flagged `valid == false` rather
 than overloading the altitude with a sentinel.
+
+### BoxClearanceLidar
+
+**Header:** `inc/BoxClearanceLidar.hpp`
+
+A six-beam clearance lidar against an axis-aligned box centered at the origin.
+`measure(sx, sy, sz, BoxExtents) -> BoxClearanceMeasurement{pos_x, neg_x, ...}` --
+the clearance from the sensor point to each of the six walls. For an axis-aligned
+box this is closed-form (no ray-march, no mesh): `clr_pos_axis = half_axis -
+sensor_axis`, `clr_neg_axis = half_axis + sensor_axis`, clamped non-negative.
+Optional per-beam Gaussian range noise (default ideal). Reusable for any
+body-in-a-box proximity scenario; the box geometry is a `measure()` argument.
 
 ## Determinism
 

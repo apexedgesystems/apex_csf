@@ -4,8 +4,10 @@
 
 include(apex/All)
 
-set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/GaussianSampler_uTest.cpp"
-                      "${CMAKE_CURRENT_SOURCE_DIR}/Sensors_uTest.cpp"
+set(UNIT_TEST_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/GaussianSampler_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Sensors_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/BoxClearanceLidar_uTest.cpp"
 )
 
 apex_add_gtest(

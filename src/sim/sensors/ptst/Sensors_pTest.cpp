@@ -9,6 +9,7 @@
 #include <cstdio>
 
 #include "src/bench/inc/Perf.hpp"
+#include "src/sim/sensors/inc/BoxClearanceLidar.hpp"
 #include "src/sim/sensors/inc/GPS.hpp"
 #include "src/sim/sensors/inc/GaussianSampler.hpp"
 #include "src/sim/sensors/inc/Pitot.hpp"
@@ -62,6 +63,27 @@ PERF_TEST(RadarAltimeterMeasure, Throughput) {
   auto result =
       perf.throughputLoop([&] { sink += ra.measureAGL(150.0).agl_m; }, "radar_altimeter_measure");
   std::printf("\n[RadarAltimeter] measure: %.0f samples/s (%.4f us/sample)\n",
+              result.callsPerSecond, 1.0e6 / result.callsPerSecond);
+}
+
+/* ----------------------------- BoxClearanceLidar ----------------------------- */
+
+// Noisy configuration (6 draws/sample) -- the worst-case per-sample cost; the
+// ideal (sigma = 0) path is pure arithmetic and strictly cheaper.
+PERF_TEST(BoxClearanceLidarMeasure, Throughput) {
+  UB_PERF_GUARD(perf);
+  sim::sensors::BoxClearanceLidarParams p;
+  p.sigma_m = 0.02;
+  sim::sensors::BoxClearanceLidar lidar(p);
+  const sim::sensors::BoxExtents box{4.0, 3.0, 2.5};
+  volatile double sink = 0.0;
+  auto result = perf.throughputLoop(
+      [&] {
+        const auto m = lidar.measure(1.0, -0.5, 0.75, box);
+        sink += m.pos_x + m.neg_z;
+      },
+      "box_clearance_lidar_measure");
+  std::printf("\n[BoxClearanceLidar] measure: %.0f samples/s (%.4f us/sample)\n",
               result.callsPerSecond, 1.0e6 / result.callsPerSecond);
 }
 
