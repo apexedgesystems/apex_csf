@@ -67,7 +67,7 @@ jobs:
       prerelease: ${{ steps.version.outputs.prerelease }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       - name: Read builder targets and released apps from the registries
         id: list
         run: |
@@ -118,7 +118,7 @@ jobs:
         builder: ${{ fromJSON(needs.targets.outputs.list) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Prepare environment
         run: |
@@ -150,7 +150,7 @@ jobs:
           docker tag "$REGISTRY/$DEV:latest" "$DEV"
 
       - name: Restore builder ccache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .ccache
           key: ccache-builder-${{ matrix.builder }}-${{ github.sha }}
@@ -190,7 +190,7 @@ jobs:
           if [ "$BUILDER" = cpu ]; then make artifact-tools VERSION="$VERSION"; fi
 
       - name: Upload platform artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: platform-${{ matrix.builder }}
           path: output/
@@ -220,7 +220,7 @@ jobs:
         include: ${{ fromJSON(needs.targets.outputs.apps) }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Prepare environment
         run: |
@@ -251,7 +251,7 @@ jobs:
         run: make release APP="$APP"
 
       - name: Upload app package
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: app-package-${{ matrix.app }}
           path: build/release/${{ matrix.app }}.tar.gz
@@ -272,14 +272,14 @@ jobs:
       contents: write
     steps:
       - name: Download platform artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: platform-*
           merge-multiple: true
           path: output
 
       - name: Download app packages
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: app-package-*
           merge-multiple: true

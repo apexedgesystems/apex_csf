@@ -30,7 +30,7 @@ jobs:
       builders: ${{ steps.list.outputs.builders }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Read nightly checks and builder targets from the registries
         id: list
@@ -58,7 +58,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up dev image
         uses: ./.github/actions/dev-setup
@@ -73,7 +73,7 @@ jobs:
       # fromJSON -- substring matching would make tsan match rtsan.
       - name: Restore ccache
         if: contains(fromJSON(needs.set-matrix.outputs.ccache), matrix.check)
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .ccache
           key: ccache-nightly-${{ matrix.check }}-${{ github.sha }}
@@ -91,7 +91,7 @@ jobs:
 
       - name: Upload coverage report
         if: ${{ always() && matrix.check == 'coverage-check' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-report
           path: build/hosted-x86_64-coverage/coverage/
@@ -99,7 +99,7 @@ jobs:
 
       - name: Upload tooling coverage report
         if: ${{ always() && (matrix.check == 'coverage-rust' || matrix.check == 'coverage-py') }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-${{ matrix.check }}
           path: |
@@ -133,7 +133,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       # The builder pulls a multi-GB dev image (jetson is FROM dev-cuda) and
       # builds a full tree; reclaim the unused host SDKs first for headroom.
@@ -167,7 +167,7 @@ jobs:
           docker tag "$REGISTRY/$DEV:latest" "$DEV"
 
       - name: Restore builder ccache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .ccache
           key: ccache-builder-${{ matrix.builder }}-${{ github.sha }}
@@ -209,7 +209,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       # Package names come from the make registries (print-ghcr-packages), not
       # the org package-list endpoint: GITHUB_TOKEN cannot enumerate org
