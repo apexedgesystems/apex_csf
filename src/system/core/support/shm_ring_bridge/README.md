@@ -95,7 +95,23 @@ and the bridge doesn't have to know the producer's struct type.
   ring's FULL state is observable via `pushes_failed_full` but never
   blocks the bridgeStep tick.
 - Side A owns the kernel objects: `closeChannel()` unlinks both the
-  shm region and the semaphore so the next process start is clean.
+  shm region and the semaphore so the next process start is clean --
+  unless the path has been re-owned by another process (see below), in
+  which case the foreign region is left untouched.
+
+### External unlink detection
+
+POSIX lets any process unlink the shm path; after that, Side A's writes land in
+an orphaned mapping no consumer can open, with every counter still reading
+healthy. The 1 Hz `telemetry` task therefore probes the path by name and
+compares the inode identity against the object the bridge created:
+
+- **Unlinked or replaced** -> `region_orphaned = 1` in state + telemetry, one
+  loud log line. `bridgeStep` is untouched (no RT cost) and stays non-fatal.
+- **`orphan_reclaim = 1`** (tunable) -> if the name is _free_ (ENOENT), the
+  bridge reopens the channel on it and clears the flag. A name re-owned by
+  another process is never fought over -- flagged only, and shutdown will not
+  unlink it.
 
 ### Two scheduled tasks
 
@@ -191,25 +207,27 @@ assigns instance indices).
 
 ### ShmRingBridgeTunables (176 bytes)
 
-| Field                  | Type       | Default | Description                                                               |
-| ---------------------- | ---------- | ------- | ------------------------------------------------------------------------- |
-| `app_magic`            | `uint32_t` | 0       | 4-byte wire-format ID (e.g. 0x524F5652 = "ROVR")                          |
-| `app_version`          | `uint16_t` | 1       | Bump on payload layout change                                             |
-| `capacity`             | `uint32_t` | 1024    | Slots per direction; **must be power of two**                             |
-| `payload_size`         | `uint32_t` | 0       | Forward-direction slot size; MUST equal effective source length           |
-| `reverse_payload_size` | `uint32_t` | 0       | Reverse-direction slot size; 0 = same as `payload_size` (symmetric).      |
-|                        |            |         | Asymmetric demos (e.g. consumer uses a small "EmptyFrame" for the unused  |
-|                        |            |         | reverse direction) MUST set this to match `sizeof(consumer's Out)` or the |
-|                        |            |         | consumer's `fstat()` will fail with `PAYLOAD_SIZE_MISMATCH`.              |
-| `source_uid`           | `uint32_t` | 0       | Source component fullUid                                                  |
-| `source_category`      | `uint8_t`  | 0       | `DataCategory` enum value (typically OUTPUT=4)                            |
-| `source_byte_offset`   | `uint16_t` | 0       | Start byte within the source data block                                   |
-| `source_byte_len`      | `uint16_t` | 0       | Bytes to copy; 0 = whole block                                            |
-| `shm_path[64]`         | char[]     | empty   | Absolute POSIX shm path (must start with '/')                             |
-| `wakeup_path[64]`      | char[]     | empty   | Sem path; empty = derive `shm_path + "_wake"`                             |
-| `label[16]`            | char[]     | empty   | Tag for log lines                                                         |
+| Field                  | Type       | Default | Description                                                                    |
+| ---------------------- | ---------- | ------- | ------------------------------------------------------------------------------ |
+| `app_magic`            | `uint32_t` | 0       | 4-byte wire-format ID (e.g. 0x524F5652 = "ROVR")                               |
+| `app_version`          | `uint16_t` | 1       | Bump on payload layout change                                                  |
+| `capacity`             | `uint32_t` | 1024    | Slots per direction; **must be power of two**                                  |
+| `payload_size`         | `uint32_t` | 0       | Forward-direction slot size; MUST equal effective source length                |
+| `reverse_payload_size` | `uint32_t` | 0       | Reverse-direction slot size; 0 = same as `payload_size` (symmetric).           |
+|                        |            |         | Asymmetric demos (e.g. consumer uses a small "EmptyFrame" for the unused       |
+|                        |            |         | reverse direction) MUST set this to match `sizeof(consumer's Out)` or the      |
+|                        |            |         | consumer's `fstat()` will fail with `PAYLOAD_SIZE_MISMATCH`.                   |
+| `source_uid`           | `uint32_t` | 0       | Source component fullUid                                                       |
+| `source_category`      | `uint8_t`  | 0       | `DataCategory` enum value (typically OUTPUT=4)                                 |
+| `source_byte_offset`   | `uint16_t` | 0       | Start byte within the source data block                                        |
+| `source_byte_len`      | `uint16_t` | 0       | Bytes to copy; 0 = whole block                                                 |
+| `sink_enabled`         | `uint8_t`  | 0       | 1 = drain Ring B + dispatch (see the command sink)                             |
+| `orphan_reclaim`       | `uint8_t`  | 0       | 1 = reopen the channel if the shm path vanishes (never fights a re-owned path) |
+| `shm_path[64]`         | char[]     | empty   | Absolute POSIX shm path (must start with '/')                                  |
+| `wakeup_path[64]`      | char[]     | empty   | Sem path; empty = derive `shm_path + "_wake"`                                  |
+| `label[16]`            | char[]     | empty   | Tag for log lines                                                              |
 
-### ShmRingBridgeState (24 bytes)
+### ShmRingBridgeState
 
 | Field                | Type       | Description                                 |
 | -------------------- | ---------- | ------------------------------------------- |
@@ -219,6 +237,7 @@ assigns instance indices).
 | `signals_failed`     | `uint64_t` | sem_post failures (should stay 0)           |
 | `channel_open`       | `uint8_t`  | 1 once shm + sem are open                   |
 | `source_resolved`    | `uint8_t`  | 1 once the source DataTarget resolves       |
+| `region_orphaned`    | `uint8_t`  | 1 = shm path unlinked/replaced externally   |
 
 ### ShmRingBridgeTlm (32 bytes, packed)
 

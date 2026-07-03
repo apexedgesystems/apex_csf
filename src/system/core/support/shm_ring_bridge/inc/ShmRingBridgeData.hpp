@@ -100,7 +100,10 @@ struct ShmRingBridgeTunables {
    * when this is enabled.
    */
   std::uint8_t sink_enabled{0};    ///< 1 = drain Ring B + dispatch; 0 = ignore.
-  std::uint8_t sink_reserved[7]{}; ///< Future: per-opcode allowlist, src uid override, etc.
+  std::uint8_t orphan_reclaim{0};  ///< 1 = reopen the channel if the shm path vanishes
+                                   ///< (ENOENT). A path re-owned by another process is
+                                   ///< flagged but never fought over.
+  std::uint8_t sink_reserved[6]{}; ///< Future: per-opcode allowlist, src uid override, etc.
 
   /* -- POSIX paths for the shm region + wakeup semaphore -- */
   /// Absolute POSIX shm path (must start with '/'; max 64 chars incl NUL).
@@ -120,7 +123,7 @@ static_assert(sizeof(ShmRingBridgeTunables) ==
                       + 4 + 4 + 4     // capacity + payload_size + reverse_payload_size
                       + 4 + 1 + 3     // source_uid + category + reserved1
                       + 2 + 2         // byte_offset + byte_len
-                      + 1 + 7         // sink_enabled + reserved
+                      + 1 + 1 + 6     // sink_enabled + orphan_reclaim + reserved
                       + 64 + 64 + 16, // paths + label
               "ShmRingBridgeTunables layout drift");
 
@@ -143,7 +146,8 @@ struct ShmRingBridgeState {
 
   std::uint8_t channel_open{0};    ///< 1 once shm + sem are open.
   std::uint8_t source_resolved{0}; ///< 1 once the source DataTarget resolves.
-  std::uint8_t reserved[6]{};
+  std::uint8_t region_orphaned{0}; ///< 1 = the shm path was unlinked or replaced externally.
+  std::uint8_t reserved[5]{};
 };
 
 /* ----------------------------- ShmRingBridgeTlm ----------------------------- */
@@ -159,7 +163,8 @@ struct __attribute__((packed)) ShmRingBridgeTlm {
   std::uint64_t signals_failed{0};
   std::uint8_t channel_open{0};
   std::uint8_t source_resolved{0};
-  std::uint8_t reserved[6]{};
+  std::uint8_t region_orphaned{0}; ///< mirrors ShmRingBridgeState::region_orphaned
+  std::uint8_t reserved[5]{};
 };
 
 static_assert(sizeof(ShmRingBridgeTlm) == 32, "ShmRingBridgeTlm size drift");

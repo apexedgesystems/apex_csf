@@ -28,13 +28,13 @@ reserved1_2          = { type = "uint",   size = 1,  value = 0 }
 source_byte_offset   = { type = "uint",   size = 2,  value = 0 }
 source_byte_len      = { type = "uint",   size = 2,  value = 48 }
 sink_enabled         = { type = "uint",   size = 1,  value = 0 }               # egress-only
+orphan_reclaim       = { type = "uint",   size = 1,  value = 1 }               # self-heal if the path vanishes
 sink_reserved_0      = { type = "uint",   size = 1,  value = 0 }
 sink_reserved_1      = { type = "uint",   size = 1,  value = 0 }
 sink_reserved_2      = { type = "uint",   size = 1,  value = 0 }
 sink_reserved_3      = { type = "uint",   size = 1,  value = 0 }
 sink_reserved_4      = { type = "uint",   size = 1,  value = 0 }
 sink_reserved_5      = { type = "uint",   size = 1,  value = 0 }
-sink_reserved_6      = { type = "uint",   size = 1,  value = 0 }
 shm_path             = { type = "string", size = 64, value = "/lidar_box" }
 wakeup_path          = { type = "string", size = 64, value = "" }              # auto-derive /lidar_box_wake
 label                = { type = "string", size = 16, value = "lidar_box" }

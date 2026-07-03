@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -114,6 +115,108 @@ PERF_TEST(BridgeStepPush, Throughput) {
 
   std::printf("\n[ShmRingBridge] bridgeStep: %.0f ticks/s (%.4f us/tick), channel_open=%u\n",
               result.callsPerSecond, 1.0e6 / result.callsPerSecond, b.bridgeState().channel_open);
+}
+
+/* ----------------------------- Payload scaling ----------------------------- */
+
+namespace {
+
+// Resolver over an arbitrary-size source block (the fixed 64-byte ResolverCtx
+// stays for the canonical case above).
+struct SizedResolverCtx {
+  std::vector<std::uint8_t> block;
+  std::uint32_t uid = 0xDE00u;
+};
+
+ResolvedSource sizedResolver(void* ctx, std::uint32_t uid, DataCategory cat) noexcept {
+  auto* r = static_cast<SizedResolverCtx*>(ctx);
+  if (uid != r->uid || cat != DataCategory::OUTPUT) {
+    return {};
+  }
+  return {r->block.data(), r->block.size()};
+}
+
+} // namespace
+
+// Characterizes the memcpy-bound region of the push path across the payload
+// sizes the demo apps use (48 B lidar_box frame, 256 B vehicle frames) and
+// beyond (KB-scale future sensors). Excluded from the profiler passes by the
+// harness filter (-*PayloadScaling*); runs in the normal --quick sweep.
+PERF_TEST(BridgeStepPush, PayloadScaling) {
+  UB_PERF_GUARD(perf);
+
+  constexpr std::uint32_t kSizes[] = {48u, 256u, 1024u, 4096u, 65536u};
+  std::printf("\n[ShmRingBridge] payload scaling (capacity 64, drained):\n");
+
+  for (const std::uint32_t SIZE : kSizes) {
+    SizedResolverCtx ctx;
+    ctx.block.assign(SIZE, 0xA5u);
+
+    ShmRingBridge b;
+    b.setResolver(sizedResolver, &ctx);
+
+    const std::string shm = std::string("/shm_ring_bridge_scale_") + std::to_string(SIZE) + "_" +
+                            std::to_string(::getpid());
+    ShmRingBridgeTunables& t = b.tunables().get();
+    t.app_magic = 0x54455354u; // "TEST"
+    t.app_version = 1;
+    t.capacity = 64;
+    t.payload_size = SIZE;
+    t.source_uid = ctx.uid;
+    t.source_category = static_cast<std::uint8_t>(DataCategory::OUTPUT);
+    t.source_byte_len = 0; // whole block
+    std::snprintf(t.shm_path, sizeof(t.shm_path), "%s", shm.c_str());
+    b.onBusReady();
+
+    Drainer drainer;
+    const bool drained = drainer.open(shm);
+
+    volatile std::uint8_t sink = 0;
+    auto result = perf.throughputLoop(
+        [&] {
+          sink = static_cast<std::uint8_t>(sink + b.bridgeStep());
+          if (drained) {
+            drainer.drain();
+          }
+        },
+        (std::string("bridge_step_") + std::to_string(SIZE) + "B").c_str());
+
+    const double US = 1.0e6 / result.callsPerSecond;
+    std::printf("  %6u B: %8.0f ticks/s  %.4f us/tick  %7.1f MB/s\n", SIZE, result.callsPerSecond,
+                US, (result.callsPerSecond * SIZE) / 1.0e6);
+  }
+}
+
+/* ----------------------------- Orphan-probe cost ----------------------------- */
+
+// The 1 Hz telemetry task now probes the shm path (shm_open + fstat + close)
+// to detect an external unlink. Measures the per-call probe cost -- non-RT
+// path, but recorded so the telemetry budget is known.
+PERF_TEST(TelemetryOrphanProbe, Cost) {
+  UB_PERF_GUARD(perf);
+
+  ResolverCtx ctx;
+  ShmRingBridge b;
+  b.setResolver(benchResolver, &ctx);
+
+  const std::string shm = std::string("/shm_ring_bridge_probe_") + std::to_string(::getpid());
+  ShmRingBridgeTunables& t = b.tunables().get();
+  t.app_magic = 0x54455354u;
+  t.app_version = 1;
+  t.capacity = 1024;
+  t.payload_size = 64;
+  t.source_uid = ctx.uid;
+  t.source_category = static_cast<std::uint8_t>(DataCategory::OUTPUT);
+  t.source_byte_len = 64;
+  std::snprintf(t.shm_path, sizeof(t.shm_path), "%s", shm.c_str());
+  b.onBusReady();
+
+  volatile std::uint8_t sink = 0;
+  auto result = perf.throughputLoop(
+      [&] { sink = static_cast<std::uint8_t>(sink + b.telemetryTick()); }, "telemetry_probe");
+
+  std::printf("\n[ShmRingBridge] telemetryTick (incl. orphan probe): %.0f calls/s (%.3f us/call)\n",
+              result.callsPerSecond, 1.0e6 / result.callsPerSecond);
 }
 
 PERF_MAIN()
