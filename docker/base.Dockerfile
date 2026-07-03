@@ -105,7 +105,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # ------------------------------------------------------------------------------
 # Compresses release executables. Distro version is outdated, so install from
 # GitHub.
-RUN wget --progress=dot:giga -O /tmp/upx.tar.xz \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/upx.tar.xz \
       "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz" && \
     tar -C /tmp -xJf /tmp/upx.tar.xz && \
     mv "/tmp/upx-${UPX_VERSION}-amd64_linux/upx" /usr/local/bin/upx && \
@@ -156,7 +156,7 @@ RUN ln -sf /usr/bin/clang-21  /usr/local/bin/clang && \
 # CMake
 # ------------------------------------------------------------------------------
 # Distro version is too old, so we install from Kitware.
-RUN wget --progress=dot:giga \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 \
       "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh" && \
     chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh && \
     ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local && \
@@ -402,12 +402,12 @@ RUN git clone --recursive --depth 1 https://github.com/google/bloaty.git /tmp/bl
 # Static binaries for speed and reproducibility.
 
 # hadolint: Dockerfile linter
-RUN wget --progress=dot:giga -O /usr/local/bin/hadolint \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/hadolint \
       "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-linux-x86_64" && \
     chmod +x /usr/local/bin/hadolint
 
 # shfmt: Shell script formatter (note: filename keeps 'v' prefix)
-RUN wget --progress=dot:giga -O /usr/local/bin/shfmt \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/shfmt \
       "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64" && \
     chmod +x /usr/local/bin/shfmt
 
@@ -427,7 +427,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ninjatracing - Convert .ninja_log to chrome-tracing JSON
 # ------------------------------------------------------------------------------
 # Single Python script from nico/ninjatracing — not packaged on PyPI.
-RUN wget --progress=dot:giga -O /usr/local/bin/ninjatracing \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/ninjatracing \
       https://raw.githubusercontent.com/nico/ninjatracing/main/ninjatracing && \
     chmod +x /usr/local/bin/ninjatracing
 
@@ -455,18 +455,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       cbmc
 
 # trivy (pinned) via the upstream install script
-RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
+RUN curl -sfL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 \
+      https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
       sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}"
 
 # gitleaks: static binary from GitHub releases
-RUN wget --progress=dot:giga -O /tmp/gitleaks.tar.gz \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/gitleaks.tar.gz \
       "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" && \
     tar -C /usr/local/bin -xzf /tmp/gitleaks.tar.gz gitleaks && \
     chmod +x /usr/local/bin/gitleaks && \
     rm /tmp/gitleaks.tar.gz
 
 # osv-scanner: static binary from GitHub releases
-RUN wget --progress=dot:giga -O /usr/local/bin/osv-scanner \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/osv-scanner \
       "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64" && \
     chmod +x /usr/local/bin/osv-scanner
 
@@ -480,7 +481,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ------------------------------------------------------------------------------
 # chmod only the new binary: build-base already opened /opt/rust tree-wide, and a
 # repeat -R here would copy the whole toolchain into this layer.
-RUN curl --proto '=https' --tlsv1.2 -fsSL \
+RUN curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 \
       "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v${CARGO_LLVM_COV_VERSION}/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz" \
       | tar xzf - -C /opt/rust/cargo/bin && \
     chmod a+rwX /opt/rust/cargo/bin/cargo-llvm-cov
