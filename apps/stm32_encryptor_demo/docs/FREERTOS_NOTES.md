@@ -22,7 +22,7 @@ and serial_checkout.py are identical in both modes.
 | Layer             | Bare-metal                         | FreeRTOS                                   |
 | ----------------- | ---------------------------------- | ------------------------------------------ |
 | Tick source       | Stm32SysTickSource (SysTick + WFI) | FreeRtosTickSource (vTaskDelayUntil)       |
-| Main loop         | McuExecutive::run() in main()     | McuExecutive::run() in FreeRTOS task      |
+| Main loop         | McuExecutive::run() in main()      | McuExecutive::run() in FreeRTOS task       |
 | SysTick ownership | Shared: HAL + tick source          | FreeRTOS kernel                            |
 | HAL timebase      | SysTick (shared)                   | SysTick (via FreeRTOS xTaskGetTickCount)   |
 | Context switch    | None (single-threaded)             | FreeRTOS PendSV (preemptive between tasks) |
@@ -191,13 +191,13 @@ and timing.
 
 ### Task mapping
 
-| Current (Option 3)                     | Pure FreeRTOS (Option 4)                                |
-| -------------------------------------- | ------------------------------------------------------- |
+| Current (Option 3)                    | Pure FreeRTOS (Option 4)                                |
+| ------------------------------------- | ------------------------------------------------------- |
 | 1 FreeRTOS task runs McuExecutive     | 4 FreeRTOS tasks (one per function)                     |
 | McuScheduler controls execution order | FreeRTOS priority preemption controls order             |
-| Shared stack (2 KB for all tasks)      | Per-task stacks (512 B - 1 KB each)                     |
-| Rate dividers (freqN/freqD) set rates  | vTaskDelayUntil per task sets rates                     |
-| DWT bracketing via profiler tasks      | FreeRTOS run-time stats (configGENERATE_RUN_TIME_STATS) |
+| Shared stack (2 KB for all tasks)     | Per-task stacks (512 B - 1 KB each)                     |
+| Rate dividers (freqN/freqD) set rates | vTaskDelayUntil per task sets rates                     |
+| DWT bracketing via profiler tasks     | FreeRTOS run-time stats (configGENERATE_RUN_TIME_STATS) |
 
 The four tasks would be:
 
@@ -210,14 +210,14 @@ The four tasks would be:
 
 ### RAM comparison
 
-| Allocation                    | Option 3 (current)    | Option 4 (pure)        |
-| ----------------------------- | --------------------- | ---------------------- |
-| FreeRTOS heap                 | 8,192 B               | 10,240 B               |
-| Task stacks                   | 2,048 B (1 executive) | 2,304 B (4 tasks)      |
-| Task control blocks           | ~140 B (1 TCB + idle) | ~350 B (4 TCBs + idle) |
-| Idle task                     | ~570 B                | ~570 B                 |
+| Allocation                  | Option 3 (current)    | Option 4 (pure)        |
+| --------------------------- | --------------------- | ---------------------- |
+| FreeRTOS heap               | 8,192 B               | 10,240 B               |
+| Task stacks                 | 2,048 B (1 executive) | 2,304 B (4 tasks)      |
+| Task control blocks         | ~140 B (1 TCB + idle) | ~350 B (4 TCBs + idle) |
+| Idle task                   | ~570 B                | ~570 B                 |
 | McuExecutive + McuScheduler | ~200 B                | 0 B                    |
-| **Total RTOS overhead**       | **~11 KB**            | **~13.5 KB**           |
+| **Total RTOS overhead**     | **~11 KB**            | **~13.5 KB**           |
 
 Pure FreeRTOS uses ~2.5 KB more RAM. Each FreeRTOS task needs its own stack
 (minimum usable ~256 B, practical minimum ~512 B) plus a TCB (~70 B). With 4
@@ -229,7 +229,7 @@ removing McuExecutive.
 | Component                       | Option 3 | Option 4 | Delta       |
 | ------------------------------- | -------- | -------- | ----------- |
 | FreeRTOS kernel                 | ~3,100 B | ~3,100 B | 0           |
-| McuExecutive + McuScheduler   | ~1,200 B | 0 B      | -1,200 B    |
+| McuExecutive + McuScheduler     | ~1,200 B | 0 B      | -1,200 B    |
 | vTaskDelayUntil calls (4 tasks) | 0 B      | ~200 B   | +200 B      |
 | FreeRTOS run-time stats         | 0 B      | ~300 B   | +300 B      |
 | **Net FLASH delta**             | -        | -        | **~-700 B** |

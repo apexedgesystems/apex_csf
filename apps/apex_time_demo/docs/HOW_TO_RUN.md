@@ -121,6 +121,6 @@ not synchronized to the scheduler.)
 
 ## Args
 
-- `--fs-root <dir>`   override Apex filesystem root (default `.apex_fs`)
-- `--shutdown-after <N>`   exit after N seconds
+- `--fs-root <dir>` override Apex filesystem root (default `.apex_fs`)
+- `--shutdown-after <N>` exit after N seconds
 - (Other standard ApexExecutive args inherited from the framework.)

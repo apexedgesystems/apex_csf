@@ -194,21 +194,21 @@ F Prime statically links everything into a single monolithic binary.
 | Feature              | Apex                                                     | cFS                             | F Prime                        |
 | -------------------- | -------------------------------------------------------- | ------------------------------- | ------------------------------ |
 | POSIX (Linux/macOS)  | Full support (ApexExecutive)                             | Full support (OSAL)             | Full support                   |
-| Bare-metal MCU       | McuExecutive (STM32, AVR, Pico, ESP32, C2000, PIC32)    | VxWorks, RTEMS (not bare-metal) | Baremetal scheduler (limited)  |
+| Bare-metal MCU       | McuExecutive (STM32, AVR, Pico, ESP32, C2000, PIC32)     | VxWorks, RTEMS (not bare-metal) | Baremetal scheduler (limited)  |
 | Same-source reuse    | Same source compiles for POSIX (shared) and MCU (static) | Separate BSP per platform       | Separate topology per platform |
 | GPU (CUDA)           | Native support (schedulable GPU tasks)                   | Not supported                   | Not supported                  |
 | Hardware abstraction | HAL layer per platform (UART, SPI, I2C, CAN, Flash)      | OSAL + PSP per platform         | Os abstraction layer           |
 
 ### Build System
 
-| Feature           | Apex                                            | cFS                         | F Prime                                 |
-| ----------------- | ----------------------------------------------- | --------------------------- | --------------------------------------- |
-| Build tool        | CMake + Ninja                                   | CMake + Make                | CMake + Ninja + FPP + Python            |
-| Code generation   | apex_data_gen (struct dictionaries, optional)   | None (manual CCSDS headers) | FPP compiler (mandatory, generates C++) |
-| Cross-compile     | Docker-based toolchains (one command)           | Manual toolchain setup      | fprime-util + ARM toolchains            |
+| Feature           | Apex                                             | cFS                         | F Prime                                 |
+| ----------------- | ------------------------------------------------ | --------------------------- | --------------------------------------- |
+| Build tool        | CMake + Ninja                                    | CMake + Make                | CMake + Ninja + FPP + Python            |
+| Code generation   | apex_data_gen (struct dictionaries, optional)    | None (manual CCSDS headers) | FPP compiler (mandatory, generates C++) |
+| Cross-compile     | Docker-based toolchains (one command)            | Manual toolchain setup      | fprime-util + ARM toolchains            |
 | Package/deploy    | CMake install components (graph-derived closure) | Manual file staging         | fprime-util install                     |
-| Language standard | C++23                                           | C99                         | C++11 (generated code)                  |
-| Test framework    | Google Test (integrated, parallel + serial)     | UT Assert (cFS-provided)    | Google Test (via fprime-util)           |
+| Language standard | C++23                                            | C99                         | C++11 (generated code)                  |
+| Test framework    | Google Test (integrated, parallel + serial)      | UT Assert (cFS-provided)    | Google Test (via fprime-util)           |
 
 ## Deep Dive: Internal Message Bus
 

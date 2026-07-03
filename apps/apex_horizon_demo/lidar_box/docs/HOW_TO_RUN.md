@@ -74,9 +74,9 @@ noisy; the noise stream is deterministic per seed.
 
 ## Troubleshooting
 
-| Symptom | Cause / fix |
-| --- | --- |
-| `Config file not found` | Run from the repo root, or pass an absolute `--config` path. |
-| No `/dev/shm/lidar_box` on the host | The compose service must have `ipc: host` (the dev anchor does); rebuild the container if you overrode it. |
-| Consumer refuses to attach | Identity mismatch: both region headers must read LBOX/v1, payload 48, capacity 8 -- check with the xxd lines above. |
-| Cursor stuck at 8 | Expected with no consumer (ring full, pushes refused). Attach a consumer or just read the slots. |
+| Symptom                             | Cause / fix                                                                                                         |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `Config file not found`             | Run from the repo root, or pass an absolute `--config` path.                                                        |
+| No `/dev/shm/lidar_box` on the host | The compose service must have `ipc: host` (the dev anchor does); rebuild the container if you overrode it.          |
+| Consumer refuses to attach          | Identity mismatch: both region headers must read LBOX/v1, payload 48, capacity 8 -- check with the xxd lines above. |
+| Cursor stuck at 8                   | Expected with no consumer (ring full, pushes refused). Attach a consumer or just read the slots.                    |

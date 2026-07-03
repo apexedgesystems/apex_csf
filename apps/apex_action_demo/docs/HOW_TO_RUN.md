@@ -123,12 +123,12 @@ $TOOLS/tprm_pack pack \
 
 ## Component Map
 
-| Component      | fullUid  | Type     | Description                                    |
-| -------------- | -------- | -------- | ---------------------------------------------- |
-| Executive      | 0x000000 | CORE     | System executive at 10 Hz                      |
-| Scheduler      | 0x000100 | CORE     | Task scheduler                                 |
-| Interface      | 0x000400 | CORE     | TCP/SLIP on port 9000                          |
-| ActionEngine   | 0x000500 | CORE     | Watchpoints, sequences, event dispatch         |
-| SensorModel    | 0x00D200 | SW_MODEL | Temperature ramp with overtemp detection       |
-| DataTransform  | 0x00CA00 | SUPPORT  | Command-driven byte-level data mutation        |
-| SystemMonitor  | 0x00C800 | SUPPORT  | CPU/memory/FD health monitoring                |
+| Component     | fullUid  | Type     | Description                              |
+| ------------- | -------- | -------- | ---------------------------------------- |
+| Executive     | 0x000000 | CORE     | System executive at 10 Hz                |
+| Scheduler     | 0x000100 | CORE     | Task scheduler                           |
+| Interface     | 0x000400 | CORE     | TCP/SLIP on port 9000                    |
+| ActionEngine  | 0x000500 | CORE     | Watchpoints, sequences, event dispatch   |
+| SensorModel   | 0x00D200 | SW_MODEL | Temperature ramp with overtemp detection |
+| DataTransform | 0x00CA00 | SUPPORT  | Command-driven byte-level data mutation  |
+| SystemMonitor | 0x00C800 | SUPPORT  | CPU/memory/FD health monitoring          |

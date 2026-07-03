@@ -224,11 +224,11 @@ measure per-tick CPU overhead via Timer0.
 
 ### Timer Allocation
 
-| Timer  | Usage                              | Configuration                           |
-| ------ | ---------------------------------- | --------------------------------------- |
-| Timer0 | Overhead measurement               | Normal mode, prescaler=64, overflow ISR |
+| Timer  | Usage                             | Configuration                           |
+| ------ | --------------------------------- | --------------------------------------- |
+| Timer0 | Overhead measurement              | Normal mode, prescaler=64, overflow ISR |
 | Timer1 | McuExecutive tick source (100 Hz) | CTC mode, prescaler varies              |
-| Timer2 | Unused                             | Available for future PWM or timing      |
+| Timer2 | Unused                            | Available for future PWM or timing      |
 
 ### Initialization Sequence
 
