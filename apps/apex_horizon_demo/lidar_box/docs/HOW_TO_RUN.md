@@ -6,7 +6,29 @@
 - Packed TPRM archive: `apps/apex_horizon_demo/lidar_box/tprm/master.tprm`
   (committed; regenerate per the README section 3 if you edit the tomls).
 
-## Run
+## Run (packaged deployment -- the standard way)
+
+The app declares an apex deployment, so it stages into a self-contained package
+(`bank_a/{bin,libs,tprm}` + the generic launcher) and runs with **zero
+arguments** -- `run.sh` resolves the executive, uses the deployment directory as
+the filesystem root, and wires `--config bank_a/tprm/master.tprm` itself:
+
+```bash
+# Stage the package (once per build)
+docker compose run --rm dev-cuda \
+  cmake --build build/hosted-x86_64-debug --target package_ApexLidarBoxDemo
+
+# Run it (Ctrl+C to stop)
+docker compose run --rm dev-cuda \
+  ./build/hosted-x86_64-debug/packages/ApexLidarBoxDemo/run.sh
+```
+
+Binaries self-locate their shared libraries via an `$ORIGIN/../libs` RPATH, so
+the package also runs on any Linux host outside the container (producer and
+consumer just need a shared `/dev/shm`). Logs, banks, and telemetry land inside
+the deployment directory.
+
+## Run (raw binary -- the dev loop)
 
 ```bash
 docker compose run --rm dev-cuda ./build/hosted-x86_64-debug/bin/ApexLidarBoxDemo \
@@ -14,9 +36,9 @@ docker compose run --rm dev-cuda ./build/hosted-x86_64-debug/bin/ApexLidarBoxDem
   --fs-root /tmp/lidar_fs
 ```
 
-Runs until Ctrl+C (`shutdownAfterSeconds = 0`). Component logs land under
-`/tmp/lidar_fs` inside the container; the producer and bridge each emit a 1 Hz
-telemetry line.
+Both forms run until Ctrl+C (`shutdownAfterSeconds = 0`). The producer and
+bridge each emit a 1 Hz telemetry line to the component logs under the
+filesystem root.
 
 The dev container shares the host IPC namespace (`ipc: host` on the compose
 anchor), so while the demo runs the ring is visible on the **host**:

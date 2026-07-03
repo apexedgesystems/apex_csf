@@ -17,11 +17,14 @@ a consumer renders it** -- two components, one ring, no ingress.
 # Build (from the repo root)
 make compose-debug
 
-# Run (inside the dev container; Ctrl+C to stop)
-docker compose run --rm dev-cuda ./build/hosted-x86_64-debug/bin/ApexLidarBoxDemo \
-  --config apps/apex_horizon_demo/lidar_box/tprm/master.tprm \
-  --fs-root /tmp/lidar_fs
+# Stage the deployment package, then run it -- zero arguments (Ctrl+C to stop)
+docker compose run --rm dev-cuda \
+  cmake --build build/hosted-x86_64-debug --target package_ApexLidarBoxDemo
+docker compose run --rm dev-cuda \
+  ./build/hosted-x86_64-debug/packages/ApexLidarBoxDemo/run.sh
 ```
+
+(For the raw-binary dev loop, see [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md).)
 
 While it runs, `/dev/shm/lidar_box` (+ `sem.lidar_box_wake`) exists on the host
 -- the dev container shares the host IPC namespace -- and any consumer that

@@ -42,17 +42,26 @@ xxd -l 24 /dev/shm/lidar_box          # LBOX/v1 header stamp
 #    region headers, drains the ring, and renders the body + six rays.
 ```
 
-## Release packaging
+## Package + run as a deployment
 
-The app declares a single-executive deployment (`master.tprm` bundled):
+The app declares a single-executive apex deployment (`apex_add_deployment`,
+`master.tprm` bundled), so the standard packaging flow applies:
 
 ```bash
-make release APP=ApexLidarBoxDemo
-# package lands under build/release/ApexLidarBoxDemo/
+# Stage: cmake --install components -> bank_a/{bin,libs,tprm} + run.sh + tarball
+docker compose run --rm dev-cuda \
+  cmake --build build/hosted-x86_64-debug --target package_ApexLidarBoxDemo
+
+# Run the package -- zero arguments; run.sh resolves the executive, makes the
+# deployment dir the filesystem root, and wires --config to the bundled TPRM
+./build/hosted-x86_64-debug/packages/ApexLidarBoxDemo/run.sh
 ```
 
-Run the packaged executive on any Linux host alongside the consumer; no
-container is required as long as producer and consumer share `/dev/shm`.
+Binaries carry an `$ORIGIN/../libs` RPATH, so the package runs on any Linux
+host with no container and no environment setup -- producer and consumer only
+need a shared `/dev/shm`. For cross-platform release tarballs, the repo-level
+`make release APP=ApexLidarBoxDemo` flow builds the same package per target
+platform.
 
 ## Notes
 
