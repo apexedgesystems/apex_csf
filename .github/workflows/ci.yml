@@ -112,7 +112,11 @@ jobs:
     name: Lint and secret scan
     needs: changes
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Rebuild-path headroom: when the PR changes image inputs, dev-setup
+    # rebuilds dev-base here, and a low-cache-overlap rebuild runs ~19 min
+    # before the checks even start (a 20-minute cap made it a runner-speed
+    # coin flip). Pull-path runs still finish in minutes.
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
