@@ -83,10 +83,7 @@ fetchcontent_declare(
   vernier
   SYSTEM
   GIT_REPOSITORY https://github.com/apexedgesystems/vernier.git
-  # TEMPORARY: the vernier 1.0.3 squash commit (immutable), validating apex
-  # against the release content before the tag is cut. Becomes GIT_TAG v1.0.3
-  # once vernier ships.
-  GIT_TAG 5bb1e5636fa9248d33f185483959cc28a3e5458f
+  GIT_TAG v1.0.3
 )
 set(VERNIER_BUILD_TOOLS
     ON
