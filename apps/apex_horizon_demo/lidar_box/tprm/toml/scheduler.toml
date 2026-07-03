@@ -1,0 +1,70 @@
+# Scheduler (componentId=1, instanceIndex=0) -- lidar_box demo
+# Total: 3 + (4 x 15) = 63 bytes
+#
+# Task schedule (50 Hz fundamental):
+#   50 Hz: LidarBoxProducer  BODY_STEP    priority 50   (writes the frame)
+#   50 Hz: ShmRingBridge     BRIDGE_STEP  priority 40   (memcpys the frame to shm)
+#    1 Hz: LidarBoxProducer  TELEMETRY    offset 3, priority -64
+#    1 Hz: ShmRingBridge     TELEMETRY    offset 7, priority -64
+#
+# Component fullUids:
+#   0xE600 (58880): LidarBoxProducer
+#   0xCB00 (51968): ShmRingBridge (-> /lidar_box)
+#
+# Within each tick, priority orders producer (50) before bridge (40), so the
+# bridge always publishes the frame written this tick -- clean
+# producer-then-publisher ordering. Telemetry log lines run at the lowest
+# priority on staggered 1 Hz offsets.
+
+[SchedulerTprmHeader]
+numPools = { type = "uint", size = 1, value = 1 }
+workersPerPool = { type = "uint", size = 1, value = 1 }
+numTasks = { type = "uint", size = 1, value = 4 }
+
+# Task 0: LidarBoxProducer bodyStep @ 50 Hz, priority 50
+[[task]]
+fullUid = { type = "uint", size = 4, value = 58880 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 50 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 50 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 1: ShmRingBridge bridgeStep @ 50 Hz, priority 40
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51968 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 50 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 40 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 2: LidarBoxProducer telemetry @ 1 Hz, priority -64, offset 3
+[[task]]
+fullUid = { type = "uint", size = 4, value = 58880 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 3 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 3: ShmRingBridge telemetry @ 1 Hz, priority -64, offset 7
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51968 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 7 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }

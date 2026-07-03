@@ -1,0 +1,40 @@
+lidar_box first-light verification -- host-side inspection of a live run
+=========================================================================
+Producer: ApexLidarBoxDemo (dev-cuda container, ipc: host), 50 Hz
+Inspection: host shell, no consumer attached
+
+$ ls -la /dev/shm | grep lidar
+-rw------- 1 kalex kalex 1152 lidar_box
+-rw------- 1 kalex kalex   32 sem.lidar_box_wake
+
+$ stat -c '%s' /dev/shm/lidar_box
+1152                                  # 2 regions x (192 prelude + 8 x 48)
+
+$ xxd -l 24 /dev/shm/lidar_box        # Region A header @ 0
+00000000: 424e 5248 0100 0000 584f 424c 0100 0000  BNRH....XOBL....
+00000010: 3000 0000 0800 0000                      0.......
+          ^framework 0x48524E42 v1   ^app LBOX v1  ^payload 48, capacity 8
+
+$ xxd -s 576 -l 24 /dev/shm/lidar_box # Region B header @ 576 (inert, valid)
+00000240: 424e 5248 0100 0000 584f 424c 0100 0000  BNRH....XOBL....
+00000250: 3000 0000 0800 0000                      0.......
+
+python3 cursor + frame decode (offsets: producer cursor @64, slots @192):
+  producer cursor: 0 -> 8  (ring filled to capacity; no consumer draining)
+  consumer cursor: 0
+  latest frame: pos_x=+0.052, pos_y=+1.978, pos_z=+1.355, yaw=+0.056,
+                clr+x=+3.948, clr-x=+4.052, clr+y=+1.022, clr-y=+4.978,
+                clr+z=+1.145, clr-z=+3.855, ts=6038938912027ns
+  opposite-clearance sums: x=8.000 (exp 8.0)  y=6.000 (exp 6.0)  z=5.000 (exp 5.0)
+
+Post-run:
+  clean exit unlinked /dev/shm/lidar_box and sem.lidar_box_wake (Side A ownership)
+
+Unit tests:
+  TestLidarBoxProducer: [  PASSED  ] 8 tests.
+
+Live consumer pairing (independent Side B implementation, same host)
+---------------------------------------------------------------------
+attach observed: consumer cursor left 0 and locked to the producer
+5-second sample: producer +248 frames, consumer +248 drained -> 49.6 fps, lag 0 slots
+live frame during pairing: pos=(-0.68,-2.25,-0.29) yaw=+2.69, clearance sums 8.0/6.0/5.0
