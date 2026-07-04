@@ -300,3 +300,51 @@ jobs:
       # zero-warning gate runs here rather than in build-test.
       - name: Build documentation (zero-warning gate)
         run: docker compose run --rm -T dev make docs-check
+
+  # ----------------------------------------------------------------------------
+  # Run report -- advisory timing/scope emit. Surfaces what the run did (scoped
+  # vs full suite, image rebuild vs pull) and what each job cost, as notices +
+  # the step summary, so a run explains itself without log archaeology.
+  # Emit-only: never gates (always() + no failure paths).
+  # ----------------------------------------------------------------------------
+  report:
+    name: Run report
+    needs: [changes, lint, build-test, rust, py, sanitize, static-analysis]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Emit timing and scope
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CPP: ${{ needs.changes.outputs.cpp }}
+          RUST: ${{ needs.changes.outputs.rust }}
+          PY: ${{ needs.changes.outputs.py }}
+          DOCKER: ${{ needs.changes.outputs.docker }}
+        run: |
+          scope="scoped"
+          [ "$CPP$RUST$PY" = "truetruetrue" ] && scope="full"
+          images="pulled"
+          [ "$DOCKER" = "true" ] && images="rebuilt (image inputs changed)"
+          echo "::notice title=CI scope::suite=$scope (cpp=$CPP rust=$RUST py=$PY); gate images $images"
+          {
+            echo "## CI run report"
+            echo ""
+            echo "- **Suite**: $scope (cpp=$CPP, rust=$RUST, py=$PY)"
+            echo "- **Gate images**: $images"
+            echo ""
+            echo "| Job | Result | Duration |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name != "Run report") | [.name, (.conclusion // .status), .started_at, (.completed_at // "")] | @tsv' |
+          while IFS=$'\t' read -r name concl start end; do
+            secs=0
+            if [ -n "$start" ] && [ -n "$end" ]; then
+              secs=$(( $(date -d "$end" +%s) - $(date -d "$start" +%s) ))
+            fi
+            printf '| %s | %s | %dm%02ds |\n' "$name" "$concl" $((secs/60)) $((secs%60)) >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice title=CI timing::${name}: ${concl} in $((secs/60))m$((secs%60))s"
+          done

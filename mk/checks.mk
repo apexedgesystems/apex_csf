@@ -109,4 +109,32 @@ print-nightly-checks:
 print-ccache-checks:
 	@printf '%s\n' '$(call _json_array,$(CHECKS_CCACHE))'
 
+# ------------------------------------------------------------------------------
+# CI timing snapshot (advisory)
+# ------------------------------------------------------------------------------
+# One-command refresh of the local CI performance baseline so "was that run
+# normal?" has a reference without log archaeology. Run-level only (the Run
+# report job emits per-job detail on each run). Host tool: needs gh auth;
+# writes into the local .design_docs (not shipped).
+
+CI_BASELINE := .design_docs/CI_PERFORMANCE_BASELINE.md
+
+ci-timings:
+	$(call log,ci,Refreshing $(CI_BASELINE))
+	@{ echo "# CI performance baseline"; \
+	   echo ""; \
+	   echo "Auto-refreshed via 'make ci-timings' ($$(date -u +%Y-%m-%dT%H:%MZ))."; \
+	   echo "Durations = startedAt..updatedAt per run; per-job detail lives in each"; \
+	   echo "run's 'Run report' job summary."; \
+	   for wf in ci.yml docker-images.yml nightly.yml release.yml; do \
+	     echo ""; echo "## $$wf"; echo ""; \
+	     gh run list --workflow=$$wf --limit 8 \
+	       --json conclusion,event,startedAt,updatedAt,displayTitle \
+	       --template '{{range .}}- {{.conclusion}} [{{.event}}] {{.startedAt}} .. {{.updatedAt}} -- {{.displayTitle}}{{"\n"}}{{end}}' \
+	       2>/dev/null || echo "(no runs / gh unavailable)"; \
+	   done; } > $(CI_BASELINE)
+	$(call log_ok,ci,wrote $(CI_BASELINE))
+
+.PHONY: ci-timings
+
 endif  # CHECKS_MK_GUARD

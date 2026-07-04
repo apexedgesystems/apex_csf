@@ -165,6 +165,12 @@ jobs:
             done <<< "$rows"
           done
 
+          # Advisory notice: which images this push rebuilds (vs pulled), so a
+          # docker-images run explains itself at a glance.
+          rebuilds=$(for image in "${!RB[@]}"; do [ "${RB[$image]}" = true ] && echo "$image"; done | sort | paste -sd' ' -)
+          count=$(echo "$rebuilds" | wc -w)
+          echo "::notice title=Image graph::rebuilding ${count}/13 images${rebuilds:+: }${rebuilds}"
+
           # Emit one JSON matrix array per tier of the images that will rebuild.
           for tier in $(seq 0 "$MAX_TIER"); do
             items=()
