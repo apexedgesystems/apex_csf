@@ -126,7 +126,7 @@ RELEASE_DIR := build/release
 # each pulling exactly the dev images its platforms build in.
 # ==============================================================================
 
-RELEASE_APPS := ApexEdgeDemo ApexHilDemo
+RELEASE_APPS := ApexEdgeDemo ApexHilDemo ApexHilSupervised
 
 # dev-<x> compose service -> apex.dev.<x> image name
 _svc_image = apex.$(subst -,.,$(1))
