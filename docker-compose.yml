@@ -162,7 +162,8 @@ services:
       args:
         <<: *build-args
     hostname: apex-dev-riscv64
-    privileged: true
+    # Unprivileged by design (H2): cross-compile + QEMU user-mode need no
+    # devices or module loads; the vcan/perf/SD-imaging shells keep privilege.
     command: bash
 
   dev-zephyr:
