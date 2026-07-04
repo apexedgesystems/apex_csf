@@ -127,17 +127,28 @@ test-rust:
 # instrumentation and emits a human-readable summary plus a machine report,
 # so the nightly leg both gates (tests still fail the job) and measures. The
 # PR gate keeps the lighter test-py/test-rust. exit 5 = pytest "no tests".
+#
+# Floors gate only when SCAN_GATE=1 (the nightly's policy switch, same as the
+# security scanners); local runs measure without failing. Set from observed
+# actuals (rust 56.4 / py 33.4, nightly 2026-07-03) with churn margin --
+# ratchet up, never down.
+COVERAGE_RUST_MIN_LINE ?= 50
+COVERAGE_PY_MIN_LINE   ?= 30
+
 coverage-py:
 	$(call log,coverage,Measuring Python tools coverage)
 	@cd "$(PY_TOOLS_DIR)" && poetry install --no-interaction && \
 	  (poetry run pytest --cov=apex_tools --cov-report=term-missing \
-	    --cov-report=xml:coverage-py.xml || test $$? -eq 5)
+	    --cov-report=xml:coverage-py.xml \
+	    $(if $(filter 1,$(SCAN_GATE)),--cov-fail-under=$(COVERAGE_PY_MIN_LINE),) \
+	    || test $$? -eq 5)
 
 coverage-rust:
 	$(call log,coverage,Measuring Rust tools coverage)
 	@cd tools/rust && cargo llvm-cov --no-report && \
 	  cargo llvm-cov report --lcov --output-path coverage-rust.lcov && \
-	  cargo llvm-cov report
+	  cargo llvm-cov report \
+	    $(if $(filter 1,$(SCAN_GATE)),--fail-under-lines $(COVERAGE_RUST_MIN_LINE),)
 
 # ------------------------------------------------------------------------------
 # Demo smoke tests
