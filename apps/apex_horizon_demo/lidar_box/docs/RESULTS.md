@@ -43,6 +43,21 @@ ShmRingBridge.telemetry     @  1 Hz (priority -64, offset 7)
 Raw inspection transcript:
 [results/first_light_shm_verification.txt](results/first_light_shm_verification.txt)
 
+## LBOX/v2 wire verification (mounted lidar + scene block), 2026-07-04
+
+The v2 producer (mounted body-fixed beams, 64-byte frame, streamed scene)
+verified on the wire, headless:
+
+| Check            | Result             | Detail                                                   |
+| ---------------- | ------------------ | -------------------------------------------------------- |
+| Region size      | PASS               | 1408 B = 2 x (192 + 8 x 64)                              |
+| Headers A + B    | PASS               | framework v1, LBOX/**v2**, payload 64, capacity 8        |
+| Scene block      | PASS               | streams the tunables: box (4.0, 3.0, 2.5), mount 0.50    |
+| Z-pair chord     | PASS               | 4.0000 exactly = 2*half_z - 2*mount                      |
+| Slab cross-check | PASS               | body +X beam: wire 3.4538 vs independent 3.4538          |
+| Distance floor   | PASS               | all beams >= 0                                           |
+| Unit tests       | 13/13 + 33/33 PASS | producer v2 invariants + sensors suite (mounted measure) |
+
 ## Interpretation
 
 The full producer path -- trajectory, clearance physics, OUTPUT registration,

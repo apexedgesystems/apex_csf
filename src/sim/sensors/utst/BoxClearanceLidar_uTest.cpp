@@ -108,3 +108,83 @@ TEST(BoxClearanceLidarTest, ReseedReproducesAndParams) {
   const auto b = s.measure(0.0, 0.0, 0.0, kBox);
   EXPECT_EQ(a.pos_x, b.pos_x);
 }
+
+/* ----------------------------- rayToWall (slab primitive) ----------------------------- */
+
+/** @test An axis-aligned ray reduces to the closed-form wall distance. */
+TEST(BoxClearanceLidarTest, RayToWallAxisAlignedReducesToClosedForm) {
+  EXPECT_NEAR(BoxClearanceLidar::rayToWall(1.0, 0.0, 0.0, 1.0, 0.0, 0.0, kBox), 3.0, kTol);
+  EXPECT_NEAR(BoxClearanceLidar::rayToWall(1.0, 0.0, 0.0, -1.0, 0.0, 0.0, kBox), 5.0, kTol);
+  EXPECT_NEAR(BoxClearanceLidar::rayToWall(0.0, -0.5, 0.0, 0.0, 1.0, 0.0, kBox), 3.5, kTol);
+  EXPECT_NEAR(BoxClearanceLidar::rayToWall(0.0, 0.0, 2.0, 0.0, 0.0, -1.0, kBox), 4.5, kTol);
+}
+
+/** @test A diagonal ray takes the nearest wall (the slab minimum). */
+TEST(BoxClearanceLidarTest, RayToWallDiagonalTakesNearestWall) {
+  // From the origin along (1,1,0)/sqrt(2): x wall at t = 4*sqrt(2) ~ 5.657,
+  // y wall at t = 3*sqrt(2) ~ 4.243 -> the y wall wins.
+  const double kInvSqrt2 = 0.7071067811865476;
+  const double t = BoxClearanceLidar::rayToWall(0.0, 0.0, 0.0, kInvSqrt2, kInvSqrt2, 0.0, kBox);
+  EXPECT_NEAR(t, 3.0 / kInvSqrt2, 1e-9);
+}
+
+/* ----------------------------- measureMounted (body-fixed) ----------------------------- */
+
+/** @test At zero yaw, mounted distances are the world-axis clearances minus the mount. */
+TEST(BoxClearanceLidarTest, MountedZeroYawIsClearanceMinusMount) {
+  BoxClearanceLidar s;
+  const double R = 0.5;
+  const auto w = s.measure(1.0, -0.5, 2.0, kBox);
+  const auto m = s.measureMounted(1.0, -0.5, 2.0, 0.0, R, kBox);
+  EXPECT_NEAR(m.pos_x, w.pos_x - R, kTol);
+  EXPECT_NEAR(m.neg_x, w.neg_x - R, kTol);
+  EXPECT_NEAR(m.pos_y, w.pos_y - R, kTol);
+  EXPECT_NEAR(m.neg_y, w.neg_y - R, kTol);
+  EXPECT_NEAR(m.pos_z, w.pos_z - R, kTol);
+  EXPECT_NEAR(m.neg_z, w.neg_z - R, kTol);
+}
+
+/** @test At yaw = +90 deg, the body X pair ranges along world +/-Y. */
+TEST(BoxClearanceLidarTest, MountedQuarterTurnSwapsAxes) {
+  BoxClearanceLidar s;
+  constexpr double kHalfPi = 1.5707963267948966;
+  const double R = 0.5;
+  const auto m = s.measureMounted(1.0, -0.5, 0.0, kHalfPi, R, kBox);
+  // body +X -> world +Y: distance = (3.0 - (-0.5)) - R = 3.0
+  EXPECT_NEAR(m.pos_x, 3.5 - R, 1e-9);
+  // body -X -> world -Y: (3.0 + (-0.5)) - R = 2.0
+  EXPECT_NEAR(m.neg_x, 2.5 - R, 1e-9);
+  // body +Y -> world -X: (4.0 + 1.0) - R = 4.5
+  EXPECT_NEAR(m.pos_y, 5.0 - R, 1e-9);
+  // body -Y -> world +X: (4.0 - 1.0) - R = 2.5
+  EXPECT_NEAR(m.neg_y, 3.0 - R, 1e-9);
+}
+
+/** @test A pod touching its wall reads exactly zero (the contact definition). */
+TEST(BoxClearanceLidarTest, MountedPodAtWallReadsZero) {
+  BoxClearanceLidar s;
+  const double R = 0.5;
+  // Body center at the +X inset limit: pod tip exactly on the wall.
+  const auto m = s.measureMounted(kBox.half_x - R, 0.0, 0.0, 0.0, R, kBox);
+  EXPECT_NEAR(m.pos_x, 0.0, kTol);
+}
+
+/** @test Inside the inset region every mounted reading stays non-negative. */
+TEST(BoxClearanceLidarTest, MountedFloorIsZeroInsideInset) {
+  BoxClearanceLidar s;
+  const double R = 0.5;
+  for (int iy = 0; iy < 16; ++iy) { // yaw sweep
+    const double yaw = 0.4 * static_cast<double>(iy);
+    for (int ip = 0; ip < 8; ++ip) { // positions toward the inset corner
+      const double f = static_cast<double>(ip) / 7.0;
+      const auto m = s.measureMounted(f * (kBox.half_x - R), f * (kBox.half_y - R),
+                                      f * (kBox.half_z - R), yaw, R, kBox);
+      ASSERT_GE(m.pos_x, -kTol);
+      ASSERT_GE(m.neg_x, -kTol);
+      ASSERT_GE(m.pos_y, -kTol);
+      ASSERT_GE(m.neg_y, -kTol);
+      ASSERT_GE(m.pos_z, -kTol);
+      ASSERT_GE(m.neg_z, -kTol);
+    }
+  }
+}

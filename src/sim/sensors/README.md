@@ -95,11 +95,19 @@ than overloading the altitude with a sentinel.
 
 **Header:** `inc/BoxClearanceLidar.hpp`
 
-A six-beam clearance lidar against an axis-aligned box centered at the origin.
-`measure(sx, sy, sz, BoxExtents) -> BoxClearanceMeasurement{pos_x, neg_x, ...}` --
-the clearance from the sensor point to each of the six walls. For an axis-aligned
-box this is closed-form (no ray-march, no mesh): `clr_pos_axis = half_axis -
-sensor_axis`, `clr_neg_axis = half_axis + sensor_axis`, clamped non-negative.
+A six-beam lidar against an axis-aligned box centered at the origin, with two
+measurement modes over the same closed-form geometry (no ray-march, no mesh):
+
+- `measure(sx, sy, sz, box)` -- a point sensor ranging along the WORLD axes:
+  `clr_pos_axis = half_axis - sensor_axis`, `clr_neg_axis = half_axis +
+  sensor_axis`, clamped non-negative. Yaw-independent.
+- `measureMounted(sx, sy, sz, yaw, mount_radius, box)` -- six pods mounted at
+  `mount_radius` from the body center, each ranging outward along its own BODY
+  axis (the X/Y pairs yaw with the body; Z stays vertical). Each reading is the
+  slab ray-to-wall distance minus the mount offset -- "pod tip to wall",
+  reaching 0 at contact. `rayToWall(p, d, box)` exposes the slab primitive for
+  arbitrary interior rays.
+
 Optional per-beam Gaussian range noise (default ideal). Reusable for any
 body-in-a-box proximity scenario; the box geometry is a `measure()` argument.
 

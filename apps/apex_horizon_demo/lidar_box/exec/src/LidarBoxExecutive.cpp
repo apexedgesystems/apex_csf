@@ -71,11 +71,11 @@ void LidarBoxExecutive::configureComponents() noexcept {
     return;
   }
 
+  const auto& S = producer_.tunables().get(); // the tunable-owned scene
   const auto& T = bridge_.tunables().get();
-  log->info(label(), fmt::format("lidar_box up: box=({:.1f},{:.1f},{:.1f}) inset={:.1f} | "
+  log->info(label(), fmt::format("lidar_box up: box=({:.1f},{:.1f},{:.1f}) mount={:.2f} | "
                                  "bridge shm={} app_magic={:#x} payload={}B cap={} src_uid={:#x}",
-                                 appsim::lidar_box::kBoxHalfX, appsim::lidar_box::kBoxHalfY,
-                                 appsim::lidar_box::kBoxHalfZ, appsim::lidar_box::kBodyRadius,
+                                 S.box_half_x_m, S.box_half_y_m, S.box_half_z_m, S.mount_radius_m,
                                  T.shm_path[0] != '\0' ? T.shm_path : "(unset)", T.app_magic,
                                  T.payload_size, T.capacity, T.source_uid));
 }

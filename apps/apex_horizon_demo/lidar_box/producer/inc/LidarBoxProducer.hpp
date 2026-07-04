@@ -2,16 +2,18 @@
 #define APEX_HORIZON_DEMO_LIDAR_BOX_PRODUCER_HPP
 /**
  * @file LidarBoxProducer.hpp
- * @brief SW model that drifts a body through the box and measures wall clearance.
+ * @brief SW model that drifts a body through the box and ranges its mounted lidar.
  *
  * Each `bodyStep` tick (50 Hz per the scheduler):
  *   1. Advances sim time and evaluates the 3D Lissajous drift + steady yaw
  *      (closed-form in t, so the trajectory is exact at any rate).
- *   2. Clamps the body center to +/-(half - radius) per axis -- the contract
- *      guarantee that every wall clearance stays >= kBodyRadius.
- *   3. Measures the six wall clearances with the sim_sensors BoxClearanceLidar.
- *   4. Publishes the 48-byte LidarBoxFrame OUTPUT block (pose + clearances +
- *      monotonic timestamp) that the ShmRingBridge streams to the consumer.
+ *   2. Clamps the body center to +/-(half - mount_radius) per axis, so every
+ *      pod-tip distance stays >= 0 (0 exactly at wall contact).
+ *   3. Measures the six mounted, body-fixed pod distances with the sim_sensors
+ *      BoxClearanceLidar (the X/Y pod pairs yaw with the body).
+ *   4. Publishes the 64-byte LidarBoxFrame OUTPUT block (pose + distances +
+ *      the streamed scene block) that the ShmRingBridge streams to the
+ *      consumer. The scene (box + mount) is owned by the tunables.
  *
  * The producer never touches the bridge: it registers OUTPUT and the bridge's
  * TPRM selects this component's (fullUid, OUTPUT) as its source. Scheduler
@@ -79,7 +81,7 @@ public:
 
   /* ----------------------------- Tasks ----------------------------- */
 
-  /// One kinematic step + clearance measurement + frame publish.
+  /// One kinematic step + mounted-lidar measurement + frame publish.
   std::uint8_t bodyStep() noexcept {
     const auto& p = tunables_.get();
     auto& s = state_.get();
@@ -87,28 +89,41 @@ public:
 
     s.t_s += p.dt_s;
 
+    // The scene is tunable-owned; the frame streams it (scene block below).
+    const sim::sensors::BoxExtents BOX{p.box_half_x_m, p.box_half_y_m, p.box_half_z_m};
+
     // Closed-form Lissajous drift; amplitude is a clamped fraction of the
-    // per-axis travel budget so the inset guarantee holds by construction.
-    s.pos_x_m = amplitude(p.amp_frac_x, kHalfX) * std::sin(p.omega_x_rad_s * s.t_s);
-    s.pos_y_m = amplitude(p.amp_frac_y, kHalfY) * std::sin(p.omega_y_rad_s * s.t_s + p.phase_y_rad);
-    s.pos_z_m = amplitude(p.amp_frac_z, kHalfZ) * std::sin(p.omega_z_rad_s * s.t_s + p.phase_z_rad);
+    // per-axis travel budget so every pod-tip distance stays >= 0 by
+    // construction (0 exactly at wall contact).
+    s.pos_x_m =
+        amplitude(p.amp_frac_x, BOX.half_x, p.mount_radius_m) * std::sin(p.omega_x_rad_s * s.t_s);
+    s.pos_y_m = amplitude(p.amp_frac_y, BOX.half_y, p.mount_radius_m) *
+                std::sin(p.omega_y_rad_s * s.t_s + p.phase_y_rad);
+    s.pos_z_m = amplitude(p.amp_frac_z, BOX.half_z, p.mount_radius_m) *
+                std::sin(p.omega_z_rad_s * s.t_s + p.phase_z_rad);
 
     // Steady yaw, wrapped to [-pi, pi] so the float in the frame stays exact.
     s.yaw_rad = wrapPi(s.yaw_rad + p.yaw_rate_rad_s * p.dt_s);
 
-    const auto CLR = lidar_.measure(s.pos_x_m, s.pos_y_m, s.pos_z_m, kBox);
+    // Mounted, body-fixed measurement: the X/Y pod pairs yaw with the body.
+    const auto D =
+        lidar_.measureMounted(s.pos_x_m, s.pos_y_m, s.pos_z_m, s.yaw_rad, p.mount_radius_m, BOX);
 
     f.pos_x = static_cast<float>(s.pos_x_m);
     f.pos_y = static_cast<float>(s.pos_y_m);
     f.pos_z = static_cast<float>(s.pos_z_m);
     f.yaw_rad = static_cast<float>(s.yaw_rad);
-    f.clr_pos_x = static_cast<float>(CLR.pos_x);
-    f.clr_neg_x = static_cast<float>(CLR.neg_x);
-    f.clr_pos_y = static_cast<float>(CLR.pos_y);
-    f.clr_neg_y = static_cast<float>(CLR.neg_y);
-    f.clr_pos_z = static_cast<float>(CLR.pos_z);
-    f.clr_neg_z = static_cast<float>(CLR.neg_z);
+    f.dist_bx_pos = static_cast<float>(D.pos_x);
+    f.dist_bx_neg = static_cast<float>(D.neg_x);
+    f.dist_by_pos = static_cast<float>(D.pos_y);
+    f.dist_by_neg = static_cast<float>(D.neg_y);
+    f.dist_bz_pos = static_cast<float>(D.pos_z);
+    f.dist_bz_neg = static_cast<float>(D.neg_z);
     f.timestamp_ns = monotonicNs();
+    f.box_half_x = static_cast<float>(BOX.half_x);
+    f.box_half_y = static_cast<float>(BOX.half_y);
+    f.box_half_z = static_cast<float>(BOX.half_z);
+    f.mount_radius = static_cast<float>(p.mount_radius_m);
 
     return static_cast<std::uint8_t>(ApexStatus::SUCCESS);
   }
@@ -121,9 +136,10 @@ public:
       const auto& f = frame_.get();
       log->info(label(),
                 fmt::format("t={:.1f}s pos=({:+.2f},{:+.2f},{:+.2f}) yaw={:+.2f} "
-                            "clr x=({:.2f}/{:.2f}) y=({:.2f}/{:.2f}) z=({:.2f}/{:.2f})",
-                            s.t_s, f.pos_x, f.pos_y, f.pos_z, f.yaw_rad, f.clr_pos_x, f.clr_neg_x,
-                            f.clr_pos_y, f.clr_neg_y, f.clr_pos_z, f.clr_neg_z));
+                            "dist bx=({:.2f}/{:.2f}) by=({:.2f}/{:.2f}) bz=({:.2f}/{:.2f})",
+                            s.t_s, f.pos_x, f.pos_y, f.pos_z, f.yaw_rad, f.dist_bx_pos,
+                            f.dist_bx_neg, f.dist_by_pos, f.dist_by_neg, f.dist_bz_pos,
+                            f.dist_bz_neg));
     }
     return static_cast<std::uint8_t>(ApexStatus::SUCCESS);
   }
@@ -150,11 +166,11 @@ protected:
 
     auto* log = componentLog();
     if (log != nullptr) {
-      log->info(label(),
-                fmt::format("init: box=({:.1f},{:.1f},{:.1f}) inset={:.1f} dt={:.3f}s "
-                            "omega=({:.2f},{:.2f},{:.2f}) yaw_rate={:.2f} sigma={:.3f}",
-                            kBoxHalfX, kBoxHalfY, kBoxHalfZ, kBodyRadius, p.dt_s, p.omega_x_rad_s,
-                            p.omega_y_rad_s, p.omega_z_rad_s, p.yaw_rate_rad_s, p.sigma_m));
+      log->info(label(), fmt::format("init: box=({:.1f},{:.1f},{:.1f}) mount={:.2f} dt={:.3f}s "
+                                     "omega=({:.2f},{:.2f},{:.2f}) yaw_rate={:.2f} sigma={:.3f}",
+                                     p.box_half_x_m, p.box_half_y_m, p.box_half_z_m,
+                                     p.mount_radius_m, p.dt_s, p.omega_x_rad_s, p.omega_y_rad_s,
+                                     p.omega_z_rad_s, p.yaw_rate_rad_s, p.sigma_m));
     }
     return static_cast<std::uint8_t>(ApexStatus::SUCCESS);
   }
@@ -162,10 +178,11 @@ protected:
 private:
   /* ----------------------------- Helpers ----------------------------- */
 
-  /// Per-axis drift amplitude: a [0,1]-clamped fraction of (half - radius).
-  [[nodiscard]] static double amplitude(double frac, double half) noexcept {
+  /// Per-axis drift amplitude: a [0,1]-clamped fraction of (half - mount_radius).
+  [[nodiscard]] static double amplitude(double frac, double half, double mount_r) noexcept {
     const double F = frac < 0.0 ? 0.0 : (frac > 1.0 ? 1.0 : frac);
-    return F * (half - static_cast<double>(kBodyRadius));
+    const double BUDGET = half - mount_r;
+    return F * (BUDGET > 0.0 ? BUDGET : 0.0);
   }
 
   /// Wrap an angle to [-pi, pi].
@@ -188,12 +205,6 @@ private:
     return static_cast<std::uint64_t>(ts.tv_sec) * 1000000000ull +
            static_cast<std::uint64_t>(ts.tv_nsec);
   }
-
-  // Double mirrors of the float wire constants (the model runs in double).
-  static constexpr double kHalfX = static_cast<double>(kBoxHalfX);
-  static constexpr double kHalfY = static_cast<double>(kBoxHalfY);
-  static constexpr double kHalfZ = static_cast<double>(kBoxHalfZ);
-  static constexpr sim::sensors::BoxExtents kBox{kHalfX, kHalfY, kHalfZ};
 
   /* ----------------------------- Apex data registration ----------------------------- */
 
