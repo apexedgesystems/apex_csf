@@ -13,6 +13,7 @@ apex_add_gtest(
   ${UNIT_TEST_SOURCES}
   LINK
   utilities_math_celestial
+  utilities_math_vecmat
   LABELS
   utilities
   math

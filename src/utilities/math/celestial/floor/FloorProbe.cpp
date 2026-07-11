@@ -6,7 +6,6 @@
  *        build.
  */
 
-#include "src/utilities/math/celestial/inc/Angles.hpp"
 #include "src/utilities/math/celestial/inc/EarthConstants.hpp"
 #include "src/utilities/math/celestial/inc/MoonConstants.hpp"
 
@@ -14,6 +13,5 @@ namespace cel = apex::math::celestial;
 
 double probe() {
   static_assert(cel::earth::A > cel::earth::B, "oblate");
-  static_assert(cel::degToRad(180.0) > 3.14, "conversion is constexpr");
-  return cel::earth::OMEGA + cel::moon::OMEGA + cel::degToRad(1.0);
+  return cel::earth::OMEGA + cel::moon::OMEGA;
 }

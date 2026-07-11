@@ -5,8 +5,7 @@
 **C++ Standard:** C++17 floor
 
 One value per physical quantity: Earth's WGS-84 ellipsoid geometry and
-rotation rate, the Moon's IAU geometry and tidally-locked rotation, and the
-angle-conversion factors. The tree's per-library constant copies (gravity,
+rotation rate, and the Moon's IAU geometry and tidally-locked rotation. The tree's per-library constant copies (gravity,
 terrain, atmosphere, sensors, factory) migrate onto this leaf so a value can
 never drift between siblings again.
 

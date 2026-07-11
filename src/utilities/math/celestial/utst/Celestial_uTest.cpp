@@ -8,7 +8,7 @@
  * adoption-branch migration), and the conversion helpers.
  */
 
-#include "src/utilities/math/celestial/inc/Angles.hpp"
+#include "src/utilities/math/vecmat/inc/Angles.hpp"
 #include "src/utilities/math/celestial/inc/EarthConstants.hpp"
 #include "src/utilities/math/celestial/inc/MoonConstants.hpp"
 
@@ -33,21 +33,22 @@ TEST(CelestialTest, Wgs84DerivedConsistency) {
 
 /** @test Earth rotation rate matches the sidereal day it implies. */
 TEST(CelestialTest, EarthOmegaImpliesSiderealDay) {
-  const double SIDEREAL_DAY_S = cel::TWO_PI / cel::earth::OMEGA;
+  const double SIDEREAL_DAY_S = apex::math::vecmat::TWO_PI / cel::earth::OMEGA;
   EXPECT_NEAR(SIDEREAL_DAY_S, 86164.1, 0.5); // ~23h 56m 4.1s
 }
 
 /** @test Tidal lock: moon OMEGA and T_SIDEREAL describe the same rotation. */
 TEST(CelestialTest, MoonOmegaMatchesSiderealPeriod) {
-  EXPECT_NEAR(cel::moon::OMEGA, cel::TWO_PI / cel::moon::T_SIDEREAL, 1e-10);
+  EXPECT_NEAR(cel::moon::OMEGA, apex::math::vecmat::TWO_PI / cel::moon::T_SIDEREAL, 1e-10);
 }
 
 /** @test Angle helpers round-trip and hit the known anchors. */
 TEST(CelestialTest, AngleConversions) {
-  EXPECT_NEAR(cel::degToRad(180.0), cel::PI, 1e-15);
-  EXPECT_NEAR(cel::radToDeg(cel::HALF_PI), 90.0, 1e-12);
-  EXPECT_NEAR(cel::degToRad(cel::radToDeg(1.234567)), 1.234567, 1e-15);
-  EXPECT_NEAR(cel::DEG_TO_RAD, 0.017453292519943295, 1e-18);
+  EXPECT_NEAR(apex::math::vecmat::degToRad(180.0), apex::math::vecmat::PI, 1e-15);
+  EXPECT_NEAR(apex::math::vecmat::radToDeg(apex::math::vecmat::HALF_PI), 90.0, 1e-12);
+  EXPECT_NEAR(apex::math::vecmat::degToRad(apex::math::vecmat::radToDeg(1.234567)), 1.234567,
+              1e-15);
+  EXPECT_NEAR(apex::math::vecmat::DEG_TO_RAD, 0.017453292519943295, 1e-18);
 }
 
 /* --------------------- Canon vs the sim-side copies ----------------------- */

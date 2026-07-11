@@ -6,6 +6,7 @@
  *        build.
  */
 
+#include "src/utilities/math/vecmat/inc/Angles.hpp"
 #include "src/utilities/math/vecmat/inc/Mat3Ops.hpp"
 #include "src/utilities/math/vecmat/inc/Rotations.hpp"
 #include "src/utilities/math/vecmat/inc/Vec3Ops.hpp"
@@ -22,5 +23,6 @@ float probe() {
   (void)vm::solveInto(I, v, x);
   float r = 0, p = 0, y = 0;
   vm::euler321FromDcmInto(dcm, r, p, y);
+  static_assert(vm::degToRad(180.0) > 3.14, "constexpr at the floor");
   return x[0] + vm::dot(A, B) + r;
 }

@@ -1,5 +1,5 @@
-#ifndef APEX_MATH_CELESTIAL_ANGLES_HPP
-#define APEX_MATH_CELESTIAL_ANGLES_HPP
+#ifndef APEX_MATH_VECMAT_ANGLES_HPP
+#define APEX_MATH_VECMAT_ANGLES_HPP
 /**
  * @file Angles.hpp
  * @brief Angle constants and degree/radian conversion factors.
@@ -12,7 +12,7 @@
 
 namespace apex {
 namespace math {
-namespace celestial {
+namespace vecmat {
 
 inline constexpr double PI = 3.14159265358979323846;
 inline constexpr double TWO_PI = 6.28318530717958647692;
@@ -27,8 +27,8 @@ template <typename T> constexpr T degToRad(T deg) noexcept { return deg * T(DEG_
 /** @brief radians -> degrees. */
 template <typename T> constexpr T radToDeg(T rad) noexcept { return rad * T(RAD_TO_DEG); }
 
-} // namespace celestial
+} // namespace vecmat
 } // namespace math
 } // namespace apex
 
-#endif // APEX_MATH_CELESTIAL_ANGLES_HPP
+#endif // APEX_MATH_VECMAT_ANGLES_HPP
