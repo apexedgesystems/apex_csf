@@ -26,9 +26,10 @@ COVERAGE_DIR    := build/$(COVERAGE_PRESET)
 # across the libraries that include them. Floors sit a few points below the
 # observed region/line numbers -- tight enough to catch a regression, with margin
 # for normal churn. Ratchet up over time, never down; `?=` allows a per-run
-# override.
-COVERAGE_MIN_LINE   ?= 55
-COVERAGE_MIN_REGION ?= 58
+# override. Ratcheted 55/58 -> 58/62 against observed 61.66/66.43 (nightly,
+# 2026-07-03) after the sim/gnc/shm additions landed.
+COVERAGE_MIN_LINE   ?= 58
+COVERAGE_MIN_REGION ?= 62
 
 # ------------------------------------------------------------------------------
 # Targets

@@ -34,6 +34,22 @@ export HOST_KERNEL := $(shell uname -r)
 # Artifact output directory
 DOCKER_OUT_DIR := output
 
+# ------------------------------------------------------------------------------
+# Platform-consumer generation (mk/platforms.mk -> compose/ci-cache/image graph)
+# ------------------------------------------------------------------------------
+# The registry is the single source of truth; the mechanical per-platform
+# sections of docker-compose.yml, docker-compose.ci-cache.yml, and the
+# docker-images GRAPH are generated between markers. regen after editing the
+# registry; check-platforms (CI lint) fails on drift.
+
+regen-platforms:
+	@python3 docker/scripts/gen-platform-consumers.py
+
+check-platforms:
+	@python3 docker/scripts/gen-platform-consumers.py --check
+
+.PHONY: regen-platforms check-platforms
+
 # Project version (extracted from CMakeLists.txt for tarball naming).
 # Override at the command line: make artifacts VERSION=1.2.3
 VERSION ?= $(shell sed -n 's/.*VERSION \([0-9]*\.[0-9]*\.[0-9]*\).*/\1/p' CMakeLists.txt | head -1)

@@ -30,7 +30,7 @@ jobs:
       builders: ${{ steps.list.outputs.builders }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Read nightly checks and builder targets from the registries
         id: list
@@ -58,7 +58,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up dev image
         uses: ./.github/actions/dev-setup
@@ -73,7 +73,7 @@ jobs:
       # fromJSON -- substring matching would make tsan match rtsan.
       - name: Restore ccache
         if: contains(fromJSON(needs.set-matrix.outputs.ccache), matrix.check)
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .ccache
           key: ccache-nightly-${{ matrix.check }}-${{ github.sha }}
@@ -91,7 +91,7 @@ jobs:
 
       - name: Upload coverage report
         if: ${{ always() && matrix.check == 'coverage-check' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-report
           path: build/hosted-x86_64-coverage/coverage/
@@ -99,7 +99,7 @@ jobs:
 
       - name: Upload tooling coverage report
         if: ${{ always() && (matrix.check == 'coverage-rust' || matrix.check == 'coverage-py') }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: coverage-${{ matrix.check }}
           path: |
@@ -133,7 +133,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       # The builder pulls a multi-GB dev image (jetson is FROM dev-cuda) and
       # builds a full tree; reclaim the unused host SDKs first for headroom.
@@ -167,7 +167,7 @@ jobs:
           docker tag "$REGISTRY/$DEV:latest" "$DEV"
 
       - name: Restore builder ccache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .ccache
           key: ccache-builder-${{ matrix.builder }}-${{ github.sha }}
@@ -209,7 +209,7 @@ jobs:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       # Package names come from the make registries (print-ghcr-packages), not
       # the org package-list endpoint: GITHUB_TOKEN cannot enumerate org
@@ -262,3 +262,46 @@ jobs:
             echo "::error::no package versions visible to the token"
             exit 1
           fi
+
+  # ----------------------------------------------------------------------------
+  # Coverage summary -- one consolidated table for the three ecosystems.
+  # Reads the coverage artifacts the matrix legs uploaded and renders actuals
+  # against the floors (parsed live from mk, so the table never drifts from the
+  # gate). Advisory surface only; the floors themselves gate inside the legs.
+  # ----------------------------------------------------------------------------
+  coverage-summary:
+    name: Coverage summary
+    needs: check
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Download coverage artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: coverage-*
+          path: cov
+      - name: Consolidate
+        run: |
+          floor() { grep -hoE "$1 *\?= *[0-9]+" $2 | grep -oE "[0-9]+$"; }
+          FL_LINE=$(floor COVERAGE_MIN_LINE mk/coverage.mk)
+          FL_REGION=$(floor COVERAGE_MIN_REGION mk/coverage.mk)
+          FL_RUST=$(floor COVERAGE_RUST_MIN_LINE mk/test.mk)
+          FL_PY=$(floor COVERAGE_PY_MIN_LINE mk/test.mk)
+          idx=$(find cov/coverage-report -path "*/html/index.html" | head -1)
+          read -r CPP_LINE CPP_REGION < <(grep -oE "Totals.*" "$idx" | grep -oE "[0-9]+\.[0-9]+%" | sed -n '2p;3p' | tr -d '%' | paste -sd' ')
+          RUST=$(awk -F: '/^LF:/{lf+=$2} /^LH:/{lh+=$2} END{if(lf)printf "%.1f", 100*lh/lf}' $(find cov -name coverage-rust.lcov | head -1))
+          PY=$(grep -oE 'line-rate="[0-9.]+"' $(find cov -name coverage-py.xml | head -1) | head -1 | grep -oE "[0-9.]+" | awk '{printf "%.1f", $1*100}')
+          {
+            echo "## Coverage summary"
+            echo ""
+            echo "| Ecosystem | Metric | Actual | Floor |"
+            echo "|---|---|---|---|"
+            echo "| C++ | line | ${CPP_LINE}% | ${FL_LINE} |"
+            echo "| C++ | region | ${CPP_REGION}% | ${FL_REGION} |"
+            echo "| rust tools | line | ${RUST}% | ${FL_RUST} |"
+            echo "| python tools | line | ${PY}% | ${FL_PY} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Coverage::C++ line ${CPP_LINE}%/${FL_LINE} region ${CPP_REGION}%/${FL_REGION}; rust ${RUST}%/${FL_RUST}; py ${PY}%/${FL_PY}"

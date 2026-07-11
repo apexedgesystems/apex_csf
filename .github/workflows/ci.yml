@@ -47,7 +47,7 @@ jobs:
       docker: ${{ steps.f.outputs.docker }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
@@ -94,31 +94,40 @@ jobs:
           # empty diff never forces an image rebuild.
           if [ -z "$files" ]; then allflag=true; fi
           if [ "$allflag" = true ]; then cpp=true; rust=true; py=true; fi
-          # Rebuild only when a dev image a gate job RUNS IN changes: base
-          # (build-base/dev-base), the cpu dev image (lint/static), the cuda image
-          # (build-test), or the base compose (build args/contexts). Leaf
-          # cross/firmware Dockerfiles and docker/scripts feed only images built
-          # post-merge (docker-images.yml) that no PR job runs in; builder/final
-          # feed the release pipe; CI compose overlays are runtime-only. None of
-          # those warrant rebuilding a gate image. The gate Dockerfiles COPY only
-          # docker/scripts (cross-only), so the listed inputs are complete.
-          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$' && echo true || echo false)
+          # Rebuild only when a gate-image INPUT changes: the images a gate job
+          # runs in (base tiers, the cpu dev image, the cuda image, the base
+          # compose), or anything base.Dockerfile bakes -- the dependency
+          # manifests (tools/rust/Cargo.*, tools/py/poetry.lock|pyproject.toml,
+          # ExternalDependencies.cmake) and the baked scripts (docker/scripts/).
+          # Without the baked inputs the gate runs offline builds against STALE
+          # caches: a lock bump fails on missing crates/wheels, and a GIT_TAG
+          # bump silently builds the OLD baked source via the
+          # FETCHCONTENT_SOURCE_DIR redirect (green-but-wrong). Leaf
+          # cross/firmware Dockerfiles feed only post-merge images; builder/final
+          # feed the release pipe; CI compose overlays are runtime-only.
+          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$|^docker/scripts/|^tools/rust/Cargo\.(lock|toml)$|^tools/py/(poetry\.lock|pyproject\.toml)$|^ExternalDependencies\.cmake$' && echo true || echo false)
           printf 'cpp=%s\nrust=%s\npy=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$docker" | tee -a "$GITHUB_OUTPUT"
 
   lint:
     name: Lint and secret scan
     needs: changes
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Rebuild-path headroom: when the PR changes image inputs, dev-setup
+    # rebuilds dev-base here, and a low-cache-overlap rebuild runs ~19 min
+    # before the checks even start (a 20-minute cap made it a runner-speed
+    # coin flip). Pull-path runs still finish in minutes.
+    timeout-minutes: 40
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
       # Host-side static check, no image needed -- run it before the image
       # pull so release-path drift is the fastest failure in the pipeline.
       - name: Check release paths (final.Dockerfile vs presets)
         run: make check-release-paths
+      - name: Check platform consumers match the registry
+        run: make check-platforms
       - name: Set up dev image
         uses: ./.github/actions/dev-setup
         with:
@@ -145,7 +154,7 @@ jobs:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
       # This job builds the full debug tree in the CUDA image and needs disk
@@ -164,7 +173,7 @@ jobs:
       # the only ones a brand-new PR's first push can see (ccache is
       # content-addressed, so a partial-match cache only helps, never hurts).
       - name: Restore ccache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .ccache
           key: ccache-build-test-${{ github.sha }}
@@ -193,7 +202,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
       - name: Set up build-base image
@@ -215,7 +224,7 @@ jobs:
     timeout-minutes: 20
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
       - name: Set up build-base image
@@ -239,7 +248,7 @@ jobs:
       COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
       - name: Set up build-base image
@@ -251,7 +260,7 @@ jobs:
           service: build-base
           rebuild: ${{ needs.changes.outputs.docker }}
       - name: Restore ccache
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: .ccache
           key: ccache-sanitize-${{ github.sha }}
@@ -273,7 +282,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
       - name: Set up dev image
@@ -293,3 +302,51 @@ jobs:
       # zero-warning gate runs here rather than in build-test.
       - name: Build documentation (zero-warning gate)
         run: docker compose run --rm -T dev make docs-check
+
+  # ----------------------------------------------------------------------------
+  # Run report -- advisory timing/scope emit. Surfaces what the run did (scoped
+  # vs full suite, image rebuild vs pull) and what each job cost, as notices +
+  # the step summary, so a run explains itself without log archaeology.
+  # Emit-only: never gates (always() + no failure paths).
+  # ----------------------------------------------------------------------------
+  report:
+    name: Run report
+    needs: [changes, lint, build-test, rust, py, sanitize, static-analysis]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+    steps:
+      - name: Emit timing and scope
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CPP: ${{ needs.changes.outputs.cpp }}
+          RUST: ${{ needs.changes.outputs.rust }}
+          PY: ${{ needs.changes.outputs.py }}
+          DOCKER: ${{ needs.changes.outputs.docker }}
+        run: |
+          scope="scoped"
+          [ "$CPP$RUST$PY" = "truetruetrue" ] && scope="full"
+          images="pulled"
+          [ "$DOCKER" = "true" ] && images="rebuilt (image inputs changed)"
+          echo "::notice title=CI scope::suite=$scope (cpp=$CPP rust=$RUST py=$PY); gate images $images"
+          {
+            echo "## CI run report"
+            echo ""
+            echo "- **Suite**: $scope (cpp=$CPP, rust=$RUST, py=$PY)"
+            echo "- **Gate images**: $images"
+            echo ""
+            echo "| Job | Result | Duration |"
+            echo "|---|---|---|"
+          } >> "$GITHUB_STEP_SUMMARY"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs?per_page=100" \
+            --jq '.jobs[] | select(.name != "Run report") | [.name, (.conclusion // .status), .started_at, (.completed_at // "")] | @tsv' |
+          while IFS=$'\t' read -r name concl start end; do
+            secs=0
+            if [ -n "$start" ] && [ -n "$end" ]; then
+              secs=$(( $(date -d "$end" +%s) - $(date -d "$start" +%s) ))
+            fi
+            printf '| %s | %s | %dm%02ds |\n' "$name" "$concl" $((secs/60)) $((secs%60)) >> "$GITHUB_STEP_SUMMARY"
+            echo "::notice title=CI timing::${name}: ${concl} in $((secs/60))m$((secs%60))s"
+          done

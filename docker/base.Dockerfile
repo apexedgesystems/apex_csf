@@ -105,7 +105,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # ------------------------------------------------------------------------------
 # Compresses release executables. Distro version is outdated, so install from
 # GitHub.
-RUN wget --progress=dot:giga -O /tmp/upx.tar.xz \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/upx.tar.xz \
       "https://github.com/upx/upx/releases/download/v${UPX_VERSION}/upx-${UPX_VERSION}-amd64_linux.tar.xz" && \
     tar -C /tmp -xJf /tmp/upx.tar.xz && \
     mv "/tmp/upx-${UPX_VERSION}-amd64_linux/upx" /usr/local/bin/upx && \
@@ -117,9 +117,15 @@ RUN wget --progress=dot:giga -O /tmp/upx.tar.xz \
 # ------------------------------------------------------------------------------
 # Scoped GPG key (signed-by restricts the key to this repo). Shared by the
 # compilers here and the analysis tooling in dev-base.
+# Download the key to a file with retries (apt.llvm.org throttles/5xx-flakes on CI
+# runners) then dearmor -- a piped one-shot fails the whole layer on any transient
+# blip, and --retry-on-http-error avoids dearmoring an error page.
 RUN install -d -m 0755 /etc/apt/keyrings && \
-    wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | \
-      gpg --dearmor -o /etc/apt/keyrings/llvm.gpg && \
+    wget --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 \
+      --waitretry=15 --timeout=30 -qO /tmp/llvm-snapshot.gpg.key \
+      https://apt.llvm.org/llvm-snapshot.gpg.key && \
+    gpg --dearmor -o /etc/apt/keyrings/llvm.gpg /tmp/llvm-snapshot.gpg.key && \
+    rm -f /tmp/llvm-snapshot.gpg.key && \
     echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] http://apt.llvm.org/$(lsb_release -sc)/ llvm-toolchain-$(lsb_release -sc)-21 main" \
       >> /etc/apt/sources.list.d/llvm.list && \
     echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] http://apt.llvm.org/$(lsb_release -sc)/ llvm-toolchain-$(lsb_release -sc)-20 main" \
@@ -150,7 +156,7 @@ RUN ln -sf /usr/bin/clang-21  /usr/local/bin/clang && \
 # CMake
 # ------------------------------------------------------------------------------
 # Distro version is too old, so we install from Kitware.
-RUN wget --progress=dot:giga \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 \
       "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.sh" && \
     chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh && \
     ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local && \
@@ -186,33 +192,10 @@ ENV PATH="/opt/rust/cargo/bin:$PATH"
 # dropping ~330 MB of Windows/wasm crates that never compile here (~124 MB cached
 # vs ~454 MB unfiltered).
 COPY tools/rust/Cargo.toml tools/rust/Cargo.lock /tmp/rust-fetch/
-RUN cd /tmp/rust-fetch && \
-    cargo fetch --locked --target x86_64-unknown-linux-gnu && \
+RUN cargo fetch --locked --target x86_64-unknown-linux-gnu \
+      --manifest-path /tmp/rust-fetch/Cargo.toml && \
     rm -rf /tmp/rust-fetch && \
     chmod -R a+rwX /opt/rust/cargo
-
-# Opt this image's apex rust-tools build into offline mode against the cache
-# above: the release builders all derive from build-base, so the shipped tools
-# never touch crates.io. This is a private, apex-scoped flag -- NOT the global
-# CARGO_NET_OFFLINE -- so it cannot force a FetchContent dependency's own rust
-# build (e.g. vernier's tools, whose crates this cache does not carry) offline.
-# dev-base unsets it so interactive dependency work still resolves online.
-ENV APEX_RUST_OFFLINE=1
-
-# ------------------------------------------------------------------------------
-# FetchContent source cache (hermetic, offline configure)
-# ------------------------------------------------------------------------------
-# Clone the build's FetchContent dependencies (fmt, googletest, vernier, seeker)
-# at their pinned tags so `cmake` configures offline -- no GitHub at release time.
-# ExternalDependencies.cmake redirects FetchContent to these via APEX_DEPS_DIR.
-# Keyed on ExternalDependencies.cmake (the pinned-version source of truth); the CI
-# image graph watches it too, so a version bump rebuilds and re-clones.
-COPY ExternalDependencies.cmake /tmp/deps/ExternalDependencies.cmake
-COPY docker/scripts/bake-external-deps.sh /tmp/deps/bake-external-deps.sh
-RUN bash /tmp/deps/bake-external-deps.sh /tmp/deps/ExternalDependencies.cmake /opt/apex-deps && \
-    rm -rf /tmp/deps && \
-    chmod -R a+rwX /opt/apex-deps
-ENV APEX_DEPS_DIR=/opt/apex-deps
 
 # ------------------------------------------------------------------------------
 # Poetry - Python package manager for the python tools (`make tools-py`)
@@ -224,18 +207,50 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # Python dependency wheelhouse (hermetic, offline python-tools build)
 # ------------------------------------------------------------------------------
 # Download the python tools' locked dependencies as wheels so the release build
-# installs them offline -- a PyPI outage/yank can no longer fail the build. The
-# tools build (tools/CMakeLists.txt) adds --no-index --find-links when
-# APEX_PIP_WHEELHOUSE is set. poetry build itself is already offline (poetry-core
-# is bundled). Keyed on poetry.lock; the CI image graph watches it too.
+# installs them offline -- a PyPI outage/yank can no longer fail the build.
+# poetry build itself is already offline (poetry-core is bundled). Keyed on
+# poetry.lock; the CI image graph watches it too. The dependency bake below adds
+# the FetchContent deps' own python-tool wheels to the same wheelhouse.
 COPY tools/py/pyproject.toml tools/py/poetry.lock /tmp/py-fetch/
 RUN pip3 install --no-cache-dir --break-system-packages poetry-plugin-export && \
-    cd /tmp/py-fetch && \
-    poetry export --format requirements.txt --output req.txt --without-hashes && \
-    pip3 download --no-cache-dir --requirement req.txt --dest /opt/apex-pip-wheels && \
-    rm -rf /tmp/py-fetch && \
-    chmod -R a+rwX /opt/apex-pip-wheels
-ENV APEX_PIP_WHEELHOUSE=/opt/apex-pip-wheels
+    poetry --directory /tmp/py-fetch export --format requirements.txt \
+      --output /tmp/py-fetch/req.txt --without-hashes && \
+    pip3 download --no-cache-dir --requirement /tmp/py-fetch/req.txt \
+      --dest /opt/apex-pip-wheels && \
+    rm -rf /tmp/py-fetch
+
+# ------------------------------------------------------------------------------
+# FetchContent source + toolchain cache (hermetic, offline configure and build)
+# ------------------------------------------------------------------------------
+# Clone the build's FetchContent dependencies (fmt, googletest, vernier, seeker)
+# at their pinned tags so `cmake` configures offline -- no GitHub at release
+# time; ExternalDependencies.cmake redirects FetchContent to these via
+# APEX_DEPS_DIR. A dependency that ships its own tools is baked too: its cargo
+# crates land in the shared CARGO_HOME (vernier >= 1.0.3 inherits it) and its
+# locked python wheels join the wheelhouse, so dependency tool builds are
+# offline as well. Keyed on ExternalDependencies.cmake (the pinned-version
+# source of truth); the CI image graph watches it too, so a version bump
+# rebuilds and re-bakes.
+COPY ExternalDependencies.cmake /tmp/deps/ExternalDependencies.cmake
+COPY docker/scripts/bake-external-deps.sh /tmp/deps/bake-external-deps.sh
+RUN bash /tmp/deps/bake-external-deps.sh /tmp/deps/ExternalDependencies.cmake \
+      /opt/apex-deps /opt/apex-pip-wheels && \
+    rm -rf /tmp/deps && \
+    chmod -R a+rwX /opt/apex-deps /opt/apex-pip-wheels /opt/rust/cargo
+ENV APEX_DEPS_DIR=/opt/apex-deps
+
+# ------------------------------------------------------------------------------
+# Offline build enforcement
+# ------------------------------------------------------------------------------
+# Everything a release build resolves is now baked: apex + dependency cargo
+# crates (shared CARGO_HOME), apex + dependency python wheels (the wheelhouse),
+# and the FetchContent sources. Enforce it globally -- cargo and pip read these
+# natively, so apex's AND every dependency's tool builds run offline with no
+# per-project flag plumbing. A missing bake fails loudly here instead of
+# silently fetching. dev-base re-opens the network for interactive work.
+ENV CARGO_NET_OFFLINE=1 \
+    PIP_NO_INDEX=1 \
+    PIP_FIND_LINKS=/opt/apex-pip-wheels
 
 # ------------------------------------------------------------------------------
 # ptest profiler link libraries
@@ -310,10 +325,10 @@ FROM build-base AS dev-base
 
 # Interactive dev resolves dependencies online; the offline guarantee is for the
 # release builders (build-base tier), not the dev shell. The baked caches are
-# still inherited, so a clean dev build reuses them and only fetches genuinely
-# new crates/wheels.
-ENV APEX_RUST_OFFLINE= \
-    APEX_PIP_WHEELHOUSE=
+# still inherited (PIP_FIND_LINKS stays, so pip prefers the wheelhouse before
+# PyPI), and this stage's own pip installs below need the index open.
+ENV CARGO_NET_OFFLINE= \
+    PIP_NO_INDEX=
 
 ARG USER
 ARG HADOLINT_VERSION=v2.14.0
@@ -387,12 +402,12 @@ RUN git clone --recursive --depth 1 https://github.com/google/bloaty.git /tmp/bl
 # Static binaries for speed and reproducibility.
 
 # hadolint: Dockerfile linter
-RUN wget --progress=dot:giga -O /usr/local/bin/hadolint \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/hadolint \
       "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-linux-x86_64" && \
     chmod +x /usr/local/bin/hadolint
 
 # shfmt: Shell script formatter (note: filename keeps 'v' prefix)
-RUN wget --progress=dot:giga -O /usr/local/bin/shfmt \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/shfmt \
       "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64" && \
     chmod +x /usr/local/bin/shfmt
 
@@ -412,7 +427,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ninjatracing - Convert .ninja_log to chrome-tracing JSON
 # ------------------------------------------------------------------------------
 # Single Python script from nico/ninjatracing — not packaged on PyPI.
-RUN wget --progress=dot:giga -O /usr/local/bin/ninjatracing \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/ninjatracing \
       https://raw.githubusercontent.com/nico/ninjatracing/main/ninjatracing && \
     chmod +x /usr/local/bin/ninjatracing
 
@@ -440,18 +455,19 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       cbmc
 
 # trivy (pinned) via the upstream install script
-RUN curl -sfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
+RUN curl -sfL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 \
+      https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
       sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}"
 
 # gitleaks: static binary from GitHub releases
-RUN wget --progress=dot:giga -O /tmp/gitleaks.tar.gz \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/gitleaks.tar.gz \
       "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" && \
     tar -C /usr/local/bin -xzf /tmp/gitleaks.tar.gz gitleaks && \
     chmod +x /usr/local/bin/gitleaks && \
     rm /tmp/gitleaks.tar.gz
 
 # osv-scanner: static binary from GitHub releases
-RUN wget --progress=dot:giga -O /usr/local/bin/osv-scanner \
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/osv-scanner \
       "https://github.com/google/osv-scanner/releases/download/v${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64" && \
     chmod +x /usr/local/bin/osv-scanner
 
@@ -465,7 +481,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ------------------------------------------------------------------------------
 # chmod only the new binary: build-base already opened /opt/rust tree-wide, and a
 # repeat -R here would copy the whole toolchain into this layer.
-RUN curl --proto '=https' --tlsv1.2 -fsSL \
+RUN curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 \
       "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v${CARGO_LLVM_COV_VERSION}/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz" \
       | tar xzf - -C /opt/rust/cargo/bin && \
     chmod a+rwX /opt/rust/cargo/bin/cargo-llvm-cov

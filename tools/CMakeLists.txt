@@ -73,13 +73,10 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml")
     file(
       WRITE "${_RUST_BUILD_SCRIPT}"
       "#!/bin/bash\nset -e\n"
-      # Build offline against the dev image's baked cargo cache when the image
-      # opts in (APEX_RUST_OFFLINE). Apex-scoped on purpose: it only gates this
-      # build, never a FetchContent dependency's own rust build. Local dev (no
-      # such env) builds online.
-      "OFFLINE=\n"
-      "if [ -n \"\${APEX_RUST_OFFLINE:-}\" ]; then OFFLINE=--offline; fi\n"
-      "'${CARGO_EXECUTABLE}' build --release \${OFFLINE}"
+      # Offline enforcement comes from the environment: the build image sets
+      # CARGO_NET_OFFLINE=1 against its baked crate cache (cargo reads it
+      # natively). Local dev (no such env) builds online.
+      "'${CARGO_EXECUTABLE}' build --release"
       " --manifest-path '${_RUST_SRC}/Cargo.toml' --target-dir '${_CARGO_TARGET}'"
       " ${_CARGO_FEATURES}\n"
       "mkdir -p '${_RUST_OUT}'\n"
@@ -124,18 +121,17 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/py/pyproject.toml")
     file(
       WRITE "${_PY_BUILD_SCRIPT}"
       "#!/bin/bash\nset -e\n"
-      # Install the dependencies offline from the dev image's baked wheelhouse
-      # when present (APEX_PIP_WHEELHOUSE). poetry build itself is already offline
-      # (poetry-core is bundled). Local dev (no env) resolves online from PyPI.
-      "FINDLINKS=\n"
-      "if [ -n \"\${APEX_PIP_WHEELHOUSE:-}\" ]; then FINDLINKS=\"--no-index --find-links \${APEX_PIP_WHEELHOUSE}\"; fi\n"
+      # Offline enforcement comes from the environment: the build image sets
+      # PIP_NO_INDEX=1 / PIP_FIND_LINKS against its baked wheelhouse (pip reads
+      # both natively). poetry build itself is already offline (poetry-core is
+      # bundled). Local dev (no such env) resolves online from PyPI.
       "mkdir -p '${_PY_OUT}' '${_PY_LIB}' '${_PY_WHEELS}'\n"
       "cd '${_PY_SRC}'\n"
       "'${POETRY_EXECUTABLE}' build --format wheel --output '${_PY_WHEELS}'\n"
       "'${PIP_EXECUTABLE}' install --quiet --no-deps --target '${_PY_LIB}' --upgrade ${_PY_WHEELS}/*.whl\n"
       "cp -f '${_PY_LIB}/bin'/* '${_PY_OUT}/' 2>/dev/null || true\n"
       "rm -rf '${_PY_LIB}/bin'\n"
-      "'${PIP_EXECUTABLE}' install --quiet \${FINDLINKS} --target '${_PY_LIB}' --upgrade ${_PY_WHEELS}/*.whl\n"
+      "'${PIP_EXECUTABLE}' install --quiet --target '${_PY_LIB}' --upgrade ${_PY_WHEELS}/*.whl\n"
       "rm -rf '${_PY_LIB}/bin'\n"
       "mkdir -p '${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps'\n"
       "touch '${_PY_STAMP}'\n"

@@ -17,6 +17,7 @@ x-inline-cache: &inline-cache
   - type=inline
 
 services:
+  # --- BEGIN GENERATED: platform consumers (make regen-platforms) ---
   base:
     build:
       cache_from:
@@ -79,10 +80,10 @@ services:
         - ${REGISTRY}/apex.dev.stm32:latest
       cache_to: *inline-cache
 
-  dev-esp32:
+  dev-arduino:
     build:
       cache_from:
-        - ${REGISTRY}/apex.dev.esp32:latest
+        - ${REGISTRY}/apex.dev.arduino:latest
       cache_to: *inline-cache
 
   dev-pico:
@@ -91,10 +92,10 @@ services:
         - ${REGISTRY}/apex.dev.pico:latest
       cache_to: *inline-cache
 
-  dev-arduino:
+  dev-esp32:
     build:
       cache_from:
-        - ${REGISTRY}/apex.dev.arduino:latest
+        - ${REGISTRY}/apex.dev.esp32:latest
       cache_to: *inline-cache
 
   dev-c2000:
@@ -105,3 +106,4 @@ services:
 
   # zephyr / atmega328pb / pic32 are dev-shell-only platforms that CI does not
   # build, so they carry no registry-cache overlay here.
+  # --- END GENERATED: platform consumers ---

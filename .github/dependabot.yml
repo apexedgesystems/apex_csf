@@ -9,6 +9,10 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Wait out newly published versions: a fresh release can be malicious or
+    # unstable (supply-chain posture; same rationale as the SHA-pinned actions).
+    cooldown:
+      default-days: 7
     groups:
       github-actions:
         patterns: ["*"]
@@ -18,6 +22,10 @@ updates:
     directory: /tools/rust
     schedule:
       interval: weekly
+    # Wait out newly published versions: a fresh release can be malicious or
+    # unstable (supply-chain posture; same rationale as the SHA-pinned actions).
+    cooldown:
+      default-days: 7
     groups:
       cargo:
         update-types: ["minor", "patch"]
@@ -27,6 +35,10 @@ updates:
     directory: /tools/py
     schedule:
       interval: weekly
+    # Wait out newly published versions: a fresh release can be malicious or
+    # unstable (supply-chain posture; same rationale as the SHA-pinned actions).
+    cooldown:
+      default-days: 7
     groups:
       python:
         update-types: ["minor", "patch"]
@@ -40,6 +52,10 @@ updates:
       - /docker/dev
     schedule:
       interval: weekly
+    # Wait out newly published versions: a fresh release can be malicious or
+    # unstable (supply-chain posture; same rationale as the SHA-pinned actions).
+    cooldown:
+      default-days: 7
     groups:
       docker:
         patterns: ["*"]
