@@ -355,3 +355,47 @@ TYPED_TEST(QuaternionTestT, SlerpInto_T05) {
   EXPECT_NEAR(out.y(), V(0), tol<V>());
   EXPECT_NEAR(out.z(), EXPECTED, tol<V>());
 }
+
+/* ---------------------- SLERP bands + angle-axis edges ---------------------- */
+
+/** @test SLERP takes all three interpolation bands and the negated-dot path. */
+TYPED_TEST(QuaternionTestT, SlerpCoversAllBands) {
+  using T = TypeParam;
+  T ad[4], bd[4], od[4];
+  Quaternion<T> a(ad), b(bd), out(od);
+  a.setIdentity();
+
+  // Band angles chosen by dot = cos(angle/2): nlerp (>0.9995), fast
+  // (0.95..0.9995), full acos (<0.95), and dot < 0 (shorter-path negate).
+  const T ANGLES[] = {T(0.01), T(0.5), T(2.0), T(5.0)};
+  for (T angle : ANGLES) {
+    b.setFromAngleAxis(angle, T(0), T(0), T(1));
+    ASSERT_EQ(a.slerpInto(b, T(0.5), out), 0);
+    // The interpolant is a unit rotation about +Z by ~angle/2 (up to sign).
+    T n = 0;
+    out.normInto(n);
+    EXPECT_NEAR(n, T(1), T(2e-2));
+    EXPECT_NEAR(out.x(), T(0), T(1e-6));
+    EXPECT_NEAR(out.y(), T(0), T(1e-6));
+    T ref[4];
+    Quaternion<T> r(ref);
+    const T HALF = angle <= T(3.14159265) ? angle * T(0.5) : (angle - T(6.283185307)) * T(0.5);
+    r.setFromAngleAxis(HALF, T(0), T(0), T(1));
+    const T SIGN = out.w() * r.w() >= T(0) ? T(1) : T(-1);
+    EXPECT_NEAR(out.w(), SIGN * r.w(), T(2e-2));
+  }
+}
+
+/** @test toAngleAxis: the zero-rotation branch yields the conventional axis. */
+TYPED_TEST(QuaternionTestT, AngleAxisIdentityBranch) {
+  using T = TypeParam;
+  T qd[4];
+  Quaternion<T> q(qd);
+  q.setIdentity();
+  T angle = T(1), ax = 0, ay = 0, az = 0;
+  ASSERT_EQ(q.toAngleAxisInto(angle, ax, ay, az), 0);
+  EXPECT_NEAR(angle, T(0), tol<T>());
+  EXPECT_EQ(ax, T(1)); // conventional axis for a zero rotation
+  EXPECT_EQ(ay, T(0));
+  EXPECT_EQ(az, T(0));
+}

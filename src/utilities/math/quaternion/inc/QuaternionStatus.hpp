@@ -7,7 +7,7 @@
  * @note RT-SAFE: All status codes are trivial enums.
  */
 
-#include <cstdint>
+#include <stdint.h>
 
 namespace apex {
 namespace math {
@@ -18,7 +18,7 @@ namespace quaternion {
 /**
  * @brief Status codes returned by Quaternion operations.
  */
-enum class Status : std::uint8_t {
+enum class Status : uint8_t {
   SUCCESS = 0,          ///< Operation succeeded.
   ERROR_INVALID_VALUE,  ///< Input value is invalid (e.g., zero-norm).
   ERROR_SIZE_MISMATCH,  ///< Array/vector size mismatch.

@@ -21,15 +21,16 @@ Header-only compatibility shims providing portability across C++ standards, Open
 
 ## 1. Quick Reference
 
-### Core Language (5 headers)
+### Core Language (6 headers)
 
-| Header                   | Purpose               | Key Features                                                 |
-| ------------------------ | --------------------- | ------------------------------------------------------------ |
-| `compat_attributes.hpp`  | Compiler hints        | `COMPAT_HOT`, `COMPAT_LIKELY`, `COMPAT_UNLIKELY`             |
-| `compat_byteswap.hpp`    | Byte order conversion | `byteswap()`, `byteswap_ieee()` - C++23 shim                 |
-| `compat_concurrency.hpp` | Atomic wait/notify    | `waitEq()`, `notifyOne/All()` - C++20 shim                   |
-| `compat_endian.hpp`      | Endian detection      | `endian` enum, `NATIVE_ENDIAN` - C++20 shim                  |
-| `compat_span.hpp`        | Byte views            | `bytes_span`, `mutable_bytes_span`, `rospan<T>` - C++20 shim |
+| Header                   | Purpose               | Key Features                                                                                             |
+| ------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------- |
+| `compat_attributes.hpp`  | Compiler hints        | `COMPAT_HOT`, `COMPAT_LIKELY`, `COMPAT_UNLIKELY`                                                         |
+| `compat_byteswap.hpp`    | Byte order conversion | `byteswap()`, `byteswap_ieee()` - C++23 shim                                                             |
+| `compat_concurrency.hpp` | Atomic wait/notify    | `waitEq()`, `notifyOne/All()` - C++20 shim                                                               |
+| `compat_endian.hpp`      | Endian detection      | `endian` enum, `NATIVE_ENDIAN` - C++20 shim                                                              |
+| `compat_math.hpp`        | Portable scalar math  | `sqrt/sin/cos/asin/acos/atan2/fabs/copysign`, `epsilon<T>()` - std on hosted, `<math.h>` on freestanding |
+| `compat_span.hpp`        | Byte views            | `bytes_span`, `mutable_bytes_span`, `rospan<T>` - C++20 shim                                             |
 
 ### CUDA Integration (5 headers)
 

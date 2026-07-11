@@ -21,7 +21,17 @@ set(CUDA_SOURCES "${SRC_DIR}/QuaternionCuda.cu")
 # Interface Library (header-only CPU)
 # ------------------------------------------------------------------------------
 
-apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
+# BAREMETAL: the header set is freestanding-clean (compat math shims, no
+# heap/exceptions/RTTI), so MCU firmware links the same quaternion the sim uses.
+apex_add_interface_library(
+  NAME
+  ${LIB_NAME}
+  INC
+  "${INC_DIR}"
+  DEPS_INTERFACE
+  utilities_compatibility
+  BAREMETAL
+)
 
 # ------------------------------------------------------------------------------
 # CUDA Library

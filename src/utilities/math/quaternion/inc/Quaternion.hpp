@@ -19,9 +19,10 @@
 
 #include "src/utilities/math/quaternion/inc/QuaternionStatus.hpp"
 
-#include <cstddef>
-#include <cstdint>
-#include <type_traits>
+#include "src/utilities/compatibility/inc/compat_type_traits.hpp"
+
+#include <stddef.h>
+#include <stdint.h>
 
 namespace apex {
 namespace math {
@@ -37,12 +38,12 @@ namespace quaternion {
  * @note RT-SAFE: All operations noexcept, no allocations.
  */
 template <typename T> class Quaternion {
-  static_assert(std::is_same<T, float>::value || std::is_same<T, double>::value,
+  static_assert(apex::compat::is_same_v<T, float> || apex::compat::is_same_v<T, double>,
                 "Quaternion<T> supports only float or double.");
 
 public:
   using ValueType = T;
-  static constexpr std::size_t K_SIZE = 4;
+  static constexpr size_t K_SIZE = 4;
 
   /* --------------------------- Construction ------------------------------ */
 
@@ -86,6 +87,13 @@ public:
    * @note RT-SAFE: No allocation. Axis must be pre-normalized.
    */
   uint8_t setFromAngleAxis(T angleRad, T axisX, T axisY, T axisZ) noexcept;
+
+  /**
+   * @brief Set from aerospace 3-2-1 Euler angles (yaw, then pitch, then roll).
+   * @param rollRad,pitchRad,yawRad Angles in radians.
+   * @note RT-SAFE: No allocation.
+   */
+  uint8_t setFromEuler321(T rollRad, T pitchRad, T yawRad) noexcept;
 
   /* ------------------------- Basic Operations ---------------------------- */
 
@@ -150,6 +158,14 @@ public:
    * @note RT-SAFE: No allocation.
    */
   uint8_t toAngleAxisInto(T& angleRad, T& axisX, T& axisY, T& axisZ) const noexcept;
+
+  /**
+   * @brief Extract aerospace 3-2-1 Euler angles (radians).
+   *
+   * Pitch is clamped to +/-pi/2 at the gimbal singularity (|sin(pitch)| >= 1).
+   * @note RT-SAFE: No allocation.
+   */
+  uint8_t toEuler321Into(T& rollRad, T& pitchRad, T& yawRad) const noexcept;
 
   /* ---------------------- Interpolation ---------------------------------- */
 

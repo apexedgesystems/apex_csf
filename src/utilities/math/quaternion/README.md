@@ -23,43 +23,36 @@ Unit quaternion operations for 3D rotations with RT-safe APIs and optional GPU a
 
 ## 1. Quick Start
 
-**Basic quaternion operations:**
+`Quaternion<T>` is a non-owning VIEW over caller storage; `QuatData<T>` owns
+the four scalars when nothing else does. Every operation returns a `uint8_t`
+status.
 
 ```cpp
-#include "src/utilities/math/quaternion/inc/Quaternion.hpp"
+#include "src/utilities/math/quaternion/inc/QuatData.hpp"
+#include "src/utilities/math/quaternion/inc/QuaternionIntegrator.hpp"
 
-using apex::math::quaternion::Quaternion;
+using namespace apex::math::quaternion;
 
-// Identity quaternion (w=1, x=y=z=0)
-Quaternion<double> q = Quaternion<double>::identity();
+QuatData<double> qd;                 // owned storage, identity by default
+Quaternion<double> q = qd.view();    // math view over it
 
-// Create from axis-angle
-double axis[3] = {0.0, 0.0, 1.0};
-auto qRot = Quaternion<double>::fromAxisAngle(axis, M_PI / 4.0);
+// Set from angle-axis (axis pre-normalized) or Euler 3-2-1
+q.setFromAngleAxis(0.785398, 0.0, 0.0, 1.0);
+q.setFromEuler321(roll, pitch, yaw);
 
-// Rotate a vector
-double vIn[3] = {1.0, 0.0, 0.0};
-double vOut[3];
-qRot.rotateVector(vIn, vOut);
+// Rotate a vector: v' = q * v * q^{-1}
+double vIn[3] = {1.0, 0.0, 0.0}, vOut[3];
+q.rotateVectorInto(vIn, vOut);
 
-// Compose rotations
-Quaternion<double> qCompose;
-qRot.multiply(q, qCompose);
+// Compose, invert, interpolate (caller supplies output storage)
+double outD[4];
+Quaternion<double> out(outD);
+q.multiplyInto(other, out);
+q.slerpInto(other, 0.5, out);
 
-// SLERP interpolation
-Quaternion<double> qInterp;
-q.slerp(qRot, 0.5, qInterp);
-```
-
-**Convert to/from rotation matrix:**
-
-```cpp
-// Quaternion to rotation matrix (row-major 3x3)
-double mat[9];
-q.toRotationMatrix(mat);
-
-// Matrix to quaternion
-auto qFromMat = Quaternion<double>::fromRotationMatrix(mat);
+// Integrate attitude from body rates (the 6DOF per-tick update)
+const double W[3] = {p, qRate, r};
+QuaternionIntegrator<double>::stepExponential(q, W, dt);
 ```
 
 ---
@@ -82,23 +75,47 @@ auto qFromMat = Quaternion<double>::fromRotationMatrix(mat);
 - **Rotation direction:** Active rotation (rotates vectors, not frames)
 - **Handedness:** Right-handed coordinate system
 - **Matrix format:** Row-major 3x3 for `toRotationMatrix`
+- **Euler angles:** aerospace 3-2-1 (yaw, then pitch, then roll), radians
+
+### Companion headers
+
+| Header                     | Provides                                                                                                                                                                                              |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `QuatData.hpp`             | `QuatData<T>` -- owned flat-POD storage (identity default, trivially copyable / bus-streamable) with a `view()` accessor                                                                              |
+| `QuaternionIntegrator.hpp` | `QuaternionIntegrator<T>` -- attitude steps for `dq/dt = 0.5 q (0, omega)`: `stepEuler`, `stepMidpoint`, `stepExponential` (exact for constant omega), plus the `deltaInto` exponential-map primitive |
+
+### Freestanding / MCU use
+
+The library is `BAREMETAL`-flagged: the same headers compile on the bare-metal
+toolchains (arm-none-eabi, avr, pico, esp32, c2000) under
+`-fno-exceptions -fno-rtti` at the C++17 floor. Scalar math routes through
+`apex::compat` (`compat_math.hpp`): `std::` on hosted builds, `<math.h>` on
+freestanding toolchains without a C++ standard library, with float overloads
+dispatching to the `f`-suffixed forms so single-precision FPUs never promote
+through double. Headers use C-header spellings (`<stdint.h>`, `<stddef.h>`)
+for the same reason. `float` instantiations serve single-precision FPUs;
+`double` serves the sim.
 
 ---
 
 ## 3. RT-Safety
 
-| Function               | RT-Safe | Notes                        |
-| ---------------------- | ------- | ---------------------------- |
-| `identity()`           | Yes     | Returns static value         |
-| `fromAxisAngle()`      | Yes     | No allocation                |
-| `rotateVector()`       | Yes     | No allocation                |
-| `multiply()`           | Yes     | No allocation                |
-| `conjugate()`          | Yes     | No allocation                |
-| `inverse()`            | Yes     | No allocation (assumes unit) |
-| `slerp()`              | Yes     | No allocation                |
-| `toRotationMatrix()`   | Yes     | No allocation                |
-| `fromRotationMatrix()` | Yes     | No allocation                |
-| `cuda::*BatchCuda()`   | Yes     | Pre-allocated device buffers |
+| Function                  | RT-Safe | Notes                           |
+| ------------------------- | ------- | ------------------------------- |
+| `setIdentity()` / `set()` | Yes     | No allocation                   |
+| `setFromAngleAxis()`      | Yes     | Axis pre-normalized             |
+| `setFromEuler321()`       | Yes     | No allocation                   |
+| `rotateVectorInto()`      | Yes     | Assumes unit quaternion         |
+| `multiplyInto()`          | Yes     | No allocation                   |
+| `conjugateInto()`         | Yes     | No allocation                   |
+| `inverseInto()`           | Yes     | Guards zero norm                |
+| `normalizeInPlace()`      | Yes     | Guards zero norm                |
+| `slerpInto()`             | Yes     | Fast-path approximations        |
+| `toRotationMatrixInto()`  | Yes     | Row-major 3x3                   |
+| `toAngleAxisInto()`       | Yes     | Angle in [0, pi]                |
+| `toEuler321Into()`        | Yes     | Pitch clamps at the singularity |
+| `QuaternionIntegrator<T>` | Yes     | All steps O(1), renormalizing   |
+| `cuda::*BatchCuda()`      | Yes     | Pre-allocated device buffers    |
 
 ---
 
@@ -108,51 +125,64 @@ auto qFromMat = Quaternion<double>::fromRotationMatrix(mat);
 
 ```cpp
 template <typename T>
-class Quaternion {
+class Quaternion {              // non-owning view over T[4] = [w, x, y, z]
 public:
-  // Data access
-  T w() const noexcept;
-  T x() const noexcept;
-  T y() const noexcept;
-  T z() const noexcept;
+  explicit Quaternion(T* data) noexcept;
+
+  // Data access (references write through to the viewed storage)
+  T& w() noexcept;  T w() const noexcept;   // likewise x(), y(), z()
   T* data() noexcept;
   const T* data() const noexcept;
 
-  // Static constructors
-  static Quaternion identity() noexcept;
-  static Quaternion fromAxisAngle(const T* axis, T angle) noexcept;
-  static Quaternion fromRotationMatrix(const T* mat) noexcept;
-  static Quaternion fromEulerZYX(T z, T y, T x) noexcept;
+  // Set operations
+  uint8_t setIdentity() noexcept;
+  uint8_t set(T w, T x, T y, T z) noexcept;
+  uint8_t setFromAngleAxis(T angleRad, T axisX, T axisY, T axisZ) noexcept;
+  uint8_t setFromEuler321(T rollRad, T pitchRad, T yawRad) noexcept;
 
-  // Operations
-  Status rotateVector(const T* vIn, T* vOut) const noexcept;
-  Status multiply(const Quaternion& rhs, Quaternion& out) const noexcept;
-  Status conjugate(Quaternion& out) const noexcept;
-  Status inverse(Quaternion& out) const noexcept;
-  Status normalize() noexcept;
-  Status slerp(const Quaternion& target, T t, Quaternion& out) const noexcept;
+  // Operations (caller supplies output storage)
+  uint8_t normInto(T& out) const noexcept;
+  uint8_t normalizeInPlace() noexcept;
+  uint8_t conjugateInto(Quaternion& out) const noexcept;
+  uint8_t inverseInto(Quaternion& out) const noexcept;
+  uint8_t multiplyInto(const Quaternion& b, Quaternion& out) const noexcept;
+  uint8_t rotateVectorInto(const T* vIn, T* vOut) const noexcept;
+  uint8_t slerpInto(const Quaternion& b, T t, Quaternion& out) const noexcept;
 
   // Conversions
-  Status toRotationMatrix(T* mat) const noexcept;
-  Status toAxisAngle(T* axis, T& angle) const noexcept;
-  Status toEulerZYX(T& z, T& y, T& x) const noexcept;
+  uint8_t toRotationMatrixInto(T* matOut) const noexcept;
+  uint8_t toAngleAxisInto(T& angleRad, T& ax, T& ay, T& az) const noexcept;
+  uint8_t toEuler321Into(T& rollRad, T& pitchRad, T& yawRad) const noexcept;
+};
+
+template <typename T> struct QuatData {   // owned flat POD, identity default
+  T d[4];
+  Quaternion<T> view() noexcept;
+  T w() const noexcept;                    // likewise x(), y(), z()
+};
+
+template <typename T> class QuaternionIntegrator {  // stateless steps
+public:
+  static uint8_t deltaInto(const T* omegaBody, T dt, Quaternion<T>& out) noexcept;
+  static uint8_t stepEuler(Quaternion<T>& q, const T* omegaBody, T dt) noexcept;
+  static uint8_t stepMidpoint(Quaternion<T>& q, const T* omegaBody, T dt) noexcept;
+  static uint8_t stepExponential(Quaternion<T>& q, const T* omegaBody, T dt) noexcept;
 };
 ```
 
 ### Status Codes
 
+All operations return `uint8_t` values of `Status` (`QuaternionStatus.hpp`):
+
 ```cpp
-enum class Status : std::uint8_t {
+enum class Status : uint8_t {
   SUCCESS = 0,
-  ERROR_ZERO_NORM = 1,
-  ERROR_INVALID_AXIS = 2,
-  ERROR_NOT_UNIT = 3,
-  ERROR_INVALID_MATRIX = 4,
-  ERROR_GIMBAL_LOCK = 5,
-  ERROR_CUDA_UNAVAILABLE = 6,
-  ERROR_CUDA_KERNEL = 7,
-  ERROR_INVALID_BATCH = 8,
-  ERROR_NULL_POINTER = 9
+  ERROR_INVALID_VALUE,   // zero norm in normalize/inverse
+  ERROR_SIZE_MISMATCH,
+  ERROR_SINGULAR,
+  ERROR_NOT_NORMALIZED,
+  ERROR_UNSUPPORTED_OP,
+  ERROR_UNKNOWN
 };
 ```
 
@@ -171,6 +201,18 @@ CPU throughput on x86-64 (batch of 10,000 quaternions, 15 repeats):
 
 SLERP is ~3.1x slower than multiply due to transcendental functions (acos, sin, cos).
 The other operations are pure element-wise arithmetic.
+
+Attitude-integration steps and Euler conversions (single call, not batched):
+
+| Operation            | Per-Call (ns) |
+| -------------------- | ------------- |
+| `stepEuler`          | 72            |
+| `stepMidpoint`       | 56            |
+| `stepExponential`    | 53            |
+| Euler-321 round trip | 75            |
+
+All are noise against a control tick: at 50 Hz the exponential step spends
+~0.0003% of the period.
 
 GPU batch throughput (10,000 quaternions, CUDA):
 
