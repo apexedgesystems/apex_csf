@@ -2,7 +2,6 @@
 
 **Platform:** Linux (full), bare-metal MCU (embedded subset)
 **C++ Standard:** C++23 (host), C++20 (bare-metal)
-**Version:** 0.0.1
 **License:** MIT
 
 Apex CSF is a real-time control and simulation framework. You write
@@ -224,17 +223,22 @@ After building, start with one of these depending on your interest:
 
 ### Demo Applications
 
-| Application                                            | Description                                                   | Platforms          |
-| ------------------------------------------------------ | ------------------------------------------------------------- | ------------------ |
-| [apex_ops_demo](apps/apex_ops_demo/)                   | Waveform telemetry for Zenith operations interface testing    | x86_64, RPi        |
-| [apex_edge_demo](apps/apex_edge_demo/)                 | GPU workloads under ApexExecutive RT scheduling               | x86_64 + CUDA      |
-| [apex_hil_demo](apps/apex_hil_demo/)                   | POSIX plant model + STM32 flight controller over UART/SLIP    | x86_64 + STM32     |
-| [apex_mc_demo](apps/apex_mc_demo/)                     | Monte Carlo voltage regulator tolerance analysis              | x86_64             |
-| [stm32_encryptor_demo](apps/stm32_encryptor_demo/)     | AES-256-GCM encryption with dual UART channels                | NUCLEO-L476RG      |
-| [arduino_encryptor_demo](apps/arduino_encryptor_demo/) | AES-256-GCM encryption on ATmega328P (32 KB flash, 2 KB SRAM) | Arduino Uno R3     |
-| [pico_encryptor_demo](apps/pico_encryptor_demo/)       | AES-256-GCM encryption with dual UART                         | Raspberry Pi Pico  |
-| [esp32_encryptor_demo](apps/esp32_encryptor_demo/)     | AES-256-GCM encryption with UART + USB CDC                    | Arduino Nano ESP32 |
-| [c2000_encryptor_demo](apps/c2000_encryptor_demo/)     | AES-256-GCM + CAN loopback                                    | LAUNCHXL-F280049C  |
+| Application                                            | Description                                                         | Platforms          |
+| ------------------------------------------------------ | ------------------------------------------------------------------- | ------------------ |
+| [apex_ops_demo](apps/apex_ops_demo/)                   | Waveform telemetry for Zenith operations interface testing          | x86_64, RPi        |
+| [apex_edge_demo](apps/apex_edge_demo/)                 | GPU workloads under ApexExecutive RT scheduling                     | x86_64 + CUDA      |
+| [apex_hil_demo](apps/apex_hil_demo/)                   | POSIX plant model + STM32 flight controller over UART/SLIP          | x86_64 + STM32     |
+| [apex_mc_demo](apps/apex_mc_demo/)                     | Monte Carlo voltage regulator tolerance analysis                    | x86_64             |
+| [apex_action_demo](apps/apex_action_demo/)             | Action engine observe-and-react pipeline with runtime data mutation | x86_64             |
+| [apex_circuit_demo](apps/apex_circuit_demo/)           | Transistor-level CMOS gates and analog filters, selected at runtime | x86_64             |
+| [apex_cpu_sim_demo](apps/apex_cpu_sim_demo/)           | Intel 4004 CPU simulation at three device-physics fidelity levels   | x86_64             |
+| [apex_time_demo](apps/apex_time_demo/)                 | TimeServer end to end: PPS ingest, UTC correlation, timed triggers  | x86_64             |
+| [apex_horizon_demo](apps/apex_horizon_demo/)           | Six-beam lidar on a drifting body, streamed to a 3D viewer          | x86_64             |
+| [stm32_encryptor_demo](apps/stm32_encryptor_demo/)     | AES-256-GCM encryption with dual UART channels                      | NUCLEO-L476RG      |
+| [arduino_encryptor_demo](apps/arduino_encryptor_demo/) | AES-256-GCM encryption on ATmega328P (32 KB flash, 2 KB SRAM)       | Arduino Uno R3     |
+| [pico_encryptor_demo](apps/pico_encryptor_demo/)       | AES-256-GCM encryption with dual UART                               | Raspberry Pi Pico  |
+| [esp32_encryptor_demo](apps/esp32_encryptor_demo/)     | AES-256-GCM encryption with UART + USB CDC                          | Arduino Nano ESP32 |
+| [c2000_encryptor_demo](apps/c2000_encryptor_demo/)     | AES-256-GCM + CAN loopback                                          | LAUNCHXL-F280049C  |
 
 ---
 
@@ -267,9 +271,12 @@ for RT-safe use. Bare-metal subset: AES-256-GCM.
 
 ### Simulation
 
-Spherical harmonic gravity (EGM2008 degree 2190, GRGM1200A degree 1200),
-circuit simulation (MNA, transient), ODE integrators, quaternion math, and
-Monte Carlo batch execution across a thread pool.
+Flight dynamics for atmospheric vehicles -- aerodynamics, propulsion,
+rigid-body dynamics, GNC by vehicle class, and sensor measurement models --
+over environment models for gravity (EGM2008 degree 2190, GRGM1200A degree
+1200), atmosphere, terrain, and celestial bodies. Plus multi-fidelity
+circuit simulation (MNA, transient, device physics) and Monte Carlo batch
+execution across a thread pool.
 
 ### GPU Compute (CUDA)
 
@@ -288,7 +295,7 @@ quaternions with optional GPU batch acceleration.
 Docker images for 13 platforms with pre-configured toolchains. Unified Make
 interface. CMake infrastructure for libraries, tests, coverage, firmware, and
 packaging. Rust CLI tools for TPRM management, data generation, and hardware
-testing.
+testing; Python CLI tools for operations decks and Monte Carlo plotting.
 
 ---
 
@@ -313,6 +320,11 @@ testing.
 | ESP32       | Xtensa LX7     | xtensa-esp32s3-elf    | esptool    |
 | ATmega328PB | AVR            | avr-gcc               | avrdude    |
 | C2000       | TI C28x DSP    | cl2000                | UniFlash   |
+| Zephyr      | ARM Cortex-M   | Zephyr SDK (GCC)      | west       |
+| PIC32       | MIPS32         | xc32-gcc              | pic32prog  |
+
+Zephyr, ATmega328PB, and PIC32 ship toolchain images without in-tree demo
+firmware yet.
 
 All toolchains are pre-configured in Docker images. See
 [docker/README.md](docker/README.md) for the image hierarchy.
@@ -426,12 +438,21 @@ Performance benchmarking uses
 
 ### Simulation
 
-| Library                                              | Namespace                   | Description                                                                                                                                                                                                                                                                                                        |
-| ---------------------------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [monte_carlo](src/system/core/monte_carlo/README.md) | `apex::monte_carlo`         | Header-only batch Monte Carlo execution across a thread pool                                                                                                                                                                                                                                                       |
-| [electronics](src/sim/electronics/README.md)         | `sim::electronics`          | Multi-fidelity circuit simulation: MNA solvers (KLU sparse, dense, batched CUDA), Newton-Raphson, transient with companion models, device physics (R/L/C, diodes, MOSFET levels 1-3 / BSIM3, JFETs, BJTs), pre-built topologies (CMOS gates, RC filters, BJT amps), chip-scale assemblies (Intel 4004 L0/Lg/L1/L2) |
-| [gravity](src/sim/environment/gravity/README.md)     | `sim::environment::gravity` | Spherical harmonic gravity (EGM2008 degree 2190, GRGM1200A degree 1200) with CUDA                                                                                                                                                                                                                                  |
-| [regulator](src/sim/analog/regulator/README.md)      | `sim::analog`               | LDO voltage regulator model for Monte Carlo tolerance analysis                                                                                                                                                                                                                                                     |
+| Library                                                        | Namespace                          | Description                                                                        |
+| -------------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------- |
+| [monte_carlo](src/system/core/monte_carlo/README.md)           | `apex::monte_carlo`                | Header-only batch Monte Carlo execution across a thread pool                       |
+| [aerodynamics](src/sim/aerodynamics/README.md)                 | `sim::aerodynamics`                | Body-frame aerodynamic force/moment models for atmospheric vehicles                |
+| [dynamics](src/sim/dynamics/README.md)                         | `sim::dynamics`                    | Rigid-body equations of motion, ODE state integration, mass-property tracking      |
+| [propulsion](src/sim/propulsion/README.md)                     | `sim::propulsion`                  | Engine thrust models from throttle command and ambient density                     |
+| [gnc](src/sim/gnc/README.md)                                   | `sim::gnc`                         | Guidance, navigation, and control organized by vehicle class                       |
+| [sensors](src/sim/sensors/README.md)                           | `sim::sensors`                     | Sensor measurement models with physical noise and bias                             |
+| [electronics](src/sim/electronics/README.md)                   | `sim::electronics`                 | Multi-fidelity circuit simulation: MNA solvers, transient analysis, device physics |
+| [gravity](src/sim/environment/gravity/README.md)               | `sim::environment::gravity`        | Spherical harmonic gravity (EGM2008 degree 2190, GRGM1200A degree 1200) with CUDA  |
+| [atmosphere](src/sim/environment/atmosphere/README.md)         | `sim::environment::atmosphere`     | Local fluid-state queries: density, pressure, temperature, speed of sound          |
+| [terrain](src/sim/environment/terrain/README.md)               | `sim::environment::terrain`        | Digital elevation queries over a fidelity ladder of models                         |
+| [celestial_body](src/sim/environment/celestial_body/README.md) | `sim::environment::celestial_body` | Component representing one celestial body and its environment models               |
+| [factory](src/sim/environment/factory/README.md)               | `sim::environment`                 | Builds gravity, terrain, and atmosphere models from a (Body, fidelity) pair        |
+| [regulator](src/sim/analog/regulator/README.md)                | `sim::analog`                      | LDO voltage regulator model for Monte Carlo tolerance analysis                     |
 
 ### GPU Compute (CUDA)
 
@@ -455,6 +476,9 @@ Performance benchmarking uses
 | `serial_dev_checker` | Scan serial device status                        |
 | `serial_dev_tester`  | Serial loopback verification                     |
 | `upx_tool`           | UPX compression/decompression helper             |
+| `ops-deck`           | Generate operations display decks (Python)       |
+| `zenith-target`      | Generate Zenith target configuration (Python)    |
+| `mc-plot`            | Plot Monte Carlo run results (Python)            |
 
 See [tools/rust/README.md](tools/rust/README.md),
 [tools/py/README.md](tools/py/README.md),
@@ -464,6 +488,14 @@ See [tools/rust/README.md](tools/rust/README.md),
 ---
 
 ## 10. Documentation
+
+### Project
+
+| Document                           | Purpose                                    |
+| ---------------------------------- | ------------------------------------------ |
+| [CHANGELOG.md](CHANGELOG.md)       | Release history and unreleased changes     |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, quality gates, PR shape |
+| [SECURITY.md](SECURITY.md)         | Vulnerability reporting and support policy |
 
 ### Build System
 
