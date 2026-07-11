@@ -126,6 +126,8 @@ jobs:
       # pull so release-path drift is the fastest failure in the pipeline.
       - name: Check release paths (final.Dockerfile vs presets)
         run: make check-release-paths
+      - name: Check platform consumers match the registry
+        run: make check-platforms
       - name: Set up dev image
         uses: ./.github/actions/dev-setup
         with:

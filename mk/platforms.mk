@@ -7,7 +7,10 @@
 #   - Makefile  : per-platform build/configure targets (_platform_targets)
 #   - compose.mk: compose-<platform> wrappers
 #   - release.mk: PLATFORM_<p>_SERVICE/BUILD/DIR
-#   - CI        : print-platform-matrix (docker-images.yml image graph)
+#   - generated : docker-compose leaf services, ci-cache entries, and the
+#                 docker-images image GRAPH (docker/scripts/
+#                 gen-platform-consumers.py via make regen-platforms;
+#                 make check-platforms gates drift)
 #
 # Fields (P_<name>_<field>):
 #   ROLE      host | cross-ship | cross-port | fw-ship | skeleton

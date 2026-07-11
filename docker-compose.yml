@@ -121,6 +121,7 @@ services:
     privileged: true
     command: bash
 
+  # --- BEGIN GENERATED: platform consumers (make regen-platforms) ---
   dev-jetson:
     <<: *common
     image: apex.dev.jetson
@@ -138,9 +139,9 @@ services:
       - NVIDIA_DISABLE_REQUIRE=true
     command: bash
 
-  # ============================================================================
+  # ==========================================================================
   # Interactive development shells - Additional Linux targets
-  # ============================================================================
+  # ==========================================================================
   dev-rpi:
     <<: *common
     image: apex.dev.rpi
@@ -162,23 +163,12 @@ services:
       args:
         <<: *build-args
     hostname: apex-dev-riscv64
-    # Unprivileged by design (H2): cross-compile + QEMU user-mode need no
-    # devices or module loads; the vcan/perf/SD-imaging shells keep privilege.
+    privileged: true
     command: bash
 
-  dev-zephyr:
-    <<: *embedded
-    image: apex.dev.zephyr
-    build:
-      context: .
-      dockerfile: docker/dev/zephyr.Dockerfile
-      args:
-        <<: *build-args
-    hostname: apex-dev-zephyr
-
-  # ============================================================================
+  # ==========================================================================
   # Interactive development shells - Embedded/MCU
-  # ============================================================================
+  # ==========================================================================
   dev-stm32:
     <<: *embedded
     image: apex.dev.stm32
@@ -189,15 +179,15 @@ services:
         <<: *build-args
     hostname: apex-dev-stm32
 
-  dev-esp32:
+  dev-arduino:
     <<: *embedded
-    image: apex.dev.esp32
+    image: apex.dev.arduino
     build:
       context: .
-      dockerfile: docker/dev/esp32.Dockerfile
+      dockerfile: docker/dev/arduino.Dockerfile
       args:
         <<: *build-args
-    hostname: apex-dev-esp32
+    hostname: apex-dev-arduino
 
   dev-pico:
     <<: *embedded
@@ -209,15 +199,35 @@ services:
         <<: *build-args
     hostname: apex-dev-pico
 
-  dev-arduino:
+  dev-esp32:
     <<: *embedded
-    image: apex.dev.arduino
+    image: apex.dev.esp32
     build:
       context: .
-      dockerfile: docker/dev/arduino.Dockerfile
+      dockerfile: docker/dev/esp32.Dockerfile
       args:
         <<: *build-args
-    hostname: apex-dev-arduino
+    hostname: apex-dev-esp32
+
+  dev-c2000:
+    <<: *embedded
+    image: apex.dev.c2000
+    build:
+      context: .
+      dockerfile: docker/dev/c2000.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-c2000
+
+  dev-zephyr:
+    <<: *embedded
+    image: apex.dev.zephyr
+    build:
+      context: .
+      dockerfile: docker/dev/zephyr.Dockerfile
+      args:
+        <<: *build-args
+    hostname: apex-dev-zephyr
 
   dev-atmega328pb:
     <<: *embedded
@@ -238,16 +248,7 @@ services:
       args:
         <<: *build-args
     hostname: apex-dev-pic32
-
-  dev-c2000:
-    <<: *embedded
-    image: apex.dev.c2000
-    build:
-      context: .
-      dockerfile: docker/dev/c2000.Dockerfile
-      args:
-        <<: *build-args
-    hostname: apex-dev-c2000
+  # --- END GENERATED: platform consumers ---
 
   # ============================================================================
   # Builder images (CI artifact generation)

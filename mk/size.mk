@@ -50,29 +50,22 @@ size:
 	$(call _size_run,$(FILE))
 
 # ------------------------------------------------------------------------------
-# Per-Platform Convenience Wrappers
+# Per-Platform Convenience Wrappers (registry-driven)
 # ------------------------------------------------------------------------------
-# Each looks up the .elf in the platform's firmware/ directory.
+# One wrapper per fw-ship registry row -- a new firmware platform gets its
+# size-<plat> for free. The .elf lives under the platform build dir in
+# $(P_<p>_FWELF) (default firmware/; `.` = build root, e.g. ESP-IDF).
 
-size-stm32:
-	@test -n "$(FW)" || { printf '$(TERM_RED)[size-stm32]$(TERM_RESET) FW not set. Usage: make size-stm32 FW=<firmware>\n'; exit 1; }
-	$(call _size_run,$(STM32_DIR)/firmware/$(FW).elf)
+_FW_PLATFORMS := $(foreach p,$(PLATFORMS),$(if $(filter fw-ship,$(P_$(p)_ROLE)),$(p)))
+_fwelf_dir = $(if $(filter .,$(P_$(1)_FWELF)),,firmware/)
 
-size-arduino:
-	@test -n "$(FW)" || { printf '$(TERM_RED)[size-arduino]$(TERM_RESET) FW not set. Usage: make size-arduino FW=<firmware>\n'; exit 1; }
-	$(call _size_run,$(ARDUINO_DIR)/firmware/$(FW).elf)
+define _SIZE_template
+size-$(1):
+	@test -n "$$(FW)" || { printf '$(TERM_RED)[size-$(1)]$(TERM_RESET) FW not set. Usage: make size-$(1) FW=<firmware>\n'; exit 1; }
+	$$(call _size_run,build/$(P_$(1)_PRESET)/$(call _fwelf_dir,$(1))$$(FW).elf)
+endef
 
-size-pico:
-	@test -n "$(FW)" || { printf '$(TERM_RED)[size-pico]$(TERM_RESET) FW not set. Usage: make size-pico FW=<firmware>\n'; exit 1; }
-	$(call _size_run,$(PICO_DIR)/firmware/$(FW).elf)
-
-size-esp32:
-	@test -n "$(FW)" || { printf '$(TERM_RED)[size-esp32]$(TERM_RESET) FW not set. Usage: make size-esp32 FW=<firmware>\n'; exit 1; }
-	$(call _size_run,$(ESP32_DIR)/$(FW).elf)
-
-size-c2000:
-	@test -n "$(FW)" || { printf '$(TERM_RED)[size-c2000]$(TERM_RESET) FW not set. Usage: make size-c2000 FW=<firmware>\n'; exit 1; }
-	$(call _size_run,$(C2000_DIR)/firmware/$(FW).elf)
+$(foreach p,$(_FW_PLATFORMS),$(eval $(call _SIZE_template,$(p))))
 
 # Native POSIX app under the host release build dir
 size-app:
@@ -95,6 +88,6 @@ size-diff:
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: size size-stm32 size-arduino size-pico size-esp32 size-c2000 size-app size-diff
+.PHONY: size $(addprefix size-,$(_FW_PLATFORMS)) size-app size-diff
 
 endif  # SIZE_MK_GUARD

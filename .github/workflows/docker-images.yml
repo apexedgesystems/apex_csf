@@ -80,11 +80,13 @@ jobs:
         run: |
           set -euo pipefail
 
+          # --- BEGIN GENERATED: platform consumers (make regen-platforms) ---
           # image | compose-service | parent-image | tier | dockerfile
           # apex.base and apex.build-base are two targets of base.Dockerfile, so
           # a base.Dockerfile change rebuilds both (and cascades to their
           # children). apex.cuda-build is the lean CUDA tier on build-base,
-          # sharing cuda.Dockerfile with apex.dev.cuda.
+          # sharing cuda.Dockerfile with apex.dev.cuda; apex.build.jetson is its
+          # jetson child. Leaf rows derive from mk/platforms.mk (ROLE != skeleton).
           GRAPH="
           apex.base|base||0|docker/base.Dockerfile
           apex.build-base|build-base||0|docker/base.Dockerfile
@@ -96,16 +98,16 @@ jobs:
           apex.dev.rpi|dev-rpi|apex.dev.cpu|2|docker/dev/rpi.Dockerfile
           apex.dev.riscv64|dev-riscv64|apex.dev.cpu|2|docker/dev/riscv64.Dockerfile
           apex.dev.stm32|dev-stm32|apex.dev.cpu|2|docker/dev/stm32.Dockerfile
-          apex.dev.esp32|dev-esp32|apex.dev.cpu|2|docker/dev/esp32.Dockerfile
-          apex.dev.pico|dev-pico|apex.dev.cpu|2|docker/dev/pico.Dockerfile
           apex.dev.arduino|dev-arduino|apex.dev.cpu|2|docker/dev/arduino.Dockerfile
+          apex.dev.pico|dev-pico|apex.dev.cpu|2|docker/dev/pico.Dockerfile
+          apex.dev.esp32|dev-esp32|apex.dev.cpu|2|docker/dev/esp32.Dockerfile
           apex.dev.c2000|dev-c2000|apex.dev.cpu|2|docker/dev/c2000.Dockerfile
           "
-          # zephyr, atmega328pb, and pic32 are intentionally absent: they are
-          # dev-shell-only platforms -- no shipping artifact uses them and their
-          # toolchains are unmaintained against the current base -- so CI does
-          # not build or publish them. Build one locally with
-          # make docker-dev-<name> if a developer needs the shell.
+          # zephyr, atmega328pb, pic32 are intentionally absent: dev-shell-only
+          # platforms (ROLE skeleton) -- no shipping artifact uses them, so CI
+          # does not build or publish them. make docker-dev-<name> builds one
+          # locally when a developer needs the shell.
+          # --- END GENERATED: platform consumers ---
           MAX_TIER=2
 
           # Diff the whole pushed range (a rebase-merge lands several commits;
