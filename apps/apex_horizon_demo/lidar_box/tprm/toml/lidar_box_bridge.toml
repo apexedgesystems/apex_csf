@@ -1,0 +1,40 @@
+# ShmRingBridge (componentId=203, instanceIndex=0, fullUid=0xCB00) -- /lidar_box publisher
+# Total: 184 bytes (ShmRingBridgeTunables; layout matches
+# src/system/core/support/shm_ring_bridge/inc/ShmRingBridgeData.hpp)
+#
+# Publishes the LidarBoxProducer's OUTPUT (64-byte LidarBoxFrame) to the
+# /lidar_box shared-memory ring at the LBOX/v2 identity. Egress-only:
+# sink_enabled = 0, and reverse_payload_size = 64 keeps the (inert) Region B
+# geometry symmetric with Region A, which is what the consumer's dual-region
+# channel validates on attach.
+#
+# app_magic 'LBOX' = 0x4C424F58 = 1279414104
+# payload_size 64  = sizeof(LidarBoxFrame) (LBOX/v2: mounted distances + scene block)
+# source_uid 0xE600 = 58880 = LidarBoxProducer fullUid (componentId=230, instance=0)
+# source_category 4 = DataCategory::OUTPUT; byte_len 64 = the whole frame
+
+[ShmRingBridgeTunables]
+app_magic            = { type = "uint",   size = 4,  value = 1279414104 }      # 0x4C424F58 = "LBOX"
+app_version          = { type = "uint",   size = 2,  value = 2 }
+reserved0            = { type = "uint",   size = 2,  value = 0 }
+capacity             = { type = "uint",   size = 4,  value = 8 }
+payload_size         = { type = "uint",   size = 4,  value = 64 }              # = sizeof(LidarBoxFrame) v2
+reverse_payload_size = { type = "uint",   size = 4,  value = 64 }              # symmetric inert Region B
+source_uid           = { type = "uint",   size = 4,  value = 58880 }           # 0xE600 = LidarBoxProducer
+source_category      = { type = "uint",   size = 1,  value = 4 }               # DataCategory::OUTPUT
+reserved1_0          = { type = "uint",   size = 1,  value = 0 }
+reserved1_1          = { type = "uint",   size = 1,  value = 0 }
+reserved1_2          = { type = "uint",   size = 1,  value = 0 }
+source_byte_offset   = { type = "uint",   size = 2,  value = 0 }
+source_byte_len      = { type = "uint",   size = 2,  value = 64 }
+sink_enabled         = { type = "uint",   size = 1,  value = 0 }               # egress-only
+orphan_reclaim       = { type = "uint",   size = 1,  value = 1 }               # self-heal if the path vanishes
+sink_reserved_0      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_1      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_2      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_3      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_4      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_5      = { type = "uint",   size = 1,  value = 0 }
+shm_path             = { type = "string", size = 64, value = "/lidar_box" }
+wakeup_path          = { type = "string", size = 64, value = "" }              # auto-derive /lidar_box_wake
+label                = { type = "string", size = 16, value = "lidar_box" }

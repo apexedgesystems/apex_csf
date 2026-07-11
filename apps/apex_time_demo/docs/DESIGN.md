@@ -13,12 +13,12 @@ standard executive shutdown path.
 
 ## Components
 
-| Component     | Owner                | Wiring                                  |
-|---------------|----------------------|-----------------------------------------|
-| TimeServer    | base ApexExecutive   | Auto-registered (componentId=6).         |
-| MockPps       | TimeDemoExecutive    | `setPpsSource(&pps_)` in registerComponents. |
-| SystemMonitor | TimeDemoExecutive    | `registerComponent(&sysMonitor_, ...)`.  |
-| GPS simulator | TimeDemoExecutive    | `std::thread` started in `configureComponents`. |
+| Component     | Owner              | Wiring                                          |
+| ------------- | ------------------ | ----------------------------------------------- |
+| TimeServer    | base ApexExecutive | Auto-registered (componentId=6).                |
+| MockPps       | TimeDemoExecutive  | `setPpsSource(&pps_)` in registerComponents.    |
+| SystemMonitor | TimeDemoExecutive  | `registerComponent(&sysMonitor_, ...)`.         |
+| GPS simulator | TimeDemoExecutive  | `std::thread` started in `configureComponents`. |
 
 ## Why a thread for the simulator
 

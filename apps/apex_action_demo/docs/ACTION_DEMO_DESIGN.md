@@ -114,18 +114,18 @@ Central action engine with full sequencing capabilities:
 
 The boot configuration (master.tprm) loads a complete autonomous campaign:
 
-| Resource | Configuration | Trigger |
-| -------- | ------------- | ------- |
-| WP0 | temp > 50, eventId=1 | Edge fires event 1 -> starts RTS 000 |
-| WP1 | temp > 80, eventId=2 | Notification: "TEMP >80 WARNING" |
-| WP2 | overtemp flag, eventId=3 | Notification: "OVERTEMP DETECTED" |
-| WP3 | temp > 100, eventId=4 | Edge fires event 4 |
-| WP4 | temp == 0.0, eventId=5 | Detects fault-injected zeroed data |
-| GP0 | WP1 AND WP2, eventId=10 | Notification: "TEMP+OVERTEMP GROUP FIRE" |
-| GP1 | WP0 OR WP3, eventId=11 | Composite OR trigger |
-| RTS 000 | 8-step fault campaign | SET_TARGET, ARM, masks, APPLY, DISARM |
-| RTS 001 | CLEAR_ALL cleanup | Chained from RTS 000 |
-| ATS | 5 timed faults | Cycles 100, 200, 350, 400, 550 |
+| Resource | Configuration            | Trigger                                  |
+| -------- | ------------------------ | ---------------------------------------- |
+| WP0      | temp > 50, eventId=1     | Edge fires event 1 -> starts RTS 000     |
+| WP1      | temp > 80, eventId=2     | Notification: "TEMP >80 WARNING"         |
+| WP2      | overtemp flag, eventId=3 | Notification: "OVERTEMP DETECTED"        |
+| WP3      | temp > 100, eventId=4    | Edge fires event 4                       |
+| WP4      | temp == 0.0, eventId=5   | Detects fault-injected zeroed data       |
+| GP0      | WP1 AND WP2, eventId=10  | Notification: "TEMP+OVERTEMP GROUP FIRE" |
+| GP1      | WP0 OR WP3, eventId=11   | Composite OR trigger                     |
+| RTS 000  | 8-step fault campaign    | SET_TARGET, ARM, masks, APPLY, DISARM    |
+| RTS 001  | CLEAR_ALL cleanup        | Chained from RTS 000                     |
+| ATS      | 5 timed faults           | Cycles 100, 200, 350, 400, 550           |
 
 The sensor ramp crosses each threshold deterministically, triggering the full
 watchpoint -> event -> notification -> sequence -> command chain autonomously.
@@ -135,33 +135,33 @@ watchpoint -> event -> notification -> sequence -> command chain autonomously.
 The checkout script (`scripts/checkout.py`) executes 77 tests across 28
 sections covering:
 
-| Section | Coverage |
-| ------- | -------- |
-| 1. Connectivity | NOOP to executive |
-| 2. Component addressing | NOOP to all 7 components |
-| 3. Clock rate | Verify execution rate |
-| 4. Executive health | Health packet parsing |
-| 5. Sensor output | Temperature, rate, overtemp via INSPECT |
-| 6. Action engine stats | Cycling, RTS loaded at boot |
-| 7. DataTransform stats | Mask application tracking |
-| 8. Autonomous campaign | TPRM-driven WP/RTS/ATS execution |
-| 9. Watchpoint fired | WP0 edge detection |
-| 10. Notifications fired | Event notification invocations |
-| 11. RTS fault campaign | Sequencer steps, command routing, masks |
-| 12. RTS chaining | CLEAR_ALL cleanup via chained RTS |
-| 13. ATS fault campaign | Timed faults from boot-generated ATS |
-| 14. Watchpoint groups | AND/OR group fire verification |
-| 15. Nested triggering | Fault -> detect -> respond chain |
-| 16. Direct ground fault | SET_TARGET, ARM, PUSH_ZERO, APPLY, CLEAR_ALL |
-| 17. Wait condition | Embedded watchpoint with timeout/SKIP |
-| 18. Endianness proxy | Byte-swapped sensor output |
-| 19. Complex scenarios | Chaining, priority preemption, blocking |
-| 20. Abort events | Preemption fires cleanup event |
-| 21. Exclusion groups | Mutual exclusion stops conflicting RTS |
-| 22. ABORT_ALL_RTS | Stop all running RTS, verify slots freed |
-| 23. GET_CATALOG | Catalog command + lookup verification |
-| 24. GET_STATUS | Status command + sequence step firing |
-| 25. Sleep / Wake | Pause clock, verify stall, resume |
-| 26. Resource catalogs | Deactivate/reactivate WP, group, notification |
-| 27. C2 latency | 20-ping round-trip measurement |
-| 28. Post-test health | Clock advancing, final statistics |
+| Section                 | Coverage                                      |
+| ----------------------- | --------------------------------------------- |
+| 1. Connectivity         | NOOP to executive                             |
+| 2. Component addressing | NOOP to all 7 components                      |
+| 3. Clock rate           | Verify execution rate                         |
+| 4. Executive health     | Health packet parsing                         |
+| 5. Sensor output        | Temperature, rate, overtemp via INSPECT       |
+| 6. Action engine stats  | Cycling, RTS loaded at boot                   |
+| 7. DataTransform stats  | Mask application tracking                     |
+| 8. Autonomous campaign  | TPRM-driven WP/RTS/ATS execution              |
+| 9. Watchpoint fired     | WP0 edge detection                            |
+| 10. Notifications fired | Event notification invocations                |
+| 11. RTS fault campaign  | Sequencer steps, command routing, masks       |
+| 12. RTS chaining        | CLEAR_ALL cleanup via chained RTS             |
+| 13. ATS fault campaign  | Timed faults from boot-generated ATS          |
+| 14. Watchpoint groups   | AND/OR group fire verification                |
+| 15. Nested triggering   | Fault -> detect -> respond chain              |
+| 16. Direct ground fault | SET_TARGET, ARM, PUSH_ZERO, APPLY, CLEAR_ALL  |
+| 17. Wait condition      | Embedded watchpoint with timeout/SKIP         |
+| 18. Endianness proxy    | Byte-swapped sensor output                    |
+| 19. Complex scenarios   | Chaining, priority preemption, blocking       |
+| 20. Abort events        | Preemption fires cleanup event                |
+| 21. Exclusion groups    | Mutual exclusion stops conflicting RTS        |
+| 22. ABORT_ALL_RTS       | Stop all running RTS, verify slots freed      |
+| 23. GET_CATALOG         | Catalog command + lookup verification         |
+| 24. GET_STATUS          | Status command + sequence step firing         |
+| 25. Sleep / Wake        | Pause clock, verify stall, resume             |
+| 26. Resource catalogs   | Deactivate/reactivate WP, group, notification |
+| 27. C2 latency          | 20-ping round-trip measurement                |
+| 28. Post-test health    | Clock advancing, final statistics             |

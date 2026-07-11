@@ -216,6 +216,14 @@ bool ShmRingBridge::openChannel() noexcept {
     shm_unlink(p.shm_path);
     return false;
   }
+  // Record the created object's identity so an external unlink/replace of the
+  // path is detectable later (checkRegionOrphaned).
+  struct stat SHM_STAT{};
+  if (fstat(FD, &SHM_STAT) == 0) {
+    shm_ino_ = static_cast<std::uint64_t>(SHM_STAT.st_ino);
+    shm_dev_ = static_cast<std::uint64_t>(SHM_STAT.st_dev);
+  }
+
   void* mapping = mmap(nullptr, TOTAL, PROT_READ | PROT_WRITE, MAP_SHARED, FD, 0);
   close(FD);
   if (mapping == MAP_FAILED) {
@@ -305,11 +313,27 @@ void ShmRingBridge::closeChannel() noexcept {
     sem_ = nullptr;
   }
 
-  // Side A is the owner: unlink shm + sem so the names are reusable.
+  // Side A is the owner: unlink shm + sem so the names are reusable -- but only
+  // while the path still refers to the object we created. A path re-owned by
+  // another process (we were orphaned) is never removed from under it.
   const auto& p = tunables_.get();
   if (p.shm_path[0] == '/') {
-    shm_unlink(p.shm_path);
+    bool ours = true;
+    const int PROBE = shm_open(p.shm_path, O_RDONLY, 0);
+    if (PROBE >= 0) {
+      struct stat SB{};
+      if (fstat(PROBE, &SB) == 0 && shm_ino_ != 0) {
+        ours = (static_cast<std::uint64_t>(SB.st_ino) == shm_ino_ &&
+                static_cast<std::uint64_t>(SB.st_dev) == shm_dev_);
+      }
+      close(PROBE);
+    }
+    if (ours) {
+      shm_unlink(p.shm_path);
+    }
   }
+  shm_ino_ = 0;
+  shm_dev_ = 0;
   const std::string SEM_PATH = deriveWakeup(p.shm_path, p.wakeup_path);
   if (!SEM_PATH.empty() && SEM_PATH[0] == '/') {
     sem_unlink(SEM_PATH.c_str());
@@ -508,7 +532,61 @@ void ShmRingBridge::drainCommands() noexcept {
   rx_cons->store(TAIL + 1u, std::memory_order_release);
 }
 
+void ShmRingBridge::checkRegionOrphaned() noexcept {
+  auto& s = state_.get();
+  if (s.channel_open == 0u) {
+    return;
+  }
+  const auto& p = tunables_.get();
+  auto* log = componentLog();
+
+  // Probe the path by name and compare against the object we created. The
+  // kernel objects live on; only the NAME can be taken from us.
+  bool gone = false;
+  bool replaced = false;
+  const int FD = shm_open(p.shm_path, O_RDONLY, 0);
+  if (FD < 0) {
+    gone = (errno == ENOENT);
+  } else {
+    struct stat SB{};
+    if (fstat(FD, &SB) == 0) {
+      replaced = (static_cast<std::uint64_t>(SB.st_ino) != shm_ino_ ||
+                  static_cast<std::uint64_t>(SB.st_dev) != shm_dev_);
+    }
+    close(FD);
+  }
+
+  if (!gone && !replaced) {
+    return;
+  }
+
+  if (s.region_orphaned == 0u) {
+    s.region_orphaned = 1u;
+    if (log != nullptr) {
+      log->info(label(), fmt::format("shm path {} externally: channel orphaned (writes land in "
+                                     "a mapping no consumer can open)",
+                                     gone ? "unlinked" : "replaced"));
+    }
+  }
+
+  // Reclaim only when the name is free -- never unlink a path another process
+  // now owns. closeChannel unlinks our (already-unlinked) objects harmlessly.
+  if (gone && p.orphan_reclaim != 0u) {
+    closeChannel();
+    if (openChannel() && resolveSource()) {
+      s.region_orphaned = 0u;
+      if (log != nullptr) {
+        log->info(label(), "orphan reclaim: channel reopened on the freed path");
+      }
+    } else if (log != nullptr) {
+      log->info(label(), "orphan reclaim FAILED; bridge will idle");
+    }
+  }
+}
+
 std::uint8_t ShmRingBridge::telemetryTick() noexcept {
+  checkRegionOrphaned();
+
   auto& s = state_.get();
   auto& tlm = telemetry_.get();
   tlm.frames_published = s.frames_published;
@@ -516,16 +594,17 @@ std::uint8_t ShmRingBridge::telemetryTick() noexcept {
   tlm.signals_failed = s.signals_failed;
   tlm.channel_open = s.channel_open;
   tlm.source_resolved = s.source_resolved;
+  tlm.region_orphaned = s.region_orphaned;
 
   auto* log = componentLog();
   if (log != nullptr) {
     const auto& p = tunables_.get();
-    log->info(label(),
-              fmt::format("tick={} app={:#x}v{} pub={} full={} sig_fail={} "
-                          "open={} resolved={} rx_cmds={}/{}/{}",
-                          s.tick_count, p.app_magic, p.app_version, s.frames_published,
-                          s.pushes_failed_full, s.signals_failed, s.channel_open, s.source_resolved,
-                          s.cmds_received, s.cmds_decode_errors, s.cmds_dispatch_errors));
+    log->info(label(), fmt::format("tick={} app={:#x}v{} pub={} full={} sig_fail={} "
+                                   "open={} resolved={} orphaned={} rx_cmds={}/{}/{}",
+                                   s.tick_count, p.app_magic, p.app_version, s.frames_published,
+                                   s.pushes_failed_full, s.signals_failed, s.channel_open,
+                                   s.source_resolved, s.region_orphaned, s.cmds_received,
+                                   s.cmds_decode_errors, s.cmds_dispatch_errors));
   }
   return 0u;
 }

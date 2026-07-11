@@ -18,7 +18,7 @@ sub-millisecond jitter across extended soak tests.
 | GPU          | Ada (SM 89), tensor cores, FP64, 64-bit atomics |
 | CUDA arch    | sm_89 (CUDA_ARCHS="89")                         |
 | Sysroot      | /opt/sysroots/jetson-thor/usr                   |
-| CMake preset | cross-jetson-release                          |
+| CMake preset | cross-jetson-release                            |
 
 ## Architecture Overview
 

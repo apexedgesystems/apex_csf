@@ -158,6 +158,11 @@ private:
   const std::uint8_t* source_ptr_ = nullptr; ///< Cached resolved source pointer.
   std::size_t source_len_ = 0;               ///< Cached resolved source length.
 
+  // Identity of the created shm object (fstat at openChannel), used to detect
+  // an external unlink/replace of the path while the channel is live.
+  std::uint64_t shm_ino_ = 0;
+  std::uint64_t shm_dev_ = 0;
+
   BridgeResolveDelegate resolver_{};
 
   /// Drain at most one APROTO frame from Ring B, validate header,
@@ -165,6 +170,12 @@ private:
   /// No-op if sink_enabled=0 or rx_slots_ unset.
   /// Called from bridgeStep after the Ring A push.
   void drainCommands() noexcept;
+
+  /// Detect an external unlink/replace of the live shm path (probe by name,
+  /// compare inode identity). Sets state.region_orphaned + logs once; when the
+  /// path is gone entirely and orphan_reclaim is set, reopens the channel.
+  /// Called from telemetryTick (non-RT) -- bridgeStep is untouched.
+  void checkRegionOrphaned() noexcept;
 
   /* ----------------------------- Apex data registration ----------------------------- */
 

@@ -15,6 +15,7 @@ specific sensor's error figures come from the application.
    - [GPS](#gps) - GNSS position + velocity
    - [Pitot](#pitot) - indicated airspeed
    - [RadarAltimeter](#radaraltimeter) - height above ground
+   - [BoxClearanceLidar](#boxclearancelidar) - six-axis clearance to a box
 3. [Determinism](#determinism)
 4. [Integration](#integration)
 
@@ -89,6 +90,26 @@ Radar altimeter. `measureAGL(agl_true) -> RadarAltimeterMeasurement{agl_m, valid
 Multiplicative noise (~1% of true AGL) + bias, floored at the ground; beyond the
 range limit (~760 m civil) the measurement is flagged `valid == false` rather
 than overloading the altitude with a sentinel.
+
+### BoxClearanceLidar
+
+**Header:** `inc/BoxClearanceLidar.hpp`
+
+A six-beam lidar against an axis-aligned box centered at the origin, with two
+measurement modes over the same closed-form geometry (no ray-march, no mesh):
+
+- `measure(sx, sy, sz, box)` -- a point sensor ranging along the WORLD axes:
+  per axis, `clr_pos = half - s` and `clr_neg = half + s`, clamped
+  non-negative. Yaw-independent.
+- `measureMounted(sx, sy, sz, yaw, mount_radius, box)` -- six pods mounted at
+  `mount_radius` from the body center, each ranging outward along its own BODY
+  axis (the X/Y pairs yaw with the body; Z stays vertical). Each reading is the
+  slab ray-to-wall distance minus the mount offset -- "pod tip to wall",
+  reaching 0 at contact. `rayToWall(p, d, box)` exposes the slab primitive for
+  arbitrary interior rays.
+
+Optional per-beam Gaussian range noise (default ideal). Reusable for any
+body-in-a-box proximity scenario; the box geometry is a `measure()` argument.
 
 ## Determinism
 

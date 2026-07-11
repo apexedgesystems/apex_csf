@@ -20,8 +20,10 @@ heaptrack.*.zst
 *.log
 /*.csv
 
-# Design docs and future proposals (internal only)
-docs/
+# Design docs and future proposals (internal only). Anchored to the repo-root
+# docs/ folder -- app docs (apps/*/docs/) are user-facing deliverables and are
+# committed.
+/docs/
 **/docs/design/
 
 # Binary data files (generated gravity coefficients, not committed)

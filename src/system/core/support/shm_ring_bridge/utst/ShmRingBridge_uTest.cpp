@@ -684,3 +684,92 @@ TEST(ShmRingBridge, fullRingDropsAdditionalPushes) {
   EXPECT_EQ(b.bridgeState().frames_published, 4u);
   EXPECT_EQ(b.bridgeState().pushes_failed_full, 4u);
 }
+
+/* ----------------------------- Orphan detection ----------------------------- */
+
+/** @test An external unlink of the live path sets the orphan flag; the bridge
+ *  keeps ticking non-fatally and mirrors the flag into telemetry. */
+TEST(ShmRingBridge, externalUnlinkSetsOrphanFlag) {
+  ResolverCtx ctx;
+  ShmRingBridge b;
+  b.setResolver(testResolver, &ctx);
+  const std::string SHM = uniqueShmPath("orphan");
+  fillTunables(b.tunables().get(), SHM, /*cap=*/16, /*payload_size=*/64, ctx.expectedUid);
+  b.onBusReady();
+  ASSERT_EQ(b.bridgeState().channel_open, 1u);
+
+  (void)b.telemetryTick(); // healthy: no flag
+  EXPECT_EQ(b.bridgeState().region_orphaned, 0u);
+
+  ::shm_unlink(SHM.c_str()); // external unlink (another Side A, an operator, ...)
+  (void)b.telemetryTick();
+  EXPECT_EQ(b.bridgeState().region_orphaned, 1u);
+  EXPECT_EQ(b.telemetry().region_orphaned, 1u);
+  EXPECT_EQ(b.bridgeState().channel_open, 1u); // mapping itself is still live
+  EXPECT_EQ(b.bridgeStep(), 0u);               // pushes stay non-fatal
+}
+
+/** @test With orphan_reclaim set, a vanished path is reopened and the flag
+ *  clears; the reclaimed region carries a valid header. */
+TEST(ShmRingBridge, orphanReclaimReopensFreedPath) {
+  ResolverCtx ctx;
+  ShmRingBridge b;
+  b.setResolver(testResolver, &ctx);
+  const std::string SHM = uniqueShmPath("reclaim");
+  ShmRingBridgeTunables& t = b.tunables().get();
+  fillTunables(t, SHM, /*cap=*/16, /*payload_size=*/64, ctx.expectedUid);
+  t.orphan_reclaim = 1;
+  b.onBusReady();
+  ASSERT_EQ(b.bridgeState().channel_open, 1u);
+
+  ::shm_unlink(SHM.c_str());
+  (void)b.telemetryTick(); // detect + reclaim in one pass
+  EXPECT_EQ(b.bridgeState().region_orphaned, 0u);
+  EXPECT_EQ(b.bridgeState().channel_open, 1u);
+
+  // The path exists again with our framework stamp.
+  const int FD = ::shm_open(SHM.c_str(), O_RDONLY, 0);
+  ASSERT_GE(FD, 0);
+  std::uint32_t magic = 0;
+  ASSERT_EQ(::pread(FD, &magic, sizeof(magic), 0), static_cast<ssize_t>(sizeof(magic)));
+  EXPECT_EQ(magic, BRIDGE_FRAMEWORK_MAGIC);
+  ::close(FD);
+}
+
+/** @test A path re-owned by another process is flagged but never fought over:
+ *  no reclaim, and shutdown does not unlink the foreign region. */
+TEST(ShmRingBridge, foreignOwnerFlaggedNotClobbered) {
+  ResolverCtx ctx;
+  const std::string SHM = uniqueShmPath("foreign");
+  struct stat FOREIGN_BEFORE{};
+
+  {
+    ShmRingBridge b;
+    b.setResolver(testResolver, &ctx);
+    ShmRingBridgeTunables& t = b.tunables().get();
+    fillTunables(t, SHM, /*cap=*/16, /*payload_size=*/64, ctx.expectedUid);
+    t.orphan_reclaim = 1; // reclaim armed -- must still refuse to fight
+    b.onBusReady();
+    ASSERT_EQ(b.bridgeState().channel_open, 1u);
+
+    // Another process takes the name: unlink + create its own region.
+    ::shm_unlink(SHM.c_str());
+    const int FOREIGN = ::shm_open(SHM.c_str(), O_RDWR | O_CREAT | O_EXCL, 0600);
+    ASSERT_GE(FOREIGN, 0);
+    ASSERT_EQ(::ftruncate(FOREIGN, 128), 0);
+    ASSERT_EQ(::fstat(FOREIGN, &FOREIGN_BEFORE), 0);
+    ::close(FOREIGN);
+
+    (void)b.telemetryTick();
+    EXPECT_EQ(b.bridgeState().region_orphaned, 1u); // flagged
+  } // bridge destructs here -> closeChannel must NOT unlink the foreign region
+
+  const int CHECK = ::shm_open(SHM.c_str(), O_RDONLY, 0);
+  ASSERT_GE(CHECK, 0) << "foreign region was clobbered on shutdown";
+  struct stat AFTER{};
+  ASSERT_EQ(::fstat(CHECK, &AFTER), 0);
+  EXPECT_EQ(AFTER.st_ino, FOREIGN_BEFORE.st_ino); // same object, untouched
+  EXPECT_EQ(AFTER.st_size, 128);
+  ::close(CHECK);
+  ::shm_unlink(SHM.c_str()); // test cleanup
+}

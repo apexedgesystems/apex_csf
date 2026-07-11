@@ -31,16 +31,16 @@ table. The Arduino Nano ESP32 has generous memory -- no optimization needed.
 
 ### SRAM Budget
 
-| Component                | Estimated Size | Notes                     |
-| ------------------------ | -------------- | ------------------------- |
-| FreeRTOS kernel          | ~20 KB         | Heap, task stacks, timers |
+| Component               | Estimated Size | Notes                     |
+| ----------------------- | -------------- | ------------------------- |
+| FreeRTOS kernel         | ~20 KB         | Heap, task stacks, timers |
 | McuExecutive task stack | 4 KB           | Pinned to core 0          |
-| UART RX/TX buffers       | 2 KB           | 512 + 512 per UART        |
-| USB CDC buffers          | 512 B          | TinyUSB managed           |
-| SLIP encode/decode       | ~1 KB          | Frame buffers             |
-| AES-256-GCM context      | ~1 KB          | Key schedule + state      |
-| Application variables    | ~2 KB          | KeyStore, engine, stats   |
-| **Total**                | **~31 KB**     | **6% of 512 KB**          |
+| UART RX/TX buffers      | 2 KB           | 512 + 512 per UART        |
+| USB CDC buffers         | 512 B          | TinyUSB managed           |
+| SLIP encode/decode      | ~1 KB          | Frame buffers             |
+| AES-256-GCM context     | ~1 KB          | Key schedule + state      |
+| Application variables   | ~2 KB          | KeyStore, engine, stats   |
+| **Total**               | **~31 KB**     | **6% of 512 KB**          |
 
 No memory optimization needed. The ESP32-S3 has 16x the SRAM of the STM32L476
 and 256x the SRAM of the Arduino Uno.

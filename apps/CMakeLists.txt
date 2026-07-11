@@ -15,6 +15,7 @@ add_subdirectory(apex_mc_demo)
 
 add_subdirectory(apex_action_demo)
 add_subdirectory(apex_hil_demo)
+add_subdirectory(apex_horizon_demo)
 add_subdirectory(apex_ops_demo)
 add_subdirectory(apex_time_demo)
 
