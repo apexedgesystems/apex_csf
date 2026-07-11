@@ -1,0 +1,69 @@
+name: Bug report
+description: Something built, ran, or behaved incorrectly
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Release tag or commit SHA where you observed the problem.
+      placeholder: v0.0.1 / 5c752e4
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - x86_64 Linux
+        - x86_64 Linux + CUDA
+        - Jetson (aarch64)
+        - Raspberry Pi (aarch64)
+        - RISC-V 64
+        - STM32
+        - Arduino
+        - Pico
+        - ESP32
+        - C2000
+        - ATmega328PB
+        - Zephyr
+        - PIC32
+        - Other / not platform-specific
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Build system (CMake / Make / Docker)
+        - Executive / scheduler / registry
+        - Protocols
+        - Cryptography
+        - Simulation
+        - GPU compute
+        - CLI tools (Rust / Python)
+        - Firmware / bare-metal
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what actually happened.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Exact commands, starting from a clean checkout where possible.
+      render: shell
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / output
+      description: Relevant build output, test output, or runtime logs.
+      render: shell

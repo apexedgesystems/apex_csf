@@ -1,0 +1,40 @@
+name: Feature request
+description: Propose new functionality or an improvement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What you are trying to do and what stands in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What you would like to see, at whatever level of detail you have.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds or other approaches you evaluated, if any.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Build system (CMake / Make / Docker)
+        - Executive / scheduler / registry
+        - Protocols
+        - Cryptography
+        - Simulation
+        - GPU compute
+        - CLI tools (Rust / Python)
+        - Firmware / bare-metal
+        - Documentation
+        - Other
+    validations:
+      required: true
