@@ -136,7 +136,7 @@ public:
     generateInput();
 
     const auto& p = tunableParams_.get();
-    const std::size_t IMG_BYTES = p.imageWidth * p.imageHeight * sizeof(float);
+    const std::size_t IMG_BYTES = sizeof(float) * p.imageWidth * p.imageHeight;
     cudaMemcpyAsync(dInput_, hInput_.data(), IMG_BYTES, cudaMemcpyHostToDevice, stream_);
 
     // Use separable 2-pass for Gaussian (type 0) and Box (type 3)
@@ -260,7 +260,7 @@ private:
 
     // Generate and upload convolution kernel weights
     const std::uint32_t DIAM = 2 * p.kernelRadius + 1;
-    std::vector<float> hKernel(DIAM * DIAM);
+    std::vector<float> hKernel(static_cast<std::size_t>(DIAM) * DIAM);
 
     if (p.kernelType == 3) {
       cuda::generateBoxKernel(hKernel.data(), p.kernelRadius);

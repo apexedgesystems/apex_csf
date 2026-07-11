@@ -263,7 +263,7 @@ private:
       dInput_ = nullptr;
       return false;
     }
-    if (cudaMalloc(&dHistogram_, GROUP_COUNT * p.histogramBins * sizeof(std::uint32_t)) !=
+    if (cudaMalloc(&dHistogram_, sizeof(std::uint32_t) * GROUP_COUNT * p.histogramBins) !=
         cudaSuccess) {
       cudaFree(dInput_);
       cudaFree(dStats_);
@@ -274,7 +274,7 @@ private:
 
     // Host result buffers
     hStats_.resize(GROUP_COUNT);
-    hHistogram_.resize(GROUP_COUNT * p.histogramBins, 0);
+    hHistogram_.resize(static_cast<std::size_t>(GROUP_COUNT) * p.histogramBins, 0);
 
     // Stream and event
     if (cudaStreamCreate(&stream_) != cudaSuccess) {

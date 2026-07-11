@@ -69,11 +69,11 @@ PERF_TEST(LinalgPerf, CpuGemm3x3_Small) {
   constexpr int BATCH = BATCH_SMALL;
   const auto AS = generateRandomMatrices3x3<double>(BATCH);
   const auto BS = generateRandomMatrices3x3<double>(BATCH, 123);
-  std::vector<double> cs(BATCH * 9);
+  std::vector<double> cs(static_cast<std::size_t>(BATCH) * 9);
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      for (int b = 0; b < BATCH; ++b) {
+      for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
         Matrix3<double> A(const_cast<double*>(&AS[b * 9]), Layout::RowMajor);
         Matrix3<double> B(const_cast<double*>(&BS[b * 9]), Layout::RowMajor);
         Matrix3<double> C(&cs[b * 9], Layout::RowMajor);
@@ -85,7 +85,7 @@ PERF_TEST(LinalgPerf, CpuGemm3x3_Small) {
   volatile double checksum = 0.0;
   auto result = perf.throughputLoop(
       [&] {
-        for (int b = 0; b < BATCH; ++b) {
+        for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
           Matrix3<double> A(const_cast<double*>(&AS[b * 9]), Layout::RowMajor);
           Matrix3<double> B(const_cast<double*>(&BS[b * 9]), Layout::RowMajor);
           Matrix3<double> C(&cs[b * 9], Layout::RowMajor);
@@ -109,11 +109,11 @@ PERF_TEST(LinalgPerf, CpuGemm3x3_Medium) {
   constexpr int BATCH = BATCH_MEDIUM;
   const auto AS = generateRandomMatrices3x3<double>(BATCH);
   const auto BS = generateRandomMatrices3x3<double>(BATCH, 123);
-  std::vector<double> cs(BATCH * 9);
+  std::vector<double> cs(static_cast<std::size_t>(BATCH) * 9);
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      for (int b = 0; b < BATCH; ++b) {
+      for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
         Matrix3<double> A(const_cast<double*>(&AS[b * 9]), Layout::RowMajor);
         Matrix3<double> B(const_cast<double*>(&BS[b * 9]), Layout::RowMajor);
         Matrix3<double> C(&cs[b * 9], Layout::RowMajor);
@@ -125,7 +125,7 @@ PERF_TEST(LinalgPerf, CpuGemm3x3_Medium) {
   volatile double checksum = 0.0;
   auto result = perf.throughputLoop(
       [&] {
-        for (int b = 0; b < BATCH; ++b) {
+        for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
           Matrix3<double> A(const_cast<double*>(&AS[b * 9]), Layout::RowMajor);
           Matrix3<double> B(const_cast<double*>(&BS[b * 9]), Layout::RowMajor);
           Matrix3<double> C(&cs[b * 9], Layout::RowMajor);
@@ -150,11 +150,11 @@ PERF_TEST(LinalgPerf, CpuInverse3x3_Medium) {
 
   constexpr int BATCH = BATCH_MEDIUM;
   auto AS = generateRandomMatrices3x3<double>(BATCH);
-  std::vector<double> outs(BATCH * 9);
+  std::vector<double> outs(static_cast<std::size_t>(BATCH) * 9);
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      for (int b = 0; b < BATCH; ++b) {
+      for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
         // Copy to output, then invert in place
         std::memcpy(&outs[b * 9], &AS[b * 9], 9 * sizeof(double));
         Matrix3<double> M(&outs[b * 9], Layout::RowMajor);
@@ -166,7 +166,7 @@ PERF_TEST(LinalgPerf, CpuInverse3x3_Medium) {
   volatile double checksum = 0.0;
   auto result = perf.throughputLoop(
       [&] {
-        for (int b = 0; b < BATCH; ++b) {
+        for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
           std::memcpy(&outs[b * 9], &AS[b * 9], 9 * sizeof(double));
           Matrix3<double> M(&outs[b * 9], Layout::RowMajor);
           M.inverseInPlace();
@@ -196,7 +196,7 @@ PERF_GPU_TEST(LinalgPerf, GpuGemm3x3_Medium) {
   double* dAs = nullptr;
   double* dBs = nullptr;
   double* dCs = nullptr;
-  const std::size_t SIZE = BATCH * 9 * sizeof(double);
+  const std::size_t SIZE = sizeof(double) * BATCH * 9;
 
   ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dAs, SIZE)));
   ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dBs, SIZE)));
@@ -241,7 +241,7 @@ PERF_GPU_TEST(LinalgPerf, GpuInverse3x3_Medium) {
   // Allocate device buffers
   double* dAs = nullptr;
   double* dOuts = nullptr;
-  const std::size_t SIZE = BATCH * 9 * sizeof(double);
+  const std::size_t SIZE = sizeof(double) * BATCH * 9;
 
   ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dAs, SIZE)));
   ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dOuts, SIZE)));
@@ -280,7 +280,7 @@ PERF_GPU_TEST(LinalgPerf, GpuTranspose3x3_Medium) {
 
   double* dAs = nullptr;
   double* dOuts = nullptr;
-  const std::size_t SIZE = BATCH * 9 * sizeof(double);
+  const std::size_t SIZE = sizeof(double) * BATCH * 9;
 
   ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dAs, SIZE)));
   ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dOuts, SIZE)));
@@ -317,11 +317,11 @@ PERF_GPU_COMPARISON(LinalgPerf, CpuVsGpu_Gemm3x3) {
   constexpr int BATCH = BATCH_MEDIUM;
   const auto AS = generateRandomMatrices3x3<double>(BATCH);
   const auto BS = generateRandomMatrices3x3<double>(BATCH, 123);
-  std::vector<double> cpuOut(BATCH * 9);
+  std::vector<double> cpuOut(static_cast<std::size_t>(BATCH) * 9);
 
   // CPU baseline
   auto cpuResult = perf.cpuBaseline([&] {
-    for (int b = 0; b < BATCH; ++b) {
+    for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
       Matrix3<double> A(const_cast<double*>(&AS[b * 9]), Layout::RowMajor);
       Matrix3<double> B(const_cast<double*>(&BS[b * 9]), Layout::RowMajor);
       Matrix3<double> C(&cpuOut[b * 9], Layout::RowMajor);
@@ -333,7 +333,7 @@ PERF_GPU_COMPARISON(LinalgPerf, CpuVsGpu_Gemm3x3) {
   double* dAs = nullptr;
   double* dBs = nullptr;
   double* dCs = nullptr;
-  const std::size_t SIZE = BATCH * 9 * sizeof(double);
+  const std::size_t SIZE = sizeof(double) * BATCH * 9;
 
   ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dAs, SIZE)));
   ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dBs, SIZE)));
@@ -375,11 +375,11 @@ PERF_GPU_COMPARISON(LinalgPerf, CpuVsGpu_Inverse3x3) {
 
   constexpr int BATCH = BATCH_MEDIUM;
   auto AS = generateRandomMatrices3x3<double>(BATCH);
-  std::vector<double> cpuOut(BATCH * 9);
+  std::vector<double> cpuOut(static_cast<std::size_t>(BATCH) * 9);
 
   // CPU baseline
   auto cpuResult = perf.cpuBaseline([&] {
-    for (int b = 0; b < BATCH; ++b) {
+    for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
       std::memcpy(&cpuOut[b * 9], &AS[b * 9], 9 * sizeof(double));
       Matrix3<double> M(&cpuOut[b * 9], Layout::RowMajor);
       M.inverseInPlace();
@@ -389,7 +389,7 @@ PERF_GPU_COMPARISON(LinalgPerf, CpuVsGpu_Inverse3x3) {
   // GPU path
   double* dAs = nullptr;
   double* dOuts = nullptr;
-  const std::size_t SIZE = BATCH * 9 * sizeof(double);
+  const std::size_t SIZE = sizeof(double) * BATCH * 9;
 
   ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dAs, SIZE)));
   ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dOuts, SIZE)));
@@ -434,11 +434,11 @@ PERF_TEST(LinalgPerf, CpuGemm_16x16) {
   std::uniform_real_distribution<double> dist(-1.0, 1.0);
 
   // Allocate storage for matrices
-  std::vector<double> dataA(N * N);
-  std::vector<double> dataB(N * N);
-  std::vector<double> dataC(N * N);
+  std::vector<double> dataA(static_cast<std::size_t>(N) * N);
+  std::vector<double> dataB(static_cast<std::size_t>(N) * N);
+  std::vector<double> dataC(static_cast<std::size_t>(N) * N);
 
-  for (std::size_t i = 0; i < N * N; ++i) {
+  for (std::size_t i = 0; i < static_cast<std::size_t>(N) * N; ++i) {
     dataA[i] = dist(gen);
     dataB[i] = dist(gen);
   }
@@ -482,11 +482,11 @@ PERF_TEST(LinalgPerf, CpuGemm_64x64) {
   std::uniform_real_distribution<double> dist(-1.0, 1.0);
 
   // Allocate storage for matrices
-  std::vector<double> dataA(N * N);
-  std::vector<double> dataB(N * N);
-  std::vector<double> dataC(N * N);
+  std::vector<double> dataA(static_cast<std::size_t>(N) * N);
+  std::vector<double> dataB(static_cast<std::size_t>(N) * N);
+  std::vector<double> dataC(static_cast<std::size_t>(N) * N);
 
-  for (std::size_t i = 0; i < N * N; ++i) {
+  for (std::size_t i = 0; i < static_cast<std::size_t>(N) * N; ++i) {
     dataA[i] = dist(gen);
     dataB[i] = dist(gen);
   }
