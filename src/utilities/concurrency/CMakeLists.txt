@@ -18,6 +18,9 @@
 # ==============================================================================
 
 include(apex/All)
+
+add_subdirectory(mcu)
+
 apex_module(utilities_concurrency)
 
 # ------------------------------------------------------------------------------
@@ -41,6 +44,8 @@ apex_add_library(
   "${INC_DIR}"
   SRC
   ${CPP_SOURCES}
+  DEPS_PUBLIC
+  utilities_concurrency_mcu
 )
 
 # ------------------------------------------------------------------------------
