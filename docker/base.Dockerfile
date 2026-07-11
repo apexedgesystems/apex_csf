@@ -326,9 +326,11 @@ FROM build-base AS dev-base
 # Interactive dev resolves dependencies online; the offline guarantee is for the
 # release builders (build-base tier), not the dev shell. The baked caches are
 # still inherited (PIP_FIND_LINKS stays, so pip prefers the wheelhouse before
-# PyPI), and this stage's own pip installs below need the index open.
-ENV CARGO_NET_OFFLINE= \
-    PIP_NO_INDEX=
+# PyPI), and this stage's own pip installs below need the index open. Explicit
+# `false`, not empty: cargo parses CARGO_NET_OFFLINE as a strict boolean and
+# errors on an empty string (a Dockerfile ENV cannot truly unset).
+ENV CARGO_NET_OFFLINE=false \
+    PIP_NO_INDEX=false
 
 ARG USER
 ARG HADOLINT_VERSION=v2.14.0
