@@ -7,8 +7,7 @@
 
 #include "src/utilities/math/quaternion/inc/Quaternion.hpp"
 
-#include <cmath>
-#include <limits>
+#include "src/utilities/compatibility/inc/compat_math.hpp"
 
 namespace apex {
 namespace math {
@@ -39,8 +38,8 @@ template <typename T> uint8_t Quaternion<T>::set(T w, T x, T y, T z) noexcept {
 template <typename T>
 uint8_t Quaternion<T>::setFromAngleAxis(T angleRad, T axisX, T axisY, T axisZ) noexcept {
   const T HALF_ANGLE = angleRad * T(0.5);
-  const T S = std::sin(HALF_ANGLE);
-  const T C = std::cos(HALF_ANGLE);
+  const T S = apex::compat::sin(HALF_ANGLE);
+  const T C = apex::compat::cos(HALF_ANGLE);
 
   data_[0] = C;
   data_[1] = axisX * S;
@@ -50,11 +49,29 @@ uint8_t Quaternion<T>::setFromAngleAxis(T angleRad, T axisX, T axisY, T axisZ) n
   return static_cast<uint8_t>(Status::SUCCESS);
 }
 
+template <typename T>
+uint8_t Quaternion<T>::setFromEuler321(T rollRad, T pitchRad, T yawRad) noexcept {
+  const T CR = apex::compat::cos(rollRad * T(0.5));
+  const T SR = apex::compat::sin(rollRad * T(0.5));
+  const T CP = apex::compat::cos(pitchRad * T(0.5));
+  const T SP = apex::compat::sin(pitchRad * T(0.5));
+  const T CY = apex::compat::cos(yawRad * T(0.5));
+  const T SY = apex::compat::sin(yawRad * T(0.5));
+
+  // q = qz(yaw) * qy(pitch) * qx(roll) -- the 3-2-1 sequence.
+  data_[0] = CR * CP * CY + SR * SP * SY;
+  data_[1] = SR * CP * CY - CR * SP * SY;
+  data_[2] = CR * SP * CY + SR * CP * SY;
+  data_[3] = CR * CP * SY - SR * SP * CY;
+
+  return static_cast<uint8_t>(Status::SUCCESS);
+}
+
 /* ----------------------------- Basic Operations -------------------------- */
 
 template <typename T> uint8_t Quaternion<T>::normInto(T& out) const noexcept {
-  out = std::sqrt(data_[0] * data_[0] + data_[1] * data_[1] + data_[2] * data_[2] +
-                  data_[3] * data_[3]);
+  out = apex::compat::sqrt(data_[0] * data_[0] + data_[1] * data_[1] + data_[2] * data_[2] +
+                           data_[3] * data_[3]);
   return static_cast<uint8_t>(Status::SUCCESS);
 }
 
@@ -62,7 +79,7 @@ template <typename T> uint8_t Quaternion<T>::normalizeInPlace() noexcept {
   T nrm = T(0);
   (void)normInto(nrm);
 
-  if (nrm < std::numeric_limits<T>::epsilon()) {
+  if (nrm < apex::compat::epsilon<T>()) {
     return static_cast<uint8_t>(Status::ERROR_INVALID_VALUE);
   }
 
@@ -86,7 +103,7 @@ template <typename T> uint8_t Quaternion<T>::conjugateInto(Quaternion<T>& out) c
 template <typename T> uint8_t Quaternion<T>::inverseInto(Quaternion<T>& out) const noexcept {
   T nrmSq = data_[0] * data_[0] + data_[1] * data_[1] + data_[2] * data_[2] + data_[3] * data_[3];
 
-  if (nrmSq < std::numeric_limits<T>::epsilon()) {
+  if (nrmSq < apex::compat::epsilon<T>()) {
     return static_cast<uint8_t>(Status::ERROR_INVALID_VALUE);
   }
 
@@ -179,11 +196,11 @@ uint8_t Quaternion<T>::toAngleAxisInto(T& angleRad, T& axisX, T& axisY, T& axisZ
     wClamped = T(-1);
   }
 
-  angleRad = T(2) * std::acos(wClamped);
+  angleRad = T(2) * apex::compat::acos(wClamped);
 
-  const T S = std::sqrt(T(1) - wClamped * wClamped);
+  const T S = apex::compat::sqrt(T(1) - wClamped * wClamped);
 
-  if (S < std::numeric_limits<T>::epsilon()) {
+  if (S < apex::compat::epsilon<T>()) {
     // Angle is 0 or 2*pi, axis is arbitrary
     axisX = T(1);
     axisY = T(0);
@@ -193,6 +210,29 @@ uint8_t Quaternion<T>::toAngleAxisInto(T& angleRad, T& axisX, T& axisY, T& axisZ
     axisY = data_[2] / S;
     axisZ = data_[3] / S;
   }
+
+  return static_cast<uint8_t>(Status::SUCCESS);
+}
+
+template <typename T>
+uint8_t Quaternion<T>::toEuler321Into(T& rollRad, T& pitchRad, T& yawRad) const noexcept {
+  const T W = data_[0], X = data_[1], Y = data_[2], Z = data_[3];
+
+  const T SINR_COSP = T(2) * (W * X + Y * Z);
+  const T COSR_COSP = T(1) - T(2) * (X * X + Y * Y);
+  rollRad = apex::compat::atan2(SINR_COSP, COSR_COSP);
+
+  const T SINP = T(2) * (W * Y - Z * X);
+  if (apex::compat::fabs(SINP) >= T(1)) {
+    // Gimbal singularity: pitch pegged at +/-90 deg.
+    pitchRad = apex::compat::copysign(T(1.5707963267948966), SINP);
+  } else {
+    pitchRad = apex::compat::asin(SINP);
+  }
+
+  const T SINY_COSP = T(2) * (W * Z + X * Y);
+  const T COSY_COSP = T(1) - T(2) * (Y * Y + Z * Z);
+  yawRad = apex::compat::atan2(SINY_COSP, COSY_COSP);
 
   return static_cast<uint8_t>(Status::SUCCESS);
 }
@@ -233,7 +273,7 @@ template <typename T> inline T fastAcos(T x) noexcept {
 
   // Near +-1: use identity acos(x) = sqrt(2*(1-x)) * (1 + poly)
   const T Y = T(1) - ABSVAL;
-  const T SQRT_TERM = std::sqrt(T(2) * Y);
+  const T SQRT_TERM = apex::compat::sqrt(T(2) * Y);
   // Polynomial correction for accuracy
   const T POLY = T(1) + Y * (T(0.166666666666667) + Y * T(0.075));
   const T RESULT = SQRT_TERM * POLY;
@@ -301,11 +341,11 @@ uint8_t Quaternion<T>::slerpInto(const Quaternion<T>& b, T t, Quaternion<T>& out
     scale1 = detail::fastSin(t * THETA) * INV_SIN_THETA;
   } else {
     // Full range: use standard library (rare case, <5% of calls typically)
-    const T THETA = std::acos(dot);
-    const T SIN_THETA = std::sin(THETA);
+    const T THETA = apex::compat::acos(dot);
+    const T SIN_THETA = apex::compat::sin(THETA);
     const T INV_SIN_THETA = T(1) / SIN_THETA;
-    scale0 = std::sin((T(1) - t) * THETA) * INV_SIN_THETA;
-    scale1 = std::sin(t * THETA) * INV_SIN_THETA;
+    scale0 = apex::compat::sin((T(1) - t) * THETA) * INV_SIN_THETA;
+    scale1 = apex::compat::sin(t * THETA) * INV_SIN_THETA;
   }
 
   out.data()[0] = scale0 * data_[0] + scale1 * bw;

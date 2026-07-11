@@ -19,7 +19,9 @@
 #include "src/bench/inc/Perf.hpp"
 #include "src/bench/inc/PerfGpu.hpp"
 #include "src/utilities/compatibility/inc/compat_cuda_error.hpp"
+#include "src/utilities/math/quaternion/inc/QuatData.hpp"
 #include "src/utilities/math/quaternion/inc/Quaternion.hpp"
+#include "src/utilities/math/quaternion/inc/QuaternionIntegrator.hpp"
 #include "src/utilities/math/quaternion/inc/QuaternionCuda.cuh"
 
 #include <gtest/gtest.h>
@@ -526,6 +528,61 @@ PERF_GPU_COMPARISON(QuaternionPerf, CpuVsGpu_Slerp) {
   cudaFree(dQsB);
   cudaFree(dTs);
   cudaFree(dQsOut);
+}
+
+/* ----------------------------- CPU Baseline: Integrator Steps ----------------------------- */
+
+/**
+ * @brief Per-tick cost of each attitude integration step (the per-vehicle
+ *        cost a 6DOF pays per scheduler tick).
+ */
+PERF_TEST(QuaternionPerf, CpuIntegratorSteps) {
+  UB_PERF_GUARD(perf);
+
+  const double W[3] = {0.3, -0.2, 0.4};
+  const double DT = 0.001;
+
+  struct Case {
+    const char* name;
+    uint8_t (*step)(Quaternion<double>&, const double*, double);
+  };
+  const Case CASES[] = {
+      {"integrator-step-euler", &QuaternionIntegrator<double>::stepEuler},
+      {"integrator-step-midpoint", &QuaternionIntegrator<double>::stepMidpoint},
+      {"integrator-step-exponential", &QuaternionIntegrator<double>::stepExponential},
+  };
+
+  for (const auto& C : CASES) {
+    apex::math::quaternion::QuatData<double> q;
+    Quaternion<double> v = q.view();
+    auto result = perf.throughputLoop([&] { (void)C.step(v, W, DT); }, C.name);
+    std::printf("  [%s] %.0f steps/s (%.1f ns/step)\n", C.name, result.callsPerSecond,
+                1.0e9 / result.callsPerSecond);
+  }
+}
+
+/* ----------------------------- CPU Baseline: Euler 321 ----------------------------- */
+
+/**
+ * @brief Euler-321 set/extract round-trip cost (telemetry-path conversion).
+ */
+PERF_TEST(QuaternionPerf, CpuEuler321RoundTrip) {
+  UB_PERF_GUARD(perf);
+
+  double qd[4];
+  Quaternion<double> q(qd);
+  q.setFromEuler321(0.3, -0.4, 1.2);
+  volatile double sink = 0.0;
+  auto result = perf.throughputLoop(
+      [&] {
+        double r = 0, p = 0, y = 0;
+        (void)q.toEuler321Into(r, p, y);
+        (void)q.setFromEuler321(r, p, y);
+        sink = sink + r;
+      },
+      "euler321-round-trip");
+  std::printf("  [euler321-round-trip] %.0f conv/s (%.1f ns)\n", result.callsPerSecond,
+              1.0e9 / result.callsPerSecond);
 }
 
 PERF_MAIN()

@@ -8,7 +8,7 @@ include(apex/All)
 # Test Sources
 # ------------------------------------------------------------------------------
 
-set(UNIT_TEST_SOURCES Quaternion_uTest.cpp)
+set(UNIT_TEST_SOURCES Quaternion_uTest.cpp QuaternionIntegrator_uTest.cpp)
 
 set(CUDA_TEST_SOURCES QuaternionCuda_uTest.cu)
 

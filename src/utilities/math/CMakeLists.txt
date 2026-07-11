@@ -1,4 +1,6 @@
 add_subdirectory(integration)
 add_subdirectory(legendre)
 add_subdirectory(linalg)
+add_subdirectory(celestial)
 add_subdirectory(quaternion)
+add_subdirectory(vecmat)

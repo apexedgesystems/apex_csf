@@ -11,6 +11,8 @@
  * https://pgda.gsfc.nasa.gov/products/50
  */
 
+#include <cstdint>
+
 namespace sim {
 namespace environment {
 namespace gravity {

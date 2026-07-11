@@ -609,24 +609,34 @@ public:
 
 ---
 
-### DelegateU8
+### DelegateU8 / Delegate<Ret, Args...>
 
-**Header:** `Delegate.hpp`
-**Purpose:** Allocation-free callable for task dispatch.
+**Header:** `Delegate.hpp` (forwarder; the types live in `mcu/inc/Delegate.hpp`)
+**Purpose:** Allocation-free callables for task dispatch and providers.
 
 ```cpp
 struct DelegateU8 {
-  using Fn = std::uint8_t (*)(void*) noexcept;
+  using Fn = uint8_t (*)(void*) noexcept;
 
   Fn fn{nullptr};     ///< Function pointer.
   void* ctx{nullptr}; ///< Opaque context.
 
-  constexpr std::uint8_t operator()() const noexcept;
+  constexpr uint8_t operator()() const noexcept;
   constexpr explicit operator bool() const noexcept;
 };
+
+template <typename Ret, typename... Args> struct Delegate; // Ret(void*, Args...)
+// + void specialization and makeDelegate(fn, ctx)
 ```
 
 **RT-Safety:** Fully RT-safe. No allocation, constexpr-compatible.
+
+**MCU subset:** the delegate types are the concurrency library's freestanding
+core, shipped as the `utilities_concurrency_mcu` interface library
+(`BAREMETAL`) so firmware callbacks and MCU-clean libraries (math substrate,
+frames edge providers) use the same callable shape as the hosted components
+without pulling the POSIX concurrency lib. The hosted lib depends on the
+subset, and the historical include path keeps working via the forwarder.
 
 ---
 

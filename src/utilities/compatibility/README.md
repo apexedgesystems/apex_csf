@@ -21,15 +21,21 @@ Header-only compatibility shims providing portability across C++ standards, Open
 
 ## 1. Quick Reference
 
-### Core Language (5 headers)
+### Core Language (10 headers)
 
-| Header                   | Purpose               | Key Features                                                 |
-| ------------------------ | --------------------- | ------------------------------------------------------------ |
-| `compat_attributes.hpp`  | Compiler hints        | `COMPAT_HOT`, `COMPAT_LIKELY`, `COMPAT_UNLIKELY`             |
-| `compat_byteswap.hpp`    | Byte order conversion | `byteswap()`, `byteswap_ieee()` - C++23 shim                 |
-| `compat_concurrency.hpp` | Atomic wait/notify    | `waitEq()`, `notifyOne/All()` - C++20 shim                   |
-| `compat_endian.hpp`      | Endian detection      | `endian` enum, `NATIVE_ENDIAN` - C++20 shim                  |
-| `compat_span.hpp`        | Byte views            | `bytes_span`, `mutable_bytes_span`, `rospan<T>` - C++20 shim |
+| Header                   | Purpose               | Key Features                                                                                             |
+| ------------------------ | --------------------- | -------------------------------------------------------------------------------------------------------- |
+| `compat_attributes.hpp`  | Compiler hints        | `COMPAT_HOT`, `COMPAT_LIKELY`, `COMPAT_UNLIKELY`                                                         |
+| `compat_byteswap.hpp`    | Byte order conversion | `byteswap()`, `byteswap_ieee()` - C++23 shim                                                             |
+| `compat_concurrency.hpp` | Atomic wait/notify    | `waitEq()`, `notifyOne/All()` - C++20 shim                                                               |
+| `compat_endian.hpp`      | Endian detection      | `endian` enum, `NATIVE_ENDIAN` - C++20 shim                                                              |
+| `compat_array.hpp`       | Fixed-size array      | `apex::compat::array<T, N>` - std::array on hosted, constexpr shim on freestanding                       |
+| `compat_lang.hpp`        | C++17 language macros | `APEX_IF_CONSTEXPR`, `APEX_INLINE_VAR` - degrade below C++17                                             |
+| `compat_legacy.hpp`      | Pre-C++17 keywords    | `APEX_NOEXCEPT/OVERRIDE/CONSTEXPR/NODISCARD/...` - down to C++03 (TI C2000)                              |
+| `compat_math.hpp`        | Portable scalar math  | `sqrt/sin/cos/asin/acos/atan2/fabs/copysign`, `epsilon<T>()` - std on hosted, `<math.h>` on freestanding |
+| `compat_rt_attrs.hpp`    | RT-effect attributes  | RealtimeSanitizer contract macros - no-ops off clang `-fsanitize=realtime`                               |
+| `compat_type_traits.hpp` | Portable type traits  | `is_same_v`, `is_unsigned_v` - std on hosted, manual shims on freestanding                               |
+| `compat_span.hpp`        | Byte views            | `bytes_span`, `mutable_bytes_span`, `rospan<T>` - C++20 shim                                             |
 
 ### CUDA Integration (5 headers)
 
@@ -98,6 +104,12 @@ Every header documents its real-time safety:
 | `compat_openssl.hpp`     | RT-CAUTION | One-time `std::call_once` | Pre-load in init               |
 | `compat_cuda_error.hpp`  | RT-DEPENDS | Depends on NDEBUG         | Safe in release mode           |
 | `compat_cuda_memory.hpp` | RT-DEPENDS | Depends on fallback       | Safe with pinned memory        |
+| `compat_array.hpp`       | RT-SAFE    | Aggregate wrapper         | Zero-cost view of a C array    |
+| `compat_lang.hpp`        | RT-SAFE    | Compile-time macros       | Zero runtime cost              |
+| `compat_legacy.hpp`      | RT-SAFE    | Compile-time macros       | Zero runtime cost              |
+| `compat_math.hpp`        | RT-SAFE    | Pure inline functions     | libm calls, no allocation      |
+| `compat_rt_attrs.hpp`    | RT-SAFE    | Compile-time attributes   | Enforced only under RTSan      |
+| `compat_type_traits.hpp` | RT-SAFE    | Compile-time only         | Zero runtime cost              |
 | `compat_blas.hpp`        | RT-SAFE    | constexpr functions       | Pure dimension helpers         |
 | `compat_cuda_blas.hpp`   | RT-DEPENDS | Handle ops are RT-UNSAFE  | Status mapping is RT-SAFE      |
 
@@ -346,11 +358,24 @@ if constexpr (apex::compat::cuda::cublasAvailable()) {
 
 ### C++ Standard
 
-| Standard | Status      | Notes                                   |
-| -------- | ----------- | --------------------------------------- |
-| C++17    | Minimum     | All features available with fallbacks   |
-| C++20    | Recommended | Native `std::span`, `std::atomic::wait` |
-| C++23    | Full        | Native `std::byteswap`                  |
+| Standard | Status         | Notes                                   |
+| -------- | -------------- | --------------------------------------- |
+| C++17    | Hosted minimum | All features available with fallbacks   |
+| C++20    | Recommended    | Native `std::span`, `std::atomic::wait` |
+| C++23    | Full           | Native `std::byteswap`                  |
+
+Below the hosted minimum, two dedicated ladders serve the bare-metal targets:
+
+- **Freestanding C++17 (no C++ standard library)** - the avr/arm-none-eabi
+  builder images ship no libstdc++ headers at all; `compat_math` and
+  `compat_type_traits` detect this via `__has_include` and fall back to
+  `<math.h>`/`<float.h>` and manual trait shims. `compat_array` shims
+  `std::array`. Enforced per PR by the tier-S floor checks and nightly by
+  the cross builders.
+- **C++03 (TI C2000 CGT)** - the C28x compiler never gains C++11+;
+  `compat_legacy` degrades the modern keywords (`APEX_NOEXCEPT`,
+  `APEX_CONSTEXPR`, `APEX_NODISCARD`, ...) to no-ops there. Intended for
+  the HAL and McuExecutive chain only.
 
 ### Compiler Support
 
