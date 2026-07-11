@@ -87,4 +87,24 @@ PERF_TEST(BoxClearanceLidarMeasure, Throughput) {
               result.callsPerSecond, 1.0e6 / result.callsPerSecond);
 }
 
+// Same noisy configuration at a non-cardinal yaw and off-center pose, so
+// every slab evaluation runs its divides and no beam short-circuits: the
+// worst-case per-sample cost of the mounted measure.
+PERF_TEST(BoxClearanceLidarMeasureMounted, Throughput) {
+  UB_PERF_GUARD(perf);
+  sim::sensors::BoxClearanceLidarParams p;
+  p.sigma_m = 0.02;
+  sim::sensors::BoxClearanceLidar lidar(p);
+  const sim::sensors::BoxExtents box{4.0, 3.0, 2.5};
+  volatile double sink = 0.0;
+  auto result = perf.throughputLoop(
+      [&] {
+        const auto m = lidar.measureMounted(1.0, -0.5, 0.75, 0.6, 0.5, box);
+        sink += m.pos_x + m.neg_z;
+      },
+      "box_clearance_lidar_measure_mounted");
+  std::printf("\n[BoxClearanceLidar] measureMounted: %.0f samples/s (%.4f us/sample)\n",
+              result.callsPerSecond, 1.0e6 / result.callsPerSecond);
+}
+
 PERF_MAIN()
