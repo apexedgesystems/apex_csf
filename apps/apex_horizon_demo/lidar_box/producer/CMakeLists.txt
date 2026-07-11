@@ -9,11 +9,14 @@
 include(apex/All)
 apex_module(apex_horizon_demo_lidar_box_producer)
 
-apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
-
-target_link_libraries(
+apex_add_interface_library(
+  NAME
   ${LIB_NAME}
-  INTERFACE sim_sensors system_core_system_component
+  INC
+  "${INC_DIR}"
+  DEPS_INTERFACE
+  sim_sensors
+  system_core_system_component
 )
 
 apex_standard_optins(${LIB_NAME})
