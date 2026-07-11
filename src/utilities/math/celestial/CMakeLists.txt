@@ -13,5 +13,7 @@ apex_module(utilities_math_celestial)
 # BAREMETAL: pure constexpr constants, no includes at all.
 apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" BAREMETAL)
 
+apex_add_floor_check(NAME ${LIB_NAME} SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/floor/FloorProbe.cpp")
+
 apex_standard_optins(${LIB_NAME})
 apex_add_test_subdirs()
