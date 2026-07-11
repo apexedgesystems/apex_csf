@@ -169,6 +169,43 @@ TEST(BoxClearanceLidarTest, MountedPodAtWallReadsZero) {
   EXPECT_NEAR(m.pos_x, 0.0, kTol);
 }
 
+/** @test Mounted distances reproduce hand-derived golden vectors.
+ *
+ * The expected values are pencil-and-paper ground truth from the slab
+ * geometry -- not the output of any implementation -- so an error coded
+ * identically on both ends of the wire (a mis-signed rotation, a wrong slab
+ * minimum) still fails here. The same table is asserted verbatim by the
+ * consumer's suite; 1e-4 m is the agreed cross-suite tolerance.
+ */
+TEST(BoxClearanceLidarTest, MountedGoldenVectorsMatchHandDerivedTruth) {
+  constexpr double kR = 0.5;
+  constexpr double kHalfPi = 1.5707963267948966;
+  constexpr double kQuarterPi = 0.7853981633974483;
+  // Yaw 45 deg at the center: both in-plane rays meet the Y slabs first,
+  // t = 3 / (sqrt(2)/2) = 3*sqrt(2), minus the mount.
+  const double kDiag = 3.0 * std::sqrt(2.0) - kR; // 3.7426407
+  struct GoldenRow {
+    double x, y, z, yaw;
+    double exp[6]; // bx+, bx-, by+, by-, bz+, bz-
+  };
+  const GoldenRow kRows[] = {
+      {0.0, 0.0, 0.0, 0.0, {3.5, 3.5, 2.5, 2.5, 2.0, 2.0}},     // half - mount
+      {1.5, -1.0, 0.75, 0.0, {2.0, 5.0, 3.5, 1.5, 1.25, 2.75}}, // per-axis offsets, both signs
+      {0.0, 0.0, 0.0, kHalfPi, {2.5, 2.5, 3.5, 3.5, 2.0, 2.0}}, // axis rotation sign/swap
+      {0.0, 0.0, 0.0, kQuarterPi, {kDiag, kDiag, kDiag, kDiag, 2.0, 2.0}}, // slab-min selection
+  };
+
+  BoxClearanceLidar s;
+  for (const auto& r : kRows) {
+    const auto m = s.measureMounted(r.x, r.y, r.z, r.yaw, kR, kBox);
+    const double got[6] = {m.pos_x, m.neg_x, m.pos_y, m.neg_y, m.pos_z, m.neg_z};
+    for (int i = 0; i < 6; ++i) {
+      EXPECT_NEAR(got[i], r.exp[i], 1e-4)
+          << "row (" << r.x << "," << r.y << "," << r.z << ", yaw=" << r.yaw << ") beam " << i;
+    }
+  }
+}
+
 /** @test Inside the inset region every mounted reading stays non-negative. */
 TEST(BoxClearanceLidarTest, MountedFloorIsZeroInsideInset) {
   BoxClearanceLidar s;

@@ -99,8 +99,8 @@ A six-beam lidar against an axis-aligned box centered at the origin, with two
 measurement modes over the same closed-form geometry (no ray-march, no mesh):
 
 - `measure(sx, sy, sz, box)` -- a point sensor ranging along the WORLD axes:
-  `clr_pos_axis = half_axis - sensor_axis`, `clr_neg_axis = half_axis +
-  sensor_axis`, clamped non-negative. Yaw-independent.
+  per axis, `clr_pos = half - s` and `clr_neg = half + s`, clamped
+  non-negative. Yaw-independent.
 - `measureMounted(sx, sy, sz, yaw, mount_radius, box)` -- six pods mounted at
   `mount_radius` from the body center, each ranging outward along its own BODY
   axis (the X/Y pairs yaw with the body; Z stays vertical). Each reading is the
