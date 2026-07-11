@@ -136,15 +136,10 @@ inline std::uint8_t toUint8(cublasStatus_t s) noexcept {
   case CUBLAS_STATUS_INVALID_VALUE:
     return mapInvalidValue();
   case CUBLAS_STATUS_NOT_SUPPORTED:
-    return mapUnsupported();
   case CUBLAS_STATUS_ARCH_MISMATCH:
     return mapUnsupported();
-  case CUBLAS_STATUS_ALLOC_FAILED:
-    return mapLibFailure();
-  case CUBLAS_STATUS_EXECUTION_FAILED:
-    return mapLibFailure();
-  case CUBLAS_STATUS_INTERNAL_ERROR:
-    return mapLibFailure();
+  // ALLOC_FAILED, EXECUTION_FAILED, INTERNAL_ERROR, and any status not
+  // enumerated here: a library failure.
   default:
     return mapLibFailure();
   }

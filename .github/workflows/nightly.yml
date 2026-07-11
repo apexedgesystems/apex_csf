@@ -60,12 +60,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      # static runs in dev-cuda so the CUDA-gated TUs enter its compile
+      # database (clang-tidy parses headers only -- no GPU on the runner).
       - name: Set up dev image
         uses: ./.github/actions/dev-setup
         with:
           registry: ${{ env.REGISTRY }}
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
+          service: ${{ matrix.check == 'static' && 'dev-cuda' || 'dev' }}
 
       # Only the legs that compile C++ through ccache persist one
       # (CHECKS_CCACHE in mk/checks.mk); the scanner and tooling legs would
@@ -87,7 +90,7 @@ jobs:
         # SCAN_GATE=1 makes the advisory scanners (trivy/osv/semgrep) fail the
         # job on findings; the other checks ignore it. Keeps the PR gate
         # deterministic while nightly surfaces new CVEs/findings for triage.
-        run: docker compose run --rm -T dev make ${{ matrix.check }} SCAN_GATE=1
+        run: docker compose run --rm -T ${{ matrix.check == 'static' && 'dev-cuda' || 'dev' }} make ${{ matrix.check }} SCAN_GATE=1
 
       - name: Upload coverage report
         if: ${{ always() && matrix.check == 'coverage-check' }}

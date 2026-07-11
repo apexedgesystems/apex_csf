@@ -107,11 +107,11 @@ PERF_TEST(QuaternionPerf, CpuMultiply_Medium) {
   constexpr int BATCH = BATCH_MEDIUM;
   auto QS_A = generateRandomQuaternions<double>(BATCH);
   auto QS_B = generateRandomQuaternions<double>(BATCH, 123);
-  std::vector<double> outs(BATCH * 4);
+  std::vector<double> outs(static_cast<std::size_t>(BATCH) * 4);
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      for (int b = 0; b < BATCH; ++b) {
+      for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
         Quaternion<double> qa(&QS_A[b * 4]);
         Quaternion<double> qb(&QS_B[b * 4]);
         Quaternion<double> qout(&outs[b * 4]);
@@ -123,7 +123,7 @@ PERF_TEST(QuaternionPerf, CpuMultiply_Medium) {
   volatile double checksum = 0.0;
   auto result = perf.throughputLoop(
       [&] {
-        for (int b = 0; b < BATCH; ++b) {
+        for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
           Quaternion<double> qa(&QS_A[b * 4]);
           Quaternion<double> qb(&QS_B[b * 4]);
           Quaternion<double> qout(&outs[b * 4]);
@@ -149,11 +149,11 @@ PERF_TEST(QuaternionPerf, CpuRotate_Medium) {
   constexpr int BATCH = BATCH_MEDIUM;
   auto QS = generateRandomQuaternions<double>(BATCH);
   const auto VS = generateRandomVectors3<double>(BATCH, 123);
-  std::vector<double> outs(BATCH * 3);
+  std::vector<double> outs(static_cast<std::size_t>(BATCH) * 3);
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      for (int b = 0; b < BATCH; ++b) {
+      for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
         Quaternion<double> q(&QS[b * 4]);
         q.rotateVectorInto(&VS[b * 3], &outs[b * 3]);
       }
@@ -163,7 +163,7 @@ PERF_TEST(QuaternionPerf, CpuRotate_Medium) {
   volatile double checksum = 0.0;
   auto result = perf.throughputLoop(
       [&] {
-        for (int b = 0; b < BATCH; ++b) {
+        for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
           Quaternion<double> q(&QS[b * 4]);
           q.rotateVectorInto(&VS[b * 3], &outs[b * 3]);
         }
@@ -188,11 +188,11 @@ PERF_TEST(QuaternionPerf, CpuSlerp_Medium) {
   auto QS_A = generateRandomQuaternions<double>(BATCH);
   auto QS_B = generateRandomQuaternions<double>(BATCH, 123);
   const auto TS = generateRandomTs<double>(BATCH, 456);
-  std::vector<double> outs(BATCH * 4);
+  std::vector<double> outs(static_cast<std::size_t>(BATCH) * 4);
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      for (int b = 0; b < BATCH; ++b) {
+      for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
         Quaternion<double> qa(&QS_A[b * 4]);
         Quaternion<double> qb(&QS_B[b * 4]);
         Quaternion<double> qout(&outs[b * 4]);
@@ -204,7 +204,7 @@ PERF_TEST(QuaternionPerf, CpuSlerp_Medium) {
   volatile double checksum = 0.0;
   auto result = perf.throughputLoop(
       [&] {
-        for (int b = 0; b < BATCH; ++b) {
+        for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
           Quaternion<double> qa(&QS_A[b * 4]);
           Quaternion<double> qb(&QS_B[b * 4]);
           Quaternion<double> qout(&outs[b * 4]);
@@ -229,11 +229,11 @@ PERF_TEST(QuaternionPerf, CpuToRotMat_Medium) {
 
   constexpr int BATCH = BATCH_MEDIUM;
   auto QS = generateRandomQuaternions<double>(BATCH);
-  std::vector<double> outs(BATCH * 9);
+  std::vector<double> outs(static_cast<std::size_t>(BATCH) * 9);
 
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      for (int b = 0; b < BATCH; ++b) {
+      for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
         Quaternion<double> q(&QS[b * 4]);
         q.toRotationMatrixInto(&outs[b * 9]);
       }
@@ -243,7 +243,7 @@ PERF_TEST(QuaternionPerf, CpuToRotMat_Medium) {
   volatile double checksum = 0.0;
   auto result = perf.throughputLoop(
       [&] {
-        for (int b = 0; b < BATCH; ++b) {
+        for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
           Quaternion<double> q(&QS[b * 4]);
           q.toRotationMatrixInto(&outs[b * 9]);
         }
@@ -273,15 +273,15 @@ PERF_GPU_TEST(QuaternionPerf, GpuRotate_Medium) {
   double* dVsIn = nullptr;
   double* dVsOut = nullptr;
 
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQs, BATCH * 4 * sizeof(double))));
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dVsIn, BATCH * 3 * sizeof(double))));
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dVsOut, BATCH * 3 * sizeof(double))));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQs, sizeof(double) * BATCH * 4)));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dVsIn, sizeof(double) * BATCH * 3)));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dVsOut, sizeof(double) * BATCH * 3)));
 
   // Copy input data
   ASSERT_TRUE(apex::compat::cuda::isSuccess(
-      cudaMemcpy(dQs, QS.data(), BATCH * 4 * sizeof(double), cudaMemcpyHostToDevice)));
+      cudaMemcpy(dQs, QS.data(), sizeof(double) * BATCH * 4, cudaMemcpyHostToDevice)));
   ASSERT_TRUE(apex::compat::cuda::isSuccess(
-      cudaMemcpy(dVsIn, VS.data(), BATCH * 3 * sizeof(double), cudaMemcpyHostToDevice)));
+      cudaMemcpy(dVsIn, VS.data(), sizeof(double) * BATCH * 3, cudaMemcpyHostToDevice)));
 
   perf.cudaWarmup(
       [&](cudaStream_t s) { cuda::rotateVectorBatchCuda(dQs, dVsIn, BATCH, dVsOut, s); });
@@ -322,18 +322,18 @@ PERF_GPU_TEST(QuaternionPerf, GpuSlerp_Medium) {
   double* dTs = nullptr;
   double* dQsOut = nullptr;
 
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsA, BATCH * 4 * sizeof(double))));
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsB, BATCH * 4 * sizeof(double))));
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dTs, BATCH * sizeof(double))));
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsOut, BATCH * 4 * sizeof(double))));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsA, sizeof(double) * BATCH * 4)));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsB, sizeof(double) * BATCH * 4)));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dTs, sizeof(double) * BATCH)));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsOut, sizeof(double) * BATCH * 4)));
 
   // Copy input data
   ASSERT_TRUE(apex::compat::cuda::isSuccess(
-      cudaMemcpy(dQsA, QS_A.data(), BATCH * 4 * sizeof(double), cudaMemcpyHostToDevice)));
+      cudaMemcpy(dQsA, QS_A.data(), sizeof(double) * BATCH * 4, cudaMemcpyHostToDevice)));
   ASSERT_TRUE(apex::compat::cuda::isSuccess(
-      cudaMemcpy(dQsB, QS_B.data(), BATCH * 4 * sizeof(double), cudaMemcpyHostToDevice)));
+      cudaMemcpy(dQsB, QS_B.data(), sizeof(double) * BATCH * 4, cudaMemcpyHostToDevice)));
   ASSERT_TRUE(apex::compat::cuda::isSuccess(
-      cudaMemcpy(dTs, TS.data(), BATCH * sizeof(double), cudaMemcpyHostToDevice)));
+      cudaMemcpy(dTs, TS.data(), sizeof(double) * BATCH, cudaMemcpyHostToDevice)));
 
   perf.cudaWarmup([&](cudaStream_t s) { cuda::slerpBatchCuda(dQsA, dQsB, dTs, BATCH, dQsOut, s); });
 
@@ -372,15 +372,15 @@ PERF_GPU_TEST(QuaternionPerf, GpuMultiply_Medium) {
   double* dQsB = nullptr;
   double* dQsOut = nullptr;
 
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsA, BATCH * 4 * sizeof(double))));
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsB, BATCH * 4 * sizeof(double))));
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsOut, BATCH * 4 * sizeof(double))));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsA, sizeof(double) * BATCH * 4)));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsB, sizeof(double) * BATCH * 4)));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsOut, sizeof(double) * BATCH * 4)));
 
   // Copy input data
   ASSERT_TRUE(apex::compat::cuda::isSuccess(
-      cudaMemcpy(dQsA, QS_A.data(), BATCH * 4 * sizeof(double), cudaMemcpyHostToDevice)));
+      cudaMemcpy(dQsA, QS_A.data(), sizeof(double) * BATCH * 4, cudaMemcpyHostToDevice)));
   ASSERT_TRUE(apex::compat::cuda::isSuccess(
-      cudaMemcpy(dQsB, QS_B.data(), BATCH * 4 * sizeof(double), cudaMemcpyHostToDevice)));
+      cudaMemcpy(dQsB, QS_B.data(), sizeof(double) * BATCH * 4, cudaMemcpyHostToDevice)));
 
   perf.cudaWarmup([&](cudaStream_t s) { cuda::multiplyBatchCuda(dQsA, dQsB, BATCH, dQsOut, s); });
 
@@ -414,11 +414,11 @@ PERF_GPU_COMPARISON(QuaternionPerf, CpuVsGpu_Rotate) {
   constexpr int BATCH = BATCH_MEDIUM;
   auto QS = generateRandomQuaternions<double>(BATCH);
   const auto VS = generateRandomVectors3<double>(BATCH, 123);
-  std::vector<double> cpuOut(BATCH * 3);
+  std::vector<double> cpuOut(static_cast<std::size_t>(BATCH) * 3);
 
   // CPU baseline
   auto cpuResult = perf.cpuBaseline([&] {
-    for (int b = 0; b < BATCH; ++b) {
+    for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
       Quaternion<double> q(&QS[b * 4]);
       q.rotateVectorInto(&VS[b * 3], &cpuOut[b * 3]);
     }
@@ -429,14 +429,14 @@ PERF_GPU_COMPARISON(QuaternionPerf, CpuVsGpu_Rotate) {
   double* dVsIn = nullptr;
   double* dVsOut = nullptr;
 
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQs, BATCH * 4 * sizeof(double))));
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dVsIn, BATCH * 3 * sizeof(double))));
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dVsOut, BATCH * 3 * sizeof(double))));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQs, sizeof(double) * BATCH * 4)));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dVsIn, sizeof(double) * BATCH * 3)));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dVsOut, sizeof(double) * BATCH * 3)));
 
   ASSERT_TRUE(apex::compat::cuda::isSuccess(
-      cudaMemcpy(dQs, QS.data(), BATCH * 4 * sizeof(double), cudaMemcpyHostToDevice)));
+      cudaMemcpy(dQs, QS.data(), sizeof(double) * BATCH * 4, cudaMemcpyHostToDevice)));
   ASSERT_TRUE(apex::compat::cuda::isSuccess(
-      cudaMemcpy(dVsIn, VS.data(), BATCH * 3 * sizeof(double), cudaMemcpyHostToDevice)));
+      cudaMemcpy(dVsIn, VS.data(), sizeof(double) * BATCH * 3, cudaMemcpyHostToDevice)));
 
   perf.cudaWarmup(
       [&](cudaStream_t s) { cuda::rotateVectorBatchCuda(dQs, dVsIn, BATCH, dVsOut, s); });
@@ -473,11 +473,11 @@ PERF_GPU_COMPARISON(QuaternionPerf, CpuVsGpu_Slerp) {
   auto QS_A = generateRandomQuaternions<double>(BATCH);
   auto QS_B = generateRandomQuaternions<double>(BATCH, 123);
   const auto TS = generateRandomTs<double>(BATCH, 456);
-  std::vector<double> cpuOut(BATCH * 4);
+  std::vector<double> cpuOut(static_cast<std::size_t>(BATCH) * 4);
 
   // CPU baseline
   auto cpuResult = perf.cpuBaseline([&] {
-    for (int b = 0; b < BATCH; ++b) {
+    for (std::size_t b = 0; b < static_cast<std::size_t>(BATCH); ++b) {
       Quaternion<double> qa(&QS_A[b * 4]);
       Quaternion<double> qb(&QS_B[b * 4]);
       Quaternion<double> qout(&cpuOut[b * 4]);
@@ -491,17 +491,17 @@ PERF_GPU_COMPARISON(QuaternionPerf, CpuVsGpu_Slerp) {
   double* dTs = nullptr;
   double* dQsOut = nullptr;
 
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsA, BATCH * 4 * sizeof(double))));
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsB, BATCH * 4 * sizeof(double))));
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dTs, BATCH * sizeof(double))));
-  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsOut, BATCH * 4 * sizeof(double))));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsA, sizeof(double) * BATCH * 4)));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsB, sizeof(double) * BATCH * 4)));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dTs, sizeof(double) * BATCH)));
+  ASSERT_TRUE(apex::compat::cuda::isSuccess(cudaMalloc(&dQsOut, sizeof(double) * BATCH * 4)));
 
   ASSERT_TRUE(apex::compat::cuda::isSuccess(
-      cudaMemcpy(dQsA, QS_A.data(), BATCH * 4 * sizeof(double), cudaMemcpyHostToDevice)));
+      cudaMemcpy(dQsA, QS_A.data(), sizeof(double) * BATCH * 4, cudaMemcpyHostToDevice)));
   ASSERT_TRUE(apex::compat::cuda::isSuccess(
-      cudaMemcpy(dQsB, QS_B.data(), BATCH * 4 * sizeof(double), cudaMemcpyHostToDevice)));
+      cudaMemcpy(dQsB, QS_B.data(), sizeof(double) * BATCH * 4, cudaMemcpyHostToDevice)));
   ASSERT_TRUE(apex::compat::cuda::isSuccess(
-      cudaMemcpy(dTs, TS.data(), BATCH * sizeof(double), cudaMemcpyHostToDevice)));
+      cudaMemcpy(dTs, TS.data(), sizeof(double) * BATCH, cudaMemcpyHostToDevice)));
 
   perf.cudaWarmup([&](cudaStream_t s) { cuda::slerpBatchCuda(dQsA, dQsB, dTs, BATCH, dQsOut, s); });
 

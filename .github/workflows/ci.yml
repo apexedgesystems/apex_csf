@@ -280,28 +280,36 @@ jobs:
     if: needs.changes.outputs.cpp == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      # The ci overlay drops dev-cuda's GPU device reservation -- the runner
+      # has no GPU, and clang-tidy only parses the CUDA headers.
+      COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
     steps:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
+      # dev-cuda, not dev: the CUDA toolkit must be present so the CUDA-gated
+      # translation units enter the compile database -- clang-tidy only parses
+      # headers, no GPU needed. With the dev image, those TUs were invisible to
+      # the gate and gated findings accumulated unseen.
       - name: Set up dev image
         uses: ./.github/actions/dev-setup
         with:
           registry: ${{ env.REGISTRY }}
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
-          service: dev
+          service: dev-cuda
           rebuild: ${{ needs.changes.outputs.docker }}
       # No ccache here: clang-tidy does not compile through the launcher --
       # every cache this job ever saved was ~191 bytes (see CHECKS_CCACHE in
       # mk/checks.mk for the same rule on nightly legs).
       - name: clang-tidy (gated checks)
-        run: docker compose run --rm -T dev make static
-      # Doxygen lives in dev-base, not the lean cuda-build gate, so the docs
-      # zero-warning gate runs here rather than in build-test.
+        run: docker compose run --rm -T dev-cuda make static
+      # Doxygen ships in dev-base, which dev-cuda extends, so the docs
+      # zero-warning gate stays in this job.
       - name: Build documentation (zero-warning gate)
-        run: docker compose run --rm -T dev make docs-check
+        run: docker compose run --rm -T dev-cuda make docs-check
 
   # ----------------------------------------------------------------------------
   # Run report -- advisory timing/scope emit. Surfaces what the run did (scoped

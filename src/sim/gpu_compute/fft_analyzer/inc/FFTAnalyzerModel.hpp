@@ -320,7 +320,7 @@ private:
     const float DT = 1.0f / p.sampleRateHz;
 
     for (std::uint32_t ch = 0; ch < p.channelCount; ++ch) {
-      float* chBuf = hInput_.data() + ch * p.samplesPerChannel;
+      float* chBuf = hInput_.data() + static_cast<std::size_t>(ch) * p.samplesPerChannel;
       // Each channel has a distinct dominant frequency + noise
       const float FREQ = 100.0f + static_cast<float>(ch) * 37.5f; // Hz
       const float AMP = 1.0f;

@@ -216,6 +216,10 @@ CLANG_TIDY    ?= run-clang-tidy-21
 # sources under src/ are scanned -- fetched dependencies are excluded.
 static: prep
 	$(call _configure,$(STATIC_PRESET),$(STATIC_DIR))
+	@command -v nvcc >/dev/null 2>&1 || printf '%s\n' \
+	  '[static] note: no CUDA toolkit in this shell -- CUDA-gated TUs are absent' \
+	  '[static] from the compile database. CI runs this lens in dev-cuda; use' \
+	  '[static] `make compose-dev-cuda` + `make static` there for full coverage.'
 	$(call log,static,Running clang-tidy)
 	@$(CLANG_TIDY) -p "$(STATIC_DIR)" -quiet "$(CURDIR)/src/.*\.(cpp|cc)$$"
 
