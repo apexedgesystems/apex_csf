@@ -10,6 +10,7 @@
 #include "src/utilities/math/frames/inc/FrameGraph.hpp"
 #include "src/utilities/math/frames/inc/Geodetic.hpp"
 #include "src/utilities/math/frames/inc/FramesStatus.hpp"
+#include "src/utilities/math/frames/inc/Mount.hpp"
 #include "src/utilities/math/frames/inc/Transform.hpp"
 
 namespace fr = apex::math::frames;
@@ -37,5 +38,9 @@ float probe() {
   (void)fr::buildCatalog(g, epoch, ids);
   fr::Transform<float> site;
   fr::enuSiteEdgeInto(0.5f, -1.0f, 100.0f, site);
+  fr::Mount<float> pod;
+  pod.leverArmM[1] = 0.5f;
+  fr::FrameId sensor = 0;
+  (void)fr::addMount(g, body, pod, "pod", sensor);
   return p[0] + v[1] + (fr::ok(fr::Status::SUCCESS) ? 1.0f : 0.0f);
 }

@@ -96,6 +96,17 @@ ENU/NED site-edge builders that attach a local-tangent frame to ECEF (NED is
 the aero/GNC first-class convention). Site construction is double-math by
 design -- see the float posture below.
 
+## Mounts
+
+A sensor mount is a static child frame, not new machinery: `Mount<T>` is a
+flat streamable POD (lever arm in body coordinates + the sensor frame's
+attitude in the body), and `addMount(g, body, mount, name, id)` is sugar over
+`addStatic`. The control-decision chain the ticket names is then one query --
+`g.in(cgFrame).from(sensorFrame).point(d_times_ahat, out, t)` -- and it
+tracks a mass-stack-driven CG with no rewiring, while the ray direction
+(`.vector`) stays CG-invariant by construction. Sensor arrays are several
+mounts.
+
 ## Performance
 
 | Operation                           | ns  |
