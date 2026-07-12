@@ -46,6 +46,38 @@ site.
   (`FramesStatus.hpp`; the transform paths are total on valid input -- the
   fallible codes serve the graph).
 
+## The frame graph
+
+`FrameGraph<T, CAPACITY>` owns all frame material: the registry, every edge,
+and resolve. Every frame is one edge to a parent; N frames = N definitions;
+any-to-any conversion is `resolve(from, to, t)` (compose up to the deepest
+common ancestor, down the other side). Multiple roots are first-class (an
+Earth-inertial and a Moon-inertial tree can coexist); resolving across
+disconnected trees reports `ERROR_NO_PATH`.
+
+Edge kinds: STATIC (stored, updatable via `updateStatic`), TIME_DRIVEN
+(provider evaluated at the explicit sim t -- never wall clock), STATE_DRIVEN
+(provider fed live state through its context). Providers are the house
+`Delegate` (function pointer + context); a provider's failure status
+propagates out of `resolve`. Names are logging-only and never on the resolve
+path. Storage is a compile-time-capacity node table -- no heap, no pointers
+on the resolve path.
+
+The fluent form keeps the point/vector split at the call site:
+
+```cpp
+FrameGraph<double> g;
+FrameId eci, ecef, body, lidar;
+g.addRoot("eci", eci);
+g.addTimeDriven(eci, {&earthRotationEdge, &epoch}, "ecef", ecef);
+g.addStateDriven(ecef, {&poseEdge, &sixDofState}, "body", body);
+g.addStatic(body, mountTransform, "lidar", lidar);
+
+double p_ecef[3], d_body[3];
+g.in(ecef).from(lidar).point(p_meas, p_ecef, t);   // position: lever arms
+g.in(body).from(lidar).vector(ray_dir, d_body, t); // direction: rotation only
+```
+
 ## Performance
 
 | Operation                           | ns  |

@@ -7,6 +7,7 @@
 #include <cstdio>
 
 #include "src/bench/inc/Perf.hpp"
+#include "src/utilities/math/frames/inc/FrameGraph.hpp"
 #include "src/utilities/math/frames/inc/Transform.hpp"
 
 namespace fr = apex::math::frames;
@@ -46,4 +47,36 @@ PERF_TEST(FramesPerf, Compose) {
   std::printf("\n[frames] compose: %.0f ops/s (%.1f ns)\n", result.callsPerSecond,
               1.0e9 / result.callsPerSecond);
 }
+PERF_TEST(FramesPerf, ResolveFourHops) {
+  UB_PERF_GUARD(perf);
+  // sensor -> mount -> body -> site -> root: the control-consumer chain shape.
+  fr::FrameGraph<double> g;
+  fr::FrameId root = 0, site = 0, body = 0, mount = 0, sensor = 0;
+  (void)g.addRoot("root", root);
+  fr::Transform<double> e;
+  e.t[0] = 1000.0;
+  (void)g.addStatic(root, e, "site", site);
+  e = fr::Transform<double>{};
+  e.rotation().setFromEuler321(0.1, -0.2, 0.9);
+  e.t[2] = -12.0;
+  (void)g.addStatic(site, e, "body", body);
+  e = fr::Transform<double>{};
+  e.t[1] = 1.5;
+  (void)g.addStatic(body, e, "mount", mount);
+  e = fr::Transform<double>{};
+  e.rotation().setFromAngleAxis(0.3, 0.0, 1.0, 0.0);
+  (void)g.addStatic(mount, e, "sensor", sensor);
+
+  fr::Transform<double> x;
+  volatile double sink = 0.0;
+  auto result = perf.throughputLoop(
+      [&] {
+        (void)g.resolve(sensor, root, 0.0, x);
+        sink = sink + x.t[0];
+      },
+      "frames_resolve_4hop");
+  std::printf("\n[frames] resolve 4-hop: %.0f ops/s (%.1f ns)\n", result.callsPerSecond,
+              1.0e9 / result.callsPerSecond);
+}
+
 PERF_MAIN()

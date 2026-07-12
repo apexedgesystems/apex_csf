@@ -6,6 +6,7 @@
  *        build.
  */
 
+#include "src/utilities/math/frames/inc/FrameGraph.hpp"
 #include "src/utilities/math/frames/inc/FramesStatus.hpp"
 #include "src/utilities/math/frames/inc/Transform.hpp"
 
@@ -22,5 +23,11 @@ float probe() {
   (void)fr::transformPointInto(inv, P, p);
   (void)fr::rotateVectorInto(inv, P, v);
   static_assert(sizeof(fr::Transform<float>) == 28, "flat POD");
+  fr::FrameGraph<float, 8> g;
+  fr::FrameId root = 0, body = 0;
+  (void)g.addRoot("root", root);
+  (void)g.addStatic(root, a, "body", body);
+  fr::Transform<float> x;
+  (void)g.resolve(body, root, 0.0f, x);
   return p[0] + v[1] + (fr::ok(fr::Status::SUCCESS) ? 1.0f : 0.0f);
 }
