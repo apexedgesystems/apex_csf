@@ -116,9 +116,9 @@ mounts.
 
 ## On-target verification
 
-apps/stm32_frames_selftest runs the golden checks on real hardware (float
-FPU + soft double), reporting over the ST-Link VCP -- the third enforcement
-ring behind the per-PR floor checks and the nightly cross builds.
+An on-target self-test firmware runs the golden checks on real hardware
+(float FPU + soft double) -- the third enforcement ring behind the per-PR
+floor checks and the nightly cross builds.
 
 ## Float posture (MCU)
 
