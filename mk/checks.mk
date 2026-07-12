@@ -117,7 +117,7 @@ print-ccache-checks:
 # report job emits per-job detail on each run). Host tool: needs gh auth;
 # writes into the local .design_docs (not shipped).
 
-CI_BASELINE := .design_docs/CI_PERFORMANCE_BASELINE.md
+CI_BASELINE := .datum/CI_PERFORMANCE_BASELINE.md
 
 ci-timings:
 	$(call log,ci,Refreshing $(CI_BASELINE))

@@ -24,6 +24,5 @@ apex_add_app(
   POSIX
 )
 
-# Deployment: single executive, defaults only (no TPRM yet -- this app is
-# the testbed the tunable-parameter tooling arc will grow one onto).
+# Deployment: single executive, defaults only (no TPRM).
 apex_add_deployment(NAME TemplateApp EXEC TemplateApp)

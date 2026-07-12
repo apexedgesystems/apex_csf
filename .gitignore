@@ -53,6 +53,7 @@ tools/rust/dev/
 # Internal dev reference material
 **/.claude_docs/
 .design_docs/
+.datum/
 
 # Archived test results (kept locally, not committed)
 **/.archive/
