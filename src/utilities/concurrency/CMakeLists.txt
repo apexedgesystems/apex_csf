@@ -21,6 +21,12 @@ include(apex/All)
 
 add_subdirectory(mcu)
 
+# The POSIX concurrency lib (threads, pools, semaphores) below never targets
+# bare-metal; the mcu subset above is the freestanding core.
+if (APEX_PLATFORM_BAREMETAL)
+  return()
+endif ()
+
 apex_module(utilities_concurrency)
 
 # ------------------------------------------------------------------------------

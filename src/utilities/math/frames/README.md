@@ -114,6 +114,12 @@ mounts.
 | transformPoint (rotate + translate) | 38  |
 | compose (one graph hop)             | 65  |
 
+## On-target verification
+
+apps/stm32_frames_selftest runs the golden checks on real hardware (float
+FPU + soft double), reporting over the ST-Link VCP -- the third enforcement
+ring behind the per-PR floor checks and the nightly cross builds.
+
 ## Float posture (MCU)
 
 `float` instantiations serve single-precision FPUs for BODY/LOCAL-frame work
