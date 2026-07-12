@@ -497,6 +497,20 @@ See [tools/rust/README.md](tools/rust/README.md),
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Development setup, quality gates, PR shape |
 | [SECURITY.md](SECURITY.md)         | Vulnerability reporting and support policy |
 
+### Release Assets
+
+Alongside the per-platform and demo tarballs, every GitHub Release carries
+its own provenance:
+
+| Asset                          | Purpose                                                              |
+| ------------------------------ | -------------------------------------------------------------------- |
+| `SHA256SUMS`                   | Integrity -- verify downloads with `sha256sum -c SHA256SUMS`         |
+| `apex-csf-<ver>-sbom.cdx.json` | CycloneDX software bill of materials for the release ref             |
+| `THIRD_PARTY_NOTICES.md`       | Third-party components and licenses, derived from the SBOM           |
+| `build-metadata.json`          | Source commit, workflow run, and the image digests behind each asset |
+
+The release body is that version's CHANGELOG section.
+
 ### Build System
 
 | Document                                     | Purpose                          |
