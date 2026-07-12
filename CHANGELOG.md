@@ -31,6 +31,10 @@ any such change is called out explicitly in its entry.
   into the build images and resolved offline during builds.
 - Static analysis now covers CUDA translation units.
 - CycloneDX SBOM generation (`make sbom`).
+- Release provenance: every GitHub Release attaches SHA256SUMS, the CycloneDX
+  SBOM, THIRD_PARTY_NOTICES derived from it, and build metadata recording the
+  image digests behind each artifact; the release body is that version's
+  section of this changelog.
 
 ### Changed
 
