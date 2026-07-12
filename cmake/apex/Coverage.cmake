@@ -175,7 +175,7 @@ function (_apex_coverage_finalize)
 
   file(MAKE_DIRECTORY "${APEX_COVERAGE_OUTPUT_DIR}")
 
-  # Compute area per lib from filesystem layout (dir under src/ or apps/).
+  # Compute area per lib from filesystem layout (dir under src/, demos/, or apps/).
   # This is the only place the build infra encodes layout, and it only knows
   # about the top-level roots -- everything beneath is auto-discovered.
   get_property(_lib_sources GLOBAL PROPERTY APEX_COVERAGE_LIB_SOURCES)
@@ -479,7 +479,7 @@ endif ()
 # ------------------------------------------------------------------------------
 # Landing page: aggregate per-library coverage into one index.html grouped by
 # area. Each lib's area is derived from its filesystem position (the dir name
-# directly under src/ or apps/), passed through via COVERAGE_LIB_AREAS in the
+# directly under src/, demos/, or apps/), passed through via COVERAGE_LIB_AREAS in the
 # manifest. The page has zero hardcoded module names -- new top-level dirs
 # show up as new sections automatically.
 #

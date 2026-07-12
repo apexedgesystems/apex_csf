@@ -104,7 +104,7 @@ Individual tprms are extracted to `.apex_fs/tprm/` during init.
 
 ```bash
 ./ApexDemo \
-  --config apps/apex_demo/tprm/master.tprm \
+  --config demos/apex_ops_demo/tprm/master.tprm \
   --archive-path /path/to/output \
   --shutdown-after 5
 ```
@@ -140,5 +140,4 @@ and TPRM loading:
 ## See Also
 
 - `CLAUDE.md` - Component identity interface details
-- `apps/apex_demo/README.md` - Demo application and phases
-- `apps/apex_demo/RESUME.md` - Development resume document
+- `demos/apex_ops_demo/README.md` - Reference demo application

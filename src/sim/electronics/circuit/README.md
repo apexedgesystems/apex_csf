@@ -218,7 +218,7 @@ for (double t = 0.0; t < tEnd; t += DT) {
 
 - `apex_circuit_demo` exercises the Circuit API end-to-end with all
   topology models. See
-  [apps/apex_circuit_demo](../../../apps/apex_circuit_demo/).
+  [demos/apex_circuit_demo](../../../demos/apex_circuit_demo/).
 
 ---
 

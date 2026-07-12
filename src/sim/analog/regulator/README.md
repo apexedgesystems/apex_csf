@@ -180,5 +180,5 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 
 ## 6. See Also
 
-- `apps/apex_mc_demo/` -- Monte Carlo regulator analysis application
+- `demos/apex_mc_demo/` -- Monte Carlo regulator analysis application
 - `docs/standards/CODE_STANDARD.md` -- Coding conventions

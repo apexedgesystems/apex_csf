@@ -323,7 +323,7 @@ express that -- `EXEC` is singular.
 apex_add_deployment(
   NAME ApexHilDemo
   EXEC ApexHilDemo                                # exactly one executive
-  TPRM apps/apex_hil_demo/tprm/master_1khz.tprm   # optional
+  TPRM demos/apex_hil_demo/tprm/master_1khz.tprm   # optional
 )
 ```
 

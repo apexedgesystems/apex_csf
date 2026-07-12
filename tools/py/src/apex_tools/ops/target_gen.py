@@ -12,7 +12,7 @@ directory:
 Usage:
   zenith-target --app ApexOpsDemo --apps-dir apps \
     --db build/apex_data_db --output build/zenith_targets/ApexOpsDemo
-  zenith-target --app-data apps/apex_ops_demo/app_data.toml --db build/apex_data_db --output out/
+  zenith-target --app-data demos/apex_ops_demo/app_data.toml --db build/apex_data_db --output out/
 """
 
 import argparse
@@ -496,15 +496,19 @@ def _sysmon_plots(prefix: str, struct_info: dict) -> list:
 
 
 def find_app_data(app_name: str, apps_dir: str) -> str:
-    """Search apps/ for app_data.toml matching the application name."""
-    for entry in sorted(Path(apps_dir).iterdir()):
-        candidate = entry / "app_data.toml"
-        if candidate.exists():
-            with open(candidate, "rb") as f:
-                data = tomllib.load(f)
-            if data.get("application") == app_name:
-                return str(candidate)
-    raise FileNotFoundError(f"No app_data.toml with application='{app_name}' found in {apps_dir}/")
+    """Search the given roots (colon-separated) for a matching app_data.toml."""
+    for root in apps_dir.split(":"):
+        root_path = Path(root)
+        if not root_path.is_dir():
+            continue
+        for entry in sorted(root_path.iterdir()):
+            candidate = entry / "app_data.toml"
+            if candidate.exists():
+                with open(candidate, "rb") as f:
+                    data = tomllib.load(f)
+                if data.get("application") == app_name:
+                    return str(candidate)
+    raise FileNotFoundError(f"No app_data.toml with application='{app_name}' found in {apps_dir}")
 
 
 def main():
@@ -512,10 +516,12 @@ def main():
         description="Generate Zenith target configuration from app_data.toml"
     )
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--app", help="Application name (searches apps/ for app_data.toml)")
+    group.add_argument("--app", help="Application name (searched for in --apps-dir roots)")
     group.add_argument("--app-data", help="Direct path to app_data.toml")
 
-    parser.add_argument("--apps-dir", default="apps", help="Apps directory (default: apps)")
+    parser.add_argument(
+        "--apps-dir", default="demos:apps", help="Colon-separated app roots (default: demos:apps)"
+    )
     parser.add_argument("--db", required=True, help="Path to apex_data_db/ directory")
     parser.add_argument("--output", required=True, help="Output directory for target configs")
     args = parser.parse_args()
