@@ -399,14 +399,14 @@ endfunction ()
 #
 # Generate the project-level docs landing page at ${CMAKE_BINARY_DIR}/docs/
 # index.html. Areas are derived from each lib's source-dir position (the
-# directory directly under src/ or apps/) -- the page has zero hardcoded
+# directory directly under src/, demos/, or apps/) -- the page has zero hardcoded
 # module names, so new top-level dirs show up as new sections automatically.
 # Re-written at configure time whenever the registered-lib set changes.
 # ------------------------------------------------------------------------------
 function (_apex_write_docs_index _libs)
   # Per-area buckets are dynamic: _grp_<area> holds libs for area <area>.
   # Area for each lib is derived from its SOURCE_DIR position (the dir
-  # directly under src/ or apps/).
+  # directly under src/, demos/, or apps/).
   set(_areas "")
   foreach (_lib IN LISTS _libs)
     get_property(_src GLOBAL PROPERTY APEX_DOXYGEN_${_lib}_SOURCE_DIR)

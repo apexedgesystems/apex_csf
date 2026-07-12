@@ -167,7 +167,7 @@ ops-sdk: apex-data-db
 #
 # Requires:
 #   - make apex-data-db (for JSON struct dictionaries)
-#   - apps/<app>/app_data.toml (per-app component manifest)
+#   - demos/<app>/app_data.toml or apps/<app>/app_data.toml (component manifest)
 #
 # Output:
 #   build/*/zenith_targets/<APP>/
@@ -181,7 +181,7 @@ zenith-target: apex-data-db
 	$(call log,zenith-target,Generating Zenith target configs for $(APP))
 	@python3 $(PY_TOOLS_DIR)/src/apex_tools/ops/target_gen.py \
 	  --app "$(APP)" \
-	  --apps-dir "apps" \
+	  --apps-dir "demos:apps" \
 	  --db "$(BUILD_DIR)/apex_data_db" \
 	  --output "$(BUILD_DIR)/zenith_targets/$(APP)"
 

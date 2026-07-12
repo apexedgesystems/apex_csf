@@ -72,7 +72,7 @@ jobs:
             case "$file" in
               tools/rust/*) rust=true ;;
               tools/py/*)   py=true ;;
-              src/*|apps/*|cmake/*|CMakeLists.txt|CMakePresets.json) cpp=true ;;
+              src/*|demos/*|apps/*|cmake/*|CMakeLists.txt|CMakePresets.json) cpp=true ;;
               *.md|docs/*)  : ;;
               # Dev-image inputs the gate jobs actually run in (base; the cpu dev
               # image used by lint/static; the cuda image used by build-test) plus

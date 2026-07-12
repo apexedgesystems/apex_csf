@@ -153,7 +153,7 @@ coverage-rust:
 # ------------------------------------------------------------------------------
 # Demo smoke tests
 # ------------------------------------------------------------------------------
-# Run app smoke scripts (apps/<app>/scripts/smoke.sh) against the built
+# Run app smoke scripts (<root>/<app>/scripts/smoke.sh, demos/ or apps/) against the built
 # binaries. The build system stays generic: it knows only the convention and
 # passes APEX_BIN_DIR; each script owns its app-specific run and verification.
 #
@@ -162,7 +162,7 @@ coverage-rust:
 # not be pulled into the CPU gate). With no APP, runs all discovered scripts as
 # a local convenience only. Reuses the debug build (no separate build).
 
-APP_SMOKE_SCRIPTS := $(if $(APP),apps/$(APP)/scripts/smoke.sh,$(wildcard apps/*/scripts/smoke.sh))
+APP_SMOKE_SCRIPTS := $(if $(APP),$(or $(firstword $(wildcard demos/$(APP)/scripts/smoke.sh apps/$(APP)/scripts/smoke.sh)),demos/$(APP)/scripts/smoke.sh),$(wildcard demos/*/scripts/smoke.sh apps/*/scripts/smoke.sh))
 
 smoke: debug
 	@for s in $(APP_SMOKE_SCRIPTS); do \

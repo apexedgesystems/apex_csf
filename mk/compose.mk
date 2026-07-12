@@ -60,11 +60,11 @@ $(eval $(call _compose_target,coverage,coverage,dev-cuda,coverage))
 $(eval $(call _compose_target,format,format (auto-fix),dev-cuda,format))
 $(eval $(call _compose_target,format-check,format (check only),dev-cuda,format-check))
 
-# Compose wrappers for every registered check (mk/checks.mk), plus sbom, are
-# generated from the registry: each `make <check>` gets a matching
+# Compose wrappers for every registered check (mk/checks.mk), plus sbom and
+# notices, are generated from the registry: each `make <check>` gets a matching
 # `make compose-<check>` automatically, so adding a check needs no edit here.
 # Covers the sanitizers, static analyzers, coverage, and security scanners.
-$(foreach c,$(CHECKS_ALL) sbom,$(eval $(call _compose_target,$(c),$(c) (dev-cuda),dev-cuda,$(c))))
+$(foreach c,$(CHECKS_ALL) sbom notices,$(eval $(call _compose_target,$(c),$(c) (dev-cuda),dev-cuda,$(c))))
 
 # ------------------------------------------------------------------------------
 # Tools (dev-cuda)

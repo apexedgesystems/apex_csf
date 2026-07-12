@@ -185,6 +185,6 @@ docker compose run --rm -T dev-cuda \
 
 ## 7. See Also
 
-- [apps/apex_circuit_demo](../../../apps/apex_circuit_demo/) - Reference template for building custom circuits (`gates`, `rc-lowpass`, `common-emitter`)
-- [apps/apex_cpu_sim_demo](../../../apps/apex_cpu_sim_demo/) - Intel 4004 CPU demo across L0 / L1 / L2 plus the example `.4004` programs
+- [demos/apex_circuit_demo](../../../demos/apex_circuit_demo/) - Reference template for building custom circuits (`gates`, `rc-lowpass`, `common-emitter`)
+- [demos/apex_cpu_sim_demo](../../../demos/apex_cpu_sim_demo/) - Intel 4004 CPU demo across L0 / L1 / L2 plus the example `.4004` programs
 - Per-module READMEs (linked from [Section 3](#3-domains)) for API details and per-device tables

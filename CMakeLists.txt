@@ -425,6 +425,7 @@ endif ()
 # ------------------------------------------------------------------------------
 
 add_subdirectory(src)
+add_subdirectory(demos)
 add_subdirectory(apps)
 
 # Tools require a hosted OS (skip for bare-metal, optional via APEX_BUILD_TOOLS)
