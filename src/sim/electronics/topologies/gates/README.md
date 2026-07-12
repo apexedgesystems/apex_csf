@@ -215,7 +215,7 @@ const double V_THRESH = gate.computeDC();
 
 - `apex_circuit_demo --circuit gates` exercises the transistor tier and
   prints DC voltage tables for all seven gates. See
-  [apps/apex_circuit_demo](../../../../apps/apex_circuit_demo/).
+  [demos/apex_circuit_demo](../../../../demos/apex_circuit_demo/).
 
 ---
 
@@ -254,4 +254,4 @@ int main() {
 - [Composite devices](../../devices/composite/README.md) - CMOS composite primitives the boolean tier wraps
 - [Nonlinear devices](../../devices/nonlinear/README.md) - MOSFET models the transistor tier consumes
 - [Intel 4004 grid](../../chips/intel4004/README.md) - Larger PMOS gate-level model (the entire 4004 chip)
-- [apps/apex_circuit_demo](../../../../apps/apex_circuit_demo/)
+- [demos/apex_circuit_demo](../../../../demos/apex_circuit_demo/)

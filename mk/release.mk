@@ -102,15 +102,17 @@ $(foreach p,$(filter-out cpu cuda,$(PLAT_BUILDERS)),\
   $(eval PLATFORM_$(p)_DIR     := build/$(P_$(p)_PRESET)))
 
 # ==============================================================================
-# App Manifests (auto-discovered from apps/*/release.mk)
+# App Manifests (auto-discovered from demos/*/release.mk and apps/*/release.mk)
 # ==============================================================================
 # Each app provides its own manifest. Manifests append to APP_REGISTRY and
 # define APP_<Name>_PLATFORMS, APP_<Name>_<plat>_TYPE, APP_<Name>_<plat>_BINARY.
+# demos/ holds the stock demos; apps/ is the user production space -- both
+# release through the same manifest surface.
 # ==============================================================================
 
 APP_REGISTRY :=
 
--include $(wildcard apps/*/release.mk)
+-include $(wildcard demos/*/release.mk apps/*/release.mk)
 
 # ==============================================================================
 # Release Directory

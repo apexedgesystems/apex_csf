@@ -140,7 +140,7 @@ const bool   SATURATED = V_CE < 0.2;
 - `apex_circuit_demo --circuit common-emitter` exercises this module and
   reports `V_B`, `V_C`, `V_CE`, `I_C`, `I_B`, plus a region check
   (cutoff / saturation / active). See
-  [apps/apex_circuit_demo](../../../../apps/apex_circuit_demo/).
+  [demos/apex_circuit_demo](../../../../demos/apex_circuit_demo/).
 
 ---
 
@@ -172,4 +172,4 @@ int main() {
 
 - [Circuit](../../circuit/README.md) - Construction API
 - [devices/nonlinear/BjtEbersMoll](../../devices/nonlinear/README.md) - BJT model used internally
-- [apps/apex_circuit_demo](../../../../apps/apex_circuit_demo/) - Example consumer (`--circuit common-emitter`)
+- [demos/apex_circuit_demo](../../../../demos/apex_circuit_demo/) - Example consumer (`--circuit common-emitter`)

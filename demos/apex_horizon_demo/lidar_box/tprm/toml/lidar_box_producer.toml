@@ -1,0 +1,27 @@
+# LidarBoxProducer (componentId=230, instanceIndex=0, fullUid=0xE600) -- body kinematics
+# Total: 120 bytes (LidarBoxTunables; layout matches
+# demos/apex_horizon_demo/lidar_box/producer/inc/LidarBoxTypes.hpp)
+#
+# The drift is a 3D Lissajous figure: pos = amp * sin(omega * t + phase) per
+# axis, amp = amp_frac * (half_extent - mount_radius). Incommensurate omegas keep
+# the path from closing so all six clearances animate; the yaw spins steadily.
+# dt_s matches the 50 Hz schedule. sigma_m = 0 keeps the lidar ideal (set > 0
+# for noisy rays; the noise stream is deterministic per seed).
+
+[LidarBoxTunables]
+dt_s           = { type = "float", size = 8, value = 0.02 }
+amp_frac_x     = { type = "float", size = 8, value = 0.85 }
+amp_frac_y     = { type = "float", size = 8, value = 0.90 }
+amp_frac_z     = { type = "float", size = 8, value = 0.80 }
+omega_x_rad_s  = { type = "float", size = 8, value = 0.11 }
+omega_y_rad_s  = { type = "float", size = 8, value = 0.17 }
+omega_z_rad_s  = { type = "float", size = 8, value = 0.23 }
+phase_y_rad    = { type = "float", size = 8, value = 1.0472 }
+phase_z_rad    = { type = "float", size = 8, value = 2.0944 }
+yaw_rate_rad_s = { type = "float", size = 8, value = 0.35 }
+sigma_m        = { type = "float", size = 8, value = 0.0 }
+# The scene (streamed in every frame's scene block; apex tunables are the owner)
+box_half_x_m   = { type = "float", size = 8, value = 4.0 }
+box_half_y_m   = { type = "float", size = 8, value = 3.0 }
+box_half_z_m   = { type = "float", size = 8, value = 2.5 }
+mount_radius_m = { type = "float", size = 8, value = 0.5 }

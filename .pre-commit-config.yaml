@@ -4,6 +4,7 @@
 files: |
   (?x)^(
     src/|
+    demos/|
     apps/|
     cmake/|
     mk/|

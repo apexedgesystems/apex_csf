@@ -212,33 +212,37 @@ After building, start with one of these depending on your interest:
 
 | If you want to...                       | Start here                                                                                |
 | --------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Connect Zenith and see live telemetry   | [apex_ops_demo](apps/apex_ops_demo/)                                                      |
-| Run a full executive with GPU models    | [apex_edge_demo](apps/apex_edge_demo/)                                                    |
-| See host + MCU hardware-in-the-loop     | [apex_hil_demo](apps/apex_hil_demo/)                                                      |
-| Run Monte Carlo sweeps across all cores | [apex_mc_demo](apps/apex_mc_demo/)                                                        |
-| Deploy AES-256-GCM on a microcontroller | [stm32_encryptor_demo](apps/stm32_encryptor_demo/)                                        |
+| Connect Zenith and see live telemetry   | [apex_ops_demo](demos/apex_ops_demo/)                                                     |
+| Run a full executive with GPU models    | [apex_edge_demo](demos/apex_edge_demo/)                                                   |
+| See host + MCU hardware-in-the-loop     | [apex_hil_demo](demos/apex_hil_demo/)                                                     |
+| Run Monte Carlo sweeps across all cores | [apex_mc_demo](demos/apex_mc_demo/)                                                       |
+| Deploy AES-256-GCM on a microcontroller | [stm32_encryptor_demo](demos/stm32_encryptor_demo/)                                       |
 | Understand the component base classes   | [system_component README](src/system/core/infrastructure/system_component/base/README.md) |
 | Understand task scheduling              | [scheduler README](src/system/core/components/scheduler/README.md)                        |
 | Browse the full protocol stack          | [Protocols](#protocols) in the library catalog below                                      |
 
 ### Demo Applications
 
-| Application                                            | Description                                                         | Platforms          |
-| ------------------------------------------------------ | ------------------------------------------------------------------- | ------------------ |
-| [apex_ops_demo](apps/apex_ops_demo/)                   | Waveform telemetry for Zenith operations interface testing          | x86_64, RPi        |
-| [apex_edge_demo](apps/apex_edge_demo/)                 | GPU workloads under ApexExecutive RT scheduling                     | x86_64 + CUDA      |
-| [apex_hil_demo](apps/apex_hil_demo/)                   | POSIX plant model + STM32 flight controller over UART/SLIP          | x86_64 + STM32     |
-| [apex_mc_demo](apps/apex_mc_demo/)                     | Monte Carlo voltage regulator tolerance analysis                    | x86_64             |
-| [apex_action_demo](apps/apex_action_demo/)             | Action engine observe-and-react pipeline with runtime data mutation | x86_64             |
-| [apex_circuit_demo](apps/apex_circuit_demo/)           | Transistor-level CMOS gates and analog filters, selected at runtime | x86_64             |
-| [apex_cpu_sim_demo](apps/apex_cpu_sim_demo/)           | Intel 4004 CPU simulation at three device-physics fidelity levels   | x86_64             |
-| [apex_time_demo](apps/apex_time_demo/)                 | TimeServer end to end: PPS ingest, UTC correlation, timed triggers  | x86_64             |
-| [apex_horizon_demo](apps/apex_horizon_demo/)           | Six-beam lidar on a drifting body, streamed to a 3D viewer          | x86_64             |
-| [stm32_encryptor_demo](apps/stm32_encryptor_demo/)     | AES-256-GCM encryption with dual UART channels                      | NUCLEO-L476RG      |
-| [arduino_encryptor_demo](apps/arduino_encryptor_demo/) | AES-256-GCM encryption on ATmega328P (32 KB flash, 2 KB SRAM)       | Arduino Uno R3     |
-| [pico_encryptor_demo](apps/pico_encryptor_demo/)       | AES-256-GCM encryption with dual UART                               | Raspberry Pi Pico  |
-| [esp32_encryptor_demo](apps/esp32_encryptor_demo/)     | AES-256-GCM encryption with UART + USB CDC                          | Arduino Nano ESP32 |
-| [c2000_encryptor_demo](apps/c2000_encryptor_demo/)     | AES-256-GCM + CAN loopback                                          | LAUNCHXL-F280049C  |
+Stock examples live under [demos/](demos/); your production applications go
+in [apps/](apps/), which the build discovers automatically and which starts
+you off with a copyable [template_app](apps/template_app/).
+
+| Application                                             | Description                                                         | Platforms          |
+| ------------------------------------------------------- | ------------------------------------------------------------------- | ------------------ |
+| [apex_ops_demo](demos/apex_ops_demo/)                   | Waveform telemetry for Zenith operations interface testing          | x86_64, RPi        |
+| [apex_edge_demo](demos/apex_edge_demo/)                 | GPU workloads under ApexExecutive RT scheduling                     | x86_64 + CUDA      |
+| [apex_hil_demo](demos/apex_hil_demo/)                   | POSIX plant model + STM32 flight controller over UART/SLIP          | x86_64 + STM32     |
+| [apex_mc_demo](demos/apex_mc_demo/)                     | Monte Carlo voltage regulator tolerance analysis                    | x86_64             |
+| [apex_action_demo](demos/apex_action_demo/)             | Action engine observe-and-react pipeline with runtime data mutation | x86_64             |
+| [apex_circuit_demo](demos/apex_circuit_demo/)           | Transistor-level CMOS gates and analog filters, selected at runtime | x86_64             |
+| [apex_cpu_sim_demo](demos/apex_cpu_sim_demo/)           | Intel 4004 CPU simulation at three device-physics fidelity levels   | x86_64             |
+| [apex_time_demo](demos/apex_time_demo/)                 | TimeServer end to end: PPS ingest, UTC correlation, timed triggers  | x86_64             |
+| [apex_horizon_demo](demos/apex_horizon_demo/)           | Six-beam lidar on a drifting body, streamed to a 3D viewer          | x86_64             |
+| [stm32_encryptor_demo](demos/stm32_encryptor_demo/)     | AES-256-GCM encryption with dual UART channels                      | NUCLEO-L476RG      |
+| [arduino_encryptor_demo](demos/arduino_encryptor_demo/) | AES-256-GCM encryption on ATmega328P (32 KB flash, 2 KB SRAM)       | Arduino Uno R3     |
+| [pico_encryptor_demo](demos/pico_encryptor_demo/)       | AES-256-GCM encryption with dual UART                               | Raspberry Pi Pico  |
+| [esp32_encryptor_demo](demos/esp32_encryptor_demo/)     | AES-256-GCM encryption with UART + USB CDC                          | Arduino Nano ESP32 |
+| [c2000_encryptor_demo](demos/c2000_encryptor_demo/)     | AES-256-GCM + CAN loopback                                          | LAUNCHXL-F280049C  |
 
 ---
 

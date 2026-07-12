@@ -98,7 +98,7 @@ Configure-only variants available: `configure-jetson`, `configure-rpi`, etc.
 | `make release-all`        | Release all registered apps              |
 | `make release-clean`      | Remove `release/` directory              |
 
-Apps declare their platforms in `apps/<app>/release.mk`. The release target
+Apps declare their platforms in `demos/<app>/release.mk` (or `apps/<app>/release.mk` for user applications). The release target
 builds each platform via Docker Compose, packages POSIX binaries with their
 shared-library closure (via the CMake `package_<APP>` install-component target),
 copies firmware artifacts for bare-metal targets, and creates a combined

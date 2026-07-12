@@ -313,7 +313,7 @@ HAL coverage: `TestHalInterface` (8), `TestHalMock` (18),
 
 ## 8. See Also
 
-- [`apps/apex_time_demo/README.md`](../../../../../apps/apex_time_demo/README.md) -- standalone demo with GPS-simulator thread.
+- [`demos/apex_time_demo/README.md`](../../../../../demos/apex_time_demo/README.md) -- standalone demo with GPS-simulator thread.
 - [`src/system/core/hal/base/IPps.hpp`](../../hal/base/IPps.hpp) -- HAL contract.
 - [`src/system/core/hal/linux/inc/LinuxPps.hpp`](../../hal/linux/inc/LinuxPps.hpp) -- `/dev/pps[N]` impl.
 - [`src/system/core/hal/stm32/inc/Stm32Pps.hpp`](../../hal/stm32/inc/Stm32Pps.hpp) -- STM32 EXTI/DWT impl.

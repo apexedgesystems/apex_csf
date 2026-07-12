@@ -163,7 +163,7 @@ const double ERROR   = std::abs(V_SIM - V_ANALY);
 
 - `apex_circuit_demo --circuit rc-lowpass` exercises this module
   end-to-end and prints simulated vs analytical step / magnitude
-  responses. See [apps/apex_circuit_demo](../../../../apps/apex_circuit_demo/).
+  responses. See [demos/apex_circuit_demo](../../../../demos/apex_circuit_demo/).
 
 ---
 
@@ -204,4 +204,4 @@ int main() {
 
 - [Circuit](../../circuit/README.md) - Construction API used by every model
 - [Linear devices](../../devices/linear/README.md) - ResistorModel and friends
-- [apps/apex_circuit_demo](../../../../apps/apex_circuit_demo/) - Example consumer (`--circuit rc-lowpass`)
+- [demos/apex_circuit_demo](../../../../demos/apex_circuit_demo/) - Example consumer (`--circuit rc-lowpass`)

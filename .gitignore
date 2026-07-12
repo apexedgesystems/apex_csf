@@ -21,8 +21,8 @@ heaptrack.*.zst
 /*.csv
 
 # Design docs and future proposals (internal only). Anchored to the repo-root
-# docs/ folder -- app docs (apps/*/docs/) are user-facing deliverables and are
-# committed.
+# docs/ folder -- application docs (demos/*/docs/, apps/*/docs/) are
+# user-facing deliverables and are committed.
 /docs/
 **/docs/design/
 
@@ -57,8 +57,14 @@ tools/rust/dev/
 # Archived test results (kept locally, not committed)
 **/.archive/
 
-# Production applications (proprietary, not committed)
-apps/production/
+# User production applications (proprietary, never committed upstream).
+# apps/ builds and releases whatever you drop in it, but only the committed
+# stub (README, discovery CMakeLists, template_app) travels with apex;
+# forks tracking their own applications adjust these lines.
+/apps/*
+!/apps/CMakeLists.txt
+!/apps/README.md
+!/apps/template_app/
 .ccache/
 
 # Tooling coverage reports (nightly artifacts)
