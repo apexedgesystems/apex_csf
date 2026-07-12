@@ -78,6 +78,24 @@ g.in(ecef).from(lidar).point(p_meas, p_ecef, t);   // position: lever arms
 g.in(body).from(lidar).vector(ray_dir, d_body, t); // direction: rotation only
 ```
 
+## The standard catalog
+
+`Catalog.hpp` populates a graph with the well-known frames: an Earth tree
+(ECI root, ECEF under the rung-1 sidereal rotation) and a Moon tree (MCI
+root, MCMF tidally locked), from ONE sim `Epoch` (Julian date at t = 0; all
+time-driven edges derive their angle from epoch + t, never a wall clock, so
+replay is exact). `CatalogIds.hci` is reserved for future ephemeris work.
+Rung-1 explicitly omits precession/nutation/polar motion -- the upgrade path
+is a higher-fidelity time-driven edge, same graph shape. The Epoch is the
+providers' Delegate context and must outlive the graph.
+
+`Geodetic.hpp` carries the tree's canonical geodetic machinery: WGS-84
+closed-form geodetic->ECEF, Bowring ECEF->geodetic (equivalence-locked
+against the gravity library's implementations it supersedes), and the
+ENU/NED site-edge builders that attach a local-tangent frame to ECEF (NED is
+the aero/GNC first-class convention). Site construction is double-math by
+design -- see the float posture below.
+
 ## Performance
 
 | Operation                           | ns  |

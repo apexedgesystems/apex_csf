@@ -7,7 +7,9 @@
 #include <cstdio>
 
 #include "src/bench/inc/Perf.hpp"
+#include "src/utilities/math/frames/inc/Catalog.hpp"
 #include "src/utilities/math/frames/inc/FrameGraph.hpp"
+#include "src/utilities/math/frames/inc/Geodetic.hpp"
 #include "src/utilities/math/frames/inc/Transform.hpp"
 
 namespace fr = apex::math::frames;
@@ -77,6 +79,46 @@ PERF_TEST(FramesPerf, ResolveFourHops) {
       "frames_resolve_4hop");
   std::printf("\n[frames] resolve 4-hop: %.0f ops/s (%.1f ns)\n", result.callsPerSecond,
               1.0e9 / result.callsPerSecond);
+}
+
+PERF_TEST(FramesPerf, GeodeticRoundTrip) {
+  UB_PERF_GUARD(perf);
+  double ecef[3], lat = 0, lon = 0, h = 0;
+  volatile double sink = 0.0;
+  auto result = perf.throughputLoop(
+      [&] {
+        fr::geodeticToEcefInto(0.6, -2.1, 120.0, ecef);
+        fr::ecefToGeodeticInto(ecef, lat, lon, h);
+        sink = sink + h;
+      },
+      "frames_geodetic_round_trip");
+  std::printf("\n[frames] geodetic round-trip: %.0f ops/s (%.1f ns)\n", result.callsPerSecond,
+              1.0e9 / result.callsPerSecond);
+}
+
+PERF_TEST(FramesPerf, CatalogEciFromSite) {
+  UB_PERF_GUARD(perf);
+  fr::Epoch epoch;
+  epoch.init(apex::math::celestial::JD_J2000);
+  fr::FrameGraph<double> g;
+  fr::CatalogIds ids;
+  (void)fr::buildCatalog(g, epoch, ids);
+  fr::Transform<double> siteEdge;
+  fr::enuSiteEdgeInto(0.7, -1.9, 350.0, siteEdge);
+  fr::FrameId site = 0;
+  (void)g.addStatic(ids.ecef, siteEdge, "site", site);
+
+  const double P[3] = {10.0, -5.0, 2.0};
+  double out[3];
+  volatile double sink = 0.0;
+  auto result = perf.throughputLoop(
+      [&] {
+        (void)g.in(ids.eci).from(site).point(P, out, 120.0);
+        sink = sink + out[0];
+      },
+      "frames_catalog_site_to_eci");
+  std::printf("\n[frames] site->ECI (time-driven hop): %.0f ops/s (%.1f ns)\n",
+              result.callsPerSecond, 1.0e9 / result.callsPerSecond);
 }
 
 PERF_MAIN()

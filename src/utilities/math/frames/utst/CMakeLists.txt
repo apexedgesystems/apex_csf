@@ -4,7 +4,7 @@
 
 include(apex/All)
 
-set(UNIT_TEST_SOURCES Transform_uTest.cpp FrameGraph_uTest.cpp)
+set(UNIT_TEST_SOURCES Transform_uTest.cpp FrameGraph_uTest.cpp Catalog_uTest.cpp)
 
 apex_add_gtest(
   TARGET

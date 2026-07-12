@@ -6,7 +6,9 @@
  *        build.
  */
 
+#include "src/utilities/math/frames/inc/Catalog.hpp"
 #include "src/utilities/math/frames/inc/FrameGraph.hpp"
+#include "src/utilities/math/frames/inc/Geodetic.hpp"
 #include "src/utilities/math/frames/inc/FramesStatus.hpp"
 #include "src/utilities/math/frames/inc/Transform.hpp"
 
@@ -29,5 +31,11 @@ float probe() {
   (void)g.addStatic(root, a, "body", body);
   fr::Transform<float> x;
   (void)g.resolve(body, root, 0.0f, x);
+  static fr::Epoch epoch; // provider ctx must outlive the graph
+  epoch.init(apex::math::celestial::JD_J2000);
+  fr::CatalogIds ids;
+  (void)fr::buildCatalog(g, epoch, ids);
+  fr::Transform<float> site;
+  fr::enuSiteEdgeInto(0.5f, -1.0f, 100.0f, site);
   return p[0] + v[1] + (fr::ok(fr::Status::SUCCESS) ? 1.0f : 0.0f);
 }

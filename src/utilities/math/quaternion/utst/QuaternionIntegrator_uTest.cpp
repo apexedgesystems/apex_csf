@@ -236,3 +236,33 @@ TYPED_TEST(QuatIntegratorTestT, EulerGimbalClamp) {
   EXPECT_TRUE(std::isfinite(static_cast<double>(r)));
   EXPECT_TRUE(std::isfinite(static_cast<double>(y)));
 }
+
+/* --------------------------- Rotation-matrix set --------------------------- */
+
+/** @test setFromRotationMatrix inverts toRotationMatrixInto (up to sign),
+ *        across all four Shepperd branches. */
+TYPED_TEST(QuatIntegratorTestT, RotationMatrixRoundTrip) {
+  using T = TypeParam;
+  // Cases chosen to force each branch: near-identity (trace), and
+  // near-180-degree rotations about each axis (per-diagonal dominance).
+  const T CASES[][4] = {
+      {T(0.1), T(0.2), T(0.3), T(0)},   // small rotation: trace branch
+      {T(3.1), T(0.02), T(0.01), T(0)}, // ~180 about X
+      {T(0.02), T(3.1), T(0.01), T(0)}, // ~180 about Y
+      {T(0.02), T(0.01), T(3.1), T(0)}, // ~180 about Z
+  };
+  for (const auto& C : CASES) {
+    T ad[4], bd[4], m[9];
+    Quaternion<T> a(ad), b(bd);
+    // Axis-angle from the case's dominant axis composition via Euler.
+    ASSERT_EQ(a.setFromEuler321(C[0], C[1], C[2]), 0);
+    ASSERT_EQ(a.toRotationMatrixInto(m), 0);
+    ASSERT_EQ(b.setFromRotationMatrix(m), 0);
+    const T SIGN =
+        (ad[0] * bd[0] + ad[1] * bd[1] + ad[2] * bd[2] + ad[3] * bd[3]) >= T(0) ? T(1) : T(-1);
+    const T TOL = std::is_same<T, double>::value ? T(1e-12) : T(1e-5);
+    for (int i = 0; i < 4; ++i) {
+      EXPECT_NEAR(ad[i], SIGN * bd[i], TOL);
+    }
+  }
+}
