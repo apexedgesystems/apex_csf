@@ -29,7 +29,6 @@ Prerequisites:
     - pyserial: pip install pyserial
     - cryptography: pip install cryptography
 
-See .claude_docs/LESSONS_LEARNED.md for board-specific notes.
 """
 
 import argparse

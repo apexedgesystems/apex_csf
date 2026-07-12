@@ -309,6 +309,4 @@ pico_encryptor_demo/
 |   +-- EncryptorEngine.cpp     # CRC validate, encrypt, SLIP encode, transmit
 |   +-- KeyStore.cpp            # Flash sector management (read/write/erase/bitmap)
 |   +-- cxx_stubs.cpp           # C++ runtime stubs (pure virtual, guards, atexit)
-+-- .claude_docs/               # (gitignored) Dev reference material
-    +-- PORTING_NOTES.md        # Implementation history and RP2040 constraints
 ```

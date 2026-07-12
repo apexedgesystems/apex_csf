@@ -291,6 +291,4 @@ stm32_encryptor_demo/
 |   +-- EncryptorEngine.cpp     # CRC validate, encrypt, SLIP encode, transmit
 |   +-- KeyStore.cpp            # Flash page management (read/write/erase/bitmap)
 |   +-- cxx_stubs.cpp           # C++ runtime stubs (no exceptions/RTTI on bare-metal)
-+-- .claude_docs/               # (gitignored) Dev reference material
-    +-- DEVELOPMENT_HISTORY.md  # Implementation history and phase notes
 ```

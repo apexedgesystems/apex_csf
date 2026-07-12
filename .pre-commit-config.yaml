@@ -42,7 +42,6 @@ exclude: |
     \.pytest_cache/|
     \.ruff_cache/|
     \.cache/|
-    .*\.claude_docs/|
     compile_commands\.json$
   )
 

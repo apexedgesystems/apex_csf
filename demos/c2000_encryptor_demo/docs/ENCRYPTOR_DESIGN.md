@@ -134,8 +134,6 @@ J14. External bus communication requires:
 2. Connect J14 CAN-H/CAN-L/GND to external CAN bus
 3. Ensure 120 ohm termination at both ends
 
-See `.claude_docs/LESSONS_LEARNED.md` for debugging notes on external CAN.
-
 ---
 
 ## Clock Configuration
@@ -201,7 +199,4 @@ c2000_encryptor_demo/
 |   +-- main.cpp                # Application (C++03)
 |   +-- cxx_stubs.cpp           # C++ runtime stubs
 |   +-- device.c                # Local device.c (flash init)
-+-- .claude_docs/               # (gitignored) Dev reference material
-    +-- LESSONS_LEARNED.md      # Board-specific debug notes
-    +-- spru514z.pdf            # TI C2000 CGT compiler reference
 ```

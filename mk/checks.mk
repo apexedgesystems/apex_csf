@@ -112,12 +112,13 @@ print-ccache-checks:
 # ------------------------------------------------------------------------------
 # CI timing snapshot (advisory)
 # ------------------------------------------------------------------------------
-# One-command refresh of the local CI performance baseline so "was that run
+# One-command refresh of a local CI performance baseline so "was that run
 # normal?" has a reference without log archaeology. Run-level only (the Run
-# report job emits per-job detail on each run). Host tool: needs gh auth;
-# writes into the local .design_docs (not shipped).
+# report job emits per-job detail on each run). Host tool: needs gh auth.
+# Defaults under build/ (not shipped); override CI_BASELINE=<path> to write
+# the snapshot wherever your workflow keeps it.
 
-CI_BASELINE := .datum/CI_PERFORMANCE_BASELINE.md
+CI_BASELINE ?= build/CI_PERFORMANCE_BASELINE.md
 
 ci-timings:
 	$(call log,ci,Refreshing $(CI_BASELINE))

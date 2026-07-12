@@ -310,6 +310,4 @@ esp32_encryptor_demo/
 |   +-- CommandDeck.cpp         # Command dispatch and response builder
 |   +-- EncryptorEngine.cpp     # CRC validate, encrypt, SLIP encode, transmit
 |   +-- KeyStore.cpp            # NVS key management (read/write/erase/bitmap)
-+-- .claude_docs/               # (gitignored) Dev reference material
-    +-- PORTING_NOTES.md        # Implementation history and ESP32-S3 constraints
 ```
