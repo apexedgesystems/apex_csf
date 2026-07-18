@@ -18,6 +18,7 @@
  * as -2 deg).
  */
 
+#include "src/utilities/math/vecmat/inc/Angles.hpp"
 #include "src/sim/gnc/common/inc/PIDLoop.hpp"
 
 namespace sim::gnc::aircraft {
@@ -98,7 +99,7 @@ public:
    * @return bank reference (rad), clamped to +/-bank_limit
    */
   [[nodiscard]] double step(double heading_ref_rad, double heading_actual_rad, double dt) noexcept {
-    constexpr double kPi = 3.14159265358979323846;
+    constexpr double kPi = apex::math::vecmat::PI;
     constexpr double kTwoPi = 2.0 * kPi;
     double error = heading_ref_rad - heading_actual_rad;
     while (error > kPi) {

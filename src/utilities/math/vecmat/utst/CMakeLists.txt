@@ -14,7 +14,6 @@ apex_add_gtest(
   LINK
   utilities_math_vecmat
   utilities_math_quaternion
-  utilities_math_linalg
   LABELS
   utilities
   math
