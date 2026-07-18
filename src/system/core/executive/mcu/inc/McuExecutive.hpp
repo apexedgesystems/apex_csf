@@ -40,7 +40,7 @@
  * FreeRunningSource tickSource(100);
  * McuExecutive<> exec(&tickSource, 100);  // 32-task, uint64_t (default)
  * McuExecutive<8, uint32_t> exec(&tickSource, 100);  // 8-task, uint32_t (AVR)
- * exec.addTask({myTask, &ctx, 1, 1, 0, 0, 1});
+ * exec.addTask({{myTask, &ctx}, 1, 1, 0, 0, 1});
  * exec.init();
  * exec.run();  // Blocks until shutdown
  * @endcode

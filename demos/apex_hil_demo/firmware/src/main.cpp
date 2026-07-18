@@ -376,11 +376,11 @@ int main() {
   controller.setMode(hil::ControlMode::HOLD_ALT);
 
   // Register scheduler tasks
-  exec.addTask({profilerStartTask, nullptr, 1, 1, 0, 127, 10});
-  exec.addTask({controlTask, &controller, 1, hil::CONTROL_FREQ_D, 0, 0, 1});
-  exec.addTask({heartbeatTask, nullptr, 1, hil::REPORT_FREQ_D, 0, 0, 2});
-  exec.addTask({ledBlinkTask, nullptr, 1, hil::LED_FREQ_D, 0, 0, 3});
-  exec.addTask({profilerEndTask, nullptr, 1, 1, 0, -128, 11});
+  exec.addTask({{profilerStartTask, nullptr}, 1, 1, 0, 127, 10});
+  exec.addTask({{controlTask, &controller}, 1, hil::CONTROL_FREQ_D, 0, 0, 1});
+  exec.addTask({{heartbeatTask, nullptr}, 1, hil::REPORT_FREQ_D, 0, 0, 2});
+  exec.addTask({{ledBlinkTask, nullptr}, 1, hil::LED_FREQ_D, 0, 0, 3});
+  exec.addTask({{profilerEndTask, nullptr}, 1, 1, 0, -128, 11});
 
   // Run executive (blocks forever)
   static_cast<void>(exec.init());

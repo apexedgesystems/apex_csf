@@ -13,13 +13,15 @@
  * Template Parameters:
  *   - MaxTasks: Maximum number of tasks in the static table (default 32).
  *     Set to the actual number of tasks + small margin for the target.
- *     Each McuTaskEntry is 12 bytes, so this directly controls SRAM usage.
+ *     Each McuTaskEntry is a two-pointer delegate plus four packed
+ *     scheduling fields (16 bytes on 32-bit targets), so this directly
+ *     controls SRAM usage.
  *   - Counter: Tick counter type (default uint64_t). Use uint32_t on
  *     8/16-bit MCUs to avoid expensive software 64-bit arithmetic.
  *     uint32_t at 100 Hz overflows after ~497 days.
  *
  * Task Scheduling Model:
- *   - Tasks are function pointers with optional context
+ *   - Tasks are Delegate<void> callables (function pointer + context)
  *   - Frequency expressed as (freqN/freqD) * fundamentalFreq
  *   - Offset allows phase spreading within a rate group
  *   - Execution order: by rate group, then by priority within group
@@ -42,6 +44,7 @@
 #include "src/system/core/components/scheduler/base/inc/IScheduler.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/ComponentType.hpp"
 #include "src/system/core/infrastructure/system_component/mcu/inc/McuComponentBase.hpp"
+#include "src/utilities/concurrency/mcu/inc/Delegate.hpp"
 
 #include <stdint.h>
 #include <stddef.h>
@@ -68,18 +71,20 @@ constexpr uint16_t SCHEDULER_LITE_COMPONENT_ID = 1;
  * @brief Static task configuration for McuScheduler.
  *
  * Describes a task to be executed at a specific rate. All fields are
- * compile-time or boot-time configured. 12 bytes per entry on all platforms.
+ * compile-time or boot-time configured. The callable is the shared
+ * concurrency Delegate<void> shape: a function pointer taking the opaque
+ * context as its first argument. Two pointers plus four packed scheduling
+ * fields per entry (16 bytes on 32-bit targets).
  */
 struct McuTaskEntry {
-  using TaskFn = void (*)(void* ctx) noexcept;
+  using Task = apex::concurrency::Delegate<void>;
 
-  TaskFn fn{nullptr};     ///< Task function pointer (nullptr = unused slot).
-  void* context{nullptr}; ///< User context passed to task function.
-  uint16_t freqN{1};      ///< Frequency numerator (freqN/freqD * fundamental).
-  uint16_t freqD{1};      ///< Frequency denominator.
-  uint16_t offset{0};     ///< Phase offset in ticks.
-  int8_t priority{0};     ///< Priority (-128 to 127, higher = earlier).
-  uint8_t taskId{0};      ///< Task identifier for diagnostics.
+  Task task{};        ///< Task callable (null delegate = unused slot).
+  uint16_t freqN{1};  ///< Frequency numerator (freqN/freqD * fundamental).
+  uint16_t freqD{1};  ///< Frequency denominator.
+  uint16_t offset{0}; ///< Phase offset in ticks.
+  int8_t priority{0}; ///< Priority (-128 to 127, higher = earlier).
+  uint8_t taskId{0};  ///< Task identifier for diagnostics.
 };
 
 /* ----------------------------- McuScheduler ----------------------------- */
@@ -95,10 +100,11 @@ struct McuTaskEntry {
  * Inherits IComponent implementation from McuComponentBase. Implements
  * IScheduler for scheduler-specific methods (tick, taskCount, etc.).
  *
- * @tparam MaxTasks Maximum number of tasks in the static table. Each
- *         McuTaskEntry is 12 bytes, so sizeof(tasks_) = MaxTasks * 12.
- *         Default: 32 (384 bytes). For constrained MCUs, use the actual
- *         number of registered tasks + small margin.
+ * @tparam MaxTasks Maximum number of tasks in the static table.
+ *         sizeof(tasks_) = MaxTasks * sizeof(McuTaskEntry) — 16 bytes per
+ *         entry on 32-bit targets, so the default of 32 costs 512 bytes.
+ *         For constrained MCUs, use the actual number of registered tasks
+ *         + small margin.
  * @tparam Counter Tick counter type. Default: uint64_t. Use uint32_t on
  *         8/16-bit targets where 64-bit arithmetic is expensive. At 100 Hz,
  *         uint32_t overflows after ~497 days.
@@ -107,8 +113,8 @@ struct McuTaskEntry {
  * @code
  * McuScheduler<> sched(100);  // 32-task, uint64_t (default)
  * McuScheduler<8, uint32_t> sched(100);  // 8-task, uint32_t (AVR)
- * sched.addTask({myTask, &ctx, 1, 1, 0, 0, 1});  // 100 Hz task
- * sched.addTask({slowTask, &ctx, 1, 10, 0, 0, 2});  // 10 Hz task
+ * sched.addTask({{myTask, &ctx}, 1, 1, 0, 0, 1});  // 100 Hz task
+ * sched.addTask({{slowTask, &ctx}, 1, 10, 0, 0, 2});  // 10 Hz task
  * sched.init();
  * while (running) {
  *   tickSource.waitForNextTick();
@@ -194,9 +200,9 @@ public:
    */
   void tick() noexcept override {
     for (size_t i = 0; i < taskCount_; ++i) {
-      const auto& task = tasks_[i];
-      if (task.fn != nullptr && shouldExecute(task, tickCount_)) {
-        task.fn(task.context);
+      const auto& entry = tasks_[i];
+      if (entry.task && shouldExecute(entry, tickCount_)) {
+        entry.task();
       }
     }
     ++tickCount_;
@@ -238,7 +244,7 @@ public:
     if (taskCount_ >= MaxTasks) {
       return false;
     }
-    if (entry.fn == nullptr) {
+    if (!entry.task) {
       return false;
     }
     tasks_[taskCount_++] = entry;
