@@ -383,3 +383,13 @@ docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/utests/TestM
 - `src/utilities/concurrency/inc/Delegate.hpp` - RT-safe callback pattern used by ImplicitOptionsRT
 - `src/utilities/math/legendre/` - Legendre polynomials for spectral methods
 - `docs/standards/CODE_STANDARD.md` - RT-safety annotation conventions
+
+## Status note
+
+The concrete `Quaternion` type and `QuaternionIntegrator` here are
+SUPERSEDED by the templated `utilities/math/quaternion` library
+(`Quaternion<T>`, `QuatData<T>`, `QuaternionIntegrator<T>` incl. the
+shared `rateInto` kinematics rate). Existing consumers keep working; new
+code uses the quaternion library, and removal is tracked once the
+consumer count is proven zero for a release cycle. The RK4/integrator
+templates in this library remain current.

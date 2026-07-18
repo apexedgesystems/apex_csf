@@ -31,6 +31,7 @@
 #include "src/sim/dynamics/integrators/inc/RK4.hpp"
 #include "src/sim/dynamics/rigid_body/inc/PointMass3D.hpp"
 #include "src/utilities/math/integration/inc/Quaternion.hpp"
+#include "src/utilities/math/quaternion/inc/QuaternionIntegrator.hpp"
 #include "src/utilities/math/vecmat/inc/Mat3Ops.hpp"
 
 #include <cmath>
@@ -154,14 +155,14 @@ inline RigidBody6DOFState rigidBody6DOFDerivative(const RigidBody6DOFState& s,
                    force_body.y / mass_kg - omega_cross_v.y,
                    force_body.z / mass_kg - omega_cross_v.z};
 
-  // q_dot = 0.5 q * (0, p, q, r), Hamilton convention
-  const double p = s.angular_velocity_body.x;
-  const double q = s.angular_velocity_body.y;
-  const double r = s.angular_velocity_body.z;
-  const auto& a = s.attitude;
-  apex::math::integration::Quaternion q_dot{
-      0.5 * (-a.x * p - a.y * q - a.z * r), 0.5 * (a.w * p + a.y * r - a.z * q),
-      0.5 * (a.w * q - a.x * r + a.z * p), 0.5 * (a.w * r + a.x * q - a.y * p)};
+  // q_dot = 0.5 q * (0, omega): the shared attitude kinematics rate.
+  double att[4] = {s.attitude.w, s.attitude.x, s.attitude.y, s.attitude.z};
+  const double W[3] = {s.angular_velocity_body.x, s.angular_velocity_body.y,
+                       s.angular_velocity_body.z};
+  double dq[4];
+  apex::math::quaternion::QuaternionIntegrator<double>::rateInto(
+      apex::math::quaternion::Quaternion<double>(att), W, dq);
+  const apex::math::integration::Quaternion q_dot{dq[0], dq[1], dq[2], dq[3]};
 
   // omega_dot = I^-1 (M - omega x (I omega))
   const Vec3 I_omega = I.multiply(s.angular_velocity_body);
