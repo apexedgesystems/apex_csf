@@ -127,6 +127,23 @@ test-rust:
 	$(call log,test,Running Rust tools tests)
 	@cd tools/rust && cargo test
 
+# Shell tools smoke: exercises ops_sdk_package.sh end to end against a
+# synthetic build tree (a stub struct dictionary) and asserts the SDK
+# tarball's shape. Host-runnable in seconds -- bash and tar only -- so the
+# shell family has an executed check, not just shellcheck's static one.
+test-sh:
+	$(call log,test,Running shell tools smoke)
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+	  mkdir -p "$$tmp/build/apex_data_db" && \
+	  printf '{"structs":{"SmokeParams":{"category":"TUNABLE_PARAM","fields":[]}}}\n' \
+	    > "$$tmp/build/apex_data_db/SmokeComponent.json" && \
+	  bash tools/sh/bin/ops_sdk_package.sh --app SmokeApp --build-dir "$$tmp/build" && \
+	  tarball="$$tmp/build/ops_sdk/SmokeApp-ops-sdk.tar.gz" && \
+	  test -f "$$tarball" && \
+	  tar -tzf "$$tarball" | grep -q "SmokeApp/structs/SmokeComponent.json" && \
+	  tar -tzf "$$tarball" | grep -q "SmokeApp/README.md"
+	$(call log_ok,test,shell smoke: SDK tarball shape verified)
+
 # Tooling coverage (nightly). Each runs its tool test suite under coverage
 # instrumentation and emits a human-readable summary plus a machine report,
 # so the nightly leg both gates (tests still fail the job) and measures. The
@@ -179,6 +196,6 @@ smoke: debug
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: test testp testp-cpu testp-cuda test-py test-rust coverage-py coverage-rust smoke
+.PHONY: test testp testp-cpu testp-cuda test-py test-rust test-sh coverage-py coverage-rust smoke
 
 endif  # TEST_MK_GUARD

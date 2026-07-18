@@ -36,9 +36,10 @@ endef
 $(eval $(call _tool_build,cpp,C++))
 $(eval $(call _tool_build,rust,Rust))
 $(eval $(call _tool_build,py,Python))
+$(eval $(call _tool_build,sh,Shell))
 
 # Build all tools (C++, Rust, Python)
-tools: tools-cpp tools-rust tools-py
+tools: tools-cpp tools-rust tools-py tools-sh
 	$(call log,tools,All tools built)
 
 # ------------------------------------------------------------------------------
