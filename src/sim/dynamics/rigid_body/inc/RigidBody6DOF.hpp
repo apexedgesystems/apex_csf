@@ -31,23 +31,11 @@
 #include "src/sim/dynamics/integrators/inc/RK4.hpp"
 #include "src/sim/dynamics/rigid_body/inc/PointMass3D.hpp"
 #include "src/utilities/math/integration/inc/Quaternion.hpp"
+#include "src/utilities/math/vecmat/inc/Mat3Ops.hpp"
 
 #include <cmath>
 
 namespace sim::dynamics::rigid_body {
-
-/* ------------------------------ Vec3 helpers ------------------------------ */
-
-/** Cross product a x b (right-handed). */
-inline Vec3 cross(const Vec3& a, const Vec3& b) {
-  return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x};
-}
-
-/** Dot product a . b. */
-inline double dot(const Vec3& a, const Vec3& b) { return a.x * b.x + a.y * b.y + a.z * b.z; }
-
-/** Euclidean norm |a|. */
-inline double norm(const Vec3& a) { return std::sqrt(dot(a, a)); }
 
 /* ----------------------------- InertiaTensor ----------------------------- */
 
@@ -78,30 +66,36 @@ struct InertiaTensor {
   double Ixy = 0.0;
   double Iyz = 0.0;
 
+  /** Row-major 3x3 form (products negated per the sign convention). */
+  void matrixInto(double* m) const {
+    m[0] = Ixx;
+    m[1] = -Ixy;
+    m[2] = -Ixz;
+    m[3] = -Ixy;
+    m[4] = Iyy;
+    m[5] = -Iyz;
+    m[6] = -Ixz;
+    m[7] = -Iyz;
+    m[8] = Izz;
+  }
+
   /** Compute I * omega (matrix-vector product) for the full tensor. */
   [[nodiscard]] Vec3 multiply(const Vec3& w) const {
-    return {Ixx * w.x - Ixy * w.y - Ixz * w.z, -Ixy * w.x + Iyy * w.y - Iyz * w.z,
-            -Ixz * w.x - Iyz * w.y + Izz * w.z};
+    double m[9], wv[3] = {w.x, w.y, w.z}, o[3];
+    matrixInto(m);
+    apex::math::vecmat::multiplyVec(m, wv, o);
+    return {o[0], o[1], o[2]};
   }
 
   /**
-   * Solve I * omega_dot = b for omega_dot via the symmetric 3x3 adjugate.
-   *
-   * Matrix entries: a11=Ixx, a12=-Ixy, a13=-Ixz, a22=Iyy, a23=-Iyz,
-   * a33=Izz. The cofactors below form the (symmetric) inverse; det > 0
-   * for any physical (positive-definite) inertia tensor.
+   * Solve I * omega_dot = b for omega_dot (adjugate inverse; det > 0 for
+   * any physical, positive-definite inertia tensor).
    */
   [[nodiscard]] Vec3 solve(const Vec3& b) const {
-    const double a11 = Ixx, a12 = -Ixy, a13 = -Ixz, a22 = Iyy, a23 = -Iyz, a33 = Izz;
-    const double c11 = a22 * a33 - a23 * a23;
-    const double c12 = -(a12 * a33 - a23 * a13);
-    const double c13 = a12 * a23 - a22 * a13;
-    const double c22 = a11 * a33 - a13 * a13;
-    const double c23 = -(a11 * a23 - a12 * a13);
-    const double c33 = a11 * a22 - a12 * a12;
-    const double det = a11 * c11 + a12 * c12 + a13 * c13;
-    return {(c11 * b.x + c12 * b.y + c13 * b.z) / det, (c12 * b.x + c22 * b.y + c23 * b.z) / det,
-            (c13 * b.x + c23 * b.y + c33 * b.z) / det};
+    double m[9], bv[3] = {b.x, b.y, b.z}, o[3];
+    matrixInto(m);
+    (void)apex::math::vecmat::solveInto(m, bv, o);
+    return {o[0], o[1], o[2]};
   }
 };
 
