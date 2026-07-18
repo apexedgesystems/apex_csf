@@ -19,6 +19,10 @@ include(apex/All)
 
 apex_add_interface_library(NAME filesystem_base INC "${PROJECT_SOURCE_DIR}" BAREMETAL)
 
+apex_add_floor_check(
+  NAME filesystem_base SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/floor/FloorProbe.cpp"
+)
+
 # ------------------------------------------------------------------------------
 # Opt-ins (coverage, doxygen)
 # ------------------------------------------------------------------------------

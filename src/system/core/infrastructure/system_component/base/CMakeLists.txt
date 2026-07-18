@@ -19,6 +19,10 @@ apex_add_interface_library(NAME system_component_base INC "${PROJECT_SOURCE_DIR}
 
 # No source files - header-only interface library
 
+apex_add_floor_check(
+  NAME system_component_base SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/floor/FloorProbe.cpp"
+)
+
 # ------------------------------------------------------------------------------
 # Opt-ins (coverage, doxygen)
 # ------------------------------------------------------------------------------
