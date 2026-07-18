@@ -103,7 +103,17 @@ jobs:
             echo "ERROR: Tag version ($TAG_BASE) does not match CMakeLists.txt ($cmake_version)"
             exit 1
           fi
-          echo "Version verified: $VERSION (base $TAG_BASE)"
+          # The tool families version with the project, so their binaries
+          # self-report the release they shipped in (--version, wheel metadata).
+          rust_version=$(sed -n 's/^version = "\([0-9.]*\)"/\1/p' tools/rust/Cargo.toml | head -1)
+          py_version=$(sed -n 's/^version = "\([0-9.]*\)"/\1/p' tools/py/pyproject.toml | head -1)
+          for pair in "tools/rust/Cargo.toml:$rust_version" "tools/py/pyproject.toml:$py_version"; do
+            if [ "${pair#*:}" != "$TAG_BASE" ]; then
+              echo "ERROR: Tag version ($TAG_BASE) does not match ${pair%%:*} (${pair#*:})"
+              exit 1
+            fi
+          done
+          echo "Version verified: $VERSION (base $TAG_BASE; cmake, cargo, py aligned)"
       # The release body is this version's CHANGELOG section (package job), so
       # a forgotten entry fails here, in seconds, like the CMake check above.
       - name: Verify CHANGELOG has this version's section

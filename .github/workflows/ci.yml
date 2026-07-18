@@ -215,6 +215,11 @@ jobs:
           rebuild: ${{ needs.changes.outputs.docker }}
       - name: Run Rust tests
         run: docker compose run --rm -T build-base make test-rust
+      # Deny-all-warnings: the rust counterpart of clang-tidy's
+      # warnings-as-errors. Deterministic -- clippy's version is pinned by the
+      # image, so a finding here is a code change, never rule drift.
+      - name: Rust static analysis (clippy)
+        run: docker compose run --rm -T build-base make clippy
 
   py:
     name: Python tool tests

@@ -88,7 +88,7 @@ pub fn files_identical(a: &Path, b: &Path) -> io::Result<bool> {
             // With equal file sizes this should not happen; treat as mismatch.
             return Ok(false);
         }
-        if &ba[..na] != &bb[..nb] {
+        if ba[..na] != bb[..nb] {
             return Ok(false);
         }
     }
@@ -100,12 +100,15 @@ pub fn files_identical(a: &Path, b: &Path) -> io::Result<bool> {
 /// Returns `(identical, temp_path, Option<(sha_orig, sha_unpacked)>)`.
 /// If `cleanup_temp` is `true` and the files are identical, the temp file
 /// is removed; otherwise it's left on disk for inspection.
+/// Comparison outcome: `(identical, temp_path, Option<(sha_orig, sha_unpacked)>)`.
+pub type CompareResult = (bool, PathBuf, Option<(String, String)>);
+
 pub fn compare_upx_to_original(
     original_path: &Path,
     upx_path: &Path,
     cleanup_temp: bool,
     print_sha: bool,
-) -> io::Result<(bool, PathBuf, Option<(String, String)>)> {
+) -> io::Result<CompareResult> {
     test(upx_path)?; // quick integrity check
 
     let tmp = temp_unpacked_path(upx_path);
@@ -170,7 +173,7 @@ mod tests {
         std::fs::write(&a, [0u8; 4096]).unwrap();
         let mut data = [0u8; 4096];
         data[1234] = 1;
-        std::fs::write(&b, &data).unwrap();
+        std::fs::write(&b, data).unwrap();
         assert!(!files_identical(&a, &b).unwrap());
     }
 

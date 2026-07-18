@@ -223,6 +223,14 @@ static: prep
 	$(call log,static,Running clang-tidy)
 	@$(CLANG_TIDY) -p "$(STATIC_DIR)" -quiet "$(CURDIR)/src/.*\.(cpp|cc)$$"
 
+# clippy: rust static analysis over the tools workspace, deny-all-warnings --
+# the rust counterpart of clang-tidy's WarningsAsErrors gate. Deterministic:
+# the clippy version is pinned by the image toolchain, so a finding is a code
+# change, never rule drift. Runs on the PR rust job and nightly.
+clippy:
+	$(call log,clippy,Running clippy -- deny warnings)
+	@cd tools/rust && cargo clippy --all-targets --locked -- -D warnings
+
 # cppcheck: an independent static-analysis engine that catches different defects
 # than clang-tidy (warning/style/performance/portability). Advisory for now --
 # it reports but does not fail the build; add --error-exitcode=1 to gate. build/
@@ -241,6 +249,6 @@ cppcheck: prep
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: static cppcheck tools apex-data-db tprm-templates ops-deck ops-artifacts ops-sdk zenith-target zenith-validate
+.PHONY: static cppcheck clippy tools apex-data-db tprm-templates ops-deck ops-artifacts ops-sdk zenith-target zenith-validate
 
 endif  # TOOLS_MK_GUARD
