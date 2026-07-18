@@ -33,13 +33,13 @@ tools-$(1): prep
 	else printf '[tools] No $(2) tools to build\n'; fi
 endef
 
-$(eval $(call _tool_build,cpp,C++))
-$(eval $(call _tool_build,rust,Rust))
-$(eval $(call _tool_build,py,Python))
-$(eval $(call _tool_build,sh,Shell))
+# The tool families (mirrors _APEX_TOOL_FAMILIES in tools/CMakeLists.txt).
+TOOL_FAMILIES := cpp rust py sh
 
-# Build all tools (C++, Rust, Python)
-tools: tools-cpp tools-rust tools-py tools-sh
+$(foreach f,$(TOOL_FAMILIES),$(eval $(call _tool_build,$(f),$(f))))
+
+# Build all tools (every family)
+tools: $(addprefix tools-,$(TOOL_FAMILIES))
 	$(call log,tools,All tools built)
 
 # ------------------------------------------------------------------------------
