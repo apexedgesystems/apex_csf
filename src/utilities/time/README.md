@@ -1,7 +1,7 @@
 # Time Utilities
 
 **Namespace:** `apex::time`
-**Platform:** POSIX (clock_gettime)
+**Platform:** Cross-platform core (`mcu/`, bare-metal capable); POSIX clock providers
 **C++ Standard:** C++17
 **Type:** Header-only
 
@@ -14,11 +14,17 @@ from specific clock sources.
 
 ## Quick Reference
 
-| Header             | Purpose                                                              | RT-Safe |
-| ------------------ | -------------------------------------------------------------------- | ------- |
-| `TimeBase.hpp`     | TimeStandard enum, TimeProviderDelegate, Timestamp struct, constants | Yes     |
-| `SystemClocks.hpp` | Concrete clock functions (MONOTONIC, UTC, TAI, GPS, MET)             | Yes     |
-| `TimeConvert.hpp`  | Unit and standard conversions                                        | Yes     |
+| Header                | Purpose                                                              | RT-Safe |
+| --------------------- | -------------------------------------------------------------------- | ------- |
+| `mcu/TimeBase.hpp`    | TimeStandard enum, TimeProviderDelegate, Timestamp struct, constants | Yes     |
+| `mcu/TimeConvert.hpp` | Unit and standard conversions                                        | Yes     |
+| `SystemClocks.hpp`    | Concrete POSIX clock functions (MONOTONIC, UTC, TAI, GPS, MET)       | Yes     |
+
+`TimeBase.hpp` and `TimeConvert.hpp` under `inc/` forward to the `mcu/`
+subset (target `utilities_time_mcu`, BAREMETAL): the time-domain types and
+pure conversions are freestanding-clean, so firmware and hosted components
+name time through the same headers. Only the `SystemClocks.hpp` provider
+set is POSIX.
 
 ---
 

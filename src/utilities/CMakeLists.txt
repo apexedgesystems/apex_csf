@@ -14,8 +14,4 @@ add_subdirectory(data_proxy)
 add_subdirectory(encryption)
 add_subdirectory(helpers)
 add_subdirectory(math)
-
-# POSIX-only libraries
-if (NOT APEX_PLATFORM_BAREMETAL)
-  add_subdirectory(time)
-endif ()
+add_subdirectory(time)
