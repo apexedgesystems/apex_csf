@@ -89,6 +89,16 @@ public:
   uint8_t setFromAngleAxis(T angleRad, T axisX, T axisY, T axisZ) noexcept;
 
   /**
+   * @brief Set from a row-major 3x3 rotation matrix (Shepperd's method).
+   *
+   * Selects the numerically largest of the four square roots, so every
+   * orientation is stable including 180-degree rotations. Inverse of
+   * toRotationMatrixInto up to quaternion sign.
+   * @note RT-SAFE: No allocation.
+   */
+  uint8_t setFromRotationMatrix(const T* mat) noexcept;
+
+  /**
    * @brief Set from aerospace 3-2-1 Euler angles (yaw, then pitch, then roll).
    * @param rollRad,pitchRad,yawRad Angles in radians.
    * @note RT-SAFE: No allocation.

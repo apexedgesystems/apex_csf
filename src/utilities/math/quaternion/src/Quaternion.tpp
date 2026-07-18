@@ -49,6 +49,36 @@ uint8_t Quaternion<T>::setFromAngleAxis(T angleRad, T axisX, T axisY, T axisZ) n
   return static_cast<uint8_t>(Status::SUCCESS);
 }
 
+template <typename T> uint8_t Quaternion<T>::setFromRotationMatrix(const T* m) noexcept {
+  const T TR = m[0] + m[4] + m[8];
+  if (TR > T(0)) {
+    const T S = apex::compat::sqrt(TR + T(1)) * T(2);
+    data_[0] = T(0.25) * S;
+    data_[1] = (m[7] - m[5]) / S;
+    data_[2] = (m[2] - m[6]) / S;
+    data_[3] = (m[3] - m[1]) / S;
+  } else if (m[0] > m[4] && m[0] > m[8]) {
+    const T S = apex::compat::sqrt(T(1) + m[0] - m[4] - m[8]) * T(2);
+    data_[0] = (m[7] - m[5]) / S;
+    data_[1] = T(0.25) * S;
+    data_[2] = (m[1] + m[3]) / S;
+    data_[3] = (m[2] + m[6]) / S;
+  } else if (m[4] > m[8]) {
+    const T S = apex::compat::sqrt(T(1) + m[4] - m[0] - m[8]) * T(2);
+    data_[0] = (m[2] - m[6]) / S;
+    data_[1] = (m[1] + m[3]) / S;
+    data_[2] = T(0.25) * S;
+    data_[3] = (m[5] + m[7]) / S;
+  } else {
+    const T S = apex::compat::sqrt(T(1) + m[8] - m[0] - m[4]) * T(2);
+    data_[0] = (m[3] - m[1]) / S;
+    data_[1] = (m[2] + m[6]) / S;
+    data_[2] = (m[5] + m[7]) / S;
+    data_[3] = T(0.25) * S;
+  }
+  return normalizeInPlace();
+}
+
 template <typename T>
 uint8_t Quaternion<T>::setFromEuler321(T rollRad, T pitchRad, T yawRad) noexcept {
   const T CR = apex::compat::cos(rollRad * T(0.5));

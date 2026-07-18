@@ -597,13 +597,18 @@ endfunction ()
 # ------------------------------------------------------------------------------
 # apex_finalize_firmware()
 #
-# Creates the firmware aggregate target from all registered firmware.
-# Call once at the end of apps that use apex_add_firmware().
+# Creates (or extends) the firmware aggregate target from all registered
+# firmware. Idempotent so every firmware app can call it: platforms that
+# host several apps (two stm32 demos in one configure) compose instead of
+# colliding on the aggregate target.
 # ------------------------------------------------------------------------------
 function (apex_finalize_firmware)
   get_property(_targets GLOBAL PROPERTY APEX_FIRMWARE_TARGETS)
   if (_targets)
-    add_custom_target(firmware DEPENDS ${_targets})
+    if (NOT TARGET firmware)
+      add_custom_target(firmware)
+    endif ()
+    add_dependencies(firmware ${_targets})
     if (APEX_TARGETS_VERBOSE)
       list(LENGTH _targets _count)
       message(STATUS "[apex] firmware aggregate target: ${_count} targets")
