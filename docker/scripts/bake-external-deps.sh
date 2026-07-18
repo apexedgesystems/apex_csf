@@ -67,12 +67,13 @@ while read -r name repo tag; do
   # Dependency python tools: download the locked wheels into the wheelhouse.
   # uv.lock exports natively; a dependency still locking with poetry gets its
   # lock parsed directly (the TOML carries name/version), so the image needs
-  # no poetry. All lock groups are included -- over-provisioning a wheelhouse
-  # is harmless, missing a wheel breaks an offline build.
+  # no poetry. Runtime groups only -- a dependency's build inside the apex
+  # image never runs its dev tooling, and all-groups was measured at +432MB
+  # of image for zero consumers.
   if [ -n "$WHEEL_DEST" ] && [ -f "$DEST/$name/tools/py/uv.lock" ]; then
     echo "[bake]   ${name}: pip download (tools/py, uv.lock)"
     (cd "$DEST/$name/tools/py" &&
-      uv export --frozen --format requirements-txt --no-emit-project \
+      uv export --frozen --format requirements-txt --no-dev --no-emit-project \
         --no-hashes --output-file /tmp/bake-req.txt &&
       pip3 download --no-cache-dir --requirement /tmp/bake-req.txt --dest "$WHEEL_DEST" &&
       rm -f /tmp/bake-req.txt)
@@ -85,7 +86,9 @@ import tomllib
 with open(sys.argv[1], "rb") as f:
     lock = tomllib.load(f)
 for pkg in lock.get("package", []):
-    print(pkg["name"] + "==" + pkg["version"])
+    # Older locks carry no groups field; treat those as runtime.
+    if "main" in pkg.get("groups", ["main"]):
+        print(pkg["name"] + "==" + pkg["version"])
 PYEOF
     # One download per pin, no resolver: the lock lists packages for every
     # environment (duplicate names under different markers), which a joint

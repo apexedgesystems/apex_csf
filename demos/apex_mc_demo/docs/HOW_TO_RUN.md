@@ -54,7 +54,7 @@ docker compose run --rm -T dev-cuda bash -c '
 ## 3. Build the Plotting Tool
 
 ```bash
-# Build Python tools (poetry wheel + pip install to build dir)
+# Build Python tools (uv wheel + pip install to build dir)
 make compose-tools-py
 ```
 

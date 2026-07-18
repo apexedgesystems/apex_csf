@@ -208,16 +208,17 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba8
 # Python dependency bake (hermetic, offline python-tools build and test)
 # ------------------------------------------------------------------------------
 # Two stores, one lock. The pip wheelhouse serves pip consumers (the cmake
-# install-to-lib step and dependency bakes). The uv cache serves uv: a frozen
-# sync installs each package from the URL pinned in uv.lock, so find-links can
-# never satisfy it -- the content-addressed cache is uv's offline mechanism.
-# Warm it with one throwaway sync (dev group included, so tests resolve
-# offline too). Keyed on uv.lock; the CI image graph watches it too. The
-# dependency bake below adds FetchContent deps' wheels to the wheelhouse.
+# install-to-lib step and dependency bakes) and carries the runtime set only.
+# The uv cache serves uv: a frozen sync installs each package from the URL
+# pinned in uv.lock, so find-links can never satisfy it -- the
+# content-addressed cache is uv's offline mechanism, and it is where the dev
+# group lives so tests resolve offline. Keyed on uv.lock; the CI image graph
+# watches it too. The dependency bake below adds FetchContent deps' wheels to
+# the wheelhouse.
 ENV UV_CACHE_DIR=/opt/apex-uv-cache
 COPY tools/py/pyproject.toml tools/py/uv.lock /tmp/py-fetch/
 RUN uv export --directory /tmp/py-fetch --frozen --format requirements-txt \
-      --no-emit-project --no-hashes --output-file /tmp/py-fetch/req.txt && \
+      --no-dev --no-emit-project --no-hashes --output-file /tmp/py-fetch/req.txt && \
     pip3 download --no-cache-dir --requirement /tmp/py-fetch/req.txt \
       --dest /opt/apex-pip-wheels && \
     uv sync --directory /tmp/py-fetch --frozen --no-install-project && \
