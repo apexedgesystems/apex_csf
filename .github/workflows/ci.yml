@@ -97,7 +97,7 @@ jobs:
           # Rebuild only when a gate-image INPUT changes: the images a gate job
           # runs in (base tiers, the cpu dev image, the cuda image, the base
           # compose), or anything base.Dockerfile bakes -- the dependency
-          # manifests (tools/rust/Cargo.*, tools/py/poetry.lock|pyproject.toml,
+          # manifests (tools/rust/Cargo.*, tools/py/uv.lock|pyproject.toml,
           # ExternalDependencies.cmake) and the baked scripts (docker/scripts/).
           # Without the baked inputs the gate runs offline builds against STALE
           # caches: a lock bump fails on missing crates/wheels, and a GIT_TAG
@@ -105,7 +105,7 @@ jobs:
           # FETCHCONTENT_SOURCE_DIR redirect (green-but-wrong). Leaf
           # cross/firmware Dockerfiles feed only post-merge images; builder/final
           # feed the release pipe; CI compose overlays are runtime-only.
-          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$|^docker/scripts/|^tools/rust/Cargo\.(lock|toml)$|^tools/py/(poetry\.lock|pyproject\.toml)$|^ExternalDependencies\.cmake$' && echo true || echo false)
+          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$|^docker/scripts/|^tools/rust/Cargo\.(lock|toml)$|^tools/py/(uv\.lock|pyproject\.toml)$|^ExternalDependencies\.cmake$' && echo true || echo false)
           printf 'cpp=%s\nrust=%s\npy=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$docker" | tee -a "$GITHUB_OUTPUT"
 
   lint:

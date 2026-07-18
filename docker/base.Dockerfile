@@ -35,7 +35,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # ------------------------------------------------------------------------------
 # Environment Configuration
 # ------------------------------------------------------------------------------
-# Build-time dependency fetches (pip/poetry from PyPI, cargo from crates.io) are
+# Build-time dependency fetches (pip/uv from PyPI, cargo from crates.io) are
 # the build's only compile-time network dependency. Transient transport flakes
 # there -- HTTP/2 framing resets, read timeouts -- have failed release builds, so
 # make the fetches resilient: bounded retries, a longer timeout, and plain
@@ -198,26 +198,39 @@ RUN cargo fetch --locked --target x86_64-unknown-linux-gnu \
     chmod -R a+rwX /opt/rust/cargo
 
 # ------------------------------------------------------------------------------
-# Poetry - Python package manager for the python tools (`make tools-py`)
+# uv - Python package manager for the python tools (`make tools-py`)
 # ------------------------------------------------------------------------------
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip3 install --no-cache-dir --break-system-packages poetry
+# Single static binary from the pinned upstream image -- nothing pip-installed.
+COPY --from=ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc \
+    /uv /usr/local/bin/uv
 
 # ------------------------------------------------------------------------------
-# Python dependency wheelhouse (hermetic, offline python-tools build)
+# Python dependency bake (hermetic, offline python-tools build and test)
 # ------------------------------------------------------------------------------
-# Download the python tools' locked dependencies as wheels so the release build
-# installs them offline -- a PyPI outage/yank can no longer fail the build.
-# poetry build itself is already offline (poetry-core is bundled). Keyed on
-# poetry.lock; the CI image graph watches it too. The dependency bake below adds
-# the FetchContent deps' own python-tool wheels to the same wheelhouse.
-COPY tools/py/pyproject.toml tools/py/poetry.lock /tmp/py-fetch/
-RUN pip3 install --no-cache-dir --break-system-packages poetry-plugin-export && \
-    poetry --directory /tmp/py-fetch export --format requirements.txt \
-      --output /tmp/py-fetch/req.txt --without-hashes && \
+# Two stores, one lock. The pip wheelhouse serves pip consumers (the cmake
+# install-to-lib step and dependency bakes). The uv cache serves uv: a frozen
+# sync installs each package from the URL pinned in uv.lock, so find-links can
+# never satisfy it -- the content-addressed cache is uv's offline mechanism.
+# Warm it with one throwaway sync (dev group included, so tests resolve
+# offline too). Keyed on uv.lock; the CI image graph watches it too. The
+# dependency bake below adds FetchContent deps' wheels to the wheelhouse.
+ENV UV_CACHE_DIR=/opt/apex-uv-cache
+COPY tools/py/pyproject.toml tools/py/uv.lock /tmp/py-fetch/
+RUN uv export --directory /tmp/py-fetch --frozen --format requirements-txt \
+      --no-emit-project --no-hashes --output-file /tmp/py-fetch/req.txt && \
     pip3 download --no-cache-dir --requirement /tmp/py-fetch/req.txt \
       --dest /opt/apex-pip-wheels && \
-    rm -rf /tmp/py-fetch
+    uv sync --directory /tmp/py-fetch --frozen --no-install-project && \
+    # A frozen sync caches wheels by their locked URLs but never touches the
+    # index, and building the project offline re-resolves build-system.requires
+    # (hatchling) against index metadata. Build a stub wheel with the same
+    # pyproject so that exact resolution runs here, online, and its metadata
+    # lands in the cache for the offline runtime builds.
+    mkdir -p /tmp/py-fetch/src/apex_tools && \
+    touch /tmp/py-fetch/src/apex_tools/__init__.py /tmp/py-fetch/README.md && \
+    uv build --wheel --directory /tmp/py-fetch --out-dir /tmp/py-fetch/dist && \
+    rm -rf /tmp/py-fetch && \
+    chmod -R a+rwX /opt/apex-uv-cache
 
 # ------------------------------------------------------------------------------
 # FetchContent source + toolchain cache (hermetic, offline configure and build)
@@ -250,7 +263,8 @@ ENV APEX_DEPS_DIR=/opt/apex-deps
 # silently fetching. dev-base re-opens the network for interactive work.
 ENV CARGO_NET_OFFLINE=1 \
     PIP_NO_INDEX=1 \
-    PIP_FIND_LINKS=/opt/apex-pip-wheels
+    PIP_FIND_LINKS=/opt/apex-pip-wheels \
+    UV_OFFLINE=1
 
 # ------------------------------------------------------------------------------
 # ptest profiler link libraries
@@ -330,7 +344,8 @@ FROM build-base AS dev-base
 # `false`, not empty: cargo parses CARGO_NET_OFFLINE as a strict boolean and
 # errors on an empty string (a Dockerfile ENV cannot truly unset).
 ENV CARGO_NET_OFFLINE=false \
-    PIP_NO_INDEX=false
+    PIP_NO_INDEX=false \
+    UV_OFFLINE=false
 
 ARG USER
 ARG HADOLINT_VERSION=v2.14.0

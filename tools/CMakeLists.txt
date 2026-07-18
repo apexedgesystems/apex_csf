@@ -106,10 +106,10 @@ endif ()
 # ------------------------------------------------------------------------------
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/py/pyproject.toml")
-  find_program(POETRY_EXECUTABLE poetry)
+  find_program(UV_EXECUTABLE uv)
   find_program(PIP_EXECUTABLE pip3 pip)
 
-  if (POETRY_EXECUTABLE AND PIP_EXECUTABLE)
+  if (UV_EXECUTABLE AND PIP_EXECUTABLE)
     set(_PY_SRC "${CMAKE_CURRENT_SOURCE_DIR}/py")
     set(_PY_OUT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/py")
     set(_PY_LIB "${CMAKE_BINARY_DIR}/lib/python")
@@ -122,12 +122,13 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/py/pyproject.toml")
       WRITE "${_PY_BUILD_SCRIPT}"
       "#!/bin/bash\nset -e\n"
       # Offline enforcement comes from the environment: the build image sets
-      # PIP_NO_INDEX=1 / PIP_FIND_LINKS against its baked wheelhouse (pip reads
-      # both natively). poetry build itself is already offline (poetry-core is
-      # bundled). Local dev (no such env) resolves online from PyPI.
+      # UV_NO_INDEX/UV_FIND_LINKS and PIP_NO_INDEX/PIP_FIND_LINKS against its
+      # baked wheelhouse (uv and pip each read their own natively). uv build
+      # itself is offline (hatchling rides the wheelhouse). Local dev (no such
+      # env) resolves online from PyPI.
       "mkdir -p '${_PY_OUT}' '${_PY_LIB}' '${_PY_WHEELS}'\n"
       "cd '${_PY_SRC}'\n"
-      "'${POETRY_EXECUTABLE}' build --format wheel --output '${_PY_WHEELS}'\n"
+      "'${UV_EXECUTABLE}' build --wheel --out-dir '${_PY_WHEELS}'\n"
       "'${PIP_EXECUTABLE}' install --quiet --no-deps --target '${_PY_LIB}' --upgrade ${_PY_WHEELS}/*.whl\n"
       "cp -f '${_PY_LIB}/bin'/* '${_PY_OUT}/' 2>/dev/null || true\n"
       "rm -rf '${_PY_LIB}/bin'\n"
@@ -148,7 +149,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/py/pyproject.toml")
     add_custom_target(${PROJECT_NAME}_py_tools DEPENDS "${_PY_STAMP}")
     list(APPEND _TOOLS_DEPS ${PROJECT_NAME}_py_tools)
   else ()
-    message(WARNING "${PROJECT_NAME}: poetry/pip not found -- Python tools skipped")
+    message(WARNING "${PROJECT_NAME}: uv/pip not found -- Python tools skipped")
   endif ()
 endif ()
 

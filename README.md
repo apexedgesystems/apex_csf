@@ -349,7 +349,7 @@ All toolchains are pre-configured in Docker images. See
 - OpenSSL (encryption library)
 - SuiteSparse (KLU sparse solver, circuit simulation)
 - Rust toolchain (CLI tools)
-- Python 3.10+ with Poetry (CLI tools)
+- Python 3.10+ with uv (CLI tools)
 
 All dependencies are available in the provided Docker images.
 

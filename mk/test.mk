@@ -113,10 +113,14 @@ testp-cuda: debug
 	@bash -o pipefail -c '$(CTEST_CUDA_PARALLEL) 2>&1 | tee -a "$(LOG_FILE)"'
 	@$(call _test_footer,cuda (parallel),$(LOG_FILE)) | tee -a "$(LOG_FILE)"
 
-# Python tools unit tests (runs from source, no build dependency)
+# Python tools unit tests. uv keeps the env in-tree (.venv) and resolves
+# offline in the build images from the baked uv cache (UV_OFFLINE=1).
+# --no-editable: test the project installed the way the wheel ships, and skip
+# the editable-install machinery (its `editables` backend never enters the
+# lock, so an editable sync could not resolve offline anyway).
 test-py:
 	$(call log,test,Running Python tools tests)
-	@cd "$(PY_TOOLS_DIR)" && poetry install --no-interaction && (poetry run pytest -v || test $$? -eq 5)
+	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable && (uv run --no-sync pytest -v || test $$? -eq 5)
 
 # Rust tools unit tests
 test-rust:
@@ -137,8 +141,8 @@ COVERAGE_PY_MIN_LINE   ?= 30
 
 coverage-py:
 	$(call log,coverage,Measuring Python tools coverage)
-	@cd "$(PY_TOOLS_DIR)" && poetry install --no-interaction && \
-	  (poetry run pytest --cov=apex_tools --cov-report=term-missing \
+	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable && \
+	  (uv run --no-sync pytest --cov=apex_tools --cov-report=term-missing \
 	    --cov-report=xml:coverage-py.xml \
 	    $(if $(filter 1,$(SCAN_GATE)),--cov-fail-under=$(COVERAGE_PY_MIN_LINE),) \
 	    || test $$? -eq 5)
