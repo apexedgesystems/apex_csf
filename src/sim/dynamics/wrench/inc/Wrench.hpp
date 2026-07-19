@@ -20,8 +20,8 @@
  * `rigid_body::cross`.
  */
 
-#include "src/sim/dynamics/rigid_body/inc/PointMass3D.hpp"   // Vec3
-#include "src/sim/dynamics/rigid_body/inc/RigidBody6DOF.hpp" // cross
+#include "src/sim/dynamics/rigid_body/inc/PointMass3D.hpp" // Vec3
+#include "src/sim/dynamics/rigid_body/inc/PointMass3D.hpp" // Vec3 + cross
 
 #include <vector>
 

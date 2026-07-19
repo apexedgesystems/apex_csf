@@ -22,6 +22,7 @@
  */
 
 #include "src/sim/dynamics/integrators/inc/RK4.hpp"
+#include "src/utilities/math/vecmat/inc/Vec3Ops.hpp"
 
 #include <array>
 
@@ -35,6 +36,32 @@ struct Vec3 {
   Vec3 operator-(const Vec3& o) const { return {x - o.x, y - o.y, z - o.z}; }
   Vec3 operator*(double k) const { return {x * k, y * k, z * k}; }
 };
+
+/* ------------------------------ Vec3 helpers ------------------------------ */
+// Thin Vec3 adapters over the tier-S vecmat implementations: the math has
+// exactly one home; these keep the struct ergonomics at the call sites.
+
+/** Cross product a x b (right-handed). */
+inline Vec3 cross(const Vec3& a, const Vec3& b) {
+  const double A[3] = {a.x, a.y, a.z};
+  const double B[3] = {b.x, b.y, b.z};
+  double o[3];
+  apex::math::vecmat::cross(A, B, o);
+  return {o[0], o[1], o[2]};
+}
+
+/** Dot product a . b. */
+inline double dot(const Vec3& a, const Vec3& b) {
+  const double A[3] = {a.x, a.y, a.z};
+  const double B[3] = {b.x, b.y, b.z};
+  return apex::math::vecmat::dot(A, B);
+}
+
+/** Euclidean norm |a|. */
+inline double norm(const Vec3& a) {
+  const double A[3] = {a.x, a.y, a.z};
+  return apex::math::vecmat::norm(A);
+}
 
 /**
  * 6-state point-mass.

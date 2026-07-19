@@ -79,16 +79,16 @@ QuaternionIntegrator<double>::stepExponential(q, W, dt);
 
 ### Companion headers
 
-| Header                     | Provides                                                                                                                                                                                              |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `QuatData.hpp`             | `QuatData<T>` -- owned flat-POD storage (identity default, trivially copyable / bus-streamable) with a `view()` accessor                                                                              |
-| `QuaternionIntegrator.hpp` | `QuaternionIntegrator<T>` -- attitude steps for `dq/dt = 0.5 q (0, omega)`: `stepEuler`, `stepMidpoint`, `stepExponential` (exact for constant omega), plus the `deltaInto` exponential-map primitive |
+| Header                     | Provides                                                                                                                                                                                                                                                                                           |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `QuatData.hpp`             | `QuatData<T>` -- owned flat-POD storage (identity default, trivially copyable / bus-streamable) with a `view()` accessor                                                                                                                                                                           |
+| `QuaternionIntegrator.hpp` | `QuaternionIntegrator<T>` -- attitude steps for `dq/dt = 0.5 q (0, omega)`: `stepEuler`, `stepMidpoint`, `stepExponential` (exact for constant omega), plus the `deltaInto` exponential-map primitive and `rateInto` (the raw kinematics rate, for consumers integrating through their own scheme) |
 
 ### Freestanding / MCU use
 
 The library is `BAREMETAL`-flagged: the same headers compile on the bare-metal
-toolchains (arm-none-eabi, avr, pico, esp32, c2000) under
-`-fno-exceptions -fno-rtti` at the C++17 floor. Scalar math routes through
+toolchains the lib.manifest declares under
+`-fno-exceptions -fno-rtti`. Scalar math routes through
 `apex::compat` (`compat_math.hpp`): `std::` on hosted builds, `<math.h>` on
 freestanding toolchains without a C++ standard library, with float overloads
 dispatching to the `f`-suffixed forms so single-precision FPUs never promote
@@ -164,6 +164,7 @@ template <typename T> struct QuatData {   // owned flat POD, identity default
 template <typename T> class QuaternionIntegrator {  // stateless steps
 public:
   static uint8_t deltaInto(const T* omegaBody, T dt, Quaternion<T>& out) noexcept;
+  static void rateInto(const Quaternion<T>& q, const T* omegaBody, T* dq) noexcept;
   static uint8_t stepEuler(Quaternion<T>& q, const T* omegaBody, T dt) noexcept;
   static uint8_t stepMidpoint(Quaternion<T>& q, const T* omegaBody, T dt) noexcept;
   static uint8_t stepExponential(Quaternion<T>& q, const T* omegaBody, T dt) noexcept;

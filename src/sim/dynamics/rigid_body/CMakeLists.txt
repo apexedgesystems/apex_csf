@@ -14,6 +14,8 @@ target_link_libraries(
   ${LIB_NAME}
   INTERFACE sim_dynamics_integrators
             utilities_math_integration # apex::math::integration::Quaternion
+            utilities_math_quaternion # shared attitude kinematics rate
+            utilities_math_vecmat # Vec3 helper + inertia delegation
 )
 
 apex_standard_optins(${LIB_NAME})

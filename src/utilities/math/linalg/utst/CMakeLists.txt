@@ -8,14 +8,8 @@ include(apex/All)
 # Test Sources
 # ------------------------------------------------------------------------------
 
-set(UNIT_TEST_SOURCES
-    ArrayBase_uTest.cpp
-    Array_uTest.cpp
-    Vector_uTest.cpp
-    Matrix2_uTest.cpp
-    Matrix3_uTest.cpp
-    Matrix4_uTest.cpp
-    Rotations_uTest.cpp
+set(UNIT_TEST_SOURCES ArrayBase_uTest.cpp Array_uTest.cpp Vector_uTest.cpp Matrix2_uTest.cpp
+                      Matrix3_uTest.cpp Matrix4_uTest.cpp
 )
 
 set(CUDA_TEST_SOURCES ArrayCuda_uTest.cu)

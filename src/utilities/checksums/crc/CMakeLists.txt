@@ -16,7 +16,7 @@ apex_module(utilities_checksums_crc)
 # Enables SSE4.2 on x86/x64 for hardware CRC-32C acceleration.
 # ------------------------------------------------------------------------------
 
-apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" BAREMETAL)
+apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
 
 if (CMAKE_SYSTEM_PROCESSOR MATCHES "(x86_64|AMD64|i[3-6]86)")
   include(CheckCXXCompilerFlag)

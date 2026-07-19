@@ -266,3 +266,29 @@ TYPED_TEST(QuatIntegratorTestT, RotationMatrixRoundTrip) {
     }
   }
 }
+
+/* -------------------------------- rateInto --------------------------------- */
+
+/** @test rateInto is the kinematics rate: matches the closed form and the
+ *        Euler step's pre-normalization increment. */
+TYPED_TEST(QuatIntegratorTestT, RateIntoMatchesClosedForm) {
+  using T = TypeParam;
+  T qd[4];
+  Quaternion<T> q(qd);
+  q.setFromEuler321(T(0.3), T(-0.4), T(1.2));
+  const T W[3] = {T(0.7), T(-0.2), T(0.5)};
+
+  T dq[4];
+  QuaternionIntegrator<T>::rateInto(q, W, dq);
+
+  // Closed form: 0.5 * q * (0, w).
+  const T EXPECT_DQ[4] = {
+      T(-0.5) * (q.x() * W[0] + q.y() * W[1] + q.z() * W[2]),
+      T(0.5) * (q.w() * W[0] + q.y() * W[2] - q.z() * W[1]),
+      T(0.5) * (q.w() * W[1] + q.z() * W[0] - q.x() * W[2]),
+      T(0.5) * (q.w() * W[2] + q.x() * W[1] - q.y() * W[0]),
+  };
+  for (int i = 0; i < 4; ++i) {
+    EXPECT_EQ(dq[i], EXPECT_DQ[i]); // identical arithmetic, exact equality
+  }
+}

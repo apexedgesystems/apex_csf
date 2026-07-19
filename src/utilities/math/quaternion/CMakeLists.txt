@@ -21,17 +21,9 @@ set(CUDA_SOURCES "${SRC_DIR}/QuaternionCuda.cu")
 # Interface Library (header-only CPU)
 # ------------------------------------------------------------------------------
 
-# BAREMETAL: the header set is freestanding-clean (compat math shims, no
+# lib.manifest mcu claim: the header set is freestanding-clean (compat math shims, no
 # heap/exceptions/RTTI), so MCU firmware links the same quaternion the sim uses.
-apex_add_interface_library(
-  NAME
-  ${LIB_NAME}
-  INC
-  "${INC_DIR}"
-  DEPS_INTERFACE
-  utilities_compatibility
-  BAREMETAL
-)
+apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" DEPS_INTERFACE utilities_compatibility)
 
 # ------------------------------------------------------------------------------
 # CUDA Library
@@ -42,8 +34,6 @@ apex_add_library_cuda(NAME ${LIB_NAME}_cuda CORE ${LIB_NAME} SRC ${CUDA_SOURCES}
 # ------------------------------------------------------------------------------
 # Opt-ins (coverage, doxygen, UPX)
 # ------------------------------------------------------------------------------
-
-apex_add_floor_check(NAME ${LIB_NAME} SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/floor/FloorProbe.cpp")
 
 apex_standard_optins(${LIB_NAME})
 apex_standard_optins(${LIB_NAME}_cuda)

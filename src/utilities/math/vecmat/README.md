@@ -2,7 +2,7 @@
 
 **Namespace:** `apex::math::vecmat`
 **Platform:** Hosted + bare-metal (BAREMETAL interface library)
-**C++ Standard:** C++17 floor
+**C++ Standard:** C++17 (see lib.manifest for the platform contract)
 
 Free functions over raw arrays -- `T[3]` vectors and row-major `T[9]`
 matrices -- for the small dense algebra a vehicle pays per tick: cross

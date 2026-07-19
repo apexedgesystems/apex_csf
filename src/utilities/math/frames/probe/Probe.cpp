@@ -1,9 +1,10 @@
 /**
- * @file FloorProbe.cpp
- * @brief MCU-floor probe: instantiates the library's public surface; compiled
- *        at C++17 with -fno-exceptions -fno-rtti by apex_add_floor_check so a
- *        hosted-only regression fails every PR build, not the next firmware
- *        build.
+ * @file Probe.cpp
+ * @brief Compile probe: instantiates the library's public surface. Built on
+ *        every platform the lib.manifest declares — under each cross
+ *        toolchain on MCU builds, at each declared posix_cpp dialect on
+ *        hosted builds — so a regression against the support contract fails
+ *        the build that owns the claim.
  */
 
 #include "src/utilities/math/frames/inc/Catalog.hpp"

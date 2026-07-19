@@ -33,7 +33,6 @@ Non-owning 2D array views with optional BLAS/LAPACK acceleration for RT-safe lin
 #include "src/utilities/math/linalg/inc/Matrix2.hpp"      // 2x2 matrix (RT-safe)
 #include "src/utilities/math/linalg/inc/Matrix3.hpp"      // 3x3 matrix (DCM)
 #include "src/utilities/math/linalg/inc/Matrix4.hpp"      // 4x4 matrix (homogeneous)
-#include "src/utilities/math/linalg/inc/Rotations.hpp"    // Rotation utilities
 #include "src/utilities/math/linalg/inc/ArrayStatus.hpp"  // Status codes
 #include "src/utilities/math/linalg/inc/ArrayCuda.cuh"    // CUDA batch ops
 ```
@@ -100,7 +99,6 @@ if (st == static_cast<uint8_t>(Status::SUCCESS)) {
 | `Matrix2` (all)         | Yes     | Cramer's rule inverse, no alloc |
 | `Matrix3` (all)         | Yes     | Cramer's rule inverse, no alloc |
 | `Matrix4` (all)         | Yes     | Adjugate inverse, no alloc      |
-| `Rotations` (all)       | Yes     | Header-only, no allocation      |
 | `skew3Into`             | Yes     | No allocation                   |
 | `outerInto`             | Yes     | No allocation                   |
 | `frobeniusNormInto`     | Yes     | No allocation                   |
@@ -125,7 +123,8 @@ ArrayBase<T, Derived>       Base non-owning 2D view (CRTP)
             |
             +-- Matrix4<T>      4x4 matrix (homogeneous, RT-safe inverse via adjugate)
 
-Rotations::                 Header-only rotation utilities
+Rotation utilities live in utilities/math/vecmat (Rotations.hpp there
+is the tier-S home for DCM/Euler constructors).
     +-- dcmFromEuler321Into       Euler 3-2-1 to DCM
     +-- eulerFromDcm321Into       DCM to Euler 3-2-1
     +-- dcmFromAxisAngleInto      Rodrigues formula
