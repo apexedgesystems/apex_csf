@@ -43,8 +43,6 @@ apex_add_library_cuda(NAME ${LIB_NAME}_cuda CORE ${LIB_NAME} SRC ${CUDA_SOURCES}
 # Opt-ins (coverage, doxygen, UPX)
 # ------------------------------------------------------------------------------
 
-apex_add_floor_check(NAME ${LIB_NAME} SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/floor/FloorProbe.cpp")
-
 apex_standard_optins(${LIB_NAME})
 apex_standard_optins(${LIB_NAME}_cuda)
 

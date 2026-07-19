@@ -87,8 +87,8 @@ QuaternionIntegrator<double>::stepExponential(q, W, dt);
 ### Freestanding / MCU use
 
 The library is `BAREMETAL`-flagged: the same headers compile on the bare-metal
-toolchains (arm-none-eabi, avr, pico, esp32, c2000) under
-`-fno-exceptions -fno-rtti` at the C++17 floor. Scalar math routes through
+toolchains the lib.manifest declares under
+`-fno-exceptions -fno-rtti`. Scalar math routes through
 `apex::compat` (`compat_math.hpp`): `std::` on hosted builds, `<math.h>` on
 freestanding toolchains without a C++ standard library, with float overloads
 dispatching to the `f`-suffixed forms so single-precision FPUs never promote

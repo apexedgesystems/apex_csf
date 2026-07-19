@@ -25,8 +25,6 @@ apex_add_interface_library(
   BAREMETAL
 )
 
-apex_add_floor_check(NAME executive_base SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/floor/FloorProbe.cpp")
-
 # ------------------------------------------------------------------------------
 # Opt-ins (coverage, doxygen, UPX)
 # ------------------------------------------------------------------------------

@@ -21,7 +21,7 @@ include(apex/Cuda)
 
 # Target factories
 include(apex/Targets)
-include(apex/Floor)
+include(apex/Manifest)
 
 # Coverage infrastructure
 include(apex/Coverage)

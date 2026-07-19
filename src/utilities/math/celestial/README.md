@@ -2,7 +2,7 @@
 
 **Namespace:** `apex::math::celestial`
 **Platform:** Hosted + bare-metal (BAREMETAL interface library)
-**C++ Standard:** C++17 floor
+**C++ Standard:** C++17 (see lib.manifest for the platform contract)
 
 One value per physical quantity: Earth's WGS-84 ellipsoid geometry and
 rotation rate, and the Moon's IAU geometry and tidally-locked rotation. The tree's per-library constant copies (gravity,

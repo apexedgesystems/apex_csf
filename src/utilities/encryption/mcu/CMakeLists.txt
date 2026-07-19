@@ -17,8 +17,6 @@ apex_module(encryption_mcu)
 
 apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" BAREMETAL)
 
-apex_add_floor_check(NAME ${LIB_NAME} SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/floor/FloorProbe.cpp")
-
 # ------------------------------------------------------------------------------
 # Opt-ins (coverage, doxygen, UPX)
 # ------------------------------------------------------------------------------

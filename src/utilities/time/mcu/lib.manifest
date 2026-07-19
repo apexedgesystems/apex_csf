@@ -1,0 +1,4 @@
+name utilities_time_mcu
+posix_cpp 17 20 23
+mcu stm32 avr pico esp32
+probe probe/Probe.cpp

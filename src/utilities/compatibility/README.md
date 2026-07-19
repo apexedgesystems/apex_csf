@@ -370,8 +370,9 @@ Below the hosted minimum, two dedicated ladders serve the bare-metal targets:
   builder images ship no libstdc++ headers at all; `compat_math` and
   `compat_type_traits` detect this via `__has_include` and fall back to
   `<math.h>`/`<float.h>` and manual trait shims. `compat_array` shims
-  `std::array`. Enforced per PR by the tier-S floor checks and nightly by
-  the cross builders.
+  `std::array`. Enforced by the lib.manifest probes (each declared
+  posix_cpp dialect per PR; the declared MCU toolchains on the cross
+  builders).
 - **C++03 (TI C2000 CGT)** - the C28x compiler never gains C++11+;
   `compat_legacy` degrades the modern keywords (`APEX_NOEXCEPT`,
   `APEX_CONSTEXPR`, `APEX_NODISCARD`, ...) to no-ops there. Intended for

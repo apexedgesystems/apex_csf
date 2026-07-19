@@ -177,6 +177,8 @@ function (apex_add_interface_library)
   if (APEX_TARGETS_VERBOSE)
     message(STATUS "[apex] INTERFACE ${IL_NAME} inc='${IL_INC}' deps='${IL_DEPS_INTERFACE}'")
   endif ()
+
+  _apex_apply_manifest(${IL_NAME})
 endfunction ()
 
 # ------------------------------------------------------------------------------
@@ -264,6 +266,8 @@ function (apex_add_library)
     list(LENGTH AL_SRC _src_count)
     message(STATUS "[apex] LIB ${AL_NAME} (${AL_TYPE}) inc='${AL_INC}' srcs=${_src_count}")
   endif ()
+
+  _apex_apply_manifest(${AL_NAME})
 endfunction ()
 
 # ------------------------------------------------------------------------------
