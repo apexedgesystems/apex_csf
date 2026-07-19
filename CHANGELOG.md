@@ -45,7 +45,6 @@ any such change is called out explicitly in its entry.
   project metadata, uv.lock); the published wheel's internal version now
   matches the release, and it no longer lists pytest as a runtime
   dependency.
-
 - Release pipeline rebuilt on parallel per-target builder images; a
   dispatch rehearsal runs the same steps as a tag release.
 - Build image hierarchy retiered (build-base / dev-base / dev-cuda /
