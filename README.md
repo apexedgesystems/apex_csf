@@ -365,6 +365,7 @@ make compose-testp
 # CLI tool tests
 make test-rust
 make test-py
+make test-sh
 
 # Code coverage (reports: build/hosted-x86_64-debug/coverage/*/html/index.html)
 make compose-coverage
