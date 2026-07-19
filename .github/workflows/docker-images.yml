@@ -204,7 +204,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       # Image builds register multi-GB layers; the runner's unused host SDKs
-      # are the headroom (observed: jetson failed layer registration on disk).
+      # are the headroom.
       - uses: ./.github/actions/reclaim-disk
       - uses: ./.github/actions/docker-build-push
         with:
@@ -228,7 +228,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       # Image builds register multi-GB layers; the runner's unused host SDKs
-      # are the headroom (observed: jetson failed layer registration on disk).
+      # are the headroom.
       - uses: ./.github/actions/reclaim-disk
       - uses: ./.github/actions/docker-build-push
         with:
@@ -252,7 +252,7 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
       # Image builds register multi-GB layers; the runner's unused host SDKs
-      # are the headroom (observed: jetson failed layer registration on disk).
+      # are the headroom.
       - uses: ./.github/actions/reclaim-disk
       - uses: ./.github/actions/docker-build-push
         with:

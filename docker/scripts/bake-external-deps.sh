@@ -67,9 +67,9 @@ while read -r name repo tag; do
   # Dependency python tools: download the locked wheels into the wheelhouse.
   # uv.lock exports natively; a dependency still locking with poetry gets its
   # lock parsed directly (the TOML carries name/version), so the image needs
-  # no poetry. Runtime groups only -- a dependency's build inside the apex
-  # image never runs its dev tooling, and all-groups was measured at +432MB
-  # of image for zero consumers.
+  # no poetry. Runtime groups only: a dependency's build inside the apex
+  # image never runs its dev tooling, so its dev wheels are dead image
+  # weight.
   if [ -n "$WHEEL_DEST" ] && [ -f "$DEST/$name/tools/py/uv.lock" ]; then
     echo "[bake]   ${name}: pip download (tools/py, uv.lock)"
     (cd "$DEST/$name/tools/py" &&
