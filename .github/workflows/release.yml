@@ -147,6 +147,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      # Builders compile full trees inside image builds; reclaim the unused
+      # host SDKs first (observed: layer registration failing on disk).
+      - name: Reclaim disk
+        uses: ./.github/actions/reclaim-disk
       - name: Prepare environment
         run: |
           touch ~/.gitconfig
@@ -264,6 +268,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
+      # Builders compile full trees inside image builds; reclaim the unused
+      # host SDKs first (observed: layer registration failing on disk).
+      - name: Reclaim disk
+        uses: ./.github/actions/reclaim-disk
       - name: Prepare environment
         run: |
           touch ~/.gitconfig
