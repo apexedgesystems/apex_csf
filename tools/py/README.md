@@ -53,16 +53,16 @@ Benchmarking tools (`bench-plot`) have moved to the external
 # From project root
 make test-py
 
-# Or directly with poetry
-cd tools/py && poetry run pytest -v
+# Or directly with uv
+cd tools/py && uv run pytest -v
 ```
 
 ### Local Development
 
 ```bash
 cd tools/py
-poetry install
-poetry shell
+uv sync
+uv run <command>  # or: source .venv/bin/activate
 
 # Now tools are available directly
 mc-plot --help

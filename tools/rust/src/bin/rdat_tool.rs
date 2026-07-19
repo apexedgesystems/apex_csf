@@ -142,17 +142,15 @@ fn cmd_info(path: &PathBuf) -> Result<(), Box<dyn std::error::Error>> {
 fn cmd_dump(path: &PathBuf, type_filter: Option<&str>) -> Result<(), Box<dyn std::error::Error>> {
     let rdat = RdatFile::from_file(path)?;
 
-    let filter_type = type_filter
-        .map(|s| match s.to_uppercase().as_str() {
-            "EXECUTIVE" => Some(ComponentType::Executive),
-            "CORE" => Some(ComponentType::Core),
-            "SW_MODEL" | "SWMODEL" => Some(ComponentType::SwModel),
-            "HW_MODEL" | "HWMODEL" => Some(ComponentType::HwModel),
-            "SUPPORT" => Some(ComponentType::Support),
-            "DRIVER" => Some(ComponentType::Driver),
-            _ => None,
-        })
-        .flatten();
+    let filter_type = type_filter.and_then(|s| match s.to_uppercase().as_str() {
+        "EXECUTIVE" => Some(ComponentType::Executive),
+        "CORE" => Some(ComponentType::Core),
+        "SW_MODEL" | "SWMODEL" => Some(ComponentType::SwModel),
+        "HW_MODEL" | "HWMODEL" => Some(ComponentType::HwModel),
+        "SUPPORT" => Some(ComponentType::Support),
+        "DRIVER" => Some(ComponentType::Driver),
+        _ => None,
+    });
 
     println!("RDAT File: {}", path.display());
     println!("Version: {}, Flags: 0x{:04X}", rdat.version, rdat.flags);

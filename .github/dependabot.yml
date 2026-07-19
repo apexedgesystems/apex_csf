@@ -30,8 +30,8 @@ updates:
       cargo:
         update-types: ["minor", "patch"]
 
-  # Python tooling (tools/py, poetry)
-  - package-ecosystem: pip
+  # Python tooling (tools/py, uv)
+  - package-ecosystem: uv
     directory: /tools/py
     schedule:
       interval: weekly

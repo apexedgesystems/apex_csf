@@ -44,6 +44,7 @@ jobs:
       cpp: ${{ steps.f.outputs.cpp }}
       rust: ${{ steps.f.outputs.rust }}
       py: ${{ steps.f.outputs.py }}
+      sh: ${{ steps.f.outputs.sh }}
       docker: ${{ steps.f.outputs.docker }}
     steps:
       - name: Checkout
@@ -66,12 +67,13 @@ jobs:
           # Scope DOWN only for changes confined to known-isolated areas; any
           # unrecognized path (root configs, new top-level dirs, build/CI infra)
           # falls through to the full suite, so coverage is never silently lost.
-          cpp=false; rust=false; py=false; allflag=false
+          cpp=false; rust=false; py=false; sh=false; allflag=false
           while IFS= read -r file; do
             [ -z "$file" ] && continue
             case "$file" in
               tools/rust/*) rust=true ;;
               tools/py/*)   py=true ;;
+              tools/sh/*)   sh=true ;;
               src/*|demos/*|apps/*|cmake/*|CMakeLists.txt|CMakePresets.json) cpp=true ;;
               *.md|docs/*)  : ;;
               # Dev-image inputs the gate jobs actually run in (base; the cpu dev
@@ -93,11 +95,11 @@ jobs:
           # a manual run is always a full run. docker stays diff-driven -- an
           # empty diff never forces an image rebuild.
           if [ -z "$files" ]; then allflag=true; fi
-          if [ "$allflag" = true ]; then cpp=true; rust=true; py=true; fi
+          if [ "$allflag" = true ]; then cpp=true; rust=true; py=true; sh=true; fi
           # Rebuild only when a gate-image INPUT changes: the images a gate job
           # runs in (base tiers, the cpu dev image, the cuda image, the base
           # compose), or anything base.Dockerfile bakes -- the dependency
-          # manifests (tools/rust/Cargo.*, tools/py/poetry.lock|pyproject.toml,
+          # manifests (tools/rust/Cargo.*, tools/py/uv.lock|pyproject.toml,
           # ExternalDependencies.cmake) and the baked scripts (docker/scripts/).
           # Without the baked inputs the gate runs offline builds against STALE
           # caches: a lock bump fails on missing crates/wheels, and a GIT_TAG
@@ -105,8 +107,8 @@ jobs:
           # FETCHCONTENT_SOURCE_DIR redirect (green-but-wrong). Leaf
           # cross/firmware Dockerfiles feed only post-merge images; builder/final
           # feed the release pipe; CI compose overlays are runtime-only.
-          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$|^docker/scripts/|^tools/rust/Cargo\.(lock|toml)$|^tools/py/(poetry\.lock|pyproject\.toml)$|^ExternalDependencies\.cmake$' && echo true || echo false)
-          printf 'cpp=%s\nrust=%s\npy=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$docker" | tee -a "$GITHUB_OUTPUT"
+          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$|^docker/scripts/|^tools/rust/Cargo\.(lock|toml)$|^tools/py/(uv\.lock|pyproject\.toml)$|^ExternalDependencies\.cmake$' && echo true || echo false)
+          printf 'cpp=%s\nrust=%s\npy=%s\nsh=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$sh" "$docker" | tee -a "$GITHUB_OUTPUT"
 
   lint:
     name: Lint and secret scan
@@ -215,6 +217,11 @@ jobs:
           rebuild: ${{ needs.changes.outputs.docker }}
       - name: Run Rust tests
         run: docker compose run --rm -T build-base make test-rust
+      # Deny-all-warnings: the rust counterpart of clang-tidy's
+      # warnings-as-errors. Deterministic -- clippy's version is pinned by the
+      # image, so a finding here is a code change, never rule drift.
+      - name: Rust static analysis (clippy)
+        run: docker compose run --rm -T build-base make clippy
 
   py:
     name: Python tool tests
@@ -237,6 +244,19 @@ jobs:
           rebuild: ${{ needs.changes.outputs.docker }}
       - name: Run Python tests
         run: docker compose run --rm -T build-base make test-py
+
+  # Host-side: the smoke needs only bash and tar, and runs in seconds.
+  sh:
+    name: Shell tool smoke
+    needs: changes
+    if: needs.changes.outputs.sh == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      - name: Run shell tools smoke
+        run: make test-sh
 
   sanitize:
     name: Sanitize

@@ -54,12 +54,6 @@ COPY --from=apex.builder.esp32:latest   /home/${USER}/workspace/build/mcu-esp32-
 COPY --from=apex.builder.c2000:latest   /home/${USER}/workspace/build/mcu-c2000-relwithdebinfo/   ./c2000/
 
 # ==============================================================================
-# Collect CLI Tools from CPU Builder
-# ==============================================================================
-COPY --from=apex.builder.cpu:latest /home/${USER}/workspace/build/hosted-x86_64-release/bin/tools/ ./tools-bin/
-COPY --from=apex.builder.cpu:latest /home/${USER}/workspace/build/hosted-x86_64-release/apex_csf-wheels/ ./tools-py/
-
-# ==============================================================================
 # Create Distribution Tarballs
 # ==============================================================================
 RUN tar -czf "apex-csf-${VERSION}-x86_64-linux.tar.gz"      ./cpu/      && \
@@ -71,9 +65,7 @@ RUN tar -czf "apex-csf-${VERSION}-x86_64-linux.tar.gz"      ./cpu/      && \
     tar -czf "apex-csf-${VERSION}-arduino.tar.gz"           ./arduino/  && \
     tar -czf "apex-csf-${VERSION}-pico.tar.gz"              ./pico/     && \
     tar -czf "apex-csf-${VERSION}-esp32.tar.gz"             ./esp32/    && \
-    tar -czf "apex-csf-${VERSION}-c2000.tar.gz"             ./c2000/    && \
-    tar -czf "apex-tools-${VERSION}-x86_64-linux.tar.gz"    ./tools-bin/ && \
-    cp ./tools-py/*.whl "apex_py_tools-${VERSION}-py3-none-any.whl"
+    tar -czf "apex-csf-${VERSION}-c2000.tar.gz"             ./c2000/
 
 # Run as the unprivileged busybox 'nobody'; artifacts are built above and the
 # default command only lists them.

@@ -286,7 +286,7 @@ The new tool automatically appears in `bin/tools/rust/mytool`.
 
 | Aspect          | Python                     | Rust                     |
 | --------------- | -------------------------- | ------------------------ |
-| Package manager | Poetry                     | Cargo                    |
+| Package manager | uv                         | Cargo                    |
 | Build artifact  | Wheel + pip install        | Native binaries          |
 | Dependencies    | Installed to lib/python/   | Statically linked        |
 | Scripts         | pip-generated entry points | Direct executables       |

@@ -44,7 +44,7 @@ COPY --chown=${HOST_UID}:${HOST_GID} . .
 #
 # The final find prunes each build tree to its runnable output -- bin/ + lib/
 # (+ test_plugins/) on POSIX targets, firmware/ (the collected flashables) on
-# MCU targets, apex_csf-wheels for the cpu tools -- dropping objects,
+# MCU targets, tools-wheels for the cpu tools -- dropping objects,
 # CMakeFiles, _deps, and ninja state. Running it inside the same RUN keeps the
 # fat tree out of the layer entirely: the exported image, the platform
 # tarballs (make artifact-<t>), and final.Dockerfile's collection all see only
@@ -57,7 +57,7 @@ RUN --mount=type=cache,target=/ccache,uid=${HOST_UID},gid=${HOST_GID} \
     { ccache -s 2>/dev/null || true; } && \
     find build -mindepth 2 -maxdepth 2 \
       ! -name bin ! -name lib ! -name firmware \
-      ! -name test_plugins ! -name apex_csf-wheels \
+      ! -name test_plugins ! -name tools-wheels \
       -exec rm -rf {} +
 
 # ==============================================================================

@@ -42,7 +42,15 @@ static apex::hal::stm32::Stm32Uart<512, 64> vcp(USART2, USART2_PINS);
 /* ----------------------------- Reporting ----------------------------- */
 
 static void print(const char* s) noexcept {
-  (void)vcp.write(reinterpret_cast<const uint8_t*>(s), strlen(s));
+  // Blocks until queued: the checks produce bytes far faster than the wire
+  // drains them, and a dropped verdict is worse than a slow one here.
+  const uint8_t* p = reinterpret_cast<const uint8_t*>(s);
+  size_t n = strlen(s);
+  while (n > 0) {
+    const size_t W = vcp.write(p, n);
+    p += W;
+    n -= W;
+  }
 }
 
 static uint32_t g_run = 0;
@@ -99,7 +107,8 @@ template <typename T> static void runSuite(const char* label, T tol) noexcept {
   check<T>("quarter_turn_y", out[1], T(1), tol * T(4));
 
   // 3. Graph resolve == hand composition (3-hop chain).
-  fr::FrameGraph<T, 8> g;
+  // Static: two graphs per suite would overflow the 2 KB stack.
+  static fr::FrameGraph<T, 8> g;
   fr::FrameId root = 0, body = 0, pay = 0, sensor = 0;
   (void)g.addRoot("root", root);
   fr::Transform<T> eb, ep, es;
@@ -123,7 +132,7 @@ template <typename T> static void runSuite(const char* label, T tol) noexcept {
   check<T>("resolve_matches_hand_z", pg[2], ph[2], tol * T(100));
 
   // 4. The CG-relative acceptance chain with a live CG shift.
-  fr::FrameGraph<T, 8> gb;
+  static fr::FrameGraph<T, 8> gb;
   fr::FrameId broot = 0, cg = 0, rf = 0;
   (void)gb.addRoot("body", broot);
   static CgCtx<T> mass; // provider ctx outlives the graph
@@ -154,7 +163,7 @@ static void runCatalogClosure() noexcept {
   print("--- catalog (double) ---\r\n");
   static fr::Epoch epoch; // provider ctx outlives the graph
   epoch.init(apex::math::celestial::JD_J2000);
-  fr::FrameGraph<double, 8> g;
+  static fr::FrameGraph<double, 8> g;
   fr::CatalogIds ids;
   (void)fr::buildCatalog(g, epoch, ids);
   const double P[3] = {apex::math::celestial::earth::A, 0.0, 0.0};
@@ -164,6 +173,14 @@ static void runCatalogClosure() noexcept {
   (void)g.in(ids.eci).from(ids.ecef).point(P, p1, PERIOD);
   check<double>("rotation_closure_m", p1[0], p0[0], 1e-3);
 }
+
+/* ----------------------------- Interrupt Handlers ----------------------------- */
+
+extern "C" void USART2_IRQHandler() { vcp.irqHandler(); }
+
+/// HAL_Init arms the 1 ms SysTick; without a handler the default trap wedges
+/// the core at exception priority and silences every lower-priority ISR.
+extern "C" void SysTick_Handler() { HAL_IncTick(); }
 
 /* ----------------------------- System Initialization ----------------------------- */
 

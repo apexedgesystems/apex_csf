@@ -4,7 +4,7 @@
 # Discovers and builds tool subdirectories by their native toolchains:
 #   cpp/   - Standard CMake (add_subdirectory)
 #   rust/  - Cargo (requires cargo on PATH)
-#   py/    - Poetry + pip (requires poetry and pip on PATH)
+#   py/    - uv + pip (requires uv and pip on PATH)
 #   sh/    - Shell scripts (copied to bin/tools/sh/)
 #
 # Each section is gated on the directory existing and the toolchain being
@@ -15,6 +15,11 @@
 # Helper script (generated at configure time)
 # ------------------------------------------------------------------------------
 # Appends PATH/PYTHONPATH entries to the build .env file (idempotent).
+
+# The tool families this tree builds. The env helper below and the make
+# surface (mk/tools.mk TOOL_FAMILIES) mirror this list; tools/README.md
+# documents every step of adding a family.
+set(_APEX_TOOL_FAMILIES cpp rust py sh)
 
 set(_ENV_FILE "${CMAKE_BINARY_DIR}/.env")
 set(_ENV_HELPER "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-env-helper.sh")
@@ -28,12 +33,14 @@ file(
   "  local key=\"$1\" line=\"$2\"\n"
   "  grep -q \"$key\" \"$ENV_FILE\" 2>/dev/null || printf '%s\\n' \"$line\" >> \"$ENV_FILE\"\n"
   "}\n"
-  "add_if_missing 'bin/tools/cpp' 'export PATH=\"$PWD/bin/tools/cpp:$PATH\"'\n"
-  "add_if_missing 'bin/tools/rust' 'export PATH=\"$PWD/bin/tools/rust:$PATH\"'\n"
-  "add_if_missing 'bin/tools/py' 'export PATH=\"$PWD/bin/tools/py:$PATH\"'\n"
-  "add_if_missing 'bin/tools/sh' 'export PATH=\"$PWD/bin/tools/sh:$PATH\"'\n"
   "add_if_missing 'PYTHONPATH.*lib/python' 'export PYTHONPATH=\"$PWD/lib/python:$PYTHONPATH\"'\n"
 )
+# One PATH line per family, driven by the same list the sections below gate on.
+foreach (_family IN LISTS _APEX_TOOL_FAMILIES)
+  file(APPEND "${_ENV_HELPER}"
+       "add_if_missing 'bin/tools/${_family}' 'export PATH=\"$PWD/bin/tools/${_family}:$PATH\"'\n"
+  )
+endforeach ()
 
 # ------------------------------------------------------------------------------
 # C++ tools
@@ -106,14 +113,16 @@ endif ()
 # ------------------------------------------------------------------------------
 
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/py/pyproject.toml")
-  find_program(POETRY_EXECUTABLE poetry)
+  find_program(UV_EXECUTABLE uv)
   find_program(PIP_EXECUTABLE pip3 pip)
 
-  if (POETRY_EXECUTABLE AND PIP_EXECUTABLE)
+  if (UV_EXECUTABLE AND PIP_EXECUTABLE)
     set(_PY_SRC "${CMAKE_CURRENT_SOURCE_DIR}/py")
     set(_PY_OUT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/py")
     set(_PY_LIB "${CMAKE_BINARY_DIR}/lib/python")
-    set(_PY_WHEELS "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-wheels")
+    # Fixed name: the release packaging (docker/scripts/package-tools.sh via
+    # make artifact-tools) and the builder prune whitelist key on it.
+    set(_PY_WHEELS "${CMAKE_BINARY_DIR}/tools-wheels")
     set(_PY_STAMP "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/py-tools.built")
 
     # Generate build script (handles shell globs that VERBATIM mode cannot expand)
@@ -122,12 +131,13 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/py/pyproject.toml")
       WRITE "${_PY_BUILD_SCRIPT}"
       "#!/bin/bash\nset -e\n"
       # Offline enforcement comes from the environment: the build image sets
-      # PIP_NO_INDEX=1 / PIP_FIND_LINKS against its baked wheelhouse (pip reads
-      # both natively). poetry build itself is already offline (poetry-core is
-      # bundled). Local dev (no such env) resolves online from PyPI.
+      # UV_OFFLINE=1 against its baked uv cache (which also holds the build
+      # backend's resolution metadata) and PIP_NO_INDEX/PIP_FIND_LINKS against
+      # the wheelhouse for the pip install below. Local dev (no such env)
+      # resolves online from PyPI.
       "mkdir -p '${_PY_OUT}' '${_PY_LIB}' '${_PY_WHEELS}'\n"
       "cd '${_PY_SRC}'\n"
-      "'${POETRY_EXECUTABLE}' build --format wheel --output '${_PY_WHEELS}'\n"
+      "'${UV_EXECUTABLE}' build --wheel --out-dir '${_PY_WHEELS}'\n"
       "'${PIP_EXECUTABLE}' install --quiet --no-deps --target '${_PY_LIB}' --upgrade ${_PY_WHEELS}/*.whl\n"
       "cp -f '${_PY_LIB}/bin'/* '${_PY_OUT}/' 2>/dev/null || true\n"
       "rm -rf '${_PY_LIB}/bin'\n"
@@ -148,7 +158,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/py/pyproject.toml")
     add_custom_target(${PROJECT_NAME}_py_tools DEPENDS "${_PY_STAMP}")
     list(APPEND _TOOLS_DEPS ${PROJECT_NAME}_py_tools)
   else ()
-    message(WARNING "${PROJECT_NAME}: poetry/pip not found -- Python tools skipped")
+    message(WARNING "${PROJECT_NAME}: uv/pip not found -- Python tools skipped")
   endif ()
 endif ()
 

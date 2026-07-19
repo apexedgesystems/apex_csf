@@ -35,9 +35,16 @@ any such change is called out explicitly in its entry.
   SBOM, THIRD_PARTY_NOTICES derived from it, and build metadata recording the
   image digests behind each artifact; the release body is that version's
   section of this changelog.
+- An executed check for every tool family: clippy (deny warnings) gates the
+  Rust tools on PRs and nightly, and a shell smoke exercises the ops SDK
+  packager.
 
 ### Changed
 
+- Python tooling manages dependencies with uv instead of poetry (PEP 621
+  project metadata, uv.lock); the published wheel's internal version now
+  matches the release, and it no longer lists pytest as a runtime
+  dependency.
 - Release pipeline rebuilt on parallel per-target builder images; a
   dispatch rehearsal runs the same steps as a tag release.
 - Build image hierarchy retiered (build-base / dev-base / dev-cuda /

@@ -157,10 +157,10 @@ fn discover_headers(
             for entry in fs::read_dir(&inc_dir)? {
                 let entry = entry?;
                 let path = entry.path();
-                if path.extension().map_or(false, |e| e == "hpp" || e == "h") {
-                    if !headers.contains(&path) {
-                        headers.push(path);
-                    }
+                if path.extension().is_some_and(|e| e == "hpp" || e == "h")
+                    && !headers.contains(&path)
+                {
+                    headers.push(path);
                 }
             }
         }
@@ -169,10 +169,9 @@ fn discover_headers(
         for entry in fs::read_dir(manifest_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().map_or(false, |e| e == "hpp" || e == "h") {
-                if !headers.contains(&path) {
-                    headers.push(path);
-                }
+            if path.extension().is_some_and(|e| e == "hpp" || e == "h") && !headers.contains(&path)
+            {
+                headers.push(path);
             }
         }
     }

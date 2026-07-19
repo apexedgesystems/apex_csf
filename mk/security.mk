@@ -126,7 +126,7 @@ gitleaks:
 	$(call log,gitleaks,Scanning for secrets)
 	@gitleaks detect --source . --no-banner --redact
 
-# osv-scanner: dependency CVEs from lockfiles (Cargo.lock, poetry, ...). Respects
+# osv-scanner: dependency CVEs from lockfiles (Cargo.lock, uv, ...). Respects
 # .gitignore, so build/ vendored crates are skipped. Advisory (trailing
 # `|| true`) unless SCAN_GATE=1 drops it so a CVE fails the job.
 osv:

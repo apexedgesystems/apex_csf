@@ -95,7 +95,6 @@ fn run_from_header(cli: &Cli, header: &Path) -> Result<(), Box<dyn std::error::E
     let opts = TemplateOptions {
         strict: cli.strict,
         struct_filter: Some(cli.r#struct.clone()),
-        ..Default::default()
     };
 
     // If no output provided, infer from the header extension

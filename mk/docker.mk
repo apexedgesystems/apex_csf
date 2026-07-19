@@ -248,8 +248,10 @@ endef
 
 $(foreach t,$(BUILDER_TARGETS),$(eval $(call _artifact_target,$(t))))
 
-# CLI tools + python wheel ride the cpu builder (same sources final.Dockerfile
-# collects from apex.builder.cpu).
+# CLI tools + python wheel ride the cpu builder. This is the ONLY tools
+# packaging path (the final image carries platform tarballs only); staging is
+# a docker cp, and validation + tar + rename live in the shared script so no
+# second implementation can drift.
 .PHONY: artifact-tools
 artifact-tools:
 	$(call log,docker,Extracting tools artifact (VERSION=$(VERSION)))
@@ -257,23 +259,18 @@ artifact-tools:
 	@CID=$$(docker create apex.builder.cpu noop) && \
 	  docker cp "$$CID:/home/$(USER)/workspace/build/$(ARTIFACT_DIR_cpu)/bin/tools" \
 	    "$(DOCKER_OUT_DIR)/.stage-tools/tools-bin" && \
-	  docker cp "$$CID:/home/$(USER)/workspace/build/$(ARTIFACT_DIR_cpu)/apex_csf-wheels" \
-	    "$(DOCKER_OUT_DIR)/.stage-tools/tools-py" && \
+	  docker cp "$$CID:/home/$(USER)/workspace/build/$(ARTIFACT_DIR_cpu)/tools-wheels" \
+	    "$(DOCKER_OUT_DIR)/.stage-tools/tools-wheels" && \
 	  docker rm "$$CID" >/dev/null
-	@find "$(DOCKER_OUT_DIR)/.stage-tools/tools-bin" -type f -print -quit | grep -q . \
-	  || { printf '$(TERM_RED)[artifact-tools]$(TERM_RESET) no files under bin/tools (tools build output broken)\n' >&2; \
-	       rm -rf "$(DOCKER_OUT_DIR)/.stage-tools"; exit 1; }
-	@ls "$(DOCKER_OUT_DIR)"/.stage-tools/tools-py/*.whl >/dev/null 2>&1 \
-	  || { printf '$(TERM_RED)[artifact-tools]$(TERM_RESET) no python wheel in apex_csf-wheels (wheel build broken)\n' >&2; \
-	       rm -rf "$(DOCKER_OUT_DIR)/.stage-tools"; exit 1; }
-	@tar -czf "$(DOCKER_OUT_DIR)/apex-tools-$(VERSION)-x86_64-linux.tar.gz" \
-	    -C "$(DOCKER_OUT_DIR)/.stage-tools" "./tools-bin"
-	@cp "$(DOCKER_OUT_DIR)"/.stage-tools/tools-py/*.whl \
-	    "$(DOCKER_OUT_DIR)/apex_py_tools-$(VERSION)-py3-none-any.whl"
+	@bash docker/scripts/package-tools.sh \
+	  "$(DOCKER_OUT_DIR)/.stage-tools/tools-bin" \
+	  "$(DOCKER_OUT_DIR)/.stage-tools/tools-wheels" \
+	  "$(DOCKER_OUT_DIR)" "$(VERSION)"
 	@rm -rf "$(DOCKER_OUT_DIR)/.stage-tools"
 	$(call log_ok,docker,apex-tools-$(VERSION)-x86_64-linux.tar.gz + wheel)
 
-artifacts: docker-final
+# Tools ride artifact-tools (the single packaging path), not the final image.
+artifacts: docker-final artifact-tools
 	$(call log,docker,Extracting artifacts to $(DOCKER_OUT_DIR)/ (VERSION=$(VERSION)))
 	@mkdir -p $(DOCKER_OUT_DIR)
 	@CID=$$(docker create apex.final) && \
@@ -287,8 +284,6 @@ artifacts: docker-final
 	  docker cp $$CID:/output/apex-csf-$(VERSION)-pico.tar.gz              $(DOCKER_OUT_DIR)/ && \
 	  docker cp $$CID:/output/apex-csf-$(VERSION)-esp32.tar.gz             $(DOCKER_OUT_DIR)/ && \
 	  docker cp $$CID:/output/apex-csf-$(VERSION)-c2000.tar.gz             $(DOCKER_OUT_DIR)/ && \
-	  docker cp $$CID:/output/apex-tools-$(VERSION)-x86_64-linux.tar.gz    $(DOCKER_OUT_DIR)/ && \
-	  docker cp $$CID:/output/apex_py_tools-$(VERSION)-py3-none-any.whl    $(DOCKER_OUT_DIR)/ && \
 	  docker rm $$CID
 	$(call log,docker,Artifacts ready: $(DOCKER_OUT_DIR)/)
 

@@ -50,7 +50,7 @@ fn builtin_enums() -> HashMap<&'static str, i64> {
 pub fn config_to_binary(config_path: &Path, output_path: &Path) -> Result<(), Error> {
     let content = fs::read_to_string(config_path)?;
 
-    let data: Json = if config_path.extension().map_or(false, |e| e == "toml") {
+    let data: Json = if config_path.extension().is_some_and(|e| e == "toml") {
         // Use toml_edit to preserve field order
         let doc: DocumentMut = content
             .parse()
@@ -441,14 +441,14 @@ mod tests {
     fn serializes_double_fields() {
         let data = json!({
             "Test": {
-                "d": { "type": "double", "size": 8, "value": 3.14159 }
+                "d": { "type": "double", "size": 8, "value": 1.25 }
             }
         });
         let bytes = serialize_value(&data).unwrap();
         assert_eq!(bytes.len(), 8);
         // Verify it's a valid double
         let val = f64::from_le_bytes(bytes.try_into().unwrap());
-        assert!((val - 3.14159).abs() < 1e-10);
+        assert!((val - 1.25).abs() < 1e-10);
     }
 
     #[test]
