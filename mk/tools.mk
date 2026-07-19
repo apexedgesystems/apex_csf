@@ -33,12 +33,13 @@ tools-$(1): prep
 	else printf '[tools] No $(2) tools to build\n'; fi
 endef
 
-$(eval $(call _tool_build,cpp,C++))
-$(eval $(call _tool_build,rust,Rust))
-$(eval $(call _tool_build,py,Python))
+# The tool families (mirrors _APEX_TOOL_FAMILIES in tools/CMakeLists.txt).
+TOOL_FAMILIES := cpp rust py sh
 
-# Build all tools (C++, Rust, Python)
-tools: tools-cpp tools-rust tools-py
+$(foreach f,$(TOOL_FAMILIES),$(eval $(call _tool_build,$(f),$(f))))
+
+# Build all tools (every family)
+tools: $(addprefix tools-,$(TOOL_FAMILIES))
 	$(call log,tools,All tools built)
 
 # ------------------------------------------------------------------------------
@@ -223,6 +224,14 @@ static: prep
 	$(call log,static,Running clang-tidy)
 	@$(CLANG_TIDY) -p "$(STATIC_DIR)" -quiet "$(CURDIR)/src/.*\.(cpp|cc)$$"
 
+# clippy: rust static analysis over the tools workspace, deny-all-warnings --
+# the rust counterpart of clang-tidy's WarningsAsErrors gate. Deterministic:
+# the clippy version is pinned by the image toolchain, so a finding is a code
+# change, never rule drift. Runs on the PR rust job and nightly.
+clippy:
+	$(call log,clippy,Running clippy -- deny warnings)
+	@cd tools/rust && cargo clippy --all-targets --locked -- -D warnings
+
 # cppcheck: an independent static-analysis engine that catches different defects
 # than clang-tidy (warning/style/performance/portability). Advisory for now --
 # it reports but does not fail the build; add --error-exitcode=1 to gate. build/
@@ -241,6 +250,6 @@ cppcheck: prep
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: static cppcheck tools apex-data-db tprm-templates ops-deck ops-artifacts ops-sdk zenith-target zenith-validate
+.PHONY: static cppcheck clippy tools apex-data-db tprm-templates ops-deck ops-artifacts ops-sdk zenith-target zenith-validate
 
 endif  # TOOLS_MK_GUARD

@@ -91,7 +91,7 @@ fn run(args: &Args) -> Result<Stats, Error> {
 fn run_single(config: &Path, args: &Args) -> Result<Stats, Error> {
     // Read and parse config to get binary data
     let content = fs::read_to_string(config)?;
-    let data: serde_json::Value = if config.extension().map_or(false, |e| e == "toml") {
+    let data: serde_json::Value = if config.extension().is_some_and(|e| e == "toml") {
         let doc: toml_edit::DocumentMut = content
             .parse()
             .map_err(|e| Error::Parse(format!("TOML parse error: {e}")))?;

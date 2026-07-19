@@ -113,15 +113,36 @@ testp-cuda: debug
 	@bash -o pipefail -c '$(CTEST_CUDA_PARALLEL) 2>&1 | tee -a "$(LOG_FILE)"'
 	@$(call _test_footer,cuda (parallel),$(LOG_FILE)) | tee -a "$(LOG_FILE)"
 
-# Python tools unit tests (runs from source, no build dependency)
+# Python tools unit tests. uv keeps the env in-tree (.venv) and resolves
+# offline in the build images from the baked uv cache (UV_OFFLINE=1).
+# --no-editable: test the project installed the way the wheel ships, and skip
+# the editable-install machinery (its `editables` backend never enters the
+# lock, so an editable sync could not resolve offline anyway).
 test-py:
 	$(call log,test,Running Python tools tests)
-	@cd "$(PY_TOOLS_DIR)" && poetry install --no-interaction && (poetry run pytest -v || test $$? -eq 5)
+	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable && (uv run --no-sync pytest -v || test $$? -eq 5)
 
 # Rust tools unit tests
 test-rust:
 	$(call log,test,Running Rust tools tests)
 	@cd tools/rust && cargo test
+
+# Shell tools smoke: exercises ops_sdk_package.sh end to end against a
+# synthetic build tree (a stub struct dictionary) and asserts the SDK
+# tarball's shape. Host-runnable in seconds -- bash and tar only -- so the
+# shell family has an executed check, not just shellcheck's static one.
+test-sh:
+	$(call log,test,Running shell tools smoke)
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+	  mkdir -p "$$tmp/build/apex_data_db" && \
+	  printf '{"structs":{"SmokeParams":{"category":"TUNABLE_PARAM","fields":[]}}}\n' \
+	    > "$$tmp/build/apex_data_db/SmokeComponent.json" && \
+	  bash tools/sh/bin/ops_sdk_package.sh --app SmokeApp --build-dir "$$tmp/build" && \
+	  tarball="$$tmp/build/ops_sdk/SmokeApp-ops-sdk.tar.gz" && \
+	  test -f "$$tarball" && \
+	  tar -tzf "$$tarball" | grep -q "SmokeApp/structs/SmokeComponent.json" && \
+	  tar -tzf "$$tarball" | grep -q "SmokeApp/README.md"
+	$(call log_ok,test,shell smoke: SDK tarball shape verified)
 
 # Tooling coverage (nightly). Each runs its tool test suite under coverage
 # instrumentation and emits a human-readable summary plus a machine report,
@@ -137,8 +158,8 @@ COVERAGE_PY_MIN_LINE   ?= 30
 
 coverage-py:
 	$(call log,coverage,Measuring Python tools coverage)
-	@cd "$(PY_TOOLS_DIR)" && poetry install --no-interaction && \
-	  (poetry run pytest --cov=apex_tools --cov-report=term-missing \
+	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable && \
+	  (uv run --no-sync pytest --cov=apex_tools --cov-report=term-missing \
 	    --cov-report=xml:coverage-py.xml \
 	    $(if $(filter 1,$(SCAN_GATE)),--cov-fail-under=$(COVERAGE_PY_MIN_LINE),) \
 	    || test $$? -eq 5)
@@ -175,6 +196,6 @@ smoke: debug
 # Phony Declarations
 # ------------------------------------------------------------------------------
 
-.PHONY: test testp testp-cpu testp-cuda test-py test-rust coverage-py coverage-rust smoke
+.PHONY: test testp testp-cpu testp-cuda test-py test-rust test-sh coverage-py coverage-rust smoke
 
 endif  # TEST_MK_GUARD

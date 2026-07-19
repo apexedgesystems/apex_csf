@@ -36,9 +36,13 @@ The PR gate runs these; run them locally first:
 
 ```bash
 make format-check   # formatting (C++, CMake, shell, Markdown, YAML)
-make static         # clang-tidy static analysis
+make static         # clang-tidy static analysis (C++)
+make clippy         # clippy, deny warnings (Rust tools)
 make compose-testp  # tests
 ```
+
+Tool changes also run their family's suite: `make test-rust`,
+`make test-py`, or `make test-sh`.
 
 `make format` applies formatting fixes in place. Static analysis and
 tests run inside the same container images CI uses, so a local pass is

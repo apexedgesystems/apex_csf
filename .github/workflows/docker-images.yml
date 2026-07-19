@@ -38,7 +38,7 @@ on:
       # builds depend on the baked copies).
       - tools/rust/Cargo.lock
       - tools/rust/Cargo.toml
-      - tools/py/poetry.lock
+      - tools/py/uv.lock
       - tools/py/pyproject.toml
       - ExternalDependencies.cmake
   workflow_dispatch:
@@ -120,7 +120,7 @@ jobs:
           else
             RANGE="HEAD~1..HEAD"
           fi
-          DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml tools/rust/Cargo.lock tools/rust/Cargo.toml tools/py/poetry.lock tools/py/pyproject.toml ExternalDependencies.cmake 2>/dev/null || echo "docker/base.Dockerfile")
+          DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml tools/rust/Cargo.lock tools/rust/Cargo.toml tools/py/uv.lock tools/py/pyproject.toml ExternalDependencies.cmake 2>/dev/null || echo "docker/base.Dockerfile")
 
           # A change to a shared script under docker/scripts/ must rebuild every
           # image whose Dockerfile COPYs it. The COPY line is the source of truth
@@ -133,11 +133,11 @@ jobs:
           done
 
           # base.Dockerfile bakes the rust cargo cache (tools/rust/Cargo.*), the
-          # python wheelhouse (tools/py/poetry.lock), and the FetchContent sources
+          # python wheelhouse (tools/py/uv.lock), and the FetchContent sources
           # (ExternalDependencies.cmake), so a change to any must rebuild
           # base/build-base to refresh them -- otherwise an offline build would run
           # against a stale cache. Map those onto base.Dockerfile (cascades to all).
-          if printf '%s\n' "$DIFF" | grep -qE '^tools/rust/Cargo\.|^tools/py/(poetry\.lock|pyproject\.toml)|^ExternalDependencies\.cmake'; then
+          if printf '%s\n' "$DIFF" | grep -qE '^tools/rust/Cargo\.|^tools/py/(uv\.lock|pyproject\.toml)|^ExternalDependencies\.cmake'; then
             DIFF=$(printf '%s\n%s' "$DIFF" "docker/base.Dockerfile")
           fi
 

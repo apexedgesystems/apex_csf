@@ -51,7 +51,7 @@ services:
   # Lean compile/link/test tier (no scanners/profilers/docs). Builders and the
   # CI build-test gate inherit this; the lean CI tool/test jobs (rust, python,
   # sanitize) also run directly in it instead of the full dev-base -- they need
-  # only rust/cargo, poetry/python, and clang + the sanitizer runtimes.
+  # only rust/cargo, uv/python, and clang + the sanitizer runtimes.
   build-base:
     <<: *common
     image: apex.build-base
@@ -264,7 +264,7 @@ services:
         <<: *build-args
         # Compile against the lean build-base, not dev-base: the CPU release
         # build (make release && make tools) needs only the compile toolchain,
-        # rust, and poetry -- all in build-base, none of dev-base's tooling.
+        # rust, and uv -- all in build-base, none of dev-base's tooling.
         DEV_IMAGE: apex.build-base
         BUILD_CMD: "make release && make tools"
 

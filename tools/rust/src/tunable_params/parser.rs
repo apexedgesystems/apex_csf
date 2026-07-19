@@ -245,7 +245,7 @@ fn parse_enum_values(body: &str) -> BTreeMap<String, i64> {
             || !name
                 .chars()
                 .next()
-                .map_or(false, |c| c.is_alphabetic() || c == '_')
+                .is_some_and(|c| c.is_alphabetic() || c == '_')
         {
             continue;
         }
@@ -470,20 +470,18 @@ fn field_to_json(
             m.insert("dims".into(), json!([n]));
             m.insert("size".into(), json!(sz.unwrap_or(0) * (n as usize)));
             // Arrays: use empty array as default if no init, otherwise try to preserve init
-            let default_val =
-                if rf.default_value.is_some() && !rf.default_value.as_ref().unwrap().is_empty() {
-                    json!(rf.default_value.as_ref().unwrap())
-                } else {
-                    json!([])
-                };
+            let default_val = match rf.default_value.as_ref() {
+                Some(v) if !v.is_empty() => json!(v),
+                _ => json!([]),
+            };
             m.insert("value".into(), default_val);
             return m;
         }
     }
 
     // char[N] → string
-    if is_char(&rf.ty) && rf.bracket_n.is_some() {
-        let n = resolve_dim(defines, rf.bracket_n.as_ref().unwrap());
+    if let (true, Some(bracket_n)) = (is_char(&rf.ty), rf.bracket_n.as_ref()) {
+        let n = resolve_dim(defines, bracket_n);
         m.insert("type".into(), json!("string"));
         m.insert("size".into(), json!(n));
         // Use parsed default or empty string
@@ -508,12 +506,10 @@ fn field_to_json(
         m.insert("dims".into(), json!([n]));
         m.insert("size".into(), json!(sz.unwrap_or(0) * (n as usize)));
         // Arrays: use empty array as default
-        let default_val =
-            if rf.default_value.is_some() && !rf.default_value.as_ref().unwrap().is_empty() {
-                json!(rf.default_value.as_ref().unwrap())
-            } else {
-                json!([])
-            };
+        let default_val = match rf.default_value.as_ref() {
+            Some(v) if !v.is_empty() => json!(v),
+            _ => json!([]),
+        };
         m.insert("value".into(), default_val);
         return m;
     }
