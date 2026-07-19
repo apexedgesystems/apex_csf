@@ -28,6 +28,7 @@ include mk/release.mk
 include mk/size.mk
 include mk/profile.mk
 include mk/clean.mk
+include mk/verify.mk
 
 # ==============================================================================
 # Configuration
@@ -166,6 +167,7 @@ help:
 	@printf '  %-28s %s\n' "make format-check" "Check formatting (no fixes)"
 	@printf '  %-28s %s\n' "make coverage" "Generate code coverage report"
 	@printf '  %-28s %s\n' "make static" "Run static analysis (clang-tidy)"
+	@printf '  %-28s %s\n' "make lib-verify LIB=<t>" "Verify a lib against its lib.manifest contract"
 	@printf '  %-28s %s\n' "make asan" "Build and test with AddressSanitizer"
 	@printf '  %-28s %s\n' "make tsan" "Build and test with ThreadSanitizer"
 	@printf '  %-28s %s\n' "make ubsan" "Build and test with UBSanitizer"
