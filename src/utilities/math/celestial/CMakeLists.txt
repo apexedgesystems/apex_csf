@@ -10,8 +10,8 @@
 include(apex/All)
 apex_module(utilities_math_celestial)
 
-# BAREMETAL: pure constexpr constants, no includes at all.
-apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" BAREMETAL)
+# lib.manifest mcu claim: pure constexpr constants, no includes at all.
+apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
 
 apex_standard_optins(${LIB_NAME})
 apex_add_test_subdirs()

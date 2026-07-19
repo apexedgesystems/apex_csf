@@ -15,7 +15,7 @@ include(apex/All)
 # Interface Library
 # ------------------------------------------------------------------------------
 
-apex_add_interface_library(NAME system_component_base INC "${PROJECT_SOURCE_DIR}" BAREMETAL)
+apex_add_interface_library(NAME system_component_base INC "${PROJECT_SOURCE_DIR}")
 
 # No source files - header-only interface library
 

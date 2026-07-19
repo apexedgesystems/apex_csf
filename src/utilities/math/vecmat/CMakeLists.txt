@@ -10,17 +10,9 @@
 include(apex/All)
 apex_module(utilities_math_vecmat)
 
-# BAREMETAL: freestanding-clean headers (compat math shims only), so firmware
+# lib.manifest mcu claim: freestanding-clean headers (compat math shims only), so firmware
 # links the same small algebra the sim uses.
-apex_add_interface_library(
-  NAME
-  ${LIB_NAME}
-  INC
-  "${INC_DIR}"
-  DEPS_INTERFACE
-  utilities_compatibility
-  BAREMETAL
-)
+apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" DEPS_INTERFACE utilities_compatibility)
 
 apex_standard_optins(${LIB_NAME})
 apex_add_test_subdirs()

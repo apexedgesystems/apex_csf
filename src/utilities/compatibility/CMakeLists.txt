@@ -22,7 +22,7 @@ apex_module(utilities_compatibility)
 # Interface Library
 # ------------------------------------------------------------------------------
 
-apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" BAREMETAL)
+apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
 
 # ------------------------------------------------------------------------------
 # Opt-ins (coverage, doxygen, UPX)

@@ -25,7 +25,6 @@ apex_add_interface_library(
   scheduler_base
   system_component_base
   utilities_concurrency_mcu
-  BAREMETAL
 )
 
 # ------------------------------------------------------------------------------

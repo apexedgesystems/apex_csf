@@ -21,7 +21,6 @@ apex_add_interface_library(
   utilities_math_vecmat
   utilities_math_celestial
   utilities_concurrency_mcu
-  BAREMETAL
 )
 
 apex_standard_optins(${LIB_NAME})

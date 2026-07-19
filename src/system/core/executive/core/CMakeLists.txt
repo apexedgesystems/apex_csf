@@ -29,7 +29,6 @@ apex_add_interface_library(
   DEPS_INTERFACE
   executive_base
   system_component_base
-  BAREMETAL
 )
 
 # ------------------------------------------------------------------------------
