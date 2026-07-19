@@ -203,6 +203,9 @@ jobs:
         img: ${{ fromJSON(needs.detect.outputs.tier0) }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      # Image builds register multi-GB layers; the runner's unused host SDKs
+      # are the headroom.
+      - uses: ./.github/actions/reclaim-disk
       - uses: ./.github/actions/docker-build-push
         with:
           service: ${{ matrix.img.service }}
@@ -224,6 +227,9 @@ jobs:
         img: ${{ fromJSON(needs.detect.outputs.tier1) }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      # Image builds register multi-GB layers; the runner's unused host SDKs
+      # are the headroom.
+      - uses: ./.github/actions/reclaim-disk
       - uses: ./.github/actions/docker-build-push
         with:
           service: ${{ matrix.img.service }}
@@ -245,6 +251,9 @@ jobs:
         img: ${{ fromJSON(needs.detect.outputs.tier2) }}
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+      # Image builds register multi-GB layers; the runner's unused host SDKs
+      # are the headroom.
+      - uses: ./.github/actions/reclaim-disk
       - uses: ./.github/actions/docker-build-push
         with:
           service: ${{ matrix.img.service }}

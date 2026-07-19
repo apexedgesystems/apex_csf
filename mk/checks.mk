@@ -55,8 +55,8 @@ CHECKS_NIGHTLY := tsan rtsan static cppcheck clippy coverage-check hardened triv
                   gitleaks osv semgrep coverage-rust coverage-py debug asan-ubsan
 # Checks whose make target compiles C++ through ccache. Drives which nightly
 # legs persist a cache -- the scanners and tooling tests would mint empty
-# entries, and static (clang-tidy) does not compile through the launcher
-# (observed: every ccache-static-* Actions cache was 191 bytes).
+# entries, and static (clang-tidy) does not compile through the launcher,
+# so its cache entries would never hold objects.
 CHECKS_CCACHE  := tsan rtsan coverage-check hardened debug asan-ubsan
 
 # ------------------------------------------------------------------------------
