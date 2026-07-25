@@ -1,0 +1,25 @@
+# Golden vector: fixed-width string padding and array element packing.
+# The trailing sentinel makes truncation visible: a short read shifts it.
+# C++ mirror: vectors::StringsArrays (GoldenVectors_uTest.cpp).
+
+[StringsArrays.name]
+type = "string"
+size = 12
+value = "apex"
+
+[StringsArrays.counts]
+type = "array"
+element_type = "uint"
+size = 8
+value = [1, 2, 513, 65535]
+
+[StringsArrays.gains]
+type = "array"
+element_type = "double"
+size = 24
+value = [0.5, -1.25, 4096.0625]
+
+[StringsArrays.sentinel]
+type = "uint"
+size = 1
+value = "0xA5"

@@ -1,0 +1,34 @@
+# Golden vector: user enum resolution, hex literals, and nested-struct
+# flattening (fields serialize in declaration order with no padding).
+# C++ mirror: vectors::NestedEnum (GoldenVectors_uTest.cpp).
+
+[__enums__]
+VECTOR_MODE_FAST = 7
+
+[NestedEnum.mode]
+type = "uint"
+size = 1
+value = "VECTOR_MODE_FAST"
+
+[NestedEnum.flags]
+type = "uint"
+size = 4
+value = "0x00C0FFEE"
+
+[NestedEnum.inner]
+type = "struct"
+
+[NestedEnum.inner.fields.inner_a]
+type = "uint"
+size = 2
+value = "0x0102"
+
+[NestedEnum.inner.fields.inner_b]
+type = "float"
+size = 4
+value = 3.5
+
+[NestedEnum.tail]
+type = "int"
+size = 2
+value = -2

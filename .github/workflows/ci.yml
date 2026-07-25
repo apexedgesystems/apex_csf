@@ -74,6 +74,9 @@ jobs:
               tools/rust/*) rust=true ;;
               tools/py/*)   py=true ;;
               tools/sh/*)   sh=true ;;
+              # The golden vectors are a two-sided contract: both suites
+              # that pin them must run.
+              tools/tprm_vectors/*) cpp=true; rust=true ;;
               src/*|demos/*|apps/*|cmake/*|CMakeLists.txt|CMakePresets.json) cpp=true ;;
               *.md|docs/*)  : ;;
               # Dev-image inputs the gate jobs actually run in (base; the cpu dev
