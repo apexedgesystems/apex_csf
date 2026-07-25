@@ -28,6 +28,11 @@ const VERSION: u16 = 2;
 const HEADER_SIZE: usize = 8;
 const INDEX_ENTRY_SIZE: usize = 12;
 
+/// Maximum entries per archive. Mirrors the C++ reader's TPRM_MAX_ENTRIES
+/// (PackedTprm.hpp): the target rejects anything larger, so packing more
+/// here would only produce an archive the vehicle refuses to load.
+pub const MAX_ENTRIES: usize = 256;
+
 /* ----------------------------- Public Types ----------------------------- */
 
 /// An entry for packing: fullUid + file path.
@@ -69,6 +74,13 @@ pub struct EntryInfo {
 pub fn pack(entries: &[PackEntry], output_path: &Path) -> Result<PackResult, Error> {
     if entries.is_empty() {
         return Err(Error::InvalidArgs("no entries to pack".to_string()));
+    }
+    if entries.len() > MAX_ENTRIES {
+        return Err(Error::InvalidArgs(format!(
+            "{} entries exceeds the archive limit of {} (the C++ reader rejects larger archives)",
+            entries.len(),
+            MAX_ENTRIES
+        )));
     }
 
     // Read all input files
@@ -386,6 +398,29 @@ fn parse_archive(data: &[u8]) -> Result<Vec<UnpackedEntry>, Error> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[test]
+    fn pack_rejects_more_than_max_entries() {
+        let temp = TempDir::new().unwrap();
+        let file = temp.path().join("one.tprm");
+        fs::write(&file, b"payload").unwrap();
+
+        let entries: Vec<PackEntry> = (0..=MAX_ENTRIES as u32)
+            .map(|uid| PackEntry {
+                full_uid: uid,
+                path: file.clone(),
+            })
+            .collect();
+        assert_eq!(entries.len(), MAX_ENTRIES + 1);
+
+        let archive = temp.path().join("master.tprm");
+        let err = pack(&entries, &archive).unwrap_err();
+        assert!(err.to_string().contains("archive limit"));
+
+        // Exactly the limit still packs.
+        let ok = pack(&entries[..MAX_ENTRIES], &archive).unwrap();
+        assert_eq!(ok.entry_count, MAX_ENTRIES);
+    }
 
     #[test]
     fn pack_and_unpack_roundtrip() {
