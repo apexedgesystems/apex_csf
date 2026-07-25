@@ -38,6 +38,8 @@ apex_add_library(
   sim_environment_gravity
   sim_environment_terrain
   sim_environment_atmosphere
+  DEPS_PRIVATE
+  utilities_math_celestial
 )
 
 # ------------------------------------------------------------------------------

@@ -5,6 +5,7 @@
  */
 
 #include "src/sim/environment/atmosphere/inc/Atm.hpp"
+#include "src/utilities/math/celestial/inc/EarthConstants.hpp"
 
 #include <cmath>
 #include <cstring>
@@ -105,7 +106,7 @@ void atmHeaderInit(AtmHeader& h) noexcept {
   h.n_records = 1u;
   h.R_specific = 287.058; // Earth dry air; caller may override per body
   h.gamma = 1.4;          // diatomic gas
-  h.g0 = 9.80665;         // Earth surface gravity
+  h.g0 = apex::math::celestial::earth::G0;
 }
 
 /* ----------------------------- Record helpers ----------------------------- */

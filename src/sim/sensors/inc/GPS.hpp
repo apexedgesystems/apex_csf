@@ -20,6 +20,8 @@
 #include "src/sim/sensors/inc/SensorBase.hpp"
 #include "src/utilities/math/vecmat/inc/Angles.hpp"
 
+#include "src/utilities/math/celestial/inc/EarthConstants.hpp"
+
 #include <cmath>
 #include <cstdint>
 
@@ -36,7 +38,7 @@ struct GPSParams {
   double sigma_velocity_m_s = 0.1;
 
   // Reference radius for the degree<->meter conversion.
-  double earth_radius_m = 6378137.0;
+  double earth_radius_m = apex::math::celestial::earth::A;
 
   std::uint32_t seed = 0x12340003u;
 };

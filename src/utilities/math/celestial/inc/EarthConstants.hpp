@@ -40,6 +40,9 @@ inline constexpr double EP2 = 6.73949674228e-3;
 /** @brief Rotation rate about +Z (inertial), rad/s. WGS-84 nominal. */
 inline constexpr double OMEGA = 7.292115e-5;
 
+/** @brief Gravitational parameter GM, m^3/s^2. WGS-84 defining. */
+inline constexpr double GM = 3.986004418e14;
+
 /** @brief Standard gravity, m/s^2 (defined constant, BIPM). */
 inline constexpr double G0 = 9.80665;
 

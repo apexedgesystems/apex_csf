@@ -7,6 +7,8 @@
  * Reference: NIMA TR8350.2 (WGS84 Implementation Manual)
  */
 
+#include "src/utilities/math/celestial/inc/EarthConstants.hpp"
+
 namespace sim {
 namespace environment {
 namespace gravity {
@@ -16,25 +18,25 @@ namespace gravity {
 namespace wgs84 {
 
 /// Semi-major axis (equatorial radius) [m].
-constexpr double A = 6378137.0;
+constexpr double A = apex::math::celestial::earth::A;
 
 /// Semi-minor axis (polar radius) [m].
-constexpr double B = 6356752.3142;
+constexpr double B = apex::math::celestial::earth::B;
 
 /// Flattening f = (a - b) / a.
-constexpr double F = 1.0 / 298.257223563;
+constexpr double F = apex::math::celestial::earth::F;
 
 /// First eccentricity squared e^2 = (a^2 - b^2) / a^2.
-constexpr double E2 = 6.69437999014e-3;
+constexpr double E2 = apex::math::celestial::earth::E2;
 
 /// Second eccentricity squared e'^2 = (a^2 - b^2) / b^2.
-constexpr double EP2 = 6.73949674228e-3;
+constexpr double EP2 = apex::math::celestial::earth::EP2;
 
 /// Earth's gravitational constant GM [m^3/s^2].
-constexpr double GM = 3.986004418e14;
+constexpr double GM = apex::math::celestial::earth::GM;
 
 /// Earth's angular velocity [rad/s].
-constexpr double OMEGA = 7.292115e-5;
+constexpr double OMEGA = apex::math::celestial::earth::OMEGA;
 
 /// Normal gravity at equator [m/s^2].
 constexpr double GAMMA_E = 9.7803253359;

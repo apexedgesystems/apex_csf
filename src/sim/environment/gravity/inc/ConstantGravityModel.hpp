@@ -1,5 +1,7 @@
 #ifndef APEX_SIM_ENVIRONMENT_GRAVITY_CONSTANT_GRAVITY_MODEL_HPP
 #define APEX_SIM_ENVIRONMENT_GRAVITY_CONSTANT_GRAVITY_MODEL_HPP
+
+#include "src/utilities/math/celestial/inc/EarthConstants.hpp"
 /**
  * @file ConstantGravityModel.hpp
  * @brief Constant radial gravity model: a = -g0 * r_hat, V = g0 * |r|.
@@ -19,7 +21,7 @@ namespace gravity {
 /* ----------------------------- Constants ----------------------------- */
 
 /// Default gravitational acceleration [m/s^2].
-constexpr double DEFAULT_G0 = 9.80665;
+constexpr double DEFAULT_G0 = apex::math::celestial::earth::G0;
 
 /* ----------------------------- ConstantGravityModel ----------------------------- */
 

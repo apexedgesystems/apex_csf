@@ -12,7 +12,15 @@
 include(apex/All)
 apex_module(sim_sensors)
 
-apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" DEPS_INTERFACE utilities_math_vecmat)
+apex_add_interface_library(
+  NAME
+  ${LIB_NAME}
+  INC
+  "${INC_DIR}"
+  DEPS_INTERFACE
+  utilities_math_vecmat
+  utilities_math_celestial
+)
 
 apex_standard_optins(${LIB_NAME})
 
