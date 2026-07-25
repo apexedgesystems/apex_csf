@@ -262,7 +262,9 @@ ENV APEX_DEPS_DIR=/opt/apex-deps
 # natively, so apex's AND every dependency's tool builds run offline with no
 # per-project flag plumbing. A missing bake fails loudly here instead of
 # silently fetching. dev-base re-opens the network for interactive work.
-ENV CARGO_NET_OFFLINE=1 \
+# cargo parses CARGO_NET_OFFLINE as a strict boolean: literal true or
+# false only.
+ENV CARGO_NET_OFFLINE=true \
     PIP_NO_INDEX=1 \
     PIP_FIND_LINKS=/opt/apex-pip-wheels \
     UV_OFFLINE=1
