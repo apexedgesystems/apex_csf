@@ -48,6 +48,14 @@ on:
         type: boolean
         default: false
 
+# Push runs are serialized by a non-cancelling concurrency group: each merge
+# triggers one, the image set is a dependency chain published as :latest
+# tags, and overlapping runs interleave pushes into a transiently incoherent
+# registry for anything pulling mid-race. Every merged state still
+# publishes, in order (the release workflow's pattern).
+concurrency:
+  group: docker-images
+
 permissions:
   contents: read
   packages: write
