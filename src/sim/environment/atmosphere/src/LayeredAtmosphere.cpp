@@ -90,7 +90,7 @@ void LayeredAtmosphere::close() noexcept {
   layers_.clear();
   R_ = 287.058;
   gamma_ = 1.4;
-  g0_ = 9.80665;
+  g0_ = apex::math::celestial::earth::G0;
   max_alt_m_ = 0.0;
 }
 

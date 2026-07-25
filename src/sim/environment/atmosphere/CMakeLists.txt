@@ -39,6 +39,8 @@ apex_add_library(
   "${INC_DIR}"
   SRC
   ${CPP_SOURCES}
+  DEPS_PUBLIC
+  utilities_math_celestial
 )
 
 # ------------------------------------------------------------------------------

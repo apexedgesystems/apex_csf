@@ -1,5 +1,7 @@
 #ifndef APEX_SIM_ENVIRONMENT_ATMOSPHERE_EARTH_USSA76_CONSTANTS_HPP
 #define APEX_SIM_ENVIRONMENT_ATMOSPHERE_EARTH_USSA76_CONSTANTS_HPP
+
+#include "src/utilities/math/celestial/inc/EarthConstants.hpp"
 /**
  * @file Ussa76Constants.hpp
  * @brief Earth thermodynamic + USSA76 layer-table constants.
@@ -30,7 +32,7 @@ inline constexpr double R_SPECIFIC = 287.058;
 inline constexpr double GAMMA = 1.4;
 
 /// Standard surface gravity at the geoid [m/s^2].
-inline constexpr double G0 = 9.80665;
+inline constexpr double G0 = apex::math::celestial::earth::G0;
 
 /* ----------------------------- USSA76 layer table ----------------------------- */
 

@@ -23,6 +23,7 @@
 
 #include "src/sim/environment/atmosphere/inc/Atm.hpp"
 #include "src/sim/environment/atmosphere/inc/AtmosphereModelBase.hpp"
+#include "src/utilities/math/celestial/inc/EarthConstants.hpp"
 
 #include <cstdint>
 #include <string>
@@ -91,9 +92,9 @@ private:
   [[nodiscard]] std::size_t findLayer(double alt_m) const noexcept;
 
   std::vector<Layer> layers_;
-  double R_ = 287.058;  ///< J/(kg*K)
-  double gamma_ = 1.4;  ///< cp/cv
-  double g0_ = 9.80665; ///< m/s^2
+  double R_ = 287.058;                           ///< J/(kg*K)
+  double gamma_ = 1.4;                           ///< cp/cv
+  double g0_ = apex::math::celestial::earth::G0; ///< m/s^2
   double max_alt_m_ =
       0.0; ///< Top of the highest layer + an extrapolation cap (default = top + 5 km).
 };

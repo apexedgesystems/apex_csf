@@ -1,5 +1,7 @@
 #ifndef APEX_SIM_ENVIRONMENT_TERRAIN_EARTH_WGS84_CONSTANTS_HPP
 #define APEX_SIM_ENVIRONMENT_TERRAIN_EARTH_WGS84_CONSTANTS_HPP
+
+#include "src/utilities/math/celestial/inc/EarthConstants.hpp"
 /**
  * @file Wgs84TerrainConstants.hpp
  * @brief WGS84 reference values used by Earth-flavored terrain models.
@@ -16,10 +18,10 @@ namespace earth {
 namespace wgs84 {
 
 /// WGS84 semi-major (equatorial) radius [m].
-inline constexpr double R_EQ_M = 6378137.0;
+inline constexpr double R_EQ_M = apex::math::celestial::earth::A;
 
 /// WGS84 semi-minor (polar) radius [m].
-inline constexpr double R_POL_M = 6356752.3142;
+inline constexpr double R_POL_M = apex::math::celestial::earth::B;
 
 /// Acceptable tolerance on a tile's `ref_radius_m` to treat it as
 /// Earth-flavored (allow any radius within ~10 km of the WGS84 mean).

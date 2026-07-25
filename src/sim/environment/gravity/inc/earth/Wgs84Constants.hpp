@@ -7,6 +7,8 @@
  * Reference: NIMA TR8350.2 (WGS84 Implementation Manual)
  */
 
+#include "src/utilities/math/celestial/inc/EarthConstants.hpp"
+
 namespace sim {
 namespace environment {
 namespace gravity {
@@ -16,25 +18,25 @@ namespace gravity {
 namespace wgs84 {
 
 /// Semi-major axis (equatorial radius) [m].
-constexpr double A = 6378137.0;
+constexpr double A = apex::math::celestial::earth::A;
 
 /// Semi-minor axis (polar radius) [m].
-constexpr double B = 6356752.3142;
+constexpr double B = apex::math::celestial::earth::B;
 
 /// Flattening f = (a - b) / a.
-constexpr double F = 1.0 / 298.257223563;
+constexpr double F = apex::math::celestial::earth::F;
 
 /// First eccentricity squared e^2 = (a^2 - b^2) / a^2.
-constexpr double E2 = 6.69437999014e-3;
+constexpr double E2 = apex::math::celestial::earth::E2;
 
 /// Second eccentricity squared e'^2 = (a^2 - b^2) / b^2.
-constexpr double EP2 = 6.73949674228e-3;
+constexpr double EP2 = apex::math::celestial::earth::EP2;
 
 /// Earth's gravitational constant GM [m^3/s^2].
-constexpr double GM = 3.986004418e14;
+constexpr double GM = apex::math::celestial::earth::GM;
 
 /// Earth's angular velocity [rad/s].
-constexpr double OMEGA = 7.292115e-5;
+constexpr double OMEGA = apex::math::celestial::earth::OMEGA;
 
 /// Normal gravity at equator [m/s^2].
 constexpr double GAMMA_E = 9.7803253359;
@@ -52,28 +54,28 @@ constexpr double SOMIGLIANA_K = 0.00193185265241;
 namespace egm2008 {
 
 /// Fully-normalized C20 coefficient (J2 = -sqrt(5)*C20).
-constexpr double C20 = -0.484165143790815e-3;
+constexpr double C20 = apex::math::celestial::earth::C20;
 
 /// Fully-normalized C30 coefficient.
-constexpr double C30 = 0.957161207093473e-6;
+constexpr double C30 = apex::math::celestial::earth::C30;
 
 /// Fully-normalized C40 coefficient.
-constexpr double C40 = 0.539965866638991e-6;
+constexpr double C40 = apex::math::celestial::earth::C40;
 
 /// Fully-normalized C50 coefficient.
-constexpr double C50 = 0.686702913736681e-7;
+constexpr double C50 = apex::math::celestial::earth::C50;
 
 /// Fully-normalized C60 coefficient.
-constexpr double C60 = -0.149953927978527e-6;
+constexpr double C60 = apex::math::celestial::earth::C60;
 
-/// Un-normalized J2 = -sqrt(5) * C20.
-constexpr double J2 = 1.0826359e-3;
+/// Un-normalized J2 = -sqrt(5) * C20 (EGM2008 tide-free, canonical).
+constexpr double J2 = apex::math::celestial::earth::J2;
 
-/// Un-normalized J3 = -sqrt(7) * C30.
-constexpr double J3 = -2.5327e-6;
+/// Un-normalized J3 = -sqrt(7) * C30 (EGM2008 tide-free, canonical).
+constexpr double J3 = apex::math::celestial::earth::J3;
 
-/// Un-normalized J4 = -3 * C40.
-constexpr double J4 = -1.6196e-6;
+/// Un-normalized J4 = -3 * C40 (EGM2008 tide-free, canonical).
+constexpr double J4 = apex::math::celestial::earth::J4;
 
 } // namespace egm2008
 
