@@ -96,23 +96,41 @@ template <typename T> T load(const char* name) {
 } // namespace vectors
 
 /* ----------------------------- Payload conformance ----------------------------- */
+// Packed members are read into locals before asserting: EXPECT_EQ binds
+// references to its arguments, and a reference to a misaligned packed member
+// is undefined behavior (UBSan enforces it). Value loads are well-defined --
+// the same rule that makes the runtime's TParams structs naturally
+// padding-free by field order instead of packed.
 
 /** @test Every scalar shape round-trips from the committed vector. */
 TEST(GoldenVectors, ScalarTypesPayload) {
   const auto V = vectors::load<vectors::ScalarTypes>("scalar_types.bin");
-  EXPECT_EQ(V.u8MaxMinus, 127U);
-  EXPECT_EQ(V.u16Pattern, 0xBEEFU);
-  EXPECT_EQ(V.u32Pattern, 0xDEADBEEFU);
-  EXPECT_EQ(V.u64Wide, 0x0123456789ABCDEFULL);
-  EXPECT_EQ(V.i8Neg, -5);
-  EXPECT_EQ(V.i16Neg, -1234);
-  EXPECT_EQ(V.i32Neg, -100000);
-  EXPECT_EQ(V.i64Neg, -5000000000LL);
-  EXPECT_EQ(V.f32Exact, 1.5F);
-  EXPECT_EQ(V.f64AsFloat8, -2.25);
-  EXPECT_EQ(V.f64AsDouble, 1048576.125);
-  EXPECT_TRUE(V.flag);
-  EXPECT_EQ(V.letter, 'A');
+  const std::uint8_t U8 = V.u8MaxMinus;
+  const std::uint16_t U16 = V.u16Pattern;
+  const std::uint32_t U32 = V.u32Pattern;
+  const std::uint64_t U64 = V.u64Wide;
+  const std::int8_t I8 = V.i8Neg;
+  const std::int16_t I16 = V.i16Neg;
+  const std::int32_t I32 = V.i32Neg;
+  const std::int64_t I64 = V.i64Neg;
+  const float F32 = V.f32Exact;
+  const double F64A = V.f64AsFloat8;
+  const double F64B = V.f64AsDouble;
+  const bool FLAG = V.flag;
+  const char LETTER = V.letter;
+  EXPECT_EQ(U8, 127U);
+  EXPECT_EQ(U16, 0xBEEFU);
+  EXPECT_EQ(U32, 0xDEADBEEFU);
+  EXPECT_EQ(U64, 0x0123456789ABCDEFULL);
+  EXPECT_EQ(I8, -5);
+  EXPECT_EQ(I16, -1234);
+  EXPECT_EQ(I32, -100000);
+  EXPECT_EQ(I64, -5000000000LL);
+  EXPECT_EQ(F32, 1.5F);
+  EXPECT_EQ(F64A, -2.25);
+  EXPECT_EQ(F64B, 1048576.125);
+  EXPECT_TRUE(FLAG);
+  EXPECT_EQ(LETTER, 'A');
 }
 
 /** @test Fixed-width string padding and array element packing. */
@@ -120,26 +138,35 @@ TEST(GoldenVectors, StringsArraysPayload) {
   const auto V = vectors::load<vectors::StringsArrays>("strings_arrays.bin");
   EXPECT_EQ(std::string(V.name), "apex");
   for (std::size_t i = 4; i < sizeof(V.name); ++i) {
-    EXPECT_EQ(V.name[i], '\0') << "string padding at byte " << i;
+    const char PAD = V.name[i];
+    EXPECT_EQ(PAD, '\0') << "string padding at byte " << i;
   }
-  EXPECT_EQ(V.counts[0], 1U);
-  EXPECT_EQ(V.counts[1], 2U);
-  EXPECT_EQ(V.counts[2], 513U);
-  EXPECT_EQ(V.counts[3], 65535U);
-  EXPECT_EQ(V.gains[0], 0.5);
-  EXPECT_EQ(V.gains[1], -1.25);
-  EXPECT_EQ(V.gains[2], 4096.0625);
-  EXPECT_EQ(V.sentinel, 0xA5U);
+  const std::uint16_t COUNTS[] = {V.counts[0], V.counts[1], V.counts[2], V.counts[3]};
+  EXPECT_EQ(COUNTS[0], 1U);
+  EXPECT_EQ(COUNTS[1], 2U);
+  EXPECT_EQ(COUNTS[2], 513U);
+  EXPECT_EQ(COUNTS[3], 65535U);
+  const double GAINS[] = {V.gains[0], V.gains[1], V.gains[2]};
+  EXPECT_EQ(GAINS[0], 0.5);
+  EXPECT_EQ(GAINS[1], -1.25);
+  EXPECT_EQ(GAINS[2], 4096.0625);
+  const std::uint8_t SENTINEL = V.sentinel;
+  EXPECT_EQ(SENTINEL, 0xA5U);
 }
 
 /** @test Enum resolution, hex literals, and nested-struct flattening. */
 TEST(GoldenVectors, NestedEnumPayload) {
   const auto V = vectors::load<vectors::NestedEnum>("nested_enum.bin");
-  EXPECT_EQ(V.mode, 7U);
-  EXPECT_EQ(V.flags, 0x00C0FFEEU);
-  EXPECT_EQ(V.inner.innerA, 0x0102U);
-  EXPECT_EQ(V.inner.innerB, 3.5F);
-  EXPECT_EQ(V.tail, -2);
+  const std::uint8_t MODE = V.mode;
+  const std::uint32_t FLAGS = V.flags;
+  const std::uint16_t INNER_A = V.inner.innerA;
+  const float INNER_B = V.inner.innerB;
+  const std::int16_t TAIL = V.tail;
+  EXPECT_EQ(MODE, 7U);
+  EXPECT_EQ(FLAGS, 0x00C0FFEEU);
+  EXPECT_EQ(INNER_A, 0x0102U);
+  EXPECT_EQ(INNER_B, 3.5F);
+  EXPECT_EQ(TAIL, -2);
 }
 
 /* ----------------------------- Archive conformance ----------------------------- */
