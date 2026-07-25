@@ -42,4 +42,9 @@ if (APEX_PLATFORM_BAREMETAL)
   elseif (APEX_HAL_PLATFORM STREQUAL "c2000")
     add_subdirectory(c2000_encryptor_demo)
   endif ()
+else ()
+  # The c2000 demo carries host-run unit tests that lock its local AES
+  # implementation to encryption_mcu; its firmware target is c2000-gated
+  # inside the demo's own CMakeLists.
+  add_subdirectory(c2000_encryptor_demo)
 endif ()
