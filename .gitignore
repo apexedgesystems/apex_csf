@@ -28,6 +28,9 @@ heaptrack.*.zst
 
 # Binary data files (generated gravity coefficients, not committed)
 **/*.bin
+# The TPRM golden vectors are committed by design: they are the byte-level
+# contract the rust and C++ suites pin against.
+!tools/tprm_vectors/payloads/*.bin
 
 # IDE and editor
 /.vscode/
