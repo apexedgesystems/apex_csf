@@ -1,5 +1,7 @@
 #ifndef APEX_SIM_ENVIRONMENT_GRAVITY_MOON_LUNAR_CONSTANTS_HPP
 #define APEX_SIM_ENVIRONMENT_GRAVITY_MOON_LUNAR_CONSTANTS_HPP
+
+#include "src/utilities/math/celestial/inc/MoonConstants.hpp"
 /**
  * @file LunarConstants.hpp
  * @brief Lunar reference frame and gravitational constants.
@@ -23,11 +25,11 @@ namespace lunar {
 
 /// Mean radius of the Moon [m].
 /// Reference: IAU 2015 report.
-constexpr double R_MEAN = 1737400.0;
+constexpr double R_MEAN = apex::math::celestial::moon::R_MEAN;
 
 /// Reference radius for GRAIL gravity models [m].
 /// This is the normalization radius used in GRGM1200A.
-constexpr double R_REF = 1738000.0;
+constexpr double R_REF = apex::math::celestial::moon::R_REF;
 
 /// Moon's gravitational constant GM [m^3/s^2].
 /// Reference: GRGM1200A, DE430 ephemeris.
@@ -36,11 +38,11 @@ constexpr double GM = 4.90280011526323e12;
 
 /// Moon's mean angular velocity [rad/s].
 /// Synchronous rotation with orbital period ~27.3 days.
-constexpr double OMEGA = 2.6617e-6;
+constexpr double OMEGA = apex::math::celestial::moon::OMEGA;
 
 /// Moon's orbital period around Earth [s].
 /// Sidereal month: ~27.32 days.
-constexpr double T_ORBIT = 2360591.5;
+constexpr double T_ORBIT = apex::math::celestial::moon::T_SIDEREAL;
 
 /// Surface gravity at mean radius [m/s^2].
 /// g = GM / R_MEAN^2 ~ 1.62 m/s^2.

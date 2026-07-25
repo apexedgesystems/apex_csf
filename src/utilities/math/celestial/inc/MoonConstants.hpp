@@ -22,8 +22,13 @@ namespace math {
 namespace celestial {
 namespace moon {
 
-/** @brief Mean radius, meters (IAU 2015). */
+/** @brief Mean radius, meters (IAU 2015). Also LOLA/SLDEM2015's
+ *  reference sphere. Distinct from R_REF. */
 inline constexpr double R_MEAN = 1737400.0;
+
+/** @brief GRGM1200A normalization (reference) radius, meters. A gravity
+ *  model convention, deliberately not the physical mean radius. */
+inline constexpr double R_REF = 1738000.0;
 
 /** @brief Sidereal rotation/orbital period, seconds (27.321661 days). */
 inline constexpr double T_SIDEREAL = 2360591.5;

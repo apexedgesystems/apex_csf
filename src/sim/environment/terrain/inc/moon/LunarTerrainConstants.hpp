@@ -1,5 +1,7 @@
 #ifndef APEX_SIM_ENVIRONMENT_TERRAIN_MOON_LUNAR_CONSTANTS_HPP
 #define APEX_SIM_ENVIRONMENT_TERRAIN_MOON_LUNAR_CONSTANTS_HPP
+
+#include "src/utilities/math/celestial/inc/MoonConstants.hpp"
 /**
  * @file LunarTerrainConstants.hpp
  * @brief Reference values used by Moon-flavored terrain models.
@@ -16,7 +18,7 @@ namespace lunar {
 
 /// LOLA / SLDEM2015 reference sphere radius [m]. Used by both LOLA's
 /// global ldem product and SLDEM2015's higher-res tiles.
-inline constexpr double R_REF_M = 1737400.0;
+inline constexpr double R_REF_M = apex::math::celestial::moon::R_MEAN;
 
 /// Acceptable tolerance on a tile's `ref_radius_m` to treat it as
 /// Moon-flavored.

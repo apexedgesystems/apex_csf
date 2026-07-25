@@ -16,6 +16,7 @@
 #include "src/sim/environment/gravity/inc/earth/Wgs84Constants.hpp"
 #include "src/sim/environment/gravity/inc/moon/LunarConstants.hpp"
 #include "src/sim/environment/terrain/inc/earth/Wgs84TerrainConstants.hpp"
+#include "src/sim/environment/terrain/inc/moon/LunarTerrainConstants.hpp"
 #include "src/sim/environment/atmosphere/inc/earth/Ussa76Constants.hpp"
 #include "src/sim/environment/gravity/inc/ConstantGravityModel.hpp"
 #include "src/sim/sensors/inc/GPS.hpp"
@@ -72,6 +73,8 @@ TEST(CelestialTest, CanonMatchesSimCopies) {
   EXPECT_EQ(cel::earth::OMEGA, gw::OMEGA);
 
   EXPECT_EQ(cel::moon::R_MEAN, gl::R_MEAN);
+  EXPECT_EQ(cel::moon::R_REF, gl::R_REF);
+  EXPECT_EQ(cel::moon::R_MEAN, sim::environment::terrain::moon::lunar::R_REF_M);
   EXPECT_EQ(cel::moon::T_SIDEREAL, gl::T_ORBIT);
   EXPECT_EQ(cel::moon::OMEGA, gl::OMEGA);
 
