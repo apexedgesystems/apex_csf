@@ -5,6 +5,7 @@
 
 #include "src/sim/environment/factory/inc/EnvironmentFactory.hpp"
 #include "src/utilities/math/celestial/inc/EarthConstants.hpp"
+#include "src/utilities/math/celestial/inc/MoonConstants.hpp"
 
 #include "src/sim/environment/gravity/inc/ConstantGravityModel.hpp"
 #include "src/sim/environment/gravity/inc/J2GravityModel.hpp"
@@ -42,11 +43,11 @@ namespace {
 /// are rounded and differ slightly from the C20-derived figures; these match
 /// the models' own coefficients to six significant digits.
 constexpr double EARTH_J2 = apex::math::celestial::earth::J2;
-constexpr double MOON_J2 = 2.0321568464e-4;
+constexpr double MOON_J2 = apex::math::celestial::moon::J2;
 
 /// Per-body surface gravity for ConstantGravityModel.
 constexpr double EARTH_G0 = apex::math::celestial::earth::G0;
-constexpr double MOON_G0 = 1.62519;
+constexpr double MOON_G0 = apex::math::celestial::moon::G_SURFACE;
 
 } // namespace
 

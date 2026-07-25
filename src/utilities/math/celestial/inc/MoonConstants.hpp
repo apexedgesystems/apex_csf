@@ -36,6 +36,22 @@ inline constexpr double T_SIDEREAL = 2360591.5;
 /** @brief Rotation rate, rad/s. Derived: 2*pi / T_SIDEREAL. */
 inline constexpr double OMEGA = 2.6617e-6;
 
+/** @brief Gravitational parameter GM, m^3/s^2. GRGM1200A as stated by
+ *  the product label. */
+inline constexpr double GM = 4.90280011526323e12;
+
+/** @brief Fully normalized C20, GRGM1200A as distributed
+ *  (principal-axes frame). */
+inline constexpr double C20 = -9.0884339347424299e-5;
+
+/** @brief Un-normalized J2 = -sqrt(5) * C20, computed to double
+ *  precision from the distributed C20. */
+inline constexpr double J2 = 0.00020322356087099962;
+
+/** @brief Surface gravity, m/s^2. Derived: GM / R_MEAN^2, computed to
+ *  double precision; not an independent measurement. */
+inline constexpr double G_SURFACE = 1.624218875654165;
+
 } // namespace moon
 } // namespace celestial
 } // namespace math

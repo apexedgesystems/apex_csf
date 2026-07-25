@@ -73,6 +73,10 @@ TEST(CelestialTest, CanonMatchesSimCopies) {
   EXPECT_EQ(cel::earth::OMEGA, gw::OMEGA);
 
   EXPECT_EQ(cel::moon::R_MEAN, gl::R_MEAN);
+  EXPECT_EQ(cel::moon::GM, gl::GM);
+  EXPECT_EQ(cel::moon::J2, sim::environment::gravity::grgm1200a::J2);
+  EXPECT_EQ(cel::moon::G_SURFACE, gl::G_SURFACE);
+  EXPECT_EQ(cel::moon::C20, sim::environment::gravity::grgm1200a::C20);
   EXPECT_EQ(cel::moon::R_REF, gl::R_REF);
   EXPECT_EQ(cel::moon::R_MEAN, sim::environment::terrain::moon::lunar::R_REF_M);
   EXPECT_EQ(cel::moon::T_SIDEREAL, gl::T_ORBIT);
@@ -91,6 +95,15 @@ TEST(CelestialTest, CanonMatchesSimCopies) {
 /** @test Each un-normalized Jn is -sqrt(2n+1) times its normalized Cn0:
  *  the two families are one dataset (EGM2008 as distributed), and any
  *  edit that breaks the derivation fails here. */
+/** @test The lunar canon is self-consistent: J2 derives from the
+ *  distributed C20 and the surface gravity from GM over the mean
+ *  radius squared. */
+TEST(CelestialTest, MoonCanonIsSelfConsistent) {
+  EXPECT_NEAR(cel::moon::J2, -std::sqrt(5.0) * cel::moon::C20, 1e-14 * cel::moon::J2);
+  EXPECT_NEAR(cel::moon::G_SURFACE, cel::moon::GM / (cel::moon::R_MEAN * cel::moon::R_MEAN),
+              1e-14 * cel::moon::G_SURFACE);
+}
+
 TEST(CelestialTest, ZonalFamilyIsOneDataset) {
   EXPECT_NEAR(cel::earth::J2, -std::sqrt(5.0) * cel::earth::C20, 1e-14 * std::abs(cel::earth::J2));
   EXPECT_NEAR(cel::earth::J3, -std::sqrt(7.0) * cel::earth::C30, 1e-14 * std::abs(cel::earth::J3));
