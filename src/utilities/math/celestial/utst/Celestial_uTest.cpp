@@ -79,7 +79,22 @@ TEST(CelestialTest, CanonMatchesSimCopies) {
   EXPECT_EQ(cel::moon::OMEGA, gl::OMEGA);
 
   EXPECT_EQ(cel::earth::GM, gw::GM);
+  EXPECT_EQ(cel::earth::J2, sim::environment::gravity::egm2008::J2);
+  EXPECT_EQ(cel::earth::J3, sim::environment::gravity::egm2008::J3);
+  EXPECT_EQ(cel::earth::J4, sim::environment::gravity::egm2008::J4);
+  EXPECT_EQ(cel::earth::C20, sim::environment::gravity::egm2008::C20);
   EXPECT_EQ(cel::earth::G0, sim::environment::atmosphere::earth::G0);
   EXPECT_EQ(cel::earth::G0, sim::environment::gravity::DEFAULT_G0);
   EXPECT_EQ(cel::earth::A, sim::sensors::GPSParams{}.earth_radius_m);
+}
+
+/** @test Each un-normalized Jn is -sqrt(2n+1) times its normalized Cn0:
+ *  the two families are one dataset (EGM2008 as distributed), and any
+ *  edit that breaks the derivation fails here. */
+TEST(CelestialTest, ZonalFamilyIsOneDataset) {
+  EXPECT_NEAR(cel::earth::J2, -std::sqrt(5.0) * cel::earth::C20, 1e-14 * std::abs(cel::earth::J2));
+  EXPECT_NEAR(cel::earth::J3, -std::sqrt(7.0) * cel::earth::C30, 1e-14 * std::abs(cel::earth::J3));
+  EXPECT_NEAR(cel::earth::J4, -3.0 * cel::earth::C40, 1e-14 * std::abs(cel::earth::J4));
+  EXPECT_NEAR(cel::earth::J5, -std::sqrt(11.0) * cel::earth::C50, 1e-14 * std::abs(cel::earth::J5));
+  EXPECT_NEAR(cel::earth::J6, -std::sqrt(13.0) * cel::earth::C60, 1e-14 * std::abs(cel::earth::J6));
 }

@@ -54,28 +54,28 @@ constexpr double SOMIGLIANA_K = 0.00193185265241;
 namespace egm2008 {
 
 /// Fully-normalized C20 coefficient (J2 = -sqrt(5)*C20).
-constexpr double C20 = -0.484165143790815e-3;
+constexpr double C20 = apex::math::celestial::earth::C20;
 
 /// Fully-normalized C30 coefficient.
-constexpr double C30 = 0.957161207093473e-6;
+constexpr double C30 = apex::math::celestial::earth::C30;
 
 /// Fully-normalized C40 coefficient.
-constexpr double C40 = 0.539965866638991e-6;
+constexpr double C40 = apex::math::celestial::earth::C40;
 
 /// Fully-normalized C50 coefficient.
-constexpr double C50 = 0.686702913736681e-7;
+constexpr double C50 = apex::math::celestial::earth::C50;
 
 /// Fully-normalized C60 coefficient.
-constexpr double C60 = -0.149953927978527e-6;
+constexpr double C60 = apex::math::celestial::earth::C60;
 
-/// Un-normalized J2 = -sqrt(5) * C20.
-constexpr double J2 = 1.0826359e-3;
+/// Un-normalized J2 = -sqrt(5) * C20 (EGM2008 tide-free, canonical).
+constexpr double J2 = apex::math::celestial::earth::J2;
 
-/// Un-normalized J3 = -sqrt(7) * C30.
-constexpr double J3 = -2.5327e-6;
+/// Un-normalized J3 = -sqrt(7) * C30 (EGM2008 tide-free, canonical).
+constexpr double J3 = apex::math::celestial::earth::J3;
 
-/// Un-normalized J4 = -3 * C40.
-constexpr double J4 = -1.6196e-6;
+/// Un-normalized J4 = -3 * C40 (EGM2008 tide-free, canonical).
+constexpr double J4 = apex::math::celestial::earth::J4;
 
 } // namespace egm2008
 

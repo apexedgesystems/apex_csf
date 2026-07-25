@@ -9,6 +9,7 @@
  * harmonics while more accurate than J2-only for high-fidelity applications.
  */
 
+#include "src/utilities/math/celestial/inc/EarthConstants.hpp"
 #include "src/sim/environment/gravity/inc/GravityModelBase.hpp"
 #include "src/sim/environment/gravity/inc/earth/Wgs84Constants.hpp"
 
@@ -214,30 +215,32 @@ private:
    * J_n = -sqrt(2n+1) * C_{n0} for fully-normalized coefficients.
    */
   static double Jn(int16_t n) noexcept {
-    // Un-normalized Jn values from EGM2008
+    // J2-J6 are the celestial canon (derived from the EGM2008
+    // distribution's normalized set); J7+ come from a separate zonal
+    // compilation and contribute at ~1e-7 of the field.
     // Positive Jn means negative C_{n0} contribution to potential
     static constexpr std::array<double, 21> JN_TABLE = {{
-        0.0,                // J0 (unused, C00=1 handled separately)
-        0.0,                // J1 (Earth center of mass at origin)
-        1.0826358191967e-3, // J2
-        -2.5323516555e-6,   // J3
-        -1.6196723715e-6,   // J4
-        -2.2730247936e-7,   // J5
-        5.4068202549e-7,    // J6
-        -3.5235228055e-7,   // J7
-        -2.0477893620e-7,   // J8
-        -1.2002797418e-7,   // J9
-        -2.4616587284e-7,   // J10
-        -2.4330917982e-7,   // J11
-        1.8770925752e-7,    // J12
-        1.9723922274e-7,    // J13
-        -1.4591071610e-8,   // J14
-        1.5222710889e-8,    // J15
-        -5.4525052934e-8,   // J16
-        -5.3074592568e-9,   // J17
-        5.4413968886e-8,    // J18
-        -3.1074531821e-8,   // J19
-        3.9908175909e-8,    // J20
+        0.0,                              // J0 (unused, C00=1 handled separately)
+        0.0,                              // J1 (Earth center of mass at origin)
+        apex::math::celestial::earth::J2, // J2
+        apex::math::celestial::earth::J3, // J3
+        apex::math::celestial::earth::J4, // J4
+        apex::math::celestial::earth::J5, // J5
+        apex::math::celestial::earth::J6, // J6
+        -3.5235228055e-7,                 // J7
+        -2.0477893620e-7,                 // J8
+        -1.2002797418e-7,                 // J9
+        -2.4616587284e-7,                 // J10
+        -2.4330917982e-7,                 // J11
+        1.8770925752e-7,                  // J12
+        1.9723922274e-7,                  // J13
+        -1.4591071610e-8,                 // J14
+        1.5222710889e-8,                  // J15
+        -5.4525052934e-8,                 // J16
+        -5.3074592568e-9,                 // J17
+        5.4413968886e-8,                  // J18
+        -3.1074531821e-8,                 // J19
+        3.9908175909e-8,                  // J20
     }};
 
     if (n < 0 || n > MAX_BUILTIN_DEGREE) {

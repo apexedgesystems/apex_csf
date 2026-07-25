@@ -41,7 +41,7 @@ namespace {
 /// gravity headers' standalone J2 constants because those standalone values
 /// are rounded and differ slightly from the C20-derived figures; these match
 /// the models' own coefficients to six significant digits.
-constexpr double EARTH_J2 = 1.0826266835e-3;
+constexpr double EARTH_J2 = apex::math::celestial::earth::J2;
 constexpr double MOON_J2 = 2.0321568464e-4;
 
 /// Per-body surface gravity for ConstantGravityModel.
