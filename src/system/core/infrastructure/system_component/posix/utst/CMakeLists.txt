@@ -47,6 +47,5 @@ apex_add_gtest(
 # The golden vectors are the cross-language contract (rust generates them,
 # this suite consumes them); the path is baked so ctest runs from any cwd.
 target_compile_definitions(
-  TestSystemCoreSystemComponent
-  PRIVATE APEX_TPRM_VECTORS_DIR="${CMAKE_SOURCE_DIR}/tools/tprm_vectors"
+  TestSystemCoreSystemComponent PRIVATE APEX_TPRM_VECTORS_DIR="${CMAKE_SOURCE_DIR}/compat/tprm"
 )

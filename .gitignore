@@ -30,7 +30,7 @@ heaptrack.*.zst
 **/*.bin
 # The TPRM golden vectors are committed by design: they are the byte-level
 # contract the rust and C++ suites pin against.
-!tools/tprm_vectors/payloads/*.bin
+!compat/tprm/payloads/*.bin
 
 # IDE and editor
 /.vscode/

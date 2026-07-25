@@ -2,7 +2,7 @@
  * @file GoldenVectors_uTest.cpp
  * @brief Cross-language conformance against the committed TPRM golden vectors.
  *
- * The files under tools/tprm_vectors/ (APEX_TPRM_VECTORS_DIR) are the
+ * The files under compat/tprm/ (APEX_TPRM_VECTORS_DIR) are the
  * byte-level contract between the rust reference implementation, this
  * runtime, and external consumers. The rust suite pins the generator to the
  * committed bytes; these tests pin hex2cpp and PackedTprmReader to the same

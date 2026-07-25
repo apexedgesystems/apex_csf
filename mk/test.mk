@@ -144,6 +144,26 @@ test-sh:
 	  tar -tzf "$$tarball" | grep -q "SmokeApp/README.md"
 	$(call log_ok,test,shell smoke: SDK tarball shape verified)
 
+# ------------------------------------------------------------------------------
+# Conformance contracts (compat/)
+# ------------------------------------------------------------------------------
+# One command per contract, running every in-repo suite that pins it; the
+# gate runs the same suites via the ci classifier when a contract or one of
+# its sides changes. Requires a debug build for the C++ side.
+
+COMPAT_CONTRACTS := tprm
+
+compat: $(addprefix compat-,$(COMPAT_CONTRACTS))
+
+compat-tprm:
+	$(call log,compat,Verifying the TPRM contract (rust + C++))
+	@cd tools/rust && cargo test --locked --test golden_vectors
+	@GTEST_FILTER='GoldenVectors.*' \
+	  "$(BUILD_DIR)/bin/utests/TestSystemCoreSystemComponent"
+	$(call log_ok,compat,TPRM contract green on both sides)
+
+.PHONY: compat compat-tprm
+
 # Tooling coverage (nightly). Each runs its tool test suite under coverage
 # instrumentation and emits a human-readable summary plus a machine report,
 # so the nightly leg both gates (tests still fail the job) and measures. The

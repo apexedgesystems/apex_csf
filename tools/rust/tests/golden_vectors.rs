@@ -1,7 +1,7 @@
-//! Golden-vector conformance: the committed vectors under
-//! tools/tprm_vectors/ are the byte-level contract between this reference
-//! implementation, the C++ runtime (GoldenVectors_uTest.cpp), and any other
-//! consumer (zenith copies the set). These tests pin the generator to the
+//! Golden-vector conformance: the committed vectors under compat/tprm/
+//! are the byte-level contract between this implementation, the C++
+//! runtime (GoldenVectors_uTest.cpp), and any other consumer (zenith
+//! copies the set). These tests pin the generator to the
 //! committed bytes; the C++ test pins the reader to the same bytes.
 //!
 //! Regenerating after an intentional format change:
@@ -15,7 +15,7 @@ use apex_rust_tools::tunable_params::binary::config_to_binary;
 use apex_rust_tools::tunable_params::pack::{pack, PackEntry};
 
 fn vectors_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../tprm_vectors")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/tprm")
 }
 
 /// The payload set: TOML source stem -> committed payload file.

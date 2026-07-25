@@ -1,8 +1,9 @@
-# TPRM golden vectors
+# TPRM conformance contract
 
-The byte-level conformance contract for the TPRM formats. Any
-implementation that produces or consumes TPRM data answers to these
-files, not to another implementation's source code.
+The byte-level golden vectors for the TPRM formats. Any implementation
+that produces or consumes TPRM data answers to these files, not to
+another implementation's source code. `make compat-tprm` runs every
+in-repo suite that pins this contract.
 
 ## Contents
 
