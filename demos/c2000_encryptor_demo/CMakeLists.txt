@@ -14,42 +14,47 @@
 # ==============================================================================
 
 include(apex/All)
+apex_module(c2000_encryptor_demo)
 
 # ------------------------------------------------------------------------------
-# Application Sources
+# Firmware Target (C2000 toolchain builds only)
 # ------------------------------------------------------------------------------
 #
 # device.c is local (copied from C2000Ware, patched for LAUNCHXL-F280049C).
 
-set(APP_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/cxx_stubs.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/device.c"
-)
+if (APEX_PLATFORM_BAREMETAL)
+  set(APP_SOURCES
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/src/cxx_stubs.cpp"
+      "${CMAKE_CURRENT_SOURCE_DIR}/src/device.c"
+  )
+
+  apex_add_firmware_with_c2000(
+    NAME
+    c2000_encryptor_demo
+    DEVICE
+    f28004x
+    MCU
+    _LAUNCHXL_F280049C
+    LINKER_SCRIPT
+    "${CMAKE_CURRENT_SOURCE_DIR}/F280049C.cmd"
+    SRC
+    ${APP_SOURCES}
+    INC
+    "${CMAKE_CURRENT_SOURCE_DIR}/inc"
+    "${CMAKE_SOURCE_DIR}/src/system/core/hal/c2000/inc"
+    "${CMAKE_SOURCE_DIR}"
+    DEFS
+    CPU1
+    _LAUNCHXL_F280049C
+    _FLASH
+    USE_INTOSC
+  )
+
+  apex_finalize_firmware()
+endif ()
 
 # ------------------------------------------------------------------------------
-# Firmware Target
+# Host-run tests (skipped on bare-metal; lock inc/aes256gcm.h to encryption_mcu)
 # ------------------------------------------------------------------------------
 
-apex_add_firmware_with_c2000(
-  NAME
-  c2000_encryptor_demo
-  DEVICE
-  f28004x
-  MCU
-  _LAUNCHXL_F280049C
-  LINKER_SCRIPT
-  "${CMAKE_CURRENT_SOURCE_DIR}/F280049C.cmd"
-  SRC
-  ${APP_SOURCES}
-  INC
-  "${CMAKE_CURRENT_SOURCE_DIR}/inc"
-  "${CMAKE_SOURCE_DIR}/src/system/core/hal/c2000/inc"
-  "${CMAKE_SOURCE_DIR}"
-  DEFS
-  CPU1
-  _LAUNCHXL_F280049C
-  _FLASH
-  USE_INTOSC
-)
-
-apex_finalize_firmware()
+apex_add_test_subdirs(utst)

@@ -76,6 +76,16 @@ The nonce auto-increments after each successful encryption.
 AES-256-GCM per FIPS 197 + NIST SP 800-38D. Software implementation in
 `inc/aes256gcm.h` -- no hardware crypto on F280049C.
 
+The header is a C port of the shared `encryption_mcu` C++ implementation
+(`src/utilities/encryption/mcu/inc/Aes256GcmMcu.hpp`), which the C28x CGT
+cannot consume (C++03 only). Equivalence between the two is locked by
+host-run unit tests in `utst/`: both implementations are pinned to the same
+NIST known-answer table
+(`src/utilities/encryption/mcu/utst/Aes256GcmKatVectors.hpp`), and a
+cross-implementation sweep asserts byte-identical ciphertext and tag across
+plaintext/AAD length combinations. A change that diverges either
+implementation fails `make test` on the host.
+
 ### 16-Bit CHAR_BIT
 
 The C28x ISA is 16-bit word-addressable. `sizeof(char) == 1` but each char
@@ -199,4 +209,6 @@ c2000_encryptor_demo/
 |   +-- main.cpp                # Application (C++03)
 |   +-- cxx_stubs.cpp           # C++ runtime stubs
 |   +-- device.c                # Local device.c (flash init)
++-- utst/
+|   +-- Aes256Gcm_uTest.cpp     # Host-run equivalence lock vs encryption_mcu
 ```
