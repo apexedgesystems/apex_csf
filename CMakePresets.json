@@ -264,7 +264,7 @@
       "displayName": "Pico (RP2040) - Bare-metal",
       "inherits": "base",
       "binaryDir": "build/mcu-pico-relwithdebinfo",
-      "toolchainFile": "cmake/toolchains/pico-gcc.cmake",
+      "toolchainFile": "${sourceDir}/cmake/toolchains/pico-gcc.cmake",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "RelWithDebInfo"
       }

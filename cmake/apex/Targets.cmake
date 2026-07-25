@@ -138,12 +138,25 @@ function (apex_add_interface_library)
   cmake_parse_arguments(IL "BAREMETAL" "NAME;INC" "DEPS_INTERFACE;DEFS;FEATURES;REQUIRES" ${ARGN})
   apex_require(IL_NAME IL_INC)
 
+  # A lib.manifest is the participation rule where present: on bare-metal the
+  # library exists iff the platform is in its mcu list, and the BAREMETAL
+  # flag is ignored — the contract is the single declaration.
+  set(_baremetal "${IL_BAREMETAL}")
+  _apex_manifest_participation(_m_present _m_participates)
+  if (_m_present AND APEX_PLATFORM_BAREMETAL)
+    if (NOT _m_participates)
+      message(STATUS "[apex] skip ${IL_NAME}: '${APEX_HAL_PLATFORM}' not in lib.manifest mcu")
+      return()
+    endif ()
+    set(_baremetal TRUE)
+  endif ()
+
   _apex_gate(
     _skip
     NAME
     ${IL_NAME}
     BAREMETAL
-    "${IL_BAREMETAL}"
+    "${_baremetal}"
     REQUIRES
     ${IL_REQUIRES}
   )
@@ -177,6 +190,8 @@ function (apex_add_interface_library)
   if (APEX_TARGETS_VERBOSE)
     message(STATUS "[apex] INTERFACE ${IL_NAME} inc='${IL_INC}' deps='${IL_DEPS_INTERFACE}'")
   endif ()
+
+  _apex_apply_manifest(${IL_NAME})
 endfunction ()
 
 # ------------------------------------------------------------------------------
@@ -204,12 +219,25 @@ function (apex_add_library)
   )
   apex_require(AL_NAME AL_TYPE AL_INC AL_SRC)
 
+  # A lib.manifest is the participation rule where present: on bare-metal the
+  # library exists iff the platform is in its mcu list, and the BAREMETAL
+  # flag is ignored — the contract is the single declaration.
+  set(_baremetal "${AL_BAREMETAL}")
+  _apex_manifest_participation(_m_present _m_participates)
+  if (_m_present AND APEX_PLATFORM_BAREMETAL)
+    if (NOT _m_participates)
+      message(STATUS "[apex] skip ${AL_NAME}: '${APEX_HAL_PLATFORM}' not in lib.manifest mcu")
+      return()
+    endif ()
+    set(_baremetal TRUE)
+  endif ()
+
   _apex_gate(
     _skip
     NAME
     ${AL_NAME}
     BAREMETAL
-    "${AL_BAREMETAL}"
+    "${_baremetal}"
     REQUIRES
     ${AL_REQUIRES}
   )
@@ -264,6 +292,8 @@ function (apex_add_library)
     list(LENGTH AL_SRC _src_count)
     message(STATUS "[apex] LIB ${AL_NAME} (${AL_TYPE}) inc='${AL_INC}' srcs=${_src_count}")
   endif ()
+
+  _apex_apply_manifest(${AL_NAME})
 endfunction ()
 
 # ------------------------------------------------------------------------------

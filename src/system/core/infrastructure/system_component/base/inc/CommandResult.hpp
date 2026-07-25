@@ -12,7 +12,7 @@
  *  - EOE_COMMAND_RESULT marks end of common codes; components extend after it.
  */
 
-#include <cstdint>
+#include <stdint.h>
 
 namespace system_core {
 namespace system_component {
@@ -25,7 +25,7 @@ namespace system_component {
  *
  * Component-specific codes extend from EOE_COMMAND_RESULT to avoid collisions.
  */
-enum class CommandResult : std::uint8_t {
+enum class CommandResult : uint8_t {
   SUCCESS = 0,      ///< Command executed successfully (ACK).
   NOT_IMPLEMENTED,  ///< Opcode not recognized by this component.
   INVALID_PAYLOAD,  ///< Payload missing, too short, or malformed.

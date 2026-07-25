@@ -52,7 +52,7 @@ TEST(McuScheduler_DefaultConstruction, CustomFrequency) {
 TEST(McuScheduler_TaskRegistration, AddSingleTask) {
   McuScheduler sched;
 
-  McuTaskEntry entry{testTask, nullptr, 1, 1, 0, 0, 1};
+  McuTaskEntry entry{{testTask, nullptr}, 1, 1, 0, 0, 1};
   const bool RESULT = sched.addTask(entry);
 
   EXPECT_TRUE(RESULT);
@@ -63,7 +63,7 @@ TEST(McuScheduler_TaskRegistration, AddSingleTask) {
 TEST(McuScheduler_TaskRegistration, RejectsNullFunction) {
   McuScheduler sched;
 
-  McuTaskEntry entry{nullptr, nullptr, 1, 1, 0, 0, 1};
+  McuTaskEntry entry{{nullptr, nullptr}, 1, 1, 0, 0, 1};
   const bool RESULT = sched.addTask(entry);
 
   EXPECT_FALSE(RESULT);
@@ -76,12 +76,12 @@ TEST(McuScheduler_TaskRegistration, RejectsWhenFull) {
 
   // Fill up the task table
   for (std::size_t i = 0; i < McuScheduler::MAX_TASKS; ++i) {
-    McuTaskEntry entry{testTask, nullptr, 1, 1, 0, 0, static_cast<std::uint8_t>(i)};
+    McuTaskEntry entry{{testTask, nullptr}, 1, 1, 0, 0, static_cast<std::uint8_t>(i)};
     EXPECT_TRUE(sched.addTask(entry));
   }
 
   // One more should fail
-  McuTaskEntry extra{testTask, nullptr, 1, 1, 0, 0, 99};
+  McuTaskEntry extra{{testTask, nullptr}, 1, 1, 0, 0, 99};
   EXPECT_FALSE(sched.addTask(extra));
   EXPECT_EQ(sched.taskCount(), McuScheduler::MAX_TASKS);
 }
@@ -89,8 +89,8 @@ TEST(McuScheduler_TaskRegistration, RejectsWhenFull) {
 /** @test clearTasks() removes all tasks. */
 TEST(McuScheduler_TaskRegistration, ClearTasks) {
   McuScheduler sched;
-  sched.addTask({testTask, nullptr, 1, 1, 0, 0, 1});
-  sched.addTask({testTask, nullptr, 1, 1, 0, 0, 2});
+  sched.addTask({{testTask, nullptr}, 1, 1, 0, 0, 1});
+  sched.addTask({{testTask, nullptr}, 1, 1, 0, 0, 2});
 
   sched.clearTasks();
 
@@ -101,13 +101,13 @@ TEST(McuScheduler_TaskRegistration, ClearTasks) {
 TEST(McuScheduler_TaskRegistration, TaskByIndex) {
   McuScheduler sched;
   int context = 42;
-  sched.addTask({testTask, &context, 1, 1, 0, 5, 1});
+  sched.addTask({{testTask, &context}, 1, 1, 0, 5, 1});
 
   const McuTaskEntry* entry = sched.task(0);
 
   ASSERT_NE(entry, nullptr);
-  EXPECT_EQ(entry->fn, testTask);
-  EXPECT_EQ(entry->context, &context);
+  EXPECT_EQ(entry->task.fn, testTask);
+  EXPECT_EQ(entry->task.ctx, &context);
   EXPECT_EQ(entry->priority, 5);
   EXPECT_EQ(entry->taskId, 1);
 }
@@ -163,7 +163,7 @@ TEST(McuScheduler_Execution, TickExecutesTask) {
   resetTestState();
   McuScheduler sched;
   int context = 123;
-  sched.addTask({testTask, &context, 1, 1, 0, 0, 1});
+  sched.addTask({{testTask, &context}, 1, 1, 0, 0, 1});
   (void)sched.init();
 
   sched.tick();
@@ -177,7 +177,7 @@ TEST(McuScheduler_Execution, TickExecutesTask) {
 TEST(McuScheduler_Execution, MultipleTicksExecuteMultipleTimes) {
   resetTestState();
   McuScheduler sched;
-  sched.addTask({testTask, nullptr, 1, 1, 0, 0, 1});
+  sched.addTask({{testTask, nullptr}, 1, 1, 0, 0, 1});
   (void)sched.init();
 
   sched.tick();
@@ -193,7 +193,7 @@ TEST(McuScheduler_Execution, FrequencyDivisor) {
   resetTestState();
   McuScheduler sched(100); // 100 Hz fundamental
   // Task runs at 1/10 fundamental = 10 Hz (every 10 ticks)
-  sched.addTask({testTask, nullptr, 1, 10, 0, 0, 1});
+  sched.addTask({{testTask, nullptr}, 1, 10, 0, 0, 1});
   (void)sched.init();
 
   // Run 20 ticks at 100 Hz
@@ -210,7 +210,7 @@ TEST(McuScheduler_Execution, OffsetDelaysExecution) {
   resetTestState();
   McuScheduler sched(100);
   // Task runs every tick but offset by 5
-  sched.addTask({testTask, nullptr, 1, 1, 5, 0, 1});
+  sched.addTask({{testTask, nullptr}, 1, 1, 5, 0, 1});
   (void)sched.init();
 
   // First 5 ticks - no execution
@@ -237,9 +237,9 @@ TEST(McuScheduler_Execution, PriorityOrdering) {
   int id1 = 1, id2 = 2, id3 = 3;
   McuScheduler sched;
   // Add in reverse priority order
-  sched.addTask({task1, &id1, 1, 1, 0, -10, 1}); // Low priority
-  sched.addTask({task2, &id2, 1, 1, 0, 10, 2});  // High priority
-  sched.addTask({task3, &id3, 1, 1, 0, 0, 3});   // Medium priority
+  sched.addTask({{task1, &id1}, 1, 1, 0, -10, 1}); // Low priority
+  sched.addTask({{task2, &id2}, 1, 1, 0, 10, 2});  // High priority
+  sched.addTask({{task3, &id3}, 1, 1, 0, 0, 3});   // Medium priority
   (void)sched.init();
 
   sched.tick();

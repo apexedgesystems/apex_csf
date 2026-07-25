@@ -22,23 +22,23 @@ apex_add_library(
 
 All modules are included via `All.cmake` in strict dependency order:
 
-| Module                    | Purpose                                                             |
-| ------------------------- | ------------------------------------------------------------------- |
-| `Core.cmake`              | Guards, module helpers, standard opt-ins                            |
-| `BuildAcceleration.cmake` | ccache, fast linker (mold/lld), split DWARF                         |
-| `Cuda.cmake`              | CUDA sources, NVML, CUPTI integration                               |
-| `Targets.cmake`           | `apex_add_library`, `apex_add_app`, `apex_add_tool`                 |
-| `Floor.cmake`             | `apex_add_floor_check`: C++17/no-exceptions MCU-floor probe targets |
-| `Coverage.cmake`          | Code coverage instrumentation and reporting                         |
-| `Testing.cmake`           | GTest/GMock unit, performance, and component tests                  |
-| `Docs.cmake`              | Doxygen per-library HTML + docs landing page                        |
-| `Upx.cmake`               | UPX-compressed artifact copies                                      |
-| `ClangTidy.cmake`         | clang-tidy for CUDA sources                                         |
-| `DataDefinitions.cmake`   | Struct dictionary manifest registration                             |
-| `Packaging.cmake`         | Application deployment packaging (`package_<APP>`)                  |
-| `Firmware.cmake`          | Bare-metal firmware targets (STM32, AVR, Pico, ESP32)               |
-| `Summary.cmake`           | Configure-time build environment summary                            |
-| `All.cmake`               | Convenience include for all modules                                 |
+| Module                    | Purpose                                                      |
+| ------------------------- | ------------------------------------------------------------ |
+| `Core.cmake`              | Guards, module helpers, standard opt-ins                     |
+| `BuildAcceleration.cmake` | ccache, fast linker (mold/lld), split DWARF                  |
+| `Cuda.cmake`              | CUDA sources, NVML, CUPTI integration                        |
+| `Targets.cmake`           | `apex_add_library`, `apex_add_app`, `apex_add_tool`          |
+| `Manifest.cmake`          | `lib.manifest` support contracts: per-platform probe targets |
+| `Coverage.cmake`          | Code coverage instrumentation and reporting                  |
+| `Testing.cmake`           | GTest/GMock unit, performance, and component tests           |
+| `Docs.cmake`              | Doxygen per-library HTML + docs landing page                 |
+| `Upx.cmake`               | UPX-compressed artifact copies                               |
+| `ClangTidy.cmake`         | clang-tidy for CUDA sources                                  |
+| `DataDefinitions.cmake`   | Struct dictionary manifest registration                      |
+| `Packaging.cmake`         | Application deployment packaging (`package_<APP>`)           |
+| `Firmware.cmake`          | Bare-metal firmware targets (STM32, AVR, Pico, ESP32)        |
+| `Summary.cmake`           | Configure-time build environment summary                     |
+| `All.cmake`               | Convenience include for all modules                          |
 
 ## Configuration Options
 

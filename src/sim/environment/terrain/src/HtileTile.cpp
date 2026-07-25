@@ -3,6 +3,7 @@
  * @brief Implementation of the HtileTile terrain consumer.
  */
 
+#include "src/utilities/math/vecmat/inc/Angles.hpp"
 #include "src/sim/environment/terrain/inc/HtileTile.hpp"
 
 #include "src/sim/environment/terrain/inc/Htile.hpp"
@@ -21,7 +22,7 @@ namespace terrain {
 /* ----------------------------- Constants ----------------------------- */
 
 namespace {
-inline constexpr double K_DEG_PER_RAD = 57.295779513082320876798154814105;
+inline constexpr double K_DEG_PER_RAD = apex::math::vecmat::RAD_TO_DEG;
 
 /// Normalize `lonDeg` into the tile's declared `[lonMin, lonMax]` window by
 /// shifting it by whole turns of 360 deg so it lands in the half-open band

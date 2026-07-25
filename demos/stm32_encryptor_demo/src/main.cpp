@@ -162,15 +162,15 @@ static void profilerEndTask(void* ctx) noexcept {
  */
 static void registerSchedulerTasks() {
   // Profiler start: every tick, highest priority (runs first)
-  exec.addTask({profilerStartTask, &tracker, 1, 1, 0, 127, 10});
+  exec.addTask({{profilerStartTask, &tracker}, 1, 1, 0, 127, 10});
   // LED blink: freqN=1, freqD=50 -> period=50 ticks -> 2 Hz at 100 Hz
-  exec.addTask({ledBlinkTask, nullptr, 1, 50, 0, 0, 1});
+  exec.addTask({{ledBlinkTask, nullptr}, 1, 50, 0, 0, 1});
   // Data channel: freqN=1, freqD=1 -> every tick -> 100 Hz
-  exec.addTask({dataChannelTask, nullptr, 1, 1, 0, 0, 2});
+  exec.addTask({{dataChannelTask, nullptr}, 1, 1, 0, 0, 2});
   // Command channel: freqN=1, freqD=5 -> period=5 ticks -> 20 Hz
-  exec.addTask({commandTask, nullptr, 1, 5, 0, 0, 3});
+  exec.addTask({{commandTask, nullptr}, 1, 5, 0, 0, 3});
   // Profiler end: every tick, lowest priority (runs last)
-  exec.addTask({profilerEndTask, &tracker, 1, 1, 0, -128, 11});
+  exec.addTask({{profilerEndTask, &tracker}, 1, 1, 0, -128, 11});
 }
 
 #if APEX_USE_FREERTOS

@@ -19,7 +19,9 @@ CrcTable<T, Poly, Initial, XorOut, ReflectIn, ReflectOut, Width>::generateTable(
 
   constexpr uint8_t BIT_WIDTH = This::fetchWidth();
   constexpr T MASK = This::fetchMask();
-  constexpr T TOPBIT = This::fetchTopBit();
+  // Used only in the !ReflectIn constexpr branch; discarded instantiations
+  // otherwise flag it unused.
+  [[maybe_unused]] constexpr T TOPBIT = This::fetchTopBit();
 
   apex::compat::array<T, CRC_TABLE_SIZE> tbl{};
 
@@ -47,7 +49,9 @@ inline void CrcTable<T, Poly, Initial, XorOut, ReflectIn, ReflectOut, Width>::up
     T& rem, const uint8_t* data, size_t len) noexcept {
   using This = CrcTable<T, Poly, Initial, XorOut, ReflectIn, ReflectOut, Width>;
 
-  constexpr uint8_t SHIFT = This::fetchWidth() - 8;
+  // Used only in the !ReflectIn constexpr branch; discarded instantiations
+  // otherwise flag it unused.
+  [[maybe_unused]] constexpr uint8_t SHIFT = This::fetchWidth() - 8;
   constexpr T MASK = This::fetchMask();
 
   APEX_IF_CONSTEXPR(ReflectIn) {

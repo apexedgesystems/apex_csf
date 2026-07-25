@@ -5,14 +5,12 @@
  * Coverage:
  *  - Vec3: algebra, cross/dot identities, normalize + zero guard, aliasing
  *  - Mat3: multiply/transpose/det, inverse round-trip + singular guard, solve
- *  - Rotations: three-way cross-implementation equivalence (vecmat DCM vs
- *    linalg Rotations vs quaternion), Euler round-trips + gimbal clamp,
+ *  - Rotations: cross-implementation equivalence (vecmat DCM vs the
+ *    quaternion conversion path), Euler round-trips + gimbal clamp,
  *    Rodrigues vs quaternion angle-axis, orthonormality, wind->body
  *    reductions and closed-form values
  */
 
-#include "src/utilities/math/linalg/inc/Matrix3.hpp"
-#include "src/utilities/math/linalg/inc/Rotations.hpp"
 #include "src/utilities/math/quaternion/inc/Quaternion.hpp"
 #include "src/utilities/math/vecmat/inc/Mat3Ops.hpp"
 #include "src/utilities/math/vecmat/inc/Rotations.hpp"
@@ -151,19 +149,14 @@ TYPED_TEST(VecmatTestT, Mat3SolveInertiaLike) {
 
 /* ------------------------------- Rotations -------------------------------- */
 
-/** @test Three-way equivalence: vecmat DCM == linalg Rotations == quaternion. */
-TYPED_TEST(VecmatTestT, Euler321ThreeWayEquivalence) {
+/** @test Cross-implementation equivalence: vecmat DCM == the quaternion path. */
+TYPED_TEST(VecmatTestT, Euler321CrossImplementationEquivalence) {
   using T = TypeParam;
   const T CASES[][3] = {{T(0.3), T(-0.4), T(1.2)}, {T(-1.0), T(0.7), T(-2.5)}, {T(0), T(0), T(0)}};
   for (const auto& C : CASES) {
     // vecmat
     T dcmV[9];
     vm::dcmFromEuler321Into(C[0], C[1], C[2], dcmV);
-
-    // linalg Rotations (the current sim-facing implementation)
-    T storage[9];
-    apex::math::linalg::Matrix3<T> dcmL(storage, apex::compat::blas::Layout::RowMajor);
-    ASSERT_EQ(apex::math::linalg::dcmFromEuler321Into(C[0], C[1], C[2], dcmL), 0);
 
     // quaternion: setFromEuler321 -> toRotationMatrixInto
     T qd[4], dcmQ[9];
@@ -173,7 +166,6 @@ TYPED_TEST(VecmatTestT, Euler321ThreeWayEquivalence) {
 
     const T TOL = std::is_same<T, double>::value ? T(1e-12) : T(1e-5);
     for (int k = 0; k < 9; ++k) {
-      EXPECT_NEAR(dcmV[k], storage[k], TOL) << "vs linalg, k=" << k;
       EXPECT_NEAR(dcmV[k], dcmQ[k], TOL) << "vs quaternion, k=" << k;
     }
   }

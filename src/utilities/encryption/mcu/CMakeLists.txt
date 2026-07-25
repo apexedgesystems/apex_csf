@@ -15,7 +15,7 @@ apex_module(encryption_mcu)
 # Interface Library
 # ------------------------------------------------------------------------------
 
-apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" BAREMETAL)
+apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
 
 # ------------------------------------------------------------------------------
 # Opt-ins (coverage, doxygen, UPX)

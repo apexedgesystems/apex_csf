@@ -16,13 +16,7 @@ include(apex/All)
 # ------------------------------------------------------------------------------
 
 apex_add_interface_library(
-  NAME
-  executive_base
-  INC
-  "${PROJECT_SOURCE_DIR}"
-  DEPS_INTERFACE
-  system_component_base
-  BAREMETAL
+  NAME executive_base INC "${PROJECT_SOURCE_DIR}" DEPS_INTERFACE system_component_base
 )
 
 # ------------------------------------------------------------------------------

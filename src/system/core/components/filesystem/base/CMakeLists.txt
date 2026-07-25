@@ -17,7 +17,7 @@ include(apex/All)
 # Interface Library
 # ------------------------------------------------------------------------------
 
-apex_add_interface_library(NAME filesystem_base INC "${PROJECT_SOURCE_DIR}" BAREMETAL)
+apex_add_interface_library(NAME filesystem_base INC "${PROJECT_SOURCE_DIR}")
 
 # ------------------------------------------------------------------------------
 # Opt-ins (coverage, doxygen)

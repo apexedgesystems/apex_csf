@@ -18,6 +18,7 @@
  */
 
 #include "src/sim/sensors/inc/SensorBase.hpp"
+#include "src/utilities/math/vecmat/inc/Angles.hpp"
 
 #include <cmath>
 #include <cstdint>
@@ -62,7 +63,7 @@ public:
   [[nodiscard]] GPSMeasurement measure(double lat_true_deg, double lon_true_deg, double alt_true_m,
                                        double V_north_true, double V_east_true,
                                        double V_down_true) noexcept {
-    constexpr double kDegToRad = 0.017453292519943295;
+    constexpr double kDegToRad = apex::math::vecmat::DEG_TO_RAD;
     const double m_per_dlat = p_.earth_radius_m * kDegToRad;
     const double m_per_dlon = p_.earth_radius_m * std::cos(lat_true_deg * kDegToRad) * kDegToRad;
 

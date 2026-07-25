@@ -49,6 +49,8 @@
  */
 
 #include "src/sim/dynamics/rigid_body/inc/PointMass3D.hpp" // sim::dynamics::rigid_body::Vec3
+#include "src/utilities/math/vecmat/inc/Mat3Ops.hpp"
+#include "src/utilities/math/vecmat/inc/Rotations.hpp"
 
 #include <cmath>
 
@@ -173,19 +175,14 @@ inline double dynamicPressureQ(double rho_kg_m3, double V_m_s) {
  */
 inline sim::dynamics::rigid_body::Vec3 windToBodyForces(double L_N, double D_N, double Y_N,
                                                         double alpha_rad, double beta_rad) {
-  const double ca = std::cos(alpha_rad);
-  const double sa = std::sin(alpha_rad);
-  const double cb = std::cos(beta_rad);
-  const double sb = std::sin(beta_rad);
-
-  const double Fx_w = -D_N;
-  const double Fy_w = Y_N;
-  const double Fz_w = -L_N;
-
-  // R_bw . F_w
-  return sim::dynamics::rigid_body::Vec3{ca * cb * Fx_w - ca * sb * Fy_w - sa * Fz_w,
-                                         sb * Fx_w + cb * Fy_w,
-                                         sa * cb * Fx_w - sa * sb * Fy_w + ca * Fz_w};
+  // R_bw from the shared wind-axes builder (written to this convention and
+  // asserted against it in the vecmat suite), applied to F_w.
+  double rbw[9];
+  apex::math::vecmat::dcmWindToBodyInto(alpha_rad, beta_rad, rbw);
+  const double FW[3] = {-D_N, Y_N, -L_N};
+  double fb[3];
+  apex::math::vecmat::multiplyVec(rbw, FW, fb);
+  return sim::dynamics::rigid_body::Vec3{fb[0], fb[1], fb[2]};
 }
 
 /* ---------------------------- Evaluator ---------------------------- */

@@ -79,7 +79,7 @@ PERF_TEST(McuSchedulerPerf, NoopTasks8) {
 
   system_core::scheduler::mcu::McuScheduler<8> sched(100);
   for (std::uint8_t i = 0; i < 8; ++i) {
-    sched.addTask({liteNoopTask, nullptr, 1, 1, 0, 0, i});
+    sched.addTask({{liteNoopTask, nullptr}, 1, 1, 0, 0, i});
   }
   (void)sched.init();
 
@@ -101,7 +101,7 @@ PERF_TEST(McuSchedulerPerf, NoopTasks32) {
 
   system_core::scheduler::mcu::McuScheduler<32> sched(100);
   for (std::uint8_t i = 0; i < 32; ++i) {
-    sched.addTask({liteNoopTask, nullptr, 1, 1, 0, 0, i});
+    sched.addTask({{liteNoopTask, nullptr}, 1, 1, 0, 0, i});
   }
   (void)sched.init();
 
@@ -131,7 +131,7 @@ PERF_TEST(McuSchedulerPerf, LightWork8) {
 
   system_core::scheduler::mcu::McuScheduler<8> sched(100);
   for (std::uint8_t i = 0; i < 8; ++i) {
-    sched.addTask({mcuTaskThunk, &spinCtx[i], 1, 1, 0, 0, i});
+    sched.addTask({{mcuTaskThunk, &spinCtx[i]}, 1, 1, 0, 0, i});
   }
   (void)sched.init();
 
@@ -157,16 +157,16 @@ PERF_TEST(McuSchedulerPerf, RateDecimation) {
 
   // Mix of rate groups: 4 at 100Hz, 4 at 50Hz, 4 at 10Hz, 4 at 1Hz
   for (std::uint8_t i = 0; i < 4; ++i) {
-    sched.addTask({liteNoopTask, nullptr, 1, 1, 0, 0, static_cast<std::uint8_t>(i)});
+    sched.addTask({{liteNoopTask, nullptr}, 1, 1, 0, 0, static_cast<std::uint8_t>(i)});
   }
   for (std::uint8_t i = 0; i < 4; ++i) {
-    sched.addTask({liteNoopTask, nullptr, 1, 2, 0, 0, static_cast<std::uint8_t>(4 + i)});
+    sched.addTask({{liteNoopTask, nullptr}, 1, 2, 0, 0, static_cast<std::uint8_t>(4 + i)});
   }
   for (std::uint8_t i = 0; i < 4; ++i) {
-    sched.addTask({liteNoopTask, nullptr, 1, 10, 0, 0, static_cast<std::uint8_t>(8 + i)});
+    sched.addTask({{liteNoopTask, nullptr}, 1, 10, 0, 0, static_cast<std::uint8_t>(8 + i)});
   }
   for (std::uint8_t i = 0; i < 4; ++i) {
-    sched.addTask({liteNoopTask, nullptr, 1, 100, 0, 0, static_cast<std::uint8_t>(12 + i)});
+    sched.addTask({{liteNoopTask, nullptr}, 1, 100, 0, 0, static_cast<std::uint8_t>(12 + i)});
   }
   (void)sched.init();
 
@@ -192,7 +192,7 @@ PERF_TEST(McuSchedulerPerf, AddTaskCost) {
     for (int i = 0; i < perf.cycles(); ++i) {
       system_core::scheduler::mcu::McuScheduler<32> sched(100);
       for (std::uint8_t j = 0; j < 32; ++j) {
-        sched.addTask({liteNoopTask, nullptr, 1, 1, 0, 0, j});
+        sched.addTask({{liteNoopTask, nullptr}, 1, 1, 0, 0, j});
       }
     }
   });
@@ -201,7 +201,7 @@ PERF_TEST(McuSchedulerPerf, AddTaskCost) {
       [&] {
         system_core::scheduler::mcu::McuScheduler<32> sched(100);
         for (std::uint8_t j = 0; j < 32; ++j) {
-          sched.addTask({liteNoopTask, nullptr, 1, 1, 0, 0, j});
+          sched.addTask({{liteNoopTask, nullptr}, 1, 1, 0, 0, j});
         }
       },
       "add-task-32");
@@ -220,7 +220,7 @@ PERF_TEST(McuSchedulerPerf, InitSortCost) {
     for (int i = 0; i < perf.cycles(); ++i) {
       system_core::scheduler::mcu::McuScheduler<32> sched(100);
       for (std::uint8_t j = 0; j < 32; ++j) {
-        sched.addTask({liteNoopTask, nullptr, 1, 1, 0, static_cast<int8_t>(31 - j), j});
+        sched.addTask({{liteNoopTask, nullptr}, 1, 1, 0, static_cast<int8_t>(31 - j), j});
       }
       (void)sched.init();
     }
@@ -230,7 +230,7 @@ PERF_TEST(McuSchedulerPerf, InitSortCost) {
       [&] {
         system_core::scheduler::mcu::McuScheduler<32> sched(100);
         for (std::uint8_t j = 0; j < 32; ++j) {
-          sched.addTask({liteNoopTask, nullptr, 1, 1, 0, static_cast<int8_t>(31 - j), j});
+          sched.addTask({{liteNoopTask, nullptr}, 1, 1, 0, static_cast<int8_t>(31 - j), j});
         }
         (void)sched.init();
       },

@@ -14,8 +14,10 @@
 #   C2000WARE_ROOT  - C2000Ware SDK path (default: /opt/ti/c2000ware-core-sdk)
 #
 # Note: CMake does not natively understand TI compiler dialect flags.
-# C++17 is enabled via --c++17 in CMAKE_CXX_FLAGS_INIT and
-# CMAKE_CXX_STANDARD is disabled to avoid CMake trying to add its own flags.
+# The dialect is C++03 (--c++03 in CMAKE_CXX_FLAGS_INIT): the C28x CGT never
+# gains C++11+, so code targeting c2000 uses compat_legacy discipline.
+# CMAKE_CXX_STANDARD is pinned to 98 with the same flag so CMake never adds
+# its own dialect options.
 # ==============================================================================
 
 # Bare-metal (no OS)

@@ -17,6 +17,7 @@ target_link_libraries(
   ${LIB_NAME}
   INTERFACE sim_dynamics_rigid_body # Vec3 (body-frame force/moment vectors)
             sim_dynamics_wrench # AppliedWrench / WrenchSource / WrenchKind (the contributor)
+            utilities_math_vecmat # wind-axes DCM builder
 )
 
 apex_standard_optins(${LIB_NAME})

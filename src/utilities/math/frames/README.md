@@ -2,7 +2,7 @@
 
 **Namespace:** `apex::math::frames`
 **Platform:** Hosted + bare-metal (BAREMETAL interface library)
-**C++ Standard:** C++17 floor
+**C++ Standard:** C++17 (see lib.manifest for the platform contract)
 
 Reference-frame machinery for vehicles: the SE(3) `Transform<T>` POD, the
 fixed-capacity frame graph, and the standard celestial catalog (ECI/ECEF/
@@ -117,8 +117,8 @@ mounts.
 ## On-target verification
 
 An on-target self-test firmware runs the golden checks on real hardware
-(float FPU + soft double) -- the third enforcement ring behind the per-PR
-floor checks and the nightly cross builds.
+(float FPU + soft double) -- the third enforcement ring behind the
+lib.manifest probes and the nightly cross builds.
 
 ## Float posture (MCU)
 

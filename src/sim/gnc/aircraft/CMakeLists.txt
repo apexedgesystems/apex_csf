@@ -17,8 +17,9 @@ apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}")
 
 target_link_libraries(
   ${LIB_NAME}
-  INTERFACE sim_gnc_common
-) # PIDLoop primitive
+  INTERFACE sim_gnc_common # PIDLoop primitive
+            utilities_math_vecmat # angle constants
+)
 
 apex_standard_optins(${LIB_NAME})
 

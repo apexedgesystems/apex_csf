@@ -120,6 +120,18 @@ public:
     return q.normalizeInPlace();
   }
 
+  /**
+   * @brief dq/dt = 0.5 * q * (0, omega), written to dq[4] [w,x,y,z].
+   *
+   * The attitude kinematics rate itself, for consumers that integrate
+   * additively through their own scheme (an RK4 state template) and
+   * normalize on their own terms; the step functions above wrap it.
+   * @note RT-SAFE: No allocation.
+   */
+  static void rateInto(const Quaternion<T>& q, const T* omegaBody, T* dq) noexcept {
+    rate(q, omegaBody, dq);
+  }
+
 private:
   /** @brief dq/dt = 0.5 * q * (0, omega), written to dq[4]. */
   static void rate(const Quaternion<T>& q, const T* w, T* dq) noexcept {

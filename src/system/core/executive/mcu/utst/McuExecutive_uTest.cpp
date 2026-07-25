@@ -104,7 +104,7 @@ TEST(McuExecutive_Execution, RunsMaxCycles) {
   resetTestState();
   FreeRunningSource tickSource(100);
   McuExecutive exec(&tickSource, 100, 50);
-  exec.addTask({testTask, nullptr, 1, 1, 0, 0, 1});
+  exec.addTask({{testTask, nullptr}, 1, 1, 0, 0, 1});
   (void)exec.init();
 
   const RunResult RESULT = exec.run();
@@ -130,7 +130,7 @@ TEST(McuExecutive_Execution, ShutdownStopsRun) {
   };
 
   McuExecutive exec(&tickSource, 100, 1000);
-  exec.addTask({shutdownTask, &exec, 1, 1, 0, 0, 1});
+  exec.addTask({{shutdownTask, &exec}, 1, 1, 0, 0, 1});
   (void)exec.init();
 
   const RunResult RESULT = exec.run();
@@ -174,7 +174,7 @@ TEST(McuExecutive_Accessors, SetMaxCycles) {
   resetTestState();
   FreeRunningSource tickSource(100);
   McuExecutive exec(&tickSource, 100, 100);
-  exec.addTask({testTask, nullptr, 1, 1, 0, 0, 1});
+  exec.addTask({{testTask, nullptr}, 1, 1, 0, 0, 1});
 
   exec.setMaxCycles(25);
   (void)exec.init();
@@ -236,7 +236,7 @@ TEST(McuExecutive_FastForward, RunsAllCycles) {
   resetTestState();
   FreeRunningSource tickSource(100);
   McuExecutive exec(&tickSource, 100, 200);
-  exec.addTask({testTask, nullptr, 1, 1, 0, 0, 1});
+  exec.addTask({{testTask, nullptr}, 1, 1, 0, 0, 1});
   (void)exec.init();
   exec.setFastForward(true);
 
@@ -261,8 +261,8 @@ TEST(McuExecutive_Integration, MultipleTasksExecution) {
 
   FreeRunningSource tickSource(100);
   McuExecutive exec(&tickSource, 100, 100);
-  exec.addTask({task1, nullptr, 1, 1, 0, 0, 1});  // Every tick
-  exec.addTask({task2, nullptr, 1, 10, 0, 0, 2}); // Every 10 ticks
+  exec.addTask({{task1, nullptr}, 1, 1, 0, 0, 1});  // Every tick
+  exec.addTask({{task2, nullptr}, 1, 10, 0, 0, 2}); // Every 10 ticks
   (void)exec.init();
 
   const RunResult RESULT = exec.run();
