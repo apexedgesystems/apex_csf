@@ -3,12 +3,13 @@
 #
 # Tests Status enum, SystemComponentBase lifecycle (init/reset/idempotent),
 # SystemComponent<T> A/B parameter staging (load/apply/rollback),
-# PackedTprm archive extraction and entry lookup, and data primitives
-# (DataCategory, ModelData, DataTarget).
+# PackedTprm archive extraction and entry lookup, data primitives
+# (DataCategory, ModelData, DataTarget), and byte-level conformance against
+# the committed TPRM golden vectors shared with the rust tooling.
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# Sources (7 files)
+# Sources
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
@@ -17,6 +18,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponent_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ComponentRegistry_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/PackedTprm_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/GoldenVectors_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DataCategory_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DataTarget_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ModelData_uTest.cpp"
@@ -40,4 +42,10 @@ apex_add_gtest(
   LABELS
   system
   system_component
+)
+
+# The golden vectors are the cross-language contract (rust generates them,
+# this suite consumes them); the path is baked so ctest runs from any cwd.
+target_compile_definitions(
+  TestSystemCoreSystemComponent PRIVATE APEX_TPRM_VECTORS_DIR="${CMAKE_SOURCE_DIR}/compat/tprm"
 )

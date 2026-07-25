@@ -1,0 +1,69 @@
+# Golden vector: every scalar shape the payload format carries, at values
+# chosen so byte order and sign handling are visible in the binary
+# (asymmetric bytes, negatives, full-width extremes).
+# C++ mirror: vectors::ScalarTypes (GoldenVectors_uTest.cpp).
+
+[ScalarTypes.u8_max_minus]
+type = "uint"
+size = 1
+value = 127
+
+[ScalarTypes.u16_pattern]
+type = "uint"
+size = 2
+value = "0xBEEF"
+
+[ScalarTypes.u32_pattern]
+type = "uint"
+size = 4
+value = "0xDEADBEEF"
+
+[ScalarTypes.u64_wide]
+type = "uint"
+size = 8
+value = "0x0123456789ABCDEF"
+
+[ScalarTypes.i8_neg]
+type = "int"
+size = 1
+value = -5
+
+[ScalarTypes.i16_neg]
+type = "int"
+size = 2
+value = -1234
+
+[ScalarTypes.i32_neg]
+type = "int"
+size = 4
+value = -100000
+
+[ScalarTypes.i64_neg]
+type = "int"
+size = 8
+value = -5000000000
+
+[ScalarTypes.f32_exact]
+type = "float"
+size = 4
+value = 1.5
+
+[ScalarTypes.f64_as_float8]
+type = "float"
+size = 8
+value = -2.25
+
+[ScalarTypes.f64_as_double]
+type = "double"
+size = 8
+value = 1048576.125
+
+[ScalarTypes.flag]
+type = "bool"
+size = 1
+value = true
+
+[ScalarTypes.letter]
+type = "char"
+size = 1
+value = "A"
