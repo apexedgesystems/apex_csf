@@ -90,6 +90,13 @@ Component base classes and lifecycle management for the Apex executive framework
 Full publish cycle = construct + `load()` + `publishInitial()` + `active()`
 read on a fresh bank.
 
+Under maximum publish contention (a control-plane writer churning
+`load()`+`apply()` continuously), `active()` reads 14.8 ns median vs
+10.9 ns uncontended in the same run -- the swap costs readers a few
+nanoseconds of cache traffic, never a wait. A torn-read detector
+(3 reader threads, 200k publishes, self-consistent patterns) observes
+zero inconsistent sets.
+
 ### Parameter Size Scaling
 
 | Param Size | `active()` Median (ns) | Calls/s |

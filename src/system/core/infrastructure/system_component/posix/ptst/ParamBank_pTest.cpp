@@ -21,9 +21,11 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <string>
+#include <thread>
 
 namespace ub = vernier::bench;
 
@@ -332,6 +334,54 @@ PERF_TEST(ParamBankPerf, FullPublishCycle) {
       "full-publish-cycle");
 
   std::printf("\n[Cold-Path] ctor+load+publishInitial+active: %.3f ns (%.0f M cycles/sec)\n",
+              result.stats.median * 1000.0, result.callsPerSecond / 1e6);
+}
+
+/* ----------------------------- Contention ----------------------------- */
+
+/**
+ * @brief active() read latency while a control-plane writer churns
+ *        load()+apply() as fast as it can (single-writer contract held,
+ *        maximum publish pressure). Pair with ActiveSmall for the
+ *        uncontended baseline.
+ */
+PERF_TEST(ParamBankPerf, ActiveUnderPublishContention) {
+  UB_PERF_GUARD(perf);
+
+  ParamBank<SmallParams> bank;
+  const SmallParams P1{2.0, 1.0, 1, 0};
+  const SmallParams P2{3.0, 2.0, 2, 0};
+  (void)bank.load(P1);
+  (void)bank.publishInitial();
+
+  std::atomic<bool> stop{false};
+  std::thread writer([&] {
+    bool flip = false;
+    while (!stop.load(std::memory_order_relaxed)) {
+      (void)bank.load(flip ? P1 : P2);
+      (void)bank.apply();
+      flip = !flip;
+    }
+  });
+
+  perf.warmup([&] {
+    for (int i = 0; i < perf.cycles(); ++i) {
+      const auto& ref = bank.active();
+      asm volatile("" ::"r"(&ref));
+    }
+  });
+
+  auto result = perf.throughputLoop(
+      [&] {
+        const auto& ref = bank.active();
+        asm volatile("" ::"r"(&ref));
+      },
+      "active-under-contention");
+
+  stop.store(true, std::memory_order_relaxed);
+  writer.join();
+
+  std::printf("\n[RT-Critical] active(24B) under publish churn: %.3f ns (%.0f M calls/sec)\n",
               result.stats.median * 1000.0, result.callsPerSecond / 1e6);
 }
 

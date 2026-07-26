@@ -16,11 +16,14 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <thread>
 #include <type_traits>
+#include <vector>
 
 using system_core::system_component::ParamBank;
 using system_core::system_component::Status;
@@ -295,6 +298,64 @@ TEST(ParamBankTest, SchedulableComponentComposition) {
   ASSERT_EQ(comp.loadParams(ModelParams{500}), Status::SUCCESS);
   ASSERT_EQ(comp.applyParams(), Status::SUCCESS);
   EXPECT_EQ(comp.params().rate, 500);
+}
+
+/* ----------------------------- Concurrency ----------------------------- */
+
+/**
+ * @test Readers never observe a torn parameter set while the writer
+ * publishes. Two self-consistent patterns (flags is always the bitwise
+ * complement of value) alternate under maximum publish pressure; any
+ * observed set must satisfy the invariant exactly.
+ */
+TEST(ParamBankTest, ConcurrentReadersSeeOnlyPublishedSets) {
+  ParamBank<TestParams> bank{};
+
+  auto consistent = [](const TestParams& p) noexcept {
+    return p.flags == ~static_cast<std::uint32_t>(p.value);
+  };
+  const TestParams A{0x11111111, ~static_cast<std::uint32_t>(0x11111111)};
+  const TestParams B{0x77777777, ~static_cast<std::uint32_t>(0x77777777)};
+  ASSERT_EQ(bank.load(A, consistent), Status::SUCCESS);
+  ASSERT_EQ(bank.publishInitial(), Status::SUCCESS);
+
+  std::atomic<bool> stop{false};
+  std::atomic<std::uint64_t> tornReads{0};
+  std::atomic<std::uint64_t> totalReads{0};
+
+  std::vector<std::thread> readers;
+  readers.reserve(3);
+  for (int t = 0; t < 3; ++t) {
+    readers.emplace_back([&] {
+      std::uint64_t local = 0;
+      std::uint64_t torn = 0;
+      while (!stop.load(std::memory_order_relaxed)) {
+        const TestParams SNAP = bank.active();
+        if (SNAP.flags != ~static_cast<std::uint32_t>(SNAP.value)) {
+          ++torn;
+        }
+        ++local;
+      }
+      totalReads.fetch_add(local, std::memory_order_relaxed);
+      tornReads.fetch_add(torn, std::memory_order_relaxed);
+    });
+  }
+
+  // Single writer: maximum publish pressure for a fixed cycle budget.
+  bool flip = false;
+  for (int i = 0; i < 200000; ++i) {
+    ASSERT_EQ(bank.load(flip ? A : B, consistent), Status::SUCCESS);
+    ASSERT_EQ(bank.apply(), Status::SUCCESS);
+    flip = !flip;
+  }
+
+  stop.store(true, std::memory_order_relaxed);
+  for (auto& r : readers) {
+    r.join();
+  }
+
+  EXPECT_EQ(tornReads.load(), 0u);
+  EXPECT_GT(totalReads.load(), 0u);
 }
 
 /* ----------------------------- Contracts ----------------------------- */
