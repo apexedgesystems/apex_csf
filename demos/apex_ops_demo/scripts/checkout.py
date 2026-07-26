@@ -41,6 +41,9 @@ Comprehensive C2 verification suite organized in three layers:
     29. WaveGen INSPECT tunable Read WaveGen#0 TUNABLE_PARAM (frequency)
     30. WaveGen GET_STATS      Custom opcode 0x0100
     31. Multi-instance verify  Both WaveGen instances produce different output
+    31a. ParamBank hot-swap     SET_PARAMS mid-stream, no stall, atomic swap
+    31b. ParamBank rollback     ROLLBACK_PARAMS restores the previous set
+    31c. Validation rail        Rejected set never publishes, wave unaffected
     32. SysMonitor reachability NOOP to SystemMonitor
 
   Summary:
@@ -717,6 +720,93 @@ def run_checkout(args: argparse.Namespace) -> int:
                 "Both instances advancing",
                 step0 > 0 and step1 > 0,
             )
+
+        section("31a. ParamBank Live Hot-Swap (SET_PARAMS)")
+        # Baseline tunables + step counter, then swap params mid-stream and
+        # prove the 100 Hz task never stalls while the set changes.
+        r = c2.inspect(0x00D000, category=1)
+        base = r.get("extra", b"")[:32]
+        base_freq = struct.unpack_from("<f", base, 0)[0]
+        base_type = base[24]
+        r = c2.inspect(0x00D000, category=2)
+        step_pre = struct.unpack_from("<I", r.get("extra", b""), 40)[0]
+        t_pre = time.monotonic()
+
+        # 5 Hz square, amplitude 1.5 (baseline is typically 1 Hz sine)
+        new_params = struct.pack("<ffffffB3xf", 5.0, 1.5, 0.0, 0.0, 0.0, 0.5, 1, 0.0)
+        r = c2.send_command(0x00D000, 0x0101, new_params)
+        check("SET_PARAMS accepted (queued)", r["status"] == 0, r["status_name"])
+
+        deadline = time.monotonic() + 1.0
+        swapped = False
+        while time.monotonic() < deadline:
+            r = c2.inspect(0x00D000, category=1)
+            extra = r.get("extra", b"")
+            if len(extra) >= 32 and abs(struct.unpack_from("<f", extra, 0)[0] - 5.0) < 1e-3:
+                swapped = True
+                break
+            time.sleep(0.02)
+        t_swap = time.monotonic()
+        check(f"Params swapped live ({(t_swap - t_pre) * 1000:.0f} ms to visibility)", swapped)
+
+        time.sleep(0.5)  # run on the new set before sampling continuity
+        r = c2.inspect(0x00D000, category=2)
+        step_post = struct.unpack_from("<I", r.get("extra", b""), 40)[0]
+        elapsed = time.monotonic() - t_pre
+        ticks = step_post - step_pre
+        expected = elapsed * 100.0
+        stall_msg = (
+            f"No stall through swap: {ticks} ticks in {elapsed * 1000:.0f} ms"
+            f" (~{expected:.0f} expected)"
+        )
+        check(stall_msg, ticks >= expected * 0.8)
+        r = c2.inspect(0x00D000, category=1)
+        extra = r.get("extra", b"")
+        check("WaveType now SQUARE", len(extra) >= 32 and extra[24] == 1)
+        check(
+            "Amplitude now 1.5",
+            len(extra) >= 32 and abs(struct.unpack_from("<f", extra, 4)[0] - 1.5) < 1e-3,
+        )
+
+        section("31b. ParamBank Rollback (ROLLBACK_PARAMS)")
+        # One level of history: restores the pre-swap set. Runs BEFORE the
+        # validation check below -- staging any new set (even a rejected
+        # one) forfeits the rollback history by design.
+        r = c2.send_command(0x00D000, 0x0102)
+        check("ROLLBACK_PARAMS accepted (queued)", r["status"] == 0, r["status_name"])
+        deadline = time.monotonic() + 1.0
+        rolled = False
+        extra = b""
+        while time.monotonic() < deadline:
+            r = c2.inspect(0x00D000, category=1)
+            extra = r.get("extra", b"")
+            if len(extra) >= 32 and abs(struct.unpack_from("<f", extra, 0)[0] - base_freq) < 1e-3:
+                rolled = True
+                break
+            time.sleep(0.02)
+        check(f"Rolled back to baseline ({base_freq:.1f} Hz)", rolled)
+        if rolled and len(extra) >= 32:
+            check("Baseline waveType restored", extra[24] == base_type)
+
+        section("31c. ParamBank Validation Rail (reject garbage)")
+        # Out-of-range set (999 Hz, negative amplitude, duty 2.0, type 9):
+        # validation refuses it at processing time, nothing publishes, and
+        # the wave keeps ticking on the last good set.
+        r = c2.inspect(0x00D000, category=2)
+        step_pre = struct.unpack_from("<I", r.get("extra", b""), 40)[0]
+        bad_params = struct.pack("<ffffffB3xf", 999.0, -5.0, 0.0, 0.0, 0.0, 2.0, 9, 0.0)
+        r = c2.send_command(0x00D000, 0x0101, bad_params)
+        time.sleep(0.4)
+        r = c2.inspect(0x00D000, category=1)
+        extra = r.get("extra", b"")
+        freq_now = struct.unpack_from("<f", extra, 0)[0] if len(extra) >= 32 else -1.0
+        check(
+            f"Rejected set never published (freq still {freq_now:.1f} Hz)",
+            abs(freq_now - base_freq) < 1e-3,
+        )
+        r = c2.inspect(0x00D000, category=2)
+        step_post = struct.unpack_from("<I", r.get("extra", b""), 40)[0]
+        check("Wave still ticking after rejection", step_post > step_pre)
 
         section("32. SystemMonitor Reachability")
         r = c2.send_command(0x00C800, proto.SYS_NOOP)

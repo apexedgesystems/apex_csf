@@ -13,9 +13,14 @@
  *   - waveStep  (100 Hz): Phase advance, waveform computation, statistics
  *   - telemetry (1 Hz):   Status logging via componentLog()
  *
- * All waveform parameters are TPRM-configurable at runtime via RELOAD_TPRM.
- * Changing waveType or frequency produces immediate visual feedback in C2
- * strip charts.
+ * All waveform parameters are TPRM-configurable at runtime via RELOAD_TPRM,
+ * and hot-swappable per instance through SET_PARAMS (0x0101) with rollback
+ * via ROLLBACK_PARAMS (0x0102). Parameters live in a ParamBank: every
+ * update stages into the inactive bank, validates, and publishes with an
+ * atomic pointer swap, so the 100 Hz waveStep never observes a torn
+ * parameter set and never stops ticking during a reload. A rejected set
+ * is never published. Changing waveType or frequency produces immediate
+ * visual feedback in C2 strip charts.
  *
  * @note waveStep is RT-safe (no allocation, bounded float math + LCG noise).
  * @note telemetry is NOT RT-safe (fmt::format I/O).
@@ -24,9 +29,9 @@
 #include "demos/apex_ops_demo/wave/inc/WaveGenData.hpp"
 
 #include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/ParamBank.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
-#include "src/utilities/helpers/inc/Files.hpp"
 
 #include <fmt/format.h>
 
@@ -41,8 +46,8 @@ namespace wave {
 
 using system_core::data::Output;
 using system_core::data::State;
-using system_core::data::TunableParam;
 using system_core::system_component::CommandResult;
+using system_core::system_component::ParamBank;
 using Status = system_core::system_component::Status;
 
 /* ----------------------------- Constants ----------------------------- */
@@ -94,7 +99,7 @@ public:
    */
   std::uint8_t waveStep() noexcept {
     auto& s = state_.get();
-    const auto& p = tunableParams_.get();
+    const auto& p = paramBank_.active();
 
     // Advance phase
     s.phase += TWO_PI * static_cast<double>(p.frequency) * DT;
@@ -182,7 +187,7 @@ public:
    */
   std::uint8_t telemetry() noexcept {
     auto& s = state_.get();
-    const auto& p = tunableParams_.get();
+    const auto& p = paramBank_.active();
 
     const double RMS =
         (s.sampleCount > 0) ? std::sqrt(s.rmsAccum / static_cast<double>(s.sampleCount)) : 0.0;
@@ -204,7 +209,13 @@ public:
    * @brief Handle commands dispatched to this WaveGenerator instance.
    *
    * Component-specific opcodes:
-   *   - 0x0100: GET_STATS - Returns WaveGenHealthTlm (32 bytes).
+   *   - 0x0100: GET_STATS       - Returns WaveGenHealthTlm (32 bytes).
+   *   - 0x0101: SET_PARAMS      - Stage + validate + atomically publish a
+   *                               full WaveGenTunableParams (32 bytes). A
+   *                               set that fails validation is never
+   *                               published and NAKs ERROR_LOAD_INVALID.
+   *   - 0x0102: ROLLBACK_PARAMS - Restore the previously active set (one
+   *                               level; staging a new set forfeits it).
    *
    * Delegates to base class for common opcodes (0x0080-0x0082).
    */
@@ -212,11 +223,13 @@ public:
                                            apex::compat::rospan<std::uint8_t> payload,
                                            std::vector<std::uint8_t>& response) noexcept override {
     constexpr std::uint16_t GET_STATS = 0x0100;
+    constexpr std::uint16_t SET_PARAMS = 0x0101;
+    constexpr std::uint16_t ROLLBACK_PARAMS = 0x0102;
 
     switch (opcode) {
     case GET_STATS: {
       const auto& s = state_.get();
-      const auto& p = tunableParams_.get();
+      const auto& p = paramBank_.active();
 
       WaveGenHealthTlm tlm{};
       tlm.waveType = p.waveType;
@@ -231,6 +244,28 @@ public:
       tlm.sampleCount = static_cast<std::uint32_t>(s.sampleCount & 0xFFFFFFFF);
       response.resize(sizeof(tlm));
       std::memcpy(response.data(), &tlm, sizeof(tlm));
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+    }
+
+    case SET_PARAMS: {
+      if (payload.size() != sizeof(WaveGenTunableParams)) {
+        return static_cast<std::uint8_t>(Status::ERROR_PARAM);
+      }
+      WaveGenTunableParams incoming{};
+      std::memcpy(&incoming, payload.data(), sizeof(incoming));
+
+      if (paramBank_.load(incoming, validateParams) != Status::SUCCESS) {
+        return static_cast<std::uint8_t>(Status::ERROR_LOAD_INVALID);
+      }
+      publishStaged();
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+    }
+
+    case ROLLBACK_PARAMS: {
+      if (paramBank_.rollback() != Status::SUCCESS) {
+        return static_cast<std::uint8_t>(Status::WARN_NOOP);
+      }
+      inspectParams_ = paramBank_.active();
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
     }
 
@@ -259,30 +294,30 @@ public:
     std::snprintf(filename, sizeof(filename), "%06x.tprm", fullUid());
     const std::filesystem::path TPRM_PATH = tprmDir / filename;
 
-    if (!std::filesystem::exists(TPRM_PATH)) {
-      setConfigured(true); // Accept defaults
-      return false;
+    bool loaded = false;
+    if (std::filesystem::exists(TPRM_PATH)) {
+      loaded = paramBank_.load(TPRM_PATH, validateParams) == Status::SUCCESS;
     }
+    if (!loaded) {
+      // Missing, unreadable, or rejected file: stage defaults so the bank
+      // always publishes a validated set.
+      (void)paramBank_.load(WaveGenTunableParams{}, validateParams);
+    }
+    publishStaged();
+    setConfigured(true);
 
-    std::string error;
-    WaveGenTunableParams loaded{};
-    if (apex::helpers::files::hex2cpp(TPRM_PATH.string(), loaded, error)) {
-      tunableParams_.get() = loaded;
-      setConfigured(true);
+    // Seed noise generator from instance index for deterministic per-instance noise
+    state_.get().noiseSeed = static_cast<std::uint32_t>(instanceIndex()) * 2654435761U;
 
-      // Seed noise generator from instance index for deterministic per-instance noise
-      state_.get().noiseSeed = static_cast<std::uint32_t>(instanceIndex()) * 2654435761U;
-
+    if (loaded) {
+      const auto& p = paramBank_.active();
       auto* log = componentLog();
       if (log != nullptr) {
-        log->info(label(), fmt::format("TPRM loaded: type={} f={:.1f}Hz amp={:.2f}",
-                                       loaded.waveType, loaded.frequency, loaded.amplitude));
+        log->info(label(), fmt::format("TPRM loaded: type={} f={:.1f}Hz amp={:.2f}", p.waveType,
+                                       p.frequency, p.amplitude));
       }
-      return true;
     }
-
-    setConfigured(true); // Accept defaults on parse failure
-    return false;
+    return loaded;
   }
 
 protected:
@@ -290,6 +325,13 @@ protected:
 
   [[nodiscard]] std::uint8_t doInit() noexcept override {
     using system_core::data::DataCategory;
+
+    // Components normally receive loadTprm() at registration; publish
+    // defaults here if no set was ever staged.
+    if (paramBank_.activeGeneration() == 0) {
+      (void)paramBank_.load(WaveGenTunableParams{}, validateParams);
+      publishStaged();
+    }
 
     // Seed noise generator from instance index
     state_.get().noiseSeed = static_cast<std::uint32_t>(instanceIndex()) * 2654435761U;
@@ -300,8 +342,11 @@ protected:
     registerTask<WaveGenerator, &WaveGenerator::telemetry>(
         static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry");
 
-    // Register data for registry (enables INSPECT from C2)
-    registerData(DataCategory::TUNABLE_PARAM, "tunableParams", &tunableParams_.get(),
+    // Register data for registry (enables INSPECT from C2). Tunables are
+    // registered through a stable mirror refreshed on every publish -- the
+    // bank's active pointer moves between banks on each swap, and the
+    // registry needs a fixed address.
+    registerData(DataCategory::TUNABLE_PARAM, "tunableParams", &inspectParams_,
                  sizeof(WaveGenTunableParams));
     registerData(DataCategory::STATE, "state", &state_.get(), sizeof(WaveGenState));
     registerData(DataCategory::OUTPUT, "output", &waveOutput_.get(), sizeof(WaveGenOutput));
@@ -310,9 +355,36 @@ protected:
   }
 
 private:
+  /* ----------------------------- Parameter Staging ----------------------------- */
+
+  /**
+   * @brief Validate a candidate parameter set before it can be published.
+   *
+   * Ranges follow the field contracts in WaveGenData.hpp; non-finite
+   * floats are rejected wholesale.
+   */
+  [[nodiscard]] static bool validateParams(const WaveGenTunableParams& p) noexcept {
+    return std::isfinite(p.frequency) && p.frequency >= 0.0F && p.frequency <= 50.0F &&
+           std::isfinite(p.amplitude) && p.amplitude >= 0.0F && std::isfinite(p.dcOffset) &&
+           std::isfinite(p.phaseOffset) && std::isfinite(p.noiseAmplitude) &&
+           p.noiseAmplitude >= 0.0F && std::isfinite(p.dutyCycle) && p.dutyCycle >= 0.0F &&
+           p.dutyCycle <= 1.0F && p.waveType <= 4;
+  }
+
+  /** @brief Publish the staged set (initial or hot swap) and refresh the INSPECT mirror. */
+  void publishStaged() noexcept {
+    if (paramBank_.activeGeneration() == 0) {
+      (void)paramBank_.publishInitial();
+    } else {
+      (void)paramBank_.apply();
+    }
+    inspectParams_ = paramBank_.active();
+  }
+
   /* ----------------------------- Data Members ----------------------------- */
 
-  TunableParam<WaveGenTunableParams> tunableParams_{};
+  ParamBank<WaveGenTunableParams> paramBank_{};
+  WaveGenTunableParams inspectParams_{}; ///< Stable address for registry INSPECT.
   State<WaveGenState> state_{};
   Output<WaveGenOutput> waveOutput_{};
 };

@@ -4,7 +4,7 @@ End-to-end build, test, release, and deploy for Raspberry Pi.
 
 ## Prerequisites
 
-- Pi: `kalex@192.168.1.119` (Pi 4, PREEMPT kernel)
+- Pi: `kalex@raspberrypi.local` (Pi 4; the DHCP address moves -- resolve via mDNS)
 - Docker Compose environment configured
 
 ## Procedure
@@ -20,20 +20,20 @@ make compose-testp
 make release APP=ApexOpsDemo
 
 # 4. Deploy to Pi (clean install from tarball)
-scp build/release/ApexOpsDemo.tar.gz kalex@192.168.1.119:~/ApexOpsDemo.tar.gz
-ssh kalex@192.168.1.119 'sudo rm -rf ~/apex_c2_demo && mkdir ~/apex_c2_demo && \
+scp build/release/ApexOpsDemo.tar.gz kalex@raspberrypi.local:~/ApexOpsDemo.tar.gz
+ssh kalex@raspberrypi.local 'sudo rm -rf ~/apex_c2_demo && mkdir ~/apex_c2_demo && \
   tar xzf ~/ApexOpsDemo.tar.gz -C ~/apex_c2_demo --strip-components=1 && \
   rm ~/ApexOpsDemo.tar.gz'
 
 # 5. Start on Pi
-ssh kalex@192.168.1.119 'cd ~/apex_c2_demo/rpi && \
+ssh kalex@raspberrypi.local 'cd ~/apex_c2_demo/rpi && \
   sudo ./run.sh </dev/null &>/tmp/opsdemo.log &'
 
 # 6. Verify
-ssh kalex@192.168.1.119 'pgrep ApexOpsDemo && sudo ss -tlnp | grep 9000'
+ssh kalex@raspberrypi.local 'pgrep ApexOpsDemo && sudo ss -tlnp | grep 9000'
 
 # 7. Run checkout
-python3 demos/apex_ops_demo/scripts/checkout.py --host 192.168.1.119 \
+python3 demos/apex_ops_demo/scripts/checkout.py --host raspberrypi.local \
   --skip-restart --skip-reload-lib
 ```
 
@@ -47,7 +47,7 @@ make apex-data-db
 make zenith-target APP=ApexOpsDemo
 
 # Validate against live target
-make zenith-validate APP=ApexOpsDemo HOST=192.168.1.119
+make zenith-validate APP=ApexOpsDemo HOST=raspberrypi.local
 
 # Copy to zenith
 cp -r build/hosted-x86_64-debug/zenith_targets/ApexOpsDemo/* \
