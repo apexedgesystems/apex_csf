@@ -1,5 +1,5 @@
-#ifndef APEX_SYSTEM_CORE_BASE_TRANSPORT_LINK_HPP
-#define APEX_SYSTEM_CORE_BASE_TRANSPORT_LINK_HPP
+#ifndef APEX_SYSTEM_COMPONENT_TRANSPORT_LINK_HPP
+#define APEX_SYSTEM_COMPONENT_TRANSPORT_LINK_HPP
 /**
  * @file TransportLink.hpp
  * @brief Transport provisioning for HW_MODEL/DRIVER virtual links.
@@ -21,7 +21,8 @@
  *   2. Add a case in provisionTransport() below
  *   3. No changes to HwModelBase or any executive code
  *
- * Part of the base interface layer - POSIX only, no framework dependencies.
+ * POSIX-tier facility (PTY, socketpair, syscalls); the platform-neutral
+ * TransportKind declaration it provisions for lives in the base tier.
  * All provisioning functions are NOT RT-safe (syscalls).
  */
 
@@ -198,4 +199,4 @@ inline bool setNonBlocking(int fd) noexcept {
 } // namespace system_component
 } // namespace system_core
 
-#endif // APEX_SYSTEM_CORE_BASE_TRANSPORT_LINK_HPP
+#endif // APEX_SYSTEM_COMPONENT_TRANSPORT_LINK_HPP
