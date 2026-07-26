@@ -587,7 +587,7 @@ def run_checkout(args: argparse.Namespace) -> int:
                         "..",
                         "..",
                         "build",
-                        "native-linux-debug",
+                        "hosted-x86_64-debug",
                         "test_plugins",
                         "OpsTestPlugin_v2.so",
                     ),
