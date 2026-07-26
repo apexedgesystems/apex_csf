@@ -20,8 +20,9 @@
 # Usage:
 #   apex_add_deployment(
 #     NAME ApexHilDemo
-#     EXEC ApexHilDemo                                 # exactly one executive
-#     TPRM demos/apex_hil_demo/tprm/master_1khz.tprm    # optional
+#     EXEC ApexHilDemo                          # exactly one executive
+#     TPRM ApexHilDemo/master_1khz.tprm         # optional; product ref or repo path
+#     TPRM_FALLBACK ApexHilDemo/safe_master.tprm # optional; pre-stages bank_b
 #   )
 #   ninja package_ApexHilDemo        # cmake --install --component + tarball
 #   make package APP=ApexHilDemo
