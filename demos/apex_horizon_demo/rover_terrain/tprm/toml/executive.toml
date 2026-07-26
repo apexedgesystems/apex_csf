@@ -1,0 +1,9 @@
+# Executive (0x000000): 50 Hz fundamental, RT mode, run until interrupted.
+[ExecutiveTunableParams]
+clockFrequencyHz = { type = "uint", size = 2, value = 50 }
+reserved0 = { type = "uint", size = 2, value = 0 }
+rtMode = { type = "uint", size = 1, value = 1 }
+reserved1 = { type = "uint", size = 1, value = 0 }
+reserved2 = { type = "uint", size = 2, value = 0 }
+rtMaxLagTicks = { type = "uint", size = 4, value = 5 }
+startupMode = { type = "uint", size = 1, value = 0 }

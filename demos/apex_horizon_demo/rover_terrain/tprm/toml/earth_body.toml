@@ -1,0 +1,11 @@
+# Earth CelestialBody (0xDC00): J2 gravity, HTILE terrain from the
+# generated 1-degree patch, LAYERED USSA76 atmosphere. The data files are
+# generated artifacts (never committed); see docs/HOW_TO_RUN.md.
+[CelestialBodyTunables]
+body                = { type = "uint",   size = 1,   value = 0 }    # EARTH
+gravity_fidelity    = { type = "uint",   size = 1,   value = 1 }    # J2
+terrain_fidelity    = { type = "uint",   size = 1,   value = 3 }    # HTILE
+atmosphere_fidelity = { type = "uint",   size = 1,   value = 2 }    # LAYERED
+gravity_data_path   = { type = "string", size = 256, value = "" }
+terrain_data_path   = { type = "string", size = 256, value = "demos/apex_horizon_demo/rover_terrain/data/earth_proc.htile" }
+atmosphere_data_path= { type = "string", size = 256, value = "demos/apex_horizon_demo/rover_terrain/data/usa76.atm" }

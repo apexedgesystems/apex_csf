@@ -1,0 +1,28 @@
+# ShmRingBridge (0xCB00): ROVR/1 egress to /horizon_rover. Capacity 16,
+# 256-byte forward frames from the rover's OUTPUT block, 4-byte inert
+# reverse ring; orphan self-heal on; sink off (egress-only).
+[ShmRingBridgeTunables]
+app_magic            = { type = "uint",   size = 4,  value = 1380931154 }      # 0x524F5652 = "ROVR"
+app_version          = { type = "uint",   size = 2,  value = 1 }
+reserved0            = { type = "uint",   size = 2,  value = 0 }
+capacity             = { type = "uint",   size = 4,  value = 16 }
+payload_size         = { type = "uint",   size = 4,  value = 256 }             # = sizeof(RoverFrame)
+reverse_payload_size = { type = "uint",   size = 4,  value = 4 }               # inert reverse ring
+source_uid           = { type = "uint",   size = 4,  value = 56832 }           # 0xDE00 = earthRover
+source_category      = { type = "uint",   size = 1,  value = 4 }               # DataCategory::OUTPUT
+reserved1_0          = { type = "uint",   size = 1,  value = 0 }
+reserved1_1          = { type = "uint",   size = 1,  value = 0 }
+reserved1_2          = { type = "uint",   size = 1,  value = 0 }
+source_byte_offset   = { type = "uint",   size = 2,  value = 0 }
+source_byte_len      = { type = "uint",   size = 2,  value = 256 }
+sink_enabled         = { type = "uint",   size = 1,  value = 0 }               # egress-only
+orphan_reclaim       = { type = "uint",   size = 1,  value = 1 }               # self-heal if the path vanishes
+sink_reserved_0      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_1      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_2      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_3      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_4      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_5      = { type = "uint",   size = 1,  value = 0 }
+shm_path             = { type = "string", size = 64, value = "/horizon_rover" }
+wakeup_path          = { type = "string", size = 64, value = "" }              # auto-derive /horizon_rover_wake
+label                = { type = "string", size = 16, value = "rover_bridge" }
