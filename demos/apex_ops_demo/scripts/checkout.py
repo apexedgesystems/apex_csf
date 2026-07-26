@@ -616,9 +616,18 @@ def run_checkout(args: argparse.Namespace) -> int:
 
         section("26. RTS Sequence (NOOP Sweep)")
         if not args.skip_rts:
-            # Upload the NOOP sweep RTS binary
+            # Upload the NOOP sweep RTS binary (compiled by the build)
             rts_path = os.path.join(
-                os.path.dirname(__file__), "..", "tprm", "rts", "rts_001_noop_sweep.rts"
+                os.path.dirname(__file__),
+                *([".."] * 3),
+                "build",
+                "hosted-x86_64-debug",
+                "demos",
+                "apex_ops_demo",
+                "exec",
+                "tprm",
+                "rts",
+                "001.rts",
             )
             if os.path.isfile(rts_path):
                 result = c2.send_file(rts_path, "rts/noop_sweep.rts")

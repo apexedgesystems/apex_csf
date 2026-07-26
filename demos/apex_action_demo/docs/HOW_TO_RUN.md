@@ -14,7 +14,14 @@ or Raspberry Pi.
 ## Prerequisites
 
 - Build the project: `make compose-debug`
-- Compiled TPRM archive: `demos/apex_action_demo/tprm/master.tprm`
+
+The build compiles `tprm/toml/` and packs the master archive from
+`tprm/tprm.manifest` (target `apex_tprm_ApexActionDemo`, part of the
+default build), so a fresh build always carries a matching TPRM:
+
+```
+build/hosted-x86_64-debug/demos/apex_action_demo/exec/tprm/master.tprm
+```
 
 ## Quick Start (Inside Dev Container)
 
@@ -22,14 +29,16 @@ or Raspberry Pi.
 # Build
 make compose-debug
 
+TPRM=build/hosted-x86_64-debug/demos/apex_action_demo/exec/tprm
+
 # Run (auto-shutdown after 30 seconds)
 ./build/hosted-x86_64-debug/bin/ApexActionDemo \
-  --config demos/apex_action_demo/tprm/master.tprm \
+  --config $TPRM/master.tprm \
   --shutdown-after 30
 
 # Run indefinitely (Ctrl+C to stop)
 ./build/hosted-x86_64-debug/bin/ApexActionDemo \
-  --config demos/apex_action_demo/tprm/master.tprm
+  --config $TPRM/master.tprm
 ```
 
 ## Operations Client Connection
@@ -85,41 +94,32 @@ block to zenith's `config.toml`.
 ## Configuration
 
 All runtime parameters are configured via TPRM TOML files in
-`tprm/toml/`. To change watchpoint thresholds or sequence campaigns:
+`tprm/toml/`, and `tprm/tprm.manifest` is the packing recipe that maps
+each fullUid to its TOML source. To change watchpoint thresholds or
+sequence campaigns:
 
 1. Edit the relevant TOML file (e.g., `tprm/toml/action.toml`)
-2. Recompile: `cfg2bin --config tprm/toml/action.toml --output tprm/action.tprm`
-3. Repack: run `tprm_pack pack` with all entries
-4. Restart the application with the new `master.tprm`
+2. Rebuild -- the tprm target recompiles the payload and repacks
+   `master.tprm` automatically
+3. Restart the application with the regenerated `master.tprm`
 
-## TPRM Compilation
+Adding a component to the archive is one manifest line
+(`0x<fullUid>  toml/<file>.toml`); a fullUid arriving twice is a
+configure error, so the manifest is also the collision check.
 
-```bash
-TOOLS=build/hosted-x86_64-debug/bin/tools/rust
-DIR=demos/apex_action_demo/tprm
+## RTS Sequences
 
-# Compile each TOML to binary
-$TOOLS/cfg2bin --config $DIR/toml/executive.toml      --output $DIR/executive.tprm
-$TOOLS/cfg2bin --config $DIR/toml/scheduler.toml      --output $DIR/scheduler.tprm
-$TOOLS/cfg2bin --config $DIR/toml/interface.toml       --output $DIR/interface.tprm
-$TOOLS/cfg2bin --config $DIR/toml/action.toml          --output $DIR/action.tprm
-$TOOLS/cfg2bin --config $DIR/toml/data_transform.toml  --output $DIR/data_transform.tprm
-$TOOLS/cfg2bin --config $DIR/toml/system_monitor.toml  --output $DIR/system_monitor.tprm
+The `[sequences]` group in `tprm/tprm.manifest` maps each slot to its
+TOML source under `tprm/toml/rts/`; the build compiles the bank into
+the generated tprm directory in slot naming:
 
-# Compile RTS sequences
-$TOOLS/cfg2bin --config $DIR/toml/rts/rts_001_fault_campaign.toml --output $DIR/rts/000.rts
-$TOOLS/cfg2bin --config $DIR/toml/rts/rts_002_cleanup.toml        --output $DIR/rts/001.rts
-
-# Pack into archive
-$TOOLS/tprm_pack pack \
-  -e "0x000000:$DIR/executive.tprm" \
-  -e "0x000100:$DIR/scheduler.tprm" \
-  -e "0x000400:$DIR/interface.tprm" \
-  -e "0x000500:$DIR/action.tprm" \
-  -e "0x00CA00:$DIR/data_transform.tprm" \
-  -e "0x00C800:$DIR/system_monitor.tprm" \
-  -o "$DIR/master.tprm"
 ```
+build/hosted-x86_64-debug/demos/apex_action_demo/exec/tprm/rts/000.rts  # fault campaign
+build/hosted-x86_64-debug/demos/apex_action_demo/exec/tprm/rts/001.rts  # cleanup
+```
+
+The executive loads the `rts/` bank next to its master at boot, so
+running with the generated `master.tprm` picks these up automatically.
 
 ## Component Map
 

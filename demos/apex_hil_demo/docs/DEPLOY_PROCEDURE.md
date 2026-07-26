@@ -76,6 +76,15 @@ ssh kalex@raspberrypi.local 'sudo cat ~/apex/system.log'
 - **TPRM:** `shutdownMode = SIGNAL_ONLY (0)`, `shutdownAfterSeconds = 0`.
   No `--shutdown-after` needed. System runs until OS signal (SIGTERM/SIGINT).
 
+- **TPRM packing:** The build packs the master archives from
+  `tprm/tprm.manifest` (target `apex_tprm_ApexHilDemo`). The deployment
+  (`apex_add_deployment` with `TPRM ApexHilDemo/master_1khz.tprm` and
+  `TPRM_FALLBACK ApexHilDemo/safe_master.tprm`) stages the primary master
+  into the active bank and pre-stages `safe_master` into
+  `bank_b/tprm/master.tprm`, so a bank swap (RELOAD_TPRM against the
+  inactive bank) reaches a known-good commandable configuration with zero
+  uplink.
+
 - **Always use `</dev/null`** when starting headless. The executive's stdin
   CLI reader interprets 'p' as PAUSE, 'q' as QUIT. Stale bytes from a closed
   SSH pipe trigger unintended commands.
@@ -106,8 +115,8 @@ deploys just the ApexHilDemo deployment:
   run.sh                       # launch script
   bank_a/bin/ApexHilDemo       # the single executive (one --fs-root owner)
   bank_a/libs/*.so*            # shared libraries (self-located via $ORIGIN RPATH)
-  bank_a/tprm/master.tprm     # TPRM config
-  bank_b/{bin,libs,tprm}/     # inactive bank (created by doInit; staging for OTA)
+  bank_a/tprm/master.tprm     # primary master (master_1khz)
+  bank_b/{bin,libs,tprm}/     # inactive bank (OTA staging); safe_master pre-staged at tprm/master.tprm
   active_bank                  # active-bank marker
   .apex_fs.lock                # single-owner lock (refuses a second executive)
   system.log                   # system log

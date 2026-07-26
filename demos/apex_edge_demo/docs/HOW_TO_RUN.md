@@ -12,7 +12,10 @@
 
 - Docker with NVIDIA runtime (`nvidia-container-toolkit`)
 - GPU visible in container (`nvidia-smi` works inside `dev-cuda`)
-- Rust tools built (`make tools-rust`) for TPRM generation
+
+The build packs the TPRM masters from `tprm/tprm.manifest` into
+`build/hosted-x86_64-debug/demos/apex_edge_demo/exec/tprm/` (target
+`apex_tprm_ApexEdgeDemo`, part of the default build).
 
 **Not required:** The demo runs in CPU stub mode when no GPU is detected.
 All 4 models fall back to no-op stubs, so the executive and scheduler can be
@@ -35,7 +38,7 @@ docker compose run --rm -T dev-cuda bash -c '
   cd build/hosted-x86_64-debug
   rm -rf .apex_fs
   bin/ApexEdgeDemo \
-    --config demos/apex_edge_demo/tprm/master.tprm \
+    --config demos/apex_edge_demo/exec/tprm/master.tprm \
     --shutdown-after 10 --skip-cleanup'
 
 # 4. Check results
@@ -82,16 +85,18 @@ All 4 GPU kernels running concurrently with real data processing.
 
 ## TPRM Configuration
 
-Two TPRM sets are maintained for different targets:
+The build packs two master archives from `tprm/tprm.manifest`, both in
+`build/hosted-x86_64-debug/demos/apex_edge_demo/exec/tprm/`:
 
-| File                    | Target          | Scheduler          |
-| ----------------------- | --------------- | ------------------ |
-| `tprm/master.tprm`      | Native (dev PC) | 1 pool, 8 workers  |
-| `tprm/master_thor.tprm` | NVIDIA Thor     | 1 pool, 14 workers |
+| Archive            | Target          | Scheduler          |
+| ------------------ | --------------- | ------------------ |
+| `master.tprm`      | Native (dev PC) | 1 pool, 8 workers  |
+| `master_thor.tprm` | NVIDIA Thor     | 1 pool, 14 workers |
 
 TOML sources are in `tprm/toml/` (shared) and `tprm/toml/thor/` (Thor overrides).
-See [tprm/README.md](../tprm/README.md) for the full TPRM layout and regeneration
-commands.
+To change configuration: edit the TOML, rebuild (the tprm target repacks both
+masters automatically), and restart. See [tprm/README.md](../tprm/README.md)
+for the full TPRM layout and fullUid map.
 
 ---
 

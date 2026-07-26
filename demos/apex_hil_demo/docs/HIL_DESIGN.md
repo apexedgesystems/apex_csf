@@ -127,12 +127,11 @@ demos/apex_hil_demo/
 +-- scripts/                      C2 demo and checkout scripts (Python)
 +-- c2_data/                      Generated JSON struct dictionaries for C2
 +-- test/plugin/                  TestPlugin_v1/v2 for hot-swap verification
-+-- tprm/                         TPRM archives + source TOMLs
-|   +-- master.tprm               100 Hz packed archive
-|   +-- master_1khz.tprm          1 kHz variant
-|   +-- safe_master.tprm          Degraded-mode (C2 only)
++-- tprm/                         TPRM packing recipe + source TOMLs
+|   +-- tprm.manifest             Packing recipe: master.tprm (100 Hz),
+|   |                             master_1khz.tprm (1 kHz), safe_master.tprm (fallback)
 |   +-- toml/                     Source configs (executive, scheduler, drivers, etc.)
-|   +-- ats/, rts/                Action sequences
+|   +-- ats/, rts/                Compiled sequence banks (operator upload)
 +-- docs/                         HIL_DESIGN.md, HOW_TO_RUN.md, DEPLOY_PROCEDURE.md
 ```
 
@@ -352,19 +351,29 @@ privileges, the executive falls back to SCHED_OTHER with a warning.
 
 ## TPRM Configuration
 
-All runtime configuration is packed into `master.tprm`:
+`tprm/tprm.manifest` is the packing recipe. The named component group
+`[components rig]` (interface, action, plant model, both driver instances,
+comparator, system monitor) is shared by `master.tprm` (100 Hz
+executive/scheduler) and `master_1khz.tprm` (1 kHz executive/scheduler);
+`safe_master.tprm` is the minimal fallback (safe executive + stock scheduler +
+interface). The CMake target `apex_tprm_ApexHilDemo` (part of the default
+build) compiles each TOML with cfg2bin and packs all three masters into
+`build/<preset>/demos/apex_hil_demo/exec/tprm/`. A fullUid arriving twice in
+one master is a configure error.
 
-| fullUid  | File                 | Contents                                                                     |
+`master.tprm` packs:
+
+| fullUid  | Source               | Contents                                                                     |
 | -------- | -------------------- | ---------------------------------------------------------------------------- |
-| 0x000000 | executive.tprm       | Clock, RT mode, thread config (6 threads)                                    |
-| 0x000100 | scheduler.tprm       | Task schedule (10 tasks)                                                     |
-| 0x000400 | interface.tprm       | C2 interface (host, port, framing, queue sizes)                              |
-| 0x000500 | action.tprm          | Action engine (watchpoints, groups, sequences, notifications, timed actions) |
-| 0x007800 | plant_model.tprm     | Plant tunable parameters (64 B)                                              |
-| 0x007A00 | driver_real.tprm     | HilDriver #0 (devicePath=/dev/ttyUSB0, 128 B)                                |
-| 0x007A01 | driver_emulated.tprm | HilDriver #1 (empty path, PTY auto, 128 B)                                   |
-| 0x007B00 | comparator.tprm      | HilComparator (warnThreshold=0.1N, 8 B)                                      |
-| 0x00C800 | system_monitor.tprm  | System monitor (Pi 4: 4 cores, no GPU)                                       |
+| 0x000000 | executive.toml       | Clock, RT mode, thread config (6 threads)                                    |
+| 0x000100 | scheduler.toml       | Task schedule (10 tasks)                                                     |
+| 0x000400 | interface.toml       | C2 interface (host, port, framing, queue sizes)                              |
+| 0x000500 | action.toml          | Action engine (watchpoints, groups, sequences, notifications, timed actions) |
+| 0x007800 | plant_model.toml     | Plant tunable parameters (64 B)                                              |
+| 0x007A00 | driver_real.toml     | HilDriver #0 (devicePath=/dev/ttyUSB0, 128 B)                                |
+| 0x007A01 | driver_emulated.toml | HilDriver #1 (empty path, PTY auto, 128 B)                                   |
+| 0x007B00 | comparator.toml      | HilComparator (warnThreshold=0.1N, 8 B)                                      |
+| 0x00C800 | system_monitor.toml  | System monitor (Pi 4: 4 cores, no GPU)                                       |
 
 ## UART Protocol
 

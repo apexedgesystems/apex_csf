@@ -25,9 +25,10 @@ ssh kalex@192.168.1.119 'sudo rm -rf ~/apex_action && mkdir ~/apex_action'
 # 5. Deploy RPi package
 rsync -a build/release/ApexActionDemo/rpi/ kalex@192.168.1.119:~/apex_action/
 
-# 6. Deploy boot-time RTS sequences
+# 6. Deploy boot-time RTS sequences (compiled by the build from toml/rts/)
 ssh kalex@192.168.1.119 'mkdir -p ~/apex_action/bank_a/rts'
-scp demos/apex_action_demo/tprm/rts/*.rts kalex@192.168.1.119:~/apex_action/bank_a/rts/
+scp build/cross-rpi-release/demos/apex_action_demo/exec/tprm/rts/*.rts \
+  kalex@192.168.1.119:~/apex_action/bank_a/rts/
 
 # 7. Start on Pi
 ssh kalex@192.168.1.119 'cd ~/apex_action && \

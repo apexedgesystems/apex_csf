@@ -10,7 +10,14 @@ any Linux host or Raspberry Pi.
 ## Prerequisites
 
 - Build the project: `make compose-debug`
-- Compiled TPRM archive: `demos/apex_ops_demo/tprm/master.tprm`
+
+The build compiles `tprm/toml/` and packs the master archive from
+`tprm/tprm.manifest` (target `apex_tprm_ApexOpsDemo`, part of the
+default build), so a fresh build always carries a matching TPRM:
+
+```
+build/hosted-x86_64-debug/demos/apex_ops_demo/exec/tprm/master.tprm
+```
 
 ## Quick Start (Inside Dev Container)
 
@@ -18,14 +25,16 @@ any Linux host or Raspberry Pi.
 # Build
 make compose-debug
 
+TPRM=build/hosted-x86_64-debug/demos/apex_ops_demo/exec/tprm
+
 # Run (auto-shutdown after 30 seconds)
 ./build/hosted-x86_64-debug/bin/ApexOpsDemo \
-  --config demos/apex_ops_demo/tprm/master.tprm \
+  --config $TPRM/master.tprm \
   --shutdown-after 30
 
 # Run indefinitely (Ctrl+C to stop)
 ./build/hosted-x86_64-debug/bin/ApexOpsDemo \
-  --config demos/apex_ops_demo/tprm/master.tprm
+  --config $TPRM/master.tprm
 ```
 
 ## Operations Client Connection
@@ -86,12 +95,17 @@ plot layouts (groupings, Y-axis ranges, thresholds).
 ## Configuration
 
 All runtime parameters are configured via TPRM TOML files in
-`tprm/toml/`. To change waveform parameters:
+`tprm/toml/`, and `tprm/tprm.manifest` is the packing recipe that maps
+each fullUid to its TOML source. To change waveform parameters:
 
 1. Edit `tprm/toml/wave_gen_0.toml` (frequency, amplitude, waveType, etc.)
-2. Recompile: `cfg2bin --config tprm/toml/wave_gen_0.toml --output tprm/wave_gen_0.tprm`
-3. Repack: run `tprm_pack pack` with all entries (see TPRM compilation section)
-4. Restart the application with the new `master.tprm`
+2. Rebuild -- the tprm target recompiles the payload and repacks
+   `master.tprm` automatically
+3. Restart the application with the regenerated `master.tprm`
+
+Adding a component to the archive is one manifest line
+(`0x<fullUid>  toml/<file>.toml`); a fullUid arriving twice is a
+configure error, so the manifest is also the collision check.
 
 Or reload at runtime:
 
@@ -99,48 +113,25 @@ Or reload at runtime:
 c2.update_tprm(0x00D000, "modified_wave_gen_0.tprm")
 ```
 
-## TPRM Compilation
-
-Individual TOML files are compiled to binary with `cfg2bin`, then packed
-into a single archive with `tprm_pack`:
-
-```bash
-TOOLS=build/hosted-x86_64-debug/bin/tools/rust
-DIR=demos/apex_ops_demo/tprm
-
-# Compile each TOML to binary
-$TOOLS/cfg2bin --config $DIR/toml/executive.toml     --output $DIR/executive.tprm
-$TOOLS/cfg2bin --config $DIR/toml/scheduler.toml     --output $DIR/scheduler.tprm
-$TOOLS/cfg2bin --config $DIR/toml/interface.toml      --output $DIR/interface.tprm
-$TOOLS/cfg2bin --config $DIR/toml/wave_gen_0.toml    --output $DIR/wave_gen_0.tprm
-$TOOLS/cfg2bin --config $DIR/toml/wave_gen_1.toml    --output $DIR/wave_gen_1.tprm
-$TOOLS/cfg2bin --config $DIR/toml/system_monitor.toml --output $DIR/system_monitor.tprm
-
-# Pack into archive
-$TOOLS/tprm_pack pack \
-  -e "0x000000:$DIR/executive.tprm" \
-  -e "0x000100:$DIR/scheduler.tprm" \
-  -e "0x000400:$DIR/interface.tprm" \
-  -e "0x00D000:$DIR/wave_gen_0.tprm" \
-  -e "0x00D001:$DIR/wave_gen_1.tprm" \
-  -e "0x00C800:$DIR/system_monitor.tprm" \
-  -o "$DIR/master.tprm"
-```
-
 ## RTS Demo Sequences
 
-Two sample RTS sequences are included in `tprm/rts/`:
+The `[sequences]` group in `tprm/tprm.manifest` maps each slot to its
+TOML source under `tprm/toml/rts/`; the build compiles the bank into
+the generated tprm directory in slot naming:
 
-| File                       | Description                                  |
-| -------------------------- | -------------------------------------------- |
-| `rts_001_noop_sweep.rts`   | Sends NOOP to each component with 1s spacing |
-| `rts_002_wave_control.rts` | DATA_WRITE zeros WaveGen#0 output, waits 3s  |
+| Generated file | Source                      | Description                                  |
+| -------------- | --------------------------- | -------------------------------------------- |
+| `rts/001.rts`  | `rts_001_noop_sweep.toml`   | Sends NOOP to each component with 1s spacing |
+| `rts/002.rts`  | `rts_002_wave_control.toml` | DATA_WRITE zeros WaveGen#0 output, waits 3s  |
 
 Load and run via the operations client:
 
 ```python
-# Upload sequence file
-c2.send_file("demos/apex_ops_demo/tprm/rts/rts_001_noop_sweep.rts", "rts/noop_sweep.rts")
+# Upload sequence file (compiled by the build)
+c2.send_file(
+    "build/hosted-x86_64-debug/demos/apex_ops_demo/exec/tprm/rts/001.rts",
+    "rts/noop_sweep.rts",
+)
 
 # Load into slot 0
 c2.send_command(0x000500, 0x0500, b"\x00.apex_fs/rts/noop_sweep.rts\x00")

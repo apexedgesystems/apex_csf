@@ -1,0 +1,20 @@
+# tprm.manifest -- ApexActionDemo
+# Packing recipe: what you read is what packs (see cmake/apex/Tprm.cmake).
+# The mission bank compiles to the generated tprm/rts/ directory in
+# slot naming; the operator stages it to the target's bank_a/rts/.
+# The master carries component configuration only.
+
+[components flight]
+0x000000  toml/executive.toml
+0x000100  toml/scheduler.toml
+0x000400  toml/interface.toml
+0x000500  toml/action.toml
+0x00CA00  toml/data_transform.toml
+0x00C800  toml/system_monitor.toml
+
+[sequences flight]
+rts 0  toml/rts/rts_001_fault_campaign.toml
+rts 1  toml/rts/rts_002_cleanup.toml
+
+[master master.tprm]
+use components flight

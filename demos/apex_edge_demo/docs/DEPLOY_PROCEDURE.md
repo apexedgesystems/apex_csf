@@ -7,7 +7,11 @@ End-to-end build, test, release, and deploy for NVIDIA Thor.
 - Thor: `kalex@192.168.1.40` (14-core aarch64, NVIDIA Thor GPU, 122 GB RAM)
 - SSH key auth configured (`ssh-copy-id kalex@192.168.1.40`)
 - Docker Compose environment configured on dev PC
-- Rust tools built (`make tools-rust`) for TPRM generation
+
+TPRM masters are packed by the build from `tprm/tprm.manifest` (target
+`apex_tprm_ApexEdgeDemo`, part of the default build) into
+`build/<preset>/demos/apex_edge_demo/exec/tprm/`; the release package ships
+`master_thor.tprm` from the cross-jetson build.
 
 ## Procedure
 
@@ -72,42 +76,15 @@ Two TPRM sets are maintained for different targets:
 | `tprm/toml/` (native) | 1 pool, 8 workers  | Dev PC testing  |
 | `tprm/toml/thor/`     | 1 pool, 14 workers | Thor deployment |
 
-The native scheduler TPRM is packed into `master.tprm` (used by `make release`).
-The Thor scheduler TPRM is packed into `master_thor.tprm` (for Thor-specific tuning).
+`tprm/tprm.manifest` composes both masters from the same algorithm chain; only
+the executive/scheduler/system_monitor timing trio differs. The build packs
+them into `build/cross-jetson-release/demos/apex_edge_demo/exec/tprm/`, and
+`make release APP=ApexEdgeDemo` stages `master_thor.tprm` into the package as
+`bank_a/tprm/master.tprm` (what boots on Thor).
 
-```bash
-# Regenerate native master.tprm (after TOML edits)
-./build/hosted-x86_64-debug/bin/tools/rust/cfg2bin \
-  --batch demos/apex_edge_demo/tprm/toml \
-  --output demos/apex_edge_demo/tprm
-
-./build/hosted-x86_64-debug/bin/tools/rust/tprm_pack pack \
-  -e 0x000000:demos/apex_edge_demo/tprm/executive.tprm \
-  -e 0x000100:demos/apex_edge_demo/tprm/scheduler.tprm \
-  -e 0x000500:demos/apex_edge_demo/tprm/action.tprm \
-  -e 0x008200:demos/apex_edge_demo/tprm/conv_filter.tprm \
-  -e 0x008300:demos/apex_edge_demo/tprm/fft_analyzer.tprm \
-  -e 0x008400:demos/apex_edge_demo/tprm/batch_stats.tprm \
-  -e 0x008500:demos/apex_edge_demo/tprm/stream_compact.tprm \
-  -e 0x00C800:demos/apex_edge_demo/tprm/system_monitor.tprm \
-  -o demos/apex_edge_demo/tprm/master.tprm
-
-# Regenerate Thor master_thor.tprm
-./build/hosted-x86_64-debug/bin/tools/rust/cfg2bin \
-  --batch demos/apex_edge_demo/tprm/toml/thor \
-  --output demos/apex_edge_demo/tprm/thor
-
-./build/hosted-x86_64-debug/bin/tools/rust/tprm_pack pack \
-  -e 0x000000:demos/apex_edge_demo/tprm/thor/executive.tprm \
-  -e 0x000100:demos/apex_edge_demo/tprm/thor/scheduler.tprm \
-  -e 0x000500:demos/apex_edge_demo/tprm/action.tprm \
-  -e 0x008200:demos/apex_edge_demo/tprm/conv_filter.tprm \
-  -e 0x008300:demos/apex_edge_demo/tprm/fft_analyzer.tprm \
-  -e 0x008400:demos/apex_edge_demo/tprm/batch_stats.tprm \
-  -e 0x008500:demos/apex_edge_demo/tprm/stream_compact.tprm \
-  -e 0x00C800:demos/apex_edge_demo/tprm/thor/system_monitor.tprm \
-  -o demos/apex_edge_demo/tprm/master_thor.tprm
-```
+After a TOML edit, rebuild: the `apex_tprm_ApexEdgeDemo` target recompiles the
+changed TOML with cfg2bin and repacks both masters automatically. See
+[../tprm/README.md](../tprm/README.md) for the manifest layout and fullUid map.
 
 ## Key Notes
 
@@ -148,7 +125,7 @@ STREAM_COMPACT - GPU complete: compacted=1M/4M selectivity=25% duration=413ms
   run.sh                       # launch script
   bank_a/bin/ApexEdgeDemo      # executive binary (aarch64)
   bank_a/libs/*.so*            # shared libraries (53 project libs)
-  bank_a/tprm/master.tprm     # TPRM config archive
+  bank_a/tprm/master.tprm     # TPRM config archive (staged master_thor.tprm)
   bank_b/{bin,libs,tprm}/     # inactive bank (created by doInit)
   active_bank                  # marker file
   system.log                   # system log

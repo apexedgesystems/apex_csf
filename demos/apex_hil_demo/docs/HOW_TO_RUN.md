@@ -37,6 +37,17 @@ make distclean
 make compose-debug
 ```
 
+The build compiles `tprm/toml/` and packs the three master archives from
+`tprm/tprm.manifest` (target `apex_tprm_ApexHilDemo`, part of the default
+build):
+
+```
+build/hosted-x86_64-debug/demos/apex_hil_demo/exec/tprm/
+  master.tprm          # 100 Hz executive/scheduler + rig components
+  master_1khz.tprm     # 1 kHz executive/scheduler + rig components
+  safe_master.tprm     # Minimal fallback (safe executive + stock scheduler + interface)
+```
+
 ### 2. Run All Tests
 
 ```bash
@@ -53,6 +64,10 @@ make release APP=ApexHilDemo
 
 This builds RPi (aarch64) and STM32 (bare-metal) targets, resolves shared
 library dependencies, creates the deployment package, and produces a tarball.
+The deployment stages `master_1khz.tprm` as the active-bank master and
+pre-stages `safe_master.tprm` into `bank_b/tprm/master.tprm`, so a bank swap
+(RELOAD_TPRM against the inactive bank) reaches a known-good commandable
+configuration with zero uplink.
 
 Output:
 
@@ -63,7 +78,8 @@ build/release/ApexHilDemo/
     bank_a/bin/ApexHilDemo        # Executive binary
     bank_a/bin/ApexWatchdog      # Watchdog supervisor binary
     bank_a/libs/*.so*             # Shared libraries
-    bank_a/tprm/master.tprm      # TPRM configuration
+    bank_a/tprm/master.tprm      # Primary master (master_1khz)
+    bank_b/tprm/master.tprm      # Pre-staged safe_master fallback
   stm32/
     firmware/*.bin                # STM32 firmware binary
 ```

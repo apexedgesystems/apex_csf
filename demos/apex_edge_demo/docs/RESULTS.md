@@ -156,7 +156,7 @@ docker compose run --rm -T dev-cuda bash -c '
   cd build/hosted-x86_64-debug
   rm -rf .apex_fs
   bin/ApexEdgeDemo \
-    --config /home/kalex/workspace/demos/apex_edge_demo/tprm/master.tprm \
+    --config demos/apex_edge_demo/exec/tprm/master.tprm \
     --shutdown-after 600 --skip-cleanup'
 
 # Analyze

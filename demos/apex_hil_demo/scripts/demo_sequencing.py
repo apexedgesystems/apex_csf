@@ -13,12 +13,14 @@ Demonstrates:
 Usage:
   python3 demo_sequencing.py [--host HOST] [--port PORT] [--rts PATH] [--slot N]
 
-Examples:
+Examples (the build compiles the bank into the generated tprm dir):
   # NOOP sweep (connectivity test)
-  python3 demo_sequencing.py --rts tprm/rts/rts_001_noop_sweep.rts --slot 0
+  python3 demo_sequencing.py \
+    --rts build/hosted-x86_64-debug/demos/apex_hil_demo/exec/tprm/rts/001.rts --slot 0
 
   # Safe mode entry
-  python3 demo_sequencing.py --rts tprm/rts/rts_002_safe_mode.rts --slot 1
+  python3 demo_sequencing.py \
+    --rts build/hosted-x86_64-debug/demos/apex_hil_demo/exec/tprm/rts/002.rts --slot 1
 """
 
 import argparse

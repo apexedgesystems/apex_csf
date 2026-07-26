@@ -171,9 +171,13 @@ def demo_tprm_update(c2: AprotoClient) -> None:
     import os
     import tempfile
 
-    tprm_path = "demos/apex_hil_demo/tprm/plant_model.bin"
+    # The build's tprm target generates this payload from toml/plant_model.toml.
+    tprm_path = (
+        "build/hosted-x86_64-debug/demos/apex_hil_demo/"
+        "exec/tprm/payloads/toml_plant_model_toml.tprm"
+    )
     if not os.path.exists(tprm_path):
-        print("  [SKIP] plant_model.bin not found locally")
+        print("  [SKIP] plant model payload not found (build first)")
         return
 
     # The plant TPRM is HilPlantTunableParams: 8 doubles (64 bytes).

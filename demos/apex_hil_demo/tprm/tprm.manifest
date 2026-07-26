@@ -1,0 +1,40 @@
+# tprm.manifest -- ApexHilDemo
+# Packing recipe: what you read is what packs (see cmake/apex/Tprm.cmake).
+# The rig chain (interface, action, plant, both driver instances,
+# comparator, monitor) is shared; the 100 Hz and 1 kHz masters differ
+# only in executive/scheduler timing. safe_master is the minimal
+# fallback image staged to bank_b by the deployment (TPRM_FALLBACK):
+# safe executive plus the stock scheduler and interface, so a bank swap
+# reaches a commandable idle loop without the rig chain.
+# The mission bank (rts + ats) compiles to the generated tprm/rts/ and
+# tprm/ats/ directories in slot naming; sequences load at runtime via
+# file transfer + LOAD_RTS.
+
+[components rig]
+0x000400  toml/interface.toml
+0x000500  toml/action.toml
+0x007800  toml/plant_model.toml
+0x007A00  toml/driver_real.toml
+0x007A01  toml/driver_emulated.toml
+0x007B00  toml/comparator.toml
+0x00C800  toml/system_monitor.toml
+
+[sequences rig]
+rts 1  toml/rts/rts_001_noop_sweep.toml
+rts 2  toml/rts/rts_002_safe_mode.toml
+ats 1  toml/ats/ats_001_pass_plan.toml
+
+[master master.tprm]
+use components rig
+0x000000  toml/executive.toml
+0x000100  toml/scheduler.toml
+
+[master master_1khz.tprm]
+use components rig
+0x000000  toml/executive_1khz.toml
+0x000100  toml/scheduler_1khz.toml
+
+[master safe_master.tprm]
+0x000000  toml/safe_executive.toml
+0x000100  toml/scheduler.toml
+0x000400  toml/interface.toml
