@@ -22,6 +22,7 @@ include(apex/Cuda)
 # Target factories
 include(apex/Targets)
 include(apex/Manifest)
+include(apex/Tprm)
 
 # Coverage infrastructure
 include(apex/Coverage)
