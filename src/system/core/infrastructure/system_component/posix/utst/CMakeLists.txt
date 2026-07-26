@@ -2,7 +2,7 @@
 # Unit Tests: system_core_system_component
 #
 # Tests Status enum, SystemComponentBase lifecycle (init/reset/idempotent),
-# SystemComponent<T> A/B parameter staging (load/apply/rollback),
+# ParamBank<T> A/B parameter staging (load/apply/rollback),
 # PackedTprm archive extraction and entry lookup, data primitives
 # (DataCategory, ModelData, DataTarget), and byte-level conformance against
 # the committed TPRM golden vectors shared with the rust tooling.
@@ -15,7 +15,7 @@
 set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponentStatus_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponentBase_uTest.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponent_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ParamBank_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ComponentRegistry_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/PackedTprm_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GoldenVectors_uTest.cpp"
