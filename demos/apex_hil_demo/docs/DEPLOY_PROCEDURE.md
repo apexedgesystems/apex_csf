@@ -116,6 +116,8 @@ deploys just the ApexHilDemo deployment:
   bank_a/bin/ApexHilDemo       # the single executive (one --fs-root owner)
   bank_a/libs/*.so*            # shared libraries (self-located via $ORIGIN RPATH)
   bank_a/tprm/master.tprm     # primary master (master_1khz)
+  bank_a/rts/*.rts            # mission bank (001 noop sweep, 002 safe mode)
+  bank_a/ats/*.ats            # mission bank (001 pass plan)
   bank_b/{bin,libs,tprm}/     # inactive bank (OTA staging); safe_master pre-staged at tprm/master.tprm
   active_bank                  # active-bank marker
   .apex_fs.lock                # single-owner lock (refuses a second executive)

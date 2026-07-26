@@ -349,10 +349,13 @@ apex_add_deployment(
 ```
 
 `TPRM` accepts a product reference (`<App>/<master>`, preferred) or a
-repo-relative file path. `TPRM_FALLBACK` stages its master into
+repo-relative file path. A product reference also stages the app's
+generated mission bank into `bank_a/rts` and `bank_a/ats`, so the
+deployed filesystem boots with the manifest's full sequence set
+resident. `TPRM_FALLBACK` stages its master into
 `bank_b/tprm/master.tprm` -- a pre-staged known-good configuration the
 executive can swap to (RELOAD_TPRM against the inactive bank) with zero
-uplink.
+uplink; bank_b stays otherwise minimal.
 
 `apex_finalize_packages()` (called once at the end of the root `CMakeLists.txt`)
 turns each declared deployment into a `package_<NAME>` target:

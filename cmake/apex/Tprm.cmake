@@ -133,6 +133,8 @@ function (apex_add_tprm)
   # the generated tree always carries the app's full mission bank. One
   # slot per kind across the whole manifest -- the app has one bank.
   set(_seq_outputs "")
+  set(_bank_rts "")
+  set(_bank_ats "")
   foreach (_item IN LISTS _all_seq_items)
     string(REPLACE "|" ";" _f "${_item}")
     list(GET _f 0 _kind)
@@ -174,6 +176,11 @@ function (apex_add_tprm)
         VERBATIM
       )
       list(APPEND _seq_outputs "${_seq_out}")
+      if (_kind STREQUAL "rts")
+        list(APPEND _bank_rts "${_seq_out}")
+      else ()
+        list(APPEND _bank_ats "${_seq_out}")
+      endif ()
     endif ()
     set(_seq_out_${_kind}_${_slot} "${_seq_out}")
   endforeach ()
@@ -251,4 +258,9 @@ function (apex_add_tprm)
 
   add_custom_target(apex_tprm_${ARG_NAME} ALL DEPENDS ${_master_outputs} ${_seq_outputs})
   set_property(GLOBAL PROPERTY APEX_TPRM_TARGET_${ARG_NAME} apex_tprm_${ARG_NAME})
+
+  # Deployments stage the mission bank into bank_a alongside the master
+  # (see apex_add_deployment).
+  set_property(GLOBAL PROPERTY APEX_TPRM_BANK_RTS_${ARG_NAME} "${_bank_rts}")
+  set_property(GLOBAL PROPERTY APEX_TPRM_BANK_ATS_${ARG_NAME} "${_bank_ats}")
 endfunction ()

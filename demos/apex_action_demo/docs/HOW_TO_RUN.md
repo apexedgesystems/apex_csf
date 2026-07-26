@@ -118,8 +118,20 @@ build/hosted-x86_64-debug/demos/apex_action_demo/exec/tprm/rts/000.rts  # fault 
 build/hosted-x86_64-debug/demos/apex_action_demo/exec/tprm/rts/001.rts  # cleanup
 ```
 
-The executive loads the `rts/` bank next to its master at boot, so
-running with the generated `master.tprm` picks these up automatically.
+The executive boot-loads sequences from `<fs-root>/bank_a/rts/`, and
+the deployment stages the generated bank there, so the packaged app
+boots with the full campaign resident:
+
+```bash
+# Inside the dev container: package, then boot the deployed filesystem
+cmake --build build/hosted-x86_64-debug --target package_ApexActionDemo
+cd build/hosted-x86_64-debug/packages/ApexActionDemo && ./run.sh
+```
+
+The quick-start invocation above runs without a staged filesystem, so
+boot-time sequences (and the checkout's campaign checks) need the
+packaged form; the operations client can still load sequences into
+slots at runtime either way.
 
 ## Component Map
 

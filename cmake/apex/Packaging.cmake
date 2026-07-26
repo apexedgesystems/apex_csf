@@ -228,6 +228,31 @@ function (apex_finalize_packages)
         COMPONENT ${_name}
       )
       list(APPEND _tprm_deps ${_tprm_dep})
+
+      # A product-referenced TPRM carries its app's mission bank: the
+      # generated rts/ats sequences stage into bank_a so the deployed
+      # filesystem boots with the manifest's full sequence set. bank_b
+      # stays minimal -- fallback master only.
+      get_property(_tprm_is_product GLOBAL PROPERTY APEX_TPRM_PRODUCT_${_tprm})
+      if (_tprm_is_product)
+        string(REGEX REPLACE "/.*$" "" _tprm_app "${_tprm}")
+        get_property(_bank_rts GLOBAL PROPERTY APEX_TPRM_BANK_RTS_${_tprm_app})
+        get_property(_bank_ats GLOBAL PROPERTY APEX_TPRM_BANK_ATS_${_tprm_app})
+        if (_bank_rts)
+          install(
+            FILES ${_bank_rts}
+            DESTINATION bank_a/rts
+            COMPONENT ${_name}
+          )
+        endif ()
+        if (_bank_ats)
+          install(
+            FILES ${_bank_ats}
+            DESTINATION bank_a/ats
+            COMPONENT ${_name}
+          )
+        endif ()
+      endif ()
     endif ()
 
     # The fallback master pre-stages bank_b so a swap to the known-good

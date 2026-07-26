@@ -79,6 +79,8 @@ build/release/ApexHilDemo/
     bank_a/bin/ApexWatchdog      # Watchdog supervisor binary
     bank_a/libs/*.so*             # Shared libraries
     bank_a/tprm/master.tprm      # Primary master (master_1khz)
+    bank_a/rts/*.rts              # Mission bank (noop sweep, safe mode)
+    bank_a/ats/*.ats              # Mission bank (pass plan)
     bank_b/tprm/master.tprm      # Pre-staged safe_master fallback
   stm32/
     firmware/*.bin                # STM32 firmware binary
