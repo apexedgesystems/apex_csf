@@ -240,3 +240,25 @@ TEST(SystemLogTest, RotateWhileLogging) {
     }
   }
 }
+
+/** @test With the fatal-flush hook enabled, fatal() returns with the queue drained. */
+TEST(SystemLogTest, FatalFlushDrainsQueue) {
+  const auto PATH = std::filesystem::temp_directory_path() / "logs_fatal_flush_test.log";
+  std::filesystem::remove(PATH);
+
+  {
+    logs::SystemLog log(PATH.string(), logs::SystemLog::Mode::ASYNC);
+    log.setLevel(logs::SystemLog::Level::INFO);
+    ASSERT_TRUE(log.isAsync());
+    log.setFatalFlush(true);
+
+    for (int i = 0; i < 64; ++i) {
+      ASSERT_EQ(log.info("FF", "pre-fatal entry", false), logs::Status::OK);
+    }
+    ASSERT_EQ(log.fatal("FF", 42, "fatal with flush", false), logs::Status::OK);
+    EXPECT_EQ(log.asyncBackend()->queueDepth(), 0u);
+  }
+
+  std::error_code ec;
+  std::filesystem::remove(PATH, ec);
+}

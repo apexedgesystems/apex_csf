@@ -36,7 +36,8 @@ enum class Status : std::uint8_t {
   ERROR_SIZE,          ///< Failed to query file size.
   ERROR_ROTATE_RENAME, ///< Failed to rename current log to backup.
   ERROR_ROTATE_REOPEN, ///< Failed to reopen a fresh log after rotation.
-  ERROR_SYNC           ///< Failed to sync file to disk.
+  ERROR_SYNC,          ///< Failed to sync file to disk.
+  ERROR_WRITE          ///< write() failed after retries (e.g. disk full).
 };
 
 /**
@@ -135,12 +136,24 @@ protected:
    * @brief Append raw bytes to the log.
    * @param data Pointer to data.
    * @param len Number of bytes to write.
-   * @return Status::OK on success; otherwise the last open status.
+   * @return Status::OK on success; ERROR_WRITE if write() fails after
+   *         retries (also counted in writeErrorCount()); otherwise the
+   *         last open status.
    *
    * Performed with a single system call loop, no locks.
    */
   Status appendBytes(const char* data, std::size_t len) noexcept;
 
+public:
+  /**
+   * @brief Count of write() failures observed by appendBytes.
+   * @note RT-safe: atomic load. Monotonic; disk-full shows up here.
+   */
+  std::uint64_t writeErrorCount() const noexcept {
+    return writeErrors_.load(std::memory_order_relaxed);
+  }
+
+protected:
   /**
    * @brief Attempt to (re)open the file descriptor.
    *
@@ -165,6 +178,7 @@ protected:
   /// Sticky status from last open. Atomic: rotate/reopen store it while
   /// lock-free writers read it on the hot path.
   std::atomic<Status> openStatus_{Status::ERROR_OPEN};
+  std::atomic<std::uint64_t> writeErrors_{0}; ///< write() failures (disk full, EIO).
 };
 
 } // namespace logs

@@ -149,7 +149,13 @@ Status SystemLog::error(std::string_view src, std::uint8_t ec, std::string_view 
 
 Status SystemLog::fatal(std::string_view src, std::uint8_t ec, std::string_view msg,
                         bool echoConsole) noexcept {
-  return logLine(Level::FATAL, "FATAL", src, msg, &ec, echoConsole);
+  const Status ST = logLine(Level::FATAL, "FATAL", src, msg, &ec, echoConsole);
+  if (fatalFlush_.load(std::memory_order_relaxed)) {
+    // Crash-adjacent FATALs must not vanish with the queue; the enabled
+    // hook trades RT safety of this one call for durability.
+    (void)flush();
+  }
+  return ST;
 }
 
 Status SystemLog::info(std::string_view src, std::string_view msg, bool echoConsole) noexcept {

@@ -35,6 +35,8 @@ const char* toString(Status s) noexcept {
     return "ERROR_ROTATE_REOPEN";
   case Status::ERROR_SYNC:
     return "ERROR_SYNC";
+  case Status::ERROR_WRITE:
+    return "ERROR_WRITE";
   default:
     return "UNKNOWN";
   }
@@ -126,7 +128,8 @@ Status LogBase::appendBytes(const char* data, std::size_t len) noexcept {
       if (errno == EINTR) {
         continue;
       }
-      return Status::OK;
+      writeErrors_.fetch_add(1, std::memory_order_relaxed);
+      return Status::ERROR_WRITE;
     }
     p += static_cast<std::size_t>(N);
     remaining -= static_cast<std::size_t>(N);

@@ -217,3 +217,13 @@ TEST(AsyncLogBackendTest, QueueDepthTracking) {
   std::error_code ec;
   std::filesystem::remove(PATH, ec);
 }
+
+/** @test Entries offered to a backend that never started are counted as drops. */
+TEST(AsyncLogBackendTest, NotRunningCountsDrops) {
+  logs::AsyncLogBackend backend("/tmp/logs_backend_notrunning_test.log", 16);
+
+  EXPECT_FALSE(backend.tryLog("never accepted"));
+  EXPECT_FALSE(backend.tryLog("never accepted either"));
+  EXPECT_EQ(backend.droppedCount(), 2u);
+  EXPECT_EQ(backend.writeErrorCount(), 0u);
+}
