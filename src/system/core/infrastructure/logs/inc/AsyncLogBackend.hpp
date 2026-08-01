@@ -20,6 +20,13 @@
  *  - Batched notifications: Only wakes I/O thread when queue was empty
  *  - Zero-copy interface: string_view avoids unnecessary allocations
  *  - Efficient flush: Condition variable instead of busy-wait polling
+ *
+ * Wakeup path (Linux): producers signal the I/O thread through an eventfd
+ * write -- a non-blocking syscall with counter semantics -- so the RT hot
+ * path never shares a lock with the I/O thread or flush()/stop() callers.
+ * The condition variable remains for control-plane waiters only (flush
+ * drain notification). Non-Linux builds keep the mutex+notify producer
+ * path.
  */
 
 #include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
@@ -142,15 +149,18 @@ public:
    *  - Lock-free for all threads
    *
    * Notification strategy: Only wakes I/O thread if queue was empty,
-   * minimizing syscall overhead during high-frequency logging.
+   * minimizing syscall overhead during high-frequency logging. The wake
+   * itself is an eventfd write on Linux: non-blocking, lock-free, safe
+   * against priority inversion.
    *
    * On failure (queue full): increments dropCount and returns false.
-   * @note RT-safe: Lock-free MPMC enqueue.
+   * @note RT-safe: Lock-free MPMC enqueue; wake is a non-blocking syscall.
    */
   bool tryLog(std::string_view msg) noexcept;
 
   /**
-   * @brief Get number of entries dropped due to queue overflow.
+   * @brief Get number of entries not accepted (queue full, or backend not
+   *        running).
    * @return Dropped entry count (monotonic).
    * @note RT-safe: Atomic load.
    */
@@ -170,6 +180,14 @@ public:
    * @note RT-safe: Atomic load.
    */
   bool isRunning() const noexcept { return running_.load(std::memory_order_acquire); }
+
+  /**
+   * @brief Count of write() failures observed by the I/O thread.
+   * @note RT-safe: Atomic load. Monotonic; disk-full shows up here.
+   */
+  std::uint64_t writeErrorCount() const noexcept {
+    return writeErrors_.load(std::memory_order_relaxed);
+  }
 
 private:
   /**
@@ -198,14 +216,18 @@ private:
   apex::concurrency::LockFreeQueue<LogEntry> queue_; ///< Lock-free ring buffer
   std::thread ioThread_;                             ///< Dedicated I/O thread
   int logFd_{-1};                                    ///< File descriptor
+  int wakeFd_{-1}; ///< eventfd the producers signal (Linux; -1 elsewhere)
 
   std::mutex stopMutex_;           ///< Guards stop condition
   std::condition_variable stopCv_; ///< Wakes I/O thread on stop
 
+  std::size_t capacity_{0}; ///< Ring capacity (drop precheck bound)
+
   std::atomic<bool> running_{false};             ///< I/O thread control
-  std::atomic<std::uint64_t> droppedCount_{0};   ///< Overflow counter
+  std::atomic<std::uint64_t> droppedCount_{0};   ///< Entries not accepted
   std::atomic<std::size_t> queueDepth_{0};       ///< Approximate queue size
   std::atomic<std::uint64_t> entriesWritten_{0}; ///< Total entries written
+  std::atomic<std::uint64_t> writeErrors_{0};    ///< write() failures on drain
 };
 
 } // namespace logs

@@ -18,6 +18,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#if defined(__linux__)
+#include <sys/eventfd.h>
+#endif
+
 // POSIX signal masking
 #if defined(__unix__) || defined(__APPLE__)
 #include <pthread.h>
@@ -39,7 +43,7 @@ LogEntry::LogEntry(std::string_view msg) noexcept {
 /* ----------------------------- AsyncLogBackend Methods ----------------------------- */
 
 AsyncLogBackend::AsyncLogBackend(std::string logPath, std::size_t queueSize) noexcept
-    : logPath_(std::move(logPath)), queue_(queueSize) {
+    : logPath_(std::move(logPath)), queue_(queueSize), capacity_(queueSize) {
   // No file operations in constructor - defer to start()
 }
 
@@ -86,6 +90,16 @@ bool AsyncLogBackend::start() noexcept {
     return false; // File open failed
   }
 
+#if defined(__linux__)
+  wakeFd_ = ::eventfd(0, EFD_CLOEXEC);
+  if (wakeFd_ < 0) {
+    ::close(logFd_);
+    logFd_ = -1;
+    running_.store(false, std::memory_order_release);
+    return false;
+  }
+#endif
+
   // Launch I/O thread (with signal masking like ThreadPool)
   try {
     ioThread_ = std::thread([this]() {
@@ -95,6 +109,10 @@ bool AsyncLogBackend::start() noexcept {
   } catch (...) {
     ::close(logFd_);
     logFd_ = -1;
+    if (wakeFd_ >= 0) {
+      ::close(wakeFd_);
+      wakeFd_ = -1;
+    }
     running_.store(false, std::memory_order_release);
     return false;
   }
@@ -116,11 +134,23 @@ bool AsyncLogBackend::stop() noexcept {
 
   // Wake I/O thread immediately (OUTSIDE mutex like ThreadPool)
   stopCv_.notify_one();
+#if defined(__linux__)
+  if (wakeFd_ >= 0) {
+    (void)::eventfd_write(wakeFd_, 1);
+  }
+#endif
 
   // Join I/O thread (it will drain queue then exit)
   if (ioThread_.joinable()) {
     ioThread_.join();
   }
+
+#if defined(__linux__)
+  if (wakeFd_ >= 0) {
+    ::close(wakeFd_);
+    wakeFd_ = -1;
+  }
+#endif
 
   // Flush and close file descriptor
   if (logFd_ >= 0) {
@@ -144,6 +174,11 @@ bool AsyncLogBackend::flush(std::uint32_t timeoutMs) noexcept {
 
   // Wake I/O thread to ensure it processes remaining entries
   stopCv_.notify_one();
+#if defined(__linux__)
+  if (wakeFd_ >= 0) {
+    (void)::eventfd_write(wakeFd_, 1);
+  }
+#endif
 
   // Wait for queue to drain using condition variable (efficient wait)
   std::unique_lock<std::mutex> lock(stopMutex_);
@@ -165,8 +200,18 @@ bool AsyncLogBackend::flush(std::uint32_t timeoutMs) noexcept {
 }
 
 bool AsyncLogBackend::tryLog(std::string_view msg) noexcept {
-  // Early exit if not running
+  // Early exit if not running -- still an unaccepted entry, so count it.
   if (!running_.load(std::memory_order_acquire)) {
+    droppedCount_.fetch_add(1, std::memory_order_relaxed);
+    return false;
+  }
+
+  // Cheap full-check before paying the 520-byte entry copy. The depth is
+  // approximate (drained entries decrement after their write completes),
+  // so this can only fire when the queue is at or within one entry of
+  // full -- where dropping is already the policy.
+  if (queueDepth_.load(std::memory_order_relaxed) >= capacity_) {
+    droppedCount_.fetch_add(1, std::memory_order_relaxed);
     return false;
   }
 
@@ -179,12 +224,22 @@ bool AsyncLogBackend::tryLog(std::string_view msg) noexcept {
     const std::size_t prevDepth = queueDepth_.fetch_add(1, std::memory_order_relaxed);
 
     if (prevDepth == 0) {
-      // Queue was empty, I/O thread likely sleeping. Notify under the lock so
-      // the wakeup cannot be lost in the window between the worker checking its
-      // predicate (queueDepth_) and parking on the CV. queueDepth_ stays
-      // lock-free; only the empty->non-empty transition takes the lock.
+#if defined(__linux__)
+      // Queue was empty, I/O thread likely parked on the eventfd. The
+      // counter write is non-blocking and cannot be lost: a write that
+      // lands before the worker's read unparks it immediately; one that
+      // lands while the worker is draining leaves the counter non-zero, so
+      // the next read returns without sleeping. No lock is shared with the
+      // I/O thread or control-plane callers on this path.
+      (void)::eventfd_write(wakeFd_, 1);
+#else
+      // Notify under the lock so the wakeup cannot be lost in the window
+      // between the worker checking its predicate (queueDepth_) and parking
+      // on the CV. queueDepth_ stays lock-free; only the empty->non-empty
+      // transition takes the lock.
       std::lock_guard<std::mutex> lock(stopMutex_);
       stopCv_.notify_one();
+#endif
     }
 
     return true;
@@ -216,7 +271,21 @@ void AsyncLogBackend::ioThreadLoop() noexcept {
       continue; // Process next entry immediately
     }
 
-    // Queue empty - wait for work or shutdown signal
+    // Queue empty - park until work arrives or shutdown is signaled
+#if defined(__linux__)
+    if (!running_.load(std::memory_order_acquire) &&
+        queueDepth_.load(std::memory_order_relaxed) == 0) {
+      break; // Clean exit: no more work, stop requested
+    }
+    if (queueDepth_.load(std::memory_order_relaxed) == 0) {
+      // Blocking read drains the wake counter; a producer's write that
+      // raced ahead of this read leaves the counter non-zero and the read
+      // returns immediately. stop() writes the counter too, so shutdown
+      // always unparks.
+      eventfd_t wakes = 0;
+      (void)::eventfd_read(wakeFd_, &wakes);
+    }
+#else
     {
       std::unique_lock<std::mutex> lock(stopMutex_);
 
@@ -233,6 +302,7 @@ void AsyncLogBackend::ioThreadLoop() noexcept {
       }
     }
     // Lock released here - loop continues to drain queue
+#endif
   }
 
   // Final flush before exit
@@ -256,7 +326,8 @@ void AsyncLogBackend::writeEntry(const LogEntry& entry) noexcept {
       if (errno == EINTR) {
         continue; // Interrupted, retry
       }
-      return; // Write error, give up
+      writeErrors_.fetch_add(1, std::memory_order_relaxed);
+      return; // Write error; the entry is lost but the loss is counted
     }
     p += static_cast<std::size_t>(N);
     remaining -= static_cast<std::size_t>(N);
