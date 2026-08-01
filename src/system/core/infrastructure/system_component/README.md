@@ -380,9 +380,10 @@ protected:
 | Directory     | Type              | Tests | Runs with `make test` |
 | ------------- | ----------------- | ----- | --------------------- |
 | `base/utst/`  | Unit tests        | 15    | Yes                   |
-| `posix/utst/` | Unit tests        | 49    | Yes                   |
+| `core/utst/`  | Unit tests        | 17    | Yes                   |
+| `posix/utst/` | Unit tests        | 114   | Yes                   |
 | `mcu/utst/`   | Unit tests        | 10    | Yes                   |
-| `posix/ptst/` | Performance tests | 10    | No (manual)           |
+| `posix/ptst/` | Performance tests | 11    | No (manual)           |
 
 ### Test Requirements
 
