@@ -355,7 +355,7 @@ privileges, the executive falls back to SCHED_OTHER with a warning.
 `[components rig]` (interface, action, plant model, both driver instances,
 comparator, system monitor) is shared by `master.tprm` (100 Hz
 executive/scheduler) and `master_1khz.tprm` (1 kHz executive/scheduler);
-`safe_master.tprm` is the minimal fallback (safe executive + stock scheduler +
+`safe_master.tprm` is the minimal fallback (safe executive + safe-mode scheduler +
 interface). The CMake target `apex_tprm_ApexHilDemo` (part of the default
 build) compiles each TOML with cfg2bin and packs all three masters into
 `build/<preset>/demos/apex_hil_demo/exec/tprm/`. A fullUid arriving twice in

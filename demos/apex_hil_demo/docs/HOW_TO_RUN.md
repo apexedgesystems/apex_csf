@@ -45,7 +45,7 @@ build):
 build/hosted-x86_64-debug/demos/apex_hil_demo/exec/tprm/
   master.tprm          # 100 Hz executive/scheduler + rig components
   master_1khz.tprm     # 1 kHz executive/scheduler + rig components
-  safe_master.tprm     # Minimal fallback (safe executive + stock scheduler + interface)
+  safe_master.tprm     # Minimal fallback (safe executive + safe-mode scheduler + interface)
 ```
 
 ### 2. Run All Tests

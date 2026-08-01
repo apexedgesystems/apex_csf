@@ -4,7 +4,9 @@
 # comparator, monitor) is shared; the 100 Hz and 1 kHz masters differ
 # only in executive/scheduler timing. safe_master is the minimal
 # fallback image staged to bank_b by the deployment (TPRM_FALLBACK):
-# safe executive plus the stock scheduler and interface, so a bank swap
+# safe executive, the safe-mode scheduler (SystemMonitor health
+# telemetry only; mission models unscheduled), and interface, so a bank
+# swap
 # reaches a commandable idle loop without the rig chain.
 # The mission bank (rts + ats) compiles to the generated tprm/rts/ and
 # tprm/ats/ directories in slot naming; sequences load at runtime via
@@ -36,5 +38,5 @@ use components rig
 
 [master safe_master.tprm]
 0x000000  toml/safe_executive.toml
-0x000100  toml/scheduler.toml
+0x000100  toml/safe_scheduler.toml
 0x000400  toml/interface.toml
