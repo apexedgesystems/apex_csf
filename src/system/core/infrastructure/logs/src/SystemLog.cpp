@@ -60,9 +60,11 @@ Status SystemLog::logLine(Level lvl, const char* levelName, std::string_view src
     return Status::OK;
   }
 
-  // Precheck: writers are lock-free; this may race with rotate but is safe.
-  if (openStatus_ != Status::OK) {
-    return openStatus_;
+  // Precheck: lock-free writers read the sticky open status atomically;
+  // rotate/reopen publish updates with release stores.
+  const Status OPEN = openStatus_.load(std::memory_order_relaxed);
+  if (OPEN != Status::OK) {
+    return OPEN;
   }
 
   // Timestamp cache (per thread, 1-second resolution).

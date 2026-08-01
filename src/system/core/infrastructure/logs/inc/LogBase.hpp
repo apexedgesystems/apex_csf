@@ -114,8 +114,9 @@ public:
 
   /**
    * @brief Retrieve the result of the most recent open or reopen attempt.
+   * @note RT-safe: atomic load.
    */
-  Status lastOpenStatus() const noexcept { return openStatus_; }
+  Status lastOpenStatus() const noexcept { return openStatus_.load(std::memory_order_relaxed); }
 
 protected:
   /**
@@ -158,10 +159,12 @@ private:
   Status sizeNoLock(std::size_t& outBytes) const noexcept;
 
 protected:
-  std::filesystem::path logPath_;         ///< Path to the log file.
-  std::atomic<int> logFd_{-1};            ///< File descriptor for O_APPEND writes.
-  std::mutex logMutex_;                   ///< Guards open/rotate/size operations.
-  Status openStatus_{Status::ERROR_OPEN}; ///< Sticky status from last open.
+  std::filesystem::path logPath_; ///< Path to the log file.
+  std::atomic<int> logFd_{-1};    ///< File descriptor for O_APPEND writes.
+  std::mutex logMutex_;           ///< Guards open/rotate/size operations.
+  /// Sticky status from last open. Atomic: rotate/reopen store it while
+  /// lock-free writers read it on the hot path.
+  std::atomic<Status> openStatus_{Status::ERROR_OPEN};
 };
 
 } // namespace logs
