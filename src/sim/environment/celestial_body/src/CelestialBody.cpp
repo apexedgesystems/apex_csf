@@ -9,6 +9,7 @@
 #include "src/sim/environment/atmosphere/inc/AtmosphereStatus.hpp"
 #include "src/sim/environment/atmosphere/inc/LayeredAtmosphere.hpp"
 #include "src/sim/environment/factory/inc/EnvironmentFactory.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/sim/environment/gravity/inc/earth/Wgs84Constants.hpp"
 #include "src/sim/environment/gravity/inc/moon/LunarConstants.hpp"
 #include "src/sim/environment/terrain/inc/HtileTile.hpp"
@@ -80,12 +81,13 @@ bool CelestialBody::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   if (!std::filesystem::exists(PATH, ec)) {
     return true;
   }
-  std::string err;
-  std::optional<std::reference_wrapper<std::string>> errRef{err};
-  if (!apex::helpers::files::hex2cpp(PATH.string(), tunables_.get(), errRef)) {
+  namespace sc = system_core::system_component;
+  const auto CHECK = sc::readTprmPayload(PATH, fullUid(), tunables_.get());
+  if (CHECK != sc::TprmPayloadCheck::OK) {
     auto* log = componentLog();
     if (log != nullptr) {
-      log->info(label(), fmt::format("loadTprm: hex2cpp failed for {} ({})", PATH.string(), err));
+      log->error(label(), sc::toFaultCode(CHECK),
+                 fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), PATH.string()));
     }
     return false;
   }

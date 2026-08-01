@@ -69,7 +69,7 @@ TOOLS=build/hosted-x86_64-debug/bin/tools/rust
 TPRM=build/hosted-x86_64-debug/demos/apex_ops_demo/exec/tprm
 cp demos/apex_ops_demo/tprm/toml/interface.toml /tmp/interface_b.toml
 sed -i 's/value = 9000/value = 9001/' /tmp/interface_b.toml
-$TOOLS/cfg2bin --config /tmp/interface_b.toml --output /tmp/interface_b.tprm
+$TOOLS/cfg2bin --config /tmp/interface_b.toml --output /tmp/interface_b.tprm --fulluid 0x000400
 $TOOLS/tprm_pack pack \
   -e "0x000000:$TPRM/payloads/toml_executive_toml.tprm" \
   -e "0x000100:$TPRM/payloads/toml_scheduler_toml.tprm" \

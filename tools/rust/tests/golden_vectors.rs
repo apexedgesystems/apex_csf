@@ -11,28 +11,43 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use apex_rust_tools::tunable_params::binary::config_to_binary;
+use apex_rust_tools::tunable_params::binary::{config_to_binary, config_to_binary_v3};
 use apex_rust_tools::tunable_params::pack::{pack, PackEntry};
 
 fn vectors_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../compat/tprm")
 }
 
-/// The payload set: TOML source stem -> committed payload file.
-const PAYLOADS: &[&str] = &["scalar_types", "strings_arrays", "nested_enum"];
+/// The payload set: (TOML source stem, contract fullUid) -> committed
+/// v3-stamped payload file. The uids are part of the contract: each
+/// vector's prelude declares its target.
+const PAYLOADS: &[(&str, u32)] = &[
+    ("scalar_types", 0x000000),
+    ("strings_arrays", 0x00D001),
+    ("nested_enum", 0x00CA00),
+];
 
-/// The archive's entries: (fullUid, payload stem). Covers a normal
-/// component, a multi-instance uid, and an RTS reserved-range slot.
+/// The archive's entries. Component entries pack the v3-stamped
+/// payloads; the RTS reserved-range slot packs a raw serialization
+/// (sequence binaries carry no payload prelude).
 const ARCHIVE_ENTRIES: &[(u32, &str)] = &[
     (0x000000, "scalar_types"),
     (0x00D001, "strings_arrays"),
-    (0xFF0005, "nested_enum"),
+    (0xFF0005, "nested_enum_raw"),
 ];
 
-fn generate_payload(stem: &str, out_dir: &Path) -> PathBuf {
+fn generate_payload(stem: &str, full_uid: u32, out_dir: &Path) -> PathBuf {
     let toml = vectors_dir().join("toml").join(format!("{stem}.toml"));
     let out = out_dir.join(format!("{stem}.bin"));
-    config_to_binary(&toml, &out).expect("payload generation failed");
+    config_to_binary_v3(&toml, &out, full_uid).expect("payload generation failed");
+    out
+}
+
+/// Raw (unstamped) serialization: the form sequence entries pack.
+fn generate_raw(stem: &str, out_dir: &Path) -> PathBuf {
+    let toml = vectors_dir().join("toml").join(format!("{stem}.toml"));
+    let out = out_dir.join(format!("{stem}_raw.bin"));
+    config_to_binary(&toml, &out).expect("raw generation failed");
     out
 }
 
@@ -50,8 +65,8 @@ fn generate_archive(payload_dir: &Path, out: &Path) {
 #[test]
 fn payloads_match_committed() {
     let tmp = tempfile::tempdir().unwrap();
-    for stem in PAYLOADS {
-        let generated = generate_payload(stem, tmp.path());
+    for (stem, uid) in PAYLOADS {
+        let generated = generate_payload(stem, *uid, tmp.path());
         let committed = vectors_dir().join("payloads").join(format!("{stem}.bin"));
         let gen_bytes = fs::read(&generated).unwrap();
         let com_bytes = fs::read(&committed).unwrap_or_else(|_| {
@@ -67,9 +82,10 @@ fn payloads_match_committed() {
 #[test]
 fn archive_matches_committed() {
     let tmp = tempfile::tempdir().unwrap();
-    for stem in PAYLOADS {
-        generate_payload(stem, tmp.path());
+    for (stem, uid) in PAYLOADS {
+        generate_payload(stem, *uid, tmp.path());
     }
+    generate_raw("nested_enum", tmp.path());
     let generated = tmp.path().join("basic.tprm");
     generate_archive(tmp.path(), &generated);
 
@@ -92,8 +108,9 @@ fn regenerate() {
     let archives = vectors_dir().join("archives");
     fs::create_dir_all(&payloads).unwrap();
     fs::create_dir_all(&archives).unwrap();
-    for stem in PAYLOADS {
-        generate_payload(stem, &payloads);
+    for (stem, uid) in PAYLOADS {
+        generate_payload(stem, *uid, &payloads);
     }
+    generate_raw("nested_enum", &payloads);
     generate_archive(&payloads, &archives.join("basic.tprm"));
 }

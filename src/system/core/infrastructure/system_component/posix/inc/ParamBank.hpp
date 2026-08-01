@@ -31,7 +31,7 @@
  */
 
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
-#include "src/utilities/helpers/inc/Files.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 
 #include <atomic>
 #include <cstdint>
@@ -103,21 +103,24 @@ public:
   }
 
   /**
-   * @brief Stage a parameter set from a binary file (exact-size image).
-   * @param path     Binary parameter file (.tprm/.bin), sizeof(TParams) bytes.
+   * @brief Stage a parameter set from a v3 payload file.
+   * @param path     Payload file ({fullUid:06x}.tprm): 20-byte prelude +
+   *                 sizeof(TParams) body (see TprmPayload.hpp).
+   * @param fullUid  Target the payload must declare; any prelude check
+   *                 failing rejects the stage (lastCheck() carries which).
    * @param validate Callable bool(const TParams&) noexcept.
    * @return Status::SUCCESS or Status::ERROR_LOAD_INVALID.
    * @note NOT RT-safe: file I/O, control-plane only.
    */
   template <typename TValidator>
-  [[nodiscard]] Status load(const std::filesystem::path& path, TValidator&& validate) noexcept {
+  [[nodiscard]] Status load(const std::filesystem::path& path, std::uint32_t fullUid,
+                            TValidator&& validate) noexcept {
     static_assert(std::is_nothrow_invocable_r_v<bool, TValidator, const TParams&>,
                   "validator must be noexcept bool(const TParams&)");
     forfeitRollbackIfStagedIsPrev();
 
-    std::string loadError;
-    std::optional<std::reference_wrapper<std::string>> errorRef{loadError};
-    if (!apex::helpers::files::hex2cpp(path.string(), *staged_, errorRef)) {
+    lastCheck_ = readTprmPayload(path, fullUid, *staged_);
+    if (lastCheck_ != TprmPayloadCheck::OK) {
       stagedValid_ = false;
       return Status::ERROR_LOAD_INVALID;
     }
@@ -131,10 +134,13 @@ public:
     return Status::SUCCESS;
   }
 
-  /** @brief Stage a parameter set from a binary file with no validation. */
-  [[nodiscard]] Status load(const std::filesystem::path& path) noexcept {
-    return load(path, [](const TParams&) noexcept { return true; });
+  /** @brief Stage a parameter set from a v3 payload file, no validation. */
+  [[nodiscard]] Status load(const std::filesystem::path& path, std::uint32_t fullUid) noexcept {
+    return load(path, fullUid, [](const TParams&) noexcept { return true; });
   }
+
+  /** @brief Prelude verdict of the last file load. @note RT-safe. */
+  [[nodiscard]] TprmPayloadCheck lastCheck() const noexcept { return lastCheck_; }
 
   /* ----------------------------- Publishing ----------------------------- */
 
@@ -247,9 +253,10 @@ private:
   TParams* staged_;                    ///< Writer-only pointer to the staging bank.
   const TParams* prev_{nullptr};       ///< Previous active bank for rollback.
 
-  std::atomic<std::uint64_t> activeGen_; ///< Successful publishes.
-  std::atomic<std::uint64_t> stagedGen_; ///< Staging attempts.
-  bool stagedValid_{false};              ///< Staged bank holds a validated set.
+  std::atomic<std::uint64_t> activeGen_;             ///< Successful publishes.
+  std::atomic<std::uint64_t> stagedGen_;             ///< Staging attempts.
+  bool stagedValid_{false};                          ///< Staged bank holds a validated set.
+  TprmPayloadCheck lastCheck_{TprmPayloadCheck::OK}; ///< Verdict of the last file load.
 };
 
 } // namespace system_component

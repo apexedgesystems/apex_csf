@@ -34,6 +34,7 @@ Component base classes and lifecycle management for the Apex executive framework
 | `DriverBase`               | Abstract class     | Base for real hardware interfaces (DRIVER)                                              | Runtime: Yes                            |
 | `McuComponentBase`         | Abstract class     | Minimal implementation for bare-metal MCUs                                              | Queries: Yes, Lifecycle: No             |
 | `PackedTprm`               | Struct             | TPRM file reader (archive extraction, entry lookup)                                     | No (file I/O)                           |
+| `TprmPayload`              | Functions          | v3 payload prelude verification (magic/version/size/fullUid/CRC, distinct rejects)      | No (file I/O)                           |
 | `ComponentRegistry`        | Class              | Component lookup by fullUid, componentId, or name                                       | Yes (read-only queries)                 |
 | `SystemComponentTlm`       | Struct             | Telemetry snapshot for component state export                                           | Yes                                     |
 | `DataCategory`             | Enum               | Semantic categories for data blocks (STATIC_PARAM, TUNABLE_PARAM, STATE, INPUT, OUTPUT) | Yes                                     |
@@ -401,3 +402,4 @@ protected:
 - `src/system/core/infrastructure/logs/` -- SystemLog used by components for diagnostics
 - `src/utilities/data_proxy/` -- ByteMaskProxy, EndiannessProxy for data transformation
 - `src/utilities/helpers/` -- Files utility for TPRM binary loading
+- `src/utilities/checksums/crc/` -- CRC-32/ISO-HDLC for v3 payload verification

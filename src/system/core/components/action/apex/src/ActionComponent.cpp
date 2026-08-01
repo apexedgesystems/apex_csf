@@ -8,6 +8,7 @@
 #include "src/system/core/components/action/apex/inc/ActionTlm.hpp"
 #include "src/system/core/components/action/apex/inc/SequenceValidation.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/utilities/helpers/inc/Files.hpp"
 
 #include <cstddef>
@@ -83,11 +84,13 @@ bool ActionComponent::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   }
 
   ActionEngineTprm loaded{};
-  std::string error;
-  if (!apex::helpers::files::hex2cpp(tprmPath.string(), loaded, error)) {
+  const auto CHECK = system_component::readTprmPayload(tprmPath, fullUid(), loaded);
+  if (CHECK != system_component::TprmPayloadCheck::OK) {
     auto* log = componentLog();
     if (log != nullptr) {
-      log->warning(label(), 1, fmt::format("TPRM load failed: {}", error));
+      log->error(label(), system_component::toFaultCode(CHECK),
+                 fmt::format("TPRM rejected ({}): {}", system_component::toString(CHECK),
+                             tprmPath.string()));
     }
     return false;
   }

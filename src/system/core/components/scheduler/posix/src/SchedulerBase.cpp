@@ -9,6 +9,7 @@
 #include "src/system/core/components/scheduler/posix/inc/SchedulerStatus.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerTlm.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 
 #include <cstdint>
 #include <cstring>
@@ -484,18 +485,22 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     return false;
   }
 
-  // Read tprm binary file
+  // Read and verify the v3 payload; the body is the schedule image.
   std::vector<std::uint8_t> tprmData;
   {
-    std::ifstream file(tprmPath, std::ios::binary | std::ios::ate);
-    if (!file) {
-      setLastError("Failed to open scheduler tprm");
+    using system_component::TprmPayloadCheck;
+    const TprmPayloadCheck CHECK = system_component::readTprmPayload(tprmPath, FULL_UID, tprmData);
+    if (CHECK != TprmPayloadCheck::OK) {
+      // toString returns static storage, which setLastError's pointer
+      // contract needs; the fault code reaches the log below.
+      setLastError(system_component::toString(CHECK));
+      if (auto* log = componentLog()) {
+        log->error(label(), system_component::toFaultCode(CHECK),
+                   fmt::format("Scheduler tprm rejected ({}): {}",
+                               system_component::toString(CHECK), tprmPath.string()));
+      }
       return false;
     }
-    const auto SIZE = file.tellg();
-    file.seekg(0, std::ios::beg);
-    tprmData.resize(static_cast<std::size_t>(SIZE));
-    file.read(reinterpret_cast<char*>(tprmData.data()), SIZE);
   }
 
   // Parse header

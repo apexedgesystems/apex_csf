@@ -6,10 +6,13 @@
 #include "src/system/core/support/data_transform/inc/DataTransform.hpp"
 
 #include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/utilities/helpers/inc/Files.hpp"
 
 #include <cstddef>
 #include <cstdio>
+
+#include <fmt/format.h>
 #include <cstring>
 #include <fcntl.h>
 #include <filesystem>
@@ -59,8 +62,8 @@ bool DataTransform::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   }
 
   // Load the fault campaign TPRM
-  std::string error;
-  if (apex::helpers::files::hex2cpp(TPRM_PATH.string(), campaign_, error)) {
+  const auto CHECK = system_component::readTprmPayload(TPRM_PATH, fullUid(), campaign_);
+  if (CHECK == system_component::TprmPayloadCheck::OK) {
     hasCampaign_ = (campaign_.entryCount > 0);
     setConfigured(true);
 
@@ -96,6 +99,14 @@ bool DataTransform::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     return true;
   }
 
+  // Rejected payload: run unarmed on defaults, fault code from the check.
+  campaign_ = FaultCampaignTprm{};
+  hasCampaign_ = false;
+  if (auto* log = componentLog()) {
+    log->error(label(), system_component::toFaultCode(CHECK),
+               fmt::format("TPRM rejected ({}): {}", system_component::toString(CHECK),
+                           TPRM_PATH.string()));
+  }
   setConfigured(true);
   return false;
 }
