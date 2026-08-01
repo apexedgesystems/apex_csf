@@ -19,9 +19,11 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstddef>
 #include <cstdio>
 #include <filesystem>
+#include <memory>
 #include <string>
 #include <system_error>
 
@@ -231,6 +233,192 @@ PERF_TEST(Payload, SizeSensitivity) {
 
   std::printf("\nPayload %d bytes: %.0f ops/s (%.1f us/op)\n", getCfg().msgBytes,
               result.callsPerSecond, result.stats.median);
+}
+
+/* ----------------------------- Sporadic Pattern ----------------------------- */
+
+/**
+ * @brief Sporadic log cycle: one entry on an always-empty queue, then wait
+ *        for the I/O thread to drain it.
+ *
+ * The dominant production pattern -- components log occasionally, so nearly
+ * every call takes the empty-to-non-empty wakeup path (the one the
+ * saturated-queue tests never exercise). The measured cycle includes the
+ * enqueue, the wakeup, and the drain wait; it is the A/B instrument for
+ * wakeup-path changes.
+ */
+PERF_TEST(SporadicPattern, SingleLogDrainCycle) {
+  UB_PERF_GUARD(perf);
+
+  const auto PATH = ub::uniqTempFile("logs_sporadic");
+  TempFileGuard cleanup{PATH};
+
+  SystemLog log(PATH.string(), SystemLog::Mode::ASYNC);
+  log.setLevel(SystemLog::Level::INFO);
+  auto backend = log.asyncBackend();
+
+  perf.setup([&] {
+    ASSERT_EQ(log.lastOpenStatus(), Status::OK);
+    ASSERT_TRUE(log.isAsync());
+  });
+
+  perf.warmup([&] {
+    for (int i = 0; i < perf.cycles(); ++i) {
+      (void)log.info("SPOR", "sporadic warmup", false);
+      while (backend->queueDepth() > 0) {
+      }
+    }
+  });
+
+  auto result = perf.throughputLoop(
+      [&] {
+        (void)log.info("SPOR", "sporadic entry", false);
+        while (backend->queueDepth() > 0) {
+        }
+      },
+      "sporadic-cycle");
+
+  std::printf("\nSporadic log+drain cycle: %.0f cycles/s (%.1f us/cycle)\n", result.callsPerSecond,
+              result.stats.median);
+}
+
+/* ----------------------------- Overflow Behavior ----------------------------- */
+
+/**
+ * @brief Burst past a tiny queue: drop path cost and counter accounting.
+ *
+ * A 16-entry queue saturates immediately under a burst, so most calls take
+ * the queue-full drop path. Proves drops are counted and measures the cost
+ * a component pays when the backend cannot keep up.
+ */
+PERF_TEST(OverflowBehavior, BurstIntoTinyQueue) {
+  UB_PERF_GUARD(perf);
+
+  const auto PATH = ub::uniqTempFile("logs_overflow");
+  TempFileGuard cleanup{PATH};
+  const std::string MSG = makeMsg(256);
+
+  SystemLog log(PATH.string(), SystemLog::Mode::ASYNC, 16);
+  log.setLevel(SystemLog::Level::INFO);
+  auto backend = log.asyncBackend();
+
+  perf.setup([&] {
+    ASSERT_EQ(log.lastOpenStatus(), Status::OK);
+    ASSERT_TRUE(log.isAsync());
+  });
+
+  perf.warmup([&] {
+    for (int i = 0; i < perf.cycles(); ++i) {
+      (void)log.info("OVFL", MSG, false);
+    }
+  });
+
+  const std::uint64_t DROPS_BEFORE = backend->droppedCount();
+  auto result = perf.throughputLoop([&] { (void)log.info("OVFL", MSG, false); }, "burst-overflow");
+  const std::uint64_t DROPS_AFTER = backend->droppedCount();
+
+  ASSERT_GT(DROPS_AFTER, DROPS_BEFORE) << "burst never overflowed the 16-entry queue";
+  std::printf("\nOverflow burst: %.0f ops/s (%.1f us/op), %llu drops counted\n",
+              result.callsPerSecond, result.stats.median,
+              static_cast<unsigned long long>(DROPS_AFTER - DROPS_BEFORE));
+}
+
+/* ----------------------------- Flush Latency ----------------------------- */
+
+/**
+ * @brief flush() latency after a 256-entry burst.
+ *
+ * Measures the control-plane drain cost a caller pays at shutdown or at a
+ * checkpoint: enqueue a burst, then block in flush() until the queue is
+ * empty and the file is synced.
+ */
+PERF_TEST(FlushLatency, BurstThenFlush) {
+  UB_PERF_GUARD(perf);
+
+  const auto PATH = ub::uniqTempFile("logs_flush");
+  TempFileGuard cleanup{PATH};
+  const std::string MSG = makeMsg(static_cast<std::size_t>(getCfg().msgBytes));
+
+  SystemLog log(PATH.string(), SystemLog::Mode::ASYNC);
+  log.setLevel(SystemLog::Level::INFO);
+
+  perf.setup([&] {
+    ASSERT_EQ(log.lastOpenStatus(), Status::OK);
+    ASSERT_TRUE(log.isAsync());
+  });
+
+  perf.warmup([&] {
+    for (int i = 0; i < 256; ++i) {
+      (void)log.info("FLSH", MSG, false);
+    }
+    (void)log.flush();
+  });
+
+  auto result = perf.throughputLoop(
+      [&] {
+        for (int i = 0; i < 256; ++i) {
+          (void)log.info("FLSH", MSG, false);
+        }
+        ASSERT_EQ(log.flush(), Status::OK);
+      },
+      "burst-flush");
+
+  std::printf("\nBurst(256)+flush: %.0f cycles/s (%.1f us/cycle)\n", result.callsPerSecond,
+              result.stats.median);
+}
+
+/* ----------------------------- Fleet Cost ----------------------------- */
+
+/**
+ * @brief Sporadic logging across a 16-backend fleet.
+ *
+ * The deployed shape gives every component its own ASYNC backend (own I/O
+ * thread, own queue). Round-robin sporadic logging across 16 of them makes
+ * every call wake a different sleeping I/O thread -- the fleet-scale cost
+ * of the per-component architecture, and the baseline for the shared-drain
+ * design decision.
+ */
+PERF_TEST(FleetCost, SixteenBackendsSporadic) {
+  UB_PERF_GUARD(perf);
+
+  constexpr std::size_t FLEET = 16;
+  std::array<std::unique_ptr<SystemLog>, FLEET> fleet;
+  std::array<TempFileGuard, FLEET> cleanups;
+  for (std::size_t i = 0; i < FLEET; ++i) {
+    const auto PATH = ub::uniqTempFile("logs_fleet");
+    cleanups[i].p = PATH;
+    fleet[i] = std::make_unique<SystemLog>(PATH.string(), SystemLog::Mode::ASYNC);
+    fleet[i]->setLevel(SystemLog::Level::INFO);
+  }
+
+  perf.setup([&] {
+    for (auto& log : fleet) {
+      ASSERT_EQ(log->lastOpenStatus(), Status::OK);
+      ASSERT_TRUE(log->isAsync());
+    }
+  });
+
+  std::size_t idx = 0;
+  perf.warmup([&] {
+    for (int i = 0; i < perf.cycles(); ++i) {
+      auto& log = *fleet[idx++ % FLEET];
+      (void)log.info("FLEET", "fleet entry", false);
+      while (log.asyncBackend()->queueDepth() > 0) {
+      }
+    }
+  });
+
+  auto result = perf.throughputLoop(
+      [&] {
+        auto& log = *fleet[idx++ % FLEET];
+        (void)log.info("FLEET", "fleet entry", false);
+        while (log.asyncBackend()->queueDepth() > 0) {
+        }
+      },
+      "fleet-sporadic");
+
+  std::printf("\nFleet(16) sporadic cycle: %.0f cycles/s (%.1f us/cycle)\n", result.callsPerSecond,
+              result.stats.median);
 }
 
 PERF_MAIN()
