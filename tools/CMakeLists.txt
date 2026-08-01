@@ -75,13 +75,19 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml")
       set(_CARGO_FEATURES "--features cuda")
     endif ()
 
+    # The stamp regenerates whenever the rust sources or lock change, so
+    # in-tree tool edits rebuild before anything consumes the binaries
+    # (cargo itself is incremental past this gate).
+    file(GLOB_RECURSE _RUST_SOURCES CONFIGURE_DEPENDS "${_RUST_SRC}/src/*.rs")
+    list(APPEND _RUST_SOURCES "${_RUST_SRC}/Cargo.toml" "${_RUST_SRC}/Cargo.lock")
+
     # Generate build script (copies all cargo binaries)
     set(_RUST_BUILD_SCRIPT "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-build-rust-tools.sh")
     file(
       WRITE "${_RUST_BUILD_SCRIPT}"
       "#!/bin/bash\nset -e\n"
       # Offline enforcement comes from the environment: the build image sets
-      # CARGO_NET_OFFLINE=1 against its baked crate cache (cargo reads it
+      # CARGO_NET_OFFLINE=true against its baked crate cache (cargo reads it
       # natively). Local dev (no such env) builds online.
       "'${CARGO_EXECUTABLE}' build --release"
       " --manifest-path '${_RUST_SRC}/Cargo.toml' --target-dir '${_CARGO_TARGET}'"
@@ -97,6 +103,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml")
       OUTPUT "${_RUST_STAMP}"
       COMMAND bash "${_RUST_BUILD_SCRIPT}"
       COMMAND bash "${_ENV_HELPER}"
+      DEPENDS ${_RUST_SOURCES}
       COMMENT "Building ${PROJECT_NAME} Rust tools"
       VERBATIM
     )
