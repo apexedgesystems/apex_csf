@@ -400,7 +400,7 @@ static constexpr size_t MAX_DATA_PER_COMPONENT = 16;
 
 ```cpp
 // Executive registers components during model registration
-void ApexExecutive::registerModel(SimModelBase* model) {
+void ApexExecutive::registerModel(SchedulableComponentBase* model) {
   auto fullUid = model->fullUid();
   registry_.registerComponent(fullUid, model->componentName());
 }

@@ -57,11 +57,19 @@ Two instances generate independent waveforms. Each has:
   - STATE (48B): phase, output, peaks, RMS accumulator, sample count
   - OUTPUT (8B): current output + normalized phase
 
-- **handleCommand (0x0100):** Returns WaveGenHealthTlm (32B) with config
-  snapshot and computed statistics.
+- **handleCommand:**
 
-- **TPRM:** Loaded from `{fullUid:06x}.tprm`. All parameters tunable at
-  runtime via RELOAD_TPRM.
+  - 0x0100 GET_STATS: Returns WaveGenHealthTlm (32B) with config snapshot
+    and computed statistics.
+  - 0x0101 SET_PARAMS: Full WaveGenTunableParams payload (32B) staged into
+    the instance's ParamBank, validated, and published with an atomic
+    pointer swap -- the 100 Hz waveStep never observes a torn set and never
+    stops ticking. A set that fails validation is never published.
+  - 0x0102 ROLLBACK_PARAMS: Restores the previously active set (one level
+    of history; staging any new set forfeits it).
+
+- **TPRM:** Loaded from `{fullUid:06x}.tprm` through the same ParamBank
+  staging path. All parameters tunable at runtime via RELOAD_TPRM.
 
 ### TestPlugin (componentId=250, SW_MODEL)
 
@@ -90,6 +98,8 @@ file descriptors. Configured for RPi4 with 4 Cortex-A72 cores.
 | FILE_GET/READ_CHUNK  | Chunked file download                           |
 | FILE_ABORT           | Mid-stream abort + recovery (both directions)   |
 | RELOAD_TPRM          | Hot-reload wave parameters                      |
+| SET_PARAMS (wave)    | Live param hot-swap via ParamBank, checkout 31a |
+| ROLLBACK_PARAMS      | One-level param rollback, checkout 31b          |
 | RELOAD_LIBRARY       | Hot-swap TestPlugin .so                         |
 | RELOAD_EXECUTIVE     | Process restart via execve (deferred ACK)       |
 | SET_VERBOSITY        | Log level control                               |

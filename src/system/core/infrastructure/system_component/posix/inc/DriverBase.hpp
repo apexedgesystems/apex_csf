@@ -18,6 +18,13 @@
  *   that both the driver (ImuDriver) and simulation model (ImuModel)
  *   implement. This enables swapping real hardware for simulation.
  *
+ * Endpoint blindness:
+ *   A driver never knows whether its peer is real or emulated. It opens
+ *   whatever endpoint it is given -- a real tty, a PTY slave provisioned by
+ *   an HwModel, eventually a host/port -- and just communicates. The
+ *   executive does the wiring; emulation is invisible from inside the
+ *   driver.
+ *
  * Example:
  * @code
  *   // Interface
@@ -33,7 +40,7 @@
  *   };
  *
  *   // Simulation model
- *   class ImuModel final : public SimModelBase, public IImu {
+ *   class ImuModel final : public HwModelBase, public IImu {
  *     ImuReading read() noexcept override { ... }
  *   };
  * @endcode

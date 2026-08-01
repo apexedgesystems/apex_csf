@@ -34,7 +34,7 @@
  */
 
 #include "src/system/core/infrastructure/system_component/posix/inc/SchedulableComponentBase.hpp"
-#include "src/system/core/infrastructure/system_component/base/inc/TransportLink.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TransportLink.hpp"
 
 #include <cerrno>
 #include <cstddef>
