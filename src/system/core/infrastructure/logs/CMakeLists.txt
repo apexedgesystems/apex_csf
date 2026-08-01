@@ -10,7 +10,7 @@ apex_module(system_core_logs)
 # ------------------------------------------------------------------------------
 
 set(CPP_SOURCES "${SRC_DIR}/LogBase.cpp" "${SRC_DIR}/SystemLog.cpp"
-                "${SRC_DIR}/AsyncLogBackend.cpp"
+                "${SRC_DIR}/AsyncLogBackend.cpp" "${SRC_DIR}/LogDrainService.cpp"
 )
 
 # ------------------------------------------------------------------------------

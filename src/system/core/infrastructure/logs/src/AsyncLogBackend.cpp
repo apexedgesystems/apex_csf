@@ -4,6 +4,7 @@
  */
 
 #include "src/system/core/infrastructure/logs/inc/AsyncLogBackend.hpp"
+#include "src/system/core/infrastructure/logs/inc/LogDrainService.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -91,6 +92,15 @@ bool AsyncLogBackend::start() noexcept {
   }
 
 #if defined(__linux__)
+  // Prefer the process-wide drain service: one I/O thread for every
+  // backend. Producers wake it through the service's eventfd; this
+  // backend owns no thread and no private eventfd in shared mode.
+  if (LogDrainService::instance().registerBackend(this)) {
+    service_ = &LogDrainService::instance();
+    return true;
+  }
+
+  // Registry full or service unavailable: dedicated-thread fallback.
   wakeFd_ = ::eventfd(0, EFD_CLOEXEC);
   if (wakeFd_ < 0) {
     ::close(logFd_);
@@ -125,6 +135,24 @@ bool AsyncLogBackend::stop() noexcept {
   if (!running_.load(std::memory_order_acquire)) {
     return true; // Already stopped
   }
+
+#if defined(__linux__)
+  if (service_ != nullptr) {
+    // Hand-off: after unregisterBackend returns the drain thread can no
+    // longer touch this ring, so leftovers drain inline here.
+    running_.store(false, std::memory_order_release);
+    service_->unregisterBackend(this);
+    service_ = nullptr;
+    while (drainBatch(SIZE_MAX) > 0) {
+    }
+    if (logFd_ >= 0) {
+      ::fsync(logFd_);
+      ::close(logFd_);
+      logFd_ = -1;
+    }
+    return queueDepth_.load(std::memory_order_relaxed) == 0;
+  }
+#endif
 
   // Signal I/O thread to stop (like ThreadPool: set flag under lock, notify outside)
   {
@@ -175,7 +203,9 @@ bool AsyncLogBackend::flush(std::uint32_t timeoutMs) noexcept {
   // Wake I/O thread to ensure it processes remaining entries
   stopCv_.notify_one();
 #if defined(__linux__)
-  if (wakeFd_ >= 0) {
+  if (service_ != nullptr) {
+    service_->notify();
+  } else if (wakeFd_ >= 0) {
     (void)::eventfd_write(wakeFd_, 1);
   }
 #endif
@@ -225,13 +255,17 @@ bool AsyncLogBackend::tryLog(std::string_view msg) noexcept {
 
     if (prevDepth == 0) {
 #if defined(__linux__)
-      // Queue was empty, I/O thread likely parked on the eventfd. The
-      // counter write is non-blocking and cannot be lost: a write that
+      // Queue was empty, the drain thread is likely parked on its eventfd.
+      // The counter write is non-blocking and cannot be lost: a write that
       // lands before the worker's read unparks it immediately; one that
       // lands while the worker is draining leaves the counter non-zero, so
       // the next read returns without sleeping. No lock is shared with the
       // I/O thread or control-plane callers on this path.
-      (void)::eventfd_write(wakeFd_, 1);
+      if (service_ != nullptr) {
+        service_->notify();
+      } else {
+        (void)::eventfd_write(wakeFd_, 1);
+      }
 #else
       // Notify under the lock so the wakeup cannot be lost in the window
       // between the worker checking its predicate (queueDepth_) and parking
@@ -248,6 +282,27 @@ bool AsyncLogBackend::tryLog(std::string_view msg) noexcept {
   // Queue full - drop entry and increment counter
   droppedCount_.fetch_add(1, std::memory_order_relaxed);
   return false;
+}
+
+std::size_t AsyncLogBackend::drainBatch(std::size_t maxEntries) noexcept {
+  LogEntry entry;
+  std::size_t drained = 0;
+
+  while (drained < maxEntries && queue_.tryPop(entry)) {
+    const std::size_t prevDepth = queueDepth_.fetch_sub(1, std::memory_order_relaxed);
+    writeEntry(entry);
+    entriesWritten_.fetch_add(1, std::memory_order_relaxed);
+    ++drained;
+
+    // Queue just became empty: notify drain waiters (flush()). Under the
+    // lock so a flush() wakeup cannot be lost between its depth check and
+    // parking on the CV.
+    if (prevDepth == 1) {
+      std::lock_guard<std::mutex> lock(stopMutex_);
+      stopCv_.notify_all();
+    }
+  }
+  return drained;
 }
 
 void AsyncLogBackend::ioThreadLoop() noexcept {

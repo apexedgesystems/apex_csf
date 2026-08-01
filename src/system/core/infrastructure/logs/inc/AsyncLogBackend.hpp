@@ -42,6 +42,8 @@
 
 namespace logs {
 
+class LogDrainService;
+
 /**
  * @struct LogEntry
  * @brief Self-contained log entry for async queue.
@@ -189,6 +191,24 @@ public:
     return writeErrors_.load(std::memory_order_relaxed);
   }
 
+  /**
+   * @brief True when the shared drain service empties this ring (no
+   *        dedicated I/O thread).
+   * @note RT-safe: simple read (set at start(), cleared at stop()).
+   */
+  bool usesSharedDrain() const noexcept { return service_ != nullptr; }
+
+  /**
+   * @brief Drain up to maxEntries from the ring to this backend's file.
+   * @return Entries written.
+   *
+   * Called by the shared drain service's sweep (or internally during
+   * stop() to empty leftovers). Single-consumer discipline: only the
+   * owning drain thread -- or stop() after unregistration -- may call it.
+   * @note NOT RT-safe: blocking file I/O.
+   */
+  std::size_t drainBatch(std::size_t maxEntries) noexcept;
+
 private:
   /**
    * @brief Block process signals in I/O thread (keeps them on shutdown thread).
@@ -221,7 +241,8 @@ private:
   std::mutex stopMutex_;           ///< Guards stop condition
   std::condition_variable stopCv_; ///< Wakes I/O thread on stop
 
-  std::size_t capacity_{0}; ///< Ring capacity (drop precheck bound)
+  std::size_t capacity_{0};           ///< Ring capacity (drop precheck bound)
+  LogDrainService* service_{nullptr}; ///< Shared drain (null = own thread)
 
   std::atomic<bool> running_{false};             ///< I/O thread control
   std::atomic<std::uint64_t> droppedCount_{0};   ///< Entries not accepted
