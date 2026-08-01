@@ -10,7 +10,8 @@
 #
 # Run:
 #   ./build/hosted-x86_64-debug/bin/ApexEdgeDemo \
-#     --config demos/apex_edge_demo/tprm/master.tprm --shutdown-after 10
+#     --config build/hosted-x86_64-debug/demos/apex_edge_demo/exec/tprm/master.tprm \
+#     --shutdown-after 10
 # ==============================================================================
 
 if (NOT APEX_PLATFORM_BAREMETAL)

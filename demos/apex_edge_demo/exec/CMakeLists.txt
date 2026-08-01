@@ -9,7 +9,8 @@
 #
 # Run:
 #   ./build/hosted-x86_64-debug/bin/ApexEdgeDemo \
-#     --config demos/apex_edge_demo/tprm/master.tprm --shutdown-after 10
+#     --config build/hosted-x86_64-debug/demos/apex_edge_demo/exec/tprm/master.tprm \
+#     --shutdown-after 10
 # ==============================================================================
 
 include(apex/All)
@@ -83,6 +84,5 @@ if (TARGET sim_gpu_compute_stream_compact_cuda)
 endif ()
 
 # Deployment: single executive with the Thor-tuned TPRM config.
-apex_add_deployment(
-  NAME ApexEdgeDemo EXEC ApexEdgeDemo TPRM demos/apex_edge_demo/tprm/master_thor.tprm
-)
+apex_add_tprm(NAME ApexEdgeDemo MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/../tprm/tprm.manifest")
+apex_add_deployment(NAME ApexEdgeDemo EXEC ApexEdgeDemo TPRM ApexEdgeDemo/master_thor.tprm)

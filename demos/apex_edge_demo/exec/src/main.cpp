@@ -7,7 +7,7 @@
  * is driven by TPRM files.
  *
  * Usage:
- *   ApexEdgeDemo --config tprm/master.tprm --shutdown-after 10
+ *   ApexEdgeDemo --config <master.tprm packed by the build> --shutdown-after 10
  */
 
 #include "demos/apex_edge_demo/exec/inc/EdgeExecutive.hpp"

@@ -16,7 +16,8 @@ cmake --preset cross-jetson-release      # cross-compile for Thor
 
 ```bash
 ./build/hosted-x86_64-debug/bin/ApexEdgeDemo \
-  --config demos/apex_edge_demo/tprm/master.tprm --shutdown-after 10
+  --config build/hosted-x86_64-debug/demos/apex_edge_demo/exec/tprm/master.tprm \
+  --shutdown-after 10
 ```
 
 ## See Also
@@ -28,4 +29,5 @@ cmake --preset cross-jetson-release      # cross-compile for Thor
   GPU utilization figures.
 - [docs/DEPLOY_PROCEDURE.md](docs/DEPLOY_PROCEDURE.md) -- Jetson Thor
   packaging and on-target deployment notes.
-- [tprm/](tprm/) -- TPRM configuration files for each scenario.
+- [tprm/](tprm/) -- TPRM packing manifest and TOML sources; the build
+  packs the master archives into the build tree.

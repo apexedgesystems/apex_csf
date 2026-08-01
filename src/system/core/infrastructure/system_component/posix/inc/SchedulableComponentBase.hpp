@@ -21,7 +21,6 @@
 
 #include <array>
 #include <cstdint>
-#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -54,7 +53,7 @@ constexpr std::size_t MAX_GROUPS_PER_COMPONENT = 4;
  *  - Sequence group management for task ordering
  *  - Task registration helpers (registerTask, registerSequencedTask)
  *
- * Derived classes (SimModelBase, SupportComponentBase, DriverBase):
+ * Derived classes (SwModelBase, HwModelBase, SupportComponentBase, DriverBase):
  *  - Override componentType() to return appropriate type
  *  - Define task methods and register them during init()
  *  - Define TaskUid enum for task identification
@@ -114,20 +113,6 @@ public:
     }
     return nullptr;
   }
-
-  /**
-   * @brief Load tunable parameters from TPRM file.
-   *
-   * The directory argument (containing extracted TPRM files) is unnamed in the
-   * default override.
-   *
-   * @return true on success, false if no TPRM found or load failed (uses defaults).
-   * @pre Must call setInstanceIndex() first to assign UID.
-   * @note Override in derived class to load component-specific TPRM.
-   * @note Default implementation does nothing and returns true.
-   * @note NOT RT-safe: File I/O.
-   */
-  bool loadTprm(const std::filesystem::path& /*tprmDir*/) noexcept override { return true; }
 
 protected:
   /**

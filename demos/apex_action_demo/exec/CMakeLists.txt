@@ -38,7 +38,6 @@ apex_add_app(
   POSIX
 )
 
-# Deployment: single executive.
-apex_add_deployment(
-  NAME ApexActionDemo EXEC ApexActionDemo TPRM demos/apex_action_demo/tprm/master.tprm
-)
+# Deployment: single executive; the master is generated from the manifest.
+apex_add_tprm(NAME ApexActionDemo MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/../tprm/tprm.manifest")
+apex_add_deployment(NAME ApexActionDemo EXEC ApexActionDemo TPRM ApexActionDemo/master.tprm)

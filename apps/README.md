@@ -23,10 +23,11 @@ Adding a directory with a `CMakeLists.txt` is the entire integration step:
 ## Build integration
 
 - **Targets**: use the same helpers the demos use -- `apex_add_app` for
-  executables, `apex_add_deployment(NAME <n> EXEC <exec> [TPRM <master>])`
-  for a packaged filesystem (bank layout + `run.sh`), `apex_add_bundle` to
-  combine deployments with tools and docs. See
-  [cmake/apex/README.md](../cmake/apex/README.md).
+  executables, `apex_add_tprm` to generate TPRM masters and sequence banks
+  from a `tprm.manifest`, `apex_add_deployment(NAME <n> EXEC <exec>
+[TPRM <master>] [TPRM_FALLBACK <master>])` for a packaged filesystem
+  (bank layout + `run.sh`), `apex_add_bundle` to combine deployments with
+  tools and docs. See [cmake/apex/README.md](../cmake/apex/README.md).
 - **Releases**: a `release.mk` manifest (`APP_REGISTRY += MyApp`,
   `APP_MyApp_PLATFORMS`, per-platform `_TYPE`/`_BINARY`) makes
   `make release APP=MyApp` work. The apex CI release matrix ships only the

@@ -1,7 +1,8 @@
 # ==============================================================================
-# Performance Tests: system_core_system_component
+# c2000_encryptor_demo - Unit Tests (host-run)
 #
-# activeParams() RT-critical latency, load/apply/rollback lifecycle, scaling.
+# Compiles the demo's C AES-256-GCM header on the host and locks it to the
+# shared encryption_mcu implementation via the shared NIST vector table.
 # ==============================================================================
 
 include(apex/All)
@@ -10,12 +11,19 @@ include(apex/All)
 # Sources (1 file)
 # ------------------------------------------------------------------------------
 
-set(PERF_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/ParamBank_pTest.cpp")
+set(UNIT_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/Aes256Gcm_uTest.cpp")
 
 # ------------------------------------------------------------------------------
-# Performance Tests
+# Test Target
 # ------------------------------------------------------------------------------
 
-apex_add_ptest(
-  TARGET ParamBank_PTEST SOURCES ${PERF_TEST_SOURCES} LINK system_core_system_component
+apex_add_gtest(
+  TARGET
+  TestC2000EncryptorAes
+  SOURCES
+  ${UNIT_TEST_SOURCES}
+  LINK
+  encryption_mcu
+  LABELS
+  demos
 )

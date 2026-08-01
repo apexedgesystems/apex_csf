@@ -311,6 +311,25 @@ Manifests are collected by `apex_finalize_data_manifests()` and written to
 `apex_data_manifests.txt` in the build directory. The `make apex-data-db` target
 reads this file and invokes `apex_data_gen` to produce JSON struct dictionaries.
 
+## TPRM generation
+
+`apex_add_tprm(NAME <App> MANIFEST <dir>/tprm.manifest)` turns a packing
+manifest into build rules: every referenced TOML compiles with `cfg2bin`,
+every `[master <file>.tprm]` block packs with `tprm_pack`, and every
+sequence line compiles into the bank-directory naming the executive
+consumes (`rts/{slot:03d}.rts`, `ats/{slot:03d}.ats`). Outputs land in
+`<binary-dir>/tprm/` under an `apex_tprm_<App>` target that is part of the
+default build, so no generated binary is ever committed and a TOML edit
+repacks on the next build.
+
+The manifest composes named groups into masters -- set union with no
+shadowing (a fullUid or slot arriving twice in one master is a configure
+error). See the grammar reference in
+[Tprm.cmake](Tprm.cmake) and any demo's `tprm/tprm.manifest`.
+
+Each packed master registers a **product** addressable as `<App>/<master>`
+in deployment declarations.
+
 ## Packaging
 
 A **deployment** is one apex filesystem -- `bank_a/{bin,libs,tprm}` + a generic
@@ -320,12 +339,23 @@ collide on `system.log`, the banks, and telemetry, so the model does not let you
 express that -- `EXEC` is singular.
 
 ```cmake
+apex_add_tprm(NAME ApexHilDemo MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/../tprm/tprm.manifest")
 apex_add_deployment(
   NAME ApexHilDemo
-  EXEC ApexHilDemo                                # exactly one executive
-  TPRM demos/apex_hil_demo/tprm/master_1khz.tprm   # optional
+  EXEC ApexHilDemo                        # exactly one executive
+  TPRM ApexHilDemo/master_1khz.tprm       # optional; product ref or repo path
+  TPRM_FALLBACK ApexHilDemo/safe_master.tprm   # optional; pre-stages bank_b
 )
 ```
+
+`TPRM` accepts a product reference (`<App>/<master>`, preferred) or a
+repo-relative file path. A product reference also stages the app's
+generated mission bank into `bank_a/rts` and `bank_a/ats`, so the
+deployed filesystem boots with the manifest's full sequence set
+resident. `TPRM_FALLBACK` stages its master into
+`bank_b/tprm/master.tprm` -- a pre-staged known-good configuration the
+executive can swap to (RELOAD_TPRM against the inactive bank) with zero
+uplink; bank_b stays otherwise minimal.
 
 `apex_finalize_packages()` (called once at the end of the root `CMakeLists.txt`)
 turns each declared deployment into a `package_<NAME>` target:

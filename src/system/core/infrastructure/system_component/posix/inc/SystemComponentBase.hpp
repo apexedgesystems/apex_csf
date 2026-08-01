@@ -14,7 +14,8 @@
  *
  * Configuration Requirement:
  *  - init() requires isConfigured() == true (ERROR_NOT_CONFIGURED otherwise).
- *  - For SystemComponent<TParams>, load() sets isConfigured().
+ *  - Components with tunable parameters call setConfigured(true) once their
+ *    ParamBank holds a validated set.
  *  - For simple components, call setConfigured(true) before init().
  */
 
@@ -130,7 +131,7 @@ public:
   /**
    * @brief Get component type classification.
    * @return Component type (EXECUTIVE, CORE, MODEL, SUPPORT).
-   * @note Default is CORE; override in derived classes (e.g., SimModelBase returns MODEL).
+   * @note Default is CORE; override in derived classes (e.g., SwModelBase returns SW_MODEL).
    * @note Used for logging directory selection and registry organization.
    */
   [[nodiscard]] ComponentType componentType() const noexcept override {
@@ -248,7 +249,7 @@ public:
    * default override.
    *
    * @return Pointer to SchedulableTask, or nullptr if not found.
-   * @note Override in components that own tasks (e.g., SimModelBase).
+   * @note Override in components that own tasks (e.g., SwModelBase derivatives).
    * @note Default returns nullptr (component has no tasks).
    */
   [[nodiscard]] virtual schedulable::SchedulableTask* taskByUid(std::uint8_t /*uid*/) noexcept {
@@ -294,8 +295,9 @@ public:
   /**
    * @brief True if component has been configured (params loaded or set ready).
    * @note RT-safe: Simple member read.
-   * @note For SystemComponent<TParams>, load() sets this.
-   * @note For simple components, call setConfigured(true) before init().
+   * @note Components with tunable parameters set this once their ParamBank
+   *       holds a validated set; simple components call setConfigured(true)
+   *       before init().
    */
   [[nodiscard]] bool isConfigured() const noexcept { return configured_; }
 
@@ -364,8 +366,8 @@ protected:
   /**
    * @brief Mark component as configured (ready for init).
    * @param v Configuration state.
-   * @note For SystemComponent<TParams>, load() calls this on success.
-   * @note For simple components, call setConfigured(true) before init().
+   * @note Components with tunable parameters call this once their ParamBank
+   *       holds a validated set; simple components call it before init().
    */
   void setConfigured(bool v) noexcept { configured_ = v; }
 

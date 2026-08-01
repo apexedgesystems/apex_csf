@@ -22,21 +22,18 @@ make release APP=ApexActionDemo
 # 4. Clean target on Pi
 ssh kalex@192.168.1.119 'sudo rm -rf ~/apex_action && mkdir ~/apex_action'
 
-# 5. Deploy RPi package
+# 5. Deploy RPi package (bank_a carries the master and the boot-time
+#    RTS bank, both generated from tprm/tprm.manifest)
 rsync -a build/release/ApexActionDemo/rpi/ kalex@192.168.1.119:~/apex_action/
 
-# 6. Deploy boot-time RTS sequences
-ssh kalex@192.168.1.119 'mkdir -p ~/apex_action/bank_a/rts'
-scp demos/apex_action_demo/tprm/rts/*.rts kalex@192.168.1.119:~/apex_action/bank_a/rts/
-
-# 7. Start on Pi
+# 6. Start on Pi
 ssh kalex@192.168.1.119 'cd ~/apex_action && \
   sudo ./run.sh </dev/null &>/tmp/apex_action.log &'
 
-# 8. Verify
+# 7. Verify
 ssh kalex@192.168.1.119 'pgrep ApexActionDemo && sudo ss -tlnp | grep 9000'
 
-# 9. Run checkout
+# 8. Run checkout
 python3 demos/apex_action_demo/scripts/checkout.py --host 192.168.1.119
 ```
 
