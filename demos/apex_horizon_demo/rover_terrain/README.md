@@ -14,10 +14,10 @@ and back-pressures; the sim is unaffected.
 # One-time: generate the terrain + atmosphere artifacts (see
 # docs/HOW_TO_RUN.md — the data files are generated, never committed).
 
-# Run (Ctrl+C to stop)
+# Run (Ctrl+C to stop; the master generates at build time)
 docker compose run --rm dev-cuda \
   ./build/hosted-x86_64-debug/bin/ApexRoverTerrainDemo \
-  --config demos/apex_horizon_demo/rover_terrain/tprm/master.tprm \
+  --config build/hosted-x86_64-debug/demos/apex_horizon_demo/rover_terrain/exec/tprm/master.tprm \
   --fs-root /tmp/rover_fs
 ```
 
@@ -51,8 +51,8 @@ that tick.
 | `earth_rover.toml`                     | rover (0xDE00)       | init pose centered on the patch, 6 deg/s steer, 8-ray lidar |
 | `rover_bridge.toml`                    | bridge (0xCB00)      | ROVR/1, `/horizon_rover`, payload 256/4, capacity 16        |
 
-Regenerate after editing any TOML (cfg2bin renames + tprm_pack; see
-docs/HOW_TO_RUN.md).
+TPRMs generate at build time from `tprm/tprm.manifest` — edit a toml
+and rebuild; no packed binaries are committed.
 
 ## 4. Wire contract (ROVR/1)
 

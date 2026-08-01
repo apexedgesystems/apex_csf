@@ -19,10 +19,14 @@ is the file-identity proof for paired runs.
 
 ## Run (raw binary — the dev loop)
 
+The TPRM master generates at build time from `tprm/tprm.manifest`
+(edit a toml, rebuild, done — no packed binaries are committed):
+
 ```bash
+TPRM=build/hosted-x86_64-debug/demos/apex_horizon_demo/rover_terrain/exec/tprm
 docker compose run --rm dev-cuda \
   ./build/hosted-x86_64-debug/bin/ApexRoverTerrainDemo \
-  --config demos/apex_horizon_demo/rover_terrain/tprm/master.tprm \
+  --config $TPRM/master.tprm \
   --fs-root /tmp/rover_fs
 ```
 
@@ -54,26 +58,11 @@ frames flowing continuously. The GroundVehicle log independently shows
 the rover driving: elevation ~1.2 km on the patch, slope a few
 degrees, heading advancing at the steer rate.
 
-## Regenerating the TPRM set
-
-```bash
-T=./build/hosted-x86_64-debug/bin/tools/rust
-TP=demos/apex_horizon_demo/rover_terrain/tprm
-$T/cfg2bin --batch $TP/toml --output $TP
-for f in $TP/*.bin; do mv "$f" "${f%.bin}.tprm"; done
-$T/tprm_pack pack \
-  -e 0x000000:$TP/executive.tprm -e 0x000100:$TP/scheduler.tprm \
-  -e 0x00DC00:$TP/earth_body.tprm -e 0x00DC01:$TP/moon_body.tprm \
-  -e 0x00DD00:$TP/earth_probe.tprm -e 0x00DD01:$TP/moon_probe.tprm \
-  -e 0x00DE00:$TP/earth_rover.tprm -e 0x00CB00:$TP/rover_bridge.tprm \
-  -o $TP/master.tprm
-```
-
 ## Troubleshooting
 
 | Symptom                           | Cause                                     | Fix                                                                             |
 | --------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------- |
 | CelestialBody init fails on Earth | data files missing                        | run One-time setup                                                              |
 | Bridge logs "channel open FAILED" | shm_path empty/not absolute in tprm       | check rover_bridge.toml, repack                                                 |
-| Components run with defaults      | master passed via a wrong flag            | use `--config <master.tprm>`                                                    |
+| Components run with defaults      | master passed via a wrong flag            | use `--config <generated master.tprm>`                                          |
 | Ring exists but never changes     | sampled after saturation with no consumer | expected back-pressure; attach a consumer or sample within ~1.6 s of first push |
