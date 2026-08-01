@@ -216,15 +216,24 @@ function (apex_add_tprm)
         endif ()
         string(REGEX REPLACE "[/.]" "_" _stem "${_path}")
         set(_payload "${_gen_dir}/payloads/${_stem}.tprm")
+        # v3 payloads are target-bound: the prelude carries the fullUid,
+        # so one TOML source serves exactly one fullUid per app.
         if (NOT "${_toml}" IN_LIST _all_tomls)
           list(APPEND _all_tomls "${_toml}")
+          set(_toml_uid_${_stem} "${_key}")
           add_custom_command(
             OUTPUT "${_payload}"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${_gen_dir}/payloads"
-            COMMAND "${_tools_dir}/cfg2bin" --config "${_toml}" --output "${_payload}"
+            COMMAND "${_tools_dir}/cfg2bin" --config "${_toml}" --output "${_payload}" --fulluid
+                    "${_key}"
             DEPENDS "${_toml}" ${PROJECT_NAME}_rust_tools
             COMMENT "[tprm] ${ARG_NAME}: ${_path}"
             VERBATIM
+          )
+        elseif (NOT _toml_uid_${_stem} STREQUAL "${_key}")
+          message(
+            FATAL_ERROR
+              "apex_add_tprm(${ARG_NAME}): ${_path} serves both ${_toml_uid_${_stem}} and ${_key} -- v3 payloads are target-bound, one TOML per fullUid"
           )
         endif ()
         list(APPEND _pack_args "-e" "${_key}:${_payload}")

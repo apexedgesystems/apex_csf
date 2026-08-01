@@ -46,32 +46,54 @@ fn builtin_enums() -> HashMap<&'static str, i64> {
 
 /* ----------------------------- Public API ----------------------------- */
 
-/// Load a TOML or JSON file and serialize to binary.
-pub fn config_to_binary(config_path: &Path, output_path: &Path) -> Result<(), Error> {
+/// Load a TOML or JSON config file into the JSON value tree the
+/// serializer walks (TOML via toml_edit to preserve field order).
+pub fn load_config(config_path: &Path) -> Result<Json, Error> {
     let content = fs::read_to_string(config_path)?;
-
-    let data: Json = if config_path.extension().is_some_and(|e| e == "toml") {
-        // Use toml_edit to preserve field order
+    if config_path.extension().is_some_and(|e| e == "toml") {
         let doc: DocumentMut = content
             .parse()
             .map_err(|e| Error::Parse(format!("TOML parse error: {e}")))?;
-        toml_edit_to_json(doc.as_item())
+        Ok(toml_edit_to_json(doc.as_item()))
     } else {
-        serde_json::from_str(&content)
-            .map_err(|e| Error::Parse(format!("JSON parse error: {e}")))?
-    };
+        serde_json::from_str(&content).map_err(|e| Error::Parse(format!("JSON parse error: {e}")))
+    }
+}
 
-    let binary = serialize_value(&data)?;
-
+/// Load a TOML or JSON file and serialize to raw bytes (no prelude):
+/// sequences and generic blobs.
+pub fn config_to_binary(config_path: &Path, output_path: &Path) -> Result<(), Error> {
+    let binary = serialize_value(&load_config(config_path)?)?;
     let mut file = fs::File::create(output_path)?;
     file.write_all(&binary)?;
+    Ok(())
+}
 
+/// Load a config, serialize, and stamp the v3 payload prelude for the
+/// component the packing manifest targets.
+pub fn config_to_binary_v3(
+    config_path: &Path,
+    output_path: &Path,
+    full_uid: u32,
+) -> Result<(), Error> {
+    let (payload, layout_hash) = serialize_value_with_layout(&load_config(config_path)?)?;
+    let stamped = super::payload::stamp(full_uid, layout_hash, &payload)?;
+    let mut file = fs::File::create(output_path)?;
+    file.write_all(&stamped)?;
     Ok(())
 }
 
 /// Serialize a JSON value tree to binary bytes.
 pub fn serialize_value(value: &Json) -> Result<Vec<u8>, Error> {
+    Ok(serialize_value_with_layout(value)?.0)
+}
+
+/// Serialize a JSON value tree to binary bytes plus the layout hash:
+/// the CRC-32 of the canonical field spec (`name:type:size;` per leaf
+/// in emission order) that the v3 payload prelude carries.
+pub fn serialize_value_with_layout(value: &Json) -> Result<(Vec<u8>, u32), Error> {
     let mut out = Vec::new();
+    let mut spec = String::new();
     // Build enum map: start with builtins, add user-defined from __enums__
     let mut enums: HashMap<String, i64> = builtin_enums()
         .into_iter()
@@ -84,8 +106,8 @@ pub fn serialize_value(value: &Json) -> Result<Vec<u8>, Error> {
             }
         }
     }
-    traverse_and_serialize(value, &mut out, &enums)?;
-    Ok(out)
+    traverse_and_serialize(value, &mut out, &mut spec, &enums)?;
+    Ok((out, super::payload::crc32(spec.as_bytes())))
 }
 
 /* ----------------------------- Constraints ----------------------------- */
@@ -129,6 +151,7 @@ fn validate_numeric(field_type: &str, size: usize, value: f64) -> Result<(), Err
 fn traverse_and_serialize(
     value: &Json,
     out: &mut Vec<u8>,
+    spec: &mut String,
     enums: &HashMap<String, i64>,
 ) -> Result<(), Error> {
     match value {
@@ -140,16 +163,18 @@ fn traverse_and_serialize(
                 }
                 // If this is a field with type/size/value, serialize it
                 if let Some(field_type) = val.get("type").and_then(|v| v.as_str()) {
-                    serialize_field(field_type, val, out, enums)?;
+                    let size = val.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
+                    spec.push_str(&format!("{key}:{field_type}:{size};"));
+                    serialize_field(field_type, val, out, spec, enums)?;
                 } else {
                     // Recurse into nested structures
-                    traverse_and_serialize(val, out, enums)?;
+                    traverse_and_serialize(val, out, spec, enums)?;
                 }
             }
         }
         Json::Array(arr) => {
             for item in arr {
-                traverse_and_serialize(item, out, enums)?;
+                traverse_and_serialize(item, out, spec, enums)?;
             }
         }
         _ => {}
@@ -163,6 +188,7 @@ fn serialize_field(
     field_type: &str,
     field: &Json,
     out: &mut Vec<u8>,
+    spec: &mut String,
     enums: &HashMap<String, i64>,
 ) -> Result<(), Error> {
     let size = field.get("size").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
@@ -232,19 +258,22 @@ fn serialize_field(
                     .and_then(|v| v.as_str())
                     .unwrap_or("uint");
                 let elem_size = size / elements.len().max(1);
+                // Element shape is layout: equal-size arrays of different
+                // element types must hash apart.
+                spec.push_str(&format!("[{elem_type}:{elem_size}x{}]", elements.len()));
                 for elem in elements {
                     let elem_field = serde_json::json!({
                         "type": elem_type,
                         "size": elem_size,
                         "value": elem
                     });
-                    serialize_field(elem_type, &elem_field, out, enums)?;
+                    serialize_field(elem_type, &elem_field, out, spec, enums)?;
                 }
             }
         }
         "struct" => {
             if let Some(fields) = field.get("fields") {
-                traverse_and_serialize(fields, out, enums)?;
+                traverse_and_serialize(fields, out, spec, enums)?;
             }
         }
         _ => {
