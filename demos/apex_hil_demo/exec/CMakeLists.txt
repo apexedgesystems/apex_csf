@@ -11,7 +11,8 @@
 #
 # Run:
 #   ./build/hosted-x86_64-debug/bin/ApexHilDemo \
-#     --config demos/apex_hil_demo/tprm/master.tprm --shutdown-after 5
+#     --config build/hosted-x86_64-debug/demos/apex_hil_demo/exec/tprm/master.tprm \
+#     --shutdown-after 5
 # ==============================================================================
 
 include(apex/All)
@@ -59,6 +60,14 @@ apex_add_app(
 # deployment (watchdog/) and supervises this one across filesystems; the
 # ApexHilSupervised bundle (see ../CMakeLists.txt) ships them together.
 # ------------------------------------------------------------------------------
+apex_add_tprm(NAME ApexHilDemo MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/../tprm/tprm.manifest")
 apex_add_deployment(
-  NAME ApexHilDemo EXEC ApexHilDemo TPRM demos/apex_hil_demo/tprm/master_1khz.tprm
+  NAME
+  ApexHilDemo
+  EXEC
+  ApexHilDemo
+  TPRM
+  ApexHilDemo/master_1khz.tprm
+  TPRM_FALLBACK
+  ApexHilDemo/safe_master.tprm
 )

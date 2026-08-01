@@ -7,7 +7,7 @@
  * clock management, and task scheduling.
  *
  * Usage:
- *   ApexOpsDemo --config tprm/master.tprm [--fs-root .apex_fs] [--shutdown-after N]
+ *   ApexOpsDemo --config <tprm-dir>/master.tprm [--fs-root .apex_fs] [--shutdown-after N]
  */
 
 #include "demos/apex_ops_demo/exec/inc/OpsExecutive.hpp"

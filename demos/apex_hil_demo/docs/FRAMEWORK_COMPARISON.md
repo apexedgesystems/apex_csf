@@ -144,7 +144,7 @@ F Prime statically links everything into a single monolithic binary.
 | Feature               | Apex                                                | cFS                                   | F Prime                                |
 | --------------------- | --------------------------------------------------- | ------------------------------------- | -------------------------------------- |
 | Runtime config format | Binary TPRM (packed structs, per-component)         | cFE Table Services (binary tables)    | Parameter database (PrmDb)             |
-| Config source         | TOML -> cfg2bin -> binary TPRM -> tprm_pack archive | Header files -> table images          | FPP constants + parameter definitions  |
+| Config source         | tprm.manifest: TOML -> cfg2bin -> tprm_pack archive | Header files -> table images          | FPP constants + parameter definitions  |
 | Runtime reload        | RELOAD_TPRM command (live, no restart)              | Table load/activate (live, per table) | Parameter update (live, per component) |
 | Per-instance config   | fullUid = (componentId << 8) \| instanceIndex       | AppId-based table ownership           | Component instance base ID             |
 | Config tools          | tprm_template, cfg2bin, tprm_pack (Rust CLI)        | Table tools (cFS-provided)            | FPP compiler + fprime-util             |
@@ -573,7 +573,7 @@ ApexWatchdog (parent process)
     |-- Timeout? kill child, log crash, restart
     |-- Crash (SIGCHLD)? log crash, restart
     |
-    |-- After 2 consecutive crashes: restart with safe.tprm
+    |-- After 2 consecutive crashes: restart with safe_master.tprm
     |-- After 5 consecutive crashes: halt (operator intervention)
     |
     Crash state persisted to watchdog.state file:
@@ -673,8 +673,8 @@ or file. F Prime cannot do component-level updates at all.
 Both restart the process. Apex's A/B banking makes it safer (known-good binary
 always on disk), but the operation itself is similar.
 
-**The watchdog with degraded-mode fallback** (safe.tprm after N crashes) is a
-capability neither cFS nor F Prime has out of the box. cFS has Health Service
+**The watchdog with degraded-mode fallback** (safe_master.tprm after N
+crashes) is a capability neither cFS nor F Prime has out of the box. cFS has Health Service
 but it restarts individual apps, not the whole executive with alternate config.
 
 **Where cFS has an edge:** cFS's multi-process app model provides memory

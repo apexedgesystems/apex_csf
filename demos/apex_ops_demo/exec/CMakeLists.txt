@@ -39,4 +39,5 @@ apex_add_app(
 )
 
 # Deployment: single executive.
-apex_add_deployment(NAME ApexOpsDemo EXEC ApexOpsDemo TPRM demos/apex_ops_demo/tprm/master.tprm)
+apex_add_tprm(NAME ApexOpsDemo MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/../tprm/tprm.manifest")
+apex_add_deployment(NAME ApexOpsDemo EXEC ApexOpsDemo TPRM ApexOpsDemo/master.tprm)

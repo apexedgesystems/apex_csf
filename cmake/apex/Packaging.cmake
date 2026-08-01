@@ -20,8 +20,9 @@
 # Usage:
 #   apex_add_deployment(
 #     NAME ApexHilDemo
-#     EXEC ApexHilDemo                                 # exactly one executive
-#     TPRM demos/apex_hil_demo/tprm/master_1khz.tprm    # optional
+#     EXEC ApexHilDemo                          # exactly one executive
+#     TPRM ApexHilDemo/master_1khz.tprm         # optional; product ref or repo path
+#     TPRM_FALLBACK ApexHilDemo/safe_master.tprm # optional; pre-stages bank_b
 #   )
 #   ninja package_ApexHilDemo        # cmake --install --component + tarball
 #   make package APP=ApexHilDemo
@@ -43,18 +44,53 @@
 include_guard(GLOBAL)
 
 # ------------------------------------------------------------------------------
-# apex_add_deployment(NAME <name> EXEC <exec> [TPRM <path>])
+# apex_add_deployment(NAME <name> EXEC <exec> [TPRM <ref>] [TPRM_FALLBACK <ref>])
 #
 # Declare a deployable apex filesystem. NAME is the bundle/dir (and the
 # package_<NAME> target). EXEC is the single executive target that owns the
-# filesystem. TPRM is the optional master config staged as bank_a/tprm/master.tprm.
+# filesystem. TPRM is the optional master config staged as
+# bank_a/tprm/master.tprm (what boots). TPRM_FALLBACK stages a second master
+# as bank_b/tprm/master.tprm -- a pre-staged known-good configuration the
+# operator can swap to with zero uplink (RELOAD_TPRM reads the inactive
+# bank).
+#
+# A <ref> is either an apex_add_tprm product ("<App>/<master.tprm>",
+# generated at build time) or a repo-relative file path.
 # ------------------------------------------------------------------------------
 function (apex_add_deployment)
-  cmake_parse_arguments(D "" "NAME;EXEC;TPRM" "" ${ARGN})
+  cmake_parse_arguments(D "" "NAME;EXEC;TPRM;TPRM_FALLBACK" "" ${ARGN})
   apex_require(D_NAME D_EXEC)
   set_property(GLOBAL APPEND PROPERTY APEX_DEPLOYMENTS "${D_NAME}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_EXEC "${D_EXEC}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_TPRM "${D_TPRM}")
+  set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_TPRM_FALLBACK "${D_TPRM_FALLBACK}")
+endfunction ()
+
+# Resolve a TPRM <ref> to (path, dependency target). Generated products win;
+# anything else is a repo-relative source path with no extra dependency.
+function (_apex_resolve_tprm _ref _out_path _out_dep)
+  get_property(_gen GLOBAL PROPERTY APEX_TPRM_PRODUCT_${_ref})
+  if (_gen)
+    string(REGEX REPLACE "/.*$" "" _app "${_ref}")
+    get_property(_dep GLOBAL PROPERTY APEX_TPRM_TARGET_${_app})
+    set(${_out_path}
+        "${_gen}"
+        PARENT_SCOPE
+    )
+    set(${_out_dep}
+        "${_dep}"
+        PARENT_SCOPE
+    )
+  else ()
+    set(${_out_path}
+        "${CMAKE_SOURCE_DIR}/${_ref}"
+        PARENT_SCOPE
+    )
+    set(${_out_dep}
+        ""
+        PARENT_SCOPE
+    )
+  endif ()
 endfunction ()
 
 # ------------------------------------------------------------------------------
@@ -183,13 +219,55 @@ function (apex_finalize_packages)
       COMPONENT ${_name}
     )
 
+    set(_tprm_deps "")
     if (_tprm)
+      _apex_resolve_tprm("${_tprm}" _tprm_path _tprm_dep)
       install(
-        FILES "${CMAKE_SOURCE_DIR}/${_tprm}"
+        FILES "${_tprm_path}"
         DESTINATION bank_a/tprm
         RENAME master.tprm
         COMPONENT ${_name}
       )
+      list(APPEND _tprm_deps ${_tprm_dep})
+
+      # A product-referenced TPRM carries its app's mission bank: the
+      # generated rts/ats sequences stage into bank_a so the deployed
+      # filesystem boots with the manifest's full sequence set. bank_b
+      # stays minimal -- fallback master only.
+      get_property(_tprm_is_product GLOBAL PROPERTY APEX_TPRM_PRODUCT_${_tprm})
+      if (_tprm_is_product)
+        string(REGEX REPLACE "/.*$" "" _tprm_app "${_tprm}")
+        get_property(_bank_rts GLOBAL PROPERTY APEX_TPRM_BANK_RTS_${_tprm_app})
+        get_property(_bank_ats GLOBAL PROPERTY APEX_TPRM_BANK_ATS_${_tprm_app})
+        if (_bank_rts)
+          install(
+            FILES ${_bank_rts}
+            DESTINATION bank_a/rts
+            COMPONENT ${_name}
+          )
+        endif ()
+        if (_bank_ats)
+          install(
+            FILES ${_bank_ats}
+            DESTINATION bank_a/ats
+            COMPONENT ${_name}
+          )
+        endif ()
+      endif ()
+    endif ()
+
+    # The fallback master pre-stages bank_b so a swap to the known-good
+    # configuration costs one command and zero uplink bytes.
+    get_property(_tprm_fb GLOBAL PROPERTY APEX_DEPLOY_${_name}_TPRM_FALLBACK)
+    if (_tprm_fb)
+      _apex_resolve_tprm("${_tprm_fb}" _fb_path _fb_dep)
+      install(
+        FILES "${_fb_path}"
+        DESTINATION bank_b/tprm
+        RENAME master.tprm
+        COMPONENT ${_name}
+      )
+      list(APPEND _tprm_deps ${_fb_dep})
     endif ()
 
     set(_pkgroot "${CMAKE_BINARY_DIR}/packages")
@@ -201,7 +279,7 @@ function (apex_finalize_packages)
               "${_pkgroot}/${_name}"
       COMMAND ${CMAKE_COMMAND} -E chdir "${_pkgroot}" ${CMAKE_COMMAND} -E tar czf "${_name}.tar.gz"
               "${_name}"
-      DEPENDS ${_exec}
+      DEPENDS ${_exec} ${_tprm_deps}
       COMMENT "[package] ${_name} -> cmake --install (bank_a + run.sh)"
       VERBATIM
     )

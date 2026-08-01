@@ -1,0 +1,24 @@
+# tprm.manifest -- ApexEdgeDemo
+# Packing recipe: what you read is what packs (see cmake/apex/Tprm.cmake).
+# The algorithm chain is shared; the two masters differ only in the timing
+# trio (executive/scheduler/system_monitor), with the thor variant tuned
+# for the Thor bench (see tprm/README.md).
+
+[components algorithms]
+0x000500  toml/action.toml
+0x008200  toml/conv_filter.toml
+0x008300  toml/fft_analyzer.toml
+0x008400  toml/batch_stats.toml
+0x008500  toml/stream_compact.toml
+
+[master master.tprm]
+use components algorithms
+0x000000  toml/executive.toml
+0x000100  toml/scheduler.toml
+0x00C800  toml/system_monitor.toml
+
+[master master_thor.tprm]
+use components algorithms
+0x000000  toml/thor/executive.toml
+0x000100  toml/thor/scheduler.toml
+0x00C800  toml/thor/system_monitor.toml

@@ -62,18 +62,22 @@ For running two instances on the same host (different ports):
 # Instance A: port 9000 (default TPRM)
 # Instance B: port 9001 (requires modified interface TPRM)
 
-# Build port-9001 TPRM for instance B
+# The build packs the default master from tprm/tprm.manifest. Instance B
+# repacks the build's generated payloads with a port-9001 interface,
+# mirroring the manifest's entry set.
 TOOLS=build/hosted-x86_64-debug/bin/tools/rust
+TPRM=build/hosted-x86_64-debug/demos/apex_ops_demo/exec/tprm
 cp demos/apex_ops_demo/tprm/toml/interface.toml /tmp/interface_b.toml
 sed -i 's/value = 9000/value = 9001/' /tmp/interface_b.toml
 $TOOLS/cfg2bin --config /tmp/interface_b.toml --output /tmp/interface_b.tprm
 $TOOLS/tprm_pack pack \
-  -e "0x000000:demos/apex_ops_demo/tprm/executive.tprm" \
-  -e "0x000100:demos/apex_ops_demo/tprm/scheduler.tprm" \
+  -e "0x000000:$TPRM/payloads/toml_executive_toml.tprm" \
+  -e "0x000100:$TPRM/payloads/toml_scheduler_toml.tprm" \
   -e "0x000400:/tmp/interface_b.tprm" \
-  -e "0x00D000:demos/apex_ops_demo/tprm/wave_gen_0.tprm" \
-  -e "0x00D001:demos/apex_ops_demo/tprm/wave_gen_1.tprm" \
-  -e "0x00C800:demos/apex_ops_demo/tprm/system_monitor.tprm" \
+  -e "0x000500:$TPRM/payloads/toml_action_toml.tprm" \
+  -e "0x00C800:$TPRM/payloads/toml_system_monitor_toml.tprm" \
+  -e "0x00D000:$TPRM/payloads/toml_wave_gen_0_toml.tprm" \
+  -e "0x00D001:$TPRM/payloads/toml_wave_gen_1_toml.tprm" \
   -o "/tmp/master_b.tprm"
 
 # Deploy to instance B

@@ -285,18 +285,22 @@ demos/apex_edge_demo/
     scripts/
         analyze_soak.py         # Post-run log analysis
     tprm/
+        tprm.manifest           # Packing recipe (components + masters)
         toml/                   # Source TOML configs
             executive.toml      # Thread-to-core layout
             scheduler.toml      # Pool config, task entries
             system_monitor.toml # GPU domain enabled
+            action.toml
             conv_filter.toml
             fft_analyzer.toml
             batch_stats.toml
             stream_compact.toml
-        master.tprm             # Packed archive (native)
-        master_thor.tprm        # Packed archive (Thor)
+            thor/               # Thor timing trio overrides
         README.md
 ```
+
+The build packs `master.tprm` (native) and `master_thor.tprm` (Thor) from the
+manifest into `build/<preset>/demos/apex_edge_demo/exec/tprm/`.
 
 ### Component Inventory
 
@@ -372,22 +376,24 @@ proves the RT loop is unaffected.
 #### 4. Soak Test Procedure
 
 ```bash
-# 1. Deploy to Thor (same pattern as Pi deploy)
-scp -r deploy/ user@thor-host:~/apex/
+# 1. Deploy the release package to Thor (see DEPLOY_PROCEDURE.md)
+make release APP=ApexEdgeDemo
+rsync -a build/release/ApexEdgeDemo/jetson/ user@thor-host:~/apex/
 
 # 2. Run soak test (24 hours)
-ssh user@thor-host 'cd ~/apex && sudo ./bin/ApexEdgeDemo \
-  --config tprm/master.tprm \
-  --shutdown-after 86400'
+#    run.sh boots bank_a with --config bank_a/tprm/master.tprm and --fs-root .
+ssh user@thor-host 'cd ~/apex && sudo ./run.sh \
+  --shutdown-after 86400 </dev/null'
 
-# 3. Collect results
-scp -r user@thor-host:~/apex/bin/.apex_fs/ ./test_runs/soak_24h/
+# 3. Collect results (run.sh writes logs under ~/apex via --fs-root .)
+scp -r user@thor-host:~/apex/system.log user@thor-host:~/apex/logs \
+  ./test_runs/soak_24h/
 
 # 4. Analyze
-grep "Frame overruns" test_runs/soak_24h/system.log      # Must be 0
-grep "GPU util" test_runs/soak_24h/system_monitor.log     # Should show >85%
-grep "WARN\|CRIT" test_runs/soak_24h/system_monitor.log   # Review threshold hits
-grep "kernel_complete" test_runs/soak_24h/conv_filter.log  # Verify work done
+grep "Frame overruns" test_runs/soak_24h/system.log          # Must be 0
+grep "GPU util" test_runs/soak_24h/logs/support/*.log         # Should show >85%
+grep "WARN\|CRIT" test_runs/soak_24h/logs/support/*.log       # Review threshold hits
+grep "GPU complete" test_runs/soak_24h/logs/models/*.log      # Verify work done
 ```
 
 #### 5. Quick Validation (5-minute smoke test)
@@ -400,7 +406,7 @@ make compose-debug
 docker compose run --rm -T dev-cuda bash -c '
   rm -rf build/hosted-x86_64-debug/bin/.apex_fs
   timeout 320 ./build/hosted-x86_64-debug/bin/ApexEdgeDemo \
-    --config demos/apex_edge_demo/tprm/master.tprm \
+    --config build/hosted-x86_64-debug/demos/apex_edge_demo/exec/tprm/master.tprm \
     --shutdown-after 300
 '
 
