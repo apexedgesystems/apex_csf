@@ -76,14 +76,15 @@ static_assert(sizeof(TprmPayloadHeader) == TPRM_PAYLOAD_HEADER_SIZE);
  */
 enum class TprmPayloadCheck : std::uint8_t {
   OK = 0,
-  FILE_ERROR = 1,         ///< Open/read failed.
-  TOO_SMALL = 2,          ///< File smaller than the prelude.
-  BAD_MAGIC = 3,          ///< Not a v3 payload.
-  BAD_VERSION = 4,        ///< Version other than 3 (v3-only reader).
-  SIZE_MISMATCH = 5,      ///< Body length differs from header payloadSize.
-  UID_MISMATCH = 6,       ///< Payload targets a different fullUid.
-  CRC_MISMATCH = 7,       ///< Body bytes fail the header CRC.
-  BODY_SIZE_MISMATCH = 8, ///< Body length differs from the caller's TParams.
+  FILE_ERROR = 1,           ///< Open/read failed.
+  TOO_SMALL = 2,            ///< File smaller than the prelude.
+  BAD_MAGIC = 3,            ///< Not a v3 payload.
+  BAD_VERSION = 4,          ///< Version other than 3 (v3-only reader).
+  SIZE_MISMATCH = 5,        ///< Body length differs from header payloadSize.
+  UID_MISMATCH = 6,         ///< Payload targets a different fullUid.
+  CRC_MISMATCH = 7,         ///< Body bytes fail the header CRC.
+  BODY_SIZE_MISMATCH = 8,   ///< Body length differs from the caller's TParams.
+  CONSTRAINT_VIOLATION = 9, ///< A field value is outside its declared legal range.
 };
 
 /// Fault-code form of a check verdict for log/telemetry surfaces.
@@ -108,12 +109,123 @@ enum class TprmPayloadCheck : std::uint8_t {
     return "body length differs from header";
   case TprmPayloadCheck::UID_MISMATCH:
     return "payload targets another fullUid";
+  case TprmPayloadCheck::CONSTRAINT_VIOLATION:
+    return "field value outside its declared legal range";
   case TprmPayloadCheck::CRC_MISMATCH:
     return "payload CRC mismatch";
   case TprmPayloadCheck::BODY_SIZE_MISMATCH:
     return "body size differs from TParams";
   }
   return "unknown";
+}
+
+/* ----------------------------- Constraint tables ----------------------------- */
+
+/// Field kind a constraint entry validates against.
+enum class TprmFieldKind : std::uint8_t {
+  INT = 0,   ///< Signed little-endian integer (size 1/2/4/8).
+  UINT = 1,  ///< Unsigned little-endian integer (size 1/2/4/8).
+  FLOAT = 2, ///< IEEE 754 (size 4/8).
+};
+
+/// One field's legal range: generated from the component's constraint
+/// declaration, compiled into the app, walked by the shared validator.
+struct TprmConstraintEntry {
+  std::uint16_t offset{0};                 ///< Byte offset within the payload body.
+  std::uint8_t size{0};                    ///< Field size in bytes.
+  TprmFieldKind kind{TprmFieldKind::UINT}; ///< Value interpretation.
+  bool hasMin{false};
+  bool hasMax{false};
+  bool hasStep{false};
+  double min{0.0};                ///< Inclusive lower bound.
+  double max{0.0};                ///< Inclusive upper bound.
+  double step{0.0};               ///< Granularity from min.
+  const double* allowed{nullptr}; ///< Explicit legal values (optional).
+  std::uint8_t allowedCount{0};   ///< Entries in `allowed`.
+};
+
+/// A component's constraint table.
+struct TprmConstraintTable {
+  const TprmConstraintEntry* entries{nullptr};
+  std::size_t count{0};
+};
+
+/// Registry seam: the build generates one strong definition per app
+/// (fullUid -> table) from the packing manifest's payloads; with no
+/// generated registry linked, the weak reference is null and constraint
+/// checking is skipped (identity and integrity checks still run).
+extern "C" {
+[[gnu::weak]] const TprmConstraintTable* apexTprmConstraintLookup(std::uint32_t fullUid) noexcept;
+}
+
+/// Read one field value from the payload body as a double.
+[[nodiscard]] inline double tprmFieldValue(const std::uint8_t* body,
+                                           const TprmConstraintEntry& e) noexcept {
+  std::uint64_t raw = 0;
+  std::memcpy(&raw, body + e.offset, e.size);
+  switch (e.kind) {
+  case TprmFieldKind::INT: {
+    // Sign-extend from the field width.
+    const int SHIFT = 64 - 8 * e.size;
+    return static_cast<double>((static_cast<std::int64_t>(raw << SHIFT)) >> SHIFT);
+  }
+  case TprmFieldKind::UINT:
+    return static_cast<double>(raw);
+  case TprmFieldKind::FLOAT:
+    if (e.size == 4) {
+      float f = 0.0F;
+      std::memcpy(&f, body + e.offset, 4);
+      return static_cast<double>(f);
+    }
+    {
+      double d = 0.0;
+      std::memcpy(&d, body + e.offset, 8);
+      return d;
+    }
+  }
+  return 0.0;
+}
+
+/// Walk a constraint table against a payload body: the on-board rail
+/// for payloads that bypassed ground tooling. Entries whose field lies
+/// outside the body are violations (the table and the layout disagree).
+[[nodiscard]] inline bool tprmConstraintsHold(const std::uint8_t* body, std::size_t bodySize,
+                                              const TprmConstraintTable& table) noexcept {
+  for (std::size_t i = 0; i < table.count; ++i) {
+    const TprmConstraintEntry& E = table.entries[i];
+    if (static_cast<std::size_t>(E.offset) + E.size > bodySize) {
+      return false;
+    }
+    const double V = tprmFieldValue(body, E);
+    if (E.hasMin && V < E.min) {
+      return false;
+    }
+    if (E.hasMax && V > E.max) {
+      return false;
+    }
+    if (E.allowed != nullptr && E.allowedCount > 0) {
+      bool found = false;
+      for (std::uint8_t a = 0; a < E.allowedCount; ++a) {
+        if (E.allowed[a] == V) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        return false;
+      }
+    }
+    if (E.hasStep && E.step > 0.0) {
+      const double BASE = E.hasMin ? E.min : 0.0;
+      const double STEPS = (V - BASE) / E.step;
+      const double NEAREST =
+          BASE + static_cast<double>(static_cast<long long>(STEPS + 0.5)) * E.step;
+      if (V - NEAREST > E.step * 1e-9 || NEAREST - V > E.step * 1e-9) {
+        return false;
+      }
+    }
+  }
+  return true;
 }
 
 /* ----------------------------- CRC-32 ----------------------------- */
@@ -194,6 +306,16 @@ verifyTprmPayload(const std::uint8_t* data, std::size_t size, std::uint32_t expe
     return CHECK;
   }
   body.assign(image.begin() + static_cast<std::ptrdiff_t>(TPRM_PAYLOAD_HEADER_SIZE), image.end());
+
+  // On-board legality rail: when the app links a generated constraint
+  // registry, the target's table gates the verified body.
+  if (apexTprmConstraintLookup != nullptr) {
+    if (const TprmConstraintTable* TABLE = apexTprmConstraintLookup(expectedUid)) {
+      if (!tprmConstraintsHold(body.data(), body.size(), *TABLE)) {
+        return TprmPayloadCheck::CONSTRAINT_VIOLATION;
+      }
+    }
+  }
   return TprmPayloadCheck::OK;
 }
 

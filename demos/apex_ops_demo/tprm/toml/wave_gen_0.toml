@@ -13,13 +13,13 @@
 #   float reserved2 = 0.0
 
 [WaveGenTunableParams]
-frequency = { type = "float", size = 4, value = 1.0 }
-amplitude = { type = "float", size = 4, value = 1.0 }
+frequency = { type = "float", size = 4, min = 0.0, max = 50.0, value = 1.0 }
+amplitude = { type = "float", size = 4, min = 0.0, value = 1.0 }
 dcOffset = { type = "float", size = 4, value = 0.0 }
 phaseOffset = { type = "float", size = 4, value = 0.0 }
 noiseAmplitude = { type = "float", size = 4, value = 0.0 }
-dutyCycle = { type = "float", size = 4, value = 0.5 }
-waveType = { type = "uint", size = 1, value = 0 }
+dutyCycle = { type = "float", size = 4, min = 0.0, max = 1.0, value = 0.5 }
+waveType = { type = "uint", size = 1, allowed = [0, 1, 2, 3, 4], value = 0 }
 reserved0 = { type = "uint", size = 1, value = 0 }
 reserved1 = { type = "uint", size = 1, value = 0 }
 reserved2 = { type = "uint", size = 1, value = 0 }

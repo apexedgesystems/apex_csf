@@ -195,6 +195,74 @@ TEST(ParamBankTest, LoadFileRejectsUnstampedImage) {
   std::filesystem::remove(PATH);
 }
 
+/* ----------------------------- Constraint tables ----------------------------- */
+
+using system_core::system_component::TprmConstraintEntry;
+using system_core::system_component::tprmConstraintsHold;
+using system_core::system_component::TprmConstraintTable;
+using system_core::system_component::TprmFieldKind;
+
+/** @test The table walker enforces min/max/allowed on typed fields. */
+TEST(TprmConstraintTest, WalkerEnforcesEachConstraintKind) {
+  // Body layout: float f @0, int16 i @4, uint8 u @6.
+  std::uint8_t body[7] = {};
+  const float F = 25.0F;
+  std::memcpy(body, &F, 4);
+  const std::int16_t I = -100;
+  std::memcpy(body + 4, &I, 2);
+  body[6] = 2;
+
+  const double ALLOWED[] = {0.0, 1.0, 2.0};
+  const TprmConstraintEntry ENTRIES[] = {
+      {0, 4, TprmFieldKind::FLOAT, true, true, false, 0.0, 50.0, 0.0, nullptr, 0},
+      {4, 2, TprmFieldKind::INT, true, false, false, -500.0, 0.0, 0.0, nullptr, 0},
+      {6, 1, TprmFieldKind::UINT, false, false, false, 0.0, 0.0, 0.0, ALLOWED, 3},
+  };
+  const TprmConstraintTable TABLE{ENTRIES, 3};
+  EXPECT_TRUE(tprmConstraintsHold(body, sizeof(body), TABLE));
+
+  const float BAD_F = 99.0F;
+  std::memcpy(body, &BAD_F, 4);
+  EXPECT_FALSE(tprmConstraintsHold(body, sizeof(body), TABLE));
+  std::memcpy(body, &F, 4);
+
+  const std::int16_t BAD_I = -501;
+  std::memcpy(body + 4, &BAD_I, 2);
+  EXPECT_FALSE(tprmConstraintsHold(body, sizeof(body), TABLE));
+  std::memcpy(body + 4, &I, 2);
+
+  body[6] = 7;
+  EXPECT_FALSE(tprmConstraintsHold(body, sizeof(body), TABLE));
+  body[6] = 2;
+  EXPECT_TRUE(tprmConstraintsHold(body, sizeof(body), TABLE));
+}
+
+/** @test An entry pointing outside the body is a violation, not a read. */
+TEST(TprmConstraintTest, WalkerRejectsOutOfBodyEntry) {
+  std::uint8_t body[4] = {};
+  const TprmConstraintEntry ENTRIES[] = {
+      {2, 4, TprmFieldKind::UINT, false, true, false, 0.0, 10.0, 0.0, nullptr, 0},
+  };
+  const TprmConstraintTable TABLE{ENTRIES, 1};
+  EXPECT_FALSE(tprmConstraintsHold(body, sizeof(body), TABLE));
+}
+
+/** @test Step granularity holds from min. */
+TEST(TprmConstraintTest, WalkerEnforcesStep) {
+  std::uint8_t body[4] = {};
+  const float V = 1.5F;
+  std::memcpy(body, &V, 4);
+  const TprmConstraintEntry ENTRIES[] = {
+      {0, 4, TprmFieldKind::FLOAT, true, false, true, 0.0, 0.0, 0.5, nullptr, 0},
+  };
+  const TprmConstraintTable TABLE{ENTRIES, 1};
+  EXPECT_TRUE(tprmConstraintsHold(body, sizeof(body), TABLE));
+
+  const float OFF_GRID = 1.25F;
+  std::memcpy(body, &OFF_GRID, 4);
+  EXPECT_FALSE(tprmConstraintsHold(body, sizeof(body), TABLE));
+}
+
 /* ----------------------------- Publishing ----------------------------- */
 
 /** @test publishInitial() publishes the staged set exactly once. */

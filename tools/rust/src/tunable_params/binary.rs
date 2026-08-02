@@ -92,8 +92,21 @@ pub fn serialize_value(value: &Json) -> Result<Vec<u8>, Error> {
 /// the CRC-32 of the canonical field spec (`name:type:size;` per leaf
 /// in emission order) that the v3 payload prelude carries.
 pub fn serialize_value_with_layout(value: &Json) -> Result<(Vec<u8>, u32), Error> {
+    let (bytes, hash, _rows) = serialize_value_with_layout_and_rows(value)?;
+    Ok((bytes, hash))
+}
+
+/// Serialize plus the constraint rows: one JSON row per constrained
+/// leaf ({offset, size, kind, min?, max?, step?, allowed?}) in body
+/// order -- the source the build compiles into the on-board table.
+/// Kind encoding matches the C++ TprmFieldKind (0=int, 1=uint,
+/// 2=float).
+pub fn serialize_value_with_layout_and_rows(
+    value: &Json,
+) -> Result<(Vec<u8>, u32, Vec<Json>), Error> {
     let mut out = Vec::new();
     let mut spec = String::new();
+    let mut rows = Vec::new();
     // Build enum map: start with builtins, add user-defined from __enums__
     let mut enums: HashMap<String, i64> = builtin_enums()
         .into_iter()
@@ -106,8 +119,40 @@ pub fn serialize_value_with_layout(value: &Json) -> Result<(Vec<u8>, u32), Error
             }
         }
     }
-    traverse_and_serialize(value, &mut out, &mut spec, &enums)?;
-    Ok((out, super::payload::crc32(spec.as_bytes())))
+    traverse_and_serialize(value, &mut out, &mut spec, &mut rows, &enums)?;
+    Ok((out, super::payload::crc32(spec.as_bytes()), rows))
+}
+
+/// Record a constraint row for a leaf about to serialize at `offset`.
+fn record_constraint_row(
+    rows: &mut Vec<Json>,
+    field_type: &str,
+    field: &Json,
+    offset: usize,
+    size: usize,
+) {
+    let has_constraint = ["min", "max", "allowed", "step"]
+        .iter()
+        .any(|k| field.get(*k).is_some());
+    if !has_constraint {
+        return;
+    }
+    let kind = match field_type {
+        "int" => 0,
+        "uint" => 1,
+        "float" | "double" => 2,
+        _ => return,
+    };
+    let mut row = serde_json::Map::new();
+    row.insert("offset".into(), serde_json::json!(offset));
+    row.insert("size".into(), serde_json::json!(size));
+    row.insert("kind".into(), serde_json::json!(kind));
+    for k in ["min", "max", "step", "allowed"] {
+        if let Some(v) = field.get(k) {
+            row.insert(k.to_string(), v.clone());
+        }
+    }
+    rows.push(Json::Object(row));
 }
 
 /* ----------------------------- Constraints ----------------------------- */
@@ -194,6 +239,7 @@ fn traverse_and_serialize(
     value: &Json,
     out: &mut Vec<u8>,
     spec: &mut String,
+    rows: &mut Vec<Json>,
     enums: &HashMap<String, i64>,
 ) -> Result<(), Error> {
     match value {
@@ -207,16 +253,16 @@ fn traverse_and_serialize(
                 if let Some(field_type) = val.get("type").and_then(|v| v.as_str()) {
                     let size = val.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
                     spec.push_str(&format!("{key}:{field_type}:{size};"));
-                    serialize_field(key, field_type, val, out, spec, enums)?;
+                    serialize_field(key, field_type, val, out, spec, rows, enums)?;
                 } else {
                     // Recurse into nested structures
-                    traverse_and_serialize(val, out, spec, enums)?;
+                    traverse_and_serialize(val, out, spec, rows, enums)?;
                 }
             }
         }
         Json::Array(arr) => {
             for item in arr {
-                traverse_and_serialize(item, out, spec, enums)?;
+                traverse_and_serialize(item, out, spec, rows, enums)?;
             }
         }
         _ => {}
@@ -232,10 +278,12 @@ fn serialize_field(
     field: &Json,
     out: &mut Vec<u8>,
     spec: &mut String,
+    rows: &mut Vec<Json>,
     enums: &HashMap<String, i64>,
 ) -> Result<(), Error> {
     let size = field.get("size").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
     let value = field.get("value");
+    record_constraint_row(rows, field_type, field, out.len(), size);
 
     match field_type {
         "int" => {
@@ -320,13 +368,13 @@ fn serialize_field(
                         }
                     }
                     let elem_name = format!("{name}[{i}]");
-                    serialize_field(&elem_name, elem_type, &elem_field, out, spec, enums)?;
+                    serialize_field(&elem_name, elem_type, &elem_field, out, spec, rows, enums)?;
                 }
             }
         }
         "struct" => {
             if let Some(fields) = field.get("fields") {
-                traverse_and_serialize(fields, out, spec, enums)?;
+                traverse_and_serialize(fields, out, spec, rows, enums)?;
             }
         }
         _ => {
