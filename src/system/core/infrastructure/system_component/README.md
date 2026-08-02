@@ -41,17 +41,17 @@ Component base classes and lifecycle management for the Apex executive framework
 | `ModelData`                | Template class     | Typed container for model data with category-based access control                       | Yes                                     |
 | `DataTarget`               | Struct             | Runtime byte-range addressing for registered data blocks                                | Yes                                     |
 
-| Question                                          | Answer                                      |
-| ------------------------------------------------- | ------------------------------------------- |
-| What is the universal component interface?        | `IComponent`                                |
-| How do I create a schedulable model?              | Inherit `SwModelBase` or `HwModelBase`      |
-| How do I add tunable parameters with hot-reload?  | Own a `ParamBank<TParams>` member           |
-| How do I get RT-safe parameter access?            | `bank.active()` (atomic pointer load, ~9ns) |
-| How do I build for bare-metal MCUs?               | Inherit `McuComponentBase`                  |
-| What status codes can init/load return?           | `Status` enum (SUCCESS through EOE marker)  |
-| How do I classify data blocks semantically?       | `DataCategory` enum                         |
-| How do I wrap typed data with category semantics? | `ModelData<T, Category>`                    |
-| How do I address a byte range in registered data? | `DataTarget` struct                         |
+| Question                                          | Answer                                     |
+| ------------------------------------------------- | ------------------------------------------ |
+| What is the universal component interface?        | `IComponent`                               |
+| How do I create a schedulable model?              | Inherit `SwModelBase` or `HwModelBase`     |
+| How do I add tunable parameters with hot-reload?  | Own a `ParamBank<TParams>` member          |
+| How do I get RT-safe parameter access?            | `bank.active()` (seqlock-validated copy)   |
+| How do I build for bare-metal MCUs?               | Inherit `McuComponentBase`                 |
+| What status codes can init/load return?           | `Status` enum (SUCCESS through EOE marker) |
+| How do I classify data blocks semantically?       | `DataCategory` enum                        |
+| How do I wrap typed data with category semantics? | `ModelData<T, Category>`                   |
+| How do I address a byte range in registered data? | `DataTarget` struct                        |
 
 ---
 
@@ -76,27 +76,26 @@ Component base classes and lifecycle management for the Apex executive framework
 
 ### Parameter Access and Lifecycle
 
-| Operation                           | Param Size | Median (us) | Calls/s | CV%   |
-| ----------------------------------- | ---------- | ----------- | ------- | ----- |
-| `active()`                          | 24B        | 0.011       | 93.0M   | 14.5% |
-| `active()`                          | 88B        | 0.016       | 63.5M   | 6.0%  |
-| `active()`                          | 320B       | 0.009       | 114.3M  | 14.6% |
-| `load()`                            | 24B        | 0.011       | 88.5M   | 2.6%  |
-| `load()`                            | 88B        | 0.012       | 84.7M   | 2.2%  |
-| `load()`                            | 320B       | 0.013       | 76.6M   | 2.4%  |
-| `load()` + `apply()`                | 24B        | 0.022       | 44.6M   | 1.5%  |
-| `rollback()` + `load()` + `apply()` | 24B        | 0.031       | 32.0M   | 9.6%  |
-| Full publish cycle                  | 24B        | 0.032       | 31.5M   | 3.7%  |
+| Operation                   | Param Size | Median (us) | Calls/s | CV%   |
+| --------------------------- | ---------- | ----------- | ------- | ----- |
+| `active()` (validated copy) | 24B        | 0.033       | 30.1M   | 0.7%  |
+| `active()` (validated copy) | 88B        | 0.056       | 17.7M   | 12.1% |
+| `active()` (validated copy) | 320B       | 0.143       | 7.0M    | 1.7%  |
+| `load()`                    | 24B        | 0.033       | 29.9M   | 3.5%  |
+| `load()`                    | 88B        | 0.057       | 17.6M   | 0.8%  |
+| `load()`                    | 320B       | 0.134       | 7.5M    | 4.0%  |
+| `apply()`                   | 24B        | 0.043       | 23.1M   | 1.5%  |
+| `rollback()`                | 24B        | 0.052       | 19.4M   | 0.4%  |
+| Full publish cycle          | 24B        | 0.099       | 10.1M   | 1.1%  |
 
 Full publish cycle = construct + `load()` + `publishInitial()` + `active()`
-read on a fresh bank.
-
-Under maximum publish contention (a control-plane writer churning
-`load()`+`apply()` continuously), `active()` reads 14.8 ns median vs
-10.9 ns uncontended in the same run -- the swap costs readers a few
-nanoseconds of cache traffic, never a wait. A torn-read detector
-(3 reader threads, 200k publishes, self-consistent patterns) observes
-zero inconsistent sets.
+read on a fresh bank. Reads return a seqlock-validated copy, so their
+cost scales with sizeof(TParams) -- the price of a read that can never
+tear, even for a reader preempted mid-copy across a publish. Under
+maximum publish contention `active()` reads 68 ns at 24B (retry-bounded,
+never a wait). The torn-read detector (3 reader threads, 200k publishes)
+observes zero inconsistent sets, including under single-CPU-pinned
+ThreadSanitizer forcing.
 
 ### Parameter Size Scaling
 
@@ -110,13 +109,13 @@ zero inconsistent sets.
 
 ### Memory Footprint
 
-| Component             | Stack                                 | Heap                    |
-| --------------------- | ------------------------------------- | ----------------------- |
-| `IComponent`          | 8B (vtable)                           | 0                       |
-| `McuComponentBase`    | ~24B (vtable + state)                 | 0                       |
-| `SystemComponentBase` | ~120B (vtable + state + descriptors)  | Log pointer (shared)    |
-| `ParamBank<T>`        | 2 \* sizeof(T) (A/B banks) + pointers | 0 (banks inline)        |
-| `PackedTprm`          | ~32B                                  | File buffer (transient) |
+| Component             | Stack                                      | Heap                    |
+| --------------------- | ------------------------------------------ | ----------------------- |
+| `IComponent`          | 8B (vtable)                                | 0                       |
+| `McuComponentBase`    | ~24B (vtable + state)                      | 0                       |
+| `SystemComponentBase` | ~120B (vtable + state + descriptors)       | Log pointer (shared)    |
+| `ParamBank<T>`        | 2 \* sizeof(T) word-atomic banks + seqlock | 0 (banks inline)        |
+| `PackedTprm`          | ~32B                                       | File buffer (transient) |
 
 ---
 
@@ -206,8 +205,9 @@ public:
   [[nodiscard]] Status apply() noexcept;           // hot-reload
   [[nodiscard]] Status rollback() noexcept;        // one level of history
 
-  /// @note RT-safe: Single atomic acquire load (~9ns).
-  [[nodiscard]] const TParams& active() const noexcept;
+  /// @note RT-safe: seqlock-validated copy; never tears, retries only
+  /// during an in-flight publish.
+  [[nodiscard]] TParams active() const noexcept;
 
   /// @note RT-safe: Simple reads.
   [[nodiscard]] const TParams& staged() const noexcept;
@@ -317,7 +317,7 @@ protected:
     if (bank_.publishInitial() != Status::SUCCESS) {
       return static_cast<uint8_t>(Status::ERROR_NOT_CONFIGURED);
     }
-    const auto& p = bank_.active();  // RT-safe (~9ns)
+    const auto p = bank_.active();  // RT-safe validated copy
     configureModel(p.frequency, p.mode);
     return 0;
   }

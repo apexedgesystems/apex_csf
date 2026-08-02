@@ -387,7 +387,7 @@ public:
     return bank_.load(p, [](const ModelParams& m) noexcept { return m.rate > 0; });
   }
 
-  [[nodiscard]] const ModelParams& params() const noexcept { return bank_.active(); }
+  [[nodiscard]] ModelParams params() const noexcept { return bank_.active(); }
   [[nodiscard]] Status applyParams() noexcept { return bank_.apply(); }
 
   [[nodiscard]] std::uint8_t step() noexcept { return 0; }
@@ -429,18 +429,38 @@ TEST(ParamBankTest, SchedulableComponentComposition) {
 
 /**
  * @test Readers never observe a torn parameter set while the writer
- * publishes. Two self-consistent patterns (flags is always the bitwise
- * complement of value) alternate under maximum publish pressure; any
- * observed set must satisfy the invariant exactly.
+ * publishes. The pattern struct is four machine words wide: an 8-byte
+ * struct copies in a single x86-64 instruction and is hardware-atomic,
+ * which masks tearing from this detector entirely; four words force a
+ * multi-instruction copy that can interleave with the writer. Two
+ * self-consistent patterns alternate under maximum publish pressure; any
+ * observed set must satisfy the invariant across all four words.
  */
 TEST(ParamBankTest, ConcurrentReadersSeeOnlyPublishedSets) {
-  ParamBank<TestParams> bank{};
-
-  auto consistent = [](const TestParams& p) noexcept {
-    return p.flags == ~static_cast<std::uint32_t>(p.value);
+  struct WideParams {
+    std::uint64_t a{0};
+    std::uint64_t b{0};
+    std::uint64_t c{0};
+    std::uint64_t d{0};
   };
-  const TestParams A{0x11111111, ~static_cast<std::uint32_t>(0x11111111)};
-  const TestParams B{0x77777777, ~static_cast<std::uint32_t>(0x77777777)};
+  static_assert(sizeof(WideParams) > sizeof(std::uint64_t),
+                "a single-word struct copies atomically in hardware and cannot tear");
+
+  ParamBank<WideParams> bank{};
+
+  auto consistent = [](const WideParams& p) noexcept {
+    return p.b == ~p.a && p.c == p.a + 1U && p.d == ~(p.a + 1U);
+  };
+  auto makePattern = [](std::uint64_t seed) noexcept {
+    WideParams p;
+    p.a = seed;
+    p.b = ~seed;
+    p.c = seed + 1U;
+    p.d = ~(seed + 1U);
+    return p;
+  };
+  const WideParams A = makePattern(0x1111111111111111ULL);
+  const WideParams B = makePattern(0x7777777777777777ULL);
   ASSERT_EQ(bank.load(A, consistent), Status::SUCCESS);
   ASSERT_EQ(bank.publishInitial(), Status::SUCCESS);
 
@@ -455,8 +475,8 @@ TEST(ParamBankTest, ConcurrentReadersSeeOnlyPublishedSets) {
       std::uint64_t local = 0;
       std::uint64_t torn = 0;
       while (!stop.load(std::memory_order_relaxed)) {
-        const TestParams SNAP = bank.active();
-        if (SNAP.flags != ~static_cast<std::uint32_t>(SNAP.value)) {
+        const WideParams SNAP = bank.active();
+        if (!(SNAP.b == ~SNAP.a && SNAP.c == SNAP.a + 1U && SNAP.d == ~(SNAP.a + 1U))) {
           ++torn;
         }
         ++local;

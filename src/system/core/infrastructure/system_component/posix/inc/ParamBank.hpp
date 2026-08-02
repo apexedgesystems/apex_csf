@@ -16,18 +16,29 @@
  *  3. load(...) then apply()       - hot-reload without re-init.
  *  4. rollback()                   - restore the previous active set.
  *
- * Rollback holds one level of history and staging forfeits it: two banks
- * cannot hold three states, so a load() that scribbles the bank the
- * rollback pointer references clears canRollback(). Callers that need
- * the old set after staging a new one must read active() first.
+ * Rollback holds one level of history and staging a validated set over
+ * the bank the rollback index references forfeits it: two banks cannot
+ * hold three states. Callers that need the old set after staging a new
+ * one must read active() first.
+ *
+ * Reader protection is a seqlock over atomic-word bank storage: the
+ * writer brackets every bank write with an odd/even generation, and
+ * active() copies words then revalidates the generation, retrying if a
+ * write overlapped. A reader preempted mid-copy across a full
+ * apply-then-load cycle therefore never returns torn data, and every
+ * access is atomic at word granularity -- race-free by construction, not
+ * by suppression. Reads return by value; a reference into a bank could
+ * not survive the writer's reuse of it.
  *
  * RT Constraints:
- *  - active(), canRollback(), generations: RT-safe, O(1), no allocation.
+ *  - active(), canRollback(), generations: RT-safe, wait-free in the
+ *    absence of a concurrent publish; bounded retries against the single
+ *    control-plane writer otherwise.
  *  - load(), publishInitial(), apply(), rollback(): control-plane only,
  *    single-writer assumption (no concurrent control-plane calls).
  *
- * TParams must be trivially copyable (no heap members) so bank copies
- * are memcpy and the RT reader can treat the published set as plain data.
+ * TParams must be trivially copyable (no heap members), with alignment
+ * no stricter than the word storage.
  */
 
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
@@ -35,6 +46,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -59,12 +71,21 @@ namespace system_component {
 template <typename TParams> class ParamBank {
   static_assert(std::is_trivially_copyable_v<TParams>,
                 "TParams must be trivially copyable for RT-safe staging (no heap members)");
+  static_assert(alignof(TParams) <= alignof(std::uint64_t),
+                "TParams alignment must not exceed the word storage alignment");
+
+  /// Bank storage in 64-bit words so every reader/writer access is atomic.
+  static constexpr std::size_t WORDS = (sizeof(TParams) + 7U) / 8U;
 
 public:
   /** @brief Both banks default-constructed; nothing staged or published. */
-  ParamBank() noexcept : active_(&bankA_), staged_(&bankB_), activeGen_(0), stagedGen_(0) {}
+  ParamBank() noexcept : activeGen_(0), stagedGen_(0) {
+    const TParams DEFAULTS{};
+    storeBank(0, DEFAULTS);
+    storeBank(1, DEFAULTS);
+  }
 
-  // Non-copyable, non-movable (atomics + self-referential bank pointers).
+  // Non-copyable, non-movable (atomic storage).
   ParamBank(const ParamBank&) = delete;
   ParamBank& operator=(const ParamBank&) = delete;
   ParamBank(ParamBank&&) = delete;
@@ -78,21 +99,25 @@ public:
    * @param validate Callable bool(const TParams&) noexcept; rejects the set.
    * @return Status::SUCCESS or Status::ERROR_LOAD_INVALID.
    * @note NOT RT-safe: control-plane only.
-   * @note Scribbles the staged bank even on rejection; forfeits rollback
-   *       if the staged bank is the rollback source (see file comment).
+   * @note Validates before writing: a rejected set never touches bank
+   *       storage. An accepted stage over the rollback source forfeits
+   *       rollback (see file comment).
    */
   template <typename TValidator>
   [[nodiscard]] Status load(const TParams& params, TValidator&& validate) noexcept {
     static_assert(std::is_nothrow_invocable_r_v<bool, TValidator, const TParams&>,
                   "validator must be noexcept bool(const TParams&)");
-    forfeitRollbackIfStagedIsPrev();
-    *staged_ = params;
     stagedGen_.fetch_add(1, std::memory_order_relaxed);
 
-    if (!std::forward<TValidator>(validate)(*staged_)) {
+    // Validate before any bank write: a rejected set never touches
+    // storage (and therefore never forfeits rollback).
+    if (!std::forward<TValidator>(validate)(params)) {
       stagedValid_ = false;
       return Status::ERROR_LOAD_INVALID;
     }
+
+    forfeitRollbackIfStagedIsPrev();
+    storeBankSeqlocked(stagedIdx_, params);
     stagedValid_ = true;
     return Status::SUCCESS;
   }
@@ -117,21 +142,17 @@ public:
                             TValidator&& validate) noexcept {
     static_assert(std::is_nothrow_invocable_r_v<bool, TValidator, const TParams&>,
                   "validator must be noexcept bool(const TParams&)");
-    forfeitRollbackIfStagedIsPrev();
 
-    lastCheck_ = readTprmPayload(path, fullUid, *staged_);
+    // Decode into a local: prelude or body failure never touches bank
+    // storage, and an accepted payload goes through the same seqlocked
+    // stage as a struct load.
+    TParams incoming{};
+    lastCheck_ = readTprmPayload(path, fullUid, incoming);
     if (lastCheck_ != TprmPayloadCheck::OK) {
       stagedValid_ = false;
       return Status::ERROR_LOAD_INVALID;
     }
-    stagedGen_.fetch_add(1, std::memory_order_relaxed);
-
-    if (!std::forward<TValidator>(validate)(*staged_)) {
-      stagedValid_ = false;
-      return Status::ERROR_LOAD_INVALID;
-    }
-    stagedValid_ = true;
-    return Status::SUCCESS;
+    return load(incoming, std::forward<TValidator>(validate));
   }
 
   /** @brief Stage a parameter set from a v3 payload file, no validation. */
@@ -159,8 +180,8 @@ public:
     if (activeGen_.load(std::memory_order_relaxed) != 0) {
       return Status::WARN_NOOP;
     }
-    active_.store(staged_, std::memory_order_release);
-    staged_ = otherBank(staged_);
+    activeIdx_.store(stagedIdx_, std::memory_order_release);
+    stagedIdx_ ^= 1U;
     activeGen_.fetch_add(1, std::memory_order_relaxed);
     return Status::SUCCESS;
   }
@@ -176,9 +197,9 @@ public:
     if (!stagedValid_) {
       return Status::ERROR_NOT_CONFIGURED;
     }
-    prev_ = active_.load(std::memory_order_relaxed);
-    active_.store(staged_, std::memory_order_release);
-    staged_ = otherBank(staged_);
+    prevIdx_ = static_cast<int>(activeIdx_.load(std::memory_order_relaxed));
+    activeIdx_.store(stagedIdx_, std::memory_order_release);
+    stagedIdx_ ^= 1U;
     activeGen_.fetch_add(1, std::memory_order_relaxed);
     return Status::SUCCESS;
   }
@@ -189,12 +210,13 @@ public:
    * @note NOT RT-safe: control-plane only.
    */
   [[nodiscard]] Status rollback() noexcept {
-    if (prev_ == nullptr) {
+    if (prevIdx_ < 0) {
       return Status::WARN_NOOP;
     }
-    active_.store(prev_, std::memory_order_release);
-    staged_ = otherBank(prev_);
-    prev_ = nullptr;
+    const std::uint32_t PREV = static_cast<std::uint32_t>(prevIdx_);
+    activeIdx_.store(PREV, std::memory_order_release);
+    stagedIdx_ = PREV ^ 1U;
+    prevIdx_ = -1;
     activeGen_.fetch_add(1, std::memory_order_relaxed);
     return Status::SUCCESS;
   }
@@ -202,23 +224,50 @@ public:
   /* ----------------------------- Reads ----------------------------- */
 
   /**
-   * @brief Current active parameter set.
-   * @return Reference to the published bank (stable for this read).
-   * @note RT-safe: single atomic acquire load.
+   * @brief Consistent copy of the current active parameter set.
+   * @return The published set by value; a reference into bank storage
+   *         could not survive the writer's eventual reuse of the bank.
+   * @note RT-safe: word-wise atomic copy under seqlock validation.
+   *       Wait-free when no publish is in flight; bounded retries against
+   *       the single control-plane writer otherwise.
    */
-  [[nodiscard]] const TParams& active() const noexcept {
-    return *active_.load(std::memory_order_acquire);
+  [[nodiscard]] TParams active() const noexcept {
+    std::uint64_t words[WORDS];
+    for (;;) {
+      const std::uint32_t S0 = seq_.load(std::memory_order_acquire);
+      if ((S0 & 1U) != 0U) {
+        continue; // A bank write is in flight; its bracket is short.
+      }
+      const std::uint32_t IDX = activeIdx_.load(std::memory_order_acquire);
+      for (std::size_t w = 0; w < WORDS; ++w) {
+        words[w] = banks_[IDX][w].load(std::memory_order_relaxed);
+      }
+      std::atomic_thread_fence(std::memory_order_acquire);
+      if (seq_.load(std::memory_order_relaxed) == S0) {
+        break; // No writer overlapped the copy.
+      }
+    }
+    TParams out;
+    std::memcpy(&out, words, sizeof(TParams));
+    return out;
   }
 
   /**
-   * @brief Staged parameter set (preview before publish).
-   * @note Single-writer assumption; not safe to read concurrently with
-   *       a control-plane load().
+   * @brief Copy of the staged parameter set (preview before publish).
+   * @note Single-writer assumption; call from the control plane only.
    */
-  [[nodiscard]] const TParams& staged() const noexcept { return *staged_; }
+  [[nodiscard]] TParams staged() const noexcept {
+    std::uint64_t words[WORDS];
+    for (std::size_t w = 0; w < WORDS; ++w) {
+      words[w] = banks_[stagedIdx_][w].load(std::memory_order_relaxed);
+    }
+    TParams out;
+    std::memcpy(&out, words, sizeof(TParams));
+    return out;
+  }
 
   /** @brief True if rollback() can restore a previous set. @note RT-safe. */
-  [[nodiscard]] bool canRollback() const noexcept { return prev_ != nullptr; }
+  [[nodiscard]] bool canRollback() const noexcept { return prevIdx_ >= 0; }
 
   /** @brief True while the staged bank holds a validated set. @note RT-safe. */
   [[nodiscard]] bool isLoaded() const noexcept { return stagedValid_; }
@@ -234,24 +283,43 @@ public:
   }
 
 private:
-  [[nodiscard]] TParams* otherBank(const TParams* bank) noexcept {
-    return (bank == &bankA_) ? &bankB_ : &bankA_;
-  }
-
-  /* A load() writes the staged bank; when that bank is the rollback
-   * source, the history it held is gone and canRollback() must say so. */
-  void forfeitRollbackIfStagedIsPrev() noexcept {
-    if (staged_ == prev_) {
-      prev_ = nullptr;
+  /** @brief Plain word store (construction only, before any reader exists). */
+  void storeBank(std::uint32_t idx, const TParams& src) noexcept {
+    std::uint64_t words[WORDS] = {};
+    std::memcpy(words, &src, sizeof(TParams));
+    for (std::size_t w = 0; w < WORDS; ++w) {
+      banks_[idx][w].store(words[w], std::memory_order_relaxed);
     }
   }
 
-  alignas(64) TParams bankA_{}; ///< Bank storage (initial publish target).
-  alignas(64) TParams bankB_{}; ///< Bank storage (initial staging area).
+  /**
+   * @brief Bank write under the seqlock bracket.
+   *
+   * The odd generation warns concurrent readers off; readers that copied
+   * while the bracket was open revalidate and retry. Single writer, so
+   * two increments bound the bracket.
+   */
+  void storeBankSeqlocked(std::uint32_t idx, const TParams& src) noexcept {
+    seq_.fetch_add(1, std::memory_order_acq_rel); // odd: write in flight
+    storeBank(idx, src);
+    seq_.fetch_add(1, std::memory_order_release); // even: stable
+  }
 
-  std::atomic<const TParams*> active_; ///< Published pointer read by the RT side.
-  TParams* staged_;                    ///< Writer-only pointer to the staging bank.
-  const TParams* prev_{nullptr};       ///< Previous active bank for rollback.
+  /* An accepted load() writes the staged bank; when that bank is the
+   * rollback source, the history it held is gone and canRollback() must
+   * say so. */
+  void forfeitRollbackIfStagedIsPrev() noexcept {
+    if (prevIdx_ >= 0 && static_cast<std::uint32_t>(prevIdx_) == stagedIdx_) {
+      prevIdx_ = -1;
+    }
+  }
+
+  alignas(64) std::atomic<std::uint64_t> banks_[2][WORDS]; ///< Word-atomic bank storage.
+
+  std::atomic<std::uint32_t> seq_{0};       ///< Seqlock generation (odd = write in flight).
+  std::atomic<std::uint32_t> activeIdx_{0}; ///< Published bank index read by the RT side.
+  std::uint32_t stagedIdx_{1};              ///< Writer-only staging bank index.
+  int prevIdx_{-1};                         ///< Previous active bank for rollback (-1 = none).
 
   std::atomic<std::uint64_t> activeGen_;             ///< Successful publishes.
   std::atomic<std::uint64_t> stagedGen_;             ///< Staging attempts.
