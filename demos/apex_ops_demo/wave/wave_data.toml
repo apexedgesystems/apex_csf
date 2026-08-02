@@ -19,6 +19,15 @@ WaveGenOutput = { category = "OUTPUT", header = "inc/WaveGenData.hpp" }
 # Health telemetry returned by GET_STATS opcode 0x0100 (32 bytes)
 WaveGenHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/WaveGenData.hpp" }
 
+# Legal ranges (the single declaration feeding cfg2bin refusal, the
+# ground UI bounds, and the on-board load check). Ranges mirror the
+# field docs in WaveGenData.hpp.
+[constraints.WaveGenTunableParams]
+frequency = { min = 0.0, max = 50.0 }
+amplitude = { min = 0.0 }
+dutyCycle = { min = 0.0, max = 1.0 }
+waveType = { allowed = [0, 1, 2, 3, 4] }
+
 [enums]
 # Waveform type selection
 WaveType = { header = "inc/WaveGenData.hpp" }
