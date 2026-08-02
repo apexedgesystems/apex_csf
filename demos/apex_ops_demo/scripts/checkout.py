@@ -634,8 +634,12 @@ def run_checkout(args: argparse.Namespace) -> int:
                     )
                 )
             )
-            rts_path = candidates[0] if candidates else os.path.join(
-                repo_root, "build/hosted-x86_64-debug/demos/apex_ops_demo/exec/tprm/rts/001.rts"
+            rts_path = (
+                candidates[0]
+                if candidates
+                else os.path.join(
+                    repo_root, "build/hosted-x86_64-debug/demos/apex_ops_demo/exec/tprm/rts/001.rts"
+                )
             )
             if os.path.isfile(rts_path):
                 result = c2.send_file(rts_path, "rts/noop_sweep.rts")
