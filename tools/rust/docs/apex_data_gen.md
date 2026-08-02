@@ -27,6 +27,24 @@ apex_data_gen --manifest <path> --output <path> [--pretty]
 
 ---
 
+## Constraint declarations
+
+An optional `[constraints.<StructName>]` section declares each field's
+legal range once at the component level -- `min`/`max` (inclusive),
+`allowed` (explicit value list), `step` (granularity from `min`):
+
+```toml
+[constraints.WaveGenTunableParams]
+frequency = { min = 0.0, max = 50.0 }
+waveType = { allowed = [0, 1, 2, 3, 4] }
+```
+
+The declaration flows into the dictionary JSON per field (a
+`constraints` object the ground UI reads), into generated authoring
+templates via `tprm_template`, and into the on-board constraint tables
+the build compiles (see `cmake/apex/Tprm.cmake`). Constraints naming an
+unregistered struct or an unknown field fail generation.
+
 ## Examples
 
 ```bash
