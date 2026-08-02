@@ -319,7 +319,7 @@ public:
     return bank_.load(p, [](const ModelParams& m) noexcept { return m.rate > 0; });
   }
 
-  [[nodiscard]] const ModelParams& params() const noexcept { return bank_.active(); }
+  [[nodiscard]] ModelParams params() const noexcept { return bank_.active(); }
   [[nodiscard]] Status applyParams() noexcept { return bank_.apply(); }
 
   [[nodiscard]] std::uint8_t step() noexcept { return 0; }
