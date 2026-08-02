@@ -17,7 +17,7 @@ use serde_json::{json, Map as JsonMap, Value as Json};
 
 use apex_rust_tools::tunable_params::{
     self,
-    manifest::{EnumEntry, FieldConstraints, Manifest, StructEntry},
+    manifest::{EnumEntry, FieldConstraints, FieldDef, Manifest, StructEntry},
     ParsedEnum, TemplateOptions,
 };
 
@@ -197,11 +197,16 @@ fn build_struct_dictionary(
     let mut structs = JsonMap::new();
 
     for (struct_name, entry) in &manifest.structs {
-        // Look up parsed struct
-        let parsed_struct = parsed.get(struct_name);
-
         let constraints = manifest.constraints.get(struct_name);
-        let struct_json = build_struct_entry(struct_name, entry, parsed_struct, constraints)?;
+
+        // Spec-defined structs derive from their ordered field list --
+        // the same source the .auto header generates from -- so the
+        // dictionary (and everything downstream: templates, ground UI)
+        // cannot drift from the spec. Others parse the C++ header.
+        let struct_json = match manifest.fields.get(struct_name) {
+            Some(spec) => build_struct_entry_from_spec(entry, spec, constraints)?,
+            None => build_struct_entry(struct_name, entry, parsed.get(struct_name), constraints)?,
+        };
         structs.insert(struct_name.clone(), struct_json);
     }
 
@@ -268,6 +273,73 @@ fn build_enum_entry(
         );
     }
 
+    Ok(Json::Object(result))
+}
+
+/// Build a struct entry from its spec field list (cdef path).
+fn build_struct_entry_from_spec(
+    entry: &StructEntry,
+    spec: &[FieldDef],
+    constraints: Option<&BTreeMap<String, FieldConstraints>>,
+) -> Result<Json, Box<dyn std::error::Error>> {
+    let mut result = JsonMap::new();
+    result.insert("category".into(), json!(entry.category.to_string()));
+    if let Some(ref opcode) = entry.opcode {
+        result.insert("opcode".into(), json!(opcode));
+    }
+
+    let mut fields = Vec::new();
+    let mut offset = 0u32;
+    for f in spec {
+        let mut e = JsonMap::new();
+        e.insert("name".into(), json!(f.name));
+        let total = f.size * f.count.unwrap_or(1);
+        match f.count {
+            None => {
+                e.insert("type".into(), json!(f.r#type));
+            }
+            Some(n) => {
+                e.insert("type".into(), json!("array"));
+                e.insert("element_type".into(), json!(f.r#type));
+                e.insert("dims".into(), json!([n]));
+            }
+        }
+        e.insert("offset".into(), json!(offset));
+        e.insert("size".into(), json!(total));
+        if let Some(d) = &f.default {
+            let v: Json = serde_json::to_value(d.clone())?;
+            match f.count {
+                None => {
+                    e.insert("value".into(), v);
+                }
+                Some(n) => {
+                    e.insert("value".into(), json!(vec![v; n as usize]));
+                }
+            }
+        } else if let Some(n) = f.count {
+            e.insert("value".into(), json!(vec![0; n as usize]));
+        }
+        if let Some(doc) = &f.doc {
+            e.insert("doc".into(), json!(doc));
+        }
+        if let Some(c) = constraints.and_then(|m| m.get(&f.name)) {
+            e.insert("constraints".into(), constraints_to_json(c));
+        }
+        fields.push(Json::Object(e));
+        offset += total;
+    }
+
+    if let Some(cmap) = constraints {
+        for key in cmap.keys() {
+            if !spec.iter().any(|f| &f.name == key) {
+                return Err(format!("constraints declared for unknown spec field: {key}").into());
+            }
+        }
+    }
+
+    result.insert("size".into(), json!(offset));
+    result.insert("fields".into(), Json::Array(fields));
+    result.insert("spec_defined".into(), json!(true));
     Ok(Json::Object(result))
 }
 

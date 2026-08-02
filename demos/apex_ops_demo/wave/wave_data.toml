@@ -5,6 +5,7 @@
 # All parameters are TPRM-configurable at runtime.
 
 component = "WaveGenerator"
+namespace = "appsim::wave"
 
 [structs]
 # Tunable parameters (TPRM-configurable, 32 bytes)
@@ -19,9 +20,76 @@ WaveGenOutput = { category = "OUTPUT", header = "inc/WaveGenData.hpp" }
 # Health telemetry returned by GET_STATS opcode 0x0100 (32 bytes)
 WaveGenHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/WaveGenData.hpp" }
 
+# Spec-defined layout: the source of truth for WaveGenTunableParams.
+# The .auto header, its layout-hash expectation, the authoring
+# template, and the dictionary all generate from this ordered list
+# (cdef phase 1). Field order is layout order.
+[[fields.WaveGenTunableParams]]
+name = "frequency"
+type = "float"
+size = 4
+default = 1.0
+doc = "Primary frequency [Hz], range 0..50."
+
+[[fields.WaveGenTunableParams]]
+name = "amplitude"
+type = "float"
+size = 4
+default = 1.0
+doc = "Peak amplitude, >= 0."
+
+[[fields.WaveGenTunableParams]]
+name = "dcOffset"
+type = "float"
+size = 4
+default = 0.0
+doc = "DC bias added to output."
+
+[[fields.WaveGenTunableParams]]
+name = "phaseOffset"
+type = "float"
+size = 4
+default = 0.0
+doc = "Phase offset [radians]."
+
+[[fields.WaveGenTunableParams]]
+name = "noiseAmplitude"
+type = "float"
+size = 4
+default = 0.0
+doc = "Gaussian-like noise peak amplitude."
+
+[[fields.WaveGenTunableParams]]
+name = "dutyCycle"
+type = "float"
+size = 4
+default = 0.5
+doc = "Duty cycle for SQUARE wave, range 0..1."
+
+[[fields.WaveGenTunableParams]]
+name = "waveType"
+type = "uint"
+size = 1
+default = 0
+doc = "WaveType enum value (0=SINE..4=COMPOSITE)."
+
+[[fields.WaveGenTunableParams]]
+name = "reserved"
+type = "uint"
+size = 1
+count = 3
+doc = "Alignment padding."
+
+[[fields.WaveGenTunableParams]]
+name = "reserved2"
+type = "float"
+size = 4
+default = 0.0
+doc = "Reserved for future use."
+
 # Legal ranges (the single declaration feeding cfg2bin refusal, the
 # ground UI bounds, and the on-board load check). Ranges mirror the
-# field docs in WaveGenData.hpp.
+# field docs above.
 [constraints.WaveGenTunableParams]
 frequency = { min = 0.0, max = 50.0 }
 amplitude = { min = 0.0 }

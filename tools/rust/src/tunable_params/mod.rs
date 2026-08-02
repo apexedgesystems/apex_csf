@@ -130,6 +130,7 @@ pub fn infer_output_path(header_path: &Path, format: Format) -> Result<PathBuf, 
 
 // === Internals ===
 pub mod binary;
+pub mod cdef;
 mod emit;
 pub mod manifest;
 pub mod pack;

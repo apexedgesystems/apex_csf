@@ -27,6 +27,19 @@ apex_data_gen --manifest <path> --output <path> [--pretty]
 
 ---
 
+## Field definitions (cdef)
+
+An optional ordered `[[fields.<StructName>]]` array makes the spec the
+source of truth for that struct: the committed `.auto` header (packed
+struct, `static_assert(sizeof)`, layout-hash constant) generates from
+it via `cdef_gen`, the dictionary entry derives from it directly
+(`spec_defined: true`, no header parse), and `make check-cdef`
+regenerates and diffs so hand edits to generated files cannot merge.
+Each entry carries `name`, `type`, `size`, optional `count` (array
+length), `default`, and `doc`; array order is layout order. The
+component-level `namespace` key names the C++ namespace generated
+headers open.
+
 ## Constraint declarations
 
 An optional `[constraints.<StructName>]` section declares each field's

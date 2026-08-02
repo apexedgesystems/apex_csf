@@ -134,12 +134,15 @@ public:
    * @param fullUid  Target the payload must declare; any prelude check
    *                 failing rejects the stage (lastCheck() carries which).
    * @param validate Callable bool(const TParams&) noexcept.
+   * @param expectedLayoutHash Spec-generated layout expectation the
+   *                 prelude must carry (null = no layout check).
    * @return Status::SUCCESS or Status::ERROR_LOAD_INVALID.
    * @note NOT RT-safe: file I/O, control-plane only.
    */
   template <typename TValidator>
   [[nodiscard]] Status load(const std::filesystem::path& path, std::uint32_t fullUid,
-                            TValidator&& validate) noexcept {
+                            TValidator&& validate,
+                            const std::uint32_t* expectedLayoutHash = nullptr) noexcept {
     static_assert(std::is_nothrow_invocable_r_v<bool, TValidator, const TParams&>,
                   "validator must be noexcept bool(const TParams&)");
 
@@ -147,7 +150,7 @@ public:
     // storage, and an accepted payload goes through the same seqlocked
     // stage as a struct load.
     TParams incoming{};
-    lastCheck_ = readTprmPayload(path, fullUid, incoming);
+    lastCheck_ = readTprmPayload(path, fullUid, incoming, expectedLayoutHash);
     if (lastCheck_ != TprmPayloadCheck::OK) {
       stagedValid_ = false;
       return Status::ERROR_LOAD_INVALID;
