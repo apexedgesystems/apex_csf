@@ -19,9 +19,12 @@
  *      when terrain rises above sensor height.
  *   7. Publishes pose + slope + lidar telemetry.
  *
- * Controller is baked-in (constant throttle + turn); a future
- * `RoverController` component would read OUTPUT telemetry and emit a
- * control command struct the vehicle subscribes to.
+ * The default drive is autonomous (constant throttle + turn). A small
+ * drive-command interface (`DriveCmd`: HALT / RESUME / SET_THROTTLE)
+ * overrides it via the internal command bus — the demo routes the
+ * bridge's command sink here, so a paired visualization can halt and
+ * resume the vehicle. A future `RoverController` component could
+ * replace the baked-in autonomy through the same seam.
  *
  * @note RT-safe within tick (no allocation); logging is NOT RT-safe.
  */
@@ -32,6 +35,7 @@
 #include "src/sim/environment/terrain/inc/TerrainModelBase.hpp"
 #include "src/sim/environment/terrain/inc/TerrainStatus.hpp"
 #include "src/utilities/math/vecmat/inc/Angles.hpp"
+#include "src/system/core/infrastructure/system_component/base/inc/CommandResult.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
@@ -46,6 +50,7 @@
 #include <optional>
 #include <string>
 #include <system_error>
+#include <vector>
 
 namespace appsim {
 namespace ground_vehicle {
@@ -86,6 +91,17 @@ public:
     TELEMETRY = 2,    ///< Periodic log line (1 Hz typ.).
   };
 
+  /* ----------------------------- Drive commands ----------------------------- */
+
+  /// Component-specific command opcodes (0x0100+ range). Reachable from
+  /// any internal-bus source: the demo wires them to the bridge's
+  /// command sink, so a paired visualization can drive the vehicle.
+  enum class DriveCmd : std::uint16_t {
+    HALT = 0x0100,         ///< No payload. Target speed -> 0 (first-order coast-down).
+    RESUME = 0x0101,       ///< No payload. Clear HALT and any throttle override.
+    SET_THROTTLE = 0x0102, ///< Payload: 1 byte, throttle percent 0-100.
+  };
+
   /* ----------------------------- Construction ----------------------------- */
 
   GroundVehicle() noexcept = default;
@@ -115,6 +131,41 @@ public:
     return telemetry_.get();
   }
 
+  /* ----------------------------- Command handling ----------------------------- */
+
+  [[nodiscard]] std::uint8_t handleCommand(std::uint16_t opcode,
+                                           apex::compat::rospan<std::uint8_t> payload,
+                                           std::vector<std::uint8_t>& response) noexcept override {
+    using system_core::system_component::CommandResult;
+    auto& s = state_.get();
+
+    switch (static_cast<DriveCmd>(opcode)) {
+    case DriveCmd::HALT:
+      s.commanded_halt = 1u;
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+
+    case DriveCmd::RESUME:
+      s.commanded_halt = 0u;
+      s.throttle_override_pct = 255u;
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+
+    case DriveCmd::SET_THROTTLE: {
+      if (payload.size() < 1u) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+      }
+      const std::uint8_t PCT = payload[0];
+      if (PCT > 100u) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_ARGUMENT);
+      }
+      s.throttle_override_pct = PCT;
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+    }
+
+    default:
+      return SwModelBase::handleCommand(opcode, payload, response);
+    }
+  }
+
   /* ----------------------------- Tasks ----------------------------- */
 
   /// One kinematic step + lidar sweep. Returns 0 unconditionally.
@@ -142,11 +193,21 @@ public:
     // (matches the 10 Hz scheduler entry, which is also the exec
     // fundamental); future could query the executive for the real dt.
     constexpr double DT = 1.0 / 10.0;
-    const double TARGET_SPEED = p.throttle_default * p.max_speed_m_s;
+    // Throttle resolves in priority order: HALT forces target speed to
+    // zero; an active SET_THROTTLE override replaces the default.
+    const double THROTTLE = (s.throttle_override_pct <= 100u)
+                                ? static_cast<double>(s.throttle_override_pct) / 100.0
+                                : p.throttle_default;
+    const double TARGET_SPEED = (s.commanded_halt != 0u) ? 0.0 : THROTTLE * p.max_speed_m_s;
     // Simple first-order approach: 95% per second time constant.
     constexpr double TAU_S = 1.0;
     tlm.speed_m_s += (TARGET_SPEED - tlm.speed_m_s) * (DT / TAU_S);
-    tlm.heading_deg = std::fmod(tlm.heading_deg + p.steer_rate_deg_s * DT + 360.0, 360.0);
+    // A halted vehicle holds its heading (wheels stop steering); the
+    // coast-down still moves it along the frozen heading until speed
+    // decays to zero.
+    if (s.commanded_halt == 0u) {
+      tlm.heading_deg = std::fmod(tlm.heading_deg + p.steer_rate_deg_s * DT + 360.0, 360.0);
+    }
 
     // 3: convert (heading, speed) to lat/lon delta on the body's
     // reference radius. ref_radius_m comes from CelestialBody telemetry.

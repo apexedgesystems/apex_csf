@@ -11,6 +11,9 @@
  *     heading wrap, lat/lon integration against hand-computed values.
  *   - Flat-terrain invariants: surface clamp, zero slope, no lidar
  *     hits, ray-count clamping to MAX_LIDAR_RAYS.
+ *   - Drive commands: HALT coast-down (closed-form decay) with frozen
+ *     heading, RESUME recovery, SET_THROTTLE retarget, and payload
+ *     validation (short / out-of-range / unknown opcode).
  *
  * Terrain here is the analytic ellipsoid (flat, no data files); the
  * slope/lidar positive cases ride the demo's htile-backed smoke.
@@ -28,6 +31,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstring>
+#include <vector>
 
 using appsim::ground_vehicle::GroundVehicle;
 using appsim::ground_vehicle::GroundVehicleTelemetry;
@@ -203,4 +207,114 @@ TEST(GroundVehicle, FlatTerrainInvariants) {
     EXPECT_EQ(TLM.lidar_hit[i], 0u);
     EXPECT_DOUBLE_EQ(TLM.lidar_range_m[i], 100.0);
   }
+}
+
+/* ----------------------------- Drive commands ----------------------------- */
+
+namespace {
+
+/// Sends a command opcode with the given payload bytes; returns the
+/// handler's result code.
+std::uint8_t sendCmd(GroundVehicle& rover, std::uint16_t opcode,
+                     const std::uint8_t* bytes = nullptr, std::size_t len = 0) {
+  static const std::uint8_t NONE[1] = {0};
+  apex::compat::rospan<std::uint8_t> payload(bytes != nullptr ? bytes : NONE, len);
+  std::vector<std::uint8_t> response;
+  return rover.handleCommand(opcode, payload, response);
+}
+
+std::uint8_t sendCmd(GroundVehicle& rover, GroundVehicle::DriveCmd cmd,
+                     const std::uint8_t* bytes = nullptr, std::size_t len = 0) {
+  return sendCmd(rover, static_cast<std::uint16_t>(cmd), bytes, len);
+}
+
+} // namespace
+
+/** @test HALT decays speed by the first-order closed form and freezes
+ *  heading; RESUME restores the default-throttle target. */
+TEST(GroundVehicleCmd, HaltCoastsDownThenResumeRecovers) {
+  CelestialBody earth;
+  earth.tunables().get() = analyticEarth();
+  ASSERT_EQ(earth.init(), 0u);
+
+  GroundVehicle rover;
+  rover.setBody(&earth);
+  configureRover(rover);
+  rover.tunables().get().steer_rate_deg_s = 6.0;
+
+  // Build up speed: s' = 0.9 s + 0.1 T per 10 Hz step (DT/TAU = 0.1).
+  constexpr double TARGET = 0.5 * 8.0;
+  for (int i = 0; i < 20; ++i) {
+    ASSERT_EQ(rover.vehicleStep(), 0u);
+  }
+  const double V_CRUISE = rover.telemetry().speed_m_s;
+  EXPECT_NEAR(V_CRUISE, TARGET * (1.0 - std::pow(0.9, 20)), 1e-12);
+
+  EXPECT_EQ(sendCmd(rover, GroundVehicle::DriveCmd::HALT), 0u);
+  const double HEADING_AT_HALT = rover.telemetry().heading_deg;
+  for (int i = 0; i < 10; ++i) {
+    ASSERT_EQ(rover.vehicleStep(), 0u);
+  }
+  EXPECT_NEAR(rover.telemetry().speed_m_s, V_CRUISE * std::pow(0.9, 10), 1e-12);
+  EXPECT_DOUBLE_EQ(rover.telemetry().heading_deg, HEADING_AT_HALT);
+
+  EXPECT_EQ(sendCmd(rover, GroundVehicle::DriveCmd::RESUME), 0u);
+  const double V_HALTED = rover.telemetry().speed_m_s;
+  ASSERT_EQ(rover.vehicleStep(), 0u);
+  EXPECT_NEAR(rover.telemetry().speed_m_s, 0.9 * V_HALTED + 0.1 * TARGET, 1e-12);
+  EXPECT_NE(rover.telemetry().heading_deg, HEADING_AT_HALT); // steering resumed
+}
+
+/** @test SET_THROTTLE retargets the speed loop; RESUME clears the
+ *  override back to the default throttle. */
+TEST(GroundVehicleCmd, SetThrottleOverridesDefault) {
+  CelestialBody earth;
+  earth.tunables().get() = analyticEarth();
+  ASSERT_EQ(earth.init(), 0u);
+
+  GroundVehicle rover;
+  rover.setBody(&earth);
+  configureRover(rover);
+
+  const std::uint8_t PCT = 25u; // 25% of 8 m/s = 2 m/s target
+  EXPECT_EQ(sendCmd(rover, GroundVehicle::DriveCmd::SET_THROTTLE, &PCT, 1), 0u);
+  for (int i = 0; i < 200; ++i) {
+    ASSERT_EQ(rover.vehicleStep(), 0u);
+  }
+  EXPECT_NEAR(rover.telemetry().speed_m_s, 2.0, 1e-6);
+
+  EXPECT_EQ(sendCmd(rover, GroundVehicle::DriveCmd::RESUME), 0u);
+  for (int i = 0; i < 200; ++i) {
+    ASSERT_EQ(rover.vehicleStep(), 0u);
+  }
+  EXPECT_NEAR(rover.telemetry().speed_m_s, 4.0, 1e-6);
+}
+
+/** @test Malformed drive commands are rejected with the documented
+ *  codes and leave the drive state untouched. */
+TEST(GroundVehicleCmd, ValidationRejectsBadPayloads) {
+  CelestialBody earth;
+  earth.tunables().get() = analyticEarth();
+  ASSERT_EQ(earth.init(), 0u);
+
+  GroundVehicle rover;
+  rover.setBody(&earth);
+  configureRover(rover);
+
+  using system_core::system_component::CommandResult;
+  // SET_THROTTLE with no payload.
+  EXPECT_EQ(sendCmd(rover, GroundVehicle::DriveCmd::SET_THROTTLE),
+            static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD));
+  // SET_THROTTLE out of range.
+  const std::uint8_t BAD = 101u;
+  EXPECT_EQ(sendCmd(rover, GroundVehicle::DriveCmd::SET_THROTTLE, &BAD, 1),
+            static_cast<std::uint8_t>(CommandResult::INVALID_ARGUMENT));
+  // Unknown opcode falls through to the base handler (non-SUCCESS).
+  EXPECT_NE(sendCmd(rover, static_cast<std::uint16_t>(0x0999u)), 0u);
+
+  // Rejected commands changed nothing: vehicle still targets default.
+  for (int i = 0; i < 200; ++i) {
+    ASSERT_EQ(rover.vehicleStep(), 0u);
+  }
+  EXPECT_NEAR(rover.telemetry().speed_m_s, 4.0, 1e-6);
 }

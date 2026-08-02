@@ -96,7 +96,16 @@ struct GroundVehicleState {
   /// True after the first tick has applied initial pose.
   std::uint8_t initialized{0};
 
-  std::uint8_t reserved[7]{};
+  /// 1 = a HALT drive command is in effect: target speed is forced to
+  /// zero (the vehicle coasts down through the normal first-order lag)
+  /// until a RESUME command clears it.
+  std::uint8_t commanded_halt{0};
+
+  /// Commanded throttle override in percent (0-100); 255 = no override
+  /// (use `throttle_default`). Set by SET_THROTTLE, cleared by RESUME.
+  std::uint8_t throttle_override_pct{255};
+
+  std::uint8_t reserved[5]{};
 };
 
 /* ----------------------------- GroundVehicleTelemetry ----------------------------- */

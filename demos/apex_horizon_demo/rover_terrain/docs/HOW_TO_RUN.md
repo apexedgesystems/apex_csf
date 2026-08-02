@@ -58,6 +58,32 @@ frames flowing continuously. The GroundVehicle log independently shows
 the rover driving: elevation ~1.2 km on the patch, slope a few
 degrees, heading advancing at the steer rate.
 
+## Drive the rover from the host (command channel)
+
+The reverse ring accepts APROTO command frames — this emulates the
+visualizer's HALT button from a host shell while the demo runs:
+
+```python
+import mmap, struct
+f = open('/dev/shm/horizon_rover', 'r+b')
+m = mmap.mmap(f.fileno(), 0)
+B = 192 + 16*256                      # region B (reverse ring) base
+PROD, SLOTS = B + 64, B + 192
+head = struct.unpack_from('<Q', m, PROD)[0]
+frame = struct.pack('<HBBIHHH', 0x5041, 1, 0,  # "AP", ver 1, flags 0
+                    0x0000DE00,                # dst: the rover
+                    0x0100,                    # HALT (0x0101 RESUME)
+                    0, 0)                      # sequence, payload_len
+m.seek(SLOTS + (head & 15)*32); m.write(frame)
+struct.pack_into('<Q', m, PROD, head + 1)
+```
+
+Within a second the GroundVehicle log shows `spd` decaying to zero
+with the heading frozen, and the bridge's 1 Hz health line counts the
+command (`rx_cmds=1/0/0`). Send `0x0101` to resume. SET_THROTTLE
+(`0x0102`) takes one payload byte (percent 0–100): pack it after the
+header and set payload_len to 1.
+
 ## Troubleshooting
 
 | Symptom                           | Cause                                     | Fix                                                                             |
