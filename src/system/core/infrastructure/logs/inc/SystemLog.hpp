@@ -159,14 +159,34 @@ public:
 
   /**
    * @brief Log a fatal message with an error code.
-   * @note RT-safe in ASYNC mode; blocks on I/O in SYNC mode.
+   * @note RT-safe in ASYNC mode (unless fatal-flush is enabled); blocks on
+   *       I/O in SYNC mode.
+   * @note With setFatalFlush(true), the call drains the async queue before
+   *       returning so a FATAL logged immediately before a crash cannot
+   *       vanish with the queue -- at the cost of blocking the caller.
    */
   Status fatal(std::string_view src, std::uint8_t ec, std::string_view msg,
                bool echoConsole = false) noexcept;
 
   /**
+   * @brief Configure whether fatal() drains the async queue before returning.
+   *
+   * Default off: fatal() is RT-safe like the other levels and a
+   * crash-adjacent FATAL may be lost with the queue. Enabled: fatal()
+   * calls flush() (NOT RT-safe -- blocks until drained and synced), the
+   * right trade for control-plane supervisors that log FATAL and abort.
+   * @note RT-safe: atomic store.
+   */
+  void setFatalFlush(bool enabled) noexcept {
+    fatalFlush_.store(enabled, std::memory_order_relaxed);
+  }
+
+  /**
    * @brief Log an informational message.
    * @note RT-safe in ASYNC mode; blocks on I/O in SYNC mode.
+   * @note echoConsole=true writes to stdout via stdio on the calling
+   *       thread -- NOT RT-safe regardless of mode; reserve for boot and
+   *       diagnostics contexts.
    */
   Status info(std::string_view src, std::string_view msg, bool echoConsole = false) noexcept;
 
@@ -217,6 +237,7 @@ private:
   std::atomic<Level> minLevel_{Level::INFO};        ///< Default: suppress DEBUG output.
   std::atomic<std::uint8_t> verbosityLevel_{0};     ///< Default: no debug messages.
   std::atomic<bool> nonBlocking_{false};            ///< Default: blocking mode.
+  std::atomic<bool> fatalFlush_{false};             ///< fatal() drains the queue when set.
 };
 
 } // namespace logs

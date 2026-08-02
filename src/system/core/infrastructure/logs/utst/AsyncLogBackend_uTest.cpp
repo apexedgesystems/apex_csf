@@ -4,8 +4,12 @@
  */
 
 #include "src/system/core/infrastructure/logs/inc/AsyncLogBackend.hpp"
+#include "src/system/core/infrastructure/logs/inc/LogDrainService.hpp"
 
 #include <gtest/gtest.h>
+
+#include <array>
+#include <memory>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -214,6 +218,55 @@ TEST(AsyncLogBackendTest, QueueDepthTracking) {
 
   backend.stop();
 
+  std::error_code ec;
+  std::filesystem::remove(PATH, ec);
+}
+
+/** @test Entries offered to a backend that never started are counted as drops. */
+TEST(AsyncLogBackendTest, NotRunningCountsDrops) {
+  logs::AsyncLogBackend backend("/tmp/logs_backend_notrunning_test.log", 16);
+
+  EXPECT_FALSE(backend.tryLog("never accepted"));
+  EXPECT_FALSE(backend.tryLog("never accepted either"));
+  EXPECT_EQ(backend.droppedCount(), 2u);
+  EXPECT_EQ(backend.writeErrorCount(), 0u);
+}
+
+/** @test Registry saturation falls back to a dedicated I/O thread that works.
+ *
+ * Fills all shared-drain slots, then verifies the next backend runs in
+ * dedicated-thread mode end to end (accepts entries, drains, flushes,
+ * stops clean) -- the fallback path the shared service otherwise shadows
+ * on Linux. Also exercises registry churn on teardown.
+ */
+TEST(AsyncLogBackendTest, DedicatedFallbackWhenRegistryFull) {
+  constexpr std::size_t FLEET = logs::LogDrainService::MAX_BACKENDS;
+  std::array<std::unique_ptr<logs::AsyncLogBackend>, FLEET> fleet;
+
+  for (std::size_t i = 0; i < FLEET; ++i) {
+    const auto PATH = std::filesystem::temp_directory_path() /
+                      ("logs_registry_fill_" + std::to_string(i) + ".log");
+    fleet[i] = std::make_unique<logs::AsyncLogBackend>(PATH.string(), 16);
+    ASSERT_TRUE(fleet[i]->start());
+  }
+
+  const auto PATH = std::filesystem::temp_directory_path() / "logs_dedicated_fallback.log";
+  logs::AsyncLogBackend overflowBackend(PATH.string(), 16);
+  ASSERT_TRUE(overflowBackend.start());
+  EXPECT_FALSE(overflowBackend.usesSharedDrain());
+
+  EXPECT_TRUE(overflowBackend.tryLog("dedicated-thread entry\n"));
+  EXPECT_TRUE(overflowBackend.flush(2000));
+  EXPECT_TRUE(overflowBackend.stop());
+  EXPECT_EQ(overflowBackend.droppedCount(), 0u);
+
+  for (std::size_t i = 0; i < FLEET; ++i) {
+    EXPECT_TRUE(fleet[i]->stop());
+    std::error_code ec;
+    std::filesystem::remove(std::filesystem::temp_directory_path() /
+                                ("logs_registry_fill_" + std::to_string(i) + ".log"),
+                            ec);
+  }
   std::error_code ec;
   std::filesystem::remove(PATH, ec);
 }

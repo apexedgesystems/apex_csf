@@ -60,9 +60,11 @@ Status SystemLog::logLine(Level lvl, const char* levelName, std::string_view src
     return Status::OK;
   }
 
-  // Precheck: writers are lock-free; this may race with rotate but is safe.
-  if (openStatus_ != Status::OK) {
-    return openStatus_;
+  // Precheck: lock-free writers read the sticky open status atomically;
+  // rotate/reopen publish updates with release stores.
+  const Status OPEN = openStatus_.load(std::memory_order_relaxed);
+  if (OPEN != Status::OK) {
+    return OPEN;
   }
 
   // Timestamp cache (per thread, 1-second resolution).
@@ -147,7 +149,13 @@ Status SystemLog::error(std::string_view src, std::uint8_t ec, std::string_view 
 
 Status SystemLog::fatal(std::string_view src, std::uint8_t ec, std::string_view msg,
                         bool echoConsole) noexcept {
-  return logLine(Level::FATAL, "FATAL", src, msg, &ec, echoConsole);
+  const Status ST = logLine(Level::FATAL, "FATAL", src, msg, &ec, echoConsole);
+  if (fatalFlush_.load(std::memory_order_relaxed)) {
+    // Crash-adjacent FATALs must not vanish with the queue; the enabled
+    // hook trades RT safety of this one call for durability.
+    (void)flush();
+  }
+  return ST;
 }
 
 Status SystemLog::info(std::string_view src, std::string_view msg, bool echoConsole) noexcept {

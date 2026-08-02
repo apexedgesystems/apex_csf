@@ -6,6 +6,9 @@
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
 #include <gtest/gtest.h>
+
+#include <atomic>
+#include <thread>
 #include <filesystem>
 #include <fstream>
 #include <random>
@@ -168,6 +171,93 @@ TEST(SystemLogTest, FatalLineFormat) {
   }
   const auto S = slurp(PATH);
   EXPECT_TRUE(contains(S, " FATAL: EXEC[42] - system halt\n"));
+
+  std::error_code ec;
+  std::filesystem::remove(PATH, ec);
+}
+
+/* ----------------------------- Rotation Under Load ----------------------------- */
+
+/** @test Logging continues correctly while rotate() runs concurrently.
+ *
+ * A writer thread logs continuously while the main thread rotates with a
+ * tiny size limit, forcing rename+reopen cycles under live traffic. Every
+ * write must land in either the pre- or post-rotation file (atomic fd
+ * swap), status stays OK throughout, and the run is exactly the workload
+ * that makes the openStatus_ read/write pair visible to race detectors.
+ */
+TEST(SystemLogTest, RotateWhileLogging) {
+  const auto PATH = std::filesystem::temp_directory_path() / "logs_rotate_race_test.log";
+  std::filesystem::remove(PATH);
+
+  {
+    logs::SystemLog log(PATH.string(), logs::SystemLog::Mode::SYNC);
+    log.setLevel(logs::SystemLog::Level::INFO);
+    ASSERT_EQ(log.lastOpenStatus(), logs::Status::OK);
+
+    std::atomic<bool> stop{false};
+    std::atomic<bool> started{false};
+    std::atomic<int> writeFailures{0};
+    std::thread writer([&] {
+      started.store(true, std::memory_order_release);
+      while (!stop.load(std::memory_order_relaxed)) {
+        if (log.info("ROT", "rotation load line", false) != logs::Status::OK) {
+          writeFailures.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+    });
+
+    while (!started.load(std::memory_order_acquire)) {
+    }
+
+    // Rotate until the writer has forced enough real rotations that the
+    // rename+reopen path demonstrably interleaved with live writes.
+    int rotations = 0;
+    for (int i = 0; i < 5000 && rotations < 50; ++i) {
+      std::size_t bytes = 0;
+      (void)log.size(bytes);
+      if (bytes > 64) {
+        ++rotations;
+      }
+      ASSERT_EQ(log.rotate(64), logs::Status::OK);
+    }
+    EXPECT_GE(rotations, 50) << "writer never outpaced rotation; no real overlap";
+
+    stop.store(true, std::memory_order_relaxed);
+    writer.join();
+
+    EXPECT_EQ(writeFailures.load(), 0);
+    EXPECT_EQ(log.lastOpenStatus(), logs::Status::OK);
+  }
+
+  // Cleanup: rotation backups share the path prefix.
+  for (const auto& entry :
+       std::filesystem::directory_iterator(std::filesystem::temp_directory_path())) {
+    const auto NAME = entry.path().filename().string();
+    if (NAME.rfind("logs_rotate_race_test.log", 0) == 0) {
+      std::error_code ec;
+      std::filesystem::remove(entry.path(), ec);
+    }
+  }
+}
+
+/** @test With the fatal-flush hook enabled, fatal() returns with the queue drained. */
+TEST(SystemLogTest, FatalFlushDrainsQueue) {
+  const auto PATH = std::filesystem::temp_directory_path() / "logs_fatal_flush_test.log";
+  std::filesystem::remove(PATH);
+
+  {
+    logs::SystemLog log(PATH.string(), logs::SystemLog::Mode::ASYNC);
+    log.setLevel(logs::SystemLog::Level::INFO);
+    ASSERT_TRUE(log.isAsync());
+    log.setFatalFlush(true);
+
+    for (int i = 0; i < 64; ++i) {
+      ASSERT_EQ(log.info("FF", "pre-fatal entry", false), logs::Status::OK);
+    }
+    ASSERT_EQ(log.fatal("FF", 42, "fatal with flush", false), logs::Status::OK);
+    EXPECT_EQ(log.asyncBackend()->queueDepth(), 0u);
+  }
 
   std::error_code ec;
   std::filesystem::remove(PATH, ec);

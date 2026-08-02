@@ -35,6 +35,8 @@ const char* toString(Status s) noexcept {
     return "ERROR_ROTATE_REOPEN";
   case Status::ERROR_SYNC:
     return "ERROR_SYNC";
+  case Status::ERROR_WRITE:
+    return "ERROR_WRITE";
   default:
     return "UNKNOWN";
   }
@@ -79,10 +81,10 @@ void LogBase::openHandleNoThrow() noexcept {
                   0644);
   if (fd >= 0) {
     logFd_.store(fd, std::memory_order_release);
-    openStatus_ = Status::OK;
+    openStatus_.store(Status::OK, std::memory_order_release);
   } else {
     logFd_.store(-1, std::memory_order_release);
-    openStatus_ = Status::ERROR_OPEN;
+    openStatus_.store(Status::ERROR_OPEN, std::memory_order_release);
   }
 }
 
@@ -112,8 +114,9 @@ std::string LogBase::getTimestampForFile() noexcept {
 
 Status LogBase::appendBytes(const char* data, std::size_t len) noexcept {
   const int FD = logFd_.load(std::memory_order_acquire);
-  if (FD < 0 || openStatus_ != Status::OK) {
-    return openStatus_;
+  const Status OPEN = openStatus_.load(std::memory_order_relaxed);
+  if (FD < 0 || OPEN != Status::OK) {
+    return OPEN;
   }
 
   const char* p = data;
@@ -125,7 +128,8 @@ Status LogBase::appendBytes(const char* data, std::size_t len) noexcept {
       if (errno == EINTR) {
         continue;
       }
-      return Status::OK;
+      writeErrors_.fetch_add(1, std::memory_order_relaxed);
+      return Status::ERROR_WRITE;
     }
     p += static_cast<std::size_t>(N);
     remaining -= static_cast<std::size_t>(N);
@@ -144,7 +148,7 @@ Status LogBase::write(const std::string& msg) noexcept {
 Status LogBase::flush() noexcept {
   const int FD = logFd_.load(std::memory_order_acquire);
   if (FD < 0) {
-    return openStatus_;
+    return openStatus_.load(std::memory_order_relaxed);
   }
 
   // Force kernel to write buffered data to disk
@@ -195,16 +199,27 @@ Status LogBase::rotate(std::size_t maxSize) noexcept {
                      ,
                      0644);
   if (newFd < 0) {
-    openStatus_ = Status::ERROR_ROTATE_REOPEN;
+    openStatus_.store(Status::ERROR_ROTATE_REOPEN, std::memory_order_release);
     return Status::ERROR_ROTATE_REOPEN;
   }
 
-  const int OLD_FD = logFd_.exchange(newFd, std::memory_order_acq_rel);
-  openStatus_ = Status::OK;
-
-  if (OLD_FD >= 0) {
-    (void)::close(OLD_FD);
+  // Writers are lock-free and may be inside write() on the current
+  // descriptor at any moment, so the descriptor NUMBER must stay stable:
+  // dup2 atomically repoints it at the fresh file (a concurrent write lands
+  // in whichever file the description references at syscall entry -- either
+  // the backup or the fresh log, never a closed or reused descriptor).
+  const int FD = logFd_.load(std::memory_order_acquire);
+  if (FD >= 0) {
+    if (::dup2(newFd, FD) < 0) {
+      (void)::close(newFd);
+      openStatus_.store(Status::ERROR_ROTATE_REOPEN, std::memory_order_release);
+      return Status::ERROR_ROTATE_REOPEN;
+    }
+    (void)::close(newFd);
+  } else {
+    logFd_.store(newFd, std::memory_order_release);
   }
+  openStatus_.store(Status::OK, std::memory_order_release);
   return Status::OK;
 }
 
