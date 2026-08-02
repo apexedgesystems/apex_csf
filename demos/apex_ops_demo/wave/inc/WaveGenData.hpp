@@ -18,6 +18,8 @@
 
 #include <cstdint>
 
+#include "demos/apex_ops_demo/wave/.auto/WaveGenTunableParams_auto.hpp"
+
 namespace appsim {
 namespace wave {
 
@@ -33,30 +35,10 @@ enum class WaveType : std::uint8_t {
 };
 
 /* ----------------------------- WaveGenTunableParams ----------------------------- */
+// Spec-defined: the struct, its size assert, and the layout-hash
+// expectation generate from [[fields.WaveGenTunableParams]] in
+// wave_data.toml (see the .auto header; check-cdef pins it).
 
-/**
- * @struct WaveGenTunableParams
- * @brief TPRM-configurable waveform parameters.
- *
- * Loaded from binary .tprm file via hex2cpp. Field order matches
- * TOML template generation order -- DO NOT REORDER.
- *
- * Size: 32 bytes.
- */
-struct WaveGenTunableParams {
-  float frequency{1.0F};      ///< Primary frequency [Hz], range 0..50.
-  float amplitude{1.0F};      ///< Peak amplitude, >= 0.
-  float dcOffset{0.0F};       ///< DC bias added to output.
-  float phaseOffset{0.0F};    ///< Phase offset [radians].
-  float noiseAmplitude{0.0F}; ///< Gaussian-like noise peak amplitude.
-  float dutyCycle{0.5F};      ///< Duty cycle for SQUARE wave, range 0..1.
-  std::uint8_t waveType{0};   ///< WaveType enum value (0=SINE..4=COMPOSITE).
-  std::uint8_t reserved[3]{}; ///< Alignment padding.
-  float reserved2{0.0F};      ///< Reserved for future use.
-};
-
-static_assert(sizeof(WaveGenTunableParams) == 32,
-              "WaveGenTunableParams size changed - update TOML template and regenerate binaries");
 static_assert(__is_trivially_copyable(WaveGenTunableParams),
               "WaveGenTunableParams must be trivially copyable for binary serialization");
 

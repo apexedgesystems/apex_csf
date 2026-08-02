@@ -296,7 +296,9 @@ public:
 
     bool loaded = false;
     if (std::filesystem::exists(TPRM_PATH)) {
-      loaded = paramBank_.load(TPRM_PATH, fullUid(), validateParams) == Status::SUCCESS;
+      // The spec-generated expectation gates the payload's layout hash.
+      loaded = paramBank_.load(TPRM_PATH, fullUid(), validateParams,
+                               &WAVE_GEN_TUNABLE_PARAMS_LAYOUT_HASH) == Status::SUCCESS;
       if (!loaded) {
         namespace sc = system_core::system_component;
         auto* log = componentLog();
