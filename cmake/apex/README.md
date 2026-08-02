@@ -330,6 +330,14 @@ error). See the grammar reference in
 Each packed master registers a **product** addressable as `<App>/<master>`
 in deployment declarations.
 
+With `EXEC <target>` the build also assembles a **constraint registry**
+into the executive: each payload's declared legal ranges (min/max/
+allowed/step, from the component `apex_data.toml` declarations carried
+through the authoring TOMLs) compile into a fullUid -> table lookup the
+payload reader consults at load. An out-of-range payload rejects with
+its own fault code and the component runs on defaults -- the on-board
+rail for payloads that bypassed ground tooling.
+
 ## Packaging
 
 A **deployment** is one apex filesystem -- `bank_a/{bin,libs,tprm}` + a generic

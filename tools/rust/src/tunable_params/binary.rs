@@ -92,8 +92,21 @@ pub fn serialize_value(value: &Json) -> Result<Vec<u8>, Error> {
 /// the CRC-32 of the canonical field spec (`name:type:size;` per leaf
 /// in emission order) that the v3 payload prelude carries.
 pub fn serialize_value_with_layout(value: &Json) -> Result<(Vec<u8>, u32), Error> {
+    let (bytes, hash, _rows) = serialize_value_with_layout_and_rows(value)?;
+    Ok((bytes, hash))
+}
+
+/// Serialize plus the constraint rows: one JSON row per constrained
+/// leaf ({offset, size, kind, min?, max?, step?, allowed?}) in body
+/// order -- the source the build compiles into the on-board table.
+/// Kind encoding matches the C++ TprmFieldKind (0=int, 1=uint,
+/// 2=float).
+pub fn serialize_value_with_layout_and_rows(
+    value: &Json,
+) -> Result<(Vec<u8>, u32, Vec<Json>), Error> {
     let mut out = Vec::new();
     let mut spec = String::new();
+    let mut rows = Vec::new();
     // Build enum map: start with builtins, add user-defined from __enums__
     let mut enums: HashMap<String, i64> = builtin_enums()
         .into_iter()
@@ -106,11 +119,85 @@ pub fn serialize_value_with_layout(value: &Json) -> Result<(Vec<u8>, u32), Error
             }
         }
     }
-    traverse_and_serialize(value, &mut out, &mut spec, &enums)?;
-    Ok((out, super::payload::crc32(spec.as_bytes())))
+    traverse_and_serialize(value, &mut out, &mut spec, &mut rows, &enums)?;
+    Ok((out, super::payload::crc32(spec.as_bytes()), rows))
+}
+
+/// Record a constraint row for a leaf about to serialize at `offset`.
+fn record_constraint_row(
+    rows: &mut Vec<Json>,
+    field_type: &str,
+    field: &Json,
+    offset: usize,
+    size: usize,
+) {
+    let has_constraint = ["min", "max", "allowed", "step"]
+        .iter()
+        .any(|k| field.get(*k).is_some());
+    if !has_constraint {
+        return;
+    }
+    let kind = match field_type {
+        "int" => 0,
+        "uint" => 1,
+        "float" | "double" => 2,
+        _ => return,
+    };
+    let mut row = serde_json::Map::new();
+    row.insert("offset".into(), serde_json::json!(offset));
+    row.insert("size".into(), serde_json::json!(size));
+    row.insert("kind".into(), serde_json::json!(kind));
+    for k in ["min", "max", "step", "allowed"] {
+        if let Some(v) = field.get(k) {
+            row.insert(k.to_string(), v.clone());
+        }
+    }
+    rows.push(Json::Object(row));
 }
 
 /* ----------------------------- Constraints ----------------------------- */
+
+/// Enforce the field's declared constraints (`min`, `max`, `allowed`,
+/// `step`): rail 1 of the shared constraint declaration -- a value
+/// outside its legal range never becomes bytes. Constraint keys are
+/// authoring metadata only; they contribute nothing to the serialized
+/// payload or the layout hash.
+fn validate_constraints(name: &str, field: &Json, value: f64) -> Result<(), Error> {
+    let min = field.get("min").and_then(|v| v.as_f64());
+    if let Some(m) = min {
+        if value < m {
+            return Err(Error::Emit(format!("{name}: value {value} below min {m}")));
+        }
+    }
+    if let Some(m) = field.get("max").and_then(|v| v.as_f64()) {
+        if value > m {
+            return Err(Error::Emit(format!("{name}: value {value} above max {m}")));
+        }
+    }
+    if let Some(allowed) = field.get("allowed").and_then(|v| v.as_array()) {
+        let ok = allowed
+            .iter()
+            .filter_map(|a| a.as_f64())
+            .any(|a| a == value);
+        if !ok {
+            return Err(Error::Emit(format!(
+                "{name}: value {value} not in the allowed list"
+            )));
+        }
+    }
+    if let Some(step) = field.get("step").and_then(|v| v.as_f64()) {
+        if step > 0.0 {
+            let base = min.unwrap_or(0.0);
+            let steps = ((value - base) / step).round();
+            if (base + steps * step - value).abs() > step * 1e-9 {
+                return Err(Error::Emit(format!(
+                    "{name}: value {value} is not min + N*step (base {base}, step {step})"
+                )));
+            }
+        }
+    }
+    Ok(())
+}
 
 /// Validate numeric value against type/size constraints.
 fn validate_numeric(field_type: &str, size: usize, value: f64) -> Result<(), Error> {
@@ -152,6 +239,7 @@ fn traverse_and_serialize(
     value: &Json,
     out: &mut Vec<u8>,
     spec: &mut String,
+    rows: &mut Vec<Json>,
     enums: &HashMap<String, i64>,
 ) -> Result<(), Error> {
     match value {
@@ -165,16 +253,16 @@ fn traverse_and_serialize(
                 if let Some(field_type) = val.get("type").and_then(|v| v.as_str()) {
                     let size = val.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
                     spec.push_str(&format!("{key}:{field_type}:{size};"));
-                    serialize_field(field_type, val, out, spec, enums)?;
+                    serialize_field(key, field_type, val, out, spec, rows, enums)?;
                 } else {
                     // Recurse into nested structures
-                    traverse_and_serialize(val, out, spec, enums)?;
+                    traverse_and_serialize(val, out, spec, rows, enums)?;
                 }
             }
         }
         Json::Array(arr) => {
             for item in arr {
-                traverse_and_serialize(item, out, spec, enums)?;
+                traverse_and_serialize(item, out, spec, rows, enums)?;
             }
         }
         _ => {}
@@ -185,29 +273,35 @@ fn traverse_and_serialize(
 /* ----------------------------- Field Serialization ----------------------------- */
 
 fn serialize_field(
+    name: &str,
     field_type: &str,
     field: &Json,
     out: &mut Vec<u8>,
     spec: &mut String,
+    rows: &mut Vec<Json>,
     enums: &HashMap<String, i64>,
 ) -> Result<(), Error> {
     let size = field.get("size").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
     let value = field.get("value");
+    record_constraint_row(rows, field_type, field, out.len(), size);
 
     match field_type {
         "int" => {
             let v = parse_int_value(value, enums)?;
             validate_numeric(field_type, size, v as f64)?;
+            validate_constraints(name, field, v as f64)?;
             out.extend(&int_to_bytes(v, size)?);
         }
         "uint" => {
             let v = parse_uint_value(value, enums)?;
             validate_numeric(field_type, size, v as f64)?;
+            validate_constraints(name, field, v as f64)?;
             out.extend(&uint_to_bytes(v, size)?);
         }
         "float" => {
             let v = value.and_then(|v| v.as_f64()).unwrap_or(0.0);
             validate_numeric(field_type, size, v)?;
+            validate_constraints(name, field, v)?;
             if size == 4 {
                 out.extend(&(v as f32).to_le_bytes());
             } else if size == 8 {
@@ -219,6 +313,7 @@ fn serialize_field(
         "double" => {
             let v = value.and_then(|v| v.as_f64()).unwrap_or(0.0);
             validate_numeric(field_type, size, v)?;
+            validate_constraints(name, field, v)?;
             if size != 8 {
                 return Err(Error::Emit(format!("double must be 8 bytes, got {size}")));
             }
@@ -261,19 +356,25 @@ fn serialize_field(
                 // Element shape is layout: equal-size arrays of different
                 // element types must hash apart.
                 spec.push_str(&format!("[{elem_type}:{elem_size}x{}]", elements.len()));
-                for elem in elements {
-                    let elem_field = serde_json::json!({
+                for (i, elem) in elements.iter().enumerate() {
+                    let mut elem_field = serde_json::json!({
                         "type": elem_type,
                         "size": elem_size,
                         "value": elem
                     });
-                    serialize_field(elem_type, &elem_field, out, spec, enums)?;
+                    for k in ["min", "max", "allowed", "step"] {
+                        if let Some(c) = field.get(k) {
+                            elem_field[k] = c.clone();
+                        }
+                    }
+                    let elem_name = format!("{name}[{i}]");
+                    serialize_field(&elem_name, elem_type, &elem_field, out, spec, rows, enums)?;
                 }
             }
         }
         "struct" => {
             if let Some(fields) = field.get("fields") {
-                traverse_and_serialize(fields, out, spec, enums)?;
+                traverse_and_serialize(fields, out, spec, rows, enums)?;
             }
         }
         _ => {
@@ -680,5 +781,53 @@ mod tests {
         });
         let bytes = serialize_value(&data).unwrap();
         assert_eq!(bytes, vec![0xCD, 0xAB]); // Little-endian
+    }
+
+    #[test]
+    fn constraints_reject_each_violation_by_field_name() {
+        let below = json!({"rate": {"type": "uint", "size": 2, "value": 5, "min": 10}});
+        assert!(format!("{}", serialize_value(&below).unwrap_err()).contains("rate"));
+
+        let above = json!({"gain": {"type": "float", "size": 4, "value": 11.0, "max": 10.0}});
+        assert!(format!("{}", serialize_value(&above).unwrap_err()).contains("above max"));
+
+        let outside =
+            json!({"mode": {"type": "uint", "size": 1, "value": 3, "allowed": [0, 1, 2]}});
+        assert!(format!("{}", serialize_value(&outside).unwrap_err()).contains("allowed"));
+
+        let off_grid = json!({"freq": {
+            "type": "float", "size": 4, "value": 1.25, "min": 0.0, "step": 0.5
+        }});
+        assert!(format!("{}", serialize_value(&off_grid).unwrap_err()).contains("step"));
+    }
+
+    #[test]
+    fn constraints_accept_legal_values() {
+        let data = json!({
+            "rate": {"type": "uint", "size": 2, "value": 100, "min": 10, "max": 1000},
+            "mode": {"type": "uint", "size": 1, "value": 2, "allowed": [0, 1, 2]},
+            "freq": {"type": "float", "size": 4, "value": 1.5, "min": 0.0, "step": 0.5}
+        });
+        assert!(serialize_value(&data).is_ok());
+    }
+
+    #[test]
+    fn constraints_apply_per_array_element() {
+        let bad = json!({"gains": {
+            "type": "array", "size": 8, "element_type": "uint",
+            "value": [1, 99], "max": 10
+        }});
+        assert!(format!("{}", serialize_value(&bad).unwrap_err()).contains("gains[1]"));
+    }
+
+    #[test]
+    fn constraint_keys_change_no_bytes_and_no_layout_hash() {
+        let plain = json!({"rate": {"type": "uint", "size": 2, "value": 100}});
+        let constrained =
+            json!({"rate": {"type": "uint", "size": 2, "value": 100, "min": 10, "max": 1000}});
+        let (b1, h1) = serialize_value_with_layout(&plain).unwrap();
+        let (b2, h2) = serialize_value_with_layout(&constrained).unwrap();
+        assert_eq!(b1, b2);
+        assert_eq!(h1, h2);
     }
 }

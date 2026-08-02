@@ -186,6 +186,17 @@ fn generate_toml_from_json(
             field_table["value"] = Item::Value(json_value_to_toml(value));
         }
 
+        // Constraints from the component declaration: the template
+        // carries them so value and legal range travel together, and
+        // cfg2bin refuses an authored value outside them.
+        if let Some(c) = field.get("constraints").and_then(|v| v.as_object()) {
+            for key in ["min", "max", "allowed", "step"] {
+                if let Some(v) = c.get(key) {
+                    field_table[key] = Item::Value(json_value_to_toml(v));
+                }
+            }
+        }
+
         // Array metadata
         if let Some(elem_type) = field.get("element_type").and_then(|v| v.as_str()) {
             field_table["element_type"] = Item::Value(TomlValue::from(elem_type));

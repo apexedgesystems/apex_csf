@@ -17,7 +17,7 @@ use serde_json::{json, Map as JsonMap, Value as Json};
 
 use apex_rust_tools::tunable_params::{
     self,
-    manifest::{EnumEntry, Manifest, StructEntry},
+    manifest::{EnumEntry, FieldConstraints, Manifest, StructEntry},
     ParsedEnum, TemplateOptions,
 };
 
@@ -200,8 +200,20 @@ fn build_struct_dictionary(
         // Look up parsed struct
         let parsed_struct = parsed.get(struct_name);
 
-        let struct_json = build_struct_entry(struct_name, entry, parsed_struct)?;
+        let constraints = manifest.constraints.get(struct_name);
+        let struct_json = build_struct_entry(struct_name, entry, parsed_struct, constraints)?;
         structs.insert(struct_name.clone(), struct_json);
+    }
+
+    // A constraint section naming an unregistered struct is a typo, not
+    // an extension point.
+    for constrained in manifest.constraints.keys() {
+        if !manifest.structs.contains_key(constrained) {
+            return Err(format!(
+                "constraints declared for '{constrained}', which is not a registered struct"
+            )
+            .into());
+        }
     }
 
     // Build enums section
@@ -264,6 +276,7 @@ fn build_struct_entry(
     name: &str,
     entry: &StructEntry,
     parsed: Option<&Json>,
+    constraints: Option<&BTreeMap<String, FieldConstraints>>,
 ) -> Result<Json, Box<dyn std::error::Error>> {
     let mut result = JsonMap::new();
 
@@ -277,7 +290,7 @@ fn build_struct_entry(
 
     // Fields from parsed header
     if let Some(Json::Array(fields)) = parsed {
-        let (struct_fields, total_size) = convert_fields_to_dictionary_format(fields)?;
+        let (struct_fields, total_size) = convert_fields_to_dictionary_format(fields, constraints)?;
         result.insert("size".into(), json!(total_size));
         result.insert("fields".into(), Json::Array(struct_fields));
     } else {
@@ -293,12 +306,33 @@ fn build_struct_entry(
     Ok(Json::Object(result))
 }
 
+/// Serialize a constraint declaration as the dictionary's per-field
+/// `constraints` object (present keys only).
+fn constraints_to_json(c: &FieldConstraints) -> Json {
+    let mut obj = JsonMap::new();
+    if let Some(v) = c.min {
+        obj.insert("min".into(), json!(v));
+    }
+    if let Some(v) = c.max {
+        obj.insert("max".into(), json!(v));
+    }
+    if let Some(ref v) = c.allowed {
+        obj.insert("allowed".into(), json!(v));
+    }
+    if let Some(v) = c.step {
+        obj.insert("step".into(), json!(v));
+    }
+    Json::Object(obj)
+}
+
 /// Convert parsed fields to struct dictionary format with offsets.
 fn convert_fields_to_dictionary_format(
     fields: &[Json],
+    constraints: Option<&BTreeMap<String, FieldConstraints>>,
 ) -> Result<(Vec<Json>, usize), Box<dyn std::error::Error>> {
     let mut result = Vec::new();
     let mut offset = 0usize;
+    let mut unmatched: Vec<&String> = constraints.map(|c| c.keys().collect()).unwrap_or_default();
 
     for field_obj in fields {
         if let Json::Object(obj) = field_obj {
@@ -319,6 +353,13 @@ fn convert_fields_to_dictionary_format(
                 // Include default value from parser (for TPRM authoring reference)
                 if let Some(value) = field_meta.get("value") {
                     entry.insert("value".into(), value.clone());
+                }
+
+                // Attach the component-level constraint declaration: the
+                // ground UI and the on-board table both read it from here.
+                if let Some(c) = constraints.and_then(|m| m.get(field_name)) {
+                    entry.insert("constraints".into(), constraints_to_json(c));
+                    unmatched.retain(|k| *k != field_name);
                 }
 
                 // Handle arrays
@@ -342,6 +383,18 @@ fn convert_fields_to_dictionary_format(
                 offset += size;
             }
         }
+    }
+
+    if !unmatched.is_empty() {
+        return Err(format!(
+            "constraints declared for unknown fields: {}",
+            unmatched
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+        .into());
     }
 
     Ok((result, offset))

@@ -1,7 +1,7 @@
 # ==============================================================================
 # Tprm.cmake - build-time TPRM generation from per-app manifests
 #
-# apex_add_tprm(NAME <App> MANIFEST <path>/tprm.manifest)
+# apex_add_tprm(NAME <App> MANIFEST <path>/tprm.manifest [EXEC <target>])
 #
 # The manifest is the packing recipe: named component groups (fullUid ->
 # TOML source), named sequence groups (rts/ats slot -> sequence binary),
@@ -28,11 +28,18 @@
 # is mission-critical: the manifest is how a mission's sequence set
 # ships). A master that packs a sequence stores it under the reserved
 # fullUid ranges for extraction on the target.
+#
+# EXEC names the executive target that compiles the generated
+# constraint registry (fullUid -> legal-range table, assembled from
+# each payload's constraint rows): the on-board rail that rejects an
+# out-of-range payload even when ground tooling was bypassed. Without
+# EXEC the registry is not generated and the reader's weak lookup
+# stays null -- identity and integrity checks still run.
 # ==============================================================================
 
 # Parse one manifest into generation rules and register the products.
 function (apex_add_tprm)
-  cmake_parse_arguments(ARG "" "NAME;MANIFEST" "" ${ARGN})
+  cmake_parse_arguments(ARG "" "NAME;MANIFEST;EXEC" "" ${ARGN})
   if (NOT ARG_NAME OR NOT ARG_MANIFEST)
     message(FATAL_ERROR "apex_add_tprm: NAME and MANIFEST are required")
   endif ()
@@ -58,6 +65,8 @@ function (apex_add_tprm)
   set(_masters "")
   set(_all_tomls "")
   set(_all_seq_items "")
+  set(_rows_pairs "")
+  set(_rows_files "")
 
   foreach (_raw IN LISTS _lines)
     # Strip comments and surrounding whitespace; skip blanks.
@@ -222,14 +231,16 @@ function (apex_add_tprm)
           list(APPEND _all_tomls "${_toml}")
           set(_toml_uid_${_stem} "${_key}")
           add_custom_command(
-            OUTPUT "${_payload}"
+            OUTPUT "${_payload}" "${_payload}.rows.json"
             COMMAND ${CMAKE_COMMAND} -E make_directory "${_gen_dir}/payloads"
             COMMAND "${_tools_dir}/cfg2bin" --config "${_toml}" --output "${_payload}" --fulluid
-                    "${_key}"
+                    "${_key}" --constraint-rows "${_payload}.rows.json"
             DEPENDS "${_toml}" ${PROJECT_NAME}_rust_tools
             COMMENT "[tprm] ${ARG_NAME}: ${_path}"
             VERBATIM
           )
+          list(APPEND _rows_pairs "${_key}|${_payload}.rows.json")
+          list(APPEND _rows_files "${_payload}.rows.json")
         elseif (NOT _toml_uid_${_stem} STREQUAL "${_key}")
           message(
             FATAL_ERROR
@@ -272,4 +283,26 @@ function (apex_add_tprm)
   # (see apex_add_deployment).
   set_property(GLOBAL PROPERTY APEX_TPRM_BANK_RTS_${ARG_NAME} "${_bank_rts}")
   set_property(GLOBAL PROPERTY APEX_TPRM_BANK_ATS_${ARG_NAME} "${_bank_ats}")
+
+  # On-board constraint registry: EXEC names the executive target that
+  # compiles the generated fullUid -> table lookup. The registry is
+  # assembled from each payload's constraint rows at build time; the
+  # weak reference in TprmPayload.hpp resolves against it, so apps
+  # without an EXEC (or without constraints) simply skip the rail.
+  if (ARG_EXEC)
+    set(_rows_manifest "${_gen_dir}/constraint_rows.txt")
+    string(REPLACE ";" "\n" _rows_lines "${_rows_pairs}")
+    file(WRITE "${_rows_manifest}" "${_rows_lines}\n")
+    set(_registry "${_gen_dir}/${ARG_NAME}_tprm_constraints.cpp")
+    add_custom_command(
+      OUTPUT "${_registry}"
+      COMMAND ${CMAKE_COMMAND} -DROWS_MANIFEST=${_rows_manifest} -DOUTPUT=${_registry} -P
+              ${CMAKE_SOURCE_DIR}/cmake/apex/TprmConstraintGen.cmake
+      DEPENDS ${_rows_files} "${_rows_manifest}"
+              "${CMAKE_SOURCE_DIR}/cmake/apex/TprmConstraintGen.cmake"
+      COMMENT "[tprm] ${ARG_NAME}: constraint registry"
+      VERBATIM
+    )
+    target_sources(${ARG_EXEC} PRIVATE "${_registry}")
+  endif ()
 endfunction ()

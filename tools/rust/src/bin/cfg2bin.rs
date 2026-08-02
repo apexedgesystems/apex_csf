@@ -57,6 +57,11 @@ struct Args {
     /// prelude for this component (single mode only)
     #[arg(long, conflicts_with = "batch")]
     fulluid: Option<String>,
+
+    /// Write the payload's constraint rows (JSON) here: the source the
+    /// build compiles into the on-board constraint table
+    #[arg(long, value_name = "PATH", requires = "fulluid")]
+    constraint_rows: Option<PathBuf>,
 }
 
 fn main() -> ExitCode {
@@ -105,7 +110,14 @@ fn run_single(config: &Path, args: &Args) -> Result<Stats, Error> {
     let data = binary::load_config(config)?;
     let binary_data = if let Some(uid_str) = &args.fulluid {
         let uid = parse_full_uid(uid_str)?;
-        let (payload, layout_hash) = binary::serialize_value_with_layout(&data)?;
+        let (payload, layout_hash, rows) = binary::serialize_value_with_layout_and_rows(&data)?;
+        if let Some(rows_path) = &args.constraint_rows {
+            fs::write(
+                rows_path,
+                serde_json::to_string_pretty(&rows)
+                    .map_err(|e| Error::Emit(format!("constraint rows: {e}")))?,
+            )?;
+        }
         payload::stamp(uid, layout_hash, &payload)?
     } else {
         binary::serialize_value(&data)?

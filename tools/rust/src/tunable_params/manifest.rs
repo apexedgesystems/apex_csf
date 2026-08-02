@@ -83,6 +83,19 @@ pub struct EnumEntry {
     pub header: Option<String>,
 }
 
+/// Per-field constraint declaration: the component-level single source
+/// the three validation rails consume (cfg2bin refusal, ground UI
+/// bounds, on-board load checks). All keys optional; `min`/`max` are
+/// inclusive, `allowed` is an explicit legal-value list, `step` is
+/// granularity from `min`.
+#[derive(Debug, Clone, Default, Deserialize, PartialEq)]
+pub struct FieldConstraints {
+    pub min: Option<f64>,
+    pub max: Option<f64>,
+    pub allowed: Option<Vec<f64>>,
+    pub step: Option<f64>,
+}
+
 /// Parsed apex_data.toml manifest.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Manifest {
@@ -93,6 +106,10 @@ pub struct Manifest {
     /// Enum entries keyed by enum name (optional section).
     #[serde(default)]
     pub enums: BTreeMap<String, EnumEntry>,
+    /// Constraint declarations: struct name -> field name -> legal
+    /// range (optional section, `[constraints.<StructName>]`).
+    #[serde(default)]
+    pub constraints: BTreeMap<String, BTreeMap<String, FieldConstraints>>,
 }
 
 /* ----------------------------- Public API --------------------------------- */
@@ -127,6 +144,7 @@ mod tests {
         let manifest = parse_manifest_str(content).unwrap();
         assert_eq!(manifest.component, "PolynomialModel");
         assert_eq!(manifest.structs.len(), 2);
+        assert!(manifest.constraints.is_empty());
 
         let tp = &manifest.structs["PolynomialTunableParams"];
         assert_eq!(tp.category, DataCategory::TunableParam);
@@ -134,6 +152,26 @@ mod tests {
 
         let state = &manifest.structs["PolynomialState"];
         assert_eq!(state.category, DataCategory::State);
+    }
+
+    #[test]
+    fn parses_constraint_declarations() {
+        let content = r#"
+            component = "WaveGenerator"
+
+            [structs]
+            WaveGenTunableParams = { category = "TUNABLE_PARAM" }
+
+            [constraints.WaveGenTunableParams]
+            frequency = { min = 0.0, max = 50.0 }
+            waveType = { allowed = [0, 1, 2, 3, 4] }
+        "#;
+
+        let manifest = parse_manifest_str(content).unwrap();
+        let c = &manifest.constraints["WaveGenTunableParams"];
+        assert_eq!(c["frequency"].min, Some(0.0));
+        assert_eq!(c["frequency"].max, Some(50.0));
+        assert_eq!(c["waveType"].allowed.as_ref().unwrap().len(), 5);
     }
 
     #[test]
