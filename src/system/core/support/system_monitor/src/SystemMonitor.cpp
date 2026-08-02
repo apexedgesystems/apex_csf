@@ -9,6 +9,7 @@
 #include "src/system/core/support/system_monitor/inc/SystemMonitor.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorTlm.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 
 // Seeker RT-safe APIs (used in telemetry task)
 #include "src/cpu/inc/CpuUtilization.hpp" // getCpuUtilizationSnapshot, computeUtilizationDelta
@@ -94,12 +95,14 @@ bool SystemMonitor::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     return false;
   }
 
-  std::string error;
   SystemMonitorTunableParams loaded{};
-  if (!apex::helpers::files::hex2cpp(tprmPath.string(), loaded, error)) {
+  const auto CHECK = system_component::readTprmPayload(tprmPath, fullUid(), loaded);
+  if (CHECK != system_component::TprmPayloadCheck::OK) {
     auto* log = componentLog();
     if (log != nullptr) {
-      log->warning(label(), 0, fmt::format("TPRM load failed: {}", error));
+      log->error(label(), system_component::toFaultCode(CHECK),
+                 fmt::format("TPRM rejected ({}): {}", system_component::toString(CHECK),
+                             tprmPath.string()));
     }
     return false;
   }

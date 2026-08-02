@@ -296,7 +296,16 @@ public:
 
     bool loaded = false;
     if (std::filesystem::exists(TPRM_PATH)) {
-      loaded = paramBank_.load(TPRM_PATH, validateParams) == Status::SUCCESS;
+      loaded = paramBank_.load(TPRM_PATH, fullUid(), validateParams) == Status::SUCCESS;
+      if (!loaded) {
+        namespace sc = system_core::system_component;
+        auto* log = componentLog();
+        if (log != nullptr) {
+          log->error(label(), sc::toFaultCode(paramBank_.lastCheck()),
+                     fmt::format("TPRM rejected ({}): {}", sc::toString(paramBank_.lastCheck()),
+                                 TPRM_PATH.string()));
+        }
+      }
     }
     if (!loaded) {
       // Missing, unreadable, or rejected file: stage defaults so the bank

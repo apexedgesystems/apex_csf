@@ -21,6 +21,7 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/ComponentRegistry.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/HwModelBase.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/PackedTprm.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/system/core/executive/posix/inc/RTMode.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
@@ -1118,22 +1119,27 @@ bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     return true; // Not an error - use defaults
   }
 
-  // Read binary TPRM
-  std::ifstream file(tprmPath, std::ios::binary);
-  if (!file) {
-    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
-                     fmt::format("Failed to open executive TPRM: {}", tprmPath.string()));
+  // Read and verify the v3 payload; a reject leaves the compiled
+  // defaults driving the executive with the check's own fault code.
+  // The body is the tunable params, optionally followed by the thread
+  // configuration block.
+  namespace sc = system_core::system_component;
+  std::vector<std::uint8_t> body;
+  const auto CHECK = sc::readTprmPayload(tprmPath, FULL_UID, body);
+  if (CHECK != sc::TprmPayloadCheck::OK) {
+    sysLog_->error(
+        label(), sc::toFaultCode(CHECK),
+        fmt::format("Executive TPRM rejected ({}): {}", sc::toString(CHECK), tprmPath.string()));
     return false;
   }
-
+  if (body.size() < sizeof(ExecutiveTunableParams)) {
+    sysLog_->error(label(), sc::toFaultCode(sc::TprmPayloadCheck::BODY_SIZE_MISMATCH),
+                   fmt::format("Executive TPRM body {} bytes, need at least {}", body.size(),
+                               sizeof(ExecutiveTunableParams)));
+    return false;
+  }
   ExecutiveTunableParams params{};
-  file.read(reinterpret_cast<char*>(&params), sizeof(params));
-  if (file.gcount() != sizeof(params)) {
-    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
-                     fmt::format("Executive TPRM size mismatch (got {}, expected {})",
-                                 file.gcount(), sizeof(params)));
-    return false;
-  }
+  std::memcpy(&params, body.data(), sizeof(params));
 
   // Apply loaded parameters to executive configuration
   tunableParams_ = params;
@@ -1149,10 +1155,11 @@ bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   watchdogState_.intervalMs = params.watchdogIntervalMs;
   profilingState_.sampleEveryN = params.profilingSampleEveryN;
 
-  // Read thread configuration (follows tunable params in TPRM file)
+  // Read thread configuration (follows tunable params in the body)
   ExecutiveThreadConfigTprm threadConfigTprm{};
-  file.read(reinterpret_cast<char*>(&threadConfigTprm), sizeof(threadConfigTprm));
-  if (file.gcount() == sizeof(threadConfigTprm)) {
+  if (body.size() >= sizeof(ExecutiveTunableParams) + sizeof(threadConfigTprm)) {
+    std::memcpy(&threadConfigTprm, body.data() + sizeof(ExecutiveTunableParams),
+                sizeof(threadConfigTprm));
     // Convert TPRM entries to runtime config
     threadConfigFromTprm(threadConfigTprm.startup, threadConfig_.startup);
     threadConfigFromTprm(threadConfigTprm.shutdown, threadConfig_.shutdown);

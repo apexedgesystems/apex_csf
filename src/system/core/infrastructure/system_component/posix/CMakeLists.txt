@@ -32,6 +32,7 @@ apex_add_library(
   DEPS_PUBLIC
   system_component_base
   system_component_core
+  utilities_checksums_crc
   utilities_helpers
   utilities_time
   system_core_logs

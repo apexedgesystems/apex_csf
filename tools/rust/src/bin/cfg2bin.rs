@@ -1,10 +1,22 @@
 //! cfg2bin: Convert TOML/JSON config files to binary blobs.
 //!
 //! Usage:
-//!   cfg2bin --config foo.toml --output foo.bin
-//!   cfg2bin --config foo.json              # outputs foo.bin
+//!   cfg2bin --config foo.toml --output foo.tprm --fulluid 0x000100
+//!   cfg2bin --config foo.toml                # sequence/blob, no prelude
 //!   cfg2bin --batch ./configs/ --output ./binaries/
-//!   cfg2bin --config foo.toml --verify existing.bin  # verify match
+//!   cfg2bin --config foo.toml --verify existing.tprm  # verify match
+//!
+//! With --fulluid the output is a format A v3 component payload: the
+//! serialized bytes behind the 20-byte prelude (magic, version, size,
+//! fullUid, layout hash, CRC-32) that readers verify before loading.
+//! Without it the output is the raw serialization -- the form sequence
+//! binaries and generic blobs use.
+//!
+//! Batch mode compiles every .toml/.json under the input directory
+//! into the output directory, preserving relative structure. Batch
+//! outputs are raw (a directory carries no per-file fullUid); stamp
+//! component payloads individually or through the build's packing
+//! manifests (cmake/apex/Tprm.cmake).
 
 use std::{
     fs,
@@ -12,7 +24,7 @@ use std::{
     process::ExitCode,
 };
 
-use apex_rust_tools::tunable_params::{binary, Error};
+use apex_rust_tools::tunable_params::{binary, payload, Error};
 use clap::Parser;
 use walkdir::WalkDir;
 
@@ -41,9 +53,10 @@ struct Args {
     #[arg(long)]
     hexdump: bool,
 
-    /// Glob pattern to filter files in batch mode (default: *.toml,*.json)
-    #[arg(long, default_value = "")]
-    pattern: String,
+    /// Target fullUid (hex, e.g. 0x000100): stamp the v3 payload
+    /// prelude for this component (single mode only)
+    #[arg(long, conflicts_with = "batch")]
+    fulluid: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -89,18 +102,14 @@ fn run(args: &Args) -> Result<Stats, Error> {
 }
 
 fn run_single(config: &Path, args: &Args) -> Result<Stats, Error> {
-    // Read and parse config to get binary data
-    let content = fs::read_to_string(config)?;
-    let data: serde_json::Value = if config.extension().is_some_and(|e| e == "toml") {
-        let doc: toml_edit::DocumentMut = content
-            .parse()
-            .map_err(|e| Error::Parse(format!("TOML parse error: {e}")))?;
-        toml_to_json(doc.as_item())
+    let data = binary::load_config(config)?;
+    let binary_data = if let Some(uid_str) = &args.fulluid {
+        let uid = parse_full_uid(uid_str)?;
+        let (payload, layout_hash) = binary::serialize_value_with_layout(&data)?;
+        payload::stamp(uid, layout_hash, &payload)?
     } else {
-        serde_json::from_str(&content)
-            .map_err(|e| Error::Parse(format!("JSON parse error: {e}")))?
+        binary::serialize_value(&data)?
     };
-    let binary_data = binary::serialize_value(&data)?;
 
     // Show hexdump if requested
     if args.hexdump {
@@ -197,56 +206,15 @@ fn hexdump(data: &[u8]) {
     }
 }
 
-/// Convert toml_edit Item to serde_json Value
-fn toml_to_json(item: &toml_edit::Item) -> serde_json::Value {
-    use serde_json::Value as Json;
-    use toml_edit::Item;
-
-    match item {
-        Item::None => Json::Null,
-        Item::Value(v) => toml_value_to_json(v),
-        Item::Table(t) => {
-            let mut map = serde_json::Map::new();
-            for (k, v) in t.iter() {
-                map.insert(k.to_string(), toml_to_json(v));
-            }
-            Json::Object(map)
-        }
-        Item::ArrayOfTables(aot) => Json::Array(
-            aot.iter()
-                .map(|t| {
-                    let mut map = serde_json::Map::new();
-                    for (k, v) in t.iter() {
-                        map.insert(k.to_string(), toml_to_json(v));
-                    }
-                    Json::Object(map)
-                })
-                .collect(),
-        ),
-    }
-}
-
-fn toml_value_to_json(v: &toml_edit::Value) -> serde_json::Value {
-    use serde_json::Value as Json;
-    use toml_edit::Value;
-
-    match v {
-        Value::String(s) => Json::String(s.value().clone()),
-        Value::Integer(i) => Json::Number((*i.value()).into()),
-        Value::Float(f) => serde_json::Number::from_f64(*f.value())
-            .map(Json::Number)
-            .unwrap_or(Json::Null),
-        Value::Boolean(b) => Json::Bool(*b.value()),
-        Value::Datetime(dt) => Json::String(dt.value().to_string()),
-        Value::Array(arr) => Json::Array(arr.iter().map(toml_value_to_json).collect()),
-        Value::InlineTable(t) => {
-            let mut map = serde_json::Map::new();
-            for (k, v) in t.iter() {
-                map.insert(k.to_string(), toml_value_to_json(v));
-            }
-            Json::Object(map)
-        }
-    }
+/// Parse a --fulluid argument: hex with or without the 0x prefix.
+fn parse_full_uid(s: &str) -> Result<u32, Error> {
+    let trimmed = s.trim();
+    let digits = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+        .unwrap_or(trimmed);
+    u32::from_str_radix(digits, 16)
+        .map_err(|e| Error::InvalidArgs(format!("bad --fulluid '{s}': {e}")))
 }
 
 fn run_batch(input_dir: &Path, args: &Args) -> Result<Stats, Error> {
@@ -299,7 +267,7 @@ fn run_batch(input_dir: &Path, args: &Args) -> Result<Stats, Error> {
         // Derive output path: preserve relative structure
         let rel_path = input_path.strip_prefix(input_dir).unwrap_or(input_path);
         let mut output_path = output_dir.join(rel_path);
-        output_path.set_extension("bin");
+        output_path.set_extension("tprm");
 
         // Create parent directories if needed
         if let Some(parent) = output_path.parent() {

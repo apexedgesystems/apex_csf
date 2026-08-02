@@ -12,6 +12,7 @@
 
 #include "src/system/core/infrastructure/system_component/posix/inc/DataCategory.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/utilities/helpers/inc/Files.hpp"
 
 #include <fcntl.h>
@@ -94,12 +95,13 @@ bool ShmRingBridge::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   if (!std::filesystem::exists(PATH, ec)) {
     return true; // Tunables stay at defaults; init can still proceed.
   }
-  std::string err;
-  std::optional<std::reference_wrapper<std::string>> errRef{err};
-  if (!apex::helpers::files::hex2cpp(PATH.string(), tunables_.get(), errRef)) {
+  const auto CHECK = system_component::readTprmPayload(PATH, fullUid(), tunables_.get());
+  if (CHECK != system_component::TprmPayloadCheck::OK) {
     auto* log = componentLog();
     if (log != nullptr) {
-      log->info(label(), fmt::format("loadTprm: hex2cpp failed for {} ({})", PATH.string(), err));
+      log->error(
+          label(), system_component::toFaultCode(CHECK),
+          fmt::format("TPRM rejected ({}): {}", system_component::toString(CHECK), PATH.string()));
     }
     return false;
   }

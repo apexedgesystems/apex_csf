@@ -27,6 +27,11 @@
 
 using system_core::system_component::ParamBank;
 using system_core::system_component::Status;
+using system_core::system_component::TPRM_PAYLOAD_MAGIC;
+using system_core::system_component::TPRM_PAYLOAD_VERSION;
+using system_core::system_component::tprmCrc32;
+using system_core::system_component::TprmPayloadCheck;
+using system_core::system_component::TprmPayloadHeader;
 
 /** @brief Minimal params POD used for tests. */
 struct TestParams {
@@ -40,16 +45,28 @@ namespace {
 /** @brief Validator shared by most tests: negative values are invalid. */
 bool nonNegative(const TestParams& p) noexcept { return p.value >= 0; }
 
-/** @brief Helper to create a temporary binary file with TestParams. */
+/// fullUid the file-load tests stamp and expect.
+constexpr std::uint32_t TEST_UID = 0x00AB01;
+
+/** @brief Helper to create a temporary v3-stamped payload file. */
 class TempParamsFile {
 public:
-  explicit TempParamsFile(const TestParams& p) {
+  explicit TempParamsFile(const TestParams& p, std::uint32_t fullUid = TEST_UID) {
     std::random_device rd;
     std::mt19937_64 gen(rd());
     std::uniform_int_distribution<unsigned long long> dist;
     path_ = std::filesystem::temp_directory_path() /
-            ("test_params_" + std::to_string(dist(gen)) + ".bin");
+            ("test_params_" + std::to_string(dist(gen)) + ".tprm");
+
+    TprmPayloadHeader hdr{};
+    hdr.magic = TPRM_PAYLOAD_MAGIC;
+    hdr.version = TPRM_PAYLOAD_VERSION;
+    hdr.payloadSize = sizeof(p);
+    hdr.fullUid = fullUid;
+    hdr.payloadCrc = tprmCrc32(reinterpret_cast<const std::uint8_t*>(&p), sizeof(p));
+
     std::ofstream file(path_, std::ios::binary);
+    file.write(reinterpret_cast<const char*>(&hdr), sizeof(hdr));
     file.write(reinterpret_cast<const char*>(&p), sizeof(p));
     file.close();
   }
@@ -113,7 +130,7 @@ TEST(ParamBankTest, LoadFileSuccess) {
   const TestParams EXPECTED{100, 0xDEAD};
   TempParamsFile tmpFile(EXPECTED);
 
-  EXPECT_EQ(bank.load(tmpFile.path(), nonNegative), Status::SUCCESS);
+  EXPECT_EQ(bank.load(tmpFile.path(), TEST_UID, nonNegative), Status::SUCCESS);
   EXPECT_TRUE(bank.isLoaded());
   EXPECT_EQ(bank.staged().value, 100);
   EXPECT_EQ(bank.staged().flags, 0xDEADu);
@@ -124,7 +141,7 @@ TEST(ParamBankTest, LoadFileNotFound) {
   ParamBank<TestParams> bank{};
   const std::filesystem::path BAD_PATH{"/nonexistent/path/to/file.bin"};
 
-  EXPECT_EQ(bank.load(BAD_PATH, nonNegative), Status::ERROR_LOAD_INVALID);
+  EXPECT_EQ(bank.load(BAD_PATH, TEST_UID, nonNegative), Status::ERROR_LOAD_INVALID);
   EXPECT_FALSE(bank.isLoaded());
 }
 
@@ -134,8 +151,48 @@ TEST(ParamBankTest, LoadFileValidationFailure) {
   const TestParams BAD{-5, 0};
   TempParamsFile tmpFile(BAD);
 
-  EXPECT_EQ(bank.load(tmpFile.path(), nonNegative), Status::ERROR_LOAD_INVALID);
+  EXPECT_EQ(bank.load(tmpFile.path(), TEST_UID, nonNegative), Status::ERROR_LOAD_INVALID);
   EXPECT_FALSE(bank.isLoaded());
+}
+
+/** @test load(path): a payload stamped for another fullUid is rejected as such. */
+TEST(ParamBankTest, LoadFileWrongTarget) {
+  ParamBank<TestParams> bank{};
+  TempParamsFile tmpFile(TestParams{1, 0}, 0x00CD02);
+
+  EXPECT_EQ(bank.load(tmpFile.path(), TEST_UID, nonNegative), Status::ERROR_LOAD_INVALID);
+  EXPECT_EQ(bank.lastCheck(), TprmPayloadCheck::UID_MISMATCH);
+  EXPECT_FALSE(bank.isLoaded());
+}
+
+/** @test load(path): a corrupted body fails the CRC check specifically. */
+TEST(ParamBankTest, LoadFileCorruptBody) {
+  ParamBank<TestParams> bank{};
+  TempParamsFile tmpFile(TestParams{7, 0});
+  {
+    std::fstream f(tmpFile.path(), std::ios::in | std::ios::out | std::ios::binary);
+    f.seekp(-1, std::ios::end);
+    const char FLIP = '\xFF';
+    f.write(&FLIP, 1);
+  }
+
+  EXPECT_EQ(bank.load(tmpFile.path(), TEST_UID, nonNegative), Status::ERROR_LOAD_INVALID);
+  EXPECT_EQ(bank.lastCheck(), TprmPayloadCheck::CRC_MISMATCH);
+}
+
+/** @test load(path): a bare struct image with no prelude is not a v3 payload. */
+TEST(ParamBankTest, LoadFileRejectsUnstampedImage) {
+  ParamBank<TestParams> bank{};
+  const TestParams P{3, 0};
+  const auto PATH = std::filesystem::temp_directory_path() / "unstamped_params.tprm";
+  {
+    std::ofstream f(PATH, std::ios::binary);
+    f.write(reinterpret_cast<const char*>(&P), sizeof(P));
+  }
+
+  EXPECT_EQ(bank.load(PATH, TEST_UID, nonNegative), Status::ERROR_LOAD_INVALID);
+  EXPECT_EQ(bank.lastCheck(), TprmPayloadCheck::TOO_SMALL);
+  std::filesystem::remove(PATH);
 }
 
 /* ----------------------------- Publishing ----------------------------- */

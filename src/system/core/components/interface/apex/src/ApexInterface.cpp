@@ -16,6 +16,7 @@
 #include "src/system/core/infrastructure/protocols/framing/cobs/inc/COBSFraming.hpp"
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 #include "src/utilities/compatibility/inc/compat_attributes.hpp"
 
@@ -98,25 +99,18 @@ bool ApexInterface::loadTprm(const std::filesystem::path& tprmDir) noexcept {
       log->info(label(), fmt::format("No TPRM found at {}, using defaults", tprmPath.string()));
     }
   } else {
-    // TPRM file exists - it must be valid
-    std::ifstream file(tprmPath, std::ios::binary);
-    if (!file) {
+    // Present payloads verify against the v3 prelude; a rejected payload
+    // leaves the defaults in place with the check's own fault code.
+    using system_component::TprmPayloadCheck;
+    const TprmPayloadCheck CHECK = system_component::readTprmPayload(tprmPath, FULL_UID, tunables);
+    if (CHECK != TprmPayloadCheck::OK) {
+      tunables = ApexInterfaceTunables{};
       auto* log = componentLog();
       if (log != nullptr) {
-        log->error(label(), 1, fmt::format("Failed to open TPRM: {}", tprmPath.string()));
+        log->error(label(), system_component::toFaultCode(CHECK),
+                   fmt::format("TPRM rejected ({}): {}", system_component::toString(CHECK),
+                               tprmPath.string()));
       }
-      return false;
-    }
-
-    file.read(reinterpret_cast<char*>(&tunables), sizeof(tunables));
-    if (file.gcount() != sizeof(tunables)) {
-      auto* log = componentLog();
-      if (log != nullptr) {
-        log->error(label(), 2,
-                   fmt::format("TPRM size mismatch (got {}, expected {}): {}", file.gcount(),
-                               sizeof(tunables), tprmPath.string()));
-      }
-      return false;
     }
   }
 
