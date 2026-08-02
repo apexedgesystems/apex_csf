@@ -30,6 +30,14 @@ tprm_template (--header <file> | --json <file>) --struct <name> [options]
 
 ---
 
+## Constraint keys
+
+When the dictionary carries a field's `constraints` object (declared in
+the component's `apex_data.toml`), the generated template emits the
+keys (`min`, `max`, `allowed`, `step`) next to the field's value, so an
+author sees the legal range where they edit and `cfg2bin` refuses
+values outside it.
+
 ## Exit Codes
 
 | Code | Meaning                                                 |

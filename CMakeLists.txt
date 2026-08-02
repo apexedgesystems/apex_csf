@@ -425,13 +425,17 @@ endif ()
 # ------------------------------------------------------------------------------
 
 add_subdirectory(src)
-add_subdirectory(demos)
-add_subdirectory(apps)
 
-# Tools require a hosted OS (skip for bare-metal, optional via APEX_BUILD_TOOLS)
+# Tools require a hosted OS (skip for bare-metal, optional via
+# APEX_BUILD_TOOLS). They configure before demos and apps because TPRM
+# generation depends on the rust tools target: apex_add_tprm resolves
+# it at configure time (see cmake/apex/Tprm.cmake).
 if (NOT APEX_PLATFORM_BAREMETAL AND APEX_BUILD_TOOLS)
   add_subdirectory(tools)
 endif ()
+
+add_subdirectory(demos)
+add_subdirectory(apps)
 
 # ------------------------------------------------------------------------------
 # Packaging (package_<APP> targets)
