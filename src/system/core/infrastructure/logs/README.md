@@ -1,26 +1,30 @@
 # Logging Library
 
-Real-time logging facility with file-backed persistence, rotation, and two modes: synchronous (blocking) and asynchronous (RT-safe lock-free queue).
+Real-time logging facility with file-backed persistence, rotation, and two modes: synchronous (blocking) and asynchronous (RT-safe lock-free queue drained by one shared service thread).
 
 **Library:** `system_core_logs`
 **Namespace:** `logs`
-**Headers:** `inc/SystemLog.hpp`, `inc/LogBase.hpp`, `inc/AsyncLogBackend.hpp`
+**Headers:** `inc/SystemLog.hpp`, `inc/LogBase.hpp`, `inc/AsyncLogBackend.hpp`, `inc/LogDrainService.hpp`
 
 ---
 
 ## 1. Quick Reference
 
-| Component         | Type   | Purpose                                                                          | RT-Safe                          |
-| ----------------- | ------ | -------------------------------------------------------------------------------- | -------------------------------- |
-| `SystemLog`       | Class  | High-level severity-filtered logger with SYNC/ASYNC modes                        | ASYNC: Yes (log calls), SYNC: No |
-| `LogBase`         | Class  | Low-level file management, atomic append, rotation                               | No (file I/O)                    |
-| `AsyncLogBackend` | Class  | Lock-free MPMC queue with dedicated I/O thread                                   | Enqueue: Yes, Lifecycle: No      |
-| `Level`           | Enum   | DEBUG, INFO, WARNING, ERROR, FATAL                                               | Yes                              |
-| `Status`          | Enum   | OK, ERROR_OPEN, ERROR_SIZE, ERROR_ROTATE_RENAME, ERROR_ROTATE_REOPEN, ERROR_SYNC | Yes                              |
-| `setLevel`        | Method | Set minimum severity threshold                                                   | Yes (atomic store)               |
-| `setVerbosity`    | Method | Set debug verbosity level (0-255)                                                | Yes (atomic store)               |
-| `flush`           | Method | Drain async queue to disk                                                        | No (blocks)                      |
-| `rotate`          | Method | Rotate log file with timestamped backup                                          | No (mutex + file I/O)            |
+| Component         | Type   | Purpose                                                                          | RT-Safe                                 |
+| ----------------- | ------ | -------------------------------------------------------------------------------- | --------------------------------------- |
+| `SystemLog`       | Class  | High-level severity-filtered logger with SYNC/ASYNC modes                        | ASYNC: Yes (log calls), SYNC: No        |
+| `LogBase`         | Class  | Low-level file management, atomic append, rotation                               | No (file I/O)                           |
+| `AsyncLogBackend` | Class  | Lock-free MPMC queue drained by the shared service (dedicated thread fallback)   | Enqueue: Yes, Lifecycle: No             |
+| `LogDrainService` | Class  | Process-wide drain thread shared by all async backends (Linux)                   | notify(): Yes, Lifecycle: No            |
+| `Level`           | Enum   | DEBUG, INFO, WARNING, ERROR, FATAL                                               | Yes                                     |
+| `Status`          | Enum   | OK, ERROR_OPEN, ERROR_SIZE, ERROR_ROTATE_RENAME, ERROR_ROTATE_REOPEN, ERROR_SYNC | Yes                                     |
+| `setLevel`        | Method | Set minimum severity threshold                                                   | Yes (atomic store)                      |
+| `setVerbosity`    | Method | Set debug verbosity level (0-255)                                                | Yes (atomic store)                      |
+| `flush`           | Method | Drain async queue to disk                                                        | No (blocks)                             |
+| `rotate`          | Method | Rotate log file with timestamped backup (descriptor stays stable via dup2)       | No (mutex + file I/O)                   |
+| `setFatalFlush`   | Method | Opt-in: fatal() drains the queue before returning (durability over RT safety)    | Yes (atomic store); fatal() then blocks |
+| `writeErrorCount` | Method | Monotonic count of write() failures (disk full, EIO)                             | Yes (atomic load)                       |
+| `droppedCount`    | Method | Monotonic count of entries not accepted (queue full or backend stopped)          | Yes (atomic load)                       |
 
 ---
 
@@ -35,7 +39,7 @@ Real-time logging facility with file-backed persistence, rotation, and two modes
 | Protocol I/O byte tracing                    | No -- use `ByteTrace` mixin (protocols/common) |
 | Structured telemetry export                  | No -- use APROTO telemetry                     |
 
-**Design intent:** Two-mode logging where ASYNC mode never blocks the calling thread. Below-threshold messages skip formatting entirely (~38ns). The async backend uses a lock-free MPMC queue with a dedicated I/O thread, achieving ~0.8us hot-path latency.
+**Design intent:** Two-mode logging where ASYNC mode never blocks the calling thread and never shares a lock with it. Below-threshold messages skip formatting entirely (~36ns). Producers push to a lock-free MPMC ring and wake the drain side with one non-blocking eventfd write; a single process-wide service thread (LogDrainService) empties every backend's ring, so a fleet of component logs costs one I/O thread, not one per component. Every loss path is counted: queue-full and stopped-backend drops in droppedCount(), write() failures in writeErrorCount().
 
 ---
 
@@ -43,14 +47,23 @@ Real-time logging facility with file-backed persistence, rotation, and two modes
 
 ### Throughput and Latency
 
-| Mode  | Scenario                 | Median (us) | Calls/s | CV%   |
-| ----- | ------------------------ | ----------- | ------- | ----- |
-| SYNC  | Single-thread            | 1.168       | 856.5K  | 5.9%  |
-| SYNC  | Multi-thread contention  | 1.390       | 719.6K  | 8.5%  |
-| ASYNC | Single-thread            | 0.754       | 1.33M   | 1.2%  |
-| ASYNC | Multi-thread contention  | 0.863       | 1.16M   | 18.7% |
-| Skip  | Below threshold          | 0.034       | 29.2M   | 2.5%  |
-| ASYNC | Payload size sensitivity | 0.760       | 1.32M   | 1.2%  |
+| Mode  | Scenario                             | Median (us) | Calls/s | CV%   |
+| ----- | ------------------------------------ | ----------- | ------- | ----- |
+| ASYNC | Single-thread enqueue                | 0.367       | 2.72M   | 3.2%  |
+| ASYNC | Multi-thread contention              | 0.601       | 1.66M   | 24.1% |
+| ASYNC | Sporadic log-to-drained cycle        | 0.783       | 1.28M   | 4.2%  |
+| ASYNC | Fleet of 16 backends, sporadic cycle | 0.876       | 1.14M   | 2.1%  |
+| ASYNC | Queue-full drop path                 | 0.502       | 1.99M   | 2.8%  |
+| SYNC  | Single-thread                        | 0.801       | 1.25M   | 3.4%  |
+| SYNC  | Multi-thread contention              | 0.917       | 1.09M   | 14.9% |
+| Skip  | Below threshold                      | 0.036       | 27.9M   | 10.8% |
+| ASYNC | Payload size sensitivity             | 0.365       | 2.74M   | 8.3%  |
+
+A 256-entry burst followed by flush() (drain + fsync) costs ~1.4 ms:
+flush() is a control-plane checkpoint, never an RT-path call. The fleet
+cycle sits within ~12% of the single-backend cycle -- the shared drain
+thread erases the wake-a-cold-thread penalty of per-component I/O
+threads (formerly 4-5x).
 
 ### Profiler Analysis
 
@@ -74,25 +87,44 @@ Real-time logging facility with file-backed persistence, rotation, and two modes
 
 ### Memory Footprint
 
-| Component           | Stack | Heap                               |
-| ------------------- | ----- | ---------------------------------- |
-| `SystemLog` (SYNC)  | ~64B  | File descriptor only               |
-| `SystemLog` (ASYNC) | ~64B  | ~2.1MB (4096 entries x 520B queue) |
-| `AsyncLogBackend`   | ~48B  | ~2.1MB (lock-free MPMC queue)      |
-| `LogBase`           | ~32B  | File descriptor only               |
+| Component           | Stack | Heap                                                                         |
+| ------------------- | ----- | ---------------------------------------------------------------------------- |
+| `SystemLog` (SYNC)  | ~64B  | File descriptor only                                                         |
+| `SystemLog` (ASYNC) | ~64B  | ~2.1MB (4096 entries x 520B queue; size it per component via asyncQueueSize) |
+| `AsyncLogBackend`   | ~48B  | ring only -- no thread in shared-drain mode                                  |
+| `LogDrainService`   | ~1KB  | one thread + one eventfd for the whole process                               |
+| `LogBase`           | ~32B  | File descriptor only                                                         |
 
 ---
 
 ## 4. Design Principles
 
 - **Two modes** -- SYNC for boot/debug, ASYNC for RT operation
-- **Lock-free hot path** -- ASYNC enqueue uses MPMC queue, never blocks caller
-- **Skip-path optimization** -- Below-threshold messages cost ~38ns (no formatting)
-- **Atomic appends** -- O_APPEND semantics for concurrent write safety
+- **Lock-free hot path, lock-free wakeup** -- ASYNC enqueue uses an MPMC ring; the drain wake is one non-blocking eventfd write; no lock is shared with the RT caller in either direction
+- **One drain thread per process** -- LogDrainService sweeps every registered backend's ring; component logs stop costing a thread each; the dedicated-thread path remains as fallback and for non-Linux builds
+- **Skip-path optimization** -- Below-threshold messages cost ~36ns (no formatting)
+- **Atomic appends, stable descriptors** -- O_APPEND write safety; rotation repoints the same descriptor via dup2 so lock-free writers never touch a closed or reused fd
+- **Counted loss, never silent loss** -- queue-full and stopped-backend drops, and write() failures, are all monotonic counters
 - **No exceptions** -- Typed status codes throughout
-- **fmt formatting** -- Profiler shows ~60% of ASYNC time is in fmt; write syscall dominates SYNC
+- **fmt formatting** -- Profiler shows formatting dominates the ASYNC hot path; write syscall dominates SYNC
 - **Timestamped rotation** -- Backup files named with YYYYMMDD-HHMMSS suffix
 - **Fine-grained verbosity** -- Integer levels 0-255 for debug messages
+
+### Constraints
+
+- The drain service thread is default-priority and outside the scheduler:
+  under full CPU saturation it degrades to counted drops (bounded
+  staleness), never to RT blocking. Executive-configured thread policy is
+  the planned integration hook.
+- echoConsole=true does stdio on the calling thread: NOT RT-safe in any
+  mode; reserve for boot/diagnostics.
+- setFatalFlush(true) makes fatal() block until the queue drains -- the
+  deliberate durability trade for supervisors that log FATAL and abort.
+- Async backends must not outlive main() (static-destruction ordering
+  with the process-wide drain service).
+- rotate() in ASYNC mode rotates the sync-path descriptor only; async
+  entries continue to the original file. Rotation ownership for async
+  logs is tracked work.
 
 ---
 
@@ -211,8 +243,8 @@ using logs::SystemLog;
 SystemLog log("system.log", SystemLog::Mode::ASYNC);
 log.setLevel(SystemLog::Level::INFO);
 
-// RT-safe: lock-free enqueue (~0.8us)
-log.info("SCHEDULER", "task completed");
+// RT-safe: ~0.37us enqueue; drained by the shared service thread
+log.info("SCHEDULER", "task completed");  // lock-free enqueue + eventfd wake
 log.warning("IO", 7, "buffer full");
 
 // Before shutdown: flush remaining entries
@@ -225,7 +257,7 @@ log.flush();
 SystemLog log("system.log", SystemLog::Mode::ASYNC);
 log.setLevel(SystemLog::Level::WARNING);
 
-// These skip formatting entirely (~38ns)
+// These skip formatting entirely (~36ns)
 log.debug("SCHEDULER", "verbose trace", 5);
 log.info("SCHEDULER", "status update");
 

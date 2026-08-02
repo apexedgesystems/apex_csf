@@ -16,8 +16,6 @@
  *  - Construct and destroy outside RT phase.
  */
 
-#include <fmt/core.h>
-
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
