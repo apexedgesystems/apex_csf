@@ -7,5 +7,5 @@ gravity_fidelity    = { type = "uint",   size = 1,   value = 1 }    # J2
 terrain_fidelity    = { type = "uint",   size = 1,   value = 3 }    # HTILE
 atmosphere_fidelity = { type = "uint",   size = 1,   value = 2 }    # LAYERED
 gravity_data_path   = { type = "string", size = 256, value = "" }
-terrain_data_path   = { type = "string", size = 256, value = "demos/apex_horizon_demo/rover_terrain/data/earth_proc.htile" }
+terrain_data_path   = { type = "string", size = 256, value = "demos/apex_horizon_demo/rover_terrain/data/alpha_patch_lod4.htile" }
 atmosphere_data_path= { type = "string", size = 256, value = "demos/apex_horizon_demo/rover_terrain/data/usa76.atm" }

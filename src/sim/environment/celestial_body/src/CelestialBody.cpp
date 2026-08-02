@@ -158,6 +158,19 @@ std::uint8_t CelestialBody::doInit() noexcept {
                                          env::terrain::toString(tstatus), p.terrain_data_path));
         }
         ok = false;
+      } else {
+        // Artifact identity for paired runs: both sides of a pairing log
+        // the header spec_hash at load, so file agreement is provable
+        // from the two logs alone.
+        auto* log = componentLog();
+        if (log != nullptr) {
+          const auto& H = tile->header();
+          log->info(label(), fmt::format("terrain artifact: body={} spec_hash={:#018x} "
+                                         "extent lat [{:.3f}, {:.3f}] lon [{:.3f}, {:.3f}] {}x{}",
+                                         std::string(H.body, strnlen(H.body, sizeof(H.body))),
+                                         H.spec_hash, H.lat_min_deg, H.lat_max_deg, H.lon_min_deg,
+                                         H.lon_max_deg, H.dim_lat, H.dim_lon));
+        }
       }
     }
   }
