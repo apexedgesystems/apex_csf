@@ -1,0 +1,10 @@
+# Moon WorldQueryProbe (0xDD01): four reference sites, vacuum atmosphere,
+# gravity at a 2000-km radius.
+[WorldQueryProbeTunables]
+num_points              = { type = "uint",   size = 4,  value = 4 }
+reserved0               = { type = "uint",   size = 4,  value = 0 }
+lat_deg                 = { type = "array",  size = 64, element_type = "float", value = [0.6741, -3.0124, 26.1322, 20.1908, 0.0, 0.0, 0.0, 0.0] }
+lon_deg                 = { type = "array",  size = 64, element_type = "float", value = [23.4733, -23.4216, 3.6336, 30.7717, 0.0, 0.0, 0.0, 0.0] }
+atmosphere_alt_m        = { type = "float",  size = 8,  value = 0.0 }
+gravity_query_radius_m  = { type = "float",  size = 8,  value = 2000000.0 }
+body_label              = { type = "string", size = 16, value = "moon" }

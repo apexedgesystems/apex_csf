@@ -1,0 +1,69 @@
+# Scheduler (0x000100): one pool, one worker, six tasks. Rates are in
+# Hz (freqN/freqD); priorities order the 10 Hz pair so the rover steps
+# before the bridge publishes within each tick. The 1 Hz tasks run at
+# background priority (-64) with staggered offsets so they never land
+# on the same fundamental tick.
+[SchedulerTprmHeader]
+numPools = { type = "uint", size = 1, value = 1 }
+workersPerPool = { type = "uint", size = 1, value = 1 }
+numTasks = { type = "uint", size = 1, value = 6 }
+[[task]]
+fullUid = { type = "uint", size = 4, value = 56576 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+[[task]]
+fullUid = { type = "uint", size = 4, value = 56577 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 5 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+[[task]]
+fullUid = { type = "uint", size = 4, value = 56832 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 10 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 50 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+[[task]]
+fullUid = { type = "uint", size = 4, value = 56832 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 7 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51968 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 10 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 40 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51968 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 9 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }

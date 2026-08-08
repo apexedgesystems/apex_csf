@@ -1,0 +1,10 @@
+# Earth WorldQueryProbe (0xDD00): five survey points across the terrain
+# patch, atmosphere sampled at 30 km, gravity at a 7000-km radius.
+[WorldQueryProbeTunables]
+num_points              = { type = "uint",   size = 4,  value = 5 }
+reserved0               = { type = "uint",   size = 4,  value = 0 }
+lat_deg                 = { type = "array",  size = 64, element_type = "float", value = [39.10, 39.50, 39.90, 39.30, 39.70, 0.0, 0.0, 0.0] }
+lon_deg                 = { type = "array",  size = 64, element_type = "float", value = [-105.90, -105.50, -105.10, -105.30, -105.70, 0.0, 0.0, 0.0] }
+atmosphere_alt_m        = { type = "float",  size = 8,  value = 30000.0 }
+gravity_query_radius_m  = { type = "float",  size = 8,  value = 7000000.0 }
+body_label              = { type = "string", size = 16, value = "earth" }
