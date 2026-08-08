@@ -2,18 +2,19 @@
 # Unit Tests: system_core_schedulable
 #
 # Tests SchedulableTaskBase (construction, label, callable), SchedulableTask
-# (execute, delegate binding), SequenceGroup (registry, phase ordering, wrap
-# contract), and SchedulableTaskCUDA (stream/event lifecycle, completion
-# tracking).
+# (execute, delegate binding), TaskBuilder (member/lambda/free-function
+# binding), SequenceGroup (registry, phase ordering, wrap contract), and
+# SchedulableTaskCUDA (stream/event lifecycle, completion tracking).
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
-# Sources (4 files)
+# Sources (5 files)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulableTask_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulableTaskBase_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TaskBuilder_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SequenceGroup_uTest.cpp"
 )
 

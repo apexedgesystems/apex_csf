@@ -5,14 +5,12 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Test Sources (5)
+# Test Sources (3)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerData_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerStatus_uTest.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/TaskBuilder_uTest.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/SchedulableTask_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerOverhead_uTest.cpp"
 )
 
