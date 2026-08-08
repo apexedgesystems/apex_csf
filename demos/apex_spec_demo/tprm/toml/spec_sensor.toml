@@ -1,0 +1,14 @@
+# SpecSensor (componentId=212, instanceIndex=0, fullUid=0xD400)
+# Authored values for the spec-born sensor; the field shapes and the
+# legal ranges mirror the spec in sensor/apex_data.toml (regenerate
+# the template after spec changes: make tprm-templates).
+#
+# SpecSensorTunableParams (20 bytes)
+
+[SpecSensorTunableParams]
+sampleRateHz = { type = "float", size = 4, min = 1.0, max = 100.0, value = 10.0 }
+referenceValue = { type = "float", size = 4, value = 25.0 }
+driftRate = { type = "float", size = 4, min = 0.0, max = 5.0, value = 0.5 }
+noiseAmplitude = { type = "float", size = 4, min = 0.0, value = 0.1 }
+mode = { type = "uint", size = 1, allowed = [0, 1, 2], value = 1 }
+reserved = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
