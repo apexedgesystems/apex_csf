@@ -33,6 +33,11 @@ bool EdgeExecutive::registerComponents() noexcept {
     return false;
   }
 
+  // Sequenced pre->transform->post chain (phase ordering across pool threads)
+  if (!registerComponent(&pipeline_, LOG_DIR)) {
+    return false;
+  }
+
   // System health monitoring (CPU + GPU via NVML)
   if (!registerComponent(&sysMonitor_, LOG_DIR)) {
     return false;
@@ -41,9 +46,9 @@ bool EdgeExecutive::registerComponents() noexcept {
   if (log != nullptr) {
     log->info("EDGE_EXEC",
               fmt::format("Registered: conv={:#x} fft={:#x} batch={:#x} compact={:#x} "
-                          "monitor={:#x}",
+                          "pipeline={:#x} monitor={:#x}",
                           convFilter_.fullUid(), fftAnalyzer_.fullUid(), batchStats_.fullUid(),
-                          streamCompact_.fullUid(), sysMonitor_.fullUid()));
+                          streamCompact_.fullUid(), pipeline_.fullUid(), sysMonitor_.fullUid()));
   }
 
   return true;

@@ -139,9 +139,12 @@ struct TaskEntry {
 
   /* ----------------------------- Sequencing ----------------------------- */
 
-  std::shared_ptr<std::atomic<int>> seqCounter{nullptr}; ///< Shared counter (null = no sequencing).
-  int seqPhase{0};                                       ///< Phase to wait for.
-  int seqMaxPhase{0};                                    ///< Max phase (for wrap).
+  /// Phase counter owned by the task's SequenceGroup (null = no sequencing).
+  /// The group must outlive every entry registered against it -- the same
+  /// lifetime the addTask(task, config, group) seam already requires.
+  std::atomic<int>* seqCounter{nullptr};
+  int seqPhase{0};    ///< Phase to wait for.
+  int seqMaxPhase{0}; ///< Max phase (for wrap).
 
   /** @brief Check if this entry has sequencing enabled. */
   [[nodiscard]] bool isSequenced() const noexcept { return seqCounter != nullptr; }

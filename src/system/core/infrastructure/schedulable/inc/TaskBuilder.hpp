@@ -38,15 +38,6 @@ inline std::uint8_t memberTrampoline(void* ctx) noexcept {
   return (static_cast<T*>(ctx)->*MemFn)();
 }
 
-/**
- * @brief Trampoline for stateless lambda/functor calls via DelegateU8.
- * @tparam F Functor type (must be stateless and convertible to function pointer)
- */
-template <typename F> inline std::uint8_t lambdaTrampoline(void* ctx) noexcept {
-  auto fn = reinterpret_cast<std::uint8_t (*)()>(ctx);
-  return fn();
-}
-
 } // namespace detail
 
 /* ----------------------------- API ----------------------------- */
@@ -77,29 +68,6 @@ inline apex::concurrency::DelegateU8 bindMember(T* obj) noexcept {
 }
 
 /**
- * @brief Bind a stateless lambda to a DelegateU8.
- * @tparam F Lambda type (must be stateless, convertible to function pointer)
- * @param fn Lambda expression
- * @return DelegateU8 wrapping the lambda call
- *
- * @note Only works with stateless lambdas (no captures).
- *       Capturing lambdas require std::function and heap allocation.
- *
- * Example:
- * @code
- * auto delegate = bindLambda([]() -> uint8_t { return 42; });
- * SchedulableTask task(delegate, "lambda_task");
- * @endcode
- */
-template <typename F, typename = std::enable_if_t<std::is_convertible_v<F, std::uint8_t (*)()>>>
-inline apex::concurrency::DelegateU8 bindLambda(F&& fn) noexcept {
-  using FnPtr = std::uint8_t (*)();
-  FnPtr fnptr = static_cast<FnPtr>(fn);
-  return apex::concurrency::DelegateU8{&detail::lambdaTrampoline<F>,
-                                       reinterpret_cast<void*>(fnptr)};
-}
-
-/**
  * @brief Bind a free function to a DelegateU8.
  * @param fn Function pointer (signature: uint8_t fn())
  * @return DelegateU8 wrapping the function call
@@ -119,6 +87,29 @@ inline apex::concurrency::DelegateU8 bindFreeFunction(std::uint8_t (*fn)()) noex
     return fnptr();
   };
   return apex::concurrency::DelegateU8{wrapper, reinterpret_cast<void*>(fn)};
+}
+
+/**
+ * @brief Bind a stateless lambda to a DelegateU8.
+ * @tparam F Lambda type (must be stateless, convertible to function pointer)
+ * @param fn Lambda expression
+ * @return DelegateU8 wrapping the lambda call
+ *
+ * A captureless lambda decays to a plain function pointer, so this is
+ * free-function binding with the decay spelled out.
+ *
+ * @note Only works with stateless lambdas (no captures).
+ *       Capturing lambdas require std::function and heap allocation.
+ *
+ * Example:
+ * @code
+ * auto delegate = bindLambda([]() -> uint8_t { return 42; });
+ * SchedulableTask task(delegate, "lambda_task");
+ * @endcode
+ */
+template <typename F, typename = std::enable_if_t<std::is_convertible_v<F, std::uint8_t (*)()>>>
+inline apex::concurrency::DelegateU8 bindLambda(F&& fn) noexcept {
+  return bindFreeFunction(static_cast<std::uint8_t (*)()>(fn));
 }
 
 } // namespace schedulable

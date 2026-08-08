@@ -15,9 +15,21 @@
  *   queries this registry to populate TaskEntry with sequencing config.
  *
  * RT-Safety:
- *   - Construction allocates (not RT-safe, do at init time)
- *   - addTask() is RT-safe after construction
- *   - Wait/advance in worker threads (hybrid spin/park)
+ *   - Construction and addTask() are config-time (addTask inserts into
+ *     the registry map); keep both out of RT paths.
+ *   - Wait/advance in worker threads (hybrid spin/park) are the RT
+ *     surface.
+ *
+ * Lifetime: the group owns the phase counter. Scheduler entries hold a
+ * pointer to it, so the group must outlive every task registered with
+ * the scheduler against it.
+ *
+ * Frame contract: a sequenced chain must complete within its period.
+ * The counter wraps on the final advance of a cycle; if the next
+ * period's phase-1 task can start while this period's tail phase still
+ * waits (an overrun), the early advance can wrap the counter beneath
+ * the tail waiter, which then completes in the following cycle --
+ * delayed, never corrupt.
  *
  * Example:
  * @code
@@ -39,7 +51,6 @@
 
 #include <atomic>
 #include <cstdint>
-#include <memory>
 #include <unordered_map>
 
 namespace system_core {
@@ -76,10 +87,11 @@ public:
    * @brief Construct a sequence group.
    * @param maxPhase Maximum phase value (= total sequenced task count).
    *
-   * @note Allocates shared counter; perform at init time, not in RT path.
+   * @note Config-time: reserves the registry buckets up front.
    */
-  explicit SequenceGroup(int maxPhase) noexcept
-      : counter_(std::make_shared<std::atomic<int>>(1)), maxPhase_(maxPhase) {}
+  explicit SequenceGroup(int maxPhase) : maxPhase_(maxPhase) {
+    registry_.reserve(static_cast<std::size_t>(maxPhase > 0 ? maxPhase : 1));
+  }
 
   /**
    * @brief Register a task with this sequence at a specific phase.
@@ -88,10 +100,11 @@ public:
    *
    * Phase numbers should be calculated as:
    *   1 for first task(s), then +1 for each prior task in sequence.
+   *
+   * @note Config-time: inserts into the registry map (may allocate a
+   *       node); keep out of RT paths.
    */
-  void addTask(SchedulableTask& task, int phase) noexcept {
-    registry_[&task] = SeqInfo{phase, maxPhase_};
-  }
+  void addTask(SchedulableTask& task, int phase) { registry_[&task] = SeqInfo{phase, maxPhase_}; }
 
   /**
    * @brief Get sequencing info for a task.
@@ -104,10 +117,11 @@ public:
   }
 
   /**
-   * @brief Get the shared counter.
-   * @return Shared pointer to the atomic counter.
+   * @brief Get the phase counter.
+   * @return Pointer to the group-owned atomic counter; valid for the
+   *         group's lifetime.
    */
-  [[nodiscard]] std::shared_ptr<std::atomic<int>> counter() const noexcept { return counter_; }
+  [[nodiscard]] std::atomic<int>* counter() noexcept { return &counter_; }
 
   /**
    * @brief Get the maximum phase number.
@@ -118,10 +132,10 @@ public:
   /**
    * @brief Reset the counter to initial state (phase 1).
    */
-  void reset() noexcept { counter_->store(1, std::memory_order_release); }
+  void reset() noexcept { counter_.store(1, std::memory_order_release); }
 
 private:
-  std::shared_ptr<std::atomic<int>> counter_;
+  std::atomic<int> counter_{1}; ///< Group-owned phase counter.
   int maxPhase_;
   std::unordered_map<const SchedulableTask*, SeqInfo> registry_;
 };

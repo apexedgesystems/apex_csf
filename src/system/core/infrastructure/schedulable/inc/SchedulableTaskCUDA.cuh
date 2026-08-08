@@ -27,6 +27,7 @@
 #include "src/system/core/infrastructure/schedulable/inc/SchedulableTask.hpp"
 
 #include <cuda_runtime_api.h>
+#include <atomic>
 #include <cstdint>
 #include <string_view>
 
@@ -139,7 +140,13 @@ public:
 private:
   cudaStream_t cudaStream_{nullptr};
   cudaEvent_t completionEvent_{nullptr};
-  bool eventRecorded_{false};
+
+  /// Completion-flag cross-thread contract: written by the thread running
+  /// execute()/recordCompletion() (the kick task), read by isComplete()/
+  /// waitComplete() from any pool thread (the poll task). Release on set,
+  /// acquire on read, so a poll thread that observes true also observes
+  /// the event record issued before it.
+  std::atomic<bool> eventRecorded_{false};
 };
 
 } // namespace schedulable

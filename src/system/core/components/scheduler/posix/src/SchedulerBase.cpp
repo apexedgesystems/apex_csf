@@ -404,7 +404,7 @@ void SchedulerBase::logScheduleLayout(std::string_view modeDescription) noexcept
 
       // Check if all tasks share the same sequence counter (sequenced together)
       bool allSequenced = true;
-      std::shared_ptr<std::atomic<int>> sharedCounter = nullptr;
+      std::atomic<int>* sharedCounter = nullptr;
 
       for (std::size_t idx : taskIndices) {
         const TaskEntry& entry = entries_[idx];

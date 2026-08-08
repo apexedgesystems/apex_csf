@@ -34,11 +34,13 @@ SchedulableTaskCUDA::~SchedulableTaskCUDA() noexcept {
 
 SchedulableTaskCUDA::SchedulableTaskCUDA(SchedulableTaskCUDA&& other) noexcept
     : SchedulableTask(std::move(other)), cudaStream_(other.cudaStream_),
-      completionEvent_(other.completionEvent_), eventRecorded_(other.eventRecorded_) {
-  // Take ownership - null out source
+      completionEvent_(other.completionEvent_),
+      eventRecorded_(other.eventRecorded_.load(std::memory_order_relaxed)) {
+  // Take ownership - null out source. Moves are single-threaded by
+  // contract (config time), so relaxed ordering suffices here.
   other.cudaStream_ = nullptr;
   other.completionEvent_ = nullptr;
-  other.eventRecorded_ = false;
+  other.eventRecorded_.store(false, std::memory_order_relaxed);
 }
 
 SchedulableTaskCUDA& SchedulableTaskCUDA::operator=(SchedulableTaskCUDA&& other) noexcept {
@@ -54,19 +56,21 @@ SchedulableTaskCUDA& SchedulableTaskCUDA::operator=(SchedulableTaskCUDA&& other)
     // Take ownership of CUDA resources
     cudaStream_ = other.cudaStream_;
     completionEvent_ = other.completionEvent_;
-    eventRecorded_ = other.eventRecorded_;
+    eventRecorded_.store(other.eventRecorded_.load(std::memory_order_relaxed),
+                         std::memory_order_relaxed);
 
     // Null out source
     other.cudaStream_ = nullptr;
     other.completionEvent_ = nullptr;
-    other.eventRecorded_ = false;
+    other.eventRecorded_.store(false, std::memory_order_relaxed);
   }
   return *this;
 }
 
 std::uint8_t SchedulableTaskCUDA::execute() noexcept {
-  // Reset completion state for this execution
-  eventRecorded_ = false;
+  // Reset completion state for this execution. Release so a poll thread
+  // never pairs a stale true with this execution's un-recorded event.
+  eventRecorded_.store(false, std::memory_order_release);
 
   // Call the delegate - it should launch GPU work and call recordCompletion()
   return SchedulableTask::execute();
@@ -79,13 +83,13 @@ cudaStream_t SchedulableTaskCUDA::getCudaStream() const noexcept { return cudaSt
 void SchedulableTaskCUDA::recordCompletion() noexcept {
   if (completionEvent_) {
     cudaEventRecord(completionEvent_, cudaStream_);
-    eventRecorded_ = true;
+    eventRecorded_.store(true, std::memory_order_release);
   }
 }
 
 bool SchedulableTaskCUDA::isComplete() const noexcept {
   // If no event was recorded, consider it complete (no GPU work)
-  if (!eventRecorded_ || !completionEvent_) {
+  if (!eventRecorded_.load(std::memory_order_acquire) || !completionEvent_) {
     return true;
   }
 
@@ -96,12 +100,14 @@ bool SchedulableTaskCUDA::isComplete() const noexcept {
 
 void SchedulableTaskCUDA::waitComplete() noexcept {
   // WARNING: Blocking call - not RT-safe
-  if (eventRecorded_ && completionEvent_) {
+  if (eventRecorded_.load(std::memory_order_acquire) && completionEvent_) {
     cudaEventSynchronize(completionEvent_);
   }
 }
 
-void SchedulableTaskCUDA::resetCompletion() noexcept { eventRecorded_ = false; }
+void SchedulableTaskCUDA::resetCompletion() noexcept {
+  eventRecorded_.store(false, std::memory_order_release);
+}
 
 } // namespace schedulable
 } // namespace system_core
