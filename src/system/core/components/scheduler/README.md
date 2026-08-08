@@ -400,14 +400,14 @@ scheduler.init();  // Creates scheduler.log with schedule layout
 
 ### 6.6 SequenceGroup
 
-| Method                    | Purpose                        |
-| ------------------------- | ------------------------------ |
-| `SequenceGroup(maxPhase)` | Construct with max phase count |
-| `addTask(task, phase)`    | Register task at phase         |
-| `getSeqInfo(task)`        | Get SeqInfo for task           |
+| Method                    | Purpose                                   |
+| ------------------------- | ----------------------------------------- |
+| `SequenceGroup(maxPhase)` | Construct with max phase count            |
+| `addTask(task, phase)`    | Register task at phase                    |
+| `getSeqInfo(task)`        | Get SeqInfo for task                      |
 | `counter()`               | Pointer to the group-owned atomic counter |
-| `maxPhase()`              | Get max phase number           |
-| `reset()`                 | Reset counter to phase 1       |
+| `maxPhase()`              | Get max phase number                      |
+| `reset()`                 | Reset counter to phase 1                  |
 
 Helper functions:
 
