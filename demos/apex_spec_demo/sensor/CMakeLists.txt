@@ -23,7 +23,12 @@ apex_add_interface_library(
 )
 
 # The spec-generated headers are a second include root so generated and
-# hand code share plain-name includes.
-target_include_directories(${LIB_NAME} INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/.auto")
+# hand code share plain-name includes. Wrapped for the export set the
+# helper installs the target into, and installed beside the inc/ headers
+# so an installed tree compiles the same way.
+target_include_directories(
+  ${LIB_NAME} INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/.auto>
+)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.auto/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
 apex_add_data_manifest(MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/apex_data.toml")
