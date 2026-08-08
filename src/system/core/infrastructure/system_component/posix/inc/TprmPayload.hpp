@@ -17,10 +17,11 @@
  * The prelude exists so a reader can refuse, loudly and specifically,
  * anything that is not the payload it expects: wrong file (magic), wrong
  * era (version), wrong target (fullUid), truncation (payloadSize),
- * corruption (payloadCrc). layoutHash is carried for tooling and
- * audit: verifying it on board needs a per-component expected value,
- * which no reader here holds, so the checks stop at identity and
- * integrity.
+ * corruption (payloadCrc), and -- when the caller passes its
+ * spec-generated expectation -- wrong layout (layoutHash): a payload
+ * built against any other field arrangement rejects before its bytes
+ * are interpreted. Components without a spec expectation skip the
+ * layout check; identity and integrity always run.
  *
  * Every check maps to a distinct TprmPayloadCheck so the reject reason
  * reaches health telemetry as itself, not as a generic load failure. A
@@ -85,6 +86,7 @@ enum class TprmPayloadCheck : std::uint8_t {
   CRC_MISMATCH = 7,         ///< Body bytes fail the header CRC.
   BODY_SIZE_MISMATCH = 8,   ///< Body length differs from the caller's TParams.
   CONSTRAINT_VIOLATION = 9, ///< A field value is outside its declared legal range.
+  LAYOUT_MISMATCH = 10,     ///< Payload layout hash differs from the spec expectation.
 };
 
 /// Fault-code form of a check verdict for log/telemetry surfaces.
@@ -111,6 +113,8 @@ enum class TprmPayloadCheck : std::uint8_t {
     return "payload targets another fullUid";
   case TprmPayloadCheck::CONSTRAINT_VIOLATION:
     return "field value outside its declared legal range";
+  case TprmPayloadCheck::LAYOUT_MISMATCH:
+    return "payload layout hash differs from the spec expectation";
   case TprmPayloadCheck::CRC_MISMATCH:
     return "payload CRC mismatch";
   case TprmPayloadCheck::BODY_SIZE_MISMATCH:
@@ -248,11 +252,14 @@ extern "C" {
  * @param size        Image size in bytes.
  * @param expectedUid fullUid the caller expects the payload to target.
  * @param header      Parsed prelude on OK (optional).
+ * @param expectedLayoutHash Spec-generated expectation the prelude's
+ *                    layoutHash must equal (null = no layout check).
  * @return OK or the first failed check.
  */
 [[nodiscard]] inline TprmPayloadCheck
 verifyTprmPayload(const std::uint8_t* data, std::size_t size, std::uint32_t expectedUid,
-                  TprmPayloadHeader* header = nullptr) noexcept {
+                  TprmPayloadHeader* header = nullptr,
+                  const std::uint32_t* expectedLayoutHash = nullptr) noexcept {
   if (size < TPRM_PAYLOAD_HEADER_SIZE) {
     return TprmPayloadCheck::TOO_SMALL;
   }
@@ -274,6 +281,11 @@ verifyTprmPayload(const std::uint8_t* data, std::size_t size, std::uint32_t expe
   if (tprmCrc32(data + TPRM_PAYLOAD_HEADER_SIZE, BODY) != hdr.payloadCrc) {
     return TprmPayloadCheck::CRC_MISMATCH;
   }
+  // Spec-defined structs carry a generated expectation: a payload built
+  // against any other layout rejects before its bytes are interpreted.
+  if (expectedLayoutHash != nullptr && hdr.layoutHash != *expectedLayoutHash) {
+    return TprmPayloadCheck::LAYOUT_MISMATCH;
+  }
   if (header != nullptr) {
     *header = hdr;
   }
@@ -287,9 +299,10 @@ verifyTprmPayload(const std::uint8_t* data, std::size_t size, std::uint32_t expe
  * @param body        Receives the verified payload body.
  * @return OK or the first failed check.
  */
-[[nodiscard]] inline TprmPayloadCheck readTprmPayload(const std::filesystem::path& path,
-                                                      std::uint32_t expectedUid,
-                                                      std::vector<std::uint8_t>& body) noexcept {
+[[nodiscard]] inline TprmPayloadCheck
+readTprmPayload(const std::filesystem::path& path, std::uint32_t expectedUid,
+                std::vector<std::uint8_t>& body,
+                const std::uint32_t* expectedLayoutHash = nullptr) noexcept {
   std::ifstream file(path, std::ios::binary | std::ios::ate);
   if (!file) {
     return TprmPayloadCheck::FILE_ERROR;
@@ -301,7 +314,8 @@ verifyTprmPayload(const std::uint8_t* data, std::size_t size, std::uint32_t expe
   if (file.gcount() != static_cast<std::streamsize>(SIZE)) {
     return TprmPayloadCheck::FILE_ERROR;
   }
-  const TprmPayloadCheck CHECK = verifyTprmPayload(image.data(), SIZE, expectedUid);
+  const TprmPayloadCheck CHECK =
+      verifyTprmPayload(image.data(), SIZE, expectedUid, nullptr, expectedLayoutHash);
   if (CHECK != TprmPayloadCheck::OK) {
     return CHECK;
   }
@@ -326,11 +340,12 @@ verifyTprmPayload(const std::uint8_t* data, std::size_t size, std::uint32_t expe
  * now applied after the prelude checks.
  */
 template <typename TParams>
-[[nodiscard]] TprmPayloadCheck readTprmPayload(const std::filesystem::path& path,
-                                               std::uint32_t expectedUid, TParams& out) noexcept {
+[[nodiscard]] TprmPayloadCheck
+readTprmPayload(const std::filesystem::path& path, std::uint32_t expectedUid, TParams& out,
+                const std::uint32_t* expectedLayoutHash = nullptr) noexcept {
   static_assert(std::is_trivially_copyable_v<TParams>);
   std::vector<std::uint8_t> body;
-  const TprmPayloadCheck CHECK = readTprmPayload(path, expectedUid, body);
+  const TprmPayloadCheck CHECK = readTprmPayload(path, expectedUid, body, expectedLayoutHash);
   if (CHECK != TprmPayloadCheck::OK) {
     return CHECK;
   }

@@ -96,11 +96,33 @@ pub struct FieldConstraints {
     pub step: Option<f64>,
 }
 
+/// One field of a spec-defined struct: the ordered building block of
+/// the generated header. Array order in the manifest is layout order.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct FieldDef {
+    /// Field name (the C++ member identifier).
+    pub name: String,
+    /// Logical type: int | uint | float | bool | char | string.
+    pub r#type: String,
+    /// Size in bytes (per element when `count` is set).
+    pub size: u32,
+    /// Array length: emits `type name[count]` (absent = scalar).
+    pub count: Option<u32>,
+    /// Default value (becomes the member initializer and the template
+    /// default).
+    pub default: Option<toml::Value>,
+    /// One-line field documentation (becomes the member's doc comment).
+    pub doc: Option<String>,
+}
+
 /// Parsed apex_data.toml manifest.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Manifest {
     /// Component name.
     pub component: String,
+    /// C++ namespace generated headers open (e.g. "appsim::wave").
+    #[serde(default)]
+    pub namespace: Option<String>,
     /// Struct entries keyed by struct name.
     pub structs: BTreeMap<String, StructEntry>,
     /// Enum entries keyed by enum name (optional section).
@@ -110,6 +132,12 @@ pub struct Manifest {
     /// range (optional section, `[constraints.<StructName>]`).
     #[serde(default)]
     pub constraints: BTreeMap<String, BTreeMap<String, FieldConstraints>>,
+    /// Spec-defined struct layouts: struct name -> ordered field list
+    /// (optional section, `[[fields.<StructName>]]` array-of-tables).
+    /// Presence makes the spec the source of truth for that struct:
+    /// the header generates from it (cdef phase 1).
+    #[serde(default)]
+    pub fields: BTreeMap<String, Vec<FieldDef>>,
 }
 
 /* ----------------------------- Public API --------------------------------- */
@@ -152,6 +180,37 @@ mod tests {
 
         let state = &manifest.structs["PolynomialState"];
         assert_eq!(state.category, DataCategory::State);
+    }
+
+    #[test]
+    fn parses_field_definitions_in_order() {
+        let content = r#"
+            component = "WaveGenerator"
+
+            [structs]
+            WaveGenTunableParams = { category = "TUNABLE_PARAM" }
+
+            [[fields.WaveGenTunableParams]]
+            name = "frequency"
+            type = "float"
+            size = 4
+            default = 1.0
+            doc = "Primary frequency [Hz]"
+
+            [[fields.WaveGenTunableParams]]
+            name = "reserved"
+            type = "uint"
+            size = 1
+            count = 3
+        "#;
+
+        let manifest = parse_manifest_str(content).unwrap();
+        let f = &manifest.fields["WaveGenTunableParams"];
+        assert_eq!(f.len(), 2);
+        assert_eq!(f[0].name, "frequency");
+        assert_eq!(f[0].r#type, "float");
+        assert_eq!(f[0].doc.as_deref(), Some("Primary frequency [Hz]"));
+        assert_eq!(f[1].count, Some(3));
     }
 
     #[test]

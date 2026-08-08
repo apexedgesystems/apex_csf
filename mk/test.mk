@@ -164,6 +164,42 @@ compat-tprm:
 
 .PHONY: compat compat-tprm
 
+# ------------------------------------------------------------------------------
+# cdef: spec-generated .auto headers (regen + drift gate)
+# ------------------------------------------------------------------------------
+# Every apex_data.toml with a [[fields.<Struct>]] spec owns committed
+# .auto headers generated from it. `make cdef` regenerates in place;
+# `make check-cdef` regenerates to a scratch tree and diffs, so a
+# hand-edited generated file (or a stale one after a spec change)
+# cannot merge. Requires the rust tools (cdef_gen).
+
+CDEF_MANIFESTS := $(shell grep -rl "^\[\[fields\." --include="*_data.toml" --include="apex_data.toml" demos src apps 2>/dev/null)
+
+cdef: tools-rust
+	$(call log,cdef,Regenerating .auto headers from component specs)
+	@for m in $(CDEF_MANIFESTS); do \
+	  "$(BUILD_DIR)/bin/tools/rust/cdef_gen" --manifest "$$m" || exit 1; \
+	done
+	$(call log_ok,cdef,.auto headers regenerated)
+
+check-cdef: tools-rust
+	$(call log,check-cdef,Diffing committed .auto headers against their specs)
+	@fail=0; for m in $(CDEF_MANIFESTS); do \
+	  dir=$$(dirname "$$m"); \
+	  scratch=$$(mktemp -d); \
+	  "$(BUILD_DIR)/bin/tools/rust/cdef_gen" --manifest "$$m" --output "$$scratch" > /dev/null || exit 1; \
+	  if ! diff -ru "$$dir/.auto" "$$scratch" > /dev/null 2>&1; then \
+	    printf '[check-cdef] DRIFT: %s/.auto does not match its spec\n' "$$dir"; \
+	    diff -ru "$$dir/.auto" "$$scratch" | head -20; \
+	    fail=1; \
+	  fi; \
+	  rm -rf "$$scratch"; \
+	done; \
+	[ $$fail -eq 0 ] || exit 1
+	$(call log_ok,check-cdef,.auto headers match their specs)
+
+.PHONY: cdef check-cdef
+
 # Tooling coverage (nightly). Each runs its tool test suite under coverage
 # instrumentation and emits a human-readable summary plus a machine report,
 # so the nightly leg both gates (tests still fail the job) and measures. The

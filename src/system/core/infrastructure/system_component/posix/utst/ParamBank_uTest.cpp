@@ -180,6 +180,18 @@ TEST(ParamBankTest, LoadFileCorruptBody) {
   EXPECT_EQ(bank.lastCheck(), TprmPayloadCheck::CRC_MISMATCH);
 }
 
+/** @test load(path): a payload stamped against another layout rejects as such. */
+TEST(ParamBankTest, LoadFileLayoutMismatch) {
+  ParamBank<TestParams> bank{};
+  TempParamsFile tmpFile(TestParams{4, 0}); // stamps layoutHash = 0
+  const std::uint32_t EXPECTED_LAYOUT = 0xABCD1234U;
+
+  EXPECT_EQ(bank.load(tmpFile.path(), TEST_UID, nonNegative, &EXPECTED_LAYOUT),
+            Status::ERROR_LOAD_INVALID);
+  EXPECT_EQ(bank.lastCheck(), TprmPayloadCheck::LAYOUT_MISMATCH);
+  EXPECT_FALSE(bank.isLoaded());
+}
+
 /** @test load(path): a bare struct image with no prelude is not a v3 payload. */
 TEST(ParamBankTest, LoadFileRejectsUnstampedImage) {
   ParamBank<TestParams> bank{};
