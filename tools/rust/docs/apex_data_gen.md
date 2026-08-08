@@ -40,6 +40,22 @@ length), `default`, and `doc`; array order is layout order. The
 component-level `namespace` key names the C++ namespace generated
 headers open.
 
+## Command and telemetry declarations
+
+Optional `[[commands]]` / `[[telemetry]]` arrays declare the
+component's C2 surface in the same spec the dispatch base generates
+from, so the dictionary names exactly the opcodes the component
+handles. Commands carry `name`, `opcode`, optional `request` /
+`response` payload struct names, and `doc`; telemetry entries carry
+`name`, `opcode`, `struct`, and `doc`. Payload structs must be
+registered structs (their layouts are ordinary `[[fields]]` specs);
+a dangling reference fails generation. The sections appear in the
+JSON as `commands` and `telemetry` arrays when present.
+
+A manifest whose registered structs are all spec-defined needs no C++
+headers at all -- fully spec-born components generate their dictionary
+from the manifest alone.
+
 ## Constraint declarations
 
 An optional `[constraints.<StructName>]` section declares each field's

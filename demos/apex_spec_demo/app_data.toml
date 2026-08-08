@@ -1,0 +1,29 @@
+# app_data.toml - ApexSpecDemo application descriptor for Zenith target generation
+#
+# Pure SIL demo: a single spec-born environment sensor. The sensor's
+# structs, commands, and telemetry all derive from sensor/apex_data.toml,
+# so the Zenith target sees exactly the surface the component dispatches.
+#
+# Core components (Executive, Scheduler, FileSystem, Registry, Interface,
+# Action) are auto-included by the target generator at their standard UIDs.
+# Only declare app-specific component instances below.
+
+application = "ApexSpecDemo"
+description = "Spec-born sensor demo proving the spec-driven codegen chain."
+
+[protocol]
+transport = "TCP"
+framing = "SLIP"
+port = 9000
+
+[[components]]
+name = "SpecSensor"
+fullUid = "0x00D400"
+instanceIndex = 0
+type = "SW_MODEL"
+notes = "Spec-born drift sensor (50 Hz step, IDLE/MEASURE/FAULT_INJECT)"
+
+[[components]]
+name = "SystemMonitor"
+fullUid = "0x00C800"
+type = "SUPPORT"

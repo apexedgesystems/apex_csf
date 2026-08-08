@@ -213,6 +213,7 @@ After building, start with one of these depending on your interest:
 | If you want to...                       | Start here                                                                                |
 | --------------------------------------- | ----------------------------------------------------------------------------------------- |
 | Connect Zenith and see live telemetry   | [apex_ops_demo](demos/apex_ops_demo/)                                                     |
+| Generate a component from a spec        | [apex_spec_demo](demos/apex_spec_demo/)                                                   |
 | Run a full executive with GPU models    | [apex_edge_demo](demos/apex_edge_demo/)                                                   |
 | See host + MCU hardware-in-the-loop     | [apex_hil_demo](demos/apex_hil_demo/)                                                     |
 | Run Monte Carlo sweeps across all cores | [apex_mc_demo](demos/apex_mc_demo/)                                                       |
@@ -238,6 +239,7 @@ you off with a copyable [template_app](apps/template_app/).
 | [apex_cpu_sim_demo](demos/apex_cpu_sim_demo/)           | Intel 4004 CPU simulation at three device-physics fidelity levels   | x86_64             |
 | [apex_time_demo](demos/apex_time_demo/)                 | TimeServer end to end: PPS ingest, UTC correlation, timed triggers  | x86_64             |
 | [apex_horizon_demo](demos/apex_horizon_demo/)           | Six-beam lidar on a drifting body, streamed to a 3D viewer          | x86_64             |
+| [apex_spec_demo](demos/apex_spec_demo/)                 | Spec-born sensor: structs, dispatch, and skeleton from one manifest | x86_64             |
 | [stm32_encryptor_demo](demos/stm32_encryptor_demo/)     | AES-256-GCM encryption with dual UART channels                      | NUCLEO-L476RG      |
 | [arduino_encryptor_demo](demos/arduino_encryptor_demo/) | AES-256-GCM encryption on ATmega328P (32 KB flash, 2 KB SRAM)       | Arduino Uno R3     |
 | [pico_encryptor_demo](demos/pico_encryptor_demo/)       | AES-256-GCM encryption with dual UART                               | Raspberry Pi Pico  |
