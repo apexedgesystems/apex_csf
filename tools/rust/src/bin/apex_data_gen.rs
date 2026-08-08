@@ -176,7 +176,15 @@ fn discover_headers(
         }
     }
 
-    if headers.is_empty() {
+    // A fully spec-defined manifest (every struct has an ordered field
+    // list, no enum entries) needs no C++ parsing at all; headers are
+    // required only when some entry derives from one.
+    let needs_headers = manifest
+        .structs
+        .keys()
+        .any(|s| !manifest.fields.contains_key(s))
+        || !manifest.enums.is_empty();
+    if headers.is_empty() && needs_headers {
         return Err(format!(
             "No header files found in {} or {}/inc/",
             manifest_dir.display(),
@@ -229,19 +237,73 @@ fn build_struct_dictionary(
         enums.insert(enum_name.clone(), enum_json);
     }
 
-    // Build final output (only include enums if there are any)
-    if enums.is_empty() {
-        Ok(json!({
-            "component": manifest.component,
-            "structs": structs,
-        }))
-    } else {
-        Ok(json!({
-            "component": manifest.component,
-            "structs": structs,
-            "enums": enums,
-        }))
+    // Command/telemetry entries come straight from the spec -- the same
+    // [[commands]]/[[telemetry]] arrays the dispatch base generates from --
+    // so the ground dictionary names exactly the opcodes the component
+    // dispatches. Payload structs must be registered (their layouts are
+    // ordinary struct entries above).
+    let mut commands = Vec::new();
+    for c in &manifest.commands {
+        for payload in [&c.request, &c.response].into_iter().flatten() {
+            if !manifest.structs.contains_key(payload) {
+                return Err(format!(
+                    "command '{}' references '{payload}', which is not a registered struct",
+                    c.name
+                )
+                .into());
+            }
+        }
+        let mut entry = JsonMap::new();
+        entry.insert("name".into(), json!(c.name));
+        entry.insert("opcode".into(), json!(c.opcode));
+        if let Some(rq) = &c.request {
+            entry.insert("request".into(), json!(rq));
+        }
+        if let Some(rs) = &c.response {
+            entry.insert("response".into(), json!(rs));
+        }
+        if let Some(doc) = &c.doc {
+            entry.insert("doc".into(), json!(doc));
+        }
+        commands.push(Json::Object(entry));
     }
+
+    let mut telemetry = Vec::new();
+    for t in &manifest.telemetry {
+        if !manifest.structs.contains_key(&t.r#struct) {
+            return Err(format!(
+                "telemetry '{}' references '{}', which is not a registered struct",
+                t.name, t.r#struct
+            )
+            .into());
+        }
+        let mut entry = JsonMap::new();
+        entry.insert("name".into(), json!(t.name));
+        entry.insert("opcode".into(), json!(t.opcode));
+        entry.insert("struct".into(), json!(t.r#struct));
+        if let Some(doc) = &t.doc {
+            entry.insert("doc".into(), json!(doc));
+        }
+        telemetry.push(Json::Object(entry));
+    }
+
+    // Build final output (optional sections only when present)
+    let mut out = JsonMap::new();
+    out.insert("component".into(), json!(manifest.component));
+    if let Some(id) = manifest.component_id {
+        out.insert("component_id".into(), json!(id));
+    }
+    out.insert("structs".into(), Json::Object(structs));
+    if !enums.is_empty() {
+        out.insert("enums".into(), Json::Object(enums));
+    }
+    if !commands.is_empty() {
+        out.insert("commands".into(), Json::Array(commands));
+    }
+    if !telemetry.is_empty() {
+        out.insert("telemetry".into(), Json::Array(telemetry));
+    }
+    Ok(Json::Object(out))
 }
 
 /// Build a single enum entry for the dictionary.
