@@ -287,9 +287,22 @@ def generate_commands(app_data: dict, struct_dicts: dict) -> dict:
             {"name": "NOOP", "opcode": "0x0000", "desc": "Connectivity check", "fields": []},
         ]
 
-        # Find component-specific opcodes from struct dict enums
+        # Spec-declared commands are authoritative when present: the same
+        # [[commands]] arrays the dispatch base generates from, with input
+        # fields derived from the request struct's dictionary entry. Other
+        # components fall back to opcode enums parsed from their headers.
         _data_file, data = find_struct_dict(name, struct_dicts)
-        if data:
+        if data and data.get("commands"):
+            for cmd in data["commands"]:
+                comp_cmds.append(
+                    {
+                        "name": cmd["name"],
+                        "opcode": cmd["opcode"],
+                        "desc": cmd.get("doc", _opcode_desc(cmd["name"])),
+                        "fields": _request_fields(cmd.get("request"), data),
+                    }
+                )
+        elif data:
             for _enum_name, enum_data in data.get("enums", {}).items():
                 for op_name, op_value in sorted(
                     enum_data.get("values", {}).items(), key=lambda x: x[1]
@@ -412,6 +425,34 @@ def _has_multi_instance(name: str, app_data: dict) -> bool:
     """Check if a component name appears more than once in the app."""
     count = sum(1 for c in app_data["components"] if c["name"] == name)
     return count > 1
+
+
+def _request_fields(request_struct: str, data: dict) -> list:
+    """Build command-panel field defs from a request struct's dictionary entry.
+
+    Maps dictionary field types (type + byte size) onto the panel's sized
+    type names (uint8/int16/float/...). Fields without a sized mapping
+    (arrays, nested structs) emit as raw with their byte size so the panel
+    shows them rather than dropping them silently.
+    """
+    if not request_struct:
+        return []
+    entry = data.get("structs", {}).get(request_struct, {})
+    fields = []
+    for f in entry.get("fields", []):
+        base = f.get("type", "")
+        size = f.get("size", 0)
+        if base in ("uint", "int"):
+            ftype = f"{base}{size * 8}" if size in (1, 2, 4, 8) else f"raw[{size}]"
+        elif base == "float":
+            ftype = "float" if size == 4 else "double" if size == 8 else f"raw[{size}]"
+        else:
+            ftype = f"raw[{size}]"
+        field = {"name": f["name"], "type": ftype, "desc": f.get("doc", "")}
+        if "default" in f:
+            field["default"] = f["default"]
+        fields.append(field)
+    return fields
 
 
 def _opcode_desc(name: str) -> str:
