@@ -49,12 +49,16 @@ From that one file the build derives:
 ## Layout
 
 ```
-sensor/    spec (apex_data.toml), .auto/ generated headers, inc/ user stub
-exec/      SpecExecutive + main (executive, scheduler, system monitor, sensor)
-tprm/      manifest + authored TOML parameter sets
-scripts/   checkout.py -- live verification of the full spec surface
-docs/      HOW_TO_RUN.md
+sensor/        spec (apex_data.toml), .auto/ generated headers, inc/ user stub
+exec/          SpecExecutive + main (executive, scheduler, system monitor, sensor)
+tprm/          manifest + authored TOML parameter sets
+scripts/       checkout.py -- live verification of the full spec surface
+docs/          HOW_TO_RUN, SPEC_DEMO_DESIGN, RESULTS, DEPLOY_PROCEDURE
+app_data.toml  application descriptor for Zenith target generation
+release.mk     release-packaging manifest (RPi posix target)
 ```
 
-See [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md) to build, run, and check out
-the app.
+- [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md) -- build, run, and check out the app
+- [docs/SPEC_DEMO_DESIGN.md](docs/SPEC_DEMO_DESIGN.md) -- architecture and the spec-born component
+- [docs/RESULTS.md](docs/RESULTS.md) -- baseline checkout results
+- [docs/DEPLOY_PROCEDURE.md](docs/DEPLOY_PROCEDURE.md) -- release and Raspberry Pi deploy
