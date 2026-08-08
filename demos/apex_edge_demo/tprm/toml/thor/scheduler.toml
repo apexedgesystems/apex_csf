@@ -9,7 +9,7 @@
 [SchedulerTprmHeader]
 numPools = { type = "uint", size = 1, value = 2 }
 workersPerPool = { type = "uint", size = 1, value = 2 }
-numTasks = { type = "uint", size = 1, value = 11 }
+numTasks = { type = "uint", size = 1, value = 14 }
 
 # Component fullUids:
 # CONV_FILTER_MODEL    = 0x8200 (33280)
@@ -149,3 +149,40 @@ offset = { type = "uint", size = 2, value = 50 }
 priority = { type = "int", size = 1, value = -32 }
 seqGroup = { type = "uint", size = 1, value = 255 }
 seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Tasks 11-13: PipelineModel sequenced chain - 5Hz on the RT pool.
+# seqGroup 0 selects the component's sequence group; phase order comes
+# from the component's registration (pre=1, transform=2, post=3).
+
+[[task]]
+fullUid = { type = "uint", size = 4, value = 34304 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 5 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 0 }
+seqPhase = { type = "uint", size = 1, value = 1 }
+
+[[task]]
+fullUid = { type = "uint", size = 4, value = 34304 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 5 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 0 }
+seqPhase = { type = "uint", size = 1, value = 2 }
+
+[[task]]
+fullUid = { type = "uint", size = 4, value = 34304 }
+taskUid = { type = "uint", size = 1, value = 3 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 5 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 0 }
+seqPhase = { type = "uint", size = 1, value = 3 }
