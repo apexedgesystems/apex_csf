@@ -36,6 +36,7 @@ exclude: |
     node_modules/|
     tools/rust/build/|
     .*/\.auto/|
+    .*/\.venv/|
     \.git/|
     \.hg/|
     \.venv/|
