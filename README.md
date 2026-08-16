@@ -239,7 +239,7 @@ you off with a copyable [template_app](apps/template_app/).
 | [apex_cpu_sim_demo](demos/apex_cpu_sim_demo/)           | Intel 4004 CPU simulation at three device-physics fidelity levels   | x86_64             |
 | [apex_time_demo](demos/apex_time_demo/)                 | TimeServer end to end: PPS ingest, UTC correlation, timed triggers  | x86_64             |
 | [apex_horizon_demo](demos/apex_horizon_demo/)           | Six-beam lidar on a drifting body, streamed to a 3D viewer          | x86_64             |
-| [apex_spec_demo](demos/apex_spec_demo/)                 | Spec-born sensor: structs, dispatch, and skeleton from one manifest | x86_64             |
+| [apex_spec_demo](demos/apex_spec_demo/)                 | Spec-born components from TOML and protobuf specs alike             | x86_64             |
 | [stm32_encryptor_demo](demos/stm32_encryptor_demo/)     | AES-256-GCM encryption with dual UART channels                      | NUCLEO-L476RG      |
 | [arduino_encryptor_demo](demos/arduino_encryptor_demo/) | AES-256-GCM encryption on ATmega328P (32 KB flash, 2 KB SRAM)       | Arduino Uno R3     |
 | [pico_encryptor_demo](demos/pico_encryptor_demo/)       | AES-256-GCM encryption with dual UART                               | Raspberry Pi Pico  |
