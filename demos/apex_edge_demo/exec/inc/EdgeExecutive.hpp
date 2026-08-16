@@ -12,12 +12,14 @@
  *   - ConvFilterModel (SW_MODEL): 2D image convolution on GPU
  *   - BatchStatsModel (SW_MODEL): Parallel reduction on GPU
  *   - StreamCompactModel (SW_MODEL): Threshold + compaction + classify on GPU
+ *   - PipelineModel (SW_MODEL): Sequenced pre->transform->post chain (CPU)
  *   - SystemMonitor (SUPPORT): CPU + GPU health telemetry via NVML
  */
 
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitor.hpp"
 
+#include "demos/apex_edge_demo/pipeline/inc/PipelineModel.hpp"
 #include "src/sim/gpu_compute/batch_stats/inc/BatchStatsModel.hpp"
 #include "src/sim/gpu_compute/conv_filter/inc/ConvFilterModel.hpp"
 #include "src/sim/gpu_compute/fft_analyzer/inc/FFTAnalyzerModel.hpp"
@@ -53,6 +55,7 @@ protected:
    *   - 1x FFTAnalyzerModel (SW_MODEL, fullUid=0x8300)
    *   - 1x BatchStatsModel (SW_MODEL, fullUid=0x8400)
    *   - 1x StreamCompactModel (SW_MODEL, fullUid=0x8500)
+   *   - 1x PipelineModel (SW_MODEL, fullUid=0x8600)
    *   - 1x SystemMonitor (SUPPORT, fullUid=0xC800)
    *
    * @return true on success, false on registration failure.
@@ -66,6 +69,7 @@ private:
   sim::gpu_compute::FFTAnalyzerModel fftAnalyzer_;
   sim::gpu_compute::BatchStatsModel batchStats_;
   sim::gpu_compute::StreamCompactModel streamCompact_;
+  apex_edge_demo::PipelineModel pipeline_;
   system_core::support::SystemMonitor sysMonitor_;
 };
 

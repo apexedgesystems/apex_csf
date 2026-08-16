@@ -12,11 +12,11 @@ Minimal task abstractions for RT-friendly scheduling. Tasks are lightweight call
 
 | Component             | Type           | Purpose                                                  | RT-Safe                                                |
 | --------------------- | -------------- | -------------------------------------------------------- | ------------------------------------------------------ |
-| `SchedulableTaskBase` | Abstract class | Base with callable + label interface                     | Construction: No, Runtime: Yes                         |
-| `SchedulableTask`     | Class          | Concrete task wrapper (~24 bytes)                        | Construction: No, Runtime: Yes                         |
+| `SchedulableTaskBase` | Abstract class | Base with callable + label interface                     | Construction: Yes (two member assigns), Runtime: Yes   |
+| `SchedulableTask`     | Class          | Concrete task wrapper (~24 bytes)                        | Construction: Yes (two member assigns), Runtime: Yes   |
 | `SchedulableTaskCUDA` | Class          | CUDA-enabled task with stream/event                      | Construction: No, Runtime: Yes (except `waitComplete`) |
 | `TaskFn` (DelegateU8) | Type alias     | Function pointer + void\* context                        | Yes                                                    |
-| `SequenceGroup`       | Class          | Phase-based task sequencing for intra-frame coordination | Yes (worker threads)                                   |
+| `SequenceGroup`       | Class          | Phase-based task sequencing for intra-frame coordination | Config: No (registry map), Wait/advance: Yes           |
 | `bindMember`          | Free function  | Zero-cost member function binding                        | Yes (constexpr)                                        |
 | `bindLambda`          | Free function  | Zero-cost stateless lambda binding                       | Yes (constexpr)                                        |
 | `bindFreeFunction`    | Free function  | Zero-cost free function binding                          | Yes (constexpr)                                        |
@@ -93,7 +93,7 @@ Minimal task abstractions for RT-friendly scheduling. Tasks are lightweight call
 | ------------------------------ | --------------------------------------- | -------------------------- |
 | `SchedulableTask`              | ~24B (vtable + delegate + label view)   | 0                          |
 | `SchedulableTaskCUDA`          | ~48B (base + stream ptr + CUDA event)   | 0 (CUDA driver owns event) |
-| `SequenceGroup` registry entry | 4B (phase + maxPhase)                   | 0                          |
+| `SequenceGroup` registry entry | 8B (phase + maxPhase)                   | 0                          |
 | `TaskFn` (DelegateU8)          | 16B (function pointer + void\* context) | 0                          |
 
 ---
@@ -120,11 +120,11 @@ class SchedulableTaskBase {
 public:
   using TaskFn = apex::concurrency::DelegateU8;
 
-  /// @note NOT RT-safe: May involve string operations.
+  /// @note Two member assigns; the label view is non-owning.
   SchedulableTaskBase(TaskFn callable, std::string_view label) noexcept;
 
   /// @note RT-safe: Direct delegate call.
-  virtual std::uint8_t execute() = 0;
+  virtual std::uint8_t execute() noexcept = 0;
 
   /// @note RT-safe: Returns string_view.
   [[nodiscard]] std::string_view getLabel() const noexcept;
@@ -136,11 +136,10 @@ public:
 ```cpp
 class SchedulableTask : public SchedulableTaskBase {
 public:
-  /// @note NOT RT-safe: Base construction.
   SchedulableTask(TaskFn callable, std::string_view label) noexcept;
 
   /// @note RT-safe: Direct delegate call (~9ns).
-  std::uint8_t execute() override;
+  std::uint8_t execute() noexcept override;
 
   /// @note RT-safe: Returns delegate reference.
   [[nodiscard]] const TaskFn& callable() const noexcept;
@@ -179,7 +178,7 @@ public:
 
 ```cpp
 /// @note RT-safe: Constexpr, zero-cost.
-template <typename T, std::uint8_t (T::*Method)() noexcept>
+template <class T, std::uint8_t (T::*MemFn)()>
 DelegateU8 bindMember(T* obj) noexcept;
 
 /// @note RT-safe: Constexpr, zero-cost.
@@ -195,13 +194,35 @@ DelegateU8 bindFreeFunction(std::uint8_t (*fn)(void*) noexcept, void* ctx = null
 ```cpp
 class SequenceGroup {
 public:
-  /// @note RT-safe (worker threads): Hybrid spin/park wait.
-  void waitForPhase(std::uint8_t phase) noexcept;
+  /// @note Config-time: reserves registry buckets.
+  explicit SequenceGroup(int maxPhase);
 
-  /// @note RT-safe (worker threads): Atomic CAS advance.
-  void advancePhase() noexcept;
+  /// @note Config-time: registry map insert; keep out of RT paths.
+  void addTask(SchedulableTask& task, int phase);
+
+  /// Group-owned counter; valid for the group's lifetime.
+  [[nodiscard]] std::atomic<int>* counter() noexcept;
+
+  [[nodiscard]] const SeqInfo* getSeqInfo(const SchedulableTask* task) const noexcept;
+  [[nodiscard]] int maxPhase() const noexcept;
+  void reset() noexcept;
 };
+
+/// @note RT-safe (worker threads): hybrid spin/park wait on the counter.
+/// Returns false when the abort flag reads true (scheduler shutdown);
+/// shutdown drives counters to SEQ_SHUTDOWN so parked waiters wake.
+[[nodiscard]] bool waitForPhase(std::atomic<int>& counter, int expectedPhase,
+                                const std::atomic<bool>* abort = nullptr) noexcept;
+
+/// @note RT-safe (worker threads): CAS advance; wraps to 1 after maxPhase.
+void advancePhase(std::atomic<int>& counter, int maxPhase) noexcept;
 ```
+
+Lifetime: the group owns the phase counter; scheduler entries point at
+it, so the group must outlive its registered tasks. Frame contract: a
+sequenced chain must complete within its period -- a tail waiter that
+loses the counter to the cycle wrap completes in the following cycle
+(delayed, never corrupt).
 
 ---
 
@@ -216,7 +237,7 @@ public:
 namespace sched = system_core::schedulable;
 
 struct SensorReader {
-  std::uint8_t read() noexcept { /* ... */ return 0; }
+  std::uint8_t read() { /* ... */ return 0; }
 };
 
 SensorReader sensor;

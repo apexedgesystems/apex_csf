@@ -122,16 +122,19 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
       const std::uint64_t CYCLE_LAG = (clockCycles > taskCycles) ? (clockCycles - taskCycles) : 0;
 
       // HARD RT VIOLATION: Stop clock immediately, do NOT send another tick
+      const char* violator = scheduler_.lastViolationComponent();
+      const std::uint8_t violatorUid = scheduler_.lastViolationTaskUid();
       sysLog_->fatal(
           label(), static_cast<std::uint8_t>(ERROR_HARD_REALTIME_FAILURE),
           fmt::format("Hard real-time constraint violated at cycle {} (mode={}): "
-                      "{}. Clock cycles: {}, Task cycles: {}, Lag: {}. "
+                      "{}. Violator: {} taskUid={}. Clock cycles: {}, Task cycles: {}, Lag: {}. "
                       "Initiating emergency shutdown.",
                       clockCycles, rtModeToString(rtConfig_.mode),
                       rtConfig_.mode == RTMode::HARD_TICK_COMPLETE
                           ? fmt::format("task execution overran frame period ({} ms)", FRAME_MS)
                           : "task missed period deadline (still running at next invocation)",
-                      clockCycles, taskCycles, CYCLE_LAG));
+                      violator != nullptr ? violator : "(unattributed)", violatorUid, clockCycles,
+                      taskCycles, CYCLE_LAG));
 
       // Emergency shutdown sequence
       controlState_.shutdownRequested.store(true, std::memory_order_release);

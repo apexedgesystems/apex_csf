@@ -23,7 +23,9 @@
 
 #include <cuda_runtime.h>
 #include <gtest/gtest.h>
+#include <atomic>
 #include <cstdint>
+#include <thread>
 
 using apex::concurrency::DelegateU8;
 using system_core::schedulable::SchedulableTaskCUDA;
@@ -256,4 +258,50 @@ TEST(SchedulableTaskCUDATest, BasePointerCompatibility) {
   system_core::schedulable::SchedulableTaskBase* basePtr = &task;
   EXPECT_EQ(basePtr->execute(), 88);
   EXPECT_EQ(basePtr->getLabel(), "base_compat");
+}
+
+/* ----------------------------- Cross-Thread Completion Tests ----------------------------- */
+
+/**
+ * @test Kick/poll completion-flag hand-off across threads.
+ *
+ * Models the scheduler's two-task pattern: one thread runs the kick side
+ * (execute + recordCompletion), a second thread polls isComplete()
+ * concurrently. The completion flag is the only coordination between
+ * them, so this test is the standing witness for its atomic pairing --
+ * run it under TSan on a CUDA host to verify the release/acquire
+ * contract, not just the functional result.
+ */
+TEST(SchedulableTaskCUDATest, CompletionFlagCrossThreadHandoff) {
+  cudaStream_t stream;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+
+  DelegateU8 del{&successTask, nullptr};
+  SchedulableTaskCUDA task(del, "kick_poll_handoff");
+  task.setCudaStream(stream);
+
+  std::atomic<bool> go{false};
+  std::atomic<bool> stop{false};
+
+  std::thread poll([&task, &go, &stop]() {
+    while (!go.load(std::memory_order_acquire)) {
+    }
+    while (!stop.load(std::memory_order_acquire)) {
+      (void)task.isComplete();
+    }
+  });
+
+  constexpr int KICKS = 20000;
+  go.store(true, std::memory_order_release);
+  for (int i = 0; i < KICKS; ++i) {
+    (void)task.execute();
+    task.recordCompletion();
+  }
+  stop.store(true, std::memory_order_release);
+  poll.join();
+
+  task.waitComplete();
+  EXPECT_TRUE(task.isComplete());
+
+  cudaStreamDestroy(stream);
 }

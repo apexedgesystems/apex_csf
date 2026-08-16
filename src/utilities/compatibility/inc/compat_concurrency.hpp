@@ -101,8 +101,8 @@ waitEq(std::atomic<T>& a, T expected) noexcept {
       if (a.load(std::memory_order_acquire) != expected)
         break;
       auto* addr = reinterpret_cast<int*>(const_cast<T*>(reinterpret_cast<volatile const T*>(&a)));
-      int rc = syscall(SYS_futex, addr, FUTEX_WAIT_PRIVATE, static_cast<int>(expected), nullptr,
-                       nullptr, 0);
+      auto rc = syscall(SYS_futex, addr, FUTEX_WAIT_PRIVATE, static_cast<int>(expected), nullptr,
+                        nullptr, 0);
       (void)rc; // May return EAGAIN if value changed, which is fine
     }
     return;

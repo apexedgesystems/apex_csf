@@ -88,10 +88,10 @@ All 4 GPU kernels running concurrently with real data processing.
 The build packs two master archives from `tprm/tprm.manifest`, both in
 `build/hosted-x86_64-debug/demos/apex_edge_demo/exec/tprm/`:
 
-| Archive            | Target          | Scheduler          |
-| ------------------ | --------------- | ------------------ |
-| `master.tprm`      | Native (dev PC) | 1 pool, 8 workers  |
-| `master_thor.tprm` | NVIDIA Thor     | 1 pool, 14 workers |
+| Archive            | Target          | Scheduler                                         |
+| ------------------ | --------------- | ------------------------------------------------- |
+| `master.tprm`      | Native (dev PC) | 1 pool, hardware-concurrency workers              |
+| `master_thor.tprm` | NVIDIA Thor     | 1 pool, hardware-concurrency workers (14 on Thor) |
 
 TOML sources are in `tprm/toml/` (shared) and `tprm/toml/thor/` (Thor overrides).
 To change configuration: edit the TOML, rebuild (the tprm target repacks both

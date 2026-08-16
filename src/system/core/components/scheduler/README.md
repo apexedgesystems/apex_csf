@@ -400,21 +400,21 @@ scheduler.init();  // Creates scheduler.log with schedule layout
 
 ### 6.6 SequenceGroup
 
-| Method                    | Purpose                        |
-| ------------------------- | ------------------------------ |
-| `SequenceGroup(maxPhase)` | Construct with max phase count |
-| `addTask(task, phase)`    | Register task at phase         |
-| `getSeqInfo(task)`        | Get SeqInfo for task           |
-| `counter()`               | Get shared atomic counter      |
-| `maxPhase()`              | Get max phase number           |
-| `reset()`                 | Reset counter to phase 1       |
+| Method                    | Purpose                                   |
+| ------------------------- | ----------------------------------------- |
+| `SequenceGroup(maxPhase)` | Construct with max phase count            |
+| `addTask(task, phase)`    | Register task at phase                    |
+| `getSeqInfo(task)`        | Get SeqInfo for task                      |
+| `counter()`               | Pointer to the group-owned atomic counter |
+| `maxPhase()`              | Get max phase number                      |
+| `reset()`                 | Reset counter to phase 1                  |
 
 Helper functions:
 
-| Function                          | Purpose                           |
-| --------------------------------- | --------------------------------- |
-| `waitForPhase(counter, phase)`    | Wait until counter >= phase       |
-| `advancePhase(counter, maxPhase)` | Increment counter, notify waiters |
+| Function                              | Purpose                                     |
+| ------------------------------------- | ------------------------------------------- |
+| `waitForPhase(counter, phase, abort)` | Wait until counter >= phase; false on abort |
+| `advancePhase(counter, maxPhase)`     | Increment counter, notify waiters           |
 
 ### 6.7 TaskBuilder Helpers
 

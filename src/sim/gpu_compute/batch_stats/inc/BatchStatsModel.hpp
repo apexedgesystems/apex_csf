@@ -20,10 +20,10 @@
 #include "src/sim/gpu_compute/batch_stats/inc/BatchStatsKernel.cuh"
 #include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 #include "src/utilities/compatibility/inc/compat_cuda_blas.hpp"
 #include "src/utilities/compatibility/inc/compat_cuda_error.hpp"
-#include "src/utilities/helpers/inc/Files.hpp"
 
 #include <cstdint>
 #include <cstdio>
@@ -227,9 +227,9 @@ public:
       return false;
     }
 
-    std::string error;
     BatchStatsTunableParams loaded{};
-    if (apex::helpers::files::hex2cpp(tprmPath.string(), loaded, error)) {
+    if (system_core::system_component::readTprmPayload(tprmPath, fullUid(), loaded) ==
+        system_core::system_component::TprmPayloadCheck::OK) {
       tunableParams_.get() = loaded;
       logTprmConfig(tprmPath.string());
       return true;

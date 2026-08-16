@@ -182,6 +182,12 @@ public:
   /** @brief Period violations in the most recent tick. Override in multi-thread. */
   [[nodiscard]] virtual std::size_t periodViolationsThisTick() const noexcept { return 0; }
 
+  /** @brief Component name of the most recent period violator (nullptr = none). */
+  [[nodiscard]] virtual const char* lastViolationComponent() const noexcept { return nullptr; }
+
+  /** @brief Task UID of the most recent period violator (0 = none). */
+  [[nodiscard]] virtual std::uint8_t lastViolationTaskUid() const noexcept { return 0U; }
+
   /** @brief Cumulative skip-on-busy count. Override in multi-thread. */
   [[nodiscard]] virtual std::size_t totalSkips() const noexcept { return 0; }
 

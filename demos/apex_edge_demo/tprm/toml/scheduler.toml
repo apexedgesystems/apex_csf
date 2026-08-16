@@ -1,20 +1,21 @@
 # Scheduler (componentId=1, instanceIndex=0)
-# Total: 168 bytes = 3 byte header + 11 x 15 byte task entries
+# Total: 183 bytes = 3 byte header + 12 x 15 byte task entries
 #
-# Single pool for native testing. For Thor deployment, split into:
-#   Pool 0 (RT CPU): telemetry tasks
-#   Pool 1 (GPU dispatch): kick/poll tasks
+# Single pool; workersPerPool 0 = hardware concurrency (the topology the
+# archived baselines ran). Multi-pool splits stay out of the tables until
+# the scheduler actually constructs pools from numPools.
 
 [SchedulerTprmHeader]
 numPools = { type = "uint", size = 1, value = 1 }
-workersPerPool = { type = "uint", size = 1, value = 2 }
-numTasks = { type = "uint", size = 1, value = 9 }
+workersPerPool = { type = "uint", size = 1, value = 0 }
+numTasks = { type = "uint", size = 1, value = 12 }
 
 # Component fullUids:
 # CONV_FILTER_MODEL    = 0x8200 (33280) [componentId=130, instance=0]
 # FFT_ANALYZER_MODEL   = 0x8300 (33536) [componentId=131, instance=0]
 # BATCH_STATS_MODEL    = 0x8400 (33792) [componentId=132, instance=0]
 # STREAM_COMPACT_MODEL = 0x8500 (34048) [componentId=133, instance=0]
+# PIPELINE_MODEL       = 0x8600 (34304) [componentId=134, instance=0]
 # SYSTEM_MONITOR       = 0xC800 (51200) [componentId=200, instance=0]
 
 # Task 0: ConvFilterModel.kick - 1Hz, normal priority
@@ -124,3 +125,40 @@ offset = { type = "uint", size = 2, value = 90 }
 priority = { type = "int", size = 1, value = -128 }
 seqGroup = { type = "uint", size = 1, value = 255 }
 seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Tasks 9-11: PipelineModel sequenced chain - 5Hz, one frame's phases.
+# seqGroup 0 selects the component's sequence group; phase order comes
+# from the component's registration (pre=1, transform=2, post=3).
+
+[[task]]
+fullUid = { type = "uint", size = 4, value = 34304 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 5 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 0 }
+seqPhase = { type = "uint", size = 1, value = 1 }
+
+[[task]]
+fullUid = { type = "uint", size = 4, value = 34304 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 5 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 0 }
+seqPhase = { type = "uint", size = 1, value = 2 }
+
+[[task]]
+fullUid = { type = "uint", size = 4, value = 34304 }
+taskUid = { type = "uint", size = 1, value = 3 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 5 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 0 }
+seqGroup = { type = "uint", size = 1, value = 0 }
+seqPhase = { type = "uint", size = 1, value = 3 }
