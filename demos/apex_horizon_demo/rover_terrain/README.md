@@ -14,7 +14,7 @@ ingress keeps working, and the sim is unaffected.
 
 ```bash
 # One-time: generate the terrain + atmosphere artifacts (see
-# docs/HOW_TO_RUN.md — the data files are generated, never committed).
+# docs/HOW_TO_RUN.md — the terrain tile is generated, never committed).
 
 # Run (Ctrl+C to stop; the master generates at build time)
 docker compose run --rm dev-cuda \

@@ -1,6 +1,8 @@
 # Earth CelestialBody (0xDC00): J2 gravity, HTILE terrain from the
 # generated 1-degree patch, LAYERED USSA76 atmosphere. The data files are
-# generated artifacts (never committed); see docs/HOW_TO_RUN.md.
+# The terrain tile is a generated artifact (synthetic "alpha" spec,
+# never committed); the USSA76 table is tracked with provenance. See
+# docs/HOW_TO_RUN.md.
 [CelestialBodyTunables]
 body                = { type = "uint",   size = 1,   value = 0 }    # EARTH
 gravity_fidelity    = { type = "uint",   size = 1,   value = 1 }    # J2
