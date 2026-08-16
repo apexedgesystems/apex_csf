@@ -61,7 +61,8 @@ the ACFT/2 contract rev.
 
 ## 5. The world data
 
-One data file: the USSA76 layered-atmosphere table (public-domain
-U.S. government standard), currently the repo's tracked copy pending
-the generated-artifact swap documented in docs/HOW_TO_RUN.md. No
-terrain artifact — this demo's world contract is the atmosphere.
+One data file: the spec-generated USSA76 layered-atmosphere table
+(public-domain U.S. government standard content; generated, never
+committed; identity by the header spec_hash logged at load — see
+docs/HOW_TO_RUN.md). No terrain artifact — this demo's world contract
+is the atmosphere.

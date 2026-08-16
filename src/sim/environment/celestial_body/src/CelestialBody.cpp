@@ -194,6 +194,20 @@ std::uint8_t CelestialBody::doInit() noexcept {
                                 env::atmosphere::toString(astatus), p.atmosphere_data_path));
         }
         ok = false;
+      } else {
+        // Artifact identity for paired runs: both sides of a pairing
+        // log the header spec_hash at load, so file agreement is
+        // provable from the two logs alone (the atmosphere counterpart
+        // of the terrain line below).
+        auto* log = componentLog();
+        if (log != nullptr) {
+          const auto& H = atm->fileHeader();
+          log->info(label(),
+                    fmt::format("atmosphere artifact: body={} model=layered "
+                                "spec_hash={:#018x} records={} R={:.3f} gamma={:.2f} g0={:.5f}",
+                                std::string(H.body, strnlen(H.body, sizeof(H.body))), H.spec_hash,
+                                H.n_records, H.R_specific, H.gamma, H.g0));
+        }
       }
     }
   }

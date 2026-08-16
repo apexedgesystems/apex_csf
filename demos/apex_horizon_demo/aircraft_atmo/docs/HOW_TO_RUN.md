@@ -2,14 +2,15 @@
 
 ## The world data
 
-The demo consumes ONE data file: the USSA76 atmosphere table. The
-earth_body toml currently points at the repo's tracked public-domain
-copy (`demos/apex_horizon_demo/rover_terrain/data/usa76.atm`) so the
-demo boots from a bare checkout. When the producer-side world pipeline
-publishes its spec-generated table (bit-deterministic, with a
-full-spec identity hash in the header), the path switches to the
-generated artifact and the tracked copy retires — identity then
-travels by the logged hash, terrain-style.
+The demo consumes ONE data file: the spec-generated USSA76 atmosphere
+table (`data/earth_ussa76.atm`, gitignored — generated world data
+stays out of this repo). Generate it with the producer-side world
+tooling (the compose-aircraft-world-artifacts target) and copy it into
+`data/`. Regeneration is bit-deterministic from the tracked spec:
+expect exactly 288 bytes with header
+`spec_hash = 0x753549717ab8b8ff`, and the boot log's
+`atmosphere artifact:` line printing that hash is the file-identity
+proof paired runs compare.
 
 ## Run (raw binary — the dev loop)
 
