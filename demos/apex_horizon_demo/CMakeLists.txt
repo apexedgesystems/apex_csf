@@ -10,4 +10,5 @@
 add_subdirectory(lidar_box)
 add_subdirectory(world_query_probe)
 add_subdirectory(ground_vehicle)
+add_subdirectory(aircraft)
 add_subdirectory(rover_terrain/exec)
