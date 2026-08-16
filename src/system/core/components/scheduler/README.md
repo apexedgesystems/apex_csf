@@ -411,10 +411,10 @@ scheduler.init();  // Creates scheduler.log with schedule layout
 
 Helper functions:
 
-| Function                          | Purpose                           |
-| --------------------------------- | --------------------------------- |
-| `waitForPhase(counter, phase)`    | Wait until counter >= phase       |
-| `advancePhase(counter, maxPhase)` | Increment counter, notify waiters |
+| Function                              | Purpose                                     |
+| ------------------------------------- | ------------------------------------------- |
+| `waitForPhase(counter, phase, abort)` | Wait until counter >= phase; false on abort |
+| `advancePhase(counter, maxPhase)`     | Increment counter, notify waiters           |
 
 ### 6.7 TaskBuilder Helpers
 

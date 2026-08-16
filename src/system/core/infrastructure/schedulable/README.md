@@ -209,7 +209,10 @@ public:
 };
 
 /// @note RT-safe (worker threads): hybrid spin/park wait on the counter.
-void waitForPhase(std::atomic<int>& counter, int expectedPhase) noexcept;
+/// Returns false when the abort flag reads true (scheduler shutdown);
+/// shutdown drives counters to SEQ_SHUTDOWN so parked waiters wake.
+[[nodiscard]] bool waitForPhase(std::atomic<int>& counter, int expectedPhase,
+                                const std::atomic<bool>* abort = nullptr) noexcept;
 
 /// @note RT-safe (worker threads): CAS advance; wraps to 1 after maxPhase.
 void advancePhase(std::atomic<int>& counter, int maxPhase) noexcept;
