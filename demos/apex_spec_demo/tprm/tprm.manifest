@@ -1,7 +1,9 @@
 # tprm.manifest -- ApexSpecDemo
 # Packing recipe: what you read is what packs (see cmake/apex/Tprm.cmake).
-# The sensor's payload shape is spec-defined (sensor/apex_data.toml);
-# its authored values live in toml/spec_sensor.toml.
+# Both app components' payload shapes are spec-defined: the sensor's in
+# sensor/apex_data.toml ([[fields]]), the actuator's in
+# actuator/spec_actuator.proto (proto_spec). Authored values live in
+# toml/.
 
 [components flight]
 0x000000  toml/executive.toml
@@ -9,6 +11,7 @@
 0x000400  toml/interface.toml
 0x00C800  toml/system_monitor.toml
 0x00D400  toml/spec_sensor.toml
+0x00D500  toml/spec_actuator.toml
 
 [master master.tprm]
 use components flight

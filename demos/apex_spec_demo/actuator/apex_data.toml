@@ -1,0 +1,46 @@
+# SpecActuator -- proto-authored spec-born component.
+#
+# Struct layouts come from spec_actuator.proto (the apex proto
+# profile; one definition source per component). Commands, telemetry,
+# and constraints live here: the proto carries layouts only.
+
+component = "SpecActuator"
+namespace = "appsim::spec"
+component_id = 213
+component_type = "SW_MODEL"
+label = "SPEC_ACT"
+proto_spec = "spec_actuator.proto"
+
+[structs]
+SpecActuatorTunableParams = { category = "TUNABLE_PARAM" }
+SpecActuatorState = { category = "STATE" }
+SpecActuatorOutput = { category = "OUTPUT" }
+MoveRequest = { category = "COMMAND", opcode = "0x0210" }
+PositionResponse = { category = "TELEMETRY", opcode = "0x0212" }
+
+[constraints.SpecActuatorTunableParams]
+rateLimit = { min = 0.1, max = 50.0 }
+holdBand = { min = 0.0 }
+
+[[commands]]
+name = "Move"
+opcode = "0x0210"
+request = "MoveRequest"
+doc = "Command a new target position; slew begins next step."
+
+[[commands]]
+name = "Halt"
+opcode = "0x0211"
+doc = "Stop where we are: target becomes the current position."
+
+[[commands]]
+name = "GetPosition"
+opcode = "0x0212"
+response = "PositionResponse"
+doc = "Return the current position and settling state."
+
+[[telemetry]]
+name = "Position"
+opcode = "0x0310"
+struct = "SpecActuatorOutput"
+doc = "Published position, readable via INSPECT (OUTPUT category)."

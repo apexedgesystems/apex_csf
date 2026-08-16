@@ -1,0 +1,11 @@
+# SpecActuator (componentId=213, instanceIndex=0, fullUid=0xD500)
+# Authored values for the proto-born actuator; the field shapes come
+# from actuator/spec_actuator.proto (the layout truth) and the legal
+# ranges mirror the constraints in actuator/apex_data.toml.
+#
+# SpecActuatorTunableParams (12 bytes)
+
+[SpecActuatorTunableParams]
+rateLimit = { type = "float", size = 4, min = 0.1, max = 50.0, value = 8.0 }
+holdBand = { type = "float", size = 4, min = 0.0, value = 0.1 }
+startPosition = { type = "float", size = 4, value = 0.0 }

@@ -11,6 +11,7 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  Interface (0x000400)
   PASS  SystemMonitor (0x00C800)
   PASS  SpecSensor (0x00D400)
+  PASS  SpecActuator (0x00D500)
 
 ------------------------------------------------------------------------
   2. Boot TPRM (spec tunables live)
@@ -26,8 +27,8 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  STATE readable
   PASS  samples advancing (~50/s, got 50)
   PASS  OUTPUT readable
-  PASS  sequence advancing (5 -> 55)
-  PASS  value tracks reference (25.48)
+  PASS  sequence advancing (6 -> 56)
+  PASS  value tracks reference (25.57)
 
 ------------------------------------------------------------------------
   4. SetMode (IDLE freezes, MEASURE resumes)
@@ -79,10 +80,43 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  state untouched (mode 1, rejects 0)
 
 ------------------------------------------------------------------------
-  10. Post-Test Health
+  10. Actuator Boot TPRM (proto-authored tunables live)
+------------------------------------------------------------------------
+  PASS  TUNABLE_PARAM readable (12 bytes)
+  PASS  rateLimit = 8.0 (TPRM value 8.0)
+  PASS  holdBand = 0.10
+
+------------------------------------------------------------------------
+  11. Actuator Slew (Move -> ramp at rate limit -> settle)
+------------------------------------------------------------------------
+  PASS  Move(4.0) accepted
+  PASS  target = 4.0 (got 4.00)
+  PASS  moves incremented (0 -> 1)
+  PASS  slewing toward target (position 2.24)
+  PASS  ramp ~8/s (moved 1.76 in 0.4s)
+  PASS  settled inside hold band (position 4.000)
+
+------------------------------------------------------------------------
+  12. Halt / GetPosition
+------------------------------------------------------------------------
+  PASS  Halt accepted
+  PASS  target frozen at position (1.76 ~ 1.76)
+  PASS  position holding (1.76 -> 1.76)
+  PASS  GetPosition accepted
+
+------------------------------------------------------------------------
+  13. Actuator Negatives
+------------------------------------------------------------------------
+  PASS  out-of-range Move rejected (rejects 0 -> 1)
+  PASS  target unchanged (1.76)
+  PASS  malformed Move: rejects unchanged
+  PASS  malformed Move: target unchanged
+
+------------------------------------------------------------------------
+  14. Post-Test Health
 ------------------------------------------------------------------------
   PASS  Clock ~100 Hz (measured 99)
 
 ========================================================================
-  Results: 41 passed, 0 failed
+  Results: 59 passed, 0 failed
 ========================================================================

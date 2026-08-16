@@ -29,6 +29,7 @@ apex_add_app(
   "${CMAKE_CURRENT_SOURCE_DIR}/inc"
   LINK
   apex_spec_demo_sensor
+  apex_spec_demo_actuator
   system_core_executive
   system_core_scheduler
   system_core_support_system_monitor

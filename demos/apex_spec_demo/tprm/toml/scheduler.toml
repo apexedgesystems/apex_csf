@@ -1,18 +1,20 @@
 # Scheduler (componentId=1, instanceIndex=0)
-# Total: 3 + (2 x 15) = 33 bytes
+# Total: 3 + (3 x 15) = 48 bytes
 #
 # Task schedule for ApexSpecDemo:
 #   50 Hz: SpecSensor step (priority 127)
+#   50 Hz: SpecActuator step (priority 126)
 #    1 Hz: SystemMonitor telemetry (priority -128, offset 25)
 #
 # Component fullUids:
 #   0xD400 (54272): SpecSensor
+#   0xD500 (54528): SpecActuator
 #   0xC800 (51200): SystemMonitor
 
 [SchedulerTprmHeader]
 numPools = { type = "uint", size = 1, value = 1 }
 workersPerPool = { type = "uint", size = 1, value = 1 }
-numTasks = { type = "uint", size = 1, value = 2 }
+numTasks = { type = "uint", size = 1, value = 3 }
 
 # Task 0: SpecSensor step @ 50 Hz, priority 127
 [[task]]
@@ -26,7 +28,19 @@ priority = { type = "int", size = 1, value = 127 }
 seqGroup = { type = "uint", size = 1, value = 255 }
 seqPhase = { type = "uint", size = 1, value = 0 }
 
-# Task 1: SystemMonitor telemetry @ 1 Hz, priority -128, offset 25
+# Task 1: SpecActuator step @ 50 Hz, priority 126
+[[task]]
+fullUid = { type = "uint", size = 4, value = 54528 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 50 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 126 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+# Task 2: SystemMonitor telemetry @ 1 Hz, priority -128, offset 25
 [[task]]
 fullUid = { type = "uint", size = 4, value = 51200 }
 taskUid = { type = "uint", size = 1, value = 1 }

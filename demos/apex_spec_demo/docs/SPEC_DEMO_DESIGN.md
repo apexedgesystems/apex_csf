@@ -3,12 +3,16 @@
 ## Purpose
 
 ApexSpecDemo is the acceptance vehicle for spec-driven component
-development: its only app component is born entirely from
-`sensor/apex_data.toml`, so a successful build, boot, and checkout
-proves the whole codegen chain -- generated structs, generated command
-dispatch, the once-only stub, the ground dictionary, and the
-layout-hash-stamped TPRM -- working together in a running executive.
-No hardware dependencies; pure SIL on any POSIX host or Raspberry Pi.
+development: both app components are born entirely from specs -- the
+sensor from inline `[[fields]]` arrays in `sensor/apex_data.toml`,
+the actuator from standard protobuf messages in
+`actuator/spec_actuator.proto` (the apex proto profile, referenced by
+its manifest's `proto_spec` key). A successful build, boot, and
+checkout proves the whole codegen chain in both authoring formats --
+generated structs, generated command dispatch, once-only stubs,
+ground dictionaries, emitted protobuf interfaces, and layout-hash-
+stamped TPRMs -- working together in a running executive. No hardware
+dependencies; pure SIL on any POSIX host or Raspberry Pi.
 
 ## Architecture
 
@@ -17,15 +21,15 @@ No hardware dependencies; pure SIL on any POSIX host or Raspberry Pi.
 |                     ApexSpecDemo (POSIX)                      |
 |                                                               |
 |  +----------------------+       +----------------------+     |
-|  |  SpecSensor          |       |  SystemMonitor       |     |
-|  |  (0xD400, spec-born) |       |  (0xC800)            |     |
-|  |  50 Hz step          |       |  1 Hz                |     |
+|  |  SpecSensor          |       |  SpecActuator        |     |
+|  |  (0xD400, TOML spec) |       |  (0xD500, proto spec)|     |
+|  |  50 Hz step          |       |  50 Hz step          |     |
 |  +----------------------+       +----------------------+     |
 |                                                               |
-|  +----------------------+                                     |
-|  |  ApexInterface       |                                     |
-|  |  TCP:9000            |                                     |
-|  +----------------------+                                     |
+|  +----------------------+       +----------------------+     |
+|  |  ApexInterface       |       |  SystemMonitor       |     |
+|  |  TCP:9000            |       |  (0xC800), 1 Hz      |     |
+|  +----------------------+       +----------------------+     |
 +---------------------------------------------------------------+
          ^                                    |
          |          TCP + SLIP + APROTO      |
@@ -87,6 +91,41 @@ generator emits.
 - STATE (20B): elapsed, drift, samples, rejects, mode.
 - OUTPUT (8B): value, sequence.
 
+## The proto-born component
+
+SpecActuator's layouts are authored the standard protobuf way --
+proto3 messages with apex custom options carrying the fixed-layout
+metadata (width/count/default as `google.protobuf.FieldOptions`
+extensions; see tools/rust/docs/proto_profile.md). The manifest
+references the file (`proto_spec`) and keeps commands, telemetry, and
+constraints TOML-side; ingest resolves the messages to the same
+ordered field lists the sensor's `[[fields]]` arrays produce, so
+everything downstream is identical. Both components also emit their
+canonical interface as `.auto/<Component>.proto` -- the protobuf
+interface comes for free regardless of authoring format.
+
+### Actuator model (the hand-written part)
+
+A position slews toward a commanded target at a tunable rate limit
+and settles inside a hold band:
+
+```
+position += clamp(target - position, -rateLimit*dt, +rateLimit*dt)
+```
+
+- **Move(position)**: sets the target; out-of-range (|p| > 1000)
+  rejects and counts (`rejects`).
+- **Halt**: target becomes the current position (stop where we are).
+- **GetPosition**: position + settling state snapshot.
+
+### Actuator command surface (from the spec)
+
+| Command     | Opcode | Shape         | Effect                       |
+| ----------- | ------ | ------------- | ---------------------------- |
+| Move        | 0x0210 | request-only  | New target; slew begins      |
+| Halt        | 0x0211 | bare          | Target frozen at position    |
+| GetPosition | 0x0212 | response-only | Position + settling snapshot |
+
 ## Observability model
 
 All registered components get interface command queues, so custom
@@ -103,6 +142,7 @@ counters. Wire-level response readback is a framework follow-on
 Pool 0
 ========================
 SpecSensor.step       @ 50 Hz (priority 127)
+SpecActuator.step     @ 50 Hz (priority 126)
 SystemMonitor.tlm     @  1 Hz (priority -128, offset 25)
 ```
 
@@ -110,7 +150,7 @@ Executive clock: 100 Hz, HARD_PERIOD_COMPLETE.
 
 ## Extension path
 
-Phase 3 adds a spec-defined DRIVER-tier component beside the sensor,
-exercising the same generation chain through the driver base; the
-fleet adoption sweep then follows this app's shape for the existing
-demos' fixed-layout components.
+Phase 3 adds a spec-defined DRIVER-tier component, exercising the
+same generation chain through the driver base; the fleet adoption
+sweep then follows this app's shape for the existing demos'
+fixed-layout components.

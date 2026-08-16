@@ -1,0 +1,52 @@
+// SpecActuator component spec, authored as protobuf.
+//
+// This file is the single definition source for the actuator's struct
+// layouts (the manifest references it via proto_spec); commands,
+// telemetry, and constraints stay in apex_data.toml. Declaration
+// order is layout order; apex/options.proto carries the fixed-layout
+// metadata (width/count/default) as standard field options.
+syntax = "proto3";
+
+package appsim.spec;
+
+import "apex/options.proto";
+
+message SpecActuatorTunableParams {
+  // Slew rate limit [units/s], range 0.1..50.
+  float rateLimit = 1 [(apex.default) = "5.0"];
+  // Hold band around the target: inside it the actuator is settled.
+  float holdBand = 2 [(apex.default) = "0.1"];
+  // Position adopted at boot.
+  float startPosition = 3 [(apex.default) = "0.0"];
+}
+
+message SpecActuatorState {
+  // Current position [units].
+  float position = 1;
+  // Commanded target [units].
+  float target = 2;
+  // Accepted move commands.
+  uint32 moves = 3;
+  // Rejected move commands (out-of-range target).
+  uint32 rejects = 4;
+}
+
+message SpecActuatorOutput {
+  // Published position [units].
+  float position = 1;
+  // Monotonic publish counter.
+  uint32 sequence = 2;
+}
+
+message MoveRequest {
+  // Commanded target position [units], range -1000..1000.
+  float position = 1;
+}
+
+message PositionResponse {
+  // Current position [units].
+  float position = 1;
+  // 1 while outside the hold band, 0 when settled.
+  uint32 moving = 2 [(apex.width) = 1];
+  repeated uint32 reserved = 3 [(apex.width) = 1, (apex.count) = 3];
+}
