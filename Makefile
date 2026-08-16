@@ -176,6 +176,8 @@ help:
 	@printf '\n'
 	@printf '%s\n' "Integration Artifacts:"
 	@printf '  %-28s %s\n' "make ops-artifacts" "Generate all ops artifacts (struct dicts + templates + deck)"
+	@printf '  %-28s %s\n' "make cdef" "Regenerate .auto headers from component specs"
+	@printf '  %-28s %s\n' "make check-cdef" "Diff committed .auto headers against their specs"
 	@printf '  %-28s %s\n' "make apex-data-db" "Generate JSON struct dictionaries"
 	@printf '  %-28s %s\n' "make tprm-templates" "Generate TOML templates for tunable params"
 	@printf '  %-28s %s\n' "make ops-deck" "Generate consolidated cmd/tlm deck"
