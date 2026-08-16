@@ -35,7 +35,7 @@ namespace aircraft_controller {
  * Setpoints + per-loop PID gains + saturation limits.
  *
  * Defaults match the wide-body transport values in
- * `sim::controllers::LongitudinalControllers.hpp` and `LateralControllers.hpp`,
+ * `sim::gnc::aircraft::LongitudinalControllers.hpp` and `LateralControllers.hpp`,
  * tuned around the classical loop-shaping treatment.
  */
 struct AircraftControllerTunables {
