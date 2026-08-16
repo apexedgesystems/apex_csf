@@ -663,6 +663,30 @@ TEST(ShmRingBridge, ringB_drainsAtMostOneFramePerTick) {
 
 /* ----------------------------- end ring-B tests ----------------------------- */
 
+/** @test Ring B drains even when the forward ring is saturated: command
+ *  ingress must keep working precisely when the consumer side has
+ *  stopped draining (paused or wedged) -- the moment a HALT matters. */
+TEST(ShmRingBridge, ringB_drainsWhileForwardRingFull) {
+  SinkFixture f;
+  ASSERT_TRUE(f.setup(uniqueShmPath("fullsink"), 4, 64, 256));
+
+  // Saturate the forward ring (no consumer drains it).
+  for (int i = 0; i < 6; ++i) {
+    EXPECT_EQ(f.bridge.bridgeStep(), 0u);
+  }
+  ASSERT_EQ(f.bridge.bridgeState().frames_published, 4u);
+  ASSERT_GT(f.bridge.bridgeState().pushes_failed_full, 0u);
+
+  // A command arriving now must still dispatch.
+  auto frame = buildAprotoFrame(/*full_uid=*/0xE000u, /*opcode=*/0x0100u, {});
+  ASSERT_TRUE(f.writer.push(frame.data(), frame.size()));
+  EXPECT_EQ(f.bridge.bridgeStep(), 0u);
+
+  EXPECT_EQ(f.bridge.bridgeState().cmds_received, 1u);
+  EXPECT_EQ(f.bus.cmd_count, 1u);
+  EXPECT_EQ(f.bus.last_opcode, 0x0100u);
+}
+
 TEST(ShmRingBridge, fullRingDropsAdditionalPushes) {
   // Producer with cap=4 and no consumer draining: after 4 pushes,
   // subsequent pushes should be counted as `pushes_failed_full` but

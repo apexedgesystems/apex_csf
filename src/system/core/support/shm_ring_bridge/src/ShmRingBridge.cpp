@@ -422,19 +422,22 @@ std::uint8_t ShmRingBridge::bridgeStep() noexcept {
   const std::uint64_t HEAD = prod->load(std::memory_order_relaxed);
   const std::uint64_t TAIL = cons->load(std::memory_order_acquire);
   if (HEAD - TAIL >= p.capacity) {
+    // Forward ring full (consumer paused or absent): back-pressure the
+    // publish but still fall through to the command drain — ingress
+    // must keep working precisely when the consumer side is wedged.
     ++s.pushes_failed_full;
-    return 0u;
-  }
-  std::uint8_t* SLOT = slots_ + (HEAD & (p.capacity - 1u)) * source_len_;
-  std::memcpy(SLOT, source_ptr_, source_len_);
-  prod->store(HEAD + 1u, std::memory_order_release);
+  } else {
+    std::uint8_t* SLOT = slots_ + (HEAD & (p.capacity - 1u)) * source_len_;
+    std::memcpy(SLOT, source_ptr_, source_len_);
+    prod->store(HEAD + 1u, std::memory_order_release);
 
-  // Signal the wakeup semaphore (see README section 5.4).
-  if (sem_post(static_cast<sem_t*>(sem_)) != 0) {
-    ++s.signals_failed;
-  }
+    // Signal the wakeup semaphore (see README section 5.4).
+    if (sem_post(static_cast<sem_t*>(sem_)) != 0) {
+      ++s.signals_failed;
+    }
 
-  ++s.frames_published;
+    ++s.frames_published;
+  }
 
   // Opportunistically drain one command frame from Ring B.
   // No-op when sink_enabled=0 (default) or Ring B not bound. Capped at

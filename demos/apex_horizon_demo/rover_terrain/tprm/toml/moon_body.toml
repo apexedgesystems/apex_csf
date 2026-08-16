@@ -1,0 +1,9 @@
+# Moon CelestialBody (0xDC01): analytic J2 + sphere + vacuum.
+[CelestialBodyTunables]
+body                = { type = "uint",   size = 1,   value = 1 }    # MOON
+gravity_fidelity    = { type = "uint",   size = 1,   value = 1 }    # J2
+terrain_fidelity    = { type = "uint",   size = 1,   value = 1 }    # SPHERE
+atmosphere_fidelity = { type = "uint",   size = 1,   value = 0 }    # CONSTANT (vacuum)
+gravity_data_path   = { type = "string", size = 256, value = "" }
+terrain_data_path   = { type = "string", size = 256, value = "" }
+atmosphere_data_path= { type = "string", size = 256, value = "" }
