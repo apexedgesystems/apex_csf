@@ -108,6 +108,20 @@ void SchedulerMultiThread::initPools(std::vector<PoolSpec> specs) noexcept {
 SchedulerMultiThread::~SchedulerMultiThread() noexcept { shutdown(); }
 
 void SchedulerMultiThread::shutdown() noexcept {
+  stopping_.store(true, std::memory_order_release);
+
+  // Release parked phase waiters. atomic wait absorbs notifies while the
+  // value is unchanged, so a bare notify cannot free a waiter -- the
+  // counter must actually change. Drive every group counter to the
+  // terminal shutdown value: waiters wake on the change, observe the
+  // stopping flag (ordered before this store), and abort their wait.
+  for (const auto& entry : entries_) {
+    if (entry.seqCounter != nullptr) {
+      entry.seqCounter->store(schedulable::SEQ_SHUTDOWN, std::memory_order_release);
+      apex::compat::atom::notifyAll(*entry.seqCounter);
+    }
+  }
+
   for (auto& pool : pools_) {
     if (pool) {
       pool->shutdown();
@@ -244,6 +258,8 @@ Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcep
       if (entry.stillRunning()) {
         ++periodViolationsThisTick_;
         ++totalPeriodViolations_;
+        lastViolationComponent_.store(entry.componentName, std::memory_order_release);
+        lastViolationTaskUid_.store(entry.taskUid, std::memory_order_release);
         periodViolationFlag_.store(true, std::memory_order_release);
 
         if (skipOnBusy_) {
@@ -278,9 +294,18 @@ std::uint8_t SchedulerMultiThread::taskTrampoline(void* raw) noexcept {
   auto* ctx = static_cast<TaskCtx*>(raw);
   TaskEntry* entry = ctx->entry;
 
-  // Wait for sequencing phase if this task is sequenced
+  // Wait for sequencing phase if this task is sequenced. An aborted
+  // wait (scheduler stopping) skips execution and the phase advance --
+  // the chain is dying, and advancing would fake phase completion.
   if (entry != nullptr && entry->isSequenced()) {
-    waitForPhase(*entry->seqCounter, entry->seqPhase);
+    if (!waitForPhase(*entry->seqCounter, entry->seqPhase, &ctx->self->stopping_)) {
+      entry->markCompleted();
+      const std::uint8_t poolIdAbort = ctx->poolId;
+      if (poolIdAbort < ctx->self->ctxPools_.size()) {
+        ctx->self->ctxPools_[poolIdAbort]->release(ctx);
+      }
+      return 0;
+    }
   }
 
   const std::uint8_t rc = ctx->task->execute();

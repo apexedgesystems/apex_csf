@@ -84,6 +84,16 @@ public:
    */
   [[nodiscard]] bool hasPeriodViolation() const noexcept { return periodViolationsThisTick_ > 0; }
 
+  /** @brief Component name of the most recent period violator (nullptr = none). */
+  [[nodiscard]] const char* lastViolationComponent() const noexcept override {
+    return lastViolationComponent_.load(std::memory_order_acquire);
+  }
+
+  /** @brief Task UID of the most recent period violator. */
+  [[nodiscard]] std::uint8_t lastViolationTaskUid() const noexcept override {
+    return lastViolationTaskUid_.load(std::memory_order_acquire);
+  }
+
   /**
    * @brief Check and clear sticky period violation flag.
    *
@@ -164,8 +174,14 @@ private:
   std::size_t periodViolationsThisTick_{0};      ///< Count of period violations detected this tick.
   std::size_t totalPeriodViolations_{0};         ///< Cumulative period violations since startup.
   std::atomic<bool> periodViolationFlag_{false}; ///< Sticky flag for period violations.
-  bool skipOnBusy_{false};                       ///< Skip tasks still running (SKIP_ON_BUSY mode).
-  std::size_t totalSkipCount_{0};                ///< Total skipped invocations across all tasks.
+  std::atomic<bool> stopping_{false};            ///< Shutdown in progress; aborts phase waits.
+
+  /// Identity of the most recent period violator, for shutdown-cause
+  /// attribution (component name is a registry-lifetime pointer).
+  std::atomic<const char*> lastViolationComponent_{nullptr};
+  std::atomic<std::uint8_t> lastViolationTaskUid_{0};
+  bool skipOnBusy_{false};        ///< Skip tasks still running (SKIP_ON_BUSY mode).
+  std::size_t totalSkipCount_{0}; ///< Total skipped invocations across all tasks.
 };
 
 } // namespace scheduler

@@ -59,6 +59,12 @@ namespace schedulable {
 // Forward declaration
 class SchedulableTask;
 
+/// Terminal counter value stored by the scheduler at shutdown. Never a
+/// valid phase (phases are >= 1), and negative so no waiter's
+/// `counter >= phase` check can pass on it: waiters wake on the value
+/// change and exit via their abort flag.
+inline constexpr int SEQ_SHUTDOWN = -1;
+
 /* ----------------------------- SeqInfo ----------------------------- */
 
 /**
@@ -146,14 +152,21 @@ private:
  * @brief Wait until counter reaches expected phase.
  * @param counter Shared atomic counter.
  * @param expectedPhase Phase to wait for.
+ * @param abort Optional abort flag; when it reads true the wait returns
+ *        false instead of continuing. The scheduler passes its stopping
+ *        flag so a parked waiter cannot outlive a shutdown -- the waker
+ *        must notify the counter after setting the flag (repeatedly, to
+ *        cover a waiter that parks between pulses).
+ * @return true when the phase arrived; false when aborted.
  *
  * Uses hybrid wait: short spin with exponential backoff, then park.
  * Force-inlined for predictable hot path performance.
  */
-inline void waitForPhase(std::atomic<int>& counter, int expectedPhase) noexcept {
+[[nodiscard]] inline bool waitForPhase(std::atomic<int>& counter, int expectedPhase,
+                                       const std::atomic<bool>* abort = nullptr) noexcept {
   // Fast path: check once before spinning
   if (counter.load(std::memory_order_acquire) >= expectedPhase) {
-    return;
+    return true;
   }
 
   // Hybrid wait: spin first, then park
@@ -163,16 +176,22 @@ inline void waitForPhase(std::atomic<int>& counter, int expectedPhase) noexcept 
 
   for (unsigned i = 0; i < SPIN_BUDGET; ++i) {
     if (counter.load(std::memory_order_acquire) >= expectedPhase) {
-      return;
+      return true;
+    }
+    if (abort != nullptr && abort->load(std::memory_order_acquire)) {
+      return false;
     }
     bk.spinOnce();
   }
 
-  // Park until ready
+  // Park until ready (or aborted)
   for (;;) {
     const int cur = counter.load(std::memory_order_acquire);
     if (cur >= expectedPhase) {
-      break;
+      return true;
+    }
+    if (abort != nullptr && abort->load(std::memory_order_acquire)) {
+      return false;
     }
     apex::compat::atom::waitEq(counter, cur);
   }

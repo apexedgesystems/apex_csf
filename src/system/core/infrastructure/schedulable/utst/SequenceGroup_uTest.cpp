@@ -21,6 +21,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
@@ -111,10 +112,10 @@ TEST(SequenceGroupTest, ChainExecutesInPhaseOrder) {
   SequenceGroup seq(3);
 
   std::atomic<int> logIdx{0};
-  int order[3] = {-1, -1, -1};
+  std::array<int, 3> order{-1, -1, -1};
 
   auto worker = [&seq, &logIdx, &order](int phase) {
-    waitForPhase(*seq.counter(), phase);
+    EXPECT_TRUE(waitForPhase(*seq.counter(), phase));
     order[logIdx.fetch_add(1, std::memory_order_acq_rel)] = phase;
     advancePhase(*seq.counter(), seq.maxPhase());
   };
@@ -152,7 +153,7 @@ TEST(SequenceGroupTest, TailWaiterDelayedByWrapCompletesNextCycle) {
     while (!tailReleased.load(std::memory_order_acquire)) {
       std::this_thread::yield();
     }
-    waitForPhase(*seq.counter(), 3);
+    EXPECT_TRUE(waitForPhase(*seq.counter(), 3));
     tailDone.store(true, std::memory_order_release);
   });
 
@@ -197,7 +198,7 @@ TEST(SequenceGroupTest, SustainedCyclesHandOffCleanly) {
       while (framesDone.load(std::memory_order_acquire) < c) {
         std::this_thread::yield();
       }
-      waitForPhase(*seq.counter(), phase);
+      EXPECT_TRUE(waitForPhase(*seq.counter(), phase));
       executions.fetch_add(1, std::memory_order_acq_rel);
       advancePhase(*seq.counter(), seq.maxPhase());
       if (phase == 3) {

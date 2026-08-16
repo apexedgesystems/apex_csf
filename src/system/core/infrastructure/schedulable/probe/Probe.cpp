@@ -34,7 +34,7 @@ std::uint32_t probe() {
   SequenceGroup seq(2);
   seq.addTask(member, 1);
   seq.addTask(lambda, 2);
-  waitForPhase(*seq.counter(), 1); // Fast path: counter starts at 1.
+  const bool WAITED = waitForPhase(*seq.counter(), 1); // Fast path: counter starts at 1.
   advancePhase(*seq.counter(), seq.maxPhase());
   seq.reset();
 
@@ -45,5 +45,5 @@ std::uint32_t probe() {
          static_cast<std::uint32_t>(freeFn.execute()) +
          static_cast<std::uint32_t>(member.getLabel().size()) +
          static_cast<std::uint32_t>(info != nullptr ? info->phase : 0) +
-         static_cast<std::uint32_t>(seq.maxPhase());
+         static_cast<std::uint32_t>(seq.maxPhase()) + static_cast<std::uint32_t>(WAITED);
 }
