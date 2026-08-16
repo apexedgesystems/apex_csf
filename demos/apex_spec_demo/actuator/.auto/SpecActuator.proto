@@ -46,4 +46,6 @@ message SpecActuatorTunableParams {
   float holdBand = 2 [(apex.default) = "0.1"];
   // Position adopted at boot.
   float startPosition = 3 [(apex.default) = "0.0"];
+  // Axis label for operator displays (fixed 8-byte char buffer).
+  string axisLabel = 4 [(apex.capacity) = 8];
 }

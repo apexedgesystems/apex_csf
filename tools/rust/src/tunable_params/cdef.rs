@@ -108,10 +108,19 @@ pub fn generate_header(manifest: &Manifest, struct_name: &str) -> Result<String,
 
     let mut body = String::new();
     for f in fields {
-        let ty = cpp_type(&f.r#type, f.size)?;
-        let decl = match f.count {
-            None => format!("{ty} {}{}", f.name, initializer(f)),
-            Some(n) => format!("{ty} {}[{n}]{{}}", f.name),
+        // Fixed text: size is the byte capacity of a null-padded char
+        // buffer; a count makes it a fixed array of such buffers.
+        let decl = if f.r#type == "string" {
+            match f.count {
+                None => format!("char {}[{}]{{}}", f.name, f.size),
+                Some(n) => format!("char {}[{n}][{}]{{}}", f.name, f.size),
+            }
+        } else {
+            let ty = cpp_type(&f.r#type, f.size)?;
+            match f.count {
+                None => format!("{ty} {}{}", f.name, initializer(f)),
+                Some(n) => format!("{ty} {}[{n}]{{}}", f.name),
+            }
         };
         match &f.doc {
             Some(doc) => body.push_str(&format!("  {decl}; ///< {doc}\n")),

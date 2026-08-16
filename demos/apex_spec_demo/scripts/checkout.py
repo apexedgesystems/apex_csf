@@ -155,13 +155,14 @@ def set_mode(c2, mode: int) -> dict:
 
 
 def read_act_tunable(c2) -> dict:
-    """SpecActuatorTunableParams (12 bytes): rateLimit, holdBand, startPosition."""
+    """SpecActuatorTunableParams (20 bytes): rateLimit, holdBand, startPosition, axisLabel."""
     r = c2.inspect(ACT, category=1)
     extra = r.get("extra", b"")
-    if len(extra) < 12:
+    if len(extra) < 20:
         return {}
     rate, band, start = struct.unpack_from("<fff", extra, 0)
-    return {"rateLimit": rate, "holdBand": band, "startPosition": start}
+    label = extra[12:20].split(b"\x00", 1)[0].decode("ascii", "replace")
+    return {"rateLimit": rate, "holdBand": band, "startPosition": start, "axisLabel": label}
 
 
 def read_act_state(c2) -> dict:
@@ -360,7 +361,7 @@ def run_checkout(args: argparse.Namespace) -> int:
 
         section("10. Actuator Boot TPRM (proto-authored tunables live)")
         p = read_act_tunable(c2)
-        if check("TUNABLE_PARAM readable (12 bytes)", bool(p)):
+        if check("TUNABLE_PARAM readable (20 bytes)", bool(p)):
             check(
                 f"rateLimit = {p['rateLimit']:.1f} (TPRM value 8.0)",
                 abs(p["rateLimit"] - 8.0) < 1e-3,
@@ -368,6 +369,12 @@ def run_checkout(args: argparse.Namespace) -> int:
             check(
                 f"holdBand = {p['holdBand']:.2f}",
                 abs(p["holdBand"] - 0.1) < 1e-3,
+            )
+            # Bounded string: authored "X-AXIS" in an 8-byte null-padded
+            # char buffer (proto (apex.capacity) = 8).
+            check(
+                f"axisLabel = '{p.get('axisLabel')}' (bounded string live)",
+                p.get("axisLabel") == "X-AXIS",
             )
         rate = p.get("rateLimit", 8.0)
 

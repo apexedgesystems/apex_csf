@@ -69,18 +69,29 @@ message SpecActuatorTunableParams {
 
 ## Type mapping
 
-| proto declaration   | field type/size    | notes                          |
-| ------------------- | ------------------ | ------------------------------ |
-| `float`             | float / 4          |                                |
-| `double`            | float / 8          |                                |
-| `bool`              | bool / 1           |                                |
-| `uint32`            | uint / 4           | `(apex.width)` narrows to 1, 2 |
-| `int32`             | int / 4            | `(apex.width)` narrows to 1, 2 |
-| `uint64`            | uint / 8           | width option not allowed       |
-| `int64`             | int / 8            | width option not allowed       |
-| `repeated <scalar>` | array of the above | `(apex.count)` **required**    |
+| proto declaration   | field type/size    | notes                                                    |
+| ------------------- | ------------------ | -------------------------------------------------------- |
+| `float`             | float / 4          |                                                          |
+| `double`            | float / 8          |                                                          |
+| `bool`              | bool / 1           |                                                          |
+| `uint32`            | uint / 4           | `(apex.width)` narrows to 1, 2                           |
+| `int32`             | int / 4            | `(apex.width)` narrows to 1, 2                           |
+| `uint64`            | uint / 8           | width option not allowed                                 |
+| `int64`             | int / 8            | width option not allowed                                 |
+| `repeated <scalar>` | array of the above | `(apex.count)` **required**                              |
+| `string`            | string / capacity  | `(apex.capacity)` **required** -> `char[N]`, null-padded |
+| `repeated string`   | string array       | `(apex.capacity)` + `(apex.count)` -> `char[N][C]`       |
+| `bytes`             | uint / 1 array     | `(apex.count)` **required** -> fixed byte array          |
 
-Everything else -- nested messages, enums, `string`/`bytes`, maps,
+The rule is bounded-or-yell, the nanopb static-mode discipline: every
+type whose standard form is variable-length has exactly one legal
+profile spelling, and it carries an explicit bound. The unbounded
+spelling fails ingest with an error that names the fix
+("unbounded string -- bound it with (apex.capacity) = <bytes>").
+String content follows the TPRM value rule: fits or packing fails,
+null-padded to capacity -- capacity is static, content varies.
+
+Everything genuinely unboundable -- nested messages, enums, maps,
 `oneof`, services, non-apex options -- is outside the profile and
 fails ingest with a named error.
 
@@ -88,11 +99,14 @@ fails ingest with a named error.
 
 - `(apex.width) = N` -- byte width (1|2|4) for `uint32`/`int32`
   fields; absent means the natural 4.
-- `(apex.count) = N` -- fixed element count; required on `repeated`,
-  forbidden on scalars.
+- `(apex.count) = N` -- fixed element count; required on `repeated`
+  and `bytes`, forbidden on scalars.
+- `(apex.capacity) = N` -- byte capacity of a string's fixed char
+  buffer; required on `string`, forbidden elsewhere.
 - `(apex.default) = "literal"` -- member default; the literal parses
   by shape (`true`/`false` -> bool, decimal point or exponent ->
-  float, otherwise integer) and must match the field type.
+  float, otherwise integer) and must match the field type. Not
+  applicable to strings (author the value in the TPRM TOML).
 
 ## Fixpoint guarantee
 

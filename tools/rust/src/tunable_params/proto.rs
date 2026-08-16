@@ -68,6 +68,7 @@ fn format_default(value: &toml::Value) -> Result<String, Error> {
 struct FieldOpts {
     width: Option<u32>,
     count: Option<u32>,
+    capacity: Option<u32>,
     default: Option<String>,
 }
 
@@ -92,6 +93,11 @@ fn parse_options(body: &str, field: &str) -> Result<FieldOpts, Error> {
                     Some(value.parse().map_err(|_| {
                         Error::Parse(format!("field '{field}': bad count '{value}'"))
                     })?)
+            }
+            "(apex.capacity)" => {
+                opts.capacity = Some(value.parse().map_err(|_| {
+                    Error::Parse(format!("field '{field}': bad capacity '{value}'"))
+                })?)
             }
             "(apex.default)" => {
                 let inner = value
@@ -251,6 +257,107 @@ pub fn package_of(source: &str) -> Option<String> {
     })
 }
 
+/// Join accumulated leading comments into a field doc.
+fn join_doc(doc: &[String]) -> Option<String> {
+    if doc.is_empty() {
+        None
+    } else {
+        Some(doc.join(" "))
+    }
+}
+
+/// Bounded text: `string x = i [(apex.capacity) = N]` -> fixed char
+/// buffer (null-padded, packing fails on overflow); repeated adds
+/// `(apex.count)` for a fixed array of such buffers. Unbounded is the
+/// error case, with the fix named.
+fn parse_string_field(
+    name: &str,
+    number: u32,
+    n: usize,
+    repeated: bool,
+    opts: &FieldOpts,
+    doc: &[String],
+) -> Result<(FieldDef, u32), Error> {
+    if opts.width.is_some() {
+        return Err(Error::Parse(format!(
+            "line {n}: field '{name}': width option not allowed on string"
+        )));
+    }
+    if opts.default.is_some() {
+        return Err(Error::Parse(format!(
+            "line {n}: field '{name}': string defaults are outside the profile \
+             (author the value in the TPRM TOML)"
+        )));
+    }
+    let Some(capacity) = opts.capacity.filter(|c| *c > 0) else {
+        return Err(Error::Parse(format!(
+            "line {n}: field '{name}': unbounded string -- bound it with \
+             (apex.capacity) = <bytes> (fixed char buffer, null-padded)"
+        )));
+    };
+    let count = match (repeated, opts.count) {
+        (true, Some(c)) if c > 0 => Some(c),
+        (true, _) => {
+            return Err(Error::Parse(format!(
+                "line {n}: field '{name}': repeated string requires (apex.count) \
+                 (the layout has no variable-length members)"
+            )))
+        }
+        (false, Some(_)) => {
+            return Err(Error::Parse(format!(
+                "line {n}: field '{name}': count option on a non-repeated field"
+            )))
+        }
+        (false, None) => None,
+    };
+    Ok((
+        FieldDef {
+            name: name.to_string(),
+            r#type: "string".to_string(),
+            size: capacity,
+            count,
+            default: None,
+            doc: join_doc(doc),
+        },
+        number,
+    ))
+}
+
+/// Bounded byte buffer: `bytes x = i [(apex.count) = N]` -> N-byte
+/// array (uint8 elements). Unbounded is the error case.
+fn parse_bytes_field(
+    name: &str,
+    number: u32,
+    n: usize,
+    repeated: bool,
+    opts: &FieldOpts,
+    doc: &[String],
+) -> Result<(FieldDef, u32), Error> {
+    if repeated || opts.width.is_some() || opts.capacity.is_some() || opts.default.is_some() {
+        return Err(Error::Parse(format!(
+            "line {n}: field '{name}': bytes takes only (apex.count) \
+             (a fixed byte array; repeated/width/capacity/default do not apply)"
+        )));
+    }
+    let Some(count) = opts.count.filter(|c| *c > 0) else {
+        return Err(Error::Parse(format!(
+            "line {n}: field '{name}': unbounded bytes -- bound it with \
+             (apex.count) = <bytes> (fixed byte array)"
+        )));
+    };
+    Ok((
+        FieldDef {
+            name: name.to_string(),
+            r#type: "uint".to_string(),
+            size: 1,
+            count: Some(count),
+            default: None,
+            doc: join_doc(doc),
+        },
+        number,
+    ))
+}
+
 /// Parse one field line: `[repeated] <scalar> <name> = <n> [opts];`
 fn parse_field(line: &str, n: usize, doc: &[String]) -> Result<(FieldDef, u32), Error> {
     let body = line
@@ -287,6 +394,22 @@ fn parse_field(line: &str, n: usize, doc: &[String]) -> Result<(FieldDef, u32), 
         .parse()
         .map_err(|_| Error::Parse(format!("line {n}: bad field number '{number}'")))?;
 
+    let opts = match opts_body {
+        Some(b) => parse_options(b, name)?,
+        None => FieldOpts::default(),
+    };
+
+    // Bounded text and byte buffers: standard proto types whose only
+    // legal profile spellings carry an explicit bound (the nanopb
+    // static-mode rule -- unbounded is a named error, never a
+    // fallback to dynamic memory).
+    if proto_type == "string" {
+        return parse_string_field(name, number, n, repeated, &opts, doc);
+    }
+    if proto_type == "bytes" {
+        return parse_bytes_field(name, number, n, repeated, &opts, doc);
+    }
+
     let Some((logical, natural, narrowable)) = scalar(proto_type) else {
         return Err(Error::Parse(format!(
             "line {n}: field '{name}': type '{proto_type}' is outside the apex profile \
@@ -294,10 +417,11 @@ fn parse_field(line: &str, n: usize, doc: &[String]) -> Result<(FieldDef, u32), 
         )));
     };
 
-    let opts = match opts_body {
-        Some(b) => parse_options(b, name)?,
-        None => FieldOpts::default(),
-    };
+    if opts.capacity.is_some() {
+        return Err(Error::Parse(format!(
+            "line {n}: field '{name}': capacity option only applies to string fields"
+        )));
+    }
 
     let size = match opts.width {
         None => natural,
@@ -404,6 +528,9 @@ pub fn emit(manifest: &Manifest) -> Result<String, Error> {
             if let Some(w) = width_opt {
                 opts.push(format!("(apex.width) = {w}"));
             }
+            if proto_type == "string" {
+                opts.push(format!("(apex.capacity) = {}", f.size));
+            }
             if let Some(c) = f.count {
                 opts.push(format!("(apex.count) = {c}"));
             }
@@ -440,6 +567,7 @@ fn proto_type_of(f: &FieldDef) -> Result<(&'static str, Option<u32>), Error> {
         ("int", 4) => ("int32", None),
         ("int", 8) => ("int64", None),
         ("int", w @ (1 | 2)) => ("int32", Some(w)),
+        ("string", _) => ("string", None),
         (other, size) => {
             return Err(Error::Emit(format!(
                 "field '{}': {other}/{size} has no proto profile form",
@@ -505,14 +633,95 @@ message MoveRequest {
     #[test]
     fn dynamic_data_is_inexpressible() {
         for (decl, needle) in [
-            ("string name = 1;", "outside the apex profile"),
-            ("bytes blob = 1;", "outside the apex profile"),
+            ("string name = 1;", "unbounded string"),
+            ("bytes blob = 1;", "unbounded bytes"),
             ("repeated float xs = 1;", "repeated requires (apex.count)"),
         ] {
             let src = format!("syntax = \"proto3\";\nmessage M {{\n  {decl}\n}}\n");
             let err = ingest(&src).unwrap_err().to_string();
             assert!(err.contains(needle), "{decl}: {err}");
         }
+    }
+
+    #[test]
+    fn bounded_strings_and_bytes_resolve_to_fixed_buffers() {
+        let src = r#"
+syntax = "proto3";
+message M {
+  // Axis label.
+  string axisLabel = 1 [(apex.capacity) = 8];
+  repeated string tags = 2 [(apex.capacity) = 4, (apex.count) = 2];
+  bytes blob = 3 [(apex.count) = 6];
+}
+"#;
+        let m = &ingest(src).unwrap()["M"];
+        assert_eq!(
+            (m[0].r#type.as_str(), m[0].size, m[0].count),
+            ("string", 8, None)
+        );
+        assert_eq!(
+            (m[1].r#type.as_str(), m[1].size, m[1].count),
+            ("string", 4, Some(2))
+        );
+        assert_eq!(
+            (m[2].r#type.as_str(), m[2].size, m[2].count),
+            ("uint", 1, Some(6))
+        );
+        // Layout-hash agreement with the value-TOML serializer walk:
+        // scalar strings hash as name:string:N; arrays as the element
+        // descriptor form.
+        assert_eq!(
+            canonical_spec(m),
+            "axisLabel:string:8;tags:array:8;[string:4x2]blob:array:6;[uint:1x6]"
+        );
+    }
+
+    #[test]
+    fn unbounded_string_and_bytes_yell_with_the_fix() {
+        for (decl, needle) in [
+            ("string name = 1;", "bound it with (apex.capacity)"),
+            (
+                "repeated string tags = 1 [(apex.capacity) = 4];",
+                "repeated string requires (apex.count)",
+            ),
+            ("bytes blob = 1;", "bound it with (apex.count)"),
+            (
+                "string name = 1 [(apex.capacity) = 8, (apex.width) = 1];",
+                "width option not allowed on string",
+            ),
+            (
+                "float x = 1 [(apex.capacity) = 8];",
+                "capacity option only applies to string",
+            ),
+        ] {
+            let src = format!("syntax = \"proto3\";\nmessage M {{\n  {decl}\n}}\n");
+            let err = ingest(&src).unwrap_err().to_string();
+            assert!(err.contains(needle), "{decl}: {err}");
+        }
+    }
+
+    #[test]
+    fn string_fields_round_trip_through_emit() {
+        let src = r#"
+syntax = "proto3";
+message M {
+  string axisLabel = 1 [(apex.capacity) = 8];
+  repeated string tags = 2 [(apex.capacity) = 4, (apex.count) = 2];
+}
+"#;
+        let mut m = parse_manifest_str(
+            "component = \"X\"\n[structs]\nM = { category = \"TUNABLE_PARAM\" }\n",
+        )
+        .unwrap();
+        m.fields = ingest(src).unwrap();
+        let first = emit(&m).unwrap();
+        assert!(first.contains("string axisLabel = 1 [(apex.capacity) = 8];"));
+        assert!(first.contains("repeated string tags = 2 [(apex.capacity) = 4, (apex.count) = 2];"));
+        let hash_before: Vec<String> = m.fields.values().map(|f| canonical_spec(f)).collect();
+        m.fields = ingest(&first).unwrap();
+        let hash_after: Vec<String> = m.fields.values().map(|f| canonical_spec(f)).collect();
+        assert_eq!(first, emit(&m).unwrap());
+        assert_eq!(hash_before, hash_after);
     }
 
     #[test]

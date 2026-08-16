@@ -23,4 +23,7 @@ extend google.protobuf.FieldOptions {
   // Member default, formatted as the literal it parses back to
   // (e.g. "10.0", "3", "true").
   string default = 51003;
+  // Byte capacity for string fields (required on string: text lives
+  // in a fixed char buffer, null-padded; longer values fail packing).
+  uint32 capacity = 51004;
 }

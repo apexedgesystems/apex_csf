@@ -27,15 +27,15 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  STATE readable
   PASS  samples advancing (~50/s, got 50)
   PASS  OUTPUT readable
-  PASS  sequence advancing (6 -> 56)
-  PASS  value tracks reference (25.57)
+  PASS  sequence advancing (7 -> 57)
+  PASS  value tracks reference (25.63)
 
 ------------------------------------------------------------------------
   4. SetMode (IDLE freezes, MEASURE resumes)
 ------------------------------------------------------------------------
   PASS  SetMode(IDLE) accepted
   PASS  mode = IDLE (0)
-  PASS  sampling frozen in IDLE (samples 56 -> 56)
+  PASS  sampling frozen in IDLE (samples 57 -> 57)
   PASS  SetMode(MEASURE) accepted
   PASS  mode = MEASURE (1)
   PASS  sampling resumed
@@ -46,15 +46,15 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  FAULT_INJECT from IDLE rejected (mode still 0)
   PASS  rejects incremented (0 -> 1)
   PASS  FAULT_INJECT from MEASURE accepted (mode 2)
-  PASS  fault bias visible (value 76.3)
+  PASS  fault bias visible (value 76.2)
 
 ------------------------------------------------------------------------
   6. Recalibrate (new reference, drift zeroed)
 ------------------------------------------------------------------------
   PASS  Recalibrate(30.0) accepted
   PASS  referenceValue now 30.0
-  PASS  drift zeroed (1.420 -> 0.160)
-  PASS  value tracks new reference (30.44)
+  PASS  drift zeroed (1.430 -> 0.160)
+  PASS  value tracks new reference (30.42)
 
 ------------------------------------------------------------------------
   7. GetStats / Reset
@@ -82,9 +82,10 @@ ApexSpecDemo Checkout: localhost:9000
 ------------------------------------------------------------------------
   10. Actuator Boot TPRM (proto-authored tunables live)
 ------------------------------------------------------------------------
-  PASS  TUNABLE_PARAM readable (12 bytes)
+  PASS  TUNABLE_PARAM readable (20 bytes)
   PASS  rateLimit = 8.0 (TPRM value 8.0)
   PASS  holdBand = 0.10
+  PASS  axisLabel = 'X-AXIS' (bounded string live)
 
 ------------------------------------------------------------------------
   11. Actuator Slew (Move -> ramp at rate limit -> settle)
@@ -92,31 +93,31 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  Move(4.0) accepted
   PASS  target = 4.0 (got 4.00)
   PASS  moves incremented (0 -> 1)
-  PASS  slewing toward target (position 2.24)
-  PASS  ramp ~8/s (moved 1.76 in 0.4s)
+  PASS  slewing toward target (position 2.40)
+  PASS  ramp ~8/s (moved 1.60 in 0.4s)
   PASS  settled inside hold band (position 4.000)
 
 ------------------------------------------------------------------------
   12. Halt / GetPosition
 ------------------------------------------------------------------------
   PASS  Halt accepted
-  PASS  target frozen at position (1.76 ~ 1.76)
-  PASS  position holding (1.76 -> 1.76)
+  PASS  target frozen at position (1.60 ~ 1.60)
+  PASS  position holding (1.60 -> 1.60)
   PASS  GetPosition accepted
 
 ------------------------------------------------------------------------
   13. Actuator Negatives
 ------------------------------------------------------------------------
   PASS  out-of-range Move rejected (rejects 0 -> 1)
-  PASS  target unchanged (1.76)
+  PASS  target unchanged (1.60)
   PASS  malformed Move: rejects unchanged
   PASS  malformed Move: target unchanged
 
 ------------------------------------------------------------------------
   14. Post-Test Health
 ------------------------------------------------------------------------
-  PASS  Clock ~100 Hz (measured 99)
+  PASS  Clock ~100 Hz (measured 100)
 
 ========================================================================
-  Results: 59 passed, 0 failed
+  Results: 60 passed, 0 failed
 ========================================================================

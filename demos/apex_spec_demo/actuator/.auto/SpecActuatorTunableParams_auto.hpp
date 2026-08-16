@@ -9,19 +9,20 @@
 namespace appsim {
 namespace spec {
 
-/// Spec-defined tunable parameters (12 bytes, packed by
+/// Spec-defined tunable parameters (20 bytes, packed by
 /// construction: field order and sizes come from the spec).
 struct SpecActuatorTunableParams {
   float rateLimit{5.0F}; ///< Slew rate limit [units/s], range 0.1..50.
   float holdBand{0.1F}; ///< Hold band around the target: inside it the actuator is settled.
   float startPosition{0.0F}; ///< Position adopted at boot.
+  char axisLabel[8]{}; ///< Axis label for operator displays (fixed 8-byte char buffer).
 };
-static_assert(sizeof(SpecActuatorTunableParams) == 12, "layout diverged from the spec");
+static_assert(sizeof(SpecActuatorTunableParams) == 20, "layout diverged from the spec");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SPEC_ACTUATOR_TUNABLE_PARAMS_LAYOUT_HASH = 0xADAA6891U;
+inline constexpr std::uint32_t SPEC_ACTUATOR_TUNABLE_PARAMS_LAYOUT_HASH = 0xC93CD892U;
 
 } // namespace spec
 } // namespace appsim

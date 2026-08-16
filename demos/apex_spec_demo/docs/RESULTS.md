@@ -27,24 +27,24 @@ SystemMonitor.tlm     @  1 Hz (priority -128, offset 25)
 
 ## Checkout Results
 
-| Test                              | Result   | Detail                                                                         |
-| --------------------------------- | -------- | ------------------------------------------------------------------------------ |
-| 1. Connectivity (6 components)    | 6/6 PASS | Executive + all registered fullUids                                            |
-| 2. Boot TPRM (spec tunables)      | 4/4 PASS | driftRate=0.5, ref=25.0, mode=MEASURE                                          |
-| 3. Model running (50 Hz)          | 5/5 PASS | 51 samples/s, sequence advancing                                               |
-| 4. SetMode IDLE / MEASURE         | 6/6 PASS | Sampling frozen in IDLE, resumed in MEASURE                                    |
-| 5. Mode guard (FAULT_INJECT)      | 4/4 PASS | Rejected from IDLE (rejects++), bias +50 visible from MEASURE                  |
-| 6. Recalibrate                    | 4/4 PASS | ref 25.0 -> 30.0 live, drift 1.43 -> 0.15                                      |
-| 7. GetStats / Reset               | 6/6 PASS | Counters zeroed, mode to tunable default                                       |
-| 8. Malformed payload (2B SetMode) | 2/2 PASS | Mode AND rejects unchanged -- user code never ran                              |
-| 9. Unknown opcode (0x02FF)        | 3/3 PASS | Tier-base fallthrough, model healthy after                                     |
-| 10. Actuator boot TPRM            | 3/3 PASS | Proto-authored tunables live (rateLimit 8.0, holdBand 0.1)                     |
-| 11. Actuator slew                 | 6/6 PASS | Target set, moves++, ramp at rate limit, settles in hold band                  |
-| 12. Halt / GetPosition            | 4/4 PASS | Target frozen at position, holds; GetPosition accepted                         |
-| 13. Actuator negatives            | 4/4 PASS | Out-of-range Move rejected (rejects++); malformed Move never reaches user code |
-| 14. Post-test health              | PASS     | Clock 99 Hz measured                                                           |
+| Test                              | Result   | Detail                                                                                        |
+| --------------------------------- | -------- | --------------------------------------------------------------------------------------------- |
+| 1. Connectivity (6 components)    | 6/6 PASS | Executive + all registered fullUids                                                           |
+| 2. Boot TPRM (spec tunables)      | 4/4 PASS | driftRate=0.5, ref=25.0, mode=MEASURE                                                         |
+| 3. Model running (50 Hz)          | 5/5 PASS | 51 samples/s, sequence advancing                                                              |
+| 4. SetMode IDLE / MEASURE         | 6/6 PASS | Sampling frozen in IDLE, resumed in MEASURE                                                   |
+| 5. Mode guard (FAULT_INJECT)      | 4/4 PASS | Rejected from IDLE (rejects++), bias +50 visible from MEASURE                                 |
+| 6. Recalibrate                    | 4/4 PASS | ref 25.0 -> 30.0 live, drift 1.43 -> 0.15                                                     |
+| 7. GetStats / Reset               | 6/6 PASS | Counters zeroed, mode to tunable default                                                      |
+| 8. Malformed payload (2B SetMode) | 2/2 PASS | Mode AND rejects unchanged -- user code never ran                                             |
+| 9. Unknown opcode (0x02FF)        | 3/3 PASS | Tier-base fallthrough, model healthy after                                                    |
+| 10. Actuator boot TPRM            | 4/4 PASS | Proto-authored tunables live (rateLimit 8.0, holdBand 0.1, bounded string axisLabel "X-AXIS") |
+| 11. Actuator slew                 | 6/6 PASS | Target set, moves++, ramp at rate limit, settles in hold band                                 |
+| 12. Halt / GetPosition            | 4/4 PASS | Target frozen at position, holds; GetPosition accepted                                        |
+| 13. Actuator negatives            | 4/4 PASS | Out-of-range Move rejected (rejects++); malformed Move never reaches user code                |
+| 14. Post-test health              | PASS     | Clock 99 Hz measured                                                                          |
 
-**Total: 59 passed, 0 failed**
+**Total: 60 passed, 0 failed**
 
 ---
 
