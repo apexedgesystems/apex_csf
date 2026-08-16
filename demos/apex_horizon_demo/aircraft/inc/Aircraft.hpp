@@ -519,10 +519,15 @@ protected:
   [[nodiscard]] std::uint8_t doInit() noexcept override {
     using system_core::data::DataCategory;
 
-    registerTask<Aircraft, &Aircraft::aircraftStep>(
-        static_cast<std::uint8_t>(TaskUid::AIRCRAFT_STEP), this, "aircraftStep");
-    registerTask<Aircraft, &Aircraft::telemetryTick>(static_cast<std::uint8_t>(TaskUid::TELEMETRY),
-                                                     this, "telemetry");
+    // Step + telemetry share sequence group 0 (step phase 0,
+    // telemetry phase 1) so a scheduler can run them race-free when
+    // they land on the same tick; the TPRM task table opts in per
+    // task.
+    (void)createSequenceGroup(0, 2);
+    registerSequencedTask<Aircraft, &Aircraft::aircraftStep>(
+        static_cast<std::uint8_t>(TaskUid::AIRCRAFT_STEP), this, "aircraftStep", 0, 0);
+    registerSequencedTask<Aircraft, &Aircraft::telemetryTick>(
+        static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry", 0, 1);
 
     registerData(DataCategory::TUNABLE_PARAM, "tunables", &tunables_.get(),
                  sizeof(AircraftTunables));

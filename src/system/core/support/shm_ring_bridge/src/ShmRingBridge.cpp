@@ -111,10 +111,16 @@ bool ShmRingBridge::loadTprm(const std::filesystem::path& tprmDir) noexcept {
 std::uint8_t ShmRingBridge::doInit() noexcept {
   using system_core::data::DataCategory;
 
-  registerTask<ShmRingBridge, &ShmRingBridge::bridgeStep>(
-      static_cast<std::uint8_t>(TaskUid::BRIDGE_STEP), this, "bridgeStep");
-  registerTask<ShmRingBridge, &ShmRingBridge::telemetryTick>(
-      static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry");
+  // bridgeStep + telemetry share sequence group 0 (step phase 0,
+  // telemetry phase 1) so schedulers can run them race-free when both
+  // land on a tick (a 50 Hz bridge fires every tick, so offset
+  // staggering alone cannot separate them). Inert unless the
+  // scheduler table opts in.
+  (void)createSequenceGroup(0, 2);
+  registerSequencedTask<ShmRingBridge, &ShmRingBridge::bridgeStep>(
+      static_cast<std::uint8_t>(TaskUid::BRIDGE_STEP), this, "bridgeStep", 0, 0);
+  registerSequencedTask<ShmRingBridge, &ShmRingBridge::telemetryTick>(
+      static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry", 0, 1);
 
   registerData(DataCategory::TUNABLE_PARAM, "tunables", &tunables_.get(),
                sizeof(ShmRingBridgeTunables));
