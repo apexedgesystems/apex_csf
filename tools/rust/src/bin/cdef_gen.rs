@@ -20,7 +20,7 @@ use std::process::ExitCode;
 
 use clap::Parser;
 
-use apex_rust_tools::tunable_params::{cdef, manifest};
+use apex_rust_tools::tunable_params::{cdef, manifest, proto};
 
 #[derive(Parser, Debug)]
 #[command(name = "cdef_gen")]
@@ -89,6 +89,17 @@ fn run(cli: &Cli) -> Result<usize, Box<dyn std::error::Error>> {
         let base = cdef::generate_cmd_base(&m)?;
         let path = out_dir.join(format!("{}CmdBase_auto.hpp", m.component));
         fs::write(&path, base)?;
+        println!("{}", path.display());
+        count += 1;
+    }
+
+    // Every spec-defined component ships its protobuf interface --
+    // the same profile ingest accepts, so the emission is also the
+    // canonical form of a proto-authored spec.
+    if !m.fields.is_empty() {
+        let interface = proto::emit(&m)?;
+        let path = out_dir.join(format!("{}.proto", m.component));
+        fs::write(&path, interface)?;
         println!("{}", path.display());
         count += 1;
     }

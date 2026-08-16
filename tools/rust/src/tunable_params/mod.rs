@@ -137,6 +137,7 @@ pub mod pack;
 mod parser;
 mod path;
 pub mod payload;
+pub mod proto;
 
 // Re-export parser functions for apex_data_gen
 pub use parser::{collect_enums, parse_header, read_file, ParsedEnum};

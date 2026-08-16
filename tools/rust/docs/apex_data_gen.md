@@ -56,6 +56,15 @@ A manifest whose registered structs are all spec-defined needs no C++
 headers at all -- fully spec-born components generate their dictionary
 from the manifest alone.
 
+## Proto-authored specs
+
+A component-level `proto_spec` key references a profile `.proto` file
+whose messages populate the field specs instead of inline `[[fields]]`
+arrays (one definition source per component -- both present is an
+error). Every spec-defined component also emits its canonical
+interface as `.auto/<Component>.proto`. See
+[proto_profile.md](proto_profile.md) for the profile.
+
 ## Constraint declarations
 
 An optional `[constraints.<StructName>]` section declares each field's
