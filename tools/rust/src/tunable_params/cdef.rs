@@ -167,6 +167,315 @@ pub fn generate_header(manifest: &Manifest, struct_name: &str) -> Result<String,
     ))
 }
 
+/// Generate the `.auto` command-dispatch base for the component: a
+/// tier-agnostic mixin whose handleCommand verifies each spec-declared
+/// command's payload size, decodes the request struct, invokes the
+/// pure-virtual hook, and encodes the response. Malformed payloads and
+/// unknown opcodes never reach user logic (unknowns fall through to
+/// the tier base).
+pub fn generate_cmd_base(manifest: &Manifest) -> Result<String, Error> {
+    if manifest.commands.is_empty() {
+        return Err(Error::Parse("no [[commands]] in the manifest".to_string()));
+    }
+    for c in &manifest.commands {
+        for s in [&c.request, &c.response].into_iter().flatten() {
+            if !manifest.fields.contains_key(s) {
+                return Err(Error::Parse(format!(
+                    "command {}: payload struct '{s}' has no [[fields.{s}]] spec",
+                    c.name
+                )));
+            }
+        }
+    }
+
+    let component = &manifest.component;
+    let class = format!("{component}CmdBase");
+    let mut shout = String::new();
+    for ch in component.chars() {
+        if ch.is_uppercase() && !shout.is_empty() && !shout.ends_with('_') {
+            shout.push('_');
+        }
+        shout.push(ch.to_ascii_uppercase());
+    }
+
+    let mut includes = String::new();
+    let mut seen: Vec<&String> = Vec::new();
+    for c in &manifest.commands {
+        for s in [&c.request, &c.response].into_iter().flatten() {
+            if !seen.contains(&s) {
+                seen.push(s);
+                includes.push_str(&format!("#include \"{s}_auto.hpp\"\n"));
+            }
+        }
+    }
+
+    let mut hooks = String::new();
+    let mut cases = String::new();
+    for c in &manifest.commands {
+        let doc = c.doc.as_deref().unwrap_or("Spec-declared command.");
+        let hook = format!("on{}", c.name);
+        let opcode = &c.opcode;
+        match (&c.request, &c.response) {
+            (Some(req), Some(resp)) => {
+                hooks.push_str(&format!(
+                    "  /// {doc}\n  [[nodiscard]] virtual std::uint8_t {hook}(const {req}& request, {resp}& response) noexcept = 0;\n"
+                ));
+                cases.push_str(&format!(
+                    "    case {opcode}U: {{\n      if (payload.size() != sizeof({req})) {{\n        return static_cast<std::uint8_t>(system_core::system_component::Status::ERROR_PARAM);\n      }}\n      {req} request{{}};\n      std::memcpy(&request, payload.data(), sizeof(request));\n      {resp} reply{{}};\n      const std::uint8_t RC = {hook}(request, reply);\n      response.resize(sizeof(reply));\n      std::memcpy(response.data(), &reply, sizeof(reply));\n      return RC;\n    }}\n"
+                ));
+            }
+            (Some(req), None) => {
+                hooks.push_str(&format!(
+                    "  /// {doc}\n  [[nodiscard]] virtual std::uint8_t {hook}(const {req}& request) noexcept = 0;\n"
+                ));
+                cases.push_str(&format!(
+                    "    case {opcode}U: {{\n      if (payload.size() != sizeof({req})) {{\n        return static_cast<std::uint8_t>(system_core::system_component::Status::ERROR_PARAM);\n      }}\n      {req} request{{}};\n      std::memcpy(&request, payload.data(), sizeof(request));\n      return {hook}(request);\n    }}\n"
+                ));
+            }
+            (None, Some(resp)) => {
+                hooks.push_str(&format!(
+                    "  /// {doc}\n  [[nodiscard]] virtual std::uint8_t {hook}({resp}& response) noexcept = 0;\n"
+                ));
+                cases.push_str(&format!(
+                    "    case {opcode}U: {{\n      if (!payload.empty()) {{\n        return static_cast<std::uint8_t>(system_core::system_component::Status::ERROR_PARAM);\n      }}\n      {resp} reply{{}};\n      const std::uint8_t RC = {hook}(reply);\n      response.resize(sizeof(reply));\n      std::memcpy(response.data(), &reply, sizeof(reply));\n      return RC;\n    }}\n"
+                ));
+            }
+            (None, None) => {
+                hooks.push_str(&format!(
+                    "  /// {doc}\n  [[nodiscard]] virtual std::uint8_t {hook}() noexcept = 0;\n"
+                ));
+                cases.push_str(&format!(
+                    "    case {opcode}U: {{\n      if (!payload.empty()) {{\n        return static_cast<std::uint8_t>(system_core::system_component::Status::ERROR_PARAM);\n      }}\n      return {hook}();\n    }}\n"
+                ));
+            }
+        }
+    }
+
+    let (ns_open, ns_close) = match &manifest.namespace {
+        Some(ns) => {
+            let parts: Vec<&str> = ns.split("::").collect();
+            (
+                parts
+                    .iter()
+                    .map(|p| format!("namespace {p} {{\n"))
+                    .collect::<String>(),
+                parts
+                    .iter()
+                    .rev()
+                    .map(|p| format!("}} // namespace {p}\n"))
+                    .collect::<String>(),
+            )
+        }
+        None => (String::new(), String::new()),
+    };
+
+    Ok(format!(
+        "// Generated by cdef_gen from the {component} spec -- DO NOT EDIT.\n\
+         // Regenerate: make cdef (check-cdef diffs this file against the spec).\n\
+         // Implement the on<Command> hooks in the component (stub-generated).\n\
+         #ifndef APEX_CDEF_AUTO_{shout}_CMD_BASE_HPP\n\
+         #define APEX_CDEF_AUTO_{shout}_CMD_BASE_HPP\n\
+         \n\
+         #include \"src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp\"\n\
+         #include \"src/utilities/compatibility/inc/compat_span.hpp\"\n\
+         {includes}\n\
+         #include <cstdint>\n\
+         #include <cstring>\n\
+         #include <vector>\n\
+         \n\
+         {ns_open}\n\
+         /// Spec-generated command dispatch: size-verified decode, hook\n\
+         /// invocation, response encode. Unknown opcodes fall through to\n\
+         /// the tier base.\n\
+         template <typename TBase> class {class} : public TBase {{\n\
+         public:\n\
+           using TBase::TBase;\n\
+         \n\
+         protected:\n\
+         {hooks}\n\
+           [[nodiscard]] std::uint8_t handleCommand(std::uint16_t opcode,\n\
+                                                    apex::compat::rospan<std::uint8_t> payload,\n\
+                                                    std::vector<std::uint8_t>& response) noexcept override {{\n\
+             switch (opcode) {{\n\
+         {cases}    default:\n\
+               return TBase::handleCommand(opcode, payload, response);\n\
+             }}\n\
+           }}\n\
+         }};\n\
+         \n\
+         {ns_close}\
+         #endif // APEX_CDEF_AUTO_{shout}_CMD_BASE_HPP\n"
+    ))
+}
+
+/// Generate the once-only component stub: a compilable skeleton the
+/// user owns after generation (never regenerated over). It inherits
+/// the generated command base over the spec's tier base, carries the
+/// spec identity, a ParamBank for the spec's TUNABLE_PARAM struct
+/// (enforcing the generated layout hash), a registered step task, and
+/// minimal honest hook bodies awaiting the component's real logic.
+pub fn generate_stub(manifest: &Manifest) -> Result<String, Error> {
+    let component = &manifest.component;
+    let id = manifest.component_id.ok_or_else(|| {
+        Error::Parse("stub generation needs component_id in the manifest".to_string())
+    })?;
+    let tier = manifest.component_type.as_deref().unwrap_or("SW_MODEL");
+    let (base, base_include) = match tier {
+        "SW_MODEL" => (
+            "system_core::system_component::SwModelBase",
+            "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp",
+        ),
+        "SUPPORT" => (
+            "system_core::system_component::SupportComponentBase",
+            "src/system/core/infrastructure/system_component/posix/inc/SupportComponentBase.hpp",
+        ),
+        "DRIVER" => (
+            "system_core::system_component::DriverBase",
+            "src/system/core/infrastructure/system_component/posix/inc/DriverBase.hpp",
+        ),
+        other => {
+            return Err(Error::Parse(format!(
+                "unsupported component_type '{other}' (SW_MODEL | SUPPORT | DRIVER)"
+            )))
+        }
+    };
+    let label = manifest.label.clone().unwrap_or_else(|| {
+        let mut s = String::new();
+        for c in component.chars() {
+            if c.is_uppercase() && !s.is_empty() {
+                s.push('_');
+            }
+            s.push(c.to_ascii_uppercase());
+        }
+        s
+    });
+
+    // The spec's tunable struct (first TUNABLE_PARAM with a field spec).
+    let tunable = manifest
+        .structs
+        .iter()
+        .find(|(name, e)| {
+            matches!(e.category, super::manifest::DataCategory::TunableParam)
+                && manifest.fields.contains_key(*name)
+        })
+        .map(|(name, _)| name.clone());
+
+    let mut shout_struct = String::new();
+    let mut bank_decl = String::new();
+    let mut load_tprm = String::new();
+    let mut tunable_include = String::new();
+    if let Some(ts) = &tunable {
+        tunable_include = format!("#include \"{ts}_auto.hpp\" // via the .auto include path\n");
+        for c in ts.chars() {
+            if c.is_uppercase() && !shout_struct.is_empty() && !shout_struct.ends_with('_') {
+                shout_struct.push('_');
+            }
+            shout_struct.push(c.to_ascii_uppercase());
+        }
+        bank_decl = format!("  system_core::system_component::ParamBank<{ts}> paramBank_{{}};\n");
+        load_tprm = format!(
+            "  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {{\n    if (!isRegistered()) {{\n      return false;\n    }}\n    const std::filesystem::path PATH = tprmDir / tprmFilename(fullUid());\n    bool loaded = false;\n    if (std::filesystem::exists(PATH)) {{\n      loaded = paramBank_.load(PATH, fullUid(),\n                               [](const {ts}&) noexcept {{ return true; }},\n                               &{shout_struct}_LAYOUT_HASH) ==\n               system_core::system_component::Status::SUCCESS;\n    }}\n    if (!loaded) {{\n      (void)paramBank_.load({ts}{{}});\n    }}\n    (void)paramBank_.publishInitial();\n    setConfigured(true);\n    return loaded;\n  }}\n\n"
+        );
+    }
+
+    let cmd_base = if manifest.commands.is_empty() {
+        base.to_string()
+    } else {
+        format!("{component}CmdBase<{base}>")
+    };
+    let cmd_include = if manifest.commands.is_empty() {
+        String::new()
+    } else {
+        format!("#include \"{component}CmdBase_auto.hpp\" // via the .auto include path\n")
+    };
+
+    let mut hooks = String::new();
+    for c in &manifest.commands {
+        let hook = format!("on{}", c.name);
+        let sig = match (&c.request, &c.response) {
+            (Some(rq), Some(rs)) => format!("{hook}(const {rq}& request, {rs}& response)"),
+            (Some(rq), None) => format!("{hook}(const {rq}& request)"),
+            (None, Some(rs)) => format!("{hook}({rs}& response)"),
+            (None, None) => format!("{hook}()"),
+        };
+        hooks.push_str(&format!(
+            "  [[nodiscard]] std::uint8_t {sig} noexcept override {{\n    // Component logic for {name} belongs here.\n    return static_cast<std::uint8_t>(system_core::system_component::Status::SUCCESS);\n  }}\n\n",
+            name = c.name
+        ));
+    }
+
+    let (ns_open, ns_close) = match &manifest.namespace {
+        Some(ns) => {
+            let parts: Vec<&str> = ns.split("::").collect();
+            (
+                parts
+                    .iter()
+                    .map(|p| format!("namespace {p} {{\n"))
+                    .collect::<String>(),
+                parts
+                    .iter()
+                    .rev()
+                    .map(|p| format!("}} // namespace {p}\n"))
+                    .collect::<String>(),
+            )
+        }
+        None => (String::new(), String::new()),
+    };
+
+    Ok(format!(
+        "// Generated once by cdef_gen --stub from the {component} spec.\n\
+         // USER-OWNED after generation: fill in the component logic; the\n\
+         // .auto headers (structs, dispatch) keep regenerating separately.\n\
+         #ifndef APEX_SPEC_STUB_{label}_HPP\n\
+         #define APEX_SPEC_STUB_{label}_HPP\n\
+         \n\
+         #include \"{base_include}\"\n\
+         {cmd_include}\
+         {tunable_include}\
+         \n\
+         #include <cstdint>\n\
+         #include <filesystem>\n\
+         \n\
+         {ns_open}\n\
+         class {component} final : public {cmd_base} {{\n\
+         public:\n\
+           static constexpr std::uint16_t COMPONENT_ID = {id};\n\
+           static constexpr const char* COMPONENT_NAME = \"{component}\";\n\
+         \n\
+           [[nodiscard]] std::uint16_t componentId() const noexcept override {{ return COMPONENT_ID; }}\n\
+           [[nodiscard]] const char* componentName() const noexcept override {{ return COMPONENT_NAME; }}\n\
+           [[nodiscard]] const char* label() const noexcept override {{ return \"{label}\"; }}\n\
+         \n\
+           {component}() noexcept = default;\n\
+           ~{component}() override = default;\n\
+         \n\
+           enum class TaskUid : std::uint8_t {{\n\
+             STEP = 1, ///< Periodic model step.\n\
+           }};\n\
+         \n\
+           std::uint8_t step() noexcept {{\n\
+             // Component periodic logic belongs here.\n\
+             return 0;\n\
+           }}\n\
+         \n\
+         {load_tprm}\
+         protected:\n\
+         {hooks}\
+           [[nodiscard]] std::uint8_t doInit() noexcept override {{\n\
+             registerTask<{component}, &{component}::step>(\n\
+                 static_cast<std::uint8_t>(TaskUid::STEP), this, \"step\");\n\
+             return 0;\n\
+           }}\n\
+         \n\
+         private:\n\
+         {bank_decl}\
+         }};\n\
+         \n\
+         {ns_close}\
+         #endif // APEX_SPEC_STUB_{label}_HPP\n"
+    ))
+}
+
 /* ----------------------------- Tests ----------------------------- */
 
 #[cfg(test)]
@@ -220,6 +529,124 @@ mod tests {
         let fields = &m.fields["WaveGenTunableParams"];
         let spec = canonical_spec(fields);
         assert_eq!(spec, "frequency:float:4;reserved:array:3;[uint:1x3]");
+    }
+
+    #[test]
+    fn cmd_base_dispatches_each_shape() {
+        let m = parse_manifest_str(
+            r#"
+            component = "SpecSensor"
+            namespace = "appsim::spec"
+
+            [structs]
+            SetModeRequest = { category = "COMMAND", opcode = "0x0200" }
+            StatsResponse = { category = "TELEMETRY", opcode = "0x0201" }
+
+            [[fields.SetModeRequest]]
+            name = "mode"
+            type = "uint"
+            size = 1
+
+            [[fields.StatsResponse]]
+            name = "samples"
+            type = "uint"
+            size = 4
+
+            [[commands]]
+            name = "SetMode"
+            opcode = "0x0200"
+            request = "SetModeRequest"
+            doc = "Select the sensor mode."
+
+            [[commands]]
+            name = "GetStats"
+            opcode = "0x0201"
+            response = "StatsResponse"
+
+            [[commands]]
+            name = "Recalibrate"
+            opcode = "0x0202"
+        "#,
+        )
+        .unwrap();
+        let h = generate_cmd_base(&m).unwrap();
+        assert!(h.contains("template <typename TBase> class SpecSensorCmdBase"));
+        assert!(h.contains("onSetMode(const SetModeRequest& request)"));
+        assert!(h.contains("onGetStats(StatsResponse& response)"));
+        assert!(h.contains("onRecalibrate() noexcept = 0"));
+        assert!(h.contains("case 0x0200U:"));
+        assert!(h.contains("payload.size() != sizeof(SetModeRequest)"));
+        assert!(h.contains("return TBase::handleCommand(opcode, payload, response);"));
+        assert!(h.contains("#include \"SetModeRequest_auto.hpp\""));
+    }
+
+    #[test]
+    fn stub_carries_identity_bank_and_generated_includes() {
+        let m = parse_manifest_str(
+            r#"
+            component = "SpecSensor"
+            namespace = "appsim::spec"
+            component_id = 212
+            component_type = "SW_MODEL"
+            label = "SPEC_SNS"
+
+            [structs]
+            SpecSensorTunableParams = { category = "TUNABLE_PARAM" }
+            SetModeRequest = { category = "COMMAND", opcode = "0x0200" }
+
+            [[fields.SpecSensorTunableParams]]
+            name = "sampleRateHz"
+            type = "float"
+            size = 4
+            default = 10.0
+
+            [[fields.SetModeRequest]]
+            name = "mode"
+            type = "uint"
+            size = 1
+
+            [[commands]]
+            name = "SetMode"
+            opcode = "0x0200"
+            request = "SetModeRequest"
+        "#,
+        )
+        .unwrap();
+        let s = generate_stub(&m).unwrap();
+        assert!(s.contains("class SpecSensor final"));
+        assert!(s.contains("SpecSensorCmdBase<system_core::system_component::SwModelBase>"));
+        assert!(s.contains("COMPONENT_ID = 212"));
+        assert!(s.contains("return \"SPEC_SNS\";"));
+        // Everything the stub references must be reachable through its own
+        // includes: the dispatch base and the tunable struct + layout hash.
+        assert!(s.contains("#include \"SpecSensorCmdBase_auto.hpp\""));
+        assert!(s.contains("#include \"SpecSensorTunableParams_auto.hpp\""));
+        assert!(s.contains("ParamBank<SpecSensorTunableParams> paramBank_{};"));
+        assert!(s.contains("&SPEC_SENSOR_TUNABLE_PARAMS_LAYOUT_HASH"));
+        assert!(s.contains("onSetMode(const SetModeRequest& request)"));
+    }
+
+    #[test]
+    fn stub_without_component_id_is_an_error() {
+        let m = parse_manifest_str("component = \"X\"\n[structs]\n").unwrap();
+        assert!(generate_stub(&m).is_err());
+    }
+
+    #[test]
+    fn cmd_base_rejects_unspecced_payload_struct() {
+        let m = parse_manifest_str(
+            r#"
+            component = "SpecSensor"
+            [structs]
+            X = { category = "COMMAND" }
+            [[commands]]
+            name = "Bad"
+            opcode = "0x0300"
+            request = "MissingStruct"
+        "#,
+        )
+        .unwrap();
+        assert!(generate_cmd_base(&m).is_err());
     }
 
     #[test]

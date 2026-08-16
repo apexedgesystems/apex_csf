@@ -12,15 +12,15 @@ namespace wave {
 /// Spec-defined tunable parameters (32 bytes, packed by
 /// construction: field order and sizes come from the spec).
 struct WaveGenTunableParams {
-  float frequency{1.0F};      ///< Primary frequency [Hz], range 0..50.
-  float amplitude{1.0F};      ///< Peak amplitude, >= 0.
-  float dcOffset{0.0F};       ///< DC bias added to output.
-  float phaseOffset{0.0F};    ///< Phase offset [radians].
+  float frequency{1.0F}; ///< Primary frequency [Hz], range 0..50.
+  float amplitude{1.0F}; ///< Peak amplitude, >= 0.
+  float dcOffset{0.0F}; ///< DC bias added to output.
+  float phaseOffset{0.0F}; ///< Phase offset [radians].
   float noiseAmplitude{0.0F}; ///< Gaussian-like noise peak amplitude.
-  float dutyCycle{0.5F};      ///< Duty cycle for SQUARE wave, range 0..1.
-  std::uint8_t waveType{0};   ///< WaveType enum value (0=SINE..4=COMPOSITE).
+  float dutyCycle{0.5F}; ///< Duty cycle for SQUARE wave, range 0..1.
+  std::uint8_t waveType{0}; ///< WaveType enum value (0=SINE..4=COMPOSITE).
   std::uint8_t reserved[3]{}; ///< Alignment padding.
-  float reserved2{0.0F};      ///< Reserved for future use.
+  float reserved2{0.0F}; ///< Reserved for future use.
 };
 static_assert(sizeof(WaveGenTunableParams) == 32, "layout diverged from the spec");
 

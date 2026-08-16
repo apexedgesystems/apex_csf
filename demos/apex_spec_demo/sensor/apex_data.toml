@@ -1,0 +1,212 @@
+# apex_data.toml - Component spec for SpecSensor (spec-driven demo)
+#
+# The demo's point: this file is the component. The tunable struct,
+# the command/telemetry payload structs, the dispatch base, and the
+# component stub all generate from it; the physics and handler logic
+# live in the user-owned stub. fullUid 0x00D400 (componentId=212).
+
+component = "SpecSensor"
+namespace = "appsim::spec"
+component_id = 212
+component_type = "SW_MODEL"
+label = "SPEC_SNS"
+
+[structs]
+# Tunable parameters (TPRM-configurable)
+SpecSensorTunableParams = { category = "TUNABLE_PARAM" }
+# Runtime state (registered for INSPECT)
+SpecSensorState = { category = "STATE" }
+# Published measurement (registered OUTPUT)
+SpecSensorOutput = { category = "OUTPUT" }
+# Command payloads
+SetModeRequest = { category = "COMMAND", opcode = "0x0200" }
+RecalibrateRequest = { category = "COMMAND", opcode = "0x0201" }
+StatsResponse = { category = "TELEMETRY", opcode = "0x0202" }
+
+# ----------------------------------------------------------------------
+# Layouts (ordered; the .auto headers generate from these)
+# ----------------------------------------------------------------------
+
+[[fields.SpecSensorTunableParams]]
+name = "sampleRateHz"
+type = "float"
+size = 4
+default = 10.0
+doc = "Model sample rate [Hz], range 1..100."
+
+[[fields.SpecSensorTunableParams]]
+name = "referenceValue"
+type = "float"
+size = 4
+default = 25.0
+doc = "Calibrated reference the measurement drifts around."
+
+[[fields.SpecSensorTunableParams]]
+name = "driftRate"
+type = "float"
+size = 4
+default = 0.05
+doc = "Drift per second away from reference, range 0..5."
+
+[[fields.SpecSensorTunableParams]]
+name = "noiseAmplitude"
+type = "float"
+size = 4
+default = 0.1
+doc = "Peak noise amplitude, >= 0."
+
+[[fields.SpecSensorTunableParams]]
+name = "mode"
+type = "uint"
+size = 1
+default = 0
+doc = "Startup mode (0=IDLE, 1=MEASURE, 2=FAULT_INJECT)."
+
+[[fields.SpecSensorTunableParams]]
+name = "reserved"
+type = "uint"
+size = 1
+count = 3
+doc = "Alignment padding."
+
+[[fields.SpecSensorState]]
+name = "elapsed"
+type = "float"
+size = 4
+doc = "Seconds since boot or last recalibration."
+
+[[fields.SpecSensorState]]
+name = "drift"
+type = "float"
+size = 4
+doc = "Accumulated drift away from the reference."
+
+[[fields.SpecSensorState]]
+name = "samples"
+type = "uint"
+size = 4
+doc = "Measurements taken since boot or reset."
+
+[[fields.SpecSensorState]]
+name = "rejects"
+type = "uint"
+size = 4
+doc = "Commands rejected (bad mode transitions)."
+
+[[fields.SpecSensorState]]
+name = "mode"
+type = "uint"
+size = 1
+doc = "Active mode (0=IDLE, 1=MEASURE, 2=FAULT_INJECT)."
+
+[[fields.SpecSensorState]]
+name = "reserved"
+type = "uint"
+size = 1
+count = 3
+doc = "Alignment padding."
+
+[[fields.SpecSensorOutput]]
+name = "value"
+type = "float"
+size = 4
+doc = "Current measurement (reference + drift + noise)."
+
+[[fields.SpecSensorOutput]]
+name = "sequence"
+type = "uint"
+size = 4
+doc = "Monotonic sample counter."
+
+[[fields.SetModeRequest]]
+name = "mode"
+type = "uint"
+size = 1
+doc = "Requested mode (0=IDLE, 1=MEASURE, 2=FAULT_INJECT)."
+
+[[fields.RecalibrateRequest]]
+name = "referenceValue"
+type = "float"
+size = 4
+doc = "New calibrated reference."
+
+[[fields.StatsResponse]]
+name = "samples"
+type = "uint"
+size = 4
+doc = "Measurements taken since boot or reset."
+
+[[fields.StatsResponse]]
+name = "rejects"
+type = "uint"
+size = 4
+doc = "Commands rejected."
+
+[[fields.StatsResponse]]
+name = "lastValue"
+type = "float"
+size = 4
+doc = "Most recent measurement."
+
+[[fields.StatsResponse]]
+name = "mode"
+type = "uint"
+size = 1
+doc = "Active mode."
+
+[[fields.StatsResponse]]
+name = "reserved"
+type = "uint"
+size = 1
+count = 3
+doc = "Alignment padding."
+
+# ----------------------------------------------------------------------
+# Legal ranges (three rails: cfg2bin, ground UI, on-board table)
+# ----------------------------------------------------------------------
+
+[constraints.SpecSensorTunableParams]
+sampleRateHz = { min = 1.0, max = 100.0 }
+driftRate = { min = 0.0, max = 5.0 }
+noiseAmplitude = { min = 0.0 }
+mode = { allowed = [0, 1, 2] }
+
+# ----------------------------------------------------------------------
+# Command set (the generated dispatch derives from this)
+# ----------------------------------------------------------------------
+
+[[commands]]
+name = "SetMode"
+opcode = "0x0200"
+request = "SetModeRequest"
+doc = "Select the operating mode; FAULT_INJECT only from MEASURE."
+
+[[commands]]
+name = "Recalibrate"
+opcode = "0x0201"
+request = "RecalibrateRequest"
+response = "StatsResponse"
+doc = "Set a new reference, zero the drift, return the stats snapshot."
+
+[[commands]]
+name = "GetStats"
+opcode = "0x0202"
+response = "StatsResponse"
+doc = "Return the stats snapshot."
+
+[[commands]]
+name = "Reset"
+opcode = "0x0203"
+doc = "Zero counters and drift; mode returns to the tunable default."
+
+# ----------------------------------------------------------------------
+# Telemetry streams
+# ----------------------------------------------------------------------
+
+[[telemetry]]
+name = "Measurement"
+opcode = "0x0300"
+struct = "SpecSensorOutput"
+doc = "Published measurement, readable via INSPECT (OUTPUT category)."
+
+[enums]

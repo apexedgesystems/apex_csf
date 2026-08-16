@@ -33,6 +33,11 @@ struct Cli {
     /// Output directory (default: <manifest dir>/.auto)
     #[arg(long, short = 'o', value_name = "DIR")]
     output: Option<PathBuf>,
+
+    /// Also emit the once-only component stub into <manifest dir>/inc
+    /// (refuses to overwrite: stubs are user-owned after generation)
+    #[arg(long)]
+    stub: bool,
 }
 
 fn main() -> ExitCode {
@@ -53,7 +58,7 @@ fn main() -> ExitCode {
 
 fn run(cli: &Cli) -> Result<usize, Box<dyn std::error::Error>> {
     let m = manifest::parse_manifest(&cli.manifest)?;
-    if m.fields.is_empty() {
+    if m.fields.is_empty() && m.commands.is_empty() {
         return Ok(0);
     }
 
@@ -77,6 +82,34 @@ fn run(cli: &Cli) -> Result<usize, Box<dyn std::error::Error>> {
         let path = out_dir.join(format!("{struct_name}_auto.hpp"));
         fs::write(&path, header)?;
         println!("{}", path.display());
+        count += 1;
+    }
+
+    if !m.commands.is_empty() {
+        let base = cdef::generate_cmd_base(&m)?;
+        let path = out_dir.join(format!("{}CmdBase_auto.hpp", m.component));
+        fs::write(&path, base)?;
+        println!("{}", path.display());
+        count += 1;
+    }
+
+    if cli.stub {
+        let inc_dir = cli
+            .manifest
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("inc");
+        let stub_path = inc_dir.join(format!("{}.hpp", m.component));
+        if stub_path.exists() {
+            return Err(format!(
+                "refusing to overwrite user-owned stub {}",
+                stub_path.display()
+            )
+            .into());
+        }
+        fs::create_dir_all(&inc_dir)?;
+        fs::write(&stub_path, cdef::generate_stub(&m)?)?;
+        println!("{} (stub, user-owned from here)", stub_path.display());
         count += 1;
     }
     Ok(count)

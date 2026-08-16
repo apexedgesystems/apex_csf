@@ -1,0 +1,47 @@
+# ApexInterface (componentId=4, instanceIndex=0)
+# Total: 84 bytes
+#
+# Based on ApexInterfaceTunables structure:
+#   std::array<char, 64> host       - Host string (64 bytes)
+#   uint16_t port                   - TCP port (2 bytes)
+#   FramingType framing (uint8)     - 0=SLIP, 1=COBS (1 byte)
+#   uint8_t crcEnabled              - CRC flag (1 byte)
+#   uint16_t cmdQueueCapacity       - Cmd queue size (2 bytes)
+#   uint16_t tlmQueueCapacity       - Tlm queue size (2 bytes)
+#   uint16_t maxPayloadBytes        - Max payload (2 bytes)
+#   (2 bytes padding for uint32 alignment)
+#   uint32_t pollTimeoutMs          - Poll timeout (4 bytes)
+#   uint16_t droppedFrameReportThreshold - Threshold (2 bytes)
+#   (2 bytes padding to 84 bytes total)
+
+[ApexInterfaceTunables]
+# Host: "0.0.0.0" (listen on all interfaces for remote C2 access)
+host = { type = "string", size = 64, value = "0.0.0.0" }
+
+# TCP server port: 9000
+port = { type = "uint", size = 2, value = 9000 }
+
+# Framing: SLIP = 0
+framing = { type = "uint", size = 1, value = 0 }
+
+# CRC disabled
+crcEnabled = { type = "uint", size = 1, value = 0 }
+
+# Queue capacities
+cmdQueueCapacity = { type = "uint", size = 2, value = 32 }
+tlmQueueCapacity = { type = "uint", size = 2, value = 64 }
+
+# Max APROTO payload size
+maxPayloadBytes = { type = "uint", size = 2, value = 4096 }
+
+# Padding for uint32 alignment (2 bytes before pollTimeoutMs)
+padding1 = { type = "uint", size = 2, value = 0 }
+
+# Socket poll timeout
+pollTimeoutMs = { type = "uint", size = 4, value = 10 }
+
+# Dropped frame report threshold
+droppedFrameReportThreshold = { type = "uint", size = 2, value = 1 }
+
+# Padding to align structure (2 bytes)
+padding2 = { type = "uint", size = 2, value = 0 }

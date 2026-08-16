@@ -1,0 +1,88 @@
+
+ApexSpecDemo Checkout: localhost:9000
+========================================================================
+
+------------------------------------------------------------------------
+  1. Connectivity
+------------------------------------------------------------------------
+  PASS  NOOP returns SUCCESS
+  PASS  Executive (0x000000)
+  PASS  Scheduler (0x000100)
+  PASS  Interface (0x000400)
+  PASS  SystemMonitor (0x00C800)
+  PASS  SpecSensor (0x00D400)
+
+------------------------------------------------------------------------
+  2. Boot TPRM (spec tunables live)
+------------------------------------------------------------------------
+  PASS  TUNABLE_PARAM readable (20 bytes)
+  PASS  driftRate = 0.50 (TPRM value 0.5)
+  PASS  referenceValue = 25.0
+  PASS  mode = 1 (TPRM boots MEASURE)
+
+------------------------------------------------------------------------
+  3. Model Running (50 Hz step)
+------------------------------------------------------------------------
+  PASS  STATE readable
+  PASS  samples advancing (~50/s, got 50)
+  PASS  OUTPUT readable
+  PASS  sequence advancing (5 -> 55)
+  PASS  value tracks reference (25.48)
+
+------------------------------------------------------------------------
+  4. SetMode (IDLE freezes, MEASURE resumes)
+------------------------------------------------------------------------
+  PASS  SetMode(IDLE) accepted
+  PASS  mode = IDLE (0)
+  PASS  sampling frozen in IDLE (samples 56 -> 56)
+  PASS  SetMode(MEASURE) accepted
+  PASS  mode = MEASURE (1)
+  PASS  sampling resumed
+
+------------------------------------------------------------------------
+  5. Mode Guard (FAULT_INJECT only from MEASURE)
+------------------------------------------------------------------------
+  PASS  FAULT_INJECT from IDLE rejected (mode still 0)
+  PASS  rejects incremented (0 -> 1)
+  PASS  FAULT_INJECT from MEASURE accepted (mode 2)
+  PASS  fault bias visible (value 76.3)
+
+------------------------------------------------------------------------
+  6. Recalibrate (new reference, drift zeroed)
+------------------------------------------------------------------------
+  PASS  Recalibrate(30.0) accepted
+  PASS  referenceValue now 30.0
+  PASS  drift zeroed (1.420 -> 0.160)
+  PASS  value tracks new reference (30.44)
+
+------------------------------------------------------------------------
+  7. GetStats / Reset
+------------------------------------------------------------------------
+  PASS  GetStats accepted
+  PASS  Reset accepted
+  PASS  samples zeroed then re-advancing (got 15)
+  PASS  rejects zeroed (got 0)
+  PASS  mode back to tunable default (1)
+  PASS  output sequence restarted (got 16)
+
+------------------------------------------------------------------------
+  8. Malformed Payload (never reaches user logic)
+------------------------------------------------------------------------
+  PASS  mode unchanged (1 -> 1)
+  PASS  rejects unchanged (0 -> 0)
+
+------------------------------------------------------------------------
+  9. Unknown Opcode (tier-base fallthrough)
+------------------------------------------------------------------------
+  PASS  SpecSensor NOOP after unknown opcode
+  PASS  model still stepping
+  PASS  state untouched (mode 1, rejects 0)
+
+------------------------------------------------------------------------
+  10. Post-Test Health
+------------------------------------------------------------------------
+  PASS  Clock ~100 Hz (measured 99)
+
+========================================================================
+  Results: 41 passed, 0 failed
+========================================================================

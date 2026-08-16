@@ -115,6 +115,36 @@ pub struct FieldDef {
     pub doc: Option<String>,
 }
 
+/// One command in the component's spec: opcode, payload structs
+/// (whose layouts are ordinary `[[fields.<Struct>]]` specs), and the
+/// doc line the generated dispatch and dictionaries carry.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct CommandDef {
+    /// Handler name (the generated hook is `on<Name>`).
+    pub name: String,
+    /// Command opcode (hex string, e.g. "0x0200").
+    pub opcode: String,
+    /// Request payload struct (spec-defined); absent = no payload.
+    pub request: Option<String>,
+    /// Response payload struct (spec-defined); absent = status-only.
+    pub response: Option<String>,
+    /// One-line command documentation.
+    pub doc: Option<String>,
+}
+
+/// One telemetry stream in the component's spec.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct TelemetryDef {
+    /// Stream name.
+    pub name: String,
+    /// Telemetry opcode (hex string).
+    pub opcode: String,
+    /// Payload struct (spec-defined).
+    pub r#struct: String,
+    /// One-line emission documentation.
+    pub doc: Option<String>,
+}
+
 /// Parsed apex_data.toml manifest.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Manifest {
@@ -123,6 +153,15 @@ pub struct Manifest {
     /// C++ namespace generated headers open (e.g. "appsim::wave").
     #[serde(default)]
     pub namespace: Option<String>,
+    /// Component id (identity constant in generated stubs).
+    #[serde(default)]
+    pub component_id: Option<u16>,
+    /// Tier base for generated stubs: SW_MODEL | SUPPORT | DRIVER.
+    #[serde(default)]
+    pub component_type: Option<String>,
+    /// Short log label for generated stubs (e.g. "SPEC_SNS").
+    #[serde(default)]
+    pub label: Option<String>,
     /// Struct entries keyed by struct name.
     pub structs: BTreeMap<String, StructEntry>,
     /// Enum entries keyed by enum name (optional section).
@@ -138,6 +177,13 @@ pub struct Manifest {
     /// the header generates from it (cdef phase 1).
     #[serde(default)]
     pub fields: BTreeMap<String, Vec<FieldDef>>,
+    /// Spec-defined command set (`[[commands]]`): the generated
+    /// dispatch and the dictionaries derive from it (cdef phase 2).
+    #[serde(default)]
+    pub commands: Vec<CommandDef>,
+    /// Spec-defined telemetry streams (`[[telemetry]]`).
+    #[serde(default)]
+    pub telemetry: Vec<TelemetryDef>,
 }
 
 /* ----------------------------- Public API --------------------------------- */

@@ -77,6 +77,10 @@ jobs:
               # Conformance contracts are multi-sided: every suite that pins
               # one must run when it changes.
               compat/tprm/*) cpp=true; rust=true ;;
+              # Component specs and their committed .auto headers are pinned
+              # against each other by check-cdef, which runs in the rust job
+              # (it needs cdef_gen); either side changing must run it.
+              *_data.toml|*/.auto/*) cpp=true; rust=true ;;
               src/*|demos/*|apps/*|cmake/*|CMakeLists.txt|CMakePresets.json) cpp=true ;;
               *.md|docs/*)  : ;;
               # Dev-image inputs the gate jobs actually run in (base; the cpu dev
@@ -225,6 +229,11 @@ jobs:
       # image, so a finding here is a code change, never rule drift.
       - name: Rust static analysis (clippy)
         run: docker compose run --rm -T build-base make clippy
+      # Committed .auto headers must be byte-identical to what cdef_gen
+      # emits from their specs -- a hand edit or a stale header after a
+      # spec (or generator) change cannot merge.
+      - name: Spec/.auto pin (check-cdef)
+        run: docker compose run --rm -T build-base make check-cdef
 
   py:
     name: Python tool tests
