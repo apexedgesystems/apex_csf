@@ -566,6 +566,18 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     // Build TaskConfig from entry
     TaskConfig cfg(entry.freqN, entry.freqD, entry.offset, entry.priority, entry.poolIndex);
 
+    // A task table referencing a pool that does not exist is a config
+    // defect; route to pool 0 loudly instead of degrading silently.
+    if (entry.poolIndex >= numPools()) {
+      cfg.poolId = 0;
+      if (auto* log = componentLog()) {
+        log->warning(label(), 0,
+                     fmt::format("TPRM task {}: pool {} does not exist ({} pool(s)); "
+                                 "routing to pool 0",
+                                 i, entry.poolIndex, numPools()));
+      }
+    }
+
     // Get sequence group if sequenced
     SequenceGroup* seqGroup = nullptr;
     if (!isUnsequenced(entry.sequenceGroup)) {

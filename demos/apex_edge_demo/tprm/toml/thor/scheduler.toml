@@ -7,8 +7,8 @@
 # occasionally block 50-200us). Pool 0 RT tasks are never affected.
 
 [SchedulerTprmHeader]
-numPools = { type = "uint", size = 1, value = 2 }
-workersPerPool = { type = "uint", size = 1, value = 2 }
+numPools = { type = "uint", size = 1, value = 1 }
+workersPerPool = { type = "uint", size = 1, value = 0 }
 numTasks = { type = "uint", size = 1, value = 14 }
 
 # Component fullUids:
@@ -22,7 +22,7 @@ numTasks = { type = "uint", size = 1, value = 14 }
 [[task]]
 fullUid = { type = "uint", size = 4, value = 33280 }
 taskUid = { type = "uint", size = 1, value = 1 }
-poolIndex = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
 freqN = { type = "uint", size = 2, value = 1 }
 freqD = { type = "uint", size = 2, value = 1 }
 offset = { type = "uint", size = 2, value = 0 }
@@ -34,7 +34,7 @@ seqPhase = { type = "uint", size = 1, value = 0 }
 [[task]]
 fullUid = { type = "uint", size = 4, value = 33280 }
 taskUid = { type = "uint", size = 1, value = 2 }
-poolIndex = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
 freqN = { type = "uint", size = 2, value = 1 }
 freqD = { type = "uint", size = 2, value = 1 }
 offset = { type = "uint", size = 2, value = 50 }
@@ -46,7 +46,7 @@ seqPhase = { type = "uint", size = 1, value = 0 }
 [[task]]
 fullUid = { type = "uint", size = 4, value = 33792 }
 taskUid = { type = "uint", size = 1, value = 1 }
-poolIndex = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
 freqN = { type = "uint", size = 2, value = 5 }
 freqD = { type = "uint", size = 2, value = 1 }
 offset = { type = "uint", size = 2, value = 0 }
@@ -58,7 +58,7 @@ seqPhase = { type = "uint", size = 1, value = 0 }
 [[task]]
 fullUid = { type = "uint", size = 4, value = 33792 }
 taskUid = { type = "uint", size = 1, value = 2 }
-poolIndex = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
 freqN = { type = "uint", size = 2, value = 5 }
 freqD = { type = "uint", size = 2, value = 1 }
 offset = { type = "uint", size = 2, value = 10 }
@@ -70,7 +70,7 @@ seqPhase = { type = "uint", size = 1, value = 0 }
 [[task]]
 fullUid = { type = "uint", size = 4, value = 33536 }
 taskUid = { type = "uint", size = 1, value = 1 }
-poolIndex = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
 freqN = { type = "uint", size = 2, value = 2 }
 freqD = { type = "uint", size = 2, value = 1 }
 offset = { type = "uint", size = 2, value = 12 }
@@ -82,7 +82,7 @@ seqPhase = { type = "uint", size = 1, value = 0 }
 [[task]]
 fullUid = { type = "uint", size = 4, value = 33536 }
 taskUid = { type = "uint", size = 1, value = 2 }
-poolIndex = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
 freqN = { type = "uint", size = 2, value = 2 }
 freqD = { type = "uint", size = 2, value = 1 }
 offset = { type = "uint", size = 2, value = 37 }
@@ -94,7 +94,7 @@ seqPhase = { type = "uint", size = 1, value = 0 }
 [[task]]
 fullUid = { type = "uint", size = 4, value = 34048 }
 taskUid = { type = "uint", size = 1, value = 1 }
-poolIndex = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
 freqN = { type = "uint", size = 2, value = 1 }
 freqD = { type = "uint", size = 2, value = 1 }
 offset = { type = "uint", size = 2, value = 25 }
@@ -106,7 +106,7 @@ seqPhase = { type = "uint", size = 1, value = 0 }
 [[task]]
 fullUid = { type = "uint", size = 4, value = 34048 }
 taskUid = { type = "uint", size = 1, value = 2 }
-poolIndex = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
 freqN = { type = "uint", size = 2, value = 1 }
 freqD = { type = "uint", size = 2, value = 1 }
 offset = { type = "uint", size = 2, value = 75 }
@@ -130,7 +130,7 @@ seqPhase = { type = "uint", size = 1, value = 0 }
 [[task]]
 fullUid = { type = "uint", size = 4, value = 33280 }
 taskUid = { type = "uint", size = 1, value = 1 }
-poolIndex = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
 freqN = { type = "uint", size = 2, value = 2 }
 freqD = { type = "uint", size = 2, value = 1 }
 offset = { type = "uint", size = 2, value = 25 }
@@ -142,7 +142,7 @@ seqPhase = { type = "uint", size = 1, value = 0 }
 [[task]]
 fullUid = { type = "uint", size = 4, value = 34048 }
 taskUid = { type = "uint", size = 1, value = 1 }
-poolIndex = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
 freqN = { type = "uint", size = 2, value = 2 }
 freqD = { type = "uint", size = 2, value = 1 }
 offset = { type = "uint", size = 2, value = 50 }

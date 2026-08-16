@@ -31,6 +31,9 @@ sub-millisecond jitter across extended soak tests.
                     HOUSEKEEP   @ Core 3  OTHER
 
     Pool 0 (RT CPU)                    Pool 1 (GPU Dispatch)
+    [design intent -- runtime currently builds a single pool with
+     hardware-concurrency workers; the split below activates when the
+     scheduler constructs pools from the table's numPools]
     Cores 4-5, FIFO 70                 Cores 6-7, OTHER
     ========================           ========================
     DataIngest     @ 10 Hz             ConvFilter.kick    @ 1 Hz
@@ -326,7 +329,10 @@ ordering is the synchronization, and each stage checksums its input so
 an ordering failure counts as a violation instead of passing silently.
 
 For native testing, all tasks run on Pool 0 (single pool). For Thor
-deployment, GPU tasks move to Pool 1 with SCHED_OTHER on cores 6-7.
+deployment, GPU tasks move to Pool 1 with SCHED_OTHER on cores 6-7 once
+multi-pool construction lands; today both tables declare the single pool
+the runtime actually builds (a task referencing a missing pool is routed
+to pool 0 with a loud warning at table load).
 
 ## Verification Strategy
 

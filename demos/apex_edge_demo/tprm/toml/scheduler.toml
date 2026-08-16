@@ -1,13 +1,13 @@
 # Scheduler (componentId=1, instanceIndex=0)
 # Total: 183 bytes = 3 byte header + 12 x 15 byte task entries
 #
-# Single pool for native testing. For Thor deployment, split into:
-#   Pool 0 (RT CPU): telemetry tasks
-#   Pool 1 (GPU dispatch): kick/poll tasks
+# Single pool; workersPerPool 0 = hardware concurrency (the topology the
+# archived baselines ran). Multi-pool splits stay out of the tables until
+# the scheduler actually constructs pools from numPools.
 
 [SchedulerTprmHeader]
 numPools = { type = "uint", size = 1, value = 1 }
-workersPerPool = { type = "uint", size = 1, value = 2 }
+workersPerPool = { type = "uint", size = 1, value = 0 }
 numTasks = { type = "uint", size = 1, value = 12 }
 
 # Component fullUids:
