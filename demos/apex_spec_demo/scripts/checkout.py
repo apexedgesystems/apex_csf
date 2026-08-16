@@ -25,7 +25,17 @@ Sections:
   8. Malformed payload     Wrong-size SetMode never reaches user logic
                            (mode AND rejects both unchanged)
   9. Unknown opcode        Falls through to the tier base; app healthy
-  10. Post-test health     Clock rate still nominal
+  10. Actuator boot        Proto-authored tunables live (rateLimit from TPRM)
+  11. Actuator slew        Move commands a target; position ramps at the
+                           rate limit and settles inside the hold band
+  12. Halt / GetPosition   Halt freezes the target at the current position
+  13. Actuator negatives   Out-of-range Move rejected (rejects++); wrong-size
+                           Move never reaches user logic
+  14. Post-test health     Clock rate still nominal
+
+The actuator sections drive a component whose entire layout surface
+was authored as protobuf (actuator/spec_actuator.proto) -- the same
+generated-dispatch guarantees, from the other authoring format.
 
 Usage:
   python3 checkout.py --host localhost
@@ -51,15 +61,23 @@ ALL_COMPONENTS = {
     "Interface": 0x000400,
     "SystemMonitor": 0x00C800,
     "SpecSensor": 0x00D400,
+    "SpecActuator": 0x00D500,
 }
 
 SNS = 0x00D400
+ACT = 0x00D500
 
 # Spec command opcodes (sensor/apex_data.toml [[commands]])
 CMD_SET_MODE = 0x0200
 CMD_RECALIBRATE = 0x0201
 CMD_GET_STATS = 0x0202
 CMD_RESET = 0x0203
+
+# Actuator command opcodes (actuator/apex_data.toml [[commands]];
+# layouts from actuator/spec_actuator.proto)
+CMD_MOVE = 0x0210
+CMD_HALT = 0x0211
+CMD_GET_POSITION = 0x0212
 
 # Modes (SpecSensor::Mode)
 IDLE, MEASURE, FAULT_INJECT = 0, 1, 2
@@ -134,6 +152,32 @@ def read_output(c2) -> dict:
 
 def set_mode(c2, mode: int) -> dict:
     return c2.send_command(SNS, CMD_SET_MODE, bytes([mode]))
+
+
+def read_act_tunable(c2) -> dict:
+    """SpecActuatorTunableParams (20 bytes): rateLimit, holdBand, startPosition, axisLabel."""
+    r = c2.inspect(ACT, category=1)
+    extra = r.get("extra", b"")
+    if len(extra) < 20:
+        return {}
+    rate, band, start = struct.unpack_from("<fff", extra, 0)
+    label = extra[12:20].split(b"\x00", 1)[0].decode("ascii", "replace")
+    return {"rateLimit": rate, "holdBand": band, "startPosition": start, "axisLabel": label}
+
+
+def read_act_state(c2) -> dict:
+    """SpecActuatorState (16 bytes): position, target, moves, rejects."""
+    r = c2.inspect(ACT, category=2)
+    extra = r.get("extra", b"")
+    if len(extra) < 16:
+        return {}
+    position, target = struct.unpack_from("<ff", extra, 0)
+    moves, rejects = struct.unpack_from("<II", extra, 8)
+    return {"position": position, "target": target, "moves": moves, "rejects": rejects}
+
+
+def move(c2, position: float) -> dict:
+    return c2.send_command(ACT, CMD_MOVE, struct.pack("<f", position))
 
 
 def run_checkout(args: argparse.Namespace) -> int:
@@ -315,7 +359,108 @@ def run_checkout(args: argparse.Namespace) -> int:
             s1.get("mode") == s0.get("mode") and s1.get("rejects") == s0.get("rejects"),
         )
 
-        section("10. Post-Test Health")
+        section("10. Actuator Boot TPRM (proto-authored tunables live)")
+        p = read_act_tunable(c2)
+        if check("TUNABLE_PARAM readable (20 bytes)", bool(p)):
+            check(
+                f"rateLimit = {p['rateLimit']:.1f} (TPRM value 8.0)",
+                abs(p["rateLimit"] - 8.0) < 1e-3,
+            )
+            check(
+                f"holdBand = {p['holdBand']:.2f}",
+                abs(p["holdBand"] - 0.1) < 1e-3,
+            )
+            # Bounded string: authored "X-AXIS" in an 8-byte null-padded
+            # char buffer (proto (apex.capacity) = 8).
+            check(
+                f"axisLabel = '{p.get('axisLabel')}' (bounded string live)",
+                p.get("axisLabel") == "X-AXIS",
+            )
+        rate = p.get("rateLimit", 8.0)
+
+        section("11. Actuator Slew (Move -> ramp at rate limit -> settle)")
+        s0 = read_act_state(c2)
+        r = move(c2, 4.0)
+        check("Move(4.0) accepted", r["status"] == 0, r["status_name"])
+        time.sleep(SETTLE)
+        s1 = read_act_state(c2)
+        check(
+            f"target = 4.0 (got {s1.get('target', 0.0):.2f})",
+            abs(s1.get("target", 0.0) - 4.0) < 1e-3,
+        )
+        check(
+            f"moves incremented ({s0.get('moves')} -> {s1.get('moves')})",
+            s1.get("moves") == s0.get("moves", 0) + 1,
+        )
+        check(
+            f"slewing toward target (position {s1.get('position', 0.0):.2f})",
+            s1.get("position", 0.0) > s0.get("position", 0.0),
+        )
+        # Ramp check: ~rate units/s while slewing.
+        time.sleep(0.4)
+        s2 = read_act_state(c2)
+        dpos = s2.get("position", 0.0) - s1.get("position", 0.0)
+        check(
+            f"ramp ~{rate:.0f}/s (moved {dpos:.2f} in 0.4s)",
+            0.2 * rate * 0.4 < dpos <= 1.3 * rate * 0.4 + 0.01,
+        )
+        # Settle: 4.0 units at 8/s = 0.5s from start; allow margin.
+        time.sleep(0.6)
+        s3 = read_act_state(c2)
+        check(
+            f"settled inside hold band (position {s3.get('position', 0.0):.3f})",
+            abs(s3.get("position", 0.0) - 4.0) <= p.get("holdBand", 0.1) + 1e-3,
+        )
+
+        section("12. Halt / GetPosition")
+        move(c2, -20.0)
+        time.sleep(SETTLE)
+        r = c2.send_command(ACT, CMD_HALT)
+        check("Halt accepted", r["status"] == 0, r["status_name"])
+        time.sleep(SETTLE)
+        s0 = read_act_state(c2)
+        check(
+            f"target frozen at position ({s0.get('target', 0.0):.2f} ~ "
+            f"{s0.get('position', 0.0):.2f})",
+            abs(s0.get("target", 0.0) - s0.get("position", 0.0)) <= p.get("holdBand", 0.1),
+        )
+        time.sleep(0.4)
+        s1 = read_act_state(c2)
+        check(
+            f"position holding ({s0.get('position', 0.0):.2f} -> "
+            f"{s1.get('position', 0.0):.2f})",
+            abs(s1.get("position", 0.0) - s0.get("position", 0.0)) < 0.05,
+        )
+        r = c2.send_command(ACT, CMD_GET_POSITION)
+        check("GetPosition accepted", r["status"] == 0, r["status_name"])
+
+        section("13. Actuator Negatives")
+        # Out-of-range target: user hook rejects and counts it.
+        s0 = read_act_state(c2)
+        move(c2, 2000.0)
+        time.sleep(SETTLE)
+        s1 = read_act_state(c2)
+        check(
+            f"out-of-range Move rejected (rejects {s0.get('rejects')} -> {s1.get('rejects')})",
+            s1.get("rejects") == s0.get("rejects", 0) + 1,
+        )
+        check(
+            f"target unchanged ({s1.get('target', 0.0):.2f})",
+            abs(s1.get("target", 0.0) - s0.get("target", 0.0)) < 1e-3,
+        )
+        # Wrong-size payload: generated dispatch rejects before user code
+        # (neither rejects nor target may change).
+        s0 = read_act_state(c2)
+        c2.send_command(ACT, CMD_MOVE, b"\x00\x00")
+        time.sleep(SETTLE)
+        s1 = read_act_state(c2)
+        check("malformed Move: rejects unchanged", s1.get("rejects") == s0.get("rejects"))
+        check(
+            "malformed Move: target unchanged",
+            abs(s1.get("target", 0.0) - s0.get("target", 0.0)) < 1e-3,
+        )
+
+        section("14. Post-Test Health")
         c1 = c2.get_clock_cycles()
         time.sleep(1.0)
         c2_val = c2.get_clock_cycles()

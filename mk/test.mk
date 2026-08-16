@@ -173,7 +173,10 @@ compat-tprm:
 # hand-edited generated file (or a stale one after a spec change)
 # cannot merge. Requires the rust tools (cdef_gen).
 
-CDEF_MANIFESTS := $(shell grep -rl "^\[\[fields\." --include="*_data.toml" --include="apex_data.toml" demos src apps 2>/dev/null)
+# Spec-defined layouts come from inline [[fields]] arrays or a
+# referenced proto_spec file; either marks the manifest as owning
+# committed .auto artifacts.
+CDEF_MANIFESTS := $(shell grep -rlE "^(\[\[fields\.|proto_spec)" --include="*_data.toml" --include="apex_data.toml" demos src apps 2>/dev/null)
 
 cdef: tools-rust
 	$(call log,cdef,Regenerating .auto headers from component specs)

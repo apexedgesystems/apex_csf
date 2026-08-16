@@ -162,6 +162,11 @@ pub struct Manifest {
     /// Short log label for generated stubs (e.g. "SPEC_SNS").
     #[serde(default)]
     pub label: Option<String>,
+    /// Proto-authored spec source: a profile .proto (relative to the
+    /// manifest) whose messages populate `fields`. One definition
+    /// source per component -- mutually exclusive with `[[fields]]`.
+    #[serde(default)]
+    pub proto_spec: Option<String>,
     /// Struct entries keyed by struct name.
     pub structs: BTreeMap<String, StructEntry>,
     /// Enum entries keyed by enum name (optional section).
@@ -191,12 +196,74 @@ pub struct Manifest {
 /// Parse a manifest file.
 pub fn parse_manifest(path: &Path) -> Result<Manifest, Error> {
     let content = fs::read_to_string(path)?;
-    parse_manifest_str(&content)
+    let mut manifest = parse_toml(&content)?;
+    resolve_proto_spec(&mut manifest, path)?;
+    Ok(manifest)
 }
 
-/// Parse manifest from string content.
-pub fn parse_manifest_str(content: &str) -> Result<Manifest, Error> {
+/// Raw TOML deserialization shared by both entry points.
+fn parse_toml(content: &str) -> Result<Manifest, Error> {
     toml::from_str(content).map_err(|e| Error::Parse(format!("manifest parse error: {}", e)))
+}
+
+/// Populate `fields` from a referenced profile .proto. One definition
+/// source per component: `proto_spec` beside any `[[fields]]` array is
+/// an error, never a merge. Every message must name a registered
+/// struct (typo guard); the file's package, when present, must match
+/// the manifest namespace.
+fn resolve_proto_spec(manifest: &mut Manifest, manifest_path: &Path) -> Result<(), Error> {
+    let Some(proto_rel) = &manifest.proto_spec else {
+        return Ok(());
+    };
+    if !manifest.fields.is_empty() {
+        return Err(Error::Parse(format!(
+            "component '{}' declares both proto_spec and [[fields]] -- one definition \
+             source per component",
+            manifest.component
+        )));
+    }
+    let proto_path = manifest_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join(proto_rel);
+    let source = fs::read_to_string(&proto_path)
+        .map_err(|e| Error::Parse(format!("proto_spec '{}': {e}", proto_path.display())))?;
+
+    if let (Some(package), Some(namespace)) =
+        (super::proto::package_of(&source), &manifest.namespace)
+    {
+        let expected = namespace.replace("::", ".");
+        if package != expected {
+            return Err(Error::Parse(format!(
+                "proto_spec package '{package}' does not match namespace '{namespace}'"
+            )));
+        }
+    }
+
+    let messages = super::proto::ingest(&source)?;
+    for name in messages.keys() {
+        if !manifest.structs.contains_key(name) {
+            return Err(Error::Parse(format!(
+                "proto_spec message '{name}' is not a registered struct"
+            )));
+        }
+    }
+    manifest.fields = messages;
+    Ok(())
+}
+
+/// Parse manifest from string content. A `proto_spec` reference needs
+/// a manifest location to resolve against, so it is rejected here --
+/// use `parse_manifest` for file-based manifests.
+pub fn parse_manifest_str(content: &str) -> Result<Manifest, Error> {
+    let manifest = parse_toml(content)?;
+    if manifest.proto_spec.is_some() {
+        return Err(Error::Parse(
+            "proto_spec requires a file-based manifest (nothing to resolve the path against)"
+                .into(),
+        ));
+    }
+    Ok(manifest)
 }
 
 /* --------------------------------- Tests ---------------------------------- */

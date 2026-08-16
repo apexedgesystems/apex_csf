@@ -13,8 +13,13 @@ namespace exec {
 bool SpecExecutive::registerComponents() noexcept {
   const auto& LOG_DIR = fileSystem().logDir();
 
-  // SpecSensor (fullUid = 0x00D400) -- the spec-born component.
+  // SpecSensor (fullUid = 0x00D400) -- TOML-authored spec.
   if (!registerComponent(&sensor_, LOG_DIR)) {
+    return false;
+  }
+
+  // SpecActuator (fullUid = 0x00D500) -- proto-authored spec.
+  if (!registerComponent(&actuator_, LOG_DIR)) {
     return false;
   }
 
@@ -24,8 +29,9 @@ bool SpecExecutive::registerComponents() noexcept {
   }
 
   if (auto* log = sysLog()) {
-    log->info("SPEC_DEMO_EXEC", fmt::format("Registered: sensor={:#x} sysmon={:#x}",
-                                            sensor_.fullUid(), sysMonitor_.fullUid()));
+    log->info("SPEC_DEMO_EXEC",
+              fmt::format("Registered: sensor={:#x} actuator={:#x} sysmon={:#x}", sensor_.fullUid(),
+                          actuator_.fullUid(), sysMonitor_.fullUid()));
   }
   return true;
 }

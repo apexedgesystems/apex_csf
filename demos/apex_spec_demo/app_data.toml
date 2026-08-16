@@ -24,6 +24,13 @@ type = "SW_MODEL"
 notes = "Spec-born drift sensor (50 Hz step, IDLE/MEASURE/FAULT_INJECT)"
 
 [[components]]
+name = "SpecActuator"
+fullUid = "0x00D500"
+instanceIndex = 0
+type = "SW_MODEL"
+notes = "Proto-authored slewing actuator (50 Hz step, rate-limited)"
+
+[[components]]
 name = "SystemMonitor"
 fullUid = "0x00C800"
 type = "SUPPORT"

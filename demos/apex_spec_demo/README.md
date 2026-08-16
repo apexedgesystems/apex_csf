@@ -1,11 +1,15 @@
 # ApexSpecDemo
 
-A minimal application whose only component is **born from a spec**: the
-environment sensor's data structures, command dispatch, ground dictionary,
-and component skeleton all derive from one file,
-[sensor/apex_data.toml](sensor/apex_data.toml). The demo exists to prove the
-spec-driven development path end to end -- if this app builds, boots, and
-passes its checkout, the codegen chain works.
+A minimal application whose components are **born from specs** -- in both
+authoring formats. The environment sensor derives from inline `[[fields]]`
+arrays in [sensor/apex_data.toml](sensor/apex_data.toml); the actuator's
+layouts are authored as standard protobuf in
+[actuator/spec_actuator.proto](actuator/spec_actuator.proto) (the
+[apex proto profile](../../tools/rust/docs/proto_profile.md)) and referenced
+by its manifest. Data structures, command dispatch, ground dictionaries,
+protobuf interfaces, and component skeletons all derive from those specs.
+The demo exists to prove the spec-driven development path end to end -- if
+this app builds, boots, and passes its checkout, the codegen chain works.
 
 ## The three-artifact model
 

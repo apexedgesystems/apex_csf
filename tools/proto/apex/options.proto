@@ -1,0 +1,29 @@
+// Apex profile field options for spec-defined component structs.
+//
+// Emitted .proto interfaces and proto-authored component specs carry
+// these options to pin the fixed memory layout format A requires:
+// byte width for the sized-integer types, element count for fixed
+// arrays, and the member default. The apex tools read the profile
+// with their own subset parser; this file exists so the same .proto
+// compiles under a standard protobuf toolchain (protoc, buf) for
+// ecosystem interop.
+syntax = "proto3";
+
+package apex;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.FieldOptions {
+  // Byte width of the field (1|2|4) for uint32/int32-declared fields;
+  // absent means the natural width of the declared scalar.
+  uint32 width = 51001;
+  // Fixed element count for repeated fields (required on repeated:
+  // the layout has no variable-length members).
+  uint32 count = 51002;
+  // Member default, formatted as the literal it parses back to
+  // (e.g. "10.0", "3", "true").
+  string default = 51003;
+  // Byte capacity for string fields (required on string: text lives
+  // in a fixed char buffer, null-padded; longer values fail packing).
+  uint32 capacity = 51004;
+}
