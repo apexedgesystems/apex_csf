@@ -88,6 +88,8 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) n
   // Create TaskEntry (scheduler owns this)
   TaskEntry entry{};
   entry.task = &task;
+  entry.periodNs =
+      ffreq_ > 0U ? (static_cast<std::uint64_t>(PERIOD_TPT) * 1'000'000'000ULL) / ffreq_ : 0ULL;
   entry.config = config;
   entry.holdCtr = 0;
 
@@ -221,6 +223,58 @@ SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
   }
 
   return replaced;
+}
+
+/* ----------------------------- inFlightSummary ----------------------------- */
+
+std::string SchedulerBase::inFlightSummary(std::size_t cap) const noexcept {
+  std::string out;
+  std::size_t listed = 0;
+  for (const auto& entry : entries_) {
+    if (!entry.stillRunning()) {
+      continue;
+    }
+    if (listed == cap) {
+      out += ", ...";
+      break;
+    }
+    if (!out.empty()) {
+      out += ", ";
+    }
+    out += entry.componentName != nullptr ? entry.componentName : "?";
+    out += ":";
+    out += std::to_string(entry.taskUid);
+    ++listed;
+  }
+  return out.empty() ? "none" : out;
+}
+
+/* ----------------------------- populateTaskStatsTlm ----------------------------- */
+
+void SchedulerBase::populateTaskStatsTlm() noexcept {
+  const auto SAT16 = [](std::uint32_t v) noexcept {
+    return static_cast<std::uint16_t>(v > 0xFFFFU ? 0xFFFFU : v);
+  };
+
+  std::size_t row = 0;
+  for (const auto& entry : entries_) {
+    if (row >= TASK_STATS_TLM_CAP) {
+      taskStatsTlm_.truncated = 1;
+      break;
+    }
+    if (!entry.stats) {
+      continue;
+    }
+    auto& r = taskStatsTlm_.rows[row];
+    r.fullUid = entry.fullUid;
+    r.taskUid = entry.taskUid;
+    r.lastRuntimeUs16 = SAT16(entry.stats->lastRuntimeUs.load(std::memory_order_relaxed));
+    r.maxRuntimeUs = entry.stats->maxRuntimeUs.load(std::memory_order_relaxed);
+    r.overruns16 = SAT16(entry.stats->overruns.load(std::memory_order_relaxed));
+    r.violations16 = SAT16(entry.stats->deadlineViolations.load(std::memory_order_relaxed));
+    ++row;
+  }
+  taskStatsTlm_.taskCount = static_cast<std::uint16_t>(row);
 }
 
 /* ----------------------------- runTablePreflight ----------------------------- */
@@ -670,6 +724,9 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
 
   // Register health snapshot as OUTPUT for INSPECT readback.
   // Populated on each GET_HEALTH call.
+  registerData(system_core::data::DataCategory::OUTPUT, "taskStats", &taskStatsTlm_,
+               sizeof(SchedulerTaskStatsTlm));
+
   registerData(system_core::data::DataCategory::OUTPUT, "health", &healthTlm_,
                sizeof(SchedulerHealthTlm));
 
@@ -828,6 +885,13 @@ std::uint8_t SchedulerBase::handleCommand(std::uint16_t opcode,
     healthTlm_.violationsThisTick = static_cast<std::uint32_t>(periodViolationsThisTick());
     response.resize(sizeof(healthTlm_));
     std::memcpy(response.data(), &healthTlm_, sizeof(healthTlm_));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::GET_TASK_STATS): {
+    populateTaskStatsTlm();
+    response.resize(sizeof(taskStatsTlm_));
+    std::memcpy(response.data(), &taskStatsTlm_, sizeof(taskStatsTlm_));
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 

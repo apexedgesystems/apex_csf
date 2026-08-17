@@ -108,6 +108,22 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
     }
     // Other SOFT modes (LOG_ONLY, SKIP_ON_BUSY): isViolation stays false
 
+    // Frame-loss event: task cycles fell further behind the clock than
+    // ever before in this run. Rare by construction (a ratchet), so the
+    // in-flight snapshot is affordable -- it names the tasks that were
+    // running when the frame was lost, which is the fact post-incident
+    // analysis needs.
+    {
+      const std::uint64_t LAG_NOW = (clockCycles > taskCycles) ? (clockCycles - taskCycles) : 0;
+      static thread_local std::uint64_t maxLagSeen = 0;
+      if (LAG_NOW > maxLagSeen && LAG_NOW > 1) {
+        maxLagSeen = LAG_NOW;
+        sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_FRAME_OVERRUN),
+                         fmt::format("FRAME_LOSS: lag reached {} at cycle {} -- in-flight: {}",
+                                     LAG_NOW, clockCycles, scheduler_.inFlightSummary(4)));
+      }
+    }
+
     // Track frame overruns (pool active or step pending at tick boundary)
     // Count is tracked for all modes; summary logged at shutdown.
     // No per-tick warnings here:

@@ -23,6 +23,7 @@
 #include <cstdint>
 
 #include <atomic>
+#include <chrono>
 #include <memory>
 
 namespace system_core {
@@ -113,17 +114,71 @@ struct TaskEntry {
 
   /* ----------------------------- Deadline Tracking ----------------------------- */
 
+  /* ----------------------------- Per-Task Stats ----------------------------- */
+
+  /**
+   * @struct TaskStats
+   * @brief Cross-thread runtime counters for one task.
+   *
+   * Writers: the tick thread stamps dispatch; the completing worker
+   * writes runtime/overrun/completion; the tick thread counts deadline
+   * violations. Readers snapshot from command/INSPECT context. All
+   * fields atomic with relaxed ordering -- these are monotonic
+   * telemetry counters, not synchronization.
+   */
+  struct TaskStats {
+    std::atomic<std::uint64_t> dispatchNs{0};         ///< Last dispatch timestamp.
+    std::atomic<std::uint32_t> maxRuntimeUs{0};       ///< Worst dispatch-to-complete time.
+    std::atomic<std::uint32_t> lastRuntimeUs{0};      ///< Most recent runtime.
+    std::atomic<std::uint32_t> completions{0};        ///< Completed executions.
+    std::atomic<std::uint32_t> overruns{0};           ///< Runtime exceeded the task period.
+    std::atomic<std::uint32_t> deadlineViolations{0}; ///< Still running at next dispatch.
+  };
+
+  /// Heap block for the same reason as isRunning: TaskEntry must stay
+  /// movable while the counters stay atomic.
+  std::unique_ptr<TaskStats> stats{std::make_unique<TaskStats>()};
+
+  std::uint64_t periodNs{0}; ///< Task period in ns (set at addTask; 0 = unknown).
+
   /// In-flight flag for deadline tracking (unique_ptr: no ref counting overhead).
   std::unique_ptr<std::atomic<bool>> isRunning{std::make_unique<std::atomic<bool>>(false)};
 
-  /** @brief Mark task as dispatched (in-flight). */
+  /** @brief Mark task as dispatched (in-flight); stamps the dispatch time. */
   void markDispatched() noexcept {
+    if (stats) {
+      stats->dispatchNs.store(
+          static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count()),
+          std::memory_order_relaxed);
+    }
     if (isRunning)
       isRunning->store(true, std::memory_order_release);
   }
 
-  /** @brief Mark task as completed (no longer in-flight). */
+  /**
+   * @brief Mark task as completed; records runtime against the period.
+   *
+   * Runtime is dispatch-to-complete, so queue wait is charged to the
+   * task -- the same base the deadline check uses.
+   */
   void markCompleted() noexcept {
+    if (stats) {
+      const auto NOW =
+          static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+      const std::uint64_t START = stats->dispatchNs.load(std::memory_order_relaxed);
+      if (START != 0 && NOW > START) {
+        const auto US = static_cast<std::uint32_t>((NOW - START) / 1000U);
+        stats->lastRuntimeUs.store(US, std::memory_order_relaxed);
+        std::uint32_t prev = stats->maxRuntimeUs.load(std::memory_order_relaxed);
+        while (US > prev &&
+               !stats->maxRuntimeUs.compare_exchange_weak(prev, US, std::memory_order_relaxed)) {
+        }
+        if (periodNs != 0 && (NOW - START) > periodNs) {
+          stats->overruns.fetch_add(1, std::memory_order_relaxed);
+        }
+      }
+      stats->completions.fetch_add(1, std::memory_order_relaxed);
+    }
     if (isRunning)
       isRunning->store(false, std::memory_order_release);
   }

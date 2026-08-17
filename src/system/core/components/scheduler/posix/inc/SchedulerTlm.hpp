@@ -22,8 +22,44 @@ namespace scheduler {
 
 /// Telemetry opcodes for Scheduler (component-specific range 0x0100+).
 enum class SchedulerTlmOpcode : std::uint16_t {
-  GET_HEALTH = 0x0100 ///< Request scheduler health snapshot.
+  GET_HEALTH = 0x0100,    ///< Request scheduler health snapshot.
+  GET_TASK_STATS = 0x0101 ///< Request per-task runtime stats snapshot.
 };
+
+/* ----------------------------- Task Stats ----------------------------- */
+
+/// Maximum tasks reported in one stats snapshot.
+inline constexpr std::size_t TASK_STATS_TLM_CAP = 32;
+
+#pragma pack(push, 1)
+/**
+ * @struct TaskStatsRowTlm
+ * @brief One task's runtime counters (16 bytes, little-endian).
+ */
+struct TaskStatsRowTlm {
+  std::uint32_t fullUid{0};         ///< Owner component fullUid.
+  std::uint8_t taskUid{0};          ///< Task UID within the component.
+  std::uint8_t pad{0};              ///< Alignment.
+  std::uint16_t lastRuntimeUs16{0}; ///< Most recent runtime (us, saturated).
+  std::uint32_t maxRuntimeUs{0};    ///< Worst dispatch-to-complete (us).
+  std::uint16_t overruns16{0};      ///< Period overruns (saturated).
+  std::uint16_t violations16{0};    ///< Deadline violations (saturated).
+};
+
+/**
+ * @struct SchedulerTaskStatsTlm
+ * @brief Per-task runtime stats snapshot.
+ *
+ * Returned as response payload to GET_TASK_STATS and registered as an
+ * INSPECT OUTPUT; rows populated at snapshot time from the live
+ * counters (readers never touch scheduler internals).
+ */
+struct SchedulerTaskStatsTlm {
+  std::uint16_t taskCount{0}; ///< Rows populated.
+  std::uint16_t truncated{0}; ///< 1 when tasks exceeded the row cap.
+  TaskStatsRowTlm rows[TASK_STATS_TLM_CAP]{};
+};
+#pragma pack(pop)
 
 /* ----------------------------- SchedulerHealthTlm ----------------------------- */
 

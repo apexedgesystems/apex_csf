@@ -268,6 +268,9 @@ Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcep
       if (entry.stillRunning()) {
         ++periodViolationsThisTick_;
         ++totalPeriodViolations_;
+        if (entry.stats) {
+          entry.stats->deadlineViolations.fetch_add(1, std::memory_order_relaxed);
+        }
         lastViolationComponent_.store(entry.componentName, std::memory_order_release);
         lastViolationTaskUid_.store(entry.taskUid, std::memory_order_release);
         periodViolationFlag_.store(true, std::memory_order_release);

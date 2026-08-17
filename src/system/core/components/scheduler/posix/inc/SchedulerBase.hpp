@@ -200,6 +200,20 @@ public:
   void runTablePreflight() noexcept;
 
   /**
+   * @brief Refresh the per-task stats snapshot from the live counters.
+   * @note Command/INSPECT context; not on the tick path.
+   */
+  void populateTaskStatsTlm() noexcept;
+
+  /**
+   * @brief Names of tasks currently marked in-flight, for loss events.
+   * @param cap Maximum names listed.
+   * @return "Component:taskUid" list, comma-separated ("none" if empty).
+   * @note Diagnostic path only (allocates); never on the tick path.
+   */
+  [[nodiscard]] std::string inFlightSummary(std::size_t cap) const noexcept;
+
+  /**
    * @brief Worker count per constructed pool (index = poolId).
    * @return One entry per pool; single-threaded default reports {1}.
    */
@@ -419,7 +433,8 @@ protected:
 
   /** @brief Table of tick index -> vector of entry indices scheduled at that tick. */
   std::vector<std::vector<std::size_t>> schedule_{};
-  TablePreflight tablePreflight_{}; ///< Verdicts from the last table analysis.
+  TablePreflight tablePreflight_{};      ///< Verdicts from the last table analysis.
+  SchedulerTaskStatsTlm taskStatsTlm_{}; ///< Snapshot for GET_TASK_STATS/INSPECT.
 
   /** @brief Fundamental frequency in ticks per second. */
   std::uint16_t ffreq_{0};
