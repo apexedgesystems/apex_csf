@@ -1,0 +1,33 @@
+# SpecProtoMax -- proto-authored maximal-profile reference component.
+#
+# Struct layouts come from spec_proto_max.proto, which uses every
+# feature the apex profile accepts -- the copyable reference for
+# proto-first users. Commands, telemetry, and constraints stay here.
+
+component = "SpecProtoMax"
+namespace = "appsim::spec"
+component_id = 217
+component_type = "SW_MODEL"
+label = "SPEC_PMX"
+proto_spec = "spec_proto_max.proto"
+
+[structs]
+SpecProtoMaxTunableParams = { category = "TUNABLE_PARAM" }
+SpecProtoMaxState = { category = "STATE" }
+ReportResponse = { category = "TELEMETRY", opcode = "0x0241" }
+
+[constraints.SpecProtoMaxTunableParams]
+ratio = { min = 0.0, max = 1.0 }
+uTiny = { max = 100 }
+
+[[commands]]
+name = "Report"
+opcode = "0x0241"
+response = "ReportResponse"
+doc = "Return the checksum/step snapshot."
+
+[[telemetry]]
+name = "Health"
+opcode = "0x0341"
+struct = "SpecProtoMaxState"
+doc = "Step/checksum state, readable via INSPECT (STATE category)."

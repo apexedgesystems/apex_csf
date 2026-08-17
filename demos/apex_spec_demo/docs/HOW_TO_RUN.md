@@ -41,13 +41,14 @@ While the app is running, from another terminal:
 python3 demos/apex_spec_demo/scripts/checkout.py --host localhost
 ```
 
-The checkout drives every command in both specs live -- the sensor's mode
-transitions (including the FAULT_INJECT guard), recalibration, stats, and
-reset, then the proto-authored actuator's Move/Halt/GetPosition (slew rate
-and hold-band settling observable) -- plus the negative paths (wrong-size
-payloads, unknown opcode, out-of-range target) and verifies each effect
-through INSPECT of the spec-generated data blocks. A clean run ends with
-`0 failed`.
+The checkout drives every command in every spec live -- the sensor's mode
+machine, the actuator's slew, the bus driver's loopback round-trips, the
+matrix's full type vocabulary (with an independent checksum cross-proof),
+the limits component's constraint rails, the maximal proto profile, and
+the two channel instances -- plus the negative paths (wrong-size payloads,
+unknown opcode, out-of-range targets, oversize frames, out-of-band
+nudges), all verified through INSPECT of the spec-generated data blocks.
+A clean run ends with `0 failed`.
 
 Commands to model components ride the async queue: the wire ACK means
 "accepted", and processing happens in the interface step. Effects are

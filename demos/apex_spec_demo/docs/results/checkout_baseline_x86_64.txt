@@ -12,6 +12,12 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  SystemMonitor (0x00C800)
   PASS  SpecSensor (0x00D400)
   PASS  SpecActuator (0x00D500)
+  PASS  SpecBusDriver (0x00D600)
+  PASS  SpecMatrix (0x00D700)
+  PASS  SpecLimits (0x00D800)
+  PASS  SpecProtoMax (0x00D900)
+  PASS  SpecChannel#0 (0x00DA00)
+  PASS  SpecChannel#1 (0x00DA01)
 
 ------------------------------------------------------------------------
   2. Boot TPRM (spec tunables live)
@@ -27,15 +33,15 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  STATE readable
   PASS  samples advancing (~50/s, got 50)
   PASS  OUTPUT readable
-  PASS  sequence advancing (7 -> 57)
-  PASS  value tracks reference (25.63)
+  PASS  sequence advancing (9 -> 58)
+  PASS  value tracks reference (25.61)
 
 ------------------------------------------------------------------------
   4. SetMode (IDLE freezes, MEASURE resumes)
 ------------------------------------------------------------------------
   PASS  SetMode(IDLE) accepted
   PASS  mode = IDLE (0)
-  PASS  sampling frozen in IDLE (samples 57 -> 57)
+  PASS  sampling frozen in IDLE (samples 59 -> 59)
   PASS  SetMode(MEASURE) accepted
   PASS  mode = MEASURE (1)
   PASS  sampling resumed
@@ -46,25 +52,25 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  FAULT_INJECT from IDLE rejected (mode still 0)
   PASS  rejects incremented (0 -> 1)
   PASS  FAULT_INJECT from MEASURE accepted (mode 2)
-  PASS  fault bias visible (value 76.2)
+  PASS  fault bias visible (value 76.3)
 
 ------------------------------------------------------------------------
   6. Recalibrate (new reference, drift zeroed)
 ------------------------------------------------------------------------
   PASS  Recalibrate(30.0) accepted
   PASS  referenceValue now 30.0
-  PASS  drift zeroed (1.430 -> 0.160)
-  PASS  value tracks new reference (30.42)
+  PASS  drift zeroed (1.440 -> 0.150)
+  PASS  value tracks new reference (30.26)
 
 ------------------------------------------------------------------------
   7. GetStats / Reset
 ------------------------------------------------------------------------
   PASS  GetStats accepted
   PASS  Reset accepted
-  PASS  samples zeroed then re-advancing (got 15)
+  PASS  samples zeroed then re-advancing (got 14)
   PASS  rejects zeroed (got 0)
   PASS  mode back to tunable default (1)
-  PASS  output sequence restarted (got 16)
+  PASS  output sequence restarted (got 15)
 
 ------------------------------------------------------------------------
   8. Malformed Payload (never reaches user logic)
@@ -114,10 +120,82 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  malformed Move: target unchanged
 
 ------------------------------------------------------------------------
-  14. Post-Test Health
+  14. Bus Driver (DRIVER tier: loopback round-trips)
 ------------------------------------------------------------------------
-  PASS  Clock ~100 Hz (measured 100)
+  PASS  bus TUNABLE readable (4 bytes)
+  PASS  loopDelayTicks = 2 (TPRM value 2)
+  PASS  maxFrameBytes = 12 (TPRM value 12)
+  PASS  SendFrame(8 bytes) accepted
+  PASS  bus STATE readable (24 bytes)
+  PASS  loopback round-trip (tx=1 rx=1)
+  PASS  byte counters match (txB=8 rxB=8)
+  PASS  oversize frame rejected (rejects 0 -> 1)
+  PASS  Flush accepted
+  PASS  GetStats accepted
+
+------------------------------------------------------------------------
+  15. Matrix (SUPPORT tier: full type vocabulary live)
+------------------------------------------------------------------------
+  PASS  matrix TUNABLE readable (80 bytes)
+  PASS  int64/uint64 lanes (-8000000001, 9000000001)
+  PASS  double lane (2.5)
+  PASS  int32/uint32 lanes (-70001, 70001)
+  PASS  float lane (0.75)
+  PASS  uint16 array lane (10, 20, 30, 40)
+  PASS  int16/uint16 lanes (-301, 301)
+  PASS  int8/uint8/bool lanes (-6, 6, 1)
+  PASS  bounded string lane 'FULL-MATRIX'
+  PASS  string array lane ('ALPHA', 'BETA')
+  PASS  byte buffer lane (1, 2, 3, 4, 5)
+  PASS  matrix STATE readable
+  PASS  checksum cross-proof (0x2C1D099F)
+  PASS  GetSnapshot accepted (SUPPORT dispatch)
+
+------------------------------------------------------------------------
+  16. Limits (every constraint kind at its rail)
+------------------------------------------------------------------------
+  PASS  limits TUNABLE readable (36 bytes)
+  PASS  min-only at edge (0.0)
+  PASS  max-only at edge (100.0)
+  PASS  band at max edge (10.0)
+  PASS  step-rail value (2.25)
+  PASS  array band edges (-1.0, -0.5, 0.5, 1.0)
+  PASS  allowed-list value (7)
+  PASS  limits STATE readable
+  PASS  in-band nudge applied (value=3.0)
+  PASS  out-of-band nudge rejected (nudges=1, rejects=1)
+
+------------------------------------------------------------------------
+  17. ProtoMax (maximal proto profile live)
+------------------------------------------------------------------------
+  PASS  protoMax TUNABLE readable (80 bytes)
+  PASS  double/uint64/int64 lanes (3.5, 9000000002, -8000000002)
+  PASS  bounded float array (0.1, 0.2, 0.3)
+  PASS  bounded string 'PMX-OK'
+  PASS  string array ('AA', 'BB')
+  PASS  byte buffer ('0xde', '0xad', '0xbe', '0xef')
+  PASS  protoMax STATE readable
+  PASS  checksum cross-proof (0x45787C8D)
+  PASS  Report accepted
+
+------------------------------------------------------------------------
+  18. Channels (one spec, two instances, two configs)
+------------------------------------------------------------------------
+  PASS  channel A TUNABLE readable
+  PASS  channel B TUNABLE readable
+  PASS  instance A config (2.0, 1.0, 'CH-A')
+  PASS  instance B config (-1.0, 5.0, 'CH-B')
+  PASS  A ramps up (21.56 -> 22.76)
+  PASS  B ramps down (-5.30 -> -5.90)
+  PASS  Zero(A) accepted
+  PASS  A restarted near offset (1.60)
+  PASS  B unaffected by A's Zero (-6.20)
+
+------------------------------------------------------------------------
+  19. Post-Test Health
+------------------------------------------------------------------------
+  PASS  Clock ~100 Hz (measured 99)
 
 ========================================================================
-  Results: 60 passed, 0 failed
+  Results: 118 passed, 0 failed
 ========================================================================

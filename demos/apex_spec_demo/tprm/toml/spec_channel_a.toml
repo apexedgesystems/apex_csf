@@ -1,0 +1,7 @@
+# SpecChannel instance 0 (componentId=218, instanceIndex=0, fullUid=0xDA00)
+# SpecChannelTunableParams (12 bytes)
+
+[SpecChannelTunableParams]
+gain = { type = "float", size = 4, min = -10.0, max = 10.0, value = 2.0 }
+offset = { type = "float", size = 4, value = 1.0 }
+channelTag = { type = "string", size = 4, value = "CH-A" }

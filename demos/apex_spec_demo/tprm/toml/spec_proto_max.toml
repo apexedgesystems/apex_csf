@@ -1,0 +1,21 @@
+# SpecProtoMax (componentId=217, instanceIndex=0, fullUid=0xD900)
+# Authored values for the maximal proto-authored layout.
+# SpecProtoMaxTunableParams (80 bytes)
+
+[SpecProtoMaxTunableParams]
+precise = { type = "float", size = 8, value = 3.5 }
+uWide = { type = "uint", size = 8, value = 9000000002 }
+iWide = { type = "int", size = 8, value = -8000000002 }
+ratio = { type = "float", size = 4, min = 0.0, max = 1.0, value = 0.5 }
+uWord = { type = "uint", size = 4, value = 70002 }
+iWord = { type = "int", size = 4, value = -70002 }
+taps = { type = "array", size = 12, element_type = "float", value = [0.1, 0.2, 0.3] }
+uShort = { type = "uint", size = 2, value = 302 }
+iShort = { type = "int", size = 2, value = -302 }
+tag = { type = "string", size = 8, value = "PMX-OK" }
+aliases = { type = "array", size = 8, element_type = "string", value = ["AA", "BB"] }
+cookie = { type = "array", size = 4, element_type = "uint", value = [222, 173, 190, 239] }
+uTiny = { type = "uint", size = 1, max = 100, value = 7 }
+iTiny = { type = "int", size = 1, value = -7 }
+enabled = { type = "bool", size = 1, value = true }
+reserved = { type = "array", size = 5, element_type = "uint", value = [0, 0, 0, 0, 0] }

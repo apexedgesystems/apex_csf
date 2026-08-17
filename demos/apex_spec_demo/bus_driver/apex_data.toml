@@ -1,0 +1,162 @@
+# SpecBusDriver -- spec-born DRIVER-tier component (loopback bus).
+#
+# Endpoint-blind: owns a software loopback "bus". SendFrame enqueues a
+# frame, the step drains it back after a tunable delay, counters
+# expose the traffic. The checkout proves tx == rx round-trips through
+# generated dispatch over the driver base.
+
+component = "SpecBusDriver"
+namespace = "appsim::spec"
+component_id = 214
+component_type = "DRIVER"
+label = "SPEC_BUS"
+
+[structs]
+SpecBusDriverTunableParams = { category = "TUNABLE_PARAM" }
+SpecBusDriverState = { category = "STATE" }
+SpecBusDriverOutput = { category = "OUTPUT" }
+FrameRequest = { category = "COMMAND", opcode = "0x0220" }
+BusStats = { category = "TELEMETRY", opcode = "0x0222" }
+
+[[fields.SpecBusDriverTunableParams]]
+name = "loopDelayTicks"
+type = "uint"
+size = 2
+default = 1
+doc = "Steps a frame sits on the loopback before it is received."
+
+[[fields.SpecBusDriverTunableParams]]
+name = "maxFrameBytes"
+type = "uint"
+size = 1
+default = 16
+doc = "Largest accepted frame length [bytes]."
+
+[[fields.SpecBusDriverTunableParams]]
+name = "reserved"
+type = "uint"
+size = 1
+
+[[fields.SpecBusDriverState]]
+name = "txFrames"
+type = "uint"
+size = 4
+doc = "Frames accepted for transmit."
+
+[[fields.SpecBusDriverState]]
+name = "rxFrames"
+type = "uint"
+size = 4
+doc = "Frames received off the loopback."
+
+[[fields.SpecBusDriverState]]
+name = "txBytes"
+type = "uint"
+size = 4
+
+[[fields.SpecBusDriverState]]
+name = "rxBytes"
+type = "uint"
+size = 4
+
+[[fields.SpecBusDriverState]]
+name = "rejects"
+type = "uint"
+size = 4
+doc = "Frames refused (oversize or bus busy)."
+
+[[fields.SpecBusDriverState]]
+name = "pending"
+type = "uint"
+size = 1
+doc = "1 while a frame sits on the loopback."
+
+[[fields.SpecBusDriverState]]
+name = "reserved"
+type = "uint"
+size = 1
+count = 3
+
+[[fields.SpecBusDriverOutput]]
+name = "rxFrames"
+type = "uint"
+size = 4
+doc = "Received-frame counter (published)."
+
+[[fields.SpecBusDriverOutput]]
+name = "lastRxLen"
+type = "uint"
+size = 1
+doc = "Length of the last received frame [bytes]."
+
+[[fields.SpecBusDriverOutput]]
+name = "reserved"
+type = "uint"
+size = 1
+count = 3
+
+[[fields.FrameRequest]]
+name = "length"
+type = "uint"
+size = 1
+doc = "Frame length in data[], 1..maxFrameBytes."
+
+[[fields.FrameRequest]]
+name = "reserved"
+type = "uint"
+size = 1
+count = 3
+
+[[fields.FrameRequest]]
+name = "data"
+type = "uint"
+size = 1
+count = 16
+doc = "Frame payload (fixed 16-byte buffer, length bytes used)."
+
+[[fields.BusStats]]
+name = "txFrames"
+type = "uint"
+size = 4
+
+[[fields.BusStats]]
+name = "rxFrames"
+type = "uint"
+size = 4
+
+[[fields.BusStats]]
+name = "txBytes"
+type = "uint"
+size = 4
+
+[[fields.BusStats]]
+name = "rxBytes"
+type = "uint"
+size = 4
+
+[constraints.SpecBusDriverTunableParams]
+loopDelayTicks = { min = 1, max = 100 }
+maxFrameBytes = { min = 1, max = 16 }
+
+[[commands]]
+name = "SendFrame"
+opcode = "0x0220"
+request = "FrameRequest"
+doc = "Queue a frame on the loopback bus."
+
+[[commands]]
+name = "Flush"
+opcode = "0x0221"
+doc = "Drop any pending frame."
+
+[[commands]]
+name = "GetStats"
+opcode = "0x0222"
+response = "BusStats"
+doc = "Return the traffic counters."
+
+[[telemetry]]
+name = "Traffic"
+opcode = "0x0320"
+struct = "SpecBusDriverOutput"
+doc = "Published rx counters, readable via INSPECT (OUTPUT category)."

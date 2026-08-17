@@ -1,0 +1,100 @@
+# SpecLimits -- constraint-torture component: every constraint kind
+# the rails support, including edge values. The authored TPRM sits
+# inside every range; the checkout proves in-range values boot and an
+# out-of-range upload rejects loudly (CONSTRAINT_VIOLATION, defaults
+# fallback) without disturbing the running set.
+
+component = "SpecLimits"
+namespace = "appsim::spec"
+component_id = 216
+component_type = "SW_MODEL"
+label = "SPEC_LIM"
+
+[structs]
+SpecLimitsTunableParams = { category = "TUNABLE_PARAM" }
+SpecLimitsState = { category = "STATE" }
+NudgeRequest = { category = "COMMAND", opcode = "0x0238" }
+
+[[fields.SpecLimitsTunableParams]]
+name = "floorOnly"
+type = "float"
+size = 4
+default = 1.0
+doc = "min-only rail."
+
+[[fields.SpecLimitsTunableParams]]
+name = "ceilOnly"
+type = "float"
+size = 4
+default = 50.0
+doc = "max-only rail."
+
+[[fields.SpecLimitsTunableParams]]
+name = "banded"
+type = "float"
+size = 4
+default = 5.0
+doc = "min+max rail."
+
+[[fields.SpecLimitsTunableParams]]
+name = "stepped"
+type = "float"
+size = 4
+default = 0.75
+doc = "step rail (granularity 0.25 from 0)."
+
+[[fields.SpecLimitsTunableParams]]
+name = "gainTable"
+type = "float"
+size = 4
+count = 4
+doc = "Array rail: every element inherits the same band."
+
+[[fields.SpecLimitsTunableParams]]
+name = "mode"
+type = "uint"
+size = 1
+default = 3
+doc = "allowed-list rail (odd modes only)."
+
+[[fields.SpecLimitsTunableParams]]
+name = "reserved"
+type = "uint"
+size = 1
+count = 3
+
+[[fields.SpecLimitsState]]
+name = "value"
+type = "float"
+size = 4
+doc = "Accumulated nudges, clamped to the banded rail."
+
+[[fields.SpecLimitsState]]
+name = "nudges"
+type = "uint"
+size = 4
+
+[[fields.SpecLimitsState]]
+name = "rejects"
+type = "uint"
+size = 4
+
+[[fields.NudgeRequest]]
+name = "delta"
+type = "float"
+size = 4
+doc = "Added to value; results outside the banded rail reject."
+
+[constraints.SpecLimitsTunableParams]
+floorOnly = { min = 0.0 }
+ceilOnly = { max = 100.0 }
+banded = { min = 0.0, max = 10.0 }
+stepped = { min = 0.0, step = 0.25 }
+gainTable = { min = -1.0, max = 1.0 }
+mode = { allowed = [1, 3, 5, 7] }
+
+[[commands]]
+name = "Nudge"
+opcode = "0x0238"
+request = "NudgeRequest"
+doc = "Nudge the value; out-of-band results reject and count."

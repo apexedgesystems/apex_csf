@@ -1,15 +1,24 @@
 # ApexSpecDemo
 
-A minimal application whose components are **born from specs** -- in both
-authoring formats. The environment sensor derives from inline `[[fields]]`
-arrays in [sensor/apex_data.toml](sensor/apex_data.toml); the actuator's
-layouts are authored as standard protobuf in
-[actuator/spec_actuator.proto](actuator/spec_actuator.proto) (the
-[apex proto profile](../../tools/rust/docs/proto_profile.md)) and referenced
-by its manifest. Data structures, command dispatch, ground dictionaries,
-protobuf interfaces, and component skeletons all derive from those specs.
-The demo exists to prove the spec-driven development path end to end -- if
-this app builds, boots, and passes its checkout, the codegen chain works.
+The **living compatibility suite** for spec-driven component development:
+every app component is born from a spec, and together the fleet covers
+the component taxonomy, both authoring formats, and the full spec
+vocabulary. If this app builds, boots, and passes its checkout, the
+codegen chain works -- including the weird cases.
+
+| Component                    | fullUid   | Tier     | Spec  | Proves                                                    |
+| ---------------------------- | --------- | -------- | ----- | --------------------------------------------------------- |
+| [SpecSensor](sensor/)        | 0xD400    | SW_MODEL | TOML  | Drift physics, mode machine, all four dispatch shapes     |
+| [SpecActuator](actuator/)    | 0xD500    | SW_MODEL | proto | Proto authoring, slew physics, bounded string             |
+| [SpecBusDriver](bus_driver/) | 0xD600    | DRIVER   | TOML  | Driver-tier dispatch, loopback round-trips                |
+| [SpecMatrix](matrix/)        | 0xD700    | SUPPORT  | TOML  | Support-tier dispatch, full type vocabulary in one struct |
+| [SpecLimits](limits/)        | 0xD800    | SW_MODEL | TOML  | Every constraint kind at its rail                         |
+| [SpecProtoMax](proto_max/)   | 0xD900    | SW_MODEL | proto | Every proto-profile feature (the copyable reference)      |
+| [SpecChannel](channel/)      | 0xDA00/01 | SW_MODEL | TOML  | One spec, two instances, per-instance TPRM                |
+
+Data structures, command dispatch, ground dictionaries, protobuf
+interfaces ([apex profile](../../tools/rust/docs/proto_profile.md)), and
+component skeletons all derive from the specs.
 
 ## The three-artifact model
 

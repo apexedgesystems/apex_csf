@@ -11,4 +11,9 @@
 
 add_subdirectory(sensor)
 add_subdirectory(actuator)
+add_subdirectory(bus_driver)
+add_subdirectory(matrix)
+add_subdirectory(limits)
+add_subdirectory(proto_max)
+add_subdirectory(channel)
 add_subdirectory(exec)

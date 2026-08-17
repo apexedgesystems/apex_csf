@@ -1,0 +1,75 @@
+# SpecChannel -- multi-instance spec-born component.
+#
+# One spec, two registered instances (fullUids 0x00DA00 and 0x00DA01)
+# with different authored TPRM values: per-instance configuration
+# through the spec path. Each instance ramps value = gain * t + offset
+# and carries its channel tag, so INSPECT proves the instances loaded
+# different parameter sets from the same layout (same hash).
+
+component = "SpecChannel"
+namespace = "appsim::spec"
+component_id = 218
+component_type = "SW_MODEL"
+label = "SPEC_CHN"
+
+[structs]
+SpecChannelTunableParams = { category = "TUNABLE_PARAM" }
+SpecChannelState = { category = "STATE" }
+SpecChannelOutput = { category = "OUTPUT" }
+
+[[fields.SpecChannelTunableParams]]
+name = "gain"
+type = "float"
+size = 4
+default = 1.0
+doc = "Ramp slope [units/s]."
+
+[[fields.SpecChannelTunableParams]]
+name = "offset"
+type = "float"
+size = 4
+default = 0.0
+doc = "Ramp intercept."
+
+[[fields.SpecChannelTunableParams]]
+name = "channelTag"
+type = "string"
+size = 4
+doc = "Instance tag for operator displays."
+
+[[fields.SpecChannelState]]
+name = "elapsed"
+type = "float"
+size = 4
+doc = "Seconds since boot (or last Zero)."
+
+[[fields.SpecChannelState]]
+name = "zeros"
+type = "uint"
+size = 4
+doc = "Zero commands handled."
+
+[[fields.SpecChannelOutput]]
+name = "value"
+type = "float"
+size = 4
+doc = "gain * elapsed + offset."
+
+[[fields.SpecChannelOutput]]
+name = "sequence"
+type = "uint"
+size = 4
+
+[constraints.SpecChannelTunableParams]
+gain = { min = -10.0, max = 10.0 }
+
+[[commands]]
+name = "Zero"
+opcode = "0x0248"
+doc = "Restart the ramp: elapsed returns to zero."
+
+[[telemetry]]
+name = "Ramp"
+opcode = "0x0348"
+struct = "SpecChannelOutput"
+doc = "Published ramp value, readable via INSPECT (OUTPUT category)."

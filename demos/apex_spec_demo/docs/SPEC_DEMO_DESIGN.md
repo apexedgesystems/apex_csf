@@ -2,17 +2,20 @@
 
 ## Purpose
 
-ApexSpecDemo is the acceptance vehicle for spec-driven component
-development: both app components are born entirely from specs -- the
-sensor from inline `[[fields]]` arrays in `sensor/apex_data.toml`,
-the actuator from standard protobuf messages in
-`actuator/spec_actuator.proto` (the apex proto profile, referenced by
-its manifest's `proto_spec` key). A successful build, boot, and
-checkout proves the whole codegen chain in both authoring formats --
-generated structs, generated command dispatch, once-only stubs,
-ground dictionaries, emitted protobuf interfaces, and layout-hash-
-stamped TPRMs -- working together in a running executive. No hardware
-dependencies; pure SIL on any POSIX host or Raspberry Pi.
+ApexSpecDemo is the living compatibility suite for spec-driven
+component development: every app component is born from a spec, and
+the fleet deliberately covers the taxonomy (SW_MODEL, DRIVER,
+SUPPORT), both authoring formats (inline `[[fields]]` TOML and the
+apex proto profile), the full type vocabulary (every width, floats,
+bool, arrays, bounded strings, string arrays, byte buffers), every
+constraint kind, and multi-instance per-instance configuration. A
+successful build, boot, and checkout proves the whole codegen chain
+-- generated structs, dispatch, once-only stubs, dictionaries,
+emitted protobuf interfaces, and layout-hash-stamped TPRMs --
+working together in a running executive, weird cases included. No
+hardware dependencies; pure SIL on any POSIX host or Raspberry Pi.
+The component table lives in the README; per-component design notes
+below cover the two physics components in depth.
 
 ## Architecture
 
