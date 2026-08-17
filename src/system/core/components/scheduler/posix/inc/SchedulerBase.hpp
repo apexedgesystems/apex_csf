@@ -20,6 +20,7 @@
 #include "src/system/core/components/scheduler/posix/inc/SchedulerStatus.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerTlm.hpp"
 #include "src/system/core/components/scheduler/base/inc/IScheduler.hpp"
+#include "src/system/core/components/scheduler/posix/inc/SchedulerPreflight.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/SequenceGroup.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
 #include "src/system/core/components/scheduler/posix/inc/TaskConfig.hpp"
@@ -181,6 +182,30 @@ public:
 
   /** @brief Period violations in the most recent tick. Override in multi-thread. */
   [[nodiscard]] virtual std::size_t periodViolationsThisTick() const noexcept { return 0; }
+
+  /**
+   * @brief Static feasibility verdicts for the loaded task table.
+   * @return Result of the most recent preflight (all-PASS default until
+   *         a table is analyzed).
+   */
+  [[nodiscard]] const TablePreflight& tablePreflight() const noexcept { return tablePreflight_; }
+
+  /**
+   * @brief Run the static table preflight and log its verdict section.
+   *
+   * Called automatically at TPRM table load; public so directly-built
+   * tables (addTask path) can be analyzed too.
+   * @note Config-time only.
+   */
+  void runTablePreflight() noexcept;
+
+  /**
+   * @brief Worker count per constructed pool (index = poolId).
+   * @return One entry per pool; single-threaded default reports {1}.
+   */
+  [[nodiscard]] virtual std::vector<std::uint16_t> poolWorkerCounts() const noexcept {
+    return {1U};
+  }
 
   /** @brief Component name of the most recent period violator (nullptr = none). */
   [[nodiscard]] virtual const char* lastViolationComponent() const noexcept { return nullptr; }
@@ -394,6 +419,7 @@ protected:
 
   /** @brief Table of tick index -> vector of entry indices scheduled at that tick. */
   std::vector<std::vector<std::size_t>> schedule_{};
+  TablePreflight tablePreflight_{}; ///< Verdicts from the last table analysis.
 
   /** @brief Fundamental frequency in ticks per second. */
   std::uint16_t ffreq_{0};

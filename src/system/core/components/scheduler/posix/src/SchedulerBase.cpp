@@ -223,6 +223,46 @@ SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
   return replaced;
 }
 
+/* ----------------------------- runTablePreflight ----------------------------- */
+
+void SchedulerBase::runTablePreflight() noexcept {
+  tablePreflight_ = analyzeTaskTable(entries_, schedule_, poolWorkerCounts());
+
+  auto* log = componentLog();
+  if (log == nullptr) {
+    return;
+  }
+
+  const auto NAME = [](PreflightVerdict v) noexcept {
+    return v == PreflightVerdict::PASS ? "PASS" : v == PreflightVerdict::WARN ? "WARN" : "FAIL";
+  };
+  const auto& P = tablePreflight_;
+
+  log->info(label(), "========== PREFLIGHT: TASK TABLE ==========");
+  log->info(label(), fmt::format("[{}] pool references: {} task(s) on missing pools",
+                                 NAME(P.poolRefs), P.missingPoolTasks));
+  log->info(label(), fmt::format("[{}] dispatch burst: worst tick {} loads pool {} with {} task(s) "
+                                 "over {} worker(s)",
+                                 NAME(P.dispatchBurst), P.worstBurstTick, P.worstBurstPool,
+                                 P.worstBurstTasks, P.worstBurstWorkers));
+  log->info(label(), fmt::format("[{}] chain dispatch order: {} group(s) with a later phase "
+                                 "dispatched ahead of an earlier one",
+                                 NAME(P.chainOrder), P.chainOrderViolations));
+  log->info(label(), fmt::format("[{}] chain shape: {} group(s) with waiters >= workers, "
+                                 "{} group(s) mixing rates/offsets",
+                                 NAME(P.chainShape), P.chainsOverWorkers, P.mixedRateChains));
+  const char* OVERALL = NAME(P.overall());
+  if (P.overall() == PreflightVerdict::FAIL) {
+    log->error(label(), 0,
+               fmt::format("preflight verdict: {} -- the table describes "
+                           "behavior the runtime cannot honor as written",
+                           OVERALL));
+  } else {
+    log->info(label(), fmt::format("preflight verdict: {}", OVERALL));
+  }
+  log->info(label(), "===========================================");
+}
+
 /* ----------------------------- initSchedulerLog ----------------------------- */
 
 void SchedulerBase::initSchedulerLog(const std::filesystem::path& logDir) noexcept {
@@ -619,6 +659,9 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
                                         skippedComponents + skippedTasks, header->numTasks,
                                         skippedComponents, skippedTasks));
   }
+
+  // Static feasibility verdicts for the table just loaded.
+  runTablePreflight();
 
   // Keep full TPRM binary for INSPECT readback and register with registry
   tprmRaw_ = tprmData;

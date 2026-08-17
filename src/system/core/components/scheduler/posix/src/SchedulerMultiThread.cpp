@@ -129,6 +129,16 @@ void SchedulerMultiThread::shutdown() noexcept {
   }
 }
 
+std::vector<std::uint16_t> SchedulerMultiThread::poolWorkerCounts() const noexcept {
+  std::vector<std::uint16_t> counts;
+  counts.reserve(pools_.size());
+  for (const auto& pool : pools_) {
+    counts.push_back(pool ? static_cast<std::uint16_t>(pool->workerCount())
+                          : static_cast<std::uint16_t>(0U));
+  }
+  return counts;
+}
+
 bool SchedulerMultiThread::threadsRunning() const noexcept {
   for (const auto& pool : pools_) {
     if (pool && pool->threadsRunning()) {
