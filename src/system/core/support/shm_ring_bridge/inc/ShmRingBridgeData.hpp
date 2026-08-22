@@ -34,6 +34,12 @@ inline constexpr std::uint32_t BRIDGE_FRAMEWORK_MAGIC = 0x48524E42u;
 
 /// Per the wire format: header (64) + producer cursor (64) + consumer
 /// cursor (64). Slots start at offset 192.
+/// Consecutive ring-full bridge ticks (with a frozen consumer tail)
+/// before a previously-draining consumer is declared stalled: 1 s at a
+/// 100 Hz bridge, 10 s at 10 Hz. Pre-attach saturation never trips it
+/// (the tail must have advanced at least once).
+inline constexpr std::uint32_t kStallWarnTicks = 100u;
+
 inline constexpr std::size_t BRIDGE_RING_HEADER_BYTES = 64u;
 inline constexpr std::size_t BRIDGE_CURSOR_BYTES = 64u;
 inline constexpr std::size_t BRIDGE_RING_PRELUDE_BYTES =
@@ -147,7 +153,16 @@ struct ShmRingBridgeState {
   std::uint8_t channel_open{0};    ///< 1 once shm + sem are open.
   std::uint8_t source_resolved{0}; ///< 1 once the source DataTarget resolves.
   std::uint8_t region_orphaned{0}; ///< 1 = the shm path was unlinked or replaced externally.
-  std::uint8_t reserved[5]{};
+
+  /* Consumer-stall detection. Saturation with no consumer is normal
+     back-pressure; a consumer that drained and then stopped is a
+     stall worth surfacing. */
+  std::uint8_t drain_seen{0};       ///< 1 once the consumer tail has ever advanced.
+  std::uint8_t consumer_stalled{0}; ///< 1 = drain stopped >= kStallWarnTicks ago.
+  std::uint8_t reserved[3]{};
+  std::uint64_t last_tail{0};         ///< Tail cursor at the last movement check.
+  std::uint32_t stall_full_streak{0}; ///< Consecutive full-failures with a frozen tail.
+  std::uint32_t stalls_total{0};      ///< Stall episodes since boot.
 };
 
 /* ----------------------------- ShmRingBridgeTlm ----------------------------- */
@@ -163,8 +178,9 @@ struct __attribute__((packed)) ShmRingBridgeTlm {
   std::uint64_t signals_failed{0};
   std::uint8_t channel_open{0};
   std::uint8_t source_resolved{0};
-  std::uint8_t region_orphaned{0}; ///< mirrors ShmRingBridgeState::region_orphaned
-  std::uint8_t reserved[5]{};
+  std::uint8_t region_orphaned{0};  ///< mirrors ShmRingBridgeState::region_orphaned
+  std::uint8_t consumer_stalled{0}; ///< mirrors ShmRingBridgeState::consumer_stalled
+  std::uint8_t reserved[4]{};
 };
 
 static_assert(sizeof(ShmRingBridgeTlm) == 32, "ShmRingBridgeTlm size drift");

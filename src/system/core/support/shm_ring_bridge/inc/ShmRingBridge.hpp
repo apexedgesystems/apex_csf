@@ -119,6 +119,10 @@ protected:
   void doReset() noexcept override;
 
 private:
+  /// Last stall state emitted by telemetryTick (edge-trigger latch for
+  /// the transition log lines).
+  std::uint8_t last_logged_stalled_ = 0;
+
   /* ----------------------------- Wire-format helpers ----------------------------- */
 
   /// Open the shm region + named semaphore as Side A. Validates the
