@@ -35,13 +35,9 @@ TEST(AircraftDataTest, TunablesFitWithinTprmPage) { EXPECT_LE(sizeof(AircraftTun
 /** @test Tunable defaults match the transport cruise preset reference condition. */
 TEST(AircraftDataTest, TunableDefaultsMatchTransportCruisePreset) {
   AircraftTunables p;
-  EXPECT_DOUBLE_EQ(p.mass_kg, 288800.0);
   EXPECT_DOUBLE_EQ(p.wing_area_m2, 510.97);
   EXPECT_DOUBLE_EQ(p.aspect_ratio, 6.96);
   EXPECT_DOUBLE_EQ(p.oswald_e, 0.80);
-  EXPECT_DOUBLE_EQ(p.CD0, 0.020);
-  EXPECT_DOUBLE_EQ(p.CL0, 0.10);
-  EXPECT_DOUBLE_EQ(p.CL_alpha, 5.50);
   EXPECT_DOUBLE_EQ(p.thrust_max_sl_N, 1.0e6);
   EXPECT_DOUBLE_EQ(p.thrust_density_exp, 0.7);
   EXPECT_DOUBLE_EQ(p.throttle_default, 0.6);

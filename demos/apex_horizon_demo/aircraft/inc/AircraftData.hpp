@@ -4,7 +4,7 @@
  * @file AircraftData.hpp
  * @brief Tunable + state + telemetry structs for the Aircraft.
  *
- * Scalar-path scope (open-loop baseline):
+ * Tunables cover:
  *   - Scalar flight-mechanics model: speed V, heading ψ, flight-path
  *     angle γ, geodetic position. 6-state PointMass3D-driven update.
  *   - Aerodynamics from the drag polar: CL = CL0 + CL_α*α,
@@ -41,10 +41,6 @@ namespace aircraft {
  * Trivially-copyable; 192 bytes.
  */
 struct AircraftTunables {
-  /// Vehicle mass at start of run [kg]. Superseded at runtime by
-  /// (m_empty + fuel(t)); kept for the scalar path and TPRM compat.
-  double mass_kg{288800.0};
-
   /// Wing reference area [m^2] (transport cruise preset value).
   double wing_area_m2{510.97};
 
@@ -53,12 +49,6 @@ struct AircraftTunables {
 
   /// Oswald efficiency factor (~0.7-0.85 typical).
   double oswald_e{0.80};
-
-  /// Drag-polar coefficients (scalar path; the 6DOF path uses
-  /// `transportCruisePreset()` instead, leaving these unused).
-  double CD0{0.020};
-  double CL0{0.10};
-  double CL_alpha{5.50}; // per radian
 
   /// Maximum sea-level thrust [N], all engines (four-engine transport).
   double thrust_max_sl_N{1.0e6};
@@ -83,11 +73,6 @@ struct AircraftTunables {
 
   /// Initial true airspeed [m/s]. Default = the preset cruise speed.
   double init_speed_m_s{235.9};
-
-  /// Open-loop commanded turn rate / flight-path angle [deg/s, deg].
-  /// Scalar-path only; unused by the 6DOF + controller path.
-  double turn_rate_cmd_deg_s{2.0};
-  double flight_path_cmd_deg{0.0};
 
   /* ----------------------------- 6DOF parameters ----------------------------- */
 

@@ -13,8 +13,8 @@
  *      interface's TCP port and send APROTO frames targeting the
  *      Aircraft's fullUid (0x00E000) with the opcode below.
  *
- *   2. **SHM/APROTO** through ShmRingBridge — UE5 writes APROTO frames
- *      into the bridge's Ring B (UE5 → apex). ShmRingBridge decodes
+ *   2. **SHM/APROTO** through ShmRingBridge — the consumer writes APROTO frames
+ *      into the bridge's Ring B (consumer → apex). ShmRingBridge decodes
  *      the frame and calls `internalBus->postInternalCommand(...)`,
  *      which routes through the same per-component cmd queue as TCP.
  *      See `horizon/docs/BRIDGE_FORMAT.md` v2 addendum.

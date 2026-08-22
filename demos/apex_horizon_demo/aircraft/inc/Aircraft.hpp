@@ -28,7 +28,6 @@
 #include "demos/apex_horizon_demo/aircraft/inc/AircraftData.hpp"
 #include "demos/apex_horizon_demo/aircraft_controller/inc/AircraftControllerData.hpp"
 
-#include "src/sim/aerodynamics/inc/PolarAero.hpp"
 #include "src/sim/aerodynamics/inc/StabilityDerivativeAero.hpp"
 #include "src/sim/environment/celestial_body/inc/CelestialBody.hpp"
 #include "demos/apex_horizon_demo/aircraft/inc/AircraftCommand.hpp"
@@ -37,7 +36,6 @@
 #include "src/sim/dynamics/mass_properties/inc/FuelBurnMassProperties.hpp"
 #include "src/sim/dynamics/rigid_body/inc/RigidBody6DOF.hpp"
 #include "src/sim/environment/atmosphere/inc/AtmosphereModelBase.hpp"
-#include "src/sim/propulsion/inc/DensityScaledThrust.hpp"
 #include "src/sim/propulsion/inc/Turbofan2Spool.hpp"
 #include "src/sim/sensors/inc/Pitot.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
@@ -45,7 +43,6 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/utilities/helpers/inc/Cpu.hpp"
-#include "src/utilities/helpers/inc/Files.hpp"
 #include "src/utilities/math/integration/inc/Quaternion.hpp"
 #include "src/utilities/math/vecmat/inc/Angles.hpp"
 
@@ -54,7 +51,6 @@
 #include <cstring>
 #include <filesystem>
 #include <fmt/format.h>
-#include <optional>
 #include <string>
 #include <system_error>
 
@@ -547,12 +543,13 @@ protected:
     auto* log = componentLog();
     if (log != nullptr) {
       const auto& p = tunables_.get();
-      log->info(label(), fmt::format("init: body={} init_pos=({:.4f}, {:.4f}, {:.0f}m) "
-                                     "hdg={:.1f}deg V={:.0f}m/s mass={:.0f}kg "
-                                     "S={:.0f}m^2 AR={:.1f} dt={:.0f}ms body_attached={}",
-                                     p.body_label, p.init_lat_deg, p.init_lon_deg, p.init_alt_m,
-                                     p.init_heading_deg, p.init_speed_m_s, p.mass_kg,
-                                     p.wing_area_m2, p.aspect_ratio, DT_S * 1e3, body_ != nullptr));
+      log->info(label(),
+                fmt::format("init: body={} init_pos=({:.4f}, {:.4f}, {:.0f}m) "
+                            "hdg={:.1f}deg V={:.0f}m/s mass={:.0f}kg "
+                            "S={:.0f}m^2 AR={:.1f} dt={:.0f}ms body_attached={}",
+                            p.body_label, p.init_lat_deg, p.init_lon_deg, p.init_alt_m,
+                            p.init_heading_deg, p.init_speed_m_s, p.m_empty_kg + p.fuel_capacity_kg,
+                            p.wing_area_m2, p.aspect_ratio, DT_S * 1e3, body_ != nullptr));
     }
     return static_cast<std::uint8_t>(ApexStatus::SUCCESS);
   }
