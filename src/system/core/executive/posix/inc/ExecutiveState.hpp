@@ -33,8 +33,11 @@ namespace executive {
  * @note DataCategory::STATE
  */
 struct ClockState {
-  std::atomic<std::uint64_t> cycles{0};       ///< Total clock cycles executed.
-  std::atomic<std::int64_t> lastTickNs{0};    ///< Timestamp of last tick (ns since epoch).
+  std::atomic<std::uint64_t> cycles{0};    ///< Total clock cycles executed.
+  std::atomic<std::int64_t> lastTickNs{0}; ///< Timestamp of last tick (ns since epoch).
+  /// Ticks abandoned by grid re-anchors after pathological stalls
+  /// (host suspend etc.); zero in any healthy run.
+  std::atomic<std::uint64_t> wallResyncDroppedTicks{0};
   std::atomic<bool> isRunning{false};         ///< Clock synchronization flag.
   std::atomic<std::uint64_t> overrunCount{0}; ///< Frame overrun counter.
 };
