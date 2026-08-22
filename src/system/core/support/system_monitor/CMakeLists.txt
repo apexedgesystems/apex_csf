@@ -43,7 +43,6 @@ apex_add_library(
   SHARED
   INC
   "${INC_DIR}"
-  "${CMAKE_SOURCE_DIR}/src/system/core/components/scheduler/posix/inc"
   "${CMAKE_SOURCE_DIR}/src/system/core/components/registry/apex/inc"
   SRC
   ${CPP_SOURCES}

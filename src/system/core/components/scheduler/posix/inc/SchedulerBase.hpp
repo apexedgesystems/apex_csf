@@ -21,6 +21,7 @@
 #include "src/system/core/components/scheduler/posix/inc/SchedulerTlm.hpp"
 #include "src/system/core/components/scheduler/base/inc/IScheduler.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerPreflight.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/HostRequirements.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/SequenceGroup.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
 #include "src/system/core/components/scheduler/posix/inc/TaskConfig.hpp"
@@ -474,11 +475,13 @@ protected:
 
   /** @brief Table of tick index -> vector of entry indices scheduled at that tick. */
   std::vector<std::vector<std::size_t>> schedule_{};
-  TablePreflight tablePreflight_{};            ///< Verdicts from the last table analysis.
-  bool tablePreflightPending_{false};          ///< Analyzed but not yet emitted to the log.
-  SchedulerTaskStatsTlm taskStatsTlm_{};       ///< Snapshot for GET_TASK_STATS/INSPECT.
-  SchedulerCensusTlm censusTlm_{};             ///< Pre-clock census report.
-  SchedulerRequirementsTlm requirementsTlm_{}; ///< Declared host requirements.
+  TablePreflight tablePreflight_{};      ///< Verdicts from the last table analysis.
+  bool tablePreflightPending_{false};    ///< Analyzed but not yet emitted to the log.
+  SchedulerTaskStatsTlm taskStatsTlm_{}; ///< Snapshot for GET_TASK_STATS/INSPECT.
+  SchedulerCensusTlm censusTlm_{};       ///< Pre-clock census report.
+  SchedulerRequirementsTlm requirementsTlm_{};
+  system_component::HostRequirements
+      hostRequirements_{}; ///< Generic published record. ///< Declared host requirements.
 
   /** @brief Fundamental frequency in ticks per second. */
   std::uint16_t ffreq_{0};

@@ -8,7 +8,7 @@
 
 #include "src/system/core/support/system_monitor/inc/SystemMonitor.hpp"
 
-#include "src/system/core/components/scheduler/posix/inc/SchedulerTlm.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/HostRequirements.hpp"
 
 #include <pthread.h>
 #include <sys/resource.h>
@@ -386,73 +386,79 @@ void SystemMonitor::logSnapshot() noexcept {
 
 /* ----------------------------- Telemetry Task ----------------------------- */
 
-/* ----------------------------- assessSchedulerPosture ----------------------------- */
+/* ----------------------------- assessHostRequirements ----------------------------- */
 
-void SystemMonitor::assessSchedulerPosture() noexcept {
+void SystemMonitor::assessHostRequirements() noexcept {
   auto* log = componentLog();
   if (registry_ == nullptr || log == nullptr) {
     return;
   }
 
-  // Public surface only: the scheduler PUBLISHES its requirements; this
-  // stock consumer correlates host posture against them exactly as a
-  // user-built support component would.
-  auto* entry =
-      registry_->getData(scheduler::SCHEDULER_FULLUID, data::DataCategory::OUTPUT, "requirements");
-  if (entry == nullptr || entry->dataPtr == nullptr ||
-      entry->size < sizeof(scheduler::SchedulerRequirementsTlm)) {
-    log->info(label(), "scheduler posture: requirements not published; correlation skipped");
-    return;
-  }
-  scheduler::SchedulerRequirementsTlm req{};
-  std::memcpy(&req, entry->dataPtr, sizeof(req));
-
-  bool anyRtRequest = false;
-  std::uint64_t wantedCpus = 0;
-  for (std::size_t i = 0; i < req.poolCount && i < scheduler::REQUIREMENTS_POOL_CAP; ++i) {
-    if (req.pools[i].policy != 0U) {
-      anyRtRequest = true;
+  // Discover every publisher by the conventional record name and shape;
+  // the monitor knows no component identities -- attribution comes from
+  // each registry entry's owner fullUid.
+  std::size_t publishers = 0;
+  log->info(label(), "========== HOST REQUIREMENTS ==========");
+  for (const auto& entry : registry_->getAllData()) {
+    if (entry.name == nullptr || entry.dataPtr == nullptr ||
+        std::strcmp(entry.name, system_component::HOST_REQUIREMENTS_NAME) != 0 ||
+        entry.size < sizeof(system_component::HostRequirements)) {
+      continue;
     }
-    wantedCpus |= req.pools[i].affinityMask;
-  }
+    ++publishers;
+    system_component::HostRequirements req{};
+    std::memcpy(&req, entry.dataPtr, sizeof(req));
 
-  log->info(label(), "========== SCHEDULER POSTURE ==========");
-  log->info(label(), fmt::format("requirements: {} Hz, {} task(s), {} pool(s), {} group(s), "
-                                 "rt-request={}",
-                                 req.fundamentalFreqHz, req.taskCount, req.poolCount,
-                                 req.seqGroupCount, anyRtRequest ? "yes" : "no"));
+    bool anyRtRequest = false;
+    std::uint64_t wantedCpus = 0;
+    for (std::size_t i = 0; i < req.rowCount && i < system_component::HOST_REQUIREMENTS_ROW_CAP;
+         ++i) {
+      if (req.rows[i].policy != 0U) {
+        anyRtRequest = true;
+      }
+      wantedCpus |= req.rows[i].affinityMask;
+    }
 
-  if (anyRtRequest) {
-    if (rtProbeGranted_) {
-      log->info(label(), "[PASS] RT policy: host grants FIFO threads");
-    } else {
+    log->info(label(), fmt::format("publisher {:#08x}: {} Hz, {} task(s), {} group(s), "
+                                   "rt-request={}",
+                                   entry.fullUid, req.rateHz, req.taskCount, req.rowCount,
+                                   anyRtRequest ? "yes" : "no"));
+
+    if (anyRtRequest) {
+      if (rtProbeGranted_) {
+        log->info(label(), "[PASS] RT policy: host grants FIFO threads");
+      } else {
+        log->warning(label(), 0,
+                     fmt::format("[WARN] RT policy requested but the host denies FIFO "
+                                 "(probe errno={}, RLIMIT_RTPRIO={}): threads will run "
+                                 "SCHED_OTHER and inherit host load",
+                                 rtProbeErrno_, rlimitRtPrio_));
+      }
+      if (snapshot_.memory.totalSwapBytes > 0) {
+        log->warning(label(), 0,
+                     fmt::format("[WARN] swap enabled ({} MB) with RT requests: page-out "
+                                 "stalls can breach deadlines",
+                                 snapshot_.memory.totalSwapBytes / (1024ULL * 1024ULL)));
+      } else {
+        log->info(label(), "[PASS] swap: disabled");
+      }
+      if (!snapshot_.cpu.rtBandwidthUnlimited && snapshot_.cpu.rtBandwidthPercent < 100.0) {
+        log->info(label(), fmt::format("[INFO] RT bandwidth capped at {:.1f}%: sustained RT "
+                                       "load beyond it will throttle",
+                                       snapshot_.cpu.rtBandwidthPercent));
+      }
+    }
+    if (wantedCpus != 0 && !snapshot_.kernel.isolCpus) {
       log->warning(label(), 0,
-                   fmt::format("[WARN] RT policy requested but the host denies FIFO "
-                               "(probe errno={}, RLIMIT_RTPRIO={}): tasks will run "
-                               "SCHED_OTHER and inherit host load",
-                               rtProbeErrno_, rlimitRtPrio_));
-    }
-    if (snapshot_.memory.totalSwapBytes > 0) {
-      log->warning(label(), 0,
-                   fmt::format("[WARN] swap enabled ({} MB) with RT requests: page-out "
-                               "stalls can breach deadlines",
-                               snapshot_.memory.totalSwapBytes / (1024ULL * 1024ULL)));
-    } else {
-      log->info(label(), "[PASS] swap: disabled");
-    }
-    if (!snapshot_.cpu.rtBandwidthUnlimited && snapshot_.cpu.rtBandwidthPercent < 100.0) {
-      log->info(label(), fmt::format("[INFO] RT bandwidth capped at {:.1f}%: sustained RT "
-                                     "load beyond it will throttle",
-                                     snapshot_.cpu.rtBandwidthPercent));
+                   fmt::format("[WARN] pinned cores requested (mask {:#x}) but no isolcpus on "
+                               "the kernel cmdline: OS tasks share those cores",
+                               wantedCpus));
+    } else if (wantedCpus != 0) {
+      log->info(label(), "[PASS] pinning: isolcpus present for requested cores");
     }
   }
-  if (wantedCpus != 0 && !snapshot_.kernel.isolCpus) {
-    log->warning(label(), 0,
-                 fmt::format("[WARN] pinned cores requested (mask {:#x}) but no isolcpus on "
-                             "the kernel cmdline: OS tasks share those cores",
-                             wantedCpus));
-  } else if (wantedCpus != 0) {
-    log->info(label(), "[PASS] pinning: isolcpus present for requested cores");
+  if (publishers == 0) {
+    log->info(label(), "no host-requirements records published; correlation skipped");
   }
   log->info(label(), "=======================================");
 }
@@ -460,7 +466,7 @@ void SystemMonitor::assessSchedulerPosture() noexcept {
 std::uint8_t SystemMonitor::telemetry() noexcept {
   if (!postureAssessed_) {
     postureAssessed_ = true;
-    assessSchedulerPosture();
+    assessHostRequirements();
   }
 
   if (config_.cpu.enabled) {

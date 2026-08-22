@@ -29,7 +29,7 @@
 #include "src/system/core/support/system_monitor/inc/SystemMonitorConfig.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorData.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorSnapshot.hpp"
-#include "src/system/core/components/registry/apex/inc/ApexRegistry.hpp"
+#include "src/system/core/components/registry/apex/inc/RegistryBase.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorTlm.hpp"
 
 #include "src/system/core/infrastructure/system_component/posix/inc/SupportComponentBase.hpp"
@@ -189,20 +189,23 @@ public:
   /**
    * @brief Wire the registry for cross-component data reads.
    *
-   * Optional: without it the scheduler-posture correlation is skipped.
-   * The monitor reads only PUBLIC registered data (the scheduler's
-   * "requirements" OUTPUT) -- the same surface any user-built support
-   * component gets; nothing here is privileged.
+   * Optional: without it the host-requirements correlation is skipped.
+   * The monitor reads only PUBLIC registered data discovered by the
+   * conventional record name -- the same surface any user-built
+   * support component gets; no publisher identities are known here.
    */
-  void setRegistry(registry::ApexRegistry* reg) noexcept { registry_ = reg; }
+  void setRegistry(registry::RegistryBase* reg) noexcept { registry_ = reg; }
 
 private:
   /**
-   * @brief Correlate host posture against the scheduler's published
-   *        requirements; logs one PASS/WARN section. Runs once, on the
-   *        first telemetry pass (the registry is frozen by then).
+   * @brief Correlate host posture against every published
+   *        host-requirements record; logs one PASS/WARN section per
+   *        publisher. Runs once, on the first telemetry pass (the
+   *        registry is frozen by then). Publishers are discovered by
+   *        the conventional record name -- the monitor knows no
+   *        component identities.
    */
-  void assessSchedulerPosture() noexcept;
+  void assessHostRequirements() noexcept;
 
 private:
   /* ----------------------------- Init Helpers ----------------------------- */
@@ -253,9 +256,9 @@ private:
   /// Health snapshot for INSPECT OUTPUT readback (populated on each telemetry cycle).
   SysMonHealthTlm healthTlm_{};
 
-  /* ----------------------------- Scheduler Posture ----------------------------- */
+  /* ----------------------------- Host Requirements ----------------------------- */
 
-  registry::ApexRegistry* registry_{nullptr}; ///< Optional; wired by the executive.
+  registry::RegistryBase* registry_{nullptr}; ///< Optional; wired by the executive.
   bool postureAssessed_{false};               ///< One-shot latch.
   bool rtProbeGranted_{false};                ///< Host granted a FIFO test thread.
   int rtProbeErrno_{0};                       ///< errno from the denied probe.

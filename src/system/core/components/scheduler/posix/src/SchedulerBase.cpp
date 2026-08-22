@@ -254,6 +254,27 @@ void SchedulerBase::populateRequirementsTlm() noexcept {
     ++n;
   }
   requirementsTlm_.poolCount = static_cast<std::uint8_t>(n);
+
+  // Mirror into the generic infrastructure record: assessors discover
+  // this by conventional name + shape via the registry, with no
+  // knowledge of the scheduler.
+  hostRequirements_ = system_component::HostRequirements{};
+  hostRequirements_.rateHz = ffreq_;
+  hostRequirements_.taskCount = static_cast<std::uint16_t>(entries_.size());
+  std::size_t hr = 0;
+  for (const auto& row : ROWS) {
+    if (hr >= system_component::HOST_REQUIREMENTS_ROW_CAP) {
+      break;
+    }
+    auto& g = hostRequirements_.rows[hr];
+    g.groupId = row.poolId;
+    g.policy = row.policy;
+    g.priority = row.priority;
+    g.threads = row.workers;
+    g.affinityMask = row.affinityMask;
+    ++hr;
+  }
+  hostRequirements_.rowCount = static_cast<std::uint8_t>(hr);
 }
 
 /* ----------------------------- runTaskCensus ----------------------------- */
@@ -838,6 +859,9 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
 
   // Register health snapshot as OUTPUT for INSPECT readback.
   // Populated on each GET_HEALTH call.
+  registerData(system_core::data::DataCategory::OUTPUT, system_component::HOST_REQUIREMENTS_NAME,
+               &hostRequirements_, sizeof(system_component::HostRequirements));
+
   registerData(system_core::data::DataCategory::OUTPUT, "tablePreflight", &tablePreflight_,
                sizeof(TablePreflight));
 
