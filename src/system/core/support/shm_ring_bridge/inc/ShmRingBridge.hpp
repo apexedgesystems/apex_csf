@@ -17,7 +17,7 @@
  * same self-described format on their own side.
  *
  * Use cases:
- *   - Stream simulation state to a the visualization consumer visualization (rover_terrain,
+ *   - Stream simulation state to a visualization consumer visualization (rover_terrain,
  *     aircraft_atmo, satellite_orbit demos).
  *   - Stream model OUTPUT to any out-of-process consumer (recorder,
  *     web dashboard, second simulator) that speaks the wire format.

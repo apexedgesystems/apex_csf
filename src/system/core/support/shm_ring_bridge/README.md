@@ -12,7 +12,7 @@ role of a self-described wire format; that format is **defined by this
 component and documented in [section 5](#5-wire-format-specification)** --
 this README is the single source of truth.
 
-Any consumer implements the format on its end: a the visualization consumer visualization, a
+Any consumer implements the format on its end: a visualization consumer visualization, a
 recorder, a web dashboard, a second simulator. There is no shared code,
 header, or library with any consumer -- apex has zero compile- or
 link-time dependency on them. The wire format is the only contract.
