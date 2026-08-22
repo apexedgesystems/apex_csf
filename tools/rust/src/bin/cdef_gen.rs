@@ -85,9 +85,9 @@ fn run(cli: &Cli) -> Result<usize, Box<dyn std::error::Error>> {
         count += 1;
     }
 
-    if !m.commands.is_empty() {
+    if !m.commands.is_empty() || !m.tasks.is_empty() {
         let base = cdef::generate_cmd_base(&m)?;
-        let path = out_dir.join(format!("{}CmdBase_auto.hpp", m.component));
+        let path = out_dir.join(format!("{}SpecBase_auto.hpp", m.component));
         fs::write(&path, base)?;
         println!("{}", path.display());
         count += 1;

@@ -22,6 +22,11 @@ PositionResponse = { category = "TELEMETRY", opcode = "0x0212" }
 rateLimit = { min = 0.1, max = 50.0 }
 holdBand = { min = 0.0 }
 
+[[tasks]]
+name = "step"
+uid = 1
+doc = "50 Hz slew step toward the commanded target."
+
 [[commands]]
 name = "Move"
 opcode = "0x0210"

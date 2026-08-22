@@ -145,6 +145,22 @@ pub struct TelemetryDef {
     pub doc: Option<String>,
 }
 
+/// One schedulable task in the component's spec: identity only --
+/// name (which is also the derived class's method name), the task
+/// uid, and the doc line. Timing (frequency, priority, offset) is
+/// deliberately NOT spec data: it stays in the scheduler TOML so the
+/// vehicle can be retimed without regeneration.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+pub struct TaskDef {
+    /// Task name; the generated doInit binds the derived method of
+    /// the same name (e.g. "step" -> &TDerived::step).
+    pub name: String,
+    /// Task uid within the component (scheduler TOML addresses it).
+    pub uid: u8,
+    /// One-line task documentation.
+    pub doc: Option<String>,
+}
+
 /// Parsed apex_data.toml manifest.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Manifest {
@@ -189,6 +205,10 @@ pub struct Manifest {
     /// Spec-defined telemetry streams (`[[telemetry]]`).
     #[serde(default)]
     pub telemetry: Vec<TelemetryDef>,
+    /// Spec-defined schedulable tasks (`[[tasks]]`): the generated
+    /// base registers them in its doInit.
+    #[serde(default)]
+    pub tasks: Vec<TaskDef>,
 }
 
 /* ----------------------------- Public API --------------------------------- */

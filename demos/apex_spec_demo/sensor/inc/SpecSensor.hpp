@@ -1,17 +1,12 @@
 // Generated once by cdef_gen --stub from the SpecSensor spec.
-// USER-OWNED after generation: fill in the component logic; the
-// .auto headers (structs, dispatch) keep regenerating separately.
+// USER-OWNED after generation: fill in the component logic. The
+// generated SpecBase owns members, loadTprm, doInit, and dispatch;
+// this file owns identity, task methods, and hooks.
 #ifndef APEX_SPEC_STUB_SPEC_SNS_HPP
 #define APEX_SPEC_STUB_SPEC_SNS_HPP
 /**
  * @file SpecSensor.hpp
  * @brief Spec-driven environment sensor model.
- *
- * Born from sensor/apex_data.toml: the tunable, state, output, and
- * command payload structs plus the dispatch base live in .auto/ and
- * regenerate from the spec; this file was generated once as the
- * skeleton and is user-owned -- the drift physics and handler logic
- * below are the hand-written part of the component.
  *
  * Model: a measurement drifting away from a calibrated reference at a
  * tunable rate with tunable noise. MEASURE samples; FAULT_INJECT
@@ -19,22 +14,17 @@
  * monitoring has something to catch; IDLE holds the last value.
  */
 
-#include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
-#include "src/system/core/infrastructure/system_component/posix/inc/ParamBank.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
 
-#include "SpecSensorCmdBase_auto.hpp"
-#include "SpecSensorOutput_auto.hpp"
-#include "SpecSensorState_auto.hpp"
-#include "SpecSensorTunableParams_auto.hpp"
+#include "SpecSensorSpecBase_auto.hpp"
 
 #include <cstdint>
-#include <filesystem>
 
 namespace appsim {
 namespace spec {
 
-class SpecSensor final : public SpecSensorCmdBase<system_core::system_component::SwModelBase> {
+class SpecSensor final
+    : public SpecSensorSpecBase<SpecSensor, system_core::system_component::SwModelBase> {
 public:
   static constexpr std::uint16_t COMPONENT_ID = 212;
   static constexpr const char* COMPONENT_NAME = "SpecSensor";
@@ -46,14 +36,7 @@ public:
   SpecSensor() noexcept = default;
   ~SpecSensor() override = default;
 
-  enum class TaskUid : std::uint8_t {
-    STEP = 1, ///< 50 Hz model step.
-  };
-
   enum class Mode : std::uint8_t { IDLE = 0, MEASURE = 1, FAULT_INJECT = 2 };
-
-  [[nodiscard]] const SpecSensorOutput& output() const noexcept { return output_.get(); }
-  [[nodiscard]] const SpecSensorState& state() const noexcept { return state_.get(); }
 
   /** @brief Advance the model one 50 Hz tick. @note RT-safe. */
   std::uint8_t step() noexcept {
@@ -84,29 +67,10 @@ public:
     return 0;
   }
 
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
-    if (!isRegistered()) {
-      return false;
-    }
-    const std::filesystem::path PATH = tprmDir / tprmFilename(fullUid());
-    bool loaded = false;
-    if (std::filesystem::exists(PATH)) {
-      loaded = paramBank_.load(
-                   PATH, fullUid(), [](const SpecSensorTunableParams&) noexcept { return true; },
-                   &SPEC_SENSOR_TUNABLE_PARAMS_LAYOUT_HASH) ==
-               system_core::system_component::Status::SUCCESS;
-    }
-    if (!loaded) {
-      (void)paramBank_.load(SpecSensorTunableParams{});
-    }
-    (void)paramBank_.publishInitial();
-    inspectParams_ = paramBank_.active();
-    state_.get().mode = inspectParams_.mode;
-    setConfigured(true);
-    return loaded;
-  }
-
 protected:
+  /// Mode boots from the published parameter set.
+  void onParamsLoaded() noexcept override { state_.get().mode = paramBank_.active().mode; }
+
   /// Select the operating mode; FAULT_INJECT only from MEASURE.
   [[nodiscard]] std::uint8_t onSetMode(const SetModeRequest& request) noexcept override {
     auto& s = state_.get();
@@ -153,19 +117,6 @@ protected:
     return static_cast<std::uint8_t>(system_core::system_component::Status::SUCCESS);
   }
 
-  [[nodiscard]] std::uint8_t doInit() noexcept override {
-    using system_core::data::DataCategory;
-
-    registerTask<SpecSensor, &SpecSensor::step>(static_cast<std::uint8_t>(TaskUid::STEP), this,
-                                                "step");
-
-    registerData(DataCategory::TUNABLE_PARAM, "tunableParams", &inspectParams_,
-                 sizeof(SpecSensorTunableParams));
-    registerData(DataCategory::STATE, "state", &state_.get(), sizeof(SpecSensorState));
-    registerData(DataCategory::OUTPUT, "output", &output_.get(), sizeof(SpecSensorOutput));
-    return 0;
-  }
-
 private:
   static constexpr float DT = 0.02F;         ///< 50 Hz step period [s].
   static constexpr float FAULT_BIAS = 50.0F; ///< Injected fault offset.
@@ -178,10 +129,6 @@ private:
     response.mode = s.mode;
   }
 
-  system_core::system_component::ParamBank<SpecSensorTunableParams> paramBank_{};
-  SpecSensorTunableParams inspectParams_{};
-  system_core::data::State<SpecSensorState> state_{};
-  system_core::data::Output<SpecSensorOutput> output_{};
   std::uint32_t noiseSeed_{0x5EED5EEDU};
 };
 

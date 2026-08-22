@@ -33,8 +33,8 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  STATE readable
   PASS  samples advancing (~50/s, got 50)
   PASS  OUTPUT readable
-  PASS  sequence advancing (9 -> 58)
-  PASS  value tracks reference (25.61)
+  PASS  sequence advancing (9 -> 59)
+  PASS  value tracks reference (25.68)
 
 ------------------------------------------------------------------------
   4. SetMode (IDLE freezes, MEASURE resumes)
@@ -99,8 +99,8 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  Move(4.0) accepted
   PASS  target = 4.0 (got 4.00)
   PASS  moves incremented (0 -> 1)
-  PASS  slewing toward target (position 2.40)
-  PASS  ramp ~8/s (moved 1.60 in 0.4s)
+  PASS  slewing toward target (position 2.24)
+  PASS  ramp ~8/s (moved 1.76 in 0.4s)
   PASS  settled inside hold band (position 4.000)
 
 ------------------------------------------------------------------------
@@ -152,6 +152,16 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  GetSnapshot accepted (SUPPORT dispatch)
 
 ------------------------------------------------------------------------
+  15b. Spec TPRM Reload (RELOAD applies, never just verifies)
+------------------------------------------------------------------------
+  PASS  cfg2bin stamps the edited set
+  PASS  RELOAD_TPRM returns SUCCESS
+  PASS  ratio APPLIED (0.75 -> 2.5)
+  PASS  active bytes changed (checksum 0x537D099F matches new set)
+  PASS  restore authored set
+  PASS  restored (0.75)
+
+------------------------------------------------------------------------
   16. Limits (every constraint kind at its rail)
 ------------------------------------------------------------------------
   PASS  limits TUNABLE readable (36 bytes)
@@ -185,17 +195,17 @@ ApexSpecDemo Checkout: localhost:9000
   PASS  channel B TUNABLE readable
   PASS  instance A config (2.0, 1.0, 'CH-A')
   PASS  instance B config (-1.0, 5.0, 'CH-B')
-  PASS  A ramps up (21.56 -> 22.76)
-  PASS  B ramps down (-5.30 -> -5.90)
+  PASS  A ramps up (26.48 -> 27.72)
+  PASS  B ramps down (-7.76 -> -8.36)
   PASS  Zero(A) accepted
-  PASS  A restarted near offset (1.60)
-  PASS  B unaffected by A's Zero (-6.20)
+  PASS  A restarted near offset (1.56)
+  PASS  B unaffected by A's Zero (-8.68)
 
 ------------------------------------------------------------------------
   19. Post-Test Health
 ------------------------------------------------------------------------
-  PASS  Clock ~100 Hz (measured 99)
+  PASS  Clock ~100 Hz (measured 100)
 
 ========================================================================
-  Results: 118 passed, 0 failed
+  Results: 124 passed, 0 failed
 ========================================================================

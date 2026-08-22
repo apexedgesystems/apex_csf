@@ -143,6 +143,11 @@ name = "stepCount"
 type = "uint"
 size = 4
 
+[[tasks]]
+name = "step"
+uid = 1
+doc = "1 Hz checksum refresh over the tunable bytes."
+
 [[commands]]
 name = "GetSnapshot"
 opcode = "0x0230"

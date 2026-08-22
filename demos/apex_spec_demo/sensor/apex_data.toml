@@ -175,6 +175,11 @@ mode = { allowed = [0, 1, 2] }
 # Command set (the generated dispatch derives from this)
 # ----------------------------------------------------------------------
 
+[[tasks]]
+name = "step"
+uid = 1
+doc = "50 Hz model step (drift + noise physics)."
+
 [[commands]]
 name = "SetMode"
 opcode = "0x0200"
