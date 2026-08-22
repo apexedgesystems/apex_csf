@@ -13,7 +13,7 @@ apex_module(utilities_helpers)
 # Interface Library
 # ------------------------------------------------------------------------------
 
-apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" DEPS_PUBLIC fmt::fmt)
+apex_add_interface_library(NAME ${LIB_NAME} INC "${INC_DIR}" DEPS_INTERFACE fmt::fmt)
 
 # ------------------------------------------------------------------------------
 # Opt-ins (coverage, doxygen, UPX)

@@ -16,24 +16,11 @@ apex_add_interface_library(
   ${LIB_NAME}
   INC
   "${INC_DIR}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/.auto"
   DEPS_INTERFACE
   system_core_system_component
   utilities_helpers
   fmt::fmt
 )
-
-# The spec-generated headers are a second include root so generated and
-# hand code share plain-name includes. Wrapped for the export set the
-# helper installs the target into, and installed beside the inc/ headers
-# so an installed tree compiles the same way. The helper may SKIP the
-# target entirely (bare-metal platform gate), so both additions guard
-# on its existence -- firmware configures must not trip over a
-# hosted-only demo library.
-if (TARGET ${LIB_NAME})
-  target_include_directories(
-    ${LIB_NAME} INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/.auto>
-  )
-  install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/.auto/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
-endif ()
 
 apex_add_data_manifest(MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/apex_data.toml")
