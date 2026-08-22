@@ -102,13 +102,13 @@ for the full TPRM layout and fullUid map.
 
 ## CLI Flags
 
-| Flag                         | Description                                       |
-| ---------------------------- | ------------------------------------------------- |
-| `--config <path>`            | Path to master.tprm archive (required)            |
-| `--shutdown-after <seconds>` | Auto-shutdown after N seconds                     |
-| `--skip-cleanup`             | Keep .apex_fs after shutdown (for log inspection) |
+| Flag                         | Description                                                                                                              |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `--config <path>`            | Path to master.tprm archive (required)                                                                                   |
+| `--shutdown-after <seconds>` | Auto-shutdown after N seconds                                                                                            |
+| `--skip-cleanup`             | Keep .apex_fs after shutdown (for log inspection)                                                                        |
 | `--task-census`              | Run the pre-clock task census: each task's cold and steady cost logged against its period budget before the clock starts |
-| `--fs-root <path>`           | Override filesystem root (default: .apex_fs)      |
+| `--fs-root <path>`           | Override filesystem root (default: .apex_fs)                                                                             |
 
 ---
 
