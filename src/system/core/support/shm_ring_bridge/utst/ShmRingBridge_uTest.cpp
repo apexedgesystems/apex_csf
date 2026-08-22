@@ -8,7 +8,7 @@
  * tripping bytes through real shm.
  *
  * The Side B helper here is a minimal spec implementation -- enough to
- * prove that another consumer (e.g. UE5's URoverRingComponent, or a
+ * prove that another consumer (e.g. the visualization consumer's URoverRingComponent, or a
  * recording tool) attaching to the same shm region sees the bytes the
  * apex bridge wrote.
  */
@@ -347,7 +347,7 @@ TEST(ShmRingBridge, fullEndToEndPublish) {
 }
 
 /* ================================================================== */
-/* Ring B command-sink (UE5 -> apex via APROTO over SHM) tests         */
+/* Ring B command-sink (the visualization consumer -> apex via APROTO over SHM) tests         */
 /* ================================================================== */
 
 namespace {

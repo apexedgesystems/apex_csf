@@ -226,7 +226,7 @@ std::uint8_t CelestialBody::doInit() noexcept {
   // 4. Populate OUTPUT telemetry: a one-shot snapshot of body identity
   //    + key physical summary derived from the live env models. This
   //    is the public face other components subscribe to and that an
-  //    external bridge reads to forward to UE5 / ground systems.
+  //    external bridge reads to forward to visualization / ground systems.
   auto& tlm = telemetry_.get();
   tlm.body = static_cast<std::uint8_t>(p.body);
   tlm.gravity_fidelity = static_cast<std::uint8_t>(p.gravity_fidelity);

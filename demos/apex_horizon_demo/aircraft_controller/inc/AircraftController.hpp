@@ -35,13 +35,11 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/utilities/helpers/inc/Cpu.hpp"
-#include "src/utilities/helpers/inc/Files.hpp"
 
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
 #include <fmt/format.h>
-#include <optional>
 #include <string>
 #include <system_error>
 

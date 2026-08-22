@@ -32,14 +32,14 @@ inline constexpr std::uint16_t BRIDGE_FRAMEWORK_VERSION = 1u;
 /// README section 5.2). Fixed stamp, spelled "HRNB" little-endian.
 inline constexpr std::uint32_t BRIDGE_FRAMEWORK_MAGIC = 0x48524E42u;
 
-/// Per the wire format: header (64) + producer cursor (64) + consumer
-/// cursor (64). Slots start at offset 192.
 /// Consecutive ring-full bridge ticks (with a frozen consumer tail)
 /// before a previously-draining consumer is declared inactive: 1 s at
 /// a 100 Hz bridge, 10 s at 10 Hz. Pre-attach saturation never trips
 /// it (the tail must have advanced at least once).
 inline constexpr std::uint32_t kStallWarnTicks = 100u;
 
+/// Per the wire format: header (64) + producer cursor (64) + consumer
+/// cursor (64). Slots start at offset 192.
 inline constexpr std::size_t BRIDGE_RING_HEADER_BYTES = 64u;
 inline constexpr std::size_t BRIDGE_CURSOR_BYTES = 64u;
 inline constexpr std::size_t BRIDGE_RING_PRELUDE_BYTES =
@@ -89,7 +89,7 @@ struct ShmRingBridgeTunables {
   std::uint16_t source_byte_offset{0}; ///< Start byte within the data block.
   std::uint16_t source_byte_len{0};    ///< Length to copy; 0 = whole block.
 
-  /* -- command-sink (Ring B / UE5 -> apex) configuration. --
+  /* -- command-sink (Ring B, consumer -> apex) configuration. --
    *
    * When sink_enabled = 1, each bridgeStep pops at most one APROTO
    * application-layer frame from Ring B and dispatches it through the

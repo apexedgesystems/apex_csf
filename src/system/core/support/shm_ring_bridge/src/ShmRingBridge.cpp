@@ -291,7 +291,7 @@ bool ShmRingBridge::openChannel() noexcept {
 
   // Bind Ring B (reverse direction; consumer -> apex).
   // Apex is the *consumer* of Ring B, so it reads rx_prod_cursor (updated
-  // by UE5 / Side B when it pushes) and writes rx_cons_cursor (apex's
+  // by the visualization consumer / Side B when it pushes) and writes rx_cons_cursor (apex's
   // own read progress). The remote side's view is mirrored.
   std::uint8_t* base_b = base + REGION_A_BYTES;
   rx_prod_cursor_ = base_b + BRIDGE_RING_HEADER_BYTES;

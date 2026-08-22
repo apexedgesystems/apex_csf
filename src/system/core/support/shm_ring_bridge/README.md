@@ -12,7 +12,7 @@ role of a self-described wire format; that format is **defined by this
 component and documented in [section 5](#5-wire-format-specification)** --
 this README is the single source of truth.
 
-Any consumer implements the format on its end: a UE5 visualization, a
+Any consumer implements the format on its end: a the visualization consumer visualization, a
 recorder, a web dashboard, a second simulator. There is no shared code,
 header, or library with any consumer -- apex has zero compile- or
 link-time dependency on them. The wire format is the only contract.
@@ -159,7 +159,7 @@ Default `sink_enabled = 0` -- existing apps see no behavior change.
 
 ## 3. Common Workflows
 
-### Publishing a model's OUTPUT to UE5
+### Publishing a model's OUTPUT to the consumer
 
 1. Pick a wire-format struct (e.g. `RoverFrame` from horizon's
    `demos/rover_terrain/contract/RoverContract.hpp`).
@@ -320,7 +320,7 @@ conformance test.
 
 ### Container deployment
 
-If apex runs inside a docker container and the consumer (e.g. UE5
+If apex runs inside a docker container and the consumer (e.g. the visualization consumer
 plugin) runs on the host (or in a different container), the producer's
 `/dev/shm` is otherwise isolated and the bridge silently fails to
 connect. Add `ipc: host` to the docker-compose service so the container

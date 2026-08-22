@@ -94,7 +94,7 @@ struct CelestialBodyState {
  * @brief Public-face telemetry (OUTPUT category) for downstream subscribers.
  *
  * Populated once at init from the underlying env models. Lets other
- * components -- and external bridges forwarding state to UE5 --
+ * components -- and external bridges forwarding state to the consumer --
  * read the body's identity + physical summary without dynamic_casting
  * through the polymorphic `gravity()` / `terrain()` / `atmosphere()`
  * accessors. Trivially copyable so it can be packed onto the wire.

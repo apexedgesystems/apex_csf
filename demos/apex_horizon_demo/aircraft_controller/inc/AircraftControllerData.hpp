@@ -115,7 +115,7 @@ struct AircraftControllerState {
  * surface fields each tick; the rest is diagnostic telemetry.
  *
  * Not wire-format-aligned (this stays inside apex; only AircraftTelemetry
- * crosses the bridge to UE5).
+ * crosses the bridge to the consumer).
  */
 struct AircraftControllerOutput {
   std::uint64_t timestamp_ns{0};
