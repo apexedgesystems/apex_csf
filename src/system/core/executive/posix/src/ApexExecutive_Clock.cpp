@@ -153,6 +153,7 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
                       taskCycles, CYCLE_LAG));
 
       // Emergency shutdown sequence
+      controlState_.rtFailureShutdown.store(true, std::memory_order_release);
       controlState_.shutdownRequested.store(true, std::memory_order_release);
       cvShutdown_.notify_all();
       cvClockTick_.notify_all();

@@ -154,9 +154,14 @@ struct ProfilingState {
 struct ControlState {
   std::atomic<bool> startupRequested{false};  ///< Startup trigger.
   std::atomic<bool> shutdownRequested{false}; ///< Shutdown trigger.
-  std::atomic<bool> pauseRequested{false};    ///< Pause request.
-  std::atomic<bool> isPaused{false};          ///< Currently paused.
-  std::atomic<bool> restartPending{false};    ///< Deferred execv (set by RELOAD_EXECUTIVE).
+  /// True only when the clock thread's hard-RT enforcement initiated the
+  /// shutdown -- the shutdown reason reads this, never infers from
+  /// overrun counters (external stops with overruns present are not
+  /// RT failures).
+  std::atomic<bool> rtFailureShutdown{false};
+  std::atomic<bool> pauseRequested{false}; ///< Pause request.
+  std::atomic<bool> isPaused{false};       ///< Currently paused.
+  std::atomic<bool> restartPending{false}; ///< Deferred execv (set by RELOAD_EXECUTIVE).
 };
 
 /* ----------------------------- OUTPUT Structures ----------------------------- */

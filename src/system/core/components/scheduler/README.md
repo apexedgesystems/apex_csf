@@ -233,6 +233,22 @@ This separation enables:
 
 ---
 
+### Deadline Semantics
+
+The deadline base is **dispatch time**: `markDispatched` stamps at
+enqueue, so queue wait charges to the task. A task counts as violating
+its period when it is still running (queued or executing) at its next
+scheduled dispatch. This is deliberate -- from the frame's
+perspective, work that has not finished by its next period is late
+regardless of whether the delay was queueing or execution -- and the
+preflight surfaces make the distinction visible instead of silent:
+the dispatch-burst analysis shows where queue pressure concentrates,
+and the task census separates first-run cost from steady state.
+
+Skip-on-busy is currently a scheduler-wide mode; per-task skip policy
+from the table is a known follow-on (it requires a task-table format
+extension).
+
 ## 5. Key Features
 
 ### N/D Frequency Decimation

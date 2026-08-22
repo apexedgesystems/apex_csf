@@ -163,7 +163,7 @@ void ApexExecutive::shutdownThread(std::promise<std::uint8_t>&& p) noexcept {
     } else if (shutdownConfig_.mode == ShutdownConfig::COMBINED) {
       snprintf(reasonBuf, sizeof(reasonBuf), "COMBINED shutdown (cycle condition at cycle %lu)",
                cycles);
-    } else if (overruns > 0 && rtConfig_.isHardMode()) {
+    } else if (controlState_.rtFailureShutdown.load(std::memory_order_acquire)) {
       snprintf(reasonBuf, sizeof(reasonBuf), "HARD_RT_FAILURE after %lu overruns at cycle %lu",
                overruns, cycles);
     } else {
