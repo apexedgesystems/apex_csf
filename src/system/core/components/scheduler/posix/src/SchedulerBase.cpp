@@ -225,6 +225,83 @@ SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
   return replaced;
 }
 
+/* ----------------------------- runTaskCensus ----------------------------- */
+
+bool SchedulerBase::runTaskCensus(std::uint8_t repeats) noexcept {
+  if (tickCount_ > 0) {
+    if (auto* log = componentLog()) {
+      log->warning(label(), 0, "task census refused: ticks have already executed");
+    }
+    return false;
+  }
+
+  const auto NOW_US = []() noexcept {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+  };
+
+  censusTlm_ = SchedulerCensusTlm{};
+  std::size_t row = 0;
+  for (auto& entry : entries_) {
+    if (entry.task == nullptr) {
+      continue;
+    }
+    if (row >= TASK_STATS_TLM_CAP) {
+      censusTlm_.truncated = 1;
+      break;
+    }
+    auto& r = censusTlm_.rows[row];
+    r.fullUid = entry.fullUid;
+    r.taskUid = entry.taskUid;
+    r.budgetUs = static_cast<std::uint32_t>(entry.periodNs / 1000ULL);
+
+    const auto T0 = NOW_US();
+    (void)entry.task->execute();
+    const auto T1 = NOW_US();
+    r.firstUs = static_cast<std::uint32_t>(T1 - T0);
+
+    std::uint32_t steady = r.firstUs;
+    for (std::uint8_t rep = 0; rep < repeats; ++rep) {
+      const auto A = NOW_US();
+      (void)entry.task->execute();
+      const auto B = NOW_US();
+      const auto US = static_cast<std::uint32_t>(B - A);
+      steady = US < steady ? US : steady;
+    }
+    r.steadyUs = steady;
+
+    if (r.budgetUs != 0 && r.steadyUs > r.budgetUs) {
+      r.verdict = 2;
+    } else if (r.budgetUs != 0 && r.firstUs > r.budgetUs) {
+      r.verdict = 1;
+    }
+    if (r.verdict > censusTlm_.overall) {
+      censusTlm_.overall = r.verdict;
+    }
+    ++row;
+  }
+  censusTlm_.taskCount = static_cast<std::uint16_t>(row);
+
+  if (auto* log = componentLog()) {
+    const auto NAME = [](std::uint8_t v) noexcept {
+      return v == 0 ? "PASS" : v == 1 ? "WARN" : "FAIL";
+    };
+    log->info(label(), "========== PREFLIGHT: TASK CENSUS ==========");
+    for (std::size_t i = 0; i < censusTlm_.taskCount; ++i) {
+      const auto& r = censusTlm_.rows[i];
+      log->info(label(), fmt::format("[{}] {:#06x}:{} first={} us steady={} us budget={} us",
+                                     NAME(r.verdict), r.fullUid, r.taskUid, r.firstUs, r.steadyUs,
+                                     r.budgetUs));
+    }
+    log->info(label(),
+              fmt::format("census verdict: {} ({} task(s){})", NAME(censusTlm_.overall),
+                          censusTlm_.taskCount, censusTlm_.truncated != 0 ? ", truncated" : ""));
+    log->info(label(), "============================================");
+  }
+  return true;
+}
+
 /* ----------------------------- inFlightSummary ----------------------------- */
 
 std::string SchedulerBase::inFlightSummary(std::size_t cap) const noexcept {
@@ -724,6 +801,9 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
 
   // Register health snapshot as OUTPUT for INSPECT readback.
   // Populated on each GET_HEALTH call.
+  registerData(system_core::data::DataCategory::OUTPUT, "taskCensus", &censusTlm_,
+               sizeof(SchedulerCensusTlm));
+
   registerData(system_core::data::DataCategory::OUTPUT, "taskStats", &taskStatsTlm_,
                sizeof(SchedulerTaskStatsTlm));
 
@@ -885,6 +965,19 @@ std::uint8_t SchedulerBase::handleCommand(std::uint16_t opcode,
     healthTlm_.violationsThisTick = static_cast<std::uint32_t>(periodViolationsThisTick());
     response.resize(sizeof(healthTlm_));
     std::memcpy(response.data(), &healthTlm_, sizeof(healthTlm_));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::RUN_TASK_CENSUS): {
+    const std::uint8_t REPEATS = payload.size() >= 1 ? payload[0] : static_cast<std::uint8_t>(3U);
+    const bool RAN = runTaskCensus(REPEATS);
+    response.push_back(RAN ? 1U : 0U);
+    return static_cast<std::uint8_t>(RAN ? CommandResult::SUCCESS : CommandResult::EXEC_FAILED);
+  }
+
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::GET_TASK_CENSUS): {
+    response.resize(sizeof(censusTlm_));
+    std::memcpy(response.data(), &censusTlm_, sizeof(censusTlm_));
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 

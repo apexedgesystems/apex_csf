@@ -206,6 +206,22 @@ public:
   void populateTaskStatsTlm() noexcept;
 
   /**
+   * @brief Execute every task once + repeats, pre-clock, measuring cost.
+   * @param repeats Additional timed executions after the cold first run.
+   * @return true if the census ran; false if refused (ticks have
+   *         already executed -- census is strictly pre-clock).
+   *
+   * Tasks run sequentially in table order (phase order for sequenced
+   * groups, which table preflight validates), directly through
+   * execute() -- the census measures task bodies, not pool plumbing.
+   * Cold first-run cost (lazy inits: GPU module load, NVML, page
+   * faults) is reported separately from the steady estimate, each
+   * against the task's period budget.
+   * @note Config-time only.
+   */
+  bool runTaskCensus(std::uint8_t repeats) noexcept;
+
+  /**
    * @brief Names of tasks currently marked in-flight, for loss events.
    * @param cap Maximum names listed.
    * @return "Component:taskUid" list, comma-separated ("none" if empty).
@@ -435,6 +451,7 @@ protected:
   std::vector<std::vector<std::size_t>> schedule_{};
   TablePreflight tablePreflight_{};      ///< Verdicts from the last table analysis.
   SchedulerTaskStatsTlm taskStatsTlm_{}; ///< Snapshot for GET_TASK_STATS/INSPECT.
+  SchedulerCensusTlm censusTlm_{};       ///< Pre-clock census report.
 
   /** @brief Fundamental frequency in ticks per second. */
   std::uint16_t ffreq_{0};

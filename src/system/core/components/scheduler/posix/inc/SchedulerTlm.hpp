@@ -22,8 +22,10 @@ namespace scheduler {
 
 /// Telemetry opcodes for Scheduler (component-specific range 0x0100+).
 enum class SchedulerTlmOpcode : std::uint16_t {
-  GET_HEALTH = 0x0100,    ///< Request scheduler health snapshot.
-  GET_TASK_STATS = 0x0101 ///< Request per-task runtime stats snapshot.
+  GET_HEALTH = 0x0100,      ///< Request scheduler health snapshot.
+  GET_TASK_STATS = 0x0101,  ///< Request per-task runtime stats snapshot.
+  RUN_TASK_CENSUS = 0x0102, ///< Execute the pre-clock task census.
+  GET_TASK_CENSUS = 0x0103  ///< Request the census report.
 };
 
 /* ----------------------------- Task Stats ----------------------------- */
@@ -45,6 +47,41 @@ struct TaskStatsRowTlm {
   std::uint16_t overruns16{0};      ///< Period overruns (saturated).
   std::uint16_t violations16{0};    ///< Deadline violations (saturated).
 };
+
+/* ----------------------------- Task Census ----------------------------- */
+
+#pragma pack(push, 1)
+/**
+ * @struct CensusRowTlm
+ * @brief One task's measured cost vs its period budget (20 bytes).
+ *
+ * verdict: 0 = PASS, 1 = WARN (first run exceeds the budget -- expect a
+ * startup violation), 2 = FAIL (steady state exceeds the budget -- the
+ * task cannot hold its period at all).
+ */
+struct CensusRowTlm {
+  std::uint32_t fullUid{0};  ///< Owner component fullUid.
+  std::uint8_t taskUid{0};   ///< Task UID within the component.
+  std::uint8_t verdict{0};   ///< 0 PASS / 1 WARN / 2 FAIL.
+  std::uint16_t pad{0};      ///< Alignment.
+  std::uint32_t firstUs{0};  ///< First execution (cold: lazy inits land here).
+  std::uint32_t steadyUs{0}; ///< Fastest of the remaining repetitions.
+  std::uint32_t budgetUs{0}; ///< Period budget (0 = unknown).
+};
+
+/**
+ * @struct SchedulerCensusTlm
+ * @brief Pre-clock task census report.
+ *
+ * Returned for GET_TASK_CENSUS and registered as an INSPECT OUTPUT.
+ */
+struct SchedulerCensusTlm {
+  std::uint16_t taskCount{0}; ///< Rows populated (0 = census never ran).
+  std::uint8_t truncated{0};  ///< 1 when tasks exceeded the row cap.
+  std::uint8_t overall{0};    ///< Worst row verdict.
+  CensusRowTlm rows[TASK_STATS_TLM_CAP]{};
+};
+#pragma pack(pop)
 
 /**
  * @struct SchedulerTaskStatsTlm

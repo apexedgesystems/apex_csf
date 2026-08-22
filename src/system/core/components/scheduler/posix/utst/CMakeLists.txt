@@ -15,6 +15,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerShutdown_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerPreflight_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerTaskStats_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerCensus_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------
