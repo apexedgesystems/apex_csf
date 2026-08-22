@@ -41,7 +41,12 @@ public:
   }
 
   void setGains(const PIDGains& g) noexcept { pid_.setGains(g); }
-  void setAileronLimit(double rad) noexcept { aileron_limit_rad_ = rad; }
+  void setAileronLimit(double rad) noexcept {
+    aileron_limit_rad_ = rad;
+    // Plumbed into the PID so anti-windup engages at the clamp; the
+    // external clamp below stays as the authoritative output bound.
+    pid_.setLimits(PIDLimits{-rad, rad});
+  }
   void reset() noexcept { pid_.reset(); }
 
   /**
@@ -89,7 +94,13 @@ public:
   }
 
   void setGains(const PIDGains& g) noexcept { pid_.setGains(g); }
-  void setBankLimit(double rad) noexcept { bank_limit_rad_ = rad; }
+  void setBankLimit(double rad) noexcept {
+    bank_limit_rad_ = rad;
+    // Plumbed into the PID so anti-windup engages at the clamp — a
+    // long heading capture must not wind the integral while the bank
+    // command is pinned at the limit.
+    pid_.setLimits(PIDLimits{-rad, rad});
+  }
   void reset() noexcept { pid_.reset(); }
 
   /**
