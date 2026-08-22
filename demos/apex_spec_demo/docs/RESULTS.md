@@ -51,7 +51,7 @@ SystemMonitor.tlm     @  1 Hz (priority -128, offset 25)
 | 18. Channels (multi-instance)     | 9/9 PASS   | One spec, two configs; opposite ramps; instance-isolated Zero                                 |
 | 19. Post-test health              | PASS       | Clock 99 Hz measured                                                                          |
 
-**Total: 118 passed, 0 failed**
+**Total: 124 passed, 0 failed**
 
 ---
 
