@@ -169,7 +169,11 @@ RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error
 # Using /opt avoids permission issues when COPY --from overlays onto CUDA images.
 # Includes: rustc, cargo, clippy (linter), rustfmt (formatter). The coverage
 # driver (cargo-llvm-cov) is added in dev-base.
-ARG RUST_VERSION=stable
+# Pinned: clippy's rule set moves with the toolchain, and CI treats its
+# findings as code defects (-D warnings) -- an image rebuild must never
+# change the rules underneath a PR. Bump deliberately, with the tree
+# clean under the new version.
+ARG RUST_VERSION=1.98.0
 ENV RUSTUP_HOME=/opt/rust/rustup \
     CARGO_HOME=/opt/rust/cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
