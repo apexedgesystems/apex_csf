@@ -127,7 +127,7 @@ endfunction ()
 #
 # Arguments:
 #   NAME            <target>           required
-#   INC             <include_dir>      required
+#   INC             <include_dirs...>  required (first = primary root)
 #   DEPS_INTERFACE  <targets...>       optional
 #   DEFS            <defs...>          optional
 #   FEATURES        <features...>      optional
