@@ -37,9 +37,6 @@ namespace {
 
 constexpr mode_t kShmMode = 0600;
 
-/// Fault code carried on the consumer-stall warning line.
-constexpr std::uint8_t WARN_CONSUMER_STALLED = 40u;
-
 bool isAbsolutePath(const char* path, std::size_t max_len) noexcept {
   if (path == nullptr || max_len == 0u)
     return false;
@@ -439,7 +436,7 @@ std::uint8_t ShmRingBridge::bridgeStep() noexcept {
     s.last_tail = TAIL;
     s.drain_seen = 1u;
     s.stall_full_streak = 0u;
-    s.consumer_stalled = 0u;
+    s.consumer_inactive = 0u;
   }
 
   if (HEAD - TAIL >= p.capacity) {
@@ -447,10 +444,10 @@ std::uint8_t ShmRingBridge::bridgeStep() noexcept {
     // publish but still fall through to the command drain — ingress
     // must keep working precisely when the consumer side is wedged.
     ++s.pushes_failed_full;
-    if (s.drain_seen != 0u && s.consumer_stalled == 0u) {
+    if (s.drain_seen != 0u && s.consumer_inactive == 0u) {
       if (++s.stall_full_streak >= kStallWarnTicks) {
-        s.consumer_stalled = 1u;
-        ++s.stalls_total;
+        s.consumer_inactive = 1u;
+        ++s.drain_stops_total;
       }
     }
   } else {
@@ -627,31 +624,33 @@ std::uint8_t ShmRingBridge::telemetryTick() noexcept {
   tlm.channel_open = s.channel_open;
   tlm.source_resolved = s.source_resolved;
   tlm.region_orphaned = s.region_orphaned;
-  tlm.consumer_stalled = s.consumer_stalled;
+  tlm.consumer_inactive = s.consumer_inactive;
 
   auto* log = componentLog();
   if (log != nullptr) {
-    // Edge-triggered stall transitions: bridgeStep only sets flags
+    // Edge-triggered activity transitions: bridgeStep only sets flags
     // (it is RT-safe); the logging happens here at the telemetry rate.
-    if (s.consumer_stalled != last_logged_stalled_) {
-      if (s.consumer_stalled != 0u) {
-        log->warning(label(), static_cast<std::uint8_t>(WARN_CONSUMER_STALLED),
-                     fmt::format("consumer STALLED: drained ring stopped moving for {} bridge "
-                                 "ticks (tail frozen at {}, stall #{})",
-                                 s.stall_full_streak, s.last_tail, s.stalls_total));
+    // INFO severity: departure of an ephemeral consumer (recorded
+    // takes, operator sessions) is routine, and the ring protocol has
+    // no liveness signal to distinguish a wedged one.
+    if (s.consumer_inactive != last_logged_stalled_) {
+      if (s.consumer_inactive != 0u) {
+        log->info(label(), fmt::format("consumer inactive: drain stopped {} bridge ticks ago "
+                                       "(tail frozen at {}, episode #{})",
+                                       s.stall_full_streak, s.last_tail, s.drain_stops_total));
       } else {
-        log->info(label(), fmt::format("consumer resumed (tail moving again, stall #{} over)",
-                                       s.stalls_total));
+        log->info(label(), fmt::format("consumer active (tail moving again, episode #{} over)",
+                                       s.drain_stops_total));
       }
-      last_logged_stalled_ = s.consumer_stalled;
+      last_logged_stalled_ = s.consumer_inactive;
     }
 
     const auto& p = tunables_.get();
     log->info(label(), fmt::format("tick={} app={:#x}v{} pub={} full={} sig_fail={} "
-                                   "open={} resolved={} orphaned={} stalled={} rx_cmds={}/{}/{}",
+                                   "open={} resolved={} orphaned={} inactive={} rx_cmds={}/{}/{}",
                                    s.tick_count, p.app_magic, p.app_version, s.frames_published,
                                    s.pushes_failed_full, s.signals_failed, s.channel_open,
-                                   s.source_resolved, s.region_orphaned, s.consumer_stalled,
+                                   s.source_resolved, s.region_orphaned, s.consumer_inactive,
                                    s.cmds_received, s.cmds_decode_errors, s.cmds_dispatch_errors));
   }
   return 0u;
