@@ -42,6 +42,7 @@ bool EdgeExecutive::registerComponents() noexcept {
   if (!registerComponent(&sysMonitor_, LOG_DIR)) {
     return false;
   }
+  sysMonitor_.setRegistry(&registry()); // Enables the scheduler-posture correlation.
 
   if (log != nullptr) {
     log->info("EDGE_EXEC",

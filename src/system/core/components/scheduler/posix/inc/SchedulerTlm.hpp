@@ -21,6 +21,9 @@ namespace scheduler {
 /* ----------------------------- SchedulerTlmOpcode ----------------------------- */
 
 /// Telemetry opcodes for Scheduler (component-specific range 0x0100+).
+/// The scheduler's well-known bus address (componentId 1, instance 0).
+inline constexpr std::uint32_t SCHEDULER_FULLUID = 0x000100U;
+
 enum class SchedulerTlmOpcode : std::uint16_t {
   GET_HEALTH = 0x0100,      ///< Request scheduler health snapshot.
   GET_TASK_STATS = 0x0101,  ///< Request per-task runtime stats snapshot.

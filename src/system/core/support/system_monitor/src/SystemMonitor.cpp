@@ -7,6 +7,11 @@
  */
 
 #include "src/system/core/support/system_monitor/inc/SystemMonitor.hpp"
+
+#include "src/system/core/components/scheduler/posix/inc/SchedulerTlm.hpp"
+
+#include <pthread.h>
+#include <sys/resource.h>
 #include "src/system/core/support/system_monitor/inc/SystemMonitorTlm.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
@@ -171,6 +176,34 @@ std::uint8_t SystemMonitor::doInit() noexcept {
   // Register health snapshot as OUTPUT for INSPECT readback.
   // Populated on each telemetry sample cycle.
   registerData(data::DataCategory::OUTPUT, "health", &healthTlm_, sizeof(SysMonHealthTlm));
+
+  // RT grant probe (cold path): can this process actually get a FIFO
+  // thread? The executive's own RT config failures log warnings, but a
+  // direct probe gives the posture assessment a ground truth plus the
+  // errno and rlimit evidence for the denial reason.
+  {
+    rlimit rl{};
+    if (getrlimit(RLIMIT_RTPRIO, &rl) == 0) {
+      rlimitRtPrio_ = static_cast<long>(rl.rlim_cur);
+    }
+    pthread_attr_t attr;
+    if (pthread_attr_init(&attr) == 0) {
+      sched_param sp{};
+      sp.sched_priority = 1;
+      (void)pthread_attr_setschedpolicy(&attr, SCHED_FIFO);
+      (void)pthread_attr_setschedparam(&attr, &sp);
+      (void)pthread_attr_setinheritsched(&attr, PTHREAD_EXPLICIT_SCHED);
+      pthread_t th{};
+      const int RC = pthread_create(&th, &attr, [](void*) -> void* { return nullptr; }, nullptr);
+      if (RC == 0) {
+        rtProbeGranted_ = true;
+        (void)pthread_join(th, nullptr);
+      } else {
+        rtProbeErrno_ = RC;
+      }
+      (void)pthread_attr_destroy(&attr);
+    }
+  }
 
   // Capture init-time snapshot (NOT RT-safe, cold path)
   captureKernelSnapshot();
@@ -353,7 +386,83 @@ void SystemMonitor::logSnapshot() noexcept {
 
 /* ----------------------------- Telemetry Task ----------------------------- */
 
+/* ----------------------------- assessSchedulerPosture ----------------------------- */
+
+void SystemMonitor::assessSchedulerPosture() noexcept {
+  auto* log = componentLog();
+  if (registry_ == nullptr || log == nullptr) {
+    return;
+  }
+
+  // Public surface only: the scheduler PUBLISHES its requirements; this
+  // stock consumer correlates host posture against them exactly as a
+  // user-built support component would.
+  auto* entry =
+      registry_->getData(scheduler::SCHEDULER_FULLUID, data::DataCategory::OUTPUT, "requirements");
+  if (entry == nullptr || entry->dataPtr == nullptr ||
+      entry->size < sizeof(scheduler::SchedulerRequirementsTlm)) {
+    log->info(label(), "scheduler posture: requirements not published; correlation skipped");
+    return;
+  }
+  scheduler::SchedulerRequirementsTlm req{};
+  std::memcpy(&req, entry->dataPtr, sizeof(req));
+
+  bool anyRtRequest = false;
+  std::uint64_t wantedCpus = 0;
+  for (std::size_t i = 0; i < req.poolCount && i < scheduler::REQUIREMENTS_POOL_CAP; ++i) {
+    if (req.pools[i].policy != 0U) {
+      anyRtRequest = true;
+    }
+    wantedCpus |= req.pools[i].affinityMask;
+  }
+
+  log->info(label(), "========== SCHEDULER POSTURE ==========");
+  log->info(label(), fmt::format("requirements: {} Hz, {} task(s), {} pool(s), {} group(s), "
+                                 "rt-request={}",
+                                 req.fundamentalFreqHz, req.taskCount, req.poolCount,
+                                 req.seqGroupCount, anyRtRequest ? "yes" : "no"));
+
+  if (anyRtRequest) {
+    if (rtProbeGranted_) {
+      log->info(label(), "[PASS] RT policy: host grants FIFO threads");
+    } else {
+      log->warning(label(), 0,
+                   fmt::format("[WARN] RT policy requested but the host denies FIFO "
+                               "(probe errno={}, RLIMIT_RTPRIO={}): tasks will run "
+                               "SCHED_OTHER and inherit host load",
+                               rtProbeErrno_, rlimitRtPrio_));
+    }
+    if (snapshot_.memory.totalSwapBytes > 0) {
+      log->warning(label(), 0,
+                   fmt::format("[WARN] swap enabled ({} MB) with RT requests: page-out "
+                               "stalls can breach deadlines",
+                               snapshot_.memory.totalSwapBytes / (1024ULL * 1024ULL)));
+    } else {
+      log->info(label(), "[PASS] swap: disabled");
+    }
+    if (!snapshot_.cpu.rtBandwidthUnlimited && snapshot_.cpu.rtBandwidthPercent < 100.0) {
+      log->info(label(), fmt::format("[INFO] RT bandwidth capped at {:.1f}%: sustained RT "
+                                     "load beyond it will throttle",
+                                     snapshot_.cpu.rtBandwidthPercent));
+    }
+  }
+  if (wantedCpus != 0 && !snapshot_.kernel.isolCpus) {
+    log->warning(label(), 0,
+                 fmt::format("[WARN] pinned cores requested (mask {:#x}) but no isolcpus on "
+                             "the kernel cmdline: OS tasks share those cores",
+                             wantedCpus));
+  } else if (wantedCpus != 0) {
+    log->info(label(), "[PASS] pinning: isolcpus present for requested cores");
+  }
+  log->info(label(), "=======================================");
+}
+
 std::uint8_t SystemMonitor::telemetry() noexcept {
+  if (!postureAssessed_) {
+    postureAssessed_ = true;
+    assessSchedulerPosture();
+  }
+
   if (config_.cpu.enabled) {
     sampleCpu();
   }
