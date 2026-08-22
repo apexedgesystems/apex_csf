@@ -63,6 +63,11 @@ size = 4
 [constraints.SpecChannelTunableParams]
 gain = { min = -10.0, max = 10.0 }
 
+[[tasks]]
+name = "step"
+uid = 1
+doc = "50 Hz ramp step."
+
 [[commands]]
 name = "Zero"
 opcode = "0x0248"

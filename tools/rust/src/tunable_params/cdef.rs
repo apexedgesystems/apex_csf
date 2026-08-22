@@ -173,15 +173,23 @@ pub fn generate_header(manifest: &Manifest, struct_name: &str) -> Result<String,
     ))
 }
 
-/// Generate the `.auto` command-dispatch base for the component: a
-/// tier-agnostic mixin whose handleCommand verifies each spec-declared
-/// command's payload size, decodes the request struct, invokes the
-/// pure-virtual hook, and encodes the response. Malformed payloads and
-/// unknown opcodes never reach user logic (unknowns fall through to
-/// the tier base).
+/// Generate the `.auto` spec base for the component: a CRTP mixin
+/// (`<C>SpecBase<TDerived, TBase>`) that owns the spec-derived
+/// machinery so stubs shrink to identity + logic:
+///
+/// - command dispatch (size-verified decode -> pure-virtual hook ->
+///   response encode; malformed = ERROR_PARAM pre-user-code, unknown
+///   opcodes fall through to the tier base);
+/// - the ParamBank/ModelData members for the categorized structs;
+/// - loadTprm enforcing the generated layout hash (validateParams /
+///   onParamsLoaded hooks for user policy);
+/// - doInit registering the spec's [[tasks]] (bound to same-named
+///   TDerived methods) and data blocks (onInit hook for extras).
 pub fn generate_cmd_base(manifest: &Manifest) -> Result<String, Error> {
-    if manifest.commands.is_empty() {
-        return Err(Error::Parse("no [[commands]] in the manifest".to_string()));
+    if manifest.commands.is_empty() && manifest.tasks.is_empty() {
+        return Err(Error::Parse(
+            "no [[commands]] or [[tasks]] in the manifest".to_string(),
+        ));
     }
     for c in &manifest.commands {
         for s in [&c.request, &c.response].into_iter().flatten() {
@@ -193,9 +201,24 @@ pub fn generate_cmd_base(manifest: &Manifest) -> Result<String, Error> {
             }
         }
     }
+    {
+        let mut seen_uids: Vec<u8> = Vec::new();
+        for t in &manifest.tasks {
+            if seen_uids.contains(&t.uid) {
+                return Err(Error::Parse(format!(
+                    "task '{}': duplicate task uid {}",
+                    t.name, t.uid
+                )));
+            }
+            seen_uids.push(t.uid);
+            if t.name.is_empty() || !t.name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                return Err(Error::Parse(format!("bad task name '{}'", t.name)));
+            }
+        }
+    }
 
     let component = &manifest.component;
-    let class = format!("{component}CmdBase");
+    let class = format!("{component}SpecBase");
     let mut shout = String::new();
     for ch in component.chars() {
         if ch.is_uppercase() && !shout.is_empty() && !shout.ends_with('_') {
@@ -275,42 +298,198 @@ pub fn generate_cmd_base(manifest: &Manifest) -> Result<String, Error> {
         None => (String::new(), String::new()),
     };
 
+    // Categorized data structs the base owns members for (only when
+    // the spec defines their layouts).
+    let struct_of = |cat: super::manifest::DataCategory| -> Option<String> {
+        manifest
+            .structs
+            .iter()
+            .find(|(name, e)| e.category == cat && manifest.fields.contains_key(*name))
+            .map(|(name, _)| name.clone())
+    };
+    let tunable = struct_of(super::manifest::DataCategory::TunableParam);
+    let state = struct_of(super::manifest::DataCategory::State);
+    let output = struct_of(super::manifest::DataCategory::Output);
+
+    for member_struct in [&tunable, &state, &output].into_iter().flatten() {
+        if !seen.contains(&member_struct) {
+            includes.push_str(&format!("#include \"{member_struct}_auto.hpp\"\n"));
+        }
+    }
+    let mut infra_includes = String::new();
+    if tunable.is_some() {
+        infra_includes.push_str(
+            "#include \"src/system/core/infrastructure/system_component/posix/inc/ParamBank.hpp\"\n",
+        );
+    }
+    if tunable.is_some() || state.is_some() || output.is_some() {
+        infra_includes.push_str(
+            "#include \"src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp\"\n",
+        );
+    }
+    if tunable.is_some() {
+        infra_includes.push_str("#include <filesystem>\n");
+    }
+
+    // TaskUid enum + registrations from [[tasks]].
+    let mut task_enum = String::new();
+    let mut task_regs = String::new();
+    if !manifest.tasks.is_empty() {
+        task_enum.push_str("  enum class TaskUid : std::uint8_t {\n");
+        for t in &manifest.tasks {
+            let doc = t.doc.as_deref().unwrap_or("Spec-declared task.");
+            let mut shout_name = String::new();
+            for ch in t.name.chars() {
+                if ch.is_uppercase() && !shout_name.is_empty() && !shout_name.ends_with('_') {
+                    shout_name.push('_');
+                }
+                shout_name.push(ch.to_ascii_uppercase());
+            }
+            task_enum.push_str(&format!("    {shout_name} = {}, ///< {doc}\n", t.uid));
+            task_regs.push_str(&format!(
+                "    this->template registerTask<TDerived, &TDerived::{name}>(\n        \
+                 static_cast<std::uint8_t>(TaskUid::{shout_name}), static_cast<TDerived*>(this), \"{name}\");\n",
+                name = t.name
+            ));
+        }
+        task_enum.push_str("  };\n\n");
+    }
+
+    // Data-block registrations + members + accessors + loadTprm.
+    let mut data_regs = String::new();
+    let mut members = String::new();
+    let mut accessors = String::new();
+    let mut load_tprm = String::new();
+    let mut param_hooks = String::new();
+    if let Some(ts) = &tunable {
+        let mut shout_struct = String::new();
+        for ch in ts.chars() {
+            if ch.is_uppercase() && !shout_struct.is_empty() && !shout_struct.ends_with('_') {
+                shout_struct.push('_');
+            }
+            shout_struct.push(ch.to_ascii_uppercase());
+        }
+        data_regs.push_str(&format!(
+            "    this->registerData(system_core::data::DataCategory::TUNABLE_PARAM, \"tunableParams\",\n                       &inspectParams_, sizeof({ts}));\n"
+        ));
+        members.push_str(&format!(
+            "  system_core::system_component::ParamBank<{ts}> paramBank_{{}};\n  {ts} inspectParams_{{}};\n"
+        ));
+        param_hooks.push_str(&format!(
+            "  /// Accept or reject an incoming parameter set (policy hook).\n  \
+             [[nodiscard]] virtual bool validateParams(const {ts}&) noexcept {{ return true; }}\n  \
+             /// Called after every successful publish (seed state from params here).\n  \
+             virtual void onParamsLoaded() noexcept {{}}\n"
+        ));
+        load_tprm.push_str(&format!(
+            "  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {{\n    \
+             if (!this->isRegistered()) {{\n      return false;\n    }}\n    \
+             const std::filesystem::path PATH = tprmDir / this->tprmFilename(this->fullUid());\n    \
+             bool loaded = false;\n    \
+             if (std::filesystem::exists(PATH)) {{\n      \
+             loaded = paramBank_.load(\n                   PATH, this->fullUid(),\n                   \
+             [this](const {ts}& p) noexcept {{ return validateParams(p); }},\n                   \
+             &{shout_struct}_LAYOUT_HASH) ==\n               \
+             system_core::system_component::Status::SUCCESS;\n    }}\n    \
+             if (!loaded) {{\n      (void)paramBank_.load({ts}{{}});\n    }}\n    \
+             // First load publishes the initial generation; a RELOAD on a\n    \
+             // live bank must APPLY the staged set instead -- publishInitial\n    \
+             // is a no-op once a generation is active (silent-no-effect\n    \
+             // defect class, caught by zenith 2026-08-22).\n    \
+             if (paramBank_.activeGeneration() == 0) {{\n      \
+             (void)paramBank_.publishInitial();\n    }} else {{\n      \
+             (void)paramBank_.apply();\n    }}\n    \
+             inspectParams_ = paramBank_.active();\n    \
+             onParamsLoaded();\n    \
+             this->setConfigured(true);\n    \
+             return loaded;\n  }}\n\n"
+        ));
+    }
+    if let Some(ss) = &state {
+        data_regs.push_str(&format!(
+            "    this->registerData(system_core::data::DataCategory::STATE, \"state\", &state_.get(),\n                       sizeof({ss}));\n"
+        ));
+        members.push_str(&format!("  system_core::data::State<{ss}> state_{{}};\n"));
+        accessors.push_str(&format!(
+            "  [[nodiscard]] const {ss}& state() const noexcept {{ return state_.get(); }}\n"
+        ));
+    }
+    if let Some(os) = &output {
+        data_regs.push_str(&format!(
+            "    this->registerData(system_core::data::DataCategory::OUTPUT, \"output\", &output_.get(),\n                       sizeof({os}));\n"
+        ));
+        members.push_str(&format!("  system_core::data::Output<{os}> output_{{}};\n"));
+        accessors.push_str(&format!(
+            "  [[nodiscard]] const {os}& output() const noexcept {{ return output_.get(); }}\n"
+        ));
+    }
+    if !accessors.is_empty() {
+        accessors.push('\n');
+    }
+
+    let do_init = format!(
+        "  [[nodiscard]] std::uint8_t doInit() noexcept override {{\n{task_regs}{data_regs}    return onInit();\n  }}\n\n"
+    );
+
+    // Dispatch only when the spec declares commands.
+    let dispatch = if manifest.commands.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "  [[nodiscard]] std::uint8_t handleCommand(std::uint16_t opcode,\n                                           apex::compat::rospan<std::uint8_t> payload,\n                                           std::vector<std::uint8_t>& response) noexcept override {{\n    switch (opcode) {{\n{cases}    default:\n      return TBase::handleCommand(opcode, payload, response);\n    }}\n  }}\n"
+        )
+    };
+    let dispatch_includes = if manifest.commands.is_empty() {
+        String::new()
+    } else {
+        "#include \"src/utilities/compatibility/inc/compat_span.hpp\"\n".to_string()
+    };
+    let dispatch_std_includes = if manifest.commands.is_empty() {
+        ""
+    } else {
+        "#include <cstring>\n#include <vector>\n"
+    };
+
     Ok(format!(
         "// Generated by cdef_gen from the {component} spec -- DO NOT EDIT.\n\
          // Regenerate: make cdef (check-cdef diffs this file against the spec).\n\
-         // Implement the on<Command> hooks in the component (stub-generated).\n\
-         #ifndef APEX_CDEF_AUTO_{shout}_CMD_BASE_HPP\n\
-         #define APEX_CDEF_AUTO_{shout}_CMD_BASE_HPP\n\
+         // Implement the task methods and on<Command> hooks in the component\n\
+         // (stub-generated); the base owns members, loadTprm, doInit, dispatch.\n\
+         #ifndef APEX_CDEF_AUTO_{shout}_SPEC_BASE_HPP\n\
+         #define APEX_CDEF_AUTO_{shout}_SPEC_BASE_HPP\n\
          \n\
          #include \"src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp\"\n\
-         #include \"src/utilities/compatibility/inc/compat_span.hpp\"\n\
+         {dispatch_includes}\
+         {infra_includes}\
          {includes}\n\
          #include <cstdint>\n\
-         #include <cstring>\n\
-         #include <vector>\n\
+         {dispatch_std_includes}\
          \n\
          {ns_open}\n\
-         /// Spec-generated command dispatch: size-verified decode, hook\n\
-         /// invocation, response encode. Unknown opcodes fall through to\n\
-         /// the tier base.\n\
-         template <typename TBase> class {class} : public TBase {{\n\
+         /// Spec-generated component base (CRTP over the derived component\n\
+         /// and its tier base): owns the categorized data members, the\n\
+         /// hash-enforcing loadTprm, the [[tasks]]-driven doInit, and the\n\
+         /// command dispatch. Unknown opcodes fall through to the tier base.\n\
+         template <typename TDerived, typename TBase> class {class} : public TBase {{\n\
          public:\n\
            using TBase::TBase;\n\
          \n\
+         {task_enum}\
+         {accessors}\
+         {load_tprm}\
          protected:\n\
+           /// Extra derived-class initialization after spec registration.\n\
+           [[nodiscard]] virtual std::uint8_t onInit() noexcept {{ return 0; }}\n\
+         {param_hooks}\
          {hooks}\n\
-           [[nodiscard]] std::uint8_t handleCommand(std::uint16_t opcode,\n\
-                                                    apex::compat::rospan<std::uint8_t> payload,\n\
-                                                    std::vector<std::uint8_t>& response) noexcept override {{\n\
-             switch (opcode) {{\n\
-         {cases}    default:\n\
-               return TBase::handleCommand(opcode, payload, response);\n\
-             }}\n\
-           }}\n\
+         {do_init}\
+         {dispatch}\
+         \n\
+         {members}\
          }};\n\
          \n\
          {ns_close}\
-         #endif // APEX_CDEF_AUTO_{shout}_CMD_BASE_HPP\n"
+         #endif // APEX_CDEF_AUTO_{shout}_SPEC_BASE_HPP\n"
     ))
 }
 
@@ -356,44 +535,25 @@ pub fn generate_stub(manifest: &Manifest) -> Result<String, Error> {
         s
     });
 
-    // The spec's tunable struct (first TUNABLE_PARAM with a field spec).
-    let tunable = manifest
-        .structs
-        .iter()
-        .find(|(name, e)| {
-            matches!(e.category, super::manifest::DataCategory::TunableParam)
-                && manifest.fields.contains_key(*name)
-        })
-        .map(|(name, _)| name.clone());
-
-    let mut shout_struct = String::new();
-    let mut bank_decl = String::new();
-    let mut load_tprm = String::new();
-    let mut tunable_include = String::new();
-    if let Some(ts) = &tunable {
-        tunable_include = format!("#include \"{ts}_auto.hpp\" // via the .auto include path\n");
-        for c in ts.chars() {
-            if c.is_uppercase() && !shout_struct.is_empty() && !shout_struct.ends_with('_') {
-                shout_struct.push('_');
-            }
-            shout_struct.push(c.to_ascii_uppercase());
-        }
-        bank_decl = format!("  system_core::system_component::ParamBank<{ts}> paramBank_{{}};\n");
-        load_tprm = format!(
-            "  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {{\n    if (!isRegistered()) {{\n      return false;\n    }}\n    const std::filesystem::path PATH = tprmDir / tprmFilename(fullUid());\n    bool loaded = false;\n    if (std::filesystem::exists(PATH)) {{\n      loaded = paramBank_.load(PATH, fullUid(),\n                               [](const {ts}&) noexcept {{ return true; }},\n                               &{shout_struct}_LAYOUT_HASH) ==\n               system_core::system_component::Status::SUCCESS;\n    }}\n    if (!loaded) {{\n      (void)paramBank_.load({ts}{{}});\n    }}\n    (void)paramBank_.publishInitial();\n    setConfigured(true);\n    return loaded;\n  }}\n\n"
+    // Task method skeletons from [[tasks]] (the generated base binds
+    // same-named methods in its doInit).
+    let mut task_methods = String::new();
+    if manifest.tasks.is_empty() {
+        task_methods.push_str(
+            "  // No [[tasks]] declared; add methods here and tasks to the spec\n  // when the component becomes schedulable.\n",
         );
     }
+    for task in &manifest.tasks {
+        let doc = task.doc.as_deref().unwrap_or("Spec-declared task.");
+        task_methods.push_str(&format!(
+            "  /** @brief {doc} */\n  std::uint8_t {name}() noexcept {{\n    // Component periodic logic belongs here.\n    return 0;\n  }}\n\n",
+            name = task.name
+        ));
+    }
 
-    let cmd_base = if manifest.commands.is_empty() {
-        base.to_string()
-    } else {
-        format!("{component}CmdBase<{base}>")
-    };
-    let cmd_include = if manifest.commands.is_empty() {
-        String::new()
-    } else {
-        format!("#include \"{component}CmdBase_auto.hpp\" // via the .auto include path\n")
-    };
+    let spec_base = format!("{component}SpecBase<{component}, {base}>");
+    let base_include_line =
+        format!("#include \"{component}SpecBase_auto.hpp\" // via the .auto include path\n");
 
     let mut hooks = String::new();
     for c in &manifest.commands {
@@ -430,20 +590,19 @@ pub fn generate_stub(manifest: &Manifest) -> Result<String, Error> {
 
     Ok(format!(
         "// Generated once by cdef_gen --stub from the {component} spec.\n\
-         // USER-OWNED after generation: fill in the component logic; the\n\
-         // .auto headers (structs, dispatch) keep regenerating separately.\n\
+         // USER-OWNED after generation: fill in the component logic. The\n\
+         // generated SpecBase owns members, loadTprm, doInit, and dispatch;\n\
+         // this file owns identity, task methods, and hooks.\n\
          #ifndef APEX_SPEC_STUB_{label}_HPP\n\
          #define APEX_SPEC_STUB_{label}_HPP\n\
          \n\
          #include \"{base_include}\"\n\
-         {cmd_include}\
-         {tunable_include}\
+         {base_include_line}\
          \n\
          #include <cstdint>\n\
-         #include <filesystem>\n\
          \n\
          {ns_open}\n\
-         class {component} final : public {cmd_base} {{\n\
+         class {component} final : public {spec_base} {{\n\
          public:\n\
            static constexpr std::uint16_t COMPONENT_ID = {id};\n\
            static constexpr const char* COMPONENT_NAME = \"{component}\";\n\
@@ -455,26 +614,9 @@ pub fn generate_stub(manifest: &Manifest) -> Result<String, Error> {
            {component}() noexcept = default;\n\
            ~{component}() override = default;\n\
          \n\
-           enum class TaskUid : std::uint8_t {{\n\
-             STEP = 1, ///< Periodic model step.\n\
-           }};\n\
-         \n\
-           std::uint8_t step() noexcept {{\n\
-             // Component periodic logic belongs here.\n\
-             return 0;\n\
-           }}\n\
-         \n\
-         {load_tprm}\
+         {task_methods}\
          protected:\n\
          {hooks}\
-           [[nodiscard]] std::uint8_t doInit() noexcept override {{\n\
-             registerTask<{component}, &{component}::step>(\n\
-                 static_cast<std::uint8_t>(TaskUid::STEP), this, \"step\");\n\
-             return 0;\n\
-           }}\n\
-         \n\
-         private:\n\
-         {bank_decl}\
          }};\n\
          \n\
          {ns_close}\
@@ -576,7 +718,7 @@ mod tests {
         )
         .unwrap();
         let h = generate_cmd_base(&m).unwrap();
-        assert!(h.contains("template <typename TBase> class SpecSensorCmdBase"));
+        assert!(h.contains("template <typename TDerived, typename TBase> class SpecSensorSpecBase"));
         assert!(h.contains("onSetMode(const SetModeRequest& request)"));
         assert!(h.contains("onGetStats(StatsResponse& response)"));
         assert!(h.contains("onRecalibrate() noexcept = 0"));
@@ -620,16 +762,46 @@ mod tests {
         .unwrap();
         let s = generate_stub(&m).unwrap();
         assert!(s.contains("class SpecSensor final"));
-        assert!(s.contains("SpecSensorCmdBase<system_core::system_component::SwModelBase>"));
+        assert!(s.contains(
+            "SpecSensorSpecBase<SpecSensor, system_core::system_component::SwModelBase>"
+        ));
         assert!(s.contains("COMPONENT_ID = 212"));
         assert!(s.contains("return \"SPEC_SNS\";"));
-        // Everything the stub references must be reachable through its own
-        // includes: the dispatch base and the tunable struct + layout hash.
-        assert!(s.contains("#include \"SpecSensorCmdBase_auto.hpp\""));
-        assert!(s.contains("#include \"SpecSensorTunableParams_auto.hpp\""));
-        assert!(s.contains("ParamBank<SpecSensorTunableParams> paramBank_{};"));
-        assert!(s.contains("&SPEC_SENSOR_TUNABLE_PARAMS_LAYOUT_HASH"));
+        assert!(s.contains("#include \"SpecSensorSpecBase_auto.hpp\""));
         assert!(s.contains("onSetMode(const SetModeRequest& request)"));
+        // Machinery lives in the generated base now, not the stub.
+        assert!(!s.contains("paramBank_"));
+        assert!(!s.contains("loadTprm(const"));
+        assert!(!s.contains("doInit()"));
+    }
+
+    #[test]
+    fn spec_base_reload_applies_not_republishes() {
+        // RELOAD on a live bank must apply() -- publishInitial() is a
+        // no-op after the first generation (the silent-no-effect
+        // defect zenith isolated on 2026-08-22).
+        let m = parse_manifest_str(
+            r#"
+            component = "X"
+            component_id = 1
+            [structs]
+            XTunableParams = { category = "TUNABLE_PARAM" }
+            [[fields.XTunableParams]]
+            name = "v"
+            type = "float"
+            size = 4
+            [[tasks]]
+            name = "step"
+            uid = 1
+        "#,
+        )
+        .unwrap();
+        let h = generate_cmd_base(&m).unwrap();
+        assert!(h.contains("if (paramBank_.activeGeneration() == 0) {"));
+        assert!(h.contains("(void)paramBank_.apply();"));
+        // Tasks drive doInit; the derived method binds by name.
+        assert!(h.contains("registerTask<TDerived, &TDerived::step>"));
+        assert!(h.contains("STEP = 1,"));
     }
 
     #[test]

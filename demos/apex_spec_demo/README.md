@@ -30,16 +30,17 @@ component skeletons all derive from the specs.
 
 - **`.auto/` headers** carry the packed structs (with `static_assert(sizeof)`
   and the layout-hash constant the TPRM v3 prelude is checked against) and
-  the command-dispatch base `SpecSensorCmdBase<TBase>`: a tier-agnostic mixin
-  whose `handleCommand` verifies each spec-declared command's payload size,
-  decodes the request struct, invokes the pure-virtual `on<Name>` hook, and
-  encodes the response. Malformed payloads and unknown opcodes never reach
-  user logic (unknowns fall through to the tier base).
-- **The stub** is generated once as a compilable skeleton -- identity,
-  ParamBank wired to the generated layout hash, a registered step task, and
-  hook overrides -- then filled in by hand. Here it carries the sensor
-  physics: a measurement drifting from a calibrated reference at a tunable
-  rate, with a mode state machine (IDLE / MEASURE / FAULT_INJECT).
+  the generated component base `<C>SpecBase<TDerived, TBase>`: a CRTP mixin
+  over the derived component and its tier base that owns the categorized
+  data members (ParamBank + State/Output blocks), the hash-enforcing
+  `loadTprm` (publishes the first generation, applies on reload), the
+  `[[tasks]]`-driven `doInit`, and the command dispatch. Malformed payloads
+  and unknown opcodes never reach user logic; `validateParams` /
+  `onParamsLoaded` / `onInit` hooks carry user policy.
+- **The stub** is generated once as a compilable skeleton -- identity, task
+  methods, and hook overrides -- then filled in by hand. Here it carries the
+  sensor physics: a measurement drifting from a calibrated reference at a
+  tunable rate, with a mode state machine (IDLE / MEASURE / FAULT_INJECT).
 
 ## What the spec defines
 
@@ -49,6 +50,9 @@ component skeletons all derive from the specs.
 - **Commands**: `[[commands]]` entries (name/opcode/request/response/doc)
   covering all four dispatch shapes -- request+response (`Recalibrate`),
   request-only (`SetMode`), response-only (`GetStats`), bare (`Reset`).
+- **Tasks**: `[[tasks]]` entries (name/uid/doc) -- identity only; the
+  generated `doInit` binds the same-named derived method, while timing
+  stays in the scheduler TOML.
 - **Telemetry**: `[[telemetry]]` streams naming the published structs.
 
 From that one file the build derives:

@@ -20,6 +20,11 @@ ReportResponse = { category = "TELEMETRY", opcode = "0x0241" }
 ratio = { min = 0.0, max = 1.0 }
 uTiny = { max = 100 }
 
+[[tasks]]
+name = "step"
+uid = 1
+doc = "10 Hz checksum refresh over the tunable bytes."
+
 [[commands]]
 name = "Report"
 opcode = "0x0241"

@@ -1,6 +1,7 @@
 // Generated once by cdef_gen --stub from the SpecBusDriver spec.
-// USER-OWNED after generation: fill in the component logic; the
-// .auto headers (structs, dispatch) keep regenerating separately.
+// USER-OWNED after generation: fill in the component logic. The
+// generated SpecBase owns members, loadTprm, doInit, and dispatch;
+// this file owns identity, task methods, and hooks.
 #ifndef APEX_SPEC_STUB_SPEC_BUS_HPP
 #define APEX_SPEC_STUB_SPEC_BUS_HPP
 /**
@@ -9,27 +10,20 @@
  *
  * Endpoint-blind: the "bus" is a single-frame software loopback.
  * SendFrame stages a frame; after a tunable number of steps it is
- * "received" back and the counters advance. The checkout proves
- * tx == rx round-trips through generated dispatch over DriverBase.
+ * "received" back and the counters advance.
  */
 
 #include "src/system/core/infrastructure/system_component/posix/inc/DriverBase.hpp"
-#include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
-#include "src/system/core/infrastructure/system_component/posix/inc/ParamBank.hpp"
 
-#include "SpecBusDriverCmdBase_auto.hpp"
-#include "SpecBusDriverOutput_auto.hpp"
-#include "SpecBusDriverState_auto.hpp"
-#include "SpecBusDriverTunableParams_auto.hpp"
+#include "SpecBusDriverSpecBase_auto.hpp"
 
 #include <cstdint>
-#include <cstring>
-#include <filesystem>
 
 namespace appsim {
 namespace spec {
 
-class SpecBusDriver final : public SpecBusDriverCmdBase<system_core::system_component::DriverBase> {
+class SpecBusDriver final
+    : public SpecBusDriverSpecBase<SpecBusDriver, system_core::system_component::DriverBase> {
 public:
   static constexpr std::uint16_t COMPONENT_ID = 214;
   static constexpr const char* COMPONENT_NAME = "SpecBusDriver";
@@ -40,12 +34,6 @@ public:
 
   SpecBusDriver() noexcept = default;
   ~SpecBusDriver() override = default;
-
-  enum class TaskUid : std::uint8_t {
-    STEP = 1, ///< 50 Hz loopback drain.
-  };
-
-  [[nodiscard]] const SpecBusDriverState& state() const noexcept { return state_.get(); }
 
   /** @brief Drain the loopback: a staged frame lands after its delay. @note RT-safe. */
   std::uint8_t step() noexcept {
@@ -62,27 +50,6 @@ public:
       }
     }
     return 0;
-  }
-
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
-    if (!isRegistered()) {
-      return false;
-    }
-    const std::filesystem::path PATH = tprmDir / tprmFilename(fullUid());
-    bool loaded = false;
-    if (std::filesystem::exists(PATH)) {
-      loaded = paramBank_.load(
-                   PATH, fullUid(), [](const SpecBusDriverTunableParams&) noexcept { return true; },
-                   &SPEC_BUS_DRIVER_TUNABLE_PARAMS_LAYOUT_HASH) ==
-               system_core::system_component::Status::SUCCESS;
-    }
-    if (!loaded) {
-      (void)paramBank_.load(SpecBusDriverTunableParams{});
-    }
-    (void)paramBank_.publishInitial();
-    inspectParams_ = paramBank_.active();
-    setConfigured(true);
-    return loaded;
   }
 
 protected:
@@ -120,24 +87,7 @@ protected:
     return static_cast<std::uint8_t>(system_core::system_component::Status::SUCCESS);
   }
 
-  [[nodiscard]] std::uint8_t doInit() noexcept override {
-    using system_core::data::DataCategory;
-
-    registerTask<SpecBusDriver, &SpecBusDriver::step>(static_cast<std::uint8_t>(TaskUid::STEP),
-                                                      this, "step");
-
-    registerData(DataCategory::TUNABLE_PARAM, "tunableParams", &inspectParams_,
-                 sizeof(SpecBusDriverTunableParams));
-    registerData(DataCategory::STATE, "state", &state_.get(), sizeof(SpecBusDriverState));
-    registerData(DataCategory::OUTPUT, "output", &output_.get(), sizeof(SpecBusDriverOutput));
-    return 0;
-  }
-
 private:
-  system_core::system_component::ParamBank<SpecBusDriverTunableParams> paramBank_{};
-  SpecBusDriverTunableParams inspectParams_{};
-  system_core::data::State<SpecBusDriverState> state_{};
-  system_core::data::Output<SpecBusDriverOutput> output_{};
   std::uint16_t countdown_{0};
   std::uint8_t stagedLen_{0};
 };

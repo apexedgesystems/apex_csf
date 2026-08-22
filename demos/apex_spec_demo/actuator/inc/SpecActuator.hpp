@@ -1,41 +1,30 @@
 // Generated once by cdef_gen --stub from the SpecActuator spec.
-// USER-OWNED after generation: fill in the component logic; the
-// .auto headers (structs, dispatch) keep regenerating separately.
+// USER-OWNED after generation: fill in the component logic. The
+// generated SpecBase owns members, loadTprm, doInit, and dispatch;
+// this file owns identity, task methods, and hooks.
 #ifndef APEX_SPEC_STUB_SPEC_ACT_HPP
 #define APEX_SPEC_STUB_SPEC_ACT_HPP
 /**
  * @file SpecActuator.hpp
  * @brief Proto-authored slewing actuator model.
  *
- * Born from actuator/spec_actuator.proto via the manifest's
- * proto_spec reference: the tunable, state, output, and command
- * payload structs plus the dispatch base live in .auto/ and
- * regenerate from the spec; this file was generated once as the
- * skeleton and is user-owned -- the slew physics and handler logic
- * below are the hand-written part of the component.
- *
  * Model: a position slews toward a commanded target at a tunable rate
  * limit and settles inside a hold band. Move sets the target (with a
  * range guard), Halt freezes the target at the current position.
  */
 
-#include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
-#include "src/system/core/infrastructure/system_component/posix/inc/ParamBank.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
 
-#include "SpecActuatorCmdBase_auto.hpp"
-#include "SpecActuatorOutput_auto.hpp"
-#include "SpecActuatorState_auto.hpp"
-#include "SpecActuatorTunableParams_auto.hpp"
+#include "SpecActuatorSpecBase_auto.hpp"
 
 #include <cmath>
 #include <cstdint>
-#include <filesystem>
 
 namespace appsim {
 namespace spec {
 
-class SpecActuator final : public SpecActuatorCmdBase<system_core::system_component::SwModelBase> {
+class SpecActuator final
+    : public SpecActuatorSpecBase<SpecActuator, system_core::system_component::SwModelBase> {
 public:
   static constexpr std::uint16_t COMPONENT_ID = 213;
   static constexpr const char* COMPONENT_NAME = "SpecActuator";
@@ -46,13 +35,6 @@ public:
 
   SpecActuator() noexcept = default;
   ~SpecActuator() override = default;
-
-  enum class TaskUid : std::uint8_t {
-    STEP = 1, ///< 50 Hz slew step.
-  };
-
-  [[nodiscard]] const SpecActuatorOutput& output() const noexcept { return output_.get(); }
-  [[nodiscard]] const SpecActuatorState& state() const noexcept { return state_.get(); }
 
   /** @brief Advance the slew one 50 Hz tick. @note RT-safe. */
   std::uint8_t step() noexcept {
@@ -75,31 +57,14 @@ public:
     return 0;
   }
 
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
-    if (!isRegistered()) {
-      return false;
-    }
-    const std::filesystem::path PATH = tprmDir / tprmFilename(fullUid());
-    bool loaded = false;
-    if (std::filesystem::exists(PATH)) {
-      loaded = paramBank_.load(
-                   PATH, fullUid(), [](const SpecActuatorTunableParams&) noexcept { return true; },
-                   &SPEC_ACTUATOR_TUNABLE_PARAMS_LAYOUT_HASH) ==
-               system_core::system_component::Status::SUCCESS;
-    }
-    if (!loaded) {
-      (void)paramBank_.load(SpecActuatorTunableParams{});
-    }
-    (void)paramBank_.publishInitial();
-    inspectParams_ = paramBank_.active();
+protected:
+  /// Position and target boot from the published parameter set.
+  void onParamsLoaded() noexcept override {
     auto& s = state_.get();
-    s.position = inspectParams_.startPosition;
-    s.target = inspectParams_.startPosition;
-    setConfigured(true);
-    return loaded;
+    s.position = paramBank_.active().startPosition;
+    s.target = s.position;
   }
 
-protected:
   /// Command a new target; out-of-range or non-finite targets reject.
   [[nodiscard]] std::uint8_t onMove(const MoveRequest& request) noexcept override {
     auto& s = state_.get();
@@ -129,27 +94,9 @@ protected:
     return static_cast<std::uint8_t>(system_core::system_component::Status::SUCCESS);
   }
 
-  [[nodiscard]] std::uint8_t doInit() noexcept override {
-    using system_core::data::DataCategory;
-
-    registerTask<SpecActuator, &SpecActuator::step>(static_cast<std::uint8_t>(TaskUid::STEP), this,
-                                                    "step");
-
-    registerData(DataCategory::TUNABLE_PARAM, "tunableParams", &inspectParams_,
-                 sizeof(SpecActuatorTunableParams));
-    registerData(DataCategory::STATE, "state", &state_.get(), sizeof(SpecActuatorState));
-    registerData(DataCategory::OUTPUT, "output", &output_.get(), sizeof(SpecActuatorOutput));
-    return 0;
-  }
-
 private:
   static constexpr float DT = 0.02F;               ///< 50 Hz step period [s].
   static constexpr float POSITION_LIMIT = 1000.0F; ///< Legal |target| bound [units].
-
-  system_core::system_component::ParamBank<SpecActuatorTunableParams> paramBank_{};
-  SpecActuatorTunableParams inspectParams_{};
-  system_core::data::State<SpecActuatorState> state_{};
-  system_core::data::Output<SpecActuatorOutput> output_{};
 };
 
 } // namespace spec

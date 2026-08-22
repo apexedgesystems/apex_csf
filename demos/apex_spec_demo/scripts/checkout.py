@@ -574,6 +574,61 @@ def run_checkout(args: argparse.Namespace) -> int:
         r = c2.send_command(MTX, CMD_SNAPSHOT)
         check("GetSnapshot accepted (SUPPORT dispatch)", r["status"] == 0, r["status_name"])
 
+        section("15b. Spec TPRM Reload (RELOAD applies, never just verifies)")
+        # The defect class this pins: a reload that verifies the stamped
+        # file, logs RELOAD_TPRM_OK, and silently never applies (isolated
+        # by the zenith session, 2026-08-22). The real pipeline end to
+        # end: edit the value TOML -> cfg2bin stamps the v3 prelude ->
+        # upload + RELOAD -> the ACTIVE bytes must change.
+        import subprocess
+
+        repo = __import__("pathlib").Path(__file__).resolve().parents[3]
+        cfg2bin = repo / "build/hosted-x86_64-debug/bin/tools/rust/cfg2bin"
+        src_toml = repo / "demos/apex_spec_demo/tprm/toml/spec_matrix.toml"
+        tprm_dir = repo / "build/hosted-x86_64-debug/demos/apex_spec_demo/exec/tprm"
+        restore_tprm = tprm_dir / "payloads/toml_spec_matrix_toml.tprm"
+        if cfg2bin.is_file() and src_toml.is_file() and restore_tprm.is_file():
+            r = c2.inspect(MTX, category=1)
+            before = r.get("extra", b"")[:80]
+            ratio0 = struct.unpack_from("<f", before, 32)[0]
+            edited = src_toml.read_text().replace("value = 0.75", "value = 2.5")
+            tmp = __import__("tempfile").mkdtemp()
+            toml_path = __import__("pathlib").Path(tmp) / "spec_matrix.toml"
+            toml_path.write_text(edited)
+            out_path = __import__("pathlib").Path(tmp) / "00d700.tprm"
+            gen = subprocess.run(
+                [str(cfg2bin), "-c", str(toml_path), "-o", str(out_path), "--fulluid", "0x00D700"],
+                capture_output=True,
+            )
+            check("cfg2bin stamps the edited set", gen.returncode == 0, gen.stderr.decode()[:80])
+            r = c2.update_tprm(MTX, str(out_path))
+            check("RELOAD_TPRM returns SUCCESS", r["status"] == 0, r["status_name"])
+            time.sleep(1.2)  # a 1 Hz step must land to refresh the checksum
+            r = c2.inspect(MTX, category=1)
+            after = r.get("extra", b"")[:80]
+            ratio1 = struct.unpack_from("<f", after, 32)[0]
+            check(f"ratio APPLIED ({ratio0} -> {ratio1})", abs(ratio1 - 2.5) < 1e-6)
+            r = c2.inspect(MTX, category=2)
+            sextra = r.get("extra", b"")
+            checksum = struct.unpack_from("<I", sextra, 4)[0]
+            check(
+                f"active bytes changed (checksum 0x{checksum:08X} matches new set)",
+                checksum == fold_checksum(after) and after != before,
+            )
+            # Restore the authored set so later sections see boot values.
+            r = c2.update_tprm(MTX, str(restore_tprm))
+            check("restore authored set", r["status"] == 0, r["status_name"])
+            time.sleep(1.2)
+            r = c2.inspect(MTX, category=1)
+            ratio2 = struct.unpack_from("<f", r.get("extra", b""), 32)[0]
+            check(f"restored ({ratio2})", abs(ratio2 - 0.75) < 1e-6)
+        else:
+            check(
+                "reload prerequisites present",
+                False,
+                "cfg2bin/toml/payload missing from build tree",
+            )
+
         section("16. Limits (every constraint kind at its rail)")
         r = c2.inspect(LIM, category=1)
         extra = r.get("extra", b"")

@@ -48,14 +48,16 @@ Everything about SpecSensor's data and command surface lives in
 
 - **`sensor/.auto/`** (generated, always regenerable, check-cdef
   pinned): six packed structs with `static_assert(sizeof)` and
-  layout-hash constants, plus `SpecSensorCmdBase_auto.hpp` -- the
-  dispatch mixin over the tier base that size-verifies, decodes,
-  invokes the `on<Name>` hook, and encodes the response. Malformed
-  payloads return `ERROR_PARAM` and unknown opcodes fall through to
-  the tier base, both before any user code.
+  layout-hash constants, plus `SpecSensorSpecBase_auto.hpp` -- the
+  CRTP component base that owns the data members, the hash-enforcing
+  `loadTprm` (first generation publishes; reloads APPLY), the
+  `[[tasks]]`-driven `doInit`, and the command dispatch (malformed =
+  `ERROR_PARAM`, unknown opcodes fall through to the tier base, both
+  before any user code). User policy rides the `validateParams` /
+  `onParamsLoaded` / `onInit` hooks.
 - **`sensor/inc/SpecSensor.hpp`** (generated once by
   `cdef_gen --stub`, user-owned): carries the hand-written part --
-  the model physics and handler logic.
+  identity, the task methods, and the handler hooks.
 
 ### Model physics (the hand-written part)
 

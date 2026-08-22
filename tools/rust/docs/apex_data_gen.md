@@ -64,6 +64,14 @@ payload prelude is checked against on the vehicle -- and
 producer of a layout states its hash; ground consumers carry it
 instead of recomputing from the flattened field lists.
 
+## Task declarations
+
+Optional `[[tasks]]` entries (`name`, `uid`, `doc`) declare the
+component's schedulable tasks -- identity only. The generated base's
+`doInit` registers each task bound to the same-named derived method;
+frequencies, priorities, and offsets stay in the scheduler TOML so
+the vehicle can be retimed without regeneration.
+
 ## Proto-authored specs
 
 A component-level `proto_spec` key references a profile `.proto` file

@@ -138,6 +138,11 @@ size = 4
 loopDelayTicks = { min = 1, max = 100 }
 maxFrameBytes = { min = 1, max = 16 }
 
+[[tasks]]
+name = "step"
+uid = 1
+doc = "50 Hz loopback drain."
+
 [[commands]]
 name = "SendFrame"
 opcode = "0x0220"
