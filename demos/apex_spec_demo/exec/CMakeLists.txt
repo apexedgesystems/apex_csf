@@ -30,6 +30,11 @@ apex_add_app(
   LINK
   apex_spec_demo_sensor
   apex_spec_demo_actuator
+  apex_spec_demo_bus_driver
+  apex_spec_demo_matrix
+  apex_spec_demo_limits
+  apex_spec_demo_proto_max
+  apex_spec_demo_channel
   system_core_executive
   system_core_scheduler
   system_core_support_system_monitor

@@ -1,0 +1,12 @@
+# SpecLimits (componentId=216, instanceIndex=0, fullUid=0xD800)
+# Every value sits inside its rail, several at edge positions.
+# SpecLimitsTunableParams (36 bytes)
+
+[SpecLimitsTunableParams]
+floorOnly = { type = "float", size = 4, min = 0.0, value = 0.0 }
+ceilOnly = { type = "float", size = 4, max = 100.0, value = 100.0 }
+banded = { type = "float", size = 4, min = 0.0, max = 10.0, value = 10.0 }
+stepped = { type = "float", size = 4, min = 0.0, step = 0.25, value = 2.25 }
+gainTable = { type = "array", size = 16, element_type = "float", min = -1.0, max = 1.0, value = [-1.0, -0.5, 0.5, 1.0] }
+mode = { type = "uint", size = 1, allowed = [1, 3, 5, 7], value = 7 }
+reserved = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }

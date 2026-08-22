@@ -56,6 +56,14 @@ A manifest whose registered structs are all spec-defined needs no C++
 headers at all -- fully spec-born components generate their dictionary
 from the manifest alone.
 
+## Layout identity
+
+Spec-defined struct entries carry `layout_hash` -- the CRC-32 the v3
+payload prelude is checked against on the vehicle -- and
+`canonical_spec`, the canonical field string it derives from. The
+producer of a layout states its hash; ground consumers carry it
+instead of recomputing from the flattened field lists.
+
 ## Proto-authored specs
 
 A component-level `proto_spec` key references a profile `.proto` file

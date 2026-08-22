@@ -127,7 +127,7 @@ endfunction ()
 #
 # Arguments:
 #   NAME            <target>           required
-#   INC             <include_dir>      required
+#   INC             <include_dirs...>  required (first = primary root)
 #   DEPS_INTERFACE  <targets...>       optional
 #   DEFS            <defs...>          optional
 #   FEATURES        <features...>      optional
@@ -135,7 +135,12 @@ endfunction ()
 #   BAREMETAL                          optional flag (enables bare-metal build)
 # ------------------------------------------------------------------------------
 function (apex_add_interface_library)
-  cmake_parse_arguments(IL "BAREMETAL" "NAME;INC" "DEPS_INTERFACE;DEFS;FEATURES;REQUIRES" ${ARGN})
+  # INC is multi-value: the first directory is the primary include
+  # root, later ones are additional roots (e.g. a component's .auto
+  # generated headers). Every root is BUILD_INTERFACE-wrapped and
+  # installed, and all of them ride inside the participation gate --
+  # a skipped target carries no stray operations.
+  cmake_parse_arguments(IL "BAREMETAL" "NAME" "INC;DEPS_INTERFACE;DEFS;FEATURES;REQUIRES" ${ARGN})
   apex_require(IL_NAME IL_INC)
 
   # A lib.manifest is the participation rule where present: on bare-metal the
@@ -167,10 +172,10 @@ function (apex_add_interface_library)
   add_library(${IL_NAME} INTERFACE)
   add_library(apex::${IL_NAME} ALIAS ${IL_NAME})
 
-  target_include_directories(
-    ${IL_NAME} INTERFACE $<BUILD_INTERFACE:${IL_INC}>
-                         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
-  )
+  foreach (_inc_dir IN LISTS IL_INC)
+    target_include_directories(${IL_NAME} INTERFACE $<BUILD_INTERFACE:${_inc_dir}>)
+  endforeach ()
+  target_include_directories(${IL_NAME} INTERFACE $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
   if (IL_DEPS_INTERFACE)
     target_link_libraries(${IL_NAME} INTERFACE ${IL_DEPS_INTERFACE})
@@ -185,7 +190,9 @@ function (apex_add_interface_library)
   endif ()
 
   install(TARGETS ${IL_NAME} EXPORT apexTargets)
-  install(DIRECTORY "${IL_INC}/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+  foreach (_inc_dir IN LISTS IL_INC)
+    install(DIRECTORY "${_inc_dir}/" DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+  endforeach ()
 
   if (APEX_TARGETS_VERBOSE)
     message(STATUS "[apex] INTERFACE ${IL_NAME} inc='${IL_INC}' deps='${IL_DEPS_INTERFACE}'")

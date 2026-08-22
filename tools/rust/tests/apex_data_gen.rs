@@ -70,6 +70,13 @@ fn dictionary_carries_spec_commands_and_telemetry() {
     assert_eq!(dict["component_id"], 212);
     assert!(dict["structs"]["SetModeRequest"].is_object());
 
+    // Producer-stated layout identity: the hash the v3 prelude carries,
+    // plus the canonical string it derives from.
+    let entry = &dict["structs"]["SetModeRequest"];
+    assert_eq!(entry["canonical_spec"], "mode:uint:1;");
+    let hash = entry["layout_hash"].as_str().expect("layout_hash");
+    assert!(hash.starts_with("0x") && hash.len() == 10, "{hash}");
+
     let commands = dict["commands"].as_array().expect("commands array");
     assert_eq!(commands.len(), 2);
     assert_eq!(commands[0]["name"], "SetMode");

@@ -12,6 +12,12 @@
 0x00C800  toml/system_monitor.toml
 0x00D400  toml/spec_sensor.toml
 0x00D500  toml/spec_actuator.toml
+0x00D600  toml/spec_bus_driver.toml
+0x00D700  toml/spec_matrix.toml
+0x00D800  toml/spec_limits.toml
+0x00D900  toml/spec_proto_max.toml
+0x00DA00  toml/spec_channel_a.toml
+0x00DA01  toml/spec_channel_b.toml
 
 [master master.tprm]
 use components flight

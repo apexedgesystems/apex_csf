@@ -4,19 +4,32 @@
  * @file SpecExecutive.hpp
  * @brief Spec-driven demo executive.
  *
- * The minimal component set around the spec-born pair: SpecSensor
- * (SW_MODEL, fullUid=0xD400, TOML-authored spec) and SpecActuator
- * (SW_MODEL, fullUid=0xD500, proto-authored spec), plus
- * SystemMonitor (SUPPORT, fullUid=0xC800) for health telemetry.
- * Pure SIL on any POSIX host; the demo exists to prove the
- * spec-driven path in both authoring formats -- every command the
- * checkout drives dispatches through generated code.
+ * Every app component is spec-born, and together they cover the
+ * component taxonomy and the spec vocabulary:
+ *
+ *   SpecSensor    0xD400  SW_MODEL  TOML     drift physics + mode machine
+ *   SpecActuator  0xD500  SW_MODEL  proto    slew + bounded string
+ *   SpecBusDriver 0xD600  DRIVER    TOML     loopback bus round-trips
+ *   SpecMatrix    0xD700  SUPPORT   TOML     full type-vocabulary checksum
+ *   SpecLimits    0xD800  SW_MODEL  TOML     every constraint kind
+ *   SpecProtoMax  0xD900  SW_MODEL  proto    maximal-profile reference
+ *   SpecChannel   0xDA00/01 SW_MODEL TOML    one spec, two instances
+ *
+ * Plus SystemMonitor (SUPPORT, 0xC800) for health telemetry. Pure SIL
+ * on any POSIX host; the demo is the living compatibility suite for
+ * the spec-driven path -- every command the checkout drives
+ * dispatches through generated code.
  */
 
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitor.hpp"
 
 #include "demos/apex_spec_demo/actuator/inc/SpecActuator.hpp"
+#include "demos/apex_spec_demo/bus_driver/inc/SpecBusDriver.hpp"
+#include "demos/apex_spec_demo/channel/inc/SpecChannel.hpp"
+#include "demos/apex_spec_demo/limits/inc/SpecLimits.hpp"
+#include "demos/apex_spec_demo/matrix/inc/SpecMatrix.hpp"
+#include "demos/apex_spec_demo/proto_max/inc/SpecProtoMax.hpp"
 #include "demos/apex_spec_demo/sensor/inc/SpecSensor.hpp"
 
 namespace appsim {
@@ -37,6 +50,12 @@ protected:
 private:
   spec::SpecSensor sensor_;
   spec::SpecActuator actuator_;
+  spec::SpecBusDriver busDriver_;
+  spec::SpecMatrix matrix_;
+  spec::SpecLimits limits_;
+  spec::SpecProtoMax protoMax_;
+  spec::SpecChannel channelA_;
+  spec::SpecChannel channelB_;
   system_core::support::SystemMonitor sysMonitor_;
 };
 

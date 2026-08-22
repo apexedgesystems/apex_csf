@@ -30,7 +30,7 @@ apex_add_interface_library(
   ${LIB_NAME}
   INC
   "${INC_DIR}"
-  DEPS_PUBLIC
+  DEPS_INTERFACE
   utilities_concurrency
   utilities_time_mcu
 )

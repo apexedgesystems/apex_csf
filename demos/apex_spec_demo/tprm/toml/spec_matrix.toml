@@ -1,0 +1,21 @@
+# SpecMatrix (componentId=215, instanceIndex=0, fullUid=0xD700)
+# Every vocabulary lane carries a distinctive authored value so the
+# checkout can prove each loaded intact.
+# SpecMatrixTunableParams (80 bytes)
+
+[SpecMatrixTunableParams]
+iWide = { type = "int", size = 8, value = -8000000001 }
+uWide = { type = "uint", size = 8, value = 9000000001 }
+precise = { type = "float", size = 8, value = 2.5 }
+iWord = { type = "int", size = 4, value = -70001 }
+uWord = { type = "uint", size = 4, value = 70001 }
+ratio = { type = "float", size = 4, value = 0.75 }
+gains = { type = "array", size = 8, element_type = "uint", value = [10, 20, 30, 40] }
+iShort = { type = "int", size = 2, value = -301 }
+uShort = { type = "uint", size = 2, value = 301 }
+iTiny = { type = "int", size = 1, value = -6 }
+uTiny = { type = "uint", size = 1, value = 6 }
+enabled = { type = "bool", size = 1, value = true }
+label = { type = "string", size = 12, value = "FULL-MATRIX" }
+tags = { type = "array", size = 12, element_type = "string", value = ["ALPHA", "BETA"] }
+blob = { type = "array", size = 5, element_type = "uint", value = [1, 2, 3, 4, 5] }

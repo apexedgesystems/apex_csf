@@ -1,0 +1,9 @@
+# SpecChannel instance 1 (componentId=218, instanceIndex=1, fullUid=0xDA01)
+# Same layout (same hash), different authored values: the
+# per-instance-configuration proof.
+# SpecChannelTunableParams (12 bytes)
+
+[SpecChannelTunableParams]
+gain = { type = "float", size = 4, min = -10.0, max = 10.0, value = -1.0 }
+offset = { type = "float", size = 4, value = 5.0 }
+channelTag = { type = "string", size = 4, value = "CH-B" }

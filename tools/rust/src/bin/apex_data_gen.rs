@@ -402,6 +402,19 @@ fn build_struct_entry_from_spec(
     result.insert("size".into(), json!(offset));
     result.insert("fields".into(), Json::Array(fields));
     result.insert("spec_defined".into(), json!(true));
+    // The producer states the layout hash: the same CRC-32 over the
+    // canonical field spec the v3 prelude is checked against on the
+    // vehicle, so consumers (zenith) carry it instead of recomputing
+    // from flattened field lists.
+    let canonical = tunable_params::cdef::canonical_spec(spec);
+    result.insert(
+        "layout_hash".into(),
+        json!(format!(
+            "0x{:08X}",
+            tunable_params::payload::crc32(canonical.as_bytes())
+        )),
+    );
+    result.insert("canonical_spec".into(), json!(canonical));
     Ok(Json::Object(result))
 }
 

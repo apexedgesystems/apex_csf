@@ -1,0 +1,156 @@
+# SpecMatrix -- spec-born SUPPORT-tier component exercising the FULL
+# type vocabulary in one struct: every integer width, both floats,
+# bool, scalar arrays, a bounded string, a string array, and a byte
+# buffer. Fields are declared largest-first so the packed-by-
+# construction struct carries no padding (the generated static_assert
+# is the proof). If a vocabulary entry breaks anywhere in the chain --
+# codegen, dictionary, template, packing, boot -- this component's
+# checkout catches it.
+
+component = "SpecMatrix"
+namespace = "appsim::spec"
+component_id = 215
+component_type = "SUPPORT"
+label = "SPEC_MTX"
+
+[structs]
+SpecMatrixTunableParams = { category = "TUNABLE_PARAM" }
+SpecMatrixState = { category = "STATE" }
+MatrixSnapshot = { category = "TELEMETRY", opcode = "0x0230" }
+
+[[fields.SpecMatrixTunableParams]]
+name = "iWide"
+type = "int"
+size = 8
+default = -8000000000
+doc = "int64 lane."
+
+[[fields.SpecMatrixTunableParams]]
+name = "uWide"
+type = "uint"
+size = 8
+default = 9000000000
+doc = "uint64 lane."
+
+[[fields.SpecMatrixTunableParams]]
+name = "precise"
+type = "float"
+size = 8
+default = 2.718281828
+doc = "double lane."
+
+[[fields.SpecMatrixTunableParams]]
+name = "iWord"
+type = "int"
+size = 4
+default = -70000
+doc = "int32 lane."
+
+[[fields.SpecMatrixTunableParams]]
+name = "uWord"
+type = "uint"
+size = 4
+default = 70000
+doc = "uint32 lane."
+
+[[fields.SpecMatrixTunableParams]]
+name = "ratio"
+type = "float"
+size = 4
+default = 0.5
+doc = "float lane."
+
+[[fields.SpecMatrixTunableParams]]
+name = "gains"
+type = "uint"
+size = 2
+count = 4
+doc = "uint16 array lane."
+
+[[fields.SpecMatrixTunableParams]]
+name = "iShort"
+type = "int"
+size = 2
+default = -300
+doc = "int16 lane."
+
+[[fields.SpecMatrixTunableParams]]
+name = "uShort"
+type = "uint"
+size = 2
+default = 300
+doc = "uint16 lane."
+
+[[fields.SpecMatrixTunableParams]]
+name = "iTiny"
+type = "int"
+size = 1
+default = -5
+doc = "int8 lane."
+
+[[fields.SpecMatrixTunableParams]]
+name = "uTiny"
+type = "uint"
+size = 1
+default = 5
+doc = "uint8 lane."
+
+[[fields.SpecMatrixTunableParams]]
+name = "enabled"
+type = "bool"
+size = 1
+default = true
+doc = "bool lane."
+
+[[fields.SpecMatrixTunableParams]]
+name = "label"
+type = "string"
+size = 12
+doc = "Bounded string lane (12-byte char buffer)."
+
+[[fields.SpecMatrixTunableParams]]
+name = "tags"
+type = "string"
+size = 6
+count = 2
+doc = "String array lane (2 x 6-byte char buffers)."
+
+[[fields.SpecMatrixTunableParams]]
+name = "blob"
+type = "uint"
+size = 1
+count = 5
+doc = "Byte buffer lane."
+
+[[fields.SpecMatrixState]]
+name = "stepCount"
+type = "uint"
+size = 4
+
+[[fields.SpecMatrixState]]
+name = "checksum"
+type = "uint"
+size = 4
+doc = "Running XOR over the tunable bytes, recomputed each step."
+
+[[fields.MatrixSnapshot]]
+name = "checksum"
+type = "uint"
+size = 4
+
+[[fields.MatrixSnapshot]]
+name = "stepCount"
+type = "uint"
+size = 4
+
+[[commands]]
+name = "GetSnapshot"
+opcode = "0x0230"
+response = "MatrixSnapshot"
+doc = "Return the current checksum and step count."
+
+[[telemetry]]
+name = "Snapshot"
+opcode = "0x0330"
+struct = "MatrixSnapshot"
+doc = "Checksum/step snapshot, also readable via INSPECT (STATE)."

@@ -31,6 +31,47 @@ type = "SW_MODEL"
 notes = "Proto-authored slewing actuator (50 Hz step, rate-limited)"
 
 [[components]]
+name = "SpecBusDriver"
+fullUid = "0x00D600"
+instanceIndex = 0
+type = "DRIVER"
+notes = "Loopback bus driver (50 Hz drain)"
+
+[[components]]
+name = "SpecMatrix"
+fullUid = "0x00D700"
+type = "SUPPORT"
+notes = "Full type-vocabulary checksum component"
+
+[[components]]
+name = "SpecLimits"
+fullUid = "0x00D800"
+instanceIndex = 0
+type = "SW_MODEL"
+notes = "Constraint-torture model (every rail kind)"
+
+[[components]]
+name = "SpecProtoMax"
+fullUid = "0x00D900"
+instanceIndex = 0
+type = "SW_MODEL"
+notes = "Maximal proto-profile reference"
+
+[[components]]
+name = "SpecChannel"
+fullUid = "0x00DA00"
+instanceIndex = 0
+type = "SW_MODEL"
+notes = "Ramp channel A (multi-instance pair)"
+
+[[components]]
+name = "SpecChannel"
+fullUid = "0x00DA01"
+instanceIndex = 1
+type = "SW_MODEL"
+notes = "Ramp channel B (multi-instance pair)"
+
+[[components]]
 name = "SystemMonitor"
 fullUid = "0x00C800"
 type = "SUPPORT"
