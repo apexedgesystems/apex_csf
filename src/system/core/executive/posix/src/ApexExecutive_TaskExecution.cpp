@@ -102,6 +102,13 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
     }
   }
 
+  // Opt-in pre-clock census: measure every task's cold and steady cost
+  // against its period budget before the first tick can be surprised
+  // by one.
+  if (runTaskCensus_) {
+    (void)scheduler_.runTaskCensus(3);
+  }
+
   sysLog_->info(label(), "Task execution started");
 
   // Main execution loop

@@ -32,6 +32,7 @@ enum Arguments : std::uint8_t {
   SHUTDOWN_CYCLE,    ///< Shutdown after N clock cycles
   ARCHIVE_PATH,      ///< Custom archive output path
   SKIP_CLEANUP,      ///< Skip filesystem cleanup on shutdown
+  TASK_CENSUS,       ///< Run the pre-clock task census before starting
   WATCHDOG_INTERVAL, ///< Watchdog check interval (ms)
   ENABLE_PROFILING,  ///< Enable profiling
   PROFILE_INTERVAL,  ///< Profile sample interval (ticks)
@@ -56,6 +57,7 @@ static const apex::helpers::args::ArgMap ARG_MAP = {
     {SHUTDOWN_CYCLE, {"--shutdown-cycle", 1, false}},
     {ARCHIVE_PATH, {"--archive-path", 1, false}},
     {SKIP_CLEANUP, {"--skip-cleanup", 0, false}},
+    {TASK_CENSUS, {"--task-census", 0, false}},
     {WATCHDOG_INTERVAL, {"--watchdog-interval", 1, false}},
     {ENABLE_PROFILING, {"--enable-profiling", 0, false}},
     {PROFILE_INTERVAL, {"--profile-interval", 1, false}},

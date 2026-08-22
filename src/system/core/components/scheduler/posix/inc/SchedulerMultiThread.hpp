@@ -84,6 +84,12 @@ public:
    */
   [[nodiscard]] bool hasPeriodViolation() const noexcept { return periodViolationsThisTick_ > 0; }
 
+  /** @brief Worker count per constructed pool (index = poolId). */
+  [[nodiscard]] std::vector<std::uint16_t> poolWorkerCounts() const noexcept override;
+
+  /** @brief Requested policy/priority/affinity per pool, from the specs. */
+  [[nodiscard]] std::vector<PoolRequirementRowTlm> poolRequirements() const noexcept override;
+
   /** @brief Component name of the most recent period violator (nullptr = none). */
   [[nodiscard]] const char* lastViolationComponent() const noexcept override {
     return lastViolationComponent_.load(std::memory_order_acquire);

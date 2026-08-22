@@ -21,9 +21,134 @@ namespace scheduler {
 /* ----------------------------- SchedulerTlmOpcode ----------------------------- */
 
 /// Telemetry opcodes for Scheduler (component-specific range 0x0100+).
+/// The scheduler's well-known bus address (componentId 1, instance 0).
+inline constexpr std::uint32_t SCHEDULER_FULLUID = 0x000100U;
+
 enum class SchedulerTlmOpcode : std::uint16_t {
-  GET_HEALTH = 0x0100 ///< Request scheduler health snapshot.
+  GET_HEALTH = 0x0100,      ///< Request scheduler health snapshot.
+  GET_TASK_STATS = 0x0101,  ///< Request per-task runtime stats snapshot.
+  RUN_TASK_CENSUS = 0x0102, ///< Execute the pre-clock task census.
+  GET_TASK_CENSUS = 0x0103, ///< Request the census report.
+  RUN_PREFLIGHT = 0x0104,   ///< Re-run the static table feasibility analysis.
+  GET_PREFLIGHT = 0x0105,   ///< Request the table feasibility verdicts.
+  GET_REQUIREMENTS = 0x0106 ///< Request the scheduler's host requirements.
 };
+
+/* ----------------------------- Requirements ----------------------------- */
+
+/// Maximum pools reported in the requirements snapshot.
+inline constexpr std::size_t REQUIREMENTS_POOL_CAP = 8;
+
+#pragma pack(push, 1)
+/**
+ * @struct PoolRequirementRowTlm
+ * @brief One pool's requested host configuration (16 bytes).
+ *
+ * What the scheduler ASKS the host for; whether the host granted it is
+ * the consumer's correlation to make (RT-config warnings, isolcpus,
+ * governor) -- the scheduler publishes needs, not judgments.
+ */
+struct PoolRequirementRowTlm {
+  std::uint8_t poolId{0};        ///< Pool index.
+  std::uint8_t policy{0};        ///< Requested POSIX policy (0/1/2 = OTHER/FIFO/RR).
+  std::int8_t priority{0};       ///< Requested POSIX priority.
+  std::uint8_t pad{0};           ///< Alignment.
+  std::uint16_t workers{0};      ///< Constructed worker count.
+  std::uint16_t pad2{0};         ///< Alignment.
+  std::uint64_t affinityMask{0}; ///< Requested CPU set (bit N = CPU N; 0 = any).
+};
+
+/**
+ * @struct SchedulerRequirementsTlm
+ * @brief The scheduler's declared host requirements.
+ *
+ * Returned for GET_REQUIREMENTS and registered as an INSPECT OUTPUT so
+ * any consumer can correlate host posture against declared needs.
+ */
+struct alignas(8) SchedulerRequirementsTlm {
+  std::uint16_t fundamentalFreqHz{0}; ///< Tick rate the clock must hold.
+  std::uint8_t poolCount{0};          ///< Rows populated.
+  std::uint8_t seqGroupCount{0};      ///< Sequence groups in the table.
+  std::uint16_t taskCount{0};         ///< Scheduled tasks.
+  std::uint16_t pad{0};               ///< Alignment.
+  PoolRequirementRowTlm pools[REQUIREMENTS_POOL_CAP]{};
+};
+#pragma pack(pop)
+
+/* ----------------------------- Task Stats ----------------------------- */
+
+/// Maximum tasks reported in one stats snapshot.
+inline constexpr std::size_t TASK_STATS_TLM_CAP = 32;
+
+#pragma pack(push, 1)
+/**
+ * @struct TaskStatsRowTlm
+ * @brief One task's runtime counters (16 bytes, little-endian).
+ */
+struct TaskStatsRowTlm {
+  std::uint32_t fullUid{0};         ///< Owner component fullUid.
+  std::uint8_t taskUid{0};          ///< Task UID within the component.
+  std::uint8_t pad{0};              ///< Alignment.
+  std::uint16_t lastRuntimeUs16{0}; ///< Most recent runtime (us, saturated).
+  std::uint32_t maxRuntimeUs{0};    ///< Worst dispatch-to-complete (us).
+  std::uint16_t overruns16{0};      ///< Period overruns (saturated).
+  std::uint16_t violations16{0};    ///< Deadline violations (saturated).
+};
+
+/* ----------------------------- Task Census ----------------------------- */
+
+#pragma pack(push, 1)
+// Top-level TLM structs carry alignas(8): pack(1) alone gives them
+// alignment 1, letting the compiler place them at odd addresses, and a
+// reference bound to a uint32/uint64 field is then UB. Field offsets are
+// laid out naturally aligned, so aligned placement makes field references
+// well-formed without changing the wire layout.
+/**
+ * @struct CensusRowTlm
+ * @brief One task's measured cost vs its period budget (20 bytes).
+ *
+ * verdict: 0 = PASS, 1 = WARN (first run exceeds the budget -- expect a
+ * startup violation), 2 = FAIL (steady state exceeds the budget -- the
+ * task cannot hold its period at all).
+ */
+struct CensusRowTlm {
+  std::uint32_t fullUid{0};  ///< Owner component fullUid.
+  std::uint8_t taskUid{0};   ///< Task UID within the component.
+  std::uint8_t verdict{0};   ///< 0 PASS / 1 WARN / 2 FAIL.
+  std::uint16_t pad{0};      ///< Alignment.
+  std::uint32_t firstUs{0};  ///< First execution (cold: lazy inits land here).
+  std::uint32_t steadyUs{0}; ///< Fastest of the remaining repetitions.
+  std::uint32_t budgetUs{0}; ///< Period budget (0 = unknown).
+};
+
+/**
+ * @struct SchedulerCensusTlm
+ * @brief Pre-clock task census report.
+ *
+ * Returned for GET_TASK_CENSUS and registered as an INSPECT OUTPUT.
+ */
+struct alignas(8) SchedulerCensusTlm {
+  std::uint16_t taskCount{0}; ///< Rows populated (0 = census never ran).
+  std::uint8_t truncated{0};  ///< 1 when tasks exceeded the row cap.
+  std::uint8_t overall{0};    ///< Worst row verdict.
+  CensusRowTlm rows[TASK_STATS_TLM_CAP]{};
+};
+#pragma pack(pop)
+
+/**
+ * @struct SchedulerTaskStatsTlm
+ * @brief Per-task runtime stats snapshot.
+ *
+ * Returned as response payload to GET_TASK_STATS and registered as an
+ * INSPECT OUTPUT; rows populated at snapshot time from the live
+ * counters (readers never touch scheduler internals).
+ */
+struct alignas(8) SchedulerTaskStatsTlm {
+  std::uint16_t taskCount{0}; ///< Rows populated.
+  std::uint16_t truncated{0}; ///< 1 when tasks exceeded the row cap.
+  TaskStatsRowTlm rows[TASK_STATS_TLM_CAP]{};
+};
+#pragma pack(pop)
 
 /* ----------------------------- SchedulerHealthTlm ----------------------------- */
 

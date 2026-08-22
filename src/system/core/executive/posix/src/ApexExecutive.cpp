@@ -1273,6 +1273,9 @@ void ApexExecutive::applyCliOverrides() noexcept {
     }
   }
 
+  // Pre-clock task census (opt-in)
+  runTaskCensus_ = parsedArgs_.count(TASK_CENSUS) > 0;
+
   // Archive configuration
   if (parsedArgs_.count(SKIP_CLEANUP)) {
     shutdownConfig_.skipCleanup = true;
