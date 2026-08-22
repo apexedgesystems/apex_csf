@@ -19,8 +19,11 @@
 
 #include <gtest/gtest.h>
 
+#include <unistd.h>
+
 #include <cstring>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 using apex::concurrency::DelegateU8;
@@ -40,7 +43,8 @@ namespace {
 std::uint8_t noopTask(void*) noexcept { return 0; }
 
 std::filesystem::path testLogDir() {
-  const auto DIR = std::filesystem::temp_directory_path() / "scheduler_requirements_utest";
+  const auto DIR = std::filesystem::temp_directory_path() /
+                   ("scheduler_requirements_utest_" + std::to_string(::getpid()));
   std::filesystem::create_directories(DIR);
   return DIR;
 }
@@ -58,13 +62,13 @@ TEST(SchedulerRequirementsTest, RowsReflectSpecsAndTable) {
   specs.push_back({"rt", 2, rt});
   specs.push_back({"bulk", 1, {}});
 
+  SequenceGroup seq(2);
   SchedulerMultiThread sched(100, testLogDir(), specs);
   ASSERT_EQ(sched.init(), 0);
 
   DelegateU8 del{&noopTask, nullptr};
   SchedulableTask a(del, "a");
   SchedulableTask b(del, "b");
-  SequenceGroup seq(2);
   seq.addTask(a, 1);
   seq.addTask(b, 2);
   ASSERT_EQ(sched.addTask(a, TaskConfig(100, 1, 0), &seq), Status::SUCCESS);

@@ -389,11 +389,16 @@ void SchedulerBase::populateTaskStatsTlm() noexcept {
 
 void SchedulerBase::runTablePreflight() noexcept {
   tablePreflight_ = analyzeTaskTable(entries_, schedule_, poolWorkerCounts());
+  tablePreflightPending_ = true;
+  logTablePreflight();
+}
 
+void SchedulerBase::logTablePreflight() noexcept {
   auto* log = componentLog();
-  if (log == nullptr) {
+  if (log == nullptr || !tablePreflightPending_) {
     return;
   }
+  tablePreflightPending_ = false;
 
   const auto NAME = [](PreflightVerdict v) noexcept {
     return v == PreflightVerdict::PASS ? "PASS" : v == PreflightVerdict::WARN ? "WARN" : "FAIL";

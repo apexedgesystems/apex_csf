@@ -17,6 +17,9 @@ namespace scheduler {
 
 uint8_t SchedulerSingleThread::doInit() noexcept {
   initSchedulerLog(logDir_);
+  if (!entries_.empty()) {
+    runTablePreflight(); // Re-analyze: the table may predate the log.
+  }
 
   componentLog()->info(label(), "Single-threaded scheduler constructed");
   componentLog()->info(label(), fmt::format("Fundamental frequency: {} Hz", ffreq_));

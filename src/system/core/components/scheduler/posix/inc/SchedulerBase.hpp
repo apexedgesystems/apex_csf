@@ -200,6 +200,15 @@ public:
   void runTablePreflight() noexcept;
 
   /**
+   * @brief Emit the stored table verdicts to the component log.
+   *
+   * Split from the analysis because the table can load before the log
+   * exists: the analysis latches its verdicts either way, and emission
+   * retries at init so a boot never silently drops the section.
+   */
+  void logTablePreflight() noexcept;
+
+  /**
    * @brief Refresh the per-task stats snapshot from the live counters.
    * @note Command/INSPECT context; not on the tick path.
    */
@@ -466,6 +475,7 @@ protected:
   /** @brief Table of tick index -> vector of entry indices scheduled at that tick. */
   std::vector<std::vector<std::size_t>> schedule_{};
   TablePreflight tablePreflight_{};            ///< Verdicts from the last table analysis.
+  bool tablePreflightPending_{false};          ///< Analyzed but not yet emitted to the log.
   SchedulerTaskStatsTlm taskStatsTlm_{};       ///< Snapshot for GET_TASK_STATS/INSPECT.
   SchedulerCensusTlm censusTlm_{};             ///< Pre-clock census report.
   SchedulerRequirementsTlm requirementsTlm_{}; ///< Declared host requirements.

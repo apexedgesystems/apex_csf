@@ -110,17 +110,21 @@ void SchedulerMultiThread::initPools(std::vector<PoolSpec> specs) noexcept {
 SchedulerMultiThread::~SchedulerMultiThread() noexcept { shutdown(); }
 
 void SchedulerMultiThread::shutdown() noexcept {
-  stopping_.store(true, std::memory_order_release);
-
-  // Release parked phase waiters. atomic wait absorbs notifies while the
-  // value is unchanged, so a bare notify cannot free a waiter -- the
-  // counter must actually change. Drive every group counter to the
-  // terminal shutdown value: waiters wake on the change, observe the
-  // stopping flag (ordered before this store), and abort their wait.
-  for (const auto& entry : entries_) {
-    if (entry.seqCounter != nullptr) {
-      entry.seqCounter->store(schedulable::SEQ_SHUTDOWN, std::memory_order_release);
-      apex::compat::atom::notifyAll(*entry.seqCounter);
+  // One-shot: the destructor calls shutdown() again after an explicit
+  // shutdown, and by then the sequence groups (whose counters the
+  // sentinel drive writes) may legitimately be gone -- their contract
+  // ends at the FIRST shutdown, not at scheduler destruction.
+  if (!stopping_.exchange(true, std::memory_order_acq_rel)) {
+    // Release parked phase waiters. atomic wait absorbs notifies while
+    // the value is unchanged, so a bare notify cannot free a waiter --
+    // the counter must actually change. Drive every group counter to
+    // the terminal shutdown value: waiters wake on the change, observe
+    // the stopping flag (ordered before this store), and abort.
+    for (const auto& entry : entries_) {
+      if (entry.seqCounter != nullptr) {
+        entry.seqCounter->store(schedulable::SEQ_SHUTDOWN, std::memory_order_release);
+        apex::compat::atom::notifyAll(*entry.seqCounter);
+      }
     }
   }
 
@@ -182,6 +186,13 @@ std::uint8_t SchedulerMultiThread::doInit() noexcept {
   // Spawn worker pools now that the TPRM header is available (loaded by
   // SchedulerBase::loadTprm before doInit runs in the normal apex lifecycle).
   resolveAndInitPoolsFromTprm();
+
+  // The table may have loaded before the log and the pools existed; the
+  // verdicts latched then were computed against an empty pool set.
+  // Re-analyze now that construction is complete, and emit.
+  if (!entries_.empty()) {
+    runTablePreflight();
+  }
 
   componentLog()->info(label(), "Multi-threaded scheduler constructed");
   componentLog()->info(label(), fmt::format("Fundamental frequency: {} Hz", ffreq_));

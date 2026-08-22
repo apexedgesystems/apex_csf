@@ -20,10 +20,13 @@
 
 #include <gtest/gtest.h>
 
+#include <unistd.h>
+
 #include <atomic>
 #include <chrono>
 #include <cstring>
 #include <filesystem>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -54,7 +57,8 @@ std::uint8_t alwaysSlowTask(void*) noexcept {
 }
 
 std::filesystem::path testLogDir() {
-  const auto DIR = std::filesystem::temp_directory_path() / "scheduler_census_utest";
+  const auto DIR = std::filesystem::temp_directory_path() /
+                   ("scheduler_census_utest_" + std::to_string(::getpid()));
   std::filesystem::create_directories(DIR);
   return DIR;
 }

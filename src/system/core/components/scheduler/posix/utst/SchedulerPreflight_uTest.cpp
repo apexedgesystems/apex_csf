@@ -22,8 +22,11 @@
 
 #include <gtest/gtest.h>
 
+#include <unistd.h>
+
 #include <atomic>
 #include <filesystem>
+#include <string>
 #include <vector>
 
 using apex::concurrency::DelegateU8;
@@ -135,15 +138,16 @@ TEST(SchedulerPreflightTest, ChainShapeHazardsWarn) {
 
 /** @test runTablePreflight populates verdicts on a live scheduler. */
 TEST(SchedulerPreflightTest, RunnerPopulatesVerdicts) {
-  const auto DIR = std::filesystem::temp_directory_path() / "scheduler_preflight_utest";
+  const auto DIR = std::filesystem::temp_directory_path() /
+                   ("scheduler_preflight_utest_" + std::to_string(::getpid()));
   std::filesystem::create_directories(DIR);
+  SequenceGroup seq(2);
   SchedulerMultiThread sched(100, DIR);
   ASSERT_EQ(sched.init(), 0);
 
   DelegateU8 del{&noopTask, nullptr};
   SchedulableTask a(del, "a");
   SchedulableTask b(del, "b");
-  SequenceGroup seq(2);
   seq.addTask(a, 1);
   seq.addTask(b, 2);
   ASSERT_EQ(sched.addTask(a, TaskConfig(100, 1, 0), &seq), system_core::scheduler::Status::SUCCESS);
