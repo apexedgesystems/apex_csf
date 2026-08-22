@@ -12,7 +12,7 @@
  * Fixture: minimal analytic-Earth CelestialBody (no data files) + a
  * default transport Aircraft + a default AircraftController in
  * closed-loop mode. Tick the controller at 25 Hz and the aircraft at
- * 50 Hz (two integrator steps per control update) to match the
+ * 100 Hz (four integrator steps per control update) to match the
  * apex_horizon_demo scheduler.
  *
  * Coverage:
@@ -93,10 +93,12 @@ void configureTrimCruise(AircraftController& ctl, Aircraft& a) {
   p.enable_mode = 1; // closed loop
 }
 
-/// Drive one controller tick + two aircraft sub-steps (matches the
-/// 25 Hz controller / 50 Hz plant cadence in apex_horizon_demo).
+/// Drive one controller tick + four aircraft sub-steps (matches the
+/// 25 Hz controller / 100 Hz plant cadence in apex_horizon_demo).
 void tickOnce(AircraftController& ctl, Aircraft& a) {
   ctl.controllerStep();
+  a.aircraftStep();
+  a.aircraftStep();
   a.aircraftStep();
   a.aircraftStep();
 }
@@ -291,7 +293,7 @@ TEST(AircraftControllerClosedLoopTest, HeadingStepCommandsRightBank) {
 
 namespace {
 
-/// Runs a coupled aircraft+controller pair (50 Hz / 25 Hz) from trim,
+/// Runs a coupled aircraft+controller pair (100 Hz / 25 Hz) from trim,
 /// with turbulence commanded off and the controller restricted to
 /// `loop_mask`. Fires a rudder doublet, then returns the peak |r| in
 /// two consecutive post-doublet windows (one expected Dutch roll
@@ -325,8 +327,8 @@ DutchRollDecay measureDutchRollDecay(std::uint8_t loop_mask) {
   EXPECT_EQ(ac.handleCommand(0x0100u, payload, response), 0u);
 
   // Settle at trim, then excite.
-  for (int i = 0; i < 100; ++i) {
-    if (i % 2 == 0) {
+  for (int i = 0; i < 200; ++i) {
+    if (i % 4 == 0) {
       (void)ctl.controllerStep();
     }
     (void)ac.aircraftStep();
@@ -335,12 +337,12 @@ DutchRollDecay measureDutchRollDecay(std::uint8_t loop_mask) {
 
   // One expected Dutch roll period ~7 s; sample |r| over two windows
   // following the 1 s doublet.
-  constexpr double DT = 1.0 / 50.0;
+  constexpr double DT = 1.0 / 100.0;
   constexpr double T_WINDOW_S = 7.0;
   DutchRollDecay d{0.0, 0.0};
   const int n = static_cast<int>((1.0 + 2.0 * T_WINDOW_S) / DT);
   for (int i = 0; i < n; ++i) {
-    if (i % 2 == 0) {
+    if (i % 4 == 0) {
       (void)ctl.controllerStep();
     }
     (void)ac.aircraftStep();

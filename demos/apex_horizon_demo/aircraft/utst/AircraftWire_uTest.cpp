@@ -105,14 +105,14 @@ TEST(AircraftExcite, RudderDoubletPlaysAndClears) {
   ASSERT_EQ(ac.aircraftStep(), 0u); // t ~ 0: first half of the doublet
   EXPECT_DOUBLE_EQ(ac.telemetry().rudder_rad, 0.05);
 
-  // Advance past the first half (0.5 s at 50 Hz = 25 ticks).
-  for (int i = 0; i < 26; ++i) {
+  // Advance past the first half (0.5 s at 100 Hz = 50 ticks).
+  for (int i = 0; i < 51; ++i) {
     ASSERT_EQ(ac.aircraftStep(), 0u);
   }
   EXPECT_DOUBLE_EQ(ac.telemetry().rudder_rad, -0.05); // second half
 
   // Advance past the doublet end; excitation must self-clear.
-  for (int i = 0; i < 30; ++i) {
+  for (int i = 0; i < 60; ++i) {
     ASSERT_EQ(ac.aircraftStep(), 0u);
   }
   EXPECT_EQ(ac.activeExcitation(), Aircraft::ExciteMode::NONE);

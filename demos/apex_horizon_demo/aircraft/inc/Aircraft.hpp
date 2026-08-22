@@ -4,7 +4,7 @@
  * @file Aircraft.hpp
  * @brief Aircraft SW model. Composes the sim/ primitives.
  *
- * Each `aircraftStep` tick (50 Hz, the executive fundamental):
+ * Each `aircraftStep` tick (100 Hz, the executive fundamental):
  *
  *   1. Read controls from the AircraftController OUTPUT block (or
  *      open-loop defaults), superimpose any armed mode excitation.
@@ -77,11 +77,12 @@ constexpr double A_SL_M_S = 340.3;
 /// Turbofan2Spool parameters per-vehicle; other vehicle classes get
 /// their own derived components.
 constexpr int NUM_ENGINES = 4;
-/// Tick step. 50 Hz to match the executive fundamental (set
-/// in executive.toml). The scheduler dispatches aircraftStep every
-/// fundamental tick so dt = 1/50 sec, sampled fast enough for the
-/// short-period mode (~0.9 rad/s, ~7s damped period).
-constexpr double DT_S = 1.0 / 50.0;
+/// Tick step. 100 Hz to match the executive fundamental (set in
+/// executive.toml — the two must change together). The scheduler
+/// dispatches aircraftStep every fundamental tick so dt = 1/100 s:
+/// far above the short-period mode (~1 rad/s), and the telemetry
+/// cadence the consumer's timeline interpolator renders from.
+constexpr double DT_S = 1.0 / 100.0;
 } // namespace
 
 /* ----------------------------- Aircraft ----------------------------- */
