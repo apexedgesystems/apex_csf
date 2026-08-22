@@ -382,3 +382,71 @@ TEST(AircraftControllerModes, YawDamperRaisesDutchRollDamping) {
       << "yaw damper did not measurably raise Dutch roll damping: bare ratio = " << bare_ratio
       << ", damped ratio = " << damped_ratio;
 }
+
+/* ---------------------- Boot-to-trim golden ---------------------- */
+
+/** @test From the demo's exact boot initial conditions (level attitude
+ *  at target altitude/speed, heading 90 degrees off its target, pitch
+ *  at zero rather than trim alpha), the coupled closed-loop sim must
+ *  REACH trim and hold it: altitude and speed captured, wings level,
+ *  heading on target, elevator settled near its trim deflection.
+ *  Turbulence is commanded off for determinism. This is the demo's
+ *  "did we achieve trim" contract as a regression. */
+TEST(AircraftControllerModes, BootConditionsReachTrim) {
+  CelestialBody earth;
+  earth.tunables().get() = analyticEarth();
+  ASSERT_EQ(earth.init(), 0u);
+
+  Aircraft ac;
+  ac.setBody(&earth);
+  // The demo's boot-IC STRUCTURE at a reference point this test's
+  // world can sustain: the data-file-free EXPONENTIAL atmosphere is
+  // ~20% thinner than the demo's USSA76 table at the demo's 12.2 km
+  // condition, where density-scaled max thrust cannot balance drag
+  // (the demo's own point holds live on the real table, with ~1%
+  // thrust margin). 8 km / 220 m/s has comfortable margin here.
+  ac.tunables().get().init_alt_m = 8000.0;
+  ac.tunables().get().init_speed_m_s = 220.0;
+  ASSERT_EQ(ac.init(), 0u);
+
+  AircraftController ctl;
+  ctl.setAircraft(&ac);
+  ctl.tunables().get().enable_mode = 1u;
+  ctl.tunables().get().target_altitude_m = 8000.0;
+  ctl.tunables().get().target_airspeed_m_s = 220.0;
+  // Mirror the demo's one off-trim commanded value: the heading
+  // target, 90 degrees from the boot heading (code defaults target
+  // the boot heading — trim from the first tick).
+  ctl.tunables().get().target_heading_deg = 135.0;
+  ASSERT_EQ(ctl.init(), 0u);
+  ac.setControllerOutput(&ctl.controllerOutput());
+
+  const std::uint8_t OFF = 0u;
+  apex::compat::rospan<std::uint8_t> payload(&OFF, 1);
+  std::vector<std::uint8_t> response;
+  ASSERT_EQ(ac.handleCommand(0x0100u, payload, response), 0u); // turbulence off
+
+  // 240 s of sim at the production cadence (100 Hz plant, 25 Hz ctl):
+  // the capture takes ~90 s; the rest must be quiet trim.
+  for (int i = 0; i < 24000; ++i) {
+    if (i % 4 == 0) {
+      (void)ctl.controllerStep();
+    }
+    ASSERT_EQ(ac.aircraftStep(), 0u);
+  }
+
+  const auto& TLM = ac.telemetry();
+  const auto& P = ac.tunables().get();
+  EXPECT_NEAR(TLM.pos_alt_m, P.init_alt_m, 15.0);       // altitude held
+  EXPECT_NEAR(TLM.airspeed_m_s, P.init_speed_m_s, 1.5); // speed held
+  EXPECT_LT(std::fabs(TLM.roll_deg), 2.0);              // wings level
+  {
+    double dpsi = 135.0 - TLM.heading_deg; // ctl default target
+    while (dpsi > 180.0)
+      dpsi -= 360.0;
+    while (dpsi < -180.0)
+      dpsi += 360.0;
+    EXPECT_LT(std::fabs(dpsi), 1.5);
+  }
+  EXPECT_LT(std::fabs(TLM.elevator_rad), 0.05); // settled near trim
+}
