@@ -418,6 +418,7 @@ private:
 
   // Archive configuration
   std::filesystem::path archivePath_{};
+  bool runTaskCensus_{false}; ///< --task-census: pre-clock cost census.
 
   // Component registry with collision detection (for model registration)
   std::unique_ptr<system_core::system_component::ComponentRegistry> componentRegistry_{nullptr};
