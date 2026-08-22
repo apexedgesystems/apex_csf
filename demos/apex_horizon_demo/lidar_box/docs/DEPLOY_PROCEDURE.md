@@ -1,7 +1,7 @@
 # ApexLidarBoxDemo Deploy Procedure
 
 Build, test, package, and pair the producer with a host-side consumer. The
-consumer (e.g. a UE5 scene implementing the wire format) runs on the host; the
+consumer (e.g. a the visualization consumer scene implementing the wire format) runs on the host; the
 producer runs in the dev container or as a packaged release on the same
 machine, sharing the host IPC namespace.
 

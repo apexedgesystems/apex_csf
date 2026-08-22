@@ -39,15 +39,14 @@
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/utilities/helpers/inc/Cpu.hpp"
-#include "src/utilities/helpers/inc/Files.hpp"
 
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fmt/format.h>
-#include <optional>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -267,7 +266,7 @@ public:
     tlm.lidar_n_rays = std::min<std::uint32_t>(p.lidar_n_rays, MAX_LIDAR_RAYS);
 
     // 7: stamp wire-format header fields. The bridge memcpys this whole
-    // struct — UE5 uses timestamp_ns + tick to detect dropped frames and
+    // struct — The consumer uses timestamp_ns + tick to detect dropped frames and
     // measure end-to-end latency.
     // Stamp simulated state time on the tick grid, anchored to the
     // monotonic clock once at the first published tick: state and
@@ -316,19 +315,23 @@ public:
 protected:
   /* ----------------------------- Lifecycle ----------------------------- */
 
-  /// Optional TPRM tunable load (mirror of CelestialBody / probe).
+  /// Optional TPRM tunable load. Typed-reject reader: a size or
+  /// identity mismatch is a loud classified fault, not a silent
+  /// fallback to defaults.
   [[nodiscard]] bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
     const std::filesystem::path PATH = tprmDir / fmt::format("{:06x}.tprm", fullUid());
     std::error_code ec;
     if (!std::filesystem::exists(PATH, ec)) {
-      return true;
+      return true; // Tunables stay at defaults; init can still proceed.
     }
-    std::string err;
-    std::optional<std::reference_wrapper<std::string>> errRef{err};
-    if (!apex::helpers::files::hex2cpp(PATH.string(), tunables_.get(), errRef)) {
+    const auto CHECK =
+        system_core::system_component::readTprmPayload(PATH, fullUid(), tunables_.get());
+    if (CHECK != system_core::system_component::TprmPayloadCheck::OK) {
       auto* log = componentLog();
       if (log != nullptr) {
-        log->info(label(), fmt::format("loadTprm: hex2cpp failed for {} ({})", PATH.string(), err));
+        log->error(label(), system_core::system_component::toFaultCode(CHECK),
+                   fmt::format("TPRM rejected ({}): {}",
+                               system_core::system_component::toString(CHECK), PATH.string()));
       }
       return false;
     }
