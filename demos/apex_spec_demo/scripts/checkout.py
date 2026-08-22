@@ -585,10 +585,8 @@ def run_checkout(args: argparse.Namespace) -> int:
         repo = __import__("pathlib").Path(__file__).resolve().parents[3]
         cfg2bin = repo / "build/hosted-x86_64-debug/bin/tools/rust/cfg2bin"
         src_toml = repo / "demos/apex_spec_demo/tprm/toml/spec_matrix.toml"
-        restore_tprm = (
-            repo
-            / "build/hosted-x86_64-debug/demos/apex_spec_demo/exec/tprm/payloads/toml_spec_matrix_toml.tprm"
-        )
+        tprm_dir = repo / "build/hosted-x86_64-debug/demos/apex_spec_demo/exec/tprm"
+        restore_tprm = tprm_dir / "payloads/toml_spec_matrix_toml.tprm"
         if cfg2bin.is_file() and src_toml.is_file() and restore_tprm.is_file():
             r = c2.inspect(MTX, category=1)
             before = r.get("extra", b"")[:80]
