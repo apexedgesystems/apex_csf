@@ -12,17 +12,25 @@ expect exactly 288 bytes with header
 `atmosphere artifact:` line printing that hash is the file-identity
 proof paired runs compare.
 
-## Run (raw binary — the dev loop)
+## Run
 
 ```bash
-TPRM=build/hosted-x86_64-debug/demos/apex_horizon_demo/aircraft_atmo/exec/tprm
-docker compose run --rm dev-cuda \
-  ./build/hosted-x86_64-debug/bin/ApexAircraftAtmoDemo \
-  --config $TPRM/master.tprm \
-  --fs-root /tmp/acft_fs
+demos/apex_horizon_demo/aircraft_atmo/scripts/run_producer.sh          # detached, verified
+demos/apex_horizon_demo/aircraft_atmo/scripts/run_producer.sh --fg     # foreground
+demos/apex_horizon_demo/aircraft_atmo/scripts/run_producer.sh --kill   # stop + remove
 ```
 
-Runs until Ctrl+C. Logs land under the filesystem root:
+The script carries the full runbook: it launches RT-privileged when
+the host grants CAP_SYS_NICE (the executive's FIFO thread table then
+applies — burst-free cadence under load), falls back to the soft-lag
+timeshare override otherwise, sets contention priority, and verifies
+the boot identity (compiled dt, atmosphere spec_hash, thread classes,
+heartbeat) before handing you the kill switch. A raw
+`docker compose run --rm dev-cuda ./build/.../ApexAircraftAtmoDemo
+--config <master.tprm> --fs-root <path>` remains valid for ad-hoc
+debugging.
+
+Runs until Ctrl+C (foreground) or the kill switch. Logs land under the filesystem root:
 `logs/models/Aircraft_0.log` has the 1 Hz flight line (pose, airdata,
 forces, fuel, gusts); `logs/models/AircraftController_0.log` the
 reference-tracking line; `logs/support/ShmRingBridge_0.log` the

@@ -12,12 +12,8 @@ stays live, and the sim is unaffected.
 ## 1. Quick start
 
 ```bash
-# Run (Ctrl+C to stop; the master generates at build time)
-TPRM=build/hosted-x86_64-debug/demos/apex_horizon_demo/aircraft_atmo/exec/tprm
-docker compose run --rm dev-cuda \
-  ./build/hosted-x86_64-debug/bin/ApexAircraftAtmoDemo \
-  --config $TPRM/master.tprm \
-  --fs-root /tmp/acft_fs
+# Launch (RT-privileged when the host allows; identity-verified boot)
+demos/apex_horizon_demo/aircraft_atmo/scripts/run_producer.sh
 ```
 
 ## 2. Components
