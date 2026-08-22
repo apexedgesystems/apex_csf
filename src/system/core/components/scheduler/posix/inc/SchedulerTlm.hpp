@@ -65,7 +65,7 @@ struct PoolRequirementRowTlm {
  * Returned for GET_REQUIREMENTS and registered as an INSPECT OUTPUT so
  * any consumer can correlate host posture against declared needs.
  */
-struct SchedulerRequirementsTlm {
+struct alignas(8) SchedulerRequirementsTlm {
   std::uint16_t fundamentalFreqHz{0}; ///< Tick rate the clock must hold.
   std::uint8_t poolCount{0};          ///< Rows populated.
   std::uint8_t seqGroupCount{0};      ///< Sequence groups in the table.
@@ -98,6 +98,11 @@ struct TaskStatsRowTlm {
 /* ----------------------------- Task Census ----------------------------- */
 
 #pragma pack(push, 1)
+// Top-level TLM structs carry alignas(8): pack(1) alone gives them
+// alignment 1, letting the compiler place them at odd addresses, and a
+// reference bound to a uint32/uint64 field is then UB. Field offsets are
+// laid out naturally aligned, so aligned placement makes field references
+// well-formed without changing the wire layout.
 /**
  * @struct CensusRowTlm
  * @brief One task's measured cost vs its period budget (20 bytes).
@@ -122,7 +127,7 @@ struct CensusRowTlm {
  *
  * Returned for GET_TASK_CENSUS and registered as an INSPECT OUTPUT.
  */
-struct SchedulerCensusTlm {
+struct alignas(8) SchedulerCensusTlm {
   std::uint16_t taskCount{0}; ///< Rows populated (0 = census never ran).
   std::uint8_t truncated{0};  ///< 1 when tasks exceeded the row cap.
   std::uint8_t overall{0};    ///< Worst row verdict.
@@ -138,7 +143,7 @@ struct SchedulerCensusTlm {
  * INSPECT OUTPUT; rows populated at snapshot time from the live
  * counters (readers never touch scheduler internals).
  */
-struct SchedulerTaskStatsTlm {
+struct alignas(8) SchedulerTaskStatsTlm {
   std::uint16_t taskCount{0}; ///< Rows populated.
   std::uint16_t truncated{0}; ///< 1 when tasks exceeded the row cap.
   TaskStatsRowTlm rows[TASK_STATS_TLM_CAP]{};
