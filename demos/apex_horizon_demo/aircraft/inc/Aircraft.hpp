@@ -394,7 +394,16 @@ public:
     tlm.aileron_rad = delta.aileron_rad;
     tlm.rudder_rad = delta.rudder_rad;
 
-    tlm.timestamp_ns = static_cast<std::uint64_t>(apex::helpers::cpu::getMonotonicNs());
+    // Stamp simulated state time on the tick grid, anchored to the
+    // monotonic clock once at the first published tick: state and
+    // stamp agree exactly, so scheduler jitter never reaches the wire
+    // and consumer-side interpolators see a clean timeline.
+    if (t0_ns_ == 0u) {
+      t0_ns_ = static_cast<std::uint64_t>(apex::helpers::cpu::getMonotonicNs());
+      t0_tick_ = s.tick_count;
+    }
+    constexpr std::uint64_t DT_NS = static_cast<std::uint64_t>(DT_S * 1.0e9);
+    tlm.timestamp_ns = t0_ns_ + (s.tick_count - t0_tick_) * DT_NS;
     tlm.tick = s.tick_count;
     ++s.tick_count;
     s.elapsed_s += DT_S;
@@ -685,6 +694,11 @@ private:
   bool turbulence_enabled_ = true;
   bool gust_alleviation_enabled_ = true;
   std::uint64_t cmd_count_ = 0;
+
+  /* Timestamp grid anchor: monotonic time of the first published tick
+     and its tick number; stamps advance from there in exact DT steps. */
+  std::uint64_t t0_ns_ = 0;
+  std::uint64_t t0_tick_ = 0;
 
   /* Mode-excitation state: which script is armed and how far along. */
   ExciteMode excite_mode_ = ExciteMode::NONE;

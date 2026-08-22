@@ -269,7 +269,17 @@ public:
     // 7: stamp wire-format header fields. The bridge memcpys this whole
     // struct — UE5 uses timestamp_ns + tick to detect dropped frames and
     // measure end-to-end latency.
-    tlm.timestamp_ns = static_cast<std::uint64_t>(apex::helpers::cpu::getMonotonicNs());
+    // Stamp simulated state time on the tick grid, anchored to the
+    // monotonic clock once at the first published tick: state and
+    // stamp agree exactly, so scheduler jitter never reaches the
+    // wire (10 Hz grid: consecutive stamps differ by exactly
+    // 100 ms).
+    if (t0_ns_ == 0u) {
+      t0_ns_ = static_cast<std::uint64_t>(apex::helpers::cpu::getMonotonicNs());
+      t0_tick_ = s.tick_count;
+    }
+    constexpr std::uint64_t DT_NS = static_cast<std::uint64_t>(DT * 1.0e9);
+    tlm.timestamp_ns = t0_ns_ + (s.tick_count - t0_tick_) * DT_NS;
     tlm.tick = s.tick_count;
     ++s.tick_count;
     return 0u;
@@ -407,6 +417,11 @@ private:
   }
 
   const sim::environment::celestial_body::CelestialBody* body_{nullptr};
+
+  /// Timestamp grid anchor: monotonic time of the first published tick
+  /// and its tick number; stamps advance from there in exact DT steps.
+  std::uint64_t t0_ns_ = 0;
+  std::uint64_t t0_tick_ = 0;
   system_core::data::TunableParam<GroundVehicleTunables> tunables_{};
   system_core::data::State<GroundVehicleState> state_{};
   system_core::data::Output<GroundVehicleTelemetry> telemetry_{};

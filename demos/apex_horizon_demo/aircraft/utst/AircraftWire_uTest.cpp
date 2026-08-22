@@ -140,3 +140,24 @@ TEST(AircraftExcite, SpeedOffsetIsOneShot) {
   EXPECT_DOUBLE_EQ(ac.telemetry().rudder_rad, 0.0);
   EXPECT_DOUBLE_EQ(ac.telemetry().elevator_rad, 0.0);
 }
+
+/** @test Timestamps sit on the sim tick grid: consecutive published
+ *  frames differ by exactly one tick period, so scheduler jitter never
+ *  reaches the wire and consumer interpolators see a clean timeline. */
+TEST(AircraftWire, TimestampsOnTickGrid) {
+  CelestialBody earth;
+  earth.tunables().get() = analyticEarth();
+  ASSERT_EQ(earth.init(), 0u);
+
+  Aircraft ac;
+  ac.setBody(&earth);
+  ASSERT_EQ(ac.init(), 0u);
+
+  ASSERT_EQ(ac.aircraftStep(), 0u);
+  const std::uint64_t T1 = ac.telemetry().timestamp_ns;
+  for (int i = 0; i < 5; ++i) {
+    ASSERT_EQ(ac.aircraftStep(), 0u);
+  }
+  const std::uint64_t T2 = ac.telemetry().timestamp_ns;
+  EXPECT_EQ(T2 - T1, 5u * 10'000'000u); // 5 ticks at 100 Hz, exact
+}
