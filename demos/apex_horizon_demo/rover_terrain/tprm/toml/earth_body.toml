@@ -1,8 +1,8 @@
 # Earth CelestialBody (0xDC00): J2 gravity, HTILE terrain from the
 # generated 1-degree patch, LAYERED USSA76 atmosphere. The data files are
-# The terrain tile is a generated artifact (synthetic "alpha" spec,
-# never committed); the USSA76 table is tracked with provenance. See
-# docs/HOW_TO_RUN.md.
+# Both data files are generated artifacts (never committed): the
+# synthetic "alpha" terrain tile and the spec-generated USSA76 table,
+# each carrying an identity hash logged at load. See docs/HOW_TO_RUN.md.
 [CelestialBodyTunables]
 body                = { type = "uint",   size = 1,   value = 0 }    # EARTH
 gravity_fidelity    = { type = "uint",   size = 1,   value = 1 }    # J2
@@ -10,4 +10,4 @@ terrain_fidelity    = { type = "uint",   size = 1,   value = 3 }    # HTILE
 atmosphere_fidelity = { type = "uint",   size = 1,   value = 2 }    # LAYERED
 gravity_data_path   = { type = "string", size = 256, value = "" }
 terrain_data_path   = { type = "string", size = 256, value = "demos/apex_horizon_demo/rover_terrain/data/alpha_patch_lod4.htile" }
-atmosphere_data_path= { type = "string", size = 256, value = "demos/apex_horizon_demo/rover_terrain/data/usa76.atm" }
+atmosphere_data_path= { type = "string", size = 256, value = "demos/apex_horizon_demo/rover_terrain/data/earth_ussa76.atm" }

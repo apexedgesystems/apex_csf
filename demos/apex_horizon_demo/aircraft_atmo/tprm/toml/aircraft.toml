@@ -1,0 +1,25 @@
+# Aircraft (0xE000): the four-engine wide-body transport at its cruise
+# reference condition (matches the sim_aerodynamics preset trim point).
+# Geometry/inertia override the preset via these tunables.
+[AircraftTunables]
+wing_area_m2       = { type = "float",  size = 8,  value = 510.97 }
+aspect_ratio       = { type = "float",  size = 8,  value = 6.96 }
+oswald_e           = { type = "float",  size = 8,  value = 0.80 }
+thrust_max_sl_N    = { type = "float",  size = 8,  value = 1.0e6 }
+thrust_density_exp = { type = "float",  size = 8,  value = 0.7 }
+throttle_default   = { type = "float",  size = 8,  value = 0.6 }
+init_lat_deg       = { type = "float",  size = 8,  value = 39.5 }
+init_lon_deg       = { type = "float",  size = 8,  value = -105.5 }
+init_alt_m         = { type = "float",  size = 8,  value = 12192.0 }
+init_heading_deg   = { type = "float",  size = 8,  value = 45.0 }
+init_speed_m_s     = { type = "float",  size = 8,  value = 235.9 }
+I_xx_kgm2          = { type = "float",  size = 8,  value = 24675886.0 }
+I_yy_kgm2          = { type = "float",  size = 8,  value = 44877562.0 }
+I_zz_kgm2          = { type = "float",  size = 8,  value = 67384138.0 }
+I_xz_kgm2          = { type = "float",  size = 8,  value = 1315143.0 }
+init_pitch_deg     = { type = "float",  size = 8,  value = 0.0 }
+init_roll_deg      = { type = "float",  size = 8,  value = 0.0 }
+TSFC_kg_per_N_s    = { type = "float",  size = 8,  value = 1.7e-5 }
+fuel_capacity_kg   = { type = "float",  size = 8,  value = 142000.0 }
+m_empty_kg         = { type = "float",  size = 8,  value = 162400.0 }
+label              = { type = "string", size = 16, value = "earth_aircraft" }

@@ -111,10 +111,16 @@ bool ShmRingBridge::loadTprm(const std::filesystem::path& tprmDir) noexcept {
 std::uint8_t ShmRingBridge::doInit() noexcept {
   using system_core::data::DataCategory;
 
-  registerTask<ShmRingBridge, &ShmRingBridge::bridgeStep>(
-      static_cast<std::uint8_t>(TaskUid::BRIDGE_STEP), this, "bridgeStep");
-  registerTask<ShmRingBridge, &ShmRingBridge::telemetryTick>(
-      static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry");
+  // bridgeStep + telemetry share sequence group 0 (step phase 0,
+  // telemetry phase 1) so schedulers can run them race-free when both
+  // land on a tick (a 50 Hz bridge fires every tick, so offset
+  // staggering alone cannot separate them). Inert unless the
+  // scheduler table opts in.
+  (void)createSequenceGroup(0, 2);
+  registerSequencedTask<ShmRingBridge, &ShmRingBridge::bridgeStep>(
+      static_cast<std::uint8_t>(TaskUid::BRIDGE_STEP), this, "bridgeStep", 0, 0);
+  registerSequencedTask<ShmRingBridge, &ShmRingBridge::telemetryTick>(
+      static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry", 0, 1);
 
   registerData(DataCategory::TUNABLE_PARAM, "tunables", &tunables_.get(),
                sizeof(ShmRingBridgeTunables));
@@ -285,7 +291,7 @@ bool ShmRingBridge::openChannel() noexcept {
 
   // Bind Ring B (reverse direction; consumer -> apex).
   // Apex is the *consumer* of Ring B, so it reads rx_prod_cursor (updated
-  // by UE5 / Side B when it pushes) and writes rx_cons_cursor (apex's
+  // by the visualization consumer / Side B when it pushes) and writes rx_cons_cursor (apex's
   // own read progress). The remote side's view is mirrored.
   std::uint8_t* base_b = base + REGION_A_BYTES;
   rx_prod_cursor_ = base_b + BRIDGE_RING_HEADER_BYTES;
@@ -421,11 +427,29 @@ std::uint8_t ShmRingBridge::bridgeStep() noexcept {
 
   const std::uint64_t HEAD = prod->load(std::memory_order_relaxed);
   const std::uint64_t TAIL = cons->load(std::memory_order_acquire);
+
+  // Consumer-stall tracking (flag arithmetic only; the telemetry task
+  // does the logging). Tail movement proves a live consumer and clears
+  // any stall; a frozen tail across kStallWarnTicks ring-full ticks —
+  // after drain has been seen at least once — declares one.
+  if (TAIL != s.last_tail) {
+    s.last_tail = TAIL;
+    s.drain_seen = 1u;
+    s.stall_full_streak = 0u;
+    s.consumer_inactive = 0u;
+  }
+
   if (HEAD - TAIL >= p.capacity) {
     // Forward ring full (consumer paused or absent): back-pressure the
     // publish but still fall through to the command drain — ingress
     // must keep working precisely when the consumer side is wedged.
     ++s.pushes_failed_full;
+    if (s.drain_seen != 0u && s.consumer_inactive == 0u) {
+      if (++s.stall_full_streak >= kStallWarnTicks) {
+        s.consumer_inactive = 1u;
+        ++s.drain_stops_total;
+      }
+    }
   } else {
     std::uint8_t* SLOT = slots_ + (HEAD & (p.capacity - 1u)) * source_len_;
     std::memcpy(SLOT, source_ptr_, source_len_);
@@ -600,16 +624,34 @@ std::uint8_t ShmRingBridge::telemetryTick() noexcept {
   tlm.channel_open = s.channel_open;
   tlm.source_resolved = s.source_resolved;
   tlm.region_orphaned = s.region_orphaned;
+  tlm.consumer_inactive = s.consumer_inactive;
 
   auto* log = componentLog();
   if (log != nullptr) {
+    // Edge-triggered activity transitions: bridgeStep only sets flags
+    // (it is RT-safe); the logging happens here at the telemetry rate.
+    // INFO severity: departure of an ephemeral consumer (recorded
+    // takes, operator sessions) is routine, and the ring protocol has
+    // no liveness signal to distinguish a wedged one.
+    if (s.consumer_inactive != last_logged_stalled_) {
+      if (s.consumer_inactive != 0u) {
+        log->info(label(), fmt::format("consumer inactive: drain stopped {} bridge ticks ago "
+                                       "(tail frozen at {}, episode #{})",
+                                       s.stall_full_streak, s.last_tail, s.drain_stops_total));
+      } else {
+        log->info(label(), fmt::format("consumer active (tail moving again, episode #{} over)",
+                                       s.drain_stops_total));
+      }
+      last_logged_stalled_ = s.consumer_inactive;
+    }
+
     const auto& p = tunables_.get();
     log->info(label(), fmt::format("tick={} app={:#x}v{} pub={} full={} sig_fail={} "
-                                   "open={} resolved={} orphaned={} rx_cmds={}/{}/{}",
+                                   "open={} resolved={} orphaned={} inactive={} rx_cmds={}/{}/{}",
                                    s.tick_count, p.app_magic, p.app_version, s.frames_published,
                                    s.pushes_failed_full, s.signals_failed, s.channel_open,
-                                   s.source_resolved, s.region_orphaned, s.cmds_received,
-                                   s.cmds_decode_errors, s.cmds_dispatch_errors));
+                                   s.source_resolved, s.region_orphaned, s.consumer_inactive,
+                                   s.cmds_received, s.cmds_decode_errors, s.cmds_dispatch_errors));
   }
   return 0u;
 }

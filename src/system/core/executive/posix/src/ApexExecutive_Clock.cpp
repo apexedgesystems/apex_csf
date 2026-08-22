@@ -64,11 +64,39 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
                                      rtConfig_.isHardMode() ? "yes" : "no"));
   sysLog_->debug(label(), fmt::format("Frame period: {} ms ({} Hz)", FRAME_MS, clockFrequency_), 2);
 
-  // Main clock loop: sleep, check overrun, signal tick, repeat
+  // Main clock loop: sleep to the ABSOLUTE deadline grid, check
+  // overrun, signal tick, repeat. The grid is anchored once and each
+  // deadline advances by exactly one period: an oversleep (scheduler
+  // stall, host contention) is repaid by immediately-due deadlines, so
+  // clock cycles track wall time by construction and starved intervals
+  // surface as task lag the RT machinery already handles. Re-anchoring
+  // to now() each iteration would leak every oversleep into permanent
+  // sim-vs-wall drift.
+  const auto FRAME_PERIOD = std::chrono::milliseconds(FRAME_MS);
+  auto nextTick = std::chrono::steady_clock::now() + FRAME_PERIOD;
   while (!controlState_.shutdownRequested.load(std::memory_order_acquire)) {
-    auto startTime = std::chrono::steady_clock::now();
-    auto nextTick = startTime + std::chrono::milliseconds(FRAME_MS);
     std::this_thread::sleep_until(nextTick);
+    nextTick += FRAME_PERIOD;
+
+    // Pathological backlog (host suspend, debugger stop): firing an
+    // unbounded catch-up burst would be worse than the gap. Beyond one
+    // second of backlog, re-anchor the grid, count the dropped ticks,
+    // and warn — bounded intervals keep true catch-up.
+    {
+      const auto NOW = std::chrono::steady_clock::now();
+      if (NOW > nextTick + std::chrono::seconds(1)) {
+        const auto BEHIND_NS =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(NOW - nextTick).count();
+        const std::uint64_t DROPPED =
+            static_cast<std::uint64_t>(BEHIND_NS / 1000000) / static_cast<std::uint64_t>(FRAME_MS);
+        clockState_.wallResyncDroppedTicks.fetch_add(DROPPED, std::memory_order_acq_rel);
+        sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_FRAME_OVERRUN),
+                         fmt::format("clock resync: {} ticks dropped after a {} ms stall "
+                                     "(host suspend/starvation beyond catch-up policy)",
+                                     DROPPED, BEHIND_NS / 1000000));
+        nextTick = NOW + FRAME_PERIOD;
+      }
+    }
 
     // Load current cycle counts
     const std::uint64_t clockCycles = clockState_.cycles.load(std::memory_order_acquire);

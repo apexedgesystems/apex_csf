@@ -126,7 +126,7 @@ struct GroundVehicleState {
  */
 struct GroundVehicleTelemetry {
   /// Producer-side monotonic timestamp at the moment vehicleStep ran [ns].
-  /// UE5 uses this to detect dropped frames + measure end-to-end latency.
+  /// The consumer uses it to detect dropped frames and measure latency.
   std::uint64_t timestamp_ns{0};
 
   /// Tick count at which this snapshot was produced.

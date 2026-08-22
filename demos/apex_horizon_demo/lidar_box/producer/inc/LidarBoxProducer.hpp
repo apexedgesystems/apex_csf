@@ -119,7 +119,15 @@ public:
     f.dist_by_neg = static_cast<float>(D.neg_y);
     f.dist_bz_pos = static_cast<float>(D.pos_z);
     f.dist_bz_neg = static_cast<float>(D.neg_z);
-    f.timestamp_ns = monotonicNs();
+    // Stamp simulated state time on the tick grid, anchored to the
+    // monotonic clock once at the first published frame: state and
+    // stamp agree exactly, so scheduler jitter never reaches the wire
+    // (family-wide guarantee shared with the other producers).
+    if (t0_ns_ == 0u) {
+      t0_ns_ = monotonicNs();
+      t0_t_s_ = s.t_s;
+    }
+    f.timestamp_ns = t0_ns_ + static_cast<std::uint64_t>((s.t_s - t0_t_s_) * 1.0e9);
     f.box_half_x = static_cast<float>(BOX.half_x);
     f.box_half_y = static_cast<float>(BOX.half_y);
     f.box_half_z = static_cast<float>(BOX.half_z);
@@ -148,10 +156,15 @@ protected:
   [[nodiscard]] std::uint8_t doInit() noexcept override {
     using system_core::data::DataCategory;
 
-    registerTask<LidarBoxProducer, &LidarBoxProducer::bodyStep>(
-        static_cast<std::uint8_t>(TaskUid::BODY_STEP), this, "bodyStep");
-    registerTask<LidarBoxProducer, &LidarBoxProducer::telemetryTick>(
-        static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry");
+    // Step + telemetry share sequence group 0 (step phase 0, telemetry
+    // phase 1); the 50 Hz step fires every tick, so offset staggering
+    // alone cannot keep the pair off the same tick. The TPRM task
+    // table opts in per task.
+    (void)createSequenceGroup(0, 2);
+    registerSequencedTask<LidarBoxProducer, &LidarBoxProducer::bodyStep>(
+        static_cast<std::uint8_t>(TaskUid::BODY_STEP), this, "bodyStep", 0, 0);
+    registerSequencedTask<LidarBoxProducer, &LidarBoxProducer::telemetryTick>(
+        static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry", 0, 1);
 
     registerData(DataCategory::TUNABLE_PARAM, "tunables", &tunables_.get(),
                  sizeof(LidarBoxTunables));
@@ -199,6 +212,11 @@ private:
   }
 
   /// Monotonic nanosecond stamp for the frame.
+  /// Timestamp grid anchor: monotonic time + sim time of the first
+  /// published frame; stamps advance on the sim-time grid from there.
+  std::uint64_t t0_ns_ = 0;
+  double t0_t_s_ = 0.0;
+
   [[nodiscard]] static std::uint64_t monotonicNs() noexcept {
     timespec ts{};
     clock_gettime(CLOCK_MONOTONIC, &ts);

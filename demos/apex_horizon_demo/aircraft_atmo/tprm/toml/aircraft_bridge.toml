@@ -1,0 +1,30 @@
+# ShmRingBridge (0xCB00): ACFT/1 bidirectional link on /horizon_aircraft.
+# Forward: capacity 16, 256-byte AircraftFrames from the aircraft's
+# OUTPUT block at 50 Hz. Reverse: 256-byte APROTO command slots drained
+# by the sink onto the internal bus (pass-1 toggles at dst 0x00E000).
+# Orphan self-heal on.
+[ShmRingBridgeTunables]
+app_magic            = { type = "uint",   size = 4,  value = 1094927956 }     # 0x41434654 = "ACFT"
+app_version          = { type = "uint",   size = 2,  value = 1 }
+reserved0            = { type = "uint",   size = 2,  value = 0 }
+capacity             = { type = "uint",   size = 4,  value = 16 }
+payload_size         = { type = "uint",   size = 4,  value = 256 }            # = sizeof(AircraftFrame)
+reverse_payload_size = { type = "uint",   size = 4,  value = 256 }            # APROTO cmd slot
+source_uid           = { type = "uint",   size = 4,  value = 57344 }          # 0xE000 = aircraft
+source_category      = { type = "uint",   size = 1,  value = 4 }              # DataCategory::OUTPUT
+reserved1_0          = { type = "uint",   size = 1,  value = 0 }
+reserved1_1          = { type = "uint",   size = 1,  value = 0 }
+reserved1_2          = { type = "uint",   size = 1,  value = 0 }
+source_byte_offset   = { type = "uint",   size = 2,  value = 0 }
+source_byte_len      = { type = "uint",   size = 2,  value = 256 }
+sink_enabled         = { type = "uint",   size = 1,  value = 1 }              # drain Ring B -> internal bus
+orphan_reclaim       = { type = "uint",   size = 1,  value = 1 }              # self-heal if the path vanishes
+sink_reserved_0      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_1      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_2      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_3      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_4      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_5      = { type = "uint",   size = 1,  value = 0 }
+shm_path             = { type = "string", size = 64, value = "/horizon_aircraft" }
+wakeup_path          = { type = "string", size = 64, value = "" }             # auto-derive /horizon_aircraft_wake
+label                = { type = "string", size = 16, value = "acft_bridge" }

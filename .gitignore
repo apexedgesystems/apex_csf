@@ -29,9 +29,8 @@ heaptrack.*.zst
 # Binary data files (generated gravity coefficients, not committed)
 **/*.bin
 # Generated world artifacts consumed at runtime (terrain/atmosphere);
-# produced by the world-generation pipeline, never committed. One
-# deliberate exception stays tracked: rover_terrain's usa76.atm (a tiny
-# public-domain USSA76 layer table this repo cannot regenerate).
+# produced by the world-generation pipeline, never committed. Identity
+# travels by the header spec_hash both sides of a pairing log at load.
 **/*.htile
 **/*.atm
 demos/apex_horizon_demo/rover_terrain/data/

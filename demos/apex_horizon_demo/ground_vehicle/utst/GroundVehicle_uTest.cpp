@@ -318,3 +318,23 @@ TEST(GroundVehicleCmd, ValidationRejectsBadPayloads) {
   }
   EXPECT_NEAR(rover.telemetry().speed_m_s, 4.0, 1e-6);
 }
+
+/** @test Timestamps sit on the sim tick grid: consecutive published
+ *  frames differ by exactly one tick period (100 ms at 10 Hz). */
+TEST(GroundVehicle, TimestampsOnTickGrid) {
+  CelestialBody earth;
+  earth.tunables().get() = analyticEarth();
+  ASSERT_EQ(earth.init(), 0u);
+
+  GroundVehicle rover;
+  rover.setBody(&earth);
+  configureRover(rover);
+
+  ASSERT_EQ(rover.vehicleStep(), 0u);
+  const std::uint64_t T1 = rover.telemetry().timestamp_ns;
+  for (int i = 0; i < 5; ++i) {
+    ASSERT_EQ(rover.vehicleStep(), 0u);
+  }
+  const std::uint64_t T2 = rover.telemetry().timestamp_ns;
+  EXPECT_EQ(T2 - T1, 5u * 100'000'000u); // 5 ticks at 10 Hz, exact
+}

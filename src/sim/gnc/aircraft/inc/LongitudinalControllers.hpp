@@ -45,7 +45,11 @@ public:
   }
 
   void setGains(const PIDGains& g) noexcept { pid_.setGains(g); }
-  void setElevatorLimit(double rad) noexcept { elevator_limit_rad_ = rad; }
+  void setElevatorLimit(double rad) noexcept {
+    elevator_limit_rad_ = rad;
+    // Plumbed into the PID so anti-windup engages at the clamp.
+    pid_.setLimits(PIDLimits{-rad, rad});
+  }
   void reset() noexcept { pid_.reset(); }
 
   /**
@@ -94,7 +98,13 @@ public:
   }
 
   void setGains(const PIDGains& g) noexcept { pid_.setGains(g); }
-  void setPitchLimit(double rad) noexcept { pitch_limit_rad_ = rad; }
+  void setPitchLimit(double rad) noexcept {
+    pitch_limit_rad_ = rad;
+    // Plumbed into the PID so anti-windup engages at the clamp — an
+    // altitude capture must not wind the integral while the pitch
+    // reference is pinned.
+    pid_.setLimits(PIDLimits{-rad, rad});
+  }
   void reset() noexcept { pid_.reset(); }
 
   /**

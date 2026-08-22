@@ -72,6 +72,11 @@ public:
   [[nodiscard]] bool isLoaded() const noexcept { return !layers_.empty(); }
 
   /// The thermo constants this model uses.
+  /// The file header from the last successful load() (zero-value for
+  /// initFromMemory-constructed models). Carries the artifact identity
+  /// (body, model_type, spec_hash) that paired runs log at load.
+  [[nodiscard]] const AtmHeader& fileHeader() const noexcept { return file_header_; }
+
   [[nodiscard]] double gasConstant() const noexcept { return R_; }
   [[nodiscard]] double gamma() const noexcept { return gamma_; }
   [[nodiscard]] double surfaceGravity() const noexcept { return g0_; }
@@ -92,6 +97,7 @@ private:
   [[nodiscard]] std::size_t findLayer(double alt_m) const noexcept;
 
   std::vector<Layer> layers_;
+  AtmHeader file_header_{};
   double R_ = 287.058;                           ///< J/(kg*K)
   double gamma_ = 1.4;                           ///< cp/cv
   double g0_ = apex::math::celestial::earth::G0; ///< m/s^2

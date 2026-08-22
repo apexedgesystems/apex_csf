@@ -111,11 +111,17 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
       break;
     }
 
-    // Wait for clock tick signal
+    // Wait for a clock tick signal OR an outstanding backlog. The
+    // backlog term is what makes catch-up real: the pending flag is a
+    // boolean, so ticks signaled during a task-thread stall would
+    // otherwise collapse into one wake and the deficit would pin
+    // forever (observed as a constant, never-decaying lag).
     {
       std::unique_lock lock(cvMutex_);
       cvClockTick_.wait(lock, [this]() {
         return taskState_.stepPending.load(std::memory_order_acquire) ||
+               taskState_.cycles.load(std::memory_order_acquire) <
+                   clockState_.cycles.load(std::memory_order_acquire) ||
                controlState_.shutdownRequested.load(std::memory_order_acquire);
       });
     }
@@ -224,9 +230,16 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
                     .count();
     }
 
-    // Clear step flag and increment cycle counter
-    taskState_.stepPending.store(false, std::memory_order_release);
-    taskState_.cycles.fetch_add(1, std::memory_order_acq_rel);
+    // Increment the cycle counter, then clear the step flag only once
+    // caught up with the clock: while a backlog remains, the wait
+    // predicate falls through immediately and the deficit drains
+    // back-to-back. (A tick arriving after the clear re-sets the flag
+    // from the clock side, so under-clearing is at worst one benign
+    // extra wake.)
+    const std::uint64_t DONE = taskState_.cycles.fetch_add(1, std::memory_order_acq_rel) + 1;
+    if (DONE >= clockState_.cycles.load(std::memory_order_acquire)) {
+      taskState_.stepPending.store(false, std::memory_order_release);
+    }
 
     if (shouldProfile) {
       // t3: After atomic operations (loop end)
