@@ -237,6 +237,22 @@ public:
     return {1U};
   }
 
+  /**
+   * @brief Requested host configuration per pool (policy/priority/affinity).
+   * @return One row per pool; single-threaded default: one OTHER pool.
+   */
+  [[nodiscard]] virtual std::vector<PoolRequirementRowTlm> poolRequirements() const noexcept {
+    PoolRequirementRowTlm row{};
+    row.workers = 1U;
+    return {row};
+  }
+
+  /**
+   * @brief Refresh the published requirements snapshot.
+   * @note Config-time; called at table load.
+   */
+  void populateRequirementsTlm() noexcept;
+
   /** @brief Component name of the most recent period violator (nullptr = none). */
   [[nodiscard]] virtual const char* lastViolationComponent() const noexcept { return nullptr; }
 
@@ -449,9 +465,10 @@ protected:
 
   /** @brief Table of tick index -> vector of entry indices scheduled at that tick. */
   std::vector<std::vector<std::size_t>> schedule_{};
-  TablePreflight tablePreflight_{};      ///< Verdicts from the last table analysis.
-  SchedulerTaskStatsTlm taskStatsTlm_{}; ///< Snapshot for GET_TASK_STATS/INSPECT.
-  SchedulerCensusTlm censusTlm_{};       ///< Pre-clock census report.
+  TablePreflight tablePreflight_{};            ///< Verdicts from the last table analysis.
+  SchedulerTaskStatsTlm taskStatsTlm_{};       ///< Snapshot for GET_TASK_STATS/INSPECT.
+  SchedulerCensusTlm censusTlm_{};             ///< Pre-clock census report.
+  SchedulerRequirementsTlm requirementsTlm_{}; ///< Declared host requirements.
 
   /** @brief Fundamental frequency in ticks per second. */
   std::uint16_t ffreq_{0};

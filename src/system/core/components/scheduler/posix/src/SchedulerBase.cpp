@@ -225,6 +225,37 @@ SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
   return replaced;
 }
 
+/* ----------------------------- populateRequirementsTlm ----------------------------- */
+
+void SchedulerBase::populateRequirementsTlm() noexcept {
+  requirementsTlm_ = SchedulerRequirementsTlm{};
+  requirementsTlm_.fundamentalFreqHz = ffreq_;
+  requirementsTlm_.taskCount = static_cast<std::uint16_t>(entries_.size());
+
+  std::size_t groups = 0;
+  {
+    std::vector<const std::atomic<int>*> seen;
+    for (const auto& e : entries_) {
+      if (e.isSequenced() && std::find(seen.begin(), seen.end(), e.seqCounter) == seen.end()) {
+        seen.push_back(e.seqCounter);
+      }
+    }
+    groups = seen.size();
+  }
+  requirementsTlm_.seqGroupCount = static_cast<std::uint8_t>(groups);
+
+  const auto ROWS = poolRequirements();
+  std::size_t n = 0;
+  for (const auto& row : ROWS) {
+    if (n >= REQUIREMENTS_POOL_CAP) {
+      break;
+    }
+    requirementsTlm_.pools[n] = row;
+    ++n;
+  }
+  requirementsTlm_.poolCount = static_cast<std::uint8_t>(n);
+}
+
 /* ----------------------------- runTaskCensus ----------------------------- */
 
 bool SchedulerBase::runTaskCensus(std::uint8_t repeats) noexcept {
@@ -793,6 +824,7 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
 
   // Static feasibility verdicts for the table just loaded.
   runTablePreflight();
+  populateRequirementsTlm();
 
   // Keep full TPRM binary for INSPECT readback and register with registry
   tprmRaw_ = tprmData;
@@ -801,6 +833,12 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
 
   // Register health snapshot as OUTPUT for INSPECT readback.
   // Populated on each GET_HEALTH call.
+  registerData(system_core::data::DataCategory::OUTPUT, "tablePreflight", &tablePreflight_,
+               sizeof(TablePreflight));
+
+  registerData(system_core::data::DataCategory::OUTPUT, "requirements", &requirementsTlm_,
+               sizeof(SchedulerRequirementsTlm));
+
   registerData(system_core::data::DataCategory::OUTPUT, "taskCensus", &censusTlm_,
                sizeof(SchedulerCensusTlm));
 
@@ -965,6 +1003,26 @@ std::uint8_t SchedulerBase::handleCommand(std::uint16_t opcode,
     healthTlm_.violationsThisTick = static_cast<std::uint32_t>(periodViolationsThisTick());
     response.resize(sizeof(healthTlm_));
     std::memcpy(response.data(), &healthTlm_, sizeof(healthTlm_));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::RUN_PREFLIGHT): {
+    runTablePreflight();
+    response.resize(sizeof(tablePreflight_));
+    std::memcpy(response.data(), &tablePreflight_, sizeof(tablePreflight_));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::GET_PREFLIGHT): {
+    response.resize(sizeof(tablePreflight_));
+    std::memcpy(response.data(), &tablePreflight_, sizeof(tablePreflight_));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::GET_REQUIREMENTS): {
+    populateRequirementsTlm();
+    response.resize(sizeof(requirementsTlm_));
+    std::memcpy(response.data(), &requirementsTlm_, sizeof(requirementsTlm_));
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 

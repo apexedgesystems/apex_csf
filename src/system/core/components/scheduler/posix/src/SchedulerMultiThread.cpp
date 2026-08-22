@@ -84,7 +84,9 @@ void SchedulerMultiThread::resolveAndInitPoolsFromTprm() noexcept {
     }
   }
 
-  initPools(std::move(pendingSpecs_));
+  // Keep the resolved specs: they are the published requirements
+  // (poolRequirements reads them after init).
+  initPools(pendingSpecs_);
 }
 
 void SchedulerMultiThread::initPools(std::vector<PoolSpec> specs) noexcept {
@@ -137,6 +139,30 @@ std::vector<std::uint16_t> SchedulerMultiThread::poolWorkerCounts() const noexce
                           : static_cast<std::uint16_t>(0U));
   }
   return counts;
+}
+
+std::vector<PoolRequirementRowTlm> SchedulerMultiThread::poolRequirements() const noexcept {
+  std::vector<PoolRequirementRowTlm> rows;
+  rows.reserve(pendingSpecs_.size());
+  for (std::size_t i = 0; i < pendingSpecs_.size(); ++i) {
+    const auto& spec = pendingSpecs_[i];
+    PoolRequirementRowTlm row{};
+    row.poolId = static_cast<std::uint8_t>(i);
+    row.policy = static_cast<std::uint8_t>(spec.config.policy);
+    row.priority = spec.config.priority;
+    row.workers = i < pools_.size() && pools_[i]
+                      ? static_cast<std::uint16_t>(pools_[i]->workerCount())
+                      : static_cast<std::uint16_t>(0U);
+    std::uint64_t mask = 0;
+    for (const std::uint8_t CPU : spec.config.affinity) {
+      if (CPU < 64U) {
+        mask |= (1ULL << CPU);
+      }
+    }
+    row.affinityMask = mask;
+    rows.push_back(row);
+  }
+  return rows;
 }
 
 bool SchedulerMultiThread::threadsRunning() const noexcept {
