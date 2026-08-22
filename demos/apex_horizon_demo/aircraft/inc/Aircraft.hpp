@@ -549,10 +549,10 @@ protected:
       const auto& p = tunables_.get();
       log->info(label(), fmt::format("init: body={} init_pos=({:.4f}, {:.4f}, {:.0f}m) "
                                      "hdg={:.1f}deg V={:.0f}m/s mass={:.0f}kg "
-                                     "S={:.0f}m^2 AR={:.1f} body_attached={}",
+                                     "S={:.0f}m^2 AR={:.1f} dt={:.0f}ms body_attached={}",
                                      p.body_label, p.init_lat_deg, p.init_lon_deg, p.init_alt_m,
                                      p.init_heading_deg, p.init_speed_m_s, p.mass_kg,
-                                     p.wing_area_m2, p.aspect_ratio, body_ != nullptr));
+                                     p.wing_area_m2, p.aspect_ratio, DT_S * 1e3, body_ != nullptr));
     }
     return static_cast<std::uint8_t>(ApexStatus::SUCCESS);
   }
