@@ -12,8 +12,12 @@ stays live, and the sim is unaffected.
 ## 1. Quick start
 
 ```bash
-# Launch (RT-privileged when the host allows; identity-verified boot)
-demos/apex_horizon_demo/aircraft_atmo/scripts/run_producer.sh
+# Stage the package, then run it (zero arguments) through the RT
+# compose service -- see docs/HOW_TO_RUN.md for the identity checks
+docker compose run --rm dev-cuda \
+  cmake --build build/hosted-x86_64-debug --target package_ApexAircraftAtmoDemo
+docker compose run --rm cuda-rt \
+  ./build/hosted-x86_64-debug/packages/ApexAircraftAtmoDemo/run.sh
 ```
 
 ## 2. Components

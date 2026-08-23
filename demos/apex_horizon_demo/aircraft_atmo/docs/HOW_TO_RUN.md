@@ -12,25 +12,46 @@ expect exactly 288 bytes with header
 `atmosphere artifact:` line printing that hash is the file-identity
 proof paired runs compare.
 
-## Run
+## Run (packaged deployment — the standard way)
+
+The app declares an apex deployment, so it stages into a
+self-contained package that runs with zero arguments. Launch through
+the `cuda-rt` compose service: it carries the rtprio rlimit, so the
+executive's FIFO thread table applies (clock 90 / tasks 80 —
+burst-free cadence under load).
 
 ```bash
-demos/apex_horizon_demo/aircraft_atmo/scripts/run_producer.sh          # detached, verified
-demos/apex_horizon_demo/aircraft_atmo/scripts/run_producer.sh --fg     # foreground
-demos/apex_horizon_demo/aircraft_atmo/scripts/run_producer.sh --kill   # stop + remove
+# Stage the package (once per build)
+docker compose run --rm dev-cuda \
+  cmake --build build/hosted-x86_64-debug --target package_ApexAircraftAtmoDemo
+
+# Run it (zero arguments; run.sh resolves the executive + bundled TPRM)
+docker compose run --rm cuda-rt \
+  ./build/hosted-x86_64-debug/packages/ApexAircraftAtmoDemo/run.sh
 ```
 
-The script carries the full runbook: it launches RT-privileged when
-the host grants CAP_SYS_NICE (the executive's FIFO thread table then
-applies — burst-free cadence under load), falls back to the soft-lag
-timeshare override otherwise, sets contention priority, and verifies
-the boot identity (compiled dt, atmosphere spec_hash, thread classes,
-heartbeat) before handing you the kill switch. A raw
-`docker compose run --rm dev-cuda ./build/.../ApexAircraftAtmoDemo
---config <master.tprm> --fs-root <path>` remains valid for ad-hoc
-debugging.
+For a long-lived detached producer, add `-d --name <name>` to the
+`compose run` and stop it later with `docker rm -f <name>`. A raw
+`docker compose run --rm cuda-rt ./build/.../ApexAircraftAtmoDemo
+--config <master.tprm> --fs-root <path>` on the unpackaged binary
+remains valid for ad-hoc debugging (`dev-cuda` works too when RT
+scheduling doesn't matter).
 
-Runs until Ctrl+C (foreground) or the kill switch. Logs land under the filesystem root:
+## Verify the boot
+
+Three log greps prove the launch is the binary + world you intended
+(guards against a stale binary or wrong config):
+
+```bash
+grep -o 'dt=10ms' <fs-root>/logs/models/Aircraft_0.log            # compiled step matches 100 Hz
+grep -o 'spec_hash=0x[0-9a-f]*' <fs-root>/logs/models/CelestialBody_0.log
+ps -T -o cls,rtprio,comm -p <pid> | grep -E 'exec_clock|exec_tasks' # FF 90 / FF 80 under cuda-rt
+```
+
+The heartbeat (`<fs-root>/heartbeat.csv`) should show clock/task
+parity within a few ticks.
+
+Runs until Ctrl+C (foreground) or `docker rm -f`. Logs land under the filesystem root:
 `logs/models/Aircraft_0.log` has the 1 Hz flight line (pose, airdata,
 forces, fuel, gusts); `logs/models/AircraftController_0.log` the
 reference-tracking line; `logs/support/ShmRingBridge_0.log` the

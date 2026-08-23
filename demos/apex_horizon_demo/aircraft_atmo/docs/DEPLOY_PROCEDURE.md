@@ -28,16 +28,12 @@ goldens, and the aerodynamics mode validations.
 
 ## 2. Run
 
-```bash
-demos/apex_horizon_demo/aircraft_atmo/scripts/run_producer.sh
-```
-
-The script launches RT-privileged when the host grants CAP_SYS_NICE
-(the executive's FIFO thread table then applies), falls back to the
-soft-lag timeshare override otherwise, and verifies the boot identity
-(compiled dt, atmosphere spec_hash, thread scheduling classes,
-heartbeat) before reporting the kill switch. `--fg`, `--kill`,
-`--name`, `--fs-root` per the script header.
+Launch through the `cuda-rt` compose service — it carries the rtprio
+rlimit, so the executive's FIFO thread table applies (clock 90 /
+tasks 80). Run flow, detached variant, and the boot-identity
+verification greps (compiled dt, atmosphere spec_hash, thread
+scheduling classes, heartbeat) are in
+[HOW_TO_RUN.md](HOW_TO_RUN.md) — verify the identity before pairing.
 
 ## 3. Package + run as a deployment
 
@@ -58,8 +54,21 @@ docker compose run --rm dev-cuda \
 
 No packed binaries or data files are committed — the master generates
 from the manifest at build time and the atmosphere table regenerates
-from its tracked spec (copy it into the package data path per
-HOW_TO_RUN before first run).
+from its tracked spec. Install it into the package before first run,
+mirroring the repo-relative path the TPRM carries (the packaged
+launcher runs with the deployment directory as cwd):
+
+```bash
+PKG=build/hosted-x86_64-debug/packages/ApexAircraftAtmoDemo
+mkdir -p $PKG/demos/apex_horizon_demo/aircraft_atmo/data
+cp demos/apex_horizon_demo/aircraft_atmo/data/earth_ussa76.atm \
+  $PKG/demos/apex_horizon_demo/aircraft_atmo/data/
+```
+
+Skipping this is caught at boot: the executive's atmosphere smoke
+check fails fast and the `spec_hash` identity grep comes up empty.
+The launcher passes `--skip-cleanup`, so shutdown archives nothing
+and the deployment stays intact across runs.
 
 ## 4. Pair
 
