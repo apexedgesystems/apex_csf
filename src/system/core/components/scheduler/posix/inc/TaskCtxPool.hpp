@@ -150,8 +150,12 @@ public:
 private:
   [[nodiscard]] TaskCtx* pop() noexcept {
     TaskCtx* node = head_.load(std::memory_order_acquire);
+    // Failure order is acquire: on a lost race the CAS reloads a head some
+    // worker just published, and the retry immediately reads node->next --
+    // that read must synchronize with the release() that wrote it. Relaxed
+    // here is unordered (works on x86 TSO, unsound on weaker targets).
     while (node && !head_.compare_exchange_weak(node, node->next, std::memory_order_acq_rel,
-                                                std::memory_order_relaxed)) {
+                                                std::memory_order_acquire)) {
     }
     if (node) {
 #ifndef NDEBUG
