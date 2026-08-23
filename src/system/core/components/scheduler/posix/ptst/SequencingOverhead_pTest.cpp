@@ -211,8 +211,10 @@ PERF_TEST(SeqOverhead, Chain4_MinimalWork) {
   cfg.repeats = std::min(cfg.repeats, 5);
   auto perf = ub::makePerfCaseWithProfiler("SeqOverhead.Chain4_MinimalWork", cfg);
 
-  auto sched = makeScheduler(100);
+  // Group declared before the scheduler: entries hold the group's counter,
+  // so it must outlive the scheduler's shutdown sentinel sweep.
   SequenceGroup seq(4);
+  auto sched = makeScheduler(100);
 
   // Timing capture
   std::atomic<std::uint64_t> pre1Start{0}, pre1End{0};
@@ -307,6 +309,8 @@ PERF_TEST(SeqOverhead, Chain4_MinimalWork) {
   std::printf("    - 2 waitForPhase calls (step, post)\n");
   std::printf("    - 4 advancePhase + notifyAll calls\n");
   std::printf("  Target: <100 us overhead for <1ms on 10ms frame\n");
+
+  sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
 
 /**
@@ -322,8 +326,10 @@ PERF_TEST(SeqOverhead, Chain4_ModelTest2Timing) {
   cfg.repeats = std::min(cfg.repeats, 3);
   auto perf = ub::makePerfCaseWithProfiler("SeqOverhead.Chain4_ModelTest2Timing", cfg);
 
-  auto sched = makeScheduler(100);
+  // Group declared before the scheduler: entries hold the group's counter,
+  // so it must outlive the scheduler's shutdown sentinel sweep.
   SequenceGroup seq(4);
+  auto sched = makeScheduler(100);
 
   // Timing capture
   std::atomic<std::uint64_t> pre1Start{0}, pre1End{0};
@@ -439,6 +445,8 @@ PERF_TEST(SeqOverhead, Chain4_ModelTest2Timing) {
   if (OVERHEAD_MEDIAN >= 1.0) {
     std::printf("  WARNING: Overhead %.3f ms exceeds 1ms target\n", OVERHEAD_MEDIAN);
   }
+
+  sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
 
 /**
@@ -489,38 +497,49 @@ PERF_TEST(SeqOverhead, SequencedVsNonSequenced) {
     tasksNonSeq.push_back(std::move(task));
   }
 
-  auto waitForNonSeqCompletion = [&](int expected) {
-    for (int wait = 0; wait < 100000; ++wait) {
-      if (completionCount.load(std::memory_order_acquire) >= expected) {
-        return;
+  // Per-cycle wait: each cycle re-bases on the count observed before its
+  // own dispatch and waits for one batch on top, with a hard deadline. A
+  // cycle that loses its batch (skip-on-busy under external load) costs
+  // one bounded timeout and the next cycle recovers; a cumulative target
+  // would stay permanently ahead of the count and burn the full timeout
+  // on every remaining cycle. Timeouts are counted and reported -- a
+  // nonzero count marks the medians as suspect.
+  auto waitForBatch = [](std::atomic<int>& counter, int target) -> bool {
+    const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+    while (counter.load(std::memory_order_acquire) < target) {
+      if (std::chrono::steady_clock::now() >= DEADLINE) {
+        return false;
       }
       std::this_thread::sleep_for(std::chrono::microseconds(1));
     }
+    return true;
   };
+  int nonSeqTimeouts = 0;
+  int seqTimeouts = 0;
 
   double nonSeqMedian = 0.0;
-  int nonSeqExpected = 0;
   {
     // Warmup
     completionCount.store(0, std::memory_order_release);
     (void)schedNonSeq->executeTasksOnTickMulti(0);
-    waitForNonSeqCompletion(4);
-    nonSeqExpected = 4;
+    (void)waitForBatch(completionCount, 4);
 
     auto resultNonSeq = perf.throughputLoop(
         [&] {
-          nonSeqExpected += 4;
+          const int BASE = completionCount.load(std::memory_order_acquire);
           (void)schedNonSeq->executeTasksOnTickMulti(0);
-          waitForNonSeqCompletion(nonSeqExpected);
+          if (!waitForBatch(completionCount, BASE + 4)) {
+            ++nonSeqTimeouts;
+          }
         },
         "nonseq-4task");
     nonSeqMedian = resultNonSeq.stats.median;
   }
 
   // Test 2: Sequenced (4 tasks in strict chain)
+  SequenceGroup seq(4); // Outlives the scheduler (shutdown sentinel sweep).
   auto schedSeq = makeScheduler(100);
   schedSeq->setSkipOnBusy(true);
-  SequenceGroup seq(4);
   std::vector<CompletionCtx> ctxSeq(4);
   std::vector<std::string> labelsSeq; // Keep labels alive
   std::vector<std::unique_ptr<SchedulableTask>> tasksSeq;
@@ -539,31 +558,22 @@ PERF_TEST(SeqOverhead, SequencedVsNonSequenced) {
     tasksSeq.push_back(std::move(task));
   }
 
-  auto waitForSeqCompletion = [&](int expected) {
-    for (int wait = 0; wait < 100000; ++wait) {
-      if (seqCompletionCount.load(std::memory_order_acquire) >= expected) {
-        return;
-      }
-      std::this_thread::sleep_for(std::chrono::microseconds(1));
-    }
-  };
-
   double seqMedian = 0.0;
-  int seqExpected = 0;
   {
     // Warmup
     seqCompletionCount.store(0, std::memory_order_release);
     seq.reset();
     (void)schedSeq->executeTasksOnTickMulti(0);
-    waitForSeqCompletion(4);
-    seqExpected = 4;
+    (void)waitForBatch(seqCompletionCount, 4);
 
     auto resultSeq = perf.throughputLoop(
         [&] {
-          seqExpected += 4;
+          const int BASE = seqCompletionCount.load(std::memory_order_acquire);
           seq.reset();
           (void)schedSeq->executeTasksOnTickMulti(0);
-          waitForSeqCompletion(seqExpected);
+          if (!waitForBatch(seqCompletionCount, BASE + 4)) {
+            ++seqTimeouts;
+          }
         },
         "seq-4task");
     seqMedian = resultSeq.stats.median;
@@ -579,6 +589,13 @@ PERF_TEST(SeqOverhead, SequencedVsNonSequenced) {
   std::printf("  Per-task overhead: %.3f us\n", PER_TASK_OVERHEAD);
   std::printf("  Expected serial time: ~400 us (4 x 100us)\n");
   std::printf("  Note: Includes 3 phase transitions (waitForPhase + advancePhase)\n");
+  if (nonSeqTimeouts != 0 || seqTimeouts != 0) {
+    std::printf("  WARNING: completion timeouts (non-seq=%d, seq=%d) -- medians suspect\n",
+                nonSeqTimeouts, seqTimeouts);
+  }
+
+  schedSeq.reset(); // Join workers before caller-owned tasks are destroyed.
+  schedNonSeq.reset();
 }
 
 /**
@@ -643,6 +660,8 @@ PERF_TEST(SeqOverhead, ThreadPoolDispatchLatency) {
   std::printf("  p99: %.3f us\n", P99);
   std::printf("  Includes: mutex acquire, queue push, CV notify, worker wake\n");
   std::printf("  Target: <50 us for low-latency RT systems\n");
+
+  sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
 
 PERF_MAIN()
