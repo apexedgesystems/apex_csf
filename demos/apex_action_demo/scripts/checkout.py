@@ -692,7 +692,7 @@ def test_wait_condition_and_timeout(c2: AprotoClient) -> bool:
         local_path = f.name
 
     print("    Uploading wait-condition RTS...")
-    r = c2.send_file(local_path, "rts/005.rts")
+    r = c2.send_file(local_path, "bank_a/rts/005.rts")
     ok &= check("RTS uploaded", r["status"] == 0, r.get("status_name", "?"))
     Path(local_path).unlink(missing_ok=True)
 
