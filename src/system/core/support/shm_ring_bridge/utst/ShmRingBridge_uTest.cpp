@@ -8,7 +8,7 @@
  * tripping bytes through real shm.
  *
  * The Side B helper here is a minimal spec implementation -- enough to
- * prove that another consumer (e.g. UE5's URoverRingComponent, or a
+ * prove that another consumer (e.g. the visualization consumer's URoverRingComponent, or a
  * recording tool) attaching to the same shm region sees the bytes the
  * apex bridge wrote.
  */
@@ -347,7 +347,7 @@ TEST(ShmRingBridge, fullEndToEndPublish) {
 }
 
 /* ================================================================== */
-/* Ring B command-sink (UE5 -> apex via APROTO over SHM) tests         */
+/* Ring B command-sink (the visualization consumer -> apex via APROTO over SHM) tests         */
 /* ================================================================== */
 
 namespace {
@@ -685,6 +685,70 @@ TEST(ShmRingBridge, ringB_drainsWhileForwardRingFull) {
   EXPECT_EQ(f.bridge.bridgeState().cmds_received, 1u);
   EXPECT_EQ(f.bus.cmd_count, 1u);
   EXPECT_EQ(f.bus.last_opcode, 0x0100u);
+}
+
+/** @test Pre-attach saturation never declares inactivity: with no
+ *  consumer ever draining, the ring fills and back-pressures
+ *  indefinitely without tripping consumer_inactive (normal boot). */
+TEST(ShmRingBridge, inactive_neverAttachedNeverDeclares) {
+  ShmRingBridge b;
+  ResolverCtx ctx;
+  b.setResolver(testResolver, &ctx);
+  ShmRingBridgeTunables& t = b.tunables().get();
+  fillTunables(t, uniqueShmPath("nostall"), /*cap=*/4, /*payload_size=*/64, ctx.expectedUid);
+  b.setInstanceIndex(0);
+  ASSERT_EQ(b.init(), 0u);
+  b.onBusReady();
+  ASSERT_EQ(b.bridgeState().channel_open, 1u);
+
+  for (std::uint32_t i = 0; i < system_core::support::kStallWarnTicks + 50u; ++i) {
+    EXPECT_EQ(b.bridgeStep(), 0u);
+  }
+  EXPECT_EQ(b.bridgeState().drain_seen, 0u);
+  EXPECT_EQ(b.bridgeState().consumer_inactive, 0u);
+}
+
+/** @test A consumer that drained and then stops is declared stalled
+ *  after system_core::support::kStallWarnTicks of frozen-tail ring-full ticks, and the flag
+ *  clears the moment the tail moves again. */
+TEST(ShmRingBridge, inactive_declaredAfterDrainStopsAndClearsOnResume) {
+  ShmRingBridge b;
+  ResolverCtx ctx;
+  b.setResolver(testResolver, &ctx);
+  const std::string SHM = uniqueShmPath("stall");
+  ShmRingBridgeTunables& t = b.tunables().get();
+  fillTunables(t, SHM, /*cap=*/4, /*payload_size=*/64, ctx.expectedUid);
+  b.setInstanceIndex(0);
+  ASSERT_EQ(b.init(), 0u);
+  b.onBusReady();
+  ASSERT_EQ(b.bridgeState().channel_open, 1u);
+
+  SideBReader reader;
+  ASSERT_TRUE(reader.open(SHM, SHM + "_wake", 4, 64));
+
+  // Publish + drain a few frames: drain_seen latches.
+  for (int i = 0; i < 6; ++i) {
+    EXPECT_EQ(b.bridgeStep(), 0u);
+    reader.cons->store(reader.prod->load(std::memory_order_acquire), std::memory_order_release);
+  }
+  EXPECT_EQ(b.bridgeState().drain_seen, 1u);
+  EXPECT_EQ(b.bridgeState().consumer_inactive, 0u);
+
+  // Consumer stops draining: the ring fills, then the stall declares
+  // after system_core::support::kStallWarnTicks consecutive frozen-tail full-failures.
+  for (std::uint32_t i = 0; i < 4u + system_core::support::kStallWarnTicks - 1u; ++i) {
+    EXPECT_EQ(b.bridgeStep(), 0u);
+  }
+  EXPECT_EQ(b.bridgeState().consumer_inactive, 0u) << "declared one tick early";
+  EXPECT_EQ(b.bridgeStep(), 0u);
+  EXPECT_EQ(b.bridgeState().consumer_inactive, 1u);
+  EXPECT_EQ(b.bridgeState().drain_stops_total, 1u);
+
+  // Resume draining: one tail movement clears the stall.
+  reader.cons->store(reader.prod->load(std::memory_order_acquire), std::memory_order_release);
+  EXPECT_EQ(b.bridgeStep(), 0u);
+  EXPECT_EQ(b.bridgeState().consumer_inactive, 0u);
+  reader.close();
 }
 
 TEST(ShmRingBridge, fullRingDropsAdditionalPushes) {

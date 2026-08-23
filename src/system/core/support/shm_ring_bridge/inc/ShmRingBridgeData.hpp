@@ -32,6 +32,12 @@ inline constexpr std::uint16_t BRIDGE_FRAMEWORK_VERSION = 1u;
 /// README section 5.2). Fixed stamp, spelled "HRNB" little-endian.
 inline constexpr std::uint32_t BRIDGE_FRAMEWORK_MAGIC = 0x48524E42u;
 
+/// Consecutive ring-full bridge ticks (with a frozen consumer tail)
+/// before a previously-draining consumer is declared inactive: 1 s at
+/// a 100 Hz bridge, 10 s at 10 Hz. Pre-attach saturation never trips
+/// it (the tail must have advanced at least once).
+inline constexpr std::uint32_t kStallWarnTicks = 100u;
+
 /// Per the wire format: header (64) + producer cursor (64) + consumer
 /// cursor (64). Slots start at offset 192.
 inline constexpr std::size_t BRIDGE_RING_HEADER_BYTES = 64u;
@@ -83,7 +89,7 @@ struct ShmRingBridgeTunables {
   std::uint16_t source_byte_offset{0}; ///< Start byte within the data block.
   std::uint16_t source_byte_len{0};    ///< Length to copy; 0 = whole block.
 
-  /* -- command-sink (Ring B / UE5 -> apex) configuration. --
+  /* -- command-sink (Ring B, consumer -> apex) configuration. --
    *
    * When sink_enabled = 1, each bridgeStep pops at most one APROTO
    * application-layer frame from Ring B and dispatches it through the
@@ -147,7 +153,19 @@ struct ShmRingBridgeState {
   std::uint8_t channel_open{0};    ///< 1 once shm + sem are open.
   std::uint8_t source_resolved{0}; ///< 1 once the source DataTarget resolves.
   std::uint8_t region_orphaned{0}; ///< 1 = the shm path was unlinked or replaced externally.
-  std::uint8_t reserved[5]{};
+
+  /* Consumer-activity tracking. Saturation with no consumer is normal
+     back-pressure; a consumer that drained and then stopped marks the
+     drain inactive — usually a departed ephemeral consumer (recorded
+     takes, operator sessions), possibly a wedged one. The ring
+     protocol carries no liveness signal to tell them apart, so the
+     transition reports at INFO. */
+  std::uint8_t drain_seen{0};        ///< 1 once the consumer tail has ever advanced.
+  std::uint8_t consumer_inactive{0}; ///< 1 = drain stopped >= kStallWarnTicks ago.
+  std::uint8_t reserved[3]{};
+  std::uint64_t last_tail{0};         ///< Tail cursor at the last movement check.
+  std::uint32_t stall_full_streak{0}; ///< Consecutive full-failures with a frozen tail.
+  std::uint32_t drain_stops_total{0}; ///< Drain-stop episodes since boot.
 };
 
 /* ----------------------------- ShmRingBridgeTlm ----------------------------- */
@@ -163,8 +181,9 @@ struct __attribute__((packed)) ShmRingBridgeTlm {
   std::uint64_t signals_failed{0};
   std::uint8_t channel_open{0};
   std::uint8_t source_resolved{0};
-  std::uint8_t region_orphaned{0}; ///< mirrors ShmRingBridgeState::region_orphaned
-  std::uint8_t reserved[5]{};
+  std::uint8_t region_orphaned{0};   ///< mirrors ShmRingBridgeState::region_orphaned
+  std::uint8_t consumer_inactive{0}; ///< mirrors ShmRingBridgeState::consumer_inactive
+  std::uint8_t reserved[4]{};
 };
 
 static_assert(sizeof(ShmRingBridgeTlm) == 32, "ShmRingBridgeTlm size drift");

@@ -33,4 +33,10 @@ apex_add_gtest(
   system
   core
   logs
+  # Thread-starvation sensitive: the rotate-race test needs its writer
+  # thread to outpace rotation within a bounded poll budget, which a
+  # saturated parallel suite can prevent. Runs serially via the timing
+  # rail.
+  TIMING_TESTS
+  SystemLogTest.RotateWhileLogging
 )

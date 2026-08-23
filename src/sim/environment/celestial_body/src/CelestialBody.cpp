@@ -194,6 +194,20 @@ std::uint8_t CelestialBody::doInit() noexcept {
                                 env::atmosphere::toString(astatus), p.atmosphere_data_path));
         }
         ok = false;
+      } else {
+        // Artifact identity for paired runs: both sides of a pairing
+        // log the header spec_hash at load, so file agreement is
+        // provable from the two logs alone (the atmosphere counterpart
+        // of the terrain line below).
+        auto* log = componentLog();
+        if (log != nullptr) {
+          const auto& H = atm->fileHeader();
+          log->info(label(),
+                    fmt::format("atmosphere artifact: body={} model=layered "
+                                "spec_hash={:#018x} records={} R={:.3f} gamma={:.2f} g0={:.5f}",
+                                std::string(H.body, strnlen(H.body, sizeof(H.body))), H.spec_hash,
+                                H.n_records, H.R_specific, H.gamma, H.g0));
+        }
       }
     }
   }
@@ -212,7 +226,7 @@ std::uint8_t CelestialBody::doInit() noexcept {
   // 4. Populate OUTPUT telemetry: a one-shot snapshot of body identity
   //    + key physical summary derived from the live env models. This
   //    is the public face other components subscribe to and that an
-  //    external bridge reads to forward to UE5 / ground systems.
+  //    external bridge reads to forward to visualization / ground systems.
   auto& tlm = telemetry_.get();
   tlm.body = static_cast<std::uint8_t>(p.body);
   tlm.gravity_fidelity = static_cast<std::uint8_t>(p.gravity_fidelity);

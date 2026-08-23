@@ -77,7 +77,7 @@ struct WorldQueryProbeState {
  *
  * Refreshed every tick with the latest sampled environmental state.
  * Other components (system monitors, ground stations, future
- * BridgeWriter pushing to UE5) read this without needing to touch the
+ * BridgeWriter pushing to the consumer) read this without needing to touch the
  * underlying CelestialBody / env model handles.
  */
 struct WorldQueryProbeTelemetry {

@@ -85,7 +85,7 @@ wire. The X/Y pairs are yaw-dependent by design (the pods turn with the body).
 Any Side B implementation of the wire format attaches to `/lidar_box`, drains
 the ring each tick (the producer cursor then advances at ~50/s), and renders
 the body + six rays from the streamed values. The reference consumer is the
-horizon UE5 scene (its loopback writer exercises the same layout, so attach is
+horizon the visualization consumer scene (its loopback writer exercises the same layout, so attach is
 plug-and-play). The `ShmRingBridge` unit suite also contains a hand-rolled
 Side B reader (`fullEndToEndPublish`) demonstrating a minimal consumer.
 

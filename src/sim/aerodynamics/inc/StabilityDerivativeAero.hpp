@@ -271,6 +271,68 @@ inline StabilityDerivativeAeroResult evaluateStabilityDerivative(
   return r;
 }
 
+/* ---------------------------- Transport cruise preset ---------------------------- */
+
+/**
+ * Stability and control derivatives for a representative four-engine
+ * wide-body transport at its high-subsonic cruise reference condition
+ * (Mach 0.8, ~12.2 km standard altitude, 236 m/s true airspeed).
+ *
+ * The set is a complete linear model about that trim point: geometry,
+ * longitudinal derivatives (lift/drag/pitch), and lateral-directional
+ * derivatives (side force/roll/yaw), all dimensionless per radian. The
+ * signs encode a statically stable airframe: Cm_a < 0 (nose-down
+ * restoring moment with angle of attack), Cn_b > 0 (weathercock
+ * stability into the relative wind), Cl_b < 0 (dihedral effect rolling
+ * away from sideslip), with Cm_q and Cn_r providing pitch and yaw rate
+ * damping. Classical dynamic modes (short period, phugoid, Dutch roll)
+ * emerge from these values through the 6DOF equations, which is what
+ * the aerodynamics unit suite verifies.
+ */
+inline StabilityDerivativeAeroParams transportCruisePreset() {
+  StabilityDerivativeAeroParams p;
+  // Reference geometry: wing area, mean aerodynamic chord, span.
+  p.S_m2 = 510.97;
+  p.c_m = 8.324;
+  p.b_m = 59.64;
+  p.AR = (p.b_m * p.b_m) / p.S_m2; // ~6.96
+
+  // Longitudinal (trim lift, lift slope, pitch-rate lift, elevator lift).
+  p.CL_0 = 0.654;
+  p.CL_a = 4.67;
+  p.CL_q = 5.65;
+  p.CL_de = 0.32;
+
+  p.CD_0 = 0.0430;
+  p.e_oswald = 0.80;
+
+  p.Cm_0 = 0.0;
+  p.Cm_a = -1.026;
+  p.Cm_q = -20.5;
+  p.Cm_de = -1.595;
+
+  // Lateral-directional (sideslip, roll/yaw rate, aileron/rudder).
+  p.CY_b = -0.90;
+  p.CY_p = 0.0;
+  p.CY_r = 0.0;
+  p.CY_da = 0.0;
+  p.CY_dr = 0.120;
+
+  p.Cl_b = -0.193;
+  p.Cl_p = -0.323;
+  p.Cl_r = 0.212;
+  p.Cl_da = 0.0129;
+  p.Cl_dr = 0.0036;
+
+  p.Cn_b = 0.147;
+  p.Cn_p = -0.0687;
+  p.Cn_r = -0.228;
+  p.Cn_da = 0.0064;
+  p.Cn_dr = -0.1152;
+
+  return p;
+}
+
 } // namespace sim::aerodynamics
 
 #endif // APEX_SIM_AERODYNAMICS_STABILITY_DERIVATIVE_AERO_HPP

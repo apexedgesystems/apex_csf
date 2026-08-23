@@ -39,15 +39,14 @@
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/utilities/helpers/inc/Cpu.hpp"
-#include "src/utilities/helpers/inc/Files.hpp"
 
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
 #include <fmt/format.h>
-#include <optional>
 #include <string>
 #include <system_error>
 #include <vector>
@@ -267,9 +266,19 @@ public:
     tlm.lidar_n_rays = std::min<std::uint32_t>(p.lidar_n_rays, MAX_LIDAR_RAYS);
 
     // 7: stamp wire-format header fields. The bridge memcpys this whole
-    // struct — UE5 uses timestamp_ns + tick to detect dropped frames and
+    // struct — The consumer uses timestamp_ns + tick to detect dropped frames and
     // measure end-to-end latency.
-    tlm.timestamp_ns = static_cast<std::uint64_t>(apex::helpers::cpu::getMonotonicNs());
+    // Stamp simulated state time on the tick grid, anchored to the
+    // monotonic clock once at the first published tick: state and
+    // stamp agree exactly, so scheduler jitter never reaches the
+    // wire (10 Hz grid: consecutive stamps differ by exactly
+    // 100 ms).
+    if (t0_ns_ == 0u) {
+      t0_ns_ = static_cast<std::uint64_t>(apex::helpers::cpu::getMonotonicNs());
+      t0_tick_ = s.tick_count;
+    }
+    constexpr std::uint64_t DT_NS = static_cast<std::uint64_t>(DT * 1.0e9);
+    tlm.timestamp_ns = t0_ns_ + (s.tick_count - t0_tick_) * DT_NS;
     tlm.tick = s.tick_count;
     ++s.tick_count;
     return 0u;
@@ -306,19 +315,23 @@ public:
 protected:
   /* ----------------------------- Lifecycle ----------------------------- */
 
-  /// Optional TPRM tunable load (mirror of CelestialBody / probe).
+  /// Optional TPRM tunable load. Typed-reject reader: a size or
+  /// identity mismatch is a loud classified fault, not a silent
+  /// fallback to defaults.
   [[nodiscard]] bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
     const std::filesystem::path PATH = tprmDir / fmt::format("{:06x}.tprm", fullUid());
     std::error_code ec;
     if (!std::filesystem::exists(PATH, ec)) {
-      return true;
+      return true; // Tunables stay at defaults; init can still proceed.
     }
-    std::string err;
-    std::optional<std::reference_wrapper<std::string>> errRef{err};
-    if (!apex::helpers::files::hex2cpp(PATH.string(), tunables_.get(), errRef)) {
+    const auto CHECK =
+        system_core::system_component::readTprmPayload(PATH, fullUid(), tunables_.get());
+    if (CHECK != system_core::system_component::TprmPayloadCheck::OK) {
       auto* log = componentLog();
       if (log != nullptr) {
-        log->info(label(), fmt::format("loadTprm: hex2cpp failed for {} ({})", PATH.string(), err));
+        log->error(label(), system_core::system_component::toFaultCode(CHECK),
+                   fmt::format("TPRM rejected ({}): {}",
+                               system_core::system_component::toString(CHECK), PATH.string()));
       }
       return false;
     }
@@ -407,6 +420,11 @@ private:
   }
 
   const sim::environment::celestial_body::CelestialBody* body_{nullptr};
+
+  /// Timestamp grid anchor: monotonic time of the first published tick
+  /// and its tick number; stamps advance from there in exact DT steps.
+  std::uint64_t t0_ns_ = 0;
+  std::uint64_t t0_tick_ = 0;
   system_core::data::TunableParam<GroundVehicleTunables> tunables_{};
   system_core::data::State<GroundVehicleState> state_{};
   system_core::data::Output<GroundVehicleTelemetry> telemetry_{};

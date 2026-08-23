@@ -17,7 +17,7 @@
  * same self-described format on their own side.
  *
  * Use cases:
- *   - Stream simulation state to a UE5 visualization (rover_terrain,
+ *   - Stream simulation state to a visualization consumer visualization (rover_terrain,
  *     aircraft_atmo, satellite_orbit demos).
  *   - Stream model OUTPUT to any out-of-process consumer (recorder,
  *     web dashboard, second simulator) that speaks the wire format.
@@ -119,6 +119,10 @@ protected:
   void doReset() noexcept override;
 
 private:
+  /// Last stall state emitted by telemetryTick (edge-trigger latch for
+  /// the transition log lines).
+  std::uint8_t last_logged_stalled_ = 0;
+
   /* ----------------------------- Wire-format helpers ----------------------------- */
 
   /// Open the shm region + named semaphore as Side A. Validates the
@@ -148,10 +152,10 @@ private:
   std::uint8_t* slots_ = nullptr; ///< First slot byte (Ring A).
 
   // Ring B (reverse; consumer -> apex). Bound when sink_enabled=1.
-  // Apex is the consumer; UE5 writes producer. Same prelude+slots layout
+  // Apex is the consumer; the visualization consumer writes producer. Same prelude+slots layout
   // as Ring A, just starting after Region A's total bytes.
-  void* rx_prod_cursor_ = nullptr;   ///< std::atomic<uint64_t>* (UE5 writes).
-  void* rx_cons_cursor_ = nullptr;   ///< std::atomic<uint64_t>* (apex writes).
+  void* rx_prod_cursor_ = nullptr; ///< std::atomic<uint64_t>* (the visualization consumer writes).
+  void* rx_cons_cursor_ = nullptr; ///< std::atomic<uint64_t>* (apex writes).
   std::uint8_t* rx_slots_ = nullptr; ///< First slot byte (Ring B).
   std::size_t rx_slot_size_ = 0;     ///< reverse_payload_size (slot bytes).
 

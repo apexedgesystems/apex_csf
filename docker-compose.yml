@@ -121,6 +121,19 @@ services:
     privileged: true
     command: bash
 
+  # Real-time runner: cuda-build's image with the rtprio rlimit raised
+  # so a non-root process can take SCHED_FIFO priorities -- demo
+  # producers launch through this service to get the executive's RT
+  # thread table (clock FIFO 90 / tasks FIFO 80) applied.
+  cuda-rt:
+    <<: *common
+    image: apex.cuda-build
+    hostname: apex-cuda-rt
+    privileged: true
+    ulimits:
+      rtprio: 99
+    command: bash
+
   # --- BEGIN GENERATED: platform consumers (make regen-platforms) ---
   dev-jetson:
     <<: *common

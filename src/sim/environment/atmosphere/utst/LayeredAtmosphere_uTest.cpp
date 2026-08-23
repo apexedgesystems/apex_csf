@@ -374,3 +374,33 @@ TEST_F(LayeredAtmFileTest, LoadFromWrongModelTypeFails) {
 }
 
 } // namespace
+
+/* ----------------------------- Cross-suite goldens ----------------------------- */
+
+/** @test Cross-suite golden densities: both sides of the paired demo
+ *  evaluate the same layered table, and each suite pins these exact
+ *  values (computed from the hydrostatic closed forms per layer:
+ *  lapse layers P = P_b (T/T_b)^(-g0/(L R)), isothermal layers
+ *  P = P_b exp(-g0 dh / (R T_b)), rho = P/(R T)). With both suites
+ *  pinned, a live model check verifies transport of the table, not
+ *  arithmetic. */
+TEST(LayeredAtmosphere, CrossSuiteGoldenDensities) {
+  LayeredAtmosphere a;
+  ASSERT_TRUE(isSuccess(a.initFromMemory(ussa76Layers(), 287.058, 1.4, 9.80665)));
+
+  const struct {
+    double alt_m;
+    double rho_kg_m3;
+  } GOLDEN[] = {
+      {0.0, 1.224978126207},     // troposphere base form
+      {8000.0, 0.525167559738},  // lapse-layer closed form
+      {11000.0, 0.363911464608}, // tropopause base, exact
+      {15000.0, 0.193672344258}, // isothermal closed form
+  };
+
+  for (const auto& G : GOLDEN) {
+    double rho = 0.0;
+    ASSERT_TRUE(isSuccess(a.density(G.alt_m, 0.0, 0.0, rho))) << "alt " << G.alt_m;
+    EXPECT_NEAR(rho, G.rho_kg_m3, 1e-9) << "alt " << G.alt_m;
+  }
+}

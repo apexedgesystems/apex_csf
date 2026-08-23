@@ -17,12 +17,12 @@ The demo consumes two data files with different handling:
   `spec_hash` both sides of a pairing log at attach — regenerating
   from the same spec yields a bit-identical artifact, which is the
   file-identity proof for paired runs.
-- `data/usa76.atm` — **committed, with provenance**: a 288-byte
-  layered table computed from the U.S. Standard Atmosphere 1976
-  (NOAA/NASA/USAF), a public-domain U.S. government standard whose
-  layer constants are published in the standard itself. It is tracked
-  because it is tiny, required at runtime, and this repo has no tool
-  to regenerate it.
+- `data/earth_ussa76.atm` — **generated, never committed**: the
+  spec-generated USSA76 layered table (public-domain U.S. government
+  standard), produced by the same producer-side world tooling
+  (compose-aircraft-world-artifacts) and copied into `data/`.
+  Bit-deterministic: 288 bytes, header spec_hash
+  0x753549717ab8b8ff, logged at load as the identity proof.
 
 ## Run (raw binary — the dev loop)
 

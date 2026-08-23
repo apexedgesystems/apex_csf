@@ -146,3 +146,42 @@ TEST(YawDamperTest, NegativeRudderClampAndReset) {
   ctl.reset();
   EXPECT_NEAR(ctl.step(0.0, 0.04), 0.0, 1e-12);
 }
+
+/* ---------------------- Capture anti-windup ---------------------- */
+
+/** @test A 90-degree heading capture settles with bounded overshoot:
+ *  the bank clamp is plumbed into the PID, so the integral cannot wind
+ *  while the command is pinned during the long turn. The plant is the
+ *  coordinated-turn kinematic (psi_dot = g tan(phi) / V) with a
+ *  first-order roll response — the same structure the demo flies.
+ *  An unplumbed clamp winds ~3 rad of integral across this capture
+ *  and overshoots by tens of degrees before unwinding. */
+TEST(HeadingHoldTest, LongCaptureSettlesWithoutWindupOvershoot) {
+  sim::gnc::aircraft::HeadingHold hold; // default gains + 0.45 rad bank limit
+
+  constexpr double kPi = 3.14159265358979323846;
+  constexpr double DT = 1.0 / 25.0; // the demo's controller rate
+  constexpr double V = 235.9;
+  constexpr double G = 9.80665;
+  constexpr double PSI_REF = 135.0 * kPi / 180.0;
+
+  double psi = 45.0 * kPi / 180.0; // boot heading
+  double phi = 0.0;                // bank, first-order toward phi_ref
+  constexpr double ROLL_TAU_S = 1.0;
+
+  double max_psi = psi;
+  for (int i = 0; i < 25 * 240; ++i) { // 240 s, generous
+    const double PHI_REF = hold.step(PSI_REF, psi, DT);
+    phi += (PHI_REF - phi) * (DT / ROLL_TAU_S);
+    psi += (G * std::tan(phi) / V) * DT;
+    if (psi > max_psi) {
+      max_psi = psi;
+    }
+  }
+
+  // Overshoot bounded to a few degrees (was tens of degrees unplumbed).
+  EXPECT_LT(max_psi - PSI_REF, 8.0 * kPi / 180.0)
+      << "overshoot " << (max_psi - PSI_REF) * 180.0 / kPi << " deg";
+  // And the capture actually settled on target.
+  EXPECT_NEAR(psi, PSI_REF, 1.0 * kPi / 180.0);
+}

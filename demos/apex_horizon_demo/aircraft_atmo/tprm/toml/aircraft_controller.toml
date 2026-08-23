@@ -1,0 +1,50 @@
+# AircraftController (0xE100): six-loop autopilot targeting the cruise
+# reference condition; gains are the demo's tuned set. enable_mode = 1
+# runs closed-loop from boot.
+
+[AircraftControllerTunables]
+target_altitude_m       = { type = "float", size = 8, value = 12192.0 }
+target_airspeed_m_s     = { type = "float", size = 8, value = 235.9 }
+target_heading_deg      = { type = "float", size = 8, value = 135.0 }
+trim_throttle           = { type = "float", size = 8, value = 0.93 }
+
+pitch_Kp                = { type = "float", size = 8, value = 1.50 }
+pitch_Ki                = { type = "float", size = 8, value = 0.10 }
+pitch_Kd                = { type = "float", size = 8, value = 0.40 }
+elevator_limit_rad      = { type = "float", size = 8, value = 0.35 }
+
+alt_Kp                  = { type = "float", size = 8, value = 0.0008 }
+alt_Ki                  = { type = "float", size = 8, value = 0.00004 }
+alt_Kd                  = { type = "float", size = 8, value = 0.0050 }
+pitch_ref_limit_rad     = { type = "float", size = 8, value = 0.15 }
+
+speed_Kp                = { type = "float", size = 8, value = 0.020 }
+speed_Ki                = { type = "float", size = 8, value = 0.0010 }
+speed_Kd                = { type = "float", size = 8, value = 0.00 }
+
+roll_Kp                 = { type = "float", size = 8, value = 0.80 }
+roll_Ki                 = { type = "float", size = 8, value = 0.05 }
+roll_Kd                 = { type = "float", size = 8, value = 0.30 }
+aileron_limit_rad       = { type = "float", size = 8, value = 0.35 }
+
+hdg_Kp                  = { type = "float", size = 8, value = 1.20 }
+hdg_Ki                  = { type = "float", size = 8, value = 0.05 }
+hdg_Kd                  = { type = "float", size = 8, value = 0.20 }
+bank_limit_rad          = { type = "float", size = 8, value = 0.45 }
+
+yaw_Kr                  = { type = "float", size = 8, value = 0.80 }
+rudder_limit_rad        = { type = "float", size = 8, value = 0.30 }
+yaw_tau_w_s             = { type = "float", size = 8, value = 3.00 }
+
+gust_K_alpha_over_delta = { type = "float", size = 8, value = 14.6 }
+gust_authority_pct      = { type = "float", size = 8, value = 1.0 }
+
+enable_mode             = { type = "uint",   size = 1,  value = 1 }
+reserved0               = { type = "uint",   size = 1,  value = 0 }
+reserved1               = { type = "uint",   size = 1,  value = 0 }
+reserved2               = { type = "uint",   size = 1,  value = 0 }
+reserved3               = { type = "uint",   size = 1,  value = 0 }
+reserved4               = { type = "uint",   size = 1,  value = 0 }
+reserved5               = { type = "uint",   size = 1,  value = 0 }
+reserved6               = { type = "uint",   size = 1,  value = 0 }
+label                   = { type = "string", size = 16, value = "earth_acft_ctl" }

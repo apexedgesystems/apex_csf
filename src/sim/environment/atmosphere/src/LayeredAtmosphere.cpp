@@ -44,6 +44,7 @@ Status LayeredAtmosphere::load(const std::string& path) noexcept {
     return Status::ERROR_FILE_FORMAT_INVALID;
   }
   reader.close();
+  file_header_ = H;
 
   std::vector<Layer> layers(N);
   for (std::size_t i = 0; i < N; ++i) {
