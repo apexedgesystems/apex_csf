@@ -84,7 +84,9 @@ void SchedulerMultiThread::resolveAndInitPoolsFromTprm() noexcept {
     }
   }
 
-  initPools(std::move(pendingSpecs_));
+  // Keep the resolved specs: they are the published requirements
+  // (poolRequirements reads them after init).
+  initPools(pendingSpecs_);
 }
 
 void SchedulerMultiThread::initPools(std::vector<PoolSpec> specs) noexcept {
@@ -108,17 +110,21 @@ void SchedulerMultiThread::initPools(std::vector<PoolSpec> specs) noexcept {
 SchedulerMultiThread::~SchedulerMultiThread() noexcept { shutdown(); }
 
 void SchedulerMultiThread::shutdown() noexcept {
-  stopping_.store(true, std::memory_order_release);
-
-  // Release parked phase waiters. atomic wait absorbs notifies while the
-  // value is unchanged, so a bare notify cannot free a waiter -- the
-  // counter must actually change. Drive every group counter to the
-  // terminal shutdown value: waiters wake on the change, observe the
-  // stopping flag (ordered before this store), and abort their wait.
-  for (const auto& entry : entries_) {
-    if (entry.seqCounter != nullptr) {
-      entry.seqCounter->store(schedulable::SEQ_SHUTDOWN, std::memory_order_release);
-      apex::compat::atom::notifyAll(*entry.seqCounter);
+  // One-shot: the destructor calls shutdown() again after an explicit
+  // shutdown, and by then the sequence groups (whose counters the
+  // sentinel drive writes) may legitimately be gone -- their contract
+  // ends at the FIRST shutdown, not at scheduler destruction.
+  if (!stopping_.exchange(true, std::memory_order_acq_rel)) {
+    // Release parked phase waiters. atomic wait absorbs notifies while
+    // the value is unchanged, so a bare notify cannot free a waiter --
+    // the counter must actually change. Drive every group counter to
+    // the terminal shutdown value: waiters wake on the change, observe
+    // the stopping flag (ordered before this store), and abort.
+    for (const auto& entry : entries_) {
+      if (entry.seqCounter != nullptr) {
+        entry.seqCounter->store(schedulable::SEQ_SHUTDOWN, std::memory_order_release);
+        apex::compat::atom::notifyAll(*entry.seqCounter);
+      }
     }
   }
 
@@ -127,6 +133,40 @@ void SchedulerMultiThread::shutdown() noexcept {
       pool->shutdown();
     }
   }
+}
+
+std::vector<std::uint16_t> SchedulerMultiThread::poolWorkerCounts() const noexcept {
+  std::vector<std::uint16_t> counts;
+  counts.reserve(pools_.size());
+  for (const auto& pool : pools_) {
+    counts.push_back(pool ? static_cast<std::uint16_t>(pool->workerCount())
+                          : static_cast<std::uint16_t>(0U));
+  }
+  return counts;
+}
+
+std::vector<PoolRequirementRowTlm> SchedulerMultiThread::poolRequirements() const noexcept {
+  std::vector<PoolRequirementRowTlm> rows;
+  rows.reserve(pendingSpecs_.size());
+  for (std::size_t i = 0; i < pendingSpecs_.size(); ++i) {
+    const auto& spec = pendingSpecs_[i];
+    PoolRequirementRowTlm row{};
+    row.poolId = static_cast<std::uint8_t>(i);
+    row.policy = static_cast<std::uint8_t>(spec.config.policy);
+    row.priority = spec.config.priority;
+    row.workers = i < pools_.size() && pools_[i]
+                      ? static_cast<std::uint16_t>(pools_[i]->workerCount())
+                      : static_cast<std::uint16_t>(0U);
+    std::uint64_t mask = 0;
+    for (const std::uint8_t CPU : spec.config.affinity) {
+      if (CPU < 64U) {
+        mask |= (1ULL << CPU);
+      }
+    }
+    row.affinityMask = mask;
+    rows.push_back(row);
+  }
+  return rows;
 }
 
 bool SchedulerMultiThread::threadsRunning() const noexcept {
@@ -146,6 +186,13 @@ std::uint8_t SchedulerMultiThread::doInit() noexcept {
   // Spawn worker pools now that the TPRM header is available (loaded by
   // SchedulerBase::loadTprm before doInit runs in the normal apex lifecycle).
   resolveAndInitPoolsFromTprm();
+
+  // The table may have loaded before the log and the pools existed; the
+  // verdicts latched then were computed against an empty pool set.
+  // Re-analyze now that construction is complete, and emit.
+  if (!entries_.empty()) {
+    runTablePreflight();
+  }
 
   componentLog()->info(label(), "Multi-threaded scheduler constructed");
   componentLog()->info(label(), fmt::format("Fundamental frequency: {} Hz", ffreq_));
@@ -258,6 +305,9 @@ Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcep
       if (entry.stillRunning()) {
         ++periodViolationsThisTick_;
         ++totalPeriodViolations_;
+        if (entry.stats) {
+          entry.stats->deadlineViolations.fetch_add(1, std::memory_order_relaxed);
+        }
         lastViolationComponent_.store(entry.componentName, std::memory_order_release);
         lastViolationTaskUid_.store(entry.taskUid, std::memory_order_release);
         periodViolationFlag_.store(true, std::memory_order_release);

@@ -233,6 +233,36 @@ This separation enables:
 
 ---
 
+### Preflight & Observability
+
+| Surface           | Opcode / OUTPUT                                                    | Purpose                                                                                                                                                                       |
+| ----------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Table feasibility | `RUN_PREFLIGHT` 0x0104 / `GET_PREFLIGHT` 0x0105 / `tablePreflight` | Static verdicts at load: missing pools (FAIL), dispatch burst (WARN + evidence), chain dispatch-order liveness (FAIL), chain shape (WARN)                                     |
+| Task census       | `RUN_TASK_CENSUS` 0x0102 / `GET_TASK_CENSUS` 0x0103 / `taskCensus` | Pre-clock execution pass: cold first-run vs steady cost per task against its period budget; strictly refused after ticks start (`--task-census` runs it at executive startup) |
+| Runtime stats     | `GET_TASK_STATS` 0x0101 / `taskStats`                              | Per-task last/max runtime, overruns, deadline violations                                                                                                                      |
+| Requirements      | `GET_REQUIREMENTS` 0x0106 / `requirements`                         | Declared host needs per pool: policy, priority, affinity mask, workers -- consumers correlate host posture against these                                                      |
+| Health            | `GET_HEALTH` 0x0100 / `health`                                     | Aggregate scheduler health snapshot                                                                                                                                           |
+
+All surfaces ride the generic component command path and the registry;
+no consumer is privileged. Hard-RT FATALs name their violating task,
+and frame-loss events list the tasks in flight when cycles fall behind.
+
+### Deadline Semantics
+
+The deadline base is **dispatch time**: `markDispatched` stamps at
+enqueue, so queue wait charges to the task. A task counts as violating
+its period when it is still running (queued or executing) at its next
+scheduled dispatch. This is deliberate -- from the frame's
+perspective, work that has not finished by its next period is late
+regardless of whether the delay was queueing or execution -- and the
+preflight surfaces make the distinction visible instead of silent:
+the dispatch-burst analysis shows where queue pressure concentrates,
+and the task census separates first-run cost from steady state.
+
+Skip-on-busy is currently a scheduler-wide mode; per-task skip policy
+from the table is a known follow-on (it requires a task-table format
+extension).
+
 ## 5. Key Features
 
 ### N/D Frequency Decimation

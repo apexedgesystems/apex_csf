@@ -14,8 +14,10 @@ apex_module(system_core_scheduler)
 # Sources (4 files)
 # ------------------------------------------------------------------------------
 
-set(CPP_SOURCES "${SRC_DIR}/SchedulerStatus.cpp" "${SRC_DIR}/SchedulerBase.cpp"
-                "${SRC_DIR}/SchedulerSingleThread.cpp" "${SRC_DIR}/SchedulerMultiThread.cpp"
+set(CPP_SOURCES
+    "${SRC_DIR}/SchedulerStatus.cpp" "${SRC_DIR}/SchedulerBase.cpp"
+    "${SRC_DIR}/SchedulerPreflight.cpp" "${SRC_DIR}/SchedulerSingleThread.cpp"
+    "${SRC_DIR}/SchedulerMultiThread.cpp"
 )
 
 # ------------------------------------------------------------------------------

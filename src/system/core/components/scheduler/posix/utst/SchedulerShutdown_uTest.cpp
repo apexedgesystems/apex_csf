@@ -24,9 +24,12 @@
 
 #include <gtest/gtest.h>
 
+#include <unistd.h>
+
 #include <atomic>
 #include <chrono>
 #include <filesystem>
+#include <string>
 #include <thread>
 
 using apex::concurrency::DelegateU8;
@@ -41,7 +44,8 @@ namespace {
 std::uint8_t noopTask(void*) noexcept { return 0; }
 
 std::filesystem::path testLogDir() {
-  const auto DIR = std::filesystem::temp_directory_path() / "scheduler_shutdown_utest";
+  const auto DIR = std::filesystem::temp_directory_path() /
+                   ("scheduler_shutdown_utest_" + std::to_string(::getpid()));
   std::filesystem::create_directories(DIR);
   return DIR;
 }

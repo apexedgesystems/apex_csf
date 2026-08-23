@@ -29,6 +29,7 @@ bool OpsExecutive::registerComponents() noexcept {
   // TelemetryManager (fullUid = 0x00C900)
   // Wire registry pointer so it can read data blocks for push telemetry.
   telemetryMgr_.setRegistry(&registry());
+  sysMonitor_.setRegistry(&registry());
   if (!registerComponent(&telemetryMgr_, LOG_DIR)) {
     return false;
   }

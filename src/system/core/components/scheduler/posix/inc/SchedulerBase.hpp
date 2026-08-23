@@ -20,6 +20,8 @@
 #include "src/system/core/components/scheduler/posix/inc/SchedulerStatus.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerTlm.hpp"
 #include "src/system/core/components/scheduler/base/inc/IScheduler.hpp"
+#include "src/system/core/components/scheduler/posix/inc/SchedulerPreflight.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/HostRequirements.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/SequenceGroup.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
 #include "src/system/core/components/scheduler/posix/inc/TaskConfig.hpp"
@@ -181,6 +183,85 @@ public:
 
   /** @brief Period violations in the most recent tick. Override in multi-thread. */
   [[nodiscard]] virtual std::size_t periodViolationsThisTick() const noexcept { return 0; }
+
+  /**
+   * @brief Static feasibility verdicts for the loaded task table.
+   * @return Result of the most recent preflight (all-PASS default until
+   *         a table is analyzed).
+   */
+  [[nodiscard]] const TablePreflight& tablePreflight() const noexcept { return tablePreflight_; }
+
+  /**
+   * @brief Run the static table preflight and log its verdict section.
+   *
+   * Called automatically at TPRM table load; public so directly-built
+   * tables (addTask path) can be analyzed too.
+   * @note Config-time only.
+   */
+  void runTablePreflight() noexcept;
+
+  /**
+   * @brief Emit the stored table verdicts to the component log.
+   *
+   * Split from the analysis because the table can load before the log
+   * exists: the analysis latches its verdicts either way, and emission
+   * retries at init so a boot never silently drops the section.
+   */
+  void logTablePreflight() noexcept;
+
+  /**
+   * @brief Refresh the per-task stats snapshot from the live counters.
+   * @note Command/INSPECT context; not on the tick path.
+   */
+  void populateTaskStatsTlm() noexcept;
+
+  /**
+   * @brief Execute every task once + repeats, pre-clock, measuring cost.
+   * @param repeats Additional timed executions after the cold first run.
+   * @return true if the census ran; false if refused (ticks have
+   *         already executed -- census is strictly pre-clock).
+   *
+   * Tasks run sequentially in table order (phase order for sequenced
+   * groups, which table preflight validates), directly through
+   * execute() -- the census measures task bodies, not pool plumbing.
+   * Cold first-run cost (lazy inits: GPU module load, NVML, page
+   * faults) is reported separately from the steady estimate, each
+   * against the task's period budget.
+   * @note Config-time only.
+   */
+  bool runTaskCensus(std::uint8_t repeats) noexcept;
+
+  /**
+   * @brief Names of tasks currently marked in-flight, for loss events.
+   * @param cap Maximum names listed.
+   * @return "Component:taskUid" list, comma-separated ("none" if empty).
+   * @note Diagnostic path only (allocates); never on the tick path.
+   */
+  [[nodiscard]] std::string inFlightSummary(std::size_t cap) const noexcept;
+
+  /**
+   * @brief Worker count per constructed pool (index = poolId).
+   * @return One entry per pool; single-threaded default reports {1}.
+   */
+  [[nodiscard]] virtual std::vector<std::uint16_t> poolWorkerCounts() const noexcept {
+    return {1U};
+  }
+
+  /**
+   * @brief Requested host configuration per pool (policy/priority/affinity).
+   * @return One row per pool; single-threaded default: one OTHER pool.
+   */
+  [[nodiscard]] virtual std::vector<PoolRequirementRowTlm> poolRequirements() const noexcept {
+    PoolRequirementRowTlm row{};
+    row.workers = 1U;
+    return {row};
+  }
+
+  /**
+   * @brief Refresh the published requirements snapshot.
+   * @note Config-time; called at table load.
+   */
+  void populateRequirementsTlm() noexcept;
 
   /** @brief Component name of the most recent period violator (nullptr = none). */
   [[nodiscard]] virtual const char* lastViolationComponent() const noexcept { return nullptr; }
@@ -394,6 +475,13 @@ protected:
 
   /** @brief Table of tick index -> vector of entry indices scheduled at that tick. */
   std::vector<std::vector<std::size_t>> schedule_{};
+  TablePreflight tablePreflight_{};      ///< Verdicts from the last table analysis.
+  bool tablePreflightPending_{false};    ///< Analyzed but not yet emitted to the log.
+  SchedulerTaskStatsTlm taskStatsTlm_{}; ///< Snapshot for GET_TASK_STATS/INSPECT.
+  SchedulerCensusTlm censusTlm_{};       ///< Pre-clock census report.
+  SchedulerRequirementsTlm requirementsTlm_{};
+  system_component::HostRequirements
+      hostRequirements_{}; ///< Generic published record. ///< Declared host requirements.
 
   /** @brief Fundamental frequency in ticks per second. */
   std::uint16_t ffreq_{0};

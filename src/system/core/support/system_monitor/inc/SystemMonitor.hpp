@@ -29,6 +29,7 @@
 #include "src/system/core/support/system_monitor/inc/SystemMonitorConfig.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorData.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorSnapshot.hpp"
+#include "src/system/core/components/registry/apex/inc/RegistryBase.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorTlm.hpp"
 
 #include "src/system/core/infrastructure/system_component/posix/inc/SupportComponentBase.hpp"
@@ -184,6 +185,28 @@ protected:
 
   [[nodiscard]] std::uint8_t doInit() noexcept override;
 
+public:
+  /**
+   * @brief Wire the registry for cross-component data reads.
+   *
+   * Optional: without it the host-requirements correlation is skipped.
+   * The monitor reads only PUBLIC registered data discovered by the
+   * conventional record name -- the same surface any user-built
+   * support component gets; no publisher identities are known here.
+   */
+  void setRegistry(registry::RegistryBase* reg) noexcept { registry_ = reg; }
+
+private:
+  /**
+   * @brief Correlate host posture against every published
+   *        host-requirements record; logs one PASS/WARN section per
+   *        publisher. Runs once, on the first telemetry pass (the
+   *        registry is frozen by then). Publishers are discovered by
+   *        the conventional record name -- the monitor knows no
+   *        component identities.
+   */
+  void assessHostRequirements() noexcept;
+
 private:
   /* ----------------------------- Init Helpers ----------------------------- */
 
@@ -232,6 +255,14 @@ private:
 
   /// Health snapshot for INSPECT OUTPUT readback (populated on each telemetry cycle).
   SysMonHealthTlm healthTlm_{};
+
+  /* ----------------------------- Host Requirements ----------------------------- */
+
+  registry::RegistryBase* registry_{nullptr}; ///< Optional; wired by the executive.
+  bool postureAssessed_{false};               ///< One-shot latch.
+  bool rtProbeGranted_{false};                ///< Host granted a FIFO test thread.
+  int rtProbeErrno_{0};                       ///< errno from the denied probe.
+  long rlimitRtPrio_{0};                      ///< RLIMIT_RTPRIO soft limit at init.
 };
 
 } // namespace support

@@ -88,6 +88,8 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) n
   // Create TaskEntry (scheduler owns this)
   TaskEntry entry{};
   entry.task = &task;
+  entry.periodNs =
+      ffreq_ > 0U ? (static_cast<std::uint64_t>(PERIOD_TPT) * 1'000'000'000ULL) / ffreq_ : 0ULL;
   entry.config = config;
   entry.holdCtr = 0;
 
@@ -221,6 +223,232 @@ SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
   }
 
   return replaced;
+}
+
+/* ----------------------------- populateRequirementsTlm ----------------------------- */
+
+void SchedulerBase::populateRequirementsTlm() noexcept {
+  requirementsTlm_ = SchedulerRequirementsTlm{};
+  requirementsTlm_.fundamentalFreqHz = ffreq_;
+  requirementsTlm_.taskCount = static_cast<std::uint16_t>(entries_.size());
+
+  std::size_t groups = 0;
+  {
+    std::vector<const std::atomic<int>*> seen;
+    for (const auto& e : entries_) {
+      if (e.isSequenced() && std::find(seen.begin(), seen.end(), e.seqCounter) == seen.end()) {
+        seen.push_back(e.seqCounter);
+      }
+    }
+    groups = seen.size();
+  }
+  requirementsTlm_.seqGroupCount = static_cast<std::uint8_t>(groups);
+
+  const auto ROWS = poolRequirements();
+  std::size_t n = 0;
+  for (const auto& row : ROWS) {
+    if (n >= REQUIREMENTS_POOL_CAP) {
+      break;
+    }
+    requirementsTlm_.pools[n] = row;
+    ++n;
+  }
+  requirementsTlm_.poolCount = static_cast<std::uint8_t>(n);
+
+  // Mirror into the generic infrastructure record: assessors discover
+  // this by conventional name + shape via the registry, with no
+  // knowledge of the scheduler.
+  hostRequirements_ = system_component::HostRequirements{};
+  hostRequirements_.rateHz = ffreq_;
+  hostRequirements_.taskCount = static_cast<std::uint16_t>(entries_.size());
+  std::size_t hr = 0;
+  for (const auto& row : ROWS) {
+    if (hr >= system_component::HOST_REQUIREMENTS_ROW_CAP) {
+      break;
+    }
+    auto& g = hostRequirements_.rows[hr];
+    g.groupId = row.poolId;
+    g.policy = row.policy;
+    g.priority = row.priority;
+    g.threads = row.workers;
+    g.affinityMask = row.affinityMask;
+    ++hr;
+  }
+  hostRequirements_.rowCount = static_cast<std::uint8_t>(hr);
+}
+
+/* ----------------------------- runTaskCensus ----------------------------- */
+
+bool SchedulerBase::runTaskCensus(std::uint8_t repeats) noexcept {
+  if (tickCount_ > 0) {
+    if (auto* log = componentLog()) {
+      log->warning(label(), 0, "task census refused: ticks have already executed");
+    }
+    return false;
+  }
+
+  const auto NOW_US = []() noexcept {
+    return std::chrono::duration_cast<std::chrono::microseconds>(
+               std::chrono::steady_clock::now().time_since_epoch())
+        .count();
+  };
+
+  censusTlm_ = SchedulerCensusTlm{};
+  std::size_t row = 0;
+  for (auto& entry : entries_) {
+    if (entry.task == nullptr) {
+      continue;
+    }
+    if (row >= TASK_STATS_TLM_CAP) {
+      censusTlm_.truncated = 1;
+      break;
+    }
+    auto& r = censusTlm_.rows[row];
+    r.fullUid = entry.fullUid;
+    r.taskUid = entry.taskUid;
+    r.budgetUs = static_cast<std::uint32_t>(entry.periodNs / 1000ULL);
+
+    const auto T0 = NOW_US();
+    (void)entry.task->execute();
+    const auto T1 = NOW_US();
+    r.firstUs = static_cast<std::uint32_t>(T1 - T0);
+
+    std::uint32_t steady = r.firstUs;
+    for (std::uint8_t rep = 0; rep < repeats; ++rep) {
+      const auto A = NOW_US();
+      (void)entry.task->execute();
+      const auto B = NOW_US();
+      const auto US = static_cast<std::uint32_t>(B - A);
+      steady = US < steady ? US : steady;
+    }
+    r.steadyUs = steady;
+
+    if (r.budgetUs != 0 && r.steadyUs > r.budgetUs) {
+      r.verdict = 2;
+    } else if (r.budgetUs != 0 && r.firstUs > r.budgetUs) {
+      r.verdict = 1;
+    }
+    if (r.verdict > censusTlm_.overall) {
+      censusTlm_.overall = r.verdict;
+    }
+    ++row;
+  }
+  censusTlm_.taskCount = static_cast<std::uint16_t>(row);
+
+  if (auto* log = componentLog()) {
+    const auto NAME = [](std::uint8_t v) noexcept {
+      return v == 0 ? "PASS" : v == 1 ? "WARN" : "FAIL";
+    };
+    log->info(label(), "========== PREFLIGHT: TASK CENSUS ==========");
+    for (std::size_t i = 0; i < censusTlm_.taskCount; ++i) {
+      const auto& r = censusTlm_.rows[i];
+      log->info(label(), fmt::format("[{}] {:#06x}:{} first={} us steady={} us budget={} us",
+                                     NAME(r.verdict), r.fullUid, r.taskUid, r.firstUs, r.steadyUs,
+                                     r.budgetUs));
+    }
+    log->info(label(),
+              fmt::format("census verdict: {} ({} task(s){})", NAME(censusTlm_.overall),
+                          censusTlm_.taskCount, censusTlm_.truncated != 0 ? ", truncated" : ""));
+    log->info(label(), "============================================");
+  }
+  return true;
+}
+
+/* ----------------------------- inFlightSummary ----------------------------- */
+
+std::string SchedulerBase::inFlightSummary(std::size_t cap) const noexcept {
+  std::string out;
+  std::size_t listed = 0;
+  for (const auto& entry : entries_) {
+    if (!entry.stillRunning()) {
+      continue;
+    }
+    if (listed == cap) {
+      out += ", ...";
+      break;
+    }
+    if (!out.empty()) {
+      out += ", ";
+    }
+    out += entry.componentName != nullptr ? entry.componentName : "?";
+    out += ":";
+    out += std::to_string(entry.taskUid);
+    ++listed;
+  }
+  return out.empty() ? "none" : out;
+}
+
+/* ----------------------------- populateTaskStatsTlm ----------------------------- */
+
+void SchedulerBase::populateTaskStatsTlm() noexcept {
+  const auto SAT16 = [](std::uint32_t v) noexcept {
+    return static_cast<std::uint16_t>(v > 0xFFFFU ? 0xFFFFU : v);
+  };
+
+  std::size_t row = 0;
+  for (const auto& entry : entries_) {
+    if (row >= TASK_STATS_TLM_CAP) {
+      taskStatsTlm_.truncated = 1;
+      break;
+    }
+    if (!entry.stats) {
+      continue;
+    }
+    auto& r = taskStatsTlm_.rows[row];
+    r.fullUid = entry.fullUid;
+    r.taskUid = entry.taskUid;
+    r.lastRuntimeUs16 = SAT16(entry.stats->lastRuntimeUs.load(std::memory_order_relaxed));
+    r.maxRuntimeUs = entry.stats->maxRuntimeUs.load(std::memory_order_relaxed);
+    r.overruns16 = SAT16(entry.stats->overruns.load(std::memory_order_relaxed));
+    r.violations16 = SAT16(entry.stats->deadlineViolations.load(std::memory_order_relaxed));
+    ++row;
+  }
+  taskStatsTlm_.taskCount = static_cast<std::uint16_t>(row);
+}
+
+/* ----------------------------- runTablePreflight ----------------------------- */
+
+void SchedulerBase::runTablePreflight() noexcept {
+  tablePreflight_ = analyzeTaskTable(entries_, schedule_, poolWorkerCounts());
+  tablePreflightPending_ = true;
+  logTablePreflight();
+}
+
+void SchedulerBase::logTablePreflight() noexcept {
+  auto* log = componentLog();
+  if (log == nullptr || !tablePreflightPending_) {
+    return;
+  }
+  tablePreflightPending_ = false;
+
+  const auto NAME = [](PreflightVerdict v) noexcept {
+    return v == PreflightVerdict::PASS ? "PASS" : v == PreflightVerdict::WARN ? "WARN" : "FAIL";
+  };
+  const auto& P = tablePreflight_;
+
+  log->info(label(), "========== PREFLIGHT: TASK TABLE ==========");
+  log->info(label(), fmt::format("[{}] pool references: {} task(s) on missing pools",
+                                 NAME(P.poolRefs), P.missingPoolTasks));
+  log->info(label(), fmt::format("[{}] dispatch burst: worst tick {} loads pool {} with {} task(s) "
+                                 "over {} worker(s)",
+                                 NAME(P.dispatchBurst), P.worstBurstTick, P.worstBurstPool,
+                                 P.worstBurstTasks, P.worstBurstWorkers));
+  log->info(label(), fmt::format("[{}] chain dispatch order: {} group(s) with a later phase "
+                                 "dispatched ahead of an earlier one",
+                                 NAME(P.chainOrder), P.chainOrderViolations));
+  log->info(label(), fmt::format("[{}] chain shape: {} group(s) with waiters >= workers, "
+                                 "{} group(s) mixing rates/offsets",
+                                 NAME(P.chainShape), P.chainsOverWorkers, P.mixedRateChains));
+  const char* OVERALL = NAME(P.overall());
+  if (P.overall() == PreflightVerdict::FAIL) {
+    log->error(label(), 0,
+               fmt::format("preflight verdict: {} -- the table describes "
+                           "behavior the runtime cannot honor as written",
+                           OVERALL));
+  } else {
+    log->info(label(), fmt::format("preflight verdict: {}", OVERALL));
+  }
+  log->info(label(), "===========================================");
 }
 
 /* ----------------------------- initSchedulerLog ----------------------------- */
@@ -620,6 +848,10 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
                                         skippedComponents, skippedTasks));
   }
 
+  // Static feasibility verdicts for the table just loaded.
+  runTablePreflight();
+  populateRequirementsTlm();
+
   // Keep full TPRM binary for INSPECT readback and register with registry
   tprmRaw_ = tprmData;
   registerData(system_core::data::DataCategory::TUNABLE_PARAM, "tunableParams", tprmRaw_.data(),
@@ -627,6 +859,21 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
 
   // Register health snapshot as OUTPUT for INSPECT readback.
   // Populated on each GET_HEALTH call.
+  registerData(system_core::data::DataCategory::OUTPUT, system_component::HOST_REQUIREMENTS_NAME,
+               &hostRequirements_, sizeof(system_component::HostRequirements));
+
+  registerData(system_core::data::DataCategory::OUTPUT, "tablePreflight", &tablePreflight_,
+               sizeof(TablePreflight));
+
+  registerData(system_core::data::DataCategory::OUTPUT, "requirements", &requirementsTlm_,
+               sizeof(SchedulerRequirementsTlm));
+
+  registerData(system_core::data::DataCategory::OUTPUT, "taskCensus", &censusTlm_,
+               sizeof(SchedulerCensusTlm));
+
+  registerData(system_core::data::DataCategory::OUTPUT, "taskStats", &taskStatsTlm_,
+               sizeof(SchedulerTaskStatsTlm));
+
   registerData(system_core::data::DataCategory::OUTPUT, "health", &healthTlm_,
                sizeof(SchedulerHealthTlm));
 
@@ -785,6 +1032,46 @@ std::uint8_t SchedulerBase::handleCommand(std::uint16_t opcode,
     healthTlm_.violationsThisTick = static_cast<std::uint32_t>(periodViolationsThisTick());
     response.resize(sizeof(healthTlm_));
     std::memcpy(response.data(), &healthTlm_, sizeof(healthTlm_));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::RUN_PREFLIGHT): {
+    runTablePreflight();
+    response.resize(sizeof(tablePreflight_));
+    std::memcpy(response.data(), &tablePreflight_, sizeof(tablePreflight_));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::GET_PREFLIGHT): {
+    response.resize(sizeof(tablePreflight_));
+    std::memcpy(response.data(), &tablePreflight_, sizeof(tablePreflight_));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::GET_REQUIREMENTS): {
+    populateRequirementsTlm();
+    response.resize(sizeof(requirementsTlm_));
+    std::memcpy(response.data(), &requirementsTlm_, sizeof(requirementsTlm_));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::RUN_TASK_CENSUS): {
+    const std::uint8_t REPEATS = payload.size() >= 1 ? payload[0] : static_cast<std::uint8_t>(3U);
+    const bool RAN = runTaskCensus(REPEATS);
+    response.push_back(RAN ? 1U : 0U);
+    return static_cast<std::uint8_t>(RAN ? CommandResult::SUCCESS : CommandResult::EXEC_FAILED);
+  }
+
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::GET_TASK_CENSUS): {
+    response.resize(sizeof(censusTlm_));
+    std::memcpy(response.data(), &censusTlm_, sizeof(censusTlm_));
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case static_cast<std::uint16_t>(SchedulerTlmOpcode::GET_TASK_STATS): {
+    populateTaskStatsTlm();
+    response.resize(sizeof(taskStatsTlm_));
+    std::memcpy(response.data(), &taskStatsTlm_, sizeof(taskStatsTlm_));
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 
