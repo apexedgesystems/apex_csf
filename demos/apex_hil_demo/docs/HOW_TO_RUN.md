@@ -214,6 +214,29 @@ Key checks:
 - STM32 driver: tx/rx counts, 0 CRC errors
 - Comparator: divergence should converge to near zero
 
+## Local Run (Dev Convenience Only)
+
+The demo also runs on the dev machine without the Pi or STM32, for
+iterating on the C2 surface, data layouts, and sequencing logic.
+**This is not verification** — the demo's V&V asset is the Pi + STM32
+rig, and any change is proven by the full deployment checkout above.
+
+Use the 1 kHz master (the same one the deployment stages as the
+active-bank master; `master.tprm` schedules at 100 Hz and fails the
+clock-rate assertions), and pass `--no-stm32` to skip the UART link
+assertions that need the physical rig:
+
+```bash
+TPRM=build/hosted-x86_64-debug/demos/apex_hil_demo/exec/tprm
+./build/hosted-x86_64-debug/bin/ApexHilDemo \
+    --config $TPRM/master_1khz.tprm --fs-root /tmp/hil_fs &
+
+PYTHONPATH=tools/py/src python3 demos/apex_hil_demo/scripts/checkout.py \
+    --host localhost --no-stm32
+```
+
+All non-skipped assertions must pass (0 failures).
+
 ## Checkout Test Coverage
 
 The checkout script (`scripts/checkout.py`) runs 16 tests with 60 assertions:
