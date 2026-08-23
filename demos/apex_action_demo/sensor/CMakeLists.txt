@@ -16,6 +16,7 @@ apex_add_interface_library(
   ${LIB_NAME}
   INC
   "${INC_DIR}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/.auto"
   DEPS_INTERFACE
   system_core_system_component
   utilities_data_proxy

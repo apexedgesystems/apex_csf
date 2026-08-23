@@ -4,10 +4,49 @@
 # runtime state for redundant-channel divergence detection.
 
 component = "HilComparator"
+namespace = "appsim::support"
 
 [structs]
 # Tunable parameters (TPRM-configurable at startup)
-ComparatorTunableParams = { category = "TUNABLE_PARAM", header = "inc/HilComparatorData.hpp" }
+ComparatorTunableParams = { category = "TUNABLE_PARAM" }
 
 # Runtime state (registered with ApexRegistry)
-ComparatorState = { category = "STATE", header = "inc/HilComparatorData.hpp" }
+ComparatorState = { category = "STATE" }
+
+[[fields.ComparatorTunableParams]]
+name = "warnThreshold"
+type = "float"
+size = 4
+default = 0.1
+doc = "Divergence magnitude warning threshold [N]."
+
+[[fields.ComparatorTunableParams]]
+name = "reserved"
+type = "float"
+size = 4
+default = 0.0
+doc = "Reserved for alignment."
+
+[[fields.ComparatorState]]
+name = "maxDivergence"
+type = "float"
+size = 4
+doc = "Maximum observed divergence [N]."
+
+[[fields.ComparatorState]]
+name = "compareCount"
+type = "uint"
+size = 4
+doc = "Total comparisons executed."
+
+[[fields.ComparatorState]]
+name = "warnCount"
+type = "uint"
+size = 4
+doc = "Threshold warnings issued."
+
+[[fields.ComparatorState]]
+name = "reserved"
+type = "uint"
+size = 4
+doc = "Reserved for alignment."

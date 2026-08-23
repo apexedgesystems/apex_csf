@@ -4,59 +4,24 @@
  * @file SensorData.hpp
  * @brief Data structures for the SensorModel component.
  *
- * Simple sensor simulation with a temperature ramp and limit detection.
- * Provides a predictable output for action engine watchpoint testing.
- * Includes ADL endianSwap for EndiannessProxy integration.
+ * The base structs (tunables, state, output, health telemetry) are
+ * spec-defined in sensor_data.toml and generated into .auto/ -- this
+ * header carries only the hand-crafted pieces: the composite
+ * native+swapped INSPECT block and the ADL endianSwap the
+ * EndiannessProxy finds.
  */
 
 #include "src/utilities/data_proxy/inc/EndiannessProxy.hpp"
+
+#include "SensorHealthTlm_auto.hpp"
+#include "SensorOutput_auto.hpp"
+#include "SensorState_auto.hpp"
+#include "SensorTunableParams_auto.hpp"
 
 #include <cstdint>
 
 namespace appsim {
 namespace sensor {
-
-/* ----------------------------- SensorTunableParams ----------------------------- */
-
-/**
- * @struct SensorTunableParams
- * @brief TPRM-configurable sensor parameters.
- */
-struct SensorTunableParams {
-  float rampRate{0.5F};     ///< Temperature increase per step [deg/step].
-  float initialTemp{20.0F}; ///< Starting temperature [deg].
-  float maxTemp{120.0F};    ///< Wrap-around temperature (resets to initial).
-};
-
-static_assert(sizeof(SensorTunableParams) == 12, "SensorTunableParams size mismatch");
-
-/* ----------------------------- SensorState ----------------------------- */
-
-/**
- * @struct SensorState
- * @brief Runtime state for the sensor model.
- */
-struct SensorState {
-  std::uint32_t stepCount{0}; ///< Total step invocations.
-  std::uint32_t wrapCount{0}; ///< Number of temperature wrap-arounds.
-};
-
-static_assert(sizeof(SensorState) == 8, "SensorState size mismatch");
-
-/* ----------------------------- SensorOutput ----------------------------- */
-
-/**
- * @struct SensorOutput
- * @brief Published output for registry access and watchpoint monitoring.
- */
-struct SensorOutput {
-  float temperature{0.0F};     ///< Current temperature reading [deg].
-  float temperatureRate{0.0F}; ///< Rate of change [deg/step].
-  std::uint8_t overtemp{0};    ///< 1 if temperature > 100.0 (threshold).
-  std::uint8_t reserved[3]{};  ///< Alignment padding.
-};
-
-static_assert(sizeof(SensorOutput) == 12, "SensorOutput size mismatch");
 
 /**
  * @struct SensorOutputWithSwap
@@ -84,23 +49,6 @@ inline void endianSwap(const SensorOutput& in, SensorOutput& out) noexcept {
   out.reserved[1] = in.reserved[1];
   out.reserved[2] = in.reserved[2];
 }
-
-/* ----------------------------- SensorHealthTlm ----------------------------- */
-
-/**
- * @struct SensorHealthTlm
- * @brief Health telemetry returned by GET_STATS (opcode 0x0100).
- */
-struct __attribute__((packed)) SensorHealthTlm {
-  float temperature{0.0F};
-  float rampRate{0.0F};
-  std::uint32_t stepCount{0};
-  std::uint32_t wrapCount{0};
-  std::uint8_t overtemp{0};
-  std::uint8_t reserved[3]{};
-};
-
-static_assert(sizeof(SensorHealthTlm) == 20, "SensorHealthTlm size mismatch");
 
 } // namespace sensor
 } // namespace appsim

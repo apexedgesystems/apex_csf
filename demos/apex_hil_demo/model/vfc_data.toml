@@ -4,7 +4,32 @@
 # Shares the model/ directory with HilPlantModel.
 
 component = "VirtualFlightCtrl"
+namespace = "appsim::model"
 
 [structs]
 # Runtime state (registered with ApexRegistry)
-VfcState = { category = "STATE", header = "inc/VirtualFlightCtrlData.hpp" }
+VfcState = { category = "STATE" }
+
+[[fields.VfcState]]
+name = "rxCount"
+type = "uint"
+size = 4
+doc = "Valid VehicleState frames received."
+
+[[fields.VfcState]]
+name = "txCount"
+type = "uint"
+size = 4
+doc = "ControlCmd frames sent."
+
+[[fields.VfcState]]
+name = "crcErrors"
+type = "uint"
+size = 4
+doc = "CRC validation failures."
+
+[[fields.VfcState]]
+name = "pollCount"
+type = "uint"
+size = 4
+doc = "Transport poll iterations."
