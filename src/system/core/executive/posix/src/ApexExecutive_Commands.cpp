@@ -60,6 +60,8 @@ const ExecutiveHealthPacket& ApexExecutive::getHealthPacket() const noexcept {
   }
 
   healthPacket_.commandsProcessed = ioState_.commandsProcessed.load(std::memory_order_acquire);
+  healthPacket_.resyncDroppedTicks = static_cast<std::uint32_t>(
+      clockState_.wallResyncDroppedTicks.load(std::memory_order_acquire));
 
   return healthPacket_;
 }

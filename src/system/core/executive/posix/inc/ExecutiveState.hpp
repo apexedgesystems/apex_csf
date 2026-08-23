@@ -194,8 +194,8 @@ struct ExecutiveHealthPacket {
   // External I/O stats (8 bytes)
   std::uint64_t commandsProcessed{0}; ///< Commands handled.
 
-  // Reserved for future use (4 bytes)
-  std::uint32_t reserved{0};
+  // Clock resync accounting (4 bytes)
+  std::uint32_t resyncDroppedTicks{0}; ///< Ticks dropped by clock grid resyncs (truncated u32).
 
   // Flag bit definitions
   static constexpr std::uint8_t FLAG_CLOCK_RUNNING = 0x01;      ///< Clock is running.
