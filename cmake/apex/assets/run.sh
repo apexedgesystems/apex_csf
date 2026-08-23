@@ -79,7 +79,10 @@ if $HAS_SEP; then
   TARGET_BANK="$(_bank_dir "$TARGET_DIR")"
   TARGET_EXEC="$(_the_exec "$TARGET_BANK")"
 
-  child_args=(--fs-root "$TARGET_DIR")
+  # A deployment is a durable installation: its directory IS the fs-root,
+  # so the executive's archive-and-wipe shutdown cleanup would delete the
+  # banks and this launcher. Skip it; explicit args can re-enable archiving.
+  child_args=(--fs-root "$TARGET_DIR" --skip-cleanup)
   if [[ -f "$TARGET_BANK/tprm/master.tprm" ]]; then
     child_args+=(--config "$TARGET_BANK/tprm/master.tprm")
   fi
@@ -87,7 +90,9 @@ if $HAS_SEP; then
 fi
 
 # Direct: run this deployment's executive with this directory as its fs-root.
-direct_args=(--fs-root "$SCRIPT_DIR")
+# --skip-cleanup for the same reason as above: shutdown must not wipe the
+# deployment that launched it.
+direct_args=(--fs-root "$SCRIPT_DIR" --skip-cleanup)
 if [[ -f "$LOCAL_BANK/tprm/master.tprm" ]]; then
   direct_args+=(--config "$LOCAL_BANK/tprm/master.tprm")
 fi
