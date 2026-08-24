@@ -10,6 +10,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/StabilityDerivativeAero_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/AeroModel_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/TransportDutchRollSim_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TransportShortPeriodSpiralSim_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/TransportPhugoidSim_uTest.cpp"
 )
 
