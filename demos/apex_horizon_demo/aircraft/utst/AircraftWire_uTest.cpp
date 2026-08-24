@@ -92,6 +92,19 @@ CelestialBodyTunables analyticEarth() {
 
 /** @test A rudder doublet plays +/- over its window on the wire and
  *  self-clears; the surfaces return to the commanded (zero) baseline. */
+TEST(AircraftWire, CommandSnapshotLayoutIsFrozen) {
+  using appsim::aircraft::AircraftCommandSnapshot;
+  static_assert(sizeof(AircraftCommandSnapshot) == 16, "snapshot is 16 bytes on the wire");
+  static_assert(offsetof(AircraftCommandSnapshot, turbulence_enabled) == 0);
+  static_assert(offsetof(AircraftCommandSnapshot, gust_alleviation_enabled) == 1);
+  // ACFT/2: the two readback fields land in former reserved bytes --
+  // offsets are wire contract, frozen with the consumer.
+  static_assert(offsetof(AircraftCommandSnapshot, loop_enable_mask) == 2);
+  static_assert(offsetof(AircraftCommandSnapshot, active_excite_mode) == 3);
+  static_assert(offsetof(AircraftCommandSnapshot, cmd_count) == 8);
+  SUCCEED();
+}
+
 TEST(AircraftExcite, RudderDoubletPlaysAndClears) {
   CelestialBody earth;
   earth.tunables().get() = analyticEarth();

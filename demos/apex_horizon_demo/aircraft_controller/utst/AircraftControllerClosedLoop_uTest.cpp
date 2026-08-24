@@ -450,3 +450,135 @@ TEST(AircraftControllerModes, BootConditionsReachTrim) {
   }
   EXPECT_LT(std::fabs(TLM.elevator_rad), 0.05); // settled near trim
 }
+
+/* -------------------- ACFT/2 command surface (0x0103/0x0104) -------------------- */
+
+namespace {
+
+/// Send a 1-byte command; returns the CommandResult code.
+std::uint8_t sendByteCmd(Aircraft& a, std::uint16_t opcode, std::uint8_t value,
+                         std::vector<std::uint8_t>* respOut = nullptr) {
+  std::uint8_t storage = value;
+  apex::compat::rospan<std::uint8_t> payload(&storage, 1);
+  std::vector<std::uint8_t> resp;
+  const std::uint8_t RC = a.handleCommand(opcode, payload, resp);
+  if (respOut != nullptr) {
+    *respOut = resp;
+  }
+  return RC;
+}
+
+std::uint8_t queryLoopMask(Aircraft& a) {
+  std::vector<std::uint8_t> resp;
+  (void)sendByteCmd(a, 0x0102u, 0u, &resp); // GET_COMMAND_STATE ignores payload
+  return resp.at(2);                        // loop_enable_mask offset in the snapshot
+}
+
+} // namespace
+
+TEST(AircraftCommandSurface, LoopMaskCommandAdoptedNextControllerTick) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  Aircraft aircraft;
+  aircraft.setBody(&earth);
+  setTurbulence(aircraft, 0);
+  AircraftController controller;
+  controller.setAircraft(&aircraft);
+  configureTrimCruise(controller, aircraft);
+  aircraft.setControllerOutput(&controller.controllerOutput());
+
+  // Boot truth: all loops, from both sides' defaults.
+  EXPECT_EQ(queryLoopMask(aircraft), 0x3Fu);
+
+  // Drop the yaw damper (bit 5): accepted, adopted on the next tick.
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0103u, 0x1Fu), 0u);
+  tickOnce(controller, aircraft);
+  EXPECT_EQ(controller.loopEnableMask(), 0x1Fu);
+  EXPECT_EQ(queryLoopMask(aircraft), 0x1Fu);
+
+  // Unknown bits reject whole; the running mask is untouched.
+  EXPECT_NE(sendByteCmd(aircraft, 0x0103u, 0x40u), 0u);
+  tickOnce(controller, aircraft);
+  EXPECT_EQ(controller.loopEnableMask(), 0x1Fu);
+
+  // Restore all loops.
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0103u, 0x3Fu), 0u);
+  tickOnce(controller, aircraft);
+  EXPECT_EQ(controller.loopEnableMask(), 0x3Fu);
+}
+
+TEST(AircraftCommandSurface, ExciteArmsOnceAndReportsTruth) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  Aircraft aircraft;
+  aircraft.setBody(&earth);
+  setTurbulence(aircraft, 0);
+  AircraftController controller;
+  controller.setAircraft(&aircraft);
+  configureTrimCruise(controller, aircraft);
+  aircraft.setControllerOutput(&controller.controllerOutput());
+
+  // Unknown mode ids reject.
+  EXPECT_NE(sendByteCmd(aircraft, 0x0104u, 0u), 0u);
+  EXPECT_NE(sendByteCmd(aircraft, 0x0104u, 5u), 0u);
+
+  // Arm the rudder doublet; snapshot reports it armed.
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0104u, 1u), 0u);
+  {
+    std::vector<std::uint8_t> resp;
+    (void)sendByteCmd(aircraft, 0x0102u, 0u, &resp);
+    EXPECT_EQ(resp.at(3), 1u); // active_excite_mode
+  }
+
+  // A second injection while armed is rejected -- the trace window
+  // stays clean -- and the armed mode is unchanged.
+  EXPECT_NE(sendByteCmd(aircraft, 0x0104u, 3u), 0u);
+  EXPECT_EQ(static_cast<std::uint8_t>(aircraft.activeExcitation()), 1u);
+
+  // Play the doublet out (1.0 s = 25 controller ticks at 100 Hz plant);
+  // it self-clears and the snapshot returns to none, after which a new
+  // excitation arms cleanly.
+  tickN(controller, aircraft, 30);
+  {
+    std::vector<std::uint8_t> resp;
+    (void)sendByteCmd(aircraft, 0x0102u, 0u, &resp);
+    EXPECT_EQ(resp.at(3), 0u);
+  }
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0104u, 3u), 0u);
+}
+
+TEST(AircraftCommandSurface, WireExcitationCapturesModeTrace) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  Aircraft aircraft;
+  aircraft.setBody(&earth);
+  setTurbulence(aircraft, 0);
+  AircraftController controller;
+  controller.setAircraft(&aircraft);
+  configureTrimCruise(controller, aircraft);
+  aircraft.setControllerOutput(&controller.controllerOutput());
+
+  // Wire-armed excitation opens the trace window: 20 Hz capture means
+  // one sample per 5 plant ticks. 2 s of flight = 40 samples, but the
+  // bounded buffer holds 64 without a telemetry drain, so all pend.
+  EXPECT_EQ(aircraft.modeTracePending(), 0u);
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0104u, 1u), 0u);
+  tickN(controller, aircraft, 50 / 4); // ~0.5 s
+  const std::size_t AFTER_HALF_S = aircraft.modeTracePending();
+  EXPECT_GE(AFTER_HALF_S, 8u);
+  EXPECT_LE(AFTER_HALF_S, 14u);
+
+  // Suite-armed excitation (direct startExcitation) does NOT trace:
+  // the trace is a wire-window instrument, not a physics side effect.
+  Aircraft bare;
+  bare.setBody(&earth);
+  setTurbulence(bare, 0);
+  bare.startExcitation(Aircraft::ExciteMode::RUDDER_DOUBLET);
+  for (int i = 0; i < 100; ++i) {
+    (void)bare.aircraftStep();
+  }
+  EXPECT_EQ(bare.modeTracePending(), 0u);
+}
