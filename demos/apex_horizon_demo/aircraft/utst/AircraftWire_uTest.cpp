@@ -1,6 +1,6 @@
 /**
  * @file AircraftWire_uTest.cpp
- * @brief Wire-layout pin for the ACFT/1 frame + mode-excitation coverage.
+ * @brief Wire-layout pin for the ACFT frame + mode-excitation coverage.
  *
  * The 256-byte AircraftTelemetry IS the wire contract: the consumer
  * side byte-diffs its contract header against this layout at pairing.
@@ -34,9 +34,10 @@ using sim::environment::celestial_body::CelestialBodyTunables;
 
 /* ----------------------------- Wire layout ----------------------------- */
 
-/** @test The ACFT/1 wire layout is frozen: 256 bytes, every offset pinned. */
+/** @test The ACFT frame layout is frozen (unchanged since v1): 256 bytes,
+ *  every offset pinned. ACFT/2 revs the command surface, not the frame. */
 TEST(AircraftWire, FrameLayoutIsFrozen) {
-  static_assert(sizeof(AircraftTelemetry) == 256, "ACFT/1 frame is exactly 256 bytes");
+  static_assert(sizeof(AircraftTelemetry) == 256, "ACFT frame is exactly 256 bytes");
 
   EXPECT_EQ(offsetof(AircraftTelemetry, timestamp_ns), 0u);
   EXPECT_EQ(offsetof(AircraftTelemetry, tick), 8u);

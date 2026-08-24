@@ -3,7 +3,7 @@
 The third producer demo over the shared-memory ring bridge: a
 four-engine wide-body transport flies full 6DOF at 50 Hz under its
 six-loop autopilot, through a layered standard atmosphere with Dryden
-turbulence, while a ShmRingBridge carries the ACFT/1 link on
+turbulence, while a ShmRingBridge carries the ACFT/2 link on
 `/horizon_aircraft` — 256-byte AircraftFrames out, APROTO commands in
 (turbulence + gust-alleviation toggles). Runs headless just as happily
 — with no consumer attached the ring back-pressures, command ingress
@@ -25,9 +25,9 @@ docker compose run --rm cuda-rt \
 | Component          | Source                                  | Role                                        |
 | ------------------ | --------------------------------------- | ------------------------------------------- |
 | CelestialBody      | src/sim/environment/celestial_body      | J2 gravity + ellipsoid + USSA76 atmosphere  |
-| Aircraft           | ../aircraft                             | 6DOF transport, ACFT/1 frame, drive toggles |
+| Aircraft           | ../aircraft                             | 6DOF transport, ACFT frame, drive toggles |
 | AircraftController | ../aircraft_controller                  | six-loop autopilot, per-loop enables        |
-| ShmRingBridge      | src/system/core/support/shm_ring_bridge | ACFT/1 bidirectional link                   |
+| ShmRingBridge      | src/system/core/support/shm_ring_bridge | ACFT/2 bidirectional link                   |
 
 ## 3. TPRM
 
@@ -40,7 +40,7 @@ ahead of the bridge 50 Hz (prio 40); each component's step/telemetry
 pair shares its sequencing group so the 50 Hz tasks never race their
 own telemetry.
 
-## 4. Wire contract (ACFT/1)
+## 4. Wire contract (ACFT/2 — frame layout frozen since v1)
 
 Forward: 256-byte AircraftFrame, frozen — layout pinned field-by-field
 by static_asserts in the aircraft unit suite; the consumer byte-diffs

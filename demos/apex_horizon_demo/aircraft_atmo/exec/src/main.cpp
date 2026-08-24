@@ -5,7 +5,7 @@
  * Spawns the executive, registers the atmosphere-only Earth, the
  * 6DOF Aircraft, its six-loop AircraftController, and the
  * ShmRingBridge, then runs the 50 Hz loop: the aircraft flies closed
- * loop at cruise and the bridge carries the ACFT/1 link on
+ * loop at cruise and the bridge carries the ACFT/2 link on
  * /horizon_aircraft — 256-byte frames out, APROTO commands in. Runs
  * headless just as happily — with no consumer attached the bridge
  * back-pressures, command ingress stays live, and the sim is
