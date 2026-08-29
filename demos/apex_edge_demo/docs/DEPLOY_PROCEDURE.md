@@ -4,8 +4,8 @@ End-to-end build, test, release, and deploy for NVIDIA Thor.
 
 ## Prerequisites
 
-- Thor: `kalex@192.168.1.40` (14-core aarch64, NVIDIA Thor GPU, 122 GB RAM)
-- SSH key auth configured (`ssh-copy-id kalex@192.168.1.40`)
+- Thor: `kalex@192.168.1.41` (14-core aarch64, NVIDIA Thor GPU, 122 GB RAM)
+- SSH key auth configured (`ssh-copy-id kalex@192.168.1.41`)
 - Docker Compose environment configured on dev PC
 
 TPRM masters are packed by the build from `tprm/tprm.manifest` (target
@@ -31,20 +31,20 @@ docker compose run --rm -T dev-cuda bash -c \
 make release APP=ApexEdgeDemo
 
 # 5. Clean target on Thor
-ssh kalex@192.168.1.40 'rm -rf ~/ApexEdgeDemo && mkdir ~/ApexEdgeDemo'
+ssh kalex@192.168.1.41 'rm -rf ~/ApexEdgeDemo && mkdir ~/ApexEdgeDemo'
 
 # 6. Deploy package (bank_a/ + run.sh)
-rsync -a build/release/ApexEdgeDemo/jetson/ kalex@192.168.1.40:~/ApexEdgeDemo/
+rsync -a build/release/ApexEdgeDemo/jetson/ kalex@192.168.1.41:~/ApexEdgeDemo/
 
 # 7. Run ApexEdgeDemo (15 seconds, headless)
 #    run.sh auto-adds --config bank_a/tprm/master.tprm and --fs-root .
 #    CRITICAL: </dev/null prevents stdin CLI reader from getting garbage
-ssh kalex@192.168.1.40 'cd ~/ApexEdgeDemo && \
+ssh kalex@192.168.1.41 'cd ~/ApexEdgeDemo && \
   rm -rf logs tlm db swap_history active_bank bank_b system.log profile.log heartbeat.csv .apex_fs && \
   timeout 45 ./run.sh --shutdown-after 15 --skip-cleanup </dev/null'
 
 # 8. Verify results
-ssh kalex@192.168.1.40 'cd ~/ApexEdgeDemo && \
+ssh kalex@192.168.1.41 'cd ~/ApexEdgeDemo && \
   echo "=== STATS ===" && \
   grep -E "cycles|overrun|completion|utilization|Runtime" system.log | tail -8 && \
   echo && echo "=== GPU MODELS ===" && \
@@ -56,15 +56,15 @@ ssh kalex@192.168.1.40 'cd ~/ApexEdgeDemo && \
   grep -E "ERROR|FATAL" system.log | head -5'
 
 # 9. Long-running soak test (run in background)
-ssh kalex@192.168.1.40 'cd ~/ApexEdgeDemo && \
+ssh kalex@192.168.1.41 'cd ~/ApexEdgeDemo && \
   rm -rf logs tlm db swap_history active_bank bank_b system.log profile.log heartbeat.csv .apex_fs && \
   nohup ./run.sh --skip-cleanup </dev/null >stdout.log 2>&1 &'
 
 # 10. Stop soak test
-ssh kalex@192.168.1.40 'kill $(pgrep ApexEdgeDemo)'
+ssh kalex@192.168.1.41 'kill $(pgrep ApexEdgeDemo)'
 
 # 11. Analyze soak test results
-python3 demos/apex_edge_demo/scripts/analyze_soak.py kalex@192.168.1.40:~/ApexEdgeDemo/
+python3 demos/apex_edge_demo/scripts/analyze_soak.py kalex@192.168.1.41:~/ApexEdgeDemo/
 ```
 
 ## TPRM Configuration

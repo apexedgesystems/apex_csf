@@ -98,7 +98,11 @@ void SchedulerMultiThread::initPools(std::vector<PoolSpec> specs) noexcept {
     const std::size_t NUM_THREADS =
         spec.numThreads > 0 ? spec.numThreads : std::thread::hardware_concurrency();
 
-    pools_.emplace_back(std::make_unique<apex::concurrency::ThreadPool>(NUM_THREADS, spec.config));
+    // Queue capacity bounds pending dispatches per pool. The preflight burst
+    // check warns orders of magnitude before this bound; hitting it means the
+    // system has already failed to drain and the enqueue is dropped loudly.
+    pools_.emplace_back(std::make_unique<apex::concurrency::ThreadPoolLockFree>(
+        NUM_THREADS, POOL_QUEUE_CAPACITY, spec.config));
 
     // Each pool gets its own context pool (sized for its workers)
     ctxPools_.emplace_back(std::make_unique<TaskCtxPool>());
@@ -297,6 +301,11 @@ Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcep
     return OUT;
   }
 
+  // One clock read serves every dispatch this tick: the stats/deadline
+  // base is the tick's dispatch-decision time, so the producer path
+  // pays a single read regardless of table size.
+  const std::uint64_t DISPATCH_NS = apex::helpers::cpu::getMonotonicNs();
+
   // Enqueue all tasks that should run (frequency gate check)
   for (std::size_t idx : entryIndices) {
     TaskEntry& entry = entries_[idx];
@@ -337,7 +346,7 @@ Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcep
         //  - HARD_PERIOD_COMPLETE: Clock thread will FATAL, warning redundant
         //  - SOFT modes: Violations expected, count tracked for shutdown summary
       }
-      enqueueTask(&entry, tick);
+      enqueueTask(&entry, tick, DISPATCH_NS);
     }
   }
 
@@ -388,7 +397,12 @@ std::uint8_t SchedulerMultiThread::taskTrampoline(void* raw) noexcept {
   return rc;
 }
 
-void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick) noexcept {
+void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
+                                       std::uint64_t dispatchNs) noexcept {
+  // First drop and every interval-th after: surfaces sustained exhaustion
+  // without logging at tick rate from the dispatch path. Power of two so the
+  // modulo compiles to a mask; the totalDispatchDrops_ counter stays exact.
+  constexpr std::size_t DISPATCH_DROP_LOG_INTERVAL = 4096U;
   SchedulableTask* task = entry->task;
   std::uint8_t poolId = entry->config.poolId;
 
@@ -406,12 +420,6 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick) noe
   if (ctx == nullptr) {
     ++totalDispatchDrops_;
     auto* lg = componentLog();
-    // First drop and every DISPATCH_DROP_LOG_INTERVAL-th after: surfaces
-    // sustained exhaustion without logging at tick rate from the dispatch
-    // path. Power of two so the modulo compiles to a mask; at worst-case
-    // drop rates (every starved task, every period) this is roughly one
-    // line every few seconds. The totalDispatchDrops_ counter stays exact.
-    constexpr std::size_t DISPATCH_DROP_LOG_INTERVAL = 4096U;
     if (lg != nullptr &&
         (totalDispatchDrops_ == 1 || (totalDispatchDrops_ % DISPATCH_DROP_LOG_INTERVAL) == 0U)) {
       lg->error(label(), static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION),
@@ -423,12 +431,32 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick) noe
   }
 
   // Mark task as dispatched (for deadline tracking)
-  entry->markDispatched();
+  entry->markDispatched(dispatchNs);
 
   ctx->tick = tick;
   ctx->poolId = poolId;
   ctx->entry = entry; // Store entry for sequencing in trampoline
-  pools_[poolId]->enqueueTask(task->getLabel().data(), {&taskTrampoline, ctx});
+  const auto STATUS = pools_[poolId]->tryEnqueue(task->getLabel().data(), {&taskTrampoline, ctx});
+  if (STATUS != apex::concurrency::PoolStatus::SUCCESS) {
+    // Bounded ring rejected the dispatch (full ring = the pool stopped
+    // draining long before this; stopped pool = shutdown race). Undo the
+    // dispatch marks so deadline tracking stays truthful, and count it
+    // with the same drop accounting as context exhaustion.
+    ctxPools_[poolId]->release(ctx);
+    if (entry->isRunning) {
+      entry->isRunning->store(false, std::memory_order_release);
+    }
+    ++entry->skipCount;
+    ++totalDispatchDrops_;
+    auto* lg = componentLog();
+    if (lg != nullptr &&
+        (totalDispatchDrops_ == 1 || (totalDispatchDrops_ % DISPATCH_DROP_LOG_INTERVAL) == 0U)) {
+      lg->error(label(), static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION),
+                fmt::format("Dispatch dropped: task '{}' at tick {}, pool ring rejected "
+                            "(status {}, total drops: {})",
+                            task->getLabel(), tick, static_cast<int>(STATUS), totalDispatchDrops_));
+    }
+  }
 }
 
 } // namespace scheduler

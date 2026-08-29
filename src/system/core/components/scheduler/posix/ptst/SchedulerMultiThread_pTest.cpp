@@ -277,6 +277,8 @@ PERF_TEST(SchedulerMtPerf, ManyNoWork) {
               (result.callsPerSecond * N) / 1e3);
   std::printf("  Workers: %u\n", std::thread::hardware_concurrency());
   std::printf("  Expected: 5-20 us per-task (vs 2.7 ns ST)\n");
+
+  sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
 
 /* ----------------------------- Many Tasks Light Work ----------------------------- */
@@ -335,8 +337,11 @@ PERF_TEST(SchedulerMtPerf, ManyLightWork) {
       },
       "many-light", memProfile);
 
-  // With real work (>1us), expect stable results
-  if (result.stats.median > 1.0) {
+  // With real work (>1us), expect stable results. The CV gate needs a
+  // meaningful sample: reduced Tier-A runs (few repeats) estimate CV
+  // with no statistical power and flake at the threshold, so the gate
+  // arms only at recorded-battery depth.
+  if (result.stats.median > 1.0 && perf.config().repeats >= 5) {
     EXPECT_STABLE_CV_CPU(result, perf.config());
   }
 
@@ -351,6 +356,8 @@ PERF_TEST(SchedulerMtPerf, ManyLightWork) {
   std::printf("  Workers: %u\n", std::thread::hardware_concurrency());
   std::printf("  Speedup vs ST: %.1fx (ideal: %ux)\n", SPEEDUP,
               std::thread::hardware_concurrency());
+
+  sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
 
 /* ----------------------------- Thread Scaling ----------------------------- */
@@ -414,6 +421,8 @@ PERF_TEST(SchedulerMtPerf, ThreadScaling) {
   std::printf("  >80%% efficiency: Excellent scaling\n");
   std::printf("  50-80%% efficiency: Good, some contention\n");
   std::printf("  <50%% efficiency: Poor scaling, investigate locks/cache\n");
+
+  sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
 
 /* ----------------------------- Task Count Scaling ----------------------------- */
@@ -473,6 +482,8 @@ PERF_TEST(SchedulerMtPerf, TaskCountScaling) {
 
     std::printf("%-10zu %-15.3f %-15.1f %-15.1f\n", taskCount, result.stats.median, perTaskNs,
                 cvPercent);
+
+    sched.reset(); // Join workers before this iteration's tasks are destroyed.
   }
 
   std::printf("\nWorkers: Run with MT_MAX_WORKERS=N to test different configs\n");
@@ -537,6 +548,8 @@ PERF_TEST(SchedulerMtPerf, ConcurrentExecutionStress) {
   std::printf("  Low CV%% (<5%%): Consistent execution time\n");
   std::printf("  High CV%% (>10%%): Uneven load distribution or contention\n");
   std::printf("  p90/p50 ratio > 1.5: High tail latency variance\n");
+
+  sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
 
 /* ----------------------------- Cold Path AddTask ----------------------------- */
@@ -708,11 +721,12 @@ PERF_TEST(SchedulerMtPerf, SequencedChain4) {
   auto perf = ub::makePerfCaseWithProfiler("SchedulerMtPerf.SequencedChain4", cfg);
 
   const Shape SH = loadShape();
-  auto sched = makeScheduler(SH);
 
   // 4-task sequence: pre1/pre2 (parallel) -> step -> post
-  // After all 4 complete, counter wraps to 1
+  // After all 4 complete, counter wraps to 1. Declared before the
+  // scheduler: it must outlive the shutdown sentinel sweep.
   SequenceGroup seq(4);
+  auto sched = makeScheduler(SH);
 
   std::vector<std::unique_ptr<TaskCtx>> ctxPool;
   ctxPool.reserve(4);
@@ -798,6 +812,8 @@ PERF_TEST(SchedulerMtPerf, SequencedChain4) {
   std::printf("  Per-task: %.3f us\n", result.stats.median / 4.0);
   std::printf("  Workers: %u\n", std::thread::hardware_concurrency());
   std::printf("  Spin: %u iters\n", SH.spin);
+
+  sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
 
 /* ----------------------------- Sequencing Overhead ----------------------------- */
@@ -850,8 +866,8 @@ PERF_TEST(SchedulerMtPerf, SequencingOverhead) {
   }
 
   // Test 2: Sequenced (4 tasks in chain - strictly sequential)
+  SequenceGroup seq(4); // Outlives the scheduler (shutdown sentinel sweep).
   auto schedSeq = makeScheduler(SH);
-  SequenceGroup seq(4);
   std::vector<std::unique_ptr<TaskCtx>> ctxPoolSeq;
   std::vector<std::unique_ptr<SchedulableTask>> tasksSeq;
   ctxPoolSeq.reserve(4);
@@ -916,6 +932,9 @@ PERF_TEST(SchedulerMtPerf, SequencingOverhead) {
   std::printf("  Per-task overhead: %.3f us\n", OVERHEAD / 4.0);
   std::printf(
       "  Note: Sequential tasks cannot run in parallel, so overhead includes serialization\n");
+
+  schedSeq.reset(); // Join workers before caller-owned tasks are destroyed.
+  schedNonSeq.reset();
 }
 
 PERF_MAIN()

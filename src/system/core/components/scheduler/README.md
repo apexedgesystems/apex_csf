@@ -107,13 +107,17 @@ Measured on x86_64 (clang-21, -O2), Docker container, 15 repeats per data point,
 
 ### Sequencing Overhead
 
-| Operation                   | Median (us) | Calls/s | CV%  |
-| --------------------------- | ----------- | ------- | ---- |
-| `waitForPhase` (fast path)  | 0.009       | 116.3M  | 3.4% |
-| `advancePhase`              | 0.024       | 41.8M   | 5.1% |
-| `waitForPhase` (spin path)  | 90.281      | 11.1K   | 1.0% |
-| Chain4 minimal work         | 261.2       | 3.8K    | 1.3% |
-| ThreadPool dispatch latency | 3.372       | 296.6K  | 4.4% |
+| Operation                  | Median (us) | Calls/s | CV%  |
+| -------------------------- | ----------- | ------- | ---- |
+| `waitForPhase` (fast path) | 0.011       | 91.2M   | 6.5% |
+| `advancePhase`             | 0.025       | 40.0M   | 7.5% |
+| `waitForPhase` (spin path) | 90.159      | 11.1K   | 4.7% |
+| Chain4 minimal work        | 259.1       | 3.9K    | 2.7% |
+| Pool dispatch latency      | 2.432       | 411.2K  | 6.5% |
+
+Dispatch pools are lock-free (Vyukov MPMC ring + waiter-gated futex
+wake): the tick thread's enqueue is a CAS push with no mutex and no
+syscall unless a worker is parked.
 
 ### McuScheduler Execution
 
@@ -249,8 +253,11 @@ and frame-loss events list the tasks in flight when cycles fall behind.
 
 ### Deadline Semantics
 
-The deadline base is **dispatch time**: `markDispatched` stamps at
-enqueue, so queue wait charges to the task. A task counts as violating
+The deadline base is **dispatch time**: `markDispatched` stamps the
+tick's dispatch-decision time (one clock read per tick, shared by
+every same-tick dispatch), so queue wait charges to the task. The
+shared base makes the producer path's timing cost independent of
+table size. A task counts as violating
 its period when it is still running (queued or executing) at its next
 scheduled dispatch. This is deliberate -- from the frame's
 perspective, work that has not finished by its next period is late
