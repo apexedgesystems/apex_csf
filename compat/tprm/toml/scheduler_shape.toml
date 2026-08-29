@@ -1,0 +1,33 @@
+# Golden vector: the scheduler TPRM shape (target 0x000100). Header
+# (numPools, workersPerPool, numTasks) followed by numTasks 15-byte
+# task entries in declaration order. Values chosen so byte order,
+# the signed priority, and the little-endian multi-byte fields are
+# visible in the binary.
+# C++ mirror: vectors::SchedulerShape (GoldenVectors_uTest.cpp).
+
+[SchedulerTprmHeader]
+numPools = { type = "uint", size = 1, value = 1 }
+workersPerPool = { type = "uint", size = 1, value = 3 }
+numTasks = { type = "uint", size = 1, value = 2 }
+
+[[task]]
+fullUid = { type = "uint", size = 4, value = "0x00BEEF00" }
+taskUid = { type = "uint", size = 1, value = 7 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 400 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = "0x0203" }
+priority = { type = "int", size = 1, value = -5 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+[[task]]
+fullUid = { type = "uint", size = 4, value = "0x00C0FFEE" }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 1 }
+freqN = { type = "uint", size = 2, value = 50 }
+freqD = { type = "uint", size = 2, value = 2 }
+offset = { type = "uint", size = 2, value = 9 }
+priority = { type = "int", size = 1, value = 127 }
+seqGroup = { type = "uint", size = 1, value = 4 }
+seqPhase = { type = "uint", size = 1, value = 1 }
