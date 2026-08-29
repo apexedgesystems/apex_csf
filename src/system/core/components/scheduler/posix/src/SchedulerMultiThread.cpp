@@ -157,15 +157,23 @@ std::uint8_t SchedulerMultiThread::doInit() noexcept {
                                               pools_[i]->workerCount()));
   }
 
-  // Count total task instances across all ticks for pool sizing
+  // Count total task instances across all ticks for pool sizing, and the
+  // largest single-tick burst -- the number of contexts one tick can demand
+  // before any completion returns a context to the pool.
   std::size_t totalTaskInstances = 0;
+  std::size_t maxTickBurst = 0;
   for (const auto& tickIndices : schedule_) {
     totalTaskInstances += tickIndices.size();
+    maxTickBurst = std::max(maxTickBurst, tickIndices.size());
   }
 
-  // Pre-allocate context pools (each pool sized for its workers)
+  // Pre-allocate context pools. Capacity must cover the densest tick with
+  // every one of its tasks dispatched before any completes, plus headroom
+  // for tasks still in flight from earlier ticks. Sizing from worker count
+  // alone starves dense ticks, and in production (fallback allocation
+  // disabled) a starved acquire has no heap escape.
   for (std::size_t i = 0; i < pools_.size(); ++i) {
-    const std::size_t POOL_SIZE = pools_[i]->workerCount() * 2;
+    const std::size_t POOL_SIZE = maxTickBurst + pools_[i]->workerCount() * 2;
     ctxPools_[i]->preallocate(POOL_SIZE);
 
 #ifdef NDEBUG
@@ -339,17 +347,33 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick) noe
     poolId = 0;
   }
 
+  // Acquire the context before marking the entry in-flight: a dispatch that
+  // never enqueues must leave the entry idle. Marking first poisons the
+  // entry's deadline tracking on a failed acquire -- it reads as running
+  // forever, which starves the task silently in soft modes and triggers
+  // emergency shutdown in hard modes.
+  TaskCtx* ctx = ctxPools_[poolId]->acquire(this, task);
+  if (ctx == nullptr) {
+    ++totalDispatchDrops_;
+    auto* lg = componentLog();
+    // First drop and every 4096th after: surfaces sustained exhaustion
+    // without logging at tick rate from the dispatch path.
+    if (lg != nullptr && (totalDispatchDrops_ == 1 || (totalDispatchDrops_ % 4096U) == 0U)) {
+      lg->error(label(), static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION),
+                fmt::format("Dispatch dropped: task '{}' at tick {}, context pool exhausted "
+                            "(total drops: {})",
+                            task->getLabel(), tick, totalDispatchDrops_));
+    }
+    return;
+  }
+
   // Mark task as dispatched (for deadline tracking)
   entry->markDispatched();
 
-  // Acquire context from the task's pool
-  TaskCtx* ctx = ctxPools_[poolId]->acquire(this, task);
-  if (ctx) {
-    ctx->tick = tick;
-    ctx->poolId = poolId;
-    ctx->entry = entry; // Store entry for sequencing in trampoline
-    pools_[poolId]->enqueueTask(task->getLabel().data(), {&taskTrampoline, ctx});
-  }
+  ctx->tick = tick;
+  ctx->poolId = poolId;
+  ctx->entry = entry; // Store entry for sequencing in trampoline
+  pools_[poolId]->enqueueTask(task->getLabel().data(), {&taskTrampoline, ctx});
 }
 
 } // namespace scheduler

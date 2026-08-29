@@ -126,6 +126,20 @@ public:
    */
   [[nodiscard]] std::size_t totalSkipCount() const noexcept { return totalSkipCount_; }
 
+  /** @brief Dispatches dropped on context-pool exhaustion since startup. */
+  [[nodiscard]] std::size_t totalDispatchDrops() const noexcept { return totalDispatchDrops_; }
+
+  /**
+   * @brief Contexts ever allocated by a pool (preallocation + any fallback).
+   *
+   * Debug builds track the count; release builds return 0. A value above
+   * the preallocated capacity means fallback allocation fired -- the
+   * capacity did not cover the schedule's dispatch demand.
+   */
+  [[nodiscard]] std::size_t ctxPoolAllocatedCount(std::size_t poolIdx) const noexcept {
+    return poolIdx < ctxPools_.size() ? ctxPools_[poolIdx]->allocatedCount() : 0;
+  }
+
   /* ----------------------------- Health Query Overrides ----------------------------- */
 
   [[nodiscard]] std::size_t totalPeriodViolations() const noexcept override {
@@ -180,8 +194,9 @@ private:
   /// attribution (component name is a registry-lifetime pointer).
   std::atomic<const char*> lastViolationComponent_{nullptr};
   std::atomic<std::uint8_t> lastViolationTaskUid_{0};
-  bool skipOnBusy_{false};        ///< Skip tasks still running (SKIP_ON_BUSY mode).
-  std::size_t totalSkipCount_{0}; ///< Total skipped invocations across all tasks.
+  bool skipOnBusy_{false};            ///< Skip tasks still running (SKIP_ON_BUSY mode).
+  std::size_t totalSkipCount_{0};     ///< Total skipped invocations across all tasks.
+  std::size_t totalDispatchDrops_{0}; ///< Dispatches dropped on context-pool exhaustion.
 };
 
 } // namespace scheduler
