@@ -64,87 +64,93 @@ ERR = 2
 # ==============================================================================
 
 # WP0: Temperature > 50.0 -> event 1
+# Boundary WP0: V > 272 m/s (validity ceiling, ~M0.92) -> speed recovery
 [ActionEngineTprm.watchpoint_0]
-targetFullUid    = { type = "uint", size = 4, value = "0xD200" }
+targetFullUid    = { type = "uint", size = 4, value = "0x00E000" }
 targetCategory   = { type = "uint", size = 1, value = "OUTPUT" }
-targetByteOffset = { type = "uint", size = 2, value = 0 }
-targetByteLen    = { type = "uint", size = 1, value = 4 }
+targetByteOffset = { type = "uint", size = 2, value = 72 }
+targetByteLen    = { type = "uint", size = 1, value = 8 }
 predicate        = { type = "uint", size = 1, value = "GT" }
-dataType         = { type = "uint", size = 1, value = "FLOAT32" }
-threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 72, 66, 0, 0, 0, 0] }
-eventId          = { type = "uint", size = 2, value = 1 }
+dataType         = { type = "uint", size = 1, value = "FLOAT64" }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 113, 64] }
+eventId          = { type = "uint", size = 2, value = 32 }
 minFireCount     = { type = "uint", size = 2, value = 1 }
-armed            = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 1 }
 reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
 
 # WP1: Temperature > 80.0 -> event 2
+# Boundary WP1: V < 200 m/s (validity floor + thrust-margin) -> speed recovery
 [ActionEngineTprm.watchpoint_1]
-targetFullUid    = { type = "uint", size = 4, value = "0xD200" }
+targetFullUid    = { type = "uint", size = 4, value = "0x00E000" }
 targetCategory   = { type = "uint", size = 1, value = "OUTPUT" }
-targetByteOffset = { type = "uint", size = 2, value = 0 }
-targetByteLen    = { type = "uint", size = 1, value = 4 }
-predicate        = { type = "uint", size = 1, value = "GT" }
-dataType         = { type = "uint", size = 1, value = "FLOAT32" }
-threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 160, 66, 0, 0, 0, 0] }
-eventId          = { type = "uint", size = 2, value = 2 }
+targetByteOffset = { type = "uint", size = 2, value = 72 }
+targetByteLen    = { type = "uint", size = 1, value = 8 }
+predicate        = { type = "uint", size = 1, value = "LT" }
+dataType         = { type = "uint", size = 1, value = "FLOAT64" }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 105, 64] }
+eventId          = { type = "uint", size = 2, value = 32 }
 minFireCount     = { type = "uint", size = 2, value = 1 }
-armed            = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 1 }
 reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
 
 # WP2: Overtemp flag != 0 -> event 3
+# Boundary WP2: bank > +45 deg -> bank recovery
 [ActionEngineTprm.watchpoint_2]
-targetFullUid    = { type = "uint", size = 4, value = "0xD200" }
+targetFullUid    = { type = "uint", size = 4, value = "0x00E000" }
 targetCategory   = { type = "uint", size = 1, value = "OUTPUT" }
-targetByteOffset = { type = "uint", size = 2, value = 8 }
-targetByteLen    = { type = "uint", size = 1, value = 1 }
-predicate        = { type = "uint", size = 1, value = "NE" }
-dataType         = { type = "uint", size = 1, value = "UINT8" }
-threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-eventId          = { type = "uint", size = 2, value = 3 }
+targetByteOffset = { type = "uint", size = 2, value = 56 }
+targetByteLen    = { type = "uint", size = 1, value = 8 }
+predicate        = { type = "uint", size = 1, value = "GT" }
+dataType         = { type = "uint", size = 1, value = "FLOAT64" }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 128, 70, 64] }
+eventId          = { type = "uint", size = 2, value = 33 }
 minFireCount     = { type = "uint", size = 2, value = 1 }
-armed            = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 1 }
 reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
 
 # WP3: Temperature > 100.0 -> event 4
+# Boundary WP3: bank < -45 deg -> bank recovery
 [ActionEngineTprm.watchpoint_3]
-targetFullUid    = { type = "uint", size = 4, value = "0xD200" }
+targetFullUid    = { type = "uint", size = 4, value = "0x00E000" }
 targetCategory   = { type = "uint", size = 1, value = "OUTPUT" }
-targetByteOffset = { type = "uint", size = 2, value = 0 }
-targetByteLen    = { type = "uint", size = 1, value = 4 }
-predicate        = { type = "uint", size = 1, value = "GT" }
-dataType         = { type = "uint", size = 1, value = "FLOAT32" }
-threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 200, 66, 0, 0, 0, 0] }
-eventId          = { type = "uint", size = 2, value = 4 }
+targetByteOffset = { type = "uint", size = 2, value = 56 }
+targetByteLen    = { type = "uint", size = 1, value = 8 }
+predicate        = { type = "uint", size = 1, value = "LT" }
+dataType         = { type = "uint", size = 1, value = "FLOAT64" }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 128, 70, 192] }
+eventId          = { type = "uint", size = 2, value = 33 }
 minFireCount     = { type = "uint", size = 2, value = 1 }
-armed            = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 1 }
 reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
 
 # WP4: Temperature == 0.0 -> event 5 (nested trigger detection)
+# Boundary WP4: alt > 13000 m -> altitude recovery
 [ActionEngineTprm.watchpoint_4]
-targetFullUid    = { type = "uint", size = 4, value = "0xD200" }
+targetFullUid    = { type = "uint", size = 4, value = "0x00E000" }
 targetCategory   = { type = "uint", size = 1, value = "OUTPUT" }
-targetByteOffset = { type = "uint", size = 2, value = 0 }
-targetByteLen    = { type = "uint", size = 1, value = 4 }
-predicate        = { type = "uint", size = 1, value = "EQ" }
-dataType         = { type = "uint", size = 1, value = "FLOAT32" }
-threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-eventId          = { type = "uint", size = 2, value = 5 }
+targetByteOffset = { type = "uint", size = 2, value = 32 }
+targetByteLen    = { type = "uint", size = 1, value = 8 }
+predicate        = { type = "uint", size = 1, value = "GT" }
+dataType         = { type = "uint", size = 1, value = "FLOAT64" }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 100, 201, 64] }
+eventId          = { type = "uint", size = 2, value = 34 }
 minFireCount     = { type = "uint", size = 2, value = 1 }
-armed            = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 1 }
 reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
 
 # WP5-7: Unused
+# Boundary WP5: alt < 11400 m -> altitude recovery
 [ActionEngineTprm.watchpoint_5]
-targetFullUid    = { type = "uint", size = 4, value = 0 }
-targetCategory   = { type = "uint", size = 1, value = 0 }
-targetByteOffset = { type = "uint", size = 2, value = 0 }
-targetByteLen    = { type = "uint", size = 1, value = 0 }
-predicate        = { type = "uint", size = 1, value = 0 }
-dataType         = { type = "uint", size = 1, value = 0 }
-threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-eventId          = { type = "uint", size = 2, value = 0 }
-minFireCount     = { type = "uint", size = 2, value = 0 }
-armed            = { type = "uint", size = 1, value = 0 }
+targetFullUid    = { type = "uint", size = 4, value = "0x00E000" }
+targetCategory   = { type = "uint", size = 1, value = "OUTPUT" }
+targetByteOffset = { type = "uint", size = 2, value = 32 }
+targetByteLen    = { type = "uint", size = 1, value = 8 }
+predicate        = { type = "uint", size = 1, value = "LT" }
+dataType         = { type = "uint", size = 1, value = "FLOAT64" }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 68, 198, 64] }
+eventId          = { type = "uint", size = 2, value = 34 }
+minFireCount     = { type = "uint", size = 2, value = 1 }
+armed            = { type = "uint", size = 1, value = 1 }
 reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
 
 [ActionEngineTprm.watchpoint_6]

@@ -19,6 +19,8 @@ rts 2  toml/rts/rts_003_spiral.toml
 rts 3  toml/rts/rts_004_phugoid.toml
 rts 4  toml/rts/rts_010_volatility.toml
 rts 5  toml/rts/rts_032_boundary_restore.toml
+rts 6  toml/rts/rts_033_bank_restore.toml
+rts 7  toml/rts/rts_034_alt_restore.toml
 
 [master master.tprm]
 use components aircraft_atmo

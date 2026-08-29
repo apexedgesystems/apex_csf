@@ -1,8 +1,6 @@
-# RTS 010: Volatility showcase
+# RTS 033: Boundary restore (bank)
 #
-# Phugoid allowed to deepen: the boundary watchpoint (prep-measured
-# thresholds) fires RTS 32 to restore early; the 900 s scheduled
-# restore here is the ultimate backstop if no boundary trips.
+# Fired by the bank watchpoints (event 33).
 #
 # Delays are scheduler cycles at 100 Hz (100 cycles = 1 s). Payloads
 # are the 1-byte ACFT/2 command surface on the Aircraft (0x00E000):
@@ -17,15 +15,15 @@ SKIP = 1
 NEXT = 0
 
 [StandaloneSequenceTprm]
-sequenceId   = { type = "uint", size = 2, value = 10 }
-eventId      = { type = "uint", size = 2, value = 10 }
-stepCount    = { type = "uint", size = 1, value = 5 }
+sequenceId   = { type = "uint", size = 2, value = 33 }
+eventId      = { type = "uint", size = 2, value = 33 }
+stepCount    = { type = "uint", size = 1, value = 3 }
 repeatCount  = { type = "uint", size = 1, value = 0 }
 type         = { type = "uint", size = 1, value = 0 }
 armed        = { type = "uint", size = 1, value = 1 }
 
 # ------------------------------------------------------------------------------
-# Step 0: banner: phugoid (showcase runs deep)
+# Step 0: banner: RECOVERY (bank boundary)
 # ------------------------------------------------------------------------------
 [StandaloneSequenceTprm.step_0]
 targetFullUid    = { type = "uint", size = 4, value = "0x00E000" }
@@ -38,7 +36,7 @@ armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
 commandOpcode    = { type = "uint", size = 2, value = "0x0105" }
 commandPayloadLen = { type = "uint", size = 1, value = 1 }
-commandPayload   = { type = "array", size = 16, value = [0x04,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+commandPayload   = { type = "array", size = 16, value = [0x12,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
 timeoutCycles    = { type = "uint", size = 4, value = 500 }
 onTimeout        = { type = "uint", size = 1, value = "SKIP" }
@@ -61,7 +59,7 @@ reserved         = { type = "uint", size = 1, value = 0 }
 reserved         = { type = "uint", size = 1, value = 0 }
 
 # ------------------------------------------------------------------------------
-# Step 1: drop PITCH+ALT+SPEED
+# Step 1: all loops on, immediately
 # ------------------------------------------------------------------------------
 [StandaloneSequenceTprm.step_1]
 targetFullUid    = { type = "uint", size = 4, value = "0x00E000" }
@@ -74,7 +72,7 @@ armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
 commandOpcode    = { type = "uint", size = 2, value = "0x0103" }
 commandPayloadLen = { type = "uint", size = 1, value = 1 }
-commandPayload   = { type = "array", size = 16, value = [0x38,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+commandPayload   = { type = "array", size = 16, value = [0x3F,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
 timeoutCycles    = { type = "uint", size = 4, value = 500 }
 onTimeout        = { type = "uint", size = 1, value = "SKIP" }
@@ -97,7 +95,7 @@ reserved         = { type = "uint", size = 1, value = 0 }
 reserved         = { type = "uint", size = 1, value = 0 }
 
 # ------------------------------------------------------------------------------
-# Step 2: settle 2 s, then +10 m/s offset
+# Step 2: 60 s roll-level + reacquire, banner clear
 # ------------------------------------------------------------------------------
 [StandaloneSequenceTprm.step_2]
 targetFullUid    = { type = "uint", size = 4, value = "0x00E000" }
@@ -108,11 +106,11 @@ actionType       = { type = "uint", size = 1, value = "COMMAND" }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-commandOpcode    = { type = "uint", size = 2, value = "0x0104" }
+commandOpcode    = { type = "uint", size = 2, value = "0x0105" }
 commandPayloadLen = { type = "uint", size = 1, value = 1 }
-commandPayload   = { type = "array", size = 16, value = [0x04,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
-delayCycles      = { type = "uint", size = 4, value = 200 }
-timeoutCycles    = { type = "uint", size = 4, value = 700 }
+commandPayload   = { type = "array", size = 16, value = [0x00,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles      = { type = "uint", size = 4, value = 6000 }
+timeoutCycles    = { type = "uint", size = 4, value = 6500 }
 onTimeout        = { type = "uint", size = 1, value = "SKIP" }
 onComplete       = { type = "uint", size = 1, value = "NEXT" }
 gotoStep         = { type = "uint", size = 1, value = 0 }
@@ -133,24 +131,24 @@ reserved         = { type = "uint", size = 1, value = 0 }
 reserved         = { type = "uint", size = 1, value = 0 }
 
 # ------------------------------------------------------------------------------
-# Step 3: backstop restore at 900 s
+# Step 3: unused slot (stepCount bounds execution)
 # ------------------------------------------------------------------------------
 [StandaloneSequenceTprm.step_3]
-targetFullUid    = { type = "uint", size = 4, value = "0x00E000" }
+targetFullUid    = { type = "uint", size = 4, value = "0x000000" }
 targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
-actionType       = { type = "uint", size = 1, value = "COMMAND" }
+actionType       = { type = "uint", size = 1, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-commandOpcode    = { type = "uint", size = 2, value = "0x0103" }
-commandPayloadLen = { type = "uint", size = 1, value = 1 }
-commandPayload   = { type = "array", size = 16, value = [0x3F,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
-delayCycles      = { type = "uint", size = 4, value = 90000 }
-timeoutCycles    = { type = "uint", size = 4, value = 90500 }
-onTimeout        = { type = "uint", size = 1, value = "SKIP" }
-onComplete       = { type = "uint", size = 1, value = "NEXT" }
+commandOpcode    = { type = "uint", size = 2, value = "0x0000" }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
+commandPayload   = { type = "array", size = 16, value = [0x00,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+timeoutCycles    = { type = "uint", size = 4, value = 0 }
+onTimeout        = { type = "uint", size = 1, value = 0 }
+onComplete       = { type = "uint", size = 1, value = 0 }
 gotoStep         = { type = "uint", size = 1, value = 0 }
 retryMax         = { type = "uint", size = 1, value = 0 }
 
@@ -169,24 +167,24 @@ reserved         = { type = "uint", size = 1, value = 0 }
 reserved         = { type = "uint", size = 1, value = 0 }
 
 # ------------------------------------------------------------------------------
-# Step 4: banner clear
+# Step 4: unused slot (stepCount bounds execution)
 # ------------------------------------------------------------------------------
 [StandaloneSequenceTprm.step_4]
-targetFullUid    = { type = "uint", size = 4, value = "0x00E000" }
+targetFullUid    = { type = "uint", size = 4, value = "0x000000" }
 targetCategory   = { type = "uint", size = 1, value = 0 }
 targetByteOffset = { type = "uint", size = 2, value = 0 }
 targetByteLen    = { type = "uint", size = 1, value = 0 }
-actionType       = { type = "uint", size = 1, value = "COMMAND" }
+actionType       = { type = "uint", size = 1, value = 0 }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-commandOpcode    = { type = "uint", size = 2, value = "0x0105" }
-commandPayloadLen = { type = "uint", size = 1, value = 1 }
+commandOpcode    = { type = "uint", size = 2, value = "0x0000" }
+commandPayloadLen = { type = "uint", size = 1, value = 0 }
 commandPayload   = { type = "array", size = 16, value = [0x00,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
-delayCycles      = { type = "uint", size = 4, value = 12000 }
-timeoutCycles    = { type = "uint", size = 4, value = 12500 }
-onTimeout        = { type = "uint", size = 1, value = "SKIP" }
-onComplete       = { type = "uint", size = 1, value = "NEXT" }
+delayCycles      = { type = "uint", size = 4, value = 0 }
+timeoutCycles    = { type = "uint", size = 4, value = 0 }
+onTimeout        = { type = "uint", size = 1, value = 0 }
+onComplete       = { type = "uint", size = 1, value = 0 }
 gotoStep         = { type = "uint", size = 1, value = 0 }
 retryMax         = { type = "uint", size = 1, value = 0 }
 
