@@ -5,6 +5,7 @@
 # interface at configured rates via postInternalTelemetry().
 
 component = "TelemetryManager"
+namespace = "system_core::support"
 
 [structs]
 # Tunable parameters (subscription table, TPRM-configurable)
@@ -13,12 +14,82 @@ TelemetryManagerTprm = { category = "TUNABLE_PARAM", header = "inc/TelemetryMana
 # Single subscription entry (16 bytes each, 32 max)
 TelemetrySubscription = { category = "TUNABLE_PARAM", header = "inc/TelemetryManagerData.hpp" }
 
-# Runtime state and counters
-TelemetryManagerState = { category = "STATE", header = "inc/TelemetryManagerData.hpp" }
+# Runtime state and counters (spec-defined below)
+TelemetryManagerState = { category = "STATE" }
 
-# Health telemetry returned by GET_STATS (opcode 0x0100)
-TelemetryManagerHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/TelemetryManagerData.hpp" }
+# Health telemetry returned by GET_STATS (opcode 0x0100; spec-defined below)
+TelemetryManagerHealthTlm = { category = "TELEMETRY", opcode = "0x0100" }
+# TelemetryManagerTprm nests TelemetrySubscription entries -- nested
+# containers are outside the spec vocabulary; both stay header-parsed.
 
 [enums]
 # Command opcodes
 TelemetryManagerOpcode = { header = "inc/TelemetryManager.hpp" }
+
+[[fields.TelemetryManagerHealthTlm]]
+name = "collectCount"
+type = "uint"
+size = 4
+default = 0
+
+[[fields.TelemetryManagerHealthTlm]]
+name = "packetsSent"
+type = "uint"
+size = 4
+default = 0
+doc = "Total telemetry packets pushed to bus."
+
+[[fields.TelemetryManagerHealthTlm]]
+name = "sendFailures"
+type = "uint"
+size = 4
+default = 0
+doc = "Failed pushes (queue full or registry miss)."
+
+[[fields.TelemetryManagerHealthTlm]]
+name = "activeCount"
+type = "uint"
+size = 2
+default = 0
+doc = "Number of active subscriptions."
+
+[[fields.TelemetryManagerHealthTlm]]
+name = "reserved"
+type = "uint"
+size = 2
+default = 0
+doc = "Alignment padding."
+
+[[fields.TelemetryManagerState]]
+name = "collectCount"
+type = "uint"
+size = 4
+default = 0
+
+[[fields.TelemetryManagerState]]
+name = "packetsSent"
+type = "uint"
+size = 4
+default = 0
+doc = "Total telemetry packets pushed to bus."
+
+[[fields.TelemetryManagerState]]
+name = "sendFailures"
+type = "uint"
+size = 4
+default = 0
+doc = "Failed pushes (queue full or registry miss)."
+
+[[fields.TelemetryManagerState]]
+name = "activeCount"
+type = "uint"
+size = 2
+default = 0
+doc = "Number of active subscriptions."
+
+[[fields.TelemetryManagerState]]
+name = "reserved"
+type = "uint"
+size = 2
+default = 0
+doc = "Alignment padding."

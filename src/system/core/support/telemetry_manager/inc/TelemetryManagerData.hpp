@@ -14,6 +14,9 @@
 
 #include <cstdint>
 
+#include "src/system/core/support/telemetry_manager/.auto/TelemetryManagerHealthTlm_auto.hpp"
+#include "src/system/core/support/telemetry_manager/.auto/TelemetryManagerState_auto.hpp"
+
 namespace system_core {
 namespace support {
 
@@ -72,40 +75,7 @@ static_assert(sizeof(TelemetryManagerTprm) == 520,
 
 /* ----------------------------- TelemetryManagerState ----------------------------- */
 
-/**
- * @struct TelemetryManagerState
- * @brief Runtime state and counters.
- *
- * Size: 16 bytes.
- */
-struct TelemetryManagerState {
-  std::uint32_t collectCount{0}; ///< Total collect task invocations.
-  std::uint32_t packetsSent{0};  ///< Total telemetry packets pushed to bus.
-  std::uint32_t sendFailures{0}; ///< Failed pushes (queue full or registry miss).
-  std::uint16_t activeCount{0};  ///< Number of active subscriptions.
-  std::uint16_t reserved{0};     ///< Alignment padding.
-};
-
-static_assert(sizeof(TelemetryManagerState) == 16,
-              "TelemetryManagerState size changed - update struct dictionary");
-
 /* ----------------------------- TelemetryManagerHealthTlm ----------------------------- */
-
-/**
- * @struct TelemetryManagerHealthTlm
- * @brief Health telemetry returned by GET_STATS (opcode 0x0100).
- *
- * Size: 16 bytes.
- */
-struct __attribute__((packed)) TelemetryManagerHealthTlm {
-  std::uint32_t collectCount{0};
-  std::uint32_t packetsSent{0};
-  std::uint32_t sendFailures{0};
-  std::uint16_t activeCount{0};
-  std::uint16_t reserved{0};
-};
-
-static_assert(sizeof(TelemetryManagerHealthTlm) == 16, "TelemetryManagerHealthTlm size changed");
 
 } // namespace support
 } // namespace system_core

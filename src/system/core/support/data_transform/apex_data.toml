@@ -4,10 +4,80 @@
 # transforms (masks, overrides) to registered data blocks via ByteMaskProxy.
 
 component = "DataTransform"
+namespace = "system_core::support"
 
 [structs]
-TransformStats = { category = "STATE", header = "inc/DataTransformData.hpp" }
-DataTransformTlm = { category = "TELEMETRY", opcode = "0x0600", header = "inc/DataTransformData.hpp" }
+# Both structs are spec-defined below.
+TransformStats = { category = "STATE" }
+DataTransformTlm = { category = "TELEMETRY", opcode = "0x0600" }
 
 [enums]
 DataTransformOpcode = { header = "inc/DataTransformData.hpp" }
+
+[[fields.DataTransformTlm]]
+name = "applyCycles"
+type = "uint"
+size = 4
+default = 0
+
+[[fields.DataTransformTlm]]
+name = "masksApplied"
+type = "uint"
+size = 4
+default = 0
+doc = "Successful mask applications."
+
+[[fields.DataTransformTlm]]
+name = "resolveFailures"
+type = "uint"
+size = 4
+default = 0
+doc = "Target resolution failures."
+
+[[fields.DataTransformTlm]]
+name = "applyFailures"
+type = "uint"
+size = 4
+default = 0
+doc = "Mask application failures."
+
+[[fields.DataTransformTlm]]
+name = "entriesArmed"
+type = "uint"
+size = 4
+default = 0
+doc = "Currently armed entry count."
+
+[[fields.TransformStats]]
+name = "applyCycles"
+type = "uint"
+size = 4
+default = 0
+
+[[fields.TransformStats]]
+name = "masksApplied"
+type = "uint"
+size = 4
+default = 0
+doc = "Successful mask applications."
+
+[[fields.TransformStats]]
+name = "resolveFailures"
+type = "uint"
+size = 4
+default = 0
+doc = "Target resolution failures."
+
+[[fields.TransformStats]]
+name = "applyFailures"
+type = "uint"
+size = 4
+default = 0
+doc = "Mask application failures."
+
+[[fields.TransformStats]]
+name = "entriesArmed"
+type = "uint"
+size = 4
+default = 0
+doc = "Currently armed entry count."
