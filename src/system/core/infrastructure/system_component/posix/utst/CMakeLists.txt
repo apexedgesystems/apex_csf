@@ -19,6 +19,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/ComponentRegistry_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/PackedTprm_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/GoldenVectors_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TprmReadback_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DataCategory_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/DataTarget_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ModelData_uTest.cpp"

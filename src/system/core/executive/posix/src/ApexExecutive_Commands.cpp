@@ -13,6 +13,7 @@
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/executive/posix/inc/ExecutiveStatus.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/PackedTprm.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmReadback.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
@@ -559,6 +560,22 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
   }
 
     // === Ground test / inspection commands ===
+
+  case static_cast<std::uint16_t>(Opcode::READBACK_TPRM): {
+    // Digest of the staged bank: ground diffs the declared identities
+    // (fullUid, layoutHash, payloadCrc per v3 prelude) against intent
+    // before committing any RELOAD_TPRM. Optional payload: u16 page
+    // offset (absent = first page).
+    std::uint16_t pageOffset = 0;
+    if (payload.size() >= 2) {
+      std::memcpy(&pageOffset, payload.data(), 2);
+    }
+    if (!system_core::system_component::appendStagedDigest(fileSystem_.inactiveTprmDir(),
+                                                           pageOffset, response)) {
+      return static_cast<std::uint8_t>(CommandResult::LOAD_FAILED);
+    }
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
 
   case static_cast<std::uint16_t>(Opcode::INSPECT): {
     // Payload: u32 targetFullUid | u8 category | u16 offset | u16 len = 9 bytes.
