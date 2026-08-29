@@ -209,6 +209,12 @@ pub struct Manifest {
     /// base registers them in its doInit.
     #[serde(default)]
     pub tasks: Vec<TaskDef>,
+    /// Declared target capabilities (`capabilities = [...]`), exported
+    /// verbatim into the dictionary so ground feature-detects from an
+    /// explicit flag, never from version strings. The executive's
+    /// manifest is the per-target surface (one executive per target).
+    #[serde(default)]
+    pub capabilities: Vec<String>,
 }
 
 /* ----------------------------- Public API --------------------------------- */
@@ -472,5 +478,20 @@ mod tests {
         let manifest = parse_manifest_str(content).unwrap();
         assert_eq!(manifest.component, "NoEnums");
         assert!(manifest.enums.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod capability_tests {
+    use super::*;
+
+    #[test]
+    fn capabilities_parse_and_default_empty() {
+        let m = parse_manifest_str("component = \"X\"\ncapabilities = [\"readback\"]\n[structs]\n")
+            .unwrap();
+        assert_eq!(m.capabilities, vec!["readback".to_string()]);
+
+        let none = parse_manifest_str("component = \"Y\"\n[structs]\n").unwrap();
+        assert!(none.capabilities.is_empty());
     }
 }
