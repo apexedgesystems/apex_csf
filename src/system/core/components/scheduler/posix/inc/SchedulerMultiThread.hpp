@@ -175,7 +175,7 @@ protected:
    */
   [[nodiscard]] std::uint8_t doInit() noexcept override;
 
-  void enqueueTask(TaskEntry* entry, std::uint16_t tick) noexcept;
+  void enqueueTask(TaskEntry* entry, std::uint16_t tick, std::uint64_t dispatchNs) noexcept;
 
   static std::uint8_t taskTrampoline(void* raw) noexcept;
 

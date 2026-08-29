@@ -301,6 +301,11 @@ Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcep
     return OUT;
   }
 
+  // One clock read serves every dispatch this tick: the stats/deadline
+  // base is the tick's dispatch-decision time, so the producer path
+  // pays a single read regardless of table size.
+  const std::uint64_t DISPATCH_NS = apex::helpers::cpu::getMonotonicNs();
+
   // Enqueue all tasks that should run (frequency gate check)
   for (std::size_t idx : entryIndices) {
     TaskEntry& entry = entries_[idx];
@@ -341,7 +346,7 @@ Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcep
         //  - HARD_PERIOD_COMPLETE: Clock thread will FATAL, warning redundant
         //  - SOFT modes: Violations expected, count tracked for shutdown summary
       }
-      enqueueTask(&entry, tick);
+      enqueueTask(&entry, tick, DISPATCH_NS);
     }
   }
 
@@ -392,7 +397,8 @@ std::uint8_t SchedulerMultiThread::taskTrampoline(void* raw) noexcept {
   return rc;
 }
 
-void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick) noexcept {
+void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
+                                       std::uint64_t dispatchNs) noexcept {
   // First drop and every interval-th after: surfaces sustained exhaustion
   // without logging at tick rate from the dispatch path. Power of two so the
   // modulo compiles to a mask; the totalDispatchDrops_ counter stays exact.
@@ -425,7 +431,7 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick) noe
   }
 
   // Mark task as dispatched (for deadline tracking)
-  entry->markDispatched();
+  entry->markDispatched(dispatchNs);
 
   ctx->tick = tick;
   ctx->poolId = poolId;
@@ -448,8 +454,7 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick) noe
       lg->error(label(), static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION),
                 fmt::format("Dispatch dropped: task '{}' at tick {}, pool ring rejected "
                             "(status {}, total drops: {})",
-                            task->getLabel(), tick, static_cast<int>(STATUS),
-                            totalDispatchDrops_));
+                            task->getLabel(), tick, static_cast<int>(STATUS), totalDispatchDrops_));
     }
   }
 }

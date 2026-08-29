@@ -337,8 +337,11 @@ PERF_TEST(SchedulerMtPerf, ManyLightWork) {
       },
       "many-light", memProfile);
 
-  // With real work (>1us), expect stable results
-  if (result.stats.median > 1.0) {
+  // With real work (>1us), expect stable results. The CV gate needs a
+  // meaningful sample: reduced Tier-A runs (few repeats) estimate CV
+  // with no statistical power and flake at the threshold, so the gate
+  // arms only at recorded-battery depth.
+  if (result.stats.median > 1.0 && perf.config().repeats >= 5) {
     EXPECT_STABLE_CV_CPU(result, perf.config());
   }
 

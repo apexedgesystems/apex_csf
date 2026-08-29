@@ -253,8 +253,11 @@ and frame-loss events list the tasks in flight when cycles fall behind.
 
 ### Deadline Semantics
 
-The deadline base is **dispatch time**: `markDispatched` stamps at
-enqueue, so queue wait charges to the task. A task counts as violating
+The deadline base is **dispatch time**: `markDispatched` stamps the
+tick's dispatch-decision time (one clock read per tick, shared by
+every same-tick dispatch), so queue wait charges to the task. The
+shared base makes the producer path's timing cost independent of
+table size. A task counts as violating
 its period when it is still running (queued or executing) at its next
 scheduled dispatch. This is deliberate -- from the frame's
 perspective, work that has not finished by its next period is late
