@@ -458,6 +458,23 @@ fn field_to_json(
     defines: &Json,
     enums: &BTreeMap<String, ParsedEnum>,
 ) -> JsonMap<String, Json> {
+    let mut visiting = Vec::new();
+    field_to_json_guarded(rf, all, names, defines, enums, &mut visiting)
+}
+
+/// Guarded resolver: `visiting` holds the nested type names on the current
+/// resolution path. A type that reappears on its own path (a struct whose
+/// member resolves back to it -- directly, mutually, or via a method
+/// declaration mis-lexed as a field) resolves as unknown instead of
+/// recursing without bound. The dictionary must terminate on any input.
+fn field_to_json_guarded(
+    rf: &RawField,
+    all: &BTreeMap<String, Vec<RawField>>,
+    names: &HashSet<String>,
+    defines: &Json,
+    enums: &BTreeMap<String, ParsedEnum>,
+    visiting: &mut Vec<String>,
+) -> JsonMap<String, Json> {
     let mut m = JsonMap::new();
 
     // std::array<T,N>
@@ -515,17 +532,19 @@ fn field_to_json(
     }
 
     // Nested struct by name
-    if names.contains(&rf.ty) {
+    if names.contains(&rf.ty) && !visiting.contains(&rf.ty) {
         if let Some(nested) = all.get(&rf.ty) {
+            visiting.push(rf.ty.clone());
             let mut nested_json = Vec::with_capacity(nested.len());
             let mut total = 0usize;
             for nf in nested {
-                let meta = field_to_json(nf, all, names, defines, enums);
+                let meta = field_to_json_guarded(nf, all, names, defines, enums, visiting);
                 let mut obj = JsonMap::new();
                 obj.insert(nf.name.clone(), Json::Object(meta.clone()));
                 total += meta.get("size").and_then(as_usize).unwrap_or(0);
                 nested_json.push(Json::Object(obj));
             }
+            visiting.pop();
             m.insert("type".into(), json!("struct"));
             m.insert("fields".into(), Json::Array(nested_json));
             m.insert("size".into(), json!(total));
@@ -1040,5 +1059,42 @@ mod tests {
         assert_eq!(e.values.len(), 2);
         assert_eq!(e.values["VALUE_A"], 1);
         assert_eq!(e.values["VALUE_B"], 2);
+    }
+
+    #[test]
+    fn self_referential_method_decls_terminate() {
+        // A struct whose method declarations return its own type (the
+        // Vec3d shape): resolution must terminate, not recurse forever.
+        let src = r#"
+            struct Vec3d {
+              double x{0.0};
+              double y{0.0};
+              double z{0.0};
+
+              Vec3d operator+(const Vec3d& rhs) const noexcept;
+              Vec3d operator-(const Vec3d& rhs) const noexcept;
+              Vec3d operator*(double s) const noexcept;
+              [[nodiscard]] double magnitude() const noexcept;
+              [[nodiscard]] Vec3d normalized() const noexcept;
+            };
+
+            struct Holder {
+              Vec3d position;
+              Vec3d velocity;
+            };
+        "#;
+        let parsed = parse_header(src, &TemplateOptions::default()).unwrap();
+        assert!(parsed.get("Holder").is_some());
+    }
+
+    #[test]
+    fn mutually_recursive_structs_terminate() {
+        let src = r#"
+            struct A { B inner; };
+            struct B { A inner; };
+        "#;
+        let parsed = parse_header(src, &TemplateOptions::default()).unwrap();
+        assert!(parsed.get("A").is_some());
+        assert!(parsed.get("B").is_some());
     }
 }
