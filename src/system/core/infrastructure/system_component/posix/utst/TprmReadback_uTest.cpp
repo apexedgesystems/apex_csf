@@ -172,3 +172,78 @@ TEST_F(TprmReadbackTest, EmptyBankAndUnreadableDir) {
   std::vector<std::uint8_t> bad;
   EXPECT_FALSE(appendStagedDigest(dir_ / "no_such_subdir", 0, bad));
 }
+
+/* ----------------------------- Verify Verdict ----------------------------- */
+
+namespace {
+
+using system_core::system_component::appendVerifyVerdict;
+using system_core::system_component::tprmCrc32;
+using system_core::system_component::VERIFY_RESPONSE_SIZE;
+
+/// Write a staged payload whose CRC (and optionally layout hash) are genuine.
+void writeVerified(const std::filesystem::path& dir, std::uint32_t uid, std::uint32_t layoutHash,
+                   const std::vector<std::uint8_t>& body, bool corruptCrc = false) {
+  TprmPayloadHeader h{};
+  std::memcpy(h.magic.data(), "APV3", 4);
+  h.version = 3;
+  h.payloadSize = static_cast<std::uint16_t>(body.size());
+  h.fullUid = uid;
+  h.layoutHash = layoutHash;
+  h.payloadCrc = tprmCrc32(body.data(), body.size()) ^ (corruptCrc ? 0xFFU : 0U);
+  std::ofstream f(dir / system_core::system_component::SystemComponentBase::tprmFilename(uid),
+                  std::ios::binary);
+  f.write(reinterpret_cast<const char*>(&h), sizeof(h));
+  f.write(reinterpret_cast<const char*>(body.data()), static_cast<std::streamsize>(body.size()));
+}
+
+} // namespace
+
+/** @test A genuine staged payload verifies OK; the verdict block carries its hashes. */
+TEST_F(TprmReadbackTest, VerifyAcceptsGenuinePayload) {
+  const std::vector<std::uint8_t> BODY(64, 0x3C);
+  writeVerified(dir_, 0x00C800U, 0xFEEDF00DU, BODY);
+
+  std::vector<std::uint8_t> out;
+  const auto VERDICT = appendVerifyVerdict(dir_, 0x00C800U, nullptr, out);
+  EXPECT_EQ(VERDICT, TprmPayloadCheck::OK);
+  ASSERT_EQ(out.size(), VERIFY_RESPONSE_SIZE);
+  EXPECT_EQ(out[0], static_cast<std::uint8_t>(TprmPayloadCheck::OK));
+  EXPECT_EQ(rd32(out, 4), 0xFEEDF00DU);
+}
+
+/** @test Body corruption and wrong-target staging produce distinct verdicts. */
+TEST_F(TprmReadbackTest, VerifyDistinguishesFailureClasses) {
+  const std::vector<std::uint8_t> BODY(32, 0x11);
+  writeVerified(dir_, 0x000500U, 0, BODY, /*corruptCrc=*/true);
+
+  std::vector<std::uint8_t> out;
+  EXPECT_EQ(appendVerifyVerdict(dir_, 0x000500U, nullptr, out), TprmPayloadCheck::CRC_MISMATCH);
+
+  // Wrong target: payload declares a different uid than its filename slot.
+  writeVerified(dir_, 0x000600U, 0, BODY);
+  std::filesystem::rename(
+      dir_ / system_core::system_component::SystemComponentBase::tprmFilename(0x000600U),
+      dir_ / system_core::system_component::SystemComponentBase::tprmFilename(0x000700U));
+  out.clear();
+  EXPECT_EQ(appendVerifyVerdict(dir_, 0x000700U, nullptr, out), TprmPayloadCheck::UID_MISMATCH);
+
+  // Missing staged file.
+  out.clear();
+  EXPECT_EQ(appendVerifyVerdict(dir_, 0x00BB00U, nullptr, out), TprmPayloadCheck::FILE_ERROR);
+}
+
+/** @test Layout-hash enforcement fires only when an expected hash is supplied. */
+TEST_F(TprmReadbackTest, VerifyEnforcesExpectedLayoutHash) {
+  const std::vector<std::uint8_t> BODY(16, 0x77);
+  writeVerified(dir_, 0x00D700U, 0xAAAA5555U, BODY);
+
+  std::vector<std::uint8_t> out;
+  const std::uint32_t GOOD = 0xAAAA5555U;
+  EXPECT_EQ(appendVerifyVerdict(dir_, 0x00D700U, &GOOD, out), TprmPayloadCheck::OK);
+
+  const std::uint32_t WRONG = 0x12345678U;
+  out.clear();
+  EXPECT_EQ(appendVerifyVerdict(dir_, 0x00D700U, &WRONG, out), TprmPayloadCheck::LAYOUT_MISMATCH);
+  EXPECT_EQ(rd32(out, 4), 0xAAAA5555U) << "declared hash reported so ground sees the delta";
+}

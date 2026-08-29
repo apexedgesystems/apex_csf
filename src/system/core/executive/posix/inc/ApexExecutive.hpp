@@ -178,6 +178,8 @@ public:
                             ///< offset, u16 len).
     READBACK_TPRM = 0x0131, ///< Digest of the staged (inactive-bank) TPRM payloads
                             ///< (optional 2-byte page-offset payload; see TprmReadback.hpp).
+    VERIFY_TPRM = 0x0132,   ///< Verify one staged payload without applying (4-byte fullUid
+                            ///< payload; 12-byte verdict response; see TprmReadback.hpp).
 
     // Runtime self-description commands
     GET_REGISTRY = 0x0140,     ///< Dump component registry (no payload, packed response).

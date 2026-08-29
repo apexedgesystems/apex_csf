@@ -29,6 +29,7 @@
  * an invalid staged file is a finding, never a silent skip.
  */
 
+#include "src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 
 #include <cstdint>
@@ -139,6 +140,53 @@ inline constexpr std::size_t READBACK_ROW_SIZE = 16;
     out.insert(out.end(), 3, 0U);
   }
   return true;
+}
+
+/// Verify-verdict response size: verdict + reserved + declared hashes.
+inline constexpr std::size_t VERIFY_RESPONSE_SIZE = 12;
+
+/**
+ * @brief Full staged-payload verification for one target, without apply.
+ *
+ * Runs every ingest check the apply path runs -- prelude, declared
+ * target, body CRC, and layout hash when the caller knows one -- and
+ * appends the verdict response:
+ *   0  u8    verdict     - TprmPayloadCheck (OK = staged bytes verified)
+ *   1  u8[3] reserved    - 0
+ *   4  u32   layoutHash  - hash the prelude declares
+ *   8  u32   payloadCrc  - CRC the prelude declares
+ *
+ * The verdict vocabulary is TprmPayloadCheck itself: hash-mismatch and
+ * constraint-violation are distinct codes, per the ground contract.
+ *
+ * @param stagedDir Directory holding staged .tprm payloads.
+ * @param fullUid Target whose staged payload is verified.
+ * @param expectedLayoutHash Optional spec hash to enforce (nullptr = skip).
+ * @param out Response buffer; the 12-byte verdict block is appended.
+ * @return The verdict (also encoded into `out`).
+ * @note NOT RT-safe: File I/O. Command-path (cold) only.
+ */
+inline TprmPayloadCheck appendVerifyVerdict(const std::filesystem::path& stagedDir,
+                                            std::uint32_t fullUid,
+                                            const std::uint32_t* expectedLayoutHash,
+                                            std::vector<std::uint8_t>& out) noexcept {
+  const std::filesystem::path FILE = stagedDir / SystemComponentBase::tprmFilename(fullUid);
+
+  TprmPayloadHeader hdr{};
+  TprmPayloadCheck verdict = checkStagedPrelude(FILE, hdr);
+  if (verdict == TprmPayloadCheck::OK) {
+    std::vector<std::uint8_t> body;
+    verdict = readTprmPayload(FILE, fullUid, body, expectedLayoutHash);
+  }
+
+  out.push_back(toFaultCode(verdict));
+  out.insert(out.end(), 3, 0U);
+  for (const std::uint32_t V : {hdr.layoutHash, hdr.payloadCrc}) {
+    for (int i = 0; i < 4; ++i) {
+      out.push_back(static_cast<std::uint8_t>((V >> (8 * i)) & 0xFFU));
+    }
+  }
+  return verdict;
 }
 
 } // namespace system_component

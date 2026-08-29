@@ -225,6 +225,28 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
                                    TPRM_FN, fileSystem_.inactiveTprmDir().string()));
     }
 
+    // Verify before apply: the vehicle never applies staged bytes it
+    // knows are wrong. The refusal keeps the LOAD_FAILED status the
+    // wire has always carried; the response's 12-byte verdict block
+    // says exactly which check failed (hash-mismatch and
+    // constraint-violation are distinct TprmPayloadCheck codes).
+    {
+      const auto VERDICT = system_core::system_component::appendVerifyVerdict(
+          fileSystem_.inactiveTprmDir(), targetUid, comp->expectedLayoutHash(), response);
+      if (VERDICT != system_core::system_component::TprmPayloadCheck::OK) {
+        sysLog_->warning(label(), system_core::system_component::toFaultCode(VERDICT),
+                         fmt::format("RELOAD_TPRM refused for 0x{:06X}: staged payload {}",
+                                     targetUid, system_core::system_component::toString(VERDICT)));
+        if (auto* sl = fileSystem_.swapLog()) {
+          sl->warning("SWAP", system_core::system_component::toFaultCode(VERDICT),
+                      fmt::format("RELOAD_TPRM_REFUSED: uid=0x{:06X} verdict={}", targetUid,
+                                  system_core::system_component::toString(VERDICT)));
+        }
+        return static_cast<std::uint8_t>(CommandResult::LOAD_FAILED);
+      }
+      response.clear(); // Verified: the apply outcome is the response.
+    }
+
     // Lock the component so the scheduler skips its tasks during reload.
     // This prevents data races when loadTprm() modifies shared state
     // (e.g. scheduler's entries_ and schedule_ vectors).
@@ -574,6 +596,26 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
                                                            pageOffset, response)) {
       return static_cast<std::uint8_t>(CommandResult::LOAD_FAILED);
     }
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case static_cast<std::uint16_t>(Opcode::VERIFY_TPRM): {
+    // Staged-verify: the full ingest check suite against the staged
+    // payload, never applying. The 12-byte response carries the
+    // TprmPayloadCheck verdict (hash-mismatch and constraint-violation
+    // are distinct codes) plus the prelude's declared hashes, so ground
+    // shows "verified on vehicle" separately from "applied".
+    if (payload.size() < 4) {
+      return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+    }
+    std::uint32_t targetUid = 0;
+    std::memcpy(&targetUid, payload.data(), 4);
+    auto* comp = registry_.getComponent(targetUid);
+    if (comp == nullptr) {
+      return static_cast<std::uint8_t>(CommandResult::TARGET_NOT_FOUND);
+    }
+    (void)system_core::system_component::appendVerifyVerdict(
+        fileSystem_.inactiveTprmDir(), targetUid, comp->expectedLayoutHash(), response);
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 
