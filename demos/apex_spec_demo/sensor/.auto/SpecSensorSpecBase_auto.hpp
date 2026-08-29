@@ -70,6 +70,12 @@ using TBase::TBase;
     return loaded;
   }
 
+  /// Staged-payload verification enforces the spec hash for this
+  /// component (VERIFY_TPRM and the verify-gated RELOAD).
+  [[nodiscard]] const std::uint32_t* expectedLayoutHash() const noexcept override {
+    return &SPEC_SENSOR_TUNABLE_PARAMS_LAYOUT_HASH;
+  }
+
 protected:
 /// Extra derived-class initialization after spec registration.
 [[nodiscard]] virtual std::uint8_t onInit() noexcept { return 0; }
