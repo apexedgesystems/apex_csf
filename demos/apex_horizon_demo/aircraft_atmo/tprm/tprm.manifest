@@ -6,10 +6,20 @@
 [components aircraft_atmo]
 0x000000  toml/executive.toml
 0x000100  toml/scheduler.toml
+0x000500  toml/action.toml
 0x00DC00  toml/earth_body.toml
 0x00E000  toml/aircraft.toml
 0x00E100  toml/aircraft_controller.toml
 0x00CB00  toml/aircraft_bridge.toml
 
+[sequences modes]
+rts 0  toml/rts/rts_001_dutch_roll.toml
+rts 1  toml/rts/rts_002_short_period.toml
+rts 2  toml/rts/rts_003_spiral.toml
+rts 3  toml/rts/rts_004_phugoid.toml
+rts 4  toml/rts/rts_010_volatility.toml
+rts 5  toml/rts/rts_032_boundary_restore.toml
+
 [master master.tprm]
 use components aircraft_atmo
+use sequences modes
