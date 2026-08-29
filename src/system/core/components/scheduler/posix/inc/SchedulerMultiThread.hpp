@@ -13,7 +13,7 @@
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerBase.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerStatus.hpp"
-#include "src/utilities/concurrency/inc/ThreadPool.hpp"
+#include "src/utilities/concurrency/inc/ThreadPoolLockFree.hpp"
 #include "src/system/core/components/scheduler/posix/inc/TaskCtxPool.hpp"
 
 #include <cstdint>
@@ -24,6 +24,10 @@
 
 namespace system_core {
 namespace scheduler {
+
+/// Pending-dispatch bound per pool (power-of-two ring slots). Far above any
+/// healthy per-tick burst; the preflight burst check warns long before this.
+inline constexpr std::size_t POOL_QUEUE_CAPACITY = 1024;
 
 /**
  * @struct PoolSpec
@@ -132,7 +136,7 @@ public:
    */
   [[nodiscard]] std::size_t totalSkipCount() const noexcept { return totalSkipCount_; }
 
-  /** @brief Dispatches dropped on context-pool exhaustion since startup. */
+  /** @brief Dispatches dropped (context exhaustion or ring rejection) since startup. */
   [[nodiscard]] std::size_t totalDispatchDrops() const noexcept { return totalDispatchDrops_; }
 
   /**
@@ -187,7 +191,10 @@ private:
   // been loaded so workersPerPool can drive sizing.
   std::vector<PoolSpec> pendingSpecs_;
 
-  std::vector<std::unique_ptr<apex::concurrency::ThreadPool>> pools_;
+  /// Lock-free dispatch pools: producer-side enqueue is a CAS push + a
+  /// waiter-gated futex wake, so the tick thread's per-task cost stays flat
+  /// as the table grows. FIFO order is preserved by the MPMC ring.
+  std::vector<std::unique_ptr<apex::concurrency::ThreadPoolLockFree>> pools_;
   std::vector<std::unique_ptr<TaskCtxPool>> ctxPools_;
   std::vector<std::string> poolNames_;
   std::filesystem::path logDir_;
@@ -202,7 +209,7 @@ private:
   std::atomic<std::uint8_t> lastViolationTaskUid_{0};
   bool skipOnBusy_{false};            ///< Skip tasks still running (SKIP_ON_BUSY mode).
   std::size_t totalSkipCount_{0};     ///< Total skipped invocations across all tasks.
-  std::size_t totalDispatchDrops_{0}; ///< Dispatches dropped on context-pool exhaustion.
+  std::size_t totalDispatchDrops_{0}; ///< Dropped dispatches (ctx exhaustion or ring reject).
 };
 
 } // namespace scheduler
