@@ -113,6 +113,8 @@ public:
     for (std::size_t i = 0; i < data::EVENT_NOTIFICATION_TABLE_SIZE; ++i) {
       prevCounts[i] = iface_.notifications[i].invokeCount;
     }
+    const std::uint32_t PREV_TIMEOUTS = iface_.stats.sequenceTimeouts;
+    const std::uint32_t PREV_ABORTS = iface_.stats.sequenceAborts;
 
     data::processCycle(iface_, currentCycle);
 
@@ -122,6 +124,14 @@ public:
       if (NOTE.invokeCount > prevCounts[i] && NOTE.hasLogMessage() && !NOTE.callback) {
         dispatchLogNotifications(NOTE.eventId, NOTE.invokeCount);
       }
+    }
+
+    // A mission sequence dropping or aborting a step is never routine:
+    // every timeout-policy firing gets a WARNING naming the sequence,
+    // step, and policy (latest context; the count covers bursts).
+    if (iface_.stats.sequenceTimeouts != PREV_TIMEOUTS) {
+      logStepTimeouts(iface_.stats.sequenceTimeouts - PREV_TIMEOUTS,
+                      iface_.stats.sequenceAborts != PREV_ABORTS);
     }
   }
 
@@ -318,6 +328,9 @@ private:
    * @note Logs to componentLog() at the configured severity.
    */
   void dispatchLogNotifications(std::uint16_t eventId, std::uint32_t fireCount) noexcept;
+
+  /// WARNING for step timeouts this cycle (count + latest seq/step/policy).
+  void logStepTimeouts(std::uint32_t count, bool aborted) noexcept;
 
   data::ActionInterface iface_{};
   data::SequenceCatalog catalog_;         ///< Sequence catalog (metadata + cached binaries).

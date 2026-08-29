@@ -1109,6 +1109,21 @@ std::uint8_t ActionComponent::handleCommand(std::uint16_t opcode,
 
 /* ----------------------------- Log Dispatch ----------------------------- */
 
+void ActionComponent::logStepTimeouts(std::uint32_t count, bool aborted) noexcept {
+  auto* log = componentLog();
+  if (log == nullptr) {
+    return;
+  }
+  const auto& ST = iface_.stats;
+  log->warning(
+      label(), static_cast<std::uint8_t>(Status::WARN_STEP_TIMEOUT),
+      fmt::format("Sequence step timeout{}: seq={} step={} policy={}{}",
+                  count > 1 ? fmt::format(" x{}", count) : std::string{}, ST.lastTimeoutSeqId,
+                  ST.lastTimeoutStep,
+                  data::toString(static_cast<data::StepTimeoutPolicy>(ST.lastTimeoutPolicy)),
+                  aborted ? " (sequence aborted)" : ""));
+}
+
 void ActionComponent::dispatchLogNotifications(std::uint16_t eventId,
                                                std::uint32_t fireCount) noexcept {
   auto* log = componentLog();

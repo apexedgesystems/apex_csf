@@ -18,6 +18,8 @@ const char* toString(Status s) noexcept {
     return "ERROR_QUEUE_FULL";
   case Status::WARN_RESOLVE_FAILURES:
     return "WARN_RESOLVE_FAILURES";
+  case Status::WARN_STEP_TIMEOUT:
+    return "WARN_STEP_TIMEOUT";
   case Status::EOE_ACTION:
     return "EOE_ACTION";
   }

@@ -127,6 +127,14 @@ struct EngineStats {
   std::uint32_t atsLoaded{0};             ///< Standalone ATS files loaded (cumulative).
   std::uint32_t abortEventsDispatched{0}; ///< Abort events dispatched (cumulative).
   std::uint32_t exclusionStops{0};        ///< Sequences stopped by mutual exclusion (cumulative).
+
+  // Context of the most recent step timeout, so the component tick can
+  // attribute its warning (a dropped mission step is never routine). With
+  // multiple timeouts in one cycle the counters carry the total and this
+  // context names the latest.
+  std::uint16_t lastTimeoutSeqId{0}; ///< Sequence id of the latest step timeout.
+  std::uint8_t lastTimeoutStep{0};   ///< Step index that timed out.
+  std::uint8_t lastTimeoutPolicy{0}; ///< StepTimeoutPolicy that fired.
 };
 
 /* ----------------------------- ActionInterface ----------------------------- */
@@ -523,6 +531,9 @@ inline std::uint16_t tickSingleSequence(ActionInterface& iface, DataSequence& se
       --step.timeoutRemaining;
       if (step.timeoutRemaining == 0) {
         ++iface.stats.sequenceTimeouts;
+        iface.stats.lastTimeoutSeqId = seq.sequenceId;
+        iface.stats.lastTimeoutStep = seq.currentStep;
+        iface.stats.lastTimeoutPolicy = static_cast<std::uint8_t>(step.onTimeout);
         if (!applyTimeoutPolicy(seq)) {
           ++iface.stats.sequenceAborts;
         } else if (step.retryCount > 0) {
@@ -552,6 +563,9 @@ inline std::uint16_t tickSingleSequence(ActionInterface& iface, DataSequence& se
       --step.timeoutRemaining;
       if (step.timeoutRemaining == 0) {
         ++iface.stats.sequenceTimeouts;
+        iface.stats.lastTimeoutSeqId = seq.sequenceId;
+        iface.stats.lastTimeoutStep = seq.currentStep;
+        iface.stats.lastTimeoutPolicy = static_cast<std::uint8_t>(step.onTimeout);
         if (!applyTimeoutPolicy(seq)) {
           ++iface.stats.sequenceAborts;
         } else if (step.retryCount > 0) {

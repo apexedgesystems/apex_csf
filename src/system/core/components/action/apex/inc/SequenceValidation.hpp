@@ -52,7 +52,8 @@ enum class SequenceErrorCode : std::uint8_t {
   WAIT_CONDITION_NO_TARGET,  ///< Wait condition enabled but target fullUid=0.
   ATS_NOT_MONOTONIC,         ///< ATS steps not in increasing time order.
   ATS_TIME_IN_PAST,          ///< ATS step timestamp is before current time.
-  ATS_NO_TIME_PROVIDER       ///< ATS sequence but no time provider configured.
+  ATS_NO_TIME_PROVIDER,      ///< ATS sequence but no time provider configured.
+  TIMEOUT_SHORTER_THAN_DELAY ///< timeoutCycles expires before the step's own delay.
 };
 
 /**
@@ -86,6 +87,8 @@ enum class SequenceErrorCode : std::uint8_t {
     return "ATS_TIME_IN_PAST";
   case SequenceErrorCode::ATS_NO_TIME_PROVIDER:
     return "ATS_NO_TIME_PROVIDER";
+  case SequenceErrorCode::TIMEOUT_SHORTER_THAN_DELAY:
+    return "TIMEOUT_SHORTER_THAN_DELAY";
   }
   return "UNKNOWN";
 }
@@ -201,6 +204,26 @@ struct SequenceError {
                       STEP.delayCycles, prevDelay);
         return fail(SequenceErrorCode::ATS_NOT_MONOTONIC, i, buf);
       }
+    }
+
+    // RTS only: a timeout at or under the step's own delay expires during
+    // the wait and fires the policy before the action ever runs -- and
+    // every later delayed step repeats the pattern, half-executing the
+    // sequence. Always an authoring error in RTS, where both fields are
+    // engine ticks; rejected at load rather than discovered at runtime.
+    // <=: with timeout == delay both expire the same cycle and the
+    // engine's timeout check runs first, so the step still dies. ATS is
+    // exempt: under a time provider its delayCycles are microseconds
+    // while timeoutCycles remain ticks, so the two are not comparable
+    // here (the rig-proven pass plans pair sub-tick waits with
+    // multi-tick timeouts).
+    if (seq.type == SequenceType::RTS && STEP.timeoutCycles > 0 && STEP.delayCycles > 0 &&
+        STEP.timeoutCycles <= STEP.delayCycles) {
+      char buf[128];
+      std::snprintf(buf, sizeof(buf),
+                    "step %u: timeoutCycles %u expires within the step's own %u-cycle delay", i,
+                    STEP.timeoutCycles, STEP.delayCycles);
+      return fail(SequenceErrorCode::TIMEOUT_SHORTER_THAN_DELAY, i, buf);
     }
     prevDelay = STEP.delayCycles;
   }

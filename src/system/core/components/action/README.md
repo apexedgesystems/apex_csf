@@ -105,6 +105,35 @@ wp.armed = true;
 - Chaining by sequence ID
 - Hot-add via RESCAN_CATALOG
 
+### Step Timing Contract
+
+A step waits `delayCycles` (RTS: relative to the previous step; ATS:
+absolute from sequence start), then executes. `timeoutCycles` counts
+from step ENTRY, so a timeout at or under the step's own wait would
+fire during the delay and kill the step before its action runs --
+validation rejects that shape at load (`TIMEOUT_SHORTER_THAN_DELAY`)
+rather than half-executing at runtime. Every timeout-policy firing
+(ABORT/SKIP/GOTO) raises `WARN_STEP_TIMEOUT` naming the sequence,
+step, and policy: a mission sequence dropping steps is never routine.
+
+### Watchpoint Debounce Semantics
+
+`minFireCount` counts predicate EDGES -- rising transitions, reset
+whenever the predicate goes false -- not sustained-true ticks. Each
+armed watchpoint states its effective semantics in one INFO line at
+TPRM load. Accumulating data-target resolve failures raise
+`WARN_RESOLVE_FAILURES` (first failure, then every 4096th).
+
+### TPRM Optionality
+
+A missing tprm is a valid configuration: defaults at INFO, load
+reports success. `false` from `loadTprm` is reserved for a file that
+exists and fails its checks, which errors at the component and warns
+at the executive. This is the fleet-wide convention (Interface,
+Action, SystemMonitor, DataTransform, ShmRingBridge, the sim
+models); the scheduler is the exception when an application config
+is present, because its table declares the tasks the app expects.
+
 ### Ground Command Interface (22 opcodes)
 
 | Range         | Commands                                                                                     |
