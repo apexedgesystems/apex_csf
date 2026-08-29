@@ -793,7 +793,20 @@ std::uint8_t ActionComponent::handleCommand(std::uint16_t opcode,
     }
 
     const bool IS_RTS = (opcode == LOAD_RTS);
-    const bool OK = IS_RTS ? loadRts(SLOT, filePath) : loadAts(SLOT, filePath);
+
+    // Ground names files relative to the vehicle filesystem, never the
+    // process working directory: a relative path resolves against the
+    // active bank (the catalog dirs' parent), so "rts/005.rts" means
+    // <bank>/rts/005.rts wherever the app's --fs-root points.
+    std::filesystem::path resolved{filePath};
+    if (resolved.is_relative()) {
+      const auto& CATALOG_DIR = IS_RTS ? catalogRtsDir_ : catalogAtsDir_;
+      if (!CATALOG_DIR.empty()) {
+        resolved = CATALOG_DIR.parent_path() / resolved;
+      }
+    }
+
+    const bool OK = IS_RTS ? loadRts(SLOT, resolved) : loadAts(SLOT, resolved);
     if (!OK) {
       return static_cast<std::uint8_t>(CommandResult::LOAD_FAILED);
     }

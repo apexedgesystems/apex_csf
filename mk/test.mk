@@ -185,14 +185,20 @@ cdef: tools-rust
 	done
 	$(call log_ok,cdef,.auto headers regenerated)
 
+# A directory may hold several manifests emitting into one .auto tree
+# (e.g. hil model: plant + vfc), so regeneration and diffing group by
+# directory -- every manifest of a directory regenerates into the same
+# scratch before the whole tree is compared.
 check-cdef: tools-rust
 	$(call log,check-cdef,Diffing committed .auto headers against their specs)
-	@fail=0; for m in $(CDEF_MANIFESTS); do \
-	  dir=$$(dirname "$$m"); \
+	@fail=0; for dir in $$(for m in $(CDEF_MANIFESTS); do dirname "$$m"; done | sort -u); do \
 	  scratch=$$(mktemp -d); \
-	  "$(BUILD_DIR)/bin/tools/rust/cdef_gen" --manifest "$$m" --output "$$scratch" > /dev/null || exit 1; \
+	  for m in $(CDEF_MANIFESTS); do \
+	    [ "$$(dirname "$$m")" = "$$dir" ] || continue; \
+	    "$(BUILD_DIR)/bin/tools/rust/cdef_gen" --manifest "$$m" --output "$$scratch" > /dev/null || exit 1; \
+	  done; \
 	  if ! diff -ru "$$dir/.auto" "$$scratch" > /dev/null 2>&1; then \
-	    printf '[check-cdef] DRIFT: %s/.auto does not match its spec\n' "$$dir"; \
+	    printf '[check-cdef] DRIFT: %s/.auto does not match its specs\n' "$$dir"; \
 	    diff -ru "$$dir/.auto" "$$scratch" | head -20; \
 	    fail=1; \
 	  fi; \

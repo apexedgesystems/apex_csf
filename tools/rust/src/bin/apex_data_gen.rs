@@ -143,8 +143,13 @@ fn discover_headers(
 
     // If all entries have explicit headers, skip automatic discovery.
     // This avoids parsing unrelated headers (e.g., complex class headers
-    // in the same inc/ directory as simple data structs).
-    let all_structs_explicit = manifest.structs.values().all(|e| e.header.is_some());
+    // in the same inc/ directory as simple data structs). Spec-defined
+    // structs ([[fields]] in the manifest) need no header at all -- their
+    // layout comes from the spec -- so they count as explicit here.
+    let all_structs_explicit = manifest
+        .structs
+        .iter()
+        .all(|(name, e)| e.header.is_some() || manifest.fields.contains_key(name));
     let all_enums_explicit =
         manifest.enums.is_empty() || manifest.enums.values().all(|e| e.header.is_some());
     let skip_auto_discovery =

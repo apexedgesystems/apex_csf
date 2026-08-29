@@ -4,13 +4,137 @@
 # runtime state. Wire types (VehicleState, ControlCmd) are in protocol_data.toml.
 
 component = "HilPlantModel"
+namespace = "appsim::plant"
 
 [structs]
 # Tunable parameters (TPRM-configurable at startup)
-HilPlantTunableParams = { category = "TUNABLE_PARAM", header = "inc/HilPlantData.hpp" }
+HilPlantTunableParams = { category = "TUNABLE_PARAM" }
 
 # Runtime state (registered with ApexRegistry)
-HilPlantState = { category = "STATE", header = "inc/HilPlantData.hpp" }
+HilPlantState = { category = "STATE" }
 
 # Output: vehicle state vector sent to drivers each control tick
 VehicleState = { category = "OUTPUT", header = "../common/inc/VehicleState.hpp" }
+
+[[fields.HilPlantTunableParams]]
+name = "mass"
+type = "float"
+size = 8
+default = 10.0
+doc = "Vehicle mass [kg]."
+
+[[fields.HilPlantTunableParams]]
+name = "dragCd"
+type = "float"
+size = 8
+default = 0.5
+doc = "Drag coefficient."
+
+[[fields.HilPlantTunableParams]]
+name = "dragArea"
+type = "float"
+size = 8
+default = 0.1
+doc = "Reference area [m^2]."
+
+[[fields.HilPlantTunableParams]]
+name = "targetAlt"
+type = "float"
+size = 8
+default = 100.0
+doc = "PD controller target altitude [m]."
+
+[[fields.HilPlantTunableParams]]
+name = "ctrlKp"
+type = "float"
+size = 8
+default = 2.0
+doc = "Proportional gain [N/m]."
+
+[[fields.HilPlantTunableParams]]
+name = "ctrlKd"
+type = "float"
+size = 8
+default = 1.5
+doc = "Derivative gain [N/(m/s)]."
+
+[[fields.HilPlantTunableParams]]
+name = "thrustMax"
+type = "float"
+size = 8
+default = 200.0
+doc = "Maximum thrust magnitude [N]."
+
+[[fields.HilPlantTunableParams]]
+name = "commLossFrames"
+type = "float"
+size = 8
+default = 25.0
+doc = "Control frames without new cmd before comm loss (0=disabled)."
+
+[[fields.HilPlantState]]
+name = "simTime"
+type = "float"
+size = 8
+doc = "Elapsed simulation time [s]."
+
+[[fields.HilPlantState]]
+name = "lastAlt"
+type = "float"
+size = 8
+doc = "Last computed altitude [m]."
+
+[[fields.HilPlantState]]
+name = "lastVz"
+type = "float"
+size = 8
+doc = "Last vertical velocity [m/s]."
+
+[[fields.HilPlantState]]
+name = "stepCount"
+type = "uint"
+size = 4
+doc = "Plant steps executed."
+
+[[fields.HilPlantState]]
+name = "ctrlCount"
+type = "uint"
+size = 4
+doc = "Control updates executed."
+
+[[fields.HilPlantState]]
+name = "tlmCount"
+type = "uint"
+size = 4
+doc = "Telemetry reports sent."
+
+[[fields.HilPlantState]]
+name = "commLossCount"
+type = "uint"
+size = 4
+doc = "Comm loss events detected."
+
+[[fields.HilPlantState]]
+name = "staleCmdFrames"
+type = "uint"
+size = 4
+doc = "Consecutive control frames with no new command."
+
+[[fields.HilPlantState]]
+name = "lastSeenRxCount"
+type = "uint"
+size = 4
+doc = "Snapshot of driver rxCount for staleness detection."
+
+[[fields.HilPlantState]]
+name = "commLost"
+type = "uint"
+size = 1
+doc = "1 if currently in comm loss state."
+
+[[fields.HilPlantState]]
+name = "reserved"
+type = "uint"
+size = 1
+count = 7
+doc = "Padding for 8-byte alignment."

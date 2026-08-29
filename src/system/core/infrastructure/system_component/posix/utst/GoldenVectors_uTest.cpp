@@ -78,6 +78,24 @@ struct NestedEnum {
 };
 static_assert(sizeof(NestedEnum) == 13, "nested_enum.bin layout");
 
+struct SchedulerShape {
+  std::uint8_t numPools;
+  std::uint8_t workersPerPool;
+  std::uint8_t numTasks;
+  struct Task {
+    std::uint32_t fullUid;
+    std::uint8_t taskUid;
+    std::uint8_t poolIndex;
+    std::uint16_t freqN;
+    std::uint16_t freqD;
+    std::uint16_t offset;
+    std::int8_t priority;
+    std::uint8_t seqGroup;
+    std::uint8_t seqPhase;
+  } tasks[2];
+};
+static_assert(sizeof(SchedulerShape) == 33, "scheduler_shape.bin layout");
+
 #pragma pack(pop)
 
 /* ----------------------------- Helpers ----------------------------- */
@@ -105,6 +123,39 @@ template <typename T> T load(const char* name, std::uint32_t fullUid) {
 // is undefined behavior (UBSan enforces it). Value loads are well-defined --
 // the same rule that makes the runtime's TParams structs naturally
 // padding-free by field order instead of packed.
+
+/** @test The scheduler TPRM shape round-trips from the committed vector. */
+TEST(GoldenVectors, SchedulerShapePayload) {
+  const auto V = vectors::load<vectors::SchedulerShape>("scheduler_shape.bin", 0x000100U);
+  const std::uint8_t POOLS = V.numPools;
+  const std::uint8_t WORKERS = V.workersPerPool;
+  const std::uint8_t TASKS = V.numTasks;
+  EXPECT_EQ(POOLS, 1U);
+  EXPECT_EQ(WORKERS, 3U);
+  EXPECT_EQ(TASKS, 2U);
+
+  const std::uint32_t UID0 = V.tasks[0].fullUid;
+  const std::uint16_t FREQ0 = V.tasks[0].freqN;
+  const std::uint16_t OFF0 = V.tasks[0].offset;
+  const std::int8_t PRIO0 = V.tasks[0].priority;
+  const std::uint8_t SEQG0 = V.tasks[0].seqGroup;
+  EXPECT_EQ(UID0, 0x00BEEF00U);
+  EXPECT_EQ(FREQ0, 400U);
+  EXPECT_EQ(OFF0, 0x0203U);
+  EXPECT_EQ(PRIO0, -5);
+  EXPECT_EQ(SEQG0, 255U);
+
+  const std::uint32_t UID1 = V.tasks[1].fullUid;
+  const std::uint8_t POOL1 = V.tasks[1].poolIndex;
+  const std::uint16_t FREQD1 = V.tasks[1].freqD;
+  const std::int8_t PRIO1 = V.tasks[1].priority;
+  const std::uint8_t SEQP1 = V.tasks[1].seqPhase;
+  EXPECT_EQ(UID1, 0x00C0FFEEU);
+  EXPECT_EQ(POOL1, 1U);
+  EXPECT_EQ(FREQD1, 2U);
+  EXPECT_EQ(PRIO1, 127);
+  EXPECT_EQ(SEQP1, 1U);
+}
 
 /** @test Every scalar shape round-trips from the committed vector. */
 TEST(GoldenVectors, ScalarTypesPayload) {

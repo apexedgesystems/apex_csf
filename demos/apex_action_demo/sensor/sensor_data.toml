@@ -1,9 +1,107 @@
 # sensor_data.toml - Component data manifest for SensorModel
+#
+# Spec-defined layouts (fleet-sweep adoption): the [[fields]] arrays
+# are the source of truth; the .auto headers generate from them and
+# the hand header (SensorData.hpp) keeps only the composite
+# INSPECT-swap block and the ADL endianSwap, including the generated
+# structs. Layouts reproduce the pre-adoption structs byte-for-byte.
 
 component = "SensorModel"
+namespace = "appsim::sensor"
 
 [structs]
-SensorTunableParams = { category = "TUNABLE_PARAM", header = "inc/SensorData.hpp" }
-SensorState = { category = "STATE", header = "inc/SensorData.hpp" }
-SensorOutput = { category = "OUTPUT", header = "inc/SensorData.hpp" }
-SensorHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/SensorData.hpp" }
+SensorTunableParams = { category = "TUNABLE_PARAM" }
+SensorState = { category = "STATE" }
+SensorOutput = { category = "OUTPUT" }
+SensorHealthTlm = { category = "TELEMETRY", opcode = "0x0100" }
+
+[[fields.SensorTunableParams]]
+name = "rampRate"
+type = "float"
+size = 4
+default = 0.5
+doc = "Temperature increase per step [deg/step]."
+
+[[fields.SensorTunableParams]]
+name = "initialTemp"
+type = "float"
+size = 4
+default = 20.0
+doc = "Starting temperature [deg]."
+
+[[fields.SensorTunableParams]]
+name = "maxTemp"
+type = "float"
+size = 4
+default = 120.0
+doc = "Wrap-around temperature (resets to initial)."
+
+[[fields.SensorState]]
+name = "stepCount"
+type = "uint"
+size = 4
+doc = "Total step invocations."
+
+[[fields.SensorState]]
+name = "wrapCount"
+type = "uint"
+size = 4
+doc = "Number of temperature wrap-arounds."
+
+[[fields.SensorOutput]]
+name = "temperature"
+type = "float"
+size = 4
+default = 0.0
+doc = "Current temperature reading [deg]."
+
+[[fields.SensorOutput]]
+name = "temperatureRate"
+type = "float"
+size = 4
+default = 0.0
+doc = "Rate of change [deg/step]."
+
+[[fields.SensorOutput]]
+name = "overtemp"
+type = "uint"
+size = 1
+doc = "1 if temperature > 100.0 (threshold)."
+
+[[fields.SensorOutput]]
+name = "reserved"
+type = "uint"
+size = 1
+count = 3
+doc = "Alignment padding."
+
+[[fields.SensorHealthTlm]]
+name = "temperature"
+type = "float"
+size = 4
+
+[[fields.SensorHealthTlm]]
+name = "rampRate"
+type = "float"
+size = 4
+
+[[fields.SensorHealthTlm]]
+name = "stepCount"
+type = "uint"
+size = 4
+
+[[fields.SensorHealthTlm]]
+name = "wrapCount"
+type = "uint"
+size = 4
+
+[[fields.SensorHealthTlm]]
+name = "overtemp"
+type = "uint"
+size = 1
+
+[[fields.SensorHealthTlm]]
+name = "reserved"
+type = "uint"
+size = 1
+count = 3

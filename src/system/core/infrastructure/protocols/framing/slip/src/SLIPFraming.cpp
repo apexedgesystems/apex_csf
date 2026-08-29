@@ -197,14 +197,14 @@ IoResult decodeChunk(DecodeState& st, const DecodeConfig& cfg, apex::compat::byt
     if (st.mode == DecodeState::Mode::DRAIN_CORRUPT) {
       ++r.bytesConsumed;
       if (B == END) {
-        st.reset();
+        st.resetToBoundary();
       }
       continue;
     }
     if (st.mode == DecodeState::Mode::DRAIN_OVERSIZE) {
       ++r.bytesConsumed;
       if (B == END) {
-        st.reset();
+        st.resetToBoundary();
       }
       continue;
     }
@@ -266,14 +266,23 @@ IoResult decodeChunk(DecodeState& st, const DecodeConfig& cfg, apex::compat::byt
     // IN_FRAME: process frame data
     if (st.mode == DecodeState::Mode::IN_FRAME) {
       if (B == END) {
-        // Frame termination
+        // Frame termination. The delimiter is a separator: the next byte
+        // already belongs to the next frame, so land on the boundary
+        // rather than in IDLE (which would demand a second delimiter and
+        // tie decoding to delimiter parity). A non-emitting delimiter
+        // (consecutive ENDs, empty frames suppressed) is consumed in
+        // place -- returning would hand the caller an empty completion
+        // for every inter-frame gap.
         const bool EMIT = (st.hadData || cfg.allowEmptyFrame);
-        st.reset();
+        st.resetToBoundary();
         ++r.bytesConsumed;
-        r.bytesProduced = w;
-        r.frameCompleted = EMIT;
-        r.status = Status::OK;
-        return r;
+        if (EMIT) {
+          r.bytesProduced = w;
+          r.frameCompleted = true;
+          r.status = Status::OK;
+          return r;
+        }
+        continue;
       }
 
       // Escape lookahead: process ESC+next atomically when available

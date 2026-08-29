@@ -646,7 +646,7 @@ def run_checkout(args: argparse.Namespace) -> int:
                 check("Upload RTS file", result["status"] == 0, result["status_name"])
 
                 # Load into slot 0 (.apex_fs/ prefix matches file transfer root)
-                load_payload = b"\x00" + b".apex_fs/rts/noop_sweep.rts\x00"
+                load_payload = b"\x00" + b"rts/noop_sweep.rts\x00"
                 r = c2.send_command(0x000500, proto.ACTION_LOAD_RTS, load_payload)
                 check("LOAD_RTS slot 0", r["status"] == 0, r["status_name"])
 

@@ -4,7 +4,7 @@
 # with 1-second spacing (100 cycles at 100 Hz). Each step has a 2-second
 # timeout with SKIP policy so the sweep continues if a component is unresponsive.
 #
-# StandaloneSequenceTprm: 8-byte header + 16 steps x 84 bytes = 1352 bytes
+# StandaloneSequenceTprm: 8-byte header + 16 steps x 64 bytes = 1032 bytes
 #
 # Components:
 #   0x7800: HilPlantModel
@@ -15,9 +15,8 @@
 
 [__enums__]
 # ActionType
-DATA_WRITE = 0
-COMMAND = 1
-ARM_CONTROL = 2
+COMMAND = 0
+ARM_CONTROL = 1
 # StepTimeoutPolicy
 ABORT = 0
 SKIP = 1

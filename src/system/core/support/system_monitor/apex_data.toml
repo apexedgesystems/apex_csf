@@ -4,14 +4,80 @@
 # postInternalTelemetry() for CPU load, temperature, memory, and FD usage.
 
 component = "SystemMonitor"
+namespace = "system_core::support"
 
 [structs]
 # Tunable parameters (TPRM-configurable at startup)
-SystemMonitorTunableParams = { category = "TUNABLE_PARAM" }
+SystemMonitorTunableParams = { category = "TUNABLE_PARAM", header = "inc/SystemMonitorData.hpp" }
 
 # Telemetry: periodic health snapshot (sent via postInternalTelemetry)
 SysMonHealthTlm = { category = "TELEMETRY", opcode = "0x0100" }
+# SysMonHealthTlm is spec-defined below; SystemMonitorTunableParams stays
+# header-parsed: its packed layout (unaligned members) is outside the
+# spec vocabulary until the generator carries packing and the layout
+# hash carries offsets.
 
 [enums]
 # Telemetry opcodes
 SysMonTlmOpcode = { header = "SystemMonitorTlm.hpp" }
+
+[[fields.SysMonHealthTlm]]
+name = "sampleCount"
+type = "uint"
+size = 4
+default = 0
+
+[[fields.SysMonHealthTlm]]
+name = "warnCount"
+type = "uint"
+size = 4
+default = 0
+doc = "Cumulative warning threshold breaches."
+
+[[fields.SysMonHealthTlm]]
+name = "critCount"
+type = "uint"
+size = 4
+default = 0
+doc = "Cumulative critical threshold breaches."
+
+[[fields.SysMonHealthTlm]]
+name = "monitoredCoreCount"
+type = "uint"
+size = 1
+default = 0
+doc = "Number of valid entries in coreLoad[]."
+
+[[fields.SysMonHealthTlm]]
+name = "pad0"
+type = "uint"
+size = 1
+default = 0
+doc = "Alignment padding."
+
+[[fields.SysMonHealthTlm]]
+name = "cpuTempC"
+type = "int"
+size = 2
+default = -1
+doc = "CPU temperature (Celsius). -1 = unavailable."
+
+[[fields.SysMonHealthTlm]]
+name = "coreLoad"
+type = "float"
+size = 4
+count = 16
+
+[[fields.SysMonHealthTlm]]
+name = "ramUsedPercent"
+type = "float"
+size = 4
+default = 0.0
+doc = "RAM utilization (percent, 0-100)."
+
+[[fields.SysMonHealthTlm]]
+name = "fdCount"
+type = "uint"
+size = 4
+default = 0
+doc = "Open file descriptor count."

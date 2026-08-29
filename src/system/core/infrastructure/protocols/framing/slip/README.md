@@ -239,6 +239,23 @@ Converts a payload into a SLIP-framed message with escape substitution and confi
 
 Stateful streaming decoder that reconstructs SLIP frames from arbitrary input chunks.
 
+#### Delimiter Semantics
+
+Per RFC 1055, `END` is a frame _separator_: the byte after a delimiter
+belongs to the next frame, and the decoder accepts it immediately.
+Consecutive delimiters (the common leading+trailing-END framing) form
+empty frames, which are ignored unless `allowEmptyFrame` is set --
+exactly the reference receiver's behavior. This keeps decoding
+independent of delimiter parity: a delimiter lost to line corruption
+costs at most the two adjacent frames (one truncated, one merged, both
+rejected by the caller's integrity check), after which the stream
+self-heals at the next delimiter.
+
+The decoder is stricter than the RFC in one place: at cold start (and
+after `DecodeState::reset()`), bytes are discarded until the first
+delimiter proves a frame boundary, instead of delivering pre-sync noise
+as a junk packet.
+
 #### Key Types
 
 ```cpp

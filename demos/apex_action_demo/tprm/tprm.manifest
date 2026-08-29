@@ -18,3 +18,4 @@ rts 1  toml/rts/rts_002_cleanup.toml
 
 [master master.tprm]
 use components flight
+use sequences flight

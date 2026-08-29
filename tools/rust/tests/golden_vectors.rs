@@ -25,6 +25,7 @@ const PAYLOADS: &[(&str, u32)] = &[
     ("scalar_types", 0x000000),
     ("strings_arrays", 0x00D001),
     ("nested_enum", 0x00CA00),
+    ("scheduler_shape", 0x000100),
 ];
 
 /// The archive's entries. Component entries pack the v3-stamped
