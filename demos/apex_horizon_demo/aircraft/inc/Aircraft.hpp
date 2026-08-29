@@ -194,6 +194,15 @@ public:
     const auto& p = tunables_.get();
 
     if (body_ == nullptr || !body_->isReady()) {
+      // Publish boot conditions while the world initializes: the
+      // OUTPUT block must never carry meaningless zeros -- the
+      // boundary watchpoints (and any early-attached consumer) read
+      // it from the first action tick, and a zero airspeed/altitude
+      // reads as "outside every envelope".
+      if (s.initialized == 0u) {
+        tlm.pos_alt_m = p.init_alt_m;
+        tlm.airspeed_m_s = p.init_speed_m_s;
+      }
       ++s.tick_count;
       return 0u;
     }
@@ -666,6 +675,19 @@ protected:
                  sizeof(AircraftTunables));
     registerData(DataCategory::STATE, "state", &state_.get(), sizeof(AircraftState));
     registerData(DataCategory::OUTPUT, "telemetry", &telemetry_.get(), sizeof(AircraftTelemetry));
+
+    // Seed the OUTPUT block with boot conditions BEFORE the runtime
+    // starts: the action engine's watchpoints evaluate it from the
+    // very first tick on the executive thread, concurrent with the
+    // worker running the first aircraft step -- a zero airspeed or
+    // altitude reads as "outside every envelope" and fires a phantom
+    // boundary recovery at boot.
+    {
+      const auto& p0 = tunables_.get();
+      auto& tlm0 = telemetry_.get();
+      tlm0.pos_alt_m = p0.init_alt_m;
+      tlm0.airspeed_m_s = p0.init_speed_m_s;
+    }
 
     auto* log = componentLog();
     if (log != nullptr) {

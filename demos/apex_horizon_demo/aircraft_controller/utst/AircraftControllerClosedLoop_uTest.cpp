@@ -685,3 +685,14 @@ TEST(AircraftCommandSurface, OrchStateMirrorsIntoFrameAndCountsRecoveries) {
   EXPECT_EQ(tlm.recovery_count, 2u);
   EXPECT_EQ(tlm.orch_state, 0x13u);
 }
+
+TEST(AircraftCommandSurface, TelemetrySeedsBootConditionsBeforeWorldReady) {
+  // No body attached: steps take the not-ready path. The OUTPUT block
+  // must publish the boot conditions, not zeros -- the boundary
+  // watchpoints evaluate it from the first action tick.
+  Aircraft aircraft;
+  (void)aircraft.aircraftStep();
+  const auto& tlm = aircraft.telemetry();
+  EXPECT_NEAR(tlm.pos_alt_m, 12192.0, 1.0);
+  EXPECT_NEAR(tlm.airspeed_m_s, 235.9, 0.1);
+}
