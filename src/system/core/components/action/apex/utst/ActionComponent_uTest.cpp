@@ -10,8 +10,12 @@
 #include <cstring>
 
 #include <array>
+#include <filesystem>
+#include <fstream>
 
 #include <gtest/gtest.h>
+
+#include <unistd.h>
 
 /* ----------------------------- Test Helpers ----------------------------- */
 
@@ -51,6 +55,40 @@ static void testCmdHandler(void* ctx, std::uint32_t uid, std::uint16_t opcode,
 }
 
 } // namespace
+
+/* ----------------------------- TPRM Load Contract ----------------------------- */
+
+/** @test Missing tprm is optional: defaults, success, no executive warning. */
+TEST(ActionComponent, LoadTprmMissingFileIsOptional) {
+  const auto DIR =
+      std::filesystem::temp_directory_path() / ("action_tprm_missing_" + std::to_string(getpid()));
+  std::filesystem::create_directories(DIR);
+
+  system_core::action::ActionComponent comp;
+  comp.setInstanceIndex(0); // Registered component: the executive-boot precondition.
+  EXPECT_TRUE(comp.loadTprm(DIR));
+
+  std::filesystem::remove_all(DIR);
+}
+
+/** @test Present-but-corrupt tprm still fails loudly. */
+TEST(ActionComponent, LoadTprmCorruptFileFails) {
+  const auto DIR =
+      std::filesystem::temp_directory_path() / ("action_tprm_corrupt_" + std::to_string(getpid()));
+  std::filesystem::create_directories(DIR);
+
+  system_core::action::ActionComponent comp;
+  comp.setInstanceIndex(0);
+  char filename[32];
+  std::snprintf(filename, sizeof(filename), "%06x.tprm", comp.fullUid());
+  {
+    std::ofstream f(DIR / filename, std::ios::binary);
+    f << "not a tprm payload";
+  }
+  EXPECT_FALSE(comp.loadTprm(DIR));
+
+  std::filesystem::remove_all(DIR);
+}
 
 /* ----------------------------- Default Construction ----------------------------- */
 

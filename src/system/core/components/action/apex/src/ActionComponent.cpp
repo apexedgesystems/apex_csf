@@ -80,7 +80,14 @@ bool ActionComponent::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   std::filesystem::path tprmPath = tprmDir / filename;
 
   if (!std::filesystem::exists(tprmPath)) {
-    return false;
+    // A tprm for this component is optional: absence means defaults, and
+    // loadTprm reports success so the executive does not warn (false is
+    // reserved for a file that exists but fails its checks).
+    auto* log = componentLog();
+    if (log != nullptr) {
+      log->info(label(), fmt::format("No TPRM found at {}, using defaults", tprmPath.string()));
+    }
+    return true;
   }
 
   ActionEngineTprm loaded{};
