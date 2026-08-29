@@ -356,9 +356,14 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick) noe
   if (ctx == nullptr) {
     ++totalDispatchDrops_;
     auto* lg = componentLog();
-    // First drop and every 4096th after: surfaces sustained exhaustion
-    // without logging at tick rate from the dispatch path.
-    if (lg != nullptr && (totalDispatchDrops_ == 1 || (totalDispatchDrops_ % 4096U) == 0U)) {
+    // First drop and every DISPATCH_DROP_LOG_INTERVAL-th after: surfaces
+    // sustained exhaustion without logging at tick rate from the dispatch
+    // path. Power of two so the modulo compiles to a mask; at worst-case
+    // drop rates (every starved task, every period) this is roughly one
+    // line every few seconds. The totalDispatchDrops_ counter stays exact.
+    constexpr std::size_t DISPATCH_DROP_LOG_INTERVAL = 4096U;
+    if (lg != nullptr &&
+        (totalDispatchDrops_ == 1 || (totalDispatchDrops_ % DISPATCH_DROP_LOG_INTERVAL) == 0U)) {
       lg->error(label(), static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION),
                 fmt::format("Dispatch dropped: task '{}' at tick {}, context pool exhausted "
                             "(total drops: {})",
