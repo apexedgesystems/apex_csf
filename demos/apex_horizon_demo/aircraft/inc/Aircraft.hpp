@@ -409,6 +409,7 @@ public:
     constexpr std::uint64_t DT_NS = static_cast<std::uint64_t>(DT_S * 1.0e9);
     tlm.timestamp_ns = t0_ns_ + (s.tick_count - t0_tick_) * DT_NS;
     tlm.tick = s.tick_count;
+    tlm.loop_mask = commanded_loop_mask_;
 
     // Mode trace: while a wire-armed excitation's window is open,
     // sample the mode-relevant channels at 20 Hz into a bounded

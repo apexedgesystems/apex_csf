@@ -196,7 +196,11 @@ struct AircraftTelemetry {
   /// Rolling count of boundary-triggered recoveries (edge detection
   /// across dropped frames).
   std::uint8_t recovery_count{0};
-  std::uint32_t reserved1{0};
+  /// Live autopilot loop mask (LoopBit; the mask the controller runs,
+  /// stamped every tick) — the panel's per-loop switch truth, so all
+  /// display state reads from the stream.
+  std::uint8_t loop_mask{0x3F};
+  std::uint8_t reserved1[3]{};
 
   // --- Body angular rates (24 bytes) ---
   double p_rad_s{0.0}; ///< body roll rate

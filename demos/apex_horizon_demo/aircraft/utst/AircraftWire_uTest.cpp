@@ -68,7 +68,8 @@ TEST(AircraftWire, FrameLayoutIsFrozen) {
   EXPECT_EQ(offsetof(AircraftTelemetry, engine_state), 201u);
   EXPECT_EQ(offsetof(AircraftTelemetry, orch_state), 202u);
   EXPECT_EQ(offsetof(AircraftTelemetry, recovery_count), 203u);
-  EXPECT_EQ(offsetof(AircraftTelemetry, reserved1), 204u);
+  EXPECT_EQ(offsetof(AircraftTelemetry, loop_mask), 204u);
+  EXPECT_EQ(offsetof(AircraftTelemetry, reserved1), 205u);
   EXPECT_EQ(offsetof(AircraftTelemetry, p_rad_s), 208u);
   EXPECT_EQ(offsetof(AircraftTelemetry, q_rad_s), 216u);
   EXPECT_EQ(offsetof(AircraftTelemetry, r_rad_s), 224u);
