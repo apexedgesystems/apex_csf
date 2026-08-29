@@ -582,3 +582,106 @@ TEST(AircraftCommandSurface, WireExcitationCapturesModeTrace) {
   }
   EXPECT_EQ(bare.modeTracePending(), 0u);
 }
+
+/**
+ * @test Recovery-envelope characterization: the orchestrated restore
+ * actually recovers.
+ *
+ * The mode set-pieces drop loops, let a mode develop, then restore
+ * LOOP_ALL -- either on schedule or early via the boundary
+ * watchpoint. This pins the physics claim underneath: from a phugoid
+ * developed for a full half-exchange with the longitudinal loops
+ * dropped, restoring the loops recaptures cruise. The phugoid is the
+ * binding case (recovery authority is thrust-margin-limited); the
+ * lateral modes recover with large margin by comparison.
+ *
+ * Runs at the closed-loop suite's reference point. The demo-altitude
+ * boundary values (thinner margin) are measured on the demo itself
+ * and live in its action-engine TPRM, not in code.
+ */
+TEST(AircraftCommandSurface, PhugoidDevelopedThenRestoredRecapturesCruise) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  Aircraft aircraft;
+  aircraft.setBody(&earth);
+  setTurbulence(aircraft, 0);
+  AircraftController controller;
+  controller.setAircraft(&aircraft);
+  configureTrimCruise(controller, aircraft);
+  aircraft.setControllerOutput(&controller.controllerOutput());
+
+  // Settle at trim first.
+  tickN(controller, aircraft, 750); // 30 s
+  const auto& out = controller.controllerOutput();
+  ASSERT_LT(std::abs(out.altitude_error_m), 50.0) << "no trim before the experiment";
+
+  // Set-piece shape: drop PITCH|ALT|SPEED (keep lateral), arm the
+  // phugoid excitation, let the exchange develop for 60 s (~half a
+  // period -- maximum energy displaced from trim).
+  ASSERT_EQ(sendByteCmd(aircraft, 0x0103u, 0x38u), 0u); // lateral only
+  ASSERT_EQ(sendByteCmd(aircraft, 0x0104u, 4u), 0u);    // SPEED_OFFSET
+  tickN(controller, aircraft, 1500);                    // 60 s
+
+  const double ALT_ERR_DEVELOPED = std::abs(out.altitude_error_m);
+  const double SPD_ERR_DEVELOPED = std::abs(out.airspeed_error_m_s);
+  // The mode must actually have displaced the state, or this test
+  // proves nothing.
+  ASSERT_GT(ALT_ERR_DEVELOPED + SPD_ERR_DEVELOPED * 10.0, 30.0)
+      << "phugoid failed to develop: alt_err=" << ALT_ERR_DEVELOPED
+      << " spd_err=" << SPD_ERR_DEVELOPED;
+
+  // The orchestrated restore. Recovery from a deep excursion is
+  // total-energy-limited and two-phase: the loops fly the aircraft
+  // back to altitude at saturated throttle first (airspeed pays for
+  // the climb), then rebuild speed once the climb ends. Assert each
+  // phase on its own timescale.
+  ASSERT_EQ(sendByteCmd(aircraft, 0x0103u, 0x3Fu), 0u);
+
+  tickN(controller, aircraft, 3000); // 120 s: altitude capture phase
+  EXPECT_LT(std::abs(out.altitude_error_m), 30.0)
+      << "altitude not recaptured from developed phugoid (was " << ALT_ERR_DEVELOPED << " m off)";
+  const double SPD_ERR_AFTER_CLIMB = std::abs(out.airspeed_error_m_s);
+
+  tickN(controller, aircraft, 3000); // +120 s: energy rebuild phase
+  EXPECT_LT(std::abs(out.airspeed_error_m_s), 0.5 * SPD_ERR_AFTER_CLIMB)
+      << "speed deficit not rebuilding after altitude capture";
+
+  tickN(controller, aircraft, 9000); // +360 s: full recapture (the
+  // deficit halves roughly every two minutes at this depth; full
+  // energy recovery from a ~1.3 km excursion takes ~10 min of sim)
+  EXPECT_LT(std::abs(out.altitude_error_m), 30.0);
+  EXPECT_LT(std::abs(out.airspeed_error_m_s), 3.0)
+      << "cruise not fully recaptured 10 min after restore";
+}
+
+TEST(AircraftCommandSurface, OrchStateMirrorsIntoFrameAndCountsRecoveries) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  Aircraft aircraft;
+  aircraft.setBody(&earth);
+  setTurbulence(aircraft, 0);
+
+  const auto& tlm = aircraft.telemetry();
+  EXPECT_EQ(tlm.orch_state, 0u);
+  EXPECT_EQ(tlm.recovery_count, 0u);
+
+  // Set-piece entry/exit mirrors verbatim; no recovery counted.
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0105u, 1u), 0u);
+  EXPECT_EQ(tlm.orch_state, 1u);
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0105u, 0u), 0u);
+  EXPECT_EQ(tlm.orch_state, 0u);
+  EXPECT_EQ(tlm.recovery_count, 0u);
+
+  // Recovery entry counts exactly once per entry, including reason
+  // changes within one recovery episode.
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0105u, 0x11u), 0u); // speed boundary
+  EXPECT_EQ(tlm.recovery_count, 1u);
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0105u, 0x12u), 0u); // still recovering
+  EXPECT_EQ(tlm.recovery_count, 1u);
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0105u, 0u), 0u);    // recovered
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0105u, 0x13u), 0u); // next episode
+  EXPECT_EQ(tlm.recovery_count, 2u);
+  EXPECT_EQ(tlm.orch_state, 0x13u);
+}

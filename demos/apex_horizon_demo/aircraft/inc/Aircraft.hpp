@@ -581,6 +581,25 @@ public:
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
     }
 
+    case AircraftOpcode::SET_ORCH_STATE: {
+      if (payload.size() < sizeof(appsim::aircraft::AircraftCmdOrchState)) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+      }
+      const auto& cmd =
+          *reinterpret_cast<const appsim::aircraft::AircraftCmdOrchState*>(payload.data());
+      auto& tlm = telemetry_.get();
+      // Entering a recovery state (0x10 bit) counts once per entry.
+      if ((cmd.state & 0x10u) != 0u && (tlm.orch_state & 0x10u) == 0u) {
+        ++tlm.recovery_count;
+      }
+      tlm.orch_state = cmd.state;
+      ++cmd_count_;
+      if (auto* log = componentLog(); log != nullptr) {
+        log->info(label(), fmt::format("cmd: SET_ORCH_STATE 0x{:02x}", cmd.state));
+      }
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+    }
+
     case AircraftOpcode::GET_COMMAND_STATE: {
       AircraftCommandSnapshot snap{};
       snap.turbulence_enabled = turbulence_enabled_ ? 1u : 0u;

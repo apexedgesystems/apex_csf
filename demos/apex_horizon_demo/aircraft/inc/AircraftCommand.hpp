@@ -70,6 +70,15 @@ enum class AircraftOpcode : std::uint16_t {
   /// with unknown bits set is rejected whole, never masked quietly.
   SET_LOOP_ENABLE = 0x0103,
 
+  /// Payload: AircraftCmdOrchState (1 byte). Mirrors the demo
+  /// orchestration state into the telemetry frame: sequences send it
+  /// as their first and last step (set-piece id on entry, 0 on exit),
+  /// and the boundary-restore sequences send 0x10|reason. The
+  /// aircraft stamps the value into the frame's orch_state byte and
+  /// bumps recovery_count whenever a recovery state (0x10 bit) is
+  /// entered. Pure display/attribution plumbing -- no physics effect.
+  SET_ORCH_STATE = 0x0105,
+
   /// Payload: AircraftCmdExcite (1 byte). Arms a scripted excitation
   /// (ids match Aircraft::ExciteMode): 1 RUDDER_DOUBLET,
   /// 2 ELEVATOR_PULSE, 3 AILERON_PULSE, 4 SPEED_OFFSET. Rejected while
@@ -98,6 +107,12 @@ struct AircraftCmdSetLoopMask {
   std::uint8_t mask; ///< LoopBit bitmask; must be within kLoopMaskValidBits.
 };
 static_assert(sizeof(AircraftCmdSetLoopMask) == 1, "AircraftCmdSetLoopMask must be exactly 1 byte");
+
+/// SET_ORCH_STATE payload.
+struct AircraftCmdOrchState {
+  std::uint8_t state; ///< 0 idle; 1..4 set-piece; 0x10|reason recovery.
+};
+static_assert(sizeof(AircraftCmdOrchState) == 1, "AircraftCmdOrchState must be exactly 1 byte");
 
 /// EXCITE_MODE payload.
 struct AircraftCmdExcite {
