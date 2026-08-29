@@ -190,7 +190,7 @@ executive.registerSupport(&transform);
 
 ### TransformStats
 
-**RT-safe:** Yes (pure data structure)
+**RT-safe:** Yes (pure data structure; spec-defined in `apex_data.toml`, generated into `.auto/`)
 
 | Field             | Type       | Description                  |
 | ----------------- | ---------- | ---------------------------- |
