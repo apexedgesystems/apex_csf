@@ -115,6 +115,7 @@ public:
     }
     const std::uint32_t PREV_TIMEOUTS = iface_.stats.sequenceTimeouts;
     const std::uint32_t PREV_ABORTS = iface_.stats.sequenceAborts;
+    const std::uint32_t PREV_RESOLVE_FAILURES = iface_.stats.resolveFailures;
 
     data::processCycle(iface_, currentCycle);
 
@@ -132,6 +133,19 @@ public:
     if (iface_.stats.sequenceTimeouts != PREV_TIMEOUTS) {
       logStepTimeouts(iface_.stats.sequenceTimeouts - PREV_TIMEOUTS,
                       iface_.stats.sequenceAborts != PREV_ABORTS);
+    }
+
+    // Resolve failures climbing means armed watchpoints/actions whose
+    // targets cannot be read -- a table that resolves nothing every tick
+    // is otherwise invisible outside C2 stats polls. Throttled: first
+    // failure and each wrap of the interval.
+    if (iface_.stats.resolveFailures != PREV_RESOLVE_FAILURES) {
+      constexpr std::uint32_t RESOLVE_WARN_INTERVAL = 4096U;
+      const std::uint32_t NOW_FAILS = iface_.stats.resolveFailures;
+      if (PREV_RESOLVE_FAILURES == 0U ||
+          (NOW_FAILS / RESOLVE_WARN_INTERVAL) != (PREV_RESOLVE_FAILURES / RESOLVE_WARN_INTERVAL)) {
+        logResolveFailures(NOW_FAILS);
+      }
     }
   }
 
@@ -331,6 +345,9 @@ private:
 
   /// WARNING for step timeouts this cycle (count + latest seq/step/policy).
   void logStepTimeouts(std::uint32_t count, bool aborted) noexcept;
+
+  /// Throttled WARNING when DataTarget resolution failures accumulate.
+  void logResolveFailures(std::uint32_t total) noexcept;
 
   data::ActionInterface iface_{};
   data::SequenceCatalog catalog_;         ///< Sequence catalog (metadata + cached binaries).

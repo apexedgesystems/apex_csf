@@ -146,6 +146,24 @@ bool ActionComponent::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     log->info(label(), fmt::format("TPRM loaded: {} watchpoints, {} groups, "
                                    "{} sequences, {} notifications, {} timed actions",
                                    wpCount, grpCount, seqCount, noteCount, actCount));
+
+    // One line per armed watchpoint stating its effective semantics.
+    // minFireCount counts predicate EDGES (rising transitions), not
+    // sustained-true ticks -- the natural misread authored watchpoints
+    // that could never fire, so the armed configuration says it outright.
+    for (const auto& wp : iface_.watchpoints) {
+      if (!wp.armed) {
+        continue;
+      }
+      if (wp.minFireCount > 0) {
+        log->info(label(), fmt::format("Watchpoint {} armed: event={} debounce={} predicate EDGES "
+                                       "(rising transitions, not sustained-true ticks)",
+                                       wp.watchpointId, wp.eventId, wp.minFireCount));
+      } else {
+        log->info(label(), fmt::format("Watchpoint {} armed: event={} fires on first edge",
+                                       wp.watchpointId, wp.eventId));
+      }
+    }
   }
 
   return true;
@@ -1122,6 +1140,17 @@ void ActionComponent::logStepTimeouts(std::uint32_t count, bool aborted) noexcep
                   ST.lastTimeoutStep,
                   data::toString(static_cast<data::StepTimeoutPolicy>(ST.lastTimeoutPolicy)),
                   aborted ? " (sequence aborted)" : ""));
+}
+
+void ActionComponent::logResolveFailures(std::uint32_t total) noexcept {
+  auto* log = componentLog();
+  if (log == nullptr) {
+    return;
+  }
+  log->warning(label(), static_cast<std::uint8_t>(Status::WARN_RESOLVE_FAILURES),
+               fmt::format("Data-target resolve failures accumulating: {} total -- an armed "
+                           "watchpoint or action cannot read its target",
+                           total));
 }
 
 void ActionComponent::dispatchLogNotifications(std::uint16_t eventId,
