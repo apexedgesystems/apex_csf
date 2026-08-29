@@ -491,3 +491,141 @@ TEST(DeterminismTest, DecodeStateReset) {
   EXPECT_EQ(st.frameLen, 0u);
   EXPECT_FALSE(st.hadData);
 }
+
+/* ----------------------------- Fixed-Buffer Caller Contract ----------------------------- */
+
+namespace {
+
+/// Encode a payload and return the wire bytes (leading + trailing END).
+std::vector<uint8_t> wireFrame(const std::vector<uint8_t>& payload) {
+  std::vector<uint8_t> encoded(payload.size() * 2 + 4);
+  auto r = encode(apex::compat::bytes_span{payload.data(), payload.size()}, encoded.data(),
+                  encoded.size());
+  EXPECT_EQ(r.status, Status::OK);
+  encoded.resize(r.bytesProduced);
+  return encoded;
+}
+
+/// Drive a byte stream through a fixed-capacity caller loop (decode into a
+/// caller buffer at offset st.frameLen, the streaming-consumer pattern).
+/// Returns the payloads of completed frames.
+std::vector<std::vector<uint8_t>> drainStream(DecodeState& st, const DecodeConfig& cfg,
+                                              const std::vector<uint8_t>& stream,
+                                              std::vector<uint8_t>& frameBuf,
+                                              bool resetOnOutputFull) {
+  std::vector<std::vector<uint8_t>> frames;
+  size_t pos = 0;
+  int guard = 0;
+  while (pos < stream.size() && ++guard < 10000) {
+    const size_t PREV_LEN = st.frameLen;
+    auto r =
+        decodeChunk(st, cfg, apex::compat::bytes_span{stream.data() + pos, stream.size() - pos},
+                    frameBuf.data() + PREV_LEN, frameBuf.size() - PREV_LEN);
+    pos += r.bytesConsumed;
+    if (r.frameCompleted) {
+      frames.emplace_back(frameBuf.begin(),
+                          frameBuf.begin() + static_cast<long>(PREV_LEN + r.bytesProduced));
+    }
+    if (r.status == Status::OUTPUT_FULL) {
+      if (!resetOnOutputFull) {
+        break; // The stalled-caller pattern: give up for this "cycle".
+      }
+      st.reset();
+      continue;
+    }
+    if (r.bytesConsumed == 0) {
+      break;
+    }
+  }
+  return frames;
+}
+
+} // namespace
+
+/**
+ * @test A lost delimiter cannot stall a caller whose maxFrameSize matches
+ * its buffer: the merged pseudo-frame trips the oversize drain before the
+ * buffer fills, and the stream recovers at the next delimiter.
+ */
+TEST(FixedBufferCallerTest, LostDelimiterRecoversWhenMaxFrameSizeMatchesBuffer) {
+  constexpr size_t BUF = 128;
+  std::vector<uint8_t> frameBuf(BUF);
+  DecodeConfig cfg{};
+  cfg.maxFrameSize = BUF;
+  DecodeState st{};
+
+  const std::vector<uint8_t> payloadA(70, 0xAA);
+  const std::vector<uint8_t> payloadB(70, 0xBB);
+  const std::vector<uint8_t> payloadC(60, 0xCC);
+
+  // Frame A loses its trailing delimiter: A and B merge into a 140-byte
+  // pseudo-frame that crosses the 128-byte capacity; C follows intact.
+  auto a = wireFrame(payloadA);
+  a.pop_back();
+  std::vector<uint8_t> stream = a;
+  auto b = wireFrame(payloadB);
+  // Drop B's leading END too (it would terminate the merged frame early
+  // and mask the runaway): the merge must cross the buffer capacity.
+  stream.insert(stream.end(), b.begin() + 1, b.end() - 1);
+  auto c = wireFrame(payloadC);
+  stream.insert(stream.end(), c.begin(), c.end());
+
+  auto frames = drainStream(st, cfg, stream, frameBuf, false);
+
+  ASSERT_EQ(frames.size(), 1u) << "healthy frame after the loss must decode";
+  EXPECT_EQ(frames[0], payloadC);
+  // Post-delimiter the decoder sits at a frame boundary, not IDLE.
+  EXPECT_EQ(st.mode, DecodeState::Mode::IN_FRAME);
+}
+
+/**
+ * @test A config whose maxFrameSize exceeds the caller's buffer reaches
+ * OUTPUT_FULL mid-runaway (the drain never trips), parking the caller at
+ * zero capacity for that cycle. Boundary semantics still recover the
+ * stream: the runaway surfaces as one junk frame (rejected by a real
+ * caller at CRC) and healthy frames decode after it -- with or without
+ * the caller's reset-on-OUTPUT_FULL handling.
+ */
+TEST(FixedBufferCallerTest, OversizedMaxFrameSizeRecoversViaBoundary) {
+  constexpr size_t BUF = 128;
+  const std::vector<uint8_t> payloadA(70, 0xAA);
+  const std::vector<uint8_t> payloadB(70, 0xBB);
+  const std::vector<uint8_t> payloadC(60, 0xCC);
+
+  auto a = wireFrame(payloadA);
+  a.pop_back();
+  std::vector<uint8_t> stream = a;
+  auto b = wireFrame(payloadB);
+  stream.insert(stream.end(), b.begin() + 1, b.end() - 1);
+  auto c = wireFrame(payloadC);
+  stream.insert(stream.end(), c.begin(), c.end());
+
+  // No-reset caller: the runaway's clean range exceeds capacity, so the
+  // bulk path returns OUTPUT_FULL without writing (all-or-nothing) and
+  // the caller gives up for this cycle. Boundary semantics still recover
+  // the stream on subsequent input.
+  {
+    std::vector<uint8_t> frameBuf(BUF);
+    DecodeConfig cfg{}; // maxFrameSize = DEFAULT_MAX_FRAME_SIZE > BUF
+    DecodeState st{};
+    auto frames = drainStream(st, cfg, stream, frameBuf, false);
+    EXPECT_TRUE(frames.empty());
+
+    auto more = drainStream(st, cfg, wireFrame(payloadC), frameBuf, false);
+    ASSERT_GE(more.size(), 1u) << "boundary semantics must recover the stream";
+    EXPECT_EQ(more.back(), payloadC);
+  }
+
+  // Reset-on-OUTPUT_FULL discharges the caller obligation: the stream
+  // recovers and the healthy frame decodes.
+  {
+    std::vector<uint8_t> frameBuf(BUF);
+    DecodeConfig cfg{};
+    DecodeState st{};
+    auto frames = drainStream(st, cfg, stream, frameBuf, true);
+    // The reset may surface the drained remainder as a junk frame (a real
+    // caller rejects it at CRC); the healthy frame must be the last one.
+    ASSERT_GE(frames.size(), 1u);
+    EXPECT_EQ(frames.back(), payloadC);
+  }
+}
