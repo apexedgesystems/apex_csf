@@ -169,7 +169,7 @@ PYTHONPATH=tools/py/src python3 demos/apex_hil_demo/scripts/checkout.py \
     --host raspberrypi.local
 ```
 
-All 60 assertions across 16 tests must pass (0 failures).
+All 56 assertions across 16 tests must pass (0 failures).
 
 ### 13. Verify Post-Checkout Health (optional)
 
@@ -239,7 +239,7 @@ All non-skipped assertions must pass (0 failures).
 
 ## Checkout Test Coverage
 
-The checkout script (`scripts/checkout.py`) runs 16 tests with 60 assertions:
+The checkout script (`scripts/checkout.py`) runs 16 tests with 56 assertions:
 
 | #   | Test                 | Assertions | What it verifies                                                       |
 | --- | -------------------- | ---------- | ---------------------------------------------------------------------- |

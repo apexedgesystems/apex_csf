@@ -4,7 +4,7 @@
 # components, waits for confirmation, and logs the outcome.
 #
 # Steps:
-#   0: Zero thrust.z on HilPlantModel (DATA_WRITE, AND=0, XOR=0 on float)
+#   0: Safing NOOP to HilPlantModel (thrust-zeroing reduced; see step 0 note)
 #   1: NOOP to HilDriver #0 (COMMAND, confirms connectivity)
 #   2: NOOP to HilDriver #1 (COMMAND, confirms connectivity)
 #   3: Wait until thrust.z == 0.0 on plant OUTPUT, with 500-cycle timeout
@@ -12,12 +12,11 @@
 #   4: NOOP to SystemMonitor (success confirmation), then done
 #   5: NOOP to SystemMonitor with different opcode (failure indicator)
 #
-# StandaloneSequenceTprm: 8-byte header + 16 steps x 84 bytes = 1352 bytes
+# StandaloneSequenceTprm: 8-byte header + 16 steps x 64 bytes = 1032 bytes
 
 [__enums__]
-DATA_WRITE = 0
-COMMAND = 1
-ARM_CONTROL = 2
+COMMAND = 0
+ARM_CONTROL = 1
 ABORT = 0
 SKIP = 1
 GOTO_STEP = 2
@@ -39,16 +38,18 @@ type         = { type = "uint", size = 1, value = 0 }
 armed        = { type = "uint", size = 1, value = 1 }
 
 # ==============================================================================
-# Step 0: Zero thrust.z on HilPlantModel (DATA_WRITE)
-#   ControlCmd.thrust.z at OUTPUT offset 8, len 4
-#   AND=0x00 XOR=0x00 -> forces float to 0.0
+# Step 0: Safing NOOP to HilPlantModel
+#   The pre-redesign sequence zeroed thrust.z here via a DATA_WRITE mask;
+#   the current engine has no data-write action and the plant exposes no
+#   safing command, so this step is a connectivity NOOP and the safing
+#   proof is the thrust gate at step 3.
 # ==============================================================================
 [StandaloneSequenceTprm.step_0]
 targetFullUid    = { type = "uint", size = 4, value = "0x7800" }
-targetCategory   = { type = "uint", size = 1, value = "OUTPUT" }
-targetByteOffset = { type = "uint", size = 2, value = 8 }
-targetByteLen    = { type = "uint", size = 1, value = 4 }
-actionType       = { type = "uint", size = 1, value = "DATA_WRITE" }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = "COMMAND" }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
@@ -144,17 +145,17 @@ reserved         = { type = "uint", size = 1, value = 0 }
 
 # ==============================================================================
 # Step 3: Wait until thrust.z == 0.0 (wait condition with GOTO on timeout)
-#   No action (DATA_WRITE with passthrough masks). The step is just a gate.
+#   The action is a NOOP; the step is the wait condition (a pure gate).
 #   Wait condition: HilPlantModel OUTPUT offset 8, 4 bytes, EQ, FLOAT32
 #   Threshold = 0.0 (all zeros as float32 LE)
 #   Timeout: 500 cycles (5 seconds). On timeout: GOTO step 5 (failure).
 # ==============================================================================
 [StandaloneSequenceTprm.step_3]
 targetFullUid    = { type = "uint", size = 4, value = "0x7800" }
-targetCategory   = { type = "uint", size = 1, value = "OUTPUT" }
-targetByteOffset = { type = "uint", size = 2, value = 8 }
-targetByteLen    = { type = "uint", size = 1, value = 4 }
-actionType       = { type = "uint", size = 1, value = "DATA_WRITE" }
+targetCategory   = { type = "uint", size = 1, value = 0 }
+targetByteOffset = { type = "uint", size = 2, value = 0 }
+targetByteLen    = { type = "uint", size = 1, value = 0 }
+actionType       = { type = "uint", size = 1, value = "COMMAND" }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }

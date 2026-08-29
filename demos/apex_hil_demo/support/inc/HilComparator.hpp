@@ -20,11 +20,14 @@
 
 #include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SupportComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 
 #include <fmt/format.h>
 
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
+#include <filesystem>
 
 namespace appsim {
 namespace support {
@@ -169,6 +172,36 @@ public:
    */
   void setWarnThreshold(float threshold) noexcept {
     tunableParams_.get().warnThreshold = threshold;
+  }
+
+  /* ----------------------------- TPRM ----------------------------- */
+
+  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+    if (!isRegistered()) {
+      return false;
+    }
+
+    char filename[32];
+    std::snprintf(filename, sizeof(filename), "%06x.tprm", fullUid());
+    const std::filesystem::path TPRM_PATH = tprmDir / filename;
+
+    if (!std::filesystem::exists(TPRM_PATH)) {
+      return false;
+    }
+
+    ComparatorTunableParams loaded{};
+    namespace sc = system_core::system_component;
+    const auto CHECK = sc::readTprmPayload(TPRM_PATH, fullUid(), loaded);
+    if (CHECK != sc::TprmPayloadCheck::OK) {
+      auto* log = componentLog();
+      if (log != nullptr) {
+        log->error(label(), sc::toFaultCode(CHECK),
+                   fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), TPRM_PATH.string()));
+      }
+      return false;
+    }
+    tunableParams_.get() = loaded;
+    return true;
   }
 
   /* ----------------------------- Accessors ----------------------------- */

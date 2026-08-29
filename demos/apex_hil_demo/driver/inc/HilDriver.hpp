@@ -27,6 +27,7 @@
 #include "src/system/core/infrastructure/protocols/serial/uart/inc/UartAdapter.hpp"
 #include "src/system/core/infrastructure/protocols/serial/uart/inc/UartConfig.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/DriverBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/utilities/checksums/crc/inc/Crc.hpp"
 #include "src/utilities/helpers/inc/Files.hpp"
 
@@ -257,6 +258,16 @@ public:
         processFrame(rxDecoded_.data(), FRAME_LEN);
       }
 
+      // OUTPUT_FULL: the accumulated bytes outgrew rxDecoded_, which is
+      // sized to the largest frame the protocol defines -- so this cannot
+      // be a valid frame. Discard it and let the decoder resync at the
+      // next delimiter; without the reset the decoder would face a
+      // zero-capacity buffer on every subsequent cycle.
+      if (result.status == apex::protocols::slip::Status::OUTPUT_FULL) {
+        decodeState_.reset();
+        continue;
+      }
+
       if (result.bytesConsumed == 0) {
         break;
       }
@@ -347,23 +358,29 @@ public:
       char devicePath[128];
     };
 
-    std::string error;
     DriverTprm loaded{};
-    if (apex::helpers::files::hex2cpp(tprmPath.string(), loaded, error)) {
-      // Only override devicePath if TPRM provides a non-empty path.
-      // Empty path means the executive wires the device dynamically (PTY).
-      if (loaded.devicePath[0] != '\0') {
-        devicePath_ = loaded.devicePath;
-        uart_ = apex::protocols::serial::uart::UartAdapter(devicePath_);
-      }
+    namespace sc = system_core::system_component;
+    const auto CHECK = sc::readTprmPayload(tprmPath, fullUid(), loaded);
+    if (CHECK != sc::TprmPayloadCheck::OK) {
       auto* log = componentLog();
       if (log != nullptr) {
-        log->info(label(),
-                  fmt::format("TPRM devicePath: {} (active: {})", loaded.devicePath, devicePath_));
+        log->error(label(), sc::toFaultCode(CHECK),
+                   fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), tprmPath.string()));
       }
-      return true;
+      return false;
     }
-    return false;
+    // Only override devicePath if TPRM provides a non-empty path.
+    // Empty path means the executive wires the device dynamically (PTY).
+    if (loaded.devicePath[0] != '\0') {
+      devicePath_ = loaded.devicePath;
+      uart_ = apex::protocols::serial::uart::UartAdapter(devicePath_);
+    }
+    auto* log = componentLog();
+    if (log != nullptr) {
+      log->info(label(),
+                fmt::format("TPRM devicePath: {} (active: {})", loaded.devicePath, devicePath_));
+    }
+    return true;
   }
 
   /* ----------------------------- Data Interface ----------------------------- */
@@ -476,7 +493,11 @@ private:
 
   // SLIP decoder state
   apex::protocols::slip::DecodeState decodeState_{};
-  apex::protocols::slip::DecodeConfig decodeCfg_{};
+  /// maxFrameSize must not exceed the decode buffer: the decoder's
+  /// oversize drain (self-resync at the next delimiter) has to trip
+  /// before rxDecoded_ fills, or a lost frame boundary turns into an
+  /// OUTPUT_FULL stall instead of a dropped frame.
+  apex::protocols::slip::DecodeConfig decodeCfg_{hil::MAX_FRAME_PAYLOAD};
 
   // Buffers
   std::array<std::uint8_t, hil::MAX_SLIP_ENCODED> rxRaw_{};
