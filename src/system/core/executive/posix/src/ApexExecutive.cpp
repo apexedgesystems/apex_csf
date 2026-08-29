@@ -176,10 +176,24 @@ std::uint8_t ApexExecutive::doInit() noexcept {
       return status(); // Error already set and logged
     }
 
-    // Load executive TPRM
+    // Load executive TPRM. A present-but-rejected tprm is fatal: the
+    // compiled defaults are not a degraded mode of the declared
+    // configuration, they are a different system (clock rate, RT mode,
+    // thread pinning), and the difference surfaces mid-run. The contract
+    // has exactly three states -- honored config, explicitly-no-config
+    // (no executive entry packed: defaults at INFO), or refused boot.
+    // There is deliberately no override: a run on discarded config gives
+    // a false sense of functionality no banner can repair. To run on
+    // defaults on purpose, pack the master without the executive entry.
     if (!loadTprm(fileSystem_.tprmDir())) {
-      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
-                       "Executive TPRM load failed, using defaults");
+      sysLog_->error(
+          label(), static_cast<std::uint8_t>(ERROR_TPRM_REJECTED),
+          fmt::format("Executive TPRM rejected; compiled defaults would run a different "
+                      "system (clock {} Hz, RT mode {}). Refusing to boot -- to run on "
+                      "defaults deliberately, repack the master without the executive entry",
+                      clockFrequency_, rtModeToString(rtConfig_.mode)));
+      setStatus(static_cast<std::uint8_t>(ERROR_TPRM_REJECTED));
+      return status();
     }
 
     // CLI overrides take precedence over TPRM values

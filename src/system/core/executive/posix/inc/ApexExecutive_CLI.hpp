@@ -22,23 +22,24 @@ namespace executive {
  * These arguments override corresponding TPRM values when provided.
  */
 enum Arguments : std::uint8_t {
-  CONFIG_FILE = 0,   ///< Path to TPRM config file (required)
-  STARTUP_MODE,      ///< Startup mode: auto, interactive, scheduled
-  STARTUP_DELAY,     ///< Delay before startup (seconds)
-  START_AT,          ///< Scheduled start time (epoch ns)
-  SHUTDOWN_MODE,     ///< Shutdown mode: signal, scheduled, relative, cycle, combined
-  SHUTDOWN_AT,       ///< Scheduled shutdown time (epoch ns)
-  SHUTDOWN_AFTER,    ///< Shutdown after N seconds
-  SHUTDOWN_CYCLE,    ///< Shutdown after N clock cycles
-  ARCHIVE_PATH,      ///< Custom archive output path
-  SKIP_CLEANUP,      ///< Skip filesystem cleanup on shutdown
-  TASK_CENSUS,       ///< Run the pre-clock task census before starting
-  WATCHDOG_INTERVAL, ///< Watchdog check interval (ms)
-  ENABLE_PROFILING,  ///< Enable profiling
-  PROFILE_INTERVAL,  ///< Profile sample interval (ticks)
-  VERBOSITY,         ///< Log verbosity level
-  RT_MODE,           ///< Real-time mode override
-  RT_MAX_LAG,        ///< Max lag tolerance (ticks)
+  CONFIG_FILE = 0,     ///< Path to TPRM config file (required)
+  STARTUP_MODE,        ///< Startup mode: auto, interactive, scheduled
+  STARTUP_DELAY,       ///< Delay before startup (seconds)
+  START_AT,            ///< Scheduled start time (epoch ns)
+  SHUTDOWN_MODE,       ///< Shutdown mode: signal, scheduled, relative, cycle, combined
+  SHUTDOWN_AT,         ///< Scheduled shutdown time (epoch ns)
+  SHUTDOWN_AFTER,      ///< Shutdown after N seconds
+  SHUTDOWN_CYCLE,      ///< Shutdown after N clock cycles
+  ARCHIVE_PATH,        ///< Custom archive output path
+  SKIP_CLEANUP,        ///< Skip filesystem cleanup on shutdown
+  TASK_CENSUS,         ///< Run the pre-clock task census before starting
+  PERMIT_DEFAULT_TPRM, ///< Boot on compiled defaults when the executive tprm is rejected
+  WATCHDOG_INTERVAL,   ///< Watchdog check interval (ms)
+  ENABLE_PROFILING,    ///< Enable profiling
+  PROFILE_INTERVAL,    ///< Profile sample interval (ticks)
+  VERBOSITY,           ///< Log verbosity level
+  RT_MODE,             ///< Real-time mode override
+  RT_MAX_LAG,          ///< Max lag tolerance (ticks)
 };
 
 /**
