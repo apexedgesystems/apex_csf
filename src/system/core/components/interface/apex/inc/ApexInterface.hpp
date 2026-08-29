@@ -271,10 +271,14 @@ private:
    * @param cmdHeader Original command header.
    * @param statusCode Response status (0=ACK, nonzero=NAK error code).
    * @param responsePayload Optional response payload data.
+   * @param stage Position of this frame in the command's response
+   *              lifecycle (every frame repeats the cmdSequence; the
+   *              stage byte tells ground which frame it is).
    */
-  void enqueueAckNak(std::uint8_t serverId, const protocols::aproto::AprotoHeader& cmdHeader,
-                     std::uint8_t statusCode,
-                     apex::compat::rospan<std::uint8_t> responsePayload = {}) noexcept;
+  void
+  enqueueAckNak(std::uint8_t serverId, const protocols::aproto::AprotoHeader& cmdHeader,
+                std::uint8_t statusCode, apex::compat::rospan<std::uint8_t> responsePayload = {},
+                protocols::aproto::AckStage stage = protocols::aproto::AckStage::RESULT) noexcept;
 
   /**
    * @brief Send NAK for dropped frames if threshold reached.

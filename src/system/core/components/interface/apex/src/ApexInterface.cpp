@@ -475,13 +475,16 @@ void ApexInterface::routeToComponent(std::uint8_t serverId,
       buf->opcode = view.header.opcode;
       buf->sequence = view.header.sequence;
       buf->internalOrigin = false; // External command.
+      buf->originServerId = serverId;
+      buf->ackRequested = view.ackRequested();
 
       // Push pointer to component's command inbox.
       if (COMPAT_LIKELY(queues->cmdInbox.tryPush(buf))) {
-        // Queued successfully - component will process in step().
-        // Send immediate ACK if requested (command accepted, not processed yet).
+        // Queued successfully - component will process in step(). An
+        // interim QUEUED frame acknowledges acceptance; the outcome
+        // follows as a COMPLETION frame when the drain executes it.
         if (view.ackRequested()) {
-          enqueueAckNak(serverId, view.header, 0); // ACK = command queued.
+          enqueueAckNak(serverId, view.header, 0, {}, aproto::AckStage::QUEUED);
         }
         return;
       }
@@ -511,7 +514,8 @@ void ApexInterface::routeToComponent(std::uint8_t serverId,
 
 void ApexInterface::enqueueAckNak(std::uint8_t serverId, const aproto::AprotoHeader& cmdHeader,
                                   std::uint8_t statusCode,
-                                  apex::compat::rospan<std::uint8_t> responsePayload) noexcept {
+                                  apex::compat::rospan<std::uint8_t> responsePayload,
+                                  aproto::AckStage stage) noexcept {
   // Build response header.
   const bool IS_ACK = (statusCode == 0);
   const std::uint16_t RESP_OPCODE = IS_ACK ? static_cast<std::uint16_t>(aproto::SystemOpcode::ACK)
@@ -531,6 +535,7 @@ void ApexInterface::enqueueAckNak(std::uint8_t serverId, const aproto::AprotoHea
   ack.cmdOpcode = cmdHeader.opcode;
   ack.cmdSequence = cmdHeader.sequence;
   ack.status = statusCode;
+  ack.stage = static_cast<std::uint8_t>(stage);
   std::memset(ack.reserved, 0, sizeof(ack.reserved));
 
   // Assemble full payload into frameBuf_ scratch (no heap allocation).
@@ -626,8 +631,24 @@ std::size_t ApexInterface::drainCommandsToComponents(std::size_t maxPerComponent
 
       // Dispatch to component using metadata fields directly (no APROTO re-parse).
       std::vector<std::uint8_t> response;
-      [[maybe_unused]] const std::uint8_t RESULT = comp->handleCommand(
+      const std::uint8_t RESULT = comp->handleCommand(
           buf->opcode, apex::compat::rospan<std::uint8_t>{buf->data, buf->length}, response);
+
+      // A queued external command's outcome leaves the vehicle as a
+      // COMPLETION frame: same cmdSequence the QUEUED frame carried,
+      // real status, response bytes in the extra. Without this frame
+      // the result of every queued command is invisible to ground.
+      if (buf->ackRequested && !buf->internalOrigin) {
+        aproto::AprotoHeader hdr{};
+        hdr.fullUid = buf->fullUid;
+        hdr.opcode = buf->opcode;
+        hdr.sequence = buf->sequence;
+        apex::compat::rospan<std::uint8_t> respSpan{};
+        if (!response.empty()) {
+          respSpan = apex::compat::rospan<std::uint8_t>{response.data(), response.size()};
+        }
+        enqueueAckNak(buf->originServerId, hdr, RESULT, respSpan, aproto::AckStage::COMPLETION);
+      }
 
       // Release buffer after processing.
       bufferPool_.release(buf);

@@ -64,10 +64,12 @@ struct MessageBuffer {
 
   /* ----------------------------- Bus Metadata ----------------------------- */
 
-  std::uint32_t fullUid{0};   ///< Component fullUid (source or target).
-  std::uint16_t opcode{0};    ///< Operation code.
-  std::uint16_t sequence{0};  ///< Sequence number (for ACK correlation).
-  bool internalOrigin{false}; ///< true = internal message, false = external.
+  std::uint32_t fullUid{0};       ///< Component fullUid (source or target).
+  std::uint16_t opcode{0};        ///< Operation code.
+  std::uint16_t sequence{0};      ///< Sequence number (for ACK correlation).
+  bool internalOrigin{false};     ///< true = internal message, false = external.
+  std::uint8_t originServerId{0}; ///< Server the command arrived on (external only).
+  bool ackRequested{false};       ///< Sender awaits a completion frame after execution.
 
   /* ----------------------------- Reference Counting ----------------------------- */
 
@@ -107,6 +109,8 @@ struct MessageBuffer {
     opcode = 0;
     sequence = 0;
     internalOrigin = false;
+    originServerId = 0;
+    ackRequested = false;
     refCount.store(1, std::memory_order_relaxed); // Reset for next use.
   }
 

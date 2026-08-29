@@ -4,6 +4,8 @@
  */
 
 #include "src/system/core/components/interface/apex/inc/ApexInterface.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/IComponentResolver.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp"
 #include "src/system/core/components/interface/apex/inc/ApexInterfaceTunables.hpp"
 #include "src/system/core/infrastructure/protocols/aproto/inc/AprotoCodec.hpp"
 #include "src/system/core/infrastructure/protocols/aproto/inc/AprotoTypes.hpp"
@@ -219,7 +221,9 @@ bool readAndDecodeCobsFrame(TcpSocketClient& client, std::vector<std::uint8_t>& 
  * @brief Validate received APROTO packet is an ACK response.
  */
 bool validateAckResponse(const std::vector<std::uint8_t>& packet, std::uint16_t expectedOpcode,
-                         std::uint16_t expectedSeq, std::uint8_t expectedStatus = 0) {
+                         std::uint16_t expectedSeq, std::uint8_t expectedStatus = 0,
+                         aproto::AckStage expectedStage = aproto::AckStage::RESULT,
+                         std::vector<std::uint8_t>* extraOut = nullptr) {
   if (packet.size() < aproto::APROTO_HEADER_SIZE + aproto::APROTO_ACK_PAYLOAD_SIZE) {
     return false;
   }
@@ -259,13 +263,144 @@ bool validateAckResponse(const std::vector<std::uint8_t>& packet, std::uint16_t 
   if (ack.status != expectedStatus) {
     return false;
   }
+  if (ack.stage != static_cast<std::uint8_t>(expectedStage)) {
+    return false;
+  }
+  if (extraOut != nullptr) {
+    extraOut->assign(view.payload.begin() + aproto::APROTO_ACK_PAYLOAD_SIZE, view.payload.end());
+  }
 
   return true;
 }
 
+/**
+ * @brief Component double whose handleCommand echoes the payload reversed.
+ */
+class QueuedEchoComponent final : public system_core::system_component::SystemComponentBase {
+public:
+  [[nodiscard]] std::uint16_t componentId() const noexcept override { return 200; }
+  [[nodiscard]] const char* componentName() const noexcept override { return "QueuedEcho"; }
+
+protected:
+  [[nodiscard]] std::uint8_t doInit() noexcept override { return 0; }
+
+public:
+  [[nodiscard]] std::uint8_t handleCommand(std::uint16_t /*opcode*/,
+                                           apex::compat::rospan<std::uint8_t> payload,
+                                           std::vector<std::uint8_t>& response) noexcept override {
+    response.assign(payload.begin(), payload.end());
+    std::reverse(response.begin(), response.end());
+    calls.fetch_add(1, std::memory_order_relaxed);
+    return 0;
+  }
+  std::atomic<int> calls{0};
+};
+
+/**
+ * @brief Resolver double mapping exactly one fullUid.
+ */
+class SingleResolver final : public system_core::system_component::IComponentResolver {
+public:
+  SingleResolver(std::uint32_t uid,
+                 system_core::system_component::SystemComponentBase* comp) noexcept
+      : uid_(uid), comp_(comp) {}
+  [[nodiscard]] system_core::system_component::SystemComponentBase*
+  getComponent(std::uint32_t fullUid) noexcept override {
+    return fullUid == uid_ ? comp_ : nullptr;
+  }
+  [[nodiscard]] const system_core::system_component::SystemComponentBase*
+  getComponent(std::uint32_t fullUid) const noexcept override {
+    return fullUid == uid_ ? comp_ : nullptr;
+  }
+
+private:
+  std::uint32_t uid_;
+  system_core::system_component::SystemComponentBase* comp_;
+};
+
 } // namespace
 
 /* ----------------------------- Tests ----------------------------- */
+
+/** @test A queued command's outcome reaches ground: QUEUED then COMPLETION. */
+TEST(ApexInterfaceTest, QueuedCommandEmitsCompletionFrame) {
+  ApexInterface iface;
+
+  ApexInterfaceTunables tun{};
+  {
+    std::string host = "127.0.0.1";
+    std::snprintf(tun.host.data(), tun.host.size(), "%s", host.c_str());
+  }
+  tun.port = 6203;
+  tun.framing = FramingType::SLIP;
+
+  ASSERT_EQ(iface.configure(tun), Status::SUCCESS);
+
+  // A routed component with an inbox: commands to it take the queued
+  // path (interim QUEUED frame at accept, COMPLETION at drain).
+  constexpr std::uint32_t TARGET_UID = 0x00C900;
+  QueuedEchoComponent echo;
+  SingleResolver resolver(TARGET_UID, &echo);
+  iface.setComponentResolver(&resolver);
+  ASSERT_NE(iface.allocateQueues(TARGET_UID), nullptr);
+  iface.freezeQueues();
+
+  std::atomic_bool run{true};
+  std::atomic<std::size_t> drained{0};
+  std::thread poller([&]() {
+    while (run.load(std::memory_order_relaxed)) {
+      iface.pollSockets(25);
+      iface.drainTelemetryOutboxes();
+      drained.fetch_add(iface.drainCommandsToComponents(), std::memory_order_relaxed);
+      std::this_thread::sleep_for(1ms);
+    }
+  });
+
+  std::this_thread::sleep_for(100ms);
+
+  TcpSocketClient cli("127.0.0.1", std::to_string(tun.port));
+  std::string err;
+  ASSERT_EQ(cli.init(1000, err), TCP_CLIENT_SUCCESS) << err;
+
+  // Component-range opcode: below 0x0080 the router treats commands as
+  // (unknown) system opcodes and NAKs without touching the resolver.
+  const std::uint16_t OPCODE = 0x0642;
+  const std::uint16_t SEQ = 77;
+  const std::array<std::uint8_t, 4> PAYLOAD{0x01, 0x02, 0x03, 0x04};
+  auto packet = buildAprotoPacket(
+      TARGET_UID, OPCODE, SEQ, apex::compat::rospan<std::uint8_t>{PAYLOAD.data(), PAYLOAD.size()});
+
+  auto enc = slipEncode(apex::compat::bytes_span{packet.data(), packet.size()});
+  std::string writeErr;
+  const ssize_t NWRITE =
+      cli.write(apex::compat::bytes_span{enc.data(), enc.size()}, 1000, writeErr);
+  ASSERT_EQ(NWRITE, static_cast<ssize_t>(enc.size())) << writeErr;
+
+  // Frame 1: interim QUEUED acknowledgment (status 0, empty extra).
+  std::vector<std::uint8_t> frame;
+  ASSERT_TRUE(readAndDecodeSlipFrame(cli, frame, 500)) << "QUEUED frame timeout";
+  EXPECT_TRUE(validateAckResponse(frame, OPCODE, SEQ, 0, aproto::AckStage::QUEUED))
+      << "first frame must be the QUEUED interim ack";
+
+  // Frame 2: deferred COMPLETION with the component's response bytes.
+  std::vector<std::uint8_t> extra;
+  const bool GOT_COMPLETION = readAndDecodeSlipFrame(cli, frame, 500);
+  const int HANDLER_CALLS = echo.calls.load(std::memory_order_relaxed);
+  if (!GOT_COMPLETION) {
+    run = false;
+    poller.join();
+    FAIL() << "COMPLETION timeout (handler calls: " << HANDLER_CALLS
+           << ", drained: " << drained.load() << ")";
+  }
+  EXPECT_TRUE(validateAckResponse(frame, OPCODE, SEQ, 0, aproto::AckStage::COMPLETION, &extra))
+      << "second frame must be the COMPLETION result";
+  const std::vector<std::uint8_t> REVERSED{0x04, 0x03, 0x02, 0x01};
+  EXPECT_EQ(extra, REVERSED) << "completion extra must carry the handler's response";
+
+  run = false;
+  poller.join();
+  EXPECT_EQ(iface.shutdown(), Status::SUCCESS);
+}
 
 /** @test APROTO NOOP command over SLIP returns ACK with correct correlation. */
 TEST(ApexInterfaceTest, AprotoNoopOverSlip) {
