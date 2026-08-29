@@ -177,8 +177,8 @@ TEST(TransportShortPeriodSim, PitchOscillationPeriodAndDampingMatchModel) {
       peak2 = aq;
     }
   }
-  EXPECT_LT(peak2, 0.5 * peak1)
-      << "short period underdamped: cycle peaks " << peak1 << " -> " << peak2;
+  EXPECT_LT(peak2, 0.5 * peak1) << "short period underdamped: cycle peaks " << peak1 << " -> "
+                                << peak2;
 }
 
 TEST(TransportSpiralSim, BankDisturbancePersistsOnTheSpiralTimescale) {

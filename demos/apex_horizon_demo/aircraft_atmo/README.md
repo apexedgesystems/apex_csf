@@ -22,12 +22,12 @@ docker compose run --rm cuda-rt \
 
 ## 2. Components
 
-| Component          | Source                                  | Role                                        |
-| ------------------ | --------------------------------------- | ------------------------------------------- |
-| CelestialBody      | src/sim/environment/celestial_body      | J2 gravity + ellipsoid + USSA76 atmosphere  |
-| Aircraft           | ../aircraft                             | 6DOF transport, ACFT frame, drive toggles |
-| AircraftController | ../aircraft_controller                  | six-loop autopilot, per-loop enables        |
-| ShmRingBridge      | src/system/core/support/shm_ring_bridge | ACFT/2 bidirectional link                   |
+| Component          | Source                                  | Role                                       |
+| ------------------ | --------------------------------------- | ------------------------------------------ |
+| CelestialBody      | src/sim/environment/celestial_body      | J2 gravity + ellipsoid + USSA76 atmosphere |
+| Aircraft           | ../aircraft                             | 6DOF transport, ACFT frame, drive toggles  |
+| AircraftController | ../aircraft_controller                  | six-loop autopilot, per-loop enables       |
+| ShmRingBridge      | src/system/core/support/shm_ring_bridge | ACFT/2 bidirectional link                  |
 
 ## 3. TPRM
 
