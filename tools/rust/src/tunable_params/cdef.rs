@@ -402,7 +402,11 @@ pub fn generate_cmd_base(manifest: &Manifest) -> Result<String, Error> {
              inspectParams_ = paramBank_.active();\n    \
              onParamsLoaded();\n    \
              this->setConfigured(true);\n    \
-             return loaded;\n  }}\n\n"
+             return loaded;\n  }}\n\n  \
+             /// Staged-payload verification enforces the spec hash for this\n  \
+             /// component (VERIFY_TPRM and the verify-gated RELOAD).\n  \
+             [[nodiscard]] const std::uint32_t* expectedLayoutHash() const noexcept override {{\n    \
+             return &{shout_struct}_LAYOUT_HASH;\n  }}\n\n"
         ));
     }
     if let Some(ss) = &state {
@@ -802,6 +806,32 @@ mod tests {
         // Tasks drive doInit; the derived method binds by name.
         assert!(h.contains("registerTask<TDerived, &TDerived::step>"));
         assert!(h.contains("STEP = 1,"));
+    }
+
+    #[test]
+    fn spec_base_publishes_expected_layout_hash() {
+        // Spec-born components enforce their layout hash at staged-verify
+        // and verify-gated RELOAD: the base overrides expectedLayoutHash()
+        // with the generated constant.
+        let m = parse_manifest_str(
+            r#"
+            component = "X"
+            component_id = 1
+            [structs]
+            XTunableParams = { category = "TUNABLE_PARAM" }
+            [[fields.XTunableParams]]
+            name = "v"
+            type = "float"
+            size = 4
+            [[tasks]]
+            name = "step"
+            uid = 1
+        "#,
+        )
+        .unwrap();
+        let h = generate_cmd_base(&m).unwrap();
+        assert!(h.contains("const std::uint32_t* expectedLayoutHash() const noexcept override"));
+        assert!(h.contains("return &X_TUNABLE_PARAMS_LAYOUT_HASH;"));
     }
 
     #[test]

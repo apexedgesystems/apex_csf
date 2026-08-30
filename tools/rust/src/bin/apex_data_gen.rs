@@ -301,6 +301,18 @@ fn build_struct_dictionary(
     out.insert("structs".into(), Json::Object(structs));
     if !enums.is_empty() {
         out.insert("enums".into(), Json::Object(enums));
+        if !manifest.capabilities.is_empty() {
+            out.insert(
+                "capabilities".into(),
+                Json::Array(
+                    manifest
+                        .capabilities
+                        .iter()
+                        .map(|c| Json::String(c.clone()))
+                        .collect(),
+                ),
+            );
+        }
     }
     if !commands.is_empty() {
         out.insert("commands".into(), Json::Array(commands));

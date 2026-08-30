@@ -23,10 +23,11 @@ Lightweight binary protocol for commanding system components and receiving telem
 | -------------------- | ------------- | --------------------------------------------------------------------------------------- | ------- |
 | `AprotoHeader`       | Struct        | 14-byte packed header (magic, version, flags, fullUid, opcode, sequence, payloadLength) | Yes     |
 | `AprotoFlags`        | Struct        | Protocol flags (internalOrigin, isResponse, ackRequested, crcPresent, encryptedPresent) | Yes     |
-| `AckPayload`         | Struct        | ACK/NAK response payload (cmdOpcode, cmdSequence, status)                               | Yes     |
+| `AckPayload`         | Struct        | ACK/NAK response payload (cmdOpcode, cmdSequence, status, stage)                        | Yes     |
 | `CryptoMeta`         | Struct        | Encryption metadata (keyIndex, nonce)                                                   | Yes     |
 | `PacketView`         | Struct        | Zero-copy view into encoded packet buffer                                               | Yes     |
 | `SystemOpcode`       | Enum          | System opcodes: NOOP, PING, file transfer (upload + download), ACK/NAK                  | Yes     |
+| `AckStage`           | Enum          | Response lifecycle: RESULT (terminal), QUEUED (interim), COMPLETION (deferred terminal) | Yes     |
 | `NakStatus`          | Enum          | Extended NAK status codes for all system operations                                     | Yes     |
 | `FileTransferState`  | Enum          | Transfer state machine: IDLE, RECEIVING, COMPLETE, ERROR, SENDING                       | Yes     |
 | `FileBeginPayload`   | Struct        | FILE_BEGIN payload (76B: totalSize, chunkSize, totalChunks, crc32, path)                | Yes     |

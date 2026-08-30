@@ -110,8 +110,11 @@ NAK_NAMES = {
     0: "SUCCESS",
     1: "UNKNOWN_OPCODE",
     2: "INVALID_PAYLOAD",
-    3: "NO_RESOLVER",
-    4: "COMPONENT_NOT_FOUND",
+    # 1-6 are context-dependent: interface routing NAKs and component
+    # CommandResult share the numeric space (completions carry the
+    # component reading).
+    3: "INVALID_ARGUMENT/NO_RESOLVER",
+    4: "TARGET_NOT_FOUND/COMPONENT_NOT_FOUND",
     5: "LOAD_FAILED",
     6: "EXEC_FAILED",
     10: "TRANSFER_IN_PROGRESS",
@@ -251,12 +254,21 @@ def parse_header(data: bytes) -> Optional[dict]:
     }
 
 
+# Response lifecycle stages (AckPayload.stage). RESULT is the terminal
+# single-frame outcome every pre-stage vehicle emits; QUEUED is the
+# interim acceptance of a queued command whose COMPLETION follows with
+# the same cmd_sequence.
+ACK_STAGE_RESULT = 0
+ACK_STAGE_QUEUED = 1
+ACK_STAGE_COMPLETION = 2
+
+
 def parse_ack(payload: bytes) -> dict:
-    """Parse ACK/NAK payload (8+ bytes: cmdOpcode:2, cmdSequence:2, status:1, reserved:3)."""
+    """Parse ACK/NAK payload (8+ bytes: cmdOpcode:2, cmdSequence:2, status:1, stage:1, rsv:2)."""
     if len(payload) < 8:
         return {"error": f"ACK payload too short ({len(payload)} bytes, need 8)"}
 
-    cmd_opcode, cmd_seq, status = struct.unpack("<HHB", payload[:5])
+    cmd_opcode, cmd_seq, status, stage = struct.unpack("<HHBB", payload[:6])
     extra = payload[8:] if len(payload) > 8 else b""
 
     return {
@@ -264,6 +276,7 @@ def parse_ack(payload: bytes) -> dict:
         "cmd_sequence": cmd_seq,
         "status": status,
         "status_name": NAK_NAMES.get(status, f"UNKNOWN({status})"),
+        "stage": stage,
         "extra": extra,
     }
 

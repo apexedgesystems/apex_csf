@@ -629,6 +629,86 @@ def run_checkout(args: argparse.Namespace) -> int:
                 "cfg2bin/toml/payload missing from build tree",
             )
 
+        section("15c. Arm / Verify / Execute (readback surface)")
+        # The full ground rotation: stage, read back the bank digest,
+        # verify on vehicle, refuse a corrupted set at apply, then apply
+        # a genuine one. Verdict vocabulary is TprmPayloadCheck
+        # (0=OK, 7=CRC_MISMATCH per the v3 ingest contract).
+        if cfg2bin.is_file() and src_toml.is_file():
+            # Stage a genuine edited set (no reload yet: transfer only).
+            edited = src_toml.read_text().replace("value = 0.75", "value = 1.5")
+            tmp = __import__("tempfile").mkdtemp()
+            toml_path = __import__("pathlib").Path(tmp) / "spec_matrix.toml"
+            toml_path.write_text(edited)
+            staged = __import__("pathlib").Path(tmp) / "00d700.tprm"
+            subprocess.run(
+                [str(cfg2bin), "-c", str(toml_path), "-o", str(staged), "--fulluid", "0x00D700"],
+                capture_output=True,
+                check=True,
+            )
+            genuine = staged.read_bytes()
+            r = c2.send_file(str(staged), "bank_b/tprm/00d700.tprm")
+            check("stage genuine set (transfer only)", r["status"] == 0, r["status_name"])
+
+            # ARM proof: the digest shows the staged identity.
+            digest = c2.readback_tprm()
+            rows = {row["full_uid"]: row for row in digest.get("rows", [])}
+            row = rows.get(MTX)
+            check("digest lists the staged target", row is not None, str(digest)[:60])
+            if row is not None:
+                import zlib
+
+                want_crc = zlib.crc32(genuine[20:]) & 0xFFFFFFFF
+                check(
+                    f"digest CRC matches staged bytes (0x{row['payload_crc']:08X})",
+                    row["payload_crc"] == want_crc,
+                )
+                check("digest verdict OK", row["verdict"] == 0)
+
+            # VERIFY proof: on-vehicle verdict OK, hash echoed.
+            v = c2.verify_tprm(MTX)
+            check(
+                f"verify_tprm verdict OK (hash 0x{v.get('layout_hash', 0):08X})",
+                v.get("verdict") == 0,
+                str(v)[:60],
+            )
+
+            # REFUSE proof: corrupt one body byte, keep the prelude.
+            corrupt = bytearray(genuine)
+            corrupt[24] ^= 0xFF
+            staged.write_bytes(bytes(corrupt))
+            r = c2.send_file(str(staged), "bank_b/tprm/00d700.tprm")
+            check("stage corrupted set", r["status"] == 0, r["status_name"])
+            v = c2.verify_tprm(MTX)
+            check(f"verify flags CRC_MISMATCH (verdict {v.get('verdict')})", v.get("verdict") == 7)
+            r = c2.send_command(0x000000, 0x0125, struct.pack("<I", MTX))
+            check("RELOAD refuses corrupted set (LOAD_FAILED)", r["status"] == 5, r["status_name"])
+            check(
+                "refusal carries the verdict", len(r.get("extra", b"")) >= 1 and r["extra"][0] == 7
+            )
+            r = c2.inspect(MTX, category=1)
+            ratio_now = struct.unpack_from("<f", r.get("extra", b""), 32)[0]
+            check(f"active bytes untouched by refusal ({ratio_now})", abs(ratio_now - 0.75) < 1e-6)
+
+            # EXECUTE proof: re-stage genuine, verify, apply, confirm.
+            staged.write_bytes(genuine)
+            r = c2.send_file(str(staged), "bank_b/tprm/00d700.tprm")
+            check("re-stage genuine set", r["status"] == 0, r["status_name"])
+            v = c2.verify_tprm(MTX)
+            check("verify OK after re-stage", v.get("verdict") == 0)
+            r = c2.send_command(0x000000, 0x0125, struct.pack("<I", MTX))
+            check("RELOAD applies verified set", r["status"] == 0, r["status_name"])
+            time.sleep(1.2)
+            r = c2.inspect(MTX, category=1)
+            ratio_v = struct.unpack_from("<f", r.get("extra", b""), 32)[0]
+            check(f"verified set ACTIVE ({ratio_v})", abs(ratio_v - 1.5) < 1e-6)
+            # Restore the authored set for later sections.
+            r = c2.update_tprm(MTX, str(restore_tprm))
+            check("restore authored set", r["status"] == 0, r["status_name"])
+            time.sleep(1.2)
+        else:
+            check("readback prerequisites present", False, "cfg2bin/toml missing")
+
         section("16. Limits (every constraint kind at its rail)")
         r = c2.inspect(LIM, category=1)
         extra = r.get("extra", b"")

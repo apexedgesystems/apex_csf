@@ -174,8 +174,12 @@ public:
     RELOAD_EXECUTIVE = 0x0127, ///< Restart executive via execve (no payload).
 
     // Ground test / inspection commands
-    INSPECT = 0x0130, ///< Read registered data (9-byte payload: u32 fullUid, u8 category, u16
-                      ///< offset, u16 len).
+    INSPECT = 0x0130,       ///< Read registered data (9-byte payload: u32 fullUid, u8 category, u16
+                            ///< offset, u16 len).
+    READBACK_TPRM = 0x0131, ///< Digest of the staged (inactive-bank) TPRM payloads
+                            ///< (optional 2-byte page-offset payload; see TprmReadback.hpp).
+    VERIFY_TPRM = 0x0132,   ///< Verify one staged payload without applying (4-byte fullUid
+                            ///< payload; 12-byte verdict response; see TprmReadback.hpp).
 
     // Runtime self-description commands
     GET_REGISTRY = 0x0140,     ///< Dump component registry (no payload, packed response).

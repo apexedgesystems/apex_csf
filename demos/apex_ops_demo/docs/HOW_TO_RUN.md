@@ -122,19 +122,20 @@ the generated tprm directory in slot naming:
 | Generated file | Source                      | Description                                  |
 | -------------- | --------------------------- | -------------------------------------------- |
 | `rts/001.rts`  | `rts_001_noop_sweep.toml`   | Sends NOOP to each component with 1s spacing |
-| `rts/002.rts`  | `rts_002_wave_control.toml` | DATA_WRITE zeros WaveGen#0 output, waits 3s  |
+| `rts/002.rts`  | `rts_002_wave_control.toml` | Timed two-step marker sequence (3s spacing)  |
 
 Load and run via the operations client:
 
 ```python
 # Upload sequence file (compiled by the build)
+# Transfer paths are filesystem-root-relative; upload into the bank.
 c2.send_file(
     "build/hosted-x86_64-debug/demos/apex_ops_demo/exec/tprm/rts/001.rts",
-    "rts/noop_sweep.rts",
+    "bank_a/rts/noop_sweep.rts",
 )
 
-# Load into slot 0
-c2.send_command(0x000500, 0x0500, b"\x00.apex_fs/rts/noop_sweep.rts\x00")
+# Load into slot 0 (LOAD paths are bank-relative).
+c2.send_command(0x000500, 0x0500, b"\x00rts/noop_sweep.rts\x00")
 
 # Start
 c2.start_rts(0)
