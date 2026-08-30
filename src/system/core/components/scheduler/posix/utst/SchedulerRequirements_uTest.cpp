@@ -126,3 +126,29 @@ TEST(SchedulerRequirementsTest, PreflightOpcodesRoundTrip) {
 
   sched.shutdown();
 }
+
+/* ----------------------------- Multi-Rate Identity ----------------------------- */
+
+/** @test Every entry of a task scheduled at multiple rates carries its identity. */
+TEST(SchedulerRequirementsTest, MultiRateRowsKeepIdentity) {
+  SchedulerMultiThread sched(100, testLogDir());
+  ASSERT_EQ(sched.init(), 0);
+
+  DelegateU8 del{&noopTask, nullptr};
+  SchedulableTask task(del, "dualRate");
+
+  // Same task, two rates -- the multi-rate table pattern (e.g. a GPU kick
+  // at 1 Hz and 2 Hz). Identity must land on EACH entry, not just the
+  // first: the executive's registry loop attributes by entry.fullUid.
+  ASSERT_EQ(sched.addTask(task, TaskConfig(1, 1, 0), nullptr, 0x008200, 1, "conv"),
+            Status::SUCCESS);
+  ASSERT_EQ(sched.addTask(task, TaskConfig(2, 1, 25), nullptr, 0x008200, 1, "conv"),
+            Status::SUCCESS);
+
+  const auto& ENTRIES = sched.entries();
+  ASSERT_EQ(ENTRIES.size(), 2U);
+  for (const auto& e : ENTRIES) {
+    EXPECT_EQ(e.fullUid, 0x008200U);
+    EXPECT_EQ(e.taskUid, 1U);
+  }
+}

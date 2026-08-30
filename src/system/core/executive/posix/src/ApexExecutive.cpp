@@ -536,7 +536,14 @@ RunResult ApexExecutive::run() noexcept {
     if (entry.task != nullptr) {
       auto status = registry_.registerTask(entry.fullUid, entry.taskUid,
                                            entry.task->getLabel().data(), entry.task);
-      if (system_core::registry::isError(status)) {
+      if (status == system_core::registry::Status::ERROR_DUPLICATE_TASK) {
+        // One task scheduled at multiple rates produces one entry per table
+        // row; the registry carries the task once and the extra rows are
+        // by-design, not a broken registration.
+        sysLog_->info(label(), fmt::format("Task {} (0x{:06X}/{}) scheduled at multiple rates; "
+                                           "registered once",
+                                           entry.task->getLabel(), entry.fullUid, entry.taskUid));
+      } else if (system_core::registry::isError(status)) {
         sysLog_->warning(label(), static_cast<std::uint8_t>(status),
                          fmt::format("Task registration failed for {} (fullUid=0x{:06X}): {}",
                                      entry.task->getLabel(), entry.fullUid,
