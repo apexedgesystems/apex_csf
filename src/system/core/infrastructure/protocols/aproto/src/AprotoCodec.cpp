@@ -209,9 +209,11 @@ Status encodeAckNak(const AprotoHeader& cmdHeader, std::uint8_t statusCode,
   ackPayload.cmdOpcode = cmdHeader.opcode;
   ackPayload.cmdSequence = cmdHeader.sequence;
   ackPayload.status = statusCode;
+  // This encoder serves synchronous responders (bare-metal decks):
+  // the frame is the command's outcome, stage RESULT.
+  ackPayload.stage = static_cast<std::uint8_t>(AckStage::RESULT);
   ackPayload.reserved[0] = 0;
   ackPayload.reserved[1] = 0;
-  ackPayload.reserved[2] = 0;
 
   // Build response header
   const std::uint16_t respOpcode = (statusCode == 0)
