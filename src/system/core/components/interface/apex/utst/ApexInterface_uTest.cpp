@@ -349,6 +349,7 @@ TEST(ApexInterfaceTest, QueuedCommandEmitsCompletionFrame) {
   std::atomic<std::size_t> drained{0};
   std::thread poller([&]() {
     while (run.load(std::memory_order_relaxed)) {
+      iface.drainCompletionFrames(); // EXT_IO side of the completion hand-off.
       iface.pollSockets(25);
       iface.drainTelemetryOutboxes();
       drained.fetch_add(iface.drainCommandsToComponents(), std::memory_order_relaxed);

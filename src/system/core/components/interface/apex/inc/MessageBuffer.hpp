@@ -70,6 +70,7 @@ struct MessageBuffer {
   bool internalOrigin{false};     ///< true = internal message, false = external.
   std::uint8_t originServerId{0}; ///< Server the command arrived on (external only).
   bool ackRequested{false};       ///< Sender awaits a completion frame after execution.
+  std::uint8_t status{0};         ///< Execution result (completion outbox entries).
 
   /* ----------------------------- Reference Counting ----------------------------- */
 
@@ -111,6 +112,7 @@ struct MessageBuffer {
     internalOrigin = false;
     originServerId = 0;
     ackRequested = false;
+    status = 0;
     refCount.store(1, std::memory_order_relaxed); // Reset for next use.
   }
 

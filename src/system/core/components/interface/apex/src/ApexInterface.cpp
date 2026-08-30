@@ -606,6 +606,25 @@ void ApexInterface::drainTelemetryOutboxes() noexcept {
   });
 }
 
+void ApexInterface::drainCompletionFrames() noexcept {
+  MessageBuffer* buf = nullptr;
+  while (completionOutbox_.tryPop(buf)) {
+    if (buf == nullptr) {
+      continue;
+    }
+    aproto::AprotoHeader hdr{};
+    hdr.fullUid = buf->fullUid;
+    hdr.opcode = buf->opcode;
+    hdr.sequence = buf->sequence;
+    apex::compat::rospan<std::uint8_t> respSpan{};
+    if (buf->length > 0) {
+      respSpan = apex::compat::rospan<std::uint8_t>{buf->data, buf->length};
+    }
+    enqueueAckNak(buf->originServerId, hdr, buf->status, respSpan, aproto::AckStage::COMPLETION);
+    bufferPool_.release(buf);
+  }
+}
+
 std::size_t ApexInterface::drainCommandsToComponents(std::size_t maxPerComponent) noexcept {
   std::size_t total = 0;
 
@@ -636,22 +655,30 @@ std::size_t ApexInterface::drainCommandsToComponents(std::size_t maxPerComponent
 
       // A queued external command's outcome leaves the vehicle as a
       // COMPLETION frame: same cmdSequence the QUEUED frame carried,
-      // real status, response bytes in the extra. Without this frame
-      // the result of every queued command is invisible to ground.
+      // real status, response bytes in the extra. Frame encoding and
+      // TX production belong to the external-I/O thread (its scratch,
+      // its side of the TX pipe), so this drain -- which runs on the
+      // task thread -- retains the buffer with the outcome written in
+      // place and hands it across on the completion outbox instead of
+      // emitting here.
       if (buf->ackRequested && !buf->internalOrigin) {
-        aproto::AprotoHeader hdr{};
-        hdr.fullUid = buf->fullUid;
-        hdr.opcode = buf->opcode;
-        hdr.sequence = buf->sequence;
-        apex::compat::rospan<std::uint8_t> respSpan{};
-        if (!response.empty()) {
-          respSpan = apex::compat::rospan<std::uint8_t>{response.data(), response.size()};
+        const std::size_t COPY = std::min(response.size(), buf->capacity);
+        if (COPY > 0) {
+          std::memcpy(buf->data, response.data(), COPY);
         }
-        enqueueAckNak(buf->originServerId, hdr, RESULT, respSpan, aproto::AckStage::COMPLETION);
+        buf->length = COPY;
+        buf->status = RESULT;
+        if (COMPAT_LIKELY(completionOutbox_.tryPush(buf))) {
+          buf = nullptr; // Ownership crossed to the outbox.
+        } else {
+          ++stats_.completionDrops;
+        }
       }
 
-      // Release buffer after processing.
-      bufferPool_.release(buf);
+      // Release buffer after processing (unless the outbox owns it).
+      if (buf != nullptr) {
+        bufferPool_.release(buf);
+      }
 
       ++count;
       ++total;

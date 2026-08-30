@@ -163,6 +163,17 @@ public:
   void drainTelemetryOutboxes() noexcept;
 
   /**
+   * @brief Emit pending COMPLETION frames for executed queued commands.
+   *
+   * The command drain runs on the task thread; frame encoding and TX
+   * belong to the external-I/O thread (its scratch buffers, its
+   * production side of the TX pipe). Executed commands cross back on
+   * a pool-buffer outbox: this drain pops, emits, and releases.
+   * @note Call from the external-I/O cycle (pollSockets path).
+   */
+  void drainCompletionFrames() noexcept;
+
+  /**
    * @brief Process pending commands for all registered components.
    * @param maxPerComponent Maximum commands to process per component (0 = unlimited).
    * @return Total number of commands processed across all components.
@@ -298,6 +309,10 @@ private:
   // Per-component queue pairs for async routing.
   QueueManager queueMgr_;
 
+  /// Executed queued commands awaiting their COMPLETION frame:
+  /// producer = task-thread command drain, consumer = external I/O.
+  apex::concurrency::SPSCQueue<MessageBuffer*> completionOutbox_{64};
+
   // Active tunables.
   ApexInterfaceTunables tunables_{};
 
@@ -351,6 +366,7 @@ public:
 
     // Queue health
     std::uint32_t cmdQueueOverflows{0}; ///< Command inbox full events.
+    std::uint32_t completionDrops{0};   ///< Completion outbox full events (outcome lost).
     std::uint32_t tlmQueueOverflows{0}; ///< Telemetry outbox full events.
   };
 
