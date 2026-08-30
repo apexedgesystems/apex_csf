@@ -196,7 +196,7 @@ function (apex_add_tprm)
         OUTPUT "${_seq_out}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${_gen_dir}/${_kind}"
         COMMAND "${_tools_dir}/cfg2bin" --config "${_seq_toml}" --output "${_seq_out}"
-        DEPENDS "${_seq_toml}" ${PROJECT_NAME}_rust_tools
+        DEPENDS "${_seq_toml}" "${_tools_dir}/cfg2bin" ${PROJECT_NAME}_rust_tools
         COMMENT "[tprm] ${ARG_NAME}: ${_kind} ${_slot3} <- ${_path}"
         VERBATIM
       )
@@ -251,7 +251,7 @@ function (apex_add_tprm)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${_gen_dir}/payloads"
             COMMAND "${_tools_dir}/cfg2bin" --config "${_toml}" --output "${_payload}" --fulluid
                     "${_key}" --constraint-rows "${_payload}.rows.json"
-            DEPENDS "${_toml}" ${PROJECT_NAME}_rust_tools
+            DEPENDS "${_toml}" "${_tools_dir}/cfg2bin" ${PROJECT_NAME}_rust_tools
             COMMENT "[tprm] ${ARG_NAME}: ${_path}"
             VERBATIM
           )
@@ -282,7 +282,7 @@ function (apex_add_tprm)
       OUTPUT "${_out}"
       COMMAND ${CMAKE_COMMAND} -E make_directory "${_gen_dir}"
       COMMAND "${_tools_dir}/tprm_pack" pack ${_pack_args} -o "${_out}"
-      DEPENDS ${_pack_deps} "${_manifest}" ${PROJECT_NAME}_rust_tools
+      DEPENDS ${_pack_deps} "${_manifest}" "${_tools_dir}/tprm_pack" ${PROJECT_NAME}_rust_tools
       COMMENT "[tprm] ${ARG_NAME}: pack ${_master}"
       VERBATIM
     )
