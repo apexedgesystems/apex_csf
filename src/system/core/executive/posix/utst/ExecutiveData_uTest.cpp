@@ -26,7 +26,9 @@ TEST(ExecutiveTunableParams, DefaultValues) {
   const executive::ExecutiveTunableParams params{};
 
   EXPECT_EQ(params.clockFrequencyHz, 100);
-  EXPECT_EQ(params.rtMode, 0); // HARD_TICK_COMPLETE
+  // Stock default is soft: a stock boot must never self-terminate on
+  // timing. Hard modes are an explicit application declaration.
+  EXPECT_EQ(params.rtMode, 2); // SOFT_SKIP_ON_BUSY
   EXPECT_EQ(params.rtMaxLagTicks, 10);
   EXPECT_EQ(params.startupMode, 0); // AUTO
   EXPECT_EQ(params.startupDelaySeconds, 1);

@@ -34,8 +34,12 @@ struct ExecutiveTunableParams {
   std::uint16_t clockFrequencyHz{100}; ///< Fundamental clock frequency (Hz).
   std::uint16_t reserved0{0};          ///< Padding for alignment.
 
-  // Real-time mode configuration
-  std::uint8_t rtMode{0};     ///< RT mode (0=HARD_TICK_COMPLETE, 1=HARD_PERIOD_COMPLETE,
+  // Real-time mode configuration. Stock default is SOFT_SKIP_ON_BUSY:
+  // a stock boot must never self-terminate on timing -- hard modes are
+  // an explicit declaration in the application's toml. Matches
+  // RTConfig's constructor default so an absent tprm and a
+  // default-valued tprm produce the same system.
+  std::uint8_t rtMode{2};     ///< RT mode (0=HARD_TICK_COMPLETE, 1=HARD_PERIOD_COMPLETE,
                               ///<          2=SOFT_SKIP_ON_BUSY, 3=SOFT_LAG_TOLERANT, 4=LOG_ONLY).
   std::uint8_t reserved1{0};  ///< Padding.
   std::uint16_t reserved2{0}; ///< Padding.

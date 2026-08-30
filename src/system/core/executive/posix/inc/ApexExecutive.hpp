@@ -485,7 +485,10 @@ private:
 
   // Simulation configuration
   std::uint16_t clockFrequency_{DEFAULT_CLOCK_FREQUENCY};
-  RTConfig rtConfig_{RTMode::HARD_TICK_COMPLETE}; ///< Real-time execution mode configuration.
+  /// Real-time execution mode configuration. Deliberately inherits the
+  /// struct's own stock default (soft) -- a member-site override here is
+  /// how the stock posture ended up hard in three places at once.
+  RTConfig rtConfig_{};
 
   // Thread configuration for primary threads
   ExecutiveThreadConfig threadConfig_{}; ///< RT config for primary threads.
