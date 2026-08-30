@@ -27,7 +27,7 @@
  */
 
 #include "src/system/core/support/system_monitor/inc/SystemMonitorConfig.hpp"
-#include "src/system/core/support/system_monitor/inc/SystemMonitorData.hpp"
+#include "src/system/core/support/system_monitor/.auto/SystemMonitorTunableParams_auto.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorSnapshot.hpp"
 #include "src/system/core/components/registry/apex/inc/RegistryBase.hpp"
 #include "src/system/core/support/system_monitor/inc/SystemMonitorTlm.hpp"
@@ -121,6 +121,16 @@ public:
    * @note NOT RT-safe.
    */
   bool loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+
+  /**
+   * @brief Layout hash staged payloads must carry for this component.
+   *
+   * Enforced at VERIFY_TPRM and the verify-gated RELOAD; the constant
+   * comes from the spec-generated header.
+   */
+  [[nodiscard]] const std::uint32_t* expectedLayoutHash() const noexcept override {
+    return &SYSTEM_MONITOR_TUNABLE_PARAMS_LAYOUT_HASH;
+  }
 
   /* ----------------------------- Task Methods ----------------------------- */
 

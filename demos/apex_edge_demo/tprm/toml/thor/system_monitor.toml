@@ -9,22 +9,7 @@ sampleRateHz = { type = "float", size = 4, value = 1.0 }
 # CPU domain (54 bytes) - all 12 Thor cores
 cpuEnabled = { type = "uint", size = 1, value = 1 }
 monitoredCoreCount = { type = "uint", size = 1, value = 12 }
-monitoredCore0 = { type = "uint", size = 2, value = 0 }
-monitoredCore1 = { type = "uint", size = 2, value = 1 }
-monitoredCore2 = { type = "uint", size = 2, value = 2 }
-monitoredCore3 = { type = "uint", size = 2, value = 3 }
-monitoredCore4 = { type = "uint", size = 2, value = 4 }
-monitoredCore5 = { type = "uint", size = 2, value = 5 }
-monitoredCore6 = { type = "uint", size = 2, value = 6 }
-monitoredCore7 = { type = "uint", size = 2, value = 7 }
-monitoredCore8 = { type = "uint", size = 2, value = 8 }
-monitoredCore9 = { type = "uint", size = 2, value = 9 }
-monitoredCore10 = { type = "uint", size = 2, value = 10 }
-monitoredCore11 = { type = "uint", size = 2, value = 11 }
-monitoredCore12 = { type = "uint", size = 2, value = 0 }
-monitoredCore13 = { type = "uint", size = 2, value = 0 }
-monitoredCore14 = { type = "uint", size = 2, value = 0 }
-monitoredCore15 = { type = "uint", size = 2, value = 0 }
+monitoredCores = { type = "array", size = 32, element_type = "uint", value = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 0, 0, 0, 0] }
 cpuLoadWarnPercent = { type = "float", size = 4, value = 80.0 }
 cpuLoadCritPercent = { type = "float", size = 4, value = 95.0 }
 cpuTempWarnC = { type = "int", size = 2, value = 80 }
@@ -34,9 +19,7 @@ cpuRtThrottleCrit = { type = "uint", size = 4, value = 10 }
 
 # Memory domain (36 bytes)
 memEnabled = { type = "uint", size = 1, value = 1 }
-memPad0 = { type = "uint", size = 1, value = 0 }
-memPad1 = { type = "uint", size = 1, value = 0 }
-memPad2 = { type = "uint", size = 1, value = 0 }
+memPad = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
 memRamWarnPercent = { type = "float", size = 4, value = 80.0 }
 memRamCritPercent = { type = "float", size = 4, value = 95.0 }
 memSwapWarnBytes = { type = "uint", size = 8, value = 1048576 }
@@ -55,6 +38,4 @@ gpuUtilCritPercent = { type = "float", size = 4, value = 100.0 }
 gpuMemWarnPercent = { type = "float", size = 4, value = 90.0 }
 gpuMemCritPercent = { type = "float", size = 4, value = 98.0 }
 gpuThrottleWarnOnAny = { type = "uint", size = 1, value = 1 }
-gpuPad2_0 = { type = "uint", size = 1, value = 0 }
-gpuPad2_1 = { type = "uint", size = 1, value = 0 }
-gpuPad2_2 = { type = "uint", size = 1, value = 0 }
+gpuPad2 = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }

@@ -74,6 +74,12 @@ pub struct StructEntry {
     pub opcode: Option<String>,
     /// Optional explicit header path (relative to manifest).
     pub header: Option<String>,
+    /// Packed layout: the generated struct carries
+    /// `__attribute__((packed))` and fields need not be naturally
+    /// aligned. Offsets are sequential either way; packed makes the
+    /// C++ compiler honor them when alignment would insert padding.
+    #[serde(default)]
+    pub packed: bool,
 }
 
 /// Enum entry in the manifest.
