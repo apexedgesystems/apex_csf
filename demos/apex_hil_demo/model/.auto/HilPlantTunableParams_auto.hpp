@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_HIL_PLANT_TUNABLE_PARAMS_HPP
 #define APEX_CDEF_AUTO_HIL_PLANT_TUNABLE_PARAMS_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -22,11 +23,19 @@ struct HilPlantTunableParams {
   double commLossFrames{25.0}; ///< Control frames without new cmd before comm loss (0=disabled).
 };
 static_assert(sizeof(HilPlantTunableParams) == 64, "layout diverged from the spec");
+static_assert(offsetof(HilPlantTunableParams, mass) == 0, "field offset diverged");
+static_assert(offsetof(HilPlantTunableParams, dragCd) == 8, "field offset diverged");
+static_assert(offsetof(HilPlantTunableParams, dragArea) == 16, "field offset diverged");
+static_assert(offsetof(HilPlantTunableParams, targetAlt) == 24, "field offset diverged");
+static_assert(offsetof(HilPlantTunableParams, ctrlKp) == 32, "field offset diverged");
+static_assert(offsetof(HilPlantTunableParams, ctrlKd) == 40, "field offset diverged");
+static_assert(offsetof(HilPlantTunableParams, thrustMax) == 48, "field offset diverged");
+static_assert(offsetof(HilPlantTunableParams, commLossFrames) == 56, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t HIL_PLANT_TUNABLE_PARAMS_LAYOUT_HASH = 0x2D523611U;
+inline constexpr std::uint32_t HIL_PLANT_TUNABLE_PARAMS_LAYOUT_HASH = 0x4ECECA54U;
 
 } // namespace plant
 } // namespace appsim

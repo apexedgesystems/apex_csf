@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SET_MODE_REQUEST_HPP
 #define APEX_CDEF_AUTO_SET_MODE_REQUEST_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -15,11 +16,12 @@ struct SetModeRequest {
   std::uint8_t mode{}; ///< Requested mode (0=IDLE, 1=MEASURE, 2=FAULT_INJECT).
 };
 static_assert(sizeof(SetModeRequest) == 1, "layout diverged from the spec");
+static_assert(offsetof(SetModeRequest, mode) == 0, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SET_MODE_REQUEST_LAYOUT_HASH = 0xD9AF370AU;
+inline constexpr std::uint32_t SET_MODE_REQUEST_LAYOUT_HASH = 0x6D1C898FU;
 
 } // namespace spec
 } // namespace appsim

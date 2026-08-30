@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SPEC_SENSOR_STATE_HPP
 #define APEX_CDEF_AUTO_SPEC_SENSOR_STATE_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -20,11 +21,17 @@ struct SpecSensorState {
   std::uint8_t reserved[3]{}; ///< Alignment padding.
 };
 static_assert(sizeof(SpecSensorState) == 20, "layout diverged from the spec");
+static_assert(offsetof(SpecSensorState, elapsed) == 0, "field offset diverged");
+static_assert(offsetof(SpecSensorState, drift) == 4, "field offset diverged");
+static_assert(offsetof(SpecSensorState, samples) == 8, "field offset diverged");
+static_assert(offsetof(SpecSensorState, rejects) == 12, "field offset diverged");
+static_assert(offsetof(SpecSensorState, mode) == 16, "field offset diverged");
+static_assert(offsetof(SpecSensorState, reserved) == 17, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SPEC_SENSOR_STATE_LAYOUT_HASH = 0xACA7D3C9U;
+inline constexpr std::uint32_t SPEC_SENSOR_STATE_LAYOUT_HASH = 0x3B5D3A65U;
 
 } // namespace spec
 } // namespace appsim

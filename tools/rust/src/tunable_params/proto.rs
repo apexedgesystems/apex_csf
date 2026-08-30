@@ -672,7 +672,7 @@ message M {
         // descriptor form.
         assert_eq!(
             canonical_spec(m),
-            "axisLabel:string:8;tags:array:8;[string:4x2]blob:array:6;[uint:1x6]"
+            "axisLabel:string:8:0;tags:array:8:8;[string:4x2]blob:array:6:16;[uint:1x6]|size:22"
         );
     }
 

@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_DRIVER_STATE_HPP
 #define APEX_CDEF_AUTO_DRIVER_STATE_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -27,11 +28,24 @@ struct DriverState {
   std::uint8_t reserved{}; ///< Padding for alignment.
 };
 static_assert(sizeof(DriverState) == 36, "layout diverged from the spec");
+static_assert(offsetof(DriverState, txCount) == 0, "field offset diverged");
+static_assert(offsetof(DriverState, rxCount) == 4, "field offset diverged");
+static_assert(offsetof(DriverState, crcErrors) == 8, "field offset diverged");
+static_assert(offsetof(DriverState, txMisses) == 12, "field offset diverged");
+static_assert(offsetof(DriverState, rxMisses) == 16, "field offset diverged");
+static_assert(offsetof(DriverState, commLostCount) == 20, "field offset diverged");
+static_assert(offsetof(DriverState, seqGaps) == 24, "field offset diverged");
+static_assert(offsetof(DriverState, txSeq) == 28, "field offset diverged");
+static_assert(offsetof(DriverState, rxSeq) == 30, "field offset diverged");
+static_assert(offsetof(DriverState, hasCmd) == 32, "field offset diverged");
+static_assert(offsetof(DriverState, uartOpen) == 33, "field offset diverged");
+static_assert(offsetof(DriverState, commLost) == 34, "field offset diverged");
+static_assert(offsetof(DriverState, reserved) == 35, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t DRIVER_STATE_LAYOUT_HASH = 0x400FD0C1U;
+inline constexpr std::uint32_t DRIVER_STATE_LAYOUT_HASH = 0xD32CE1B0U;
 
 } // namespace driver
 } // namespace appsim

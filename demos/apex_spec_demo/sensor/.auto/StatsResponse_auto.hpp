@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_STATS_RESPONSE_HPP
 #define APEX_CDEF_AUTO_STATS_RESPONSE_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -19,11 +20,16 @@ struct StatsResponse {
   std::uint8_t reserved[3]{}; ///< Alignment padding.
 };
 static_assert(sizeof(StatsResponse) == 16, "layout diverged from the spec");
+static_assert(offsetof(StatsResponse, samples) == 0, "field offset diverged");
+static_assert(offsetof(StatsResponse, rejects) == 4, "field offset diverged");
+static_assert(offsetof(StatsResponse, lastValue) == 8, "field offset diverged");
+static_assert(offsetof(StatsResponse, mode) == 12, "field offset diverged");
+static_assert(offsetof(StatsResponse, reserved) == 13, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t STATS_RESPONSE_LAYOUT_HASH = 0x4F601226U;
+inline constexpr std::uint32_t STATS_RESPONSE_LAYOUT_HASH = 0xD39B482BU;
 
 } // namespace spec
 } // namespace appsim

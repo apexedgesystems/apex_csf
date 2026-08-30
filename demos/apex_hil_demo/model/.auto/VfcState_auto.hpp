@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_VFC_STATE_HPP
 #define APEX_CDEF_AUTO_VFC_STATE_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -18,11 +19,15 @@ struct VfcState {
   std::uint32_t pollCount{}; ///< Transport poll iterations.
 };
 static_assert(sizeof(VfcState) == 16, "layout diverged from the spec");
+static_assert(offsetof(VfcState, rxCount) == 0, "field offset diverged");
+static_assert(offsetof(VfcState, txCount) == 4, "field offset diverged");
+static_assert(offsetof(VfcState, crcErrors) == 8, "field offset diverged");
+static_assert(offsetof(VfcState, pollCount) == 12, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t VFC_STATE_LAYOUT_HASH = 0x5A9B1590U;
+inline constexpr std::uint32_t VFC_STATE_LAYOUT_HASH = 0xC31087A9U;
 
 } // namespace model
 } // namespace appsim

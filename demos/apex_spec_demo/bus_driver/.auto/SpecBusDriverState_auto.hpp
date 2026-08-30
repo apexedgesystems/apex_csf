@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SPEC_BUS_DRIVER_STATE_HPP
 #define APEX_CDEF_AUTO_SPEC_BUS_DRIVER_STATE_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -21,11 +22,18 @@ struct SpecBusDriverState {
   std::uint8_t reserved[3]{};
 };
 static_assert(sizeof(SpecBusDriverState) == 24, "layout diverged from the spec");
+static_assert(offsetof(SpecBusDriverState, txFrames) == 0, "field offset diverged");
+static_assert(offsetof(SpecBusDriverState, rxFrames) == 4, "field offset diverged");
+static_assert(offsetof(SpecBusDriverState, txBytes) == 8, "field offset diverged");
+static_assert(offsetof(SpecBusDriverState, rxBytes) == 12, "field offset diverged");
+static_assert(offsetof(SpecBusDriverState, rejects) == 16, "field offset diverged");
+static_assert(offsetof(SpecBusDriverState, pending) == 20, "field offset diverged");
+static_assert(offsetof(SpecBusDriverState, reserved) == 21, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SPEC_BUS_DRIVER_STATE_LAYOUT_HASH = 0xF209623FU;
+inline constexpr std::uint32_t SPEC_BUS_DRIVER_STATE_LAYOUT_HASH = 0x1D5C64E4U;
 
 } // namespace spec
 } // namespace appsim

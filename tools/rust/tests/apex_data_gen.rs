@@ -73,7 +73,7 @@ fn dictionary_carries_spec_commands_and_telemetry() {
     // Producer-stated layout identity: the hash the v3 prelude carries,
     // plus the canonical string it derives from.
     let entry = &dict["structs"]["SetModeRequest"];
-    assert_eq!(entry["canonical_spec"], "mode:uint:1;");
+    assert_eq!(entry["canonical_spec"], "mode:uint:1:0;|size:1");
     let hash = entry["layout_hash"].as_str().expect("layout_hash");
     assert!(hash.starts_with("0x") && hash.len() == 10, "{hash}");
 

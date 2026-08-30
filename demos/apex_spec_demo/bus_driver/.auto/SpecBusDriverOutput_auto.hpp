@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SPEC_BUS_DRIVER_OUTPUT_HPP
 #define APEX_CDEF_AUTO_SPEC_BUS_DRIVER_OUTPUT_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -17,11 +18,14 @@ struct SpecBusDriverOutput {
   std::uint8_t reserved[3]{};
 };
 static_assert(sizeof(SpecBusDriverOutput) == 8, "layout diverged from the spec");
+static_assert(offsetof(SpecBusDriverOutput, rxFrames) == 0, "field offset diverged");
+static_assert(offsetof(SpecBusDriverOutput, lastRxLen) == 4, "field offset diverged");
+static_assert(offsetof(SpecBusDriverOutput, reserved) == 5, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SPEC_BUS_DRIVER_OUTPUT_LAYOUT_HASH = 0xF67EFC97U;
+inline constexpr std::uint32_t SPEC_BUS_DRIVER_OUTPUT_LAYOUT_HASH = 0xBE351D97U;
 
 } // namespace spec
 } // namespace appsim

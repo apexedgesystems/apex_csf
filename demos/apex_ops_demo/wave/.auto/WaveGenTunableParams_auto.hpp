@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_WAVE_GEN_TUNABLE_PARAMS_HPP
 #define APEX_CDEF_AUTO_WAVE_GEN_TUNABLE_PARAMS_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -23,11 +24,20 @@ struct WaveGenTunableParams {
   float reserved2{0.0F}; ///< Reserved for future use.
 };
 static_assert(sizeof(WaveGenTunableParams) == 32, "layout diverged from the spec");
+static_assert(offsetof(WaveGenTunableParams, frequency) == 0, "field offset diverged");
+static_assert(offsetof(WaveGenTunableParams, amplitude) == 4, "field offset diverged");
+static_assert(offsetof(WaveGenTunableParams, dcOffset) == 8, "field offset diverged");
+static_assert(offsetof(WaveGenTunableParams, phaseOffset) == 12, "field offset diverged");
+static_assert(offsetof(WaveGenTunableParams, noiseAmplitude) == 16, "field offset diverged");
+static_assert(offsetof(WaveGenTunableParams, dutyCycle) == 20, "field offset diverged");
+static_assert(offsetof(WaveGenTunableParams, waveType) == 24, "field offset diverged");
+static_assert(offsetof(WaveGenTunableParams, reserved) == 25, "field offset diverged");
+static_assert(offsetof(WaveGenTunableParams, reserved2) == 28, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t WAVE_GEN_TUNABLE_PARAMS_LAYOUT_HASH = 0x3C65B01CU;
+inline constexpr std::uint32_t WAVE_GEN_TUNABLE_PARAMS_LAYOUT_HASH = 0xAFB2DA8FU;
 
 } // namespace wave
 } // namespace appsim

@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SYS_MON_HEALTH_TLM_HPP
 #define APEX_CDEF_AUTO_SYS_MON_HEALTH_TLM_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace system_core {
@@ -23,11 +24,20 @@ struct SysMonHealthTlm {
   std::uint32_t fdCount{0}; ///< Open file descriptor count.
 };
 static_assert(sizeof(SysMonHealthTlm) == 88, "layout diverged from the spec");
+static_assert(offsetof(SysMonHealthTlm, sampleCount) == 0, "field offset diverged");
+static_assert(offsetof(SysMonHealthTlm, warnCount) == 4, "field offset diverged");
+static_assert(offsetof(SysMonHealthTlm, critCount) == 8, "field offset diverged");
+static_assert(offsetof(SysMonHealthTlm, monitoredCoreCount) == 12, "field offset diverged");
+static_assert(offsetof(SysMonHealthTlm, pad0) == 13, "field offset diverged");
+static_assert(offsetof(SysMonHealthTlm, cpuTempC) == 14, "field offset diverged");
+static_assert(offsetof(SysMonHealthTlm, coreLoad) == 16, "field offset diverged");
+static_assert(offsetof(SysMonHealthTlm, ramUsedPercent) == 80, "field offset diverged");
+static_assert(offsetof(SysMonHealthTlm, fdCount) == 84, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SYS_MON_HEALTH_TLM_LAYOUT_HASH = 0xA3D00836U;
+inline constexpr std::uint32_t SYS_MON_HEALTH_TLM_LAYOUT_HASH = 0x5A677FA1U;
 
 } // namespace support
 } // namespace system_core

@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SENSOR_HEALTH_TLM_HPP
 #define APEX_CDEF_AUTO_SENSOR_HEALTH_TLM_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -20,11 +21,17 @@ struct SensorHealthTlm {
   std::uint8_t reserved[3]{};
 };
 static_assert(sizeof(SensorHealthTlm) == 20, "layout diverged from the spec");
+static_assert(offsetof(SensorHealthTlm, temperature) == 0, "field offset diverged");
+static_assert(offsetof(SensorHealthTlm, rampRate) == 4, "field offset diverged");
+static_assert(offsetof(SensorHealthTlm, stepCount) == 8, "field offset diverged");
+static_assert(offsetof(SensorHealthTlm, wrapCount) == 12, "field offset diverged");
+static_assert(offsetof(SensorHealthTlm, overtemp) == 16, "field offset diverged");
+static_assert(offsetof(SensorHealthTlm, reserved) == 17, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SENSOR_HEALTH_TLM_LAYOUT_HASH = 0x0911D5EEU;
+inline constexpr std::uint32_t SENSOR_HEALTH_TLM_LAYOUT_HASH = 0xFD0D2FACU;
 
 } // namespace sensor
 } // namespace appsim

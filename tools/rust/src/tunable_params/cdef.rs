@@ -62,22 +62,66 @@ fn initializer(field: &FieldDef) -> String {
 }
 
 /// The canonical field-spec string for the layout hash: identical to
-/// the serializer's emission-order walk (`name:type:size;` per leaf,
-/// array element shape appended) over the template this spec
-/// generates.
+/// the serializer's emission-order walk (`name:type:size:offset;` per
+/// leaf, array element shape appended, `|size:total` terminator) over
+/// the template this spec generates. Offsets pin the byte layout:
+/// packed and padded arrangements of the same fields hash apart, and
+/// any byte moving changes the hash.
 pub fn canonical_spec(fields: &[FieldDef]) -> String {
     let mut spec = String::new();
+    let mut offset: u32 = 0;
     for f in fields {
         match f.count {
-            None => spec.push_str(&format!("{}:{}:{};", f.name, f.r#type, f.size)),
+            None => {
+                spec.push_str(&format!("{}:{}:{}:{};", f.name, f.r#type, f.size, offset));
+                offset += f.size;
+            }
             Some(n) => {
                 let total = f.size * n;
-                spec.push_str(&format!("{}:array:{};", f.name, total));
+                spec.push_str(&format!("{}:array:{}:{};", f.name, total, offset));
                 spec.push_str(&format!("[{}:{}x{}]", f.r#type, f.size, n));
+                offset += total;
             }
         }
     }
+    spec.push_str(&format!("|size:{offset}"));
     spec
+}
+
+/// Alignment validation for non-packed specs: offsets are cumulative
+/// (no implicit padding, ever -- gaps must be explicit pad fields), so
+/// a natural-alignment struct is only reproducible when every field
+/// lands on its own alignment and the total is a multiple of the
+/// widest. Packed specs skip this; their sequential bytes are the
+/// layout by definition.
+pub fn validate_natural_alignment(struct_name: &str, fields: &[FieldDef]) -> Result<(), Error> {
+    let mut offset: u32 = 0;
+    let mut max_align: u32 = 1;
+    for f in fields {
+        // A string is a char buffer: its size is byte length, its
+        // alignment is 1. Numeric fields align to their own width.
+        let align = if f.r#type == "string" || f.r#type == "char" {
+            1
+        } else {
+            f.size.min(8)
+        };
+        max_align = max_align.max(align);
+        if align > 0 && offset % align != 0 {
+            return Err(Error::Parse(format!(
+                "{struct_name}.{}: offset {offset} misaligns a {}-byte field; \
+                 add explicit pad fields or mark the struct packed = true",
+                f.name, f.size
+            )));
+        }
+        offset += f.size * f.count.unwrap_or(1);
+    }
+    if max_align > 0 && offset % max_align != 0 {
+        return Err(Error::Parse(format!(
+            "{struct_name}: total {offset} is not a multiple of the widest \
+             alignment {max_align}; add trailing pad fields or mark packed = true"
+        )));
+    }
+    Ok(())
 }
 
 /// Total serialized size of the spec's layout in bytes.
@@ -95,6 +139,7 @@ pub fn generate_header(manifest: &Manifest, struct_name: &str) -> Result<String,
         return Err(Error::Parse(format!("[[fields.{struct_name}]] is empty")));
     }
 
+    validate_natural_alignment(struct_name, fields)?;
     let hash = super::payload::crc32(canonical_spec(fields).as_bytes());
     let size = layout_size(fields);
 
@@ -104,6 +149,16 @@ pub fn generate_header(manifest: &Manifest, struct_name: &str) -> Result<String,
             shout.push('_');
         }
         shout.push(c.to_ascii_uppercase());
+    }
+
+    let mut offset_asserts = String::new();
+    let mut off: u32 = 0;
+    for f in fields {
+        offset_asserts.push_str(&format!(
+            "static_assert(offsetof({struct_name}, {}) == {off}, \"field offset diverged\");\n",
+            f.name
+        ));
+        off += f.size * f.count.unwrap_or(1);
     }
 
     let mut body = String::new();
@@ -153,6 +208,7 @@ pub fn generate_header(manifest: &Manifest, struct_name: &str) -> Result<String,
          #ifndef APEX_CDEF_AUTO_{shout}_HPP\n\
          #define APEX_CDEF_AUTO_{shout}_HPP\n\
          \n\
+         #include <cstddef>\n\
          #include <cstdint>\n\
          \n\
          {ns_open}\n\
@@ -161,6 +217,7 @@ pub fn generate_header(manifest: &Manifest, struct_name: &str) -> Result<String,
          struct {struct_name} {{\n\
          {body}}};\n\
          static_assert(sizeof({struct_name}) == {size}, \"layout diverged from the spec\");\n\
+         {offset_asserts}\
          \n\
          /// Layout hash the v3 payload prelude must carry for this struct\n\
          /// (canonical field-spec CRC-32; stamped by cfg2bin from the same\n\
@@ -655,7 +712,7 @@ mod tests {
             name = "reserved"
             type = "uint"
             size = 1
-            count = 3
+            count = 4
         "#,
         )
         .unwrap()
@@ -666,8 +723,9 @@ mod tests {
         let h = generate_header(&pilot_manifest(), "WaveGenTunableParams").unwrap();
         assert!(h.contains("struct WaveGenTunableParams {"));
         assert!(h.contains("float frequency{1.0F}; ///< Primary frequency [Hz]"));
-        assert!(h.contains("std::uint8_t reserved[3]{};"));
-        assert!(h.contains("static_assert(sizeof(WaveGenTunableParams) == 7"));
+        assert!(h.contains("std::uint8_t reserved[4]{};"));
+        assert!(h.contains("static_assert(sizeof(WaveGenTunableParams) == 8"));
+        assert!(h.contains("static_assert(offsetof(WaveGenTunableParams, reserved) == 4"));
         assert!(h.contains("WAVE_GEN_TUNABLE_PARAMS_LAYOUT_HASH"));
         assert!(h.contains("namespace appsim {"));
         assert!(h.contains("} // namespace wave"));
@@ -680,7 +738,10 @@ mod tests {
         let m = pilot_manifest();
         let fields = &m.fields["WaveGenTunableParams"];
         let spec = canonical_spec(fields);
-        assert_eq!(spec, "frequency:float:4;reserved:array:3;[uint:1x3]");
+        assert_eq!(
+            spec,
+            "frequency:float:4:0;reserved:array:4:4;[uint:1x4]|size:8"
+        );
     }
 
     #[test]
