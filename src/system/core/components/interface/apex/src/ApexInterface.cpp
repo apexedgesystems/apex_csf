@@ -988,6 +988,7 @@ void ApexInterface::logStatsSummary() noexcept {
   log->info(label(), "Queue Health:");
   log->info(label(), fmt::format("  Cmd queue overflows: {}", stats_.cmdQueueOverflows));
   log->info(label(), fmt::format("  Tlm queue overflows: {}", stats_.tlmQueueOverflows));
+  log->info(label(), fmt::format("  Completion drops: {}", stats_.completionDrops));
   log->info(label(), "=============================");
 }
 
