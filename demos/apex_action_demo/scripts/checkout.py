@@ -469,6 +469,13 @@ def test_direct_fault(c2: AprotoClient) -> bool:
     dt_before = read_dt_stats(c2)
     masks_before = dt_before.get("masksApplied", 0)
 
+    # Start from a clean slate: the sequence sections above push masks
+    # through the action engine, and the per-entry queue is 4 deep --
+    # without this clear the push below hits a full queue. (Invisible
+    # before completion frames: the queued-ack always read success.)
+    r = c2.send_command(FULLUID_TRANSFORM, DT_CLEAR_ALL, b"")
+    ok &= check("CLEAR_ALL for a clean slate", r["status"] == 0, r["status_name"])
+
     # SET_TARGET -> ARM -> PUSH_ZERO -> APPLY -> verify -> CLEAR_ALL
     payload = struct.pack("<BIBHB", 0, FULLUID_SENSOR, 4, 0, 4)
     r = c2.send_command(FULLUID_TRANSFORM, DT_SET_TARGET, payload)

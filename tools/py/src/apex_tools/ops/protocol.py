@@ -110,8 +110,11 @@ NAK_NAMES = {
     0: "SUCCESS",
     1: "UNKNOWN_OPCODE",
     2: "INVALID_PAYLOAD",
-    3: "NO_RESOLVER",
-    4: "COMPONENT_NOT_FOUND",
+    # 1-6 are context-dependent: interface routing NAKs and component
+    # CommandResult share the numeric space (completions carry the
+    # component reading).
+    3: "INVALID_ARGUMENT/NO_RESOLVER",
+    4: "TARGET_NOT_FOUND/COMPONENT_NOT_FOUND",
     5: "LOAD_FAILED",
     6: "EXEC_FAILED",
     10: "TRANSFER_IN_PROGRESS",
