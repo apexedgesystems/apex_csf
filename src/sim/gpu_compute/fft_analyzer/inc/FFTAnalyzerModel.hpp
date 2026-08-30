@@ -206,7 +206,13 @@ public:
     std::filesystem::path tprmPath = tprmDir / filename;
 
     if (!std::filesystem::exists(tprmPath)) {
-      return false;
+      // Optional tprm: defaults + success, so a stock (no-config) boot
+      // stays warning-free. False is reserved for a present file that
+      // fails its checks.
+      if (auto* log = componentLog()) {
+        log->info(label(), "No TPRM found, using defaults");
+      }
+      return true;
     }
 
     FFTAnalyzerTunableParams loaded{};

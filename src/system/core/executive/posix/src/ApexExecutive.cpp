@@ -523,11 +523,19 @@ RunResult ApexExecutive::run() noexcept {
   // Sync scheduler fundamental frequency with executive clock rate (must be before loadTprm)
   scheduler_.setFundamentalFreq(clockFrequency_);
 
-  // Load scheduler TPRM and wire tasks (scheduler handles its own TPRM)
+  // Load scheduler TPRM and wire tasks (scheduler handles its own TPRM).
+  // With no configuration provided at all, an empty schedule IS the
+  // declared state -- a stock boot idles -- so the missing table logs at
+  // INFO. With a config present, a missing/unloadable table stays an
+  // error: the application declared tasks it did not get.
   if (!scheduler_.loadTprm(tprmDir)) {
-    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_SCHEDULER_NO_TASKS),
-                   fmt::format("Scheduler loadTprm failed: {}",
-                               scheduler_.lastError() ? scheduler_.lastError() : "unknown"));
+    if (configPath_.empty()) {
+      sysLog_->info(label(), "No schedule configured; scheduler idle (0 tasks)");
+    } else {
+      sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_SCHEDULER_NO_TASKS),
+                     fmt::format("Scheduler loadTprm failed: {}",
+                                 scheduler_.lastError() ? scheduler_.lastError() : "unknown"));
+    }
   }
 
   // Register scheduled tasks with registry (scheduler loaded them, executive registers for
