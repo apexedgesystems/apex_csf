@@ -20,10 +20,11 @@
  *       not per-task. This eliminates 10-30us syscall overhead per task.
  */
 
+#include "src/utilities/helpers/inc/Cpu.hpp"
+
 #include <cstdint>
 
 #include <atomic>
-#include <chrono>
 #include <memory>
 
 namespace system_core {
@@ -144,12 +145,16 @@ struct TaskEntry {
   /// In-flight flag for deadline tracking (unique_ptr: no ref counting overhead).
   std::unique_ptr<std::atomic<bool>> isRunning{std::make_unique<std::atomic<bool>>(false)};
 
-  /** @brief Mark task as dispatched (in-flight); stamps the dispatch time. */
-  void markDispatched() noexcept {
+  /**
+   * @brief Mark task as dispatched (in-flight); stamps the dispatch time.
+   *
+   * The caller supplies the timestamp: the tick thread reads the clock
+   * once per tick and every same-tick dispatch shares that base, so the
+   * producer path pays one clock read regardless of table size.
+   */
+  void markDispatched(std::uint64_t dispatchNs) noexcept {
     if (stats) {
-      stats->dispatchNs.store(
-          static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count()),
-          std::memory_order_relaxed);
+      stats->dispatchNs.store(dispatchNs, std::memory_order_relaxed);
     }
     if (isRunning)
       isRunning->store(true, std::memory_order_release);
@@ -159,12 +164,12 @@ struct TaskEntry {
    * @brief Mark task as completed; records runtime against the period.
    *
    * Runtime is dispatch-to-complete, so queue wait is charged to the
-   * task -- the same base the deadline check uses.
+   * task -- the same base the deadline check uses. The dispatch base is
+   * the tick's dispatch-decision time (shared across the tick).
    */
   void markCompleted() noexcept {
     if (stats) {
-      const auto NOW =
-          static_cast<std::uint64_t>(std::chrono::steady_clock::now().time_since_epoch().count());
+      const std::uint64_t NOW = apex::helpers::cpu::getMonotonicNs();
       const std::uint64_t START = stats->dispatchNs.load(std::memory_order_relaxed);
       if (START != 0 && NOW > START) {
         const auto US = static_cast<std::uint32_t>((NOW - START) / 1000U);

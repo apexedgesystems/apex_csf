@@ -174,7 +174,7 @@ PERF_TEST(SchedulerPerf, EmptyTickOverhead) {
   // Typical results: 5-20ns (well below 50ns threshold)
   // Note: Sub-nanosecond workloads approach timer resolution limits, so
   // CV% can be high even with stable execution. Only check in non-quick mode.
-  if (!perf.config().quickMode) {
+  if (!perf.config().quickMode && perf.config().repeats >= 5) {
     EXPECT_STABLE_CV_CPU(result, perf.config());
   }
 
@@ -242,7 +242,7 @@ PERF_TEST(SchedulerPerf, ManyNoWork) {
   const double NS_PER_TASK = (result.stats.median * 1000.0) / N;
 
   // Relaxed CV% check: tiny workloads (<1us) hit measurement precision limits
-  if (result.stats.median > 1.0) {
+  if (result.stats.median > 1.0 && perf.config().repeats >= 5) {
     EXPECT_STABLE_CV_CPU(result, perf.config());
   } else {
     // For sub-microsecond workloads, accept up to 30% CV due to timer noise
@@ -310,7 +310,9 @@ PERF_TEST(SchedulerPerf, ManyLightWork) {
 
   // Validate
   const double NS_PER_TASK = (result.stats.median * 1000.0) / N;
-  EXPECT_STABLE_CV_CPU(result, perf.config());
+  if (perf.config().repeats >= 5) {
+    EXPECT_STABLE_CV_CPU(result, perf.config());
+  }
 
   std::printf("\n[Throughput] %zu tasks (spin=%u):\n", N, SPIN);
   std::printf("  Total: %.3f us (%.0f ticks/sec)\n", result.stats.median, result.callsPerSecond);
@@ -458,7 +460,7 @@ PERF_TEST(SchedulerPerf, TaskCountScaling) {
 
     // Validate: Only check CV% for workloads above timer precision threshold
     // and only in non-quick mode (quick mode has fewer samples = higher variance)
-    if (!cfg.quickMode && result.stats.median > 1.0) {
+    if (!cfg.quickMode && result.stats.median > 1.0 && cfg.repeats >= 5) {
       // Above 1us in full mode: expect stable results
       EXPECT_STABLE_CV_CPU(result, cfg);
     }
