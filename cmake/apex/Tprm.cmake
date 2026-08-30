@@ -71,6 +71,14 @@ function (apex_add_tprm)
     message(FATAL_ERROR "apex_add_tprm(${ARG_NAME}): no manifest at ${_manifest}")
   endif ()
   get_filename_component(_src_dir "${_manifest}" DIRECTORY)
+
+  # The manifest is parsed at configure time; a new or removed entry
+  # must reconfigure, or the packing recipe silently runs stale.
+  set_property(
+    DIRECTORY
+    APPEND
+    PROPERTY CMAKE_CONFIGURE_DEPENDS "${_manifest}"
+  )
   set(_gen_dir "${CMAKE_CURRENT_BINARY_DIR}/tprm")
   set(_tools_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/rust")
 
