@@ -15,6 +15,84 @@
 use super::manifest::{FieldDef, Manifest};
 use super::Error;
 
+use std::collections::BTreeMap;
+
+/// All field specs in a manifest, keyed by struct name: the lookup
+/// context nested fields resolve against.
+pub type FieldsMap = BTreeMap<String, Vec<FieldDef>>;
+
+/// Resolve a `type = "nested"` field to its embedded struct's fields.
+/// One level only: the embedded struct must be all leaves.
+fn resolve_nested<'a>(
+    all: &'a FieldsMap,
+    host: &str,
+    f: &FieldDef,
+) -> Result<&'a [FieldDef], Error> {
+    let sub_name = f.r#struct.as_deref().ok_or_else(|| {
+        Error::Parse(format!(
+            "{host}.{}: type = \"nested\" requires struct = \"<Name>\"",
+            f.name
+        ))
+    })?;
+    let sub = all.get(sub_name).ok_or_else(|| {
+        Error::Parse(format!(
+            "{host}.{}: nested struct '{sub_name}' has no [[fields.{sub_name}]] spec",
+            f.name
+        ))
+    })?;
+    if let Some(deep) = sub.iter().find(|s| s.r#type == "nested") {
+        return Err(Error::Parse(format!(
+            "{host}.{}: '{sub_name}.{}' is itself nested -- one level of nesting only",
+            f.name, deep.name
+        )));
+    }
+    Ok(sub)
+}
+
+/// Shape checks that apply to every field before emission: a leaf
+/// needs a positive size and no struct key; a nested field is sized
+/// by its embedded struct.
+fn validate_field_shape(host: &str, f: &FieldDef) -> Result<(), Error> {
+    if f.r#type == "nested" {
+        if f.default.is_some() {
+            return Err(Error::Parse(format!(
+                "{host}.{}: nested fields take no default (defaults live on the embedded struct's leaves)",
+                f.name
+            )));
+        }
+        return Ok(());
+    }
+    if f.r#struct.is_some() {
+        return Err(Error::Parse(format!(
+            "{host}.{}: struct = ... only applies to type = \"nested\"",
+            f.name
+        )));
+    }
+    if f.size == 0 {
+        return Err(Error::Parse(format!(
+            "{host}.{}: leaf fields need a positive size",
+            f.name
+        )));
+    }
+    Ok(())
+}
+
+/// Append one leaf's canonical rows at `offset`; returns its span.
+fn push_leaf_rows(spec: &mut String, f: &FieldDef, offset: u32) -> u32 {
+    match f.count {
+        None => {
+            spec.push_str(&format!("{}:{}:{}:{};", f.name, f.r#type, f.size, offset));
+            f.size
+        }
+        Some(n) => {
+            let total = f.size * n;
+            spec.push_str(&format!("{}:array:{}:{};", f.name, total, offset));
+            spec.push_str(&format!("[{}:{}x{}]", f.r#type, f.size, n));
+            total
+        }
+    }
+}
+
 /// C++ type for a logical field type/size pair.
 fn cpp_type(field_type: &str, size: u32) -> Result<&'static str, Error> {
     Ok(match (field_type, size) {
@@ -67,25 +145,28 @@ fn initializer(field: &FieldDef) -> String {
 /// the template this spec generates. Offsets pin the byte layout:
 /// packed and padded arrangements of the same fields hash apart, and
 /// any byte moving changes the hash.
-pub fn canonical_spec(fields: &[FieldDef]) -> String {
+/// Nested fields inline their embedded struct's leaves (per element
+/// for arrays, no wrapper row) -- exactly what the serializer's walk
+/// emits over the nested value tables, so agreement survives nesting.
+pub fn canonical_spec(host: &str, fields: &[FieldDef], all: &FieldsMap) -> Result<String, Error> {
     let mut spec = String::new();
     let mut offset: u32 = 0;
     for f in fields {
-        match f.count {
-            None => {
-                spec.push_str(&format!("{}:{}:{}:{};", f.name, f.r#type, f.size, offset));
-                offset += f.size;
+        validate_field_shape(host, f)?;
+        if f.r#type == "nested" {
+            let sub = resolve_nested(all, host, f)?;
+            for _ in 0..f.count.unwrap_or(1) {
+                for s in sub {
+                    validate_field_shape(host, s)?;
+                    offset += push_leaf_rows(&mut spec, s, offset);
+                }
             }
-            Some(n) => {
-                let total = f.size * n;
-                spec.push_str(&format!("{}:array:{}:{};", f.name, total, offset));
-                spec.push_str(&format!("[{}:{}x{}]", f.r#type, f.size, n));
-                offset += total;
-            }
+        } else {
+            offset += push_leaf_rows(&mut spec, f, offset);
         }
     }
     spec.push_str(&format!("|size:{offset}"));
-    spec
+    Ok(spec)
 }
 
 /// Alignment validation for non-packed specs: offsets are cumulative
@@ -94,26 +175,48 @@ pub fn canonical_spec(fields: &[FieldDef]) -> String {
 /// lands on its own alignment and the total is a multiple of the
 /// widest. Packed specs skip this; their sequential bytes are the
 /// layout by definition.
-pub fn validate_natural_alignment(struct_name: &str, fields: &[FieldDef]) -> Result<(), Error> {
-    let mut offset: u32 = 0;
-    let mut max_align: u32 = 1;
-    for f in fields {
-        // A string is a char buffer: its size is byte length, its
-        // alignment is 1. Numeric fields align to their own width.
-        let align = if f.r#type == "string" || f.r#type == "char" {
+pub fn validate_natural_alignment(
+    manifest: &Manifest,
+    struct_name: &str,
+    fields: &[FieldDef],
+) -> Result<(), Error> {
+    // A string is a char buffer: its size is byte length, its
+    // alignment is 1. Numeric fields align to their own width. A
+    // nested field aligns as its embedded struct does: 1 when packed,
+    // otherwise the widest of its leaves.
+    let leaf_align = |f: &FieldDef| -> u32 {
+        if f.r#type == "string" || f.r#type == "char" {
             1
         } else {
             f.size.min(8)
+        }
+    };
+    let mut offset: u32 = 0;
+    let mut max_align: u32 = 1;
+    for f in fields {
+        let (align, span) = if f.r#type == "nested" {
+            let sub = resolve_nested(&manifest.fields, struct_name, f)?;
+            let sub_name = f.r#struct.as_deref().unwrap_or_default();
+            let sub_packed = manifest.structs.get(sub_name).is_some_and(|e| e.packed);
+            let align = if sub_packed {
+                1
+            } else {
+                sub.iter().map(&leaf_align).max().unwrap_or(1)
+            };
+            let sub_size: u32 = sub.iter().map(|s| s.size * s.count.unwrap_or(1)).sum();
+            (align, sub_size * f.count.unwrap_or(1))
+        } else {
+            (leaf_align(f), f.size * f.count.unwrap_or(1))
         };
         max_align = max_align.max(align);
         if align > 0 && offset % align != 0 {
             return Err(Error::Parse(format!(
-                "{struct_name}.{}: offset {offset} misaligns a {}-byte field; \
+                "{struct_name}.{}: offset {offset} misaligns a {align}-byte-aligned field; \
                  add explicit pad fields or mark the struct packed = true",
-                f.name, f.size
+                f.name
             )));
         }
-        offset += f.size * f.count.unwrap_or(1);
+        offset += span;
     }
     if max_align > 0 && offset % max_align != 0 {
         return Err(Error::Parse(format!(
@@ -125,8 +228,18 @@ pub fn validate_natural_alignment(struct_name: &str, fields: &[FieldDef]) -> Res
 }
 
 /// Total serialized size of the spec's layout in bytes.
-pub fn layout_size(fields: &[FieldDef]) -> u32 {
-    fields.iter().map(|f| f.size * f.count.unwrap_or(1)).sum()
+pub fn layout_size(host: &str, fields: &[FieldDef], all: &FieldsMap) -> Result<u32, Error> {
+    let mut total: u32 = 0;
+    for f in fields {
+        if f.r#type == "nested" {
+            let sub = resolve_nested(all, host, f)?;
+            let sub_size: u32 = sub.iter().map(|s| s.size * s.count.unwrap_or(1)).sum();
+            total += sub_size * f.count.unwrap_or(1);
+        } else {
+            total += f.size * f.count.unwrap_or(1);
+        }
+    }
+    Ok(total)
 }
 
 /// Generate the `.auto` header for one spec-defined struct.
@@ -141,10 +254,11 @@ pub fn generate_header(manifest: &Manifest, struct_name: &str) -> Result<String,
 
     let packed = manifest.structs.get(struct_name).is_some_and(|e| e.packed);
     if !packed {
-        validate_natural_alignment(struct_name, fields)?;
+        validate_natural_alignment(manifest, struct_name, fields)?;
     }
-    let hash = super::payload::crc32(canonical_spec(fields).as_bytes());
-    let size = layout_size(fields);
+    let hash =
+        super::payload::crc32(canonical_spec(struct_name, fields, &manifest.fields)?.as_bytes());
+    let size = layout_size(struct_name, fields, &manifest.fields)?;
 
     let mut shout = String::new();
     for c in struct_name.chars() {
@@ -161,14 +275,38 @@ pub fn generate_header(manifest: &Manifest, struct_name: &str) -> Result<String,
             "static_assert(offsetof({struct_name}, {}) == {off}, \"field offset diverged\");\n",
             f.name
         ));
-        off += f.size * f.count.unwrap_or(1);
+        off += layout_size(struct_name, std::slice::from_ref(f), &manifest.fields)?;
+    }
+
+    // Nested members come from sibling generated headers; a quoted
+    // include resolves next to the including file, so no include path
+    // is needed for .auto-to-.auto references.
+    let mut nested_includes = String::new();
+    let mut seen_subs: Vec<&str> = Vec::new();
+    for f in fields {
+        if f.r#type == "nested" {
+            let sub = f.r#struct.as_deref().unwrap_or_default();
+            if !seen_subs.contains(&sub) {
+                seen_subs.push(sub);
+                nested_includes.push_str(&format!("#include \"{sub}_auto.hpp\"\n"));
+            }
+        }
+    }
+    if !nested_includes.is_empty() {
+        nested_includes.push('\n');
     }
 
     let mut body = String::new();
     for f in fields {
         // Fixed text: size is the byte capacity of a null-padded char
         // buffer; a count makes it a fixed array of such buffers.
-        let decl = if f.r#type == "string" {
+        let decl = if f.r#type == "nested" {
+            let sub = f.r#struct.as_deref().unwrap_or_default();
+            match f.count {
+                None => format!("{sub} {}{{}}", f.name),
+                Some(n) => format!("{sub} {}[{n}]{{}}", f.name),
+            }
+        } else if f.r#type == "string" {
             match f.count {
                 None => format!("char {}[{}]{{}}", f.name, f.size),
                 Some(n) => format!("char {}[{n}][{}]{{}}", f.name, f.size),
@@ -222,6 +360,7 @@ pub fn generate_header(manifest: &Manifest, struct_name: &str) -> Result<String,
          #include <cstddef>\n\
          #include <cstdint>\n\
          \n\
+         {nested_includes}\
          {ns_open}\n\
          /// Spec-defined tunable parameters ({size} bytes, packed by\n\
          /// construction: field order and sizes come from the spec).\n\
@@ -748,7 +887,7 @@ mod tests {
         // generates must produce the same canonical string.
         let m = pilot_manifest();
         let fields = &m.fields["WaveGenTunableParams"];
-        let spec = canonical_spec(fields);
+        let spec = canonical_spec("WaveGenTunableParams", fields, &m.fields).unwrap();
         assert_eq!(
             spec,
             "frequency:float:4:0;reserved:array:4:4;[uint:1x4]|size:8"
@@ -812,9 +951,131 @@ mod tests {
         let natural = parse_manifest_str(&toml("")).unwrap();
         let packed = parse_manifest_str(&toml(", packed = true")).unwrap();
         assert_eq!(
-            canonical_spec(&natural.fields["MonTunableParams"]),
-            canonical_spec(&packed.fields["MonTunableParams"])
+            canonical_spec("Mon", &natural.fields["MonTunableParams"], &natural.fields).unwrap(),
+            canonical_spec("Mon", &packed.fields["MonTunableParams"], &packed.fields).unwrap()
         );
+    }
+
+    fn nested_manifest(count: &str) -> Manifest {
+        parse_manifest_str(&format!(
+            r#"
+            component = "Tlm"
+            [structs]
+            Sub = {{ category = "STRUCT" }}
+            TlmTprm = {{ category = "TUNABLE_PARAM" }}
+            [[fields.Sub]]
+            name = "fullUid"
+            type = "uint"
+            size = 4
+            [[fields.Sub]]
+            name = "rateDiv"
+            type = "uint"
+            size = 4
+            default = 1
+            [[fields.TlmTprm]]
+            name = "collectRateHz"
+            type = "uint"
+            size = 4
+            default = 1
+            [[fields.TlmTprm]]
+            name = "subs"
+            type = "nested"
+            struct = "Sub"{count}
+        "#
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn nested_fields_inline_into_the_hash_and_emit_members() {
+        let m = nested_manifest("\ncount = 2");
+        let spec = canonical_spec("TlmTprm", &m.fields["TlmTprm"], &m.fields).unwrap();
+        // Sub's leaves repeat per element at running offsets, no
+        // wrapper row -- the serializer's walk over [[subs]] tables.
+        assert_eq!(
+            spec,
+            "collectRateHz:uint:4:0;fullUid:uint:4:4;rateDiv:uint:4:8;\
+             fullUid:uint:4:12;rateDiv:uint:4:16;|size:20"
+        );
+        let h = generate_header(&m, "TlmTprm").unwrap();
+        assert!(h.contains("#include \"Sub_auto.hpp\""));
+        assert!(h.contains("Sub subs[2]{};"));
+        assert!(h.contains("static_assert(sizeof(TlmTprm) == 20"));
+        assert!(h.contains("static_assert(offsetof(TlmTprm, subs) == 4"));
+
+        let scalar = nested_manifest("");
+        let h = generate_header(&scalar, "TlmTprm").unwrap();
+        assert!(h.contains("Sub subs{};"));
+        assert!(h.contains("static_assert(sizeof(TlmTprm) == 12"));
+    }
+
+    #[test]
+    fn nested_agrees_with_the_serializer_walk() {
+        // The value-TOML side: [[subs]] tables of annotated leaves.
+        // Its emitted spec must equal the generator's canonical form.
+        let m = nested_manifest("\ncount = 2");
+        let value = serde_json::json!({
+            "collectRateHz": { "type": "uint", "size": 4, "value": 10 },
+            "subs": [
+                { "fullUid": { "type": "uint", "size": 4, "value": 1 },
+                  "rateDiv": { "type": "uint", "size": 4, "value": 2 } },
+                { "fullUid": { "type": "uint", "size": 4, "value": 3 },
+                  "rateDiv": { "type": "uint", "size": 4, "value": 4 } },
+            ]
+        });
+        let (bytes, hash) = crate::tunable_params::binary::serialize_value_with_layout(
+            &serde_json::json!({ "TlmTprm": value }),
+        )
+        .unwrap();
+        assert_eq!(bytes.len(), 20);
+        let spec = canonical_spec("TlmTprm", &m.fields["TlmTprm"], &m.fields).unwrap();
+        assert_eq!(hash, super::super::payload::crc32(spec.as_bytes()));
+    }
+
+    #[test]
+    fn nesting_is_one_level_only() {
+        let m = parse_manifest_str(
+            r#"
+            component = "X"
+            [structs]
+            A = { category = "STRUCT" }
+            B = { category = "STRUCT" }
+            XTprm = { category = "TUNABLE_PARAM" }
+            [[fields.A]]
+            name = "v"
+            type = "uint"
+            size = 4
+            [[fields.B]]
+            name = "a"
+            type = "nested"
+            struct = "A"
+            [[fields.XTprm]]
+            name = "b"
+            type = "nested"
+            struct = "B"
+        "#,
+        )
+        .unwrap();
+        let err = generate_header(&m, "XTprm").unwrap_err();
+        assert!(format!("{err}").contains("one level"), "{err}");
+    }
+
+    #[test]
+    fn nested_needs_a_declared_struct() {
+        let m = parse_manifest_str(
+            r#"
+            component = "X"
+            [structs]
+            XTprm = { category = "TUNABLE_PARAM" }
+            [[fields.XTprm]]
+            name = "sub"
+            type = "nested"
+            struct = "Ghost"
+        "#,
+        )
+        .unwrap();
+        let err = generate_header(&m, "XTprm").unwrap_err();
+        assert!(format!("{err}").contains("no [[fields.Ghost]]"), "{err}");
     }
 
     #[test]
