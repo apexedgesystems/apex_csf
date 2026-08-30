@@ -23,6 +23,8 @@
 #include <thread>
 
 #include <gtest/gtest.h>
+#include <filesystem>
+#include <unistd.h>
 
 /* ----------------------------- Default Construction ----------------------------- */
 
@@ -404,4 +406,19 @@ TEST(SystemMonitorSnapshot, DefaultConstruction) {
   EXPECT_EQ(snap.cpu.coreCount, 0);
   EXPECT_EQ(snap.memory.totalRamBytes, 0U);
   EXPECT_FALSE(snap.gpu.available);
+}
+
+/* ----------------------------- TPRM Load Contract ----------------------------- */
+
+/** @test Missing tprm is optional: defaults and success (no executive warning). */
+TEST(SystemMonitor, LoadTprmMissingFileIsOptional) {
+  const auto DIR =
+      std::filesystem::temp_directory_path() / ("sysmon_tprm_missing_" + std::to_string(getpid()));
+  std::filesystem::create_directories(DIR);
+
+  system_core::support::SystemMonitor mon;
+  mon.setInstanceIndex(0);
+  EXPECT_TRUE(mon.loadTprm(DIR));
+
+  std::filesystem::remove_all(DIR);
 }

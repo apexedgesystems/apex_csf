@@ -31,6 +31,7 @@ enum class Status : std::uint8_t {
 
   // Warnings ------------------------------------------------------------------
   WARN_RESOLVE_FAILURES, ///< One or more targets could not be resolved.
+  WARN_STEP_TIMEOUT,     ///< A sequence step timed out (policy fired: skip/abort/goto).
 
   // Marker --------------------------------------------------------------------
   EOE_ACTION

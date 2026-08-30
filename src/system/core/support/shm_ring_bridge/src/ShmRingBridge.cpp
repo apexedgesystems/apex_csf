@@ -93,7 +93,11 @@ bool ShmRingBridge::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   const std::filesystem::path PATH = tprmDir / fmt::format("{:06x}.tprm", fullUid());
   std::error_code ec;
   if (!std::filesystem::exists(PATH, ec)) {
-    return true; // Tunables stay at defaults; init can still proceed.
+    auto* log = componentLog();
+    if (log != nullptr) {
+      log->info(label(), "No TPRM found, using defaults");
+    }
+    return true;
   }
   const auto CHECK = system_component::readTprmPayload(PATH, fullUid(), tunables_.get());
   if (CHECK != system_component::TprmPayloadCheck::OK) {

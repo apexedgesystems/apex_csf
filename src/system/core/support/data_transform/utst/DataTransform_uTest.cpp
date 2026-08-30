@@ -10,6 +10,8 @@
 #include <array>
 #include <cstring>
 #include <vector>
+#include <filesystem>
+#include <unistd.h>
 
 using system_core::data::DataCategory;
 using system_core::support::DataTransform;
@@ -434,4 +436,20 @@ TEST(DataTransform, FullFaultInjectionFlow) {
   // Further APPLY_ENTRY should fail (disarmed)
   EXPECT_NE(applyEntry(dt, 0), 0u);
   EXPECT_EQ(dt.stats().masksApplied, 1u); // Still 1 from before
+}
+
+/* ----------------------------- TPRM Load Contract ----------------------------- */
+
+/** @test Missing tprm is optional: pass-through config, success, configured. */
+TEST(DataTransform, LoadTprmMissingFileIsOptional) {
+  const auto DIR =
+      std::filesystem::temp_directory_path() / ("dtx_tprm_missing_" + std::to_string(getpid()));
+  std::filesystem::create_directories(DIR);
+
+  system_core::support::DataTransform dt;
+  dt.setInstanceIndex(0);
+  EXPECT_TRUE(dt.loadTprm(DIR));
+  EXPECT_TRUE(dt.isConfigured());
+
+  std::filesystem::remove_all(DIR);
 }

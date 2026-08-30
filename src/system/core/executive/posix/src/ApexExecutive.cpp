@@ -176,10 +176,24 @@ std::uint8_t ApexExecutive::doInit() noexcept {
       return status(); // Error already set and logged
     }
 
-    // Load executive TPRM
+    // Load executive TPRM. A present-but-rejected tprm is fatal: the
+    // compiled defaults are not a degraded mode of the declared
+    // configuration, they are a different system (clock rate, RT mode,
+    // thread pinning), and the difference surfaces mid-run. The contract
+    // has exactly three states -- honored config, explicitly-no-config
+    // (no executive entry packed: defaults at INFO), or refused boot.
+    // There is deliberately no override: a run on discarded config gives
+    // a false sense of functionality no banner can repair. To run on
+    // defaults on purpose, pack the master without the executive entry.
     if (!loadTprm(fileSystem_.tprmDir())) {
-      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
-                       "Executive TPRM load failed, using defaults");
+      sysLog_->error(
+          label(), static_cast<std::uint8_t>(ERROR_TPRM_REJECTED),
+          fmt::format("Executive TPRM rejected; compiled defaults would run a different "
+                      "system (clock {} Hz, RT mode {}). Refusing to boot -- to run on "
+                      "defaults deliberately, repack the master without the executive entry",
+                      clockFrequency_, rtModeToString(rtConfig_.mode)));
+      setStatus(static_cast<std::uint8_t>(ERROR_TPRM_REJECTED));
+      return status();
     }
 
     // CLI overrides take precedence over TPRM values
@@ -509,11 +523,19 @@ RunResult ApexExecutive::run() noexcept {
   // Sync scheduler fundamental frequency with executive clock rate (must be before loadTprm)
   scheduler_.setFundamentalFreq(clockFrequency_);
 
-  // Load scheduler TPRM and wire tasks (scheduler handles its own TPRM)
+  // Load scheduler TPRM and wire tasks (scheduler handles its own TPRM).
+  // With no configuration provided at all, an empty schedule IS the
+  // declared state -- a stock boot idles -- so the missing table logs at
+  // INFO. With a config present, a missing/unloadable table stays an
+  // error: the application declared tasks it did not get.
   if (!scheduler_.loadTprm(tprmDir)) {
-    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_SCHEDULER_NO_TASKS),
-                   fmt::format("Scheduler loadTprm failed: {}",
-                               scheduler_.lastError() ? scheduler_.lastError() : "unknown"));
+    if (configPath_.empty()) {
+      sysLog_->info(label(), "No schedule configured; scheduler idle (0 tasks)");
+    } else {
+      sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_SCHEDULER_NO_TASKS),
+                     fmt::format("Scheduler loadTprm failed: {}",
+                                 scheduler_.lastError() ? scheduler_.lastError() : "unknown"));
+    }
   }
 
   // Register scheduled tasks with registry (scheduler loaded them, executive registers for
@@ -522,7 +544,14 @@ RunResult ApexExecutive::run() noexcept {
     if (entry.task != nullptr) {
       auto status = registry_.registerTask(entry.fullUid, entry.taskUid,
                                            entry.task->getLabel().data(), entry.task);
-      if (system_core::registry::isError(status)) {
+      if (status == system_core::registry::Status::ERROR_DUPLICATE_TASK) {
+        // One task scheduled at multiple rates produces one entry per table
+        // row; the registry carries the task once and the extra rows are
+        // by-design, not a broken registration.
+        sysLog_->info(label(), fmt::format("Task {} (0x{:06X}/{}) scheduled at multiple rates; "
+                                           "registered once",
+                                           entry.task->getLabel(), entry.fullUid, entry.taskUid));
+      } else if (system_core::registry::isError(status)) {
         sysLog_->warning(label(), static_cast<std::uint8_t>(status),
                          fmt::format("Task registration failed for {} (fullUid=0x{:06X}): {}",
                                      entry.task->getLabel(), entry.fullUid,

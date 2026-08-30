@@ -223,8 +223,11 @@ public:
     std::filesystem::path tprmPath = tprmDir / filename;
 
     if (!std::filesystem::exists(tprmPath)) {
+      // Optional tprm: defaults + success, so a stock (no-config) boot
+      // stays warning-free. False is reserved for a present file that
+      // fails its checks.
       logTprmConfig("defaults");
-      return false;
+      return true;
     }
 
     BatchStatsTunableParams loaded{};
