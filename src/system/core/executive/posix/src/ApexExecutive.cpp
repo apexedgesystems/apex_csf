@@ -1170,6 +1170,22 @@ bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   ExecutiveTunableParams params{};
   std::memcpy(&params, body.data(), sizeof(params));
 
+  // Value validation: size and CRC prove transport integrity, not
+  // vocabulary. Out-of-range system-class fields reject the load and
+  // route into the refuse-to-boot contract.
+  const char* valErr = nullptr;
+  if (!validateExecutiveTunables(params, &valErr)) {
+    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_REJECTED),
+                   fmt::format("Executive TPRM value rejected: {}", valErr));
+    return false;
+  }
+  if (params.watchdogIntervalMs < WATCHDOG_INTERVAL_MIN_MS) {
+    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
+                     fmt::format("watchdogIntervalMs {} below minimum; clamped to {} ms",
+                                 params.watchdogIntervalMs, WATCHDOG_INTERVAL_MIN_MS));
+    params.watchdogIntervalMs = WATCHDOG_INTERVAL_MIN_MS;
+  }
+
   // Apply loaded parameters to executive configuration
   tunableParams_ = params;
   clockFrequency_ = params.clockFrequencyHz;
