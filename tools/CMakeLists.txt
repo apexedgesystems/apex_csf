@@ -99,8 +99,12 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml")
       "touch '${_RUST_STAMP}'\n"
     )
 
+    # The generator binaries are declared byproducts so file-level
+    # dependencies on them (the TPRM rules) resolve in a fresh tree:
+    # without this, ninja sees a needed file with no producing rule.
     add_custom_command(
       OUTPUT "${_RUST_STAMP}"
+      BYPRODUCTS "${_RUST_OUT}/cfg2bin" "${_RUST_OUT}/tprm_pack"
       COMMAND bash "${_RUST_BUILD_SCRIPT}"
       COMMAND bash "${_ENV_HELPER}"
       DEPENDS ${_RUST_SOURCES}

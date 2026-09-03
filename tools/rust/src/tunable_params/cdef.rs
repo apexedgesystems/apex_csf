@@ -252,7 +252,7 @@ pub fn validate_natural_alignment(
             (leaf_align(f), f.size * f.count.unwrap_or(1))
         };
         max_align = max_align.max(align);
-        if align > 0 && offset % align != 0 {
+        if align > 0 && !offset.is_multiple_of(align) {
             return Err(Error::Parse(format!(
                 "{struct_name}.{}: offset {offset} misaligns a {align}-byte-aligned field; \
                  add explicit pad fields or mark the struct packed = true",
@@ -261,7 +261,7 @@ pub fn validate_natural_alignment(
         }
         offset += span;
     }
-    if max_align > 0 && offset % max_align != 0 {
+    if max_align > 0 && !offset.is_multiple_of(max_align) {
         return Err(Error::Parse(format!(
             "{struct_name}: total {offset} is not a multiple of the widest \
              alignment {max_align}; add trailing pad fields or mark packed = true"
