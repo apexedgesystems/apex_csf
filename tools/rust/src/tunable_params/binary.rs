@@ -89,8 +89,9 @@ pub fn serialize_value(value: &Json) -> Result<Vec<u8>, Error> {
 }
 
 /// Serialize a JSON value tree to binary bytes plus the layout hash:
-/// the CRC-32 of the canonical field spec (`name:type:size;` per leaf
-/// in emission order) that the v3 payload prelude carries.
+/// the CRC-32 of the canonical field spec (`name:type:size:offset;`
+/// per leaf in emission order, `|size:total` terminator) that the v3
+/// payload prelude carries.
 pub fn serialize_value_with_layout(value: &Json) -> Result<(Vec<u8>, u32), Error> {
     let (bytes, hash, _rows) = serialize_value_with_layout_and_rows(value)?;
     Ok((bytes, hash))
