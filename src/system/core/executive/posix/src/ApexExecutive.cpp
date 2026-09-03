@@ -1358,6 +1358,24 @@ void ApexExecutive::applyCliOverrides() noexcept {
         static_cast<std::uint8_t>(std::stoul(std::string(parsedArgs_[VERBOSITY][0])));
     sysLog_->setVerbosity(verbosity);
   }
+
+  // The registered tunables block reports the EFFECTIVE configuration.
+  // Every override above mutates a working config; this single sync point
+  // re-derives the wire-struct fields from those configs so INSPECT of the
+  // tunables block and GET_HEALTH can never disagree about the running
+  // system (observed before this: --rt-mode log-only over a hard-mode
+  // tprm left INSPECT reporting the dead declared mode).
+  tunableParams_.clockFrequencyHz = clockFrequency_;
+  tunableParams_.rtMode = static_cast<std::uint8_t>(rtConfig_.mode);
+  tunableParams_.rtMaxLagTicks = rtConfig_.maxLagTicks;
+  tunableParams_.startupMode = static_cast<std::uint8_t>(startupConfig_.mode);
+  tunableParams_.startupDelaySeconds = startupConfig_.delaySeconds;
+  tunableParams_.shutdownMode = static_cast<std::uint8_t>(shutdownConfig_.mode);
+  tunableParams_.skipCleanup = shutdownConfig_.skipCleanup ? 1U : 0U;
+  tunableParams_.shutdownAfterSeconds = shutdownConfig_.relativeSeconds;
+  tunableParams_.shutdownAtCycle = shutdownConfig_.targetClockCycle;
+  tunableParams_.watchdogIntervalMs = watchdogState_.intervalMs;
+  tunableParams_.profilingSampleEveryN = profilingState_.sampleEveryN;
 }
 
 /* ----------------------------- IExecutive Interface ----------------------------- */
