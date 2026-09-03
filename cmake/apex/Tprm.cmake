@@ -203,8 +203,11 @@ function (apex_add_tprm)
       add_custom_command(
         OUTPUT "${_seq_out}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${_gen_dir}/${_kind}"
-        COMMAND "${_tools_dir}/cfg2bin" --config "${_seq_toml}" --output "${_seq_out}"
+        COMMAND
+          "${_tools_dir}/cfg2bin" --config "${_seq_toml}" --output "${_seq_out}" --pin-spec
+          "${PROJECT_SOURCE_DIR}/src/system/core/components/action/apex/apex_data.toml:StandaloneSequenceTprm"
         DEPENDS "${_seq_toml}" "${_tools_dir}/cfg2bin" ${PROJECT_NAME}_rust_tools
+                "${PROJECT_SOURCE_DIR}/src/system/core/components/action/apex/apex_data.toml"
         COMMENT "[tprm] ${ARG_NAME}: ${_kind} ${_slot3} <- ${_path}"
         VERBATIM
       )

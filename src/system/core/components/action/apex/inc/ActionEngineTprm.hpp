@@ -24,6 +24,8 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "src/system/core/components/action/apex/.auto/StandaloneSequenceTprm_auto.hpp"
+
 namespace system_core {
 namespace action {
 
@@ -164,88 +166,10 @@ static_assert(std::is_trivially_copyable_v<ActionEngineTprm>,
 
 /* ----------------------------- Standalone RTS/ATS Structs ----------------------------- */
 
-/**
- * @struct StandaloneWaitConditionTprm
- * @brief Binary representation of a step wait condition.
- */
-struct StandaloneWaitConditionTprm {
-  std::uint32_t targetFullUid;    ///< Component fullUid.
-  std::uint8_t targetCategory;    ///< DataCategory enum value.
-  std::uint16_t targetByteOffset; ///< Byte offset.
-  std::uint8_t targetByteLen;     ///< Byte length.
-  std::uint8_t predicate;         ///< WatchPredicate enum value.
-  std::uint8_t dataType;          ///< WatchDataType enum value.
-  std::uint8_t threshold[8];      ///< Raw threshold bytes.
-  std::uint8_t enabled;           ///< 1 = condition active.
-  std::uint8_t reserved;          ///< Padding.
-} __attribute__((packed));
-
-static_assert(sizeof(StandaloneWaitConditionTprm) == 20,
-              "StandaloneWaitConditionTprm must be 20 bytes");
-
-/**
- * @struct StandaloneStepTprm
- * @brief Expanded step format for standalone RTS/ATS files.
- *
- * Includes all control flow fields: timeout, branching, retry, wait
- * condition, and command payload.
- */
-struct StandaloneStepTprm {
-  /* ---- Action target ---- */
-  std::uint32_t targetFullUid;    ///< Target component.
-  std::uint8_t targetCategory;    ///< DataCategory enum value.
-  std::uint16_t targetByteOffset; ///< Byte offset.
-  std::uint8_t targetByteLen;     ///< Byte length.
-  std::uint8_t actionType;        ///< ActionType enum value (COMMAND=0, ARM_CONTROL=1).
-
-  /* ---- ARM_CONTROL fields ---- */
-  std::uint8_t armTarget; ///< ArmControlTarget enum.
-  std::uint8_t armIndex;  ///< Table index.
-  std::uint8_t armState;  ///< 1 = arm, 0 = disarm.
-
-  /* ---- COMMAND fields ---- */
-  std::uint16_t commandOpcode;     ///< Command opcode.
-  std::uint8_t commandPayloadLen;  ///< Payload length.
-  std::uint8_t commandPayload[16]; ///< Command payload bytes.
-
-  /* ---- Timing ---- */
-  std::uint32_t delayCycles;   ///< Delay (RTS: relative, ATS: absolute offset).
-  std::uint32_t timeoutCycles; ///< Max wait (0 = no timeout).
-
-  /* ---- Control flow ---- */
-  std::uint8_t onTimeout;  ///< StepTimeoutPolicy enum.
-  std::uint8_t onComplete; ///< StepCompletionAction enum.
-  std::uint8_t gotoStep;   ///< Target for GOTO_STEP or START_RTS slot.
-  std::uint8_t retryMax;   ///< Max retries on timeout.
-
-  /* ---- Wait condition ---- */
-  StandaloneWaitConditionTprm waitCondition; ///< Optional hold condition.
-
-  std::uint8_t reserved; ///< Padding.
-} __attribute__((packed));
-
-static_assert(sizeof(StandaloneStepTprm) == 64, "StandaloneStepTprm must be 64 bytes");
-
-/**
- * @struct StandaloneSequenceTprm
- * @brief Expanded sequence format for standalone RTS/ATS files.
- *
- * Loaded by ActionComponent::loadRts()/loadAts() into individual
- * sequence table slots. Stored as raw hex2cpp binary in rts/ or ats/
- * filesystem directories.
- */
-struct StandaloneSequenceTprm {
-  std::uint16_t sequenceId;     ///< Unique ID for logging/telemetry.
-  std::uint16_t eventId;        ///< Trigger event (0 = manual start only).
-  std::uint8_t stepCount;       ///< Number of valid steps (0-16).
-  std::uint8_t repeatCount;     ///< Repeat count (0 = once, 0xFF = forever).
-  std::uint8_t type;            ///< SequenceType enum (0=RTS, 1=ATS).
-  std::uint8_t armed;           ///< 1 = armed on load.
-  StandaloneStepTprm steps[16]; ///< Step table (SEQUENCE_MAX_STEPS).
-} __attribute__((packed));
-
-// Header: 8 bytes. Steps: 16 * 64 = 1024 bytes. Total: 1032 bytes.
-static_assert(sizeof(StandaloneSequenceTprm) == 1032, "StandaloneSequenceTprm size mismatch");
+// Spec-generated above (apex_data.toml is the source of truth): the
+// standalone sequence file format with its layout-hash constant and
+// per-field offset asserts. 8-byte header + 16 x 64-byte steps, each
+// embedding a 20-byte wait condition; 1032 bytes total.
 
 static_assert(std::is_trivially_copyable_v<StandaloneSequenceTprm>,
               "StandaloneSequenceTprm must be trivially copyable");
