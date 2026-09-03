@@ -21,32 +21,38 @@ use std::collections::BTreeMap;
 /// context nested fields resolve against.
 pub type FieldsMap = BTreeMap<String, Vec<FieldDef>>;
 
+/// Embedding depth budget: a struct may nest fragments, and those
+/// fragments may nest fragments of their own -- two levels total
+/// (sequence -> steps -> waitCondition is the deepest shipped shape).
+const MAX_NESTING_DEPTH: u32 = 2;
+
 /// Resolve a `type = "nested"` field to its embedded struct's fields.
-/// One level only: the embedded struct must be all leaves.
+/// `depth` is the embedding level this field sits at (1 = a field of
+/// the top struct); exceeding the budget is a generation error.
 fn resolve_nested<'a>(
     all: &'a FieldsMap,
     host: &str,
     f: &FieldDef,
+    depth: u32,
 ) -> Result<&'a [FieldDef], Error> {
+    if depth > MAX_NESTING_DEPTH {
+        return Err(Error::Parse(format!(
+            "{host}.{}: nesting exceeds {MAX_NESTING_DEPTH} levels",
+            f.name
+        )));
+    }
     let sub_name = f.r#struct.as_deref().ok_or_else(|| {
         Error::Parse(format!(
             "{host}.{}: type = \"nested\" requires struct = \"<Name>\"",
             f.name
         ))
     })?;
-    let sub = all.get(sub_name).ok_or_else(|| {
+    all.get(sub_name).map(Vec::as_slice).ok_or_else(|| {
         Error::Parse(format!(
             "{host}.{}: nested struct '{sub_name}' has no [[fields.{sub_name}]] spec",
             f.name
         ))
-    })?;
-    if let Some(deep) = sub.iter().find(|s| s.r#type == "nested") {
-        return Err(Error::Parse(format!(
-            "{host}.{}: '{sub_name}.{}' is itself nested -- one level of nesting only",
-            f.name, deep.name
-        )));
-    }
-    Ok(sub)
+    })
 }
 
 /// Shape checks that apply to every field before emission: a leaf
@@ -150,23 +156,34 @@ fn initializer(field: &FieldDef) -> String {
 /// emits over the nested value tables, so agreement survives nesting.
 pub fn canonical_spec(host: &str, fields: &[FieldDef], all: &FieldsMap) -> Result<String, Error> {
     let mut spec = String::new();
-    let mut offset: u32 = 0;
+    let offset = emit_rows(host, fields, all, 0, &mut spec, 1)?;
+    spec.push_str(&format!("|size:{offset}"));
+    Ok(spec)
+}
+
+/// Recursive row emission for one field list starting at `offset`;
+/// returns the offset past its span. `depth` is the embedding level
+/// of any nested field encountered in this list.
+fn emit_rows(
+    host: &str,
+    fields: &[FieldDef],
+    all: &FieldsMap,
+    mut offset: u32,
+    spec: &mut String,
+    depth: u32,
+) -> Result<u32, Error> {
     for f in fields {
         validate_field_shape(host, f)?;
         if f.r#type == "nested" {
-            let sub = resolve_nested(all, host, f)?;
+            let sub = resolve_nested(all, host, f, depth)?;
             for _ in 0..f.count.unwrap_or(1) {
-                for s in sub {
-                    validate_field_shape(host, s)?;
-                    offset += push_leaf_rows(&mut spec, s, offset);
-                }
+                offset = emit_rows(host, sub, all, offset, spec, depth + 1)?;
             }
         } else {
-            offset += push_leaf_rows(&mut spec, f, offset);
+            offset += push_leaf_rows(spec, f, offset);
         }
     }
-    spec.push_str(&format!("|size:{offset}"));
-    Ok(spec)
+    Ok(offset)
 }
 
 /// Alignment validation for non-packed specs: offsets are cumulative
@@ -191,20 +208,46 @@ pub fn validate_natural_alignment(
             f.size.min(8)
         }
     };
+    // Fragment alignment recurses (a fragment may embed fragments);
+    // packed fragments align 1 at any depth.
+    fn fragment_align(
+        manifest: &Manifest,
+        host: &str,
+        fields: &[FieldDef],
+        depth: u32,
+        leaf_align: &dyn Fn(&FieldDef) -> u32,
+    ) -> Result<u32, Error> {
+        let mut widest: u32 = 1;
+        for f in fields {
+            let a = if f.r#type == "nested" {
+                let sub = resolve_nested(&manifest.fields, host, f, depth)?;
+                let sub_name = f.r#struct.as_deref().unwrap_or_default();
+                if manifest.structs.get(sub_name).is_some_and(|e| e.packed) {
+                    1
+                } else {
+                    fragment_align(manifest, host, sub, depth + 1, leaf_align)?
+                }
+            } else {
+                leaf_align(f)
+            };
+            widest = widest.max(a);
+        }
+        Ok(widest)
+    }
     let mut offset: u32 = 0;
     let mut max_align: u32 = 1;
     for f in fields {
         let (align, span) = if f.r#type == "nested" {
-            let sub = resolve_nested(&manifest.fields, struct_name, f)?;
+            let sub = resolve_nested(&manifest.fields, struct_name, f, 1)?;
             let sub_name = f.r#struct.as_deref().unwrap_or_default();
             let sub_packed = manifest.structs.get(sub_name).is_some_and(|e| e.packed);
             let align = if sub_packed {
                 1
             } else {
-                sub.iter().map(&leaf_align).max().unwrap_or(1)
+                fragment_align(manifest, struct_name, sub, 2, &leaf_align)?
             };
-            let sub_size: u32 = sub.iter().map(|s| s.size * s.count.unwrap_or(1)).sum();
-            (align, sub_size * f.count.unwrap_or(1))
+            let span = layout_size(struct_name, std::slice::from_ref(f), &manifest.fields)?;
+            (align, span)
         } else {
             (leaf_align(f), f.size * f.count.unwrap_or(1))
         };
@@ -229,17 +272,19 @@ pub fn validate_natural_alignment(
 
 /// Total serialized size of the spec's layout in bytes.
 pub fn layout_size(host: &str, fields: &[FieldDef], all: &FieldsMap) -> Result<u32, Error> {
-    let mut total: u32 = 0;
-    for f in fields {
-        if f.r#type == "nested" {
-            let sub = resolve_nested(all, host, f)?;
-            let sub_size: u32 = sub.iter().map(|s| s.size * s.count.unwrap_or(1)).sum();
-            total += sub_size * f.count.unwrap_or(1);
-        } else {
-            total += f.size * f.count.unwrap_or(1);
+    fn walk(host: &str, fields: &[FieldDef], all: &FieldsMap, depth: u32) -> Result<u32, Error> {
+        let mut total: u32 = 0;
+        for f in fields {
+            if f.r#type == "nested" {
+                let sub = resolve_nested(all, host, f, depth)?;
+                total += walk(host, sub, all, depth + 1)? * f.count.unwrap_or(1);
+            } else {
+                total += f.size * f.count.unwrap_or(1);
+            }
         }
+        Ok(total)
     }
-    Ok(total)
+    walk(host, fields, all, 1)
 }
 
 /// Generate the `.auto` header for one spec-defined struct.
@@ -1033,31 +1078,47 @@ mod tests {
     }
 
     #[test]
-    fn nesting_is_one_level_only() {
-        let m = parse_manifest_str(
-            r#"
-            component = "X"
-            [structs]
-            A = { category = "STRUCT" }
-            B = { category = "STRUCT" }
-            XTprm = { category = "TUNABLE_PARAM" }
-            [[fields.A]]
-            name = "v"
-            type = "uint"
-            size = 4
-            [[fields.B]]
-            name = "a"
-            type = "nested"
-            struct = "A"
-            [[fields.XTprm]]
-            name = "b"
-            type = "nested"
-            struct = "B"
-        "#,
-        )
-        .unwrap();
-        let err = generate_header(&m, "XTprm").unwrap_err();
-        assert!(format!("{err}").contains("one level"), "{err}");
+    fn nesting_is_two_levels_at_most() {
+        // sequence -> steps -> waitCondition is the deepest shipped
+        // shape: fragments may embed fragments, but not a third level.
+        let toml = |xtprm_target: &str| {
+            format!(
+                r#"
+                component = "X"
+                [structs]
+                A = {{ category = "STRUCT" }}
+                B = {{ category = "STRUCT" }}
+                C = {{ category = "STRUCT" }}
+                XTprm = {{ category = "TUNABLE_PARAM" }}
+                [[fields.A]]
+                name = "v"
+                type = "uint"
+                size = 4
+                [[fields.B]]
+                name = "a"
+                type = "nested"
+                struct = "A"
+                [[fields.C]]
+                name = "b"
+                type = "nested"
+                struct = "B"
+                [[fields.XTprm]]
+                name = "top"
+                type = "nested"
+                struct = "{xtprm_target}"
+            "#
+            )
+        };
+        // Two levels (XTprm -> B -> A): accepted, leaves inline.
+        let two = parse_manifest_str(&toml("B")).unwrap();
+        let spec = canonical_spec("XTprm", &two.fields["XTprm"], &two.fields).unwrap();
+        assert_eq!(spec, "v:uint:4:0;|size:4");
+        assert!(generate_header(&two, "XTprm").is_ok());
+
+        // Three levels (XTprm -> C -> B -> A): rejected.
+        let three = parse_manifest_str(&toml("C")).unwrap();
+        let err = generate_header(&three, "XTprm").unwrap_err();
+        assert!(format!("{err}").contains("exceeds 2 levels"), "{err}");
     }
 
     #[test]
