@@ -527,14 +527,18 @@ def test_post_restart(host: str, port: int) -> bool:
 
 
 def find_plugin_so() -> str:
-    """Auto-detect TestPlugin_v2.so from build directory."""
+    """Auto-detect TestPlugin_v2.so from build directory.
+
+    Newest build wins: the plugin's ABI must match the running target
+    binary, so a stale sibling tree must never shadow the fresh one.
+    """
     candidates = [
         "build/rpi-aarch64-release/test_plugins/TestPlugin_v2.so",
         "build/rpi-aarch64-debug/test_plugins/TestPlugin_v2.so",
     ]
-    for path in candidates:
-        if os.path.isfile(path):
-            return path
+    existing = [p for p in candidates if os.path.isfile(p)]
+    if existing:
+        return max(existing, key=os.path.getmtime)
     return candidates[0]
 
 

@@ -340,7 +340,7 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
                                    loader.lastError() ? loader.lastError() : "unknown"));
       if (auto* sl = fileSystem_.swapLog()) {
         sl->warning("SWAP", LOAD_RC,
-                    fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=dlopen_failed rc={}",
+                    fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=load_failed rc={}",
                                 targetUid, LOAD_RC));
       }
       oldComp->unlock();

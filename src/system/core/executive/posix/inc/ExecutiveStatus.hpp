@@ -66,10 +66,12 @@ enum class Status : std::uint8_t {
 
 /**
  * @enum ExecCommandResult
- * @brief Executive-specific handleCommand() result codes (values 16+).
+ * @brief Executive-specific handleCommand() result codes (values 7+).
  *
- * Common codes (0-6) are in system_component::CommandResult.
- * These extend that range for hot-swap and executive-specific operations.
+ * Common codes (0-6) are in system_component::CommandResult; this block
+ * extends from EOE_COMMAND_RESULT for hot-swap and executive-specific
+ * operations. PluginLoader failures pass through RELOAD_LIBRARY as the
+ * loader's own codes (17-20), a separate block.
  */
 enum class ExecCommandResult : std::uint8_t {
   DLOPEN_FAILED = ///< Dynamic library open failed.
