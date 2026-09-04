@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SPEC_LIMITS_STATE_HPP
 #define APEX_CDEF_AUTO_SPEC_LIMITS_STATE_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -17,11 +18,14 @@ struct SpecLimitsState {
   std::uint32_t rejects{};
 };
 static_assert(sizeof(SpecLimitsState) == 12, "layout diverged from the spec");
+static_assert(offsetof(SpecLimitsState, value) == 0, "field offset diverged");
+static_assert(offsetof(SpecLimitsState, nudges) == 4, "field offset diverged");
+static_assert(offsetof(SpecLimitsState, rejects) == 8, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SPEC_LIMITS_STATE_LAYOUT_HASH = 0xE9F62C33U;
+inline constexpr std::uint32_t SPEC_LIMITS_STATE_LAYOUT_HASH = 0x508291FCU;
 
 } // namespace spec
 } // namespace appsim

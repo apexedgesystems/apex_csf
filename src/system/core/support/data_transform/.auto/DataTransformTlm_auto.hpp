@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_DATA_TRANSFORM_TLM_HPP
 #define APEX_CDEF_AUTO_DATA_TRANSFORM_TLM_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace system_core {
@@ -19,11 +20,16 @@ struct DataTransformTlm {
   std::uint32_t entriesArmed{0}; ///< Currently armed entry count.
 };
 static_assert(sizeof(DataTransformTlm) == 20, "layout diverged from the spec");
+static_assert(offsetof(DataTransformTlm, applyCycles) == 0, "field offset diverged");
+static_assert(offsetof(DataTransformTlm, masksApplied) == 4, "field offset diverged");
+static_assert(offsetof(DataTransformTlm, resolveFailures) == 8, "field offset diverged");
+static_assert(offsetof(DataTransformTlm, applyFailures) == 12, "field offset diverged");
+static_assert(offsetof(DataTransformTlm, entriesArmed) == 16, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t DATA_TRANSFORM_TLM_LAYOUT_HASH = 0x70B4AF85U;
+inline constexpr std::uint32_t DATA_TRANSFORM_TLM_LAYOUT_HASH = 0x1BCD6174U;
 
 } // namespace support
 } // namespace system_core

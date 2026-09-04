@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_FRAME_REQUEST_HPP
 #define APEX_CDEF_AUTO_FRAME_REQUEST_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -17,11 +18,14 @@ struct FrameRequest {
   std::uint8_t data[16]{}; ///< Frame payload (fixed 16-byte buffer, length bytes used).
 };
 static_assert(sizeof(FrameRequest) == 20, "layout diverged from the spec");
+static_assert(offsetof(FrameRequest, length) == 0, "field offset diverged");
+static_assert(offsetof(FrameRequest, reserved) == 1, "field offset diverged");
+static_assert(offsetof(FrameRequest, data) == 4, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t FRAME_REQUEST_LAYOUT_HASH = 0x024D2797U;
+inline constexpr std::uint32_t FRAME_REQUEST_LAYOUT_HASH = 0xC2E2B3C1U;
 
 } // namespace spec
 } // namespace appsim

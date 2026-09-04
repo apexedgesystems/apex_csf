@@ -103,7 +103,8 @@ bool SystemMonitor::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   }
 
   SystemMonitorTunableParams loaded{};
-  const auto CHECK = system_component::readTprmPayload(tprmPath, fullUid(), loaded);
+  const auto CHECK = system_component::readTprmPayload(tprmPath, fullUid(), loaded,
+                                                       &SYSTEM_MONITOR_TUNABLE_PARAMS_LAYOUT_HASH);
   if (CHECK != system_component::TprmPayloadCheck::OK) {
     auto* log = componentLog();
     if (log != nullptr) {

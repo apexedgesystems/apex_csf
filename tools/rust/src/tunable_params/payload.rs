@@ -15,11 +15,12 @@
 //! (layoutHash), truncation (payloadSize), corruption (payloadCrc).
 //!
 //! Canonical field spec: during serialization every leaf field
-//! contributes `name:type:size;` in emission order (the TOML
-//! declaration order); layoutHash is the CRC-32 of that ASCII string.
-//! Two templates that would produce the same byte count in a
-//! different field arrangement therefore hash differently -- the
-//! same-size silent-misload hole this header closes.
+//! contributes `name:type:size:offset;` in emission order (the TOML
+//! declaration order), and the string closes with a `|size:total`
+//! terminator; layoutHash is the CRC-32 of that ASCII string. Offsets
+//! pin the byte layout, so templates that place the same fields at
+//! different positions hash differently -- the same-size
+//! silent-misload hole this header closes.
 
 use super::Error;
 

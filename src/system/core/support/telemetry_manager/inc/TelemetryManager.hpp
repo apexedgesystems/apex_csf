@@ -35,7 +35,7 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SupportComponentBase.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
-#include "src/utilities/helpers/inc/Files.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 
 #include <fmt/format.h>
 
@@ -270,23 +270,40 @@ public:
       return false;
     }
 
-    std::string error;
     TelemetryManagerTprm loaded{};
-    if (apex::helpers::files::hex2cpp(TPRM_PATH.string(), loaded, error)) {
-      tunableParams_.get() = loaded;
-      setConfigured(true);
-      recomputeActiveCount();
-
+    const auto CHECK = system_component::readTprmPayload(TPRM_PATH, fullUid(), loaded,
+                                                         &TELEMETRY_MANAGER_TPRM_LAYOUT_HASH);
+    if (CHECK != system_component::TprmPayloadCheck::OK) {
       auto* log = componentLog();
       if (log != nullptr) {
-        log->info(label(), fmt::format("TPRM loaded: collectRate={} Hz, {} active subscriptions",
-                                       loaded.collectRateHz, state_.get().activeCount));
+        log->error(label(), system_component::toFaultCode(CHECK),
+                   fmt::format("TPRM rejected ({}): {}", system_component::toString(CHECK),
+                               TPRM_PATH.string()));
       }
-      return true;
+      setConfigured(true);
+      return false;
     }
 
+    tunableParams_.get() = loaded;
     setConfigured(true);
-    return false;
+    recomputeActiveCount();
+
+    auto* log = componentLog();
+    if (log != nullptr) {
+      log->info(label(), fmt::format("TPRM loaded: collectRate={} Hz, {} active subscriptions",
+                                     loaded.collectRateHz, state_.get().activeCount));
+    }
+    return true;
+  }
+
+  /**
+   * @brief Layout hash staged payloads must carry for this component.
+   *
+   * Enforced at VERIFY_TPRM and the verify-gated RELOAD; the constant
+   * comes from the spec-generated header.
+   */
+  [[nodiscard]] const std::uint32_t* expectedLayoutHash() const noexcept override {
+    return &TELEMETRY_MANAGER_TPRM_LAYOUT_HASH;
   }
 
 protected:

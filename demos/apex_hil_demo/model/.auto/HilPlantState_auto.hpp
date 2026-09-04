@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_HIL_PLANT_STATE_HPP
 #define APEX_CDEF_AUTO_HIL_PLANT_STATE_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -25,11 +26,22 @@ struct HilPlantState {
   std::uint8_t reserved[7]{}; ///< Padding for 8-byte alignment.
 };
 static_assert(sizeof(HilPlantState) == 56, "layout diverged from the spec");
+static_assert(offsetof(HilPlantState, simTime) == 0, "field offset diverged");
+static_assert(offsetof(HilPlantState, lastAlt) == 8, "field offset diverged");
+static_assert(offsetof(HilPlantState, lastVz) == 16, "field offset diverged");
+static_assert(offsetof(HilPlantState, stepCount) == 24, "field offset diverged");
+static_assert(offsetof(HilPlantState, ctrlCount) == 28, "field offset diverged");
+static_assert(offsetof(HilPlantState, tlmCount) == 32, "field offset diverged");
+static_assert(offsetof(HilPlantState, commLossCount) == 36, "field offset diverged");
+static_assert(offsetof(HilPlantState, staleCmdFrames) == 40, "field offset diverged");
+static_assert(offsetof(HilPlantState, lastSeenRxCount) == 44, "field offset diverged");
+static_assert(offsetof(HilPlantState, commLost) == 48, "field offset diverged");
+static_assert(offsetof(HilPlantState, reserved) == 49, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t HIL_PLANT_STATE_LAYOUT_HASH = 0xCB1D5DFFU;
+inline constexpr std::uint32_t HIL_PLANT_STATE_LAYOUT_HASH = 0xEC84014FU;
 
 } // namespace plant
 } // namespace appsim

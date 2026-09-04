@@ -71,6 +71,14 @@ function (apex_add_tprm)
     message(FATAL_ERROR "apex_add_tprm(${ARG_NAME}): no manifest at ${_manifest}")
   endif ()
   get_filename_component(_src_dir "${_manifest}" DIRECTORY)
+
+  # The manifest is parsed at configure time; a new or removed entry
+  # must reconfigure, or the packing recipe silently runs stale.
+  set_property(
+    DIRECTORY
+    APPEND
+    PROPERTY CMAKE_CONFIGURE_DEPENDS "${_manifest}"
+  )
   set(_gen_dir "${CMAKE_CURRENT_BINARY_DIR}/tprm")
   set(_tools_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/rust")
 
@@ -195,8 +203,11 @@ function (apex_add_tprm)
       add_custom_command(
         OUTPUT "${_seq_out}"
         COMMAND ${CMAKE_COMMAND} -E make_directory "${_gen_dir}/${_kind}"
-        COMMAND "${_tools_dir}/cfg2bin" --config "${_seq_toml}" --output "${_seq_out}"
-        DEPENDS "${_seq_toml}" ${PROJECT_NAME}_rust_tools
+        COMMAND
+          "${_tools_dir}/cfg2bin" --config "${_seq_toml}" --output "${_seq_out}" --pin-spec
+          "${PROJECT_SOURCE_DIR}/src/system/core/components/action/apex/apex_data.toml:StandaloneSequenceTprm"
+        DEPENDS "${_seq_toml}" "${_tools_dir}/cfg2bin" ${PROJECT_NAME}_rust_tools
+                "${PROJECT_SOURCE_DIR}/src/system/core/components/action/apex/apex_data.toml"
         COMMENT "[tprm] ${ARG_NAME}: ${_kind} ${_slot3} <- ${_path}"
         VERBATIM
       )
@@ -251,7 +262,7 @@ function (apex_add_tprm)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${_gen_dir}/payloads"
             COMMAND "${_tools_dir}/cfg2bin" --config "${_toml}" --output "${_payload}" --fulluid
                     "${_key}" --constraint-rows "${_payload}.rows.json"
-            DEPENDS "${_toml}" ${PROJECT_NAME}_rust_tools
+            DEPENDS "${_toml}" "${_tools_dir}/cfg2bin" ${PROJECT_NAME}_rust_tools
             COMMENT "[tprm] ${ARG_NAME}: ${_path}"
             VERBATIM
           )
@@ -282,7 +293,7 @@ function (apex_add_tprm)
       OUTPUT "${_out}"
       COMMAND ${CMAKE_COMMAND} -E make_directory "${_gen_dir}"
       COMMAND "${_tools_dir}/tprm_pack" pack ${_pack_args} -o "${_out}"
-      DEPENDS ${_pack_deps} "${_manifest}" ${PROJECT_NAME}_rust_tools
+      DEPENDS ${_pack_deps} "${_manifest}" "${_tools_dir}/tprm_pack" ${PROJECT_NAME}_rust_tools
       COMMENT "[tprm] ${ARG_NAME}: pack ${_master}"
       VERBATIM
     )

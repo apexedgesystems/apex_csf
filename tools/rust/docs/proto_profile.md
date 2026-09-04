@@ -91,9 +91,12 @@ spelling fails ingest with an error that names the fix
 String content follows the TPRM value rule: fits or packing fails,
 null-padded to capacity -- capacity is static, content varies.
 
-Everything genuinely unboundable -- nested messages, enums, maps,
-`oneof`, services, non-apex options -- is outside the profile and
-fails ingest with a named error.
+A message-typed field is a nested struct reference: the message must
+be defined in the same file, arrays are `repeated` with an
+`(apex.count)` bound, and embedding runs at most two levels deep
+(generation enforces the depth). Everything genuinely unboundable --
+enums, maps, `oneof`, services, non-apex options -- is outside the
+profile and fails ingest with a named error.
 
 ## Options
 

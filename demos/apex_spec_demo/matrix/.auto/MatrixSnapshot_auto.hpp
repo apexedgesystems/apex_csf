@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_MATRIX_SNAPSHOT_HPP
 #define APEX_CDEF_AUTO_MATRIX_SNAPSHOT_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -16,11 +17,13 @@ struct MatrixSnapshot {
   std::uint32_t stepCount{};
 };
 static_assert(sizeof(MatrixSnapshot) == 8, "layout diverged from the spec");
+static_assert(offsetof(MatrixSnapshot, checksum) == 0, "field offset diverged");
+static_assert(offsetof(MatrixSnapshot, stepCount) == 4, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t MATRIX_SNAPSHOT_LAYOUT_HASH = 0x7E448D88U;
+inline constexpr std::uint32_t MATRIX_SNAPSHOT_LAYOUT_HASH = 0xABB7323EU;
 
 } // namespace spec
 } // namespace appsim

@@ -40,6 +40,23 @@ length), `default`, and `doc`; array order is layout order. The
 component-level `namespace` key names the C++ namespace generated
 headers open.
 
+Non-packed specs must be naturally aligned with no implicit padding --
+gaps are explicit pad fields, and a misaligned field is a generation
+error naming the fix. A `[structs]` entry may declare `packed = true`:
+the generated struct carries `__attribute__((packed))` and skips the
+alignment validation (the hash is unchanged by packing -- it names the
+bytes, not the C++ spelling).
+
+A field may declare `type = "nested", struct = "<Name>"` (optional
+`count`) to embed another spec-defined struct as a member or array.
+Fragments meant only for embedding register as `category = "STRUCT"`
+-- generated and hashable, never a component data block. Embedding
+runs at most two levels deep; the canonical spec inlines fragment
+leaves at running offsets, so nesting never changes the hash
+vocabulary. Every generated header pins each field with a
+`static_assert(offsetof(...))`, so a clean compile is proof the C++
+layout matches the hash.
+
 ## Command and telemetry declarations
 
 Optional `[[commands]]` / `[[telemetry]]` arrays declare the

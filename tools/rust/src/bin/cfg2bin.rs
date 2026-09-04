@@ -24,7 +24,7 @@ use std::{
     process::ExitCode,
 };
 
-use apex_rust_tools::tunable_params::{binary, payload, Error};
+use apex_rust_tools::tunable_params::{binary, cdef, manifest, payload, Error};
 use clap::Parser;
 use walkdir::WalkDir;
 
@@ -62,6 +62,14 @@ struct Args {
     /// build compiles into the on-board constraint table
     #[arg(long, value_name = "PATH", requires = "fulluid")]
     constraint_rows: Option<PathBuf>,
+
+    /// Pin the serialization against a spec-defined struct
+    /// (<apex_data.toml>:<StructName>): error unless the serialized
+    /// walk's layout hash equals the spec's canonical hash. The
+    /// build-time rail for raw (preludeless) products like sequence
+    /// binaries, whose readers cannot check a stamped hash.
+    #[arg(long, value_name = "MANIFEST:STRUCT", conflicts_with = "batch")]
+    pin_spec: Option<String>,
 }
 
 fn main() -> ExitCode {
@@ -108,6 +116,35 @@ fn run(args: &Args) -> Result<Stats, Error> {
 
 fn run_single(config: &Path, args: &Args) -> Result<Stats, Error> {
     let data = binary::load_config(config)?;
+
+    if let Some(pin) = &args.pin_spec {
+        let (manifest_path, struct_name) = pin.rsplit_once(':').ok_or_else(|| {
+            Error::InvalidArgs(format!(
+                "--pin-spec wants <apex_data.toml>:<Struct>, got '{pin}'"
+            ))
+        })?;
+        let manifest = manifest::parse_manifest(Path::new(manifest_path))?;
+        let spec = manifest.fields.get(struct_name).ok_or_else(|| {
+            Error::InvalidArgs(format!(
+                "--pin-spec: no [[fields.{struct_name}]] in {manifest_path}"
+            ))
+        })?;
+        let canonical = cdef::canonical_spec(struct_name, spec, &manifest.fields)?;
+        let expected = payload::crc32(canonical.as_bytes());
+        let (bytes, walk_hash) = binary::serialize_value_with_layout(&data)?;
+        if walk_hash != expected {
+            return Err(Error::Emit(format!(
+                "{}: layout diverged from spec {struct_name} \
+                 (walk hash 0x{walk_hash:08X}, spec hash 0x{expected:08X}, \
+                 walk {} bytes, spec {} bytes) -- field names, order, sizes, \
+                 and total must match {manifest_path}",
+                config.display(),
+                bytes.len(),
+                cdef::layout_size(struct_name, spec, &manifest.fields)?,
+            )));
+        }
+    }
+
     let binary_data = if let Some(uid_str) = &args.fulluid {
         let uid = parse_full_uid(uid_str)?;
         let (payload, layout_hash, rows) = binary::serialize_value_with_layout_and_rows(&data)?;

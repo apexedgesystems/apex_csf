@@ -26,3 +26,64 @@ message SysMonHealthTlm {
   // Open file descriptor count.
   uint32 fdCount = 9 [(apex.default) = "0"];
 }
+
+message SystemMonitorTunableParams {
+  // Telemetry rate (Hz).
+  float sampleRateHz = 1 [(apex.default) = "1.0"];
+  // CPU domain: 1 = enabled, 0 = disabled.
+  uint32 cpuEnabled = 2 [(apex.width) = 1, (apex.default) = "1"];
+  // Number of valid entries in monitoredCores.
+  uint32 monitoredCoreCount = 3 [(apex.width) = 1, (apex.default) = "0"];
+  // Core indices to monitor.
+  repeated uint32 monitoredCores = 4 [(apex.width) = 2, (apex.count) = 16];
+  // Per-core load warning threshold.
+  float cpuLoadWarnPercent = 5 [(apex.default) = "80.0"];
+  // Per-core load critical threshold.
+  float cpuLoadCritPercent = 6 [(apex.default) = "95.0"];
+  // CPU temperature warning (Celsius).
+  int32 cpuTempWarnC = 7 [(apex.width) = 2, (apex.default) = "75"];
+  // CPU temperature critical (Celsius).
+  int32 cpuTempCritC = 8 [(apex.width) = 2, (apex.default) = "85"];
+  // RT throttle delta warning threshold.
+  uint32 cpuRtThrottleWarn = 9 [(apex.default) = "1"];
+  // RT throttle delta critical threshold.
+  uint32 cpuRtThrottleCrit = 10 [(apex.default) = "10"];
+  // Memory domain: 1 = enabled, 0 = disabled.
+  uint32 memEnabled = 11 [(apex.width) = 1, (apex.default) = "1"];
+  // Explicit padding.
+  repeated uint32 memPad = 12 [(apex.width) = 1, (apex.count) = 3];
+  // RAM utilization warning threshold.
+  float memRamWarnPercent = 13 [(apex.default) = "80.0"];
+  // RAM utilization critical threshold.
+  float memRamCritPercent = 14 [(apex.default) = "95.0"];
+  // Swap usage warning threshold (bytes).
+  uint64 memSwapWarnBytes = 15 [(apex.default) = "1"];
+  // Swap usage critical threshold (bytes).
+  uint64 memSwapCritBytes = 16 [(apex.default) = "1"];
+  // FD utilization warning threshold.
+  float memFdWarnPercent = 17 [(apex.default) = "70.0"];
+  // FD utilization critical threshold.
+  float memFdCritPercent = 18 [(apex.default) = "90.0"];
+  // GPU domain: 1 = enabled, 0 = disabled.
+  uint32 gpuEnabled = 19 [(apex.width) = 1, (apex.default) = "0"];
+  // GPU device index.
+  int32 gpuDeviceIndex = 20 [(apex.width) = 1, (apex.default) = "0"];
+  // GPU temperature warning (Celsius).
+  int32 gpuTempWarnC = 21 [(apex.width) = 2, (apex.default) = "75"];
+  // GPU temperature critical (Celsius).
+  int32 gpuTempCritC = 22 [(apex.width) = 2, (apex.default) = "85"];
+  // Explicit padding.
+  uint32 gpuPad = 23 [(apex.width) = 2, (apex.default) = "0"];
+  // GPU utilization warning threshold.
+  float gpuUtilWarnPercent = 24 [(apex.default) = "90.0"];
+  // GPU utilization critical threshold.
+  float gpuUtilCritPercent = 25 [(apex.default) = "98.0"];
+  // GPU memory warning threshold.
+  float gpuMemWarnPercent = 26 [(apex.default) = "80.0"];
+  // GPU memory critical threshold.
+  float gpuMemCritPercent = 27 [(apex.default) = "95.0"];
+  // 1 = warn on any GPU throttle.
+  uint32 gpuThrottleWarnOnAny = 28 [(apex.width) = 1, (apex.default) = "1"];
+  // Explicit padding.
+  repeated uint32 gpuPad2 = 29 [(apex.width) = 1, (apex.count) = 3];
+}

@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_BUS_STATS_HPP
 #define APEX_CDEF_AUTO_BUS_STATS_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -18,11 +19,15 @@ struct BusStats {
   std::uint32_t rxBytes{};
 };
 static_assert(sizeof(BusStats) == 16, "layout diverged from the spec");
+static_assert(offsetof(BusStats, txFrames) == 0, "field offset diverged");
+static_assert(offsetof(BusStats, rxFrames) == 4, "field offset diverged");
+static_assert(offsetof(BusStats, txBytes) == 8, "field offset diverged");
+static_assert(offsetof(BusStats, rxBytes) == 12, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t BUS_STATS_LAYOUT_HASH = 0x258BEC42U;
+inline constexpr std::uint32_t BUS_STATS_LAYOUT_HASH = 0xFA18EF7BU;
 
 } // namespace spec
 } // namespace appsim

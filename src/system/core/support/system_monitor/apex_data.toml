@@ -7,15 +7,13 @@ component = "SystemMonitor"
 namespace = "system_core::support"
 
 [structs]
-# Tunable parameters (TPRM-configurable at startup)
-SystemMonitorTunableParams = { category = "TUNABLE_PARAM", header = "inc/SystemMonitorData.hpp" }
+# Tunable parameters (TPRM-configurable at startup). Packed: multi-byte
+# fields sit at unaligned offsets, so the generated struct carries
+# __attribute__((packed)) to honor the sequential layout.
+SystemMonitorTunableParams = { category = "TUNABLE_PARAM", packed = true }
 
 # Telemetry: periodic health snapshot (sent via postInternalTelemetry)
 SysMonHealthTlm = { category = "TELEMETRY", opcode = "0x0100" }
-# SysMonHealthTlm is spec-defined below; SystemMonitorTunableParams stays
-# header-parsed: its packed layout (unaligned members) is outside the
-# spec vocabulary until the generator carries packing and the layout
-# hash carries offsets.
 
 [enums]
 # Telemetry opcodes
@@ -81,3 +79,206 @@ type = "uint"
 size = 4
 default = 0
 doc = "Open file descriptor count."
+
+[[fields.SystemMonitorTunableParams]]
+name = "sampleRateHz"
+type = "float"
+size = 4
+default = 1.0
+doc = "Telemetry rate (Hz)."
+
+[[fields.SystemMonitorTunableParams]]
+name = "cpuEnabled"
+type = "uint"
+size = 1
+default = 1
+doc = "CPU domain: 1 = enabled, 0 = disabled."
+
+[[fields.SystemMonitorTunableParams]]
+name = "monitoredCoreCount"
+type = "uint"
+size = 1
+default = 0
+doc = "Number of valid entries in monitoredCores."
+
+[[fields.SystemMonitorTunableParams]]
+name = "monitoredCores"
+type = "uint"
+size = 2
+count = 16
+doc = "Core indices to monitor."
+
+[[fields.SystemMonitorTunableParams]]
+name = "cpuLoadWarnPercent"
+type = "float"
+size = 4
+default = 80.0
+doc = "Per-core load warning threshold."
+
+[[fields.SystemMonitorTunableParams]]
+name = "cpuLoadCritPercent"
+type = "float"
+size = 4
+default = 95.0
+doc = "Per-core load critical threshold."
+
+[[fields.SystemMonitorTunableParams]]
+name = "cpuTempWarnC"
+type = "int"
+size = 2
+default = 75
+doc = "CPU temperature warning (Celsius)."
+
+[[fields.SystemMonitorTunableParams]]
+name = "cpuTempCritC"
+type = "int"
+size = 2
+default = 85
+doc = "CPU temperature critical (Celsius)."
+
+[[fields.SystemMonitorTunableParams]]
+name = "cpuRtThrottleWarn"
+type = "uint"
+size = 4
+default = 1
+doc = "RT throttle delta warning threshold."
+
+[[fields.SystemMonitorTunableParams]]
+name = "cpuRtThrottleCrit"
+type = "uint"
+size = 4
+default = 10
+doc = "RT throttle delta critical threshold."
+
+[[fields.SystemMonitorTunableParams]]
+name = "memEnabled"
+type = "uint"
+size = 1
+default = 1
+doc = "Memory domain: 1 = enabled, 0 = disabled."
+
+[[fields.SystemMonitorTunableParams]]
+name = "memPad"
+type = "uint"
+size = 1
+count = 3
+doc = "Explicit padding."
+
+[[fields.SystemMonitorTunableParams]]
+name = "memRamWarnPercent"
+type = "float"
+size = 4
+default = 80.0
+doc = "RAM utilization warning threshold."
+
+[[fields.SystemMonitorTunableParams]]
+name = "memRamCritPercent"
+type = "float"
+size = 4
+default = 95.0
+doc = "RAM utilization critical threshold."
+
+[[fields.SystemMonitorTunableParams]]
+name = "memSwapWarnBytes"
+type = "uint"
+size = 8
+default = 1
+doc = "Swap usage warning threshold (bytes)."
+
+[[fields.SystemMonitorTunableParams]]
+name = "memSwapCritBytes"
+type = "uint"
+size = 8
+default = 1
+doc = "Swap usage critical threshold (bytes)."
+
+[[fields.SystemMonitorTunableParams]]
+name = "memFdWarnPercent"
+type = "float"
+size = 4
+default = 70.0
+doc = "FD utilization warning threshold."
+
+[[fields.SystemMonitorTunableParams]]
+name = "memFdCritPercent"
+type = "float"
+size = 4
+default = 90.0
+doc = "FD utilization critical threshold."
+
+[[fields.SystemMonitorTunableParams]]
+name = "gpuEnabled"
+type = "uint"
+size = 1
+default = 0
+doc = "GPU domain: 1 = enabled, 0 = disabled."
+
+[[fields.SystemMonitorTunableParams]]
+name = "gpuDeviceIndex"
+type = "int"
+size = 1
+default = 0
+doc = "GPU device index."
+
+[[fields.SystemMonitorTunableParams]]
+name = "gpuTempWarnC"
+type = "int"
+size = 2
+default = 75
+doc = "GPU temperature warning (Celsius)."
+
+[[fields.SystemMonitorTunableParams]]
+name = "gpuTempCritC"
+type = "int"
+size = 2
+default = 85
+doc = "GPU temperature critical (Celsius)."
+
+[[fields.SystemMonitorTunableParams]]
+name = "gpuPad"
+type = "uint"
+size = 2
+default = 0
+doc = "Explicit padding."
+
+[[fields.SystemMonitorTunableParams]]
+name = "gpuUtilWarnPercent"
+type = "float"
+size = 4
+default = 90.0
+doc = "GPU utilization warning threshold."
+
+[[fields.SystemMonitorTunableParams]]
+name = "gpuUtilCritPercent"
+type = "float"
+size = 4
+default = 98.0
+doc = "GPU utilization critical threshold."
+
+[[fields.SystemMonitorTunableParams]]
+name = "gpuMemWarnPercent"
+type = "float"
+size = 4
+default = 80.0
+doc = "GPU memory warning threshold."
+
+[[fields.SystemMonitorTunableParams]]
+name = "gpuMemCritPercent"
+type = "float"
+size = 4
+default = 95.0
+doc = "GPU memory critical threshold."
+
+[[fields.SystemMonitorTunableParams]]
+name = "gpuThrottleWarnOnAny"
+type = "uint"
+size = 1
+default = 1
+doc = "1 = warn on any GPU throttle."
+
+[[fields.SystemMonitorTunableParams]]
+name = "gpuPad2"
+type = "uint"
+size = 1
+count = 3
+doc = "Explicit padding."

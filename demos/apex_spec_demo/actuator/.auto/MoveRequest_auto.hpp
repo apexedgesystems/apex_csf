@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_MOVE_REQUEST_HPP
 #define APEX_CDEF_AUTO_MOVE_REQUEST_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -15,11 +16,12 @@ struct MoveRequest {
   float position{}; ///< Commanded target position [units], range -1000..1000.
 };
 static_assert(sizeof(MoveRequest) == 4, "layout diverged from the spec");
+static_assert(offsetof(MoveRequest, position) == 0, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t MOVE_REQUEST_LAYOUT_HASH = 0x971368B4U;
+inline constexpr std::uint32_t MOVE_REQUEST_LAYOUT_HASH = 0xC351C9ADU;
 
 } // namespace spec
 } // namespace appsim

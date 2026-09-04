@@ -6,6 +6,7 @@
 # StandaloneSequenceTprm on demand.
 
 component = "ActionComponent"
+namespace = "system_core::action"
 
 [structs]
 # Monolithic engine configuration (watchpoints, groups, inline sequences,
@@ -21,9 +22,260 @@ ActionHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/Act
 # Internal engine statistics (runtime state, mirrors ActionHealthTlm)
 EngineStats = { category = "STATE", header = "inc/ActionInterface.hpp" }
 
+# Standalone RTS/ATS sequence file format (spec-defined, packed):
+# 8-byte header + 16 x 64-byte steps, each step embedding a 20-byte
+# wait condition. cfg2bin pins compiled sequences against this spec.
+StandaloneSequenceTprm = { category = "PROTOCOL", packed = true }
+StandaloneStepTprm = { category = "STRUCT", packed = true }
+StandaloneWaitConditionTprm = { category = "STRUCT", packed = true }
+
 [enums]
 # Action component status codes
 Status = { header = "inc/ActionComponentStatus.hpp" }
 
 # Telemetry opcodes
 ActionTlmOpcode = { header = "inc/ActionTlm.hpp" }
+
+[[fields.StandaloneWaitConditionTprm]]
+name = "targetFullUid"
+type = "uint"
+size = 4
+default = 0
+doc = "Component fullUid to watch."
+
+[[fields.StandaloneWaitConditionTprm]]
+name = "targetCategory"
+type = "uint"
+size = 1
+default = 0
+doc = "DataCategory enum value."
+
+[[fields.StandaloneWaitConditionTprm]]
+name = "targetByteOffset"
+type = "uint"
+size = 2
+default = 0
+doc = "Byte offset into the data block."
+
+[[fields.StandaloneWaitConditionTprm]]
+name = "targetByteLen"
+type = "uint"
+size = 1
+default = 0
+doc = "Byte length to compare."
+
+[[fields.StandaloneWaitConditionTprm]]
+name = "predicate"
+type = "uint"
+size = 1
+default = 0
+doc = "WatchPredicate enum value."
+
+[[fields.StandaloneWaitConditionTprm]]
+name = "dataType"
+type = "uint"
+size = 1
+default = 0
+doc = "WatchDataType enum value."
+
+[[fields.StandaloneWaitConditionTprm]]
+name = "threshold"
+type = "uint"
+size = 1
+count = 8
+doc = "Raw threshold bytes."
+
+[[fields.StandaloneWaitConditionTprm]]
+name = "enabled"
+type = "uint"
+size = 1
+default = 0
+doc = "1 = condition active."
+
+[[fields.StandaloneWaitConditionTprm]]
+name = "reserved"
+type = "uint"
+size = 1
+default = 0
+doc = "Explicit padding."
+
+[[fields.StandaloneStepTprm]]
+name = "targetFullUid"
+type = "uint"
+size = 4
+default = 0
+doc = "Target component."
+
+[[fields.StandaloneStepTprm]]
+name = "targetCategory"
+type = "uint"
+size = 1
+default = 0
+doc = "DataCategory enum value."
+
+[[fields.StandaloneStepTprm]]
+name = "targetByteOffset"
+type = "uint"
+size = 2
+default = 0
+doc = "Byte offset."
+
+[[fields.StandaloneStepTprm]]
+name = "targetByteLen"
+type = "uint"
+size = 1
+default = 0
+doc = "Byte length."
+
+[[fields.StandaloneStepTprm]]
+name = "actionType"
+type = "uint"
+size = 1
+default = 0
+doc = "ActionType enum (COMMAND=0, ARM_CONTROL=1)."
+
+[[fields.StandaloneStepTprm]]
+name = "armTarget"
+type = "uint"
+size = 1
+default = 0
+doc = "ArmControlTarget enum."
+
+[[fields.StandaloneStepTprm]]
+name = "armIndex"
+type = "uint"
+size = 1
+default = 0
+doc = "Table index."
+
+[[fields.StandaloneStepTprm]]
+name = "armState"
+type = "uint"
+size = 1
+default = 0
+doc = "1 = arm, 0 = disarm."
+
+[[fields.StandaloneStepTprm]]
+name = "commandOpcode"
+type = "uint"
+size = 2
+default = 0
+doc = "Command opcode."
+
+[[fields.StandaloneStepTprm]]
+name = "commandPayloadLen"
+type = "uint"
+size = 1
+default = 0
+doc = "Payload length."
+
+[[fields.StandaloneStepTprm]]
+name = "commandPayload"
+type = "uint"
+size = 1
+count = 16
+doc = "Command payload bytes."
+
+[[fields.StandaloneStepTprm]]
+name = "delayCycles"
+type = "uint"
+size = 4
+default = 0
+doc = "Delay (RTS: relative, ATS: absolute offset)."
+
+[[fields.StandaloneStepTprm]]
+name = "timeoutCycles"
+type = "uint"
+size = 4
+default = 0
+doc = "Max wait (0 = no timeout)."
+
+[[fields.StandaloneStepTprm]]
+name = "onTimeout"
+type = "uint"
+size = 1
+default = 0
+doc = "StepTimeoutPolicy enum."
+
+[[fields.StandaloneStepTprm]]
+name = "onComplete"
+type = "uint"
+size = 1
+default = 0
+doc = "StepCompletionAction enum."
+
+[[fields.StandaloneStepTprm]]
+name = "gotoStep"
+type = "uint"
+size = 1
+default = 0
+doc = "Target for GOTO_STEP or START_RTS slot."
+
+[[fields.StandaloneStepTprm]]
+name = "retryMax"
+type = "uint"
+size = 1
+default = 0
+doc = "Max retries on timeout."
+
+[[fields.StandaloneStepTprm]]
+name = "waitCondition"
+type = "nested"
+struct = "StandaloneWaitConditionTprm"
+doc = "Optional hold condition."
+
+[[fields.StandaloneStepTprm]]
+name = "reserved"
+type = "uint"
+size = 1
+default = 0
+doc = "Explicit padding."
+
+[[fields.StandaloneSequenceTprm]]
+name = "sequenceId"
+type = "uint"
+size = 2
+default = 0
+doc = "Unique ID for logging/telemetry."
+
+[[fields.StandaloneSequenceTprm]]
+name = "eventId"
+type = "uint"
+size = 2
+default = 0
+doc = "Trigger event (0 = manual start only)."
+
+[[fields.StandaloneSequenceTprm]]
+name = "stepCount"
+type = "uint"
+size = 1
+default = 0
+doc = "Number of valid steps (0-16)."
+
+[[fields.StandaloneSequenceTprm]]
+name = "repeatCount"
+type = "uint"
+size = 1
+default = 0
+doc = "Repeat count (0 = once, 0xFF = forever)."
+
+[[fields.StandaloneSequenceTprm]]
+name = "type"
+type = "uint"
+size = 1
+default = 0
+doc = "SequenceType enum (0=RTS, 1=ATS)."
+
+[[fields.StandaloneSequenceTprm]]
+name = "armed"
+type = "uint"
+size = 1
+default = 0
+doc = "1 = armed on load."
+
+[[fields.StandaloneSequenceTprm]]
+name = "steps"
+type = "nested"
+struct = "StandaloneStepTprm"
+count = 16
+doc = "Step table (SEQUENCE_MAX_STEPS)."

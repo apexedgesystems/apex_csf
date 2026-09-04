@@ -48,6 +48,10 @@ pub enum DataCategory {
     Telemetry,
     /// Wire protocol structures (packet framing).
     Protocol,
+    /// Reusable layout fragment: generated and hashable like any
+    /// spec struct, but never registered as a component data block.
+    /// Other structs embed it through `type = "nested"` fields.
+    Struct,
 }
 
 impl std::fmt::Display for DataCategory {
@@ -61,6 +65,7 @@ impl std::fmt::Display for DataCategory {
             DataCategory::Command => write!(f, "COMMAND"),
             DataCategory::Telemetry => write!(f, "TELEMETRY"),
             DataCategory::Protocol => write!(f, "PROTOCOL"),
+            DataCategory::Struct => write!(f, "STRUCT"),
         }
     }
 }
@@ -74,6 +79,12 @@ pub struct StructEntry {
     pub opcode: Option<String>,
     /// Optional explicit header path (relative to manifest).
     pub header: Option<String>,
+    /// Packed layout: the generated struct carries
+    /// `__attribute__((packed))` and fields need not be naturally
+    /// aligned. Offsets are sequential either way; packed makes the
+    /// C++ compiler honor them when alignment would insert padding.
+    #[serde(default)]
+    pub packed: bool,
 }
 
 /// Enum entry in the manifest.
@@ -104,10 +115,17 @@ pub struct FieldDef {
     pub name: String,
     /// Logical type: int | uint | float | bool | char | string.
     pub r#type: String,
-    /// Size in bytes (per element when `count` is set).
+    /// Size in bytes (per element when `count` is set). Leaves must
+    /// declare it; nested fields are sized by their embedded struct
+    /// and omit it (generation rejects a sizeless leaf).
+    #[serde(default)]
     pub size: u32,
     /// Array length: emits `type name[count]` (absent = scalar).
     pub count: Option<u32>,
+    /// Embedded struct name for `type = "nested"` fields: the field
+    /// is a member (or array) of that spec-defined struct. One level
+    /// only -- the embedded struct's own fields must be leaves.
+    pub r#struct: Option<String>,
     /// Default value (becomes the member initializer and the template
     /// default).
     pub default: Option<toml::Value>,

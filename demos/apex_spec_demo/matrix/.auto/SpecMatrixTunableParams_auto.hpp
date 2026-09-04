@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SPEC_MATRIX_TUNABLE_PARAMS_HPP
 #define APEX_CDEF_AUTO_SPEC_MATRIX_TUNABLE_PARAMS_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -29,11 +30,26 @@ struct SpecMatrixTunableParams {
   std::uint8_t blob[5]{}; ///< Byte buffer lane.
 };
 static_assert(sizeof(SpecMatrixTunableParams) == 80, "layout diverged from the spec");
+static_assert(offsetof(SpecMatrixTunableParams, iWide) == 0, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, uWide) == 8, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, precise) == 16, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, iWord) == 24, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, uWord) == 28, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, ratio) == 32, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, gains) == 36, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, iShort) == 44, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, uShort) == 46, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, iTiny) == 48, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, uTiny) == 49, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, enabled) == 50, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, label) == 51, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, tags) == 63, "field offset diverged");
+static_assert(offsetof(SpecMatrixTunableParams, blob) == 75, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SPEC_MATRIX_TUNABLE_PARAMS_LAYOUT_HASH = 0x5D6CD6BAU;
+inline constexpr std::uint32_t SPEC_MATRIX_TUNABLE_PARAMS_LAYOUT_HASH = 0xA597E249U;
 
 } // namespace spec
 } // namespace appsim

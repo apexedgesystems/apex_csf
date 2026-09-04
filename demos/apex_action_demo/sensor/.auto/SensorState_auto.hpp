@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SENSOR_STATE_HPP
 #define APEX_CDEF_AUTO_SENSOR_STATE_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -16,11 +17,13 @@ struct SensorState {
   std::uint32_t wrapCount{}; ///< Number of temperature wrap-arounds.
 };
 static_assert(sizeof(SensorState) == 8, "layout diverged from the spec");
+static_assert(offsetof(SensorState, stepCount) == 0, "field offset diverged");
+static_assert(offsetof(SensorState, wrapCount) == 4, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SENSOR_STATE_LAYOUT_HASH = 0x1F72C7BAU;
+inline constexpr std::uint32_t SENSOR_STATE_LAYOUT_HASH = 0xAB1015BDU;
 
 } // namespace sensor
 } // namespace appsim

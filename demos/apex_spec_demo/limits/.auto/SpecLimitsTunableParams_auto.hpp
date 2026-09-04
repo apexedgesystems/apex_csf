@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SPEC_LIMITS_TUNABLE_PARAMS_HPP
 #define APEX_CDEF_AUTO_SPEC_LIMITS_TUNABLE_PARAMS_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -21,11 +22,18 @@ struct SpecLimitsTunableParams {
   std::uint8_t reserved[3]{};
 };
 static_assert(sizeof(SpecLimitsTunableParams) == 36, "layout diverged from the spec");
+static_assert(offsetof(SpecLimitsTunableParams, floorOnly) == 0, "field offset diverged");
+static_assert(offsetof(SpecLimitsTunableParams, ceilOnly) == 4, "field offset diverged");
+static_assert(offsetof(SpecLimitsTunableParams, banded) == 8, "field offset diverged");
+static_assert(offsetof(SpecLimitsTunableParams, stepped) == 12, "field offset diverged");
+static_assert(offsetof(SpecLimitsTunableParams, gainTable) == 16, "field offset diverged");
+static_assert(offsetof(SpecLimitsTunableParams, mode) == 32, "field offset diverged");
+static_assert(offsetof(SpecLimitsTunableParams, reserved) == 33, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SPEC_LIMITS_TUNABLE_PARAMS_LAYOUT_HASH = 0xEA32365DU;
+inline constexpr std::uint32_t SPEC_LIMITS_TUNABLE_PARAMS_LAYOUT_HASH = 0xE4F35CF5U;
 
 } // namespace spec
 } // namespace appsim

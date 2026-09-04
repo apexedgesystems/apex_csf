@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_COMPARATOR_TUNABLE_PARAMS_HPP
 #define APEX_CDEF_AUTO_COMPARATOR_TUNABLE_PARAMS_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -16,11 +17,13 @@ struct ComparatorTunableParams {
   float reserved{0.0F}; ///< Reserved for alignment.
 };
 static_assert(sizeof(ComparatorTunableParams) == 8, "layout diverged from the spec");
+static_assert(offsetof(ComparatorTunableParams, warnThreshold) == 0, "field offset diverged");
+static_assert(offsetof(ComparatorTunableParams, reserved) == 4, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t COMPARATOR_TUNABLE_PARAMS_LAYOUT_HASH = 0xCE8CD128U;
+inline constexpr std::uint32_t COMPARATOR_TUNABLE_PARAMS_LAYOUT_HASH = 0x37BF5D88U;
 
 } // namespace support
 } // namespace appsim

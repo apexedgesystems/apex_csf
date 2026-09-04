@@ -217,7 +217,13 @@ fn build_struct_dictionary(
         // dictionary (and everything downstream: templates, ground UI)
         // cannot drift from the spec. Others parse the C++ header.
         let struct_json = match manifest.fields.get(struct_name) {
-            Some(spec) => build_struct_entry_from_spec(entry, spec, constraints)?,
+            Some(spec) => build_struct_entry_from_spec(
+                struct_name,
+                entry,
+                spec,
+                &manifest.fields,
+                constraints,
+            )?,
             None => build_struct_entry(struct_name, entry, parsed.get(struct_name), constraints)?,
         };
         structs.insert(struct_name.clone(), struct_json);
@@ -357,8 +363,10 @@ fn build_enum_entry(
 
 /// Build a struct entry from its spec field list (cdef path).
 fn build_struct_entry_from_spec(
+    struct_name: &str,
     entry: &StructEntry,
     spec: &[FieldDef],
+    all_fields: &tunable_params::cdef::FieldsMap,
     constraints: Option<&BTreeMap<String, FieldConstraints>>,
 ) -> Result<Json, Box<dyn std::error::Error>> {
     let mut result = JsonMap::new();
@@ -372,15 +380,24 @@ fn build_struct_entry_from_spec(
     for f in spec {
         let mut e = JsonMap::new();
         e.insert("name".into(), json!(f.name));
-        let total = f.size * f.count.unwrap_or(1);
-        match f.count {
-            None => {
-                e.insert("type".into(), json!(f.r#type));
-            }
-            Some(n) => {
-                e.insert("type".into(), json!("array"));
-                e.insert("element_type".into(), json!(f.r#type));
+        let total =
+            tunable_params::cdef::layout_size(struct_name, std::slice::from_ref(f), all_fields)?;
+        if f.r#type == "nested" {
+            e.insert("type".into(), json!("nested"));
+            e.insert("struct".into(), json!(f.r#struct));
+            if let Some(n) = f.count {
                 e.insert("dims".into(), json!([n]));
+            }
+        } else {
+            match f.count {
+                None => {
+                    e.insert("type".into(), json!(f.r#type));
+                }
+                Some(n) => {
+                    e.insert("type".into(), json!("array"));
+                    e.insert("element_type".into(), json!(f.r#type));
+                    e.insert("dims".into(), json!([n]));
+                }
             }
         }
         e.insert("offset".into(), json!(offset));
@@ -395,7 +412,7 @@ fn build_struct_entry_from_spec(
                     e.insert("value".into(), json!(vec![v; n as usize]));
                 }
             }
-        } else if let Some(n) = f.count {
+        } else if let Some(n) = f.count.filter(|_| f.r#type != "nested") {
             e.insert("value".into(), json!(vec![0; n as usize]));
         }
         if let Some(doc) = &f.doc {
@@ -423,7 +440,7 @@ fn build_struct_entry_from_spec(
     // canonical field spec the v3 prelude is checked against on the
     // vehicle, so consumers (zenith) carry it instead of recomputing
     // from flattened field lists.
-    let canonical = tunable_params::cdef::canonical_spec(spec);
+    let canonical = tunable_params::cdef::canonical_spec(struct_name, spec, all_fields)?;
     result.insert(
         "layout_hash".into(),
         json!(format!(

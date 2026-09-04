@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SPEC_PROTO_MAX_TUNABLE_PARAMS_HPP
 #define APEX_CDEF_AUTO_SPEC_PROTO_MAX_TUNABLE_PARAMS_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -30,11 +31,27 @@ struct SpecProtoMaxTunableParams {
   std::uint8_t reserved[5]{}; ///< Tail padding to the struct's 8-byte alignment boundary.
 };
 static_assert(sizeof(SpecProtoMaxTunableParams) == 80, "layout diverged from the spec");
+static_assert(offsetof(SpecProtoMaxTunableParams, precise) == 0, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, uWide) == 8, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, iWide) == 16, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, ratio) == 24, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, uWord) == 28, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, iWord) == 32, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, taps) == 36, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, uShort) == 48, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, iShort) == 50, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, tag) == 52, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, aliases) == 60, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, cookie) == 68, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, uTiny) == 72, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, iTiny) == 73, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, enabled) == 74, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxTunableParams, reserved) == 75, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SPEC_PROTO_MAX_TUNABLE_PARAMS_LAYOUT_HASH = 0xB2F1408CU;
+inline constexpr std::uint32_t SPEC_PROTO_MAX_TUNABLE_PARAMS_LAYOUT_HASH = 0x8A1BB50CU;
 
 } // namespace spec
 } // namespace appsim

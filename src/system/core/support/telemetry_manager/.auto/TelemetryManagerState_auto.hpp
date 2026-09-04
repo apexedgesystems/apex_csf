@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_TELEMETRY_MANAGER_STATE_HPP
 #define APEX_CDEF_AUTO_TELEMETRY_MANAGER_STATE_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace system_core {
@@ -19,11 +20,16 @@ struct TelemetryManagerState {
   std::uint16_t reserved{0}; ///< Alignment padding.
 };
 static_assert(sizeof(TelemetryManagerState) == 16, "layout diverged from the spec");
+static_assert(offsetof(TelemetryManagerState, collectCount) == 0, "field offset diverged");
+static_assert(offsetof(TelemetryManagerState, packetsSent) == 4, "field offset diverged");
+static_assert(offsetof(TelemetryManagerState, sendFailures) == 8, "field offset diverged");
+static_assert(offsetof(TelemetryManagerState, activeCount) == 12, "field offset diverged");
+static_assert(offsetof(TelemetryManagerState, reserved) == 14, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t TELEMETRY_MANAGER_STATE_LAYOUT_HASH = 0x307F7315U;
+inline constexpr std::uint32_t TELEMETRY_MANAGER_STATE_LAYOUT_HASH = 0x86699C0EU;
 
 } // namespace support
 } // namespace system_core
