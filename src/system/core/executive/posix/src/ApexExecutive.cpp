@@ -417,16 +417,7 @@ bool ApexExecutive::registerComponent(system_core::system_component::SystemCompo
   comp->initComponentLog(logDir);
 
   // Step 4: Load TPRM configuration
-  {
-    using system_core::system_component::TprmIngest;
-    const TprmIngest INGEST = comp->loadTprm(fileSystem_.tprmDir());
-    if (INGEST == TprmIngest::REJECTED ||
-        (INGEST == TprmIngest::DEFAULTS && !comp->paramsOptional())) {
-      sysLog_->warning(
-          label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
-          fmt::format("loadTprm failed for {} (0x{:06X})", comp->label(), comp->fullUid()));
-    }
-  }
+  const auto TPRM_INGEST = comp->loadTprm(fileSystem_.tprmDir());
 
   // Step 4.5: Provision transport for HW_MODEL components
   if (comp->componentType() == system_core::system_component::ComponentType::HW_MODEL) {
@@ -440,6 +431,10 @@ bool ApexExecutive::registerComponent(system_core::system_component::SystemCompo
 
   // Step 5: Initialize the component
   (void)comp->init();
+
+  // Judge the ingest now that init() has registered the component's
+  // data blocks (the NONE-with-registered-params cross-check needs them).
+  recordIngestOutcome(comp, TPRM_INGEST);
 
   // Step 6: Register component's data descriptors with ApexRegistry
   for (std::size_t i = 0; i < comp->dataCount(); ++i) {
@@ -533,13 +528,19 @@ RunResult ApexExecutive::run() noexcept {
   // declared state -- a stock boot idles -- so the missing table logs at
   // INFO. With a config present, a missing/unloadable table stays an
   // error: the application declared tasks it did not get.
-  if (scheduler_.loadTprm(tprmDir) != system_core::system_component::TprmIngest::LOADED) {
-    if (configPath_.empty()) {
-      sysLog_->info(label(), "No schedule configured; scheduler idle (0 tasks)");
-    } else {
-      sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_SCHEDULER_NO_TASKS),
-                     fmt::format("Scheduler loadTprm failed: {}",
-                                 scheduler_.lastError() ? scheduler_.lastError() : "unknown"));
+  {
+    using system_core::system_component::TprmIngest;
+    const TprmIngest SCHED_INGEST = scheduler_.loadTprm(tprmDir);
+    if (SCHED_INGEST != TprmIngest::LOADED) {
+      if (configPath_.empty() && SCHED_INGEST == TprmIngest::DEFAULTS) {
+        sysLog_->info(label(), "No schedule configured; scheduler idle (0 tasks)");
+      } else {
+        sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_SCHEDULER_NO_TASKS),
+                       fmt::format("Scheduler loadTprm failed: {}",
+                                   scheduler_.lastError() ? scheduler_.lastError() : "unknown"));
+        ingestFailures_.push_back({scheduler_.fullUid(), scheduler_.label(), SCHED_INGEST,
+                                   SCHED_INGEST == TprmIngest::REJECTED});
+      }
     }
   }
 
@@ -574,6 +575,8 @@ RunResult ApexExecutive::run() noexcept {
   if (interface_->loadTprm(tprmDir) == system_core::system_component::TprmIngest::REJECTED) {
     sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_MODULE_INIT_FAIL),
                    "Interface loadTprm FAILED");
+    ingestFailures_.push_back({interface_->fullUid(), interface_->label(),
+                               system_core::system_component::TprmIngest::REJECTED, true});
   } else {
     const std::uint8_t IFACE_INIT = interface_->init();
     if (IFACE_INIT != 0) {
@@ -639,6 +642,8 @@ RunResult ApexExecutive::run() noexcept {
   // an external caller wires up a real PPS source.
   timeServer_.setSteadyClock(system_core::time_server::TimeServer::defaultSteadyClock());
   timeServer_.setWallClock(system_core::time_server::TimeServer::defaultWallClock());
+  timeServer_.initComponentLog(fileSystem_.logDir());
+  recordIngestOutcome(&timeServer_, timeServer_.loadTprm(fileSystem_.tprmDir()));
   {
     const std::uint8_t TIME_SERVER_INIT = timeServer_.init();
     if (TIME_SERVER_INIT != 0) {
@@ -671,12 +676,7 @@ RunResult ApexExecutive::run() noexcept {
 
   // Load action engine TPRM (watchpoints, groups, sequences, notifications, actions)
   actionComp_.initComponentLog(fileSystem_.logDir());
-  if (actionComp_.loadTprm(fileSystem_.tprmDir()) ==
-      system_core::system_component::TprmIngest::REJECTED) {
-    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
-                     fmt::format("loadTprm failed for {} (0x{:06X})", actionComp_.label(),
-                                 actionComp_.fullUid()));
-  }
+  recordIngestOutcome(&actionComp_, actionComp_.loadTprm(fileSystem_.tprmDir()));
 
   // Auto-load standalone RTS/ATS sequences from banked directories.
   // Files are named {slot:03d}.rts / {slot:03d}.ats (placed by unpackMasterTprm routing).
@@ -911,6 +911,14 @@ RunResult ApexExecutive::run() noexcept {
                        fmt::format("Registry database export failed: {}",
                                    system_core::registry::toString(exportStatus)));
     }
+  }
+
+  // TPRM ingest barrier: every component has loaded and registered, so
+  // every offender is on the list -- judge them together and refuse to
+  // run a misconfigured vehicle rather than fail on the first.
+  if (!ingestPolicyHolds()) {
+    setStatus(static_cast<std::uint8_t>(ERROR_TPRM_INGEST));
+    return RunResult::ERROR_INIT;
   }
 
   // Allocate queues for interface itself (self-command routing for deterministic timing).
@@ -1209,6 +1217,81 @@ ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
 
   sysLog_->info(label(), fmt::format("Loaded executive TPRM from: {}", tprmPath.string()));
   return TprmIngest::LOADED;
+}
+
+/* ----------------------------- TPRM Ingest Policy ----------------------------- */
+
+void ApexExecutive::recordIngestOutcome(system_core::system_component::SystemComponentBase* comp,
+                                        system_core::system_component::TprmIngest ingest) noexcept {
+  using system_core::system_component::TprmIngest;
+
+  if (ingest == TprmIngest::LOADED) {
+    return;
+  }
+
+  if (ingest == TprmIngest::NONE) {
+    // A component that registers TUNABLE_PARAM data but ignores the
+    // TPRM directory is a half-wired declaration: the params exist,
+    // nothing can ever configure them.
+    bool registersTunables = false;
+    for (std::size_t i = 0; i < system_core::system_component::MAX_DATA_PER_COMPONENT; ++i) {
+      const auto* DESC = comp->dataDescriptor(i);
+      if (DESC != nullptr && DESC->ptr != nullptr &&
+          DESC->category == system_core::data::DataCategory::TUNABLE_PARAM) {
+        registersTunables = true;
+        break;
+      }
+    }
+    if (!registersTunables) {
+      return;
+    }
+    ingestFailures_.push_back({comp->fullUid(), comp->label(), ingest, false});
+    return;
+  }
+
+  if (ingest == TprmIngest::DEFAULTS) {
+    if (comp->paramsOptional()) {
+      return; // Designed configuration; the component already logged it.
+    }
+    ingestFailures_.push_back({comp->fullUid(), comp->label(), ingest, false});
+    return;
+  }
+
+  // REJECTED: a present-but-refused payload is never intentional.
+  ingestFailures_.push_back({comp->fullUid(), comp->label(), ingest, true});
+}
+
+bool ApexExecutive::ingestPolicyHolds() noexcept {
+  using system_core::system_component::TprmIngest;
+
+  bool fatal = false;
+  for (const auto& F : ingestFailures_) {
+    const char* WHAT = F.state == TprmIngest::REJECTED ? "payload rejected"
+                       : F.state == TprmIngest::DEFAULTS
+                           ? "no payload provided (params not declared optional)"
+                           : "registers tunable params but ingests nothing";
+    const bool IS_FATAL = F.fatalAlways || ingestPolicy_ == IngestPolicy::STRICT;
+    fatal = fatal || IS_FATAL;
+    if (IS_FATAL) {
+      sysLog_->error(
+          label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+          fmt::format("TPRM ingest: {} (0x{:06X}): {}", F.componentLabel, F.fullUid, WHAT));
+    } else {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
+                       fmt::format("TPRM ingest: {} (0x{:06X}): {} -- LENIENT policy, "
+                                   "running defaults",
+                                   F.componentLabel, F.fullUid, WHAT));
+    }
+  }
+  if (fatal) {
+    sysLog_->error(
+        label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+        fmt::format("Refusing to run: {} component(s) failed TPRM ingest under {} policy",
+                    ingestFailures_.size(),
+                    ingestPolicy_ == IngestPolicy::STRICT ? "STRICT" : "LENIENT"));
+    return false;
+  }
+  return true;
 }
 
 void ApexExecutive::applyCliOverrides() noexcept {

@@ -64,6 +64,21 @@ std::uint8_t ApexExecutive::processArgs() noexcept {
   }
   sysLog_->info(label(), "=====================================");
 
+  // ===== Parse Ingest Policy =====
+  if (parsedArgs_.count(INGEST_POLICY)) {
+    const std::string_view VALUE = parsedArgs_[INGEST_POLICY][0];
+    if (VALUE == "strict") {
+      ingestPolicy_ = IngestPolicy::STRICT;
+    } else if (VALUE == "lenient") {
+      ingestPolicy_ = IngestPolicy::LENIENT;
+    } else {
+      setStatus(static_cast<std::uint8_t>(ERROR_ARG_PARSE_FAIL));
+      sysLog_->error(label(), status(),
+                     fmt::format("--ingest-policy wants strict|lenient, got '{}'", VALUE));
+      return status();
+    }
+  }
+
   // ===== Parse Verbosity =====
   if (parsedArgs_.count(VERBOSITY)) {
     const std::uint8_t verbosity =

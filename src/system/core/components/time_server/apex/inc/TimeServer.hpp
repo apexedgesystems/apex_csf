@@ -170,6 +170,19 @@ public:
    */
   void loadTprm(const TimeServerTunableParams& params) noexcept;
 
+  /**
+   * @brief Boot-time ingest from the TPRM directory (framework contract).
+   *
+   * Reads the v3 payload for this component's fullUid when present and
+   * applies it through loadTprm(params); absence leaves the designed
+   * GPS-PRIMARY defaults in place.
+   */
+  [[nodiscard]] system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+
+  /** @brief Defaults are a designed configuration (PPS wiring is an app concern). */
+  [[nodiscard]] bool paramsOptional() const noexcept override { return true; }
+
   /* ----------------------------- Runtime ----------------------------- */
 
   /**

@@ -5,6 +5,11 @@
 
 #include "src/system/core/components/time_server/apex/inc/TimeServer.hpp"
 
+#include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
+
+#include <fmt/format.h>
+
 #include "src/system/core/infrastructure/system_component/base/inc/CommandResult.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
 
@@ -55,6 +60,29 @@ TimeServer::TimeServer() noexcept {
 }
 
 /* ----------------------------- Configuration ----------------------------- */
+
+system_component::TprmIngest TimeServer::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+  using system_component::TprmIngest;
+  const std::filesystem::path PATH =
+      tprmDir / system_component::SystemComponentBase::tprmFilename(fullUid());
+  std::error_code ec;
+  if (!std::filesystem::exists(PATH, ec)) {
+    return TprmIngest::DEFAULTS;
+  }
+  TimeServerTunableParams loaded{};
+  const auto CHECK = system_component::readTprmPayload(PATH, fullUid(), loaded);
+  if (CHECK != system_component::TprmPayloadCheck::OK) {
+    auto* log = componentLog();
+    if (log != nullptr) {
+      log->error(
+          label(), system_component::toFaultCode(CHECK),
+          fmt::format("TPRM rejected ({}): {}", system_component::toString(CHECK), PATH.string()));
+    }
+    return TprmIngest::REJECTED;
+  }
+  loadTprm(loaded);
+  return TprmIngest::LOADED;
+}
 
 void TimeServer::loadTprm(const TimeServerTunableParams& params) noexcept {
   tprm_ = params;

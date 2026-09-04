@@ -402,6 +402,55 @@ private:
    */
   void configureRegisteredComponents() noexcept;
 
+  /* ----------------------------- TPRM Ingest Policy ----------------------------- */
+
+  /**
+   * @brief Boot posture toward missing or rejected TPRMs.
+   *
+   * STRICT (the default) refuses to run a misconfigured vehicle: a
+   * rejected payload, or a missing one for a component whose params
+   * are not declared optional, fails init with the component and
+   * check named. LENIENT keeps warn-and-run-defaults for dev
+   * ergonomics; a rejected payload is fatal under both postures (a
+   * present-but-refused file is never intentional).
+   */
+  enum class IngestPolicy : std::uint8_t {
+    STRICT = 0,
+    LENIENT = 1,
+  };
+
+  /// One component's failed ingest, recorded during boot and judged
+  /// at the post-registration barrier so every offender is named.
+  struct IngestFailure {
+    std::uint32_t fullUid{0};
+    const char* componentLabel{nullptr};
+    system_core::system_component::TprmIngest state{};
+    bool fatalAlways{false}; ///< True for rejected payloads: fatal under every policy.
+  };
+
+  /**
+   * @brief Record one component's ingest outcome against the policy.
+   *
+   * Called after the component's init() so its registered data blocks
+   * are visible: a component that registers TUNABLE_PARAM data but
+   * reports NONE is the absent-declaration case strictness exists to
+   * catch.
+   */
+  void recordIngestOutcome(system_core::system_component::SystemComponentBase* comp,
+                           system_core::system_component::TprmIngest ingest) noexcept;
+
+  /**
+   * @brief Judge recorded ingest failures at the boot barrier.
+   *
+   * Logs every failure with its component and state; returns false
+   * when any is fatal under the active policy (rejected payloads
+   * always; missing ones under STRICT unless declared optional).
+   */
+  [[nodiscard]] bool ingestPolicyHolds() noexcept;
+
+  IngestPolicy ingestPolicy_{IngestPolicy::STRICT};
+  std::vector<IngestFailure> ingestFailures_{};
+
   // General executive information
   std::filesystem::path execPath_{};
   std::vector<std::string> args_{};

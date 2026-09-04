@@ -10,6 +10,7 @@
 0x000400  toml/interface.toml
 0x000500  toml/action.toml
 0x00CA00  toml/data_transform.toml
+0x00D200  toml/sensor.toml
 0x00C800  toml/system_monitor.toml
 
 [sequences flight]

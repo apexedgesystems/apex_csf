@@ -40,6 +40,7 @@ enum class Status : std::uint8_t {
   ERROR_SCHEDULER_NO_TASKS,
   ERROR_CONFIG_NOT_FOUND,
   ERROR_TPRM_UNPACK_FAIL,
+  ERROR_TPRM_INGEST,   ///< Ingest policy refused boot (bad or missing TPRMs; see log).
   ERROR_TPRM_REJECTED, ///< Executive tprm present but unusable; defaults refused.
 
   // Warning codes -------------------------------------------------------------

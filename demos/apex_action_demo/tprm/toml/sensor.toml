@@ -1,0 +1,6 @@
+# SensorModel (componentId=210, instanceIndex=0)
+# Total: 12 bytes -- thermal ramp shape for the fault-campaign demo.
+
+rampRate = { type = "float", size = 4, value = 0.5 }
+initialTemp = { type = "float", size = 4, value = 20.0 }
+maxTemp = { type = "float", size = 4, value = 120.0 }

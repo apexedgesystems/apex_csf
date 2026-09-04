@@ -62,6 +62,8 @@ int main(int argc, char* argv[]) {
     return STATUS;
   }
 
-  static_cast<void>(app.run());
-  return EXIT_SUCCESS;
+  // A refused boot (ingest policy, init failure) must be visible to
+  // scripts and supervisors as a nonzero exit.
+  const auto RESULT = app.run();
+  return RESULT == executive::RunResult::SUCCESS ? EXIT_SUCCESS : EXIT_FAILURE;
 }

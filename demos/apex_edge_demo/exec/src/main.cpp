@@ -50,7 +50,8 @@ int main(int argc, char* argv[]) {
     return status;
   }
 
-  static_cast<void>(edge.run());
-
-  return 0;
+  // A refused boot (ingest policy, init failure) must be visible to
+  // scripts and supervisors as a nonzero exit.
+  const auto RESULT = edge.run();
+  return RESULT == executive::RunResult::SUCCESS ? 0 : 1;
 }
