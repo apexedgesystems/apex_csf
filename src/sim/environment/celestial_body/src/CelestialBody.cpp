@@ -71,7 +71,9 @@ bool tunablesOk(const CelestialBodyTunables& t) noexcept {
 
 /* ----------------------------- CelestialBody Methods ----------------------------- */
 
-bool CelestialBody::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+system_core::system_component::TprmIngest
+CelestialBody::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+  using system_core::system_component::TprmIngest;
   // The apex executive's unpackMasterTprm() writes each entry to disk
   // as `tprmDir/{fullUid:06x}.tprm`. Look for one for this instance;
   // if absent, the C++ struct defaults stand and we report success
@@ -79,7 +81,7 @@ bool CelestialBody::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   const std::filesystem::path PATH = tprmDir / fmt::format("{:06x}.tprm", fullUid());
   std::error_code ec;
   if (!std::filesystem::exists(PATH, ec)) {
-    return true;
+    return TprmIngest::DEFAULTS;
   }
   namespace sc = system_core::system_component;
   const auto CHECK = sc::readTprmPayload(PATH, fullUid(), tunables_.get());
@@ -89,13 +91,13 @@ bool CelestialBody::loadTprm(const std::filesystem::path& tprmDir) noexcept {
       log->error(label(), sc::toFaultCode(CHECK),
                  fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), PATH.string()));
     }
-    return false;
+    return TprmIngest::REJECTED;
   }
   auto* log = componentLog();
   if (log != nullptr) {
     log->info(label(), fmt::format("loadTprm: tunables loaded from {}", PATH.string()));
   }
-  return true;
+  return TprmIngest::LOADED;
 }
 
 std::uint8_t CelestialBody::doInit() noexcept {

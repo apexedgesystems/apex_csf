@@ -253,7 +253,8 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     comp->lock();
 
     // Load TPRM from inactive bank (C2 uploaded it there via FILE_TRANSFER).
-    if (!comp->loadTprm(fileSystem_.inactiveTprmDir())) {
+    if (comp->loadTprm(fileSystem_.inactiveTprmDir()) !=
+        system_core::system_component::TprmIngest::LOADED) {
       comp->unlock();
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
                        fmt::format("TPRM reload failed for component 0x{:06X}", targetUid));
@@ -373,7 +374,8 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     newComp->setInstanceIndex(oldComp->instanceIndex());
 
     // Initialize new component: loadTprm from active bank (same config).
-    if (!newComp->loadTprm(fileSystem_.tprmDir())) {
+    if (newComp->loadTprm(fileSystem_.tprmDir()) ==
+        system_core::system_component::TprmIngest::REJECTED) {
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
                        "RELOAD_LIBRARY: new component loadTprm failed");
       if (auto* sl = fileSystem_.swapLog()) {

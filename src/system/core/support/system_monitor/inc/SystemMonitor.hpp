@@ -120,7 +120,7 @@ public:
    * @pre Must call setInstanceIndex() first to assign UID.
    * @note NOT RT-safe.
    */
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+  system_component::TprmIngest loadTprm(const std::filesystem::path& tprmDir) noexcept override;
 
   /**
    * @brief Layout hash staged payloads must carry for this component.

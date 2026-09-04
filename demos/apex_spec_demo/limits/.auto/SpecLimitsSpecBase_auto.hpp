@@ -35,13 +35,16 @@ using TBase::TBase;
 
   [[nodiscard]] const SpecLimitsState& state() const noexcept { return state_.get(); }
 
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+  system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+    using system_core::system_component::TprmIngest;
     if (!this->isRegistered()) {
-      return false;
+      return TprmIngest::REJECTED;
     }
     const std::filesystem::path PATH = tprmDir / this->tprmFilename(this->fullUid());
+    const bool PRESENT = std::filesystem::exists(PATH);
     bool loaded = false;
-    if (std::filesystem::exists(PATH)) {
+    if (PRESENT) {
       loaded = paramBank_.load(
                    PATH, this->fullUid(),
                    [this](const SpecLimitsTunableParams& p) noexcept { return validateParams(p); },
@@ -63,7 +66,10 @@ using TBase::TBase;
     inspectParams_ = paramBank_.active();
     onParamsLoaded();
     this->setConfigured(true);
-    return loaded;
+    if (loaded) {
+      return TprmIngest::LOADED;
+    }
+    return PRESENT ? TprmIngest::REJECTED : TprmIngest::DEFAULTS;
   }
 
   /// Staged-payload verification enforces the spec hash for this

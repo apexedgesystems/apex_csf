@@ -178,7 +178,7 @@ public:
    * @return true on success.
    * @note NOT RT-safe: File I/O.
    */
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+  system_component::TprmIngest loadTprm(const std::filesystem::path& tprmDir) noexcept override;
 
   /**
    * @brief Send LOAD_ATS command to action engine via internal bus.

@@ -196,9 +196,11 @@ public:
   /* ----------------------------- TPRM ----------------------------- */
 
   /** @brief Load tunable parameters from TPRM directory. @note NOT RT-safe: file I/O. */
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+  system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+    using system_core::system_component::TprmIngest;
     if (!isRegistered()) {
-      return false;
+      return TprmIngest::REJECTED;
     }
 
     char filename[32];
@@ -212,17 +214,20 @@ public:
       if (auto* log = componentLog()) {
         log->info(label(), "No TPRM found, using defaults");
       }
-      return true;
+      return TprmIngest::DEFAULTS;
     }
 
     ConvFilterTunableParams loaded{};
     if (system_core::system_component::readTprmPayload(tprmPath, fullUid(), loaded) ==
         system_core::system_component::TprmPayloadCheck::OK) {
       tunableParams_.get() = loaded;
-      return true;
+      return TprmIngest::LOADED;
     }
-    return false;
+    return TprmIngest::REJECTED;
   }
+
+  /** @brief Defaults are a designed configuration for a stock (no-config) boot. */
+  [[nodiscard]] bool paramsOptional() const noexcept override { return true; }
 
 private:
   /* ----------------------------- GPU Memory Management ----------------------------- */

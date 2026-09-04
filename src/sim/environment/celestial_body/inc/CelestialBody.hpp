@@ -122,7 +122,11 @@ protected:
   /// struct defaults (or any prior `tunables().set(...)` call) stand;
   /// the override returns true so the framework continues. Returns
   /// false only on a real I/O error or a size-mismatch read.
-  [[nodiscard]] bool loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+  [[nodiscard]] system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+
+  /** @brief Defaults are a designed configuration (framework-contract optional). */
+  [[nodiscard]] bool paramsOptional() const noexcept override { return true; }
 
   /// Build the env bundle from tunables; load any file-backed models.
   /// Registers tunables + state + telemetry with the data registry.

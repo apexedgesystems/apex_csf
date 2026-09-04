@@ -47,9 +47,11 @@ void DataTransform::doReset() noexcept {
 
 /* ----------------------------- TPRM Loading ----------------------------- */
 
-bool DataTransform::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+system_component::TprmIngest
+DataTransform::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+  using system_component::TprmIngest;
   if (!isRegistered()) {
-    return false;
+    return TprmIngest::REJECTED;
   }
 
   char filename[32];
@@ -64,7 +66,7 @@ bool DataTransform::loadTprm(const std::filesystem::path& tprmDir) noexcept {
       log->info(label(), "No TPRM found, no fault campaign armed");
     }
     setConfigured(true);
-    return true;
+    return TprmIngest::DEFAULTS;
   }
 
   // Load the fault campaign TPRM
@@ -102,7 +104,7 @@ bool DataTransform::loadTprm(const std::filesystem::path& tprmDir) noexcept {
       }
     }
 
-    return true;
+    return TprmIngest::LOADED;
   }
 
   // Rejected payload: run unarmed on defaults, fault code from the check.
@@ -114,7 +116,7 @@ bool DataTransform::loadTprm(const std::filesystem::path& tprmDir) noexcept {
                            TPRM_PATH.string()));
   }
   setConfigured(true);
-  return false;
+  return TprmIngest::REJECTED;
 }
 
 /* ----------------------------- ATS Generation ----------------------------- */

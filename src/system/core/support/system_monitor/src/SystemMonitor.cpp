@@ -83,9 +83,11 @@ SystemMonitor::~SystemMonitor() {
 
 /* ----------------------------- TPRM Loading ----------------------------- */
 
-bool SystemMonitor::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+system_component::TprmIngest
+SystemMonitor::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+  using system_component::TprmIngest;
   if (!isRegistered()) {
-    return false;
+    return TprmIngest::REJECTED;
   }
 
   char filename[32];
@@ -99,7 +101,7 @@ bool SystemMonitor::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     if (log != nullptr) {
       log->info(label(), "No TPRM found, using defaults");
     }
-    return true;
+    return TprmIngest::DEFAULTS;
   }
 
   SystemMonitorTunableParams loaded{};
@@ -112,7 +114,7 @@ bool SystemMonitor::loadTprm(const std::filesystem::path& tprmDir) noexcept {
                  fmt::format("TPRM rejected ({}): {}", system_component::toString(CHECK),
                              tprmPath.string()));
     }
-    return false;
+    return TprmIngest::REJECTED;
   }
 
   // Cache raw TPRM for INSPECT readback
@@ -162,7 +164,7 @@ bool SystemMonitor::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     log->info(label(), fmt::format("TPRM loaded from {}", tprmPath.string()));
   }
 
-  return true;
+  return TprmIngest::LOADED;
 }
 
 /* ----------------------------- Lifecycle ----------------------------- */

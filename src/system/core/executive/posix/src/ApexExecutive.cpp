@@ -185,7 +185,7 @@ std::uint8_t ApexExecutive::doInit() noexcept {
     // There is deliberately no override: a run on discarded config gives
     // a false sense of functionality no banner can repair. To run on
     // defaults on purpose, pack the master without the executive entry.
-    if (!loadTprm(fileSystem_.tprmDir())) {
+    if (loadTprm(fileSystem_.tprmDir()) == system_core::system_component::TprmIngest::REJECTED) {
       sysLog_->error(
           label(), static_cast<std::uint8_t>(ERROR_TPRM_REJECTED),
           fmt::format("Executive TPRM rejected; compiled defaults would run a different "
@@ -417,10 +417,15 @@ bool ApexExecutive::registerComponent(system_core::system_component::SystemCompo
   comp->initComponentLog(logDir);
 
   // Step 4: Load TPRM configuration
-  if (!comp->loadTprm(fileSystem_.tprmDir())) {
-    sysLog_->warning(
-        label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
-        fmt::format("loadTprm failed for {} (0x{:06X})", comp->label(), comp->fullUid()));
+  {
+    using system_core::system_component::TprmIngest;
+    const TprmIngest INGEST = comp->loadTprm(fileSystem_.tprmDir());
+    if (INGEST == TprmIngest::REJECTED ||
+        (INGEST == TprmIngest::DEFAULTS && !comp->paramsOptional())) {
+      sysLog_->warning(
+          label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
+          fmt::format("loadTprm failed for {} (0x{:06X})", comp->label(), comp->fullUid()));
+    }
   }
 
   // Step 4.5: Provision transport for HW_MODEL components
@@ -528,7 +533,7 @@ RunResult ApexExecutive::run() noexcept {
   // declared state -- a stock boot idles -- so the missing table logs at
   // INFO. With a config present, a missing/unloadable table stays an
   // error: the application declared tasks it did not get.
-  if (!scheduler_.loadTprm(tprmDir)) {
+  if (scheduler_.loadTprm(tprmDir) != system_core::system_component::TprmIngest::LOADED) {
     if (configPath_.empty()) {
       sysLog_->info(label(), "No schedule configured; scheduler idle (0 tasks)");
     } else {
@@ -566,7 +571,7 @@ RunResult ApexExecutive::run() noexcept {
   interface_->initInterfaceLog(fileSystem_.coreLogDir());
 
   // Load interface TPRM (component self-loads using its componentId)
-  if (!interface_->loadTprm(tprmDir)) {
+  if (interface_->loadTprm(tprmDir) == system_core::system_component::TprmIngest::REJECTED) {
     sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_MODULE_INIT_FAIL),
                    "Interface loadTprm FAILED");
   } else {
@@ -666,7 +671,8 @@ RunResult ApexExecutive::run() noexcept {
 
   // Load action engine TPRM (watchpoints, groups, sequences, notifications, actions)
   actionComp_.initComponentLog(fileSystem_.logDir());
-  if (!actionComp_.loadTprm(fileSystem_.tprmDir())) {
+  if (actionComp_.loadTprm(fileSystem_.tprmDir()) ==
+      system_core::system_component::TprmIngest::REJECTED) {
     sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
                      fmt::format("loadTprm failed for {} (0x{:06X})", actionComp_.label(),
                                  actionComp_.fullUid()));
@@ -1135,7 +1141,9 @@ bool ApexExecutive::unpackMasterTprm() noexcept {
   return true;
 }
 
-bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+system_core::system_component::TprmIngest
+ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+  using system_core::system_component::TprmIngest;
   // Generate filename from executive fullUid (componentId << 8 | instance 0 -> "000000.tprm")
   // Note: Executive is always instance 0 and loads TPRM before registration
   const std::uint32_t FULL_UID = static_cast<std::uint32_t>(componentId()) << 8;
@@ -1145,7 +1153,7 @@ bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   if (!std::filesystem::exists(tprmPath)) {
     sysLog_->info(label(),
                   fmt::format("No executive TPRM found at {}, using defaults", tprmPath.string()));
-    return true; // Not an error - use defaults
+    return TprmIngest::DEFAULTS; // Not an error - use defaults
   }
 
   // Read and verify the v3 payload; a reject leaves the compiled
@@ -1159,13 +1167,13 @@ bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     sysLog_->error(
         label(), sc::toFaultCode(CHECK),
         fmt::format("Executive TPRM rejected ({}): {}", sc::toString(CHECK), tprmPath.string()));
-    return false;
+    return TprmIngest::REJECTED;
   }
   if (body.size() < sizeof(ExecutiveTunableParams)) {
     sysLog_->error(label(), sc::toFaultCode(sc::TprmPayloadCheck::BODY_SIZE_MISMATCH),
                    fmt::format("Executive TPRM body {} bytes, need at least {}", body.size(),
                                sizeof(ExecutiveTunableParams)));
-    return false;
+    return TprmIngest::REJECTED;
   }
   ExecutiveTunableParams params{};
   std::memcpy(&params, body.data(), sizeof(params));
@@ -1200,7 +1208,7 @@ bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   // If thread config not present, defaults remain (all OTHER/0/[all])
 
   sysLog_->info(label(), fmt::format("Loaded executive TPRM from: {}", tprmPath.string()));
-  return true;
+  return TprmIngest::LOADED;
 }
 
 void ApexExecutive::applyCliOverrides() noexcept {

@@ -77,6 +77,26 @@ struct DataDescriptor {
   std::size_t size{0};           ///< Size in bytes.
 };
 
+/* ----------------------------- TprmIngest ----------------------------- */
+
+/**
+ * @enum TprmIngest
+ * @brief Outcome of a component's boot-time TPRM ingest.
+ *
+ * loadTprm() reports one of four honest states; the executive's
+ * ingest policy maps them to continue / warn / fail. The vocabulary
+ * deliberately separates "no file, running designed defaults" from
+ * "file present and refused" — the latter is fatal under every
+ * policy, the former only under STRICT for components whose params
+ * are not declared optional.
+ */
+enum class TprmIngest : std::uint8_t {
+  NONE = 0,     ///< Component has no TPRM surface (nothing to ingest).
+  LOADED = 1,   ///< Payload ingested, verified, and applied.
+  DEFAULTS = 2, ///< No payload file; component runs built-in defaults.
+  REJECTED = 3, ///< Payload present but refused (see component log for the check).
+};
+
 /* ----------------------------- SystemComponentBase ----------------------------- */
 
 /**
@@ -234,13 +254,37 @@ public:
    * The directory argument (containing extracted TPRM files) is unnamed in the
    * default override.
    *
-   * @return true on success, false if load failed (component uses defaults).
+   * The return value states the ingest outcome honestly so the
+   * executive can apply its ingest policy: a component must never
+   * report LOADED for a file it did not ingest, and a missing file is
+   * DEFAULTS, never an error masked as success. REJECTED names a
+   * present-but-refused payload (the TprmPayloadCheck vocabulary);
+   * the executive treats it as fatal under every policy.
+   *
+   * @return The ingest outcome for this component.
    * @note Uses componentId() to generate filename: "{componentId:06x}.tprm".
    * @note Default implementation does nothing (component has no TPRM).
    * @note Override in derived class to load component-specific TPRM.
    * @note NOT RT-safe: File I/O.
    */
-  virtual bool loadTprm(const std::filesystem::path& /*tprmDir*/) noexcept { return true; }
+  virtual TprmIngest loadTprm(const std::filesystem::path& /*tprmDir*/) noexcept {
+    return TprmIngest::NONE;
+  }
+
+  /**
+   * @brief Whether this component may legitimately run on built-in
+   *        defaults when no TPRM file is provided.
+   *
+   * STRICT ingest fails a component that registers TUNABLE_PARAM data
+   * but reports DEFAULTS; overriding this to true declares the
+   * defaults are a designed configuration (e.g. an optional onboard
+   * sequence bank), not a forgotten file. REJECTED payloads are fatal
+   * regardless of this flag.
+   *
+   * @return true when missing-TPRM defaults are an accepted state.
+   * @note RT-safe: returns a constant.
+   */
+  [[nodiscard]] virtual bool paramsOptional() const noexcept { return false; }
 
   /**
    * @brief Post-init hook called after all components are registered and the

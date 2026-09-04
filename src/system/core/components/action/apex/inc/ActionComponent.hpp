@@ -187,7 +187,15 @@ public:
    * @return true if TPRM loaded successfully, false if not found or error.
    * @note NOT RT-safe: File I/O.
    */
-  [[nodiscard]] bool loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+  [[nodiscard]] system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+
+  /**
+   * @brief The engine's TPRM (onboard sequence/watchpoint tables) is
+   *        optional by design: absence means an empty table set, and
+   *        sequences arrive at runtime over the wire.
+   */
+  [[nodiscard]] bool paramsOptional() const noexcept override { return true; }
 
   /* ----------------------------- RTS/ATS Loading ----------------------------- */
 

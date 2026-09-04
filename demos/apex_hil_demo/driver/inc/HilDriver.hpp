@@ -340,9 +340,11 @@ public:
 
   /* ----------------------------- TPRM ----------------------------- */
 
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+  system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+    using system_core::system_component::TprmIngest;
     if (!isRegistered()) {
-      return false;
+      return TprmIngest::REJECTED;
     }
 
     char filename[32];
@@ -350,7 +352,7 @@ public:
     std::filesystem::path tprmPath = tprmDir / filename;
 
     if (!std::filesystem::exists(tprmPath)) {
-      return false;
+      return TprmIngest::DEFAULTS;
     }
 
     // TPRM for driver contains device path as first 128 bytes (null-terminated)
@@ -367,7 +369,7 @@ public:
         log->error(label(), sc::toFaultCode(CHECK),
                    fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), tprmPath.string()));
       }
-      return false;
+      return TprmIngest::REJECTED;
     }
     // Only override devicePath if TPRM provides a non-empty path.
     // Empty path means the executive wires the device dynamically (PTY).
@@ -380,7 +382,7 @@ public:
       log->info(label(),
                 fmt::format("TPRM devicePath: {} (active: {})", loaded.devicePath, devicePath_));
     }
-    return true;
+    return TprmIngest::LOADED;
   }
 
   /* ----------------------------- Data Interface ----------------------------- */

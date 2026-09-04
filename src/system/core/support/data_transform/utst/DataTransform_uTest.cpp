@@ -448,7 +448,7 @@ TEST(DataTransform, LoadTprmMissingFileIsOptional) {
 
   system_core::support::DataTransform dt;
   dt.setInstanceIndex(0);
-  EXPECT_TRUE(dt.loadTprm(DIR));
+  EXPECT_EQ(dt.loadTprm(DIR), system_core::system_component::TprmIngest::DEFAULTS);
   EXPECT_TRUE(dt.isConfigured());
 
   std::filesystem::remove_all(DIR);

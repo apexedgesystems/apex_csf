@@ -176,9 +176,11 @@ public:
 
   /* ----------------------------- TPRM ----------------------------- */
 
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+  system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+    using system_core::system_component::TprmIngest;
     if (!isRegistered()) {
-      return false;
+      return TprmIngest::REJECTED;
     }
 
     char filename[32];
@@ -186,7 +188,7 @@ public:
     const std::filesystem::path TPRM_PATH = tprmDir / filename;
 
     if (!std::filesystem::exists(TPRM_PATH)) {
-      return false;
+      return TprmIngest::DEFAULTS;
     }
 
     ComparatorTunableParams loaded{};
@@ -198,10 +200,10 @@ public:
         log->error(label(), sc::toFaultCode(CHECK),
                    fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), TPRM_PATH.string()));
       }
-      return false;
+      return TprmIngest::REJECTED;
     }
     tunableParams_.get() = loaded;
-    return true;
+    return TprmIngest::LOADED;
   }
 
   /* ----------------------------- Accessors ----------------------------- */

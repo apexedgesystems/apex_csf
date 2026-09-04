@@ -698,7 +698,9 @@ void SchedulerBase::clearTasks() noexcept {
 
 /* ----------------------------- loadTprm ----------------------------- */
 
-bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+system_component::TprmIngest
+SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+  using system_component::TprmIngest;
   // Build tprm path from fullUid (componentId << 8 | instance 0)
   // Note: Scheduler is always instance 0 and may load TPRM before registration
   const std::uint32_t FULL_UID = static_cast<std::uint32_t>(componentId()) << 8;
@@ -708,13 +710,13 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   // Check resolver is set
   if (componentResolver_ == nullptr) {
     setLastError("Component resolver not set");
-    return false;
+    return TprmIngest::REJECTED;
   }
 
   // Check file exists
   if (!std::filesystem::exists(tprmPath)) {
     setLastError("Scheduler tprm not found");
-    return false;
+    return TprmIngest::DEFAULTS;
   }
 
   // Read and verify the v3 payload; the body is the schedule image.
@@ -731,14 +733,14 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
                    fmt::format("Scheduler tprm rejected ({}): {}",
                                system_component::toString(CHECK), tprmPath.string()));
       }
-      return false;
+      return TprmIngest::REJECTED;
     }
   }
 
   // Parse header
   if (tprmData.size() < sizeof(SchedulerTprmHeader)) {
     setLastError("Scheduler tprm too small for header");
-    return false;
+    return TprmIngest::REJECTED;
   }
 
   const auto* header = reinterpret_cast<const SchedulerTprmHeader*>(tprmData.data());
@@ -747,7 +749,7 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   const std::size_t EXPECTED_SIZE = schedulerTprmSize(header->numTasks);
   if (tprmData.size() != EXPECTED_SIZE) {
     setLastError("Scheduler tprm size mismatch");
-    return false;
+    return TprmIngest::REJECTED;
   }
 
   // Backup current schedule for restoration on failure.
@@ -840,7 +842,7 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
                                "previous schedule restored",
                                skippedComponents + skippedTasks, header->numTasks));
     }
-    return false;
+    return TprmIngest::REJECTED;
   }
 
   // Log skip summary if any tasks were skipped
@@ -887,7 +889,7 @@ bool SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   }
 
   setConfigured(true);
-  return true;
+  return TprmIngest::LOADED;
 }
 
 /* ----------------------------- exportSchedule ----------------------------- */

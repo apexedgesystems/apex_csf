@@ -285,17 +285,20 @@ public:
    * @return true on success, false if file not found or parse error.
    * @note NOT RT-safe: file I/O.
    */
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+  system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+    using system_core::system_component::TprmIngest;
     if (!isRegistered()) {
-      return false;
+      return TprmIngest::REJECTED;
     }
 
     char filename[32];
     std::snprintf(filename, sizeof(filename), "%06x.tprm", fullUid());
     const std::filesystem::path TPRM_PATH = tprmDir / filename;
 
+    const bool PRESENT = std::filesystem::exists(TPRM_PATH);
     bool loaded = false;
-    if (std::filesystem::exists(TPRM_PATH)) {
+    if (PRESENT) {
       // The spec-generated expectation gates the payload's layout hash.
       loaded = paramBank_.load(TPRM_PATH, fullUid(), validateParams,
                                &WAVE_GEN_TUNABLE_PARAMS_LAYOUT_HASH) == Status::SUCCESS;
@@ -328,7 +331,10 @@ public:
                                        p.frequency, p.amplitude));
       }
     }
-    return loaded;
+    if (loaded) {
+      return TprmIngest::LOADED;
+    }
+    return PRESENT ? TprmIngest::REJECTED : TprmIngest::DEFAULTS;
   }
 
 protected:

@@ -370,7 +370,8 @@ private:
    * @param tprmDir Directory containing extracted TPRM files.
    * @return true on success, false if load failed.
    */
-  [[nodiscard]] bool loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+  [[nodiscard]] system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override;
 
   /**
    * @brief Apply CLI argument overrides to TPRM-loaded configuration.

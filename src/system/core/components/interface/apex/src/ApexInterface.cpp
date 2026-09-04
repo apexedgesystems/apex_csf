@@ -84,7 +84,10 @@ Status ApexInterface::configure(const ApexInterfaceTunables& t) noexcept {
   return Status::SUCCESS;
 }
 
-bool ApexInterface::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+system_component::TprmIngest
+ApexInterface::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+  using system_component::TprmIngest;
+  TprmIngest result = TprmIngest::LOADED;
   // Generate filename from fullUid (componentId << 8 | instance 0)
   // Note: Interface is always instance 0 and may load TPRM before registration
   const std::uint32_t FULL_UID = static_cast<std::uint32_t>(componentId()) << 8;
@@ -93,6 +96,7 @@ bool ApexInterface::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   ApexInterfaceTunables tunables{};
 
   if (!std::filesystem::exists(tprmPath)) {
+    result = TprmIngest::DEFAULTS;
     // No TPRM file - use defaults (normal for apps that don't ship an interface TPRM)
     auto* log = componentLog();
     if (log != nullptr) {
@@ -104,6 +108,7 @@ bool ApexInterface::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     using system_component::TprmPayloadCheck;
     const TprmPayloadCheck CHECK = system_component::readTprmPayload(tprmPath, FULL_UID, tunables);
     if (CHECK != TprmPayloadCheck::OK) {
+      result = TprmIngest::REJECTED;
       tunables = ApexInterfaceTunables{};
       auto* log = componentLog();
       if (log != nullptr) {
@@ -117,7 +122,7 @@ bool ApexInterface::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   // Configure sockets with tunables (defaults or loaded).
   const Status ST = configure(tunables);
   if (ST != Status::SUCCESS) {
-    return false;
+    return TprmIngest::REJECTED;
   }
 
   // Register tunables for INSPECT readback
@@ -125,7 +130,7 @@ bool ApexInterface::loadTprm(const std::filesystem::path& tprmDir) noexcept {
                sizeof(ApexInterfaceTunables));
 
   setConfigured(true);
-  return true;
+  return result;
 }
 
 /* ----------------------------- Frame Processing ----------------------------- */
