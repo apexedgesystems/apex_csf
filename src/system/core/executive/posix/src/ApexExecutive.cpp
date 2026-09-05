@@ -170,9 +170,19 @@ std::uint8_t ApexExecutive::doInit() noexcept {
   // Configure filesystem cleanup for destructor-based RAII cleanup
   fileSystem_.configureShutdownCleanup(!shutdownConfig_.skipCleanup, archivePath_);
 
-  // Unpack master TPRM, load executive TPRM, apply CLI overrides
+  // Unpack master TPRM, load executive TPRM, apply CLI overrides.
+  // A fallback boot (marker present: the prior boot flipped banks after
+  // a failed ingest) must NOT re-extract the master -- the master is
+  // what failed; the flipped bank's staged payloads are the config.
+  const bool FALLBACK_BOOT = std::filesystem::exists(ingestFallbackMarker());
+  if (FALLBACK_BOOT) {
+    sysLog_->error(
+        label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+        fmt::format("Fallback boot: skipping master extraction, using staged bank {}",
+                    fileSystem_.activeBank() == system_core::filesystem::Bank::A ? "A" : "B"));
+  }
   if (!configPath_.empty()) {
-    if (!unpackMasterTprm()) {
+    if (!FALLBACK_BOOT && !unpackMasterTprm()) {
       return status(); // Error already set and logged
     }
 
@@ -917,8 +927,26 @@ RunResult ApexExecutive::run() noexcept {
   // every offender is on the list -- judge them together and refuse to
   // run a misconfigured vehicle rather than fail on the first.
   if (!ingestPolicyHolds()) {
+    if (attemptIngestFallback()) {
+      // Unreachable: a successful fallback exec-replaces this process.
+      return RunResult::ERROR_INIT;
+    }
     setStatus(static_cast<std::uint8_t>(ERROR_TPRM_INGEST));
     return RunResult::ERROR_INIT;
+  }
+  {
+    // Ingest held; a surviving marker means this IS the fallback boot.
+    // Impossible to miss: ERROR-level, and the flag stays for status.
+    std::error_code fbEc;
+    if (std::filesystem::exists(ingestFallbackMarker(), fbEc)) {
+      bootedOnFallback_ = true;
+      std::filesystem::remove(ingestFallbackMarker(), fbEc);
+      sysLog_->error(
+          label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+          fmt::format("RUNNING ON FALLBACK BANK {}: the packed master failed ingest; "
+                      "repair it and reboot to restore the primary configuration",
+                      fileSystem_.activeBank() == system_core::filesystem::Bank::A ? "A" : "B"));
+    }
   }
 
   // Allocate queues for interface itself (self-command routing for deterministic timing).
@@ -1259,6 +1287,73 @@ void ApexExecutive::recordIngestOutcome(system_core::system_component::SystemCom
 
   // REJECTED: a present-but-refused payload is never intentional.
   ingestFailures_.push_back({comp->fullUid(), comp->label(), ingest, true});
+}
+
+std::filesystem::path ApexExecutive::ingestFallbackMarker() const noexcept {
+  return fileSystem_.rootDir() / ".ingest_fallback";
+}
+
+bool ApexExecutive::attemptIngestFallback() noexcept {
+  namespace fs = std::filesystem;
+  const fs::path MARKER = ingestFallbackMarker();
+  std::error_code ec;
+  if (fs::exists(MARKER, ec)) {
+    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                   "Fallback bank also failed ingest; no further banks to try");
+    return false;
+  }
+
+  const auto OTHER = fileSystem_.activeBank() == system_core::filesystem::Bank::A
+                         ? system_core::filesystem::Bank::B
+                         : system_core::filesystem::Bank::A;
+  const fs::path OTHER_TPRM = fileSystem_.bankDir(OTHER) / "tprm";
+  bool staged = false;
+  if (fs::is_directory(OTHER_TPRM, ec)) {
+    for (const auto& ENTRY : fs::directory_iterator(OTHER_TPRM, ec)) {
+      if (ENTRY.path().extension() == ".tprm") {
+        staged = true;
+        break;
+      }
+    }
+  }
+  if (!staged) {
+    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                   fmt::format("No fallback: bank {} has no staged payloads",
+                               OTHER == system_core::filesystem::Bank::A ? "A" : "B"));
+    return false;
+  }
+
+  {
+    std::ofstream marker(MARKER);
+    marker << (fileSystem_.activeBank() == system_core::filesystem::Bank::A ? "from_a\n"
+                                                                            : "from_b\n");
+  }
+  if (!fileSystem_.flipActiveBank()) {
+    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                   "Bank flip failed; cannot fall back");
+    fs::remove(MARKER, ec);
+    return false;
+  }
+
+  sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                 fmt::format("TPRM ingest failed; flipping to staged bank {} and restarting",
+                             OTHER == system_core::filesystem::Bank::A ? "A" : "B"));
+  sysLog_->flush();
+
+  const std::string EXEC_STR = execPath_.string();
+  std::vector<const char*> argv;
+  argv.push_back(EXEC_STR.c_str());
+  for (const auto& arg : args_) {
+    argv.push_back(arg.c_str());
+  }
+  argv.push_back(nullptr);
+  execv(EXEC_STR.c_str(), const_cast<char* const*>(argv.data()));
+
+  const int EXEC_ERRNO = errno;
+  sysLog_->error(
+      label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+      fmt::format("Fallback execv failed (errno={}): {}", EXEC_ERRNO, std::strerror(EXEC_ERRNO)));
+  return false;
 }
 
 bool ApexExecutive::ingestPolicyHolds() noexcept {

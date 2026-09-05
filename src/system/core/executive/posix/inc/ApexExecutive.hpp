@@ -451,6 +451,23 @@ private:
   IngestPolicy ingestPolicy_{IngestPolicy::STRICT};
   std::vector<IngestFailure> ingestFailures_{};
 
+  /**
+   * @brief One bounded A/B recovery when the active bank fails ingest.
+   *
+   * If no fallback was attempted yet and the other bank has staged
+   * payloads, writes the attempt marker, flips active_bank, and
+   * re-execs the executive (argv preserved, --fs-root included) so
+   * the vehicle boots the known-good bank. Returns false when the
+   * flip is impossible: fallback already attempted, nothing staged,
+   * or exec failed.
+   */
+  [[nodiscard]] bool attemptIngestFallback() noexcept;
+
+  /// Marker recording that this boot chain already flipped banks.
+  [[nodiscard]] std::filesystem::path ingestFallbackMarker() const noexcept;
+
+  bool bootedOnFallback_{false}; ///< This boot runs the fallback bank.
+
   // General executive information
   std::filesystem::path execPath_{};
   std::vector<std::string> args_{};

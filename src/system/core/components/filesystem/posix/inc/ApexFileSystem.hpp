@@ -134,6 +134,9 @@ public:
   /// Current active bank.
   [[nodiscard]] Bank activeBank() const noexcept { return activeBank_; }
 
+  /// Filesystem root (parent of the bank directories).
+  [[nodiscard]] std::filesystem::path rootDir() const noexcept { return bankADir_.parent_path(); }
+
   /**
    * @brief Swap a single file between active and inactive banks.
    * @param subdir Subdirectory within bank (LIB_DIR, TPRM_DIR, or BIN_DIR).
