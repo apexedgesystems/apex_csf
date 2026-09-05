@@ -186,3 +186,9 @@ Run integration dtest (requires horizon-generated htile fixture):
   of the environment subsystem.
 - horizon `tools/world_data/` -- canonical home for converters,
   procedural generators, and sample world specs.
+
+## File suffix
+
+Terrain artifacts ship as `.htile` (HTILE_FILE_SUFFIX). The header
+magic is the authoritative identity; the suffix is the config-facing
+convention.

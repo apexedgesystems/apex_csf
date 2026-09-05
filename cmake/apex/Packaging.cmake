@@ -56,14 +56,21 @@ include_guard(GLOBAL)
 #
 # A <ref> is either an apex_add_tprm product ("<App>/<master.tprm>",
 # generated at build time) or a repo-relative file path.
+#
+# DATA lists repo-relative world-data files (generated, gitignored);
+# each stages into the package at its own repo-relative path, so the
+# config-declared string resolves identically under the deployment
+# fs-root and the dev tree. Files absent at install time are skipped
+# (OPTIONAL): fidelities that need them fail loudly at boot instead.
 # ------------------------------------------------------------------------------
 function (apex_add_deployment)
-  cmake_parse_arguments(D "" "NAME;EXEC;TPRM;TPRM_FALLBACK" "" ${ARGN})
+  cmake_parse_arguments(D "" "NAME;EXEC;TPRM;TPRM_FALLBACK" "DATA" ${ARGN})
   apex_require(D_NAME D_EXEC)
   set_property(GLOBAL APPEND PROPERTY APEX_DEPLOYMENTS "${D_NAME}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_EXEC "${D_EXEC}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_TPRM "${D_TPRM}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_TPRM_FALLBACK "${D_TPRM_FALLBACK}")
+  set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_DATA "${D_DATA}")
 endfunction ()
 
 # Resolve a TPRM <ref> to (path, dependency target). Generated products win;
@@ -269,6 +276,19 @@ function (apex_finalize_packages)
       )
       list(APPEND _tprm_deps ${_fb_dep})
     endif ()
+
+    # World-data staging: each file lands at its repo-relative path under
+    # the package root (the deployment dir is the fs-root at run time).
+    get_property(_data GLOBAL PROPERTY APEX_DEPLOY_${_name}_DATA)
+    foreach (_df IN LISTS _data)
+      get_filename_component(_df_dir "${_df}" DIRECTORY)
+      install(
+        FILES "${CMAKE_SOURCE_DIR}/${_df}"
+        DESTINATION "${_df_dir}"
+        COMPONENT ${_name}
+        OPTIONAL
+      )
+    endforeach ()
 
     set(_pkgroot "${CMAKE_BINARY_DIR}/packages")
     add_custom_target(
