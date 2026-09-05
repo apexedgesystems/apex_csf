@@ -51,7 +51,30 @@ ps -T -o cls,rtprio,comm -p <pid> | grep -E 'exec_clock|exec_tasks' # FF 90 / FF
 The heartbeat (`<fs-root>/heartbeat.csv`) should show clock/task
 parity within a few ticks.
 
-Runs until Ctrl+C (foreground) or `docker rm -f`. Logs land under the filesystem root:
+Runs until Ctrl+C (foreground) or `docker rm -f`.
+
+RT mode note: the config defaults to HARD_PERIOD_COMPLETE — one
+missed task period is a deliberate fatal (the flight-code stance,
+with the violator named in the shutdown log). For long showcase or
+pairing sessions on a shared host, boot resilient instead:
+
+```bash
+docker compose run --rm cuda-rt \
+  ./build/hosted-x86_64-debug/packages/ApexAircraftAtmoDemo/run.sh \
+  --rt-mode lag-tolerant --rt-max-lag 200
+```
+
+## Mode set-pieces (ACFT/2)
+
+The classical-mode demonstrations run as action-engine sequences
+(catalog-scanned at boot: `Sequence catalog: 6 entries`). Fire one
+with a single command to the action engine (0x000500, opcode 0x0510,
+u16 id): 1 Dutch roll, 2 short period, 3 spiral, 4 phugoid,
+10 volatility showcase, 32 boundary restore / panic. Each sequence
+drops the mode's loops, excites, dwells for its trace window, and
+restores — bracketed by SET_ORCH_STATE so the frame's orch_state
+byte (offset 202) narrates the whole arc. Producer-side measurement
+comes from the MODETRACE lines in Aircraft_0.log. Logs land under the filesystem root:
 `logs/models/Aircraft_0.log` has the 1 Hz flight line (pose, airdata,
 forces, fuel, gusts); `logs/models/AircraftController_0.log` the
 reference-tracking line; `logs/support/ShmRingBridge_0.log` the

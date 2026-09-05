@@ -189,8 +189,18 @@ struct AircraftTelemetry {
   // --- Flags + small fields (8 bytes) ---
   std::uint8_t mode{0};         ///< 0 = open-loop pattern; 1 = closed-loop
   std::uint8_t engine_state{0}; ///< N1/N2 spool state (populated when wired)
-  std::uint16_t reserved0{0};
-  std::uint32_t reserved1{0};
+  /// Orchestrator state (SET_ORCH_STATE mirror): 0 idle, 1..4 the
+  /// running set-piece (= its sequence id), 0x10|reason while a
+  /// boundary recovery runs (reason: 1 speed, 2 bank, 3 altitude).
+  std::uint8_t orch_state{0};
+  /// Rolling count of boundary-triggered recoveries (edge detection
+  /// across dropped frames).
+  std::uint8_t recovery_count{0};
+  /// Live autopilot loop mask (LoopBit; the mask the controller runs,
+  /// stamped every tick) — the panel's per-loop switch truth, so all
+  /// display state reads from the stream.
+  std::uint8_t loop_mask{0x3F};
+  std::uint8_t reserved1[3]{};
 
   // --- Body angular rates (24 bytes) ---
   double p_rad_s{0.0}; ///< body roll rate

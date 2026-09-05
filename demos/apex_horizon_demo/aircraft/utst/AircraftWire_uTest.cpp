@@ -1,6 +1,6 @@
 /**
  * @file AircraftWire_uTest.cpp
- * @brief Wire-layout pin for the ACFT/1 frame + mode-excitation coverage.
+ * @brief Wire-layout pin for the ACFT frame + mode-excitation coverage.
  *
  * The 256-byte AircraftTelemetry IS the wire contract: the consumer
  * side byte-diffs its contract header against this layout at pairing.
@@ -34,9 +34,10 @@ using sim::environment::celestial_body::CelestialBodyTunables;
 
 /* ----------------------------- Wire layout ----------------------------- */
 
-/** @test The ACFT/1 wire layout is frozen: 256 bytes, every offset pinned. */
+/** @test The ACFT frame layout is frozen (unchanged since v1): 256 bytes,
+ *  every offset pinned. ACFT/2 revs the command surface, not the frame. */
 TEST(AircraftWire, FrameLayoutIsFrozen) {
-  static_assert(sizeof(AircraftTelemetry) == 256, "ACFT/1 frame is exactly 256 bytes");
+  static_assert(sizeof(AircraftTelemetry) == 256, "ACFT frame is exactly 256 bytes");
 
   EXPECT_EQ(offsetof(AircraftTelemetry, timestamp_ns), 0u);
   EXPECT_EQ(offsetof(AircraftTelemetry, tick), 8u);
@@ -65,8 +66,10 @@ TEST(AircraftWire, FrameLayoutIsFrozen) {
   EXPECT_EQ(offsetof(AircraftTelemetry, altitude_AGL_m), 192u);
   EXPECT_EQ(offsetof(AircraftTelemetry, mode), 200u);
   EXPECT_EQ(offsetof(AircraftTelemetry, engine_state), 201u);
-  EXPECT_EQ(offsetof(AircraftTelemetry, reserved0), 202u);
-  EXPECT_EQ(offsetof(AircraftTelemetry, reserved1), 204u);
+  EXPECT_EQ(offsetof(AircraftTelemetry, orch_state), 202u);
+  EXPECT_EQ(offsetof(AircraftTelemetry, recovery_count), 203u);
+  EXPECT_EQ(offsetof(AircraftTelemetry, loop_mask), 204u);
+  EXPECT_EQ(offsetof(AircraftTelemetry, reserved1), 205u);
   EXPECT_EQ(offsetof(AircraftTelemetry, p_rad_s), 208u);
   EXPECT_EQ(offsetof(AircraftTelemetry, q_rad_s), 216u);
   EXPECT_EQ(offsetof(AircraftTelemetry, r_rad_s), 224u);
@@ -92,6 +95,19 @@ CelestialBodyTunables analyticEarth() {
 
 /** @test A rudder doublet plays +/- over its window on the wire and
  *  self-clears; the surfaces return to the commanded (zero) baseline. */
+TEST(AircraftWire, CommandSnapshotLayoutIsFrozen) {
+  using appsim::aircraft::AircraftCommandSnapshot;
+  static_assert(sizeof(AircraftCommandSnapshot) == 16, "snapshot is 16 bytes on the wire");
+  static_assert(offsetof(AircraftCommandSnapshot, turbulence_enabled) == 0);
+  static_assert(offsetof(AircraftCommandSnapshot, gust_alleviation_enabled) == 1);
+  // ACFT/2: the two readback fields land in former reserved bytes --
+  // offsets are wire contract, frozen with the consumer.
+  static_assert(offsetof(AircraftCommandSnapshot, loop_enable_mask) == 2);
+  static_assert(offsetof(AircraftCommandSnapshot, active_excite_mode) == 3);
+  static_assert(offsetof(AircraftCommandSnapshot, cmd_count) == 8);
+  SUCCEED();
+}
+
 TEST(AircraftExcite, RudderDoubletPlaysAndClears) {
   CelestialBody earth;
   earth.tunables().get() = analyticEarth();

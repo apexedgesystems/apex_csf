@@ -9,7 +9,7 @@
  *     layered USSA76 atmosphere), configured via TPRM tunables.
  *   - The Aircraft flying full 6DOF at 50 Hz.
  *   - The AircraftController's six-loop autopilot at 25 Hz.
- *   - One ShmRingBridge carrying the ACFT/1 link on /horizon_aircraft:
+ *   - One ShmRingBridge carrying the ACFT/2 link on /horizon_aircraft:
  *     256-byte frames out at 50 Hz, APROTO commands drained from the
  *     reverse ring. The bridge idles if no consumer attaches; the sim
  *     runs unchanged.

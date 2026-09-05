@@ -188,6 +188,20 @@ public:
     // feedback (washed out) to suppress Dutch roll.
     const double yaw_rate_rad_s = tlm.r_rad_s;
 
+    // ---- Adopt the commanded loop mask (SET_LOOP_ENABLE) ----
+    // Aircraft owns the command state (single command path, same as
+    // the gust-alleviation gate). Adoption is edge-triggered: a NEW
+    // command takes effect on the next controller tick, while direct
+    // setLoopEnableMask() callers (unit suite) keep control between
+    // commands -- the mask is not continuously re-asserted.
+    {
+      const std::uint8_t CMD_MASK = aircraft_->commandedLoopMask();
+      if (CMD_MASK != adopted_loop_cmd_) {
+        adopted_loop_cmd_ = CMD_MASK;
+        loop_enable_mask_ = CMD_MASK;
+      }
+    }
+
     // ---- Cascade: outer altitude → inner pitch ----
     // A disabled outer loop feeds a level (zero) reference to an
     // enabled inner loop; a disabled inner loop zeroes its surface.
@@ -332,6 +346,11 @@ private:
 
   /// Per-loop enable mask (LoopBit); defaults to all loops active.
   std::uint8_t loop_enable_mask_ = LOOP_ALL;
+
+  /// Last SET_LOOP_ENABLE value adopted from the aircraft; adoption is
+  /// edge-triggered so direct mask setters stay effective between
+  /// wire commands. Boot value matches both sides' all-loops default.
+  std::uint8_t adopted_loop_cmd_ = LOOP_ALL;
 
   /* TPRM data triple */
   system_core::data::TunableParam<AircraftControllerTunables> tunables_{};

@@ -1,7 +1,7 @@
 # ApexAircraftAtmoDemo Deploy Procedure
 
 Build, verify, package, and pair the producer with a host-side
-visualization consumer implementing the ACFT/1 wire format. The
+visualization consumer implementing the ACFT/2 wire format. The
 producer runs in the dev container (or as a packaged release on the
 same machine), sharing the host IPC namespace.
 
@@ -12,7 +12,7 @@ same machine), sharing the host IPC namespace.
 - The generated USSA76 atmosphere table in `data/` (see
   [HOW_TO_RUN.md](HOW_TO_RUN.md) — producer-side world tooling,
   bit-deterministic, identity by header spec_hash).
-- A consumer implementing ACFT/1 (optional — the demo verifies
+- A consumer implementing ACFT/2 (optional — the demo verifies
   headless; the ring back-pressures and command ingress stays live).
 
 ## 1. Build + verify
@@ -77,7 +77,7 @@ at attach, from logs alone:
 
 - Both processes print the same atmosphere identity
   (`spec_hash=...`) at load.
-- The bridge init line shows ACFT v1 / capacity 16 / payload 256/256
+- The bridge init line shows ACFT v2 / capacity 16 / payload 256/256
   on `/horizon_aircraft`.
 - The 1 Hz bridge health line carries publish/inactive/command
   counters; consumer departures report as `consumer inactive` (INFO,

@@ -128,9 +128,17 @@ public:
   }
   [[nodiscard]] ExciteMode activeExcitation() const noexcept { return excite_mode_; }
 
+  /// Commanded per-loop enable mask (SET_LOOP_ENABLE); the controller
+  /// reads this each tick the way it reads the gust-alleviation gate.
+  [[nodiscard]] std::uint8_t commandedLoopMask() const noexcept { return commanded_loop_mask_; }
+
+  /// Mode-trace samples awaiting the telemetry-tick drain (unit-suite
+  /// observability; the log line is the production surface).
+  [[nodiscard]] std::size_t modeTracePending() const noexcept { return trace_pending_.size(); }
+
   /* ----------------------------- Construction ----------------------------- */
 
-  Aircraft() noexcept = default;
+  Aircraft() noexcept { trace_pending_.reserve(64); }
   ~Aircraft() override = default;
 
   Aircraft(const Aircraft&) = delete;
@@ -186,6 +194,15 @@ public:
     const auto& p = tunables_.get();
 
     if (body_ == nullptr || !body_->isReady()) {
+      // Publish boot conditions while the world initializes: the
+      // OUTPUT block must never carry meaningless zeros -- the
+      // boundary watchpoints (and any early-attached consumer) read
+      // it from the first action tick, and a zero airspeed/altitude
+      // reads as "outside every envelope".
+      if (s.initialized == 0u) {
+        tlm.pos_alt_m = p.init_alt_m;
+        tlm.airspeed_m_s = p.init_speed_m_s;
+      }
       ++s.tick_count;
       return 0u;
     }
@@ -401,6 +418,31 @@ public:
     constexpr std::uint64_t DT_NS = static_cast<std::uint64_t>(DT_S * 1.0e9);
     tlm.timestamp_ns = t0_ns_ + (s.tick_count - t0_tick_) * DT_NS;
     tlm.tick = s.tick_count;
+    tlm.loop_mask = commanded_loop_mask_;
+
+    // Mode trace: while a wire-armed excitation's window is open,
+    // sample the mode-relevant channels at 20 Hz into a bounded
+    // buffer; telemetryTick drains it to the component log. Capture
+    // is memcpy-scale (RT path stays allocation-free: the buffer is
+    // reserved at init and never grows).
+    if (trace_mode_ != 0u) {
+      if (trace_decim_ == 0u) {
+        if (trace_pending_.size() < trace_pending_.capacity()) {
+          trace_pending_.push_back(ModeTraceSample{
+              trace_t_s_, trace_mode_, commanded_loop_mask_, tlm.p_rad_s, tlm.q_rad_s, tlm.r_rad_s,
+              tlm.roll_deg, tlm.pitch_deg, tlm.airspeed_m_s, tlm.pos_alt_m});
+        } else {
+          ++trace_dropped_;
+        }
+      }
+      trace_decim_ = (trace_decim_ + 1u) % 5u;
+      trace_t_s_ += DT_S;
+      if (trace_t_s_ >= trace_window_s_) {
+        trace_mode_ = 0u;
+        trace_ended_ = true;
+      }
+    }
+
     ++s.tick_count;
     s.elapsed_s += DT_S;
     return 0u;
@@ -411,6 +453,22 @@ public:
     auto* log = componentLog();
     if (log == nullptr)
       return 0u;
+
+    // Drain the mode-trace buffer (fixed grep-able shape; the offline
+    // period measurement and the V&V evidence both parse these lines).
+    for (const auto& ts : trace_pending_) {
+      log->info(label(), fmt::format("MODETRACE mode={} mask=0x{:02x} t={:.2f} p={:+.5f} q={:+.5f} "
+                                     "r={:+.5f} phi={:+.3f} theta={:+.3f} V={:.3f} alt={:.2f}",
+                                     ts.mode, ts.mask, ts.t_s, ts.p_rad_s, ts.q_rad_s, ts.r_rad_s,
+                                     ts.phi_deg, ts.theta_deg, ts.V_m_s, ts.alt_m));
+    }
+    trace_pending_.clear();
+    if (trace_ended_) {
+      trace_ended_ = false;
+      log->info(label(), fmt::format("MODETRACE end dropped={}", trace_dropped_));
+      trace_dropped_ = 0u;
+    }
+
     const auto& tlm = telemetry_.get();
     const auto& p = tunables_.get();
     log->info(label(), fmt::format("tick={} {} lat={:.5f} lon={:.5f} alt={:7.1f}m "
@@ -476,10 +534,88 @@ public:
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
     }
 
+    case AircraftOpcode::SET_LOOP_ENABLE: {
+      if (payload.size() < sizeof(appsim::aircraft::AircraftCmdSetLoopMask)) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+      }
+      const auto& cmd =
+          *reinterpret_cast<const appsim::aircraft::AircraftCmdSetLoopMask*>(payload.data());
+      // Unknown bits reject the command whole -- a panel sending a
+      // future bit must fail loudly, not run with a silently clipped
+      // mask that looks accepted.
+      if ((cmd.mask & static_cast<std::uint8_t>(~appsim::aircraft::kLoopMaskValidBits)) != 0u) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_ARGUMENT);
+      }
+      const std::uint8_t old = commanded_loop_mask_;
+      commanded_loop_mask_ = cmd.mask;
+      ++cmd_count_;
+      if (auto* log = componentLog(); log != nullptr) {
+        log->info(label(), fmt::format("cmd: SET_LOOP_ENABLE 0x{:02x} -> 0x{:02x}", old, cmd.mask));
+      }
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+    }
+
+    case AircraftOpcode::EXCITE_MODE: {
+      if (payload.size() < sizeof(appsim::aircraft::AircraftCmdExcite)) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+      }
+      const auto& cmd =
+          *reinterpret_cast<const appsim::aircraft::AircraftCmdExcite*>(payload.data());
+      if (cmd.mode < static_cast<std::uint8_t>(ExciteMode::RUDDER_DOUBLET) ||
+          cmd.mode > static_cast<std::uint8_t>(ExciteMode::SPEED_OFFSET)) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_ARGUMENT);
+      }
+      // One armed mode at a time: a second injection would contaminate
+      // the running mode's trace window, so it is rejected, not queued.
+      if (excite_mode_ != ExciteMode::NONE) {
+        if (auto* log = componentLog(); log != nullptr) {
+          log->info(label(), fmt::format("cmd: EXCITE_MODE {} rejected (mode {} armed)", cmd.mode,
+                                         static_cast<int>(excite_mode_)));
+        }
+        return static_cast<std::uint8_t>(CommandResult::EXEC_FAILED);
+      }
+      startExcitation(static_cast<ExciteMode>(cmd.mode));
+      trace_mode_ = cmd.mode;
+      trace_t_s_ = 0.0;
+      trace_decim_ = 0u;
+      // Window scaled to the mode's timescale: fast modes need
+      // seconds, the phugoid needs minutes.
+      trace_window_s_ = (cmd.mode == 2u)   ? 30.0
+                        : (cmd.mode == 1u) ? 60.0
+                        : (cmd.mode == 3u) ? 120.0
+                                           : 300.0;
+      ++cmd_count_;
+      if (auto* log = componentLog(); log != nullptr) {
+        log->info(label(), fmt::format("cmd: EXCITE_MODE {} armed", cmd.mode));
+      }
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+    }
+
+    case AircraftOpcode::SET_ORCH_STATE: {
+      if (payload.size() < sizeof(appsim::aircraft::AircraftCmdOrchState)) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+      }
+      const auto& cmd =
+          *reinterpret_cast<const appsim::aircraft::AircraftCmdOrchState*>(payload.data());
+      auto& tlm = telemetry_.get();
+      // Entering a recovery state (0x10 bit) counts once per entry.
+      if ((cmd.state & 0x10u) != 0u && (tlm.orch_state & 0x10u) == 0u) {
+        ++tlm.recovery_count;
+      }
+      tlm.orch_state = cmd.state;
+      ++cmd_count_;
+      if (auto* log = componentLog(); log != nullptr) {
+        log->info(label(), fmt::format("cmd: SET_ORCH_STATE 0x{:02x}", cmd.state));
+      }
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+    }
+
     case AircraftOpcode::GET_COMMAND_STATE: {
       AircraftCommandSnapshot snap{};
       snap.turbulence_enabled = turbulence_enabled_ ? 1u : 0u;
       snap.gust_alleviation_enabled = gust_alleviation_enabled_ ? 1u : 0u;
+      snap.loop_enable_mask = commanded_loop_mask_;
+      snap.active_excite_mode = static_cast<std::uint8_t>(excite_mode_);
       snap.cmd_count = cmd_count_;
       response.resize(sizeof(snap));
       std::memcpy(response.data(), &snap, sizeof(snap));
@@ -539,6 +675,19 @@ protected:
                  sizeof(AircraftTunables));
     registerData(DataCategory::STATE, "state", &state_.get(), sizeof(AircraftState));
     registerData(DataCategory::OUTPUT, "telemetry", &telemetry_.get(), sizeof(AircraftTelemetry));
+
+    // Seed the OUTPUT block with boot conditions BEFORE the runtime
+    // starts: the action engine's watchpoints evaluate it from the
+    // very first tick on the executive thread, concurrent with the
+    // worker running the first aircraft step -- a zero airspeed or
+    // altitude reads as "outside every envelope" and fires a phantom
+    // boundary recovery at boot.
+    {
+      const auto& p0 = tunables_.get();
+      auto& tlm0 = telemetry_.get();
+      tlm0.pos_alt_m = p0.init_alt_m;
+      tlm0.airspeed_m_s = p0.init_speed_m_s;
+    }
 
     auto* log = componentLog();
     if (log != nullptr) {
@@ -684,6 +833,40 @@ private:
   double latest_IAS_m_s_ = 0.0; ///< Pitot indicated airspeed
 
   /* ----------------------------- command state ----------------------------- */
+  /// One 20 Hz mode-trace sample; drained to the component log by
+  /// telemetryTick. Field order matches the MODETRACE log line.
+  struct ModeTraceSample {
+    double t_s;
+    std::uint8_t mode;
+    std::uint8_t mask;
+    double p_rad_s;
+    double q_rad_s;
+    double r_rad_s;
+    double phi_deg;
+    double theta_deg;
+    double V_m_s;
+    double alt_m;
+  };
+
+  /// Bounded between-flush buffer: 20 Hz capture against a 1 Hz drain
+  /// needs ~20; 64 absorbs telemetry-tick jitter. Reserved once at
+  /// construction; the RT path never allocates (overflow counts into
+  /// trace_dropped_ instead of growing).
+  std::vector<ModeTraceSample> trace_pending_{};
+  std::uint8_t trace_mode_{0};   ///< Armed trace mode id; 0 = idle.
+  bool trace_ended_{false};      ///< Window closed; telemetryTick logs the end line.
+  double trace_t_s_{0.0};        ///< Time since excitation [s].
+  double trace_window_s_{0.0};   ///< Capture window for the armed mode [s].
+  std::uint32_t trace_decim_{0}; ///< 100 Hz -> 20 Hz decimation phase.
+  std::uint32_t trace_dropped_{0};
+
+  /// Commanded autopilot loop mask (SET_LOOP_ENABLE). Aircraft owns
+  /// the command state per the single-command-path rule; the
+  /// controller applies it at the top of every controller tick, so
+  /// this value IS the running mask within one 25 Hz tick (both boot
+  /// defaults are all-loops, so they agree before the first command).
+  std::uint8_t commanded_loop_mask_{0x3F};
+
   /// Runtime command flags mutated by handleCommand (TCP/APROTO via
   /// ApexInterface or SHM/APROTO via the bridge command sink). Defaults to
   /// existing pre-behavior so the sim remains binary-compatible
