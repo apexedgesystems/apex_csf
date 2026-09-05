@@ -79,6 +79,7 @@ enum class ExecCommandResult : std::uint8_t {
   INIT_FAILED,     ///< Component initialization failed after swap.
   TASK_MISMATCH,   ///< New component task count differs from old.
   REGISTRY_FAILED, ///< Registry re-population failed after swap.
+  INGEST_HELD,     ///< Refused: SAFE ingest hold (repair TPRMs, then RELOAD_EXECUTIVE).
 };
 
 /* ----------------------------- API ----------------------------- */

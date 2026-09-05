@@ -116,6 +116,11 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
   case static_cast<std::uint16_t>(Opcode::CMD_RESUME):
+    if (ingestHold_) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                       "RESUME refused: SAFE ingest hold (repair TPRMs, then RELOAD_EXECUTIVE)");
+      return static_cast<std::uint8_t>(ExecCommandResult::INGEST_HELD);
+    }
     resume();
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
@@ -143,6 +148,11 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
   case static_cast<std::uint16_t>(Opcode::CMD_WAKE):
+    if (ingestHold_) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                       "WAKE refused: SAFE ingest hold (repair TPRMs, then RELOAD_EXECUTIVE)");
+      return static_cast<std::uint8_t>(ExecCommandResult::INGEST_HELD);
+    }
     if (!scheduler_.isSleeping()) {
       sysLog_->debug(label(), "Wake requested but system not sleeping", 2);
     } else {
@@ -579,6 +589,10 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     restartExecTarget_ = execTarget;
     restartDidSwapBinary_ = didSwapBinary;
     controlState_.restartPending.store(true, std::memory_order_release);
+    // Wake a paused clock: the SAFE ingest hold (and any pause) repairs
+    // through RELOAD_EXECUTIVE, so the pending restart must not wait for
+    // a resume that will never come.
+    cvPause_.notify_all();
 
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }

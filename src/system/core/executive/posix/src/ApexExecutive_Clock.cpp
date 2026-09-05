@@ -274,12 +274,22 @@ void ApexExecutive::handleClockPause() noexcept {
   std::cout << "\n=== System PAUSED (cycle " << cycles << ") - Press R+Enter to resume ===\n"
             << std::endl;
 
-  // Wait for resume or shutdown
+  // Wait for resume, shutdown, or a deferred restart. RELOAD_EXECUTIVE
+  // must work from a paused system -- the SAFE ingest hold repairs
+  // through it -- so a pending restart wakes the clock and releases the
+  // task loop, whose per-tick restart processing execs before any task
+  // dispatches.
   std::unique_lock lock(cvMutex_);
   cvPause_.wait(lock, [this]() {
     return !controlState_.pauseRequested.load(std::memory_order_acquire) ||
-           controlState_.shutdownRequested.load(std::memory_order_acquire);
+           controlState_.shutdownRequested.load(std::memory_order_acquire) ||
+           controlState_.restartPending.load(std::memory_order_acquire);
   });
+  if (controlState_.restartPending.load(std::memory_order_acquire)) {
+    sysLog_->info(label(), "Deferred restart requested while paused; releasing for exec");
+    controlState_.pauseRequested.store(false, std::memory_order_release);
+    controlState_.isPaused.store(false, std::memory_order_release);
+  }
 
   // Reset frame overrun counter after pause (fresh start for RT checks)
   clockState_.overrunCount.store(0, std::memory_order_release);

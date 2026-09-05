@@ -931,8 +931,17 @@ RunResult ApexExecutive::run() noexcept {
       // Unreachable: a successful fallback exec-replaces this process.
       return RunResult::ERROR_INIT;
     }
+    // No bank can boot. Stay reachable instead of dying: hold the
+    // system paused with the interface alive so ground can repair over
+    // the wire (readback -> upload -> verify -> RELOAD_EXECUTIVE).
+    // --shutdown-after still applies, so automated runs exit.
+    ingestHold_ = true;
     setStatus(static_cast<std::uint8_t>(ERROR_TPRM_INGEST));
-    return RunResult::ERROR_INIT;
+    controlState_.pauseRequested.store(true, std::memory_order_release);
+    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                   "SAFE HOLD: no bank passes ingest; scheduler held, interface up. "
+                   "Repair over the wire (upload + VERIFY_TPRM + RELOAD_EXECUTIVE) "
+                   "or reboot with a corrected master");
   }
   {
     // Ingest held; a surviving marker means this IS the fallback boot.

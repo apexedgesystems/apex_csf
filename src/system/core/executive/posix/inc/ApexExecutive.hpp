@@ -468,6 +468,19 @@ private:
 
   bool bootedOnFallback_{false}; ///< This boot runs the fallback bank.
 
+  /**
+   * @brief SAFE ingest-hold: both banks failed, but the vehicle stays
+   *        reachable.
+   *
+   * The system boots permanently paused -- clock ticks and command
+   * drains run, tasks never dispatch -- so ground can inspect the
+   * staged banks (READBACK_TPRM), upload a corrected payload, verify
+   * it, and command RELOAD_EXECUTIVE to reboot onto the fix. RESUME
+   * and WAKE are refused while held: a misconfigured vehicle never
+   * runs by accident.
+   */
+  bool ingestHold_{false};
+
   // General executive information
   std::filesystem::path execPath_{};
   std::vector<std::string> args_{};
