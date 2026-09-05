@@ -100,6 +100,62 @@ master.tprm
 
 Individual tprms are extracted to `.apex_fs/tprm/` during init.
 
+## Ingest Policy
+
+Every component reports its boot ingest as one of four states — NONE
+(no TPRM surface), LOADED, DEFAULTS (no file, built-in defaults),
+REJECTED (file present but refused) — and the executive judges them
+together at a post-registration barrier. `--ingest-policy
+strict|lenient` selects the posture; **STRICT is the default**:
+
+| State                               | STRICT | LENIENT    |
+| ----------------------------------- | ------ | ---------- |
+| REJECTED                            | fatal  | fatal      |
+| DEFAULTS, params not optional       | fatal  | warn + run |
+| DEFAULTS, `paramsOptional()`        | run    | run        |
+| NONE with registered TUNABLE_PARAMs | fatal  | warn + run |
+
+A rejected payload is fatal under every policy: a present-but-refused
+file is never intentional. Components whose defaults are a designed
+configuration override `paramsOptional()`.
+
+## Boot Recovery and SAFE
+
+A failed ingest triggers one bounded A/B recovery: if the other bank
+holds staged payloads, the executive flips `active_bank` and re-execs;
+the fallback boot skips master extraction (the master is what failed)
+and announces RUNNING ON FALLBACK BANK at ERROR level.
+
+When no bank passes, the executive enters **SAFE/HOLD**. SAFE's
+invariant, application-wide: **the command path survives
+configuration failure** — any bad load short of a crashed binary
+stays reachable and repairable over the wire. Three SAFE levels share
+that invariant, ordered by how much of the vehicle still moves:
+
+| Level         | What runs                                           | Status      |
+| ------------- | --------------------------------------------------- | ----------- |
+| SAFE/HOLD     | nothing cycles; wire alive                          | implemented |
+| SAFE/IDLE     | core + support tier tasks (watchable); no app tasks | future      |
+| SAFE/DEGRADED | all but the failed component's dependency cone      | future      |
+
+HOLD is the only honest answer for a misconfigured core component or
+an undeclared dependency graph; IDLE's skip set falls out of the
+component taxonomy's tier axis; DEGRADED needs declared dependencies
+(see the SAFE-orchestration backlog ticket). HOLD is parked-at-boot:
+
+| Thread        | In SAFE hold                          |
+| ------------- | ------------------------------------- |
+| Clock         | parked (no cycles advance)            |
+| TaskExecution | waiting (no task ever dispatches)     |
+| ExternalIO    | serving (full command/telemetry path) |
+| Watchdog      | running                               |
+
+RESUME and WAKE are refused with INGEST_HELD; the repair loop is the
+standard surface — READBACK_TPRM to inspect the staged banks, file
+upload to place a corrected set, VERIFY_TPRM to check it, and
+RELOAD_EXECUTIVE to reboot onto the fix. `--shutdown-after` still
+applies, so automated runs exit rather than hang.
+
 ## Usage
 
 ```bash
