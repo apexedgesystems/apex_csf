@@ -5,10 +5,89 @@
 # Wire types (ControlCmd) are in protocol_data.toml.
 
 component = "HilDriver"
+namespace = "appsim::driver"
 
 [structs]
 # Runtime state (registered with ApexRegistry)
-DriverState = { category = "STATE", header = "inc/HilDriverData.hpp" }
+DriverState = { category = "STATE" }
 
 # Output: control command received from flight controller
 ControlCmd = { category = "OUTPUT", header = "../common/inc/VehicleState.hpp" }
+
+[[fields.DriverState]]
+name = "txCount"
+type = "uint"
+size = 4
+doc = "VehicleState frames sent to device."
+
+[[fields.DriverState]]
+name = "rxCount"
+type = "uint"
+size = 4
+doc = "ControlCmd frames received from device."
+
+[[fields.DriverState]]
+name = "crcErrors"
+type = "uint"
+size = 4
+doc = "CRC validation failures."
+
+[[fields.DriverState]]
+name = "txMisses"
+type = "uint"
+size = 4
+doc = "sendState calls skipped (no UART or no state source)."
+
+[[fields.DriverState]]
+name = "rxMisses"
+type = "uint"
+size = 4
+doc = "recvCommand calls with no data available (non-blocking)."
+
+[[fields.DriverState]]
+name = "commLostCount"
+type = "uint"
+size = 4
+doc = "Number of comm loss events."
+
+[[fields.DriverState]]
+name = "seqGaps"
+type = "uint"
+size = 4
+doc = "Detected gaps in received ControlCmd sequence."
+
+[[fields.DriverState]]
+name = "txSeq"
+type = "uint"
+size = 2
+doc = "Last sent VehicleState.seqNum."
+
+[[fields.DriverState]]
+name = "rxSeq"
+type = "uint"
+size = 2
+doc = "Last received ControlCmd.seqNum."
+
+[[fields.DriverState]]
+name = "hasCmd"
+type = "uint"
+size = 1
+doc = "1 if a valid ControlCmd has been received."
+
+[[fields.DriverState]]
+name = "uartOpen"
+type = "uint"
+size = 1
+doc = "1 if UART is open and configured."
+
+[[fields.DriverState]]
+name = "commLost"
+type = "uint"
+size = 1
+doc = "1 if comm watchdog detected link loss."
+
+[[fields.DriverState]]
+name = "reserved"
+type = "uint"
+size = 1
+doc = "Padding for alignment."

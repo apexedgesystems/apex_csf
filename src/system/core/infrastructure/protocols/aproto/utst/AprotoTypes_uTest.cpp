@@ -10,6 +10,7 @@
 #include <gtest/gtest.h>
 
 using system_core::protocols::aproto::AckPayload;
+using system_core::protocols::aproto::AckStage;
 using system_core::protocols::aproto::APROTO_ACK_PAYLOAD_SIZE;
 using system_core::protocols::aproto::APROTO_AUTH_TAG_SIZE;
 using system_core::protocols::aproto::APROTO_CRC_SIZE;
@@ -210,9 +211,10 @@ TEST(AckPayloadTest, DefaultInit) {
   EXPECT_EQ(ack.cmdOpcode, 0);
   EXPECT_EQ(ack.cmdSequence, 0);
   EXPECT_EQ(ack.status, 0);
+  EXPECT_EQ(ack.stage, static_cast<std::uint8_t>(AckStage::RESULT))
+      << "default stage must read as a terminal result (pre-stage frame compatibility)";
   EXPECT_EQ(ack.reserved[0], 0);
   EXPECT_EQ(ack.reserved[1], 0);
-  EXPECT_EQ(ack.reserved[2], 0);
 }
 
 /* ----------------------------- SystemOpcode Tests ----------------------------- */

@@ -1,0 +1,330 @@
+# TelemetryManager (componentId=201, instanceIndex=0)
+# Total: 520 bytes
+#
+# Default configuration: collect task at 1 Hz with every push channel
+# inactive. Subscriptions are enabled by staging a new table (each
+# entry: fullUid + category + opcode + window + rate divisor).
+
+collectRateHz = { type = "uint", size = 2, value = 1 }
+reserved0 = { type = "uint", size = 2, value = 0 }
+reserved1 = { type = "uint", size = 4, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }
+
+[[subscriptions]]
+fullUid = { type = "uint", size = 4, value = 0 }
+category = { type = "uint", size = 1, value = 0 }
+active = { type = "uint", size = 1, value = 0 }
+opcode = { type = "uint", size = 2, value = 0 }
+offset = { type = "uint", size = 2, value = 0 }
+length = { type = "uint", size = 2, value = 0 }
+rateDiv = { type = "uint", size = 2, value = 1 }
+reserved = { type = "uint", size = 2, value = 0 }

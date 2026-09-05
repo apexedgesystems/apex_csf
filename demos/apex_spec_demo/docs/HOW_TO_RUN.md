@@ -41,6 +41,26 @@ While the app is running, from another terminal:
 python3 demos/apex_spec_demo/scripts/checkout.py --host localhost
 ```
 
+## Arm / Verify / Execute (readback surface)
+
+The checkout's section 15c walks the ground rotation for parameter
+changes:
+
+1. **Arm**: transfer the stamped payload to the inactive bank
+   (`send_file` only -- nothing applies).
+2. **Verify**: `readback_tprm()` lists what is actually staged
+   (declared fullUid / layoutHash / payloadCrc per v3 prelude);
+   `verify_tprm(uid)` runs every ingest check on the vehicle without
+   applying. Verdicts speak TprmPayloadCheck (0 = OK).
+3. **Execute or refuse**: `RELOAD_TPRM` applies a verified set; a set
+   that fails verification is refused (status LOAD_FAILED, the
+   verdict in the response extra) and the active bytes stay
+   untouched -- proven in-checkout with a deliberately corrupted
+   payload.
+
+Targets advertising this surface carry `"readback"` in their
+dictionary's `capabilities` list.
+
 The checkout drives every command in every spec live -- the sensor's mode
 machine, the actuator's slew, the bus driver's loopback round-trips, the
 matrix's full type vocabulary (with an independent checksum cross-proof),

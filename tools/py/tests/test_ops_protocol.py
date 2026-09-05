@@ -105,3 +105,55 @@ def test_parse_header_too_short():
     """parse_header returns None for undersized data."""
     result = parse_header(b"\x00\x01\x02")
     assert result is None
+
+
+# ============================ ACK stages ============================
+
+
+def test_parse_ack_stage_field():
+    """The stage byte (offset 5) parses; pre-stage frames read RESULT."""
+    import struct
+
+    from apex_tools.ops import protocol as proto
+
+    payload = struct.pack("<HHBB", 0x0642, 77, 0, proto.ACK_STAGE_QUEUED) + b"\x00\x00"
+    ack = proto.parse_ack(payload)
+    assert ack["cmd_sequence"] == 77
+    assert ack["stage"] == proto.ACK_STAGE_QUEUED
+
+    legacy = struct.pack("<HHB", 0x0100, 5, 0) + b"\x00\x00\x00"
+    ack = proto.parse_ack(legacy)
+    assert ack["stage"] == proto.ACK_STAGE_RESULT
+
+
+def test_terminal_frame_selection():
+    """send_command returns the terminal frame: QUEUED is interim,
+    COMPLETION (same sequence) is the outcome; stale sequences are
+    discarded."""
+    import struct
+
+    from apex_tools.ops import protocol as proto
+    from apex_tools.ops.client import AprotoClient
+
+    client = AprotoClient.__new__(AprotoClient)
+    client.timeout = 1.0
+    client._seq = 42  # _next_seq returns the current value
+
+    def frame(seq, stage, status=0, extra=b""):
+        payload = struct.pack("<HHBB", 0x0642, seq, status, stage) + b"\x00\x00" + extra
+        return {"payload": payload}
+
+    responses = iter(
+        [
+            frame(9, proto.ACK_STAGE_COMPLETION),  # stale, prior exchange
+            frame(42, proto.ACK_STAGE_QUEUED),
+            frame(42, proto.ACK_STAGE_COMPLETION, status=5, extra=b"\x03"),
+        ]
+    )
+    client._send_raw = lambda pkt: None
+    client._recv_response = lambda timeout=None: next(responses)
+
+    ack = client.send_command(0x00C900, 0x0642, b"")
+    assert ack["status"] == 5
+    assert ack["queued"] is True
+    assert ack["extra"] == b"\x03"

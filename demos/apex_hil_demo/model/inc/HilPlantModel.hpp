@@ -21,6 +21,7 @@
 
 #include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 #include "src/utilities/helpers/inc/Files.hpp"
 
@@ -278,14 +279,20 @@ public:
       return false;
     }
 
-    std::string error;
     HilPlantTunableParams loaded{};
-    if (apex::helpers::files::hex2cpp(tprmPath.string(), loaded, error)) {
-      tunableParams_.get() = loaded;
-      logTprmConfig(tprmPath.string());
-      return true;
+    namespace sc = system_core::system_component;
+    const auto CHECK = sc::readTprmPayload(tprmPath, fullUid(), loaded);
+    if (CHECK != sc::TprmPayloadCheck::OK) {
+      auto* log = componentLog();
+      if (log != nullptr) {
+        log->error(label(), sc::toFaultCode(CHECK),
+                   fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), tprmPath.string()));
+      }
+      return false;
     }
-    return false;
+    tunableParams_.get() = loaded;
+    logTprmConfig(tprmPath.string());
+    return true;
   }
 
   /* ----------------------------- Accessors ----------------------------- */

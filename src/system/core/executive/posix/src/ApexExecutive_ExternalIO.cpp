@@ -213,6 +213,9 @@ void ApexExecutive::externalIO(std::promise<std::uint8_t>&& p) noexcept {
     // Poll interface for network commands
     // Use short timeout (10ms) - combined with 10ms stdin poll gives ~20ms response latency
     if (INTERFACE_ENABLED) {
+      // Emit COMPLETION frames for commands the task-thread drain has
+      // executed: frame encoding and TX production stay on this thread.
+      interface_->drainCompletionFrames();
       interface_->pollSockets(10);
     }
   }

@@ -10,6 +10,7 @@
 0x000400  toml/interface.toml
 0x000500  toml/action.toml
 0x00C800  toml/system_monitor.toml
+0x00C900  toml/telemetry_manager.toml
 0x00D000  toml/wave_gen_0.toml
 0x00D001  toml/wave_gen_1.toml
 

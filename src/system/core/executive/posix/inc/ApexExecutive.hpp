@@ -174,8 +174,12 @@ public:
     RELOAD_EXECUTIVE = 0x0127, ///< Restart executive via execve (no payload).
 
     // Ground test / inspection commands
-    INSPECT = 0x0130, ///< Read registered data (9-byte payload: u32 fullUid, u8 category, u16
-                      ///< offset, u16 len).
+    INSPECT = 0x0130,       ///< Read registered data (9-byte payload: u32 fullUid, u8 category, u16
+                            ///< offset, u16 len).
+    READBACK_TPRM = 0x0131, ///< Digest of the staged (inactive-bank) TPRM payloads
+                            ///< (optional 2-byte page-offset payload; see TprmReadback.hpp).
+    VERIFY_TPRM = 0x0132,   ///< Verify one staged payload without applying (4-byte fullUid
+                            ///< payload; 12-byte verdict response; see TprmReadback.hpp).
 
     // Runtime self-description commands
     GET_REGISTRY = 0x0140,     ///< Dump component registry (no payload, packed response).
@@ -372,8 +376,26 @@ private:
    * @brief Apply CLI argument overrides to TPRM-loaded configuration.
    *
    * CLI args take precedence over TPRM values. Call after loadTprm().
+   * Tunable-mapped flags edit a copy of the wire struct and re-enter
+   * adoptTunables(); session-only settings apply directly.
    */
   void applyCliOverrides() noexcept;
+
+  /**
+   * @brief Validate, clamp, and adopt a tunable-parameter set.
+   *
+   * The single door for tunable ingestion whatever the source (tprm
+   * payload or CLI override pass): vocabulary validation, floor
+   * clamps, then the wire struct and every derived working config
+   * assigned together. One writer keeps the registered TUNABLE block
+   * (INSPECT) and the running configuration in agreement.
+   *
+   * @param params Candidate parameter set (clamped locally on adopt).
+   * @param valErr Receives a static description on validation failure.
+   * @return true on adoption; false if validation rejected the set
+   *         (no state is modified).
+   */
+  [[nodiscard]] bool adoptTunables(ExecutiveTunableParams params, const char** valErr) noexcept;
 
   /**
    * @brief Register a core component with the registry.
@@ -481,7 +503,10 @@ private:
 
   // Simulation configuration
   std::uint16_t clockFrequency_{DEFAULT_CLOCK_FREQUENCY};
-  RTConfig rtConfig_{RTMode::HARD_TICK_COMPLETE}; ///< Real-time execution mode configuration.
+  /// Real-time execution mode configuration. Deliberately inherits the
+  /// struct's own stock default (soft) -- a member-site override here is
+  /// how the stock posture ended up hard in three places at once.
+  RTConfig rtConfig_{};
 
   // Thread configuration for primary threads
   ExecutiveThreadConfig threadConfig_{}; ///< RT config for primary threads.

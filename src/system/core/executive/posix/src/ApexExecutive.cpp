@@ -176,10 +176,24 @@ std::uint8_t ApexExecutive::doInit() noexcept {
       return status(); // Error already set and logged
     }
 
-    // Load executive TPRM
+    // Load executive TPRM. A present-but-rejected tprm is fatal: the
+    // compiled defaults are not a degraded mode of the declared
+    // configuration, they are a different system (clock rate, RT mode,
+    // thread pinning), and the difference surfaces mid-run. The contract
+    // has exactly three states -- honored config, explicitly-no-config
+    // (no executive entry packed: defaults at INFO), or refused boot.
+    // There is deliberately no override: a run on discarded config gives
+    // a false sense of functionality no banner can repair. To run on
+    // defaults on purpose, pack the master without the executive entry.
     if (!loadTprm(fileSystem_.tprmDir())) {
-      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
-                       "Executive TPRM load failed, using defaults");
+      sysLog_->error(
+          label(), static_cast<std::uint8_t>(ERROR_TPRM_REJECTED),
+          fmt::format("Executive TPRM rejected; compiled defaults would run a different "
+                      "system (clock {} Hz, RT mode {}). Refusing to boot -- to run on "
+                      "defaults deliberately, repack the master without the executive entry",
+                      clockFrequency_, rtModeToString(rtConfig_.mode)));
+      setStatus(static_cast<std::uint8_t>(ERROR_TPRM_REJECTED));
+      return status();
     }
 
     // CLI overrides take precedence over TPRM values
@@ -509,11 +523,19 @@ RunResult ApexExecutive::run() noexcept {
   // Sync scheduler fundamental frequency with executive clock rate (must be before loadTprm)
   scheduler_.setFundamentalFreq(clockFrequency_);
 
-  // Load scheduler TPRM and wire tasks (scheduler handles its own TPRM)
+  // Load scheduler TPRM and wire tasks (scheduler handles its own TPRM).
+  // With no configuration provided at all, an empty schedule IS the
+  // declared state -- a stock boot idles -- so the missing table logs at
+  // INFO. With a config present, a missing/unloadable table stays an
+  // error: the application declared tasks it did not get.
   if (!scheduler_.loadTprm(tprmDir)) {
-    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_SCHEDULER_NO_TASKS),
-                   fmt::format("Scheduler loadTprm failed: {}",
-                               scheduler_.lastError() ? scheduler_.lastError() : "unknown"));
+    if (configPath_.empty()) {
+      sysLog_->info(label(), "No schedule configured; scheduler idle (0 tasks)");
+    } else {
+      sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_SCHEDULER_NO_TASKS),
+                     fmt::format("Scheduler loadTprm failed: {}",
+                                 scheduler_.lastError() ? scheduler_.lastError() : "unknown"));
+    }
   }
 
   // Register scheduled tasks with registry (scheduler loaded them, executive registers for
@@ -522,7 +544,14 @@ RunResult ApexExecutive::run() noexcept {
     if (entry.task != nullptr) {
       auto status = registry_.registerTask(entry.fullUid, entry.taskUid,
                                            entry.task->getLabel().data(), entry.task);
-      if (system_core::registry::isError(status)) {
+      if (status == system_core::registry::Status::ERROR_DUPLICATE_TASK) {
+        // One task scheduled at multiple rates produces one entry per table
+        // row; the registry carries the task once and the extra rows are
+        // by-design, not a broken registration.
+        sysLog_->info(label(), fmt::format("Task {} (0x{:06X}/{}) scheduled at multiple rates; "
+                                           "registered once",
+                                           entry.task->getLabel(), entry.fullUid, entry.taskUid));
+      } else if (system_core::registry::isError(status)) {
         sysLog_->warning(label(), static_cast<std::uint8_t>(status),
                          fmt::format("Task registration failed for {} (fullUid=0x{:06X}): {}",
                                      entry.task->getLabel(), entry.fullUid,
@@ -1106,6 +1135,36 @@ bool ApexExecutive::unpackMasterTprm() noexcept {
   return true;
 }
 
+bool ApexExecutive::adoptTunables(ExecutiveTunableParams params, const char** valErr) noexcept {
+  if (!validateExecutiveTunables(params, valErr)) {
+    return false;
+  }
+  if (params.watchdogIntervalMs < WATCHDOG_INTERVAL_MIN_MS) {
+    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
+                     fmt::format("watchdogIntervalMs {} below minimum; clamped to {} ms",
+                                 params.watchdogIntervalMs, WATCHDOG_INTERVAL_MIN_MS));
+    params.watchdogIntervalMs = WATCHDOG_INTERVAL_MIN_MS;
+  }
+
+  // The wire struct and every derived working config assigned in one
+  // place: the registered TUNABLE block (INSPECT) and the running
+  // system cannot disagree. Session-only fields living outside the
+  // struct (epoch schedule points) are deliberately untouched.
+  tunableParams_ = params;
+  clockFrequency_ = params.clockFrequencyHz;
+  rtConfig_.mode = static_cast<RTMode>(params.rtMode);
+  rtConfig_.maxLagTicks = params.rtMaxLagTicks;
+  startupConfig_.mode = static_cast<StartupConfig::Mode>(params.startupMode);
+  startupConfig_.delaySeconds = params.startupDelaySeconds;
+  shutdownConfig_.mode = static_cast<ShutdownConfig::Mode>(params.shutdownMode);
+  shutdownConfig_.skipCleanup = (params.skipCleanup != 0);
+  shutdownConfig_.relativeSeconds = params.shutdownAfterSeconds;
+  shutdownConfig_.targetClockCycle = params.shutdownAtCycle;
+  watchdogState_.intervalMs = params.watchdogIntervalMs;
+  profilingState_.sampleEveryN = params.profilingSampleEveryN;
+  return true;
+}
+
 bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   // Generate filename from executive fullUid (componentId << 8 | instance 0 -> "000000.tprm")
   // Note: Executive is always instance 0 and loads TPRM before registration
@@ -1141,19 +1200,15 @@ bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   ExecutiveTunableParams params{};
   std::memcpy(&params, body.data(), sizeof(params));
 
-  // Apply loaded parameters to executive configuration
-  tunableParams_ = params;
-  clockFrequency_ = params.clockFrequencyHz;
-  rtConfig_.mode = static_cast<RTMode>(params.rtMode);
-  rtConfig_.maxLagTicks = params.rtMaxLagTicks;
-  startupConfig_.mode = static_cast<StartupConfig::Mode>(params.startupMode);
-  startupConfig_.delaySeconds = params.startupDelaySeconds;
-  shutdownConfig_.mode = static_cast<ShutdownConfig::Mode>(params.shutdownMode);
-  shutdownConfig_.skipCleanup = (params.skipCleanup != 0);
-  shutdownConfig_.relativeSeconds = params.shutdownAfterSeconds;
-  shutdownConfig_.targetClockCycle = params.shutdownAtCycle;
-  watchdogState_.intervalMs = params.watchdogIntervalMs;
-  profilingState_.sampleEveryN = params.profilingSampleEveryN;
+  // Value validation happens in the adoption door: size and CRC prove
+  // transport integrity, not vocabulary. A rejected set routes into
+  // the refuse-to-boot contract.
+  const char* valErr = nullptr;
+  if (!adoptTunables(params, &valErr)) {
+    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_REJECTED),
+                   fmt::format("Executive TPRM value rejected: {}", valErr));
+    return false;
+  }
 
   // Read thread configuration (follows tunable params in the body)
   ExecutiveThreadConfigTprm threadConfigTprm{};
@@ -1178,6 +1233,13 @@ void ApexExecutive::applyCliOverrides() noexcept {
   // CLI arguments take precedence over TPRM values.
   // Note: processArgs() already parsed CLI args into parsedArgs_ and applied some directly.
   // This function ensures CLI overrides are re-applied after TPRM loading.
+  //
+  // Tunable-mapped flags edit a copy of the wire struct; the adoption
+  // door then validates, clamps, and derives every working config from
+  // it, so flags and tprm values honor one contract and INSPECT reads
+  // the effective configuration. Session-only settings (epoch schedule
+  // points, census, archive path, verbosity) apply directly.
+  ExecutiveTunableParams p = tunableParams_;
 
   // Clock frequency (not exposed via CLI currently, but could be added)
 
@@ -1186,15 +1248,15 @@ void ApexExecutive::applyCliOverrides() noexcept {
     std::string_view modeStr = parsedArgs_[RT_MODE][0];
     RTMode mode{};
     if (parseRTMode(modeStr, mode)) {
-      rtConfig_.mode = mode;
+      p.rtMode = static_cast<std::uint8_t>(mode);
     }
   }
 
   if (parsedArgs_.count(RT_MAX_LAG)) {
-    if (!parseClampedU32(parsedArgs_[RT_MAX_LAG][0], rtConfig_.maxLagTicks)) {
-      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
-                       fmt::format("--rt-max-lag exceeds 32-bit range; clamped to {} ticks",
-                                   rtConfig_.maxLagTicks));
+    if (!parseClampedU32(parsedArgs_[RT_MAX_LAG][0], p.rtMaxLagTicks)) {
+      sysLog_->warning(
+          label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
+          fmt::format("--rt-max-lag exceeds 32-bit range; clamped to {} ticks", p.rtMaxLagTicks));
     }
   }
 
@@ -1202,19 +1264,19 @@ void ApexExecutive::applyCliOverrides() noexcept {
   if (parsedArgs_.count(STARTUP_MODE)) {
     std::string_view mode = parsedArgs_[STARTUP_MODE][0];
     if (mode == "auto") {
-      startupConfig_.mode = StartupConfig::AUTO;
+      p.startupMode = static_cast<std::uint8_t>(StartupConfig::AUTO);
     } else if (mode == "interactive") {
-      startupConfig_.mode = StartupConfig::INTERACTIVE;
+      p.startupMode = static_cast<std::uint8_t>(StartupConfig::INTERACTIVE);
     } else if (mode == "scheduled") {
-      startupConfig_.mode = StartupConfig::SCHEDULED;
+      p.startupMode = static_cast<std::uint8_t>(StartupConfig::SCHEDULED);
     }
   }
 
   if (parsedArgs_.count(STARTUP_DELAY)) {
-    if (!parseClampedU32(parsedArgs_[STARTUP_DELAY][0], startupConfig_.delaySeconds)) {
+    if (!parseClampedU32(parsedArgs_[STARTUP_DELAY][0], p.startupDelaySeconds)) {
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
                        fmt::format("--startup-delay exceeds 32-bit range; clamped to {} s",
-                                   startupConfig_.delaySeconds));
+                                   p.startupDelaySeconds));
     }
   }
 
@@ -1226,15 +1288,15 @@ void ApexExecutive::applyCliOverrides() noexcept {
   if (parsedArgs_.count(SHUTDOWN_MODE)) {
     std::string_view mode = parsedArgs_[SHUTDOWN_MODE][0];
     if (mode == "signal") {
-      shutdownConfig_.mode = ShutdownConfig::SIGNAL_ONLY;
+      p.shutdownMode = static_cast<std::uint8_t>(ShutdownConfig::SIGNAL_ONLY);
     } else if (mode == "scheduled") {
-      shutdownConfig_.mode = ShutdownConfig::SCHEDULED;
+      p.shutdownMode = static_cast<std::uint8_t>(ShutdownConfig::SCHEDULED);
     } else if (mode == "relative") {
-      shutdownConfig_.mode = ShutdownConfig::RELATIVE_TIME;
+      p.shutdownMode = static_cast<std::uint8_t>(ShutdownConfig::RELATIVE_TIME);
     } else if (mode == "cycle") {
-      shutdownConfig_.mode = ShutdownConfig::CLOCK_CYCLE;
+      p.shutdownMode = static_cast<std::uint8_t>(ShutdownConfig::CLOCK_CYCLE);
     } else if (mode == "combined") {
-      shutdownConfig_.mode = ShutdownConfig::COMBINED;
+      p.shutdownMode = static_cast<std::uint8_t>(ShutdownConfig::COMBINED);
     }
   }
 
@@ -1243,15 +1305,15 @@ void ApexExecutive::applyCliOverrides() noexcept {
   }
 
   if (parsedArgs_.count(SHUTDOWN_AFTER)) {
-    if (!parseClampedU32(parsedArgs_[SHUTDOWN_AFTER][0], shutdownConfig_.relativeSeconds)) {
+    if (!parseClampedU32(parsedArgs_[SHUTDOWN_AFTER][0], p.shutdownAfterSeconds)) {
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
                        fmt::format("--shutdown-after exceeds 32-bit range; clamped to {} s",
-                                   shutdownConfig_.relativeSeconds));
+                                   p.shutdownAfterSeconds));
     }
   }
 
   if (parsedArgs_.count(SHUTDOWN_CYCLE)) {
-    shutdownConfig_.targetClockCycle = std::stoull(std::string(parsedArgs_[SHUTDOWN_CYCLE][0]));
+    p.shutdownAtCycle = std::stoull(std::string(parsedArgs_[SHUTDOWN_CYCLE][0]));
   }
 
   // Infer the shutdown mode from the timing argument(s) when no explicit
@@ -1263,13 +1325,13 @@ void ApexExecutive::applyCliOverrides() noexcept {
                          (parsedArgs_.count(SHUTDOWN_AT) ? 1 : 0) +
                          (parsedArgs_.count(SHUTDOWN_CYCLE) ? 1 : 0);
     if (provided > 1) {
-      shutdownConfig_.mode = ShutdownConfig::COMBINED;
+      p.shutdownMode = static_cast<std::uint8_t>(ShutdownConfig::COMBINED);
     } else if (parsedArgs_.count(SHUTDOWN_AFTER)) {
-      shutdownConfig_.mode = ShutdownConfig::RELATIVE_TIME;
+      p.shutdownMode = static_cast<std::uint8_t>(ShutdownConfig::RELATIVE_TIME);
     } else if (parsedArgs_.count(SHUTDOWN_AT)) {
-      shutdownConfig_.mode = ShutdownConfig::SCHEDULED;
+      p.shutdownMode = static_cast<std::uint8_t>(ShutdownConfig::SCHEDULED);
     } else if (parsedArgs_.count(SHUTDOWN_CYCLE)) {
-      shutdownConfig_.mode = ShutdownConfig::CLOCK_CYCLE;
+      p.shutdownMode = static_cast<std::uint8_t>(ShutdownConfig::CLOCK_CYCLE);
     }
   }
 
@@ -1278,7 +1340,7 @@ void ApexExecutive::applyCliOverrides() noexcept {
 
   // Archive configuration
   if (parsedArgs_.count(SKIP_CLEANUP)) {
-    shutdownConfig_.skipCleanup = true;
+    p.skipCleanup = 1U;
   }
 
   if (parsedArgs_.count(ARCHIVE_PATH)) {
@@ -1287,23 +1349,23 @@ void ApexExecutive::applyCliOverrides() noexcept {
 
   // Watchdog interval override
   if (parsedArgs_.count(WATCHDOG_INTERVAL)) {
-    if (!parseClampedU32(parsedArgs_[WATCHDOG_INTERVAL][0], watchdogState_.intervalMs)) {
+    if (!parseClampedU32(parsedArgs_[WATCHDOG_INTERVAL][0], p.watchdogIntervalMs)) {
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
                        fmt::format("--watchdog-interval exceeds 32-bit range; clamped to {} ms",
-                                   watchdogState_.intervalMs));
+                                   p.watchdogIntervalMs));
     }
   }
 
   // Profiling override
   if (parsedArgs_.count(ENABLE_PROFILING)) {
     if (parsedArgs_.count(PROFILE_INTERVAL)) {
-      if (!parseClampedU32(parsedArgs_[PROFILE_INTERVAL][0], profilingState_.sampleEveryN)) {
+      if (!parseClampedU32(parsedArgs_[PROFILE_INTERVAL][0], p.profilingSampleEveryN)) {
         sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
                          fmt::format("--profile-interval exceeds 32-bit range; clamped to {}",
-                                     profilingState_.sampleEveryN));
+                                     p.profilingSampleEveryN));
       }
     } else {
-      profilingState_.sampleEveryN = 1;
+      p.profilingSampleEveryN = 1;
     }
   }
 
@@ -1312,6 +1374,17 @@ void ApexExecutive::applyCliOverrides() noexcept {
     const std::uint8_t verbosity =
         static_cast<std::uint8_t>(std::stoul(std::string(parsedArgs_[VERBOSITY][0])));
     sysLog_->setVerbosity(verbosity);
+  }
+
+  // One door out: validation and clamps match the tprm path exactly.
+  // Every site above writes vocabulary-checked values, so a rejection
+  // is a future-flag defect; the loaded configuration stays in force
+  // and the refusal is logged rather than half-applied.
+  const char* valErr = nullptr;
+  if (!adoptTunables(p, &valErr)) {
+    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
+                     fmt::format("CLI overrides rejected ({}); keeping loaded configuration",
+                                 valErr != nullptr ? valErr : "unknown"));
   }
 }
 

@@ -240,6 +240,13 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
       if (controlState_.shutdownRequested.load(std::memory_order_acquire)) {
         break;
       }
+
+      // Paused time is suspended, not owed: without a fresh anchor the
+      // absolute grid repays the pause as immediately-due deadlines,
+      // and back-to-back ticks read as period violations (fatal under
+      // hard RT within cycles of resume). Only sub-second stalls repay
+      // through the grid; a pause resumes on a clean period boundary.
+      nextTick = std::chrono::steady_clock::now() + FRAME_PERIOD;
     }
   }
 

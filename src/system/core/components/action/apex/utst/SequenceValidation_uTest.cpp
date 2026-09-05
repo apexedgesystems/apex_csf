@@ -332,3 +332,69 @@ TEST(SequenceValidation, RtsSkipsTimeline) {
   SequenceError err{};
   EXPECT_TRUE(system_core::data::validateAtsTimeline(seq, 999999, 0, &err));
 }
+
+/* ----------------------------- Timeout vs Delay ----------------------------- */
+
+/** @test A timeout expiring within the step's own delay is an authoring error. */
+TEST(SequenceValidation, TimeoutShorterThanDelayRejected) {
+  DataSequence seq{};
+  seq.type = SequenceType::RTS;
+  seq.stepCount = 1;
+  seq.steps[0].action.target.fullUid = 0x007800;
+  seq.steps[0].delayCycles = 200;
+  seq.steps[0].timeoutCycles = 100; // Expires mid-delay: the aircraft set-piece bug.
+  seq.steps[0].onTimeout = StepTimeoutPolicy::SKIP;
+
+  SequenceError err{};
+  EXPECT_FALSE(system_core::data::validateSequence(seq, &err));
+  EXPECT_EQ(err.code, system_core::data::SequenceErrorCode::TIMEOUT_SHORTER_THAN_DELAY);
+  EXPECT_EQ(err.stepIndex, 0);
+}
+
+/** @test timeout == delay also dies (engine checks timeout first); rejected. */
+TEST(SequenceValidation, TimeoutEqualToDelayRejected) {
+  DataSequence seq{};
+  seq.type = SequenceType::RTS;
+  seq.stepCount = 1;
+  seq.steps[0].action.target.fullUid = 0x007800;
+  seq.steps[0].delayCycles = 100;
+  seq.steps[0].timeoutCycles = 100;
+
+  SequenceError err{};
+  EXPECT_FALSE(system_core::data::validateSequence(seq, &err));
+  EXPECT_EQ(err.code, system_core::data::SequenceErrorCode::TIMEOUT_SHORTER_THAN_DELAY);
+}
+
+/** @test A timeout with margin over the delay is valid; zero timeout means none. */
+TEST(SequenceValidation, TimeoutWithMarginValid) {
+  DataSequence seq{};
+  seq.type = SequenceType::RTS;
+  seq.stepCount = 2;
+  seq.steps[0].action.target.fullUid = 0x007800;
+  seq.steps[1].action.target.fullUid = 0x007800;
+  seq.steps[0].delayCycles = 200;
+  seq.steps[0].timeoutCycles = 300; // Margin past the delay.
+  seq.steps[1].delayCycles = 500;
+  seq.steps[1].timeoutCycles = 0; // No timeout configured.
+
+  SequenceError err{};
+  EXPECT_TRUE(system_core::data::validateSequence(seq, &err));
+}
+
+/** @test ATS is exempt: time-provider delays are microseconds while
+ *  timeouts are engine ticks -- not comparable at validation. The
+ *  rig-proven pass plans pair sub-tick waits with multi-tick timeouts. */
+TEST(SequenceValidation, AtsExemptFromTimeoutDelayRule) {
+  DataSequence seq{};
+  seq.type = SequenceType::ATS;
+  seq.stepCount = 2;
+  seq.steps[0].action.target.fullUid = 0x007800;
+  seq.steps[1].action.target.fullUid = 0x007800;
+  seq.steps[0].delayCycles = 500;   // Microseconds under a time provider.
+  seq.steps[0].timeoutCycles = 200; // Ticks; the HIL pass-plan shape.
+  seq.steps[1].delayCycles = 5000;
+  seq.steps[1].timeoutCycles = 100;
+
+  SequenceError err{};
+  EXPECT_TRUE(system_core::data::validateSequence(seq, &err));
+}

@@ -13,7 +13,7 @@
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerBase.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerStatus.hpp"
-#include "src/utilities/concurrency/inc/ThreadPool.hpp"
+#include "src/utilities/concurrency/inc/ThreadPoolLockFree.hpp"
 #include "src/system/core/components/scheduler/posix/inc/TaskCtxPool.hpp"
 
 #include <cstdint>
@@ -24,6 +24,10 @@
 
 namespace system_core {
 namespace scheduler {
+
+/// Pending-dispatch bound per pool (power-of-two ring slots). Far above any
+/// healthy per-tick burst; the preflight burst check warns long before this.
+inline constexpr std::size_t POOL_QUEUE_CAPACITY = 1024;
 
 /**
  * @struct PoolSpec
@@ -132,6 +136,20 @@ public:
    */
   [[nodiscard]] std::size_t totalSkipCount() const noexcept { return totalSkipCount_; }
 
+  /** @brief Dispatches dropped (context exhaustion or ring rejection) since startup. */
+  [[nodiscard]] std::size_t totalDispatchDrops() const noexcept { return totalDispatchDrops_; }
+
+  /**
+   * @brief Contexts ever allocated by a pool (preallocation + any fallback).
+   *
+   * Debug builds track the count; release builds return 0. A value above
+   * the preallocated capacity means fallback allocation fired -- the
+   * capacity did not cover the schedule's dispatch demand.
+   */
+  [[nodiscard]] std::size_t ctxPoolAllocatedCount(std::size_t poolIdx) const noexcept {
+    return poolIdx < ctxPools_.size() ? ctxPools_[poolIdx]->allocatedCount() : 0;
+  }
+
   /* ----------------------------- Health Query Overrides ----------------------------- */
 
   [[nodiscard]] std::size_t totalPeriodViolations() const noexcept override {
@@ -157,7 +175,7 @@ protected:
    */
   [[nodiscard]] std::uint8_t doInit() noexcept override;
 
-  void enqueueTask(TaskEntry* entry, std::uint16_t tick) noexcept;
+  void enqueueTask(TaskEntry* entry, std::uint16_t tick, std::uint64_t dispatchNs) noexcept;
 
   static std::uint8_t taskTrampoline(void* raw) noexcept;
 
@@ -173,7 +191,10 @@ private:
   // been loaded so workersPerPool can drive sizing.
   std::vector<PoolSpec> pendingSpecs_;
 
-  std::vector<std::unique_ptr<apex::concurrency::ThreadPool>> pools_;
+  /// Lock-free dispatch pools: producer-side enqueue is a CAS push + a
+  /// waiter-gated futex wake, so the tick thread's per-task cost stays flat
+  /// as the table grows. FIFO order is preserved by the MPMC ring.
+  std::vector<std::unique_ptr<apex::concurrency::ThreadPoolLockFree>> pools_;
   std::vector<std::unique_ptr<TaskCtxPool>> ctxPools_;
   std::vector<std::string> poolNames_;
   std::filesystem::path logDir_;
@@ -186,8 +207,9 @@ private:
   /// attribution (component name is a registry-lifetime pointer).
   std::atomic<const char*> lastViolationComponent_{nullptr};
   std::atomic<std::uint8_t> lastViolationTaskUid_{0};
-  bool skipOnBusy_{false};        ///< Skip tasks still running (SKIP_ON_BUSY mode).
-  std::size_t totalSkipCount_{0}; ///< Total skipped invocations across all tasks.
+  bool skipOnBusy_{false};            ///< Skip tasks still running (SKIP_ON_BUSY mode).
+  std::size_t totalSkipCount_{0};     ///< Total skipped invocations across all tasks.
+  std::size_t totalDispatchDrops_{0}; ///< Dropped dispatches (ctx exhaustion or ring reject).
 };
 
 } // namespace scheduler

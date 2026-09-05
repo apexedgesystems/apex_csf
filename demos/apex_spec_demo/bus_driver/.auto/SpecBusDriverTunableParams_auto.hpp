@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SPEC_BUS_DRIVER_TUNABLE_PARAMS_HPP
 #define APEX_CDEF_AUTO_SPEC_BUS_DRIVER_TUNABLE_PARAMS_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -17,11 +18,14 @@ struct SpecBusDriverTunableParams {
   std::uint8_t reserved{};
 };
 static_assert(sizeof(SpecBusDriverTunableParams) == 4, "layout diverged from the spec");
+static_assert(offsetof(SpecBusDriverTunableParams, loopDelayTicks) == 0, "field offset diverged");
+static_assert(offsetof(SpecBusDriverTunableParams, maxFrameBytes) == 2, "field offset diverged");
+static_assert(offsetof(SpecBusDriverTunableParams, reserved) == 3, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SPEC_BUS_DRIVER_TUNABLE_PARAMS_LAYOUT_HASH = 0xB0B4CB9EU;
+inline constexpr std::uint32_t SPEC_BUS_DRIVER_TUNABLE_PARAMS_LAYOUT_HASH = 0xBABA083FU;
 
 } // namespace spec
 } // namespace appsim

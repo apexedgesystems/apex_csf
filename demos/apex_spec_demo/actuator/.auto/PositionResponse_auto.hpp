@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_POSITION_RESPONSE_HPP
 #define APEX_CDEF_AUTO_POSITION_RESPONSE_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -17,11 +18,14 @@ struct PositionResponse {
   std::uint8_t reserved[3]{};
 };
 static_assert(sizeof(PositionResponse) == 8, "layout diverged from the spec");
+static_assert(offsetof(PositionResponse, position) == 0, "field offset diverged");
+static_assert(offsetof(PositionResponse, moving) == 4, "field offset diverged");
+static_assert(offsetof(PositionResponse, reserved) == 5, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t POSITION_RESPONSE_LAYOUT_HASH = 0x2F8EB15EU;
+inline constexpr std::uint32_t POSITION_RESPONSE_LAYOUT_HASH = 0x021F7B09U;
 
 } // namespace spec
 } // namespace appsim

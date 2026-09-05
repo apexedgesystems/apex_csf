@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_NUDGE_REQUEST_HPP
 #define APEX_CDEF_AUTO_NUDGE_REQUEST_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -15,11 +16,12 @@ struct NudgeRequest {
   float delta{}; ///< Added to value; results outside the banded rail reject.
 };
 static_assert(sizeof(NudgeRequest) == 4, "layout diverged from the spec");
+static_assert(offsetof(NudgeRequest, delta) == 0, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t NUDGE_REQUEST_LAYOUT_HASH = 0x716D14C3U;
+inline constexpr std::uint32_t NUDGE_REQUEST_LAYOUT_HASH = 0xD026B087U;
 
 } // namespace spec
 } // namespace appsim

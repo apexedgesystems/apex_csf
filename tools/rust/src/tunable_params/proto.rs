@@ -244,6 +244,21 @@ pub fn ingest(source: &str) -> Result<BTreeMap<String, Vec<FieldDef>>, Error> {
     if !saw_syntax {
         return Err(Error::Parse("missing 'syntax = \"proto3\";'".into()));
     }
+    // Message-typed fields must reference messages this file defines
+    // (the profile is self-contained; one level of nesting only, which
+    // cdef enforces at generation).
+    for (msg, fields) in &messages {
+        for f in fields {
+            if let Some(sub) = f.r#struct.as_deref() {
+                if !messages.contains_key(sub) {
+                    return Err(Error::Parse(format!(
+                        "{msg}.{}: message type '{sub}' is not defined in this file",
+                        f.name
+                    )));
+                }
+            }
+        }
+    }
     let _ = package; // validated against the manifest namespace by the caller
     Ok(messages)
 }
@@ -317,6 +332,7 @@ fn parse_string_field(
             size: capacity,
             count,
             default: None,
+            r#struct: None,
             doc: join_doc(doc),
         },
         number,
@@ -352,6 +368,7 @@ fn parse_bytes_field(
             size: 1,
             count: Some(count),
             default: None,
+            r#struct: None,
             doc: join_doc(doc),
         },
         number,
@@ -411,6 +428,45 @@ fn parse_field(line: &str, n: usize, doc: &[String]) -> Result<(FieldDef, u32), 
     }
 
     let Some((logical, natural, narrowable)) = scalar(proto_type) else {
+        // A message-typed field is a nested struct reference; the
+        // caller verifies the message exists once the file is parsed.
+        if proto_type.chars().next().is_some_and(|c| c.is_uppercase())
+            && proto_type.chars().all(|c| c.is_alphanumeric() || c == '_')
+        {
+            if opts.width.is_some() || opts.capacity.is_some() || opts.default.is_some() {
+                return Err(Error::Parse(format!(
+                    "line {n}: field '{name}': width/capacity/default do not apply to \
+                     message-typed fields"
+                )));
+            }
+            let count = match (repeated, opts.count) {
+                (true, Some(c)) if c > 0 => Some(c),
+                (true, _) => {
+                    return Err(Error::Parse(format!(
+                        "line {n}: field '{name}': repeated message requires (apex.count) \
+                         (the layout has no variable-length members)"
+                    )))
+                }
+                (false, Some(_)) => {
+                    return Err(Error::Parse(format!(
+                        "line {n}: field '{name}': count option on a non-repeated field"
+                    )))
+                }
+                (false, None) => None,
+            };
+            return Ok((
+                FieldDef {
+                    name: name.to_string(),
+                    r#type: "nested".to_string(),
+                    size: 0,
+                    count,
+                    default: None,
+                    r#struct: Some(proto_type.to_string()),
+                    doc: join_doc(doc),
+                },
+                number,
+            ));
+        }
         return Err(Error::Parse(format!(
             "line {n}: field '{name}': type '{proto_type}' is outside the apex profile \
              (fixed-layout scalars only)"
@@ -494,6 +550,7 @@ fn parse_field(line: &str, n: usize, doc: &[String]) -> Result<(FieldDef, u32), 
             size,
             count,
             default,
+            r#struct: None,
             doc,
         },
         number,
@@ -522,6 +579,27 @@ pub fn emit(manifest: &Manifest) -> Result<String, Error> {
         for (i, f) in fields.iter().enumerate() {
             if let Some(doc) = &f.doc {
                 out.push_str(&format!("  // {doc}\n"));
+            }
+            // Nested fields are message-typed: protobuf's native
+            // embedding, with (apex.count) bounding arrays like any
+            // other repeated field.
+            if f.r#type == "nested" {
+                let sub = f.r#struct.as_deref().ok_or_else(|| {
+                    Error::Parse(format!(
+                        "{struct_name}.{}: nested field without a struct name",
+                        f.name
+                    ))
+                })?;
+                let (repeated, opts_text) = match f.count {
+                    Some(c) => ("repeated ", format!(" [(apex.count) = {c}]")),
+                    None => ("", String::new()),
+                };
+                out.push_str(&format!(
+                    "  {repeated}{sub} {} = {}{opts_text};\n",
+                    f.name,
+                    i + 1
+                ));
+                continue;
             }
             let (proto_type, width_opt) = proto_type_of(f)?;
             let mut opts: Vec<String> = Vec::new();
@@ -654,7 +732,8 @@ message M {
   bytes blob = 3 [(apex.count) = 6];
 }
 "#;
-        let m = &ingest(src).unwrap()["M"];
+        let all = ingest(src).unwrap();
+        let m = &all["M"];
         assert_eq!(
             (m[0].r#type.as_str(), m[0].size, m[0].count),
             ("string", 8, None)
@@ -671,8 +750,8 @@ message M {
         // scalar strings hash as name:string:N; arrays as the element
         // descriptor form.
         assert_eq!(
-            canonical_spec(m),
-            "axisLabel:string:8;tags:array:8;[string:4x2]blob:array:6;[uint:1x6]"
+            canonical_spec("M", m, &all).unwrap(),
+            "axisLabel:string:8:0;tags:array:8:8;[string:4x2]blob:array:6:16;[uint:1x6]|size:22"
         );
     }
 
@@ -717,9 +796,17 @@ message M {
         let first = emit(&m).unwrap();
         assert!(first.contains("string axisLabel = 1 [(apex.capacity) = 8];"));
         assert!(first.contains("repeated string tags = 2 [(apex.capacity) = 4, (apex.count) = 2];"));
-        let hash_before: Vec<String> = m.fields.values().map(|f| canonical_spec(f)).collect();
+        let hash_before: Vec<String> = m
+            .fields
+            .values()
+            .map(|f| canonical_spec("rt", f, &m.fields).unwrap())
+            .collect();
         m.fields = ingest(&first).unwrap();
-        let hash_after: Vec<String> = m.fields.values().map(|f| canonical_spec(f)).collect();
+        let hash_after: Vec<String> = m
+            .fields
+            .values()
+            .map(|f| canonical_spec("rt", f, &m.fields).unwrap())
+            .collect();
         assert_eq!(first, emit(&m).unwrap());
         assert_eq!(hash_before, hash_after);
     }
@@ -778,9 +865,17 @@ message M {
 
         // Round 2: ingest the emission and emit again.
         let ingested = ingest(&first).unwrap();
-        let hash_before: Vec<String> = m.fields.values().map(|f| canonical_spec(f)).collect();
+        let hash_before: Vec<String> = m
+            .fields
+            .values()
+            .map(|f| canonical_spec("rt", f, &m.fields).unwrap())
+            .collect();
         m.fields = ingested;
-        let hash_after: Vec<String> = m.fields.values().map(|f| canonical_spec(f)).collect();
+        let hash_after: Vec<String> = m
+            .fields
+            .values()
+            .map(|f| canonical_spec("rt", f, &m.fields).unwrap())
+            .collect();
         let second = emit(&m).unwrap();
 
         assert_eq!(first, second, "emission is not a fixpoint");

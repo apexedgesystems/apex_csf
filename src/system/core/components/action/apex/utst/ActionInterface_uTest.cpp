@@ -816,6 +816,12 @@ TEST(ActionInterface, SequenceTimeoutAbort) {
   EXPECT_EQ(seq.status, system_core::data::SequenceStatus::TIMED_OUT);
   EXPECT_EQ(iface.stats.sequenceTimeouts, 1U);
   EXPECT_EQ(iface.stats.sequenceAborts, 1U);
+
+  // Timeout context captured for the component's warning line.
+  EXPECT_EQ(iface.stats.lastTimeoutSeqId, seq.sequenceId);
+  EXPECT_EQ(iface.stats.lastTimeoutStep, 0U);
+  EXPECT_EQ(iface.stats.lastTimeoutPolicy,
+            static_cast<std::uint8_t>(system_core::data::StepTimeoutPolicy::ABORT));
 }
 
 /** @test Step timeout with SKIP policy advances to next step. */

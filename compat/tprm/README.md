@@ -15,7 +15,9 @@ in-repo suite that pins this contract.
 | `archives/basic.tprm`    | Format B: a packed archive (v3 component entries + a raw RTS-reserved entry)                   |
 
 The payload uids are part of the contract: `scalar_types` targets
-0x000000, `strings_arrays` 0x00D001, `nested_enum` 0x00CA00. A reader
+0x000000, `strings_arrays` 0x00D001, `nested_enum` 0x00CA00, and
+`scheduler_shape` 0x000100 (the scheduler TPRM: header + 15-byte task
+entries, the shape a C2 backend needs to render or author schedules). A reader
 must verify the prelude (wrong magic, version, target, size, or CRC
 each reject distinctly) before touching the body.
 

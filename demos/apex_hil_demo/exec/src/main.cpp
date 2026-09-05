@@ -40,15 +40,10 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-  // Program arguments (excluding --fs-root which is consumed here)
-  std::vector<std::string> args;
-  for (int i = 1; i < argc; ++i) {
-    if (std::string_view(argv[i]) == "--fs-root" && i + 1 < argc) {
-      ++i; // skip value
-      continue;
-    }
-    args.emplace_back(argv[i]);
-  }
+  // Full argument list, --fs-root included: the executive ignores
+  // unknown flags and replays these args on a RELOAD_EXECUTIVE
+  // restart, which must come back up on the same filesystem root.
+  std::vector<std::string> args(argv + 1, argv + argc);
 
   // Create HIL executive (with plant model)
   appsim::exec::HilExecutive hil(exec, args, rootfs);

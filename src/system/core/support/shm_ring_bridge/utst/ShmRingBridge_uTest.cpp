@@ -35,6 +35,8 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <filesystem>
+#include <unistd.h>
 
 using system_core::data::DataCategory;
 using system_core::support::BRIDGE_FRAMEWORK_MAGIC;
@@ -860,4 +862,19 @@ TEST(ShmRingBridge, foreignOwnerFlaggedNotClobbered) {
   EXPECT_EQ(AFTER.st_size, 128);
   ::close(CHECK);
   ::shm_unlink(SHM.c_str()); // test cleanup
+}
+
+/* ----------------------------- TPRM Load Contract ----------------------------- */
+
+/** @test Missing tprm is optional: defaults and success (pinned convention). */
+TEST(ShmRingBridge, LoadTprmMissingFileIsOptional) {
+  const auto DIR =
+      std::filesystem::temp_directory_path() / ("shmrb_tprm_missing_" + std::to_string(getpid()));
+  std::filesystem::create_directories(DIR);
+
+  system_core::support::ShmRingBridge bridge;
+  bridge.setInstanceIndex(0);
+  EXPECT_TRUE(bridge.loadTprm(DIR));
+
+  std::filesystem::remove_all(DIR);
 }

@@ -475,13 +475,16 @@ void ApexInterface::routeToComponent(std::uint8_t serverId,
       buf->opcode = view.header.opcode;
       buf->sequence = view.header.sequence;
       buf->internalOrigin = false; // External command.
+      buf->originServerId = serverId;
+      buf->ackRequested = view.ackRequested();
 
       // Push pointer to component's command inbox.
       if (COMPAT_LIKELY(queues->cmdInbox.tryPush(buf))) {
-        // Queued successfully - component will process in step().
-        // Send immediate ACK if requested (command accepted, not processed yet).
+        // Queued successfully - component will process in step(). An
+        // interim QUEUED frame acknowledges acceptance; the outcome
+        // follows as a COMPLETION frame when the drain executes it.
         if (view.ackRequested()) {
-          enqueueAckNak(serverId, view.header, 0); // ACK = command queued.
+          enqueueAckNak(serverId, view.header, 0, {}, aproto::AckStage::QUEUED);
         }
         return;
       }
@@ -511,7 +514,8 @@ void ApexInterface::routeToComponent(std::uint8_t serverId,
 
 void ApexInterface::enqueueAckNak(std::uint8_t serverId, const aproto::AprotoHeader& cmdHeader,
                                   std::uint8_t statusCode,
-                                  apex::compat::rospan<std::uint8_t> responsePayload) noexcept {
+                                  apex::compat::rospan<std::uint8_t> responsePayload,
+                                  aproto::AckStage stage) noexcept {
   // Build response header.
   const bool IS_ACK = (statusCode == 0);
   const std::uint16_t RESP_OPCODE = IS_ACK ? static_cast<std::uint16_t>(aproto::SystemOpcode::ACK)
@@ -531,6 +535,7 @@ void ApexInterface::enqueueAckNak(std::uint8_t serverId, const aproto::AprotoHea
   ack.cmdOpcode = cmdHeader.opcode;
   ack.cmdSequence = cmdHeader.sequence;
   ack.status = statusCode;
+  ack.stage = static_cast<std::uint8_t>(stage);
   std::memset(ack.reserved, 0, sizeof(ack.reserved));
 
   // Assemble full payload into frameBuf_ scratch (no heap allocation).
@@ -601,6 +606,25 @@ void ApexInterface::drainTelemetryOutboxes() noexcept {
   });
 }
 
+void ApexInterface::drainCompletionFrames() noexcept {
+  MessageBuffer* buf = nullptr;
+  while (completionOutbox_.tryPop(buf)) {
+    if (buf == nullptr) {
+      continue;
+    }
+    aproto::AprotoHeader hdr{};
+    hdr.fullUid = buf->fullUid;
+    hdr.opcode = buf->opcode;
+    hdr.sequence = buf->sequence;
+    apex::compat::rospan<std::uint8_t> respSpan{};
+    if (buf->length > 0) {
+      respSpan = apex::compat::rospan<std::uint8_t>{buf->data, buf->length};
+    }
+    enqueueAckNak(buf->originServerId, hdr, buf->status, respSpan, aproto::AckStage::COMPLETION);
+    bufferPool_.release(buf);
+  }
+}
+
 std::size_t ApexInterface::drainCommandsToComponents(std::size_t maxPerComponent) noexcept {
   std::size_t total = 0;
 
@@ -626,11 +650,35 @@ std::size_t ApexInterface::drainCommandsToComponents(std::size_t maxPerComponent
 
       // Dispatch to component using metadata fields directly (no APROTO re-parse).
       std::vector<std::uint8_t> response;
-      [[maybe_unused]] const std::uint8_t RESULT = comp->handleCommand(
+      const std::uint8_t RESULT = comp->handleCommand(
           buf->opcode, apex::compat::rospan<std::uint8_t>{buf->data, buf->length}, response);
 
-      // Release buffer after processing.
-      bufferPool_.release(buf);
+      // A queued external command's outcome leaves the vehicle as a
+      // COMPLETION frame: same cmdSequence the QUEUED frame carried,
+      // real status, response bytes in the extra. Frame encoding and
+      // TX production belong to the external-I/O thread (its scratch,
+      // its side of the TX pipe), so this drain -- which runs on the
+      // task thread -- retains the buffer with the outcome written in
+      // place and hands it across on the completion outbox instead of
+      // emitting here.
+      if (buf->ackRequested && !buf->internalOrigin) {
+        const std::size_t COPY = std::min(response.size(), buf->capacity);
+        if (COPY > 0) {
+          std::memcpy(buf->data, response.data(), COPY);
+        }
+        buf->length = COPY;
+        buf->status = RESULT;
+        if (COMPAT_LIKELY(completionOutbox_.tryPush(buf))) {
+          buf = nullptr; // Ownership crossed to the outbox.
+        } else {
+          ++stats_.completionDrops;
+        }
+      }
+
+      // Release buffer after processing (unless the outbox owns it).
+      if (buf != nullptr) {
+        bufferPool_.release(buf);
+      }
 
       ++count;
       ++total;
@@ -940,6 +988,7 @@ void ApexInterface::logStatsSummary() noexcept {
   log->info(label(), "Queue Health:");
   log->info(label(), fmt::format("  Cmd queue overflows: {}", stats_.cmdQueueOverflows));
   log->info(label(), fmt::format("  Tlm queue overflows: {}", stats_.tlmQueueOverflows));
+  log->info(label(), fmt::format("  Completion drops: {}", stats_.completionDrops));
   log->info(label(), "=============================");
 }
 

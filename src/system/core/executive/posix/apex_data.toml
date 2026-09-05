@@ -6,6 +6,12 @@
 
 component = "ApexExecutive"
 
+# Ground feature-detects per target from this explicit list, never
+# from version strings. readback = staged-verify surface
+# (READBACK_TPRM, VERIFY_TPRM, verify-gated RELOAD) and
+# cmd_sequence-correlated QUEUED/COMPLETION response stages.
+capabilities = ["readback"]
+
 [structs]
 # Tunable parameters (TPRM-configurable at startup)
 ExecutiveTunableParams = { category = "TUNABLE_PARAM", header = "inc/ExecutiveData.hpp" }

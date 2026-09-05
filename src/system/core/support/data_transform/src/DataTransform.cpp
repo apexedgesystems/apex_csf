@@ -57,8 +57,14 @@ bool DataTransform::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   const std::filesystem::path TPRM_PATH = tprmDir / filename;
 
   if (!std::filesystem::exists(TPRM_PATH)) {
+    // No campaign packed: a valid configuration (transform runs pass-
+    // through), reported as success so the executive does not warn.
+    auto* log = componentLog();
+    if (log != nullptr) {
+      log->info(label(), "No TPRM found, no fault campaign armed");
+    }
     setConfigured(true);
-    return false;
+    return true;
   }
 
   // Load the fault campaign TPRM

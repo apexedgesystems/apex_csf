@@ -5,20 +5,174 @@
 # interface at configured rates via postInternalTelemetry().
 
 component = "TelemetryManager"
+namespace = "system_core::support"
 
 [structs]
-# Tunable parameters (subscription table, TPRM-configurable)
-TelemetryManagerTprm = { category = "TUNABLE_PARAM", header = "inc/TelemetryManagerData.hpp" }
+# Tunable parameters (subscription table, TPRM-configurable):
+# collect rate + 32 nested TelemetrySubscription entries.
+TelemetryManagerTprm = { category = "TUNABLE_PARAM" }
 
-# Single subscription entry (16 bytes each, 32 max)
-TelemetrySubscription = { category = "TUNABLE_PARAM", header = "inc/TelemetryManagerData.hpp" }
+# Single subscription entry (16 bytes), embedded 32x in the Tprm.
+TelemetrySubscription = { category = "STRUCT" }
 
-# Runtime state and counters
-TelemetryManagerState = { category = "STATE", header = "inc/TelemetryManagerData.hpp" }
+# Runtime state and counters (spec-defined below)
+TelemetryManagerState = { category = "STATE" }
 
-# Health telemetry returned by GET_STATS (opcode 0x0100)
-TelemetryManagerHealthTlm = { category = "TELEMETRY", opcode = "0x0100", header = "inc/TelemetryManagerData.hpp" }
+# Health telemetry returned by GET_STATS (opcode 0x0100; spec-defined below)
+TelemetryManagerHealthTlm = { category = "TELEMETRY", opcode = "0x0100" }
 
 [enums]
 # Command opcodes
 TelemetryManagerOpcode = { header = "inc/TelemetryManager.hpp" }
+
+[[fields.TelemetryManagerHealthTlm]]
+name = "collectCount"
+type = "uint"
+size = 4
+default = 0
+
+[[fields.TelemetryManagerHealthTlm]]
+name = "packetsSent"
+type = "uint"
+size = 4
+default = 0
+doc = "Total telemetry packets pushed to bus."
+
+[[fields.TelemetryManagerHealthTlm]]
+name = "sendFailures"
+type = "uint"
+size = 4
+default = 0
+doc = "Failed pushes (queue full or registry miss)."
+
+[[fields.TelemetryManagerHealthTlm]]
+name = "activeCount"
+type = "uint"
+size = 2
+default = 0
+doc = "Number of active subscriptions."
+
+[[fields.TelemetryManagerHealthTlm]]
+name = "reserved"
+type = "uint"
+size = 2
+default = 0
+doc = "Alignment padding."
+
+[[fields.TelemetryManagerState]]
+name = "collectCount"
+type = "uint"
+size = 4
+default = 0
+
+[[fields.TelemetryManagerState]]
+name = "packetsSent"
+type = "uint"
+size = 4
+default = 0
+doc = "Total telemetry packets pushed to bus."
+
+[[fields.TelemetryManagerState]]
+name = "sendFailures"
+type = "uint"
+size = 4
+default = 0
+doc = "Failed pushes (queue full or registry miss)."
+
+[[fields.TelemetryManagerState]]
+name = "activeCount"
+type = "uint"
+size = 2
+default = 0
+doc = "Number of active subscriptions."
+
+[[fields.TelemetryManagerState]]
+name = "reserved"
+type = "uint"
+size = 2
+default = 0
+doc = "Alignment padding."
+
+[[fields.TelemetrySubscription]]
+name = "fullUid"
+type = "uint"
+size = 4
+default = 0
+doc = "Target component fullUid (e.g. 0x00D000)."
+
+[[fields.TelemetrySubscription]]
+name = "category"
+type = "uint"
+size = 1
+default = 0
+doc = "DataCategory enum (0=STATIC, 1=TUNABLE, 2=STATE, 3=INPUT, 4=OUTPUT)."
+
+[[fields.TelemetrySubscription]]
+name = "active"
+type = "uint"
+size = 1
+default = 0
+doc = "1 = active, 0 = inactive."
+
+[[fields.TelemetrySubscription]]
+name = "opcode"
+type = "uint"
+size = 2
+default = 0
+doc = "APROTO opcode for the outbound telemetry packet."
+
+[[fields.TelemetrySubscription]]
+name = "offset"
+type = "uint"
+size = 2
+default = 0
+doc = "Byte offset into the data block (0 = start)."
+
+[[fields.TelemetrySubscription]]
+name = "length"
+type = "uint"
+size = 2
+default = 0
+doc = "Bytes to read (0 = entire block)."
+
+[[fields.TelemetrySubscription]]
+name = "rateDiv"
+type = "uint"
+size = 2
+default = 1
+doc = "Rate divisor: push every N collect ticks (1 = every tick)."
+
+[[fields.TelemetrySubscription]]
+name = "reserved"
+type = "uint"
+size = 2
+default = 0
+doc = "Explicit padding."
+
+[[fields.TelemetryManagerTprm]]
+name = "collectRateHz"
+type = "uint"
+size = 2
+default = 1
+doc = "Base collect task rate (Hz); subscriptions divide from this."
+
+[[fields.TelemetryManagerTprm]]
+name = "reserved0"
+type = "uint"
+size = 2
+default = 0
+doc = "Explicit padding."
+
+[[fields.TelemetryManagerTprm]]
+name = "reserved1"
+type = "uint"
+size = 4
+default = 0
+doc = "Explicit padding."
+
+[[fields.TelemetryManagerTprm]]
+name = "subscriptions"
+type = "nested"
+struct = "TelemetrySubscription"
+count = 32
+doc = "Push channel table; unused entries have active = 0."

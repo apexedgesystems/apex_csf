@@ -159,9 +159,13 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config, S
     return RC;
   }
 
-  // Store fullUid, taskUid, componentName, and sequencing info in TaskEntry
-  TaskEntry* entry = getEntry(task);
-  if (entry != nullptr) {
+  // Store fullUid, taskUid, componentName, and sequencing info in the entry
+  // the base call just appended. getEntry() would return the FIRST entry for
+  // this task pointer, which is a different entry when one task is scheduled
+  // at multiple rates -- the second row's identity would land on the first
+  // entry and leave its own at fullUid 0.
+  TaskEntry* entry = entries_.empty() ? nullptr : &entries_.back();
+  if (entry != nullptr && entry->task == &task) {
     entry->fullUid = fullUid;
     entry->componentName = componentName;
     entry->taskUid = taskUid;

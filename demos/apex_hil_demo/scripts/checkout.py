@@ -160,8 +160,14 @@ def test_executive_health(c2: AprotoClient) -> bool:
     return ok
 
 
-def test_driver_stats(c2: AprotoClient) -> bool:
-    """Test 5: Read STM32 driver state via INSPECT."""
+def test_driver_stats(c2: AprotoClient, no_stm32: bool = False) -> bool:
+    """Test 5: Read STM32 driver state via INSPECT.
+
+    With no_stm32, the link-dependent assertions (tx/rx active, no tx
+    misses) are skipped: without the FTDI UART the link never opens and
+    the driver counts a miss per cycle by design. Decode and CRC
+    assertions always run.
+    """
     print("\n--- 5. STM32 Driver Stats ---")
     r = c2.inspect(0x007A00, category=2)
     ok = check("INSPECT driver #0 returns SUCCESS", r["status"] == 0, r["status_name"])
@@ -176,10 +182,13 @@ def test_driver_stats(c2: AprotoClient) -> bool:
             f"    tx={tx} rx={rx} crcErr={crcErr} txMiss={txMiss} rxMiss={rxMiss} "
             f"uartOpen={uartOpen}"
         )
-        ok &= check("STM32 tx > 0 (communicating)", tx > 0)
-        ok &= check("STM32 rx > 0 (receiving)", rx > 0)
+        if no_stm32:
+            print("    (link assertions skipped: --no-stm32)")
+        else:
+            ok &= check("STM32 tx > 0 (communicating)", tx > 0)
+            ok &= check("STM32 rx > 0 (receiving)", rx > 0)
+            ok &= check("STM32 0 tx misses", txMiss == 0)
         ok &= check("STM32 0 CRC errors", crcErr == 0)
-        ok &= check("STM32 0 tx misses", txMiss == 0)
     else:
         ok &= check("Driver state size >= 28", False, f"got {len(state)} bytes")
     return ok
@@ -518,14 +527,18 @@ def test_post_restart(host: str, port: int) -> bool:
 
 
 def find_plugin_so() -> str:
-    """Auto-detect TestPlugin_v2.so from build directory."""
+    """Auto-detect TestPlugin_v2.so from build directory.
+
+    Newest build wins: the plugin's ABI must match the running target
+    binary, so a stale sibling tree must never shadow the fresh one.
+    """
     candidates = [
         "build/rpi-aarch64-release/test_plugins/TestPlugin_v2.so",
         "build/rpi-aarch64-debug/test_plugins/TestPlugin_v2.so",
     ]
-    for path in candidates:
-        if os.path.isfile(path):
-            return path
+    existing = [p for p in candidates if os.path.isfile(p)]
+    if existing:
+        return max(existing, key=os.path.getmtime)
     return candidates[0]
 
 
@@ -542,6 +555,11 @@ def main() -> int:
         help="Skip RELOAD_EXECUTIVE test (preserves running instance)",
     )
     parser.add_argument("--skip-reload-lib", action="store_true", help="Skip RELOAD_LIBRARY test")
+    parser.add_argument(
+        "--no-stm32",
+        action="store_true",
+        help="Hosted run without the STM32 rig: skip UART link assertions",
+    )
     parser.add_argument(
         "--plugin-so", default=None, help="Path to TestPlugin_v2.so (auto-detected if omitted)"
     )
@@ -560,7 +578,7 @@ def main() -> int:
             test_component_addressing(c2)
             test_clock_rate(c2)
             test_executive_health(c2)
-            test_driver_stats(c2)
+            test_driver_stats(c2, no_stm32=args.no_stm32)
             test_comparator(c2)
             test_sleep_wake(c2)
             test_lock_unlock(c2)

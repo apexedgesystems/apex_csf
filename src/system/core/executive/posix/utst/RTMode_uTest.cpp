@@ -99,10 +99,10 @@ TEST(RTMode, ParseRTModeInvalidStrings) {
 
 /* ----------------------------- RTConfig Tests ----------------------------- */
 
-/** @test RTConfig default construction. */
+/** @test RTConfig default construction: stock is soft, never fatal. */
 TEST(RTConfig, DefaultConstruction) {
   const executive::RTConfig config{};
-  EXPECT_EQ(config.mode, executive::RTMode::HARD_PERIOD_COMPLETE);
+  EXPECT_EQ(config.mode, executive::RTMode::SOFT_SKIP_ON_BUSY);
   EXPECT_EQ(config.maxLagTicks, 10U);
 }
 
@@ -185,7 +185,9 @@ TEST(RTConfig, MethodsAreConstexpr) {
   constexpr bool isSoft = config.isSoftMode();
   constexpr bool needsTracking = config.needsDeadlineTracking();
 
-  EXPECT_TRUE(isHard);
-  EXPECT_FALSE(isSoft);
+  // Stock default is SOFT_SKIP_ON_BUSY: soft, with deadline tracking
+  // (skip decisions need per-task in-flight state).
+  EXPECT_FALSE(isHard);
+  EXPECT_TRUE(isSoft);
   EXPECT_TRUE(needsTracking);
 }

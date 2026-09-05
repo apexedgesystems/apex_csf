@@ -232,7 +232,11 @@ PERF_TEST(SchedulableTaskPerf, CallableAccessor) {
   std::printf("  Latency: %.3f us (median)\n", result.stats.median);
   std::printf("  Throughput: %.0f M calls/sec\n", result.callsPerSecond / 1e6);
 
-  EXPECT_STABLE_CV_CPU(result, perf.config());
+  // CV gate arms only at recorded-battery depth (reduced-repeat runs
+  // estimate CV with no statistical power and flake at the threshold).
+  if (perf.config().repeats >= 5) {
+    EXPECT_STABLE_CV_CPU(result, perf.config());
+  }
 }
 
 /* ----------------------------- Cache Hierarchy ----------------------------- */

@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_RECALIBRATE_REQUEST_HPP
 #define APEX_CDEF_AUTO_RECALIBRATE_REQUEST_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -15,11 +16,12 @@ struct RecalibrateRequest {
   float referenceValue{}; ///< New calibrated reference.
 };
 static_assert(sizeof(RecalibrateRequest) == 4, "layout diverged from the spec");
+static_assert(offsetof(RecalibrateRequest, referenceValue) == 0, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t RECALIBRATE_REQUEST_LAYOUT_HASH = 0xBFA1F4A4U;
+inline constexpr std::uint32_t RECALIBRATE_REQUEST_LAYOUT_HASH = 0x4BABF3B0U;
 
 } // namespace spec
 } // namespace appsim

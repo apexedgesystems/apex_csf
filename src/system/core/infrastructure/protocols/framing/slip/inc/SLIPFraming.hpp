@@ -91,9 +91,29 @@ struct DecodeState {
 
   /**
    * @brief Reset decoder to idle state.
+   *
+   * IDLE is the pre-sync state: bytes are discarded until a delimiter
+   * proves a frame boundary. Use for initial startup and after errors
+   * that leave the stream position unknown.
    */
   void reset() noexcept {
     mode = Mode::IDLE;
+    frameLen = 0;
+    hadData = false;
+  }
+
+  /**
+   * @brief Reset decoder to a frame boundary.
+   *
+   * A delimiter separates frames: the byte after it belongs to the next
+   * frame, so the decoder must accept payload immediately rather than
+   * demand another delimiter. Requiring one couples correctness to
+   * delimiter parity -- a single lost END on a leading+trailing-END
+   * stream then shifts every subsequent frame into the discard path
+   * permanently. Use wherever a delimiter has just been consumed.
+   */
+  void resetToBoundary() noexcept {
+    mode = Mode::IN_FRAME;
     frameLen = 0;
     hadData = false;
   }

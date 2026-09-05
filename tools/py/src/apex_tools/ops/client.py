@@ -153,10 +153,29 @@ class AprotoClient:
         if not ack_req:
             return {"status": 0, "status_name": "SUCCESS"}
 
-        resp = self._recv_response()
-        ack = proto.parse_ack(resp.get("payload", b""))
-        ack["raw_response"] = resp
-        return ack
+        # A command's outcome is its TERMINAL frame for this sequence:
+        # RESULT (sync path, and every pre-readback vehicle) or
+        # COMPLETION (deferred outcome of a QUEUED command). An interim
+        # QUEUED frame is recorded and the wait continues; frames from
+        # other sequences are stale and discarded.
+        queued_seen = False
+        deadline = time.monotonic() + self.timeout
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                if queued_seen:
+                    raise TimeoutError(f"seq {seq}: QUEUED but no COMPLETION within timeout")
+                raise TimeoutError("No response received within timeout")
+            resp = self._recv_response(timeout=remaining)
+            ack = proto.parse_ack(resp.get("payload", b""))
+            if ack.get("cmd_sequence") != seq:
+                continue  # Stale frame from an earlier exchange.
+            if ack.get("stage") == proto.ACK_STAGE_QUEUED:
+                queued_seen = True
+                continue
+            ack["queued"] = queued_seen
+            ack["raw_response"] = resp
+            return ack
 
     # Basic commands
 
@@ -227,6 +246,50 @@ class AprotoClient:
     def get_sysmon_health(self) -> dict:
         """Get system monitor health (request via component opcode)."""
         return self.send_command(proto.FULLUID_SYSMON, proto.COMPONENT_GET_HEALTH)
+
+    # ------------------------------------------------------------------
+    # Staged-verify surface (readback capability)
+    # ------------------------------------------------------------------
+
+    def readback_tprm(self, offset: int = 0) -> dict:
+        """Digest of the staged (inactive-bank) TPRM payloads.
+
+        Returns {"total", "offset", "rows": [{"full_uid", "layout_hash",
+        "payload_crc", "verdict"}]} parsed from one page; iterate with
+        `offset` until offset + len(rows) == total.
+        """
+        r = self.send_command(0x000000, 0x0131, struct.pack("<H", offset))
+        if r["status"] != 0:
+            return {"error": r["status_name"], "status": r["status"]}
+        extra = r.get("extra", b"")
+        total, first, count = struct.unpack_from("<HHB", extra, 0)
+        rows = []
+        for i in range(count):
+            o = 8 + i * 16
+            uid, lhash, crc = struct.unpack_from("<III", extra, o)
+            rows.append(
+                {
+                    "full_uid": uid,
+                    "layout_hash": lhash,
+                    "payload_crc": crc,
+                    "verdict": extra[o + 12],
+                }
+            )
+        return {"total": total, "offset": first, "rows": rows}
+
+    def verify_tprm(self, full_uid: int) -> dict:
+        """Verify one staged payload on the vehicle without applying.
+
+        Returns {"verdict", "layout_hash", "payload_crc"}; verdict 0 (OK)
+        means every ingest check the apply path runs has passed.
+        """
+        r = self.send_command(0x000000, 0x0132, struct.pack("<I", full_uid))
+        if r["status"] != 0:
+            return {"error": r["status_name"], "status": r["status"]}
+        extra = r.get("extra", b"")
+        verdict = extra[0] if extra else 255
+        lhash, crc = struct.unpack_from("<II", extra, 4) if len(extra) >= 12 else (0, 0)
+        return {"verdict": verdict, "layout_hash": lhash, "payload_crc": crc}
 
     # Action engine sequence commands
 

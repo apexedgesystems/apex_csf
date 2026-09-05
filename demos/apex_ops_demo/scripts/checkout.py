@@ -582,7 +582,9 @@ def run_checkout(args: argparse.Namespace) -> int:
         if not args.skip_reload_lib:
             plugin_so = args.plugin_so
             if plugin_so is None:
-                # Auto-detect from build dir
+                # Auto-detect across build trees; NEWEST build wins. The
+                # plugin's ABI must match the running host, so a stale
+                # sibling tree must never shadow the freshly built one.
                 candidates = [
                     os.path.join(
                         os.path.dirname(__file__),
@@ -590,15 +592,15 @@ def run_checkout(args: argparse.Namespace) -> int:
                         "..",
                         "..",
                         "build",
-                        "hosted-x86_64-debug",
+                        tree,
                         "test_plugins",
                         "OpsTestPlugin_v2.so",
-                    ),
+                    )
+                    for tree in ("hosted-x86_64-debug", "hosted-x86_64-debug-cpu")
                 ]
-                for c in candidates:
-                    if os.path.isfile(c):
-                        plugin_so = os.path.abspath(c)
-                        break
+                existing = [os.path.abspath(c) for c in candidates if os.path.isfile(c)]
+                if existing:
+                    plugin_so = max(existing, key=os.path.getmtime)
 
             if plugin_so and os.path.isfile(plugin_so):
                 result = c2.update_component(
@@ -609,7 +611,7 @@ def run_checkout(args: argparse.Namespace) -> int:
                 )
                 check(
                     "Library hot-swap accepted",
-                    result["status"] in (0, 17),
+                    result["status"] == 0,
                     result["status_name"],
                 )
             else:
@@ -642,11 +644,13 @@ def run_checkout(args: argparse.Namespace) -> int:
                 )
             )
             if os.path.isfile(rts_path):
-                result = c2.send_file(rts_path, "rts/noop_sweep.rts")
+                # Transfer paths are filesystem-root-relative; LOAD paths are
+                # bank-relative (resolve against the active bank). The pair
+                # must land on the same file: upload into the bank.
+                result = c2.send_file(rts_path, "bank_a/rts/noop_sweep.rts")
                 check("Upload RTS file", result["status"] == 0, result["status_name"])
 
-                # Load into slot 0 (.apex_fs/ prefix matches file transfer root)
-                load_payload = b"\x00" + b".apex_fs/rts/noop_sweep.rts\x00"
+                load_payload = b"\x00" + b"rts/noop_sweep.rts\x00"
                 r = c2.send_command(0x000500, proto.ACTION_LOAD_RTS, load_payload)
                 check("LOAD_RTS slot 0", r["status"] == 0, r["status_name"])
 

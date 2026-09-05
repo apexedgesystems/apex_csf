@@ -127,7 +127,8 @@ static_assert(sizeof(AprotoHeader) == 14, "AprotoHeader must be 14 bytes");
  *   0       2     cmdOpcode   - Original command opcode
  *   2       2     cmdSequence - Original command sequence
  *   4       1     status      - 0=success, nonzero=error code
- *   5       3     reserved    - Reserved, set to 0
+ *   5       1     stage       - AckStage (0=RESULT keeps pre-stage frames valid)
+ *   6       2     reserved    - Reserved, set to 0
  *
  * @note RT-safe: POD type, packed for wire transmission.
  */
@@ -135,8 +136,23 @@ struct AckPayload {
   std::uint16_t cmdOpcode;   ///< Original command opcode
   std::uint16_t cmdSequence; ///< Original command sequence
   std::uint8_t status;       ///< 0=success, nonzero=error
-  std::uint8_t reserved[3];  ///< Reserved, set to 0
+  std::uint8_t stage;        ///< AckStage: response lifecycle position
+  std::uint8_t reserved[2];  ///< Reserved, set to 0
 } __attribute__((packed));
+
+/**
+ * @enum AckStage
+ * @brief Position of an ACK/NAK frame in a command's response lifecycle.
+ *
+ * Every frame of one command carries the same cmdSequence; the stage
+ * byte tells ground which frame it is. RESULT = 0 so every frame
+ * emitted before staging existed reads as a terminal result.
+ */
+enum class AckStage : std::uint8_t {
+  RESULT = 0,    ///< Terminal: status and extra are the command's outcome.
+  QUEUED = 1,    ///< Interim: command accepted onto the target's queue.
+  COMPLETION = 2 ///< Terminal: deferred outcome of a previously QUEUED command.
+};
 
 static_assert(sizeof(AckPayload) == 8, "AckPayload must be 8 bytes");
 

@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SPEC_SENSOR_TUNABLE_PARAMS_HPP
 #define APEX_CDEF_AUTO_SPEC_SENSOR_TUNABLE_PARAMS_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -20,11 +21,17 @@ struct SpecSensorTunableParams {
   std::uint8_t reserved[3]{}; ///< Alignment padding.
 };
 static_assert(sizeof(SpecSensorTunableParams) == 20, "layout diverged from the spec");
+static_assert(offsetof(SpecSensorTunableParams, sampleRateHz) == 0, "field offset diverged");
+static_assert(offsetof(SpecSensorTunableParams, referenceValue) == 4, "field offset diverged");
+static_assert(offsetof(SpecSensorTunableParams, driftRate) == 8, "field offset diverged");
+static_assert(offsetof(SpecSensorTunableParams, noiseAmplitude) == 12, "field offset diverged");
+static_assert(offsetof(SpecSensorTunableParams, mode) == 16, "field offset diverged");
+static_assert(offsetof(SpecSensorTunableParams, reserved) == 17, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SPEC_SENSOR_TUNABLE_PARAMS_LAYOUT_HASH = 0x2924797DU;
+inline constexpr std::uint32_t SPEC_SENSOR_TUNABLE_PARAMS_LAYOUT_HASH = 0x7668D6ACU;
 
 } // namespace spec
 } // namespace appsim

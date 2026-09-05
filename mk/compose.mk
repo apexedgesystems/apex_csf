@@ -63,8 +63,13 @@ $(eval $(call _compose_target,format-check,format (check only),dev-cuda,format-c
 # Compose wrappers for every registered check (mk/checks.mk), plus sbom and
 # notices, are generated from the registry: each `make <check>` gets a matching
 # `make compose-<check>` automatically, so adding a check needs no edit here.
-# Covers the sanitizers, static analyzers, coverage, and security scanners.
-$(foreach c,$(CHECKS_ALL) sbom notices,$(eval $(call _compose_target,$(c),$(c) (dev-cuda),dev-cuda,$(c))))
+# Service mapping mirrors CI (nightly.yml): static runs in dev-cuda so the
+# CUDA-gated TUs enter its compile database (clang-tidy parses, no GPU
+# needed); every other check runs in dev -- the CUDA image's nvcc caps the
+# host compiler below the image's newest clang, and sanitizer runtimes ship
+# only for the newest, so sanitizer links fail in dev-cuda by construction.
+$(foreach c,$(filter-out static,$(CHECKS_ALL)) sbom notices,$(eval $(call _compose_target,$(c),$(c) (dev),dev,$(c))))
+$(eval $(call _compose_target,static,static (dev-cuda),dev-cuda,static))
 
 # ------------------------------------------------------------------------------
 # Tools (dev-cuda)

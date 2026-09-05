@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SPEC_PROTO_MAX_STATE_HPP
 #define APEX_CDEF_AUTO_SPEC_PROTO_MAX_STATE_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -16,11 +17,13 @@ struct SpecProtoMaxState {
   std::uint32_t checksum{}; ///< XOR checksum over the tunable bytes, recomputed each step.
 };
 static_assert(sizeof(SpecProtoMaxState) == 8, "layout diverged from the spec");
+static_assert(offsetof(SpecProtoMaxState, stepCount) == 0, "field offset diverged");
+static_assert(offsetof(SpecProtoMaxState, checksum) == 4, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SPEC_PROTO_MAX_STATE_LAYOUT_HASH = 0x26945ADFU;
+inline constexpr std::uint32_t SPEC_PROTO_MAX_STATE_LAYOUT_HASH = 0xEC80FB62U;
 
 } // namespace spec
 } // namespace appsim

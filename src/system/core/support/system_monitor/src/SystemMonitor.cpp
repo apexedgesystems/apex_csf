@@ -93,15 +93,18 @@ bool SystemMonitor::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   std::filesystem::path tprmPath = tprmDir / filename;
 
   if (!std::filesystem::exists(tprmPath)) {
+    // Optional tprm: defaults + success, so the executive does not warn
+    // and a live library reload does not fail on an absent file.
     auto* log = componentLog();
     if (log != nullptr) {
-      log->info(label(), "TPRM not found, using defaults");
+      log->info(label(), "No TPRM found, using defaults");
     }
-    return false;
+    return true;
   }
 
   SystemMonitorTunableParams loaded{};
-  const auto CHECK = system_component::readTprmPayload(tprmPath, fullUid(), loaded);
+  const auto CHECK = system_component::readTprmPayload(tprmPath, fullUid(), loaded,
+                                                       &SYSTEM_MONITOR_TUNABLE_PARAMS_LAYOUT_HASH);
   if (CHECK != system_component::TprmPayloadCheck::OK) {
     auto* log = componentLog();
     if (log != nullptr) {

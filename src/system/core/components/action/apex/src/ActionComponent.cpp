@@ -80,7 +80,14 @@ bool ActionComponent::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   std::filesystem::path tprmPath = tprmDir / filename;
 
   if (!std::filesystem::exists(tprmPath)) {
-    return false;
+    // A tprm for this component is optional: absence means defaults, and
+    // loadTprm reports success so the executive does not warn (false is
+    // reserved for a file that exists but fails its checks).
+    auto* log = componentLog();
+    if (log != nullptr) {
+      log->info(label(), fmt::format("No TPRM found at {}, using defaults", tprmPath.string()));
+    }
+    return true;
   }
 
   ActionEngineTprm loaded{};
@@ -139,6 +146,24 @@ bool ActionComponent::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     log->info(label(), fmt::format("TPRM loaded: {} watchpoints, {} groups, "
                                    "{} sequences, {} notifications, {} timed actions",
                                    wpCount, grpCount, seqCount, noteCount, actCount));
+
+    // One line per armed watchpoint stating its effective semantics.
+    // minFireCount counts predicate EDGES (rising transitions), not
+    // sustained-true ticks -- the natural misread authored watchpoints
+    // that could never fire, so the armed configuration says it outright.
+    for (const auto& wp : iface_.watchpoints) {
+      if (!wp.armed) {
+        continue;
+      }
+      if (wp.minFireCount > 0) {
+        log->info(label(), fmt::format("Watchpoint {} armed: event={} debounce={} predicate EDGES "
+                                       "(rising transitions, not sustained-true ticks)",
+                                       wp.watchpointId, wp.eventId, wp.minFireCount));
+      } else {
+        log->info(label(), fmt::format("Watchpoint {} armed: event={} fires on first edge",
+                                       wp.watchpointId, wp.eventId));
+      }
+    }
   }
 
   return true;
@@ -793,7 +818,20 @@ std::uint8_t ActionComponent::handleCommand(std::uint16_t opcode,
     }
 
     const bool IS_RTS = (opcode == LOAD_RTS);
-    const bool OK = IS_RTS ? loadRts(SLOT, filePath) : loadAts(SLOT, filePath);
+
+    // Ground names files relative to the vehicle filesystem, never the
+    // process working directory: a relative path resolves against the
+    // active bank (the catalog dirs' parent), so "rts/005.rts" means
+    // <bank>/rts/005.rts wherever the app's --fs-root points.
+    std::filesystem::path resolved{filePath};
+    if (resolved.is_relative()) {
+      const auto& CATALOG_DIR = IS_RTS ? catalogRtsDir_ : catalogAtsDir_;
+      if (!CATALOG_DIR.empty()) {
+        resolved = CATALOG_DIR.parent_path() / resolved;
+      }
+    }
+
+    const bool OK = IS_RTS ? loadRts(SLOT, resolved) : loadAts(SLOT, resolved);
     if (!OK) {
       return static_cast<std::uint8_t>(CommandResult::LOAD_FAILED);
     }
@@ -1088,6 +1126,32 @@ std::uint8_t ActionComponent::handleCommand(std::uint16_t opcode,
 }
 
 /* ----------------------------- Log Dispatch ----------------------------- */
+
+void ActionComponent::logStepTimeouts(std::uint32_t count, bool aborted) noexcept {
+  auto* log = componentLog();
+  if (log == nullptr) {
+    return;
+  }
+  const auto& ST = iface_.stats;
+  log->warning(
+      label(), static_cast<std::uint8_t>(Status::WARN_STEP_TIMEOUT),
+      fmt::format("Sequence step timeout{}: seq={} step={} policy={}{}",
+                  count > 1 ? fmt::format(" x{}", count) : std::string{}, ST.lastTimeoutSeqId,
+                  ST.lastTimeoutStep,
+                  data::toString(static_cast<data::StepTimeoutPolicy>(ST.lastTimeoutPolicy)),
+                  aborted ? " (sequence aborted)" : ""));
+}
+
+void ActionComponent::logResolveFailures(std::uint32_t total) noexcept {
+  auto* log = componentLog();
+  if (log == nullptr) {
+    return;
+  }
+  log->warning(label(), static_cast<std::uint8_t>(Status::WARN_RESOLVE_FAILURES),
+               fmt::format("Data-target resolve failures accumulating: {} total -- an armed "
+                           "watchpoint or action cannot read its target",
+                           total));
+}
 
 void ActionComponent::dispatchLogNotifications(std::uint16_t eventId,
                                                std::uint32_t fireCount) noexcept {

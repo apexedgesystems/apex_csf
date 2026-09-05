@@ -12,6 +12,9 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/DataTarget.hpp"
 #include "src/utilities/data_proxy/inc/ByteMaskProxy.hpp"
 
+#include "src/system/core/support/data_transform/.auto/DataTransformTlm_auto.hpp"
+#include "src/system/core/support/data_transform/.auto/TransformStats_auto.hpp"
+
 #include <array>
 #include <cstdint>
 
@@ -40,18 +43,6 @@ struct TransformEntry {
 
 /* ----------------------------- TransformStats ----------------------------- */
 
-/**
- * @struct TransformStats
- * @brief Diagnostic counters for the DataTransform component.
- */
-struct TransformStats {
-  std::uint32_t applyCycles{0};     ///< Total apply() task invocations.
-  std::uint32_t masksApplied{0};    ///< Successful mask applications.
-  std::uint32_t resolveFailures{0}; ///< Target resolution failures.
-  std::uint32_t applyFailures{0};   ///< Mask application failures.
-  std::uint32_t entriesArmed{0};    ///< Currently armed entry count.
-};
-
 /* ----------------------------- DataTransformOpcode ----------------------------- */
 
 /**
@@ -74,22 +65,6 @@ enum class DataTransformOpcode : std::uint16_t {
 };
 
 /* ----------------------------- DataTransformTlm ----------------------------- */
-
-/**
- * @struct DataTransformTlm
- * @brief Health telemetry payload for DataTransform.
- *
- * Returned by GET_STATS (opcode 0x0600).
- */
-struct __attribute__((packed)) DataTransformTlm {
-  std::uint32_t applyCycles{0};
-  std::uint32_t masksApplied{0};
-  std::uint32_t resolveFailures{0};
-  std::uint32_t applyFailures{0};
-  std::uint32_t entriesArmed{0};
-};
-
-static_assert(sizeof(DataTransformTlm) == 20, "DataTransformTlm size mismatch");
 
 } // namespace support
 } // namespace system_core

@@ -4,6 +4,7 @@
 #ifndef APEX_CDEF_AUTO_SPEC_CHANNEL_OUTPUT_HPP
 #define APEX_CDEF_AUTO_SPEC_CHANNEL_OUTPUT_HPP
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -16,11 +17,13 @@ struct SpecChannelOutput {
   std::uint32_t sequence{};
 };
 static_assert(sizeof(SpecChannelOutput) == 8, "layout diverged from the spec");
+static_assert(offsetof(SpecChannelOutput, value) == 0, "field offset diverged");
+static_assert(offsetof(SpecChannelOutput, sequence) == 4, "field offset diverged");
 
 /// Layout hash the v3 payload prelude must carry for this struct
 /// (canonical field-spec CRC-32; stamped by cfg2bin from the same
 /// spec-generated template).
-inline constexpr std::uint32_t SPEC_CHANNEL_OUTPUT_LAYOUT_HASH = 0x930F87EAU;
+inline constexpr std::uint32_t SPEC_CHANNEL_OUTPUT_LAYOUT_HASH = 0x51666963U;
 
 } // namespace spec
 } // namespace appsim

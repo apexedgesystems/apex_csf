@@ -202,7 +202,7 @@ Top-level configuration with per-domain sub-structs:
 
 ### SysMonHealthTlm
 
-**RT-safe:** Yes (88-byte packed POD)
+**RT-safe:** Yes (88-byte POD; spec-defined in `apex_data.toml`, generated into `.auto/`)
 
 Telemetry wire format posted via internal bus at each sample. Contains
 sample/warn/crit counters, per-core load, CPU temperature, RAM utilization,

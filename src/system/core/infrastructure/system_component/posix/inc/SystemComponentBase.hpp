@@ -216,6 +216,19 @@ public:
   static std::string tprmFilename(std::uint32_t fullUid) noexcept;
 
   /**
+   * @brief Layout hash this component's TPRM payloads must declare.
+   *
+   * Staged-payload verification enforces the hash when a component
+   * publishes one; nullptr skips the layout check (component predates
+   * spec-defined params). Spec-born components override with their
+   * generated constant.
+   *
+   * @return Pointer to the expected hash, or nullptr if none.
+   * @note RT-safe: returns a pointer to a constant.
+   */
+  [[nodiscard]] virtual const std::uint32_t* expectedLayoutHash() const noexcept { return nullptr; }
+
+  /**
    * @brief Load tunable parameters from TPRM directory.
    *
    * The directory argument (containing extracted TPRM files) is unnamed in the
