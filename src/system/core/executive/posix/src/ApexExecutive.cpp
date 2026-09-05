@@ -1022,6 +1022,12 @@ RunResult ApexExecutive::run() noexcept {
   profLog_->flush();
   heartbeatLog_->flush();
 
+  // A run that spent its life in the SAFE ingest hold is not a
+  // success: scripts and supervisors must see the misconfiguration
+  // even though the vehicle stayed reachable until shutdown.
+  if (ingestHold_) {
+    return RunResult::ERROR_INIT;
+  }
   return RunResult::SUCCESS;
 }
 

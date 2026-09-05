@@ -194,6 +194,22 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
     }
 
     // ========================================================================
+    // Pause Check (pre-tick)
+    // ========================================================================
+    // A pause requested before this tick parks WITHOUT emitting it: a
+    // boot into the SAFE ingest hold must dispatch zero frames, not
+    // one. (Post-tick pause requests park at the check further down.)
+    if (controlState_.pauseRequested.load(std::memory_order_acquire) &&
+        !controlState_.isPaused.load(std::memory_order_acquire)) {
+      handleClockPause();
+      if (controlState_.shutdownRequested.load(std::memory_order_acquire)) {
+        break;
+      }
+      nextTick = std::chrono::steady_clock::now() + FRAME_PERIOD;
+      continue;
+    }
+
+    // ========================================================================
     // Tick Generation
     // ========================================================================
     // Stamp tick time for profiling (ns since epoch, high resolution)
