@@ -50,11 +50,11 @@ def check(name: str, ok: bool, detail: str = "") -> None:
     FAIL += not ok
 
 
-def corrupt_master(dest: str) -> None:
-    """Copy the master with one flipped byte inside the sysmon body."""
+def corrupt_master(dest: str, uid: int = SYSMON_UID) -> None:
+    """Copy the master with one flipped byte inside one payload's body."""
     d = bytearray(open(f"{GEN}/master.tprm", "rb").read())
     for i in range(len(d) - 20):
-        if d[i : i + 4] == b"APV3" and struct.unpack_from("<I", d, i + 8)[0] == SYSMON_UID:
+        if d[i : i + 4] == b"APV3" and struct.unpack_from("<I", d, i + 8)[0] == uid:
             d[i + 25] ^= 0xFF
             break
     open(dest, "wb").write(bytes(d))
@@ -178,6 +178,22 @@ def main() -> int:
     check("repaired vehicle serves", c2.send_command(0, 0x0101)["status"] == 0)
     c2.close()
     p.terminate()
+
+    print("== 5. Corrupt EXECUTIVE payload: same chain, never runs on defaults")
+    exec_bad = os.path.join(work, "master_exec_bad.tprm")
+    corrupt_master(exec_bad, uid=0x000000)
+    code, log = boot(exec_bad, os.path.join(work, "fs6"))
+    check("exec rejection held (exit nonzero)", code != 0, f"exit={code}")
+    check("barrier chain engaged", "Continuing to the ingest barrier" in log)
+    check("SAFE HOLD on defaults", "SAFE HOLD" in log)
+    check("zero cycles on exec defaults", "Clock stopped after 0 cycles" in log)
+    fs7 = os.path.join(work, "fs7")
+    os.makedirs(os.path.join(fs7, "bank_b/tprm"), exist_ok=True)
+    for f in glob.glob(os.path.join(good, "*.tprm")):
+        shutil.copy(f, os.path.join(fs7, "bank_b/tprm"))
+    code, log = boot(exec_bad, fs7, timeout=40, shutdown_after=8)
+    check("exec rejection heals via bank", "RUNNING ON FALLBACK BANK B" in log)
+    check("healed vehicle ran", "Task execution started" in log)
 
     print(f"\n  Results: {PASS} passed, {FAIL} failed")
     shutil.rmtree(work, ignore_errors=True)

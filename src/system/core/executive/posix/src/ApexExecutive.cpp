@@ -186,24 +186,26 @@ std::uint8_t ApexExecutive::doInit() noexcept {
       return status(); // Error already set and logged
     }
 
-    // Load executive TPRM. A present-but-rejected tprm is fatal: the
+    // Load executive TPRM. A present-but-rejected tprm never RUNS: the
     // compiled defaults are not a degraded mode of the declared
     // configuration, they are a different system (clock rate, RT mode,
-    // thread pinning), and the difference surfaces mid-run. The contract
-    // has exactly three states -- honored config, explicitly-no-config
-    // (no executive entry packed: defaults at INFO), or refused boot.
-    // There is deliberately no override: a run on discarded config gives
-    // a false sense of functionality no banner can repair. To run on
-    // defaults on purpose, pack the master without the executive entry.
+    // thread pinning). Instead of dying here, the rejection joins the
+    // ingest barrier like any component's: the bank fallback can heal
+    // it (the staged bank's executive payload is part of the validated
+    // set), and failing that the SAFE hold keeps the vehicle reachable
+    // on compiled defaults -- which are inert while held, since a held
+    // system dispatches nothing. To run on defaults on purpose, pack
+    // the master without the executive entry (explicitly-no-config,
+    // defaults at INFO).
     if (loadTprm(fileSystem_.tprmDir()) == system_core::system_component::TprmIngest::REJECTED) {
       sysLog_->error(
           label(), static_cast<std::uint8_t>(ERROR_TPRM_REJECTED),
           fmt::format("Executive TPRM rejected; compiled defaults would run a different "
-                      "system (clock {} Hz, RT mode {}). Refusing to boot -- to run on "
-                      "defaults deliberately, repack the master without the executive entry",
+                      "system (clock {} Hz, RT mode {}). Continuing to the ingest barrier "
+                      "-- bank fallback or SAFE hold, never a run on discarded config",
                       clockFrequency_, rtModeToString(rtConfig_.mode)));
-      setStatus(static_cast<std::uint8_t>(ERROR_TPRM_REJECTED));
-      return status();
+      ingestFailures_.push_back(
+          {fullUid(), label(), system_core::system_component::TprmIngest::REJECTED, true});
     }
 
     // CLI overrides take precedence over TPRM values

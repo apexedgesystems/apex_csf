@@ -117,7 +117,12 @@ strict|lenient` selects the posture; **STRICT is the default**:
 
 A rejected payload is fatal under every policy: a present-but-refused
 file is never intentional. Components whose defaults are a designed
-configuration override `paramsOptional()`.
+configuration override `paramsOptional()`. The executive's own
+payload follows the same chain: a rejected executive TPRM joins the
+barrier (compiled defaults never RUN -- the fallback bank heals it,
+or the SAFE hold keeps the vehicle reachable on defaults that stay
+inert because nothing dispatches). A master packed without an
+executive entry remains the designed explicitly-no-config state.
 
 ## Boot Recovery and SAFE
 
