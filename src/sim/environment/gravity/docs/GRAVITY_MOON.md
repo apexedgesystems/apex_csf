@@ -67,7 +67,7 @@ model.acceleration(R, a);
 using namespace sim::environment::gravity;
 
 FullTableCoeffSource src;
-src.open("grgm1200a_full.bin");
+src.open("grgm1200a_full.grav");
 
 GrailModel model;
 GrailParams params;
@@ -178,7 +178,7 @@ void setAccelMode(AccelMode m) noexcept;
 
 ```cpp
 FullTableCoeffSource src;
-src.open("grgm1200a_full.bin");
+src.open("grgm1200a_full.grav");
 
 GrailModel model;
 GrailParams params;
@@ -241,7 +241,7 @@ gravity.acceleration(r, a);
 
 ```cpp
 FullTableCoeffSource src;
-src.open("grgm1200a_full.bin");
+src.open("grgm1200a_full.grav");
 
 GrailModel gravity;
 GrailParams params;
@@ -298,7 +298,7 @@ The lunar gravity coefficients come from NASA's Planetary Geodynamics Data Archi
 | --------------------- | ----- | ---------------------------------- |
 | `gggrx_1200a_sha.tab` | 84 MB | Original SHA text file (source)    |
 | `gggrx_1200a_sha.lbl` | 11 KB | PDS label with metadata            |
-| `grgm1200a_full.bin`  | 25 MB | Converted binary (36-byte records) |
+| `grgm1200a_full.grav` | 25 MB | Converted binary (36-byte records) |
 
 ### Binary Format
 
@@ -363,7 +363,7 @@ int main() {
 
   // GRAIL Model (high fidelity)
   FullTableCoeffSource src;
-  if (src.open("grgm1200a_full.bin")) {
+  if (src.open("grgm1200a_full.grav")) {
     GrailModel grailModel;
     GrailParams grailParams;
     grailParams.N = 360;

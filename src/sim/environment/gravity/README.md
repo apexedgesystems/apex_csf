@@ -82,7 +82,7 @@ model.acceleration(R, a);
 using namespace sim::environment::gravity;
 
 FullTableCoeffSource src;
-src.open("egm2008_full.bin");
+src.open("egm2008_full.grav");
 
 Egm2008Model model;
 Egm2008Params params;
@@ -103,7 +103,7 @@ model.evaluate(R, V, a);
 using namespace sim::environment::gravity;
 
 FullTableCoeffSource src;
-src.open("grgm1200a_full.bin");
+src.open("grgm1200a_full.grav");
 
 GrailModel model;
 GrailParams params;
@@ -246,3 +246,9 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 - **[docs/GRAVITY_EARTH.md](docs/GRAVITY_EARTH.md)** - Earth models, geodetic utilities, geoid
 - **[docs/GRAVITY_MOON.md](docs/GRAVITY_MOON.md)** - Lunar models, GRAIL data
 - **`src/utilities/math/legendre/`** - Legendre polynomial library
+
+## File suffix
+
+Coefficient tables ship as `.grav` (GRAV_FILE_SUFFIX). The format is
+headerless, so the suffix is currently the only identity marker --
+never name tables with a generic .bin.

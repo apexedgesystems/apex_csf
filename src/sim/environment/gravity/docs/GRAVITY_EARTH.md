@@ -73,7 +73,7 @@ model.acceleration(R, a);
 using namespace sim::environment::gravity;
 
 FullTableCoeffSource src;
-src.open("egm2008_full.bin");
+src.open("egm2008_full.grav");
 
 Egm2008Model model;
 Egm2008Params params;
@@ -151,7 +151,7 @@ bool evaluate(const double r[3], double& V, double a[3]) const noexcept;
 
 ```cpp
 FullTableCoeffSource src;
-src.open("egm2008_full.bin");
+src.open("egm2008_full.grav");
 
 Egm2008Model model;
 Egm2008Params params;
@@ -260,7 +260,7 @@ void ecefToNed(double lat, double lon, const double ecef[3], double ned[3]) noex
 
 ```cpp
 FullTableCoeffSource src;
-src.open("egm2008_full.bin");
+src.open("egm2008_full.grav");
 
 GeoidModel geoid;
 GeoidParams params;
@@ -316,7 +316,7 @@ gravity.acceleration(r, a);
 
 ```cpp
 FullTableCoeffSource src;
-src.open("egm2008_full.bin");
+src.open("egm2008_full.grav");
 
 Egm2008Model gravity;
 Egm2008Params params;
@@ -446,7 +446,7 @@ int main() {
 
   // EGM2008 Model (high fidelity)
   FullTableCoeffSource src;
-  if (src.open("egm2008_full.bin")) {
+  if (src.open("egm2008_full.grav")) {
     Egm2008Model egmModel;
     Egm2008Params egmParams;
     egmParams.N = 360;

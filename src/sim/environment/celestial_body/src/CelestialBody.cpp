@@ -21,6 +21,7 @@
 #include <fmt/format.h>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 
 namespace sim {
@@ -147,8 +148,14 @@ std::uint8_t CelestialBody::doInit() noexcept {
   // first (packaged runs stage data there at the declared relative
   // path); a root miss keeps the path cwd-relative for dev-tree runs
   // and says so, keeping the two worlds distinguishable in the log.
-  const auto RESOLVE = [this](const char* raw, const char* kind) -> std::string {
+  const auto RESOLVE = [this](const char* raw, const char* kind,
+                              std::string_view canonicalSuffix) -> std::string {
     namespace sc = system_core::system_component;
+    if (auto* log = componentLog();
+        log != nullptr && !std::string_view{raw}.ends_with(canonicalSuffix)) {
+      log->info(label(), fmt::format("{} data path lacks the canonical {} suffix: {}", kind,
+                                     canonicalSuffix, raw));
+    }
     const std::filesystem::path RESOLVED = sc::resolveDataPath(fileSystemRoot(), raw);
     if (auto* log = componentLog(); log != nullptr && !fileSystemRoot().empty() &&
                                     RESOLVED == std::filesystem::path{raw} &&
@@ -167,7 +174,8 @@ std::uint8_t CelestialBody::doInit() noexcept {
       }
       ok = false;
     } else {
-      const std::string TERRAIN_PATH = RESOLVE(p.terrain_data_path, "terrain");
+      const std::string TERRAIN_PATH =
+          RESOLVE(p.terrain_data_path, "terrain", env::terrain::HTILE_FILE_SUFFIX);
       const env::terrain::Status tstatus = tile->load(TERRAIN_PATH);
       if (!env::terrain::isSuccess(tstatus)) {
         auto* log = componentLog();
@@ -201,7 +209,8 @@ std::uint8_t CelestialBody::doInit() noexcept {
       }
       ok = false;
     } else {
-      const std::string ATMO_PATH = RESOLVE(p.atmosphere_data_path, "atmosphere");
+      const std::string ATMO_PATH =
+          RESOLVE(p.atmosphere_data_path, "atmosphere", env::atmosphere::ATM_FILE_SUFFIX);
       const env::atmosphere::Status astatus = atm->load(ATMO_PATH);
       if (!env::atmosphere::isSuccess(astatus)) {
         auto* log = componentLog();

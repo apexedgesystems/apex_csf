@@ -26,13 +26,16 @@ heaptrack.*.zst
 /docs/
 **/docs/design/
 
-# Binary data files (generated gravity coefficients, not committed)
+# Miscellaneous generated binaries
 **/*.bin
 # Generated world artifacts consumed at runtime (terrain/atmosphere);
 # produced by the world-generation pipeline, never committed. Identity
 # travels by the header spec_hash both sides of a pairing log at load.
 **/*.htile
 **/*.atm
+# Gravity coefficient tables (headerless records; suffix is the
+# identity marker until the format grows a header).
+**/*.grav
 demos/apex_horizon_demo/rover_terrain/data/
 # The TPRM golden vectors are committed by design: they are the byte-level
 # contract the rust and C++ suites pin against.
