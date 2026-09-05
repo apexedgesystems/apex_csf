@@ -54,18 +54,14 @@ docker compose run --rm dev-cuda \
 
 No packed binaries or data files are committed — the master generates
 from the manifest at build time and the atmosphere table regenerates
-from its tracked spec. Install it into the package before first run,
-mirroring the repo-relative path the TPRM carries (the packaged
-launcher runs with the deployment directory as cwd):
+from its tracked spec. The deployment declares the table as DATA
+(apex_add_deployment), so packaging stages it automatically at its
+repo-relative path under the deployment root whenever the file exists
+in the source tree; components resolve the TPRM's relative path
+against the fs-root at boot. Generate the table before packaging and
+the package is self-contained.
 
-```bash
-PKG=build/hosted-x86_64-debug/packages/ApexAircraftAtmoDemo
-mkdir -p $PKG/demos/apex_horizon_demo/aircraft_atmo/data
-cp demos/apex_horizon_demo/aircraft_atmo/data/earth_ussa76.atm \
-  $PKG/demos/apex_horizon_demo/aircraft_atmo/data/
-```
-
-Skipping this is caught at boot: the executive's atmosphere smoke
+A missing table is caught at boot: the executive's atmosphere smoke
 check fails fast and the `spec_hash` identity grep comes up empty.
 The launcher passes `--skip-cleanup`, so shutdown archives nothing
 and the deployment stays intact across runs.
