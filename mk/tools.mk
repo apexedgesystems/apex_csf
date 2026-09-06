@@ -148,7 +148,7 @@ ops-artifacts: apex-data-db tprm-templates ops-deck
 #     <APP>/runtime/scheduler.sdat  Task schedule metadata (if available)
 #     <APP>/README.md               Quick-start guide for operations integrators
 
-ops-sdk: apex-data-db
+ops-sdk: apex-data-db tprm-templates
 	@test -n "$(APP)" || { printf '$(TERM_RED)[ops-sdk]$(TERM_RESET) APP not set. Usage: make ops-sdk APP=<name>\n'; exit 1; }
 	$(call log,ops-sdk,Packaging Ops SDK for $(APP))
 	@bash tools/sh/bin/ops_sdk_package.sh \

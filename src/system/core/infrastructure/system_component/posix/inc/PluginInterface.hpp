@@ -22,7 +22,24 @@
 
 #include "src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp"
 
+#include <cstdint>
+
 /* ----------------------------- Constants ----------------------------- */
+
+/// Plugin ABI version. The factory contract hands the host a C++ object
+/// whose vtable layout must match the host's component base classes
+/// exactly -- any virtual added, removed, or reordered on those bases
+/// invalidates every previously built plugin. Bump this constant with
+/// every such change; the loader refuses a plugin whose baked version
+/// differs (or that predates versioning) BEFORE any C++ call, turning
+/// silent vtable skew into a loud load error.
+static constexpr std::uint32_t APEX_PLUGIN_ABI_VERSION = 1;
+
+/// Name of the ABI-version function exported by plugin .so files.
+static constexpr const char* APEX_PLUGIN_ABI_SYMBOL = "apex_plugin_abi_version";
+
+/// ABI version function signature.
+using ApexPluginAbiFn = std::uint32_t (*)();
 
 /// Name of the create factory function exported by plugin .so files.
 static constexpr const char* APEX_PLUGIN_CREATE_SYMBOL = "apex_create_component";
@@ -48,6 +65,7 @@ using ApexPluginDestroyFn = void (*)(system_core::system_component::SystemCompon
  */
 // NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define APEX_PLUGIN_FACTORY(CLASS_NAME)                                                            \
+  extern "C" std::uint32_t apex_plugin_abi_version() { return APEX_PLUGIN_ABI_VERSION; }           \
   extern "C" system_core::system_component::SystemComponentBase* apex_create_component() {         \
     return new CLASS_NAME(); /* NOLINT(cppcoreguidelines-owning-memory) */                         \
   }                                                                                                \

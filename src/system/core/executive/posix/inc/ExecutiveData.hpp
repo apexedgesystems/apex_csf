@@ -34,8 +34,12 @@ struct ExecutiveTunableParams {
   std::uint16_t clockFrequencyHz{100}; ///< Fundamental clock frequency (Hz).
   std::uint16_t reserved0{0};          ///< Padding for alignment.
 
-  // Real-time mode configuration
-  std::uint8_t rtMode{0};     ///< RT mode (0=HARD_TICK_COMPLETE, 1=HARD_PERIOD_COMPLETE,
+  // Real-time mode configuration. Stock default is SOFT_SKIP_ON_BUSY:
+  // a stock boot must never self-terminate on timing -- hard modes are
+  // an explicit declaration in the application's toml. Matches
+  // RTConfig's constructor default so an absent tprm and a
+  // default-valued tprm produce the same system.
+  std::uint8_t rtMode{2};     ///< RT mode (0=HARD_TICK_COMPLETE, 1=HARD_PERIOD_COMPLETE,
                               ///<          2=SOFT_SKIP_ON_BUSY, 3=SOFT_LAG_TOLERANT, 4=LOG_ONLY).
   std::uint8_t reserved1{0};  ///< Padding.
   std::uint16_t reserved2{0}; ///< Padding.
@@ -62,6 +66,44 @@ struct ExecutiveTunableParams {
   // Profiling configuration
   std::uint32_t profilingSampleEveryN{0}; ///< Profile every N ticks (0=disabled).
 };
+
+/**
+ * @brief Validate loaded tunable values against the system's vocabulary.
+ *
+ * A payload that passes size and CRC can still carry values outside the
+ * enums and operating ranges -- and these fields select the SYSTEM CLASS
+ * (clock rate, RT enforcement, lifecycle modes), so out-of-range values
+ * mean the config is not what its author wrote. Invalid values reject the
+ * load (routing into the executive's refuse-to-boot contract) rather than
+ * silently casting to undefined behavior: rtMode feeds a raw enum cast,
+ * and clockFrequencyHz feeds a divisor (0 divides; >1000 collapses the
+ * frame period to zero and busy-spins the grid).
+ *
+ * @param p Loaded parameters.
+ * @param[out] err On failure, a static description of the first violation.
+ * @return True if every field is within vocabulary.
+ */
+[[nodiscard]] inline bool validateExecutiveTunables(const ExecutiveTunableParams& p,
+                                                    const char** err) noexcept {
+  const char* reason = nullptr;
+  if (p.rtMode > 4) {
+    reason = "rtMode outside enum range [0,4]";
+  } else if (p.clockFrequencyHz == 0 || p.clockFrequencyHz > 1000) {
+    reason = "clockFrequencyHz outside [1,1000] Hz";
+  } else if (p.startupMode > 2) {
+    reason = "startupMode outside enum range [0,2]";
+  } else if (p.shutdownMode > 4) {
+    reason = "shutdownMode outside enum range [0,4]";
+  }
+  if (err != nullptr) {
+    *err = reason;
+  }
+  return reason == nullptr;
+}
+
+/// Minimum watchdog interval; smaller loaded values clamp here (documented
+/// bound -- an operational parameter, not a system-class selector).
+inline constexpr std::uint32_t WATCHDOG_INTERVAL_MIN_MS = 100;
 
 // Ensure struct is trivially copyable for hex2cpp
 static_assert(std::is_trivially_copyable_v<ExecutiveTunableParams>,

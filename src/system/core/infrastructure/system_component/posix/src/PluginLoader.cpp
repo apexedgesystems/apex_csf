@@ -51,6 +51,26 @@ std::uint8_t PluginLoader::load(const std::filesystem::path& soPath) noexcept {
     return 17; // DLOPEN_FAILED
   }
 
+  // ABI gate before ANY C++ call into the plugin: a mismatched vtable
+  // layout makes every virtual call undefined behavior, so a plugin that
+  // predates versioning (symbol absent) or bakes a different version is
+  // refused while it is still just a handle.
+  void* abiSym = ::dlsym(handle_, APEX_PLUGIN_ABI_SYMBOL);
+  if (abiSym == nullptr) {
+    lastError_ = "plugin predates ABI versioning (rebuild against current tree)";
+    ::dlclose(handle_);
+    handle_ = nullptr;
+    return 20; // ABI_MISMATCH
+  }
+  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+  const std::uint32_t PLUGIN_ABI = reinterpret_cast<ApexPluginAbiFn>(abiSym)();
+  if (PLUGIN_ABI != APEX_PLUGIN_ABI_VERSION) {
+    lastError_ = "plugin ABI version mismatch (rebuild against current tree)";
+    ::dlclose(handle_);
+    handle_ = nullptr;
+    return 20; // ABI_MISMATCH
+  }
+
   // Resolve create factory.
   void* createSym = ::dlsym(handle_, APEX_PLUGIN_CREATE_SYMBOL);
   if (createSym == nullptr) {

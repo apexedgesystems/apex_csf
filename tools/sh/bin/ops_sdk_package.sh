@@ -95,7 +95,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-$BUILD_DIR/ops_sdk}"
 
 SDK_DIR="$OUTPUT_DIR/$APP"
 rm -rf "$SDK_DIR"
-mkdir -p "$SDK_DIR/structs" "$SDK_DIR/runtime"
+mkdir -p "$SDK_DIR/structs" "$SDK_DIR/runtime" "$SDK_DIR/templates"
 
 # Copy struct dictionaries
 JSON_COUNT=0
@@ -114,6 +114,26 @@ if [[ "$JSON_COUNT" -eq 0 ]]; then
 fi
 
 log "Included $JSON_COUNT struct dictionaries"
+
+# Copy TPRM templates (editable baseline tomls, values = compiled stock
+# defaults lifted from the struct initializers). The copy-tweak-pack
+# starting point for application configuration.
+TPL_COUNT=0
+if [[ -d "$BUILD_DIR/tprm_templates" ]]; then
+  for tpl in "$BUILD_DIR/tprm_templates"/*.toml; do
+    [[ -f "$tpl" ]] || continue
+    cp -f "$tpl" "$SDK_DIR/templates/"
+    TPL_COUNT=$((TPL_COUNT + 1))
+  done
+fi
+
+if [[ "$TPL_COUNT" -eq 0 ]]; then
+  err "No TPRM templates found in $BUILD_DIR/tprm_templates/"
+  err "Run 'make tprm-templates' first"
+  exit 1
+fi
+
+log "Included $TPL_COUNT TPRM templates"
 
 # Copy runtime exports (optional -- only available after a test run)
 APEX_FS="$BUILD_DIR/bin/.apex_fs"
@@ -151,6 +171,14 @@ cat >"$SDK_DIR/README.md" <<READMEEOF
 - \`runtime/scheduler.sdat\` -- Binary metadata exported at runtime listing
   the task schedule. Use \`sdat_tool --input runtime/scheduler.sdat --list\`
   to inspect.
+
+- \`templates/*.toml\` -- Editable TPRM baselines, one per tunable struct.
+  Every field carries the compiled stock default (generated from the source
+  initializers, so they never drift). To configure a deployment: copy the
+  template into your application's tprm toml directory, change only the
+  values you mean to change, and pack it into the master with the app's
+  tprm manifest. A field you delete falls back to its compiled default at
+  load; a struct you omit entirely runs on stock defaults (logged at INFO).
 
 ## Connecting
 

@@ -26,7 +26,9 @@ TEST(ExecutiveTunableParams, DefaultValues) {
   const executive::ExecutiveTunableParams params{};
 
   EXPECT_EQ(params.clockFrequencyHz, 100);
-  EXPECT_EQ(params.rtMode, 0); // HARD_TICK_COMPLETE
+  // Stock default is soft: a stock boot must never self-terminate on
+  // timing. Hard modes are an explicit application declaration.
+  EXPECT_EQ(params.rtMode, 2); // SOFT_SKIP_ON_BUSY
   EXPECT_EQ(params.rtMaxLagTicks, 10);
   EXPECT_EQ(params.startupMode, 0); // AUTO
   EXPECT_EQ(params.startupDelaySeconds, 1);
@@ -159,4 +161,46 @@ TEST(ThreadConfigFromTprm, StackSizeIsZero) {
   executive::threadConfigFromTprm(entry, out);
 
   EXPECT_EQ(out.stackSize, 0U);
+}
+
+/* ----------------------------- Value Validation ----------------------------- */
+
+/** @test Defaults and demo-shaped values pass validation. */
+TEST(ExecutiveTunableValidation, DefaultsAndDeclaredValuesPass) {
+  executive::ExecutiveTunableParams p{};
+  const char* err = nullptr;
+  EXPECT_TRUE(executive::validateExecutiveTunables(p, &err));
+  EXPECT_EQ(err, nullptr);
+
+  p.clockFrequencyHz = 1000; // Upper bound inclusive (1 kHz demos).
+  p.rtMode = 1;              // Declared hard mode.
+  p.startupMode = 2;
+  p.shutdownMode = 4;
+  EXPECT_TRUE(executive::validateExecutiveTunables(p, &err));
+}
+
+/** @test System-class fields outside vocabulary reject with a reason. */
+TEST(ExecutiveTunableValidation, OutOfVocabularyRejects) {
+  const char* err = nullptr;
+
+  executive::ExecutiveTunableParams p{};
+  p.rtMode = 5; // Past SOFT_LOG_ONLY: raw cast would be UB-adjacent.
+  EXPECT_FALSE(executive::validateExecutiveTunables(p, &err));
+  ASSERT_NE(err, nullptr);
+
+  p = {};
+  p.clockFrequencyHz = 0; // Divides the frame period.
+  EXPECT_FALSE(executive::validateExecutiveTunables(p, &err));
+
+  p = {};
+  p.clockFrequencyHz = 1001; // Collapses the frame period to zero ms.
+  EXPECT_FALSE(executive::validateExecutiveTunables(p, &err));
+
+  p = {};
+  p.startupMode = 3;
+  EXPECT_FALSE(executive::validateExecutiveTunables(p, &err));
+
+  p = {};
+  p.shutdownMode = 5;
+  EXPECT_FALSE(executive::validateExecutiveTunables(p, &err));
 }

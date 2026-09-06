@@ -47,6 +47,7 @@ public:
    *   17 — dlopen failed
    *   18 — factory symbol not found
    *   19 — component creation failed
+   *   20 — plugin ABI version missing or mismatched
    */
   [[nodiscard]] std::uint8_t load(const std::filesystem::path& soPath) noexcept;
 

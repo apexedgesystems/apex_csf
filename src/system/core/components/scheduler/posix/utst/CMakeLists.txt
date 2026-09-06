@@ -38,4 +38,10 @@ apex_add_gtest(
   system
   core
   scheduler
+  # The ctx-burst test asserts zero fallback allocations during a dense
+  # tick, which holds only when pool workers drain at dispatch pace --
+  # under parallel suite load the box can starve the workers and flake
+  # the assertion. Timing-marked so it runs serially.
+  TIMING_TESTS
+  SchedulerCtxBurstTest.DenseTickDispatchesAllTasksWithoutFallback
 )

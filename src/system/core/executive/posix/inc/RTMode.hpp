@@ -38,7 +38,9 @@ enum class RTMode : std::uint8_t {
   /**
    * @brief HARD: Each task must complete before its next scheduled invocation.
    *
-   * Recommended default. A 5Hz task has 200ms to complete (not 10ms).
+   * Recommended for declared RT applications (the stock default is
+   * SOFT_SKIP_ON_BUSY -- hard modes are an explicit opt-in). A 5Hz
+   * task has 200ms to complete (not 10ms).
    * Tracks per-task deadlines based on task period.
    *
    * Use case: Mixed-rate systems, typical embedded RT applications.
@@ -83,8 +85,10 @@ enum class RTMode : std::uint8_t {
  * @brief Configuration for real-time execution behavior.
  */
 struct RTConfig {
-  RTMode mode{RTMode::HARD_PERIOD_COMPLETE}; ///< Active RT mode
-  std::uint32_t maxLagTicks{10};             ///< Max allowed lag for LAG_TOLERANT mode
+  /// Active RT mode. Stock default is soft: never fatal without an
+  /// explicit hard-mode declaration in the application's configuration.
+  RTMode mode{RTMode::SOFT_SKIP_ON_BUSY};
+  std::uint32_t maxLagTicks{10}; ///< Max allowed lag for LAG_TOLERANT mode
 
   /**
    * @brief Check if mode is a HARD mode (triggers shutdown on miss).

@@ -582,7 +582,9 @@ def run_checkout(args: argparse.Namespace) -> int:
         if not args.skip_reload_lib:
             plugin_so = args.plugin_so
             if plugin_so is None:
-                # Auto-detect from build dir
+                # Auto-detect across build trees; NEWEST build wins. The
+                # plugin's ABI must match the running host, so a stale
+                # sibling tree must never shadow the freshly built one.
                 candidates = [
                     os.path.join(
                         os.path.dirname(__file__),
@@ -590,15 +592,15 @@ def run_checkout(args: argparse.Namespace) -> int:
                         "..",
                         "..",
                         "build",
-                        "hosted-x86_64-debug",
+                        tree,
                         "test_plugins",
                         "OpsTestPlugin_v2.so",
-                    ),
+                    )
+                    for tree in ("hosted-x86_64-debug", "hosted-x86_64-debug-cpu")
                 ]
-                for c in candidates:
-                    if os.path.isfile(c):
-                        plugin_so = os.path.abspath(c)
-                        break
+                existing = [os.path.abspath(c) for c in candidates if os.path.isfile(c)]
+                if existing:
+                    plugin_so = max(existing, key=os.path.getmtime)
 
             if plugin_so and os.path.isfile(plugin_so):
                 result = c2.update_component(
@@ -609,7 +611,7 @@ def run_checkout(args: argparse.Namespace) -> int:
                 )
                 check(
                     "Library hot-swap accepted",
-                    result["status"] in (0, 17),
+                    result["status"] == 0,
                     result["status_name"],
                 )
             else:
