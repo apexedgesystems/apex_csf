@@ -36,10 +36,12 @@ heaptrack.*.zst
 # Gravity coefficient tables (headerless records; suffix is the
 # identity marker until the format grows a header).
 **/*.grav
-# Demo data dirs are generated/staging areas (world artifacts plus any
-# downloaded source files beside them); never tracked, any extension.
+# Data dirs are generated/staging areas (world artifacts plus any
+# downloaded source files beside them, e.g. the NASA .tab/.lbl sources
+# the gravity docs fetch); never tracked, any extension.
 demos/*/data/
 demos/apex_horizon_demo/*/data/
+src/sim/environment/*/data/
 # The TPRM golden vectors are committed by design: they are the byte-level
 # contract the rust and C++ suites pin against.
 !compat/tprm/payloads/*.bin
