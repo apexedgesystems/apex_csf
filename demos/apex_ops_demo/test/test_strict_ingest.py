@@ -195,6 +195,16 @@ def main() -> int:
     check("exec rejection heals via bank", "RUNNING ON FALLBACK BANK B" in log)
     check("healed vehicle ran", "Task execution started" in log)
 
+    print("== 6. Bare boot (no master): stock defaults idle soft, rc=0")
+    fs8 = os.path.join(work, "fs8")
+    cmd = [BIN, "--fs-root", fs8, "--shutdown-after", "5", "--skip-cleanup"]
+    r = subprocess.run(cmd, capture_output=True, timeout=25)
+    log8_path = os.path.join(fs8, "system.log")
+    log8 = open(log8_path).read() if os.path.exists(log8_path) else ""
+    check("bare boot rc=0", r.returncode == 0, f"rc={r.returncode}")
+    check("no hold, no refusal", "SAFE HOLD" not in log8 and "Refusing" not in log8)
+    check("idles (scheduler 0 tasks)", "scheduler idle (0 tasks)" in log8)
+
     print(f"\n  Results: {PASS} passed, {FAIL} failed")
     shutil.rmtree(work, ignore_errors=True)
     return 1 if FAIL else 0

@@ -1302,6 +1302,16 @@ void ApexExecutive::recordIngestOutcome(system_core::system_component::SystemCom
     return;
   }
 
+  // A bare boot -- no master provided at all -- is the whole-vehicle
+  // explicitly-no-config state: defaults everywhere are the deliberate
+  // stock configuration, not a forgotten file (same doctrine as the
+  // absent executive entry and the scheduler's idle case). STRICT
+  // polices configured systems; REJECTED cannot occur here since
+  // there are no payloads to refuse.
+  if (configPath_.empty() && ingest != TprmIngest::REJECTED) {
+    return;
+  }
+
   if (ingest == TprmIngest::NONE) {
     // A component that registers TUNABLE_PARAM data but ignores the
     // TPRM directory is a half-wired declaration: the params exist,
