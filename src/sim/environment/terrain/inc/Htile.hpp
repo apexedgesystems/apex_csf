@@ -53,10 +53,16 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <string_view>
 
 namespace sim {
 namespace environment {
 namespace terrain {
+
+/// Canonical file suffix for htile terrain artifacts. The header magic
+/// is the authoritative format identity; the suffix is the human- and
+/// config-facing convention.
+inline constexpr std::string_view HTILE_FILE_SUFFIX{".htile"};
 
 /* ----------------------------- Constants ----------------------------- */
 

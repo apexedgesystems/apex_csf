@@ -46,5 +46,13 @@ apex_add_tprm(
   NAME ApexRoverTerrainDemo MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/../tprm/tprm.manifest"
 )
 apex_add_deployment(
-  NAME ApexRoverTerrainDemo EXEC ApexRoverTerrainDemo TPRM ApexRoverTerrainDemo/master.tprm
+  NAME
+  ApexRoverTerrainDemo
+  EXEC
+  ApexRoverTerrainDemo
+  TPRM
+  ApexRoverTerrainDemo/master.tprm
+  DATA
+  demos/apex_horizon_demo/rover_terrain/data/alpha_patch_lod4.htile
+  demos/apex_horizon_demo/rover_terrain/data/earth_ussa76.atm
 )

@@ -14,8 +14,11 @@
 
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
 #include <memory>
 
+using system_core::system_component::resolveDataPath;
 using system_core::system_component::Status;
 using system_core::system_component::SystemComponentBase;
 
@@ -197,4 +200,39 @@ TEST(SystemComponentBaseTest, NoexceptContracts) {
   static_assert(noexcept(std::declval<DummyComponent&>().init()), "init() should be noexcept");
   static_assert(noexcept(std::declval<DummyComponent&>().reset()), "reset() should be noexcept");
   SUCCEED();
+}
+
+/* ----------------------------- Data-Path Resolution Tests ----------------------------- */
+
+/** @test Absolute paths pass through resolveDataPath untouched. */
+TEST(ResolveDataPathTest, AbsolutePassthrough) {
+  const std::filesystem::path ROOT = std::filesystem::temp_directory_path();
+  EXPECT_EQ(resolveDataPath(ROOT, "/etc/hostname"), std::filesystem::path{"/etc/hostname"});
+}
+
+/** @test Empty root leaves relative paths cwd-relative. */
+TEST(ResolveDataPathTest, EmptyRootPassthrough) {
+  EXPECT_EQ(resolveDataPath({}, "demos/x/data/f.bin"), std::filesystem::path{"demos/x/data/f.bin"});
+}
+
+/** @test A relative path present under the root resolves to root/path. */
+TEST(ResolveDataPathTest, RootHitResolves) {
+  const std::filesystem::path ROOT = std::filesystem::temp_directory_path() / "rdp_utst_root";
+  const std::filesystem::path REL{"demos/d/data/f.bin"};
+  std::filesystem::create_directories(ROOT / REL.parent_path());
+  {
+    std::ofstream out(ROOT / REL);
+    out << "x";
+  }
+  EXPECT_EQ(resolveDataPath(ROOT, REL.string()), ROOT / REL);
+  std::filesystem::remove_all(ROOT);
+}
+
+/** @test A root miss keeps the declared path (dev-tree cwd fallback). */
+TEST(ResolveDataPathTest, RootMissKeepsDeclared) {
+  const std::filesystem::path ROOT = std::filesystem::temp_directory_path() / "rdp_utst_empty_root";
+  std::filesystem::create_directories(ROOT);
+  const std::filesystem::path REL{"demos/d/data/missing.bin"};
+  EXPECT_EQ(resolveDataPath(ROOT, REL.string()), REL);
+  std::filesystem::remove_all(ROOT);
 }

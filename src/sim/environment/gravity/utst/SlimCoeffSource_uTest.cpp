@@ -72,13 +72,13 @@ TEST(SlimCoeffSourceF, TypeInstantiation) {
 /** @test SlimCoeffSourceD open fails for non-existent file. */
 TEST(SlimCoeffSourceD, OpenNonExistent) {
   SlimCoeffSourceD src;
-  EXPECT_FALSE(src.open("/nonexistent/path/to/file.bin"));
+  EXPECT_FALSE(src.open("/nonexistent/path/to/file.grav"));
 }
 
 /** @test SlimCoeffSourceF open fails for non-existent file. */
 TEST(SlimCoeffSourceF, OpenNonExistent) {
   SlimCoeffSourceF src;
-  EXPECT_FALSE(src.open("/nonexistent/path/to/file.bin"));
+  EXPECT_FALSE(src.open("/nonexistent/path/to/file.grav"));
 }
 
 /* ----------------------------- Record Size Verification ----------------------------- */

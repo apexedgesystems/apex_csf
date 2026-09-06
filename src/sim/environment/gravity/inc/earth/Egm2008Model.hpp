@@ -46,7 +46,7 @@ struct Egm2008Params {
  * @example
  * @code
  * FullTableCoeffSource src;
- * src.open("egm2008_full.bin");
+ * src.open("egm2008_full.grav");
  *
  * Egm2008Model model;
  * Egm2008Params params;  // Uses WGS84 defaults

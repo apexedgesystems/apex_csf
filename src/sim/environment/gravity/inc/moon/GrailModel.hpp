@@ -49,7 +49,7 @@ struct GrailParams {
  * @example
  * @code
  * FullTableCoeffSource src;
- * src.open("grgm1200a_full.bin");
+ * src.open("grgm1200a_full.grav");
  *
  * GrailModel model;
  * GrailParams params;  // Uses lunar defaults
