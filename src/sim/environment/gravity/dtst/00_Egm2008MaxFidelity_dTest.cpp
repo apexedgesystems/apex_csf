@@ -9,7 +9,7 @@
  *  - Validate output against known reference values
  *
  * Prereqs:
- *  - egm2008_full_n2190.bin in data/earth/ (86MB, 36-byte records)
+ *  - egm2008_full_n2190.grav in data/earth/ (86MB, 36-byte records)
  *
  * Notes:
  *  - Not included in standard test runs (use --gtest_filter="*MaxFidelity*")
@@ -38,7 +38,7 @@ namespace {
 // Paths to EGM2008 tables (relative to workspace root)
 // Note: full_n2190 starts at n=2 (EGM2008 standard format)
 constexpr const char* K_FULL_TABLE_PATH =
-    "src/sim/environment/gravity/data/earth/egm2008_full_n2190.bin";
+    "src/sim/environment/gravity/data/earth/egm2008_full_n2190.grav";
 
 // WGS84 constants
 constexpr double GM = 3.986004418e14; // m^3/s^2

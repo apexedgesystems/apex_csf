@@ -8,7 +8,7 @@
  *  - Verify numerical parity between CPU and GPU
  *
  * Prereqs:
- *  - egm2008_full_n2190.bin in data/earth/ (86MB, 36-byte records)
+ *  - egm2008_full_n2190.grav in data/earth/ (86MB, 36-byte records)
  *  - CUDA runtime available
  *
  * Notes:
@@ -41,7 +41,7 @@ namespace {
 /* ----------------------------- Test Configuration ----------------------------- */
 
 constexpr const char* K_FULL_TABLE_PATH =
-    "src/sim/environment/gravity/data/earth/egm2008_full_n2190.bin";
+    "src/sim/environment/gravity/data/earth/egm2008_full_n2190.grav";
 
 // WGS84 constants
 constexpr double GM = 3.986004418e14; // m^3/s^2

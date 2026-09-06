@@ -45,5 +45,12 @@ apex_add_tprm(
   NAME ApexAircraftAtmoDemo MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/../tprm/tprm.manifest"
 )
 apex_add_deployment(
-  NAME ApexAircraftAtmoDemo EXEC ApexAircraftAtmoDemo TPRM ApexAircraftAtmoDemo/master.tprm
+  NAME
+  ApexAircraftAtmoDemo
+  EXEC
+  ApexAircraftAtmoDemo
+  TPRM
+  ApexAircraftAtmoDemo/master.tprm
+  DATA
+  demos/apex_horizon_demo/aircraft_atmo/data/earth_ussa76.atm
 )

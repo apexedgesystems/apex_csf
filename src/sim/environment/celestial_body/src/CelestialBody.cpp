@@ -21,6 +21,7 @@
 #include <fmt/format.h>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <system_error>
 
 namespace sim {
@@ -143,6 +144,27 @@ std::uint8_t CelestialBody::doInit() noexcept {
   //    successful load is Status::SUCCESS); a dynamic_cast miss or any
   //    non-success load is a fatal init error (the specific code is logged).
   bool ok = true;
+  // Config-declared data paths resolve against the executive fs-root
+  // first (packaged runs stage data there at the declared relative
+  // path); a root miss keeps the path cwd-relative for dev-tree runs
+  // and says so, keeping the two worlds distinguishable in the log.
+  const auto RESOLVE = [this](const char* raw, const char* kind,
+                              std::string_view canonicalSuffix) -> std::string {
+    namespace sc = system_core::system_component;
+    if (auto* log = componentLog();
+        log != nullptr && !std::string_view{raw}.ends_with(canonicalSuffix)) {
+      log->info(label(), fmt::format("{} data path lacks the canonical {} suffix: {}", kind,
+                                     canonicalSuffix, raw));
+    }
+    const std::filesystem::path RESOLVED = sc::resolveDataPath(fileSystemRoot(), raw);
+    if (auto* log = componentLog(); log != nullptr && !fileSystemRoot().empty() &&
+                                    RESOLVED == std::filesystem::path{raw} &&
+                                    !RESOLVED.is_absolute()) {
+      log->info(label(),
+                fmt::format("{} data path not under fs root; cwd-relative: {}", kind, raw));
+    }
+    return RESOLVED.string();
+  };
   if (p.terrain_fidelity == env::TerrainFidelity::HTILE) {
     auto* tile = dynamic_cast<env::terrain::HtileTile*>(env_.terrain.get());
     if (tile == nullptr) {
@@ -152,12 +174,14 @@ std::uint8_t CelestialBody::doInit() noexcept {
       }
       ok = false;
     } else {
-      const env::terrain::Status tstatus = tile->load(std::string(p.terrain_data_path));
+      const std::string TERRAIN_PATH =
+          RESOLVE(p.terrain_data_path, "terrain", env::terrain::HTILE_FILE_SUFFIX);
+      const env::terrain::Status tstatus = tile->load(TERRAIN_PATH);
       if (!env::terrain::isSuccess(tstatus)) {
         auto* log = componentLog();
         if (log != nullptr) {
           log->info(label(), fmt::format("init: terrain load failed ({}) -> {}",
-                                         env::terrain::toString(tstatus), p.terrain_data_path));
+                                         env::terrain::toString(tstatus), TERRAIN_PATH));
         }
         ok = false;
       } else {
@@ -185,13 +209,14 @@ std::uint8_t CelestialBody::doInit() noexcept {
       }
       ok = false;
     } else {
-      const env::atmosphere::Status astatus = atm->load(std::string(p.atmosphere_data_path));
+      const std::string ATMO_PATH =
+          RESOLVE(p.atmosphere_data_path, "atmosphere", env::atmosphere::ATM_FILE_SUFFIX);
+      const env::atmosphere::Status astatus = atm->load(ATMO_PATH);
       if (!env::atmosphere::isSuccess(astatus)) {
         auto* log = componentLog();
         if (log != nullptr) {
-          log->info(label(),
-                    fmt::format("init: atmosphere load failed ({}) -> {}",
-                                env::atmosphere::toString(astatus), p.atmosphere_data_path));
+          log->info(label(), fmt::format("init: atmosphere load failed ({}) -> {}",
+                                         env::atmosphere::toString(astatus), ATMO_PATH));
         }
         ok = false;
       } else {

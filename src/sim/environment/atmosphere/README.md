@@ -249,3 +249,8 @@ geometric altitude differ by about 2% at 30 km, growing with altitude.
 - `sim::environment::factory` -- cross-subsystem dispatch.
 - horizon `tools/world_data/` -- canonical home for converters,
   procedural generators, and sample world specs.
+
+## File suffix
+
+Atm tables ship as `.atm` (ATM_FILE_SUFFIX). The header magic is the
+authoritative identity; the suffix is the config-facing convention.

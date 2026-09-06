@@ -416,6 +416,10 @@ bool ApexExecutive::registerComponent(system_core::system_component::SystemCompo
   // Step 3: Initialize component log (uses instance index for filename)
   comp->initComponentLog(logDir);
 
+  // Step 3.5: Filesystem root for data-path resolution (packaged runs
+  // stage data under the root; dev trees keep cwd-relative resolution)
+  comp->setFileSystemRoot(fileSystem_.root());
+
   // Step 4: Load TPRM configuration
   if (!comp->loadTprm(fileSystem_.tprmDir())) {
     sysLog_->warning(

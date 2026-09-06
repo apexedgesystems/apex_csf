@@ -15,10 +15,17 @@
 #include <cstdint>
 #include <fstream>
 #include <string>
+#include <string_view>
 
 namespace sim {
 namespace environment {
 namespace gravity {
+
+/// Canonical file suffix for gravity coefficient tables. The format is
+/// headerless (raw fixed-size records validated by size only), so the
+/// suffix is currently the file's ONLY identity marker -- name tables
+/// .grav, never a generic .bin.
+inline constexpr std::string_view GRAV_FILE_SUFFIX{".grav"};
 
 /* ----------------------------- GravityCoeffTable ----------------------------- */
 

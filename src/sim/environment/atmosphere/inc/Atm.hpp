@@ -47,11 +47,17 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string_view>
 #include <cstdio>
 
 namespace sim {
 namespace environment {
 namespace atmosphere {
+
+/// Canonical file suffix for atm tables. The header magic is the
+/// authoritative format identity; the suffix is the human- and
+/// config-facing convention.
+inline constexpr std::string_view ATM_FILE_SUFFIX{".atm"};
 
 /* ----------------------------- Constants ----------------------------- */
 
