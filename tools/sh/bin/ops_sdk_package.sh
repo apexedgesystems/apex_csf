@@ -178,7 +178,11 @@ cat >"$SDK_DIR/README.md" <<READMEEOF
   template into your application's tprm toml directory, change only the
   values you mean to change, and pack it into the master with the app's
   tprm manifest. A field you delete falls back to its compiled default at
-  load; a struct you omit entirely runs on stock defaults (logged at INFO).
+  load. Omitting a component's struct from a packed master is a boot
+  refusal under the default STRICT ingest policy unless that component
+  declares its params optional -- pass --ingest-policy lenient to run
+  on defaults with a warning instead. A bare boot (no master at all)
+  runs entirely on stock defaults.
 
 ## Connecting
 
