@@ -60,6 +60,26 @@ def corrupt_master(dest: str, uid: int = SYSMON_UID) -> None:
     open(dest, "wb").write(bytes(d))
 
 
+def forge_bad_value(dest: str) -> None:
+    """Well-formed executive payload, out-of-vocabulary rtMode, CRC restamped:
+    transport checks pass, the adoption door must be what rejects."""
+    import json
+    import zlib
+
+    d = bytearray(open(f"{GEN}/master.tprm", "rb").read())
+    db = json.load(open(f"{BUILD}/apex_data_db/ApexExecutive.json"))
+    fields = db["structs"]["ExecutiveTunableParams"]["fields"]
+    rt = next(f for f in fields if f["name"] == "rtMode")
+    for i in range(len(d) - 20):
+        if d[i : i + 4] == b"APV3" and struct.unpack_from("<I", d, i + 8)[0] == 0:
+            size = struct.unpack_from("<H", d, i + 6)[0]
+            body = i + 20
+            d[body + rt["offset"]] = 99
+            struct.pack_into("<I", d, i + 16, zlib.crc32(d[body : body + size]) & 0xFFFFFFFF)
+            break
+    open(dest, "wb").write(bytes(d))
+
+
 def pack_without_sysmon(dest: str) -> None:
     args = [f"{BUILD}/bin/tools/rust/tprm_pack", "pack", "-o", dest]
     keep = {
@@ -194,6 +214,17 @@ def main() -> int:
     code, log = boot(exec_bad, fs7, timeout=40, shutdown_after=8)
     check("exec rejection heals via bank", "RUNNING ON FALLBACK BANK B" in log)
     check("healed vehicle ran", "Task execution started" in log)
+
+    print("== 5b. Forged bad-VALUE executive payload: field named, same chain")
+    val_bad = os.path.join(work, "master_valbad.tprm")
+    forge_bad_value(val_bad)
+    code, log = boot(val_bad, os.path.join(work, "fs_val"))
+    check("value rejection names field", "rtMode outside enum range" in log)
+    check("routes to barrier", "Continuing to the ingest barrier" in log)
+    check(
+        "held, zero cycles, nonzero exit",
+        code != 0 and "SAFE HOLD" in log and "Clock stopped after 0 cycles" in log,
+    )
 
     print("== 6. Bare boot (no master): stock defaults idle soft, rc=0")
     fs8 = os.path.join(work, "fs8")

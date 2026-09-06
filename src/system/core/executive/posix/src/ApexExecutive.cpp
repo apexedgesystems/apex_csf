@@ -204,8 +204,10 @@ std::uint8_t ApexExecutive::doInit() noexcept {
                       "system (clock {} Hz, RT mode {}). Continuing to the ingest barrier "
                       "-- bank fallback or SAFE hold, never a run on discarded config",
                       clockFrequency_, rtModeToString(rtConfig_.mode)));
-      ingestFailures_.push_back(
-          {fullUid(), label(), system_core::system_component::TprmIngest::REJECTED, true});
+      // The executive records itself pre-registration; its identity is
+      // componentId 0, instance 0 -- not the unregistered sentinel.
+      ingestFailures_.push_back({static_cast<std::uint32_t>(componentId()) << 8, label(),
+                                 system_core::system_component::TprmIngest::REJECTED, true});
     }
 
     // CLI overrides take precedence over TPRM values
