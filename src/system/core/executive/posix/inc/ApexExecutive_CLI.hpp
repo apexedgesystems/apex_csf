@@ -40,6 +40,7 @@ enum Arguments : std::uint8_t {
   VERBOSITY,           ///< Log verbosity level
   RT_MODE,             ///< Real-time mode override
   RT_MAX_LAG,          ///< Max lag tolerance (ticks)
+  INGEST_POLICY,       ///< TPRM ingest policy (strict|lenient)
 };
 
 /**
@@ -65,6 +66,7 @@ static const apex::helpers::args::ArgMap ARG_MAP = {
     {VERBOSITY, {"--verbosity", 1, false}},
     {RT_MODE, {"--rt-mode", 1, false}},
     {RT_MAX_LAG, {"--rt-max-lag", 1, false}},
+    {INGEST_POLICY, {"--ingest-policy", 1, false}},
 };
 
 } // namespace executive

@@ -418,7 +418,7 @@ TEST(SystemMonitor, LoadTprmMissingFileIsOptional) {
 
   system_core::support::SystemMonitor mon;
   mon.setInstanceIndex(0);
-  EXPECT_TRUE(mon.loadTprm(DIR));
+  EXPECT_EQ(mon.loadTprm(DIR), system_core::system_component::TprmIngest::DEFAULTS);
 
   std::filesystem::remove_all(DIR);
 }

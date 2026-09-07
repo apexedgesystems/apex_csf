@@ -74,7 +74,8 @@ struct ExecutiveTunableParams {
  * enums and operating ranges -- and these fields select the SYSTEM CLASS
  * (clock rate, RT enforcement, lifecycle modes), so out-of-range values
  * mean the config is not what its author wrote. Invalid values reject the
- * load (routing into the executive's refuse-to-boot contract) rather than
+ * load (a REJECTED ingest feeding the barrier's refuse-to-run chain:
+ * bank fallback, else the SAFE hold) rather than
  * silently casting to undefined behavior: rtMode feeds a raw enum cast,
  * and clockFrequencyHz feeds a divisor (0 divides; >1000 collapses the
  * frame period to zero and busy-spins the grid).

@@ -78,10 +78,11 @@ public:
 
   /* ----------------------------- TPRM ----------------------------- */
 
-  bool loadTprm(const std::filesystem::path& /*tprmDir*/) noexcept override {
-    // No TPRM needed -- accept defaults.
+  system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& /*tprmDir*/) noexcept override {
+    // No TPRM surface -- nothing to ingest.
     setConfigured(true);
-    return true;
+    return system_core::system_component::TprmIngest::NONE;
   }
 
 private:

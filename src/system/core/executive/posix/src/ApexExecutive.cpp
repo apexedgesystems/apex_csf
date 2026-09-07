@@ -170,30 +170,44 @@ std::uint8_t ApexExecutive::doInit() noexcept {
   // Configure filesystem cleanup for destructor-based RAII cleanup
   fileSystem_.configureShutdownCleanup(!shutdownConfig_.skipCleanup, archivePath_);
 
-  // Unpack master TPRM, load executive TPRM, apply CLI overrides
+  // Unpack master TPRM, load executive TPRM, apply CLI overrides.
+  // A fallback boot (marker present: the prior boot flipped banks after
+  // a failed ingest) must NOT re-extract the master -- the master is
+  // what failed; the flipped bank's staged payloads are the config.
+  const bool FALLBACK_BOOT = std::filesystem::exists(ingestFallbackMarker());
+  if (FALLBACK_BOOT) {
+    sysLog_->error(
+        label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+        fmt::format("Fallback boot: skipping master extraction, using staged bank {}",
+                    fileSystem_.activeBank() == system_core::filesystem::Bank::A ? "A" : "B"));
+  }
   if (!configPath_.empty()) {
-    if (!unpackMasterTprm()) {
+    if (!FALLBACK_BOOT && !unpackMasterTprm()) {
       return status(); // Error already set and logged
     }
 
-    // Load executive TPRM. A present-but-rejected tprm is fatal: the
+    // Load executive TPRM. A present-but-rejected tprm never RUNS: the
     // compiled defaults are not a degraded mode of the declared
     // configuration, they are a different system (clock rate, RT mode,
-    // thread pinning), and the difference surfaces mid-run. The contract
-    // has exactly three states -- honored config, explicitly-no-config
-    // (no executive entry packed: defaults at INFO), or refused boot.
-    // There is deliberately no override: a run on discarded config gives
-    // a false sense of functionality no banner can repair. To run on
-    // defaults on purpose, pack the master without the executive entry.
-    if (!loadTprm(fileSystem_.tprmDir())) {
+    // thread pinning). Instead of dying here, the rejection joins the
+    // ingest barrier like any component's: the bank fallback can heal
+    // it (the staged bank's executive payload is part of the validated
+    // set), and failing that the SAFE hold keeps the vehicle reachable
+    // on compiled defaults -- which are inert while held, since a held
+    // system dispatches nothing. To run on defaults on purpose, pack
+    // the master without the executive entry (explicitly-no-config,
+    // defaults at INFO).
+    if (loadTprm(fileSystem_.tprmDir()) == system_core::system_component::TprmIngest::REJECTED) {
       sysLog_->error(
           label(), static_cast<std::uint8_t>(ERROR_TPRM_REJECTED),
           fmt::format("Executive TPRM rejected; compiled defaults would run a different "
-                      "system (clock {} Hz, RT mode {}). Refusing to boot -- to run on "
-                      "defaults deliberately, repack the master without the executive entry",
+                      "system (clock {} Hz, RT mode {}). Continuing to the ingest barrier "
+                      "-- bank fallback or SAFE hold, never a run on discarded config",
                       clockFrequency_, rtModeToString(rtConfig_.mode)));
-      setStatus(static_cast<std::uint8_t>(ERROR_TPRM_REJECTED));
-      return status();
+      // The executive records itself pre-registration; its identity is
+      // componentId 0, instance 0 -- not the unregistered sentinel.
+      ingestFailures_.push_back({static_cast<std::uint32_t>(componentId()) << 8, label(),
+                                 system_core::system_component::TprmIngest::REJECTED, true});
     }
 
     // CLI overrides take precedence over TPRM values
@@ -421,11 +435,7 @@ bool ApexExecutive::registerComponent(system_core::system_component::SystemCompo
   comp->setFileSystemRoot(fileSystem_.root());
 
   // Step 4: Load TPRM configuration
-  if (!comp->loadTprm(fileSystem_.tprmDir())) {
-    sysLog_->warning(
-        label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
-        fmt::format("loadTprm failed for {} (0x{:06X})", comp->label(), comp->fullUid()));
-  }
+  const auto TPRM_INGEST = comp->loadTprm(fileSystem_.tprmDir());
 
   // Step 4.5: Provision transport for HW_MODEL components
   if (comp->componentType() == system_core::system_component::ComponentType::HW_MODEL) {
@@ -439,6 +449,10 @@ bool ApexExecutive::registerComponent(system_core::system_component::SystemCompo
 
   // Step 5: Initialize the component
   (void)comp->init();
+
+  // Judge the ingest now that init() has registered the component's
+  // data blocks (the NONE-with-registered-params cross-check needs them).
+  recordIngestOutcome(comp, TPRM_INGEST);
 
   // Step 6: Register component's data descriptors with ApexRegistry
   for (std::size_t i = 0; i < comp->dataCount(); ++i) {
@@ -532,13 +546,19 @@ RunResult ApexExecutive::run() noexcept {
   // declared state -- a stock boot idles -- so the missing table logs at
   // INFO. With a config present, a missing/unloadable table stays an
   // error: the application declared tasks it did not get.
-  if (!scheduler_.loadTprm(tprmDir)) {
-    if (configPath_.empty()) {
-      sysLog_->info(label(), "No schedule configured; scheduler idle (0 tasks)");
-    } else {
-      sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_SCHEDULER_NO_TASKS),
-                     fmt::format("Scheduler loadTprm failed: {}",
-                                 scheduler_.lastError() ? scheduler_.lastError() : "unknown"));
+  {
+    using system_core::system_component::TprmIngest;
+    const TprmIngest SCHED_INGEST = scheduler_.loadTprm(tprmDir);
+    if (SCHED_INGEST != TprmIngest::LOADED) {
+      if (configPath_.empty() && SCHED_INGEST == TprmIngest::DEFAULTS) {
+        sysLog_->info(label(), "No schedule configured; scheduler idle (0 tasks)");
+      } else {
+        sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_SCHEDULER_NO_TASKS),
+                       fmt::format("Scheduler loadTprm failed: {}",
+                                   scheduler_.lastError() ? scheduler_.lastError() : "unknown"));
+        ingestFailures_.push_back({scheduler_.fullUid(), scheduler_.label(), SCHED_INGEST,
+                                   SCHED_INGEST == TprmIngest::REJECTED});
+      }
     }
   }
 
@@ -570,9 +590,11 @@ RunResult ApexExecutive::run() noexcept {
   interface_->initInterfaceLog(fileSystem_.coreLogDir());
 
   // Load interface TPRM (component self-loads using its componentId)
-  if (!interface_->loadTprm(tprmDir)) {
+  if (interface_->loadTprm(tprmDir) == system_core::system_component::TprmIngest::REJECTED) {
     sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_MODULE_INIT_FAIL),
                    "Interface loadTprm FAILED");
+    ingestFailures_.push_back({interface_->fullUid(), interface_->label(),
+                               system_core::system_component::TprmIngest::REJECTED, true});
   } else {
     const std::uint8_t IFACE_INIT = interface_->init();
     if (IFACE_INIT != 0) {
@@ -638,6 +660,8 @@ RunResult ApexExecutive::run() noexcept {
   // an external caller wires up a real PPS source.
   timeServer_.setSteadyClock(system_core::time_server::TimeServer::defaultSteadyClock());
   timeServer_.setWallClock(system_core::time_server::TimeServer::defaultWallClock());
+  timeServer_.initComponentLog(fileSystem_.logDir());
+  recordIngestOutcome(&timeServer_, timeServer_.loadTprm(fileSystem_.tprmDir()));
   {
     const std::uint8_t TIME_SERVER_INIT = timeServer_.init();
     if (TIME_SERVER_INIT != 0) {
@@ -670,11 +694,7 @@ RunResult ApexExecutive::run() noexcept {
 
   // Load action engine TPRM (watchpoints, groups, sequences, notifications, actions)
   actionComp_.initComponentLog(fileSystem_.logDir());
-  if (!actionComp_.loadTprm(fileSystem_.tprmDir())) {
-    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
-                     fmt::format("loadTprm failed for {} (0x{:06X})", actionComp_.label(),
-                                 actionComp_.fullUid()));
-  }
+  recordIngestOutcome(&actionComp_, actionComp_.loadTprm(fileSystem_.tprmDir()));
 
   // Auto-load standalone RTS/ATS sequences from banked directories.
   // Files are named {slot:03d}.rts / {slot:03d}.ats (placed by unpackMasterTprm routing).
@@ -911,6 +931,41 @@ RunResult ApexExecutive::run() noexcept {
     }
   }
 
+  // TPRM ingest barrier: every component has loaded and registered, so
+  // every offender is on the list -- judge them together and refuse to
+  // run a misconfigured vehicle rather than fail on the first.
+  if (!ingestPolicyHolds()) {
+    if (attemptIngestFallback()) {
+      // Unreachable: a successful fallback exec-replaces this process.
+      return RunResult::ERROR_INIT;
+    }
+    // No bank can boot. Stay reachable instead of dying: hold the
+    // system paused with the interface alive so ground can repair over
+    // the wire (readback -> upload -> verify -> RELOAD_EXECUTIVE).
+    // --shutdown-after still applies, so automated runs exit.
+    ingestHold_ = true;
+    setStatus(static_cast<std::uint8_t>(ERROR_TPRM_INGEST));
+    controlState_.pauseRequested.store(true, std::memory_order_release);
+    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                   "SAFE HOLD: no bank passes ingest; scheduler held, interface up. "
+                   "Repair over the wire (upload + VERIFY_TPRM + RELOAD_EXECUTIVE) "
+                   "or reboot with a corrected master");
+  }
+  {
+    // Ingest held; a surviving marker means this IS the fallback boot.
+    // Impossible to miss: ERROR-level, and the flag stays for status.
+    std::error_code fbEc;
+    if (std::filesystem::exists(ingestFallbackMarker(), fbEc)) {
+      bootedOnFallback_ = true;
+      std::filesystem::remove(ingestFallbackMarker(), fbEc);
+      sysLog_->error(
+          label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+          fmt::format("RUNNING ON FALLBACK BANK {}: the packed master failed ingest; "
+                      "repair it and reboot to restore the primary configuration",
+                      fileSystem_.activeBank() == system_core::filesystem::Bank::A ? "A" : "B"));
+    }
+  }
+
   // Allocate queues for interface itself (self-command routing for deterministic timing).
   // QueueManager maintains fullUid -> queues mapping; components use IInternalBus for messaging.
   {
@@ -975,6 +1030,12 @@ RunResult ApexExecutive::run() noexcept {
   profLog_->flush();
   heartbeatLog_->flush();
 
+  // A run that spent its life in the SAFE ingest hold is not a
+  // success: scripts and supervisors must see the misconfiguration
+  // even though the vehicle stayed reachable until shutdown.
+  if (ingestHold_) {
+    return RunResult::ERROR_INIT;
+  }
   return RunResult::SUCCESS;
 }
 
@@ -1169,7 +1230,9 @@ bool ApexExecutive::adoptTunables(ExecutiveTunableParams params, const char** va
   return true;
 }
 
-bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+system_core::system_component::TprmIngest
+ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+  using system_core::system_component::TprmIngest;
   // Generate filename from executive fullUid (componentId << 8 | instance 0 -> "000000.tprm")
   // Note: Executive is always instance 0 and loads TPRM before registration
   const std::uint32_t FULL_UID = static_cast<std::uint32_t>(componentId()) << 8;
@@ -1179,7 +1242,7 @@ bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   if (!std::filesystem::exists(tprmPath)) {
     sysLog_->info(label(),
                   fmt::format("No executive TPRM found at {}, using defaults", tprmPath.string()));
-    return true; // Not an error - use defaults
+    return TprmIngest::DEFAULTS; // Not an error - use defaults
   }
 
   // Read and verify the v3 payload; a reject leaves the compiled
@@ -1193,25 +1256,27 @@ bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     sysLog_->error(
         label(), sc::toFaultCode(CHECK),
         fmt::format("Executive TPRM rejected ({}): {}", sc::toString(CHECK), tprmPath.string()));
-    return false;
+    return TprmIngest::REJECTED;
   }
   if (body.size() < sizeof(ExecutiveTunableParams)) {
     sysLog_->error(label(), sc::toFaultCode(sc::TprmPayloadCheck::BODY_SIZE_MISMATCH),
                    fmt::format("Executive TPRM body {} bytes, need at least {}", body.size(),
                                sizeof(ExecutiveTunableParams)));
-    return false;
+    return TprmIngest::REJECTED;
   }
   ExecutiveTunableParams params{};
   std::memcpy(&params, body.data(), sizeof(params));
 
   // Value validation happens in the adoption door: size and CRC prove
-  // transport integrity, not vocabulary. A rejected set routes into
-  // the refuse-to-boot contract.
+  // transport integrity, not vocabulary. A rejected set is REJECTED
+  // like any refused payload -- one honest state feeding the ingest
+  // barrier, where the refuse-to-run contract lives (bank fallback,
+  // else the SAFE hold; discarded config never runs).
   const char* valErr = nullptr;
   if (!adoptTunables(params, &valErr)) {
     sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_REJECTED),
                    fmt::format("Executive TPRM value rejected: {}", valErr));
-    return false;
+    return TprmIngest::REJECTED;
   }
 
   // Read thread configuration (follows tunable params in the body)
@@ -1230,6 +1295,158 @@ bool ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   // If thread config not present, defaults remain (all OTHER/0/[all])
 
   sysLog_->info(label(), fmt::format("Loaded executive TPRM from: {}", tprmPath.string()));
+  return TprmIngest::LOADED;
+}
+
+/* ----------------------------- TPRM Ingest Policy ----------------------------- */
+
+void ApexExecutive::recordIngestOutcome(system_core::system_component::SystemComponentBase* comp,
+                                        system_core::system_component::TprmIngest ingest) noexcept {
+  using system_core::system_component::TprmIngest;
+
+  if (ingest == TprmIngest::LOADED) {
+    return;
+  }
+
+  // A bare boot -- no master provided at all -- is the whole-vehicle
+  // explicitly-no-config state: defaults everywhere are the deliberate
+  // stock configuration, not a forgotten file (same doctrine as the
+  // absent executive entry and the scheduler's idle case). STRICT
+  // polices configured systems; REJECTED cannot occur here since
+  // there are no payloads to refuse.
+  if (configPath_.empty() && ingest != TprmIngest::REJECTED) {
+    return;
+  }
+
+  if (ingest == TprmIngest::NONE) {
+    // A component that registers TUNABLE_PARAM data but ignores the
+    // TPRM directory is a half-wired declaration: the params exist,
+    // nothing can ever configure them.
+    bool registersTunables = false;
+    for (std::size_t i = 0; i < system_core::system_component::MAX_DATA_PER_COMPONENT; ++i) {
+      const auto* DESC = comp->dataDescriptor(i);
+      if (DESC != nullptr && DESC->ptr != nullptr &&
+          DESC->category == system_core::data::DataCategory::TUNABLE_PARAM) {
+        registersTunables = true;
+        break;
+      }
+    }
+    if (!registersTunables) {
+      return;
+    }
+    ingestFailures_.push_back({comp->fullUid(), comp->label(), ingest, false});
+    return;
+  }
+
+  if (ingest == TprmIngest::DEFAULTS) {
+    if (comp->paramsOptional()) {
+      return; // Designed configuration; the component already logged it.
+    }
+    ingestFailures_.push_back({comp->fullUid(), comp->label(), ingest, false});
+    return;
+  }
+
+  // REJECTED: a present-but-refused payload is never intentional.
+  ingestFailures_.push_back({comp->fullUid(), comp->label(), ingest, true});
+}
+
+std::filesystem::path ApexExecutive::ingestFallbackMarker() const noexcept {
+  return fileSystem_.rootDir() / ".ingest_fallback";
+}
+
+bool ApexExecutive::attemptIngestFallback() noexcept {
+  namespace fs = std::filesystem;
+  const fs::path MARKER = ingestFallbackMarker();
+  std::error_code ec;
+  if (fs::exists(MARKER, ec)) {
+    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                   "Fallback bank also failed ingest; no further banks to try");
+    return false;
+  }
+
+  const auto OTHER = fileSystem_.activeBank() == system_core::filesystem::Bank::A
+                         ? system_core::filesystem::Bank::B
+                         : system_core::filesystem::Bank::A;
+  const fs::path OTHER_TPRM = fileSystem_.bankDir(OTHER) / "tprm";
+  bool staged = false;
+  if (fs::is_directory(OTHER_TPRM, ec)) {
+    for (const auto& ENTRY : fs::directory_iterator(OTHER_TPRM, ec)) {
+      if (ENTRY.path().extension() == ".tprm") {
+        staged = true;
+        break;
+      }
+    }
+  }
+  if (!staged) {
+    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                   fmt::format("No fallback: bank {} has no staged payloads",
+                               OTHER == system_core::filesystem::Bank::A ? "A" : "B"));
+    return false;
+  }
+
+  {
+    std::ofstream marker(MARKER);
+    marker << (fileSystem_.activeBank() == system_core::filesystem::Bank::A ? "from_a\n"
+                                                                            : "from_b\n");
+  }
+  if (!fileSystem_.flipActiveBank()) {
+    sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                   "Bank flip failed; cannot fall back");
+    fs::remove(MARKER, ec);
+    return false;
+  }
+
+  sysLog_->error(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                 fmt::format("TPRM ingest failed; flipping to staged bank {} and restarting",
+                             OTHER == system_core::filesystem::Bank::A ? "A" : "B"));
+  sysLog_->flush();
+
+  const std::string EXEC_STR = execPath_.string();
+  std::vector<const char*> argv;
+  argv.push_back(EXEC_STR.c_str());
+  for (const auto& arg : args_) {
+    argv.push_back(arg.c_str());
+  }
+  argv.push_back(nullptr);
+  execv(EXEC_STR.c_str(), const_cast<char* const*>(argv.data()));
+
+  const int EXEC_ERRNO = errno;
+  sysLog_->error(
+      label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+      fmt::format("Fallback execv failed (errno={}): {}", EXEC_ERRNO, std::strerror(EXEC_ERRNO)));
+  return false;
+}
+
+bool ApexExecutive::ingestPolicyHolds() noexcept {
+  using system_core::system_component::TprmIngest;
+
+  bool fatal = false;
+  for (const auto& F : ingestFailures_) {
+    const char* WHAT = F.state == TprmIngest::REJECTED ? "payload rejected"
+                       : F.state == TprmIngest::DEFAULTS
+                           ? "no payload provided (params not declared optional)"
+                           : "registers tunable params but ingests nothing";
+    const bool IS_FATAL = F.fatalAlways || ingestPolicy_ == IngestPolicy::STRICT;
+    fatal = fatal || IS_FATAL;
+    if (IS_FATAL) {
+      sysLog_->error(
+          label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+          fmt::format("TPRM ingest: {} (0x{:06X}): {}", F.componentLabel, F.fullUid, WHAT));
+    } else {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
+                       fmt::format("TPRM ingest: {} (0x{:06X}): {} -- LENIENT policy, "
+                                   "running defaults",
+                                   F.componentLabel, F.fullUid, WHAT));
+    }
+  }
+  if (fatal) {
+    sysLog_->error(
+        label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+        fmt::format("Refusing to run: {} component(s) failed TPRM ingest under {} policy",
+                    ingestFailures_.size(),
+                    ingestPolicy_ == IngestPolicy::STRICT ? "STRICT" : "LENIENT"));
+    return false;
+  }
   return true;
 }
 

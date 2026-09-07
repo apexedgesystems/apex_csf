@@ -70,9 +70,11 @@ void ActionComponent::doReset() noexcept { data::resetInterface(iface_); }
 
 /* ----------------------------- TPRM Loading ----------------------------- */
 
-bool ActionComponent::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+system_component::TprmIngest
+ActionComponent::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+  using system_component::TprmIngest;
   if (!isRegistered()) {
-    return false;
+    return TprmIngest::REJECTED;
   }
 
   char filename[32];
@@ -80,14 +82,13 @@ bool ActionComponent::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   std::filesystem::path tprmPath = tprmDir / filename;
 
   if (!std::filesystem::exists(tprmPath)) {
-    // A tprm for this component is optional: absence means defaults, and
-    // loadTprm reports success so the executive does not warn (false is
-    // reserved for a file that exists but fails its checks).
+    // A tprm for this component is optional (paramsOptional): absence
+    // means the engine runs with an empty table set, a designed state.
     auto* log = componentLog();
     if (log != nullptr) {
       log->info(label(), fmt::format("No TPRM found at {}, using defaults", tprmPath.string()));
     }
-    return true;
+    return TprmIngest::DEFAULTS;
   }
 
   ActionEngineTprm loaded{};
@@ -99,7 +100,7 @@ bool ActionComponent::loadTprm(const std::filesystem::path& tprmDir) noexcept {
                  fmt::format("TPRM rejected ({}): {}", system_component::toString(CHECK),
                              tprmPath.string()));
     }
-    return false;
+    return TprmIngest::REJECTED;
   }
 
   // Deserialize into live ActionInterface tables.
@@ -166,7 +167,7 @@ bool ActionComponent::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     }
   }
 
-  return true;
+  return TprmIngest::LOADED;
 }
 
 /* ----------------------------- TPRM Deserialization ----------------------------- */

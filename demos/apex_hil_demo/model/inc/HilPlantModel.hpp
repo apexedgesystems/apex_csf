@@ -265,9 +265,11 @@ public:
 
   /* ----------------------------- TPRM ----------------------------- */
 
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+  system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+    using system_core::system_component::TprmIngest;
     if (!isRegistered()) {
-      return false;
+      return TprmIngest::REJECTED;
     }
 
     char filename[32];
@@ -276,7 +278,7 @@ public:
 
     if (!std::filesystem::exists(tprmPath)) {
       logTprmConfig("defaults");
-      return false;
+      return TprmIngest::DEFAULTS;
     }
 
     HilPlantTunableParams loaded{};
@@ -288,11 +290,11 @@ public:
         log->error(label(), sc::toFaultCode(CHECK),
                    fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), tprmPath.string()));
       }
-      return false;
+      return TprmIngest::REJECTED;
     }
     tunableParams_.get() = loaded;
     logTprmConfig(tprmPath.string());
-    return true;
+    return TprmIngest::LOADED;
   }
 
   /* ----------------------------- Accessors ----------------------------- */

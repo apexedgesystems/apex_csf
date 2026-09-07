@@ -874,7 +874,7 @@ TEST(ShmRingBridge, LoadTprmMissingFileIsOptional) {
 
   system_core::support::ShmRingBridge bridge;
   bridge.setInstanceIndex(0);
-  EXPECT_TRUE(bridge.loadTprm(DIR));
+  EXPECT_EQ(bridge.loadTprm(DIR), system_core::system_component::TprmIngest::DEFAULTS);
 
   std::filesystem::remove_all(DIR);
 }
