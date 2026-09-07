@@ -29,6 +29,15 @@
 
 #include <gtest/gtest.h>
 
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
+#include <unistd.h>
+
+#include <atomic>
+#include <thread>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -595,6 +604,123 @@ PERF_TEST(InterfacePerf, InternalBusRoundTrip) {
 
   perf.warmup(fn);
   perf.throughputLoop(fn, "InternalBus_FullRoundTrip_64B");
+}
+
+/* ----------------------------- TX Wire Boundary ----------------------------- */
+
+namespace {
+
+/// Loopback TCP pair with a discard reader: the syscall boundary the
+/// in-memory pipeline tests deliberately exclude. TCP_NODELAY on the
+/// writer so Nagle does not synthesize batching the code did not do.
+struct LoopbackTx {
+  int writeFd{-1};
+  int readFd{-1};
+  std::thread reader;
+  std::atomic<bool> stop{false};
+
+  bool init() noexcept {
+    const int LISTEN_FD = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (LISTEN_FD < 0) {
+      return false;
+    }
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = 0;
+    if (::bind(LISTEN_FD, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 ||
+        ::listen(LISTEN_FD, 1) != 0) {
+      ::close(LISTEN_FD);
+      return false;
+    }
+    socklen_t len = sizeof(addr);
+    ::getsockname(LISTEN_FD, reinterpret_cast<sockaddr*>(&addr), &len);
+    writeFd = ::socket(AF_INET, SOCK_STREAM, 0);
+    if (writeFd < 0 || ::connect(writeFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+      ::close(LISTEN_FD);
+      return false;
+    }
+    readFd = ::accept(LISTEN_FD, nullptr, nullptr);
+    ::close(LISTEN_FD);
+    if (readFd < 0) {
+      return false;
+    }
+    const int ONE = 1;
+    ::setsockopt(writeFd, IPPROTO_TCP, TCP_NODELAY, &ONE, sizeof(ONE));
+    reader = std::thread([this]() {
+      std::array<std::uint8_t, 1 << 16> sink{};
+      while (!stop.load(std::memory_order_acquire)) {
+        const ssize_t N = ::recv(readFd, sink.data(), sink.size(), 0);
+        if (N <= 0) {
+          break;
+        }
+      }
+    });
+    return true;
+  }
+
+  ~LoopbackTx() {
+    stop.store(true, std::memory_order_release);
+    if (writeFd >= 0) {
+      ::shutdown(writeFd, SHUT_RDWR);
+      ::close(writeFd);
+    }
+    if (readFd >= 0) {
+      ::shutdown(readFd, SHUT_RDWR);
+      ::close(readFd);
+    }
+    if (reader.joinable()) {
+      reader.join();
+    }
+  }
+};
+
+/// One SLIP-framed 128 B telemetry packet, encoded once.
+std::vector<std::uint8_t> makeWireFrame() {
+  std::array<std::uint8_t, 128> payload{};
+  for (std::size_t i = 0; i < payload.size(); ++i) {
+    payload[i] = static_cast<std::uint8_t>(i);
+  }
+  const aproto::AprotoHeader HDR =
+      aproto::buildHeader(0x006500, 0x0001, 42, payload.size(), true, false, false);
+  std::array<std::uint8_t, 512> pkt{};
+  std::size_t pktLen = 0;
+  (void)aproto::encodePacket(HDR, {payload.data(), payload.size()}, {pkt.data(), pkt.size()},
+                             pktLen);
+  std::array<std::uint8_t, 1024> framed{};
+  const auto SLIP_RESULT =
+      apex::protocols::slip::encode({pkt.data(), pktLen}, framed.data(), framed.size());
+  return {framed.begin(), framed.begin() + static_cast<std::ptrdiff_t>(SLIP_RESULT.bytesProduced)};
+}
+
+} // namespace
+
+/** @brief The shipped shape: one write() syscall per frame. */
+PERF_TEST(InterfacePerf, TxWirePerFrameWrite) {
+  UB_PERF_GUARD(perf);
+  LoopbackTx wire;
+  ASSERT_TRUE(wire.init());
+  const std::vector<std::uint8_t> FRAME = makeWireFrame();
+
+  auto fn = [&]() { (void)::send(wire.writeFd, FRAME.data(), FRAME.size(), MSG_NOSIGNAL); };
+  perf.throughputLoop(fn, "Interface_TxWire_PerFrameWrite_128B");
+}
+
+/** @brief The batched alternative: 64 frames coalesced into one write(). */
+PERF_TEST(InterfacePerf, TxWireBatchedWrite64) {
+  UB_PERF_GUARD(perf);
+  LoopbackTx wire;
+  ASSERT_TRUE(wire.init());
+  const std::vector<std::uint8_t> FRAME = makeWireFrame();
+  std::vector<std::uint8_t> batch;
+  for (int i = 0; i < 64; ++i) {
+    batch.insert(batch.end(), FRAME.begin(), FRAME.end());
+  }
+
+  // Per-op time divides by 64 for the per-frame comparison; the
+  // summary line reports batch calls, ops_per_lambda converts.
+  auto fn = [&]() { (void)::send(wire.writeFd, batch.data(), batch.size(), MSG_NOSIGNAL); };
+  perf.throughputLoop(fn, "Interface_TxWire_BatchedWrite_64x128B");
 }
 
 PERF_MAIN()
