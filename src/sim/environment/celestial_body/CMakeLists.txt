@@ -40,6 +40,7 @@ apex_add_library(
   ${CPP_SOURCES}
   DEPS_PUBLIC
   sim_environment_factory
+  sim_environment_world
   system_core_system_component
   utilities_helpers
   fmt::fmt

@@ -54,7 +54,4 @@ apex_add_deployment(
   ApexRoverTerrainDemo/master.tprm
   WORLD
   earth
-  DATA
-  demos/apex_horizon_demo/rover_terrain/data/alpha_patch_lod4.htile
-  demos/apex_horizon_demo/rover_terrain/data/earth_ussa76.atm
 )

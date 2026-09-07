@@ -58,6 +58,14 @@ public:
   /// propagated from `initFromMemory`.
   [[nodiscard]] Status load(const std::string& path) noexcept;
 
+  /**
+   * @brief Load from an in-memory atm file image (header + records).
+   *
+   * Same validation and construction as load(); the image is a
+   * complete .atm byte stream, e.g. a world-bundle entry payload.
+   */
+  [[nodiscard]] Status loadFromImage(const std::uint8_t* data, std::size_t size) noexcept;
+
   /// Initialize directly from in-memory data (skips file I/O). Useful
   /// for tests and for hardcoded body presets (e.g. Earth USSA76).
   /// Returns `Status::SUCCESS`, or `ERROR_PARAM_LAYERS_EMPTY`,
@@ -92,6 +100,11 @@ public:
   [[nodiscard]] double maxAltitudeM() const noexcept override;
 
 private:
+  /// Shared tail of load()/loadFromImage(): header constants + layer
+  /// table into the runtime model.
+  [[nodiscard]] Status adoptTable(const AtmHeader& h,
+                                  const std::vector<AtmRecord>& records) noexcept;
+
   /// Find index of the layer containing `alt_m`. Clamps to first/last
   /// when out of the table's documented range.
   [[nodiscard]] std::size_t findLayer(double alt_m) const noexcept;

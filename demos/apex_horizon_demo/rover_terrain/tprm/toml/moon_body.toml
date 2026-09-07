@@ -1,9 +1,9 @@
-# Moon CelestialBody (0xDC01): analytic J2 + sphere + vacuum.
+# Moon CelestialBody (0xDC01): analytic J2 + sphere + vacuum. Every
+# fidelity is analytic, so no world binding (world_uid 0 = unbound).
 [CelestialBodyTunables]
-body                = { type = "uint",   size = 1,   value = 1 }    # MOON
-gravity_fidelity    = { type = "uint",   size = 1,   value = 1 }    # J2
-terrain_fidelity    = { type = "uint",   size = 1,   value = 1 }    # SPHERE
-atmosphere_fidelity = { type = "uint",   size = 1,   value = 0 }    # CONSTANT (vacuum)
-gravity_data_path   = { type = "string", size = 256, value = "" }
-terrain_data_path   = { type = "string", size = 256, value = "" }
-atmosphere_data_path= { type = "string", size = 256, value = "" }
+body                = { type = "uint", size = 1, value = 1 }    # MOON
+gravity_fidelity    = { type = "uint", size = 1, value = 1 }    # J2
+terrain_fidelity    = { type = "uint", size = 1, value = 1 }    # SPHERE
+atmosphere_fidelity = { type = "uint", size = 1, value = 0 }    # CONSTANT (vacuum)
+world_uid           = { type = "uint", size = 4, value = 0 }
+world_pin           = { type = "uint", size = 8, value = 0 }

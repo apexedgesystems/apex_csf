@@ -53,6 +53,4 @@ apex_add_deployment(
   ApexAircraftAtmoDemo/master.tprm
   WORLD
   earth
-  DATA
-  demos/apex_horizon_demo/aircraft_atmo/data/earth_ussa76.atm
 )
