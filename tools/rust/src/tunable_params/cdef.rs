@@ -634,11 +634,14 @@ pub fn generate_cmd_base(manifest: &Manifest) -> Result<String, Error> {
              virtual void onParamsLoaded() noexcept {{}}\n"
         ));
         load_tprm.push_str(&format!(
-            "  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {{\n    \
-             if (!this->isRegistered()) {{\n      return false;\n    }}\n    \
+            "  system_core::system_component::TprmIngest\n  \
+             loadTprm(const std::filesystem::path& tprmDir) noexcept override {{\n    \
+             using system_core::system_component::TprmIngest;\n    \
+             if (!this->isRegistered()) {{\n      return TprmIngest::REJECTED;\n    }}\n    \
              const std::filesystem::path PATH = tprmDir / this->tprmFilename(this->fullUid());\n    \
+             const bool PRESENT = std::filesystem::exists(PATH);\n    \
              bool loaded = false;\n    \
-             if (std::filesystem::exists(PATH)) {{\n      \
+             if (PRESENT) {{\n      \
              loaded = paramBank_.load(\n                   PATH, this->fullUid(),\n                   \
              [this](const {ts}& p) noexcept {{ return validateParams(p); }},\n                   \
              &{shout_struct}_LAYOUT_HASH) ==\n               \
@@ -654,7 +657,8 @@ pub fn generate_cmd_base(manifest: &Manifest) -> Result<String, Error> {
              inspectParams_ = paramBank_.active();\n    \
              onParamsLoaded();\n    \
              this->setConfigured(true);\n    \
-             return loaded;\n  }}\n\n  \
+             if (loaded) {{\n      return TprmIngest::LOADED;\n    }}\n    \
+             return PRESENT ? TprmIngest::REJECTED : TprmIngest::DEFAULTS;\n  }}\n\n  \
              /// Staged-payload verification enforces the spec hash for this\n  \
              /// component (VERIFY_TPRM and the verify-gated RELOAD).\n  \
              [[nodiscard]] const std::uint32_t* expectedLayoutHash() const noexcept override {{\n    \

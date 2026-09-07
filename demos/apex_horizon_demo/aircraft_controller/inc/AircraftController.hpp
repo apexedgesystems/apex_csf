@@ -275,11 +275,13 @@ protected:
   /// Optional TPRM tunable load. Typed-reject reader: a size or
   /// identity mismatch is a loud classified fault, not a silent
   /// fallback to defaults.
-  [[nodiscard]] bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+  [[nodiscard]] system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+    using system_core::system_component::TprmIngest;
     const std::filesystem::path PATH = tprmDir / fmt::format("{:06x}.tprm", fullUid());
     std::error_code ec;
     if (!std::filesystem::exists(PATH, ec)) {
-      return true; // Tunables stay at defaults; init can still proceed.
+      return TprmIngest::DEFAULTS; // Tunables stay at defaults; init can still proceed.
     }
     const auto CHECK =
         system_core::system_component::readTprmPayload(PATH, fullUid(), tunables_.get());
@@ -290,14 +292,17 @@ protected:
                    fmt::format("TPRM rejected ({}): {}",
                                system_core::system_component::toString(CHECK), PATH.string()));
       }
-      return false;
+      return TprmIngest::REJECTED;
     }
     auto* log = componentLog();
     if (log != nullptr) {
       log->info(label(), fmt::format("loadTprm: tunables loaded from {}", PATH.string()));
     }
-    return true;
+    return TprmIngest::LOADED;
   }
+
+  /** @brief Defaults are a designed configuration for this demo component. */
+  [[nodiscard]] bool paramsOptional() const noexcept override { return true; }
 
   [[nodiscard]] std::uint8_t doInit() noexcept override {
     using system_core::data::DataCategory;

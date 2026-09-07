@@ -66,7 +66,8 @@ TEST(ActionComponent, LoadTprmMissingFileIsOptional) {
 
   system_core::action::ActionComponent comp;
   comp.setInstanceIndex(0); // Registered component: the executive-boot precondition.
-  EXPECT_TRUE(comp.loadTprm(DIR));
+  EXPECT_EQ(comp.loadTprm(DIR), system_core::system_component::TprmIngest::DEFAULTS);
+  EXPECT_TRUE(comp.paramsOptional());
 
   std::filesystem::remove_all(DIR);
 }
@@ -85,7 +86,7 @@ TEST(ActionComponent, LoadTprmCorruptFileFails) {
     std::ofstream f(DIR / filename, std::ios::binary);
     f << "not a tprm payload";
   }
-  EXPECT_FALSE(comp.loadTprm(DIR));
+  EXPECT_EQ(comp.loadTprm(DIR), system_core::system_component::TprmIngest::REJECTED);
 
   std::filesystem::remove_all(DIR);
 }

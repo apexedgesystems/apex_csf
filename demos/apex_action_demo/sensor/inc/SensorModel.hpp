@@ -19,6 +19,7 @@
 
 #include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 
 #include <fmt/format.h>
@@ -143,6 +144,39 @@ public:
     default:
       return SwModelBase::handleCommand(opcode, payload, response);
     }
+  }
+
+  /* ----------------------------- TPRM ----------------------------- */
+
+  /**
+   * @brief Ingest the packed sensor payload, enforcing the spec hash.
+   */
+  [[nodiscard]] system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+    using system_core::system_component::TprmIngest;
+    namespace sc = system_core::system_component;
+    const std::filesystem::path PATH = tprmDir / sc::SystemComponentBase::tprmFilename(fullUid());
+    std::error_code ec;
+    if (!std::filesystem::exists(PATH, ec)) {
+      return TprmIngest::DEFAULTS;
+    }
+    SensorTunableParams loaded{};
+    const auto CHECK =
+        sc::readTprmPayload(PATH, fullUid(), loaded, &SENSOR_TUNABLE_PARAMS_LAYOUT_HASH);
+    if (CHECK != sc::TprmPayloadCheck::OK) {
+      if (auto* log = componentLog()) {
+        log->error(label(), sc::toFaultCode(CHECK),
+                   fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), PATH.string()));
+      }
+      return TprmIngest::REJECTED;
+    }
+    tunableParams_.get() = loaded;
+    return TprmIngest::LOADED;
+  }
+
+  /** @brief Staged-payload verification enforces the spec hash. */
+  [[nodiscard]] const std::uint32_t* expectedLayoutHash() const noexcept override {
+    return &SENSOR_TUNABLE_PARAMS_LAYOUT_HASH;
   }
 
 protected:

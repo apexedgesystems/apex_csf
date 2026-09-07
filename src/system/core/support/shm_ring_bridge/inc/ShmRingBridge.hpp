@@ -105,7 +105,8 @@ public:
    * ----------------------------- */
 
   /// Load tunables from `{tprmDir}/{fullUid:06x}.tprm` (apex convention).
-  [[nodiscard]] bool loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+  [[nodiscard]] system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override;
 
   /// Called after the internal bus is wired and the registry is populated.
   /// Opens the shm region + semaphore (Side A role) and resolves the

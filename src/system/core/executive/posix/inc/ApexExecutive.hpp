@@ -370,7 +370,8 @@ private:
    * @param tprmDir Directory containing extracted TPRM files.
    * @return true on success, false if load failed.
    */
-  [[nodiscard]] bool loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+  [[nodiscard]] system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override;
 
   /**
    * @brief Apply CLI argument overrides to TPRM-loaded configuration.
@@ -418,6 +419,85 @@ private:
    * Called automatically after interface init, before scheduler task registration.
    */
   void configureRegisteredComponents() noexcept;
+
+  /* ----------------------------- TPRM Ingest Policy ----------------------------- */
+
+  /**
+   * @brief Boot posture toward missing or rejected TPRMs.
+   *
+   * STRICT (the default) refuses to run a misconfigured vehicle: a
+   * rejected payload, or a missing one for a component whose params
+   * are not declared optional, fails init with the component and
+   * check named. LENIENT keeps warn-and-run-defaults for dev
+   * ergonomics; a rejected payload is fatal under both postures (a
+   * present-but-refused file is never intentional).
+   */
+  enum class IngestPolicy : std::uint8_t {
+    STRICT = 0,
+    LENIENT = 1,
+  };
+
+  /// One component's failed ingest, recorded during boot and judged
+  /// at the post-registration barrier so every offender is named.
+  struct IngestFailure {
+    std::uint32_t fullUid{0};
+    const char* componentLabel{nullptr};
+    system_core::system_component::TprmIngest state{};
+    bool fatalAlways{false}; ///< True for rejected payloads: fatal under every policy.
+  };
+
+  /**
+   * @brief Record one component's ingest outcome against the policy.
+   *
+   * Called after the component's init() so its registered data blocks
+   * are visible: a component that registers TUNABLE_PARAM data but
+   * reports NONE is the absent-declaration case strictness exists to
+   * catch.
+   */
+  void recordIngestOutcome(system_core::system_component::SystemComponentBase* comp,
+                           system_core::system_component::TprmIngest ingest) noexcept;
+
+  /**
+   * @brief Judge recorded ingest failures at the boot barrier.
+   *
+   * Logs every failure with its component and state; returns false
+   * when any is fatal under the active policy (rejected payloads
+   * always; missing ones under STRICT unless declared optional).
+   */
+  [[nodiscard]] bool ingestPolicyHolds() noexcept;
+
+  IngestPolicy ingestPolicy_{IngestPolicy::STRICT};
+  std::vector<IngestFailure> ingestFailures_{};
+
+  /**
+   * @brief One bounded A/B recovery when the active bank fails ingest.
+   *
+   * If no fallback was attempted yet and the other bank has staged
+   * payloads, writes the attempt marker, flips active_bank, and
+   * re-execs the executive (argv preserved, --fs-root included) so
+   * the vehicle boots the known-good bank. Returns false when the
+   * flip is impossible: fallback already attempted, nothing staged,
+   * or exec failed.
+   */
+  [[nodiscard]] bool attemptIngestFallback() noexcept;
+
+  /// Marker recording that this boot chain already flipped banks.
+  [[nodiscard]] std::filesystem::path ingestFallbackMarker() const noexcept;
+
+  bool bootedOnFallback_{false}; ///< This boot runs the fallback bank.
+
+  /**
+   * @brief SAFE ingest-hold: both banks failed, but the vehicle stays
+   *        reachable.
+   *
+   * The system boots permanently paused -- clock ticks and command
+   * drains run, tasks never dispatch -- so ground can inspect the
+   * staged banks (READBACK_TPRM), upload a corrected payload, verify
+   * it, and command RELOAD_EXECUTIVE to reboot onto the fix. RESUME
+   * and WAKE are refused while held: a misconfigured vehicle never
+   * runs by accident.
+   */
+  bool ingestHold_{false};
 
   // General executive information
   std::filesystem::path execPath_{};

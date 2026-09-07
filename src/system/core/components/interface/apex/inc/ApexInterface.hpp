@@ -87,7 +87,7 @@ public:
    * @note Reads "{componentId:06x}.tprm" (e.g., "000004.tprm") and calls configure().
    * @note NOT RT-safe: File I/O.
    */
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+  system_component::TprmIngest loadTprm(const std::filesystem::path& tprmDir) noexcept override;
 
   /**
    * @brief Set component resolver for command routing.

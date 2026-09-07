@@ -116,6 +116,11 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
   case static_cast<std::uint16_t>(Opcode::CMD_RESUME):
+    if (ingestHold_) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                       "RESUME refused: SAFE ingest hold (repair TPRMs, then RELOAD_EXECUTIVE)");
+      return static_cast<std::uint8_t>(ExecCommandResult::INGEST_HELD);
+    }
     resume();
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
@@ -143,6 +148,11 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
   case static_cast<std::uint16_t>(Opcode::CMD_WAKE):
+    if (ingestHold_) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(ERROR_TPRM_INGEST),
+                       "WAKE refused: SAFE ingest hold (repair TPRMs, then RELOAD_EXECUTIVE)");
+      return static_cast<std::uint8_t>(ExecCommandResult::INGEST_HELD);
+    }
     if (!scheduler_.isSleeping()) {
       sysLog_->debug(label(), "Wake requested but system not sleeping", 2);
     } else {
@@ -253,7 +263,8 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     comp->lock();
 
     // Load TPRM from inactive bank (C2 uploaded it there via FILE_TRANSFER).
-    if (!comp->loadTprm(fileSystem_.inactiveTprmDir())) {
+    if (comp->loadTprm(fileSystem_.inactiveTprmDir()) !=
+        system_core::system_component::TprmIngest::LOADED) {
       comp->unlock();
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
                        fmt::format("TPRM reload failed for component 0x{:06X}", targetUid));
@@ -373,7 +384,8 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     newComp->setInstanceIndex(oldComp->instanceIndex());
 
     // Initialize new component: loadTprm from active bank (same config).
-    if (!newComp->loadTprm(fileSystem_.tprmDir())) {
+    if (newComp->loadTprm(fileSystem_.tprmDir()) ==
+        system_core::system_component::TprmIngest::REJECTED) {
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
                        "RELOAD_LIBRARY: new component loadTprm failed");
       if (auto* sl = fileSystem_.swapLog()) {
@@ -577,6 +589,10 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     restartExecTarget_ = execTarget;
     restartDidSwapBinary_ = didSwapBinary;
     controlState_.restartPending.store(true, std::memory_order_release);
+    // Wake a paused clock: the SAFE ingest hold (and any pause) repairs
+    // through RELOAD_EXECUTIVE, so the pending restart must not wait for
+    // a resume that will never come.
+    cvPause_.notify_all();
 
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }

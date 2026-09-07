@@ -310,7 +310,8 @@ public:
    * @note Requires componentResolver to be set before calling.
    * @note NOT RT-safe: file I/O, vector resizing.
    */
-  [[nodiscard]] bool loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+  [[nodiscard]] system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override;
 
 protected:
   /**

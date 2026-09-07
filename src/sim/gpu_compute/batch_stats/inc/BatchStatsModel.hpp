@@ -213,9 +213,11 @@ public:
   /* ----------------------------- TPRM ----------------------------- */
 
   /** @brief Load tunable parameters from TPRM directory. @note NOT RT-safe: file I/O. */
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+  system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+    using system_core::system_component::TprmIngest;
     if (!isRegistered()) {
-      return false;
+      return TprmIngest::REJECTED;
     }
 
     char filename[32];
@@ -227,7 +229,7 @@ public:
       // stays warning-free. False is reserved for a present file that
       // fails its checks.
       logTprmConfig("defaults");
-      return true;
+      return TprmIngest::DEFAULTS;
     }
 
     BatchStatsTunableParams loaded{};
@@ -235,10 +237,13 @@ public:
         system_core::system_component::TprmPayloadCheck::OK) {
       tunableParams_.get() = loaded;
       logTprmConfig(tprmPath.string());
-      return true;
+      return TprmIngest::LOADED;
     }
-    return false;
+    return TprmIngest::REJECTED;
   }
+
+  /** @brief Defaults are a designed configuration for a stock (no-config) boot. */
+  [[nodiscard]] bool paramsOptional() const noexcept override { return true; }
 
 private:
   /* ----------------------------- GPU Memory Management ----------------------------- */

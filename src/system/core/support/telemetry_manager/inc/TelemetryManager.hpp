@@ -256,9 +256,10 @@ public:
 
   /* ----------------------------- TPRM ----------------------------- */
 
-  bool loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+  system_component::TprmIngest loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+    using system_component::TprmIngest;
     if (!isRegistered()) {
-      return false;
+      return TprmIngest::REJECTED;
     }
 
     char filename[32];
@@ -267,7 +268,7 @@ public:
 
     if (!std::filesystem::exists(TPRM_PATH)) {
       setConfigured(true);
-      return false;
+      return TprmIngest::DEFAULTS;
     }
 
     TelemetryManagerTprm loaded{};
@@ -281,7 +282,7 @@ public:
                                TPRM_PATH.string()));
       }
       setConfigured(true);
-      return false;
+      return TprmIngest::REJECTED;
     }
 
     tunableParams_.get() = loaded;
@@ -293,7 +294,7 @@ public:
       log->info(label(), fmt::format("TPRM loaded: collectRate={} Hz, {} active subscriptions",
                                      loaded.collectRateHz, state_.get().activeCount));
     }
-    return true;
+    return TprmIngest::LOADED;
   }
 
   /**

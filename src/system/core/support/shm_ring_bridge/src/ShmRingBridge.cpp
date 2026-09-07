@@ -89,7 +89,9 @@ ShmRingBridge::~ShmRingBridge() noexcept { closeChannel(); }
 
 /* ----------------------------- Lifecycle ----------------------------- */
 
-bool ShmRingBridge::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+system_component::TprmIngest
+ShmRingBridge::loadTprm(const std::filesystem::path& tprmDir) noexcept {
+  using system_component::TprmIngest;
   const std::filesystem::path PATH = tprmDir / fmt::format("{:06x}.tprm", fullUid());
   std::error_code ec;
   if (!std::filesystem::exists(PATH, ec)) {
@@ -97,7 +99,7 @@ bool ShmRingBridge::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     if (log != nullptr) {
       log->info(label(), "No TPRM found, using defaults");
     }
-    return true;
+    return TprmIngest::DEFAULTS;
   }
   const auto CHECK = system_component::readTprmPayload(PATH, fullUid(), tunables_.get());
   if (CHECK != system_component::TprmPayloadCheck::OK) {
@@ -107,9 +109,9 @@ bool ShmRingBridge::loadTprm(const std::filesystem::path& tprmDir) noexcept {
           label(), system_component::toFaultCode(CHECK),
           fmt::format("TPRM rejected ({}): {}", system_component::toString(CHECK), PATH.string()));
     }
-    return false;
+    return TprmIngest::REJECTED;
   }
-  return true;
+  return TprmIngest::LOADED;
 }
 
 std::uint8_t ShmRingBridge::doInit() noexcept {
