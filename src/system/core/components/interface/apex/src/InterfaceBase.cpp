@@ -264,8 +264,12 @@ void InterfaceBase::flushTxToClients(std::uint8_t serverId,
   std::array<std::uint8_t, GLOBAL_BUFFER_MAX> tbuf{};
   const std::size_t OUT_CAP = std::min(maxBufferSize_, tbuf.size());
 
-  // Burst multiple messages per flush
-  for (std::size_t iter = 0; iter < TX_BURST_MAX * 2; ++iter) {
+  // Drain everything enqueued since the last flush: the bound is the
+  // pipe capacity itself, so throughput is set by producers, not by a
+  // per-poll burst quota (which capped the wire at pollRate x burst).
+  const std::size_t FLUSH_MAX =
+      ioCfg_.pipeCapacityMessages > 0 ? ioCfg_.pipeCapacityMessages : DEFAULT_PIPE_CAPACITY;
+  for (std::size_t iter = 0; iter < FLUSH_MAX; ++iter) {
     const std::size_t PRODUCED =
         processBytesTx(serverId, apex::compat::mutable_bytes_span{tbuf.data(), OUT_CAP});
     if (PRODUCED == 0U) {
@@ -351,13 +355,16 @@ void InterfaceBase::enqueueTxMessage(std::uint8_t serverId,
   // Acquire pre-allocated buffer from pool (RT-safe, lock-free).
   MessageBuffer* buf = txPool_->acquire(data.size());
   if (COMPAT_UNLIKELY(buf == nullptr)) {
-    return; // Pool exhausted (all buffers in flight).
+    // A frame the producer believes sent must never vanish silently.
+    ++s.txPoolExhausted;
+    return;
   }
   // Copy only the actual message bytes (not 4KB).
   std::memcpy(buf->data, data.data(), data.size());
   buf->length = data.size();
   // Push pointer to pipe (8 bytes, trivial move).
   if (COMPAT_UNLIKELY(!s.txPipe->tryPush(buf))) {
+    ++s.txPipeFull;
     txPool_->release(buf); // Pipe full - return buffer to pool.
   }
 }

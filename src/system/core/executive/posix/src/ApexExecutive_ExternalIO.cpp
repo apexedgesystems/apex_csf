@@ -105,7 +105,10 @@ void ApexExecutive::externalIO(std::promise<std::uint8_t>&& p) noexcept {
 
   // Main processing loop - poll stdin and interface
   // Use shorter stdin timeout when interface is enabled for responsive network I/O
-  const int STDIN_TIMEOUT_MS = INTERFACE_ENABLED ? 10 : 100;
+  // With the interface enabled, the socket poll is the loop's only
+  // blocking wait: stdin is checked nonblocking so the TX drain
+  // cadence is ~100 Hz, not halved by a second 10 ms sleep.
+  const int STDIN_TIMEOUT_MS = INTERFACE_ENABLED ? 0 : 100;
 
   while (!externalIOShouldStop_.load(std::memory_order_relaxed) &&
          !controlState_.shutdownRequested.load(std::memory_order_relaxed)) {
