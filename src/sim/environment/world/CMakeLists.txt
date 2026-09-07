@@ -41,6 +41,24 @@ apex_add_library(
 )
 
 # ------------------------------------------------------------------------------
+# Packer/verifier tool (callable standalone; producers use it as a
+# black box, packaging drives it through apex_add_world)
+# ------------------------------------------------------------------------------
+
+apex_add_app(
+  NAME
+  world_pack
+  SRC
+  "${CMAKE_CURRENT_SOURCE_DIR}/tool/WorldPack.cpp"
+  LINK
+  ${LIB_NAME}
+  sim_environment_atmosphere
+  sim_environment_terrain
+  NO_INSTALL
+  NO_UPX
+)
+
+# ------------------------------------------------------------------------------
 # Opt-ins (coverage, doxygen, UPX)
 # ------------------------------------------------------------------------------
 

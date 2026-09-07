@@ -64,13 +64,14 @@ include_guard(GLOBAL)
 # (OPTIONAL): fidelities that need them fail loudly at boot instead.
 # ------------------------------------------------------------------------------
 function (apex_add_deployment)
-  cmake_parse_arguments(D "" "NAME;EXEC;TPRM;TPRM_FALLBACK" "DATA" ${ARGN})
+  cmake_parse_arguments(D "" "NAME;EXEC;TPRM;TPRM_FALLBACK;WORLD" "DATA" ${ARGN})
   apex_require(D_NAME D_EXEC)
   set_property(GLOBAL APPEND PROPERTY APEX_DEPLOYMENTS "${D_NAME}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_EXEC "${D_EXEC}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_TPRM "${D_TPRM}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_TPRM_FALLBACK "${D_TPRM_FALLBACK}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_DATA "${D_DATA}")
+  set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_WORLD "${D_WORLD}")
 endfunction ()
 
 # Resolve a TPRM <ref> to (path, dependency target). Generated products win;
@@ -277,6 +278,25 @@ function (apex_finalize_packages)
       list(APPEND _tprm_deps ${_fb_dep})
     endif ()
 
+    # World bundle: the shared per-body artifact set stages into the
+    # bank beside the tprms; the package target depends on the pack, so
+    # a declared world that cannot build fails here, not at boot.
+    get_property(_world GLOBAL PROPERTY APEX_DEPLOY_${_name}_WORLD)
+    set(_world_deps "")
+    if (_world)
+      get_property(_wprod GLOBAL PROPERTY APEX_WORLD_PRODUCT_${_world})
+      get_property(_wtgt GLOBAL PROPERTY APEX_WORLD_TARGET_${_world})
+      if (NOT _wprod)
+        message(FATAL_ERROR "deployment ${_name}: WORLD ${_world} is not declared (apex_add_world)")
+      endif ()
+      install(
+        FILES "${_wprod}"
+        DESTINATION bank_a/tprm
+        COMPONENT ${_name}
+      )
+      list(APPEND _world_deps ${_wtgt})
+    endif ()
+
     # World-data staging: each file lands at its repo-relative path under
     # the package root (the deployment dir is the fs-root at run time).
     get_property(_data GLOBAL PROPERTY APEX_DEPLOY_${_name}_DATA)
@@ -299,7 +319,7 @@ function (apex_finalize_packages)
               "${_pkgroot}/${_name}"
       COMMAND ${CMAKE_COMMAND} -E chdir "${_pkgroot}" ${CMAKE_COMMAND} -E tar czf "${_name}.tar.gz"
               "${_name}"
-      DEPENDS ${_exec} ${_tprm_deps}
+      DEPENDS ${_exec} ${_tprm_deps} ${_world_deps}
       COMMENT "[package] ${_name} -> cmake --install (bank_a + run.sh)"
       VERBATIM
     )

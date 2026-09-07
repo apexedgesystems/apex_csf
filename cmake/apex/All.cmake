@@ -23,6 +23,7 @@ include(apex/Cuda)
 include(apex/Targets)
 include(apex/Manifest)
 include(apex/Tprm)
+include(apex/World)
 
 # Coverage infrastructure
 include(apex/Coverage)
