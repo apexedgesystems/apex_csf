@@ -77,107 +77,104 @@ CelestialBody::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   // as `tprmDir/{fullUid:06x}.tprm`. Look for one for this instance;
   // if absent, the C++ struct defaults stand and we report success
   // (loadTprm is optional per the framework contract).
-  tprmDir_ = tprmDir;
+  if (bootTprmDir_.empty()) {
+    bootTprmDir_ = tprmDir;
+  }
+  lastTprmDir_ = tprmDir;
   const std::filesystem::path PATH = tprmDir / fmt::format("{:06x}.tprm", fullUid());
   std::error_code ec;
-  if (!std::filesystem::exists(PATH, ec)) {
-    return TprmIngest::DEFAULTS;
-  }
-  namespace sc = system_core::system_component;
-  const auto CHECK = sc::readTprmPayload(PATH, fullUid(), tunables_.get());
-  if (CHECK != sc::TprmPayloadCheck::OK) {
-    auto* log = componentLog();
-    if (log != nullptr) {
-      log->error(label(), sc::toFaultCode(CHECK),
-                 fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), PATH.string()));
-    }
-    return TprmIngest::REJECTED;
-  }
   auto* log = componentLog();
-  if (log != nullptr) {
-    log->info(label(), fmt::format("loadTprm: tunables loaded from {}", PATH.string()));
+  TprmIngest outcome = TprmIngest::DEFAULTS;
+  if (std::filesystem::exists(PATH, ec)) {
+    namespace sc = system_core::system_component;
+    const auto CHECK = sc::readTprmPayload(PATH, fullUid(), tunables_.get());
+    if (CHECK != sc::TprmPayloadCheck::OK) {
+      if (log != nullptr) {
+        log->error(label(), sc::toFaultCode(CHECK),
+                   fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), PATH.string()));
+      }
+      return TprmIngest::REJECTED;
+    }
+    if (log != nullptr) {
+      log->info(label(), fmt::format("loadTprm: tunables loaded from {}", PATH.string()));
+    }
+    outcome = TprmIngest::LOADED;
   }
-  return TprmIngest::LOADED;
+
+  // Live rebind: a reload landing on an initialized component re-runs
+  // the world binding under the new tunables -- RELOAD_TPRM IS the
+  // rebind command, no dedicated opcode. Bundle versions coexist in
+  // the bank and the pin selects, so the prior world stays resident
+  // as the fallback a pin-revert reload restores. Models reload in
+  // place (consumer pointers stay valid); the operation belongs under
+  // the operator's pause/quiesce discipline. On a failed rebind the
+  // running world is kept and the state block keeps attesting it --
+  // commanded (tunables) vs actual (state) stay independently
+  // INSPECTable, and the refusal is logged with its cause.
+  auto& s = state_.get();
+  if (s.init_status == 1u) {
+    const CelestialBodyTunables& P = tunables_.get();
+    if (bindWorld(P, s)) {
+      if (log != nullptr) {
+        log->info(label(), fmt::format("world rebound: uid=0x{:06x} pin=0x{:016x}", P.world_uid,
+                                       P.world_pin));
+      }
+    } else if (log != nullptr) {
+      log->error(label(), static_cast<std::uint8_t>(2),
+                 "world rebind refused; prior world remains bound");
+    }
+  }
+  return outcome;
 }
 
-std::uint8_t CelestialBody::doInit() noexcept {
-  using system_core::data::DataCategory;
-
-  auto& s = state_.get();
-  s.env_built = 0;
-  s.data_loaded = 0;
-  s.init_status = 0;
-
-  const auto& p = tunables_.get();
-
-  // 1. Validate tunables.
-  if (!tunablesOk(p)) {
-    s.init_status = 2;
-    auto* log = componentLog();
-    if (log != nullptr) {
-      log->info(
-          label(),
-          fmt::format("init: tunables invalid (file-backed fidelity selected with empty path)"));
-    }
-    return static_cast<std::uint8_t>(ApexStatus::ERROR_PARAM);
-  }
-
-  // 2. Build env via the factory.
-  env::EnvironmentSpec spec{};
-  spec.body = p.body;
-  spec.gravity = p.gravity_fidelity;
-  spec.terrain = p.terrain_fidelity;
-  spec.atmosphere = p.atmosphere_fidelity;
-  env_ = env::makeEnvironment(spec);
-
-  if (env_.gravity == nullptr || env_.terrain == nullptr || env_.atmosphere == nullptr) {
-    s.init_status = 2;
-    auto* log = componentLog();
-    if (log != nullptr) {
-      log->info(label(), "init: factory returned a null model");
-    }
-    return static_cast<std::uint8_t>(ApexStatus::ERROR_LOAD_INVALID);
-  }
-  s.env_built = 1;
-
-  // 3. Bind the world and load file-backed models from its entries.
-  //    The binding is the contract: the bundle whose uid the tprm
-  //    names must exist in the bank, carry exactly the pinned content
-  //    hash, and hold an entry for every file-backed fidelity -- any
-  //    miss is a fatal init error naming what disagreed. Entry
-  //    payloads are complete artifact images handed to the models'
-  //    in-memory loaders; per-entry CRC verifies on read, so boot
-  //    cost scales with the entries this configuration loads.
+bool CelestialBody::bindWorld(const CelestialBodyTunables& p, CelestialBodyState& s) noexcept {
   bool ok = true;
   namespace wb = sim::environment::world;
   wb::WorldBundleReader bundle;
   if (needsWorld(p)) {
-    std::error_code ec;
+    // Discovery matches uid AND pin: bundle versions of one world
+    // coexist in the bank (earth.world.tprm beside earth_v2...), and
+    // the pin selects the authorized one. A rebind is therefore a
+    // tprm reload carrying a new pin; the prior version stays
+    // resident as the instant fallback.
     bool bound = false;
-    for (const auto& de : std::filesystem::directory_iterator(tprmDir_, ec)) {
-      if (!de.is_regular_file(ec) ||
-          !de.path().filename().string().ends_with(wb::WORLD_FILE_SUFFIX)) {
+    std::uint64_t nearMissHash = 0;
+    std::string nearMissName;
+    for (const auto& DIR : {lastTprmDir_, bootTprmDir_}) {
+      if (bound || DIR.empty()) {
         continue;
       }
-      if (bundle.open(de.path()) == wb::WorldBundleCheck::OK &&
-          bundle.header().fullUid == p.world_uid) {
-        bound = true;
-        break;
+      std::error_code ec;
+      for (const auto& de : std::filesystem::directory_iterator(DIR, ec)) {
+        if (!de.is_regular_file(ec) ||
+            !de.path().filename().string().ends_with(wb::WORLD_FILE_SUFFIX)) {
+          continue;
+        }
+        if (bundle.open(de.path()) == wb::WorldBundleCheck::OK &&
+            bundle.header().fullUid == p.world_uid) {
+          if (bundle.header().bundleContentHash == p.world_pin) {
+            bound = true;
+            break;
+          }
+          nearMissHash = bundle.header().bundleContentHash;
+          nearMissName = de.path().filename().string();
+        }
+        bundle.close();
       }
-      bundle.close();
     }
     if (!bound) {
       if (auto* log = componentLog(); log != nullptr) {
-        log->info(label(), fmt::format("init: no world bundle with uid 0x{:06x} in {}", p.world_uid,
-                                       tprmDir_.string()));
-      }
-      ok = false;
-    } else if (bundle.header().bundleContentHash != p.world_pin) {
-      if (auto* log = componentLog(); log != nullptr) {
-        log->info(label(), fmt::format("init: world pin mismatch: tprm pins 0x{:016x}, bundle {} "
-                                       "carries 0x{:016x} -- refusing the unauthorized world",
-                                       p.world_pin, bundle.path().filename().string(),
-                                       bundle.header().bundleContentHash));
+        if (!nearMissName.empty()) {
+          log->info(label(),
+                    fmt::format("init: world pin mismatch: tprm pins 0x{:016x}; nearest uid "
+                                "0x{:06x} candidate {} carries 0x{:016x} -- refusing the "
+                                "unauthorized world",
+                                p.world_pin, p.world_uid, nearMissName, nearMissHash));
+        } else {
+          log->info(label(),
+                    fmt::format("init: no world bundle with uid 0x{:06x} in {} or {}", p.world_uid,
+                                lastTprmDir_.string(), bootTprmDir_.string()));
+        }
       }
       ok = false;
     } else if (auto* log = componentLog(); log != nullptr) {
@@ -304,6 +301,56 @@ std::uint8_t CelestialBody::doInit() noexcept {
     s.world_uid = p.world_uid;
     s.world_pin = p.world_pin;
   }
+
+  return ok;
+}
+
+std::uint8_t CelestialBody::doInit() noexcept {
+  using system_core::data::DataCategory;
+
+  auto& s = state_.get();
+  s.env_built = 0;
+  s.data_loaded = 0;
+  s.init_status = 0;
+
+  const auto& p = tunables_.get();
+
+  // 1. Validate tunables.
+  if (!tunablesOk(p)) {
+    s.init_status = 2;
+    auto* log = componentLog();
+    if (log != nullptr) {
+      log->info(
+          label(),
+          fmt::format("init: tunables invalid (file-backed fidelity selected with empty path)"));
+    }
+    return static_cast<std::uint8_t>(ApexStatus::ERROR_PARAM);
+  }
+
+  // 2. Build env via the factory.
+  env::EnvironmentSpec spec{};
+  spec.body = p.body;
+  spec.gravity = p.gravity_fidelity;
+  spec.terrain = p.terrain_fidelity;
+  spec.atmosphere = p.atmosphere_fidelity;
+  env_ = env::makeEnvironment(spec);
+
+  if (env_.gravity == nullptr || env_.terrain == nullptr || env_.atmosphere == nullptr) {
+    s.init_status = 2;
+    auto* log = componentLog();
+    if (log != nullptr) {
+      log->info(label(), "init: factory returned a null model");
+    }
+    return static_cast<std::uint8_t>(ApexStatus::ERROR_LOAD_INVALID);
+  }
+  s.env_built = 1;
+
+  // 3. Bind the world and load file-backed models from its entries.
+  //    The binding is the contract (bindWorld): uid+pin discovery in
+  //    the bank, refusal naming any miss, entry payloads to the
+  //    models' in-memory loaders. Shared with the RELOAD_TPRM rebind
+  //    re-entry, where the same contract swaps the running world.
+  const bool ok = bindWorld(p, s);
 
   if (!ok) {
     s.init_status = 2;

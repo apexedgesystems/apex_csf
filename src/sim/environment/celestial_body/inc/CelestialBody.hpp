@@ -137,10 +137,22 @@ protected:
   [[nodiscard]] std::uint8_t doInit() noexcept override;
 
 private:
-  /// Bank tprm directory captured at loadTprm; the world bundle the
-  /// binding names is discovered here at init (bundles live beside
-  /// the component tprms).
-  std::filesystem::path tprmDir_{};
+  /// Bind the world named by the tunables: uid+pin discovery in the
+  /// bank tprm dir, fidelity-vs-content validation, entry payloads to
+  /// the models' in-memory loaders. Returns false (with the cause
+  /// logged) on any miss; stamps the state block's world identity on
+  /// success. Shared by doInit and the RELOAD_TPRM rebind re-entry.
+  [[nodiscard]] bool bindWorld(const CelestialBodyTunables& p, CelestialBodyState& s) noexcept;
+
+  /// Bank tprm directories the executive has handed loadTprm: the
+  /// boot-time dir (active bank) and the most recent one (the
+  /// inactive bank during a RELOAD). World discovery scans the latest
+  /// first -- fresh uploads land there -- then the boot dir, where
+  /// resident bundles serve as the revert fallback. The component
+  /// never derives bank layout; it only remembers where it was
+  /// pointed.
+  std::filesystem::path bootTprmDir_{};
+  std::filesystem::path lastTprmDir_{};
 
   system_core::data::TunableParam<CelestialBodyTunables> tunables_{};
   system_core::data::State<CelestialBodyState> state_{};
