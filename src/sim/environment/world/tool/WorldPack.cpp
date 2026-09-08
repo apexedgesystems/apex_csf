@@ -15,6 +15,7 @@
  */
 
 #include "src/sim/environment/atmosphere/inc/Atm.hpp"
+#include "src/sim/environment/gravity/inc/GravityCoeffTable.hpp"
 #include "src/sim/environment/terrain/inc/Htile.hpp"
 #include "src/sim/environment/world/inc/WorldBundle.hpp"
 
@@ -117,13 +118,14 @@ int main(int argc, char** argv) {
     } else if (A == "--uid") {
       componentId = static_cast<std::uint32_t>(std::strtoul(V, nullptr, 16));
     } else if (A == "--gravity") {
-      sources.push_back({WorldEntryRole::GRAVITY, ".grav", V, 0});
+      sources.push_back(
+          {WorldEntryRole::GRAVITY, sim::environment::gravity::GRAV_FILE_SUFFIX, V, 0});
     } else if (A == "--terrain") {
-      sources.push_back(
-          {WorldEntryRole::TERRAIN, ".htile", V, sniffSpecHash(V, WorldEntryRole::TERRAIN)});
+      sources.push_back({WorldEntryRole::TERRAIN, sim::environment::terrain::HTILE_FILE_SUFFIX, V,
+                         sniffSpecHash(V, WorldEntryRole::TERRAIN)});
     } else if (A == "--atmosphere") {
-      sources.push_back(
-          {WorldEntryRole::ATMOSPHERE, ".atm", V, sniffSpecHash(V, WorldEntryRole::ATMOSPHERE)});
+      sources.push_back({WorldEntryRole::ATMOSPHERE, sim::environment::atmosphere::ATM_FILE_SUFFIX,
+                         V, sniffSpecHash(V, WorldEntryRole::ATMOSPHERE)});
     } else {
       usage();
       return 2;
