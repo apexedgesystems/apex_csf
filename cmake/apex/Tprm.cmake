@@ -381,11 +381,20 @@ function (apex_add_bundle_tprms)
   )
 
   file(STRINGS "${_manifest}" _lines)
+  set(_kind "")
   foreach (_raw IN LISTS _lines)
     string(REGEX REPLACE "#.*$" "" _line "${_raw}")
     string(STRIP "${_line}" _line)
     if (_line STREQUAL "")
       continue()
+    endif ()
+
+    if (_line MATCHES "^kind +([a-z_]+)$")
+      set(_kind "${CMAKE_MATCH_1}")
+      continue()
+    endif ()
+    if (_kind STREQUAL "")
+      message(FATAL_ERROR "apex_add_bundle_tprms: manifest must declare `kind <name>` first")
     endif ()
 
     separate_arguments(_tokens UNIX_COMMAND "${_line}")
@@ -397,14 +406,23 @@ function (apex_add_bundle_tprms)
     list(GET _tokens 1 _id)
     list(SUBLIST _tokens 2 -1 _entries)
 
-    set(_product "${_name}.world.tprm")
+    set(_product "${_name}.${_kind}.tprm")
     get_property(_dup GLOBAL PROPERTY APEX_TPRM_PRODUCT_${_product})
     if (_dup)
       message(FATAL_ERROR "apex_add_bundle_tprms: bundle ${_name} already defined")
     endif ()
 
     set(_out "${CMAKE_BINARY_DIR}/worlds/${_product}")
-    set(_args --out "${_out}" --body "${_name}" --uid "${_id}")
+    set(_args
+        --out
+        "${_out}"
+        --body
+        "${_name}"
+        --uid
+        "${_id}"
+        --kind
+        "${_kind}"
+    )
     set(_deps "")
     # Entry sources in rows are repo-relative; the tool receives
     # absolute paths so pack runs are cwd-independent.

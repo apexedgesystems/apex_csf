@@ -84,6 +84,25 @@ TEST(WorldUidTest, RangeMembership) {
   SUCCEED();
 }
 
+/* ----------------------------- Kind registry ----------------------------- */
+
+TEST(BundleKindTest, RegistryResolvesWorldAndRefusesUnknown) {
+  const auto* W = bundleKindByName("world");
+  ASSERT_NE(W, nullptr);
+  EXPECT_EQ(W->componentIdFirst, WORLD_COMPONENT_ID_FIRST);
+  EXPECT_EQ(W->suffix, WORLD_FILE_SUFFIX);
+  EXPECT_EQ(W->roleCount, 3u);
+  EXPECT_EQ(bundleKindByName("engine"), nullptr); // registers when real
+
+  EXPECT_EQ(bundleKindByUid(worldFullUid(0x0101)), W);
+  EXPECT_EQ(bundleKindByUid(0x00DC00u), nullptr); // component space
+
+  WorldRoleInfo info{};
+  EXPECT_TRUE(bundleRoleFromName(*W, "terrain", info));
+  EXPECT_EQ(info.suffix, ".htile");
+  EXPECT_FALSE(bundleRoleFromName(*W, "perf_map", info));
+}
+
 /* ----------------------------- Round trip ----------------------------- */
 
 TEST_F(WorldBundleTest, RoundTripThreeRoles) {

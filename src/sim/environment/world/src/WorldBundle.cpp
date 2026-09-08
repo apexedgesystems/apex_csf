@@ -25,6 +25,47 @@ constexpr std::size_t K_CHUNK = 1u << 20;
 
 } // namespace
 
+/* ----------------------------- Bundle kinds ----------------------------- */
+
+namespace {
+/// The registered kinds. A new content-bundle kind adds a row here
+/// (plus its vocabulary table); everything downstream reads this.
+constexpr BundleKindInfo K_KINDS[] = {
+    {"world", WORLD_COMPONENT_ID_FIRST, WORLD_COMPONENT_ID_LAST, WORLD_FILE_SUFFIX,
+     WORLD_ROLE_TABLE, sizeof(WORLD_ROLE_TABLE) / sizeof(WORLD_ROLE_TABLE[0])},
+};
+} // namespace
+
+const BundleKindInfo* bundleKindByName(std::string_view name) noexcept {
+  for (const auto& k : K_KINDS) {
+    if (k.name == name) {
+      return &k;
+    }
+  }
+  return nullptr;
+}
+
+const BundleKindInfo* bundleKindByUid(std::uint32_t fullUid) noexcept {
+  const std::uint32_t ID = fullUid >> 8;
+  for (const auto& k : K_KINDS) {
+    if (ID >= k.componentIdFirst && ID <= k.componentIdLast) {
+      return &k;
+    }
+  }
+  return nullptr;
+}
+
+bool bundleRoleFromName(const BundleKindInfo& kind, std::string_view name,
+                        WorldRoleInfo& out) noexcept {
+  for (std::size_t i = 0; i < kind.roleCount; ++i) {
+    if (kind.roles[i].name == name) {
+      out = kind.roles[i];
+      return true;
+    }
+  }
+  return false;
+}
+
 const char* toString(WorldBundleCheck c) noexcept {
   switch (c) {
   case WorldBundleCheck::OK:
@@ -58,7 +99,7 @@ const char* toString(WorldBundleCheck c) noexcept {
 WorldBundleCheck WorldBundleWriter::write(const std::filesystem::path& outPath,
                                           std::uint32_t fullUid, std::string_view body,
                                           const std::vector<WorldEntrySource>& sources) noexcept {
-  if (!isWorldUid(fullUid)) {
+  if (bundleKindByUid(fullUid) == nullptr) {
     return WorldBundleCheck::BAD_UID;
   }
   // A bundle with no entries is a manifest error: an empty world
@@ -235,7 +276,7 @@ WorldBundleCheck WorldBundleReader::open(const std::filesystem::path& path) noex
     close();
     return WorldBundleCheck::BAD_VERSION;
   }
-  if (!isWorldUid(header_.fullUid)) {
+  if (bundleKindByUid(header_.fullUid) == nullptr) {
     close();
     return WorldBundleCheck::BAD_UID;
   }

@@ -85,6 +85,7 @@ int verify(const char* path) {
 
 void usage() {
   std::fprintf(stderr, "usage: world_pack --out <bundle> --body <name> --uid <hex componentId>\n"
+                       "                  [--kind <kind>]  (default: world)\n"
                        "                  --entry <role>=<file> [--entry <role>=<file> ...]\n"
                        "       world_pack --verify <bundle>\n"
                        "roles: registered vocabulary (gravity, terrain, atmosphere)\n");
@@ -96,6 +97,7 @@ int main(int argc, char** argv) {
   std::string out;
   std::string body;
   std::uint32_t componentId = 0;
+  const BundleKindInfo* kind = bundleKindByName("world"); // default kind
   std::vector<WorldEntrySource> sources;
 
   for (int i = 1; i < argc; ++i) {
@@ -111,6 +113,12 @@ int main(int argc, char** argv) {
     const char* V = argv[++i];
     if (A == "--out") {
       out = V;
+    } else if (A == "--kind") {
+      kind = bundleKindByName(V);
+      if (kind == nullptr) {
+        std::fprintf(stderr, "world_pack: unknown bundle kind %s\n", V);
+        return 2;
+      }
     } else if (A == "--body") {
       body = V;
     } else if (A == "--uid") {
@@ -121,8 +129,10 @@ int main(int argc, char** argv) {
       const std::string_view SPEC{V};
       const std::size_t EQ = SPEC.find('=');
       WorldRoleInfo info{};
-      if (EQ == std::string_view::npos || !worldRoleFromName(SPEC.substr(0, EQ), info)) {
-        std::fprintf(stderr, "world_pack: unknown role in --entry %s\n", V);
+      if (EQ == std::string_view::npos || kind == nullptr ||
+          !bundleRoleFromName(*kind, SPEC.substr(0, EQ), info)) {
+        std::fprintf(stderr, "world_pack: role in --entry %s is not in the %s vocabulary\n", V,
+                     kind != nullptr ? std::string(kind->name).c_str() : "?");
         return 2;
       }
       const std::string PATH{SPEC.substr(EQ + 1)};
@@ -138,6 +148,14 @@ int main(int argc, char** argv) {
     return 2;
   }
   const std::uint32_t UID = worldFullUid(static_cast<std::uint16_t>(componentId));
+  if (kind == nullptr || componentId < kind->componentIdFirst ||
+      componentId > kind->componentIdLast) {
+    std::fprintf(stderr, "world_pack: uid 0x%04x outside the %s kind range [0x%04x, 0x%04x]\n",
+                 componentId, kind != nullptr ? std::string(kind->name).c_str() : "?",
+                 kind != nullptr ? kind->componentIdFirst : 0,
+                 kind != nullptr ? kind->componentIdLast : 0);
+    return 2;
+  }
   const WorldBundleCheck RC = WorldBundleWriter::write(out, UID, body, sources);
   if (RC != WorldBundleCheck::OK) {
     std::fprintf(stderr, "world_pack: pack failed (%s): %s\n", toString(RC), out.c_str());

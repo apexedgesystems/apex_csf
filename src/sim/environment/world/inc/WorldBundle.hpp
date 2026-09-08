@@ -64,6 +64,41 @@ inline constexpr std::uint16_t WORLD_BUNDLE_VERSION = 1;
 inline constexpr std::uint16_t WORLD_COMPONENT_ID_FIRST = 0x0100;
 inline constexpr std::uint16_t WORLD_COMPONENT_ID_LAST = 0x01FF;
 
+/* ----------------------------- Bundle kinds ----------------------------- */
+
+/// A content-bundle KIND is data, not code: a name (the manifest's
+/// `kind` row), a reserved componentId sub-range (the structural
+/// discriminator), a product suffix, and a role vocabulary. The
+/// container mechanics -- header, entry table, hash layers, pin
+/// binding, staging, rebind -- are kind-agnostic; registering a new
+/// kind (engine maps, nav databases) is a row here plus its
+/// vocabulary table, nothing else. Masters are deliberately NOT a
+/// kind: sets of component config tprms already have their bundle,
+/// the master itself. Kinds cover sets of content artifacts.
+struct WorldRoleInfo; // fwd (vocabulary rows, defined below)
+
+struct BundleKindInfo {
+  std::string_view name;          ///< Manifest `kind` value.
+  std::uint16_t componentIdFirst; ///< Reserved sub-range, inclusive.
+  std::uint16_t componentIdLast;  ///< Reserved sub-range, inclusive.
+  std::string_view suffix;        ///< Product suffix; by rule ".<name>.tprm"
+                                  ///< so build layers derive it without a
+                                  ///< second registry.
+  const WorldRoleInfo* roles;     ///< Vocabulary table.
+  std::size_t roleCount;          ///< Vocabulary size.
+};
+
+/// Registered kinds (world is the first). Growing this table is the
+/// whole cost of a new bundle kind.
+[[nodiscard]] const BundleKindInfo* bundleKindByName(std::string_view name) noexcept;
+
+/// Kind owning a fullUid's componentId, or nullptr.
+[[nodiscard]] const BundleKindInfo* bundleKindByUid(std::uint32_t fullUid) noexcept;
+
+/// Resolve a role by name within one kind's vocabulary.
+[[nodiscard]] bool bundleRoleFromName(const BundleKindInfo& kind, std::string_view name,
+                                      WorldRoleInfo& out) noexcept;
+
 /// Fixed header size in bytes.
 inline constexpr std::size_t WORLD_HEADER_SIZE = 64;
 
