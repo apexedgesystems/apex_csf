@@ -39,17 +39,17 @@ CHANNEL_OPCODE_BASE = 0x0340
 TOOLS = "build/hosted-x86_64-debug/bin/tools/rust"
 CROSS_PAYLOADS = "build/cross-rpi-release/demos/apex_ops_demo/exec/tprm/payloads"
 SCHED_PROBE = "build/probe_scratch/scheduler_probe.tprm"
-REMOTE_DIR = "~/apex/blaster_probe"
+REMOTE_DIR = "/home/kalex/apex/blaster_probe"
 
 # (fullUid, DataCategory OUTPUT=4) blocks the ops demo registers.
 BLOCKS = [(0x00D000, 4), (0x00D001, 4), (0x00C800, 4)]
 
-GRID = [(c, d) for c in (8, 16, 24, 32) for d in (4, 2, 1)]  # 25/50/100 Hz
+GRID = [(c, d) for c in (8, 16, 24, 32) for d in (4, 2, 1)]  # collect/4, /2, /1
 
 
-def tm_toml(channels: int, rate_div: int) -> str:
+def tm_toml(channels: int, rate_div: int, collect_hz: int) -> str:
     head = (
-        'collectRateHz = { type = "uint", size = 2, value = 100 }\n'
+        f'collectRateHz = {{ type = "uint", size = 2, value = {collect_hz} }}\n'
         'reserved0 = { type = "uint", size = 2, value = 0 }\n'
         'reserved1 = { type = "uint", size = 4, value = 0 }\n'
     )
@@ -75,19 +75,43 @@ def sh(cmd: list, **kw) -> subprocess.CompletedProcess:
     return subprocess.run(cmd, check=True, capture_output=True, text=True, **kw)
 
 
-def build_masters(workdir: str) -> list:
+def probe_infra(workdir: str, collect_hz: int) -> dict:
+    """Executive + scheduler payloads for the requested collect rate."""
+    paths = {}
+    sched = open("build/probe_scratch/scheduler_probe.toml").read()
+    sched = sched.replace(
+        'freqN = { type = "uint", size = 2, value = 100 }',
+        f'freqN = {{ type = "uint", size = 2, value = {collect_hz} }}',
+    )
+    sp = f"{workdir}/scheduler_{collect_hz}.toml"
+    open(sp, "w").write(sched)
+    paths["sched"] = f"{workdir}/scheduler_{collect_hz}.tprm"
+    sh([f"{TOOLS}/cfg2bin", "--config", sp, "--output", paths["sched"], "--fulluid", "0x000100"])
+    ex = open("demos/apex_ops_demo/tprm/toml/executive.toml").read()
+    ex = ex.replace(
+        'clockFrequencyHz = { type = "uint", size = 2, value = 100 }',
+        f'clockFrequencyHz = {{ type = "uint", size = 2, value = {collect_hz} }}',
+    )
+    ep = f"{workdir}/executive_{collect_hz}.toml"
+    open(ep, "w").write(ex)
+    paths["exec"] = f"{workdir}/executive_{collect_hz}.tprm"
+    sh([f"{TOOLS}/cfg2bin", "--config", ep, "--output", paths["exec"], "--fulluid", "0x000000"])
+    return paths
+
+
+def build_masters(workdir: str, collect_hz: int) -> list:
+    infra = probe_infra(workdir, collect_hz)
     names = []
     for channels, rate_div in GRID:
-        tag = f"{channels}c_{100 // rate_div}hz"
+        tag = f"{channels}c_{collect_hz // rate_div}hz"
         toml = f"{workdir}/tm_{tag}.toml"
         tm = f"{workdir}/tm_{tag}.tprm"
         master = f"{workdir}/master_{tag}.tprm"
         with open(toml, "w") as f:
-            f.write(tm_toml(channels, rate_div))
+            f.write(tm_toml(channels, rate_div, collect_hz))
         sh([f"{TOOLS}/cfg2bin", "--config", toml, "--output", tm, "--fulluid", f"0x{TM_UID:06X}"])
         args = [f"{TOOLS}/tprm_pack", "pack", "-o", master]
         for uid, fn in [
-            (0x000000, "toml_executive_toml.tprm"),
             (0x000400, "toml_interface_toml.tprm"),
             (0x000500, "toml_action_toml.tprm"),
             (0x00C800, "toml_system_monitor_toml.tprm"),
@@ -95,7 +119,8 @@ def build_masters(workdir: str) -> list:
             (0x00D001, "toml_wave_gen_1_toml.tprm"),
         ]:
             args += ["-e", f"0x{uid:06X}:{CROSS_PAYLOADS}/{fn}"]
-        args += ["-e", f"0x000100:{SCHED_PROBE}", "-e", f"0x{TM_UID:06X}:{tm}"]
+        args += ["-e", f"0x000000:{infra['exec']}", "-e", f"0x000100:{infra['sched']}"]
+        args += ["-e", f"0x{TM_UID:06X}:{tm}"]
         sh(args)
         names.append((channels, rate_div, f"master_{tag}.tprm"))
     return names
@@ -108,7 +133,14 @@ def remote(ssh_target: str, cmd: str) -> str:
 
 def drain_count(host: str, port: int, seconds: float) -> int:
     client = AprotoClient(host, port)
-    client.connect()
+    for _attempt in range(10):
+        try:
+            client.connect()
+            break
+        except OSError:
+            time.sleep(1.0)
+    else:
+        return 0
     sock = client._sock
     sock.settimeout(0.2)
     deadline = time.monotonic() + seconds
@@ -131,31 +163,46 @@ def drain_count(host: str, port: int, seconds: float) -> int:
 
 
 def run_point(
-    ssh_target: str, host: str, port: int, master: str, channels: int, rate_div: int, seconds: float
+    ssh_target: str,
+    host: str,
+    port: int,
+    master: str,
+    channels: int,
+    rate_div: int,
+    seconds: float,
+    collect_hz: int = 100,
 ) -> dict:
+    # sudo: hard-RT rates need FIFO scheduling; without CAP_SYS_NICE the
+    # host's CFS jitter forges overruns the vehicle did not earn.
     remote(
         ssh_target,
-        f"cd {REMOTE_DIR} && pkill -x ApexOpsDemo; sleep 1; rm -rf probe_fs; "
-        f"LD_LIBRARY_PATH={REMOTE_DIR}/libs nohup ./ApexOpsDemo --config {master} "
-        f"--fs-root probe_fs --shutdown-after 600 --skip-cleanup "
-        f"> boot.log 2>&1 < /dev/null & sleep 7; pgrep -cx ApexOpsDemo",
+        f"cd {REMOTE_DIR} && sudo pkill -x ApexOpsDemo; sleep 1; sudo rm -rf probe_fs; "
+        f"sudo bash -c 'LD_LIBRARY_PATH={REMOTE_DIR}/libs nohup ./ApexOpsDemo "
+        f"--config {master} --fs-root probe_fs --shutdown-after 600 --skip-cleanup "
+        f"> boot.log 2>&1 < /dev/null &' ; sleep 7; pgrep -cx ApexOpsDemo",
     )
+    pre = remote(ssh_target, f"tail -1 {REMOTE_DIR}/probe_fs/heartbeat.csv")
+    pre_ovr = int(pre.split(",")[3]) if "," in pre and not pre.startswith("timestamp") else 0
     received = drain_count(host, port, seconds)
     tm_line = remote(
         ssh_target,
-        f"pkill -x ApexOpsDemo; sleep 2; "
+        f"sudo pkill -x ApexOpsDemo; sleep 2; "
         f"tail -1 {REMOTE_DIR}/probe_fs/logs/support/TelemetryManager_0.log; "
-        f"tail -1 {REMOTE_DIR}/probe_fs/heartbeat.csv",
+        f"tail -1 {REMOTE_DIR}/probe_fs/heartbeat.csv; "
+        f'sudo grep -E "Telemetry frames" {REMOTE_DIR}/probe_fs/system.log | tail -1',
     )
     lines = tm_line.splitlines()
     sent = fail = overruns = -1
+    wire_frames = -1
     for ln in lines:
         if "sent=" in ln:
             sent = int(ln.split("sent=")[1].split()[0])
             fail = int(ln.split("fail=")[1].split()[0])
+        elif "Telemetry frames" in ln:
+            wire_frames = int(ln.rsplit(":", 1)[1].strip())
         elif "," in ln and not ln.startswith("timestamp"):
-            overruns = int(ln.split(",")[3])
-    per_channel_hz = 100.0 / rate_div
+            overruns = int(ln.split(",")[3]) - pre_ovr  # window delta
+    per_channel_hz = float(collect_hz) / rate_div
     expected = channels * per_channel_hz * seconds
     return {
         "channels": channels,
@@ -163,6 +210,7 @@ def run_point(
         "sent_total": sent,
         "failures": fail,
         "overruns": overruns,
+        "wire_frames": wire_frames,
         "received": received,
         "expected": expected,
         "recv_ratio": received / expected if expected else 0.0,
@@ -176,10 +224,11 @@ def main() -> int:
     ap.add_argument("--host", required=True)
     ap.add_argument("--port", type=int, default=9000)
     ap.add_argument("--seconds", type=float, default=30.0)
+    ap.add_argument("--collect-hz", type=int, default=100)
     args = ap.parse_args()
 
     workdir = tempfile.mkdtemp(prefix="tm_probe_")
-    masters = build_masters(workdir)
+    masters = build_masters(workdir, args.collect_hz)
     subprocess.run(
         ["scp", "-q"] + [f"{workdir}/{m}" for _, _, m in masters] + [f"{args.ssh}:{REMOTE_DIR}/"],
         check=True,
@@ -189,14 +238,23 @@ def main() -> int:
     results = []
     print("point            sent_tot  fail  ovr  recv_ratio  verdict")
     for channels, rate_div, master in masters:
-        r = run_point(args.ssh, args.host, args.port, master, channels, rate_div, args.seconds)
+        r = run_point(
+            args.ssh,
+            args.host,
+            args.port,
+            master,
+            channels,
+            rate_div,
+            args.seconds,
+            args.collect_hz,
+        )
         results.append(r)
         print(
             f"{r['channels']:>2}ch @{r['hz']:>5.1f}Hz  {r['sent_total']:>8}  "
             f"{r['failures']:>4}  {r['overruns']:>3}  {r['recv_ratio']:>9.3f}  "
             f"{'PASS' if r['pass'] else 'SATURATED'}"
         )
-    remote(args.ssh, "pkill -x ApexOpsDemo; true")
+    remote(args.ssh, "sudo pkill -x ApexOpsDemo; true")
 
     print(json.dumps(results, indent=1))
     best = max(
