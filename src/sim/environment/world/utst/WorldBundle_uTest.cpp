@@ -238,4 +238,43 @@ TEST_F(WorldBundleTest, MissingRoleReportsNotFound) {
   EXPECT_EQ(r.findEntry(WorldEntryRole::GRAVITY, idx), WorldBundleCheck::ENTRY_NOT_FOUND);
 }
 
+// An empty bundle is a manifest error: an unbound config is the way
+// to say "no world", not a bundle with nothing in it.
+TEST_F(WorldBundleTest, EmptyBundleRefused) {
+  EXPECT_EQ(WorldBundleWriter::write(dir_ / "empty.world.tprm", K_EARTH_UID, "earth", {}),
+            WorldBundleCheck::TABLE_INVALID);
+}
+
+// Unknown roles below the ceiling are tolerated on open (findEntry
+// simply never matches), so grown worlds keep serving old consumers;
+// roles at or above the ceiling are refused for mask safety.
+TEST_F(WorldBundleTest, UnknownRoleToleratedCeilingRefused) {
+  const auto OUT = dir_ / "grown.world.tprm";
+  ASSERT_EQ(WorldBundleWriter::write(OUT, K_EARTH_UID, "earth", threeSources()),
+            WorldBundleCheck::OK);
+  // Rewrite entry 0's role to an unknown-but-legal value (40).
+  {
+    std::FILE* f = std::fopen(OUT.string().c_str(), "rb+");
+    ASSERT_NE(f, nullptr);
+    ASSERT_EQ(std::fseek(f, static_cast<long>(WORLD_HEADER_SIZE), SEEK_SET), 0);
+    ASSERT_NE(std::fputc(40, f), EOF);
+    std::fclose(f);
+  }
+  WorldBundleReader r;
+  ASSERT_EQ(r.open(OUT), WorldBundleCheck::OK); // tolerated
+  std::size_t idx = 0;
+  EXPECT_EQ(r.findEntry(WorldEntryRole::GRAVITY, idx), WorldBundleCheck::ENTRY_NOT_FOUND);
+  EXPECT_EQ(r.findEntry(WorldEntryRole::ATMOSPHERE, idx), WorldBundleCheck::OK);
+  r.close();
+  // Now the ceiling: role 64 refuses.
+  {
+    std::FILE* f = std::fopen(OUT.string().c_str(), "rb+");
+    ASSERT_NE(f, nullptr);
+    ASSERT_EQ(std::fseek(f, static_cast<long>(WORLD_HEADER_SIZE), SEEK_SET), 0);
+    ASSERT_NE(std::fputc(64, f), EOF);
+    std::fclose(f);
+  }
+  EXPECT_EQ(r.open(OUT), WorldBundleCheck::TABLE_INVALID);
+}
+
 } // namespace

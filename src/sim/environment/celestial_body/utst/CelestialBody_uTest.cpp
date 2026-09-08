@@ -327,6 +327,7 @@ inline std::uint64_t makeEarthWorld(const std::filesystem::path& dir, std::uint3
     return 0;
   }
   std::vector<atm::AtmRecord> recs;
+  recs.reserve(nRecords);
   for (std::uint16_t i = 0; i < nRecords; ++i) {
     recs.push_back(atm::atmMakeLayer(11000.0 * i, 288.15 - 71.5 * (i > 0 ? 1.0 : 0.0),
                                      i == 0 ? 101325.0 : 22632.06 / i, 0.0));

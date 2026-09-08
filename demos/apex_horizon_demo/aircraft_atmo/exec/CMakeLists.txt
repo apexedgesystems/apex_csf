@@ -51,6 +51,6 @@ apex_add_deployment(
   ApexAircraftAtmoDemo
   TPRM
   ApexAircraftAtmoDemo/master.tprm
-  WORLD
-  earth
+  TPRM_STAGE
+  earth.world.tprm
 )

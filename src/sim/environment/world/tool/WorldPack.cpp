@@ -15,7 +15,6 @@
  */
 
 #include "src/sim/environment/atmosphere/inc/Atm.hpp"
-#include "src/sim/environment/gravity/inc/GravityCoeffTable.hpp"
 #include "src/sim/environment/terrain/inc/Htile.hpp"
 #include "src/sim/environment/world/inc/WorldBundle.hpp"
 
@@ -74,11 +73,10 @@ int verify(const char* path) {
   std::printf("  contentHash=0x%016llx totalSize=%llu\n",
               static_cast<unsigned long long>(H.bundleContentHash),
               static_cast<unsigned long long>(H.totalSize));
-  static constexpr const char* K_ROLES[] = {"gravity", "terrain", "atmosphere"};
   for (const auto& e : r.entries()) {
-    const char* ROLE = e.role < 3 ? K_ROLES[e.role] : "?";
     std::printf("  entry role=%-10s suffix=%-7s size=%-10llu crc32=0x%08x specHash=0x%016llx\n",
-                ROLE, e.suffix, static_cast<unsigned long long>(e.size), e.crc32,
+                std::string(worldRoleName(e.role)).c_str(), e.suffix,
+                static_cast<unsigned long long>(e.size), e.crc32,
                 static_cast<unsigned long long>(e.specHash));
   }
   std::printf("verify: OK\n");
@@ -86,10 +84,10 @@ int verify(const char* path) {
 }
 
 void usage() {
-  std::fprintf(stderr,
-               "usage: world_pack --out <bundle> --body <name> --uid <hex componentId>\n"
-               "                  [--gravity <file>] [--terrain <file>] [--atmosphere <file>]\n"
-               "       world_pack --verify <bundle>\n");
+  std::fprintf(stderr, "usage: world_pack --out <bundle> --body <name> --uid <hex componentId>\n"
+                       "                  --entry <role>=<file> [--entry <role>=<file> ...]\n"
+                       "       world_pack --verify <bundle>\n"
+                       "roles: registered vocabulary (gravity, terrain, atmosphere)\n");
 }
 
 } // namespace
@@ -117,15 +115,18 @@ int main(int argc, char** argv) {
       body = V;
     } else if (A == "--uid") {
       componentId = static_cast<std::uint32_t>(std::strtoul(V, nullptr, 16));
-    } else if (A == "--gravity") {
-      sources.push_back(
-          {WorldEntryRole::GRAVITY, sim::environment::gravity::GRAV_FILE_SUFFIX, V, 0});
-    } else if (A == "--terrain") {
-      sources.push_back({WorldEntryRole::TERRAIN, sim::environment::terrain::HTILE_FILE_SUFFIX, V,
-                         sniffSpecHash(V, WorldEntryRole::TERRAIN)});
-    } else if (A == "--atmosphere") {
-      sources.push_back({WorldEntryRole::ATMOSPHERE, sim::environment::atmosphere::ATM_FILE_SUFFIX,
-                         V, sniffSpecHash(V, WorldEntryRole::ATMOSPHERE)});
+    } else if (A == "--entry") {
+      // role=path against the registered vocabulary; the suffix rides
+      // from the same table, so manifests never state formats.
+      const std::string_view SPEC{V};
+      const std::size_t EQ = SPEC.find('=');
+      WorldRoleInfo info{};
+      if (EQ == std::string_view::npos || !worldRoleFromName(SPEC.substr(0, EQ), info)) {
+        std::fprintf(stderr, "world_pack: unknown role in --entry %s\n", V);
+        return 2;
+      }
+      const std::string PATH{SPEC.substr(EQ + 1)};
+      sources.push_back({info.role, info.suffix, PATH, sniffSpecHash(PATH, info.role)});
     } else {
       usage();
       return 2;

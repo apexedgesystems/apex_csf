@@ -61,10 +61,19 @@ WorldBundleCheck WorldBundleWriter::write(const std::filesystem::path& outPath,
   if (!isWorldUid(fullUid)) {
     return WorldBundleCheck::BAD_UID;
   }
-  // Unique roles; sources must exist and be regular files.
-  std::uint32_t seenRoles = 0;
+  // A bundle with no entries is a manifest error: an empty world
+  // means the consumer config should be unbound, not bound to
+  // nothing.
+  if (sources.empty()) {
+    return WorldBundleCheck::TABLE_INVALID;
+  }
+  // Unique roles below the role ceiling; sources must exist.
+  std::uint64_t seenRoles = 0;
   for (const auto& s : sources) {
-    const std::uint32_t BIT = 1u << static_cast<std::uint8_t>(s.role);
+    if (static_cast<std::uint8_t>(s.role) >= WORLD_ROLE_LIMIT) {
+      return WorldBundleCheck::TABLE_INVALID;
+    }
+    const std::uint64_t BIT = 1ull << static_cast<std::uint8_t>(s.role);
     if ((seenRoles & BIT) != 0) {
       return WorldBundleCheck::TABLE_INVALID;
     }
@@ -245,9 +254,16 @@ WorldBundleCheck WorldBundleReader::open(const std::filesystem::path& path) noex
   // Table sanity: payloads inside the file, past the table, no role
   // duplicates.
   const std::uint64_t PAYLOAD_FLOOR = WORLD_HEADER_SIZE + header_.entryCount * WORLD_ENTRY_SIZE;
-  std::uint32_t seenRoles = 0;
+  // Roles above the ceiling are refused (mask safety); roles below it
+  // but outside this build's vocabulary are tolerated -- findEntry
+  // simply never matches them, so grown worlds serve old consumers.
+  std::uint64_t seenRoles = 0;
   for (const auto& e : entries_) {
-    const std::uint32_t BIT = 1u << e.role;
+    if (e.role >= WORLD_ROLE_LIMIT) {
+      close();
+      return WorldBundleCheck::TABLE_INVALID;
+    }
+    const std::uint64_t BIT = 1ull << e.role;
     const bool ROLE_DUP = (seenRoles & BIT) != 0;
     seenRoles |= BIT;
     // Overflow-safe span check: offset + size must fit inside the file

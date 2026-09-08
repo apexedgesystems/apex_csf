@@ -333,3 +333,101 @@ function (apex_add_tprm)
     target_sources(${ARG_EXEC} PRIVATE "${_registry}")
   endif ()
 endfunction ()
+
+# ------------------------------------------------------------------------------
+# apex_add_bundle_tprms(MANIFEST <file>)
+#
+# Content-bundle products from a bundle manifest -- the content
+# sibling of the component-tprm flow above. One bundle per manifest
+# row:
+#
+#   <name> <componentId-hex> <role>=<repo-relative-source> [...]
+#
+#   name        packs worlds/<name>.world.tprm; referenced by
+#               deployments via TPRM_STAGE <name>.world.tprm
+#   componentId reserved content range (worlds: 0x0100-0x01FF)
+#   role        registered vocabulary (see WorldBundle.hpp's role
+#               table); the inner-format suffix rides from the same
+#               table, so manifests never state formats
+#
+# Rules enforced at parse or pack: at least one entry per row, roles
+# unique per row, duplicate names refused (bundles are shared -- any
+# deployment referencing one stages the same product), sources exist
+# at pack. Pack targets stay out of ALL: sources are generated
+# artifacts, so packing runs when a package demands it and a missing
+# source fails the pack there -- a package that declares a bundle
+# must contain it.
+#
+# Products register in the tprm-product namespace
+# (APEX_TPRM_PRODUCT_<name>.world.tprm), so deployment staging
+# resolves through the same helper as masters.
+# ------------------------------------------------------------------------------
+function (apex_add_bundle_tprms)
+  cmake_parse_arguments(B "" "MANIFEST" "" ${ARGN})
+  apex_require(B_MANIFEST)
+
+  if (APEX_PLATFORM_BAREMETAL)
+    return()
+  endif ()
+
+  get_filename_component(_manifest "${B_MANIFEST}" ABSOLUTE)
+  if (NOT EXISTS "${_manifest}")
+    message(FATAL_ERROR "apex_add_bundle_tprms: no manifest at ${_manifest}")
+  endif ()
+  set_property(
+    DIRECTORY
+    APPEND
+    PROPERTY CMAKE_CONFIGURE_DEPENDS "${_manifest}"
+  )
+
+  file(STRINGS "${_manifest}" _lines)
+  foreach (_raw IN LISTS _lines)
+    string(REGEX REPLACE "#.*$" "" _line "${_raw}")
+    string(STRIP "${_line}" _line)
+    if (_line STREQUAL "")
+      continue()
+    endif ()
+
+    separate_arguments(_tokens UNIX_COMMAND "${_line}")
+    list(LENGTH _tokens _ntok)
+    if (_ntok LESS 3)
+      message(FATAL_ERROR "apex_add_bundle_tprms: row needs <name> <id> <role>=<src>: ${_line}")
+    endif ()
+    list(GET _tokens 0 _name)
+    list(GET _tokens 1 _id)
+    list(SUBLIST _tokens 2 -1 _entries)
+
+    set(_product "${_name}.world.tprm")
+    get_property(_dup GLOBAL PROPERTY APEX_TPRM_PRODUCT_${_product})
+    if (_dup)
+      message(FATAL_ERROR "apex_add_bundle_tprms: bundle ${_name} already defined")
+    endif ()
+
+    set(_out "${CMAKE_BINARY_DIR}/worlds/${_product}")
+    set(_args --out "${_out}" --body "${_name}" --uid "${_id}")
+    set(_deps "")
+    # Entry sources in rows are repo-relative; the tool receives
+    # absolute paths so pack runs are cwd-independent.
+    foreach (_e IN LISTS _entries)
+      if (NOT _e MATCHES "^[a-z_]+=.+$")
+        message(FATAL_ERROR "apex_add_bundle_tprms: bad entry token in ${_name}: ${_e}")
+      endif ()
+      string(REGEX MATCH "^[a-z_]+" _role "${_e}")
+      string(REGEX REPLACE "^[a-z_]+=" "" _src "${_e}")
+      list(APPEND _args --entry "${_role}=${CMAKE_SOURCE_DIR}/${_src}")
+      list(APPEND _deps "${CMAKE_SOURCE_DIR}/${_src}")
+    endforeach ()
+
+    add_custom_command(
+      OUTPUT "${_out}"
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/worlds"
+      COMMAND $<TARGET_FILE:world_pack> ${_args}
+      DEPENDS world_pack ${_deps} "${_manifest}"
+      COMMENT "[bundle] pack ${_name} -> ${_product}"
+      VERBATIM
+    )
+    add_custom_target(bundle_${_name} DEPENDS "${_out}")
+    set_property(GLOBAL PROPERTY APEX_TPRM_PRODUCT_${_product} "${_out}")
+    set_property(GLOBAL PROPERTY APEX_TPRM_TARGET_BUNDLE_${_product} "bundle_${_name}")
+  endforeach ()
+endfunction ()

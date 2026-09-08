@@ -42,7 +42,7 @@ apex_add_library(
 
 # ------------------------------------------------------------------------------
 # Packer/verifier tool (callable standalone; producers use it as a
-# black box, packaging drives it through apex_add_world)
+# black box, packaging drives it through apex_add_bundle_tprms)
 # ------------------------------------------------------------------------------
 
 apex_add_app(

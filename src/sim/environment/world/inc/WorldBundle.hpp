@@ -88,11 +88,57 @@ inline constexpr std::uint64_t WORLD_PAYLOAD_ALIGN = 8;
 
 /// Role an entry plays in constructing the world. The role is the
 /// lookup key a consumer uses; exactly one entry per role per bundle.
+/// The vocabulary is registered HERE and only here -- manifest rows
+/// and tool arguments reference these names, so growing the
+/// vocabulary (magnetic and solar are ported next) is one enumerator
+/// plus one table row below. Role values stay below
+/// WORLD_ROLE_LIMIT; unknown roles in a bundle are ignorable by
+/// construction, so grown worlds keep serving old consumers.
 enum class WorldEntryRole : std::uint8_t {
   GRAVITY = 0,    ///< Coefficient table (.grav payload).
   TERRAIN = 1,    ///< Terrain tiling (.htile payload).
   ATMOSPHERE = 2, ///< Atmosphere table (.atm payload).
 };
+
+/// Ceiling for role values (duplicate detection uses a 64-bit mask).
+inline constexpr std::uint8_t WORLD_ROLE_LIMIT = 64;
+
+/// Registered vocabulary: canonical name and inner-format suffix per
+/// role, in enumerator order.
+struct WorldRoleInfo {
+  WorldEntryRole role;
+  std::string_view name;
+  std::string_view suffix;
+};
+
+inline constexpr WorldRoleInfo WORLD_ROLE_TABLE[] = {
+    {WorldEntryRole::GRAVITY, "gravity", ".grav"},
+    {WorldEntryRole::TERRAIN, "terrain", ".htile"},
+    {WorldEntryRole::ATMOSPHERE, "atmosphere", ".atm"},
+};
+
+/// Canonical name for a role ("?" for values outside the table).
+[[nodiscard]] inline constexpr std::string_view worldRoleName(std::uint8_t role) noexcept {
+  for (const auto& r : WORLD_ROLE_TABLE) {
+    if (static_cast<std::uint8_t>(r.role) == role) {
+      return r.name;
+    }
+  }
+  return "?";
+}
+
+/// Resolve a registered role by name.
+/// @return true and sets out on a vocabulary hit.
+[[nodiscard]] inline constexpr bool worldRoleFromName(std::string_view name,
+                                                      WorldRoleInfo& out) noexcept {
+  for (const auto& r : WORLD_ROLE_TABLE) {
+    if (r.name == name) {
+      out = r;
+      return true;
+    }
+  }
+  return false;
+}
 
 /// Distinct verdict per check; loaders report these as fault detail.
 enum class WorldBundleCheck : std::uint8_t {

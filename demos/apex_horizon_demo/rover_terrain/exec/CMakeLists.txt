@@ -52,6 +52,6 @@ apex_add_deployment(
   ApexRoverTerrainDemo
   TPRM
   ApexRoverTerrainDemo/master.tprm
-  WORLD
-  earth
+  TPRM_STAGE
+  earth.world.tprm
 )
