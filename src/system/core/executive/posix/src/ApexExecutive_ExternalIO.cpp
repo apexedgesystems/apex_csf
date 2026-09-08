@@ -219,7 +219,10 @@ void ApexExecutive::externalIO(std::promise<std::uint8_t>&& p) noexcept {
       // Emit COMPLETION frames for commands the task-thread drain has
       // executed: frame encoding and TX production stay on this thread.
       interface_->drainCompletionFrames();
-      interface_->pollSockets(10);
+      // 1 ms poll: the TX drain cadence bounds wire throughput at
+      // cadence x pipe depth, so the wait is the knob -- ~1 kHz gives
+      // ~50K frames/s headroom for ~0.1% idle CPU on one core.
+      interface_->pollSockets(1);
     }
   }
 
