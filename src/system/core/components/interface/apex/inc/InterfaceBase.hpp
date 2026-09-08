@@ -169,6 +169,17 @@ public:
    */
   void initInterfaceLog(const std::filesystem::path& logDir) noexcept;
 
+  /// Frames dropped at the TX boundary (pool exhausted + pipe full),
+  /// summed across servers. A nonzero value means telemetry or
+  /// responses vanished after their producer saw success.
+  [[nodiscard]] std::uint64_t txDropCount() const noexcept {
+    std::uint64_t total = 0;
+    for (std::size_t i = 0; i < numServers_; ++i) {
+      total += servers_[i].txPoolExhausted + servers_[i].txPipeFull;
+    }
+    return total;
+  }
+
 protected:
   /* ----------------------------- Hooks ----------------------------- */
 
@@ -194,17 +205,6 @@ protected:
   /// Pipe capacity for a server (may reflect overrides in future).
   std::size_t pipeCapacity(std::uint8_t /*serverId*/) const noexcept {
     return ioCfg_.pipeCapacityMessages;
-  }
-
-  /// Frames dropped at the TX boundary (pool exhausted + pipe full),
-  /// summed across servers. A nonzero value means telemetry or
-  /// responses vanished after their producer saw success.
-  [[nodiscard]] std::uint64_t txDropCount() const noexcept {
-    std::uint64_t total = 0;
-    for (std::size_t i = 0; i < numServers_; ++i) {
-      total += servers_[i].txPoolExhausted + servers_[i].txPipeFull;
-    }
-    return total;
   }
 
   /**

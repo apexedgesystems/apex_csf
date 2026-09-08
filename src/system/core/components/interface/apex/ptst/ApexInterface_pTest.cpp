@@ -660,17 +660,23 @@ struct LoopbackTx {
   }
 
   ~LoopbackTx() {
+    // shutdown() unblocks the reader's recv(); join BEFORE close so no
+    // thread touches an fd another thread is closing.
     stop.store(true, std::memory_order_release);
     if (writeFd >= 0) {
       ::shutdown(writeFd, SHUT_RDWR);
-      ::close(writeFd);
     }
     if (readFd >= 0) {
       ::shutdown(readFd, SHUT_RDWR);
-      ::close(readFd);
     }
     if (reader.joinable()) {
       reader.join();
+    }
+    if (writeFd >= 0) {
+      ::close(writeFd);
+    }
+    if (readFd >= 0) {
+      ::close(readFd);
     }
   }
 };
@@ -721,6 +727,124 @@ PERF_TEST(InterfacePerf, TxWireBatchedWrite64) {
   // summary line reports batch calls, ops_per_lambda converts.
   auto fn = [&]() { (void)::send(wire.writeFd, batch.data(), batch.size(), MSG_NOSIGNAL); };
   perf.throughputLoop(fn, "Interface_TxWire_BatchedWrite_64x128B");
+}
+
+/* ----------------------------- Real TX Chain ----------------------------- */
+
+namespace {
+
+/// The genuine transmit machinery under harness control: a configured
+/// ApexInterface on loopback TCP with a discard reader. One "burst"
+/// models one telemetry tick: N postInternalTelemetry calls through
+/// the real outbox, the task-thread drain into the TX pipe, and the
+/// external-I/O flush to the socket.
+struct TxChain {
+  system_core::interface::ApexInterface iface;
+  int clientFd{-1};
+  std::thread reader;
+  std::atomic<bool> stop{false};
+  std::uint32_t uid{0x00D000};
+
+  bool init(std::uint16_t port) noexcept {
+    system_core::interface::ApexInterfaceTunables tun{};
+    std::snprintf(tun.host.data(), tun.host.size(), "127.0.0.1");
+    tun.port = port;
+    tun.framing = system_core::interface::FramingType::SLIP;
+    if (iface.configure(tun) != system_core::interface::Status::SUCCESS) {
+      return false;
+    }
+    if (iface.allocateQueues(uid) == nullptr) {
+      return false;
+    }
+    iface.freezeQueues();
+
+    clientFd = ::socket(AF_INET, SOCK_STREAM, 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    addr.sin_port = htons(port);
+    if (clientFd < 0 ||
+        ::connect(clientFd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+      return false;
+    }
+    // Let the server accept.
+    for (int i = 0; i < 20; ++i) {
+      iface.pollSockets(5);
+    }
+    reader = std::thread([this]() {
+      std::array<std::uint8_t, 1 << 16> sink{};
+      while (!stop.load(std::memory_order_acquire)) {
+        const ssize_t N = ::recv(clientFd, sink.data(), sink.size(), 0);
+        if (N <= 0) {
+          break;
+        }
+      }
+    });
+    return true;
+  }
+
+  /// One telemetry tick: post `frames`, drain outboxes, flush wire.
+  void burst(std::size_t frames, const std::uint8_t* payload, std::size_t len) noexcept {
+    for (std::size_t i = 0; i < frames; ++i) {
+      (void)iface.postInternalTelemetry(uid, static_cast<std::uint16_t>(0x0340 + i),
+                                        {payload, len});
+    }
+    iface.drainTelemetryOutboxes();
+    iface.pollSockets(0);
+  }
+
+  ~TxChain() {
+    // shutdown() unblocks the reader's recv(); join BEFORE close so no
+    // thread touches an fd another thread is closing.
+    stop.store(true, std::memory_order_release);
+    if (clientFd >= 0) {
+      ::shutdown(clientFd, SHUT_RDWR);
+    }
+    if (reader.joinable()) {
+      reader.join();
+    }
+    if (clientFd >= 0) {
+      ::close(clientFd);
+    }
+  }
+};
+
+} // namespace
+
+/** @brief Sustained frames/s through the real pool/pipe/flush/write chain. */
+PERF_TEST(InterfacePerf, TxChainDrainThroughput32) {
+  UB_PERF_GUARD(perf);
+  TxChain chain;
+  ASSERT_TRUE(chain.init(6310));
+  std::array<std::uint8_t, 128> payload{};
+
+  auto fn = [&]() { chain.burst(32, payload.data(), payload.size()); };
+  perf.throughputLoop(fn, "Interface_TxChain_Burst32x128B");
+  EXPECT_EQ(chain.iface.txDropCount(), 0U) << "drops while draining every burst";
+}
+
+/** @brief Burst absorption: ticks the pipe must hold when the flush is late.
+ *  Eight full 32-frame ticks between flushes models ~8 ms of external-I/O
+ *  wake jitter at 1 kHz; the pipe must absorb them without dropping. */
+PERF_TEST(InterfacePerf, TxChainBurstAbsorption8Ticks) {
+  UB_PERF_GUARD(perf);
+  TxChain chain;
+  ASSERT_TRUE(chain.init(6311));
+  std::array<std::uint8_t, 128> payload{};
+
+  auto fn = [&]() {
+    for (int tick = 0; tick < 8; ++tick) {
+      for (std::size_t i = 0; i < 32; ++i) {
+        (void)chain.iface.postInternalTelemetry(chain.uid, static_cast<std::uint16_t>(0x0340 + i),
+                                                {payload.data(), payload.size()});
+      }
+      chain.iface.drainTelemetryOutboxes(); // outbox -> pipe each tick, no flush
+    }
+    chain.iface.pollSockets(0); // one late flush for all eight ticks
+  };
+  perf.throughputLoop(fn, "Interface_TxChain_Absorb8x32");
+  EXPECT_EQ(chain.iface.txDropCount(), 0U)
+      << "pipe must absorb 8 ticks x 32 frames between flushes";
 }
 
 PERF_MAIN()
