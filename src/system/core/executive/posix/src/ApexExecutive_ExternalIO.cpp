@@ -219,9 +219,12 @@ void ApexExecutive::externalIO(std::promise<std::uint8_t>&& p) noexcept {
       // Emit COMPLETION frames for commands the task-thread drain has
       // executed: frame encoding and TX production stay on this thread.
       interface_->drainCompletionFrames();
-      // 1 ms poll: the TX drain cadence bounds wire throughput at
-      // cadence x pipe depth, so the wait is the knob -- ~1 kHz gives
-      // ~50K frames/s headroom for ~0.1% idle CPU on one core.
+      // 1 ms poll: each wake drains at most one pipe of staged TX
+      // frames, so sustained wire throughput is bounded by drain
+      // cadence x pipe depth (~256K frames/s at the default 256-deep
+      // pipe, ~8x the telemetry table's configuration maximum) for
+      // ~0.1% idle CPU on one core. RX events return the poll early,
+      // so command latency is not quantized by this wait.
       interface_->pollSockets(1);
     }
   }
