@@ -22,7 +22,11 @@
 # must have registered it before this app parses) as a master entry
 # keyed by the bundle's own uid: tprm_pack stamps the v4 prelude at
 # pack, extraction delivers it to the bank at init like every other
-# entry, and consumers open it there by uid filename.
+# entry, and consumers open it there by uid filename. Bundle sources
+# are generated world data, never committed, so their presence gates
+# the app's ALL attachment: a tree without the content builds
+# everything else and leaves the master unpacked (STATUS at
+# configure), instead of breaking every default build.
 #
 # Composition is set union with NO shadowing: a fullUid or slot arriving
 # twice in one master is a configure error (bundle uids share the entry
@@ -95,6 +99,7 @@ function (apex_add_tprm)
   set(_section "")
   set(_section_name "")
   set(_masters "")
+  set(_missing_bundle_srcs "")
   set(_all_tomls "")
   set(_all_seq_items "")
   set(_rows_pairs "")
@@ -287,6 +292,16 @@ function (apex_add_tprm)
         if (_bundle_tgt)
           list(APPEND _pack_deps ${_bundle_tgt})
         endif ()
+        # Content-presence gate: bundle sources are generated world
+        # data, never committed, so a tree may lack them. Record any
+        # absentee; the app's tprm target then stays out of ALL (the
+        # rest of the tree builds) and an explicit build fails loudly.
+        get_property(_bundle_srcs GLOBAL PROPERTY APEX_TPRM_BUNDLE_SRCS_${_key})
+        foreach (_bsrc IN LISTS _bundle_srcs)
+          if (NOT EXISTS "${_bsrc}")
+            list(APPEND _missing_bundle_srcs "${_bsrc}")
+          endif ()
+        endforeach ()
       elseif (_kind STREQUAL "entry")
         set(_toml "${_src_dir}/${_path}")
         if (NOT EXISTS "${_toml}")
@@ -345,7 +360,22 @@ function (apex_add_tprm)
     set_property(GLOBAL PROPERTY APEX_TPRM_PRODUCT_${ARG_NAME}/${_master} "${_out}")
   endforeach ()
 
-  add_custom_target(apex_tprm_${ARG_NAME} ALL DEPENDS ${_master_outputs} ${_seq_outputs})
+  # Content-presence gate: a master embedding bundle content the tree
+  # does not hold cannot pack here, so the app's tprm target leaves
+  # ALL rather than break every default build (CI and fresh clones
+  # carry no generated world data by design). Where the content
+  # exists -- dev trees, deployment builds -- behavior is unchanged.
+  # An explicit build of the target still fails loudly on the missing
+  # file. Re-run cmake after providing the content.
+  if (_missing_bundle_srcs)
+    message(
+      STATUS
+        "apex_add_tprm(${ARG_NAME}): bundle content absent; apex_tprm_${ARG_NAME} left out of ALL (provide, then re-run cmake): ${_missing_bundle_srcs}"
+    )
+    add_custom_target(apex_tprm_${ARG_NAME} DEPENDS ${_master_outputs} ${_seq_outputs})
+  else ()
+    add_custom_target(apex_tprm_${ARG_NAME} ALL DEPENDS ${_master_outputs} ${_seq_outputs})
+  endif ()
   set_property(GLOBAL PROPERTY APEX_TPRM_TARGET_${ARG_NAME} apex_tprm_${ARG_NAME})
 
   # Deployments stage the mission bank into bank_a alongside the master
@@ -496,5 +526,10 @@ function (apex_add_bundle_tprms)
     # the key a master's `bundle` row packs this product under.
     math(EXPR _fulluid "${_id} << 8" OUTPUT_FORMAT HEXADECIMAL)
     set_property(GLOBAL PROPERTY APEX_TPRM_BUNDLE_FULLUID_${_product} "${_fulluid}")
+    # Entry sources, for the content-presence gate: world data is
+    # generated, never committed, so a tree may lack it (CI, fresh
+    # clones). Masters embedding this bundle consult the list to
+    # decide whether they can build here at all.
+    set_property(GLOBAL PROPERTY APEX_TPRM_BUNDLE_SRCS_${_product} "${_deps}")
   endforeach ()
 endfunction ()
