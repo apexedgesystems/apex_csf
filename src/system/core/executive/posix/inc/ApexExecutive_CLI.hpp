@@ -40,7 +40,6 @@ enum Arguments : std::uint8_t {
   RT_MODE,           ///< Real-time mode override
   RT_MAX_LAG,        ///< Max lag tolerance (ticks)
   INGEST_POLICY,     ///< TPRM ingest policy (strict|lenient)
-  WORLD_STAGE,       ///< Stage a world bundle into the active bank at boot
 };
 
 /**
@@ -67,7 +66,6 @@ static const apex::helpers::args::ArgMap ARG_MAP = {
     {RT_MODE, {"--rt-mode", 1, false}},
     {RT_MAX_LAG, {"--rt-max-lag", 1, false}},
     {INGEST_POLICY, {"--ingest-policy", 1, false}},
-    {WORLD_STAGE, {"--world", 1, false}},
 };
 
 } // namespace executive

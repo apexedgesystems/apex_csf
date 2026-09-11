@@ -213,24 +213,6 @@ std::uint8_t ApexExecutive::doInit() noexcept {
     // CLI overrides take precedence over TPRM values
     applyCliOverrides();
 
-    // Stage a CLI-named world bundle into the active bank so dev-tree
-    // runs match the packaged layout (packages stage bundles at
-    // install; a manual run points --world at the built bundle).
-    // Binding identity is enforced downstream regardless: the
-    // consumer verifies uid and pin at init, so a wrong bundle here
-    // refuses exactly like a wrong upload.
-    if (parsedArgs_.count(WORLD_STAGE)) {
-      const std::filesystem::path SRC{std::string(parsedArgs_[WORLD_STAGE][0])};
-      const std::filesystem::path DST = fileSystem_.tprmDir() / SRC.filename();
-      std::error_code ec;
-      std::filesystem::copy_file(SRC, DST, std::filesystem::copy_options::overwrite_existing, ec);
-      if (ec) {
-        sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
-                         fmt::format("--world stage failed: {} ({})", SRC.string(), ec.message()));
-      } else {
-        sysLog_->info(label(), fmt::format("world staged: {} -> {}", SRC.string(), DST.string()));
-      }
-    }
   } else {
     sysLog_->info(label(), "No config file provided, using CLI args only");
   }

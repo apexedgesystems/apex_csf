@@ -58,13 +58,12 @@ include_guard(GLOBAL)
 # generated at build time) or a repo-relative file path.
 # ------------------------------------------------------------------------------
 function (apex_add_deployment)
-  cmake_parse_arguments(D "" "NAME;EXEC;TPRM;TPRM_FALLBACK" "TPRM_STAGE" ${ARGN})
+  cmake_parse_arguments(D "" "NAME;EXEC;TPRM;TPRM_FALLBACK" "" ${ARGN})
   apex_require(D_NAME D_EXEC)
   set_property(GLOBAL APPEND PROPERTY APEX_DEPLOYMENTS "${D_NAME}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_EXEC "${D_EXEC}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_TPRM "${D_TPRM}")
   set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_TPRM_FALLBACK "${D_TPRM_FALLBACK}")
-  set_property(GLOBAL PROPERTY APEX_DEPLOY_${D_NAME}_TPRM_STAGE "${D_TPRM_STAGE}")
 endfunction ()
 
 # Resolve a TPRM <ref> to (path, dependency target). Generated products win;
@@ -271,30 +270,6 @@ function (apex_finalize_packages)
       list(APPEND _tprm_deps ${_fb_dep})
     endif ()
 
-    # Additional tprm products staged into bank_a/tprm as-is (no
-    # rename): bundle products land beside the master through the same
-    # resolver masters use. The package target depends on their packs,
-    # so a declared product that cannot build fails here, not at boot.
-    get_property(_stage GLOBAL PROPERTY APEX_DEPLOY_${_name}_TPRM_STAGE)
-    set(_world_deps "")
-    foreach (_ref IN LISTS _stage)
-      get_property(_sprod GLOBAL PROPERTY APEX_TPRM_PRODUCT_${_ref})
-      if (NOT _sprod)
-        message(
-          FATAL_ERROR "deployment ${_name}: TPRM_STAGE ${_ref} is not a registered tprm product"
-        )
-      endif ()
-      install(
-        FILES "${_sprod}"
-        DESTINATION bank_a/tprm
-        COMPONENT ${_name}
-      )
-      get_property(_stgt GLOBAL PROPERTY APEX_TPRM_TARGET_BUNDLE_${_ref})
-      if (_stgt)
-        list(APPEND _world_deps ${_stgt})
-      endif ()
-    endforeach ()
-
     set(_pkgroot "${CMAKE_BINARY_DIR}/packages")
     add_custom_target(
       package_${_name}
@@ -304,7 +279,7 @@ function (apex_finalize_packages)
               "${_pkgroot}/${_name}"
       COMMAND ${CMAKE_COMMAND} -E chdir "${_pkgroot}" ${CMAKE_COMMAND} -E tar czf "${_name}.tar.gz"
               "${_name}"
-      DEPENDS ${_exec} ${_tprm_deps} ${_world_deps}
+      DEPENDS ${_exec} ${_tprm_deps}
       COMMENT "[package] ${_name} -> cmake --install (bank_a + run.sh)"
       VERBATIM
     )
