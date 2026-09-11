@@ -6,9 +6,8 @@
 # pack time, duplicate names refused (bundles are shared: every
 # master embedding a bundle row packs the same product).
 #
-# The terrain entry joins earth when the regenerated htile artifact
-# lands; role-keyed bundles absorb new entries without consumer
-# changes (only the pin moves).
+# earth carries the atmosphere table and the 1-degree terrain patch;
+# adding an entry moves the pin every consumer of the world carries.
 kind world
 
-earth 0x0101 atmosphere=demos/apex_horizon_demo/aircraft_atmo/data/earth_ussa76.atm
+earth 0x0101 atmosphere=demos/apex_horizon_demo/aircraft_atmo/data/earth_ussa76.atm terrain=demos/apex_horizon_demo/rover_terrain/data/alpha_patch_lod4.htile

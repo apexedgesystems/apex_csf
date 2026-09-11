@@ -7,7 +7,7 @@
 [CelestialBodyTunables]
 body                = { type = "uint", size = 1, value = 0 }    # EARTH
 gravity_fidelity    = { type = "uint", size = 1, value = 1 }    # J2
-terrain_fidelity    = { type = "uint", size = 1, value = 2 }    # ELLIPSOID
+terrain_fidelity    = { type = "uint", size = 1, value = 3 }    # HTILE
 atmosphere_fidelity = { type = "uint", size = 1, value = 2 }    # LAYERED
 world_uid           = { type = "uint", size = 4, value = "0x010100" }
-world_pin           = { type = "uint", size = 8, value = "0xb97508555afba490" }
+world_pin           = { type = "uint", size = 8, value = "0xcde624259349dfc9" }
