@@ -100,6 +100,7 @@ function (apex_add_tprm)
   set(_section_name "")
   set(_masters "")
   set(_missing_bundle_srcs "")
+  set(_master_has_bundle FALSE)
   set(_all_tomls "")
   set(_all_seq_items "")
   set(_rows_pairs "")
@@ -288,6 +289,7 @@ function (apex_add_tprm)
         endif ()
         list(APPEND _pack_args "-b" "${_bundle_uid}:${_bundle_path}")
         list(APPEND _pack_deps "${_bundle_path}")
+        set(_master_has_bundle TRUE)
         get_property(_bundle_tgt GLOBAL PROPERTY APEX_TPRM_TARGET_BUNDLE_${_key})
         if (_bundle_tgt)
           list(APPEND _pack_deps ${_bundle_tgt})
@@ -367,7 +369,19 @@ function (apex_add_tprm)
   # exists -- dev trees, deployment builds -- behavior is unchanged.
   # An explicit build of the target still fails loudly on the missing
   # file. Re-run cmake after providing the content.
-  if (_missing_bundle_srcs)
+  # Cross-compile gate: bundle packing runs world_pack, a target-built
+  # binary, on the build host -- it cannot execute under a cross
+  # toolchain. A master with bundle rows therefore leaves ALL on cross
+  # presets (the hosted demo masters are hosted products; every other
+  # target builds), and an explicit build still fails loudly. Packing
+  # through a host tool lifts this gate.
+  if (_master_has_bundle AND CMAKE_CROSSCOMPILING)
+    message(
+      STATUS
+        "apex_add_tprm(${ARG_NAME}): bundle packing needs a host tool; apex_tprm_${ARG_NAME} left out of ALL on this cross preset"
+    )
+    add_custom_target(apex_tprm_${ARG_NAME} DEPENDS ${_master_outputs} ${_seq_outputs})
+  elseif (_missing_bundle_srcs)
     message(
       STATUS
         "apex_add_tprm(${ARG_NAME}): bundle content absent; apex_tprm_${ARG_NAME} left out of ALL (provide, then re-run cmake): ${_missing_bundle_srcs}"
