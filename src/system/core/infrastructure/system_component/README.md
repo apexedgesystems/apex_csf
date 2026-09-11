@@ -58,16 +58,17 @@ Component base classes and lifecycle management for the Apex executive framework
 
 ## 2. When to Use
 
-| Scenario                                       | Use This Library?                             |
-| ---------------------------------------------- | --------------------------------------------- |
-| Create a schedulable model for the executive   | Yes -- inherit `SwModelBase` or `HwModelBase` |
-| Create a core infrastructure component         | Yes -- inherit `CoreComponentBase`            |
-| Create a hardware driver component             | Yes -- inherit `DriverBase`                   |
-| Add tunable parameters with hot-reload         | Yes -- own a `ParamBank<TParams>` member      |
-| Need component identity (componentId, fullUid) | Yes -- `IComponent` interface                 |
-| Build for bare-metal MCU with McuExecutive     | Yes -- `McuComponentBase`                     |
-| Task scheduling configuration (freq, priority) | No -- scheduler owns config                   |
-| Component-to-component messaging               | No -- use `IInternalBus` (separate library)   |
+| Scenario                                       | Use This Library?                                                                                                                    |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Create a schedulable model for the executive   | Yes -- inherit `SwModelBase` or `HwModelBase`                                                                                        |
+| Create a core infrastructure component         | Yes -- inherit `CoreComponentBase`                                                                                                   |
+| Create a hardware driver component             | Yes -- inherit `DriverBase`                                                                                                          |
+| Add tunable parameters with hot-reload         | Yes -- own a `ParamBank<TParams>` member                                                                                             |
+| Need component identity (componentId, fullUid) | Yes -- `IComponent` interface                                                                                                        |
+| Allocate a componentId                         | Runtime components use the single-byte space; `[0x0100, 0x01FF]` is reserved for world bundles (content artifacts, never registered) |
+| Build for bare-metal MCU with McuExecutive     | Yes -- `McuComponentBase`                                                                                                            |
+| Task scheduling configuration (freq, priority) | No -- scheduler owns config                                                                                                          |
+| Component-to-component messaging               | No -- use `IInternalBus` (separate library)                                                                                          |
 
 **Design intent:** Four-tier component hierarchy. `IComponent` is the universal contract (no heavy deps). `ComponentCore` adds the concrete identity / lifecycle / registration state shared by every implementation, with no platform deps. `SystemComponentBase` (POSIX tier) extends ComponentCore with TPRM, logging, data descriptors, and internal bus access. `McuComponentBase` (MCU tier) extends ComponentCore with static-allocation contracts. The shared ComponentCore lets `ComponentRegistry` accept either tier, so MCU components register through the same call path POSIX components use. A/B parameter staging (`ParamBank<TParams>`, owned as a member by any component -- schedulable included) enables lock-free RT parameter access with zero-allocation hot-reload.
 

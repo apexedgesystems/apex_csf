@@ -54,15 +54,14 @@ docker compose run --rm dev-cuda \
 
 No packed binaries or data files are committed — the master generates
 from the manifest at build time and the atmosphere table regenerates
-from its tracked spec. The deployment declares the table as DATA
-(apex_add_deployment), so packaging stages it automatically at its
-repo-relative path under the deployment root whenever the file exists
-in the source tree; components resolve the TPRM's relative path
-against the fs-root at boot. Generate the table before packaging and
-the package is self-contained.
-
-A missing table is caught at boot: the executive's atmosphere smoke
-check fails fast and the `spec_hash` identity grep comes up empty.
+from its tracked spec. The deployment references the shared earth
+world (apex_add_deployment WORLD), so packaging packs the table into
+earth.world.tprm and stages the bundle into bank_a/tprm beside the
+master; the CelestialBody tprm binds it by uid and pinned content
+hash at boot. Generate the table before packaging and the package is
+self-contained — a missing table fails the pack (a package that
+declares a world must contain it), and a bundle that does not hash to
+the pinned value refuses init naming both hashes.
 The launcher passes `--skip-cleanup`, so shutdown archives nothing
 and the deployment stays intact across runs.
 

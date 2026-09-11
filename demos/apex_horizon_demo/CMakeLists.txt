@@ -7,6 +7,12 @@
 # bridge wire format but are independently buildable and runnable.
 # ==============================================================================
 
+# Shared world bundles: defined once in the bundle manifest, packed
+# as tprm products, embedded by any master below via a
+# `bundle <name>.world.tprm` manifest row (registration must precede
+# the apps' apex_add_tprm calls, hence this position).
+apex_add_bundle_tprms(MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/worlds.manifest")
+
 add_subdirectory(lidar_box)
 add_subdirectory(world_query_probe)
 add_subdirectory(ground_vehicle)

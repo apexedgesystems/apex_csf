@@ -2,13 +2,16 @@
 #define APEX_SYSTEM_CORE_SYSTEM_COMPONENT_TPRM_PAYLOAD_HPP
 /**
  * @file TprmPayload.hpp
- * @brief Format A v3 payload prelude: verified ingest for component payloads.
+ * @brief Format A v4 payload prelude: verified ingest for component payloads.
  *
  * Every component payload carries a 20-byte little-endian prelude:
  * ```
- *   magic[4]       = "APV3"
+ *   magic[4]       = "APV4"
  *   version[2]     = 3
- *   payloadSize[2] = byte length of the payload that follows
+ *   reserved[2]    = 0
+ *   payloadSize[8] = byte length of the payload that follows -- 64-bit
+ *                    so bundle entries (world content) ride the same
+ *                    prelude as component structs
  *   fullUid[4]     = (componentId << 8) | instanceIndex the payload targets
  *   layoutHash[4]  = CRC-32 of the canonical field spec the tools emitted
  *   payloadCrc[4]  = CRC-32 (IEEE) of the payload bytes
@@ -45,22 +48,23 @@ namespace system_component {
 
 /* ----------------------------- Constants ----------------------------- */
 
-/// Magic bytes for v3 component payloads (distinct from archive "TPRM").
-inline constexpr std::array<char, 4> TPRM_PAYLOAD_MAGIC = {'A', 'P', 'V', '3'};
+/// Magic bytes for v4 component payloads (distinct from archive "TPRM").
+inline constexpr std::array<char, 4> TPRM_PAYLOAD_MAGIC = {'A', 'P', 'V', '4'};
 
 /// Payload format version the reader requires.
-inline constexpr std::uint16_t TPRM_PAYLOAD_VERSION = 3;
+inline constexpr std::uint16_t TPRM_PAYLOAD_VERSION = 4;
 
 /// Prelude size in bytes.
-inline constexpr std::size_t TPRM_PAYLOAD_HEADER_SIZE = 20;
+inline constexpr std::size_t TPRM_PAYLOAD_HEADER_SIZE = 28;
 
 /* ----------------------------- Header ----------------------------- */
 
 #pragma pack(push, 1)
 struct TprmPayloadHeader {
-  std::array<char, 4> magic{};  ///< "APV3"
-  std::uint16_t version{0};     ///< Format version (3).
-  std::uint16_t payloadSize{0}; ///< Byte length of the payload body.
+  std::array<char, 4> magic{};  ///< "APV4"
+  std::uint16_t version{0};     ///< Format version (4).
+  std::uint16_t reserved{0};    ///< Zero.
+  std::uint64_t payloadSize{0}; ///< Byte length of the payload body.
   std::uint32_t fullUid{0};     ///< Target (componentId << 8) | instance.
   std::uint32_t layoutHash{0};  ///< CRC-32 of the canonical field spec.
   std::uint32_t payloadCrc{0};  ///< CRC-32 (IEEE) of the payload body.
@@ -79,8 +83,8 @@ enum class TprmPayloadCheck : std::uint8_t {
   OK = 0,
   FILE_ERROR = 1,           ///< Open/read failed.
   TOO_SMALL = 2,            ///< File smaller than the prelude.
-  BAD_MAGIC = 3,            ///< Not a v3 payload.
-  BAD_VERSION = 4,          ///< Version other than 3 (v3-only reader).
+  BAD_MAGIC = 3,            ///< Not a v4 payload.
+  BAD_VERSION = 4,          ///< Version other than 4 (v4-only reader).
   SIZE_MISMATCH = 5,        ///< Body length differs from header payloadSize.
   UID_MISMATCH = 6,         ///< Payload targets a different fullUid.
   CRC_MISMATCH = 7,         ///< Body bytes fail the header CRC.
@@ -102,9 +106,9 @@ enum class TprmPayloadCheck : std::uint8_t {
   case TprmPayloadCheck::FILE_ERROR:
     return "file open/read failed";
   case TprmPayloadCheck::TOO_SMALL:
-    return "smaller than the v3 prelude";
+    return "smaller than the v4 prelude";
   case TprmPayloadCheck::BAD_MAGIC:
-    return "bad payload magic (want APV3)";
+    return "bad payload magic (want APV4)";
   case TprmPayloadCheck::BAD_VERSION:
     return "payload version not 3";
   case TprmPayloadCheck::SIZE_MISMATCH:
@@ -247,7 +251,7 @@ extern "C" {
 /* ----------------------------- Verification ----------------------------- */
 
 /**
- * @brief Verify a v3-stamped buffer against the expected target.
+ * @brief Verify a v4-stamped buffer against the expected target.
  * @param data        Whole file image (prelude + body).
  * @param size        Image size in bytes.
  * @param expectedUid fullUid the caller expects the payload to target.
@@ -293,7 +297,7 @@ verifyTprmPayload(const std::uint8_t* data, std::size_t size, std::uint32_t expe
 }
 
 /**
- * @brief Read and verify a v3 payload file; return the body bytes.
+ * @brief Read and verify a v4 payload file; return the body bytes.
  * @param path        Payload file ({fullUid:06x}.tprm).
  * @param expectedUid fullUid the caller expects.
  * @param body        Receives the verified payload body.
@@ -334,9 +338,9 @@ readTprmPayload(const std::filesystem::path& path, std::uint32_t expectedUid,
 }
 
 /**
- * @brief Read and verify a v3 payload file into a fixed-size TParams.
+ * @brief Read and verify a v4 payload file into a fixed-size TParams.
  *
- * The body must be exactly sizeof(TParams) -- the pre-v3 size check,
+ * The body must be exactly sizeof(TParams) -- the pre-prelude size check,
  * now applied after the prelude checks.
  */
 template <typename TParams>

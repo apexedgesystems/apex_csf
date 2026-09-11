@@ -1,10 +1,13 @@
-//! Format A v3 payload prelude: self-describing header on every
+//! Format A v4 payload prelude: self-describing header on every
 //! component payload.
 //!
-//! Layout (20 bytes, little-endian):
-//!   magic[4]       = "APV3"
-//!   version[2]     = 3
-//!   payloadSize[2] = byte length of the payload that follows
+//! Layout (28 bytes, little-endian):
+//!   magic[4]       = "APV4"
+//!   version[2]     = 4
+//!   reserved[2]    = 0
+//!   payloadSize[8] = byte length of the payload that follows -- 64-bit
+//!                    so bundle entries (world content, tens of MB)
+//!                    ride the same prelude as component structs
 //!   fullUid[4]     = (componentId << 8) | instanceIndex the payload targets
 //!   layoutHash[4]  = CRC-32 of the canonical field spec (see below)
 //!   payloadCrc[4]  = CRC-32 (IEEE) of the payload bytes
@@ -24,15 +27,15 @@
 
 use super::Error;
 
-pub const MAGIC: &[u8; 4] = b"APV3";
-pub const VERSION: u16 = 3;
-pub const HEADER_SIZE: usize = 20;
+pub const MAGIC: &[u8; 4] = b"APV4";
+pub const VERSION: u16 = 4;
+pub const HEADER_SIZE: usize = 28;
 
-/// Parsed v3 prelude.
+/// Parsed v4 prelude.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PayloadHeader {
     pub version: u16,
-    pub payload_size: u16,
+    pub payload_size: u64,
     pub full_uid: u32,
     pub layout_hash: u32,
     pub payload_crc: u32,
@@ -55,18 +58,13 @@ pub fn crc32(data: &[u8]) -> u32 {
 
 /* ----------------------------- Stamp / parse ----------------------------- */
 
-/// Prepend the v3 prelude to a serialized payload.
+/// Prepend the v4 prelude to a serialized payload.
 pub fn stamp(full_uid: u32, layout_hash: u32, payload: &[u8]) -> Result<Vec<u8>, Error> {
-    let size = u16::try_from(payload.len()).map_err(|_| {
-        Error::Emit(format!(
-            "payload of {} bytes exceeds the {} byte v3 size field",
-            payload.len(),
-            u16::MAX
-        ))
-    })?;
+    let size = payload.len() as u64;
     let mut out = Vec::with_capacity(HEADER_SIZE + payload.len());
     out.extend_from_slice(MAGIC);
     out.extend_from_slice(&VERSION.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
     out.extend_from_slice(&size.to_le_bytes());
     out.extend_from_slice(&full_uid.to_le_bytes());
     out.extend_from_slice(&layout_hash.to_le_bytes());
@@ -75,17 +73,17 @@ pub fn stamp(full_uid: u32, layout_hash: u32, payload: &[u8]) -> Result<Vec<u8>,
     Ok(out)
 }
 
-/// Parse and fully verify a v3-stamped payload; returns the header and
+/// Parse and fully verify a v4-stamped payload; returns the header and
 /// the payload slice. Every check that fails is a distinct error.
 pub fn parse(data: &[u8]) -> Result<(PayloadHeader, &[u8]), Error> {
     if data.len() < HEADER_SIZE {
         return Err(Error::Parse(format!(
-            "{} bytes is too small for the {HEADER_SIZE} byte v3 prelude",
+            "{} bytes is too small for the {HEADER_SIZE} byte v4 prelude",
             data.len()
         )));
     }
     if &data[0..4] != MAGIC {
-        return Err(Error::Parse("bad payload magic (want APV3)".to_string()));
+        return Err(Error::Parse("bad payload magic (want APV4)".to_string()));
     }
     let version = u16::from_le_bytes([data[4], data[5]]);
     if version != VERSION {
@@ -93,10 +91,12 @@ pub fn parse(data: &[u8]) -> Result<(PayloadHeader, &[u8]), Error> {
             "payload format version {version} (reader requires {VERSION})"
         )));
     }
-    let payload_size = u16::from_le_bytes([data[6], data[7]]);
-    let full_uid = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
-    let layout_hash = u32::from_le_bytes([data[12], data[13], data[14], data[15]]);
-    let payload_crc = u32::from_le_bytes([data[16], data[17], data[18], data[19]]);
+    let payload_size = u64::from_le_bytes([
+        data[8], data[9], data[10], data[11], data[12], data[13], data[14], data[15],
+    ]);
+    let full_uid = u32::from_le_bytes([data[16], data[17], data[18], data[19]]);
+    let layout_hash = u32::from_le_bytes([data[20], data[21], data[22], data[23]]);
+    let payload_crc = u32::from_le_bytes([data[24], data[25], data[26], data[27]]);
 
     let payload = &data[HEADER_SIZE..];
     if payload.len() != payload_size as usize {
@@ -162,7 +162,7 @@ mod tests {
         assert!(format!("{}", parse(&bad_version).unwrap_err()).contains("version"));
 
         let mut bad_size = good.clone();
-        bad_size[6] = 99;
+        bad_size[8] = 99;
         assert!(format!("{}", parse(&bad_size).unwrap_err()).contains("declares"));
 
         let mut bad_crc = good;

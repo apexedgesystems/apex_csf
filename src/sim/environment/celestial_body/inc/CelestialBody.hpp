@@ -113,17 +113,20 @@ public:
   /// Convenience: did init() complete and all queries are usable?
   [[nodiscard]] bool isReady() const noexcept { return state_.get().init_status == 1u; }
 
-protected:
-  /* ----------------------------- Lifecycle ----------------------------- */
-
   /// Optional: load tunables from a per-component `.tprm` file at
   /// `tprmDir/{fullUid:06x}.tprm`. Called by the apex executive between
   /// `initComponentLog()` and `init()`. If no file exists, the C++
   /// struct defaults (or any prior `tunables().set(...)` call) stand;
   /// the override returns true so the framework continues. Returns
-  /// false only on a real I/O error or a size-mismatch read.
+  /// false only on a real I/O error or a size-mismatch read. Public
+  /// like the base declaration: the executive (and binding tests)
+  /// drive it directly, and it captures the bank dir the world
+  /// bundle is discovered in at init.
   [[nodiscard]] system_core::system_component::TprmIngest
   loadTprm(const std::filesystem::path& tprmDir) noexcept override;
+
+protected:
+  /* ----------------------------- Lifecycle ----------------------------- */
 
   /** @brief Defaults are a designed configuration (framework-contract optional). */
   [[nodiscard]] bool paramsOptional() const noexcept override { return true; }
@@ -134,6 +137,23 @@ protected:
   [[nodiscard]] std::uint8_t doInit() noexcept override;
 
 private:
+  /// Bind the world named by the tunables: uid+pin discovery in the
+  /// bank tprm dir, fidelity-vs-content validation, entry payloads to
+  /// the models' in-memory loaders. Returns false (with the cause
+  /// logged) on any miss; stamps the state block's world identity on
+  /// success. Shared by doInit and the RELOAD_TPRM rebind re-entry.
+  [[nodiscard]] bool bindWorld(const CelestialBodyTunables& p, CelestialBodyState& s) noexcept;
+
+  /// Bank tprm directories the executive has handed loadTprm: the
+  /// boot-time dir (active bank) and the most recent one (the
+  /// inactive bank during a RELOAD). World discovery scans the latest
+  /// first -- fresh uploads land there -- then the boot dir, where
+  /// resident bundles serve as the revert fallback. The component
+  /// never derives bank layout; it only remembers where it was
+  /// pointed.
+  std::filesystem::path bootTprmDir_{};
+  std::filesystem::path lastTprmDir_{};
+
   system_core::data::TunableParam<CelestialBodyTunables> tunables_{};
   system_core::data::State<CelestialBodyState> state_{};
   system_core::data::Output<CelestialBodyTelemetry> telemetry_{};

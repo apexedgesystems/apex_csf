@@ -79,9 +79,9 @@ protected:
                    std::uint32_t crc, std::size_t bodyLen, bool corruptMagic = false,
                    bool lieAboutSize = false) {
     TprmPayloadHeader h{};
-    std::memcpy(h.magic.data(), corruptMagic ? "NOPE" : "APV3", 4);
-    h.version = 3;
-    h.payloadSize = static_cast<std::uint16_t>(lieAboutSize ? bodyLen + 7 : bodyLen);
+    std::memcpy(h.magic.data(), corruptMagic ? "NOPE" : "APV4", 4);
+    h.version = system_core::system_component::TPRM_PAYLOAD_VERSION;
+    h.payloadSize = static_cast<std::uint64_t>(lieAboutSize ? bodyLen + 7 : bodyLen);
     h.fullUid = uid;
     h.layoutHash = layoutHash;
     h.payloadCrc = crc;
@@ -185,8 +185,8 @@ using system_core::system_component::VERIFY_RESPONSE_SIZE;
 void writeVerified(const std::filesystem::path& dir, std::uint32_t uid, std::uint32_t layoutHash,
                    const std::vector<std::uint8_t>& body, bool corruptCrc = false) {
   TprmPayloadHeader h{};
-  std::memcpy(h.magic.data(), "APV3", 4);
-  h.version = 3;
+  std::memcpy(h.magic.data(), "APV4", 4);
+  h.version = system_core::system_component::TPRM_PAYLOAD_VERSION;
   h.payloadSize = static_cast<std::uint16_t>(body.size());
   h.fullUid = uid;
   h.layoutHash = layoutHash;

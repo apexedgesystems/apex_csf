@@ -46,6 +46,14 @@ public:
   ///   - `ERROR_ALLOC_FAIL` if the sample buffer cannot be allocated.
   [[nodiscard]] Status load(const std::string& path) noexcept;
 
+  /**
+   * @brief Load from an in-memory htile file image (header + samples).
+   *
+   * Same validation and construction as load(); the image is a
+   * complete .htile byte stream, e.g. a world-bundle entry payload.
+   */
+  [[nodiscard]] Status loadFromImage(const std::uint8_t* data, std::size_t size) noexcept;
+
   /// Free internal buffers; reset to default state.
   void close() noexcept;
 
@@ -71,6 +79,11 @@ public:
   [[nodiscard]] bool isInCoverage(double latRad, double lonRad) const noexcept;
 
 private:
+  /// Shared tail of load()/loadFromImage(): validated header + samples
+  /// into the runtime tile.
+  [[nodiscard]] Status adoptTile(const HtileHeader& h,
+                                 std::vector<std::int16_t>&& samples) noexcept;
+
   HtileHeader header_{};
   std::vector<std::int16_t> samples_; ///< Row-major, N->S, host-endian.
   double resolution_m_ = 0.0;         ///< Mean ground spacing (m at the equator).

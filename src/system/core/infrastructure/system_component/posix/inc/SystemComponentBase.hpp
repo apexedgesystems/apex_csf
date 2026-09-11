@@ -229,23 +229,6 @@ public:
   [[nodiscard]] IInternalBus* internalBus() const noexcept { return internalBus_; }
 
   /**
-   * @brief Set the executive filesystem root for data-path resolution.
-   * @param root Executive fs-root (deployment directory on packaged runs).
-   * @note Called by executive during component registration.
-   * @note Components resolve relative TPRM data paths against this root
-   *       (see resolveDataPath); packaged deployments stage data files
-   *       under the root at their config-declared relative paths.
-   */
-  void setFileSystemRoot(const std::filesystem::path& root) noexcept { fsRoot_ = root; }
-
-  /**
-   * @brief Get the executive filesystem root.
-   * @return Root path; empty when the component runs outside an executive
-   *         (unit tests, standalone tools).
-   */
-  [[nodiscard]] const std::filesystem::path& fileSystemRoot() const noexcept { return fsRoot_; }
-
-  /**
    * @brief Generate TPRM filename from fullUid.
    * @param fullUid Full component UID (componentId << 8 | instanceIndex).
    * @return Filename in format "{fullUid:06x}.tprm" (e.g., "000100.tprm" for scheduler).
@@ -471,7 +454,6 @@ protected:
 private:
   std::shared_ptr<logs::SystemLog> componentLog_{nullptr};
   IInternalBus* internalBus_{nullptr};
-  std::filesystem::path fsRoot_{}; ///< Executive fs-root for data-path resolution.
   bool configured_{false};
   bool locked_{false};
 
@@ -482,37 +464,6 @@ private:
   std::array<DataDescriptor, MAX_DATA_PER_COMPONENT> data_{};
   std::size_t dataCount_{0};
 };
-
-/**
- * @brief Resolve a config-declared data path against a filesystem root.
- *
- * Contract: absolute paths pass through untouched. A relative path
- * resolves to root/path when that file exists (the packaged-run case:
- * deployment staging mirrors the config-declared relative path under
- * the fs-root). Otherwise the path returns unchanged, leaving
- * cwd-relative resolution in force (the dev-tree case, where configs
- * reference generated data in the source tree). Callers surface which
- * resolution applied; a file present in neither place fails at open
- * with the caller's existing error path.
- *
- * @param root Filesystem root (empty skips root resolution).
- * @param path Config-declared path (absolute or relative).
- * @return Resolved path per the contract above.
- * @note NOT RT-safe: touches the filesystem.
- */
-[[nodiscard]] inline std::filesystem::path resolveDataPath(const std::filesystem::path& root,
-                                                           std::string_view path) noexcept {
-  const std::filesystem::path P{path};
-  if (P.is_absolute() || root.empty()) {
-    return P;
-  }
-  std::error_code ec;
-  const std::filesystem::path ROOTED = root / P;
-  if (std::filesystem::exists(ROOTED, ec)) {
-    return ROOTED;
-  }
-  return P;
-}
 
 } // namespace system_component
 } // namespace system_core

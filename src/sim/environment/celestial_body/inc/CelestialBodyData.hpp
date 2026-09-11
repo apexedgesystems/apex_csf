@@ -23,23 +23,21 @@ namespace sim {
 namespace environment {
 namespace celestial_body {
 
-/* ----------------------------- Constants ----------------------------- */
-
-/// Maximum length of a data-file path stored in tunables. 256 covers any
-/// practical relative-or-absolute filesystem path; longer paths would
-/// likely indicate a misconfiguration.
-inline constexpr std::size_t MAX_DATA_PATH = 256u;
-
 /* ----------------------------- CelestialBodyTunables ----------------------------- */
 
 /**
  * @brief Configuration parameters for a CelestialBody component.
  *
- * Selects (a) which body to represent and (b) per-subsystem fidelity +
- * (c) data file paths for file-backed fidelities. For analytic
- * fidelities (CONSTANT/SPHERE/ELLIPSOID for terrain; CONSTANT/J2 for
- * gravity; CONSTANT/EXPONENTIAL for atmosphere), the corresponding
- * data path is ignored.
+ * Selects (a) which body to represent, (b) per-subsystem fidelity, and
+ * (c) the WORLD BINDING for file-backed fidelities: the uid of the
+ * world bundle carrying this body's content artifacts, and the pinned
+ * bundle content hash the master thereby authorizes. Analytic
+ * fidelities (CONSTANT/SPHERE/ELLIPSOID terrain; CONSTANT/J2 gravity;
+ * CONSTANT/EXPONENTIAL atmosphere) need no binding (world_uid 0).
+ * A file-backed fidelity with no binding, a binding that resolves to
+ * no bundle, or a bundle whose content hash differs from the pin all
+ * refuse init loudly -- the world a config declares is the world that
+ * runs, or nothing does.
  */
 struct CelestialBodyTunables {
   /// Which celestial body this component represents.
@@ -55,15 +53,17 @@ struct CelestialBodyTunables {
   sim::environment::AtmosphereFidelity atmosphere_fidelity{
       sim::environment::AtmosphereFidelity::CONSTANT};
 
-  /// Path to the gravity coefficient .bin file (only used when
-  /// gravity_fidelity == SPHERICAL). NUL-padded.
-  char gravity_data_path[MAX_DATA_PATH]{};
+  /// World bundle uid this body binds (reserved world range,
+  /// e.g. 0x010100). Zero = unbound; valid only while every fidelity
+  /// is analytic. Sits at offset 4 so the pin lands naturally
+  /// 8-aligned with no hidden padding -- the toml layout mirrors the
+  /// struct byte-for-byte.
+  std::uint32_t world_uid{0};
 
-  /// Path to the terrain .htile file (only used when terrain_fidelity == HTILE).
-  char terrain_data_path[MAX_DATA_PATH]{};
-
-  /// Path to the atmosphere .atm file (only used when atmosphere_fidelity == LAYERED).
-  char atmosphere_data_path[MAX_DATA_PATH]{};
+  /// Pinned bundle content hash: the bundle bound at init must carry
+  /// exactly this bundleContentHash. The authored toml states it; the
+  /// master packs it; world_pack --verify prints the value to pin.
+  std::uint64_t world_pin{0};
 };
 
 /* ----------------------------- CelestialBodyState ----------------------------- */
@@ -86,6 +86,16 @@ struct CelestialBodyState {
   std::uint8_t init_status{0};
 
   std::uint8_t reserved[5]{};
+
+  /// World identity as bound at init (ground truth for INSPECT): the
+  /// bundle uid and pin actually verified, plus the per-role inner
+  /// spec hashes of the entries loaded (zero when the role was not
+  /// loaded or the inner format predates provenance headers).
+  std::uint32_t world_uid{0};
+  std::uint32_t world_reserved{0};
+  std::uint64_t world_pin{0};
+  std::uint64_t atmosphere_spec_hash{0};
+  std::uint64_t terrain_spec_hash{0};
 };
 
 /* ----------------------------- CelestialBodyTelemetry ----------------------------- */
