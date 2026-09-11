@@ -30,8 +30,11 @@ namespace {
 using namespace sim::environment::world;
 
 /// Read the inner artifact's self-declared spec hash; zero when the
-/// format carries none (or the header cannot be read -- pack still
-/// succeeds; provenance is the artifact's own concern).
+/// format carries none or the header cannot be read. For formats that
+/// define a spec hash, zero means "no generating spec" (a converted or
+/// hand-assembled file): identical records to a generated artifact
+/// but no identity a consumer pin can bind to, so pack refuses such an
+/// entry unless the operator passes --allow-unspecified.
 std::uint64_t sniffSpecHash(const std::filesystem::path& p, WorldEntryRole role) {
   std::FILE* f = std::fopen(p.string().c_str(), "rb");
   if (f == nullptr) {
@@ -52,6 +55,12 @@ std::uint64_t sniffSpecHash(const std::filesystem::path& p, WorldEntryRole role)
   }
   std::fclose(f);
   return hash;
+}
+
+/// Roles whose inner format defines a spec hash (gravity tables record
+/// zero until their header lands, so they are exempt).
+bool roleDefinesSpecHash(WorldEntryRole role) {
+  return role == WorldEntryRole::ATMOSPHERE || role == WorldEntryRole::TERRAIN;
 }
 
 int verify(const char* path) {
@@ -84,11 +93,13 @@ int verify(const char* path) {
 }
 
 void usage() {
-  std::fprintf(stderr, "usage: world_pack --out <bundle> --body <name> --uid <hex componentId>\n"
-                       "                  [--kind <kind>]  (default: world)\n"
-                       "                  --entry <role>=<file> [--entry <role>=<file> ...]\n"
-                       "       world_pack --verify <bundle>\n"
-                       "roles: registered vocabulary (gravity, terrain, atmosphere)\n");
+  std::fprintf(stderr,
+               "usage: world_pack --out <bundle> --body <name> --uid <hex componentId>\n"
+               "                  [--kind <kind>]  (default: world)\n"
+               "                  --entry <role>=<file> [--entry <role>=<file> ...]\n"
+               "                  [--allow-unspecified]  (pack entries whose spec_hash is 0)\n"
+               "       world_pack --verify <bundle>\n"
+               "roles: registered vocabulary (gravity, terrain, atmosphere)\n");
 }
 
 } // namespace
@@ -99,12 +110,17 @@ int main(int argc, char** argv) {
   std::uint32_t componentId = 0;
   const BundleKindInfo* kind = bundleKindByName("world"); // default kind
   std::vector<WorldEntrySource> sources;
+  bool allowUnspecified = false;
 
   for (int i = 1; i < argc; ++i) {
     const std::string_view A{argv[i]};
     const bool HAS_VALUE = i + 1 < argc;
     if (A == "--verify" && HAS_VALUE) {
       return verify(argv[i + 1]);
+    }
+    if (A == "--allow-unspecified") {
+      allowUnspecified = true;
+      continue;
     }
     if (!HAS_VALUE) {
       usage();
@@ -136,7 +152,16 @@ int main(int argc, char** argv) {
         return 2;
       }
       const std::string PATH{SPEC.substr(EQ + 1)};
-      sources.push_back({info.role, info.suffix, PATH, sniffSpecHash(PATH, info.role)});
+      const std::uint64_t SPEC_HASH = sniffSpecHash(PATH, info.role);
+      if (SPEC_HASH == 0 && roleDefinesSpecHash(info.role) && !allowUnspecified) {
+        std::fprintf(stderr,
+                     "world_pack: %s carries spec_hash 0 (no generating spec: a converted or "
+                     "hand-assembled file) -- a consumer pin cannot bind to it. Regenerate the "
+                     "artifact from its spec, or pass --allow-unspecified to pack it knowingly.\n",
+                     PATH.c_str());
+        return 2;
+      }
+      sources.push_back({info.role, info.suffix, PATH, SPEC_HASH});
     } else {
       usage();
       return 2;
