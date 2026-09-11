@@ -44,6 +44,19 @@ bool AircraftAtmoExecutive::registerComponents() noexcept {
       log->info(label(), "registerComponent(earth) FAILED");
     return false;
   }
+  // A body that registered but is not ready has refused its world
+  // (binding mismatch, missing entry, bad image). Flying without an
+  // atmosphere is not a degraded mode for this demo -- the aircraft
+  // would sit parked at tick 0 behind a healthy-looking executive --
+  // so the boot refuses here, at error severity, instead of the smoke
+  // check noting it at info and the run continuing.
+  if (!earth_.isReady()) {
+    if (log != nullptr) {
+      log->error(label(), static_cast<std::uint8_t>(1),
+                 "earth is not ready after registration (world binding refused) -- refusing boot");
+    }
+    return false;
+  }
 
   aircraft_.setBody(&earth_);
   aircraft_.setControllerOutput(&controller_.controllerOutput());
