@@ -56,8 +56,8 @@ inline constexpr std::size_t DEFAULT_TLM_QUEUE_CAPACITY = 64;
  * - Maintains layering (system_component does not depend on interface library)
  *
  * Ownership:
- * - cmdInbox: Interface allocates → pushes → pops → releases
- * - tlmOutbox: Interface allocates → pushes → pops → releases
+ * - cmdInbox: Interface allocates -> pushes -> pops -> releases
+ * - tlmOutbox: Interface allocates -> pushes -> pops -> releases
  */
 struct ComponentQueues {
   apex::concurrency::LockFreeQueue<MessageBuffer*>

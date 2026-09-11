@@ -4,7 +4,7 @@
 # Task schedule for ApexOpsDemo:
 #   100 Hz: WaveGenerator #0 waveStep (priority 127, seqGroup 0 phase 0)
 #   100 Hz: WaveGenerator #1 waveStep (priority 126, seqGroup 1 phase 0)
-#    10 Hz: TelemetryManager collect (priority 40, offset 3)
+#    50 Hz: TelemetryManager collect (priority 40, offset 1)
 #    10 Hz: TestPlugin tick (priority -64, offset 5)
 #     1 Hz: WaveGenerator #0 telemetry (priority -128, offset 51, seqGroup 0 phase 1)
 #     1 Hz: WaveGenerator #1 telemetry (priority -128, offset 52, seqGroup 1 phase 1)

@@ -993,6 +993,12 @@ void ApexInterface::logStatsSummary() noexcept {
   log->info(label(), "Queue Health:");
   log->info(label(), fmt::format("  Cmd queue overflows: {}", stats_.cmdQueueOverflows));
   log->info(label(), fmt::format("  Tlm queue overflows: {}", stats_.tlmQueueOverflows));
+  if (txDropCount() > 0) {
+    log->warning(label(), static_cast<std::uint8_t>(1),
+                 fmt::format("  TX frames dropped at wire boundary: {}", txDropCount()));
+  } else {
+    log->info(label(), "  TX frames dropped at wire boundary: 0");
+  }
   log->info(label(), fmt::format("  Completion drops: {}", stats_.completionDrops));
   log->info(label(), "=============================");
 }

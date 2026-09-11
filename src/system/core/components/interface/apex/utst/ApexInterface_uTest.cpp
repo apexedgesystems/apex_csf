@@ -649,3 +649,56 @@ TEST(ApexInterfaceTest, AprotoUnknownComponentNak) {
   auto shutStatus = iface.shutdown();
   EXPECT_EQ(shutStatus, Status::SUCCESS);
 }
+
+/** @test TX-boundary drops are counted, never silent: with no flush
+ * running, enqueues beyond the pipe/pool capacity must increment
+ * txDropCount() by exactly the overflow, and frames up to capacity
+ * must never count as dropped. */
+TEST(ApexInterfaceTest, TxBoundaryDropsAreCounted) {
+  ApexInterface iface;
+
+  ApexInterfaceTunables tun{};
+  {
+    std::string host = "127.0.0.1";
+    std::snprintf(tun.host.data(), tun.host.size(), "%s", host.c_str());
+  }
+  tun.port = 6205;
+  tun.framing = FramingType::SLIP;
+
+  ASSERT_EQ(iface.configure(tun), Status::SUCCESS);
+
+  constexpr std::uint32_t SRC_UID = 0x00CA00;
+  ASSERT_NE(iface.allocateQueues(SRC_UID), nullptr);
+  iface.freezeQueues();
+
+  const std::size_t PIPE_CAP = iface.ioConfig().pipeCapacityMessages;
+  constexpr std::size_t OUTBOX_BATCH = 64; // tlmQueueCapacity default
+  constexpr std::size_t OVERFLOW_FRAMES = 64;
+  ASSERT_EQ(PIPE_CAP % OUTBOX_BATCH, 0U) << "test assumes whole batches";
+
+  const std::array<std::uint8_t, 16> PAYLOAD{};
+
+  // Fill exactly to capacity: every frame must be accepted and none
+  // may count as dropped.
+  for (std::size_t sent = 0; sent < PIPE_CAP; sent += OUTBOX_BATCH) {
+    for (std::size_t i = 0; i < OUTBOX_BATCH; ++i) {
+      ASSERT_TRUE(iface.postInternalTelemetry(SRC_UID, static_cast<std::uint16_t>(0x0350),
+                                              {PAYLOAD.data(), PAYLOAD.size()}));
+    }
+    iface.drainTelemetryOutboxes();
+  }
+  EXPECT_EQ(iface.txDropCount(), 0U) << "no drop may be counted below capacity";
+
+  // Overflow: with nothing flushing, every additional frame must be
+  // dropped AND counted (pool exhausted or pipe full -- both sites
+  // feed the same counter).
+  for (std::size_t i = 0; i < OVERFLOW_FRAMES; ++i) {
+    ASSERT_TRUE(iface.postInternalTelemetry(SRC_UID, static_cast<std::uint16_t>(0x0350),
+                                            {PAYLOAD.data(), PAYLOAD.size()}));
+  }
+  iface.drainTelemetryOutboxes();
+  EXPECT_EQ(iface.txDropCount(), OVERFLOW_FRAMES)
+      << "every frame past capacity must be counted at the TX boundary";
+
+  EXPECT_EQ(iface.shutdown(), Status::SUCCESS);
+}
