@@ -54,14 +54,15 @@ docker compose run --rm dev-cuda \
 
 No packed binaries or data files are committed — the master generates
 from the manifest at build time and the atmosphere table regenerates
-from its tracked spec. The deployment references the shared earth
-world (apex_add_deployment WORLD), so packaging packs the table into
-earth.world.tprm and stages the bundle into bank_a/tprm beside the
-master; the CelestialBody tprm binds it by uid and pinned content
-hash at boot. Generate the table before packaging and the package is
-self-contained — a missing table fails the pack (a package that
-declares a world must contain it), and a bundle that does not hash to
-the pinned value refuses init naming both hashes.
+from its tracked spec. The master embeds the shared earth world
+(`bundle earth.world.tprm` in tprm.manifest): packaging packs the
+table into the bundle and the bundle rides the master, which
+extraction breaks out into bank_a/tprm at boot as entry 0x010100; the
+CelestialBody tprm binds it by uid and pinned content hash. Generate
+the table before building — without it the demo's tprm target stays
+out of the default build (configure names the missing file) — and
+the package is self-contained; a bundle that does not hash to the
+pinned value refuses init naming both hashes.
 The launcher passes `--skip-cleanup`, so shutdown archives nothing
 and the deployment stays intact across runs.
 
