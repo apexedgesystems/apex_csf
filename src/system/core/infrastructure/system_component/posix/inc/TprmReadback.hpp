@@ -71,10 +71,10 @@ inline constexpr std::size_t READBACK_ROW_SIZE = 16;
   if (!in.read(reinterpret_cast<char*>(&header), sizeof(header))) {
     return TprmPayloadCheck::TOO_SMALL;
   }
-  if (std::memcmp(header.magic.data(), "APV3", 4) != 0) {
+  if (std::memcmp(header.magic.data(), "APV4", 4) != 0) {
     return TprmPayloadCheck::BAD_MAGIC;
   }
-  if (header.version != 3) {
+  if (header.version != TPRM_PAYLOAD_VERSION) {
     return TprmPayloadCheck::BAD_VERSION;
   }
   if (FILE_SIZE != sizeof(header) + header.payloadSize) {

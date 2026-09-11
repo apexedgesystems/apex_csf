@@ -6,9 +6,12 @@
  *
  * Every component payload carries a 20-byte little-endian prelude:
  * ```
- *   magic[4]       = "APV3"
+ *   magic[4]       = "APV4"
  *   version[2]     = 3
- *   payloadSize[2] = byte length of the payload that follows
+ *   reserved[2]    = 0
+ *   payloadSize[8] = byte length of the payload that follows -- 64-bit
+ *                    so bundle entries (world content) ride the same
+ *                    prelude as component structs
  *   fullUid[4]     = (componentId << 8) | instanceIndex the payload targets
  *   layoutHash[4]  = CRC-32 of the canonical field spec the tools emitted
  *   payloadCrc[4]  = CRC-32 (IEEE) of the payload bytes
@@ -45,22 +48,23 @@ namespace system_component {
 
 /* ----------------------------- Constants ----------------------------- */
 
-/// Magic bytes for v3 component payloads (distinct from archive "TPRM").
-inline constexpr std::array<char, 4> TPRM_PAYLOAD_MAGIC = {'A', 'P', 'V', '3'};
+/// Magic bytes for v4 component payloads (distinct from archive "TPRM").
+inline constexpr std::array<char, 4> TPRM_PAYLOAD_MAGIC = {'A', 'P', 'V', '4'};
 
 /// Payload format version the reader requires.
-inline constexpr std::uint16_t TPRM_PAYLOAD_VERSION = 3;
+inline constexpr std::uint16_t TPRM_PAYLOAD_VERSION = 4;
 
 /// Prelude size in bytes.
-inline constexpr std::size_t TPRM_PAYLOAD_HEADER_SIZE = 20;
+inline constexpr std::size_t TPRM_PAYLOAD_HEADER_SIZE = 28;
 
 /* ----------------------------- Header ----------------------------- */
 
 #pragma pack(push, 1)
 struct TprmPayloadHeader {
-  std::array<char, 4> magic{};  ///< "APV3"
-  std::uint16_t version{0};     ///< Format version (3).
-  std::uint16_t payloadSize{0}; ///< Byte length of the payload body.
+  std::array<char, 4> magic{};  ///< "APV4"
+  std::uint16_t version{0};     ///< Format version (4).
+  std::uint16_t reserved{0};    ///< Zero.
+  std::uint64_t payloadSize{0}; ///< Byte length of the payload body.
   std::uint32_t fullUid{0};     ///< Target (componentId << 8) | instance.
   std::uint32_t layoutHash{0};  ///< CRC-32 of the canonical field spec.
   std::uint32_t payloadCrc{0};  ///< CRC-32 (IEEE) of the payload body.
@@ -104,7 +108,7 @@ enum class TprmPayloadCheck : std::uint8_t {
   case TprmPayloadCheck::TOO_SMALL:
     return "smaller than the v3 prelude";
   case TprmPayloadCheck::BAD_MAGIC:
-    return "bad payload magic (want APV3)";
+    return "bad payload magic (want APV4)";
   case TprmPayloadCheck::BAD_VERSION:
     return "payload version not 3";
   case TprmPayloadCheck::SIZE_MISMATCH:
