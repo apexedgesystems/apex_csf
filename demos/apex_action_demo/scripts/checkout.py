@@ -367,7 +367,26 @@ def test_rts_chaining(c2: AprotoClient) -> bool:
     # ground command for the active table (only catalog activate/deactivate).
     # Use DEACTIVATE_WP instead.
     c2.send_command(proto.FULLUID_ACTION, 0x0531, struct.pack("<H", 1))
-    time.sleep(3.0)  # Wait for deactivation + any in-flight RTS to complete
+
+    # Wait for actual quiescence, not a fixed interval: the boot-scheduled
+    # ATS fault campaign and the WP0 chain both apply ARM steps, so a
+    # fixed sleep makes this check phase-sensitive to the checkout's
+    # launch time. Poll until the engine's step/arm counters hold still.
+    last = None
+    stable_since = None
+    deadline = time.time() + 30.0
+    while time.time() < deadline:
+        s = read_action_stats(c2)
+        key = (s.get("sequenceSteps"), s.get("armControlsApplied"))
+        if key == last:
+            if stable_since is None:
+                stable_since = time.time()
+            elif time.time() - stable_since >= 2.0:
+                break
+        else:
+            stable_since = None
+            last = key
+        time.sleep(0.2)
 
     # Now CLEAR_ALL is safe -- no campaign re-arming entries
     r = c2.send_command(FULLUID_TRANSFORM, DT_CLEAR_ALL, b"")
