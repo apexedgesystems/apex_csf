@@ -3,6 +3,7 @@
  * @brief Implementation of the hydrostatic piecewise-layered atmosphere.
  */
 
+#include <cstring>
 #include "src/sim/environment/atmosphere/inc/LayeredAtmosphere.hpp"
 
 #include <algorithm>
@@ -44,16 +45,41 @@ Status LayeredAtmosphere::load(const std::string& path) noexcept {
     return Status::ERROR_FILE_FORMAT_INVALID;
   }
   reader.close();
-  file_header_ = H;
+  return adoptTable(H, records);
+}
 
-  std::vector<Layer> layers(N);
-  for (std::size_t i = 0; i < N; ++i) {
+Status LayeredAtmosphere::loadFromImage(const std::uint8_t* data, std::size_t size) noexcept {
+  if (data == nullptr || size < kAtmHeaderSize) {
+    return Status::ERROR_FILE_FORMAT_INVALID;
+  }
+  AtmHeader h{};
+  std::memcpy(&h, data, sizeof(h));
+  if (std::memcmp(h.magic, kAtmMagic, sizeof(h.magic)) != 0 || h.version != kAtmVersion) {
+    return Status::ERROR_FILE_FORMAT_INVALID;
+  }
+  if (h.model_type != static_cast<std::uint8_t>(AtmModelType::kLayered)) {
+    return Status::ERROR_MODEL_TYPE_MISMATCH;
+  }
+  const std::size_t N = h.n_records;
+  if (size < kAtmHeaderSize + N * kAtmRecordSize) {
+    return Status::ERROR_FILE_FORMAT_INVALID;
+  }
+  std::vector<AtmRecord> records(N);
+  std::memcpy(records.data(), data + kAtmHeaderSize, N * kAtmRecordSize);
+  return adoptTable(h, records);
+}
+
+Status LayeredAtmosphere::adoptTable(const AtmHeader& h,
+                                     const std::vector<AtmRecord>& records) noexcept {
+  file_header_ = h;
+  std::vector<Layer> layers(records.size());
+  for (std::size_t i = 0; i < records.size(); ++i) {
     layers[i].base_alt_m = records[i].f0;
     layers[i].base_T_K = records[i].f1;
     layers[i].base_P_Pa = records[i].f2;
     layers[i].lapse_K_per_m = records[i].f3;
   }
-  return initFromMemory(layers, H.R_specific, H.gamma, H.g0);
+  return initFromMemory(layers, h.R_specific, h.gamma, h.g0);
 }
 
 Status LayeredAtmosphere::initFromMemory(const std::vector<Layer>& layers, double R_specific,

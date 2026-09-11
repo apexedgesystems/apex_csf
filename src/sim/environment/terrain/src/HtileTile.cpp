@@ -81,7 +81,42 @@ Status HtileTile::load(const std::string& path) noexcept {
   if (!r.readAllSamples(samples.data(), COUNT * sizeof(std::int16_t))) {
     return Status::ERROR_FILE_FORMAT_INVALID;
   }
-  header_ = r.header();
+  return adoptTile(r.header(), std::move(samples));
+}
+
+Status HtileTile::loadFromImage(const std::uint8_t* data, std::size_t size) noexcept {
+  close();
+  if (data == nullptr || size < kHtileHeaderSize) {
+    return Status::ERROR_FILE_FORMAT_INVALID;
+  }
+  HtileHeader h{};
+  std::memcpy(&h, data, sizeof(h));
+  if (!htileHeaderValid(h)) {
+    return Status::ERROR_FILE_FORMAT_INVALID;
+  }
+  if (h.sample_type != static_cast<std::uint8_t>(HtileSampleType::kInt16)) {
+    return Status::ERROR_SAMPLE_TYPE_UNSUPPORTED;
+  }
+  if (h.void_value < std::numeric_limits<std::int16_t>::min() ||
+      h.void_value > std::numeric_limits<std::int16_t>::max()) {
+    return Status::ERROR_FILE_FORMAT_INVALID;
+  }
+  const std::size_t COUNT = static_cast<std::size_t>(h.dim_lat) * h.dim_lon;
+  if (size < kHtileHeaderSize + COUNT * sizeof(std::int16_t)) {
+    return Status::ERROR_FILE_FORMAT_INVALID;
+  }
+  std::vector<std::int16_t> samples;
+  try {
+    samples.resize(COUNT);
+  } catch (...) {
+    return Status::ERROR_ALLOC_FAIL;
+  }
+  std::memcpy(samples.data(), data + kHtileHeaderSize, COUNT * sizeof(std::int16_t));
+  return adoptTile(h, std::move(samples));
+}
+
+Status HtileTile::adoptTile(const HtileHeader& h, std::vector<std::int16_t>&& samples) noexcept {
+  header_ = h;
   samples_ = std::move(samples);
 
   // Approximate per-cell ground spacing in meters. Use the body's

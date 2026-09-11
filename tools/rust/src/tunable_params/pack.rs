@@ -19,7 +19,7 @@
 
 use std::{fs, io, path::Path};
 
-use super::Error;
+use super::{payload, Error};
 
 /* ----------------------------- Constants ----------------------------- */
 
@@ -35,11 +35,37 @@ pub const MAX_ENTRIES: usize = 256;
 
 /* ----------------------------- Public Types ----------------------------- */
 
-/// An entry for packing: fullUid + file path.
+/// An entry for packing: fullUid + file path. `wrap_bundle` marks a
+/// content-bundle product (APW1 container): pack stamps the v4 payload
+/// prelude around the raw bytes so the bundle rides the master under
+/// the same prelude as component structs. Bundle preludes carry
+/// layoutHash 0 -- bulk content has no wire-struct contract; integrity
+/// is the prelude crc plus the bundle's own content hash.
 #[derive(Debug, Clone)]
 pub struct PackEntry {
     pub full_uid: u32,
     pub path: std::path::PathBuf,
+    pub wrap_bundle: bool,
+}
+
+impl PackEntry {
+    /// A prelude-bearing payload file (cfg2bin product), packed verbatim.
+    pub fn payload(full_uid: u32, path: std::path::PathBuf) -> Self {
+        Self {
+            full_uid,
+            path,
+            wrap_bundle: false,
+        }
+    }
+
+    /// A content-bundle product, prelude-stamped at pack time.
+    pub fn bundle(full_uid: u32, path: std::path::PathBuf) -> Self {
+        Self {
+            full_uid,
+            path,
+            wrap_bundle: true,
+        }
+    }
 }
 
 /// An unpacked entry read from archive.
@@ -93,6 +119,12 @@ pub fn pack(entries: &[PackEntry], output_path: &Path) -> Result<PackResult, Err
             )));
         }
         let data = fs::read(&entry.path)?;
+        let data = if entry.wrap_bundle {
+            check_bundle(&data, entry.full_uid, &entry.path)?;
+            payload::stamp(entry.full_uid, 0, &data)?
+        } else {
+            data
+        };
         tprm_entries.push((entry.full_uid, data));
     }
 
@@ -323,6 +355,27 @@ pub struct DiffEntry {
 
 /* ----------------------------- Internal Helpers ----------------------------- */
 
+/// Refuse a bundle entry whose file is not an APW1 container carrying
+/// the fullUid the manifest keyed it under (uid at byte 8 of the
+/// bundle header; WorldBundle.hpp is the layout authority). Catches
+/// manifest/uid drift at pack time instead of at boot.
+fn check_bundle(data: &[u8], full_uid: u32, path: &Path) -> Result<(), Error> {
+    if data.len() < 12 || &data[0..4] != b"APW1" {
+        return Err(Error::InvalidArgs(format!(
+            "bundle entry is not an APW1 container: {}",
+            path.display()
+        )));
+    }
+    let embedded = u32::from_le_bytes([data[8], data[9], data[10], data[11]]);
+    if embedded != full_uid {
+        return Err(Error::InvalidArgs(format!(
+            "bundle {} carries uid 0x{embedded:06x} but the manifest keys it 0x{full_uid:06x}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
 fn parse_archive(data: &[u8]) -> Result<Vec<UnpackedEntry>, Error> {
     // Validate header
     if data.len() < HEADER_SIZE {
@@ -406,10 +459,7 @@ mod tests {
         fs::write(&file, b"payload").unwrap();
 
         let entries: Vec<PackEntry> = (0..=MAX_ENTRIES as u32)
-            .map(|uid| PackEntry {
-                full_uid: uid,
-                path: file.clone(),
-            })
+            .map(|uid| PackEntry::payload(uid, file.clone()))
             .collect();
         assert_eq!(entries.len(), MAX_ENTRIES + 1);
 
@@ -436,14 +486,8 @@ mod tests {
         // Executive: componentId=0, instance=0 -> fullUid=0x000000
         // Model: componentId=101=0x65, instance=0 -> fullUid=0x006500
         let entries = vec![
-            PackEntry {
-                full_uid: 0x000000,
-                path: file1,
-            },
-            PackEntry {
-                full_uid: 0x006500, // componentId=101, instance=0
-                path: file2,
-            },
+            PackEntry::payload(0x000000, file1),
+            PackEntry::payload(0x006500, file2), // componentId=101, instance=0
         ];
 
         // Pack
@@ -485,18 +529,9 @@ mod tests {
 
         // Scheduler (componentId=1), two models (componentId=102,103)
         let entries = vec![
-            PackEntry {
-                full_uid: 0x000100, // componentId=1, instance=0
-                path: file1,
-            },
-            PackEntry {
-                full_uid: 0x006600, // componentId=102, instance=0
-                path: file2,
-            },
-            PackEntry {
-                full_uid: 0x006700, // componentId=103, instance=0
-                path: file3,
-            },
+            PackEntry::payload(0x000100, file1), // componentId=1, instance=0
+            PackEntry::payload(0x006600, file2), // componentId=102, instance=0
+            PackEntry::payload(0x006700, file3), // componentId=103, instance=0
         ];
 
         let archive = temp.path().join("test.tprm");
@@ -526,14 +561,8 @@ mod tests {
         fs::write(&file2, b"aaa").unwrap();
 
         let entries = vec![
-            PackEntry {
-                full_uid: 0x006400, // Higher fullUid first (componentId=100)
-                path: file1,
-            },
-            PackEntry {
-                full_uid: 0x000100, // Lower fullUid second (componentId=1)
-                path: file2,
-            },
+            PackEntry::payload(0x006400, file1), // Higher fullUid first (componentId=100)
+            PackEntry::payload(0x000100, file2), // Lower fullUid second (componentId=1)
         ];
 
         let archive = temp.path().join("sorted.tprm");
@@ -556,10 +585,7 @@ mod tests {
     #[test]
     fn rejects_missing_input_file() {
         let temp = TempDir::new().unwrap();
-        let entries = vec![PackEntry {
-            full_uid: 0,
-            path: temp.path().join("nonexistent.tprm"),
-        }];
+        let entries = vec![PackEntry::payload(0, temp.path().join("nonexistent.tprm"))];
         let archive = temp.path().join("out.tprm");
         let result = pack(&entries, &archive);
         assert!(result.is_err());
@@ -586,6 +612,68 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// A minimal APW1 header: magic + fullUid at byte 8, zero elsewhere
+    /// (check_bundle reads only those fields; the C++ reader owns full
+    /// container validation).
+    fn fake_bundle(full_uid: u32) -> Vec<u8> {
+        let mut b = vec![0u8; 64];
+        b[0..4].copy_from_slice(b"APW1");
+        b[8..12].copy_from_slice(&full_uid.to_le_bytes());
+        b
+    }
+
+    #[test]
+    fn bundle_entry_gets_prelude_stamped() {
+        let temp = TempDir::new().unwrap();
+        let bundle_file = temp.path().join("earth.world.tprm");
+        let raw = fake_bundle(0x010100);
+        fs::write(&bundle_file, &raw).unwrap();
+
+        let comp_file = temp.path().join("comp.tprm");
+        fs::write(&comp_file, b"component_payload").unwrap();
+
+        let entries = vec![
+            PackEntry::payload(0x00DC00, comp_file),
+            PackEntry::bundle(0x010100, bundle_file),
+        ];
+        let archive = temp.path().join("master.tprm");
+        pack(&entries, &archive).unwrap();
+
+        // The extracted bundle entry is the v4 prelude followed by the
+        // raw container bytes; the component entry stays verbatim.
+        let unpack_dir = temp.path().join("unpacked");
+        let unpacked = unpack(&archive, &unpack_dir).unwrap();
+        let bundle_entry = unpacked.iter().find(|e| e.full_uid == 0x010100).unwrap();
+        let (hdr, body) = payload::parse(&bundle_entry.data).unwrap();
+        assert_eq!(hdr.full_uid, 0x010100);
+        assert_eq!(hdr.layout_hash, 0);
+        assert_eq!(body, raw.as_slice());
+        let comp_entry = unpacked.iter().find(|e| e.full_uid == 0x00DC00).unwrap();
+        assert_eq!(comp_entry.data, b"component_payload");
+    }
+
+    #[test]
+    fn bundle_entry_uid_drift_refused() {
+        let temp = TempDir::new().unwrap();
+        let bundle_file = temp.path().join("earth.world.tprm");
+        fs::write(&bundle_file, fake_bundle(0x010200)).unwrap();
+
+        let archive = temp.path().join("master.tprm");
+        let err = pack(&[PackEntry::bundle(0x010100, bundle_file)], &archive).unwrap_err();
+        assert!(err.to_string().contains("0x010200"));
+    }
+
+    #[test]
+    fn bundle_entry_requires_apw1_container() {
+        let temp = TempDir::new().unwrap();
+        let not_bundle = temp.path().join("plain.tprm");
+        fs::write(&not_bundle, b"just bytes, no container").unwrap();
+
+        let archive = temp.path().join("master.tprm");
+        let err = pack(&[PackEntry::bundle(0x010100, not_bundle)], &archive).unwrap_err();
+        assert!(err.to_string().contains("APW1"));
+    }
+
     #[test]
     fn handles_multi_instance_components() {
         // Multi-instance support: same componentId, different instanceIndex
@@ -598,14 +686,8 @@ mod tests {
 
         // PolynomialModel (componentId=102=0x66) with two instances
         let entries = vec![
-            PackEntry {
-                full_uid: 0x006600, // componentId=102, instance=0
-                path: file1,
-            },
-            PackEntry {
-                full_uid: 0x006601, // componentId=102, instance=1
-                path: file2,
-            },
+            PackEntry::payload(0x006600, file1), // componentId=102, instance=0
+            PackEntry::payload(0x006601, file2), // componentId=102, instance=1
         ];
 
         let archive = temp.path().join("multi.tprm");

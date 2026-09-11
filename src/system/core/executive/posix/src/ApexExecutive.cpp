@@ -212,6 +212,7 @@ std::uint8_t ApexExecutive::doInit() noexcept {
 
     // CLI overrides take precedence over TPRM values
     applyCliOverrides();
+
   } else {
     sysLog_->info(label(), "No config file provided, using CLI args only");
   }
@@ -429,10 +430,6 @@ bool ApexExecutive::registerComponent(system_core::system_component::SystemCompo
 
   // Step 3: Initialize component log (uses instance index for filename)
   comp->initComponentLog(logDir);
-
-  // Step 3.5: Filesystem root for data-path resolution (packaged runs
-  // stage data under the root; dev trees keep cwd-relative resolution)
-  comp->setFileSystemRoot(fileSystem_.root());
 
   // Step 4: Load TPRM configuration
   const auto TPRM_INGEST = comp->loadTprm(fileSystem_.tprmDir());
@@ -1245,7 +1242,7 @@ ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     return TprmIngest::DEFAULTS; // Not an error - use defaults
   }
 
-  // Read and verify the v3 payload; a reject leaves the compiled
+  // Read and verify the v4 payload; a reject leaves the compiled
   // defaults driving the executive with the check's own fault code.
   // The body is the tunable params, optionally followed by the thread
   // configuration block.

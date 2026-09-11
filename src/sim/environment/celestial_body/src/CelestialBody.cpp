@@ -11,6 +11,7 @@
 #include "src/sim/environment/factory/inc/EnvironmentFactory.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/sim/environment/gravity/inc/earth/Wgs84Constants.hpp"
+#include "src/sim/environment/world/inc/WorldBundle.hpp"
 #include "src/sim/environment/gravity/inc/moon/LunarConstants.hpp"
 #include "src/sim/environment/terrain/inc/HtileTile.hpp"
 #include "src/sim/environment/terrain/inc/TerrainStatus.hpp"
@@ -34,9 +35,6 @@ namespace env = sim::environment;
 
 namespace {
 
-/// Returns true iff the path buffer holds at least one non-NUL char.
-bool pathSet(const char (&buf)[MAX_DATA_PATH]) noexcept { return buf[0] != '\0'; }
-
 /// Returns the canonical reference radius for a built-in body, or 0 if the
 /// body is OTHER. A procedural (OTHER) body has no canonical radius here, so
 /// surface-gravity telemetry is left at 0 for it (see doInit()).
@@ -52,20 +50,20 @@ double referenceRadiusFor(env::Body body) noexcept {
   return 0.0;
 }
 
-/// Validates the tunables struct for internal consistency.
-/// Currently: file-backed fidelities require non-empty paths.
+/// True when any configured fidelity needs world-bundle content.
+bool needsWorld(const CelestialBodyTunables& t) noexcept {
+  return t.gravity_fidelity == env::GravityFidelity::SPHERICAL ||
+         t.terrain_fidelity == env::TerrainFidelity::HTILE ||
+         t.atmosphere_fidelity == env::AtmosphereFidelity::LAYERED;
+}
+
+/// Validates the tunables struct for internal consistency: file-backed
+/// fidelities require a world binding in the reserved uid range.
 bool tunablesOk(const CelestialBodyTunables& t) noexcept {
-  if (t.gravity_fidelity == env::GravityFidelity::SPHERICAL && !pathSet(t.gravity_data_path)) {
-    return false;
+  if (!needsWorld(t)) {
+    return true;
   }
-  if (t.terrain_fidelity == env::TerrainFidelity::HTILE && !pathSet(t.terrain_data_path)) {
-    return false;
-  }
-  if (t.atmosphere_fidelity == env::AtmosphereFidelity::LAYERED &&
-      !pathSet(t.atmosphere_data_path)) {
-    return false;
-  }
-  return true;
+  return t.world_uid != 0 && sim::environment::world::isWorldUid(t.world_uid);
 }
 
 } // namespace
@@ -79,26 +77,232 @@ CelestialBody::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   // as `tprmDir/{fullUid:06x}.tprm`. Look for one for this instance;
   // if absent, the C++ struct defaults stand and we report success
   // (loadTprm is optional per the framework contract).
+  if (bootTprmDir_.empty()) {
+    bootTprmDir_ = tprmDir;
+  }
+  lastTprmDir_ = tprmDir;
   const std::filesystem::path PATH = tprmDir / fmt::format("{:06x}.tprm", fullUid());
   std::error_code ec;
-  if (!std::filesystem::exists(PATH, ec)) {
-    return TprmIngest::DEFAULTS;
-  }
-  namespace sc = system_core::system_component;
-  const auto CHECK = sc::readTprmPayload(PATH, fullUid(), tunables_.get());
-  if (CHECK != sc::TprmPayloadCheck::OK) {
-    auto* log = componentLog();
-    if (log != nullptr) {
-      log->error(label(), sc::toFaultCode(CHECK),
-                 fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), PATH.string()));
-    }
-    return TprmIngest::REJECTED;
-  }
   auto* log = componentLog();
-  if (log != nullptr) {
-    log->info(label(), fmt::format("loadTprm: tunables loaded from {}", PATH.string()));
+  TprmIngest outcome = TprmIngest::DEFAULTS;
+  if (std::filesystem::exists(PATH, ec)) {
+    namespace sc = system_core::system_component;
+    const auto CHECK = sc::readTprmPayload(PATH, fullUid(), tunables_.get());
+    if (CHECK != sc::TprmPayloadCheck::OK) {
+      if (log != nullptr) {
+        log->error(label(), sc::toFaultCode(CHECK),
+                   fmt::format("TPRM rejected ({}): {}", sc::toString(CHECK), PATH.string()));
+      }
+      return TprmIngest::REJECTED;
+    }
+    if (log != nullptr) {
+      log->info(label(), fmt::format("loadTprm: tunables loaded from {}", PATH.string()));
+    }
+    outcome = TprmIngest::LOADED;
   }
-  return TprmIngest::LOADED;
+
+  // Live rebind: a reload landing on an initialized component re-runs
+  // the world binding under the new tunables -- RELOAD_TPRM IS the
+  // rebind command, no dedicated opcode. Bundle versions coexist in
+  // the bank and the pin selects, so the prior world stays resident
+  // as the fallback a pin-revert reload restores. Models reload in
+  // place (consumer pointers stay valid); the operation belongs under
+  // the operator's pause/quiesce discipline. On a failed rebind the
+  // running world is kept and the state block keeps attesting it --
+  // commanded (tunables) vs actual (state) stay independently
+  // INSPECTable, and the refusal is logged with its cause.
+  auto& s = state_.get();
+  if (s.init_status == 1u) {
+    const CelestialBodyTunables& P = tunables_.get();
+    if (bindWorld(P, s)) {
+      if (log != nullptr) {
+        log->info(label(), fmt::format("world rebound: uid=0x{:06x} pin=0x{:016x}", P.world_uid,
+                                       P.world_pin));
+      }
+    } else if (log != nullptr) {
+      log->error(label(), static_cast<std::uint8_t>(2),
+                 "world rebind refused; prior world remains bound");
+    }
+  }
+  return outcome;
+}
+
+bool CelestialBody::bindWorld(const CelestialBodyTunables& p, CelestialBodyState& s) noexcept {
+  bool ok = true;
+  namespace wb = sim::environment::world;
+  wb::WorldBundleReader bundle;
+  if (needsWorld(p)) {
+    // The bundle is a master entry, so extraction delivered it as
+    // {world_uid:06x}.tprm -- the binding opens that file directly,
+    // reload dir first, boot dir second. Versions of one world
+    // coexist ACROSS the banks (the boot bank keeps the running
+    // version while a reload stages the next), and the pin selects
+    // the authorized one; a revert is one reload carrying the prior
+    // pin, against content that never left the bank.
+    bool bound = false;
+    std::uint64_t nearMissHash = 0;
+    std::string nearMissName;
+    const std::string FNAME = fmt::format("{:06x}.tprm", p.world_uid);
+    for (const auto& DIR : {lastTprmDir_, bootTprmDir_}) {
+      if (DIR.empty()) {
+        continue;
+      }
+      const std::filesystem::path CANDIDATE = DIR / FNAME;
+      std::error_code ec;
+      if (!std::filesystem::exists(CANDIDATE, ec)) {
+        continue;
+      }
+      if (bundle.open(CANDIDATE) == wb::WorldBundleCheck::OK &&
+          bundle.header().fullUid == p.world_uid) {
+        if (bundle.header().bundleContentHash == p.world_pin) {
+          bound = true;
+          break;
+        }
+        nearMissHash = bundle.header().bundleContentHash;
+        nearMissName = CANDIDATE.string();
+      }
+      bundle.close();
+    }
+    if (!bound) {
+      if (auto* log = componentLog(); log != nullptr) {
+        if (!nearMissName.empty()) {
+          log->info(label(),
+                    fmt::format("init: world pin mismatch: tprm pins 0x{:016x}; uid 0x{:06x} "
+                                "candidate {} carries 0x{:016x} -- refusing the "
+                                "unauthorized world",
+                                p.world_pin, p.world_uid, nearMissName, nearMissHash));
+        } else {
+          log->info(label(), fmt::format("init: no world bundle entry {} in {} or {}", FNAME,
+                                         lastTprmDir_.string(), bootTprmDir_.string()));
+        }
+      }
+      ok = false;
+    } else if (auto* log = componentLog(); log != nullptr) {
+      const auto& H = bundle.header();
+      log->info(label(),
+                fmt::format("world bound: body={} uid=0x{:06x} pin=0x{:016x} entries={}",
+                            std::string(H.body, strnlen(H.body, sizeof(H.body))), H.fullUid,
+                            H.bundleContentHash, static_cast<unsigned>(H.entryCount)));
+    }
+  }
+
+  /// Fetch one role's payload; a fidelity that demands a role the
+  /// bundle lacks (or a payload failing its CRC) is a fatal miss.
+  const auto FETCH = [this, &bundle](wb::WorldEntryRole role, const char* kind,
+                                     std::vector<std::uint8_t>& out,
+                                     std::uint64_t& specHash) -> bool {
+    std::size_t idx = 0;
+    if (bundle.findEntry(role, idx) != wb::WorldBundleCheck::OK) {
+      if (auto* log = componentLog(); log != nullptr) {
+        log->info(label(), fmt::format("init: fidelity requires a {} entry the bound world "
+                                       "does not carry",
+                                       kind));
+      }
+      return false;
+    }
+    const wb::WorldBundleCheck RC = bundle.readEntry(idx, out);
+    if (RC != wb::WorldBundleCheck::OK) {
+      if (auto* log = componentLog(); log != nullptr) {
+        log->info(label(), fmt::format("init: {} entry read failed ({})", kind, wb::toString(RC)));
+      }
+      return false;
+    }
+    specHash = bundle.entries()[idx].specHash;
+    return true;
+  };
+
+  if (ok && p.terrain_fidelity == env::TerrainFidelity::HTILE) {
+    auto* tile = dynamic_cast<env::terrain::HtileTile*>(env_.terrain.get());
+    std::vector<std::uint8_t> image;
+    std::uint64_t specHash = 0;
+    if (tile == nullptr) {
+      if (auto* log = componentLog(); log != nullptr) {
+        log->info(label(), "init: terrain model is not an HtileTile");
+      }
+      ok = false;
+    } else if (!FETCH(wb::WorldEntryRole::TERRAIN, "terrain", image, specHash)) {
+      ok = false;
+    } else {
+      const env::terrain::Status tstatus = tile->loadFromImage(image.data(), image.size());
+      if (!env::terrain::isSuccess(tstatus)) {
+        if (auto* log = componentLog(); log != nullptr) {
+          log->info(label(),
+                    fmt::format("init: terrain load failed ({})", env::terrain::toString(tstatus)));
+        }
+        ok = false;
+      } else {
+        s.terrain_spec_hash = specHash;
+        // Artifact identity for paired runs: both sides of a pairing log
+        // the header spec_hash at load, so file agreement is provable
+        // from the two logs alone.
+        if (auto* log = componentLog(); log != nullptr) {
+          const auto& H = tile->header();
+          log->info(label(), fmt::format("terrain artifact: body={} spec_hash={:#018x} "
+                                         "extent lat [{:.3f}, {:.3f}] lon [{:.3f}, {:.3f}] {}x{}",
+                                         std::string(H.body, strnlen(H.body, sizeof(H.body))),
+                                         H.spec_hash, H.lat_min_deg, H.lat_max_deg, H.lon_min_deg,
+                                         H.lon_max_deg, H.dim_lat, H.dim_lon));
+        }
+      }
+    }
+  }
+  if (ok && p.atmosphere_fidelity == env::AtmosphereFidelity::LAYERED) {
+    auto* atm = dynamic_cast<env::atmosphere::LayeredAtmosphere*>(env_.atmosphere.get());
+    std::vector<std::uint8_t> image;
+    std::uint64_t specHash = 0;
+    if (atm == nullptr) {
+      if (auto* log = componentLog(); log != nullptr) {
+        log->info(label(), "init: atmosphere model is not a LayeredAtmosphere");
+      }
+      ok = false;
+    } else if (!FETCH(wb::WorldEntryRole::ATMOSPHERE, "atmosphere", image, specHash)) {
+      ok = false;
+    } else {
+      const env::atmosphere::Status astatus = atm->loadFromImage(image.data(), image.size());
+      if (!env::atmosphere::isSuccess(astatus)) {
+        if (auto* log = componentLog(); log != nullptr) {
+          log->info(label(), fmt::format("init: atmosphere load failed ({})",
+                                         env::atmosphere::toString(astatus)));
+        }
+        ok = false;
+      } else {
+        s.atmosphere_spec_hash = specHash;
+        // Artifact identity for paired runs: both sides of a pairing
+        // log the header spec_hash at load, so file agreement is
+        // provable from the two logs alone (the atmosphere counterpart
+        // of the terrain line above).
+        if (auto* log = componentLog(); log != nullptr) {
+          const auto& H = atm->fileHeader();
+          log->info(label(),
+                    fmt::format("atmosphere artifact: body={} model=layered "
+                                "spec_hash={:#018x} records={} R={:.3f} gamma={:.2f} g0={:.5f}",
+                                std::string(H.body, strnlen(H.body, sizeof(H.body))), H.spec_hash,
+                                H.n_records, H.R_specific, H.gamma, H.g0));
+        }
+      }
+    }
+  }
+  // Gravity SPHERICAL fidelity: the coefficient-loading API (a
+  // CoeffSource the caller wires + the model's own init()) differs
+  // from the terrain/atmosphere in-memory contract, so the entry is
+  // required present in the bound world but not loaded here (the
+  // gravity-header ticket tracks closing that gap).
+  if (ok && p.gravity_fidelity == env::GravityFidelity::SPHERICAL) {
+    std::size_t idx = 0;
+    if (bundle.findEntry(wb::WorldEntryRole::GRAVITY, idx) != wb::WorldBundleCheck::OK) {
+      if (auto* log = componentLog(); log != nullptr) {
+        log->info(label(), "init: fidelity requires a gravity entry the bound world "
+                           "does not carry");
+      }
+      ok = false;
+    }
+  }
+  if (ok && needsWorld(p)) {
+    s.world_uid = p.world_uid;
+    s.world_pin = p.world_pin;
+  }
+
+  return ok;
 }
 
 std::uint8_t CelestialBody::doInit() noexcept {
@@ -141,108 +345,12 @@ std::uint8_t CelestialBody::doInit() noexcept {
   }
   s.env_built = 1;
 
-  // 3. Load file-backed models when their fidelity needs files. The terrain
-  //    and atmosphere load() calls now return their own Status enums (a
-  //    successful load is Status::SUCCESS); a dynamic_cast miss or any
-  //    non-success load is a fatal init error (the specific code is logged).
-  bool ok = true;
-  // Config-declared data paths resolve against the executive fs-root
-  // first (packaged runs stage data there at the declared relative
-  // path); a root miss keeps the path cwd-relative for dev-tree runs
-  // and says so, keeping the two worlds distinguishable in the log.
-  const auto RESOLVE = [this](const char* raw, const char* kind,
-                              std::string_view canonicalSuffix) -> std::string {
-    namespace sc = system_core::system_component;
-    if (auto* log = componentLog();
-        log != nullptr && !std::string_view{raw}.ends_with(canonicalSuffix)) {
-      log->info(label(), fmt::format("{} data path lacks the canonical {} suffix: {}", kind,
-                                     canonicalSuffix, raw));
-    }
-    const std::filesystem::path RESOLVED = sc::resolveDataPath(fileSystemRoot(), raw);
-    if (auto* log = componentLog(); log != nullptr && !fileSystemRoot().empty() &&
-                                    RESOLVED == std::filesystem::path{raw} &&
-                                    !RESOLVED.is_absolute()) {
-      log->info(label(),
-                fmt::format("{} data path not under fs root; cwd-relative: {}", kind, raw));
-    }
-    return RESOLVED.string();
-  };
-  if (p.terrain_fidelity == env::TerrainFidelity::HTILE) {
-    auto* tile = dynamic_cast<env::terrain::HtileTile*>(env_.terrain.get());
-    if (tile == nullptr) {
-      auto* log = componentLog();
-      if (log != nullptr) {
-        log->info(label(), "init: terrain model is not an HtileTile");
-      }
-      ok = false;
-    } else {
-      const std::string TERRAIN_PATH =
-          RESOLVE(p.terrain_data_path, "terrain", env::terrain::HTILE_FILE_SUFFIX);
-      const env::terrain::Status tstatus = tile->load(TERRAIN_PATH);
-      if (!env::terrain::isSuccess(tstatus)) {
-        auto* log = componentLog();
-        if (log != nullptr) {
-          log->info(label(), fmt::format("init: terrain load failed ({}) -> {}",
-                                         env::terrain::toString(tstatus), TERRAIN_PATH));
-        }
-        ok = false;
-      } else {
-        // Artifact identity for paired runs: both sides of a pairing log
-        // the header spec_hash at load, so file agreement is provable
-        // from the two logs alone.
-        auto* log = componentLog();
-        if (log != nullptr) {
-          const auto& H = tile->header();
-          log->info(label(), fmt::format("terrain artifact: body={} spec_hash={:#018x} "
-                                         "extent lat [{:.3f}, {:.3f}] lon [{:.3f}, {:.3f}] {}x{}",
-                                         std::string(H.body, strnlen(H.body, sizeof(H.body))),
-                                         H.spec_hash, H.lat_min_deg, H.lat_max_deg, H.lon_min_deg,
-                                         H.lon_max_deg, H.dim_lat, H.dim_lon));
-        }
-      }
-    }
-  }
-  if (p.atmosphere_fidelity == env::AtmosphereFidelity::LAYERED) {
-    auto* atm = dynamic_cast<env::atmosphere::LayeredAtmosphere*>(env_.atmosphere.get());
-    if (atm == nullptr) {
-      auto* log = componentLog();
-      if (log != nullptr) {
-        log->info(label(), "init: atmosphere model is not a LayeredAtmosphere");
-      }
-      ok = false;
-    } else {
-      const std::string ATMO_PATH =
-          RESOLVE(p.atmosphere_data_path, "atmosphere", env::atmosphere::ATM_FILE_SUFFIX);
-      const env::atmosphere::Status astatus = atm->load(ATMO_PATH);
-      if (!env::atmosphere::isSuccess(astatus)) {
-        auto* log = componentLog();
-        if (log != nullptr) {
-          log->info(label(), fmt::format("init: atmosphere load failed ({}) -> {}",
-                                         env::atmosphere::toString(astatus), ATMO_PATH));
-        }
-        ok = false;
-      } else {
-        // Artifact identity for paired runs: both sides of a pairing
-        // log the header spec_hash at load, so file agreement is
-        // provable from the two logs alone (the atmosphere counterpart
-        // of the terrain line below).
-        auto* log = componentLog();
-        if (log != nullptr) {
-          const auto& H = atm->fileHeader();
-          log->info(label(),
-                    fmt::format("atmosphere artifact: body={} model=layered "
-                                "spec_hash={:#018x} records={} R={:.3f} gamma={:.2f} g0={:.5f}",
-                                std::string(H.body, strnlen(H.body, sizeof(H.body))), H.spec_hash,
-                                H.n_records, H.R_specific, H.gamma, H.g0));
-        }
-      }
-    }
-  }
-  // Gravity SPHERICAL fidelity: the gravity model's coefficient-loading API
-  // (a CoeffSource the caller wires + the model's own init()) differs from the
-  // terrain/atmosphere load() contract, so it is not file-loaded here; the
-  // analytic/J2 arms need no file at all. The validation step already requires
-  // a non-empty gravity_data_path for SPHERICAL.
+  // 3. Bind the world and load file-backed models from its entries.
+  //    The binding is the contract (bindWorld): uid+pin discovery in
+  //    the bank, refusal naming any miss, entry payloads to the
+  //    models' in-memory loaders. Shared with the RELOAD_TPRM rebind
+  //    re-entry, where the same contract swaps the running world.
+  const bool ok = bindWorld(p, s);
 
   if (!ok) {
     s.init_status = 2;

@@ -1,7 +1,8 @@
 # tprm.manifest -- ApexAircraftAtmoDemo
 # Packing recipe: what you read is what packs (see cmake/apex/Tprm.cmake).
-# The master carries the atmosphere-only world, the aircraft + its
-# autopilot, and the ACFT/1 bridge configuration.
+# The master carries the atmosphere-only earth world (embedded bundle
+# entry 0x010100), the aircraft + its autopilot, and the ACFT/1
+# bridge configuration.
 
 [components aircraft_atmo]
 0x000000  toml/executive.toml
@@ -13,3 +14,4 @@
 
 [master master.tprm]
 use components aircraft_atmo
+bundle earth.world.tprm

@@ -15,10 +15,22 @@
 #   [sequences <name>]      followed by:  rts|ats <slot>  <file-path>
 #   [master <file.tprm>]    followed by:  use components <name>
 #                                         use sequences <name>
+#                                         bundle <product>
 #                                         ...or direct entry/slot lines
 #
+# A `bundle` row embeds a content-bundle product (apex_add_bundle_tprms
+# must have registered it before this app parses) as a master entry
+# keyed by the bundle's own uid: tprm_pack stamps the v4 prelude at
+# pack, extraction delivers it to the bank at init like every other
+# entry, and consumers open it there by uid filename. Bundle sources
+# are generated world data, never committed, so their presence gates
+# the app's ALL attachment: a tree without the content builds
+# everything else and leaves the master unpacked (STATUS at
+# configure), instead of breaking every default build.
+#
 # Composition is set union with NO shadowing: a fullUid or slot arriving
-# twice in one master is a configure error. What you read is what packs.
+# twice in one master is a configure error (bundle uids share the entry
+# namespace). What you read is what packs.
 #
 # Sequence slot lines carry decimal slots and TOML sources; each
 # compiles to ${gen}/rts|ats/{slot:03d}.rts/.ats -- the bank-directory
@@ -87,6 +99,7 @@ function (apex_add_tprm)
   set(_section "")
   set(_section_name "")
   set(_masters "")
+  set(_missing_bundle_srcs "")
   set(_all_tomls "")
   set(_all_seq_items "")
   set(_rows_pairs "")
@@ -133,6 +146,11 @@ function (apex_add_tprm)
         )
       endif ()
       list(APPEND _m_items_${_section_name} ${_grp_s_${CMAKE_MATCH_1}})
+    elseif (_line MATCHES "^bundle +([A-Za-z0-9_.-]+)$")
+      if (NOT _section STREQUAL "master")
+        message(FATAL_ERROR "apex_add_tprm(${ARG_NAME}): 'bundle' outside a master block: ${_raw}")
+      endif ()
+      list(APPEND _m_items_${_section_name} "bundle|${CMAKE_MATCH_1}|-")
     elseif (_line MATCHES "^(0x[0-9A-Fa-f]+) +(.+)$")
       set(_item "entry|${CMAKE_MATCH_1}|${CMAKE_MATCH_2}")
       if (_section STREQUAL "components")
@@ -235,8 +253,24 @@ function (apex_add_tprm)
       list(GET _f 1 _key)
       list(GET _f 2 _path)
 
-      # No shadowing: a repeated fullUid or slot in one master is an error.
-      set(_dedup "${_kind}:${_key}")
+      # No shadowing: a repeated fullUid or slot in one master is an
+      # error. Entry and bundle uids normalize to one hex spelling and
+      # share a namespace -- a bundle cannot shadow a component entry.
+      if (_kind STREQUAL "bundle")
+        get_property(_bundle_uid GLOBAL PROPERTY APEX_TPRM_BUNDLE_FULLUID_${_key})
+        if (NOT _bundle_uid)
+          message(
+            FATAL_ERROR
+              "apex_add_tprm(${ARG_NAME}): bundle ${_key} is not a registered bundle product (apex_add_bundle_tprms must run before this app)"
+          )
+        endif ()
+        set(_dedup "entry:${_bundle_uid}")
+      elseif (_kind STREQUAL "entry")
+        math(EXPR _norm_uid "${_key}" OUTPUT_FORMAT HEXADECIMAL)
+        set(_dedup "entry:${_norm_uid}")
+      else ()
+        set(_dedup "${_kind}:${_key}")
+      endif ()
       if ("${_dedup}" IN_LIST _seen_keys)
         message(
           FATAL_ERROR
@@ -245,14 +279,37 @@ function (apex_add_tprm)
       endif ()
       list(APPEND _seen_keys "${_dedup}")
 
-      if (_kind STREQUAL "entry")
+      if (_kind STREQUAL "bundle")
+        get_property(_bundle_path GLOBAL PROPERTY APEX_TPRM_PRODUCT_${_key})
+        if (NOT _bundle_path)
+          message(
+            FATAL_ERROR "apex_add_tprm(${ARG_NAME}): bundle ${_key} has no registered product path"
+          )
+        endif ()
+        list(APPEND _pack_args "-b" "${_bundle_uid}:${_bundle_path}")
+        list(APPEND _pack_deps "${_bundle_path}")
+        get_property(_bundle_tgt GLOBAL PROPERTY APEX_TPRM_TARGET_BUNDLE_${_key})
+        if (_bundle_tgt)
+          list(APPEND _pack_deps ${_bundle_tgt})
+        endif ()
+        # Content-presence gate: bundle sources are generated world
+        # data, never committed, so a tree may lack them. Record any
+        # absentee; the app's tprm target then stays out of ALL (the
+        # rest of the tree builds) and an explicit build fails loudly.
+        get_property(_bundle_srcs GLOBAL PROPERTY APEX_TPRM_BUNDLE_SRCS_${_key})
+        foreach (_bsrc IN LISTS _bundle_srcs)
+          if (NOT EXISTS "${_bsrc}")
+            list(APPEND _missing_bundle_srcs "${_bsrc}")
+          endif ()
+        endforeach ()
+      elseif (_kind STREQUAL "entry")
         set(_toml "${_src_dir}/${_path}")
         if (NOT EXISTS "${_toml}")
           message(FATAL_ERROR "apex_add_tprm(${ARG_NAME}): missing source ${_path} (${_master})")
         endif ()
         string(REGEX REPLACE "[/.]" "_" _stem "${_path}")
         set(_payload "${_gen_dir}/payloads/${_stem}.tprm")
-        # v3 payloads are target-bound: the prelude carries the fullUid,
+        # Payloads are target-bound: the prelude carries the fullUid,
         # so one TOML source serves exactly one fullUid per app.
         if (NOT "${_toml}" IN_LIST _all_tomls)
           list(APPEND _all_tomls "${_toml}")
@@ -271,7 +328,7 @@ function (apex_add_tprm)
         elseif (NOT _toml_uid_${_stem} STREQUAL "${_key}")
           message(
             FATAL_ERROR
-              "apex_add_tprm(${ARG_NAME}): ${_path} serves both ${_toml_uid_${_stem}} and ${_key} -- v3 payloads are target-bound, one TOML per fullUid"
+              "apex_add_tprm(${ARG_NAME}): ${_path} serves both ${_toml_uid_${_stem}} and ${_key} -- payloads are target-bound, one TOML per fullUid"
           )
         endif ()
         list(APPEND _pack_args "-e" "${_key}:${_payload}")
@@ -303,7 +360,22 @@ function (apex_add_tprm)
     set_property(GLOBAL PROPERTY APEX_TPRM_PRODUCT_${ARG_NAME}/${_master} "${_out}")
   endforeach ()
 
-  add_custom_target(apex_tprm_${ARG_NAME} ALL DEPENDS ${_master_outputs} ${_seq_outputs})
+  # Content-presence gate: a master embedding bundle content the tree
+  # does not hold cannot pack here, so the app's tprm target leaves
+  # ALL rather than break every default build (CI and fresh clones
+  # carry no generated world data by design). Where the content
+  # exists -- dev trees, deployment builds -- behavior is unchanged.
+  # An explicit build of the target still fails loudly on the missing
+  # file. Re-run cmake after providing the content.
+  if (_missing_bundle_srcs)
+    message(
+      STATUS
+        "apex_add_tprm(${ARG_NAME}): bundle content absent; apex_tprm_${ARG_NAME} left out of ALL (provide, then re-run cmake): ${_missing_bundle_srcs}"
+    )
+    add_custom_target(apex_tprm_${ARG_NAME} DEPENDS ${_master_outputs} ${_seq_outputs})
+  else ()
+    add_custom_target(apex_tprm_${ARG_NAME} ALL DEPENDS ${_master_outputs} ${_seq_outputs})
+  endif ()
   set_property(GLOBAL PROPERTY APEX_TPRM_TARGET_${ARG_NAME} apex_tprm_${ARG_NAME})
 
   # Deployments stage the mission bank into bank_a alongside the master
@@ -332,4 +404,132 @@ function (apex_add_tprm)
     )
     target_sources(${ARG_EXEC} PRIVATE "${_registry}")
   endif ()
+endfunction ()
+
+# ------------------------------------------------------------------------------
+# apex_add_bundle_tprms(MANIFEST <file>)
+#
+# Content-bundle products from a bundle manifest -- the content
+# sibling of the component-tprm flow above. One bundle per manifest
+# row:
+#
+#   <name> <componentId-hex> <role>=<repo-relative-source> [...]
+#
+#   name        packs worlds/<name>.world.tprm; embedded in a master
+#               via a `bundle <name>.world.tprm` row in the app's
+#               tprm.manifest (this function must run first)
+#   componentId reserved content range (worlds: 0x0100-0x01FF); the
+#               bundle's fullUid is componentId << 8, the key its
+#               master entry carries and consumers open by
+#   role        registered vocabulary (see WorldBundle.hpp's role
+#               table); the inner-format suffix rides from the same
+#               table, so manifests never state formats
+#
+# Rules enforced at parse or pack: at least one entry per row, roles
+# unique per row, duplicate names refused (bundles are shared -- any
+# master embedding one packs the same product), sources exist at
+# pack. Pack targets stay out of ALL: sources are generated
+# artifacts, so packing runs when a master demands it and a missing
+# source fails the pack there -- a master that declares a bundle
+# must contain it.
+#
+# Products register in the tprm-product namespace
+# (APEX_TPRM_PRODUCT_<name>.world.tprm) with their fullUid beside
+# them, so master packing resolves both from the manifest reference.
+# ------------------------------------------------------------------------------
+function (apex_add_bundle_tprms)
+  cmake_parse_arguments(B "" "MANIFEST" "" ${ARGN})
+  apex_require(B_MANIFEST)
+
+  if (APEX_PLATFORM_BAREMETAL)
+    return()
+  endif ()
+
+  get_filename_component(_manifest "${B_MANIFEST}" ABSOLUTE)
+  if (NOT EXISTS "${_manifest}")
+    message(FATAL_ERROR "apex_add_bundle_tprms: no manifest at ${_manifest}")
+  endif ()
+  set_property(
+    DIRECTORY
+    APPEND
+    PROPERTY CMAKE_CONFIGURE_DEPENDS "${_manifest}"
+  )
+
+  file(STRINGS "${_manifest}" _lines)
+  set(_kind "")
+  foreach (_raw IN LISTS _lines)
+    string(REGEX REPLACE "#.*$" "" _line "${_raw}")
+    string(STRIP "${_line}" _line)
+    if (_line STREQUAL "")
+      continue()
+    endif ()
+
+    if (_line MATCHES "^kind +([a-z_]+)$")
+      set(_kind "${CMAKE_MATCH_1}")
+      continue()
+    endif ()
+    if (_kind STREQUAL "")
+      message(FATAL_ERROR "apex_add_bundle_tprms: manifest must declare `kind <name>` first")
+    endif ()
+
+    separate_arguments(_tokens UNIX_COMMAND "${_line}")
+    list(LENGTH _tokens _ntok)
+    if (_ntok LESS 3)
+      message(FATAL_ERROR "apex_add_bundle_tprms: row needs <name> <id> <role>=<src>: ${_line}")
+    endif ()
+    list(GET _tokens 0 _name)
+    list(GET _tokens 1 _id)
+    list(SUBLIST _tokens 2 -1 _entries)
+
+    set(_product "${_name}.${_kind}.tprm")
+    get_property(_dup GLOBAL PROPERTY APEX_TPRM_PRODUCT_${_product})
+    if (_dup)
+      message(FATAL_ERROR "apex_add_bundle_tprms: bundle ${_name} already defined")
+    endif ()
+
+    set(_out "${CMAKE_BINARY_DIR}/worlds/${_product}")
+    set(_args
+        --out
+        "${_out}"
+        --body
+        "${_name}"
+        --uid
+        "${_id}"
+        --kind
+        "${_kind}"
+    )
+    set(_deps "")
+    # Entry sources in rows are repo-relative; the tool receives
+    # absolute paths so pack runs are cwd-independent.
+    foreach (_e IN LISTS _entries)
+      if (NOT _e MATCHES "^[a-z_]+=.+$")
+        message(FATAL_ERROR "apex_add_bundle_tprms: bad entry token in ${_name}: ${_e}")
+      endif ()
+      string(REGEX MATCH "^[a-z_]+" _role "${_e}")
+      string(REGEX REPLACE "^[a-z_]+=" "" _src "${_e}")
+      list(APPEND _args --entry "${_role}=${CMAKE_SOURCE_DIR}/${_src}")
+      list(APPEND _deps "${CMAKE_SOURCE_DIR}/${_src}")
+    endforeach ()
+
+    add_custom_command(
+      OUTPUT "${_out}"
+      COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/worlds"
+      COMMAND $<TARGET_FILE:world_pack> ${_args}
+      DEPENDS world_pack ${_deps} "${_manifest}"
+      COMMENT "[bundle] pack ${_name} -> ${_product}"
+      VERBATIM
+    )
+    add_custom_target(bundle_${_name} DEPENDS "${_out}")
+    set_property(GLOBAL PROPERTY APEX_TPRM_PRODUCT_${_product} "${_out}")
+    set_property(GLOBAL PROPERTY APEX_TPRM_TARGET_BUNDLE_${_product} "bundle_${_name}")
+    # fullUid = componentId << 8 (instance byte zero for bundles):
+    # the key a master's `bundle` row packs this product under.
+    math(EXPR _fulluid "${_id} << 8" OUTPUT_FORMAT HEXADECIMAL)
+    set_property(GLOBAL PROPERTY APEX_TPRM_BUNDLE_FULLUID_${_product} "${_fulluid}")
+    # Entry sources, for the content-presence gate: world data is
+    # generated, never committed, so a tree may lack it (CI, fresh
+    # clones). Masters embedding this bundle consult the list to
+    # decide whether they can build here at all.
+    set_property(GLOBAL PROPERTY APEX_TPRM_BUNDLE_SRCS_${_product} "${_deps}")
+  endforeach ()
 endfunction ()

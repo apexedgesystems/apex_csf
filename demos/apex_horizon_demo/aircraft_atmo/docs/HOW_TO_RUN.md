@@ -12,6 +12,13 @@ expect exactly 288 bytes with header
 `atmosphere artifact:` line printing that hash is the file-identity
 proof paired runs compare.
 
+The content is needed at BUILD time: the earth world bundle packs
+from it and embeds in the master (`bundle earth.world.tprm` in
+tprm.manifest), which extraction breaks out into the bank at boot. A
+tree without the file still builds everything else — the demo's tprm
+target just stays out of the default build (configure prints which
+file is missing); provide the file and re-run cmake.
+
 ## Run (packaged deployment — the standard way)
 
 The app declares an apex deployment, so it stages into a
@@ -95,7 +102,8 @@ Within a second the Aircraft log shows
 
 | Symptom                           | Cause                               | Fix                                                            |
 | --------------------------------- | ----------------------------------- | -------------------------------------------------------------- |
-| CelestialBody init fails on Earth | atmosphere table missing            | see The world data above                                       |
+| master.tprm never generates       | atmosphere table missing at build   | see The world data above; provide the file, re-run cmake       |
+| CelestialBody init fails on Earth | wrong bundle content for the pin    | repack; the refusal log names both hashes                      |
 | Bridge logs "channel open FAILED" | shm_path empty/not absolute in tprm | check aircraft_bridge.toml, repack                             |
 | Components run with defaults      | master passed via a wrong flag      | use `--config <generated master.tprm>`                         |
 | Ring exists but never changes     | saturation with no consumer         | expected back-pressure; attach or sample within ~0.3 s of boot |

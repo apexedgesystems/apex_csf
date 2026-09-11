@@ -53,9 +53,9 @@ def check(name: str, ok: bool, detail: str = "") -> None:
 def corrupt_master(dest: str, uid: int = SYSMON_UID) -> None:
     """Copy the master with one flipped byte inside one payload's body."""
     d = bytearray(open(f"{GEN}/master.tprm", "rb").read())
-    for i in range(len(d) - 20):
-        if d[i : i + 4] == b"APV3" and struct.unpack_from("<I", d, i + 8)[0] == uid:
-            d[i + 25] ^= 0xFF
+    for i in range(len(d) - 28):
+        if d[i : i + 4] == b"APV4" and struct.unpack_from("<I", d, i + 16)[0] == uid:
+            d[i + 28 + 5] ^= 0xFF  # fifth body byte (past the v4 prelude)
             break
     open(dest, "wb").write(bytes(d))
 
@@ -70,12 +70,12 @@ def forge_bad_value(dest: str) -> None:
     db = json.load(open(f"{BUILD}/apex_data_db/ApexExecutive.json"))
     fields = db["structs"]["ExecutiveTunableParams"]["fields"]
     rt = next(f for f in fields if f["name"] == "rtMode")
-    for i in range(len(d) - 20):
-        if d[i : i + 4] == b"APV3" and struct.unpack_from("<I", d, i + 8)[0] == 0:
-            size = struct.unpack_from("<H", d, i + 6)[0]
-            body = i + 20
+    for i in range(len(d) - 28):
+        if d[i : i + 4] == b"APV4" and struct.unpack_from("<I", d, i + 16)[0] == 0:
+            size = struct.unpack_from("<Q", d, i + 8)[0]
+            body = i + 28
             d[body + rt["offset"]] = 99
-            struct.pack_into("<I", d, i + 16, zlib.crc32(d[body : body + size]) & 0xFFFFFFFF)
+            struct.pack_into("<I", d, i + 24, zlib.crc32(d[body : body + size]) & 0xFFFFFFFF)
             break
     open(dest, "wb").write(bytes(d))
 
