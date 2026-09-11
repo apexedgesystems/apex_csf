@@ -23,6 +23,13 @@ constexpr std::size_t K_CHUNK = 1u << 20;
   return (v + (WORLD_PAYLOAD_ALIGN - 1)) & ~(WORLD_PAYLOAD_ALIGN - 1);
 }
 
+/// The v4 payload prelude a master-extracted bundle entry arrives
+/// under (TprmPayload.hpp is the format authority; only the fields
+/// the skip needs are read here -- magic, and the declared payload
+/// size at byte 8 for the length cross-check).
+constexpr std::size_t K_PRELUDE_SIZE = 28;
+constexpr char K_PRELUDE_MAGIC[4] = {'A', 'P', 'V', '4'};
+
 } // namespace
 
 /* ----------------------------- Bundle kinds ----------------------------- */
@@ -255,6 +262,7 @@ void WorldBundleReader::close() noexcept {
   entries_.clear();
   header_ = WorldBundleHeader{};
   path_.clear();
+  baseOffset_ = 0;
 }
 
 WorldBundleCheck WorldBundleReader::open(const std::filesystem::path& path) noexcept {
@@ -264,6 +272,38 @@ WorldBundleCheck WorldBundleReader::open(const std::filesystem::path& path) noex
     return WorldBundleCheck::FILE_ERROR;
   }
   path_ = path;
+  std::error_code ec;
+  const std::uint64_t FSIZE = std::filesystem::file_size(path, ec);
+  if (ec) {
+    close();
+    return WorldBundleCheck::SIZE_MISMATCH;
+  }
+
+  // A master-extracted entry carries the v4 payload prelude in front
+  // of the container; skip it after cross-checking its declared size
+  // against the file, so a truncated extraction fails here rather
+  // than as an offset error deeper in.
+  unsigned char probe[K_PRELUDE_SIZE] = {};
+  const std::size_t GOT = std::fread(probe, 1, sizeof(probe), file_);
+  if (GOT >= sizeof(K_PRELUDE_MAGIC) &&
+      std::memcmp(probe, K_PRELUDE_MAGIC, sizeof(K_PRELUDE_MAGIC)) == 0) {
+    if (GOT != sizeof(probe)) {
+      close();
+      return WorldBundleCheck::FILE_ERROR;
+    }
+    std::uint64_t declared = 0;
+    std::memcpy(&declared, &probe[8], sizeof(declared));
+    if (FSIZE != K_PRELUDE_SIZE + declared) {
+      close();
+      return WorldBundleCheck::SIZE_MISMATCH;
+    }
+    baseOffset_ = K_PRELUDE_SIZE;
+  }
+
+  if (std::fseek(file_, static_cast<long>(baseOffset_), SEEK_SET) != 0) {
+    close();
+    return WorldBundleCheck::FILE_ERROR;
+  }
   if (std::fread(&header_, 1, sizeof(header_), file_) != sizeof(header_)) {
     close();
     return WorldBundleCheck::FILE_ERROR;
@@ -280,9 +320,7 @@ WorldBundleCheck WorldBundleReader::open(const std::filesystem::path& path) noex
     close();
     return WorldBundleCheck::BAD_UID;
   }
-  std::error_code ec;
-  const std::uint64_t FSIZE = std::filesystem::file_size(path, ec);
-  if (ec || FSIZE != header_.totalSize) {
+  if (FSIZE - baseOffset_ != header_.totalSize) {
     close();
     return WorldBundleCheck::SIZE_MISMATCH;
   }
@@ -336,7 +374,7 @@ WorldBundleCheck WorldBundleReader::readEntry(std::size_t index,
   }
   const auto& e = entries_[index];
   out.resize(static_cast<std::size_t>(e.size));
-  if (std::fseek(file_, static_cast<long>(e.offset), SEEK_SET) != 0) {
+  if (std::fseek(file_, static_cast<long>(baseOffset_ + e.offset), SEEK_SET) != 0) {
     return WorldBundleCheck::FILE_ERROR;
   }
   if (e.size > 0 && std::fread(out.data(), 1, out.size(), file_) != out.size()) {
@@ -352,7 +390,7 @@ WorldBundleCheck WorldBundleReader::verifyContentHash() noexcept {
   if (file_ == nullptr) {
     return WorldBundleCheck::FILE_ERROR;
   }
-  if (std::fseek(file_, static_cast<long>(WORLD_HEADER_SIZE), SEEK_SET) != 0) {
+  if (std::fseek(file_, static_cast<long>(baseOffset_ + WORLD_HEADER_SIZE), SEEK_SET) != 0) {
     return WorldBundleCheck::FILE_ERROR;
   }
   std::vector<std::uint8_t> buf(K_CHUNK);

@@ -8,8 +8,9 @@
 # ==============================================================================
 
 # Shared world bundles: defined once in the bundle manifest, packed
-# as tprm products, referenced by any deployment below via
-# TPRM_STAGE <name>.world.tprm.
+# as tprm products, embedded by any master below via a
+# `bundle <name>.world.tprm` manifest row (registration must precede
+# the apps' apex_add_tprm calls, hence this position).
 apex_add_bundle_tprms(MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/worlds.manifest")
 
 add_subdirectory(lidar_box)

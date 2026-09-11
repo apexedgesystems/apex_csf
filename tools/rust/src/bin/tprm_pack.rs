@@ -4,6 +4,7 @@
 //!
 //! Usage:
 //!   tprm_pack pack -o master.tprm -e 0x000000:executive.tprm -e 0x006600:polynomial_0.tprm
+//!   tprm_pack pack -o master.tprm -e ... -b 0x010100:earth.world.tprm
 //!   tprm_pack unpack -i master.tprm -o ./unpacked/
 //!   tprm_pack list -i master.tprm
 //!   tprm_pack diff old.tprm new.tprm
@@ -11,6 +12,12 @@
 //! Entry format: fullUid:filepath
 //!   fullUid = (componentId << 8) | instanceIndex
 //!   Can be specified as hex (0x006600) or decimal (26112)
+//!
+//! -e entries are prelude-bearing payload files (cfg2bin products),
+//! packed verbatim. -b entries are content-bundle products (APW1
+//! containers); pack stamps the v4 prelude around the raw bytes so
+//! the bundle rides the master like every other entry and extraction
+//! delivers it to the bank at init.
 //!
 //! Examples:
 //!   Executive (componentId=0, instance=0):     0x000000 or 0
@@ -41,6 +48,12 @@ enum Command {
         /// Entry in format fullUid:filepath (e.g., 0x006600:polynomial_0.tprm)
         #[arg(short, long = "entry", action = clap::ArgAction::Append)]
         entries: Vec<String>,
+
+        /// Content-bundle entry in format fullUid:filepath; the raw
+        /// APW1 container is prelude-stamped at pack
+        /// (e.g., 0x010100:earth.world.tprm)
+        #[arg(short = 'b', long = "bundle", action = clap::ArgAction::Append)]
+        bundle_entries: Vec<String>,
 
         /// RTS sequence in format slot:filepath (e.g., 4:rts/rts_001.rts)
         #[arg(short = 'r', long = "rts", action = clap::ArgAction::Append)]
@@ -103,39 +116,41 @@ fn run(args: Args) -> Result<(), Error> {
     match args.command {
         Command::Pack {
             entries,
+            bundle_entries,
             rts_entries,
             ats_entries,
             output,
         } => {
             let mut pack_entries = parse_entries(&entries)?;
 
+            for bundle_str in &bundle_entries {
+                let (full_uid, path) = parse_uid_entry(bundle_str)?;
+                pack_entries.push(pack::PackEntry::bundle(full_uid, path));
+            }
+
             // Parse RTS entries: slot -> fullUid = 0xFF0000 | slot
             for rts_str in &rts_entries {
                 let (slot, path) = parse_sequence_entry(rts_str, "rts")?;
-                pack_entries.push(pack::PackEntry {
-                    full_uid: 0xFF0000 | (slot as u32),
-                    path,
-                });
+                pack_entries.push(pack::PackEntry::payload(0xFF0000 | (slot as u32), path));
             }
 
             // Parse ATS entries: slot -> fullUid = 0xFE0000 | slot
             for ats_str in &ats_entries {
                 let (slot, path) = parse_sequence_entry(ats_str, "ats")?;
-                pack_entries.push(pack::PackEntry {
-                    full_uid: 0xFE0000 | (slot as u32),
-                    path,
-                });
+                pack_entries.push(pack::PackEntry::payload(0xFE0000 | (slot as u32), path));
             }
 
             if pack_entries.is_empty() {
                 return Err(Error::InvalidArgs(
-                    "at least one entry (-e, -r, or -a) required".to_string(),
+                    "at least one entry (-e, -b, -r, or -a) required".to_string(),
                 ));
             }
 
             println!("Packing {} entries:", pack_entries.len());
             for e in &pack_entries {
-                let label = if e.full_uid & 0xFFFF00 == 0xFF0000 {
+                let label = if e.wrap_bundle {
+                    format!("bundle 0x{:06x}", e.full_uid)
+                } else if e.full_uid & 0xFFFF00 == 0xFF0000 {
                     format!("RTS slot {}", e.full_uid & 0xFF)
                 } else if e.full_uid & 0xFFFF00 == 0xFE0000 {
                     format!("ATS slot {}", e.full_uid & 0xFF)
@@ -282,28 +297,31 @@ fn parse_entries(entries: &[String]) -> Result<Vec<pack::PackEntry>, Error> {
     let mut result = Vec::with_capacity(entries.len());
 
     for entry_str in entries {
-        let parts: Vec<&str> = entry_str.splitn(2, ':').collect();
-        if parts.len() != 2 {
-            return Err(Error::InvalidArgs(format!(
-                "invalid entry format '{}'. Expected 'fullUid:filepath' (e.g., 0x006600:file.tprm)",
-                entry_str
-            )));
-        }
-
-        let full_uid = parse_full_uid(parts[0]).map_err(|_| {
-            Error::InvalidArgs(format!(
-                "invalid fullUid '{}'. Use hex (0x006600) or decimal. Max 0xFFFFFF (24-bit)",
-                parts[0]
-            ))
-        })?;
-
-        result.push(pack::PackEntry {
-            full_uid,
-            path: PathBuf::from(parts[1]),
-        });
+        let (full_uid, path) = parse_uid_entry(entry_str)?;
+        result.push(pack::PackEntry::payload(full_uid, path));
     }
 
     Ok(result)
+}
+
+/// Parse a "fullUid:filepath" token (shared by -e and -b).
+fn parse_uid_entry(entry_str: &str) -> Result<(u32, PathBuf), Error> {
+    let parts: Vec<&str> = entry_str.splitn(2, ':').collect();
+    if parts.len() != 2 {
+        return Err(Error::InvalidArgs(format!(
+            "invalid entry format '{}'. Expected 'fullUid:filepath' (e.g., 0x006600:file.tprm)",
+            entry_str
+        )));
+    }
+
+    let full_uid = parse_full_uid(parts[0]).map_err(|_| {
+        Error::InvalidArgs(format!(
+            "invalid fullUid '{}'. Use hex (0x006600) or decimal. Max 0xFFFFFF (24-bit)",
+            parts[0]
+        ))
+    })?;
+
+    Ok((full_uid, PathBuf::from(parts[1])))
 }
 
 /// Parse a sequence entry in format "slot:filepath" (e.g., "4:rts/noop.rts").

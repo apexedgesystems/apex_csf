@@ -3,7 +3,8 @@
 # Roles come from the registered vocabulary (WorldBundle.hpp role
 # table); the inner-format suffix rides from the same table. Rules:
 # at least one entry per row, roles unique per row, sources exist at
-# pack time, duplicate names refused (bundles are shared).
+# pack time, duplicate names refused (bundles are shared: every
+# master embedding a bundle row packs the same product).
 #
 # The terrain entry joins earth when the regenerated htile artifact
 # lands; role-keyed bundles absorb new entries without consumer

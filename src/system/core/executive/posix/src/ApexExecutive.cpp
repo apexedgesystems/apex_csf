@@ -1260,7 +1260,7 @@ ApexExecutive::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     return TprmIngest::DEFAULTS; // Not an error - use defaults
   }
 
-  // Read and verify the v3 payload; a reject leaves the compiled
+  // Read and verify the v4 payload; a reject leaves the compiled
   // defaults driving the executive with the check's own fault code.
   // The body is the tunable params, optionally followed by the thread
   // configuration block.

@@ -132,48 +132,48 @@ bool CelestialBody::bindWorld(const CelestialBodyTunables& p, CelestialBodyState
   namespace wb = sim::environment::world;
   wb::WorldBundleReader bundle;
   if (needsWorld(p)) {
-    // Discovery matches uid AND pin: bundle versions of one world
-    // coexist in the bank (earth.world.tprm beside earth_v2...), and
-    // the pin selects the authorized one. A rebind is therefore a
-    // tprm reload carrying a new pin; the prior version stays
-    // resident as the instant fallback.
+    // The bundle is a master entry, so extraction delivered it as
+    // {world_uid:06x}.tprm -- the binding opens that file directly,
+    // reload dir first, boot dir second. Versions of one world
+    // coexist ACROSS the banks (the boot bank keeps the running
+    // version while a reload stages the next), and the pin selects
+    // the authorized one; a revert is one reload carrying the prior
+    // pin, against content that never left the bank.
     bool bound = false;
     std::uint64_t nearMissHash = 0;
     std::string nearMissName;
+    const std::string FNAME = fmt::format("{:06x}.tprm", p.world_uid);
     for (const auto& DIR : {lastTprmDir_, bootTprmDir_}) {
-      if (bound || DIR.empty()) {
+      if (DIR.empty()) {
         continue;
       }
+      const std::filesystem::path CANDIDATE = DIR / FNAME;
       std::error_code ec;
-      for (const auto& de : std::filesystem::directory_iterator(DIR, ec)) {
-        if (!de.is_regular_file(ec) ||
-            !de.path().filename().string().ends_with(wb::WORLD_FILE_SUFFIX)) {
-          continue;
-        }
-        if (bundle.open(de.path()) == wb::WorldBundleCheck::OK &&
-            bundle.header().fullUid == p.world_uid) {
-          if (bundle.header().bundleContentHash == p.world_pin) {
-            bound = true;
-            break;
-          }
-          nearMissHash = bundle.header().bundleContentHash;
-          nearMissName = de.path().filename().string();
-        }
-        bundle.close();
+      if (!std::filesystem::exists(CANDIDATE, ec)) {
+        continue;
       }
+      if (bundle.open(CANDIDATE) == wb::WorldBundleCheck::OK &&
+          bundle.header().fullUid == p.world_uid) {
+        if (bundle.header().bundleContentHash == p.world_pin) {
+          bound = true;
+          break;
+        }
+        nearMissHash = bundle.header().bundleContentHash;
+        nearMissName = CANDIDATE.string();
+      }
+      bundle.close();
     }
     if (!bound) {
       if (auto* log = componentLog(); log != nullptr) {
         if (!nearMissName.empty()) {
           log->info(label(),
-                    fmt::format("init: world pin mismatch: tprm pins 0x{:016x}; nearest uid "
-                                "0x{:06x} candidate {} carries 0x{:016x} -- refusing the "
+                    fmt::format("init: world pin mismatch: tprm pins 0x{:016x}; uid 0x{:06x} "
+                                "candidate {} carries 0x{:016x} -- refusing the "
                                 "unauthorized world",
                                 p.world_pin, p.world_uid, nearMissName, nearMissHash));
         } else {
-          log->info(label(),
-                    fmt::format("init: no world bundle with uid 0x{:06x} in {} or {}", p.world_uid,
-                                lastTprmDir_.string(), bootTprmDir_.string()));
+          log->info(label(), fmt::format("init: no world bundle entry {} in {} or {}", FNAME,
+                                         lastTprmDir_.string(), bootTprmDir_.string()));
         }
       }
       ok = false;

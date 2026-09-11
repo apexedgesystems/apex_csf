@@ -6,14 +6,19 @@
  *
  * A world bundle collects the content artifacts that construct one
  * simulated world (gravity coefficient table, terrain tiling,
- * atmosphere table) into a single bank-resident binary
- * (<body>.world.tprm). It is the content sibling of the component
- * tprm family: same identity discipline (magic, version, uid, hash),
- * different container because bulk demands it -- the v3 component
- * payload carries a 16-bit size and whole-body reads, while bundle
- * entries need 64-bit offsets and in-place access (a full gravity
- * table is tens of MB; boot must not pay for entries a fidelity never
- * loads).
+ * atmosphere table) into a single packed binary (<body>.world.tprm).
+ * It is the content sibling of the component tprm family: same
+ * identity discipline (magic, version, uid, hash), different
+ * container because bulk demands role-keyed in-place access (a full
+ * gravity table is tens of MB; boot must not pay for entries a
+ * fidelity never loads).
+ *
+ * The bundle rides the master tprm as a uid-keyed entry under the v4
+ * payload prelude, and master extraction delivers it to the bank as
+ * {fullUid:06x}.tprm at init like every other entry -- one master
+ * ingested and broken up at boot, worlds included. The reader skips a
+ * leading prelude when present, so one open() serves both
+ * residencies: the bare pack product and the master-extracted entry.
  *
  * Identity and verification layers:
  *  - bundleContentHash (FNV-1a 64): covers every byte from the end of
@@ -345,6 +350,11 @@ private:
   std::filesystem::path path_{};
   WorldBundleHeader header_{};
   std::vector<WorldEntryRecord> entries_{};
+  /// Byte offset of the bundle header within the file: 0 for a bare
+  /// pack product, the v4 prelude size for a master-extracted entry.
+  /// Entry offsets and the content-hash span are bundle-relative, so
+  /// every seek adds this base.
+  std::uint64_t baseOffset_ = 0;
 };
 
 } // namespace world

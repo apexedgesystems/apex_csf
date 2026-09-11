@@ -55,10 +55,7 @@ fn generate_raw(stem: &str, out_dir: &Path) -> PathBuf {
 fn generate_archive(payload_dir: &Path, out: &Path) {
     let entries: Vec<PackEntry> = ARCHIVE_ENTRIES
         .iter()
-        .map(|(uid, stem)| PackEntry {
-            full_uid: *uid,
-            path: payload_dir.join(format!("{stem}.bin")),
-        })
+        .map(|(uid, stem)| PackEntry::payload(*uid, payload_dir.join(format!("{stem}.bin"))))
         .collect();
     pack(&entries, out).expect("archive generation failed");
 }

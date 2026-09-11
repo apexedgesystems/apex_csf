@@ -31,7 +31,7 @@ pub const MAGIC: &[u8; 4] = b"APV4";
 pub const VERSION: u16 = 4;
 pub const HEADER_SIZE: usize = 28;
 
-/// Parsed v3 prelude.
+/// Parsed v4 prelude.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PayloadHeader {
     pub version: u16,

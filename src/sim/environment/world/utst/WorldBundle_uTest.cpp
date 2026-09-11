@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -294,6 +295,78 @@ TEST_F(WorldBundleTest, UnknownRoleToleratedCeilingRefused) {
     std::fclose(f);
   }
   EXPECT_EQ(r.open(OUT), WorldBundleCheck::TABLE_INVALID);
+}
+
+/* ----------------------------- Prelude-wrapped residency ----------------------------- */
+
+namespace {
+
+/// Wrap a bundle file the way a master entry arrives after
+/// extraction: the 28-byte v4 payload prelude (APV4, version 4,
+/// 64-bit size, uid, layoutHash 0, payload crc) followed by the raw
+/// container bytes. Mirrors tprm_pack's -b stamping.
+std::filesystem::path wrapWithPrelude(const std::filesystem::path& bundle, std::uint32_t uid) {
+  std::ifstream in(bundle, std::ios::binary);
+  std::vector<char> body((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  const std::uint64_t SIZE = body.size();
+  const std::uint32_t CRC =
+      worldCrc32(reinterpret_cast<const std::uint8_t*>(body.data()), body.size());
+  const std::uint16_t VERSION = 4;
+  const std::uint16_t RESERVED = 0;
+  const std::uint32_t LAYOUT = 0;
+
+  const auto OUT = bundle.parent_path() / (bundle.stem().string() + ".wrapped.tprm");
+  std::ofstream out(OUT, std::ios::binary);
+  out.write("APV4", 4);
+  out.write(reinterpret_cast<const char*>(&VERSION), sizeof(VERSION));
+  out.write(reinterpret_cast<const char*>(&RESERVED), sizeof(RESERVED));
+  out.write(reinterpret_cast<const char*>(&SIZE), sizeof(SIZE));
+  out.write(reinterpret_cast<const char*>(&uid), sizeof(uid));
+  out.write(reinterpret_cast<const char*>(&LAYOUT), sizeof(LAYOUT));
+  out.write(reinterpret_cast<const char*>(&CRC), sizeof(CRC));
+  out.write(body.data(), static_cast<std::streamsize>(body.size()));
+  return OUT;
+}
+
+} // namespace
+
+// A master-extracted entry (v4 prelude + container) opens through the
+// same reader as the bare pack product: identical header, readable
+// entries, and -- the pin invariant -- the same content hash, so
+// wrapping never moves the value a consumer tprm pins.
+TEST_F(WorldBundleTest, PreludeWrappedEntryOpensAndKeepsPin) {
+  const auto BARE = dir_ / "earth.world.tprm";
+  ASSERT_EQ(WorldBundleWriter::write(BARE, K_EARTH_UID, "earth", threeSources()),
+            WorldBundleCheck::OK);
+  WorldBundleReader bare;
+  ASSERT_EQ(bare.open(BARE), WorldBundleCheck::OK);
+  const std::uint64_t PIN = bare.header().bundleContentHash;
+  bare.close();
+
+  const auto WRAPPED = wrapWithPrelude(BARE, K_EARTH_UID);
+  WorldBundleReader r;
+  ASSERT_EQ(r.open(WRAPPED), WorldBundleCheck::OK);
+  EXPECT_EQ(r.header().fullUid, K_EARTH_UID);
+  EXPECT_EQ(r.header().bundleContentHash, PIN);
+  EXPECT_EQ(r.header().entryCount, 3u);
+  std::vector<std::uint8_t> payload;
+  for (std::size_t i = 0; i < r.entries().size(); ++i) {
+    EXPECT_EQ(r.readEntry(i, payload), WorldBundleCheck::OK);
+  }
+  EXPECT_EQ(r.verifyContentHash(), WorldBundleCheck::OK);
+}
+
+// A wrapped entry whose prelude-declared size disagrees with the file
+// is refused before container parsing -- a truncated extraction fails
+// loudly at open, not as an offset error deeper in.
+TEST_F(WorldBundleTest, PreludeSizeDriftRefused) {
+  const auto BARE = dir_ / "earth.world.tprm";
+  ASSERT_EQ(WorldBundleWriter::write(BARE, K_EARTH_UID, "earth", threeSources()),
+            WorldBundleCheck::OK);
+  const auto WRAPPED = wrapWithPrelude(BARE, K_EARTH_UID);
+  std::filesystem::resize_file(WRAPPED, std::filesystem::file_size(WRAPPED) - 1);
+  WorldBundleReader r;
+  EXPECT_EQ(r.open(WRAPPED), WorldBundleCheck::SIZE_MISMATCH);
 }
 
 } // namespace

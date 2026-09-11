@@ -309,11 +309,13 @@ TEST(CelestialBody, InitIsIdempotent) {
 namespace worldfx {
 
 /// Write a minimal valid USSA76-class .atm image and pack it as the
-/// sole atmosphere entry of an earth world bundle in `dir`.
+/// sole atmosphere entry of an earth world bundle in `dir`, named
+/// the way master extraction delivers it: {uid:06x}.tprm. With
+/// `wrapPrelude` the file additionally carries the v4 payload
+/// prelude, the exact bytes a master entry arrives as.
 /// Returns the bundle's content hash (the value a pin must match).
 inline std::uint64_t makeEarthWorld(const std::filesystem::path& dir, std::uint32_t uid,
-                                    const char* bundleName = "earth.world.tprm",
-                                    std::uint16_t nRecords = 2) {
+                                    std::uint16_t nRecords = 2, bool wrapPrelude = false) {
   namespace atm = sim::environment::atmosphere;
   namespace wb = sim::environment::world;
   atm::AtmHeader hdr{};
@@ -321,7 +323,7 @@ inline std::uint64_t makeEarthWorld(const std::filesystem::path& dir, std::uint3
   std::snprintf(hdr.body, sizeof(hdr.body), "%s", "earth");
   hdr.model_type = static_cast<std::uint8_t>(atm::AtmModelType::kLayered);
   hdr.n_records = nRecords;
-  const std::filesystem::path SRC = dir / (std::string(bundleName) + ".fixture.atm");
+  const std::filesystem::path SRC = dir / "earth.fixture.atm";
   atm::AtmWriter w;
   if (!w.open(SRC.string().c_str(), hdr)) {
     return 0;
@@ -336,11 +338,44 @@ inline std::uint64_t makeEarthWorld(const std::filesystem::path& dir, std::uint3
     return 0;
   }
   w.close();
-  const std::filesystem::path OUT = dir / bundleName;
-  if (wb::WorldBundleWriter::write(OUT, uid, "earth",
+
+  char name[32];
+  std::snprintf(name, sizeof(name), "%06x.tprm", uid);
+  const std::filesystem::path OUT = dir / name;
+  const std::filesystem::path PACKED = wrapPrelude ? dir / "bare.bundle" : OUT;
+  if (wb::WorldBundleWriter::write(PACKED, uid, "earth",
                                    {{wb::WorldEntryRole::ATMOSPHERE, ".atm", SRC, 0}}) !=
       wb::WorldBundleCheck::OK) {
     return 0;
+  }
+  if (wrapPrelude) {
+    std::FILE* in = std::fopen(PACKED.string().c_str(), "rb");
+    if (in == nullptr) {
+      return 0;
+    }
+    std::vector<std::uint8_t> body;
+    for (int c = std::fgetc(in); c != EOF; c = std::fgetc(in)) {
+      body.push_back(static_cast<std::uint8_t>(c));
+    }
+    std::fclose(in);
+    const std::uint64_t SIZE = body.size();
+    const std::uint32_t CRC = wb::worldCrc32(body.data(), body.size());
+    const std::uint16_t VERSION = 4;
+    const std::uint16_t RESERVED = 0;
+    const std::uint32_t LAYOUT = 0;
+    std::FILE* out = std::fopen(OUT.string().c_str(), "wb");
+    if (out == nullptr) {
+      return 0;
+    }
+    std::fwrite("APV4", 1, 4, out);
+    std::fwrite(&VERSION, 1, sizeof(VERSION), out);
+    std::fwrite(&RESERVED, 1, sizeof(RESERVED), out);
+    std::fwrite(&SIZE, 1, sizeof(SIZE), out);
+    std::fwrite(&uid, 1, sizeof(uid), out);
+    std::fwrite(&LAYOUT, 1, sizeof(LAYOUT), out);
+    std::fwrite(&CRC, 1, sizeof(CRC), out);
+    std::fwrite(body.data(), 1, body.size(), out);
+    std::fclose(out);
   }
   wb::WorldBundleReader r;
   if (r.open(OUT) != wb::WorldBundleCheck::OK) {
@@ -459,23 +494,27 @@ TEST(CelestialBodyWorld, MissingRoleRefused) {
   std::filesystem::remove_all(DIR);
 }
 
-// Two versions of one world coexist in the bank; the pin selects the
-// authorized one regardless of scan order.
-TEST(CelestialBodyWorld, TwoVersionsPinSelects) {
-  const auto DIR = worldfx::freshDir("twover");
+// Versions of one world coexist ACROSS the banks (each bank holds one
+// {uid:06x}.tprm); the pin selects the authorized one, reload dir
+// first, boot dir second.
+TEST(CelestialBodyWorld, TwoVersionsAcrossBanksPinSelects) {
+  const auto BOOT = worldfx::freshDir("twover_boot");
+  const auto RELOAD = worldfx::freshDir("twover_reload");
   const std::uint32_t UID = sim::environment::world::worldFullUid(0x0101);
-  const std::uint64_t PIN_V1 = worldfx::makeEarthWorld(DIR, UID, "earth.world.tprm", 2);
-  const std::uint64_t PIN_V2 = worldfx::makeEarthWorld(DIR, UID, "earth_v2.world.tprm", 3);
+  const std::uint64_t PIN_V1 = worldfx::makeEarthWorld(BOOT, UID, 2);
+  const std::uint64_t PIN_V2 = worldfx::makeEarthWorld(RELOAD, UID, 3);
   ASSERT_NE(PIN_V1, 0u);
   ASSERT_NE(PIN_V2, 0u);
   ASSERT_NE(PIN_V1, PIN_V2);
 
+  // Pin v2: the reload-dir candidate wins.
   CelestialBodyTunables t = analyticEarth();
   t.atmosphere_fidelity = AtmosphereFidelity::LAYERED;
   t.world_uid = UID;
   t.world_pin = PIN_V2;
   CelestialBody body;
-  ASSERT_EQ(body.loadTprm(DIR), system_core::system_component::TprmIngest::DEFAULTS);
+  ASSERT_EQ(body.loadTprm(BOOT), system_core::system_component::TprmIngest::DEFAULTS);
+  ASSERT_EQ(body.loadTprm(RELOAD), system_core::system_component::TprmIngest::DEFAULTS);
   body.tunables().set(t);
   ASSERT_EQ(body.init(), 0u);
   EXPECT_EQ(body.bodyState().world_pin, PIN_V2);
@@ -483,17 +522,33 @@ TEST(CelestialBodyWorld, TwoVersionsPinSelects) {
       dynamic_cast<const sim::environment::atmosphere::LayeredAtmosphere*>(body.atmosphere());
   ASSERT_NE(atm, nullptr);
   EXPECT_EQ(atm->fileHeader().n_records, 3u); // v2's table, not v1's
-  std::filesystem::remove_all(DIR);
+
+  // Pin v1: the reload-dir candidate mismatches and the boot bank
+  // serves the authorized version.
+  t.world_pin = PIN_V1;
+  CelestialBody body2;
+  ASSERT_EQ(body2.loadTprm(BOOT), system_core::system_component::TprmIngest::DEFAULTS);
+  ASSERT_EQ(body2.loadTprm(RELOAD), system_core::system_component::TprmIngest::DEFAULTS);
+  body2.tunables().set(t);
+  ASSERT_EQ(body2.init(), 0u);
+  EXPECT_EQ(body2.bodyState().world_pin, PIN_V1);
+  const auto* atm2 =
+      dynamic_cast<const sim::environment::atmosphere::LayeredAtmosphere*>(body2.atmosphere());
+  ASSERT_NE(atm2, nullptr);
+  EXPECT_EQ(atm2->fileHeader().n_records, 2u);
+  std::filesystem::remove_all(BOOT);
+  std::filesystem::remove_all(RELOAD);
 }
 
-// The rebind re-entry: after init, a second bindWorld pass under new
-// tunables (the RELOAD_TPRM shape) swaps the running world in place;
-// a pin-revert swaps back -- both versions stayed resident.
+// The rebind re-entry: after init, a reload from the inactive bank
+// (the RELOAD_TPRM shape) swaps the running world in place; a
+// pin-revert swaps back -- the boot version never left its bank.
 TEST(CelestialBodyWorld, RebindSwapsAndRevertsInPlace) {
-  const auto DIR = worldfx::freshDir("rebind");
+  const auto BOOT = worldfx::freshDir("rebind_boot");
+  const auto RELOAD = worldfx::freshDir("rebind_reload");
   const std::uint32_t UID = sim::environment::world::worldFullUid(0x0101);
-  const std::uint64_t PIN_V1 = worldfx::makeEarthWorld(DIR, UID, "earth.world.tprm", 2);
-  const std::uint64_t PIN_V2 = worldfx::makeEarthWorld(DIR, UID, "earth_v2.world.tprm", 3);
+  const std::uint64_t PIN_V1 = worldfx::makeEarthWorld(BOOT, UID, 2);
+  const std::uint64_t PIN_V2 = worldfx::makeEarthWorld(RELOAD, UID, 3);
   ASSERT_NE(PIN_V1, 0u);
   ASSERT_NE(PIN_V2, 0u);
 
@@ -502,7 +557,7 @@ TEST(CelestialBodyWorld, RebindSwapsAndRevertsInPlace) {
   t.world_uid = UID;
   t.world_pin = PIN_V1;
   CelestialBody body;
-  ASSERT_EQ(body.loadTprm(DIR), system_core::system_component::TprmIngest::DEFAULTS);
+  ASSERT_EQ(body.loadTprm(BOOT), system_core::system_component::TprmIngest::DEFAULTS);
   body.tunables().set(t);
   ASSERT_EQ(body.init(), 0u);
   const auto* atm =
@@ -510,20 +565,45 @@ TEST(CelestialBodyWorld, RebindSwapsAndRevertsInPlace) {
   ASSERT_NE(atm, nullptr);
   EXPECT_EQ(atm->fileHeader().n_records, 2u);
 
-  // Rebind to v2 (tunables update + re-entry), model swaps in place.
+  // Rebind to v2 staged in the inactive bank (tunables update +
+  // re-entry), model swaps in place.
   t.world_pin = PIN_V2;
   body.tunables().set(t);
-  ASSERT_EQ(body.loadTprm(DIR), system_core::system_component::TprmIngest::DEFAULTS);
+  ASSERT_EQ(body.loadTprm(RELOAD), system_core::system_component::TprmIngest::DEFAULTS);
   EXPECT_EQ(body.bodyState().world_pin, PIN_V2);
   EXPECT_EQ(body.atmosphere(), atm); // same model object, new content
   EXPECT_EQ(atm->fileHeader().n_records, 3u);
 
-  // Revert to v1: the prior version never left the bank.
+  // Revert to v1: the boot version never left its bank, so the
+  // reload-dir candidate mismatches and boot serves it.
   t.world_pin = PIN_V1;
   body.tunables().set(t);
-  ASSERT_EQ(body.loadTprm(DIR), system_core::system_component::TprmIngest::DEFAULTS);
+  ASSERT_EQ(body.loadTprm(RELOAD), system_core::system_component::TprmIngest::DEFAULTS);
   EXPECT_EQ(body.bodyState().world_pin, PIN_V1);
   EXPECT_EQ(atm->fileHeader().n_records, 2u);
+  std::filesystem::remove_all(BOOT);
+  std::filesystem::remove_all(RELOAD);
+}
+
+// The production residency: the entry as master extraction writes it,
+// v4 prelude and all. The binding opens it identically -- the pin is
+// the bundle content hash either way.
+TEST(CelestialBodyWorld, PreludeWrappedEntryBinds) {
+  const auto DIR = worldfx::freshDir("wrapped");
+  const std::uint32_t UID = sim::environment::world::worldFullUid(0x0101);
+  const std::uint64_t PIN = worldfx::makeEarthWorld(DIR, UID, 2, /*wrapPrelude=*/true);
+  ASSERT_NE(PIN, 0u);
+
+  CelestialBodyTunables t = analyticEarth();
+  t.atmosphere_fidelity = AtmosphereFidelity::LAYERED;
+  t.world_uid = UID;
+  t.world_pin = PIN;
+  CelestialBody body;
+  ASSERT_EQ(body.loadTprm(DIR), system_core::system_component::TprmIngest::DEFAULTS);
+  body.tunables().set(t);
+  ASSERT_EQ(body.init(), 0u);
+  EXPECT_EQ(body.bodyState().world_pin, PIN);
+  ASSERT_NE(body.atmosphere(), nullptr);
   std::filesystem::remove_all(DIR);
 }
 
