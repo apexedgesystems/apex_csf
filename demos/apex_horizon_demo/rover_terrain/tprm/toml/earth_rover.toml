@@ -28,3 +28,5 @@ anchor_lat_deg     = { type = "float",  size = 8,  value = 39.50 }
 anchor_lon_deg     = { type = "float",  size = 8,  value = -105.50 }
 init_north_m       = { type = "float",  size = 8,  value = 0.0 }
 init_east_m        = { type = "float",  size = 8,  value = 0.0 }
+step_hz            = { type = "uint",   size = 4,  value = 10 }
+lidar_divisor      = { type = "uint",   size = 4,  value = 1 }

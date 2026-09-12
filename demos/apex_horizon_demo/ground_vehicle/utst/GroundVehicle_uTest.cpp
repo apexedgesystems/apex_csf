@@ -487,3 +487,75 @@ TEST(GroundVehicleCmd, LedCommandsAreBoundedAndStamped) {
             static_cast<std::uint8_t>(CmdResultCode::NACK_INVALID_ARGUMENT));
   EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_LO], 0x06u);
 }
+
+/* ----------------------------- LEDs + step rate ----------------------------- */
+
+TEST(GroundVehicleLed, StrobeBitFollowsTheRateCodeAt100Hz) {
+  ReadyRover r;
+  r.rover.tunables().get().step_hz = 100u;
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 5u}), 0u); // green, 10 Hz
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {2u, 1u, 0u}), 0u); // red, steady
+  // 10 Hz at 100 steps/s: period 10 steps, 5 on then 5 off, repeating.
+  std::vector<int> lamp1;
+  for (int i = 0; i < 30; ++i) {
+    (void)r.rover.vehicleStep();
+    const auto* f = r.rover.frameBytes();
+    lamp1.push_back((f[fb::FB_LED_BITS] & 0x01u) != 0u ? 1 : 0);
+    EXPECT_EQ((f[fb::FB_LED_BITS] & 0x02u) != 0u, true) << "steady lamp stays on";
+  }
+  int on = 0, transitions = 0;
+  for (std::size_t i = 0; i < lamp1.size(); ++i) {
+    on += lamp1[i];
+    if (i > 0 && lamp1[i] != lamp1[i - 1]) {
+      ++transitions;
+    }
+  }
+  EXPECT_EQ(on, 15) << "half the steps on over three periods";
+  EXPECT_EQ(transitions, 5) << "toggles every 5 steps";
+  for (std::size_t i = 0; i + 5 < lamp1.size(); i += 10) {
+    EXPECT_EQ(lamp1[i], 1) << "period starts on";
+    EXPECT_EQ(lamp1[i + 5], 0) << "half period off";
+  }
+
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 0u, 5u}), 0u); // colour off wins
+  (void)r.rover.vehicleStep();
+  EXPECT_EQ(r.rover.frameBytes()[fb::FB_LED_BITS] & 0x01u, 0u);
+}
+
+TEST(GroundVehicleLed, HalfHertzAtTenHzStepsIsTenOnTenOff) {
+  ReadyRover r;                                                          // step_hz default 10
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 3u, 1u}), 0u); // blue, 0.5 Hz
+  int on = 0;
+  for (int i = 0; i < 20; ++i) {
+    (void)r.rover.vehicleStep();
+    on += (r.rover.frameBytes()[fb::FB_LED_BITS] & 0x01u) != 0u ? 1 : 0;
+  }
+  EXPECT_EQ(on, 10);
+}
+
+TEST(GroundVehicle, StepRateScalesTheIntegrationAndTheTimestampGrid) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  GroundVehicle slow, fast;
+  configureRover(slow);
+  configureRover(fast);
+  slow.tunables().get().step_hz = 10u;
+  fast.tunables().get().step_hz = 100u;
+  slow.setBody(&earth);
+  fast.setBody(&earth);
+  for (int i = 0; i < 20; ++i) {
+    (void)slow.vehicleStep(); // 2 s
+  }
+  for (int i = 0; i < 200; ++i) {
+    (void)fast.vehicleStep(); // 2 s
+  }
+  // Same elapsed time: first-order speed approach and heading agree to
+  // the integration-step difference.
+  EXPECT_NEAR(fast.telemetry().speed_m_s, slow.telemetry().speed_m_s, 0.05);
+  EXPECT_NEAR(fast.telemetry().heading_deg, slow.telemetry().heading_deg, 1e-6);
+  // Timestamp grid follows the step rate.
+  const std::uint64_t T1 = fast.telemetry().timestamp_ns;
+  (void)fast.vehicleStep();
+  EXPECT_EQ(fast.telemetry().timestamp_ns - T1, 10000000u);
+}

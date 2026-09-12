@@ -5,8 +5,8 @@
  * @brief Kinematic rover component for apex_horizon_demo.
  *
  * The rover drives in a slow circle at constant throttle + constant
- * steering rate. Each `vehicleStep` tick (10 Hz, matching executive
- * fundamental):
+ * steering rate. Each `vehicleStep` tick (at `step_hz`, the scheduler
+ * entry's rate):
  *   1. Integrates speed up toward `max_speed_m_s` from `throttle_default`.
  *   2. Integrates heading at `steer_rate_deg_s`.
  *   3. Converts (heading, speed) to (lat, lon) deltas using the body's
@@ -91,7 +91,7 @@ public:
   /* ----------------------------- Task UIDs ----------------------------- */
 
   enum class TaskUid : std::uint8_t {
-    VEHICLE_STEP = 1, ///< Periodic kinematic step + lidar sweep (10 Hz, matches exec fundamental).
+    VEHICLE_STEP = 1, ///< Periodic kinematic step + lidar sweep (at tunables.step_hz).
     TELEMETRY = 2,    ///< Periodic log line (1 Hz typ.).
   };
 
@@ -302,10 +302,9 @@ public:
       s.initialized = 1u;
     }
 
-    // 1 + 2: integrate speed and heading. dt is hardcoded for the MVP
-    // (matches the 10 Hz scheduler entry, which is also the exec
-    // fundamental); future could query the executive for the real dt.
-    constexpr double DT = 1.0 / 10.0;
+    // 1 + 2: integrate speed and heading at the scheduled step rate
+    // (the tunable must match the scheduler entry for this task).
+    const double DT = 1.0 / static_cast<double>(std::max<std::uint32_t>(p.step_hz, 1u));
     // Throttle and steering resolve in priority order: HALT forces the
     // target speed to zero and freezes the heading; a valid attached
     // drive-command block supplies both; otherwise the built-in
@@ -381,9 +380,37 @@ public:
       tlm.is_slipping = 0u;
     }
 
-    // 6: lidar sweep. N rays across fov_deg, centered on vehicle heading.
-    sweepLidar(tlm, p, R);
+    // 6: lidar sweep. N rays across fov_deg, centered on vehicle heading;
+    // decimated to every lidar_divisor-th step.
+    const std::uint32_t LIDAR_DIV = std::max<std::uint32_t>(p.lidar_divisor, 1u);
+    if ((s.step_count % LIDAR_DIV) == 1u % LIDAR_DIV) {
+      sweepLidar(tlm, p, R);
+    }
     tlm.lidar_n_rays = std::min<std::uint32_t>(p.lidar_n_rays, MAX_LIDAR_RAYS);
+
+    // 6b: lamps. A steady colour is on; a strobed one toggles every half
+    // period, the period being the step rate over the rate code's
+    // frequency (never below two steps, so any rate reads as a blink).
+    for (std::size_t i = 0; i < 2u; ++i) {
+      const std::uint8_t COLOUR = s.led_colour[i];
+      const std::uint8_t RATE = std::min<std::uint8_t>(s.led_rate[i], kLedRateMax);
+      if (COLOUR == 0u) {
+        s.led_on[i] = 0u;
+        s.led_phase[i] = 0u;
+        continue;
+      }
+      if (RATE == 0u) {
+        s.led_on[i] = 1u;
+        s.led_phase[i] = 0u;
+        continue;
+      }
+      // kLedRateFrames is the period at 100 Hz; scale to this step rate.
+      const std::uint32_t PERIOD =
+          std::max<std::uint32_t>(2u, (kLedRateFrames[RATE] * p.step_hz) / 100u);
+      const std::uint32_t HALF = PERIOD / 2u;
+      s.led_on[i] = (s.led_phase[i] < HALF) ? 1u : 0u;
+      s.led_phase[i] = static_cast<std::uint16_t>((s.led_phase[i] + 1u) % PERIOD);
+    }
 
     // 7: stamp wire-format header fields. The bridge memcpys this whole
     // struct — The consumer uses timestamp_ns + tick to detect dropped frames and
@@ -397,7 +424,7 @@ public:
       t0_ns_ = static_cast<std::uint64_t>(apex::helpers::cpu::getMonotonicNs());
       t0_tick_ = s.tick_count;
     }
-    constexpr std::uint64_t DT_NS = static_cast<std::uint64_t>(DT * 1.0e9);
+    const std::uint64_t DT_NS = static_cast<std::uint64_t>(DT * 1.0e9);
     tlm.timestamp_ns = t0_ns_ + (s.tick_count - t0_tick_) * DT_NS;
     tlm.tick = s.tick_count;
 
@@ -411,6 +438,8 @@ public:
     fb[FB_SEQ_STATE] = s.seq_state;
     fb[FB_ACTIVE_WAYPOINT] = s.active_waypoint;
     fb[FB_WAYPOINT_TOTAL] = s.waypoint_total;
+    fb[FB_LED_BITS] = static_cast<std::uint8_t>((s.led_on[0] != 0u ? 0x01u : 0u) |
+                                                (s.led_on[1] != 0u ? 0x02u : 0u));
     fb[FB_LED1_COLOUR] = s.led_colour[0];
     fb[FB_LED1_RATE] = s.led_rate[0];
     fb[FB_LED2_COLOUR] = s.led_colour[1];

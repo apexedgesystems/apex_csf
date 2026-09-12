@@ -88,6 +88,14 @@ struct GroundVehicleTunables {
   double anchor_lon_deg{-105.5};
   double init_north_m{0.0};
   double init_east_m{0.0};
+
+  /// Rate `vehicleStep` is scheduled at [Hz]: the integration dt, the
+  /// timestamp grid, and the LED strobe timer all derive from it.
+  std::uint32_t step_hz{10};
+  /// Lidar sweeps every N-th step (the sweep is the expensive part of
+  /// the tick; at 100 Hz a 10 Hz sweep keeps the terrain queries where
+  /// they were).
+  std::uint32_t lidar_divisor{1};
 };
 
 /* ----------------------------- GroundVehicleDriveCommand ----------------------------- */
@@ -161,6 +169,11 @@ struct GroundVehicleState {
   std::uint8_t last_cmd_result{0};
   std::uint8_t reserved_cmd{0};
   std::uint16_t last_cmd_opcode{0};
+
+  /* ---- LED strobe runtime (per lamp) ---- */
+  std::uint16_t led_phase[2]{}; ///< Steps into the current strobe period.
+  std::uint8_t led_on[2]{};     ///< Live on/off, what the frame reports.
+  std::uint8_t reserved_strobe[2]{};
 };
 
 /* ----------------------------- GroundVehicleTelemetry ----------------------------- */
