@@ -2,7 +2,8 @@
 
 Memory layout and budget for the `stm32_encryptor_demo` firmware running on the
 NUCLEO-L476RG. The STM32L476RG has unified flash, two SRAM banks, and no EEPROM
-(flash pages serve as non-volatile storage).
+(flash pages serve as non-volatile storage). The F767ZI build's map is in
+[STM32F767ZI](#stm32f767zi) at the end.
 
 ---
 
@@ -168,6 +169,51 @@ Available for future use (DMA buffers, secondary data structures, etc.).
 SRAM2 can be hardware write-protected via the SYSCFG_SWPR register (useful for
 protecting critical data from errant writes). It is also retained in some
 low-power modes where SRAM1 is not.
+
+---
+
+## STM32F767ZI
+
+The second board's part has 2 MB of flash and 512 KB of RAM, both reachable
+as one region each from the application's point of view.
+
+| Region       | Size   | Address Range             | Notes                                      |
+| ------------ | ------ | ------------------------- | ------------------------------------------ |
+| Flash (AXIM) | 2 MB   | 0x0800_0000 - 0x081F_FFFF | XIP; also aliased at 0x0020_0000 over ITCM |
+| DTCM RAM     | 128 KB | 0x2000_0000 - 0x2001_FFFF | Zero-wait data RAM                         |
+| SRAM1        | 368 KB | 0x2002_0000 - 0x2007_BFFF | AXI/AHB                                    |
+| SRAM2        | 16 KB  | 0x2007_C000 - 0x2007_FFFF | AXI/AHB                                    |
+| ITCM RAM     | 16 KB  | 0x0000_0000 - 0x0000_3FFF | Unused                                     |
+
+`STM32F767ZI.ld` declares FLASH as 2048K at 0x0800_0000 and RAM as one
+512K region at 0x2000_0000 (DTCM, SRAM1, and SRAM2 are contiguous), with the
+stack at the top of RAM.
+
+### Flash Sectors
+
+Single-bank layout (the factory option-byte setting; the dual-bank option
+halves every sector and numbers the second bank 12-23):
+
+| Sectors | Size each | Address     |
+| ------- | --------- | ----------- |
+| 0-3     | 32 KB     | 0x0800_0000 |
+| 4       | 128 KB    | 0x0802_0000 |
+| 5-11    | 256 KB    | 0x0804_0000 |
+
+The application image lives in sector 0. The key store is sector 11
+(0x081C_0000, 256 KB), the last erasable unit; the same index is bank 1's
+last 128 KB sector under dual bank, so the key store stays valid in either
+mode. Programming is 32-bit; a sector erase takes about a second.
+
+### Usage
+
+| Variant    | Flash (text + data) | RAM (data + bss) |
+| ---------- | ------------------- | ---------------- |
+| Bare-metal | 20,624 B (0.98%)    | 7,492 B (1.43%)  |
+| FreeRTOS   | 23,888 B (1.14%)    | 15,992 B (3.05%) |
+
+Both variants are smaller than their L476 counterparts: one UART instance
+instead of two, and the Cortex-M7 code density.
 
 ---
 

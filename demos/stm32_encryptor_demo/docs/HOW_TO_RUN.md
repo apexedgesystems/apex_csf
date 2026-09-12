@@ -1,7 +1,9 @@
 # How to Run: STM32 Encryptor
 
 Step-by-step commands to build, flash, and verify the AES-256-GCM encryptor
-firmware on the NUCLEO-L476RG (STM32L476RG, Cortex-M4 @ 80 MHz).
+firmware on the NUCLEO-L476RG (STM32L476RG, Cortex-M4 @ 80 MHz). The same
+demo also builds for the NUCLEO-F767ZI (STM32F767ZI, Cortex-M7 @ 216 MHz);
+its differences are collected in [NUCLEO-F767ZI](#nucleo-f767zi) at the end.
 
 ---
 
@@ -353,20 +355,85 @@ ser.close()
 
 ---
 
+## NUCLEO-F767ZI
+
+The second board in this demo. One knob selects it at configure time,
+`APEX_STM32_BOARD=nucleo_f767zi`, the same way `APEX_USE_FREERTOS` selects
+the execution mode. What changes:
+
+| Item          | NUCLEO-L476RG                                  | NUCLEO-F767ZI                                                                                                  |
+| ------------- | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Core / clock  | Cortex-M4F @ 80 MHz                            | Cortex-M7 @ 216 MHz (HSE bypass 8 MHz from the ST-Link, PLL, over-drive)                                       |
+| Channels      | Two UARTs: FTDI (data) + ST-Link VCP (command) | One UART: the ST-Link VCP carries both, each SLIP frame prefixed with a channel byte (0x00 data, 0x01 command) |
+| Heartbeat LED | LD2, PA5                                       | LD1 (green), PB0                                                                                               |
+| Key store     | Flash page 510 (2 KB)                          | Flash sector 11 (256 KB single-bank); an erase takes about a second                                            |
+| Tick budget   | 800,000 cycles                                 | 2,160,000 cycles                                                                                               |
+| udev name     | `/dev/nucleo_0`                                | `/dev/nucleo_1` (add a rule keyed on the board's ST-Link serial)                                               |
+
+No FTDI adapter is needed: plug the board's ST-Link USB in and everything
+runs over `/dev/nucleo_1`.
+
+### Build
+
+A build directory holds one board (the toolchain refuses an in-place
+switch), so remove the stm32 build directory when changing boards:
+
+```bash
+rm -rf build/mcu-stm32-relwithdebinfo
+make release APP=stm32_encryptor_demo CMAKE_EXTRA_ARGS="-DAPEX_STM32_BOARD=nucleo_f767zi"
+```
+
+The artifacts stage under the same `build/release/stm32_encryptor_demo/`
+paths as the L476 build; the staging directory holds whichever board was
+configured. The FreeRTOS variant adds `-DAPEX_USE_FREERTOS=ON` to the same
+option string with `make compose-stm32`.
+
+### Flash and reset
+
+The board is on the development machine, so flash with the host's
+`st-flash`, selecting the probe by serial when more than one ST-Link is
+attached:
+
+```bash
+st-flash --connect-under-reset --serial <st-link serial> write \
+    build/release/stm32_encryptor_demo/stm32/firmware/stm32_encryptor_demo.bin 0x08000000
+st-flash --connect-under-reset --serial <st-link serial> reset
+```
+
+`--connect-under-reset` holds the core in reset while the probe attaches;
+without it a running F767 image can refuse the connection ("Can not
+connect to target"). LD1 blinks at 2 Hz after the reset.
+
+### Checkout
+
+```bash
+python3 demos/stm32_encryptor_demo/scripts/serial_checkout.py \
+  --shared-port /dev/nucleo_1 --timeout 6
+```
+
+`--shared-port` opens one handle for both channels and prefixes and routes
+the frames. `--timeout 6` covers the key-store sector erase, which the
+L476's default 2 s would cut short. The same 40 checks run; the Connection
+group reports the command channel as sharing the data port.
+
+---
+
 ## Troubleshooting
 
-| Symptom                      | Fix                                                                |
-| ---------------------------- | ------------------------------------------------------------------ |
-| `/dev/nucleo_0` missing      | Check USB-C cable, verify udev rules for 0483:374b                 |
-| `/dev/ftdi_0` missing        | Check FTDI adapter USB connection, verify udev rules for 0403:6001 |
-| CPU halted after flash       | Run `make compose-stm32-reset` or press the black RESET button     |
-| LED not blinking after flash | Reset the board; st-flash can leave CPU halted (see above)         |
-| Port opens but no response   | Wait 2 seconds after opening for UART initialization               |
-| Checkout skips groups        | Both ports required; verify data and command ports are available   |
-| FTDI TX/RX LEDs not flashing | Check wiring: TXD->PA10, RXD->PA9, GND->GND                        |
-| `cryptography` import error  | Install with `pip install cryptography` for decrypt verification   |
-| Permission denied on port    | Add user to `dialout` group: `sudo usermod -aG dialout $USER`      |
-| FTDI adapter at 5V           | Set voltage jumper to 3.3V; STM32L4 pins are not 5V tolerant       |
+| Symptom                                 | Fix                                                                  |
+| --------------------------------------- | -------------------------------------------------------------------- |
+| `/dev/nucleo_0` missing                 | Check USB-C cable, verify udev rules for 0483:374b                   |
+| `/dev/ftdi_0` missing                   | Check FTDI adapter USB connection, verify udev rules for 0403:6001   |
+| CPU halted after flash                  | Run `make compose-stm32-reset` or press the black RESET button       |
+| LED not blinking after flash            | Reset the board; st-flash can leave CPU halted (see above)           |
+| Port opens but no response              | Wait 2 seconds after opening for UART initialization                 |
+| Checkout skips groups                   | Both ports required; verify data and command ports are available     |
+| FTDI TX/RX LEDs not flashing            | Check wiring: TXD->PA10, RXD->PA9, GND->GND                          |
+| `cryptography` import error             | Install with `pip install cryptography` for decrypt verification     |
+| Permission denied on port               | Add user to `dialout` group: `sudo usermod -aG dialout $USER`        |
+| FTDI adapter at 5V                      | Set voltage jumper to 3.3V; STM32L4 pins are not 5V tolerant         |
+| Board switch refused                    | The stm32 build directory remembers its board; remove it and rebuild |
+| F767ZI checkout times out on key writes | Pass `--timeout 6`; a 256 KB sector erase takes about a second       |
 
 ---
 
