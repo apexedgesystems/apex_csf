@@ -152,8 +152,7 @@ public:
     const std::uint8_t RC = dispatchCommand(opcode, payload, response);
     // Stamp the result of every rover-range command for the frame;
     // opcodes outside the surface fall through to the base untouched.
-    if (opcode >= static_cast<std::uint16_t>(RoverOpcode::HALT) &&
-        opcode <= static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE)) {
+    if (opcode >= static_cast<std::uint16_t>(RoverOpcode::HALT) && opcode <= kRoverOpcodeLast) {
       auto& s = state_.get();
       s.last_cmd_opcode = opcode;
       switch (static_cast<CommandResult>(RC)) {
@@ -162,6 +161,9 @@ public:
         break;
       case CommandResult::EXEC_FAILED:
         s.last_cmd_result = static_cast<std::uint8_t>(CmdResultCode::NACK_EXEC_FAILED);
+        break;
+      case static_cast<CommandResult>(kCommandResultBusy):
+        s.last_cmd_result = static_cast<std::uint8_t>(CmdResultCode::NACK_BUSY);
         break;
       default:
         s.last_cmd_result = static_cast<std::uint8_t>(CmdResultCode::NACK_INVALID_ARGUMENT);
@@ -177,6 +179,12 @@ public:
   }
 
 private:
+  /// A sequence owns the drive while seq_state is a running id (not
+  /// idle, not a halt reason).
+  [[nodiscard]] static bool sequenceOwnsDrive(const GroundVehicleState& s) noexcept {
+    return s.seq_state != 0u && (s.seq_state & kSeqStateHaltBit) == 0u;
+  }
+
   [[nodiscard]] std::uint8_t dispatchCommand(std::uint16_t opcode,
                                              apex::compat::rospan<std::uint8_t> payload,
                                              std::vector<std::uint8_t>& response) noexcept {
@@ -215,19 +223,25 @@ private:
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
     }
 
-    case RoverOpcode::SET_MODE: {
+    case RoverOpcode::SET_MODE:
+    case RoverOpcode::SET_MODE_SEQ: {
       if (payload.size() < sizeof(RoverCmdSetMode)) {
         return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
       }
       if (payload[0] > kDriveModeMax) {
         return static_cast<std::uint8_t>(CommandResult::INVALID_ARGUMENT);
       }
+      if (static_cast<RoverOpcode>(opcode) == RoverOpcode::SET_MODE && sequenceOwnsDrive(s)) {
+        return kCommandResultBusy;
+      }
       s.commanded_mode = payload[0];
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
     }
 
     case RoverOpcode::SET_TARGET_REL:
-    case RoverOpcode::SET_TARGET_ABS: {
+    case RoverOpcode::SET_TARGET_ABS:
+    case RoverOpcode::SET_TARGET_REL_SEQ:
+    case RoverOpcode::SET_TARGET_ABS_SEQ: {
       if (payload.size() < sizeof(RoverCmdSetTarget)) {
         return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
       }
@@ -240,7 +254,14 @@ private:
       if (s.commanded_halt != 0u) {
         return static_cast<std::uint8_t>(CommandResult::EXEC_FAILED); // the mode refuses
       }
-      s.target_kind = (static_cast<RoverOpcode>(opcode) == RoverOpcode::SET_TARGET_REL) ? 1u : 2u;
+      const auto OP = static_cast<RoverOpcode>(opcode);
+      const bool FROM_WIRE =
+          (OP == RoverOpcode::SET_TARGET_REL) || (OP == RoverOpcode::SET_TARGET_ABS);
+      if (FROM_WIRE && sequenceOwnsDrive(s)) {
+        return kCommandResultBusy;
+      }
+      s.target_kind =
+          (OP == RoverOpcode::SET_TARGET_REL || OP == RoverOpcode::SET_TARGET_REL_SEQ) ? 1u : 2u;
       s.target_a_m = t.a_m;
       s.target_b_m = t.b_m;
       ++s.target_seq;

@@ -35,7 +35,21 @@ enum class RoverOpcode : std::uint16_t {
   SET_TARGET_ABS = 0x0105, ///< RoverCmdSetTarget: (north, east) metres from the grid anchor.
   SET_LED = 0x0106,        ///< RoverCmdSetLed: lamp 1..2, colour code, rate code.
   SET_SEQ_STATE = 0x0107,  ///< RoverCmdSeqState: sequences bracket themselves (display truth).
+  /// Sequence-owned variants of SET_MODE / SET_TARGET_REL / SET_TARGET_ABS
+  /// (same payloads). Sequences drive through these; the plain opcodes
+  /// answer NACK_BUSY while a sequence is running, so a panel cannot
+  /// steal the drive from a tour without halting it first.
+  SET_MODE_SEQ = 0x0113,
+  SET_TARGET_REL_SEQ = 0x0114,
+  SET_TARGET_ABS_SEQ = 0x0115,
 };
+
+/// Last rover-range opcode (for result stamping).
+inline constexpr std::uint16_t kRoverOpcodeLast = 0x0115;
+
+/// Component-specific command result: the drive is owned by a running
+/// sequence (extends the framework's CommandResult codes).
+inline constexpr std::uint8_t kCommandResultBusy = 0x20;
 
 /* ----------------------------- Bounds ----------------------------- */
 

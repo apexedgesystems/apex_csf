@@ -3,8 +3,9 @@
 # Clears a halt, returns to HOLD, lamps off, sequence state idle.
 #
 # Delays are scheduler cycles at 100 Hz. Commands are the ROVR/2 surface on
-# the rover (0x00DE00): SET_MODE 0x0103, SET_TARGET_REL 0x0104, SET_TARGET_ABS
-# 0x0105, SET_LED 0x0106, SET_SEQ_STATE 0x0107; HALT 0x0100, RESUME 0x0101.
+# the rover (0x00DE00), through the sequence-owned drive opcodes SET_MODE_SEQ
+# 0x0113 and SET_TARGET_REL_SEQ 0x0114 (the wire's 0x0103/0x0104 answer BUSY while
+# a sequence runs); SET_LED 0x0106, SET_SEQ_STATE 0x0107; HALT 0x0100, RESUME 0x0101.
 # A step with waitCondition holds after its delay until the controller's
 # ARRIVED byte (0xE200 OUTPUT @18) reads 1, then fires.
 
@@ -58,7 +59,7 @@ reserved         = { type = "uint", size = 1, value = 0 }
 [StandaloneSequenceTprm.step_0_tail]
 reserved         = { type = "uint", size = 1, value = 0 }
 
-# Step 1: SET_MODE 0
+# Step 1: SET_MODE_SEQ 0
 [StandaloneSequenceTprm.step_1]
 targetFullUid    = { type = "uint", size = 4, value = "0x00DE00" }
 targetCategory   = { type = "uint", size = 1, value = 0 }
@@ -68,7 +69,7 @@ actionType       = { type = "uint", size = 1, value = "COMMAND" }
 armTarget        = { type = "uint", size = 1, value = 0 }
 armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
-commandOpcode    = { type = "uint", size = 2, value = "0x0103" }
+commandOpcode    = { type = "uint", size = 2, value = "0x0113" }
 commandPayloadLen = { type = "uint", size = 1, value = 1 }
 commandPayload   = { type = "array", size = 16, value = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }

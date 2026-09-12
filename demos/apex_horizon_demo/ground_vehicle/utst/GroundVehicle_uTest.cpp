@@ -448,16 +448,17 @@ TEST(GroundVehicleCmd, SetModeIsBoundedAndAdoptable) {
 
 TEST(GroundVehicleCmd, TargetsValidateRefuseWhileHaltedAndCountWaypoints) {
   ReadyRover r;
+  // A running sequence issues its legs through the sequence-owned opcodes.
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 2u}), 0u);
-  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.52F, 0.0F)), 0u);
-  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_ABS, targetBytes(10.0F, -4.0F)), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(1.52F, 0.0F)), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_ABS_SEQ, targetBytes(10.0F, -4.0F)), 0u);
   const auto& s = r.rover.vehicleState();
   EXPECT_EQ(s.target_kind, 2u);
   EXPECT_EQ(s.target_seq, 2u);
   EXPECT_EQ(s.active_waypoint, 2u);
   EXPECT_FLOAT_EQ(s.target_a_m, 10.0F);
 
-  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(5000.0F, 0.0F)), 0u)
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(5000.0F, 0.0F)), 0u)
       << "out of bounds";
   EXPECT_EQ(s.target_seq, 2u) << "rejected whole";
   {
@@ -605,4 +606,32 @@ TEST(GroundVehicleCmd, HaltStampsManualReasonAndResumeClearsAnyHalt) {
   EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0x12u);
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
   EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+}
+
+/* ----------------------------- BUSY: a sequence owns the drive ----------------------------- */
+
+TEST(GroundVehicleCmd, WireTargetsAreBusyWhileASequenceRunsButSequenceOpcodesAreNot) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
+            appsim::ground_vehicle::kCommandResultBusy);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE, {0u}),
+            appsim::ground_vehicle::kCommandResultBusy);
+  EXPECT_EQ(r.rover.vehicleState().target_seq, 0u) << "refused whole";
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT], static_cast<std::uint8_t>(CmdResultCode::NACK_BUSY));
+  EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_LO], 0x03u);
+
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE_SEQ, {2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(1.0F, 0.0F)), 0u);
+  EXPECT_EQ(r.rover.vehicleState().target_seq, 1u);
+  EXPECT_EQ(r.rover.vehicleState().active_waypoint, 1u);
+
+  // Sequence ends: the wire drives again. A halt (0x1x) is not "running".
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_ABS, targetBytes(0.0F, 0.0F)), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED))
+      << "halted refuses with EXEC_FAILED, not BUSY";
 }
