@@ -11,9 +11,12 @@
  *  - STM32F7 (e.g., STM32F767xx)
  *  - STM32G4 (e.g., STM32G474xx)
  *  - STM32H7 (e.g., STM32H743xx)
+ * Supported with the single DR/SR register model (data read and written
+ * through DR, error flags cleared by the HAL's SR-then-DR read sequence):
+ *  - STM32F4 (e.g., STM32F446xx)
  *
- * NOT supported (old UART peripheral with single DR/SR registers):
- *  - STM32F1, STM32F2, STM32F4
+ * NOT supported:
+ *  - STM32F1, STM32F2
  *
  * Features:
  *  - Interrupt-driven RX (no polling in hot path)
@@ -58,11 +61,13 @@
 // STM32 HAL includes - user must have configured their project
 // Note: STM32CubeL4 defines STM32L476xx (chip-specific), not STM32L4xx (family)
 //
-// Only new-UART families are supported (RDR/TDR register model).
-// F1/F2/F4 use a different register layout (single DR) and are not compatible.
-#if defined(STM32F1) || defined(STM32F2) || defined(STM32F4xx) || defined(STM32F401xC) ||          \
-    defined(STM32F411xE) || defined(STM32F446xx)
-#error "Stm32Uart requires new UART peripheral (RDR/TDR). F1/F2/F4 not supported."
+// New-UART families use RDR/TDR; the F4 keeps the single DR register model.
+// F1/F2 use a different register layout again and are not supported.
+#if defined(STM32F1) || defined(STM32F2)
+#error "Stm32Uart: F1/F2 UART register model not supported."
+#elif defined(STM32F4xx) || defined(STM32F401xC) || defined(STM32F411xE) || defined(STM32F446xx)
+#include "stm32f4xx_hal.h"
+#define APEX_STM32_UART_LEGACY_DR 1
 #elif defined(STM32L476xx) || defined(STM32L4xx)
 #include "stm32l4xx_hal.h"
 #elif defined(STM32F7xx) || defined(STM32F767xx)
@@ -394,7 +399,11 @@ public:
 #ifndef APEX_HAL_STM32_MOCK
     // Check for RX data
     if (__HAL_UART_GET_FLAG(&huart_, UART_FLAG_RXNE) != RESET) {
+#ifdef APEX_STM32_UART_LEGACY_DR
+      uint8_t data = static_cast<uint8_t>(huart_.Instance->DR & 0xFF);
+#else
       uint8_t data = static_cast<uint8_t>(huart_.Instance->RDR & 0xFF);
+#endif
       size_t nextHead = (rxHead_ + 1) % RxBufSize;
 
       if (nextHead != rxTail_) {
@@ -414,7 +423,11 @@ public:
     if (__HAL_UART_GET_IT_SOURCE(&huart_, UART_IT_TXE) != RESET &&
         __HAL_UART_GET_FLAG(&huart_, UART_FLAG_TXE) != RESET) {
       if (txTail_ != txHead_) {
+#ifdef APEX_STM32_UART_LEGACY_DR
+        huart_.Instance->DR = txBuf_[txTail_];
+#else
         huart_.Instance->TDR = txBuf_[txTail_];
+#endif
         txTail_ = (txTail_ + 1) % TxBufSize;
       } else {
         // TX buffer empty, disable TXE interrupt
@@ -424,6 +437,29 @@ public:
     }
 
     // Check for errors
+#ifdef APEX_STM32_UART_LEGACY_DR
+    // The F4 clears every error flag with the same SR-then-DR read sequence,
+    // so the flags are sampled first and one clear covers all four.
+    const bool OVERRUN = __HAL_UART_GET_FLAG(&huart_, UART_FLAG_ORE) != RESET;
+    const bool FRAMING = __HAL_UART_GET_FLAG(&huart_, UART_FLAG_FE) != RESET;
+    const bool PARITY = __HAL_UART_GET_FLAG(&huart_, UART_FLAG_PE) != RESET;
+    const bool NOISE = __HAL_UART_GET_FLAG(&huart_, UART_FLAG_NE) != RESET;
+    if (OVERRUN || FRAMING || PARITY || NOISE) {
+      __HAL_UART_CLEAR_OREFLAG(&huart_);
+      if (OVERRUN) {
+        ++stats_.overrunErrors;
+      }
+      if (FRAMING) {
+        ++stats_.framingErrors;
+      }
+      if (PARITY) {
+        ++stats_.parityErrors;
+      }
+      if (NOISE) {
+        ++stats_.noiseErrors;
+      }
+    }
+#else
     if (__HAL_UART_GET_FLAG(&huart_, UART_FLAG_ORE) != RESET) {
       __HAL_UART_CLEAR_FLAG(&huart_, UART_CLEAR_OREF);
       ++stats_.overrunErrors;
@@ -440,6 +476,7 @@ public:
       __HAL_UART_CLEAR_FLAG(&huart_, UART_CLEAR_NEF);
       ++stats_.noiseErrors;
     }
+#endif
 #endif
   }
 

@@ -12,14 +12,17 @@
  *  - STM32G4 (e.g., STM32G474xx) -- 512KB dual-bank, 2KB pages
  *  - STM32F7 (e.g., STM32F767xx) -- sector-based: 4 x 32KB, 128KB, then
  *    256KB sectors per bank (halved when the nDBANK option selects dual
- *    bank). Sectors are exposed through the page vocabulary: page index =
+ *    bank).
+ *  - STM32F4 (e.g., STM32F446xx) -- sector-based with the same rule at a
+ *    16KB small sector: 4 x 16KB, 64KB, then 128KB sectors, single bank.
+ *    Sectors are exposed through the page vocabulary on both: page index =
  *    sector index, geometry().pageSize is the smallest sector, and
  *    pageSizeAt() reports each sector's true size. The layout is derived
- *    at init() from the flash-size register and the nDBANK option bit.
- *    Programming is 32-bit (double-word needs external Vpp on F7).
+ *    at init() from the flash-size register and, where the part has one,
+ *    the nDBANK option bit. Programming is 32-bit (double-word needs
+ *    external Vpp).
  *
  * NOT supported:
- *  - STM32F4 (sector-based, legacy flash controller)
  *  - STM32H7 (128KB sectors, 256-bit flash words)
  *  - STM32F1 (1KB pages, different register interface)
  *
@@ -62,9 +65,11 @@
 
 #include <string.h> // memcpy, memset
 
-// STM32 HAL includes -- only page-based flash families supported
+// STM32 HAL includes -- page-based (L4/G4) and sector-based (F4/F7) families
 #if defined(STM32F4xx) || defined(STM32F446xx) || defined(STM32F401xC) || defined(STM32F411xE)
-#error "Stm32Flash: F4 uses sector-based erase (not supported by this wrapper)."
+#include "stm32f4xx_hal.h"
+#define APEX_STM32_FLASH_SECTORED 1
+#define APEX_STM32_FLASH_SMALL_SECTOR (16U * 1024U)
 #elif defined(STM32H7xx) || defined(STM32H743xx)
 #error "Stm32Flash: H7 uses sector-based erase (not supported by this wrapper)."
 #elif defined(STM32F1) || defined(STM32F103xB)
@@ -74,6 +79,7 @@
 #elif defined(STM32F7xx) || defined(STM32F767xx)
 #include "stm32f7xx_hal.h"
 #define APEX_STM32_FLASH_SECTORED 1
+#define APEX_STM32_FLASH_SMALL_SECTOR (32U * 1024U)
 #elif defined(STM32G4xx) || defined(STM32G474xx)
 #include "stm32g4xx_hal.h"
 #else
@@ -142,32 +148,35 @@ public:
   static constexpr uint32_t MAX_SECTORS = 24;
 
   /**
-   * @brief Compute the F7 sector layout for a flash size and bank mode.
+   * @brief Compute the F4/F7 sector layout for a flash size, small-sector
+   *        size, and bank count.
    *
    * Each bank holds four small sectors, one sector of four times that
    * size, and large sectors of eight times that size until the bank is
-   * full. The small sector is 32 KB in single-bank mode and 16 KB in
-   * dual-bank mode; dual bank splits the array into two equal banks with
-   * the second bank's sectors numbered after the first bank's.
+   * full. The small sector is 16 KB on the F4 and 32 KB on the F7; the
+   * F7's dual-bank option halves it and splits the array into two equal
+   * banks with the second bank's sectors numbered after the first bank's.
    *
    * Pure arithmetic, so it is the same in every build and unit-testable
    * without hardware.
    *
    * @param totalBytes Flash size in bytes.
-   * @param dualBank true when the nDBANK option selects dual-bank mode.
+   * @param smallSector Size of the small sectors in bytes.
+   * @param banks Number of banks (1 or 2).
    * @param sizesOut Receives each sector's size, in index order.
    * @param maxCount Capacity of sizesOut.
-   * @return Number of sectors written (0 if maxCount is too small).
+   * @return Number of sectors written (0 on bad arguments or a full table).
    * @note RT-safe.
    */
-  [[nodiscard]] static uint32_t sectorLayout(uint32_t totalBytes, bool dualBank, uint32_t* sizesOut,
+  [[nodiscard]] static uint32_t sectorLayout(uint32_t totalBytes, uint32_t smallSector,
+                                             uint32_t banks, uint32_t* sizesOut,
                                              uint32_t maxCount) noexcept {
-    if (sizesOut == nullptr || totalBytes == 0) {
+    if (sizesOut == nullptr || totalBytes == 0 || smallSector == 0 || banks == 0) {
       return 0;
     }
-    const uint32_t BANKS = dualBank ? 2U : 1U;
+    const uint32_t BANKS = banks;
     const uint32_t BANK_BYTES = totalBytes / BANKS;
-    const uint32_t SMALL = dualBank ? (16U * 1024U) : (32U * 1024U);
+    const uint32_t SMALL = smallSector;
     uint32_t count = 0;
     for (uint32_t b = 0; b < BANKS; ++b) {
       uint32_t filled = 0;
@@ -231,17 +240,30 @@ public:
       return FlashStatus::ERROR_WRITE_PROTECTED;
     }
 
-    // Clear any pending error flags
+    // Clear any pending error flags (the F4 HAL has no aggregate name)
+#if defined(FLASH_FLAG_ALL_ERRORS)
     __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_ALL_ERRORS);
+#else
+    __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_OPERR | FLASH_FLAG_WRPERR | FLASH_FLAG_PGAERR |
+                           FLASH_FLAG_PGPERR | FLASH_FLAG_PGSERR);
+#endif
 
 #ifdef APEX_STM32_FLASH_SECTORED
     // Sector-based: size from the flash-size register (KB), bank mode from
-    // the nDBANK option bit, sector table from the family rule.
+    // the nDBANK option bit on parts that have one, sector table from the
+    // family rule with the family's small-sector size.
     const uint32_t SIZE_KB = *reinterpret_cast<const volatile uint16_t*>(FLASHSIZE_BASE);
+#if defined(FLASH_OPTCR_nDBANK)
     const bool DUAL = (READ_BIT(FLASH->OPTCR, FLASH_OPTCR_nDBANK) == 0U);
+#else
+    const bool DUAL = false;
+#endif
+    const uint32_t SMALL =
+        DUAL ? (APEX_STM32_FLASH_SMALL_SECTOR / 2U) : APEX_STM32_FLASH_SMALL_SECTOR;
     geometry_.baseAddress = FLASH_BASE;
     geometry_.totalSize = SIZE_KB * 1024U;
-    sectorCount_ = sectorLayout(geometry_.totalSize, DUAL, sectorSizes_, MAX_SECTORS);
+    sectorCount_ =
+        sectorLayout(geometry_.totalSize, SMALL, DUAL ? 2U : 1U, sectorSizes_, MAX_SECTORS);
     uint32_t offset = 0;
     for (uint32_t i = 0; i < sectorCount_; ++i) {
       sectorOffsets_[i] = offset;

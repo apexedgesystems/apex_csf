@@ -521,7 +521,7 @@ TEST(Stm32Flash, BusyAfterInit) {
 TEST(Stm32Flash, SectorLayoutSingleBank2MB) {
   uint32_t sizes[Stm32Flash::MAX_SECTORS] = {};
   const uint32_t COUNT =
-      Stm32Flash::sectorLayout(2U * 1024U * 1024U, false, sizes, Stm32Flash::MAX_SECTORS);
+      Stm32Flash::sectorLayout(2U * 1024U * 1024U, 32U * 1024U, 1U, sizes, Stm32Flash::MAX_SECTORS);
   ASSERT_EQ(COUNT, 12U);
   uint32_t total = 0;
   for (uint32_t i = 0; i < COUNT; ++i) {
@@ -536,7 +536,7 @@ TEST(Stm32Flash, SectorLayoutSingleBank2MB) {
 TEST(Stm32Flash, SectorLayoutDualBank2MB) {
   uint32_t sizes[Stm32Flash::MAX_SECTORS] = {};
   const uint32_t COUNT =
-      Stm32Flash::sectorLayout(2U * 1024U * 1024U, true, sizes, Stm32Flash::MAX_SECTORS);
+      Stm32Flash::sectorLayout(2U * 1024U * 1024U, 16U * 1024U, 2U, sizes, Stm32Flash::MAX_SECTORS);
   ASSERT_EQ(COUNT, 24U);
   for (uint32_t bank = 0; bank < 2U; ++bank) {
     uint32_t bankTotal = 0;
@@ -553,17 +553,38 @@ TEST(Stm32Flash, SectorLayoutDualBank2MB) {
 TEST(Stm32Flash, SectorLayoutSingleBank1MB) {
   uint32_t sizes[Stm32Flash::MAX_SECTORS] = {};
   const uint32_t COUNT =
-      Stm32Flash::sectorLayout(1024U * 1024U, false, sizes, Stm32Flash::MAX_SECTORS);
+      Stm32Flash::sectorLayout(1024U * 1024U, 32U * 1024U, 1U, sizes, Stm32Flash::MAX_SECTORS);
   ASSERT_EQ(COUNT, 8U);
   EXPECT_EQ(sizes[7], 256U * 1024U);
 }
 
-/** @test Verify the layout refuses a null table, a zero size, and an undersized table. */
+/** @test Verify the F4 512 KB layout: 4 x 16K, 64K, 3 x 128K. */
+TEST(Stm32Flash, SectorLayoutF4SingleBank512KB) {
+  uint32_t sizes[Stm32Flash::MAX_SECTORS] = {};
+  const uint32_t COUNT =
+      Stm32Flash::sectorLayout(512U * 1024U, 16U * 1024U, 1U, sizes, Stm32Flash::MAX_SECTORS);
+  ASSERT_EQ(COUNT, 8U);
+  uint32_t total = 0;
+  for (uint32_t i = 0; i < COUNT; ++i) {
+    const uint32_t EXPECTED = (i < 4U) ? 16U * 1024U : (i == 4U) ? 64U * 1024U : 128U * 1024U;
+    EXPECT_EQ(sizes[i], EXPECTED) << "sector " << i;
+    total += sizes[i];
+  }
+  EXPECT_EQ(total, 512U * 1024U);
+}
+
+/** @test Verify the layout refuses a null table, zero sizes, zero banks, and an undersized table.
+ */
 TEST(Stm32Flash, SectorLayoutRejectsBadArguments) {
   uint32_t sizes[Stm32Flash::MAX_SECTORS] = {};
-  EXPECT_EQ(Stm32Flash::sectorLayout(2U * 1024U * 1024U, false, nullptr, 4), 0U);
-  EXPECT_EQ(Stm32Flash::sectorLayout(0, false, sizes, Stm32Flash::MAX_SECTORS), 0U);
-  EXPECT_EQ(Stm32Flash::sectorLayout(2U * 1024U * 1024U, false, sizes, 4), 0U);
+  EXPECT_EQ(Stm32Flash::sectorLayout(2U * 1024U * 1024U, 32U * 1024U, 1U, nullptr, 4), 0U);
+  EXPECT_EQ(Stm32Flash::sectorLayout(0, 32U * 1024U, 1U, sizes, Stm32Flash::MAX_SECTORS), 0U);
+  EXPECT_EQ(Stm32Flash::sectorLayout(2U * 1024U * 1024U, 0, 1U, sizes, Stm32Flash::MAX_SECTORS),
+            0U);
+  EXPECT_EQ(
+      Stm32Flash::sectorLayout(2U * 1024U * 1024U, 32U * 1024U, 0, sizes, Stm32Flash::MAX_SECTORS),
+      0U);
+  EXPECT_EQ(Stm32Flash::sectorLayout(2U * 1024U * 1024U, 32U * 1024U, 1U, sizes, 4), 0U);
 }
 
 /* ----------------------------- Page Size Accessor ----------------------------- */

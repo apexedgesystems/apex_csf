@@ -337,15 +337,20 @@ New-generation peripherals with modern register layouts:
 | STM32L4 | Yes            | Yes         | Yes | Yes           | Yes (page)   |
 | STM32G4 | Yes            | Yes         | Yes | Yes           | Yes (page)   |
 | STM32F7 | Yes            | Yes         | Yes | Yes           | Yes (sector) |
+| STM32F4 | Yes (DR/SR)    | Yes         | Yes | No (legacy)   | Yes (sector) |
 | STM32H7 | Yes            | Planned     | Yes | Planned       | Planned      |
 
-**Not supported:** STM32F1, STM32F2, STM32F4 (legacy peripheral registers).
+**Not supported:** STM32F1, STM32F2 (legacy peripheral registers). The F4's
+I2C is the legacy CCR peripheral and stays unsupported.
 
-Flash on the F7 is sector-based with non-uniform sizes. `Stm32Flash` keeps
-the page vocabulary there: page index = sector index, `geometry().pageSize`
-is the smallest sector, and `pageSizeAt(index)` reports each sector's true
-size. The layout is derived at `init()` from the flash-size register and the
-dual-bank option bit; programming is 32-bit on the F7.
+Flash on the F4 and F7 is sector-based with non-uniform sizes. `Stm32Flash`
+keeps the page vocabulary there: page index = sector index,
+`geometry().pageSize` is the smallest sector, and `pageSizeAt(index)` reports
+each sector's true size. The layout is derived at `init()` from the
+flash-size register and, where the part has one, the dual-bank option bit;
+programming is 32-bit on both. The F4 USART keeps the single DR register and
+clears its error flags with the HAL's SR-then-DR sequence; the driver's ISR
+carries that branch.
 
 ### Construction
 
