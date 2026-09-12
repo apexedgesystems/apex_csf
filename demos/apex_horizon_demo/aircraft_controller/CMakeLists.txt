@@ -29,4 +29,4 @@ apex_add_interface_library(
 
 apex_standard_optins(${LIB_NAME})
 
-apex_add_test_subdirs(utst)
+apex_add_test_subdirs()

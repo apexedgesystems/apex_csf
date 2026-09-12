@@ -61,7 +61,37 @@ enum class AircraftOpcode : std::uint16_t {
   /// Payload: empty.
   /// Response: AircraftCommandSnapshot (sizeof = 16 bytes; see below).
   GET_COMMAND_STATE = 0x0102,
+
+  /// Payload: AircraftCmdSetLoopMask (1 byte). Per-loop autopilot
+  /// enable bitmask, applied by AircraftController on its next tick:
+  ///   bit 0 PITCH   bit 1 ALT      bit 2 SPEED
+  ///   bit 3 ROLL    bit 4 HEADING  bit 5 YAW_DAMPER
+  /// 0x3F = all loops (boot default). Bits 6-7 are invalid: a mask
+  /// with unknown bits set is rejected whole, never masked quietly.
+  SET_LOOP_ENABLE = 0x0103,
+
+  /// Payload: AircraftCmdOrchState (1 byte). Mirrors the demo
+  /// orchestration state into the telemetry frame: sequences send it
+  /// as their first and last step (set-piece id on entry, 0 on exit),
+  /// and the boundary-restore sequences send 0x10|reason. The
+  /// aircraft stamps the value into the frame's orch_state byte and
+  /// bumps recovery_count whenever a recovery state (0x10 bit) is
+  /// entered. Pure display/attribution plumbing -- no physics effect.
+  SET_ORCH_STATE = 0x0105,
+
+  /// Payload: AircraftCmdExcite (1 byte). Arms a scripted excitation
+  /// (ids match Aircraft::ExciteMode): 1 RUDDER_DOUBLET,
+  /// 2 ELEVATOR_PULSE, 3 AILERON_PULSE, 4 SPEED_OFFSET. Rejected while
+  /// an excitation is already armed -- one mode at a time, so a trace
+  /// window is never contaminated by a second injection.
+  EXCITE_MODE = 0x0104,
 };
+
+/// Valid SET_LOOP_ENABLE bits (bit 5..0). Mirrors
+/// AircraftController::LoopBit; the wire contract lives here so the
+/// producer's command layer validates without depending on the
+/// controller header.
+inline constexpr std::uint8_t kLoopMaskValidBits = 0x3F;
 
 /* ----------------------------- Payload structs ----------------------------- */
 
@@ -72,13 +102,33 @@ struct AircraftCmdSetEnable {
 };
 static_assert(sizeof(AircraftCmdSetEnable) == 1, "AircraftCmdSetEnable must be exactly 1 byte");
 
+/// SET_LOOP_ENABLE payload.
+struct AircraftCmdSetLoopMask {
+  std::uint8_t mask; ///< LoopBit bitmask; must be within kLoopMaskValidBits.
+};
+static_assert(sizeof(AircraftCmdSetLoopMask) == 1, "AircraftCmdSetLoopMask must be exactly 1 byte");
+
+/// SET_ORCH_STATE payload.
+struct AircraftCmdOrchState {
+  std::uint8_t state; ///< 0 idle; 1..4 set-piece; 0x10|reason recovery.
+};
+static_assert(sizeof(AircraftCmdOrchState) == 1, "AircraftCmdOrchState must be exactly 1 byte");
+
+/// EXCITE_MODE payload.
+struct AircraftCmdExcite {
+  std::uint8_t mode; ///< Aircraft::ExciteMode id (1..4); 0/unknown rejected.
+};
+static_assert(sizeof(AircraftCmdExcite) == 1, "AircraftCmdExcite must be exactly 1 byte");
+
 /// Snapshot of the aircraft's current command-state flags. Returned
 /// by GET_COMMAND_STATE so external clients (HUD, checkout script, ops
 /// dashboard) can read the live state without a separate INSPECT call.
 struct AircraftCommandSnapshot {
   std::uint8_t turbulence_enabled;       ///< 0/1 — current Dryden gating
   std::uint8_t gust_alleviation_enabled; ///< 0/1 — controller δe_gust gate
-  std::uint8_t reserved[6];              ///< Reserved for future flags
+  std::uint8_t loop_enable_mask;         ///< LoopBit mask the controller runs (producer truth)
+  std::uint8_t active_excite_mode;       ///< ExciteMode id currently armed; 0 = none
+  std::uint8_t reserved[4];              ///< Reserved for future flags
   std::uint64_t cmd_count;               ///< Number of commands handled since boot
 };
 static_assert(sizeof(AircraftCommandSnapshot) == 16,

@@ -1,11 +1,11 @@
-# ShmRingBridge (0xCB00): ACFT/1 bidirectional link on /horizon_aircraft.
+# ShmRingBridge (0xCB00): ACFT/2 bidirectional link on /horizon_aircraft.
 # Forward: capacity 16, 256-byte AircraftFrames from the aircraft's
 # OUTPUT block at 50 Hz. Reverse: 256-byte APROTO command slots drained
 # by the sink onto the internal bus (pass-1 toggles at dst 0x00E000).
 # Orphan self-heal on.
 [ShmRingBridgeTunables]
 app_magic            = { type = "uint",   size = 4,  value = 1094927956 }     # 0x41434654 = "ACFT"
-app_version          = { type = "uint",   size = 2,  value = 1 }
+app_version          = { type = "uint",   size = 2,  value = 2 }
 reserved0            = { type = "uint",   size = 2,  value = 0 }
 capacity             = { type = "uint",   size = 4,  value = 16 }
 payload_size         = { type = "uint",   size = 4,  value = 256 }            # = sizeof(AircraftFrame)

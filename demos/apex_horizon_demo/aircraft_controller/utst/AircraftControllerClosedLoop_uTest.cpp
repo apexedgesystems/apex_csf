@@ -450,3 +450,249 @@ TEST(AircraftControllerModes, BootConditionsReachTrim) {
   }
   EXPECT_LT(std::fabs(TLM.elevator_rad), 0.05); // settled near trim
 }
+
+/* -------------------- ACFT/2 command surface (0x0103/0x0104) -------------------- */
+
+namespace {
+
+/// Send a 1-byte command; returns the CommandResult code.
+std::uint8_t sendByteCmd(Aircraft& a, std::uint16_t opcode, std::uint8_t value,
+                         std::vector<std::uint8_t>* respOut = nullptr) {
+  std::uint8_t storage = value;
+  apex::compat::rospan<std::uint8_t> payload(&storage, 1);
+  std::vector<std::uint8_t> resp;
+  const std::uint8_t RC = a.handleCommand(opcode, payload, resp);
+  if (respOut != nullptr) {
+    *respOut = resp;
+  }
+  return RC;
+}
+
+std::uint8_t queryLoopMask(Aircraft& a) {
+  std::vector<std::uint8_t> resp;
+  (void)sendByteCmd(a, 0x0102u, 0u, &resp); // GET_COMMAND_STATE ignores payload
+  return resp.at(2);                        // loop_enable_mask offset in the snapshot
+}
+
+} // namespace
+
+TEST(AircraftCommandSurface, LoopMaskCommandAdoptedNextControllerTick) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  Aircraft aircraft;
+  aircraft.setBody(&earth);
+  setTurbulence(aircraft, 0);
+  AircraftController controller;
+  controller.setAircraft(&aircraft);
+  configureTrimCruise(controller, aircraft);
+  aircraft.setControllerOutput(&controller.controllerOutput());
+
+  // Boot truth: all loops, from both sides' defaults.
+  EXPECT_EQ(queryLoopMask(aircraft), 0x3Fu);
+
+  // Drop the yaw damper (bit 5): accepted, adopted on the next tick.
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0103u, 0x1Fu), 0u);
+  tickOnce(controller, aircraft);
+  EXPECT_EQ(controller.loopEnableMask(), 0x1Fu);
+  EXPECT_EQ(queryLoopMask(aircraft), 0x1Fu);
+
+  // Unknown bits reject whole; the running mask is untouched.
+  EXPECT_NE(sendByteCmd(aircraft, 0x0103u, 0x40u), 0u);
+  tickOnce(controller, aircraft);
+  EXPECT_EQ(controller.loopEnableMask(), 0x1Fu);
+
+  // Restore all loops.
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0103u, 0x3Fu), 0u);
+  tickOnce(controller, aircraft);
+  EXPECT_EQ(controller.loopEnableMask(), 0x3Fu);
+}
+
+TEST(AircraftCommandSurface, ExciteArmsOnceAndReportsTruth) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  Aircraft aircraft;
+  aircraft.setBody(&earth);
+  setTurbulence(aircraft, 0);
+  AircraftController controller;
+  controller.setAircraft(&aircraft);
+  configureTrimCruise(controller, aircraft);
+  aircraft.setControllerOutput(&controller.controllerOutput());
+
+  // Unknown mode ids reject.
+  EXPECT_NE(sendByteCmd(aircraft, 0x0104u, 0u), 0u);
+  EXPECT_NE(sendByteCmd(aircraft, 0x0104u, 5u), 0u);
+
+  // Arm the rudder doublet; snapshot reports it armed.
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0104u, 1u), 0u);
+  {
+    std::vector<std::uint8_t> resp;
+    (void)sendByteCmd(aircraft, 0x0102u, 0u, &resp);
+    EXPECT_EQ(resp.at(3), 1u); // active_excite_mode
+  }
+
+  // A second injection while armed is rejected -- the trace window
+  // stays clean -- and the armed mode is unchanged.
+  EXPECT_NE(sendByteCmd(aircraft, 0x0104u, 3u), 0u);
+  EXPECT_EQ(static_cast<std::uint8_t>(aircraft.activeExcitation()), 1u);
+
+  // Play the doublet out (1.0 s = 25 controller ticks at 100 Hz plant);
+  // it self-clears and the snapshot returns to none, after which a new
+  // excitation arms cleanly.
+  tickN(controller, aircraft, 30);
+  {
+    std::vector<std::uint8_t> resp;
+    (void)sendByteCmd(aircraft, 0x0102u, 0u, &resp);
+    EXPECT_EQ(resp.at(3), 0u);
+  }
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0104u, 3u), 0u);
+}
+
+TEST(AircraftCommandSurface, WireExcitationCapturesModeTrace) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  Aircraft aircraft;
+  aircraft.setBody(&earth);
+  setTurbulence(aircraft, 0);
+  AircraftController controller;
+  controller.setAircraft(&aircraft);
+  configureTrimCruise(controller, aircraft);
+  aircraft.setControllerOutput(&controller.controllerOutput());
+
+  // Wire-armed excitation opens the trace window: 20 Hz capture means
+  // one sample per 5 plant ticks. 2 s of flight = 40 samples, but the
+  // bounded buffer holds 64 without a telemetry drain, so all pend.
+  EXPECT_EQ(aircraft.modeTracePending(), 0u);
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0104u, 1u), 0u);
+  tickN(controller, aircraft, 50 / 4); // ~0.5 s
+  const std::size_t AFTER_HALF_S = aircraft.modeTracePending();
+  EXPECT_GE(AFTER_HALF_S, 8u);
+  EXPECT_LE(AFTER_HALF_S, 14u);
+
+  // Suite-armed excitation (direct startExcitation) does NOT trace:
+  // the trace is a wire-window instrument, not a physics side effect.
+  Aircraft bare;
+  bare.setBody(&earth);
+  setTurbulence(bare, 0);
+  bare.startExcitation(Aircraft::ExciteMode::RUDDER_DOUBLET);
+  for (int i = 0; i < 100; ++i) {
+    (void)bare.aircraftStep();
+  }
+  EXPECT_EQ(bare.modeTracePending(), 0u);
+}
+
+/**
+ * @test Recovery-envelope characterization: the orchestrated restore
+ * actually recovers.
+ *
+ * The mode set-pieces drop loops, let a mode develop, then restore
+ * LOOP_ALL -- either on schedule or early via the boundary
+ * watchpoint. This pins the physics claim underneath: from a phugoid
+ * developed for a full half-exchange with the longitudinal loops
+ * dropped, restoring the loops recaptures cruise. The phugoid is the
+ * binding case (recovery authority is thrust-margin-limited); the
+ * lateral modes recover with large margin by comparison.
+ *
+ * Runs at the closed-loop suite's reference point. The demo-altitude
+ * boundary values (thinner margin) are measured on the demo itself
+ * and live in its action-engine TPRM, not in code.
+ */
+TEST(AircraftCommandSurface, PhugoidDevelopedThenRestoredRecapturesCruise) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  Aircraft aircraft;
+  aircraft.setBody(&earth);
+  setTurbulence(aircraft, 0);
+  AircraftController controller;
+  controller.setAircraft(&aircraft);
+  configureTrimCruise(controller, aircraft);
+  aircraft.setControllerOutput(&controller.controllerOutput());
+
+  // Settle at trim first.
+  tickN(controller, aircraft, 750); // 30 s
+  const auto& out = controller.controllerOutput();
+  ASSERT_LT(std::abs(out.altitude_error_m), 50.0) << "no trim before the experiment";
+
+  // Set-piece shape: drop PITCH|ALT|SPEED (keep lateral), arm the
+  // phugoid excitation, let the exchange develop for 60 s (~half a
+  // period -- maximum energy displaced from trim).
+  ASSERT_EQ(sendByteCmd(aircraft, 0x0103u, 0x38u), 0u); // lateral only
+  ASSERT_EQ(sendByteCmd(aircraft, 0x0104u, 4u), 0u);    // SPEED_OFFSET
+  tickN(controller, aircraft, 1500);                    // 60 s
+
+  const double ALT_ERR_DEVELOPED = std::abs(out.altitude_error_m);
+  const double SPD_ERR_DEVELOPED = std::abs(out.airspeed_error_m_s);
+  // The mode must actually have displaced the state, or this test
+  // proves nothing.
+  ASSERT_GT(ALT_ERR_DEVELOPED + SPD_ERR_DEVELOPED * 10.0, 30.0)
+      << "phugoid failed to develop: alt_err=" << ALT_ERR_DEVELOPED
+      << " spd_err=" << SPD_ERR_DEVELOPED;
+
+  // The orchestrated restore. Recovery from a deep excursion is
+  // total-energy-limited and two-phase: the loops fly the aircraft
+  // back to altitude at saturated throttle first (airspeed pays for
+  // the climb), then rebuild speed once the climb ends. Assert each
+  // phase on its own timescale.
+  ASSERT_EQ(sendByteCmd(aircraft, 0x0103u, 0x3Fu), 0u);
+
+  tickN(controller, aircraft, 3000); // 120 s: altitude capture phase
+  EXPECT_LT(std::abs(out.altitude_error_m), 30.0)
+      << "altitude not recaptured from developed phugoid (was " << ALT_ERR_DEVELOPED << " m off)";
+  const double SPD_ERR_AFTER_CLIMB = std::abs(out.airspeed_error_m_s);
+
+  tickN(controller, aircraft, 3000); // +120 s: energy rebuild phase
+  EXPECT_LT(std::abs(out.airspeed_error_m_s), 0.5 * SPD_ERR_AFTER_CLIMB)
+      << "speed deficit not rebuilding after altitude capture";
+
+  tickN(controller, aircraft, 9000); // +360 s: full recapture (the
+  // deficit halves roughly every two minutes at this depth; full
+  // energy recovery from a ~1.3 km excursion takes ~10 min of sim)
+  EXPECT_LT(std::abs(out.altitude_error_m), 30.0);
+  EXPECT_LT(std::abs(out.airspeed_error_m_s), 3.0)
+      << "cruise not fully recaptured 10 min after restore";
+}
+
+TEST(AircraftCommandSurface, OrchStateMirrorsIntoFrameAndCountsRecoveries) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  Aircraft aircraft;
+  aircraft.setBody(&earth);
+  setTurbulence(aircraft, 0);
+
+  const auto& tlm = aircraft.telemetry();
+  EXPECT_EQ(tlm.orch_state, 0u);
+  EXPECT_EQ(tlm.recovery_count, 0u);
+
+  // Set-piece entry/exit mirrors verbatim; no recovery counted.
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0105u, 1u), 0u);
+  EXPECT_EQ(tlm.orch_state, 1u);
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0105u, 0u), 0u);
+  EXPECT_EQ(tlm.orch_state, 0u);
+  EXPECT_EQ(tlm.recovery_count, 0u);
+
+  // Recovery entry counts exactly once per entry, including reason
+  // changes within one recovery episode.
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0105u, 0x11u), 0u); // speed boundary
+  EXPECT_EQ(tlm.recovery_count, 1u);
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0105u, 0x12u), 0u); // still recovering
+  EXPECT_EQ(tlm.recovery_count, 1u);
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0105u, 0u), 0u);    // recovered
+  EXPECT_EQ(sendByteCmd(aircraft, 0x0105u, 0x13u), 0u); // next episode
+  EXPECT_EQ(tlm.recovery_count, 2u);
+  EXPECT_EQ(tlm.orch_state, 0x13u);
+}
+
+TEST(AircraftCommandSurface, TelemetrySeedsBootConditionsBeforeWorldReady) {
+  // No body attached: steps take the not-ready path. The OUTPUT block
+  // must publish the boot conditions, not zeros -- the boundary
+  // watchpoints evaluate it from the first action tick.
+  Aircraft aircraft;
+  (void)aircraft.aircraftStep();
+  const auto& tlm = aircraft.telemetry();
+  EXPECT_NEAR(tlm.pos_alt_m, 12192.0, 1.0);
+  EXPECT_NEAR(tlm.airspeed_m_s, 235.9, 0.1);
+}

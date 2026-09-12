@@ -22,6 +22,11 @@ any such change is called out explicitly in its entry.
 - Six demo applications: operations telemetry (Zenith), action engine,
   circuit selection, CPU simulation at three fidelity levels, time server,
   and a lidar visualization producer.
+- Vehicle demo family for an external visualizer: a rover on tiled terrain
+  (ROVR/2) and a transport aircraft in a standard atmosphere (ACFT/2) with
+  one-command dynamic-mode set-pieces (short period, Dutch roll, spiral,
+  phugoid), a 20 Hz mode trace, and a measured recovery boundary that
+  restores the autopilot when a demonstration leaves the flight envelope.
 - Nightly assurance pipeline: warm firmware builds for every MCU target,
   sanitizer suites, cppcheck, dependency and container scans, and
   per-language coverage floors; CodeQL analysis on the default branch.
