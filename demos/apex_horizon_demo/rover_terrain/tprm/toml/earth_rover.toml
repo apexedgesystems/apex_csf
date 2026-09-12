@@ -22,3 +22,9 @@ lidar_max_range_m  = { type = "float",  size = 8,  value = 500.0 }
 lidar_fov_deg      = { type = "float",  size = 8,  value = 90.0 }
 lidar_step_m       = { type = "float",  size = 8,  value = 5.0 }
 body_label         = { type = "string", size = 16, value = "earth_rover" }
+init_from_grid     = { type = "uint",   size = 1,  value = 0 }
+reserved_init      = { type = "array",  size = 7,  value = [0,0,0,0,0,0,0] }
+anchor_lat_deg     = { type = "float",  size = 8,  value = 39.50 }
+anchor_lon_deg     = { type = "float",  size = 8,  value = -105.50 }
+init_north_m       = { type = "float",  size = 8,  value = 0.0 }
+init_east_m        = { type = "float",  size = 8,  value = 0.0 }

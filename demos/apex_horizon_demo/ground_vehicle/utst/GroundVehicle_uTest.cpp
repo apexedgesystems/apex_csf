@@ -338,3 +338,31 @@ TEST(GroundVehicle, TimestampsOnTickGrid) {
   const std::uint64_t T2 = rover.telemetry().timestamp_ns;
   EXPECT_EQ(T2 - T1, 5u * 100'000'000u); // 5 ticks at 10 Hz, exact
 }
+
+/* ----------------------------- Grid boot ----------------------------- */
+
+TEST(GroundVehicle, GridBootPlacesTheRoverFromTheAnchor) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  GroundVehicle rover;
+  configureRover(rover);
+  auto& p = rover.tunables().get();
+  p.init_from_grid = 1u;
+  p.anchor_lat_deg = 39.5;
+  p.anchor_lon_deg = -105.5;
+  p.init_north_m = 100.0;
+  p.init_east_m = -50.0;
+  p.init_heading_deg = 0.0;
+  p.throttle_default = 0.0; // sit still after the latch
+  p.steer_rate_deg_s = 0.0;
+  rover.setBody(&earth);
+  (void)rover.vehicleStep();
+
+  const double R = earth.telemetry().reference_radius_m;
+  const double M_PER_DEG_LAT = R * apex::math::vecmat::DEG_TO_RAD;
+  const double M_PER_DEG_LON =
+      R * std::cos(39.5 * apex::math::vecmat::DEG_TO_RAD) * apex::math::vecmat::DEG_TO_RAD;
+  EXPECT_NEAR(rover.telemetry().pos_lat_deg, 39.5 + 100.0 / M_PER_DEG_LAT, 1e-9);
+  EXPECT_NEAR(rover.telemetry().pos_lon_deg, -105.5 - 50.0 / M_PER_DEG_LON, 1e-9);
+}

@@ -196,8 +196,18 @@ public:
     // First tick: pull init pose from tunables into telemetry. After
     // that, subsequent ticks integrate from telemetry's pose.
     if (s.initialized == 0u) {
-      tlm.pos_lat_deg = p.init_lat_deg;
-      tlm.pos_lon_deg = p.init_lon_deg;
+      if (p.init_from_grid != 0u) {
+        // Grid boot: the anchor plus (north, east) metres, projected
+        // about the anchor latitude as the step integrates.
+        const double R0 = body_->telemetry().reference_radius_m;
+        const double M_PER_DEG_LAT = R0 * DEG_TO_RAD;
+        const double M_PER_DEG_LON = R0 * std::cos(p.anchor_lat_deg * DEG_TO_RAD) * DEG_TO_RAD;
+        tlm.pos_lat_deg = p.anchor_lat_deg + ((R0 > 0.0) ? p.init_north_m / M_PER_DEG_LAT : 0.0);
+        tlm.pos_lon_deg = p.anchor_lon_deg + ((R0 > 0.0) ? p.init_east_m / M_PER_DEG_LON : 0.0);
+      } else {
+        tlm.pos_lat_deg = p.init_lat_deg;
+        tlm.pos_lon_deg = p.init_lon_deg;
+      }
       tlm.heading_deg = p.init_heading_deg;
       tlm.speed_m_s = 0.0;
       s.initialized = 1u;

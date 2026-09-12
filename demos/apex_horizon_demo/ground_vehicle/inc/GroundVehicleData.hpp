@@ -78,6 +78,16 @@ struct GroundVehicleTunables {
 
   /// Tag for log lines.
   char body_label[16]{};
+
+  /// Boot position source: 0 = geodetic (`init_lat/lon_deg`), 1 = grid
+  /// (`init_north/east_m` from the anchor, projected with the same
+  /// local-flat approximation the step integrates with).
+  std::uint8_t init_from_grid{0};
+  std::uint8_t reserved_init[7]{};
+  double anchor_lat_deg{39.5};
+  double anchor_lon_deg{-105.5};
+  double init_north_m{0.0};
+  double init_east_m{0.0};
 };
 
 /* ----------------------------- GroundVehicleDriveCommand ----------------------------- */
