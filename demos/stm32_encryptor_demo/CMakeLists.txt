@@ -10,10 +10,10 @@
 # Supports bare-metal (default) and FreeRTOS modes via APEX_USE_FREERTOS.
 #
 # Build (bare-metal):
-#   docker compose run --rm -T dev-stm32 make stm32
+#   make compose-stm32
 #
 # Build (FreeRTOS):
-#   docker compose run --rm -T dev-stm32 make stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
+#   make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
 # ==============================================================================
 
 include(apex/All)

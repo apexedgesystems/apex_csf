@@ -1312,7 +1312,7 @@ def run_checkout(data_port: str, cmd_port: str, baud: int) -> int:
                 ("Idle overhead (1s)", lambda s: check_overhead_idle(s)),
                 ("Fast-forward on", lambda s: check_fastforward_on(s)),
                 ("Fast-forward overhead", lambda s: check_fastforward_overhead(s)),
-                ("Fast-forward o", lambda s: check_fastforward_off(s)),
+                ("Fast-forward off", lambda s: check_fastforward_off(s)),
             ],
         ),
         (

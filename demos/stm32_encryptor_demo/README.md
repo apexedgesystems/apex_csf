@@ -15,20 +15,26 @@ Supports bare-metal (default) and FreeRTOS modes via `APEX_USE_FREERTOS`.
 Bare-metal:
 
 ```bash
-docker compose run --rm -T dev-stm32 make stm32
+make compose-stm32
 ```
 
 FreeRTOS:
 
 ```bash
-docker compose run --rm -T dev-stm32 make stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
+make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
 ```
+
+Output lands in `build/mcu-stm32-relwithdebinfo/firmware/`.
 
 ## Flashing
 
 ```bash
 make compose-stm32-flash STM32_FIRMWARE=stm32_encryptor_demo
 ```
+
+When the board hangs off the Raspberry Pi rig instead of the development
+machine, copy the binary over and flash with the Pi's `st-flash`; see
+[docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md).
 
 ## See Also
 
