@@ -671,3 +671,47 @@ TEST(GroundVehicleTrace, BufferIsBoundedAndCountsDrops) {
   EXPECT_EQ(r.rover.seqTracePending(), 64u);
   EXPECT_EQ(r.rover.vehicleState().trace_dropped, 36u);
 }
+
+/* ----------------------------- Golden frame ----------------------------- */
+
+/** @test A fully populated reserved tail, byte for byte: the ROVR/2 v2 frame
+ *  as the consumer's golden test pins it (offsets 232..249). */
+TEST(GroundVehicleWire, ReservedTailGoldenBytes) {
+  ReadyRover r;
+  r.rover.tunables().get().step_hz = 100u;
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 2u}), 0u);
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE_SEQ, {2u}), 0u);
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(1.524F, 0.0F)), 0u);
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 0u}), 0u); // lamp 1 green steady
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {2u, 1u, 4u}), 0u); // lamp 2 red 5 Hz
+  // Last command on the wire: a refused plain target (BUSY, opcode 0x0104).
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
+            appsim::ground_vehicle::kCommandResultBusy);
+  (void)r.rover.vehicleStep(); // lamp 2 phase 0: on
+  const auto* f = r.rover.frameBytes();
+  const std::uint8_t GOLDEN[18] = {
+      0,    // [0]  board_link: no board in the software form
+      1,    // [1]  controller_mode: the attached block's mode is 1 in this fixture (no controller
+            // stepped)
+      3,    // [2]  seq_state: sequence 3 running
+      1,    // [3]  active_waypoint
+      2,    // [4]  waypoint_total
+      0x03, // [5]  led_bits: both lamps on this frame
+      2,
+      0, // [6..7] lamp 1 green, steady
+      1,
+      4, // [8..9] lamp 2 red, 5 Hz
+      4, // [10] last_cmd_result: NACK_BUSY
+      0x04,
+      0x01, // [11..12] last_cmd_opcode 0x0104 LE
+      0,    // [13] board_load_pct
+      0,
+      0, // [14..15] board_tick
+      0,
+      0, // [16..17] mast (stretch)
+  };
+  for (std::size_t i = 0; i < sizeof(GOLDEN); ++i) {
+    EXPECT_EQ(f[i], GOLDEN[i]) << "byte 232+" << i;
+  }
+  static_assert(offsetof(GroundVehicleTelemetry, reserved1) + 18 == 250);
+}
