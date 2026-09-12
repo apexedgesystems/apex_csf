@@ -61,8 +61,28 @@ the ACFT/2 contract rev.
 
 ## 5. The world data
 
-One data file: the spec-generated USSA76 layered-atmosphere table
-(public-domain U.S. government standard content; generated, never
-committed; identity by the header spec_hash logged at load — see
-docs/HOW_TO_RUN.md). No terrain artifact — this demo's world contract
-is the atmosphere.
+The shared earth world (`worlds.manifest`, bundle uid 0x010100) carries
+two entries: the spec-generated USSA76 layered-atmosphere table this
+demo binds (public-domain U.S. government standard content; identity
+by the header spec_hash logged at load — see docs/HOW_TO_RUN.md) and
+the rover demo's terrain tile, which this demo never loads (its world
+contract is the atmosphere; terrain fidelity stays ELLIPSOID). The
+`world_pin` in `tprm/toml/earth_body.toml` is the bundle's content
+hash over both entries; a bundle that hashes differently is refused
+at init and the executive refuses the boot.
+
+## 6. Testing
+
+- Unit suites (`make testp`): the wire pins (`AircraftWire_uTest`:
+  snapshot offsets 2/3, frame offsets 202/203/204, size 256), the
+  closed-loop command-surface suite in `../aircraft_controller/utst`
+  (mask adoption and rejection, excitation lifecycle, orchestration
+  mirror and recovery counting, boot seed, the two-phase recovery
+  recapture), and the aero mode anchors in `src/sim/aerodynamics/utst`
+  (short period, Dutch roll, spiral, phugoid closed forms).
+- Benchmark (`bin/ptests/ApexHorizonDemoAircraftController_PTEST`):
+  per-tick cost of the plant with the mode trace idle and armed, and
+  of the 25 Hz closed-loop tick — the perf record for the RT path
+  (trace adds under 1 µs to a 10 ms step on the hosted debug preset).
+- Live: the criterion takes in docs/HOW_TO_RUN.md (clean air, both
+  sides measuring the same take).
