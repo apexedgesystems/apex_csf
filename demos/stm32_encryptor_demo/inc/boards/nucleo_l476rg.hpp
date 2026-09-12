@@ -19,12 +19,9 @@
 namespace encryptor {
 namespace board {
 
-/* ----------------------------- Identity ----------------------------- */
 // Internal linkage throughout: each translation unit that includes the
 // board sees its own constants, exactly as when they lived in main.cpp,
 // so the default board's image is unchanged by the board split.
-
-static constexpr const char* NAME = "NUCLEO-L476RG";
 
 /* ----------------------------- LED ----------------------------- */
 

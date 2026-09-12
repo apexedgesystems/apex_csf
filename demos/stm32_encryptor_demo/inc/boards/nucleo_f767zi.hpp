@@ -24,12 +24,9 @@
 namespace encryptor {
 namespace board {
 
-/* ----------------------------- Identity ----------------------------- */
 // Internal linkage throughout: each translation unit that includes the
 // board sees its own constants, exactly as when they lived in main.cpp,
 // so the default board's image is unchanged by the board split.
-
-static constexpr const char* NAME = "NUCLEO-F767ZI";
 
 /* ----------------------------- LED ----------------------------- */
 
@@ -46,11 +43,6 @@ static const apex::hal::stm32::Stm32UartPins CMD_UART_PINS = {GPIOD, GPIO_PIN_8,
                                                               GPIOD, GPIO_PIN_9, // RX
                                                               GPIO_AF7_USART3};
 static constexpr IRQn_Type CMD_UART_IRQN = USART3_IRQn;
-
-/// The data channel is the same UART; the prefix byte tells the frames apart.
-static USART_TypeDef* const DATA_UART = CMD_UART;
-static const apex::hal::stm32::Stm32UartPins DATA_UART_PINS = CMD_UART_PINS;
-static constexpr IRQn_Type DATA_UART_IRQN = CMD_UART_IRQN;
 
 /* ----------------------------- Channel Layout ----------------------------- */
 
