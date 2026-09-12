@@ -292,12 +292,14 @@ for the reply), not a firmware ceiling: on the Pi rig they land at roughly
 
 ### Checkout Options
 
-| Flag                       | Description                               |
-| -------------------------- | ----------------------------------------- |
-| `--data-port /dev/ttyUSB0` | Override data channel port (FTDI/UART1)   |
-| `--cmd-port /dev/ttyACM0`  | Override command channel port (VCP/UART2) |
-| `--baud 115200`            | Override baud rate                        |
-| `--verbose`                | Show detailed output per test             |
+| Flag                       | Description                                                                |
+| -------------------------- | -------------------------------------------------------------------------- |
+| `--data-port /dev/ttyUSB0` | Override data channel port (FTDI/UART1)                                    |
+| `--cmd-port /dev/ttyACM0`  | Override command channel port (VCP/UART2)                                  |
+| `--shared-port /dev/...`   | One port carrying both channels with the prefix byte (F767ZI, F446RE)      |
+| `--timeout 6`              | Per-response timeout in seconds (default 2; sector-flash boards need more) |
+| `--baud 115200`            | Override baud rate                                                         |
+| `--verbose`                | Show detailed output per test                                              |
 
 ---
 
@@ -405,8 +407,11 @@ st-flash --connect-under-reset --serial <st-link serial> reset
 ```
 
 `--connect-under-reset` holds the core in reset while the probe attaches;
-without it a running F767 image can refuse the connection ("Can not
+without it a running F7 or F4 image can refuse the connection ("Can not
 connect to target"). The heartbeat LED blinks at 2 Hz after the reset.
+Header pinouts for wiring anything beyond the USB cable are in
+[NUCLEO_F767ZI_PINOUT.md](NUCLEO_F767ZI_PINOUT.md) and
+[NUCLEO_F446RE_PINOUT.md](NUCLEO_F446RE_PINOUT.md).
 
 ### Checkout
 

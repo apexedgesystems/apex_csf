@@ -1,11 +1,13 @@
 # STM32 Encryptor Design
 
-Detailed design for the `stm32_encryptor_demo` firmware application running on the
-NUCLEO-L476RG. Covers encryption pipeline, dual UART architecture, serial protocol,
-key management, task model, and STM32-specific constraints. The same application
-builds for the NUCLEO-F767ZI and the NUCLEO-F446RE;
-[Board Differences](#board-differences) at the end lists what the board
-description changes.
+Detailed design for the `stm32_encryptor_demo` firmware application. Covers the
+encryption pipeline, channel architecture, serial protocol, key management, task
+model, and STM32-specific constraints, described on the NUCLEO-L476RG, the
+board it was written for. The same application builds for the NUCLEO-F767ZI and
+the NUCLEO-F446RE from a board description under `inc/boards/`;
+[Board Differences](#board-differences) at the end lists everything the board
+description changes, and the sections before it name the L476RG's values where
+they are board-specific.
 
 ---
 
@@ -17,7 +19,8 @@ AES-256-GCM, and transmitted back as a SLIP-framed ciphertext packet. A separate
 command channel provides key provisioning, diagnostics, and overhead measurement.
 
 **Target hardware:** NUCLEO-L476RG (STM32L476RG, ARM Cortex-M4 @ 80 MHz,
-1 MB flash, 96 KB SRAM)
+1 MB flash, 96 KB SRAM); also NUCLEO-F767ZI and NUCLEO-F446RE (Board
+Differences)
 
 **Encryption:** AES-256-GCM (software implementation, standard 8-bit CHAR_BIT)
 
@@ -29,7 +32,7 @@ command channel provides key provisioning, diagnostics, and overhead measurement
 
 ## Channel Architecture
 
-Two independent UART channels, each with a distinct role:
+On the L476RG, two independent UART channels, each with a distinct role:
 
 | Channel | UART   | Connector                       | Baud   | Role                                      |
 | ------- | ------ | ------------------------------- | ------ | ----------------------------------------- |
@@ -57,8 +60,10 @@ outside the CRC.
 ### SLIP Framing
 
 All communication uses SLIP (RFC 1055) framing with leading and trailing END
-delimiters (0xC0). The data and command channels each have an independent SLIP
-decoder instance.
+delimiters (0xC0). On two-UART boards the data and command channels each have
+an independent SLIP decoder instance; on a shared-channel board one decoder
+feeds a router that reads the first byte of each frame (the channel prefix)
+and hands the rest to the data or command handler.
 
 ### Data Channel Protocol
 
@@ -157,8 +162,9 @@ if the key store is empty.
 
 ### Flash-Backed Storage (Page 510)
 
-Keys are stored on a dedicated flash page in the STM32L476's bank 2. The page
-is not part of the application image.
+Keys are stored on a dedicated flash page that is not part of the application
+image: page 510 in the STM32L476's bank 2 (the other boards use their last
+flash sector, see Board Differences). The layout below is the L476RG's.
 
 ```
 Page 510 (0x080FF000 - 0x080FF7FF):  Key store (2048 bytes)
@@ -200,15 +206,17 @@ RAM, erase the page, and rewrite all slots with the updated key.
 
 ### McuExecutive (100 Hz)
 
-The firmware uses a cooperative scheduler with five tasks. Two execution modes
-are supported (selected at compile time via `APEX_USE_FREERTOS`):
+The firmware uses a cooperative scheduler with five tasks on the two-UART
+L476RG and four on the shared-channel boards, where one channel task replaces
+the data and command pollers. Two execution modes are supported (selected at
+compile time via `APEX_USE_FREERTOS`):
 
 | Mode                 | Tick Source        | Description                            |
 | -------------------- | ------------------ | -------------------------------------- |
 | Bare-metal (default) | Stm32SysTickSource | SysTick interrupt + WFI                |
 | FreeRTOS             | FreeRtosTickSource | vTaskDelayUntil inside a FreeRTOS task |
 
-Task configuration is identical in both modes:
+Task configuration is identical in both modes (L476RG shown):
 
 ```
 profilerStartTask:  100 Hz  priority=127   (DWT cycle start)
@@ -225,14 +233,15 @@ to measure per-tick CPU overhead via the DWT cycle counter.
 
 ```
 main():
-  HAL_Init()                # HAL timebase (SysTick)
-  SystemClock_Config()      # MSI + PLL -> 80 MHz
-  GPIO_Init()               # LED PA5
-  tracker.enableDwt()       # DWT cycle counter
-  Startup blinks (3x)      # Visual confirmation
-  dataUart.init(115200)     # USART1 (FTDI) 8N1, interrupt-driven
-  cmdUart.init(115200)      # USART2 (VCP) 8N1, interrupt-driven
-  keyStore.init()           # Scan flash page 510 for populated slots
+  HAL_Init()                       # HAL timebase (SysTick)
+  board::configureCaches()         # Core caches where the board has them
+  board::configureSystemClock()    # L476RG: MSI + PLL -> 80 MHz
+  GPIO_Init()                      # Heartbeat LED (board::LED_PORT/LED_PIN)
+  tracker.enableDwt()              # DWT cycle counter
+  Startup blinks (3x)             # Visual confirmation
+  dataUart.init(115200)            # Data UART 8N1, interrupt-driven (two-UART boards)
+  cmdUart.init(115200)             # Command / shared UART 8N1, interrupt-driven
+  keyStore.init()                  # Scan the board's key-store page for populated slots
   if store empty:
     provision test key      # Write 0x00..0x1F to slot 0
   engine.loadActiveKey()    # Load key from store into encrypt engine
@@ -245,6 +254,9 @@ stack, priority 3). The FreeRTOS scheduler is started after task creation.
 
 ### Interrupt Service Routines
 
+The vector names come from the board header (L476RG shown; the shared-channel
+boards define only the command UART's vector):
+
 | Vector            | Handler                   | Purpose                       |
 | ----------------- | ------------------------- | ----------------------------- |
 | USART1_IRQHandler | dataUart.irqHandler()     | FTDI data channel RX/TX       |
@@ -255,9 +267,10 @@ stack, priority 3). The FreeRTOS scheduler is started after task creation.
 
 ## Overhead Measurement
 
-The DWT cycle counter (DWT->CYCCNT) runs at core clock speed (80 MHz). The
-profiler start and end tasks sample CYCCNT at the boundaries of each scheduler
-tick to measure per-tick CPU cost.
+The DWT cycle counter (DWT->CYCCNT) runs at core clock speed (80 MHz on the
+L476RG; the OVERHEAD reply carries each board's per-tick budget, so a host can
+derive the clock). The profiler start and end tasks sample CYCCNT at the
+boundaries of each scheduler tick to measure per-tick CPU cost.
 
 **Budget:** At 100 Hz, each tick has 800,000 cycles. An idle tick costs
 ~600-700 cycles (under 0.1% of budget) in both execution modes; the
@@ -280,7 +293,7 @@ sample, so a single run prints anywhere from ~100 to ~130 kHz).
 
 The board description under `inc/boards/` supplies every board-specific
 value; the pipeline, protocol, key-store semantics, and checkout script are
-the same on both boards.
+the same on all three boards.
 
 | Item                          | NUCLEO-L476RG                                             | NUCLEO-F767ZI                                                                                  | NUCLEO-F446RE                                                           |
 | ----------------------------- | --------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
@@ -322,21 +335,23 @@ stm32_encryptor_demo/
 |   +-- HOW_TO_RUN.md           # Build, flash, verify steps
 |   +-- MEMORY_MAP.md           # Flash/RAM layout, section placement
 |   +-- NUCLEO_L476RG_PINOUT.md # Board pinout, headers, LEDs
+|   +-- NUCLEO_F767ZI_PINOUT.md # Board pinout, headers, LEDs
+|   +-- NUCLEO_F446RE_PINOUT.md # Board pinout, headers, LEDs
 |   +-- SH_U09C5_PINOUT.md     # FTDI adapter pinout
 +-- inc/
 |   +-- boards/                 # Board descriptions (Board.hpp selects one)
 |   |   +-- nucleo_l476rg.hpp
 |   |   +-- nucleo_f767zi.hpp
-|   +-- nucleo_f446re.hpp
+|   |   +-- nucleo_f446re.hpp
 |   +-- stm32l4xx_hal_conf.h    # HAL config, L4 (GPIO, RCC, PWR, Flash, UART, DMA)
 |   +-- stm32f7xx_hal_conf.h    # HAL config, F7 (same module set)
 |   +-- stm32f4xx_hal_conf.h    # HAL config, F4 (same module set, no uart_ex)
-|   +-- FreeRTOSConfig.h        # FreeRTOS kernel configuration (L476RG)
+|   +-- FreeRTOSConfig.h        # FreeRTOS kernel configuration (all boards)
 |   +-- CommandDeck.hpp         # Command channel handler (14 opcodes)
 |   +-- EncryptorCommon.hpp     # Shared types, sizing template, protocol enums
-|   +-- EncryptorConfig.hpp     # STM32-specific sizing (256B, 16 slots)
+|   +-- EncryptorConfig.hpp     # STM32 sizing (256B, 16 slots, board channel prefix)
 |   +-- EncryptorEngine.hpp     # Data channel encrypt pipeline
-|   +-- KeyStore.hpp            # Flash-backed key storage (16 slots, page 510)
+|   +-- KeyStore.hpp            # Flash-backed key storage (16 slots, board key-store page)
 |   +-- OverheadTracker.hpp     # DWT cycle counter measurement
 +-- scripts/
 |   +-- serial_checkout.py      # Automated checkout (40 checks, 11 groups)
@@ -344,6 +359,6 @@ stm32_encryptor_demo/
 |   +-- main.cpp                # Application entry, task registration, ISRs
 |   +-- CommandDeck.cpp         # Command dispatch and response builder
 |   +-- EncryptorEngine.cpp     # CRC validate, encrypt, SLIP encode, transmit
-|   +-- KeyStore.cpp            # Flash page management (read/write/erase/bitmap)
+|   +-- KeyStore.cpp            # Key-store page management (read/write/erase/bitmap)
 |   +-- cxx_stubs.cpp           # C++ runtime stubs (no exceptions/RTTI on bare-metal)
 ```
