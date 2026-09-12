@@ -1,0 +1,32 @@
+# GroundVehicle (0xDE00) for rover_mcu: boots HOLDING at the grid anchor
+# (39.5 N, -105.5 W, the terrain patch centre) heading north, steps at the
+# 100 Hz fundamental (dt 0.01 s; lidar sweeps every 10th step), and is
+# driven by the RoverController through the drive-command seam.
+# GroundVehicleTunables layout (offsets for hand-checking the packed bin):
+#   double  mass_kg                 8 B  (offset   0)
+#   double  max_speed_m_s           8 B  (offset   8)
+#   double  throttle_default        8 B  (offset  16)
+#   double  steer_rate_deg_s        8 B  (offset  24)
+[GroundVehicleTunables]
+mass_kg            = { type = "float",  size = 8,  value = 1500.0 }
+max_speed_m_s      = { type = "float",  size = 8,  value = 8.0 }
+throttle_default   = { type = "float",  size = 8,  value = 0.0 }
+steer_rate_deg_s   = { type = "float",  size = 8,  value = 6.0 }
+init_lat_deg       = { type = "float",  size = 8,  value = 39.50 }
+init_lon_deg       = { type = "float",  size = 8,  value = -105.50 }
+init_heading_deg   = { type = "float",  size = 8,  value = 0.0 }
+max_slope_deg      = { type = "float",  size = 8,  value = 25.0 }
+lidar_n_rays       = { type = "uint",   size = 4,  value = 8 }
+lidar_reserved     = { type = "uint",   size = 4,  value = 0 }
+lidar_max_range_m  = { type = "float",  size = 8,  value = 500.0 }
+lidar_fov_deg      = { type = "float",  size = 8,  value = 90.0 }
+lidar_step_m       = { type = "float",  size = 8,  value = 5.0 }
+body_label         = { type = "string", size = 16, value = "earth_rover" }
+init_from_grid     = { type = "uint",   size = 1,  value = 1 }
+reserved_init      = { type = "array",  size = 7,  value = [0,0,0,0,0,0,0] }
+anchor_lat_deg     = { type = "float",  size = 8,  value = 39.50 }
+anchor_lon_deg     = { type = "float",  size = 8,  value = -105.50 }
+init_north_m       = { type = "float",  size = 8,  value = 0.0 }
+init_east_m        = { type = "float",  size = 8,  value = 0.0 }
+step_hz            = { type = "uint",   size = 4,  value = 100 }
+lidar_divisor      = { type = "uint",   size = 4,  value = 10 }

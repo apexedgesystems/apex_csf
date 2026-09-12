@@ -1,0 +1,18 @@
+# RoverController (0xE200): boots HOLD at the anchor; WAYPOINT law gains
+# tuned for legible 5-10 ft legs: turn in place until the heading error is
+# under 20 deg, drive at min(cruise, 0.5/s x distance) so the plant's 1 s lag
+# closes without overshoot, arrive inside 0.2 m.
+[RoverControllerTunables]
+boot_mode                 = { type = "uint",  size = 1, value = 0 }
+reserved0                 = { type = "array", size = 7, value = [0,0,0,0,0,0,0] }
+anchor_lat_deg            = { type = "float", size = 8, value = 39.50 }
+anchor_lon_deg            = { type = "float", size = 8, value = -105.50 }
+trajectory_throttle_frac  = { type = "float", size = 8, value = 0.6 }
+trajectory_steer_rate_deg_s = { type = "float", size = 8, value = 6.0 }
+heading_gain              = { type = "float", size = 8, value = 1.0 }
+max_steer_rate_deg_s      = { type = "float", size = 8, value = 45.0 }
+cruise_throttle_frac      = { type = "float", size = 8, value = 0.5 }
+approach_gain_per_s       = { type = "float", size = 8, value = 0.5 }
+arrival_tolerance_m       = { type = "float", size = 8, value = 0.2 }
+turn_in_place_deg         = { type = "float", size = 8, value = 20.0 }
+turn_throttle_frac        = { type = "float", size = 8, value = 0.0 }

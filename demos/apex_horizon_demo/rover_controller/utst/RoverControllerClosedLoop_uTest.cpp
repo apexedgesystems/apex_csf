@@ -136,15 +136,15 @@ TEST(RoverControllerWaypoint, LegNorthArrivesAndLatches) {
   rig.north_east(n, e);
   const auto& out = rig.ctl.controllerOutput();
   EXPECT_EQ(out.arrived, 1u) << "dist=" << out.distance_m;
-  EXPECT_NEAR(n, 10.0, 0.5) << "north";
+  EXPECT_NEAR(n, 10.0, 0.6) << "north (6 % of a long leg: damping 0.7 plus the arrival coast)";
   EXPECT_NEAR(e, 0.0, 0.5) << "east";
-  EXPECT_LT(max_north, 10.5) << "overshoot";
+  EXPECT_LT(max_north, 10.6) << "overshoot (~4 % of the leg at damping 0.7)";
   EXPECT_LT(rig.rover.telemetry().speed_m_s, 0.2) << "at rest after arrival";
   EXPECT_NEAR(out.steer_rate_deg_s, 0.0, 1e-9);
   EXPECT_NEAR(out.throttle_frac, 0.0, 1e-9);
 }
 
-TEST(RoverControllerWaypoint, LegEastSteersClockwiseAndCrawlsWhileTurning) {
+TEST(RoverControllerWaypoint, LegEastSteersClockwiseAndTurnsInPlace) {
   Rig rig(0.0); // heading north
   rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
   rig.tick();
@@ -159,8 +159,8 @@ TEST(RoverControllerWaypoint, LegEastSteersClockwiseAndCrawlsWhileTurning) {
   double n = 0.0, e = 0.0;
   rig.north_east(n, e);
   EXPECT_EQ(out.arrived, 1u) << "dist=" << out.distance_m;
-  EXPECT_NEAR(e, 6.0, 0.5);
-  EXPECT_NEAR(n, 0.0, 1.0);
+  EXPECT_NEAR(e, 6.0, 0.4);
+  EXPECT_NEAR(n, 0.0, 0.4);
 }
 
 TEST(RoverControllerWaypoint, RetargetClearsArrivedAndReachesTheNextLeg) {
@@ -179,7 +179,34 @@ TEST(RoverControllerWaypoint, RetargetClearsArrivedAndReachesTheNextLeg) {
   double n = 0.0, e = 0.0;
   rig.north_east(n, e);
   EXPECT_EQ(rig.ctl.controllerOutput().arrived, 1u);
-  EXPECT_NEAR(n, 8.05, 0.6);
+  EXPECT_NEAR(n, 8.05, 0.4);
+}
+
+TEST(RoverControllerWaypoint, DemoScaleLegLandsInsideTolerance) {
+  // A 5 ft leg, the demo's unit of motion: arrival inside the 0.2 m
+  // tolerance with centimetre-scale overshoot, in a few seconds.
+  Rig rig(0.0);
+  rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
+  rig.tick();
+  rig.ctl.setTargetRel(1.524, 0.0);
+  double max_north = 0.0;
+  int arrived_tick = -1;
+  for (int i = 0; i < 200; ++i) { // 20 s
+    rig.tick();
+    double n = 0.0, e = 0.0;
+    rig.north_east(n, e);
+    max_north = std::max(max_north, n);
+    if (arrived_tick < 0 && rig.ctl.controllerOutput().arrived != 0u) {
+      arrived_tick = i;
+    }
+  }
+  double n = 0.0, e = 0.0;
+  rig.north_east(n, e);
+  EXPECT_GE(arrived_tick, 0);
+  EXPECT_LT(arrived_tick, 100) << "arrives within 10 s";
+  EXPECT_NEAR(n, 1.524, 0.2);
+  EXPECT_LT(max_north, 1.524 + 0.15) << "overshoot";
+  EXPECT_LT(rig.rover.telemetry().speed_m_s, 0.05);
 }
 
 TEST(RoverControllerWaypoint, HoldModeIgnoresTheTarget) {

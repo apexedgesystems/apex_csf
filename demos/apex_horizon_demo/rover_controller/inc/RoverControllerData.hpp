@@ -44,24 +44,26 @@ struct RoverControllerTunables {
 
   /// WAYPOINT mode: heading loop gain [deg/s per deg of error] and its
   /// steer-rate authority [deg/s].
-  double heading_gain{0.8};
-  double max_steer_rate_deg_s{30.0};
+  double heading_gain{1.0};
+  double max_steer_rate_deg_s{45.0};
 
   /// WAYPOINT mode: cruise throttle fraction, and the approach gain
-  /// [1/s]: the speed target is min(cruise, gain * remaining distance),
-  /// so the plant's first-order speed lag (1 s) closes on the target
-  /// critically damped instead of overshooting.
+  /// [1/s]: the speed target is min(cruise, gain * remaining distance).
+  /// Against the plant's 1 s speed lag, 0.5/s gives a damping ratio of
+  /// 0.7 -- about 4 % overshoot, a few centimetres on demo-scale legs
+  /// -- while a critically damped gain would double every leg's time.
   double cruise_throttle_frac{0.5};
   double approach_gain_per_s{0.5};
 
   /// A leg is ARRIVED when the remaining distance is below this.
-  double arrival_tolerance_m{0.5};
+  double arrival_tolerance_m{0.2};
 
   /// Throttle fraction while the heading error exceeds
-  /// `turn_in_place_deg` (the kinematic plant turns without speed;
-  /// crawling keeps the motion legible on screen).
-  double turn_in_place_deg{60.0};
-  double turn_throttle_frac{0.1};
+  /// `turn_in_place_deg`: the kinematic plant steers without speed,
+  /// so zero throttle turns the rover in place and each leg reads as
+  /// turn, then drive straight, then stop.
+  double turn_in_place_deg{20.0};
+  double turn_throttle_frac{0.0};
 };
 
 /* ----------------------------- RoverControllerState ----------------------------- */
