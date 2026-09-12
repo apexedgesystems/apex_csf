@@ -62,6 +62,8 @@
 
 #if defined(STM32L476xx) || defined(STM32L4xx)
 #include "stm32l4xx_hal.h"
+#elif defined(STM32F7xx) || defined(STM32F767xx)
+#include "stm32f7xx_hal.h"
 #elif defined(STM32G4xx) || defined(STM32G474xx)
 #include "stm32g4xx_hal.h"
 #elif defined(STM32H7xx) || defined(STM32H743xx)

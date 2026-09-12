@@ -8,6 +8,7 @@
  *
  * Supported families (new UART peripheral with RDR/TDR/ISR/ICR registers):
  *  - STM32L4 (e.g., STM32L476xx)
+ *  - STM32F7 (e.g., STM32F767xx)
  *  - STM32G4 (e.g., STM32G474xx)
  *  - STM32H7 (e.g., STM32H743xx)
  *
@@ -64,6 +65,8 @@
 #error "Stm32Uart requires new UART peripheral (RDR/TDR). F1/F2/F4 not supported."
 #elif defined(STM32L476xx) || defined(STM32L4xx)
 #include "stm32l4xx_hal.h"
+#elif defined(STM32F7xx) || defined(STM32F767xx)
+#include "stm32f7xx_hal.h"
 #elif defined(STM32G4xx) || defined(STM32G474xx)
 #include "stm32g4xx_hal.h"
 #elif defined(STM32H7xx) || defined(STM32H743xx)
@@ -483,6 +486,11 @@ private:
       __HAL_RCC_UART5_CLK_ENABLE();
     }
 #endif
+#if defined(USART6)
+    else if (huart_.Instance == USART6) {
+      __HAL_RCC_USART6_CLK_ENABLE();
+    }
+#endif
 #if defined(LPUART1)
     else if (huart_.Instance == LPUART1) {
       __HAL_RCC_LPUART1_CLK_ENABLE();
@@ -555,6 +563,11 @@ private:
 #if defined(UART5)
     if (huart_.Instance == UART5) {
       return UART5_IRQn;
+    }
+#endif
+#if defined(USART6)
+    if (huart_.Instance == USART6) {
+      return USART6_IRQn;
     }
 #endif
 #if defined(LPUART1)
