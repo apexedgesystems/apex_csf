@@ -52,6 +52,18 @@ bool RoverTerrainExecutive::registerComponents() noexcept {
       log->info(label(), "registerComponent(moon) FAILED");
     return false;
   }
+  // Neither body may run unready: an unbound world parks every vehicle
+  // and probe behind a healthy-looking executive. Refuse the boot at
+  // error severity rather than let the smoke check note it at info.
+  if (!earth_.isReady() || !moon_.isReady()) {
+    if (log != nullptr) {
+      log->error(
+          label(), static_cast<std::uint8_t>(1),
+          fmt::format("body not ready after registration (earth={} moon={}) -- refusing boot",
+                      earth_.isReady(), moon_.isReady()));
+    }
+    return false;
+  }
 
   earthProbe_.setBody(&earth_);
   if (!registerComponent(&earthProbe_, LOG_DIR)) {
