@@ -460,14 +460,22 @@ TEST(GroundVehicleCmd, TargetsValidateRefuseWhileHaltedAndCountWaypoints) {
   EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(5000.0F, 0.0F)), 0u)
       << "out of bounds";
   EXPECT_EQ(s.target_seq, 2u) << "rejected whole";
+  {
+    const auto* g = r.frame();
+    EXPECT_EQ(g[fb::FB_SEQ_STATE], 3u);
+    EXPECT_EQ(g[fb::FB_WAYPOINT_TOTAL], 2u);
+    EXPECT_EQ(g[fb::FB_ACTIVE_WAYPOINT], 2u);
+  }
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
             static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED));
   const auto* f = r.frame();
   EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT], static_cast<std::uint8_t>(CmdResultCode::NACK_EXEC_FAILED));
-  EXPECT_EQ(f[fb::FB_SEQ_STATE], 3u);
-  EXPECT_EQ(f[fb::FB_WAYPOINT_TOTAL], 2u);
-  EXPECT_EQ(f[fb::FB_ACTIVE_WAYPOINT], 2u);
+  // The halt supersedes the running sequence on the frame: manual
+  // reason, legs cleared, mode HALTED.
+  EXPECT_EQ(f[fb::FB_SEQ_STATE], appsim::ground_vehicle::kSeqStateManualHalt);
+  EXPECT_EQ(f[fb::FB_WAYPOINT_TOTAL], 0u);
+  EXPECT_EQ(f[fb::FB_ACTIVE_WAYPOINT], 0u);
   EXPECT_EQ(f[fb::FB_CONTROLLER_MODE], appsim::ground_vehicle::kFrameModeHalted);
 }
 
@@ -578,4 +586,23 @@ TEST(GroundVehicle, InitSeedsTheOutputBlockBeforeTheFirstStep) {
   EXPECT_EQ(t.lidar_hit[0], 0u);
   EXPECT_DOUBLE_EQ(t.lidar_range_m[4], rover.tunables_const().lidar_max_range_m);
   EXPECT_EQ(t.is_slipping, 0u);
+}
+
+/* ----------------------------- Halt attribution ----------------------------- */
+
+TEST(GroundVehicleCmd, HaltStampsManualReasonAndResumeClearsAnyHalt) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], appsim::ground_vehicle::kSeqStateManualHalt);
+  EXPECT_EQ(r.frame()[fb::FB_CONTROLLER_MODE], appsim::ground_vehicle::kFrameModeHalted);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+
+  // A recovery sequence's reason survives a later plant-level HALT and
+  // is cleared by RESUME like any halt.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0x12u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0x12u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
 }

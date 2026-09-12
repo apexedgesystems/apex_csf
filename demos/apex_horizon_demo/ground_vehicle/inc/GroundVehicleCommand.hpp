@@ -115,6 +115,12 @@ enum class CmdResultCode : std::uint8_t {
 /// Frame controller_mode value while a plant-level HALT is in effect.
 inline constexpr std::uint8_t kFrameModeHalted = 3;
 
+/// seq_state values: 0 idle, 1..31 a running sequence, 0x10|reason a
+/// halt. A plant-level HALT stamps MANUAL_HALT unless a recovery
+/// reason is already set; RESUME clears any halt reason to idle.
+inline constexpr std::uint8_t kSeqStateHaltBit = 0x10;
+inline constexpr std::uint8_t kSeqStateManualHalt = 0x15;
+
 } // namespace ground_vehicle
 } // namespace appsim
 

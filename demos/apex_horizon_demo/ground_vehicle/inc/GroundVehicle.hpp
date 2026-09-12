@@ -186,11 +186,21 @@ private:
     switch (static_cast<RoverOpcode>(opcode)) {
     case RoverOpcode::HALT:
       s.commanded_halt = 1u;
+      // A halt is attributed on the frame: manual unless a recovery
+      // sequence already named its reason.
+      if ((s.seq_state & kSeqStateHaltBit) == 0u) {
+        s.seq_state = kSeqStateManualHalt;
+        s.waypoint_total = 0u;
+        s.active_waypoint = 0u;
+      }
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
     case RoverOpcode::RESUME:
       s.commanded_halt = 0u;
       s.throttle_override_pct = 255u;
+      if ((s.seq_state & kSeqStateHaltBit) != 0u) {
+        s.seq_state = 0u; // the halt is over; a running sequence would re-stamp itself
+      }
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
     case RoverOpcode::SET_THROTTLE: {
