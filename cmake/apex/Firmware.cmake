@@ -412,6 +412,12 @@ function (apex_add_firmware_with_stm32)
     list(APPEND _vendor_src "${_hal}/Src/stm32${_fam}xx_hal_${_m}.c")
   endforeach ()
 
+  # Vendor sources compile under the project's warning set but are not ours
+  # to fix; the F4 HAL leaves parameters unused in its flash driver. Their
+  # headers are already system headers, this gives the sources the same
+  # treatment for that one warning.
+  set_source_files_properties(${_vendor_src} PROPERTIES COMPILE_OPTIONS "-Wno-unused-parameter")
+
   apex_add_firmware(
     NAME
     ${ST_NAME}

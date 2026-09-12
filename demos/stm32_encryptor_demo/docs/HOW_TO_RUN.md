@@ -51,7 +51,7 @@ Add to `/etc/udev/rules.d/99-microcontrollers.rules`:
 
 ```
 # STM32 NUCLEO - ST-Link VCP (command channel)
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374b", SYMLINK+="nucleo_0"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374b", SYMLINK+="nucleo_l476rg_0"
 
 # STM32 NUCLEO - ST-Link USB debug probe (flash/reset access)
 SUBSYSTEMS=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374b", MODE:="0666"
@@ -181,7 +181,7 @@ Laptop-direct (the udev symlinks are the script defaults):
 ```bash
 python3 demos/stm32_encryptor_demo/scripts/serial_checkout.py \
   --data-port /dev/ftdi_0 \
-  --cmd-port /dev/nucleo_0
+  --cmd-port /dev/nucleo_l476rg_0
 ```
 
 Pi rig (no udev symlinks there: the ST-Link VCP enumerates as
@@ -368,10 +368,10 @@ the execution mode. What changes:
 | Heartbeat LED | LD2, PA5                                       | LD1 (green), PB0                                                                                               |
 | Key store     | Flash page 510 (2 KB)                          | Flash sector 11 (256 KB single-bank); an erase takes about a second                                            |
 | Tick budget   | 800,000 cycles                                 | 2,160,000 cycles                                                                                               |
-| udev name     | `/dev/nucleo_0`                                | `/dev/nucleo_1` (add a rule keyed on the board's ST-Link serial)                                               |
+| udev name     | `/dev/nucleo_l476rg_0`                         | `/dev/nucleo_f767zi_0` (rule keyed on the board's ST-Link serial)                                              |
 
 No FTDI adapter is needed: plug the board's ST-Link USB in and everything
-runs over `/dev/nucleo_1`.
+runs over `/dev/nucleo_f767zi_0`.
 
 ### Build
 
@@ -408,7 +408,7 @@ connect to target"). LD1 blinks at 2 Hz after the reset.
 
 ```bash
 python3 demos/stm32_encryptor_demo/scripts/serial_checkout.py \
-  --shared-port /dev/nucleo_1 --timeout 6
+  --shared-port /dev/nucleo_f767zi_0 --timeout 6
 ```
 
 `--shared-port` opens one handle for both channels and prefixes and routes
@@ -422,7 +422,7 @@ group reports the command channel as sharing the data port.
 
 | Symptom                                 | Fix                                                                  |
 | --------------------------------------- | -------------------------------------------------------------------- |
-| `/dev/nucleo_0` missing                 | Check USB-C cable, verify udev rules for 0483:374b                   |
+| `/dev/nucleo_l476rg_0` missing          | Check USB-C cable, verify udev rules for 0483:374b                   |
 | `/dev/ftdi_0` missing                   | Check FTDI adapter USB connection, verify udev rules for 0403:6001   |
 | CPU halted after flash                  | Run `make compose-stm32-reset` or press the black RESET button       |
 | LED not blinking after flash            | Reset the board; st-flash can leave CPU halted (see above)           |
