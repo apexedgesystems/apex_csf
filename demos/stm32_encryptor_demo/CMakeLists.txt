@@ -9,10 +9,10 @@
 #
 # Supports bare-metal (default) and FreeRTOS modes via APEX_USE_FREERTOS.
 #
-# Build (bare-metal):
-#   make compose-stm32
+# Build (bare-metal release package):
+#   make release APP=stm32_encryptor_demo
 #
-# Build (FreeRTOS):
+# Build (FreeRTOS, development):
 #   make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
 # ==============================================================================
 

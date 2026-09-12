@@ -307,12 +307,11 @@ separate app. Implementation steps:
 ## Build Commands
 
 ```bash
-# Bare-metal (default)
-docker compose run --rm -T dev-stm32 make stm32
+# Bare-metal (default): the release package
+make release APP=stm32_encryptor_demo
 
-# FreeRTOS
-docker compose run --rm -T dev-stm32 bash -c \
-  'cmake --preset mcu-stm32-relwithdebinfo -DAPEX_USE_FREERTOS=ON && cmake --build --preset mcu-stm32-relwithdebinfo -j$(nproc)'
+# FreeRTOS: development build of the same preset
+make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
 ```
 
 ## Verification

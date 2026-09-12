@@ -210,7 +210,8 @@ release:
 	@rm -rf "$(RELEASE_DIR)/$(APP)"
 	@$(MAKE) $(addprefix _release-$(APP)-,$(APP_$(APP)_PLATFORMS))
 	@tar -czf "$(RELEASE_DIR)/$(APP).tar.gz" -C "$(RELEASE_DIR)" "$(APP)"
-	$(call log_ok,release,$(APP).tar.gz ($$(du -sh "$(RELEASE_DIR)/$(APP).tar.gz" | cut -f1)))
+	@size=$$(du -h "$(RELEASE_DIR)/$(APP).tar.gz" | cut -f1); \
+	  printf '$(TERM_GREEN)[%s]$(TERM_RESET) %s\n' release "$(APP).tar.gz ($$size)"
 else
 release: prep
 	$(call _build,native release,$(HOST_RELEASE_PRESET),$(HOST_RELEASE_DIR))

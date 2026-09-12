@@ -70,35 +70,42 @@ pip install pyserial cryptography
 
 ## 1. Build
 
-Bare-metal (default):
+The deployable is the release package. Building it is the same command a
+user runs to ship the app:
 
 ```bash
-make compose-stm32
+make release APP=stm32_encryptor_demo
 ```
 
-FreeRTOS variant:
+This builds the stm32 platform inside the dev-stm32 container (every
+firmware image in that preset, not only this app), then stages this app's
+artifacts and tars them:
+
+- `build/release/stm32_encryptor_demo/stm32/firmware/stm32_encryptor_demo.elf`
+- `build/release/stm32_encryptor_demo/stm32/firmware/stm32_encryptor_demo.bin`
+- `build/release/stm32_encryptor_demo/stm32/firmware/stm32_encryptor_demo.hex`
+- `build/release/stm32_encryptor_demo.tar.gz`
+
+Flash from the staged copy under `build/release/`: that is the artifact a
+deployment ships, and it is what the checkout record below was taken on.
+
+The build summary prints flash and RAM usage; the expected figures are in
+[MEMORY_MAP.md](MEMORY_MAP.md).
+
+### FreeRTOS variant
+
+The release manifest registers the bare-metal build only. The FreeRTOS
+variant is a development build of the same platform preset:
 
 ```bash
 make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
 ```
 
-Both variants write to the same build directory (the option is a CMake
-cache flag, so switching variants reconfigures and relinks in place):
-
-- `build/mcu-stm32-relwithdebinfo/firmware/stm32_encryptor_demo.elf`
-- `build/mcu-stm32-relwithdebinfo/firmware/stm32_encryptor_demo.bin`
-- `build/mcu-stm32-relwithdebinfo/firmware/stm32_encryptor_demo.hex`
-
-The build summary prints flash and RAM usage; the expected figures are in
-[MEMORY_MAP.md](MEMORY_MAP.md).
-
-To package a release instead (the same artifacts under
-`build/release/stm32_encryptor_demo/stm32/firmware/` plus the
-`build/release/stm32_encryptor_demo.tar.gz` tarball):
-
-```bash
-make release APP=stm32_encryptor_demo
-```
+It writes `build/mcu-stm32-relwithdebinfo/firmware/stm32_encryptor_demo.{elf,bin,hex}`.
+The option is a CMake cache flag on the shared build directory, so a
+following `make release APP=stm32_encryptor_demo` or
+`make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=OFF"` switches
+it back before the next bare-metal package.
 
 ---
 
@@ -139,7 +146,7 @@ in one step:
 
 ```bash
 ssh kalex@raspberrypi.local 'mkdir -p ~/apex/stm32_encryptor_demo'
-scp build/mcu-stm32-relwithdebinfo/firmware/stm32_encryptor_demo.bin \
+scp build/release/stm32_encryptor_demo/stm32/firmware/stm32_encryptor_demo.bin \
     demos/stm32_encryptor_demo/scripts/serial_checkout.py \
     kalex@raspberrypi.local:~/apex/stm32_encryptor_demo/
 ssh kalex@raspberrypi.local 'cd ~/apex/stm32_encryptor_demo && \

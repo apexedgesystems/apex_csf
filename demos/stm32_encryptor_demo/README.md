@@ -12,19 +12,20 @@ Supports bare-metal (default) and FreeRTOS modes via `APEX_USE_FREERTOS`.
 
 ## Building
 
-Bare-metal:
+Release package (what a deployment ships):
 
 ```bash
-make compose-stm32
+make release APP=stm32_encryptor_demo
 ```
 
-FreeRTOS:
+Artifacts stage under `build/release/stm32_encryptor_demo/stm32/firmware/`
+with a `build/release/stm32_encryptor_demo.tar.gz` tarball.
+
+FreeRTOS variant (development build of the same preset):
 
 ```bash
 make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
 ```
-
-Output lands in `build/mcu-stm32-relwithdebinfo/firmware/`.
 
 ## Flashing
 
