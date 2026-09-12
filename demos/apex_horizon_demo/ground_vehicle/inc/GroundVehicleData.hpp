@@ -125,6 +125,25 @@ struct GroundVehicleDriveCommand {
   std::uint8_t reserved[5]{};
 };
 
+/* ----------------------------- GroundVehicleSeqTraceSample ----------------------------- */
+
+/// One 20 Hz sample of the rover while a sequence runs: what the
+/// plots of a demonstration are drawn from. Field order matches the
+/// SEQTRACE log line.
+struct GroundVehicleSeqTraceSample {
+  double t_s;       ///< Seconds since the sequence started.
+  std::uint8_t seq; ///< seq_state at the sample.
+  std::uint8_t wp;  ///< active_waypoint.
+  std::uint8_t wp_total;
+  std::uint8_t led_bits;
+  double north_m; ///< Grid position about the anchor.
+  double east_m;
+  double heading_deg;
+  double speed_m_s;
+  double lidar_nearest_m;
+  double slope_deg;
+};
+
 /* ----------------------------- GroundVehicleState ----------------------------- */
 
 /**
@@ -174,6 +193,14 @@ struct GroundVehicleState {
   std::uint16_t led_phase[2]{}; ///< Steps into the current strobe period.
   std::uint8_t led_on[2]{};     ///< Live on/off, what the frame reports.
   std::uint8_t reserved_strobe[2]{};
+
+  /* ---- Sequence trace runtime ---- */
+  double trace_t_s{0.0};          ///< Seconds into the current trace window.
+  std::uint32_t trace_decim{0};   ///< Steps since the last sample.
+  std::uint32_t trace_dropped{0}; ///< Samples lost to a full buffer.
+  std::uint8_t trace_active{0};   ///< 1 while a sequence runs.
+  std::uint8_t trace_ended{0};    ///< 1 = drain logs the end marker.
+  std::uint8_t reserved_trace[6]{};
 };
 
 /* ----------------------------- GroundVehicleTelemetry ----------------------------- */

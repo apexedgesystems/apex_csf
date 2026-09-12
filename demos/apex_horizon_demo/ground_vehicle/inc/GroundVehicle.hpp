@@ -84,6 +84,11 @@ public:
   static constexpr std::uint16_t COMPONENT_ID = 222;
   static constexpr const char* COMPONENT_NAME = "GroundVehicle";
 
+  /// Sequence trace: samples per second while a sequence runs, and the
+  /// buffer the 1 Hz drain empties (three seconds of headroom).
+  static constexpr std::uint32_t kSeqTraceHz = 20;
+  static constexpr std::size_t kSeqTraceReserve = 64;
+
   [[nodiscard]] std::uint16_t componentId() const noexcept override { return COMPONENT_ID; }
   [[nodiscard]] const char* componentName() const noexcept override { return COMPONENT_NAME; }
   [[nodiscard]] const char* label() const noexcept override { return "GROUND_VEH"; }
@@ -105,7 +110,8 @@ public:
 
   /* ----------------------------- Construction ----------------------------- */
 
-  GroundVehicle() noexcept = default;
+  /// The trace buffer is reserved here, never grown on the RT path.
+  GroundVehicle() noexcept { trace_pending_.reserve(kSeqTraceReserve); }
   ~GroundVehicle() override = default;
 
   GroundVehicle(const GroundVehicle&) = delete;
@@ -467,15 +473,42 @@ public:
     fb[FB_LAST_CMD_RESULT] = s.last_cmd_result;
     fb[FB_LAST_CMD_OPCODE_LO] = static_cast<std::uint8_t>(s.last_cmd_opcode & 0xFFu);
     fb[FB_LAST_CMD_OPCODE_HI] = static_cast<std::uint8_t>(s.last_cmd_opcode >> 8u);
+
+    // 9: sequence trace. While seq_state names a running sequence,
+    // sample the drive-relevant channels at 20 Hz into a bounded
+    // buffer that telemetryTick drains to the log (the RT path never
+    // allocates: the buffer is reserved at init; overflow counts).
+    captureSeqTrace(s, tlm, p, DT);
     ++s.tick_count;
     return 0u;
   }
 
-  /// Periodic log line summarizing pose + nearest lidar hit.
+  /// Samples pending in the trace buffer (drained by telemetryTick).
+  [[nodiscard]] std::size_t seqTracePending() const noexcept { return trace_pending_.size(); }
+
+  /// Periodic log line summarizing pose + nearest lidar hit, and the
+  /// drain of the sequence trace (fixed grep-able shape: the offline
+  /// plots parse these lines).
   std::uint8_t telemetryTick() noexcept {
     auto* log = componentLog();
     if (log == nullptr) {
       return 0u;
+    }
+    {
+      auto& s = state_.get();
+      for (const auto& ts : trace_pending_) {
+        log->info(label(), fmt::format("SEQTRACE seq={} wp={}/{} t={:.2f} n={:+.3f} e={:+.3f} "
+                                       "hdg={:.2f} v={:.3f} lidar={:.1f} slope={:.2f} led={}",
+                                       ts.seq, ts.wp, ts.wp_total, ts.t_s, ts.north_m, ts.east_m,
+                                       ts.heading_deg, ts.speed_m_s, ts.lidar_nearest_m,
+                                       ts.slope_deg, ts.led_bits));
+      }
+      trace_pending_.clear();
+      if (s.trace_ended != 0u) {
+        s.trace_ended = 0u;
+        log->info(label(), fmt::format("SEQTRACE end dropped={}", s.trace_dropped));
+        s.trace_dropped = 0u;
+      }
     }
     const auto& tlm = telemetry_.get();
     const auto& p = tunables_.get();
@@ -598,6 +631,53 @@ private:
     }
   }
 
+  /* ----------------------------- Sequence trace ----------------------------- */
+
+  void captureSeqTrace(GroundVehicleState& s, const GroundVehicleTelemetry& tlm,
+                       const GroundVehicleTunables& p, double dt) noexcept {
+    const bool RUNNING = (s.seq_state != 0u);
+    if (!RUNNING) {
+      if (s.trace_active != 0u) {
+        s.trace_active = 0u;
+        s.trace_ended = 1u;
+      }
+      return;
+    }
+    if (s.trace_active == 0u) {
+      s.trace_active = 1u;
+      s.trace_t_s = 0.0;
+      s.trace_decim = 0u;
+    }
+    const std::uint32_t DECIM = std::max<std::uint32_t>(p.step_hz / kSeqTraceHz, 1u);
+    if (s.trace_decim == 0u) {
+      if (trace_pending_.size() < trace_pending_.capacity()) {
+        const double R0 = (body_ != nullptr) ? body_->telemetry().reference_radius_m : 0.0;
+        double n = 0.0, e = 0.0;
+        if (R0 > 0.0) {
+          n = (tlm.pos_lat_deg - p.anchor_lat_deg) * R0 * DEG_TO_RAD;
+          e = (tlm.pos_lon_deg - p.anchor_lon_deg) * R0 * std::cos(p.anchor_lat_deg * DEG_TO_RAD) *
+              DEG_TO_RAD;
+        }
+        double nearest = p.lidar_max_range_m;
+        const std::uint32_t N = std::min<std::uint32_t>(p.lidar_n_rays, MAX_LIDAR_RAYS);
+        for (std::uint32_t i = 0; i < N; ++i) {
+          if (tlm.lidar_hit[i] != 0u && tlm.lidar_range_m[i] < nearest) {
+            nearest = tlm.lidar_range_m[i];
+          }
+        }
+        trace_pending_.push_back(GroundVehicleSeqTraceSample{
+            s.trace_t_s, s.seq_state, s.active_waypoint, s.waypoint_total,
+            static_cast<std::uint8_t>((s.led_on[0] != 0u ? 1u : 0u) |
+                                      (s.led_on[1] != 0u ? 2u : 0u)),
+            n, e, tlm.heading_deg, tlm.speed_m_s, nearest, tlm.slope_deg});
+      } else {
+        ++s.trace_dropped;
+      }
+    }
+    s.trace_decim = (s.trace_decim + 1u) % DECIM;
+    s.trace_t_s += dt;
+  }
+
   /* ----------------------------- Lidar helper ----------------------------- */
 
   /// Cast `tunables.lidar_n_rays` rays forward and update telemetry.
@@ -650,6 +730,7 @@ private:
 
   const sim::environment::celestial_body::CelestialBody* body_{nullptr};
   const GroundVehicleDriveCommand* drive_cmd_{nullptr};
+  std::vector<GroundVehicleSeqTraceSample> trace_pending_{};
 
   /// Timestamp grid anchor: monotonic time of the first published tick
   /// and its tick number; stamps advance from there in exact DT steps.

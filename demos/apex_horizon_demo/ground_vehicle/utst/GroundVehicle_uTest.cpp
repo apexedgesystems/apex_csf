@@ -635,3 +635,39 @@ TEST(GroundVehicleCmd, WireTargetsAreBusyWhileASequenceRunsButSequenceOpcodesAre
             static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED))
       << "halted refuses with EXEC_FAILED, not BUSY";
 }
+
+/* ----------------------------- Sequence trace ----------------------------- */
+
+TEST(GroundVehicleTrace, SamplesAt20HzWhileASequenceRunsAndStopsWhenIdle) {
+  ReadyRover r;
+  r.rover.tunables().get().step_hz = 100u;
+  EXPECT_EQ(r.rover.seqTracePending(), 0u);
+  for (int i = 0; i < 50; ++i) {
+    (void)r.rover.vehicleStep();
+  }
+  EXPECT_EQ(r.rover.seqTracePending(), 0u) << "idle: nothing captured";
+
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
+  for (int i = 0; i < 100; ++i) { // 1 s at 100 Hz
+    (void)r.rover.vehicleStep();
+  }
+  EXPECT_EQ(r.rover.seqTracePending(), 20u) << "20 Hz";
+
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+  for (int i = 0; i < 100; ++i) {
+    (void)r.rover.vehicleStep();
+  }
+  EXPECT_EQ(r.rover.seqTracePending(), 20u) << "idle again: no new samples";
+  EXPECT_EQ(r.rover.vehicleState().trace_ended, 1u) << "end marker pending for the drain";
+}
+
+TEST(GroundVehicleTrace, BufferIsBoundedAndCountsDrops) {
+  ReadyRover r;
+  r.rover.tunables().get().step_hz = 100u;
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {1u, 1u}), 0u);
+  for (int i = 0; i < 100 * 5; ++i) { // 5 s without a drain: 100 samples offered, 64 fit
+    (void)r.rover.vehicleStep();
+  }
+  EXPECT_EQ(r.rover.seqTracePending(), 64u);
+  EXPECT_EQ(r.rover.vehicleState().trace_dropped, 36u);
+}
