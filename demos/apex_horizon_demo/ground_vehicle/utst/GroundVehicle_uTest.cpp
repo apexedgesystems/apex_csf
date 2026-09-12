@@ -366,3 +366,124 @@ TEST(GroundVehicle, GridBootPlacesTheRoverFromTheAnchor) {
   EXPECT_NEAR(rover.telemetry().pos_lat_deg, 39.5 + 100.0 / M_PER_DEG_LAT, 1e-9);
   EXPECT_NEAR(rover.telemetry().pos_lon_deg, -105.5 - 50.0 / M_PER_DEG_LON, 1e-9);
 }
+
+/* ----------------------------- ROVR/2 command surface ----------------------------- */
+
+namespace {
+
+using appsim::ground_vehicle::CmdResultCode;
+using appsim::ground_vehicle::RoverCmdSetLed;
+using appsim::ground_vehicle::RoverCmdSetTarget;
+using appsim::ground_vehicle::RoverOpcode;
+namespace fb = appsim::ground_vehicle;
+
+std::uint8_t sendBytes(GroundVehicle& rover, RoverOpcode op,
+                       const std::vector<std::uint8_t>& bytes) {
+  apex::compat::rospan<std::uint8_t> payload(bytes.data(), bytes.size());
+  std::vector<std::uint8_t> resp;
+  return rover.handleCommand(static_cast<std::uint16_t>(op), payload, resp);
+}
+
+std::vector<std::uint8_t> targetBytes(float a, float b) {
+  RoverCmdSetTarget t{a, b};
+  std::vector<std::uint8_t> v(sizeof(t));
+  std::memcpy(v.data(), &t, sizeof(t));
+  return v;
+}
+
+/// Ready rover, one tick in (pose latched, frame stamped).
+struct ReadyRover {
+  CelestialBody earth;
+  GroundVehicle rover;
+  ReadyRover() {
+    earth.tunables().set(analyticEarth());
+    EXPECT_EQ(earth.init(), 0u);
+    configureRover(rover);
+    rover.setBody(&earth);
+    (void)rover.vehicleStep();
+  }
+  const std::uint8_t* frame() {
+    (void)rover.vehicleStep();
+    return rover.frameBytes();
+  }
+};
+
+} // namespace
+
+TEST(GroundVehicleWire, ReservedTailOffsetsArePinned) {
+  static_assert(offsetof(GroundVehicleTelemetry, reserved1) == 232u);
+  EXPECT_EQ(232u + fb::FB_BOARD_LINK, 232u);
+  EXPECT_EQ(232u + fb::FB_CONTROLLER_MODE, 233u);
+  EXPECT_EQ(232u + fb::FB_SEQ_STATE, 234u);
+  EXPECT_EQ(232u + fb::FB_ACTIVE_WAYPOINT, 235u);
+  EXPECT_EQ(232u + fb::FB_WAYPOINT_TOTAL, 236u);
+  EXPECT_EQ(232u + fb::FB_LED_BITS, 237u);
+  EXPECT_EQ(232u + fb::FB_LED1_COLOUR, 238u);
+  EXPECT_EQ(232u + fb::FB_LED1_RATE, 239u);
+  EXPECT_EQ(232u + fb::FB_LED2_COLOUR, 240u);
+  EXPECT_EQ(232u + fb::FB_LED2_RATE, 241u);
+  EXPECT_EQ(232u + fb::FB_LAST_CMD_RESULT, 242u);
+  EXPECT_EQ(232u + fb::FB_LAST_CMD_OPCODE_LO, 243u);
+  EXPECT_EQ(232u + fb::FB_LAST_CMD_OPCODE_HI, 244u);
+  EXPECT_EQ(232u + fb::FB_BOARD_LOAD_PCT, 245u);
+  EXPECT_EQ(232u + fb::FB_BOARD_TICK_LO, 246u);
+  EXPECT_EQ(232u + fb::FB_BOARD_TICK_HI, 247u);
+  EXPECT_EQ(232u + fb::FB_MAST_PAN_DEG, 248u);
+  EXPECT_EQ(232u + fb::FB_MAST_EXT_PCT, 249u);
+}
+
+TEST(GroundVehicleCmd, SetModeIsBoundedAndAdoptable) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE, {2u}), 0u);
+  EXPECT_EQ(r.rover.vehicleState().commanded_mode, 2u);
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_MODE, {3u}), 0u);
+  EXPECT_EQ(r.rover.vehicleState().commanded_mode, 2u) << "rejected whole";
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_MODE, {}), 0u) << "short payload";
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT],
+            static_cast<std::uint8_t>(CmdResultCode::NACK_INVALID_ARGUMENT));
+  EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_LO], 0x03u);
+  EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_HI], 0x01u);
+}
+
+TEST(GroundVehicleCmd, TargetsValidateRefuseWhileHaltedAndCountWaypoints) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.52F, 0.0F)), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_ABS, targetBytes(10.0F, -4.0F)), 0u);
+  const auto& s = r.rover.vehicleState();
+  EXPECT_EQ(s.target_kind, 2u);
+  EXPECT_EQ(s.target_seq, 2u);
+  EXPECT_EQ(s.active_waypoint, 2u);
+  EXPECT_FLOAT_EQ(s.target_a_m, 10.0F);
+
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(5000.0F, 0.0F)), 0u)
+      << "out of bounds";
+  EXPECT_EQ(s.target_seq, 2u) << "rejected whole";
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED));
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT], static_cast<std::uint8_t>(CmdResultCode::NACK_EXEC_FAILED));
+  EXPECT_EQ(f[fb::FB_SEQ_STATE], 3u);
+  EXPECT_EQ(f[fb::FB_WAYPOINT_TOTAL], 2u);
+  EXPECT_EQ(f[fb::FB_ACTIVE_WAYPOINT], 2u);
+  EXPECT_EQ(f[fb::FB_CONTROLLER_MODE], appsim::ground_vehicle::kFrameModeHalted);
+}
+
+TEST(GroundVehicleCmd, LedCommandsAreBoundedAndStamped) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 5u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {2u, 1u, 0u}), 0u);
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_LED, {3u, 1u, 1u}), 0u) << "lamp";
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 6u, 1u}), 0u) << "colour";
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 1u, 6u}), 0u) << "rate";
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LED1_COLOUR], 2u);
+  EXPECT_EQ(f[fb::FB_LED1_RATE], 5u);
+  EXPECT_EQ(f[fb::FB_LED2_COLOUR], 1u);
+  EXPECT_EQ(f[fb::FB_LED2_RATE], 0u);
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT],
+            static_cast<std::uint8_t>(CmdResultCode::NACK_INVALID_ARGUMENT));
+  EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_LO], 0x06u);
+}

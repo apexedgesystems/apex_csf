@@ -52,6 +52,12 @@ static_assert(offsetof(RoverControllerOutput, throttle_frac) ==
 static_assert(offsetof(RoverControllerOutput, valid) ==
                   offsetof(ground_vehicle::GroundVehicleDriveCommand, valid),
               "drive command head must alias GroundVehicleDriveCommand");
+static_assert(offsetof(RoverControllerOutput, mode) ==
+                  offsetof(ground_vehicle::GroundVehicleDriveCommand, mode),
+              "drive command head must alias GroundVehicleDriveCommand");
+static_assert(offsetof(RoverControllerOutput, arrived) ==
+                  offsetof(ground_vehicle::GroundVehicleDriveCommand, arrived),
+              "drive command head must alias GroundVehicleDriveCommand");
 
 class RoverController final : public system_core::system_component::SwModelBase {
 public:
@@ -159,6 +165,25 @@ public:
     if (s.initialized == 0u) {
       mode_ = static_cast<DriveMode>(std::min<std::uint8_t>(p.boot_mode, 2u));
       s.initialized = 1u;
+    }
+
+    // Adopt what the wire commanded on the plant, edge-triggered: a
+    // NEW mode or target takes effect on this tick; direct setMode /
+    // setTarget callers keep control between commands.
+    if (vehicle_ != nullptr) {
+      const auto& vs = vehicle_->vehicleState();
+      if (vs.commanded_mode != 255u && vs.commanded_mode != s.adopted_mode) {
+        s.adopted_mode = vs.commanded_mode;
+        setMode(static_cast<DriveMode>(std::min<std::uint8_t>(vs.commanded_mode, 2u)));
+      }
+      if (vs.target_seq != s.adopted_target_seq) {
+        s.adopted_target_seq = vs.target_seq;
+        if (vs.target_kind == 1u) {
+          setTargetRel(static_cast<double>(vs.target_a_m), static_cast<double>(vs.target_b_m));
+        } else if (vs.target_kind == 2u) {
+          setTargetAbs(static_cast<double>(vs.target_a_m), static_cast<double>(vs.target_b_m));
+        }
+      }
     }
 
     double n = 0.0, e = 0.0;

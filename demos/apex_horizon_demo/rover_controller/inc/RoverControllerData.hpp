@@ -77,7 +77,11 @@ struct RoverControllerState {
   std::uint8_t target_valid{0};
   std::uint8_t initialized{0};
   std::uint16_t target_seq{0};
-  std::uint8_t reserved[4]{};
+  /// Last commanded target sequence and mode adopted from the plant's
+  /// command state (edge-triggered adoption, as the aircraft's mask).
+  std::uint16_t adopted_target_seq{0};
+  std::uint8_t adopted_mode{255};
+  std::uint8_t reserved[1]{};
 };
 
 /* ----------------------------- RoverControllerOutput ----------------------------- */
@@ -93,14 +97,14 @@ struct RoverControllerOutput {
   double steer_rate_deg_s{0.0};
   double throttle_frac{0.0};
   std::uint8_t valid{0};
-  std::uint8_t reserved0[7]{};
+  std::uint8_t mode{0};    ///< DriveMode code in effect.
+  std::uint8_t arrived{0}; ///< 1 once the current target is inside tolerance.
+  std::uint8_t reserved0[5]{};
 
   /* ---- Diagnostics ---- */
   std::uint64_t tick{0};
-  std::uint8_t mode{0};    ///< DriveMode code in effect.
-  std::uint8_t arrived{0}; ///< 1 once the current target is inside tolerance.
   std::uint16_t target_seq{0};
-  std::uint8_t reserved1[4]{};
+  std::uint8_t reserved1[6]{};
   double grid_north_m{0.0}; ///< Vehicle position on the grid.
   double grid_east_m{0.0};
   double distance_m{0.0};        ///< Remaining distance to the target.

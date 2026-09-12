@@ -25,6 +25,8 @@
 #include "src/sim/environment/factory/inc/EnvironmentFidelity.hpp"
 
 #include <cmath>
+#include <cstring>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -190,4 +192,40 @@ TEST(RoverControllerWaypoint, HoldModeIgnoresTheTarget) {
   rig.north_east(n, e);
   EXPECT_NEAR(n, 0.0, 1e-6);
   EXPECT_NEAR(rig.rover.telemetry().speed_m_s, 0.0, 1e-9);
+}
+
+/* ----------------------------- Wire adoption ----------------------------- */
+
+TEST(RoverControllerAdoption, CommandedModeAndTargetAreAdoptedEdgeTriggered) {
+  using appsim::ground_vehicle::RoverCmdSetTarget;
+  using appsim::ground_vehicle::RoverOpcode;
+  Rig rig(0.0);
+  rig.tick();
+  auto send = [&](RoverOpcode op, const std::vector<std::uint8_t>& bytes) {
+    apex::compat::rospan<std::uint8_t> payload(bytes.data(), bytes.size());
+    std::vector<std::uint8_t> resp;
+    return rig.rover.handleCommand(static_cast<std::uint16_t>(op), payload, resp);
+  };
+  RoverCmdSetTarget t{8.0F, 0.0F};
+  std::vector<std::uint8_t> tb(sizeof(t));
+  std::memcpy(tb.data(), &t, sizeof(t));
+
+  ASSERT_EQ(send(RoverOpcode::SET_MODE, {2u}), 0u);
+  ASSERT_EQ(send(RoverOpcode::SET_TARGET_REL, tb), 0u);
+  rig.tick();
+  EXPECT_EQ(rig.ctl.mode(), DriveMode::WAYPOINT);
+  EXPECT_EQ(rig.ctl.controllerState().target_valid, 1u);
+  EXPECT_EQ(rig.rover.frameBytes()[appsim::ground_vehicle::FB_CONTROLLER_MODE], 2u);
+
+  rig.run(300);
+  double n = 0.0, e = 0.0;
+  rig.north_east(n, e);
+  EXPECT_EQ(rig.ctl.controllerOutput().arrived, 1u);
+  EXPECT_NEAR(n, 8.0, 0.5);
+
+  // A direct setMode between commands keeps control: the wire's value
+  // was already adopted, so it is not re-applied.
+  rig.ctl.setMode(DriveMode::HOLD);
+  rig.tick();
+  EXPECT_EQ(rig.ctl.mode(), DriveMode::HOLD);
 }

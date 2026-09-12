@@ -110,7 +110,11 @@ struct GroundVehicleDriveCommand {
   double throttle_frac{0.0};
   /// 0 = block not driving (plant falls back to its trajectory).
   std::uint8_t valid{0};
-  std::uint8_t reserved[7]{};
+  /// Writer's drive mode (0 HOLD, 1 TRAJECTORY, 2 WAYPOINT) and
+  /// arrival latch -- truth the plant stamps into the frame.
+  std::uint8_t mode{0};
+  std::uint8_t arrived{0};
+  std::uint8_t reserved[5]{};
 };
 
 /* ----------------------------- GroundVehicleState ----------------------------- */
@@ -138,7 +142,25 @@ struct GroundVehicleState {
   /// (use `throttle_default`). Set by SET_THROTTLE, cleared by RESUME.
   std::uint8_t throttle_override_pct{255};
 
-  std::uint8_t reserved[5]{};
+  /* ---- Commanded drive state (adopted by the controller, edge-triggered) ---- */
+  std::uint8_t commanded_mode{255}; ///< 255 = never commanded; else 0..2.
+  std::uint8_t target_kind{0};      ///< 0 none, 1 REL, 2 ABS (of the latest target).
+  std::uint16_t target_seq{0};      ///< Bumps per accepted target command.
+  float target_a_m{0.0F};           ///< north (REL displacement / ABS from anchor).
+  float target_b_m{0.0F};           ///< east.
+
+  /* ---- Sequence attribution + LED commands (stamped into the frame) ---- */
+  std::uint8_t seq_state{0};
+  std::uint8_t waypoint_total{0};
+  std::uint8_t active_waypoint{0}; ///< Targets accepted since the sequence started.
+  std::uint8_t led_colour[2]{};
+  std::uint8_t led_rate[2]{};
+  std::uint8_t reserved_led{0};
+
+  /* ---- Last command result on the wire ---- */
+  std::uint8_t last_cmd_result{0};
+  std::uint8_t reserved_cmd{0};
+  std::uint16_t last_cmd_opcode{0};
 };
 
 /* ----------------------------- GroundVehicleTelemetry ----------------------------- */

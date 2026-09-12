@@ -32,6 +32,7 @@
  * @note RT-safe within tick (no allocation); logging is NOT RT-safe.
  */
 
+#include "demos/apex_horizon_demo/ground_vehicle/inc/GroundVehicleCommand.hpp"
 #include "demos/apex_horizon_demo/ground_vehicle/inc/GroundVehicleData.hpp"
 
 #include "src/sim/environment/celestial_body/inc/CelestialBody.hpp"
@@ -96,14 +97,11 @@ public:
 
   /* ----------------------------- Drive commands ----------------------------- */
 
-  /// Component-specific command opcodes (0x0100+ range). Reachable from
-  /// any internal-bus source: the demo wires them to the bridge's
-  /// command sink, so a paired visualization can drive the vehicle.
-  enum class DriveCmd : std::uint16_t {
-    HALT = 0x0100,         ///< No payload. Target speed -> 0 (first-order coast-down).
-    RESUME = 0x0101,       ///< No payload. Clear HALT and any throttle override.
-    SET_THROTTLE = 0x0102, ///< Payload: 1 byte, throttle percent 0-100.
-  };
+  /// The drive opcodes (the full surface is RoverOpcode in
+  /// GroundVehicleCommand.hpp). Reachable from any internal-bus
+  /// source: the demo wires them to the bridge's command sink, so a
+  /// paired visualization and the sequence engine drive the vehicle.
+  using DriveCmd = RoverOpcode;
 
   /* ----------------------------- Construction ----------------------------- */
 
@@ -151,19 +149,51 @@ public:
                                            apex::compat::rospan<std::uint8_t> payload,
                                            std::vector<std::uint8_t>& response) noexcept override {
     using system_core::system_component::CommandResult;
+    const std::uint8_t RC = dispatchCommand(opcode, payload, response);
+    // Stamp the result of every rover-range command for the frame;
+    // opcodes outside the surface fall through to the base untouched.
+    if (opcode >= static_cast<std::uint16_t>(RoverOpcode::HALT) &&
+        opcode <= static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE)) {
+      auto& s = state_.get();
+      s.last_cmd_opcode = opcode;
+      switch (static_cast<CommandResult>(RC)) {
+      case CommandResult::SUCCESS:
+        s.last_cmd_result = static_cast<std::uint8_t>(CmdResultCode::ACK);
+        break;
+      case CommandResult::EXEC_FAILED:
+        s.last_cmd_result = static_cast<std::uint8_t>(CmdResultCode::NACK_EXEC_FAILED);
+        break;
+      default:
+        s.last_cmd_result = static_cast<std::uint8_t>(CmdResultCode::NACK_INVALID_ARGUMENT);
+        break;
+      }
+    }
+    return RC;
+  }
+
+  /// Frame bytes 232..: what the plant stamps every tick.
+  [[nodiscard]] const std::uint8_t* frameBytes() const noexcept {
+    return telemetry_.get().reserved1;
+  }
+
+private:
+  [[nodiscard]] std::uint8_t dispatchCommand(std::uint16_t opcode,
+                                             apex::compat::rospan<std::uint8_t> payload,
+                                             std::vector<std::uint8_t>& response) noexcept {
+    using system_core::system_component::CommandResult;
     auto& s = state_.get();
 
-    switch (static_cast<DriveCmd>(opcode)) {
-    case DriveCmd::HALT:
+    switch (static_cast<RoverOpcode>(opcode)) {
+    case RoverOpcode::HALT:
       s.commanded_halt = 1u;
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
-    case DriveCmd::RESUME:
+    case RoverOpcode::RESUME:
       s.commanded_halt = 0u;
       s.throttle_override_pct = 255u;
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
-    case DriveCmd::SET_THROTTLE: {
+    case RoverOpcode::SET_THROTTLE: {
       if (payload.size() < 1u) {
         return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
       }
@@ -175,11 +205,70 @@ public:
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
     }
 
-    default:
-      return SwModelBase::handleCommand(opcode, payload, response);
+    case RoverOpcode::SET_MODE: {
+      if (payload.size() < sizeof(RoverCmdSetMode)) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+      }
+      if (payload[0] > kDriveModeMax) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_ARGUMENT);
+      }
+      s.commanded_mode = payload[0];
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
     }
+
+    case RoverOpcode::SET_TARGET_REL:
+    case RoverOpcode::SET_TARGET_ABS: {
+      if (payload.size() < sizeof(RoverCmdSetTarget)) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+      }
+      RoverCmdSetTarget t{};
+      std::memcpy(&t, payload.data(), sizeof(t));
+      if (!std::isfinite(t.a_m) || !std::isfinite(t.b_m) || std::fabs(t.a_m) > kTargetAbsMaxM ||
+          std::fabs(t.b_m) > kTargetAbsMaxM) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_ARGUMENT);
+      }
+      if (s.commanded_halt != 0u) {
+        return static_cast<std::uint8_t>(CommandResult::EXEC_FAILED); // the mode refuses
+      }
+      s.target_kind = (static_cast<RoverOpcode>(opcode) == RoverOpcode::SET_TARGET_REL) ? 1u : 2u;
+      s.target_a_m = t.a_m;
+      s.target_b_m = t.b_m;
+      ++s.target_seq;
+      if (s.seq_state != 0u && s.active_waypoint < 255u) {
+        ++s.active_waypoint;
+      }
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+    }
+
+    case RoverOpcode::SET_LED: {
+      if (payload.size() < sizeof(RoverCmdSetLed)) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+      }
+      const std::uint8_t LAMP = payload[0];
+      const std::uint8_t COLOUR = payload[1];
+      const std::uint8_t RATE = payload[2];
+      if (LAMP < 1u || LAMP > kLampCount || COLOUR > kLedColourMax || RATE > kLedRateMax) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_ARGUMENT);
+      }
+      s.led_colour[LAMP - 1u] = COLOUR;
+      s.led_rate[LAMP - 1u] = RATE;
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+    }
+
+    case RoverOpcode::SET_SEQ_STATE: {
+      if (payload.size() < sizeof(RoverCmdSeqState)) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+      }
+      s.seq_state = payload[0];
+      s.waypoint_total = payload[1];
+      s.active_waypoint = 0u;
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+    }
+    }
+    return SwModelBase::handleCommand(opcode, payload, response);
   }
 
+public:
   /* ----------------------------- Tasks ----------------------------- */
 
   /// One kinematic step + lidar sweep. Returns 0 unconditionally.
@@ -311,6 +400,24 @@ public:
     constexpr std::uint64_t DT_NS = static_cast<std::uint64_t>(DT * 1.0e9);
     tlm.timestamp_ns = t0_ns_ + (s.tick_count - t0_tick_) * DT_NS;
     tlm.tick = s.tick_count;
+
+    // 8: drive/command truth into the frame's reserved tail (byte map
+    // in GroundVehicleCommand.hpp). LED bits and board bytes are
+    // stamped by their own features.
+    auto* fb = tlm.reserved1;
+    fb[FB_CONTROLLER_MODE] = (s.commanded_halt != 0u) ? kFrameModeHalted
+                             : DRIVEN                 ? drive_cmd_->mode
+                                                      : static_cast<std::uint8_t>(1u);
+    fb[FB_SEQ_STATE] = s.seq_state;
+    fb[FB_ACTIVE_WAYPOINT] = s.active_waypoint;
+    fb[FB_WAYPOINT_TOTAL] = s.waypoint_total;
+    fb[FB_LED1_COLOUR] = s.led_colour[0];
+    fb[FB_LED1_RATE] = s.led_rate[0];
+    fb[FB_LED2_COLOUR] = s.led_colour[1];
+    fb[FB_LED2_RATE] = s.led_rate[1];
+    fb[FB_LAST_CMD_RESULT] = s.last_cmd_result;
+    fb[FB_LAST_CMD_OPCODE_LO] = static_cast<std::uint8_t>(s.last_cmd_opcode & 0xFFu);
+    fb[FB_LAST_CMD_OPCODE_HI] = static_cast<std::uint8_t>(s.last_cmd_opcode >> 8u);
     ++s.tick_count;
     return 0u;
   }
