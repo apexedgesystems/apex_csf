@@ -19,12 +19,15 @@
  *      when terrain rises above sensor height.
  *   7. Publishes pose + slope + lidar telemetry.
  *
- * The default drive is autonomous (constant throttle + turn). A small
- * drive-command interface (`DriveCmd`: HALT / RESUME / SET_THROTTLE)
- * overrides it via the internal command bus — the demo routes the
- * bridge's command sink here, so a paired visualization can halt and
- * resume the vehicle. A future `RoverController` component could
- * replace the baked-in autonomy through the same seam.
+ * Steering and throttle come from an attached drive-command block
+ * (`setDriveCommand`, written by a RoverController or by a hardware
+ * driver) when one is valid; otherwise the vehicle drives its built-in
+ * trajectory (constant throttle + turn). A small drive-command
+ * interface (`DriveCmd`: HALT / RESUME / SET_THROTTLE) sits above
+ * both via the internal command bus — the demo routes the bridge's
+ * command sink here, so a paired visualization can halt and resume
+ * the vehicle. HALT is a plant-level stop regardless of the block;
+ * SET_THROTTLE only shapes the built-in trajectory.
  *
  * @note RT-safe within tick (no allocation); logging is NOT RT-safe.
  */
@@ -42,6 +45,7 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/utilities/helpers/inc/Cpu.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -120,10 +124,21 @@ public:
     return body_;
   }
 
+  /// Attach the drive-command block the plant reads each tick (a
+  /// controller's OUTPUT or a driver's). Pointer must outlive the
+  /// component; nullptr (the default) means the built-in trajectory.
+  void setDriveCommand(const GroundVehicleDriveCommand* cmd) noexcept { drive_cmd_ = cmd; }
+  [[nodiscard]] const GroundVehicleDriveCommand* driveCommand() const noexcept {
+    return drive_cmd_;
+  }
+
   /* ----------------------------- Tunables / state accessors ----------------------------- */
 
   [[nodiscard]] system_core::data::TunableParam<GroundVehicleTunables>& tunables() noexcept {
     return tunables_;
+  }
+  [[nodiscard]] const GroundVehicleTunables& tunables_const() const noexcept {
+    return tunables_.get();
   }
   [[nodiscard]] const GroundVehicleState& vehicleState() const noexcept { return state_.get(); }
   [[nodiscard]] const GroundVehicleTelemetry& telemetry() const noexcept {
@@ -192,11 +207,17 @@ public:
     // (matches the 10 Hz scheduler entry, which is also the exec
     // fundamental); future could query the executive for the real dt.
     constexpr double DT = 1.0 / 10.0;
-    // Throttle resolves in priority order: HALT forces target speed to
-    // zero; an active SET_THROTTLE override replaces the default.
-    const double THROTTLE = (s.throttle_override_pct <= 100u)
-                                ? static_cast<double>(s.throttle_override_pct) / 100.0
-                                : p.throttle_default;
+    // Throttle and steering resolve in priority order: HALT forces the
+    // target speed to zero and freezes the heading; a valid attached
+    // drive-command block supplies both; otherwise the built-in
+    // trajectory does (with an active SET_THROTTLE override replacing
+    // its default throttle).
+    const bool DRIVEN = (drive_cmd_ != nullptr) && (drive_cmd_->valid != 0u);
+    const double THROTTLE = DRIVEN ? std::clamp(drive_cmd_->throttle_frac, 0.0, 1.0)
+                                   : ((s.throttle_override_pct <= 100u)
+                                          ? static_cast<double>(s.throttle_override_pct) / 100.0
+                                          : p.throttle_default);
+    const double STEER_RATE_DEG_S = DRIVEN ? drive_cmd_->steer_rate_deg_s : p.steer_rate_deg_s;
     const double TARGET_SPEED = (s.commanded_halt != 0u) ? 0.0 : THROTTLE * p.max_speed_m_s;
     // Simple first-order approach: 95% per second time constant.
     constexpr double TAU_S = 1.0;
@@ -205,7 +226,7 @@ public:
     // coast-down still moves it along the frozen heading until speed
     // decays to zero.
     if (s.commanded_halt == 0u) {
-      tlm.heading_deg = std::fmod(tlm.heading_deg + p.steer_rate_deg_s * DT + 360.0, 360.0);
+      tlm.heading_deg = std::fmod(tlm.heading_deg + STEER_RATE_DEG_S * DT + 360.0, 360.0);
     }
 
     // 3: convert (heading, speed) to lat/lon delta on the body's
@@ -425,6 +446,7 @@ private:
   }
 
   const sim::environment::celestial_body::CelestialBody* body_{nullptr};
+  const GroundVehicleDriveCommand* drive_cmd_{nullptr};
 
   /// Timestamp grid anchor: monotonic time of the first published tick
   /// and its tick number; stamps advance from there in exact DT steps.

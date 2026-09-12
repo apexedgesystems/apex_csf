@@ -80,6 +80,29 @@ struct GroundVehicleTunables {
   char body_label[16]{};
 };
 
+/* ----------------------------- GroundVehicleDriveCommand ----------------------------- */
+
+/**
+ * @brief The controller seam: what a drive controller hands the plant
+ * each tick.
+ *
+ * The vehicle reads this block when one is attached and `valid` is
+ * set; otherwise it drives its built-in trajectory (constant
+ * `throttle_default` + `steer_rate_deg_s`). A RoverController writes
+ * it from its own OUTPUT block; in the hardware-in-the-loop form a
+ * UART driver writes the same block from the board's control frames,
+ * so the plant never knows which produced it.
+ */
+struct GroundVehicleDriveCommand {
+  /// Commanded heading rate [deg/s], positive clockwise.
+  double steer_rate_deg_s{0.0};
+  /// Commanded throttle fraction 0..1 of `max_speed_m_s`.
+  double throttle_frac{0.0};
+  /// 0 = block not driving (plant falls back to its trajectory).
+  std::uint8_t valid{0};
+  std::uint8_t reserved[7]{};
+};
+
 /* ----------------------------- GroundVehicleState ----------------------------- */
 
 /**
