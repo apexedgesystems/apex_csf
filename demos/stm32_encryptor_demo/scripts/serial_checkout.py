@@ -13,11 +13,12 @@ Usage:
 
 Port assignments (NUCLEO-L476RG, two UARTs):
     Data channel:    UART1 via FTDI adapter (/dev/ftdi_0)
-    Command channel: UART2 via ST-Link VCP  (/dev/nucleo_0)
+    Command channel: UART2 via ST-Link VCP  (/dev/nucleo_l476rg_0)
 
-Shared port (NUCLEO-F767ZI, one UART): both channels ride the ST-Link
-VCP with a one-byte channel prefix inside every SLIP frame; pass
---shared-port /dev/nucleo_1 and the script prefixes and routes frames.
+Shared port (NUCLEO-F767ZI, NUCLEO-F446RE; one UART): both channels ride
+the ST-Link VCP with a one-byte channel prefix inside every SLIP frame;
+pass --shared-port /dev/nucleo_<board>_0 and the script prefixes and
+routes frames.
 
 Options:
     --timeout SECONDS   Per-response timeout (default 2.0). The F767ZI's key
@@ -41,7 +42,7 @@ Prerequisites:
     - Firmware flashed and board reset
     - pyserial installed (pip install pyserial)
     - cryptography installed (pip install cryptography) -- for decrypt verify
-    - VCP:  /dev/nucleo_0 or /dev/ttyACM0 (command channel)
+    - VCP:  /dev/nucleo_l476rg_0 or /dev/ttyACM0 (command channel)
     - FTDI: /dev/ftdi_0 or /dev/ttyUSB0 (data channel)
 
 See docs/ENCRYPTOR_DESIGN.md for full protocol specification.
@@ -68,7 +69,7 @@ except ImportError:
 # =============================================================================
 
 DEFAULT_DATA_PORT = "/dev/ftdi_0"
-DEFAULT_CMD_PORT = "/dev/nucleo_0"
+DEFAULT_CMD_PORT = "/dev/nucleo_l476rg_0"
 DEFAULT_BAUD = 115200
 TIMEOUT_S = 2.0
 
@@ -1496,7 +1497,8 @@ def main():
         "--shared-port",
         default=None,
         help="Single port carrying both channels with a channel prefix byte "
-        "(NUCLEO-F767ZI: /dev/nucleo_1); overrides --data-port and --cmd-port",
+        "(NUCLEO-F767ZI: /dev/nucleo_f767zi_0, NUCLEO-F446RE: /dev/nucleo_f446re_0); "
+        "overrides --data-port and --cmd-port",
     )
     parser.add_argument("--baud", type=int, default=DEFAULT_BAUD, help="Baud rate")
     parser.add_argument(

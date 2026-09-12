@@ -2,8 +2,8 @@
 
 Memory layout and budget for the `stm32_encryptor_demo` firmware running on the
 NUCLEO-L476RG. The STM32L476RG has unified flash, two SRAM banks, and no EEPROM
-(flash pages serve as non-volatile storage). The F767ZI build's map is in
-[STM32F767ZI](#stm32f767zi) at the end.
+(flash pages serve as non-volatile storage). The other boards' maps are in
+[STM32F767ZI](#stm32f767zi) and [STM32F446RE](#stm32f446re) at the end.
 
 ---
 
@@ -214,6 +214,42 @@ mode. Programming is 32-bit; a sector erase takes about a second.
 
 Both variants are smaller than their L476 counterparts: one UART instance
 instead of two, and the Cortex-M7 code density.
+
+---
+
+## STM32F446RE
+
+512 KB of flash and 128 KB of RAM, the latter one contiguous region.
+
+| Region | Size   | Address Range             | Notes                           |
+| ------ | ------ | ------------------------- | ------------------------------- |
+| Flash  | 512 KB | 0x0800_0000 - 0x0807_FFFF | XIP through the ART accelerator |
+| SRAM1  | 112 KB | 0x2000_0000 - 0x2001_BFFF |                                 |
+| SRAM2  | 16 KB  | 0x2001_C000 - 0x2001_FFFF | Contiguous with SRAM1           |
+
+`STM32F446RE.ld` declares FLASH as 512K at 0x0800_0000 and RAM as one 128K
+region at 0x2000_0000, with the stack at the top of RAM.
+
+### Flash Sectors
+
+The F7 rule at a 16 KB small sector, single bank:
+
+| Sectors | Size each | Address     |
+| ------- | --------- | ----------- |
+| 0-3     | 16 KB     | 0x0800_0000 |
+| 4       | 64 KB     | 0x0801_0000 |
+| 5-7     | 128 KB    | 0x0802_0000 |
+
+The application image lives in sector 0. The key store is sector 7
+(0x0806_0000, 128 KB), the last erasable unit. Programming is 32-bit; a
+sector erase takes under a second.
+
+### Usage
+
+| Variant    | Flash (text + data) | RAM (data + bss)  |
+| ---------- | ------------------- | ----------------- |
+| Bare-metal | 19,760 B (3.77%)    | 7,432 B (5.67%)   |
+| FreeRTOS   | 23,060 B (4.40%)    | 15,936 B (12.16%) |
 
 ---
 

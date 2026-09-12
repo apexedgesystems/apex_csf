@@ -8,6 +8,7 @@
 # (a cache variable, passed like any other -D option):
 #   nucleo_l476rg  STM32L476RG, Cortex-M4F  (default)
 #   nucleo_f767zi  STM32F767ZI, Cortex-M7 with double-precision FPU
+#   nucleo_f446re  STM32F446RE, Cortex-M4F
 #
 # Usage:
 #   cmake --preset mcu-stm32-relwithdebinfo
@@ -54,17 +55,17 @@ set(CMAKE_SIZE arm-none-eabi-size)
 
 set(APEX_STM32_BOARD
     "nucleo_l476rg"
-    CACHE STRING "STM32 board: nucleo_l476rg | nucleo_f767zi"
+    CACHE STRING "STM32 board: nucleo_l476rg | nucleo_f767zi | nucleo_f446re"
 )
 
-if (APEX_STM32_BOARD STREQUAL "nucleo_l476rg")
+if (APEX_STM32_BOARD STREQUAL "nucleo_l476rg" OR APEX_STM32_BOARD STREQUAL "nucleo_f446re")
   set(CPU_FLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16")
 elseif (APEX_STM32_BOARD STREQUAL "nucleo_f767zi")
   set(CPU_FLAGS "-mcpu=cortex-m7 -mthumb -mfloat-abi=hard -mfpu=fpv5-d16")
 else ()
   message(
     FATAL_ERROR
-      "APEX_STM32_BOARD='${APEX_STM32_BOARD}' is not a known board (nucleo_l476rg | nucleo_f767zi)"
+      "APEX_STM32_BOARD='${APEX_STM32_BOARD}' is not a known board (nucleo_l476rg | nucleo_f767zi | nucleo_f446re)"
   )
 endif ()
 

@@ -10,6 +10,7 @@
 # The board is selected by APEX_STM32_BOARD (toolchain cache variable):
 #   nucleo_l476rg  STM32L476RG, Cortex-M4F @ 80 MHz   (default)
 #   nucleo_f767zi  STM32F767ZI, Cortex-M7 @ 216 MHz
+#   nucleo_f446re  STM32F446RE, Cortex-M4F @ 180 MHz
 # Execution mode is selected by APEX_USE_FREERTOS (bare-metal default).
 #
 # Build (bare-metal release package, default board):
@@ -31,15 +32,31 @@ option(APEX_USE_FREERTOS "Build with FreeRTOS (vTaskDelayUntil tick source)" OFF
 # ------------------------------------------------------------------------------
 #
 # One row per NUCLEO: Cube edition, MCU define, startup file, linker script,
-# FreeRTOS port directory, and the board definition inc/boards/Board.hpp keys
-# on. APEX_STM32_BOARD itself is declared by cmake/toolchains/stm32-gcc.cmake,
-# which derives the CPU flags from the same value.
+# HAL module list, FreeRTOS port directory, and the board definition
+# inc/boards/Board.hpp keys on. APEX_STM32_BOARD itself is declared by
+# cmake/toolchains/stm32-gcc.cmake, which derives the CPU flags from the
+# same value.
+
+set(BOARD_HAL_MODULES
+    cortex
+    flash
+    flash_ex
+    gpio
+    rcc
+    rcc_ex
+    pwr
+    pwr_ex
+    dma
+    dma_ex
+    uart
+)
 
 if (APEX_STM32_BOARD STREQUAL "nucleo_l476rg")
   set(BOARD_CUBE L4)
   set(BOARD_MCU STM32L476xx)
   set(BOARD_STARTUP startup_stm32l476xx)
   set(BOARD_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/STM32L476RG.ld")
+  list(APPEND BOARD_HAL_MODULES uart_ex)
   set(BOARD_FREERTOS_PORT "portable/GCC/ARM_CM4F")
   set(BOARD_DEFINE APEX_BOARD_NUCLEO_L476RG)
 elseif (APEX_STM32_BOARD STREQUAL "nucleo_f767zi")
@@ -47,8 +64,16 @@ elseif (APEX_STM32_BOARD STREQUAL "nucleo_f767zi")
   set(BOARD_MCU STM32F767xx)
   set(BOARD_STARTUP startup_stm32f767xx)
   set(BOARD_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/STM32F767ZI.ld")
+  list(APPEND BOARD_HAL_MODULES uart_ex)
   set(BOARD_FREERTOS_PORT "portable/GCC/ARM_CM7/r0p1")
   set(BOARD_DEFINE APEX_BOARD_NUCLEO_F767ZI)
+elseif (APEX_STM32_BOARD STREQUAL "nucleo_f446re")
+  set(BOARD_CUBE F4)
+  set(BOARD_MCU STM32F446xx)
+  set(BOARD_STARTUP startup_stm32f446xx)
+  set(BOARD_LINKER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/STM32F446RE.ld")
+  set(BOARD_FREERTOS_PORT "portable/GCC/ARM_CM4F")
+  set(BOARD_DEFINE APEX_BOARD_NUCLEO_F446RE)
 else ()
   message(
     FATAL_ERROR "stm32_encryptor_demo: no board row for APEX_STM32_BOARD='${APEX_STM32_BOARD}'"
@@ -114,18 +139,7 @@ apex_add_firmware_with_stm32(
   STARTUP
   ${BOARD_STARTUP}
   HAL_MODULES
-  cortex
-  flash
-  flash_ex
-  gpio
-  rcc
-  rcc_ex
-  pwr
-  pwr_ex
-  dma
-  dma_ex
-  uart
-  uart_ex
+  ${BOARD_HAL_MODULES}
   LINKER_SCRIPT
   "${BOARD_LINKER_SCRIPT}"
   SRC

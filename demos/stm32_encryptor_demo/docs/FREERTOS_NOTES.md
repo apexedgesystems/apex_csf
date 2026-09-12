@@ -314,6 +314,12 @@ make release APP=stm32_encryptor_demo
 make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
 ```
 
+The variant builds on every board the demo supports; the board table in
+CMakeLists.txt supplies the port directory (`ARM_CM4F` for the L476RG and
+F446RE, `ARM_CM7/r0p1` for the F767ZI) and the Cube edition the kernel
+sources come from. Per-board sizes and idle figures for both modes are in
+ENCRYPTOR_DESIGN.md's Board Differences table.
+
 ## Verification
 
 The same `serial_checkout.py` validates both firmware modes:
@@ -323,5 +329,7 @@ The same `serial_checkout.py` validates both firmware modes:
 python3 demos/stm32_encryptor_demo/scripts/serial_checkout.py --verbose
 ```
 
-All 40 checks should pass in both modes. Overhead numbers will differ
-slightly due to FreeRTOS context switch overhead.
+All 40 checks should pass in both modes on every board (shared-channel
+boards add `--shared-port <port> --timeout 6`). Overhead numbers differ
+between the modes and the boards; the design doc's table carries the
+measured values.
