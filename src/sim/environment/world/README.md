@@ -29,7 +29,15 @@ extracted entry read identically.
   payload bytes only, verified on every read.
 - **Per-entry specHash** — the inner artifact's own provenance hash,
   copied verbatim at pack time; the artifact stays the authority on
-  its identity (zero when the format predates headers).
+  its identity. A zero specHash is a format convention for "no
+  generating spec" (a converted or hand-assembled file), not a
+  defect: identical records, no identity a consumer pin can bind to.
+  `world_pack` therefore refuses a zero specHash for formats that
+  define one (atmosphere, terrain) and names the remedy; a pin is
+  authored only from generator output. `--allow-unspecified` packs
+  such an entry knowingly (its content hash then differs from the
+  canonical artifact's, and consumers pinned to the canonical value
+  refuse it at init).
 
 ## Uid range
 
