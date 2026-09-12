@@ -108,83 +108,125 @@ TEST(RoverControllerSeam, ValidBlockReplacesTrajectory) {
   EXPECT_NEAR(rig.rover.telemetry().speed_m_s, 0.0, 1e-9);
 }
 
-TEST(RoverControllerSeam, TrajectoryModeReproducesThePlantsCircle) {
+TEST(RoverControllerSeam, TrajectoryModeDrivesASteeredCircle) {
   Rig rig(45.0);
   rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::TRAJECTORY);
-  rig.run(20);
-  EXPECT_NEAR(rig.rover.telemetry().heading_deg, 45.0 + 6.0 * 2.0, 1e-6);
-  EXPECT_GT(rig.rover.telemetry().speed_m_s, 0.5);
+  rig.tick();
+  // First tick: the steering angle is commanded but the rover has only
+  // just started rolling (0.15 m/s after one 10 Hz step), so the heading
+  // has barely moved -- a steered plant cannot pivot at rest.
+  EXPECT_NEAR(rig.ctl.controllerOutput().steer_angle_deg, 5.0, 1e-9);
+  EXPECT_NEAR(rig.rover.telemetry().heading_deg, 45.0, 0.1);
+  const double H1 = rig.rover.telemetry().heading_deg;
+  rig.run(200); // 20 s
+  const double V = rig.rover.telemetry().speed_m_s;
+  EXPECT_GT(V, 4.0) << "cruising at 0.6 of max";
+  // At 4.8 m/s the heading turns at v tan(5 deg) / 1.5 m = 16 deg/s: the
+  // last second of the run must show that rate.
+  const double H2 = rig.rover.telemetry().heading_deg;
+  rig.run(10);
+  double dh = rig.rover.telemetry().heading_deg - H2;
+  if (dh < 0.0)
+    dh += 360.0;
+  EXPECT_NEAR(
+      dh, V * std::tan(5.0 * apex::math::vecmat::DEG_TO_RAD) / 1.5 * apex::math::vecmat::RAD_TO_DEG,
+      0.5);
+  EXPECT_NE(H2, H1);
 }
 
 /* ----------------------------- WAYPOINT ----------------------------- */
 
-TEST(RoverControllerWaypoint, LegNorthArrivesAndLatches) {
+TEST(RoverControllerWaypoint, LegNorthRampsCruisesBrakesAndLatches) {
   Rig rig(0.0);
   rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
   rig.tick(); // plant latches its pose; controller has an origin
-  rig.ctl.setTargetRel(10.0, 0.0);
+  rig.ctl.setTargetRel(20.0, 0.0);
   ASSERT_EQ(rig.ctl.controllerState().target_valid, 1u);
 
-  double max_north = 0.0;
-  for (int i = 0; i < 300; ++i) { // 30 s
+  double max_north = 0.0, max_v = 0.0;
+  int arrived_tick = -1;
+  for (int i = 0; i < 400; ++i) { // 40 s
     rig.tick();
     double n = 0.0, e = 0.0;
     rig.north_east(n, e);
     max_north = std::max(max_north, n);
+    max_v = std::max(max_v, rig.rover.telemetry().speed_m_s);
+    if (arrived_tick < 0 && rig.ctl.controllerOutput().arrived != 0u) {
+      arrived_tick = i;
+    }
   }
   double n = 0.0, e = 0.0;
   rig.north_east(n, e);
   const auto& out = rig.ctl.controllerOutput();
   EXPECT_EQ(out.arrived, 1u) << "dist=" << out.distance_m;
-  EXPECT_NEAR(n, 10.0, 0.6) << "north (6 % of a long leg: damping 0.7 plus the arrival coast)";
-  EXPECT_NEAR(e, 0.0, 0.5) << "east";
-  EXPECT_LT(max_north, 10.6) << "overshoot (~4 % of the leg at damping 0.7)";
-  EXPECT_LT(rig.rover.telemetry().speed_m_s, 0.2) << "at rest after arrival";
-  EXPECT_NEAR(out.steer_rate_deg_s, 0.0, 1e-9);
+  EXPECT_GE(arrived_tick, 0);
+  EXPECT_LT(arrived_tick, 150) << "20 m at 3 m/s cruise with ramps: under 15 s";
+  EXPECT_NEAR(max_v, 3.0, 0.1) << "cruise";
+  EXPECT_NEAR(n, 20.0, 0.3) << "north";
+  EXPECT_NEAR(e, 0.0, 0.05) << "east (a straight leg)";
+  EXPECT_LT(max_north, 20.3) << "braking profile lands without overshoot";
+  EXPECT_LT(rig.rover.telemetry().speed_m_s, 0.05) << "at rest after arrival";
   EXPECT_NEAR(out.throttle_frac, 0.0, 1e-9);
 }
 
-TEST(RoverControllerWaypoint, LegEastSteersClockwiseAndTurnsInPlace) {
+TEST(RoverControllerWaypoint, LegEastArcsRightWithoutPivoting) {
   Rig rig(0.0); // heading north
   rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
   rig.tick();
-  rig.ctl.setTargetRel(0.0, 6.0);
+  rig.ctl.setTargetRel(0.0, 12.0);
   rig.tick();
   const auto& out = rig.ctl.controllerOutput();
   EXPECT_NEAR(out.heading_error_deg, 90.0, 1.0);
-  EXPECT_GT(out.steer_rate_deg_s, 0.0) << "east of a north heading is clockwise";
-  EXPECT_NEAR(out.throttle_frac, rig.ctl.tunables().get().turn_throttle_frac, 1e-9);
+  EXPECT_NEAR(out.steer_angle_deg, 33.0, 1e-9) << "full right lock toward a target abeam";
+  EXPECT_LT(rig.rover.telemetry().heading_deg, 0.5)
+      << "no pivot: one 10 Hz step at 0.15 m/s turns well under a degree";
 
-  rig.run(400); // 40 s
+  // The heading may only change while the rover rolls, and never faster
+  // than the plant's minimum radius allows.
+  double prev_h = rig.rover.telemetry().heading_deg;
+  for (int i = 0; i < 400; ++i) {
+    rig.tick();
+    const double V = rig.rover.telemetry().speed_m_s;
+    double dh = rig.rover.telemetry().heading_deg - prev_h;
+    if (dh > 180.0)
+      dh -= 360.0;
+    if (dh < -180.0)
+      dh += 360.0;
+    prev_h = rig.rover.telemetry().heading_deg;
+    const double MAX_RATE = V * std::tan(33.0 * apex::math::vecmat::DEG_TO_RAD) / 1.5 *
+                                apex::math::vecmat::RAD_TO_DEG * 0.1 +
+                            1e-6;
+    EXPECT_LE(std::fabs(dh), MAX_RATE) << "tick " << i << " v=" << V;
+  }
   double n = 0.0, e = 0.0;
   rig.north_east(n, e);
   EXPECT_EQ(out.arrived, 1u) << "dist=" << out.distance_m;
-  EXPECT_NEAR(e, 6.0, 0.4);
-  EXPECT_NEAR(n, 0.0, 0.4);
+  EXPECT_NEAR(e, 12.0, 0.3);
+  EXPECT_NEAR(n, 0.0, 0.3);
 }
 
 TEST(RoverControllerWaypoint, RetargetClearsArrivedAndReachesTheNextLeg) {
   Rig rig(0.0);
   rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
   rig.tick();
-  rig.ctl.setTargetRel(5.0, 0.0);
+  rig.ctl.setTargetRel(10.0, 0.0);
   rig.run(300);
   ASSERT_EQ(rig.ctl.controllerOutput().arrived, 1u);
   const std::uint16_t SEQ1 = rig.ctl.controllerState().target_seq;
 
-  rig.ctl.setTargetRel(3.05, 0.0); // 10 ft further north
+  rig.ctl.setTargetRel(10.0, 0.0); // 10 m further north
   EXPECT_EQ(rig.ctl.controllerOutput().arrived, 0u);
   EXPECT_EQ(rig.ctl.controllerState().target_seq, SEQ1 + 1u);
   rig.run(300);
   double n = 0.0, e = 0.0;
   rig.north_east(n, e);
   EXPECT_EQ(rig.ctl.controllerOutput().arrived, 1u);
-  EXPECT_NEAR(n, 8.05, 0.4);
+  EXPECT_NEAR(n, 20.0, 0.4);
 }
 
-TEST(RoverControllerWaypoint, DemoScaleLegLandsInsideTolerance) {
-  // A 5 ft leg, the demo's unit of motion: arrival inside the 0.2 m
-  // tolerance with centimetre-scale overshoot, in a few seconds.
+TEST(RoverControllerWaypoint, ShortStraightLegLandsInsideTolerance) {
+  // A 5 ft leg straight ahead: the precision case -- braking profile
+  // from a standing start, arrival inside 0.2 m with centimetre overshoot.
   Rig rig(0.0);
   rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
   rig.tick();
@@ -203,7 +245,7 @@ TEST(RoverControllerWaypoint, DemoScaleLegLandsInsideTolerance) {
   double n = 0.0, e = 0.0;
   rig.north_east(n, e);
   EXPECT_GE(arrived_tick, 0);
-  EXPECT_LT(arrived_tick, 100) << "arrives within 10 s";
+  EXPECT_LT(arrived_tick, 60) << "arrives within 6 s";
   EXPECT_NEAR(n, 1.524, 0.2);
   EXPECT_LT(max_north, 1.524 + 0.15) << "overshoot";
   EXPECT_LT(rig.rover.telemetry().speed_m_s, 0.05);

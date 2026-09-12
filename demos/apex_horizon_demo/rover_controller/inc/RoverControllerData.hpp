@@ -38,32 +38,32 @@ struct RoverControllerTunables {
   double anchor_lat_deg{39.5};
   double anchor_lon_deg{-105.5};
 
-  /// TRAJECTORY mode constants (mirror the plant's own defaults).
+  /// TRAJECTORY mode: a constant steering angle at a constant throttle
+  /// (a circle of radius wheelbase / tan(angle): 1.5 m at 5 deg is
+  /// 17 m).
   double trajectory_throttle_frac{0.6};
-  double trajectory_steer_rate_deg_s{6.0};
+  double trajectory_steer_deg{5.0};
 
-  /// WAYPOINT mode: heading loop gain [deg/s per deg of error] and its
-  /// steer-rate authority [deg/s].
-  double heading_gain{1.0};
-  double max_steer_rate_deg_s{45.0};
+  /// WAYPOINT mode, pure pursuit: the steering angle that carries the
+  /// rover onto the target through an arc, from the plant's geometry
+  /// (delta = atan(2 L sin(alpha) / Ld), alpha the bearing error, Ld
+  /// the lookahead capped at the remaining distance).
+  double wheelbase_m{1.5};
+  double max_steer_deg{33.0};
+  double lookahead_m{3.5};
 
-  /// WAYPOINT mode: cruise throttle fraction, and the approach gain
-  /// [1/s]: the speed target is min(cruise, gain * remaining distance).
-  /// Against the plant's 1 s speed lag, 0.5/s gives a damping ratio of
-  /// 0.7 -- about 4 % overshoot, a few centimetres on demo-scale legs
-  /// -- while a critically damped gain would double every leg's time.
-  double cruise_throttle_frac{0.5};
-  double approach_gain_per_s{0.5};
+  /// WAYPOINT mode, speed profile: cruise fraction of the plant's max
+  /// speed; braking deceleration for the trapezoidal ramp-down (speed
+  /// target = min(cruise, sqrt(2 a d)) so the rover stops on the target
+  /// under the plant's own braking limit); a corner speed factor while
+  /// the bearing error exceeds corner_deg.
+  double cruise_throttle_frac{0.375}; ///< 3 m/s of 8.
+  double brake_m_s2{2.0};
+  double corner_speed_frac{0.5};
+  double corner_deg{45.0};
 
   /// A leg is ARRIVED when the remaining distance is below this.
   double arrival_tolerance_m{0.2};
-
-  /// Throttle fraction while the heading error exceeds
-  /// `turn_in_place_deg`: the kinematic plant steers without speed,
-  /// so zero throttle turns the rover in place and each leg reads as
-  /// turn, then drive straight, then stop.
-  double turn_in_place_deg{20.0};
-  double turn_throttle_frac{0.0};
 };
 
 /* ----------------------------- RoverControllerState ----------------------------- */
@@ -96,7 +96,7 @@ struct RoverControllerState {
  */
 struct RoverControllerOutput {
   /* ---- Drive command (consumed by GroundVehicle; layout pinned) ---- */
-  double steer_rate_deg_s{0.0};
+  double steer_angle_deg{0.0};
   double throttle_frac{0.0};
   std::uint8_t valid{0};
   std::uint8_t mode{0};    ///< DriveMode code in effect.

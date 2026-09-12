@@ -13,13 +13,13 @@
  * host in the software-in-the-loop form and its `controllerStep` is
  * the task the board firmware runs in the hardware form.
  *
- * WAYPOINT law: a proportional heading loop on the bearing error
- * (authority-limited), throttle at cruise while far, scaled down with
- * the remaining distance inside `slow_radius_m` so the first-order
- * plant settles inside `arrival_tolerance_m` without overshoot, and a
- * crawl throttle while the heading error is large so the rover turns
- * before it drives. Arrival latches `arrived` and zeroes the command
- * until a new target arrives.
+ * WAYPOINT law: pure pursuit onto a lookahead point on the bearing to
+ * the target (steering angle from the plant's wheelbase, so corners
+ * are arcs of at least the minimum radius and the rover never pivots
+ * in place) with a trapezoidal speed profile -- cruise, then a
+ * sqrt(2 a d) ramp-down against the plant's braking limit -- and a
+ * slower pass through corners. Arrival latches `arrived` and zeroes
+ * the command until a new target arrives.
  */
 
 #include "demos/apex_horizon_demo/ground_vehicle/inc/GroundVehicle.hpp"
@@ -43,8 +43,8 @@ namespace rover_controller {
 
 using ApexStatus = system_core::system_component::Status;
 
-static_assert(offsetof(RoverControllerOutput, steer_rate_deg_s) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, steer_rate_deg_s),
+static_assert(offsetof(RoverControllerOutput, steer_angle_deg) ==
+                  offsetof(ground_vehicle::GroundVehicleDriveCommand, steer_angle_deg),
               "drive command head must alias GroundVehicleDriveCommand");
 static_assert(offsetof(RoverControllerOutput, throttle_frac) ==
                   offsetof(ground_vehicle::GroundVehicleDriveCommand, throttle_frac),
@@ -199,7 +199,7 @@ public:
     case DriveMode::HOLD:
       break;
     case DriveMode::TRAJECTORY:
-      steer = p.trajectory_steer_rate_deg_s;
+      steer = p.trajectory_steer_deg;
       throttle = p.trajectory_throttle_frac;
       break;
     case DriveMode::WAYPOINT:
@@ -207,7 +207,7 @@ public:
       break;
     }
 
-    out.steer_rate_deg_s = steer;
+    out.steer_angle_deg = steer;
     out.throttle_frac = std::clamp(throttle, 0.0, 1.0);
     // The block drives from the first tick (a HOLD boot must never let
     // the plant take a trajectory step); before the plant has latched
@@ -229,10 +229,10 @@ public:
     log->info(label(),
               fmt::format("tick={} mode={} grid=({:+.1f}N,{:+.1f}E) target=({:+.1f}N,{:+.1f}E)"
                           " valid={} seq={} dist={:.2f}m err={:+.1f}deg arrived={} "
-                          "cmd: steer={:+.1f}deg/s thr={:.2f}",
+                          "cmd: steer={:+.1f}deg thr={:.2f}",
                           out.tick, out.mode, out.grid_north_m, out.grid_east_m, s.target_north_m,
                           s.target_east_m, s.target_valid, s.target_seq, out.distance_m,
-                          out.heading_error_deg, out.arrived, out.steer_rate_deg_s,
+                          out.heading_error_deg, out.arrived, out.steer_angle_deg,
                           out.throttle_frac));
     return 0u;
   }
@@ -279,12 +279,12 @@ protected:
     auto* log = componentLog();
     if (log != nullptr) {
       const auto& p = tunables_.get();
-      log->info(label(), fmt::format("init: boot_mode={} anchor=({:.4f}, {:.4f}) gain={:.2f} "
-                                     "cruise={:.2f} approach={:.2f}/s tol={:.2f}m "
-                                     "vehicle_attached={}",
-                                     p.boot_mode, p.anchor_lat_deg, p.anchor_lon_deg,
-                                     p.heading_gain, p.cruise_throttle_frac, p.approach_gain_per_s,
-                                     p.arrival_tolerance_m, vehicle_ != nullptr));
+      log->info(label(), fmt::format("init: boot_mode={} anchor=({:.4f}, {:.4f}) wheelbase={:.2f}m "
+                                     "max_steer={:.0f}deg lookahead={:.1f}m cruise={:.3f} "
+                                     "brake={:.1f}m/s2 tol={:.2f}m vehicle_attached={}",
+                                     p.boot_mode, p.anchor_lat_deg, p.anchor_lon_deg, p.wheelbase_m,
+                                     p.max_steer_deg, p.lookahead_m, p.cruise_throttle_frac,
+                                     p.brake_m_s2, p.arrival_tolerance_m, vehicle_ != nullptr));
     }
     return static_cast<std::uint8_t>(ApexStatus::SUCCESS);
   }
@@ -326,20 +326,27 @@ private:
     const double ERR = wrap180(BEARING - vehicle_->telemetry().heading_deg);
     out.bearing_deg = BEARING;
     out.heading_error_deg = ERR;
-    steer = std::clamp(p.heading_gain * ERR, -p.max_steer_rate_deg_s, p.max_steer_rate_deg_s);
 
-    // Speed target: cruise while far, proportional to the remaining
-    // distance as the leg closes, a crawl while still turning.
+    // Pure pursuit: steer onto the arc through the lookahead point,
+    // which sits on the bearing to the target no farther than the
+    // target itself. kappa = 2 sin(alpha) / Ld; delta = atan(L kappa).
+    const double ALPHA = ERR * apex::math::vecmat::DEG_TO_RAD;
+    const double LD = std::clamp(p.lookahead_m, 0.5, std::max(DIST, 0.5));
+    const double KAPPA = 2.0 * std::sin(ALPHA) / LD;
+    steer = std::clamp(std::atan(p.wheelbase_m * KAPPA) * apex::math::vecmat::RAD_TO_DEG,
+                       -p.max_steer_deg, p.max_steer_deg);
+
+    // Trapezoidal speed: cruise until the braking distance to the
+    // tolerance ring, then sqrt(2 a d) so the plant's own braking
+    // limit lands the rover on the target; slower through a corner.
     const double MAX_V = vehicle_->tunables_const().max_speed_m_s;
-    double frac = p.cruise_throttle_frac;
-    if (MAX_V > 0.0) {
-      const double V_APPROACH = p.approach_gain_per_s * DIST;
-      frac = std::min(p.cruise_throttle_frac, V_APPROACH / MAX_V);
+    const double CRUISE = p.cruise_throttle_frac * MAX_V;
+    const double D_LEFT = std::max(DIST - p.arrival_tolerance_m, 0.0);
+    double v = std::min(CRUISE, std::sqrt(2.0 * std::max(p.brake_m_s2, 0.01) * D_LEFT));
+    if (std::fabs(ERR) > p.corner_deg) {
+      v = std::min(v, CRUISE * p.corner_speed_frac);
     }
-    if (std::fabs(ERR) > p.turn_in_place_deg) {
-      frac = std::min(frac, p.turn_throttle_frac);
-    }
-    throttle = frac;
+    throttle = (MAX_V > 0.0) ? v / MAX_V : 0.0;
   }
 
   const ground_vehicle::GroundVehicle* vehicle_{nullptr};

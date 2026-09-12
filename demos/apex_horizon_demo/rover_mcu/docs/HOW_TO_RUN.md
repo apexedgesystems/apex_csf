@@ -30,18 +30,27 @@ Stable ids; one visualizer button per id. Legs wait on the
 controller's ARRIVED byte; every sequence brackets itself with
 SET_SEQ_STATE so the frame narrates it.
 
-| Id  | Sequence                                                             |
-| --- | -------------------------------------------------------------------- |
-| 1   | north 5 ft, arrive, HOLD                                             |
-| 2   | north 5 ft → east 10 ft, lamp 1 green steady on arrival              |
-| 3   | as 2, then lamp 1 green at 10 Hz for 5 s, off, HOLD                  |
-| 4   | out and back: lamp 2 red 1 Hz while moving, lamp 1 green 10 Hz 5 s   |
-| 5   | guarded 10 ft square, lamp 1 blue steady; the boundary may preempt   |
-| 6   | manual halt (panic): HALT, both lamps red 5 Hz, seq_state 0x15       |
-| 7   | resume: RESUME, HOLD, lamps off, seq_state idle                      |
-| 32  | obstacle halt (lidar centre ray < 15 m): reason 0x11, lamps red 5 Hz |
-| 33  | geofence halt (±200 m about the anchor): reason 0x12                 |
-| 34  | slope halt (terrain slip): reason 0x13                               |
+| Id  | Sequence                                                                                                    |
+| --- | ----------------------------------------------------------------------------------------------------------- |
+| 1   | north 10 m, arrive, HOLD                                                                                    |
+| 2   | north 10 m → east 20 m, lamp 1 green steady on arrival                                                      |
+| 3   | as 2, then lamp 1 green at 10 Hz for 5 s, off, HOLD                                                         |
+| 4   | out and back: 15 m north, 30 m east, lamp 2 red 1 Hz while moving, lamp 1 green 10 Hz 5 s at the far corner |
+| 5   | guarded 30 m square, lamp 1 blue steady; the boundary may preempt                                           |
+| 6   | manual halt (panic): HALT, both lamps red 5 Hz, seq_state 0x15                                              |
+| 7   | resume: RESUME, HOLD, lamps off, seq_state idle                                                             |
+| 32  | obstacle halt (lidar centre ray < 15 m): reason 0x11, lamps red 5 Hz                                        |
+| 33  | geofence halt (±200 m about the anchor): reason 0x12                                                        |
+| 34  | slope halt (terrain slip): reason 0x13                                                                      |
+
+Corners are arcs: the driven plant is a steered vehicle (heading rate
+v·tan δ / wheelbase; a 1.5 m wheelbase and 33° lock give a minimum
+radius of about 2.3 m; 1.5 m/s² acceleration, 2 m/s² braking), and the
+controller steers by pure pursuit to a 3.5 m lookahead with a
+trapezoidal speed profile at 3 m/s cruise, so each leg ramps up,
+cruises, and brakes onto its target inside 0.2 m without pivoting in
+place. Legs must be longer than the turning radius;
+`tprm/toml/rover_controller.toml` holds every one of those numbers.
 
 After a boundary halt, RESUME (7) then a target inside the fence
 drives the rover home; the watchpoints fire on the predicate's

@@ -19,10 +19,12 @@
  *      when terrain rises above sensor height.
  *   7. Publishes pose + slope + lidar telemetry.
  *
- * Steering and throttle come from an attached drive-command block
- * (`setDriveCommand`, written by a RoverController or by a hardware
- * driver) when one is valid; otherwise the vehicle drives its built-in
- * trajectory (constant throttle + turn). A small drive-command
+ * Steering angle and throttle come from an attached drive-command
+ * block (`setDriveCommand`, written by a RoverController or by a
+ * hardware driver) when one is valid: the plant is then a steered
+ * vehicle (heading rate v tan(delta) / wheelbase, speed under
+ * acceleration and braking limits). Otherwise the vehicle drives its
+ * built-in trajectory (constant throttle + turn rate). A small drive-command
  * interface (`DriveCmd`: HALT / RESUME / SET_THROTTLE) sits above
  * both via the internal command bus — the demo routes the bridge's
  * command sink here, so a paired visualization can halt and resume
@@ -337,20 +339,37 @@ public:
     // trajectory does (with an active SET_THROTTLE override replacing
     // its default throttle).
     const bool DRIVEN = (drive_cmd_ != nullptr) && (drive_cmd_->valid != 0u);
-    const double THROTTLE = DRIVEN ? std::clamp(drive_cmd_->throttle_frac, 0.0, 1.0)
-                                   : ((s.throttle_override_pct <= 100u)
-                                          ? static_cast<double>(s.throttle_override_pct) / 100.0
-                                          : p.throttle_default);
-    const double STEER_RATE_DEG_S = DRIVEN ? drive_cmd_->steer_rate_deg_s : p.steer_rate_deg_s;
-    const double TARGET_SPEED = (s.commanded_halt != 0u) ? 0.0 : THROTTLE * p.max_speed_m_s;
-    // Simple first-order approach: 95% per second time constant.
-    constexpr double TAU_S = 1.0;
-    tlm.speed_m_s += (TARGET_SPEED - tlm.speed_m_s) * (DT / TAU_S);
-    // A halted vehicle holds its heading (wheels stop steering); the
-    // coast-down still moves it along the frozen heading until speed
-    // decays to zero.
-    if (s.commanded_halt == 0u) {
-      tlm.heading_deg = std::fmod(tlm.heading_deg + STEER_RATE_DEG_S * DT + 360.0, 360.0);
+    if (DRIVEN) {
+      // The steered vehicle: speed follows the throttle target under
+      // the acceleration and braking limits; heading turns at
+      // v tan(delta) / wheelbase, so a stationary rover cannot pivot
+      // and the tightest turn is wheelbase / tan(max_steer).
+      const double TARGET_SPEED =
+          (s.commanded_halt != 0u)
+              ? 0.0
+              : std::clamp(drive_cmd_->throttle_frac, 0.0, 1.0) * p.max_speed_m_s;
+      const double DV = TARGET_SPEED - tlm.speed_m_s;
+      const double LIMIT = (DV >= 0.0 ? p.accel_m_s2 : p.decel_m_s2) * DT;
+      tlm.speed_m_s += std::clamp(DV, -LIMIT, LIMIT);
+      if (s.commanded_halt == 0u && p.wheelbase_m > 0.0) {
+        const double DELTA =
+            std::clamp(drive_cmd_->steer_angle_deg, -p.max_steer_deg, p.max_steer_deg) * DEG_TO_RAD;
+        const double RATE_DEG_S = tlm.speed_m_s * std::tan(DELTA) / p.wheelbase_m * RAD_TO_DEG;
+        tlm.heading_deg = std::fmod(tlm.heading_deg + RATE_DEG_S * DT + 360.0, 360.0);
+      }
+    } else {
+      // The undriven plant: its built-in constant-rate circle with a
+      // first-order speed approach (95 % per second), and a HALT that
+      // freezes the heading while the coast-down runs out.
+      const double THROTTLE = (s.throttle_override_pct <= 100u)
+                                  ? static_cast<double>(s.throttle_override_pct) / 100.0
+                                  : p.throttle_default;
+      const double TARGET_SPEED = (s.commanded_halt != 0u) ? 0.0 : THROTTLE * p.max_speed_m_s;
+      constexpr double TAU_S = 1.0;
+      tlm.speed_m_s += (TARGET_SPEED - tlm.speed_m_s) * (DT / TAU_S);
+      if (s.commanded_halt == 0u) {
+        tlm.heading_deg = std::fmod(tlm.heading_deg + p.steer_rate_deg_s * DT + 360.0, 360.0);
+      }
     }
 
     // 3: convert (heading, speed) to lat/lon delta on the body's

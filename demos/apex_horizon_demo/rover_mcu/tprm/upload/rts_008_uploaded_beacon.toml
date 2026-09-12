@@ -1,4 +1,4 @@
-# RTS 008: uploaded: north 5 ft with a white 2 Hz beacon, then back
+# RTS 008: uploaded: north 10 m with a white 2 Hz beacon, then back
 #
 # Not in the boot catalog. Uploaded live to prove the mission-upload path:
 # cfg2bin -> transfer to bank rts/ -> RESCAN_CATALOG -> START_RTS_BY_ID 8.
@@ -128,7 +128,7 @@ reserved         = { type = "uint", size = 1, value = 0 }
 [StandaloneSequenceTprm.step_2_tail]
 reserved         = { type = "uint", size = 1, value = 0 }
 
-# Step 3: SET_TARGET_REL_SEQ (+1.524 N, +0.000 E) m
+# Step 3: SET_TARGET_REL_SEQ (+10.000 N, +0.000 E) m
 [StandaloneSequenceTprm.step_3]
 targetFullUid    = { type = "uint", size = 4, value = "0x00DE00" }
 targetCategory   = { type = "uint", size = 1, value = 0 }
@@ -140,7 +140,7 @@ armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
 commandOpcode    = { type = "uint", size = 2, value = "0x0114" }
 commandPayloadLen = { type = "uint", size = 1, value = 16 }
-commandPayload   = { type = "array", size = 16, value = [111,18,195,63,0,0,0,0,0,0,0,0,0,0,0,0] }
+commandPayload   = { type = "array", size = 16, value = [0,0,32,65,0,0,0,0,0,0,0,0,0,0,0,0] }
 delayCycles      = { type = "uint", size = 4, value = 0 }
 timeoutCycles    = { type = "uint", size = 4, value = 500 }
 onTimeout        = { type = "uint", size = 1, value = "SKIP" }
@@ -162,7 +162,7 @@ reserved         = { type = "uint", size = 1, value = 0 }
 [StandaloneSequenceTprm.step_3_tail]
 reserved         = { type = "uint", size = 1, value = 0 }
 
-# Step 4: SET_TARGET_REL_SEQ (-1.524 N, +0.000 E) m after ARRIVED
+# Step 4: SET_TARGET_REL_SEQ (-10.000 N, +0.000 E) m after ARRIVED
 [StandaloneSequenceTprm.step_4]
 targetFullUid    = { type = "uint", size = 4, value = "0x00DE00" }
 targetCategory   = { type = "uint", size = 1, value = 0 }
@@ -174,7 +174,7 @@ armIndex         = { type = "uint", size = 1, value = 0 }
 armState         = { type = "uint", size = 1, value = 0 }
 commandOpcode    = { type = "uint", size = 2, value = "0x0114" }
 commandPayloadLen = { type = "uint", size = 1, value = 16 }
-commandPayload   = { type = "array", size = 16, value = [111,18,195,191,0,0,0,0,0,0,0,0,0,0,0,0] }
+commandPayload   = { type = "array", size = 16, value = [0,0,32,193,0,0,0,0,0,0,0,0,0,0,0,0] }
 delayCycles      = { type = "uint", size = 4, value = 20 }
 timeoutCycles    = { type = "uint", size = 4, value = 6000 }
 onTimeout        = { type = "uint", size = 1, value = "SKIP" }

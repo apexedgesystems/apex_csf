@@ -5,8 +5,9 @@ microcontroller: the plant (a kinematic rover with a lidar fan over
 the shared Earth terrain tile) and the sequence engine run in this
 POSIX apex app; the drive controller writes the plant's drive-command
 block through a seam that a UART driver takes over in the
-hardware-in-the-loop form. Five A→B tours of rising complexity, two
-lamps as sequence actions, a manual halt and resume, and a safety
+hardware-in-the-loop form. Five A→B tours of rising complexity (10–30 m legs driven as
+arcs by a steered plant and a pure-pursuit controller), two lamps as
+sequence actions, a manual halt and resume, and a safety
 boundary (lidar obstacle, ±200 m geofence, terrain slip) that halts
 the rover with a reason the frame names. A ShmRingBridge streams the
 256-byte ROVR/2 frame at 100 Hz to `/horizon_rover` for an
@@ -38,8 +39,8 @@ path, and the trace.
 | Piece           | Where                                   | Role                                                                    |
 | --------------- | --------------------------------------- | ----------------------------------------------------------------------- |
 | CelestialBody   | src/sim/environment/celestial_body      | Earth bound to the shared world (J2, HTILE terrain, LAYERED atmosphere) |
-| GroundVehicle   | ../ground_vehicle                       | 100 Hz kinematic rover + lidar; lamps; the drive-command seam; trace    |
-| RoverController | ../rover_controller                     | 10 Hz HOLD / TRAJECTORY / WAYPOINT law on a north/east grid             |
+| GroundVehicle   | ../ground_vehicle                       | 100 Hz steered rover + lidar; lamps; the drive-command seam; trace      |
+| RoverController | ../rover_controller                     | 10 Hz HOLD / TRAJECTORY / pure-pursuit WAYPOINT on a grid               |
 | Action engine   | src/system/core/components/action       | Sequence catalog (standalone RTS) + the boundary watchpoints            |
 | ShmRingBridge   | src/system/core/support/shm_ring_bridge | ROVR/2 bidirectional link on /horizon_rover at 100 Hz                   |
 

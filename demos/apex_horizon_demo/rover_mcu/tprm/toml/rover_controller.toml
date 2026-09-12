@@ -1,18 +1,21 @@
-# RoverController (0xE200): boots HOLD at the anchor; WAYPOINT law gains
-# tuned for legible 5-10 ft legs: turn in place until the heading error is
-# under 20 deg, drive at min(cruise, 0.5/s x distance) so the plant's 1 s lag
-# closes without overshoot, arrive inside 0.2 m.
+# RoverController (0xE200): boots HOLD at the anchor. WAYPOINT is pure
+# pursuit on the plant's steering geometry (wheelbase 1.5 m, 33 deg lock ->
+# minimum radius ~2.3 m, lookahead 3.5 m) with a trapezoidal speed profile:
+# cruise 3 m/s (0.375 of 8), sqrt(2 a d) ramp-down against 2 m/s^2 braking,
+# half speed through corners, arrive inside 0.2 m. TRAJECTORY is a 5 deg
+# constant steer at 0.6 throttle (a 17 m circle).
 [RoverControllerTunables]
 boot_mode                 = { type = "uint",  size = 1, value = 0 }
 reserved0                 = { type = "array", size = 7, value = [0,0,0,0,0,0,0] }
 anchor_lat_deg            = { type = "float", size = 8, value = 39.50 }
 anchor_lon_deg            = { type = "float", size = 8, value = -105.50 }
 trajectory_throttle_frac  = { type = "float", size = 8, value = 0.6 }
-trajectory_steer_rate_deg_s = { type = "float", size = 8, value = 6.0 }
-heading_gain              = { type = "float", size = 8, value = 1.0 }
-max_steer_rate_deg_s      = { type = "float", size = 8, value = 45.0 }
-cruise_throttle_frac      = { type = "float", size = 8, value = 0.5 }
-approach_gain_per_s       = { type = "float", size = 8, value = 0.5 }
+trajectory_steer_deg      = { type = "float", size = 8, value = 5.0 }
+wheelbase_m               = { type = "float", size = 8, value = 1.5 }
+max_steer_deg             = { type = "float", size = 8, value = 33.0 }
+lookahead_m               = { type = "float", size = 8, value = 3.5 }
+cruise_throttle_frac      = { type = "float", size = 8, value = 0.375 }
+brake_m_s2                = { type = "float", size = 8, value = 2.0 }
+corner_speed_frac         = { type = "float", size = 8, value = 0.5 }
+corner_deg                = { type = "float", size = 8, value = 45.0 }
 arrival_tolerance_m       = { type = "float", size = 8, value = 0.2 }
-turn_in_place_deg         = { type = "float", size = 8, value = 20.0 }
-turn_throttle_frac        = { type = "float", size = 8, value = 0.0 }

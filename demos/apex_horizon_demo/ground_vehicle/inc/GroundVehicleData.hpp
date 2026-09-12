@@ -89,6 +89,13 @@ struct GroundVehicleTunables {
   double init_north_m{0.0};
   double init_east_m{0.0};
 
+  /// Steered-vehicle geometry and limits, applied when a drive command
+  /// is attached (the undriven plant keeps its constant-rate circle).
+  double wheelbase_m{1.5};
+  double max_steer_deg{33.0}; ///< Minimum radius = wheelbase / tan(max_steer).
+  double accel_m_s2{1.5};     ///< Speed rate limit toward a higher target.
+  double decel_m_s2{2.0};     ///< Speed rate limit toward a lower target (braking).
+
   /// Rate `vehicleStep` is scheduled at [Hz]: the integration dt, the
   /// timestamp grid, and the LED strobe timer all derive from it.
   std::uint32_t step_hz{10};
@@ -112,9 +119,11 @@ struct GroundVehicleTunables {
  * so the plant never knows which produced it.
  */
 struct GroundVehicleDriveCommand {
-  /// Commanded heading rate [deg/s], positive clockwise.
-  double steer_rate_deg_s{0.0};
-  /// Commanded throttle fraction 0..1 of `max_speed_m_s`.
+  /// Commanded steering angle [deg], positive right; the plant turns at
+  /// v tan(delta) / wheelbase, so it cannot turn without rolling.
+  double steer_angle_deg{0.0};
+  /// Commanded throttle fraction 0..1 of `max_speed_m_s` (the speed
+  /// target; the plant reaches it under its acceleration limits).
   double throttle_frac{0.0};
   /// 0 = block not driving (plant falls back to its trajectory).
   std::uint8_t valid{0};
