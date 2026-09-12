@@ -177,7 +177,7 @@ TEST(RoverControllerWaypoint, LegEastArcsRightWithoutPivoting) {
   rig.tick();
   const auto& out = rig.ctl.controllerOutput();
   EXPECT_NEAR(out.heading_error_deg, 90.0, 1.0);
-  EXPECT_NEAR(out.steer_angle_deg, 33.0, 1e-9) << "full right lock toward a target abeam";
+  EXPECT_NEAR(out.steer_angle_deg, 20.0, 1e-9) << "full right lock toward a target abeam";
   EXPECT_LT(rig.rover.telemetry().heading_deg, 0.5)
       << "no pivot: one 10 Hz step at 0.15 m/s turns well under a degree";
 
@@ -193,7 +193,7 @@ TEST(RoverControllerWaypoint, LegEastArcsRightWithoutPivoting) {
     if (dh < -180.0)
       dh += 360.0;
     prev_h = rig.rover.telemetry().heading_deg;
-    const double MAX_RATE = V * std::tan(33.0 * apex::math::vecmat::DEG_TO_RAD) / 1.5 *
+    const double MAX_RATE = V * std::tan(20.0 * apex::math::vecmat::DEG_TO_RAD) / 1.5 *
                                 apex::math::vecmat::RAD_TO_DEG * 0.1 +
                             1e-6;
     EXPECT_LE(std::fabs(dh), MAX_RATE) << "tick " << i << " v=" << V;

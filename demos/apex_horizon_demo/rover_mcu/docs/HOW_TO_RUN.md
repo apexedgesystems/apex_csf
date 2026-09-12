@@ -44,10 +44,11 @@ SET_SEQ_STATE so the frame narrates it.
 | 34  | slope halt (terrain slip): reason 0x13                                                                      |
 
 Corners are arcs: the driven plant is a steered vehicle (heading rate
-v·tan δ / wheelbase; a 1.5 m wheelbase and 33° lock give a minimum
-radius of about 2.3 m; 1.5 m/s² acceleration, 2 m/s² braking), and the
+v·tan δ / wheelbase; a 1.5 m wheelbase and 20° lock give a minimum
+radius of about 4.1 m; 1.5 m/s² acceleration, 2 m/s² braking), and the
 controller steers by pure pursuit to a 3.5 m lookahead with a
-trapezoidal speed profile at 3 m/s cruise, so each leg ramps up,
+trapezoidal speed profile at 3 m/s cruise and 0.9 m/s through a corner
+(a 90° turn takes about 7 s), so each leg ramps up,
 cruises, and brakes onto its target inside 0.2 m without pivoting in
 place. Legs must be longer than the turning radius;
 `tprm/toml/rover_controller.toml` holds every one of those numbers.

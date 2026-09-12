@@ -49,18 +49,19 @@ struct RoverControllerTunables {
   /// (delta = atan(2 L sin(alpha) / Ld), alpha the bearing error, Ld
   /// the lookahead capped at the remaining distance).
   double wheelbase_m{1.5};
-  double max_steer_deg{33.0};
+  double max_steer_deg{20.0};
   double lookahead_m{3.5};
 
   /// WAYPOINT mode, speed profile: cruise fraction of the plant's max
   /// speed; braking deceleration for the trapezoidal ramp-down (speed
   /// target = min(cruise, sqrt(2 a d)) so the rover stops on the target
   /// under the plant's own braking limit); a corner speed factor while
-  /// the bearing error exceeds corner_deg.
+  /// the bearing error exceeds corner_deg, held low enough that a corner
+  /// reads as a turn on screen (0.9 m/s at 20° lock is about 13°/s).
   double cruise_throttle_frac{0.375}; ///< 3 m/s of 8.
   double brake_m_s2{2.0};
-  double corner_speed_frac{0.5};
-  double corner_deg{45.0};
+  double corner_speed_frac{0.3};
+  double corner_deg{15.0};
 
   /// A leg is ARRIVED when the remaining distance is below this.
   double arrival_tolerance_m{0.2};
