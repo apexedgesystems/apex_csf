@@ -1,13 +1,24 @@
 # ==============================================================================
-# stm32-gcc.cmake - Bare-metal ARM Cortex-M4 toolchain
+# stm32-gcc.cmake - Bare-metal ARM Cortex-M toolchain for STM32 boards
 # ==============================================================================
 #
-# Target: STM32L4xx (Cortex-M4 with FPU)
 # Compiler: arm-none-eabi-gcc (from ARM GNU Toolchain)
+#
+# The board selects the CPU core and FPU flags through APEX_STM32_BOARD
+# (a cache variable, passed like any other -D option):
+#   nucleo_l476rg  STM32L476RG, Cortex-M4F  (default)
+#   nucleo_f767zi  STM32F767ZI, Cortex-M7 with double-precision FPU
 #
 # Usage:
 #   cmake --preset mcu-stm32-relwithdebinfo
+#   cmake --preset mcu-stm32-relwithdebinfo -DAPEX_STM32_BOARD=nucleo_f767zi
 #   cmake --build --preset mcu-stm32-relwithdebinfo
+#
+# A build directory is configured for one board and remembers it in the
+# cache, so later configures without the option keep building that board.
+# The CPU flags are copied into the cache on the first configure, so an
+# explicit configure for a different board is refused instead of silently
+# keeping the old flags.
 # ==============================================================================
 
 # Bare-metal ARM (no OS)
@@ -38,10 +49,41 @@ set(CMAKE_OBJDUMP arm-none-eabi-objdump)
 set(CMAKE_SIZE arm-none-eabi-size)
 
 # ------------------------------------------------------------------------------
-# CPU / FPU Flags (Cortex-M4 with single-precision FPU)
+# Board -> CPU / FPU Flags
 # ------------------------------------------------------------------------------
 
-set(CPU_FLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16")
+set(APEX_STM32_BOARD
+    "nucleo_l476rg"
+    CACHE STRING "STM32 board: nucleo_l476rg | nucleo_f767zi"
+)
+
+if (APEX_STM32_BOARD STREQUAL "nucleo_l476rg")
+  set(CPU_FLAGS "-mcpu=cortex-m4 -mthumb -mfloat-abi=hard -mfpu=fpv4-sp-d16")
+elseif (APEX_STM32_BOARD STREQUAL "nucleo_f767zi")
+  set(CPU_FLAGS "-mcpu=cortex-m7 -mthumb -mfloat-abi=hard -mfpu=fpv5-d16")
+else ()
+  message(
+    FATAL_ERROR
+      "APEX_STM32_BOARD='${APEX_STM32_BOARD}' is not a known board (nucleo_l476rg | nucleo_f767zi)"
+  )
+endif ()
+
+# The CPU flags reach the compiler through CMAKE_<LANG>_FLAGS_INIT, which
+# CMake copies into the cache once. Refuse a board change on an existing
+# build directory so the binary never carries another board's flags.
+if (DEFINED APEX_STM32_BOARD_CONFIGURED AND NOT APEX_STM32_BOARD_CONFIGURED STREQUAL
+                                            APEX_STM32_BOARD
+)
+  message(
+    FATAL_ERROR
+      "This build directory was configured for APEX_STM32_BOARD=${APEX_STM32_BOARD_CONFIGURED}; "
+      "remove build/mcu-stm32-* before configuring for ${APEX_STM32_BOARD}"
+  )
+endif ()
+set(APEX_STM32_BOARD_CONFIGURED
+    "${APEX_STM32_BOARD}"
+    CACHE INTERNAL "Board the build directory was first configured for"
+)
 
 # ------------------------------------------------------------------------------
 # C++ Standard (arm-none-eabi-g++ 10.3 supports up to C++20)
@@ -102,7 +144,10 @@ set(CMAKE_FIND_ROOT_PATH_MODE_LIBRARY ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_INCLUDE ONLY)
 set(CMAKE_FIND_ROOT_PATH_MODE_PACKAGE ONLY)
 
-# STM32Cube path (if available)
+# STM32Cube paths (if available)
 if (DEFINED ENV{STM32CUBE_L4_PATH})
   list(APPEND CMAKE_PREFIX_PATH "$ENV{STM32CUBE_L4_PATH}")
+endif ()
+if (DEFINED ENV{STM32CUBE_F7_PATH})
+  list(APPEND CMAKE_PREFIX_PATH "$ENV{STM32CUBE_F7_PATH}")
 endif ()

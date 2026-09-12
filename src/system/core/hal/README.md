@@ -332,13 +332,20 @@ host test rig does not need real PPS hardware.
 
 New-generation peripherals with modern register layouts:
 
-| Family  | UART (RDR/TDR) | CAN (bxCAN) | SPI | I2C (TIMINGR) | Flash (page) |
+| Family  | UART (RDR/TDR) | CAN (bxCAN) | SPI | I2C (TIMINGR) | Flash        |
 | ------- | -------------- | ----------- | --- | ------------- | ------------ |
-| STM32L4 | Yes            | Yes         | Yes | Yes           | Yes          |
-| STM32G4 | Yes            | Yes         | Yes | Yes           | Yes          |
+| STM32L4 | Yes            | Yes         | Yes | Yes           | Yes (page)   |
+| STM32G4 | Yes            | Yes         | Yes | Yes           | Yes (page)   |
+| STM32F7 | Yes            | Yes         | Yes | Yes           | Yes (sector) |
 | STM32H7 | Yes            | Planned     | Yes | Planned       | Planned      |
 
 **Not supported:** STM32F1, STM32F2, STM32F4 (legacy peripheral registers).
+
+Flash on the F7 is sector-based with non-uniform sizes. `Stm32Flash` keeps
+the page vocabulary there: page index = sector index, `geometry().pageSize`
+is the smallest sector, and `pageSizeAt(index)` reports each sector's true
+size. The layout is derived at `init()` from the flash-size register and the
+dual-bank option bit; programming is 32-bit on the F7.
 
 ### Construction
 

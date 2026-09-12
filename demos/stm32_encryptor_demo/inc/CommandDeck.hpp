@@ -50,12 +50,25 @@ public:
   /**
    * @brief Poll the command channel for incoming commands.
    *
-   * Called from commandTask at 20 Hz. Reads available bytes from UART2,
-   * feeds to SLIP decoder, dispatches complete frames.
+   * Called from commandTask at 20 Hz on boards with a dedicated command
+   * UART. Reads available bytes, feeds the SLIP decoder, dispatches
+   * complete frames.
    *
    * @note RT-safe (except when dispatching flash write/erase commands).
    */
   void poll() noexcept;
+
+  /**
+   * @brief Process a complete SLIP-decoded command frame (channel prefix removed).
+   *
+   * Validates CRC-16, dispatches the command, and transmits the response
+   * (prefixed with CHANNEL_CMD on shared-channel boards). poll() calls
+   * this on two-UART boards; the shared-channel task calls it directly.
+   *
+   * @param frame Decoded frame data: opcode + payload + CRC-16.
+   * @param len Frame length in bytes.
+   */
+  void processFrame(const uint8_t* frame, size_t len) noexcept;
 
 private:
   apex::hal::IUart& uart_;
@@ -71,13 +84,6 @@ private:
   uint8_t decodeBuf_[MAX_CMD_FRAME];    ///< SLIP decode output.
   uint8_t rspBuf_[MAX_RSP_FRAME];       ///< Response assembly.
   uint8_t slipEncodeBuf_[MAX_RSP_SLIP]; ///< SLIP-encoded response for TX.
-
-  /**
-   * @brief Process a complete SLIP-decoded command frame.
-   * @param frame Decoded frame data.
-   * @param len Frame length in bytes.
-   */
-  void processFrame(const uint8_t* frame, size_t len) noexcept;
 
   /**
    * @brief Build and transmit a SLIP-encoded response.

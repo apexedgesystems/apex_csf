@@ -1,14 +1,18 @@
 # STM32 Encryptor Demo
 
-AES-256-GCM encryption firmware for NUCLEO-L476RG. First platform in
-the apex_csf encryptor family (STM32, Arduino, Pico, ESP32, C2000).
+AES-256-GCM encryption firmware for the NUCLEO-L476RG and the
+NUCLEO-F767ZI. First platform in the apex_csf encryptor family (STM32,
+Arduino, Pico, ESP32, C2000).
 
-UART1 (FTDI): SLIP + CRC + AES-256-GCM data channel.
-UART2 (VCP): SLIP + CRC command channel (key management, stats, IV).
-LED heartbeat at 2 Hz, data at 100 Hz, commands at 20 Hz.
+SLIP + CRC + AES-256-GCM data channel; SLIP + CRC command channel (key
+management, stats, IV). On the L476RG the channels are two UARTs (FTDI
+data, ST-Link VCP command); on the F767ZI both share the ST-Link VCP with
+a channel prefix byte. LED heartbeat at 2 Hz, data at 100 Hz.
 Flash-backed key store.
 
-Supports bare-metal (default) and FreeRTOS modes via `APEX_USE_FREERTOS`.
+The board is selected by `APEX_STM32_BOARD` (`nucleo_l476rg` default,
+`nucleo_f767zi`); bare-metal (default) and FreeRTOS modes by
+`APEX_USE_FREERTOS`.
 
 ## Building
 
@@ -25,6 +29,13 @@ FreeRTOS variant (development build of the same preset):
 
 ```bash
 make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
+```
+
+NUCLEO-F767ZI (a build directory holds one board; remove it when switching):
+
+```bash
+rm -rf build/mcu-stm32-relwithdebinfo
+make release APP=stm32_encryptor_demo CMAKE_EXTRA_ARGS="-DAPEX_STM32_BOARD=nucleo_f767zi"
 ```
 
 ## Flashing

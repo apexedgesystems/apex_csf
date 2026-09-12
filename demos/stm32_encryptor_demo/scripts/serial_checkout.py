@@ -11,9 +11,18 @@ Usage:
     python3 demos/stm32_encryptor_demo/scripts/serial_checkout.py --cmd-port /dev/ttyACM0
     python3 demos/stm32_encryptor_demo/scripts/serial_checkout.py --verbose
 
-Port assignments:
+Port assignments (NUCLEO-L476RG, two UARTs):
     Data channel:    UART1 via FTDI adapter (/dev/ftdi_0)
     Command channel: UART2 via ST-Link VCP  (/dev/nucleo_0)
+
+Shared port (NUCLEO-F767ZI, one UART): both channels ride the ST-Link
+VCP with a one-byte channel prefix inside every SLIP frame; pass
+--shared-port /dev/nucleo_1 and the script prefixes and routes frames.
+
+Options:
+    --timeout SECONDS   Per-response timeout (default 2.0). The F767ZI's key
+                        store lives in a 256 KB sector whose erase takes
+                        seconds, so use --timeout 6 there.
 
 Checkout groups:
      1. Connection      - Serial ports accessible
@@ -107,6 +116,12 @@ STATUS_ERR_LOCKED = 0x05
 KEY_MODE_RANDOM = 0x00
 KEY_MODE_LOCKED = 0x01
 
+# Channel prefix bytes (must match EncryptorConfig.hpp); only used with
+# --shared-port, where both channels share one UART.
+CHANNEL_DATA = 0x00
+CHANNEL_CMD = 0x01
+SHARED_PORT = False
+
 # =============================================================================
 # SLIP framing (RFC 1055)
 # =============================================================================
@@ -187,11 +202,30 @@ def crc16_xmodem(data: bytes) -> int:
 # =============================================================================
 
 
+def wrap_channel(channel: int, payload: bytes) -> bytes:
+    """SLIP-encode a frame, prefixed with the channel byte on a shared port."""
+    if SHARED_PORT:
+        return slip_encode(bytes([channel]) + payload)
+    return slip_encode(payload)
+
+
+def frames_for_channel(raw: bytes, channel: int) -> list:
+    """Decode SLIP frames and return the payloads addressed to a channel.
+
+    On a shared port each frame carries a channel byte first; it is
+    stripped here. On dedicated ports every frame belongs to the channel.
+    """
+    frames = slip_decode_frames(raw)
+    if not SHARED_PORT:
+        return frames
+    return [f[1:] for f in frames if len(f) >= 2 and f[0] == channel]
+
+
 def build_data_frame(plaintext: bytes) -> bytes:
     """Build a SLIP-encoded data channel input frame: plaintext + CRC-16."""
     crc = crc16_xmodem(plaintext)
     payload = plaintext + struct.pack(">H", crc)
-    return slip_encode(payload)
+    return wrap_channel(CHANNEL_DATA, payload)
 
 
 def parse_encrypted_frame(frame: bytes):
@@ -210,7 +244,7 @@ def build_command(opcode: int, payload: bytes = b"") -> bytes:
     frame_data = bytes([opcode]) + payload
     crc = crc16_xmodem(frame_data)
     frame_data += struct.pack(">H", crc)
-    return slip_encode(frame_data)
+    return wrap_channel(CHANNEL_CMD, frame_data)
 
 
 def parse_response(frame: bytes):
@@ -225,8 +259,10 @@ def parse_response(frame: bytes):
     return body[0], body[1], body[2:]
 
 
-def send_command(ser: serial.Serial, opcode: int, payload: bytes = b"", timeout: float = TIMEOUT_S):
-    """Send a command and wait for the response frame."""
+def send_command(ser: serial.Serial, opcode: int, payload: bytes = b"", timeout=None):
+    """Send a command and wait for the response frame (timeout defaults to --timeout)."""
+    if timeout is None:
+        timeout = TIMEOUT_S
     drain(ser, settle=0.05)
     cmd = build_command(opcode, payload)
     ser.write(cmd)
@@ -239,7 +275,7 @@ def send_command(ser: serial.Serial, opcode: int, payload: bytes = b"", timeout:
         chunk = ser.read(max(1, ser.in_waiting))
         if chunk:
             raw.extend(chunk)
-            frames = slip_decode_frames(bytes(raw))
+            frames = frames_for_channel(bytes(raw), CHANNEL_CMD)
             if frames:
                 return parse_response(frames[0])
         else:
@@ -247,8 +283,10 @@ def send_command(ser: serial.Serial, opcode: int, payload: bytes = b"", timeout:
     return None
 
 
-def send_data_and_recv(ser: serial.Serial, plaintext: bytes, timeout: float = TIMEOUT_S):
+def send_data_and_recv(ser: serial.Serial, plaintext: bytes, timeout=None):
     """Send plaintext on data channel and receive encrypted response."""
+    if timeout is None:
+        timeout = TIMEOUT_S
     drain(ser, settle=0.05)
     frame = build_data_frame(plaintext)
     ser.write(frame)
@@ -260,7 +298,7 @@ def send_data_and_recv(ser: serial.Serial, plaintext: bytes, timeout: float = TI
         chunk = ser.read(max(1, ser.in_waiting))
         if chunk:
             raw.extend(chunk)
-            frames = slip_decode_frames(bytes(raw))
+            frames = frames_for_channel(bytes(raw), CHANNEL_DATA)
             if frames:
                 return parse_encrypted_frame(frames[0])
         else:
@@ -280,10 +318,14 @@ def log(msg: str) -> None:
 
 
 def drain(ser: serial.Serial, settle: float = 0.1) -> bytes:
-    """Drain and discard any pending RX data."""
+    """Drain and discard any pending RX data.
+
+    Reads only what is already waiting: a blocking read here would sit
+    for the whole serial timeout on every command when the line is quiet.
+    """
     ser.reset_input_buffer()
     time.sleep(settle)
-    stale = ser.read(ser.in_waiting or 256)
+    stale = ser.read(ser.in_waiting)
     ser.reset_input_buffer()
     return stale
 
@@ -735,7 +777,7 @@ def check_reject_bad_crc(data_ser: serial.Serial, cmd_ser: serial.Serial) -> boo
     plaintext = b"bad_crc_test"
     bad_crc = 0xDEAD
     payload = plaintext + struct.pack(">H", bad_crc)
-    frame = slip_encode(payload)
+    frame = wrap_channel(CHANNEL_DATA, payload)
 
     drain(data_ser, settle=0.05)
     data_ser.write(frame)
@@ -744,7 +786,7 @@ def check_reject_bad_crc(data_ser: serial.Serial, cmd_ser: serial.Serial) -> boo
 
     # Should get no encrypted response
     raw = data_ser.read(data_ser.in_waiting or 256)
-    frames = slip_decode_frames(raw) if raw else []
+    frames = frames_for_channel(raw, CHANNEL_DATA) if raw else []
 
     # Check error counter incremented
     resp = send_command(cmd_ser, CMD_STATS)
@@ -773,14 +815,14 @@ def check_reject_too_short(data_ser: serial.Serial, cmd_ser: serial.Serial) -> b
     time.sleep(0.05)
 
     # Send only 2 bytes (below minimum of 3)
-    frame = slip_encode(b"\x00\x00")
+    frame = wrap_channel(CHANNEL_DATA, b"\x00\x00")
     drain(data_ser, settle=0.05)
     data_ser.write(frame)
     data_ser.flush()
     time.sleep(0.3)
 
     raw = data_ser.read(data_ser.in_waiting or 256)
-    frames = slip_decode_frames(raw) if raw else []
+    frames = frames_for_channel(raw, CHANNEL_DATA) if raw else []
 
     resp = send_command(cmd_ser, CMD_STATS)
     if resp and resp[1] == STATUS_OK and len(resp[2]) >= 16:
@@ -872,7 +914,7 @@ def send_recv_fast(ser, plaintext, timeout=0.5):
         avail = ser.in_waiting
         if avail:
             raw.extend(ser.read(avail))
-            frames = slip_decode_frames(bytes(raw))
+            frames = frames_for_channel(bytes(raw), CHANNEL_DATA)
             if frames:
                 return parse_encrypted_frame(frames[0])
         else:
@@ -1070,14 +1112,17 @@ def check_fastforward_overhead(cmd_ser: serial.Serial) -> bool:
         print("  FAIL  OVERHEAD: bad response")
         return False
 
-    last, minimum, maximum, count, _budget = struct.unpack("<IIIII", payload[:20])
+    last, minimum, maximum, count, budget = struct.unpack("<IIIII", payload[:20])
 
     if count == 0 or maximum == 0:
         print(f"  FAIL  No samples in fast-forward (count={count})")
         return False
 
     if last > 0:
-        max_rate = 80_000_000 / last
+        # The board reports its per-tick budget at the 100 Hz fundamental,
+        # so budget * 100 is its core clock (80 MHz on the L476, 216 MHz on the F767)
+        clock_hz = budget * 100
+        max_rate = clock_hz / last
     else:
         max_rate = 0
 
@@ -1085,7 +1130,10 @@ def check_fastforward_overhead(cmd_ser: serial.Serial) -> bool:
         f"  PASS  Fast-forward overhead: last={last} min={minimum} "
         f"max={maximum} ({count} samples)"
     )
-    print(f"         Max achievable rate: ~{max_rate:.0f} Hz " f"(last={last} cycles @ 80 MHz)")
+    print(
+        f"         Max achievable rate: ~{max_rate:.0f} Hz "
+        f"(last={last} cycles @ {budget * 100 / 1e6:.0f} MHz)"
+    )
     return True
 
 
@@ -1199,6 +1247,12 @@ def run_checkout(data_port: str, cmd_port: str, baud: int) -> int:
     if not check_port_exists(cmd_port, "Command"):
         results["Command port exists"] = False
         print("\n  Command channel not available. Command tests will be " "skipped.")
+    elif SHARED_PORT and data_ser is not None:
+        # One UART carries both channels: reuse the open handle
+        results["Command port exists"] = True
+        cmd_ser = data_ser
+        results["Command port open"] = True
+        print(f"  PASS  Command port shares {cmd_port} (channel-prefixed frames)")
     else:
         results["Command port exists"] = True
         try:
@@ -1368,10 +1422,10 @@ def run_checkout(data_port: str, cmd_port: str, baud: int) -> int:
 
         group_results[group_name] = group_pass
 
-    # Cleanup
+    # Cleanup (a shared port is one handle)
     if data_ser is not None:
         data_ser.close()
-    if cmd_ser is not None:
+    if cmd_ser is not None and cmd_ser is not data_ser:
         cmd_ser.close()
 
     # Summary
@@ -1425,7 +1479,7 @@ def run_checkout(data_port: str, cmd_port: str, baud: int) -> int:
 
 
 def main():
-    global VERBOSE
+    global VERBOSE, TIMEOUT_S, SHARED_PORT
 
     parser = argparse.ArgumentParser(description="STM32 Encryptor firmware checkout")
     parser.add_argument(
@@ -1438,11 +1492,29 @@ def main():
         default=DEFAULT_CMD_PORT,
         help="Command channel port - VCP/UART2 (default: %(default)s)",
     )
+    parser.add_argument(
+        "--shared-port",
+        default=None,
+        help="Single port carrying both channels with a channel prefix byte "
+        "(NUCLEO-F767ZI: /dev/nucleo_1); overrides --data-port and --cmd-port",
+    )
     parser.add_argument("--baud", type=int, default=DEFAULT_BAUD, help="Baud rate")
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=TIMEOUT_S,
+        help="Per-response timeout in seconds; raise it for boards whose key-store "
+        "erase takes longer than the default (NUCLEO-F767ZI: 256 KB sector) "
+        "(default: %(default)s)",
+    )
     parser.add_argument("--verbose", action="store_true", help="Show detailed output")
     args = parser.parse_args()
 
     VERBOSE = args.verbose
+    TIMEOUT_S = args.timeout
+    if args.shared_port:
+        SHARED_PORT = True
+        return run_checkout(args.shared_port, args.shared_port, args.baud)
     return run_checkout(args.data_port, args.cmd_port, args.baud)
 
 

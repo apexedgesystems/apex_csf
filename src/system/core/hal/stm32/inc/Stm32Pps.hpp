@@ -6,7 +6,7 @@
  *
  * Captures the local cycle counter at the moment of an external 1PPS
  * edge using EXTI on a configurable GPIO pin. The DWT (Data Watchpoint
- * and Trace) cycle counter is read inside the ISR — it ticks at the
+ * and Trace) cycle counter is read inside the ISR -- it ticks at the
  * core clock frequency, so the latched value can be converted to
  * nanoseconds with a single multiply: `ns = cycles * (1e9 / coreFreqHz)`.
  *
@@ -19,7 +19,7 @@
  *  cadence faster than the wrap interval to avoid losing precision. At
  *  1 Hz PPS and a typical 100 Hz scheduler frame, this is comfortable.
  *  The implementation does NOT extend the counter to 64 bits in
- *  software — that is left to the consumer if greater dynamic range is
+ *  software -- that is left to the consumer if greater dynamic range is
  *  ever needed.
  *
  * Timestamp domain:
@@ -62,6 +62,8 @@
 
 #if defined(STM32L476xx) || defined(STM32L4xx)
 #include "stm32l4xx_hal.h"
+#elif defined(STM32F7xx) || defined(STM32F767xx)
+#include "stm32f7xx_hal.h"
 #elif defined(STM32G4xx) || defined(STM32G474xx)
 #include "stm32g4xx_hal.h"
 #elif defined(STM32H7xx) || defined(STM32H743xx)
@@ -103,7 +105,7 @@ struct Stm32PpsOptions {
  * Single-instance per EXTI line. The vector table dispatches the IRQ to
  * irqHandler(); irqHandler() latches DWT->CYCCNT and bumps the pulse
  * count atomically (single 32-bit register read, single increment, on a
- * single ISR — no concurrency hazard).
+ * single ISR -- no concurrency hazard).
  *
  * Thread / ISR safety:
  *  - irqHandler() runs in interrupt context. Touches only volatile
