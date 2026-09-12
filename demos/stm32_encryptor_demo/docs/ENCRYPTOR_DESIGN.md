@@ -291,8 +291,8 @@ the same on both boards.
 | Key store                     | Page 510, 2 KB, ~25 ms erase                              | Sector 11, 256 KB single-bank (128 KB dual-bank), ~0.93 s erase                                |
 | Flash programming             | 64-bit double-word                                        | 32-bit word (double-word needs external Vpp)                                                   |
 | Tick budget (100 Hz)          | 800,000 cycles                                            | 2,160,000 cycles                                                                               |
-| Idle tick (measured)          | ~600-700 cycles                                           | ~430-450 cycles                                                                                |
-| Fast-forward floor (measured) | ~608 cycles (~130 kHz)                                    | ~432 cycles (~500 kHz)                                                                         |
+| Idle tick (measured)          | ~600-700 cycles (both modes)                              | ~430-450 cycles bare-metal, ~310-330 FreeRTOS                                                  |
+| Fast-forward floor (measured) | ~608 cycles (~130 kHz)                                    | ~432 cycles bare-metal (~500 kHz), ~288 FreeRTOS (~750 kHz)                                    |
 | DWT                           | enable CYCCNT                                             | unlock (LAR) then enable CYCCNT                                                                |
 | Flash / RAM, bare-metal       | 23,344 B / 7,472 B                                        | 20,624 B / 7,492 B                                                                             |
 | Flash / RAM, FreeRTOS         | 26,664 B / 15,976 B                                       | 23,888 B / 15,992 B                                                                            |
