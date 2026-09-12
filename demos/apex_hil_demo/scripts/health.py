@@ -59,18 +59,33 @@ def query_health(host: str, port: int, timeout: float) -> dict:
             r = c2.inspect(DRIVER_REAL_UID, category=2)
             if r["status"] == 0:
                 state = r.get("extra", b"")
-                if len(state) >= 28:
-                    tx, rx, crcErr, txMiss, rxMiss = struct.unpack_from("<IIIII", state, 0)
-                    commLostCount = struct.unpack_from("<I", state, 24)[0]
+                if len(state) >= 36:
+                    # DriverState (36 B): 7 x u32, 2 x u16, 4 x u8 -- see driver_data.toml.
+                    (
+                        tx,
+                        rx,
+                        crcErr,
+                        txMiss,
+                        rxMiss,
+                        commLostCount,
+                        seqGaps,
+                        _txSeq,
+                        _rxSeq,
+                        hasCmd,
+                        uartOpen,
+                        commLost,
+                        _reserved,
+                    ) = struct.unpack_from("<7I2H4B", state, 0)
                     result["stm32_driver"] = {
                         "tx": tx,
                         "rx": rx,
                         "crc_errors": crcErr,
                         "tx_misses": txMiss,
                         "rx_misses": rxMiss,
-                        "has_cmd": state[20],
-                        "uart_open": state[21],
-                        "comm_lost": state[22],
+                        "seq_gaps": seqGaps,
+                        "has_cmd": hasCmd,
+                        "uart_open": uartOpen,
+                        "comm_lost": commLost,
                         "comm_lost_count": commLostCount,
                     }
 
@@ -78,15 +93,29 @@ def query_health(host: str, port: int, timeout: float) -> dict:
             r = c2.inspect(DRIVER_EMU_UID, category=2)
             if r["status"] == 0:
                 state = r.get("extra", b"")
-                if len(state) >= 28:
-                    tx, rx, crcErr, txMiss, rxMiss = struct.unpack_from("<IIIII", state, 0)
-                    commLostCount = struct.unpack_from("<I", state, 24)[0]
+                if len(state) >= 36:
+                    (
+                        tx,
+                        rx,
+                        crcErr,
+                        txMiss,
+                        rxMiss,
+                        _commLostCount,
+                        seqGaps,
+                        _txSeq,
+                        _rxSeq,
+                        _hasCmd,
+                        _uartOpen,
+                        _commLost,
+                        _reserved,
+                    ) = struct.unpack_from("<7I2H4B", state, 0)
                     result["emu_driver"] = {
                         "tx": tx,
                         "rx": rx,
                         "crc_errors": crcErr,
                         "tx_misses": txMiss,
                         "rx_misses": rxMiss,
+                        "seq_gaps": seqGaps,
                     }
 
             # Comparator
@@ -94,10 +123,11 @@ def query_health(host: str, port: int, timeout: float) -> dict:
             if r["status"] == 0:
                 state = r.get("extra", b"")
                 if len(state) >= 16:
-                    n, div_mean, div_max, warnings = struct.unpack("<Iffi", state[:16])
+                    # ComparatorState (16 B): maxDivergence f32, compareCount u32,
+                    # warnCount u32, reserved u32 -- see comparator_data.toml.
+                    div_max, n, warnings = struct.unpack_from("<fII", state, 0)
                     result["comparator"] = {
                         "samples": n,
-                        "divergence_mean": round(div_mean, 6),
                         "divergence_max": round(div_max, 6),
                         "warnings": warnings,
                     }
@@ -145,6 +175,7 @@ def print_human(r: dict) -> None:
             f"ratio={rx_ratio:.0f}%  "
             f"crcErr={d['crc_errors']}  "
             f"txMiss={d['tx_misses']}  rxMiss={d['rx_misses']}  "
+            f"seqGaps={d['seq_gaps']}  "
             f"uart={'OK' if d['uart_open'] else 'CLOSED'}  "
             f"comm={comm}  commLostEvents={d['comm_lost_count']}"
         )
@@ -154,14 +185,13 @@ def print_human(r: dict) -> None:
         print(
             f"  Emulated:  tx={d['tx']}  rx={d['rx']}  "
             f"crcErr={d['crc_errors']}  "
-            f"txMiss={d['tx_misses']}  rxMiss={d['rx_misses']}"
+            f"txMiss={d['tx_misses']}  rxMiss={d['rx_misses']}  seqGaps={d['seq_gaps']}"
         )
 
     if "comparator" in r:
         c = r["comparator"]
         print(
             f"  Compare:   samples={c['samples']}  "
-            f"div_mean={c['divergence_mean']:.6f}  "
             f"div_max={c['divergence_max']:.6f}  "
             f"warnings={c['warnings']}"
         )
@@ -180,12 +210,19 @@ def print_human(r: dict) -> None:
             problems.append(f"TX misses: {d['tx_misses']}")
         if not d["uart_open"]:
             problems.append("UART closed")
+        if d["seq_gaps"] > 0:
+            problems.append(f"Sequence gaps: {d['seq_gaps']} (lost frames)")
     if "executive" in r:
         if r["executive"]["watchdog_warnings"] > 0:
             problems.append(f"Watchdog warnings: {r['executive']['watchdog_warnings']}")
     if "comparator" in r:
-        if r["comparator"]["warnings"] > 0:
-            problems.append(f"Comparator warnings: {r['comparator']['warnings']}")
+        # Threshold warnings accrue by design during the startup transient
+        # (max 200 N before the PD controller converges); flag only a
+        # divergence beyond that bound.
+        if r["comparator"]["divergence_max"] > 200.0:
+            problems.append(
+                f"Comparator divergence beyond 200 N: {r['comparator']['divergence_max']}"
+            )
 
     if problems:
         print(f"  VERDICT:   DEGRADED -- {'; '.join(problems)}")

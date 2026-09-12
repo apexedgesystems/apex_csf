@@ -169,6 +169,17 @@ public:
    */
   void initInterfaceLog(const std::filesystem::path& logDir) noexcept;
 
+  /// Frames dropped at the TX boundary (pool exhausted + pipe full),
+  /// summed across servers. A nonzero value means telemetry or
+  /// responses vanished after their producer saw success.
+  [[nodiscard]] std::uint64_t txDropCount() const noexcept {
+    std::uint64_t total = 0;
+    for (std::size_t i = 0; i < numServers_; ++i) {
+      total += servers_[i].txPoolExhausted + servers_[i].txPipeFull;
+    }
+    return total;
+  }
+
 protected:
   /* ----------------------------- Hooks ----------------------------- */
 
@@ -245,6 +256,8 @@ private:
         txPipe; ///< Lock-free TX (pointer push, zero-alloc hot path).
     std::uint32_t rxErrorCount{0};
     std::uint32_t txErrorCount{0};
+    std::uint32_t txPoolExhausted{0}; ///< Frames dropped: TX buffer pool empty.
+    std::uint32_t txPipeFull{0};      ///< Frames dropped: TX pipe at capacity.
   };
 
   Status status_{Status::SUCCESS};

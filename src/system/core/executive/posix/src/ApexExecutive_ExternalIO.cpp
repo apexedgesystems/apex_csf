@@ -105,7 +105,10 @@ void ApexExecutive::externalIO(std::promise<std::uint8_t>&& p) noexcept {
 
   // Main processing loop - poll stdin and interface
   // Use shorter stdin timeout when interface is enabled for responsive network I/O
-  const int STDIN_TIMEOUT_MS = INTERFACE_ENABLED ? 10 : 100;
+  // With the interface enabled, the socket poll is the loop's only
+  // blocking wait: stdin is checked nonblocking so the TX drain
+  // cadence is ~100 Hz, not halved by a second 10 ms sleep.
+  const int STDIN_TIMEOUT_MS = INTERFACE_ENABLED ? 0 : 100;
 
   while (!externalIOShouldStop_.load(std::memory_order_relaxed) &&
          !controlState_.shutdownRequested.load(std::memory_order_relaxed)) {
@@ -216,7 +219,13 @@ void ApexExecutive::externalIO(std::promise<std::uint8_t>&& p) noexcept {
       // Emit COMPLETION frames for commands the task-thread drain has
       // executed: frame encoding and TX production stay on this thread.
       interface_->drainCompletionFrames();
-      interface_->pollSockets(10);
+      // 1 ms poll: each wake drains at most one pipe of staged TX
+      // frames, so sustained wire throughput is bounded by drain
+      // cadence x pipe depth (~256K frames/s at the default 256-deep
+      // pipe, ~8x the telemetry table's configuration maximum) for
+      // ~0.1% idle CPU on one core. RX events return the poll early,
+      // so command latency is not quantized by this wait.
+      interface_->pollSockets(1);
     }
   }
 

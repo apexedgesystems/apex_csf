@@ -38,11 +38,17 @@ struct SocketEndpoint {
  * @brief Per-interface I/O configuration (sizes/timeouts/queues).
  */
 struct SocketIoConfig {
-  std::size_t rxBufferBytes{1024};      ///< Per-server RX buffer size (bytes).
-  std::size_t txBufferBytes{1024};      ///< Per-server TX buffer size (bytes).
-  std::uint32_t rxTimeoutMs{0};         ///< RX operation timeout (ms).
-  std::uint32_t txTimeoutMs{0};         ///< TX operation timeout (ms).
-  std::size_t pipeCapacityMessages{50}; ///< Bounded pipe capacity (messages).
+  std::size_t rxBufferBytes{1024}; ///< Per-server RX buffer size (bytes).
+  std::size_t txBufferBytes{1024}; ///< Per-server TX buffer size (bytes).
+  std::uint32_t rxTimeoutMs{0};    ///< RX operation timeout (ms).
+  std::uint32_t txTimeoutMs{0};    ///< TX operation timeout (ms).
+  /// Bounded pipe capacity (messages). Sized for burst absorption: a
+  /// full 32-subscription telemetry tick is one burst, and 256 holds
+  /// ~8 such bursts, so the drain thread can miss several ~1 kHz
+  /// wakes before frames drop. Drops at this boundary are counted
+  /// per server and surfaced in the stats summary. Memory cost:
+  /// capacity x max buffer size per server on the TX pool.
+  std::size_t pipeCapacityMessages{256};
 };
 
 /**

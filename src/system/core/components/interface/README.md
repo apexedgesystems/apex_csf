@@ -122,6 +122,27 @@ Measured on x86_64 (clang-21, -O2), Docker container, 15 repeats per data point,
 | TX pipeline (encode + frame) | 0.847       | 1.2M    | 1.3% |
 | Internal bus round-trip      | 0.124       | 8.0M    | 0.6% |
 
+### TX Wire and Chain
+
+Measured on x86_64 (clang-21, -O2), Docker container, 15 repeats, 10000 cycles.
+
+| Operation                                            | Median (us) | Rate           | CV%   |
+| ---------------------------------------------------- | ----------- | -------------- | ----- |
+| Wire write, one frame                                | 2.06        | 486K frames/s  | 2.5%  |
+| Wire write, batched x64 (per batch)                  | 2.63        | 24.4M frames/s | 13.7% |
+| Chain drain, 32 subscriptions (per drain)            | 113.3       | 282K frames/s  | 3.8%  |
+| Burst absorption, 8 ticks x 32 (zero drops asserted) | 922.8       | n/a            | 21.9% |
+
+The chain path (post -> outbox drain -> pipe -> flush -> SLIP -> wire) is
+syscall-bound: one `write()` per frame at 2.06 us sets the per-frame
+ceiling, and batching x64 amortizes it to 0.04 us/frame -- headroom held
+in reserve, not currently used. Live system (Raspberry Pi 4, aarch64,
+SCHED_FIFO): 32,000 telemetry frames/s sustained at 0.999 delivery
+(32 channels x 1 kHz), zero vehicle-side drops, zero steady-state RT
+overruns. Wire throughput scales as external-I/O poll cadence x TX pipe
+depth (1 ms x 256 messages by default); frames dropped at the TX boundary
+are counted per server and reported in the stats summary.
+
 ### Profiler Analysis (gperftools)
 
 **TxPipeline (798 samples):**
@@ -255,7 +276,7 @@ void MyComponent::handleCommand(const AprotoHeader& hdr,
 iface.postInternalCommand(targetUid, opcode, payload);  // Interface allocates buffer
 ```
 
-**Memory savings**: 99.8% reduction (384KB → 768 bytes per component)
+**Memory savings**: 99.8% reduction (384KB -> 768 bytes per component)
 
 ### RT-Safety Summary
 
