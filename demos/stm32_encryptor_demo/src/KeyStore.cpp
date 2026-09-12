@@ -2,9 +2,9 @@
  * @file KeyStore.cpp
  * @brief Flash-backed key storage implementation.
  *
- * Keys are stored on flash page 510 (0x080FF000). Each of the 16 slots
- * occupies 32 bytes (one AES-256 key). The RAM cache mirrors flash contents
- * and is used for all reads and key selection.
+ * Keys are stored on the board's key-store page (board::KEY_STORE_PAGE).
+ * Each of the 16 slots occupies 32 bytes (one AES-256 key). The RAM cache
+ * mirrors flash contents and is used for all reads and key selection.
  *
  * Write strategy:
  *  - Empty slot: write 32 bytes directly (4 double-word writes).
@@ -52,7 +52,8 @@ KeyStoreStatus KeyStore::init() noexcept {
     return KeyStoreStatus::ERROR_FLASH_INIT;
   }
 
-  // Read key data from flash page 510 into RAM cache
+  // Read key data from the key-store page into RAM cache (the board
+  // description picks a page that exists in every bank mode of its part)
   const uint32_t ADDR = flash_.addressForPage(KEY_STORE_PAGE);
   status = flash_.read(ADDR, keyCache_, TOTAL_KEY_DATA);
   if (status != apex::hal::FlashStatus::OK) {

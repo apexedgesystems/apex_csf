@@ -162,8 +162,9 @@ void EncryptorEngine::processFrame(const uint8_t* frame, size_t len) noexcept {
     return;
   }
 
-  // Encrypt plaintext with AES-256-GCM
-  uint8_t* ct = outputFrame_ + 1 + GCM_NONCE_LEN;
+  // Encrypt plaintext with AES-256-GCM; the ciphertext lands after the
+  // (optional) channel prefix, key index, and nonce
+  uint8_t* ct = outputFrame_ + CHANNEL_PREFIX + 1 + GCM_NONCE_LEN;
   uint8_t tag[GCM_TAG_LEN];
 
   auto gcmResult = apex::encryption::mcu::aes256GcmEncrypt(
@@ -174,12 +175,15 @@ void EncryptorEngine::processFrame(const uint8_t* frame, size_t len) noexcept {
     return;
   }
 
-  // Build output frame: key_index(1) + nonce(12) + ciphertext(N) + tag(16)
-  outputFrame_[0] = activeKeyIndex_;
-  memcpy(outputFrame_ + 1, nonce_, GCM_NONCE_LEN);
+  // Build output frame: [channel(1)] + key_index(1) + nonce(12) + ciphertext(N) + tag(16)
+  if (CHANNEL_PREFIX != 0) {
+    outputFrame_[0] = CHANNEL_DATA;
+  }
+  outputFrame_[CHANNEL_PREFIX] = activeKeyIndex_;
+  memcpy(outputFrame_ + CHANNEL_PREFIX + 1, nonce_, GCM_NONCE_LEN);
   memcpy(ct + PT_LEN, tag, GCM_TAG_LEN);
 
-  const size_t OUTPUT_LEN = 1 + GCM_NONCE_LEN + PT_LEN + GCM_TAG_LEN;
+  const size_t OUTPUT_LEN = CHANNEL_PREFIX + 1 + GCM_NONCE_LEN + PT_LEN + GCM_TAG_LEN;
 
   // SLIP-encode output frame
   const apex::compat::bytes_span OUTPUT_SPAN(outputFrame_, OUTPUT_LEN);

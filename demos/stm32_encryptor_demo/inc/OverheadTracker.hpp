@@ -19,8 +19,8 @@
 
 #include <stdint.h>
 
-// DWT registers are defined in CMSIS core headers via the HAL
-#include "stm32l4xx_hal.h"
+// DWT registers are defined in CMSIS core headers via the board's HAL
+#include "boards/Board.hpp"
 
 namespace encryptor {
 
@@ -77,6 +77,10 @@ public:
    */
   void enableDwt() noexcept {
     CoreDebug->DEMCR = CoreDebug->DEMCR | CoreDebug_DEMCR_TRCENA_Msk;
+#if (__CORTEX_M == 7U)
+    // The M7 gates DWT register writes behind its lock access register.
+    DWT->LAR = 0xC5ACCE55U;
+#endif
     DWT->CYCCNT = 0;
     DWT->CTRL = DWT->CTRL | DWT_CTRL_CYCCNTENA_Msk;
   }

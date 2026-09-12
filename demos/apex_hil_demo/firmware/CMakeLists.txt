@@ -14,6 +14,15 @@
 
 include(apex/All)
 
+# Built for the NUCLEO-L476RG only; other boards in the stm32 preset skip it.
+if (NOT APEX_STM32_BOARD STREQUAL "nucleo_l476rg")
+  message(
+    STATUS
+      "[apex] skip apex_hil_demo_firmware: NUCLEO-L476RG firmware, board is '${APEX_STM32_BOARD}'"
+  )
+  return()
+endif ()
+
 # ------------------------------------------------------------------------------
 # STM32CubeL4 SDK Path
 # ------------------------------------------------------------------------------

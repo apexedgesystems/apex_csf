@@ -44,12 +44,26 @@ public:
   /**
    * @brief Poll the data channel: read UART, decode SLIP, encrypt, transmit.
    *
-   * Called from dataChannelTask at 100 Hz. Processes all available bytes
-   * in the UART RX buffer and handles zero or more complete frames.
+   * Called from dataChannelTask at 100 Hz on boards with a dedicated data
+   * UART. Processes all available bytes in the UART RX buffer and handles
+   * zero or more complete frames.
    *
    * @note RT-safe after construction.
    */
   void poll() noexcept;
+
+  /**
+   * @brief Process a complete SLIP-decoded data frame (channel prefix removed).
+   *
+   * Validates CRC-16, encrypts, and transmits the SLIP-encoded output
+   * (prefixed with CHANNEL_DATA on shared-channel boards). poll() calls
+   * this on two-UART boards; the shared-channel task calls it directly.
+   *
+   * @param frame Decoded frame data: plaintext + CRC-16.
+   * @param len Frame length in bytes.
+   * @note RT-safe: no allocations, bounded by the frame size.
+   */
+  void processFrame(const uint8_t* frame, size_t len) noexcept;
 
   /**
    * @brief Load active key from the key store.
@@ -169,9 +183,9 @@ private:
   apex::protocols::slip::DecodeConfig slipCfg_;
 
   // Work buffers (all static, no heap)
-  uint8_t decodeBuf_[MAX_INPUT_FRAME];      ///< SLIP decode output.
-  uint8_t outputFrame_[MAX_OUTPUT_FRAME];   ///< Assembled output (hdr + ct + tag).
-  uint8_t slipEncodeBuf_[MAX_SLIP_ENCODED]; ///< SLIP-encoded output for TX.
+  uint8_t decodeBuf_[MAX_INPUT_FRAME];                     ///< SLIP decode output.
+  uint8_t outputFrame_[CHANNEL_PREFIX + MAX_OUTPUT_FRAME]; ///< Output (prefix + hdr + ct + tag).
+  uint8_t slipEncodeBuf_[MAX_SLIP_ENCODED];                ///< SLIP-encoded output for TX.
 
   // Encryption state
   uint8_t activeKey_[AES_KEY_LEN];
@@ -185,13 +199,6 @@ private:
   uint8_t rotationIndex_; ///< Counter for RANDOM mode rotation.
 
   EncryptorStats stats_;
-
-  /**
-   * @brief Process a complete SLIP-decoded frame.
-   * @param frame Decoded frame data.
-   * @param len Frame length in bytes.
-   */
-  void processFrame(const uint8_t* frame, size_t len) noexcept;
 };
 
 } // namespace encryptor
