@@ -9,9 +9,17 @@ firmware on the NUCLEO-L476RG (STM32L476RG, Cortex-M4 @ 80 MHz).
 
 ### Hardware
 
-- NUCLEO-L476RG plugged in via USB-C (ST-Link VCP for command channel)
-- DSD TECH SH-U09C5 USB-TTL adapter (FTDI FT232RL for data channel)
-- Host machine running Linux (tested on Ubuntu 22.04+)
+- NUCLEO-L476RG plugged in via USB (ST-Link: SWD for flashing, VCP for the
+  command channel)
+- DSD TECH SH-U09C5 USB-TTL adapter (FTDI FT232RL for the data channel)
+- A Linux host for both USB cables. Two arrangements are in use:
+  - **Laptop-direct**: both cables on the development machine; the
+    `compose-stm32-*` make targets flash from the dev container and the
+    udev symlinks below name the ports.
+  - **Pi rig**: both cables on the Raspberry Pi 4 at
+    `kalex@raspberrypi.local` (the same rig the HIL demo uses). The
+    firmware and checkout script are copied over and `st-flash` runs on the
+    Pi. The checkout record in this document was taken on this rig.
 
 ### Wiring
 
@@ -62,20 +70,48 @@ pip install pyserial cryptography
 
 ## 1. Build
 
+The deployable is the release package. Building it is the same command a
+user runs to ship the app:
+
 ```bash
 make release APP=stm32_encryptor_demo
 ```
 
-Output:
+This builds the stm32 platform inside the dev-stm32 container (every
+firmware image in that preset, not only this app), then stages this app's
+artifacts and tars them:
 
-- `build/stm32/firmware/stm32_encryptor_demo.elf`
-- `build/stm32/firmware/stm32_encryptor_demo.bin`
-- `build/stm32/firmware/stm32_encryptor_demo.hex`
-- `build/release/stm32_encryptor_demo.tar.gz` (release tarball)
+- `build/release/stm32_encryptor_demo/stm32/firmware/stm32_encryptor_demo.elf`
+- `build/release/stm32_encryptor_demo/stm32/firmware/stm32_encryptor_demo.bin`
+- `build/release/stm32_encryptor_demo/stm32/firmware/stm32_encryptor_demo.hex`
+- `build/release/stm32_encryptor_demo.tar.gz`
+
+Flash from the staged copy under `build/release/`: that is the artifact a
+deployment ships, and it is what the checkout record below was taken on.
+
+The build summary prints flash and RAM usage; the expected figures are in
+[MEMORY_MAP.md](MEMORY_MAP.md).
+
+### FreeRTOS variant
+
+The release manifest registers the bare-metal build only. The FreeRTOS
+variant is a development build of the same platform preset:
+
+```bash
+make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
+```
+
+It writes `build/mcu-stm32-relwithdebinfo/firmware/stm32_encryptor_demo.{elf,bin,hex}`.
+The option is a CMake cache flag on the shared build directory, so a
+following `make release APP=stm32_encryptor_demo` or
+`make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=OFF"` switches
+it back before the next bare-metal package.
 
 ---
 
 ## 2. Flash
+
+### Laptop-direct
 
 ```bash
 make compose-stm32-flash STM32_FIRMWARE=stm32_encryptor_demo
@@ -102,12 +138,33 @@ run the reset command above or press the black RESET button on the NUCLEO board.
 The on-board LED (LD2, PA5) should begin blinking at 2 Hz after a successful
 flash and reset.
 
+### Pi rig
+
+The ST-Link is on the Pi's USB, so the Pi's own `st-flash` programs the
+board. Copy the binary and the checkout script over, then flash and reset
+in one step:
+
+```bash
+ssh kalex@raspberrypi.local 'mkdir -p ~/apex/stm32_encryptor_demo'
+scp build/release/stm32_encryptor_demo/stm32/firmware/stm32_encryptor_demo.bin \
+    demos/stm32_encryptor_demo/scripts/serial_checkout.py \
+    kalex@raspberrypi.local:~/apex/stm32_encryptor_demo/
+ssh kalex@raspberrypi.local 'cd ~/apex/stm32_encryptor_demo && \
+    sudo st-flash write stm32_encryptor_demo.bin 0x08000000 && \
+    sudo st-flash reset'
+```
+
+`st-flash` verifies the write ("Flash written and verified") before the
+reset. The Pi needs `stlink-tools`, `python3-serial`, and
+`python3-cryptography`.
+
 ---
 
 ## 3. Reset
 
 ```bash
-make compose-stm32-reset
+make compose-stm32-reset                          # laptop-direct
+ssh kalex@raspberrypi.local 'sudo st-flash reset'  # Pi rig
 ```
 
 Sends an SWD reset via st-flash to restart the STM32L476RG. Use this after
@@ -117,92 +174,118 @@ flashing or to recover from a halted state.
 
 ## 4. Run Checkout
 
+Laptop-direct (the udev symlinks are the script defaults):
+
 ```bash
 python3 demos/stm32_encryptor_demo/scripts/serial_checkout.py \
   --data-port /dev/ftdi_0 \
   --cmd-port /dev/nucleo_0
 ```
 
+Pi rig (no udev symlinks there: the ST-Link VCP enumerates as
+`/dev/ttyACM0` and the FTDI adapter as `/dev/ttyUSB0`):
+
+```bash
+ssh kalex@raspberrypi.local 'cd ~/apex/stm32_encryptor_demo && \
+    python3 serial_checkout.py --data-port /dev/ttyUSB0 --cmd-port /dev/ttyACM0'
+```
+
 ### Expected Output
 
+Per-check PASS lines print as each group runs (shown here for the
+Connection group; `--verbose` adds the measured values), followed by the
+summary:
+
 ```
-STM32 Encryptor Checkout (dual UART)
-  Data port:    /dev/ftdi_0
-  Command port: /dev/nucleo_0
+STM32 Encryptor Checkout
+  Data channel:    /dev/ttyUSB0
+  Command channel: /dev/ttyACM0
 ============================================================
 
 --- Connection ---
-  PASS  Data port exists: /dev/ftdi_0
-  PASS  Data port open: /dev/ftdi_0 @ 115200
-  PASS  Command port exists: /dev/nucleo_0
-  PASS  Command port open: /dev/nucleo_0 @ 115200
+  PASS  Data port exists: /dev/ttyUSB0
+  PASS  Data port open: /dev/ttyUSB0 @ 115200
+  PASS  Command port exists: /dev/ttyACM0
+  PASS  Command port open: /dev/ttyACM0 @ 115200
 
---- Data Channel ---
-  PASS  Encrypt basic: 16 B plaintext -> 16 B ciphertext (key=0)
-  PASS  Nonce increment: 1 -> 2
-
---- Key Store ---
-  PASS  Erase all keys
-  PASS  Write key slot 0
-  PASS  Read key slot 0
-  PASS  Write key slot 1
-  PASS  Key store status (2 keys)
-
---- Key Mode ---
-  PASS  Lock to key 0
-  PASS  Locked mode consistent
-  PASS  Mode status (locked)
-  PASS  Unlock
-  PASS  Mode status (random)
-
---- IV Management ---
-  PASS  IV reset
-  PASS  IV status
-  PASS  IV after encrypt
-
---- Diagnostics ---
-  PASS  Stats reset
-  PASS  Stats query
-  PASS  Stats after encrypt
-
---- Rejection ---
-  PASS  Bad CRC rejected
-  PASS  Too-short rejected
-  PASS  No-keys rejected
-
---- Stress ---
-  PASS  Re-provision key 0
-  PASS  Continuous encrypt (20 packets)
-  PASS  Encrypt roundtrip (decrypt verify)
-
---- Throughput ---
-  PASS  Re-provision key 0
-  PASS  Lock to key 0
-  PASS  Throughput 16B x 100
-  PASS  Throughput 64B x 100
-  PASS  Throughput 128B x 50
-  PASS  Throughput 256B x 50
-
---- Overhead ---
-  PASS  Overhead query
-  PASS  Overhead reset
-  PASS  Idle overhead (1s)
-  PASS  Fast-forward on
-  PASS  Fast-forward overhead
-  PASS  Fast-forward off
-
---- Idle ---
-  PASS  Data channel idle
-  PASS  Command channel idle
+  ...
 
 ============================================================
 Checkout Summary
 ============================================================
+
+  [PASS] Connection
+        [PASS] Data port exists
+        [PASS] Data port open
+        [PASS] Command port exists
+        [PASS] Command port open
+
+  [PASS] Data Channel
+        [PASS] Encrypt basic
+        [PASS] Nonce increment
+
+  [PASS] Key Store
+        [PASS] Erase all keys
+        [PASS] Write key slot 0
+        [PASS] Read key slot 0
+        [PASS] Write key slot 1
+        [PASS] Key store status (2 keys)
+
+  [PASS] Key Mode
+        [PASS] Lock to key 0
+        [PASS] Locked mode consistent
+        [PASS] Mode status (locked)
+        [PASS] Unlock
+        [PASS] Mode status (random)
+
+  [PASS] IV Management
+        [PASS] IV reset
+        [PASS] IV status
+        [PASS] IV after encrypt
+
+  [PASS] Diagnostics
+        [PASS] Stats reset
+        [PASS] Stats query
+        [PASS] Stats after encrypt
+
+  [PASS] Rejection
+        [PASS] Bad CRC rejected
+        [PASS] Too-short rejected
+        [PASS] No-keys rejected
+
+  [PASS] Stress
+        [PASS] Re-provision key 0
+        [PASS] Continuous encrypt (20 packets)
+        [PASS] Encrypt roundtrip (decrypt verify)
+
+  [PASS] Throughput
+        [PASS] Re-provision key 0
+        [PASS] Lock to key 0
+        [PASS] Throughput 16B x 100
+        [PASS] Throughput 64B x 100
+        [PASS] Throughput 128B x 50
+        [PASS] Throughput 256B x 50
+
+  [PASS] Overhead
+        [PASS] Overhead query
+        [PASS] Overhead reset
+        [PASS] Idle overhead (1s)
+        [PASS] Fast-forward on
+        [PASS] Fast-forward overhead
+        [PASS] Fast-forward off
+
+  [PASS] Idle
+        [PASS] Data channel idle
+        [PASS] Command channel idle
+
 40/40 checks passed
 Checkout: PASS
 ```
 
-All 40 checks across 11 groups should pass.
+All 40 checks across 11 groups should pass. The throughput figures the
+script prints are host round-trip bound (one request, one response, wait
+for the reply), not a firmware ceiling: on the Pi rig they land at roughly
+11-53 packets/s depending on payload size.
 
 ### Checkout Options
 

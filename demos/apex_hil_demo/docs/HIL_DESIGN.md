@@ -403,7 +403,7 @@ Wire format: `[SLIP_END] [opcode:1] [payload:N] [CRC-16:2] [SLIP_END]`
 ### Raspberry Pi 4 (POSIX Host)
 
 - SoC: BCM2711, 4x Cortex-A72 @ 1.8 GHz
-- Kernel: 6.12.62+rpt-rpi-v8 (PREEMPT, not PREEMPT_RT)
+- Kernel: 6.18.39+rpt-rpi-v8 (PREEMPT, not PREEMPT_RT)
 - IP: raspberrypi.local (SSH: kalex@)
 - UART: /dev/ttyUSB0 (via FTDI FT232RL adapter)
 

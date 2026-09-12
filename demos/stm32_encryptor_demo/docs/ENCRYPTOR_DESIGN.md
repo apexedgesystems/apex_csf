@@ -8,7 +8,7 @@ key management, task model, and STM32-specific constraints.
 
 ## Overview
 
-The encryptor is a unidirectional encryption passthrough device with EEPROM-backed
+The encryptor is a unidirectional encryption passthrough device with flash-backed
 key management. Plaintext bytes arrive on a data channel, are encrypted with
 AES-256-GCM, and transmitted back as a SLIP-framed ciphertext packet. A separate
 command channel provides key provisioning, diagnostics, and overhead measurement.
@@ -20,7 +20,7 @@ command channel provides key provisioning, diagnostics, and overhead measurement
 
 **Framing:** SLIP (RFC 1055) on both channels
 
-**Language:** C++17 (arm-none-eabi-gcc)
+**Language:** C++20 (arm-none-eabi-gcc; the STM32 toolchain caps at C++20)
 
 ---
 
@@ -251,12 +251,20 @@ The DWT cycle counter (DWT->CYCCNT) runs at core clock speed (80 MHz). The
 profiler start and end tasks sample CYCCNT at the boundaries of each scheduler
 tick to measure per-tick CPU cost.
 
-**Budget:** At 100 Hz, each tick has 800,000 cycles. Idle overhead is ~620
-cycles (0.08% of budget).
+**Budget:** At 100 Hz, each tick has 800,000 cycles. An idle tick costs
+~600-700 cycles (under 0.1% of budget) in both execution modes; the
+checkout's one-second idle window sees a peak of ~2,850 cycles when the
+command poll coincides with a tick. A tick that services a KEY_STORE_ERASE
+or a populated-slot rewrite blocks for the ~25 ms page erase and shows up
+in the OVERHEAD max as ~1.8 M cycles (over two tick budgets), which is why
+flash operations are confined to the command channel and marked NOT
+RT-safe.
 
 **Fast-forward mode:** When enabled via the FASTFORWARD command, the executive
 skips the wait-for-tick delay and runs tasks back-to-back. This reveals the
-maximum achievable scheduler rate (~119 kHz bare-metal, ~129 kHz FreeRTOS).
+maximum achievable scheduler rate: ~608 cycles per tick at minimum in both
+modes, about 130 kHz at 80 MHz (the checkout reports the rate from the last
+sample, so a single run prints anywhere from ~100 to ~130 kHz).
 
 ---
 
@@ -284,7 +292,7 @@ stm32_encryptor_demo/
 |   +-- KeyStore.hpp            # Flash-backed key storage (16 slots, page 510)
 |   +-- OverheadTracker.hpp     # DWT cycle counter measurement
 +-- scripts/
-|   +-- serial_checkout.py      # Automated checkout (36 checks, 10 groups)
+|   +-- serial_checkout.py      # Automated checkout (40 checks, 11 groups)
 +-- src/
 |   +-- main.cpp                # Application entry, task registration, ISRs
 |   +-- CommandDeck.cpp         # Command dispatch and response builder

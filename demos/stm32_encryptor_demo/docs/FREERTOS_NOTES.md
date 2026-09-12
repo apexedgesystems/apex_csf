@@ -132,7 +132,7 @@ Stm32SysTickSource and FreeRtosTickSource -- both satisfy ITickSource.
 ## Size Comparison: Bare-Metal vs FreeRTOS (Option 3)
 
 Both modes were built with `-Os` (size-optimized) for NUCLEO-L476RG (1 MB FLASH,
-96 KB SRAM1 + 32 KB SRAM2). Identical application code, same 36/36 serial checkout
+96 KB SRAM1 + 32 KB SRAM2). Identical application code, same 40/40 serial checkout
 checks passing. Build with `APEX_USE_FREERTOS=OFF` (default) for bare-metal,
 `APEX_USE_FREERTOS=ON` for FreeRTOS.
 
@@ -140,10 +140,10 @@ checks passing. Build with `APEX_USE_FREERTOS=OFF` (default) for bare-metal,
 
 | Metric                  | Bare-metal       | FreeRTOS (Option 3) | Delta             |
 | ----------------------- | ---------------- | ------------------- | ----------------- |
-| FLASH (.text + .rodata) | 22,780 B (2.17%) | 26,140 B (2.49%)    | +3,360 B (+14.7%) |
-| RAM (.data + .bss)      | 7,456 B (7.58%)  | 15,960 B (16.24%)   | +8,504 B (+114%)  |
+| FLASH (.text + .rodata) | 23,344 B (2.23%) | 26,664 B (2.54%)    | +3,320 B (+14.2%) |
+| RAM (.data + .bss)      | 7,472 B (7.60%)  | 15,976 B (16.25%)   | +8,504 B (+114%)  |
 
-### Where the FLASH delta goes (+3,360 B)
+### Where the FLASH delta goes (+3,320 B)
 
 | Component                                               | Approximate size |
 | ------------------------------------------------------- | ---------------- |
@@ -307,12 +307,11 @@ separate app. Implementation steps:
 ## Build Commands
 
 ```bash
-# Bare-metal (default)
-docker compose run --rm -T dev-stm32 make stm32
+# Bare-metal (default): the release package
+make release APP=stm32_encryptor_demo
 
-# FreeRTOS
-docker compose run --rm -T dev-stm32 bash -c \
-  'cmake --preset mcu-stm32-relwithdebinfo -DAPEX_USE_FREERTOS=ON && cmake --build --preset mcu-stm32-relwithdebinfo -j$(nproc)'
+# FreeRTOS: development build of the same preset
+make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
 ```
 
 ## Verification
@@ -324,5 +323,5 @@ The same `serial_checkout.py` validates both firmware modes:
 python3 demos/stm32_encryptor_demo/scripts/serial_checkout.py --verbose
 ```
 
-All 36 checks should pass in both modes. Overhead numbers will differ
+All 40 checks should pass in both modes. Overhead numbers will differ
 slightly due to FreeRTOS context switch overhead.

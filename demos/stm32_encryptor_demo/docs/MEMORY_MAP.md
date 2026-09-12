@@ -58,8 +58,8 @@ rewriting all slots.
 
 | Variant    | Code + Data | Percent of 1 MB | Pages Used |
 | ---------- | ----------- | --------------- | ---------- |
-| Bare-metal | 22,780 B    | 2.17%           | 12         |
-| FreeRTOS   | 26,428 B    | 2.52%           | 13         |
+| Bare-metal | 23,344 B    | 2.23%           | 12         |
+| FreeRTOS   | 26,664 B    | 2.54%           | 14         |
 
 Breakdown by component (FreeRTOS variant, from linker map):
 
@@ -76,7 +76,7 @@ Breakdown by component (FreeRTOS variant, from linker map):
 | KeyStore                                       | ~1 KB            | Flash page management                    |
 | McuExecutive + McuScheduler                    | ~1.5 KB          | Cooperative scheduler                    |
 | Main + init + stubs                            | ~1 KB            | Boot, UART init, task registration       |
-| **Total**                                      | **~26.4 KB**     | **Matches linker output**                |
+| **Total**                                      | **~26.7 KB**     | **Matches linker output**                |
 
 ---
 
@@ -139,7 +139,7 @@ Main RAM for stack, heap, and all runtime data. Code does not reside in SRAM
 
 | Variant    | Used     | Percent of 96 KB | Free     |
 | ---------- | -------- | ---------------- | -------- |
-| Bare-metal | 7,456 B  | 7.58%            | 90,736 B |
+| Bare-metal | 7,472 B  | 7.60%            | 90,832 B |
 | FreeRTOS   | 15,976 B | 16.25%           | 82,216 B |
 
 ### Buffer Allocation Detail
@@ -190,5 +190,5 @@ low-power modes where SRAM1 is not.
 | Hardware RNG         | TRNG                    | None                 | -           |
 | FPU                  | Single-precision        | None                 | -           |
 | Operating Voltage    | 1.71-3.6V               | 5V                   | Different   |
-| Encryptor Flash Used | 26.4 KB (2.5%)          | ~12-14 KB (est. 40%) | ~2x         |
+| Encryptor Flash Used | 23.3-26.7 KB (2.2-2.5%) | ~12-14 KB (est. 40%) | ~2x         |
 | Encryptor RAM Used   | 7.5-16 KB (8-16%)       | ~1.3 KB (est. 62%)   | ~6-12x      |

@@ -12,16 +12,19 @@ Supports bare-metal (default) and FreeRTOS modes via `APEX_USE_FREERTOS`.
 
 ## Building
 
-Bare-metal:
+Release package (what a deployment ships):
 
 ```bash
-docker compose run --rm -T dev-stm32 make stm32
+make release APP=stm32_encryptor_demo
 ```
 
-FreeRTOS:
+Artifacts stage under `build/release/stm32_encryptor_demo/stm32/firmware/`
+with a `build/release/stm32_encryptor_demo.tar.gz` tarball.
+
+FreeRTOS variant (development build of the same preset):
 
 ```bash
-docker compose run --rm -T dev-stm32 make stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
+make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FREERTOS=ON"
 ```
 
 ## Flashing
@@ -29,6 +32,10 @@ docker compose run --rm -T dev-stm32 make stm32 CMAKE_EXTRA_ARGS="-DAPEX_USE_FRE
 ```bash
 make compose-stm32-flash STM32_FIRMWARE=stm32_encryptor_demo
 ```
+
+When the board hangs off the Raspberry Pi rig instead of the development
+machine, copy the binary over and flash with the Pi's `st-flash`; see
+[docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md).
 
 ## See Also
 
