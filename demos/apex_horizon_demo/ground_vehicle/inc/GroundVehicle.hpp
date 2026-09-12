@@ -282,23 +282,12 @@ public:
       return 0u;
     }
 
-    // First tick: pull init pose from tunables into telemetry. After
-    // that, subsequent ticks integrate from telemetry's pose.
+    // First tick: latch the boot pose into telemetry (doInit already
+    // seeded it so watchpoints never read zeros; this re-asserts it
+    // with the body's radius known). Subsequent ticks integrate from
+    // telemetry's pose.
     if (s.initialized == 0u) {
-      if (p.init_from_grid != 0u) {
-        // Grid boot: the anchor plus (north, east) metres, projected
-        // about the anchor latitude as the step integrates.
-        const double R0 = body_->telemetry().reference_radius_m;
-        const double M_PER_DEG_LAT = R0 * DEG_TO_RAD;
-        const double M_PER_DEG_LON = R0 * std::cos(p.anchor_lat_deg * DEG_TO_RAD) * DEG_TO_RAD;
-        tlm.pos_lat_deg = p.anchor_lat_deg + ((R0 > 0.0) ? p.init_north_m / M_PER_DEG_LAT : 0.0);
-        tlm.pos_lon_deg = p.anchor_lon_deg + ((R0 > 0.0) ? p.init_east_m / M_PER_DEG_LON : 0.0);
-      } else {
-        tlm.pos_lat_deg = p.init_lat_deg;
-        tlm.pos_lon_deg = p.init_lon_deg;
-      }
-      tlm.heading_deg = p.init_heading_deg;
-      tlm.speed_m_s = 0.0;
+      seedBootPose(tlm, p);
       s.initialized = 1u;
     }
 
@@ -527,6 +516,7 @@ protected:
     registerData(DataCategory::STATE, "state", &state_.get(), sizeof(GroundVehicleState));
     registerData(DataCategory::OUTPUT, "telemetry", &telemetry_.get(),
                  sizeof(GroundVehicleTelemetry));
+    seedBootPose(telemetry_.get(), tunables_.get());
 
     auto* log = componentLog();
     if (log != nullptr) {
@@ -541,6 +531,42 @@ protected:
   }
 
 private:
+  /* ----------------------------- Boot pose ----------------------------- */
+
+  /// Write the boot pose and a benign sensor picture (no lidar hits,
+  /// level, on terrain) into telemetry. Called at init, before any
+  /// task runs, because the action engine's watchpoints evaluate the
+  /// OUTPUT block from the executive thread starting at tick 0 -- a
+  /// zero-initialized block reads as "outside the geofence with an
+  /// obstacle at 0 m" and would fire every boundary at boot.
+  void seedBootPose(GroundVehicleTelemetry& tlm, const GroundVehicleTunables& p) const noexcept {
+    const double R0 = (body_ != nullptr) ? body_->telemetry().reference_radius_m : 0.0;
+    if (p.init_from_grid != 0u && R0 > 0.0) {
+      // Grid boot: the anchor plus (north, east) metres, projected
+      // about the anchor latitude as the step integrates.
+      const double M_PER_DEG_LAT = R0 * DEG_TO_RAD;
+      const double M_PER_DEG_LON = R0 * std::cos(p.anchor_lat_deg * DEG_TO_RAD) * DEG_TO_RAD;
+      tlm.pos_lat_deg = p.anchor_lat_deg + p.init_north_m / M_PER_DEG_LAT;
+      tlm.pos_lon_deg = p.anchor_lon_deg + p.init_east_m / M_PER_DEG_LON;
+    } else if (p.init_from_grid != 0u) {
+      tlm.pos_lat_deg = p.anchor_lat_deg;
+      tlm.pos_lon_deg = p.anchor_lon_deg;
+    } else {
+      tlm.pos_lat_deg = p.init_lat_deg;
+      tlm.pos_lon_deg = p.init_lon_deg;
+    }
+    tlm.heading_deg = p.init_heading_deg;
+    tlm.speed_m_s = 0.0;
+    tlm.slope_deg = 0.0;
+    tlm.is_slipping = 0u;
+    tlm.is_off_terrain = 0u;
+    tlm.lidar_n_rays = std::min<std::uint32_t>(p.lidar_n_rays, MAX_LIDAR_RAYS);
+    for (std::uint32_t i = 0; i < MAX_LIDAR_RAYS; ++i) {
+      tlm.lidar_range_m[i] = p.lidar_max_range_m;
+      tlm.lidar_hit[i] = 0u;
+    }
+  }
+
   /* ----------------------------- Lidar helper ----------------------------- */
 
   /// Cast `tunables.lidar_n_rays` rays forward and update telemetry.

@@ -559,3 +559,23 @@ TEST(GroundVehicle, StepRateScalesTheIntegrationAndTheTimestampGrid) {
   (void)fast.vehicleStep();
   EXPECT_EQ(fast.telemetry().timestamp_ns - T1, 10000000u);
 }
+
+/* ----------------------------- Boot seed ----------------------------- */
+
+TEST(GroundVehicle, InitSeedsTheOutputBlockBeforeTheFirstStep) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  GroundVehicle rover;
+  configureRover(rover);
+  rover.setBody(&earth);
+  ASSERT_EQ(rover.init(), 0u);
+  // No step yet: a watchpoint reading the block now sees the boot pose
+  // and a clear lidar, never zeros.
+  const auto& t = rover.telemetry();
+  EXPECT_NEAR(t.pos_lat_deg, rover.tunables_const().init_lat_deg, 1e-12);
+  EXPECT_NEAR(t.pos_lon_deg, rover.tunables_const().init_lon_deg, 1e-12);
+  EXPECT_EQ(t.lidar_hit[0], 0u);
+  EXPECT_DOUBLE_EQ(t.lidar_range_m[4], rover.tunables_const().lidar_max_range_m);
+  EXPECT_EQ(t.is_slipping, 0u);
+}
