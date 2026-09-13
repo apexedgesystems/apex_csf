@@ -12,12 +12,12 @@ Run from inside the producer's container (the ops interface listens on
 
     docker exec -i -w /home/kalex/workspace rover_mcu \\
       tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py \\
-      demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --slot 10 --start
+      demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --slot 11 --start
 
 Arguments:
   toml            the StandaloneSequenceTprm TOML (its sequenceId is the id you start)
   --slot N        bank file name NNN.rts (must not collide with a packed slot; the
-                  boot catalog uses 000..009)
+                  boot catalog uses 000..010)
   --start         START_RTS_BY_ID after the rescan
   --host/--port   ops interface (default 127.0.0.1:9000)
   --build-dir     build tree holding bin/tools/rust/cfg2bin (default build/hosted-x86_64-debug)

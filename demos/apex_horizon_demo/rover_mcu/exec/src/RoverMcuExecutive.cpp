@@ -83,6 +83,12 @@ bool RoverMcuExecutive::registerComponents() noexcept {
 /* ----------------------------- configureComponents ----------------------------- */
 
 void RoverMcuExecutive::configureComponents() noexcept {
+  // One sequence at a time: every catalog RTS shares an exclusion
+  // group, so a halt sequence cancels the tour it interrupts and a
+  // tour started over another replaces it; the policy survives the
+  // catalog rescan an upload triggers.
+  actionComponent().setRtsExclusionGroup(1u);
+
   auto* log = sysLog();
   if (log == nullptr) {
     return;

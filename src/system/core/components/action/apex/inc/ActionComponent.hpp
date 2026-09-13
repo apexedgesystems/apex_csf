@@ -269,6 +269,21 @@ public:
    */
   [[nodiscard]] const data::SequenceCatalog& catalog() const noexcept { return catalog_; }
 
+  /**
+   * @brief Put every RTS in the catalog into one exclusion group.
+   *
+   * Starting a sequence stops any running sequence in its exclusion
+   * group, so with a single group a catalog behaves as "one sequence
+   * at a time": a new start replaces the running one instead of
+   * running beside it. The group is applied to the entries loaded now
+   * and to every later scan (a rescan rebuilds the catalog). 0 clears
+   * the policy for later scans without touching loaded entries.
+   *
+   * @param group Exclusion group for every RTS entry (0 = none).
+   * @note NOT RT-safe: boot-time configuration.
+   */
+  void setRtsExclusionGroup(std::uint8_t group) noexcept;
+
   /* ----------------------------- Command Handling ----------------------------- */
 
   /**
@@ -363,6 +378,10 @@ private:
   data::GroupCatalog grpCatalog_;         ///< Group definitions.
   data::NotificationCatalog noteCatalog_; ///< Notification definitions.
   std::filesystem::path catalogRtsDir_{}; ///< Stored rts/ path for rescan.
+  std::uint8_t rtsExclusionGroup_{0};     ///< Group stamped on every RTS at scan (0 = none).
+
+  /// Stamp rtsExclusionGroup_ on every RTS entry currently loaded.
+  void applyRtsExclusionGroup() noexcept;
   std::filesystem::path catalogAtsDir_{}; ///< Stored ats/ path for rescan.
 };
 

@@ -608,6 +608,38 @@ TEST(GroundVehicleCmd, HaltStampsManualReasonAndResumeClearsAnyHalt) {
   EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
 }
 
+TEST(GroundVehicleCmd, WhileHaltedOnlyHaltAndResumeAreAccepted) {
+  // A geofence halt sequence lights the lamps, names its reason, then
+  // latches the halt. Whatever is started afterwards cannot repaint
+  // the lamps, change the mode, retarget, or overwrite the reason
+  // (a sequence that sails through on a stale ARRIVED latch would
+  // otherwise write "state 0" over a live halt).
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0x12u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 1u, 4u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  const auto EXEC_FAILED =
+      static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {1u, 1u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 0u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE_SEQ, {2u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(10.0F, 0.0F)),
+            EXEC_FAILED);
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_SEQ_STATE], 0x12u) << "the reason stays";
+  EXPECT_EQ(f[fb::FB_CONTROLLER_MODE], appsim::ground_vehicle::kFrameModeHalted);
+  EXPECT_EQ(r.rover.vehicleState().led_colour[0], 1u) << "lamp stays red";
+  EXPECT_EQ(r.rover.vehicleState().led_rate[0], 4u);
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT], static_cast<std::uint8_t>(CmdResultCode::NACK_EXEC_FAILED));
+  // RESUME reopens everything.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 0u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE_SEQ, {2u}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+}
+
 /* ----------------------------- BUSY: a sequence owns the drive ----------------------------- */
 
 TEST(GroundVehicleCmd, WireTargetsAreBusyWhileASequenceRunsButSequenceOpcodesAreNot) {

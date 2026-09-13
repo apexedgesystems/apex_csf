@@ -163,19 +163,16 @@ public:
     if (opcode >= static_cast<std::uint16_t>(RoverOpcode::HALT) && opcode <= kRoverOpcodeLast) {
       auto& s = state_.get();
       s.last_cmd_opcode = opcode;
-      switch (static_cast<CommandResult>(RC)) {
-      case CommandResult::SUCCESS:
+      // BUSY is this plant's own code outside CommandResult, so the map
+      // is on the raw byte.
+      if (RC == static_cast<std::uint8_t>(CommandResult::SUCCESS)) {
         s.last_cmd_result = static_cast<std::uint8_t>(CmdResultCode::ACK);
-        break;
-      case CommandResult::EXEC_FAILED:
+      } else if (RC == static_cast<std::uint8_t>(CommandResult::EXEC_FAILED)) {
         s.last_cmd_result = static_cast<std::uint8_t>(CmdResultCode::NACK_EXEC_FAILED);
-        break;
-      case static_cast<CommandResult>(kCommandResultBusy):
+      } else if (RC == kCommandResultBusy) {
         s.last_cmd_result = static_cast<std::uint8_t>(CmdResultCode::NACK_BUSY);
-        break;
-      default:
+      } else {
         s.last_cmd_result = static_cast<std::uint8_t>(CmdResultCode::NACK_INVALID_ARGUMENT);
-        break;
       }
     }
     return RC;
@@ -233,6 +230,9 @@ private:
 
     case RoverOpcode::SET_MODE:
     case RoverOpcode::SET_MODE_SEQ: {
+      if (s.commanded_halt != 0u) {
+        return static_cast<std::uint8_t>(CommandResult::EXEC_FAILED); // halted: RESUME first
+      }
       if (payload.size() < sizeof(RoverCmdSetMode)) {
         return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
       }
@@ -289,6 +289,12 @@ private:
       if (LAMP < 1u || LAMP > kLampCount || COLOUR > kLedColourMax || RATE > kLedRateMax) {
         return static_cast<std::uint8_t>(CommandResult::INVALID_ARGUMENT);
       }
+      if (s.commanded_halt != 0u) {
+        // The halt lamps are the alarm; a halt sequence lights them
+        // before it latches the halt, and nothing repaints them until
+        // RESUME.
+        return static_cast<std::uint8_t>(CommandResult::EXEC_FAILED);
+      }
       s.led_colour[LAMP - 1u] = COLOUR;
       s.led_rate[LAMP - 1u] = RATE;
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
@@ -297,6 +303,12 @@ private:
     case RoverOpcode::SET_SEQ_STATE: {
       if (payload.size() < sizeof(RoverCmdSeqState)) {
         return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
+      }
+      if (s.commanded_halt != 0u) {
+        // The halt reason stays on the frame until RESUME: a sequence
+        // started (or finishing) while halted cannot bracket itself
+        // over it.
+        return static_cast<std::uint8_t>(CommandResult::EXEC_FAILED);
       }
       s.seq_state = payload[0];
       s.waypoint_total = payload[1];

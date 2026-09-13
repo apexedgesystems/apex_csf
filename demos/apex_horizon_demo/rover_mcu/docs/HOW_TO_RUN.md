@@ -28,7 +28,15 @@ visualizer attaches.
 
 Stable ids; one visualizer button per id. Legs wait on the
 controller's ARRIVED byte; every sequence brackets itself with
-SET_SEQ_STATE so the frame narrates it.
+SET_SEQ_STATE so the frame narrates it. One sequence runs at a time:
+the executive puts every catalog RTS in one exclusion group, so
+starting a sequence stops the running one (a halt cancels the tour
+it interrupts, a resume replaces the halt, a tour started over
+another restarts it). A leg that cannot arrive inside its 60 s
+ceiling aborts the tour. While halted the plant accepts only HALT and
+RESUME (lamps, mode, targets and sequence state answer EXEC_FAILED),
+so the alarm lamps and the halt reason stay on the frame whatever is
+started until RESUME.
 
 | Id  | Sequence                                                                                                    |
 | --- | ----------------------------------------------------------------------------------------------------------- |
@@ -37,8 +45,9 @@ SET_SEQ_STATE so the frame narrates it.
 | 3   | as 2, then lamp 1 green at 10 Hz for 5 s, off, HOLD                                                         |
 | 4   | out and back: 15 m north, 30 m east, lamp 2 red 1 Hz while moving, lamp 1 green 10 Hz 5 s at the far corner |
 | 5   | guarded 30 m square, lamp 1 blue steady; the boundary may preempt                                           |
-| 6   | manual halt (panic): HALT, both lamps red 5 Hz, seq_state 0x15                                              |
+| 6   | manual halt (panic): both lamps red 5 Hz, then HALT; seq_state 0x15                                         |
 | 7   | resume: RESUME, HOLD, lamps off, seq_state idle                                                             |
+| 9   | home: absolute target (0, 0), the anchor; brings the rover back from wherever the relative legs left it     |
 | 32  | obstacle halt (lidar centre ray < 15 m): reason 0x11, lamps red 5 Hz                                        |
 | 33  | geofence halt (±200 m about the anchor): reason 0x12                                                        |
 | 34  | slope halt (terrain slip): reason 0x13                                                                      |
@@ -57,10 +66,10 @@ cruises, and brakes onto its target inside 0.2 m without pivoting in
 place. Legs must be longer than the turning radius;
 `tprm/toml/rover_controller.toml` holds every one of those numbers.
 
-After a boundary halt, RESUME (7) then a target inside the fence
-drives the rover home; the watchpoints fire on the predicate's
-rising edge only (`minFireCount 0`), so a sustained breach starts
-its halt once.
+After a boundary halt, RESUME (7) then home (9) drives the rover
+back to the anchor; the watchpoints fire on the predicate's rising
+edge only (`minFireCount 0`), so a sustained breach starts its halt
+once.
 
 Lamp codes: colour {0 off, 1 red, 2 green, 3 blue, 4 yellow, 5
 white}; rate {0 steady, 1 0.5 Hz, 2 1 Hz, 3 2 Hz, 4 5 Hz, 5 10 Hz}.
@@ -77,11 +86,13 @@ container, so run the script from there:
 ```bash
 docker exec -i -w /home/kalex/workspace rover_mcu \
   tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py \
-  demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --slot 10 --start
+  demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --slot 11 --start
 ```
 
-`Action_0.log` shows `Catalog scanned: 11 RTS` then `RTS started:
-id=8`. The uploaded id lives until the next boot repacks the bank.
+`Action_0.log` shows `Catalog scanned: 12 RTS` then `RTS started:
+id=8`; the uploaded id joins the exclusion group like the rest
+(starting another sequence over it logs `stopping RTS 8`). The
+uploaded id lives until the next boot repacks the bank.
 
 ## Trace and plots
 

@@ -22,9 +22,10 @@ rts 3  toml/rts/rts_004_out_and_back.toml
 rts 4  toml/rts/rts_005_guarded_square.toml
 rts 5  toml/rts/rts_006_manual_halt.toml
 rts 6  toml/rts/rts_007_resume_lights_off.toml
-rts 7  toml/rts/rts_032_obstacle_halt.toml
-rts 8  toml/rts/rts_033_geofence_halt.toml
-rts 9  toml/rts/rts_034_slope_halt.toml
+rts 7  toml/rts/rts_009_home.toml
+rts 8  toml/rts/rts_032_obstacle_halt.toml
+rts 9  toml/rts/rts_033_geofence_halt.toml
+rts 10  toml/rts/rts_034_slope_halt.toml
 
 [master master.tprm]
 use components rover_mcu

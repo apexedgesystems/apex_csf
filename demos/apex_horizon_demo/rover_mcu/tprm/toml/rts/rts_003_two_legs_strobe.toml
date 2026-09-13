@@ -7,10 +7,15 @@
 # 0x0113 and SET_TARGET_REL_SEQ 0x0114 (the wire's 0x0103/0x0104 answer BUSY while
 # a sequence runs); SET_LED 0x0106, SET_SEQ_STATE 0x0107; HALT 0x0100, RESUME 0x0101.
 # A step with waitCondition holds after its delay until the controller's
-# ARRIVED byte (0xE200 OUTPUT @18) reads 1, then fires.
+# ARRIVED byte (0xE200 OUTPUT @18) reads 1, then fires; if the ceiling passes
+# first the sequence ABORTS (a leg that cannot arrive ends the tour rather
+# than skipping into the next leg). Every catalog RTS is in exclusion group 1
+# (set by the executive at boot and after every rescan): starting one stops
+# whichever is running, so a halt cancels the tour and a tour replaces a tour.
 
 [__enums__]
 COMMAND = 0
+ABORT = 0
 SKIP = 1
 NEXT = 0
 OUTPUT = 4
@@ -142,7 +147,7 @@ commandPayloadLen = { type = "uint", size = 1, value = 16 }
 commandPayload   = { type = "array", size = 16, value = [0,0,0,0,0,0,160,65,0,0,0,0,0,0,0,0] }
 delayCycles      = { type = "uint", size = 4, value = 20 }
 timeoutCycles    = { type = "uint", size = 4, value = 6000 }
-onTimeout        = { type = "uint", size = 1, value = "SKIP" }
+onTimeout        = { type = "uint", size = 1, value = "ABORT" }
 onComplete       = { type = "uint", size = 1, value = "NEXT" }
 gotoStep         = { type = "uint", size = 1, value = 0 }
 retryMax         = { type = "uint", size = 1, value = 0 }
@@ -176,7 +181,7 @@ commandPayloadLen = { type = "uint", size = 1, value = 3 }
 commandPayload   = { type = "array", size = 16, value = [1,2,5,0,0,0,0,0,0,0,0,0,0,0,0,0] }
 delayCycles      = { type = "uint", size = 4, value = 20 }
 timeoutCycles    = { type = "uint", size = 4, value = 6000 }
-onTimeout        = { type = "uint", size = 1, value = "SKIP" }
+onTimeout        = { type = "uint", size = 1, value = "ABORT" }
 onComplete       = { type = "uint", size = 1, value = "NEXT" }
 gotoStep         = { type = "uint", size = 1, value = 0 }
 retryMax         = { type = "uint", size = 1, value = 0 }
