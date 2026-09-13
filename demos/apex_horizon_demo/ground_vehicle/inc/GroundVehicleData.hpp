@@ -78,6 +78,79 @@ struct GroundVehicleTunables {
 
   /// Tag for log lines.
   char body_label[16]{};
+
+  /// Boot position source: 0 = geodetic (`init_lat/lon_deg`), 1 = grid
+  /// (`init_north/east_m` from the anchor, projected with the same
+  /// local-flat approximation the step integrates with).
+  std::uint8_t init_from_grid{0};
+  std::uint8_t reserved_init[7]{};
+  double anchor_lat_deg{39.5};
+  double anchor_lon_deg{-105.5};
+  double init_north_m{0.0};
+  double init_east_m{0.0};
+
+  /// Steered-vehicle geometry and limits, applied when a drive command
+  /// is attached (the undriven plant keeps its constant-rate circle).
+  double wheelbase_m{1.5};
+  double max_steer_deg{33.0}; ///< Minimum radius = wheelbase / tan(max_steer).
+  double accel_m_s2{1.5};     ///< Speed rate limit toward a higher target.
+  double decel_m_s2{2.0};     ///< Speed rate limit toward a lower target (braking).
+
+  /// Rate `vehicleStep` is scheduled at [Hz]: the integration dt, the
+  /// timestamp grid, and the LED strobe timer all derive from it.
+  std::uint32_t step_hz{10};
+  /// Lidar sweeps every N-th step (the sweep is the expensive part of
+  /// the tick; at 100 Hz a 10 Hz sweep keeps the terrain queries where
+  /// they were).
+  std::uint32_t lidar_divisor{1};
+};
+
+/* ----------------------------- GroundVehicleDriveCommand ----------------------------- */
+
+/**
+ * @brief The controller seam: what a drive controller hands the plant
+ * each tick.
+ *
+ * The vehicle reads this block when one is attached and `valid` is
+ * set; otherwise it drives its built-in trajectory (constant
+ * `throttle_default` + `steer_rate_deg_s`). A RoverController writes
+ * it from its own OUTPUT block; in the hardware-in-the-loop form a
+ * UART driver writes the same block from the board's control frames,
+ * so the plant never knows which produced it.
+ */
+struct GroundVehicleDriveCommand {
+  /// Commanded steering angle [deg], positive right; the plant turns at
+  /// v tan(delta) / wheelbase, so it cannot turn without rolling.
+  double steer_angle_deg{0.0};
+  /// Commanded throttle fraction 0..1 of `max_speed_m_s` (the speed
+  /// target; the plant reaches it under its acceleration limits).
+  double throttle_frac{0.0};
+  /// 0 = block not driving (plant falls back to its trajectory).
+  std::uint8_t valid{0};
+  /// Writer's drive mode (0 HOLD, 1 TRAJECTORY, 2 WAYPOINT) and
+  /// arrival latch -- truth the plant stamps into the frame.
+  std::uint8_t mode{0};
+  std::uint8_t arrived{0};
+  std::uint8_t reserved[5]{};
+};
+
+/* ----------------------------- GroundVehicleSeqTraceSample ----------------------------- */
+
+/// One 20 Hz sample of the rover while a sequence runs: what the
+/// plots of a demonstration are drawn from. Field order matches the
+/// SEQTRACE log line.
+struct GroundVehicleSeqTraceSample {
+  double t_s;       ///< Seconds since the sequence started.
+  std::uint8_t seq; ///< seq_state at the sample.
+  std::uint8_t wp;  ///< active_waypoint.
+  std::uint8_t wp_total;
+  std::uint8_t led_bits;
+  double north_m; ///< Grid position about the anchor.
+  double east_m;
+  double heading_deg;
+  double speed_m_s;
+  double lidar_nearest_m;
+  double slope_deg;
 };
 
 /* ----------------------------- GroundVehicleState ----------------------------- */
@@ -105,7 +178,38 @@ struct GroundVehicleState {
   /// (use `throttle_default`). Set by SET_THROTTLE, cleared by RESUME.
   std::uint8_t throttle_override_pct{255};
 
-  std::uint8_t reserved[5]{};
+  /* ---- Commanded drive state (adopted by the controller, edge-triggered) ---- */
+  std::uint8_t commanded_mode{255}; ///< 255 = never commanded; else 0..2.
+  std::uint8_t target_kind{0};      ///< 0 none, 1 REL, 2 ABS (of the latest target).
+  std::uint16_t target_seq{0};      ///< Bumps per accepted target command.
+  float target_a_m{0.0F};           ///< north (REL displacement / ABS from anchor).
+  float target_b_m{0.0F};           ///< east.
+
+  /* ---- Sequence attribution + LED commands (stamped into the frame) ---- */
+  std::uint8_t seq_state{0};
+  std::uint8_t waypoint_total{0};
+  std::uint8_t active_waypoint{0}; ///< Targets accepted since the sequence started.
+  std::uint8_t led_colour[2]{};
+  std::uint8_t led_rate[2]{};
+  std::uint8_t reserved_led{0};
+
+  /* ---- Last command result on the wire ---- */
+  std::uint8_t last_cmd_result{0};
+  std::uint8_t reserved_cmd{0};
+  std::uint16_t last_cmd_opcode{0};
+
+  /* ---- LED strobe runtime (per lamp) ---- */
+  std::uint16_t led_phase[2]{}; ///< Steps into the current strobe period.
+  std::uint8_t led_on[2]{};     ///< Live on/off, what the frame reports.
+  std::uint8_t reserved_strobe[2]{};
+
+  /* ---- Sequence trace runtime ---- */
+  double trace_t_s{0.0};          ///< Seconds into the current trace window.
+  std::uint32_t trace_decim{0};   ///< Steps since the last sample.
+  std::uint32_t trace_dropped{0}; ///< Samples lost to a full buffer.
+  std::uint8_t trace_active{0};   ///< 1 while a sequence runs.
+  std::uint8_t trace_ended{0};    ///< 1 = drain logs the end marker.
+  std::uint8_t reserved_trace[6]{};
 };
 
 /* ----------------------------- GroundVehicleTelemetry ----------------------------- */

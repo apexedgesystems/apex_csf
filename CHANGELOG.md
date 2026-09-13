@@ -27,6 +27,10 @@ any such change is called out explicitly in its entry.
   one-command dynamic-mode set-pieces (short period, Dutch roll, spiral,
   phugoid), a 20 Hz mode trace, and a measured recovery boundary that
   restores the autopilot when a demonstration leaves the flight envelope.
+- rover_mcu demo: the rover with its drive controller behind a seam (the
+  software-in-the-loop form of the hardware demo), two lamps as sequence
+  actions, a catalog of A-to-B tours with reason-coded safety halts, a
+  20 Hz sequence trace, and a mission-upload path for sequences.
 - Nightly assurance pipeline: warm firmware builds for every MCU target,
   sanitizer suites, cppcheck, dependency and container scans, and
   per-language coverage floors; CodeQL analysis on the default branch.

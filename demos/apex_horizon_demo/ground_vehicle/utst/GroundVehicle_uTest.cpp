@@ -338,3 +338,412 @@ TEST(GroundVehicle, TimestampsOnTickGrid) {
   const std::uint64_t T2 = rover.telemetry().timestamp_ns;
   EXPECT_EQ(T2 - T1, 5u * 100'000'000u); // 5 ticks at 10 Hz, exact
 }
+
+/* ----------------------------- Grid boot ----------------------------- */
+
+TEST(GroundVehicle, GridBootPlacesTheRoverFromTheAnchor) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  GroundVehicle rover;
+  configureRover(rover);
+  auto& p = rover.tunables().get();
+  p.init_from_grid = 1u;
+  p.anchor_lat_deg = 39.5;
+  p.anchor_lon_deg = -105.5;
+  p.init_north_m = 100.0;
+  p.init_east_m = -50.0;
+  p.init_heading_deg = 0.0;
+  p.throttle_default = 0.0; // sit still after the latch
+  p.steer_rate_deg_s = 0.0;
+  rover.setBody(&earth);
+  (void)rover.vehicleStep();
+
+  const double R = earth.telemetry().reference_radius_m;
+  const double M_PER_DEG_LAT = R * apex::math::vecmat::DEG_TO_RAD;
+  const double M_PER_DEG_LON =
+      R * std::cos(39.5 * apex::math::vecmat::DEG_TO_RAD) * apex::math::vecmat::DEG_TO_RAD;
+  EXPECT_NEAR(rover.telemetry().pos_lat_deg, 39.5 + 100.0 / M_PER_DEG_LAT, 1e-9);
+  EXPECT_NEAR(rover.telemetry().pos_lon_deg, -105.5 - 50.0 / M_PER_DEG_LON, 1e-9);
+}
+
+/* ----------------------------- ROVR/2 command surface ----------------------------- */
+
+namespace {
+
+using appsim::ground_vehicle::CmdResultCode;
+using appsim::ground_vehicle::RoverCmdSetLed;
+using appsim::ground_vehicle::RoverCmdSetTarget;
+using appsim::ground_vehicle::RoverOpcode;
+namespace fb = appsim::ground_vehicle;
+
+std::uint8_t sendBytes(GroundVehicle& rover, RoverOpcode op,
+                       const std::vector<std::uint8_t>& bytes) {
+  apex::compat::rospan<std::uint8_t> payload(bytes.data(), bytes.size());
+  std::vector<std::uint8_t> resp;
+  return rover.handleCommand(static_cast<std::uint16_t>(op), payload, resp);
+}
+
+std::vector<std::uint8_t> targetBytes(float a, float b) {
+  RoverCmdSetTarget t{a, b};
+  std::vector<std::uint8_t> v(sizeof(t));
+  std::memcpy(v.data(), &t, sizeof(t));
+  return v;
+}
+
+/// Ready rover, one tick in (pose latched, frame stamped).
+struct ReadyRover {
+  CelestialBody earth;
+  GroundVehicle rover;
+  ReadyRover() {
+    earth.tunables().set(analyticEarth());
+    EXPECT_EQ(earth.init(), 0u);
+    configureRover(rover);
+    rover.setBody(&earth);
+    (void)rover.vehicleStep();
+  }
+  const std::uint8_t* frame() {
+    (void)rover.vehicleStep();
+    return rover.frameBytes();
+  }
+};
+
+} // namespace
+
+TEST(GroundVehicleWire, ReservedTailOffsetsArePinned) {
+  static_assert(offsetof(GroundVehicleTelemetry, reserved1) == 232u);
+  EXPECT_EQ(232u + fb::FB_BOARD_LINK, 232u);
+  EXPECT_EQ(232u + fb::FB_CONTROLLER_MODE, 233u);
+  EXPECT_EQ(232u + fb::FB_SEQ_STATE, 234u);
+  EXPECT_EQ(232u + fb::FB_ACTIVE_WAYPOINT, 235u);
+  EXPECT_EQ(232u + fb::FB_WAYPOINT_TOTAL, 236u);
+  EXPECT_EQ(232u + fb::FB_LED_BITS, 237u);
+  EXPECT_EQ(232u + fb::FB_LED1_COLOUR, 238u);
+  EXPECT_EQ(232u + fb::FB_LED1_RATE, 239u);
+  EXPECT_EQ(232u + fb::FB_LED2_COLOUR, 240u);
+  EXPECT_EQ(232u + fb::FB_LED2_RATE, 241u);
+  EXPECT_EQ(232u + fb::FB_LAST_CMD_RESULT, 242u);
+  EXPECT_EQ(232u + fb::FB_LAST_CMD_OPCODE_LO, 243u);
+  EXPECT_EQ(232u + fb::FB_LAST_CMD_OPCODE_HI, 244u);
+  EXPECT_EQ(232u + fb::FB_BOARD_LOAD_PCT, 245u);
+  EXPECT_EQ(232u + fb::FB_BOARD_TICK_LO, 246u);
+  EXPECT_EQ(232u + fb::FB_BOARD_TICK_HI, 247u);
+  EXPECT_EQ(232u + fb::FB_MAST_PAN_DEG, 248u);
+  EXPECT_EQ(232u + fb::FB_MAST_EXT_PCT, 249u);
+}
+
+TEST(GroundVehicleCmd, SetModeIsBoundedAndAdoptable) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE, {2u}), 0u);
+  EXPECT_EQ(r.rover.vehicleState().commanded_mode, 2u);
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_MODE, {3u}), 0u);
+  EXPECT_EQ(r.rover.vehicleState().commanded_mode, 2u) << "rejected whole";
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_MODE, {}), 0u) << "short payload";
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT],
+            static_cast<std::uint8_t>(CmdResultCode::NACK_INVALID_ARGUMENT));
+  EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_LO], 0x03u);
+  EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_HI], 0x01u);
+}
+
+TEST(GroundVehicleCmd, TargetsValidateRefuseWhileHaltedAndCountWaypoints) {
+  ReadyRover r;
+  // A running sequence issues its legs through the sequence-owned opcodes.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(1.52F, 0.0F)), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_ABS_SEQ, targetBytes(10.0F, -4.0F)), 0u);
+  const auto& s = r.rover.vehicleState();
+  EXPECT_EQ(s.target_kind, 2u);
+  EXPECT_EQ(s.target_seq, 2u);
+  EXPECT_EQ(s.active_waypoint, 2u);
+  EXPECT_FLOAT_EQ(s.target_a_m, 10.0F);
+
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(5000.0F, 0.0F)), 0u)
+      << "out of bounds";
+  EXPECT_EQ(s.target_seq, 2u) << "rejected whole";
+  {
+    const auto* g = r.frame();
+    EXPECT_EQ(g[fb::FB_SEQ_STATE], 3u);
+    EXPECT_EQ(g[fb::FB_WAYPOINT_TOTAL], 2u);
+    EXPECT_EQ(g[fb::FB_ACTIVE_WAYPOINT], 2u);
+  }
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED));
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT], static_cast<std::uint8_t>(CmdResultCode::NACK_EXEC_FAILED));
+  // The halt supersedes the running sequence on the frame: manual
+  // reason, legs cleared, mode HALTED.
+  EXPECT_EQ(f[fb::FB_SEQ_STATE], appsim::ground_vehicle::kSeqStateManualHalt);
+  EXPECT_EQ(f[fb::FB_WAYPOINT_TOTAL], 0u);
+  EXPECT_EQ(f[fb::FB_ACTIVE_WAYPOINT], 0u);
+  EXPECT_EQ(f[fb::FB_CONTROLLER_MODE], appsim::ground_vehicle::kFrameModeHalted);
+}
+
+TEST(GroundVehicleCmd, LedCommandsAreBoundedAndStamped) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 5u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {2u, 1u, 0u}), 0u);
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_LED, {3u, 1u, 1u}), 0u) << "lamp";
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 6u, 1u}), 0u) << "colour";
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 1u, 6u}), 0u) << "rate";
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LED1_COLOUR], 2u);
+  EXPECT_EQ(f[fb::FB_LED1_RATE], 5u);
+  EXPECT_EQ(f[fb::FB_LED2_COLOUR], 1u);
+  EXPECT_EQ(f[fb::FB_LED2_RATE], 0u);
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT],
+            static_cast<std::uint8_t>(CmdResultCode::NACK_INVALID_ARGUMENT));
+  EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_LO], 0x06u);
+}
+
+/* ----------------------------- LEDs + step rate ----------------------------- */
+
+TEST(GroundVehicleLed, StrobeBitFollowsTheRateCodeAt100Hz) {
+  ReadyRover r;
+  r.rover.tunables().get().step_hz = 100u;
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 5u}), 0u); // green, 10 Hz
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {2u, 1u, 0u}), 0u); // red, steady
+  // 10 Hz at 100 steps/s: period 10 steps, 5 on then 5 off, repeating.
+  std::vector<int> lamp1;
+  for (int i = 0; i < 30; ++i) {
+    (void)r.rover.vehicleStep();
+    const auto* f = r.rover.frameBytes();
+    lamp1.push_back((f[fb::FB_LED_BITS] & 0x01u) != 0u ? 1 : 0);
+    EXPECT_EQ((f[fb::FB_LED_BITS] & 0x02u) != 0u, true) << "steady lamp stays on";
+  }
+  int on = 0, transitions = 0;
+  for (std::size_t i = 0; i < lamp1.size(); ++i) {
+    on += lamp1[i];
+    if (i > 0 && lamp1[i] != lamp1[i - 1]) {
+      ++transitions;
+    }
+  }
+  EXPECT_EQ(on, 15) << "half the steps on over three periods";
+  EXPECT_EQ(transitions, 5) << "toggles every 5 steps";
+  for (std::size_t i = 0; i + 5 < lamp1.size(); i += 10) {
+    EXPECT_EQ(lamp1[i], 1) << "period starts on";
+    EXPECT_EQ(lamp1[i + 5], 0) << "half period off";
+  }
+
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 0u, 5u}), 0u); // colour off wins
+  (void)r.rover.vehicleStep();
+  EXPECT_EQ(r.rover.frameBytes()[fb::FB_LED_BITS] & 0x01u, 0u);
+}
+
+TEST(GroundVehicleLed, HalfHertzAtTenHzStepsIsTenOnTenOff) {
+  ReadyRover r;                                                          // step_hz default 10
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 3u, 1u}), 0u); // blue, 0.5 Hz
+  int on = 0;
+  for (int i = 0; i < 20; ++i) {
+    (void)r.rover.vehicleStep();
+    on += (r.rover.frameBytes()[fb::FB_LED_BITS] & 0x01u) != 0u ? 1 : 0;
+  }
+  EXPECT_EQ(on, 10);
+}
+
+TEST(GroundVehicle, StepRateScalesTheIntegrationAndTheTimestampGrid) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  GroundVehicle slow, fast;
+  configureRover(slow);
+  configureRover(fast);
+  slow.tunables().get().step_hz = 10u;
+  fast.tunables().get().step_hz = 100u;
+  slow.setBody(&earth);
+  fast.setBody(&earth);
+  for (int i = 0; i < 20; ++i) {
+    (void)slow.vehicleStep(); // 2 s
+  }
+  for (int i = 0; i < 200; ++i) {
+    (void)fast.vehicleStep(); // 2 s
+  }
+  // Same elapsed time: first-order speed approach and heading agree to
+  // the integration-step difference.
+  EXPECT_NEAR(fast.telemetry().speed_m_s, slow.telemetry().speed_m_s, 0.05);
+  EXPECT_NEAR(fast.telemetry().heading_deg, slow.telemetry().heading_deg, 1e-6);
+  // Timestamp grid follows the step rate.
+  const std::uint64_t T1 = fast.telemetry().timestamp_ns;
+  (void)fast.vehicleStep();
+  EXPECT_EQ(fast.telemetry().timestamp_ns - T1, 10000000u);
+}
+
+/* ----------------------------- Boot seed ----------------------------- */
+
+TEST(GroundVehicle, InitSeedsTheOutputBlockBeforeTheFirstStep) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  GroundVehicle rover;
+  configureRover(rover);
+  rover.setBody(&earth);
+  ASSERT_EQ(rover.init(), 0u);
+  // No step yet: a watchpoint reading the block now sees the boot pose
+  // and a clear lidar, never zeros.
+  const auto& t = rover.telemetry();
+  EXPECT_NEAR(t.pos_lat_deg, rover.tunables_const().init_lat_deg, 1e-12);
+  EXPECT_NEAR(t.pos_lon_deg, rover.tunables_const().init_lon_deg, 1e-12);
+  EXPECT_EQ(t.lidar_hit[0], 0u);
+  EXPECT_DOUBLE_EQ(t.lidar_range_m[4], rover.tunables_const().lidar_max_range_m);
+  EXPECT_EQ(t.is_slipping, 0u);
+}
+
+/* ----------------------------- Halt attribution ----------------------------- */
+
+TEST(GroundVehicleCmd, HaltStampsManualReasonAndResumeClearsAnyHalt) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], appsim::ground_vehicle::kSeqStateManualHalt);
+  EXPECT_EQ(r.frame()[fb::FB_CONTROLLER_MODE], appsim::ground_vehicle::kFrameModeHalted);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+
+  // A recovery sequence's reason survives a later plant-level HALT and
+  // is cleared by RESUME like any halt.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0x12u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0x12u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+}
+
+TEST(GroundVehicleCmd, WhileHaltedOnlyHaltAndResumeAreAccepted) {
+  // A geofence halt sequence lights the lamps, names its reason, then
+  // latches the halt. Whatever is started afterwards cannot repaint
+  // the lamps, change the mode, retarget, or overwrite the reason
+  // (a sequence that sails through on a stale ARRIVED latch would
+  // otherwise write "state 0" over a live halt).
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0x12u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 1u, 4u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  const auto EXEC_FAILED =
+      static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {1u, 1u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 0u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE_SEQ, {2u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(10.0F, 0.0F)),
+            EXEC_FAILED);
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_SEQ_STATE], 0x12u) << "the reason stays";
+  EXPECT_EQ(f[fb::FB_CONTROLLER_MODE], appsim::ground_vehicle::kFrameModeHalted);
+  EXPECT_EQ(r.rover.vehicleState().led_colour[0], 1u) << "lamp stays red";
+  EXPECT_EQ(r.rover.vehicleState().led_rate[0], 4u);
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT], static_cast<std::uint8_t>(CmdResultCode::NACK_EXEC_FAILED));
+  // RESUME reopens everything.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 0u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE_SEQ, {2u}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+}
+
+/* ----------------------------- BUSY: a sequence owns the drive ----------------------------- */
+
+TEST(GroundVehicleCmd, WireTargetsAreBusyWhileASequenceRunsButSequenceOpcodesAreNot) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
+            appsim::ground_vehicle::kCommandResultBusy);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE, {0u}),
+            appsim::ground_vehicle::kCommandResultBusy);
+  EXPECT_EQ(r.rover.vehicleState().target_seq, 0u) << "refused whole";
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT], static_cast<std::uint8_t>(CmdResultCode::NACK_BUSY));
+  EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_LO], 0x03u);
+
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE_SEQ, {2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(1.0F, 0.0F)), 0u);
+  EXPECT_EQ(r.rover.vehicleState().target_seq, 1u);
+  EXPECT_EQ(r.rover.vehicleState().active_waypoint, 1u);
+
+  // Sequence ends: the wire drives again. A halt (0x1x) is not "running".
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_ABS, targetBytes(0.0F, 0.0F)), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED))
+      << "halted refuses with EXEC_FAILED, not BUSY";
+}
+
+/* ----------------------------- Sequence trace ----------------------------- */
+
+TEST(GroundVehicleTrace, SamplesAt20HzWhileASequenceRunsAndStopsWhenIdle) {
+  ReadyRover r;
+  r.rover.tunables().get().step_hz = 100u;
+  EXPECT_EQ(r.rover.seqTracePending(), 0u);
+  for (int i = 0; i < 50; ++i) {
+    (void)r.rover.vehicleStep();
+  }
+  EXPECT_EQ(r.rover.seqTracePending(), 0u) << "idle: nothing captured";
+
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
+  for (int i = 0; i < 100; ++i) { // 1 s at 100 Hz
+    (void)r.rover.vehicleStep();
+  }
+  EXPECT_EQ(r.rover.seqTracePending(), 20u) << "20 Hz";
+
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+  for (int i = 0; i < 100; ++i) {
+    (void)r.rover.vehicleStep();
+  }
+  EXPECT_EQ(r.rover.seqTracePending(), 20u) << "idle again: no new samples";
+  EXPECT_EQ(r.rover.vehicleState().trace_ended, 1u) << "end marker pending for the drain";
+}
+
+TEST(GroundVehicleTrace, BufferIsBoundedAndCountsDrops) {
+  ReadyRover r;
+  r.rover.tunables().get().step_hz = 100u;
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {1u, 1u}), 0u);
+  for (int i = 0; i < 100 * 5; ++i) { // 5 s without a drain: 100 samples offered, 64 fit
+    (void)r.rover.vehicleStep();
+  }
+  EXPECT_EQ(r.rover.seqTracePending(), 64u);
+  EXPECT_EQ(r.rover.vehicleState().trace_dropped, 36u);
+}
+
+/* ----------------------------- Golden frame ----------------------------- */
+
+/** @test A fully populated reserved tail, byte for byte: the ROVR/2 v2 frame
+ *  as the consumer's golden test pins it (offsets 232..249). */
+TEST(GroundVehicleWire, ReservedTailGoldenBytes) {
+  ReadyRover r;
+  r.rover.tunables().get().step_hz = 100u;
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 2u}), 0u);
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE_SEQ, {2u}), 0u);
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(1.524F, 0.0F)), 0u);
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 0u}), 0u); // lamp 1 green steady
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {2u, 1u, 4u}), 0u); // lamp 2 red 5 Hz
+  // Last command on the wire: a refused plain target (BUSY, opcode 0x0104).
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
+            appsim::ground_vehicle::kCommandResultBusy);
+  (void)r.rover.vehicleStep(); // lamp 2 phase 0: on
+  const auto* f = r.rover.frameBytes();
+  const std::uint8_t GOLDEN[18] = {
+      0,    // [0]  board_link: no board in the software form
+      1,    // [1]  controller_mode: the attached block's mode is 1 in this fixture (no controller
+            // stepped)
+      3,    // [2]  seq_state: sequence 3 running
+      1,    // [3]  active_waypoint
+      2,    // [4]  waypoint_total
+      0x03, // [5]  led_bits: both lamps on this frame
+      2,
+      0, // [6..7] lamp 1 green, steady
+      1,
+      4, // [8..9] lamp 2 red, 5 Hz
+      4, // [10] last_cmd_result: NACK_BUSY
+      0x04,
+      0x01, // [11..12] last_cmd_opcode 0x0104 LE
+      0,    // [13] board_load_pct
+      0,
+      0, // [14..15] board_tick
+      0,
+      0, // [16..17] mast (stretch)
+  };
+  for (std::size_t i = 0; i < sizeof(GOLDEN); ++i) {
+    EXPECT_EQ(f[i], GOLDEN[i]) << "byte 232+" << i;
+  }
+  static_assert(offsetof(GroundVehicleTelemetry, reserved1) + 18 == 250);
+}
