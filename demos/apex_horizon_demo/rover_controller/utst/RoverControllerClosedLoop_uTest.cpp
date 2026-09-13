@@ -177,7 +177,7 @@ TEST(RoverControllerWaypoint, LegEastArcsRightWithoutPivoting) {
   rig.tick();
   const auto& out = rig.ctl.controllerOutput();
   EXPECT_NEAR(out.heading_error_deg, 90.0, 1.0);
-  EXPECT_NEAR(out.steer_angle_deg, 20.0, 1e-9) << "full right lock toward a target abeam";
+  EXPECT_NEAR(out.steer_angle_deg, 33.0, 1e-9) << "full right lock toward a target abeam";
   EXPECT_LT(rig.rover.telemetry().heading_deg, 0.5)
       << "no pivot: one 10 Hz step at 0.15 m/s turns well under a degree";
 
@@ -193,7 +193,7 @@ TEST(RoverControllerWaypoint, LegEastArcsRightWithoutPivoting) {
     if (dh < -180.0)
       dh += 360.0;
     prev_h = rig.rover.telemetry().heading_deg;
-    const double MAX_RATE = V * std::tan(20.0 * apex::math::vecmat::DEG_TO_RAD) / 1.5 *
+    const double MAX_RATE = V * std::tan(33.0 * apex::math::vecmat::DEG_TO_RAD) / 1.5 *
                                 apex::math::vecmat::RAD_TO_DEG * 0.1 +
                             1e-6;
     EXPECT_LE(std::fabs(dh), MAX_RATE) << "tick " << i << " v=" << V;
@@ -249,6 +249,87 @@ TEST(RoverControllerWaypoint, ShortStraightLegLandsInsideTolerance) {
   EXPECT_NEAR(n, 1.524, 0.2);
   EXPECT_LT(max_north, 1.524 + 0.15) << "overshoot";
   EXPECT_LT(rig.rover.telemetry().speed_m_s, 0.05);
+}
+
+TEST(RoverControllerWaypoint, RepeatedLegsFromAnOffAxisHeadingEndSquare) {
+  // Five consecutive "10 m north of here" legs from a rover facing
+  // south-east (the operator clicking the same sequence): the first
+  // leg swings onto the line; every later leg starts and ends within a
+  // few degrees of north, on the line, because the controller follows
+  // the leg line and drives the last metres straight along it.
+  Rig rig(116.0);
+  rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
+  rig.tick();
+  double start_e = 0.0, unused = 0.0;
+  rig.north_east(unused, start_e);
+  for (int leg = 1; leg <= 5; ++leg) {
+    double n0 = 0.0, e0 = 0.0;
+    rig.north_east(n0, e0);
+    rig.ctl.setTargetRel(10.0, 0.0);
+    int ticks = 0;
+    while (rig.ctl.controllerOutput().arrived == 0u && ticks < 600) {
+      rig.tick();
+      ++ticks;
+    }
+    ASSERT_LT(ticks, 600) << "leg " << leg << " never arrived";
+    double n1 = 0.0, e1 = 0.0;
+    rig.north_east(n1, e1);
+    const double H = rig.rover.telemetry().heading_deg;
+    const double H_ERR = std::fabs(std::fmod(H + 180.0, 360.0) - 180.0);
+    EXPECT_NEAR(n1 - n0, 10.0, 0.3) << "leg " << leg;
+    EXPECT_NEAR(e1, start_e, 0.3) << "leg " << leg << " lands on the line";
+    EXPECT_LT(H_ERR, (leg == 1) ? 10.0 : 2.0)
+        << "leg " << leg << " ends square (heading " << H << ")";
+    if (leg >= 2) {
+      EXPECT_LT(ticks, 50) << "leg " << leg << " is a straight 10 m at 3 m/s, no re-turn";
+    }
+  }
+}
+
+TEST(RoverControllerWaypoint, StraightReversalTurnsAroundInsteadOfDrivingAway) {
+  // Out 20 m east, then 20 m straight back: the aim point starts
+  // directly behind the rover (180 deg error, where pursuit curvature
+  // is zero). The rover must commit to a turn, come back along the
+  // line, and land on the start without first driving off east.
+  Rig rig(90.0); // heading east
+  rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
+  rig.tick();
+  rig.ctl.setTargetRel(0.0, 20.0);
+  int ticks = 0;
+  while (rig.ctl.controllerOutput().arrived == 0u && ticks < 400) {
+    rig.tick();
+    ++ticks;
+  }
+  ASSERT_LT(ticks, 400);
+  rig.ctl.setTargetRel(0.0, -20.0);
+  double max_e = 0.0;
+  double max_rate = 0.0;
+  double prev_h = rig.rover.telemetry().heading_deg;
+  ticks = 0;
+  while (rig.ctl.controllerOutput().arrived == 0u && ticks < 400) {
+    rig.tick();
+    ++ticks;
+    double n = 0.0, e = 0.0;
+    rig.north_east(n, e);
+    max_e = std::max(max_e, e);
+    double dh = rig.rover.telemetry().heading_deg - prev_h;
+    if (dh > 180.0)
+      dh -= 360.0;
+    if (dh < -180.0)
+      dh += 360.0;
+    prev_h = rig.rover.telemetry().heading_deg;
+    max_rate = std::max(max_rate, std::fabs(dh) * 10.0);
+  }
+  double n = 0.0, e = 0.0;
+  rig.north_east(n, e);
+  ASSERT_LT(ticks, 400) << "never arrived";
+  EXPECT_LT(ticks, 320) << "reversal: a 12 s turn at 15 deg/s plus a 20 m leg, not a stall";
+  EXPECT_LT(max_e, 20.0 + 3.0) << "does not drive away before turning";
+  EXPECT_LE(max_rate, 15.0 + 0.5) << "the yaw-rate bound holds through the reversal";
+  EXPECT_NEAR(e, 0.0, 0.5);
+  EXPECT_NEAR(n, 0.0, 0.5);
+  const double H = rig.rover.telemetry().heading_deg;
+  EXPECT_NEAR(H, 270.0, 5.0) << "arrives aligned with the return leg";
 }
 
 TEST(RoverControllerWaypoint, HoldModeIgnoresTheTarget) {

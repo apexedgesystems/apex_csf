@@ -114,9 +114,11 @@ public:
     }
   }
 
-  /// Target at (north, east) metres from the grid anchor.
+  /// Target at (north, east) metres from the grid anchor. The leg the
+  /// rover follows runs from where it is now to the target.
   void setTargetAbs(double north_m, double east_m) noexcept {
     auto& s = state_.get();
+    gridPosition(s.leg_start_north_m, s.leg_start_east_m);
     s.target_north_m = north_m;
     s.target_east_m = east_m;
     s.target_valid = 1u;
@@ -229,11 +231,11 @@ public:
     log->info(label(),
               fmt::format("tick={} mode={} grid=({:+.1f}N,{:+.1f}E) target=({:+.1f}N,{:+.1f}E)"
                           " valid={} seq={} dist={:.2f}m err={:+.1f}deg arrived={} "
-                          "cmd: steer={:+.1f}deg thr={:.2f}",
+                          "xtrack={:+.2f}m cmd: steer={:+.1f}deg thr={:.2f}",
                           out.tick, out.mode, out.grid_north_m, out.grid_east_m, s.target_north_m,
                           s.target_east_m, s.target_valid, s.target_seq, out.distance_m,
-                          out.heading_error_deg, out.arrived, out.steer_angle_deg,
-                          out.throttle_frac));
+                          out.heading_error_deg, out.arrived, out.cross_track_m,
+                          out.steer_angle_deg, out.throttle_frac));
     return 0u;
   }
 
@@ -311,7 +313,24 @@ private:
     const double DE = s.target_east_m - e;
     const double DIST = std::sqrt(DN * DN + DE * DE);
     out.distance_m = DIST;
-    if (DIST < p.arrival_tolerance_m) {
+
+    // The leg as a line: unit direction from its start to the target,
+    // and the rover's projection onto it (along, and signed cross-track,
+    // + to the right of the direction of travel).
+    const double LN = s.target_north_m - s.leg_start_north_m;
+    const double LE = s.target_east_m - s.leg_start_east_m;
+    const double LEG = std::sqrt(LN * LN + LE * LE);
+    const bool HAS_LINE = LEG > 0.5;
+    const double UN = HAS_LINE ? LN / LEG : 0.0;
+    const double UE = HAS_LINE ? LE / LEG : 0.0;
+    const double PN = n - s.leg_start_north_m;
+    const double PE = e - s.leg_start_east_m;
+    const double ALONG = HAS_LINE ? (PN * UN + PE * UE) : 0.0;
+    const double CROSS = HAS_LINE ? (PE * UN - PN * UE) : 0.0;
+    out.cross_track_m = CROSS;
+
+    if (DIST < p.arrival_tolerance_m ||
+        (HAS_LINE && ALONG >= LEG && std::fabs(CROSS) < p.passed_end_cross_m)) {
       out.arrived = 1u;
     }
     if (out.arrived != 0u) {
@@ -321,20 +340,39 @@ private:
       out.heading_error_deg = 0.0;
       return;
     }
+
+    // Aim point: on the leg line, lookahead_m ahead of the rover's
+    // projection and allowed to run past the target, so the approach is
+    // driven straight along the leg. Past the target (a missed ring) or
+    // on a leg too short to define a line, aim at the target itself.
+    double AN = DN;
+    double AE = DE;
+    double AIM_DIST = std::clamp(p.lookahead_m, 0.5, std::max(DIST, 0.5));
+    if (HAS_LINE && ALONG < LEG) {
+      const double AHEAD = ALONG + p.lookahead_m;
+      AN = s.leg_start_north_m + UN * AHEAD - n;
+      AE = s.leg_start_east_m + UE * AHEAD - e;
+      AIM_DIST = std::max(std::sqrt(AN * AN + AE * AE), 0.5);
+    }
     const double BEARING =
-        std::fmod(std::atan2(DE, DN) * apex::math::vecmat::RAD_TO_DEG + 360.0, 360.0);
+        std::fmod(std::atan2(AE, AN) * apex::math::vecmat::RAD_TO_DEG + 360.0, 360.0);
     const double ERR = wrap180(BEARING - vehicle_->telemetry().heading_deg);
     out.bearing_deg = BEARING;
     out.heading_error_deg = ERR;
 
-    // Pure pursuit: steer onto the arc through the lookahead point,
-    // which sits on the bearing to the target no farther than the
-    // target itself. kappa = 2 sin(alpha) / Ld; delta = atan(L kappa).
-    const double ALPHA = ERR * apex::math::vecmat::DEG_TO_RAD;
-    const double LD = std::clamp(p.lookahead_m, 0.5, std::max(DIST, 0.5));
-    const double KAPPA = 2.0 * std::sin(ALPHA) / LD;
-    steer = std::clamp(std::atan(p.wheelbase_m * KAPPA) * apex::math::vecmat::RAD_TO_DEG,
-                       -p.max_steer_deg, p.max_steer_deg);
+    // Pure pursuit onto the aim point: kappa = 2 sin(alpha) / d,
+    // delta = atan(L kappa). Beyond 90 degrees of error the pursuit
+    // curvature falls off (sin alpha -> 0 with the aim point behind the
+    // rover, a straight reversal would drive away at zero steer), so the
+    // rover commits to full lock toward the aim point until it is ahead.
+    if (std::fabs(ERR) > 90.0) {
+      steer = std::copysign(p.max_steer_deg, ERR);
+    } else {
+      const double ALPHA = ERR * apex::math::vecmat::DEG_TO_RAD;
+      const double KAPPA = 2.0 * std::sin(ALPHA) / AIM_DIST;
+      steer = std::clamp(std::atan(p.wheelbase_m * KAPPA) * apex::math::vecmat::RAD_TO_DEG,
+                         -p.max_steer_deg, p.max_steer_deg);
+    }
 
     // Trapezoidal speed: cruise until the braking distance to the
     // tolerance ring, then sqrt(2 a d) so the plant's own braking
@@ -347,6 +385,19 @@ private:
       v = std::min(v, CRUISE * p.corner_speed_frac);
     }
     throttle = (MAX_V > 0.0) ? v / MAX_V : 0.0;
+
+    // Yaw-rate bound: the lock may not turn the rover faster than
+    // max_yaw_rate_deg_s at any speed it can reach before the next
+    // step -- the plant moves from its current speed toward the
+    // commanded one, so the faster of the two bounds tan(delta) <=
+    // rate L / v.
+    const double V_BOUND = std::max(vehicle_->telemetry().speed_m_s, v);
+    if (V_BOUND > 0.05 && p.max_yaw_rate_deg_s > 0.0) {
+      const double LOCK = std::atan(p.max_yaw_rate_deg_s * apex::math::vecmat::DEG_TO_RAD *
+                                    p.wheelbase_m / V_BOUND) *
+                          apex::math::vecmat::RAD_TO_DEG;
+      steer = std::clamp(steer, -LOCK, LOCK);
+    }
   }
 
   const ground_vehicle::GroundVehicle* vehicle_{nullptr};

@@ -92,7 +92,7 @@ struct GroundVehicleTunables {
   /// Steered-vehicle geometry and limits, applied when a drive command
   /// is attached (the undriven plant keeps its constant-rate circle).
   double wheelbase_m{1.5};
-  double max_steer_deg{20.0}; ///< Minimum radius = wheelbase / tan(max_steer).
+  double max_steer_deg{33.0}; ///< Minimum radius = wheelbase / tan(max_steer).
   double accel_m_s2{1.5};     ///< Speed rate limit toward a higher target.
   double decel_m_s2{2.0};     ///< Speed rate limit toward a lower target (braking).
 

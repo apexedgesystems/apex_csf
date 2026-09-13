@@ -29,7 +29,7 @@ anchor_lon_deg     = { type = "float",  size = 8,  value = -105.50 }
 init_north_m       = { type = "float",  size = 8,  value = 0.0 }
 init_east_m        = { type = "float",  size = 8,  value = 0.0 }
 wheelbase_m        = { type = "float",  size = 8,  value = 1.5 }
-max_steer_deg      = { type = "float",  size = 8,  value = 20.0 }
+max_steer_deg      = { type = "float",  size = 8,  value = 33.0 }
 accel_m_s2         = { type = "float",  size = 8,  value = 1.5 }
 decel_m_s2         = { type = "float",  size = 8,  value = 2.0 }
 step_hz            = { type = "uint",   size = 4,  value = 100 }
