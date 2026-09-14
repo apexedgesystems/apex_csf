@@ -8,7 +8,10 @@
  * host's closed-loop tests pin. The three user LEDs show lamp 1; a
  * HEARTBEAT once a second carries the executive's cycle count, the
  * controller's step count and the tick load measured with the DWT
- * cycle counter. McuExecutive on SysTick at 100 Hz drives it all.
+ * cycle counter. The lidar sensor sends a LIDAR_SCAN per sweep on its
+ * own UART; every CONTROL_CMD carries what the board last saw (sensor
+ * state, scan number, hit bits, closest return). McuExecutive on
+ * SysTick at 100 Hz drives it all.
  */
 
 #include "McuExecutive.hpp"
@@ -16,6 +19,7 @@
 #include "Stm32SysTickSource.hpp"
 #include "Stm32Uart.hpp"
 #include "demos/apex_horizon_demo/rover_mcu/board/inc/RoverBoardController.hpp"
+#include "demos/apex_horizon_demo/rover_mcu/board/inc/RoverBoardLidar.hpp"
 #include "demos/apex_horizon_demo/rover_mcu/board/inc/RoverBoardProtocol.hpp"
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
 #include "src/utilities/compatibility/inc/compat_span.hpp"
@@ -34,11 +38,13 @@ static constexpr uint16_t LINK_HZ = 20; ///< The host's STATE_UPDATE rate (strob
 /* ----------------------------- Peripherals ----------------------------- */
 
 static apex::hal::stm32::Stm32Uart<512, 512> linkUart(board::LINK_UART, board::LINK_UART_PINS);
+static apex::hal::stm32::Stm32Uart<256, 64> sensorUart(board::SENSOR_UART, board::SENSOR_UART_PINS);
 
 /* ----------------------------- Controller ----------------------------- */
 
 static rover_board::RoverBoardController controller;
 static rover_board::BoardCommand lastCommand;
+static rover_board::RoverBoardLidar lidar;
 
 /* ----------------------------- Executive ----------------------------- */
 
@@ -62,6 +68,12 @@ static uint32_t rxCount = 0;
 static uint32_t txCount = 0;
 static uint32_t crcErrors = 0;
 static uint16_t txSeq = 0;
+
+/* ----------------------------- Sensor buffers ----------------------------- */
+
+static apex::protocols::slip::DecodeState sensorDecodeState;
+static uint8_t sensorChunk[64];
+static uint8_t sensorDecodeBuf[rover_board::MAX_FRAME_PAYLOAD];
 
 /* ----------------------------- Frames ----------------------------- */
 
@@ -92,6 +104,7 @@ static void processFrame(const uint8_t* data, size_t len) noexcept {
     ++rxCount;
     controller.updateState(state);
     lastCommand = controller.step();
+    lidar.fill(lastCommand, HAL_GetTick());
     lastCommand.seq_num = ++txSeq;
     sendFrame(rover_board::Opcode::CONTROL_CMD, &lastCommand, sizeof(lastCommand));
   }
@@ -115,6 +128,43 @@ static void linkTask(void* /*ctx*/) noexcept {
     }
     if (result.status == apex::protocols::slip::Status::OUTPUT_FULL) {
       slipDecodeState.reset();
+      continue;
+    }
+    if (result.bytesConsumed == 0) {
+      break;
+    }
+  }
+}
+
+/// A de-SLIPped frame from the sensor: a LIDAR_SCAN updates the board's picture.
+static void processSensorFrame(const uint8_t* data, size_t len) noexcept {
+  const rover_board::ParsedFrame F = rover_board::parseFrame(data, len);
+  if (!F.ok || F.opcode != rover_board::Opcode::LIDAR_SCAN ||
+      F.payload_len != sizeof(rover_board::LidarScan)) {
+    lidar.onBadFrame();
+    return;
+  }
+  rover_board::LidarScan scan;
+  memcpy(&scan, F.payload, sizeof(scan));
+  lidar.onScan(scan, HAL_GetTick());
+}
+
+/// 100 Hz: drain the sensor's UART.
+static void sensorTask(void* /*ctx*/) noexcept {
+  const size_t AVAIL = sensorUart.read(sensorChunk, sizeof(sensorChunk));
+  size_t pos = 0;
+  while (pos < AVAIL) {
+    const size_t PREV_LEN = sensorDecodeState.frameLen;
+    const apex::compat::bytes_span INPUT(sensorChunk + pos, AVAIL - pos);
+    auto result = apex::protocols::slip::decodeChunk(sensorDecodeState, slipDecodeCfg, INPUT,
+                                                     sensorDecodeBuf + PREV_LEN,
+                                                     rover_board::MAX_FRAME_PAYLOAD - PREV_LEN);
+    pos += result.bytesConsumed;
+    if (result.frameCompleted) {
+      processSensorFrame(sensorDecodeBuf, PREV_LEN + result.bytesProduced);
+    }
+    if (result.status == apex::protocols::slip::Status::OUTPUT_FULL) {
+      sensorDecodeState.reset();
       continue;
     }
     if (result.bytesConsumed == 0) {
@@ -191,6 +241,9 @@ int main() {
   static_cast<void>(linkUart.init(uartCfg));
   HAL_NVIC_SetPriority(board::LINK_UART_IRQN, 6, 0);
   HAL_NVIC_EnableIRQ(board::LINK_UART_IRQN);
+  static_cast<void>(sensorUart.init(uartCfg));
+  HAL_NVIC_SetPriority(board::SENSOR_UART_IRQN, 7, 0);
+  HAL_NVIC_EnableIRQ(board::SENSOR_UART_IRQN);
 
   slipDecodeCfg.maxFrameSize = rover_board::MAX_FRAME_PAYLOAD;
   slipDecodeCfg.allowEmptyFrame = false;
@@ -202,6 +255,7 @@ int main() {
   controller.setTunables(tunables);
 
   exec.addTask({{profilerStartTask, nullptr}, 1, 1, 0, 127, 10});
+  exec.addTask({{sensorTask, nullptr}, 1, 1, 0, 5, 4});
   exec.addTask({{linkTask, nullptr}, 1, 1, 0, 0, 1});
   exec.addTask({{ledTask, nullptr}, 1, 1, 0, -10, 2});
   exec.addTask({{heartbeatTask, nullptr}, 1, EXEC_FREQ_HZ, 0, -20, 3});
@@ -222,6 +276,8 @@ extern "C" void SysTick_Handler() {
 }
 
 extern "C" void USART3_IRQHandler() { linkUart.irqHandler(); }
+
+extern "C" void USART6_IRQHandler() { sensorUart.irqHandler(); }
 
 extern "C" void HAL_MspInit() {
   __HAL_RCC_SYSCFG_CLK_ENABLE();

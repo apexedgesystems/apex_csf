@@ -136,8 +136,15 @@ struct GroundVehicleDriveCommand {
   /// counter that moves while the link is alive; zero for a host law.
   std::uint8_t board_link{0};
   std::uint8_t board_load_pct{0};
-  std::uint8_t reserved0{0};
+  /// The lidar as the board saw it (0 NEVER, 1 UP, 2 STALE), the scan
+  /// number, its hit bits and closest return in whole metres (255 no
+  /// return). With lidar_state 0 the plant stamps its own sweep instead.
+  std::uint8_t lidar_state{0};
   std::uint16_t board_tick{0};
+  std::uint8_t lidar_hit_bits{0};
+  std::uint8_t lidar_nearest_m{255};
+  std::uint16_t lidar_scan_seq{0};
+  std::uint8_t reserved0[4]{};
 };
 
 /* ----------------------------- GroundVehicleSeqTraceSample ----------------------------- */
@@ -157,6 +164,11 @@ struct GroundVehicleSeqTraceSample {
   double speed_m_s;
   double lidar_nearest_m;
   double slope_deg;
+  std::uint8_t lidar_state;     ///< Frame lidar_state (0 = the plant's own sweep).
+  std::uint8_t lidar_hit_bits;  ///< Frame hit bits (what the board saw, or the sweep).
+  std::uint8_t lidar_frame_m;   ///< Frame closest return, whole metres.
+  std::uint8_t sweep_hit_bits;  ///< The plant's own sweep: rays that returned.
+  std::uint16_t lidar_scan_seq; ///< Frame scan number.
 };
 
 /* ----------------------------- GroundVehicleState ----------------------------- */

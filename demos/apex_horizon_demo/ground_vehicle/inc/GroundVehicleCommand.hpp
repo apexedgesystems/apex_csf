@@ -114,7 +114,17 @@ enum FrameByte : std::size_t {
   FB_BOARD_TICK_HI = 15,
   FB_MAST_PAN_DEG = 16,
   FB_MAST_EXT_PCT = 17,
+  /// The lidar picture the rover acts on. Hardware form with a sensor:
+  /// what the board saw (state 1 UP, 2 STALE). Otherwise state 0 and
+  /// the plant's own sweep.
+  FB_LIDAR_STATE = 18,
+  FB_LIDAR_HIT_BITS = 19,  ///< bit i: ray i returned (ray 0 the left edge of the fan).
+  FB_LIDAR_NEAREST_M = 20, ///< Closest return, whole metres; 255 none.
+  FB_LIDAR_SCAN_SEQ = 21,  ///< Low byte of the scan number; moves at the sweep rate.
 };
+
+/// seq_state reason for a lidar that stopped sending (halt sequence 36).
+inline constexpr std::uint8_t kSeqStateSensorLost = 0x16;
 
 /// last_cmd_result codes on the wire.
 enum class CmdResultCode : std::uint8_t {

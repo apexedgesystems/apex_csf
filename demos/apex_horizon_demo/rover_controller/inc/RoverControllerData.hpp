@@ -112,7 +112,7 @@ struct RoverControllerState {
 
 /**
  * @brief Controller OUTPUT: the drive command the plant consumes plus
- * diagnostics. The first three fields are laid out exactly as
+ * diagnostics. The drive command head is laid out exactly as
  * GroundVehicleDriveCommand so the plant can be handed a pointer to
  * this block's head.
  */
@@ -125,8 +125,12 @@ struct RoverControllerOutput {
   std::uint8_t arrived{0};        ///< 1 once the current target is inside tolerance.
   std::uint8_t board_link{0};     ///< 0 NEVER, 1 UP, 2 LOST (board drive source).
   std::uint8_t board_load_pct{0}; ///< Board tick load from its heartbeat.
-  std::uint8_t reserved0{0};
-  std::uint16_t board_tick{0}; ///< Board command sequence number.
+  std::uint8_t lidar_state{0};    ///< The lidar as the board saw it (0 NEVER, 1 UP, 2 STALE).
+  std::uint16_t board_tick{0};    ///< Board command sequence number.
+  std::uint8_t lidar_hit_bits{0};
+  std::uint8_t lidar_nearest_m{255}; ///< Closest return the board saw, whole metres.
+  std::uint16_t lidar_scan_seq{0};
+  std::uint8_t reserved0[4]{};
 
   /* ---- Diagnostics ---- */
   std::uint64_t tick{0};

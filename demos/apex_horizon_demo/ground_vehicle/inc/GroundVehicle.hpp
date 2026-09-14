@@ -510,6 +510,7 @@ public:
         DRIVEN ? drive_cmd_->board_tick : static_cast<std::uint16_t>(0u);
     fb[FB_BOARD_TICK_LO] = static_cast<std::uint8_t>(BOARD_TICK & 0xFFu);
     fb[FB_BOARD_TICK_HI] = static_cast<std::uint8_t>(BOARD_TICK >> 8u);
+    stampLidar(fb, tlm, p, DRIVEN);
 
     // 9: sequence trace. While seq_state names a running sequence,
     // sample the drive-relevant channels at 20 Hz into a bounded
@@ -535,10 +536,12 @@ public:
       auto& s = state_.get();
       for (const auto& ts : trace_pending_) {
         log->info(label(), fmt::format("SEQTRACE seq={} wp={}/{} t={:.2f} n={:+.3f} e={:+.3f} "
-                                       "hdg={:.2f} v={:.3f} lidar={:.1f} slope={:.2f} led={}",
+                                       "hdg={:.2f} v={:.3f} lidar={:.1f} slope={:.2f} led={} "
+                                       "lstate={} lhits={:#04x} lnear={} lscan={} sweep={:#04x}",
                                        ts.seq, ts.wp, ts.wp_total, ts.t_s, ts.north_m, ts.east_m,
                                        ts.heading_deg, ts.speed_m_s, ts.lidar_nearest_m,
-                                       ts.slope_deg, ts.led_bits));
+                                       ts.slope_deg, ts.led_bits, ts.lidar_state, ts.lidar_hit_bits,
+                                       ts.lidar_frame_m, ts.lidar_scan_seq, ts.sweep_hit_bits));
       }
       trace_pending_.clear();
       if (s.trace_ended != 0u) {
@@ -666,6 +669,7 @@ private:
       tlm.lidar_range_m[i] = p.lidar_max_range_m;
       tlm.lidar_hit[i] = 0u;
     }
+    tlm.reserved1[FB_LIDAR_NEAREST_M] = 255u;
   }
 
   /* ----------------------------- Sequence trace ----------------------------- */
@@ -706,7 +710,9 @@ private:
             s.trace_t_s, s.seq_state, s.active_waypoint, s.waypoint_total,
             static_cast<std::uint8_t>((s.led_on[0] != 0u ? 1u : 0u) |
                                       (s.led_on[1] != 0u ? 2u : 0u)),
-            n, e, tlm.heading_deg, tlm.speed_m_s, nearest, tlm.slope_deg});
+            n, e, tlm.heading_deg, tlm.speed_m_s, nearest, tlm.slope_deg,
+            tlm.reserved1[FB_LIDAR_STATE], tlm.reserved1[FB_LIDAR_HIT_BITS],
+            tlm.reserved1[FB_LIDAR_NEAREST_M], sweepHitBits(tlm, p), lidar_scan_seq_});
       } else {
         ++s.trace_dropped;
       }
@@ -716,6 +722,48 @@ private:
   }
 
   /* ----------------------------- Lidar helper ----------------------------- */
+
+  /// Rays of the plant's own sweep that returned, as a bit per ray (first eight).
+  [[nodiscard]] static std::uint8_t sweepHitBits(const GroundVehicleTelemetry& tlm,
+                                                 const GroundVehicleTunables& p) noexcept {
+    const std::uint32_t N = std::min<std::uint32_t>({p.lidar_n_rays, MAX_LIDAR_RAYS, 8u});
+    std::uint8_t bits = 0u;
+    for (std::uint32_t i = 0; i < N; ++i) {
+      if (tlm.lidar_hit[i] != 0u) {
+        bits = static_cast<std::uint8_t>(bits | (1u << i));
+      }
+    }
+    return bits;
+  }
+
+  /// The lidar bytes of the frame: what the board saw when a board
+  /// reports a sensor, otherwise the plant's own sweep (state 0).
+  void stampLidar(std::uint8_t* fb, const GroundVehicleTelemetry& tlm,
+                  const GroundVehicleTunables& p, bool driven) noexcept {
+    if (driven && drive_cmd_->lidar_state != 0u) {
+      fb[FB_LIDAR_STATE] = drive_cmd_->lidar_state;
+      fb[FB_LIDAR_HIT_BITS] = drive_cmd_->lidar_hit_bits;
+      fb[FB_LIDAR_NEAREST_M] = drive_cmd_->lidar_nearest_m;
+      lidar_scan_seq_ = drive_cmd_->lidar_scan_seq;
+    } else {
+      double nearest = p.lidar_max_range_m;
+      bool any = false;
+      const std::uint32_t N = std::min<std::uint32_t>(p.lidar_n_rays, MAX_LIDAR_RAYS);
+      for (std::uint32_t i = 0; i < N; ++i) {
+        if (tlm.lidar_hit[i] != 0u && tlm.lidar_range_m[i] < nearest) {
+          nearest = tlm.lidar_range_m[i];
+          any = true;
+        }
+      }
+      fb[FB_LIDAR_STATE] = 0u;
+      fb[FB_LIDAR_HIT_BITS] = sweepHitBits(tlm, p);
+      fb[FB_LIDAR_NEAREST_M] = any ? static_cast<std::uint8_t>(std::min(nearest, 254.0))
+                                   : static_cast<std::uint8_t>(255u);
+      lidar_scan_seq_ = static_cast<std::uint16_t>(state_.get().step_count /
+                                                   std::max<std::uint32_t>(p.lidar_divisor, 1u));
+    }
+    fb[FB_LIDAR_SCAN_SEQ] = static_cast<std::uint8_t>(lidar_scan_seq_ & 0xFFu);
+  }
 
   /// Cast `tunables.lidar_n_rays` rays forward and update telemetry.
   /// Sensor altitude = vehicle altitude + SENSOR_HEIGHT_M; rays travel
@@ -773,6 +821,7 @@ private:
   /// and its tick number; stamps advance from there in exact DT steps.
   std::uint64_t t0_ns_ = 0;
   std::uint64_t t0_tick_ = 0;
+  std::uint16_t lidar_scan_seq_ = 0; ///< Full scan number behind the frame's low byte.
   system_core::data::TunableParam<GroundVehicleTunables> tunables_{};
   system_core::data::State<GroundVehicleState> state_{};
   system_core::data::Output<GroundVehicleTelemetry> telemetry_{};

@@ -7,7 +7,8 @@
  * The link to the host is the ST-Link virtual COM port: USART3 on PD8
  * (TX) / PD9 (RX), AF7, the one USB-C cable. The three user LEDs show
  * lamp 1 of the rover: LD3 (red, PB14), LD1 (green, PB0), LD2 (blue,
- * PB7); yellow is red + green, white is all three. Clock 216 MHz from
+ * PB7); yellow is red + green, white is all three. The lidar sensor
+ * has its own wire on USART6 (D0/D1). Clock 216 MHz from
  * the 8 MHz HSE bypass, as the encryptor firmware runs this board.
  */
 
@@ -56,6 +57,16 @@ static const apex::hal::stm32::Stm32UartPins LINK_UART_PINS = {GPIOD, GPIO_PIN_8
                                                                GPIOD, GPIO_PIN_9, // RX
                                                                GPIO_AF7_USART3};
 static constexpr IRQn_Type LINK_UART_IRQN = USART3_IRQn;
+
+/* ----------------------------- Sensor port (lidar) ----------------------------- */
+
+/// The lidar sensor's wire: USART6 on the Arduino header, D0 = PG9 (RX),
+/// D1 = PG14 (TX), AF8; 3.3 V logic, ground to any GND pin.
+static USART_TypeDef* const SENSOR_UART = USART6;
+static const apex::hal::stm32::Stm32UartPins SENSOR_UART_PINS = {GPIOG, GPIO_PIN_14, // TX
+                                                                 GPIOG, GPIO_PIN_9,  // RX
+                                                                 GPIO_AF8_USART6};
+static constexpr IRQn_Type SENSOR_UART_IRQN = USART6_IRQn;
 
 /* ----------------------------- Clock ----------------------------- */
 

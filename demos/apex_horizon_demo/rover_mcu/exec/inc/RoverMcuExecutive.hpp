@@ -15,6 +15,10 @@
  *     board computes the drive, the controller forwards its command
  *     and runs the host law as a shadow; the frame's board bytes carry
  *     the link state, the board's load and its tick.
+ *   - The RoverLidarModel: each plant sweep goes out as a LIDAR_SCAN on
+ *     a USB-serial adapter wired to the board's sensor UART; the board
+ *     reports what it saw with its command, and the frame's lidar bytes
+ *     carry that picture.
  *   - The action engine's sequence catalog and safety watchpoints
  *     come from the TPRM set (no C++ here).
  *   - One ShmRingBridge publishing the rover's 256-byte ROVR/2 OUTPUT
@@ -28,6 +32,7 @@
 #include "demos/apex_horizon_demo/ground_vehicle/inc/GroundVehicle.hpp"
 #include "demos/apex_horizon_demo/rover_controller/inc/RoverController.hpp"
 #include "demos/apex_horizon_demo/rover_mcu/board_link/inc/RoverBoardLink.hpp"
+#include "demos/apex_horizon_demo/rover_mcu/lidar_model/inc/RoverLidarModel.hpp"
 #include "src/sim/environment/celestial_body/inc/CelestialBody.hpp"
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/support/shm_ring_bridge/inc/ShmRingBridge.hpp"
@@ -57,6 +62,7 @@ private:
   appsim::ground_vehicle::GroundVehicle rover_;
   appsim::rover_controller::RoverController controller_;
   appsim::rover_board::RoverBoardLink link_;
+  appsim::rover_board::RoverLidarModel lidar_;
   system_core::support::ShmRingBridge bridge_;
 };
 

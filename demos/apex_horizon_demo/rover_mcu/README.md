@@ -8,7 +8,8 @@ block through one seam, computed either by the host law or by the same
 law running on a NUCLEO-F767ZI over its USB serial link. Five A→B tours of rising complexity (10–30 m legs driven as
 arcs by a steered plant and a pure-pursuit controller), two lamps as
 sequence actions, a manual halt and resume, and a safety
-boundary (lidar obstacle, ±200 m geofence, terrain slip) that halts
+boundary (lidar obstacle, ±200 m geofence, terrain slip, board link lost,
+lidar lost) that halts
 the rover with a reason the frame names. A ShmRingBridge streams the
 256-byte ROVR/2 frame at 100 Hz to `/horizon_rover` for an
 out-of-process visualizer and drains its commands back; the demo
@@ -28,7 +29,7 @@ docker compose run --rm dev-cuda \
   --rt-mode lag-tolerant --rt-max-lag 200
 ```
 
-Boot: `Sequence catalog: 12 entries`, `world bound: ... entries=2`, the
+Boot: `Sequence catalog: 13 entries`, `world bound: ... entries=2`, the
 controller HOLDING at the grid anchor (39.5 N, −105.5 W, the terrain
 patch centre) heading north. See [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md)
 for driving it from a host shell, the sequence catalog, the upload
@@ -42,12 +43,14 @@ path, running the controller on the board, and the trace.
 | GroundVehicle   | ../ground_vehicle                       | 100 Hz steered rover + lidar; lamps; the drive-command seam; trace            |
 | RoverController | ../rover_controller                     | 20 Hz HOLD / TRAJECTORY / leg-line pure pursuit; forwards the board's command |
 | RoverBoardLink  | ./board_link                            | 20 Hz serial link to the board: state out, command and heartbeat in           |
-| Board firmware  | ./board/firmware                        | The same law on the NUCLEO-F767ZI; lamp 1 on the user LEDs; heartbeat         |
+| RoverLidarModel | ./lidar_model                           | 10 Hz lidar scans on their own wire to the board (a hardware model)           |
+| Board firmware  | ./board/firmware                        | The same law on the NUCLEO-F767ZI; lidar scans on USART6; lamp 1; heartbeat   |
 | Action engine   | src/system/core/components/action       | Sequence catalog (standalone RTS) + the boundary watchpoints                  |
 | ShmRingBridge   | src/system/core/support/shm_ring_bridge | ROVR/2 bidirectional link on /horizon_rover at 100 Hz                         |
 
 Scheduler order inside a tick: board link (priority 70) before the
-controller (60) before the plant (50) before the bridge (40).
+controller (60) before the plant (50) before the lidar model (45) before
+the bridge (40).
 
 ## 3. Wire contract (ROVR/2, frame layout unchanged)
 
@@ -57,8 +60,11 @@ the visualizer pins; this demo writes the reserved tail at offset
 [ground_vehicle/inc/GroundVehicleCommand.hpp](../ground_vehicle/inc/GroundVehicleCommand.hpp)):
 controller mode (HALTED under a plant-level halt), sequence state
 (running id, or 0x10|reason for a halt), active/total waypoints, the
-lamps' live bits and commanded colour/rate codes, and the result and
-opcode of the last command. Commands on the reverse ring:
+lamps' live bits and commanded colour/rate codes, the result and
+opcode of the last command, the board link's state, load and tick, and
+the lidar picture the rover acts on (state, hit bits, closest return,
+scan number: what the board saw, or the plant's own sweep without a
+board sensor). Commands on the reverse ring:
 HALT / RESUME / SET_THROTTLE, SET_MODE, SET_TARGET_REL / ABS
 (single-precision north/east metres), SET_LED (lamp, colour, rate),
 SET_SEQ_STATE (sequences only), and START_RTS_BY_ID to the action

@@ -12,6 +12,7 @@
 
 #include "demos/apex_horizon_demo/ground_vehicle/inc/GroundVehicleCommand.hpp"
 #include "demos/apex_horizon_demo/rover_mcu/board/inc/RoverBoardController.hpp"
+#include "demos/apex_horizon_demo/rover_mcu/board/inc/RoverBoardLidar.hpp"
 #include "demos/apex_horizon_demo/rover_mcu/board_link/inc/RoverBoardLink.hpp"
 #include "src/sim/environment/celestial_body/inc/CelestialBody.hpp"
 #include "src/sim/environment/factory/inc/Body.hpp"
@@ -72,6 +73,8 @@ CelestialBodyTunables analyticEarth() {
 struct VirtualBoard {
   PtyPair pty;
   RoverBoardController ctl;
+  appsim::rover_board::RoverBoardLidar lidar;
+  std::uint32_t now_ms{0};
   slip::DecodeState ds{};
   slip::DecodeConfig dc{};
   std::array<std::uint8_t, 512> raw{};
@@ -133,6 +136,7 @@ struct VirtualBoard {
             ++states;
             ctl.updateState(s);
             BoardCommand c = ctl.step();
+            lidar.fill(c, now_ms);
             c.seq_num = ++seq;
             if (answering) {
               send(Opcode::CONTROL_CMD, &c, sizeof(c));
@@ -349,4 +353,46 @@ TEST(RoverBoardLink, DisabledLeavesTheHostLawAndNeverOpensThePort) {
   EXPECT_EQ(rig.ctl.controllerOutput().board_link, LINK_NEVER);
   EXPECT_EQ(rig.ctl.controllerOutput().throttle_frac,
             rig.ctl.controllerOutput().shadow_throttle_frac);
+}
+
+/* ----------------------------- Lidar picture ----------------------------- */
+
+TEST(RoverBoardLink, WhatTheBoardSawOfItsLidarReachesTheFrame) {
+  Rig rig;
+  for (int i = 0; i < 5; ++i) {
+    rig.tick();
+  }
+  const auto* frame = rig.rover.frameBytes();
+  EXPECT_EQ(frame[fb::FB_LIDAR_STATE], appsim::rover_board::LIDAR_NEVER)
+      << "no sensor on the board: the plant's own sweep";
+
+  appsim::rover_board::LidarScan scan{};
+  scan.scan_seq = 41;
+  scan.n_rays = 8;
+  scan.hit_bits = 0x18;
+  for (auto& r : scan.range_cm) {
+    r = appsim::rover_board::LIDAR_NO_RETURN_CM;
+  }
+  scan.range_cm[3] = 1420;
+  scan.range_cm[4] = 2210;
+  rig.board.lidar.onScan(scan, 0);
+  rig.tick();
+  rig.tick(); // the reply carrying the scan is read on the next tick
+  EXPECT_EQ(frame[fb::FB_LIDAR_STATE], appsim::rover_board::LIDAR_UP);
+  EXPECT_EQ(frame[fb::FB_LIDAR_HIT_BITS], 0x18u);
+  EXPECT_EQ(frame[fb::FB_LIDAR_NEAREST_M], 14u);
+  EXPECT_EQ(frame[fb::FB_LIDAR_SCAN_SEQ], 41u);
+
+  rig.board.now_ms = appsim::rover_board::LIDAR_STALE_MS + 1u; // scans stopped
+  rig.tick();
+  rig.tick();
+  EXPECT_EQ(frame[fb::FB_LIDAR_STATE], appsim::rover_board::LIDAR_STALE);
+
+  rig.board.answering = false; // the link goes: no picture rides without it
+  for (int i = 0; i < 12; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    rig.tick();
+  }
+  ASSERT_EQ(rig.link.linkState().link_state, LINK_LOST);
+  EXPECT_EQ(frame[fb::FB_LIDAR_STATE], appsim::rover_board::LIDAR_NEVER);
 }

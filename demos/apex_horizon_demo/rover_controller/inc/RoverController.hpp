@@ -69,6 +69,22 @@ static_assert(offsetof(RoverControllerOutput, board_load_pct) ==
 static_assert(offsetof(RoverControllerOutput, board_tick) ==
                   offsetof(ground_vehicle::GroundVehicleDriveCommand, board_tick),
               "drive command head must alias GroundVehicleDriveCommand");
+static_assert(offsetof(RoverControllerOutput, lidar_state) ==
+                  offsetof(ground_vehicle::GroundVehicleDriveCommand, lidar_state),
+              "drive command head must alias GroundVehicleDriveCommand");
+static_assert(offsetof(RoverControllerOutput, lidar_hit_bits) ==
+                  offsetof(ground_vehicle::GroundVehicleDriveCommand, lidar_hit_bits),
+              "drive command head must alias GroundVehicleDriveCommand");
+static_assert(offsetof(RoverControllerOutput, lidar_nearest_m) ==
+                  offsetof(ground_vehicle::GroundVehicleDriveCommand, lidar_nearest_m),
+              "drive command head must alias GroundVehicleDriveCommand");
+static_assert(offsetof(RoverControllerOutput, lidar_scan_seq) ==
+                  offsetof(ground_vehicle::GroundVehicleDriveCommand, lidar_scan_seq),
+              "drive command head must alias GroundVehicleDriveCommand");
+static_assert(sizeof(ground_vehicle::GroundVehicleDriveCommand) == 32,
+              "the drive command head is 32 bytes");
+static_assert(offsetof(RoverControllerOutput, tick) == 32,
+              "diagnostics start after the drive command head");
 
 class RoverController final : public system_core::system_component::SwModelBase {
 public:
@@ -249,6 +265,13 @@ public:
       out.board_link = board_->link_state;
       out.board_load_pct = board_->load_pct;
       out.board_tick = board_->board_tick;
+      // What the board saw of its lidar rides with its command; a link
+      // that is not UP carries no sensor picture, so the plant falls
+      // back to its own sweep.
+      out.lidar_state = UP ? CMD.lidar_state : rover_board::LIDAR_NEVER;
+      out.lidar_hit_bits = UP ? CMD.lidar_hit_bits : static_cast<std::uint8_t>(0u);
+      out.lidar_nearest_m = UP ? CMD.lidar_nearest_m : rover_board::LIDAR_NEAREST_NONE;
+      out.lidar_scan_seq = UP ? CMD.lidar_scan_seq : static_cast<std::uint16_t>(0u);
     }
     out.steer_angle_deg = steer;
     out.throttle_frac = std::clamp(throttle, 0.0, 1.0);

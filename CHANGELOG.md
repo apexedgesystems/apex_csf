@@ -30,6 +30,8 @@ any such change is called out explicitly in its entry.
 - rover_mcu demo: the rover with its drive controller behind a seam, run
   either as the host law or on a NUCLEO-F767ZI over its USB serial link
   (shared guidance law, board firmware, host link driver, link-lost
+  halt), the lidar as a hardware model on its own serial wire to the
+  board (scans in, what the board saw back on the frame, sensor-lost
   halt), two lamps as sequence actions, a catalog of A-to-B tours with
   reason-coded safety halts, a 20 Hz sequence trace, and a
   mission-upload path for sequences.

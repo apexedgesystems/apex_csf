@@ -11,6 +11,7 @@
  */
 
 #include "demos/apex_horizon_demo/rover_mcu/board/inc/RoverBoardController.hpp"
+#include "demos/apex_horizon_demo/rover_mcu/board/inc/RoverBoardLidar.hpp"
 #include "demos/apex_horizon_demo/rover_mcu/board/inc/RoverBoardProtocol.hpp"
 
 #include <gtest/gtest.h>
@@ -324,4 +325,47 @@ TEST(RoverBoardController, StrobeFollowsTheRateCodesAtTheStepRate) {
     EXPECT_EQ(c.led_bits & 0x02u, 0x02u) << "steady lamp is on";
   }
   EXPECT_EQ(on, 20) << "1 Hz over 2 s at 20 Hz: on half the steps";
+}
+
+/* ----------------------------- Lidar ----------------------------- */
+
+TEST(RoverBoardLidar, ScanRoundTripsAndTheBoardKeepsOnlyValidRays) {
+  appsim::rover_board::LidarScan scan{};
+  scan.scan_seq = 0xBEEF;
+  scan.n_rays = 4;
+  scan.hit_bits = 0xFF; // bits past n_rays are noise
+  for (auto& r : scan.range_cm) {
+    r = 800; // rays past n_rays carry junk ranges too
+  }
+  scan.range_cm[0] = appsim::rover_board::LIDAR_NO_RETURN_CM;
+  scan.range_cm[1] = 60000; // 600 m: capped at 254 in whole metres
+  scan.range_cm[2] = appsim::rover_board::LIDAR_NO_RETURN_CM;
+  scan.range_cm[3] = appsim::rover_board::LIDAR_NO_RETURN_CM;
+
+  uint8_t frame[appsim::rover_board::MAX_FRAME_PAYLOAD]{};
+  const size_t N = appsim::rover_board::buildFrame(Opcode::LIDAR_SCAN, &scan, sizeof(scan), frame,
+                                                   sizeof(frame));
+  ASSERT_EQ(N, 1u + sizeof(scan) + 2u);
+  const auto F = appsim::rover_board::parseFrame(frame, N);
+  ASSERT_TRUE(F.ok);
+  ASSERT_EQ(F.opcode, Opcode::LIDAR_SCAN);
+  appsim::rover_board::LidarScan back{};
+  std::memcpy(&back, F.payload, sizeof(back));
+  EXPECT_EQ(std::memcmp(&back, &scan, sizeof(scan)), 0);
+
+  appsim::rover_board::RoverBoardLidar lidar;
+  lidar.onScan(back, 100);
+  BoardCommand cmd{};
+  lidar.fill(cmd, 100);
+  EXPECT_EQ(cmd.lidar_state, appsim::rover_board::LIDAR_UP);
+  EXPECT_EQ(cmd.lidar_scan_seq, 0xBEEFu);
+  EXPECT_EQ(cmd.lidar_hit_bits, 0x0Fu);
+  EXPECT_EQ(cmd.lidar_nearest_m, 254u);
+
+  scan.n_rays = 4;
+  scan.range_cm[1] = appsim::rover_board::LIDAR_NO_RETURN_CM;
+  lidar.onScan(scan, 200);
+  lidar.fill(cmd, 200);
+  EXPECT_EQ(cmd.lidar_nearest_m, appsim::rover_board::LIDAR_NEAREST_NONE)
+      << "the junk ranges past n_rays are never read";
 }

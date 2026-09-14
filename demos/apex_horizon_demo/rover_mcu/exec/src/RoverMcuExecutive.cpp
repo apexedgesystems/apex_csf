@@ -72,6 +72,13 @@ bool RoverMcuExecutive::registerComponents() noexcept {
     return false;
   }
 
+  lidar_.setSource(&rover_.telemetry());
+  if (!registerComponent(&lidar_, LOG_DIR)) {
+    if (log != nullptr)
+      log->info(label(), "registerComponent(lidar model) FAILED");
+    return false;
+  }
+
   bridge_.setResolver(bridgeResolverFn, static_cast<void*>(&registry()));
   if (!registerComponent(&bridge_, LOG_DIR)) {
     if (log != nullptr)
@@ -81,9 +88,10 @@ bool RoverMcuExecutive::registerComponents() noexcept {
 
   if (log != nullptr) {
     log->info(label(), fmt::format("registered: earth_uid={:#x} rover_uid={:#x} "
-                                   "controller_uid={:#x} link_uid={:#x} bridge_uid={:#x}",
+                                   "controller_uid={:#x} link_uid={:#x} lidar_uid={:#x} "
+                                   "bridge_uid={:#x}",
                                    earth_.fullUid(), rover_.fullUid(), controller_.fullUid(),
-                                   link_.fullUid(), bridge_.fullUid()));
+                                   link_.fullUid(), lidar_.fullUid(), bridge_.fullUid()));
   }
   return true;
 }

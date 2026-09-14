@@ -428,6 +428,10 @@ TEST(GroundVehicleWire, ReservedTailOffsetsArePinned) {
   EXPECT_EQ(232u + fb::FB_BOARD_LOAD_PCT, 245u);
   EXPECT_EQ(232u + fb::FB_BOARD_TICK_LO, 246u);
   EXPECT_EQ(232u + fb::FB_BOARD_TICK_HI, 247u);
+  EXPECT_EQ(232u + fb::FB_LIDAR_STATE, 250u);
+  EXPECT_EQ(232u + fb::FB_LIDAR_HIT_BITS, 251u);
+  EXPECT_EQ(232u + fb::FB_LIDAR_NEAREST_M, 252u);
+  EXPECT_EQ(232u + fb::FB_LIDAR_SCAN_SEQ, 253u);
   EXPECT_EQ(232u + fb::FB_MAST_PAN_DEG, 248u);
   EXPECT_EQ(232u + fb::FB_MAST_EXT_PCT, 249u);
 }
@@ -746,4 +750,54 @@ TEST(GroundVehicleWire, ReservedTailGoldenBytes) {
     EXPECT_EQ(f[i], GOLDEN[i]) << "byte 232+" << i;
   }
   static_assert(offsetof(GroundVehicleTelemetry, reserved1) + 18 == 250);
+}
+
+/* ----------------------------- Lidar bytes ----------------------------- */
+
+/** @test Without a board's sensor picture the frame carries the plant's own sweep. */
+TEST(GroundVehicleWire, LidarBytesCarryThePlantSweepWithoutABoardSensor) {
+  ReadyRover r;
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LIDAR_STATE], 0u);
+  // The analytic ellipsoid is flat: no ray returns, no closest return.
+  EXPECT_EQ(f[fb::FB_LIDAR_HIT_BITS], 0u);
+  EXPECT_EQ(f[fb::FB_LIDAR_NEAREST_M], 255u);
+}
+
+/** @test The boot frame reads no obstacle, so the obstacle watchpoint cannot fire at tick 0. */
+TEST(GroundVehicleWire, BootFrameReadsNoObstacle) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  GroundVehicle rover;
+  configureRover(rover);
+  rover.setBody(&earth);
+  ASSERT_EQ(rover.init(), 0u);
+  EXPECT_EQ(rover.frameBytes()[fb::FB_LIDAR_NEAREST_M], 255u);
+}
+
+/** @test With a board reporting its sensor, the frame carries what the board saw. */
+TEST(GroundVehicleWire, LidarBytesCarryWhatTheBoardSaw) {
+  ReadyRover r;
+  appsim::ground_vehicle::GroundVehicleDriveCommand cmd{};
+  cmd.valid = 1u;
+  cmd.lidar_state = 1u;
+  cmd.lidar_hit_bits = 0x3Cu;
+  cmd.lidar_nearest_m = 12u;
+  cmd.lidar_scan_seq = 0x1234u;
+  r.rover.setDriveCommand(&cmd);
+  auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LIDAR_STATE], 1u);
+  EXPECT_EQ(f[fb::FB_LIDAR_HIT_BITS], 0x3Cu);
+  EXPECT_EQ(f[fb::FB_LIDAR_NEAREST_M], 12u);
+  EXPECT_EQ(f[fb::FB_LIDAR_SCAN_SEQ], 0x34u);
+
+  cmd.lidar_state = 2u; // the board's sensor went stale: the frame says so
+  f = r.frame();
+  EXPECT_EQ(f[fb::FB_LIDAR_STATE], 2u);
+
+  cmd.lidar_state = 0u; // no sensor on the board: back to the plant's sweep
+  f = r.frame();
+  EXPECT_EQ(f[fb::FB_LIDAR_STATE], 0u);
+  EXPECT_EQ(f[fb::FB_LIDAR_NEAREST_M], 255u);
 }

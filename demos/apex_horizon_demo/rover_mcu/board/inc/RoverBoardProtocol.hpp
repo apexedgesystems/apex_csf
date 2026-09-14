@@ -10,7 +10,9 @@
  * the board answers each with one CONTROL_CMD carrying the steering
  * angle and throttle the plant consumes through its drive-command seam,
  * plus what it adopted. Once a second the board sends a HEARTBEAT with
- * its cycle count, step count and load. Frames are
+ * its cycle count, step count and load. The lidar sensor speaks the
+ * same framing on the board's second UART: one LIDAR_SCAN per sweep,
+ * and the board reports what it last saw in every CONTROL_CMD. Frames are
  * [opcode][payload][CRC-16/XMODEM big-endian] inside SLIP, the shape the
  * HIL demo pinned; this header is the single definition both sides
  * compile, and it depends on nothing but <stdint.h>.
@@ -34,6 +36,7 @@ enum class Opcode : uint8_t {
   STATE_UPDATE = 0x10, ///< host -> board: BoardState.
   CONTROL_CMD = 0x20,  ///< board -> host: BoardCommand.
   HEARTBEAT = 0x30,    ///< board -> host: BoardHeartbeat.
+  LIDAR_SCAN = 0x40,   ///< sensor -> board (its own wire): LidarScan.
 };
 
 /* ----------------------------- Codes shared with the frame ----------------------------- */
@@ -77,24 +80,51 @@ struct BoardState {
 };
 static_assert(sizeof(BoardState) == 48, "BoardState is 48 bytes on the wire");
 
+/* ----------------------------- LidarScan ----------------------------- */
+
+inline constexpr size_t LIDAR_WIRE_RAYS = 8;
+/// range_cm of a ray with no return inside the sensor's range.
+inline constexpr uint16_t LIDAR_NO_RETURN_CM = 0xFFFF;
+
+/// sensor -> board, one per sweep. 20 bytes. Ray 0 is the left edge of
+/// the fan, ray LIDAR_WIRE_RAYS - 1 the right edge.
+struct LidarScan {
+  uint16_t scan_seq{0};                 ///< Bumps every sweep.
+  uint8_t n_rays{0};                    ///< Valid rays (<= LIDAR_WIRE_RAYS).
+  uint8_t hit_bits{0};                  ///< bit i: ray i returned inside the sensor's range.
+  uint16_t range_cm[LIDAR_WIRE_RAYS]{}; ///< LIDAR_NO_RETURN_CM without a return.
+};
+static_assert(sizeof(LidarScan) == 20, "LidarScan is 20 bytes on the wire");
+
+/// Sensor states as the board reports them and the ROVR/2 frame carries them.
+inline constexpr uint8_t LIDAR_NEVER = 0; ///< No scan since the board booted.
+inline constexpr uint8_t LIDAR_UP = 1;    ///< Scans arriving.
+inline constexpr uint8_t LIDAR_STALE = 2; ///< Scans stopped for LIDAR_STALE_MS.
+inline constexpr uint32_t LIDAR_STALE_MS = 500;
+/// lidar_nearest_m when no ray returned.
+inline constexpr uint8_t LIDAR_NEAREST_NONE = 255;
+
 /* ----------------------------- BoardCommand ----------------------------- */
 
-/// board -> host, one per BoardState. 28 bytes.
+/// board -> host, one per BoardState. 32 bytes.
 struct BoardCommand {
   float steer_deg{0.0F};
   float throttle_frac{0.0F};
   float cross_track_m{0.0F};
   float distance_m{0.0F};
-  uint8_t mode{0};     ///< MODE_* in effect on the board.
-  uint8_t arrived{0};  ///< Arrival latch for the adopted target.
-  uint8_t led_bits{0}; ///< bit0 lamp1 on, bit1 lamp2 on (the board's own strobe).
-  uint8_t reserved0{0};
-  uint16_t target_seq{0}; ///< The target the board is driving to.
-  uint16_t seq_num{0};    ///< Board sequence number.
-  uint16_t ack_seq{0};    ///< The BoardState.seq_num this answers.
-  uint16_t reserved1{0};
+  uint8_t mode{0};                  ///< MODE_* in effect on the board.
+  uint8_t arrived{0};               ///< Arrival latch for the adopted target.
+  uint8_t led_bits{0};              ///< bit0 lamp1 on, bit1 lamp2 on (the board's own strobe).
+  uint8_t lidar_state{LIDAR_NEVER}; ///< LIDAR_* as the board judges its sensor.
+  uint16_t target_seq{0};           ///< The target the board is driving to.
+  uint16_t seq_num{0};              ///< Board sequence number.
+  uint16_t ack_seq{0};              ///< The BoardState.seq_num this answers.
+  uint16_t lidar_scan_seq{0};       ///< The last scan the board received.
+  uint8_t lidar_hit_bits{0};        ///< That scan's hit bits.
+  uint8_t lidar_nearest_m{LIDAR_NEAREST_NONE}; ///< Its closest return, whole metres (254 cap).
+  uint16_t reserved0{0};
 };
-static_assert(sizeof(BoardCommand) == 28, "BoardCommand is 28 bytes on the wire");
+static_assert(sizeof(BoardCommand) == 32, "BoardCommand is 32 bytes on the wire");
 
 /* ----------------------------- BoardHeartbeat ----------------------------- */
 

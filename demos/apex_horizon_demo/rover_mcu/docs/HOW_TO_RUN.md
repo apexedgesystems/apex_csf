@@ -48,10 +48,11 @@ started until RESUME.
 | 6   | manual halt (panic): both lamps red 5 Hz, then HALT; seq_state 0x15                                         |
 | 7   | resume: RESUME, HOLD, lamps off, seq_state idle                                                             |
 | 9   | home: absolute target (0, 0), the anchor; brings the rover back from wherever the relative legs left it     |
-| 32  | obstacle halt (lidar centre ray < 15 m): reason 0x11, lamps red 5 Hz                                        |
+| 32  | obstacle halt (closest lidar return in the frame < 15 m): reason 0x11, lamps red 5 Hz                       |
 | 33  | geofence halt (±200 m about the anchor): reason 0x12                                                        |
 | 34  | slope halt (terrain slip): reason 0x13                                                                      |
 | 35  | link-lost halt (the board stopped answering): reason 0x14; holds after the link returns until resume (7)    |
+| 36  | sensor-lost halt (the board stopped receiving lidar scans): reason 0x16; holds until resume (7)             |
 
 Corners are arcs: the driven plant is a steered vehicle (heading rate
 v·tan δ / wheelbase; a 1.5 m wheelbase and 33° lock give a minimum
@@ -90,7 +91,7 @@ docker exec -i -w /home/kalex/workspace rover_mcu \
   demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --slot 12 --start
 ```
 
-`Action_0.log` shows `Catalog scanned: 13 RTS` then `RTS started:
+`Action_0.log` shows `Catalog scanned: 14 RTS` then `RTS started:
 id=8`; the uploaded id joins the exclusion group like the rest
 (starting another sequence over it logs `stopping RTS 8`). The
 uploaded id lives until the next boot repacks the bank.
@@ -142,6 +143,50 @@ If the board stops answering for 500 ms the link reads LOST, the
 controller drives zero, and the board-link watchpoint starts sequence 35
 (reason 0x14, lamps red 5 Hz), which cancels any running tour. When the
 board answers again the link reads UP; resume (7) releases the halt.
+
+## The lidar on its own wire
+
+The rover's lidar reaches the board the way a real sensor would: over
+its own serial line. `RoverLidarModel` (0xE400, a hardware model) turns
+each plant sweep (10 Hz) into one `LIDAR_SCAN` frame (scan number, a hit
+bit and a range per ray, 20 bytes, SLIP + CRC-16) and writes it to a
+USB-serial adapter wired to the board's USART6. The board keeps the last
+scan and reports what it saw in every `CONTROL_CMD`: the sensor state
+(UP, or STALE once scans stop for 500 ms), the scan number, the hit bits
+and the closest return. The frame carries that picture at offsets
+250..253, and the obstacle and sensor-lost watchpoints read it.
+
+Wiring (adapter jumper at 3.3 V; VCC not connected):
+
+| Adapter | Board | Signal          |
+| ------- | ----- | --------------- |
+| TXD     | D0    | PG9, USART6_RX  |
+| RXD     | D1    | PG14, USART6_TX |
+| GND     | GND   | ground          |
+
+`tprm/toml/rover_lidar_model.toml` names the port (`/dev/ttyUSB0`),
+the sensor's range (50 m: a ray returning farther reads as no return)
+and `enabled`. Plug the adapter in before starting the producer, as with
+the board. With `enabled = 0`, or with no board reporting a sensor, the
+frame's lidar bytes carry the plant's own sweep (state 0) and the
+obstacle halt still works.
+
+| Frame byte | Meaning                                                        |
+| ---------- | -------------------------------------------------------------- |
+| 250        | lidar state: 0 plant sweep, 1 UP (what the board saw), 2 STALE |
+| 251        | hit bits, ray 0 the left edge of the fan                       |
+| 252        | closest return, whole metres; 255 none                         |
+| 253        | scan number, low byte (moves at 10 Hz while scans flow)        |
+
+Check it from zenith while the rover sits still:
+
+```bash
+curl -s "localhost:8080/api/targets/<id>/inspect/0x00DE00?category=4&offset=250&length=4"
+```
+
+The SEQTRACE lines carry the frame's lidar fields (`lstate`, `lhits`,
+`lnear`, `lscan`) beside the plant's own sweep (`sweep`), so a run plots
+the world next to what reached the board.
 
 ## Trace and plots
 
