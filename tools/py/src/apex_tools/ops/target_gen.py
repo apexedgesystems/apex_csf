@@ -246,7 +246,20 @@ def generate_app_manifest(app_data: dict, struct_dicts: dict) -> dict:
 
 def generate_commands(app_data: dict, struct_dicts: dict) -> dict:
     """Generate commands.json from struct dict enums + universal opcodes."""
-    commands: dict = {"quickCommands": QUICK_COMMANDS, "components": {}}
+    # App-declared quick commands (one-click operations such as starting a
+    # catalog sequence) follow the universal ones.
+    quick = list(QUICK_COMMANDS)
+    for qc in app_data.get("quickCommands", []):
+        entry = {
+            "label": qc["label"],
+            "fullUid": qc["fullUid"],
+            "opcode": qc["opcode"],
+            "desc": qc.get("desc", ""),
+        }
+        if qc.get("payloadHex"):
+            entry["payloadHex"] = qc["payloadHex"]
+        quick.append(entry)
+    commands: dict = {"quickCommands": quick, "components": {}}
 
     # Executive commands (from ApexExecutive.json enums)
     exec_dict = struct_dicts.get("ApexExecutive.json", {})
@@ -333,7 +346,32 @@ def generate_commands(app_data: dict, struct_dicts: dict) -> dict:
 
 
 def generate_telemetry(app_data: dict, struct_dicts: dict) -> dict:
-    """Generate telemetry.json with default plot layouts from OUTPUT structs."""
+    """Generate telemetry.json with default plot layouts from OUTPUT structs.
+
+    App-declared `[[layouts]]` (name + `[[layouts.plots]]` with title and
+    channels) come first, in declaration order, ahead of the generated
+    Default layout, so an application chooses what an operator sees first.
+    """
+    declared = [
+        {
+            "name": lay["name"],
+            "plots": [
+                {
+                    "title": plot["title"],
+                    "channels": list(plot["channels"]),
+                    "height": plot.get("height", 200),
+                }
+                for plot in lay.get("plots", [])
+            ],
+        }
+        for lay in app_data.get("layouts", [])
+    ]
+    generated = _generated_layouts(app_data, struct_dicts)
+    return {"layouts": declared + generated}
+
+
+def _generated_layouts(app_data: dict, struct_dicts: dict) -> list:
+    """One Default layout with a plot per OUTPUT/TELEMETRY struct, or none."""
     layouts = []
 
     # Collect OUTPUT channels per component instance
@@ -356,20 +394,13 @@ def generate_telemetry(app_data: dict, struct_dicts: dict) -> dict:
             for field in struct_info.get("fields", []):
                 ftype = field.get("type", "")
                 fname = field.get("name", "")
-                # Skip padding, reserved, and non-numeric fields
-                if fname in ("reserved", "pad0", "pad1", "pad2", "pad3"):
+                # Padding and reserved bytes are never channels, and array
+                # fields are not decoded as channels by the ground side, so
+                # only named scalar numerics are plotted.
+                if fname.startswith(("reserved", "pad")):
                     continue
                 if ftype in ("float", "int", "uint"):
                     channels.append(f"{prefix}.{fname}")
-                elif ftype == "array" and field.get("element_type") in ("float", "int", "uint"):
-                    # For arrays, add first few elements as individual channels
-                    dims = field.get("dims", [1])
-                    count = min(dims[0], 4) if dims else 1
-                    if count == 1:
-                        channels.append(f"{prefix}.{fname}")
-                    else:
-                        for i in range(count):
-                            channels.append(f"{prefix}.{fname}[{i}]")
 
             if channels:
                 plot: dict = {
@@ -388,14 +419,8 @@ def generate_telemetry(app_data: dict, struct_dicts: dict) -> dict:
                 layouts.append(plot)
 
     if not layouts:
-        return {"layouts": []}
-
-    # Group into a single default layout
-    return {
-        "layouts": [
-            {"name": "Default", "plots": layouts},
-        ]
-    }
+        return []
+    return [{"name": "Default", "plots": layouts}]
 
 
 # ---------------------------------------------------------------------------
@@ -537,14 +562,18 @@ def _sysmon_plots(prefix: str, struct_info: dict) -> list:
 
 
 def find_app_data(app_name: str, apps_dir: str) -> str:
-    """Search the given roots (colon-separated) for a matching app_data.toml."""
+    """Search the given roots (colon-separated) for a matching app_data.toml.
+
+    Searches every depth under each root, so an application nested in a
+    demo family (demos/<family>/<app>/app_data.toml) is found like a
+    top-level one.
+    """
     for root in apps_dir.split(":"):
         root_path = Path(root)
         if not root_path.is_dir():
             continue
-        for entry in sorted(root_path.iterdir()):
-            candidate = entry / "app_data.toml"
-            if candidate.exists():
+        for candidate in sorted(root_path.rglob("app_data.toml")):
+            if candidate.is_file():
                 with open(candidate, "rb") as f:
                     data = tomllib.load(f)
                 if data.get("application") == app_name:

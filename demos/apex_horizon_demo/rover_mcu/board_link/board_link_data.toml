@@ -1,0 +1,10 @@
+# board_link_data.toml - Component data manifest for RoverBoardLink
+#
+# Host driver for the serial link to the NUCLEO (fullUid 0x00E300).
+
+component = "RoverBoardLink"
+namespace = "appsim::rover_board"
+
+[structs]
+RoverBoardLinkTunables = { category = "TUNABLE_PARAM", header = "inc/RoverBoardLink.hpp" }
+RoverBoardLinkState = { category = "STATE", header = "inc/RoverBoardLink.hpp" }

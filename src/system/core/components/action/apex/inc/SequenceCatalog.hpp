@@ -157,6 +157,15 @@ public:
    * @param fn Callback: void(const CatalogEntry&).
    * @note RT-safe if fn is RT-safe: O(N).
    */
+  /**
+   * @brief Iterate all entries with write access (policy applied to every entry).
+   */
+  template <typename F> void forEachMut(F&& fn) noexcept {
+    for (std::size_t i = 0; i < count_; ++i) {
+      fn(entries_[i]);
+    }
+  }
+
   template <typename F> void forEach(F&& fn) const noexcept {
     for (std::size_t i = 0; i < count_; ++i) {
       fn(entries_[i]);

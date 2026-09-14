@@ -83,6 +83,7 @@ std::size_t SequenceCatalog::scan(const std::filesystem::path& dir, SequenceType
     cat.type = type;
     cat.priority = 0; // Default priority (can be overridden by TPRM)
     cat.blockCount = 0;
+    cat.exclusionGroup = 0; // Runtime policy; a rescan starts clean (slots are reused)
 
     // Cache the variable-length binary for RT loading (no filesystem I/O at trigger time)
     cat.binary = std::move(fileData);

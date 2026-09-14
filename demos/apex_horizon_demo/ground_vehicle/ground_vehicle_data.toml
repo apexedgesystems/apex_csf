@@ -1,0 +1,61 @@
+# ground_vehicle_data.toml - Component data manifest for GroundVehicle
+#
+# The steered rover plant (fullUid 0x00DE00): tunables, state, the
+# 256-byte ROVR/2 OUTPUT frame, and the command surface with its payload
+# structs, all parsed from the component headers.
+
+component = "GroundVehicle"
+namespace = "appsim::ground_vehicle"
+
+[structs]
+GroundVehicleTunables = { category = "TUNABLE_PARAM", header = "inc/GroundVehicleData.hpp" }
+GroundVehicleState = { category = "STATE", header = "inc/GroundVehicleData.hpp" }
+GroundVehicleTelemetry = { category = "OUTPUT", header = "inc/GroundVehicleData.hpp" }
+RoverCmdSetMode = { category = "COMMAND", opcode = "0x0103", header = "inc/GroundVehicleCommand.hpp" }
+RoverCmdSetTarget = { category = "COMMAND", opcode = "0x0104", header = "inc/GroundVehicleCommand.hpp" }
+RoverCmdSetLed = { category = "COMMAND", opcode = "0x0106", header = "inc/GroundVehicleCommand.hpp" }
+RoverCmdSeqState = { category = "COMMAND", opcode = "0x0107", header = "inc/GroundVehicleCommand.hpp" }
+
+[enums]
+RoverOpcode = { header = "inc/GroundVehicleCommand.hpp" }
+CmdResultCode = { header = "inc/GroundVehicleCommand.hpp" }
+
+[[commands]]
+name = "HALT"
+opcode = "0x0100"
+doc = "Plant-level stop; heading frozen. Stamps MANUAL_HALT (0x15) unless a halt reason is set."
+
+[[commands]]
+name = "RESUME"
+opcode = "0x0101"
+doc = "Clear a halt and any throttle override."
+
+[[commands]]
+name = "SET_MODE"
+opcode = "0x0103"
+request = "RoverCmdSetMode"
+doc = "Drive mode: 0 HOLD, 1 TRAJECTORY, 2 WAYPOINT. BUSY while a sequence runs."
+
+[[commands]]
+name = "SET_TARGET_REL"
+opcode = "0x0104"
+request = "RoverCmdSetTarget"
+doc = "Target (north, east) metres from the current position. BUSY while a sequence runs."
+
+[[commands]]
+name = "SET_TARGET_ABS"
+opcode = "0x0105"
+request = "RoverCmdSetTarget"
+doc = "Target (north, east) metres from the grid anchor; |value| <= 2000."
+
+[[commands]]
+name = "SET_LED"
+opcode = "0x0106"
+request = "RoverCmdSetLed"
+doc = "Lamp 1..2; colour 0 off, 1 red, 2 green, 3 blue, 4 yellow, 5 white; rate 0 steady, 1 0.5 Hz, 2 1 Hz, 3 2 Hz, 4 5 Hz, 5 10 Hz."
+
+[[commands]]
+name = "SET_SEQ_STATE"
+opcode = "0x0107"
+request = "RoverCmdSeqState"
+doc = "Sequences bracket themselves with this; 0 idle, 1..31 running id, 0x10|reason halt."

@@ -457,12 +457,37 @@ std::size_t ActionComponent::scanCatalog(const std::filesystem::path& rtsDir,
   total += catalog_.scan(rtsDir, data::SequenceType::RTS);
   total += catalog_.scan(atsDir, data::SequenceType::ATS);
 
+  applyRtsExclusionGroup();
+
   auto* log = componentLog();
   if (log != nullptr) {
     log->info(label(), fmt::format("Catalog scanned: {} RTS, {} ATS ({} total)",
                                    catalog_.rtsCount(), catalog_.atsCount(), total));
   }
   return total;
+}
+
+void ActionComponent::setRtsExclusionGroup(std::uint8_t group) noexcept {
+  rtsExclusionGroup_ = group;
+  if (group != 0) {
+    applyRtsExclusionGroup();
+  }
+  auto* log = componentLog();
+  if (log != nullptr) {
+    log->info(label(), fmt::format("RTS exclusion group {}: {} RTS entries, one at a time", group,
+                                   catalog_.rtsCount()));
+  }
+}
+
+void ActionComponent::applyRtsExclusionGroup() noexcept {
+  if (rtsExclusionGroup_ == 0) {
+    return;
+  }
+  catalog_.forEachMut([this](data::CatalogEntry& e) {
+    if (e.type == data::SequenceType::RTS) {
+      e.exclusionGroup = rtsExclusionGroup_;
+    }
+  });
 }
 
 std::uint8_t ActionComponent::startRtsById(std::uint16_t sequenceId) noexcept {

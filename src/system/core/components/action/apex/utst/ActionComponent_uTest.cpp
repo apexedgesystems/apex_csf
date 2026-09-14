@@ -12,6 +12,8 @@
 #include <array>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
+#include <string>
 
 #include <gtest/gtest.h>
 
@@ -228,6 +230,67 @@ TEST(ActionComponent, IfaceAccess) {
 /* ----------------------------- Status Tests ----------------------------- */
 
 /** @test Status toString covers all values. */
+/* ----------------------------- RTS exclusion group ----------------------------- */
+
+namespace {
+
+/// Write minimal RTS binaries (header + padding) so a catalog scan loads them.
+std::filesystem::path writeRtsDir(const char* name, std::initializer_list<std::uint16_t> ids) {
+  const std::filesystem::path DIR = std::filesystem::temp_directory_path() / name;
+  std::filesystem::remove_all(DIR);
+  std::filesystem::create_directories(DIR);
+  for (const std::uint16_t ID : ids) {
+    std::array<std::uint8_t, 1352> binary{};
+    std::memcpy(&binary[0], &ID, 2);
+    binary[4] = 2; // stepCount
+    binary[7] = 1; // armed
+    std::ofstream out(DIR / ("rts_" + std::to_string(ID) + ".rts"), std::ios::binary);
+    out.write(reinterpret_cast<const char*>(binary.data()),
+              static_cast<std::streamsize>(binary.size()));
+  }
+  return DIR;
+}
+
+} // namespace
+
+/** @test A group set before the scan is stamped on every RTS the scan loads. */
+TEST(ActionComponent, RtsExclusionGroupStampsEveryScannedRts) {
+  system_core::action::ActionComponent comp;
+  ResolverCtx rCtx;
+  comp.setResolver(testResolver, &rCtx);
+  ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
+  const auto DIR = writeRtsDir("action_excl_scan_rts", {1, 2, 32});
+  comp.setRtsExclusionGroup(1);
+  ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 3u);
+  comp.catalog().forEach([](const system_core::data::CatalogEntry& e) {
+    EXPECT_EQ(e.exclusionGroup, 1u) << "rts " << e.sequenceId;
+  });
+  std::filesystem::remove_all(DIR);
+}
+
+/** @test A group set after the scan is applied to the loaded entries and survives a rescan. */
+TEST(ActionComponent, RtsExclusionGroupAppliedNowAndAfterRescan) {
+  system_core::action::ActionComponent comp;
+  ResolverCtx rCtx;
+  comp.setResolver(testResolver, &rCtx);
+  ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
+  const auto DIR = writeRtsDir("action_excl_rescan_rts", {5, 6});
+  ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 2u);
+  EXPECT_EQ(comp.catalog().findById(5)->exclusionGroup, 0u);
+  comp.setRtsExclusionGroup(3);
+  EXPECT_EQ(comp.catalog().findById(5)->exclusionGroup, 3u);
+  EXPECT_EQ(comp.catalog().findById(6)->exclusionGroup, 3u);
+  // A rescan rebuilds the catalog (an upload does this): the policy re-applies.
+  ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 2u);
+  EXPECT_EQ(comp.catalog().findById(6)->exclusionGroup, 3u);
+  // 0 clears the policy for later scans without touching what is loaded.
+  comp.setRtsExclusionGroup(0);
+  EXPECT_EQ(comp.catalog().findById(5)->exclusionGroup, 3u);
+  ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 2u);
+  EXPECT_EQ(comp.catalog().findById(5)->exclusionGroup, 0u);
+  std::filesystem::remove_all(DIR);
+}
+
 TEST(ActionComponentStatus, ToStringCoversAll) {
   using system_core::action::Status;
   using system_core::action::toString;

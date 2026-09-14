@@ -1,0 +1,31 @@
+# ShmRingBridge (0xCB00): ROVR/2 bidirectional link on /horizon_rover.
+# Forward: capacity 16, 256-byte frames from the rover's OUTPUT block.
+# Reverse: 32-byte APROTO command frames (14-byte header + payload),
+# drained by the sink onto the internal command bus -- the consumer's
+# HUD drives the rover (HALT/RESUME/SET_THROTTLE at dst 0x00DE00).
+# Orphan self-heal on.
+[ShmRingBridgeTunables]
+app_magic            = { type = "uint",   size = 4,  value = 1380931154 }      # 0x524F5652 = "ROVR"
+app_version          = { type = "uint",   size = 2,  value = 2 }
+reserved0            = { type = "uint",   size = 2,  value = 0 }
+capacity             = { type = "uint",   size = 4,  value = 16 }
+payload_size         = { type = "uint",   size = 4,  value = 256 }             # = sizeof(RoverFrame)
+reverse_payload_size = { type = "uint",   size = 4,  value = 32 }              # APROTO cmd frames (14B hdr + payload)
+source_uid           = { type = "uint",   size = 4,  value = 56832 }           # 0xDE00 = earthRover
+source_category      = { type = "uint",   size = 1,  value = 4 }               # DataCategory::OUTPUT
+reserved1_0          = { type = "uint",   size = 1,  value = 0 }
+reserved1_1          = { type = "uint",   size = 1,  value = 0 }
+reserved1_2          = { type = "uint",   size = 1,  value = 0 }
+source_byte_offset   = { type = "uint",   size = 2,  value = 0 }
+source_byte_len      = { type = "uint",   size = 2,  value = 256 }
+sink_enabled         = { type = "uint",   size = 1,  value = 1 }               # drain Ring B -> internal command bus
+orphan_reclaim       = { type = "uint",   size = 1,  value = 1 }               # self-heal if the path vanishes
+sink_reserved_0      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_1      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_2      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_3      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_4      = { type = "uint",   size = 1,  value = 0 }
+sink_reserved_5      = { type = "uint",   size = 1,  value = 0 }
+shm_path             = { type = "string", size = 64, value = "/horizon_rover" }
+wakeup_path          = { type = "string", size = 64, value = "" }              # auto-derive /horizon_rover_wake
+label                = { type = "string", size = 16, value = "rover_bridge" }

@@ -1,0 +1,13 @@
+# Earth CelestialBody (0xDC00): J2 gravity, ELLIPSOID terrain, LAYERED
+# USSA76 atmosphere from the bound world bundle. Terrain runs the
+# analytic ellipsoid until the regenerated htile artifact lands in the
+# shared earth world; the fidelity flips to HTILE with that regen (the
+# binding itself needs no change -- role-keyed bundles absorb new
+# entries, only the pin moves).
+[CelestialBodyTunables]
+body                = { type = "uint", size = 1, value = 0 }    # EARTH
+gravity_fidelity    = { type = "uint", size = 1, value = 1 }    # J2
+terrain_fidelity    = { type = "uint", size = 1, value = 3 }    # HTILE
+atmosphere_fidelity = { type = "uint", size = 1, value = 2 }    # LAYERED
+world_uid           = { type = "uint", size = 4, value = "0x010100" }
+world_pin           = { type = "uint", size = 8, value = "0xcde624259349dfc9" }

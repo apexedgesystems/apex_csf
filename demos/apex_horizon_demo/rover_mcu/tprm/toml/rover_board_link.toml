@@ -1,0 +1,12 @@
+# RoverBoardLink (0xE300): the serial link to the rover controller on the
+# NUCLEO-F767ZI (the ST-Link virtual COM port, the board's one USB cable).
+# enabled = 1: the board computes the drive and the host law runs as a
+# shadow; with no board answering the rover gets zero drive. enabled = 0:
+# the host law drives and the port is never opened. The link is LOST when
+# no command arrives for link_timeout_ms after it was UP.
+[RoverBoardLinkTunables]
+device_path     = { type = "string", size = 64, value = "/dev/ttyACM0" }
+baud_rate       = { type = "uint",   size = 4,  value = 115200 }
+link_timeout_ms = { type = "uint",   size = 2,  value = 500 }
+enabled         = { type = "uint",   size = 1,  value = 1 }
+reserved        = { type = "uint",   size = 1,  value = 0 }
