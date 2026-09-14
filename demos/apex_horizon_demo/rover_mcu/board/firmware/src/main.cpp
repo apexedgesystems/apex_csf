@@ -164,6 +164,9 @@ static void gpioInit() noexcept {
 
 static void enableDwt() noexcept {
   CoreDebug->DEMCR = CoreDebug->DEMCR | CoreDebug_DEMCR_TRCENA_Msk;
+  // The Cortex-M7 locks the DWT after a power-on reset; unlock it, or the
+  // cycle counter never runs unless a debugger has unlocked it first.
+  DWT->LAR = 0xC5ACCE55U;
   DWT->CYCCNT = 0;
   DWT->CTRL = DWT->CTRL | DWT_CTRL_CYCCNTENA_Msk;
 }
