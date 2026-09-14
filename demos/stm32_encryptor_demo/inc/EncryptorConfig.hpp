@@ -6,19 +6,31 @@
  *
  * Imports shared types from EncryptorCommon.hpp and instantiates
  * EncryptorSizing with STM32 parameters (larger buffers, more key slots).
- *
- * Dual UART: UART1 (data channel), UART2/VCP (command channel).
- * No channel prefix needed (separate physical channels).
+ * The channel prefix size comes from the board: boards with two UARTs
+ * carry no prefix; a board that multiplexes both channels on one UART
+ * prefixes every SLIP frame with CHANNEL_DATA or CHANNEL_CMD.
  */
 
 #include "EncryptorCommon.hpp"
+#include "boards/Board.hpp"
 
 namespace encryptor {
 
 /* ----------------------------- Sizing ----------------------------- */
 
-/// STM32 sizing: 256B plaintext, 16 key slots, no channel prefix.
-using Sizing = EncryptorSizing<256, 16, 0>;
+/// STM32 sizing: 256B plaintext, 16 key slots, board-defined channel prefix.
+using Sizing = EncryptorSizing<256, 16, board::CHANNEL_PREFIX_SIZE>;
+
+/* ----------------------------- Channel Prefix ----------------------------- */
+
+/// Bytes of channel prefix in every SLIP frame (0 or 1).
+static constexpr size_t CHANNEL_PREFIX = Sizing::CHANNEL_PREFIX;
+
+/// Prefix byte for data channel frames (plaintext in, ciphertext out).
+static constexpr uint8_t CHANNEL_DATA = 0x00;
+
+/// Prefix byte for command channel frames (request in, response out).
+static constexpr uint8_t CHANNEL_CMD = 0x01;
 
 /* ----------------------------- Sizing Aliases ----------------------------- */
 // Aliases for backward compatibility with existing code.

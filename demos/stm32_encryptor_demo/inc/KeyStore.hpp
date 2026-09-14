@@ -8,12 +8,14 @@
  * are cached in RAM for RT-safe read access. Write and erase operations
  * are blocking (flash programming stalls the CPU bus).
  *
- * Flash layout (page 510, 0x080FF000):
+ * The page comes from the board description (board::KEY_STORE_PAGE):
+ * page 510 (2 KB) on the L476RG, sector 11 on the F767ZI. Slot layout
+ * from the page start, whatever its size:
  *   Slot  0: bytes 0x000-0x01F  (32 bytes)
  *   Slot  1: bytes 0x020-0x03F  (32 bytes)
  *   ...
  *   Slot 15: bytes 0x1E0-0x1FF  (32 bytes)
- *   Unused:  bytes 0x200-0x7FF  (1536 bytes reserved)
+ *   Remainder of the page unused.
  *
  * Slot detection: empty = all 0xFF (flash erased state).
  *
@@ -23,6 +25,7 @@
 
 #include "EncryptorConfig.hpp"
 #include "IFlash.hpp"
+#include "boards/Board.hpp"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -62,8 +65,8 @@ enum class KeyStoreStatus : uint8_t {
  */
 class KeyStore {
 public:
-  /// Flash page for key storage (page 510 on STM32L476).
-  static constexpr uint32_t KEY_STORE_PAGE = 510;
+  /// Flash page for key storage, from the board description.
+  static constexpr uint32_t KEY_STORE_PAGE = board::KEY_STORE_PAGE;
 
   /// Size of each key slot in bytes.
   static constexpr size_t SLOT_SIZE = AES_KEY_LEN;
@@ -80,7 +83,7 @@ public:
   /* ----------------------------- Lifecycle ----------------------------- */
 
   /**
-   * @brief Initialize flash and load key cache from page 510.
+   * @brief Initialize flash and load key cache from the key-store page.
    *
    * Calls flash.init(), reads all slot data into RAM cache, and scans
    * the bitmap for populated slots.
@@ -121,7 +124,7 @@ public:
   /**
    * @brief Erase all keys (full page erase).
    *
-   * Erases flash page 510 and clears the RAM cache. All slots become empty.
+   * Erases the key-store page and clears the RAM cache. All slots become empty.
    *
    * @return OK on success, ERROR_FLASH_ERASE on hardware error.
    * @note NOT RT-safe: page erase blocks ~25 ms.

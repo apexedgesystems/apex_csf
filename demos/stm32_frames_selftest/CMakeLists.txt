@@ -13,6 +13,15 @@
 
 include(apex/All)
 
+# Built for the NUCLEO-L476RG only; other boards in the stm32 preset skip it.
+if (NOT APEX_STM32_BOARD STREQUAL "nucleo_l476rg")
+  message(
+    STATUS
+      "[apex] skip stm32_frames_selftest: NUCLEO-L476RG firmware, board is '${APEX_STM32_BOARD}'"
+  )
+  return()
+endif ()
+
 set(APP_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/src/main.cpp"
                 "${CMAKE_CURRENT_SOURCE_DIR}/src/cxx_stubs.cpp"
 )

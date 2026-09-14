@@ -147,8 +147,11 @@ void CommandDeck::processFrame(const uint8_t* frame, size_t len) noexcept {
 
 void CommandDeck::sendResponse(uint8_t opcode, CmdStatus status, const uint8_t* payload,
                                size_t payloadLen) noexcept {
-  // Build response: opcode(1) + status(1) + payload(N) + CRC(2)
+  // Build response: [channel(1)] + opcode(1) + status(1) + payload(N) + CRC(2)
   size_t pos = 0;
+  if (CHANNEL_PREFIX != 0) {
+    rspBuf_[pos++] = CHANNEL_CMD;
+  }
   rspBuf_[pos++] = opcode;
   rspBuf_[pos++] = static_cast<uint8_t>(status);
 
@@ -157,8 +160,9 @@ void CommandDeck::sendResponse(uint8_t opcode, CmdStatus status, const uint8_t* 
     pos += payloadLen;
   }
 
-  // Append CRC-16 (big-endian)
-  const uint16_t RSP_CRC = computeCrc16(rspBuf_, pos);
+  // Append CRC-16 (big-endian) over opcode + status + payload (the channel
+  // byte is transport framing and stays outside the CRC)
+  const uint16_t RSP_CRC = computeCrc16(rspBuf_ + CHANNEL_PREFIX, pos - CHANNEL_PREFIX);
   rspBuf_[pos++] = static_cast<uint8_t>(RSP_CRC >> 8);
   rspBuf_[pos++] = static_cast<uint8_t>(RSP_CRC & 0xFF);
 

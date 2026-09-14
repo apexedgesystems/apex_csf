@@ -176,8 +176,10 @@ jobs:
           done
 
           # Advisory notice: which images this push rebuilds (vs pulled), so a
-          # docker-images run explains itself at a glance.
-          rebuilds=$(for image in "${!RB[@]}"; do [ "${RB[$image]}" = true ] && echo "$image"; done | sort | paste -sd' ' -)
+          # docker-images run explains itself at a glance. The loop's status is
+          # its last iteration's, and under pipefail a non-rebuilt last image
+          # would fail the substitution, so the test is an if rather than &&.
+          rebuilds=$(for image in "${!RB[@]}"; do if [ "${RB[$image]}" = true ]; then echo "$image"; fi; done | sort | paste -sd' ' -)
           count=$(echo "$rebuilds" | wc -w)
           echo "::notice title=Image graph::rebuilding ${count}/13 images${rebuilds:+: }${rebuilds}"
 

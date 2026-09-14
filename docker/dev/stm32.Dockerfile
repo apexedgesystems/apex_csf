@@ -44,13 +44,18 @@ RUN git clone --recursive --depth 1 \
       https://github.com/STMicroelectronics/STM32CubeF4.git /opt/STM32CubeF4 && \
     git clone --recursive --depth 1 \
       https://github.com/STMicroelectronics/STM32CubeL4.git /opt/STM32CubeL4 && \
+    git clone --recursive --depth 1 \
+      https://github.com/STMicroelectronics/STM32CubeF7.git /opt/STM32CubeF7 && \
     rm -rf /opt/STM32CubeF4/Projects /opt/STM32CubeF4/Documentation \
            /opt/STM32CubeF4/Utilities /opt/STM32CubeF4/.git \
            /opt/STM32CubeL4/Projects /opt/STM32CubeL4/Documentation \
-           /opt/STM32CubeL4/Utilities /opt/STM32CubeL4/.git
+           /opt/STM32CubeL4/Utilities /opt/STM32CubeL4/.git \
+           /opt/STM32CubeF7/Projects /opt/STM32CubeF7/Documentation \
+           /opt/STM32CubeF7/Utilities /opt/STM32CubeF7/.git
 
 ENV STM32CUBE_F4_PATH="/opt/STM32CubeF4"
 ENV STM32CUBE_L4_PATH="/opt/STM32CubeL4"
+ENV STM32CUBE_F7_PATH="/opt/STM32CubeF7"
 
 # ==============================================================================
 # Shell Prompt

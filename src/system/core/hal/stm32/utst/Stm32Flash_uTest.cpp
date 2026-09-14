@@ -514,3 +514,92 @@ TEST(Stm32Flash, BusyAfterInit) {
 
   EXPECT_FALSE(flash.isBusy());
 }
+
+/* ----------------------------- Sector Layout ----------------------------- */
+
+/** @test Verify the single-bank 2 MB layout: 4 x 32K, 128K, 7 x 256K. */
+TEST(Stm32Flash, SectorLayoutSingleBank2MB) {
+  uint32_t sizes[Stm32Flash::MAX_SECTORS] = {};
+  const uint32_t COUNT =
+      Stm32Flash::sectorLayout(2U * 1024U * 1024U, 32U * 1024U, 1U, sizes, Stm32Flash::MAX_SECTORS);
+  ASSERT_EQ(COUNT, 12U);
+  uint32_t total = 0;
+  for (uint32_t i = 0; i < COUNT; ++i) {
+    const uint32_t EXPECTED = (i < 4U) ? 32U * 1024U : (i == 4U) ? 128U * 1024U : 256U * 1024U;
+    EXPECT_EQ(sizes[i], EXPECTED) << "sector " << i;
+    total += sizes[i];
+  }
+  EXPECT_EQ(total, 2U * 1024U * 1024U);
+}
+
+/** @test Verify dual-bank halves every sector and numbers the second bank after the first. */
+TEST(Stm32Flash, SectorLayoutDualBank2MB) {
+  uint32_t sizes[Stm32Flash::MAX_SECTORS] = {};
+  const uint32_t COUNT =
+      Stm32Flash::sectorLayout(2U * 1024U * 1024U, 16U * 1024U, 2U, sizes, Stm32Flash::MAX_SECTORS);
+  ASSERT_EQ(COUNT, 24U);
+  for (uint32_t bank = 0; bank < 2U; ++bank) {
+    uint32_t bankTotal = 0;
+    for (uint32_t i = 0; i < 12U; ++i) {
+      const uint32_t EXPECTED = (i < 4U) ? 16U * 1024U : (i == 4U) ? 64U * 1024U : 128U * 1024U;
+      EXPECT_EQ(sizes[bank * 12U + i], EXPECTED) << "bank " << bank << " sector " << i;
+      bankTotal += sizes[bank * 12U + i];
+    }
+    EXPECT_EQ(bankTotal, 1024U * 1024U);
+  }
+}
+
+/** @test Verify a 1 MB single-bank part stops after three large sectors. */
+TEST(Stm32Flash, SectorLayoutSingleBank1MB) {
+  uint32_t sizes[Stm32Flash::MAX_SECTORS] = {};
+  const uint32_t COUNT =
+      Stm32Flash::sectorLayout(1024U * 1024U, 32U * 1024U, 1U, sizes, Stm32Flash::MAX_SECTORS);
+  ASSERT_EQ(COUNT, 8U);
+  EXPECT_EQ(sizes[7], 256U * 1024U);
+}
+
+/** @test Verify the F4 512 KB layout: 4 x 16K, 64K, 3 x 128K. */
+TEST(Stm32Flash, SectorLayoutF4SingleBank512KB) {
+  uint32_t sizes[Stm32Flash::MAX_SECTORS] = {};
+  const uint32_t COUNT =
+      Stm32Flash::sectorLayout(512U * 1024U, 16U * 1024U, 1U, sizes, Stm32Flash::MAX_SECTORS);
+  ASSERT_EQ(COUNT, 8U);
+  uint32_t total = 0;
+  for (uint32_t i = 0; i < COUNT; ++i) {
+    const uint32_t EXPECTED = (i < 4U) ? 16U * 1024U : (i == 4U) ? 64U * 1024U : 128U * 1024U;
+    EXPECT_EQ(sizes[i], EXPECTED) << "sector " << i;
+    total += sizes[i];
+  }
+  EXPECT_EQ(total, 512U * 1024U);
+}
+
+/** @test Verify the layout refuses a null table, zero sizes, zero banks, and an undersized table.
+ */
+TEST(Stm32Flash, SectorLayoutRejectsBadArguments) {
+  uint32_t sizes[Stm32Flash::MAX_SECTORS] = {};
+  EXPECT_EQ(Stm32Flash::sectorLayout(2U * 1024U * 1024U, 32U * 1024U, 1U, nullptr, 4), 0U);
+  EXPECT_EQ(Stm32Flash::sectorLayout(0, 32U * 1024U, 1U, sizes, Stm32Flash::MAX_SECTORS), 0U);
+  EXPECT_EQ(Stm32Flash::sectorLayout(2U * 1024U * 1024U, 0, 1U, sizes, Stm32Flash::MAX_SECTORS),
+            0U);
+  EXPECT_EQ(
+      Stm32Flash::sectorLayout(2U * 1024U * 1024U, 32U * 1024U, 0, sizes, Stm32Flash::MAX_SECTORS),
+      0U);
+  EXPECT_EQ(Stm32Flash::sectorLayout(2U * 1024U * 1024U, 32U * 1024U, 1U, sizes, 4), 0U);
+}
+
+/* ----------------------------- Page Size Accessor ----------------------------- */
+
+/** @test Verify pageSizeAt agrees with the uniform geometry and addresses chain by size. */
+TEST(Stm32Flash, PageSizeAtMatchesGeometry) {
+  Stm32Flash flash;
+  ASSERT_EQ(flash.init(), FlashStatus::OK);
+  const FlashGeometry GEO = flash.geometry();
+  uint32_t expectedAddr = GEO.baseAddress;
+  for (uint32_t i = 0; i < GEO.pageCount; ++i) {
+    EXPECT_EQ(flash.pageSizeAt(i), GEO.pageSize) << "page " << i;
+    EXPECT_EQ(flash.addressForPage(i), expectedAddr) << "page " << i;
+    EXPECT_EQ(flash.pageForAddress(expectedAddr), i) << "page " << i;
+    expectedAddr += flash.pageSizeAt(i);
+  }
+  EXPECT_EQ(flash.pageSizeAt(GEO.pageCount), 0U);
+}

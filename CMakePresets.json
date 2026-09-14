@@ -212,7 +212,7 @@
     },
     {
       "name": "mcu-stm32-relwithdebinfo",
-      "displayName": "STM32 (L476) - Bare-metal",
+      "displayName": "STM32 - Bare-metal (board: APEX_STM32_BOARD)",
       "inherits": "base",
       "binaryDir": "build/mcu-stm32-relwithdebinfo",
       "toolchainFile": "cmake/toolchains/stm32-gcc.cmake",
@@ -222,7 +222,7 @@
     },
     {
       "name": "mcu-stm32-debug",
-      "displayName": "STM32 (L476) - Bare-metal Debug (-Og -g3)",
+      "displayName": "STM32 - Bare-metal Debug (-Og -g3; board: APEX_STM32_BOARD)",
       "inherits": "mcu-stm32-relwithdebinfo",
       "binaryDir": "build/mcu-stm32-debug",
       "cacheVariables": {
