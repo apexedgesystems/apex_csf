@@ -1,0 +1,16 @@
+# rover_controller_data.toml - Component data manifest for RoverController
+#
+# The rover's controller seat (fullUid 0x00E200): resolves commands into
+# the leg, forwards the board's drive (or runs the host law), and carries
+# the board's link, load and lidar picture in its OUTPUT head.
+
+component = "RoverController"
+namespace = "appsim::rover_controller"
+
+[structs]
+RoverControllerTunables = { category = "TUNABLE_PARAM", header = "inc/RoverControllerData.hpp" }
+RoverControllerState = { category = "STATE", header = "inc/RoverControllerData.hpp" }
+RoverControllerOutput = { category = "OUTPUT", header = "inc/RoverControllerData.hpp" }
+
+[enums]
+DriveMode = { header = "inc/RoverControllerData.hpp" }

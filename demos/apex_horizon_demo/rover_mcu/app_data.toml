@@ -1,0 +1,188 @@
+# app_data.toml - ApexRoverMcuDemo application descriptor for Zenith target generation
+#
+# The rover with its controller on a NUCLEO-F767ZI: the plant, the
+# controller seat, the board link, the lidar hardware model, Earth, and
+# the ROVR/2 bridge to the visualizer.
+#
+# Core components (Executive, Scheduler, FileSystem, Registry, Interface,
+# Action) are auto-included by the target generator at their standard UIDs.
+# Only declare app-specific component instances below.
+
+application = "ApexRoverMcuDemo"
+description = "Rover on a terrain tile; guidance law on a NUCLEO-F767ZI; lidar on its own wire."
+
+[protocol]
+transport = "TCP"
+framing = "SLIP"
+port = 9000
+
+[[components]]
+name = "GroundVehicle"
+fullUid = "0x00DE00"
+type = "SW_MODEL"
+notes = "100 Hz steered plant, lidar sweep, lamps; OUTPUT is the 256 B ROVR/2 frame"
+
+[[components]]
+name = "RoverController"
+fullUid = "0x00E200"
+type = "SW_MODEL"
+notes = "20 Hz: resolves the leg, forwards the board's drive, host law as shadow"
+
+[[components]]
+name = "RoverBoardLink"
+fullUid = "0x00E300"
+type = "DRIVER"
+notes = "Serial link to the NUCLEO over the ST-Link VCP"
+
+[[components]]
+name = "RoverLidarModel"
+fullUid = "0x00E400"
+type = "HW_MODEL"
+notes = "Lidar scans over a USB-serial adapter to the board's USART6"
+
+[[components]]
+name = "CelestialBody"
+fullUid = "0x00DC00"
+type = "SW_MODEL"
+notes = "Earth bound to the shared world (J2, terrain tile, layered atmosphere)"
+
+[[components]]
+name = "ShmRingBridge"
+fullUid = "0x00CB00"
+type = "SUPPORT"
+notes = "ROVR/2 frame out to /horizon_rover at 100 Hz, commands in"
+
+# ------------------------------------------------------------------------------
+# Quick commands: one click starts a catalog sequence (START_RTS_BY_ID 0x0510
+# to the action engine, u16 little-endian sequence id), or cuts the lidar.
+# ------------------------------------------------------------------------------
+
+[[quickCommands]]
+label = "Seq 1: north 10 m"
+fullUid = "0x000500"
+opcode = "0x0510"
+payloadHex = "0100"
+desc = "North 10 m, arrive, HOLD"
+
+[[quickCommands]]
+label = "Seq 2: north + east"
+fullUid = "0x000500"
+opcode = "0x0510"
+payloadHex = "0200"
+desc = "North 10 m, east 20 m, lamp 1 green"
+
+[[quickCommands]]
+label = "Seq 3: legs + strobe"
+fullUid = "0x000500"
+opcode = "0x0510"
+payloadHex = "0300"
+desc = "As 2, then lamp 1 green at 10 Hz for 5 s"
+
+[[quickCommands]]
+label = "Seq 5: 30 m square"
+fullUid = "0x000500"
+opcode = "0x0510"
+payloadHex = "0500"
+desc = "Guarded 30 m square, lamp 1 blue"
+
+[[quickCommands]]
+label = "Seq 6: HALT"
+fullUid = "0x000500"
+opcode = "0x0510"
+payloadHex = "0600"
+desc = "Manual halt: lamps red 5 Hz, seq_state 0x15; cancels the running tour"
+
+[[quickCommands]]
+label = "Seq 7: resume"
+fullUid = "0x000500"
+opcode = "0x0510"
+payloadHex = "0700"
+desc = "Clear any halt, HOLD, lamps off"
+
+[[quickCommands]]
+label = "Seq 9: home"
+fullUid = "0x000500"
+opcode = "0x0510"
+payloadHex = "0900"
+desc = "Drive back to the anchor (0, 0)"
+
+[[quickCommands]]
+label = "Cut lidar"
+fullUid = "0x000000"
+opcode = "0x0114"
+payloadHex = "00e40000"
+desc = "Lock the lidar model: scans stop, the board reports STALE, halt 0x16 within 2 s"
+
+[[quickCommands]]
+label = "Restore lidar"
+fullUid = "0x000000"
+opcode = "0x0115"
+payloadHex = "00e40000"
+desc = "Unlock the lidar model; the halt holds until Seq 7"
+
+# ------------------------------------------------------------------------------
+# Layouts, in the order an audience reads them. The frame's reserved tail
+# (mode, sequence state, lamps, command result, lidar picture) is one byte
+# array in the OUTPUT struct until it gets named fields; the controller's
+# OUTPUT carries the board and lidar bytes as named fields meanwhile.
+# ------------------------------------------------------------------------------
+
+[[layouts]]
+name = "Drive"
+
+[[layouts.plots]]
+title = "Speed & heading"
+channels = ["GroundVehicle.speed_m_s", "GroundVehicle.heading_deg"]
+
+[[layouts.plots]]
+title = "Leg"
+channels = ["RoverController.distance_m", "RoverController.cross_track_m", "RoverController.heading_error_deg"]
+
+[[layouts.plots]]
+title = "Drive command: board vs host shadow"
+channels = ["RoverController.steer_angle_deg", "RoverController.shadow_steer_deg", "RoverController.throttle_frac", "RoverController.shadow_throttle_frac"]
+
+[[layouts.plots]]
+title = "Terrain"
+channels = ["GroundVehicle.slope_deg", "GroundVehicle.ground_elevation_m", "GroundVehicle.is_slipping", "GroundVehicle.is_off_terrain"]
+
+[[layouts]]
+name = "Position"
+
+[[layouts.plots]]
+title = "Lat / lon"
+channels = ["GroundVehicle.pos_lat_deg", "GroundVehicle.pos_lon_deg"]
+
+[[layouts.plots]]
+title = "Grid position"
+channels = ["RoverController.grid_north_m", "RoverController.grid_east_m"]
+
+[[layouts.plots]]
+title = "Altitude"
+channels = ["GroundVehicle.pos_alt_m", "GroundVehicle.ground_elevation_m"]
+
+[[layouts.plots]]
+title = "Slope azimuth"
+channels = ["GroundVehicle.slope_azimuth_deg", "GroundVehicle.slope_deg"]
+
+[[layouts]]
+name = "Board link"
+
+[[layouts.plots]]
+title = "Link"
+channels = ["RoverController.board_link", "RoverController.board_load_pct"]
+
+[[layouts.plots]]
+title = "Board tick"
+channels = ["RoverController.board_tick"]
+
+[[layouts]]
+name = "Lidar"
+
+[[layouts.plots]]
+title = "What the board saw"
+channels = ["RoverController.lidar_state", "RoverController.lidar_nearest_m", "RoverController.lidar_hit_bits"]
+
+[[layouts.plots]]
+title = "Scan number"
+channels = ["RoverController.lidar_scan_seq"]

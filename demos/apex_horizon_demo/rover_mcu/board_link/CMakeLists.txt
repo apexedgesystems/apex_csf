@@ -27,4 +27,7 @@ apex_add_interface_library(
 
 apex_standard_optins(${LIB_NAME})
 
+# Struct dictionary for zenith (make apex-data-db)
+apex_add_data_manifest(MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/board_link_data.toml")
+
 apex_add_test_subdirs()
