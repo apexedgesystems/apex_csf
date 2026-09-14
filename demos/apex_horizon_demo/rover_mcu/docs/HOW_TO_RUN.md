@@ -51,6 +51,7 @@ started until RESUME.
 | 32  | obstacle halt (lidar centre ray < 15 m): reason 0x11, lamps red 5 Hz                                        |
 | 33  | geofence halt (±200 m about the anchor): reason 0x12                                                        |
 | 34  | slope halt (terrain slip): reason 0x13                                                                      |
+| 35  | link-lost halt (the board stopped answering): reason 0x14; holds after the link returns until resume (7)    |
 
 Corners are arcs: the driven plant is a steered vehicle (heading rate
 v·tan δ / wheelbase; a 1.5 m wheelbase and 33° lock give a minimum
@@ -63,7 +64,7 @@ profile at 3 m/s cruise and 0.6 m/s through a corner, with the lock
 limited by speed so the heading never turns faster than 15°/s (a 90°
 turn takes about 6 s), so each leg ramps up,
 cruises, and brakes onto its target inside 0.2 m without pivoting in
-place. Legs must be longer than the turning radius;
+place. A leg arrives inside 0.2 m, or once the rover has passed its end within 0.5 m of the target. A rover that is not lined up with a leg (more than 60° off it) with less than about 7 m left, which is two turning radii plus the lookahead, swings out through a keyhole first: it drives to the line 7 m short of the target, turns onto it and drives the rest straight, so a 2 m leg entered facing away takes up to a minute. Every catalog leg is 10 m or longer and never needs the keyhole;
 `tprm/toml/rover_controller.toml` holds every one of those numbers.
 
 After a boundary halt, RESUME (7) then home (9) drives the rover
@@ -86,13 +87,61 @@ container, so run the script from there:
 ```bash
 docker exec -i -w /home/kalex/workspace rover_mcu \
   tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py \
-  demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --slot 11 --start
+  demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --slot 12 --start
 ```
 
-`Action_0.log` shows `Catalog scanned: 12 RTS` then `RTS started:
+`Action_0.log` shows `Catalog scanned: 13 RTS` then `RTS started:
 id=8`; the uploaded id joins the exclusion group like the rest
 (starting another sequence over it logs `stopping RTS 8`). The
 uploaded id lives until the next boot repacks the bank.
+
+## Run the controller on the board (NUCLEO-F767ZI)
+
+The rover's controller runs on a NUCLEO-F767ZI connected by its one USB
+cable: the ST-Link virtual COM port carries the link (USART3, 115200
+8N1) and the programmer. The firmware runs the same guidance law the
+host tests pin (`rover_controller/inc/RoverGuidance.hpp`); the plant,
+the sequences and the bridge stay in the producer.
+
+Build and flash:
+
+```bash
+make compose-stm32 CMAKE_EXTRA_ARGS="-DAPEX_STM32_BOARD=nucleo_f767zi"
+st-flash --connect-under-reset --reset write \
+  build/mcu-stm32-relwithdebinfo/firmware/rover_mcu_firmware.bin 0x08000000
+```
+
+The firmware sleeps between ticks, so a plain `st-flash` (and
+`make compose-stm32-flash`) cannot attach once it runs: connect under
+reset. An stm32 build directory holds one board; move
+`build/mcu-stm32-relwithdebinfo` aside before building for another. At
+boot the three user LEDs light red, green and blue in turn; after that
+they show lamp 1 (LD3 red, LD1 green, LD2 blue; yellow is red + green,
+white is all three) with its strobe.
+
+`tprm/toml/rover_board_link.toml` selects the drive source:
+`enabled = 1` (the default) the board computes the drive and the host
+law runs beside it as a shadow; `enabled = 0` the host law drives and
+the port is never opened. Plug the board in before starting the
+producer: its container sees the host's devices as they were when it
+started.
+
+What shows the board is driving:
+
+- `logs/drivers/RoverBoardLink_0.log`: `port open`, `link NEVER -> UP`,
+  then a 1 Hz line with frames each way, heartbeats, CRC refusals,
+  sequence gaps, and the board's cycle count, step count, tick time and
+  load.
+- The frame's board bytes: `board_link` (tail @232, 0 NEVER, 1 UP,
+  2 LOST), `board_load_pct` (@245), `board_tick` (@246..247) advancing
+  at 20 Hz while the board answers.
+- `logs/models/RoverController_0.log`: the board's command next to the
+  host law's (`host: steer ... thr ...`).
+
+If the board stops answering for 500 ms the link reads LOST, the
+controller drives zero, and the board-link watchpoint starts sequence 35
+(reason 0x14, lamps red 5 Hz), which cancels any running tour. When the
+board answers again the link reads UP; resume (7) releases the halt.
 
 ## Trace and plots
 

@@ -12,6 +12,7 @@
 0x00DC00  toml/earth_body.toml
 0x00DE00  toml/earth_rover.toml
 0x00E200  toml/rover_controller.toml
+0x00E300  toml/rover_board_link.toml
 0x00CB00  toml/rover_bridge.toml
 
 [sequences rover]
@@ -26,6 +27,7 @@ rts 7  toml/rts/rts_009_home.toml
 rts 8  toml/rts/rts_032_obstacle_halt.toml
 rts 9  toml/rts/rts_033_geofence_halt.toml
 rts 10  toml/rts/rts_034_slope_halt.toml
+rts 11  toml/rts/rts_035_link_lost_halt.toml
 
 [master master.tprm]
 use components rover_mcu

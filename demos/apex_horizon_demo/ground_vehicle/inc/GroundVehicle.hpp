@@ -504,6 +504,12 @@ public:
     fb[FB_LAST_CMD_RESULT] = s.last_cmd_result;
     fb[FB_LAST_CMD_OPCODE_LO] = static_cast<std::uint8_t>(s.last_cmd_opcode & 0xFFu);
     fb[FB_LAST_CMD_OPCODE_HI] = static_cast<std::uint8_t>(s.last_cmd_opcode >> 8u);
+    fb[FB_BOARD_LINK] = DRIVEN ? drive_cmd_->board_link : static_cast<std::uint8_t>(0u);
+    fb[FB_BOARD_LOAD_PCT] = DRIVEN ? drive_cmd_->board_load_pct : static_cast<std::uint8_t>(0u);
+    const std::uint16_t BOARD_TICK =
+        DRIVEN ? drive_cmd_->board_tick : static_cast<std::uint16_t>(0u);
+    fb[FB_BOARD_TICK_LO] = static_cast<std::uint8_t>(BOARD_TICK & 0xFFu);
+    fb[FB_BOARD_TICK_HI] = static_cast<std::uint8_t>(BOARD_TICK >> 8u);
 
     // 9: sequence trace. While seq_state names a running sequence,
     // sample the drive-relevant channels at 20 Hz into a bounded

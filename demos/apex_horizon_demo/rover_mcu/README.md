@@ -3,9 +3,9 @@
 The rover demo in the form that moves its control loop onto a
 microcontroller: the plant (a kinematic rover with a lidar fan over
 the shared Earth terrain tile) and the sequence engine run in this
-POSIX apex app; the drive controller writes the plant's drive-command
-block through a seam that a UART driver takes over in the
-hardware-in-the-loop form. Five A→B tours of rising complexity (10–30 m legs driven as
+POSIX apex app; the drive command reaches the plant's drive-command
+block through one seam, computed either by the host law or by the same
+law running on a NUCLEO-F767ZI over its USB serial link. Five A→B tours of rising complexity (10–30 m legs driven as
 arcs by a steered plant and a pure-pursuit controller), two lamps as
 sequence actions, a manual halt and resume, and a safety
 boundary (lidar obstacle, ±200 m geofence, terrain slip) that halts
@@ -28,24 +28,26 @@ docker compose run --rm dev-cuda \
   --rt-mode lag-tolerant --rt-max-lag 200
 ```
 
-Boot: `Sequence catalog: 10 entries`, `world bound: ... entries=2`, the
+Boot: `Sequence catalog: 12 entries`, `world bound: ... entries=2`, the
 controller HOLDING at the grid anchor (39.5 N, −105.5 W, the terrain
 patch centre) heading north. See [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md)
 for driving it from a host shell, the sequence catalog, the upload
-path, and the trace.
+path, running the controller on the board, and the trace.
 
 ## 2. What it composes
 
-| Piece           | Where                                   | Role                                                                    |
-| --------------- | --------------------------------------- | ----------------------------------------------------------------------- |
-| CelestialBody   | src/sim/environment/celestial_body      | Earth bound to the shared world (J2, HTILE terrain, LAYERED atmosphere) |
-| GroundVehicle   | ../ground_vehicle                       | 100 Hz steered rover + lidar; lamps; the drive-command seam; trace      |
-| RoverController | ../rover_controller                     | 10 Hz HOLD / TRAJECTORY / pure-pursuit WAYPOINT on a grid               |
-| Action engine   | src/system/core/components/action       | Sequence catalog (standalone RTS) + the boundary watchpoints            |
-| ShmRingBridge   | src/system/core/support/shm_ring_bridge | ROVR/2 bidirectional link on /horizon_rover at 100 Hz                   |
+| Piece           | Where                                   | Role                                                                          |
+| --------------- | --------------------------------------- | ----------------------------------------------------------------------------- |
+| CelestialBody   | src/sim/environment/celestial_body      | Earth bound to the shared world (J2, HTILE terrain, LAYERED atmosphere)       |
+| GroundVehicle   | ../ground_vehicle                       | 100 Hz steered rover + lidar; lamps; the drive-command seam; trace            |
+| RoverController | ../rover_controller                     | 20 Hz HOLD / TRAJECTORY / leg-line pure pursuit; forwards the board's command |
+| RoverBoardLink  | ./board_link                            | 20 Hz serial link to the board: state out, command and heartbeat in           |
+| Board firmware  | ./board/firmware                        | The same law on the NUCLEO-F767ZI; lamp 1 on the user LEDs; heartbeat         |
+| Action engine   | src/system/core/components/action       | Sequence catalog (standalone RTS) + the boundary watchpoints                  |
+| ShmRingBridge   | src/system/core/support/shm_ring_bridge | ROVR/2 bidirectional link on /horizon_rover at 100 Hz                         |
 
-Scheduler order inside a tick: controller (priority 60) before the
-plant (50) before the bridge (40).
+Scheduler order inside a tick: board link (priority 70) before the
+controller (60) before the plant (50) before the bridge (40).
 
 ## 3. Wire contract (ROVR/2, frame layout unchanged)
 

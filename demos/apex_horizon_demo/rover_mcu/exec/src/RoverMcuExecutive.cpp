@@ -58,9 +58,17 @@ bool RoverMcuExecutive::registerComponents() noexcept {
   }
 
   controller_.setVehicle(&rover_);
+  controller_.setBoardLink(&link_.snapshot());
   if (!registerComponent(&controller_, LOG_DIR)) {
     if (log != nullptr)
       log->info(label(), "registerComponent(controller) FAILED");
+    return false;
+  }
+
+  link_.setSources(&rover_, &controller_);
+  if (!registerComponent(&link_, LOG_DIR)) {
+    if (log != nullptr)
+      log->info(label(), "registerComponent(board link) FAILED");
     return false;
   }
 
@@ -73,9 +81,9 @@ bool RoverMcuExecutive::registerComponents() noexcept {
 
   if (log != nullptr) {
     log->info(label(), fmt::format("registered: earth_uid={:#x} rover_uid={:#x} "
-                                   "controller_uid={:#x} bridge_uid={:#x}",
+                                   "controller_uid={:#x} link_uid={:#x} bridge_uid={:#x}",
                                    earth_.fullUid(), rover_.fullUid(), controller_.fullUid(),
-                                   bridge_.fullUid()));
+                                   link_.fullUid(), bridge_.fullUid()));
   }
   return true;
 }

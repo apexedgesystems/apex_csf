@@ -2,7 +2,8 @@
 # files (tprm/toml/rts/, catalog-scanned at boot, started by id via 0x0510);
 # the embedded sequence/notification tables stay disarmed. Watchpoints on
 # the rover's OUTPUT (0x00DE00) arm the safety boundary: lidar obstacle,
-# a +/-200 m geofence about the anchor, and terrain slope, each routed to
+# a +/-200 m geofence about the anchor, terrain slope, and the board link
+# going from UP to LOST, each routed to
 # a reason-stamped halt sequence. minFireCount 0 = fire on the predicate's
 # rising edge only; a nonzero count fires on EVERY evaluation once that
 # many edges have been seen, which for a sustained breach is every tick.
@@ -143,17 +144,18 @@ minFireCount     = { type = "uint", size = 2, value = 0 }
 armed            = { type = "uint", size = 1, value = 1 }
 reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
 
+# WP6: board link lost: frame board_link (tail @232) == 2 -> link-lost halt (35)
 [ActionEngineTprm.watchpoint_6]
-targetFullUid    = { type = "uint", size = 4, value = 0 }
-targetCategory   = { type = "uint", size = 1, value = 0 }
-targetByteOffset = { type = "uint", size = 2, value = 0 }
-targetByteLen    = { type = "uint", size = 1, value = 0 }
-predicate        = { type = "uint", size = 1, value = 0 }
-dataType         = { type = "uint", size = 1, value = 0 }
-threshold        = { type = "array", size = 8, element_type = "uint", value = [0, 0, 0, 0, 0, 0, 0, 0] }
-eventId          = { type = "uint", size = 2, value = 0 }
+targetFullUid    = { type = "uint", size = 4, value = "0x00DE00" }
+targetCategory   = { type = "uint", size = 1, value = "OUTPUT" }
+targetByteOffset = { type = "uint", size = 2, value = 232 }
+targetByteLen    = { type = "uint", size = 1, value = 1 }
+predicate        = { type = "uint", size = 1, value = "EQ" }
+dataType         = { type = "uint", size = 1, value = "UINT8" }
+threshold        = { type = "array", size = 8, element_type = "uint", value = [2,0,0,0,0,0,0,0] }
+eventId          = { type = "uint", size = 2, value = 35 }
 minFireCount     = { type = "uint", size = 2, value = 0 }
-armed            = { type = "uint", size = 1, value = 0 }
+armed            = { type = "uint", size = 1, value = 1 }
 reserved         = { type = "array", size = 3, element_type = "uint", value = [0, 0, 0] }
 
 [ActionEngineTprm.watchpoint_7]

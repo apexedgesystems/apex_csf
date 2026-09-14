@@ -5,7 +5,8 @@
 # geometry (wheelbase 1.5 m, 33 deg lock -> minimum radius ~2.3 m) with a
 # trapezoidal speed profile: cruise 3 m/s (0.375 of 8), sqrt(2 a d)
 # ramp-down against 2 m/s^2 braking, 0.6 m/s through corners, arrive
-# inside 0.2 m or once past the leg's end within 0.5 m of the line. The
+# inside 0.2 m or once past the leg's end within 0.5 m of the target; a
+# rover not lined up near the end swings out through a keyhole first. The
 # heading rate is bounded at 15 deg/s by limiting the lock with speed. TRAJECTORY is a 5 deg
 # constant steer at 0.6 throttle (a 17 m circle).
 [RoverControllerTunables]

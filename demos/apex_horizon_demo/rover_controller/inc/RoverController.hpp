@@ -24,6 +24,8 @@
 
 #include "demos/apex_horizon_demo/ground_vehicle/inc/GroundVehicle.hpp"
 #include "demos/apex_horizon_demo/rover_controller/inc/RoverControllerData.hpp"
+#include "demos/apex_horizon_demo/rover_controller/inc/RoverGuidance.hpp"
+#include "demos/apex_horizon_demo/rover_mcu/board/inc/RoverBoardProtocol.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/ModelData.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
@@ -57,6 +59,15 @@ static_assert(offsetof(RoverControllerOutput, mode) ==
               "drive command head must alias GroundVehicleDriveCommand");
 static_assert(offsetof(RoverControllerOutput, arrived) ==
                   offsetof(ground_vehicle::GroundVehicleDriveCommand, arrived),
+              "drive command head must alias GroundVehicleDriveCommand");
+static_assert(offsetof(RoverControllerOutput, board_link) ==
+                  offsetof(ground_vehicle::GroundVehicleDriveCommand, board_link),
+              "drive command head must alias GroundVehicleDriveCommand");
+static_assert(offsetof(RoverControllerOutput, board_load_pct) ==
+                  offsetof(ground_vehicle::GroundVehicleDriveCommand, board_load_pct),
+              "drive command head must alias GroundVehicleDriveCommand");
+static_assert(offsetof(RoverControllerOutput, board_tick) ==
+                  offsetof(ground_vehicle::GroundVehicleDriveCommand, board_tick),
               "drive command head must alias GroundVehicleDriveCommand");
 
 class RoverController final : public system_core::system_component::SwModelBase {
@@ -107,9 +118,21 @@ public:
   /* ----------------------------- Mode and targets ----------------------------- */
 
   [[nodiscard]] DriveMode mode() const noexcept { return mode_; }
+  /**
+   * @brief Take the drive from a board through its link (nullptr = host law).
+   *
+   * While the snapshot says enabled, the output carries the board's
+   * steering, throttle, mode and arrival (the arrival only for the
+   * leg this controller currently holds, so a stale latch never
+   * completes a new leg) and zero drive whenever the link is not UP; the host law
+   * still runs every step into the shadow fields.
+   */
+  void setBoardLink(const rover_board::BoardLinkSnapshot* link) noexcept { board_ = link; }
+
   void setMode(DriveMode mode) noexcept {
     mode_ = mode;
     if (mode != DriveMode::WAYPOINT) {
+      host_arrived_ = 0u;
       output_.get().arrived = 0u;
     }
   }
@@ -123,6 +146,8 @@ public:
     s.target_east_m = east_m;
     s.target_valid = 1u;
     ++s.target_seq;
+    host_arrived_ = 0u;
+    s.leg_phase = 0u;
     output_.get().arrived = 0u;
   }
 
@@ -209,6 +234,22 @@ public:
       break;
     }
 
+    out.shadow_steer_deg = steer;
+    out.shadow_throttle_frac = throttle;
+    if (board_ != nullptr && board_->enabled != 0u) {
+      const bool UP = board_->link_state == rover_board::LINK_UP;
+      const auto& CMD = board_->cmd;
+      steer = UP ? static_cast<double>(CMD.steer_deg) : 0.0;
+      throttle = UP ? static_cast<double>(CMD.throttle_frac) : 0.0;
+      if (UP) {
+        out.mode = CMD.mode;
+      }
+      const bool SAME_TARGET = (CMD.target_seq == s.target_seq);
+      out.arrived = (UP && SAME_TARGET) ? CMD.arrived : static_cast<std::uint8_t>(0u);
+      out.board_link = board_->link_state;
+      out.board_load_pct = board_->load_pct;
+      out.board_tick = board_->board_tick;
+    }
     out.steer_angle_deg = steer;
     out.throttle_frac = std::clamp(throttle, 0.0, 1.0);
     // The block drives from the first tick (a HOLD boot must never let
@@ -228,14 +269,17 @@ public:
     }
     const auto& out = output_.get();
     const auto& s = state_.get();
-    log->info(label(),
-              fmt::format("tick={} mode={} grid=({:+.1f}N,{:+.1f}E) target=({:+.1f}N,{:+.1f}E)"
-                          " valid={} seq={} dist={:.2f}m err={:+.1f}deg arrived={} "
-                          "xtrack={:+.2f}m cmd: steer={:+.1f}deg thr={:.2f}",
-                          out.tick, out.mode, out.grid_north_m, out.grid_east_m, s.target_north_m,
-                          s.target_east_m, s.target_valid, s.target_seq, out.distance_m,
-                          out.heading_error_deg, out.arrived, out.cross_track_m,
-                          out.steer_angle_deg, out.throttle_frac));
+    log->info(
+        label(),
+        fmt::format(
+            "tick={} mode={} grid=({:+.1f}N,{:+.1f}E) target=({:+.1f}N,{:+.1f}E)"
+            " valid={} seq={} dist={:.2f}m err={:+.1f}deg arrived={} "
+            "xtrack={:+.2f}m cmd: steer={:+.1f}deg thr={:.2f} host: steer={:+.1f}deg thr={:.2f} "
+            "board_link={} load={}%",
+            out.tick, out.mode, out.grid_north_m, out.grid_east_m, s.target_north_m,
+            s.target_east_m, s.target_valid, s.target_seq, out.distance_m, out.heading_error_deg,
+            out.arrived, out.cross_track_m, out.steer_angle_deg, out.throttle_frac,
+            out.shadow_steer_deg, out.shadow_throttle_frac, out.board_link, out.board_load_pct));
     return 0u;
   }
 
@@ -292,16 +336,7 @@ protected:
   }
 
 private:
-  /// Wrap an angle difference to [-180, 180) degrees.
-  static double wrap180(double deg) noexcept {
-    double d = std::fmod(deg + 180.0, 360.0);
-    if (d < 0.0) {
-      d += 360.0;
-    }
-    return d - 180.0;
-  }
-
-  void waypointLaw(const RoverControllerState& s, RoverControllerOutput& out,
+  void waypointLaw(RoverControllerState& s, RoverControllerOutput& out,
                    const RoverControllerTunables& p, double n, double e, double& steer,
                    double& throttle) noexcept {
     if (s.target_valid == 0u || vehicle_ == nullptr) {
@@ -309,99 +344,32 @@ private:
       out.heading_error_deg = 0.0;
       return;
     }
-    const double DN = s.target_north_m - n;
-    const double DE = s.target_east_m - e;
-    const double DIST = std::sqrt(DN * DN + DE * DE);
-    out.distance_m = DIST;
-
-    // The leg as a line: unit direction from its start to the target,
-    // and the rover's projection onto it (along, and signed cross-track,
-    // + to the right of the direction of travel).
-    const double LN = s.target_north_m - s.leg_start_north_m;
-    const double LE = s.target_east_m - s.leg_start_east_m;
-    const double LEG = std::sqrt(LN * LN + LE * LE);
-    const bool HAS_LINE = LEG > 0.5;
-    const double UN = HAS_LINE ? LN / LEG : 0.0;
-    const double UE = HAS_LINE ? LE / LEG : 0.0;
-    const double PN = n - s.leg_start_north_m;
-    const double PE = e - s.leg_start_east_m;
-    const double ALONG = HAS_LINE ? (PN * UN + PE * UE) : 0.0;
-    const double CROSS = HAS_LINE ? (PE * UN - PN * UE) : 0.0;
-    out.cross_track_m = CROSS;
-
-    if (DIST < p.arrival_tolerance_m ||
-        (HAS_LINE && ALONG >= LEG && std::fabs(CROSS) < p.passed_end_cross_m)) {
-      out.arrived = 1u;
-    }
-    if (out.arrived != 0u) {
-      // Latched until a new target: the plant coasts to rest.
-      out.bearing_deg =
-          std::fmod(std::atan2(DE, DN) * apex::math::vecmat::RAD_TO_DEG + 360.0, 360.0);
-      out.heading_error_deg = 0.0;
-      return;
-    }
-
-    // Aim point: on the leg line, lookahead_m ahead of the rover's
-    // projection and allowed to run past the target, so the approach is
-    // driven straight along the leg. Past the target (a missed ring) or
-    // on a leg too short to define a line, aim at the target itself.
-    double AN = DN;
-    double AE = DE;
-    double AIM_DIST = std::clamp(p.lookahead_m, 0.5, std::max(DIST, 0.5));
-    if (HAS_LINE && ALONG < LEG) {
-      const double AHEAD = ALONG + p.lookahead_m;
-      AN = s.leg_start_north_m + UN * AHEAD - n;
-      AE = s.leg_start_east_m + UE * AHEAD - e;
-      AIM_DIST = std::max(std::sqrt(AN * AN + AE * AE), 0.5);
-    }
-    const double BEARING =
-        std::fmod(std::atan2(AE, AN) * apex::math::vecmat::RAD_TO_DEG + 360.0, 360.0);
-    const double ERR = wrap180(BEARING - vehicle_->telemetry().heading_deg);
-    out.bearing_deg = BEARING;
-    out.heading_error_deg = ERR;
-
-    // Pure pursuit onto the aim point: kappa = 2 sin(alpha) / d,
-    // delta = atan(L kappa). Beyond 90 degrees of error the pursuit
-    // curvature falls off (sin alpha -> 0 with the aim point behind the
-    // rover, a straight reversal would drive away at zero steer), so the
-    // rover commits to full lock toward the aim point until it is ahead.
-    if (std::fabs(ERR) > 90.0) {
-      steer = std::copysign(p.max_steer_deg, ERR);
-    } else {
-      const double ALPHA = ERR * apex::math::vecmat::DEG_TO_RAD;
-      const double KAPPA = 2.0 * std::sin(ALPHA) / AIM_DIST;
-      steer = std::clamp(std::atan(p.wheelbase_m * KAPPA) * apex::math::vecmat::RAD_TO_DEG,
-                         -p.max_steer_deg, p.max_steer_deg);
-    }
-
-    // Trapezoidal speed: cruise until the braking distance to the
-    // tolerance ring, then sqrt(2 a d) so the plant's own braking
-    // limit lands the rover on the target; slower through a corner.
-    const double MAX_V = vehicle_->tunables_const().max_speed_m_s;
-    const double CRUISE = p.cruise_throttle_frac * MAX_V;
-    const double D_LEFT = std::max(DIST - p.arrival_tolerance_m, 0.0);
-    double v = std::min(CRUISE, std::sqrt(2.0 * std::max(p.brake_m_s2, 0.01) * D_LEFT));
-    if (std::fabs(ERR) > p.corner_deg) {
-      v = std::min(v, CRUISE * p.corner_speed_frac);
-    }
-    throttle = (MAX_V > 0.0) ? v / MAX_V : 0.0;
-
-    // Yaw-rate bound: the lock may not turn the rover faster than
-    // max_yaw_rate_deg_s at any speed it can reach before the next
-    // step -- the plant moves from its current speed toward the
-    // commanded one, so the faster of the two bounds tan(delta) <=
-    // rate L / v.
-    const double V_BOUND = std::max(vehicle_->telemetry().speed_m_s, v);
-    if (V_BOUND > 0.05 && p.max_yaw_rate_deg_s > 0.0) {
-      const double LOCK = std::atan(p.max_yaw_rate_deg_s * apex::math::vecmat::DEG_TO_RAD *
-                                    p.wheelbase_m / V_BOUND) *
-                          apex::math::vecmat::RAD_TO_DEG;
-      steer = std::clamp(steer, -LOCK, LOCK);
-    }
+    // The law itself is RoverGuidance.hpp, shared with the board's
+    // firmware; this wraps the component's state around it.
+    const GuidanceTunables G{p.wheelbase_m,          p.max_steer_deg,       p.lookahead_m,
+                             p.cruise_throttle_frac, p.brake_m_s2,          p.corner_speed_frac,
+                             p.corner_deg,           p.arrival_tolerance_m, p.passed_end_cross_m,
+                             p.max_yaw_rate_deg_s};
+    GuidanceLeg leg{s.target_north_m, s.target_east_m, s.leg_start_north_m, s.leg_start_east_m,
+                    s.target_valid,   host_arrived_,   s.leg_phase};
+    const GuidanceInput in{n, e, vehicle_->telemetry().heading_deg, vehicle_->telemetry().speed_m_s,
+                           vehicle_->tunables_const().max_speed_m_s};
+    const GuidanceOutput g = waypointGuidance(G, leg, in);
+    host_arrived_ = leg.arrived;
+    s.leg_phase = leg.phase;
+    out.arrived = leg.arrived;
+    out.distance_m = g.distance_m;
+    out.bearing_deg = g.bearing_deg;
+    out.heading_error_deg = g.heading_error_deg;
+    out.cross_track_m = g.cross_track_m;
+    steer = g.steer_deg;
+    throttle = g.throttle_frac;
   }
 
   const ground_vehicle::GroundVehicle* vehicle_{nullptr};
   DriveMode mode_{DriveMode::HOLD};
+  const rover_board::BoardLinkSnapshot* board_{nullptr};
+  std::uint8_t host_arrived_{0}; ///< The host law's own arrival latch.
   system_core::data::TunableParam<RoverControllerTunables> tunables_{};
   system_core::data::State<RoverControllerState> state_{};
   system_core::data::Output<RoverControllerOutput> output_{};

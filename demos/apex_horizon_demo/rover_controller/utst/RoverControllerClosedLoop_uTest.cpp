@@ -25,6 +25,7 @@
 #include "src/sim/environment/factory/inc/EnvironmentFidelity.hpp"
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <vector>
 
@@ -330,6 +331,29 @@ TEST(RoverControllerWaypoint, StraightReversalTurnsAroundInsteadOfDrivingAway) {
   EXPECT_NEAR(n, 0.0, 0.5);
   const double H = rig.rover.telemetry().heading_deg;
   EXPECT_NEAR(H, 270.0, 5.0) << "arrives aligned with the return leg";
+}
+
+TEST(RoverControllerWaypoint, AShortLegEnteredFacingAwayArrivesOnTheTarget) {
+  // Home after a link-lost halt on the board: 4.2 m to the target with
+  // the rover facing away from it (heading 320.7 deg, target bearing
+  // 77 deg). The loop to turn around must not end the leg 1.2 m beside
+  // the target: it arrives under the arrival rule (within 0.5 m of the
+  // target), in bounded time.
+  Rig rig(320.7);
+  rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
+  rig.tick();
+  rig.ctl.setTargetAbs(0.938, 4.111);
+  int ticks = 0;
+  while (rig.ctl.controllerOutput().arrived == 0u && ticks < 600) {
+    rig.tick();
+    ++ticks;
+  }
+  double n = 0.0, e = 0.0;
+  rig.north_east(n, e);
+  ASSERT_LT(ticks, 600) << "arrives within 60 s";
+  const double MISS = std::hypot(n - 0.938, e - 4.111);
+  std::printf("[ facing-away home leg ] miss %.2f m after %.1f s\n", MISS, ticks * 0.1);
+  EXPECT_LT(MISS, 0.5) << "ticks=" << ticks;
 }
 
 TEST(RoverControllerWaypoint, HoldModeIgnoresTheTarget) {

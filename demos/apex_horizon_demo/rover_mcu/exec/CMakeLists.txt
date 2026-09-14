@@ -20,6 +20,7 @@ apex_add_app(
   LINK
   apex_horizon_demo_ground_vehicle
   apex_horizon_demo_rover_controller
+  apex_horizon_demo_rover_board_link
   sim_environment_celestial_body
   system_core_registry
   system_core_support_shm_ring_bridge

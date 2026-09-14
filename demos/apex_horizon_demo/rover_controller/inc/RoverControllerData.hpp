@@ -71,7 +71,7 @@ struct RoverControllerTunables {
 
   /// A leg is ARRIVED when the remaining distance is below this, or
   /// once the rover has passed the leg's end within passed_end_cross_m
-  /// of the line (a cut corner completes the leg instead of looping
+  /// of the target (a cut corner completes the leg instead of looping
   /// back for the point).
   double arrival_tolerance_m{0.2};
   double passed_end_cross_m{0.5};
@@ -100,7 +100,7 @@ struct RoverControllerState {
   /// command state (edge-triggered adoption, as the aircraft's mask).
   std::uint16_t adopted_target_seq{0};
   std::uint8_t adopted_mode{255};
-  std::uint8_t reserved[1]{};
+  std::uint8_t leg_phase{0}; ///< Guidance leg phase (along / keyhole / rejoin).
   /// Where the current leg started (the rover's grid position when the
   /// target was set): with the target it defines the line the rover
   /// follows.
@@ -121,9 +121,12 @@ struct RoverControllerOutput {
   double steer_angle_deg{0.0};
   double throttle_frac{0.0};
   std::uint8_t valid{0};
-  std::uint8_t mode{0};    ///< DriveMode code in effect.
-  std::uint8_t arrived{0}; ///< 1 once the current target is inside tolerance.
-  std::uint8_t reserved0[5]{};
+  std::uint8_t mode{0};           ///< DriveMode code in effect.
+  std::uint8_t arrived{0};        ///< 1 once the current target is inside tolerance.
+  std::uint8_t board_link{0};     ///< 0 NEVER, 1 UP, 2 LOST (board drive source).
+  std::uint8_t board_load_pct{0}; ///< Board tick load from its heartbeat.
+  std::uint8_t reserved0{0};
+  std::uint16_t board_tick{0}; ///< Board command sequence number.
 
   /* ---- Diagnostics ---- */
   std::uint64_t tick{0};
@@ -135,6 +138,10 @@ struct RoverControllerOutput {
   double bearing_deg{0.0};       ///< Bearing to the aim point [deg from north, cw].
   double heading_error_deg{0.0}; ///< Wrapped bearing - heading [-180, 180].
   double cross_track_m{0.0};     ///< Signed distance from the leg line (+ right of it).
+  /// The host law's own command, computed every step; with the board
+  /// as the drive source it runs beside the board for comparison.
+  double shadow_steer_deg{0.0};
+  double shadow_throttle_frac{0.0};
 };
 
 } // namespace rover_controller

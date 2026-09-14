@@ -131,7 +131,13 @@ struct GroundVehicleDriveCommand {
   /// arrival latch -- truth the plant stamps into the frame.
   std::uint8_t mode{0};
   std::uint8_t arrived{0};
-  std::uint8_t reserved[5]{};
+  /// Board link status the writer carries when a board computes the
+  /// command (0 NEVER, 1 UP, 2 LOST), the board's tick load and a tick
+  /// counter that moves while the link is alive; zero for a host law.
+  std::uint8_t board_link{0};
+  std::uint8_t board_load_pct{0};
+  std::uint8_t reserved0{0};
+  std::uint16_t board_tick{0};
 };
 
 /* ----------------------------- GroundVehicleSeqTraceSample ----------------------------- */

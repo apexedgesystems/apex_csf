@@ -9,9 +9,12 @@
  *   - One CelestialBody (Earth) bound to the shared world bundle, so
  *     the rover drives the terrain tile.
  *   - The GroundVehicle stepping at the 100 Hz fundamental and the
- *     RoverController at 10 Hz, wired through the drive-command seam
- *     (the controller writes the block the plant consumes; in the
- *     hardware form a UART driver takes the controller's seat).
+ *     RoverController at 20 Hz, wired through the drive-command seam
+ *     (the controller writes the block the plant consumes).
+ *   - The RoverBoardLink to the NUCLEO: with the link enabled the
+ *     board computes the drive, the controller forwards its command
+ *     and runs the host law as a shadow; the frame's board bytes carry
+ *     the link state, the board's load and its tick.
  *   - The action engine's sequence catalog and safety watchpoints
  *     come from the TPRM set (no C++ here).
  *   - One ShmRingBridge publishing the rover's 256-byte ROVR/2 OUTPUT
@@ -24,6 +27,7 @@
 
 #include "demos/apex_horizon_demo/ground_vehicle/inc/GroundVehicle.hpp"
 #include "demos/apex_horizon_demo/rover_controller/inc/RoverController.hpp"
+#include "demos/apex_horizon_demo/rover_mcu/board_link/inc/RoverBoardLink.hpp"
 #include "src/sim/environment/celestial_body/inc/CelestialBody.hpp"
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/support/shm_ring_bridge/inc/ShmRingBridge.hpp"
@@ -52,6 +56,7 @@ private:
   sim::environment::celestial_body::CelestialBody earth_;
   appsim::ground_vehicle::GroundVehicle rover_;
   appsim::rover_controller::RoverController controller_;
+  appsim::rover_board::RoverBoardLink link_;
   system_core::support::ShmRingBridge bridge_;
 };
 
