@@ -394,20 +394,13 @@ def _generated_layouts(app_data: dict, struct_dicts: dict) -> list:
             for field in struct_info.get("fields", []):
                 ftype = field.get("type", "")
                 fname = field.get("name", "")
-                # Skip padding, reserved, and non-numeric fields
-                if fname in ("reserved", "pad0", "pad1", "pad2", "pad3"):
+                # Padding and reserved bytes are never channels, and array
+                # fields are not decoded as channels by the ground side, so
+                # only named scalar numerics are plotted.
+                if fname.startswith(("reserved", "pad")):
                     continue
                 if ftype in ("float", "int", "uint"):
                     channels.append(f"{prefix}.{fname}")
-                elif ftype == "array" and field.get("element_type") in ("float", "int", "uint"):
-                    # For arrays, add first few elements as individual channels
-                    dims = field.get("dims", [1])
-                    count = min(dims[0], 4) if dims else 1
-                    if count == 1:
-                        channels.append(f"{prefix}.{fname}")
-                    else:
-                        for i in range(count):
-                            channels.append(f"{prefix}.{fname}[{i}]")
 
             if channels:
                 plot: dict = {

@@ -163,3 +163,31 @@ def test_find_app_data_searches_nested_apps(tmp_path):
     roots = f"{tmp_path / 'demos'}:{tmp_path / 'missing'}"
     assert find_app_data("TopApp", roots) == str(top / "app_data.toml")
     assert find_app_data("NestedApp", roots) == str(nested / "app_data.toml")
+
+
+def test_generated_default_plots_named_scalars_only():
+    dicts = {
+        "EnumComp.json": {
+            "component": "EnumComp",
+            "structs": {
+                "EnumCompOutput": {
+                    "category": "OUTPUT",
+                    "fields": [
+                        {"name": "speed", "type": "float", "size": 8},
+                        {"name": "ranges", "type": "array", "element_type": "float", "dims": [8]},
+                        {
+                            "name": "reserved1",
+                            "type": "array",
+                            "element_type": "uint",
+                            "dims": [24],
+                        },
+                        {"name": "reserved0", "type": "uint", "size": 2},
+                        {"name": "pad_a", "type": "uint", "size": 1},
+                        {"name": "mode", "type": "uint", "size": 1},
+                    ],
+                }
+            },
+        }
+    }
+    layouts = generate_telemetry(APP_DATA, dicts)["layouts"]
+    assert layouts[0]["plots"][0]["channels"] == ["EnumComp.speed", "EnumComp.mode"]
