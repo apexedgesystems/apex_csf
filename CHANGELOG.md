@@ -46,6 +46,16 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- Breaking: the TPRM payload prelude is format A v4 (28 bytes, magic
+  `APV4`, 64-bit payload size). Readers accept v4 only; a v3-stamped
+  payload is refused with `BAD_MAGIC`. Consumers of `compat/tprm/` copy
+  the regenerated vector set.
+- Contract change: a nested struct contributes only its flattened leaves
+  to the TPRM layout hash, whether written as a plain nested table or as
+  `type = "struct"` with a `fields` table. Serialized bodies are
+  unchanged; the `nested_enum` conformance vector re-stamps with layout
+  hash `c77da66d`, so consumers that pin it re-pin that one vector or
+  regenerate.
 - Python tooling manages dependencies with uv instead of poetry (PEP 621
   project metadata, uv.lock); the published wheel's internal version now
   matches the release, and it no longer lists pytest as a runtime

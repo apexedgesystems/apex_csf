@@ -1081,12 +1081,12 @@ mod tests {
         assert_eq!(hash, super::super::payload::crc32(spec.as_bytes()));
     }
 
+    /// @test The typed "struct" spelling of a nested member, the form the
+    /// authoring template writes, stamps the hash the spec side generates
+    /// for the same manifest, and that canonical string is the literal
+    /// leaf list with no wrapper row.
     #[test]
     fn struct_spelling_agrees_with_the_spec_side() {
-        // The value-TOML side may also spell a nested member as a key
-        // typed "struct" with its leaves under "fields" (the authoring
-        // template writes this form). It must stamp the hash the spec
-        // side generates, the same as the plain nested-table spelling.
         let m = nested_manifest("");
         let value = serde_json::json!({
             "collectRateHz": { "type": "uint", "size": 4, "value": 10 },

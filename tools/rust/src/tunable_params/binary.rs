@@ -681,13 +681,13 @@ mod tests {
         assert_eq!(bytes, vec![1, 2, 3, 4]);
     }
 
+    /// @test The two spellings of a nested struct, a key typed "struct"
+    /// with its leaves under "fields" and a plain nested table of leaves,
+    /// serialize to identical bytes and stamp the same layout hash.
     #[test]
     fn struct_spelling_hashes_like_a_nested_table() {
-        // The same bytes written two ways: a key typed "struct" with its
-        // leaves under "fields", and a plain nested table of leaves. Both
-        // must serialize identically and stamp the same layout hash; the
-        // keys are chosen in alphabetical order so the walk order is the
-        // declaration order either way.
+        // Keys are in alphabetical order so the walk order is the
+        // declaration order under either spelling.
         let typed = json!({
             "Outer": {
                 "head": { "type": "uint", "size": 1, "value": 7 },
