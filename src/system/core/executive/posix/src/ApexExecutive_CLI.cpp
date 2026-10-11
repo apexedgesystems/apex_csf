@@ -244,6 +244,21 @@ std::uint8_t ApexExecutive::processArgs() noexcept {
     rtConfig_.maxLagTicks = static_cast<std::uint32_t>(maxLagTicks);
   }
 
+  // ===== Parse Clock Frequency =====
+  // Applied here for a config-less boot; a tprm boot re-applies it over
+  // the loaded value through the adoption door. The bound is the
+  // validator's own, so both paths refuse the same values.
+  if (parsedArgs_.count(CLOCK_HZ)) {
+    const unsigned long hz = std::stoul(std::string(parsedArgs_[CLOCK_HZ][0]));
+    if (hz == 0UL || hz > 1000UL) {
+      setStatus(static_cast<std::uint8_t>(ERROR_ARG_PARSE_FAIL));
+      sysLog_->error(label(), status(), fmt::format("--clock-hz wants 1..1000 Hz, got {}", hz));
+      return status();
+    }
+    clockFrequency_ = static_cast<std::uint16_t>(hz);
+    tunableParams_.clockFrequencyHz = clockFrequency_;
+  }
+
   // ===== Validate Shutdown Configuration =====
   if (shutdownConfig_.mode == ShutdownConfig::SCHEDULED && shutdownConfig_.shutdownAtEpochNs == 0) {
     setStatus(static_cast<std::uint8_t>(ERROR_ARG_PARSE_FAIL));

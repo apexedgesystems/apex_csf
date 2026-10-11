@@ -15,6 +15,8 @@
  * @see DataCategory.hpp for category definitions
  */
 
+#include "src/system/core/executive/posix/inc/TickLateness.hpp"
+
 #include <cstdint>
 
 #include <atomic>
@@ -28,13 +30,16 @@ namespace executive {
  * @brief Runtime state for clock thread.
  *
  * Thread-safe state maintained by clock thread, read by task execution
- * and watchdog threads. Uses atomics for cross-thread visibility.
+ * and watchdog threads. Uses atomics for cross-thread visibility, except
+ * the lateness record, which only the clock thread touches while it runs
+ * and which other threads read once the clock thread has exited.
  *
  * @note DataCategory::STATE
  */
 struct ClockState {
   std::atomic<std::uint64_t> cycles{0};    ///< Total clock cycles executed.
   std::atomic<std::int64_t> lastTickNs{0}; ///< Timestamp of last tick (ns since epoch).
+  TickLateness lateness{};                 ///< Wake lateness against each tick's deadline.
   /// Ticks abandoned by grid re-anchors after pathological stalls
   /// (host suspend etc.); zero in any healthy run.
   std::atomic<std::uint64_t> wallResyncDroppedTicks{0};

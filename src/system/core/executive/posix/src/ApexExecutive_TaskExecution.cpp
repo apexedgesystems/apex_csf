@@ -166,7 +166,9 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
                     .count();
     }
 
-    sysLog_->debug(label(), fmt::format("Executing tasks for tick {}", tick), 3);
+    if (sysLog_->verbosity() >= 3) {
+      sysLog_->debug(label(), fmt::format("Executing tasks for tick {}", tick), 3);
+    }
 
     // Pre-tick I/O drain: telemetry out, then commands in.
     // Draining telemetry first ensures components start with empty outboxes.

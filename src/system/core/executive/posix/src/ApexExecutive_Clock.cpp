@@ -76,6 +76,12 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
   auto nextTick = std::chrono::steady_clock::now() + FRAME_PERIOD;
   while (!controlState_.shutdownRequested.load(std::memory_order_acquire)) {
     std::this_thread::sleep_until(nextTick);
+
+    // How late the wake landed against the deadline it slept to: the
+    // run's record of timer resolution, slack and scheduler latency.
+    const auto NOW = std::chrono::steady_clock::now();
+    clockState_.lateness.record(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(NOW - nextTick).count());
     nextTick += FRAME_PERIOD;
 
     // Pathological backlog (host suspend, debugger stop): firing an
@@ -83,7 +89,6 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
     // second of backlog, re-anchor the grid, count the dropped ticks,
     // and warn — bounded intervals keep true catch-up.
     {
-      const auto NOW = std::chrono::steady_clock::now();
       if (NOW > nextTick + std::chrono::seconds(1)) {
         const auto BEHIND_NS =
             std::chrono::duration_cast<std::chrono::nanoseconds>(NOW - nextTick).count();
@@ -226,7 +231,11 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
     const std::uint64_t newClockCycles =
         clockState_.cycles.fetch_add(1, std::memory_order_acq_rel) + 1;
 
-    sysLog_->debug(label(), fmt::format("Clock tick {} sent to executors", newClockCycles), 3);
+    // Formatting is the costly part of a debug line, so it is skipped
+    // outright on the per-tick path unless the verbosity asks for it.
+    if (sysLog_->verbosity() >= 3) {
+      sysLog_->debug(label(), fmt::format("Clock tick {} sent to executors", newClockCycles), 3);
+    }
 
     // ========================================================================
     // Cycle-Based Shutdown Check
@@ -273,6 +282,15 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
   clockState_.isRunning.store(false, std::memory_order_release);
   cvClockTick_.notify_all();
 
+  {
+    const TickLateness& L = clockState_.lateness;
+    sysLog_->info(label(),
+                  fmt::format("Tick lateness: {} wakes, p50 <= {} us, p99 <= {} us, max {:.1f} us, "
+                              "mean {:.1f} us, 1 ms or later: {}, early: {}",
+                              L.count, L.percentileNs(0.50) / 1000, L.percentileNs(0.99) / 1000,
+                              static_cast<double>(L.maxNs) / 1000.0, L.meanNs() / 1000.0,
+                              L.overflow, L.early));
+  }
   sysLog_->info(label(), fmt::format("Clock stopped after {} cycles",
                                      clockState_.cycles.load(std::memory_order_acquire)));
   sysLog_->debug(label(), "Clock thread exiting cleanly", 1);

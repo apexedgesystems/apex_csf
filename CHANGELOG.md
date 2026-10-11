@@ -10,6 +10,9 @@ any such change is called out explicitly in its entry.
 
 ### Added
 
+- Executive clock wake-lateness record: every clock wake is measured
+  against its deadline and summarised (p50, p99, max) when the clock
+  stops; `--clock-hz` overrides the fundamental frequency for a run.
 - Flight-dynamics simulation domains: aerodynamics, rigid-body dynamics,
   propulsion, guidance/navigation/control (organized by vehicle class), and
   sensor measurement models.

@@ -5,7 +5,7 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Test Sources (4)
+# Test Sources (5)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
@@ -13,6 +13,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/RTMode_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ExecutiveData_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ShutdownConfig_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/TickLateness_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------

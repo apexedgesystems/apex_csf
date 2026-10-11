@@ -189,6 +189,28 @@ and TPRM loading:
   into the action engine). All queued commands are drained before runtime
   starts.
 
+## Clock Cadence
+
+The clock thread sleeps to an absolute deadline grid and signals the
+task-execution thread on every wake. Each wake is recorded against the
+deadline it slept to, with no allocation on the tick path, and the
+distribution is summarised when the clock stops:
+
+```text
+Tick lateness: 3000 wakes, p50 <= 61 us, p99 <= 143 us, max 7212.3 us, mean 58.4 us, 1 ms or later: 2, early: 0
+```
+
+Read it as "that share of wakes were no later than this": the
+percentiles are bucket upper edges at one-microsecond resolution. The
+figures are the host's timer resolution, timer slack and scheduler
+latency as the clock experiences them, so they are the first thing to
+look at when a run reports frame overruns or lag. In-process callers get
+the same record from `clockLateness()` once `run()` has returned.
+
+`--clock-hz N` overrides the configured fundamental for a run, within the
+validator's [1, 1000] Hz; the cadence benchmark uses it to boot at the
+rate under test.
+
 ## Testing
 
 | Dir           | Contents                                                          | In CI suite? |
@@ -200,7 +222,8 @@ and TPRM loading:
 | `posix/dtst/` | Full-boot timing-integrity component tests (clock grid repayment, | No (manual)  |
 |               | backlog drain to parity, counted >1 s resync)                     |              |
 | `posix/ptst/` | Delivered-cadence benchmark (period fidelity, jitter tail,        | No (manual)  |
-|               | cumulative drift vs the deadline grid)                            |              |
+|               | cumulative drift vs the deadline grid, wake lateness) at the      |              |
+|               | rate `CADENCE_HZ` selects                                         |              |
 
 The dtst and ptst tiers boot a real `ApexExecutive` (config-less CLI
 boot, cycle-target shutdown) and assert wall-clock spans, so they run
