@@ -192,9 +192,21 @@ and TPRM loading:
 ## Clock Cadence
 
 The clock thread sleeps to an absolute deadline grid and signals the
-task-execution thread on every wake. Each wake is recorded against the
-deadline it slept to, with no allocation on the tick path, and the
-distribution is summarised when the clock stops:
+task-execution thread on every wake. Tick `n` is due at the anchor plus
+`n / Hz` whole seconds plus the `(n mod Hz)`-th share of a second
+(`ClockGrid.hpp`), so every rate in [1, 1000] Hz is honoured: a rate
+that does not divide a second into whole nanoseconds (600 Hz is
+1,666,666.67 ns) keeps every second boundary exact and is never more
+than a nanosecond off inside one. The wait is one absolute-deadline
+sleep on the monotonic clock (`clock_nanosleep` with `TIMER_ABSTIME`),
+and the clock thread runs with one nanosecond of timer slack, so an
+ordinary-policy boot is not subject to the kernel's default 50 us of
+wake coalescing. The 1000 Hz ceiling is a stated limit of the POSIX
+executive, not a property of the arithmetic.
+
+Each wake is recorded against the deadline it slept to, with no
+allocation on the tick path, and the distribution is summarised when
+the clock stops:
 
 ```text
 Tick lateness: 3000 wakes, p50 <= 61 us, p99 <= 143 us, max 7212.3 us, mean 58.4 us, 1 ms or later: 2, early: 0

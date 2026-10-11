@@ -20,6 +20,9 @@
 #include <pthread.h>
 #include <sched.h>
 #endif
+#if defined(__linux__)
+#include <sys/prctl.h>
+#endif
 
 namespace apex {
 namespace concurrency {
@@ -101,6 +104,36 @@ inline bool applyThreadConfig(const ThreadConfig& config,
   (void)config;
   (void)threadName;
   return true;
+#endif
+}
+
+/* ----------------------------- setThreadTimerSlackNs ----------------------------- */
+
+/**
+ * @brief Set the calling thread's timer slack.
+ *
+ * The kernel may delay a timed wake by up to the thread's slack to
+ * coalesce it with others: 50 us by default for ordinary policies, none
+ * for real-time ones. A periodic thread that must wake on its deadline
+ * under an ordinary policy sets the slack to one nanosecond, the
+ * smallest value the kernel accepts.
+ *
+ * @param slackNs Slack in nanoseconds; 0 restores the thread's default.
+ * @return The previous slack in nanoseconds, or -1 when the platform has
+ *         no such control or refused the change.
+ * @note NOT RT-safe: two syscalls. Linux only; elsewhere returns -1 and
+ *       changes nothing.
+ */
+inline long setThreadTimerSlackNs(unsigned long slackNs) noexcept {
+#if defined(__linux__)
+  const int PREVIOUS = ::prctl(PR_GET_TIMERSLACK, 0, 0, 0, 0);
+  if (PREVIOUS < 0 || ::prctl(PR_SET_TIMERSLACK, slackNs, 0, 0, 0) != 0) {
+    return -1;
+  }
+  return PREVIOUS;
+#else
+  (void)slackNs;
+  return -1;
 #endif
 }
 

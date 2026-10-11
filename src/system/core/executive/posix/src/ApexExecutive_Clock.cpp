@@ -18,8 +18,10 @@
  */
 
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
+#include "src/system/core/executive/posix/inc/ClockGrid.hpp"
 #include "src/system/core/executive/posix/inc/RTMode.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
+#include "src/utilities/concurrency/inc/ThreadConfig.hpp"
 
 #include <chrono>
 #include <iostream>
@@ -59,47 +61,70 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
   std::this_thread::sleep_for(STARTUP_DELAY);
   sysLog_->info(label(), "Clock started");
 
-  const auto FRAME_MS = 1000 / clockFrequency_;
+  // Wakes are timed to the nanosecond, so the kernel must not coalesce
+  // them: an ordinary thread carries 50 us of timer slack by default
+  // (real-time policies none), and one nanosecond is the least it takes.
+  {
+    const long PREVIOUS_SLACK = apex::concurrency::setThreadTimerSlackNs(1);
+    if (PREVIOUS_SLACK >= 0) {
+      sysLog_->info(label(), fmt::format("Clock timer slack: {} ns -> 1 ns", PREVIOUS_SLACK));
+    } else {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_THREAD_CONFIG_FAIL),
+                       "Clock timer slack left at the platform default (no control available)");
+    }
+  }
+
+  const std::uint32_t HZ = clockFrequency_;
+  const std::uint64_t PERIOD_NS = clockgrid::periodNs(HZ);
+  const double PERIOD_MS = static_cast<double>(clockgrid::NS_PER_S) / (1e6 * HZ);
   sysLog_->info(label(), fmt::format("RT mode: {} (hard={})", rtModeToString(rtConfig_.mode),
                                      rtConfig_.isHardMode() ? "yes" : "no"));
-  sysLog_->debug(label(), fmt::format("Frame period: {} ms ({} Hz)", FRAME_MS, clockFrequency_), 2);
+  sysLog_->info(
+      label(),
+      fmt::format("Frame period: {} ns ({} Hz){}", PERIOD_NS, HZ,
+                  (clockgrid::NS_PER_S % HZ) != 0U ? ", grid exact at every second boundary" : ""));
 
   // Main clock loop: sleep to the ABSOLUTE deadline grid, check
-  // overrun, signal tick, repeat. The grid is anchored once and each
-  // deadline advances by exactly one period: an oversleep (scheduler
+  // overrun, signal tick, repeat. Tick n's deadline is computed from
+  // the anchor and n (ClockGrid.hpp), never by adding a period, so a
+  // rate that does not divide a second into whole nanoseconds still
+  // lands every second boundary exactly. An oversleep (scheduler
   // stall, host contention) is repaid by immediately-due deadlines, so
   // clock cycles track wall time by construction and starved intervals
   // surface as task lag the RT machinery already handles. Re-anchoring
   // to now() each iteration would leak every oversleep into permanent
   // sim-vs-wall drift.
-  const auto FRAME_PERIOD = std::chrono::milliseconds(FRAME_MS);
-  auto nextTick = std::chrono::steady_clock::now() + FRAME_PERIOD;
+  std::uint64_t anchorNs = clockgrid::nowNs();
+  std::uint64_t tickIndex = 1; // Tick 0 is the anchor itself; the first wait is for tick 1.
   while (!controlState_.shutdownRequested.load(std::memory_order_acquire)) {
-    std::this_thread::sleep_until(nextTick);
+    const std::uint64_t DEADLINE_NS = clockgrid::deadlineNs(anchorNs, tickIndex, HZ);
+    clockgrid::sleepUntilMonotonicNs(DEADLINE_NS);
 
     // How late the wake landed against the deadline it slept to: the
     // run's record of timer resolution, slack and scheduler latency.
-    const auto NOW = std::chrono::steady_clock::now();
-    clockState_.lateness.record(
-        std::chrono::duration_cast<std::chrono::nanoseconds>(NOW - nextTick).count());
-    nextTick += FRAME_PERIOD;
+    const std::uint64_t NOW_NS = clockgrid::nowNs();
+    clockState_.lateness.record(static_cast<std::int64_t>(NOW_NS) -
+                                static_cast<std::int64_t>(DEADLINE_NS));
+    ++tickIndex;
 
     // Pathological backlog (host suspend, debugger stop): firing an
     // unbounded catch-up burst would be worse than the gap. Beyond one
     // second of backlog, re-anchor the grid, count the dropped ticks,
     // and warn — bounded intervals keep true catch-up.
     {
-      if (NOW > nextTick + std::chrono::seconds(1)) {
-        const auto BEHIND_NS =
-            std::chrono::duration_cast<std::chrono::nanoseconds>(NOW - nextTick).count();
-        const std::uint64_t DROPPED =
-            static_cast<std::uint64_t>(BEHIND_NS / 1000000) / static_cast<std::uint64_t>(FRAME_MS);
+      const std::uint64_t NEXT_NS = clockgrid::deadlineNs(anchorNs, tickIndex, HZ);
+      if (NOW_NS > NEXT_NS + clockgrid::NS_PER_S) {
+        const std::uint64_t BEHIND_NS = NOW_NS - NEXT_NS;
+        // Deadlines already in the past that have not been slept to:
+        // every grid tick up to now, less the ones this loop issued.
+        const std::uint64_t DROPPED = clockgrid::ticksElapsed(anchorNs, NOW_NS, HZ) - tickIndex;
         clockState_.wallResyncDroppedTicks.fetch_add(DROPPED, std::memory_order_acq_rel);
         sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_FRAME_OVERRUN),
                          fmt::format("clock resync: {} ticks dropped after a {} ms stall "
                                      "(host suspend/starvation beyond catch-up policy)",
                                      DROPPED, BEHIND_NS / 1000000));
-        nextTick = NOW + FRAME_PERIOD;
+        anchorNs = NOW_NS;
+        tickIndex = 1;
       }
     }
 
@@ -175,15 +200,16 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
       const std::uint8_t violatorUid = scheduler_.lastViolationTaskUid();
       sysLog_->fatal(
           label(), static_cast<std::uint8_t>(ERROR_HARD_REALTIME_FAILURE),
-          fmt::format("Hard real-time constraint violated at cycle {} (mode={}): "
-                      "{}. Violator: {} taskUid={}. Clock cycles: {}, Task cycles: {}, Lag: {}. "
-                      "Initiating emergency shutdown.",
-                      clockCycles, rtModeToString(rtConfig_.mode),
-                      rtConfig_.mode == RTMode::HARD_TICK_COMPLETE
-                          ? fmt::format("task execution overran frame period ({} ms)", FRAME_MS)
-                          : "task missed period deadline (still running at next invocation)",
-                      violator != nullptr ? violator : "(unattributed)", violatorUid, clockCycles,
-                      taskCycles, CYCLE_LAG));
+          fmt::format(
+              "Hard real-time constraint violated at cycle {} (mode={}): "
+              "{}. Violator: {} taskUid={}. Clock cycles: {}, Task cycles: {}, Lag: {}. "
+              "Initiating emergency shutdown.",
+              clockCycles, rtModeToString(rtConfig_.mode),
+              rtConfig_.mode == RTMode::HARD_TICK_COMPLETE
+                  ? fmt::format("task execution overran frame period ({:.3f} ms)", PERIOD_MS)
+                  : "task missed period deadline (still running at next invocation)",
+              violator != nullptr ? violator : "(unattributed)", violatorUid, clockCycles,
+              taskCycles, CYCLE_LAG));
 
       // Emergency shutdown sequence
       controlState_.rtFailureShutdown.store(true, std::memory_order_release);
@@ -210,18 +236,19 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
       if (controlState_.shutdownRequested.load(std::memory_order_acquire)) {
         break;
       }
-      nextTick = std::chrono::steady_clock::now() + FRAME_PERIOD;
+      anchorNs = clockgrid::nowNs();
+      tickIndex = 1;
       continue;
     }
 
     // ========================================================================
     // Tick Generation
     // ========================================================================
-    // Stamp tick time for profiling (ns since epoch, high resolution)
-    const auto TICK_NS = std::chrono::duration_cast<std::chrono::nanoseconds>(
-                             std::chrono::steady_clock::now().time_since_epoch())
-                             .count();
-    clockState_.lastTickNs.store(TICK_NS, std::memory_order_release);
+    // Stamp tick time for profiling. CLOCK_MONOTONIC is what the
+    // standard library's steady clock reads on this platform, so the
+    // task thread's steady-clock stamps compare with it directly.
+    clockState_.lastTickNs.store(static_cast<std::int64_t>(clockgrid::nowNs()),
+                                 std::memory_order_release);
 
     // Signal task execution thread to process this tick
     // NOTE: clockCycles incremented AFTER signal, maintaining invariant:
@@ -271,7 +298,8 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
       // and back-to-back ticks read as period violations (fatal under
       // hard RT within cycles of resume). Only sub-second stalls repay
       // through the grid; a pause resumes on a clean period boundary.
-      nextTick = std::chrono::steady_clock::now() + FRAME_PERIOD;
+      anchorNs = clockgrid::nowNs();
+      tickIndex = 1;
     }
   }
 

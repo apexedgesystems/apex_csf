@@ -49,6 +49,11 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- Executive clock: tick deadlines are computed from the tick index on a
+  nanosecond grid; the wait is an absolute-deadline sleep on the
+  monotonic clock, and the clock thread runs with one nanosecond of
+  timer slack. The 1000 Hz ceiling on `clockFrequencyHz` is now stated
+  policy rather than an arithmetic guard.
 - Python tooling manages dependencies with uv instead of poetry (PEP 621
   project metadata, uv.lock); the published wheel's internal version now
   matches the release, and it no longer lists pytest as a runtime
@@ -58,6 +63,13 @@ any such change is called out explicitly in its entry.
 - Build image hierarchy retiered (build-base / dev-base / dev-cuda /
   per-platform); containers run as a non-root user.
 - GitHub Actions pinned to commit SHAs with an automated pin guard.
+
+### Fixed
+
+- Executive clock: a fundamental frequency that does not divide 1000 ran
+  at the wrong rate silently (600 Hz ticked at 1000 Hz, 300 Hz at
+  333 Hz) because the frame period was held in whole milliseconds; the
+  boot log and health packet reported the requested rate throughout.
 
 ## [0.0.1] - 2026-03-27
 
