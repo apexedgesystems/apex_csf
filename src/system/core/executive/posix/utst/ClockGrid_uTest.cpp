@@ -5,6 +5,7 @@
 
 #include "src/system/core/executive/posix/inc/ClockGrid.hpp"
 
+#include <array>
 #include <cstdint>
 
 #include <gtest/gtest.h>
@@ -20,7 +21,8 @@ constexpr std::uint64_t ANCHOR = 123'456'789'012ULL;
 
 /// Every rate the validator admits, with the awkward ones called out:
 /// primes, non-divisors of 1000, both ends of the range.
-constexpr std::uint32_t RATES[] = {1, 2, 3, 7, 30, 60, 100, 128, 300, 333, 600, 799, 999, 1000};
+constexpr std::array<std::uint32_t, 14> RATES{1,   2,   3,   7,   30,  60,  100,
+                                              128, 300, 333, 600, 799, 999, 1000};
 
 } // namespace
 

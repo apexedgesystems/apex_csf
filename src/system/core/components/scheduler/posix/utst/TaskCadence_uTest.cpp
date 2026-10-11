@@ -5,6 +5,7 @@
 
 #include "src/system/core/components/scheduler/posix/inc/TaskCadence.hpp"
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -80,9 +81,17 @@ TEST(TaskCadence, StepperMatchesFormula) {
   struct Case {
     std::uint32_t hz, n, d, offset;
   };
-  const Case CASES[] = {{100, 100, 1, 0},  {100, 1, 1, 0},    {100, 30, 1, 0},    {100, 30, 1, 3},
-                        {1000, 100, 2, 0}, {100, 2, 4, 0},    {1000, 100, 3, 0},  {100, 1, 4, 150},
-                        {100, 7, 1, 2},    {1000, 999, 1, 0}, {1000, 1, 65535, 0}};
+  const std::array<Case, 11> CASES{{{100, 100, 1, 0},
+                                    {100, 1, 1, 0},
+                                    {100, 30, 1, 0},
+                                    {100, 30, 1, 3},
+                                    {1000, 100, 2, 0},
+                                    {100, 2, 4, 0},
+                                    {1000, 100, 3, 0},
+                                    {100, 1, 4, 150},
+                                    {100, 7, 1, 2},
+                                    {1000, 999, 1, 0},
+                                    {1000, 1, 65535, 0}}};
   for (const auto& C : CASES) {
     ASSERT_TRUE(TaskCadence::admissible(C.hz, C.n, C.d, C.offset));
     const auto RUNS = stepped(C.hz, C.n, C.d, C.offset, 5000);
@@ -99,11 +108,11 @@ TEST(TaskCadence, CountPerPatternIsExact) {
     std::uint32_t hz, n, d;
     const char* what;
   };
-  const Case CASES[] = {{100, 1, 4, "0.25 Hz"},
-                        {1000, 100, 2, "50 Hz written as 100/2"},
-                        {100, 2, 4, "0.5 Hz written as 2/4"},
-                        {1000, 100, 3, "33.3 Hz written as 100/3"},
-                        {100, 30, 1, "30 Hz on 100 Hz"}};
+  const std::array<Case, 5> CASES{{{100, 1, 4, "0.25 Hz"},
+                                   {1000, 100, 2, "50 Hz written as 100/2"},
+                                   {100, 2, 4, "0.5 Hz written as 2/4"},
+                                   {1000, 100, 3, "33.3 Hz written as 100/3"},
+                                   {100, 30, 1, "30 Hz on 100 Hz"}}};
   for (const auto& C : CASES) {
     const std::uint64_t PATTERN = TaskCadence::patternTicks(C.hz, C.d);
     TaskCadence c{};
@@ -178,9 +187,9 @@ TEST(TaskCadence, InitAtKeepsAbsolutePhase) {
   struct Case {
     std::uint32_t hz, n, d, offset;
   };
-  const Case CASES[] = {
-      {100, 100, 1, 0}, {100, 30, 1, 3}, {1000, 100, 3, 0}, {100, 1, 4, 150}, {100, 7, 1, 2}};
-  const std::uint64_t LOADS[] = {0, 1, 149, 150, 151, 999, 1000, 123'456, 7'000'003};
+  const std::array<Case, 5> CASES{
+      {{100, 100, 1, 0}, {100, 30, 1, 3}, {1000, 100, 3, 0}, {100, 1, 4, 150}, {100, 7, 1, 2}}};
+  const std::array<std::uint64_t, 9> LOADS{0, 1, 149, 150, 151, 999, 1000, 123'456, 7'000'003};
   for (const auto& C : CASES) {
     for (const std::uint64_t LOAD : LOADS) {
       TaskCadence fresh{};

@@ -15,6 +15,7 @@
 #include "src/system/core/infrastructure/schedulable/inc/SchedulableTask.hpp"
 #include "src/utilities/concurrency/inc/Delegate.hpp"
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -142,13 +143,13 @@ TEST(SchedulerRates, CountPerPatternIsExact) {
     std::uint16_t hz, n, d;
     const char* what;
   };
-  const Case CASES[] = {{100, 1, 4, "0.25 Hz"},
-                        {1000, 100, 2, "50 Hz written as 100/2"},
-                        {100, 2, 4, "0.5 Hz written as 2/4"},
-                        {1000, 100, 3, "33.3 Hz written as 100/3"},
-                        {100, 30, 1, "30 Hz on 100 Hz"},
-                        {100, 100, 1, "every tick"},
-                        {1000, 1, 1, "1 Hz on 1000 Hz"}};
+  const std::array<Case, 7> CASES{{{100, 1, 4, "0.25 Hz"},
+                                   {1000, 100, 2, "50 Hz written as 100/2"},
+                                   {100, 2, 4, "0.5 Hz written as 2/4"},
+                                   {1000, 100, 3, "33.3 Hz written as 100/3"},
+                                   {100, 30, 1, "30 Hz on 100 Hz"},
+                                   {100, 100, 1, "every tick"},
+                                   {1000, 1, 1, "1 Hz on 1000 Hz"}}};
   for (const auto& C : CASES) {
     Harness h(C.hz);
     ASSERT_EQ(h.add(C.n, C.d, 0), Status::SUCCESS) << C.what;
