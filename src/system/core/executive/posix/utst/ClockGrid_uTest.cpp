@@ -74,7 +74,7 @@ TEST(ClockGrid, SpacingIsPeriodOrPeriodPlusOne) {
   }
 }
 
-/** @test The 600 Hz case from the ticket: 1,666,666 or 1,666,667 ns apart, exact at one second. */
+/** @test The 600 Hz case: 1,666,666 or 1,666,667 ns apart, exact at one second. */
 TEST(ClockGrid, SixHundredHertzIsHonest) {
   EXPECT_EQ(periodNs(600), 1'666'666U);
   EXPECT_EQ(deadlineNs(0, 1, 600), 1'666'666U);

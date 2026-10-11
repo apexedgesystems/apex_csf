@@ -93,7 +93,7 @@ TEST(TaskCadence, StepperMatchesFormula) {
   }
 }
 
-/** @test The ticket's table: every row runs the configured number of times per pattern. */
+/** @test The rate table from the README: every row runs the configured count per pattern. */
 TEST(TaskCadence, CountPerPatternIsExact) {
   struct Case {
     std::uint32_t hz, n, d;
