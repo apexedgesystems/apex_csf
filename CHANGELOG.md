@@ -47,9 +47,8 @@ any such change is called out explicitly in its entry.
 ### Changed
 
 - Breaking: the TPRM payload prelude is format A v4 (28 bytes, magic
-  `APV4`, 64-bit payload size). Readers accept v4 only; a v3-stamped
-  payload is refused with `BAD_MAGIC`. Consumers of `compat/tprm/` copy
-  the regenerated vector set.
+  `APV4`, 64-bit payload size). Readers accept v4 only; v3 payloads are
+  rejected. Consumers of `compat/tprm/` copy the regenerated vector set.
 - Contract change: a nested struct contributes only its flattened leaves
   to the TPRM layout hash, whether written as a plain nested table or as
   `type = "struct"` with a `fields` table. Serialized bodies are
