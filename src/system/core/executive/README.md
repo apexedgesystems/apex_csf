@@ -225,17 +225,18 @@ rate under test.
 
 ## Testing
 
-| Dir           | Contents                                                          | In CI suite? |
-| ------------- | ----------------------------------------------------------------- | ------------ |
-| `posix/utst/` | Struct/config unit tests (status, RT mode, data, shutdown)        | Yes          |
-| `base/utst/`  | IExecutive contract tests                                         | Yes          |
-| `core/utst/`  | ExecutiveCore identity/contract tests                             | Yes          |
-| `mcu/utst/`   | MCU executive unit tests                                          | Yes          |
-| `posix/dtst/` | Full-boot timing-integrity component tests (clock grid repayment, | No (manual)  |
-|               | backlog drain to parity, counted >1 s resync)                     |              |
-| `posix/ptst/` | Delivered-cadence benchmark (period fidelity, jitter tail,        | No (manual)  |
-|               | cumulative drift vs the deadline grid, wake lateness) at the      |              |
-|               | rate `CADENCE_HZ` selects                                         |              |
+| Dir           | Contents                                                         | In CI suite? |
+| ------------- | ---------------------------------------------------------------- | ------------ |
+| `posix/utst/` | Struct/config unit tests (status, RT mode, data, shutdown)       | Yes          |
+| `base/utst/`  | IExecutive contract tests                                        | Yes          |
+| `core/utst/`  | ExecutiveCore identity/contract tests                            | Yes          |
+| `mcu/utst/`   | MCU executive unit tests                                         | Yes          |
+| `posix/dtst/` | Full-boot timing-integrity component tests (clock grid repayment | No (manual)  |
+|               | across a real SIGSTOP stall, backlog drain to parity, counted    |              |
+|               | >1 s resync, pause neither owed nor counted)                     |              |
+| `posix/ptst/` | Delivered-cadence benchmark (period fidelity, jitter tail,       | No (manual)  |
+|               | cumulative drift vs the deadline grid, wake lateness) at the     |              |
+|               | rate `CADENCE_HZ` selects                                        |              |
 
 The dtst and ptst tiers boot a real `ApexExecutive` (config-less CLI
 boot, cycle-target shutdown) and assert wall-clock spans, so they run
