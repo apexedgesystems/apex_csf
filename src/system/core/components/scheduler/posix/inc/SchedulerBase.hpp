@@ -12,7 +12,7 @@
  * Design:
  *   - Tasks are minimal (just callable + label)
  *   - Scheduler owns all configuration via TaskConfig
- *   - Frequency decimation happens at scheduler level (TaskEntry::shouldRun)
+ *   - Rates are scheduler-level: each entry's TaskCadence names the cycles it runs on
  */
 
 #include "src/system/core/infrastructure/system_component/posix/inc/CoreComponentBase.hpp"
@@ -470,6 +470,44 @@ protected:
 
   /** @brief Tick counter (incremented by tick()). */
   std::uint64_t tickCount_{0};
+
+  /**
+   * @brief Cycle index of the dispatch now starting, checked against the
+   *        caller's tick index so the two can never disagree.
+   *
+   * The executive passes `cycle mod ffreq`; the scheduler keeps the whole
+   * seconds. When the expected index arrives the count simply advances;
+   * otherwise it moves to the next cycle at or after the expected one
+   * whose index matches, which stays correct when ticks are skipped (a
+   * sleeping scheduler) and when a table is loaded mid-second.
+   *
+   * @pre ffreq_ > 0 (the schedule table exists).
+   * @note RT-safe: compares and increments on the expected path, no division.
+   */
+  [[nodiscard]] std::uint64_t beginDispatchCycle(std::uint16_t tick) noexcept {
+    if (tick == expectedTick_) {
+      const std::uint64_t CYCLE = nextDispatchCycle_++;
+      if (++expectedTick_ >= ffreq_) {
+        expectedTick_ = 0;
+      }
+      return CYCLE;
+    }
+    // Resynchronise from the start of the current second (nextDispatchCycle_
+    // minus its own index is a whole number of seconds).
+    const std::uint64_t BASE = nextDispatchCycle_ - expectedTick_;
+    std::uint64_t cycle = BASE + tick;
+    if (cycle < nextDispatchCycle_) {
+      cycle += ffreq_;
+    }
+    nextDispatchCycle_ = cycle + 1;
+    expectedTick_ = (static_cast<std::uint32_t>(tick) + 1U >= ffreq_) ? 0U : tick + 1U;
+    return cycle;
+  }
+
+  /** @brief Cycle the next dispatch will be given; a late addTask aligns to it. */
+  std::uint64_t nextDispatchCycle_{0};
+  /** @brief nextDispatchCycle_ mod ffreq_, kept alongside so the expected path divides nothing. */
+  std::uint16_t expectedTick_{0};
 
   /** @brief All registered task entries (scheduler owns these). */
   std::vector<TaskEntry> entries_{};

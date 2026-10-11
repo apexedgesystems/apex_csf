@@ -293,6 +293,7 @@ Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcep
     setStatus(static_cast<std::uint8_t>(OUT));
     return OUT;
   }
+  const std::uint64_t CYCLE = beginDispatchCycle(tick);
 
   auto& entryIndices = schedule_[TIDX];
   if (entryIndices.empty()) {
@@ -306,10 +307,16 @@ Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcep
   // pays a single read regardless of table size.
   const std::uint64_t DISPATCH_NS = apex::helpers::cpu::getMonotonicNs();
 
-  // Enqueue all tasks that should run (frequency gate check)
+  // Enqueue every task whose cadence lands on this cycle. A one-second
+  // pattern's slots are exact, so every visit runs; a multi-second
+  // pattern consults its cadence, and the instant is consumed here
+  // whether or not the task then dispatches.
   for (std::size_t idx : entryIndices) {
     TaskEntry& entry = entries_[idx];
-    if (entry.shouldRun()) {
+    if (!entry.gated || entry.cadence.due(CYCLE)) {
+      if (entry.gated) {
+        entry.cadence.advance();
+      }
       // Skip tasks belonging to locked components
       if (entry.fullUid != 0 && componentResolver_) {
         auto* comp = componentResolver_->getComponent(entry.fullUid);

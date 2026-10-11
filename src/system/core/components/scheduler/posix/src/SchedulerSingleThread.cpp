@@ -38,6 +38,7 @@ Status SchedulerSingleThread::executeTasksOnTickSingle(std::uint16_t tick) noexc
     setStatus(static_cast<uint8_t>(Status::SUCCESS));
     return Status::SUCCESS;
   }
+  const std::uint64_t CYCLE = beginDispatchCycle(tick);
 
   auto& entryIndices = schedule_[TICK];
   const std::size_t N = entryIndices.size();
@@ -56,9 +57,14 @@ Status SchedulerSingleThread::executeTasksOnTickSingle(std::uint16_t tick) noexc
     const std::size_t ENTRY_IDX = entryIndices[i];
     TaskEntry& entry = entries_[ENTRY_IDX];
 
-    // Frequency decimation check (scheduler-owned)
-    if (!entry.shouldRun()) {
-      continue;
+    // Cadence gate for multi-second patterns: is this one of the task's
+    // cycles? The instant is consumed here whether or not the task then
+    // dispatches. A one-second pattern's slots are exact: every visit runs.
+    if (entry.gated) {
+      if (!entry.cadence.due(CYCLE)) {
+        continue;
+      }
+      entry.cadence.advance();
     }
 
     // Skip tasks belonging to locked components

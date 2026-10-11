@@ -36,21 +36,11 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) n
   const std::uint16_t TFREQD = config.freqD;
   const std::uint16_t OFFSET = config.offset;
 
-  // Preconditions
-  if (TFREQN > ffreq_) {
-    setLastError("tfreqn > ffreq");
-    setStatus(static_cast<std::uint8_t>(Status::ERROR_TFREQN_GT_FFREQ));
-    return Status::ERROR_TFREQN_GT_FFREQ;
-  }
-
+  // Admission: the rate must exist, fit under the fundamental, and start
+  // inside its own first period. Landing on whole ticks is not a
+  // condition; an uneven rate is admitted and announced below.
   if (TFREQN == 0) {
-    setLastError("tfreqn == 0 (division undefined)");
-    setStatus(static_cast<std::uint8_t>(Status::ERROR_FFREQ_MOD_TFREQN_DNE0));
-    return Status::ERROR_FFREQ_MOD_TFREQN_DNE0;
-  }
-
-  if ((ffreq_ % TFREQN) != 0) {
-    setLastError("ffreq % tfreqn != 0");
+    setLastError("tfreqn == 0 (no rate)");
     setStatus(static_cast<std::uint8_t>(Status::ERROR_FFREQ_MOD_TFREQN_DNE0));
     return Status::ERROR_FFREQ_MOD_TFREQN_DNE0;
   }
@@ -61,37 +51,46 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) n
     return Status::ERROR_TFREQD_LT1;
   }
 
-  // First-touch sizing
-  if (schedule_.empty() && ffreq_ > 0U) {
-    schedule_.resize(static_cast<std::size_t>(ffreq_));
+  const std::uint64_t PATTERN = TaskCadence::patternTicks(ffreq_, TFREQD);
+  if (ffreq_ == 0U || TFREQN > PATTERN) {
+    setLastError("tfreqn / tfreqd above the fundamental");
+    setStatus(static_cast<std::uint8_t>(Status::ERROR_TFREQN_GT_FFREQ));
+    return Status::ERROR_TFREQN_GT_FFREQ;
   }
 
-  // Geometry
-  const std::uint16_t BASE_TPT =
-      (TFREQN == ffreq_) ? 1 : static_cast<std::uint16_t>(ffreq_ / TFREQN);
-  const std::uint32_t PERIOD_TPT =
-      (TFREQD == 1) ? static_cast<std::uint32_t>(BASE_TPT)
-                    : static_cast<std::uint32_t>(BASE_TPT) * static_cast<std::uint32_t>(TFREQD);
-
-  if (PERIOD_TPT == 0U) {
-    setLastError("Computed periodTicks == 0");
-    setStatus(static_cast<std::uint8_t>(Status::ERROR_FFREQ_MOD_TFREQN_DNE0));
-    return Status::ERROR_FFREQ_MOD_TFREQN_DNE0;
-  }
-
-  if (OFFSET >= PERIOD_TPT) {
-    setLastError("offset >= periodTicks");
+  if (static_cast<std::uint64_t>(OFFSET) * TFREQN >= PATTERN) {
+    setLastError("offset at or beyond the task period");
     setStatus(static_cast<std::uint8_t>(Status::ERROR_OFFSET_GTE_TPT));
     return Status::ERROR_OFFSET_GTE_TPT;
   }
 
-  // Create TaskEntry (scheduler owns this)
+  // First-touch sizing
+  if (schedule_.empty()) {
+    schedule_.resize(static_cast<std::size_t>(ffreq_));
+  }
+
+  // Create TaskEntry (scheduler owns this). The cadence aligns to the
+  // cycle the next dispatch will carry, so a task added mid-run keeps
+  // the phase it would have had from the first tick.
   TaskEntry entry{};
   entry.task = &task;
-  entry.periodNs =
-      ffreq_ > 0U ? (static_cast<std::uint64_t>(PERIOD_TPT) * 1'000'000'000ULL) / ffreq_ : 0ULL;
   entry.config = config;
-  entry.holdCtr = 0;
+  entry.cadence.initAt(ffreq_, TFREQN, TFREQD, OFFSET, nextDispatchCycle_);
+  entry.gated = (TFREQD > 1U);
+  // The budget a run is measured against is the shortest gap to its
+  // next run; for a rate on whole ticks that is the period itself.
+  entry.periodNs =
+      (static_cast<std::uint64_t>(entry.cadence.shortestGapTicks()) * 1'000'000'000ULL) / ffreq_;
+
+  if (entry.cadence.uneven()) {
+    if (auto* log = componentLog()) {
+      log->warning(label(), 0,
+                   fmt::format("task '{}' at {}/{} Hz on a {} Hz fundamental does not land on "
+                               "whole ticks: {} runs every {} s, spaced {} to {} ticks",
+                               task.getLabel(), TFREQN, TFREQD, ffreq_, TFREQN, TFREQD,
+                               entry.cadence.shortestGapTicks(), entry.cadence.longestGapTicks()));
+    }
+  }
 
   // Add entry to registry (move-only due to unique_ptr member)
   entries_.push_back(std::move(entry));
@@ -112,9 +111,32 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) n
     }
   };
 
-  // Place entry on all of its ticks
-  for (std::uint32_t tick = OFFSET; tick < ffreq_; tick += PERIOD_TPT) {
-    const std::size_t IDX = static_cast<std::size_t>(static_cast<std::uint16_t>(tick));
+  // Place the entry on every slot its cadence visits. One pass of N runs
+  // from the offset covers every residue the task ever uses, since the
+  // pattern repeats after Hz * D ticks, a whole number of seconds. The
+  // residue is stepped alongside the cadence (its gap reduced mod Hz
+  // once) so the walk divides nothing per step.
+  // A one-second pattern (D == 1) visits N distinct residues, so only a
+  // multi-second pattern can revisit a slot and needs the dedupe.
+  TaskCadence walk{};
+  walk.init(ffreq_, TFREQN, TFREQD, OFFSET);
+  const std::uint32_t STEP = walk.shortestGapTicks() % ffreq_;
+  std::vector<std::uint8_t> placed(TFREQD > 1U ? static_cast<std::size_t>(ffreq_) : 0U, 0U);
+  std::uint32_t slot = OFFSET % ffreq_;
+  for (std::uint32_t k = 0; k < TFREQN; ++k) {
+    const std::size_t IDX = static_cast<std::size_t>(slot);
+    const std::uint64_t BEFORE = walk.nextRun;
+    walk.advance();
+    slot += STEP + static_cast<std::uint32_t>(walk.nextRun - BEFORE - walk.shortestGapTicks());
+    if (slot >= ffreq_) {
+      slot -= ffreq_;
+    }
+    if (!placed.empty()) {
+      if (placed[IDX] != 0U) {
+        continue;
+      }
+      placed[IDX] = 1U;
+    }
     auto& vec = schedule_[IDX];
 
     ensureCapacity(vec);
@@ -797,8 +819,11 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
       continue;
     }
 
-    // Build TaskConfig from entry
+    // Build TaskConfig from entry. The constructor coerces a zero
+    // denominator to one as an API convenience; a config row says what
+    // it says, so the rate rule gets to refuse it.
     TaskConfig cfg(entry.freqN, entry.freqD, entry.offset, entry.priority, entry.poolIndex);
+    cfg.freqD = entry.freqD;
 
     // A task table referencing a pool that does not exist is a config
     // defect; route to pool 0 loudly instead of degrading silently.

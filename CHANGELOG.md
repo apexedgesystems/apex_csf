@@ -49,6 +49,13 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- Scheduler task rates: any `freqN / freqD` up to the fundamental is
+  admitted, including rates that do not land on whole ticks; those run
+  the exact count per `freqD` seconds with spacing uneven by at most one
+  tick and a warning in the scheduler log. Refused: zero fields, a rate
+  above the fundamental, an offset at or beyond the first period. A task
+  added while the clock runs keeps the phase it would have had from the
+  first tick.
 - Executive clock: tick deadlines are computed from the tick index on a
   nanosecond grid; the wait is an absolute-deadline sleep on the
   monotonic clock, and the clock thread runs with one nanosecond of
@@ -66,6 +73,12 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Scheduler task rates with a denominator above one ran at the wrong
+  rate: the denominator was applied twice (placement stride and a
+  per-visit counter), so `100/2` at 1000 Hz ran at 25 Hz instead of 50
+  and `100/3` at about 11 Hz instead of 33.3; a long-period task's
+  first run came on its `freqD`-th visit rather than at its offset, and
+  an offset beyond the fundamental was accepted and never ran.
 - Executive clock: a fundamental frequency that does not divide 1000 ran
   at the wrong rate silently (600 Hz ticked at 1000 Hz, 300 Hz at
   333 Hz) because the frame period was held in whole milliseconds; the
