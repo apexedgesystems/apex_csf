@@ -19,6 +19,7 @@ APP_DATA = {
     "components": [
         {"name": "SpecSensor", "fullUid": "0x00D400", "instanceIndex": 0, "type": "SW_MODEL"},
         {"name": "EnumComp", "fullUid": "0x00D500", "type": "SW_MODEL"},
+        {"name": "ValueComp", "fullUid": "0x00E200", "type": "SW_MODEL"},
     ],
 }
 
@@ -63,7 +64,25 @@ ENUM_DICT = {
     "enums": {"EnumCompOpcode": {"underlying_type": "uint16_t", "values": {"GET_STATS": 256}}},
 }
 
-STRUCT_DICTS = {"SpecSensor.json": SPEC_DICT, "EnumComp.json": ENUM_DICT}
+# A component whose only enum is a plain value enum, as the rover's
+# controller has for its drive mode. Its values sit in the protocol's own
+# opcode range, so they are not this component's commands.
+VALUE_ENUM_DICT = {
+    "component": "ValueComp",
+    "structs": {},
+    "enums": {
+        "DriveMode": {
+            "underlying_type": "uint8_t",
+            "values": {"HOLD": 0, "TRAJECTORY": 1, "WAYPOINT": 2},
+        }
+    },
+}
+
+STRUCT_DICTS = {
+    "SpecSensor.json": SPEC_DICT,
+    "EnumComp.json": ENUM_DICT,
+    "ValueComp.json": VALUE_ENUM_DICT,
+}
 
 
 def _component_commands(commands: dict, label: str) -> list:
@@ -86,6 +105,22 @@ def test_spec_commands_are_authoritative():
 
     reset = cmds[3]
     assert reset["fields"] == []
+
+
+def test_value_enums_are_not_exported_as_commands():
+    """A mode enum is not a command surface.
+
+    Its values fall in 0x0000..0x00FF, which the interface answers itself
+    as NOOP / PING / GET_STATUS. Exported as commands they would appear
+    on the console under the mode's name, acknowledge, and leave the
+    component untouched.
+    """
+    commands = generate_commands(APP_DATA, STRUCT_DICTS)
+    cmds = _component_commands(commands, "ValueComp")
+    names = [c["name"] for c in cmds]
+    assert names == ["NOOP", "GET_HEALTH"]
+    assert "HOLD" not in names
+    assert "WAYPOINT" not in names
 
 
 def test_enum_fallback_still_generates():

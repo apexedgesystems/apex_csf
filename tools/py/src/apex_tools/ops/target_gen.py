@@ -140,6 +140,12 @@ QUICK_COMMANDS = [
 ]
 
 
+# Opcodes below this belong to the protocol, not to a component: the
+# interface answers them locally (see ApexInterface, "System opcodes
+# (0x0000-0x00FF) are handled locally").
+FIRST_COMPONENT_OPCODE = 0x0100
+
+
 # ---------------------------------------------------------------------------
 # Loader helpers
 # ---------------------------------------------------------------------------
@@ -304,6 +310,14 @@ def generate_commands(app_data: dict, struct_dicts: dict) -> dict:
         # [[commands]] arrays the dispatch base generates from, with input
         # fields derived from the request struct's dictionary entry. Other
         # components fall back to opcode enums parsed from their headers.
+        #
+        # Only an enum whose values are component opcodes can be one of
+        # those: 0x0000..0x00FF belongs to the protocol itself (NOOP,
+        # PING, GET_STATUS, RESET), which the interface answers without
+        # the component ever seeing it. An enum of plain values -- a mode,
+        # a state, a colour -- lands in that range, and exporting it as
+        # commands puts buttons on the console that acknowledge and do
+        # nothing, under the value's name.
         _data_file, data = find_struct_dict(name, struct_dicts)
         if data and data.get("commands"):
             for cmd in data["commands"]:
@@ -317,9 +331,10 @@ def generate_commands(app_data: dict, struct_dicts: dict) -> dict:
                 )
         elif data:
             for _enum_name, enum_data in data.get("enums", {}).items():
-                for op_name, op_value in sorted(
-                    enum_data.get("values", {}).items(), key=lambda x: x[1]
-                ):
+                values = enum_data.get("values", {})
+                if any(v < FIRST_COMPONENT_OPCODE for v in values.values()):
+                    continue  # A value enum, not this component's opcodes.
+                for op_name, op_value in sorted(values.items(), key=lambda x: x[1]):
                     comp_cmds.append(
                         {
                             "name": op_name,
