@@ -83,6 +83,13 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Action watchpoints: `minFireCount` now debounces. With N set, a
+  watchpoint dispatches once when its predicate has held for N
+  consecutive evaluations and stays quiet until the predicate drops;
+  before, 1 refired on every evaluation and anything higher never fired.
+  Groups follow the same rule; their config row's `minFireCount` was
+  read into nothing. `fireCount`, delivered to notifications, counts
+  dispatches.
 - Scheduler task rates with a denominator above one ran at the wrong
   rate: the denominator was applied twice (placement stride and a
   per-visit counter), so `100/2` at 1000 Hz ran at 25 Hz instead of 50

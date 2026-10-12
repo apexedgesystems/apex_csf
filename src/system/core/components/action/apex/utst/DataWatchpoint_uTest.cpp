@@ -422,13 +422,13 @@ TEST(DataWatchpoint, CustomDelegateEdgeDetection) {
   EXPECT_FALSE(evaluateEdge(wp, reinterpret_cast<const std::uint8_t*>(&ABOVE), 4));
   EXPECT_EQ(wp.fireCount, 1U);
 
-  // Below again: no fire (true -> false, debounce resets fireCount)
+  // Below again: no fire (true -> false re-arms; the dispatch count stays)
   EXPECT_FALSE(evaluateEdge(wp, reinterpret_cast<const std::uint8_t*>(&BELOW), 4));
-  EXPECT_EQ(wp.fireCount, 0U);
-
-  // Above again: fire (false -> true, fireCount restarts from 0)
-  EXPECT_TRUE(evaluateEdge(wp, reinterpret_cast<const std::uint8_t*>(&ABOVE), 4));
   EXPECT_EQ(wp.fireCount, 1U);
+
+  // Above again: fire (false -> true), the second dispatch
+  EXPECT_TRUE(evaluateEdge(wp, reinterpret_cast<const std::uint8_t*>(&ABOVE), 4));
+  EXPECT_EQ(wp.fireCount, 2U);
 }
 
 /** @test Custom delegate context can be updated between evaluations. */
@@ -491,14 +491,14 @@ TEST(DataWatchpoint, EdgeDetection) {
   EXPECT_FALSE(evaluateEdge(wp, reinterpret_cast<const std::uint8_t*>(&STILL_ABOVE), 4));
   EXPECT_EQ(wp.fireCount, 1U);
 
-  // Below again: no fire (true -> false transition, debounce resets fireCount)
+  // Below again: no fire (true -> false re-arms; the dispatch count stays)
   EXPECT_FALSE(evaluateEdge(wp, reinterpret_cast<const std::uint8_t*>(&BELOW), 4));
-  EXPECT_EQ(wp.fireCount, 0U);
+  EXPECT_EQ(wp.fireCount, 1U);
   EXPECT_FALSE(wp.lastResult);
 
-  // Above again: fire again (false -> true transition, fireCount restarts)
+  // Above again: fire again (false -> true transition), the second dispatch
   EXPECT_TRUE(evaluateEdge(wp, reinterpret_cast<const std::uint8_t*>(&ABOVE), 4));
-  EXPECT_EQ(wp.fireCount, 1U);
+  EXPECT_EQ(wp.fireCount, 2U);
 }
 
 /** @test evaluateEdge does not fire when unarmed. */
@@ -715,6 +715,59 @@ TEST(DataWatchpoint, GroupEdgeDetection) {
   table[0].lastResult = true;
   EXPECT_TRUE(evaluateGroupEdge(group, table, 2));
   EXPECT_EQ(group.fireCount, 2U);
+}
+
+/** @test With minFireCount=3 a group dispatches on the third held evaluation, once, and re-arms. */
+TEST(DataWatchpoint, GroupDebounceFiresOnceAfterHeld) {
+  DataWatchpoint table[1]{};
+  table[0].watchpointId = 1;
+  table[0].armed = true;
+
+  WatchpointGroup group{};
+  group.refs = {1, 0, 0, 0};
+  group.count = 1;
+  group.logic = GroupLogic::AND;
+  group.eventId = 7;
+  group.minFireCount = 3;
+  group.armed = true;
+
+  table[0].lastResult = true;
+  EXPECT_FALSE(evaluateGroupEdge(group, table, 1)); // held 1
+  EXPECT_FALSE(evaluateGroupEdge(group, table, 1)); // held 2
+  EXPECT_TRUE(evaluateGroupEdge(group, table, 1));  // held 3: the dispatch
+  EXPECT_FALSE(evaluateGroupEdge(group, table, 1)); // latched
+  EXPECT_EQ(group.fireCount, 1U);
+
+  table[0].lastResult = false;
+  EXPECT_FALSE(evaluateGroupEdge(group, table, 1)); // re-arm
+  EXPECT_EQ(group.heldCount, 0U);
+  table[0].lastResult = true;
+  EXPECT_FALSE(evaluateGroupEdge(group, table, 1));
+  EXPECT_FALSE(evaluateGroupEdge(group, table, 1));
+  EXPECT_TRUE(evaluateGroupEdge(group, table, 1));
+  EXPECT_EQ(group.fireCount, 2U);
+}
+
+/** @test With minFireCount=1 a group dispatches once per excursion, not on every evaluation. */
+TEST(DataWatchpoint, GroupDebounceOneFiresOncePerExcursion) {
+  DataWatchpoint table[1]{};
+  table[0].watchpointId = 1;
+  table[0].armed = true;
+  table[0].lastResult = true;
+
+  WatchpointGroup group{};
+  group.refs = {1, 0, 0, 0};
+  group.count = 1;
+  group.logic = GroupLogic::OR;
+  group.minFireCount = 1;
+  group.armed = true;
+
+  std::uint32_t dispatches = 0;
+  for (int i = 0; i < 50; ++i) {
+    dispatches += evaluateGroupEdge(group, table, 1) ? 1U : 0U;
+  }
+  EXPECT_EQ(dispatches, 1U);
+  EXPECT_EQ(group.fireCount, 1U);
 }
 
 /** @test Group edge detection does not fire when unarmed. */
@@ -997,8 +1050,8 @@ TEST(DataWatchpoint, DefaultMinFireCount) {
   EXPECT_EQ(wp.minFireCount, 0U);
 }
 
-/** @test With minFireCount=0, evaluateEdge fires on first edge. */
-TEST(DataWatchpoint, DebounceZeroFiresImmediately) {
+/** @test With minFireCount=0 the rising edge is the dispatch, once per excursion. */
+TEST(DataWatchpoint, DebounceZeroFiresOnEdge) {
   DataWatchpoint wp{};
   wp.predicate = WatchPredicate::GT;
   wp.dataType = WatchDataType::UINT8;
@@ -1008,13 +1061,42 @@ TEST(DataWatchpoint, DebounceZeroFiresImmediately) {
   std::uint8_t threshold = 10;
   std::memcpy(wp.threshold.data(), &threshold, 1);
 
-  std::uint8_t val = 20;
-  EXPECT_TRUE(evaluateEdge(wp, &val, 1));
+  std::uint8_t high = 20;
+  std::uint8_t low = 5;
+  EXPECT_TRUE(evaluateEdge(wp, &high, 1));
   EXPECT_EQ(wp.fireCount, 1U);
+  EXPECT_FALSE(evaluateEdge(wp, &high, 1));
+  EXPECT_FALSE(evaluateEdge(wp, &low, 1));
+  EXPECT_TRUE(evaluateEdge(wp, &high, 1));
+  EXPECT_EQ(wp.fireCount, 2U);
 }
 
-/** @test With minFireCount=3, event dispatches only on 3rd edge. */
-TEST(DataWatchpoint, DebounceRequiresThreeEdges) {
+/** @test With minFireCount=1 a sustained excursion dispatches exactly once, not on every
+ * evaluation. */
+TEST(DataWatchpoint, DebounceOneFiresOncePerExcursion) {
+  DataWatchpoint wp{};
+  wp.predicate = WatchPredicate::GT;
+  wp.dataType = WatchDataType::UINT8;
+  wp.minFireCount = 1;
+  wp.armed = true;
+
+  std::uint8_t threshold = 10;
+  std::memcpy(wp.threshold.data(), &threshold, 1);
+
+  std::uint8_t high = 20;
+  std::uint8_t low = 5;
+  std::uint32_t dispatches = 0;
+  for (int i = 0; i < 100; ++i) {
+    dispatches += evaluateEdge(wp, &high, 1) ? 1U : 0U;
+  }
+  EXPECT_EQ(dispatches, 1U);
+  EXPECT_FALSE(evaluateEdge(wp, &low, 1));
+  EXPECT_TRUE(evaluateEdge(wp, &high, 1));
+  EXPECT_EQ(wp.fireCount, 2U);
+}
+
+/** @test With minFireCount=3 the dispatch comes on the third consecutive true evaluation, once. */
+TEST(DataWatchpoint, DebounceFiresOnceAfterHeld) {
   DataWatchpoint wp{};
   wp.predicate = WatchPredicate::GT;
   wp.dataType = WatchDataType::UINT8;
@@ -1026,32 +1108,24 @@ TEST(DataWatchpoint, DebounceRequiresThreeEdges) {
 
   std::uint8_t high = 20;
   std::uint8_t low = 5;
-
-  // Edge 1: fire but no dispatch
+  EXPECT_FALSE(evaluateEdge(wp, &high, 1)); // held 1
+  EXPECT_FALSE(evaluateEdge(wp, &high, 1)); // held 2
+  EXPECT_TRUE(evaluateEdge(wp, &high, 1));  // held 3: the dispatch
+  EXPECT_EQ(wp.fireCount, 1U);
+  EXPECT_FALSE(evaluateEdge(wp, &high, 1)); // latched
   EXPECT_FALSE(evaluateEdge(wp, &high, 1));
   EXPECT_EQ(wp.fireCount, 1U);
 
-  // Go low to reset edge
+  // Drop and return: the run starts over and dispatches once more on its third.
   EXPECT_FALSE(evaluateEdge(wp, &low, 1));
-  EXPECT_EQ(wp.fireCount, 0U); // Reset on false
-
-  // Edge 2
   EXPECT_FALSE(evaluateEdge(wp, &high, 1));
-  EXPECT_EQ(wp.fireCount, 1U);
-  EXPECT_FALSE(evaluateEdge(wp, &low, 1));
-
-  // Edge 3
   EXPECT_FALSE(evaluateEdge(wp, &high, 1));
-  EXPECT_EQ(wp.fireCount, 1U);
-  EXPECT_FALSE(evaluateEdge(wp, &low, 1));
-
-  // Edge 4
-  EXPECT_FALSE(evaluateEdge(wp, &high, 1));
-  EXPECT_EQ(wp.fireCount, 1U);
+  EXPECT_TRUE(evaluateEdge(wp, &high, 1));
+  EXPECT_EQ(wp.fireCount, 2U);
 }
 
-/** @test Debounce with sustained true: count stays at 1 (only edges count). */
-TEST(DataWatchpoint, DebounceSustainedTrue) {
+/** @test A flicker shorter than the debounce never dispatches: each false restarts the run. */
+TEST(DataWatchpoint, DebounceFlickerNeverFires) {
   DataWatchpoint wp{};
   wp.predicate = WatchPredicate::GT;
   wp.dataType = WatchDataType::UINT8;
@@ -1062,20 +1136,17 @@ TEST(DataWatchpoint, DebounceSustainedTrue) {
   std::memcpy(wp.threshold.data(), &threshold, 1);
 
   std::uint8_t high = 20;
-
-  // First edge
-  EXPECT_FALSE(evaluateEdge(wp, &high, 1));
-  EXPECT_EQ(wp.fireCount, 1U);
-
-  // Sustained true: no more edges, count stays at 1
-  EXPECT_FALSE(evaluateEdge(wp, &high, 1));
-  EXPECT_EQ(wp.fireCount, 1U);
-  EXPECT_FALSE(evaluateEdge(wp, &high, 1));
-  EXPECT_EQ(wp.fireCount, 1U);
+  std::uint8_t low = 5;
+  for (int i = 0; i < 20; ++i) {
+    EXPECT_FALSE(evaluateEdge(wp, &high, 1));
+    EXPECT_FALSE(evaluateEdge(wp, &high, 1));
+    EXPECT_FALSE(evaluateEdge(wp, &low, 1));
+  }
+  EXPECT_EQ(wp.fireCount, 0U);
 }
 
-/** @test Debounce resets fireCount when predicate goes false. */
-TEST(DataWatchpoint, DebounceResetsOnFalse) {
+/** @test The held run and the latch are the state behind the debounce, and a false clears both. */
+TEST(DataWatchpoint, DebounceStateClearsOnFalse) {
   DataWatchpoint wp{};
   wp.predicate = WatchPredicate::GT;
   wp.dataType = WatchDataType::UINT8;
@@ -1087,18 +1158,17 @@ TEST(DataWatchpoint, DebounceResetsOnFalse) {
 
   std::uint8_t high = 20;
   std::uint8_t low = 5;
-
-  // Edge 1
   EXPECT_FALSE(evaluateEdge(wp, &high, 1));
-  EXPECT_EQ(wp.fireCount, 1U);
-
-  // Goes false: resets
+  EXPECT_EQ(wp.heldCount, 1U);
+  EXPECT_FALSE(wp.latched);
+  EXPECT_TRUE(evaluateEdge(wp, &high, 1));
+  EXPECT_EQ(wp.heldCount, 2U);
+  EXPECT_TRUE(wp.latched);
+  EXPECT_FALSE(evaluateEdge(wp, &high, 1));
+  EXPECT_EQ(wp.heldCount, 3U);
   EXPECT_FALSE(evaluateEdge(wp, &low, 1));
-  EXPECT_EQ(wp.fireCount, 0U);
-
-  // Edge 1 again (counter reset)
-  EXPECT_FALSE(evaluateEdge(wp, &high, 1));
-  EXPECT_EQ(wp.fireCount, 1U);
+  EXPECT_EQ(wp.heldCount, 0U);
+  EXPECT_FALSE(wp.latched);
 }
 
 /* ----------------------------- WatchFunction ----------------------------- */

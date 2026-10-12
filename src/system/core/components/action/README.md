@@ -118,11 +118,19 @@ step, and policy: a mission sequence dropping steps is never routine.
 
 ### Watchpoint Debounce Semantics
 
-`minFireCount` counts predicate EDGES -- rising transitions, reset
-whenever the predicate goes false -- not sustained-true ticks. Each
+A watchpoint dispatches once per excursion of its predicate. With
+`minFireCount` 0 the dispatch is the rising edge. With `minFireCount` N
+the predicate must hold for N consecutive evaluations (ticks at the
+default cadence; `cadenceTicks` stretches each evaluation) before the
+one dispatch, after which the watchpoint stays quiet until the predicate
+goes false and re-arms it. So 1 is the edge, 3 is "true for three
+evaluations in a row", and a signal that flickers never accumulates a
+run. `fireCount`, delivered to notifications, counts dispatches. Each
 armed watchpoint states its effective semantics in one INFO line at
 TPRM load. Accumulating data-target resolve failures raise
-`WARN_RESOLVE_FAILURES` (first failure, then every 4096th).
+`WARN_RESOLVE_FAILURES` (first failure, then every 4096th). Groups
+follow the same rule on their combined result; their config row's
+`minFireCount` is read and applied.
 
 ### TPRM Optionality
 
