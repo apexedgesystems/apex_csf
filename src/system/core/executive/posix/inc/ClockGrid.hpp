@@ -18,11 +18,6 @@
 #include <cstdint>
 #include <ctime>
 
-#if !defined(__linux__)
-#include <chrono>
-#include <thread>
-#endif
-
 namespace executive {
 namespace clockgrid {
 
@@ -75,17 +70,19 @@ inline constexpr std::uint64_t NS_PER_S = 1'000'000'000ULL;
 }
 
 /**
- * @brief Block the calling thread until an absolute monotonic instant.
+ * @brief Block the calling thread until an absolute CLOCK_MONOTONIC instant.
  *
- * On Linux this is one absolute-deadline sleep on CLOCK_MONOTONIC: the
- * kernel owns the deadline, so there is no gap between reading the clock
- * and arming a relative timer, and a signal that interrupts the wait is
- * retried against the same instant. Elsewhere it falls back to the
- * standard library's steady-clock wait.
+ * On Linux this is one absolute-deadline sleep: the kernel owns the
+ * deadline, so there is no gap between reading the clock and arming a
+ * relative timer, and a signal that interrupts the wait is retried
+ * against the same instant. Elsewhere the remaining interval is read from
+ * the same clock and slept relatively, re-read after each interruption,
+ * so both halves stay in one clock domain.
  *
- * @param deadlineNs Monotonic instant to wake at, in nanoseconds.
- * @note RT-safe apart from the wait itself: no allocation, bounded
- *       retries on EINTR only.
+ * @param deadlineNs CLOCK_MONOTONIC instant to wake at, in nanoseconds.
+ * @note RT-safe apart from the wait itself: no allocation. Each signal
+ *       interruption costs one retry; no bound is placed on how many
+ *       signals arrive.
  */
 inline void sleepUntilMonotonicNs(std::uint64_t deadlineNs) noexcept {
 #if defined(__linux__)
@@ -95,8 +92,25 @@ inline void sleepUntilMonotonicNs(std::uint64_t deadlineNs) noexcept {
   while (::clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, nullptr) == EINTR) {
   }
 #else
-  std::this_thread::sleep_until(
-      std::chrono::steady_clock::time_point(std::chrono::nanoseconds(deadlineNs)));
+  for (;;) {
+    timespec now{};
+    ::clock_gettime(CLOCK_MONOTONIC, &now);
+    const std::uint64_t NOW_NS =
+        static_cast<std::uint64_t>(now.tv_sec) * NS_PER_S + static_cast<std::uint64_t>(now.tv_nsec);
+    if (NOW_NS >= deadlineNs) {
+      return;
+    }
+    const std::uint64_t LEFT = deadlineNs - NOW_NS;
+    timespec rem{};
+    rem.tv_sec = static_cast<time_t>(LEFT / NS_PER_S);
+    rem.tv_nsec = static_cast<long>(LEFT % NS_PER_S);
+    if (::nanosleep(&rem, nullptr) == 0) {
+      return;
+    }
+    if (errno != EINTR) {
+      return;
+    }
+  }
 #endif
 }
 
