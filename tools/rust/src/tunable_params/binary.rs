@@ -90,7 +90,7 @@ pub fn serialize_value(value: &Json) -> Result<Vec<u8>, Error> {
 
 /// Serialize a JSON value tree to binary bytes plus the layout hash:
 /// the CRC-32 of the canonical field spec (`name:type:size:offset;`
-/// per leaf in emission order, `|size:total` terminator) that the v3
+/// per leaf in emission order, `|size:total` terminator) that the
 /// payload prelude carries.
 pub fn serialize_value_with_layout(value: &Json) -> Result<(Vec<u8>, u32), Error> {
     let (bytes, hash, _rows) = serialize_value_with_layout_and_rows(value)?;
@@ -256,7 +256,14 @@ fn traverse_and_serialize(
                     let size = val.get("size").and_then(|v| v.as_u64()).unwrap_or(0);
                     // out.len() is this leaf's byte offset: the walk and the
                     // spec-side cumulative offsets agree by construction.
-                    spec.push_str(&format!("{key}:{field_type}:{size}:{};", out.len()));
+                    // A key typed "struct" is a grouping, not a leaf: its
+                    // leaves contribute their own rows at running offsets
+                    // and the group contributes none, so the typed spelling
+                    // and a plain nested table hash alike, and both match
+                    // the spec side's inlined fragments.
+                    if field_type != "struct" {
+                        spec.push_str(&format!("{key}:{field_type}:{size}:{};", out.len()));
+                    }
                     serialize_field(key, field_type, val, out, spec, rows, enums)?;
                 } else {
                     // Recurse into nested structures
@@ -672,6 +679,44 @@ mod tests {
         });
         let bytes = serialize_value(&data).unwrap();
         assert_eq!(bytes, vec![1, 2, 3, 4]);
+    }
+
+    /// @test The two spellings of a nested struct, a key typed "struct"
+    /// with its leaves under "fields" and a plain nested table of leaves,
+    /// serialize to identical bytes and stamp the same layout hash.
+    #[test]
+    fn struct_spelling_hashes_like_a_nested_table() {
+        // Keys are in alphabetical order so the walk order is the
+        // declaration order under either spelling.
+        let typed = json!({
+            "Outer": {
+                "head": { "type": "uint", "size": 1, "value": 7 },
+                "inner": {
+                    "type": "struct",
+                    "size": 6,
+                    "fields": {
+                        "a": { "type": "uint", "size": 2, "value": 0x0102 },
+                        "b": { "type": "float", "size": 4, "value": 3.5 }
+                    }
+                },
+                "tail": { "type": "int", "size": 2, "value": -2 }
+            }
+        });
+        let plain = json!({
+            "Outer": {
+                "head": { "type": "uint", "size": 1, "value": 7 },
+                "inner": {
+                    "a": { "type": "uint", "size": 2, "value": 0x0102 },
+                    "b": { "type": "float", "size": 4, "value": 3.5 }
+                },
+                "tail": { "type": "int", "size": 2, "value": -2 }
+            }
+        });
+        let (bytes_typed, hash_typed) = serialize_value_with_layout(&typed).unwrap();
+        let (bytes_plain, hash_plain) = serialize_value_with_layout(&plain).unwrap();
+        assert_eq!(bytes_typed, bytes_plain);
+        assert_eq!(bytes_typed.len(), 9);
+        assert_eq!(hash_typed, hash_plain);
     }
 
     #[test]

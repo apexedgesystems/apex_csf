@@ -46,6 +46,11 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- Breaking: TPRM payload prelude is format A v4; readers reject v3
+  payloads. Copy the regenerated `compat/tprm/` set.
+- TPRM layout hash: a nested struct contributes only its flattened
+  leaves, under either value-TOML spelling. Bodies unchanged;
+  `nested_enum` re-stamps as `c77da66d`, so re-pin or regenerate.
 - Python tooling manages dependencies with uv instead of poetry (PEP 621
   project metadata, uv.lock); the published wheel's internal version now
   matches the release, and it no longer lists pytest as a runtime
