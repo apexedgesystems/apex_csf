@@ -386,6 +386,34 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
   }
 }
 
+bool SchedulerMultiThread::waitForInFlightTasks(std::uint64_t timeoutNs) noexcept {
+  const std::uint64_t DEADLINE = apex::helpers::cpu::getMonotonicNs() + timeoutNs;
+  apex::helpers::cpu::ExponentialBackoff bk;
+  for (;;) {
+    bool pending = false;
+    for (const TaskEntry& entry : entries_) {
+      // stillRunning() is the acquire that pairs with markCompleted()'s
+      // release: once every entry reads idle, every completed task's
+      // writes are published to this thread.
+      if (entry.stillRunning()) {
+        pending = true;
+        break;
+      }
+    }
+    if (!pending) {
+      return true;
+    }
+    if (stopping_.load(std::memory_order_acquire)) {
+      return false;
+    }
+    if (apex::helpers::cpu::getMonotonicNs() >= DEADLINE) {
+      ++totalInFlightWaitTimeouts_;
+      return false;
+    }
+    bk.spinOnce();
+  }
+}
+
 /* ----------------------------- Task Dispatch ----------------------------- */
 
 std::uint8_t SchedulerMultiThread::taskTrampoline(void* raw) noexcept {

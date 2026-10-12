@@ -229,9 +229,52 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
     // correlation before the action engine reads its time provider.
     timeServer_.tick(static_cast<std::uint32_t>(taskCycles));
 
-    // Run action engine: evaluate watchpoints, tick sequences, apply data-writes.
-    // Runs after scheduler so it observes freshly-written task outputs.
-    actionComp_.tick(static_cast<std::uint32_t>(taskCycles));
+    // The action phase runs on this thread and shares its data with the
+    // tasks: watchpoints read task outputs and data-writes mutate task
+    // inputs, including halt decisions. Dispatch is asynchronous, so the
+    // tasks' ownership of that data has to end before the action phase
+    // begins. Waiting until nothing is in flight is that boundary, and
+    // the completed tasks' writes become visible here through it. A task
+    // overrunning from an earlier cycle holds it too: the violation the
+    // scheduler records for the overrun does not end its ownership.
+    //
+    // The wait is bounded by this frame: it may use what is left of the
+    // period that began at the tick this cycle answers, less a tenth of
+    // the period kept back for the action phase and the loop's tail, so
+    // a worker that finishes late still leaves the phase room to run
+    // before the next tick. When the loop is already past that point --
+    // draining a backlog -- the wait is a single poll. A fixed bound of
+    // one period would instead carry every held cycle into the next
+    // frame. On expiry the action phase is skipped for this cycle rather
+    // than run against data a worker is still writing, and skipped again
+    // each cycle until the worker finishes: a long overrun suspends the
+    // engine, not the executive. The engine is level- and time-driven,
+    // so a skipped cycle resolves on the next one that runs.
+    const std::uint64_t PERIOD_NS =
+        (clockFrequency_ > 0U) ? (1000000000ULL / clockFrequency_) : 1000000ULL;
+    const std::uint64_t PHASE_RESERVE_NS = PERIOD_NS / 10U;
+    const std::uint64_t TICK_NS =
+        static_cast<std::uint64_t>(clockState_.lastTickNs.load(std::memory_order_acquire));
+    const std::uint64_t NOW_NS =
+        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                       std::chrono::steady_clock::now().time_since_epoch())
+                                       .count());
+    const std::uint64_t WAIT_END_NS = TICK_NS + PERIOD_NS - PHASE_RESERVE_NS;
+    const std::uint64_t BARRIER_NS = (WAIT_END_NS > NOW_NS) ? (WAIT_END_NS - NOW_NS) : 0U;
+    if (scheduler_.waitForInFlightTasks(BARRIER_NS)) {
+      // Run action engine: evaluate watchpoints, tick sequences, apply
+      // data-writes, on the completed tasks' outputs.
+      actionComp_.tick(static_cast<std::uint32_t>(taskCycles));
+    } else if (!controlState_.shutdownRequested.load(std::memory_order_acquire)) {
+      constexpr std::size_t BARRIER_LOG_INTERVAL = 1024U;
+      const std::size_t TIMEOUTS = scheduler_.totalInFlightWaitTimeouts();
+      if (TIMEOUTS == 1U || (TIMEOUTS % BARRIER_LOG_INTERVAL) == 0U) {
+        sysLog_->warning(label(), static_cast<std::uint8_t>(0x01),
+                         fmt::format("Action phase skipped at cycle {}: a task is still "
+                                     "running at the frame's end (total skips: {})",
+                                     taskCycles, TIMEOUTS));
+      }
+    }
 
     if (shouldProfile) {
       // t2: Just after scheduler returns

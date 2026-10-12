@@ -39,3 +39,7 @@ apex_add_app(
 apex_add_tprm(NAME ApexRoverMcuDemo MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/../tprm/tprm.manifest")
 
 apex_add_deployment(NAME ApexRoverMcuDemo EXEC ApexRoverMcuDemo TPRM ApexRoverMcuDemo/master.tprm)
+
+# The app directory sets no apex_module() paths, so the test tier is added
+# directly rather than through apex_add_test_subdirs().
+add_subdirectory(utst)

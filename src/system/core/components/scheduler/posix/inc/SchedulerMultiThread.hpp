@@ -99,6 +99,33 @@ public:
    */
   [[nodiscard]] bool hasPeriodViolation() const noexcept { return periodViolationsThisTick_ > 0; }
 
+  /**
+   * @brief Wait until no dispatched task is still running.
+   *
+   * Dispatch is asynchronous: the cycle entry returns once the tasks are
+   * enqueued, so a caller that reads task outputs on the tick thread
+   * would race the workers still writing them. This is the ownership
+   * boundary for such a caller. It returns once every entry has released
+   * its in-flight flag, which is also the acquire that publishes the
+   * tasks' writes to this thread.
+   *
+   * Every in-flight entry holds it, whichever cycle dispatched it. A task
+   * overrunning from an earlier cycle still owns its data; the period
+   * violation the scheduler records for it is an account of the overrun,
+   * not the end of that ownership.
+   *
+   * @param timeoutNs Deadline for the wait; 0 polls once.
+   * @return True once nothing is in flight, false on timeout or shutdown
+   *         -- in which case the caller must not read task outputs or
+   *         write task inputs, because a worker may still be doing so.
+   */
+  [[nodiscard]] bool waitForInFlightTasks(std::uint64_t timeoutNs) noexcept;
+
+  /** @brief In-flight waits that hit their deadline since startup. */
+  [[nodiscard]] std::size_t totalInFlightWaitTimeouts() const noexcept {
+    return totalInFlightWaitTimeouts_;
+  }
+
   /** @brief Worker count per constructed pool (index = poolId). */
   [[nodiscard]] std::vector<std::uint16_t> poolWorkerCounts() const noexcept override;
 
@@ -233,6 +260,7 @@ private:
   bool skipOnBusy_{false};            ///< Skip tasks still running (SKIP_ON_BUSY mode).
   std::size_t totalSkipCount_{0};     ///< Total skipped invocations across all tasks.
   std::size_t totalDispatchDrops_{0}; ///< Dropped dispatches (ctx exhaustion or ring reject).
+  std::size_t totalInFlightWaitTimeouts_{0}; ///< In-flight waits that hit their deadline.
 };
 
 } // namespace scheduler

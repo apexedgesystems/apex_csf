@@ -135,6 +135,12 @@ public:
    */
   [[nodiscard]] const ExecutiveHealthPacket& getHealthPacket() const noexcept;
 
+  /// Cycles on which the action phase was skipped because a task was
+  /// still running when the completion wait expired.
+  [[nodiscard]] std::size_t actionPhaseSkips() const noexcept {
+    return scheduler_.totalInFlightWaitTimeouts();
+  }
+
   /**
    * @brief The clock's wake-lateness record for the run.
    *
