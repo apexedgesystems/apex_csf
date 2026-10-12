@@ -54,10 +54,17 @@ protected:
   [[nodiscard]] bool registerComponents() noexcept override;
 
   /// Post-init smoke check: the rover's boot pose on the grid and the
-  /// terrain under it, logged once before the scheduler takes over.
+  /// terrain under it, logged once before the scheduler takes over, and
+  /// the start of the boot sequence.
   void configureComponents() noexcept override;
 
 private:
+  /// Start the armed ATS the sequence bank packs, so the demo comes up
+  /// running. Which sequence that is lives in the ATS file and the
+  /// manifest row that packs it; nothing here names one. No-op, logged,
+  /// when the bank packs none.
+  void startBootSequence() noexcept;
+
   sim::environment::celestial_body::CelestialBody earth_;
   appsim::ground_vehicle::GroundVehicle rover_;
   appsim::rover_controller::RoverController controller_;

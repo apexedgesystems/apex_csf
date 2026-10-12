@@ -31,6 +31,11 @@ rts 10  toml/rts/rts_034_slope_halt.toml
 rts 11  toml/rts/rts_035_link_lost_halt.toml
 rts 12  toml/rts/rts_036_sensor_lost_halt.toml
 
+# The boot sequence. Slot 32 is the first ATS slot (0..31 are RTS), and
+# the executive starts the armed ATS it finds there once the components
+# are up. Drop this row and the demo boots idle.
+ats 32  toml/ats/ats_010_boot.toml
+
 [master master.tprm]
 use components rover_mcu
 use sequences rover

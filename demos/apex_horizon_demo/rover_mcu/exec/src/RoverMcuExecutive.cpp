@@ -9,6 +9,9 @@
 
 #include <fmt/format.h>
 
+#include <cstdint>
+#include <vector>
+
 namespace appsim {
 namespace rover_mcu {
 
@@ -104,6 +107,7 @@ void RoverMcuExecutive::configureComponents() noexcept {
   // tour started over another replaces it; the policy survives the
   // catalog rescan an upload triggers.
   actionComponent().setRtsExclusionGroup(1u);
+  startBootSequence();
 
   auto* log = sysLog();
   if (log == nullptr) {
@@ -118,6 +122,52 @@ void RoverMcuExecutive::configureComponents() noexcept {
                         p.init_from_grid != 0u ? "on the grid" : "geodetic", p.init_north_m,
                         p.init_east_m, p.anchor_lat_deg, p.anchor_lon_deg, p.init_heading_deg,
                         p.step_hz, c.boot_mode, c.cruise_throttle_frac, c.arrival_tolerance_m));
+}
+
+/* ----------------------------- startBootSequence ----------------------------- */
+
+void RoverMcuExecutive::startBootSequence() noexcept {
+  // The demo comes up running. The boot behaviour itself is data: the
+  // framework has already loaded the ats/ bank into its slots, so what
+  // is left is to start the armed one. Which sequence it then runs, and
+  // whether it runs at all, is in that file and in the manifest row that
+  // packs it -- no sequence is named here.
+  //
+  // Starting it now sets its clock before the scheduler runs, and its
+  // first step waits out a delay, so the sequence acts once the plant
+  // has latched its configured pose: a first leg expressed relative to
+  // the rover measures from where the rover actually is.
+  auto& action = actionComponent();
+  auto* log = sysLog();
+  constexpr std::uint8_t ATS_FIRST_SLOT =
+      static_cast<std::uint8_t>(system_core::data::Config::RTS_SLOT_COUNT);
+
+  for (std::uint8_t slot = ATS_FIRST_SLOT;
+       slot < static_cast<std::uint8_t>(system_core::data::SEQUENCE_TABLE_SIZE); ++slot) {
+    const auto& SEQ = action.iface().sequences[slot];
+    if (SEQ.type != system_core::data::SequenceType::ATS || !SEQ.armed || SEQ.stepCount == 0u) {
+      continue;
+    }
+    const std::uint8_t PAYLOAD[1] = {slot};
+    std::vector<std::uint8_t> response;
+    const std::uint8_t RC =
+        action.handleCommand(0x0504u, apex::compat::rospan<std::uint8_t>(PAYLOAD, 1), response);
+    if (log != nullptr) {
+      if (RC == 0u) {
+        log->info(label(), fmt::format("boot sequence: ATS id={} slot={} started ({} steps)",
+                                       SEQ.sequenceId, slot, SEQ.stepCount));
+      } else {
+        log->warning(label(), RC,
+                     fmt::format("boot sequence: ATS id={} slot={} refused (rc={})", SEQ.sequenceId,
+                                 slot, RC));
+      }
+    }
+    return; // One boot sequence: the first armed ATS in the bank.
+  }
+
+  if (log != nullptr) {
+    log->info(label(), "boot sequence: none packed, the rover boots idle");
+  }
 }
 
 } // namespace rover_mcu
