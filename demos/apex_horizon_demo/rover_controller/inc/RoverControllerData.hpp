@@ -81,6 +81,15 @@ struct RoverControllerTunables {
   /// entered at cruise is taken on a wider arc until the rover has
   /// slowed, instead of snapping at full lock).
   double max_yaw_rate_deg_s{15.0};
+
+  /// The plant's acceleration limit, and how long a command waits
+  /// between being computed and reaching the plant. The yaw bound holds
+  /// against the speed the rover can have when the steering lands, so a
+  /// path with a delay declares it here: the host law commands the
+  /// plant it just sampled (zero), the board's command crosses the link
+  /// and lands a link tick later.
+  double accel_m_s2{1.5};
+  double command_lead_s{0.0};
 };
 
 /* ----------------------------- RoverControllerState ----------------------------- */
@@ -101,6 +110,11 @@ struct RoverControllerState {
   std::uint16_t adopted_target_seq{0};
   std::uint8_t adopted_mode{255};
   std::uint8_t leg_phase{0}; ///< Guidance leg phase (along / keyhole / rejoin).
+
+  /// The turn direction the law committed to while the aim point is
+  /// behind the rover (+1 right, -1 left, 0 not reversing). Held across
+  /// steps so the reversal completes instead of alternating.
+  std::int8_t leg_reverse_dir{0};
   /// Where the current leg started (the rover's grid position when the
   /// target was set): with the target it defines the line the rover
   /// follows.

@@ -60,7 +60,30 @@ struct GuidanceTunables {
   double arrival_tolerance_m{0.2};
   double passed_end_cross_m{0.5};
   double max_yaw_rate_deg_s{15.0};
+
+  /// The plant's acceleration limit and the delay between sampling the
+  /// state a command is computed from and that command reaching the
+  /// plant. Together they bound how much faster the rover can be when
+  /// the steering is applied than when it was chosen, which is what the
+  /// yaw-rate limit has to hold against. The host law runs against the
+  /// plant it just sampled, so its lead is zero; the board's command
+  /// crosses the link and lands a link tick later.
+  double accel_m_s2{1.5};
+  double command_lead_s{0.0};
 };
+
+/// Below this the leg's two ends coincide and its direction is
+/// undefined: the only genuine degeneracy. Anything longer has a line,
+/// including legs shorter than the rover's turning circle -- those are
+/// driven through the keyhole, out and back onto the line, which is
+/// slow but arrives.
+inline constexpr double GUIDANCE_MIN_LEG_M = 1.0e-3;
+
+/// How close to the 180-degree wrap the bearing error has to be for its
+/// sign to count as ambiguous. Inside this band the committed reversal
+/// direction is held; outside it the sign decides, which keeps the
+/// reversal the shorter way round.
+inline constexpr double GUIDANCE_REVERSAL_HOLD_DEG = 30.0;
 
 /* ----------------------------- GuidanceLeg ----------------------------- */
 
@@ -82,6 +105,14 @@ struct GuidanceLeg {
   uint8_t valid{0};
   uint8_t arrived{0}; ///< Latched until the next target.
   uint8_t phase{0};   ///< LEG_PHASE_*: how the rover is approaching this leg.
+
+  /// Which way the rover committed to turn while the aim point is
+  /// behind it (+1 right, -1 left, 0 not reversing). The sign of a
+  /// bearing error either side of 180 degrees is opposite, so a rover
+  /// pointed almost exactly away from its aim point would otherwise
+  /// alternate full lock each step and track straight ahead; the
+  /// commitment holds until the aim point is ahead again.
+  int8_t reverse_dir{0};
 };
 
 /* ----------------------------- GuidanceInput ----------------------------- */
@@ -126,15 +157,16 @@ inline void setLeg(GuidanceLeg& leg, double target_north_m, double target_east_m
   leg.valid = 1u;
   leg.arrived = 0u;
   leg.phase = LEG_PHASE_ALONG;
+  leg.reverse_dir = 0;
 }
 
 /**
  * @brief One step of the waypoint law.
  *
  * Latches leg.arrived when the target is inside the tolerance ring or
- * the rover has passed the leg's end within passed_end_cross_m of the
- * line; while latched the output is zero steer and zero throttle so the
- * plant coasts to rest.
+ * the rover has passed the leg's end while still within
+ * passed_end_cross_m of the target; while latched the output is zero
+ * steer and zero throttle so the plant coasts to rest.
  */
 inline GuidanceOutput waypointGuidance(const GuidanceTunables& p, GuidanceLeg& leg,
                                        const GuidanceInput& in) noexcept {
@@ -153,7 +185,7 @@ inline GuidanceOutput waypointGuidance(const GuidanceTunables& p, GuidanceLeg& l
   const double LN = leg.target_north_m - leg.start_north_m;
   const double LE = leg.target_east_m - leg.start_east_m;
   const double LEG = sqrt(LN * LN + LE * LE);
-  const bool HAS_LINE = LEG > 0.5;
+  const bool HAS_LINE = LEG > GUIDANCE_MIN_LEG_M;
   const double UN = HAS_LINE ? LN / LEG : 0.0;
   const double UE = HAS_LINE ? LE / LEG : 0.0;
   const double PN = in.north_m - leg.start_north_m;
@@ -179,7 +211,8 @@ inline GuidanceOutput waypointGuidance(const GuidanceTunables& p, GuidanceLeg& l
   // turning radius of that point it REJOINs (pursues the line again)
   // and is ALONG once within 30 deg of it. The rover therefore meets the
   // end straight rather than circling a target inside its turning
-  // circle. On a leg too short to define a line, aim at the target.
+  // circle. Only a leg whose ends coincide has no line; it aims at the
+  // target, which is inside the arrival ring by then.
   double AN = DN;
   double AE = DE;
   double AIM_DIST = guidanceClamp(p.lookahead_m, 0.5, guidanceMax(DIST, 0.5));
@@ -220,8 +253,22 @@ inline GuidanceOutput waypointGuidance(const GuidanceTunables& p, GuidanceLeg& l
   // atan(L kappa)); full lock while the aim point is behind.
   double steer = 0.0;
   if (fabs(ERR) > 90.0) {
-    steer = copysign(p.max_steer_deg, ERR);
+    // Full lock toward the aim point, which the sign of the error gives:
+    // either sign turns the rover onto it, and this is the shorter way
+    // round. Within a band of the 180-degree wrap that sign is not
+    // meaningful -- a fraction of a degree of heading puts it either way
+    // -- so there the direction already committed to is held instead.
+    // Without that hold, a rover pointed almost exactly away from its
+    // aim point alternates full lock each step and tracks straight
+    // ahead, which with the board's one-tick-delayed commands it does
+    // for as long as the target stays behind it.
+    const bool AMBIGUOUS = fabs(ERR) > (180.0 - GUIDANCE_REVERSAL_HOLD_DEG);
+    if (!AMBIGUOUS || leg.reverse_dir == 0) {
+      leg.reverse_dir = (ERR >= 0.0) ? static_cast<int8_t>(1) : static_cast<int8_t>(-1);
+    }
+    steer = (leg.reverse_dir > 0) ? p.max_steer_deg : -p.max_steer_deg;
   } else {
+    leg.reverse_dir = 0;
     const double ALPHA = ERR * GUIDANCE_DEG_TO_RAD;
     const double KAPPA = 2.0 * sin(ALPHA) / AIM_DIST;
     steer = guidanceClamp(atan(p.wheelbase_m * KAPPA) * GUIDANCE_RAD_TO_DEG, -p.max_steer_deg,
@@ -239,9 +286,14 @@ inline GuidanceOutput waypointGuidance(const GuidanceTunables& p, GuidanceLeg& l
   }
   out.throttle_frac = (MAX_V > 0.0) ? guidanceClamp(v / MAX_V, 0.0, 1.0) : 0.0;
 
-  // Yaw-rate bound against the faster of the current and commanded
-  // speed: tan(delta) <= rate L / v.
-  const double V_BOUND = guidanceMax(in.speed_m_s, v);
+  // Yaw-rate bound: tan(delta) <= rate L / v, against the fastest the
+  // rover can be while this steering is applied. The sampled speed is
+  // not that speed -- the command in force until this one lands can
+  // still be accelerating the plant -- so the sampled speed is carried
+  // forward over the command's lead at the plant's acceleration limit.
+  const double V_AT_CONSUMPTION =
+      in.speed_m_s + guidanceMax(p.accel_m_s2, 0.0) * guidanceMax(p.command_lead_s, 0.0);
+  const double V_BOUND = guidanceMax(V_AT_CONSUMPTION, v);
   if (V_BOUND > 0.05 && p.max_yaw_rate_deg_s > 0.0) {
     const double LOCK = atan(p.max_yaw_rate_deg_s * GUIDANCE_DEG_TO_RAD * p.wheelbase_m / V_BOUND) *
                         GUIDANCE_RAD_TO_DEG;

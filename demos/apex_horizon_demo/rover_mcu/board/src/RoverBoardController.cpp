@@ -69,8 +69,15 @@ BoardCommand RoverBoardController::step() noexcept {
         static_cast<double>(last_.north_m), static_cast<double>(last_.east_m),
         static_cast<double>(last_.heading_deg), static_cast<double>(last_.speed_m_s),
         static_cast<double>(last_.max_speed_m_s)};
+    // The command this step computes is sent after the state it read and
+    // reaches the plant during the next step, so the law's yaw bound is
+    // given that lead: one step of this board.
+    rover_controller::GuidanceTunables g_tunables = p_.guidance;
+    if (p_.step_hz > 0u) {
+      g_tunables.command_lead_s = 1.0 / static_cast<double>(p_.step_hz);
+    }
     const rover_controller::GuidanceOutput g =
-        rover_controller::waypointGuidance(p_.guidance, leg_, in);
+        rover_controller::waypointGuidance(g_tunables, leg_, in);
     cmd.steer_deg = static_cast<float>(g.steer_deg);
     cmd.throttle_frac = static_cast<float>(g.throttle_frac);
     cmd.cross_track_m = static_cast<float>(g.cross_track_m);

@@ -175,6 +175,9 @@ TEST(RoverBoardController, HoldIsZeroAndTrajectoryIsTheConstantSteer) {
   EXPECT_EQ(rig.last.ack_seq, rig.seq) << "each command answers the state it was computed on";
 }
 
+/**
+ * @test With no pose yet, or a halted plant, the board commands zero drive.
+ */
 TEST(RoverBoardController, NoStateOrAHaltMeansZeroDrive) {
   RoverBoardController ctl;
   BoardCommand c = ctl.step();
@@ -208,6 +211,9 @@ TEST(RoverBoardController, LegNorthRampsCruisesBrakesAndLatches) {
   EXPECT_EQ(rig.last.throttle_frac, 0.0F);
 }
 
+/**
+ * @test The board's law ends each leg aligned with it, as the host's does.
+ */
 TEST(RoverBoardController, RepeatedLegsFromAnOffAxisHeadingEndSquare) {
   Rig rig;
   rig.plant.hdg = 116.0;
@@ -226,6 +232,9 @@ TEST(RoverBoardController, RepeatedLegsFromAnOffAxisHeadingEndSquare) {
   }
 }
 
+/**
+ * @test An absolute target is driven to, and the heading rate stays inside its bound.
+ */
 TEST(RoverBoardController, AbsoluteTargetAndYawBoundHold) {
   Rig rig;
   rig.plant.hdg = 90.0;
@@ -251,6 +260,9 @@ TEST(RoverBoardController, AbsoluteTargetAndYawBoundHold) {
   EXPECT_LE(max_rate, 15.0 + 0.5) << "the 15 deg/s bound holds on every tick";
 }
 
+/**
+ * @test A repeated target mid-leg keeps the original line rather than starting a new one.
+ */
 TEST(RoverBoardController, AResetMidLegKeepsTheSameLine) {
   // The board restarts halfway along a 20 m leg: a fresh controller
   // reads the same leg from the next frame and finishes it where the
@@ -276,10 +288,21 @@ TEST(RoverBoardController, AResetMidLegKeepsTheSameLine) {
   EXPECT_NEAR(rig.plant.n, 20.0, 0.3) << "the leg ends where it always did";
 }
 
+/**
+ * @test Every short leg from every heading arrives, bounded in time and heading rate.
+ */
 TEST(RoverBoardController, ShortLegsFromEveryHeadingArriveOnTheTarget) {
   // 2, 4 and 6 m legs (shorter than a turn-around loop) entered from 24
   // headings: every one arrives, in bounded time, within the arrival
   // rule's 0.5 m of its target, with the heading-rate bound held.
+  //
+  // The budget covers the slowest leg with room to spare: 4 m entered
+  // facing away takes 1865 steps (93 s at this rig's 20 Hz). It is
+  // longer than it was before the yaw bound allowed for the delay a
+  // command crosses the link with -- at corner speed that bound now
+  // holds the lock near 30 deg rather than the full 33, which widens
+  // the keyhole arc. The rate assertion is the law's actual 15 deg/s
+  // bound: the worst case over these 72 legs reaches 14.88.
   for (const double LEG : {2.0, 4.0, 6.0}) {
     for (int k = 0; k < 24; ++k) {
       Rig rig;
@@ -288,7 +311,7 @@ TEST(RoverBoardController, ShortLegsFromEveryHeadingArriveOnTheTarget) {
       rig.tick(MODE_WAYPOINT);
       int t = 0;
       double max_rate = 0.0, prev = rig.plant.hdg;
-      while (rig.last.arrived == 0u && ++t < 1600) {
+      while (rig.last.arrived == 0u && ++t < 2200) {
         rig.tick(MODE_WAYPOINT);
         double dh = rig.plant.hdg - prev;
         if (dh > 180.0)
@@ -299,10 +322,10 @@ TEST(RoverBoardController, ShortLegsFromEveryHeadingArriveOnTheTarget) {
         max_rate = std::max(max_rate, std::fabs(dh) / Plant::DT);
       }
       const double MISS = std::hypot(rig.plant.n - LEG, rig.plant.e);
-      EXPECT_LT(t, 1600) << "leg " << LEG << " from " << 15.0 * k << " deg never arrived";
+      EXPECT_LT(t, 2200) << "leg " << LEG << " from " << 15.0 * k << " deg never arrived";
       EXPECT_LT(MISS, 0.5) << "leg " << LEG << " from " << 15.0 * k << " deg ends " << MISS
                            << " m off after " << t << " ticks";
-      EXPECT_LE(max_rate, 15.5) << "leg " << LEG << " from " << 15.0 * k << " deg";
+      EXPECT_LE(max_rate, 15.0) << "leg " << LEG << " from " << 15.0 * k << " deg";
     }
   }
 }

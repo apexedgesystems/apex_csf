@@ -272,6 +272,19 @@ public:
       out.lidar_hit_bits = UP ? CMD.lidar_hit_bits : static_cast<std::uint8_t>(0u);
       out.lidar_nearest_m = UP ? CMD.lidar_nearest_m : rover_board::LIDAR_NEAREST_NONE;
       out.lidar_scan_seq = UP ? CMD.lidar_scan_seq : static_cast<std::uint16_t>(0u);
+    } else {
+      // Host control: there is no board behind these fields, so they
+      // carry no board. Left at their last values they would outlive
+      // the link that produced them -- the frame would still show a
+      // board UP and the plant would still prefer a sensor picture no
+      // one is updating, instead of falling back to its own sweep.
+      out.board_link = rover_board::LINK_NEVER;
+      out.board_load_pct = 0u;
+      out.board_tick = 0u;
+      out.lidar_state = rover_board::LIDAR_NEVER;
+      out.lidar_hit_bits = 0u;
+      out.lidar_nearest_m = rover_board::LIDAR_NEAREST_NONE;
+      out.lidar_scan_seq = 0u;
     }
     out.steer_angle_deg = steer;
     out.throttle_frac = std::clamp(throttle, 0.0, 1.0);
@@ -372,14 +385,15 @@ private:
     const GuidanceTunables G{p.wheelbase_m,          p.max_steer_deg,       p.lookahead_m,
                              p.cruise_throttle_frac, p.brake_m_s2,          p.corner_speed_frac,
                              p.corner_deg,           p.arrival_tolerance_m, p.passed_end_cross_m,
-                             p.max_yaw_rate_deg_s};
+                             p.max_yaw_rate_deg_s,   p.accel_m_s2,          p.command_lead_s};
     GuidanceLeg leg{s.target_north_m, s.target_east_m, s.leg_start_north_m, s.leg_start_east_m,
-                    s.target_valid,   host_arrived_,   s.leg_phase};
+                    s.target_valid,   host_arrived_,   s.leg_phase,         s.leg_reverse_dir};
     const GuidanceInput in{n, e, vehicle_->telemetry().heading_deg, vehicle_->telemetry().speed_m_s,
                            vehicle_->tunables_const().max_speed_m_s};
     const GuidanceOutput g = waypointGuidance(G, leg, in);
     host_arrived_ = leg.arrived;
     s.leg_phase = leg.phase;
+    s.leg_reverse_dir = leg.reverse_dir;
     out.arrived = leg.arrived;
     out.distance_m = g.distance_m;
     out.bearing_deg = g.bearing_deg;

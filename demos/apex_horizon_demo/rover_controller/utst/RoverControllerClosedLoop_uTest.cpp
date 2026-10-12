@@ -99,6 +99,9 @@ TEST(RoverControllerSeam, InvalidBlockLeavesTrajectoryDriving) {
   EXPECT_GT(rig.rover.telemetry().speed_m_s, 0.5);
 }
 
+/**
+ * @test A booted HOLD drives the plant nowhere, through a valid command block.
+ */
 TEST(RoverControllerSeam, ValidBlockReplacesTrajectory) {
   Rig rig(45.0);
   rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::HOLD);
@@ -109,6 +112,9 @@ TEST(RoverControllerSeam, ValidBlockReplacesTrajectory) {
   EXPECT_NEAR(rig.rover.telemetry().speed_m_s, 0.0, 1e-9);
 }
 
+/**
+ * @test TRAJECTORY holds its constant steer and throttle, so the plant circles.
+ */
 TEST(RoverControllerSeam, TrajectoryModeDrivesASteeredCircle) {
   Rig rig(45.0);
   rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::TRAJECTORY);
@@ -170,6 +176,9 @@ TEST(RoverControllerWaypoint, LegNorthRampsCruisesBrakesAndLatches) {
   EXPECT_NEAR(out.throttle_frac, 0.0, 1e-9);
 }
 
+/**
+ * @test A leg across the rover's heading is driven as an arc, never a standing turn.
+ */
 TEST(RoverControllerWaypoint, LegEastArcsRightWithoutPivoting) {
   Rig rig(0.0); // heading north
   rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
@@ -206,6 +215,9 @@ TEST(RoverControllerWaypoint, LegEastArcsRightWithoutPivoting) {
   EXPECT_NEAR(n, 0.0, 0.3);
 }
 
+/**
+ * @test A new target drops the arrival latch and the rover drives the new leg.
+ */
 TEST(RoverControllerWaypoint, RetargetClearsArrivedAndReachesTheNextLeg) {
   Rig rig(0.0);
   rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
@@ -225,6 +237,9 @@ TEST(RoverControllerWaypoint, RetargetClearsArrivedAndReachesTheNextLeg) {
   EXPECT_NEAR(n, 20.0, 0.4);
 }
 
+/**
+ * @test A short leg straight ahead stops inside the arrival ring.
+ */
 TEST(RoverControllerWaypoint, ShortStraightLegLandsInsideTolerance) {
   // A 5 ft leg straight ahead: the precision case -- braking profile
   // from a standing start, arrival inside 0.2 m with centimetre overshoot.
@@ -252,6 +267,9 @@ TEST(RoverControllerWaypoint, ShortStraightLegLandsInsideTolerance) {
   EXPECT_LT(rig.rover.telemetry().speed_m_s, 0.05);
 }
 
+/**
+ * @test Each leg ends aligned with it, so the next one starts square.
+ */
 TEST(RoverControllerWaypoint, RepeatedLegsFromAnOffAxisHeadingEndSquare) {
   // Five consecutive "10 m north of here" legs from a rover facing
   // south-east (the operator clicking the same sequence): the first
@@ -287,6 +305,9 @@ TEST(RoverControllerWaypoint, RepeatedLegsFromAnOffAxisHeadingEndSquare) {
   }
 }
 
+/**
+ * @test A target behind the rover is turned toward, not driven away from.
+ */
 TEST(RoverControllerWaypoint, StraightReversalTurnsAroundInsteadOfDrivingAway) {
   // Out 20 m east, then 20 m straight back: the aim point starts
   // directly behind the rover (180 deg error, where pursuit curvature
@@ -333,6 +354,9 @@ TEST(RoverControllerWaypoint, StraightReversalTurnsAroundInsteadOfDrivingAway) {
   EXPECT_NEAR(H, 270.0, 5.0) << "arrives aligned with the return leg";
 }
 
+/**
+ * @test A short leg entered backwards still arrives, through the keyhole.
+ */
 TEST(RoverControllerWaypoint, AShortLegEnteredFacingAwayArrivesOnTheTarget) {
   // Home after a link-lost halt on the board: 4.2 m to the target with
   // the rover facing away from it (heading 320.7 deg, target bearing
@@ -356,6 +380,9 @@ TEST(RoverControllerWaypoint, AShortLegEnteredFacingAwayArrivesOnTheTarget) {
   EXPECT_LT(MISS, 0.5) << "ticks=" << ticks;
 }
 
+/**
+ * @test A target set in HOLD moves nothing until a driving mode takes it.
+ */
 TEST(RoverControllerWaypoint, HoldModeIgnoresTheTarget) {
   Rig rig(0.0);
   rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::HOLD);
@@ -402,4 +429,68 @@ TEST(RoverControllerAdoption, CommandedModeAndTargetAreAdoptedEdgeTriggered) {
   rig.ctl.setMode(DriveMode::HOLD);
   rig.tick();
   EXPECT_EQ(rig.ctl.mode(), DriveMode::HOLD);
+}
+
+/* ----------------------------- Board handover ----------------------------- */
+
+/**
+ * @test Turning the board off clears the board's fields from the output.
+ */
+TEST(RoverControllerBoardHandover, DisablingTheLinkClearsTheBoardsPicture) {
+  Rig rig;
+  appsim::rover_board::BoardLinkSnapshot link{};
+  link.enabled = 1u;
+  link.link_state = appsim::rover_board::LINK_UP;
+  link.load_pct = 37u;
+  link.board_tick = 1234u;
+  link.cmd.lidar_state = appsim::rover_board::LIDAR_STALE;
+  link.cmd.lidar_hit_bits = 0x0Fu;
+  link.cmd.lidar_nearest_m = 7u;
+  link.cmd.lidar_scan_seq = 99u;
+  rig.ctl.setBoardLink(&link);
+  rig.run(1); // The first step adopts the booted mode; set ours after it.
+  rig.ctl.setMode(DriveMode::WAYPOINT);
+  rig.ctl.setTargetRel(20.0, 0.0); // A leg for the host law to resume on.
+  rig.run(3);
+
+  ASSERT_EQ(rig.ctl.controllerOutput().board_link, appsim::rover_board::LINK_UP);
+  ASSERT_EQ(rig.ctl.controllerOutput().lidar_nearest_m, 7u);
+
+  // The operator disables the link live. Guidance returns to the host,
+  // and nothing of the board's may be left standing: the plant prefers a
+  // sensor picture over its own sweep whenever one is present.
+  link.enabled = 0u;
+  rig.run(1);
+
+  const auto& OUT = rig.ctl.controllerOutput();
+  EXPECT_EQ(OUT.board_link, appsim::rover_board::LINK_NEVER);
+  EXPECT_EQ(OUT.board_load_pct, 0u);
+  EXPECT_EQ(OUT.board_tick, 0u);
+  EXPECT_EQ(OUT.lidar_state, appsim::rover_board::LIDAR_NEVER);
+  EXPECT_EQ(OUT.lidar_hit_bits, 0u);
+  EXPECT_EQ(OUT.lidar_nearest_m, appsim::rover_board::LIDAR_NEAREST_NONE);
+  EXPECT_EQ(OUT.lidar_scan_seq, 0u);
+  EXPECT_GT(OUT.throttle_frac, 0.0) << "the host law should be driving again";
+}
+
+/**
+ * @test Detaching the link entirely clears it too.
+ */
+TEST(RoverControllerBoardHandover, DetachingTheLinkClearsTheBoardsPicture) {
+  Rig rig;
+  appsim::rover_board::BoardLinkSnapshot link{};
+  link.enabled = 1u;
+  link.link_state = appsim::rover_board::LINK_LOST;
+  link.cmd.lidar_nearest_m = 12u;
+  rig.ctl.setBoardLink(&link);
+  rig.run(1);
+  rig.ctl.setMode(DriveMode::WAYPOINT);
+  rig.run(1);
+  ASSERT_EQ(rig.ctl.controllerOutput().board_link, appsim::rover_board::LINK_LOST);
+
+  rig.ctl.setBoardLink(nullptr);
+  rig.run(1);
+
+  EXPECT_EQ(rig.ctl.controllerOutput().board_link, appsim::rover_board::LINK_NEVER);
+  EXPECT_EQ(rig.ctl.controllerOutput().lidar_nearest_m, appsim::rover_board::LIDAR_NEAREST_NONE);
 }

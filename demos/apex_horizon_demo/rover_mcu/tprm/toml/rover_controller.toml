@@ -7,8 +7,11 @@
 # ramp-down against 2 m/s^2 braking, 0.6 m/s through corners, arrive
 # inside 0.2 m or once past the leg's end within 0.5 m of the target; a
 # rover not lined up near the end swings out through a keyhole first. The
-# heading rate is bounded at 15 deg/s by limiting the lock with speed. TRAJECTORY is a 5 deg
-# constant steer at 0.6 throttle (a 17 m circle).
+# heading rate is bounded at 15 deg/s by limiting the lock against the
+# speed the rover can reach by the time the steering is applied (the
+# sampled speed carried forward over command_lead_s at accel_m_s2; the
+# host law commands the plant it just sampled, so its lead is zero).
+# TRAJECTORY is a 5 deg constant steer at 0.6 throttle (a 17 m circle).
 [RoverControllerTunables]
 boot_mode                 = { type = "uint",  size = 1, value = 0 }
 reserved0                 = { type = "array", size = 7, value = [0,0,0,0,0,0,0] }
@@ -26,3 +29,5 @@ corner_deg                = { type = "float", size = 8, value = 15.0 }
 arrival_tolerance_m       = { type = "float", size = 8, value = 0.2 }
 passed_end_cross_m        = { type = "float", size = 8, value = 0.5 }
 max_yaw_rate_deg_s        = { type = "float", size = 8, value = 15.0 }
+accel_m_s2                = { type = "float", size = 8, value = 1.5 }
+command_lead_s            = { type = "float", size = 8, value = 0.0 }
