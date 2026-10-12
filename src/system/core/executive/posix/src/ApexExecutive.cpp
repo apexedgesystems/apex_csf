@@ -1459,18 +1459,17 @@ void ApexExecutive::applyCliOverrides() noexcept {
   // points, census, archive path, verbosity) apply directly.
   ExecutiveTunableParams p = tunableParams_;
 
-  // Clock frequency override. The adoption door's validator bounds it
-  // to [1, 1000] Hz with the tprm path's own rule; a value outside the
-  // 16-bit field is refused here with the same outcome.
+  // Clock frequency override, re-applied over the loaded value with the
+  // same whole-token parse and bound the argument pass used; the adoption
+  // door's validator holds the same [1, 1000] rule for the tprm path.
   if (parsedArgs_.count(CLOCK_HZ)) {
     std::uint32_t hz = 0;
-    if (parseClampedU32(parsedArgs_[CLOCK_HZ][0], hz) &&
-        hz <= std::numeric_limits<std::uint16_t>::max()) {
+    if (cli::parseWholeU32(parsedArgs_[CLOCK_HZ][0], hz) && hz >= 1U && hz <= 1000U) {
       p.clockFrequencyHz = static_cast<std::uint16_t>(hz);
     } else {
-      sysLog_->warning(
-          label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
-          fmt::format("--clock-hz exceeds 16-bit range; keeping {} Hz", p.clockFrequencyHz));
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
+                       fmt::format("--clock-hz not a whole number in 1..1000; keeping {} Hz",
+                                   p.clockFrequencyHz));
     }
   }
 
