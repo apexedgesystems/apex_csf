@@ -17,6 +17,7 @@
  * All structs trivially-copyable for TPRM compatibility.
  */
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -294,14 +295,53 @@ struct GroundVehicleTelemetry {
   /// 1 iff the corresponding ray hit terrain within its march range.
   std::uint8_t lidar_hit[MAX_LIDAR_RAYS]{};
 
-  /// Padding to a round 256 bytes; reserved for future fields without
-  /// a wire-format version bump (e.g. wheel speeds, IMU, contact normals).
-  std::uint8_t reserved1[24]{};
+  /* ---- The frame's tail: bytes 232..255, each one byte, named ---- */
+  /// What the plant stamps every tick beyond the pose and the sweep: the
+  /// board's link, the controller's mode, the running sequence, the
+  /// lamps, the last command's fate, the board's load and tick, the mast,
+  /// and the lidar picture the rover acts on. Every byte here is zero
+  /// before the feature that writes it exists, which is what lets the
+  /// frame stay ROVR/2 while the tail grows. The FrameByte table names
+  /// the same bytes by offset for the code that stamps them; the fields
+  /// name them for the dictionary, so a consumer sees `board_link`, not
+  /// the second byte of a reserved block.
+  std::uint8_t board_link{0};      ///< 0 NEVER, 1 UP, 2 LOST (hardware form).
+  std::uint8_t controller_mode{0}; ///< 0 HOLD, 1 TRAJECTORY, 2 WAYPOINT, 3 HALTED.
+  std::uint8_t seq_state{0};       ///< 0 idle, a running sequence id, or 0x10|halt reason.
+  std::uint8_t active_waypoint{0}; ///< Leg in progress, 1-based; 0 none.
+  std::uint8_t waypoint_total{0};  ///< Legs in the running sequence.
+  std::uint8_t led_bits{0};        ///< bit0 lamp 1 lit, bit1 lamp 2 lit (live).
+  std::uint8_t led1_colour{0};     ///< 0 off, 1 red, 2 green, 3 blue, 4 yellow, 5 white.
+  std::uint8_t led1_rate{0};       ///< 0 steady, 1 0.5 Hz, 2 1 Hz, 3 2 Hz, 4 5 Hz, 5 10 Hz.
+  std::uint8_t led2_colour{0};
+  std::uint8_t led2_rate{0};
+  std::uint8_t last_cmd_result{0};    ///< CmdResultCode of the last rover-range command.
+  std::uint8_t last_cmd_opcode_lo{0}; ///< Its opcode, little-endian.
+  std::uint8_t last_cmd_opcode_hi{0};
+  std::uint8_t board_load_pct{0}; ///< From the board's heartbeat.
+  std::uint8_t board_tick_lo{0};  ///< The board's tick, little-endian.
+  std::uint8_t board_tick_hi{0};
+  std::uint8_t mast_pan_deg{0}; ///< Reserved for the mast; 0 until it exists.
+  std::uint8_t mast_ext_pct{0};
+  std::uint8_t lidar_state{0};     ///< 0 plant sweep, 1 board UP, 2 board STALE.
+  std::uint8_t lidar_hit_bits{0};  ///< bit i: ray i returned (ray 0 the left edge of the fan).
+  std::uint8_t lidar_nearest_m{0}; ///< Closest return, whole metres; 255 none.
+  std::uint8_t lidar_scan_seq{0};  ///< Low byte of the scan number; moves at the sweep rate.
+
+  /// Bytes 254..255: still free, still zero.
+  std::uint8_t reserved1[2]{};
 };
 
 static_assert(sizeof(GroundVehicleTelemetry) == 256,
               "GroundVehicleTelemetry must match the ROVR/1 RoverFrame wire "
               "format: exactly 256 bytes");
+
+// The tail starts where the reserved block did, and nothing in it has
+// alignment: a consumer reading bytes 232..255 by offset reads the same
+// values a consumer reading the fields by name does.
+static_assert(offsetof(GroundVehicleTelemetry, board_link) == 232u);
+static_assert(offsetof(GroundVehicleTelemetry, lidar_scan_seq) == 253u);
+static_assert(offsetof(GroundVehicleTelemetry, reserved1) == 254u);
 
 } // namespace ground_vehicle
 } // namespace appsim

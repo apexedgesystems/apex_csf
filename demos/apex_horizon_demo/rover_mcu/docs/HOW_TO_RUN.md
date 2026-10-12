@@ -102,6 +102,34 @@ id=8`; the uploaded id joins the exclusion group like the rest
 (starting another sequence over it logs `stopping RTS 8`). The
 uploaded id lives until the next boot repacks the bank.
 
+## Pushed telemetry (the console target)
+
+The producer pushes four blocks over the ops interface (TCP/SLIP,
+port 9000) without being asked: the rover's 256-byte ROVR/2 OUTPUT
+frame at 20 Hz, the controller's OUTPUT at 10 Hz, and the board
+link's and the lidar model's STATE (counters and the board's
+heartbeat; those two drivers have no OUTPUT block) at 5 Hz. `tprm/toml/telemetry_manager.toml` is
+the table (fullUid, category, opcode, rate divisor against the 20 Hz
+collect); a console that decodes a packet by its (fullUid, size)
+sees every field of the block by name. The frame's tail bytes 232..253
+are named fields of the frame (`board_link`, `seq_state`,
+`lidar_nearest_m`, ...), and the lidar fan's rays are per-element
+channels (`lidar_range_m[0]`..`[15]`, `lidar_hit[0]`..`[15]`), so the
+"Lidar rays" layout in `app_data.toml` plots the eight the demo
+sweeps.
+
+To watch the pushes arrive without a console, from inside the
+producer's container:
+
+```bash
+docker exec -i -w /home/kalex/workspace rover_mcu \
+  tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/push_probe.py --seconds 5
+```
+
+It connects, counts every packet by (fullUid, opcode, size) for the
+window, reports the rates, and checks that the frame's named tail
+decodes to the same bytes a consumer reading offsets 232..253 sees.
+
 ## Run the controller on the board (NUCLEO-F767ZI)
 
 The rover's controller runs on a NUCLEO-F767ZI connected by its one USB

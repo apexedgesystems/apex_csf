@@ -17,7 +17,6 @@ Usage:
 
 import argparse
 import json
-import shutil
 import sys
 
 if sys.version_info >= (3, 11):
@@ -149,6 +148,63 @@ FIRST_COMPONENT_OPCODE = 0x0100
 # ---------------------------------------------------------------------------
 # Loader helpers
 # ---------------------------------------------------------------------------
+
+
+# An array this long or shorter is a handful of channels, not a buffer:
+# a lidar fan, a lamp bank, a wheel set. Longer arrays stay buffers.
+MAX_EXPANDED_ARRAY_LEN = 32
+
+
+def expand_array_fields(struct_dicts: dict) -> dict:
+    """Give each short numeric array its elements as scalar fields.
+
+    The console decodes a block by its dictionary and names a channel per
+    scalar field; it does not decode arrays, so a per-ray range stays
+    invisible however the plot asks for it. Each element of a short
+    numeric array becomes a field of its own, `name[i]`, at the array's
+    offset plus i times the element size, with the element's type. The
+    array entry itself stays, so a consumer that reads arrays still can.
+    Reserved and padding arrays are not channels and are left alone, and
+    an entry already expanded is not expanded again.
+    """
+    out = {}
+    for fname, data in struct_dicts.items():
+        structs = {}
+        for sname, sinfo in data.get("structs", {}).items():
+            fields = []
+            existing = {f.get("name") for f in sinfo.get("fields", [])}
+            for field in sinfo.get("fields", []):
+                fields.append(field)
+                name = field.get("name", "")
+                dims = field.get("dims") or []
+                etype = field.get("element_type")
+                if (
+                    field.get("type") != "array"
+                    or etype not in ("float", "int", "uint")
+                    or len(dims) != 1
+                    or not 1 <= dims[0] <= MAX_EXPANDED_ARRAY_LEN
+                    or name.startswith(("reserved", "pad"))
+                    or f"{name}[0]" in existing
+                ):
+                    continue
+                count = dims[0]
+                esize = field.get("size", 0) // count if count else 0
+                if esize <= 0:
+                    continue
+                for i in range(count):
+                    fields.append(
+                        {
+                            "name": f"{name}[{i}]",
+                            "type": etype,
+                            "offset": field.get("offset", 0) + i * esize,
+                            "size": esize,
+                            "value": 0,
+                            "doc": f"Element {i} of {name}.",
+                        }
+                    )
+            structs[sname] = {**sinfo, "fields": fields}
+        out[fname] = {**data, "structs": structs}
+    return out
 
 
 def load_app_data(path: str) -> dict:
@@ -409,10 +465,16 @@ def _generated_layouts(app_data: dict, struct_dicts: dict) -> list:
             for field in struct_info.get("fields", []):
                 ftype = field.get("type", "")
                 fname = field.get("name", "")
-                # Padding and reserved bytes are never channels, and array
-                # fields are not decoded as channels by the ground side, so
-                # only named scalar numerics are plotted.
+                # Padding and reserved bytes are never channels, and an
+                # array field is not decoded as a channel by the ground
+                # side (its elements are, once expanded), so only named
+                # scalar numerics are plotted.
                 if fname.startswith(("reserved", "pad")):
+                    continue
+                # An array's elements are channels the app's own layouts
+                # may name; the generated catch-all would otherwise carry
+                # every ray of every fan.
+                if fname.endswith("]"):
                     continue
                 if ftype in ("float", "int", "uint"):
                     channels.append(f"{prefix}.{fname}")
@@ -597,6 +659,7 @@ def find_app_data(app_name: str, apps_dir: str) -> str:
 
 
 def main():
+    """Generate a console target directory for one application."""
     parser = argparse.ArgumentParser(
         description="Generate Zenith target configuration from app_data.toml"
     )
@@ -619,7 +682,7 @@ def main():
 
     # Load inputs
     app_data = load_app_data(app_data_path)
-    struct_dicts = load_struct_dicts(args.db)
+    struct_dicts = expand_array_fields(load_struct_dicts(args.db))
 
     app_name = app_data["application"]
     print(f"[zenith-target] Generating target configs for {app_name}")
@@ -655,9 +718,12 @@ def main():
     # Copy struct dicts
     structs_dir = out / "structs"
     structs_dir.mkdir(exist_ok=True)
-    for fname in sorted(struct_dicts.keys()):
-        src = Path(args.db) / fname
-        shutil.copy2(src, structs_dir / fname)
+    # The bundle carries the expanded dictionaries: the console's decoder
+    # names a channel per scalar field, and the array elements are now
+    # scalar fields.
+    for fname, data in struct_dicts.items():
+        with open(structs_dir / fname, "w") as f:
+            json.dump(data, f, indent=2)
     print(f"[zenith-target] {structs_dir}/ ({len(struct_dicts)} files)")
 
     print(f"[zenith-target] Done. Output: {out}/")

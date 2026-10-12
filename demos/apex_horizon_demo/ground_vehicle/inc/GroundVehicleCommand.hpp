@@ -92,10 +92,12 @@ struct RoverCmdSeqState {
 };
 static_assert(sizeof(RoverCmdSeqState) == 2);
 
-/* ----------------------------- Frame bytes (telemetry reserved1, base 232)
+/* ----------------------------- Frame bytes (telemetry tail, base 232)
  * ----------------------------- */
 
-/// Offsets within GroundVehicleTelemetry::reserved1.
+/// Offsets within the frame's tail, counted from
+/// GroundVehicleTelemetry::board_link; each offset is the field of the
+/// same name, which the dictionary carries by name.
 enum FrameByte : std::size_t {
   FB_BOARD_LINK = 0,      ///< 0 NEVER, 1 UP, 2 LOST (hardware form).
   FB_CONTROLLER_MODE = 1, ///< 0 HOLD, 1 TRAJECTORY, 2 WAYPOINT, 3 HALTED.

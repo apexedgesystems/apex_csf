@@ -52,6 +52,12 @@ fullUid = "0x00CB00"
 type = "SUPPORT"
 notes = "ROVR/2 frame out to /horizon_rover at 100 Hz, commands in"
 
+[[components]]
+name = "TelemetryManager"
+fullUid = "0x00C900"
+type = "SUPPORT"
+notes = "Pushes the rover and controller OUTPUT and the link and lidar STATE over the ops interface: 20 / 10 / 5 / 5 Hz"
+
 # ------------------------------------------------------------------------------
 # Quick commands: one click starts a catalog sequence (START_RTS_BY_ID 0x0510
 # to the action engine, u16 little-endian sequence id), or cuts the lidar.
@@ -186,3 +192,14 @@ channels = ["RoverController.lidar_state", "RoverController.lidar_nearest_m", "R
 [[layouts.plots]]
 title = "Scan number"
 channels = ["RoverController.lidar_scan_seq"]
+
+[[layouts]]
+name = "Lidar rays"
+
+[[layouts.plots]]
+title = "Range per ray (m)"
+channels = ["GroundVehicle.lidar_range_m[0]", "GroundVehicle.lidar_range_m[1]", "GroundVehicle.lidar_range_m[2]", "GroundVehicle.lidar_range_m[3]", "GroundVehicle.lidar_range_m[4]", "GroundVehicle.lidar_range_m[5]", "GroundVehicle.lidar_range_m[6]", "GroundVehicle.lidar_range_m[7]"]
+
+[[layouts.plots]]
+title = "The picture the rover acts on"
+channels = ["GroundVehicle.lidar_state", "GroundVehicle.lidar_nearest_m", "GroundVehicle.lidar_hit_bits"]

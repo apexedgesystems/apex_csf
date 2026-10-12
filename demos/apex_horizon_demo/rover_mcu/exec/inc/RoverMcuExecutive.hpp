@@ -24,6 +24,10 @@
  *   - One ShmRingBridge publishing the rover's 256-byte ROVR/2 OUTPUT
  *     to /horizon_rover every tick and draining the reverse ring into
  *     the command bus. The bridge idles if no consumer attaches.
+ *   - One TelemetryManager pushing the rover's, the controller's, the
+ *     link's and the lidar model's OUTPUT blocks over the ops interface
+ *     at the rates its TPRM table sets, so a console receives them
+ *     without polling.
  *
  * The executive's C++ specifies cross-component wiring only; all
  * configuration values come from the TPRM set.
@@ -36,6 +40,7 @@
 #include "src/sim/environment/celestial_body/inc/CelestialBody.hpp"
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/support/shm_ring_bridge/inc/ShmRingBridge.hpp"
+#include "src/system/core/support/telemetry_manager/inc/TelemetryManager.hpp"
 
 namespace appsim {
 namespace rover_mcu {
@@ -71,6 +76,7 @@ private:
   appsim::rover_board::RoverBoardLink link_;
   appsim::rover_board::RoverLidarModel lidar_;
   system_core::support::ShmRingBridge bridge_;
+  system_core::support::TelemetryManager telemetry_;
 };
 
 } // namespace rover_mcu

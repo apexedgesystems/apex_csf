@@ -178,9 +178,10 @@ public:
     return RC;
   }
 
-  /// Frame bytes 232..: what the plant stamps every tick.
+  /// Frame bytes 232..: what the plant stamps every tick, as the byte
+  /// block the FrameByte offsets index (the fields from board_link on).
   [[nodiscard]] const std::uint8_t* frameBytes() const noexcept {
-    return telemetry_.get().reserved1;
+    return &telemetry_.get().board_link;
   }
 
 private:
@@ -507,7 +508,7 @@ public:
     // 8: drive/command truth into the frame's reserved tail (byte map
     // in GroundVehicleCommand.hpp). LED bits and board bytes are
     // stamped by their own features.
-    auto* fb = tlm.reserved1;
+    auto* fb = &tlm.board_link; // The tail as a byte block, FrameByte-indexed.
     fb[FB_CONTROLLER_MODE] = (s.commanded_halt != 0u) ? kFrameModeHalted
                              : DRIVEN                 ? drive_cmd_->mode
                                                       : static_cast<std::uint8_t>(1u);
@@ -688,7 +689,7 @@ private:
       tlm.lidar_range_m[i] = p.lidar_max_range_m;
       tlm.lidar_hit[i] = 0u;
     }
-    tlm.reserved1[FB_LIDAR_NEAREST_M] = 255u;
+    tlm.lidar_nearest_m = 255u;
   }
 
   /* ----------------------------- Sequence trace ----------------------------- */
@@ -729,9 +730,8 @@ private:
             s.trace_t_s, s.seq_state, s.active_waypoint, s.waypoint_total,
             static_cast<std::uint8_t>((s.led_on[0] != 0u ? 1u : 0u) |
                                       (s.led_on[1] != 0u ? 2u : 0u)),
-            n, e, tlm.heading_deg, tlm.speed_m_s, nearest, tlm.slope_deg,
-            tlm.reserved1[FB_LIDAR_STATE], tlm.reserved1[FB_LIDAR_HIT_BITS],
-            tlm.reserved1[FB_LIDAR_NEAREST_M], sweepHitBits(tlm, p), lidar_scan_seq_});
+            n, e, tlm.heading_deg, tlm.speed_m_s, nearest, tlm.slope_deg, tlm.lidar_state,
+            tlm.lidar_hit_bits, tlm.lidar_nearest_m, sweepHitBits(tlm, p), lidar_scan_seq_});
       } else {
         ++s.trace_dropped;
       }

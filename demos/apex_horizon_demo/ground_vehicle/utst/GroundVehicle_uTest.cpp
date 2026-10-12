@@ -95,7 +95,7 @@ TEST(GroundVehicleWire, RoverFrameLayoutIsFrozen) {
   static_assert(offsetof(GroundVehicleTelemetry, lidar_n_rays) == 84u);
   static_assert(offsetof(GroundVehicleTelemetry, lidar_range_m) == 88u);
   static_assert(offsetof(GroundVehicleTelemetry, lidar_hit) == 216u);
-  static_assert(offsetof(GroundVehicleTelemetry, reserved1) == 232u);
+  static_assert(offsetof(GroundVehicleTelemetry, board_link) == 232u);
   SUCCEED();
 }
 
@@ -422,7 +422,33 @@ struct ReadyRover {
  * @test Every frame-byte name lands on the wire offset the consumer reads.
  */
 TEST(GroundVehicleWire, ReservedTailOffsetsArePinned) {
-  static_assert(offsetof(GroundVehicleTelemetry, reserved1) == 232u);
+  // The tail's named fields and the FrameByte offsets are two names for
+  // the same bytes: a consumer decoding by name and a consumer reading
+  // the frame by offset must agree on every one.
+  static_assert(offsetof(GroundVehicleTelemetry, board_link) == 232u);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, board_link), 232u + fb::FB_BOARD_LINK);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, controller_mode), 232u + fb::FB_CONTROLLER_MODE);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, seq_state), 232u + fb::FB_SEQ_STATE);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, active_waypoint), 232u + fb::FB_ACTIVE_WAYPOINT);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, waypoint_total), 232u + fb::FB_WAYPOINT_TOTAL);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, led_bits), 232u + fb::FB_LED_BITS);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, led1_colour), 232u + fb::FB_LED1_COLOUR);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, led1_rate), 232u + fb::FB_LED1_RATE);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, led2_colour), 232u + fb::FB_LED2_COLOUR);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, led2_rate), 232u + fb::FB_LED2_RATE);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, last_cmd_result), 232u + fb::FB_LAST_CMD_RESULT);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, last_cmd_opcode_lo), 232u + fb::FB_LAST_CMD_OPCODE_LO);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, last_cmd_opcode_hi), 232u + fb::FB_LAST_CMD_OPCODE_HI);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, board_load_pct), 232u + fb::FB_BOARD_LOAD_PCT);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, board_tick_lo), 232u + fb::FB_BOARD_TICK_LO);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, board_tick_hi), 232u + fb::FB_BOARD_TICK_HI);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, mast_pan_deg), 232u + fb::FB_MAST_PAN_DEG);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, mast_ext_pct), 232u + fb::FB_MAST_EXT_PCT);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, lidar_state), 232u + fb::FB_LIDAR_STATE);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, lidar_hit_bits), 232u + fb::FB_LIDAR_HIT_BITS);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, lidar_nearest_m), 232u + fb::FB_LIDAR_NEAREST_M);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, lidar_scan_seq), 232u + fb::FB_LIDAR_SCAN_SEQ);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, reserved1), 254u);
   EXPECT_EQ(232u + fb::FB_BOARD_LINK, 232u);
   EXPECT_EQ(232u + fb::FB_CONTROLLER_MODE, 233u);
   EXPECT_EQ(232u + fb::FB_SEQ_STATE, 234u);
@@ -781,7 +807,7 @@ TEST(GroundVehicleWire, ReservedTailGoldenBytes) {
   for (std::size_t i = 0; i < sizeof(GOLDEN); ++i) {
     EXPECT_EQ(f[i], GOLDEN[i]) << "byte 232+" << i;
   }
-  static_assert(offsetof(GroundVehicleTelemetry, reserved1) + 18 == 250);
+  static_assert(offsetof(GroundVehicleTelemetry, lidar_state) == 250u);
 }
 
 /* ----------------------------- Lidar bytes ----------------------------- */

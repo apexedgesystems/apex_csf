@@ -2,13 +2,14 @@
 # (20 Hz, priority 70) reads the board's reply and sends the rover's state,
 # then the controller (20 Hz, 60) takes the board's command (or runs the
 # host law), then the plant (100 Hz, 50), then the lidar model (10 Hz, 45,
-# the tick after the plant sweeps), then the bridge (100 Hz, 40);
-# 1 Hz telemetry lines are staggered.
+# the tick after the plant sweeps), then the bridge (100 Hz, 40), then the
+# pushed-telemetry collect (20 Hz, 30: it reads the blocks the bridge just
+# published); 1 Hz telemetry lines are staggered.
 
 [SchedulerTprmHeader]
 numPools = { type = "uint", size = 1, value = 1 }
 workersPerPool = { type = "uint", size = 1, value = 1 }
-numTasks = { type = "uint", size = 1, value = 11 }
+numTasks = { type = "uint", size = 1, value = 13 }
 
 [[task]]
 fullUid = { type = "uint", size = 4, value = 56320 }
@@ -127,6 +128,28 @@ poolIndex = { type = "uint", size = 1, value = 0 }
 freqN = { type = "uint", size = 2, value = 1 }
 freqD = { type = "uint", size = 2, value = 1 }
 offset = { type = "uint", size = 2, value = 9 }
+priority = { type = "int", size = 1, value = -64 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51456 }
+taskUid = { type = "uint", size = 1, value = 1 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 20 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 0 }
+priority = { type = "int", size = 1, value = 30 }
+seqGroup = { type = "uint", size = 1, value = 255 }
+seqPhase = { type = "uint", size = 1, value = 0 }
+
+[[task]]
+fullUid = { type = "uint", size = 4, value = 51456 }
+taskUid = { type = "uint", size = 1, value = 2 }
+poolIndex = { type = "uint", size = 1, value = 0 }
+freqN = { type = "uint", size = 2, value = 1 }
+freqD = { type = "uint", size = 2, value = 1 }
+offset = { type = "uint", size = 2, value = 8 }
 priority = { type = "int", size = 1, value = -64 }
 seqGroup = { type = "uint", size = 1, value = 255 }
 seqPhase = { type = "uint", size = 1, value = 0 }

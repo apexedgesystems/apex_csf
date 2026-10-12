@@ -88,13 +88,23 @@ bool RoverMcuExecutive::registerComponents() noexcept {
       log->info(label(), "registerComponent(bridge) FAILED");
     return false;
   }
+  // The pushed-telemetry dispatcher reads the registered OUTPUT blocks
+  // straight from the registry, so it is wired to it before it registers.
+  telemetry_.setRegistry(&registry());
+  if (!registerComponent(&telemetry_, LOG_DIR)) {
+    if (log != nullptr) {
+      log->info(label(), "registerComponent(telemetry) FAILED");
+    }
+    return false;
+  }
 
   if (log != nullptr) {
     log->info(label(), fmt::format("registered: earth_uid={:#x} rover_uid={:#x} "
                                    "controller_uid={:#x} link_uid={:#x} lidar_uid={:#x} "
-                                   "bridge_uid={:#x}",
+                                   "bridge_uid={:#x} telemetry_uid={:#x}",
                                    earth_.fullUid(), rover_.fullUid(), controller_.fullUid(),
-                                   link_.fullUid(), lidar_.fullUid(), bridge_.fullUid()));
+                                   link_.fullUid(), lidar_.fullUid(), bridge_.fullUid(),
+                                   telemetry_.fullUid()));
   }
   return true;
 }

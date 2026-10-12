@@ -15,6 +15,7 @@
 0x00E300  toml/rover_board_link.toml
 0x00E400  toml/rover_lidar_model.toml
 0x00CB00  toml/rover_bridge.toml
+0x00C900  toml/telemetry_manager.toml
 
 [sequences rover]
 rts 0  toml/rts/rts_001_leg_north.toml

@@ -36,8 +36,10 @@ any such change is called out explicitly in its entry.
   halt), the lidar as a hardware model on its own serial wire to the
   board (scans in, what the board saw back on the frame, sensor-lost
   halt), two lamps as sequence actions, a catalog of A-to-B tours with
-  reason-coded safety halts, a 20 Hz sequence trace, and a
-  mission-upload path for sequences.
+  reason-coded safety halts, a 20 Hz sequence trace, a mission-upload
+  path for sequences, a boot sequence from the ATS bank, and pushed
+  telemetry (the frame with its tail bytes named, per-ray lidar
+  channels, the controller, link and lidar blocks) for a console.
 - Nightly assurance pipeline: warm firmware builds for every MCU target,
   sanitizer suites, cppcheck, dependency and container scans, and
   per-language coverage floors; CodeQL analysis on the default branch.
@@ -91,6 +93,10 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- The executive's action phase ran while the cycle's tasks were still
+  being executed by the scheduler's workers; it now waits, bounded by
+  the frame, until no task is in flight, and skips the phase for a cycle
+  on which a task overruns rather than read what a worker is writing.
 - Scheduler task rates with a denominator above one ran at the wrong
   rate: the denominator was applied twice (placement stride and a
   per-visit counter), so `100/2` at 1000 Hz ran at 25 Hz instead of 50

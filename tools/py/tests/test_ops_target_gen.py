@@ -8,6 +8,7 @@ legacy path. Also covers app-declared quick commands and layouts.
 
 from apex_tools.ops.target_gen import (
     QUICK_COMMANDS,
+    expand_array_fields,
     find_app_data,
     generate_commands,
     generate_telemetry,
@@ -226,3 +227,117 @@ def test_generated_default_plots_named_scalars_only():
     }
     layouts = generate_telemetry(APP_DATA, dicts)["layouts"]
     assert layouts[0]["plots"][0]["channels"] == ["EnumComp.speed", "EnumComp.mode"]
+
+
+# ---------------------------------------------------------------------------
+# Array expansion: a short numeric array's elements become scalar fields
+# ---------------------------------------------------------------------------
+
+RAY_DICT = {
+    "component": "Fan",
+    "structs": {
+        "FanOutput": {
+            "category": "OUTPUT",
+            "size": 112,
+            "fields": [
+                {"name": "n_rays", "type": "uint", "offset": 0, "size": 4},
+                {
+                    "name": "pad0",
+                    "type": "array",
+                    "offset": 4,
+                    "size": 4,
+                    "element_type": "uint",
+                    "dims": [4],
+                },
+                {
+                    "name": "range_m",
+                    "type": "array",
+                    "offset": 8,
+                    "size": 32,
+                    "element_type": "float",
+                    "dims": [4],
+                },
+                {
+                    "name": "hit",
+                    "type": "array",
+                    "offset": 40,
+                    "size": 4,
+                    "element_type": "uint",
+                    "dims": [4],
+                },
+                {
+                    "name": "reserved1",
+                    "type": "array",
+                    "offset": 44,
+                    "size": 4,
+                    "element_type": "uint",
+                    "dims": [4],
+                },
+                {
+                    "name": "big",
+                    "type": "array",
+                    "offset": 48,
+                    "size": 64,
+                    "element_type": "uint",
+                    "dims": [64],
+                },
+            ],
+        }
+    },
+}
+
+
+def _field_names(dicts: dict) -> list:
+    return [f["name"] for f in dicts["Fan.json"]["structs"]["FanOutput"]["fields"]]
+
+
+def test_short_numeric_arrays_expand_into_element_fields():
+    """Each element gets a scalar field at the array's offset plus its index."""
+    out = expand_array_fields({"Fan.json": RAY_DICT})
+    fields = {f["name"]: f for f in out["Fan.json"]["structs"]["FanOutput"]["fields"]}
+    assert fields["range_m[0]"] == {
+        "name": "range_m[0]",
+        "type": "float",
+        "offset": 8,
+        "size": 8,
+        "value": 0,
+        "doc": "Element 0 of range_m.",
+    }
+    assert fields["range_m[3]"]["offset"] == 32
+    assert fields["hit[2]"] == {
+        "name": "hit[2]",
+        "type": "uint",
+        "offset": 42,
+        "size": 1,
+        "value": 0,
+        "doc": "Element 2 of hit.",
+    }
+    # The array entries themselves stay for consumers that read arrays.
+    assert fields["range_m"]["type"] == "array"
+
+
+def test_reserved_padding_and_long_arrays_are_not_expanded():
+    """Padding and reserved arrays are not channels; a 64-element array is a buffer."""
+    names = _field_names(expand_array_fields({"Fan.json": RAY_DICT}))
+    assert "pad0[0]" not in names
+    assert "reserved1[0]" not in names
+    assert "big[0]" not in names
+    assert "n_rays" in names
+
+
+def test_expansion_is_idempotent_and_leaves_the_input_alone():
+    once = expand_array_fields({"Fan.json": RAY_DICT})
+    twice = expand_array_fields(once)
+    assert _field_names(twice) == _field_names(once)
+    assert "range_m[0]" not in [f["name"] for f in RAY_DICT["structs"]["FanOutput"]["fields"]]
+
+
+def test_generated_default_layout_skips_array_elements():
+    """The catch-all plots the scalars; the app's own layouts may name the rays."""
+    app = dict(APP_DATA)
+    app["components"] = [{"name": "Fan", "fullUid": "0x00D900", "type": "SW_MODEL"}]
+    dicts = expand_array_fields({"Fan.json": RAY_DICT})
+    layouts = generate_telemetry(app, dicts)["layouts"]
+    default = next(lay for lay in layouts if lay["name"] == "Default")
+    channels = [c for plot in default["plots"] for c in plot["channels"]]
+    assert channels == ["Fan.n_rays"]

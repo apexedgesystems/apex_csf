@@ -25,6 +25,7 @@ apex_add_app(
   sim_environment_celestial_body
   system_core_registry
   system_core_support_shm_ring_bridge
+  system_core_support_telemetry_manager
   system_core_executive
   system_core_scheduler
   system_core_logs

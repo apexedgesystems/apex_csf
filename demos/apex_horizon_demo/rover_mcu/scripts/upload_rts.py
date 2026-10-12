@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upload a standalone sequence into a running rover_mcu producer and start it.
+r"""Upload a standalone sequence into a running rover_mcu producer and start it.
 
 The mission-upload path: compile the sequence TOML with cfg2bin, transfer
 the payload over the APROTO ops interface into the active bank's rts/
@@ -57,6 +57,7 @@ def packed_slots(manifest: pathlib.Path) -> dict[int, str]:
 
 
 def main() -> int:
+    """Compile the sequence, refuse a packed slot, transfer, rescan, start."""
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
