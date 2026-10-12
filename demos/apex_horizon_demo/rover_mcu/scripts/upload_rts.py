@@ -12,12 +12,18 @@ Run from inside the producer's container (the ops interface listens on
 
     docker exec -i -w /home/kalex/workspace rover_mcu \\
       tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py \\
-      demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --slot 12 --start
+      demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --slot 13 --start
+
+The slot is the bank file name, and writing a packed slot replaces the
+sequence that boots there rather than adding one. Which slots are packed
+comes from tprm.manifest, so the check moves with the catalog: pass
+--slot and an occupied one is refused with the sequence it would have
+replaced named, or leave it out and the lowest free slot is used.
 
 Arguments:
   toml            the StandaloneSequenceTprm TOML (its sequenceId is the id you start)
-  --slot N        bank file name NNN.rts (must not collide with a packed slot; the
-                  boot catalog uses 000..011)
+  --slot N        bank file name NNN.rts; refused if the manifest packs it.
+                  Default: the lowest slot the manifest leaves free.
   --start         START_RTS_BY_ID after the rescan
   --host/--port   ops interface (default 127.0.0.1:9000)
   --build-dir     build tree holding bin/tools/rust/cfg2bin (default build/hosted-x86_64-debug)
@@ -32,9 +38,22 @@ import time
 
 REPO = pathlib.Path(__file__).resolve().parents[4]
 SPEC = REPO / "src/system/core/components/action/apex/apex_data.toml"
+MANIFEST = pathlib.Path(__file__).resolve().parents[1] / "tprm/tprm.manifest"
 ACTION_UID = 0x000500
 OP_START_RTS_BY_ID = 0x0510
 OP_RESCAN_CATALOG = 0x0520
+
+
+def packed_slots(manifest: pathlib.Path) -> dict[int, str]:
+    """Slot -> sequence file, for every `rts N` row the manifest packs."""
+    slots: dict[int, str] = {}
+    if not manifest.is_file():
+        return slots
+    for line in manifest.read_text().splitlines():
+        m = re.match(r"\s*rts\s+(\d+)\s+(\S+)", line)
+        if m is not None:
+            slots[int(m.group(1))] = pathlib.Path(m.group(2)).name
+    return slots
 
 
 def main() -> int:
@@ -42,7 +61,7 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("toml")
-    ap.add_argument("--slot", type=int, required=True)
+    ap.add_argument("--slot", type=int, default=None)
     ap.add_argument("--start", action="store_true")
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=9000)
@@ -59,7 +78,31 @@ def main() -> int:
         print("no sequenceId in", toml, file=sys.stderr)
         return 2
     seq_id = int(m.group(1))
-    out = pathlib.Path(a.build_dir) / "rover_mcu_upload" / f"{a.slot:03d}.rts"
+    if 0x10 <= seq_id <= 0x1F:
+        print(
+            f"sequence id {seq_id} is inside the frame's reserved halt range "
+            f"(16..31): a running sequence stamps its id on the same byte a halt "
+            f"stamps its reason, so this id would read as a halt. Renumber it.",
+            file=sys.stderr,
+        )
+        return 2
+
+    packed = packed_slots(MANIFEST)
+    if a.slot is None:
+        slot = next(n for n in range(1000) if n not in packed)
+        print(f"slot {slot} (the lowest the manifest leaves free; packed: " f"{sorted(packed)})")
+    else:
+        slot = a.slot
+        if slot in packed:
+            print(
+                f"slot {slot} is packed with {packed[slot]}: uploading there would "
+                f"replace it instead of adding a sequence. Free slots start at "
+                f"{next(n for n in range(1000) if n not in packed)}.",
+                file=sys.stderr,
+            )
+            return 2
+
+    out = pathlib.Path(a.build_dir) / "rover_mcu_upload" / f"{slot:03d}.rts"
     out.parent.mkdir(parents=True, exist_ok=True)
     cfg2bin = pathlib.Path(a.build_dir) / "bin/tools/rust/cfg2bin"
     subprocess.run(
@@ -78,11 +121,11 @@ def main() -> int:
 
     c = AprotoClient(a.host, a.port, timeout=5.0)
     c.connect()
-    r = c.send_file(str(out), f"{a.bank}/rts/{a.slot:03d}.rts")
+    r = c.send_file(str(out), f"{a.bank}/rts/{slot:03d}.rts")
     if r.get("status", 1) != 0:
         print("transfer failed:", r, file=sys.stderr)
         return 1
-    print(f"transferred to {a.bank}/rts/{a.slot:03d}.rts ({r['file_end']['bytes_written']} B)")
+    print(f"transferred to {a.bank}/rts/{slot:03d}.rts ({r['file_end']['bytes_written']} B)")
     r = c.send_command(ACTION_UID, OP_RESCAN_CATALOG)
     print("RESCAN_CATALOG:", r["status_name"])
     if a.start:

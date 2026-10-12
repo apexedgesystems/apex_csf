@@ -372,6 +372,14 @@ TEST(GroundVehicle, GridBootPlacesTheRoverFromTheAnchor) {
 namespace {
 
 using appsim::ground_vehicle::CmdResultCode;
+using appsim::ground_vehicle::kCommandResultBusy;
+using appsim::ground_vehicle::kSeqStateGeofenceHalt;
+using appsim::ground_vehicle::kSeqStateHaltBit;
+using appsim::ground_vehicle::kSeqStateLinkLost;
+using appsim::ground_vehicle::kSeqStateManualHalt;
+using appsim::ground_vehicle::kSeqStateObstacleHalt;
+using appsim::ground_vehicle::kSeqStateSensorLost;
+using appsim::ground_vehicle::kSeqStateSlopeHalt;
 using appsim::ground_vehicle::RoverCmdSetLed;
 using appsim::ground_vehicle::RoverCmdSetTarget;
 using appsim::ground_vehicle::RoverOpcode;
@@ -410,6 +418,9 @@ struct ReadyRover {
 
 } // namespace
 
+/**
+ * @test Every frame-byte name lands on the wire offset the consumer reads.
+ */
 TEST(GroundVehicleWire, ReservedTailOffsetsArePinned) {
   static_assert(offsetof(GroundVehicleTelemetry, reserved1) == 232u);
   EXPECT_EQ(232u + fb::FB_BOARD_LINK, 232u);
@@ -436,6 +447,9 @@ TEST(GroundVehicleWire, ReservedTailOffsetsArePinned) {
   EXPECT_EQ(232u + fb::FB_MAST_EXT_PCT, 249u);
 }
 
+/**
+ * @test A mode command is bounded to the defined modes and reaches the frame.
+ */
 TEST(GroundVehicleCmd, SetModeIsBoundedAndAdoptable) {
   ReadyRover r;
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE, {2u}), 0u);
@@ -450,6 +464,9 @@ TEST(GroundVehicleCmd, SetModeIsBoundedAndAdoptable) {
   EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_HI], 0x01u);
 }
 
+/**
+ * @test Targets are range-checked, refused while halted, and counted as legs.
+ */
 TEST(GroundVehicleCmd, TargetsValidateRefuseWhileHaltedAndCountWaypoints) {
   ReadyRover r;
   // A running sequence issues its legs through the sequence-owned opcodes.
@@ -484,6 +501,9 @@ TEST(GroundVehicleCmd, TargetsValidateRefuseWhileHaltedAndCountWaypoints) {
   EXPECT_EQ(f[fb::FB_CONTROLLER_MODE], appsim::ground_vehicle::kFrameModeHalted);
 }
 
+/**
+ * @test A lamp command is bounded to the defined codes and stamped on the frame.
+ */
 TEST(GroundVehicleCmd, LedCommandsAreBoundedAndStamped) {
   ReadyRover r;
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 5u}), 0u);
@@ -535,6 +555,9 @@ TEST(GroundVehicleLed, StrobeBitFollowsTheRateCodeAt100Hz) {
   EXPECT_EQ(r.rover.frameBytes()[fb::FB_LED_BITS] & 0x01u, 0u);
 }
 
+/**
+ * @test A 0.5 Hz lamp is lit for exactly half of a 2 s window.
+ */
 TEST(GroundVehicleLed, HalfHertzAtTenHzStepsIsTenOnTenOff) {
   ReadyRover r;                                                          // step_hz default 10
   ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 3u, 1u}), 0u); // blue, 0.5 Hz
@@ -546,6 +569,9 @@ TEST(GroundVehicleLed, HalfHertzAtTenHzStepsIsTenOnTenOff) {
   EXPECT_EQ(on, 10);
 }
 
+/**
+ * @test Both the integration and the timestamps follow step_hz, not a fixed 10 Hz.
+ */
 TEST(GroundVehicle, StepRateScalesTheIntegrationAndTheTimestampGrid) {
   CelestialBody earth;
   earth.tunables().set(analyticEarth());
@@ -612,6 +638,9 @@ TEST(GroundVehicleCmd, HaltStampsManualReasonAndResumeClearsAnyHalt) {
   EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
 }
 
+/**
+ * @test A halted plant refuses every command that would drive it.
+ */
 TEST(GroundVehicleCmd, WhileHaltedOnlyHaltAndResumeAreAccepted) {
   // A geofence halt sequence lights the lamps, names its reason, then
   // latches the halt. Whatever is started afterwards cannot repaint
@@ -697,6 +726,9 @@ TEST(GroundVehicleTrace, SamplesAt20HzWhileASequenceRunsAndStopsWhenIdle) {
   EXPECT_EQ(r.rover.vehicleState().trace_ended, 1u) << "end marker pending for the drain";
 }
 
+/**
+ * @test The trace buffer stops at its reserved size and counts what it could not hold.
+ */
 TEST(GroundVehicleTrace, BufferIsBoundedAndCountsDrops) {
   ReadyRover r;
   r.rover.tunables().get().step_hz = 100u;
@@ -800,4 +832,86 @@ TEST(GroundVehicleWire, LidarBytesCarryWhatTheBoardSaw) {
   f = r.frame();
   EXPECT_EQ(f[fb::FB_LIDAR_STATE], 0u);
   EXPECT_EQ(f[fb::FB_LIDAR_NEAREST_M], 255u);
+}
+
+/* ----------------------------- Sequence state encoding ----------------------------- */
+
+/**
+ * @test A running id below the halt band owns the drive and refuses manual commands.
+ */
+TEST(GroundVehicleSeqState, RunningSequenceBelowTheHaltBandOwnsTheDrive) {
+  ReadyRover r;
+  const std::uint8_t SEQ[2] = {15u, 2u}; // id 15: the last expressible running id.
+  EXPECT_EQ(sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE), SEQ, 2), 0u);
+  EXPECT_EQ(r.rover.vehicleState().seq_state, 15u);
+
+  // A sequence owns the drive, so a manual mode command is refused.
+  const std::uint8_t MODE[1] = {2u};
+  EXPECT_EQ(sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_MODE), MODE, 1),
+            kCommandResultBusy);
+
+  // A halt now reads as the manual halt, not as sequence 15 recovering.
+  EXPECT_EQ(sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::HALT)), 0u);
+  EXPECT_EQ(r.rover.vehicleState().seq_state, kSeqStateManualHalt);
+}
+
+/**
+ * @test A running id inside the halt band is refused, at both edges.
+ *
+ * The band is reserved for halt reasons, so no sequence id may lie in
+ * it. The plant refuses the values that are not defined reasons; the
+ * defined ones (0x11..0x16) it must accept, because a recovery halt is
+ * authored through this same command, which is why the range is
+ * reserved at the point ids are assigned rather than only here.
+ */
+TEST(GroundVehicleSeqState, RunningIdsInsideTheHaltBandAreRefused) {
+  ReadyRover r;
+  for (const std::uint8_t ID :
+       {std::uint8_t{16}, std::uint8_t{23}, std::uint8_t{24}, std::uint8_t{31}}) {
+    const std::uint8_t SEQ[2] = {ID, 1u};
+    EXPECT_EQ(
+        sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE), SEQ, 2),
+        static_cast<std::uint8_t>(system_core::system_component::CommandResult::INVALID_PAYLOAD))
+        << "id " << static_cast<int>(ID) << " would read as a halt";
+    EXPECT_EQ(r.rover.vehicleState().seq_state, 0u) << "id " << static_cast<int>(ID);
+  }
+
+  // Either side of the band is accepted: 15 below it, 32 above it (the
+  // catalog's halt-demo sequences run at 32..36).
+  for (const std::uint8_t ID : {std::uint8_t{15}, std::uint8_t{32}}) {
+    const std::uint8_t SEQ[2] = {ID, 1u};
+    EXPECT_EQ(sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE), SEQ, 2), 0u)
+        << "id " << static_cast<int>(ID);
+    EXPECT_EQ(r.rover.vehicleState().seq_state, ID);
+  }
+}
+
+/**
+ * @test The halt band is exactly the reserved range the contract names.
+ */
+TEST(GroundVehicleSeqState, TheHaltBandIsTheReservedIdRange) {
+  // Every defined reason sits inside 0x10..0x1F, so reserving that range
+  // for them is what keeps running ids unambiguous.
+  for (const std::uint8_t REASON :
+       {kSeqStateObstacleHalt, kSeqStateGeofenceHalt, kSeqStateSlopeHalt, kSeqStateLinkLost,
+        kSeqStateManualHalt, kSeqStateSensorLost}) {
+    EXPECT_EQ(REASON & kSeqStateHaltBit, kSeqStateHaltBit);
+    EXPECT_LT(REASON, 0x20u);
+  }
+  EXPECT_EQ(kSeqStateHaltBit, 0x10u);
+}
+
+/**
+ * @test Every defined halt reason is still accepted as a recovery state.
+ */
+TEST(GroundVehicleSeqState, DefinedHaltReasonsRemainExpressible) {
+  ReadyRover r;
+  for (const std::uint8_t REASON :
+       {kSeqStateObstacleHalt, kSeqStateGeofenceHalt, kSeqStateSlopeHalt, kSeqStateLinkLost,
+        kSeqStateManualHalt, kSeqStateSensorLost}) {
+    const std::uint8_t SEQ[2] = {REASON, 0u};
+    EXPECT_EQ(sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE), SEQ, 2), 0u)
+        << "reason 0x" << std::hex << static_cast<int>(REASON);
+    EXPECT_EQ(r.rover.vehicleState().seq_state, REASON);
+  }
 }

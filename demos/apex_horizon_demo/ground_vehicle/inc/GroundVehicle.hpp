@@ -186,6 +186,16 @@ public:
 private:
   /// A sequence owns the drive while seq_state is a running id (not
   /// idle, not a halt reason).
+  /// Whether the frame's seq_state byte can carry this value without
+  /// ambiguity: idle, a defined halt reason, or a running sequence's
+  /// catalog id from outside the halt band.
+  [[nodiscard]] static bool seqStateIsExpressible(std::uint8_t v) noexcept {
+    if ((v & kSeqStateHaltBit) == 0u) {
+      return true; // Idle, or a running id below the band.
+    }
+    return v >= kSeqStateObstacleHalt && v <= kSeqStateSensorLost;
+  }
+
   [[nodiscard]] static bool sequenceOwnsDrive(const GroundVehicleState& s) noexcept {
     return s.seq_state != 0u && (s.seq_state & kSeqStateHaltBit) == 0u;
   }
@@ -309,6 +319,15 @@ private:
         // started (or finishing) while halted cannot bracket itself
         // over it.
         return static_cast<std::uint8_t>(CommandResult::EXEC_FAILED);
+      }
+      // A running sequence stamps its catalog id here, and a halt
+      // stamps the halt bit with its reason. An id that lands inside the
+      // halt band would be both: the frame could not say which, and the
+      // plant reads the band as halted, so the drive would stay manual
+      // while the sequence believed it owned it. Refuse it at the point
+      // it is authored rather than put it on the wire.
+      if (!seqStateIsExpressible(payload[0])) {
+        return static_cast<std::uint8_t>(CommandResult::INVALID_PAYLOAD);
       }
       s.seq_state = payload[0];
       s.waypoint_total = payload[1];

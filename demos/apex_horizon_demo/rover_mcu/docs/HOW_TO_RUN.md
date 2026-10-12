@@ -88,8 +88,14 @@ container, so run the script from there:
 ```bash
 docker exec -i -w /home/kalex/workspace rover_mcu \
   tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py \
-  demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --slot 12 --start
+  demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --start
 ```
+
+The slot is the bank's file name. The boot catalog packs 000 to 012,
+so the upload needs one past them; left out, the script takes the
+lowest slot `tprm.manifest` leaves free (013 here) and names it, and a
+`--slot` the manifest packs is refused rather than replacing the
+sequence that boots there.
 
 `Action_0.log` shows `Catalog scanned: 14 RTS` then `RTS started:
 id=8`; the uploaded id joins the exclusion group like the rest

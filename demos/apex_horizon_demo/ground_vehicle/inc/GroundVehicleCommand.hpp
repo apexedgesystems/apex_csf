@@ -86,7 +86,8 @@ struct RoverCmdSetLed {
 static_assert(sizeof(RoverCmdSetLed) == 3);
 
 struct RoverCmdSeqState {
-  std::uint8_t state;          ///< 0 idle; 1..31 running RTS id; 0x10|reason recovery halt.
+  std::uint8_t state;          ///< 0 idle; a running RTS id; 0x10|reason recovery halt.
+                               ///< Ids inside the halt band are refused.
   std::uint8_t waypoint_total; ///< Legs in the running sequence (0 when idle).
 };
 static_assert(sizeof(RoverCmdSeqState) == 2);
@@ -123,9 +124,6 @@ enum FrameByte : std::size_t {
   FB_LIDAR_SCAN_SEQ = 21,  ///< Low byte of the scan number; moves at the sweep rate.
 };
 
-/// seq_state reason for a lidar that stopped sending (halt sequence 36).
-inline constexpr std::uint8_t kSeqStateSensorLost = 0x16;
-
 /// last_cmd_result codes on the wire.
 enum class CmdResultCode : std::uint8_t {
   NONE = 0,
@@ -139,11 +137,21 @@ enum class CmdResultCode : std::uint8_t {
 /// Frame controller_mode value while a plant-level HALT is in effect.
 inline constexpr std::uint8_t kFrameModeHalted = 3;
 
-/// seq_state values: 0 idle, 1..31 a running sequence, 0x10|reason a
-/// halt. A plant-level HALT stamps MANUAL_HALT unless a recovery
-/// reason is already set; RESUME clears any halt reason to idle.
+/// seq_state values: 0 idle, a running sequence's catalog id, or
+/// 0x10|reason for a halt. The halt bit decides which, so the two
+/// spaces cannot overlap: 0x10..0x1F is reserved for halt reasons and no
+/// sequence id may lie in it. SET_SEQ_STATE refuses the values in that
+/// range that are not defined reasons, and the upload path refuses a
+/// sequence id in it; the shipped catalog uses 1..9 and 32..36. A plant-level HALT stamps
+/// MANUAL_HALT unless a recovery reason is already set; RESUME clears any halt reason to idle.
 inline constexpr std::uint8_t kSeqStateHaltBit = 0x10;
+inline constexpr std::uint8_t kSeqStateObstacleHalt = 0x11;
+inline constexpr std::uint8_t kSeqStateGeofenceHalt = 0x12;
+inline constexpr std::uint8_t kSeqStateSlopeHalt = 0x13;
+inline constexpr std::uint8_t kSeqStateLinkLost = 0x14;
 inline constexpr std::uint8_t kSeqStateManualHalt = 0x15;
+/// A lidar that stopped sending (halt sequence 36).
+inline constexpr std::uint8_t kSeqStateSensorLost = 0x16;
 
 } // namespace ground_vehicle
 } // namespace appsim
