@@ -135,6 +135,16 @@ public:
    */
   [[nodiscard]] const ExecutiveHealthPacket& getHealthPacket() const noexcept;
 
+  /**
+   * @brief The clock's wake-lateness record for the run.
+   *
+   * Complete once run() has returned; the clock thread owns it while it
+   * runs, so read it only after that.
+   *
+   * @return Lateness distribution of every clock wake against its deadline.
+   */
+  [[nodiscard]] const TickLateness& clockLateness() const noexcept { return clockState_.lateness; }
+
   /* ----------------------------- Command Handling ----------------------------- */
 
   /**

@@ -10,6 +10,9 @@ any such change is called out explicitly in its entry.
 
 ### Added
 
+- Executive clock wake-lateness record: every clock wake is measured
+  against its deadline and summarised (p50, p99, max) when the clock
+  stops; `--clock-hz` overrides the fundamental frequency for a run.
 - Flight-dynamics simulation domains: aerodynamics, rigid-body dynamics,
   propulsion, guidance/navigation/control (organized by vehicle class), and
   sensor measurement models.
@@ -46,6 +49,23 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- Breaking: scheduler subclasses override `executeCycle(cycle)` in place
+  of `executeTick(tick)`, and the multi-thread scheduler's overridable
+  dispatch hook is `executeTasksOnCycleMulti(cycle)`; the tick-index
+  names remain as non-virtual wrappers. Dependent schedulers migrate and
+  rebuild.
+- Scheduler task rates: any `freqN / freqD` up to the fundamental is
+  admitted, including rates that do not land on whole ticks; those run
+  the exact count per `freqD` seconds with spacing uneven by at most one
+  tick and a warning in the scheduler log. Refused: zero fields, a rate
+  above the fundamental, an offset at or beyond the first period. A task
+  added while the clock runs keeps the phase it would have had from the
+  first tick.
+- Executive clock: tick deadlines are computed from the tick index on a
+  nanosecond grid; the wait is an absolute-deadline sleep on the
+  monotonic clock, and the clock thread runs with one nanosecond of
+  timer slack. The 1000 Hz ceiling on `clockFrequencyHz` is now stated
+  policy rather than an arithmetic guard.
 - Breaking: TPRM payload prelude is format A v4; readers reject v3
   payloads. Copy the regenerated `compat/tprm/` set.
 - TPRM layout hash: a nested struct contributes only its flattened
@@ -60,6 +80,19 @@ any such change is called out explicitly in its entry.
 - Build image hierarchy retiered (build-base / dev-base / dev-cuda /
   per-platform); containers run as a non-root user.
 - GitHub Actions pinned to commit SHAs with an automated pin guard.
+
+### Fixed
+
+- Scheduler task rates with a denominator above one ran at the wrong
+  rate: the denominator was applied twice (placement stride and a
+  per-visit counter), so `100/2` at 1000 Hz ran at 25 Hz instead of 50
+  and `100/3` at about 11 Hz instead of 33.3; a long-period task's
+  first run came on its `freqD`-th visit rather than at its offset, and
+  an offset beyond the fundamental was accepted and never ran.
+- Executive clock: a fundamental frequency that does not divide 1000 ran
+  at the wrong rate silently (600 Hz ticked at 1000 Hz, 300 Hz at
+  333 Hz) because the frame period was held in whole milliseconds; the
+  boot log and health packet reported the requested rate throughout.
 
 ## [0.0.1] - 2026-03-27
 

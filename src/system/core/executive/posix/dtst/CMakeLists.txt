@@ -2,8 +2,9 @@
 # Development Tests: system_core_executive
 #
 # Full-boot timing-integrity tests: clock grid repayment, task backlog
-# drain, and the >1 s resync policy, exercised on a real executive via
-# pause/resume. Wall-clock sensitive -- run on an otherwise-idle host.
+# drain, the >1 s resync policy and the pause policy, exercised on a
+# real executive with SIGSTOP stalls and pause/resume. Wall-clock
+# sensitive -- run on an otherwise-idle host.
 # ==============================================================================
 
 # ------------------------------------------------------------------------------

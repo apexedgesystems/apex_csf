@@ -73,7 +73,7 @@ scheduler.executeTasksOnTickSingle(0);
 | Deterministic single-threaded task execution | Yes -- `SchedulerSingleThread`                 |
 | Parallel task execution with thread pools    | Yes -- `SchedulerMultiThread`                  |
 | Bare-metal MCU scheduling (no heap)          | Yes -- `McuScheduler<N>`                       |
-| N/D frequency decimation with phase offsets  | Yes -- `TaskConfig` with freqN/freqD/offset    |
+| N/D task rates with phase offsets            | Yes -- `TaskConfig` with freqN/freqD/offset    |
 | Intra-frame task ordering dependencies       | Yes -- `SequenceGroup` with phase-based waits  |
 | TPRM-based runtime task configuration        | Yes -- `SchedulerData` with SDAT binary export |
 | Simple timer/callback scheduling             | No -- use OS timer APIs directly               |
@@ -272,20 +272,45 @@ extension).
 
 ## 5. Key Features
 
-### N/D Frequency Decimation
+### Task Rates
 
-Tasks run at `N/D` of the fundamental frequency:
+A task runs at `freqN / freqD` Hz on a fundamental of `Hz` ticks per
+second: `N` times in every `D` seconds, run `k` on tick
+`offset + floor(k * Hz * D / N)`, counted from the first tick ever
+dispatched. Successive runs are `floor(Hz * D / N)` ticks apart, or one
+more, so the count per `D` seconds is exact and the spacing is uneven
+by at most one tick when the rate does not land on whole ticks. Such a
+rate is admitted with a warning in the scheduler log that names the
+spacing; the shipped configs all use whole-tick rates.
 
 ```cpp
-// 1000Hz fundamental, task at 100Hz (every 10th tick)
-scheduler.addTask(task, 100, 1);   // N=100, D=1
+// 1000 Hz fundamental
+scheduler.addTask(task, 100, 1);      // 100 Hz: every 10th tick
+scheduler.addTask(task, 50, 1);       // 50 Hz: every 20th tick
+scheduler.addTask(task, 100, 2);      // 50 Hz as well: 100 runs every 2 s
+scheduler.addTask(task, 100, 3);      // 33.3 Hz: 100 runs every 3 s, every 30th tick
+scheduler.addTask(task, 1, 4, 150);   // 0.25 Hz: ticks 150, 4150, 8150, ...
 
-// Task at 50Hz (every 20th tick)
-scheduler.addTask(task, 50, 1);
-
-// Task at 33.33Hz (every 30th tick)
-scheduler.addTask(task, 100, 3);   // N=100, D=3 = 33.33Hz
+// 100 Hz fundamental
+scheduler.addTask(task, 30, 1);       // 30 Hz: 30 runs a second, spaced 3, 3, 4 ticks (warned)
+scheduler.addTask(task, 2, 4);        // 0.5 Hz: every 200 ticks
 ```
+
+Refused, with the row named in the log: a zero numerator or
+denominator, a rate above the fundamental (`N > Hz * D`), and an offset
+at or beyond the first period (`offset * N >= Hz * D`). A refused row in
+a config is skipped and the boot continues without it.
+
+Limits: the fastest task rate is the fundamental; the slowest is
+`1 / 65535` Hz, one run every 65,535 s (18 h 12 min 15 s), which at
+1000 Hz is a period of 65,535,000 ticks; the offset is a 16-bit tick
+count, so a phase deeper than 65,535 ticks into a longer period cannot
+be expressed. The budget a run is measured against (`periodNs`, the
+overrun and census figures) is the shortest gap to the task's next run.
+
+A task added or reloaded while the clock is running keeps the phase it
+would have had from the first tick: a 1 Hz task at offset 30 runs on
+cycles 30, 130, 230, ... whichever cycle it arrived on.
 
 ### Zero-Allocation Delegate Pattern
 
@@ -528,20 +553,46 @@ scheduler.executeTasksOnTickMulti(tick);
 ### 7.3 Schedule Geometry
 
 ```cpp
-// Fundamental: 1000Hz, Task: 100Hz
-// periodTicks = 1000 / 100 = 10
+// Fundamental: 1000 Hz, task: 100 Hz
+// run k on tick offset + floor(k * 1000 * 1 / 100) = offset + 10 k
 // Task runs at ticks: 0, 10, 20, 30, ...
 
 // With offset = 5
 // Task runs at ticks: 5, 15, 25, 35, ...
 scheduler.addTask(task, 100, 1, 5);
 
-// With decimation D=2 (50Hz effective)
-// periodTicks = (1000 / 100) * 2 = 20
+// 100/2: 100 runs every 2 s, floor(k * 2000 / 100) = 20 k, 50 Hz
 scheduler.addTask(task, 100, 2);
+
+// 100 Hz fundamental, 30/1: floor(k * 100 / 30) = 0, 3, 6, 10, 13, ...
+// 30 runs a second, spaced 3, 3, 4 (admitted with a warning)
+scheduler.addTask(task, 30, 1);
 ```
 
+The one-second table holds, for each tick index, every task whose
+cadence ever lands on that index. A denominator of one makes the
+pattern one second long, so those slots are exact and every visit is a
+run. A multi-second pattern (`D > 1`) lands on more residues than it
+runs on in any one second, so its entry consults its cadence on each
+visit, one 64-bit compare and a few additions. A slot that holds no
+multi-second task runs a loop with no per-visit test; the dispatch
+entry itself notes the cycle it serves (two compares and a store per
+dispatch) so a table loaded mid-run aligns to the true phase.
+
+Phase is defined on the full cycle count the caller supplies
+(`executeTasksOnCycle*`); the executive passes its task-cycle count and
+the scheduler's own `tick()` passes its tick count, which advances
+through `sleep()`. The tick-index entries (`executeTasksOnTick*`) are
+for callers that dispatch every tick in order and keep no count: they
+cannot report whole seconds they skipped.
+
 ### 7.4 MCU Bare-Metal
+
+The bare-metal scheduler reads the same two fields differently: there
+`freqN / freqD` is a fraction of the fundamental, not a rate in hertz
+(`1, 10` is 10 Hz on a 100 Hz fundamental, where POSIX would read
+0.1 Hz), and its integer division truncates rates that do not divide
+the fundamental. The two meanings are being reconciled separately.
 
 ```cpp
 // AVR/STM32: 8-task, 32-bit counter

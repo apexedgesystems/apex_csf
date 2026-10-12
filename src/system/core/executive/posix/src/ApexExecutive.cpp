@@ -1459,7 +1459,19 @@ void ApexExecutive::applyCliOverrides() noexcept {
   // points, census, archive path, verbosity) apply directly.
   ExecutiveTunableParams p = tunableParams_;
 
-  // Clock frequency (not exposed via CLI currently, but could be added)
+  // Clock frequency override, re-applied over the loaded value with the
+  // same whole-token parse and bound the argument pass used; the adoption
+  // door's validator holds the same [1, 1000] rule for the tprm path.
+  if (parsedArgs_.count(CLOCK_HZ)) {
+    std::uint32_t hz = 0;
+    if (cli::parseWholeU32(parsedArgs_[CLOCK_HZ][0], hz) && hz >= 1U && hz <= 1000U) {
+      p.clockFrequencyHz = static_cast<std::uint16_t>(hz);
+    } else {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_CLI_ARG_CLAMPED),
+                       fmt::format("--clock-hz not a whole number in 1..1000; keeping {} Hz",
+                                   p.clockFrequencyHz));
+    }
+  }
 
   // RT mode override
   if (parsedArgs_.count(RT_MODE)) {

@@ -3,7 +3,7 @@
  * @brief Timing-integrity tests for the executive clock grid and task drain.
  *
  * Boots a real ApexExecutive (config-less, CLI-configured, cycle-target
- * shutdown) and pins the two wall-clock contracts of the runtime:
+ * shutdown) and pins the wall-clock contracts of the runtime:
  *
  *  - Absolute deadline grid: clock cycles track wall time by
  *    construction. A stall shorter than the resync bound is repaid by a
@@ -21,17 +21,27 @@
  *    grid re-anchors once, and the dropped ticks are counted in the
  *    health packet's resyncDroppedTicks.
  *
- * The pause/resume path induces the stalls: pause halts the clock
- * mid-grid, so resume presents exactly the stale-deadline backlog the
- * policies exist for. These are component-level dev tests (manual
- * execution): they assert wall-clock spans, so run them on an
- * otherwise-idle host.
+ *  - Pause is suspended time, not owed time: resume re-anchors the grid
+ *    on a clean period boundary, so a pause of any length is neither
+ *    repaid nor counted as a resync.
+ *
+ * Stalls are real: the whole process is stopped with SIGSTOP and
+ * continued by a forked child after the chosen interval, which is what
+ * a host suspend or a debugger does to the clock. These are
+ * component-level dev tests (manual execution): they assert wall-clock
+ * spans, so run them on an otherwise-idle host.
  */
 
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/executive/posix/inc/ExecutiveState.hpp"
 
 #include <gtest/gtest.h>
+
+#include <csignal>
+#include <ctime>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <chrono>
 #include <cstdint>
@@ -102,6 +112,27 @@ protected:
     return Clock::now();
   }
 
+  /// Stop the whole process for `stall`, the way a host suspend or a
+  /// debugger does. A forked child sleeps out the interval and sends
+  /// SIGCONT; the child runs only async-signal-safe calls, so forking
+  /// from this threaded process is sound.
+  static void stallProcessFor(std::chrono::milliseconds stall) {
+    const pid_t CHILD = ::fork();
+    ASSERT_GE(CHILD, 0) << "fork failed";
+    if (CHILD == 0) {
+      timespec ts{};
+      ts.tv_sec = static_cast<time_t>(stall.count() / 1000);
+      ts.tv_nsec = static_cast<long>((stall.count() % 1000) * 1'000'000L);
+      while (::nanosleep(&ts, &ts) != 0) {
+      }
+      (void)::kill(::getppid(), SIGCONT);
+      ::_exit(0);
+    }
+    (void)::raise(SIGSTOP);
+    int status = 0;
+    (void)::waitpid(CHILD, &status, 0);
+  }
+
   /// Wait until the paused flag reports `paused`.
   void waitForPaused(bool paused, std::chrono::milliseconds timeout) {
     const auto DEADLINE = Clock::now() + timeout;
@@ -155,30 +186,25 @@ TEST_F(ExecutiveTimingTest, NominalRunTracksWallAtParity) {
 
 /**
  * A stall shorter than the resync bound must be repaid, not leaked: the
- * wall span from cycle A to the target is the grid span even though a
- * 600 ms pause sits inside it, because resume fires the backlogged
- * deadlines as a catch-up burst. The burst also exercises the drain
- * path under collapsed wakes — the run must still end at parity. A
- * re-anchoring clock would exceed the expected span by the full pause;
- * a boolean-only wake would end short of task parity.
+ * wall span from cycle A to the target is the grid span even though the
+ * process was stopped for 600 ms inside it, because the wake after the
+ * stall fires the backlogged deadlines as a catch-up burst. The burst
+ * also exercises the drain path under collapsed wakes -- the run must
+ * still end at parity. A re-anchoring clock would exceed the expected
+ * span by the full stall; a boolean-only wake would end short of task
+ * parity.
  */
 TEST_F(ExecutiveTimingTest, ShortStallIsRepaidByCatchUpBurst) {
   constexpr std::uint64_t TARGET = 300;
-  constexpr auto PAUSE = std::chrono::milliseconds(600);
+  constexpr auto STALL = std::chrono::milliseconds(600);
   boot(TARGET);
 
   const auto T_A = waitForClockCycles(50, std::chrono::seconds(15));
-
-  exec_->pause();
-  waitForPaused(true, std::chrono::seconds(2));
-  std::this_thread::sleep_for(PAUSE);
-  exec_->resume();
-  waitForPaused(false, std::chrono::seconds(2));
-
+  stallProcessFor(STALL);
   const auto T_B = waitForClockCycles(TARGET, std::chrono::seconds(10));
   runner_.join();
 
-  // 250 frames at 10 ms = 2500 ms, pause included: the grid owes no
+  // 250 frames at 10 ms = 2500 ms, stall included: the grid owes no
   // extra time. The 600 ms discriminator dwarfs the tolerance.
   const auto SPAN_MS = std::chrono::duration_cast<std::chrono::milliseconds>(T_B - T_A).count();
   EXPECT_NEAR(static_cast<double>(SPAN_MS), 2500.0, 250.0);
@@ -198,17 +224,58 @@ TEST_F(ExecutiveTimingTest, ShortStallIsRepaidByCatchUpBurst) {
 
 /**
  * A stall beyond one second must NOT be caught up: the grid re-anchors
- * once and accounts for the gap in resyncDroppedTicks. A 1.6 s pause
- * at 100 Hz drops on the order of 160 ticks (the pause takes effect at
- * a frame boundary, so the count carries a few frames of slop). The
- * run must still finish at parity on the cycle target.
+ * once and accounts for the gap in resyncDroppedTicks. The policy is
+ * all or nothing, so a 1.6 s stop at 100 Hz drops the 160 deadlines
+ * that passed during it, give or take the one the wake handles and the
+ * few frames the host takes to run the clock thread again. Dropped
+ * ticks are never issued, so the cycle count falls behind wall time by
+ * the stall for good: the span from cycle A to the target grows by the
+ * whole stall, the signature that distinguishes a drop from a repaid
+ * backlog. The run must still finish at parity on the cycle target.
  */
 TEST_F(ExecutiveTimingTest, LongStallResyncsWithCountedDrop) {
   constexpr std::uint64_t TARGET = 250;
-  constexpr auto PAUSE = std::chrono::milliseconds(1600);
+  constexpr auto STALL = std::chrono::milliseconds(1600);
   boot(TARGET);
 
-  waitForClockCycles(50, std::chrono::seconds(15));
+  const auto T_A = waitForClockCycles(50, std::chrono::seconds(15));
+  stallProcessFor(STALL);
+  const auto T_B = waitForClockCycles(TARGET, std::chrono::seconds(10));
+  runner_.join();
+
+  const auto& HP = exec_->getHealthPacket();
+  EXPECT_GE(HP.resyncDroppedTicks, 150u);
+  EXPECT_LE(HP.resyncDroppedTicks, 175u);
+
+  // 200 frames at 10 ms = 2000 ms plus the 1600 ms stall in full: the
+  // dropped deadlines were never issued as cycles.
+  const auto SPAN_MS = std::chrono::duration_cast<std::chrono::milliseconds>(T_B - T_A).count();
+  EXPECT_NEAR(static_cast<double>(SPAN_MS), 3600.0, 250.0);
+
+  EXPECT_EQ(HP.clockCycles, TARGET);
+  // Cycle-target shutdown races the final signaled tick: the task
+  // thread's post-wake shutdown check may retire it before executing
+  // tick TARGET, so end-state task cycles are TARGET or TARGET - 1.
+  // The drain contract under test is that no larger deficit survives.
+  EXPECT_GE(HP.taskExecutionCycles, TARGET - 1);
+  EXPECT_LE(HP.taskExecutionCycles, TARGET);
+}
+
+/* ----------------------------- Pause policy ----------------------------- */
+
+/**
+ * Paused time is suspended, not owed. Resume re-anchors the grid on a
+ * clean period boundary, so the wall span from cycle A to the target
+ * grows by the whole pause, and a pause longer than the resync bound is
+ * still not a resync: no catch-up burst (which would read as period
+ * violations, fatal under hard RT) and no dropped-tick count.
+ */
+TEST_F(ExecutiveTimingTest, PauseIsSuspendedNotOwed) {
+  constexpr std::uint64_t TARGET = 250;
+  constexpr auto PAUSE = std::chrono::milliseconds(1200);
+  boot(TARGET);
+
+  const auto T_A = waitForClockCycles(50, std::chrono::seconds(15));
 
   exec_->pause();
   waitForPaused(true, std::chrono::seconds(2));
@@ -216,17 +283,18 @@ TEST_F(ExecutiveTimingTest, LongStallResyncsWithCountedDrop) {
   exec_->resume();
   waitForPaused(false, std::chrono::seconds(2));
 
-  waitForClockCycles(TARGET, std::chrono::seconds(10));
+  const auto T_B = waitForClockCycles(TARGET, std::chrono::seconds(10));
   runner_.join();
 
+  // 200 frames at 10 ms = 2000 ms, plus the 1200 ms pause in full. The
+  // pause takes effect at a frame boundary on either side, so the
+  // tolerance carries a few frames.
+  const auto SPAN_MS = std::chrono::duration_cast<std::chrono::milliseconds>(T_B - T_A).count();
+  EXPECT_NEAR(static_cast<double>(SPAN_MS), 3200.0, 250.0);
+
   const auto& HP = exec_->getHealthPacket();
-  EXPECT_GE(HP.resyncDroppedTicks, 100u);
-  EXPECT_LE(HP.resyncDroppedTicks, 220u);
+  EXPECT_EQ(HP.resyncDroppedTicks, 0u);
   EXPECT_EQ(HP.clockCycles, TARGET);
-  // Cycle-target shutdown races the final signaled tick: the task
-  // thread's post-wake shutdown check may retire it before executing
-  // tick TARGET, so end-state task cycles are TARGET or TARGET - 1.
-  // The drain contract under test is that no larger deficit survives.
   EXPECT_GE(HP.taskExecutionCycles, TARGET - 1);
   EXPECT_LE(HP.taskExecutionCycles, TARGET);
 }
