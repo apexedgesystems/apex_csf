@@ -49,6 +49,11 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- Breaking: scheduler subclasses override `executeCycle(cycle)` in place
+  of `executeTick(tick)`, and the multi-thread scheduler's overridable
+  dispatch hook is `executeTasksOnCycleMulti(cycle)`; the tick-index
+  names remain as non-virtual wrappers. Dependent schedulers migrate and
+  rebuild.
 - Scheduler task rates: any `freqN / freqD` up to the fundamental is
   admitted, including rates that do not land on whole ticks; those run
   the exact count per `freqD` seconds with spacing uneven by at most one

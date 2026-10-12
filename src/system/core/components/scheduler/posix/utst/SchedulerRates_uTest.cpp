@@ -303,9 +303,25 @@ TEST(SchedulerRates, SleepKeepsMultiSecondPhase) {
 TEST(SchedulerRates, EmptyTableStillCounts) {
   Harness h(100);
   h.run(250);
+  // A multi-second task: its first instant is the first one at or after
+  // the cycle it was added on, so the instant at 150 is never owed.
+  ASSERT_EQ(h.add(1, 4, 150), Status::SUCCESS);
   ASSERT_EQ(h.add(1, 1, 30), Status::SUCCESS);
-  h.run(200);
-  EXPECT_EQ(h.runs(), (std::vector<std::uint64_t>{330, 430}));
+  h.run(1050);
+  EXPECT_EQ(h.runs(0), (std::vector<std::uint64_t>{550, 950}));
+  EXPECT_EQ(h.runs(1)[0], 330U);
+}
+
+/** @test A task added while the scheduler sleeps first runs at its next instant after the add. */
+TEST(SchedulerRates, AddDuringSleepStartsAtNextInstant) {
+  Harness h(100);
+  h.runByTickApi(50);
+  h.scheduler().sleep();
+  h.runByTickApi(200);                          // cycles 50..249 pass unseen by dispatch
+  ASSERT_EQ(h.add(1, 4, 150), Status::SUCCESS); // added at cycle 250, during sleep
+  h.scheduler().wake();
+  h.runByTickApi(1050); // cycles 250..1299
+  EXPECT_EQ(h.runs(), (std::vector<std::uint64_t>{550, 950}));
 }
 
 /** @test The worker dispatcher delivers an uneven rate and a long offset on their exact instants.

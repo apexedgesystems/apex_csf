@@ -113,13 +113,17 @@ public:
    *
    * Hands the full cycle count to executeCycle() and increments it. The
    * count advances through sleep as well, so a multi-second task keeps
-   * its phase across one: dispatch is skipped, time is not.
+   * its phase across one: dispatch is skipped, time is not. A sleeping
+   * tick still notes its cycle, so a task admitted during sleep aligns
+   * to the cycle that is current, not to the last one dispatched.
    *
    * @note RT-safe: delegates to derived implementation.
    */
   void tick() noexcept override {
     if (!sleeping_.load(std::memory_order_acquire)) {
       executeCycle(tickCount_);
+    } else {
+      static_cast<void>(beginDispatchCycle(tickCount_));
     }
     ++tickCount_;
   }
