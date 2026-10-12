@@ -61,7 +61,18 @@ public:
 
   ~SchedulerMultiThread() noexcept override;
 
-  [[nodiscard]] virtual Status executeTasksOnTickMulti(std::uint16_t tick) noexcept;
+  /**
+   * @brief Execute the tasks due on a cycle through the thread pools.
+   * @param cycle Full cycle count since the first dispatch.
+   */
+  [[nodiscard]] virtual Status executeTasksOnCycleMulti(std::uint64_t cycle) noexcept;
+
+  /**
+   * @brief Execute the tasks due on a tick index, for callers that dispatch
+   *        every tick in order and keep no cycle count of their own.
+   * @param tick Tick index within one second, [0, ffreq).
+   */
+  [[nodiscard]] Status executeTasksOnTickMulti(std::uint16_t tick) noexcept;
 
   /**
    * @brief Task completion callback (placeholder for future dependency support).
@@ -165,10 +176,22 @@ public:
   [[nodiscard]] bool skipOnBusyEnabled() const noexcept override { return skipOnBusy_; }
 
 protected:
-  /** @brief Delegate tick execution to multi-threaded dispatch. */
-  void executeTick(std::uint16_t tick) noexcept override {
-    static_cast<void>(executeTasksOnTickMulti(tick));
+  /** @brief Delegate cycle execution to multi-threaded dispatch. */
+  void executeCycle(std::uint64_t cycle) noexcept override {
+    static_cast<void>(executeTasksOnCycleMulti(cycle));
   }
+
+  /**
+   * @brief Enqueue every entry on one slot in order.
+   *
+   * One body, two instantiations: the gated one consults a multi-second
+   * task's cadence per visit; the other, used for every slot that holds
+   * no such task, is the plain loop with no per-visit test.
+   */
+  template <bool kGated>
+  void dispatchSlot(const std::vector<std::size_t>& entryIndices, std::uint64_t cycle,
+                    std::uint16_t tick, std::uint64_t dispatchNs, logs::SystemLog* lg,
+                    int logLevel) noexcept;
 
   /**
    * @brief Initialize the scheduler. Called by base init().

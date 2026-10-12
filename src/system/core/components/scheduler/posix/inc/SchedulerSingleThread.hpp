@@ -30,14 +30,22 @@ public:
   ~SchedulerSingleThread() override = default;
 
   /**
-   * @brief Execute tasks scheduled on a specific tick (single-threaded, sequential).
+   * @brief Execute the tasks due on a cycle (single-threaded, sequential).
+   * @param cycle Full cycle count since the first dispatch.
+   */
+  [[nodiscard]] Status executeTasksOnCycleSingle(std::uint64_t cycle) noexcept;
+
+  /**
+   * @brief Execute the tasks due on a tick index, for callers that dispatch
+   *        every tick in order and keep no cycle count of their own.
+   * @param tick Tick index within one second, [0, ffreq).
    */
   [[nodiscard]] Status executeTasksOnTickSingle(std::uint16_t tick) noexcept;
 
 protected:
-  /** @brief Delegate tick execution to single-threaded sequential dispatch. */
-  void executeTick(std::uint16_t tick) noexcept override {
-    static_cast<void>(executeTasksOnTickSingle(tick));
+  /** @brief Delegate cycle execution to single-threaded sequential dispatch. */
+  void executeCycle(std::uint64_t cycle) noexcept override {
+    static_cast<void>(executeTasksOnCycleSingle(cycle));
   }
 
   /**
@@ -46,6 +54,18 @@ protected:
   [[nodiscard]] uint8_t doInit() noexcept override;
 
 private:
+  /**
+   * @brief Run every entry on one slot in order.
+   *
+   * One body, two instantiations: the gated one consults a multi-second
+   * task's cadence per visit; the other, used for every slot that holds
+   * no such task, is the plain loop with no per-visit test.
+   * @return True if any task returned an error or threw.
+   */
+  template <bool kGated>
+  bool dispatchSlot(const std::vector<std::size_t>& entryIndices, std::uint64_t cycle,
+                    std::uint16_t tick) noexcept;
+
   std::filesystem::path logDir_; ///< Log directory, used in init().
 };
 

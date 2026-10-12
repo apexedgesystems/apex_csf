@@ -25,10 +25,11 @@ enum class Status : std::uint8_t {
   SUCCESS = 0,
 
   // Scheduler base ------------------------------------------------------------
-  ERROR_TFREQN_GT_FFREQ = static_cast<std::uint8_t>(system_component::Status::EOE_SYSTEM_COMPONENT),
-  ERROR_FFREQ_MOD_TFREQN_DNE0,
-  ERROR_OFFSET_GTE_TPT,
-  ERROR_TFREQD_LT1,
+  ERROR_TFREQN_GT_FFREQ = static_cast<std::uint8_t>(
+      system_component::Status::EOE_SYSTEM_COMPONENT), ///< Rate above the fundamental.
+  ERROR_FFREQ_MOD_TFREQN_DNE0,                         ///< Numerator zero: no rate.
+  ERROR_OFFSET_GTE_TPT,                                ///< Offset at or beyond the period.
+  ERROR_TFREQD_LT1,                                    ///< Denominator zero.
   ERROR_TASK_EXECUTION_FAIL,
   ERROR_THREAD_LAUNCH_FAIL,
 

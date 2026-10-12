@@ -101,7 +101,7 @@ struct TaskConfig {
  * The scheduler maintains a collection of TaskEntry objects. Each entry contains:
  *   - Non-owning pointer to the task (caller manages task lifetime)
  *   - Scheduling configuration (frequency, priority, poolId)
- *   - Runtime state for frequency decimation (holdCtr)
+ *   - Whether the scheduler consults a cadence for it (multi-second patterns)
  *
  * This design keeps tasks minimal while giving scheduler full control over scheduling.
  */
@@ -111,7 +111,11 @@ struct TaskEntry {
   std::uint32_t fullUid{0};           ///< Owner component's full UID (for contention detection).
   const char* componentName{nullptr}; ///< Owner component name (for logging).
   std::uint8_t taskUid{0};            ///< Task UID within component (for registry registration).
-  std::uint16_t holdCtr{0};           ///< Frequency decimation counter.
+  /// False for a denominator of one: such a task's pattern repeats every
+  /// second, so its table slots are exact and every visit is a run. True
+  /// for a multi-second pattern, whose cadence (kept by the scheduler
+  /// beside the entries) says which visits are runs.
+  bool gated{false};
 
   /* ----------------------------- Deadline Tracking ----------------------------- */
 
@@ -208,22 +212,6 @@ struct TaskEntry {
 
   /** @brief Check if this entry has sequencing enabled. */
   [[nodiscard]] bool isSequenced() const noexcept { return seqCounter != nullptr; }
-
-  /** @brief Check if task should run this tick (frequency gate). */
-  [[nodiscard]] bool shouldRun() noexcept {
-    if (config.freqD <= 1) {
-      return true; // No decimation
-    }
-    ++holdCtr;
-    if (holdCtr >= config.freqD) {
-      holdCtr = 0;
-      return true;
-    }
-    return false;
-  }
-
-  /** @brief Reset decimation counter (call at schedule start). */
-  void resetHold() noexcept { holdCtr = 0; }
 };
 
 } // namespace scheduler

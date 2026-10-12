@@ -77,8 +77,11 @@ struct ExecutiveTunableParams {
  * load (a REJECTED ingest feeding the barrier's refuse-to-run chain:
  * bank fallback, else the SAFE hold) rather than
  * silently casting to undefined behavior: rtMode feeds a raw enum cast,
- * and clockFrequencyHz feeds a divisor (0 divides; >1000 collapses the
- * frame period to zero and busy-spins the grid).
+ * and clockFrequencyHz sets the tick grid (0 has no period). The
+ * 1000 Hz ceiling is the POSIX executive's stated limit, not an
+ * arithmetic fence: the grid is exact for any rate, but one-millisecond
+ * ticks are the finest a general-purpose kernel's timer and scheduler
+ * latency can be expected to honour.
  *
  * @param p Loaded parameters.
  * @param[out] err On failure, a static description of the first violation.

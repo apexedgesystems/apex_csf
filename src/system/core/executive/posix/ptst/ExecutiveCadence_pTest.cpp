@@ -14,18 +14,22 @@
  *    the number the absolute deadline grid pins near zero regardless
  *    of per-tick oversleep
  *  - resyncs and end-state clock/task parity as sanity gates
+ *  - the clock thread's own wake-lateness record (p50, p99, max against
+ *    each tick's deadline), read back after the run
  *
  * This is deliberately not a PerfCase throughput loop: a paced 100 Hz
  * loop's calls-per-second is fixed by construction and meaningless as
  * a metric. Cadence quality lives in the period distribution and the
  * drift, so those are measured and reported directly.
  *
- * Polling at ~0.2 ms quantizes each edge to well under 5% of a 10 ms
- * frame — adequate for millisecond-scale jitter tails and exact for
- * drift (which only needs the first and last edges).
+ * The sampler polls at a fortieth of the frame, capped at 0.2 ms, so an
+ * edge is quantized to well under 5% of a frame at any rate — adequate
+ * for millisecond-scale jitter tails and exact for drift (which only
+ * needs the first and last edges).
  *
  * Environment knobs:
- *   CADENCE_CYCLES  total clock cycles to run (default 1000 = 10 s)
+ *   CADENCE_CYCLES  total clock cycles to run (default 1000 = 10 s at 100 Hz)
+ *   CADENCE_HZ      fundamental frequency to boot with (default 100)
  *   CADENCE_CSV     if set, append "cycle,edge_ns" samples to this path
  */
 
@@ -36,6 +40,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -49,15 +54,14 @@ namespace {
 using executive::ApexExecutive;
 using Clock = std::chrono::steady_clock;
 
-constexpr double FRAME_MS = 10.0; // default executive clock: 100 Hz
-
 class CadenceExecutive : public ApexExecutive {
 public:
-  CadenceExecutive(const std::filesystem::path& fsRoot, std::uint64_t targetCycles)
+  CadenceExecutive(const std::filesystem::path& fsRoot, std::uint64_t targetCycles,
+                   std::uint32_t hz)
       : ApexExecutive("ExecutiveCadence_pTest",
                       {"--shutdown-mode", "cycle", "--shutdown-cycle", std::to_string(targetCycles),
-                       "--rt-mode", "lag-tolerant", "--rt-max-lag", "1000000", "--skip-cleanup",
-                       "--verbosity", "0"},
+                       "--clock-hz", std::to_string(hz), "--rt-mode", "lag-tolerant",
+                       "--rt-max-lag", "1000000", "--skip-cleanup", "--verbosity", "0"},
                       fsRoot) {}
 };
 
@@ -66,13 +70,22 @@ std::uint64_t envCycles() noexcept {
   return (s && *s != '\0') ? std::strtoull(s, nullptr, 10) : 1000u;
 }
 
+std::uint32_t envHz() noexcept {
+  const char* s = std::getenv("CADENCE_HZ");
+  return (s && *s != '\0') ? static_cast<std::uint32_t>(std::strtoul(s, nullptr, 10)) : 100u;
+}
+
 TEST(ExecutiveCadencePerf, PeriodFidelityAndDrift) {
   const std::uint64_t CYCLES = envCycles();
+  const std::uint32_t HZ = envHz();
+  const double FRAME_MS = 1000.0 / static_cast<double>(HZ);
+  const auto POLL = std::chrono::microseconds(
+      std::min<std::int64_t>(200, static_cast<std::int64_t>(FRAME_MS * 1000.0 / 40.0)));
   const auto FS_ROOT = std::filesystem::path(::testing::TempDir()) / "exec_cadence_ptst";
   std::filesystem::remove_all(FS_ROOT);
   std::filesystem::create_directories(FS_ROOT);
 
-  CadenceExecutive exec(FS_ROOT, CYCLES);
+  CadenceExecutive exec(FS_ROOT, CYCLES, HZ);
   ASSERT_EQ(exec.init(), 0);
 
   // Edge sampler: one wall timestamp per observed cycle-count change.
@@ -93,7 +106,7 @@ TEST(ExecutiveCadencePerf, PeriodFidelityAndDrift) {
                 .count());
         last = C;
       }
-      std::this_thread::sleep_for(std::chrono::microseconds(200));
+      std::this_thread::sleep_for(POLL);
     }
   });
 
@@ -136,14 +149,22 @@ TEST(ExecutiveCadencePerf, PeriodFidelityAndDrift) {
   const double DRIFT_MS = SPAN_MS - SPAN_CYCLES * FRAME_MS;
 
   const auto& HP = exec.getHealthPacket();
+  const auto& L = exec.clockLateness();
 
-  std::printf("ExecutiveCadencePerf.PeriodFidelityAndDrift: cycles=%llu edges=%zu "
+  std::printf("ExecutiveCadencePerf.PeriodFidelityAndDrift: hz=%u cycles=%llu edges=%zu "
               "period mean=%.4f ms (err %+.4f) min=%.3f p95=%.3f p99=%.3f max=%.3f | "
               "drift=%+.3f ms over %.1f s | overruns=%llu resyncDropped=%u\n",
-              static_cast<unsigned long long>(HP.clockCycles), edgeCycle.size(), MEAN,
+              HZ, static_cast<unsigned long long>(HP.clockCycles), edgeCycle.size(), MEAN,
               MEAN - FRAME_MS, sorted.front(), PCT(0.95), PCT(0.99), sorted.back(), DRIFT_MS,
               SPAN_MS / 1000.0, static_cast<unsigned long long>(HP.frameOverrunCount),
               HP.resyncDroppedTicks);
+  std::printf(
+      "ExecutiveCadencePerf.PeriodFidelityAndDrift: wake lateness n=%llu "
+      "p50<=%lld us p99<=%lld us max=%.1f us mean=%.1f us >=1ms=%llu early=%llu\n",
+      static_cast<unsigned long long>(L.count), static_cast<long long>(L.percentileNs(0.50) / 1000),
+      static_cast<long long>(L.percentileNs(0.99) / 1000), static_cast<double>(L.maxNs) / 1000.0,
+      L.meanNs() / 1000.0, static_cast<unsigned long long>(L.overflow),
+      static_cast<unsigned long long>(L.early));
 
   if (const char* csv = std::getenv("CADENCE_CSV")) {
     if (std::FILE* f = std::fopen(csv, "a")) {
@@ -158,10 +179,12 @@ TEST(ExecutiveCadencePerf, PeriodFidelityAndDrift) {
   // Sanity gates, deliberately loose: the baseline artifact carries the
   // real numbers; these only catch a broken grid (mean off by >2% or
   // drift growing with run length) on an otherwise-idle timing rail.
-  EXPECT_NEAR(MEAN, FRAME_MS, 0.2);
+  EXPECT_EQ(HP.clockFrequencyHz, HZ);
+  EXPECT_NEAR(MEAN, FRAME_MS, 0.02 * FRAME_MS);
   EXPECT_LT(std::abs(DRIFT_MS), 50.0);
   EXPECT_EQ(HP.resyncDroppedTicks, 0u);
   EXPECT_EQ(HP.clockCycles, CYCLES);
+  EXPECT_EQ(L.count, CYCLES);
 
   std::filesystem::remove_all(FS_ROOT);
 }

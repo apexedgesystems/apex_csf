@@ -1081,6 +1081,37 @@ mod tests {
         assert_eq!(hash, super::super::payload::crc32(spec.as_bytes()));
     }
 
+    /// @test The typed "struct" spelling of a nested member, the form the
+    /// authoring template writes, stamps the hash the spec side generates
+    /// for the same manifest, and that canonical string is the literal
+    /// leaf list with no wrapper row.
+    #[test]
+    fn struct_spelling_agrees_with_the_spec_side() {
+        let m = nested_manifest("");
+        let value = serde_json::json!({
+            "collectRateHz": { "type": "uint", "size": 4, "value": 10 },
+            "subs": {
+                "type": "struct",
+                "size": 8,
+                "fields": {
+                    "fullUid": { "type": "uint", "size": 4, "value": 1 },
+                    "rateDiv": { "type": "uint", "size": 4, "value": 2 }
+                }
+            }
+        });
+        let (bytes, hash) = crate::tunable_params::binary::serialize_value_with_layout(
+            &serde_json::json!({ "TlmTprm": value }),
+        )
+        .unwrap();
+        assert_eq!(bytes.len(), 12);
+        let spec = canonical_spec("TlmTprm", &m.fields["TlmTprm"], &m.fields).unwrap();
+        assert_eq!(
+            spec,
+            "collectRateHz:uint:4:0;fullUid:uint:4:4;rateDiv:uint:4:8;|size:12"
+        );
+        assert_eq!(hash, super::super::payload::crc32(spec.as_bytes()));
+    }
+
     #[test]
     fn nesting_is_two_levels_at_most() {
         // sequence -> steps -> waitCondition is the deepest shipped

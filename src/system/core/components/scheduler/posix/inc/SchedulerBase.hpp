@@ -12,7 +12,7 @@
  * Design:
  *   - Tasks are minimal (just callable + label)
  *   - Scheduler owns all configuration via TaskConfig
- *   - Frequency decimation happens at scheduler level (TaskEntry::shouldRun)
+ *   - Rates are scheduler-level: each entry's TaskCadence names the cycles it runs on
  */
 
 #include "src/system/core/infrastructure/system_component/posix/inc/CoreComponentBase.hpp"
@@ -24,6 +24,7 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/HostRequirements.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/SequenceGroup.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
+#include "src/system/core/components/scheduler/posix/inc/TaskCadence.hpp"
 #include "src/system/core/components/scheduler/posix/inc/TaskConfig.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/SchedulableTask.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/TaskBuilder.hpp"
@@ -110,16 +111,19 @@ public:
   /**
    * @brief Execute one scheduler tick (IScheduler interface).
    *
-   * Computes current tick index, delegates to executeTick(), and increments
-   * the tick counter. When sleeping, tick counter still advances (time
-   * awareness) but task dispatch is skipped.
+   * Hands the full cycle count to executeCycle() and increments it. The
+   * count advances through sleep as well, so a multi-second task keeps
+   * its phase across one: dispatch is skipped, time is not. A sleeping
+   * tick still notes its cycle, so a task admitted during sleep aligns
+   * to the cycle that is current, not to the last one dispatched.
    *
    * @note RT-safe: delegates to derived implementation.
    */
   void tick() noexcept override {
     if (!sleeping_.load(std::memory_order_acquire)) {
-      const std::uint16_t TICK_IDX = static_cast<std::uint16_t>(tickCount_ % ffreq_);
-      executeTick(TICK_IDX);
+      executeCycle(tickCount_);
+    } else {
+      static_cast<void>(beginDispatchCycle(tickCount_));
     }
     ++tickCount_;
   }
@@ -461,15 +465,85 @@ protected:
   void logScheduleLayout(std::string_view modeDescription) noexcept;
 
   /**
-   * @brief Execute tasks for a specific tick index.
-   * @param tick Tick index within one fundamental period [0, ffreq).
+   * @brief Execute the tasks due on a cycle.
+   * @param cycle Full cycle count since the first dispatch; the table
+   *        index is `cycle mod ffreq`.
    * @note Pure virtual: SchedulerMultiThread dispatches to thread pools,
    *       SchedulerSingleThread executes sequentially.
    */
-  virtual void executeTick(std::uint16_t tick) noexcept = 0;
+  virtual void executeCycle(std::uint64_t cycle) noexcept = 0;
 
   /** @brief Tick counter (incremented by tick()). */
   std::uint64_t tickCount_{0};
+
+  /**
+   * @brief Note the cycle a dispatch is about to serve and return its table index.
+   *
+   * Every dispatch entry calls this first, before any early return, so
+   * the cycle a late addTask aligns to is always the one after the last
+   * served, whether or not that cycle had work. On the expected cycle the
+   * index is carried forward without division; a skipped or repeated
+   * cycle recomputes it.
+   *
+   * @note RT-safe: compares, increments and one store; a division only
+   *       when the cycle is not the expected one.
+   */
+  [[nodiscard]] std::uint16_t beginDispatchCycle(std::uint64_t cycle) noexcept {
+    std::uint16_t index = expectedTick_;
+    if (cycle != nextDispatchCycle_) {
+      index = (ffreq_ == 0U) ? 0U : static_cast<std::uint16_t>(cycle % ffreq_);
+    }
+    nextDispatchCycle_ = cycle + 1;
+    expectedTick_ = (static_cast<std::uint32_t>(index) + 1U >= ffreq_)
+                        ? static_cast<std::uint16_t>(0U)
+                        : static_cast<std::uint16_t>(index + 1U);
+    return index;
+  }
+
+  /**
+   * @brief Cycle for a caller that supplies only a tick index.
+   *
+   * For callers that dispatch every tick in order: the next cycle, at or
+   * after the one expected, whose index is `tick`. Such a caller cannot
+   * report whole seconds it skipped, so a caller that keeps a cycle count
+   * passes it to the cycle entry instead.
+   *
+   * @note RT-safe: a compare on the expected path; one division otherwise.
+   */
+  [[nodiscard]] std::uint64_t cycleForTick(std::uint16_t tick) const noexcept {
+    if (tick == expectedTick_ || ffreq_ == 0U) {
+      return nextDispatchCycle_;
+    }
+    const std::uint64_t BASE = nextDispatchCycle_ - (nextDispatchCycle_ % ffreq_);
+    std::uint64_t cycle = BASE + tick;
+    if (cycle < nextDispatchCycle_) {
+      cycle += ffreq_;
+    }
+    return cycle;
+  }
+
+  /** @brief Cycle the next dispatch will be given; a late addTask aligns to it. */
+  std::uint64_t nextDispatchCycle_{0};
+  /** @brief nextDispatchCycle_ mod ffreq_, carried so the expected path divides nothing. */
+  std::uint16_t expectedTick_{0};
+
+  /**
+   * @brief Each entry's cadence, index-aligned with entries_.
+   *
+   * Kept beside the entries rather than inside them so the per-visit walk
+   * over denominator-one tasks touches no more of each entry than it did
+   * before cadences existed; only a gated entry's cadence is read.
+   */
+  std::vector<TaskCadence> cadences_{};
+
+  /**
+   * @brief Per slot: whether any gated entry is placed on it.
+   *
+   * A slot with none dispatches with the plain loop, which tests nothing
+   * per visit; only a slot that holds a multi-second task pays the
+   * per-visit cadence check. Index-aligned with schedule_.
+   */
+  std::vector<std::uint8_t> slotHasGated_{};
 
   /** @brief All registered task entries (scheduler owns these). */
   std::vector<TaskEntry> entries_{};

@@ -10,6 +10,9 @@
 #include "src/utilities/helpers/inc/Utilities.hpp"
 
 #include <cstdint>
+#include <charconv>
+#include <string_view>
+#include <system_error>
 
 namespace executive {
 
@@ -40,6 +43,7 @@ enum Arguments : std::uint8_t {
   RT_MODE,           ///< Real-time mode override
   RT_MAX_LAG,        ///< Max lag tolerance (ticks)
   INGEST_POLICY,     ///< TPRM ingest policy (strict|lenient)
+  CLOCK_HZ,          ///< Fundamental clock frequency override (Hz)
 };
 
 /**
@@ -66,7 +70,39 @@ static const apex::helpers::args::ArgMap ARG_MAP = {
     {RT_MODE, {"--rt-mode", 1, false}},
     {RT_MAX_LAG, {"--rt-max-lag", 1, false}},
     {INGEST_POLICY, {"--ingest-policy", 1, false}},
+    {CLOCK_HZ, {"--clock-hz", 1, false}},
 };
+
+namespace cli {
+
+/**
+ * @brief Parse a whole decimal token into an unsigned 32-bit value without throwing.
+ *
+ * The entire token must be digits: no sign, no whitespace, no suffix, no
+ * exponent, no fraction. A value that does not fit the type is rejected
+ * rather than clamped, so a mistyped flag cannot select a different
+ * timing configuration quietly.
+ *
+ * @param token The argument text.
+ * @param[out] out The value, written only on success.
+ * @return True when the whole token was a number in range.
+ * @note RT-safe: no allocation, no exceptions.
+ */
+[[nodiscard]] inline bool parseWholeU32(std::string_view token, std::uint32_t& out) noexcept {
+  if (token.empty()) {
+    return false;
+  }
+  std::uint32_t value = 0;
+  const char* const END = token.data() + token.size();
+  const auto RESULT = std::from_chars(token.data(), END, value, 10);
+  if (RESULT.ec != std::errc{} || RESULT.ptr != END) {
+    return false;
+  }
+  out = value;
+  return true;
+}
+
+} // namespace cli
 
 } // namespace executive
 
