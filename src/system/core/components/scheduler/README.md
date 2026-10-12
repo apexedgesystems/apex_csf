@@ -572,10 +572,19 @@ scheduler.addTask(task, 30, 1);
 The one-second table holds, for each tick index, every task whose
 cadence ever lands on that index. A denominator of one makes the
 pattern one second long, so those slots are exact and every visit is a
-run: no gate is consulted and the dispatch cost is what it was. A
-multi-second pattern (`D > 1`) lands on more residues than it runs on
-in any one second, so its entry consults its cadence on each visit, one
-64-bit compare and a few additions.
+run. A multi-second pattern (`D > 1`) lands on more residues than it
+runs on in any one second, so its entry consults its cadence on each
+visit, one 64-bit compare and a few additions. A slot that holds no
+multi-second task runs a loop with no per-visit test; the dispatch
+entry itself notes the cycle it serves (two compares and a store per
+dispatch) so a table loaded mid-run aligns to the true phase.
+
+Phase is defined on the full cycle count the caller supplies
+(`executeTasksOnCycle*`); the executive passes its task-cycle count and
+the scheduler's own `tick()` passes its tick count, which advances
+through `sleep()`. The tick-index entries (`executeTasksOnTick*`) are
+for callers that dispatch every tick in order and keep no count: they
+cannot report whole seconds they skipped.
 
 ### 7.4 MCU Bare-Metal
 

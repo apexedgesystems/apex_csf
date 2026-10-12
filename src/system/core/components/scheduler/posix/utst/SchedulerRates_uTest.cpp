@@ -2,13 +2,16 @@
  * @file SchedulerRates_uTest.cpp
  * @brief Task-rate admission and cadence through the scheduler's own dispatch.
  *
- * Drives a single-thread scheduler cycle by cycle, the way the executive
- * does (tick index = cycle mod fundamental), counting each task's runs
- * and recording the cycles it ran on. Every rate in the rate contract is
- * checked by its delivered count and spacing, not by inspecting
- * bookkeeping.
+ * Drives a scheduler cycle by cycle, the way the executive does (the full
+ * cycle count, from which the scheduler takes the table index), counting
+ * each task's runs and recording the cycles it ran on. Every rate in the
+ * rate contract is checked by its delivered count and spacing, not by
+ * inspecting bookkeeping. The tick-index entry, the scheduler's own
+ * tick()/sleep() path and the worker dispatcher each get a case of
+ * their own.
  */
 
+#include "src/system/core/components/scheduler/posix/inc/SchedulerMultiThread.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerSingleThread.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerStatus.hpp"
 #include "src/system/core/components/scheduler/posix/inc/TaskConfig.hpp"
@@ -16,15 +19,19 @@
 #include "src/utilities/concurrency/inc/Delegate.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
 
 using apex::concurrency::DelegateU8;
+using system_core::scheduler::PoolSpec;
 using system_core::scheduler::SchedulableTask;
+using system_core::scheduler::SchedulerMultiThread;
 using system_core::scheduler::SchedulerSingleThread;
 using system_core::scheduler::Status;
 using system_core::scheduler::TaskConfig;
@@ -69,14 +76,38 @@ public:
     return sched_.addTask(*tasks_.back(), cfg);
   }
 
-  /// Dispatch `cycles` consecutive cycles starting at the current one.
+  /// Dispatch `cycles` consecutive cycles starting at the current one,
+  /// through the cycle entry the executive uses.
   void run(std::uint64_t cycles) {
     for (std::uint64_t i = 0; i < cycles; ++i) {
-      for (auto& r : recorders_) {
-        r->cycle = next_;
-      }
+      stamp(next_);
+      (void)sched_.executeTasksOnCycleSingle(next_);
+      ++next_;
+    }
+  }
+
+  /// The same, through the tick-index entry (callers with no cycle count).
+  void runByTick(std::uint64_t cycles) {
+    for (std::uint64_t i = 0; i < cycles; ++i) {
+      stamp(next_);
       (void)sched_.executeTasksOnTickSingle(static_cast<std::uint16_t>(next_ % hz_));
       ++next_;
+    }
+  }
+
+  /// The same, through the scheduler's own tick(), whose count advances
+  /// through sleep.
+  void runByTickApi(std::uint64_t cycles) {
+    for (std::uint64_t i = 0; i < cycles; ++i) {
+      stamp(sched_.tickCount());
+      sched_.tick();
+      ++next_;
+    }
+  }
+
+  void stamp(std::uint64_t cycle) {
+    for (auto& r : recorders_) {
+      r->cycle = cycle;
     }
   }
 
@@ -240,6 +271,70 @@ TEST(SchedulerRates, LateAddKeepsAbsolutePhase) {
   EXPECT_EQ(THIRTY[2], 256U);
   EXPECT_EQ(THIRTY[3], 260U);
   EXPECT_EQ(countIn(THIRTY, 250, 350), 30U);
+}
+
+/* ----------------------------- Dispatch seams ----------------------------- */
+
+/** @test The tick-index entry keeps pace for a caller that dispatches every tick in order. */
+TEST(SchedulerRates, TickIndexEntryKeepsPace) {
+  Harness h(100);
+  ASSERT_EQ(h.add(1, 4, 150), Status::SUCCESS);
+  ASSERT_EQ(h.add(30, 1, 0), Status::SUCCESS);
+  h.runByTick(1300);
+  EXPECT_EQ(h.runs(0), (std::vector<std::uint64_t>{150, 550, 950}));
+  EXPECT_EQ(countIn(h.runs(1), 0, 1300), 390U);
+}
+
+/** @test Sleeping through whole seconds does not shift a multi-second task's phase. */
+TEST(SchedulerRates, SleepKeepsMultiSecondPhase) {
+  Harness h(100);
+  ASSERT_EQ(h.add(1, 4, 150), Status::SUCCESS);
+  h.runByTickApi(50);
+  h.scheduler().sleep();
+  h.runByTickApi(200); // cycles 50..249 pass with no dispatch; the count still advances
+  h.scheduler().wake();
+  h.runByTickApi(1050); // cycles 250..1299
+  // The run missed at 150 is repaid at the first dispatch after waking;
+  // the instants after it stay on the nominal grid.
+  EXPECT_EQ(h.runs(), (std::vector<std::uint64_t>{250, 550, 950}));
+}
+
+/** @test Cycles served with an empty table still count, so a later add aligns to the true phase. */
+TEST(SchedulerRates, EmptyTableStillCounts) {
+  Harness h(100);
+  h.run(250);
+  ASSERT_EQ(h.add(1, 1, 30), Status::SUCCESS);
+  h.run(200);
+  EXPECT_EQ(h.runs(), (std::vector<std::uint64_t>{330, 430}));
+}
+
+/** @test The worker dispatcher delivers an uneven rate and a long offset on their exact instants.
+ */
+TEST(SchedulerRates, MultiThreadDeliveredCadence) {
+  Recorder uneven;
+  Recorder slow;
+  SchedulableTask a(DelegateU8{&recordRun, &uneven}, "uneven");
+  SchedulableTask b(DelegateU8{&recordRun, &slow}, "slow");
+  SchedulerMultiThread sched(10, logDir(), std::vector<PoolSpec>{{"rates", 1, {}}});
+  ASSERT_EQ(sched.addTask(a, TaskConfig(3, 2, 2)), Status::SUCCESS);
+  ASSERT_EQ(sched.addTask(b, TaskConfig(1, 4, 15)), Status::SUCCESS);
+  ASSERT_EQ(sched.init(), 0);
+  for (std::uint64_t cycle = 0; cycle < 60; ++cycle) {
+    uneven.cycle = cycle;
+    slow.cycle = cycle;
+    ASSERT_EQ(sched.executeTasksOnCycleMulti(cycle), Status::SUCCESS);
+    // An entry is marked running before it is queued and cleared after
+    // the task returns, so waiting on both drains queued and in-flight
+    // work before the recorders' cycle changes.
+    const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (sched.entries()[0].stillRunning() || sched.entries()[1].stillRunning()) {
+      ASSERT_LT(std::chrono::steady_clock::now(), DEADLINE) << "task completion timed out";
+      std::this_thread::yield();
+    }
+  }
+  sched.shutdown();
+  EXPECT_EQ(uneven.runs, (std::vector<std::uint64_t>{2, 8, 15, 22, 28, 35, 42, 48, 55}));
+  EXPECT_EQ(slow.runs, (std::vector<std::uint64_t>{15, 55}));
 }
 
 /* ----------------------------- Period budget ----------------------------- */

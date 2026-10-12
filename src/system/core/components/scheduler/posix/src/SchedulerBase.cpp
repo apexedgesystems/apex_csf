@@ -67,33 +67,39 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) n
   // First-touch sizing
   if (schedule_.empty()) {
     schedule_.resize(static_cast<std::size_t>(ffreq_));
+    slotHasGated_.assign(static_cast<std::size_t>(ffreq_), 0U);
   }
 
-  // Create TaskEntry (scheduler owns this). The cadence aligns to the
-  // cycle the next dispatch will carry, so a task added mid-run keeps
-  // the phase it would have had from the first tick.
+  // The cadence aligns to the cycle the next dispatch will carry, so a
+  // task added mid-run keeps the phase it would have had from the first
+  // tick. It lives beside the entry (cadences_), index-aligned.
+  TaskCadence cadence{};
+  cadence.initAt(ffreq_, TFREQN, TFREQD, OFFSET, nextDispatchCycle_);
+
+  // Create TaskEntry (scheduler owns this).
   TaskEntry entry{};
   entry.task = &task;
   entry.config = config;
-  entry.cadence.initAt(ffreq_, TFREQN, TFREQD, OFFSET, nextDispatchCycle_);
   entry.gated = (TFREQD > 1U);
   // The budget a run is measured against is the shortest gap to its
   // next run; for a rate on whole ticks that is the period itself.
   entry.periodNs =
-      (static_cast<std::uint64_t>(entry.cadence.shortestGapTicks()) * 1'000'000'000ULL) / ffreq_;
+      (static_cast<std::uint64_t>(cadence.shortestGapTicks()) * 1'000'000'000ULL) / ffreq_;
 
-  if (entry.cadence.uneven()) {
+  if (cadence.uneven()) {
     if (auto* log = componentLog()) {
       log->warning(label(), 0,
                    fmt::format("task '{}' at {}/{} Hz on a {} Hz fundamental does not land on "
                                "whole ticks: {} runs every {} s, spaced {} to {} ticks",
                                task.getLabel(), TFREQN, TFREQD, ffreq_, TFREQN, TFREQD,
-                               entry.cadence.shortestGapTicks(), entry.cadence.longestGapTicks()));
+                               cadence.shortestGapTicks(), cadence.longestGapTicks()));
     }
   }
 
-  // Add entry to registry (move-only due to unique_ptr member)
+  // Add entry and cadence to the registry (entries are move-only due to
+  // the unique_ptr members); the two vectors stay index-aligned.
   entries_.push_back(std::move(entry));
+  cadences_.push_back(cadence);
   const std::size_t ENTRY_IDX = entries_.size() - 1;
 
   // Priority comparator for sorted insertion
@@ -136,6 +142,7 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) n
         continue;
       }
       placed[IDX] = 1U;
+      slotHasGated_[IDX] = 1U;
     }
     auto& vec = schedule_[IDX];
 
@@ -713,9 +720,11 @@ void SchedulerBase::logScheduleLayout(std::string_view modeDescription) noexcept
 
 void SchedulerBase::clearTasks() noexcept {
   entries_.clear();
+  cadences_.clear();
   for (auto& tick : schedule_) {
     tick.clear();
   }
+  std::fill(slotHasGated_.begin(), slotHasGated_.end(), static_cast<std::uint8_t>(0U));
 }
 
 /* ----------------------------- loadTprm ----------------------------- */
@@ -777,9 +786,13 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   // Backup current schedule for restoration on failure.
   // This prevents leaving the scheduler empty if parsing fails.
   auto backupEntries = std::move(entries_);
+  auto backupCadences = std::move(cadences_);
   auto backupSchedule = std::move(schedule_);
+  auto backupSlotHasGated = std::move(slotHasGated_);
   entries_.clear();
+  cadences_.clear();
   schedule_.clear();
+  slotHasGated_.clear();
 
   const std::uint8_t* taskEntryBytes = tprmData.data() + sizeof(SchedulerTprmHeader);
 
@@ -859,7 +872,9 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   // If no tasks were resolved at all, restore the previous schedule.
   if (entries_.empty() && header->numTasks > 0) {
     entries_ = std::move(backupEntries);
+    cadences_ = std::move(backupCadences);
     schedule_ = std::move(backupSchedule);
+    slotHasGated_ = std::move(backupSlotHasGated);
     setLastError("TPRM reload failed: 0 tasks resolved, keeping previous schedule");
     if (auto* log = componentLog()) {
       log->warning(label(), 0,

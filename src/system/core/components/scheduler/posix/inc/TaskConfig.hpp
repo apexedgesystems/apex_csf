@@ -20,8 +20,6 @@
  *       not per-task. This eliminates 10-30us syscall overhead per task.
  */
 
-#include "src/system/core/components/scheduler/posix/inc/TaskCadence.hpp"
-
 #include "src/utilities/helpers/inc/Cpu.hpp"
 
 #include <cstdint>
@@ -103,7 +101,7 @@ struct TaskConfig {
  * The scheduler maintains a collection of TaskEntry objects. Each entry contains:
  *   - Non-owning pointer to the task (caller manages task lifetime)
  *   - Scheduling configuration (frequency, priority, poolId)
- *   - The task's run cadence on the tick grid (TaskCadence)
+ *   - Whether the scheduler consults a cadence for it (multi-second patterns)
  *
  * This design keeps tasks minimal while giving scheduler full control over scheduling.
  */
@@ -113,10 +111,10 @@ struct TaskEntry {
   std::uint32_t fullUid{0};           ///< Owner component's full UID (for contention detection).
   const char* componentName{nullptr}; ///< Owner component name (for logging).
   std::uint8_t taskUid{0};            ///< Task UID within component (for registry registration).
-  TaskCadence cadence{};              ///< Which cycles the task runs on.
   /// False for a denominator of one: such a task's pattern repeats every
-  /// second, so its table slots are exact and every visit is a run; the
-  /// cadence is consulted only for multi-second patterns.
+  /// second, so its table slots are exact and every visit is a run. True
+  /// for a multi-second pattern, whose cadence (kept by the scheduler
+  /// beside the entries) says which visits are runs.
   bool gated{false};
 
   /* ----------------------------- Deadline Tracking ----------------------------- */

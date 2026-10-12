@@ -257,9 +257,17 @@ std::uint8_t SchedulerMultiThread::doInit() noexcept {
 /* ----------------------------- Execution ----------------------------- */
 
 Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcept {
+  return executeTasksOnCycleMulti(cycleForTick(tick));
+}
+
+Status SchedulerMultiThread::executeTasksOnCycleMulti(std::uint64_t cycle) noexcept {
+  // The cycle is noted before any early return, so a late addTask aligns
+  // to the cycle after this one whether or not it had work.
+  const std::uint16_t tick = beginDispatchCycle(cycle);
+
   // Track dispatch count for health telemetry (tickCount_ is only incremented
   // by SchedulerBase::tick() which the executive does not call -- it calls
-  // executeTasksOnTickMulti() directly).
+  // the cycle entry directly).
   ++tickCount_;
 
   // Reset per-tick violation counter
@@ -293,7 +301,6 @@ Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcep
     setStatus(static_cast<std::uint8_t>(OUT));
     return OUT;
   }
-  const std::uint64_t CYCLE = beginDispatchCycle(tick);
 
   auto& entryIndices = schedule_[TIDX];
   if (entryIndices.empty()) {
@@ -307,59 +314,76 @@ Status SchedulerMultiThread::executeTasksOnTickMulti(std::uint16_t tick) noexcep
   // pays a single read regardless of table size.
   const std::uint64_t DISPATCH_NS = apex::helpers::cpu::getMonotonicNs();
 
-  // Enqueue every task whose cadence lands on this cycle. A one-second
-  // pattern's slots are exact, so every visit runs; a multi-second
-  // pattern consults its cadence, and the instant is consumed here
-  // whether or not the task then dispatches.
-  for (std::size_t idx : entryIndices) {
-    TaskEntry& entry = entries_[idx];
-    if (!entry.gated || entry.cadence.due(CYCLE)) {
-      if (entry.gated) {
-        entry.cadence.advance();
-      }
-      // Skip tasks belonging to locked components
-      if (entry.fullUid != 0 && componentResolver_) {
-        auto* comp = componentResolver_->getComponent(entry.fullUid);
-        if (comp != nullptr && comp->isLocked()) {
-          continue;
-        }
-      }
-
-      // Check for period deadline violation: task still running from previous dispatch
-      if (entry.stillRunning()) {
-        ++periodViolationsThisTick_;
-        ++totalPeriodViolations_;
-        if (entry.stats) {
-          entry.stats->deadlineViolations.fetch_add(1, std::memory_order_relaxed);
-        }
-        lastViolationComponent_.store(entry.componentName, std::memory_order_release);
-        lastViolationTaskUid_.store(entry.taskUid, std::memory_order_release);
-        periodViolationFlag_.store(true, std::memory_order_release);
-
-        if (skipOnBusy_) {
-          // SKIP_ON_BUSY mode: skip this invocation instead of dispatching
-          ++entry.skipCount;
-          ++totalSkipCount_;
-          if (lg && static_cast<int>(logs::SystemLog::Level::WARNING) >= LOG_LEVEL) {
-            lg->warning(label(), static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION),
-                        fmt::format("Skipping task '{}' at tick {} (still running, skip #{})",
-                                    entry.task->getLabel(), tick, entry.skipCount));
-          }
-          continue; // Skip dispatch, move to next task
-        }
-
-        // Not in skip mode: violation flag already set above for clock thread to check.
-        // No per-violation warning here:
-        //  - HARD_PERIOD_COMPLETE: Clock thread will FATAL, warning redundant
-        //  - SOFT modes: Violations expected, count tracked for shutdown summary
-      }
-      enqueueTask(&entry, tick, DISPATCH_NS);
-    }
+  // A slot that holds a multi-second task takes the gated loop; every
+  // other slot takes the plain one, which tests nothing per visit.
+  if (slotHasGated_[TIDX] != 0U) {
+    dispatchSlot<true>(entryIndices, cycle, tick, DISPATCH_NS, lg, LOG_LEVEL);
+  } else {
+    dispatchSlot<false>(entryIndices, cycle, tick, DISPATCH_NS, lg, LOG_LEVEL);
   }
 
   const Status OUT = hadErrors ? Status::WARN_TASK_NON_SUCCESS_RET : Status::SUCCESS;
   setStatus(static_cast<std::uint8_t>(OUT));
   return OUT;
+}
+
+template <bool kGated>
+void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryIndices,
+                                        [[maybe_unused]] std::uint64_t cycle, std::uint16_t tick,
+                                        std::uint64_t dispatchNs, logs::SystemLog* lg,
+                                        int logLevel) noexcept {
+  for (std::size_t idx : entryIndices) {
+    TaskEntry& entry = entries_[idx];
+
+    // Cadence gate: is this cycle one of the task's runs? The instant is
+    // consumed here whether or not the task then dispatches.
+    if constexpr (kGated) {
+      if (entry.gated) {
+        if (!cadences_[idx].due(cycle)) {
+          continue;
+        }
+        cadences_[idx].advance();
+      }
+    }
+
+    // Skip tasks belonging to locked components
+    if (entry.fullUid != 0 && componentResolver_) {
+      auto* comp = componentResolver_->getComponent(entry.fullUid);
+      if (comp != nullptr && comp->isLocked()) {
+        continue;
+      }
+    }
+
+    // Check for period deadline violation: task still running from previous dispatch
+    if (entry.stillRunning()) {
+      ++periodViolationsThisTick_;
+      ++totalPeriodViolations_;
+      if (entry.stats) {
+        entry.stats->deadlineViolations.fetch_add(1, std::memory_order_relaxed);
+      }
+      lastViolationComponent_.store(entry.componentName, std::memory_order_release);
+      lastViolationTaskUid_.store(entry.taskUid, std::memory_order_release);
+      periodViolationFlag_.store(true, std::memory_order_release);
+
+      if (skipOnBusy_) {
+        // SKIP_ON_BUSY mode: skip this invocation instead of dispatching
+        ++entry.skipCount;
+        ++totalSkipCount_;
+        if (lg && static_cast<int>(logs::SystemLog::Level::WARNING) >= logLevel) {
+          lg->warning(label(), static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION),
+                      fmt::format("Skipping task '{}' at tick {} (still running, skip #{})",
+                                  entry.task->getLabel(), tick, entry.skipCount));
+        }
+        continue; // Skip dispatch, move to next task
+      }
+
+      // Not in skip mode: violation flag already set above for clock thread to check.
+      // No per-violation warning here:
+      //  - HARD_PERIOD_COMPLETE: Clock thread will FATAL, warning redundant
+      //  - SOFT modes: Violations expected, count tracked for shutdown summary
+    }
+    enqueueTask(&entry, tick, dispatchNs);
+  }
 }
 
 /* ----------------------------- Task Dispatch ----------------------------- */
