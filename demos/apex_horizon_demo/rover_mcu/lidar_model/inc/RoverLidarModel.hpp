@@ -15,8 +15,10 @@
  * unplugged adapter recovers without a restart; with enabled = 0 the
  * port is never opened.
  *
- * @note NOT RT-safe in the 1 Hz telemetry task (port open, logging).
- * scanStep() is RT-safe: bounded buffers and non-blocking I/O.
+ * @note NOT RT-safe. scanStep() writes the port (a non-blocking write is
+ * still a syscall, so the kernel's latency is not bounded), and the 1 Hz
+ * telemetry task opens the port, formats and logs. Buffers are fixed and
+ * the step path does not allocate.
  */
 
 #include "demos/apex_horizon_demo/ground_vehicle/inc/GroundVehicleData.hpp"

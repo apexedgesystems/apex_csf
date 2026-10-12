@@ -14,8 +14,15 @@
  * replugging the board recovers without a restart. With enabled = 0 the
  * port is never opened and the controller keeps the host law.
  *
- * @note NOT RT-safe in doInit() and the 1 Hz telemetry task (port open,
- * logging). linkStep() is RT-safe: bounded buffers and non-blocking I/O.
+ * @note NOT RT-safe. Every task of this driver reaches the kernel:
+ * linkStep() reads and writes the port, and on a failure closes and
+ * reopens it; doInit() and the 1 Hz telemetry task open the port, format
+ * and log. The buffers are fixed and nothing allocates on the step path,
+ * but a non-blocking syscall is still a syscall -- it bounds how long
+ * userspace waits, not how long the kernel takes -- so no step of this
+ * driver carries a bounded-latency claim. It shares the pool's worker
+ * with the plant and the controller, so its recovery and telemetry work
+ * sits in front of their next dispatch rather than beside it.
  */
 
 #include "demos/apex_horizon_demo/ground_vehicle/inc/GroundVehicle.hpp"

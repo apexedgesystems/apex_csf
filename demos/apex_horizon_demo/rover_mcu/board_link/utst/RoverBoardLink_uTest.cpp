@@ -243,6 +243,9 @@ TEST(RoverBoardLink, ComesUpAndCarriesTheBoardsLoadAndTickOntoTheFrame) {
   EXPECT_GT(TICK, 0u);
 }
 
+/**
+ * @test A board whose sequence numbering restarts is followed, not read as a gap.
+ */
 TEST(RoverBoardLink, ABoardRebootIsARestartNotAGap) {
   Rig rig;
   for (int i = 0; i < 30; ++i) {
@@ -263,6 +266,9 @@ TEST(RoverBoardLink, ABoardRebootIsARestartNotAGap) {
   EXPECT_EQ(rig.link.linkState().link_state, LINK_UP);
 }
 
+/**
+ * @test A frame failing its CRC is counted and dropped, leaving the last command standing.
+ */
 TEST(RoverBoardLink, ACorruptFrameIsCountedAndIgnored) {
   Rig rig;
   rig.tick();
@@ -311,6 +317,9 @@ TEST(RoverBoardLink, TheBoardDrivesALegAndAStaleArrivalNeverCompletesTheNext) {
   EXPECT_NEAR(n, 30.0, 0.5);
 }
 
+/**
+ * @test Silence past the timeout reports LOST and zero drive; traffic recovers it.
+ */
 TEST(RoverBoardLink, SilenceIsLostAndZeroDriveThenTheLinkRecovers) {
   Rig rig;
   rig.tick();
@@ -339,6 +348,9 @@ TEST(RoverBoardLink, SilenceIsLostAndZeroDriveThenTheLinkRecovers) {
   EXPECT_GT(rig.ctl.controllerOutput().throttle_frac, 0.0) << "the drive resumes with the link";
 }
 
+/**
+ * @test With the link disabled the port is never opened and the host law keeps the plant.
+ */
 TEST(RoverBoardLink, DisabledLeavesTheHostLawAndNeverOpensThePort) {
   Rig rig(false);
   EXPECT_EQ(rig.link.linkState().uart_open, 0u);
