@@ -24,10 +24,11 @@
  *   - One ShmRingBridge publishing the rover's 256-byte ROVR/2 OUTPUT
  *     to /horizon_rover every tick and draining the reverse ring into
  *     the command bus. The bridge idles if no consumer attaches.
- *   - One TelemetryManager pushing the rover's, the controller's, the
- *     link's and the lidar model's OUTPUT blocks over the ops interface
- *     at the rates its TPRM table sets, so a console receives them
- *     without polling.
+ *   - One TelemetryManager pushing the rover's and the controller's
+ *     OUTPUT blocks and the link's and the lidar model's STATE blocks
+ *     (those two drivers register no OUTPUT) over the ops interface at
+ *     the rates its TPRM table sets, so a console receives them without
+ *     polling.
  *
  * The executive's C++ specifies cross-component wiring only; all
  * configuration values come from the TPRM set.

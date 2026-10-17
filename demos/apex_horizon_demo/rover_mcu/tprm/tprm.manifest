@@ -8,6 +8,7 @@
 [components rover_mcu]
 0x000000  toml/executive.toml
 0x000100  toml/scheduler.toml
+0x000400  toml/interface.toml
 0x000500  toml/action.toml
 0x00DC00  toml/earth_body.toml
 0x00DE00  toml/earth_rover.toml

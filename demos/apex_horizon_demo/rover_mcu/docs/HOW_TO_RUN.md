@@ -129,6 +129,35 @@ channels (`lidar_range_m[0]`..`[15]`, `lidar_hit[0]`..`[15]`), so the
 "Lidar rays" layout in `app_data.toml` plots the eight the demo
 sweeps.
 
+### The console's endpoint on the host
+
+Inside its container the interface listens on `0.0.0.0:9000`
+(`tprm/toml/interface.toml`); nothing reaches it from the host unless
+the container publishes the port. The supported host endpoint is
+**127.0.0.1:9010**, host loopback only, so a console on this machine
+connects there and nothing off the machine can:
+
+```bash
+docker compose run -d --rm --name rover_mcu -p 127.0.0.1:9010:9000 dev-cuda \
+  ./build/hosted-x86_64-debug/bin/ApexRoverMcuDemo --config ... --fs-root ...
+```
+
+(`producers/rover.sh` in the horizon work area passes this flag.) From
+the host, `push_probe.py --host 127.0.0.1 --port 9010` then sees the
+same four streams, and a command sent to 127.0.0.1:9010 is answered.
+
+To watch the pushes arrive without a console, from inside the
+producer's container:
+
+```bash
+docker exec -i -w /home/kalex/workspace rover_mcu \
+  tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/push_probe.py --seconds 5
+```
+
+It connects, counts every packet by (fullUid, opcode, size) for the
+window, reports the rates, and checks that the frame's named tail
+decodes to the same bytes a consumer reading offsets 232..253 sees.
+
 ## Run the controller on the board (NUCLEO-F767ZI)
 
 The rover's controller runs on a NUCLEO-F767ZI connected by its one USB
