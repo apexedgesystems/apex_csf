@@ -94,6 +94,11 @@ any such change is called out explicitly in its entry.
   333 Hz) because the frame period was held in whole milliseconds; the
   boot log and health packet reported the requested rate throughout.
 
+### Security
+
+- Python tooling lock: virtualenv 21.6.1 to 21.14.5, clearing four
+  published advisories.
+
 ## [0.0.1] - 2026-03-27
 
 Initial release: real-time executive (Linux and bare-metal MCU),
