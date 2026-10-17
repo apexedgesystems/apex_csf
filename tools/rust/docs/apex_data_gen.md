@@ -74,10 +74,12 @@ a dangling reference fails generation. The sections appear in the
 JSON as `commands` and `telemetry` arrays when present.
 
 A manifest whose structs are all spec-defined and which declares no
-enums needs no C++ headers at all -- fully spec-born components generate
-their dictionary from the manifest alone. An enum is always parsed from a
-header, declared or discovered, so a manifest with spec-defined structs and
-an enum still needs that one header.
+enums and no header paths needs no C++ headers at all -- fully spec-born
+components generate their dictionary from the manifest alone. An enum is
+always parsed from a header, declared or discovered, so a manifest with
+spec-defined structs and an enum still needs that one header; and a
+`header` declared on any entry is checked before discovery, so it must
+exist even when every struct is spec-defined.
 
 ## Layout identity
 

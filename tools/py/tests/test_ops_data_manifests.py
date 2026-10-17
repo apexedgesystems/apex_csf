@@ -109,3 +109,67 @@ def test_cli_prints_one_path_per_line_and_reports_errors(tmp_path, capsys):
     _write(tmp_path / "loose" / "loose_data.toml", 'component = "Loose"\n')
     assert main(["--roots", str(tmp_path)]) == 1
     assert "not registered" in capsys.readouterr().err
+
+
+def test_unquoted_manifest_argument_registers_the_file(tmp_path):
+    """Verify `MANIFEST ${CMAKE_CURRENT_SOURCE_DIR}/x` without quotes registers x, as CMake does."""
+    manifest = _write(tmp_path / "wave" / "wave_data.toml", 'component = "Wave"\n')
+    _write(
+        tmp_path / "wave" / "CMakeLists.txt",
+        "apex_add_data_manifest(MANIFEST ${CMAKE_CURRENT_SOURCE_DIR}/wave_data.toml)\n",
+    )
+    assert inventory([tmp_path]) == [manifest]
+
+
+def test_unquoted_registration_of_a_missing_file_fails(tmp_path):
+    """Verify an unquoted path that points nowhere is reported, not read as the default."""
+    _component_tree(tmp_path, 'component = "Wave"')
+    _write(
+        tmp_path / "comp" / "CMakeLists.txt",
+        "apex_add_data_manifest(MANIFEST ${CMAKE_CURRENT_SOURCE_DIR}/missing_data.toml)\n",
+    )
+    with pytest.raises(ManifestInventoryError, match="registered but not present"):
+        inventory([tmp_path])
+
+
+def test_bracket_comment_hides_a_registration(tmp_path):
+    """Verify a call inside `#[[ ... ]]` registers nothing, so its manifest is unregistered."""
+    _component_tree(tmp_path, 'component = "Wave"')
+    _write(
+        tmp_path / "comp" / "CMakeLists.txt",
+        "#[[\napex_add_data_manifest()\n]]\n",
+    )
+    with pytest.raises(ManifestInventoryError, match="not registered by apex_add_data_manifest"):
+        inventory([tmp_path])
+
+
+def test_hash_inside_a_quoted_argument_is_not_a_comment(tmp_path):
+    """Verify a `#` within a quoted argument elsewhere on the line does not hide the call."""
+    manifest = _component_tree(tmp_path, 'component = "Wave"')
+    _write(
+        tmp_path / "comp" / "CMakeLists.txt",
+        'set(NOTE "tag#1")\napex_add_data_manifest() # registers the default\n',
+    )
+    assert inventory([tmp_path]) == [manifest]
+
+
+def test_call_spanning_lines_is_read(tmp_path):
+    """Verify a MANIFEST argument on its own line is read like a one-line call."""
+    manifest = _write(tmp_path / "wave" / "wave_data.toml", 'component = "Wave"\n')
+    _write(
+        tmp_path / "wave" / "CMakeLists.txt",
+        'apex_add_data_manifest(\n  MANIFEST\n  "${CMAKE_CURRENT_SOURCE_DIR}/wave_data.toml"\n)\n',
+    )
+    assert inventory([tmp_path]) == [manifest]
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    ["MANIFEST", "MANIFEST a b", 'FOO "x"', 'MANIFEST "${OTHER_DIR}/x_data.toml"'],
+)
+def test_argument_shapes_outside_the_contract_fail(tmp_path, arguments):
+    """Verify a call the reader cannot interpret is an error, never a silent default."""
+    _component_tree(tmp_path, 'component = "Wave"')
+    _write(tmp_path / "odd" / "CMakeLists.txt", f"apex_add_data_manifest({arguments})\n")
+    with pytest.raises(ManifestInventoryError, match="not a form this inventory|cannot resolve"):
+        inventory([tmp_path])

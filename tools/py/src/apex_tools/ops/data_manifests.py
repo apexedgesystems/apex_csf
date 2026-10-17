@@ -11,11 +11,15 @@ change it.
 
 Unless disabled, the inventory is compared with the manifests CMake
 registers through `apex_add_data_manifest(...)` in the CMakeLists.txt files
-under the same roots: the default `apex_data.toml` beside the CMakeLists, or
-the `MANIFEST` path with `${CMAKE_CURRENT_SOURCE_DIR}` resolved. The two
-sets must be equal and every registered file must exist, so a registration
-that points nowhere, a manifest nobody registered, and a descriptor
-registered as a manifest all fail. An empty inventory fails.
+under the same roots. A call is read the way the helper reads it: no
+arguments register the default `apex_data.toml` beside the CMakeLists;
+`MANIFEST <path>` registers that path, quoted or unquoted, with
+`${CMAKE_CURRENT_SOURCE_DIR}` resolved; line comments and bracket comments
+(`#[[ ... ]]`) hide a call. Any other argument shape, or a variable this
+reader cannot resolve, is an error rather than a guess. The two sets must be
+equal and every registered file must exist, so a registration that points
+nowhere, a manifest nobody registered, and a descriptor registered as a
+manifest all fail. An empty inventory fails.
 
 Usage:
     data_manifests.py --roots demos src apps
@@ -44,7 +48,10 @@ MANIFEST_SUFFIX = "_data.toml"
 MANIFEST_DEFAULT_NAME = "apex_data.toml"
 SKIP_DIR_NAMES = {"build"}
 REGISTRATION_RE = re.compile(r"apex_add_data_manifest\s*\(([^)]*)\)")
-MANIFEST_ARG_RE = re.compile(r'MANIFEST\s+"([^"]*)"')
+BRACKET_COMMENT_RE = re.compile(r"#\[(=*)\[.*?\]\1\]", re.S)
+# One CMake argument: a quoted argument (escapes carried as written) or an
+# unquoted argument (no whitespace, parentheses, quotes or comment marks).
+ARGUMENT_RE = re.compile(r'"((?:[^"\\]|\\.)*)"|([^\s()"#;]+)')
 SOURCE_DIR_VAR = "${CMAKE_CURRENT_SOURCE_DIR}"
 
 
@@ -109,16 +116,56 @@ def component_manifests(roots: list[Path]) -> list[Path]:
 
 
 def _without_comments(text: str) -> str:
-    """Drop CMake `#` comments so a commented-out registration does not count."""
-    return "\n".join(line.split("#", 1)[0] for line in text.splitlines())
+    """Drop CMake bracket and line comments so a commented-out call does not count.
+
+    A `#` inside a quoted argument is part of the argument, not a comment.
+    """
+    text = BRACKET_COMMENT_RE.sub(" ", text)
+    kept = []
+    for line in text.splitlines():
+        quoted = False
+        for pos, ch in enumerate(line):
+            if ch == '"':
+                quoted = not quoted
+            elif ch == "#" and not quoted:
+                line = line[:pos]
+                break
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def _manifest_argument(cmake: Path, raw_args: str) -> Path:
+    """Resolve one call's argument list to the manifest it registers.
+
+    Raises:
+        ManifestInventoryError: an argument shape the helper does not take,
+            a MANIFEST keyword without a value, or a variable other than
+            CMAKE_CURRENT_SOURCE_DIR in the path.
+    """
+    tokens = [quoted or unquoted for quoted, unquoted in ARGUMENT_RE.findall(raw_args)]
+    tokens = [tok for tok in tokens if tok]
+    if not tokens:
+        return cmake.parent / MANIFEST_DEFAULT_NAME
+    if tokens[0] != "MANIFEST" or len(tokens) != 2:
+        raise ManifestInventoryError(
+            f"{cmake}: apex_add_data_manifest({raw_args.strip()}) is not a form this "
+            f"inventory reads; use no arguments or MANIFEST <path>"
+        )
+    raw = tokens[1]
+    if "${" in raw.replace(SOURCE_DIR_VAR, ""):
+        raise ManifestInventoryError(
+            f"{cmake}: cannot resolve MANIFEST path '{raw}'; only {SOURCE_DIR_VAR} is understood"
+        )
+    return Path(raw.replace(SOURCE_DIR_VAR, str(cmake.parent)))
 
 
 def registered_manifests(roots: list[Path]) -> set[Path]:
     """Return the manifests `apex_add_data_manifest` registers under the roots.
 
     Raises:
-        ManifestInventoryError: a MANIFEST path uses a variable other than
-            CMAKE_CURRENT_SOURCE_DIR, which this inventory cannot resolve.
+        ManifestInventoryError: a call whose arguments this reader does not
+            take, or a MANIFEST path using a variable other than
+            CMAKE_CURRENT_SOURCE_DIR.
     """
     registered: set[Path] = set()
     for root in roots:
@@ -127,18 +174,7 @@ def registered_manifests(roots: list[Path]) -> set[Path]:
                 continue
             text = _without_comments(cmake.read_text(encoding="utf-8"))
             for call in REGISTRATION_RE.finditer(text):
-                arg = MANIFEST_ARG_RE.search(call.group(1))
-                if arg is None:
-                    target = cmake.parent / MANIFEST_DEFAULT_NAME
-                else:
-                    raw = arg.group(1)
-                    if "${" in raw.replace(SOURCE_DIR_VAR, ""):
-                        raise ManifestInventoryError(
-                            f"{cmake}: cannot resolve MANIFEST path '{raw}'; only "
-                            f"{SOURCE_DIR_VAR} is understood"
-                        )
-                    target = Path(raw.replace(SOURCE_DIR_VAR, str(cmake.parent)))
-                registered.add(_normalize(target))
+                registered.add(_normalize(_manifest_argument(cmake, call.group(1))))
     return registered
 
 
