@@ -400,16 +400,11 @@ def generate_commands(app_data: dict, struct_dicts: dict) -> dict:
                         }
                     )
 
-        # If no component-specific opcodes, add GET_HEALTH as default
-        if len(comp_cmds) == 1:
-            comp_cmds.append(
-                {
-                    "name": "GET_HEALTH",
-                    "opcode": "0x0100",
-                    "desc": "Component health telemetry",
-                    "fields": [],
-                }
-            )
+        # A component that declares no commands and carries no opcode enum
+        # gets NOOP and nothing else. A health command is not assumed: the
+        # base dispatch answers an opcode the component does not implement
+        # with NOT_IMPLEMENTED, and a button that does that is not a
+        # command surface.
 
         commands["components"][label] = {"fullUid": uid, "commands": comp_cmds}
 

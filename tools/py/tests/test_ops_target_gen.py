@@ -119,7 +119,9 @@ def test_value_enums_are_not_exported_as_commands():
     commands = generate_commands(APP_DATA, STRUCT_DICTS)
     cmds = _component_commands(commands, "ValueComp")
     names = [c["name"] for c in cmds]
-    assert names == ["NOOP", "GET_HEALTH"]
+    # NOOP and nothing else: no health command is assumed for a component
+    # that does not implement one.
+    assert names == ["NOOP"]
     assert "HOLD" not in names
     assert "WAYPOINT" not in names
 
@@ -326,6 +328,7 @@ def test_reserved_padding_and_long_arrays_are_not_expanded():
 
 
 def test_expansion_is_idempotent_and_leaves_the_input_alone():
+    """Expanding twice adds nothing, and the input dictionaries are not mutated."""
     once = expand_array_fields({"Fan.json": RAY_DICT})
     twice = expand_array_fields(once)
     assert _field_names(twice) == _field_names(once)
@@ -341,3 +344,4 @@ def test_generated_default_layout_skips_array_elements():
     default = next(lay for lay in layouts if lay["name"] == "Default")
     channels = [c for plot in default["plots"] for c in plot["channels"]]
     assert channels == ["Fan.n_rays"]
+
