@@ -301,7 +301,7 @@ struct DataWatchpoint {
   bool lastResult{false};               ///< Previous predicate result.
   bool latched{false};                  ///< Dispatched during the current excursion.
   std::uint32_t heldCount{0};           ///< Consecutive evaluations the predicate has held.
-  std::uint32_t fireCount{0};           ///< Dispatches so far (what notifications receive).
+  std::uint32_t fireCount{0};           ///< Dispatches so far.
   std::uint32_t minFireCount{
       0}; ///< Debounce: held evaluations before the one dispatch (0 = on the edge).
   std::uint16_t cadenceTicks{0}; ///< Evaluate every N ticks (0 = every tick).
@@ -663,7 +663,7 @@ template <typename T>
  * quiet until the predicate goes false, which re-arms it. heldCount is
  * the run of true evaluations so far and latched records that this
  * excursion has dispatched; both clear when the predicate is false.
- * fireCount counts dispatches and is what notifications receive.
+ * fireCount counts dispatches; a notification keeps its own invokeCount.
  */
 inline bool evaluateEdge(DataWatchpoint& wp, const std::uint8_t* data,
                          std::size_t dataLen) noexcept {
@@ -779,7 +779,7 @@ struct WatchpointGroup {
   bool lastResult{false};             ///< Previous group result.
   bool latched{false};                ///< Dispatched during the current excursion.
   std::uint32_t heldCount{0};         ///< Consecutive evaluations the combined result has held.
-  std::uint32_t fireCount{0};         ///< Dispatches so far (what notifications receive).
+  std::uint32_t fireCount{0};         ///< Dispatches so far.
   std::uint32_t minFireCount{
       0}; ///< Debounce: held evaluations before the one dispatch (0 = on the edge).
 };

@@ -336,6 +336,7 @@ void ActionComponent::deserializeTprm(const ActionEngineTprm& tprm) noexcept {
     def.count = SRC.refCount;
     def.logic = static_cast<GroupLogic>(SRC.logic);
     def.eventId = SRC.eventId;
+    def.minFireCount = SRC.minFireCount;
     def.activeOnBoot = (SRC.armed != 0);
     grpCatalog_.add(def);
   }
@@ -1167,7 +1168,7 @@ void ActionComponent::logResolveFailures(std::uint32_t total) noexcept {
 }
 
 void ActionComponent::dispatchLogNotifications(std::uint16_t eventId,
-                                               std::uint32_t fireCount) noexcept {
+                                               std::uint32_t invokeCount) noexcept {
   auto* log = componentLog();
   if (log == nullptr) {
     return;
@@ -1184,15 +1185,15 @@ void ActionComponent::dispatchLogNotifications(std::uint16_t eventId,
     switch (note.logSeverity) {
     case data::LogSeverity::WARNING:
       log->warning(note.logLabel, static_cast<std::uint8_t>(eventId),
-                   fmt::format("{} (fires={})", note.logMessage, fireCount));
+                   fmt::format("{} (fires={})", note.logMessage, invokeCount));
       break;
     case data::LogSeverity::ERR:
       log->error(note.logLabel, static_cast<std::uint8_t>(eventId),
-                 fmt::format("{} (fires={})", note.logMessage, fireCount));
+                 fmt::format("{} (fires={})", note.logMessage, invokeCount));
       break;
     case data::LogSeverity::INFO:
     default:
-      log->info(note.logLabel, fmt::format("{} (fires={})", note.logMessage, fireCount));
+      log->info(note.logLabel, fmt::format("{} (fires={})", note.logMessage, invokeCount));
       break;
     }
     ++note.invokeCount;

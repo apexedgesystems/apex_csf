@@ -125,7 +125,8 @@ default cadence; `cadenceTicks` stretches each evaluation) before the
 one dispatch, after which the watchpoint stays quiet until the predicate
 goes false and re-arms it. So 1 is the edge, 3 is "true for three
 evaluations in a row", and a signal that flickers never accumulates a
-run. `fireCount`, delivered to notifications, counts dispatches. Each
+run. `fireCount` on the watchpoint counts its dispatches; a notification's
+callback receives that notification's own `invokeCount`. Each
 armed watchpoint states its effective semantics in one INFO line at
 TPRM load. Accumulating data-target resolve failures raise
 `WARN_RESOLVE_FAILURES` (first failure, then every 4096th). Groups
