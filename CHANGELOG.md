@@ -10,8 +10,10 @@ any such change is called out explicitly in its entry.
 
 ### Added
 
-- `make check-data-db`: every component manifest generates its dictionary
-  clean, run in CI beside check-cdef.
+- `make check-data-db`: every component data manifest generates its
+  dictionary clean, checked against CMake registration; CI runs it whenever a
+  manifest, header or generator changes
+  ([#166](https://github.com/apexedgesystems/apex_csf/pull/166)).
 - Executive clock wake-lateness record: every clock wake is measured
   against its deadline and summarised (p50, p99, max) when the clock
   stops; `--clock-hz` overrides the fundamental frequency for a run.
@@ -87,7 +89,8 @@ any such change is called out explicitly in its entry.
 
 - Data manifests naming a header at the wrong path: SystemMonitor's
   dictionary generates again, SystemComponent's `ComponentType` enum carries
-  its values, and a missing declared header now fails generation.
+  its values, and a missing declared header now fails generation
+  ([#166](https://github.com/apexedgesystems/apex_csf/pull/166)).
 - Scheduler task rates with a denominator above one ran at the wrong
   rate: the denominator was applied twice (placement stride and a
   per-visit counter), so `100/2` at 1000 Hz ran at 25 Hz instead of 50

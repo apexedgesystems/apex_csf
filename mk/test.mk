@@ -209,26 +209,28 @@ check-cdef: tools-rust
 	[ $$fail -eq 0 ] || exit 1
 	$(call log_ok,check-cdef,.auto headers match their specs)
 
-# Every component manifest (a manifest with a top-level `component`
-# key; the app_data.toml application descriptors are not generator
-# input) must produce its dictionary with no entry left behind a
-# `_warning` key, because ground tooling regenerates its target
-# directories from these. Generation goes to a scratch tree so the gate
-# is read-only; the first failing manifest fails it.
-DATA_MANIFESTS := $(shell grep -rlE '^component = ' --include="*_data.toml" --include="apex_data.toml" demos src apps 2>/dev/null)
-
+# Every component data manifest must produce its dictionary with no entry
+# left behind a `_warning` key, because ground tooling regenerates its
+# target directories from these. The inventory comes from a TOML parser
+# and is checked against the apex_add_data_manifest registrations
+# (tools/py/src/apex_tools/ops/data_manifests.py), so neither the key's
+# spelling nor a registration that points nowhere can narrow the gate.
+# Generation goes to a scratch tree so the gate is read-only; the first
+# failing manifest fails it.
 check-data-db: tools-rust
 	$(call log,check-data-db,Generating every component dictionary to a scratch tree)
-	@scratch=$$(mktemp -d); fail=0; \
-	for m in $(DATA_MANIFESTS); do \
+	@manifests=$$(python3 $(PY_TOOLS_DIR)/src/apex_tools/ops/data_manifests.py --roots demos src apps) || exit 1; \
+	scratch=$$(mktemp -d); fail=0; count=0; \
+	for m in $$manifests; do \
+	  count=$$((count + 1)); \
 	  "$(BUILD_DIR)/bin/tools/rust/apex_data_gen" --manifest "$$m" --output "$$scratch" > /dev/null || { fail=1; break; }; \
 	done; \
 	if [ $$fail -eq 0 ] && grep -l '"_warning"' "$$scratch"/*.json; then \
 	  printf '[check-data-db] a dictionary above carries a _warning entry\n'; fail=1; \
 	fi; \
 	rm -rf "$$scratch"; \
-	[ $$fail -eq 0 ] || exit 1
-	$(call log_ok,check-data-db,$(words $(DATA_MANIFESTS)) component dictionaries generate clean)
+	[ $$fail -eq 0 ] || exit 1; \
+	printf '[check-data-db] %s component dictionaries generate clean\n' "$$count"
 
 .PHONY: cdef check-cdef check-data-db
 

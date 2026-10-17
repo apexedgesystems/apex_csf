@@ -124,12 +124,20 @@ request = "MissingStruct"
 }
 
 /// @test A manifest entry that declares a header the tree does not hold
-/// fails generation at that entry, naming the entry and the path it
-/// resolved to; the run neither falls back to directory discovery nor
-/// emits a dictionary with the enum's values missing.
+/// fails generation at that entry, naming the entry and the full path it
+/// resolved to. A header under inc/ that does define the enum is present
+/// so that a fallback to directory discovery would have succeeded: the
+/// failure proves there is none, and no dictionary is written.
 #[test]
 fn declared_header_that_does_not_exist_fails_naming_it() {
     let dir = tempdir().unwrap();
+    let inc = dir.path().join("inc");
+    fs::create_dir_all(&inc).unwrap();
+    fs::write(
+        inc.join("Other.hpp"),
+        "enum class Mode : uint8_t { A = 1 };\n",
+    )
+    .unwrap();
     let manifest = write_manifest(
         &dir,
         r#"
@@ -156,6 +164,7 @@ Mode = { header = "inc/Missing.hpp" }
     assert!(!output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("enum 'Mode'"));
-    assert!(stderr.contains("inc/Missing.hpp"));
+    let resolved = dir.path().join("inc/Missing.hpp");
+    assert!(stderr.contains(&resolved.display().to_string()));
     assert!(String::from_utf8_lossy(&output.stdout).is_empty());
 }
