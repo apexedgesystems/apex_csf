@@ -5,9 +5,10 @@
  * @brief Conditional data triggers with type-aware comparison.
  *
  * DataWatchpoint monitors a byte range in a registered data block and
- * evaluates a predicate each cycle. When the predicate transitions from
- * false to true (edge-triggered), the watchpoint fires an event ID that
- * can trigger DataActions with ON_EVENT triggers.
+ * evaluates a predicate each cycle. Once the predicate has held for the
+ * configured debounce (minFireCount consecutive true evaluations; 0 means
+ * the rising edge), the watchpoint fires its event ID once per predicate
+ * excursion; the event can trigger DataActions with ON_EVENT triggers.
  *
  * Supported predicates:
  *   - Comparison: GT, LT, GE, LE, EQ, NE (type-aware via WatchDataType)
@@ -56,6 +57,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 
 #include <array>
 
@@ -267,14 +269,16 @@ using WatchComputeDelegate = apex::concurrency::Delegate<double, const std::uint
  * @struct DataWatchpoint
  * @brief Monitors a data target and fires an event on predicate match.
  *
- * Edge-triggered: fires only when the predicate transitions from false
- * to true. Re-arms automatically when the predicate goes back to false.
+ * Edge-triggered: fires when the predicate transitions from false to
+ * true, or, with a debounce, once the predicate has held for
+ * minFireCount consecutive evaluations. Either way it fires once per
+ * excursion and re-arms when the predicate goes back to false.
  *
  * Compute pipeline:
  *   1. Raw bytes read from data target.
  *   2. WatchFunction transforms to computed double (or NONE for raw).
  *   3. Predicate (GT, LT, etc.) compares computed value against threshold.
- *   4. Edge detection fires event on false-to-true transition.
+ *   4. Edge detection and debounce dispatch the event once per excursion.
  *
  * When predicate is CUSTOM, the customAssess delegate is invoked instead
  * of the standard pipeline. When function is CUSTOM, the customCompute
@@ -296,9 +300,12 @@ struct DataWatchpoint {
   WatchComputeDelegate customCompute{}; ///< Custom compute (WatchFunction::CUSTOM).
   bool armed{false};                    ///< Active flag.
   bool lastResult{false};               ///< Previous predicate result.
-  std::uint32_t fireCount{0};           ///< Times edge triggered.
-  std::uint32_t minFireCount{0};        ///< Debounce: edges before dispatch (0 = immediate).
-  std::uint16_t cadenceTicks{0};        ///< Evaluate every N ticks (0 = every tick).
+  bool latched{false};                  ///< Dispatched during the current excursion.
+  std::uint32_t heldCount{0};           ///< Consecutive evaluations the predicate has held.
+  std::uint32_t fireCount{0};           ///< Dispatches so far.
+  std::uint32_t minFireCount{
+      0}; ///< Debounce: held evaluations before the one dispatch (0 = on the edge).
+  std::uint16_t cadenceTicks{0}; ///< Evaluate every N ticks (0 = every tick).
 
   /* ---- Compute State ---- */
   double computedValue{0.0};       ///< Last computed value (for MEAN accumulation).
@@ -643,20 +650,21 @@ template <typename T>
 
 /**
  * @brief Evaluate a watchpoint with edge detection and state update.
- * @param wp Watchpoint to evaluate (modified: lastResult, lastValue, fireCount).
+ * @param wp Watchpoint to evaluate (modified: lastResult, lastValue,
+ *        heldCount, latched, fireCount).
  * @param data Pointer to the watched bytes (already offset-adjusted).
  * @param dataLen Number of bytes available at data pointer.
  * @return True if the watchpoint should dispatch its eventId.
  * @note RT-safe: O(byteLen).
  *
- * Updates wp.lastResult for edge detection and wp.lastValue for CHANGED
- * predicate tracking. Increments wp.fireCount on each edge trigger.
- *
- * When minFireCount > 0 (debounce), returns true only when fireCount
- * reaches minFireCount exactly. This lets noisy signals settle before
- * dispatching. After dispatch, fireCount continues incrementing but
- * no further dispatches occur until the predicate goes false and
- * fireCount resets.
+ * One dispatch per excursion. With minFireCount 0 the dispatch is the
+ * rising edge itself. With minFireCount N the predicate must hold for N
+ * consecutive evaluations (ticks, at the default cadence) before the one
+ * dispatch, which lets a noisy signal settle; the watchpoint then stays
+ * quiet until the predicate goes false, which re-arms it. heldCount is
+ * the run of true evaluations so far and latched records that this
+ * excursion has dispatched; both clear when the predicate is false.
+ * fireCount counts dispatches; a notification keeps its own invokeCount.
  */
 inline bool evaluateEdge(DataWatchpoint& wp, const std::uint8_t* data,
                          std::size_t dataLen) noexcept {
@@ -678,9 +686,13 @@ inline bool evaluateEdge(DataWatchpoint& wp, const std::uint8_t* data,
   const bool EDGE = result && !wp.lastResult;
   wp.lastResult = result;
 
-  // Reset fireCount when predicate goes false (re-arm debounce)
+  // A false evaluation ends the excursion: the held run and the latch
+  // clear, so the next excursion is judged afresh.
   if (!result) {
-    wp.fireCount = 0;
+    wp.heldCount = 0;
+    wp.latched = false;
+  } else if (wp.heldCount < std::numeric_limits<std::uint32_t>::max()) {
+    ++wp.heldCount;
   }
 
   // Update lastValue for CHANGED predicate and STALE function
@@ -690,17 +702,16 @@ inline bool evaluateEdge(DataWatchpoint& wp, const std::uint8_t* data,
     std::memcpy(wp.lastValue.data(), data, COPY_LEN);
   }
 
-  if (EDGE) {
+  // Without a debounce the edge is the dispatch; with one, the first
+  // evaluation at which the predicate has held long enough is, and the
+  // latch keeps every later evaluation of the same excursion quiet.
+  const bool DISPATCH =
+      (wp.minFireCount == 0U) ? EDGE : (!wp.latched && wp.heldCount >= wp.minFireCount);
+  if (DISPATCH) {
+    wp.latched = true;
     ++wp.fireCount;
   }
-
-  // No debounce: dispatch on first edge
-  if (wp.minFireCount == 0) {
-    return EDGE;
-  }
-
-  // Debounce: dispatch only when count reaches threshold
-  return wp.fireCount == wp.minFireCount;
+  return DISPATCH;
 }
 
 /* ----------------------------- GroupLogic ----------------------------- */
@@ -751,8 +762,10 @@ using GroupAssessDelegate = apex::concurrency::Delegate<bool, const bool*, std::
  * each referenced watchpoint's lastResult using AND/OR logic, or invokes
  * a custom delegate for cross-variable equations.
  *
- * Edge-triggered: fires only on false-to-true transition of the combined
- * result, same as individual watchpoints.
+ * Edge-triggered, same as an individual watchpoint: fires on the
+ * false-to-true transition of the combined result, or, with a debounce,
+ * once the combined result has held for minFireCount consecutive
+ * evaluations; once per excursion, re-armed when it goes false.
  *
  * @note RT-safe: No allocation. Static sizing.
  */
@@ -765,7 +778,11 @@ struct WatchpointGroup {
   std::uint16_t eventId{0};           ///< Event ID fired on trigger.
   bool armed{false};                  ///< Active flag.
   bool lastResult{false};             ///< Previous group result.
-  std::uint32_t fireCount{0};         ///< Times this group fired.
+  bool latched{false};                ///< Dispatched during the current excursion.
+  std::uint32_t heldCount{0};         ///< Consecutive evaluations the combined result has held.
+  std::uint32_t fireCount{0};         ///< Dispatches so far.
+  std::uint32_t minFireCount{
+      0}; ///< Debounce: held evaluations before the one dispatch (0 = on the edge).
 };
 
 /* ----------------------------- Group Evaluation ----------------------------- */
@@ -843,12 +860,15 @@ struct WatchpointGroup {
 }
 
 /**
- * @brief Evaluate a watchpoint group with edge detection.
- * @param group Group to evaluate (modified: lastResult, fireCount).
+ * @brief Evaluate a watchpoint group with edge detection and debounce.
+ * @param group Group to evaluate (modified: lastResult, heldCount, latched, fireCount).
  * @param table Pointer to the watchpoint table.
  * @param tableSize Number of entries in the watchpoint table.
  * @param wpIndex Optional ID-to-index lookup (nullptr = linear scan fallback).
- * @return True if the group result transitioned from false to true.
+ * @return True if the group should dispatch its eventId: the rising edge of
+ *         the combined result with minFireCount 0, otherwise the first
+ *         evaluation at which the result has held for minFireCount
+ *         evaluations, once per excursion.
  * @note RT-safe: O(count) with index.
  */
 inline bool evaluateGroupEdge(WatchpointGroup& group, const DataWatchpoint* table,
@@ -859,15 +879,23 @@ inline bool evaluateGroupEdge(WatchpointGroup& group, const DataWatchpoint* tabl
   }
 
   const bool RESULT = evaluateGroup(group, table, tableSize, wpIndex);
-  const bool FIRED = RESULT && !group.lastResult;
-
+  const bool EDGE = RESULT && !group.lastResult;
   group.lastResult = RESULT;
 
-  if (FIRED) {
-    ++group.fireCount;
+  if (!RESULT) {
+    group.heldCount = 0;
+    group.latched = false;
+  } else if (group.heldCount < std::numeric_limits<std::uint32_t>::max()) {
+    ++group.heldCount;
   }
 
-  return FIRED;
+  const bool DISPATCH =
+      (group.minFireCount == 0U) ? EDGE : (!group.latched && group.heldCount >= group.minFireCount);
+  if (DISPATCH) {
+    group.latched = true;
+    ++group.fireCount;
+  }
+  return DISPATCH;
 }
 
 } // namespace data

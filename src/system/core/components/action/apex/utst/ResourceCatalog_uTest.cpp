@@ -245,6 +245,7 @@ TEST(ResourceCatalog, ActivateGroup) {
   def.count = 2;
   def.logic = GroupLogic::OR;
   def.eventId = 5;
+  def.minFireCount = 3;
 
   const std::uint8_t SLOT = activateGroup(def, table, 4);
   ASSERT_NE(SLOT, 0xFF);
@@ -252,7 +253,36 @@ TEST(ResourceCatalog, ActivateGroup) {
   EXPECT_EQ(table[SLOT].refs[0], 1U);
   EXPECT_EQ(table[SLOT].refs[1], 2U);
   EXPECT_EQ(table[SLOT].logic, GroupLogic::OR);
+  EXPECT_EQ(table[SLOT].eventId, 5U);
+  EXPECT_EQ(table[SLOT].minFireCount, 3U);
   EXPECT_TRUE(table[SLOT].armed);
+}
+
+/** @test Reactivating a group restores its configured debounce with fresh run state. */
+TEST(ResourceCatalog, ReactivateGroupKeepsDebounce) {
+  WatchpointGroup table[4]{};
+
+  GroupDef def{};
+  def.groupId = 10;
+  def.refs = {1, 0, 0, 0};
+  def.count = 1;
+  def.eventId = 5;
+  def.minFireCount = 3;
+
+  const std::uint8_t FIRST = activateGroup(def, table, 4);
+  ASSERT_NE(FIRST, 0xFF);
+  table[FIRST].heldCount = 2;
+  table[FIRST].latched = true;
+  table[FIRST].fireCount = 1;
+
+  EXPECT_TRUE(deactivateGroup(10, table, 4));
+  const std::uint8_t AGAIN = activateGroup(def, table, 4);
+  ASSERT_NE(AGAIN, 0xFF);
+  EXPECT_EQ(table[AGAIN].minFireCount, 3U);
+  EXPECT_EQ(table[AGAIN].heldCount, 0U);
+  EXPECT_FALSE(table[AGAIN].latched);
+  EXPECT_EQ(table[AGAIN].fireCount, 0U);
+  EXPECT_TRUE(table[AGAIN].armed);
 }
 
 /** @test Deactivate group. */
