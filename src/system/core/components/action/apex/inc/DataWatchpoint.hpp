@@ -5,9 +5,10 @@
  * @brief Conditional data triggers with type-aware comparison.
  *
  * DataWatchpoint monitors a byte range in a registered data block and
- * evaluates a predicate each cycle. When the predicate transitions from
- * false to true (edge-triggered), the watchpoint fires an event ID that
- * can trigger DataActions with ON_EVENT triggers.
+ * evaluates a predicate each cycle. Once the predicate has held for the
+ * configured debounce (minFireCount consecutive true evaluations; 0 means
+ * the rising edge), the watchpoint fires its event ID once per predicate
+ * excursion; the event can trigger DataActions with ON_EVENT triggers.
  *
  * Supported predicates:
  *   - Comparison: GT, LT, GE, LE, EQ, NE (type-aware via WatchDataType)
