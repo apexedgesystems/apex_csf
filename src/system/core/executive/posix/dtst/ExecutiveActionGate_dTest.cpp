@@ -14,7 +14,14 @@
  *  - the action phase is skipped, and counted, on every cycle the task is
  *    still running -- including the cycles on which the scheduler
  *    dispatches nothing new because the task is still busy;
- *  - once the task completes, the phase resumes and the skip count stops.
+ *  - once the task completes, the phase resumes and the skip count stops;
+ *  - after the whole process is stalled (SIGSTOP, as a host suspend or a
+ *    debugger does it), the clock's catch-up burst leaves the task loop
+ *    behind by many cycles: the in-flight wait is reduced to a poll on
+ *    every one of those cycles, counted -- and skips the phase when that
+ *    poll finds the just-dispatched task in flight -- and the backlog
+ *    drains to parity instead of each old cycle being granted the latest
+ *    tick's frame.
  *
  * The schedule comes from a scheduler TPRM the test writes into the
  * executive's bank, since a config-less boot runs an idle scheduler.
@@ -33,6 +40,11 @@
 
 #include <atomic>
 #include <chrono>
+#include <csignal>
+#include <ctime>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -147,6 +159,25 @@ void writeScheduleTprm(const std::filesystem::path& fsRoot) {
   f.write(reinterpret_cast<const char*>(body.data()), static_cast<std::streamsize>(body.size()));
 }
 
+/// Stop the whole process for `stall`, the way a host suspend or a
+/// debugger does: a forked child sends SIGSTOP, sleeps, then SIGCONT; the
+/// child runs only async-signal-safe calls.
+void stallProcessFor(std::chrono::milliseconds stall) {
+  const pid_t CHILD = ::fork();
+  if (CHILD == 0) {
+    const pid_t PARENT = ::getppid();
+    timespec ts{};
+    ts.tv_sec = static_cast<time_t>(stall.count() / 1000);
+    ts.tv_nsec = static_cast<long>((stall.count() % 1000) * 1'000'000L);
+    ::kill(PARENT, SIGSTOP);
+    ::nanosleep(&ts, nullptr);
+    ::kill(PARENT, SIGCONT);
+    ::_exit(0);
+  }
+  int status = 0;
+  ::waitpid(CHILD, &status, 0);
+}
+
 class ExecutiveActionGateTest : public ::testing::Test {
 protected:
   void boot(std::uint64_t targetCycles) {
@@ -248,4 +279,46 @@ TEST_F(ExecutiveActionGateTest, OverrunSkipsThePhaseAndKeepsCadence) {
   EXPECT_LE(AFTER.clockCycles - AFTER.taskExecutionCycles, 2u);
   EXPECT_EQ(AFTER.frameOverrunCount, SETTLED.frameOverrunCount)
       << "the wait kept overrunning after the worker finished";
+}
+
+/**
+ * @test A stalled process drains its backlog with the wait reduced to a
+ *       poll on every behind cycle, and the loop returns to parity.
+ */
+TEST_F(ExecutiveActionGateTest, StallDrainsTheBacklogWithoutGrantingOldCyclesAFrame) {
+  boot(2000);
+  ASSERT_TRUE(waitForSteps(50, std::chrono::seconds(15)));
+  EXPECT_EQ(exec_->actionWaitBacklogPolls(), 0u) << "keeping pace: no cycle is behind";
+  const auto BEFORE = exec_->getHealthPacket();
+
+  // Thirty periods of stall. On resume the clock issues the missed ticks
+  // as a burst, so the task loop is behind by about thirty cycles.
+  stallProcessFor(std::chrono::milliseconds(300));
+
+  // The backlog drains: within a few periods the loop is back at parity,
+  // which it could not be if each old cycle had waited out the latest
+  // tick's frame. Every behind cycle was a poll, and counted.
+  const auto DEADLINE = Clock::now() + std::chrono::milliseconds(500);
+  bool parity = false;
+  while (Clock::now() < DEADLINE) {
+    const auto H = exec_->getHealthPacket();
+    if (H.clockCycles >= BEFORE.clockCycles + 30u && H.clockCycles - H.taskExecutionCycles <= 1u) {
+      parity = true;
+      break;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+  EXPECT_TRUE(parity) << "the task loop did not catch the clock up after the stall";
+  EXPECT_GE(exec_->actionWaitBacklogPolls(), 10u);
+  // A behind cycle's poll comes right after its dispatch, with the task
+  // in flight, so it skips the phase: every skip during the drain is one
+  // of those polls, never a cycle waited out at pace.
+  EXPECT_LE(exec_->actionPhaseSkips(), exec_->actionWaitBacklogPolls());
+
+  // Back at pace, no further cycle is behind, and nothing skips.
+  const auto POLLS_AT_PARITY = exec_->actionWaitBacklogPolls();
+  const auto SKIPS_AT_PARITY = exec_->actionPhaseSkips();
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  EXPECT_EQ(exec_->actionWaitBacklogPolls(), POLLS_AT_PARITY);
+  EXPECT_EQ(exec_->actionPhaseSkips(), SKIPS_AT_PARITY);
 }

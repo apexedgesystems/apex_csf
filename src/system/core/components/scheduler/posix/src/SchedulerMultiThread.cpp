@@ -392,8 +392,10 @@ bool SchedulerMultiThread::waitForInFlightTasks(std::uint64_t timeoutNs) noexcep
   for (;;) {
     bool pending = false;
     for (const TaskEntry& entry : entries_) {
-      // stillRunning() is the acquire that pairs with markCompleted()'s
-      // release: once every entry reads idle, every completed task's
+      // stillRunning() is the acquire that pairs with each completion's
+      // release, and it counts invocations: an entry with a second
+      // invocation queued or running behind a completed first is still
+      // in flight. Once every entry reads idle, every completed task's
       // writes are published to this thread.
       if (entry.stillRunning()) {
         pending = true;
@@ -407,7 +409,7 @@ bool SchedulerMultiThread::waitForInFlightTasks(std::uint64_t timeoutNs) noexcep
       return false;
     }
     if (apex::helpers::cpu::getMonotonicNs() >= DEADLINE) {
-      ++totalInFlightWaitTimeouts_;
+      totalInFlightWaitTimeouts_.fetch_add(1U, std::memory_order_relaxed);
       return false;
     }
     bk.spinOnce();
@@ -502,9 +504,7 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
     // dispatch marks so deadline tracking stays truthful, and count it
     // with the same drop accounting as context exhaustion.
     ctxPools_[poolId]->release(ctx);
-    if (entry->isRunning) {
-      entry->isRunning->store(false, std::memory_order_release);
-    }
+    entry->unmarkDispatched();
     ++entry->skipCount;
     ++totalDispatchDrops_;
     auto* lg = componentLog();

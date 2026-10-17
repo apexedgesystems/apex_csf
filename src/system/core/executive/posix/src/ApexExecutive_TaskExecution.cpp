@@ -21,6 +21,7 @@
 
 #include <cerrno>
 #include <chrono>
+#include <thread>
 #include <cstring>
 #include <vector>
 
@@ -170,21 +171,21 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
       sysLog_->debug(label(), fmt::format("Executing tasks for tick {}", tick), 3);
     }
 
-    // Pre-tick I/O drain: telemetry out, then commands in.
-    // Draining telemetry first ensures components start with empty outboxes.
-    // Telemetry from tick N-1 goes out at start of tick N (1-tick latency).
-    // This ordering is multithread-safe: no race between task completion and drain.
+    // Pre-tick command drain: commands that arrived since the last cycle
+    // reach their components here, on the thread that owns component
+    // dispatch. Telemetry is not framed here: the outboxes are drained,
+    // framed and produced into the TX pipe by the external I/O thread,
+    // which also frames replies, so the encoder scratch and the pipe
+    // have one owner.
     if (interface_ && interface_->isInitialized()) {
-      interface_->drainTelemetryOutboxes();
       interface_->drainCommandsToComponents();
 
-      // Deferred RELOAD_EXECUTIVE: the ACK is now queued in the TX buffer.
-      // Flush it to the wire, then execv. The client receives the ACK before
-      // the connection drops.
+      // Deferred RELOAD_EXECUTIVE: the ACK was framed and produced by the
+      // external I/O thread on receipt, which also writes the wire. Give
+      // that thread time to flush it before execv drops the connection;
+      // its poll runs every millisecond, so a few of them is ample.
       if (controlState_.restartPending.load(std::memory_order_acquire)) {
-        // One more TX drain to push the ACK out.
-        interface_->drainTelemetryOutboxes();
-        interface_->pollSockets(0);
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
 
         sysLog_->flush();
         if (auto* sl = fileSystem_.swapLog()) {
@@ -250,17 +251,30 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
     // each cycle until the worker finishes: a long overrun suspends the
     // engine, not the executive. The engine is level- and time-driven,
     // so a skipped cycle resolves on the next one that runs.
+    //
+    // Backlog is detected from the cycle counts, not inferred from the
+    // clock: lastTickNs is the latest tick the clock emitted, which is
+    // this cycle's tick only when the task loop is keeping pace. While
+    // the loop is behind by a cycle or more, an older cycle must not be
+    // given the latest tick's frame, so its wait is a single poll.
     const std::uint64_t PERIOD_NS =
         (clockFrequency_ > 0U) ? (1000000000ULL / clockFrequency_) : 1000000ULL;
     const std::uint64_t PHASE_RESERVE_NS = PERIOD_NS / 10U;
-    const std::uint64_t TICK_NS =
-        static_cast<std::uint64_t>(clockState_.lastTickNs.load(std::memory_order_acquire));
-    const std::uint64_t NOW_NS =
-        static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                       std::chrono::steady_clock::now().time_since_epoch())
-                                       .count());
-    const std::uint64_t WAIT_END_NS = TICK_NS + PERIOD_NS - PHASE_RESERVE_NS;
-    const std::uint64_t BARRIER_NS = (WAIT_END_NS > NOW_NS) ? (WAIT_END_NS - NOW_NS) : 0U;
+    const bool BACKLOG = clockState_.cycles.load(std::memory_order_acquire) > taskCycles + 1U;
+    std::uint64_t barrierNs = 0U;
+    if (BACKLOG) {
+      actionWaitBacklogPolls_.fetch_add(1U, std::memory_order_relaxed);
+    } else {
+      const std::uint64_t TICK_NS =
+          static_cast<std::uint64_t>(clockState_.lastTickNs.load(std::memory_order_acquire));
+      const std::uint64_t NOW_NS =
+          static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                         std::chrono::steady_clock::now().time_since_epoch())
+                                         .count());
+      const std::uint64_t WAIT_END_NS = TICK_NS + PERIOD_NS - PHASE_RESERVE_NS;
+      barrierNs = (WAIT_END_NS > NOW_NS) ? (WAIT_END_NS - NOW_NS) : 0U;
+    }
+    const std::uint64_t BARRIER_NS = barrierNs;
     if (scheduler_.waitForInFlightTasks(BARRIER_NS)) {
       // Run action engine: evaluate watchpoints, tick sequences, apply
       // data-writes, on the completed tasks' outputs.
@@ -271,8 +285,9 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
       if (TIMEOUTS == 1U || (TIMEOUTS % BARRIER_LOG_INTERVAL) == 0U) {
         sysLog_->warning(label(), static_cast<std::uint8_t>(0x01),
                          fmt::format("Action phase skipped at cycle {}: a task is still "
-                                     "running at the frame's end (total skips: {})",
-                                     taskCycles, TIMEOUTS));
+                                     "running at the wait's end{} (total skips: {})",
+                                     taskCycles, BACKLOG ? ", polled while behind the clock" : "",
+                                     TIMEOUTS));
       }
     }
 

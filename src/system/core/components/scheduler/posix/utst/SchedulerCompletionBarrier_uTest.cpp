@@ -16,6 +16,9 @@
  *    later cycles, including one that dispatched nothing at all, until
  *    it finishes: a period violation records the overrun, it does not
  *    end the task's ownership.
+ *  - A second invocation admitted behind a running first -- a soft mode
+ *    that does not skip queues it -- holds the wait after the first
+ *    completes, until it too completes.
  *  - With nothing in flight the wait returns at once.
  */
 
@@ -33,6 +36,7 @@
 #include <filesystem>
 #include <string>
 #include <thread>
+#include <vector>
 
 using apex::concurrency::DelegateU8;
 using system_core::schedulable::SchedulableTask;
@@ -69,6 +73,38 @@ struct HeldTask {
     return 0;
   }
 };
+
+/// A task whose every invocation holds until released individually: the
+/// n-th invocation runs once `released` reaches n. Each one publishes its
+/// own number.
+struct HeldInvocations {
+  std::atomic<std::uint32_t> released{0};
+  std::atomic<std::uint32_t> started{0};
+  std::atomic<std::uint32_t> finished{0};
+  int last_output{0}; ///< Plain int on purpose: the wait is what publishes it.
+
+  static std::uint8_t run(void* self) noexcept {
+    auto* t = static_cast<HeldInvocations*>(self);
+    const std::uint32_t MINE = t->started.fetch_add(1U, std::memory_order_acq_rel) + 1U;
+    while (t->released.load(std::memory_order_acquire) < MINE) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    t->last_output = static_cast<int>(MINE);
+    t->finished.fetch_add(1U, std::memory_order_acq_rel);
+    return 0;
+  }
+};
+
+bool awaitStarted(const HeldInvocations& t, std::uint32_t n) {
+  const auto START = std::chrono::steady_clock::now();
+  while (t.started.load(std::memory_order_acquire) < n) {
+    if (std::chrono::steady_clock::now() - START > std::chrono::seconds(3)) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return true;
+}
 
 /// Wait until the pool worker is actually inside the task body, so the
 /// test is not racing dispatch itself.
@@ -175,6 +211,84 @@ TEST(SchedulerCompletionBarrierTest, OverrunFromAnEarlierCycleStillHoldsTheWait)
   EXPECT_EQ(held.output, 0x5A5A);
 
   sched->shutdown();
+}
+
+namespace {
+
+/// A scheduler with exactly `workers` workers in its one pool, so a test
+/// decides whether a second invocation queues behind the first or runs
+/// beside it.
+std::unique_ptr<SchedulerMultiThread> schedulerWithWorkers(std::size_t workers) {
+  std::vector<system_core::scheduler::PoolSpec> pools(1);
+  pools[0].name = "default";
+  pools[0].numThreads = workers;
+  return std::make_unique<SchedulerMultiThread>(100, testLogDir(), std::move(pools));
+}
+
+/// The successor scenario: invocation 1 holds, invocation 2 is admitted
+/// behind it (the default policy admits a task still running at its next
+/// dispatch rather than skipping it), the first is released, and the
+/// wait must hold until the second completes too.
+void successorHoldsTheWait(std::size_t workers, bool successorRunsBeside) {
+  auto sched = schedulerWithWorkers(workers);
+  ASSERT_EQ(sched->init(), 0);
+
+  HeldInvocations held;
+  DelegateU8 del{&HeldInvocations::run, &held};
+  SchedulableTask task(del, "held_twice");
+  ASSERT_EQ(sched->addTask(task, TaskConfig(100, 1, 0)), Status::SUCCESS);
+
+  (void)sched->executeTasksOnTickMulti(0); // Invocation 1 runs and holds.
+  ASSERT_TRUE(awaitStarted(held, 1U));
+  (void)sched->executeTasksOnTickMulti(1); // Invocation 2 is admitted.
+  EXPECT_TRUE(sched->hasPeriodViolation());
+  EXPECT_EQ(sched->entries()[0].inFlightCount(), 2U);
+  if (successorRunsBeside) {
+    ASSERT_TRUE(awaitStarted(held, 2U)); // A second worker runs it at once.
+  }
+  EXPECT_FALSE(sched->waitForInFlightTasks(TEN_MS_NS)) << "both invocations outstanding";
+
+  // Release the first. It completes; the second is still outstanding --
+  // queued behind it on one worker, or running beside it on two. The
+  // entry is still in flight: its second invocation owns the data.
+  held.released.store(1U, std::memory_order_release);
+  ASSERT_TRUE(awaitStarted(held, 2U));
+  const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+  while (held.finished.load(std::memory_order_acquire) < 1U &&
+         std::chrono::steady_clock::now() < DEADLINE) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  EXPECT_EQ(held.finished.load(std::memory_order_acquire), 1U);
+  EXPECT_FALSE(sched->waitForInFlightTasks(TEN_MS_NS)) << "the second invocation is outstanding";
+  EXPECT_EQ(sched->entries()[0].inFlightCount(), 1U);
+
+  // Only the second's completion ends the entry's ownership, and its
+  // write is what the wait then publishes.
+  held.released.store(2U, std::memory_order_release);
+  EXPECT_TRUE(sched->waitForInFlightTasks(ONE_SECOND_NS));
+  EXPECT_EQ(held.finished.load(std::memory_order_acquire), 2U);
+  EXPECT_EQ(held.last_output, 2);
+  EXPECT_EQ(sched->entries()[0].inFlightCount(), 0U);
+
+  sched->shutdown();
+}
+
+} // namespace
+
+/**
+ * @test A second invocation queued behind a running first, on one worker,
+ *       holds the wait after the first completes, until it completes too.
+ */
+TEST(SchedulerCompletionBarrierTest, QueuedSuccessorHoldsTheWaitAfterTheFirstCompletes) {
+  successorHoldsTheWait(1U, false);
+}
+
+/**
+ * @test A second invocation running beside the first, on two workers,
+ *       holds the wait after the first completes, until it completes too.
+ */
+TEST(SchedulerCompletionBarrierTest, RunningSuccessorHoldsTheWaitAfterTheFirstCompletes) {
+  successorHoldsTheWait(2U, true);
 }
 
 /**

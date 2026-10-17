@@ -109,7 +109,10 @@ public:
    * its in-flight flag, which is also the acquire that publishes the
    * tasks' writes to this thread.
    *
-   * Every in-flight entry holds it, whichever cycle dispatched it. A task
+   * Every in-flight entry holds it, whichever cycle dispatched it, and
+   * every admitted invocation of it: a soft mode that does not skip can
+   * queue a second invocation behind a running first, and the first's
+   * completion does not release the second's ownership. A task
    * overrunning from an earlier cycle still owns its data; the period
    * violation the scheduler records for it is an account of the overrun,
    * not the end of that ownership.
@@ -121,9 +124,10 @@ public:
    */
   [[nodiscard]] bool waitForInFlightTasks(std::uint64_t timeoutNs) noexcept;
 
-  /** @brief In-flight waits that hit their deadline since startup. */
+  /** @brief In-flight waits that hit their deadline since startup. Read
+   *         from any thread; the tick thread increments it. */
   [[nodiscard]] std::size_t totalInFlightWaitTimeouts() const noexcept {
-    return totalInFlightWaitTimeouts_;
+    return totalInFlightWaitTimeouts_.load(std::memory_order_acquire);
   }
 
   /** @brief Worker count per constructed pool (index = poolId). */
@@ -260,7 +264,7 @@ private:
   bool skipOnBusy_{false};            ///< Skip tasks still running (SKIP_ON_BUSY mode).
   std::size_t totalSkipCount_{0};     ///< Total skipped invocations across all tasks.
   std::size_t totalDispatchDrops_{0}; ///< Dropped dispatches (ctx exhaustion or ring reject).
-  std::size_t totalInFlightWaitTimeouts_{0}; ///< In-flight waits that hit their deadline.
+  std::atomic<std::size_t> totalInFlightWaitTimeouts_{0}; ///< Waits that hit their deadline.
 };
 
 } // namespace scheduler
