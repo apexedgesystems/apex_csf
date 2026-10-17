@@ -234,6 +234,11 @@ jobs:
       # spec (or generator) change cannot merge.
       - name: Spec/.auto pin (check-cdef)
         run: docker compose run --rm -T build-base make check-cdef
+      # Every component manifest must produce its dictionary: a declared
+      # header that does not resolve, or an enum left without values,
+      # cannot merge -- ground tooling regenerates its targets from these.
+      - name: Dictionaries generate (check-data-db)
+        run: docker compose run --rm -T build-base make check-data-db
 
   py:
     name: Python tool tests

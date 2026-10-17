@@ -11,6 +11,10 @@ and produces one `.json` file per component. Each JSON file describes all
 registered structs (field names, types, byte offsets, sizes) and enums. These
 dictionaries are consumed by `tprm_template`, `c2-deck`, and `c2_sdk_package.sh`.
 
+A struct or enum entry's `header` is resolved against the manifest's own
+directory and must exist; a declared path that does not fails the run at
+that entry, naming it and the path it resolved to.
+
 ---
 
 ## Options
@@ -132,6 +136,9 @@ apex_data_gen \
 
 # Via the Make convenience target
 make apex-data-db
+
+# Every component manifest generates clean (the CI gate)
+make check-data-db
 ```
 
 ---

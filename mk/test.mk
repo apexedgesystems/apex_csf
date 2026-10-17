@@ -209,7 +209,28 @@ check-cdef: tools-rust
 	[ $$fail -eq 0 ] || exit 1
 	$(call log_ok,check-cdef,.auto headers match their specs)
 
-.PHONY: cdef check-cdef
+# Every component manifest (a manifest with a top-level `component`
+# key; the app_data.toml application descriptors are not generator
+# input) must produce its dictionary with no entry left behind a
+# `_warning` key, because ground tooling regenerates its target
+# directories from these. Generation goes to a scratch tree so the gate
+# is read-only; the first failing manifest fails it.
+DATA_MANIFESTS := $(shell grep -rlE '^component = ' --include="*_data.toml" --include="apex_data.toml" demos src apps 2>/dev/null)
+
+check-data-db: tools-rust
+	$(call log,check-data-db,Generating every component dictionary to a scratch tree)
+	@scratch=$$(mktemp -d); fail=0; \
+	for m in $(DATA_MANIFESTS); do \
+	  "$(BUILD_DIR)/bin/tools/rust/apex_data_gen" --manifest "$$m" --output "$$scratch" > /dev/null || { fail=1; break; }; \
+	done; \
+	if [ $$fail -eq 0 ] && grep -l '"_warning"' "$$scratch"/*.json; then \
+	  printf '[check-data-db] a dictionary above carries a _warning entry\n'; fail=1; \
+	fi; \
+	rm -rf "$$scratch"; \
+	[ $$fail -eq 0 ] || exit 1
+	$(call log_ok,check-data-db,$(words $(DATA_MANIFESTS)) component dictionaries generate clean)
+
+.PHONY: cdef check-cdef check-data-db
 
 # Tooling coverage (nightly). Each runs its tool test suite under coverage
 # instrumentation and emits a human-readable summary plus a machine report,

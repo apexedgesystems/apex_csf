@@ -10,6 +10,8 @@ any such change is called out explicitly in its entry.
 
 ### Added
 
+- `make check-data-db`: every component manifest generates its dictionary
+  clean, run in CI beside check-cdef.
 - Executive clock wake-lateness record: every clock wake is measured
   against its deadline and summarised (p50, p99, max) when the clock
   stops; `--clock-hz` overrides the fundamental frequency for a run.
@@ -83,6 +85,9 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Data manifests naming a header at the wrong path: SystemMonitor's
+  dictionary generates again, SystemComponent's `ComponentType` enum carries
+  its values, and a missing declared header now fails generation.
 - Scheduler task rates with a denominator above one ran at the wrong
   rate: the denominator was applied twice (placement stride and a
   per-visit counter), so `100/2` at 1000 Hz ran at 25 Hz instead of 50
