@@ -345,3 +345,29 @@ def test_generated_default_layout_skips_array_elements():
     channels = [c for plot in default["plots"] for c in plot["channels"]]
     assert channels == ["Fan.n_rays"]
 
+
+# ---------------------------------------------------------------------------
+# The uploader's running-id domain is the plant's: bit 0x10 clear, one byte
+# ---------------------------------------------------------------------------
+
+
+def _upload_rts_module():
+    import importlib.util
+    import pathlib
+
+    path = (
+        pathlib.Path(__file__).resolve().parents[3]
+        / "demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py"
+    )
+    spec = importlib.util.spec_from_file_location("upload_rts", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_uploader_running_id_domain_is_the_plants():
+    """A running id is a byte with bit 0x10 clear: 16..31 and 48..63 are out, 47 and 64 in."""
+    mod = _upload_rts_module()
+    assert all(mod.running_id_expressible(i) for i in (1, 9, 15, 32, 36, 47, 64, 79, 207))
+    # 255 is 0xFF: it carries the halt bit like every value in 16..31, 48..63, ...
+    assert not any(mod.running_id_expressible(i) for i in (0, 16, 22, 31, 48, 63, 255, 256, 300))

@@ -44,6 +44,17 @@ OP_START_RTS_BY_ID = 0x0510
 OP_RESCAN_CATALOG = 0x0520
 
 
+def running_id_expressible(seq_id: int) -> bool:
+    """Whether the frame can carry this id as a running sequence.
+
+    The frame's sequence-state byte stamps a running sequence's id, and a
+    halt stamps 0x10 with its reason, so a running id is a byte with bit
+    0x10 clear: 1..15, 32..47, 64..79 and so on. The plant refuses the
+    rest; this applies the same rule before anything is compiled.
+    """
+    return 1 <= seq_id <= 255 and (seq_id & 0x10) == 0
+
+
 def packed_slots(manifest: pathlib.Path) -> dict[int, str]:
     """Slot -> sequence file, for every `rts N` row the manifest packs."""
     slots: dict[int, str] = {}
@@ -79,11 +90,12 @@ def main() -> int:
         print("no sequenceId in", toml, file=sys.stderr)
         return 2
     seq_id = int(m.group(1))
-    if 0x10 <= seq_id <= 0x1F:
+    if not running_id_expressible(seq_id):
         print(
-            f"sequence id {seq_id} is inside the frame's reserved halt range "
-            f"(16..31): a running sequence stamps its id on the same byte a halt "
-            f"stamps its reason, so this id would read as a halt. Renumber it.",
+            f"sequence id {seq_id} cannot be a running sequence on the frame: a "
+            f"running id is one byte with bit 0x10 clear (1..15, 32..47, 64..79, "
+            f"...), since a halt stamps that bit with its reason on the same byte. "
+            f"Renumber it.",
             file=sys.stderr,
         )
         return 2

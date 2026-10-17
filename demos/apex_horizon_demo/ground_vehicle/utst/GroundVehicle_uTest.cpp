@@ -902,9 +902,21 @@ TEST(GroundVehicleSeqState, RunningIdsInsideTheHaltBandAreRefused) {
     EXPECT_EQ(r.rover.vehicleState().seq_state, 0u) << "id " << static_cast<int>(ID);
   }
 
-  // Either side of the band is accepted: 15 below it, 32 above it (the
-  // catalog's halt-demo sequences run at 32..36).
-  for (const std::uint8_t ID : {std::uint8_t{15}, std::uint8_t{32}}) {
+  // The rule is the bit, not the interval: 48..63 carry it too and are
+  // refused, while 47 and 64 do not and are accepted.
+  for (const std::uint8_t ID : {std::uint8_t{48}, std::uint8_t{63}}) {
+    const std::uint8_t SEQ[2] = {ID, 1u};
+    EXPECT_EQ(
+        sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE), SEQ, 2),
+        static_cast<std::uint8_t>(system_core::system_component::CommandResult::INVALID_PAYLOAD))
+        << "id " << static_cast<int>(ID) << " carries the halt bit";
+  }
+
+  // Either side of a band is accepted: 15 below the first, 32 above it
+  // (the catalog's halt-demo sequences run at 32..36), 47 and 64 around
+  // the second.
+  for (const std::uint8_t ID :
+       {std::uint8_t{15}, std::uint8_t{32}, std::uint8_t{47}, std::uint8_t{64}}) {
     const std::uint8_t SEQ[2] = {ID, 1u};
     EXPECT_EQ(sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE), SEQ, 2), 0u)
         << "id " << static_cast<int>(ID);

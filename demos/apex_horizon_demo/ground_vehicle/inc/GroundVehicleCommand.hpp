@@ -86,8 +86,8 @@ struct RoverCmdSetLed {
 static_assert(sizeof(RoverCmdSetLed) == 3);
 
 struct RoverCmdSeqState {
-  std::uint8_t state;          ///< 0 idle; a running RTS id; 0x10|reason recovery halt.
-                               ///< Ids inside the halt band are refused.
+  std::uint8_t state;          ///< 0 idle; a running RTS id with bit 0x10 clear;
+                               ///< 0x10|reason for a recovery halt. Refused otherwise.
   std::uint8_t waypoint_total; ///< Legs in the running sequence (0 when idle).
 };
 static_assert(sizeof(RoverCmdSeqState) == 2);
@@ -140,11 +140,12 @@ enum class CmdResultCode : std::uint8_t {
 inline constexpr std::uint8_t kFrameModeHalted = 3;
 
 /// seq_state values: 0 idle, a running sequence's catalog id, or
-/// 0x10|reason for a halt. The halt bit decides which, so the two
-/// spaces cannot overlap: 0x10..0x1F is reserved for halt reasons and no
-/// sequence id may lie in it. SET_SEQ_STATE refuses the values in that
-/// range that are not defined reasons, and the upload path refuses a
-/// sequence id in it; the shipped catalog uses 1..9 and 32..36. A plant-level HALT stamps
+/// 0x10|reason for a halt. The halt bit decides which, so a running id
+/// is a byte with bit 0x10 clear: 1..15, 32..47, 64..79 and so on up to
+/// 255 (the shipped catalog uses 1..9 and 32..36). SET_SEQ_STATE refuses
+/// a value with the bit set that is not a defined reason, and the upload
+/// path refuses a sequence id outside the running domain; the two apply
+/// the same rule. A plant-level HALT stamps
 /// MANUAL_HALT unless a recovery reason is already set; RESUME clears any halt reason to idle.
 inline constexpr std::uint8_t kSeqStateHaltBit = 0x10;
 inline constexpr std::uint8_t kSeqStateObstacleHalt = 0x11;

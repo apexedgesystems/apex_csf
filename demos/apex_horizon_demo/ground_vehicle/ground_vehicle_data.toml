@@ -58,4 +58,4 @@ doc = "Lamp 1..2; colour 0 off, 1 red, 2 green, 3 blue, 4 yellow, 5 white; rate 
 name = "SET_SEQ_STATE"
 opcode = "0x0107"
 request = "RoverCmdSeqState"
-doc = "Sequences bracket themselves with this; 0 idle, 1..31 running id, 0x10|reason halt."
+doc = "Sequences bracket themselves with this; 0 idle, a running id with bit 0x10 clear (1..15, 32..47, 64..79, ...), 0x10|reason halt."
