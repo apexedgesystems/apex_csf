@@ -122,3 +122,40 @@ request = "MissingStruct"
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("MissingStruct"));
 }
+
+/// @test A manifest entry that declares a header the tree does not hold
+/// fails generation at that entry, naming the entry and the path it
+/// resolved to; the run neither falls back to directory discovery nor
+/// emits a dictionary with the enum's values missing.
+#[test]
+fn declared_header_that_does_not_exist_fails_naming_it() {
+    let dir = tempdir().unwrap();
+    let manifest = write_manifest(
+        &dir,
+        r#"
+component = "X"
+
+[structs]
+A = { category = "OUTPUT" }
+
+[[fields.A]]
+name = "v"
+type = "uint"
+size = 4
+
+[enums]
+Mode = { header = "inc/Missing.hpp" }
+"#,
+    );
+
+    let output = Command::cargo_bin("apex_data_gen")
+        .unwrap()
+        .args(["--manifest", manifest.to_str().unwrap(), "--output", "-"])
+        .output()
+        .expect("run apex_data_gen");
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("enum 'Mode'"));
+    assert!(stderr.contains("inc/Missing.hpp"));
+    assert!(String::from_utf8_lossy(&output.stdout).is_empty());
+}

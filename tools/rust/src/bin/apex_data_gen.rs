@@ -121,23 +121,31 @@ fn discover_headers(
 ) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
     let mut headers = Vec::new();
 
-    // Check for explicit headers in manifest struct entries
-    for entry in manifest.structs.values() {
-        if let Some(ref header) = entry.header {
-            let path = manifest_dir.join(header);
-            if path.exists() && !headers.contains(&path) {
-                headers.push(path);
-            }
+    // A declared header is a statement about the tree, resolved against
+    // the manifest's directory. One that does not exist is an error at
+    // the entry that declares it, not an empty header set three steps
+    // later or an enum shipped without values.
+    let declared = manifest
+        .structs
+        .iter()
+        .filter_map(|(name, e)| e.header.as_ref().map(|h| ("struct", name, h)))
+        .chain(
+            manifest
+                .enums
+                .iter()
+                .filter_map(|(name, e)| e.header.as_ref().map(|h| ("enum", name, h))),
+        );
+    for (kind, name, header) in declared {
+        let path = manifest_dir.join(header);
+        if !path.is_file() {
+            return Err(format!(
+                "{kind} '{name}' declares header '{header}' but {} does not exist",
+                path.display()
+            )
+            .into());
         }
-    }
-
-    // Check for explicit headers in manifest enum entries
-    for entry in manifest.enums.values() {
-        if let Some(ref header) = entry.header {
-            let path = manifest_dir.join(header);
-            if path.exists() && !headers.contains(&path) {
-                headers.push(path);
-            }
+        if !headers.contains(&path) {
+            headers.push(path);
         }
     }
 
