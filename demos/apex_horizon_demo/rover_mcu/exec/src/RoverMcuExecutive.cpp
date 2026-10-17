@@ -143,10 +143,11 @@ void RoverMcuExecutive::startBootSequence() noexcept {
   // whether it runs at all, is in that file and in the manifest row that
   // packs it -- no sequence is named here.
   //
-  // Starting it now sets its clock before the scheduler runs, and its
-  // first step waits out a delay, so the sequence acts once the plant
-  // has latched its configured pose: a first leg expressed relative to
-  // the rover measures from where the rover actually is.
+  // Starting it now, before the scheduler runs, puts its first step on
+  // the first action phase -- which the executive runs after that
+  // cycle's tasks, so the plant has latched its configured pose by then:
+  // a first leg expressed relative to the rover measures from where the
+  // rover actually is.
   auto& action = actionComponent();
   auto* log = sysLog();
   constexpr std::uint8_t ATS_FIRST_SLOT =

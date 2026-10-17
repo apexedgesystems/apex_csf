@@ -2,25 +2,21 @@
 #
 # The ticket's boot requirement: the demo comes up running a sequence
 # rather than waiting to be told. This is the only ATS the rover packs,
-# and the whole boot behaviour is in it: after half a second it asks the
-# action engine (0x000500) to START_RTS_BY_ID the sequence named in its
-# payload, which is RTS 1 (leg north) as shipped.
+# and the whole boot behaviour is in it: on the first action tick after
+# the scheduler starts it asks the action engine (0x000500) to
+# START_RTS_BY_ID the sequence named in its payload, which is RTS 1 (leg
+# north) as shipped.
 #
 # Which sequence boots is this payload; whether anything boots at all is
 # `armed` below, and whether the demo has a boot sequence at all is the
 # `ats` row in tprm.manifest. Nothing in C++ names a sequence.
 #
-# The step carries no delay, and the ordering is not left to one. The
-# action phase runs after the tick's tasks have completed, so the first
-# phase after the scheduler starts already follows the plant's first
-# step: the pose is latched and the controller has adopted its boot mode
-# before this step fires, and a first leg expressed relative to the rover
-# measures from where the rover actually is.
-#
-# A delay would not have given that. An ATS measures its delays against
-# the time provider, which here is the TimeServer's UTC clock; with no
-# PPS or GPS to synchronise it that clock reads zero, and any nonzero
-# delay would sit in the future forever.
+# The step carries no delay (delayCycles 0). The ordering comes from the
+# executive: the action phase runs after the tick's tasks have completed,
+# so the first phase after the scheduler starts already follows the
+# plant's first step -- the pose is latched and the controller has
+# adopted its boot mode before this step fires, and a first leg expressed
+# relative to the rover measures from where the rover actually is.
 #
 # Slot 32 is the first ATS slot: 0..31 are the RTS range (RTS_SLOT_COUNT).
 

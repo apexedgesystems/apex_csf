@@ -5,10 +5,21 @@
 `tprm/toml/earth_rover.toml` places the rover: `init_from_grid = 1`
 with `init_north_m` / `init_east_m` metres from the anchor
 (`anchor_lat_deg` / `anchor_lon_deg`), or `0` for geodetic
-`init_lat/lon_deg`. `tprm/toml/rover_controller.toml` sets
+`init_lat/lon_deg`.
+
+What the rover does at boot is decided by the ATS bank first and the
+controller's `boot_mode` second. As shipped, `tprm/toml/ats/ats_010_boot.toml`
+is packed into ATS slot 32 (`ats 32` in `tprm/tprm.manifest`) and armed;
+the executive starts it once the components are up, and its one step
+asks the action engine to START_RTS_BY_ID the sequence named in its
+payload -- RTS 1 (north 10 m) as shipped, bytes `[1,0]` of
+`commandPayload`. To boot a different sequence, change that payload. To
+boot with no sequence, set its `armed` to 0 or remove the `ats 32` row;
+the controller then sits in `tprm/toml/rover_controller.toml`'s
 `boot_mode`: 0 HOLD (sit), 1 TRAJECTORY (the built-in circle), 2
-WAYPOINT (drive to whatever target is commanded). Edit, rebuild the
-master (`make debug`), run.
+WAYPOINT (drive to whatever target is commanded). A sequence started by
+the ATS sets the mode itself, so `boot_mode` only matters without one.
+Edit, rebuild the master (`make debug`), run.
 
 ## Drive it from a host shell
 
@@ -117,18 +128,6 @@ are named fields of the frame (`board_link`, `seq_state`,
 channels (`lidar_range_m[0]`..`[15]`, `lidar_hit[0]`..`[15]`), so the
 "Lidar rays" layout in `app_data.toml` plots the eight the demo
 sweeps.
-
-To watch the pushes arrive without a console, from inside the
-producer's container:
-
-```bash
-docker exec -i -w /home/kalex/workspace rover_mcu \
-  tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/push_probe.py --seconds 5
-```
-
-It connects, counts every packet by (fullUid, opcode, size) for the
-window, reports the rates, and checks that the frame's named tail
-decodes to the same bytes a consumer reading offsets 232..253 sees.
 
 ## Run the controller on the board (NUCLEO-F767ZI)
 

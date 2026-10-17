@@ -29,9 +29,12 @@ docker compose run --rm dev-cuda \
   --rt-mode lag-tolerant --rt-max-lag 200
 ```
 
-Boot: `Sequence catalog: 13 entries`, `world bound: ... entries=2`, the
-controller HOLDING at the grid anchor (39.5 N, −105.5 W, the terrain
-patch centre) heading north. See [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md)
+Boot: `Sequence catalog: 13 entries`, `world bound: ... entries=2`,
+`boot sequence: ATS id=10 slot=32 started`, and the rover drives
+sequence 1 (north 10 m) from the grid anchor (39.5 N, −105.5 W, the
+terrain patch centre). With the ATS disarmed or unpacked the controller
+sits in its `boot_mode` instead (HOLD as shipped); see the boot modes in
+the run guide. See [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md)
 for driving it from a host shell, the sequence catalog, the upload
 path, running the controller on the board, and the trace.
 
