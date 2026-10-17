@@ -277,7 +277,7 @@ using WatchComputeDelegate = apex::concurrency::Delegate<double, const std::uint
  *   1. Raw bytes read from data target.
  *   2. WatchFunction transforms to computed double (or NONE for raw).
  *   3. Predicate (GT, LT, etc.) compares computed value against threshold.
- *   4. Edge detection fires event on false-to-true transition.
+ *   4. Edge detection and debounce dispatch the event once per excursion.
  *
  * When predicate is CUSTOM, the customAssess delegate is invoked instead
  * of the standard pipeline. When function is CUSTOM, the customCompute

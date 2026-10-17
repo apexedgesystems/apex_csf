@@ -54,14 +54,14 @@ RTS/ATS command sequences, and routes actions to registered components.
 
 ## 2. Design Principles
 
-| Principle          | Implementation                                           |
-| ------------------ | -------------------------------------------------------- |
-| RT-safe hot path   | processCycle: no allocation, bounded loops, noexcept     |
-| Edge-triggered     | Watchpoints fire on false-to-true transition only        |
-| Delegate wiring    | No virtual dispatch, Delegate<> function pointers        |
-| Configurable scale | All table sizes via ActionEngineConfig                   |
-| Cached loading     | Sequence binaries cached at boot, memcpy at trigger      |
-| Compute pipeline   | raw bytes -> WatchFunction -> predicate -> edge -> event |
+| Principle            | Implementation                                                        |
+| -------------------- | --------------------------------------------------------------------- |
+| RT-safe hot path     | processCycle: no allocation, bounded loops, noexcept                  |
+| Debounced triggering | One dispatch per excursion after the configured true-evaluation count |
+| Delegate wiring      | No virtual dispatch, Delegate<> function pointers                     |
+| Configurable scale   | All table sizes via ActionEngineConfig                                |
+| Cached loading       | Sequence binaries cached at boot, memcpy at trigger                   |
+| Compute pipeline     | raw bytes -> WatchFunction -> predicate -> edge -> event              |
 
 ---
 

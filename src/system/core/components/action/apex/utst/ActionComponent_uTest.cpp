@@ -11,6 +11,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include <array>
@@ -220,8 +221,17 @@ TEST(ActionComponent, TickWithWatchpoint) {
 
 namespace {
 
+/// A fresh directory only this process owns (mode 0700, name chosen atomically), or empty.
+std::filesystem::path makePrivateDir(const char* tag) {
+  std::string pattern =
+      (std::filesystem::temp_directory_path() / (std::string(tag) + "_XXXXXX")).string();
+  const char* MADE = ::mkdtemp(pattern.data());
+  return (MADE == nullptr) ? std::filesystem::path{} : std::filesystem::path{MADE};
+}
+
 /// Write a CRC-bearing engine TPRM for `comp` into `dir`, as the loader expects it on disk.
-void writeEngineTprm(const std::filesystem::path& dir, system_core::action::ActionComponent& comp,
+/// Returns false if the file could not be written in full.
+bool writeEngineTprm(const std::filesystem::path& dir, system_core::action::ActionComponent& comp,
                      const system_core::action::ActionEngineTprm& config) {
   namespace sc = system_core::system_component;
   sc::TprmPayloadHeader header{};
@@ -232,9 +242,10 @@ void writeEngineTprm(const std::filesystem::path& dir, system_core::action::Acti
   header.payloadCrc = sc::tprmCrc32(reinterpret_cast<const std::uint8_t*>(&config), sizeof(config));
   char filename[32];
   std::snprintf(filename, sizeof(filename), "%06x.tprm", comp.fullUid());
-  std::ofstream out(dir / filename, std::ios::binary);
+  std::ofstream out(dir / filename, std::ios::binary | std::ios::trunc);
   out.write(reinterpret_cast<const char*>(&header), sizeof(header));
   out.write(reinterpret_cast<const char*>(&config), sizeof(config));
+  return out.good();
 }
 
 /// One armed watchpoint (byte[0] > 0) and two groups over it: group 1 armed at boot with a
@@ -279,9 +290,8 @@ constexpr std::uint16_t OP_DEACTIVATE_GROUP = 0x0533;
 /** @test A group's configured debounce survives DEACTIVATE_GROUP then ACTIVATE_GROUP. */
 TEST(ActionComponent, GroupDebounceSurvivesReactivation) {
   namespace sc = system_core::system_component;
-  const auto DIR = std::filesystem::temp_directory_path() /
-                   ("action_tprm_group_reactivate_" + std::to_string(getpid()));
-  std::filesystem::create_directories(DIR);
+  const auto DIR = makePrivateDir("action_tprm_group_reactivate");
+  ASSERT_FALSE(DIR.empty());
 
   system_core::action::ActionComponent comp;
   comp.setInstanceIndex(0);
@@ -289,7 +299,7 @@ TEST(ActionComponent, GroupDebounceSurvivesReactivation) {
   block.bytes[0] = 5; // byte[0] > 0 holds on every tick
   ResolverCtx rCtx{&block};
   comp.setResolver(testResolver, &rCtx);
-  writeEngineTprm(DIR, comp, debouncedGroupsConfig());
+  ASSERT_TRUE(writeEngineTprm(DIR, comp, debouncedGroupsConfig()));
   ASSERT_EQ(comp.loadTprm(DIR), sc::TprmIngest::LOADED);
   ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
 
@@ -328,9 +338,8 @@ TEST(ActionComponent, GroupDebounceSurvivesReactivation) {
 /** @test A group configured unarmed receives its debounce when first activated by command. */
 TEST(ActionComponent, UnarmedGroupActivatesWithDebounce) {
   namespace sc = system_core::system_component;
-  const auto DIR = std::filesystem::temp_directory_path() /
-                   ("action_tprm_group_activate_" + std::to_string(getpid()));
-  std::filesystem::create_directories(DIR);
+  const auto DIR = makePrivateDir("action_tprm_group_activate");
+  ASSERT_FALSE(DIR.empty());
 
   system_core::action::ActionComponent comp;
   comp.setInstanceIndex(0);
@@ -338,7 +347,7 @@ TEST(ActionComponent, UnarmedGroupActivatesWithDebounce) {
   block.bytes[0] = 5;
   ResolverCtx rCtx{&block};
   comp.setResolver(testResolver, &rCtx);
-  writeEngineTprm(DIR, comp, debouncedGroupsConfig());
+  ASSERT_TRUE(writeEngineTprm(DIR, comp, debouncedGroupsConfig()));
   ASSERT_EQ(comp.loadTprm(DIR), sc::TprmIngest::LOADED);
   ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
   ASSERT_EQ(findArmedGroup(comp, 2), nullptr); // in the catalog only

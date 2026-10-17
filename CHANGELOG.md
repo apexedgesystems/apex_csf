@@ -83,13 +83,9 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
-- Action watchpoints: `minFireCount` now debounces. With N set, a
-  watchpoint dispatches once when its predicate has held for N
-  consecutive evaluations and stays quiet until the predicate drops;
-  before, 1 refired on every evaluation and anything higher never fired.
-  Groups follow the same rule; their config row's `minFireCount` was
-  read into nothing and is now kept across runtime activation as well.
-  `fireCount` counts dispatches.
+- Fixed watchpoint and group debounce: one dispatch after `minFireCount`
+  consecutive true evaluations, with group settings kept across
+  activation. ([#162](https://github.com/apexedgesystems/apex_csf/pull/162))
 - Scheduler task rates with a denominator above one ran at the wrong
   rate: the denominator was applied twice (placement stride and a
   per-visit counter), so `100/2` at 1000 Hz ran at 25 Hz instead of 50
