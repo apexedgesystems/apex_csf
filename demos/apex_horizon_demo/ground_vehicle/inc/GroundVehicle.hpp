@@ -179,9 +179,12 @@ public:
   }
 
   /// Frame bytes 232..: what the plant stamps every tick, as the byte
-  /// block the FrameByte offsets index (the fields from board_link on).
+  /// block the FrameByte offsets index. A byte view of the whole frame
+  /// object at the tail's offset: the named fields are its bytes, and
+  /// indexing within the object is defined where indexing past one
+  /// member is not.
   [[nodiscard]] const std::uint8_t* frameBytes() const noexcept {
-    return &telemetry_.get().board_link;
+    return reinterpret_cast<const std::uint8_t*>(&telemetry_.get()) + kFrameTailOffset;
   }
 
 private:
@@ -508,7 +511,9 @@ public:
     // 8: drive/command truth into the frame's reserved tail (byte map
     // in GroundVehicleCommand.hpp). LED bits and board bytes are
     // stamped by their own features.
-    auto* fb = &tlm.board_link; // The tail as a byte block, FrameByte-indexed.
+    // The tail as a byte block, FrameByte-indexed: a view of the frame
+    // object at the tail's offset.
+    auto* fb = reinterpret_cast<std::uint8_t*>(&tlm) + kFrameTailOffset;
     fb[FB_CONTROLLER_MODE] = (s.commanded_halt != 0u) ? kFrameModeHalted
                              : DRIVEN                 ? drive_cmd_->mode
                                                       : static_cast<std::uint8_t>(1u);

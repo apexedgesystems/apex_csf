@@ -336,10 +336,16 @@ static_assert(sizeof(GroundVehicleTelemetry) == 256,
               "GroundVehicleTelemetry must match the ROVR/1 RoverFrame wire "
               "format: exactly 256 bytes");
 
+/// Where the frame's tail begins inside the 256-byte frame. The code that
+/// stamps the tail by FrameByte offset takes a byte view of the whole
+/// frame at this offset -- never a pointer into one named member and an
+/// index past it, which the language does not define.
+inline constexpr std::size_t kFrameTailOffset = 232u;
+
 // The tail starts where the reserved block did, and nothing in it has
 // alignment: a consumer reading bytes 232..255 by offset reads the same
 // values a consumer reading the fields by name does.
-static_assert(offsetof(GroundVehicleTelemetry, board_link) == 232u);
+static_assert(offsetof(GroundVehicleTelemetry, board_link) == kFrameTailOffset);
 static_assert(offsetof(GroundVehicleTelemetry, lidar_scan_seq) == 253u);
 static_assert(offsetof(GroundVehicleTelemetry, reserved1) == 254u);
 
