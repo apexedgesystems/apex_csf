@@ -135,6 +135,19 @@ public:
    */
   [[nodiscard]] const ExecutiveHealthPacket& getHealthPacket() const noexcept;
 
+  /// Cycles on which the action phase was skipped because a task was
+  /// still running when the in-flight wait expired. Readable from any
+  /// thread.
+  [[nodiscard]] std::size_t actionPhaseSkips() const noexcept {
+    return scheduler_.totalInFlightWaitTimeouts();
+  }
+
+  /// Cycles on which the in-flight wait was a single poll because the
+  /// task loop was behind the clock. Readable from any thread.
+  [[nodiscard]] std::uint64_t actionWaitBacklogPolls() const noexcept {
+    return actionWaitBacklogPolls_.load(std::memory_order_acquire);
+  }
+
   /**
    * @brief The clock's wake-lateness record for the run.
    *
@@ -552,6 +565,8 @@ private:
 
   // Scheduler management
   system_core::scheduler::SchedulerMultiThread scheduler_;
+  /// In-flight waits reduced to a poll because the task loop was behind.
+  std::atomic<std::uint64_t> actionWaitBacklogPolls_{0};
 
   // Interface management (external command/telemetry)
   std::unique_ptr<system_core::interface::ApexInterface> interface_{nullptr};

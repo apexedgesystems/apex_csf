@@ -702,3 +702,94 @@ TEST(ApexInterfaceTest, TxBoundaryDropsAreCounted) {
 
   EXPECT_EQ(iface.shutdown(), Status::SUCCESS);
 }
+
+/* ----------------------------- One TX owner ----------------------------- */
+
+namespace {
+
+/// The interface with its receive entry exposed, so a test can play the
+/// external I/O thread: receiving a command frames and queues its reply.
+class TwoThreadInterface : public ApexInterface {
+public:
+  using ApexInterface::processBytesRx;
+};
+
+/// A SLIP-framed NOOP addressed to the interface, ACK requested.
+std::vector<std::uint8_t> slipNoop() {
+  std::array<std::uint8_t, 64> packet{};
+  std::size_t packetBytes = 0;
+  const auto HEADER = aproto::buildHeader(
+      0x000400, static_cast<std::uint16_t>(aproto::SystemOpcode::NOOP), 42, 0, false, true, false);
+  EXPECT_EQ(aproto::encodePacket(HEADER, {}, {packet.data(), packet.size()}, packetBytes),
+            aproto::Status::SUCCESS);
+  std::array<std::uint8_t, 160> slip{};
+  const auto ENC =
+      apex::protocols::slip::encode({packet.data(), packetBytes}, slip.data(), slip.size());
+  return {slip.data(), slip.data() + ENC.bytesProduced};
+}
+
+} // namespace
+
+/**
+ * @test Telemetry posted from one thread while another drains it and
+ *       frames replies: one owner of the encoder scratch and the TX pipe.
+ *
+ * The executive posts telemetry from the task side (components fill
+ * their outboxes) and frames everything -- telemetry, completions,
+ * replies -- on the external I/O thread. This test runs those two roles
+ * on two threads at once; under ThreadSanitizer it is the proof that
+ * the roles share nothing but the lock-free outboxes.
+ */
+TEST(ApexInterfaceTxOwner, PostingAndFramingOnTwoThreadsShareOnlyTheOutboxes) {
+  TwoThreadInterface iface;
+  constexpr std::uint32_t UID = 0x00DE00;
+  ASSERT_NE(iface.allocateQueues(UID), nullptr);
+  iface.freezeQueues();
+
+  std::array<std::uint8_t, 256> telemetry{};
+  telemetry.fill(0xA5);
+  const std::vector<std::uint8_t> NOOP = slipNoop();
+
+  // Both roles reached once before anything concurrent is interpreted.
+  ASSERT_TRUE(iface.postInternalTelemetry(UID, 0x0340, {telemetry.data(), telemetry.size()}));
+  iface.drainTelemetryOutboxes();
+  iface.processBytesRx(0, {NOOP.data(), NOOP.size()});
+  ASSERT_EQ(iface.stats().telemetryFrames, 1u);
+  ASSERT_EQ(iface.stats().responsesQueued, 1u);
+
+  constexpr unsigned N = 2000;
+  std::atomic<bool> start{false};
+  std::atomic<unsigned> posted{0};
+  std::thread taskSide([&]() {
+    while (!start.load(std::memory_order_acquire)) {
+    }
+    for (unsigned i = 0; i < N; ++i) {
+      // The outbox is bounded: a post the drain has not caught up with
+      // is retried, as a component's next tick would.
+      while (!iface.postInternalTelemetry(UID, 0x0340, {telemetry.data(), telemetry.size()})) {
+        std::this_thread::yield();
+      }
+      posted.fetch_add(1u, std::memory_order_relaxed);
+    }
+  });
+  std::thread ioSide([&]() {
+    while (!start.load(std::memory_order_acquire)) {
+    }
+    for (unsigned i = 0; i < N; ++i) {
+      iface.drainTelemetryOutboxes();
+      iface.processBytesRx(0, {NOOP.data(), NOOP.size()});
+    }
+    // Whatever the task side posted after the last drain.
+    while (posted.load(std::memory_order_acquire) < N) {
+      iface.drainTelemetryOutboxes();
+      std::this_thread::yield();
+    }
+    iface.drainTelemetryOutboxes();
+  });
+  start.store(true, std::memory_order_release);
+  taskSide.join();
+  ioSide.join();
+
+  EXPECT_EQ(iface.stats().telemetryFrames, 1u + N);
+  EXPECT_EQ(iface.stats().responsesQueued, 1u + N);
+}

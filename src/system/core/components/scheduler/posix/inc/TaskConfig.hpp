@@ -140,14 +140,19 @@ struct TaskEntry {
     std::atomic<std::uint32_t> deadlineViolations{0}; ///< Still running at next dispatch.
   };
 
-  /// Heap block for the same reason as isRunning: TaskEntry must stay
+  /// Heap block for the same reason as inFlight: TaskEntry must stay
   /// movable while the counters stay atomic.
   std::unique_ptr<TaskStats> stats{std::make_unique<TaskStats>()};
 
   std::uint64_t periodNs{0}; ///< Task period in ns (set at addTask; 0 = unknown).
 
-  /// In-flight flag for deadline tracking (unique_ptr: no ref counting overhead).
-  std::unique_ptr<std::atomic<bool>> isRunning{std::make_unique<std::atomic<bool>>(false)};
+  /// Invocations admitted to a pool and not yet completed. A count, not a
+  /// flag: a soft mode that does not skip can admit a second invocation
+  /// while the first still runs, and the first's completion must not
+  /// read as the entry being idle while the second is queued or running.
+  /// Heap block so TaskEntry stays movable (no ref counting overhead).
+  std::unique_ptr<std::atomic<std::uint32_t>> inFlight{
+      std::make_unique<std::atomic<std::uint32_t>>(0U)};
 
   /**
    * @brief Mark task as dispatched (in-flight); stamps the dispatch time.
@@ -160,8 +165,8 @@ struct TaskEntry {
     if (stats) {
       stats->dispatchNs.store(dispatchNs, std::memory_order_relaxed);
     }
-    if (isRunning)
-      isRunning->store(true, std::memory_order_release);
+    if (inFlight)
+      inFlight->fetch_add(1U, std::memory_order_release);
   }
 
   /**
@@ -188,13 +193,30 @@ struct TaskEntry {
       }
       stats->completions.fetch_add(1, std::memory_order_relaxed);
     }
-    if (isRunning)
-      isRunning->store(false, std::memory_order_release);
+    if (inFlight)
+      inFlight->fetch_sub(1U, std::memory_order_release);
   }
 
-  /** @brief Check if task is still running from previous dispatch. */
+  /// Undo one admission that never reached a pool (context exhaustion,
+  /// ring rejection): the entry is not in flight for it.
+  void unmarkDispatched() noexcept {
+    if (inFlight)
+      inFlight->fetch_sub(1U, std::memory_order_release);
+  }
+
+  /**
+   * @brief Whether any admitted invocation is still outstanding.
+   *
+   * The acquire pairs with the release of every completion, so a reader
+   * that sees zero also sees the completed invocations' writes.
+   */
   [[nodiscard]] bool stillRunning() const noexcept {
-    return isRunning && isRunning->load(std::memory_order_acquire);
+    return inFlight && inFlight->load(std::memory_order_acquire) != 0U;
+  }
+
+  /** @brief Admitted invocations not yet completed. */
+  [[nodiscard]] std::uint32_t inFlightCount() const noexcept {
+    return inFlight ? inFlight->load(std::memory_order_acquire) : 0U;
   }
 
   /* ----------------------------- Skip Tracking ----------------------------- */

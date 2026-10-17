@@ -386,6 +386,36 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
   }
 }
 
+bool SchedulerMultiThread::waitForInFlightTasks(std::uint64_t timeoutNs) noexcept {
+  const std::uint64_t DEADLINE = apex::helpers::cpu::getMonotonicNs() + timeoutNs;
+  apex::helpers::cpu::ExponentialBackoff bk;
+  for (;;) {
+    bool pending = false;
+    for (const TaskEntry& entry : entries_) {
+      // stillRunning() is the acquire that pairs with each completion's
+      // release, and it counts invocations: an entry with a second
+      // invocation queued or running behind a completed first is still
+      // in flight. Once every entry reads idle, every completed task's
+      // writes are published to this thread.
+      if (entry.stillRunning()) {
+        pending = true;
+        break;
+      }
+    }
+    if (!pending) {
+      return true;
+    }
+    if (stopping_.load(std::memory_order_acquire)) {
+      return false;
+    }
+    if (apex::helpers::cpu::getMonotonicNs() >= DEADLINE) {
+      totalInFlightWaitTimeouts_.fetch_add(1U, std::memory_order_relaxed);
+      return false;
+    }
+    bk.spinOnce();
+  }
+}
+
 /* ----------------------------- Task Dispatch ----------------------------- */
 
 std::uint8_t SchedulerMultiThread::taskTrampoline(void* raw) noexcept {
@@ -474,9 +504,7 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
     // dispatch marks so deadline tracking stays truthful, and count it
     // with the same drop accounting as context exhaustion.
     ctxPools_[poolId]->release(ctx);
-    if (entry->isRunning) {
-      entry->isRunning->store(false, std::memory_order_release);
-    }
+    entry->unmarkDispatched();
     ++entry->skipCount;
     ++totalDispatchDrops_;
     auto* lg = componentLog();

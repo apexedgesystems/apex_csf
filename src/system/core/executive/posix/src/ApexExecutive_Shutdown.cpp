@@ -26,7 +26,12 @@ static inline int64_t getCurrentTimeNs() noexcept {
 
 // Helper: Broadcast shutdown request to all threads
 void ApexExecutive::broadcastShutdownRequest() noexcept {
-  controlState_.shutdownRequested.store(true, std::memory_order_release);
+  // Set under the mutex every predicate wait on this flag holds, so the
+  // store cannot land between a waiter's check and its block.
+  {
+    const std::lock_guard<std::mutex> lock(cvMutex_);
+    controlState_.shutdownRequested.store(true, std::memory_order_release);
+  }
   cvShutdown_.notify_all();
 }
 
