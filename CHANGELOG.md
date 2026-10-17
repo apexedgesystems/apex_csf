@@ -96,9 +96,8 @@ any such change is called out explicitly in its entry.
 
 ### Security
 
-- Python tooling lock: virtualenv bumped from 21.6.1 to 21.14.5 (with its
-  dependency python-discovery to 1.6.3), clearing the four published
-  advisories that failed the nightly OSV scan.
+- Python tooling lock: virtualenv 21.6.1 to 21.14.5, clearing four
+  published advisories.
 
 ## [0.0.1] - 2026-03-27
 
