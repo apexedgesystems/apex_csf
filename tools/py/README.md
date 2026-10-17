@@ -28,11 +28,12 @@ The build directory is relocatable (copy anywhere, source `.env`, and run).
 
 ## Tools
 
-### Operations (1)
+### Operations (2)
 
-| Tool       | Purpose                                                     | Docs                            |
-| ---------- | ----------------------------------------------------------- | ------------------------------- |
-| `ops-deck` | Generate consolidated cmd/tlm deck from struct dictionaries | [ops_deck.md](docs/ops_deck.md) |
+| Tool                | Purpose                                                                          | Docs                                        |
+| ------------------- | -------------------------------------------------------------------------------- | ------------------------------------------- |
+| `ops-deck`          | Generate consolidated cmd/tlm deck from struct dictionaries                      | [ops_deck.md](docs/ops_deck.md)             |
+| `data_manifests.py` | Component data manifest inventory, checked against CMake registration (the gate) | [data_manifests.md](docs/data_manifests.md) |
 
 ### Monte Carlo (1)
 

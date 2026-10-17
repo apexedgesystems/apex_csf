@@ -235,6 +235,33 @@ jobs:
       - name: Spec/.auto pin (check-cdef)
         run: docker compose run --rm -T build-base make check-cdef
 
+  data-db:
+    name: Dictionaries generate
+    needs: changes
+    # The dictionary generator reads component manifests and .auto headers
+    # (classified rust), the C++ headers under the component trees (cpp),
+    # and runs through the Rust generator and the Python inventory (rust,
+    # py). Any of them can break a dictionary ground tooling regenerates
+    # from, so the gate runs for any of them, on the smallest image.
+    if: needs.changes.outputs.cpp == 'true' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.py == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      - name: Set up build-base image
+        uses: ./.github/actions/dev-setup
+        with:
+          registry: ${{ env.REGISTRY }}
+          actor: ${{ github.actor }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          service: build-base
+          rebuild: ${{ needs.changes.outputs.docker }}
+      - name: Dictionaries generate (check-data-db)
+        run: docker compose run --rm -T build-base make check-data-db
+
   py:
     name: Python tool tests
     needs: changes
@@ -351,7 +378,7 @@ jobs:
   # ----------------------------------------------------------------------------
   report:
     name: Run report
-    needs: [changes, lint, build-test, rust, py, sanitize, static-analysis]
+    needs: [changes, lint, build-test, rust, data-db, py, sanitize, static-analysis]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

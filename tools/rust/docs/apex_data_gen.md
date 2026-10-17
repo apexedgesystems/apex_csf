@@ -11,6 +11,10 @@ and produces one `.json` file per component. Each JSON file describes all
 registered structs (field names, types, byte offsets, sizes) and enums. These
 dictionaries are consumed by `tprm_template`, `c2-deck`, and `c2_sdk_package.sh`.
 
+A struct or enum entry's `header` is resolved against the manifest's own
+directory and must exist; a declared path that does not fails the run at
+that entry, naming it and the path it resolved to.
+
 ---
 
 ## Options
@@ -69,9 +73,13 @@ registered structs (their layouts are ordinary `[[fields]]` specs);
 a dangling reference fails generation. The sections appear in the
 JSON as `commands` and `telemetry` arrays when present.
 
-A manifest whose registered structs are all spec-defined needs no C++
-headers at all -- fully spec-born components generate their dictionary
-from the manifest alone.
+A manifest whose structs are all spec-defined and which declares no
+enums and no header paths needs no C++ headers at all -- fully spec-born
+components generate their dictionary from the manifest alone. An enum is
+always parsed from a header, declared or discovered, so a manifest with
+spec-defined structs and an enum still needs that one header; and a
+`header` declared on any entry is checked before discovery, so it must
+exist even when every struct is spec-defined.
 
 ## Layout identity
 
@@ -132,6 +140,10 @@ apex_data_gen \
 
 # Via the Make convenience target
 make apex-data-db
+
+# Every component manifest generates clean (the CI gate; the manifest
+# inventory is parsed TOML, checked against apex_add_data_manifest)
+make check-data-db
 ```
 
 ---
