@@ -1621,7 +1621,12 @@ void ApexExecutive::applyCliOverrides() noexcept {
 /* ----------------------------- IExecutive Interface ----------------------------- */
 
 void ApexExecutive::shutdown() noexcept {
-  controlState_.shutdownRequested.store(true, std::memory_order_release);
+  // The flag is set under the mutex its predicate waits hold, as in
+  // broadcastShutdownRequest.
+  {
+    const std::lock_guard<std::mutex> lock(cvMutex_);
+    controlState_.shutdownRequested.store(true, std::memory_order_release);
+  }
   cvShutdown_.notify_all();
   cvClockTick_.notify_all();
   cvPause_.notify_all();
