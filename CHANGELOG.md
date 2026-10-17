@@ -95,8 +95,12 @@ any such change is called out explicitly in its entry.
 
 - The executive's action phase ran while the cycle's tasks were still
   being executed by the scheduler's workers; it now waits, bounded by
-  the frame, until no task is in flight, and skips the phase for a cycle
-  on which a task overruns rather than read what a worker is writing.
+  the frame, until no admitted invocation of any task is outstanding,
+  and skips the phase for a cycle on which a task overruns rather than
+  read what a worker is writing.
+- Pushed telemetry was framed on the task thread while command replies
+  were framed on the external I/O thread, through one encoder buffer
+  into one single-producer pipe; the I/O thread now frames both.
 - Scheduler task rates with a denominator above one ran at the wrong
   rate: the denominator was applied twice (placement stride and a
   per-visit counter), so `100/2` at 1000 Hz ran at 25 Hz instead of 50
