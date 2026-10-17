@@ -24,6 +24,10 @@
  *    keyhole instead of circling a point inside the turning circle.
  *  - The heading rate holds its bound on every plant step, including
  *    while a command computed at one speed lands at a higher one.
+ *  - A reply the link accepts later than one tick -- held a tick, the next
+ *    reply lost, the link still UP -- lands at a speed the board never
+ *    saw; the controller re-bounds the lock at consumption, so the rate
+ *    holds on every plant step through that too.
  */
 
 #include "demos/apex_horizon_demo/ground_vehicle/inc/GroundVehicle.hpp"
@@ -117,9 +121,28 @@ public:
    * Drain before send: the command the controller forwards now is the
    * one the board computed from the state sent on the previous tick.
    */
+  /// Hold the reply the board computes on the coming tick one extra link
+  /// tick, and lose the one after it: the delivery the link accepts while
+  /// UP with one sequence gap. The held reply lands two ticks after the
+  /// state it answers instead of one, and stays in force through the gap.
+  void holdNextReply() noexcept { armHold_ = true; }
+
   void linkTick() noexcept {
-    snapshot_.cmd = pending_;
-    snapshot_.board_tick = pending_.seq_num;
+    // Drain before send. A held reply: on the tick after it was computed
+    // nothing new lands and the previous command stays in force; on the
+    // tick after that the held reply lands, two ticks old.
+    if (hold_ == 2) {
+      hold_ = 1;
+      dropNext_ = true; // The reply computed this tick is the lost one.
+    } else if (hold_ == 1) {
+      hold_ = 0;
+      snapshot_.cmd = held_;
+      snapshot_.board_tick = held_.seq_num;
+      pending_ = held_; // The last received command holds through the gap.
+    } else {
+      snapshot_.cmd = pending_;
+      snapshot_.board_tick = pending_.seq_num;
+    }
     (void)controller_.controllerStep();
 
     BoardState st{};
@@ -142,7 +165,16 @@ public:
     st.target_seq = CS.target_seq;
     st.seq_num = ++tx_seq_;
     board_.updateState(st);
-    pending_ = board_.step();
+    const BoardCommand REPLY = board_.step();
+    if (armHold_) {
+      armHold_ = false;
+      held_ = REPLY; // Lands two ticks from now.
+      hold_ = 2;
+    } else if (dropNext_) {
+      dropNext_ = false; // Never lands.
+    } else {
+      pending_ = REPLY; // Lands next tick.
+    }
 
     for (int i = 0; i < PLANT_STEPS_PER_LINK_TICK; ++i) {
       const double BEFORE = rover_.telemetry().heading_deg;
@@ -191,6 +223,10 @@ private:
   RoverBoardController board_{};
   BoardLinkSnapshot snapshot_{};
   BoardCommand pending_{};
+  BoardCommand held_{};
+  int hold_{0};
+  bool armHold_{false};
+  bool dropNext_{false};
   std::uint16_t tx_seq_{0};
   double max_yaw_rate_deg_s_{0.0};
 };
@@ -255,6 +291,67 @@ TEST(RoverBoardDelayedFeedback, YawRateHoldsItsBoundAcrossTheDelay) {
       EXPECT_LE(rig.maxYawRateDegS(), 15.0)
           << DIST << " m leg from " << 15.0 * k << " deg turned at " << rig.maxYawRateDegS()
           << " deg/s";
+    }
+  }
+}
+
+/**
+ * @test A late reply the link still accepts lands within the yaw bound.
+ */
+TEST(RoverBoardDelayedFeedback, LateReplyStillAcceptedLandsWithinTheYawBound) {
+  // Every leg from every heading, with a reply held a tick and the next
+  // lost every fourth tick through the first two seconds of the leg --
+  // the whole run-up from rest to cruise, so some hold lands while the
+  // rover is turning at its lock with speed still rising. The board
+  // bounded that reply against the speed it sampled plus one tick;
+  // landing two ticks late it meets a faster plant, and only the bound
+  // re-applied at consumption keeps the rate inside 15 deg/s.
+  for (const double DIST : {2.0, 3.0, 4.0, 6.0}) {
+    for (int k = 0; k < 24; ++k) {
+      LinkedRig rig(15.0 * k);
+      rig.setTargetAbs(DIST, 0.0);
+      for (int t = 0; t < 2400 && !rig.arrived(); ++t) {
+        if (t >= 2 && t <= 40 && (t % 4) == 2) {
+          rig.holdNextReply();
+        }
+        rig.linkTick();
+      }
+      EXPECT_LE(rig.maxYawRateDegS(), 15.0)
+          << DIST << " m leg from " << 15.0 * k << " deg turned at " << rig.maxYawRateDegS()
+          << " deg/s with a late reply";
+    }
+  }
+}
+
+/**
+ * @test A retarget during the run-up, with its first turn reply late,
+ *       lands within the yaw bound.
+ */
+TEST(RoverBoardDelayedFeedback, LateTurnReplyAfterARetargetMidRunUpLandsWithinTheYawBound) {
+  // The case that breaks a board-only bound: the rover is cruising north
+  // and still accelerating when a target abeam arrives. The board's first
+  // reply for it turns hard at the lock it computed for the speed it
+  // sampled plus one tick; that reply is held a tick and the next lost,
+  // and the plant, still under the previous command, keeps accelerating
+  // through both -- so the turn lands at a speed well above the board's
+  // allowance. Swept over when the retarget happens in the run-up.
+  for (int retargetTick = 6; retargetTick <= 40; retargetTick += 2) {
+    for (const double SIDE : {10.0, -10.0}) {
+      LinkedRig rig(0.0);
+      rig.setTargetAbs(30.0, 0.0);
+      for (int t = 0; t < 2400 && !rig.arrived(); ++t) {
+        if (t == retargetTick) {
+          rig.setTargetAbs(30.0, SIDE); // Abeam of the run so far.
+          rig.holdNextReply();          // The first turn reply is the late one.
+        }
+        rig.linkTick();
+        if (t > retargetTick + 60) {
+          break; // The turn is over; the rest of the leg adds nothing.
+        }
+      }
+      EXPECT_LE(rig.maxYawRateDegS(), 15.0)
+          << "retarget at tick " << retargetTick << " to the " << (SIDE > 0 ? "east" : "west")
+          << " turned at " << rig.maxYawRateDegS() << " deg/s with its first reply late";
     }
   }
 }

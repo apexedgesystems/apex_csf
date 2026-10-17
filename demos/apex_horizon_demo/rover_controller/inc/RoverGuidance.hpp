@@ -161,6 +161,27 @@ inline void setLeg(GuidanceLeg& leg, double target_north_m, double target_east_m
 }
 
 /**
+ * @brief Clamp a steering angle so the heading rate at a given speed
+ *        stays inside the bound: tan(delta) <= rate L / v.
+ *
+ * Shared by the law, which bounds against the speed it predicts for the
+ * command's consumption, and by the host controller, which bounds again
+ * at consumption against the speed the plant actually has -- a command
+ * that reached the plant later than the law's lead allowed for lands at
+ * a speed the law never saw.
+ */
+inline double boundSteerForYawRate(const GuidanceTunables& p, double steer_deg,
+                                   double speed_m_s) noexcept {
+  if (speed_m_s > 0.05 && p.max_yaw_rate_deg_s > 0.0) {
+    const double LOCK =
+        atan(p.max_yaw_rate_deg_s * GUIDANCE_DEG_TO_RAD * p.wheelbase_m / speed_m_s) *
+        GUIDANCE_RAD_TO_DEG;
+    return guidanceClamp(steer_deg, -LOCK, LOCK);
+  }
+  return steer_deg;
+}
+
+/**
  * @brief One step of the waypoint law.
  *
  * Latches leg.arrived when the target is inside the tolerance ring or
@@ -293,12 +314,7 @@ inline GuidanceOutput waypointGuidance(const GuidanceTunables& p, GuidanceLeg& l
   // forward over the command's lead at the plant's acceleration limit.
   const double V_AT_CONSUMPTION =
       in.speed_m_s + guidanceMax(p.accel_m_s2, 0.0) * guidanceMax(p.command_lead_s, 0.0);
-  const double V_BOUND = guidanceMax(V_AT_CONSUMPTION, v);
-  if (V_BOUND > 0.05 && p.max_yaw_rate_deg_s > 0.0) {
-    const double LOCK = atan(p.max_yaw_rate_deg_s * GUIDANCE_DEG_TO_RAD * p.wheelbase_m / V_BOUND) *
-                        GUIDANCE_RAD_TO_DEG;
-    steer = guidanceClamp(steer, -LOCK, LOCK);
-  }
+  steer = boundSteerForYawRate(p, steer, guidanceMax(V_AT_CONSUMPTION, v));
   out.steer_deg = steer;
   return out;
 }

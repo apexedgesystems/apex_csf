@@ -90,6 +90,12 @@ struct RoverControllerTunables {
   /// and lands a link tick later.
   double accel_m_s2{1.5};
   double command_lead_s{0.0};
+
+  /// The rate controllerStep runs at. A command the controller forwards
+  /// holds the plant for one of its steps, so the lock bound re-applied
+  /// at consumption allows for what the plant can gain in that time.
+  std::uint16_t step_hz{20};
+  std::uint8_t reserved1[6]{};
 };
 
 /* ----------------------------- RoverControllerState ----------------------------- */

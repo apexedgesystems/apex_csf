@@ -257,6 +257,21 @@ public:
       const auto& CMD = board_->cmd;
       steer = UP ? static_cast<double>(CMD.steer_deg) : 0.0;
       throttle = UP ? static_cast<double>(CMD.throttle_frac) : 0.0;
+      // The board bounded its lock against the speed it sampled plus one
+      // link tick of acceleration. A reply the link accepts later than
+      // that -- held a tick, the next one lost -- lands at a speed the
+      // board never saw, so the bound is applied again here, at
+      // consumption, against the plant's speed now plus what it can gain
+      // while this command holds (one controller step).
+      if (UP && vehicle_ != nullptr) {
+        const double HOLD_S = (p.step_hz > 0u) ? (1.0 / static_cast<double>(p.step_hz)) : 0.0;
+        const double V_HOLD = vehicle_->telemetry().speed_m_s + p.accel_m_s2 * HOLD_S;
+        const GuidanceTunables G{
+            p.wheelbase_m,        p.max_steer_deg,      p.lookahead_m, p.cruise_throttle_frac,
+            p.brake_m_s2,         p.corner_speed_frac,  p.corner_deg,  p.arrival_tolerance_m,
+            p.passed_end_cross_m, p.max_yaw_rate_deg_s, p.accel_m_s2,  p.command_lead_s};
+        steer = boundSteerForYawRate(G, steer, V_HOLD);
+      }
       if (UP) {
         out.mode = CMD.mode;
       }

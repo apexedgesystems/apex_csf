@@ -31,3 +31,5 @@ passed_end_cross_m        = { type = "float", size = 8, value = 0.5 }
 max_yaw_rate_deg_s        = { type = "float", size = 8, value = 15.0 }
 accel_m_s2                = { type = "float", size = 8, value = 1.5 }
 command_lead_s            = { type = "float", size = 8, value = 0.0 }
+step_hz                   = { type = "uint",  size = 2, value = 20 }
+reserved1                 = { type = "array", size = 6, value = [0,0,0,0,0,0] }
