@@ -71,9 +71,10 @@ struct TaskExecutionState {
  */
 struct WatchdogState {
   std::uint64_t lastClockCycles{0}; ///< Last observed clock cycle count.
-  std::uint64_t warningCount{0};    ///< Total warnings issued.
-  std::uint32_t intervalMs{1000};   ///< Watchdog check interval (ms).
-  int supervisorFd{-1};             ///< Pipe fd for supervisor heartbeat (-1 = no supervisor).
+  std::atomic<std::uint64_t> warningCount{
+      0}; ///< Total warnings issued (watchdog thread writes; snapshots read).
+  std::uint32_t intervalMs{1000}; ///< Watchdog check interval (ms).
+  int supervisorFd{-1};           ///< Pipe fd for supervisor heartbeat (-1 = no supervisor).
 };
 
 /**

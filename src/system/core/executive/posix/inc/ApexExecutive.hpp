@@ -128,12 +128,13 @@ public:
   /**
    * @brief Get current health packet snapshot.
    *
-   * Populates and returns a snapshot of current executive state for
-   * health monitoring and telemetry. Thread-safe.
+   * Builds a snapshot of the executive's counters and flags from their
+   * atomics and returns it by value, touching no state another caller
+   * could be writing: callable from any thread at any time.
    *
    * @return ExecutiveHealthPacket with current state.
    */
-  [[nodiscard]] const ExecutiveHealthPacket& getHealthPacket() const noexcept;
+  [[nodiscard]] ExecutiveHealthPacket getHealthPacket() const noexcept;
 
   /// Cycles on which the action phase was skipped because a task was
   /// still running when the in-flight wait expired. Readable from any
@@ -598,7 +599,12 @@ private:
   ProfilingState profilingState_{}; ///< Profiling subsystem state.
 
   // Output packet (populated on demand, registered as OUTPUT for INSPECT)
-  mutable ExecutiveHealthPacket healthPacket_{}; ///< Current health snapshot.
+  /// The health block registered for INSPECT readback. Written by one
+  /// thread only -- the I/O thread, on each GET_HEALTH -- and read by
+  /// that thread's INSPECT, so the block never tears; init writes the
+  /// first snapshot before any thread starts. Every other reader takes
+  /// its own snapshot from getHealthPacket().
+  ExecutiveHealthPacket healthPacket_{};
 
   // Registered components (for auto-configuration after interface init)
   std::vector<system_core::system_component::SystemComponentBase*> registeredComponents_{};

@@ -356,7 +356,8 @@ void ApexExecutive::shutdownStage5FinalStats() noexcept {
     sysLog_->info(label(), fmt::format("Lag threshold exceeded: yes (max allowed: {} ticks)",
                                        rtConfig_.maxLagTicks));
   }
-  sysLog_->info(label(), fmt::format("Watchdog warnings: {}", watchdogState_.warningCount));
+  sysLog_->info(label(), fmt::format("Watchdog warnings: {}",
+                                     watchdogState_.warningCount.load(std::memory_order_relaxed)));
 
   // Profiling statistics if enabled
   if (profilingState_.isActive() && profilingState_.sampleCount > 0) {

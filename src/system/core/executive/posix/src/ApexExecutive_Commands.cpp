@@ -34,37 +34,41 @@ using system_core::system_component::CommandResult;
 
 /* ----------------------------- Health Packet ----------------------------- */
 
-const ExecutiveHealthPacket& ApexExecutive::getHealthPacket() const noexcept {
-  // Populate the cached member (mutable for const access).
-  healthPacket_.clockCycles = clockState_.cycles.load(std::memory_order_acquire);
-  healthPacket_.clockFrequencyHz = clockFrequency_;
-  healthPacket_.frameOverrunCount = clockState_.overrunCount.load(std::memory_order_acquire);
-  healthPacket_.taskExecutionCycles = taskState_.cycles.load(std::memory_order_acquire);
-  healthPacket_.watchdogWarningCount = watchdogState_.warningCount;
-  healthPacket_.rtMode = static_cast<std::uint8_t>(rtConfig_.mode);
+ExecutiveHealthPacket ApexExecutive::getHealthPacket() const noexcept {
+  // A snapshot of the live counters, built in a local and returned by
+  // value: any thread may call this at any time without touching state
+  // another caller could be writing. The registered INSPECT block is
+  // refreshed from such a snapshot by the I/O thread alone.
+  ExecutiveHealthPacket packet{};
+  packet.clockCycles = clockState_.cycles.load(std::memory_order_acquire);
+  packet.clockFrequencyHz = clockFrequency_;
+  packet.frameOverrunCount = clockState_.overrunCount.load(std::memory_order_acquire);
+  packet.taskExecutionCycles = taskState_.cycles.load(std::memory_order_acquire);
+  packet.watchdogWarningCount = watchdogState_.warningCount.load(std::memory_order_relaxed);
+  packet.rtMode = static_cast<std::uint8_t>(rtConfig_.mode);
 
-  healthPacket_.flags = 0;
+  packet.flags = 0;
   if (clockState_.isRunning.load(std::memory_order_acquire)) {
-    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_CLOCK_RUNNING;
+    packet.flags |= ExecutiveHealthPacket::FLAG_CLOCK_RUNNING;
   }
   if (controlState_.isPaused.load(std::memory_order_acquire)) {
-    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_PAUSED;
+    packet.flags |= ExecutiveHealthPacket::FLAG_PAUSED;
   }
   if (controlState_.shutdownRequested.load(std::memory_order_acquire)) {
-    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_SHUTDOWN_REQUESTED;
+    packet.flags |= ExecutiveHealthPacket::FLAG_SHUTDOWN_REQUESTED;
   }
   if (taskState_.lagThresholdExceeded.load(std::memory_order_acquire)) {
-    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_LAG_EXCEEDED;
+    packet.flags |= ExecutiveHealthPacket::FLAG_LAG_EXCEEDED;
   }
   if (scheduler_.isSleeping()) {
-    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_SLEEPING;
+    packet.flags |= ExecutiveHealthPacket::FLAG_SLEEPING;
   }
 
-  healthPacket_.commandsProcessed = ioState_.commandsProcessed.load(std::memory_order_acquire);
-  healthPacket_.resyncDroppedTicks = static_cast<std::uint32_t>(
+  packet.commandsProcessed = ioState_.commandsProcessed.load(std::memory_order_acquire);
+  packet.resyncDroppedTicks = static_cast<std::uint32_t>(
       clockState_.wallResyncDroppedTicks.load(std::memory_order_acquire));
 
-  return healthPacket_;
+  return packet;
 }
 
 /* ----------------------------- Command Dispatch ----------------------------- */
@@ -76,10 +80,11 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     // === Query commands (no payload, return data) ===
 
   case static_cast<std::uint16_t>(Opcode::GET_HEALTH): {
-    // Return 48-byte health packet (also updates the registered OUTPUT snapshot).
-    const auto& PACKET = getHealthPacket();
+    // Return the 48-byte health packet. This runs on the I/O thread, the
+    // one writer of the registered INSPECT block, which it refreshes here.
+    healthPacket_ = getHealthPacket();
     response.resize(sizeof(ExecutiveHealthPacket));
-    std::memcpy(response.data(), &PACKET, sizeof(ExecutiveHealthPacket));
+    std::memcpy(response.data(), &healthPacket_, sizeof(ExecutiveHealthPacket));
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 
