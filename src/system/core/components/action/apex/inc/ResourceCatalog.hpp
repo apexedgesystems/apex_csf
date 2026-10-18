@@ -65,6 +65,7 @@ struct GroupDef {
   GroupLogic logic{GroupLogic::AND};                           ///< Combination logic.
   std::uint16_t eventId{0};                                    ///< Event ID fired.
   bool activeOnBoot{false};                                    ///< Auto-activate.
+  std::uint32_t minFireCount{0};                               ///< Debounce threshold.
 };
 
 /* ----------------------------- NotificationDef ----------------------------- */
@@ -261,6 +262,7 @@ inline std::uint8_t activateGroup(const GroupDef& def, WatchpointGroup* table,
       table[i].count = def.count;
       table[i].logic = def.logic;
       table[i].eventId = def.eventId;
+      table[i].minFireCount = def.minFireCount;
       table[i].armed = true;
       return static_cast<std::uint8_t>(i);
     }

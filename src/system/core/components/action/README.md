@@ -54,14 +54,14 @@ RTS/ATS command sequences, and routes actions to registered components.
 
 ## 2. Design Principles
 
-| Principle          | Implementation                                           |
-| ------------------ | -------------------------------------------------------- |
-| RT-safe hot path   | processCycle: no allocation, bounded loops, noexcept     |
-| Edge-triggered     | Watchpoints fire on false-to-true transition only        |
-| Delegate wiring    | No virtual dispatch, Delegate<> function pointers        |
-| Configurable scale | All table sizes via ActionEngineConfig                   |
-| Cached loading     | Sequence binaries cached at boot, memcpy at trigger      |
-| Compute pipeline   | raw bytes -> WatchFunction -> predicate -> edge -> event |
+| Principle            | Implementation                                                        |
+| -------------------- | --------------------------------------------------------------------- |
+| RT-safe hot path     | processCycle: no allocation, bounded loops, noexcept                  |
+| Debounced triggering | One dispatch per excursion after the configured true-evaluation count |
+| Delegate wiring      | No virtual dispatch, Delegate<> function pointers                     |
+| Configurable scale   | All table sizes via ActionEngineConfig                                |
+| Cached loading       | Sequence binaries cached at boot, memcpy at trigger                   |
+| Compute pipeline     | raw bytes -> WatchFunction -> predicate -> edge -> event              |
 
 ---
 
@@ -118,11 +118,20 @@ step, and policy: a mission sequence dropping steps is never routine.
 
 ### Watchpoint Debounce Semantics
 
-`minFireCount` counts predicate EDGES -- rising transitions, reset
-whenever the predicate goes false -- not sustained-true ticks. Each
+A watchpoint dispatches once per excursion of its predicate. With
+`minFireCount` 0 the dispatch is the rising edge. With `minFireCount` N
+the predicate must hold for N consecutive evaluations (ticks at the
+default cadence; `cadenceTicks` stretches each evaluation) before the
+one dispatch, after which the watchpoint stays quiet until the predicate
+goes false and re-arms it. So 1 is the edge, 3 is "true for three
+evaluations in a row", and a signal that flickers never accumulates a
+run. `fireCount` on the watchpoint counts its dispatches; a notification's
+callback receives that notification's own `invokeCount`. Each
 armed watchpoint states its effective semantics in one INFO line at
 TPRM load. Accumulating data-target resolve failures raise
-`WARN_RESOLVE_FAILURES` (first failure, then every 4096th).
+`WARN_RESOLVE_FAILURES` (first failure, then every 4096th). Groups
+follow the same rule on their combined result; their config row's
+`minFireCount` is read and applied.
 
 ### TPRM Optionality
 
