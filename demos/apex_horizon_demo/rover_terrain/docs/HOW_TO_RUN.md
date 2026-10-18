@@ -12,15 +12,19 @@ The demo consumes two data files with different handling:
   No real-world elevation data feeds it, by policy AND by
   construction: real-world datasets stay in the producer pipeline's
   private sandbox and are never converted into distributable
-  artifacts. Generate it with the producer-side world tooling and copy
-  it into `data/` (gitignored). The htile header carries a
+  artifacts. Generate it in Horizon's `horizon_2` repository with
+  `make compose-rover-terrain-artifact`, which writes
+  `demos/rover_terrain/data/alpha_patch_lod4.htile` there, and copy it
+  into `data/` (gitignored). The htile header carries a
   `spec_hash` both sides of a pairing log at attach — regenerating
   from the same spec yields a bit-identical artifact, which is the
   file-identity proof for paired runs.
 - `data/earth_ussa76.atm` — **generated, never committed**: the
   spec-generated USSA76 layered table (public-domain U.S. government
-  standard), produced by the same producer-side world tooling
-  (compose-aircraft-world-artifacts) and copied into `data/`.
+  standard), produced in `horizon_2` by
+  `make compose-aircraft-world-artifacts`, which writes
+  `demos/aircraft_atmo/data/earth_ussa76.atm` there, and copied into
+  `data/`.
   Bit-deterministic: 288 bytes, header spec_hash
   0x753549717ab8b8ff, logged at load as the identity proof.
 

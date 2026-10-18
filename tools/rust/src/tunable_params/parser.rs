@@ -153,7 +153,7 @@ fn parse_defines(content: &str) -> Result<Json, Error> {
     // Parse inline constexpr constants
     for c in RE_CONSTEXPR.captures_iter(content) {
         let name = c[1].to_string();
-        let raw = &c[2];
+        let raw = strip_int_suffix(&c[2]);
         // Handle hex values (0x...)
         if raw.starts_with("0x") || raw.starts_with("0X") {
             if let Ok(v) = u64::from_str_radix(&raw[2..], 16) {
@@ -603,8 +603,26 @@ fn as_usize(v: &Json) -> Option<usize> {
     }
 }
 
+/// Drop a C++ integer literal suffix (`u`, `l`, `ul`, `ull`, any case), so
+/// `16u` reads as 16. Hex digits are left alone: only a trailing run of
+/// suffix letters after a decimal digit, or after a hex literal's digits,
+/// is removed.
+fn strip_int_suffix(raw: &str) -> &str {
+    let is_hex = raw.starts_with("0x") || raw.starts_with("0X");
+    let trimmed = raw.trim_end_matches(['u', 'U', 'l', 'L']);
+    if trimmed.len() == raw.len() || trimmed.is_empty() {
+        return raw;
+    }
+    let last = trimmed.as_bytes()[trimmed.len() - 1];
+    if last.is_ascii_digit() || (is_hex && last.is_ascii_hexdigit() && trimmed.len() > 2) {
+        trimmed
+    } else {
+        raw
+    }
+}
+
 fn resolve_dim(defines: &Json, token: &str) -> u64 {
-    if let Ok(v) = token.parse::<u64>() {
+    if let Ok(v) = strip_int_suffix(token).parse::<u64>() {
         return v;
     }
     if let Json::Object(map) = defines {
@@ -1059,6 +1077,32 @@ mod tests {
         assert_eq!(e.values.len(), 2);
         assert_eq!(e.values["VALUE_A"], 1);
         assert_eq!(e.values["VALUE_B"], 2);
+    }
+
+    #[test]
+    fn integer_suffixes_resolve_in_constants_and_dims() {
+        assert_eq!(strip_int_suffix("16u"), "16");
+        assert_eq!(strip_int_suffix("16UL"), "16");
+        assert_eq!(strip_int_suffix("7ull"), "7");
+        assert_eq!(strip_int_suffix("0x1Fu"), "0x1F");
+        assert_eq!(strip_int_suffix("16"), "16");
+        assert_eq!(strip_int_suffix("MAX_RAYS"), "MAX_RAYS");
+        assert_eq!(strip_int_suffix("u"), "u");
+
+        let src = r#"
+            inline constexpr std::size_t MAX_RAYS = 16u;
+            struct Scan {
+              double range[MAX_RAYS]{};
+              std::uint8_t hit[8u]{};
+            };
+        "#;
+        let parsed = parse_header(src, &TemplateOptions::default()).unwrap();
+        let defines = parsed.get("__defines__").cloned().unwrap_or(Json::Null);
+        assert_eq!(resolve_dim(&defines, "8u"), 8);
+        if !defines.is_null() {
+            assert_eq!(resolve_dim(&defines, "MAX_RAYS"), 16);
+        }
+        assert!(parsed.get("Scan").is_some());
     }
 
     #[test]

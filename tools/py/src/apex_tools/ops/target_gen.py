@@ -17,7 +17,6 @@ Usage:
 
 import argparse
 import json
-import shutil
 import sys
 
 if sys.version_info >= (3, 11):
@@ -140,9 +139,72 @@ QUICK_COMMANDS = [
 ]
 
 
+# Opcodes below this belong to the protocol, not to a component: the
+# interface answers them locally (see ApexInterface, "System opcodes
+# (0x0000-0x00FF) are handled locally").
+FIRST_COMPONENT_OPCODE = 0x0100
+
+
 # ---------------------------------------------------------------------------
 # Loader helpers
 # ---------------------------------------------------------------------------
+
+
+# An array this long or shorter is a handful of channels, not a buffer:
+# a lidar fan, a lamp bank, a wheel set. Longer arrays stay buffers.
+MAX_EXPANDED_ARRAY_LEN = 32
+
+
+def expand_array_fields(struct_dicts: dict) -> dict:
+    """Give each short numeric array its elements as scalar fields.
+
+    The console decodes a block by its dictionary and names a channel per
+    scalar field; it does not decode arrays, so a per-ray range stays
+    invisible however the plot asks for it. Each element of a short
+    numeric array becomes a field of its own, `name[i]`, at the array's
+    offset plus i times the element size, with the element's type. The
+    array entry itself stays, so a consumer that reads arrays still can.
+    Reserved and padding arrays are not channels and are left alone, and
+    an entry already expanded is not expanded again.
+    """
+    out = {}
+    for fname, data in struct_dicts.items():
+        structs = {}
+        for sname, sinfo in data.get("structs", {}).items():
+            fields = []
+            existing = {f.get("name") for f in sinfo.get("fields", [])}
+            for field in sinfo.get("fields", []):
+                fields.append(field)
+                name = field.get("name", "")
+                dims = field.get("dims") or []
+                etype = field.get("element_type")
+                if (
+                    field.get("type") != "array"
+                    or etype not in ("float", "int", "uint")
+                    or len(dims) != 1
+                    or not 1 <= dims[0] <= MAX_EXPANDED_ARRAY_LEN
+                    or name.startswith(("reserved", "pad"))
+                    or f"{name}[0]" in existing
+                ):
+                    continue
+                count = dims[0]
+                esize = field.get("size", 0) // count if count else 0
+                if esize <= 0:
+                    continue
+                for i in range(count):
+                    fields.append(
+                        {
+                            "name": f"{name}[{i}]",
+                            "type": etype,
+                            "offset": field.get("offset", 0) + i * esize,
+                            "size": esize,
+                            "value": 0,
+                            "doc": f"Element {i} of {name}.",
+                        }
+                    )
+            structs[sname] = {**sinfo, "fields": fields}
+        out[fname] = {**data, "structs": structs}
+    return out
 
 
 def load_app_data(path: str) -> dict:
@@ -246,7 +308,20 @@ def generate_app_manifest(app_data: dict, struct_dicts: dict) -> dict:
 
 def generate_commands(app_data: dict, struct_dicts: dict) -> dict:
     """Generate commands.json from struct dict enums + universal opcodes."""
-    commands: dict = {"quickCommands": QUICK_COMMANDS, "components": {}}
+    # App-declared quick commands (one-click operations such as starting a
+    # catalog sequence) follow the universal ones.
+    quick = list(QUICK_COMMANDS)
+    for qc in app_data.get("quickCommands", []):
+        entry = {
+            "label": qc["label"],
+            "fullUid": qc["fullUid"],
+            "opcode": qc["opcode"],
+            "desc": qc.get("desc", ""),
+        }
+        if qc.get("payloadHex"):
+            entry["payloadHex"] = qc["payloadHex"]
+        quick.append(entry)
+    commands: dict = {"quickCommands": quick, "components": {}}
 
     # Executive commands (from ApexExecutive.json enums)
     exec_dict = struct_dicts.get("ApexExecutive.json", {})
@@ -291,6 +366,14 @@ def generate_commands(app_data: dict, struct_dicts: dict) -> dict:
         # [[commands]] arrays the dispatch base generates from, with input
         # fields derived from the request struct's dictionary entry. Other
         # components fall back to opcode enums parsed from their headers.
+        #
+        # Only an enum whose values are component opcodes can be one of
+        # those: 0x0000..0x00FF belongs to the protocol itself (NOOP,
+        # PING, GET_STATUS, RESET), which the interface answers without
+        # the component ever seeing it. An enum of plain values -- a mode,
+        # a state, a colour -- lands in that range, and exporting it as
+        # commands puts buttons on the console that acknowledge and do
+        # nothing, under the value's name.
         _data_file, data = find_struct_dict(name, struct_dicts)
         if data and data.get("commands"):
             for cmd in data["commands"]:
@@ -304,9 +387,10 @@ def generate_commands(app_data: dict, struct_dicts: dict) -> dict:
                 )
         elif data:
             for _enum_name, enum_data in data.get("enums", {}).items():
-                for op_name, op_value in sorted(
-                    enum_data.get("values", {}).items(), key=lambda x: x[1]
-                ):
+                values = enum_data.get("values", {})
+                if any(v < FIRST_COMPONENT_OPCODE for v in values.values()):
+                    continue  # A value enum, not this component's opcodes.
+                for op_name, op_value in sorted(values.items(), key=lambda x: x[1]):
                     comp_cmds.append(
                         {
                             "name": op_name,
@@ -316,16 +400,11 @@ def generate_commands(app_data: dict, struct_dicts: dict) -> dict:
                         }
                     )
 
-        # If no component-specific opcodes, add GET_HEALTH as default
-        if len(comp_cmds) == 1:
-            comp_cmds.append(
-                {
-                    "name": "GET_HEALTH",
-                    "opcode": "0x0100",
-                    "desc": "Component health telemetry",
-                    "fields": [],
-                }
-            )
+        # A component that declares no commands and carries no opcode enum
+        # gets NOOP and nothing else. A health command is not assumed: the
+        # base dispatch answers an opcode the component does not implement
+        # with NOT_IMPLEMENTED, and a button that does that is not a
+        # command surface.
 
         commands["components"][label] = {"fullUid": uid, "commands": comp_cmds}
 
@@ -333,7 +412,32 @@ def generate_commands(app_data: dict, struct_dicts: dict) -> dict:
 
 
 def generate_telemetry(app_data: dict, struct_dicts: dict) -> dict:
-    """Generate telemetry.json with default plot layouts from OUTPUT structs."""
+    """Generate telemetry.json with default plot layouts from OUTPUT structs.
+
+    App-declared `[[layouts]]` (name + `[[layouts.plots]]` with title and
+    channels) come first, in declaration order, ahead of the generated
+    Default layout, so an application chooses what an operator sees first.
+    """
+    declared = [
+        {
+            "name": lay["name"],
+            "plots": [
+                {
+                    "title": plot["title"],
+                    "channels": list(plot["channels"]),
+                    "height": plot.get("height", 200),
+                }
+                for plot in lay.get("plots", [])
+            ],
+        }
+        for lay in app_data.get("layouts", [])
+    ]
+    generated = _generated_layouts(app_data, struct_dicts)
+    return {"layouts": declared + generated}
+
+
+def _generated_layouts(app_data: dict, struct_dicts: dict) -> list:
+    """One Default layout with a plot per OUTPUT/TELEMETRY struct, or none."""
     layouts = []
 
     # Collect OUTPUT channels per component instance
@@ -356,20 +460,19 @@ def generate_telemetry(app_data: dict, struct_dicts: dict) -> dict:
             for field in struct_info.get("fields", []):
                 ftype = field.get("type", "")
                 fname = field.get("name", "")
-                # Skip padding, reserved, and non-numeric fields
-                if fname in ("reserved", "pad0", "pad1", "pad2", "pad3"):
+                # Padding and reserved bytes are never channels, and an
+                # array field is not decoded as a channel by the ground
+                # side (its elements are, once expanded), so only named
+                # scalar numerics are plotted.
+                if fname.startswith(("reserved", "pad")):
+                    continue
+                # An array's elements are channels the app's own layouts
+                # may name; the generated catch-all would otherwise carry
+                # every ray of every fan.
+                if fname.endswith("]"):
                     continue
                 if ftype in ("float", "int", "uint"):
                     channels.append(f"{prefix}.{fname}")
-                elif ftype == "array" and field.get("element_type") in ("float", "int", "uint"):
-                    # For arrays, add first few elements as individual channels
-                    dims = field.get("dims", [1])
-                    count = min(dims[0], 4) if dims else 1
-                    if count == 1:
-                        channels.append(f"{prefix}.{fname}")
-                    else:
-                        for i in range(count):
-                            channels.append(f"{prefix}.{fname}[{i}]")
 
             if channels:
                 plot: dict = {
@@ -388,14 +491,8 @@ def generate_telemetry(app_data: dict, struct_dicts: dict) -> dict:
                 layouts.append(plot)
 
     if not layouts:
-        return {"layouts": []}
-
-    # Group into a single default layout
-    return {
-        "layouts": [
-            {"name": "Default", "plots": layouts},
-        ]
-    }
+        return []
+    return [{"name": "Default", "plots": layouts}]
 
 
 # ---------------------------------------------------------------------------
@@ -537,14 +634,18 @@ def _sysmon_plots(prefix: str, struct_info: dict) -> list:
 
 
 def find_app_data(app_name: str, apps_dir: str) -> str:
-    """Search the given roots (colon-separated) for a matching app_data.toml."""
+    """Search the given roots (colon-separated) for a matching app_data.toml.
+
+    Searches every depth under each root, so an application nested in a
+    demo family (demos/<family>/<app>/app_data.toml) is found like a
+    top-level one.
+    """
     for root in apps_dir.split(":"):
         root_path = Path(root)
         if not root_path.is_dir():
             continue
-        for entry in sorted(root_path.iterdir()):
-            candidate = entry / "app_data.toml"
-            if candidate.exists():
+        for candidate in sorted(root_path.rglob("app_data.toml")):
+            if candidate.is_file():
                 with open(candidate, "rb") as f:
                     data = tomllib.load(f)
                 if data.get("application") == app_name:
@@ -553,6 +654,7 @@ def find_app_data(app_name: str, apps_dir: str) -> str:
 
 
 def main():
+    """Generate a console target directory for one application."""
     parser = argparse.ArgumentParser(
         description="Generate Zenith target configuration from app_data.toml"
     )
@@ -575,7 +677,7 @@ def main():
 
     # Load inputs
     app_data = load_app_data(app_data_path)
-    struct_dicts = load_struct_dicts(args.db)
+    struct_dicts = expand_array_fields(load_struct_dicts(args.db))
 
     app_name = app_data["application"]
     print(f"[zenith-target] Generating target configs for {app_name}")
@@ -611,9 +713,12 @@ def main():
     # Copy struct dicts
     structs_dir = out / "structs"
     structs_dir.mkdir(exist_ok=True)
-    for fname in sorted(struct_dicts.keys()):
-        src = Path(args.db) / fname
-        shutil.copy2(src, structs_dir / fname)
+    # The bundle carries the expanded dictionaries: the console's decoder
+    # names a channel per scalar field, and the array elements are now
+    # scalar fields.
+    for fname, data in struct_dicts.items():
+        with open(structs_dir / fname, "w") as f:
+            json.dump(data, f, indent=2)
     print(f"[zenith-target] {structs_dir}/ ({len(struct_dicts)} files)")
 
     print(f"[zenith-target] Done. Output: {out}/")

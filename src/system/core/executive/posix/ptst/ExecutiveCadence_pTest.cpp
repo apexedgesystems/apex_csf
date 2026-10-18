@@ -148,7 +148,7 @@ TEST(ExecutiveCadencePerf, PeriodFidelityAndDrift) {
   const double SPAN_MS = static_cast<double>(edgeNs.back() - edgeNs.front()) / 1e6;
   const double DRIFT_MS = SPAN_MS - SPAN_CYCLES * FRAME_MS;
 
-  const auto& HP = exec.getHealthPacket();
+  const auto HP = exec.getHealthPacket();
   const auto& L = exec.clockLateness();
 
   std::printf("ExecutiveCadencePerf.PeriodFidelityAndDrift: hz=%u cycles=%llu edges=%zu "
