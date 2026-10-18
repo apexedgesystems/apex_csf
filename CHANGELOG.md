@@ -10,10 +10,10 @@ any such change is called out explicitly in its entry.
 
 ### Added
 
-- `make check-data-db`: every component data manifest generates its
-  dictionary clean, checked against CMake registration; CI runs it whenever a
-  manifest, header or generator changes
-  ([#166](https://github.com/apexedgesystems/apex_csf/pull/166)).
+- `make check-data-db`: every registered data manifest generates its
+  dictionary clean; CI runs it whenever a manifest, header, registration or
+  generator changes. An explicit `MANIFEST` path that does not exist now
+  fails configure ([#166](https://github.com/apexedgesystems/apex_csf/pull/166)).
 - Executive clock wake-lateness record: every clock wake is measured
   against its deadline and summarised (p50, p99, max) when the clock
   stops; `--clock-hz` overrides the fundamental frequency for a run.

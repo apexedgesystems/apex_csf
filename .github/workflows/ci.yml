@@ -239,11 +239,11 @@ jobs:
     name: Dictionaries generate
     needs: changes
     # The dictionary generator reads component manifests and .auto headers
-    # (classified rust), the C++ headers under the component trees (cpp),
-    # and runs through the Rust generator and the Python inventory (rust,
-    # py). Any of them can break a dictionary ground tooling regenerates
-    # from, so the gate runs for any of them, on the smallest image.
-    if: needs.changes.outputs.cpp == 'true' || needs.changes.outputs.rust == 'true' || needs.changes.outputs.py == 'true'
+    # (classified rust), the C++ headers and CMake registrations under the
+    # component trees (cpp), and runs through the Rust generator (rust).
+    # Any of them can break a dictionary ground tooling regenerates from,
+    # so the gate runs for either, on the smallest image.
+    if: needs.changes.outputs.cpp == 'true' || needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

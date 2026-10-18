@@ -141,8 +141,8 @@ apex_data_gen \
 # Via the Make convenience target
 make apex-data-db
 
-# Every component manifest generates clean (the CI gate; the manifest
-# inventory is parsed TOML, checked against apex_add_data_manifest)
+# Every registered manifest generates clean (the CI gate; the inventory is
+# the list CMake writes from the apex_add_data_manifest registrations)
 make check-data-db
 ```
 
