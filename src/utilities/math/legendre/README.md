@@ -4,7 +4,7 @@
 **Platform:** Cross-platform (CPU); Linux with CUDA toolkit (GPU)
 **C++ Standard:** C++17
 
-High-performance library for fully normalized associated Legendre functions (Pbar), designed for real-time and embedded systems with zero-allocation APIs and optional GPU acceleration.
+High-performance library for fully normalized associated Legendre functions (Pbar), designed for real-time and embedded systems with zero-allocation APIs and optional GPU acceleration. Scalar functions evaluate a single P_n^m or Pbar_n^m; the triangle API computes every degree and order up to N at once.
 
 ---
 
@@ -21,6 +21,17 @@ High-performance library for fully normalized associated Legendre functions (Pba
 ---
 
 ## 1. Quick Start
+
+**Single value (scalar API):**
+
+```cpp
+#include "src/utilities/math/legendre/inc/AssociatedLegendre.hpp"
+
+using apex::math::legendre::normalizedAssociatedLegendre;
+
+// Pbar_{180,90}(0.3): O(n - m), no allocation, RT-safe
+double pbar = normalizedAssociatedLegendre(180, 90, 0.3);
+```
 
 **Simple triangle computation:**
 
@@ -85,6 +96,7 @@ double dpbar = result.dP[pbarTriangleIndex(10, 5)];
 
 ### Computation Modes
 
+- **Scalar** - One Pbar_n^m by walking its column, O(n - m), ~0.37us for (180, 90)
 - **CPU baseline** - Standard upward recurrence, ~77us for N=180
 - **CPU cached** - Precomputed A/B coefficients, ~33us for N=180 (2.3x faster)
 - **GPU kernel** - CUDA parallel computation, ~4us for N=180 (19x faster)
@@ -100,6 +112,20 @@ double dpbar = result.dP[pbarTriangleIndex(10, 5)];
 ---
 
 ## 3. RT-Safety
+
+### Scalar API (AssociatedLegendre.hpp)
+
+| Function                                 | RT-Safe | Notes                                          |
+| ---------------------------------------- | ------- | ---------------------------------------------- |
+| `normalizedAssociatedLegendre()`         | YES     | O(n - m), no allocation, `APEX_NONBLOCKING`    |
+| `associatedLegendre()`                   | YES     | O(n - m), no allocation, `APEX_NONBLOCKING`    |
+| `legendrePolynomial()`                   | YES     | O(n), no allocation, `APEX_NONBLOCKING`        |
+| `normalizedAssociatedLegendreFunction()` | NO      | Takes a `std::function` (may allocate to wrap) |
+| `associatedLegendreFunction()`           | NO      | Takes a `std::function` (may allocate to wrap) |
+| `legendrePolynomialFunction()`           | NO      | Takes a `std::function` (may allocate to wrap) |
+
+The non-blocking contract is enforced under the RealtimeSanitizer build
+(`make rtsan`): an allocation reached from these functions aborts the test.
 
 ### Triangle API (PbarTriangle.hpp)
 
@@ -147,6 +173,30 @@ double dpbar = result.dP[pbarTriangleIndex(10, 5)];
 ---
 
 ## 4. API Reference
+
+### Scalar Functions
+
+`normalizedAssociatedLegendre(n, m, x)` and `associatedLegendre(n, m, x)` walk
+column m of the stable upward recurrence from the diagonal (m, m) to (n, m):
+O(n - m) work, no table, no allocation. Both omit the Condon-Shortley phase
+(geodesy convention), and the normalized form matches the triangle entry at
+`pbarTriangleIndex(n, m)`.
+
+| Property     | Normalized `Pbar_n^m`                                  | Unnormalized `P_n^m`                                                  |
+| ------------ | ------------------------------------------------------ | --------------------------------------------------------------------- |
+| Accuracy     | 1e-10 relative to `std::sph_legendre` through n = 2190 | 1e-10 relative to `std::assoc_legendre`                               |
+| Range        | Bounded by sqrt(2n+1); finite at every degree          | Becomes inf where the value exceeds DBL_MAX (`P_n^n(0)` from n = 151) |
+| Invalid n, m | NaN                                                    | NaN                                                                   |
+
+Near |x| = 1 with large m the diagonal seed `(1 - x^2)^(m/2)` falls into
+subnormals and then to zero (for example x = 0.999 from m near 240), and the
+column loses its digits with it. Every forward-column method shares this,
+`std::sph_legendre` included; Holmes-Featherstone scaling is the remedy and is
+not applied here.
+
+The transform variants (`...Function(n, m, fX, x)`) evaluate at `fX(x)` and
+clamp the transformed value, so `fX = cos` with a colatitude in [0, pi] works
+across the whole range.
 
 ### Triangular Storage
 
@@ -249,6 +299,26 @@ CPU cached is 9.4x faster than baseline at N=180 (47.7 vs 450.6 us).
 
 Scaling is O(N^2) as expected (triangular storage of (N+1)(N+2)/2 elements).
 
+### Scalar Functions vs the Standard Library
+
+Release build, x = 0.3, pinned to one core under SCHED_FIFO on an x86-64
+laptop, `LegendreScalar_PTEST --cycles 200000`; each cell averages the medians
+of two runs:
+
+| (n, m)       | `normalizedAssociatedLegendre` (us) | `std::sph_legendre` (us) |
+| ------------ | ----------------------------------- | ------------------------ |
+| (10, 3)      | 0.025                               | 0.068                    |
+| (50, 25)     | 0.10                                | 0.18                     |
+| (180, 90)    | 0.37                                | 0.60                     |
+| (180, 180)   | 0.16                                | 0.031                    |
+| (720, 360)   | 1.48                                | 2.44                     |
+| (2190, 1000) | 4.9                                 | 8.1                      |
+
+Off the diagonal the column walk is 1.6-2.7x faster than the standard library.
+On the diagonal (n = m) the standard library's closed form is about 5x faster:
+the walk forms the diagonal product term by term, and only a precomputed seed
+table would close that gap.
+
 ### Why Cached is Faster
 
 The upward recurrence requires coefficients A(n,m) and B(n,m) containing sqrt() calls:
@@ -275,24 +345,24 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 
 # Run performance tests
 docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/ptests/LegendrePbar_PTEST
+docker compose run --rm -T dev ./build/hosted-x86_64-release/bin/ptests/LegendreScalar_PTEST --cycles 200000
 ```
 
 ### Test Organization
 
 | Test File                           | Purpose                       | Tests |
 | ----------------------------------- | ----------------------------- | ----- |
-| `LegendreFactorials_uTest.cpp`      | Factorial precomputation      | 4     |
-| `LegendrePolynomials_uTest.cpp`     | Associated Legendre functions | 8     |
-| `LegendrePbarTriangle_uTest.cpp`    | CPU triangle computation      | 12    |
-| `LegendrePbarDerivatives_uTest.cpp` | Derivative computation        | 6     |
-| `LegendrePbarCuda_uTest.cu`         | GPU/CPU parity                | 12    |
-| `LegendrePbar_pTest.cpp`            | Performance benchmarks        | 9     |
+| `LegendrePolynomials_uTest.cpp`     | Scalar functions, to n = 2190 | 15    |
+| `LegendrePbarTriangle_uTest.cpp`    | CPU triangle computation      | 5     |
+| `LegendrePbarDerivatives_uTest.cpp` | Derivative computation        | 11    |
+| `LegendrePbarCuda_uTest.cu`         | GPU/CPU parity                | 13    |
+| `LegendreScalar_pTest.cpp`          | Scalar vs `std::` throughput  | 3 x 6 |
+| `LegendrePbar_pTest.cpp`            | Triangle benchmarks           | 8     |
 
 ---
 
 ## 7. See Also
 
-- `src/sim/kinematics/gravity/` - EGM2008 gravity model using this library
+- `src/sim/environment/gravity/` - EGM2008 gravity model using this library
 - [Vernier](https://github.com/apexedgesystems/vernier) - Performance testing framework
 - `src/utilities/compatibility/` - CUDA attribute shims and C++17/20 compatibility
-- `optimization/legendre/` - Optimization notes and baseline measurements
