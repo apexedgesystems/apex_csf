@@ -12,10 +12,12 @@
 
 #include "src/utilities/math/legendre/inc/AssociatedLegendre.hpp"
 #include "src/utilities/math/legendre/inc/PbarTriangle.hpp"
+#include "src/utilities/math/legendre/utst/PbarReference.hpp"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <set>
@@ -500,6 +502,26 @@ TEST(MathLegendrePolynomials, CachedTables_LayoutAndRange) {
   EXPECT_TRUE(EMPTY.diag.empty() && EMPTY.off.empty() && EMPTY.ab.empty());
   EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(0, 0, 0.3, EMPTY)));
   EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(0, 0, 0.3, ScalarTables{})));
+}
+
+/**
+ * @test NormalizedNearPole_KeepsPrecision
+ * @brief Within about 2.6 degrees of either pole, the stateless and cached
+ *        scalar walks agree with an extended-precision reference to 4e-13 of
+ *        each column's scale.
+ */
+TEST(MathLegendrePolynomials, NormalizedNearPole_KeepsPrecision) {
+  constexpr int N = 160;
+  const ScalarTables TABLES = makeScalarTables(N);
+  for (double x : legendre_test::NEAR_POLE_ARGS) {
+    const auto STATELESS = legendre_test::columnScaledError(
+        N, x, [&](int n, int m) { return normalizedAssociatedLegendre(n, m, x); });
+    const auto CACHED = legendre_test::columnScaledError(
+        N, x, [&](int n, int m) { return normalizedAssociatedLegendre(n, m, x, TABLES); });
+    EXPECT_GE(STATELESS.columns, 50) << "x=" << x;
+    EXPECT_LE(STATELESS.worst, 4e-13) << "stateless x=" << x << " m=" << STATELESS.worstM;
+    EXPECT_LE(CACHED.worst, 4e-13) << "cached x=" << x << " m=" << CACHED.worstM;
+  }
 }
 
 /* ----------------------------- Transform API ----------------------------- */

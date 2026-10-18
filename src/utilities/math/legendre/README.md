@@ -86,7 +86,7 @@ using apex::math::legendre::computeNormalizedPbarTriangleWithDerivativesVector;
 using apex::math::legendre::pbarTriangleIndex;
 
 double sinPhi = 0.5;
-double cosPhi = std::sqrt(1.0 - sinPhi * sinPhi);
+double cosPhi = std::sqrt((1.0 - sinPhi) * (1.0 + sinPhi)); // keeps digits near the poles
 auto result = computeNormalizedPbarTriangleWithDerivativesVector(50, sinPhi, cosPhi);
 
 // result.P[idx] = Pbar_{n,m}(sin(phi))
@@ -213,6 +213,15 @@ so one instance can serve any number of threads.
 The transform variants (`...Function(n, m, fX, x)`) evaluate at `fX(x)` and
 clamp the transformed value, so `fX = cos` with a colatitude in [0, pi] works
 across the whole range.
+
+### Precision Near the Poles
+
+Every path forms cos(phi) from x = sin(phi) as sqrt((1 - x)(1 + x)), never
+sqrt(1 - x\*x): near |x| = 1 the latter cancels, and its error enters the
+diagonal seed s^m and grows with m. Within 2.6 degrees of either pole the CPU
+and GPU triangles and the scalar functions agree with an extended-precision
+reference to about 1e-13 of each column's scale; the cancelling form lost up
+to 1.8e-8 there. The factored form costs one extra addition per call.
 
 ### Triangular Storage
 
