@@ -214,8 +214,14 @@ private:
     case RoverOpcode::HALT:
       s.commanded_halt = 1u;
       // A halt is attributed on the frame: manual unless a recovery
-      // sequence already named its reason.
+      // sequence already named its reason. A plain halt is a pause:
+      // the action engine is not told, so a running sequence keeps
+      // its place and finishes after RESUME. The id and counters the
+      // reason displaces are kept so RESUME can put them back.
       if ((s.seq_state & kSeqStateHaltBit) == 0u) {
+        pausedSeqState_ = s.seq_state;
+        pausedWaypointTotal_ = s.waypoint_total;
+        pausedActiveWaypoint_ = s.active_waypoint;
         s.seq_state = kSeqStateManualHalt;
         s.waypoint_total = 0u;
         s.active_waypoint = 0u;
@@ -226,7 +232,15 @@ private:
       s.commanded_halt = 0u;
       s.throttle_override_pct = 255u;
       if ((s.seq_state & kSeqStateHaltBit) != 0u) {
-        s.seq_state = 0u; // the halt is over; a running sequence would re-stamp itself
+        // The halt is over. A sequence paused by a plain halt is still
+        // running and gets its id and counters back; otherwise idle,
+        // and a sequence that starts later stamps itself.
+        s.seq_state = pausedSeqState_;
+        s.waypoint_total = pausedWaypointTotal_;
+        s.active_waypoint = pausedActiveWaypoint_;
+        pausedSeqState_ = 0u;
+        pausedWaypointTotal_ = 0u;
+        pausedActiveWaypoint_ = 0u;
       }
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
@@ -321,7 +335,12 @@ private:
       if (s.commanded_halt != 0u) {
         // The halt reason stays on the frame until RESUME: a sequence
         // started (or finishing) while halted cannot bracket itself
-        // over it.
+        // over it. That it tried means the engine's state moved on
+        // from the sequence a plain halt paused, so nothing is put
+        // back on RESUME.
+        pausedSeqState_ = 0u;
+        pausedWaypointTotal_ = 0u;
+        pausedActiveWaypoint_ = 0u;
         return static_cast<std::uint8_t>(CommandResult::EXEC_FAILED);
       }
       // A running sequence stamps its catalog id here, and a halt
@@ -849,6 +868,13 @@ private:
   system_core::data::TunableParam<GroundVehicleTunables> tunables_{};
   system_core::data::State<GroundVehicleState> state_{};
   system_core::data::Output<GroundVehicleTelemetry> telemetry_{};
+  /// What a plain HALT displaced on the frame, restored by RESUME: the
+  /// running sequence's id and waypoint counters, or zero when the
+  /// halt found no sequence running or one tried to re-bracket the
+  /// frame during the pause.
+  std::uint8_t pausedSeqState_{0};
+  std::uint8_t pausedWaypointTotal_{0};
+  std::uint8_t pausedActiveWaypoint_{0};
 };
 
 } // namespace ground_vehicle

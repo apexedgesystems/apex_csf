@@ -341,6 +341,10 @@ TEST(GroundVehicle, TimestampsOnTickGrid) {
 
 /* ----------------------------- Grid boot ----------------------------- */
 
+/**
+ * @test A grid boot places the rover at its north/east offset from the anchor, so a scenario
+ *       stated in grid metres starts where the controller's grid says it is.
+ */
 TEST(GroundVehicle, GridBootPlacesTheRoverFromTheAnchor) {
   CelestialBody earth;
   earth.tunables().set(analyticEarth());
@@ -549,6 +553,10 @@ TEST(GroundVehicleCmd, LedCommandsAreBoundedAndStamped) {
 
 /* ----------------------------- LEDs + step rate ----------------------------- */
 
+/**
+ * @test The frame's lamp bits strobe at the coded rate whatever the step rate, and a steady or
+ *       dark lamp holds, so the displayed strobe matches the commanded one.
+ */
 TEST(GroundVehicleLed, StrobeBitFollowsTheRateCodeAt100Hz) {
   ReadyRover r;
   r.rover.tunables().get().step_hz = 100u;
@@ -627,6 +635,10 @@ TEST(GroundVehicle, StepRateScalesTheIntegrationAndTheTimestampGrid) {
 
 /* ----------------------------- Boot seed ----------------------------- */
 
+/**
+ * @test Init seeds the output block with the boot pose and a clear lidar, so anything reading
+ *       it before the first step never sees zeros.
+ */
 TEST(GroundVehicle, InitSeedsTheOutputBlockBeforeTheFirstStep) {
   CelestialBody earth;
   earth.tunables().set(analyticEarth());
@@ -647,6 +659,10 @@ TEST(GroundVehicle, InitSeedsTheOutputBlockBeforeTheFirstStep) {
 
 /* ----------------------------- Halt attribution ----------------------------- */
 
+/**
+ * @test A wire HALT is attributed as manual unless a sequence already named its reason, and
+ *       RESUME clears either, so the frame always says why the rover stopped.
+ */
 TEST(GroundVehicleCmd, HaltStampsManualReasonAndResumeClearsAnyHalt) {
   ReadyRover r;
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
@@ -662,6 +678,47 @@ TEST(GroundVehicleCmd, HaltStampsManualReasonAndResumeClearsAnyHalt) {
   EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0x12u);
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
   EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+}
+
+/**
+ * @test A plain HALT pauses a running sequence: the frame carries the halt reason through the
+ *       pause and the sequence's id and waypoint counters come back on RESUME, so a console
+ *       never reads idle while a tour is still running. A sequence that tries to re-bracket the
+ *       frame while halted means the engine moved on, and RESUME then reads idle.
+ */
+TEST(GroundVehicleCmd, PlainHaltKeepsTheRunningSequenceForResume) {
+  ReadyRover r;
+  // Sequence 2 running, two legs, the first target accepted.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(10.0F, 0.0F)), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 2u);
+  EXPECT_EQ(r.rover.vehicleState().active_waypoint, 1u);
+
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], appsim::ground_vehicle::kSeqStateManualHalt);
+  EXPECT_EQ(r.rover.vehicleState().active_waypoint, 0u);
+
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 2u) << "the paused sequence is still running";
+  EXPECT_EQ(r.rover.vehicleState().waypoint_total, 2u);
+  EXPECT_EQ(r.rover.vehicleState().active_waypoint, 1u);
+
+  // The sequence ends normally; a later plain HALT with nothing running
+  // restores idle.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+
+  // Paused, then a recovery sequence tries to name its reason: refused
+  // while halted, and the pause no longer owns the frame on RESUME.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 1u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  const auto EXEC_FAILED =
+      static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0x14u, 0u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u) << "the engine moved on; nothing to put back";
 }
 
 /**
@@ -701,6 +758,10 @@ TEST(GroundVehicleCmd, WhileHaltedOnlyHaltAndResumeAreAccepted) {
 
 /* ----------------------------- BUSY: a sequence owns the drive ----------------------------- */
 
+/**
+ * @test While a sequence runs, wire mode and target commands are refused whole as BUSY and only
+ *       the sequence's own opcodes drive, so the operator cannot fight a running sequence.
+ */
 TEST(GroundVehicleCmd, WireTargetsAreBusyWhileASequenceRunsButSequenceOpcodesAreNot) {
   ReadyRover r;
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
@@ -729,6 +790,10 @@ TEST(GroundVehicleCmd, WireTargetsAreBusyWhileASequenceRunsButSequenceOpcodesAre
 
 /* ----------------------------- Sequence trace ----------------------------- */
 
+/**
+ * @test The trace samples at 20 Hz only while a sequence runs and marks its end, so a
+ *       demonstration's plot covers exactly the sequence.
+ */
 TEST(GroundVehicleTrace, SamplesAt20HzWhileASequenceRunsAndStopsWhenIdle) {
   ReadyRover r;
   r.rover.tunables().get().step_hz = 100u;
