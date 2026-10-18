@@ -135,6 +135,7 @@ def test_enum_fallback_still_generates():
 
 
 def test_app_quick_commands_follow_the_universal_ones():
+    """App quick commands append after the universal set, keeping payloadHex only when given."""
     app = dict(APP_DATA)
     app["quickCommands"] = [
         {
@@ -159,6 +160,7 @@ def test_app_quick_commands_follow_the_universal_ones():
 
 
 def test_without_app_quick_commands_the_list_is_unchanged():
+    """An app that declares no quick commands gets exactly the universal set."""
     assert generate_commands(APP_DATA, STRUCT_DICTS)["quickCommands"] == QUICK_COMMANDS
 
 
@@ -174,6 +176,7 @@ OUTPUT_DICT = {
 
 
 def test_app_layouts_come_before_the_generated_default():
+    """App-declared layouts lead the list, with plot defaults filled in, ahead of Default."""
     app = dict(APP_DATA)
     app["layouts"] = [
         {"name": "Drive", "plots": [{"title": "Speed", "channels": ["EnumComp.speed"]}]},
@@ -189,10 +192,12 @@ def test_app_layouts_come_before_the_generated_default():
 
 
 def test_without_layouts_or_outputs_telemetry_is_empty():
+    """With no app layouts and no OUTPUT structs, no layout (not even Default) is emitted."""
     assert generate_telemetry(APP_DATA, {}) == {"layouts": []}
 
 
 def test_find_app_data_searches_nested_apps(tmp_path):
+    """find_app_data locates apps at any depth under each root and tolerates a missing root."""
     top = tmp_path / "demos" / "top_app"
     nested = tmp_path / "demos" / "family" / "nested_app"
     for d, name in ((top, "TopApp"), (nested, "NestedApp")):
@@ -204,6 +209,7 @@ def test_find_app_data_searches_nested_apps(tmp_path):
 
 
 def test_generated_default_plots_named_scalars_only():
+    """The Default layout plots named scalars only, never arrays, reserved or padding fields."""
     dicts = {
         "EnumComp.json": {
             "component": "EnumComp",
@@ -371,3 +377,86 @@ def test_uploader_running_id_domain_is_the_plants():
     assert all(mod.running_id_expressible(i) for i in (1, 9, 15, 32, 36, 47, 64, 79, 207))
     # 255 is 0xFF: it carries the halt bit like every value in 16..31, 48..63, ...
     assert not any(mod.running_id_expressible(i) for i in (0, 16, 22, 31, 48, 63, 255, 256, 300))
+
+
+# ---------------------------------------------------------------------------
+# The uploader's exit status follows each terminal command result
+# ---------------------------------------------------------------------------
+
+
+def _run_uploader(monkeypatch, tmp_path, rescan_status, start_status):
+    """Run the real uploader main with compiler, transfer and client stubbed.
+
+    Returns (exit status, opcodes sent, stdout, stderr). No socket or process
+    is created: the compiler writes a placeholder file and the client returns
+    the given terminal statuses.
+    """
+    import contextlib
+    import io
+    import pathlib
+    import sys
+    import types
+
+    mod = _upload_rts_module()
+    names = {0: "SUCCESS", 4: "TARGET_NOT_FOUND", 5: "LOAD_FAILED"}
+    sent = []
+
+    def compiler(argv, *, check):
+        pathlib.Path(argv[argv.index("--output") + 1]).write_bytes(b"placeholder")
+        return types.SimpleNamespace(returncode=0)
+
+    class Client:
+        def __init__(self, host, port, timeout):
+            pass
+
+        def connect(self):
+            pass
+
+        def send_file(self, local_path, remote_path):
+            size = pathlib.Path(local_path).stat().st_size
+            return {"status": 0, "file_end": {"bytes_written": size}}
+
+        def send_command(self, uid, opcode, payload=b""):
+            sent.append(opcode)
+            status = rescan_status if opcode == mod.OP_RESCAN_CATALOG else start_status
+            return {"status": status, "status_name": names[status], "queued": False}
+
+    client_module = types.ModuleType("apex_tools.ops.client")
+    client_module.AprotoClient = Client
+    monkeypatch.setitem(sys.modules, "apex_tools.ops.client", client_module)
+    monkeypatch.setattr(mod, "subprocess", types.SimpleNamespace(run=compiler))
+    toml = mod.MANIFEST.parent / "upload/rts_008_uploaded_beacon.toml"
+    argv = ["upload_rts.py", str(toml), "--start", "--build-dir", str(tmp_path)]
+    monkeypatch.setattr(sys, "argv", argv)
+    out, err = io.StringIO(), io.StringIO()
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        status = mod.main()
+    return status, sent, out.getvalue(), err.getvalue()
+
+
+def test_uploader_rejected_rescan_fails_before_start(monkeypatch, tmp_path):
+    """A failed RESCAN_CATALOG exits nonzero, names the status, and never sends START."""
+    status, sent, _, err = _run_uploader(monkeypatch, tmp_path, 4, 0)
+    mod = _upload_rts_module()
+    assert status != 0
+    assert sent == [mod.OP_RESCAN_CATALOG]
+    assert "RESCAN_CATALOG failed: TARGET_NOT_FOUND (code 4)" in err
+
+
+def test_uploader_rejected_start_exits_nonzero(monkeypatch, tmp_path):
+    """A failed START_RTS_BY_ID after a good rescan exits nonzero and names the status."""
+    status, sent, _, err = _run_uploader(monkeypatch, tmp_path, 0, 5)
+    mod = _upload_rts_module()
+    assert status != 0
+    assert sent == [mod.OP_RESCAN_CATALOG, mod.OP_START_RTS_BY_ID]
+    assert "START_RTS_BY_ID 8 failed: LOAD_FAILED (code 5)" in err
+
+
+def test_uploader_success_exits_zero(monkeypatch, tmp_path):
+    """Transfer, rescan and start all succeeding exit zero with both statuses printed."""
+    status, sent, out, err = _run_uploader(monkeypatch, tmp_path, 0, 0)
+    mod = _upload_rts_module()
+    assert status == 0
+    assert sent == [mod.OP_RESCAN_CATALOG, mod.OP_START_RTS_BY_ID]
+    assert "RESCAN_CATALOG: SUCCESS" in out and "START_RTS_BY_ID 8: SUCCESS" in out
+    assert err == ""

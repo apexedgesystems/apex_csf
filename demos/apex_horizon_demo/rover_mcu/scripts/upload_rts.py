@@ -10,7 +10,7 @@ the new id exists in the catalog until the next boot repacks the bank.
 Run from inside the producer's container (the ops interface listens on
 127.0.0.1:9000 there), with the apex tools venv:
 
-    docker exec -i -w /home/kalex/workspace rover_mcu \\
+    docker exec -i -w /home/$USER/workspace rover_mcu \\
       tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py \\
       demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --slot 13 --start
 
@@ -34,7 +34,6 @@ import re
 import struct
 import subprocess
 import sys
-import time
 
 REPO = pathlib.Path(__file__).resolve().parents[4]
 SPEC = REPO / "src/system/core/components/action/apex/apex_data.toml"
@@ -67,8 +66,16 @@ def packed_slots(manifest: pathlib.Path) -> dict[int, str]:
     return slots
 
 
+def _status_text(result: dict) -> str:
+    """A terminal command result as `NAME (code N)` for a failure line."""
+    return f"{result.get('status_name', 'UNKNOWN')} (code {result.get('status', '?')})"
+
+
 def main() -> int:
-    """Compile the sequence, refuse a packed slot, transfer, rescan, start."""
+    """Compile the sequence, refuse a packed slot, transfer, rescan, start.
+
+    Returns nonzero when any step fails; a failed rescan stops before START.
+    """
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -139,11 +146,18 @@ def main() -> int:
         print("transfer failed:", r, file=sys.stderr)
         return 1
     print(f"transferred to {a.bank}/rts/{slot:03d}.rts ({r['file_end']['bytes_written']} B)")
+    # send_command returns the terminal RESULT/COMPLETION, so a successful
+    # rescan status means the catalog already holds the new id when START goes out.
     r = c.send_command(ACTION_UID, OP_RESCAN_CATALOG)
+    if r.get("status", 1) != 0:
+        print(f"RESCAN_CATALOG failed: {_status_text(r)}", file=sys.stderr)
+        return 1
     print("RESCAN_CATALOG:", r["status_name"])
     if a.start:
-        time.sleep(0.5)
         r = c.send_command(ACTION_UID, OP_START_RTS_BY_ID, struct.pack("<H", seq_id))
+        if r.get("status", 1) != 0:
+            print(f"START_RTS_BY_ID {seq_id} failed: {_status_text(r)}", file=sys.stderr)
+            return 1
         print(f"START_RTS_BY_ID {seq_id}:", r["status_name"])
     return 0
 
