@@ -88,13 +88,22 @@ class Ring:
         struct.pack_into("<Q", self.m, self.b_base + PROD_CURSOR, head + 1)
 
     def latest(self) -> bytes | None:
-        """Newest frame in region A, consuming everything published so far."""
+        """Newest unread frame in region A, consuming it and every older unread frame.
+
+        Returns None when no frame is unread: nothing published yet, or nothing
+        published since the previous call. The newest unread slot stays owned by
+        this consumer until its bytes are copied; only then does the consumer
+        cursor advance to the sampled head, so the producer cannot reuse that slot
+        mid-copy. Older unread frames are skipped, not returned.
+        """
         head = struct.unpack_from("<Q", self.m, PROD_CURSOR)[0]
-        if head == 0:
+        cons = struct.unpack_from("<Q", self.m, CONS_CURSOR)[0]
+        if head <= cons:
             return None
-        struct.pack_into("<Q", self.m, CONS_CURSOR, head)
         off = PRELUDE_BYTES + ((head - 1) & (self.a_cap - 1)) * self.a_size
-        return bytes(self.m[off : off + self.a_size])
+        frame = bytes(self.m[off : off + self.a_size])
+        struct.pack_into("<Q", self.m, CONS_CURSOR, head)
+        return frame
 
 
 def describe(fr: bytes, anchor_lat: float, anchor_lon: float) -> str:
@@ -142,7 +151,7 @@ def main() -> int:
         for i in range(args.count):
             fr = ring.latest()
             line = (
-                "no frame published yet"
+                "no new frame since the last read"
                 if fr is None
                 else describe(fr, args.anchor_lat, args.anchor_lon)
             )
