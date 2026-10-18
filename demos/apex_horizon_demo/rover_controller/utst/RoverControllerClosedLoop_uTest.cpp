@@ -10,7 +10,9 @@
  *
  * Coverage:
  *   - The seam: an attached but not-yet-driving block leaves the plant
- *     on its built-in trajectory; a valid block replaces it.
+ *     on its built-in trajectory; a valid block replaces it; the plant
+ *     holds the controller's own typed command, which mirrors the
+ *     OUTPUT head after every step and every arrival reset.
  *   - HOLD keeps the rover at rest; TRAJECTORY reproduces the plant's
  *     own circle.
  *   - WAYPOINT: a leg north arrives inside tolerance without overshoot
@@ -83,10 +85,31 @@ struct Rig {
   void north_east(double& n, double& e) const { ctl.gridPosition(n, e); }
 };
 
+/// Every field of the plant's drive command equals the OUTPUT head's.
+void expectCommandMirrorsOutput(const appsim::ground_vehicle::GroundVehicleDriveCommand& cmd,
+                                const appsim::rover_controller::RoverControllerOutput& out) {
+  EXPECT_EQ(cmd.steer_angle_deg, out.steer_angle_deg);
+  EXPECT_EQ(cmd.throttle_frac, out.throttle_frac);
+  EXPECT_EQ(cmd.valid, out.valid);
+  EXPECT_EQ(cmd.mode, out.mode);
+  EXPECT_EQ(cmd.arrived, out.arrived);
+  EXPECT_EQ(cmd.board_link, out.board_link);
+  EXPECT_EQ(cmd.board_load_pct, out.board_load_pct);
+  EXPECT_EQ(cmd.lidar_state, out.lidar_state);
+  EXPECT_EQ(cmd.board_tick, out.board_tick);
+  EXPECT_EQ(cmd.lidar_hit_bits, out.lidar_hit_bits);
+  EXPECT_EQ(cmd.lidar_nearest_m, out.lidar_nearest_m);
+  EXPECT_EQ(cmd.lidar_scan_seq, out.lidar_scan_seq);
+}
+
 } // namespace
 
 /* ----------------------------- The seam ----------------------------- */
 
+/**
+ * @test An attached command that is not yet valid leaves the plant on its built-in trajectory,
+ *       so wiring a controller changes nothing until it actually drives.
+ */
 TEST(RoverControllerSeam, InvalidBlockLeavesTrajectoryDriving) {
   Rig rig(45.0);
   // Never step the controller: its block stays valid = 0.
@@ -141,8 +164,62 @@ TEST(RoverControllerSeam, TrajectoryModeDrivesASteeredCircle) {
   EXPECT_NE(H2, H1);
 }
 
+/**
+ * @test The plant holds the controller's own typed command, and it carries
+ *       the OUTPUT head after every step.
+ */
+TEST(RoverControllerSeam, PlantReadsTheCommandTheControllerWrote) {
+  Rig rig(0.0);
+  rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
+  EXPECT_EQ(rig.rover.driveCommand(), rig.ctl.driveCommand());
+  EXPECT_NE(static_cast<const void*>(rig.ctl.driveCommand()),
+            static_cast<const void*>(&rig.ctl.controllerOutput()));
+  rig.tick();
+  rig.ctl.setTargetRel(0.0, 12.0); // Abeam: full lock, a crawl, then arrival.
+  bool steered = false;
+  for (int i = 0; i < 400; ++i) {
+    rig.tick();
+    const auto& CMD = *rig.rover.driveCommand();
+    expectCommandMirrorsOutput(CMD, rig.ctl.controllerOutput());
+    EXPECT_EQ(CMD.valid, 1u);
+    EXPECT_EQ(CMD.mode, static_cast<std::uint8_t>(DriveMode::WAYPOINT));
+    steered = steered || (CMD.steer_angle_deg != 0.0 && CMD.throttle_frac > 0.0);
+  }
+  EXPECT_TRUE(steered) << "the plant saw a turning command";
+  EXPECT_EQ(rig.rover.driveCommand()->arrived, 1u);
+}
+
+/**
+ * @test Clearing the arrival latch between steps reaches the plant's
+ *       command at once, and a later arrival latches it again.
+ */
+TEST(RoverControllerSeam, ArrivalResetReachesThePlantsCommandWithoutAStep) {
+  Rig rig(0.0);
+  rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
+  rig.tick();
+  rig.ctl.setTargetRel(10.0, 0.0);
+  rig.run(300);
+  const auto& CMD = *rig.ctl.driveCommand();
+  ASSERT_EQ(CMD.arrived, 1u);
+
+  rig.ctl.setTargetRel(10.0, 0.0); // A new target clears the latch.
+  EXPECT_EQ(CMD.arrived, 0u);
+  expectCommandMirrorsOutput(CMD, rig.ctl.controllerOutput());
+
+  rig.run(300);
+  ASSERT_EQ(CMD.arrived, 1u) << "the next leg latches arrival again";
+
+  rig.ctl.setMode(DriveMode::HOLD); // Leaving WAYPOINT clears it too.
+  EXPECT_EQ(CMD.arrived, 0u);
+  expectCommandMirrorsOutput(CMD, rig.ctl.controllerOutput());
+}
+
 /* ----------------------------- WAYPOINT ----------------------------- */
 
+/**
+ * @test A straight leg ramps to cruise, brakes onto the target without overshoot and latches
+ *       arrival at rest: the speed profile lands where it was told to.
+ */
 TEST(RoverControllerWaypoint, LegNorthRampsCruisesBrakesAndLatches) {
   Rig rig(0.0);
   rig.ctl.tunables().get().boot_mode = static_cast<std::uint8_t>(DriveMode::WAYPOINT);
@@ -397,6 +474,10 @@ TEST(RoverControllerWaypoint, HoldModeIgnoresTheTarget) {
 
 /* ----------------------------- Wire adoption ----------------------------- */
 
+/**
+ * @test Wire mode and target commands take effect once on the next step and are not
+ *       re-applied, so a direct setMode between commands keeps control.
+ */
 TEST(RoverControllerAdoption, CommandedModeAndTargetAreAdoptedEdgeTriggered) {
   using appsim::ground_vehicle::RoverCmdSetTarget;
   using appsim::ground_vehicle::RoverOpcode;

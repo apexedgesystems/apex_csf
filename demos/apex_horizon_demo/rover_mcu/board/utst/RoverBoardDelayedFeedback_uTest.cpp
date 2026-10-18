@@ -28,6 +28,9 @@
  *    reply lost, the link still UP -- lands at a speed the board never
  *    saw; the controller re-bounds the lock at consumption, so the rate
  *    holds on every plant step through that too.
+ *  - That consumption bound belongs to WAYPOINT: a board TRAJECTORY
+ *    reaches the plant at its constant steering angle at cruise, where
+ *    the yaw bound would otherwise cut it.
  */
 
 #include "demos/apex_horizon_demo/ground_vehicle/inc/GroundVehicle.hpp"
@@ -108,6 +111,15 @@ public:
     // mode, so a target set before that would be overwritten.
     (void)rover_.vehicleStep();
     linkTick();
+  }
+
+  void setMode(DriveMode mode) noexcept { controller_.setMode(mode); }
+
+  /// The board's constant TRAJECTORY steering angle [deg].
+  void setBoardTrajectorySteer(double steer_deg) noexcept {
+    BoardTunables bt = board_.tunables();
+    bt.trajectory_steer_deg = steer_deg;
+    board_.setTunables(bt);
   }
 
   void setTargetAbs(double north_m, double east_m) noexcept {
@@ -203,6 +215,9 @@ public:
     return controller_.controllerOutput().arrived != 0u;
   }
   [[nodiscard]] double maxYawRateDegS() const noexcept { return max_yaw_rate_deg_s_; }
+  /// The board command the controller consumed on the last link tick.
+  [[nodiscard]] const BoardCommand& consumedCommand() const noexcept { return snapshot_.cmd; }
+  [[nodiscard]] const GroundVehicle& rover() const noexcept { return rover_; }
 
 private:
   static constexpr double ANCHOR_LAT_DEG = 39.5;
@@ -352,6 +367,36 @@ TEST(RoverBoardDelayedFeedback, LateTurnReplyAfterARetargetMidRunUpLandsWithinTh
       EXPECT_LE(rig.maxYawRateDegS(), 15.0)
           << "retarget at tick " << retargetTick << " to the " << (SIDE > 0 ? "east" : "west")
           << " turned at " << rig.maxYawRateDegS() << " deg/s with its first reply late";
+    }
+  }
+}
+
+/**
+ * @test Board TRAJECTORY at the shipped cruise speed reaches the plant at
+ *       exactly the board's constant steering angle, either sign.
+ */
+TEST(RoverBoardDelayedFeedback, BoardTrajectoryKeepsItsConstantSteerAtCruise) {
+  // Shipped defaults: 0.6 throttle of an 8 m/s plant is 4.8 m/s, where
+  // the 15 deg/s waypoint yaw bound on a 1.5 m wheelbase would allow
+  // only about 4.6 deg. The circle is defined by its 5-degree angle, so
+  // nothing between the board and the plant may change it. The WAYPOINT
+  // side of the same consumption bound is the two late-reply cases above.
+  for (const double STEER : {5.0, -5.0}) {
+    LinkedRig rig(0.0);
+    rig.setBoardTrajectorySteer(STEER);
+    rig.setMode(DriveMode::TRAJECTORY);
+    for (int t = 0; t < 200; ++t) { // 10 s: the run-up to cruise and beyond.
+      rig.linkTick();
+    }
+    EXPECT_NEAR(rig.rover().telemetry().speed_m_s, 4.8, 0.05) << "at cruise";
+    for (int t = 0; t < 40; ++t) {
+      rig.linkTick();
+      const auto& CMD = *rig.rover().driveCommand();
+      ASSERT_EQ(rig.consumedCommand().mode, appsim::rover_board::MODE_TRAJECTORY);
+      EXPECT_EQ(static_cast<double>(rig.consumedCommand().steer_deg), STEER);
+      EXPECT_EQ(CMD.steer_angle_deg, STEER)
+          << "tick " << t << " at " << rig.rover().telemetry().speed_m_s << " m/s";
+      EXPECT_EQ(CMD.mode, appsim::rover_board::MODE_TRAJECTORY);
     }
   }
 }

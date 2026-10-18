@@ -132,12 +132,12 @@ struct RoverControllerState {
 
 /**
  * @brief Controller OUTPUT: the drive command the plant consumes plus
- * diagnostics. The drive command head is laid out exactly as
- * GroundVehicleDriveCommand so the plant can be handed a pointer to
- * this block's head.
+ * diagnostics. The controller copies the drive-command head into the
+ * GroundVehicleDriveCommand it hands the plant whenever the head
+ * changes; the fields carry the same names and meanings.
  */
 struct RoverControllerOutput {
-  /* ---- Drive command (consumed by GroundVehicle; layout pinned) ---- */
+  /* ---- Drive command (mirrored to GroundVehicle's drive command) ---- */
   double steer_angle_deg{0.0};
   double throttle_frac{0.0};
   std::uint8_t valid{0};

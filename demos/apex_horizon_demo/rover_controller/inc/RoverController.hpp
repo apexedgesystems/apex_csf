@@ -36,7 +36,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 #include <fmt/format.h>
@@ -46,47 +45,6 @@ namespace appsim {
 namespace rover_controller {
 
 using ApexStatus = system_core::system_component::Status;
-
-static_assert(offsetof(RoverControllerOutput, steer_angle_deg) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, steer_angle_deg),
-              "drive command head must alias GroundVehicleDriveCommand");
-static_assert(offsetof(RoverControllerOutput, throttle_frac) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, throttle_frac),
-              "drive command head must alias GroundVehicleDriveCommand");
-static_assert(offsetof(RoverControllerOutput, valid) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, valid),
-              "drive command head must alias GroundVehicleDriveCommand");
-static_assert(offsetof(RoverControllerOutput, mode) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, mode),
-              "drive command head must alias GroundVehicleDriveCommand");
-static_assert(offsetof(RoverControllerOutput, arrived) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, arrived),
-              "drive command head must alias GroundVehicleDriveCommand");
-static_assert(offsetof(RoverControllerOutput, board_link) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, board_link),
-              "drive command head must alias GroundVehicleDriveCommand");
-static_assert(offsetof(RoverControllerOutput, board_load_pct) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, board_load_pct),
-              "drive command head must alias GroundVehicleDriveCommand");
-static_assert(offsetof(RoverControllerOutput, board_tick) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, board_tick),
-              "drive command head must alias GroundVehicleDriveCommand");
-static_assert(offsetof(RoverControllerOutput, lidar_state) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, lidar_state),
-              "drive command head must alias GroundVehicleDriveCommand");
-static_assert(offsetof(RoverControllerOutput, lidar_hit_bits) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, lidar_hit_bits),
-              "drive command head must alias GroundVehicleDriveCommand");
-static_assert(offsetof(RoverControllerOutput, lidar_nearest_m) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, lidar_nearest_m),
-              "drive command head must alias GroundVehicleDriveCommand");
-static_assert(offsetof(RoverControllerOutput, lidar_scan_seq) ==
-                  offsetof(ground_vehicle::GroundVehicleDriveCommand, lidar_scan_seq),
-              "drive command head must alias GroundVehicleDriveCommand");
-static_assert(sizeof(ground_vehicle::GroundVehicleDriveCommand) == 32,
-              "the drive command head is 32 bytes");
-static_assert(offsetof(RoverControllerOutput, tick) == 32,
-              "diagnostics start after the drive command head");
 
 class RoverController final : public system_core::system_component::SwModelBase {
 public:
@@ -118,9 +76,17 @@ public:
   void setVehicle(const ground_vehicle::GroundVehicle* vehicle) noexcept { vehicle_ = vehicle; }
   [[nodiscard]] const ground_vehicle::GroundVehicle* vehicle() const noexcept { return vehicle_; }
 
-  /// The block to hand the plant (`GroundVehicle::setDriveCommand`).
+  /**
+   * @brief The command to hand the plant (`GroundVehicle::setDriveCommand`).
+   *
+   * A GroundVehicleDriveCommand this controller owns for its lifetime,
+   * holding the drive-command head of the OUTPUT block. It is refreshed
+   * at the end of every step and wherever the head changes between
+   * steps (the arrival latch cleared by a mode or target change), so the
+   * plant reads exactly what the OUTPUT block carries.
+   */
   [[nodiscard]] const ground_vehicle::GroundVehicleDriveCommand* driveCommand() const noexcept {
-    return reinterpret_cast<const ground_vehicle::GroundVehicleDriveCommand*>(&output_.get());
+    return &command_;
   }
 
   [[nodiscard]] system_core::data::TunableParam<RoverControllerTunables>& tunables() noexcept {
@@ -152,6 +118,7 @@ public:
     if (mode != DriveMode::WAYPOINT) {
       host_arrived_ = 0u;
       output_.get().arrived = 0u;
+      publishCommand();
     }
   }
 
@@ -167,6 +134,7 @@ public:
     host_arrived_ = 0u;
     s.leg_phase = 0u;
     output_.get().arrived = 0u;
+    publishCommand();
   }
 
   /// Target displaced (north, east) metres from where the rover is now.
@@ -259,13 +227,15 @@ public:
       const auto& CMD = board_->cmd;
       steer = UP ? static_cast<double>(CMD.steer_deg) : 0.0;
       throttle = UP ? static_cast<double>(CMD.throttle_frac) : 0.0;
-      // The board bounded its lock against the speed it sampled plus one
-      // link tick of acceleration. A reply the link accepts later than
-      // that -- held a tick, the next one lost -- lands at a speed the
-      // board never saw, so the bound is applied again here, at
-      // consumption, against the plant's speed now plus what it can gain
-      // while this command holds (one controller step).
-      if (UP && vehicle_ != nullptr) {
+      // In WAYPOINT the board bounded its lock against the speed it
+      // sampled plus one link tick of acceleration. A reply the link
+      // accepts later than that -- held a tick, the next one lost -- lands
+      // at a speed the board never saw, so the bound is applied again
+      // here, at consumption, against the plant's speed now plus what it
+      // can gain while this command holds (one controller step). The yaw
+      // bound is the WAYPOINT guidance contract; TRAJECTORY's constant
+      // steering angle is forwarded as the board sent it.
+      if (UP && vehicle_ != nullptr && CMD.mode == rover_board::MODE_WAYPOINT) {
         const double HOLD_S = (p.step_hz > 0u) ? (1.0 / static_cast<double>(p.step_hz)) : 0.0;
         const double V_HOLD = vehicle_->telemetry().speed_m_s + p.accel_m_s2 * HOLD_S;
         const GuidanceTunables G{
@@ -312,6 +282,7 @@ public:
     out.valid = (vehicle_ != nullptr) ? 1u : 0u;
     out.tick = s.tick_count;
     ++s.tick_count;
+    publishCommand();
     return 0u;
   }
 
@@ -389,6 +360,23 @@ protected:
   }
 
 private:
+  /// Copy the OUTPUT block's drive-command head into the plant's command.
+  void publishCommand() noexcept {
+    const auto& OUT = output_.get();
+    command_.steer_angle_deg = OUT.steer_angle_deg;
+    command_.throttle_frac = OUT.throttle_frac;
+    command_.valid = OUT.valid;
+    command_.mode = OUT.mode;
+    command_.arrived = OUT.arrived;
+    command_.board_link = OUT.board_link;
+    command_.board_load_pct = OUT.board_load_pct;
+    command_.lidar_state = OUT.lidar_state;
+    command_.board_tick = OUT.board_tick;
+    command_.lidar_hit_bits = OUT.lidar_hit_bits;
+    command_.lidar_nearest_m = OUT.lidar_nearest_m;
+    command_.lidar_scan_seq = OUT.lidar_scan_seq;
+  }
+
   void waypointLaw(RoverControllerState& s, RoverControllerOutput& out,
                    const RoverControllerTunables& p, double n, double e, double& steer,
                    double& throttle) noexcept {
@@ -427,6 +415,8 @@ private:
   system_core::data::TunableParam<RoverControllerTunables> tunables_{};
   system_core::data::State<RoverControllerState> state_{};
   system_core::data::Output<RoverControllerOutput> output_{};
+  /// The plant's view of the OUTPUT head (see `driveCommand`).
+  ground_vehicle::GroundVehicleDriveCommand command_{};
 };
 
 } // namespace rover_controller
