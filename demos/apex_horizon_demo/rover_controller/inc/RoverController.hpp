@@ -169,7 +169,8 @@ public:
 
   /* ----------------------------- Tasks ----------------------------- */
 
-  /// One control step at the plant's cadence. Returns 0 unconditionally.
+  /// One control step at the controller's 20 Hz cadence. Returns 0
+  /// unconditionally.
   std::uint8_t controllerStep() noexcept {
     auto& s = state_.get();
     auto& out = output_.get();

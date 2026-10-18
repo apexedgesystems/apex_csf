@@ -19,12 +19,18 @@ runs headless just as happily.
 
 The master packs the shared earth world, whose two data files are
 generated and never committed. Provide them once, before configuring
-the build, following the
-[world-artifact setup](../rover_terrain/docs/HOW_TO_RUN.md#one-time-setup-the-world-artifacts),
-at the paths `worlds.manifest` names:
+the build. Horizon's `horizon_2` repository produces both; from its
+root, `make compose-rover-terrain-artifact` creates
+`demos/rover_terrain/data/alpha_patch_lod4.htile` and
+`make compose-aircraft-world-artifacts` creates
+`demos/aircraft_atmo/data/earth_ussa76.atm`. Copy each to the path
+`worlds.manifest` names here:
 
-- `demos/apex_horizon_demo/aircraft_atmo/data/earth_ussa76.atm`
-- `demos/apex_horizon_demo/rover_terrain/data/alpha_patch_lod4.htile`
+- `earth_ussa76.atm` to `demos/apex_horizon_demo/aircraft_atmo/data/earth_ussa76.atm`
+- `alpha_patch_lod4.htile` to `demos/apex_horizon_demo/rover_terrain/data/alpha_patch_lod4.htile`
+
+The [world-artifact setup](../rover_terrain/docs/HOW_TO_RUN.md#one-time-setup-the-world-artifacts)
+describes what each file holds.
 
 Without them everything else builds, but configure leaves the demo's
 master.tprm out of the build and names the missing files; add them and

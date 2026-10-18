@@ -90,7 +90,10 @@ any such change is called out explicitly in its entry.
   one thread frames both pushed telemetry and command replies. Breaking:
   `TaskEntry::isRunning` is replaced by an in-flight count; migrate to
   `stillRunning()`, `inFlightCount()`, `markDispatched()`,
-  `markCompleted()` and `unmarkDispatched()`, and rebuild dependent code
+  `markCompleted()` and `unmarkDispatched()`. Copies of
+  `ApexInterface::stats()` must use `statsSnapshot()` (the counters are
+  atomics now), and `getHealthPacket()` returns a value to own rather
+  than a reference to borrow; rebuild dependent code
   ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
 - Scheduler task rates with a denominator above one ran at the wrong
   rate: the denominator was applied twice (placement stride and a

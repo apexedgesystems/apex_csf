@@ -70,10 +70,10 @@ void ApexExecutive::startup(std::promise<std::uint8_t>&& p) noexcept {
       std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
   startupCompletedNs_.store(nowNs, std::memory_order_release);
 
-  // Signal the threads waiting for startup. The flag is set under the
-  // mutex their predicate waits hold, so the store cannot land between a
-  // waiter's check of the flag and its block: a notify sent in that gap
-  // reaches no one, and the waiter sleeps until shutdown.
+  // Signal the threads waiting for startup. This store takes the mutex
+  // their predicate waits hold, so it cannot land between a waiter's
+  // check of the flag and its block: a notify sent in that gap reaches
+  // no one, and the waiter sleeps until shutdown.
   {
     const std::lock_guard<std::mutex> lock(cvMutex_);
     controlState_.startupRequested.store(true, std::memory_order_release);

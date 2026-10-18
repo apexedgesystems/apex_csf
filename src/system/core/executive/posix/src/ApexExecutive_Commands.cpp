@@ -37,8 +37,7 @@ using system_core::system_component::CommandResult;
 ExecutiveHealthPacket ApexExecutive::getHealthPacket() const noexcept {
   // A snapshot of the live counters, built in a local and returned by
   // value: any thread may call this at any time without touching state
-  // another caller could be writing. The registered INSPECT block is
-  // refreshed from such a snapshot by the I/O thread alone.
+  // another caller could be writing.
   ExecutiveHealthPacket packet{};
   packet.clockCycles = clockState_.cycles.load(std::memory_order_acquire);
   packet.clockFrequencyHz = clockFrequency_;
@@ -80,8 +79,10 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     // === Query commands (no payload, return data) ===
 
   case static_cast<std::uint16_t>(Opcode::GET_HEALTH): {
-    // Return the 48-byte health packet. This runs on the I/O thread, the
-    // one writer of the registered INSPECT block, which it refreshes here.
+    // Return the 48-byte health packet and refresh the registered INSPECT
+    // block from the same snapshot. Wire commands reach this on the I/O
+    // thread; a direct action COMMAND to the executive reaches it on the
+    // task thread.
     healthPacket_ = getHealthPacket();
     response.resize(sizeof(ExecutiveHealthPacket));
     std::memcpy(response.data(), &healthPacket_, sizeof(ExecutiveHealthPacket));
@@ -595,9 +596,9 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     restartDidSwapBinary_ = didSwapBinary;
     // Wake a paused clock: the SAFE ingest hold (and any pause) repairs
     // through RELOAD_EXECUTIVE, so the pending restart must not wait for
-    // a resume that will never come. The flag is set under the mutex
-    // the clock's pause wait holds, so the store cannot land between
-    // its check and its block.
+    // a resume that will never come. This store takes the mutex the
+    // clock's pause wait holds, so it cannot land between that wait's
+    // check and its block.
     {
       const std::lock_guard<std::mutex> lock(cvMutex_);
       controlState_.restartPending.store(true, std::memory_order_release);

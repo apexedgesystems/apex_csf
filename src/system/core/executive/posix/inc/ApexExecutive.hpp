@@ -625,11 +625,14 @@ private:
   ProfilingState profilingState_{}; ///< Profiling subsystem state.
 
   // Output packet (populated on demand, registered as OUTPUT for INSPECT)
-  /// The health block registered for INSPECT readback. Written by one
-  /// thread only -- the I/O thread, on each GET_HEALTH -- and read by
-  /// that thread's INSPECT, so the block never tears; init writes the
-  /// first snapshot before any thread starts. Every other reader takes
-  /// its own snapshot from getHealthPacket().
+  /// The health block registered for INSPECT readback. Init writes the
+  /// first snapshot before any thread starts; afterwards the GET_HEALTH
+  /// handler refreshes it on whichever thread dispatches that command:
+  /// the I/O thread for wire commands, the task thread for a direct
+  /// action COMMAND aimed at the executive. The I/O thread's INSPECT
+  /// reads it as last refreshed and does not refresh it; a task-thread
+  /// refresh is not serialized against that read. Callers wanting a
+  /// snapshot of their own take one from getHealthPacket().
   ExecutiveHealthPacket healthPacket_{};
 
   // Registered components (for auto-configuration after interface init)
