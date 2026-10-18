@@ -30,6 +30,7 @@
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/IInternalBus.hpp"
 
+#include <atomic>
 #include <cstdint>
 
 #include <array>
@@ -346,32 +347,69 @@ public:
   /* ----------------------------- Statistics ----------------------------- */
 
   /// Statistics counters for command/telemetry tracking.
+  /**
+   * @struct Stats
+   * @brief Live counters. Each is written by whichever thread runs the
+   *        path it counts -- the I/O thread for the wire and the pushed
+   *        telemetry it frames, the task thread or a worker for the
+   *        internal bus -- and read by GET_STATS on the task thread, by
+   *        the legacy raw snapshot and by the shutdown summary. Each is
+   *        a relaxed atomic: a reader takes a torn-free value per field
+   *        with no ordering claimed between fields. `snapshot()` is the
+   *        plain copy for the wire.
+   */
   struct Stats {
-    // External interface
-    std::uint32_t packetsReceived{0}; ///< Valid APROTO packets received from socket.
-    std::uint32_t packetsInvalid{0};  ///< Invalid packets (too small, parse error).
-    std::uint32_t systemCommands{0};  ///< System opcodes handled (NOOP, PING, etc.).
-    std::uint32_t routedCommands{0};  ///< Commands routed to components.
-    std::uint32_t responsesQueued{0}; ///< ACK/NAK responses queued.
-    std::uint32_t telemetryFrames{0}; ///< Telemetry frames transmitted to socket.
-    std::uint32_t framingErrors{0};   ///< Framing decode errors (SLIP/COBS).
+    std::atomic<std::uint32_t> packetsReceived{0}; ///< Valid APROTO packets received from socket.
+    std::atomic<std::uint32_t> packetsInvalid{0};  ///< Invalid packets (too small, parse error).
+    std::atomic<std::uint32_t> systemCommands{0};  ///< System opcodes handled (NOOP, PING, etc.).
+    std::atomic<std::uint32_t> routedCommands{0};  ///< Commands routed to components.
+    std::atomic<std::uint32_t> responsesQueued{0}; ///< ACK/NAK responses queued.
+    std::atomic<std::uint32_t> telemetryFrames{0}; ///< Telemetry frames transmitted to socket.
+    std::atomic<std::uint32_t> framingErrors{0};   ///< Framing decode errors (SLIP/COBS).
+    std::atomic<std::uint32_t> internalCommandsSent{
+        0}; ///< Internal commands posted (model-to-model).
+    std::atomic<std::uint32_t> internalTelemetrySent{
+        0}; ///< Internal telemetry posted (model-to-external).
+    std::atomic<std::uint32_t> internalCommandsFailed{
+        0}; ///< Internal commands failed (queue full or not found).
+    std::atomic<std::uint32_t> multicastCommandsSent{0}; ///< Multicast commands posted.
+    std::atomic<std::uint32_t> broadcastCommandsSent{0}; ///< Broadcast commands posted.
+    std::atomic<std::uint32_t> cmdQueueOverflows{0};     ///< Command inbox full events.
+    std::atomic<std::uint32_t> completionDrops{
+        0}; ///< Completion outbox full events (outcome lost).
+    std::atomic<std::uint32_t> tlmQueueOverflows{0}; ///< Telemetry outbox full events.
+  };
 
-    // Internal bus
+  /**
+   * @struct StatsSnapshot
+   * @brief Plain copy of the counters in declaration order: the wire
+   *        form of the legacy raw statistics reply (15 x uint32).
+   */
+  struct StatsSnapshot {
+    std::uint32_t packetsReceived{0};       ///< Valid APROTO packets received from socket.
+    std::uint32_t packetsInvalid{0};        ///< Invalid packets (too small, parse error).
+    std::uint32_t systemCommands{0};        ///< System opcodes handled (NOOP, PING, etc.).
+    std::uint32_t routedCommands{0};        ///< Commands routed to components.
+    std::uint32_t responsesQueued{0};       ///< ACK/NAK responses queued.
+    std::uint32_t telemetryFrames{0};       ///< Telemetry frames transmitted to socket.
+    std::uint32_t framingErrors{0};         ///< Framing decode errors (SLIP/COBS).
     std::uint32_t internalCommandsSent{0};  ///< Internal commands posted (model-to-model).
     std::uint32_t internalTelemetrySent{0}; ///< Internal telemetry posted (model-to-external).
     std::uint32_t internalCommandsFailed{
         0};                                 ///< Internal commands failed (queue full or not found).
     std::uint32_t multicastCommandsSent{0}; ///< Multicast commands posted.
     std::uint32_t broadcastCommandsSent{0}; ///< Broadcast commands posted.
-
-    // Queue health
-    std::uint32_t cmdQueueOverflows{0}; ///< Command inbox full events.
-    std::uint32_t completionDrops{0};   ///< Completion outbox full events (outcome lost).
-    std::uint32_t tlmQueueOverflows{0}; ///< Telemetry outbox full events.
+    std::uint32_t cmdQueueOverflows{0};     ///< Command inbox full events.
+    std::uint32_t completionDrops{0};       ///< Completion outbox full events (outcome lost).
+    std::uint32_t tlmQueueOverflows{0};     ///< Telemetry outbox full events.
   };
+  static_assert(sizeof(StatsSnapshot) == 15U * sizeof(std::uint32_t));
 
-  /** @brief Get current statistics (read-only). */
+  /** @brief Live counters (read-only; each field loads atomically). */
   [[nodiscard]] const Stats& stats() const noexcept { return stats_; }
+
+  /** @brief Plain copy of every counter, one relaxed load per field. */
+  [[nodiscard]] StatsSnapshot statsSnapshot() const noexcept;
 
   /** @brief Log statistics summary. Call during shutdown. */
   void logStatsSummary() noexcept;
