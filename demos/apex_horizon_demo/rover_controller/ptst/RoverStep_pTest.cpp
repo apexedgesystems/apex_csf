@@ -8,7 +8,7 @@
  * the 20 Hz trace capture. The loops isolate what the branch added:
  * the plant idle at 100 Hz (lidar every 10th step as the demo runs),
  * the same step with both lamps strobing and a sequence tracing
- * (drained through a real component log at 1 Hz), and the 10 Hz
+ * (drained through a real component log at 1 Hz), and the 20 Hz
  * controller step in WAYPOINT mode.
  */
 
@@ -128,7 +128,7 @@ PERF_TEST(RoverStep, PlantLampsAndTrace) {
   std::filesystem::remove_all(LOG_DIR, ec);
 }
 
-PERF_TEST(RoverStep, ControllerWaypoint10Hz) {
+PERF_TEST(RoverStep, ControllerWaypoint20Hz) {
   UB_PERF_GUARD(perf);
   Rig rig;
   if (!rig.init()) {

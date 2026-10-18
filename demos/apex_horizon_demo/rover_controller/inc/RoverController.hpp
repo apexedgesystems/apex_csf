@@ -7,11 +7,13 @@
  *
  * Reads the GroundVehicle's telemetry (pose on the body), works in a
  * local north/east grid about an anchor, and writes a drive command
- * (steer rate + throttle) the plant consumes. The wiring is direct
- * (`setVehicle`, and the plant is handed `driveCommand()`), as the
- * aircraft's controller is wired, so the same component runs on the
- * host in the software-in-the-loop form and its `controllerStep` is
- * the task the board firmware runs in the hardware form.
+ * (steering angle + throttle) the plant consumes. It steps at 20 Hz
+ * beside the plant's 100 Hz. The wiring is direct (`setVehicle`, and
+ * the plant is handed `driveCommand()`), as the aircraft's controller
+ * is wired. With a board on the link, the board runs the same guidance
+ * law (`RoverGuidance.hpp`) in its own controller and this component
+ * forwards the board's command to the plant, running the host law
+ * beside it as a shadow; without one, this component drives.
  *
  * WAYPOINT law: pure pursuit onto a lookahead point on the bearing to
  * the target (steering angle from the plant's wheelbase, so corners
@@ -99,7 +101,7 @@ public:
   [[nodiscard]] const char* label() const noexcept override { return "ROVER_CTL"; }
 
   enum class TaskUid : std::uint8_t {
-    CONTROLLER_STEP = 1, ///< 10 Hz, the plant's cadence.
+    CONTROLLER_STEP = 1, ///< 20 Hz (`step_hz`); the plant steps at 100 Hz.
     TELEMETRY = 2,       ///< 1 Hz log line.
   };
 

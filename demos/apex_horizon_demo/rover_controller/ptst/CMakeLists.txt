@@ -2,7 +2,7 @@
 # Performance Tests: apex_horizon_demo_rover_controller
 #
 # Per-tick cost of the rover plant at 100 Hz (with and without the strobe and
-# the sequence trace running) and the 10 Hz controller step.
+# the sequence trace running) and the 20 Hz controller step.
 # ==============================================================================
 
 include(apex/All)
