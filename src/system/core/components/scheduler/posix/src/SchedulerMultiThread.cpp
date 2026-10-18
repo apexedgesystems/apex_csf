@@ -24,6 +24,7 @@
 #include <thread>
 
 #include <fmt/core.h>
+#include <chrono>
 
 namespace system_core {
 namespace scheduler {
@@ -388,7 +389,22 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
 
 bool SchedulerMultiThread::waitForInFlightTasks(std::uint64_t timeoutNs) noexcept {
   const std::uint64_t DEADLINE = apex::helpers::cpu::getMonotonicNs() + timeoutNs;
+  // Two phases. A short spin catches the common case, a task that
+  // completes within tens of microseconds of its dispatch, without a
+  // sleep's latency. Past the spin the waiter sleeps in slices that
+  // double from SLEEP_MIN_NS to SLEEP_MAX_NS and never run past the
+  // deadline: a worker that shares this CPU gets it while the wait
+  // holds. A waiter that kept spinning would keep the very worker it
+  // waits for off a shared core, and under ordinary scheduling would
+  // cost a core's worth of CPU for every held frame. A sleep gives the
+  // CPU up under every scheduling policy, where a yield does not under
+  // a real-time one. The bound on detection latency once sleeping is
+  // one slice; the deadline bounds the whole wait as before.
+  constexpr unsigned SPIN_LIMIT = 1024U; // ~2k relax iterations in all
+  constexpr std::uint64_t SLEEP_MIN_NS = 20000U;
+  constexpr std::uint64_t SLEEP_MAX_NS = 250000U;
   apex::helpers::cpu::ExponentialBackoff bk;
+  std::uint64_t sleepNs = 0U;
   for (;;) {
     bool pending = false;
     for (const TaskEntry& entry : entries_) {
@@ -408,11 +424,18 @@ bool SchedulerMultiThread::waitForInFlightTasks(std::uint64_t timeoutNs) noexcep
     if (stopping_.load(std::memory_order_acquire)) {
       return false;
     }
-    if (apex::helpers::cpu::getMonotonicNs() >= DEADLINE) {
+    const std::uint64_t NOW = apex::helpers::cpu::getMonotonicNs();
+    if (NOW >= DEADLINE) {
       totalInFlightWaitTimeouts_.fetch_add(1U, std::memory_order_relaxed);
       return false;
     }
-    bk.spinOnce();
+    if (bk.n < SPIN_LIMIT) {
+      bk.spinOnce();
+      continue;
+    }
+    sleepNs = (sleepNs == 0U) ? SLEEP_MIN_NS : std::min(sleepNs * 2U, SLEEP_MAX_NS);
+    const std::uint64_t SLICE_NS = std::min(sleepNs, DEADLINE - NOW);
+    std::this_thread::sleep_for(std::chrono::nanoseconds(SLICE_NS));
   }
 }
 
