@@ -280,26 +280,25 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
       }
     }
     const bool BACKLOG = !coherent || tickCycles != taskCycles + 1U;
-    std::uint64_t barrierNs = 0U;
+    // The wait's end is an instant on the clock's grid, handed to the
+    // scheduler as that instant: whatever holds this thread between here
+    // and the wait is taken from the frame, never added to it, and a
+    // frame already over is a poll. A cycle behind gets no frame at all.
+    std::uint64_t waitEndNs = 0U;
     if (BACKLOG) {
       actionWaitBacklogPolls_.fetch_add(1U, std::memory_order_relaxed);
     } else {
-      const std::uint64_t TICK_NS = static_cast<std::uint64_t>(tickStampNs);
-      const std::uint64_t NOW_NS =
-          static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-                                         std::chrono::steady_clock::now().time_since_epoch())
-                                         .count());
-      const std::uint64_t WAIT_END_NS = TICK_NS + PERIOD_NS - PHASE_RESERVE_NS;
-      barrierNs = (WAIT_END_NS > NOW_NS) ? (WAIT_END_NS - NOW_NS) : 0U;
+      waitEndNs = static_cast<std::uint64_t>(tickStampNs) + PERIOD_NS - PHASE_RESERVE_NS;
     }
-    const std::uint64_t BARRIER_NS = barrierNs;
+    const std::uint64_t WAIT_END_NS = waitEndNs;
+    onWaitDeadlineSelected(taskCycles, WAIT_END_NS);
     // Whether this cycle starts behind is read again here, plainly and
     // apart from the budget logic above, so the wait it is then granted
     // is recorded whatever that logic decided.
     const bool BEHIND_AT_WAIT =
         clockState_.cycles.load(std::memory_order_acquire) > taskCycles + 1U;
     const std::uint64_t WAIT_START_NS = apex::helpers::cpu::getMonotonicNs();
-    const bool TASKS_DONE = scheduler_.waitForInFlightTasks(BARRIER_NS);
+    const bool TASKS_DONE = scheduler_.waitForInFlightTasksUntil(WAIT_END_NS);
     if (BEHIND_AT_WAIT) {
       const std::uint64_t WAITED_NS = apex::helpers::cpu::getMonotonicNs() - WAIT_START_NS;
       if (WAITED_NS > actionWaitBehindMaxNs_.load(std::memory_order_relaxed)) {

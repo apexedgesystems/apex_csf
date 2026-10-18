@@ -32,6 +32,7 @@
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
+#include "src/utilities/helpers/inc/Cpu.hpp"
 #include "src/system/core/executive/posix/inc/ExecutiveState.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
@@ -121,9 +122,24 @@ public:
 
   HeldStepModel model;
 
+  /// Armed, the next cycle that selects a wait of over 5 ms is held for
+  /// 20 ms at the seam between selecting its deadline and waiting on
+  /// it: a preemption there, two ticks long, on demand.
+  std::atomic<bool> holdAtSelection{false};
+  std::atomic<unsigned> heldAtSelection{0};
+
 protected:
   [[nodiscard]] bool registerComponents() noexcept override {
     return registerComponent(&model, fileSystem().logDir());
+  }
+
+  void onWaitDeadlineSelected(std::uint64_t, std::uint64_t waitEndNs) noexcept override {
+    if (holdAtSelection.load(std::memory_order_acquire) &&
+        waitEndNs > apex::helpers::cpu::getMonotonicNs() + 5'000'000ULL) {
+      holdAtSelection.store(false, std::memory_order_release);
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      heldAtSelection.fetch_add(1u, std::memory_order_acq_rel);
+    }
   }
 };
 
@@ -385,4 +401,49 @@ TEST_F(ExecutiveActionGateTest, StallDrainsTheBacklogWithoutGrantingOldCyclesAFr
   EXPECT_LE(exec_->actionPhaseSkips() - SKIPS_AT_PACE, HOST_HOLDS_TOLERATED);
   const auto AFTER = exec_->getHealthPacket();
   EXPECT_LE(AFTER.clockCycles - AFTER.taskExecutionCycles, 2u);
+}
+
+/**
+ * @test A preemption between selecting a cycle's wait deadline and waiting
+ *       on it does not renew the frame: the deadline is an instant, so a
+ *       cycle held past its frame's end polls, whatever budget it chose.
+ */
+TEST_F(ExecutiveActionGateTest, PreemptionAfterSelectingTheDeadlineDoesNotRenewTheWait) {
+  boot(2000);
+  ASSERT_TRUE(waitForSteps(50, std::chrono::seconds(15)));
+
+  // Hold the task so every cycle selects most of a frame as its wait.
+  exec_->model.hold.store(true, std::memory_order_release);
+  const std::size_t SKIPS_AT_HOLD = exec_->actionPhaseSkips();
+  {
+    const auto DEADLINE = Clock::now() + std::chrono::milliseconds(500);
+    while (Clock::now() < DEADLINE && exec_->actionPhaseSkips() < SKIPS_AT_HOLD + 2u) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+  }
+  ASSERT_GE(exec_->actionPhaseSkips(), SKIPS_AT_HOLD + 2u) << "the hold did not take effect";
+  const std::uint64_t BEHIND_WAIT_BEFORE_NS = exec_->actionWaitBehindMaxNs();
+
+  // One cycle is held 20 ms at the seam: by the time it waits, two ticks
+  // have passed and its frame is over.
+  exec_->holdAtSelection.store(true, std::memory_order_release);
+  {
+    const auto DEADLINE = Clock::now() + std::chrono::seconds(1);
+    while (Clock::now() < DEADLINE &&
+           exec_->heldAtSelection.load(std::memory_order_acquire) == 0u) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+  }
+  ASSERT_EQ(exec_->heldAtSelection.load(std::memory_order_acquire), 1u) << "no cycle was held";
+  // Its wait has returned and been recorded within a frame of the hold's end.
+  std::this_thread::sleep_for(std::chrono::milliseconds(30));
+  const std::uint64_t BEHIND_WAIT_NS = exec_->actionWaitBehindMaxNs();
+  EXPECT_GT(BEHIND_WAIT_NS, BEHIND_WAIT_BEFORE_NS) << "the held cycle was not behind";
+  EXPECT_LT(BEHIND_WAIT_NS, 2'000'000ULL)
+      << "the held cycle was granted " << BEHIND_WAIT_NS / 1000U << " us past its frame";
+  RecordProperty("behind_wait_us", static_cast<int>(BEHIND_WAIT_NS / 1000U));
+
+  exec_->model.hold.store(false, std::memory_order_release);
+  const std::uint64_t STEPS_AT_RELEASE = exec_->model.steps.load(std::memory_order_acquire);
+  ASSERT_TRUE(waitForSteps(STEPS_AT_RELEASE + 10u, std::chrono::milliseconds(3000)));
 }

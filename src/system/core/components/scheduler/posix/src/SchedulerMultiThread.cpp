@@ -388,19 +388,25 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
 }
 
 bool SchedulerMultiThread::waitForInFlightTasks(std::uint64_t timeoutNs) noexcept {
-  const std::uint64_t DEADLINE = apex::helpers::cpu::getMonotonicNs() + timeoutNs;
+  return waitForInFlightTasksUntil(apex::helpers::cpu::getMonotonicNs() + timeoutNs);
+}
+
+bool SchedulerMultiThread::waitForInFlightTasksUntil(std::uint64_t deadlineNs) noexcept {
+  const std::uint64_t DEADLINE = deadlineNs;
   // Two phases. A short spin catches the common case, a task that
   // completes within tens of microseconds of its dispatch, without a
-  // sleep's latency. Past the spin the waiter sleeps in slices that
-  // double from SLEEP_MIN_NS to SLEEP_MAX_NS and never run past the
-  // deadline: a worker that shares this CPU gets it while the wait
-  // holds. A waiter that kept spinning would keep the very worker it
-  // waits for off a shared core, and under ordinary scheduling would
-  // cost a core's worth of CPU for every held frame. A sleep gives the
-  // CPU up under every scheduling policy, where a yield does not under
-  // a real-time one. The bound on detection latency once sleeping is
-  // one slice; the deadline bounds the whole wait as before.
-  constexpr unsigned SPIN_LIMIT = 1024U; // ~2k relax iterations in all
+  // sleep's latency. Past the spin the waiter sleeps in slices whose
+  // requested length doubles from SLEEP_MIN_NS to SLEEP_MAX_NS and is
+  // capped at what is left of the budget: a worker that shares this CPU
+  // gets it while the wait holds. A waiter that kept spinning would keep
+  // the very worker it waits for off a shared core, and under ordinary
+  // scheduling would cost a core's worth of CPU for every held frame. A
+  // sleep gives the CPU up under every scheduling policy, where a yield
+  // does not under a real-time one. When a sleep returns is the host's
+  // to decide: the deadline is checked on every return, so it bounds when
+  // the wait stops asking, not when it comes back, and a completion that
+  // lands during a sleep is noticed on the next return.
+  constexpr unsigned SPIN_LIMIT = 1024U;
   constexpr std::uint64_t SLEEP_MIN_NS = 20000U;
   constexpr std::uint64_t SLEEP_MAX_NS = 250000U;
   apex::helpers::cpu::ExponentialBackoff bk;

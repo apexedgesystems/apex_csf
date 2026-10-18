@@ -117,12 +117,34 @@ public:
    * violation the scheduler records for it is an account of the overrun,
    * not the end of that ownership.
    *
-   * @param timeoutNs Deadline for the wait; 0 polls once.
+   * @param timeoutNs Budget for the wait from the moment of the call; 0
+   *        polls once. The call is waitForInFlightTasksUntil with the
+   *        instant taken at entry.
    * @return True once nothing is in flight, false on timeout or shutdown
    *         -- in which case the caller must not read task outputs or
    *         write task inputs, because a worker may still be doing so.
    */
   [[nodiscard]] bool waitForInFlightTasks(std::uint64_t timeoutNs) noexcept;
+
+  /**
+   * @brief Wait until nothing is in flight or a CLOCK_MONOTONIC instant
+   *        passes.
+   *
+   * The deadline is an instant, not a duration, so a caller that chose it
+   * as the end of a frame keeps that end whatever happens between
+   * choosing and calling: an instant already past is a single poll. The
+   * wait is a short spin, then sleeps in slices the caller does not see;
+   * each slice is a requested length capped at 250 us and at what is
+   * left of the budget, and when the sleep returns is the host's to
+   * decide, so the deadline is a bound on when the wait stops asking, not
+   * on when it returns. Ownership and publication are as for
+   * waitForInFlightTasks.
+   *
+   * @param deadlineNs CLOCK_MONOTONIC ns (apex::helpers::cpu::getMonotonicNs);
+   *        0 or any instant already past polls once.
+   * @return As waitForInFlightTasks.
+   */
+  [[nodiscard]] bool waitForInFlightTasksUntil(std::uint64_t deadlineNs) noexcept;
 
   /** @brief In-flight waits that hit their deadline since startup. Read
    *         from any thread; the tick thread increments it. */

@@ -269,6 +269,21 @@ protected:
    * @return true on success, false on registration failure.
    * @note Components must be member variables of derived class to ensure lifetime.
    */
+  /**
+   * @brief The seam between selecting the action phase's wait deadline
+   *        and waiting on it, once per cycle.
+   *
+   * Called with the cycle and the CLOCK_MONOTONIC instant the wait will
+   * stop at (0 for a cycle that gets a poll). A derived executive can
+   * observe the selection here; a test can hold the thread here to stand
+   * in for a preemption between the two. The deadline is an instant, so
+   * time spent here is taken from the wait, never added to it.
+   */
+  virtual void onWaitDeadlineSelected(std::uint64_t taskCycles, std::uint64_t waitEndNs) noexcept {
+    (void)taskCycles;
+    (void)waitEndNs;
+  }
+
   [[nodiscard]] virtual bool registerComponents() noexcept { return true; }
 
   /**

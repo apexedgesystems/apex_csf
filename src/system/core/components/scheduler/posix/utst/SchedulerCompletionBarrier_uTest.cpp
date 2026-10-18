@@ -23,6 +23,7 @@
  */
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerMultiThread.hpp"
+#include "src/utilities/helpers/inc/Cpu.hpp"
 #include "src/system/core/infrastructure/schedulable/inc/SchedulableTask.hpp"
 #include "src/utilities/concurrency/inc/Delegate.hpp"
 
@@ -120,6 +121,42 @@ bool awaitEntry(const HeldTask& task) {
 }
 
 } // namespace
+
+/**
+ * @test The absolute-deadline wait polls once when its instant is already past
+ *       and holds until it when it is ahead, answering the same about what is
+ *       in flight: a caller that chose a frame's end keeps it across the call,
+ *       whatever held the caller between choosing and calling.
+ */
+TEST(SchedulerCompletionBarrierTest, AnInstantAlreadyPastPollsOnce) {
+  auto sched = std::make_unique<SchedulerMultiThread>(100, testLogDir());
+  ASSERT_EQ(sched->init(), 0);
+
+  HeldTask held;
+  DelegateU8 del{&HeldTask::run, &held};
+  SchedulableTask task(del, "held_plant_step");
+  ASSERT_EQ(sched->addTask(task, TaskConfig(100, 1, 0)), Status::SUCCESS);
+  (void)sched->executeTasksOnTickMulti(0);
+  ASSERT_TRUE(awaitEntry(held));
+
+  // An instant already past: one poll, back at once, the task still owned.
+  const std::uint64_t T0 = apex::helpers::cpu::getMonotonicNs();
+  EXPECT_FALSE(sched->waitForInFlightTasksUntil(T0 - ONE_SECOND_NS));
+  EXPECT_LT(apex::helpers::cpu::getMonotonicNs() - T0, 5'000'000ULL);
+  EXPECT_FALSE(sched->waitForInFlightTasksUntil(0U));
+
+  // An instant ahead: the wait asks until it, then gives the same answer.
+  const std::uint64_t T1 = apex::helpers::cpu::getMonotonicNs();
+  EXPECT_FALSE(sched->waitForInFlightTasksUntil(T1 + TEN_MS_NS));
+  EXPECT_GE(apex::helpers::cpu::getMonotonicNs() - T1, TEN_MS_NS);
+
+  held.release.store(true, std::memory_order_release);
+  EXPECT_TRUE(
+      sched->waitForInFlightTasksUntil(apex::helpers::cpu::getMonotonicNs() + ONE_SECOND_NS));
+  EXPECT_EQ(held.output, 0x5A5A);
+
+  sched->shutdown();
+}
 
 /**
  * @test The wait holds for a running task and publishes what it wrote.
