@@ -119,6 +119,10 @@ struct Rig {
 
 /* ----------------------------- Codec ----------------------------- */
 
+/**
+ * @test Board frames round-trip their payload byte for byte and a corrupt or short frame is
+ *       refused, so the link never acts on a damaged frame.
+ */
 TEST(RoverBoardProtocol, FramesRoundTripAndACorruptByteIsRefused) {
   BoardState s{};
   s.north_m = 12.5F;
@@ -162,6 +166,10 @@ TEST(RoverBoardProtocol, FramesRoundTripAndACorruptByteIsRefused) {
 
 /* ----------------------------- Modes ----------------------------- */
 
+/**
+ * @test HOLD commands zero drive and TRAJECTORY its constant steer and throttle, each answering
+ *       the state it was computed on, matching the host law's modes.
+ */
 TEST(RoverBoardController, HoldIsZeroAndTrajectoryIsTheConstantSteer) {
   Rig rig;
   rig.tick(MODE_HOLD);
@@ -190,6 +198,10 @@ TEST(RoverBoardController, NoStateOrAHaltMeansZeroDrive) {
 
 /* ----------------------------- Legs (the host tests' numbers) ----------------------------- */
 
+/**
+ * @test The board's law drives a straight leg to cruise, lands it without overshoot and keeps
+ *       the arrival latched with zero drive, as the host's law does.
+ */
 TEST(RoverBoardController, LegNorthRampsCruisesBrakesAndLatches) {
   Rig rig;
   double vmax = 0.0;
@@ -332,6 +344,10 @@ TEST(RoverBoardController, ShortLegsFromEveryHeadingArriveOnTheTarget) {
 
 /* ----------------------------- Strobe ----------------------------- */
 
+/**
+ * @test The board's lamp strobe follows the rate code at its own step rate and a steady lamp
+ *       stays on, so its LEDs match what the plant shows.
+ */
 TEST(RoverBoardController, StrobeFollowsTheRateCodesAtTheStepRate) {
   Rig rig; // 20 Hz
   // Lamp 1 red at 1 Hz (code 2): 20 steps per period, on for the first 10.
@@ -352,6 +368,10 @@ TEST(RoverBoardController, StrobeFollowsTheRateCodesAtTheStepRate) {
 
 /* ----------------------------- Lidar ----------------------------- */
 
+/**
+ * @test A lidar scan round-trips the frame intact and the board reads only the rays the scan
+ *       declares, capping range, so junk past n_rays never reaches the command.
+ */
 TEST(RoverBoardLidar, ScanRoundTripsAndTheBoardKeepsOnlyValidRays) {
   appsim::rover_board::LidarScan scan{};
   scan.scan_seq = 0xBEEF;

@@ -212,6 +212,10 @@ struct Rig {
 
 /* ----------------------------- Link judgement ----------------------------- */
 
+/**
+ * @test The link reports UP only once replies arrive, with zero drive before that, and the
+ *       board's load and tick reach the plant's frame unchanged.
+ */
 TEST(RoverBoardLink, ComesUpAndCarriesTheBoardsLoadAndTickOntoTheFrame) {
   Rig rig;
   EXPECT_EQ(rig.link.linkState().uart_open, 1u) << "the slave end opens like /dev/ttyACM0";
@@ -283,6 +287,10 @@ TEST(RoverBoardLink, ACorruptFrameIsCountedAndIgnored) {
 
 /* ----------------------------- Drive through the plant ----------------------------- */
 
+/**
+ * @test The board drives a leg to arrival over the link, and its arrival for the old leg is
+ *       not forwarded after a retarget, so a stale latch never ends the new leg.
+ */
 TEST(RoverBoardLink, TheBoardDrivesALegAndAStaleArrivalNeverCompletesTheNext) {
   Rig rig;
   rig.tick();
@@ -369,6 +377,10 @@ TEST(RoverBoardLink, DisabledLeavesTheHostLawAndNeverOpensThePort) {
 
 /* ----------------------------- Lidar picture ----------------------------- */
 
+/**
+ * @test The board's lidar picture, including staleness, reaches the plant's frame, and a lost
+ *       link drops it back to the plant's own sweep.
+ */
 TEST(RoverBoardLink, WhatTheBoardSawOfItsLidarReachesTheFrame) {
   Rig rig;
   for (int i = 0; i < 5; ++i) {
