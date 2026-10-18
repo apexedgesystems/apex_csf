@@ -49,13 +49,27 @@ set(APEX_DATA_DB_DIR
 #
 # The default form is a no-op when the directory holds no apex_data.toml,
 # so a library may call it by convention. An explicit MANIFEST path names
-# a file the author intends to ship; a path that does not exist is a
-# configure error, so a mistyped path cannot drop a manifest silently.
+# a file the author intends to ship; a path that does not exist, including
+# a failed lookup's -NOTFOUND value, is a configure error, so a mistyped or
+# unresolved path cannot drop a manifest silently. Any other argument shape
+# is a configure error as well.
 # ------------------------------------------------------------------------------
 function (apex_add_data_manifest)
-  cmake_parse_arguments(ADM "" "MANIFEST" "" ${ARGN})
+  cmake_parse_arguments(PARSE_ARGV 0 ADM "" "MANIFEST" "")
 
-  if (NOT ADM_MANIFEST)
+  # The call takes no arguments, or MANIFEST with one value. Anything else
+  # is a mistake to name, not a form to guess at.
+  if (ADM_UNPARSED_ARGUMENTS OR "MANIFEST" IN_LIST ADM_KEYWORDS_MISSING_VALUES)
+    message(
+      FATAL_ERROR "apex_add_data_manifest: use no arguments or MANIFEST <path>; got '${ARGV}'\n"
+                  "  (registered from ${CMAKE_CURRENT_LIST_FILE})"
+    )
+  endif ()
+
+  # Absence of the keyword selects the default; a value that CMake would
+  # call false (such as a -NOTFOUND result) is still an explicit value and
+  # is checked like any other path.
+  if (NOT DEFINED ADM_MANIFEST)
     set(ADM_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/apex_data.toml")
     if (NOT EXISTS "${ADM_MANIFEST}")
       return()
