@@ -29,8 +29,10 @@
  *    method, std::sph_legendre included; the remedy is Holmes-Featherstone
  *    scaling, which this library does not apply.
  *
- * Two API styles:
+ * API styles:
  *  - Simple: evaluation at x, clamped to [-1, 1]. Real-time safe.
+ *  - Cached: the normalized function with its coefficients precomputed once
+ *    in a ScalarTables (see below). Real-time safe once the tables exist.
  *  - Transform: evaluation at fX(x), with the transformed value clamped to
  *    [-1, 1] (for example fX = cos with a colatitude in [0, pi]).
  *
@@ -40,7 +42,9 @@
 
 #include "src/utilities/compatibility/inc/compat_rt_attrs.hpp"
 
+#include <cstddef>
 #include <functional>
+#include <vector>
 
 namespace apex {
 namespace math {
@@ -85,6 +89,66 @@ namespace legendre {
  * @note RT-safe: O(n - m), no allocation.
  */
 [[nodiscard]] double normalizedAssociatedLegendre(int n, int m, double x) noexcept APEX_NONBLOCKING;
+
+/* ----------------------------- Cached API ----------------------------- */
+
+/// Orders below this build the diagonal seed s^m with a multiply loop; at or
+/// above it, one std::pow call is cheaper (measured crossover: m = 32 on an
+/// aarch64 Thor, about 56 on an x86-64 laptop).
+inline constexpr int SCALAR_POW_SEED_MIN_ORDER = 32;
+
+/**
+ * @struct ScalarTables
+ * @brief Coefficients the normalized column walk would otherwise recompute,
+ *        precomputed once for every degree up to maxDegree.
+ *
+ *  - diag[m] = Pbar_{m,m} / s^m, the diagonal's normalization product (m = 0..N).
+ *  - off[m]  = sqrt(2m+3), the first off-diagonal factor (m = 0..N).
+ *  - ab      = the recurrence pairs {A(k,m), B(k,m)}, column by column: column m
+ *              holds k = m+2..N contiguously, so a walk reads one forward
+ *              stream. (The triangle's layout puts consecutive k of one column
+ *              k+1 entries apart, which costs a cache line per step at high
+ *              degree.)
+ *
+ * Read-only after makeScalarTables returns, so one instance can serve any
+ * number of threads. Size: about 8 N^2 bytes (38 MB at N = 2190).
+ */
+struct ScalarTables {
+  int maxDegree{-1};        ///< Largest degree the tables cover (-1: empty).
+  std::vector<double> diag; ///< Pbar_{m,m} / s^m.
+  std::vector<double> off;  ///< sqrt(2m+3).
+  std::vector<double> ab;   ///< {A, B} pairs, column-major.
+};
+
+/**
+ * @brief Build the tables for every degree and order up to maxDegree.
+ *
+ * @param maxDegree Largest degree to cover; negative yields empty tables.
+ * @return Tables ready for normalizedAssociatedLegendre(n, m, x, tables).
+ * @note NOT RT-safe: allocates; throws std::bad_alloc if allocation fails.
+ */
+[[nodiscard]] ScalarTables makeScalarTables(int maxDegree);
+
+/**
+ * @brief Normalized associated Legendre function Pbar_n^m(x) from precomputed tables.
+ *
+ * The same column walk as normalizedAssociatedLegendre(n, m, x), reading its
+ * coefficients from @p tables: the step is two multiplies and a subtract, and
+ * the diagonal is one table lookup times s^m (a multiply loop below
+ * SCALAR_POW_SEED_MIN_ORDER, one std::pow at or above it). Agrees with the
+ * stateless form to rounding, and is bit-identical to it on the diagonal below
+ * that order.
+ *
+ * @param n      Degree (0 <= n <= tables.maxDegree).
+ * @param m      Order (0 <= m <= n).
+ * @param x      Argument (clamped to [-1, 1]).
+ * @param tables Tables from makeScalarTables covering degree n.
+ * @return Pbar_n^m(x); NaN for invalid n/m or n beyond tables.maxDegree.
+ * @note RT-safe: O(n - m), no allocation.
+ */
+[[nodiscard]] double
+normalizedAssociatedLegendre(int n, int m, double x,
+                             const ScalarTables& tables) noexcept APEX_NONBLOCKING;
 
 /* ----------------------------- Transform API ----------------------------- */
 

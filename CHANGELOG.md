@@ -10,6 +10,9 @@ any such change is called out explicitly in its entry.
 
 ### Added
 
+- Cached scalar Legendre evaluation from precomputed tables
+  (`ScalarTables`) for repeated calls up to a fixed degree.
+  ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
 - Executive clock wake-lateness record: every clock wake is measured
   against its deadline and summarised (p50, p99, max) when the clock
   stops; `--clock-hz` overrides the fundamental frequency for a run.

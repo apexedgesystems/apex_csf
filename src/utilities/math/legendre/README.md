@@ -31,6 +31,11 @@ using apex::math::legendre::normalizedAssociatedLegendre;
 
 // Pbar_{180,90}(0.3): O(n - m), no allocation, RT-safe
 double pbar = normalizedAssociatedLegendre(180, 90, 0.3);
+
+// Repeated evaluation up to a fixed degree: build the tables once (allocates)
+using apex::math::legendre::makeScalarTables;
+const auto TABLES = makeScalarTables(2190);
+double fast = normalizedAssociatedLegendre(180, 90, 0.3, TABLES); // RT-safe
 ```
 
 **Simple triangle computation:**
@@ -96,7 +101,8 @@ double dpbar = result.dP[pbarTriangleIndex(10, 5)];
 
 ### Computation Modes
 
-- **Scalar** - One Pbar_n^m by walking its column, O(n - m), ~0.37us for (180, 90)
+- **Scalar** - One Pbar_n^m by walking its column, O(n - m), ~0.39us for (180, 90)
+- **Scalar cached** - The same walk from precomputed tables, ~0.12us for (180, 90)
 - **CPU baseline** - Standard upward recurrence, ~77us for N=180
 - **CPU cached** - Precomputed A/B coefficients, ~33us for N=180 (2.3x faster)
 - **GPU kernel** - CUDA parallel computation, ~4us for N=180 (19x faster)
@@ -115,14 +121,16 @@ double dpbar = result.dP[pbarTriangleIndex(10, 5)];
 
 ### Scalar API (AssociatedLegendre.hpp)
 
-| Function                                 | RT-Safe | Notes                                          |
-| ---------------------------------------- | ------- | ---------------------------------------------- |
-| `normalizedAssociatedLegendre()`         | YES     | O(n - m), no allocation, `APEX_NONBLOCKING`    |
-| `associatedLegendre()`                   | YES     | O(n - m), no allocation, `APEX_NONBLOCKING`    |
-| `legendrePolynomial()`                   | YES     | O(n), no allocation, `APEX_NONBLOCKING`        |
-| `normalizedAssociatedLegendreFunction()` | NO      | Takes a `std::function` (may allocate to wrap) |
-| `associatedLegendreFunction()`           | NO      | Takes a `std::function` (may allocate to wrap) |
-| `legendrePolynomialFunction()`           | NO      | Takes a `std::function` (may allocate to wrap) |
+| Function                                    | RT-Safe | Notes                                                  |
+| ------------------------------------------- | ------- | ------------------------------------------------------ |
+| `normalizedAssociatedLegendre()`            | YES     | O(n - m), no allocation, `APEX_NONBLOCKING`            |
+| `associatedLegendre()`                      | YES     | O(n - m), no allocation, `APEX_NONBLOCKING`            |
+| `legendrePolynomial()`                      | YES     | O(n), no allocation, `APEX_NONBLOCKING`                |
+| `normalizedAssociatedLegendre(..., tables)` | YES     | O(n - m), reads precomputed tables, `APEX_NONBLOCKING` |
+| `makeScalarTables()`                        | NO      | Allocates the tables (about 8 N^2 bytes)               |
+| `normalizedAssociatedLegendreFunction()`    | NO      | Takes a `std::function` (may allocate to wrap)         |
+| `associatedLegendreFunction()`              | NO      | Takes a `std::function` (may allocate to wrap)         |
+| `legendrePolynomialFunction()`              | NO      | Takes a `std::function` (may allocate to wrap)         |
 
 The non-blocking contract is enforced under the RealtimeSanitizer build
 (`make rtsan`): an allocation reached from these functions aborts the test.
@@ -193,6 +201,14 @@ subnormals and then to zero (for example x = 0.999 from m near 240), and the
 column loses its digits with it. Every forward-column method shares this,
 `std::sph_legendre` included; Holmes-Featherstone scaling is the remedy and is
 not applied here.
+
+`normalizedAssociatedLegendre(n, m, x, tables)` is the same walk reading its
+coefficients from a `ScalarTables` built once by `makeScalarTables(N)`: each
+step is two multiplies and a subtract, the diagonal is a table lookup times
+s^m, and each column's coefficients are stored contiguously so a walk reads
+one forward stream. Degrees beyond the tables return NaN. The tables take
+about 8 N^2 bytes (38 MB at N = 2190) and are read-only after construction,
+so one instance can serve any number of threads.
 
 The transform variants (`...Function(n, m, fX, x)`) evaluate at `fX(x)` and
 clamp the transformed value, so `fX = cos` with a colatitude in [0, pi] works
@@ -305,19 +321,20 @@ Release build, x = 0.3, pinned to one core under SCHED_FIFO on an x86-64
 laptop, `LegendreScalar_PTEST --cycles 200000`; each cell averages the medians
 of two runs:
 
-| (n, m)       | `normalizedAssociatedLegendre` (us) | `std::sph_legendre` (us) |
-| ------------ | ----------------------------------- | ------------------------ |
-| (10, 3)      | 0.025                               | 0.068                    |
-| (50, 25)     | 0.10                                | 0.18                     |
-| (180, 90)    | 0.37                                | 0.60                     |
-| (180, 180)   | 0.16                                | 0.031                    |
-| (720, 360)   | 1.48                                | 2.44                     |
-| (2190, 1000) | 4.9                                 | 8.1                      |
+| (n, m)       | stateless (us) | cached (us) | `std::sph_legendre` (us) |
+| ------------ | -------------- | ----------- | ------------------------ |
+| (10, 3)      | 0.027          | 0.0077      | 0.071                    |
+| (50, 25)     | 0.11           | 0.028       | 0.19                     |
+| (180, 90)    | 0.39           | 0.12        | 0.65                     |
+| (180, 180)   | 0.17           | 0.015       | 0.033                    |
+| (720, 360)   | 1.59           | 0.49        | 2.71                     |
+| (2190, 1000) | 5.3            | 1.6         | 8.5                      |
 
-Off the diagonal the column walk is 1.6-2.7x faster than the standard library.
-On the diagonal (n = m) the standard library's closed form is about 5x faster:
-the walk forms the diagonal product term by term, and only a precomputed seed
-table would close that gap.
+Off the diagonal the stateless walk is 1.6-2.6x faster than the standard
+library; on the diagonal (n = m) the standard library's closed form is about
+5x faster than it, because the walk forms the diagonal product term by term.
+The cached walk is 5-9x faster than the standard library off the diagonal and
+about 2x faster on it.
 
 ### Why Cached is Faster
 
@@ -352,11 +369,11 @@ docker compose run --rm -T dev ./build/hosted-x86_64-release/bin/ptests/Legendre
 
 | Test File                           | Purpose                       | Tests |
 | ----------------------------------- | ----------------------------- | ----- |
-| `LegendrePolynomials_uTest.cpp`     | Scalar functions, to n = 2190 | 15    |
+| `LegendrePolynomials_uTest.cpp`     | Scalar functions, to n = 2190 | 19    |
 | `LegendrePbarTriangle_uTest.cpp`    | CPU triangle computation      | 5     |
 | `LegendrePbarDerivatives_uTest.cpp` | Derivative computation        | 11    |
 | `LegendrePbarCuda_uTest.cu`         | GPU/CPU parity                | 13    |
-| `LegendreScalar_pTest.cpp`          | Scalar vs `std::` throughput  | 3 x 6 |
+| `LegendreScalar_pTest.cpp`          | Scalar vs `std::` throughput  | 4 x 6 |
 | `LegendrePbar_pTest.cpp`            | Triangle benchmarks           | 8     |
 
 ---

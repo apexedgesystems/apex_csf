@@ -31,10 +31,13 @@ using apex::math::legendre::associatedLegendreFunction;
 using apex::math::legendre::computeNormalizedPbarTriangle;
 using apex::math::legendre::legendrePolynomial;
 using apex::math::legendre::legendrePolynomialFunction;
+using apex::math::legendre::makeScalarTables;
 using apex::math::legendre::normalizedAssociatedLegendre;
 using apex::math::legendre::normalizedAssociatedLegendreFunction;
 using apex::math::legendre::pbarTriangleIndex;
 using apex::math::legendre::pbarTriangleSize;
+using apex::math::legendre::SCALAR_POW_SEED_MIN_ORDER;
+using apex::math::legendre::ScalarTables;
 
 /* ----------------------------- File Helpers ----------------------------- */
 
@@ -373,6 +376,130 @@ TEST(MathLegendrePolynomials, UnnormalizedRange_OverflowsOnlyWithTheValue) {
   EXPECT_TRUE(nearRel(associatedLegendre(150, 150, 0.0), doubleFactorial, 1e-13, 0.0));
   EXPECT_TRUE(std::isinf(associatedLegendre(151, 151, 0.0)));
   EXPECT_TRUE(std::isfinite(normalizedAssociatedLegendre(151, 151, 0.0)));
+}
+
+/* ----------------------------- Cached API ----------------------------- */
+
+namespace {
+
+/// Tables for the whole grid, built once for every cached test.
+const ScalarTables& gridTables() {
+  static const ScalarTables TABLES = makeScalarTables(GRID_MAX_N);
+  return TABLES;
+}
+
+} // namespace
+
+/**
+ * @test CachedHighDegree_MatchesStdSphLegendre
+ * @brief The cached walk meets the same 1e-10 bound against rescaled
+ *        std::sph_legendre across the grid as the stateless walk.
+ */
+TEST(MathLegendrePolynomials, CachedHighDegree_MatchesStdSphLegendre) {
+#if defined(__cpp_lib_math_special_functions)
+  const ScalarTables& TABLES = gridTables();
+  for (double x : gridArguments()) {
+    const double THETA = std::acos(x);
+    for (int n : gridDegrees()) {
+      for (int m : gridOrders(n)) {
+        const double SIGN = (m % 2 == 0) ? 1.0 : -1.0;
+        const double SCALE = std::sqrt(4.0 * M_PI * ((m == 0) ? 1.0 : 2.0));
+        const double REF =
+            SIGN * SCALE *
+            std::sph_legendre(static_cast<unsigned>(n), static_cast<unsigned>(m), THETA);
+        EXPECT_TRUE(nearRel(normalizedAssociatedLegendre(n, m, x, TABLES), REF, REL_TOL, ABS_TOL))
+            << "n=" << n << " m=" << m << " x=" << x;
+      }
+    }
+  }
+#else
+  GTEST_SKIP() << "C++17 special math functions unavailable in this standard library";
+#endif
+}
+
+/**
+ * @test CachedHighDegree_MatchesStateless
+ * @brief Cached and stateless walks agree across the grid; they differ only in
+ *        how the coefficients are rounded.
+ */
+TEST(MathLegendrePolynomials, CachedHighDegree_MatchesStateless) {
+  const ScalarTables& TABLES = gridTables();
+  for (double x : gridArguments()) {
+    for (int n : gridDegrees()) {
+      for (int m : gridOrders(n)) {
+        EXPECT_TRUE(nearRel(normalizedAssociatedLegendre(n, m, x, TABLES),
+                            normalizedAssociatedLegendre(n, m, x), REL_TOL, ABS_TOL))
+            << "n=" << n << " m=" << m << " x=" << x;
+      }
+    }
+  }
+}
+
+/**
+ * @test CachedDiagonalSeed_BothBranches
+ * @brief Below SCALAR_POW_SEED_MIN_ORDER the diagonal is the stateless product
+ *        exactly (same table product, same multiply loop); at and above it the
+ *        pow seed agrees with the loop to rounding.
+ */
+TEST(MathLegendrePolynomials, CachedDiagonalSeed_BothBranches) {
+  const ScalarTables& TABLES = gridTables();
+  for (double x : gridArguments()) {
+    for (int m : {0, 1, 2, SCALAR_POW_SEED_MIN_ORDER - 1}) {
+      EXPECT_EQ(normalizedAssociatedLegendre(m, m, x, TABLES),
+                normalizedAssociatedLegendre(m, m, x))
+          << "m=" << m << " x=" << x;
+    }
+    for (int m :
+         {SCALAR_POW_SEED_MIN_ORDER, SCALAR_POW_SEED_MIN_ORDER + 1, 100, 1000, GRID_MAX_N}) {
+      EXPECT_TRUE(nearRel(normalizedAssociatedLegendre(m, m, x, TABLES),
+                          normalizedAssociatedLegendre(m, m, x), 1e-11, ABS_TOL))
+          << "m=" << m << " x=" << x;
+    }
+  }
+}
+
+/**
+ * @test CachedTables_LayoutAndRange
+ * @brief Table sizes follow the documented layout, every (n, m) of a small
+ *        table matches the stateless walk, and degrees beyond the tables,
+ *        invalid orders and empty tables return NaN.
+ */
+TEST(MathLegendrePolynomials, CachedTables_LayoutAndRange) {
+  static_assert(
+      noexcept(normalizedAssociatedLegendre(1, 1, 0.0, std::declval<const ScalarTables&>())));
+
+  const ScalarTables T10 = makeScalarTables(10);
+  EXPECT_EQ(T10.maxDegree, 10);
+  EXPECT_EQ(T10.diag.size(), 11U);
+  EXPECT_EQ(T10.off.size(), 11U);
+  EXPECT_EQ(T10.ab.size(), 2U * 45U); // (N-1)N/2 pairs
+  for (int n = 0; n <= 10; ++n) {
+    for (int m = 0; m <= n; ++m) {
+      EXPECT_TRUE(nearRel(normalizedAssociatedLegendre(n, m, -0.4, T10),
+                          normalizedAssociatedLegendre(n, m, -0.4), 1e-14, 1e-15))
+          << "n=" << n << " m=" << m;
+    }
+  }
+  EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(11, 0, 0.3, T10)));
+  EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(3, 4, 0.3, T10)));
+  EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(-1, 0, 0.3, T10)));
+  EXPECT_TRUE(std::isnan(
+      normalizedAssociatedLegendre(3, 1, std::numeric_limits<double>::quiet_NaN(), T10)));
+
+  // Degrees 0 and 1 hold no recurrence pairs.
+  const ScalarTables T0 = makeScalarTables(0);
+  EXPECT_TRUE(T0.ab.empty());
+  EXPECT_EQ(normalizedAssociatedLegendre(0, 0, 0.3, T0), 1.0);
+  const ScalarTables T1 = makeScalarTables(1);
+  EXPECT_TRUE(T1.ab.empty());
+  EXPECT_EQ(normalizedAssociatedLegendre(1, 0, 0.3, T1), normalizedAssociatedLegendre(1, 0, 0.3));
+  EXPECT_EQ(normalizedAssociatedLegendre(1, 1, 0.3, T1), normalizedAssociatedLegendre(1, 1, 0.3));
+
+  const ScalarTables EMPTY = makeScalarTables(-1);
+  EXPECT_EQ(EMPTY.maxDegree, -1);
+  EXPECT_TRUE(EMPTY.diag.empty() && EMPTY.off.empty() && EMPTY.ab.empty());
+  EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(0, 0, 0.3, EMPTY)));
+  EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(0, 0, 0.3, ScalarTables{})));
 }
 
 /* ----------------------------- Transform API ----------------------------- */

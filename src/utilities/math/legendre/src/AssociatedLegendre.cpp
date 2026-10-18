@@ -120,6 +120,14 @@ double unnormalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
 
 constexpr double NAN_VALUE = std::numeric_limits<double>::quiet_NaN();
 
+/// Index of column m's first pair, {A(m+2,m), B(m+2,m)}, in ScalarTables::ab:
+/// columns 0..m-1 hold N-1, N-2, ..., N-m pairs (none once m >= N-1).
+inline std::size_t columnPairOffset(int maxDegree, int m) noexcept APEX_NONBLOCKING {
+  const auto N = static_cast<std::size_t>(maxDegree);
+  const auto M = static_cast<std::size_t>(m);
+  return M * (N - 1) - M * (M - 1) / 2;
+}
+
 } // namespace
 
 /* ----------------------------- Simple API ----------------------------- */
@@ -145,6 +153,75 @@ double legendrePolynomial(int n, double x) noexcept APEX_NONBLOCKING {
  */
 double normalizedAssociatedLegendre(int n, int m, double x) noexcept APEX_NONBLOCKING {
   return validOrder(n, m) ? normalizedColumn(n, m, clampUnit(x)) : NAN_VALUE;
+}
+
+/* ----------------------------- Cached API ----------------------------- */
+
+ScalarTables makeScalarTables(int maxDegree) {
+  ScalarTables tables;
+  if (maxDegree < 0) {
+    return tables;
+  }
+  const auto N = static_cast<std::size_t>(maxDegree);
+  tables.maxDegree = maxDegree;
+  tables.diag.resize(N + 1);
+  tables.off.resize(N + 1);
+  tables.ab.resize((N >= 1) ? N * (N - 1) : 0); // (N-1)N/2 pairs
+
+  // The same product the stateless walk forms, so diag[m] matches it bit for bit.
+  double ratio = 1.0;
+  tables.diag[0] = 1.0;
+  for (int m = 1; m <= maxDegree; ++m) {
+    ratio *= (m == 1) ? 3.0 : (2.0 * m + 1.0) / (2.0 * m);
+    tables.diag[static_cast<std::size_t>(m)] = std::sqrt(ratio);
+  }
+  for (int m = 0; m <= maxDegree; ++m) {
+    tables.off[static_cast<std::size_t>(m)] = std::sqrt(2.0 * m + 3.0);
+  }
+  // A and B as computeRecurrenceCoefficients tabulates them, stored column-major.
+  for (int m = 0; m + 2 <= maxDegree; ++m) {
+    double* pair = tables.ab.data() + 2 * columnPairOffset(maxDegree, m);
+    for (int k = m + 2; k <= maxDegree; ++k, pair += 2) {
+      const double NM = static_cast<double>(k - m);
+      const double NPM = static_cast<double>(k + m);
+      pair[0] = std::sqrt(((2.0 * k + 1.0) * (2.0 * k - 1.0)) / (NM * NPM));
+      pair[1] =
+          std::sqrt(((2.0 * k + 1.0) * (NPM - 1.0) * (NM - 1.0)) / ((2.0 * k - 3.0) * NM * NPM));
+    }
+  }
+  return tables;
+}
+
+double normalizedAssociatedLegendre(int n, int m, double x,
+                                    const ScalarTables& tables) noexcept APEX_NONBLOCKING {
+  if (!validOrder(n, m) || n > tables.maxDegree) {
+    return NAN_VALUE;
+  }
+  const double T = clampUnit(x);
+  const double S = sinOf(T);
+
+  double power = 1.0; // s^m
+  if (m < SCALAR_POW_SEED_MIN_ORDER) {
+    for (int k = 0; k < m; ++k) {
+      power *= S;
+    }
+  } else {
+    power = std::pow(S, m);
+  }
+  const double DIAG = tables.diag[static_cast<std::size_t>(m)] * power;
+  if (n == m) {
+    return DIAG;
+  }
+
+  double prev = DIAG;
+  double cur = tables.off[static_cast<std::size_t>(m)] * T * DIAG; // Pbar_{m+1,m}
+  const double* pair = tables.ab.data() + 2 * columnPairOffset(tables.maxDegree, m);
+  for (int k = m + 2; k <= n; ++k, pair += 2) {
+    const double NEXT = pair[0] * T * cur - pair[1] * prev;
+    prev = cur;
+    cur = NEXT;
+  }
+  return cur;
 }
 
 /* ----------------------------- Transform API ----------------------------- */

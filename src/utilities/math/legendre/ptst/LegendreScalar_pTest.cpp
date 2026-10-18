@@ -2,7 +2,8 @@
  * @file LegendreScalar_pTest.cpp
  * @brief Throughput of the scalar Legendre functions beside the standard library's.
  *
- * Each (n, m) case times the library's normalized column walk and, where the
+ * Each (n, m) case times the library's normalized column walk, stateless and
+ * from precomputed tables, and, where the
  * standard library provides the C++17 special math functions, std::sph_legendre
  * at the same point, so the comparison is measured on whatever host runs it.
  * The degrees span a low order, the middle of a column, the diagonal and the
@@ -26,13 +27,21 @@
 #include <tuple>
 
 using apex::math::legendre::associatedLegendre;
+using apex::math::legendre::makeScalarTables;
 using apex::math::legendre::normalizedAssociatedLegendre;
+using apex::math::legendre::ScalarTables;
 
 namespace {
 
 constexpr double X = 0.3; ///< Interior argument; every case below is finite and normal here.
 
 class LegendreScalarPerf : public ::testing::TestWithParam<std::tuple<int, int>> {};
+
+/// Tables for every case, built once outside the measured loops.
+const ScalarTables& benchTables() {
+  static const ScalarTables TABLES = makeScalarTables(2190);
+  return TABLES;
+}
 
 std::string caseLabel(const char* what, int n, int m) {
   return std::string(what) + "_n" + std::to_string(n) + "_m" + std::to_string(m);
@@ -50,6 +59,18 @@ TEST_P(LegendreScalarPerf, Normalized) {
   auto result = perf.throughputLoop([&] { sink = normalizedAssociatedLegendre(N, M, X); },
                                     caseLabel("normalized", N, M));
   std::printf("\n[legendre] normalized (%d, %d): %.1f ns\n", N, M, 1.0e9 / result.callsPerSecond);
+}
+
+/** @brief Normalized Pbar_n^m(x) from precomputed tables. */
+TEST_P(LegendreScalarPerf, NormalizedCached) {
+  UB_PERF_GUARD(perf);
+  const auto [N, M] = GetParam();
+  const ScalarTables& TABLES = benchTables();
+  volatile double sink = 0.0;
+  auto result = perf.throughputLoop([&] { sink = normalizedAssociatedLegendre(N, M, X, TABLES); },
+                                    caseLabel("normalized_cached", N, M));
+  std::printf("\n[legendre] normalized cached (%d, %d): %.1f ns\n", N, M,
+              1.0e9 / result.callsPerSecond);
 }
 
 /** @brief Unnormalized P_n^m(x) where it is finite at x = 0.3 (n below 128 here). */
