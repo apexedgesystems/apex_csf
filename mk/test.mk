@@ -221,7 +221,7 @@ check-data-db: tools-rust
 	$(call log,check-data-db,Generating every registered dictionary to a scratch tree)
 	@list="$(BUILD_DIR)/apex_data_manifests.txt"; \
 	[ -s "$$list" ] || { printf '[check-data-db] no registered manifests in %s\n' "$$list"; exit 1; }; \
-	scratch=$$(mktemp -d); fail=0; count=0; \
+	scratch=$$(mktemp -d) || exit 1; fail=0; count=0; \
 	while IFS= read -r m; do \
 	  [ -z "$$m" ] && continue; \
 	  count=$$((count + 1)); \
@@ -248,7 +248,7 @@ GATE_FIXTURES := mk/fixtures/check-data-db
 
 check-data-manifest-helper:
 	$(call log,check-data-manifest-helper,Configuring the apex_add_data_manifest fixture per case)
-	@scratch=$$(mktemp -d); fail=0; \
+	@scratch=$$(mktemp -d) || exit 1; fail=0; \
 	run() { cmake -S "$(HELPER_FIXTURE)" -B "$$scratch/$$1" -DCASE="$$1" > "$$scratch/$$1.log" 2>&1; echo $$?; }; \
 	expect() { grep -q -- "$$2" "$$scratch/$$1.log" || { printf '[check-data-manifest-helper] %s: missing diagnostic "%s"\n' "$$1" "$$2"; fail=1; }; }; \
 	[ "$$(run default-absent)" -eq 0 ] && [ ! -s "$$scratch/default-absent/apex_data_manifests.txt" ] \
@@ -269,7 +269,7 @@ check-data-manifest-helper:
 
 check-data-db-contract: tools-rust
 	$(call log,check-data-db-contract,Driving check-data-db with one fixture per verdict)
-	@scratch=$$(mktemp -d); fail=0; \
+	@scratch=$$(mktemp -d) || exit 1; fail=0; \
 	mkdir -p "$$scratch/bin/tools/rust" && ln -s "$(abspath $(BUILD_DIR))/bin/tools/rust/apex_data_gen" "$$scratch/bin/tools/rust/apex_data_gen"; \
 	run() { printf '%s\n' "$(abspath $(GATE_FIXTURES))/$$1/apex_data.toml" > "$$scratch/apex_data_manifests.txt"; \
 	        $(MAKE) --no-print-directory -o tools-rust check-data-db BUILD_DIR="$$scratch" > "$$scratch/$$1.log" 2>&1; echo $$?; }; \
