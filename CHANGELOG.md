@@ -30,16 +30,9 @@ any such change is called out explicitly in its entry.
   one-command dynamic-mode set-pieces (short period, Dutch roll, spiral,
   phugoid), a 20 Hz mode trace, and a measured recovery boundary that
   restores the autopilot when a demonstration leaves the flight envelope.
-- rover_mcu demo: the rover with its drive controller behind a seam, run
-  either as the host law or on a NUCLEO-F767ZI over its USB serial link
-  (shared guidance law, board firmware, host link driver, link-lost
-  halt), the lidar as a hardware model on its own serial wire to the
-  board (scans in, what the board saw back on the frame, sensor-lost
-  halt), two lamps as sequence actions, a catalog of A-to-B tours with
-  reason-coded safety halts, a 20 Hz sequence trace, a mission-upload
-  path for sequences, a boot sequence from the ATS bank, and pushed
-  telemetry (the frame with its tail bytes named, per-ray lidar
-  channels, the controller, link and lidar blocks) for a console.
+- rover_mcu demo: rover drive control on the host or a NUCLEO-F767ZI,
+  with safety halts, mission upload and pushed telemetry
+  ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
 - Nightly assurance pipeline: warm firmware builds for every MCU target,
   sanitizer suites, cppcheck, dependency and container scans, and
   per-language coverage floors; CodeQL analysis on the default branch.
@@ -93,14 +86,12 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
-- The executive's action phase ran while the cycle's tasks were still
-  being executed by the scheduler's workers; it now waits, bounded by
-  the frame, until no admitted invocation of any task is outstanding,
-  and skips the phase for a cycle on which a task overruns rather than
-  read what a worker is writing.
-- Pushed telemetry was framed on the task thread while command replies
-  were framed on the external I/O thread, through one encoder buffer
-  into one single-producer pipe; the I/O thread now frames both.
+- The executive's action phase waits for the cycle's in-flight tasks, and
+  one thread frames both pushed telemetry and command replies. Breaking:
+  `TaskEntry::isRunning` is replaced by an in-flight count; migrate to
+  `stillRunning()`, `inFlightCount()`, `markDispatched()`,
+  `markCompleted()` and `unmarkDispatched()`, and rebuild dependent code
+  ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
 - Scheduler task rates with a denominator above one ran at the wrong
   rate: the denominator was applied twice (placement stride and a
   per-visit counter), so `100/2` at 1000 Hz ran at 25 Hz instead of 50

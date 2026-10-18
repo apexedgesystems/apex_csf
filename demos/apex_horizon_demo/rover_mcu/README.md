@@ -17,6 +17,19 @@ runs headless just as happily.
 
 ## 1. Quick start
 
+The master packs the shared earth world, whose two data files are
+generated and never committed. Provide them once, before configuring
+the build, following the
+[world-artifact setup](../rover_terrain/docs/HOW_TO_RUN.md#one-time-setup-the-world-artifacts),
+at the paths `worlds.manifest` names:
+
+- `demos/apex_horizon_demo/aircraft_atmo/data/earth_ussa76.atm`
+- `demos/apex_horizon_demo/rover_terrain/data/alpha_patch_lod4.htile`
+
+Without them everything else builds, but configure leaves the demo's
+master.tprm out of the build and names the missing files; add them and
+run `make debug` again (it re-runs CMake before building).
+
 ```bash
 # Build (the master packs the sequence catalog and the shared earth world)
 docker compose run --rm dev-cuda make debug
@@ -25,7 +38,7 @@ docker compose run --rm dev-cuda make debug
 docker compose run --rm dev-cuda \
   ./build/hosted-x86_64-debug/bin/ApexRoverMcuDemo \
   --config build/hosted-x86_64-debug/demos/apex_horizon_demo/rover_mcu/exec/tprm/master.tprm \
-  --fs-root /home/kalex/workspace/build/rover_mcu_fs --skip-cleanup \
+  --fs-root /home/$USER/workspace/build/rover_mcu_fs --skip-cleanup \
   --rt-mode lag-tolerant --rt-max-lag 200
 ```
 
@@ -36,7 +49,8 @@ terrain patch centre). With the ATS disarmed or unpacked the controller
 sits in its `boot_mode` instead (HOLD as shipped); see the boot modes in
 the run guide. See [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md)
 for driving it from a host shell, the sequence catalog, the upload
-path, running the controller on the board, and the trace.
+path, the console endpoint, running the controller on the board, and
+the trace. The helper scripts it uses live in [scripts/](scripts/).
 
 ## 2. What it composes
 
@@ -82,5 +96,6 @@ their own twin opcodes).
   strobe frame counts, step-rate scaling, boot seed, trace capture),
   `TestApexHorizonDemoRoverController` (seam, HOLD/TRAJECTORY,
   waypoint legs at demo scale, wire adoption).
-- Live: the joint V&V thread with the visualizer (sequences, lamps,
-  rejections, the geofence, upload) is recorded with the branch.
+- Live: with the demo running, the run guide's walkthroughs exercise
+  sequences, lamps, rejections, the geofence and upload against a
+  visualizer or the scripts in `scripts/`.

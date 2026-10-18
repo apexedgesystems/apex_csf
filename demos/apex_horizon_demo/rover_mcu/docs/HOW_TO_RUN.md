@@ -23,17 +23,21 @@ Edit, rebuild the master (`make debug`), run.
 
 ## Drive it from a host shell
 
-The reverse ring accepts APROTO command frames; the branch record
-carries a probe (`rover_ring_probe.py`) that sends them and reads the
-frame's reserved tail back. With the demo running:
+The reverse ring accepts APROTO command frames;
+`scripts/rover_ring_probe.py` (standard library only) sends them and
+reads the frame's reserved tail back. The dev containers share the host
+IPC namespace, so with the demo running, from the repository root on
+the host:
 
 ```bash
-python3 rover_ring_probe.py start 1      # START_RTS_BY_ID 1 (sequence 1)
-python3 rover_ring_probe.py watch 20 1.0 # 20 s of frame bytes, once a second
+P=demos/apex_horizon_demo/rover_mcu/scripts/rover_ring_probe.py
+python3 $P start 1       # START_RTS_BY_ID 1 (sequence 1)
+python3 $P watch 20 1.0  # 20 frames, once a second: position and tail
+python3 $P halt          # HALT the rover; resume releases it
 ```
 
-Only one consumer may drain the ring: stop the probe before a
-visualizer attaches.
+`watch` drains the frame ring as its consumer, and only one consumer
+may drain it: stop the probe before a visualizer attaches.
 
 ## The sequence catalog (`tprm/toml/rts/`)
 
@@ -93,11 +97,13 @@ The producer runs the strobe; the frame carries the live bit.
 A sequence that is not in the boot catalog is compiled, transferred
 over the TCP ops interface into the active bank's `rts/` directory,
 the engine rescans its catalog, and the sequence starts by id. The
-ops interface listens on 127.0.0.1:9000 inside the producer's
-container, so run the script from there:
+script needs the build tree's `cfg2bin` and the tools venv, so run it
+inside the producer's container (started as `rover_mcu`, see
+[the console's endpoint](#the-consoles-endpoint-on-the-host)), where
+it connects to the ops interface at 127.0.0.1:9000:
 
 ```bash
-docker exec -i -w /home/kalex/workspace rover_mcu \
+docker exec -i -w /home/$USER/workspace rover_mcu \
   tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py \
   demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --start
 ```
@@ -115,8 +121,9 @@ uploaded id lives until the next boot repacks the bank.
 
 ## Pushed telemetry (the console target)
 
-The producer pushes four blocks over the ops interface (TCP/SLIP,
-port 9000) without being asked: the rover's 256-byte ROVR/2 OUTPUT
+The producer pushes four blocks over the ops interface (TCP/SLIP;
+127.0.0.1:9000 inside the container, 127.0.0.1:9010 on the host)
+without being asked: the rover's 256-byte ROVR/2 OUTPUT
 frame at 20 Hz, the controller's OUTPUT at 10 Hz, and the board
 link's and the lidar model's STATE (counters and the board's
 heartbeat; those two drivers have no OUTPUT block) at 5 Hz. `tprm/toml/telemetry_manager.toml` is
@@ -132,25 +139,30 @@ sweeps.
 ### The console's endpoint on the host
 
 Inside its container the interface listens on `0.0.0.0:9000`
-(`tprm/toml/interface.toml`); nothing reaches it from the host unless
-the container publishes the port. The supported host endpoint is
+(`tprm/toml/interface.toml`), so a client in the container connects to
+127.0.0.1:9000; nothing reaches it from the host unless the container
+publishes the port. The supported host endpoint is
 **127.0.0.1:9010**, host loopback only, so a console on this machine
 connects there and nothing off the machine can:
 
 ```bash
 docker compose run -d --rm --name rover_mcu -p 127.0.0.1:9010:9000 dev-cuda \
-  ./build/hosted-x86_64-debug/bin/ApexRoverMcuDemo --config ... --fs-root ...
+  ./build/hosted-x86_64-debug/bin/ApexRoverMcuDemo \
+  --config build/hosted-x86_64-debug/demos/apex_horizon_demo/rover_mcu/exec/tprm/master.tprm \
+  --fs-root /home/$USER/workspace/build/rover_mcu_fs --skip-cleanup \
+  --rt-mode lag-tolerant --rt-max-lag 200
 ```
 
-(`producers/rover.sh` in the horizon work area passes this flag.) From
-the host, `push_probe.py --host 127.0.0.1 --port 9010` then sees the
-same four streams, and a command sent to 127.0.0.1:9010 is answered.
+This is the quick start's run command, detached, named `rover_mcu` and
+with the port published; stop it with `docker stop rover_mcu`. From the
+host, `push_probe.py --host 127.0.0.1 --port 9010` then sees the same
+four streams, and a command sent to 127.0.0.1:9010 is answered.
 
 To watch the pushes arrive without a console, from inside the
-producer's container:
+producer's container (127.0.0.1:9000, the script's default):
 
 ```bash
-docker exec -i -w /home/kalex/workspace rover_mcu \
+docker exec -i -w /home/$USER/workspace rover_mcu \
   tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/push_probe.py --seconds 5
 ```
 
@@ -256,8 +268,13 @@ While a sequence runs the rover samples itself at 20 Hz and the 1 Hz
 telemetry task drains `SEQTRACE ...` lines into
 `logs/models/GroundVehicle_0.log` (sequence id and leg, grid
 north/east, heading, speed, nearest lidar return, slope, lamp bits),
-ending with `SEQTRACE end dropped=N`. The branch record's
-`seqtrace_to_csv.py` cuts one CSV per take for the plots.
+ending with `SEQTRACE end dropped=N`. `scripts/seqtrace_to_csv.py`
+(standard library only) cuts one CSV per take for plotting:
+
+```bash
+python3 demos/apex_horizon_demo/rover_mcu/scripts/seqtrace_to_csv.py \
+  build/rover_mcu_fs/logs/models/GroundVehicle_0.log build/rover_mcu_trace
+```
 
 ## Logs
 

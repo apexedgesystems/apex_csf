@@ -12,7 +12,7 @@ reports whether every byte agrees.
 Run from inside the producer's container (the ops interface listens on
 127.0.0.1:9000 there), with the apex tools venv:
 
-    docker exec -i -w /home/kalex/workspace rover_mcu \\
+    docker exec -i -w /home/$USER/workspace rover_mcu \\
       tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/push_probe.py --seconds 5
 
 Arguments:
