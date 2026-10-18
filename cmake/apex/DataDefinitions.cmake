@@ -47,19 +47,23 @@ set(APEX_DATA_DB_DIR
 #   apex_add_data_manifest()  # Uses apex_data.toml in current directory
 #   apex_add_data_manifest(MANIFEST ${CMAKE_CURRENT_SOURCE_DIR}/data/my_manifest.toml)
 #
-# No-op if manifest file doesn't exist.
+# The default form is a no-op when the directory holds no apex_data.toml,
+# so a library may call it by convention. An explicit MANIFEST path names
+# a file the author intends to ship; a path that does not exist is a
+# configure error, so a mistyped path cannot drop a manifest silently.
 # ------------------------------------------------------------------------------
 function (apex_add_data_manifest)
   cmake_parse_arguments(ADM "" "MANIFEST" "" ${ARGN})
 
-  # Default manifest path
   if (NOT ADM_MANIFEST)
     set(ADM_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/apex_data.toml")
-  endif ()
-
-  # Check manifest exists
-  if (NOT EXISTS "${ADM_MANIFEST}")
-    return()
+    if (NOT EXISTS "${ADM_MANIFEST}")
+      return()
+    endif ()
+  elseif (NOT EXISTS "${ADM_MANIFEST}")
+    message(FATAL_ERROR "apex_add_data_manifest: MANIFEST path does not exist: ${ADM_MANIFEST}\n"
+                        "  (registered from ${CMAKE_CURRENT_LIST_FILE})"
+    )
   endif ()
 
   # Track manifest path globally
