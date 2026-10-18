@@ -87,6 +87,9 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Fixed watchpoint and group debounce: one dispatch after `minFireCount`
+  consecutive true evaluations, with group settings kept across
+  activation. ([#162](https://github.com/apexedgesystems/apex_csf/pull/162))
 - Data manifests naming a header at the wrong path: SystemMonitor's
   dictionary generates again, SystemComponent's `ComponentType` enum carries
   its values, and a missing declared header now fails generation
@@ -101,6 +104,11 @@ any such change is called out explicitly in its entry.
   at the wrong rate silently (600 Hz ticked at 1000 Hz, 300 Hz at
   333 Hz) because the frame period was held in whole milliseconds; the
   boot log and health packet reported the requested rate throughout.
+
+### Security
+
+- Python tooling lock: virtualenv 21.6.1 to 21.14.5, clearing four
+  published advisories.
 
 ## [0.0.1] - 2026-03-27
 
