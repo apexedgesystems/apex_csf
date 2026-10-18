@@ -261,9 +261,11 @@ check-data-manifest-helper:
 	expect notfound 'MANIFEST path does not exist'; expect notfound 'NOTFOUND'; \
 	[ "$$(run keyword-without-value)" -ne 0 ] || { printf '[check-data-manifest-helper] keyword-without-value: expected a configure error\n'; fail=1; }; \
 	expect keyword-without-value 'use no arguments or MANIFEST <path>'; \
+	[ "$$(run stray-argument)" -ne 0 ] || { printf '[check-data-manifest-helper] stray-argument: expected a configure error\n'; fail=1; }; \
+	expect stray-argument 'use no arguments or MANIFEST <path>'; expect stray-argument 'OFF'; \
 	rm -rf "$$scratch"; \
 	[ $$fail -eq 0 ] || exit 1
-	$(call log_ok,check-data-manifest-helper,default no-op; valid listed; missing and -NOTFOUND paths and malformed calls fail configure)
+	$(call log_ok,check-data-manifest-helper,default no-op; valid listed; missing and -NOTFOUND paths and bare or stray arguments fail configure)
 
 check-data-db-contract: tools-rust
 	$(call log,check-data-db-contract,Driving check-data-db with one fixture per verdict)

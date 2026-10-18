@@ -308,7 +308,8 @@ apex_add_data_manifest(MANIFEST path/to/manifest) # Explicit path
 ```
 
 The default form is a no-op when the directory holds no `apex_data.toml`; an
-explicit `MANIFEST` path that does not exist is a configure error. Manifests
+explicit `MANIFEST` path that does not exist, a `MANIFEST` keyword without a
+value, or an unrecognized argument is a configure error. Manifests
 are collected by `apex_finalize_data_manifests()` and written to
 `apex_data_manifests.txt` in the build directory. The `make apex-data-db` target
 reads this file and invokes `apex_data_gen` to produce JSON struct dictionaries;

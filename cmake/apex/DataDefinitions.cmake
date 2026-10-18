@@ -51,15 +51,18 @@ set(APEX_DATA_DB_DIR
 # so a library may call it by convention. An explicit MANIFEST path names
 # a file the author intends to ship; a path that does not exist, including
 # a failed lookup's -NOTFOUND value, is a configure error, so a mistyped or
-# unresolved path cannot drop a manifest silently. Any other argument shape
-# is a configure error as well.
+# unresolved path cannot drop a manifest silently. A MANIFEST keyword
+# without a value, or an argument the helper does not recognize, is a
+# configure error as well; a repeated keyword follows cmake_parse_arguments.
 # ------------------------------------------------------------------------------
 function (apex_add_data_manifest)
   cmake_parse_arguments(PARSE_ARGV 0 ADM "" "MANIFEST" "")
 
-  # The call takes no arguments, or MANIFEST with one value. Anything else
-  # is a mistake to name, not a form to guess at.
-  if (ADM_UNPARSED_ARGUMENTS OR "MANIFEST" IN_LIST ADM_KEYWORDS_MISSING_VALUES)
+  # The call takes no arguments, or MANIFEST with a value. A MANIFEST
+  # keyword without a value, or an argument the helper does not recognize,
+  # is a mistake to name, not a form to guess at. Presence is tested, not
+  # truth: a stray OFF is as unrecognized as a stray word.
+  if (DEFINED ADM_UNPARSED_ARGUMENTS OR "MANIFEST" IN_LIST ADM_KEYWORDS_MISSING_VALUES)
     message(
       FATAL_ERROR "apex_add_data_manifest: use no arguments or MANIFEST <path>; got '${ARGV}'\n"
                   "  (registered from ${CMAKE_CURRENT_LIST_FILE})"

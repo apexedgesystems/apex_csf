@@ -6,7 +6,8 @@
 # can assert the helper's contract from the outside: the default form is a
 # no-op without a manifest, a present registration lands in the list, and
 # an explicit path that does not exist (typed, or a failed lookup's
-# -NOTFOUND value) or a malformed call fails configure.
+# -NOTFOUND value), a bare MANIFEST keyword or an unrecognized argument
+# fails configure.
 # ==============================================================================
 
 cmake_minimum_required(VERSION 3.24)
@@ -37,6 +38,9 @@ elseif (CASE STREQUAL "notfound")
   apex_add_data_manifest(MANIFEST "${FIXTURE_LOOKUP}")
 elseif (CASE STREQUAL "keyword-without-value")
   apex_add_data_manifest(MANIFEST)
+elseif (CASE STREQUAL "stray-argument")
+  # A stray argument CMake would read as false must still be reported.
+  apex_add_data_manifest(MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/present_data.toml" OFF)
 else ()
   message(FATAL_ERROR "unknown CASE '${CASE}'")
 endif ()
