@@ -179,6 +179,8 @@ help:
 	@printf '  %-28s %s\n' "make cdef" "Regenerate .auto headers from component specs"
 	@printf '  %-28s %s\n' "make check-cdef" "Diff committed .auto headers against their specs"
 	@printf '  %-28s %s\n' "make check-data-db" "Generate every component dictionary; fail on a bad manifest"
+	@printf '  %-28s %s\n' "make check-data-manifest-helper" "Assert the apex_add_data_manifest contract on a fixture"
+	@printf '  %-28s %s\n' "make check-data-db-contract" "Assert check-data-db's verdicts on fixture manifests"
 	@printf '  %-28s %s\n' "make apex-data-db" "Generate JSON struct dictionaries"
 	@printf '  %-28s %s\n' "make tprm-templates" "Generate TOML templates for tunable params"
 	@printf '  %-28s %s\n' "make ops-deck" "Generate consolidated cmd/tlm deck"

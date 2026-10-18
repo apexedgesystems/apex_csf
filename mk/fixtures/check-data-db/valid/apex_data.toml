@@ -1,0 +1,9 @@
+component = "GateValid"
+
+[structs]
+GateOutput = { category = "OUTPUT" }
+
+[[fields.GateOutput]]
+name = "value"
+type = "uint"
+size = 4

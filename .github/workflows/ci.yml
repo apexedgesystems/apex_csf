@@ -261,6 +261,11 @@ jobs:
           rebuild: ${{ needs.changes.outputs.docker }}
       - name: Dictionaries generate (check-data-db)
         run: docker compose run --rm -T build-base make check-data-db
+      # The gate stands on the helper's explicit-path error and its own
+      # failure propagation; valid inputs alone would stay green if either
+      # were removed, so the fixtures assert both verdicts here.
+      - name: Helper and gate contracts
+        run: docker compose run --rm -T build-base make check-data-manifest-helper check-data-db-contract
 
   py:
     name: Python tool tests
