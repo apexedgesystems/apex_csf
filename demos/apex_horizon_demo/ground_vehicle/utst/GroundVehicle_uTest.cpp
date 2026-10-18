@@ -680,14 +680,27 @@ TEST(GroundVehicleCmd, HaltStampsManualReasonAndResumeClearsAnyHalt) {
   EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
 }
 
+namespace {
+/// The engine's answer in these tests: a bit per catalog id.
+struct RunningIds {
+  std::uint64_t bits{0};
+  static bool query(void* ctx, std::uint8_t id) noexcept {
+    return (static_cast<RunningIds*>(ctx)->bits >> id) & 1u;
+  }
+};
+} // namespace
+
 /**
  * @test A plain HALT pauses a running sequence: the frame carries the halt reason through the
- *       pause and the sequence's id and waypoint counters come back on RESUME, so a console
- *       never reads idle while a tour is still running. A sequence that tries to re-bracket the
- *       frame while halted means the engine moved on, and RESUME then reads idle.
+ *       pause and the sequence's id and waypoint counters come back on RESUME while the engine
+ *       still runs it, so a console never reads idle during a tour. A sequence that tries to
+ *       re-bracket the frame while halted is what RESUME applies instead, under the same rule.
  */
 TEST(GroundVehicleCmd, PlainHaltKeepsTheRunningSequenceForResume) {
   ReadyRover r;
+  RunningIds engine;
+  r.rover.setSequenceOwnershipQuery(&RunningIds::query, &engine);
+  engine.bits = (1u << 2) | (1u << 3);
   // Sequence 2 running, two legs, the first target accepted.
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(10.0F, 0.0F)), 0u);
@@ -711,7 +724,7 @@ TEST(GroundVehicleCmd, PlainHaltKeepsTheRunningSequenceForResume) {
   EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
 
   // Paused, then a recovery sequence tries to name its reason: refused
-  // while halted, and the pause no longer owns the frame on RESUME.
+  // while halted; a halt reason is no running id, so RESUME reads idle.
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 1u}), 0u);
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
   const auto EXEC_FAILED =
@@ -719,6 +732,69 @@ TEST(GroundVehicleCmd, PlainHaltKeepsTheRunningSequenceForResume) {
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0x14u, 0u}), EXEC_FAILED);
   EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
   EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u) << "the engine moved on; nothing to put back";
+}
+
+/**
+ * @test RESUME puts a paused sequence back only while the engine still runs it: one that timed
+ *       out or was stopped during the halt leaves the frame idle (so ordinary commands are not
+ *       BUSY against nothing), a restart or a replacement started during the halt lands as the
+ *       bracket it tried to stamp, and a sequence that ended during the halt reads idle.
+ */
+TEST(GroundVehicleCmd, ResumeRestoresOnlyWhatTheEngineStillRuns) {
+  ReadyRover r;
+  RunningIds engine;
+  r.rover.setSequenceOwnershipQuery(&RunningIds::query, &engine);
+  const auto EXEC_FAILED =
+      static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED);
+
+  // Timed out (or stopped) while halted: not restored, and HOLD is accepted.
+  engine.bits = 1u << 2;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  engine.bits = 0u;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u) << "the engine no longer runs it";
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE, {0u}), 0u) << "not BUSY";
+
+  // Same-id restart while halted: its bracket is refused then, applied on
+  // RESUME with its own waypoint count and no leg in progress.
+  engine.bits = 1u << 3;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(10.0F, 0.0F)), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 1u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 3u);
+  EXPECT_EQ(r.rover.vehicleState().waypoint_total, 1u);
+  EXPECT_EQ(r.rover.vehicleState().active_waypoint, 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+
+  // Replaced while halted by another sequence the engine now runs.
+  engine.bits = 1u << 2;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  engine.bits = 1u << 5;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {5u, 4u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 5u);
+  EXPECT_EQ(r.rover.vehicleState().waypoint_total, 4u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+
+  // Ended while halted: its end is refused then and applied on RESUME.
+  engine.bits = 1u << 2;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 1u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), EXEC_FAILED);
+  engine.bits = 0u;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+
+  // No engine wired at all: the plant cannot vouch for a paused sequence.
+  r.rover.setSequenceOwnershipQuery(nullptr, nullptr);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 1u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
 }
 
 /**

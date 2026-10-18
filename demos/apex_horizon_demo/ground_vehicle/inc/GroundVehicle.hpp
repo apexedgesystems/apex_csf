@@ -134,6 +134,19 @@ public:
   /// controller's OUTPUT or a driver's). Pointer must outlive the
   /// component; nullptr (the default) means the built-in trajectory.
   void setDriveCommand(const GroundVehicleDriveCommand* cmd) noexcept { drive_cmd_ = cmd; }
+
+  /// Whether the action engine is running the sequence with this catalog
+  /// id: the engine owns sequences, the plant only displays and adopts
+  /// what the engine owns, and a RESUME puts a paused sequence back on
+  /// the frame only when the engine still runs it.
+  using SequenceRunningFn = bool (*)(void* ctx, std::uint8_t sequenceId) noexcept;
+
+  /// Wire the engine's answer. Without one the plant cannot vouch for a
+  /// paused sequence and RESUME reads idle.
+  void setSequenceOwnershipQuery(SequenceRunningFn fn, void* ctx) noexcept {
+    seq_running_fn_ = fn;
+    seq_running_ctx_ = ctx;
+  }
   [[nodiscard]] const GroundVehicleDriveCommand* driveCommand() const noexcept {
     return drive_cmd_;
   }
@@ -232,15 +245,36 @@ private:
       s.commanded_halt = 0u;
       s.throttle_override_pct = 255u;
       if ((s.seq_state & kSeqStateHaltBit) != 0u) {
-        // The halt is over. A sequence paused by a plain halt is still
-        // running and gets its id and counters back; otherwise idle,
-        // and a sequence that starts later stamps itself.
-        s.seq_state = pausedSeqState_;
-        s.waypoint_total = pausedWaypointTotal_;
-        s.active_waypoint = pausedActiveWaypoint_;
+        // The halt is over. What goes back on the frame is what the
+        // engine owns now: a bracket a sequence tried to stamp while
+        // halted (a start, a restart, or an end) if there was one, else
+        // the sequence the plain halt paused -- and either only if the
+        // engine still runs that id. A sequence that timed out, was
+        // stopped or was replaced during the halt is not restored, so
+        // the frame never claims a sequence that would make ordinary
+        // commands BUSY against nothing.
+        std::uint8_t id = pausedSeqState_;
+        std::uint8_t total = pausedWaypointTotal_;
+        std::uint8_t active = pausedActiveWaypoint_;
+        if (pendingBracket_) {
+          id = pendingBracketSeq_;
+          total = pendingBracketTotal_;
+          active = 0u;
+        }
+        if (id != 0u && !sequenceRunning(id)) {
+          id = 0u;
+          total = 0u;
+          active = 0u;
+        }
+        s.seq_state = id;
+        s.waypoint_total = total;
+        s.active_waypoint = active;
         pausedSeqState_ = 0u;
         pausedWaypointTotal_ = 0u;
         pausedActiveWaypoint_ = 0u;
+        pendingBracket_ = false;
+        pendingBracketSeq_ = 0u;
+        pendingBracketTotal_ = 0u;
       }
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
 
@@ -335,12 +369,15 @@ private:
       if (s.commanded_halt != 0u) {
         // The halt reason stays on the frame until RESUME: a sequence
         // started (or finishing) while halted cannot bracket itself
-        // over it. That it tried means the engine's state moved on
-        // from the sequence a plain halt paused, so nothing is put
-        // back on RESUME.
-        pausedSeqState_ = 0u;
-        pausedWaypointTotal_ = 0u;
-        pausedActiveWaypoint_ = 0u;
+        // over it. The bracket it tried to stamp is kept: it is what the
+        // engine owns now, in place of whatever the plain halt paused,
+        // and RESUME applies it if the engine still runs that id (an
+        // end, id 0, always applies).
+        if (seqStateIsExpressible(payload[0])) {
+          pendingBracket_ = true;
+          pendingBracketSeq_ = payload[0];
+          pendingBracketTotal_ = payload[1];
+        }
         return static_cast<std::uint8_t>(CommandResult::EXEC_FAILED);
       }
       // A running sequence stamps its catalog id here, and a halt
@@ -875,6 +912,17 @@ private:
   std::uint8_t pausedSeqState_{0};
   std::uint8_t pausedWaypointTotal_{0};
   std::uint8_t pausedActiveWaypoint_{0};
+  /// A bracket a sequence tried to stamp while halted (refused then),
+  /// applied on RESUME under the engine's authority.
+  bool pendingBracket_{false};
+  std::uint8_t pendingBracketSeq_{0};
+  std::uint8_t pendingBracketTotal_{0};
+  SequenceRunningFn seq_running_fn_{nullptr};
+  void* seq_running_ctx_{nullptr};
+
+  [[nodiscard]] bool sequenceRunning(std::uint8_t id) const noexcept {
+    return seq_running_fn_ != nullptr && seq_running_fn_(seq_running_ctx_, id);
+  }
 };
 
 } // namespace ground_vehicle

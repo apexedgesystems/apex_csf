@@ -31,6 +31,26 @@ bridgeResolverFn(void* ctx, std::uint32_t fullUid,
   return {reinterpret_cast<const std::uint8_t*>(entry->dataPtr), entry->size};
 }
 
+/* ----------------------------- Sequence ownership ----------------------------- */
+
+// The engine's answer to the plant: whether a sequence with this catalog
+// id is running in any slot. RESUME asks it on the task thread, which
+// is also the thread the action phase mutates the table on.
+static bool sequenceRunningFn(void* ctx, std::uint8_t sequenceId) noexcept {
+  using system_core::data::SequenceStatus;
+  const auto* action = static_cast<const system_core::action::ActionComponent*>(ctx);
+  for (const auto& SEQ : action->iface().sequences) {
+    if (SEQ.sequenceId != sequenceId) {
+      continue;
+    }
+    if (SEQ.status == SequenceStatus::WAITING || SEQ.status == SequenceStatus::EXECUTING ||
+        SEQ.status == SequenceStatus::WAITING_CONDITION) {
+      return true;
+    }
+  }
+  return false;
+}
+
 /* ----------------------------- registerComponents ----------------------------- */
 
 bool RoverMcuExecutive::registerComponents() noexcept {
@@ -54,6 +74,7 @@ bool RoverMcuExecutive::registerComponents() noexcept {
 
   rover_.setBody(&earth_);
   rover_.setDriveCommand(controller_.driveCommand());
+  rover_.setSequenceOwnershipQuery(&sequenceRunningFn, static_cast<void*>(&actionComponent()));
   if (!registerComponent(&rover_, LOG_DIR)) {
     if (log != nullptr)
       log->info(label(), "registerComponent(rover) FAILED");
