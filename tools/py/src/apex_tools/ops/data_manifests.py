@@ -20,9 +20,10 @@ no arguments register the default `apex_data.toml` beside the CMakeLists;
 `MANIFEST <path>` registers that path, quoted or unquoted, with CMake's
 escape sequences decoded and `${CMAKE_CURRENT_SOURCE_DIR}` resolved (an
 escaped dollar stays literal); line comments and bracket comments
-(`#[[ ... ]]`) hide a call. A bracket argument, any other argument shape,
-an invalid escape, or a variable this reader cannot resolve is an error
-rather than a guess. The two sets must be
+(`#[[ ... ]]`) hide a call. A bracket argument, a semicolon anywhere in
+the path (CMake would treat the value as a list), any other argument
+shape, an invalid escape, or a variable this reader cannot resolve is an
+error rather than a guess. The two sets must be
 equal and every registered file must exist, so a registration that points
 nowhere, a manifest nobody registered, and a descriptor registered as a
 manifest all fail. An empty inventory fails.
@@ -234,15 +235,23 @@ def _evaluate(cmake: Path, kind: str, raw: str) -> str:
 
     Escape sequences follow cmake-language: a backslash before a
     non-alphanumeric character yields that character, ``\\t``, ``\\r`` and
-    ``\\n`` encode the control characters, ``\\;`` yields a semicolon, a
-    backslash-newline inside a quoted argument continues the line, and any
-    other escape is an error. An unescaped ``${CMAKE_CURRENT_SOURCE_DIR}``
+    ``\\n`` encode the control characters, a backslash-newline inside a
+    quoted argument continues the line, and any other escape is an error.
+    A semicolon, escaped or not, is refused before evaluation: CMake hands
+    the value on as a list, which no path can carry. An unescaped
+    ``${CMAKE_CURRENT_SOURCE_DIR}``
     is replaced by the manifest's directory; any other unescaped variable
     reference is an error. An escaped dollar never opens a reference.
 
     Raises:
-        ManifestInventoryError: an invalid escape or an unresolvable variable.
+        ManifestInventoryError: a semicolon in the value, an invalid escape
+            or an unresolvable variable.
     """
+    if ";" in raw:
+        raise ManifestInventoryError(
+            f"{cmake}: MANIFEST path {raw!r} carries a semicolon, which CMake treats as a "
+            "list separator; not a form this inventory reads"
+        )
     out: list[str] = []
     i, n = 0, len(raw)
     while i < n:

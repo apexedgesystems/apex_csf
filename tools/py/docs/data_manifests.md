@@ -16,7 +16,7 @@ the helper reads them through a small CMake lexer: no arguments for the default
 `apex_data.toml` beside the file, `MANIFEST <path>` quoted or unquoted with
 `${CMAKE_CURRENT_SOURCE_DIR}` resolved, line and bracket comments hiding a call
 (an opener inside a comment or a quoted value is text), and any other argument
-shape an error. Every registered file must exist and the inventory must not be
+shape an error, including a bracket argument or a path carrying a semicolon. Every registered file must exist and the inventory must not be
 empty. `make check-data-db` runs it first and generates every manifest it
 lists; a problem prints a message and exits 1.
 

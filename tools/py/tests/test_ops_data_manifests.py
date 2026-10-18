@@ -304,3 +304,26 @@ def test_text_that_is_not_a_command_invocation_fails(tmp_path):
     _write(tmp_path / "odd" / "CMakeLists.txt", "stray_token\napex_add_data_manifest()\n")
     with pytest.raises(ManifestInventoryError, match="expected a command invocation"):
         inventory([tmp_path])
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        "${CMAKE_CURRENT_SOURCE_DIR}/semi\\;_data.toml",
+        '"${CMAKE_CURRENT_SOURCE_DIR}/semi\\;_data.toml"',
+        '"${CMAKE_CURRENT_SOURCE_DIR}/semi;_data.toml"',
+        "${CMAKE_CURRENT_SOURCE_DIR}/semi;_data.toml",
+    ],
+)
+def test_semicolon_bearing_manifest_path_is_refused(tmp_path, argument):
+    """Verify a path with a semicolon, escaped or not, is refused even though the file exists.
+
+    CMake hands the value on as a list, so its helper registers nothing for
+    any of these spellings; the reader refuses them instead of matching the
+    file by name.
+    """
+    _component_tree(tmp_path, 'component = "Wave"')
+    _write(tmp_path / "comp" / "semi;_data.toml", 'component = "Semi"\n')
+    _write(tmp_path / "comp" / "CMakeLists.txt", f"apex_add_data_manifest(MANIFEST {argument})\n")
+    with pytest.raises(ManifestInventoryError, match="carries a semicolon"):
+        inventory([tmp_path])
