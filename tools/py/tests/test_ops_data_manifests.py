@@ -143,12 +143,13 @@ def test_bracket_comment_hides_a_registration(tmp_path):
         inventory([tmp_path])
 
 
-def test_hash_inside_a_quoted_argument_is_not_a_comment(tmp_path):
-    """Verify a `#` within a quoted argument elsewhere on the line does not hide the call."""
-    manifest = _component_tree(tmp_path, 'component = "Wave"')
+def test_hash_inside_a_quoted_manifest_path_is_part_of_the_path(tmp_path):
+    """Verify a MANIFEST path containing `#` registers that file; the `#` is not a comment."""
+    manifest = _write(tmp_path / "wave" / "tag#1_data.toml", 'component = "Wave"\n')
     _write(
-        tmp_path / "comp" / "CMakeLists.txt",
-        'set(NOTE "tag#1")\napex_add_data_manifest() # registers the default\n',
+        tmp_path / "wave" / "CMakeLists.txt",
+        'apex_add_data_manifest(MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/tag#1_data.toml")'
+        " # default\n",
     )
     assert inventory([tmp_path]) == [manifest]
 
@@ -172,4 +173,60 @@ def test_argument_shapes_outside_the_contract_fail(tmp_path, arguments):
     _component_tree(tmp_path, 'component = "Wave"')
     _write(tmp_path / "odd" / "CMakeLists.txt", f"apex_add_data_manifest({arguments})\n")
     with pytest.raises(ManifestInventoryError, match="not a form this inventory|cannot resolve"):
+        inventory([tmp_path])
+
+
+def test_parenthesis_inside_a_quoted_missing_path_is_kept(tmp_path):
+    """Verify `"...apex_data.toml)missing"` is one missing path, not its existing prefix."""
+    _component_tree(tmp_path, 'component = "Wave"')
+    _write(
+        tmp_path / "comp" / "CMakeLists.txt",
+        'apex_add_data_manifest(MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/apex_data.toml)missing")\n',
+    )
+    expected = r"registered but not present: .*apex_data\.toml\)missing"
+    with pytest.raises(ManifestInventoryError, match=expected):
+        inventory([tmp_path])
+
+
+def test_parenthesis_inside_a_quoted_existing_path_registers_it(tmp_path):
+    """Verify a quoted path with `)` in the file name registers that file."""
+    manifest = _write(tmp_path / "wave" / "odd)_data.toml", 'component = "Wave"\n')
+    _write(
+        tmp_path / "wave" / "CMakeLists.txt",
+        'apex_add_data_manifest(MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/odd)_data.toml")\n',
+    )
+    assert inventory([tmp_path]) == [manifest]
+
+
+def test_bracket_opener_inside_a_line_comment_is_text(tmp_path):
+    """Verify `##[[` on a comment line does not open a bracket comment over the next call."""
+    manifest = _component_tree(tmp_path, 'component = "Wave"')
+    _write(tmp_path / "comp" / "CMakeLists.txt", "##[[\napex_add_data_manifest()\n#]]\n")
+    assert inventory([tmp_path]) == [manifest]
+
+
+def test_bracket_opener_inside_a_quoted_path_is_text(tmp_path):
+    """Verify `[[` inside a quoted MANIFEST path is part of the path, not a comment."""
+    _component_tree(tmp_path, 'component = "Wave"')
+    _write(
+        tmp_path / "comp" / "CMakeLists.txt",
+        'apex_add_data_manifest(MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/x[[y_data.toml")\n',
+    )
+    expected = r"registered but not present: .*x\[\[y_data\.toml"
+    with pytest.raises(ManifestInventoryError, match=expected):
+        inventory([tmp_path])
+
+
+def test_command_name_is_case_insensitive(tmp_path):
+    """Verify `APEX_ADD_DATA_MANIFEST()` registers like the lowercase spelling, as CMake does."""
+    manifest = _component_tree(tmp_path, 'component = "Wave"')
+    _write(tmp_path / "comp" / "CMakeLists.txt", "APEX_ADD_DATA_MANIFEST()\n")
+    assert inventory([tmp_path]) == [manifest]
+
+
+def test_unterminated_quoted_argument_fails(tmp_path):
+    """Verify a CMakeLists the lexer cannot finish is an error, not a partial inventory."""
+    _component_tree(tmp_path, 'component = "Wave"')
+    _write(tmp_path / "odd" / "CMakeLists.txt", 'apex_add_data_manifest(MANIFEST "unterminated\n')
+    with pytest.raises(ManifestInventoryError, match="unterminated quoted argument"):
         inventory([tmp_path])

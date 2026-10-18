@@ -11,12 +11,15 @@ change it.
 
 Unless disabled, the inventory is compared with the manifests CMake
 registers through `apex_add_data_manifest(...)` in the CMakeLists.txt files
-under the same roots. A call is read the way the helper reads it: no
-arguments register the default `apex_data.toml` beside the CMakeLists;
-`MANIFEST <path>` registers that path, quoted or unquoted, with
-`${CMAKE_CURRENT_SOURCE_DIR}` resolved; line comments and bracket comments
-(`#[[ ... ]]`) hide a call. Any other argument shape, or a variable this
-reader cannot resolve, is an error rather than a guess. The two sets must be
+under the same roots. The files are read with a small CMake lexer, so a
+comment opener inside a line comment or a quoted argument is text, and a
+parenthesis or bracket inside a quoted argument stays in the argument. A
+call is read the way the helper reads it: no arguments register the default
+`apex_data.toml` beside the CMakeLists; `MANIFEST <path>` registers that
+path, quoted or unquoted, with `${CMAKE_CURRENT_SOURCE_DIR}` resolved; line
+comments and bracket comments (`#[[ ... ]]`) hide a call. Any other argument
+shape, or a variable this reader cannot resolve, is an error rather than a
+guess. The two sets must be
 equal and every registered file must exist, so a registration that points
 nowhere, a manifest nobody registered, and a descriptor registered as a
 manifest all fail. An empty inventory fails.
@@ -47,12 +50,10 @@ else:
 MANIFEST_SUFFIX = "_data.toml"
 MANIFEST_DEFAULT_NAME = "apex_data.toml"
 SKIP_DIR_NAMES = {"build"}
-REGISTRATION_RE = re.compile(r"apex_add_data_manifest\s*\(([^)]*)\)")
-BRACKET_COMMENT_RE = re.compile(r"#\[(=*)\[.*?\]\1\]", re.S)
-# One CMake argument: a quoted argument (escapes carried as written) or an
-# unquoted argument (no whitespace, parentheses, quotes or comment marks).
-ARGUMENT_RE = re.compile(r'"((?:[^"\\]|\\.)*)"|([^\s()"#;]+)')
+REGISTRATION_COMMAND = "apex_add_data_manifest"
+BRACKET_OPEN_RE = re.compile(r"\[(=*)\[")
 SOURCE_DIR_VAR = "${CMAKE_CURRENT_SOURCE_DIR}"
+_SEPARATORS = ' \t\r\n()"#'
 
 
 class ManifestInventoryError(Exception):
@@ -115,43 +116,130 @@ def component_manifests(roots: list[Path]) -> list[Path]:
     return [p for p in find_candidates(roots) if classify(p) == "component"]
 
 
-def _without_comments(text: str) -> str:
-    """Drop CMake bracket and line comments so a commented-out call does not count.
+Token = tuple[str, str]
 
-    A `#` inside a quoted argument is part of the argument, not a comment.
+
+def _lex(cmake: Path, text: str) -> list[Token]:
+    """Split a CMakeLists file into tokens with comments removed.
+
+    Token kinds: "(" and ")", "quoted" (escapes resolved), "bracket"
+    (a `[[ ... ]]` argument), and "unquoted" (identifiers and bare
+    arguments). A `#` outside a quoted or bracket argument starts a line
+    comment, or a bracket comment when `[=*[` follows it immediately; the
+    comment runs to its own end, so an opener inside a line comment or a
+    quoted value is text.
+
+    Raises:
+        ManifestInventoryError: an unterminated quoted argument, bracket
+            argument or bracket comment.
     """
-    text = BRACKET_COMMENT_RE.sub(" ", text)
-    kept = []
-    for line in text.splitlines():
-        quoted = False
-        for pos, ch in enumerate(line):
-            if ch == '"':
-                quoted = not quoted
-            elif ch == "#" and not quoted:
-                line = line[:pos]
-                break
-        kept.append(line)
-    return "\n".join(kept)
+    tokens: list[Token] = []
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if ch in " \t\r\n":
+            i += 1
+        elif ch == "#":
+            opener = BRACKET_OPEN_RE.match(text, i + 1)
+            if opener is not None:
+                i = _bracket_end(cmake, text, opener, "bracket comment")
+            else:
+                newline = text.find("\n", i)
+                i = n if newline < 0 else newline + 1
+        elif ch == '"':
+            value = []
+            j = i + 1
+            while j < n and text[j] != '"':
+                if text[j] == "\\" and j + 1 < n:
+                    value.append(text[j + 1])
+                    j += 2
+                else:
+                    value.append(text[j])
+                    j += 1
+            if j >= n:
+                raise ManifestInventoryError(f"{cmake}: unterminated quoted argument")
+            tokens.append(("quoted", "".join(value)))
+            i = j + 1
+        elif ch in "()":
+            tokens.append((ch, ch))
+            i += 1
+        else:
+            opener = BRACKET_OPEN_RE.match(text, i)
+            if opener is not None:
+                end = _bracket_end(cmake, text, opener, "bracket argument")
+                close_len = len(opener.group(1)) + 2
+                tokens.append(("bracket", text[opener.end() : end - close_len]))
+                i = end
+            else:
+                j = i
+                while j < n and text[j] not in _SEPARATORS:
+                    j += 1
+                tokens.append(("unquoted", text[i:j]))
+                i = j
+    return tokens
 
 
-def _manifest_argument(cmake: Path, raw_args: str) -> Path:
-    """Resolve one call's argument list to the manifest it registers.
+def _bracket_end(cmake: Path, text: str, opener: re.Match[str], what: str) -> int:
+    """Return the index just past the `]=*]` that closes the opener."""
+    close = "]" + opener.group(1) + "]"
+    end = text.find(close, opener.end())
+    if end < 0:
+        raise ManifestInventoryError(f"{cmake}: unterminated {what}")
+    return end + len(close)
+
+
+def _registration_calls(cmake: Path, tokens: list[Token]) -> list[list[Token]]:
+    """Return the argument tokens of each registration call, in file order."""
+    calls: list[list[Token]] = []
+    i = 0
+    while i < len(tokens):
+        kind, value = tokens[i]
+        if kind == "unquoted" and value.lower() == REGISTRATION_COMMAND and i + 1 < len(tokens):
+            if tokens[i + 1][0] != "(":
+                i += 1
+                continue
+            depth = 0
+            args: list[Token] = []
+            j = i + 1
+            while j < len(tokens):
+                if tokens[j][0] == "(":
+                    depth += 1
+                    if depth > 1:
+                        args.append(tokens[j])
+                elif tokens[j][0] == ")":
+                    depth -= 1
+                    if depth == 0:
+                        break
+                    args.append(tokens[j])
+                else:
+                    args.append(tokens[j])
+                j += 1
+            if depth != 0:
+                raise ManifestInventoryError(f"{cmake}: unterminated {REGISTRATION_COMMAND} call")
+            calls.append(args)
+            i = j + 1
+        else:
+            i += 1
+    return calls
+
+
+def _manifest_argument(cmake: Path, args: list[Token]) -> Path:
+    """Resolve one call's argument tokens to the manifest it registers.
 
     Raises:
         ManifestInventoryError: an argument shape the helper does not take,
             a MANIFEST keyword without a value, or a variable other than
             CMAKE_CURRENT_SOURCE_DIR in the path.
     """
-    tokens = [quoted or unquoted for quoted, unquoted in ARGUMENT_RE.findall(raw_args)]
-    tokens = [tok for tok in tokens if tok]
-    if not tokens:
+    if not args:
         return cmake.parent / MANIFEST_DEFAULT_NAME
-    if tokens[0] != "MANIFEST" or len(tokens) != 2:
+    shown = " ".join(value for _, value in args)
+    if len(args) != 2 or args[0] != ("unquoted", "MANIFEST") or args[1][0] == "(":
         raise ManifestInventoryError(
-            f"{cmake}: apex_add_data_manifest({raw_args.strip()}) is not a form this "
-            f"inventory reads; use no arguments or MANIFEST <path>"
+            f"{cmake}: {REGISTRATION_COMMAND}({shown}) is not a form this inventory reads; "
+            "use no arguments or MANIFEST <path>"
         )
-    raw = tokens[1]
+    raw = args[1][1]
     if "${" in raw.replace(SOURCE_DIR_VAR, ""):
         raise ManifestInventoryError(
             f"{cmake}: cannot resolve MANIFEST path '{raw}'; only {SOURCE_DIR_VAR} is understood"
@@ -163,18 +251,19 @@ def registered_manifests(roots: list[Path]) -> set[Path]:
     """Return the manifests `apex_add_data_manifest` registers under the roots.
 
     Raises:
-        ManifestInventoryError: a call whose arguments this reader does not
-            take, or a MANIFEST path using a variable other than
-            CMAKE_CURRENT_SOURCE_DIR.
+        ManifestInventoryError: a file the lexer cannot finish (an
+            unterminated quote, bracket or call), a call whose arguments
+            this reader does not take, or a MANIFEST path using a variable
+            other than CMAKE_CURRENT_SOURCE_DIR.
     """
     registered: set[Path] = set()
     for root in roots:
         for cmake in sorted(root.rglob("CMakeLists.txt")):
             if _is_skipped(cmake.relative_to(root)):
                 continue
-            text = _without_comments(cmake.read_text(encoding="utf-8"))
-            for call in REGISTRATION_RE.finditer(text):
-                registered.add(_normalize(_manifest_argument(cmake, call.group(1))))
+            tokens = _lex(cmake, cmake.read_text(encoding="utf-8"))
+            for args in _registration_calls(cmake, tokens):
+                registered.add(_normalize(_manifest_argument(cmake, args)))
     return registered
 
 
