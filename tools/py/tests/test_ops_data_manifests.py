@@ -166,13 +166,26 @@ def test_call_spanning_lines_is_read(tmp_path):
 
 @pytest.mark.parametrize(
     "arguments",
-    ["MANIFEST", "MANIFEST a b", 'FOO "x"', 'MANIFEST "${OTHER_DIR}/x_data.toml"'],
+    [
+        "MANIFEST",
+        "MANIFEST a b",
+        'FOO "x"',
+        'MANIFEST "${OTHER_DIR}/x_data.toml"',
+        "MANIFEST [[${CMAKE_CURRENT_SOURCE_DIR}/apex_data.toml]]",
+        'MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/apex_\\data.toml"',
+    ],
 )
 def test_argument_shapes_outside_the_contract_fail(tmp_path, arguments):
-    """Verify a call the reader cannot interpret is an error, never a silent default."""
+    """Verify a call the reader cannot interpret is an error, never a silent default.
+
+    The bracket argument is one CMake would register literally and the
+    `\\d` escape is one CMake rejects; both are refused rather than read
+    as the existing default manifest.
+    """
     _component_tree(tmp_path, 'component = "Wave"')
     _write(tmp_path / "odd" / "CMakeLists.txt", f"apex_add_data_manifest({arguments})\n")
-    with pytest.raises(ManifestInventoryError, match="not a form this inventory|cannot resolve"):
+    expected = "not a form this inventory|cannot resolve|invalid escape"
+    with pytest.raises(ManifestInventoryError, match=expected):
         inventory([tmp_path])
 
 
@@ -229,4 +242,65 @@ def test_unterminated_quoted_argument_fails(tmp_path):
     _component_tree(tmp_path, 'component = "Wave"')
     _write(tmp_path / "odd" / "CMakeLists.txt", 'apex_add_data_manifest(MANIFEST "unterminated\n')
     with pytest.raises(ManifestInventoryError, match="unterminated quoted argument"):
+        inventory([tmp_path])
+
+
+def test_escaped_dollar_keeps_the_variable_literal(tmp_path):
+    """Verify `"\\${CMAKE_CURRENT_SOURCE_DIR}/..."` is a literal path, as CMake leaves it."""
+    _component_tree(tmp_path, 'component = "Wave"')
+    _write(
+        tmp_path / "comp" / "CMakeLists.txt",
+        'apex_add_data_manifest(MANIFEST "\\${CMAKE_CURRENT_SOURCE_DIR}/apex_data.toml")\n',
+    )
+    expected = r"registered but not present: .*\$\{CMAKE_CURRENT_SOURCE_DIR\}/apex_data"
+    with pytest.raises(ManifestInventoryError, match=expected):
+        inventory([tmp_path])
+
+
+def test_encoded_tab_changes_the_path(tmp_path):
+    """Verify `apex_da\\ta.toml` names a path with a tab, not the existing apex_data.toml."""
+    _component_tree(tmp_path, 'component = "Wave"')
+    _write(
+        tmp_path / "comp" / "CMakeLists.txt",
+        'apex_add_data_manifest(MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/apex_da\\ta.toml")\n',
+    )
+    expected = r"registered but not present: .*apex_da\ta\.toml"
+    with pytest.raises(ManifestInventoryError, match=expected):
+        inventory([tmp_path])
+
+
+def test_identity_escape_in_an_unquoted_path_is_decoded(tmp_path):
+    """Verify `my\\ data_data.toml` unquoted registers the file whose name has a space."""
+    manifest = _write(tmp_path / "wave" / "my data_data.toml", 'component = "Wave"\n')
+    _write(
+        tmp_path / "wave" / "CMakeLists.txt",
+        "apex_add_data_manifest(MANIFEST ${CMAKE_CURRENT_SOURCE_DIR}/my\\ data_data.toml)\n",
+    )
+    assert inventory([tmp_path]) == [manifest]
+
+
+def test_command_name_inside_another_commands_arguments_is_data(tmp_path):
+    """Verify `message(apex_add_data_manifest())` is data, so the manifest stays unregistered."""
+    _component_tree(tmp_path, 'component = "Wave"')
+    _write(tmp_path / "comp" / "CMakeLists.txt", "message(apex_add_data_manifest())\n")
+    with pytest.raises(ManifestInventoryError, match="not registered by apex_add_data_manifest"):
+        inventory([tmp_path])
+
+
+def test_bracket_comment_inside_the_argument_list_is_skipped(tmp_path):
+    """Verify `#[=[ ... ]=]` between a call's arguments does not hide or alter the registration."""
+    manifest = _component_tree(tmp_path, 'component = "Wave"')
+    _write(
+        tmp_path / "comp" / "CMakeLists.txt",
+        "apex_add_data_manifest(#[=[ argument comment ]=]\n"
+        '  MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/apex_data.toml")\n',
+    )
+    assert inventory([tmp_path]) == [manifest]
+
+
+def test_text_that_is_not_a_command_invocation_fails(tmp_path):
+    """Verify a stray token where a command should be is an error for the file."""
+    _component_tree(tmp_path, 'component = "Wave"')
+    _write(tmp_path / "odd" / "CMakeLists.txt", "stray_token\napex_add_data_manifest()\n")
+    with pytest.raises(ManifestInventoryError, match="expected a command invocation"):
         inventory([tmp_path])
