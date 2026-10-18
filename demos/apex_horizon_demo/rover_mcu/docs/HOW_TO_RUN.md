@@ -269,7 +269,17 @@ telemetry task drains `SEQTRACE ...` lines into
 `logs/models/GroundVehicle_0.log` (sequence id and leg, grid
 north/east, heading, speed, nearest lidar return, slope, lamp bits),
 ending with `SEQTRACE end dropped=N`. `scripts/seqtrace_to_csv.py`
-(standard library only) cuts one CSV per take for plotting:
+(standard library only) cuts one CSV per take for plotting. The drain
+writes pending samples before the pending end marker, so a take started
+within a second of the last one ending can log its first samples ahead of
+that take's marker, and one marker can count two takes' drops. The
+extractor starts a new take wherever the take clock `t` fails to advance
+(the plant restarts it at 0 for each take) or a different running id
+appears; halt states never split a take. The log cannot say which take
+the next marker closes, so both takes at such a split are written as
+`seq<S>_take<i>_uncertain.csv` with a `.txt` note naming the lines and the
+reason, and a shared nonzero drop count is reported as unknown. `--strict`
+instead writes nothing and exits 2 naming the first such line:
 
 ```bash
 python3 demos/apex_horizon_demo/rover_mcu/scripts/seqtrace_to_csv.py \
