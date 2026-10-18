@@ -273,8 +273,15 @@ void ApexExecutive::resume() noexcept {
     return;
   }
 
-  controlState_.pauseRequested.store(false, std::memory_order_release);
-  controlState_.isPaused.store(false, std::memory_order_release);
+  // The clock waits on the first flag and the task loop on the second,
+  // both under the condition mutex; the stores take it so neither can
+  // land between a waiter's check and its block, where the notify
+  // would reach no one and the system would stay paused.
+  {
+    const std::lock_guard<std::mutex> lock(cvMutex_);
+    controlState_.pauseRequested.store(false, std::memory_order_release);
+    controlState_.isPaused.store(false, std::memory_order_release);
+  }
   cvPause_.notify_all();
   sysLog_->debug(label(), "Resume requested via external command", 1);
 }

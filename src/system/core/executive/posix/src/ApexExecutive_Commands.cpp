@@ -588,10 +588,15 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     // Write target before flag (release ordering on the atomic store).
     restartExecTarget_ = execTarget;
     restartDidSwapBinary_ = didSwapBinary;
-    controlState_.restartPending.store(true, std::memory_order_release);
     // Wake a paused clock: the SAFE ingest hold (and any pause) repairs
     // through RELOAD_EXECUTIVE, so the pending restart must not wait for
-    // a resume that will never come.
+    // a resume that will never come. The flag is set under the mutex
+    // the clock's pause wait holds, so the store cannot land between
+    // its check and its block.
+    {
+      const std::lock_guard<std::mutex> lock(cvMutex_);
+      controlState_.restartPending.store(true, std::memory_order_release);
+    }
     cvPause_.notify_all();
 
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
