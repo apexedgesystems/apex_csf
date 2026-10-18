@@ -5,24 +5,41 @@
  * Notes:
  *  - Tests verify mathematical properties and known values.
  *  - Tests are platform-agnostic: assert invariants, not exact implementation details.
+ *  - High-degree accuracy is checked against the C++17 special math functions
+ *    (std::sph_legendre, std::assoc_legendre), an implementation independent of
+ *    this library, and against the triangle API.
  */
 
 #include "src/utilities/math/legendre/inc/AssociatedLegendre.hpp"
-#include "src/utilities/math/legendre/inc/Factorials.hpp"
+#include "src/utilities/math/legendre/inc/PbarTriangle.hpp"
+#include "src/utilities/math/legendre/utst/PbarReference.hpp"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
+#include <set>
+#include <utility>
+#include <vector>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
+using apex::math::legendre::associatedLegendre;
 using apex::math::legendre::associatedLegendreFunction;
+using apex::math::legendre::computeNormalizedPbarTriangle;
+using apex::math::legendre::legendrePolynomial;
 using apex::math::legendre::legendrePolynomialFunction;
+using apex::math::legendre::makeScalarTables;
+using apex::math::legendre::normalizedAssociatedLegendre;
 using apex::math::legendre::normalizedAssociatedLegendreFunction;
-using apex::math::legendre::precomputedFactorials;
+using apex::math::legendre::pbarTriangleIndex;
+using apex::math::legendre::pbarTriangleSize;
+using apex::math::legendre::SCALAR_POW_SEED_MIN_ORDER;
+using apex::math::legendre::ScalarTables;
 
 /* ----------------------------- File Helpers ----------------------------- */
 
@@ -197,12 +214,364 @@ TEST(MathLegendrePolynomials, RoundTrip_Normalization) {
         double raw = associatedLegendreFunction(n, m, fx, x);
         double norm = normalizedAssociatedLegendreFunction(n, m, fx, x);
 
-        auto tbl = precomputedFactorials(n + m);
-        double ratio = tbl[n - m] / tbl[n + m];
+        const double ratio = std::tgamma(n - m + 1.0) / std::tgamma(n + m + 1.0);
         double factor = std::sqrt((2.0 * n + 1.0) * 2.0 * ratio);
 
         EXPECT_NEAR(raw * factor, norm, TOL) << "n=" << n << " m=" << m << " x=" << x;
       }
     }
+  }
+}
+
+/* ----------------------------- High Degree ----------------------------- */
+
+namespace {
+
+/// |got - ref| <= rel |ref| + abs. The absolute floor is in normalized units,
+/// where values are O(1); it covers true zeros, which a reference evaluated
+/// through acos(x) returns as about 1e-14.
+::testing::AssertionResult nearRel(double got, double ref, double rel, double abs) {
+  if (std::isfinite(got) && std::fabs(got - ref) <= rel * std::fabs(ref) + abs) {
+    return ::testing::AssertionSuccess();
+  }
+  return ::testing::AssertionFailure()
+         << "got " << got << " ref " << ref << " diff " << std::fabs(got - ref);
+}
+
+/// The ticket's grid: degrees across both failure points of the old closed form
+/// (digits lost from n = 22, inf from n = 86) up to the EGM2008 degree.
+const std::vector<int>& gridDegrees() {
+  static const std::vector<int> NS = {1, 5, 10, 50, 85, 86, 180, 360, 720, 2190};
+  return NS;
+}
+
+const std::vector<double>& gridArguments() {
+  static const std::vector<double> XS = {-0.9, -0.3, 0.0, 0.3, 0.7, 0.999};
+  return XS;
+}
+
+/// Orders {0, 1, n/3, n/2, n-1, n}, deduplicated and in range.
+std::set<int> gridOrders(int n) {
+  std::set<int> ms;
+  for (int m : {0, 1, n / 3, n / 2, n - 1, n}) {
+    if (m >= 0 && m <= n) {
+      ms.insert(m);
+    }
+  }
+  return ms;
+}
+
+constexpr double REL_TOL = 1e-10;
+constexpr double ABS_TOL = 1e-12;
+constexpr int GRID_MAX_N = 2190;
+
+} // namespace
+
+/**
+ * @test NormalizedHighDegree_MatchesTriangle
+ * @brief The scalar walk agrees with the triangle entry at idx(n, m) across the
+ *        whole grid, n up to 2190.
+ */
+TEST(MathLegendrePolynomials, NormalizedHighDegree_MatchesTriangle) {
+  std::vector<double> tri(pbarTriangleSize(GRID_MAX_N));
+  for (double x : gridArguments()) {
+    ASSERT_TRUE(computeNormalizedPbarTriangle(GRID_MAX_N, x, tri.data(), tri.size()));
+    for (int n : gridDegrees()) {
+      for (int m : gridOrders(n)) {
+        EXPECT_TRUE(nearRel(normalizedAssociatedLegendre(n, m, x), tri[pbarTriangleIndex(n, m)],
+                            REL_TOL, ABS_TOL))
+            << "n=" << n << " m=" << m << " x=" << x;
+      }
+    }
+  }
+}
+
+/**
+ * @test NormalizedHighDegree_BoundedBySqrt2nPlus1
+ * @brief Every grid value is finite and within |Pbar_n^m| <= sqrt(2n+1), the
+ *        bound the fully normalized functions satisfy (sqrt(2n+1) times the
+ *        Schmidt semi-normalized bound of 1).
+ */
+TEST(MathLegendrePolynomials, NormalizedHighDegree_BoundedBySqrt2nPlus1) {
+  for (double x : gridArguments()) {
+    for (int n : gridDegrees()) {
+      for (int m : gridOrders(n)) {
+        const double V = normalizedAssociatedLegendre(n, m, x);
+        ASSERT_TRUE(std::isfinite(V)) << "n=" << n << " m=" << m << " x=" << x;
+        EXPECT_LE(std::fabs(V), std::sqrt(2.0 * n + 1.0) * (1.0 + 1e-12))
+            << "n=" << n << " m=" << m << " x=" << x;
+      }
+    }
+  }
+}
+
+/**
+ * @test NormalizedHighDegree_MatchesStdSphLegendre
+ * @brief Against std::sph_legendre rescaled to the geodesy convention,
+ *        Pbar_n^m(x) = (-1)^m sqrt(4 pi (2 - delta_0m)) sph_legendre(n, m, acos x),
+ *        to 1e-10 relative across the grid. The closed form this replaced was
+ *        off by more than 1e-9 from n = 22 and returned inf from n = 86.
+ */
+TEST(MathLegendrePolynomials, NormalizedHighDegree_MatchesStdSphLegendre) {
+#if defined(__cpp_lib_math_special_functions)
+  for (double x : gridArguments()) {
+    const double THETA = std::acos(x);
+    for (int n : gridDegrees()) {
+      for (int m : gridOrders(n)) {
+        const double SIGN = (m % 2 == 0) ? 1.0 : -1.0;
+        const double SCALE = std::sqrt(4.0 * M_PI * ((m == 0) ? 1.0 : 2.0));
+        const double REF =
+            SIGN * SCALE *
+            std::sph_legendre(static_cast<unsigned>(n), static_cast<unsigned>(m), THETA);
+        EXPECT_TRUE(nearRel(normalizedAssociatedLegendre(n, m, x), REF, REL_TOL, ABS_TOL))
+            << "n=" << n << " m=" << m << " x=" << x;
+      }
+    }
+  }
+#else
+  GTEST_SKIP() << "C++17 special math functions unavailable in this standard library";
+#endif
+}
+
+/**
+ * @test UnnormalizedHighDegree_MatchesStdAssocLegendre
+ * @brief Against std::assoc_legendre (no Condon-Shortley phase, the same
+ *        convention) for every grid degree below 128, where the standard
+ *        defines it. Compared in normalized units, so the absolute floor means
+ *        the same thing as in the normalized tests.
+ */
+TEST(MathLegendrePolynomials, UnnormalizedHighDegree_MatchesStdAssocLegendre) {
+#if defined(__cpp_lib_math_special_functions)
+  for (double x : gridArguments()) {
+    for (int n : gridDegrees()) {
+      if (n >= 128) {
+        continue;
+      }
+      for (int m : gridOrders(n)) {
+        const double LOG_N = 0.5 * (std::log((m == 0 ? 1.0 : 2.0) * (2.0 * n + 1.0)) +
+                                    std::lgamma(n - m + 1.0) - std::lgamma(n + m + 1.0));
+        const double NORM = std::exp(LOG_N);
+        const double REF =
+            std::assoc_legendre(static_cast<unsigned>(n), static_cast<unsigned>(m), x);
+        EXPECT_TRUE(nearRel(NORM * associatedLegendre(n, m, x), NORM * REF, REL_TOL, ABS_TOL))
+            << "n=" << n << " m=" << m << " x=" << x;
+      }
+    }
+  }
+#else
+  GTEST_SKIP() << "C++17 special math functions unavailable in this standard library";
+#endif
+}
+
+/**
+ * @test UnnormalizedRange_OverflowsOnlyWithTheValue
+ * @brief P_n^n(0) = (2n-1)!!: finite and exact-to-rounding at n = 150, inf at
+ *        n = 151 where (301)!! exceeds DBL_MAX. The normalized value at the same
+ *        point stays finite.
+ */
+TEST(MathLegendrePolynomials, UnnormalizedRange_OverflowsOnlyWithTheValue) {
+  double doubleFactorial = 1.0;
+  for (int k = 1; k <= 150; ++k) {
+    doubleFactorial *= 2.0 * k - 1.0;
+  }
+  ASSERT_TRUE(std::isfinite(doubleFactorial));
+  EXPECT_TRUE(nearRel(associatedLegendre(150, 150, 0.0), doubleFactorial, 1e-13, 0.0));
+  EXPECT_TRUE(std::isinf(associatedLegendre(151, 151, 0.0)));
+  EXPECT_TRUE(std::isfinite(normalizedAssociatedLegendre(151, 151, 0.0)));
+}
+
+/* ----------------------------- Cached API ----------------------------- */
+
+namespace {
+
+/// Tables for the whole grid, built once for every cached test.
+const ScalarTables& gridTables() {
+  static const ScalarTables TABLES = makeScalarTables(GRID_MAX_N);
+  return TABLES;
+}
+
+} // namespace
+
+/**
+ * @test CachedHighDegree_MatchesStdSphLegendre
+ * @brief The cached walk meets the same 1e-10 bound against rescaled
+ *        std::sph_legendre across the grid as the stateless walk.
+ */
+TEST(MathLegendrePolynomials, CachedHighDegree_MatchesStdSphLegendre) {
+#if defined(__cpp_lib_math_special_functions)
+  const ScalarTables& TABLES = gridTables();
+  for (double x : gridArguments()) {
+    const double THETA = std::acos(x);
+    for (int n : gridDegrees()) {
+      for (int m : gridOrders(n)) {
+        const double SIGN = (m % 2 == 0) ? 1.0 : -1.0;
+        const double SCALE = std::sqrt(4.0 * M_PI * ((m == 0) ? 1.0 : 2.0));
+        const double REF =
+            SIGN * SCALE *
+            std::sph_legendre(static_cast<unsigned>(n), static_cast<unsigned>(m), THETA);
+        EXPECT_TRUE(nearRel(normalizedAssociatedLegendre(n, m, x, TABLES), REF, REL_TOL, ABS_TOL))
+            << "n=" << n << " m=" << m << " x=" << x;
+      }
+    }
+  }
+#else
+  GTEST_SKIP() << "C++17 special math functions unavailable in this standard library";
+#endif
+}
+
+/**
+ * @test CachedHighDegree_MatchesStateless
+ * @brief Cached and stateless walks agree across the grid; they differ only in
+ *        how the coefficients are rounded.
+ */
+TEST(MathLegendrePolynomials, CachedHighDegree_MatchesStateless) {
+  const ScalarTables& TABLES = gridTables();
+  for (double x : gridArguments()) {
+    for (int n : gridDegrees()) {
+      for (int m : gridOrders(n)) {
+        EXPECT_TRUE(nearRel(normalizedAssociatedLegendre(n, m, x, TABLES),
+                            normalizedAssociatedLegendre(n, m, x), REL_TOL, ABS_TOL))
+            << "n=" << n << " m=" << m << " x=" << x;
+      }
+    }
+  }
+}
+
+/**
+ * @test CachedDiagonalSeed_BothBranches
+ * @brief Below SCALAR_POW_SEED_MIN_ORDER the diagonal is the stateless product
+ *        exactly (same table product, same multiply loop); at and above it the
+ *        pow seed agrees with the loop to rounding.
+ */
+TEST(MathLegendrePolynomials, CachedDiagonalSeed_BothBranches) {
+  const ScalarTables& TABLES = gridTables();
+  for (double x : gridArguments()) {
+    for (int m : {0, 1, 2, SCALAR_POW_SEED_MIN_ORDER - 1}) {
+      EXPECT_EQ(normalizedAssociatedLegendre(m, m, x, TABLES),
+                normalizedAssociatedLegendre(m, m, x))
+          << "m=" << m << " x=" << x;
+    }
+    for (int m :
+         {SCALAR_POW_SEED_MIN_ORDER, SCALAR_POW_SEED_MIN_ORDER + 1, 100, 1000, GRID_MAX_N}) {
+      EXPECT_TRUE(nearRel(normalizedAssociatedLegendre(m, m, x, TABLES),
+                          normalizedAssociatedLegendre(m, m, x), 1e-11, ABS_TOL))
+          << "m=" << m << " x=" << x;
+    }
+  }
+}
+
+/**
+ * @test CachedTables_LayoutAndRange
+ * @brief Table sizes follow the documented layout, every (n, m) of a small
+ *        table matches the stateless walk, and degrees beyond the tables,
+ *        invalid orders and empty tables return NaN.
+ */
+TEST(MathLegendrePolynomials, CachedTables_LayoutAndRange) {
+  static_assert(
+      noexcept(normalizedAssociatedLegendre(1, 1, 0.0, std::declval<const ScalarTables&>())));
+
+  const ScalarTables T10 = makeScalarTables(10);
+  EXPECT_EQ(T10.maxDegree, 10);
+  EXPECT_EQ(T10.diag.size(), 11U);
+  EXPECT_EQ(T10.off.size(), 11U);
+  EXPECT_EQ(T10.ab.size(), 2U * 45U); // (N-1)N/2 pairs
+  for (int n = 0; n <= 10; ++n) {
+    for (int m = 0; m <= n; ++m) {
+      EXPECT_TRUE(nearRel(normalizedAssociatedLegendre(n, m, -0.4, T10),
+                          normalizedAssociatedLegendre(n, m, -0.4), 1e-14, 1e-15))
+          << "n=" << n << " m=" << m;
+    }
+  }
+  EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(11, 0, 0.3, T10)));
+  EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(3, 4, 0.3, T10)));
+  EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(-1, 0, 0.3, T10)));
+  EXPECT_TRUE(std::isnan(
+      normalizedAssociatedLegendre(3, 1, std::numeric_limits<double>::quiet_NaN(), T10)));
+
+  // Degrees 0 and 1 hold no recurrence pairs.
+  const ScalarTables T0 = makeScalarTables(0);
+  EXPECT_TRUE(T0.ab.empty());
+  EXPECT_EQ(normalizedAssociatedLegendre(0, 0, 0.3, T0), 1.0);
+  const ScalarTables T1 = makeScalarTables(1);
+  EXPECT_TRUE(T1.ab.empty());
+  EXPECT_EQ(normalizedAssociatedLegendre(1, 0, 0.3, T1), normalizedAssociatedLegendre(1, 0, 0.3));
+  EXPECT_EQ(normalizedAssociatedLegendre(1, 1, 0.3, T1), normalizedAssociatedLegendre(1, 1, 0.3));
+
+  const ScalarTables EMPTY = makeScalarTables(-1);
+  EXPECT_EQ(EMPTY.maxDegree, -1);
+  EXPECT_TRUE(EMPTY.diag.empty() && EMPTY.off.empty() && EMPTY.ab.empty());
+  EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(0, 0, 0.3, EMPTY)));
+  EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(0, 0, 0.3, ScalarTables{})));
+}
+
+/**
+ * @test NormalizedNearPole_KeepsPrecision
+ * @brief Within about 2.6 degrees of either pole, the stateless and cached
+ *        scalar walks agree with an extended-precision reference to 4e-13 of
+ *        each column's scale.
+ */
+TEST(MathLegendrePolynomials, NormalizedNearPole_KeepsPrecision) {
+  constexpr int N = 160;
+  const ScalarTables TABLES = makeScalarTables(N);
+  for (double x : legendre_test::NEAR_POLE_ARGS) {
+    const auto STATELESS = legendre_test::columnScaledError(
+        N, x, [&](int n, int m) { return normalizedAssociatedLegendre(n, m, x); });
+    const auto CACHED = legendre_test::columnScaledError(
+        N, x, [&](int n, int m) { return normalizedAssociatedLegendre(n, m, x, TABLES); });
+    EXPECT_GE(STATELESS.columns, 50) << "x=" << x;
+    EXPECT_LE(STATELESS.worst, 4e-13) << "stateless x=" << x << " m=" << STATELESS.worstM;
+    EXPECT_LE(CACHED.worst, 4e-13) << "cached x=" << x << " m=" << CACHED.worstM;
+  }
+}
+
+/* ----------------------------- Transform API ----------------------------- */
+
+/**
+ * @test TransformClampsTheTransformedValue
+ * @brief With fX = cos and colatitude input, every theta in [0, pi] evaluates
+ *        at cos(theta). The clamp applies to fX(x), not to x: clamping the
+ *        input first evaluated every theta above 1 rad at cos(1).
+ */
+TEST(MathLegendrePolynomials, TransformClampsTheTransformedValue) {
+  const auto COS = [](double theta) { return std::cos(theta); };
+  for (double theta : {0.5, 1.0, 1.2, 2.0, 3.0}) {
+    for (int n : {2, 7, 40}) {
+      for (int m : {0, 1, n}) {
+        EXPECT_EQ(normalizedAssociatedLegendreFunction(n, m, COS, theta),
+                  normalizedAssociatedLegendre(n, m, std::cos(theta)))
+            << "n=" << n << " m=" << m << " theta=" << theta;
+        EXPECT_EQ(associatedLegendreFunction(n, m, COS, theta),
+                  associatedLegendre(n, m, std::cos(theta)))
+            << "n=" << n << " m=" << m << " theta=" << theta;
+      }
+    }
+  }
+  // A transform that leaves [-1, 1] is clamped after it is applied.
+  const auto TWICE = [](double v) { return 2.0 * v; };
+  EXPECT_EQ(normalizedAssociatedLegendreFunction(3, 1, TWICE, 0.8),
+            normalizedAssociatedLegendre(3, 1, 1.0));
+}
+
+/* ----------------------------- Contract ----------------------------- */
+
+/**
+ * @test SimpleApiContract
+ * @brief The simple API is noexcept; invalid orders and a NaN argument return NaN.
+ */
+TEST(MathLegendrePolynomials, SimpleApiContract) {
+  static_assert(noexcept(normalizedAssociatedLegendre(1, 1, 0.0)));
+  static_assert(noexcept(associatedLegendre(1, 1, 0.0)));
+  static_assert(noexcept(legendrePolynomial(1, 0.0)));
+
+  for (auto [n, m] : {std::pair{-1, 0}, std::pair{2, -1}, std::pair{2, 3}}) {
+    EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(n, m, 0.3))) << n << "," << m;
+    EXPECT_TRUE(std::isnan(associatedLegendre(n, m, 0.3))) << n << "," << m;
+  }
+  EXPECT_TRUE(std::isnan(legendrePolynomial(-1, 0.3)));
+
+  const double NAN_X = std::numeric_limits<double>::quiet_NaN();
+  for (int m : {0, 1, 3}) {
+    EXPECT_TRUE(std::isnan(normalizedAssociatedLegendre(3, m, NAN_X))) << "m=" << m;
+    EXPECT_TRUE(std::isnan(associatedLegendre(3, m, NAN_X))) << "m=" << m;
   }
 }

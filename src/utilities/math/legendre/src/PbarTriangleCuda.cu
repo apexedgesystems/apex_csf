@@ -51,8 +51,8 @@ pbarTriangleBatchSingleBlockKernel(int n, const double* SIM_RESTRICT xs, double*
   const int TBL = blockDim.x;
 
   const double X = clampPm1(xs[B]);
-  const double X2 = X * X;
-  const double C = (X2 < 1.0) ? ::sqrt(1.0 - X2) : 0.0;
+  // Factored 1 - X^2: keeps its digits as |X| -> 1, where 1 - X*X cancels.
+  const double C = ::sqrt((1.0 - X) * (1.0 + X));
 
   double* SIM_RESTRICT dst = out + static_cast<std::size_t>(B) * triSize;
 
@@ -256,7 +256,9 @@ __global__ void pbarTriangleWithDerivativesBatchKernel(
     cphi = (cphi >= 0.0) ? COS_MIN : -COS_MIN;
   }
   const double TAN_PHI = SPHI / cphi;
-  const double C = ::sqrt(1.0 - SPHI * SPHI); // cos from sin for recurrence (more stable)
+  // cos from sin for the recurrence, as the CPU path does; factored 1 - SPHI^2 keeps its
+  // digits as |SPHI| -> 1, where 1 - SPHI*SPHI cancels.
+  const double C = ::sqrt((1.0 - SPHI) * (1.0 + SPHI));
 
   double* SIM_RESTRICT pDst = pOut + static_cast<std::size_t>(B) * triSize;
   double* SIM_RESTRICT dpDst = dpOut + static_cast<std::size_t>(B) * triSize;

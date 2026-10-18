@@ -10,6 +10,9 @@ any such change is called out explicitly in its entry.
 
 ### Added
 
+- Cached scalar Legendre evaluation from precomputed tables
+  (`ScalarTables`) for repeated calls up to a fixed degree.
+  ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
 - Executive clock wake-lateness record: every clock wake is measured
   against its deadline and summarised (p50, p99, max) when the clock
   stops; `--clock-hz` overrides the fundamental frequency for a run.
@@ -83,6 +86,12 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Scalar Legendre functions are correct to n = 2190 and allocation-free
+  (they failed from n = 22), and the transform variants clamp the
+  transformed value. ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
+- Legendre triangles (CPU and GPU) keep full precision near the poles,
+  where forming cos(phi) as 1 - x*x lost up to 1.8e-8.
+  ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
 - Fixed watchpoint and group debounce: one dispatch after `minFireCount`
   consecutive true evaluations, with group settings kept across
   activation. ([#162](https://github.com/apexedgesystems/apex_csf/pull/162))
