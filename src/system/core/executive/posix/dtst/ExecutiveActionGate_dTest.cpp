@@ -300,63 +300,89 @@ TEST_F(ExecutiveActionGateTest, OverrunSkipsThePhaseAndKeepsCadence) {
 }
 
 /**
- * @test A stalled process drains its backlog with the wait reduced to a
- *       poll on every behind cycle, and the loop returns to parity.
+ * @test A stalled process drains its backlog while its task is still
+ *       held: every behind cycle is a poll, never the latest tick's frame.
+ *
+ * The task is held before the stall, so afterwards the loop cannot catch
+ * the clock up by finishing work: the only way back to parity is a zero
+ * wait on every cycle processed while behind. A wait that handed an old
+ * cycle the latest tick's frame would spend most of a period on each of
+ * the thirty replayed ticks and miss the bound by an order of magnitude,
+ * whatever it counted.
  */
 TEST_F(ExecutiveActionGateTest, StallDrainsTheBacklogWithoutGrantingOldCyclesAFrame) {
   boot(2000);
   ASSERT_TRUE(waitForSteps(50, std::chrono::seconds(15)));
+
+  // Hold the task. From here every cycle waits out its frame and skips
+  // the phase, and the loop keeps within a cycle of the clock.
+  exec_->model.hold.store(true, std::memory_order_release);
+  const std::size_t SKIPS_AT_HOLD = exec_->actionPhaseSkips();
+  {
+    const auto DEADLINE = Clock::now() + std::chrono::milliseconds(500);
+    while (Clock::now() < DEADLINE && exec_->actionPhaseSkips() < SKIPS_AT_HOLD + 2u) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+  }
+  ASSERT_GE(exec_->actionPhaseSkips(), SKIPS_AT_HOLD + 2u) << "the hold did not take effect";
   const std::size_t POLLS_BEFORE = exec_->actionWaitBacklogPolls();
-  const std::size_t SKIPS_BEFORE = exec_->actionPhaseSkips();
-  EXPECT_LE(POLLS_BEFORE, HOST_HOLDS_TOLERATED)
-      << "keeping pace: a cycle is behind only when the host holds the task thread";
+  const std::uint64_t BEHIND_WAIT_BEFORE_NS = exec_->actionWaitBehindMaxNs();
   const auto BEFORE = exec_->getHealthPacket();
   const auto T_BEFORE = Clock::now();
 
   // Thirty periods of stall. The clock keeps its grid through it and on
-  // resume issues the missed ticks as fast as it can, so the task loop
-  // is behind by about thirty cycles.
+  // resume issues the missed ticks as fast as it can.
   const auto STALLED = stallProcessFor(std::chrono::milliseconds(300));
   ASSERT_GE(STALLED.count(), 290) << "the stall did not take effect";
+  const auto T_RESUME = Clock::now();
 
-  // The backlog drains: within a few periods the loop is back at parity,
-  // which it could not be if each old cycle had waited out the latest
-  // tick's frame. The loop drains the replayed ticks about as fast as
-  // the clock issues them, so a moment within a tick of the clock can
-  // come before the replay has ended; parity is read once the clock is
-  // also back at wall time -- as many ticks since BEFORE as periods have
-  // elapsed, within one. Every behind cycle was a poll, and counted: how
-  // many depends on how far the loop drains while the clock replays --
-  // the clock logs each new depth of lag, which slows the replay about
-  // as the loop catches up, so the depth settles well above five.
+  // Parity: the clock back at wall time (as many ticks since BEFORE as
+  // periods have elapsed, within one) and the loop within a cycle of it,
+  // with the task still held. Thirty zero-budget polls take milliseconds;
+  // thirty frames would take most of the stall over again.
   constexpr auto PERIOD = std::chrono::milliseconds(1000 / CLOCK_HZ);
-  const auto DEADLINE = Clock::now() + std::chrono::milliseconds(500);
+  constexpr auto DRAIN_BOUND = std::chrono::milliseconds(100);
   bool parity = false;
-  while (Clock::now() < DEADLINE) {
+  while (Clock::now() < T_RESUME + DRAIN_BOUND) {
     const auto H = exec_->getHealthPacket();
     const std::uint64_t TICKS_DUE =
         BEFORE.clockCycles + static_cast<std::uint64_t>((Clock::now() - T_BEFORE) / PERIOD);
-    if (H.clockCycles + 1u >= TICKS_DUE && H.clockCycles >= BEFORE.clockCycles + 30u &&
+    if (H.clockCycles + 1u >= TICKS_DUE && H.clockCycles >= BEFORE.clockCycles + 25u &&
         H.clockCycles - H.taskExecutionCycles <= 1u) {
       parity = true;
       break;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }
-  EXPECT_TRUE(parity) << "the task loop did not catch the clock up after the stall";
-  EXPECT_GE(exec_->actionWaitBacklogPolls() - POLLS_BEFORE, 5u);
-  // A behind cycle's poll comes right after its dispatch, with the task
-  // in flight, so it skips the phase: every skip during the drain is one
-  // of those polls, never a cycle waited out at pace -- beyond a host
-  // hold shorter than a period, which skips without being behind.
-  EXPECT_LE(exec_->actionPhaseSkips() - SKIPS_BEFORE,
-            (exec_->actionWaitBacklogPolls() - POLLS_BEFORE) + HOST_HOLDS_TOLERATED);
+  const auto DRAIN_MS =
+      std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - T_RESUME).count();
+  EXPECT_TRUE(parity) << "the loop did not catch the clock up within " << DRAIN_BOUND.count()
+                      << " ms with the task held: a behind cycle was given a frame";
+  RecordProperty("drain_ms", static_cast<int>(DRAIN_MS));
+  // The direct measure: every cycle that started behind got a poll. With
+  // the task held the poll finds it in flight and returns at once, so the
+  // longest such wait is the poll's own cost; a budget taken from the
+  // latest tick instead would hold the first behind cycle for most of a
+  // frame, whatever the replay's pace made of the others.
+  constexpr std::uint64_t POLL_BOUND_NS = 2'000'000U;
+  const std::uint64_t BEHIND_WAIT_NS = exec_->actionWaitBehindMaxNs();
+  EXPECT_GT(BEHIND_WAIT_NS, BEHIND_WAIT_BEFORE_NS) << "no cycle was processed behind";
+  EXPECT_LT(BEHIND_WAIT_NS, POLL_BOUND_NS)
+      << "a cycle that started behind was granted " << BEHIND_WAIT_NS / 1000U << " us";
+  RecordProperty("behind_wait_us", static_cast<int>(BEHIND_WAIT_NS / 1000U));
+  RecordProperty("backlog_polls", static_cast<int>(exec_->actionWaitBacklogPolls() - POLLS_BEFORE));
 
-  // Back at pace, no further cycle is behind and nothing skips, beyond
-  // what a host hold would add.
-  const auto POLLS_AT_PARITY = exec_->actionWaitBacklogPolls();
-  const auto SKIPS_AT_PARITY = exec_->actionPhaseSkips();
+  // Release. The task runs again, the phase resumes, and at pace no
+  // further cycle is behind and nothing skips, beyond what a host hold
+  // would add.
+  exec_->model.hold.store(false, std::memory_order_release);
+  const std::uint64_t STEPS_AT_RELEASE = exec_->model.steps.load(std::memory_order_acquire);
+  ASSERT_TRUE(waitForSteps(STEPS_AT_RELEASE + 10u, std::chrono::milliseconds(3000)));
+  const auto POLLS_AT_PACE = exec_->actionWaitBacklogPolls();
+  const auto SKIPS_AT_PACE = exec_->actionPhaseSkips();
   std::this_thread::sleep_for(std::chrono::milliseconds(200));
-  EXPECT_LE(exec_->actionWaitBacklogPolls() - POLLS_AT_PARITY, HOST_HOLDS_TOLERATED);
-  EXPECT_LE(exec_->actionPhaseSkips() - SKIPS_AT_PARITY, HOST_HOLDS_TOLERATED);
+  EXPECT_LE(exec_->actionWaitBacklogPolls() - POLLS_AT_PACE, HOST_HOLDS_TOLERATED);
+  EXPECT_LE(exec_->actionPhaseSkips() - SKIPS_AT_PACE, HOST_HOLDS_TOLERATED);
+  const auto AFTER = exec_->getHealthPacket();
+  EXPECT_LE(AFTER.clockCycles - AFTER.taskExecutionCycles, 2u);
 }

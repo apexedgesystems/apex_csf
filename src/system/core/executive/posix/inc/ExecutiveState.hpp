@@ -39,7 +39,17 @@ namespace executive {
 struct ClockState {
   std::atomic<std::uint64_t> cycles{0};    ///< Total clock cycles executed.
   std::atomic<std::int64_t> lastTickNs{0}; ///< Timestamp of last tick (ns since epoch).
-  TickLateness lateness{};                 ///< Wake lateness against each tick's deadline.
+  /// The grid instant the last tick was due at (CLOCK_MONOTONIC ns): the
+  /// start of the frame that tick opens, which is where a cycle's wait
+  /// budget is measured from. A tick the clock emits late still opens
+  /// the frame it was due to open, not a frame starting at its emission.
+  std::atomic<std::int64_t> lastTickDeadlineNs{0};
+  /// Generation bracketing `lastTickNs`, `lastTickDeadlineNs` and `cycles`: odd while the clock
+  /// publishes a tick, even once both describe the same tick. A reader
+  /// that sees one even value before and after loading both holds a
+  /// stamp and a count that belong to one tick.
+  std::atomic<std::uint32_t> tickGeneration{0};
+  TickLateness lateness{}; ///< Wake lateness against each tick's deadline.
   /// Ticks abandoned by grid re-anchors after pathological stalls
   /// (host suspend etc.); zero in any healthy run.
   std::atomic<std::uint64_t> wallResyncDroppedTicks{0};

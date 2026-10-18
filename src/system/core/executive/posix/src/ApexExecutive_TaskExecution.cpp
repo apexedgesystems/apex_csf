@@ -15,6 +15,7 @@
  */
 
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
+#include "src/utilities/helpers/inc/Cpu.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
 #include <unistd.h>
@@ -252,21 +253,38 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
     // engine, not the executive. The engine is level- and time-driven,
     // so a skipped cycle resolves on the next one that runs.
     //
-    // Backlog is detected from the cycle counts, not inferred from the
-    // clock: lastTickNs is the latest tick the clock emitted, which is
-    // this cycle's tick only when the task loop is keeping pace. While
-    // the loop is behind by a cycle or more, an older cycle must not be
-    // given the latest tick's frame, so its wait is a single poll.
+    // The tick this cycle answers is the one whose count is taskCycles + 1.
+    // Its frame starts at the grid instant it was due, read with its count
+    // under the clock's generation: the same even generation before and
+    // after both loads means they describe one tick. The grid instant, not
+    // the emission stamp: a tick the clock emits late opens the frame it
+    // was due to open, so a late cycle has less of it, never a fresh one
+    // overlapping the next. A generation in flux after a few tries, or a
+    // count past this cycle's, means the clock has moved on and this cycle
+    // is behind: an older cycle is not given a newer tick's frame, so its
+    // wait is a single poll.
     const std::uint64_t PERIOD_NS =
         (clockFrequency_ > 0U) ? (1000000000ULL / clockFrequency_) : 1000000ULL;
     const std::uint64_t PHASE_RESERVE_NS = PERIOD_NS / 10U;
-    const bool BACKLOG = clockState_.cycles.load(std::memory_order_acquire) > taskCycles + 1U;
+    std::uint64_t tickCycles = 0U;
+    std::int64_t tickStampNs = 0;
+    bool coherent = false;
+    for (unsigned attempt = 0U; attempt < 8U && !coherent; ++attempt) {
+      const std::uint32_t GEN0 = clockState_.tickGeneration.load(std::memory_order_acquire);
+      tickCycles = clockState_.cycles.load(std::memory_order_acquire);
+      tickStampNs = clockState_.lastTickDeadlineNs.load(std::memory_order_acquire);
+      const std::uint32_t GEN1 = clockState_.tickGeneration.load(std::memory_order_acquire);
+      coherent = (GEN0 == GEN1) && ((GEN0 & 1U) == 0U);
+      if (!coherent) {
+        apex::helpers::cpu::relax();
+      }
+    }
+    const bool BACKLOG = !coherent || tickCycles != taskCycles + 1U;
     std::uint64_t barrierNs = 0U;
     if (BACKLOG) {
       actionWaitBacklogPolls_.fetch_add(1U, std::memory_order_relaxed);
     } else {
-      const std::uint64_t TICK_NS =
-          static_cast<std::uint64_t>(clockState_.lastTickNs.load(std::memory_order_acquire));
+      const std::uint64_t TICK_NS = static_cast<std::uint64_t>(tickStampNs);
       const std::uint64_t NOW_NS =
           static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                          std::chrono::steady_clock::now().time_since_epoch())
@@ -275,7 +293,20 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
       barrierNs = (WAIT_END_NS > NOW_NS) ? (WAIT_END_NS - NOW_NS) : 0U;
     }
     const std::uint64_t BARRIER_NS = barrierNs;
-    if (scheduler_.waitForInFlightTasks(BARRIER_NS)) {
+    // Whether this cycle starts behind is read again here, plainly and
+    // apart from the budget logic above, so the wait it is then granted
+    // is recorded whatever that logic decided.
+    const bool BEHIND_AT_WAIT =
+        clockState_.cycles.load(std::memory_order_acquire) > taskCycles + 1U;
+    const std::uint64_t WAIT_START_NS = apex::helpers::cpu::getMonotonicNs();
+    const bool TASKS_DONE = scheduler_.waitForInFlightTasks(BARRIER_NS);
+    if (BEHIND_AT_WAIT) {
+      const std::uint64_t WAITED_NS = apex::helpers::cpu::getMonotonicNs() - WAIT_START_NS;
+      if (WAITED_NS > actionWaitBehindMaxNs_.load(std::memory_order_relaxed)) {
+        actionWaitBehindMaxNs_.store(WAITED_NS, std::memory_order_release);
+      }
+    }
+    if (TASKS_DONE) {
       // Run action engine: evaluate watchpoints, tick sequences, apply
       // data-writes, on the completed tasks' outputs.
       actionComp_.tick(static_cast<std::uint32_t>(taskCycles));

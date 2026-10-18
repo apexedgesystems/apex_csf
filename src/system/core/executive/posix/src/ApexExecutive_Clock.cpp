@@ -244,19 +244,27 @@ void ApexExecutive::clock(std::promise<std::uint8_t>&& p) noexcept {
     // ========================================================================
     // Tick Generation
     // ========================================================================
-    // Stamp tick time for profiling. CLOCK_MONOTONIC is what the
-    // standard library's steady clock reads on this platform, so the
-    // task thread's steady-clock stamps compare with it directly.
+    // The tick's stamp and its count are published as one generation:
+    // odd while both are being written, even once they agree, so the
+    // task thread can bind a cycle's wait to the tick that cycle answers
+    // rather than to whichever tick is latest when it looks. The stamp
+    // is CLOCK_MONOTONIC, which is what the standard library's steady
+    // clock reads on this platform, so the task thread's steady-clock
+    // stamps compare with it directly. The signal follows the generation
+    // so a task thread woken by it finds the pair complete.
+    clockState_.tickGeneration.fetch_add(1, std::memory_order_acq_rel);
     clockState_.lastTickNs.store(static_cast<std::int64_t>(clockgrid::nowNs()),
                                  std::memory_order_release);
-
-    // Signal task execution thread to process this tick
-    // NOTE: clockCycles incremented AFTER signal, maintaining invariant:
-    //       clockCycles = taskCycles + 1 (when no overruns)
-    taskState_.stepPending.store(true, std::memory_order_release);
-    cvClockTick_.notify_all();
+    clockState_.lastTickDeadlineNs.store(static_cast<std::int64_t>(DEADLINE_NS),
+                                         std::memory_order_release);
     const std::uint64_t newClockCycles =
         clockState_.cycles.fetch_add(1, std::memory_order_acq_rel) + 1;
+    clockState_.tickGeneration.fetch_add(1, std::memory_order_release);
+
+    // Signal task execution thread to process this tick; the invariant
+    // clockCycles = taskCycles + 1 holds while no cycle overruns.
+    taskState_.stepPending.store(true, std::memory_order_release);
+    cvClockTick_.notify_all();
 
     // Formatting is the costly part of a debug line, so it is skipped
     // outright on the per-tick path unless the verbosity asks for it.

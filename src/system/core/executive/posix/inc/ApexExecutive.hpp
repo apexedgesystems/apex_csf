@@ -145,6 +145,16 @@ public:
 
   /// Cycles on which the in-flight wait was a single poll because the
   /// task loop was behind the clock. Readable from any thread.
+  /**
+   * @brief The longest wait, in ns, the action phase gave a cycle that
+   *        started behind the clock. A cycle behind gets a poll, so this
+   *        is the poll's own cost (microseconds) when the budget is bound
+   *        to the processed cycle, and most of a frame when it is not.
+   */
+  [[nodiscard]] std::uint64_t actionWaitBehindMaxNs() const noexcept {
+    return actionWaitBehindMaxNs_.load(std::memory_order_acquire);
+  }
+
   [[nodiscard]] std::uint64_t actionWaitBacklogPolls() const noexcept {
     return actionWaitBacklogPolls_.load(std::memory_order_acquire);
   }
@@ -568,6 +578,7 @@ private:
   system_core::scheduler::SchedulerMultiThread scheduler_;
   /// In-flight waits reduced to a poll because the task loop was behind.
   std::atomic<std::uint64_t> actionWaitBacklogPolls_{0};
+  std::atomic<std::uint64_t> actionWaitBehindMaxNs_{0}; ///< See actionWaitBehindMaxNs().
 
   // Interface management (external command/telemetry)
   std::unique_ptr<system_core::interface::ApexInterface> interface_{nullptr};
