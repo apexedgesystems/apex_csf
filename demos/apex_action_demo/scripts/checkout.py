@@ -1229,8 +1229,8 @@ def test_resource_catalogs(c2: AprotoClient) -> bool:
     stats_mid = read_action_stats(c2)
     wp_mid = stats_mid.get("watchpointsFired", 0)
     wp_delta = wp_mid - wp_before
-    # WP1 was the most active (temp > 50 fires every tick once temp is above 50).
-    # With it deactivated, fire rate should drop significantly.
+    # WP1 (temp > 50, debounce 1) dispatches once per excursion above 50;
+    # with it deactivated, its share of the fire count stops.
     print(f"    WP fires during deactivation: {wp_delta}")
 
     # Reactivate WP1

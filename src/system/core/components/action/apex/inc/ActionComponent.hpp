@@ -361,10 +361,10 @@ private:
   /**
    * @brief Dispatch built-in log notifications for a fired event.
    * @param eventId Event that fired.
-   * @param fireCount Number of times the event has fired.
+   * @param invokeCount The notification's own invocation count, logged as `fires=`.
    * @note Logs to componentLog() at the configured severity.
    */
-  void dispatchLogNotifications(std::uint16_t eventId, std::uint32_t fireCount) noexcept;
+  void dispatchLogNotifications(std::uint16_t eventId, std::uint32_t invokeCount) noexcept;
 
   /// WARNING for step timeouts this cycle (count + latest seq/step/policy).
   void logStepTimeouts(std::uint32_t count, bool aborted) noexcept;

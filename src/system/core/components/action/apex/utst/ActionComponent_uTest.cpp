@@ -5,8 +5,13 @@
 
 #include "src/system/core/components/action/apex/inc/ActionComponent.hpp"
 #include "src/system/core/components/action/apex/inc/ActionComponentStatus.hpp"
+#include "src/system/core/components/action/apex/inc/ActionEngineTprm.hpp"
+#include "src/system/core/infrastructure/system_component/base/inc/CommandResult.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
 
 #include <array>
@@ -14,6 +19,7 @@
 #include <fstream>
 #include <initializer_list>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -210,6 +216,164 @@ TEST(ActionComponent, TickWithWatchpoint) {
 
   comp.tick(0);
   EXPECT_EQ(comp.stats().watchpointsFired, 1U);
+}
+
+/* ----------------------------- Catalog Activation Keeps Config ----------------------------- */
+
+namespace {
+
+/// A fresh directory only this process owns (mode 0700, name chosen atomically), or empty.
+std::filesystem::path makePrivateDir(const char* tag) {
+  std::string pattern =
+      (std::filesystem::temp_directory_path() / (std::string(tag) + "_XXXXXX")).string();
+  const char* MADE = ::mkdtemp(pattern.data());
+  return (MADE == nullptr) ? std::filesystem::path{} : std::filesystem::path{MADE};
+}
+
+/// Write a CRC-bearing engine TPRM for `comp` into `dir`, as the loader expects it on disk.
+/// Returns false if the file could not be written in full.
+bool writeEngineTprm(const std::filesystem::path& dir, system_core::action::ActionComponent& comp,
+                     const system_core::action::ActionEngineTprm& config) {
+  namespace sc = system_core::system_component;
+  sc::TprmPayloadHeader header{};
+  header.magic = sc::TPRM_PAYLOAD_MAGIC;
+  header.version = sc::TPRM_PAYLOAD_VERSION;
+  header.fullUid = comp.fullUid();
+  header.payloadSize = sizeof(config);
+  header.payloadCrc = sc::tprmCrc32(reinterpret_cast<const std::uint8_t*>(&config), sizeof(config));
+  char filename[32];
+  std::snprintf(filename, sizeof(filename), "%06x.tprm", comp.fullUid());
+  std::ofstream out(dir / filename, std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(&header), sizeof(header));
+  out.write(reinterpret_cast<const char*>(&config), sizeof(config));
+  return out.good();
+}
+
+/// One armed watchpoint (byte[0] > 0) and two groups over it: group 1 armed at boot with a
+/// debounce of three, group 2 left unarmed with a debounce of two.
+system_core::action::ActionEngineTprm debouncedGroupsConfig() {
+  system_core::action::ActionEngineTprm config{};
+  auto& wp = config.watchpoints[0];
+  wp.targetFullUid = 0x007800;
+  wp.targetCategory = static_cast<std::uint8_t>(system_core::data::DataCategory::OUTPUT);
+  wp.targetByteLen = 1;
+  wp.predicate = static_cast<std::uint8_t>(system_core::data::WatchPredicate::GT);
+  wp.dataType = static_cast<std::uint8_t>(system_core::data::WatchDataType::UINT8);
+  wp.armed = 1;
+  auto& boot = config.groups[0];
+  boot.refCount = 1; // refs[0] = 0: watchpoint 1
+  boot.eventId = 42;
+  boot.minFireCount = 3;
+  boot.armed = 1;
+  auto& later = config.groups[1];
+  later.refCount = 1;
+  later.eventId = 43;
+  later.minFireCount = 2;
+  later.armed = 0;
+  return config;
+}
+
+const system_core::data::WatchpointGroup* findArmedGroup(system_core::action::ActionComponent& comp,
+                                                         std::uint16_t groupId) {
+  for (const auto& group : comp.iface().groups) {
+    if (group.armed && group.groupId == groupId) {
+      return &group;
+    }
+  }
+  return nullptr;
+}
+
+constexpr std::uint16_t OP_ACTIVATE_GROUP = 0x0532;
+constexpr std::uint16_t OP_DEACTIVATE_GROUP = 0x0533;
+
+} // namespace
+
+/** @test A group's configured debounce survives DEACTIVATE_GROUP then ACTIVATE_GROUP. */
+TEST(ActionComponent, GroupDebounceSurvivesReactivation) {
+  namespace sc = system_core::system_component;
+  const auto DIR = makePrivateDir("action_tprm_group_reactivate");
+  ASSERT_FALSE(DIR.empty());
+
+  system_core::action::ActionComponent comp;
+  comp.setInstanceIndex(0);
+  TestBlock block;
+  block.bytes[0] = 5; // byte[0] > 0 holds on every tick
+  ResolverCtx rCtx{&block};
+  comp.setResolver(testResolver, &rCtx);
+  ASSERT_TRUE(writeEngineTprm(DIR, comp, debouncedGroupsConfig()));
+  ASSERT_EQ(comp.loadTprm(DIR), sc::TprmIngest::LOADED);
+  ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
+
+  // Boot: one dispatch, on the third held evaluation.
+  comp.tick(0);
+  comp.tick(1);
+  EXPECT_EQ(comp.stats().groupsFired, 0U);
+  comp.tick(2);
+  EXPECT_EQ(comp.stats().groupsFired, 1U);
+  comp.tick(3);
+  EXPECT_EQ(comp.stats().groupsFired, 1U);
+
+  std::uint8_t id[2] = {1, 0};
+  std::vector<std::uint8_t> response;
+  const auto OK = static_cast<std::uint8_t>(sc::CommandResult::SUCCESS);
+  EXPECT_EQ(comp.handleCommand(OP_DEACTIVATE_GROUP, {id, 2}, response), OK);
+  EXPECT_EQ(comp.handleCommand(OP_ACTIVATE_GROUP, {id, 2}, response), OK);
+  const auto* group = findArmedGroup(comp, 1);
+  ASSERT_NE(group, nullptr);
+  EXPECT_EQ(group->minFireCount, 3U);
+  EXPECT_EQ(group->heldCount, 0U);
+  EXPECT_FALSE(group->latched);
+
+  // The same configured delay applies again before the next single dispatch.
+  comp.tick(4);
+  comp.tick(5);
+  EXPECT_EQ(comp.stats().groupsFired, 1U);
+  comp.tick(6);
+  EXPECT_EQ(comp.stats().groupsFired, 2U);
+  comp.tick(7);
+  EXPECT_EQ(comp.stats().groupsFired, 2U);
+
+  std::filesystem::remove_all(DIR);
+}
+
+/** @test A group configured unarmed receives its debounce when first activated by command. */
+TEST(ActionComponent, UnarmedGroupActivatesWithDebounce) {
+  namespace sc = system_core::system_component;
+  const auto DIR = makePrivateDir("action_tprm_group_activate");
+  ASSERT_FALSE(DIR.empty());
+
+  system_core::action::ActionComponent comp;
+  comp.setInstanceIndex(0);
+  TestBlock block;
+  block.bytes[0] = 5;
+  ResolverCtx rCtx{&block};
+  comp.setResolver(testResolver, &rCtx);
+  ASSERT_TRUE(writeEngineTprm(DIR, comp, debouncedGroupsConfig()));
+  ASSERT_EQ(comp.loadTprm(DIR), sc::TprmIngest::LOADED);
+  ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
+  ASSERT_EQ(findArmedGroup(comp, 2), nullptr); // in the catalog only
+
+  std::uint8_t id[2] = {2, 0};
+  std::vector<std::uint8_t> response;
+  EXPECT_EQ(comp.handleCommand(OP_ACTIVATE_GROUP, {id, 2}, response),
+            static_cast<std::uint8_t>(sc::CommandResult::SUCCESS));
+  const auto* group = findArmedGroup(comp, 2);
+  ASSERT_NE(group, nullptr);
+  EXPECT_EQ(group->minFireCount, 2U);
+  EXPECT_EQ(group->eventId, 43U);
+
+  // Group 2 dispatches on its second held evaluation; the boot group (three) follows one tick
+  // later.
+  comp.tick(0);
+  EXPECT_EQ(comp.stats().groupsFired, 0U);
+  comp.tick(1);
+  EXPECT_EQ(comp.stats().groupsFired, 1U);
+  comp.tick(2);
+  EXPECT_EQ(comp.stats().groupsFired, 2U);
+  comp.tick(3);
+  EXPECT_EQ(comp.stats().groupsFired, 2U);
+
+  std::filesystem::remove_all(DIR);
 }
 
 /* ----------------------------- Interface Access ----------------------------- */
