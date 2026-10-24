@@ -137,7 +137,16 @@ protected:
     if (holdAtSelection.load(std::memory_order_acquire) &&
         waitEndNs > apex::helpers::cpu::getMonotonicNs() + 5'000'000ULL) {
       holdAtSelection.store(false, std::memory_order_release);
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      // Held until the clock has emitted two more ticks, so the cycle is
+      // behind by the time it waits whatever the host does to the clock
+      // thread meanwhile; a bound keeps a stalled clock from holding the
+      // test forever.
+      const std::uint64_t TICKS_AT_HOLD = getHealthPacket().clockCycles;
+      const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+      while (getHealthPacket().clockCycles < TICKS_AT_HOLD + 2u &&
+             std::chrono::steady_clock::now() < DEADLINE) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+      }
       heldAtSelection.fetch_add(1u, std::memory_order_acq_rel);
     }
   }
