@@ -1,0 +1,22 @@
+[package]
+name = "apex-tprm"
+description = "Tunable-parameter encoding, manifests, spec headers and the proto profile shared by the apex build and ops tools"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "apex_tprm"
+path = "src/lib.rs"
+
+[dependencies]
+once_cell = { workspace = true }
+regex = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+toml_edit = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

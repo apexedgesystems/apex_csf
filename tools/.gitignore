@@ -51,7 +51,6 @@ $RECYCLE.BIN/
 # =========================================
 /tmp/
 /out/
-/build/
 *.log
 
 # Rustdoc output
