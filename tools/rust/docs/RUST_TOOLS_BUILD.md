@@ -50,7 +50,6 @@ build/hosted-x86_64-debug/
 tools/rust/
 +-- Cargo.toml              # Package definition
 +-- Cargo.lock              # Locked dependencies
-+-- build.rs                # Build script (CUDA detection)
 +-- README.md               # User documentation
 +-- CMakeLists.txt          # CMake build integration
 +-- docs/
@@ -217,29 +216,6 @@ serial_dev_checker --help  # Works!
 
 ---
 
-## CUDA Feature
-
-The Rust tools support optional CUDA integration via a cargo feature:
-
-```toml
-# Cargo.toml
-[features]
-default = []
-cuda = ["dep:cuda-sys"]
-```
-
-The CMake build detects CUDA presence and enables the feature automatically:
-
-```cmake
-if (DEFINED ENV{CUDA_HOME} OR EXISTS "/usr/local/cuda")
-  set(_cargo_features "--features" "cuda")
-endif ()
-```
-
-The `build.rs` script performs additional CUDA toolkit detection at compile time.
-
----
-
 ## Adding New Tools
 
 ### 1. Create the Binary Source
@@ -339,17 +315,6 @@ serial_dev_checker --help
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
-
-### Build Fails with CUDA Errors
-
-**Cause:** CUDA feature enabled but toolkit not properly installed.
-
-**Fix:** Either install CUDA toolkit or disable the feature:
-
-```bash
-# In tools/rust/
-cargo build --release --no-default-features
 ```
 
 ### Incremental Build Not Working

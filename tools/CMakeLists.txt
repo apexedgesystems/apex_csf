@@ -68,13 +68,6 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml")
     set(_CARGO_TARGET "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-rust-target")
     set(_RUST_STAMP "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/rust-tools.built")
 
-    # Auto-enable cuda feature if nvcc is available
-    set(_CARGO_FEATURES "")
-    find_program(_NVCC_EXE nvcc)
-    if (_NVCC_EXE)
-      set(_CARGO_FEATURES "--features cuda")
-    endif ()
-
     # The stamp regenerates whenever the rust sources or lock change, so
     # in-tree tool edits rebuild before anything consumes the binaries
     # (cargo itself is incremental past this gate).
@@ -90,8 +83,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml")
       # CARGO_NET_OFFLINE=true against its baked crate cache (cargo reads it
       # natively). Local dev (no such env) builds online.
       "'${CARGO_EXECUTABLE}' build --release"
-      " --manifest-path '${_RUST_SRC}/Cargo.toml' --target-dir '${_CARGO_TARGET}'"
-      " ${_CARGO_FEATURES}\n"
+      " --manifest-path '${_RUST_SRC}/Cargo.toml' --target-dir '${_CARGO_TARGET}'\n"
       "mkdir -p '${_RUST_OUT}'\n"
       "find '${_CARGO_TARGET}/release' -maxdepth 1 -type f -executable ! -name '*.*'"
       " -exec cp -f {} '${_RUST_OUT}/' \\;\n"
