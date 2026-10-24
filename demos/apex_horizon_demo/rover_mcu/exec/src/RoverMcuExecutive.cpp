@@ -34,17 +34,13 @@ bridgeResolverFn(void* ctx, std::uint32_t fullUid,
 /* ----------------------------- Sequence ownership ----------------------------- */
 
 // The engine's answer to the plant: whether a sequence with this catalog
-// id is running in any slot. RESUME asks it on the task thread, which
-// is also the thread the action phase mutates the table on.
+// id is running in any slot, by the engine's own definition of running
+// (system_core::data::isRunning). RESUME asks it on the task thread,
+// which is also the thread the action phase mutates the table on.
 static bool sequenceRunningFn(void* ctx, std::uint8_t sequenceId) noexcept {
-  using system_core::data::SequenceStatus;
   const auto* action = static_cast<const system_core::action::ActionComponent*>(ctx);
   for (const auto& SEQ : action->iface().sequences) {
-    if (SEQ.sequenceId != sequenceId) {
-      continue;
-    }
-    if (SEQ.status == SequenceStatus::WAITING || SEQ.status == SequenceStatus::EXECUTING ||
-        SEQ.status == SequenceStatus::WAITING_CONDITION) {
+    if (SEQ.sequenceId == sequenceId && system_core::data::isRunning(SEQ)) {
       return true;
     }
   }
