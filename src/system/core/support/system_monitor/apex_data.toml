@@ -17,7 +17,7 @@ SysMonHealthTlm = { category = "TELEMETRY", opcode = "0x0100" }
 
 [enums]
 # Telemetry opcodes
-SysMonTlmOpcode = { header = "SystemMonitorTlm.hpp" }
+SysMonTlmOpcode = { header = "inc/SystemMonitorTlm.hpp" }
 
 [[fields.SysMonHealthTlm]]
 name = "sampleCount"
