@@ -1,0 +1,12 @@
+component = "GateWarning"
+
+[structs]
+GateOutput = { category = "OUTPUT" }
+
+[[fields.GateOutput]]
+name = "value"
+type = "uint"
+size = 4
+
+[enums]
+NoSuchEnum = {}

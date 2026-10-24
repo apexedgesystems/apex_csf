@@ -1,0 +1,12 @@
+# Fixture manifest for the apex_add_data_manifest contract check: the one
+# file the "valid" case registers. Spec-defined, so no header is needed.
+
+component = "FixturePresent"
+
+[structs]
+FixtureOutput = { category = "OUTPUT" }
+
+[[fields.FixtureOutput]]
+name = "value"
+type = "uint"
+size = 4

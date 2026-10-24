@@ -47,19 +47,40 @@ set(APEX_DATA_DB_DIR
 #   apex_add_data_manifest()  # Uses apex_data.toml in current directory
 #   apex_add_data_manifest(MANIFEST ${CMAKE_CURRENT_SOURCE_DIR}/data/my_manifest.toml)
 #
-# No-op if manifest file doesn't exist.
+# The default form is a no-op when the directory holds no apex_data.toml,
+# so a library may call it by convention. An explicit MANIFEST path names
+# a file the author intends to ship; a path that does not exist, including
+# a failed lookup's -NOTFOUND value, is a configure error, so a mistyped or
+# unresolved path cannot drop a manifest silently. A MANIFEST keyword
+# without a value, or an argument the helper does not recognize, is a
+# configure error as well; a repeated keyword follows cmake_parse_arguments.
 # ------------------------------------------------------------------------------
 function (apex_add_data_manifest)
-  cmake_parse_arguments(ADM "" "MANIFEST" "" ${ARGN})
+  cmake_parse_arguments(PARSE_ARGV 0 ADM "" "MANIFEST" "")
 
-  # Default manifest path
-  if (NOT ADM_MANIFEST)
-    set(ADM_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/apex_data.toml")
+  # The call takes no arguments, or MANIFEST with a value. A MANIFEST
+  # keyword without a value, or an argument the helper does not recognize,
+  # is a mistake to name, not a form to guess at. Presence is tested, not
+  # truth: a stray OFF is as unrecognized as a stray word.
+  if (DEFINED ADM_UNPARSED_ARGUMENTS OR "MANIFEST" IN_LIST ADM_KEYWORDS_MISSING_VALUES)
+    message(
+      FATAL_ERROR "apex_add_data_manifest: use no arguments or MANIFEST <path>; got '${ARGV}'\n"
+                  "  (registered from ${CMAKE_CURRENT_LIST_FILE})"
+    )
   endif ()
 
-  # Check manifest exists
-  if (NOT EXISTS "${ADM_MANIFEST}")
-    return()
+  # Absence of the keyword selects the default; a value that CMake would
+  # call false (such as a -NOTFOUND result) is still an explicit value and
+  # is checked like any other path.
+  if (NOT DEFINED ADM_MANIFEST)
+    set(ADM_MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/apex_data.toml")
+    if (NOT EXISTS "${ADM_MANIFEST}")
+      return()
+    endif ()
+  elseif (NOT EXISTS "${ADM_MANIFEST}")
+    message(FATAL_ERROR "apex_add_data_manifest: MANIFEST path does not exist: ${ADM_MANIFEST}\n"
+                        "  (registered from ${CMAKE_CURRENT_LIST_FILE})"
+    )
   endif ()
 
   # Track manifest path globally

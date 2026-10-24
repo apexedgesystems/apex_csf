@@ -66,7 +66,7 @@ apex-data-db: tools-rust
 	  "$(BUILD_DIR)/bin/tools/rust/apex_data_gen" \
 	    --manifest "$$manifest" \
 	    --output "$(BUILD_DIR)/apex_data_db/" \
-	    --pretty; \
+	    --pretty || exit 1; \
 	done < "$(BUILD_DIR)/apex_data_manifests.txt"
 	$(call log,apex-data-db,Struct dictionaries generated to $(BUILD_DIR)/apex_data_db/)
 
