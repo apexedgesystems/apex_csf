@@ -59,5 +59,5 @@ registry-info --data .apex_fs/db/registry.rdat
 
 ## See Also
 
-- [rdat_tool](../../../tools/rust/docs/rdat_tool.md) -- Rust tool with additional SQLite export and richer analysis.
+- [rdat_tool](../../analysis/rust/apex-analysis-tools/docs/rdat_tool.md) -- Rust tool with additional SQLite export and richer analysis.
 - [Registry Library](../../../src/system/core/components/registry/README.md) -- API documentation.

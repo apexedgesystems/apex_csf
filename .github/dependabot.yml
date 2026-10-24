@@ -17,9 +17,9 @@ updates:
       github-actions:
         patterns: ["*"]
 
-  # Rust tooling (tools/rust)
+  # Rust tooling (the tools/ workspace)
   - package-ecosystem: cargo
-    directory: /tools/rust
+    directory: /tools
     schedule:
       interval: weekly
     # Wait out newly published versions: a fresh release can be malicious or

@@ -112,9 +112,9 @@ export _NOTICES_PY
 
 notices: sbom
 	$(call log,notices,Deriving THIRD_PARTY_NOTICES.md from the SBOM)
-	@cd tools/rust && cargo metadata --locked --format-version 1 \
-	  > ../../$(SECURITY_DIR)/cargo-metadata.json 2>/dev/null \
-	  || echo '{}' > ../../$(SECURITY_DIR)/cargo-metadata.json
+	@cd tools && cargo metadata --locked --format-version 1 \
+	  > ../$(SECURITY_DIR)/cargo-metadata.json 2>/dev/null \
+	  || echo '{}' > ../$(SECURITY_DIR)/cargo-metadata.json
 	@python3 -c "$$_NOTICES_PY" $(SECURITY_DIR)/sbom.cdx.json \
 	  $(SECURITY_DIR)/cargo-metadata.json $(SECURITY_DIR)/THIRD_PARTY_NOTICES.md
 	$(call log_ok,notices,wrote $(SECURITY_DIR)/THIRD_PARTY_NOTICES.md)

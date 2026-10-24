@@ -482,4 +482,4 @@ auto zBytes = entry->getBytes(16, 8);
 - `src/system/core/executive/` - ApexExecutive integration
 - `src/system/core/components/scheduler/` - Task scheduling
 - `src/system/core/infrastructure/schedulable/` - SchedulableTask
-- `tools/rust/` - `rdat_tool` for RDAT file analysis and SQLite export
+- `tools/analysis/rust/apex-analysis-tools/` - `rdat_tool` for RDAT file analysis and SQLite export

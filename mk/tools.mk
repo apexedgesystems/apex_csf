@@ -22,24 +22,32 @@ PY_TOOLS_DIR := tools/py
 # Tool Build Targets
 # ------------------------------------------------------------------------------
 
-# _tool_build: Generate a tools-<lang> target that builds via ninja
-# $(1) = language suffix (cpp/rust/py), $(2) = display name
+# _tool_build: Generate a tools-<name> target that builds via ninja
+# $(1) = family (cpp/py/sh) or role (build/ops/analysis), $(2) = display name
+# `ninja build.ninja` re-runs the CMake generate step when a CMakeLists
+# changed, so the target query that follows sees targets added or renamed
+# since the tree was last built instead of answering from a stale graph.
 define _tool_build
 .PHONY: tools-$(1)
 tools-$(1): prep
 	@test -f "$$(BUILD_DIR)/CMakeCache.txt" || cmake --preset $$(HOST_DEBUG_PRESET) $$(CMAKE_VERBOSE_FLAG)
-	@cd "$$(BUILD_DIR)" && if ninja -t query apex_csf_$(1)_tools >/dev/null 2>&1; then \
+	@cd "$$(BUILD_DIR)" && ninja build.ninja && \
+	  if ninja -t query apex_csf_$(1)_tools >/dev/null 2>&1; then \
 	  printf '[tools] Building $(2) tools\n'; ninja apex_csf_$(1)_tools; \
 	else printf '[tools] No $(2) tools to build\n'; fi
 endef
 
-# The tool families (mirrors _APEX_TOOL_FAMILIES in tools/CMakeLists.txt).
-TOOL_FAMILIES := cpp rust py sh
+# The tool families still built by language and the roles the Rust workspace
+# is built by (mirror _APEX_TOOL_FAMILIES and _APEX_TOOL_ROLES in
+# tools/CMakeLists.txt). Executables land in bin/tools/<family|role>; the
+# apex build itself depends on tools-build alone.
+TOOL_FAMILIES := cpp py sh
+TOOL_ROLES := build ops analysis
 
-$(foreach f,$(TOOL_FAMILIES),$(eval $(call _tool_build,$(f),$(f))))
+$(foreach f,$(TOOL_FAMILIES) $(TOOL_ROLES),$(eval $(call _tool_build,$(f),$(f))))
 
-# Build all tools (every family)
-tools: $(addprefix tools-,$(TOOL_FAMILIES))
+# Build every tool (all families and roles)
+tools: $(addprefix tools-,$(TOOL_FAMILIES) $(TOOL_ROLES))
 	$(call log,tools,All tools built)
 
 # ------------------------------------------------------------------------------
@@ -47,9 +55,9 @@ tools: $(addprefix tools-,$(TOOL_FAMILIES))
 # ------------------------------------------------------------------------------
 
 # Generate struct dictionaries from registered apex_data.toml manifests
-# Requires: make tools-rust (for apex_data_gen), cmake configure (for manifest list)
+# Requires: make tools-build (for apex_data_gen), cmake configure (for manifest list)
 # Output: build/*/apex_data_db/*.json - struct dictionaries for operations systems
-apex-data-db: tools-rust
+apex-data-db: tools-build
 	$(call log,apex-data-db,Generating struct dictionaries)
 	@mkdir -p "$(BUILD_DIR)/apex_data_db"
 	@if [ ! -f "$(BUILD_DIR)/apex_data_manifests.txt" ]; then \
@@ -63,7 +71,7 @@ apex-data-db: tools-rust
 	@while IFS= read -r manifest; do \
 	  [ -z "$$manifest" ] && continue; \
 	  printf '[apex-data-db] Processing: %s\n' "$$manifest"; \
-	  "$(BUILD_DIR)/bin/tools/rust/apex_data_gen" \
+	  "$(BUILD_DIR)/bin/tools/build/apex_data_gen" \
 	    --manifest "$$manifest" \
 	    --output "$(BUILD_DIR)/apex_data_db/" \
 	    --pretty || exit 1; \
@@ -75,10 +83,10 @@ apex-data-db: tools-rust
 # ------------------------------------------------------------------------------
 
 # Generate TOML templates from struct dictionaries for TPRM authoring
-# Requires: make apex-data-db (for JSON struct dictionaries)
+# Requires: make apex-data-db (for JSON struct dictionaries) and the ops tools
 # Output: build/*/tprm_templates/*.toml - editable templates for TPRM configuration
 # Note: Uses Python for JSON parsing (available in container, jq is not)
-tprm-templates: apex-data-db
+tprm-templates: apex-data-db tools-ops
 	$(call log,tprm-templates,Generating TOML templates from struct dictionaries)
 	@mkdir -p "$(BUILD_DIR)/tprm_templates"
 	@for json in "$(BUILD_DIR)/apex_data_db"/*.json; do \
@@ -89,7 +97,7 @@ tprm-templates: apex-data-db
 	    [ -z "$$struct" ] && continue; \
 	    outfile="$(BUILD_DIR)/tprm_templates/$${component}_$${struct}.toml"; \
 	    printf '[tprm-templates] %s -> %s\n' "$$struct" "$$outfile"; \
-	    "$(BUILD_DIR)/bin/tools/rust/tprm_template" \
+	    "$(BUILD_DIR)/bin/tools/ops/tprm_template" \
 	      --json "$$json" \
 	      --struct "$$struct" \
 	      --output "$$outfile"; \
@@ -105,7 +113,7 @@ tprm-templates: apex-data-db
 # Produces a single markdown document describing all commands, telemetry,
 # tunable parameters, and state data across all registered components.
 #
-# Requires: make apex-data-db (for JSON struct dictionaries)
+# Requires: make apex-data-db (for JSON struct dictionaries) and the ops tools
 # Output: build/*/ops_deck.md
 ops-deck: apex-data-db
 	$(call log,ops-deck,Generating command/telemetry deck)
@@ -230,7 +238,7 @@ static: prep
 # change, never rule drift. Runs on the PR rust job and nightly.
 clippy:
 	$(call log,clippy,Running clippy -- deny warnings)
-	@cd tools/rust && cargo clippy --all-targets --locked -- -D warnings
+	@cd tools && cargo clippy --workspace --all-targets --locked -- -D warnings
 
 # cppcheck: an independent static-analysis engine that catches different defects
 # than clang-tidy (warning/style/performance/portability). Advisory for now --
