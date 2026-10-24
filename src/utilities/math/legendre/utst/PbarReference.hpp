@@ -13,6 +13,7 @@
  */
 
 #include <cmath>
+#include <limits>
 
 namespace legendre_test {
 
@@ -42,6 +43,33 @@ inline long double pbarReference(int n, int m, double x) {
   return cur;
 }
 
+/// Unnormalized P_n^m(x) in long double by the same column recurrence; its
+/// exponent range (about 1e4932) holds every intermediate for n up to a few
+/// hundred, where double's does not.
+inline long double unnormalizedReference(int n, int m, double x) {
+  const long double T = static_cast<long double>(x);
+  const long double S = std::sqrt((1.0L - T) * (1.0L + T));
+  long double diag = 1.0L;
+  long double odd = 1.0L;
+  for (int k = 1; k <= m; ++k) {
+    diag *= odd * S;
+    odd += 2.0L;
+  }
+  if (n == m) {
+    return diag;
+  }
+  long double prev = diag;
+  long double cur = (2.0L * m + 1.0L) * T * diag;
+  for (int k = m + 2; k <= n; ++k) {
+    const long double NEXT =
+        ((2.0L * k - 1.0L) * T * cur - static_cast<long double>(k + m - 1) * prev) /
+        static_cast<long double>(k - m);
+    prev = cur;
+    cur = NEXT;
+  }
+  return cur;
+}
+
 /// Arguments within about 2.6 degrees of either pole, where 1 - x*x cancels.
 inline constexpr double NEAR_POLE_ARGS[] = {0.999, 0.99999, 0.9999999, -0.9999999, 0.999999999};
 
@@ -52,9 +80,11 @@ inline constexpr long double NORMAL_FLOOR = 2.3e-308L;
 
 /// Column-scaled accuracy of an implementation over the triangle up to N at x.
 struct ColumnScaledError {
-  double worst{0.0}; ///< max over columns of max_n |got - ref| / max_n |ref|
+  double worst{0.0}; ///< max over columns of max_n |got - ref| / max_n |ref|; infinite if any value
+                     ///< was not finite
   int worstM{-1};    ///< column holding the worst error
   int columns{0};    ///< columns compared (those with a normal diagonal seed)
+  int nonfinite{0};  ///< implementation or reference values that were NaN or infinite
 };
 
 /**
@@ -76,10 +106,21 @@ template <class Get> ColumnScaledError columnScaledError(int N, double x, Get ge
     long double errMax = 0.0L;
     for (int n = m; n <= N; ++n) {
       const long double REF = pbarReference(n, m, x);
+      const auto GOT = static_cast<long double>(get(n, m));
+      // fmax would drop a NaN, so a non-finite value is counted and fails the
+      // column outright instead of entering the reduction.
+      if (!std::isfinite(REF) || !std::isfinite(GOT)) {
+        ++out.nonfinite;
+        out.worst = std::numeric_limits<double>::infinity();
+        out.worstM = m;
+        continue;
+      }
       colMax = std::fmax(colMax, std::fabs(REF));
-      errMax = std::fmax(errMax, std::fabs(static_cast<long double>(get(n, m)) - REF));
+      errMax = std::fmax(errMax, std::fabs(GOT - REF));
     }
-    const auto REL = static_cast<double>(errMax / colMax);
+    const auto REL = (colMax > 0.0L)
+                         ? static_cast<double>(errMax / colMax)
+                         : ((errMax > 0.0L) ? std::numeric_limits<double>::infinity() : 0.0);
     if (REL > out.worst) {
       out.worst = REL;
       out.worstM = m;

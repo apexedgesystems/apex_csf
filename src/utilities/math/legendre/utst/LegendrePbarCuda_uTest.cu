@@ -607,8 +607,7 @@ TEST_F(CudaLegendreFixture, CudaPbarPrealloc_BadInputs) {
  * @brief Within about 2.6 degrees of either pole, the GPU triangle kernel and
  *        the P output of the derivatives kernel agree with an extended-precision
  *        host reference to 4e-13 of each column's scale.
- *        The recurrence's own rounding is about 1e-13 of column scale here; the
- *        cancelling form gave 1.2e-12 at 87.4 degrees up to 1.8e-8 at 89.997.
+ *        The recurrence's own rounding is about 1e-13 of column scale here.
  */
 #if LOCAL_HAS_CUDA_RUNTIME
 TEST_F(CudaLegendreFixture, CudaPbar_NearPoleKeepsPrecision) {
@@ -636,6 +635,8 @@ TEST_F(CudaLegendreFixture, CudaPbar_NearPoleKeepsPrecision) {
     const auto DERIV_E = legendre_test::columnScaledError(
         N, x, [&](int n, int m) { return withDerivP[pbarTriangleIndex(n, m)]; });
     EXPECT_GE(TRI_E.columns, 50) << "x=" << x;
+    EXPECT_EQ(TRI_E.nonfinite, 0) << "x=" << x;
+    EXPECT_EQ(DERIV_E.nonfinite, 0) << "x=" << x;
     EXPECT_LE(TRI_E.worst, REL_TOL) << "triangle kernel x=" << x << " m=" << TRI_E.worstM;
     EXPECT_LE(DERIV_E.worst, REL_TOL) << "derivatives kernel P x=" << x << " m=" << DERIV_E.worstM;
     std::printf(

@@ -238,8 +238,7 @@ namespace {
          << "got " << got << " ref " << ref << " diff " << std::fabs(got - ref);
 }
 
-/// The ticket's grid: degrees across both failure points of the old closed form
-/// (digits lost from n = 22, inf from n = 86) up to the EGM2008 degree.
+/// Degrees from 1 to 2190, the EGM2008 degree, dense at the low end.
 const std::vector<int>& gridDegrees() {
   static const std::vector<int> NS = {1, 5, 10, 50, 85, 86, 180, 360, 720, 2190};
   return NS;
@@ -309,8 +308,7 @@ TEST(MathLegendrePolynomials, NormalizedHighDegree_BoundedBySqrt2nPlus1) {
  * @test NormalizedHighDegree_MatchesStdSphLegendre
  * @brief Against std::sph_legendre rescaled to the geodesy convention,
  *        Pbar_n^m(x) = (-1)^m sqrt(4 pi (2 - delta_0m)) sph_legendre(n, m, acos x),
- *        to 1e-10 relative across the grid. The closed form this replaced was
- *        off by more than 1e-9 from n = 22 and returned inf from n = 86.
+ *        to 1e-10 relative across the grid.
  */
 TEST(MathLegendrePolynomials, NormalizedHighDegree_MatchesStdSphLegendre) {
 #if defined(__cpp_lib_math_special_functions)
@@ -519,9 +517,143 @@ TEST(MathLegendrePolynomials, NormalizedNearPole_KeepsPrecision) {
     const auto CACHED = legendre_test::columnScaledError(
         N, x, [&](int n, int m) { return normalizedAssociatedLegendre(n, m, x, TABLES); });
     EXPECT_GE(STATELESS.columns, 50) << "x=" << x;
+    EXPECT_EQ(STATELESS.nonfinite, 0) << "x=" << x;
+    EXPECT_EQ(CACHED.nonfinite, 0) << "x=" << x;
     EXPECT_LE(STATELESS.worst, 4e-13) << "stateless x=" << x << " m=" << STATELESS.worstM;
     EXPECT_LE(CACHED.worst, 4e-13) << "cached x=" << x << " m=" << CACHED.worstM;
   }
+}
+
+/* ----------------------------- Unnormalized Range ----------------------------- */
+
+namespace {
+
+/// Accuracy scale for P_n^m at one argument: the largest reference magnitude
+/// among degrees n-1, n, n+1 in the same column. The zeros of consecutive
+/// degrees interleave, so this is the local amplitude even where P_n^m itself
+/// passes through zero, where a relative bound would measure the zero.
+long double unnormalizedLocalScale(int n, int m, double x) {
+  long double scale = 0.0L;
+  for (int k = std::max(m, n - 1); k <= n + 1; ++k) {
+    scale = std::fmax(scale, std::fabs(legendre_test::unnormalizedReference(k, m, x)));
+  }
+  return scale;
+}
+
+} // namespace
+
+/**
+ * @test UnnormalizedRange_IntermediatesStayRepresentable
+ * @brief Values whose intermediates overflow double but whose results do not
+ *        are finite and within 1e-12 of the local amplitude of the long double
+ *        recurrence; three of them also match independently computed values to
+ *        1e-12 relative (the fourth sits at a root of its two-term closed form,
+ *        where the value is sixteen digits below its terms). An odd-parity value
+ *        at x = 0 is exactly zero, and a true overflow is a signed infinity.
+ */
+TEST(MathLegendrePolynomials, UnnormalizedRange_IntermediatesStayRepresentable) {
+  struct Case {
+    int n, m;
+    double x;
+    double independent; // two-term Rodrigues evaluation, rounded to double
+    bool relative;      // independent value comparable at 1e-12 relative
+  };
+  const Case FINITE[] = {
+      {152, 150, 0.05, -1.1353410821681464e308, true},
+      {152, 150, 0.05744849896214261, 1.6444996327746805e292, false},
+      {180, 140, 0.3, -9.783177957359671e306, true},
+      {200, 100, 0.3, -8.359055842138339e226, true},
+  };
+  for (const Case& C : FINITE) {
+    const double GOT = associatedLegendre(C.n, C.m, C.x);
+    ASSERT_TRUE(std::isfinite(GOT)) << "n=" << C.n << " m=" << C.m << " x=" << C.x;
+    const long double REF = legendre_test::unnormalizedReference(C.n, C.m, C.x);
+    EXPECT_LE(std::fabs(static_cast<long double>(GOT) - REF),
+              1e-12L * unnormalizedLocalScale(C.n, C.m, C.x))
+        << "n=" << C.n << " m=" << C.m << " x=" << C.x << " got " << GOT;
+    if (C.relative) {
+      EXPECT_TRUE(nearRel(GOT, C.independent, 1e-12, 0.0)) << "n=" << C.n << " m=" << C.m;
+    }
+  }
+  EXPECT_EQ(associatedLegendre(152, 151, 0.0), 0.0); // odd n - m at x = 0
+  EXPECT_EQ(associatedLegendre(2190, 0, 1.0), 1.0);
+  EXPECT_EQ(associatedLegendre(2190, 1, 1.0), 0.0);
+  const double OVER = associatedLegendre(153, 151, 0.0); // true value below -DBL_MAX
+  EXPECT_TRUE(std::isinf(OVER) && OVER < 0.0) << OVER;
+  // True overflows reached in the walk rather than the seed: the renormalisation of the
+  // recurrence itself is what keeps the sign instead of an inf - inf NaN.
+  {
+    const double V = associatedLegendre(900, 210, 0.0);
+    const long double REF = legendre_test::unnormalizedReference(900, 210, 0.0);
+    EXPECT_TRUE(std::isinf(V) && ((V > 0.0) == (REF > 0.0L))) << "n=900 m=210: " << V;
+  }
+  {
+    const double V = associatedLegendre(900, 320, 0.0);
+    const long double REF = legendre_test::unnormalizedReference(900, 320, 0.0);
+    EXPECT_TRUE(std::isinf(V) && ((V > 0.0) == (REF > 0.0L))) << "n=900 m=320: " << V;
+  }
+  // A representable result whose walk climbs past 2^512 from a scaled seed.
+  {
+    const double V = associatedLegendre(1200, 100, 0.9);
+    const long double REF = legendre_test::unnormalizedReference(1200, 100, 0.9);
+    ASSERT_TRUE(std::isfinite(V)) << V;
+    EXPECT_LE(std::fabs(static_cast<long double>(V) - REF),
+              1e-10L * unnormalizedLocalScale(1200, 100, 0.9));
+  }
+}
+
+/**
+ * @test UnnormalizedSweep_FiniteExactlyWhenRepresentable
+ * @brief Over every (n, m) with n <= 300 and seven arguments, against the long
+ *        double recurrence: a zero reference gives exactly zero; a reference
+ *        above DBL_MAX gives an infinity of the same sign; a reference below
+ *        DBL_MIN gives no larger magnitude and no NaN; everything else is within
+ *        1e-10 of the column's local amplitude, the documented accuracy class:
+ *        the forward recurrence's double rounding reaches about 4e-11 relative
+ *        on small-magnitude entries at x = 0.999 (both normalized and
+ *        unnormalized walks, against an exact rational evaluation), while the
+ *        long double reference agrees with that evaluation to 1e-17.
+ */
+TEST(MathLegendrePolynomials, UnnormalizedSweep_FiniteExactlyWhenRepresentable) {
+  constexpr int N = 300;
+  constexpr double DMAX = std::numeric_limits<double>::max();
+  constexpr double DMIN = std::numeric_limits<double>::min();
+  int overflowed = 0, zeros = 0, compared = 0;
+  for (double x : {-0.9, -0.3, 0.0, 0.3, 0.7, 0.999, 1.0}) {
+    for (int m = 0; m <= N; ++m) {
+      // One pass per column keeps the local-scale neighbours at hand.
+      long double refPrev = 0.0L;                                      // n - 1
+      long double ref = legendre_test::unnormalizedReference(m, m, x); // n
+      for (int n = m; n <= N; ++n) {
+        const long double REF_NEXT =
+            (n + 1 <= N) ? legendre_test::unnormalizedReference(n + 1, m, x) : 0.0L;
+        const double GOT = associatedLegendre(n, m, x);
+        ASSERT_FALSE(std::isnan(GOT)) << "n=" << n << " m=" << m << " x=" << x;
+        if (ref == 0.0L) {
+          EXPECT_EQ(GOT, 0.0) << "n=" << n << " m=" << m << " x=" << x;
+          ++zeros;
+        } else if (std::fabs(ref) > static_cast<long double>(DMAX)) {
+          EXPECT_TRUE(std::isinf(GOT) && ((GOT > 0.0) == (ref > 0.0L)))
+              << "n=" << n << " m=" << m << " x=" << x << " got " << GOT;
+          ++overflowed;
+        } else if (std::fabs(ref) < static_cast<long double>(DMIN)) {
+          EXPECT_LE(std::fabs(GOT), DMIN) << "n=" << n << " m=" << m << " x=" << x;
+        } else {
+          const long double SCALE =
+              std::fmax(std::fabs(ref), std::fmax(std::fabs(refPrev), std::fabs(REF_NEXT)));
+          EXPECT_LE(std::fabs(static_cast<long double>(GOT) - ref), 1e-10L * SCALE)
+              << "n=" << n << " m=" << m << " x=" << x << " got " << GOT << " ref "
+              << static_cast<double>(ref);
+          ++compared;
+        }
+        refPrev = ref;
+        ref = REF_NEXT;
+      }
+    }
+  }
+  EXPECT_GT(compared, 100000);
+  EXPECT_GT(overflowed, 1000);
+  EXPECT_GT(zeros, 1000);
 }
 
 /* ----------------------------- Transform API ----------------------------- */
@@ -529,8 +661,8 @@ TEST(MathLegendrePolynomials, NormalizedNearPole_KeepsPrecision) {
 /**
  * @test TransformClampsTheTransformedValue
  * @brief With fX = cos and colatitude input, every theta in [0, pi] evaluates
- *        at cos(theta). The clamp applies to fX(x), not to x: clamping the
- *        input first evaluated every theta above 1 rad at cos(1).
+ *        at cos(theta): the transform is applied first and its result is
+ *        clamped to [-1, 1].
  */
 TEST(MathLegendrePolynomials, TransformClampsTheTransformedValue) {
   const auto COS = [](double theta) { return std::cos(theta); };

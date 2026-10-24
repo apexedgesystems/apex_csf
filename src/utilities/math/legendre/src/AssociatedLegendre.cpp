@@ -92,19 +92,37 @@ double normalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
  *   P_{m+1,m} = (2m+1) t P_{m,m}
  *   (k-m) P_{k,m} = (2k-1) t P_{k-1,m} - (k+m-1) P_{k-2,m}
  *
- * With m = 0 the last line is Bonnet's recurrence for P_n.
+ * With m = 0 the last line is Bonnet's recurrence for P_n. These values grow
+ * like (2m-1)!! and shrink like s^m, so the seed and the recurrence's
+ * intermediate products leave double's exponent range long before a final
+ * value does. The walk therefore carries the pair (prev, cur) scaled by
+ * 2^-scale and renormalises by 2^512 whenever |cur| leaves [2^-512, 2^512]:
+ * every intermediate stays representable (|cur| <= 2^512 and a coefficient
+ * below 2^13 keep each product under 2^526), an exact zero stays zero, and
+ * the single ldexp at the end is the only place range is decided, giving
+ * inf or 0 exactly when the true value lies beyond double.
  */
 double unnormalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
+  constexpr double UP = 0x1p512;
+  constexpr double DOWN = 0x1p-512;
   const double S = sinOf(t);
+  int scale = 0;
 
-  double diag = 1.0; // P_{0,0}
+  double diag = 1.0; // P_{0,0}, non-negative throughout the seed
   double odd = 1.0;  // 2k - 1
   for (int k = 1; k <= m; ++k) {
     diag *= odd * S;
     odd += 2.0;
+    if (diag > UP) {
+      diag *= DOWN;
+      scale += 512;
+    } else if (diag < DOWN && diag != 0.0) {
+      diag *= UP;
+      scale -= 512;
+    }
   }
   if (n == m) {
-    return diag;
+    return std::ldexp(diag, scale);
   }
 
   double prev = diag;
@@ -114,8 +132,18 @@ double unnormalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
         ((2.0 * k - 1.0) * t * cur - static_cast<double>(k + m - 1) * prev) / (k - m);
     prev = cur;
     cur = NEXT;
+    const double MAG = std::fabs(cur);
+    if (MAG > UP) {
+      cur *= DOWN;
+      prev *= DOWN;
+      scale += 512;
+    } else if (MAG < DOWN && MAG != 0.0) {
+      cur *= UP;
+      prev *= UP;
+      scale -= 512;
+    }
   }
-  return cur;
+  return std::ldexp(cur, scale);
 }
 
 constexpr double NAN_VALUE = std::numeric_limits<double>::quiet_NaN();

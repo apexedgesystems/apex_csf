@@ -160,8 +160,7 @@ TEST(MathLegendrePolynomials, PbarTriangle_BadInputs) {
  *        variants agree with an extended-precision reference to 4e-13 of each
  *        column's scale. cos(phi) formed as 1 - x*x cancels there, and the
  *        seed's error s^m carries into the whole column, growing with m.
- *        The recurrence's own rounding is about 1e-13 of column scale here; the
- *        cancelling form gave 1.2e-12 at 87.4 degrees up to 1.8e-8 at 89.997.
+ *        The recurrence's own rounding is about 1e-13 of column scale here.
  */
 TEST(MathLegendrePolynomials, PbarTriangle_NearPoleKeepsPrecision) {
   constexpr int N = 160;
@@ -185,6 +184,7 @@ TEST(MathLegendrePolynomials, PbarTriangle_NearPoleKeepsPrecision) {
       const auto E = legendre_test::columnScaledError(
           N, x, [&](int n, int m) { return TRI[pbarTriangleIndex(n, m)]; });
       EXPECT_GE(E.columns, 50) << NAMES[v] << " x=" << x;
+      EXPECT_EQ(E.nonfinite, 0) << NAMES[v] << " x=" << x;
       EXPECT_LE(E.worst, TOL) << NAMES[v] << " x=" << x << " worst column m=" << E.worstM;
       std::printf("[near-pole] %-11s x=%-12.9g columns=%3d worst=%.2e (m=%d)\n", NAMES[v], x,
                   E.columns, E.worst, E.worstM);
