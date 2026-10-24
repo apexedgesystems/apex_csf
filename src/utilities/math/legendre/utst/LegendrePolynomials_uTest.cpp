@@ -603,6 +603,54 @@ TEST(MathLegendrePolynomials, UnnormalizedRange_IntermediatesStayRepresentable) 
 }
 
 /**
+ * @test UnnormalizedTinyArgument_EvenValuesOrdinaryOddValuesTiny
+ * @brief A tiny nonzero argument makes every odd-offset value proportional to x
+ *        while the even-offset values stay ordinary; the pair must be carried
+ *        through the recurrence together. Degrees 6 and 8 at the smallest
+ *        subnormal are -0.3125 and 0.2734375, the same as at zero; every
+ *        (n, m) with n <= 60 at six tiny arguments of both signs is finite,
+ *        matches the long double recurrence to 1e-12 where that is a normal
+ *        double, and is no larger than DBL_MIN where the reference is below it.
+ *        At a subnormal argument the odd-offset values begin as subnormals and
+ *        keep only that precision (about 34 bits here), so they are held to
+ *        1e-9. The polynomial and identity-transform wrappers agree with the
+ *        direct call.
+ */
+TEST(MathLegendrePolynomials, UnnormalizedTinyArgument_EvenValuesOrdinaryOddValuesTiny) {
+  constexpr double TRUE_MIN = std::numeric_limits<double>::denorm_min();
+  constexpr double DMIN = std::numeric_limits<double>::min();
+  EXPECT_DOUBLE_EQ(associatedLegendre(6, 0, TRUE_MIN), -0.3125);
+  EXPECT_DOUBLE_EQ(associatedLegendre(8, 0, TRUE_MIN), 0.2734375);
+  EXPECT_DOUBLE_EQ(associatedLegendre(6, 0, -TRUE_MIN), -0.3125);
+  EXPECT_DOUBLE_EQ(legendrePolynomial(8, TRUE_MIN), 0.2734375);
+  EXPECT_DOUBLE_EQ(legendrePolynomialFunction(8, fx, TRUE_MIN), 0.2734375);
+  EXPECT_DOUBLE_EQ(associatedLegendreFunction(6, 0, fx, -TRUE_MIN), -0.3125);
+
+  int compared = 0, tiny = 0;
+  for (double x : {TRUE_MIN, -TRUE_MIN, DMIN, -1e-300, 1e-200, 0x1p-600}) {
+    for (int n = 0; n <= 60; ++n) {
+      for (int m = 0; m <= n; ++m) {
+        const double GOT = associatedLegendre(n, m, x);
+        ASSERT_TRUE(std::isfinite(GOT)) << "n=" << n << " m=" << m << " x=" << x << " got " << GOT;
+        const long double REF = legendre_test::unnormalizedReference(n, m, x);
+        if (std::fabs(REF) >= static_cast<long double>(DMIN)) {
+          const bool ODD_OF_SUBNORMAL = ((n - m) % 2 != 0) && std::fabs(x) < DMIN;
+          const long double TOL = ODD_OF_SUBNORMAL ? 1e-9L : 1e-12L;
+          EXPECT_LE(std::fabs(static_cast<long double>(GOT) - REF), TOL * std::fabs(REF))
+              << "n=" << n << " m=" << m << " x=" << x << " got " << GOT;
+          ++compared;
+        } else {
+          EXPECT_LE(std::fabs(GOT), DMIN) << "n=" << n << " m=" << m << " x=" << x;
+          ++tiny;
+        }
+      }
+    }
+  }
+  EXPECT_GT(compared, 8000) << "tiny=" << tiny;
+  EXPECT_GT(tiny, 100) << "compared=" << compared; // only the subnormal arguments reach this branch
+}
+
+/**
  * @test UnnormalizedSweep_FiniteExactlyWhenRepresentable
  * @brief Over every (n, m) with n <= 300 and seven arguments, against the long
  *        double recurrence: a zero reference gives exactly zero; a reference
@@ -611,8 +659,9 @@ TEST(MathLegendrePolynomials, UnnormalizedRange_IntermediatesStayRepresentable) 
  *        1e-10 of the column's local amplitude, the documented accuracy class:
  *        the forward recurrence's double rounding reaches about 4e-11 relative
  *        on small-magnitude entries at x = 0.999 (both normalized and
- *        unnormalized walks, against an exact rational evaluation), while the
- *        long double reference agrees with that evaluation to 1e-17.
+ *        unnormalized walks, against an exact rational evaluation); the long
+ *        double reference agrees with that evaluation to about 1e-14 relative
+ *        at the sampled points, enough for this tolerance.
  */
 TEST(MathLegendrePolynomials, UnnormalizedSweep_FiniteExactlyWhenRepresentable) {
   constexpr int N = 300;

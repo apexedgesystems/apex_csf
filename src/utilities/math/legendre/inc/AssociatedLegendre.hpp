@@ -24,7 +24,12 @@
  *    exponent alongside, so intermediates never overflow or underflow; the
  *    result is inf only where the true value exceeds DBL_MAX (P_n^n(0) =
  *    (2n-1)!! does from n = 151) and 0 only where it is below the smallest
- *    subnormal. Use the normalized form at high degree.
+ *    subnormal. Use the normalized form at high degree. For a subnormal
+ *    argument the odd-offset values (n - m odd) are proportional to x and
+ *    begin life as subnormals, so they carry only the precision a subnormal
+ *    of their size can hold (about 34 bits at the smallest subnormal) and
+ *    later values of that parity inherit it; the even-offset values are
+ *    unaffected.
  *  - Near |x| = 1 with large m, the diagonal seed (1 - x^2)^(m/2) falls into
  *    subnormals and then to zero (for example x = 0.999 from m near 240), and
  *    the column loses its digits with it. This is true of every forward-column
@@ -98,8 +103,8 @@ namespace legendre {
 /// Orders below this build the diagonal seed s^m with a multiply loop; at or
 /// above it, one std::pow call. A fixed cross-target choice: the loop/pow
 /// crossover measured at m = 32 on an aarch64 Thor and near m = 56 on an
-/// x86-64 laptop, where the pow seed costs at most about 7 ns extra for
-/// orders 32 to 55.
+/// x86-64 laptop; at m = 32 the laptop sample paid about 7 ns for the pow
+/// seed over the loop.
 inline constexpr int SCALAR_POW_SEED_MIN_ORDER = 32;
 
 /**

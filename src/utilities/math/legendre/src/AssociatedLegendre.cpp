@@ -96,11 +96,17 @@ double normalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
  * like (2m-1)!! and shrink like s^m, so the seed and the recurrence's
  * intermediate products leave double's exponent range long before a final
  * value does. The walk therefore carries the pair (prev, cur) scaled by
- * 2^-scale and renormalises by 2^512 whenever |cur| leaves [2^-512, 2^512]:
- * every intermediate stays representable (|cur| <= 2^512 and a coefficient
- * below 2^13 keep each product under 2^526), an exact zero stays zero, and
- * the single ldexp at the end is the only place range is decided, giving
- * inf or 0 exactly when the true value lies beyond double.
+ * 2^-scale and renormalises by 2^512. Scaling down is keyed on |cur| alone:
+ * after every step both members are at most 2^512, since prev is the
+ * previous step's checked cur and any scaling applies to both, so a
+ * coefficient below 2^13 keeps each product under 2^526. Scaling up needs
+ * both members small: with a tiny argument the odd-offset values are
+ * proportional to t while the even ones are ordinary, and scaling on the
+ * small member alone would push its neighbour out of range. The smaller
+ * member may underflow harmlessly beneath the larger, an exact zero stays
+ * zero, and the ldexp at the end (skipped when nothing was scaled) is the
+ * only place range is decided, giving inf or 0 exactly when the true value
+ * lies beyond double.
  */
 double unnormalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
   constexpr double UP = 0x1p512;
@@ -122,7 +128,7 @@ double unnormalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
     }
   }
   if (n == m) {
-    return std::ldexp(diag, scale);
+    return (scale == 0) ? diag : std::ldexp(diag, scale);
   }
 
   double prev = diag;
@@ -132,18 +138,18 @@ double unnormalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
         ((2.0 * k - 1.0) * t * cur - static_cast<double>(k + m - 1) * prev) / (k - m);
     prev = cur;
     cur = NEXT;
-    const double MAG = std::fabs(cur);
-    if (MAG > UP) {
+    const double ABS_CUR = std::fabs(cur);
+    if (ABS_CUR > UP) {
       cur *= DOWN;
       prev *= DOWN;
       scale += 512;
-    } else if (MAG < DOWN && MAG != 0.0) {
+    } else if (ABS_CUR < DOWN && std::fabs(prev) < DOWN && (cur != 0.0 || prev != 0.0)) {
       cur *= UP;
       prev *= UP;
       scale -= 512;
     }
   }
-  return std::ldexp(cur, scale);
+  return (scale == 0) ? cur : std::ldexp(cur, scale);
 }
 
 constexpr double NAN_VALUE = std::numeric_limits<double>::quiet_NaN();
