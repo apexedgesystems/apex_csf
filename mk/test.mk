@@ -209,7 +209,82 @@ check-cdef: tools-rust
 	[ $$fail -eq 0 ] || exit 1
 	$(call log_ok,check-cdef,.auto headers match their specs)
 
-.PHONY: cdef check-cdef
+# Every registered data manifest must produce its dictionary with no
+# entry left behind a `_warning` key, because ground tooling regenerates
+# its target directories from these. The inventory is the one CMake
+# writes at configure from the apex_add_data_manifest registrations (the
+# same list apex-data-db consumes); the tools-rust prerequisite
+# configures the tree, so the list is present. Generation goes to a
+# scratch tree so the gate is read-only; the first failing manifest
+# fails it.
+check-data-db: tools-rust
+	$(call log,check-data-db,Generating every registered dictionary to a scratch tree)
+	@list="$(BUILD_DIR)/apex_data_manifests.txt"; \
+	[ -s "$$list" ] || { printf '[check-data-db] no registered manifests in %s\n' "$$list"; exit 1; }; \
+	scratch=$$(mktemp -d) || exit 1; fail=0; count=0; \
+	while IFS= read -r m; do \
+	  [ -z "$$m" ] && continue; \
+	  count=$$((count + 1)); \
+	  "$(BUILD_DIR)/bin/tools/rust/apex_data_gen" --manifest "$$m" --output "$$scratch" > /dev/null || { fail=1; break; }; \
+	done < "$$list"; \
+	if [ $$fail -eq 0 ] && grep -l '"_warning"' "$$scratch"/*.json; then \
+	  printf '[check-data-db] a dictionary above carries a _warning entry\n'; fail=1; \
+	fi; \
+	rm -rf "$$scratch"; \
+	[ $$fail -eq 0 ] || exit 1; \
+	printf '[check-data-db] %s registered dictionaries generate clean\n' "$$count"
+
+# Contract checks for the pieces check-data-db stands on, so that removing
+# the helper's explicit-path error or the gate's failure propagation cannot
+# pass CI on valid inputs alone.
+#
+# check-data-manifest-helper configures cmake/apex/test/data_manifest once
+# per case and asserts status, the registered list and the diagnostic.
+# check-data-db-contract hands the real check-data-db recipe a scratch
+# BUILD_DIR holding the built generator and a one-entry registered list per
+# fixture under mk/fixtures/check-data-db, asserting the gate's verdict.
+HELPER_FIXTURE := cmake/apex/test/data_manifest
+GATE_FIXTURES := mk/fixtures/check-data-db
+
+check-data-manifest-helper:
+	$(call log,check-data-manifest-helper,Configuring the apex_add_data_manifest fixture per case)
+	@scratch=$$(mktemp -d) || exit 1; fail=0; \
+	run() { cmake -S "$(HELPER_FIXTURE)" -B "$$scratch/$$1" -DCASE="$$1" > "$$scratch/$$1.log" 2>&1; echo $$?; }; \
+	expect() { grep -q -- "$$2" "$$scratch/$$1.log" || { printf '[check-data-manifest-helper] %s: missing diagnostic "%s"\n' "$$1" "$$2"; fail=1; }; }; \
+	[ "$$(run default-absent)" -eq 0 ] && [ ! -s "$$scratch/default-absent/apex_data_manifests.txt" ] \
+	  || { printf '[check-data-manifest-helper] default-absent: expected success with an empty list\n'; fail=1; }; \
+	[ "$$(run valid)" -eq 0 ] && grep -q 'present_data.toml$$' "$$scratch/valid/apex_data_manifests.txt" \
+	  || { printf '[check-data-manifest-helper] valid: expected success listing present_data.toml\n'; fail=1; }; \
+	[ "$$(run explicit-missing)" -ne 0 ] || { printf '[check-data-manifest-helper] explicit-missing: expected a configure error\n'; fail=1; }; \
+	expect explicit-missing 'MANIFEST path does not exist'; expect explicit-missing 'missing_data.toml'; \
+	[ "$$(run notfound)" -ne 0 ] || { printf '[check-data-manifest-helper] notfound: expected a configure error\n'; fail=1; }; \
+	expect notfound 'MANIFEST path does not exist'; expect notfound 'NOTFOUND'; \
+	[ "$$(run keyword-without-value)" -ne 0 ] || { printf '[check-data-manifest-helper] keyword-without-value: expected a configure error\n'; fail=1; }; \
+	expect keyword-without-value 'use no arguments or MANIFEST <path>'; \
+	[ "$$(run stray-argument)" -ne 0 ] || { printf '[check-data-manifest-helper] stray-argument: expected a configure error\n'; fail=1; }; \
+	expect stray-argument 'use no arguments or MANIFEST <path>'; expect stray-argument 'OFF'; \
+	rm -rf "$$scratch"; \
+	[ $$fail -eq 0 ] || exit 1
+	$(call log_ok,check-data-manifest-helper,default no-op; valid listed; missing and -NOTFOUND paths and bare or stray arguments fail configure)
+
+check-data-db-contract: tools-rust
+	$(call log,check-data-db-contract,Driving check-data-db with one fixture per verdict)
+	@scratch=$$(mktemp -d) || exit 1; fail=0; \
+	mkdir -p "$$scratch/bin/tools/rust" && ln -s "$(abspath $(BUILD_DIR))/bin/tools/rust/apex_data_gen" "$$scratch/bin/tools/rust/apex_data_gen"; \
+	run() { printf '%s\n' "$(abspath $(GATE_FIXTURES))/$$1/apex_data.toml" > "$$scratch/apex_data_manifests.txt"; \
+	        $(MAKE) --no-print-directory -o tools-rust check-data-db BUILD_DIR="$$scratch" > "$$scratch/$$1.log" 2>&1; echo $$?; }; \
+	expect() { grep -q -- "$$2" "$$scratch/$$1.log" || { printf '[check-data-db-contract] %s: missing "%s"\n' "$$1" "$$2"; fail=1; }; }; \
+	[ "$$(run valid)" -eq 0 ] || { printf '[check-data-db-contract] valid: expected the gate to pass\n'; fail=1; }; \
+	expect valid '1 registered dictionaries generate clean'; \
+	[ "$$(run broken-header)" -ne 0 ] || { printf '[check-data-db-contract] broken-header: expected the gate to fail\n'; fail=1; }; \
+	expect broken-header 'declares header'; \
+	[ "$$(run warning)" -ne 0 ] || { printf '[check-data-db-contract] warning: expected the gate to fail\n'; fail=1; }; \
+	expect warning 'carries a _warning entry'; \
+	rm -rf "$$scratch"; \
+	[ $$fail -eq 0 ] || exit 1
+	$(call log_ok,check-data-db-contract,valid passes; a declared-header error and a _warning entry fail the gate)
+
+.PHONY: cdef check-cdef check-data-db check-data-manifest-helper check-data-db-contract
 
 # Tooling coverage (nightly). Each runs its tool test suite under coverage
 # instrumentation and emits a human-readable summary plus a machine report,

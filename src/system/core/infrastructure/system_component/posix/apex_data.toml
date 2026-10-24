@@ -6,7 +6,8 @@
 # These are the base layer commands - every CORE, SW_MODEL, HW_MODEL,
 # DRIVER, and SUPPORT component responds to these opcodes.
 #
-# Headers are discovered by convention (inc/*.hpp in same directory).
+# Headers are discovered by convention (inc/*.hpp in same directory);
+# the enum names its header in the base layer explicitly.
 
 component = "SystemComponent"
 
@@ -17,4 +18,4 @@ ComponentStatusInfoTlm = { category = "TELEMETRY", opcode = "0x0081" }
 
 [enums]
 # Component type classification for logging and registry
-ComponentType = { header = "inc/ComponentType.hpp" }
+ComponentType = { header = "../base/inc/ComponentType.hpp" }
