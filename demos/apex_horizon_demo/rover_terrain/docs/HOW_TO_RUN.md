@@ -2,9 +2,14 @@
 
 ## One-time setup: the world artifacts
 
-The demo consumes two data files with different handling:
+The demo consumes two data files with different handling. Both are
+generated in Horizon's `horizon_2` repository and copied to the paths
+the shared `demos/apex_horizon_demo/worlds.manifest` names; the two
+destinations below are those paths, from this repository's root (the
+[rover_mcu quick start](../../rover_mcu/README.md#1-quick-start) gives
+the same recipe):
 
-- `data/alpha_patch_lod4.htile` — the 1-degree terrain patch
+- `alpha_patch_lod4.htile` — the 1-degree terrain patch
   (39–40 N, 106–105 W), **generated, never committed**. Its content is
   entirely synthetic: the world-generation pipeline's terrain tool
   renders it from a tracked sample spec for a _fictional_ rocky body
@@ -12,19 +17,22 @@ The demo consumes two data files with different handling:
   No real-world elevation data feeds it, by policy AND by
   construction: real-world datasets stay in the producer pipeline's
   private sandbox and are never converted into distributable
-  artifacts. Generate it in Horizon's `horizon_2` repository with
+  artifacts. Generate it in `horizon_2` with
   `make compose-rover-terrain-artifact`, which writes
   `demos/rover_terrain/data/alpha_patch_lod4.htile` there, and copy it
-  into `data/` (gitignored). The htile header carries a
+  to `demos/apex_horizon_demo/rover_terrain/data/alpha_patch_lod4.htile`
+  (gitignored). The htile header carries a
   `spec_hash` both sides of a pairing log at attach — regenerating
   from the same spec yields a bit-identical artifact, which is the
   file-identity proof for paired runs.
-- `data/earth_ussa76.atm` — **generated, never committed**: the
+- `earth_ussa76.atm` — **generated, never committed**: the
   spec-generated USSA76 layered table (public-domain U.S. government
   standard), produced in `horizon_2` by
   `make compose-aircraft-world-artifacts`, which writes
-  `demos/aircraft_atmo/data/earth_ussa76.atm` there, and copied into
-  `data/`.
+  `demos/aircraft_atmo/data/earth_ussa76.atm` there. Copy it to
+  `demos/apex_horizon_demo/aircraft_atmo/data/earth_ussa76.atm`
+  (gitignored): the aircraft_atmo demo's data directory, not this
+  demo's.
   Bit-deterministic: 288 bytes, header spec_hash
   0x753549717ab8b8ff, logged at load as the identity proof.
 
