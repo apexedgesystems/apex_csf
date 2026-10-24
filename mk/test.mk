@@ -125,7 +125,7 @@ test-py:
 # Rust tools unit tests
 test-rust:
 	$(call log,test,Running Rust tools tests)
-	@cd tools/rust && cargo test
+	@cd tools && cargo test --workspace
 
 # Shell tools smoke: exercises ops_sdk_package.sh end to end against a
 # synthetic build tree (a stub struct dictionary) and asserts the SDK
@@ -159,7 +159,7 @@ compat: $(addprefix compat-,$(COMPAT_CONTRACTS))
 
 compat-tprm:
 	$(call log,compat,Verifying the TPRM contract (rust + C++))
-	@cd tools/rust && cargo test --locked --test golden_vectors
+	@cd tools && cargo test --locked -p apex-tprm --test golden_vectors
 	@GTEST_FILTER='GoldenVectors.*' \
 	  "$(BUILD_DIR)/bin/utests/TestSystemCoreSystemComponent"
 	$(call log_ok,compat,TPRM contract green on both sides)
@@ -308,7 +308,7 @@ coverage-py:
 
 coverage-rust:
 	$(call log,coverage,Measuring Rust tools coverage)
-	@cd tools/rust && cargo llvm-cov --no-report && \
+	@cd tools && cargo llvm-cov --workspace --no-report && \
 	  cargo llvm-cov report --lcov --output-path coverage-rust.lcov && \
 	  cargo llvm-cov report \
 	    $(if $(filter 1,$(SCAN_GATE)),--fail-under-lines $(COVERAGE_RUST_MIN_LINE),)

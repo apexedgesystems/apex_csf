@@ -487,7 +487,7 @@ Performance benchmarking uses
 | `zenith-target`      | Generate Zenith target configuration (Python)    |
 | `mc-plot`            | Plot Monte Carlo run results (Python)            |
 
-See [tools/rust/README.md](tools/rust/README.md),
+See [tools/docs/rust_tools.md](tools/docs/rust_tools.md),
 [tools/py/README.md](tools/py/README.md),
 [tools/cpp/README.md](tools/cpp/README.md), and
 [tools/sh/README.md](tools/sh/README.md) for full documentation.

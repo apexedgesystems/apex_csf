@@ -3,7 +3,7 @@
 #
 # Discovers and builds tool subdirectories by their native toolchains:
 #   cpp/   - Standard CMake (add_subdirectory)
-#   rust/  - Cargo (requires cargo on PATH)
+#   <role>/rust/ - Cargo workspace rooted at tools/Cargo.toml (requires cargo on PATH)
 #   py/    - uv + pip (requires uv and pip on PATH)
 #   sh/    - Shell scripts (copied to bin/tools/sh/)
 #
@@ -54,11 +54,12 @@ endif ()
 # Rust tools
 # ------------------------------------------------------------------------------
 
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml")
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
   find_program(CARGO_EXECUTABLE cargo)
 
   if (CARGO_EXECUTABLE)
-    set(_RUST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/rust")
+    # The workspace root; members live under <role>/rust/<crate>.
+    set(_RUST_SRC "${CMAKE_CURRENT_SOURCE_DIR}")
     set(_RUST_OUT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/rust")
     # Inherit CARGO_HOME from the environment (the dev image bakes a pinned,
     # offline-ready registry cache at /opt/rust/cargo; locally it is ~/.cargo).
@@ -71,10 +72,13 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml")
     # The stamp regenerates whenever the rust sources or lock change, so
     # in-tree tool edits rebuild before anything consumes the binaries
     # (cargo itself is incremental past this gate).
-    file(GLOB_RECURSE _RUST_SOURCES CONFIGURE_DEPENDS "${_RUST_SRC}/src/*.rs")
-    list(APPEND _RUST_SOURCES "${_RUST_SRC}/Cargo.toml" "${_RUST_SRC}/Cargo.lock")
+    file(GLOB_RECURSE _RUST_SOURCES CONFIGURE_DEPENDS "${_RUST_SRC}/*/rust/*/src/*.rs")
+    file(GLOB _RUST_MANIFESTS CONFIGURE_DEPENDS "${_RUST_SRC}/*/rust/*/Cargo.toml")
+    list(APPEND _RUST_SOURCES ${_RUST_MANIFESTS} "${_RUST_SRC}/Cargo.toml"
+         "${_RUST_SRC}/Cargo.lock"
+    )
 
-    # Generate build script (copies all cargo binaries)
+    # Generate build script (builds every member, copies all cargo binaries)
     set(_RUST_BUILD_SCRIPT "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-build-rust-tools.sh")
     file(
       WRITE "${_RUST_BUILD_SCRIPT}"
@@ -82,7 +86,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml")
       # Offline enforcement comes from the environment: the build image sets
       # CARGO_NET_OFFLINE=true against its baked crate cache (cargo reads it
       # natively). Local dev (no such env) builds online.
-      "'${CARGO_EXECUTABLE}' build --release"
+      "'${CARGO_EXECUTABLE}' build --release --workspace"
       " --manifest-path '${_RUST_SRC}/Cargo.toml' --target-dir '${_CARGO_TARGET}'\n"
       "mkdir -p '${_RUST_OUT}'\n"
       "find '${_CARGO_TARGET}/release' -maxdepth 1 -type f -executable ! -name '*.*'"

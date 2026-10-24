@@ -81,10 +81,10 @@ clean-rust-build:
 	    'rm -rf "{}/bin/tools/rust" 2>/dev/null || true' \; ; \
 	fi
 
-# Clean local Rust target (from development builds within tools/rust/)
+# Clean local Rust target (from development builds within tools/)
 clean-rust-local:
 	$(call log,clean,Removing local Rust target)
-	@rm -rf tools/rust/target 2>/dev/null || true
+	@rm -rf tools/target 2>/dev/null || true
 
 # Clean all Rust artifacts
 clean-rust: clean-rust-build clean-rust-local

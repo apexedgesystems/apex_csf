@@ -230,7 +230,7 @@ static: prep
 # change, never rule drift. Runs on the PR rust job and nightly.
 clippy:
 	$(call log,clippy,Running clippy -- deny warnings)
-	@cd tools/rust && cargo clippy --all-targets --locked -- -D warnings
+	@cd tools && cargo clippy --workspace --all-targets --locked -- -D warnings
 
 # cppcheck: an independent static-analysis engine that catches different defects
 # than clang-tidy (warning/style/performance/portability). Advisory for now --

@@ -17,7 +17,7 @@ codegen chain works -- including the weird cases.
 | [SpecChannel](channel/)      | 0xDA00/01 | SW_MODEL | TOML  | One spec, two instances, per-instance TPRM                |
 
 Data structures, command dispatch, ground dictionaries, protobuf
-interfaces ([apex profile](../../tools/rust/docs/proto_profile.md)), and
+interfaces ([apex profile](../../tools/build/rust/apex-tprm/docs/proto_profile.md)), and
 component skeletons all derive from the specs.
 
 ## The three-artifact model

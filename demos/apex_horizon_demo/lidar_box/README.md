@@ -58,7 +58,7 @@ Scheduler priorities order `bodyStep` (50) before `bridgeStep` (40) inside each
 Rebuild the packed archive after editing any toml:
 
 ```bash
-T=tools/rust/target/debug ; TP=demos/apex_horizon_demo/lidar_box/tprm
+T=tools/target/debug ; TP=demos/apex_horizon_demo/lidar_box/tprm
 $T/cfg2bin --batch $TP/toml/ --output $TP/
 $T/tprm_pack pack -e 0x000000:$TP/executive.tprm -e 0x000100:$TP/scheduler.tprm \
   -e 0x00E600:$TP/lidar_box_producer.tprm -e 0x00CB00:$TP/lidar_box_bridge.tprm \

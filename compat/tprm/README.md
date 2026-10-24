@@ -23,7 +23,7 @@ each reject distinctly) before touching the body.
 
 ## Who pins what
 
-- **tools/rust** (reference implementation):
+- **tools/build/rust/apex-tprm** (reference implementation):
   `tests/golden_vectors.rs` regenerates every vector and asserts
   byte-identity with the committed files.
 - **C++ runtime**: `GoldenVectors_uTest.cpp` verifies the same files
