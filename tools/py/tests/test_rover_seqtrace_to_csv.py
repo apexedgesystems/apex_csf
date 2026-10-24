@@ -43,6 +43,15 @@ def _run(tmp_path: pathlib.Path, log: str, *flags: str):
     return code, files, out
 
 
+def _dropped(printed: str) -> dict[str, str]:
+    """{file: dropped} from the script's printed summary lines."""
+    return {
+        pathlib.Path(line.split("  ")[0]).name: line.split("dropped=", 1)[1]
+        for line in printed.splitlines()
+        if "  rows=" in line
+    }
+
+
 def test_ordinary_takes_split_at_their_end_markers(tmp_path):
     """Two takes each closed by its own marker come out exact and unmarked."""
     log = _sample(1, 0) + _sample(1, 0.05) + END + _sample(2, 0) + _sample(2, 0.05) + END
@@ -116,3 +125,81 @@ def test_running_id_change_without_clock_restart_is_split_and_marked(tmp_path):
         "seq1_take1_uncertain.csv": [("1", "0.00"), ("17", "0.05")],
         "seq32_take1_uncertain.csv": [("32", "0.10")],
     }
+
+
+def test_later_zero_marker_keeps_an_earlier_shared_drop_count_unknown(tmp_path, capsys):
+    """A take that shared a nonzero dropped count stays unknown when a later marker reads 0."""
+    # The 64-sample buffer holds A's one row and 63 of B's; B loses seven more before the drain
+    # logs marker 7, then ends while C starts before the next drain logs marker 0.
+    log = (
+        _sample(1, 0)
+        + "".join(_sample(2, i * 0.05) for i in range(63))
+        + "SEQTRACE end dropped=7\n"
+        + _sample(2, 3.5)
+        + _sample(3, 0)
+        + END
+        + _sample(3, 0.05)
+        + END
+    )
+    code, files, _ = _run(tmp_path, log)
+    assert code == 0
+    assert {name: len(rows) for name, rows in files.items()} == {
+        "seq1_take1_uncertain.csv": 1,
+        "seq2_take1_uncertain.csv": 64,
+        "seq3_take1_uncertain.csv": 2,
+    }
+    assert _dropped(capsys.readouterr().out) == {
+        "seq1_take1_uncertain.csv": "unknown (shared total 7)",
+        "seq2_take1_uncertain.csv": "unknown (shared total 7)",
+        "seq3_take1_uncertain.csv": "0",
+    }
+
+
+def test_take_cut_short_after_a_shared_zero_marker_is_unknown(tmp_path, capsys):
+    """A take with rows after its last end marker, cut off by the end of the log, is unknown."""
+    log = _sample(1, 0.9) + _sample(2, 0) + END + _sample(2, 0.1)
+    code, files, _ = _run(tmp_path, log)
+    assert code == 0
+    assert files == {
+        "seq1_take1_uncertain.csv": [("1", "0.90")],
+        "seq2_take1_uncertain.csv": [("2", "0.00"), ("2", "0.10")],
+    }
+    assert _dropped(capsys.readouterr().out) == {
+        "seq1_take1_uncertain.csv": "0",
+        "seq2_take1_uncertain.csv": "unknown",
+    }
+
+
+def test_first_sample_above_t0_shares_the_marker_before_it(tmp_path, capsys):
+    """A take whose first sample has t above 0 shares the previous marker's count, uncertain."""
+    # The previous take fills the 64-sample buffer and ends; the next starts while it is full,
+    # so its first three samples are lost and counted in the previous take's marker.
+    log = (
+        "".join(_sample(1, i * 0.05) for i in range(64))
+        + "SEQTRACE end dropped=3\n"
+        + _sample(2, 0.15)
+        + _sample(2, 0.2)
+        + END
+    )
+    reason = (
+        "line 66: first sample at t=0.15: earlier samples lost and counted in the marker on line 65"
+    )
+    code, files, out = _run(tmp_path, log)
+    assert code == 0
+    assert {name: len(rows) for name, rows in files.items()} == {
+        "seq1_take1_uncertain.csv": 64,
+        "seq2_take1_uncertain.csv": 2,
+    }
+    assert _dropped(capsys.readouterr().out) == {
+        "seq1_take1_uncertain.csv": "unknown (shared total 3)",
+        "seq2_take1_uncertain.csv": "unknown (shared total 3)",
+    }
+    assert reason in (out / "seq1_take1_uncertain.txt").read_text()
+    assert reason in (out / "seq2_take1_uncertain.txt").read_text()
+
+    strict = tmp_path / "strict"
+    strict.mkdir()
+    code, files, _ = _run(strict, log, "--strict")
+    assert code == 2
+    assert files == {}
+    assert reason in capsys.readouterr().err

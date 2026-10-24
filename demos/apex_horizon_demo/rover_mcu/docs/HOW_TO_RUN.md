@@ -278,8 +278,13 @@ extractor starts a new take wherever the take clock `t` fails to advance
 appears; halt states never split a take. The log cannot say which take
 the next marker closes, so both takes at such a split are written as
 `seq<S>_take<i>_uncertain.csv` with a `.txt` note naming the lines and the
-reason, and a shared nonzero drop count is reported as unknown. `--strict`
-instead writes nothing and exits 2 naming the first such line:
+reason, and a shared nonzero drop count is reported as unknown for every
+take that shared it, whatever its later markers read. A take whose first
+sample is not at `t=0.00` lost its first samples while the buffer still held
+the take before it, into that take's marker: both are written as uncertain
+and the count as shared. A take with rows after its last marker that the
+log ends on is `unknown`. `--strict` instead writes nothing and exits 2
+naming the first such line:
 
 ```bash
 python3 demos/apex_horizon_demo/rover_mcu/scripts/seqtrace_to_csv.py \

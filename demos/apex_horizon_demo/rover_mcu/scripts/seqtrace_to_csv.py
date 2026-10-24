@@ -23,28 +23,37 @@ board saw, or the plant's own sweep with no board sensor -- beside the
 plant's own sweep.
 
 Take boundaries. The telemetry task drains every pending sample before the
-pending end marker, so a take that starts within a second of the previous
-one ending can log its first samples ahead of the previous take's marker,
-and one marker can stand for two takes (its count is their sum). The
-producer restarts the take clock `t` at 0 when a take starts and only
-advances it within a take, so the extractor guarantees:
+pending end marker, and each marker counts the samples lost since the
+previous marker. So a take that starts within a second of the previous one
+ending can log its first samples ahead of the previous take's marker, one
+marker can stand for two takes (its count is their sum), and a take that
+starts while the buffer is still full loses its first samples into the
+previous take's count. The producer restarts the take clock `t` at 0 when a
+take starts and only advances it within a take, so the extractor
+guarantees:
 
   * an end marker with no take started since the previous marker closes the
-    current take and its dropped count is exact;
+    current take; its dropped count is exact unless the next take's first
+    sample has `t` above 0;
   * a sample whose `t` is not greater than the previous sample's starts a new
     take, even before an end marker; the earlier rows stay with the earlier
     take;
   * a sample whose state byte is a running id other than the take's running
     id, with no clock restart, also starts a new take (a sequence that hands
-    over to another without going idle); halt bytes never split a take.
+    over to another without going idle); halt bytes never split a take;
+  * a take whose first sample follows an end marker with `t` above 0 lost
+    its earlier samples into that marker's count, which it shares with the
+    takes the marker closes.
 
 It does not decide where such a take ends or how a shared dropped count
-divides, so every take on either side of one of those splits is written as
-`seq<S>_take<i>_uncertain.csv` beside a `.txt` note naming the log lines and
-the reason; a shared nonzero dropped count is reported as unknown. With
-`--strict` it writes nothing and exits 2 at the first such boundary, naming
-the line. A take cut short by the end of the log is still written, with its
-dropped count reported as unknown. Standard library only:
+divides, so every take on either side of one of those boundaries is written
+as `seq<S>_take<i>_uncertain.csv` beside a `.txt` note naming the log lines
+and the reason, and a take that shares a nonzero count reports its dropped
+count as unknown however its later markers read. With `--strict` it writes
+nothing and exits 2 at the first such boundary, naming the line. A take
+that logs rows after its last end marker and is cut short by the end of the
+log is still written, with its dropped count reported as unknown. Standard
+library only:
 
     python3 demos/apex_horizon_demo/rover_mcu/scripts/seqtrace_to_csv.py \
       <fs-root>/logs/models/GroundVehicle_0.log out/
@@ -95,9 +104,29 @@ class Take:
         self.rows: list[list[str]] = []
         self.running: int | None = None
         self.last_t = 0.0
-        self.dropped = "unknown"
+        # End markers whose count may include this take's losses, by log line: the count, and why
+        # the take may own only part of it, or None when the count is the take's alone.
+        self.ends: dict[int, tuple[int, str | None]] = {}
+        # Rows logged since its last end marker, whose losses no marker in the log counts yet.
+        self.uncounted = False
         self.notes: list[str] = []
         self.maybe_closed = False
+
+    def share(self, line: int, count: int) -> None:
+        """Hold the end marker on `line` as a count this take shares with other takes."""
+        held = self.ends.get(line)
+        if held is None or held[1] is None:
+            self.ends[line] = (count, f"shared total {count}")
+
+    def dropped_text(self) -> str:
+        """The dropped count, or unknown with the marker counts that leave it open."""
+        own = sum(count for count, how in self.ends.values() if how is None)
+        # A shared or unattributable zero gives the take nothing; any other such count is never
+        # divided, so the total stays unknown whatever later markers report.
+        open_counts = [how for count, how in self.ends.values() if count and how]
+        if open_counts:
+            return f"unknown ({', '.join(([f'at least {own}'] if own else []) + open_counts)})"
+        return "unknown" if self.uncounted else str(own)
 
 
 def extract(lines, strict: bool = False) -> list[Take]:
@@ -106,6 +135,8 @@ def extract(lines, strict: bool = False) -> list[Take]:
     unclosed: list[Take] = []
     current: Take | None = None
     counts: dict[str, int] = {}
+    # The latest end marker while no row has followed it: its line, count, and the takes it closes.
+    last_end: tuple[int, int, list[Take]] | None = None
 
     def start(seq: str) -> Take:
         counts[seq] = counts.get(seq, 0) + 1
@@ -141,35 +172,56 @@ def extract(lines, strict: bool = False) -> list[Take]:
                     current.notes.append(f"{note}; this take starts there")
             if current is None:
                 current = start(fields[1])
+                # The first sample is taken at t=0 unless the buffer is full, and those losses
+                # are in the marker drained just before this row.
+                if last_end is not None and t > 0:
+                    end_line, end_count, closed = last_end
+                    note = (
+                        f"line {lineno}: first sample at t={t:.2f}: earlier samples lost and "
+                        f"counted in the marker on line {end_line}"
+                    )
+                    if strict:
+                        raise AmbiguousBoundary(note)
+                    for take in closed:
+                        take.share(end_line, end_count)
+                        take.notes.append(f"{note}; that count is shared with {current.name}")
+                    current.share(end_line, end_count)
+                    current.notes.append(f"{note}; this take starts there")
             current.rows.append(fields)
             current.last_t = t
+            current.uncounted = True
             if running_id(state) is not None:
                 current.running = running_id(state)
+            last_end = None
             continue
         end = END.search(line)
         if not end:
             continue
-        count = end.group(1)
+        count = int(end.group(1))
         if unclosed:
-            shared = [*unclosed, current] if current is not None else unclosed
+            shared = [*unclosed, current] if current is not None else [*unclosed]
             for take in shared:
-                take.dropped = count if count == "0" else f"unknown (shared total {count})"
+                take.share(lineno, count)
+                take.uncounted = False
                 take.notes.append(
-                    f"line {lineno}: end marker may close any of "
+                    f"line {lineno}: end marker (dropped={count}) may close any of "
                     + ", ".join(other.name for other in shared)
                 )
             unclosed.clear()
             if current is not None:
                 current.maybe_closed = True
+            last_end = (lineno, count, shared)
         elif current is not None:
-            # A take that already shared a nonzero count cannot be given an exact one.
-            if not current.dropped.startswith("unknown (shared"):
-                current.dropped = count
+            how = None
             if current.maybe_closed:
                 current.notes.append(f"line {lineno}: end marker with no rows since the last")
-                if count != "0":
-                    current.dropped = f"unknown (line {lineno} reported {count})"
+                how = f"line {lineno} reported {count}"
+            current.ends[lineno] = (count, how)
+            current.uncounted = False
+            last_end = (lineno, count, [current])
             current = None
+        else:
+            last_end = (lineno, count, [])
     return done
 
 
@@ -200,7 +252,7 @@ def main() -> int:
             f.writelines(",".join(r) + "\n" for r in take.rows)
         if take.notes:
             (args.out_dir / f"{stem}.txt").write_text("\n".join(take.notes) + "\n")
-        print(f"{path}  rows={len(take.rows)}  dropped={take.dropped}")
+        print(f"{path}  rows={len(take.rows)}  dropped={take.dropped_text()}")
         for note in take.notes:
             print(f"  uncertain: {note}")
     return 0
