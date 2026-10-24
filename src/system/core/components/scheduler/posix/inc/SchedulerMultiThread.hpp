@@ -132,12 +132,15 @@ public:
    *
    * The deadline is an instant, not a duration, so a caller that chose it
    * as the end of a frame keeps that end whatever happens between
-   * choosing and calling: an instant already past is a single poll. The
-   * wait is a short spin, then sleeps in slices the caller does not see;
-   * each slice is a requested length capped at 250 us and at what is
-   * left of the budget, and when the sleep returns is the host's to
-   * decide, so the deadline is a bound on when the wait stops asking, not
-   * on when it returns. Ownership and publication are as for
+   * choosing and calling: time lost there is never granted again, and an
+   * instant already past is a single poll. The wait is a short spin, then
+   * sleeps in slices the caller does not see. Each sleep request is
+   * capped at 250 us and at the remainder of the budget as of the clock
+   * read before it, and no further request is issued once a read finds
+   * the deadline passed. Preemption can delay both issuing a request and
+   * its return, and when a sleep returns is the host's to decide, so the
+   * deadline bounds the length of each request, not the instant a request
+   * is made or the wait returns. Ownership and publication are as for
    * waitForInFlightTasks.
    *
    * @param deadlineNs CLOCK_MONOTONIC ns (apex::helpers::cpu::getMonotonicNs);

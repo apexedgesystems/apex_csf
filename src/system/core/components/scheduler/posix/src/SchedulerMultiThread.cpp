@@ -397,15 +397,19 @@ bool SchedulerMultiThread::waitForInFlightTasksUntil(std::uint64_t deadlineNs) n
   // completes within tens of microseconds of its dispatch, without a
   // sleep's latency. Past the spin the waiter sleeps in slices whose
   // requested length doubles from SLEEP_MIN_NS to SLEEP_MAX_NS and is
-  // capped at what is left of the budget: a worker that shares this CPU
-  // gets it while the wait holds. A waiter that kept spinning would keep
-  // the very worker it waits for off a shared core, and under ordinary
-  // scheduling would cost a core's worth of CPU for every held frame. A
-  // sleep gives the CPU up under every scheduling policy, where a yield
-  // does not under a real-time one. When a sleep returns is the host's
-  // to decide: the deadline is checked on every return, so it bounds when
-  // the wait stops asking, not when it comes back, and a completion that
-  // lands during a sleep is noticed on the next return.
+  // capped at what was left of the budget at the preceding clock read: a
+  // worker that shares this CPU gets it while the wait holds. A waiter
+  // that kept spinning would keep the very worker it waits for off a
+  // shared core, and under ordinary scheduling would cost a core's worth
+  // of CPU for every held frame. A sleep gives the CPU up under every
+  // scheduling policy, where a yield does not under a real-time one. The
+  // clock is read before every request and none is issued once a read
+  // finds the deadline passed, but a preemption between that read and
+  // the sleep call can issue the request late, and when a sleep returns
+  // is the host's to decide: the deadline bounds the length of each
+  // request, not the instant it is issued or the instant the wait comes
+  // back. A completion that lands during a sleep is noticed on the next
+  // return.
   constexpr unsigned SPIN_LIMIT = 1024U;
   constexpr std::uint64_t SLEEP_MIN_NS = 20000U;
   constexpr std::uint64_t SLEEP_MAX_NS = 250000U;

@@ -145,8 +145,11 @@ inline constexpr std::uint8_t kFrameModeHalted = 3;
 /// 255 (the shipped catalog uses 1..9 and 32..36). SET_SEQ_STATE refuses
 /// a value with the bit set that is not a defined reason, and the upload
 /// path refuses a sequence id outside the running domain; the two apply
-/// the same rule. A plant-level HALT stamps
-/// MANUAL_HALT unless a recovery reason is already set; RESUME clears any halt reason to idle.
+/// the same rule. A plant-level HALT stamps MANUAL_HALT unless a recovery
+/// reason is already set. RESUME clears the halt reason; the sequence id
+/// and waypoint counters the halt paused, or those of a bracket a
+/// sequence stamped while halted, return only while the action engine
+/// still runs that id, and otherwise the sequence reads idle.
 inline constexpr std::uint8_t kSeqStateHaltBit = 0x10;
 inline constexpr std::uint8_t kSeqStateObstacleHalt = 0x11;
 inline constexpr std::uint8_t kSeqStateGeofenceHalt = 0x12;
