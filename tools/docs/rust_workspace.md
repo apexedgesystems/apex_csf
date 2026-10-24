@@ -1,338 +1,243 @@
-# Rust Tools Build System
+# Rust tools: the workspace and how it builds
 
-Technical documentation for the Rust tools build infrastructure.
-
----
-
-## Overview
-
-Rust tools are built using Cargo and deployed as native binaries via a CMake
-custom target that produces a self-contained, relocatable build directory.
-
-**Design Goals:**
-
-- Build directory is self-contained (copy anywhere and run)
-- No hardcoded tool names in build infrastructure
-- Native binaries with no runtime dependencies
-- Clean separation: binaries in `bin/tools/rust/`
-- Incremental builds via stamp file pattern
+How the Rust tools are laid out, built, installed and extended. For what
+each tool does, see [rust_tools.md](rust_tools.md).
 
 ---
 
-## Architecture
+## Shape
 
-### Directory Layout (Build Output)
+One Cargo workspace at `tools/` with one lock. Its members live under
+`<role>/rust/<crate>`, where the role names the consumer:
+
+| Role       | Consumer                                                                              | Crates                                    |
+| ---------- | ------------------------------------------------------------------------------------- | ----------------------------------------- |
+| `build`    | the apex build itself (TPRM compilation and packing, spec headers, data dictionaries) | `apex-tprm` (library), `apex-build-tools` |
+| `ops`      | people and systems operating a deployed apex system                                   | `apex-ops-tools`                          |
+| `analysis` | inspection of the data files a run leaves behind                                      | `apex-analysis-tools`                     |
+
+Executables install to `bin/tools/<role>/`, so every consumer names a
+role, never a language: the TPRM rules run `bin/tools/build/cfg2bin`.
+Only the build role is a dependency of the apex build; the other roles
+build on request.
+
+### Source layout
+
+```
+tools/
++-- Cargo.toml                 # [workspace]: members, shared package fields,
+|                              #   every dependency version, the profiles
++-- Cargo.lock                 # the one lock
++-- rustfmt.toml
++-- build/rust/
+|   +-- apex-tprm/             # lib apex_tprm: cdef, manifest, proto, binary, pack, ...
+|   |   +-- src/  tests/  docs/
+|   \-- apex-build-tools/      # bins cfg2bin, tprm_pack, cdef_gen, apex_data_gen
+|       +-- src/bin/  tests/  docs/
++-- ops/rust/
+|   \-- apex-ops-tools/        # lib apex_ops_tools: serial, upx
+|       +-- src/  src/bin/  tests/  docs/   # tprm_template, upx_tool, serial_dev_*
+\-- analysis/rust/
+    \-- apex-analysis-tools/   # lib apex_analysis_tools: registry, scheduler
+        +-- src/  src/bin/  docs/           # rdat_tool, sdat_tool
+```
+
+Each crate keeps its tests and its per-tool docs beside its sources.
+
+### Build output
 
 ```
 build/hosted-x86_64-debug/
-+-- .env                        # Environment setup (PATH includes rust tools)
-+-- bin/
-|   \-- tools/
-|       +-- py/                 # Python tools
-|       \-- rust/               # Rust tools
-|           +-- serial_dev_checker
-|           +-- serial_dev_tester
-|           +-- tprm_template
-|           +-- tprm_pack
-|           +-- apex_data_gen
-|           +-- rdat_tool
-|           +-- sdat_tool
-|           +-- upx_tool
-|           \-- cfg2bin
-\-- rust-target/                # Cargo build directory (intermediate)
-    \-- release/
-        \-- ...
-```
-
-### Source Layout
-
-```
-tools/rust/
-+-- Cargo.toml              # Package definition
-+-- Cargo.lock              # Locked dependencies
-+-- README.md               # User documentation
-+-- CMakeLists.txt          # CMake build integration
-+-- docs/
-|   +-- RUST_TOOLS_BUILD.md     # This file
-|   +-- serial_dev_checker.md   # Serial checker usage
-|   +-- serial_dev_tester.md    # Serial tester usage
-|   +-- tprm_template.md        # Template generator usage
-|   +-- rdat_tool.md            # Registry RDAT analysis
-|   +-- upx_tool.md             # UPX tool usage
-|   \-- cfg2bin.md              # Config to binary usage
-+-- src/
-|   +-- lib.rs              # Library root
-|   +-- bin/
-|   |   +-- serial_dev_checker.rs
-|   |   +-- serial_dev_tester.rs
-|   |   +-- tprm_template.rs
-|   |   +-- tprm_pack.rs
-|   |   +-- apex_data_gen.rs
-|   |   +-- rdat_tool.rs
-|   |   +-- sdat_tool.rs
-|   |   +-- upx_tool.rs
-|   |   \-- cfg2bin.rs
-|   +-- serial/             # Serial device module
-|   +-- tunable_params/     # C++ parsing module
-|   \-- upx/                # UPX operations module
-\-- tests/
-    \-- ...                 # Integration tests
++-- .env                            # PATH lines, one per bin/tools/<dir>
++-- bin/tools/
+|   +-- build/                      # cfg2bin tprm_pack cdef_gen apex_data_gen
+|   +-- ops/                        # tprm_template upx_tool serial_dev_checker serial_dev_tester
+|   +-- analysis/                   # rdat_tool sdat_tool
+|   +-- py/  sh/  cpp/              # the other families
+\-- apex_csf-rust-target/
+    +-- build/  ops/  analysis/     # one cargo target dir per role
 ```
 
 ---
 
-## Build Process
+## How CMake builds it
 
-### Cargo Release Build
+`tools/CMakeLists.txt` holds two lists: `_APEX_TOOL_FAMILIES` (the
+Python, shell and C++ tools, built by language) and `_APEX_TOOL_ROLES`
+(`build ops analysis`). For each role that has crates under
+`<role>/rust/`, it generates one build script and one custom command:
 
-Unlike Python (which requires pip install), Rust produces standalone binaries:
+1. `cargo build --release -p <member>...` into
+   `${CMAKE_BINARY_DIR}/apex_csf-rust-target/<role>`. The `-p` list is
+   read from each member's `Cargo.toml` (`[package] name`).
+2. Every executable in that target dir's `release/` is copied to
+   `bin/tools/<role>/`. The `[[bin]] name` entries are declared as
+   byproducts so file-level dependencies on them (the TPRM rules) resolve
+   in a fresh tree.
+3. A stamp (`apex_csf-stamps/rust-<role>-tools.built`) records the
+   build. It depends on every `*.rs` under the workspace, every member
+   manifest and the lock, so an edit anywhere regenerates the roles that
+   share the library; cargo is incremental past that point.
 
-```
-cargo build --release --target-dir ${BUILD_DIR}/rust-target
-    \-- rust-target/release/
-        +-- serial_dev_checker
-        +-- serial_dev_tester
-        +-- tprm_template
-        +-- upx_tool
-        \-- cfg2bin
-              v
-    Copy to bin/tools/rust/
-```
+The custom target is `apex_csf_<role>_tools`. Two aggregates sit above
+them: `apex_csf_tools_default` is in ALL and carries the build role plus
+the py and sh families; `apex_csf_tools` carries every tool. A plain
+`ninja` therefore compiles the four build tools and nothing from ops or
+analysis.
 
-### CMakeLists.txt
+The CMake file knows no tool names. A tool joins a role by its
+`Cargo.toml` entry alone.
 
-The CMake file knows NOTHING about individual tools. All tool definitions live
-in Cargo.toml. Adding a new `[[bin]]` target automatically includes it.
+### Cargo home and offline builds
 
-```cmake
-# tools/rust/CMakeLists.txt
-
-# Prerequisites: cargo
-find_program(CARGO_EXECUTABLE cargo)
-if (NOT CARGO_EXECUTABLE)
-  message(WARNING "Cargo not found; skipping Rust tools")
-  return()
-endif ()
-
-# Paths
-set(_rust_src "${CMAKE_CURRENT_SOURCE_DIR}")
-set(_rust_bin_dir "${CMAKE_BINARY_DIR}/bin/tools/rust")
-set(_rust_target_dir "${CMAKE_BINARY_DIR}/rust-target")
-set(_stamp_file "${CMAKE_BINARY_DIR}/.rust_tools_installed")
-
-# Source dependency tracking
-file(GLOB_RECURSE _rust_sources
-  "${_rust_src}/src/*.rs"
-  "${_rust_src}/Cargo.toml"
-  "${_rust_src}/Cargo.lock"
-  "${_rust_src}/build.rs"
-)
-
-add_custom_command(
-  OUTPUT "${_stamp_file}"
-  COMMAND ${CARGO_EXECUTABLE} build --release --target-dir "${_rust_target_dir}"
-  COMMAND ${CMAKE_COMMAND} -E make_directory "${_rust_bin_dir}"
-  # Copy all executables dynamically - no hardcoded tool names
-  COMMAND sh -c "find ... -type f -executable -exec cp {} '${_rust_bin_dir}/' \\;"
-  COMMAND ${CMAKE_COMMAND} -E touch "${_stamp_file}"
-  DEPENDS ${_rust_sources}
-  WORKING_DIRECTORY "${_rust_src}"
-  COMMENT "Building Rust tools"
-)
-
-add_custom_target(rust_tools DEPENDS "${_stamp_file}")
-```
-
-### Makefile Integration
-
-```makefile
-# mk/tools.mk
-
-tools-rust: prep
-    $(call log,tools,Building Rust tools)
-    @test -f "$(BUILD_DIR)/CMakeCache.txt" || cmake --preset $(HOST_DEBUG_PRESET)
-    @cd "$(BUILD_DIR)" && ninja rust_tools
-    @grep -q 'bin/tools/rust' "$(BUILD_DIR)/.env" 2>/dev/null || \
-      printf 'export PATH="$$PWD/bin/tools/rust:$$PATH"\n' >> "$(BUILD_DIR)/.env"
-    $(call log,tools,Rust tools ready - source .env from build directory to use)
-```
-
-Key points:
-
-- `prep` target creates empty `.env` file
-- `tools-rust` appends Rust PATH only if not already present (idempotent)
-- Uses `$PWD` for relative paths (relocatable)
+`CARGO_HOME` comes from the environment: the dev image bakes a pinned,
+offline-ready registry cache and sets `CARGO_NET_OFFLINE=true`; locally
+it is `~/.cargo` and builds resolve online. Target dirs are per build
+tree and per role, so compiled artifacts never cross trees.
 
 ---
 
-## The .env File
+## Make surface
 
-### Purpose
+| Target                                  | Does                                                                      |
+| --------------------------------------- | ------------------------------------------------------------------------- |
+| `make tools-build`                      | the build role: what the apex build stands on                             |
+| `make tools-ops`, `make tools-analysis` | the other roles, on request                                               |
+| `make tools`                            | every tool (all roles and families)                                       |
+| `make test-rust`                        | `cargo test --workspace` at `tools/`                                      |
+| `make clippy`                           | `cargo clippy --workspace --all-targets --locked -- -D warnings`          |
+| `make compat-tprm`                      | the TPRM contract: `-p apex-tprm --test golden_vectors` plus the C++ side |
+| `make coverage-rust`                    | `cargo llvm-cov --workspace`; report at `tools/coverage-rust.lcov`        |
+| `make clean-rust`                       | the role output dirs, the per-role target dirs and `tools/target`         |
 
-Unlike Python, Rust binaries do not require PYTHONPATH or library paths.
-Only PATH is needed to find the binaries.
+The gates stand on the build role: `apex-data-db`, `cdef`, `check-cdef`,
+`check-data-db` and `check-data-db-contract` list `tools-build` as their
+prerequisite; `tprm-templates` lists `tools-ops` for `tprm_template`.
 
-### Content
+Each `tools-<name>` target configures the tree if needed, runs
+`ninja build.ninja` so the graph reflects the current CMakeLists, then
+builds `apex_csf_<name>_tools` if that target exists.
+
+---
+
+## The .env file
 
 ```bash
 # build/hosted-x86_64-debug/.env
+export PATH="$PWD/bin/tools/build:$PATH"
+export PATH="$PWD/bin/tools/ops:$PATH"
+export PATH="$PWD/bin/tools/analysis:$PATH"
 export PATH="$PWD/bin/tools/py:$PATH"
 export PYTHONPATH="$PWD/lib/python:$PYTHONPATH"
-export PATH="$PWD/bin/tools/rust:$PATH"
 ```
 
-- Uses `$PWD` so paths are relative to where you source from
-- Appends to existing PATH (doesn't clobber)
-- Must be sourced from the build directory
-
-### Usage Pattern
+Lines are appended once per `bin/tools/<dir>` by the env helper; `$PWD`
+keeps the build directory relocatable. Source it from the build
+directory:
 
 ```bash
-# From project root
-make tools-rust
-
-# Enter build directory and source .env
-cd build/hosted-x86_64-debug
-source .env
-
-# Now tools work
-serial_dev_checker --help
-upx_tool --help
-```
-
-### Relocatable Builds
-
-Because `.env` uses `$PWD`, the build directory is relocatable:
-
-```bash
-# Copy build directory to another machine
-scp -r build/hosted-x86_64-debug user@remote:/opt/apex/
-
-# On remote machine
-cd /opt/apex/hosted-x86_64-debug
-source .env
-serial_dev_checker --help  # Works!
+make tools
+cd build/hosted-x86_64-debug && source .env
+cfg2bin --help
+rdat_tool --help
 ```
 
 ---
 
-## Adding New Tools
+## Dependencies and the lock
 
-### 1. Create the Binary Source
+Every external dependency's version is written once, in
+`[workspace.dependencies]` of `tools/Cargo.toml`; members take it with
+`name = { workspace = true }`. Dependabot watches `/tools`. The image
+fetch layer in `docker/base.Dockerfile` copies the root manifest, the
+lock and each member's `Cargo.toml` (no sources) and runs
+`cargo fetch --locked`, which is why members declare their targets with
+explicit `path`s: cargo resolves the workspace from manifests alone. CI
+rebuilds the gate image when `tools/Cargo.*` or a member manifest
+changes.
 
-```rust
-// tools/rust/src/bin/mytool.rs
-
-use clap::Parser;
-
-#[derive(Parser)]
-#[command(name = "mytool", about = "My tool description")]
-struct Args {
-    #[arg(short, long)]
-    config: String,
-}
-
-fn main() {
-    let args = Args::parse();
-    // ... implementation
-}
-```
-
-### 2. Add Binary to Cargo.toml
-
-```toml
-# tools/rust/Cargo.toml
-
-[[bin]]
-name = "mytool"
-path = "src/bin/mytool.rs"
-```
-
-### 3. Rebuild
-
-```bash
-make tools-rust
-```
-
-The new tool automatically appears in `bin/tools/rust/mytool`.
+Measured on x86_64 Linux: the build role resolves 44 crates; the whole
+workspace 70. Bundled SQLite, the serial stack and the hashing crates
+belong to the ops and analysis roles only.
 
 ---
 
-## Comparison with Python Tools
+## Adding things
 
-| Aspect          | Python                     | Rust                     |
-| --------------- | -------------------------- | ------------------------ |
-| Package manager | uv                         | Cargo                    |
-| Build artifact  | Wheel + pip install        | Native binaries          |
-| Dependencies    | Installed to lib/python/   | Statically linked        |
-| Scripts         | pip-generated entry points | Direct executables       |
-| .env needs      | PYTHONPATH + PATH          | PATH only                |
-| Build speed     | Slow (pip installs)        | Fast (incremental cargo) |
-| Runtime deps    | Python interpreter         | None                     |
+### A tool to an existing crate
+
+1. Write `src/bin/<tool>.rs` in the member crate.
+2. Add a `[[bin]]` entry with `name` and `path` to that crate's
+   `Cargo.toml`. If it needs a crate not yet in the workspace, add the
+   version to `[workspace.dependencies]` and reference it with
+   `{ workspace = true }`.
+3. `make tools-<role>`; the executable appears in `bin/tools/<role>/`.
+4. Document it in the crate's `docs/<tool>.md` and link it from
+   [rust_tools.md](rust_tools.md).
+
+### A member crate
+
+1. Create `tools/<role>/rust/<crate>/Cargo.toml` inheriting the shared
+   fields (`version.workspace = true`, and likewise edition, authors,
+   license) and declaring its `[lib]` and `[[bin]]` targets with explicit
+   paths. The `members` globs pick it up.
+2. Add one `COPY` line for its `Cargo.toml` to the rust fetch layer in
+   `docker/base.Dockerfile`, next to the existing members.
+3. `cargo metadata` at `tools/` updates the lock.
+
+### A role
+
+Add it to `_APEX_TOOL_ROLES` in `tools/CMakeLists.txt` and to
+`TOOL_ROLES` in `mk/tools.mk`; give it a CI scope in
+`.github/workflows/ci.yml` if it should gate on its own.
 
 ---
 
 ## Testing
 
-### Unit Tests
-
 ```bash
-# Run via make (future target)
-make test-rust
-
-# Or directly with cargo
-cd tools/rust && cargo test
+make test-rust                       # every member
+cd tools && cargo test -p apex-tprm  # one member
+cd tools && cargo test -p apex-build-tools --test apex_data_gen
 ```
 
-### Integration Test
-
-```bash
-# Clean build
-make distclean
-make tools-rust
-
-# Verify tools work
-cd build/hosted-x86_64-debug
-source .env
-serial_dev_checker --help
-```
+Integration tests that run a binary live with the crate that builds it
+(`proto_spec` runs `cdef_gen`, so it sits in `apex-build-tools`).
+`apex-tprm`'s `golden_vectors` reads `compat/tprm` four levels up.
 
 ---
 
 ## Troubleshooting
 
-### "Command not found: serial_dev_checker"
+### "Command not found: cfg2bin"
 
-**Cause:** PATH not set or wrong directory.
+Source `.env` from the build directory, or call the tool by its role
+path: `build/hosted-x86_64-debug/bin/tools/build/cfg2bin`.
 
-**Fix:** Source `.env` from the build directory (not project root).
+### "No build tools to build"
+
+The configure skipped the tools: cargo is not on PATH, or the tree was
+configured with `APEX_BUILD_TOOLS=OFF`. A tools-enabled configure
+without cargo fails at the TPRM rules instead, naming the missing target.
 
 ### "Cargo not found"
-
-**Cause:** Rust toolchain not installed.
-
-**Fix:** Install Rust via rustup:
 
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ```
 
-### Incremental Build Not Working
-
-**Cause:** Stamp file exists but sources changed.
-
-**Fix:** Clean and rebuild:
+### Stale binaries after moving crates
 
 ```bash
 make clean-rust
-make tools-rust
+make tools
 ```
 
 ---
 
-## See Also
+## See also
 
-- [rust_tools.md](rust_tools.md) - User documentation
-- [serial_dev_checker.md](../ops/rust/apex-ops-tools/docs/serial_dev_checker.md) - Serial checker usage
-- [upx_tool.md](../ops/rust/apex-ops-tools/docs/upx_tool.md) - UPX tool usage
-- [mk/tools.mk](../../mk/tools.mk) - Makefile integration
+- [rust_tools.md](rust_tools.md): what each tool does, by role
+- [tools/CMakeLists.txt](../CMakeLists.txt), [mk/tools.mk](../../mk/tools.mk)
+- [proto_profile.md](../build/rust/apex-tprm/docs/proto_profile.md): the
+  proto subset `cdef_gen` reads

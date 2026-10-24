@@ -218,7 +218,7 @@ After building, start with one of these depending on your interest:
 | See host + MCU hardware-in-the-loop     | [apex_hil_demo](demos/apex_hil_demo/)                                                     |
 | Run Monte Carlo sweeps across all cores | [apex_mc_demo](demos/apex_mc_demo/)                                                       |
 | Deploy AES-256-GCM on a microcontroller | [stm32_encryptor_demo](demos/stm32_encryptor_demo/)                                       |
-| Understand the component base classes   | [system_component README](src/system/core/infrastructure/system_component/base/README.md) |
+| Understand the component base classes   | [system_component README](src/system/core/infrastructure/system_component/README.md) |
 | Understand task scheduling              | [scheduler README](src/system/core/components/scheduler/README.md)                        |
 | Browse the full protocol stack          | [Protocols](#protocols) in the library catalog below                                      |
 
@@ -420,7 +420,7 @@ Performance benchmarking uses
 
 | Library                                                                            | Namespace                       | Description                                                                              |
 | ---------------------------------------------------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------- |
-| [system_component](src/system/core/infrastructure/system_component/base/README.md) | `system_core::system_component` | Component base classes and lifecycle (IComponent, SystemComponentBase, McuComponentBase) |
+| [system_component](src/system/core/infrastructure/system_component/README.md) | `system_core::system_component` | Component base classes and lifecycle (IComponent, SystemComponentBase, McuComponentBase) |
 | [schedulable](src/system/core/infrastructure/schedulable/README.md)                | `system_core::schedulable`      | Lightweight task abstractions (~24 bytes) with zero-cost delegates                       |
 | [data](src/system/core/infrastructure/data/README.md)                              | `system_core::data`             | Typed data containers, endianness handling, watchpoints, and fault injection             |
 | [logs](src/system/core/infrastructure/logs/README.md)                              | `logs`                          | RT-safe asynchronous logging with file-backed persistence and rotation                   |
