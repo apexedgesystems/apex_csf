@@ -88,13 +88,18 @@ any such change is called out explicitly in its entry.
   per-platform); containers run as a non-root user.
 - GitHub Actions pinned to commit SHAs with an automated pin guard.
 
+### Removed
+
+- The public factorial helpers (`Factorials.hpp`: `precomputedFactorials`,
+  `largeFactorial`); replace direct uses before updating. Breaking.
+  ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
+
 ### Fixed
 
-- Scalar Legendre functions are correct to n = 2190 and allocation-free
-  (they failed from n = 22), and the transform variants clamp the
-  transformed value. ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
-- Legendre triangles (CPU and GPU) keep full precision near the poles,
-  where forming cos(phi) as 1 - x*x lost up to 1.8e-8.
+- Improve scalar Legendre accuracy, make the simple scalar API
+  allocation-free, and clamp transformed inputs after transformation.
+  ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
+- Improve CPU and GPU Legendre triangle accuracy near the poles.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
 - Fixed watchpoint and group debounce: one dispatch after `minFireCount`
   consecutive true evaluations, with group settings kept across
