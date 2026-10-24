@@ -36,7 +36,7 @@ from apex_tools.ops.client import AprotoClient  # noqa: E402
 
 TM_UID = 0x00C900
 CHANNEL_OPCODE_BASE = 0x0340
-TOOLS = "build/hosted-x86_64-debug/bin/tools/rust"
+TOOLS = "build/hosted-x86_64-debug/bin/tools/build"
 CROSS_PAYLOADS = "build/cross-rpi-release/demos/apex_ops_demo/exec/tprm/payloads"
 SCHED_PROBE = "build/probe_scratch/scheduler_probe.tprm"
 REMOTE_DIR = "/home/kalex/apex/blaster_probe"

@@ -65,7 +65,7 @@ For running two instances on the same host (different ports):
 # The build packs the default master from tprm/tprm.manifest. Instance B
 # repacks the build's generated payloads with a port-9001 interface,
 # mirroring the manifest's entry set.
-TOOLS=build/hosted-x86_64-debug/bin/tools/rust
+TOOLS=build/hosted-x86_64-debug/bin/tools/build
 TPRM=build/hosted-x86_64-debug/demos/apex_ops_demo/exec/tprm
 cp demos/apex_ops_demo/tprm/toml/interface.toml /tmp/interface_b.toml
 sed -i 's/value = 9000/value = 9001/' /tmp/interface_b.toml

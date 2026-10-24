@@ -180,10 +180,10 @@ compat-tprm:
 # committed .auto artifacts.
 CDEF_MANIFESTS := $(shell grep -rlE "^(\[\[fields\.|proto_spec)" --include="*_data.toml" --include="apex_data.toml" demos src apps 2>/dev/null)
 
-cdef: tools-rust
+cdef: tools-build
 	$(call log,cdef,Regenerating .auto headers from component specs)
 	@for m in $(CDEF_MANIFESTS); do \
-	  "$(BUILD_DIR)/bin/tools/rust/cdef_gen" --manifest "$$m" || exit 1; \
+	  "$(BUILD_DIR)/bin/tools/build/cdef_gen" --manifest "$$m" || exit 1; \
 	done
 	$(call log_ok,cdef,.auto headers regenerated)
 
@@ -191,13 +191,13 @@ cdef: tools-rust
 # (e.g. hil model: plant + vfc), so regeneration and diffing group by
 # directory -- every manifest of a directory regenerates into the same
 # scratch before the whole tree is compared.
-check-cdef: tools-rust
+check-cdef: tools-build
 	$(call log,check-cdef,Diffing committed .auto headers against their specs)
 	@fail=0; for dir in $$(for m in $(CDEF_MANIFESTS); do dirname "$$m"; done | sort -u); do \
 	  scratch=$$(mktemp -d); \
 	  for m in $(CDEF_MANIFESTS); do \
 	    [ "$$(dirname "$$m")" = "$$dir" ] || continue; \
-	    "$(BUILD_DIR)/bin/tools/rust/cdef_gen" --manifest "$$m" --output "$$scratch" > /dev/null || exit 1; \
+	    "$(BUILD_DIR)/bin/tools/build/cdef_gen" --manifest "$$m" --output "$$scratch" > /dev/null || exit 1; \
 	  done; \
 	  if ! diff -ru "$$dir/.auto" "$$scratch" > /dev/null 2>&1; then \
 	    printf '[check-cdef] DRIFT: %s/.auto does not match its specs\n' "$$dir"; \
@@ -213,11 +213,11 @@ check-cdef: tools-rust
 # entry left behind a `_warning` key, because ground tooling regenerates
 # its target directories from these. The inventory is the one CMake
 # writes at configure from the apex_add_data_manifest registrations (the
-# same list apex-data-db consumes); the tools-rust prerequisite
+# same list apex-data-db consumes); the tools-build prerequisite
 # configures the tree, so the list is present. Generation goes to a
 # scratch tree so the gate is read-only; the first failing manifest
 # fails it.
-check-data-db: tools-rust
+check-data-db: tools-build
 	$(call log,check-data-db,Generating every registered dictionary to a scratch tree)
 	@list="$(BUILD_DIR)/apex_data_manifests.txt"; \
 	[ -s "$$list" ] || { printf '[check-data-db] no registered manifests in %s\n' "$$list"; exit 1; }; \
@@ -225,7 +225,7 @@ check-data-db: tools-rust
 	while IFS= read -r m; do \
 	  [ -z "$$m" ] && continue; \
 	  count=$$((count + 1)); \
-	  "$(BUILD_DIR)/bin/tools/rust/apex_data_gen" --manifest "$$m" --output "$$scratch" > /dev/null || { fail=1; break; }; \
+	  "$(BUILD_DIR)/bin/tools/build/apex_data_gen" --manifest "$$m" --output "$$scratch" > /dev/null || { fail=1; break; }; \
 	done < "$$list"; \
 	if [ $$fail -eq 0 ] && grep -l '"_warning"' "$$scratch"/*.json; then \
 	  printf '[check-data-db] a dictionary above carries a _warning entry\n'; fail=1; \
@@ -267,12 +267,12 @@ check-data-manifest-helper:
 	[ $$fail -eq 0 ] || exit 1
 	$(call log_ok,check-data-manifest-helper,default no-op; valid listed; missing and -NOTFOUND paths and bare or stray arguments fail configure)
 
-check-data-db-contract: tools-rust
+check-data-db-contract: tools-build
 	$(call log,check-data-db-contract,Driving check-data-db with one fixture per verdict)
 	@scratch=$$(mktemp -d) || exit 1; fail=0; \
-	mkdir -p "$$scratch/bin/tools/rust" && ln -s "$(abspath $(BUILD_DIR))/bin/tools/rust/apex_data_gen" "$$scratch/bin/tools/rust/apex_data_gen"; \
+	mkdir -p "$$scratch/bin/tools/build" && ln -s "$(abspath $(BUILD_DIR))/bin/tools/build/apex_data_gen" "$$scratch/bin/tools/build/apex_data_gen"; \
 	run() { printf '%s\n' "$(abspath $(GATE_FIXTURES))/$$1/apex_data.toml" > "$$scratch/apex_data_manifests.txt"; \
-	        $(MAKE) --no-print-directory -o tools-rust check-data-db BUILD_DIR="$$scratch" > "$$scratch/$$1.log" 2>&1; echo $$?; }; \
+	        $(MAKE) --no-print-directory -o tools-build check-data-db BUILD_DIR="$$scratch" > "$$scratch/$$1.log" 2>&1; echo $$?; }; \
 	expect() { grep -q -- "$$2" "$$scratch/$$1.log" || { printf '[check-data-db-contract] %s: missing "%s"\n' "$$1" "$$2"; fail=1; }; }; \
 	[ "$$(run valid)" -eq 0 ] || { printf '[check-data-db-contract] valid: expected the gate to pass\n'; fail=1; }; \
 	expect valid '1 registered dictionaries generate clean'; \
