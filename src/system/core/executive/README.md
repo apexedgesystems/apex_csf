@@ -175,6 +175,11 @@ applies, so automated runs exit rather than hang.
 The executive init phase performs several steps after component registration
 and TPRM loading:
 
+- **Build identity**: The `=== System Configuration ===` block opens with
+  `Build: <summary>`, the source state and configuration the binaries came
+  from (`git describe`, branch, tree state, build type, compiler, target;
+  see `src/utilities/build_info/README.md`), so a run log names its build.
+
 - **Core component queue allocation**: Allocates command queues for all core
   components (scheduler, filesystem, registry, action) so they can receive
   internal bus commands from support components during init.
