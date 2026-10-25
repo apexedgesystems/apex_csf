@@ -12,8 +12,8 @@
  * Usage:
  *   ./LegendreScalar_PTEST --cycles 200000 --csv results.csv
  *
- * Every case warms its call before the timed loop, so a cold first call is
- * not in the measurement.
+ * Every case makes a thousand untimed calls before the timed loop, so a cold
+ * start is not in the measurement.
  *
  * Sub-microsecond calls: pass an explicit --cycles rather than relying on a
  * time target.
@@ -36,7 +36,8 @@ using apex::math::legendre::ScalarTables;
 
 namespace {
 
-constexpr double X = 0.3; ///< Interior argument; every case below is finite and normal here.
+constexpr double X = 0.3;        ///< Interior argument; every case below is finite and normal here.
+constexpr int WARM_CALLS = 1000; ///< Untimed calls per case before the measured loop.
 
 class LegendreScalarPerf : public ::testing::TestWithParam<std::tuple<int, int>> {};
 
@@ -59,7 +60,11 @@ TEST_P(LegendreScalarPerf, Normalized) {
   UB_PERF_GUARD(perf);
   const auto [N, M] = GetParam();
   volatile double sink = 0.0;
-  perf.warmup([&] { sink = normalizedAssociatedLegendre(N, M, X); });
+  perf.warmup([&] {
+    for (int i = 0; i < WARM_CALLS; ++i) {
+      sink = normalizedAssociatedLegendre(N, M, X);
+    }
+  });
   auto result = perf.throughputLoop([&] { sink = normalizedAssociatedLegendre(N, M, X); },
                                     caseLabel("normalized", N, M));
   std::printf("\n[legendre] normalized (%d, %d): %.1f ns\n", N, M, 1.0e9 / result.callsPerSecond);
@@ -71,7 +76,11 @@ TEST_P(LegendreScalarPerf, NormalizedCached) {
   const auto [N, M] = GetParam();
   const ScalarTables& TABLES = benchTables();
   volatile double sink = 0.0;
-  perf.warmup([&] { sink = normalizedAssociatedLegendre(N, M, X, TABLES); });
+  perf.warmup([&] {
+    for (int i = 0; i < WARM_CALLS; ++i) {
+      sink = normalizedAssociatedLegendre(N, M, X, TABLES);
+    }
+  });
   auto result = perf.throughputLoop([&] { sink = normalizedAssociatedLegendre(N, M, X, TABLES); },
                                     caseLabel("normalized_cached", N, M));
   std::printf("\n[legendre] normalized cached (%d, %d): %.1f ns\n", N, M,
@@ -86,7 +95,11 @@ TEST_P(LegendreScalarPerf, Unnormalized) {
     GTEST_SKIP() << "P_" << N << "^" << M << "(" << X << ") exceeds DBL_MAX";
   }
   volatile double sink = 0.0;
-  perf.warmup([&] { sink = associatedLegendre(N, M, X); });
+  perf.warmup([&] {
+    for (int i = 0; i < WARM_CALLS; ++i) {
+      sink = associatedLegendre(N, M, X);
+    }
+  });
   auto result = perf.throughputLoop([&] { sink = associatedLegendre(N, M, X); },
                                     caseLabel("unnormalized", N, M));
   std::printf("\n[legendre] unnormalized (%d, %d): %.1f ns\n", N, M, 1.0e9 / result.callsPerSecond);
@@ -101,8 +114,11 @@ TEST_P(LegendreScalarPerf, StdSphLegendre) {
   const auto [N, M] = GetParam();
   const double THETA = std::acos(X);
   volatile double sink = 0.0;
-  perf.warmup(
-      [&] { sink = std::sph_legendre(static_cast<unsigned>(N), static_cast<unsigned>(M), THETA); });
+  perf.warmup([&] {
+    for (int i = 0; i < WARM_CALLS; ++i) {
+      sink = std::sph_legendre(static_cast<unsigned>(N), static_cast<unsigned>(M), THETA);
+    }
+  });
   auto result = perf.throughputLoop(
       [&] { sink = std::sph_legendre(static_cast<unsigned>(N), static_cast<unsigned>(M), THETA); },
       caseLabel("std_sph_legendre", N, M));
@@ -133,7 +149,11 @@ TEST_P(LegendreScalarRangePerf, Unnormalized) {
     GTEST_SKIP() << C.label << ": value not finite in this build";
   }
   volatile double sink = 0.0;
-  perf.warmup([&] { sink = associatedLegendre(C.n, C.m, C.x); });
+  perf.warmup([&] {
+    for (int i = 0; i < WARM_CALLS; ++i) {
+      sink = associatedLegendre(C.n, C.m, C.x);
+    }
+  });
   auto result = perf.throughputLoop([&] { sink = associatedLegendre(C.n, C.m, C.x); },
                                     std::string("unnormalized_") + C.label);
   std::printf("\n[legendre] unnormalized %s (%d, %d, %g): %.1f ns\n", C.label, C.n, C.m, C.x,

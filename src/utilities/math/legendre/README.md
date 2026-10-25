@@ -379,14 +379,14 @@ docker compose run --rm -T dev ./build/hosted-x86_64-release/bin/ptests/Legendre
 
 ### Test Organization
 
-| Test File                           | Purpose                       | Tests |
-| ----------------------------------- | ----------------------------- | ----- |
-| `LegendrePolynomials_uTest.cpp`     | Scalar functions, to n = 2190 | 22    |
-| `LegendrePbarTriangle_uTest.cpp`    | CPU triangle computation      | 6     |
-| `LegendrePbarDerivatives_uTest.cpp` | Derivative computation        | 11    |
-| `LegendrePbarCuda_uTest.cu`         | GPU/CPU parity                | 14    |
-| `LegendreScalar_pTest.cpp`          | Scalar vs `std::` throughput  | 4 x 6 |
-| `LegendrePbar_pTest.cpp`            | Triangle benchmarks           | 8     |
+| Test File                           | Purpose                          | Tests     |
+| ----------------------------------- | -------------------------------- | --------- |
+| `LegendrePolynomials_uTest.cpp`     | Scalar functions, to n = 2190    | 24        |
+| `LegendrePbarTriangle_uTest.cpp`    | CPU triangle computation         | 6         |
+| `LegendrePbarDerivatives_uTest.cpp` | Derivative computation           | 11        |
+| `LegendrePbarCuda_uTest.cu`         | GPU/CPU parity                   | 14        |
+| `LegendreScalar_pTest.cpp`          | Scalar vs `std::`; range regimes | 4 x 6 + 5 |
+| `LegendrePbar_pTest.cpp`            | Triangle benchmarks              | 8         |
 
 ---
 

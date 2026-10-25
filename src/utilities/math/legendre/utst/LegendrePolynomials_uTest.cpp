@@ -608,13 +608,11 @@ TEST(MathLegendrePolynomials, UnnormalizedRange_IntermediatesStayRepresentable) 
  *        while the even-offset values stay ordinary; the pair must be carried
  *        through the recurrence together. Degrees 6 and 8 at the smallest
  *        subnormal are -0.3125 and 0.2734375, the same as at zero; every
- *        (n, m) with n <= 60 at six tiny arguments of both signs is finite,
- *        matches the long double recurrence to 1e-12 where that is a normal
- *        double, and is no larger than DBL_MIN where the reference is below it.
- *        At a subnormal argument the odd-offset values begin as subnormals and
- *        keep only that precision (about 34 bits here), so they are held to
- *        1e-9. The polynomial and identity-transform wrappers agree with the
- *        direct call.
+ *        (n, m) with n <= 60 at six tiny arguments of both signs is finite and
+ *        within 1e-12 relative plus one subnormal quantum of the long double
+ *        recurrence, which holds a result that is itself subnormal to its own
+ *        quantization. The polynomial and identity-transform wrappers agree
+ *        with the direct call.
  */
 TEST(MathLegendrePolynomials, UnnormalizedTinyArgument_EvenValuesOrdinaryOddValuesTiny) {
   constexpr double TRUE_MIN = std::numeric_limits<double>::denorm_min();
@@ -626,28 +624,50 @@ TEST(MathLegendrePolynomials, UnnormalizedTinyArgument_EvenValuesOrdinaryOddValu
   EXPECT_DOUBLE_EQ(legendrePolynomialFunction(8, fx, TRUE_MIN), 0.2734375);
   EXPECT_DOUBLE_EQ(associatedLegendreFunction(6, 0, fx, -TRUE_MIN), -0.3125);
 
-  int compared = 0, tiny = 0;
+  int compared = 0, subnormalResults = 0;
   for (double x : {TRUE_MIN, -TRUE_MIN, DMIN, -1e-300, 1e-200, 0x1p-600}) {
     for (int n = 0; n <= 60; ++n) {
       for (int m = 0; m <= n; ++m) {
         const double GOT = associatedLegendre(n, m, x);
         ASSERT_TRUE(std::isfinite(GOT)) << "n=" << n << " m=" << m << " x=" << x << " got " << GOT;
         const long double REF = legendre_test::unnormalizedReference(n, m, x);
-        if (std::fabs(REF) >= static_cast<long double>(DMIN)) {
-          const bool ODD_OF_SUBNORMAL = ((n - m) % 2 != 0) && std::fabs(x) < DMIN;
-          const long double TOL = ODD_OF_SUBNORMAL ? 1e-9L : 1e-12L;
-          EXPECT_LE(std::fabs(static_cast<long double>(GOT) - REF), TOL * std::fabs(REF))
-              << "n=" << n << " m=" << m << " x=" << x << " got " << GOT;
-          ++compared;
-        } else {
-          EXPECT_LE(std::fabs(GOT), DMIN) << "n=" << n << " m=" << m << " x=" << x;
-          ++tiny;
+        EXPECT_LE(std::fabs(static_cast<long double>(GOT) - REF),
+                  1e-12L * std::fabs(REF) + static_cast<long double>(TRUE_MIN))
+            << "n=" << n << " m=" << m << " x=" << x << " got " << GOT << " ref "
+            << static_cast<double>(REF);
+        ++compared;
+        if (std::fabs(REF) < static_cast<long double>(DMIN)) {
+          ++subnormalResults;
         }
       }
     }
   }
-  EXPECT_GT(compared, 8000) << "tiny=" << tiny;
-  EXPECT_GT(tiny, 100) << "compared=" << compared; // only the subnormal arguments reach this branch
+  EXPECT_GT(compared, 11000);
+  EXPECT_GT(subnormalResults, 100); // only the subnormal arguments produce these
+}
+
+/**
+ * @test UnnormalizedHigherOrder_SmallerParityTermKeepsDigits
+ * @brief At a tiny argument the two parity chains are far apart in magnitude;
+ *        the smaller must keep its digits through every rescaling of the pair.
+ *        Independently computed values (Rodrigues form at the exact binary64
+ *        argument, high precision): (89, 84) and (153, 150) at the smallest
+ *        subnormal, far from any range edge, and (308, 257) at an argument
+ *        where the result sits within 1.4e-13 of DBL_MAX and must stay finite.
+ */
+TEST(MathLegendrePolynomials, UnnormalizedHigherOrder_SmallerParityTermKeepsDigits) {
+  constexpr double TRUE_MIN = std::numeric_limits<double>::denorm_min();
+  constexpr double X_NEAR_MAX = 0x0.0000005c2a1f4p-1022;
+  EXPECT_TRUE(nearRel(associatedLegendre(89, 84, TRUE_MIN), 1.2166519286034941e-167, 1e-12, 0.0));
+  EXPECT_TRUE(nearRel(associatedLegendre(153, 150, TRUE_MIN), -8.456177073235439e-13, 1e-12, 0.0));
+  const double NEAR_MAX = associatedLegendre(308, 257, X_NEAR_MAX);
+  ASSERT_TRUE(std::isfinite(NEAR_MAX)) << NEAR_MAX;
+  EXPECT_TRUE(nearRel(NEAR_MAX, -1.7976931348620682e308, 1e-12, 0.0));
+  const double NEAR_MAX_NEG = associatedLegendre(308, 257, -X_NEAR_MAX); // n - m odd: sign flips
+  ASSERT_TRUE(std::isfinite(NEAR_MAX_NEG)) << NEAR_MAX_NEG;
+  EXPECT_TRUE(nearRel(NEAR_MAX_NEG, 1.7976931348620682e308, 1e-12, 0.0));
+  EXPECT_TRUE(nearRel(associatedLegendreFunction(89, 84, fx, TRUE_MIN), 1.2166519286034941e-167,
+                      1e-12, 0.0));
 }
 
 /**

@@ -24,12 +24,10 @@
  *    exponent alongside, so intermediates never overflow or underflow; the
  *    result is inf only where the true value exceeds DBL_MAX (P_n^n(0) =
  *    (2n-1)!! does from n = 151) and 0 only where it is below the smallest
- *    subnormal. Use the normalized form at high degree. For a subnormal
- *    argument the odd-offset values (n - m odd) are proportional to x and
- *    begin life as subnormals, so they carry only the precision a subnormal
- *    of their size can hold (about 34 bits at the smallest subnormal) and
- *    later values of that parity inherit it; the even-offset values are
- *    unaffected.
+ *    subnormal. Use the normalized form at high degree. Intermediates are
+ *    kept in the normal range for every argument, including subnormal ones,
+ *    so only a result that is itself subnormal carries less than full
+ *    precision (the quantization of its own magnitude).
  *  - Near |x| = 1 with large m, the diagonal seed (1 - x^2)^(m/2) falls into
  *    subnormals and then to zero (for example x = 0.999 from m near 240), and
  *    the column loses its digits with it. This is true of every forward-column

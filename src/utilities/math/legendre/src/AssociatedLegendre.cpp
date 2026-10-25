@@ -96,21 +96,36 @@ double normalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
  * like (2m-1)!! and shrink like s^m, so the seed and the recurrence's
  * intermediate products leave double's exponent range long before a final
  * value does. The walk therefore carries the pair (prev, cur) scaled by
- * 2^-scale and renormalises by 2^512. Scaling down is keyed on |cur| alone:
- * after every step both members are at most 2^512, since prev is the
- * previous step's checked cur and any scaling applies to both, so a
- * coefficient below 2^13 keeps each product under 2^526. Scaling up needs
- * both members small: with a tiny argument the odd-offset values are
- * proportional to t while the even ones are ordinary, and scaling on the
- * small member alone would push its neighbour out of range. The smaller
- * member may underflow harmlessly beneath the larger, an exact zero stays
- * zero, and the ldexp at the end (skipped when nothing was scaled) is the
- * only place range is decided, giving inf or 0 exactly when the true value
- * lies beyond double.
+ * 2^-scale, in a band chosen so that both members stay normal doubles:
+ *
+ *  - Scaling down by 2^512 is keyed on |cur| > 2^980. After every step both
+ *    members are at most 2^980 (prev is the previous step's checked cur and
+ *    any scaling applies to both), so a coefficient below 2^13 keeps each
+ *    product under 2^1007, and the larger member never falls below 2^468
+ *    by scaling.
+ *  - Scaling up by 2^512 happens when both members are below 2^-512; one
+ *    step shrinks a pair by at most 2^13 outside an exact cancellation, so
+ *    the pair lands within [2^-13, 1).
+ *  - The two parity chains (n - m even and odd) are coupled only through
+ *    t, so their magnitudes can differ by up to about |t| / 2^13. For
+ *    |t| >= 2^-500 that ratio keeps the smaller member normal in either
+ *    band. For smaller |t| the seed is lifted into [2^468, 2^980) before the
+ *    walk, so the larger member stays at least 2^468 and the smaller one at
+ *    least 2^468 |t| / 2^13 >= 2^-619 for any nonzero t. The smaller member
+ *    then keeps its digits through every downscale, and only a final value
+ *    that is itself subnormal is quantized.
+ *
+ * An exact zero stays zero, and the ldexp at the end (skipped when nothing
+ * was scaled) is the only place range is decided, giving inf or 0 exactly
+ * when the true value lies beyond double.
  */
 double unnormalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
-  constexpr double UP = 0x1p512;
-  constexpr double DOWN = 0x1p-512;
+  constexpr double UP = 0x1p980;      // larger member above this: scale down
+  constexpr double LOW = 0x1p-512;    // both members below this: scale up
+  constexpr double STEP_UP = 0x1p512; // scaling factors
+  constexpr double STEP_DOWN = 0x1p-512;
+  constexpr double LIFT_FLOOR = 0x1p468; // larger member kept at least this for tiny t
+  constexpr double TINY_T = 0x1p-500;    // below this the parity chains can separate too far
   const double S = sinOf(t);
   int scale = 0;
 
@@ -120,15 +135,22 @@ double unnormalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
     diag *= odd * S;
     odd += 2.0;
     if (diag > UP) {
-      diag *= DOWN;
+      diag *= STEP_DOWN;
       scale += 512;
-    } else if (diag < DOWN && diag != 0.0) {
-      diag *= UP;
+    } else if (diag < LOW && diag != 0.0) {
+      diag *= STEP_UP;
       scale -= 512;
     }
   }
   if (n == m) {
     return (scale == 0) ? diag : std::ldexp(diag, scale);
+  }
+  if (std::fabs(t) < TINY_T) {
+    // At most three lifts: a nonzero seed is at least 2^-1074.
+    while (diag != 0.0 && diag < LIFT_FLOOR) {
+      diag *= STEP_UP;
+      scale -= 512;
+    }
   }
 
   double prev = diag;
@@ -140,12 +162,12 @@ double unnormalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
     cur = NEXT;
     const double ABS_CUR = std::fabs(cur);
     if (ABS_CUR > UP) {
-      cur *= DOWN;
-      prev *= DOWN;
+      cur *= STEP_DOWN;
+      prev *= STEP_DOWN;
       scale += 512;
-    } else if (ABS_CUR < DOWN && std::fabs(prev) < DOWN && (cur != 0.0 || prev != 0.0)) {
-      cur *= UP;
-      prev *= UP;
+    } else if (ABS_CUR < LOW && std::fabs(prev) < LOW && (cur != 0.0 || prev != 0.0)) {
+      cur *= STEP_UP;
+      prev *= STEP_UP;
       scale -= 512;
     }
   }
