@@ -12,10 +12,7 @@ import struct
 
 import pytest
 
-PROBE = (
-    pathlib.Path(__file__).resolve().parents[3]
-    / "demos/apex_horizon_demo/rover_mcu/scripts/rover_ring_probe.py"
-)
+PROBE = pathlib.Path(__file__).resolve().parents[1] / "scripts/rover_ring_probe.py"
 CAP = 16
 SIZE = 256
 

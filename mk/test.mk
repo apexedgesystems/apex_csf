@@ -118,9 +118,13 @@ testp-cuda: debug
 # --no-editable: test the project installed the way the wheel ships, and skip
 # the editable-install machinery (its `editables` backend never enters the
 # lock, so an editable sync could not resolve offline anyway).
+# A demo's checkout scripts keep their tests beside them, in the demo's
+# test/ directory; the gate collects those directories with the tools' own.
+PY_DEMO_TEST_DIRS := demos/apex_horizon_demo/rover_mcu/test
 test-py:
 	$(call log,test,Running Python tools tests)
-	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable && (uv run --no-sync pytest -v || test $$? -eq 5)
+	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable && \
+	  (uv run --no-sync pytest -v tests $(addprefix $(CURDIR)/,$(PY_DEMO_TEST_DIRS)) || test $$? -eq 5)
 
 # Rust tools unit tests
 test-rust:

@@ -8,10 +8,7 @@ from unittest.mock import patch
 
 import pytest
 
-SCRIPT = (
-    pathlib.Path(__file__).resolve().parents[3]
-    / "demos/apex_horizon_demo/rover_mcu/scripts/seqtrace_to_csv.py"
-)
+SCRIPT = pathlib.Path(__file__).resolve().parents[1] / "scripts/seqtrace_to_csv.py"
 END = "SEQTRACE end dropped=0\n"
 
 

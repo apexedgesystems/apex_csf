@@ -56,7 +56,8 @@ sits in its `boot_mode` instead (HOLD as shipped); see the boot modes in
 the run guide. See [docs/HOW_TO_RUN.md](docs/HOW_TO_RUN.md)
 for driving it from a host shell, the sequence catalog, the upload
 path, the console endpoint, running the controller on the board, and
-the trace. The helper scripts it uses live in [scripts/](scripts/).
+the trace. The helper scripts it uses live in [scripts/](scripts/), with
+their tests in [test/](test/), which `make test-py` runs with the tools' own.
 
 ## 2. What it composes
 
