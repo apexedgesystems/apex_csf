@@ -28,9 +28,10 @@ previous marker. So a take that starts within a second of the previous one
 ending can log its first samples ahead of the previous take's marker, one
 marker can stand for two takes (its count is their sum), and a take that
 starts while the buffer is still full loses its first samples into the
-previous take's count. The producer restarts the take clock `t` at 0 when a
-take starts and only advances it within a take, so the extractor
-guarantees:
+previous take's count. The producer restarts the take clock `t` at 0 when
+it sees the sequence state go from idle to running and only advances it
+while a sequence runs; a sequence that hands over directly to another
+running id keeps the clock going. So the extractor applies these rules:
 
   * an end marker with no take started since the previous marker closes the
     current take; its dropped count is exact unless the next take's first
@@ -41,9 +42,11 @@ guarantees:
   * a sample whose state byte is a running id other than the take's running
     id, with no clock restart, also starts a new take (a sequence that hands
     over to another without going idle); halt bytes never split a take;
-  * a take whose first sample follows an end marker with `t` above 0 lost
-    its earlier samples into that marker's count, which it shares with the
-    takes the marker closes, whichever of the rules above started the take.
+  * a take whose first sample follows an end marker with `t` above 0 may
+    have lost its earlier samples into that marker's count, or may have
+    kept the clock of the take before it through a handover and lost
+    nothing; the log cannot tell, so it shares the count with the takes
+    the marker closes, whichever of the rules above started the take.
 
 It does not decide where such a take ends or how a shared dropped count
 divides, so every take on either side of one of those boundaries is written
@@ -172,13 +175,15 @@ def extract(lines, strict: bool = False) -> list[Take]:
                     current.notes.append(f"{note}; this take starts there")
             if current is None:
                 current = start(fields[1])
-            # Whichever rule started the take, its first sample is taken at t=0 unless the
-            # buffer is full, and those losses are in the marker drained just before this row.
+            # Whichever rule started the take, a first sample above t=0 means either that the
+            # buffer was full when it started and its first samples went into the marker
+            # drained just before this row, or that a handover kept the previous take's clock
+            # and nothing of its own was lost; the count is shared either way.
             if not current.rows and last_end is not None and t > 0:
                 end_line, end_count, closed = last_end
                 note = (
-                    f"line {lineno}: first sample at t={t:.2f}: earlier samples lost and "
-                    f"counted in the marker on line {end_line}"
+                    f"line {lineno}: first sample at t={t:.2f}: earlier sample losses may be "
+                    f"included in the marker on line {end_line}"
                 )
                 if strict:
                     raise AmbiguousBoundary(note)

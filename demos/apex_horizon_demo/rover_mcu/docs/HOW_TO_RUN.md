@@ -274,15 +274,18 @@ writes pending samples before the pending end marker, so a take started
 within a second of the last one ending can log its first samples ahead of
 that take's marker, and one marker can count two takes' drops. The
 extractor starts a new take wherever the take clock `t` fails to advance
-(the plant restarts it at 0 for each take) or a different running id
+(the plant restarts it at 0 when a sequence starts from idle; a direct
+handover to another running id keeps it going) or a different running id
 appears; halt states never split a take. The log cannot say which take
 the next marker closes, so both takes at such a split are written as
 `seq<S>_take<i>_uncertain.csv` with a `.txt` note naming the lines and the
 reason, and a shared nonzero drop count is reported as unknown for every
-take that shared it, whatever its later markers read. A take whose first
-sample is not at `t=0.00` lost its first samples while the buffer still held
-the take before it, into that take's marker: both are written as uncertain
-and the count as shared. A take with rows after its last marker that the
+take that shared it, whatever its later markers read. A take beginning
+above `t=0.00` after an end marker may have lost its first samples into
+that marker while the buffer still held the take before it, or may have
+kept that take's clock through a handover; the extractor shares the count
+conservatively and writes both takes as uncertain. A take with rows after
+its last marker that the
 log ends on is `unknown`. `--strict` instead writes nothing and exits 2
 naming the first such line:
 

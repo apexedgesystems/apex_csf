@@ -182,7 +182,8 @@ def test_first_sample_above_t0_shares_the_marker_before_it(tmp_path, capsys):
         + END
     )
     reason = (
-        "line 66: first sample at t=0.15: earlier samples lost and counted in the marker on line 65"
+        "line 66: first sample at t=0.15: earlier sample losses may be included in the marker "
+        "on line 65"
     )
     code, files, out = _run(tmp_path, log)
     assert code == 0
@@ -214,11 +215,12 @@ def test_take_started_after_a_shared_marker_shares_it_whichever_rule_started_it(
     tmp_path, capsys, b_rows, c_first_t
 ):
     """A take starting above t=0 after a shared marker shares it, whichever rule split it."""
-    # A fills most of the 64-sample buffer and ends; B logs its first rows and ends while the
-    # buffer is full, so C loses its first samples into the marker that A and B share. C's
-    # first retained row then either exceeds B's last t (a running-id split with no clock
-    # restart visible) or equals it (a clock-reset split); either way C lost samples into
-    # marker 3, and the later marker 0 must not make it read exact.
+    # A fills most of the 64-sample buffer and ends; B logs its first rows while the buffer
+    # is full, and three samples are lost into the marker that A and B share. C's first
+    # retained row then either exceeds B's last t (a running-id split: C lost its first
+    # samples, or kept B's clock through a handover and lost nothing; the log cannot tell)
+    # or equals it (a clock-reset split); either way marker 3 may count C's losses, and the
+    # later marker 0 must not make C read exact.
     a_rows = 64 - len(b_rows)
     log = (
         "".join(_sample(1, i * 0.05) for i in range(a_rows))
@@ -229,8 +231,8 @@ def test_take_started_after_a_shared_marker_shares_it_whichever_rule_started_it(
         + END
     )
     reason = (
-        f"line 66: first sample at t={c_first_t:.2f}: earlier samples lost and counted in the "
-        "marker on line 65"
+        f"line 66: first sample at t={c_first_t:.2f}: earlier sample losses may be included in "
+        "the marker on line 65"
     )
     code, files, out = _run(tmp_path, log)
     assert code == 0
