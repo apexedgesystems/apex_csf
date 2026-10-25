@@ -29,6 +29,7 @@
 
 #include "src/system/core/infrastructure/schedulable/inc/SequenceGroup.hpp"
 
+#include "src/utilities/build_info/inc/BuildInfo.hpp"
 #include "src/utilities/concurrency/inc/ThreadConfig.hpp"
 #include "src/utilities/helpers/inc/Utilities.hpp"
 
@@ -220,8 +221,11 @@ std::uint8_t ApexExecutive::doInit() noexcept {
   // Initialize heartbeat log
   heartbeatLog_->info("HEARTBEAT", "timestamp_ns,clock_cycles,task_cycles,frame_overruns,status");
 
-  // Log comprehensive system configuration (all settings in one place)
+  // Log comprehensive system configuration (all settings in one place),
+  // opening with the identity of the build these binaries came from so a run
+  // log names its source state.
   sysLog_->info(label(), "=== System Configuration ===");
+  sysLog_->info(label(), fmt::format("Build: {}", apex::build_info::summary()));
   sysLog_->info(label(), fmt::format("Clock frequency: {} Hz", clockFrequency_));
   sysLog_->info(label(), fmt::format("RT mode: {} (hard={})", rtModeToString(rtConfig_.mode),
                                      rtConfig_.isHardMode() ? "yes" : "no"));
