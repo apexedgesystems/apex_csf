@@ -10,6 +10,9 @@ any such change is called out explicitly in its entry.
 
 ### Added
 
+- Cached scalar Legendre evaluation from precomputed tables
+  (`ScalarTables`) for repeated calls up to a fixed degree.
+  ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
 - `make check-data-db`: every registered data manifest generates its
   dictionary clean; CI runs it whenever a manifest, header, registration or
   generator changes. An explicit `MANIFEST` path that does not exist now
@@ -85,8 +88,19 @@ any such change is called out explicitly in its entry.
   per-platform); containers run as a non-root user.
 - GitHub Actions pinned to commit SHAs with an automated pin guard.
 
+### Removed
+
+- The public factorial helpers (`Factorials.hpp`: `precomputedFactorials`,
+  `largeFactorial`); replace direct uses before updating. Breaking.
+  ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
+
 ### Fixed
 
+- Improve scalar Legendre accuracy, make the simple scalar API
+  allocation-free, and clamp transformed inputs after transformation.
+  ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
+- Improve CPU and GPU Legendre triangle accuracy near the poles.
+  ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
 - Fixed watchpoint and group debounce: one dispatch after `minFireCount`
   consecutive true evaluations, with group settings kept across
   activation. ([#162](https://github.com/apexedgesystems/apex_csf/pull/162))
