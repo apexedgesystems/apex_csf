@@ -43,7 +43,7 @@ guarantees:
     over to another without going idle); halt bytes never split a take;
   * a take whose first sample follows an end marker with `t` above 0 lost
     its earlier samples into that marker's count, which it shares with the
-    takes the marker closes.
+    takes the marker closes, whichever of the rules above started the take.
 
 It does not decide where such a take ends or how a shared dropped count
 divides, so every take on either side of one of those boundaries is written
@@ -172,21 +172,21 @@ def extract(lines, strict: bool = False) -> list[Take]:
                     current.notes.append(f"{note}; this take starts there")
             if current is None:
                 current = start(fields[1])
-                # The first sample is taken at t=0 unless the buffer is full, and those losses
-                # are in the marker drained just before this row.
-                if last_end is not None and t > 0:
-                    end_line, end_count, closed = last_end
-                    note = (
-                        f"line {lineno}: first sample at t={t:.2f}: earlier samples lost and "
-                        f"counted in the marker on line {end_line}"
-                    )
-                    if strict:
-                        raise AmbiguousBoundary(note)
-                    for take in closed:
-                        take.share(end_line, end_count)
-                        take.notes.append(f"{note}; that count is shared with {current.name}")
-                    current.share(end_line, end_count)
-                    current.notes.append(f"{note}; this take starts there")
+            # Whichever rule started the take, its first sample is taken at t=0 unless the
+            # buffer is full, and those losses are in the marker drained just before this row.
+            if not current.rows and last_end is not None and t > 0:
+                end_line, end_count, closed = last_end
+                note = (
+                    f"line {lineno}: first sample at t={t:.2f}: earlier samples lost and "
+                    f"counted in the marker on line {end_line}"
+                )
+                if strict:
+                    raise AmbiguousBoundary(note)
+                for take in closed:
+                    take.share(end_line, end_count)
+                    take.notes.append(f"{note}; that count is shared with {current.name}")
+                current.share(end_line, end_count)
+                current.notes.append(f"{note}; this take starts there")
             current.rows.append(fields)
             current.last_t = t
             current.uncounted = True
