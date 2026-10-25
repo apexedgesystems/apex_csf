@@ -9,7 +9,6 @@ include(apex/All)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/LegendreFactorials_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/LegendrePolynomials_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/LegendrePbarTriangle_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/LegendrePbarDerivatives_uTest.cpp"

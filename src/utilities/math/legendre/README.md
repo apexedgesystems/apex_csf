@@ -4,7 +4,7 @@
 **Platform:** Cross-platform (CPU); Linux with CUDA toolkit (GPU)
 **C++ Standard:** C++17
 
-High-performance library for fully normalized associated Legendre functions (Pbar), designed for real-time and embedded systems with zero-allocation APIs and optional GPU acceleration.
+High-performance library for fully normalized associated Legendre functions (Pbar), designed for real-time and embedded systems with zero-allocation APIs and optional GPU acceleration. Scalar functions evaluate a single P_n^m or Pbar_n^m; the triangle API computes every degree and order up to N at once.
 
 ---
 
@@ -21,6 +21,22 @@ High-performance library for fully normalized associated Legendre functions (Pba
 ---
 
 ## 1. Quick Start
+
+**Single value (scalar API):**
+
+```cpp
+#include "src/utilities/math/legendre/inc/AssociatedLegendre.hpp"
+
+using apex::math::legendre::normalizedAssociatedLegendre;
+
+// Pbar_{180,90}(0.3): O(m) seed + O(n - m) walk, no allocation, RT-safe
+double pbar = normalizedAssociatedLegendre(180, 90, 0.3);
+
+// Repeated evaluation up to a fixed degree: build the tables once (allocates)
+using apex::math::legendre::makeScalarTables;
+const auto TABLES = makeScalarTables(2190);
+double fast = normalizedAssociatedLegendre(180, 90, 0.3, TABLES); // RT-safe
+```
 
 **Simple triangle computation:**
 
@@ -70,7 +86,7 @@ using apex::math::legendre::computeNormalizedPbarTriangleWithDerivativesVector;
 using apex::math::legendre::pbarTriangleIndex;
 
 double sinPhi = 0.5;
-double cosPhi = std::sqrt(1.0 - sinPhi * sinPhi);
+double cosPhi = std::sqrt((1.0 - sinPhi) * (1.0 + sinPhi)); // keeps digits near the poles
 auto result = computeNormalizedPbarTriangleWithDerivativesVector(50, sinPhi, cosPhi);
 
 // result.P[idx] = Pbar_{n,m}(sin(phi))
@@ -85,6 +101,8 @@ double dpbar = result.dP[pbarTriangleIndex(10, 5)];
 
 ### Computation Modes
 
+- **Scalar** - One Pbar_n^m by walking its column, O(n) in all, ~0.39us for (180, 90)
+- **Scalar cached** - The same walk from precomputed tables, ~0.12us for (180, 90)
 - **CPU baseline** - Standard upward recurrence, ~77us for N=180
 - **CPU cached** - Precomputed A/B coefficients, ~33us for N=180 (2.3x faster)
 - **GPU kernel** - CUDA parallel computation, ~4us for N=180 (19x faster)
@@ -100,6 +118,22 @@ double dpbar = result.dP[pbarTriangleIndex(10, 5)];
 ---
 
 ## 3. RT-Safety
+
+### Scalar API (AssociatedLegendre.hpp)
+
+| Function                                    | RT-Safe | Notes                                                                                |
+| ------------------------------------------- | ------- | ------------------------------------------------------------------------------------ |
+| `normalizedAssociatedLegendre()`            | YES     | O(m) seed + O(n - m) walk, no allocation, `APEX_NONBLOCKING`                         |
+| `associatedLegendre()`                      | YES     | O(m) seed + O(n - m) walk, no allocation, `APEX_NONBLOCKING`                         |
+| `legendrePolynomial()`                      | YES     | O(n), no allocation, `APEX_NONBLOCKING`                                              |
+| `normalizedAssociatedLegendre(..., tables)` | YES     | O(n - m) walk after a bounded seed; reads caller-retained tables; `APEX_NONBLOCKING` |
+| `makeScalarTables()`                        | NO      | Allocates the tables (about 8 N^2 bytes)                                             |
+| `normalizedAssociatedLegendreFunction()`    | NO      | Takes a `std::function` (may allocate to wrap)                                       |
+| `associatedLegendreFunction()`              | NO      | Takes a `std::function` (may allocate to wrap)                                       |
+| `legendrePolynomialFunction()`              | NO      | Takes a `std::function` (may allocate to wrap)                                       |
+
+The non-blocking contract is enforced under the RealtimeSanitizer build
+(`make rtsan`): an allocation reached from these functions aborts the test.
 
 ### Triangle API (PbarTriangle.hpp)
 
@@ -141,16 +175,61 @@ double dpbar = result.dP[pbarTriangleIndex(10, 5)];
 | `createPbarWorkspace()`    | NO      | Allocates GPU and pinned host buffers |
 | `ensurePbarCoefficients()` | NO      | One-time coefficient build            |
 | `enqueueCompute()`         | YES     | Enqueues kernel, no allocation        |
-| `synchronize()`            | YES     | Waits for completion                  |
+| `synchronize()`            | NO      | Blocks on GPU completion              |
 | `destroyPbarWorkspace()`   | NO      | Frees resources                       |
 
 ---
 
 ## 4. API Reference
 
+### Scalar Functions
+
+`normalizedAssociatedLegendre(n, m, x)` and `associatedLegendre(n, m, x)` walk
+column m of the stable upward recurrence from the diagonal (m, m) to (n, m):
+an O(m) seed then an O(n - m) walk, O(n) in all; no table, no allocation. Both omit the Condon-Shortley phase
+(geodesy convention), and the normalized form matches the triangle entry at
+`pbarTriangleIndex(n, m)`.
+
+| Property     | Normalized `Pbar_n^m`                                                                                                                           | Unnormalized `P_n^m`                                                                                                                                                                                                                                                                                                                                            |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Accuracy     | Within 1e-10 relative (1e-12 absolute floor) of `std::sph_legendre` on a tested grid: n up to 2190, six orders per degree, x from -0.9 to 0.999 | Within 1e-10 relative of `std::assoc_legendre` for n below 128, compared in normalized units; within 1e-10 of the column's local amplitude (the largest reference magnitude among neighbouring degrees) against a long double recurrence over every (n, m) with n up to 300 at seven arguments; selected finite cases with overflowing intermediates hold 1e-12 |
+| Range        | Bounded by sqrt(2n+1); finite at every degree                                                                                                   | inf only where the value exceeds DBL_MAX (`P_n^n(0)` from n = 151), 0 only below the smallest subnormal, subject to rounding; a common binary exponent protects representable results from range loss in the intermediates; subnormal results have reduced precision                                                                                            |
+| Invalid n, m | NaN                                                                                                                                             | NaN                                                                                                                                                                                                                                                                                                                                                             |
+
+For normalized evaluation (and the triangles) near |x| = 1 with large m, the
+diagonal seed `(1 - x^2)^(m/2)` falls into subnormals and then to zero (for
+example x = 0.999 from m near 240), and the column loses its digits with it.
+Every forward-column method without exponent scaling shares this,
+`std::sph_legendre` included; Holmes-Featherstone scaling is the remedy and is
+not applied here. The unnormalized walk carries its seed with a binary
+exponent and is not subject to this limit.
+
+`normalizedAssociatedLegendre(n, m, x, tables)` is the same walk reading its
+coefficients from a `ScalarTables` built once by `makeScalarTables(N)`: each
+step is two multiplies and a subtract, the diagonal is a table lookup times
+s^m, and each column's coefficients are stored contiguously so a walk reads
+one forward stream. Degrees beyond the tables return NaN. The tables take
+about 8 N^2 bytes (38 MB at N = 2190) and are read-only after construction,
+so one instance can serve any number of threads.
+
+The transform variants (`...Function(n, m, fX, x)`) evaluate at `fX(x)` and
+clamp the transformed value, so `fX = cos` with a colatitude in [0, pi] works
+across the whole range.
+
+### Precision Near the Poles
+
+Every path forms cos(phi) from x = sin(phi) as sqrt((1 - x)(1 + x)), never
+sqrt(1 - x\*x): near |x| = 1 the latter cancels, and its error enters the
+diagonal seed s^m and grows with m. Within 2.6 degrees of either pole the CPU
+and GPU triangles and the scalar functions agree with an extended-precision
+reference to about 1e-13 of each column's scale, measured at five arguments
+from 87.4 to 89.997 degrees, N = 160, over the columns whose diagonal seed is a
+normal double. The factored form costs one extra addition per call.
+
 ### Triangular Storage
 
-All functions use triangular storage with index formula:
+Triangle outputs use triangular storage with index formula (the scalar
+cache's coefficient tables are column-major; see `ScalarTables`):
 
 ```
 idx(n,m) = n(n+1)/2 + m
@@ -249,6 +328,28 @@ CPU cached is 9.4x faster than baseline at N=180 (47.7 vs 450.6 us).
 
 Scaling is O(N^2) as expected (triangular storage of (N+1)(N+2)/2 elements).
 
+### Scalar Functions vs the Standard Library
+
+Release build, x = 0.3, pinned to one core under SCHED_FIFO on an x86-64
+laptop, `LegendreScalar_PTEST --cycles 200000`; each cell averages the medians
+of two runs. These are sampled measurements on one host, not portable or
+tail-latency bounds; the noisiest cell, cached (180, 180), had a 185 percent
+coefficient of variation in one of its two runs and 1.5 percent in the other.
+
+| (n, m)       | stateless (us) | cached (us) | `std::sph_legendre` (us) |
+| ------------ | -------------- | ----------- | ------------------------ |
+| (10, 3)      | 0.027          | 0.0077      | 0.071                    |
+| (50, 25)     | 0.11           | 0.028       | 0.19                     |
+| (180, 90)    | 0.39           | 0.12        | 0.65                     |
+| (180, 180)   | 0.17           | 0.015       | 0.033                    |
+| (720, 360)   | 1.59           | 0.49        | 2.71                     |
+| (2190, 1000) | 5.3            | 1.6         | 8.5                      |
+
+In these samples the stateless walk ran 1.6-2.6x faster than the standard
+library off the diagonal and about 5x slower on it (n = m), where the walk
+forms the diagonal product term by term; the cached walk ran 5-9x faster off
+the diagonal and about 2x faster on it.
+
 ### Why Cached is Faster
 
 The upward recurrence requires coefficients A(n,m) and B(n,m) containing sqrt() calls:
@@ -275,24 +376,24 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 
 # Run performance tests
 docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/ptests/LegendrePbar_PTEST
+docker compose run --rm -T dev ./build/hosted-x86_64-release/bin/ptests/LegendreScalar_PTEST --cycles 200000
 ```
 
 ### Test Organization
 
-| Test File                           | Purpose                       | Tests |
-| ----------------------------------- | ----------------------------- | ----- |
-| `LegendreFactorials_uTest.cpp`      | Factorial precomputation      | 4     |
-| `LegendrePolynomials_uTest.cpp`     | Associated Legendre functions | 8     |
-| `LegendrePbarTriangle_uTest.cpp`    | CPU triangle computation      | 12    |
-| `LegendrePbarDerivatives_uTest.cpp` | Derivative computation        | 6     |
-| `LegendrePbarCuda_uTest.cu`         | GPU/CPU parity                | 12    |
-| `LegendrePbar_pTest.cpp`            | Performance benchmarks        | 9     |
+| Test File                           | Purpose                          | Tests     |
+| ----------------------------------- | -------------------------------- | --------- |
+| `LegendrePolynomials_uTest.cpp`     | Scalar functions, to n = 2190    | 24        |
+| `LegendrePbarTriangle_uTest.cpp`    | CPU triangle computation         | 6         |
+| `LegendrePbarDerivatives_uTest.cpp` | Derivative computation           | 11        |
+| `LegendrePbarCuda_uTest.cu`         | GPU/CPU parity                   | 14        |
+| `LegendreScalar_pTest.cpp`          | Scalar vs `std::`; range regimes | 4 x 6 + 5 |
+| `LegendrePbar_pTest.cpp`            | Triangle benchmarks              | 8         |
 
 ---
 
 ## 7. See Also
 
-- `src/sim/kinematics/gravity/` - EGM2008 gravity model using this library
+- `src/sim/environment/gravity/` - EGM2008 gravity model using this library
 - [Vernier](https://github.com/apexedgesystems/vernier) - Performance testing framework
 - `src/utilities/compatibility/` - CUDA attribute shims and C++17/20 compatibility
-- `optimization/legendre/` - Optimization notes and baseline measurements

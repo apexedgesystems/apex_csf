@@ -9,18 +9,25 @@
 
 #include "src/utilities/math/legendre/inc/AssociatedLegendre.hpp"
 #include "src/utilities/math/legendre/inc/PbarTriangle.hpp"
+#include "src/utilities/math/legendre/utst/PbarReference.hpp"
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstdio>
+#include <vector>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
 using apex::math::legendre::computeNormalizedPbarTriangle;
+using apex::math::legendre::computeNormalizedPbarTriangleCached;
+using apex::math::legendre::computeNormalizedPbarTriangleCachedInterleaved;
 using apex::math::legendre::computeNormalizedPbarTriangleVector;
+using apex::math::legendre::computeRecurrenceCoefficientsInterleaved;
+using apex::math::legendre::computeRecurrenceCoefficientsVector;
 using apex::math::legendre::legendrePolynomialFunction;
 using apex::math::legendre::normalizedAssociatedLegendreFunction;
 using apex::math::legendre::pbarTriangleIndex;
@@ -145,4 +152,42 @@ TEST(MathLegendrePolynomials, PbarTriangle_BadInputs) {
   std::array<double, 1> out0{0.0};
   ASSERT_TRUE(computeNormalizedPbarTriangle(0, 0.42, out0.data(), out0.size()));
   EXPECT_DOUBLE_EQ(out0[0], 1.0);
+}
+
+/**
+ * @test PbarTriangle_NearPoleKeepsPrecision
+ * @brief Within about 2.6 degrees of either pole, all three CPU triangle
+ *        variants agree with an extended-precision reference to 4e-13 of each
+ *        column's scale. cos(phi) formed as 1 - x*x cancels there, and the
+ *        seed's error s^m carries into the whole column, growing with m.
+ *        The recurrence's own rounding is about 1e-13 of column scale here.
+ */
+TEST(MathLegendrePolynomials, PbarTriangle_NearPoleKeepsPrecision) {
+  constexpr int N = 160;
+  constexpr double TOL = 4e-13;
+  const std::size_t SIZE = pbarTriangleSize(N);
+  const auto COEFFS = computeRecurrenceCoefficientsVector(N);
+  std::vector<double> ab(2 * SIZE);
+  ASSERT_TRUE(computeRecurrenceCoefficientsInterleaved(N, ab.data(), ab.size()));
+  std::vector<double> plain(SIZE), cached(SIZE), interleaved(SIZE);
+
+  for (double x : legendre_test::NEAR_POLE_ARGS) {
+    ASSERT_TRUE(computeNormalizedPbarTriangle(N, x, plain.data(), SIZE));
+    ASSERT_TRUE(computeNormalizedPbarTriangleCached(N, x, COEFFS.A.data(), COEFFS.B.data(),
+                                                    cached.data(), SIZE));
+    ASSERT_TRUE(
+        computeNormalizedPbarTriangleCachedInterleaved(N, x, ab.data(), interleaved.data(), SIZE));
+    const std::vector<double>* VARIANTS[] = {&plain, &cached, &interleaved};
+    const char* NAMES[] = {"plain", "cached", "interleaved"};
+    for (int v = 0; v < 3; ++v) {
+      const auto& TRI = *VARIANTS[v];
+      const auto E = legendre_test::columnScaledError(
+          N, x, [&](int n, int m) { return TRI[pbarTriangleIndex(n, m)]; });
+      EXPECT_GE(E.columns, 50) << NAMES[v] << " x=" << x;
+      EXPECT_EQ(E.nonfinite, 0) << NAMES[v] << " x=" << x;
+      EXPECT_LE(E.worst, TOL) << NAMES[v] << " x=" << x << " worst column m=" << E.worstM;
+      std::printf("[near-pole] %-11s x=%-12.9g columns=%3d worst=%.2e (m=%d)\n", NAMES[v], x,
+                  E.columns, E.worst, E.worstM);
+    }
+  }
 }
