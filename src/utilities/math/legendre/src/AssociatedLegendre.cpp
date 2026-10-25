@@ -95,29 +95,26 @@ double normalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
  * With m = 0 the last line is Bonnet's recurrence for P_n. These values grow
  * like (2m-1)!! and shrink like s^m, so the seed and the recurrence's
  * intermediate products leave double's exponent range long before a final
- * value does. The walk therefore carries the pair (prev, cur) scaled by
- * 2^-scale, in a band chosen so that both members stay normal doubles:
+ * value does. The walk therefore carries the pair (prev, cur) under a common
+ * binary exponent, scale, and renormalises by 2^512 under two conditions:
  *
- *  - Scaling down by 2^512 is keyed on |cur| > 2^980. After every step both
- *    members are at most 2^980 (prev is the previous step's checked cur and
- *    any scaling applies to both), so a coefficient below 2^13 keeps each
- *    product under 2^1007, and the larger member never falls below 2^468
- *    by scaling.
- *  - Scaling up by 2^512 happens when both members are below 2^-512; one
- *    step shrinks a pair by at most 2^13 outside an exact cancellation, so
- *    the pair lands within [2^-13, 1).
- *  - The two parity chains (n - m even and odd) are coupled only through
- *    t, so their magnitudes can differ by up to about |t| / 2^13. For
- *    |t| >= 2^-500 that ratio keeps the smaller member normal in either
- *    band. For smaller |t| the seed is lifted into [2^468, 2^980) before the
- *    walk, so the larger member stays at least 2^468 and the smaller one at
- *    least 2^468 |t| / 2^13 >= 2^-619 for any nonzero t. The smaller member
- *    then keeps its digits through every downscale, and only a final value
- *    that is itself subnormal is quantized.
+ *  - down, when |cur| exceeds 2^980 after a step: prev is the previous
+ *    checked cur and both scale together, so a coefficient below 2^13 keeps
+ *    the next products under 2^1007 (the first off-diagonal value is formed
+ *    before any check and can reach 2^993, still with headroom);
+ *  - up, when both members are below 2^-512 and not both zero.
  *
- * An exact zero stays zero, and the ldexp at the end (skipped when nothing
- * was scaled) is the only place range is decided, giving inf or 0 exactly
- * when the true value lies beyond double.
+ * The parity chains (n - m even and odd) are coupled only through t, so at
+ * a tiny |t| they sit far apart in magnitude. Below 2^-500 the seed is lifted
+ * to at least 2^468 before the walk, so the smaller chain stays out of the
+ * subnormal range through later downscales, where its digits would otherwise
+ * be lost. This protects representable results from range loss in the
+ * intermediates. It does not make every temporary normal (a coefficient times
+ * a subnormal t can underflow harmlessly against a far larger partner), and
+ * ordinary rounding and cancellation, especially near a zero of the function,
+ * still apply. An exact zero stays zero, and the ldexp at the end (skipped
+ * when nothing was scaled) decides range: inf or 0 where the true value lies
+ * beyond double, subject to rounding.
  */
 double unnormalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
   constexpr double UP = 0x1p980;      // larger member above this: scale down
@@ -146,7 +143,8 @@ double unnormalizedColumn(int n, int m, double t) noexcept APEX_NONBLOCKING {
     return (scale == 0) ? diag : std::ldexp(diag, scale);
   }
   if (std::fabs(t) < TINY_T) {
-    // At most three lifts: a nonzero seed is at least 2^-1074.
+    // With |t| this small s is 1 and the seed is at least 1, so one lift reaches the
+    // floor; the loop bounds any nonzero double at four.
     while (diag != 0.0 && diag < LIFT_FLOOR) {
       diag *= STEP_UP;
       scale -= 512;

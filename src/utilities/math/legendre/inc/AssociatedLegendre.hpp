@@ -20,19 +20,22 @@
  * Range:
  *  - Normalized values are bounded by sqrt(2n+1) and stay accurate through
  *    n = 2190, the EGM2008 degree.
- *  - Unnormalized values grow like (2m-1)!!. The walk carries a binary
- *    exponent alongside, so intermediates never overflow or underflow; the
- *    result is inf only where the true value exceeds DBL_MAX (P_n^n(0) =
- *    (2n-1)!! does from n = 151) and 0 only where it is below the smallest
- *    subnormal. Use the normalized form at high degree. Intermediates are
- *    kept in the normal range for every argument, including subnormal ones,
- *    so only a result that is itself subnormal carries less than full
- *    precision (the quantization of its own magnitude).
- *  - Near |x| = 1 with large m, the diagonal seed (1 - x^2)^(m/2) falls into
- *    subnormals and then to zero (for example x = 0.999 from m near 240), and
- *    the column loses its digits with it. This is true of every forward-column
- *    method, std::sph_legendre included; the remedy is Holmes-Featherstone
- *    scaling, which this library does not apply.
+ *  - Unnormalized values grow like (2m-1)!!. The walk carries a common
+ *    binary exponent beside the recurrence pair, which protects a
+ *    representable result from losing range in its intermediates: the result
+ *    is inf only where the true value exceeds DBL_MAX (P_n^n(0) = (2n-1)!!
+ *    does from n = 151) and 0 only where it is below the smallest subnormal,
+ *    subject to rounding. Ordinary rounding and cancellation still bound the
+ *    accuracy, especially near a zero of the function, and a subnormal result
+ *    has the reduced precision of its magnitude. Use the normalized form at
+ *    high degree.
+ *  - Normalized evaluation near |x| = 1 with large m: the diagonal seed
+ *    (1 - x^2)^(m/2) falls into subnormals and then to zero (for example
+ *    x = 0.999 from m near 240), and the column loses its digits with it.
+ *    Every forward-column method without exponent scaling shares this,
+ *    std::sph_legendre included; Holmes-Featherstone scaling is the remedy,
+ *    and this library does not apply it to the normalized walks or the
+ *    triangles.
  *
  * API styles:
  *  - Simple: evaluation at x, clamped to [-1, 1]. Real-time safe.
@@ -66,7 +69,7 @@ namespace legendre {
  * @param m Order (0 <= m <= n).
  * @param x Argument (clamped to [-1, 1]).
  * @return P_n^m(x); inf where the true value exceeds DBL_MAX and 0 where it is
- *         below the smallest subnormal; NaN for invalid n/m.
+ *         below the smallest subnormal, subject to rounding; NaN for invalid n/m.
  * @note RT-safe: O(m) seed plus O(n - m) walk, O(n) in all; no allocation.
  */
 [[nodiscard]] double associatedLegendre(int n, int m, double x) noexcept APEX_NONBLOCKING;

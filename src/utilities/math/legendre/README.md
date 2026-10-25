@@ -193,14 +193,16 @@ an O(m) seed then an O(n - m) walk, O(n) in all; no table, no allocation. Both o
 | Property     | Normalized `Pbar_n^m`                                                                                                                           | Unnormalized `P_n^m`                                                                                                                                                                                                                                                                                                                                            |
 | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Accuracy     | Within 1e-10 relative (1e-12 absolute floor) of `std::sph_legendre` on a tested grid: n up to 2190, six orders per degree, x from -0.9 to 0.999 | Within 1e-10 relative of `std::assoc_legendre` for n below 128, compared in normalized units; within 1e-10 of the column's local amplitude (the largest reference magnitude among neighbouring degrees) against a long double recurrence over every (n, m) with n up to 300 at seven arguments; selected finite cases with overflowing intermediates hold 1e-12 |
-| Range        | Bounded by sqrt(2n+1); finite at every degree                                                                                                   | inf only where the value exceeds DBL_MAX (`P_n^n(0)` from n = 151), 0 only below the smallest subnormal; intermediates are exponent-scaled                                                                                                                                                                                                                      |
+| Range        | Bounded by sqrt(2n+1); finite at every degree                                                                                                   | inf only where the value exceeds DBL_MAX (`P_n^n(0)` from n = 151), 0 only below the smallest subnormal, subject to rounding; a common binary exponent protects representable results from range loss in the intermediates; subnormal results have reduced precision                                                                                            |
 | Invalid n, m | NaN                                                                                                                                             | NaN                                                                                                                                                                                                                                                                                                                                                             |
 
-Near |x| = 1 with large m the diagonal seed `(1 - x^2)^(m/2)` falls into
-subnormals and then to zero (for example x = 0.999 from m near 240), and the
-column loses its digits with it. Every forward-column method shares this,
+For normalized evaluation (and the triangles) near |x| = 1 with large m, the
+diagonal seed `(1 - x^2)^(m/2)` falls into subnormals and then to zero (for
+example x = 0.999 from m near 240), and the column loses its digits with it.
+Every forward-column method without exponent scaling shares this,
 `std::sph_legendre` included; Holmes-Featherstone scaling is the remedy and is
-not applied here.
+not applied here. The unnormalized walk carries its seed with a binary
+exponent and is not subject to this limit.
 
 `normalizedAssociatedLegendre(n, m, x, tables)` is the same walk reading its
 coefficients from a `ScalarTables` built once by `makeScalarTables(N)`: each
