@@ -122,9 +122,10 @@ public:
 
   HeldStepModel model;
 
-  /// Armed, the next cycle that selects a wait of over 5 ms is held for
-  /// 20 ms at the seam between selecting its deadline and waiting on
-  /// it: a preemption there, two ticks long, on demand.
+  /// Armed, the next cycle that selects a wait of over 5 ms is held at
+  /// the seam between selecting its deadline and waiting on it until the
+  /// clock has emitted two more ticks, or for 200 ms at most: a
+  /// preemption there, on demand.
   std::atomic<bool> holdAtSelection{false};
   std::atomic<unsigned> heldAtSelection{0};
 
@@ -433,8 +434,8 @@ TEST_F(ExecutiveActionGateTest, PreemptionAfterSelectingTheDeadlineDoesNotRenewT
   ASSERT_GE(exec_->actionPhaseSkips(), SKIPS_AT_HOLD + 2u) << "the hold did not take effect";
   const std::uint64_t BEHIND_WAIT_BEFORE_NS = exec_->actionWaitBehindMaxNs();
 
-  // One cycle is held 20 ms at the seam: by the time it waits, two ticks
-  // have passed and its frame is over.
+  // One cycle is held at the seam until two more ticks have passed: by
+  // the time it waits, its frame is over.
   exec_->holdAtSelection.store(true, std::memory_order_release);
   {
     const auto DEADLINE = Clock::now() + std::chrono::seconds(1);
