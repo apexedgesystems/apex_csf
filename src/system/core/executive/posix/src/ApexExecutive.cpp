@@ -632,9 +632,9 @@ RunResult ApexExecutive::run() noexcept {
   }
 
   // Register executive health packet as OUTPUT for INSPECT readback.
-  // The packet is populated on each GET_HEALTH call and on each INSPECT read.
+  // GET_HEALTH refreshes the packet; INSPECT reads it as last refreshed.
   {
-    (void)getHealthPacket(); // Populate initial snapshot (return value unused).
+    healthPacket_ = getHealthPacket(); // The first snapshot, before any thread runs.
     auto status = registry_.registerData(fullUid(), system_core::data::DataCategory::OUTPUT,
                                          "health", &healthPacket_, sizeof(ExecutiveHealthPacket));
     if (system_core::registry::isError(status)) {
@@ -1621,7 +1621,12 @@ void ApexExecutive::applyCliOverrides() noexcept {
 /* ----------------------------- IExecutive Interface ----------------------------- */
 
 void ApexExecutive::shutdown() noexcept {
-  controlState_.shutdownRequested.store(true, std::memory_order_release);
+  // This store takes the mutex the flag's predicate waits hold, as the
+  // one in broadcastShutdownRequest does.
+  {
+    const std::lock_guard<std::mutex> lock(cvMutex_);
+    controlState_.shutdownRequested.store(true, std::memory_order_release);
+  }
   cvShutdown_.notify_all();
   cvClockTick_.notify_all();
   cvPause_.notify_all();

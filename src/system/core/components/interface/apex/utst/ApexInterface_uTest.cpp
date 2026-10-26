@@ -4,6 +4,7 @@
  */
 
 #include "src/system/core/components/interface/apex/inc/ApexInterface.hpp"
+#include "src/system/core/components/interface/apex/inc/InterfaceTlm.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/IComponentResolver.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp"
 #include "src/system/core/components/interface/apex/inc/ApexInterfaceTunables.hpp"
@@ -701,4 +702,159 @@ TEST(ApexInterfaceTest, TxBoundaryDropsAreCounted) {
       << "every frame past capacity must be counted at the TX boundary";
 
   EXPECT_EQ(iface.shutdown(), Status::SUCCESS);
+}
+
+/* ----------------------------- One TX owner ----------------------------- */
+
+namespace {
+
+/// The interface with its receive entry exposed, so a test can play the
+/// external I/O thread: receiving a command frames and queues its reply.
+class TwoThreadInterface : public ApexInterface {
+public:
+  using ApexInterface::processBytesRx;
+};
+
+/// A SLIP-framed NOOP addressed to the interface, ACK requested.
+std::vector<std::uint8_t> slipNoop() {
+  std::array<std::uint8_t, 64> packet{};
+  std::size_t packetBytes = 0;
+  const auto HEADER = aproto::buildHeader(
+      0x000400, static_cast<std::uint16_t>(aproto::SystemOpcode::NOOP), 42, 0, false, true, false);
+  EXPECT_EQ(aproto::encodePacket(HEADER, {}, {packet.data(), packet.size()}, packetBytes),
+            aproto::Status::SUCCESS);
+  std::array<std::uint8_t, 160> slip{};
+  const auto ENC =
+      apex::protocols::slip::encode({packet.data(), packetBytes}, slip.data(), slip.size());
+  return {slip.data(), slip.data() + ENC.bytesProduced};
+}
+
+} // namespace
+
+/**
+ * @test Telemetry posted from one thread while another drains it and
+ *       frames replies: one owner of the encoder scratch and the TX pipe.
+ *
+ * The executive posts telemetry from the task side (components fill
+ * their outboxes) and frames everything -- telemetry, completions,
+ * replies -- on the external I/O thread. This test runs those two roles
+ * on two threads at once; under ThreadSanitizer it is the proof that
+ * the roles share nothing but the lock-free outboxes.
+ */
+TEST(ApexInterfaceTxOwner, PostingAndFramingOnTwoThreadsShareOnlyTheOutboxes) {
+  TwoThreadInterface iface;
+  constexpr std::uint32_t UID = 0x00DE00;
+  ASSERT_NE(iface.allocateQueues(UID), nullptr);
+  iface.freezeQueues();
+
+  std::array<std::uint8_t, 256> telemetry{};
+  telemetry.fill(0xA5);
+  const std::vector<std::uint8_t> NOOP = slipNoop();
+
+  // Both roles reached once before anything concurrent is interpreted.
+  ASSERT_TRUE(iface.postInternalTelemetry(UID, 0x0340, {telemetry.data(), telemetry.size()}));
+  iface.drainTelemetryOutboxes();
+  iface.processBytesRx(0, {NOOP.data(), NOOP.size()});
+  ASSERT_EQ(iface.stats().telemetryFrames.load(), 1u);
+  ASSERT_EQ(iface.stats().responsesQueued.load(), 1u);
+
+  constexpr unsigned N = 2000;
+  std::atomic<bool> start{false};
+  std::atomic<unsigned> posted{0};
+  std::thread taskSide([&]() {
+    while (!start.load(std::memory_order_acquire)) {
+    }
+    for (unsigned i = 0; i < N; ++i) {
+      // The outbox is bounded: a post the drain has not caught up with
+      // is retried, as a component's next tick would.
+      while (!iface.postInternalTelemetry(UID, 0x0340, {telemetry.data(), telemetry.size()})) {
+        std::this_thread::yield();
+      }
+      posted.fetch_add(1u, std::memory_order_relaxed);
+    }
+  });
+  std::thread ioSide([&]() {
+    while (!start.load(std::memory_order_acquire)) {
+    }
+    for (unsigned i = 0; i < N; ++i) {
+      iface.drainTelemetryOutboxes();
+      iface.processBytesRx(0, {NOOP.data(), NOOP.size()});
+    }
+    // Whatever the task side posted after the last drain.
+    while (posted.load(std::memory_order_acquire) < N) {
+      iface.drainTelemetryOutboxes();
+      std::this_thread::yield();
+    }
+    iface.drainTelemetryOutboxes();
+  });
+  start.store(true, std::memory_order_release);
+  taskSide.join();
+  ioSide.join();
+
+  EXPECT_EQ(iface.stats().telemetryFrames.load(), 1u + N);
+  EXPECT_EQ(iface.stats().responsesQueued.load(), 1u + N);
+}
+
+/**
+ * @test GET_STATS and the legacy raw snapshot, answered on the task
+ *       thread while the I/O thread frames telemetry, read torn-free,
+ *       monotonic counters.
+ *
+ * The counters are written by the thread that runs the path they count
+ * and read by whichever thread answers the command; under
+ * ThreadSanitizer this is the proof that those readers share nothing
+ * with the writers but the atomics, on both reply forms.
+ */
+TEST(ApexInterfaceTxOwner, StatsReadOnTheTaskThreadWhileTheIoThreadFramesTelemetry) {
+  TwoThreadInterface iface;
+  constexpr std::uint32_t UID = 0x00DE00;
+  ASSERT_NE(iface.allocateQueues(UID), nullptr);
+  iface.freezeQueues();
+  std::array<std::uint8_t, 256> telemetry{};
+  telemetry.fill(0x5A);
+
+  constexpr unsigned N = 2000;
+  std::atomic<bool> start{false};
+  std::atomic<bool> done{false};
+  std::thread ioSide([&]() {
+    while (!start.load(std::memory_order_acquire)) {
+    }
+    for (unsigned i = 0; i < N; ++i) {
+      while (!iface.postInternalTelemetry(UID, 0x0340, {telemetry.data(), telemetry.size()})) {
+        std::this_thread::yield();
+      }
+      iface.drainTelemetryOutboxes();
+    }
+    done.store(true, std::memory_order_release);
+  });
+
+  // The task thread's view: the packed health telemetry and the legacy
+  // raw snapshot, read while the frames are being counted.
+  std::uint32_t lastFrames = 0;
+  unsigned reads = 0;
+  start.store(true, std::memory_order_release);
+  while (!done.load(std::memory_order_acquire)) {
+    std::vector<std::uint8_t> response;
+    ASSERT_EQ(iface.handleCommand(
+                  static_cast<std::uint16_t>(system_core::interface::InterfaceTlmOpcode::GET_STATS),
+                  {}, response),
+              0u);
+    system_core::interface::InterfaceHealthTlm tlm{};
+    ASSERT_EQ(response.size(), sizeof(tlm));
+    std::memcpy(&tlm, response.data(), sizeof(tlm));
+    EXPECT_GE(tlm.telemetryFrames, lastFrames) << "a counter read went backwards";
+    lastFrames = tlm.telemetryFrames;
+
+    ASSERT_EQ(iface.handleCommand(0x0082u, {}, response), 0u);
+    ApexInterface::StatsSnapshot raw{};
+    ASSERT_EQ(response.size(), sizeof(raw));
+    std::memcpy(&raw, response.data(), sizeof(raw));
+    EXPECT_GE(raw.telemetryFrames, lastFrames) << "the raw snapshot went backwards";
+    lastFrames = raw.telemetryFrames;
+    ++reads;
+  }
+  ioSide.join();
+
+  EXPECT_EQ(iface.stats().telemetryFrames.load(), N);
+  EXPECT_GT(reads, 0u);
 }

@@ -25,6 +25,7 @@
 #include "src/system/core/components/interface/apex/inc/MessageBuffer.hpp"
 #include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
 
+#include <atomic>
 #include <cstddef>
 #include <memory>
 #include <vector>
@@ -159,10 +160,10 @@ private:
 
 #ifndef NDEBUG
   /// Debug: Total acquire count.
-  std::uint64_t totalAcquires_{0};
+  std::atomic<std::uint64_t> totalAcquires_{0};
 
   /// Debug: Total release count.
-  std::uint64_t totalReleases_{0};
+  std::atomic<std::uint64_t> totalReleases_{0};
 #endif
 };
 

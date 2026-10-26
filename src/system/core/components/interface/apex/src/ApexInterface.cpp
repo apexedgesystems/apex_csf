@@ -267,7 +267,7 @@ void ApexInterface::processAprotoPacket(std::uint8_t serverId,
                                         apex::compat::rospan<std::uint8_t> frame) noexcept {
   // Minimum packet size check.
   if (frame.size() < aproto::APROTO_HEADER_SIZE) {
-    ++stats_.packetsInvalid;
+    stats_.packetsInvalid.fetch_add(1U, std::memory_order_relaxed);
     return;
   }
 
@@ -275,11 +275,11 @@ void ApexInterface::processAprotoPacket(std::uint8_t serverId,
   aproto::PacketView view{};
   const aproto::Status ST = aproto::createPacketView(frame, view);
   if (ST != aproto::Status::SUCCESS) {
-    ++stats_.packetsInvalid;
+    stats_.packetsInvalid.fetch_add(1U, std::memory_order_relaxed);
     return;
   }
 
-  ++stats_.packetsReceived;
+  stats_.packetsReceived.fetch_add(1U, std::memory_order_relaxed);
 
   // Responses are ignored; only commands are processed.
   if (view.isResponse()) {
@@ -291,12 +291,12 @@ void ApexInterface::processAprotoPacket(std::uint8_t serverId,
 
   // Try system opcodes first.
   if (handleSystemOpcode(serverId, view)) {
-    ++stats_.systemCommands;
+    stats_.systemCommands.fetch_add(1U, std::memory_order_relaxed);
     return;
   }
 
   // Route to component.
-  ++stats_.routedCommands;
+  stats_.routedCommands.fetch_add(1U, std::memory_order_relaxed);
   routeToComponent(serverId, view);
 }
 
@@ -469,7 +469,7 @@ void ApexInterface::routeToComponent(std::uint8_t serverId,
     MessageBuffer* buf = bufferPool_.acquire(view.payload.size());
     if (buf == nullptr) {
       // Pool exhausted - fall through to sync handling.
-      ++stats_.cmdQueueOverflows;
+      stats_.cmdQueueOverflows.fetch_add(1U, std::memory_order_relaxed);
     } else {
       // Copy payload only into buffer; metadata in struct fields.
       if (!view.payload.empty()) {
@@ -495,7 +495,7 @@ void ApexInterface::routeToComponent(std::uint8_t serverId,
       }
       // Queue full - release buffer and fall through to sync handling.
       bufferPool_.release(buf);
-      ++stats_.cmdQueueOverflows;
+      stats_.cmdQueueOverflows.fetch_add(1U, std::memory_order_relaxed);
     }
   }
 
@@ -571,7 +571,7 @@ void ApexInterface::enqueueAckNak(std::uint8_t serverId, const aproto::AprotoHea
 
   // Enqueue into pre-allocated TxFrame slot (no heap allocation).
   enqueueTxMessage(serverId, apex::compat::rospan<std::uint8_t>{responseBuf_.data(), bytesWritten});
-  ++stats_.responsesQueued;
+  stats_.responsesQueued.fetch_add(1U, std::memory_order_relaxed);
 }
 
 /* ----------------------------- Queue Draining ----------------------------- */
@@ -602,7 +602,7 @@ void ApexInterface::drainTelemetryOutboxes() noexcept {
       if (ST == aproto::Status::SUCCESS && bytesWritten > 0) {
         enqueueTxMessage(SERVER_ID,
                          apex::compat::rospan<std::uint8_t>{responseBuf_.data(), bytesWritten});
-        ++stats_.telemetryFrames;
+        stats_.telemetryFrames.fetch_add(1U, std::memory_order_relaxed);
       }
 
       // Release buffer back to pool.
@@ -676,7 +676,7 @@ std::size_t ApexInterface::drainCommandsToComponents(std::size_t maxPerComponent
         if (COMPAT_LIKELY(completionOutbox_.tryPush(buf))) {
           buf = nullptr; // Ownership crossed to the outbox.
         } else {
-          ++stats_.completionDrops;
+          stats_.completionDrops.fetch_add(1U, std::memory_order_relaxed);
         }
       }
 
@@ -707,28 +707,31 @@ std::uint8_t ApexInterface::handleCommand(std::uint16_t opcode,
   if (opcode == static_cast<std::uint16_t>(InterfaceTlmOpcode::GET_STATS)) {
     // GET_STATS (0x0100) - Return packed health telemetry.
     InterfaceHealthTlm tlm{};
-    tlm.packetsReceived = stats_.packetsReceived;
-    tlm.packetsInvalid = stats_.packetsInvalid;
-    tlm.systemCommands = stats_.systemCommands;
-    tlm.routedCommands = stats_.routedCommands;
-    tlm.responsesQueued = stats_.responsesQueued;
-    tlm.telemetryFrames = stats_.telemetryFrames;
-    tlm.framingErrors = stats_.framingErrors;
-    tlm.internalCommandsSent = stats_.internalCommandsSent;
-    tlm.internalTelemetrySent = stats_.internalTelemetrySent;
-    tlm.internalCommandsFailed = stats_.internalCommandsFailed;
-    tlm.multicastCommandsSent = stats_.multicastCommandsSent;
-    tlm.broadcastCommandsSent = stats_.broadcastCommandsSent;
-    tlm.cmdQueueOverflows = stats_.cmdQueueOverflows;
-    tlm.tlmQueueOverflows = stats_.tlmQueueOverflows;
+    const StatsSnapshot S = statsSnapshot();
+    tlm.packetsReceived = S.packetsReceived;
+    tlm.packetsInvalid = S.packetsInvalid;
+    tlm.systemCommands = S.systemCommands;
+    tlm.routedCommands = S.routedCommands;
+    tlm.responsesQueued = S.responsesQueued;
+    tlm.telemetryFrames = S.telemetryFrames;
+    tlm.framingErrors = S.framingErrors;
+    tlm.internalCommandsSent = S.internalCommandsSent;
+    tlm.internalTelemetrySent = S.internalTelemetrySent;
+    tlm.internalCommandsFailed = S.internalCommandsFailed;
+    tlm.multicastCommandsSent = S.multicastCommandsSent;
+    tlm.broadcastCommandsSent = S.broadcastCommandsSent;
+    tlm.cmdQueueOverflows = S.cmdQueueOverflows;
+    tlm.tlmQueueOverflows = S.tlmQueueOverflows;
     response.resize(sizeof(tlm));
     std::memcpy(response.data(), &tlm, sizeof(tlm));
     return 0; // SUCCESS
   }
   if (opcode == 0x0082) {
-    // GET_INTERFACE_STATS (legacy) - Return raw statistics structure.
-    response.resize(sizeof(Stats));
-    std::memcpy(response.data(), &stats_, sizeof(Stats));
+    // GET_INTERFACE_STATS (legacy) - Return the raw statistics structure:
+    // the plain snapshot, whose layout is the counters in order.
+    const StatsSnapshot S = statsSnapshot();
+    response.resize(sizeof(StatsSnapshot));
+    std::memcpy(response.data(), &S, sizeof(StatsSnapshot));
     return 0; // SUCCESS
   }
 
@@ -741,7 +744,7 @@ std::uint8_t ApexInterface::handleCommand(std::uint16_t opcode,
 void ApexInterface::reportDroppedFramesIfNeeded(std::uint8_t serverId) noexcept {
   // Increment dropped frame counter.
   ++droppedFrameCount_;
-  ++stats_.framingErrors;
+  stats_.framingErrors.fetch_add(1U, std::memory_order_relaxed);
 
   // Check if threshold reached (0 = disabled).
   const std::uint16_t THRESHOLD = tunables_.droppedFrameReportThreshold;
@@ -801,14 +804,14 @@ bool ApexInterface::postInternalCommand(std::uint32_t srcFullUid, std::uint32_t 
   // Get target component's queues.
   auto* queues = queueMgr_.get(dstFullUid);
   if (queues == nullptr) {
-    ++stats_.internalCommandsFailed;
+    stats_.internalCommandsFailed.fetch_add(1U, std::memory_order_relaxed);
     return false; // Component not found.
   }
 
   // Allocate MessageBuffer from pool (payload only, no protocol header).
   MessageBuffer* buf = bufferPool_.acquire(payload.size());
   if (buf == nullptr) {
-    ++stats_.internalCommandsFailed;
+    stats_.internalCommandsFailed.fetch_add(1U, std::memory_order_relaxed);
     return false; // Pool exhausted.
   }
 
@@ -827,12 +830,12 @@ bool ApexInterface::postInternalCommand(std::uint32_t srcFullUid, std::uint32_t 
   // Push pointer to cmdInbox (RT-safe, lock-free).
   const bool success = queues->cmdInbox.tryPush(buf);
   if (success) {
-    ++stats_.internalCommandsSent;
+    stats_.internalCommandsSent.fetch_add(1U, std::memory_order_relaxed);
   } else {
     // Queue full - release buffer.
     bufferPool_.release(buf);
-    ++stats_.internalCommandsFailed;
-    ++stats_.cmdQueueOverflows;
+    stats_.internalCommandsFailed.fetch_add(1U, std::memory_order_relaxed);
+    stats_.cmdQueueOverflows.fetch_add(1U, std::memory_order_relaxed);
   }
   return success;
 }
@@ -848,7 +851,7 @@ bool ApexInterface::postInternalTelemetry(std::uint32_t srcFullUid, std::uint16_
   // Allocate MessageBuffer from pool (payload only, no protocol header).
   MessageBuffer* buf = bufferPool_.acquire(payload.size());
   if (buf == nullptr) {
-    ++stats_.tlmQueueOverflows;
+    stats_.tlmQueueOverflows.fetch_add(1U, std::memory_order_relaxed);
     return false; // Pool exhausted.
   }
 
@@ -867,12 +870,12 @@ bool ApexInterface::postInternalTelemetry(std::uint32_t srcFullUid, std::uint16_
   // Push pointer to tlmOutbox (RT-safe, lock-free).
   const bool success = queues->tlmOutbox.tryPush(buf);
   if (success) {
-    ++stats_.internalTelemetrySent;
+    stats_.internalTelemetrySent.fetch_add(1U, std::memory_order_relaxed);
   } else {
     // Queue full - release buffer.
     bufferPool_.release(buf);
-    ++stats_.internalCommandsFailed;
-    ++stats_.tlmQueueOverflows;
+    stats_.internalCommandsFailed.fetch_add(1U, std::memory_order_relaxed);
+    stats_.tlmQueueOverflows.fetch_add(1U, std::memory_order_relaxed);
   }
   return success;
 }
@@ -901,7 +904,7 @@ std::size_t ApexInterface::postMulticastCommand(
   // Acquire single buffer (payload only, no protocol header).
   MessageBuffer* buf = bufferPool_.acquire(payload.size());
   if (buf == nullptr) {
-    ++stats_.internalCommandsFailed;
+    stats_.internalCommandsFailed.fetch_add(1U, std::memory_order_relaxed);
     return 0; // Pool exhausted.
   }
 
@@ -937,8 +940,9 @@ std::size_t ApexInterface::postMulticastCommand(
   }
 
   if (queued > 0) {
-    ++stats_.multicastCommandsSent;
-    stats_.internalCommandsSent += static_cast<std::uint32_t>(queued);
+    stats_.multicastCommandsSent.fetch_add(1U, std::memory_order_relaxed);
+    stats_.internalCommandsSent.fetch_add(static_cast<std::uint32_t>(queued),
+                                          std::memory_order_relaxed);
   }
   return queued;
 }
@@ -964,12 +968,32 @@ ApexInterface::postBroadcastCommand(std::uint32_t srcFullUid, std::uint16_t opco
   const std::size_t result =
       postMulticastCommand(srcFullUid, {targets.data(), count}, opcode, payload);
   if (result > 0) {
-    ++stats_.broadcastCommandsSent;
+    stats_.broadcastCommandsSent.fetch_add(1U, std::memory_order_relaxed);
   }
   return result;
 }
 
 /* ----------------------------- Statistics ----------------------------- */
+
+ApexInterface::StatsSnapshot ApexInterface::statsSnapshot() const noexcept {
+  StatsSnapshot snap{};
+  snap.packetsReceived = stats_.packetsReceived.load(std::memory_order_relaxed);
+  snap.packetsInvalid = stats_.packetsInvalid.load(std::memory_order_relaxed);
+  snap.systemCommands = stats_.systemCommands.load(std::memory_order_relaxed);
+  snap.routedCommands = stats_.routedCommands.load(std::memory_order_relaxed);
+  snap.responsesQueued = stats_.responsesQueued.load(std::memory_order_relaxed);
+  snap.telemetryFrames = stats_.telemetryFrames.load(std::memory_order_relaxed);
+  snap.framingErrors = stats_.framingErrors.load(std::memory_order_relaxed);
+  snap.internalCommandsSent = stats_.internalCommandsSent.load(std::memory_order_relaxed);
+  snap.internalTelemetrySent = stats_.internalTelemetrySent.load(std::memory_order_relaxed);
+  snap.internalCommandsFailed = stats_.internalCommandsFailed.load(std::memory_order_relaxed);
+  snap.multicastCommandsSent = stats_.multicastCommandsSent.load(std::memory_order_relaxed);
+  snap.broadcastCommandsSent = stats_.broadcastCommandsSent.load(std::memory_order_relaxed);
+  snap.cmdQueueOverflows = stats_.cmdQueueOverflows.load(std::memory_order_relaxed);
+  snap.completionDrops = stats_.completionDrops.load(std::memory_order_relaxed);
+  snap.tlmQueueOverflows = stats_.tlmQueueOverflows.load(std::memory_order_relaxed);
+  return snap;
+}
 
 void ApexInterface::logStatsSummary() noexcept {
   auto* log = componentLog();
@@ -979,27 +1003,40 @@ void ApexInterface::logStatsSummary() noexcept {
 
   log->info(label(), "=== Interface Statistics ===");
   log->info(label(), "External Interface:");
-  log->info(label(), fmt::format("  Packets received: {}", stats_.packetsReceived));
-  log->info(label(), fmt::format("  Packets invalid: {}", stats_.packetsInvalid));
-  log->info(label(), fmt::format("  System commands: {}", stats_.systemCommands));
-  log->info(label(), fmt::format("  Routed commands: {}", stats_.routedCommands));
-  log->info(label(), fmt::format("  Responses queued: {}", stats_.responsesQueued));
-  log->info(label(), fmt::format("  Telemetry frames: {}", stats_.telemetryFrames));
-  log->info(label(), fmt::format("  Framing errors: {}", stats_.framingErrors));
+  log->info(label(), fmt::format("  Packets received: {}",
+                                 stats_.packetsReceived.load(std::memory_order_relaxed)));
+  log->info(label(), fmt::format("  Packets invalid: {}",
+                                 stats_.packetsInvalid.load(std::memory_order_relaxed)));
+  log->info(label(), fmt::format("  System commands: {}",
+                                 stats_.systemCommands.load(std::memory_order_relaxed)));
+  log->info(label(), fmt::format("  Routed commands: {}",
+                                 stats_.routedCommands.load(std::memory_order_relaxed)));
+  log->info(label(), fmt::format("  Responses queued: {}",
+                                 stats_.responsesQueued.load(std::memory_order_relaxed)));
+  log->info(label(), fmt::format("  Telemetry frames: {}",
+                                 stats_.telemetryFrames.load(std::memory_order_relaxed)));
+  log->info(label(), fmt::format("  Framing errors: {}",
+                                 stats_.framingErrors.load(std::memory_order_relaxed)));
   log->info(label(), "Internal Bus:");
-  log->info(label(), fmt::format("  Commands sent: {}", stats_.internalCommandsSent));
-  log->info(label(), fmt::format("  Telemetry sent: {}", stats_.internalTelemetrySent));
-  log->info(label(), fmt::format("  Commands failed: {}", stats_.internalCommandsFailed));
+  log->info(label(), fmt::format("  Commands sent: {}",
+                                 stats_.internalCommandsSent.load(std::memory_order_relaxed)));
+  log->info(label(), fmt::format("  Telemetry sent: {}",
+                                 stats_.internalTelemetrySent.load(std::memory_order_relaxed)));
+  log->info(label(), fmt::format("  Commands failed: {}",
+                                 stats_.internalCommandsFailed.load(std::memory_order_relaxed)));
   log->info(label(), "Queue Health:");
-  log->info(label(), fmt::format("  Cmd queue overflows: {}", stats_.cmdQueueOverflows));
-  log->info(label(), fmt::format("  Tlm queue overflows: {}", stats_.tlmQueueOverflows));
+  log->info(label(), fmt::format("  Cmd queue overflows: {}",
+                                 stats_.cmdQueueOverflows.load(std::memory_order_relaxed)));
+  log->info(label(), fmt::format("  Tlm queue overflows: {}",
+                                 stats_.tlmQueueOverflows.load(std::memory_order_relaxed)));
   if (txDropCount() > 0) {
     log->warning(label(), static_cast<std::uint8_t>(1),
                  fmt::format("  TX frames dropped at wire boundary: {}", txDropCount()));
   } else {
     log->info(label(), "  TX frames dropped at wire boundary: 0");
   }
-  log->info(label(), fmt::format("  Completion drops: {}", stats_.completionDrops));
+  log->info(label(), fmt::format("  Completion drops: {}",
+                                 stats_.completionDrops.load(std::memory_order_relaxed)));
   log->info(label(), "=============================");
 }
 

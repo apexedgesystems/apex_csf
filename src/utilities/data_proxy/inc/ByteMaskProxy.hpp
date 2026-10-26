@@ -294,6 +294,15 @@ public:
   [[nodiscard]] std::size_t size() const noexcept { return count_; }
 
   /**
+   * @brief The front mask, the one apply() writes.
+   * @return Pointer to the front entry, or nullptr when the queue is empty.
+   * @note RT-safe: O(1). The pointer is valid until the next push, pop or clear.
+   */
+  [[nodiscard]] const MaskEntry* front() const noexcept {
+    return (count_ == 0) ? nullptr : &masks_[head_];
+  }
+
+  /**
    * @brief Get maximum queue capacity.
    * @return MASK_MAX_ENTRIES.
    * @note RT-safe: O(1).

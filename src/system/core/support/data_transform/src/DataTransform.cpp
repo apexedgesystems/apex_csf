@@ -31,6 +31,8 @@ std::uint8_t DataTransform::doInit() noexcept {
 
   registerTask<DataTransform, &DataTransform::telemetry>(
       static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry");
+  registerTask<DataTransform, &DataTransform::hold>(static_cast<std::uint8_t>(TaskUid::HOLD), this,
+                                                    "hold");
 
   registerData(data::DataCategory::STATE, "stats", &stats_, sizeof(TransformStats));
 
@@ -38,11 +40,13 @@ std::uint8_t DataTransform::doInit() noexcept {
 }
 
 void DataTransform::doReset() noexcept {
-  for (auto& entry : entries_) {
-    entry.armed = false;
-    entry.proxy.clear();
+  for (std::uint8_t i = 0; i < TRANSFORM_MAX_ENTRIES; ++i) {
+    entries_[i].armed = false;
+    entries_[i].proxy.clear();
+    withdrawHeld(i);
   }
   stats_ = {};
+  holdApplies_ = 0;
 }
 
 /* ----------------------------- TPRM Loading ----------------------------- */
@@ -396,11 +400,63 @@ std::uint8_t DataTransform::telemetry() noexcept {
   auto* log = componentLog();
   if (log != nullptr) {
     char buf[128];
-    std::snprintf(buf, sizeof(buf), "armed=%u applied=%u resolve_fail=%u apply_fail=%u", armed,
-                  stats_.masksApplied, stats_.resolveFailures, stats_.applyFailures);
+    std::snprintf(buf, sizeof(buf), "armed=%u applied=%u held=%u resolve_fail=%u apply_fail=%u",
+                  armed, stats_.masksApplied, holdApplies_, stats_.resolveFailures,
+                  stats_.applyFailures);
     log->info(label(), buf);
   }
   return 0;
+}
+
+std::uint8_t DataTransform::hold() noexcept {
+  for (auto& held : held_) {
+    if (!held.active.load(std::memory_order_acquire)) {
+      continue;
+    }
+    const std::uint32_t GEN = held.gen.load(std::memory_order_acquire);
+    if ((GEN & 1U) != 0U) {
+      continue; // the command side is writing the copy
+    }
+    const std::uint32_t FULL_UID = held.fullUid;
+    const data::DataCategory CATEGORY = held.category;
+    const std::uint16_t BYTE_OFFSET = held.byteOffset;
+    data_proxy::MaskEntry mask = held.mask;
+    if (held.gen.load(std::memory_order_acquire) != GEN) {
+      continue; // the copy changed under the read
+    }
+    auto resolved = resolver_(FULL_UID, CATEGORY);
+    if (resolved.data == nullptr || BYTE_OFFSET >= resolved.size) {
+      ++stats_.resolveFailures;
+      continue;
+    }
+    const std::size_t AVAILABLE = resolved.size - BYTE_OFFSET;
+    if (mask.index + mask.len > AVAILABLE) {
+      ++stats_.applyFailures;
+      continue;
+    }
+    std::uint8_t* p = resolved.data + BYTE_OFFSET + mask.index;
+    for (std::uint8_t i = 0; i < mask.len; ++i) {
+      p[i] = static_cast<std::uint8_t>((p[i] & mask.andMask[i]) ^ mask.xorMask[i]);
+    }
+    ++holdApplies_;
+  }
+  return 0;
+}
+
+void DataTransform::publishHeld(std::uint8_t index) noexcept {
+  const auto& entry = entries_[index];
+  const data_proxy::MaskEntry* front = entry.proxy.front();
+  if (front == nullptr) {
+    return;
+  }
+  auto& held = held_[index];
+  held.gen.fetch_add(1U, std::memory_order_acq_rel); // odd: writing
+  held.fullUid = entry.target.fullUid;
+  held.category = entry.target.category;
+  held.byteOffset = entry.target.byteOffset;
+  held.mask = *front;
+  held.gen.fetch_add(1U, std::memory_order_acq_rel); // even: complete
+  held.active.store(true, std::memory_order_release);
 }
 
 /* ----------------------------- Private Helpers ----------------------------- */
@@ -442,6 +498,7 @@ bool DataTransform::applyEntry(std::uint8_t index) noexcept {
   auto status = entry.proxy.apply(targetBytes, AVAILABLE);
   if (status == data_proxy::ByteMaskStatus::SUCCESS) {
     ++stats_.masksApplied;
+    publishHeld(index);
 
     auto* log = componentLog();
     if (log != nullptr) {
@@ -517,6 +574,7 @@ std::uint8_t DataTransform::handleCommand(std::uint16_t opcode,
       return static_cast<std::uint8_t>(Status::ERROR_PARAM);
     }
     entries_[INDEX].armed = false;
+    withdrawHeld(INDEX);
     {
       auto* log = componentLog();
       if (log != nullptr) {
@@ -610,13 +668,15 @@ std::uint8_t DataTransform::handleCommand(std::uint16_t opcode,
       return static_cast<std::uint8_t>(Status::ERROR_PARAM);
     }
     entries_[INDEX].proxy.clear();
+    withdrawHeld(INDEX);
     return static_cast<std::uint8_t>(Status::SUCCESS);
   }
 
   case DataTransformOpcode::CLEAR_ALL: {
-    for (auto& entry : entries_) {
-      entry.armed = false;
-      entry.proxy.clear();
+    for (std::uint8_t i = 0; i < TRANSFORM_MAX_ENTRIES; ++i) {
+      entries_[i].armed = false;
+      entries_[i].proxy.clear();
+      withdrawHeld(i);
     }
     stats_.entriesArmed = 0;
     return static_cast<std::uint8_t>(Status::SUCCESS);
