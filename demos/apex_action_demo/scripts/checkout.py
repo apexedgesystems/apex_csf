@@ -360,28 +360,28 @@ def test_rts_chaining(c2: AprotoClient) -> bool:
     section("12. RTS Chaining (cleanup)")
     ok = True
 
-    # Disarm WP0 (watchpointId=1) to stop the autonomous campaign
-    # ARM_CONTROL: armTarget=0 (WATCHPOINT), armIndex=0 (slot 0), armState=0 (disarm)
-    # Use direct table write via slot-based sequence: simpler to just disarm via
-    # the action component's ARM_CONTROL. But we don't have a direct "disarm WP"
-    # ground command for the active table (only catalog activate/deactivate).
-    # Use DEACTIVATE_WP instead.
+    # Deactivate WP0 (watchpointId=1) so no new campaign run starts
+    # (DEACTIVATE_WP, 0x0531); a run already in progress is left to finish.
     c2.send_command(proto.FULLUID_ACTION, 0x0531, struct.pack("<H", 1))
 
     # Wait for actual quiescence, not a fixed interval: the boot-scheduled
-    # ATS fault campaign and the WP0 chain both apply ARM steps, so a
-    # fixed sleep makes this check phase-sensitive to the checkout's
-    # launch time. Poll until the engine's step/arm counters hold still.
+    # ATS fault campaign applies ARM steps on its own clock, so a fixed sleep
+    # makes this check phase-sensitive to the checkout's launch time. Poll
+    # until the engine's step/arm counters hold still for longer than a
+    # step's wait can: a wait condition times out at 50 cycles (5 s at
+    # 10 Hz) and advances the step counter when it does, so six seconds of
+    # silence means no run is still inside a step that could ARM an entry
+    # after CLEAR_ALL.
     last = None
     stable_since = None
-    deadline = time.time() + 30.0
+    deadline = time.time() + 60.0
     while time.time() < deadline:
         s = read_action_stats(c2)
         key = (s.get("sequenceSteps"), s.get("armControlsApplied"))
         if key == last:
             if stable_since is None:
                 stable_since = time.time()
-            elif time.time() - stable_since >= 2.0:
+            elif time.time() - stable_since >= 6.0:
                 break
         else:
             stable_since = None
