@@ -57,10 +57,26 @@ directly via C2.
 
 ### Command-Driven Mask Application
 
-DataTransform is not scheduled. Mask application happens when the action
-engine sequencer (or a ground operator) sends APPLY_ENTRY or APPLY_ALL.
-This gives cycle-accurate timing inherited from the sequencer with zero
-periodic overhead in DataTransform itself.
+Mask application happens when the action engine sequencer (or a ground
+operator) sends APPLY_ENTRY or APPLY_ALL, at the tick the sequencer
+chooses.
+
+### Held Masks
+
+An applied mask is held: the `hold()` task writes it again on every tick
+it runs, so a fault written into a block whose owner rewrites it each
+cycle outlives that rewrite and a consumer sampling once per cycle (the
+action engine's watchpoints) sees it. Schedule `hold()` at the owner's
+step rate with a lower priority than the step, so it runs after it in the
+same cycle. DISARM_ENTRY, CLEAR_MASKS and CLEAR_ALL end the hold; without
+a scheduled hold task an apply is a single write.
+
+Commands arrive on the I/O thread while `hold()` runs on a worker, so the
+hold never reads the entry table. A commanded apply publishes a copy of
+the entry's target and front mask under a generation counter (odd while
+the copy is written, then even, then active); `hold()` reads active, the
+generation, the copy and the generation again, and skips the entry for
+that tick if the copy was mid-write or changed.
 
 ### ByteMaskProxy Per Entry
 
@@ -174,6 +190,7 @@ executive.registerSupport(&transform);
 | `loadTprm(dir)`               | No      | Load fault campaign from TPRM binary        |
 | `onBusReady()`                | No      | Send LOAD_ATS to action engine via bus      |
 | `telemetry()`                 | No      | Log health stats (1 Hz task)                |
+| `hold()`                      | Yes     | Re-apply armed entries' applied masks       |
 | `stats()`                     | Yes     | Get diagnostic counters                     |
 | `entries()`                   | Yes     | Get transform entry table (8 entries)       |
 | `entry(index)`                | Yes     | Get mutable entry by index                  |

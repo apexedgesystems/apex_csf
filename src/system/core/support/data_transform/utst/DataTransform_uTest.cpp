@@ -438,6 +438,95 @@ TEST(DataTransform, FullFaultInjectionFlow) {
   EXPECT_EQ(dt.stats().masksApplied, 1u); // Still 1 from before
 }
 
+/* ----------------------------- Held Masks ----------------------------- */
+
+/// Arm entry 0 on the test block, queue a zero mask over its first four bytes and apply it.
+void armApplyZero(DataTransform& dt, ResolverCtx& ctx) {
+  ctx.block.fill(0xAA);
+  dt.setResolver(testResolver, &ctx);
+  (void)dt.init();
+  dt.entry(0)->target = {0x007800, DataCategory::OUTPUT, 0, 4};
+  ASSERT_EQ(sendCmd(dt, DataTransformOpcode::ARM_ENTRY, 0), 0u);
+  std::vector<std::uint8_t> response;
+  std::array<std::uint8_t, 4> payload = {0, 0, 0, 4};
+  ASSERT_EQ(dt.handleCommand(static_cast<std::uint16_t>(DataTransformOpcode::PUSH_ZERO_MASK),
+                             {payload.data(), payload.size()}, response),
+            0u);
+  ASSERT_EQ(applyEntry(dt, 0), 0u);
+  ASSERT_EQ(ctx.block[0], 0x00);
+}
+
+/** @test A hold tick re-applies the applied mask after the block's owner rewrote the bytes. */
+TEST(DataTransform, HoldReappliesTheAppliedMaskAfterTheOwnerRewritesTheBlock) {
+  DataTransform dt;
+  ResolverCtx ctx;
+  armApplyZero(dt, ctx);
+
+  // The owner's step writes a fresh value over the masked bytes.
+  ctx.block[0] = 0x12;
+  ctx.block[3] = 0x34;
+  EXPECT_EQ(dt.hold(), 0u);
+  EXPECT_EQ(ctx.block[0], 0x00);
+  EXPECT_EQ(ctx.block[3], 0x00);
+  EXPECT_EQ(ctx.block[4], 0xAA); // Outside the mask, untouched
+  // The hold is not a commanded apply.
+  EXPECT_EQ(dt.stats().masksApplied, 1u);
+  EXPECT_EQ(dt.stats().applyFailures, 0u);
+}
+
+/** @test An armed mask that no command has applied is not written by a hold tick. */
+TEST(DataTransform, HoldLeavesAnUnappliedMaskAlone) {
+  DataTransform dt;
+  ResolverCtx ctx;
+  ctx.block.fill(0xAA);
+  dt.setResolver(testResolver, &ctx);
+  (void)dt.init();
+  dt.entry(0)->target = {0x007800, DataCategory::OUTPUT, 0, 4};
+  ASSERT_EQ(sendCmd(dt, DataTransformOpcode::ARM_ENTRY, 0), 0u);
+  std::vector<std::uint8_t> response;
+  std::array<std::uint8_t, 4> payload = {0, 0, 0, 4};
+  ASSERT_EQ(dt.handleCommand(static_cast<std::uint16_t>(DataTransformOpcode::PUSH_ZERO_MASK),
+                             {payload.data(), payload.size()}, response),
+            0u);
+  EXPECT_EQ(dt.hold(), 0u);
+  EXPECT_EQ(ctx.block[0], 0xAA);
+}
+
+/** @test DISARM_ENTRY, CLEAR_MASKS and CLEAR_ALL each end the hold. */
+TEST(DataTransform, DisarmAndClearEndTheHold) {
+  for (const auto OP : {DataTransformOpcode::DISARM_ENTRY, DataTransformOpcode::CLEAR_MASKS,
+                        DataTransformOpcode::CLEAR_ALL}) {
+    DataTransform dt;
+    ResolverCtx ctx;
+    armApplyZero(dt, ctx);
+    std::vector<std::uint8_t> response;
+    std::array<std::uint8_t, 1> index = {0};
+    if (OP == DataTransformOpcode::CLEAR_ALL) {
+      ASSERT_EQ(dt.handleCommand(static_cast<std::uint16_t>(OP), {}, response), 0u);
+    } else {
+      ASSERT_EQ(
+          dt.handleCommand(static_cast<std::uint16_t>(OP), {index.data(), index.size()}, response),
+          0u);
+    }
+    ctx.block[0] = 0x12;
+    EXPECT_EQ(dt.hold(), 0u);
+    EXPECT_EQ(ctx.block[0], 0x12) << "opcode " << static_cast<int>(OP);
+  }
+  // A re-armed entry whose mask is still queued does not hold until a command applies it again.
+  DataTransform dt;
+  ResolverCtx ctx;
+  armApplyZero(dt, ctx);
+  ASSERT_EQ(sendCmd(dt, DataTransformOpcode::DISARM_ENTRY, 0), 0u);
+  ASSERT_EQ(sendCmd(dt, DataTransformOpcode::ARM_ENTRY, 0), 0u);
+  ctx.block[0] = 0x12;
+  EXPECT_EQ(dt.hold(), 0u);
+  EXPECT_EQ(ctx.block[0], 0x12);
+  ASSERT_EQ(applyEntry(dt, 0), 0u);
+  ctx.block[0] = 0x12;
+  EXPECT_EQ(dt.hold(), 0u);
+  EXPECT_EQ(ctx.block[0], 0x00);
+}
+
 /* ----------------------------- TPRM Load Contract ----------------------------- */
 
 /** @test Missing tprm is optional: pass-through config, success, configured. */
