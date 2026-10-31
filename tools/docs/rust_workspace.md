@@ -68,12 +68,16 @@ Python, shell and C++ tools, built by language) and `_APEX_TOOL_ROLES`
 `<role>/rust/`, it generates one build script and one custom command:
 
 1. `cargo build --release -p <member>...` into
-   `${CMAKE_BINARY_DIR}/apex_csf-rust-target/<role>`. The `-p` list is
-   read from each member's `Cargo.toml` (`[package] name`).
-2. Every executable in that target dir's `release/` is copied to
-   `bin/tools/<role>/`. The `[[bin]] name` entries are declared as
-   byproducts so file-level dependencies on them (the TPRM rules) resolve
-   in a fresh tree.
+   `${CMAKE_BINARY_DIR}/apex_csf-rust-target/<role>`. The members and
+   their executables come from `cargo metadata --no-deps --offline
+--locked`, read once at configure: a package belongs to the role whose
+   directory holds its manifest, and its `bin` targets are what the role
+   installs. The manifests are configure inputs, so a manifest edit
+   reconfigures before the next build.
+2. Each declared executable is copied from that target dir's `release/`
+   to `bin/tools/<role>/` by name and declared as a byproduct, so
+   file-level dependencies on it (the TPRM rules) resolve in a fresh tree
+   and a renamed tool never lingers from an earlier build.
 3. A stamp (`apex_csf-stamps/rust-<role>-tools.built`) records the
    build. It depends on every `*.rs` under the workspace, every member
    manifest and the lock, so an edit anywhere regenerates the roles that
@@ -85,8 +89,8 @@ the py and sh families; `apex_csf_tools` carries every tool. A plain
 `ninja` therefore compiles the four build tools and nothing from ops or
 analysis.
 
-The CMake file knows no tool names. A tool joins a role by its
-`Cargo.toml` entry alone.
+The CMake file knows no tool names and reads no TOML itself. A tool
+joins a role by its `Cargo.toml` entry alone.
 
 ### Cargo home and offline builds
 
@@ -156,9 +160,12 @@ explicit `path`s: cargo resolves the workspace from manifests alone. CI
 rebuilds the gate image when `tools/Cargo.*` or a member manifest
 changes.
 
-Measured on x86_64 Linux: the build role resolves 44 crates; the whole
-workspace 70. Bundled SQLite, the serial stack and the hashing crates
-belong to the ops and analysis roles only.
+Measured on x86_64 Linux as distinct normal-edge packages, local members
+included (`cargo tree --locked -e normal --prefix none <selection> | sed
+'/^$/d' | sed 's/ (.*//' | sort -u | wc -l`): the build role resolves
+44, ops 61, analysis 34, the whole workspace 69. Bundled SQLite, the
+serial stack and the hashing crates belong to the ops and analysis roles
+only.
 
 ---
 
@@ -187,9 +194,13 @@ belong to the ops and analysis roles only.
 
 ### A role
 
-Add it to `_APEX_TOOL_ROLES` in `tools/CMakeLists.txt` and to
-`TOOL_ROLES` in `mk/tools.mk`; give it a CI scope in
-`.github/workflows/ci.yml` if it should gate on its own.
+1. Add `"<role>/rust/*"` to `members` in `tools/Cargo.toml`, so the
+   role's crates are workspace members and inherit the shared fields.
+2. Add the role to `_APEX_TOOL_ROLES` in `tools/CMakeLists.txt` and to
+   `TOOL_ROLES` in `mk/tools.mk`.
+3. Follow the member-crate steps above for its first crate; give the
+   role a CI scope in `.github/workflows/ci.yml` only if it should gate
+   on its own.
 
 ---
 

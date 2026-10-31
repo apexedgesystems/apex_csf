@@ -83,9 +83,103 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
          "${_RUST_SRC}/Cargo.lock"
     )
 
+    # Cargo owns the interpretation of the workspace: which packages exist,
+    # where each manifest lives and which executables it declares. Its
+    # metadata is read once at configure with no dependency resolution and
+    # no network, and a failure stops configure instead of building from a
+    # guess. The manifests' contents are configure inputs for the same
+    # reason (the glob above tracks only their presence).
+    set_property(
+      DIRECTORY
+      APPEND
+      PROPERTY CMAKE_CONFIGURE_DEPENDS ${_RUST_MANIFESTS} "${_RUST_SRC}/Cargo.toml"
+               "${_RUST_SRC}/Cargo.lock"
+    )
+    execute_process(
+      COMMAND "${CARGO_EXECUTABLE}" metadata --no-deps --offline --locked --format-version 1
+              --manifest-path "${_RUST_SRC}/Cargo.toml"
+      OUTPUT_VARIABLE _cargo_meta
+      ERROR_VARIABLE _cargo_meta_err
+      RESULT_VARIABLE _cargo_meta_rc
+    )
+    if (NOT _cargo_meta_rc EQUAL 0)
+      message(
+        FATAL_ERROR
+          "${PROJECT_NAME}: cargo metadata failed for ${_RUST_SRC}/Cargo.toml:\n${_cargo_meta_err}"
+      )
+    endif ()
+    string(JSON _pkg_count LENGTH "${_cargo_meta}" packages)
+    if (_pkg_count EQUAL 0)
+      message(FATAL_ERROR "${PROJECT_NAME}: the Rust workspace at ${_RUST_SRC} has no members")
+    endif ()
+    math(EXPR _pkg_last "${_pkg_count} - 1")
+
     foreach (_role IN LISTS _APEX_TOOL_ROLES)
-      file(GLOB _role_manifests CONFIGURE_DEPENDS "${_RUST_SRC}/${_role}/rust/*/Cargo.toml")
-      if (NOT _role_manifests)
+      # A package belongs to the role whose directory holds its manifest; its
+      # [[bin]] targets are the executables the role installs.
+      set(_role_packages "")
+      set(_role_bin_names "")
+      set(_i -1)
+      while (_i LESS _pkg_last)
+        math(EXPR _i "${_i} + 1")
+        string(
+          JSON
+          _pkg_manifest
+          GET
+          "${_cargo_meta}"
+          packages
+          ${_i}
+          manifest_path
+        )
+        file(RELATIVE_PATH _pkg_rel "${_RUST_SRC}" "${_pkg_manifest}")
+        if (NOT _pkg_rel MATCHES "^${_role}/rust/")
+          continue()
+        endif ()
+        string(
+          JSON
+          _pkg_name
+          GET
+          "${_cargo_meta}"
+          packages
+          ${_i}
+          name
+        )
+        string(APPEND _role_packages " -p ${_pkg_name}")
+        string(JSON _target_count LENGTH "${_cargo_meta}" packages ${_i} targets)
+        if (_target_count GREATER 0)
+          math(EXPR _target_last "${_target_count} - 1")
+          set(_t -1)
+          while (_t LESS _target_last)
+            math(EXPR _t "${_t} + 1")
+            string(
+              JSON
+              _kinds
+              GET
+              "${_cargo_meta}"
+              packages
+              ${_i}
+              targets
+              ${_t}
+              kind
+            )
+            if (_kinds MATCHES "\"bin\"")
+              string(
+                JSON
+                _bin
+                GET
+                "${_cargo_meta}"
+                packages
+                ${_i}
+                targets
+                ${_t}
+                name
+              )
+              list(APPEND _role_bin_names "${_bin}")
+            endif ()
+          endwhile ()
+        endif ()
+      endwhile ()
+      if (NOT _role_packages)
         continue()
       endif ()
 
@@ -94,27 +188,15 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
       set(_role_stamp "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/rust-${_role}-tools.built")
       set(_role_script "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-build-rust-${_role}-tools.sh")
 
-      # The member manifests say what to build (-p <package>) and what comes
-      # out ([[bin]] names), so a tool joins a role by its Cargo.toml alone.
-      # The executables are declared byproducts so file-level dependencies on
-      # them (the TPRM rules) resolve in a fresh tree: without this, ninja
-      # sees a needed file with no producing rule.
-      set(_role_packages "")
+      # The executables are copied by the names cargo declared and declared
+      # as byproducts, so file-level dependencies on them (the TPRM rules)
+      # resolve in a fresh tree and a renamed or removed tool never lingers
+      # in bin/tools/<role> from an earlier build of the target dir.
       set(_role_bins "")
-      foreach (_manifest IN LISTS _role_manifests)
-        file(STRINGS "${_manifest}" _manifest_lines)
-        set(_table "")
-        foreach (_line IN LISTS _manifest_lines)
-          if (_line MATCHES "^\\[(.*)\\]$")
-            set(_table "${CMAKE_MATCH_1}")
-          elseif (_line MATCHES "^name = \"([^\"]+)\"")
-            if (_table STREQUAL "package")
-              string(APPEND _role_packages " -p ${CMAKE_MATCH_1}")
-            elseif (_table STREQUAL "[bin]")
-              list(APPEND _role_bins "${_role_out}/${CMAKE_MATCH_1}")
-            endif ()
-          endif ()
-        endforeach ()
+      set(_role_copy "")
+      foreach (_bin IN LISTS _role_bin_names)
+        list(APPEND _role_bins "${_role_out}/${_bin}")
+        string(APPEND _role_copy "cp -f '${_role_target}/release/${_bin}' '${_role_out}/'\n")
       endforeach ()
 
       file(
@@ -126,8 +208,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
         "'${CARGO_EXECUTABLE}' build --release${_role_packages}"
         " --manifest-path '${_RUST_SRC}/Cargo.toml' --target-dir '${_role_target}'\n"
         "mkdir -p '${_role_out}'\n"
-        "find '${_role_target}/release' -maxdepth 1 -type f -executable ! -name '*.*'"
-        " -exec cp -f {} '${_role_out}/' \\;\n"
+        "${_role_copy}"
         "mkdir -p '${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps'\n"
         "touch '${_role_stamp}'\n"
       )
