@@ -99,6 +99,9 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- The action demo's fault campaign sequence chains to its cleanup
+  sequence (id 2) instead of restarting itself
+  ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
 - DataTransform holds an applied mask on each hold tick while its entry
   stays armed, under one lock its commands take and the hold tries, and
   the action demo schedules the hold after its sensor's step, so an
