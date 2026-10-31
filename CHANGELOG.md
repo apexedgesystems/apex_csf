@@ -105,6 +105,7 @@ any such change is called out explicitly in its entry.
   and npm on PATH. Workflows run on `ubuntu-24.04`. ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
 - The zephyr dev image builds again on Ubuntu 24.04 (its Python tool install
   passes `--break-system-packages`).
+  ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
 - Improve scalar Legendre accuracy, make the simple scalar API
   allocation-free, and clamp transformed inputs after transformation.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
