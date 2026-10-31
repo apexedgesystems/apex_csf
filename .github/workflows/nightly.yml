@@ -23,7 +23,7 @@ permissions:
 jobs:
   set-matrix:
     name: Resolve nightly checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       checks: ${{ steps.list.outputs.checks }}
       ccache: ${{ steps.list.outputs.ccache }}
@@ -42,7 +42,7 @@ jobs:
   check:
     name: ${{ matrix.check }}
     needs: set-matrix
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
 
     strategy:
@@ -123,7 +123,7 @@ jobs:
   builder-warm:
     name: warm-${{ matrix.builder }}
     needs: set-matrix
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 180
 
     strategy:
@@ -204,7 +204,7 @@ jobs:
   # ----------------------------------------------------------------------------
   ghcr-gc:
     name: ghcr garbage collection
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       packages: write
@@ -276,7 +276,7 @@ jobs:
     name: Coverage summary
     needs: check
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
       - name: Checkout
