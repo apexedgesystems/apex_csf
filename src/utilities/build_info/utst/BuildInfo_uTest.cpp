@@ -10,6 +10,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cctype>
 #include <cstring>
 #include <string>
@@ -49,8 +50,10 @@ bool endsWith(std::string_view text, std::string_view suffix) {
 
 } // namespace
 
-/** @test Every field is non-empty and the summary line carries each of them. */
-TEST(BuildInfo, SummaryCarriesEveryField) {
+/** @test Every field is non-empty and the summary line carries the ones it is built from:
+ *  project, description, branch, tree state, build type, compiler, target (version and commit
+ *  are not in it; the description already names the commit). */
+TEST(BuildInfo, SummaryCarriesItsFields) {
   const std::string SUMMARY = summary();
   ASSERT_FALSE(SUMMARY.empty());
   for (const char* field :
@@ -74,18 +77,40 @@ TEST(BuildInfo, TreeStateAndDirtyAgree) {
   EXPECT_EQ(dirty(), isHex12(STATE));
 }
 
-/** @test describe() names the commit it was taken from and ends in -dirty exactly when the tree is
- * dirty. */
-TEST(BuildInfo, DescribeAgreesWithCommitAndTreeState) {
+/** @test describe() takes one of its documented forms, each ending in -dirty exactly when the
+ *  tree is dirty: an exact tag, <tag>-<n>-g<hex> with the hex a prefix of commit(), or a bare hex
+ *  prefix of commit() where no tag is reachable. The generator pins twelve digits, but any
+ *  abbreviation of at least four is a valid form. */
+TEST(BuildInfo, DescribeTakesADocumentedForm) {
   if (std::strcmp(commit(), "unknown") == 0) {
     GTEST_SKIP() << "no repository metadata in this build";
   }
-  const std::string_view DESCRIBE = describe();
-  // git abbreviates to at least seven digits, so the first seven of the full
-  // commit appear in the description whether or not a tag is reachable.
-  EXPECT_NE(DESCRIBE.find(std::string_view(commit()).substr(0, 7)), std::string_view::npos)
-      << DESCRIBE;
-  EXPECT_EQ(endsWith(DESCRIBE, "-dirty"), dirty()) << DESCRIBE << " vs tree=" << treeState();
+  std::string_view described = describe();
+  const bool DESCRIBED_DIRTY = endsWith(described, "-dirty");
+  EXPECT_EQ(DESCRIBED_DIRTY, dirty()) << described << " vs tree=" << treeState();
+  if (DESCRIBED_DIRTY) {
+    described.remove_suffix(std::string_view("-dirty").size());
+  }
+  ASSERT_FALSE(described.empty());
+
+  const std::string_view COMMIT = commit();
+  const auto IS_HEX = [](std::string_view text) {
+    return !text.empty() && std::all_of(text.begin(), text.end(), [](char c) {
+      return std::isxdigit(static_cast<unsigned char>(c)) != 0;
+    });
+  };
+  const auto IS_PREFIX_OF_COMMIT = [&](std::string_view hex) {
+    return hex.size() >= 4 && hex.size() <= COMMIT.size() && IS_HEX(hex) &&
+           COMMIT.substr(0, hex.size()) == hex;
+  };
+  if (IS_HEX(described)) {
+    // No tag reachable: the description is a bare abbreviation of the commit.
+    EXPECT_TRUE(IS_PREFIX_OF_COMMIT(described)) << described << " vs commit " << COMMIT;
+  } else if (const auto G = described.rfind("-g"); G != std::string_view::npos) {
+    EXPECT_TRUE(IS_PREFIX_OF_COMMIT(described.substr(G + 2)))
+        << described << " vs commit " << COMMIT;
+  }
+  // Otherwise an exact tag: there is no commit abbreviation to compare.
 }
 
 /** @test The branch is a name, never empty; "HEAD" stands for a detached checkout. */
