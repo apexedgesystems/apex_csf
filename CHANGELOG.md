@@ -96,6 +96,10 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Build images ship ninja 1.13.1, which rebuilds an object whose header changed
+  while its compile was running; existing build trees rebuild once. ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
+- The pre-commit node hooks run on a node baked into the dev image instead of
+  one downloaded at hook install; workflows run on `ubuntu-24.04`. ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
 - Improve scalar Legendre accuracy, make the simple scalar API
   allocation-free, and clamp transformed inputs after transformation.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
@@ -121,6 +125,8 @@ any such change is called out explicitly in its entry.
 
 ### Security
 
+- Python tool dependencies re-locked under a 3.11 floor (pillow 13, filelock
+  4.2, virtualenv 21.15) and block-buffer 0.12.1 in the Rust lock. ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
 - Python tooling lock: virtualenv 21.6.1 to 21.14.5, clearing four
   published advisories.
 
