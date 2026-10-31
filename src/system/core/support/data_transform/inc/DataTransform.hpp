@@ -26,29 +26,38 @@
  * end the hold. The hold task runs only where the schedule lists it;
  * without it an apply is a single write.
  *
- * Ownership. Commands can run on the I/O thread (the interface's direct
- * dispatch) or on the task thread while a worker runs hold(), so one
- * mutex owns every write the component makes: the held copies, the
- * target bytes an apply or a hold writes, and the entry table's arming.
- * The command side locks it (APPLY_ENTRY, APPLY_ALL, DISARM_ENTRY,
- * CLEAR_MASKS, CLEAR_ALL, reset) and may therefore wait for one
- * in-progress hold tick, bounded by the tick's work; hold() only tries
- * the lock and skips the whole tick, counted, when a command holds it,
- * so a worker never blocks. When DISARM_ENTRY, CLEAR_MASKS or CLEAR_ALL
- * returns, no hold write of that entry is in progress and none follows
- * until a command applies again. The hold's own counters are atomics the
- * telemetry task reads; the hold never writes the statistics block.
- * Direct entry() configuration is preparation before the first APPLY;
- * after it, only commands change what a hold writes. The target block's
- * owner writes it from its own task: schedule hold() on the same single
- * worker after that task, as the action demo does, or sequence it behind
- * the owner's step; priority alone orders nothing across workers.
+ * Ownership. One mutex serializes the component's commands with the
+ * hold's writes. Every command the component handles runs under it,
+ * whether it arrives on the I/O thread (the interface's direct dispatch)
+ * or on the task thread (the queue drain), so an APPLY resolves, writes
+ * and publishes one snapshot of the entry's target and front mask and no
+ * SET_TARGET, ARM, mask push, CLEAR or other APPLY interleaves with it;
+ * the 1 Hz telemetry takes the lock to read the counters, and reset takes
+ * it. hold() only tries the lock: when a command holds it the whole tick
+ * is skipped and counted, so a worker never waits for a command. A
+ * command may wait for another command (its resolution and logging
+ * included) or for one in-progress hold tick; that wait is a plain mutex
+ * wait with no fairness or duration bound. When DISARM_ENTRY, CLEAR_MASKS
+ * or CLEAR_ALL returns, no hold write of that entry is in progress and
+ * none follows until a command applies again. The hold's own counters
+ * are atomics; the hold never writes the statistics block. Direct
+ * entry() configuration is preparation before the first APPLY; after it,
+ * only commands change what a hold writes. The target block's owner
+ * writes it from its own task: the action demo runs hold() on the same
+ * single worker, below the owner's step, so the admitted step runs
+ * before the admitted hold in a cycle (a skipped or rejected invocation
+ * is not delivered); a schedule with more workers must sequence the two
+ * with matching admission and phase progress, since priority alone
+ * orders nothing across workers.
  *
  * A low-frequency telemetry task (1 Hz) reports health stats.
  *
  * componentId = 202  (support component range)
  *
- * @note handleCommand is RT-safe for all opcodes. init/reset are NOT RT-safe.
+ * @note handleCommand is NOT RT-safe: every opcode takes the component's
+ *       lock, and APPLY resolves and logs. init/reset/telemetry are NOT
+ *       RT-safe. hold() never waits for the lock; its note states its
+ *       bounds and what it does not promise.
  */
 
 #include "src/system/core/support/data_transform/inc/DataTransformData.hpp"
@@ -170,7 +179,15 @@ public:
    * hold's own atomic counters.
    *
    * @return 0 on success.
-   * @note RT-safe: try-lock, bounded by the entry table, no logging.
+   * @note Never waits for the lock, allocates nothing and logs nothing;
+   *       its work is bounded by the entry table, one resolver call per
+   *       held entry and MASK_MAX_LEN bytes per entry, given a resolver
+   *       that is bounded, does not block and does not call back into
+   *       this component (the lock is not recursive). Not syscall-free:
+   *       releasing the lock wakes a command waiting for it. A tick that
+   *       finds the lock held writes nothing, and repeated contention
+   *       skips ticks without bound, so the hold promises no delivery
+   *       rate.
    */
   std::uint8_t hold() noexcept;
 
@@ -228,8 +245,9 @@ public:
    * @param payload Command payload bytes.
    * @param response Output response buffer.
    * @return Status code.
-   * @note NOT RT-safe: APPLY, DISARM and CLEAR take the component's lock
-   *       and may wait for one in-progress hold tick.
+   * @note NOT RT-safe: every opcode runs under the component's lock and
+   *       may wait for another command or for an in-progress hold tick,
+   *       a plain mutex wait with no bound; APPLY resolves and logs.
    */
   std::uint8_t handleCommand(std::uint16_t opcode, apex::compat::rospan<std::uint8_t> payload,
                              std::vector<std::uint8_t>& response) noexcept override;
@@ -260,10 +278,11 @@ protected:
 
 private:
   /**
-   * @brief Resolve target and apply front mask for a single entry.
+   * @brief Write one snapshot of an entry's target and front mask, and
+   *        publish that snapshot as the entry's held copy.
    * @param index Entry index.
-   * @return true if mask was applied successfully.
-   * @note RT-safe: O(mask length).
+   * @return true if the mask was written.
+   * @note The caller holds holdMutex_. NOT RT-safe: resolves and logs.
    */
   bool applyEntry(std::uint8_t index) noexcept;
 
@@ -284,8 +303,8 @@ private:
   bool hasCampaign_{false};           ///< True if a fault campaign was loaded.
   std::filesystem::path atsPath_{};   ///< Path to generated ATS file.
   std::uint16_t clockFrequencyHz_{0}; ///< Clock frequency for cycle-to-us conversion.
-  /// Owns every write this component makes: the held copies, the target
-  /// bytes and the entry table's arming. Commands lock it; hold() tries it.
+  /// Serializes the commands (every opcode), the telemetry's read and reset
+  /// with the hold's writes: those lock it; hold() tries it.
   std::mutex holdMutex_;
   std::atomic<std::uint32_t> holdApplies_{0}; ///< Masks written by hold ticks.
   std::atomic<std::uint32_t> holdSkips_{0};   ///< Hold ticks skipped: a command held the lock.
@@ -304,8 +323,6 @@ private:
   };
   std::array<HeldMask, TRANSFORM_MAX_ENTRIES> held_{}; ///< One per entry.
 
-  /// Publish entry index's target and front mask as its held copy (caller holds the lock).
-  void publishHeld(std::uint8_t index) noexcept;
   /// Withdraw entry index's held copy (caller holds the lock).
   void withdrawHeld(std::uint8_t index) noexcept { held_[index].active = false; }
 };

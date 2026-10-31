@@ -4,11 +4,13 @@
 # Task schedule for ApexActionDemo:
 #   10 Hz: SensorModel sensorStep (priority 127)
 #   10 Hz: DataTransform hold (priority 100, below the sensor's step: the
-#          pool's one worker runs the step first and the hold after it in
-#          the same cycle, so an applied mask outlives the step's rewrite
-#          and the action phase evaluates the masked value; a schedule
-#          with more workers must sequence the two, priority alone does
-#          not order them)
+#          pool's one worker runs the admitted step first and the admitted
+#          hold after it in the same cycle, so an applied mask outlives the
+#          step's rewrite and the action phase evaluates the masked value;
+#          a skipped or rejected invocation is not delivered, and a
+#          schedule with more workers must sequence the two with matching
+#          admission and phase progress, priority alone does not order
+#          them)
 #    1 Hz: SensorModel telemetry (priority -128, offset 5)
 #    1 Hz: DataTransform telemetry (priority -128, offset 6)
 #    1 Hz: SystemMonitor telemetry (priority -128, offset 7)

@@ -564,7 +564,8 @@ thread_local bool tlsHoldThread = false;
  * or a command caught mid-write while the other side arrives.
  */
 struct GateCtx {
-  std::array<std::uint8_t, 64> block{};
+  std::array<std::uint8_t, 64> block{};  ///< uid 0x007800
+  std::array<std::uint8_t, 64> blockB{}; ///< uid 0x007900
   std::atomic<bool> parkHold{false};
   std::atomic<bool> parkCommand{false};
   std::atomic<bool> failHold{false};
@@ -590,6 +591,9 @@ struct GateCtx {
 
 ResolvedData gateResolver(void* ctx, std::uint32_t fullUid, DataCategory /*category*/) noexcept {
   auto* c = static_cast<GateCtx*>(ctx);
+  if (fullUid == 0x007900) {
+    return {c->blockB.data(), c->blockB.size()};
+  }
   if (fullUid != 0x007800) {
     return {};
   }
@@ -604,6 +608,21 @@ ResolvedData gateResolver(void* ctx, std::uint32_t fullUid, DataCategory /*categ
     c->cv.wait_for(lock, std::chrono::seconds(10), [c] { return c->released; });
   }
   return {c->block.data(), c->block.size()};
+}
+
+/// Arm entry 0 with a 4-byte ZERO mask on the gate resolver's block, without applying it.
+void armZeroGated(DataTransform& dt, GateCtx& ctx) {
+  ctx.block.fill(0xAA);
+  ctx.blockB.fill(0xBB);
+  dt.setResolver(gateResolver, &ctx);
+  (void)dt.init();
+  dt.entry(0)->target = {0x007800, DataCategory::OUTPUT, 0, 4};
+  ASSERT_EQ(sendCmd(dt, DataTransformOpcode::ARM_ENTRY, 0), 0u);
+  std::vector<std::uint8_t> response;
+  std::array<std::uint8_t, 4> payload = {0, 0, 0, 4};
+  ASSERT_EQ(dt.handleCommand(static_cast<std::uint16_t>(DataTransformOpcode::PUSH_ZERO_MASK),
+                             {payload.data(), payload.size()}, response),
+            0u);
 }
 
 /// Arm entry 0 with a 4-byte ZERO mask on the gate resolver's block and apply it.
@@ -671,17 +690,23 @@ TEST(DataTransformHold, WithdrawalWaitsForTheInProgressHoldAndEndsIt) {
     ASSERT_TRUE(ctx.waitParked());
 
     // The withdrawal arrives while the hold is in progress and must wait for it.
+    std::atomic<bool> arrived{false};
     std::atomic<bool> returned{false};
     std::uint8_t status = 0xFF;
     std::thread command([&] {
       std::vector<std::uint8_t> response;
       std::array<std::uint8_t, 1> index = {0};
+      arrived.store(true, std::memory_order_release);
       status = (OP == DataTransformOpcode::CLEAR_ALL)
                    ? dt.handleCommand(static_cast<std::uint16_t>(OP), {}, response)
                    : dt.handleCommand(static_cast<std::uint16_t>(OP), {index.data(), index.size()},
                                       response);
       returned.store(true, std::memory_order_release);
     });
+    for (int i = 0; i < 5000 && !arrived.load(std::memory_order_acquire); ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(arrived.load(std::memory_order_acquire));
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
     EXPECT_FALSE(returned.load(std::memory_order_acquire)) << "opcode " << static_cast<int>(OP);
 
@@ -765,4 +790,75 @@ TEST(DataTransformHold, FailingHoldTicksNeverWriteTheStatisticsBlock) {
   EXPECT_EQ(dt.holdApplies(), 0u);
   EXPECT_EQ(dt.stats().resolveFailures, 0u); // the hold's failures are not commanded ones
   EXPECT_EQ(ctx.block[0], 0x00);             // the commanded apply's write stands
+}
+
+/** @test An APPLY writes and publishes one snapshot of its entry: a SET_TARGET or a mask push that
+ * arrives during the apply runs after it, and the hold writes what the apply wrote. */
+TEST(DataTransformHold, AppliesAndPublishesOneSnapshotWhileAnEntryMutationWaits) {
+  for (const auto OP : {DataTransformOpcode::SET_TARGET, DataTransformOpcode::PUSH_HIGH_MASK}) {
+    DataTransform dt;
+    GateCtx ctx;
+    armZeroGated(dt, ctx);
+
+    // A command thread is inside APPLY_ENTRY on target A, parked in the resolve with the lock held.
+    ctx.parkCommand.store(true, std::memory_order_release);
+    std::thread apply([&] { EXPECT_EQ(applyEntry(dt, 0), 0u); });
+    ASSERT_TRUE(ctx.waitParked());
+
+    // The mutation arrives during the apply: SET_TARGET moves entry 0 to block B, PUSH_HIGH_MASK
+    // queues a second mask. Either waits for the apply.
+    std::atomic<bool> arrived{false};
+    std::atomic<bool> returned{false};
+    std::uint8_t status = 0xFF;
+    std::thread mutation([&] {
+      std::vector<std::uint8_t> response;
+      arrived.store(true, std::memory_order_release);
+      if (OP == DataTransformOpcode::SET_TARGET) {
+        std::array<std::uint8_t, 9> target = {
+            0, 0x00, 0x79, 0x00, 0x00, static_cast<std::uint8_t>(DataCategory::OUTPUT), 0, 0, 4};
+        status = dt.handleCommand(static_cast<std::uint16_t>(OP), {target.data(), target.size()},
+                                  response);
+      } else {
+        std::array<std::uint8_t, 4> mask = {0, 0, 0, 4};
+        status =
+            dt.handleCommand(static_cast<std::uint16_t>(OP), {mask.data(), mask.size()}, response);
+      }
+      returned.store(true, std::memory_order_release);
+    });
+    for (int i = 0; i < 5000 && !arrived.load(std::memory_order_acquire); ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_TRUE(arrived.load(std::memory_order_acquire));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_FALSE(returned.load(std::memory_order_acquire)) << "opcode " << static_cast<int>(OP);
+
+    ctx.release();
+    apply.join();
+    mutation.join();
+    ctx.parkCommand.store(false, std::memory_order_release);
+    EXPECT_EQ(status, 0u) << "opcode " << static_cast<int>(OP);
+    EXPECT_EQ(ctx.block[0], 0x00) << "the apply wrote A";
+    EXPECT_EQ(ctx.blockB[0], 0xBB) << "no apply wrote B";
+
+    // The hold writes what the apply wrote: A, masked to zero; never B, never the later mask.
+    ctx.block[0] = 0x12;
+    EXPECT_EQ(dt.hold(), 0u);
+    EXPECT_EQ(ctx.block[0], 0x00) << "opcode " << static_cast<int>(OP);
+    EXPECT_EQ(ctx.blockB[0], 0xBB) << "opcode " << static_cast<int>(OP);
+    EXPECT_EQ(dt.holdApplies(), 1u);
+
+    // The mutation took effect after the apply: the next APPLY is the one that publishes it.
+    EXPECT_EQ(applyEntry(dt, 0), 0u);
+    ctx.block[0] = 0x12;
+    ctx.blockB[0] = 0x34;
+    EXPECT_EQ(dt.hold(), 0u);
+    if (OP == DataTransformOpcode::SET_TARGET) {
+      EXPECT_EQ(ctx.blockB[0], 0x00) << "the hold now writes B, which the second apply wrote";
+      EXPECT_EQ(ctx.block[0], 0x12) << "A is no longer held";
+    } else {
+      EXPECT_EQ(ctx.block[0], 0x00) << "the front mask is still the zero mask";
+      EXPECT_EQ(ctx.blockB[0], 0x34);
+    }
+    EXPECT_EQ(dt.holdApplies(), 2u);
+  }
 }
