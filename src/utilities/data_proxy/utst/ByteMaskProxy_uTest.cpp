@@ -40,7 +40,6 @@ TEST(ByteMaskStatus, ToStringReturnsExpected) {
 
 /* ----------------------------- Push Operations ----------------------------- */
 
-/** @test Push succeeds with valid parameters. */
 /** @test front() is the mask apply() writes: null when empty, the oldest queued otherwise. */
 TEST(ByteMaskProxy, FrontIsTheMaskApplyWrites) {
   ByteMaskProxy proxy;
@@ -60,6 +59,7 @@ TEST(ByteMaskProxy, FrontIsTheMaskApplyWrites) {
   EXPECT_EQ(proxy.front(), nullptr);
 }
 
+/** @test Push succeeds with valid parameters. */
 TEST(ByteMaskProxy, PushSucceeds) {
   ByteMaskProxy proxy;
   std::array<std::uint8_t, 4> andMask = {0xFF, 0xFF, 0xFF, 0xFF};
