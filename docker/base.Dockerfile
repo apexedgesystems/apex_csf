@@ -25,6 +25,8 @@ ARG HOST_UID
 ARG HOST_GID
 ARG CMAKE_VERSION=4.2.3
 ARG UPX_VERSION=5.1.0
+ARG NINJA_VERSION=1.13.1
+ARG NINJA_SHA256=0830252db77884957a1a4b87b05a1e2d9b5f658b8367f82999a941884cbe0238
 
 LABEL org.opencontainers.image.title="apex.build-base" \
       org.opencontainers.image.description="Compile/link/test tier for Apex CSF C++ builders" \
@@ -83,8 +85,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       wget curl lsb-release gnupg ca-certificates \
       # Version control (FetchContent clones at configure time)
       git \
-      # Build systems
-      make cmake ninja-build \
+      # Build systems (ninja is installed from its release below)
+      make cmake \
       # Compiler acceleration (ccache=object cache, mold=fast linker)
       ccache mold \
       # Python for build scripts and the python tools
@@ -161,6 +163,21 @@ RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error
     chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh && \
     ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local && \
     rm cmake-${CMAKE_VERSION}-linux-x86_64.sh
+
+# ------------------------------------------------------------------------------
+# Ninja
+# ------------------------------------------------------------------------------
+# From 1.12 ninja records each command's start time in its build log and
+# rebuilds an output whose inputs changed while the command ran; the distro's
+# 1.11 compares against the output's mtime and keeps that object. Installed
+# from the GitHub release, checksum-verified.
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/ninja-linux.zip \
+      "https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-linux.zip" && \
+    echo "${NINJA_SHA256}  /tmp/ninja-linux.zip" | sha256sum -c - && \
+    python3 -c "import zipfile; zipfile.ZipFile('/tmp/ninja-linux.zip').extract('ninja', '/usr/local/bin')" && \
+    chmod 0755 /usr/local/bin/ninja && \
+    rm /tmp/ninja-linux.zip && \
+    ninja --version
 
 # ------------------------------------------------------------------------------
 # Rust Toolchain
