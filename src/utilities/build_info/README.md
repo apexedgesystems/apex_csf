@@ -63,9 +63,10 @@ checkouts carrying the same patch report the same state.
 
 ## 3. How It Is Generated
 
-`cmake/GenerateBuildInfo.cmake` runs in CMake script mode from a custom
-target with no inputs, so it executes on every build that needs the library.
-It reads git, fills `src/BuildInfo.cpp.in`, and replaces the generated
+`apex_add_build_info` (cmake/apex/BuildInfo.cmake) gives the library a
+refresh target with no inputs, so the generator, the same module run in
+CMake script mode, executes on every build that needs the library. It
+reads git, fills `src/BuildInfo.cpp.in`, and replaces the generated
 `BuildInfo.cpp` only when the content differs: a build with no identity change
 recompiles and relinks nothing, and an edit anywhere in the tree recompiles
 one translation unit and relinks this one small library.

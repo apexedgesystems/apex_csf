@@ -1,28 +1,75 @@
 # ==============================================================================
-# GenerateBuildInfo.cmake
+# BuildInfo.cmake - Build identity
 # ------------------------------------------------------------------------------
-# Writes the build identity translation unit from the source tree's git state
-# and the configuration it is built with. Invoked in script mode on every
-# build; the output file is replaced only when its content changes, so an
-# unchanged identity recompiles and relinks nothing.
+# Generates a translation unit carrying the source state and configuration a
+# build came from (git describe, commit, branch, tree state, build type,
+# compiler, target system) and keeps it current on every build.
 #
-# Inputs (-D):
-#   SOURCE_DIR      repository root
-#   TEMPLATE        BuildInfo.cpp.in
-#   OUTPUT          BuildInfo.cpp to write
-#   PROJECT_NAME    CMake project name
-#   PROJECT_VERSION CMake project version
-#   BUILD_TYPE      configuration being built (may be empty)
-#   COMPILER        "<id>-<version>"
-#   TARGET_SYSTEM   "<system>/<processor>"
-#   GIT_EXECUTABLE  path to git, or empty when git is unavailable
+# Two roles in one file:
+#   - Included through apex/All: defines apex_add_build_info(), which a library
+#     calls to get a refresh target for its generated source.
+#   - Run in script mode (cmake -P) by that target: reads git, fills the
+#     template, and rewrites the output only when its content changed, so an
+#     unchanged identity recompiles and relinks nothing.
 #
-# Git-derived fields read "unknown" when git or the repository metadata is
-# absent (a source archive, an image build context that omits .git). The
-# identity carries no build time: it is a function of source state and
-# configuration alone, so two builds of one tree agree.
+# Usage:
+#   apex_add_build_info(
+#     NAME     <refresh target>
+#     TEMPLATE <BuildInfo.cpp.in>
+#     OUTPUT   <generated BuildInfo.cpp>
+#   )
+#
+# The identity carries no build time: it is a function of source state and
+# configuration alone, so two builds of one tree agree. Git-derived fields
+# read "unknown" when git or the repository metadata is absent (a source
+# archive, an image build context that omits .git).
 # ==============================================================================
 
+# ------------------------------------------------------------------------------
+# Module role
+# ------------------------------------------------------------------------------
+if (NOT CMAKE_SCRIPT_MODE_FILE)
+  include_guard(GLOBAL)
+
+  function (apex_add_build_info)
+    cmake_parse_arguments(BI "" "NAME;TEMPLATE;OUTPUT" "" ${ARGN})
+    apex_require(BI_NAME BI_TEMPLATE BI_OUTPUT)
+
+    find_package(Git QUIET)
+    set(_git "")
+    if (Git_FOUND)
+      set(_git "${GIT_EXECUTABLE}")
+    endif ()
+
+    set_source_files_properties("${BI_OUTPUT}" PROPERTIES GENERATED TRUE)
+
+    # A target with no inputs is always out of date, so the generator runs on
+    # every build that needs the library; it leaves the output untouched when
+    # the identity is unchanged.
+    add_custom_target(
+      ${BI_NAME}
+      COMMAND
+        ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR} -DTEMPLATE=${BI_TEMPLATE}
+        -DOUTPUT=${BI_OUTPUT} -DPROJECT_NAME=${CMAKE_PROJECT_NAME}
+        -DPROJECT_VERSION=${CMAKE_PROJECT_VERSION} -DBUILD_TYPE=$<CONFIG>
+        -DCOMPILER=${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}
+        -DTARGET_SYSTEM=${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR} -DGIT_EXECUTABLE=${_git} -P
+        ${CMAKE_CURRENT_FUNCTION_LIST_FILE}
+      BYPRODUCTS "${BI_OUTPUT}"
+      COMMENT "Refreshing the build identity"
+      VERBATIM
+    )
+  endfunction ()
+
+  return()
+endif ()
+
+# ------------------------------------------------------------------------------
+# Script role: the generator
+# ------------------------------------------------------------------------------
+# Inputs (-D): SOURCE_DIR, TEMPLATE, OUTPUT, PROJECT_NAME, PROJECT_VERSION,
+# COMPILER, TARGET_SYSTEM, BUILD_TYPE (may be empty), GIT_EXECUTABLE (empty
+# when git is unavailable).
 cmake_minimum_required(VERSION 3.24)
 
 foreach (
@@ -36,7 +83,7 @@ foreach (
   TARGET_SYSTEM
 )
   if (NOT DEFINED ${_required})
-    message(FATAL_ERROR "GenerateBuildInfo: ${_required} is required")
+    message(FATAL_ERROR "BuildInfo: ${_required} is required")
   endif ()
 endforeach ()
 
