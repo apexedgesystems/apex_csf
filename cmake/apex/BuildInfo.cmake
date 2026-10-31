@@ -114,92 +114,72 @@ endfunction ()
 
 if (GIT_EXECUTABLE AND EXISTS "${SOURCE_DIR}/.git")
   # --abbrev=12 pins the hash length so the description reads the same under
-  # any core.abbrev setting and names the same digits commit() does.
-  _bi_git(_describe describe --tags --always --dirty --abbrev=12)
+  # any core.abbrev setting and names the same digits commit() does. The
+  # -dirty mark is appended from the tree state below, so describe() and
+  # dirty() cannot disagree.
+  _bi_git(_describe describe --tags --always --abbrev=12)
   _bi_git(_commit rev-parse --short=12 HEAD)
   _bi_git(_branch rev-parse --abbrev-ref HEAD)
+  set(_head_tree "unknown")
+  _bi_git(_head_tree rev-parse HEAD^{tree})
 
-  # Tree state: every tracked path whose working-tree content or mode differs
-  # from HEAD (staged or unstaged, the set `git describe --dirty` inspects),
-  # serialized from plumbing output and raw blob hashes rather than diff
-  # text. `diff-index --raw` carries no presentation setting, and
-  # `hash-object --no-filters` hashes the bytes with no clean filter or text
-  # conversion, so two checkouts holding the same modifications report the
-  # same state whatever their diff configuration or attributes say, and a
-  # change a textconv driver would hide still counts. A path the index only
-  # lists as stat-changed hashes to HEAD's own blob and is dropped.
-  execute_process(
-    COMMAND "${GIT_EXECUTABLE}" -C "${SOURCE_DIR}" diff-index --raw --no-renames HEAD
-    RESULT_VARIABLE _di_result
-    OUTPUT_VARIABLE _di_raw
-    ERROR_QUIET
+  # Tree state: the id of the tree git would commit from the working tree's
+  # tracked paths, built in a temporary index so the checkout's own index is
+  # neither read nor written. read-tree loads HEAD, add -u records every
+  # tracked path from its current content, mode and type (regular file,
+  # symlink, gitlink) and every deletion, and write-tree names the result.
+  # Git handles each path itself, whatever characters it holds, under its own
+  # content normalization (clean filters, line endings): the content a commit
+  # would record, and the content `git describe --dirty` compares. A tree equal
+  # to HEAD's is clean; otherwise the tree id is the state, so the same
+  # modifications give the same state on any checkout and two different
+  # modifications differ. Nothing here depends on diff presentation or on
+  # the index's stat cache.
+  set(_tmp_index "${OUTPUT}.index")
+  file(REMOVE "${_tmp_index}" "${_tmp_index}.lock")
+  set(_tmp_git
+      "${CMAKE_COMMAND}"
+      -E
+      env
+      "GIT_INDEX_FILE=${_tmp_index}"
+      "${GIT_EXECUTABLE}"
+      -C
+      "${SOURCE_DIR}"
   )
-  if (_di_result EQUAL 0)
-    set(_entries "")
-    set(_paths "")
-    string(REGEX MATCHALL "[^\n]+" _di_lines "${_di_raw}")
-    foreach (_line IN LISTS _di_lines)
-      if (_line MATCHES "^:([0-7]+) ([0-7]+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z]+)\t(.*)$")
-        list(
-          APPEND
-          _entries
-          "${CMAKE_MATCH_5}|${CMAKE_MATCH_1}|${CMAKE_MATCH_2}|${CMAKE_MATCH_3}|${CMAKE_MATCH_4}|${CMAKE_MATCH_6}"
-        )
-        if (NOT CMAKE_MATCH_5 STREQUAL "D")
-          string(APPEND _paths "${CMAKE_MATCH_6}\n")
-        endif ()
-      endif ()
-    endforeach ()
-    set(_blobs "")
-    if (NOT _paths STREQUAL "")
-      set(_paths_file "${OUTPUT}.paths")
-      file(WRITE "${_paths_file}" "${_paths}")
-      execute_process(
-        COMMAND "${GIT_EXECUTABLE}" -C "${SOURCE_DIR}" hash-object --no-filters --stdin-paths
-        INPUT_FILE "${_paths_file}"
-        RESULT_VARIABLE _ho_result
-        OUTPUT_VARIABLE _ho_raw
-        ERROR_QUIET
-      )
-      file(REMOVE "${_paths_file}")
-      if (_ho_result EQUAL 0)
-        string(REGEX MATCHALL "[^\n]+" _blobs "${_ho_raw}")
-      else ()
-        set(_entries "unhashable")
-      endif ()
-    endif ()
-    set(_state "")
-    set(_blob_index 0)
-    foreach (_entry IN LISTS _entries)
-      if (_entry STREQUAL "unhashable")
-        set(_state "unknown")
-        break()
-      endif ()
-      string(REPLACE "|" ";" _f "${_entry}")
-      list(GET _f 0 _status)
-      list(GET _f 1 _mode_old)
-      list(GET _f 2 _mode_new)
-      list(GET _f 3 _blob_old)
-      list(GET _f 5 _path)
-      if (_status STREQUAL "D")
-        set(_blob_new "deleted")
-      elseif (_mode_new STREQUAL "160000")
-        list(GET _f 4 _blob_new)
-      else ()
-        list(GET _blobs ${_blob_index} _blob_new)
-        math(EXPR _blob_index "${_blob_index} + 1")
-      endif ()
-      if (_blob_new STREQUAL "${_blob_old}" AND _mode_new STREQUAL "${_mode_old}")
-        continue()
-      endif ()
-      string(APPEND _state "${_status} ${_mode_old} ${_mode_new} ${_path} ${_blob_new}\n")
-    endforeach ()
-    if (_state STREQUAL "")
+  execute_process(
+    COMMAND ${_tmp_git} read-tree HEAD
+    RESULT_VARIABLE _rt_result
+    OUTPUT_QUIET ERROR_QUIET
+  )
+  execute_process(
+    COMMAND ${_tmp_git} add -u
+    RESULT_VARIABLE _add_result
+    OUTPUT_QUIET ERROR_QUIET
+  )
+  execute_process(
+    COMMAND ${_tmp_git} write-tree
+    RESULT_VARIABLE _wt_result
+    OUTPUT_VARIABLE _work_tree
+    ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  file(REMOVE "${_tmp_index}" "${_tmp_index}.lock")
+  if (_rt_result EQUAL 0
+      AND _add_result EQUAL 0
+      AND _wt_result EQUAL 0
+      AND NOT _work_tree STREQUAL ""
+      AND NOT _head_tree STREQUAL "unknown"
+  )
+    if (_work_tree STREQUAL "${_head_tree}")
       set(_tree "clean")
-    elseif (NOT _state STREQUAL "unknown")
-      string(SHA256 _state_hash "${_state}")
-      string(SUBSTRING "${_state_hash}" 0 12 _tree)
+    else ()
+      string(SUBSTRING "${_work_tree}" 0 12 _tree)
     endif ()
+  endif ()
+  if (NOT _tree STREQUAL "clean"
+      AND NOT _tree STREQUAL "unknown"
+      AND NOT _describe STREQUAL "unknown"
+  )
+    string(APPEND _describe "-dirty")
   endif ()
 endif ()
 
