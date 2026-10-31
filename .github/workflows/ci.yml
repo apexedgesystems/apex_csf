@@ -73,6 +73,10 @@ jobs:
             case "$file" in
               tools/rust/*) rust=true ;;
               tools/py/*)   py=true ;;
+              # A demo's checkout scripts keep their pytest files beside them;
+              # make test-py collects those directories, so a change there
+              # selects the Python job, as it did from tools/py/tests.
+              demos/*/test/*.py|demos/*/*/test/*.py) py=true ;;
               tools/sh/*)   sh=true ;;
               # Conformance contracts are multi-sided: every suite that pins
               # one must run when it changes.
