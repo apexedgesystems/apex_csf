@@ -104,9 +104,10 @@ bool computeNormalizedPbarTriangle(int n, double x, double* out, std::size_t out
   if (n == 0)
     return true;
 
-  // We evaluate with x = sin(phi); C = cos(phi) = sqrt(1 - x^2)
-  const double X2 = x * x;
-  const double C = (X2 < 1.0) ? std::sqrt(1.0 - X2) : 0.0;
+  // We evaluate with x = sin(phi); C = cos(phi) = sqrt((1 - x)(1 + x)), the factored
+  // 1 - x^2: it keeps its digits as |x| -> 1, where 1 - x*x cancels. x is clamped, so
+  // both factors are non-negative.
+  const double C = std::sqrt((1.0 - x) * (1.0 + x));
 
   // Pbar_00
   out[pbarTriangleIndex(0, 0)] = 1.0;
@@ -175,9 +176,10 @@ bool computeNormalizedPbarTriangleCached(int n, double x, const double* A, const
   if (n == 0)
     return true;
 
-  // We evaluate with x = sin(phi); C = cos(phi) = sqrt(1 - x^2)
-  const double X2 = x * x;
-  const double C = (X2 < 1.0) ? std::sqrt(1.0 - X2) : 0.0;
+  // We evaluate with x = sin(phi); C = cos(phi) = sqrt((1 - x)(1 + x)), the factored
+  // 1 - x^2: it keeps its digits as |x| -> 1, where 1 - x*x cancels. x is clamped, so
+  // both factors are non-negative.
+  const double C = std::sqrt((1.0 - x) * (1.0 + x));
 
   // Precompute sqrt(3) once
   static const double SQRT3 = std::sqrt(3.0);
@@ -261,9 +263,10 @@ bool computeNormalizedPbarTriangleCachedInterleaved(int n, double x, const doubl
   if (n == 0)
     return true;
 
-  // We evaluate with x = sin(phi); C = cos(phi) = sqrt(1 - x^2)
-  const double X2 = x * x;
-  const double C = (X2 < 1.0) ? std::sqrt(1.0 - X2) : 0.0;
+  // We evaluate with x = sin(phi); C = cos(phi) = sqrt((1 - x)(1 + x)), the factored
+  // 1 - x^2: it keeps its digits as |x| -> 1, where 1 - x*x cancels. x is clamped, so
+  // both factors are non-negative.
+  const double C = std::sqrt((1.0 - x) * (1.0 + x));
 
   // Precompute sqrt(3) once
   static const double SQRT3 = std::sqrt(3.0);

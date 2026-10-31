@@ -11,13 +11,16 @@
 #include "src/utilities/math/legendre/inc/PbarDerivatives.hpp"    // CPU reference (derivatives)
 #include "src/utilities/math/legendre/inc/PbarTriangle.hpp"       // CPU reference (triangle)
 #include "src/utilities/math/legendre/inc/PbarTriangleCuda.cuh"   // CUDA device API
+#include "src/utilities/math/legendre/utst/PbarReference.hpp"     // extended-precision reference
 
 #include "src/utilities/compatibility/inc/compat_cuda_blas.hpp"  // runtimeAvailable()
 #include "src/utilities/compatibility/inc/compat_cuda_error.hpp" // isSuccess(...)
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <vector>
 
@@ -596,5 +599,51 @@ TEST_F(CudaLegendreFixture, CudaPbarPrealloc_BadInputs) {
 
   ASSERT_TRUE(::apex::compat::cuda::isSuccess(cudaFree(d_x)));
   ASSERT_TRUE(::apex::compat::cuda::isSuccess(cudaFree(d_out)));
+}
+#endif
+
+/**
+ * @test CudaPbar_NearPoleKeepsPrecision
+ * @brief Within about 2.6 degrees of either pole, the GPU triangle kernel and
+ *        the P output of the derivatives kernel agree with an extended-precision
+ *        host reference to 4e-13 of each column's scale.
+ *        The recurrence's own rounding is about 1e-13 of column scale here.
+ */
+#if LOCAL_HAS_CUDA_RUNTIME
+TEST_F(CudaLegendreFixture, CudaPbar_NearPoleKeepsPrecision) {
+  constexpr int N = 160;
+  constexpr double REL_TOL = 4e-13;
+  const std::size_t NEED = pbarTriangleSize(N);
+  double* dP = nullptr;
+  double* dDp = nullptr;
+  ASSERT_TRUE(::apex::compat::cuda::isSuccess(cudaMalloc(&dP, NEED * sizeof(double))));
+  ASSERT_TRUE(::apex::compat::cuda::isSuccess(cudaMalloc(&dDp, NEED * sizeof(double))));
+
+  for (double x : legendre_test::NEAR_POLE_ARGS) {
+    const std::vector<double> TRI = gpuTriangleDevice(N, x);
+    ASSERT_EQ(TRI.size(), NEED);
+
+    const double COS_PHI = std::sqrt((1.0 - x) * (1.0 + x));
+    ASSERT_TRUE(computeNormalizedPbarTriangleWithDerivativesCuda(N, x, COS_PHI, dP, dDp, NEED));
+    ASSERT_TRUE(::apex::compat::cuda::isSuccess(cudaDeviceSynchronize()));
+    std::vector<double> withDerivP(NEED);
+    ASSERT_TRUE(::apex::compat::cuda::isSuccess(
+        cudaMemcpy(withDerivP.data(), dP, NEED * sizeof(double), cudaMemcpyDeviceToHost)));
+
+    const auto TRI_E = legendre_test::columnScaledError(
+        N, x, [&](int n, int m) { return TRI[pbarTriangleIndex(n, m)]; });
+    const auto DERIV_E = legendre_test::columnScaledError(
+        N, x, [&](int n, int m) { return withDerivP[pbarTriangleIndex(n, m)]; });
+    EXPECT_GE(TRI_E.columns, 50) << "x=" << x;
+    EXPECT_EQ(TRI_E.nonfinite, 0) << "x=" << x;
+    EXPECT_EQ(DERIV_E.nonfinite, 0) << "x=" << x;
+    EXPECT_LE(TRI_E.worst, REL_TOL) << "triangle kernel x=" << x << " m=" << TRI_E.worstM;
+    EXPECT_LE(DERIV_E.worst, REL_TOL) << "derivatives kernel P x=" << x << " m=" << DERIV_E.worstM;
+    std::printf(
+        "[near-pole gpu] x=%-12.9g columns=%3d triangle worst=%.2e derivatives-P worst=%.2e\n", x,
+        TRI_E.columns, TRI_E.worst, DERIV_E.worst);
+  }
+  ASSERT_TRUE(::apex::compat::cuda::isSuccess(cudaFree(dP)));
+  ASSERT_TRUE(::apex::compat::cuda::isSuccess(cudaFree(dDp)));
 }
 #endif

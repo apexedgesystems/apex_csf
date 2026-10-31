@@ -16,8 +16,8 @@ apex_module(utilities_math_legendre)
 # Sources
 # ------------------------------------------------------------------------------
 
-set(CPP_SOURCES "${SRC_DIR}/Factorials.cpp" "${SRC_DIR}/AssociatedLegendre.cpp"
-                "${SRC_DIR}/PbarTriangle.cpp" "${SRC_DIR}/PbarDerivatives.cpp"
+set(CPP_SOURCES "${SRC_DIR}/AssociatedLegendre.cpp" "${SRC_DIR}/PbarTriangle.cpp"
+                "${SRC_DIR}/PbarDerivatives.cpp"
 )
 
 set(CUDA_SOURCES "${SRC_DIR}/PbarTriangleCuda.cu" "${SRC_DIR}/PbarWorkspace.cu")
@@ -35,6 +35,8 @@ apex_add_library(
   "${INC_DIR}"
   SRC
   ${CPP_SOURCES}
+  DEPS_PUBLIC
+  utilities_compatibility
 )
 
 # ------------------------------------------------------------------------------
