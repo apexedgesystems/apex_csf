@@ -41,7 +41,8 @@ namespace build_info {
 /// CMake project version.
 [[nodiscard]] const char* version() noexcept APEX_NONBLOCKING;
 
-/// `git describe --tags --always --dirty --abbrev=12`, or "unknown".
+/// `git describe --tags --always --abbrev=12`, with "-dirty" appended when
+/// treeState() is not clean, or "unknown".
 [[nodiscard]] const char* describe() noexcept APEX_NONBLOCKING;
 
 /// HEAD as twelve hex digits, or "unknown".
@@ -53,16 +54,16 @@ namespace build_info {
 /**
  * @brief "clean", twelve hex digits, or "unknown".
  *
- * The digits start the SHA-256 of a listing of every tracked path whose
- * content or mode differs from HEAD, staged or unstaged alike, each with the
- * raw hash of its working-tree bytes. It comes from git plumbing and blob
- * hashes, not from diff text, so diff settings do not move it and a textconv
- * driver cannot hide an edit: two trees with the same modifications report
- * the same state.
+ * The digits start the id of the tree git would commit from the working
+ * tree's tracked paths (every path, mode and object type, under git's own
+ * content normalization), built in a temporary index; "clean" when that tree
+ * is HEAD's. Diff settings, path quoting and textconv drivers play no part,
+ * so two trees with the same modifications report the same state and two
+ * different modifications differ.
  */
 [[nodiscard]] const char* treeState() noexcept APEX_NONBLOCKING;
 
-/// True when treeState() names a diff.
+/// True when treeState() names a tree other than HEAD's.
 [[nodiscard]] bool dirty() noexcept APEX_NONBLOCKING;
 
 /// Configuration built (CMAKE_BUILD_TYPE), or "unspecified".
