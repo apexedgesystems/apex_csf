@@ -66,17 +66,39 @@ chooses.
 An applied mask is held: the `hold()` task writes it again on every tick
 it runs, so a fault written into a block whose owner rewrites it each
 cycle outlives that rewrite and a consumer sampling once per cycle (the
-action engine's watchpoints) sees it. Schedule `hold()` at the owner's
-step rate with a lower priority than the step, so it runs after it in the
-same cycle. DISARM_ENTRY, CLEAR_MASKS and CLEAR_ALL end the hold; without
-a scheduled hold task an apply is a single write.
+action engine's watchpoints) sees it. DISARM_ENTRY, CLEAR_MASKS and
+CLEAR_ALL end the hold; without a scheduled hold task an apply is a
+single write.
 
-Commands arrive on the I/O thread while `hold()` runs on a worker, so the
-hold never reads the entry table. A commanded apply publishes a copy of
-the entry's target and front mask under a generation counter (odd while
-the copy is written, then even, then active); `hold()` reads active, the
-generation, the copy and the generation again, and skips the entry for
-that tick if the copy was mid-write or changed.
+Ownership: one mutex owns every write the component makes (the held
+copies, the target bytes an apply or a hold writes, the entry table's
+arming). A command can run on the I/O thread (the interface's direct
+dispatch when a component queue is full or its pool exhausted) or on the
+task thread (the queue drain, including after an action-phase wait
+timed out) while a worker runs `hold()`, so:
+
+- APPLY_ENTRY, APPLY_ALL, DISARM_ENTRY, CLEAR_MASKS, CLEAR_ALL and reset
+  lock; they may wait for one in-progress hold tick, bounded by that
+  tick's work (eight entries, one registry scan and at most 32 bytes
+  each). When DISARM_ENTRY, CLEAR_MASKS or CLEAR_ALL returns, no hold
+  write of that entry is in progress and none follows until a command
+  applies again.
+- `hold()` tries the lock and, when a command holds it, skips the whole
+  tick and counts it; a worker never blocks on a command. Under the lock
+  it reads the held copies, resolves each target through the registry
+  and writes the mask.
+- The hold's counters (written, skipped, resolve and apply failures) are
+  atomics the 1 Hz telemetry reads; the hold never writes the statistics
+  block GET_STATS returns.
+- `entry(index)` is preparation before that entry's first APPLY; after
+  it, only commands change what a hold writes.
+
+Ordering against the block's owner is the schedule's: run `hold()` on
+the same single worker after the owner's step (dispatch is
+priority-ordered and a single worker executes serially, as the action
+demo does with the step at 127 and the hold at 100), or sequence the
+two with a sequence group; priority alone orders nothing across
+workers.
 
 ### ByteMaskProxy Per Entry
 
@@ -190,7 +212,7 @@ executive.registerSupport(&transform);
 | `loadTprm(dir)`               | No      | Load fault campaign from TPRM binary        |
 | `onBusReady()`                | No      | Send LOAD_ATS to action engine via bus      |
 | `telemetry()`                 | No      | Log health stats (1 Hz task)                |
-| `hold()`                      | Yes     | Re-apply armed entries' applied masks       |
+| `hold()`                      | Yes     | Write every held mask again (try-lock)      |
 | `stats()`                     | Yes     | Get diagnostic counters                     |
 | `entries()`                   | Yes     | Get transform entry table (8 entries)       |
 | `entry(index)`                | Yes     | Get mutable entry by index                  |

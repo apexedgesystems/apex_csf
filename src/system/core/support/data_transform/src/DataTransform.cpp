@@ -40,13 +40,17 @@ std::uint8_t DataTransform::doInit() noexcept {
 }
 
 void DataTransform::doReset() noexcept {
+  std::lock_guard<std::mutex> lock(holdMutex_);
   for (std::uint8_t i = 0; i < TRANSFORM_MAX_ENTRIES; ++i) {
     entries_[i].armed = false;
     entries_[i].proxy.clear();
     withdrawHeld(i);
   }
   stats_ = {};
-  holdApplies_ = 0;
+  holdApplies_.store(0, std::memory_order_relaxed);
+  holdSkips_.store(0, std::memory_order_relaxed);
+  holdResolveFailures_.store(0, std::memory_order_relaxed);
+  holdApplyFailures_.store(0, std::memory_order_relaxed);
 }
 
 /* ----------------------------- TPRM Loading ----------------------------- */
@@ -400,45 +404,44 @@ std::uint8_t DataTransform::telemetry() noexcept {
   auto* log = componentLog();
   if (log != nullptr) {
     char buf[128];
-    std::snprintf(buf, sizeof(buf), "armed=%u applied=%u held=%u resolve_fail=%u apply_fail=%u",
-                  armed, stats_.masksApplied, holdApplies_, stats_.resolveFailures,
-                  stats_.applyFailures);
+    std::snprintf(buf, sizeof(buf),
+                  "armed=%u applied=%u resolve_fail=%u apply_fail=%u | hold: written=%u "
+                  "skipped=%u resolve_fail=%u apply_fail=%u",
+                  armed, stats_.masksApplied, stats_.resolveFailures, stats_.applyFailures,
+                  holdApplies_.load(std::memory_order_relaxed),
+                  holdSkips_.load(std::memory_order_relaxed),
+                  holdResolveFailures_.load(std::memory_order_relaxed),
+                  holdApplyFailures_.load(std::memory_order_relaxed));
     log->info(label(), buf);
   }
   return 0;
 }
 
 std::uint8_t DataTransform::hold() noexcept {
-  for (auto& held : held_) {
-    if (!held.active.load(std::memory_order_acquire)) {
+  std::unique_lock<std::mutex> lock(holdMutex_, std::try_to_lock);
+  if (!lock.owns_lock()) {
+    holdSkips_.fetch_add(1U, std::memory_order_relaxed); // a command owns the writes this tick
+    return 0;
+  }
+  for (const auto& held : held_) {
+    if (!held.active) {
       continue;
     }
-    const std::uint32_t GEN = held.gen.load(std::memory_order_acquire);
-    if ((GEN & 1U) != 0U) {
-      continue; // the command side is writing the copy
-    }
-    const std::uint32_t FULL_UID = held.fullUid;
-    const data::DataCategory CATEGORY = held.category;
-    const std::uint16_t BYTE_OFFSET = held.byteOffset;
-    data_proxy::MaskEntry mask = held.mask;
-    if (held.gen.load(std::memory_order_acquire) != GEN) {
-      continue; // the copy changed under the read
-    }
-    auto resolved = resolver_(FULL_UID, CATEGORY);
-    if (resolved.data == nullptr || BYTE_OFFSET >= resolved.size) {
-      ++stats_.resolveFailures;
+    auto resolved = resolver_(held.fullUid, held.category);
+    if (resolved.data == nullptr || held.byteOffset >= resolved.size) {
+      holdResolveFailures_.fetch_add(1U, std::memory_order_relaxed);
       continue;
     }
-    const std::size_t AVAILABLE = resolved.size - BYTE_OFFSET;
-    if (mask.index + mask.len > AVAILABLE) {
-      ++stats_.applyFailures;
+    const std::size_t AVAILABLE = resolved.size - held.byteOffset;
+    if (held.mask.index + held.mask.len > AVAILABLE) {
+      holdApplyFailures_.fetch_add(1U, std::memory_order_relaxed);
       continue;
     }
-    std::uint8_t* p = resolved.data + BYTE_OFFSET + mask.index;
-    for (std::uint8_t i = 0; i < mask.len; ++i) {
-      p[i] = static_cast<std::uint8_t>((p[i] & mask.andMask[i]) ^ mask.xorMask[i]);
+    std::uint8_t* p = resolved.data + held.byteOffset + held.mask.index;
+    for (std::uint8_t i = 0; i < held.mask.len; ++i) {
+      p[i] = static_cast<std::uint8_t>((p[i] & held.mask.andMask[i]) ^ held.mask.xorMask[i]);
     }
-    ++holdApplies_;
+    holdApplies_.fetch_add(1U, std::memory_order_relaxed);
   }
   return 0;
 }
@@ -450,13 +453,11 @@ void DataTransform::publishHeld(std::uint8_t index) noexcept {
     return;
   }
   auto& held = held_[index];
-  held.gen.fetch_add(1U, std::memory_order_acq_rel); // odd: writing
   held.fullUid = entry.target.fullUid;
   held.category = entry.target.category;
   held.byteOffset = entry.target.byteOffset;
   held.mask = *front;
-  held.gen.fetch_add(1U, std::memory_order_acq_rel); // even: complete
-  held.active.store(true, std::memory_order_release);
+  held.active = true;
 }
 
 /* ----------------------------- Private Helpers ----------------------------- */
@@ -465,6 +466,7 @@ bool DataTransform::applyEntry(std::uint8_t index) noexcept {
   if (index >= TRANSFORM_MAX_ENTRIES) {
     return false;
   }
+  std::lock_guard<std::mutex> lock(holdMutex_); // the target write and the held copy are ours
 
   auto& entry = entries_[index];
   if (!entry.armed || entry.proxy.empty()) {
@@ -573,8 +575,11 @@ std::uint8_t DataTransform::handleCommand(std::uint16_t opcode,
     if (INDEX >= TRANSFORM_MAX_ENTRIES) {
       return static_cast<std::uint8_t>(Status::ERROR_PARAM);
     }
-    entries_[INDEX].armed = false;
-    withdrawHeld(INDEX);
+    {
+      std::lock_guard<std::mutex> lock(holdMutex_);
+      entries_[INDEX].armed = false;
+      withdrawHeld(INDEX);
+    }
     {
       auto* log = componentLog();
       if (log != nullptr) {
@@ -667,16 +672,22 @@ std::uint8_t DataTransform::handleCommand(std::uint16_t opcode,
     if (INDEX >= TRANSFORM_MAX_ENTRIES) {
       return static_cast<std::uint8_t>(Status::ERROR_PARAM);
     }
-    entries_[INDEX].proxy.clear();
-    withdrawHeld(INDEX);
+    {
+      std::lock_guard<std::mutex> lock(holdMutex_);
+      entries_[INDEX].proxy.clear();
+      withdrawHeld(INDEX);
+    }
     return static_cast<std::uint8_t>(Status::SUCCESS);
   }
 
   case DataTransformOpcode::CLEAR_ALL: {
-    for (std::uint8_t i = 0; i < TRANSFORM_MAX_ENTRIES; ++i) {
-      entries_[i].armed = false;
-      entries_[i].proxy.clear();
-      withdrawHeld(i);
+    {
+      std::lock_guard<std::mutex> lock(holdMutex_);
+      for (std::uint8_t i = 0; i < TRANSFORM_MAX_ENTRIES; ++i) {
+        entries_[i].armed = false;
+        entries_[i].proxy.clear();
+        withdrawHeld(i);
+      }
     }
     stats_.entriesArmed = 0;
     return static_cast<std::uint8_t>(Status::SUCCESS);

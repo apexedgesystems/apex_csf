@@ -8,10 +8,15 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
-#include <vector>
 #include <filesystem>
+#include <mutex>
+#include <thread>
 #include <unistd.h>
+#include <vector>
 
 using system_core::data::DataCategory;
 using system_core::support::DataTransform;
@@ -541,4 +546,223 @@ TEST(DataTransform, LoadTprmMissingFileIsOptional) {
   EXPECT_TRUE(dt.isConfigured());
 
   std::filesystem::remove_all(DIR);
+}
+
+/* ----------------------------- Hold Ownership (threads) ----------------------------- */
+
+namespace {
+
+/// Marks the thread that runs hold(); the gate resolver treats it differently.
+thread_local bool tlsHoldThread = false;
+
+/**
+ * @brief A resolver that can park the calling thread inside the resolve.
+ *
+ * `parkHold` parks the hold thread, `parkCommand` parks a command thread,
+ * each until `release()`; `failHold` makes the hold thread's resolve fail.
+ * Parking inside the resolve pins the interleaving the tests need: a hold
+ * or a command caught mid-write while the other side arrives.
+ */
+struct GateCtx {
+  std::array<std::uint8_t, 64> block{};
+  std::atomic<bool> parkHold{false};
+  std::atomic<bool> parkCommand{false};
+  std::atomic<bool> failHold{false};
+  std::atomic<bool> parked{false};
+  std::mutex mutex;
+  std::condition_variable cv;
+  bool released{false};
+
+  void release() {
+    {
+      std::lock_guard<std::mutex> lock(mutex);
+      released = true;
+    }
+    cv.notify_all();
+  }
+  bool waitParked() {
+    for (int i = 0; i < 5000 && !parked.load(std::memory_order_acquire); ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return parked.load(std::memory_order_acquire);
+  }
+};
+
+ResolvedData gateResolver(void* ctx, std::uint32_t fullUid, DataCategory /*category*/) noexcept {
+  auto* c = static_cast<GateCtx*>(ctx);
+  if (fullUid != 0x007800) {
+    return {};
+  }
+  if (tlsHoldThread && c->failHold.load(std::memory_order_acquire)) {
+    return {};
+  }
+  const bool PARK = tlsHoldThread ? c->parkHold.load(std::memory_order_acquire)
+                                  : c->parkCommand.load(std::memory_order_acquire);
+  if (PARK) {
+    std::unique_lock<std::mutex> lock(c->mutex);
+    c->parked.store(true, std::memory_order_release);
+    c->cv.wait_for(lock, std::chrono::seconds(10), [c] { return c->released; });
+  }
+  return {c->block.data(), c->block.size()};
+}
+
+/// Arm entry 0 with a 4-byte ZERO mask on the gate resolver's block and apply it.
+void armApplyZeroGated(DataTransform& dt, GateCtx& ctx) {
+  ctx.block.fill(0xAA);
+  dt.setResolver(gateResolver, &ctx);
+  (void)dt.init();
+  dt.entry(0)->target = {0x007800, DataCategory::OUTPUT, 0, 4};
+  ASSERT_EQ(sendCmd(dt, DataTransformOpcode::ARM_ENTRY, 0), 0u);
+  std::vector<std::uint8_t> response;
+  std::array<std::uint8_t, 4> payload = {0, 0, 0, 4};
+  ASSERT_EQ(dt.handleCommand(static_cast<std::uint16_t>(DataTransformOpcode::PUSH_ZERO_MASK),
+                             {payload.data(), payload.size()}, response),
+            0u);
+  ASSERT_EQ(applyEntry(dt, 0), 0u);
+  ASSERT_EQ(ctx.block[0], 0x00);
+}
+
+} // namespace
+
+/** @test A hold tick that finds a command owning the writes skips the tick and counts it. */
+TEST(DataTransformHold, SkipsTheTickWhileACommandOwnsTheWrites) {
+  DataTransform dt;
+  GateCtx ctx;
+  armApplyZeroGated(dt, ctx);
+  ctx.block.fill(0xAA);
+
+  // A command thread is inside APPLY_ENTRY, parked in the resolve with the lock held.
+  ctx.parkCommand.store(true, std::memory_order_release);
+  std::thread command([&] { EXPECT_EQ(applyEntry(dt, 0), 0u); });
+  ASSERT_TRUE(ctx.waitParked());
+
+  EXPECT_EQ(dt.hold(), 0u); // returns at once: the command owns the writes
+  EXPECT_EQ(dt.holdSkips(), 1u);
+  EXPECT_EQ(dt.holdApplies(), 0u);
+  EXPECT_EQ(ctx.block[0], 0xAA); // the hold wrote nothing
+
+  ctx.release();
+  command.join();
+  EXPECT_EQ(ctx.block[0], 0x00); // the command's own apply
+
+  ctx.block[0] = 0x12;
+  EXPECT_EQ(dt.hold(), 0u);
+  EXPECT_EQ(ctx.block[0], 0x00);
+  EXPECT_EQ(dt.holdApplies(), 1u);
+  EXPECT_EQ(dt.holdSkips(), 1u);
+}
+
+/** @test DISARM_ENTRY, CLEAR_MASKS and CLEAR_ALL return only after an in-progress hold write
+ * completes, and no hold writes the entry afterwards. */
+TEST(DataTransformHold, WithdrawalWaitsForTheInProgressHoldAndEndsIt) {
+  for (const auto OP : {DataTransformOpcode::DISARM_ENTRY, DataTransformOpcode::CLEAR_MASKS,
+                        DataTransformOpcode::CLEAR_ALL}) {
+    DataTransform dt;
+    GateCtx ctx;
+    armApplyZeroGated(dt, ctx);
+    ctx.block[0] = 0x12; // the owner's rewrite the pending hold will mask
+
+    // A hold tick is in progress, parked in the resolve with the lock held.
+    ctx.parkHold.store(true, std::memory_order_release);
+    std::thread worker([&] {
+      tlsHoldThread = true;
+      EXPECT_EQ(dt.hold(), 0u);
+    });
+    ASSERT_TRUE(ctx.waitParked());
+
+    // The withdrawal arrives while the hold is in progress and must wait for it.
+    std::atomic<bool> returned{false};
+    std::uint8_t status = 0xFF;
+    std::thread command([&] {
+      std::vector<std::uint8_t> response;
+      std::array<std::uint8_t, 1> index = {0};
+      status = (OP == DataTransformOpcode::CLEAR_ALL)
+                   ? dt.handleCommand(static_cast<std::uint16_t>(OP), {}, response)
+                   : dt.handleCommand(static_cast<std::uint16_t>(OP), {index.data(), index.size()},
+                                      response);
+      returned.store(true, std::memory_order_release);
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_FALSE(returned.load(std::memory_order_acquire)) << "opcode " << static_cast<int>(OP);
+
+    ctx.release();
+    worker.join();
+    command.join();
+    EXPECT_EQ(status, 0u) << "opcode " << static_cast<int>(OP);
+    EXPECT_EQ(ctx.block[0], 0x00) << "the in-progress hold completed its write";
+    EXPECT_EQ(dt.holdApplies(), 1u);
+
+    // After the withdrawal returned, no hold writes the entry.
+    ctx.block[0] = 0x34;
+    tlsHoldThread = true;
+    EXPECT_EQ(dt.hold(), 0u);
+    tlsHoldThread = false;
+    EXPECT_EQ(ctx.block[0], 0x34) << "opcode " << static_cast<int>(OP);
+    EXPECT_EQ(dt.holdApplies(), 1u);
+  }
+}
+
+/** @test Commanded applies racing hold ticks: every tick either wrote under the lock or skipped,
+ * and the block ends masked. */
+TEST(DataTransformHold, ConcurrentAppliesAndHoldTicksEachOwnTheirWrites) {
+  constexpr unsigned TICKS = 20000;
+  DataTransform dt;
+  GateCtx ctx;
+  armApplyZeroGated(dt, ctx);
+
+  std::atomic<bool> go{false};
+  std::thread worker([&] {
+    tlsHoldThread = true;
+    while (!go.load(std::memory_order_acquire)) {
+      std::this_thread::yield();
+    }
+    for (unsigned i = 0; i < TICKS; ++i) {
+      EXPECT_EQ(dt.hold(), 0u);
+    }
+  });
+  go.store(true, std::memory_order_release);
+  for (unsigned i = 0; i < TICKS; ++i) {
+    ASSERT_EQ(applyEntry(dt, 0), 0u);
+  }
+  worker.join();
+
+  EXPECT_EQ(dt.holdApplies() + dt.holdSkips(), TICKS);
+  EXPECT_EQ(dt.stats().masksApplied, TICKS + 1);
+  EXPECT_EQ(ctx.block[0], 0x00);
+  EXPECT_EQ(ctx.block[3], 0x00);
+  EXPECT_EQ(ctx.block[4], 0xAA);
+}
+
+/** @test Hold ticks whose resolve fails count in the hold's own counters while GET_STATS reads the
+ * statistics block. */
+TEST(DataTransformHold, FailingHoldTicksNeverWriteTheStatisticsBlock) {
+  constexpr unsigned TICKS = 20000;
+  DataTransform dt;
+  GateCtx ctx;
+  armApplyZeroGated(dt, ctx);
+  ctx.failHold.store(true, std::memory_order_release);
+
+  std::atomic<bool> go{false};
+  std::thread worker([&] {
+    tlsHoldThread = true;
+    while (!go.load(std::memory_order_acquire)) {
+      std::this_thread::yield();
+    }
+    for (unsigned i = 0; i < TICKS; ++i) {
+      EXPECT_EQ(dt.hold(), 0u);
+    }
+  });
+  go.store(true, std::memory_order_release);
+  std::vector<std::uint8_t> response;
+  for (unsigned i = 0; i < TICKS; ++i) {
+    ASSERT_EQ(
+        dt.handleCommand(static_cast<std::uint16_t>(DataTransformOpcode::GET_STATS), {}, response),
+        0u);
+  }
+  worker.join();
+
+  EXPECT_EQ(dt.holdResolveFailures() + dt.holdSkips(), TICKS);
+  EXPECT_EQ(dt.holdApplies(), 0u);
+  EXPECT_EQ(dt.stats().resolveFailures, 0u); // the hold's failures are not commanded ones
+  EXPECT_EQ(ctx.block[0], 0x00);             // the commanded apply's write stands
 }

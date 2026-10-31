@@ -23,12 +23,26 @@
  * written into a block that its owner rewrites each cycle outlives that
  * rewrite and a consumer that samples once per cycle, such as the action
  * engine's watchpoints, sees it. DISARM_ENTRY, CLEAR_MASKS and CLEAR_ALL
- * end the hold. The hold task runs only where the schedule lists it (after
- * the block owner's step in the same cycle); without it an apply is a
- * single write. Commands arrive on the I/O thread while the hold runs on a
- * worker, so the hold never reads the entry table: a commanded apply
- * publishes a copy of the target and the mask under a generation counter,
- * and a hold tick that sees the copy mid-write skips that entry once.
+ * end the hold. The hold task runs only where the schedule lists it;
+ * without it an apply is a single write.
+ *
+ * Ownership. Commands can run on the I/O thread (the interface's direct
+ * dispatch) or on the task thread while a worker runs hold(), so one
+ * mutex owns every write the component makes: the held copies, the
+ * target bytes an apply or a hold writes, and the entry table's arming.
+ * The command side locks it (APPLY_ENTRY, APPLY_ALL, DISARM_ENTRY,
+ * CLEAR_MASKS, CLEAR_ALL, reset) and may therefore wait for one
+ * in-progress hold tick, bounded by the tick's work; hold() only tries
+ * the lock and skips the whole tick, counted, when a command holds it,
+ * so a worker never blocks. When DISARM_ENTRY, CLEAR_MASKS or CLEAR_ALL
+ * returns, no hold write of that entry is in progress and none follows
+ * until a command applies again. The hold's own counters are atomics the
+ * telemetry task reads; the hold never writes the statistics block.
+ * Direct entry() configuration is preparation before the first APPLY;
+ * after it, only commands change what a hold writes. The target block's
+ * owner writes it from its own task: schedule hold() on the same single
+ * worker after that task, as the action demo does, or sequence it behind
+ * the owner's step; priority alone orders nothing across workers.
  *
  * A low-frequency telemetry task (1 Hz) reports health stats.
  *
@@ -46,6 +60,7 @@
 #include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <mutex>
 
 namespace system_core {
 namespace support {
@@ -106,7 +121,7 @@ public:
 
   enum class TaskUid : std::uint8_t {
     TELEMETRY = 1, ///< 1 Hz health stats logging.
-    HOLD = 2       ///< Re-apply every armed entry's applied mask (the block owner's rate).
+    HOLD = 2       ///< Write every held mask again (the block owner's rate, after its step).
   };
 
   /* ----------------------------- Construction ----------------------------- */
@@ -146,14 +161,16 @@ public:
   /**
    * @brief Write every held mask again.
    *
-   * Scheduled at the rate of the block owner's step and after it in the
-   * same cycle, so the owner's fresh write is masked again before the
-   * action phase evaluates the block. Reads only the held copies the
-   * command side publishes, never the entry table; a copy caught mid-write
-   * is skipped this tick. A resolve failure counts like a commanded one.
+   * Scheduled at the rate of the block owner's step and after it on the
+   * same worker, so the owner's fresh write is masked again before the
+   * action phase evaluates the block. Tries the component's lock: when a
+   * command holds it the tick is skipped and counted. Under the lock it
+   * reads the held copies, resolves each target through the registry and
+   * writes at most MASK_MAX_LEN bytes per entry; failures count in the
+   * hold's own atomic counters.
    *
    * @return 0 on success.
-   * @note RT-safe: bounded by the entry table, no logging.
+   * @note RT-safe: try-lock, bounded by the entry table, no logging.
    */
   std::uint8_t hold() noexcept;
 
@@ -166,6 +183,19 @@ public:
    */
   [[nodiscard]] const TransformStats& stats() const noexcept { return stats_; }
 
+  /// Masks written by hold ticks so far.
+  [[nodiscard]] std::uint32_t holdApplies() const noexcept {
+    return holdApplies_.load(std::memory_order_relaxed);
+  }
+  /// Hold ticks skipped because a command held the lock.
+  [[nodiscard]] std::uint32_t holdSkips() const noexcept {
+    return holdSkips_.load(std::memory_order_relaxed);
+  }
+  /// Hold ticks that could not resolve a held target.
+  [[nodiscard]] std::uint32_t holdResolveFailures() const noexcept {
+    return holdResolveFailures_.load(std::memory_order_relaxed);
+  }
+
   /**
    * @brief Get transform entry table.
    * @return Reference to entry array.
@@ -177,6 +207,11 @@ public:
 
   /**
    * @brief Get mutable entry for direct configuration (test/debug).
+   *
+   * Preparation before that entry's first APPLY: a target or mask written
+   * here is not synchronized against hold(), which writes only what a
+   * command applied. After an APPLY, change the entry through commands.
+   *
    * @param index Entry index.
    * @return Pointer to entry, or nullptr if out of bounds.
    * @note RT-safe.
@@ -193,7 +228,8 @@ public:
    * @param payload Command payload bytes.
    * @param response Output response buffer.
    * @return Status code.
-   * @note NOT RT-safe.
+   * @note NOT RT-safe: APPLY, DISARM and CLEAR take the component's lock
+   *       and may wait for one in-progress hold tick.
    */
   std::uint8_t handleCommand(std::uint16_t opcode, apex::compat::rospan<std::uint8_t> payload,
                              std::vector<std::uint8_t>& response) noexcept override;
@@ -248,31 +284,30 @@ private:
   bool hasCampaign_{false};           ///< True if a fault campaign was loaded.
   std::filesystem::path atsPath_{};   ///< Path to generated ATS file.
   std::uint16_t clockFrequencyHz_{0}; ///< Clock frequency for cycle-to-us conversion.
-  std::uint32_t holdApplies_{0};      ///< Masks re-applied by hold ticks (logged at 1 Hz).
+  /// Owns every write this component makes: the held copies, the target
+  /// bytes and the entry table's arming. Commands lock it; hold() tries it.
+  std::mutex holdMutex_;
+  std::atomic<std::uint32_t> holdApplies_{0}; ///< Masks written by hold ticks.
+  std::atomic<std::uint32_t> holdSkips_{0};   ///< Hold ticks skipped: a command held the lock.
+  std::atomic<std::uint32_t> holdResolveFailures_{
+      0};                                           ///< Hold ticks that could not resolve a target.
+  std::atomic<std::uint32_t> holdApplyFailures_{0}; ///< Held masks that did not fit the block.
 
-  /**
-   * @brief The copy of an applied mask and its target that hold() writes.
-   *
-   * The command side writes it with gen odd, then even, then sets active;
-   * hold() reads active, then gen, the copy, and gen again, and uses the
-   * copy only if gen was even and unchanged.
-   */
+  /// The copy of an applied mask and its target that hold() writes; written
+  /// and read under holdMutex_ only.
   struct HeldMask {
-    std::atomic<std::uint32_t> gen{0}; ///< Odd while the copy is being written.
-    std::atomic<bool> active{false};   ///< A commanded apply published the copy.
-    std::uint32_t fullUid{0};          ///< Target block owner.
-    data::DataCategory category{};     ///< Target block category.
-    std::uint16_t byteOffset{0};       ///< Entry offset into the block.
-    data_proxy::MaskEntry mask{};      ///< The applied mask (index, AND, XOR, len).
+    bool active{false};            ///< A commanded apply published the copy.
+    std::uint32_t fullUid{0};      ///< Target block owner.
+    data::DataCategory category{}; ///< Target block category.
+    std::uint16_t byteOffset{0};   ///< Entry offset into the block.
+    data_proxy::MaskEntry mask{};  ///< The applied mask (index, AND, XOR, len).
   };
   std::array<HeldMask, TRANSFORM_MAX_ENTRIES> held_{}; ///< One per entry.
 
-  /// Publish entry index's target and front mask as its held copy.
+  /// Publish entry index's target and front mask as its held copy (caller holds the lock).
   void publishHeld(std::uint8_t index) noexcept;
-  /// Withdraw entry index's held copy.
-  void withdrawHeld(std::uint8_t index) noexcept {
-    held_[index].active.store(false, std::memory_order_release);
-  }
+  /// Withdraw entry index's held copy (caller holds the lock).
+  void withdrawHeld(std::uint8_t index) noexcept { held_[index].active = false; }
 };
 
 } // namespace support

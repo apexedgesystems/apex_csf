@@ -21,9 +21,10 @@ DataTransform support component for runtime data mutation.
 
 3. **Fault injection via DataTransform** -- ground commands or the
    sequencer arm transform entries targeting sensor output bytes and apply a
-   mask; the 10 Hz hold task re-applies it after each sensor step while the
-   entry stays armed, so the action engine detects the corruption via
-   watchpoints on its next evaluation.
+   mask; the 10 Hz hold task writes it again after each sensor step (the
+   schedule's single worker runs the step first) while the entry stays
+   armed, so the action engine detects the corruption via watchpoints on
+   its next evaluation.
 
 4. **ARM_CONTROL dynamic reconfiguration** -- actions dynamically arm and
    disarm watchpoints and sequences at runtime.
