@@ -27,6 +27,12 @@ files: |
      \.gitignore)
   )
 
+# The node hooks (prettier) run on a node that pre-commit installs through
+# nodeenv; a pinned release keeps that install deterministic instead of
+# whatever nodeenv calls latest (an alpha on 2026-10-31).
+default_language_version:
+  node: 22.14.0
+
 exclude: |
   (?x)^(
     build/|
