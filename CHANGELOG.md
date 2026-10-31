@@ -109,17 +109,14 @@ any such change is called out explicitly in its entry.
 - The zephyr dev image builds again on Ubuntu 24.04 (its Python tool install
   passes `--break-system-packages`).
   ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
-- The action demo's fault campaign sequence chains to its cleanup
-  sequence (id 2) instead of restarting itself
-  ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
-- The action engine's statistics block reports the sequences still
-  running, and the action demo's checkout waits on it before its
-  CLEAR_ALL check ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
 - DataTransform holds an applied mask on each hold tick while its entry
-  stays armed, under one lock its commands take and the hold tries, and
-  the action demo schedules the hold after its sensor's step, so an
-  injected fault stays visible to the watchpoints
+  stays armed, and the action demo schedules the hold after its sensor's
+  step, so an injected fault stays visible to the watchpoints
   ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
+- The action demo's fault campaign chains to its cleanup sequence instead
+  of restarting itself, and its checkout waits on the action engine's
+  count of running sequences, which the engine's statistics block now
+  reports ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
 - The executive's action phase waits for the cycle's in-flight tasks, and
   one thread frames both pushed telemetry and command replies. Breaking:
   `TaskEntry::isRunning` is replaced by an in-flight count; migrate to
