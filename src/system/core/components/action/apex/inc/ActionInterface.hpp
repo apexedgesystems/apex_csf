@@ -127,7 +127,7 @@ struct EngineStats {
   std::uint32_t atsLoaded{0};             ///< Standalone ATS files loaded (cumulative).
   std::uint32_t abortEventsDispatched{0}; ///< Abort events dispatched (cumulative).
   std::uint32_t exclusionStops{0};        ///< Sequences stopped by mutual exclusion (cumulative).
-  std::uint32_t sequencesRunning{0}; ///< Sequences still running after this cycle's tick (gauge).
+  std::uint32_t sequencesRunning{0}; ///< RTS and ATS running when the last cycle ended (gauge).
 
   // Context of the most recent step timeout, so the component tick can
   // attribute its warning (a dropped mission step is never routine). With
@@ -610,7 +610,6 @@ inline std::uint16_t tickSingleSequence(ActionInterface& iface, DataSequence& se
  * Handles cross-sequence START_RTS triggers after each tick.
  */
 inline void tickSequences(ActionInterface& iface, std::uint32_t currentCycle = 0) noexcept {
-  iface.stats.sequencesRunning = 0;
   for (std::size_t i = 0; i < SEQUENCE_TABLE_SIZE; ++i) {
     auto& seq = iface.sequences[i];
     if (!isRunning(seq)) {
@@ -618,9 +617,6 @@ inline void tickSequences(ActionInterface& iface, std::uint32_t currentCycle = 0
     }
 
     const std::uint16_t CHAIN_ID = tickSingleSequence(iface, seq, currentCycle);
-    if (isRunning(seq)) {
-      ++iface.stats.sequencesRunning; // a delay, a wait or a timeout countdown still owns it
-    }
 
     // Handle START_RTS: start another sequence by ID via catalog
     if (CHAIN_ID != 0) {
@@ -815,7 +811,9 @@ inline void dispatchAbortEvents(ActionInterface& iface) noexcept {
  *   2. Evaluate groups -> collect fired eventIds
  *   3. Dispatch events -> notifications + sequences + ON_EVENT actions
  *   4. Tick sequences -> queue step actions
- *   5. Process action queue -> apply/route/arm/expire
+ *   5. Dispatch abort events -> cleanup sequences
+ *   6. Process action queue -> apply/route/arm/expire
+ *   7. Count the sequences still running (the cycle's end state)
  */
 inline void processCycle(ActionInterface& iface, std::uint32_t currentCycle) noexcept {
   ++iface.stats.totalCycles;
@@ -844,6 +842,16 @@ inline void processCycle(ActionInterface& iface, std::uint32_t currentCycle) noe
 
   // 6. Process actions
   processActions(iface, currentCycle);
+
+  // 7. Publish the cycle's end state: the sequences still running after
+  //    every transition above (ticks, chains, abort starts, arm controls),
+  //    so a reader that sees zero saw nothing running when the cycle ended.
+  iface.stats.sequencesRunning = 0;
+  for (const auto& seq : iface.sequences) {
+    if (isRunning(seq)) {
+      ++iface.stats.sequencesRunning;
+    }
+  }
 }
 
 /* ----------------------------- Reset ----------------------------- */

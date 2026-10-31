@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ApexActionDemo comprehensive system checkout (76 tests).
+ApexActionDemo comprehensive system checkout (79 checks).
 
 Exercises the action engine, DataTransform support component, and sequence
 catalog against a running ApexActionDemo instance.
@@ -115,6 +115,15 @@ ALL_COMPONENTS = {
     "SystemMonitor": 0x00C800,
 }
 
+# The action engine's EngineStats block as INSPECT returns it: seventeen
+# uint32 counters (the running-sequence gauge is the seventeenth, at offset
+# 64) and the latest step-timeout context (u16 sequence id, u8 step, u8
+# policy). The gauge is read only from a block of exactly this size; the
+# layout before the gauge is 68 bytes with the timeout context at offset
+# 64, which must not be read as a running count.
+ENGINE_STATS_BYTES = 72
+ENGINE_GAUGE_OFFSET = 64
+
 # DataTransform opcodes
 DT_ARM_ENTRY = 0x0601
 DT_DISARM_ENTRY = 0x0602
@@ -165,9 +174,10 @@ def read_action_stats(c2: AprotoClient) -> dict:
             extra = struct.unpack_from("<2I", data, 56)
             result["abortEventsDispatched"] = extra[0]
             result["exclusionStops"] = extra[1]
-        if len(data) >= 68:
-            # Gauge: sequences (RTS and ATS) still running after the last tick.
-            result["sequencesRunning"] = struct.unpack_from("<I", data, 64)[0]
+        result["blockBytes"] = len(data)
+        if len(data) == ENGINE_STATS_BYTES:
+            # Gauge: sequences (RTS and ATS) running at the end of the last cycle.
+            result["sequencesRunning"] = struct.unpack_from("<I", data, ENGINE_GAUGE_OFFSET)[0]
         return result
     return {}
 
@@ -175,20 +185,33 @@ def read_action_stats(c2: AprotoClient) -> dict:
 def wait_for_no_running_sequence(c2: AprotoClient, deadline_s: float) -> tuple:
     """Poll the engine's running-sequence gauge until it reads zero twice.
 
-    The gauge counts RTS and ATS alike after each tick; two consecutive zero
-    reads mean a chain start between reads is seen. Returns (quiescent,
-    last_reading, elapsed_s); the caller decides what the deadline means.
+    The gauge is the engine's end-of-cycle count of RTS and ATS alike, so a
+    zero read means nothing ran when that cycle ended; two consecutive zero
+    reads cover a start between the read and the cycle boundary. A block
+    that is not the layout carrying the gauge ends the wait at once with no
+    reading. Returns (quiescent, last_reading, elapsed_s); the caller
+    decides what the deadline means.
     """
     t0 = time.time()
     zero_reads = 0
     running = None
     while time.time() - t0 < deadline_s:
         running = read_action_stats(c2).get("sequencesRunning")
+        if running is None:
+            break
         zero_reads = zero_reads + 1 if running == 0 else 0
         if zero_reads >= 2:
             break
         time.sleep(0.2)
     return zero_reads >= 2, running, time.time() - t0
+
+
+def quiescence_detail(c2: AprotoClient, running, elapsed: float) -> str:
+    """The detail line for a failed wait: the reading, or the block that had none."""
+    if running is None:
+        got = read_action_stats(c2).get("blockBytes", 0)
+        return f"gauge unavailable: stats block {got} bytes, expected {ENGINE_STATS_BYTES}"
+    return f"running={running} after {elapsed:.1f} s"
 
 
 def read_dt_stats(c2: AprotoClient) -> dict:
@@ -395,7 +418,7 @@ def test_rts_chaining(c2: AprotoClient) -> bool:
     ok &= check(
         "No sequence running before CLEAR_ALL",
         quiescent,
-        f"running={running} after {elapsed:.1f} s",
+        quiescence_detail(c2, running, elapsed),
     )
 
     # CLEAR_ALL goes out either way (later sections expect a clean table);
@@ -974,7 +997,7 @@ def test_complex_scenarios(c2: AprotoClient) -> bool:
     ok &= check(
         "No sequence running before the blocking scenario",
         quiescent,
-        f"running={running} after {elapsed:.1f} s",
+        quiescence_detail(c2, running, elapsed),
     )
 
     # Set RTS 43 to be blocked BY RTS 42 (43.blocks = [42])

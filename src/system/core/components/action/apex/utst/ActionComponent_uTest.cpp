@@ -455,6 +455,42 @@ TEST(ActionComponent, RtsExclusionGroupAppliedNowAndAfterRescan) {
   std::filesystem::remove_all(DIR);
 }
 
+/** @test A catalog sequence that chains to itself runs on every tick, and the published gauge says
+ * so: the chain handler restarts it after the slot walk counted it. */
+TEST(ActionComponent, RunningGaugeCountsACatalogSequenceChainingToItself) {
+  system_core::action::ActionComponent comp;
+  ResolverCtx rCtx;
+  comp.setResolver(testResolver, &rCtx);
+  ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
+
+  // One immediate command step that chains to sequence id 1: itself.
+  system_core::action::StandaloneSequenceTprm seq{};
+  seq.sequenceId = 1;
+  seq.armed = 1;
+  seq.stepCount = 1;
+  seq.steps[0].actionType = static_cast<std::uint8_t>(system_core::data::ActionType::COMMAND);
+  seq.steps[0].onComplete =
+      static_cast<std::uint8_t>(system_core::data::StepCompletionAction::START_RTS);
+  seq.steps[0].gotoStep = 1;
+  const auto DIR = makePrivateDir("action_gauge_self_chain");
+  ASSERT_FALSE(DIR.empty());
+  {
+    std::ofstream out(DIR / "one.rts", std::ios::binary);
+    out.write(reinterpret_cast<const char*>(&seq), static_cast<std::streamsize>(sizeof(seq)));
+    ASSERT_TRUE(out.good());
+  }
+  ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 1u);
+  ASSERT_NE(comp.startRtsById(1), 0xFFu);
+
+  for (std::uint32_t tick = 0; tick < 5; ++tick) {
+    comp.tick(tick);
+    EXPECT_TRUE(system_core::data::isRunning(comp.iface().sequences[0])) << "tick " << tick;
+    EXPECT_EQ(comp.stats().sequencesRunning, 1u) << "tick " << tick;
+  }
+  EXPECT_EQ(comp.stats().sequenceSteps, 5u);
+  std::filesystem::remove_all(DIR);
+}
+
 TEST(ActionComponentStatus, ToStringCoversAll) {
   using system_core::action::Status;
   using system_core::action::toString;

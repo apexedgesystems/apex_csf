@@ -1334,3 +1334,144 @@ TEST(ActionInterface, SkippedTimeoutsKeepASequenceRunningWithoutSteppingTheCount
   EXPECT_FALSE(system_core::data::isRunning(seq));
   EXPECT_EQ(iface.stats.sequencesRunning, 0U);
 }
+
+namespace {
+
+/// Running sequences by the engine's own predicate, the value the gauge must publish.
+std::uint32_t runningByPredicate(const ActionInterface& iface) {
+  std::uint32_t count = 0;
+  for (const auto& seq : iface.sequences) {
+    if (system_core::data::isRunning(seq)) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+/// A one-step resident sequence: an immediate command, armed, with an optional delay.
+void setupOneStep(system_core::data::DataSequence& seq, std::uint16_t id, std::uint32_t delay) {
+  seq.sequenceId = id;
+  seq.armed = true;
+  seq.stepCount = 1;
+  seq.steps[0].delayCycles = delay;
+  initCommandAction(seq.steps[0].action, 0x7800, ActionTrigger::IMMEDIATE, 0, id);
+}
+
+/// One cycle, then the gauge against the predicate; returns the gauge.
+std::uint32_t cycleAndCheck(ActionInterface& iface, std::uint32_t cycle, const char* what) {
+  processCycle(iface, cycle);
+  EXPECT_EQ(iface.stats.sequencesRunning, runningByPredicate(iface)) << what << " cycle " << cycle;
+  return iface.stats.sequencesRunning;
+}
+
+} // namespace
+
+/**
+ * @test The running gauge is the cycle's end state: a chain into an earlier slot, a sequence
+ * chaining to itself, a cleanup started by an abort event and a disarm by an ARM_CONTROL action
+ * all change what runs after the slot walk counted it, and the gauge reports what runs when the
+ * cycle ends.
+ */
+TEST(ActionInterface, RunningGaugeIsTheCycleEndState) {
+  // A chain into an earlier slot (the target was walked before its starter completed).
+  for (const bool BACKWARD : {false, true}) {
+    CommandCtx cmdCtx;
+    ActionInterface iface{};
+    iface.commandHandler = {testCommandHandler, &cmdCtx};
+    auto& from = iface.sequences[BACKWARD ? 1 : 0];
+    auto& to = iface.sequences[BACKWARD ? 0 : 1];
+    setupOneStep(from, 100, 0);
+    setupOneStep(to, 200, 5);
+    from.steps[0].onComplete = system_core::data::StepCompletionAction::START_RTS;
+    from.steps[0].chainTargetId = 200;
+    system_core::data::startSequence(from);
+    const char* WHAT = BACKWARD ? "backward chain" : "forward chain";
+    // The forward target is walked in the cycle that started it, so its
+    // five-cycle delay runs out one cycle sooner than the backward target's.
+    const std::uint32_t LAST_RUNNING = BACKWARD ? 4 : 3;
+    EXPECT_EQ(cycleAndCheck(iface, 0, WHAT), 1U) << "the chained sequence runs when cycle 0 ends";
+    for (std::uint32_t cycle = 1; cycle <= LAST_RUNNING; ++cycle) {
+      EXPECT_EQ(cycleAndCheck(iface, cycle, WHAT), 1U);
+    }
+    for (std::uint32_t cycle = LAST_RUNNING + 1; cycle <= 6; ++cycle) {
+      EXPECT_EQ(cycleAndCheck(iface, cycle, WHAT), 0U);
+    }
+    EXPECT_EQ(cmdCtx.callCount, 2U) << WHAT;
+  }
+
+  // A sequence chaining to itself completes and restarts inside the same cycle, every cycle.
+  {
+    CommandCtx cmdCtx;
+    ActionInterface iface{};
+    iface.commandHandler = {testCommandHandler, &cmdCtx};
+    auto& seq = iface.sequences[0];
+    setupOneStep(seq, 100, 0);
+    seq.steps[0].onComplete = system_core::data::StepCompletionAction::START_RTS;
+    seq.steps[0].chainTargetId = 100;
+    system_core::data::startSequence(seq);
+    for (std::uint32_t cycle = 0; cycle < 5; ++cycle) {
+      EXPECT_EQ(cycleAndCheck(iface, cycle, "self chain"), 1U);
+    }
+    EXPECT_EQ(cmdCtx.callCount, 5U);
+  }
+
+  // A cleanup sequence started by an abort event dispatched after the slot walk.
+  {
+    CommandCtx cmdCtx;
+    ActionInterface iface{};
+    iface.commandHandler = {testCommandHandler, &cmdCtx};
+    auto& first = iface.sequences[0];
+    auto& cleanup = iface.sequences[1];
+    setupOneStep(first, 100, 0);
+    first.abortEventId = 300;
+    setupOneStep(cleanup, 200, 5);
+    cleanup.eventId = 300;
+    system_core::data::startSequence(first);
+    system_core::data::abortSequence(first);
+    rebuildEventIndex(iface);
+    EXPECT_EQ(cycleAndCheck(iface, 0, "abort start"), 1U) << "the cleanup runs when cycle 0 ends";
+    for (std::uint32_t cycle = 1; cycle <= 4; ++cycle) {
+      EXPECT_EQ(cycleAndCheck(iface, cycle, "abort start"), 1U);
+    }
+    EXPECT_EQ(cycleAndCheck(iface, 5, "abort start"), 0U);
+    EXPECT_EQ(iface.stats.abortEventsDispatched, 1U);
+  }
+
+  // An ARM_CONTROL action disarming a running sequence, applied after the slot walk.
+  {
+    CommandCtx cmdCtx;
+    ActionInterface iface{};
+    iface.commandHandler = {testCommandHandler, &cmdCtx};
+    setupOneStep(iface.sequences[0], 100, 10);
+    system_core::data::startSequence(iface.sequences[0]);
+    DataAction stop{};
+    initArmControlAction(stop, ArmControlTarget::SEQUENCE, 0, false, ActionTrigger::IMMEDIATE, 0);
+    ASSERT_EQ(queueAction(iface, stop), ActionStatus::SUCCESS);
+    EXPECT_EQ(cycleAndCheck(iface, 0, "action disarm"), 0U) << "nothing runs when cycle 0 ends";
+    EXPECT_EQ(cycleAndCheck(iface, 1, "action disarm"), 0U);
+    EXPECT_EQ(iface.stats.armControlsApplied, 1U);
+  }
+
+  // An ordinary RTS and ATS run out, and reset clears the gauge with the tables.
+  for (const auto TYPE :
+       {system_core::data::SequenceType::RTS, system_core::data::SequenceType::ATS}) {
+    CommandCtx cmdCtx;
+    ActionInterface iface{};
+    iface.commandHandler = {testCommandHandler, &cmdCtx};
+    setupOneStep(iface.sequences[0], 100, 2);
+    iface.sequences[0].type = TYPE;
+    system_core::data::startSequence(iface.sequences[0], 0);
+    const char* WHAT = (TYPE == system_core::data::SequenceType::RTS) ? "rts" : "ats";
+    std::uint32_t lastRunning = 0;
+    for (std::uint32_t cycle = 0; cycle < 4; ++cycle) {
+      if (cycleAndCheck(iface, cycle, WHAT) != 0) {
+        lastRunning = cycle;
+      }
+    }
+    EXPECT_EQ(iface.stats.sequencesRunning, 0U) << WHAT;
+    EXPECT_GE(lastRunning, 0U) << WHAT;
+    EXPECT_EQ(cmdCtx.callCount, 1U) << WHAT;
+    resetInterface(iface);
+    EXPECT_EQ(iface.stats.sequencesRunning, 0U) << WHAT;
+  }
+}
