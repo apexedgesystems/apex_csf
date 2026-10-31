@@ -127,6 +127,7 @@ struct EngineStats {
   std::uint32_t atsLoaded{0};             ///< Standalone ATS files loaded (cumulative).
   std::uint32_t abortEventsDispatched{0}; ///< Abort events dispatched (cumulative).
   std::uint32_t exclusionStops{0};        ///< Sequences stopped by mutual exclusion (cumulative).
+  std::uint32_t sequencesRunning{0}; ///< Sequences still running after this cycle's tick (gauge).
 
   // Context of the most recent step timeout, so the component tick can
   // attribute its warning (a dropped mission step is never routine). With
@@ -609,6 +610,7 @@ inline std::uint16_t tickSingleSequence(ActionInterface& iface, DataSequence& se
  * Handles cross-sequence START_RTS triggers after each tick.
  */
 inline void tickSequences(ActionInterface& iface, std::uint32_t currentCycle = 0) noexcept {
+  iface.stats.sequencesRunning = 0;
   for (std::size_t i = 0; i < SEQUENCE_TABLE_SIZE; ++i) {
     auto& seq = iface.sequences[i];
     if (!isRunning(seq)) {
@@ -616,6 +618,9 @@ inline void tickSequences(ActionInterface& iface, std::uint32_t currentCycle = 0
     }
 
     const std::uint16_t CHAIN_ID = tickSingleSequence(iface, seq, currentCycle);
+    if (isRunning(seq)) {
+      ++iface.stats.sequencesRunning; // a delay, a wait or a timeout countdown still owns it
+    }
 
     // Handle START_RTS: start another sequence by ID via catalog
     if (CHAIN_ID != 0) {

@@ -165,8 +165,30 @@ def read_action_stats(c2: AprotoClient) -> dict:
             extra = struct.unpack_from("<2I", data, 56)
             result["abortEventsDispatched"] = extra[0]
             result["exclusionStops"] = extra[1]
+        if len(data) >= 68:
+            # Gauge: sequences (RTS and ATS) still running after the last tick.
+            result["sequencesRunning"] = struct.unpack_from("<I", data, 64)[0]
         return result
     return {}
+
+
+def wait_for_no_running_sequence(c2: AprotoClient, deadline_s: float) -> tuple:
+    """Poll the engine's running-sequence gauge until it reads zero twice.
+
+    The gauge counts RTS and ATS alike after each tick; two consecutive zero
+    reads mean a chain start between reads is seen. Returns (quiescent,
+    last_reading, elapsed_s); the caller decides what the deadline means.
+    """
+    t0 = time.time()
+    zero_reads = 0
+    running = None
+    while time.time() - t0 < deadline_s:
+        running = read_action_stats(c2).get("sequencesRunning")
+        zero_reads = zero_reads + 1 if running == 0 else 0
+        if zero_reads >= 2:
+            break
+        time.sleep(0.2)
+    return zero_reads >= 2, running, time.time() - t0
 
 
 def read_dt_stats(c2: AprotoClient) -> dict:
@@ -364,40 +386,33 @@ def test_rts_chaining(c2: AprotoClient) -> bool:
     # (DEACTIVATE_WP, 0x0531); a run already in progress is left to finish.
     c2.send_command(proto.FULLUID_ACTION, 0x0531, struct.pack("<H", 1))
 
-    # Wait for actual quiescence, not a fixed interval: the boot-scheduled
-    # ATS fault campaign applies ARM steps on its own clock, so a fixed sleep
-    # makes this check phase-sensitive to the checkout's launch time. Poll
-    # until the engine's step/arm counters hold still for longer than a
-    # step's wait can: a wait condition times out at 50 cycles (5 s at
-    # 10 Hz) and advances the step counter when it does, so six seconds of
-    # silence means no run is still inside a step that could ARM an entry
-    # after CLEAR_ALL.
-    last = None
-    stable_since = None
-    deadline = time.time() + 60.0
-    while time.time() < deadline:
-        s = read_action_stats(c2)
-        key = (s.get("sequenceSteps"), s.get("armControlsApplied"))
-        if key == last:
-            if stable_since is None:
-                stable_since = time.time()
-            elif time.time() - stable_since >= 6.0:
-                break
-        else:
-            stable_since = None
-            last = key
-        time.sleep(0.2)
+    # Wait on the engine's own answer: its running-sequence gauge (RTS and
+    # ATS alike, read from the stats block INSPECT returns). The step and
+    # arm counters are not that answer: a sequence whose steps wait on an
+    # absolute offset, time out and SKIP moves neither counter for longer
+    # than any fixed window while it still has an ARM step ahead of it.
+    quiescent, running, elapsed = wait_for_no_running_sequence(c2, 60.0)
+    ok &= check(
+        "No sequence running before CLEAR_ALL",
+        quiescent,
+        f"running={running} after {elapsed:.1f} s",
+    )
 
-    # Now CLEAR_ALL is safe -- no campaign re-arming entries
+    # CLEAR_ALL goes out either way (later sections expect a clean table);
+    # the disarmed assertion is made only after confirmed completion, since
+    # a still-running sequence can legitimately re-arm an entry after it.
     r = c2.send_command(FULLUID_TRANSFORM, DT_CLEAR_ALL, b"")
     ok &= check("CLEAR_ALL accepted", r["status"] == 0, r["status_name"])
 
     time.sleep(0.5)
 
-    dt = read_dt_stats(c2)
-    armed = dt.get("entriesArmed", 0)
-    print(f"    Entries armed after CLEAR_ALL: {armed}")
-    ok &= check("All entries disarmed after CLEAR_ALL", armed == 0, f"armed={armed}")
+    if quiescent:
+        dt = read_dt_stats(c2)
+        armed = dt.get("entriesArmed", 0)
+        print(f"    Entries armed after CLEAR_ALL: {armed}")
+        ok &= check("All entries disarmed after CLEAR_ALL", armed == 0, f"armed={armed}")
+    else:
+        print("    Disarmed check skipped: completion not confirmed before the deadline")
 
     # Re-arm WP0 so subsequent tests still have the campaign running
     c2.send_command(proto.FULLUID_ACTION, 0x0530, struct.pack("<H", 1))
@@ -950,6 +965,18 @@ def test_complex_scenarios(c2: AprotoClient) -> bool:
     # --- Scenario 3: Blocking ---
     print("    Scenario 3: Blocking (X blocks Y)")
 
+    # The blocked check counts routed commands over a window, and the
+    # autonomous campaign routes commands of its own whenever WP0 starts
+    # it, so quiet the campaign first (deactivate WP0, wait until nothing
+    # runs) and re-arm WP0 once the scenario is done.
+    c2.send_command(proto.FULLUID_ACTION, 0x0531, struct.pack("<H", 1))
+    quiescent, running, elapsed = wait_for_no_running_sequence(c2, 30.0)
+    ok &= check(
+        "No sequence running before the blocking scenario",
+        quiescent,
+        f"running={running} after {elapsed:.1f} s",
+    )
+
     # Set RTS 43 to be blocked BY RTS 42 (43.blocks = [42])
     c2.send_command(proto.FULLUID_ACTION, 0x0513, struct.pack("<HBH", 43, 1, 42))
     time.sleep(1.0)  # Wait for async SET_BLOCKING to process
@@ -989,6 +1016,9 @@ def test_complex_scenarios(c2: AprotoClient) -> bool:
         unblocked_cmds >= 1,
         f"new_cmds={unblocked_cmds}",
     )
+
+    # The campaign runs again for the sections that follow.
+    c2.send_command(proto.FULLUID_ACTION, 0x0530, struct.pack("<H", 1))
 
     # Clean up
     c2.send_command(proto.FULLUID_ACTION, 0x0511, struct.pack("<H", 43))

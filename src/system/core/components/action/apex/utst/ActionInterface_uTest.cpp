@@ -110,6 +110,7 @@ TEST(ActionInterface, EngineStatsDefaults) {
   EXPECT_EQ(S.sequenceSteps, 0U);
   EXPECT_EQ(S.notificationsInvoked, 0U);
   EXPECT_EQ(S.resolveFailures, 0U);
+  EXPECT_EQ(S.sequencesRunning, 0U);
 }
 
 /* ----------------------------- Action Queue ----------------------------- */
@@ -1260,4 +1261,76 @@ TEST(ActionInterface, TimeoutAbortFiresAbortEvent) {
   EXPECT_EQ(seq.status, system_core::data::SequenceStatus::TIMED_OUT);
   EXPECT_GE(noteCtx.callCount, 1U);
   EXPECT_GE(iface.stats.abortEventsDispatched, 1U);
+}
+
+/* ----------------------------- Running Gauge ----------------------------- */
+
+/**
+ * @test An ATS whose steps time out and SKIP keeps running without moving the
+ * step or arm counters; the running gauge is what reports it, and it drops to
+ * zero only once the last step completes.
+ *
+ * The fixture is the action demo's fault campaign as DataTransform builds it:
+ * five command steps per fault at absolute offsets 100, 200 and 350 cycles
+ * (durations 0, 50, 0), each with a 50-cycle timeout and the SKIP policy.
+ */
+TEST(ActionInterface, SkippedTimeoutsKeepASequenceRunningWithoutSteppingTheCounters) {
+  CommandCtx cmdCtx;
+  ActionInterface iface{};
+  iface.commandHandler = {testCommandHandler, &cmdCtx};
+
+  auto& seq = iface.sequences[0];
+  seq.type = system_core::data::SequenceType::ATS;
+  seq.armed = true;
+  seq.stepCount = 15;
+  const std::uint32_t TRIGGERS[] = {100, 200, 350};
+  const std::uint32_t DURATIONS[] = {0, 50, 0};
+  const std::uint16_t OPCODES[] = {0x0609, 0x0601, 0x0603, 0x060A, 0x0602};
+  for (std::uint8_t f = 0; f < 3; ++f) {
+    for (std::uint8_t j = 0; j < 5; ++j) {
+      auto& step = seq.steps[5 * f + j];
+      step.delayCycles = TRIGGERS[f] + ((j == 4) ? DURATIONS[f] : 0);
+      step.timeoutCycles = 50;
+      step.onTimeout = system_core::data::StepTimeoutPolicy::SKIP;
+      initCommandAction(step.action, 0xCA00, ActionTrigger::IMMEDIATE, 0, OPCODES[j]);
+    }
+  }
+  system_core::data::startSequence(seq, 0);
+
+  // Through cycle 199 the first fault's steps have fired and the second
+  // fault's first step waits on its absolute offset: the step and arm
+  // counters hold still for a run of consecutive cycles longer than any
+  // fixed quiet window the checkout could choose, while the sequence keeps
+  // running and the gauge says so.
+  std::uint32_t previousSteps = 0;
+  std::uint32_t previousArms = 0;
+  std::uint32_t unchangedRun = 0;
+  for (std::uint32_t cycle = 1; cycle <= 199; ++cycle) {
+    processCycle(iface, cycle);
+    const bool SAME = iface.stats.sequenceSteps == previousSteps &&
+                      iface.stats.armControlsApplied == previousArms;
+    unchangedRun = SAME ? unchangedRun + 1 : 0;
+    previousSteps = iface.stats.sequenceSteps;
+    previousArms = iface.stats.armControlsApplied;
+    EXPECT_EQ(iface.stats.sequencesRunning, 1U) << "cycle " << cycle;
+    EXPECT_TRUE(system_core::data::isRunning(seq)) << "cycle " << cycle;
+  }
+  EXPECT_GE(unchangedRun, 60U)
+      << "the counters were flat for six seconds at 10 Hz and the sequence "
+         "still ran";
+  EXPECT_GT(iface.stats.sequenceTimeouts, 0U) << "the waits timed out and were skipped";
+
+  // The second fault's ARM_ENTRY still arrives: silence was not completion.
+  const std::uint32_t COMMANDS_BEFORE = cmdCtx.callCount;
+  for (std::uint32_t cycle = 200; cycle <= 210; ++cycle) {
+    processCycle(iface, cycle);
+  }
+  EXPECT_GT(cmdCtx.callCount, COMMANDS_BEFORE);
+
+  // Run the campaign out: the gauge reports completion, nothing else does.
+  for (std::uint32_t cycle = 211; cycle <= 450; ++cycle) {
+    processCycle(iface, cycle);
+  }
+  EXPECT_FALSE(system_core::data::isRunning(seq));
+  EXPECT_EQ(iface.stats.sequencesRunning, 0U);
 }
