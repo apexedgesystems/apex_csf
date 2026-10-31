@@ -25,6 +25,8 @@ ARG HOST_UID
 ARG HOST_GID
 ARG CMAKE_VERSION=4.2.3
 ARG UPX_VERSION=5.1.0
+ARG NINJA_VERSION=1.13.1
+ARG NINJA_SHA256=0830252db77884957a1a4b87b05a1e2d9b5f658b8367f82999a941884cbe0238
 
 LABEL org.opencontainers.image.title="apex.build-base" \
       org.opencontainers.image.description="Compile/link/test tier for Apex CSF C++ builders" \
@@ -83,8 +85,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       wget curl lsb-release gnupg ca-certificates \
       # Version control (FetchContent clones at configure time)
       git \
-      # Build systems
-      make cmake ninja-build \
+      # Build systems (ninja is installed from its release below)
+      make cmake \
       # Compiler acceleration (ccache=object cache, mold=fast linker)
       ccache mold \
       # Python for build scripts and the python tools
@@ -161,6 +163,23 @@ RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error
     chmod +x cmake-${CMAKE_VERSION}-linux-x86_64.sh && \
     ./cmake-${CMAKE_VERSION}-linux-x86_64.sh --skip-license --prefix=/usr/local && \
     rm cmake-${CMAKE_VERSION}-linux-x86_64.sh
+
+# ------------------------------------------------------------------------------
+# Ninja
+# ------------------------------------------------------------------------------
+# From 1.12 ninja records each command's start time in its build log and
+# rebuilds an output whose inputs changed while the command ran; the distro's
+# 1.11 compares against the output's mtime and keeps that object. Installed
+# from the GitHub release, checksum-verified, and linked at the distro path
+# as well, which every CMake cache configured in the earlier images names.
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/ninja-linux.zip \
+      "https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-linux.zip" && \
+    echo "${NINJA_SHA256}  /tmp/ninja-linux.zip" | sha256sum -c - && \
+    python3 -c "import zipfile; zipfile.ZipFile('/tmp/ninja-linux.zip').extract('ninja', '/usr/local/bin')" && \
+    chmod 0755 /usr/local/bin/ninja && \
+    rm /tmp/ninja-linux.zip && \
+    ln -sf /usr/local/bin/ninja /usr/bin/ninja && \
+    ninja --version && /usr/bin/ninja --version
 
 # ------------------------------------------------------------------------------
 # Rust Toolchain
@@ -360,6 +379,8 @@ ARG SHFMT_VERSION=v3.12.0
 ARG BLACK_VERSION=26.1.0
 ARG CMAKELANG_VERSION=0.6.13
 ARG PRE_COMMIT_VERSION=4.5.1
+ARG NODE_VERSION=26.13.0
+ARG NODE_SHA256=d28a96af6c38596f6d9d97c0ee531c13d238d757742387d1928de822d959e997
 ARG GITLEAKS_VERSION=8.30.1
 ARG OSV_SCANNER_VERSION=2.3.8
 ARG TRIVY_VERSION=0.71.0
@@ -446,6 +467,26 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       pre-commit==${PRE_COMMIT_VERSION} \
       black==${BLACK_VERSION} \
       cmakelang==${CMAKELANG_VERSION}
+
+# ------------------------------------------------------------------------------
+# Node.js - runtime for the node-language pre-commit hooks
+# ------------------------------------------------------------------------------
+# With node and npm on PATH, pre-commit runs its node hooks (prettier,
+# markdownlint) on this node instead of asking nodeenv to download whichever
+# release nodejs.org lists first at install time, so the format gate's node is
+# an image fact. Official tarball, checksum-verified, unpacked whole under
+# /opt/node so the notices it ships (its own LICENSE and every bundled npm
+# dependency's) stay with the code; only the executables are linked onto PATH.
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/node.tar.xz \
+      "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" && \
+    echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - && \
+    tar -C /opt -xJf /tmp/node.tar.xz && \
+    mv "/opt/node-v${NODE_VERSION}-linux-x64" /opt/node && \
+    ln -s /opt/node/bin/node /usr/local/bin/node && \
+    ln -s /opt/node/bin/npm /usr/local/bin/npm && \
+    ln -s /opt/node/bin/npx /usr/local/bin/npx && \
+    rm /tmp/node.tar.xz && \
+    node --version && npm --version && test -f /opt/node/LICENSE
 
 # ------------------------------------------------------------------------------
 # ninjatracing - Convert .ninja_log to chrome-tracing JSON

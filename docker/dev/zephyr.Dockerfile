@@ -23,7 +23,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
     DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      ninja-build \
       gperf \
       device-tree-compiler \
       python3-dev \
@@ -55,7 +54,7 @@ RUN ./setup.sh -h -c
 # ==============================================================================
 # West (Zephyr Meta-tool)
 # ==============================================================================
-RUN pip3 install --no-cache-dir \
+RUN pip3 install --no-cache-dir --break-system-packages \
       west \
       pyelftools \
       pyyaml \

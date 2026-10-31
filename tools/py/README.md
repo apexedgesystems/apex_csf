@@ -2,7 +2,7 @@
 
 **Location:** `tools/py/`
 **Package:** `apex_tools`
-**Platform:** Cross-platform Python >=3.10
+**Platform:** Cross-platform Python >=3.11
 
 Command-line tools for the Apex CSF C++ project. Python tools focus on
 visualization and operations interface generation.

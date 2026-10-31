@@ -27,6 +27,10 @@ files: |
      \.gitignore)
   )
 
+# The node hooks run on the dev image's node; pre-commit never downloads one.
+default_language_version:
+  node: system
+
 exclude: |
   (?x)^(
     build/|

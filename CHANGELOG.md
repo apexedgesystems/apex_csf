@@ -99,6 +99,16 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Build images ship ninja 1.13.1, which rebuilds an object whose header changed
+  while its compile was running; it answers at the distro path too, so an
+  existing build tree keeps building and rebuilds once as its build log starts
+  over. ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
+- The pre-commit node hooks run on a node baked into the dev image instead of
+  one downloaded at hook install; hooks run outside the container need node
+  and npm on PATH. Workflows run on `ubuntu-24.04`. ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
+- The zephyr dev image builds again on Ubuntu 24.04 (its Python tool install
+  passes `--break-system-packages`).
+  ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
 - The action demo's fault campaign sequence chains to its cleanup
   sequence (id 2) instead of restarting itself
   ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
@@ -144,6 +154,8 @@ any such change is called out explicitly in its entry.
 
 ### Security
 
+- Python tool dependencies re-locked under a 3.11 floor (pillow 13, filelock
+  4.2, virtualenv 21.15) and block-buffer 0.12.1 in the Rust lock. ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
 - Python tooling lock: virtualenv 21.6.1 to 21.14.5, clearing four
   published advisories.
 
