@@ -51,9 +51,9 @@ layer). Dev images extend `apex.base` (CPU-derived) or `apex.dev.cuda`
 
 ### Base Image
 
-| Image       | Base         | Description                                                  |
-| ----------- | ------------ | ------------------------------------------------------------ |
-| `apex.base` | Ubuntu 24.04 | Clang 20-21, CMake 4.x, Ninja, ccache, mold, Rust, profilers |
+| Image       | Base         | Description                                                                    |
+| ----------- | ------------ | ------------------------------------------------------------------------------ |
+| `apex.base` | Ubuntu 24.04 | Clang 20-21, CMake 4.x, Ninja 1.13, Node 26 LTS, ccache, mold, Rust, profilers |
 
 Includes: LLVM toolchain, formatters (clang-format, black, shfmt, hadolint),
 math/crypto libraries (OpenBLAS, LAPACK, SuiteSparse, OpenSSL), Doxygen, UPX,

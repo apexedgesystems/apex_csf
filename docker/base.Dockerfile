@@ -377,6 +377,8 @@ ARG SHFMT_VERSION=v3.12.0
 ARG BLACK_VERSION=26.1.0
 ARG CMAKELANG_VERSION=0.6.13
 ARG PRE_COMMIT_VERSION=4.5.1
+ARG NODE_VERSION=26.13.0
+ARG NODE_SHA256=d28a96af6c38596f6d9d97c0ee531c13d238d757742387d1928de822d959e997
 ARG GITLEAKS_VERSION=8.30.1
 ARG OSV_SCANNER_VERSION=2.3.8
 ARG TRIVY_VERSION=0.71.0
@@ -463,6 +465,20 @@ RUN --mount=type=cache,target=/root/.cache/pip \
       pre-commit==${PRE_COMMIT_VERSION} \
       black==${BLACK_VERSION} \
       cmakelang==${CMAKELANG_VERSION}
+
+# ------------------------------------------------------------------------------
+# Node.js - runtime for the node-language pre-commit hooks
+# ------------------------------------------------------------------------------
+# With node and npm on PATH, pre-commit runs its node hooks (prettier,
+# markdownlint) on this node instead of asking nodeenv to download whichever
+# release nodejs.org lists first at install time, so the format gate's node is
+# an image fact. Official tarball, checksum-verified.
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/node.tar.xz \
+      "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" && \
+    echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - && \
+    tar -C /usr/local --strip-components=1 --exclude='*/CHANGELOG.md' --exclude='*/README.md' --exclude='*/LICENSE' -xJf /tmp/node.tar.xz && \
+    rm /tmp/node.tar.xz && \
+    node --version && npm --version
 
 # ------------------------------------------------------------------------------
 # ninjatracing - Convert .ninja_log to chrome-tracing JSON
