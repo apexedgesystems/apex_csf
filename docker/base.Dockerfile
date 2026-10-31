@@ -170,14 +170,16 @@ RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error
 # From 1.12 ninja records each command's start time in its build log and
 # rebuilds an output whose inputs changed while the command ran; the distro's
 # 1.11 compares against the output's mtime and keeps that object. Installed
-# from the GitHub release, checksum-verified.
+# from the GitHub release, checksum-verified, and linked at the distro path
+# as well, which every CMake cache configured in the earlier images names.
 RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/ninja-linux.zip \
       "https://github.com/ninja-build/ninja/releases/download/v${NINJA_VERSION}/ninja-linux.zip" && \
     echo "${NINJA_SHA256}  /tmp/ninja-linux.zip" | sha256sum -c - && \
     python3 -c "import zipfile; zipfile.ZipFile('/tmp/ninja-linux.zip').extract('ninja', '/usr/local/bin')" && \
     chmod 0755 /usr/local/bin/ninja && \
     rm /tmp/ninja-linux.zip && \
-    ninja --version
+    ln -sf /usr/local/bin/ninja /usr/bin/ninja && \
+    ninja --version && /usr/bin/ninja --version
 
 # ------------------------------------------------------------------------------
 # Rust Toolchain
