@@ -246,6 +246,20 @@ check-data-db: tools-rust
 HELPER_FIXTURE := cmake/apex/test/data_manifest
 GATE_FIXTURES := mk/fixtures/check-data-db
 
+# apex/BuildInfo generator contract: the tree state follows tracked content
+# (diff settings cannot move it, a textconv driver cannot hide an edit) and the
+# description takes its documented forms. The fixture builds its own
+# repositories under a scratch directory and runs the real generator on them.
+BUILD_INFO_FIXTURE := cmake/apex/test/build_info/fixture.cmake
+
+check-build-info:
+	$(call log,check-build-info,Running the apex/BuildInfo generator fixture)
+	@scratch=$$(mktemp -d) || exit 1; \
+	  cmake -DMODULE="$(CURDIR)/cmake/apex/BuildInfo.cmake" \
+	        -DTEMPLATE="$(CURDIR)/src/utilities/build_info/src/BuildInfo.cpp.in" \
+	        -DGIT_EXECUTABLE="$$(command -v git)" -DWORK="$$scratch" \
+	        -P "$(CURDIR)/$(BUILD_INFO_FIXTURE)"; status=$$?; rm -rf "$$scratch"; exit $$status
+
 check-data-manifest-helper:
 	$(call log,check-data-manifest-helper,Configuring the apex_add_data_manifest fixture per case)
 	@scratch=$$(mktemp -d) || exit 1; fail=0; \
@@ -284,7 +298,7 @@ check-data-db-contract: tools-rust
 	[ $$fail -eq 0 ] || exit 1
 	$(call log_ok,check-data-db-contract,valid passes; a declared-header error and a _warning entry fail the gate)
 
-.PHONY: cdef check-cdef check-data-db check-data-manifest-helper check-data-db-contract
+.PHONY: cdef check-cdef check-data-db check-data-manifest-helper check-data-db-contract check-build-info
 
 # Tooling coverage (nightly). Each runs its tool test suite under coverage
 # instrumentation and emits a human-readable summary plus a machine report,

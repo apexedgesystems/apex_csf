@@ -113,25 +113,92 @@ function (_bi_git _out)
 endfunction ()
 
 if (GIT_EXECUTABLE AND EXISTS "${SOURCE_DIR}/.git")
-  _bi_git(_describe describe --tags --always --dirty)
+  # --abbrev=12 pins the hash length so the description reads the same under
+  # any core.abbrev setting and names the same digits commit() does.
+  _bi_git(_describe describe --tags --always --dirty --abbrev=12)
   _bi_git(_commit rev-parse --short=12 HEAD)
   _bi_git(_branch rev-parse --abbrev-ref HEAD)
 
-  # Tree state: the diff of tracked files against HEAD, staged and unstaged
-  # alike, which is the same set `git describe --dirty` inspects. Binary
-  # hunks are emitted as text so the whole diff hashes.
+  # Tree state: every tracked path whose working-tree content or mode differs
+  # from HEAD (staged or unstaged, the set `git describe --dirty` inspects),
+  # serialized from plumbing output and raw blob hashes rather than diff
+  # text. `diff-index --raw` carries no presentation setting, and
+  # `hash-object --no-filters` hashes the bytes with no clean filter or text
+  # conversion, so two checkouts holding the same modifications report the
+  # same state whatever their diff configuration or attributes say, and a
+  # change a textconv driver would hide still counts. A path the index only
+  # lists as stat-changed hashes to HEAD's own blob and is dropped.
   execute_process(
-    COMMAND "${GIT_EXECUTABLE}" -C "${SOURCE_DIR}" diff HEAD --no-ext-diff --no-color --binary
-    RESULT_VARIABLE _diff_result
-    OUTPUT_VARIABLE _diff
+    COMMAND "${GIT_EXECUTABLE}" -C "${SOURCE_DIR}" diff-index --raw --no-renames HEAD
+    RESULT_VARIABLE _di_result
+    OUTPUT_VARIABLE _di_raw
     ERROR_QUIET
   )
-  if (_diff_result EQUAL 0)
-    if (_diff STREQUAL "")
+  if (_di_result EQUAL 0)
+    set(_entries "")
+    set(_paths "")
+    string(REGEX MATCHALL "[^\n]+" _di_lines "${_di_raw}")
+    foreach (_line IN LISTS _di_lines)
+      if (_line MATCHES "^:([0-7]+) ([0-7]+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z]+)\t(.*)$")
+        list(
+          APPEND
+          _entries
+          "${CMAKE_MATCH_5}|${CMAKE_MATCH_1}|${CMAKE_MATCH_2}|${CMAKE_MATCH_3}|${CMAKE_MATCH_4}|${CMAKE_MATCH_6}"
+        )
+        if (NOT CMAKE_MATCH_5 STREQUAL "D")
+          string(APPEND _paths "${CMAKE_MATCH_6}\n")
+        endif ()
+      endif ()
+    endforeach ()
+    set(_blobs "")
+    if (NOT _paths STREQUAL "")
+      set(_paths_file "${OUTPUT}.paths")
+      file(WRITE "${_paths_file}" "${_paths}")
+      execute_process(
+        COMMAND "${GIT_EXECUTABLE}" -C "${SOURCE_DIR}" hash-object --no-filters --stdin-paths
+        INPUT_FILE "${_paths_file}"
+        RESULT_VARIABLE _ho_result
+        OUTPUT_VARIABLE _ho_raw
+        ERROR_QUIET
+      )
+      file(REMOVE "${_paths_file}")
+      if (_ho_result EQUAL 0)
+        string(REGEX MATCHALL "[^\n]+" _blobs "${_ho_raw}")
+      else ()
+        set(_entries "unhashable")
+      endif ()
+    endif ()
+    set(_state "")
+    set(_blob_index 0)
+    foreach (_entry IN LISTS _entries)
+      if (_entry STREQUAL "unhashable")
+        set(_state "unknown")
+        break()
+      endif ()
+      string(REPLACE "|" ";" _f "${_entry}")
+      list(GET _f 0 _status)
+      list(GET _f 1 _mode_old)
+      list(GET _f 2 _mode_new)
+      list(GET _f 3 _blob_old)
+      list(GET _f 5 _path)
+      if (_status STREQUAL "D")
+        set(_blob_new "deleted")
+      elseif (_mode_new STREQUAL "160000")
+        list(GET _f 4 _blob_new)
+      else ()
+        list(GET _blobs ${_blob_index} _blob_new)
+        math(EXPR _blob_index "${_blob_index} + 1")
+      endif ()
+      if (_blob_new STREQUAL "${_blob_old}" AND _mode_new STREQUAL "${_mode_old}")
+        continue()
+      endif ()
+      string(APPEND _state "${_status} ${_mode_old} ${_mode_new} ${_path} ${_blob_new}\n")
+    endforeach ()
+    if (_state STREQUAL "")
       set(_tree "clean")
-    else ()
-      string(SHA256 _diff_hash "${_diff}")
-      string(SUBSTRING "${_diff_hash}" 0 12 _tree)
+    elseif (NOT _state STREQUAL "unknown")
+      string(SHA256 _state_hash "${_state}")
+      string(SUBSTRING "${_state_hash}" 0 12 _tree)
     endif ()
   endif ()
 endif ()
