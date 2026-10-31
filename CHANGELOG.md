@@ -97,7 +97,9 @@ any such change is called out explicitly in its entry.
 ### Fixed
 
 - Build images ship ninja 1.13.1, which rebuilds an object whose header changed
-  while its compile was running; existing build trees rebuild once. ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
+  while its compile was running. An existing local build tree needs one
+  `cmake -U CMAKE_MAKE_PROGRAM --preset <preset>` (its cache names the removed
+  distro ninja) and then rebuilds once. ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
 - The pre-commit node hooks run on a node baked into the dev image instead of
   one downloaded at hook install; workflows run on `ubuntu-24.04`. ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
 - Improve scalar Legendre accuracy, make the simple scalar API
