@@ -54,7 +54,7 @@ RUN ./setup.sh -h -c
 # ==============================================================================
 # West (Zephyr Meta-tool)
 # ==============================================================================
-RUN pip3 install --no-cache-dir \
+RUN pip3 install --no-cache-dir --break-system-packages \
       west \
       pyelftools \
       pyyaml \
