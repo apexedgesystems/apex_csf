@@ -472,13 +472,19 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # With node and npm on PATH, pre-commit runs its node hooks (prettier,
 # markdownlint) on this node instead of asking nodeenv to download whichever
 # release nodejs.org lists first at install time, so the format gate's node is
-# an image fact. Official tarball, checksum-verified.
+# an image fact. Official tarball, checksum-verified, unpacked whole under
+# /opt/node so the notices it ships (its own LICENSE and every bundled npm
+# dependency's) stay with the code; only the executables are linked onto PATH.
 RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/node.tar.xz \
       "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" && \
     echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - && \
-    tar -C /usr/local --strip-components=1 --exclude='*/CHANGELOG.md' --exclude='*/README.md' --exclude='*/LICENSE' -xJf /tmp/node.tar.xz && \
+    tar -C /opt -xJf /tmp/node.tar.xz && \
+    mv "/opt/node-v${NODE_VERSION}-linux-x64" /opt/node && \
+    ln -s /opt/node/bin/node /usr/local/bin/node && \
+    ln -s /opt/node/bin/npm /usr/local/bin/npm && \
+    ln -s /opt/node/bin/npx /usr/local/bin/npx && \
     rm /tmp/node.tar.xz && \
-    node --version && npm --version
+    node --version && npm --version && test -f /opt/node/LICENSE
 
 # ------------------------------------------------------------------------------
 # ninjatracing - Convert .ninja_log to chrome-tracing JSON
