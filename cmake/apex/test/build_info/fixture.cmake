@@ -276,8 +276,24 @@ execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SUB}" init -q -b main . OUTPUT
 execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SUB}" config user.email fixture@example.invalid)
 execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SUB}" config user.name fixture)
 file(WRITE "${SUB}/s.txt" "sub\n")
-execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SUB}" add -A OUTPUT_QUIET ERROR_QUIET)
-execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${SUB}" commit -q -m sub1 OUTPUT_QUIET ERROR_QUIET)
+execute_process(
+  COMMAND "${GIT_EXECUTABLE}" -C "${SUB}" -c user.email=fixture@example.invalid -c user.name=fixture
+          -c commit.gpgsign=false add -A
+  RESULT_VARIABLE _sub_step
+  OUTPUT_QUIET ERROR_QUIET
+)
+if (NOT _sub_step EQUAL 0)
+  message(FATAL_ERROR "fixture: git add -A in the submodule source failed")
+endif ()
+execute_process(
+  COMMAND "${GIT_EXECUTABLE}" -C "${SUB}" -c user.email=fixture@example.invalid -c user.name=fixture
+          -c commit.gpgsign=false commit -q -m sub1
+  RESULT_VARIABLE _sub_step
+  OUTPUT_QUIET ERROR_QUIET
+)
+if (NOT _sub_step EQUAL 0)
+  message(FATAL_ERROR "fixture: git commit -q -m sub1 in the submodule source failed")
+endif ()
 repo_git(
   -c
   protocol.file.allow=always
@@ -292,8 +308,14 @@ identity_field(TREE_STATE _tg0)
 expect_eq(gitlink-clean "${_tg0}" "clean")
 file(WRITE "${REPO}/sub/s.txt" "sub2\n")
 execute_process(
-  COMMAND "${GIT_EXECUTABLE}" -C "${REPO}/sub" commit -q -am sub2 OUTPUT_QUIET ERROR_QUIET
+  COMMAND "${GIT_EXECUTABLE}" -C "${REPO}/sub" -c user.email=fixture@example.invalid -c
+          user.name=fixture -c commit.gpgsign=false commit -q -am sub2
+  RESULT_VARIABLE _sub_commit
+  OUTPUT_QUIET ERROR_QUIET
 )
+if (NOT _sub_commit EQUAL 0)
+  message(FATAL_ERROR "fixture: the submodule commit failed")
+endif ()
 identity_field(TREE_STATE _tg1)
 expect_state(gitlink-advance-counts "${_tg1}")
 
