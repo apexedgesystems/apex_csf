@@ -17,7 +17,8 @@
  * Where git or the repository metadata is unavailable (a source archive, an
  * image build context without .git), the git-derived fields read "unknown".
  *
- * Every accessor returns a pointer to static storage and is RT-safe.
+ * The string accessors return pointers to static storage and dirty() a bool;
+ * all are RT-safe.
  */
 
 #include "compat_rt_attrs.hpp"
@@ -40,7 +41,7 @@ namespace build_info {
 /// CMake project version.
 [[nodiscard]] const char* version() noexcept APEX_NONBLOCKING;
 
-/// `git describe --tags --always --dirty`, or "unknown".
+/// `git describe --tags --always --dirty --abbrev=12`, or "unknown".
 [[nodiscard]] const char* describe() noexcept APEX_NONBLOCKING;
 
 /// HEAD as twelve hex digits, or "unknown".
@@ -52,9 +53,12 @@ namespace build_info {
 /**
  * @brief "clean", twelve hex digits, or "unknown".
  *
- * The digits are the start of the SHA-256 of `git diff HEAD` over tracked
- * files, staged and unstaged alike: two trees with the same modifications
- * report the same state.
+ * The digits start the SHA-256 of a listing of every tracked path whose
+ * content or mode differs from HEAD, staged or unstaged alike, each with the
+ * raw hash of its working-tree bytes. It comes from git plumbing and blob
+ * hashes, not from diff text, so diff settings do not move it and a textconv
+ * driver cannot hide an edit: two trees with the same modifications report
+ * the same state.
  */
 [[nodiscard]] const char* treeState() noexcept APEX_NONBLOCKING;
 
