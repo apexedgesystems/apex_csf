@@ -42,7 +42,7 @@ namespace build_info {
 [[nodiscard]] const char* version() noexcept APEX_NONBLOCKING;
 
 /// `git describe --tags --always --abbrev=12`, with "-dirty" appended when
-/// treeState() is not clean, or "unknown".
+/// dirty() is true, or "unknown".
 [[nodiscard]] const char* describe() noexcept APEX_NONBLOCKING;
 
 /// HEAD as twelve hex digits, or "unknown".
@@ -63,7 +63,8 @@ namespace build_info {
  */
 [[nodiscard]] const char* treeState() noexcept APEX_NONBLOCKING;
 
-/// True when treeState() names a tree other than HEAD's.
+/// True when treeState() names a tree other than HEAD's; false for "clean"
+/// and "unknown".
 [[nodiscard]] bool dirty() noexcept APEX_NONBLOCKING;
 
 /// Configuration built (CMAKE_BUILD_TYPE), or "unspecified".

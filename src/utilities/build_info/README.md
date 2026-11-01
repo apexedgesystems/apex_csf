@@ -42,7 +42,7 @@ sysLog->info(label(), fmt::format("Build: {}", apex::build_info::summary()));
 | `commit()`       | `7c9d744a07c7`             | `git rev-parse --short=12 HEAD`                                                   |
 | `branch()`       | `main`, `HEAD` (detached)  | `git rev-parse --abbrev-ref HEAD`                                                 |
 | `treeState()`    | `clean`, `3f1c0a9b7d2e`    | the working tree's git tree id, first twelve hex; see 2                           |
-| `dirty()`        | `false`                    | `treeState()` is not `clean`                                                      |
+| `dirty()`        | `false`                    | `treeState()` names a tree other than HEAD's; `false` for `clean` and `unknown`   |
 | `buildType()`    | `Release`                  | the configuration built                                                           |
 | `compiler()`     | `Clang-21.1.8`             | CMake compiler id and version                                                     |
 | `targetSystem()` | `Linux/x86_64`             | CMake system name and processor                                                   |
