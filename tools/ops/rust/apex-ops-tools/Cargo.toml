@@ -1,0 +1,45 @@
+[package]
+name = "apex-ops-tools"
+description = "Tools run beside a deployed apex system: TPRM templates, UPX batch compression, serial device checkout"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "apex_ops_tools"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tprm_template"
+path = "src/bin/tprm_template.rs"
+
+[[bin]]
+name = "upx_tool"
+path = "src/bin/upx_tool.rs"
+
+[[bin]]
+name = "serial_dev_checker"
+path = "src/bin/serial_dev_checker.rs"
+
+[[bin]]
+name = "serial_dev_tester"
+path = "src/bin/serial_dev_tester.rs"
+
+[dependencies]
+apex-tprm = { workspace = true }
+clap = { workspace = true }
+hex = { workspace = true }
+nix = { workspace = true }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+toml = { workspace = true }
+toml_edit = { workspace = true }
+walkdir = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+predicates = { workspace = true }
+tempfile = { workspace = true }

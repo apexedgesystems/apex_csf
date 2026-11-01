@@ -105,9 +105,9 @@ jobs:
           fi
           # The tool families version with the project, so their binaries
           # self-report the release they shipped in (--version, wheel metadata).
-          rust_version=$(sed -n 's/^version = "\([0-9.]*\)"/\1/p' tools/rust/Cargo.toml | head -1)
+          rust_version=$(sed -n 's/^version = "\([0-9.]*\)"/\1/p' tools/Cargo.toml | head -1)
           py_version=$(sed -n 's/^version = "\([0-9.]*\)"/\1/p' tools/py/pyproject.toml | head -1)
-          for pair in "tools/rust/Cargo.toml:$rust_version" "tools/py/pyproject.toml:$py_version"; do
+          for pair in "tools/Cargo.toml:$rust_version" "tools/py/pyproject.toml:$py_version"; do
             if [ "${pair#*:}" != "$TAG_BASE" ]; then
               echo "ERROR: Tag version ($TAG_BASE) does not match ${pair%%:*} (${pair#*:})"
               exit 1

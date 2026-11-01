@@ -81,7 +81,7 @@ def forge_bad_value(dest: str) -> None:
 
 
 def pack_without_sysmon(dest: str) -> None:
-    args = [f"{BUILD}/bin/tools/rust/tprm_pack", "pack", "-o", dest]
+    args = [f"{BUILD}/bin/tools/build/tprm_pack", "pack", "-o", dest]
     keep = {
         0x000000: "toml_executive_toml.tprm",
         0x000100: "toml_scheduler_toml.tprm",

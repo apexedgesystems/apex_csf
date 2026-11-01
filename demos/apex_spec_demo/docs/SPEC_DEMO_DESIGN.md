@@ -101,7 +101,7 @@ generator emits.
 SpecActuator's layouts are authored the standard protobuf way --
 proto3 messages with apex custom options carrying the fixed-layout
 metadata (width/count/default as `google.protobuf.FieldOptions`
-extensions; see tools/rust/docs/proto_profile.md). The manifest
+extensions; see tools/build/rust/apex-tprm/docs/proto_profile.md). The manifest
 references the file (`proto_spec`) and keeps commands, telemetry, and
 constraints TOML-side; ingest resolves the messages to the same
 ordered field lists the sensor's `[[fields]]` arrays produce, so

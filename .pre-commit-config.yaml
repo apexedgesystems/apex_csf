@@ -38,7 +38,6 @@ exclude: |
     dist/|
     out/|
     node_modules/|
-    tools/rust/build/|
     .*/\.auto/|
     .*/\.venv/|
     \.git/|
@@ -192,7 +191,7 @@ repos:
 
       - id: cargo-fmt-local
         name: cargo fmt (local)
-        entry: cargo fmt --manifest-path tools/rust/Cargo.toml --
+        entry: cargo fmt --all --manifest-path tools/Cargo.toml --
         language: system
         files: \.rs$
         pass_filenames: false

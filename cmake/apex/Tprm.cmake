@@ -62,17 +62,17 @@ function (apex_add_tprm)
     return()
   endif ()
 
-  # Lean release builders configure with APEX_BUILD_TOOLS=OFF: no rust
+  # Lean release builders configure with APEX_BUILD_TOOLS=OFF: no build
   # tools, so no TPRM generation -- their trees ship binaries, and the
   # packaging that installs generated masters runs in tool-bearing
   # configures. A tools-enabled configure that still lacks the target
   # is a broken environment, not a policy, and fails loudly here
   # instead of as a phantom file dependency at build time.
-  if (NOT TARGET ${PROJECT_NAME}_rust_tools)
+  if (NOT TARGET ${PROJECT_NAME}_build_tools)
     if (APEX_BUILD_TOOLS)
       message(
         FATAL_ERROR
-          "apex_add_tprm(${ARG_NAME}): the rust tools target is missing in a tools-enabled configure (cargo not found?)"
+          "apex_add_tprm(${ARG_NAME}): the build tools target is missing in a tools-enabled configure (cargo not found?)"
       )
     endif ()
     return()
@@ -92,7 +92,7 @@ function (apex_add_tprm)
     PROPERTY CMAKE_CONFIGURE_DEPENDS "${_manifest}"
   )
   set(_gen_dir "${CMAKE_CURRENT_BINARY_DIR}/tprm")
-  set(_tools_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/rust")
+  set(_tools_dir "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/build")
 
   file(STRINGS "${_manifest}" _lines)
 
@@ -225,7 +225,7 @@ function (apex_add_tprm)
         COMMAND
           "${_tools_dir}/cfg2bin" --config "${_seq_toml}" --output "${_seq_out}" --pin-spec
           "${PROJECT_SOURCE_DIR}/src/system/core/components/action/apex/apex_data.toml:StandaloneSequenceTprm"
-        DEPENDS "${_seq_toml}" "${_tools_dir}/cfg2bin" ${PROJECT_NAME}_rust_tools
+        DEPENDS "${_seq_toml}" "${_tools_dir}/cfg2bin" ${PROJECT_NAME}_build_tools
                 "${PROJECT_SOURCE_DIR}/src/system/core/components/action/apex/apex_data.toml"
         COMMENT "[tprm] ${ARG_NAME}: ${_kind} ${_slot3} <- ${_path}"
         VERBATIM
@@ -321,7 +321,7 @@ function (apex_add_tprm)
             COMMAND ${CMAKE_COMMAND} -E make_directory "${_gen_dir}/payloads"
             COMMAND "${_tools_dir}/cfg2bin" --config "${_toml}" --output "${_payload}" --fulluid
                     "${_key}" --constraint-rows "${_payload}.rows.json"
-            DEPENDS "${_toml}" "${_tools_dir}/cfg2bin" ${PROJECT_NAME}_rust_tools
+            DEPENDS "${_toml}" "${_tools_dir}/cfg2bin" ${PROJECT_NAME}_build_tools
             COMMENT "[tprm] ${ARG_NAME}: ${_path}"
             VERBATIM
           )
@@ -352,7 +352,7 @@ function (apex_add_tprm)
       OUTPUT "${_out}"
       COMMAND ${CMAKE_COMMAND} -E make_directory "${_gen_dir}"
       COMMAND "${_tools_dir}/tprm_pack" pack ${_pack_args} -o "${_out}"
-      DEPENDS ${_pack_deps} "${_manifest}" "${_tools_dir}/tprm_pack" ${PROJECT_NAME}_rust_tools
+      DEPENDS ${_pack_deps} "${_manifest}" "${_tools_dir}/tprm_pack" ${PROJECT_NAME}_build_tools
       COMMENT "[tprm] ${ARG_NAME}: pack ${_master}"
       VERBATIM
     )

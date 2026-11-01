@@ -210,11 +210,17 @@ ENV PATH="/opt/rust/cargo/bin:$PATH"
 # and the fetch is paid once per dependency change instead of every build.
 #
 # Keyed on Cargo.lock: this layer rebuilds only when a dependency changes (the CI
-# image graph also watches tools/rust/Cargo.lock so the cache never goes stale).
+# image graph also watches tools/Cargo.lock so the cache never goes stale).
 # --target restricts the fetch to the host triple the rust tools build for,
 # dropping ~330 MB of Windows/wasm crates that never compile here (~124 MB cached
 # vs ~454 MB unfiltered).
-COPY tools/rust/Cargo.toml tools/rust/Cargo.lock /tmp/rust-fetch/
+# The workspace root and every member manifest (no sources): cargo resolves
+# the whole workspace from these alone. A new member crate adds one line.
+COPY tools/Cargo.toml tools/Cargo.lock /tmp/rust-fetch/
+COPY tools/build/rust/apex-tprm/Cargo.toml /tmp/rust-fetch/build/rust/apex-tprm/
+COPY tools/build/rust/apex-build-tools/Cargo.toml /tmp/rust-fetch/build/rust/apex-build-tools/
+COPY tools/ops/rust/apex-ops-tools/Cargo.toml /tmp/rust-fetch/ops/rust/apex-ops-tools/
+COPY tools/analysis/rust/apex-analysis-tools/Cargo.toml /tmp/rust-fetch/analysis/rust/apex-analysis-tools/
 RUN cargo fetch --locked --target x86_64-unknown-linux-gnu \
       --manifest-path /tmp/rust-fetch/Cargo.toml && \
     rm -rf /tmp/rust-fetch && \

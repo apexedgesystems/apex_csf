@@ -56,6 +56,12 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- Breaking: the Rust tools are one Cargo workspace at `tools/`, built and
+  installed by role. Executables move from `bin/tools/rust/` to
+  `bin/tools/<role>/` (build, ops, analysis); `make tools-build` replaces
+  `make tools-rust` as what the apex build needs, with `tools-ops` and
+  `tools-analysis` on request
+  ([#171](https://github.com/apexedgesystems/apex_csf/pull/171)).
 - Breaking: scheduler subclasses override `executeCycle(cycle)` in place
   of `executeTick(tick)`, and the multi-thread scheduler's overridable
   dispatch hook is `executeTasksOnCycleMulti(cycle)`; the tick-index
