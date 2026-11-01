@@ -88,8 +88,6 @@ Configure-only variants available: `configure-jetson`, `configure-rpi`, etc.
 | `make tools-build`    | Build the tools the apex build needs (Rust) |
 | `make tools-ops`      | Build the ops tools (Rust)                  |
 | `make tools-analysis` | Build the analysis tools (Rust)             |
-| `make tools-cpp`      | Build C++ tools only                        |
-| `make tools-py`       | Build Python tools only                     |
 | `make apex-data-db`   | Generate struct dictionaries                |
 
 ### Release

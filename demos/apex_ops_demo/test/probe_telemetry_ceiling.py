@@ -16,7 +16,8 @@ logs after a clean stop:
 
 Usage (host side; binary+libs already deployed to REMOTE_DIR):
 
-  PYTHONPATH=tools/py/src python3 demos/apex_ops_demo/test/probe_telemetry_ceiling.py \\
+  PYTHONPATH=tools/ops/py/apex_ops/src \\
+      python3 demos/apex_ops_demo/test/probe_telemetry_ceiling.py \\
       --ssh kalex@raspberrypi.local --host raspberrypi.local --seconds 30
 
 Builds one master per grid point on the host (probe scheduler with
@@ -30,9 +31,9 @@ import sys
 import tempfile
 import time
 
-sys.path.insert(0, "tools/py/src")
-from apex_tools.ops import protocol as proto  # noqa: E402
-from apex_tools.ops.client import AprotoClient  # noqa: E402
+sys.path.insert(0, "tools/ops/py/apex_ops/src")
+from apex_ops import protocol as proto  # noqa: E402
+from apex_ops.client import AprotoClient  # noqa: E402
 
 TM_UID = 0x00C900
 CHANNEL_OPCODE_BASE = 0x0340

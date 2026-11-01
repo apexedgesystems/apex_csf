@@ -39,9 +39,13 @@ on:
       - tools/Cargo.lock
       - tools/Cargo.toml
       - tools/*/rust/*/Cargo.toml
-      - tools/py/uv.lock
-      - tools/py/pyproject.toml
+      - tools/uv.lock
+      - tools/pyproject.toml
+      - tools/*/py/*/pyproject.toml
       - ExternalDependencies.cmake
+      # The build role's scripts are COPYd into the images.
+      - tools/build/sh/**
+      - tools/build/py/bin/**
   workflow_dispatch:
     inputs:
       force_rebuild:
@@ -129,24 +133,25 @@ jobs:
           else
             RANGE="HEAD~1..HEAD"
           fi
-          DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml tools/Cargo.lock tools/Cargo.toml 'tools/*/rust/*/Cargo.toml' tools/py/uv.lock tools/py/pyproject.toml ExternalDependencies.cmake 2>/dev/null || echo "docker/base.Dockerfile")
+          DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml tools/build/sh tools/build/py/bin tools/Cargo.lock tools/Cargo.toml 'tools/*/rust/*/Cargo.toml' tools/uv.lock tools/pyproject.toml 'tools/*/py/*/pyproject.toml' ExternalDependencies.cmake 2>/dev/null || echo "docker/base.Dockerfile")
 
-          # A change to a shared script under docker/scripts/ must rebuild every
+          # A change to a build-role script (tools/build/sh, tools/build/py/bin)
+          # must rebuild every
           # image whose Dockerfile COPYs it. The COPY line is the source of truth
           # for that dependency, so fold each changed script's consuming
           # Dockerfiles into DIFF -- the per-image match below then selects them
           # (with the usual parent cascade), no separate script-to-image table.
-          for script in $(printf '%s\n' "$DIFF" | grep '^docker/scripts/' || true); do
+          for script in $(printf '%s\n' "$DIFF" | grep -E '^tools/build/(sh|py/bin)/' || true); do
             consumers=$(grep -rlF "$script" docker --include='*.Dockerfile' 2>/dev/null || true)
             [ -n "$consumers" ] && DIFF=$(printf '%s\n%s' "$DIFF" "$consumers")
           done
 
           # base.Dockerfile bakes the rust cargo cache (tools/Cargo.* and the member manifests), the
-          # python wheelhouse (tools/py/uv.lock), and the FetchContent sources
+          # python wheelhouse (tools/uv.lock and the member manifests), and the FetchContent sources
           # (ExternalDependencies.cmake), so a change to any must rebuild
           # base/build-base to refresh them -- otherwise an offline build would run
           # against a stale cache. Map those onto base.Dockerfile (cascades to all).
-          if printf '%s\n' "$DIFF" | grep -qE '^tools/Cargo\.|^tools/[^/]+/rust/[^/]+/Cargo\.toml$|^tools/py/(uv\.lock|pyproject\.toml)|^ExternalDependencies\.cmake'; then
+          if printf '%s\n' "$DIFF" | grep -qE '^tools/Cargo\.|^tools/[^/]+/rust/[^/]+/Cargo\.toml$|^tools/(uv\.lock|pyproject\.toml)$|^tools/[^/]+/py/[^/]+/pyproject\.toml$|^ExternalDependencies\.cmake'; then
             DIFF=$(printf '%s\n%s' "$DIFF" "docker/base.Dockerfile")
           fi
 

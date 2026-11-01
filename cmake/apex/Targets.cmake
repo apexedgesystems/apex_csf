@@ -453,7 +453,9 @@ endfunction ()
 # ------------------------------------------------------------------------------
 # apex_add_tool(...)
 #
-# Define a CLI executable. Outputs to bin/tools/, installs unless NO_INSTALL.
+# Define a CLI executable. A tool lives at tools/<role>/cpp/<tool> and outputs
+# to bin/tools/<role> beside the role's other languages; installs unless
+# NO_INSTALL.
 #
 # By default, tools require POSIX and are skipped on bare-metal builds.
 # Use the BAREMETAL flag to opt a tool into bare-metal compilation.
@@ -488,13 +490,24 @@ function (apex_add_tool)
     return()
   endif ()
 
+  # The role is the directory the tool sits in under tools/.
+  file(RELATIVE_PATH _tool_rel "${CMAKE_SOURCE_DIR}/tools" "${CMAKE_CURRENT_SOURCE_DIR}")
+  if (_tool_rel MATCHES "^([^/.]+)/cpp/")
+    set(_tool_role "${CMAKE_MATCH_1}")
+  else ()
+    message(
+      FATAL_ERROR
+        "apex_add_tool(${TOOL_NAME}): tools live under tools/<role>/cpp/<tool>, not ${CMAKE_CURRENT_SOURCE_DIR}"
+    )
+  endif ()
+
   set(_args
       NAME
       ${TOOL_NAME}
       SRC
       ${TOOL_SRC}
       OUTPUT_DIR
-      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/cpp"
+      "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/${_tool_role}"
       KIND
       "TOOL"
   )
@@ -517,8 +530,8 @@ function (apex_add_tool)
 
   _apex_add_executable(${_args})
 
-  # Track tool for aggregate target
-  set_property(GLOBAL APPEND PROPERTY APEX_CPP_TOOLS ${TOOL_NAME})
+  # The role aggregate in tools/CMakeLists.txt collects the role's tools.
+  set_property(GLOBAL APPEND PROPERTY APEX_TOOLS_${_tool_role} ${TOOL_NAME})
 endfunction ()
 
 # ------------------------------------------------------------------------------
@@ -662,23 +675,6 @@ function (apex_add_library_cuda)
 
     if (APEX_TARGETS_VERBOSE)
       message(STATUS "[apex] CUDA SHIM ${ACL_NAME} (CUDA inactive) core='${ACL_CORE}'")
-    endif ()
-  endif ()
-endfunction ()
-
-# ------------------------------------------------------------------------------
-# apex_finalize_cpp_tools()
-#
-# Creates the ${PROJECT_NAME}_cpp_tools aggregate target from all registered tools.
-# Call once at the end of tools/cpp/CMakeLists.txt.
-# ------------------------------------------------------------------------------
-function (apex_finalize_cpp_tools)
-  get_property(_tools GLOBAL PROPERTY APEX_CPP_TOOLS)
-  if (_tools)
-    add_custom_target(${PROJECT_NAME}_cpp_tools DEPENDS ${_tools})
-    if (APEX_TARGETS_VERBOSE)
-      list(LENGTH _tools _count)
-      message(STATUS "[apex] ${PROJECT_NAME}_cpp_tools aggregate target: ${_count} tools")
     endif ()
   endif ()
 endfunction ()

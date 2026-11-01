@@ -24,9 +24,9 @@ import struct
 import sys
 import time
 
-sys.path.insert(0, "tools/py/src")
+sys.path.insert(0, "tools/ops/py/apex_ops/src")
 
-from apex_tools.ops.client import AprotoClient  # noqa: E402
+from apex_ops.client import AprotoClient  # noqa: E402
 
 # HIL demo component fullUids
 EXEC_UID = 0x000000

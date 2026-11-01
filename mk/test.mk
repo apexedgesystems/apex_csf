@@ -28,7 +28,7 @@ CUDA_LABEL     ?= cuda
 TEST_LOG ?= ctest.log
 
 # Python tools directory
-PY_TOOLS_DIR := tools/py
+PY_TOOLS_DIR := tools
 PY_LIB_DIR   := $(BUILD_DIR)/lib/python
 
 # ------------------------------------------------------------------------------
@@ -120,7 +120,7 @@ testp-cuda: debug
 # lock, so an editable sync could not resolve offline anyway).
 test-py:
 	$(call log,test,Running Python tools tests)
-	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable && (uv run --no-sync pytest -v || test $$? -eq 5)
+	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable --all-packages && (uv run --no-sync pytest -v || test $$? -eq 5)
 
 # Rust tools unit tests
 test-rust:
@@ -138,7 +138,7 @@ test-sh:
 	  printf '{"structs":{"SmokeParams":{"category":"TUNABLE_PARAM","fields":[]}}}\n' \
 	    > "$$tmp/build/apex_data_db/SmokeComponent.json" && \
 	  printf '[SmokeParams]\n' > "$$tmp/build/tprm_templates/SmokeComponent_SmokeParams.toml" && \
-	  bash tools/sh/bin/ops_sdk_package.sh --app SmokeApp --build-dir "$$tmp/build" && \
+	  bash tools/ops/sh/bin/ops_sdk_package.sh --app SmokeApp --build-dir "$$tmp/build" && \
 	  tarball="$$tmp/build/ops_sdk/SmokeApp-ops-sdk.tar.gz" && \
 	  test -f "$$tarball" && \
 	  tar -tzf "$$tarball" | grep -q "SmokeApp/structs/SmokeComponent.json" && \
@@ -242,9 +242,9 @@ check-data-db: tools-build
 # per case and asserts status, the registered list and the diagnostic.
 # check-data-db-contract hands the real check-data-db recipe a scratch
 # BUILD_DIR holding the built generator and a one-entry registered list per
-# fixture under mk/fixtures/check-data-db, asserting the gate's verdict.
+# fixture under tools/build/fixtures/check-data-db, asserting the gate's verdict.
 HELPER_FIXTURE := cmake/apex/test/data_manifest
-GATE_FIXTURES := mk/fixtures/check-data-db
+GATE_FIXTURES := tools/build/fixtures/check-data-db
 
 check-data-manifest-helper:
 	$(call log,check-data-manifest-helper,Configuring the apex_add_data_manifest fixture per case)
@@ -300,8 +300,8 @@ COVERAGE_PY_MIN_LINE   ?= 30
 
 coverage-py:
 	$(call log,coverage,Measuring Python tools coverage)
-	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable && \
-	  (uv run --no-sync pytest --cov=apex_tools --cov-report=term-missing \
+	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable --all-packages && \
+	  (uv run --no-sync pytest --cov=apex_ops --cov=apex_analysis --cov-report=term-missing \
 	    --cov-report=xml:coverage-py.xml \
 	    $(if $(filter 1,$(SCAN_GATE)),--cov-fail-under=$(COVERAGE_PY_MIN_LINE),) \
 	    || test $$? -eq 5)

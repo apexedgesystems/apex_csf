@@ -137,7 +137,8 @@ apex_add_tool(
 )
 ```
 
-Tools output to `bin/tools/`.
+Tools output to `bin/tools/<role>`, the role being the `tools/<role>/cpp/<tool>`
+directory the call sits in.
 
 ### Firmware (Bare-Metal Executables)
 
@@ -316,7 +317,7 @@ reads this file and invokes `apex_data_gen` to produce JSON struct dictionaries;
 `make check-data-db` generates the same list into a scratch tree as a gate.
 `make check-data-manifest-helper` asserts the helper's contract on the fixture in
 `test/data_manifest/`; `make check-data-db-contract` asserts the gate's verdicts
-on `mk/fixtures/check-data-db/`.
+on `tools/build/fixtures/check-data-db/`.
 
 ## TPRM generation
 

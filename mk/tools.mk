@@ -15,15 +15,16 @@ TOOLS_MK_GUARD := 1
 
 # Uses BUILD_DIR and NUM_JOBS from common.mk
 
-# Python tools source directory
-PY_TOOLS_DIR := tools/py
+# The Python workspace root (uv) and the ops package the make targets run as files
+PY_TOOLS_DIR := tools
+OPS_PY := tools/ops/py/apex_ops/src/apex_ops
 
 # ------------------------------------------------------------------------------
 # Tool Build Targets
 # ------------------------------------------------------------------------------
 
-# _tool_build: Generate a tools-<name> target that builds via ninja
-# $(1) = family (cpp/py/sh) or role (build/ops/analysis), $(2) = display name
+# _tool_build: Generate a tools-<role> target that builds via ninja
+# $(1) = role (build/ops/analysis), $(2) = display name
 # `ninja build.ninja` re-runs the CMake generate step when a CMakeLists
 # changed, so the target query that follows sees targets added or renamed
 # since the tree was last built instead of answering from a stale graph.
@@ -37,17 +38,15 @@ tools-$(1): prep
 	else printf '[tools] No $(2) tools to build\n'; fi
 endef
 
-# The tool families still built by language and the roles the Rust workspace
-# is built by (mirror _APEX_TOOL_FAMILIES and _APEX_TOOL_ROLES in
-# tools/CMakeLists.txt). Executables land in bin/tools/<family|role>; the
-# apex build itself depends on tools-build alone.
-TOOL_FAMILIES := cpp py sh
+# The roles every tool is built and installed by (mirrors _APEX_TOOL_ROLES in
+# tools/CMakeLists.txt). Executables land in bin/tools/<role>; the apex build
+# itself depends on tools-build alone.
 TOOL_ROLES := build ops analysis
 
-$(foreach f,$(TOOL_FAMILIES) $(TOOL_ROLES),$(eval $(call _tool_build,$(f),$(f))))
+$(foreach r,$(TOOL_ROLES),$(eval $(call _tool_build,$(r),$(r))))
 
-# Build every tool (all families and roles)
-tools: $(addprefix tools-,$(TOOL_FAMILIES) $(TOOL_ROLES))
+# Build every tool (all roles)
+tools: $(addprefix tools-,$(TOOL_ROLES))
 	$(call log,tools,All tools built)
 
 # ------------------------------------------------------------------------------
@@ -117,7 +116,7 @@ tprm-templates: apex-data-db tools-ops
 # Output: build/*/ops_deck.md
 ops-deck: apex-data-db
 	$(call log,ops-deck,Generating command/telemetry deck)
-	@python3 $(PY_TOOLS_DIR)/src/apex_tools/ops/deck_gen.py \
+	@python3 $(OPS_PY)/deck_gen.py \
 	  --db "$(BUILD_DIR)/apex_data_db" \
 	  --output "$(BUILD_DIR)/ops_deck.md"
 
@@ -159,7 +158,7 @@ ops-artifacts: apex-data-db tprm-templates ops-deck
 ops-sdk: apex-data-db tprm-templates
 	@test -n "$(APP)" || { printf '$(TERM_RED)[ops-sdk]$(TERM_RESET) APP not set. Usage: make ops-sdk APP=<name>\n'; exit 1; }
 	$(call log,ops-sdk,Packaging Ops SDK for $(APP))
-	@bash tools/sh/bin/ops_sdk_package.sh \
+	@bash tools/ops/sh/bin/ops_sdk_package.sh \
 	  --app "$(APP)" \
 	  --build-dir "$(BUILD_DIR)"
 
@@ -188,7 +187,7 @@ ops-sdk: apex-data-db tprm-templates
 zenith-target: apex-data-db
 	@test -n "$(APP)" || { printf '$(TERM_RED)[zenith-target]$(TERM_RESET) APP not set. Usage: make zenith-target APP=<name>\n'; exit 1; }
 	$(call log,zenith-target,Generating Zenith target configs for $(APP))
-	@python3 $(PY_TOOLS_DIR)/src/apex_tools/ops/target_gen.py \
+	@python3 $(OPS_PY)/target_gen.py \
 	  --app "$(APP)" \
 	  --apps-dir "demos:apps" \
 	  --db "$(BUILD_DIR)/apex_data_db" \
@@ -205,7 +204,7 @@ zenith-target: apex-data-db
 zenith-validate: zenith-target
 	@test -n "$(HOST)" || { printf '$(TERM_RED)[zenith-validate]$(TERM_RESET) HOST not set. Usage: make zenith-validate APP=<name> HOST=<ip> [PORT=<port>]\n'; exit 1; }
 	$(call log,zenith-validate,Validating $(APP) against $(HOST):$(or $(PORT),9000))
-	@python3 $(PY_TOOLS_DIR)/src/apex_tools/ops/target_validate.py \
+	@python3 $(OPS_PY)/target_validate.py \
 	  --generated "$(BUILD_DIR)/zenith_targets/$(APP)" \
 	  --host "$(HOST)" \
 	  --port "$(or $(PORT),9000)"

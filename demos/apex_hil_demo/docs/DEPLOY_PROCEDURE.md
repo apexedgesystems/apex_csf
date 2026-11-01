@@ -58,10 +58,10 @@ ssh kalex@raspberrypi.local 'cd ~/apex/ApexWatchdog && \
 
 # 11. Wait for system to start, then verify
 sleep 10
-PYTHONPATH=tools/py/src python3 demos/apex_hil_demo/scripts/checkout.py --host raspberrypi.local
+PYTHONPATH=tools/ops/py/apex_ops/src python3 demos/apex_hil_demo/scripts/checkout.py --host raspberrypi.local
 
 # 12. Health check (safe for soak tests, read-only)
-PYTHONPATH=tools/py/src python3 demos/apex_hil_demo/scripts/health.py --host raspberrypi.local
+PYTHONPATH=tools/ops/py/apex_ops/src python3 demos/apex_hil_demo/scripts/health.py --host raspberrypi.local
 
 # 13. Stop via signal
 ssh kalex@raspberrypi.local 'sudo kill $(pgrep ApexHilDemo)'      # direct mode

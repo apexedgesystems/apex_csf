@@ -121,7 +121,7 @@ its `.auto/<Component>.proto` emission is the normalized interface.
 
 ## See also
 
-- [apex/options.proto](../../../../proto/apex/options.proto) -- extension
+- [apex/options.proto](../../../proto/apex/options.proto) -- extension
   definitions for standard toolchains.
 - [apex_data_gen](../../apex-build-tools/docs/apex_data_gen.md) -- the manifest surfaces the
   proto profile feeds.

@@ -56,6 +56,15 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- Breaking: every tool now lives under its role (`tools/<role>/<language>/<unit>`)
+  and installs to `bin/tools/<role>/`; `bin/tools/{py,sh,cpp}` and
+  `make tools-{py,sh,cpp}` are gone. The Python tools are a uv workspace
+  with one lock at `tools/`: the `apex_tools` package becomes `apex_ops`
+  (`tools/ops/py/apex_ops`, no runtime dependencies) and `apex_analysis`
+  (`tools/analysis/py/apex_analysis`), each shipping its own wheel in place
+  of `apex_py_tools`; scripts set `PYTHONPATH=tools/ops/py/apex_ops/src`.
+  The docker scripts move to `tools/build/sh` and `tools/build/py/bin`, the
+  proto profile and the data-db gate fixtures to `tools/build`.
 - Breaking: the Rust tools are one Cargo workspace at `tools/`, built and
   installed by role. Executables move from `bin/tools/rust/` to
   `bin/tools/<role>/` (build, ops, analysis); `make tools-build` replaces

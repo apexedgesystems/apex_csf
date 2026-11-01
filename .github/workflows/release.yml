@@ -106,8 +106,13 @@ jobs:
           # The tool families version with the project, so their binaries
           # self-report the release they shipped in (--version, wheel metadata).
           rust_version=$(sed -n 's/^version = "\([0-9.]*\)"/\1/p' tools/Cargo.toml | head -1)
-          py_version=$(sed -n 's/^version = "\([0-9.]*\)"/\1/p' tools/py/pyproject.toml | head -1)
-          for pair in "tools/Cargo.toml:$rust_version" "tools/py/pyproject.toml:$py_version"; do
+          # Every Python member versions with the workspace root.
+          pairs="tools/Cargo.toml:$rust_version"
+          for f in tools/pyproject.toml tools/*/py/*/pyproject.toml; do
+            v=$(sed -n 's/^version = "\([0-9.]*\)"/\1/p' "$f" | head -1)
+            pairs="$pairs $f:$v"
+          done
+          for pair in $pairs; do
             if [ "${pair#*:}" != "$TAG_BASE" ]; then
               echo "ERROR: Tag version ($TAG_BASE) does not match ${pair%%:*} (${pair#*:})"
               exit 1
@@ -417,7 +422,7 @@ jobs:
           mkdir -p dist
           cp output/apex-csf-"$VERSION"-*.tar.gz dist/
           cp output/apex-tools-"$VERSION"-*.tar.gz dist/
-          cp output/apex_py_tools-"$VERSION"-*.whl dist/
+          cp output/*.whl dist/
           cp build/release/*.tar.gz dist/
           cp provenance/sbom.cdx.json "dist/apex-csf-$VERSION-sbom.cdx.json"
           cp provenance/THIRD_PARTY_NOTICES.md dist/
@@ -425,9 +430,12 @@ jobs:
           n_apps=$(ls build/release/*.tar.gz | wc -l)
           want_platform=$(python3 -c 'import json,os; print(len(json.loads(os.environ["BUILDERS"])))')
           want_apps=$(python3 -c 'import json,os; print(len(json.loads(os.environ["APPS"])))')
-          echo "platform tarballs: $n_platform/$want_platform, app packages: $n_apps/$want_apps"
+          n_wheels=$(ls dist/*.whl | wc -l)
+          want_wheels=$(ls tools/*/py/*/pyproject.toml | wc -l)
+          echo "platform tarballs: $n_platform/$want_platform, app packages: $n_apps/$want_apps, wheels: $n_wheels/$want_wheels"
           [ "$n_platform" -eq "$want_platform" ] || { echo "ERROR: missing platform tarballs"; exit 1; }
           [ "$n_apps" -eq "$want_apps" ] || { echo "ERROR: missing app packages"; exit 1; }
+          [ "$n_wheels" -eq "$want_wheels" ] || { echo "ERROR: expected one wheel per Python member"; exit 1; }
           ls -la dist/
 
       - name: Write build metadata
