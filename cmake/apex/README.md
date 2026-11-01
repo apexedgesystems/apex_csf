@@ -137,7 +137,8 @@ apex_add_tool(
 )
 ```
 
-Tools output to `bin/tools/`.
+Tools output to `bin/tools/<role>`, the role being the `tools/<role>/cpp/<tool>`
+directory the call sits in.
 
 ### Firmware (Bare-Metal Executables)
 

@@ -1,20 +1,20 @@
 # ==============================================================================
-# Tools: system_core_registry
+# Tool: registry-info
 #
-# CLI tools for inspecting and manipulating registry database files.
+# Inspects registry database files; installs to bin/tools/analysis.
 # ==============================================================================
 
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Registry Tools (1)
+# registry-info
 # ------------------------------------------------------------------------------
 
 apex_add_tool(
   NAME
   registry-info
   SRC
-  "${CMAKE_CURRENT_SOURCE_DIR}/registry-info.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/registry-info.cpp"
   LINK
   system_core_registry
   fmt::fmt

@@ -41,7 +41,7 @@ endef
 # is built by (mirror _APEX_TOOL_FAMILIES and _APEX_TOOL_ROLES in
 # tools/CMakeLists.txt). Executables land in bin/tools/<family|role>; the
 # apex build itself depends on tools-build alone.
-TOOL_FAMILIES := cpp py
+TOOL_FAMILIES := py
 TOOL_ROLES := build ops analysis
 
 $(foreach f,$(TOOL_FAMILIES) $(TOOL_ROLES),$(eval $(call _tool_build,$(f),$(f))))

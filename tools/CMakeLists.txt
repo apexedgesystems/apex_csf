@@ -1,8 +1,8 @@
 # ==============================================================================
-# tools/CMakeLists.txt - CLI tools (C++, Python, and Rust and shell by role)
+# tools/CMakeLists.txt - CLI tools (Python by family; Rust, shell and C++ by role)
 #
 # Discovers and builds tool subdirectories by their native toolchains:
-#   cpp/   - Standard CMake (add_subdirectory)
+#   <role>/cpp/<tool>/ - standard CMake (add_subdirectory, apex_add_tool)
 #   <role>/rust/ - Cargo workspace rooted at tools/Cargo.toml (requires cargo on PATH)
 #   py/    - uv + pip (requires uv and pip on PATH)
 #   <role>/sh/bin/ - shell scripts copied to bin/tools/<role>/
@@ -20,7 +20,7 @@
 # is built by role below. The env helper and the make surface (mk/tools.mk
 # TOOL_FAMILIES and TOOL_ROLES) mirror both lists; tools/README.md documents
 # every step of adding a family.
-set(_APEX_TOOL_FAMILIES cpp py)
+set(_APEX_TOOL_FAMILIES py)
 # The roles tools are built and installed by: executables land in
 # bin/tools/<role>, and only the build role is a dependency of the apex build.
 set(_APEX_TOOL_ROLES build ops analysis)
@@ -48,12 +48,21 @@ foreach (_dir IN LISTS _APEX_TOOL_FAMILIES _APEX_TOOL_ROLES)
 endforeach ()
 
 # ------------------------------------------------------------------------------
-# C++ tools
+# C++ tools (by role)
 # ------------------------------------------------------------------------------
 
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cpp/CMakeLists.txt")
-  add_subdirectory(cpp)
-endif ()
+# Each tools/<role>/cpp/<tool> directory is a CMake subdirectory whose
+# apex_add_tool call outputs to bin/tools/<role> and registers the tool in
+# APEX_TOOLS_<role>; the role aggregates below pick those up.
+foreach (_role IN LISTS _APEX_TOOL_ROLES)
+  file(GLOB _cpp_tool_dirs CONFIGURE_DEPENDS
+       "${CMAKE_CURRENT_SOURCE_DIR}/${_role}/cpp/*/CMakeLists.txt"
+  )
+  foreach (_cpp_cmake IN LISTS _cpp_tool_dirs)
+    get_filename_component(_cpp_dir "${_cpp_cmake}" DIRECTORY)
+    add_subdirectory("${_cpp_dir}")
+  endforeach ()
+endforeach ()
 
 # ------------------------------------------------------------------------------
 # Rust tools (one workspace, built and installed by role)
@@ -328,9 +337,14 @@ endforeach ()
 # ------------------------------------------------------------------------------
 
 # ${PROJECT_NAME}_<role>_tools builds every language's tools of that role
+# (the Rust and shell stamps and the C++ tool targets)
 # (make tools-<role>); the TPRM rules depend on the build role's aggregate.
 # Only the build role is a dependency of the apex build.
 foreach (_role IN LISTS _APEX_TOOL_ROLES)
+  get_property(_role_cpp_tools GLOBAL PROPERTY APEX_TOOLS_${_role})
+  if (_role_cpp_tools)
+    list(APPEND _ROLE_PARTS_${_role} ${_role_cpp_tools})
+  endif ()
   if (NOT _ROLE_PARTS_${_role})
     continue()
   endif ()
