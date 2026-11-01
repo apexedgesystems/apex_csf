@@ -388,8 +388,10 @@ def _run_uploader(monkeypatch, tmp_path, rescan_status, start_status):
     """Run the real uploader main with compiler, transfer and client stubbed.
 
     Returns (exit status, opcodes sent, stdout, stderr). No socket or process
-    is created: the compiler writes a placeholder file and the client returns
-    the given terminal statuses.
+    is created: the compiler stub checks that the uploader runs the build-role
+    cfg2bin the tree installs, with the config, the output and the spec pin,
+    then writes a placeholder file; the client returns the given terminal
+    statuses.
     """
     import contextlib
     import io
@@ -400,9 +402,15 @@ def _run_uploader(monkeypatch, tmp_path, rescan_status, start_status):
     mod = _upload_rts_module()
     names = {0: "SUCCESS", 4: "TARGET_NOT_FOUND", 5: "LOAD_FAILED"}
     sent = []
+    toml = mod.MANIFEST.parent / "upload/rts_008_uploaded_beacon.toml"
 
     def compiler(argv, *, check):
-        pathlib.Path(argv[argv.index("--output") + 1]).write_bytes(b"placeholder")
+        assert check is True
+        assert pathlib.Path(argv[0]) == tmp_path / "bin/tools/build/cfg2bin", argv[0]
+        assert argv[1:3] == ["--config", str(toml)]
+        assert argv[3] == "--output"
+        assert argv[5:] == ["--pin-spec", f"{mod.SPEC}:StandaloneSequenceTprm"]
+        pathlib.Path(argv[4]).write_bytes(b"placeholder")
         return types.SimpleNamespace(returncode=0)
 
     class Client:
@@ -425,7 +433,6 @@ def _run_uploader(monkeypatch, tmp_path, rescan_status, start_status):
     client_module.AprotoClient = Client
     monkeypatch.setitem(sys.modules, "apex_tools.ops.client", client_module)
     monkeypatch.setattr(mod, "subprocess", types.SimpleNamespace(run=compiler))
-    toml = mod.MANIFEST.parent / "upload/rts_008_uploaded_beacon.toml"
     argv = ["upload_rts.py", str(toml), "--start", "--build-dir", str(tmp_path)]
     monkeypatch.setattr(sys, "argv", argv)
     out, err = io.StringIO(), io.StringIO()

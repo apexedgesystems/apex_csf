@@ -26,7 +26,7 @@ Arguments:
                   Default: the lowest slot the manifest leaves free.
   --start         START_RTS_BY_ID after the rescan
   --host/--port   ops interface (default 127.0.0.1:9000)
-  --build-dir     build tree holding bin/tools/rust/cfg2bin (default build/hosted-x86_64-debug)
+  --build-dir     build tree holding bin/tools/build/cfg2bin (default build/hosted-x86_64-debug)
 """
 import argparse
 import pathlib
@@ -124,7 +124,7 @@ def main() -> int:
 
     out = pathlib.Path(a.build_dir) / "rover_mcu_upload" / f"{slot:03d}.rts"
     out.parent.mkdir(parents=True, exist_ok=True)
-    cfg2bin = pathlib.Path(a.build_dir) / "bin/tools/rust/cfg2bin"
+    cfg2bin = pathlib.Path(a.build_dir) / "bin/tools/build/cfg2bin"
     subprocess.run(
         [
             str(cfg2bin),
