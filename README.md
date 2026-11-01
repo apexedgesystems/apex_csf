@@ -351,7 +351,9 @@ All toolchains are pre-configured in Docker images. See
 - OpenSSL (encryption library)
 - SuiteSparse (KLU sparse solver, circuit simulation)
 - Rust toolchain (CLI tools)
-- Python 3.10+ with uv (CLI tools)
+- Python 3.11+ with uv (CLI tools)
+- Node.js 20+ on PATH when the pre-commit hooks run outside the container
+  (prettier and markdownlint run on the system node; the dev image ships one)
 
 All dependencies are available in the provided Docker images.
 

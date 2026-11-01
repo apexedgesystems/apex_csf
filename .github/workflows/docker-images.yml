@@ -70,7 +70,7 @@ jobs:
   # ----------------------------------------------------------------------------
   detect:
     name: Detect changed images
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       tier0: ${{ steps.d.outputs.tier0 }}
       tier1: ${{ steps.d.outputs.tier1 }}
@@ -206,7 +206,7 @@ jobs:
     name: ${{ matrix.img.image }}
     needs: detect
     if: ${{ needs.detect.outputs.tier0 != '[]' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -230,7 +230,7 @@ jobs:
     name: ${{ matrix.img.image }}
     needs: [detect, tier0]
     if: ${{ always() && needs.detect.outputs.tier1 != '[]' && needs.tier0.result != 'failure' && needs.tier0.result != 'cancelled' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -254,7 +254,7 @@ jobs:
     name: ${{ matrix.img.image }}
     needs: [detect, tier1]
     if: ${{ always() && needs.detect.outputs.tier2 != '[]' && needs.tier1.result != 'failure' && needs.tier1.result != 'cancelled' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
       fail-fast: false
