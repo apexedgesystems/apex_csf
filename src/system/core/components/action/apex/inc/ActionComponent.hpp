@@ -118,9 +118,8 @@ public:
     const std::uint32_t PREV_ABORTS = iface_.stats.sequenceAborts;
     const std::uint32_t PREV_RESOLVE_FAILURES = iface_.stats.resolveFailures;
 
-    // The cycle's end state is the one engine value other threads read:
-    // the published count below answers GET_RUNNING wherever that command
-    // is served, so the engine's tables and counters stay with this thread.
+    // The published count below answers GET_RUNNING wherever that command
+    // is served, without exposing the engine's tables to that query.
     sequencesRunning_.store(data::processCycle(iface_, currentCycle), std::memory_order_release);
 
     // Dispatch built-in log for notifications that fired this cycle.

@@ -522,7 +522,9 @@ TEST(ActionComponent, RunningCountCoversACatalogSequenceChainingToItself) {
 /** @test The published count answers GET_RUNNING on another thread while the engine ticks. The
  * handler reads only what the cycle publishes, whether the queue drain or the interface's
  * synchronous fallback serves it, so every reply is a cycle's end state and nothing of the
- * engine's tables is read across the threads (run under ThreadSanitizer). */
+ * engine's tables is read across the threads (run under ThreadSanitizer). The self-chain runs
+ * when every cycle ends, so every reply while it runs is 1: a transient zero between a cycle's
+ * reset of the count and its publication would fail here. */
 TEST(ActionComponent, RunningCountIsPublishedToItsQueryWhileTheEngineTicks) {
   system_core::action::ActionComponent comp;
   ResolverCtx rCtx;
@@ -532,35 +534,32 @@ TEST(ActionComponent, RunningCountIsPublishedToItsQueryWhileTheEngineTicks) {
   ASSERT_FALSE(DIR.empty());
   ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 1u);
   ASSERT_NE(comp.startRtsById(1), 0xFFu);
+  comp.tick(0);
+  ASSERT_EQ(queryRunning(comp), 1u) << "the self-chain runs when its first cycle ends";
 
-  // The engine thread cycles the self-chain, stops it, and publishes one
-  // more cycle's end state; the reader queries until the engine is done.
-  constexpr std::uint32_t TICKS = 20000;
-  std::atomic<bool> ticking{true};
+  // The engine thread cycles the self-chain until the reader has its
+  // replies, then stops it and publishes one more cycle's end state.
+  constexpr std::uint32_t REPLIES = 20000;
+  std::atomic<bool> readerDone{false};
+  std::uint32_t ticks = 1;
   bool stopped = false;
   std::thread engine([&] {
-    for (std::uint32_t tick = 0; tick < TICKS; ++tick) {
-      comp.tick(tick);
+    while (!readerDone.load(std::memory_order_acquire)) {
+      comp.tick(ticks++);
     }
     stopped = comp.stopRtsById(1);
-    comp.tick(TICKS);
-    ticking.store(false, std::memory_order_release);
+    comp.tick(ticks++);
   });
-  std::uint32_t replies = 0;
-  std::uint32_t repliesOfOne = 0;
-  while (ticking.load(std::memory_order_acquire)) {
-    const std::uint8_t RUNNING = queryRunning(comp);
-    ASSERT_LE(RUNNING, 1u) << "a cycle's end state: the one sequence or none";
-    repliesOfOne += RUNNING;
-    ++replies;
+  for (std::uint32_t reply = 0; reply < REPLIES; ++reply) {
+    ASSERT_EQ(queryRunning(comp), 1u) << "reply " << reply << ": the sequence runs until the stop";
   }
+  readerDone.store(true, std::memory_order_release);
   engine.join();
   EXPECT_TRUE(stopped);
-  EXPECT_GT(replies, 0u);
-  EXPECT_GT(repliesOfOne, 0u) << "the reader saw the sequence running";
+  EXPECT_GE(ticks, 2u) << "the engine cycled under the queries";
   EXPECT_EQ(queryRunning(comp), 0u) << "the cycle after the stop published nothing running";
   EXPECT_EQ(comp.sequencesRunning(), 0u);
-  EXPECT_EQ(comp.stats().totalCycles, TICKS + 1);
+  EXPECT_EQ(comp.stats().totalCycles, ticks);
   std::filesystem::remove_all(DIR);
 }
 
