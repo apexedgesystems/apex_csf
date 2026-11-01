@@ -248,7 +248,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/py/pyproject.toml")
     set(_PY_SRC "${CMAKE_CURRENT_SOURCE_DIR}/py")
     set(_PY_OUT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/py")
     set(_PY_LIB "${CMAKE_BINARY_DIR}/lib/python")
-    # Fixed name: the release packaging (docker/scripts/package-tools.sh via
+    # Fixed name: the release packaging (tools/build/sh/package-tools.sh via
     # make artifact-tools) and the builder prune whitelist key on it.
     set(_PY_WHEELS "${CMAKE_BINARY_DIR}/tools-wheels")
     set(_PY_STAMP "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/py-tools.built")

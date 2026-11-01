@@ -92,7 +92,7 @@ jobs:
               # runs in them, so a change confined here needs only lint -- not the
               # full C++/rust/py suite. (Lint always runs; it hadolints/shellchecks
               # these.)
-              docker/dev/*|docker/scripts/*) : ;;
+              docker/dev/*|tools/build/sh/*|tools/build/py/bin/*) : ;;
               .github/*|mk/*|docker/*|docker-compose*) allflag=true ;;
               *)            allflag=true ;;
             esac
@@ -107,14 +107,14 @@ jobs:
           # runs in (base tiers, the cpu dev image, the cuda image, the base
           # compose), or anything base.Dockerfile bakes -- the dependency
           # manifests (tools/Cargo.*, the member Cargo.toml files, tools/py/uv.lock|pyproject.toml,
-          # ExternalDependencies.cmake) and the baked scripts (docker/scripts/).
+          # ExternalDependencies.cmake) and the baked scripts (tools/build/sh/, tools/build/py/bin/).
           # Without the baked inputs the gate runs offline builds against STALE
           # caches: a lock bump fails on missing crates/wheels, and a GIT_TAG
           # bump silently builds the OLD baked source via the
           # FETCHCONTENT_SOURCE_DIR redirect (green-but-wrong). Leaf
           # cross/firmware Dockerfiles feed only post-merge images; builder/final
           # feed the release pipe; CI compose overlays are runtime-only.
-          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$|^docker/scripts/|^tools/Cargo\.(lock|toml)$|^tools/[^/]+/rust/[^/]+/Cargo\.toml$|^tools/py/(uv\.lock|pyproject\.toml)$|^ExternalDependencies\.cmake$' && echo true || echo false)
+          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$|^tools/build/sh/|^tools/build/py/bin/|^tools/Cargo\.(lock|toml)$|^tools/[^/]+/rust/[^/]+/Cargo\.toml$|^tools/py/(uv\.lock|pyproject\.toml)$|^ExternalDependencies\.cmake$' && echo true || echo false)
           printf 'cpp=%s\nrust=%s\npy=%s\nsh=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$sh" "$docker" | tee -a "$GITHUB_OUTPUT"
 
   lint:

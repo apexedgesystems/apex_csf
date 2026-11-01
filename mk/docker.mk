@@ -43,10 +43,10 @@ DOCKER_OUT_DIR := output
 # registry; check-platforms (CI lint) fails on drift.
 
 regen-platforms:
-	@python3 docker/scripts/gen-platform-consumers.py
+	@python3 tools/build/py/bin/gen-platform-consumers.py
 
 check-platforms:
-	@python3 docker/scripts/gen-platform-consumers.py --check
+	@python3 tools/build/py/bin/gen-platform-consumers.py --check
 
 .PHONY: regen-platforms check-platforms
 
@@ -262,7 +262,7 @@ artifact-tools:
 	  docker cp "$$CID:/home/$(USER)/workspace/build/$(ARTIFACT_DIR_cpu)/tools-wheels" \
 	    "$(DOCKER_OUT_DIR)/.stage-tools/tools-wheels" && \
 	  docker rm "$$CID" >/dev/null
-	@bash docker/scripts/package-tools.sh \
+	@bash tools/build/sh/package-tools.sh \
 	  "$(DOCKER_OUT_DIR)/.stage-tools/tools-bin" \
 	  "$(DOCKER_OUT_DIR)/.stage-tools/tools-wheels" \
 	  "$(DOCKER_OUT_DIR)" "$(VERSION)"

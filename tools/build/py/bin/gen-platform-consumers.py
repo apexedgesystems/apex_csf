@@ -20,7 +20,8 @@ import re
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent.parent
+# tools/build/py/bin/<this file>: the repo root is five levels up.
+ROOT = Path(__file__).resolve().parents[4]
 REGISTRY = ROOT / "mk/platforms.mk"
 
 FILES = {

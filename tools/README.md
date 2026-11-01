@@ -50,7 +50,7 @@ steps -- every one of them, honestly:
    cache in `docker/base.Dockerfile` (the cargo/uv sections are the
    patterns), or release builds will fail offline.
 5. **Release assets**: executables under `bin/tools/go` ride the
-   apex-tools tarball automatically (`docker/scripts/package-tools.sh`
+   apex-tools tarball automatically (`tools/build/sh/package-tools.sh`
    packages the whole tree). Only a language-native package artifact
    (like the python wheel) needs a packaging change -- extend
    package-tools.sh, never a second implementation.

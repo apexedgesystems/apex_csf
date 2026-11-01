@@ -275,7 +275,7 @@ RUN uv export --directory /tmp/py-fetch --frozen --format requirements-txt \
 # source of truth); the CI image graph watches it too, so a version bump
 # rebuilds and re-bakes.
 COPY ExternalDependencies.cmake /tmp/deps/ExternalDependencies.cmake
-COPY docker/scripts/bake-external-deps.sh /tmp/deps/bake-external-deps.sh
+COPY tools/build/sh/bake-external-deps.sh /tmp/deps/bake-external-deps.sh
 RUN bash /tmp/deps/bake-external-deps.sh /tmp/deps/ExternalDependencies.cmake \
       /opt/apex-deps /opt/apex-pip-wheels && \
     rm -rf /tmp/deps && \
