@@ -1,4 +1,4 @@
-"""Unit tests for apex_tools.mc.mc_plot module.
+"""Unit tests for apex_analysis.mc_plot module.
 
 Tests plot generation functions with synthetic dataframes. Verifies that
 functions run without error and produce expected output files.
@@ -6,7 +6,7 @@ functions run without error and produce expected output files.
 
 import numpy as np
 import pandas as pd
-from apex_tools.mc.mc_plot import (
+from apex_analysis.mc_plot import (
     plot_convergence,
     plot_correlation_matrix,
     plot_histograms,

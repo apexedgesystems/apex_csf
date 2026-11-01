@@ -1,11 +1,11 @@
-"""Unit tests for apex_tools.ops.deck_gen module.
+"""Unit tests for apex_ops.deck_gen module.
 
 Tests struct dictionary loading, category grouping, and field formatting.
 """
 
 import json
 
-from apex_tools.ops.deck_gen import (
+from apex_ops.deck_gen import (
     collect_by_category,
     format_type,
     format_value,

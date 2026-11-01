@@ -490,7 +490,7 @@ Performance benchmarking uses
 | `mc-plot`            | Plot Monte Carlo run results (Python)            |
 
 See [tools/docs/rust_tools.md](tools/docs/rust_tools.md),
-[tools/py/README.md](tools/py/README.md),
+[tools/docs/python_tools.md](tools/docs/python_tools.md),
 [registry-info](tools/analysis/cpp/registry_info/docs/registry_info.md), and
 [tools/ops/sh/README.md](tools/ops/sh/README.md) for full documentation.
 

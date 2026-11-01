@@ -28,7 +28,7 @@ CUDA_LABEL     ?= cuda
 TEST_LOG ?= ctest.log
 
 # Python tools directory
-PY_TOOLS_DIR := tools/py
+PY_TOOLS_DIR := tools
 PY_LIB_DIR   := $(BUILD_DIR)/lib/python
 
 # ------------------------------------------------------------------------------
@@ -120,7 +120,7 @@ testp-cuda: debug
 # lock, so an editable sync could not resolve offline anyway).
 test-py:
 	$(call log,test,Running Python tools tests)
-	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable && (uv run --no-sync pytest -v || test $$? -eq 5)
+	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable --all-packages && (uv run --no-sync pytest -v || test $$? -eq 5)
 
 # Rust tools unit tests
 test-rust:
@@ -300,8 +300,8 @@ COVERAGE_PY_MIN_LINE   ?= 30
 
 coverage-py:
 	$(call log,coverage,Measuring Python tools coverage)
-	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable && \
-	  (uv run --no-sync pytest --cov=apex_tools --cov-report=term-missing \
+	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable --all-packages && \
+	  (uv run --no-sync pytest --cov=apex_ops --cov=apex_analysis --cov-report=term-missing \
 	    --cov-report=xml:coverage-py.xml \
 	    $(if $(filter 1,$(SCAN_GATE)),--cov-fail-under=$(COVERAGE_PY_MIN_LINE),) \
 	    || test $$? -eq 5)

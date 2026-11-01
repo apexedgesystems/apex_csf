@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.11"
 resolution-markers = [
     "python_full_version >= '3.15' and sys_platform == 'win32'",
@@ -16,10 +16,17 @@ resolution-markers = [
     "python_full_version < '3.12' and sys_platform != 'emscripten' and sys_platform != 'win32'",
 ]
 
+[manifest]
+members = [
+    "apex-analysis",
+    "apex-ops",
+    "apex-py-tools",
+]
+
 [[package]]
-name = "apex-py-tools"
+name = "apex-analysis"
 version = "0.0.1"
-source = { editable = "." }
+source = { editable = "analysis/py/apex_analysis" }
 dependencies = [
     { name = "matplotlib" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
@@ -28,10 +35,26 @@ dependencies = [
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "scipy", version = "1.18.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "seaborn" },
-    { name = "toml" },
-    { name = "tomli" },
-    { name = "tomlkit" },
 ]
+
+[package.metadata]
+requires-dist = [
+    { name = "matplotlib", specifier = ">=3.10.9,<4.0.0" },
+    { name = "numpy", specifier = ">=2.2.4,<3.0.0" },
+    { name = "pandas", specifier = ">=2.2.3,<4.0.0" },
+    { name = "scipy", specifier = ">=1.11.0,<2.0.0" },
+    { name = "seaborn", specifier = ">=0.13.0,<0.14.0" },
+]
+
+[[package]]
+name = "apex-ops"
+version = "0.0.1"
+source = { editable = "ops/py/apex_ops" }
+
+[[package]]
+name = "apex-py-tools"
+version = "0.0.1"
+source = { virtual = "." }
 
 [package.dev-dependencies]
 dev = [
@@ -49,16 +72,6 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [
-    { name = "matplotlib", specifier = ">=3.10.9,<4.0.0" },
-    { name = "numpy", specifier = ">=2.2.4,<3.0.0" },
-    { name = "pandas", specifier = ">=2.2.3,<4.0.0" },
-    { name = "scipy", specifier = ">=1.11.0,<2.0.0" },
-    { name = "seaborn", specifier = ">=0.13.0,<0.14.0" },
-    { name = "toml", specifier = ">=0.10.2,<0.11.0" },
-    { name = "tomli", specifier = ">=2.4.1,<3.0.0" },
-    { name = "tomlkit", specifier = ">=0.15.1,<0.16.0" },
-]
 
 [package.metadata.requires-dev]
 dev = [
@@ -1692,15 +1705,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/43/f8/0a71edf031f03c40db17503cb8ca78a69a171254e568e7db241b0ab57ea1/snowballstemmer-3.1.1.tar.gz", hash = "sha256:e07bbc54a0d798fe6010a12398422e62a8bfbba95c394fd0956ef58cb4d3e260", size = 123314, upload-time = "2026-06-03T00:56:40.194Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/4c/07/2ebca9b11fb9be7340a818d8d6f63feaebb146be2c4afbd6061701d6df6e/snowballstemmer-3.1.1-py3-none-any.whl", hash = "sha256:7e207fa178741da09cdee59d3ecec3827ad5f92b1fc5c9ff3755b639f71f5752", size = 104164, upload-time = "2026-06-03T00:56:38.614Z" },
-]
-
-[[package]]
-name = "toml"
-version = "0.10.2"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/be/ba/1f744cdc819428fc6b5084ec34d9b30660f6f9daaf70eead706e3203ec3c/toml-0.10.2.tar.gz", hash = "sha256:b3bda1d108d5dd99f4a20d24d9c348e91c4db7ab1b749200bded2f839ccbe68f", size = 22253, upload-time = "2020-11-01T01:40:22.204Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/44/6f/7120676b6d73228c96e17f1f794d8ab046fc910d781c8d151120c3f1569e/toml-0.10.2-py2.py3-none-any.whl", hash = "sha256:806143ae5bfb6a3c6e736a764057db0e6a0e05e338b5630894a5f779cabb4f9b", size = 16588, upload-time = "2020-11-01T01:40:20.672Z" },
 ]
 
 [[package]]

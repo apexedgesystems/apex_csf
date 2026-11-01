@@ -58,5 +58,5 @@ ops-deck --db build/hosted-x86_64-debug/apex_data_db --output deck.md
 
 ## See Also
 
-- [apex_data_gen](../../build/rust/apex-build-tools/docs/apex_data_gen.md) -- Generates the JSON struct dictionaries consumed by this tool.
-- [ops_sdk_package.sh](../../ops/sh/docs/ops_sdk_package.md) -- Bundles struct dictionaries and a generated deck into a deployable SDK package.
+- [apex_data_gen](../../../../build/rust/apex-build-tools/docs/apex_data_gen.md) -- Generates the JSON struct dictionaries consumed by this tool.
+- [ops_sdk_package.sh](../../../sh/docs/ops_sdk_package.md) -- Bundles struct dictionaries and a generated deck into a deployable SDK package.

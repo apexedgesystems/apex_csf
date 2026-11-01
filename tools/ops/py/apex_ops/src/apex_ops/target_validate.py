@@ -15,8 +15,10 @@ import sys
 from pathlib import Path
 
 # Ensure the ops package is importable when run standalone
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from apex_tools.ops.client import AprotoClient  # noqa: E402
+# Runnable as a file (make zenith-validate): the package root is src/, two
+# levels up from this module.
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from apex_ops.client import AprotoClient  # noqa: E402
 
 PASS_COUNT = 0
 WARN_COUNT = 0

@@ -156,7 +156,6 @@ help:
 	@printf '  %-28s %s\n' "make tools-build" "Build the tools the apex build needs (Rust)"
 	@printf '  %-28s %s\n' "make tools-ops" "Build the ops tools (Rust)"
 	@printf '  %-28s %s\n' "make tools-analysis" "Build the analysis tools (Rust)"
-	@printf '  %-28s %s\n' "make tools-py" "Build Python tools only"
 	@printf '\n'
 	@printf '%s\n' "Profiling (chrome://tracing format):"
 	@printf '  %-28s %s\n' "make profile-configure" "CMake configure-time hotspots"

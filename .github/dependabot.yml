@@ -30,9 +30,9 @@ updates:
       cargo:
         update-types: ["minor", "patch"]
 
-  # Python tooling (tools/py, uv)
+  # Python tooling (the tools/ uv workspace)
   - package-ecosystem: uv
-    directory: /tools/py
+    directory: /tools
     schedule:
       interval: weekly
     # Wait out newly published versions: a fresh release can be malicious or

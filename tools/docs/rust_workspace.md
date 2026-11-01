@@ -135,7 +135,6 @@ builds `apex_csf_<name>_tools` if that target exists.
 export PATH="$PWD/bin/tools/build:$PATH"
 export PATH="$PWD/bin/tools/ops:$PATH"
 export PATH="$PWD/bin/tools/analysis:$PATH"
-export PATH="$PWD/bin/tools/py:$PATH"
 export PYTHONPATH="$PWD/lib/python:$PYTHONPATH"
 ```
 

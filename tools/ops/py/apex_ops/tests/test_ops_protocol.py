@@ -1,9 +1,9 @@
-"""Unit tests for apex_tools.ops.protocol module.
+"""Unit tests for apex_ops.protocol module.
 
 Tests SLIP framing, APROTO packet construction, and header parsing.
 """
 
-from apex_tools.ops.protocol import (
+from apex_ops.protocol import (
     build_packet,
     parse_header,
     slip_decode_stream,
@@ -114,7 +114,7 @@ def test_parse_ack_stage_field():
     """The stage byte (offset 5) parses; pre-stage frames read RESULT."""
     import struct
 
-    from apex_tools.ops import protocol as proto
+    from apex_ops import protocol as proto
 
     payload = struct.pack("<HHBB", 0x0642, 77, 0, proto.ACK_STAGE_QUEUED) + b"\x00\x00"
     ack = proto.parse_ack(payload)
@@ -132,8 +132,8 @@ def test_terminal_frame_selection():
     discarded."""
     import struct
 
-    from apex_tools.ops import protocol as proto
-    from apex_tools.ops.client import AprotoClient
+    from apex_ops import protocol as proto
+    from apex_ops.client import AprotoClient
 
     client = AprotoClient.__new__(AprotoClient)
     client.timeout = 1.0

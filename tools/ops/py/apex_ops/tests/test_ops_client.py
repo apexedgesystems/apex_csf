@@ -1,9 +1,9 @@
-"""Unit tests for apex_tools.ops.client module.
+"""Unit tests for apex_ops.client module.
 
 Tests CRC32C computation (software implementation matching hardware CRC32C).
 """
 
-from apex_tools.ops.client import crc32c
+from apex_ops.client import crc32c
 
 # =============================== CRC32C ================================
 

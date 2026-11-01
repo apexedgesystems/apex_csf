@@ -13,11 +13,13 @@ Connects to a running ApexHilDemo on Raspberry Pi via the C2 interface
 Prerequisites:
   - ApexHilDemo running on target (e.g., raspberrypi.local)
   - STM32 flight controller connected via /dev/ttyACM0
-  - Python 3.10+ with apex_tools on PYTHONPATH
+  - Python 3.10+ with apex_ops on PYTHONPATH
 
 Usage:
-  PYTHONPATH=tools/py/src python3 demos/apex_hil_demo/scripts/demo_customer.py
-  PYTHONPATH=tools/py/src python3 demos/apex_hil_demo/scripts/demo_customer.py --host 192.168.1.119
+  PYTHONPATH=tools/ops/py/apex_ops/src \\
+      python3 demos/apex_hil_demo/scripts/demo_customer.py
+  PYTHONPATH=tools/ops/py/apex_ops/src \\
+      python3 demos/apex_hil_demo/scripts/demo_customer.py --host 192.168.1.119
 """
 
 import argparse
@@ -25,9 +27,9 @@ import struct
 import sys
 import time
 
-sys.path.insert(0, "tools/py/src")
+sys.path.insert(0, "tools/ops/py/apex_ops/src")
 
-from apex_tools.ops.client import AprotoClient  # noqa: E402
+from apex_ops.client import AprotoClient  # noqa: E402
 
 # Component fullUids (componentId << 8 | instanceIndex)
 EXECUTIVE = 0x000000

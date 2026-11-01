@@ -76,7 +76,6 @@ $(eval $(call _compose_target,static,static (dev-cuda),dev-cuda,static))
 # ------------------------------------------------------------------------------
 
 $(eval $(call _compose_target,tools,all tools,dev-cuda,tools))
-$(eval $(call _compose_target,tools-py,Python tools,dev-cuda,tools-py))
 $(eval $(call _compose_target,tools-build,build tools,dev-cuda,tools-build))
 $(eval $(call _compose_target,tools-ops,ops tools,dev-cuda,tools-ops))
 $(eval $(call _compose_target,tools-analysis,analysis tools,dev-cuda,tools-analysis))

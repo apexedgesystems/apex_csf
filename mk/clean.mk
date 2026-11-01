@@ -15,7 +15,7 @@ CLEAN_MK_GUARD := 1
 # multi-platform workflows (native, jetson, rpi, stm32, etc.)
 
 # Python tools directory
-PY_TOOLS_DIR := tools/py
+PY_TOOLS_DIR := tools
 
 # ------------------------------------------------------------------------------
 # C++ Clean Targets
@@ -62,7 +62,7 @@ clean-py-build:
 	$(call log,clean,Removing Python build artifacts)
 	@if [ -d build ]; then \
 	  find build -mindepth 1 -maxdepth 1 -type d -exec sh -c \
-	    'rm -rf "{}/lib/python" "{}/bin/tools/py" "{}/wheels" 2>/dev/null || true' \; ; \
+	    'rm -rf "{}/lib/python" "{}/tools-wheels" 2>/dev/null || true' \; ; \
 	fi
 
 # Clean all Python artifacts

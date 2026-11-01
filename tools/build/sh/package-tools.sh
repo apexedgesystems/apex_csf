@@ -6,9 +6,10 @@
 # artifact stage and the CI extraction path (make artifact-tools) call this,
 # so the two can never drift.
 #
-# Inputs: a bin/tools tree (all families) and the wheels dir produced by the
-# python family's build. Validates both -- an empty tree or a wheel count
-# other than one means a broken tools build, and a release must fail loudly.
+# Inputs: a bin/tools tree (every role) and the wheels dir the python build
+# writes, one subdir per role with one wheel per member. Validates both -- an
+# empty tree or no wheel means a broken tools build, and a release must fail
+# loudly.
 #
 # Usage: package-tools.sh <tools-bin-dir> <wheels-dir> <out-dir> <version>
 # ==============================================================================
@@ -24,15 +25,14 @@ if [ -z "$(find "$TOOLS_BIN" -type f 2>/dev/null | head -1)" ]; then
   exit 1
 fi
 
-wheel_count=$(find "$WHEELS" -maxdepth 1 -name '*.whl' 2>/dev/null | wc -l)
-if [ "$wheel_count" -ne 1 ]; then
-  echo "[package-tools] ERROR: expected exactly 1 wheel in $WHEELS, found $wheel_count" >&2
+wheel_count=$(find "$WHEELS" -name '*.whl' 2>/dev/null | wc -l)
+if [ "$wheel_count" -lt 1 ]; then
+  echo "[package-tools] ERROR: no wheel under $WHEELS (python tools build broken)" >&2
   exit 1
 fi
 
 mkdir -p "$OUT"
 tar -czf "$OUT/apex-tools-${VERSION}-x86_64-linux.tar.gz" \
   -C "$(dirname "$TOOLS_BIN")" "$(basename "$TOOLS_BIN")"
-cp "$(find "$WHEELS" -maxdepth 1 -name '*.whl')" \
-  "$OUT/apex_py_tools-${VERSION}-py3-none-any.whl"
-echo "[package-tools] apex-tools-${VERSION}-x86_64-linux.tar.gz + wheel -> $OUT"
+find "$WHEELS" -name '*.whl' -exec cp {} "$OUT/" \;
+echo "[package-tools] apex-tools-${VERSION}-x86_64-linux.tar.gz + ${wheel_count} wheel(s) -> $OUT"

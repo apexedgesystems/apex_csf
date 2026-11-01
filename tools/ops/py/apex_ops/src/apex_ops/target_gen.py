@@ -18,16 +18,7 @@ Usage:
 import argparse
 import json
 import shutil
-import sys
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    try:
-        import tomllib
-    except ModuleNotFoundError:
-        import tomli as tomllib  # type: ignore[no-redef]
-
+import tomllib
 from pathlib import Path
 
 # ---------------------------------------------------------------------------

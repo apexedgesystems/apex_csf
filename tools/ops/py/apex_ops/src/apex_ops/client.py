@@ -9,7 +9,7 @@ Provides a high-level interface for:
   - Runtime updates (lock, unlock, TPRM reload, exec restart)
 
 Usage:
-    from apex_tools.ops.client import AprotoClient
+    from apex_ops.client import AprotoClient
 
     with AprotoClient("raspberrypi.local", 9000) as c2:
         health = c2.get_health()

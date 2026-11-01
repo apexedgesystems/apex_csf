@@ -6,7 +6,7 @@ derived from the request struct), while enum-based components keep the
 legacy path.
 """
 
-from apex_tools.ops.target_gen import generate_commands
+from apex_ops.target_gen import generate_commands
 
 APP_DATA = {
     "application": "TestApp",
