@@ -242,9 +242,9 @@ check-data-db: tools-build
 # per case and asserts status, the registered list and the diagnostic.
 # check-data-db-contract hands the real check-data-db recipe a scratch
 # BUILD_DIR holding the built generator and a one-entry registered list per
-# fixture under mk/fixtures/check-data-db, asserting the gate's verdict.
+# fixture under tools/build/fixtures/check-data-db, asserting the gate's verdict.
 HELPER_FIXTURE := cmake/apex/test/data_manifest
-GATE_FIXTURES := mk/fixtures/check-data-db
+GATE_FIXTURES := tools/build/fixtures/check-data-db
 
 check-data-manifest-helper:
 	$(call log,check-data-manifest-helper,Configuring the apex_add_data_manifest fixture per case)
