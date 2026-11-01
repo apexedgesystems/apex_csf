@@ -65,7 +65,6 @@ Cargo.lock.bak
 
 # Dev scripts (not committed)
 tools/py/dev/
-tools/rust/dev/
 
 # Archived test results (kept locally, not committed)
 **/.archive/

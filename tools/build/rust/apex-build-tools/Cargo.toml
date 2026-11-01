@@ -1,0 +1,33 @@
+[package]
+name = "apex-build-tools"
+description = "The tools the apex build stands on: TPRM compilation and packing, spec header generation, data dictionaries"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "cfg2bin"
+path = "src/bin/cfg2bin.rs"
+
+[[bin]]
+name = "tprm_pack"
+path = "src/bin/tprm_pack.rs"
+
+[[bin]]
+name = "cdef_gen"
+path = "src/bin/cdef_gen.rs"
+
+[[bin]]
+name = "apex_data_gen"
+path = "src/bin/apex_data_gen.rs"
+
+[dependencies]
+apex-tprm = { workspace = true }
+clap = { workspace = true }
+serde_json = { workspace = true }
+walkdir = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = { workspace = true }
+tempfile = { workspace = true }

@@ -1,0 +1,24 @@
+[package]
+name = "apex-analysis-tools"
+description = "Inspectors for the data files an apex system leaves behind: registry RDAT and scheduler SDAT"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[lib]
+name = "apex_analysis_tools"
+path = "src/lib.rs"
+
+[[bin]]
+name = "rdat_tool"
+path = "src/bin/rdat_tool.rs"
+
+[[bin]]
+name = "sdat_tool"
+path = "src/bin/sdat_tool.rs"
+
+[dependencies]
+clap = { workspace = true }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }

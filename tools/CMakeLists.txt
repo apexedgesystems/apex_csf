@@ -1,9 +1,9 @@
 # ==============================================================================
-# tools/CMakeLists.txt - CLI tools (C++, Rust, Python, Shell)
+# tools/CMakeLists.txt - CLI tools (C++, Rust by role, Python, Shell)
 #
 # Discovers and builds tool subdirectories by their native toolchains:
 #   cpp/   - Standard CMake (add_subdirectory)
-#   rust/  - Cargo (requires cargo on PATH)
+#   <role>/rust/ - Cargo workspace rooted at tools/Cargo.toml (requires cargo on PATH)
 #   py/    - uv + pip (requires uv and pip on PATH)
 #   sh/    - Shell scripts (copied to bin/tools/sh/)
 #
@@ -16,10 +16,14 @@
 # ------------------------------------------------------------------------------
 # Appends PATH/PYTHONPATH entries to the build .env file (idempotent).
 
-# The tool families this tree builds. The env helper below and the make
-# surface (mk/tools.mk TOOL_FAMILIES) mirror this list; tools/README.md
-# documents every step of adding a family.
-set(_APEX_TOOL_FAMILIES cpp rust py sh)
+# The tool families this tree still builds by language; the Rust workspace
+# is built by role below. The env helper and the make surface (mk/tools.mk
+# TOOL_FAMILIES and TOOL_ROLES) mirror both lists; tools/README.md documents
+# every step of adding a family.
+set(_APEX_TOOL_FAMILIES cpp py sh)
+# The roles tools are built and installed by: executables land in
+# bin/tools/<role>, and only the build role is a dependency of the apex build.
+set(_APEX_TOOL_ROLES build ops analysis)
 
 set(_ENV_FILE "${CMAKE_BINARY_DIR}/.env")
 set(_ENV_HELPER "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-env-helper.sh")
@@ -35,10 +39,11 @@ file(
   "}\n"
   "add_if_missing 'PYTHONPATH.*lib/python' 'export PYTHONPATH=\"$PWD/lib/python:$PYTHONPATH\"'\n"
 )
-# One PATH line per family, driven by the same list the sections below gate on.
-foreach (_family IN LISTS _APEX_TOOL_FAMILIES)
+# One PATH line per bin/tools/<dir>, driven by the same lists the sections
+# below gate on.
+foreach (_dir IN LISTS _APEX_TOOL_FAMILIES _APEX_TOOL_ROLES)
   file(APPEND "${_ENV_HELPER}"
-       "add_if_missing 'bin/tools/${_family}' 'export PATH=\"$PWD/bin/tools/${_family}:$PATH\"'\n"
+       "add_if_missing 'bin/tools/${_dir}' 'export PATH=\"$PWD/bin/tools/${_dir}:$PATH\"'\n"
   )
 endforeach ()
 
@@ -51,69 +56,181 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cpp/CMakeLists.txt")
 endif ()
 
 # ------------------------------------------------------------------------------
-# Rust tools
+# Rust tools (one workspace, built and installed by role)
 # ------------------------------------------------------------------------------
 
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/rust/Cargo.toml")
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
   find_program(CARGO_EXECUTABLE cargo)
 
   if (CARGO_EXECUTABLE)
-    set(_RUST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/rust")
-    set(_RUST_OUT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/rust")
+    # The workspace root; members live under <role>/rust/<crate>.
+    set(_RUST_SRC "${CMAKE_CURRENT_SOURCE_DIR}")
     # Inherit CARGO_HOME from the environment (the dev image bakes a pinned,
     # offline-ready registry cache at /opt/rust/cargo; locally it is ~/.cargo).
     # Sharing the registry cache -- not a fresh per-build one -- lets a clean
     # build reuse the baked crates and lets the release build run offline
-    # (hermetic). The target dir stays per-build so compiled artifacts isolate.
-    set(_CARGO_TARGET "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-rust-target")
-    set(_RUST_STAMP "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/rust-tools.built")
+    # (hermetic). Target dirs stay per-build and per-role so compiled
+    # artifacts isolate.
+    set(_CARGO_TARGET_ROOT "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-rust-target")
 
-    # Auto-enable cuda feature if nvcc is available
-    set(_CARGO_FEATURES "")
-    find_program(_NVCC_EXE nvcc)
-    if (_NVCC_EXE)
-      set(_CARGO_FEATURES "--features cuda")
+    # Every role's stamp regenerates whenever any workspace source, manifest
+    # or the lock changes (the members share apex-tprm), so in-tree tool
+    # edits rebuild before anything consumes the binaries; cargo itself is
+    # incremental past this gate.
+    file(GLOB_RECURSE _RUST_SOURCES CONFIGURE_DEPENDS "${_RUST_SRC}/*/rust/*/src/*.rs")
+    file(GLOB _RUST_MANIFESTS CONFIGURE_DEPENDS "${_RUST_SRC}/*/rust/*/Cargo.toml")
+    list(APPEND _RUST_SOURCES ${_RUST_MANIFESTS} "${_RUST_SRC}/Cargo.toml"
+         "${_RUST_SRC}/Cargo.lock"
+    )
+
+    # Cargo owns the interpretation of the workspace: which packages exist,
+    # where each manifest lives and which executables it declares. Its
+    # metadata is read once at configure with no dependency resolution and
+    # no network, and a failure stops configure instead of building from a
+    # guess. The manifests' contents are configure inputs for the same
+    # reason (the glob above tracks only their presence).
+    set_property(
+      DIRECTORY
+      APPEND
+      PROPERTY CMAKE_CONFIGURE_DEPENDS ${_RUST_MANIFESTS} "${_RUST_SRC}/Cargo.toml"
+               "${_RUST_SRC}/Cargo.lock"
+    )
+    execute_process(
+      COMMAND "${CARGO_EXECUTABLE}" metadata --no-deps --offline --locked --format-version 1
+              --manifest-path "${_RUST_SRC}/Cargo.toml"
+      OUTPUT_VARIABLE _cargo_meta
+      ERROR_VARIABLE _cargo_meta_err
+      RESULT_VARIABLE _cargo_meta_rc
+    )
+    if (NOT _cargo_meta_rc EQUAL 0)
+      message(
+        FATAL_ERROR
+          "${PROJECT_NAME}: cargo metadata failed for ${_RUST_SRC}/Cargo.toml:\n${_cargo_meta_err}"
+      )
     endif ()
+    string(JSON _pkg_count LENGTH "${_cargo_meta}" packages)
+    if (_pkg_count EQUAL 0)
+      message(FATAL_ERROR "${PROJECT_NAME}: the Rust workspace at ${_RUST_SRC} has no members")
+    endif ()
+    math(EXPR _pkg_last "${_pkg_count} - 1")
 
-    # The stamp regenerates whenever the rust sources or lock change, so
-    # in-tree tool edits rebuild before anything consumes the binaries
-    # (cargo itself is incremental past this gate).
-    file(GLOB_RECURSE _RUST_SOURCES CONFIGURE_DEPENDS "${_RUST_SRC}/src/*.rs")
-    list(APPEND _RUST_SOURCES "${_RUST_SRC}/Cargo.toml" "${_RUST_SRC}/Cargo.lock")
+    foreach (_role IN LISTS _APEX_TOOL_ROLES)
+      # A package belongs to the role whose directory holds its manifest; its
+      # [[bin]] targets are the executables the role installs.
+      set(_role_packages "")
+      set(_role_bin_names "")
+      set(_i -1)
+      while (_i LESS _pkg_last)
+        math(EXPR _i "${_i} + 1")
+        string(
+          JSON
+          _pkg_manifest
+          GET
+          "${_cargo_meta}"
+          packages
+          ${_i}
+          manifest_path
+        )
+        file(RELATIVE_PATH _pkg_rel "${_RUST_SRC}" "${_pkg_manifest}")
+        if (NOT _pkg_rel MATCHES "^${_role}/rust/")
+          continue()
+        endif ()
+        string(
+          JSON
+          _pkg_name
+          GET
+          "${_cargo_meta}"
+          packages
+          ${_i}
+          name
+        )
+        string(APPEND _role_packages " -p ${_pkg_name}")
+        string(JSON _target_count LENGTH "${_cargo_meta}" packages ${_i} targets)
+        if (_target_count GREATER 0)
+          math(EXPR _target_last "${_target_count} - 1")
+          set(_t -1)
+          while (_t LESS _target_last)
+            math(EXPR _t "${_t} + 1")
+            string(
+              JSON
+              _kinds
+              GET
+              "${_cargo_meta}"
+              packages
+              ${_i}
+              targets
+              ${_t}
+              kind
+            )
+            if (_kinds MATCHES "\"bin\"")
+              string(
+                JSON
+                _bin
+                GET
+                "${_cargo_meta}"
+                packages
+                ${_i}
+                targets
+                ${_t}
+                name
+              )
+              list(APPEND _role_bin_names "${_bin}")
+            endif ()
+          endwhile ()
+        endif ()
+      endwhile ()
+      if (NOT _role_packages)
+        continue()
+      endif ()
 
-    # Generate build script (copies all cargo binaries)
-    set(_RUST_BUILD_SCRIPT "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-build-rust-tools.sh")
-    file(
-      WRITE "${_RUST_BUILD_SCRIPT}"
-      "#!/bin/bash\nset -e\n"
-      # Offline enforcement comes from the environment: the build image sets
-      # CARGO_NET_OFFLINE=true against its baked crate cache (cargo reads it
-      # natively). Local dev (no such env) builds online.
-      "'${CARGO_EXECUTABLE}' build --release"
-      " --manifest-path '${_RUST_SRC}/Cargo.toml' --target-dir '${_CARGO_TARGET}'"
-      " ${_CARGO_FEATURES}\n"
-      "mkdir -p '${_RUST_OUT}'\n"
-      "find '${_CARGO_TARGET}/release' -maxdepth 1 -type f -executable ! -name '*.*'"
-      " -exec cp -f {} '${_RUST_OUT}/' \\;\n"
-      "mkdir -p '${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps'\n"
-      "touch '${_RUST_STAMP}'\n"
-    )
+      set(_role_out "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/${_role}")
+      set(_role_target "${_CARGO_TARGET_ROOT}/${_role}")
+      set(_role_stamp "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/rust-${_role}-tools.built")
+      set(_role_script "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-build-rust-${_role}-tools.sh")
 
-    # The generator binaries are declared byproducts so file-level
-    # dependencies on them (the TPRM rules) resolve in a fresh tree:
-    # without this, ninja sees a needed file with no producing rule.
-    add_custom_command(
-      OUTPUT "${_RUST_STAMP}"
-      BYPRODUCTS "${_RUST_OUT}/cfg2bin" "${_RUST_OUT}/tprm_pack"
-      COMMAND bash "${_RUST_BUILD_SCRIPT}"
-      COMMAND bash "${_ENV_HELPER}"
-      DEPENDS ${_RUST_SOURCES}
-      COMMENT "Building ${PROJECT_NAME} Rust tools"
-      VERBATIM
-    )
+      # Only the executables cargo currently declares are copied, by name,
+      # and declared as byproducts so file-level dependencies on them (the
+      # TPRM rules) resolve in a fresh tree. A stale executable left in the
+      # target dir is never installed again; a name already installed under
+      # bin/tools/<role> by an earlier build is not removed (make clean-rust
+      # clears the role output dirs).
+      set(_role_bins "")
+      set(_role_copy "")
+      foreach (_bin IN LISTS _role_bin_names)
+        list(APPEND _role_bins "${_role_out}/${_bin}")
+        string(APPEND _role_copy "cp -f '${_role_target}/release/${_bin}' '${_role_out}/'\n")
+      endforeach ()
 
-    add_custom_target(${PROJECT_NAME}_rust_tools DEPENDS "${_RUST_STAMP}")
-    list(APPEND _TOOLS_DEPS ${PROJECT_NAME}_rust_tools)
+      file(
+        WRITE "${_role_script}"
+        "#!/bin/bash\nset -e\n"
+        # Offline enforcement comes from the environment: the build image sets
+        # CARGO_NET_OFFLINE=true against its baked crate cache (cargo reads it
+        # natively). Local dev (no such env) builds online.
+        "'${CARGO_EXECUTABLE}' build --release${_role_packages}"
+        " --manifest-path '${_RUST_SRC}/Cargo.toml' --target-dir '${_role_target}'\n"
+        "mkdir -p '${_role_out}'\n"
+        "${_role_copy}"
+        "mkdir -p '${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps'\n"
+        "touch '${_role_stamp}'\n"
+      )
+
+      add_custom_command(
+        OUTPUT "${_role_stamp}"
+        BYPRODUCTS ${_role_bins}
+        COMMAND bash "${_role_script}"
+        COMMAND bash "${_ENV_HELPER}"
+        DEPENDS ${_RUST_SOURCES}
+        COMMENT "Building ${PROJECT_NAME} ${_role} tools (rust)"
+        VERBATIM
+      )
+
+      add_custom_target(${PROJECT_NAME}_${_role}_tools DEPENDS "${_role_stamp}")
+      list(APPEND _TOOLS_DEPS ${PROJECT_NAME}_${_role}_tools)
+      if (NOT _role STREQUAL "build")
+        list(APPEND _TOOLS_ON_REQUEST ${PROJECT_NAME}_${_role}_tools)
+      endif ()
+    endforeach ()
   else ()
     message(WARNING "${PROJECT_NAME}: cargo not found -- Rust tools skipped")
   endif ()
@@ -206,6 +323,15 @@ endif ()
 # Aggregate target
 # ------------------------------------------------------------------------------
 
+# A plain build (ninja with no target) carries what the apex build stands on:
+# the build role, plus the families not yet sorted into roles. Every tool,
+# the ops and analysis roles included, builds through ${PROJECT_NAME}_tools
+# (make tools); the release builder runs that explicitly.
 if (_TOOLS_DEPS)
-  add_custom_target(${PROJECT_NAME}_tools ALL DEPENDS ${_TOOLS_DEPS})
+  set(_TOOLS_DEFAULT_DEPS ${_TOOLS_DEPS})
+  if (_TOOLS_ON_REQUEST)
+    list(REMOVE_ITEM _TOOLS_DEFAULT_DEPS ${_TOOLS_ON_REQUEST})
+  endif ()
+  add_custom_target(${PROJECT_NAME}_tools_default ALL DEPENDS ${_TOOLS_DEFAULT_DEPS})
+  add_custom_target(${PROJECT_NAME}_tools DEPENDS ${_TOOLS_DEPS})
 endif ()

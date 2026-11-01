@@ -583,7 +583,7 @@ def run_checkout(args: argparse.Namespace) -> int:
         import subprocess
 
         repo = __import__("pathlib").Path(__file__).resolve().parents[3]
-        cfg2bin = repo / "build/hosted-x86_64-debug/bin/tools/rust/cfg2bin"
+        cfg2bin = repo / "build/hosted-x86_64-debug/bin/tools/build/cfg2bin"
         src_toml = repo / "demos/apex_spec_demo/tprm/toml/spec_matrix.toml"
         tprm_dir = repo / "build/hosted-x86_64-debug/demos/apex_spec_demo/exec/tprm"
         restore_tprm = tprm_dir / "payloads/toml_spec_matrix_toml.tprm"

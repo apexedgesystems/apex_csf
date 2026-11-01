@@ -665,4 +665,4 @@ while (true) {
 - `src/system/core/infrastructure/logs/` - SystemLog for logging integration
 - `src/system/core/executive/` - ApexExecutive uses scheduler
 - `src/utilities/concurrency/` - ThreadPool and Delegate
-- `tools/rust/` - `sdat_tool` for SDAT file analysis
+- `tools/analysis/rust/apex-analysis-tools/` - `sdat_tool` for SDAT file analysis

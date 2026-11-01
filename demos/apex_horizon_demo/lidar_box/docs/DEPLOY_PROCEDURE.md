@@ -22,7 +22,7 @@ docker compose run --rm dev-cuda \
   ./build/hosted-x86_64-debug/bin/utests/TestLidarBoxProducer
 
 # 3. (If tomls changed) rebuild + repack the TPRM archive
-T=tools/rust/target/debug ; TP=demos/apex_horizon_demo/lidar_box/tprm
+T=tools/target/debug ; TP=demos/apex_horizon_demo/lidar_box/tprm
 $T/cfg2bin --batch $TP/toml/ --output $TP/
 $T/tprm_pack pack -e 0x000000:$TP/executive.tprm -e 0x000100:$TP/scheduler.tprm \
   -e 0x00E600:$TP/lidar_box_producer.tprm -e 0x00CB00:$TP/lidar_box_bridge.tprm \

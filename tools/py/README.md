@@ -72,6 +72,6 @@ mc-plot --help
 
 ## See Also
 
-- [tools/rust/README.md](../rust/README.md) - Rust CLI tools (tprm, serial, analysis, upx)
+- [tools/docs/rust_tools.md](../docs/rust_tools.md) - Rust CLI tools (tprm, serial, analysis, upx)
 - [tools/cpp/README.md](../cpp/README.md) - C++ diagnostic and utility tools
 - [Vernier](https://github.com/apexedgesystems/vernier) - Performance measurement framework (C++, external)

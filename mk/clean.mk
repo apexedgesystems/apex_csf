@@ -73,18 +73,19 @@ clean-py: clean-py-src clean-py-build
 # Rust Clean Targets
 # ------------------------------------------------------------------------------
 
-# Clean Rust build artifacts from build directory
+# Clean Rust build artifacts (the role output dirs and cargo target dirs)
+# from every build directory
 clean-rust-build:
 	$(call log,clean,Removing Rust build artifacts)
 	@if [ -d build ]; then \
 	  find build -mindepth 1 -maxdepth 1 -type d -exec sh -c \
-	    'rm -rf "{}/bin/tools/rust" 2>/dev/null || true' \; ; \
+	    'rm -rf "{}/bin/tools/build" "{}/bin/tools/ops" "{}/bin/tools/analysis" "{}"/*-rust-target 2>/dev/null || true' \; ; \
 	fi
 
-# Clean local Rust target (from development builds within tools/rust/)
+# Clean local Rust target (from development builds within tools/)
 clean-rust-local:
 	$(call log,clean,Removing local Rust target)
-	@rm -rf tools/rust/target 2>/dev/null || true
+	@rm -rf tools/target 2>/dev/null || true
 
 # Clean all Rust artifacts
 clean-rust: clean-rust-build clean-rust-local

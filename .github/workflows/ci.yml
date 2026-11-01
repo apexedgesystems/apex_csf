@@ -2,7 +2,7 @@
 # CI -- lint, build, and test on PRs to main
 #
 # Change-scoped: a "changes" job classifies the PR diff, and the expensive jobs
-# run only when their area changed. A tools/rust or tools/py change (e.g. a
+# run only when their area changed. A Rust workspace or tools/py change (e.g. a
 # Dependabot bump) does not rebuild the C++/CUDA surface; a docs-only change
 # runs lint alone. Scope-down is opt-in per known subtree: cross-cutting paths
 # (.github/, mk/, docker/, the CMake build files) and any unrecognized path run
@@ -71,7 +71,7 @@ jobs:
           while IFS= read -r file; do
             [ -z "$file" ] && continue
             case "$file" in
-              tools/rust/*) rust=true ;;
+              tools/Cargo.*|tools/*/rust/*) rust=true ;;
               tools/py/*)   py=true ;;
               # A demo's checkout scripts keep their pytest files beside them;
               # make test-py collects those directories, so a change there
@@ -110,7 +110,7 @@ jobs:
           # Rebuild only when a gate-image INPUT changes: the images a gate job
           # runs in (base tiers, the cpu dev image, the cuda image, the base
           # compose), or anything base.Dockerfile bakes -- the dependency
-          # manifests (tools/rust/Cargo.*, tools/py/uv.lock|pyproject.toml,
+          # manifests (tools/Cargo.*, the member Cargo.toml files, tools/py/uv.lock|pyproject.toml,
           # ExternalDependencies.cmake) and the baked scripts (docker/scripts/).
           # Without the baked inputs the gate runs offline builds against STALE
           # caches: a lock bump fails on missing crates/wheels, and a GIT_TAG
@@ -118,7 +118,7 @@ jobs:
           # FETCHCONTENT_SOURCE_DIR redirect (green-but-wrong). Leaf
           # cross/firmware Dockerfiles feed only post-merge images; builder/final
           # feed the release pipe; CI compose overlays are runtime-only.
-          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$|^docker/scripts/|^tools/rust/Cargo\.(lock|toml)$|^tools/py/(uv\.lock|pyproject\.toml)$|^ExternalDependencies\.cmake$' && echo true || echo false)
+          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$|^docker/scripts/|^tools/Cargo\.(lock|toml)$|^tools/[^/]+/rust/[^/]+/Cargo\.toml$|^tools/py/(uv\.lock|pyproject\.toml)$|^ExternalDependencies\.cmake$' && echo true || echo false)
           printf 'cpp=%s\nrust=%s\npy=%s\nsh=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$sh" "$docker" | tee -a "$GITHUB_OUTPUT"
 
   lint:
