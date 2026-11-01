@@ -127,7 +127,6 @@ struct EngineStats {
   std::uint32_t atsLoaded{0};             ///< Standalone ATS files loaded (cumulative).
   std::uint32_t abortEventsDispatched{0}; ///< Abort events dispatched (cumulative).
   std::uint32_t exclusionStops{0};        ///< Sequences stopped by mutual exclusion (cumulative).
-  std::uint32_t sequencesRunning{0}; ///< RTS and ATS running when the last cycle ended (gauge).
 
   // Context of the most recent step timeout, so the component tick can
   // attribute its warning (a dropped mission step is never routine). With
@@ -804,6 +803,9 @@ inline void dispatchAbortEvents(ActionInterface& iface) noexcept {
  * @brief Run one full cycle of the action engine.
  * @param iface ActionInterface to process.
  * @param currentCycle Current scheduler cycle count.
+ * @return The sequences (RTS and ATS) running when the cycle ended: the
+ *         count after every transition of the pipeline below, so zero
+ *         means nothing ran when this cycle ended.
  * @note RT-safe: O(tables * queue). Bounded by static table sizes.
  *
  * Call once per scheduler frame. Executes the full pipeline:
@@ -814,8 +816,14 @@ inline void dispatchAbortEvents(ActionInterface& iface) noexcept {
  *   5. Dispatch abort events -> cleanup sequences
  *   6. Process action queue -> apply/route/arm/expire
  *   7. Count the sequences still running (the cycle's end state)
+ *
+ * The count is returned rather than kept in the tables: the engine's
+ * tables and counters belong to the thread that cycles them, and the
+ * owner driving the cycle publishes the count to other threads.
  */
-inline void processCycle(ActionInterface& iface, std::uint32_t currentCycle) noexcept {
+static_assert(SEQUENCE_TABLE_SIZE <= 255U, "the running count is one byte");
+
+inline std::uint8_t processCycle(ActionInterface& iface, std::uint32_t currentCycle) noexcept {
   ++iface.stats.totalCycles;
 
   // Maximum possible events per cycle: all watchpoints + all groups
@@ -843,15 +851,16 @@ inline void processCycle(ActionInterface& iface, std::uint32_t currentCycle) noe
   // 6. Process actions
   processActions(iface, currentCycle);
 
-  // 7. Publish the cycle's end state: the sequences still running after
-  //    every transition above (ticks, chains, abort starts, arm controls),
-  //    so a reader that sees zero saw nothing running when the cycle ended.
-  iface.stats.sequencesRunning = 0;
+  // 7. The cycle's end state: the sequences still running after every
+  //    transition above (ticks, chains, abort starts, arm controls), so a
+  //    reader that sees zero saw nothing running when the cycle ended.
+  std::uint8_t running = 0;
   for (const auto& seq : iface.sequences) {
     if (isRunning(seq)) {
-      ++iface.stats.sequencesRunning;
+      ++running;
     }
   }
+  return running;
 }
 
 /* ----------------------------- Reset ----------------------------- */

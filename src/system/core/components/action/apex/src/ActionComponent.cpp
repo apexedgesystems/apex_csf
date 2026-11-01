@@ -66,7 +66,10 @@ std::uint8_t ActionComponent::doInit() noexcept {
   return static_cast<std::uint8_t>(Status::SUCCESS);
 }
 
-void ActionComponent::doReset() noexcept { data::resetInterface(iface_); }
+void ActionComponent::doReset() noexcept {
+  data::resetInterface(iface_);
+  sequencesRunning_.store(0, std::memory_order_release);
+}
 
 /* ----------------------------- TPRM Loading ----------------------------- */
 
@@ -1059,6 +1062,12 @@ std::uint8_t ActionComponent::handleCommand(std::uint16_t opcode,
     response[9] = 0xFF; // No slot assigned
     response[10] = static_cast<std::uint8_t>(entry->type);
     response[11] = entry->armed ? 1 : 0;
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case 0x0523: { // GET_RUNNING: no payload -- the sequences running when the last cycle ended
+    response.resize(1);
+    response[0] = sequencesRunning_.load(std::memory_order_acquire);
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 

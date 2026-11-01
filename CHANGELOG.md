@@ -114,9 +114,9 @@ any such change is called out explicitly in its entry.
   step, so an injected fault stays visible to the watchpoints
   ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
 - The action demo's fault campaign chains to its cleanup sequence instead
-  of restarting itself, and its checkout waits on the action engine's
-  count of running sequences, which the engine's statistics block now
-  reports ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
+  of restarting itself, and its checkout waits on the action component's
+  new GET_RUNNING query, the count of sequences running when its last
+  cycle ended ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
 - The executive's action phase waits for the cycle's in-flight tasks, and
   one thread frames both pushed telemetry and command replies. Breaking:
   `TaskEntry::isRunning` is replaced by an in-flight count; migrate to

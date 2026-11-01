@@ -115,15 +115,6 @@ ALL_COMPONENTS = {
     "SystemMonitor": 0x00C800,
 }
 
-# The action engine's EngineStats block as INSPECT returns it: seventeen
-# uint32 counters (the running-sequence gauge is the seventeenth, at offset
-# 64) and the latest step-timeout context (u16 sequence id, u8 step, u8
-# policy). The gauge is read only from a block of exactly this size; the
-# layout before the gauge is 68 bytes with the timeout context at offset
-# 64, which must not be read as a running count.
-ENGINE_STATS_BYTES = 72
-ENGINE_GAUGE_OFFSET = 64
-
 # DataTransform opcodes
 DT_ARM_ENTRY = 0x0601
 DT_DISARM_ENTRY = 0x0602
@@ -174,43 +165,51 @@ def read_action_stats(c2: AprotoClient) -> dict:
             extra = struct.unpack_from("<2I", data, 56)
             result["abortEventsDispatched"] = extra[0]
             result["exclusionStops"] = extra[1]
-        result["blockBytes"] = len(data)
-        if len(data) == ENGINE_STATS_BYTES:
-            # Gauge: sequences (RTS and ATS) running at the end of the last cycle.
-            result["sequencesRunning"] = struct.unpack_from("<I", data, ENGINE_GAUGE_OFFSET)[0]
         return result
     return {}
 
 
-def wait_for_no_running_sequence(c2: AprotoClient, deadline_s: float) -> tuple:
-    """Poll the engine's running-sequence gauge until it reads zero twice.
+def read_running_sequences(c2: AprotoClient):
+    """The action component's count of RTS and ATS running when its last cycle ended.
 
-    The gauge is the engine's end-of-cycle count of RTS and ATS alike, so a
-    zero read means nothing ran when that cycle ended; two consecutive zero
-    reads cover a start between the read and the cycle boundary. A block
-    that is not the layout carrying the gauge ends the wait at once with no
-    reading. Returns (quiescent, last_reading, elapsed_s); the caller
-    decides what the deadline means.
+    GET_RUNNING is answered from the count the component publishes after each
+    cycle, so every reply is a completed cycle's end state whichever thread
+    serves the command. None when the target rejects the query (a build
+    without it) or the reply carries no count.
+    """
+    r = c2.send_command(proto.FULLUID_ACTION, proto.ACTION_GET_RUNNING)
+    extra = r.get("extra", b"")
+    if r.get("status") != 0 or len(extra) < 1:
+        return None
+    return extra[0]
+
+
+def wait_for_no_running_sequence(c2: AprotoClient, deadline_s: float) -> tuple:
+    """Poll the action component's running count until it reads zero.
+
+    Each reply is the count when a cycle ended, so one zero reading means
+    nothing ran when that cycle ended. A target that does not answer the
+    query ends the wait at once with no reading. Returns (quiescent,
+    last_reading, elapsed_s); the caller decides what the deadline means.
     """
     t0 = time.time()
-    zero_reads = 0
     running = None
     while time.time() - t0 < deadline_s:
-        running = read_action_stats(c2).get("sequencesRunning")
-        if running is None:
-            break
-        zero_reads = zero_reads + 1 if running == 0 else 0
-        if zero_reads >= 2:
+        running = read_running_sequences(c2)
+        if running is None or running == 0:
             break
         time.sleep(0.2)
-    return zero_reads >= 2, running, time.time() - t0
+    return running == 0, running, time.time() - t0
 
 
 def quiescence_detail(c2: AprotoClient, running, elapsed: float) -> str:
-    """The detail line for a failed wait: the reading, or the block that had none."""
+    """The detail line for a failed wait: the reading, or the reply that had none."""
     if running is None:
-        got = read_action_stats(c2).get("blockBytes", 0)
-        return f"gauge unavailable: stats block {got} bytes, expected {ENGINE_STATS_BYTES}"
+        r = c2.send_command(proto.FULLUID_ACTION, proto.ACTION_GET_RUNNING)
+        return (
+            f"running count unavailable: GET_RUNNING {r.get('status_name')}, "
+            f"{len(r.get('extra', b''))}-byte reply"
+        )
     return f"running={running} after {elapsed:.1f} s"
 
 
@@ -409,11 +408,12 @@ def test_rts_chaining(c2: AprotoClient) -> bool:
     # (DEACTIVATE_WP, 0x0531); a run already in progress is left to finish.
     c2.send_command(proto.FULLUID_ACTION, 0x0531, struct.pack("<H", 1))
 
-    # Wait on the engine's own answer: its running-sequence gauge (RTS and
-    # ATS alike, read from the stats block INSPECT returns). The step and
-    # arm counters are not that answer: a sequence whose steps wait on an
-    # absolute offset, time out and SKIP moves neither counter for longer
-    # than any fixed window while it still has an ARM step ahead of it.
+    # Wait on the engine's own answer: the count of running sequences (RTS
+    # and ATS alike) the component publishes when each cycle ends, read
+    # with GET_RUNNING. The step and arm counters are not that answer: a
+    # sequence whose steps wait on an absolute offset, time out and SKIP
+    # moves neither counter for longer than any fixed window while it
+    # still has an ARM step ahead of it.
     quiescent, running, elapsed = wait_for_no_running_sequence(c2, 60.0)
     ok &= check(
         "No sequence running before CLEAR_ALL",

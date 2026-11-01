@@ -28,6 +28,7 @@
 #include "src/system/core/components/action/apex/inc/SequenceCatalog.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/CoreComponentBase.hpp"
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <vector>
@@ -117,7 +118,10 @@ public:
     const std::uint32_t PREV_ABORTS = iface_.stats.sequenceAborts;
     const std::uint32_t PREV_RESOLVE_FAILURES = iface_.stats.resolveFailures;
 
-    data::processCycle(iface_, currentCycle);
+    // The cycle's end state is the one engine value other threads read:
+    // the published count below answers GET_RUNNING wherever that command
+    // is served, so the engine's tables and counters stay with this thread.
+    sequencesRunning_.store(data::processCycle(iface_, currentCycle), std::memory_order_release);
 
     // Dispatch built-in log for notifications that fired this cycle.
     for (std::size_t i = 0; i < data::EVENT_NOTIFICATION_TABLE_SIZE; ++i) {
@@ -172,6 +176,16 @@ public:
    * @note RT-safe: Direct member access.
    */
   [[nodiscard]] const data::EngineStats& stats() const noexcept { return iface_.stats; }
+
+  /**
+   * @brief Sequences (RTS and ATS) running when the last cycle ended.
+   * @return The count tick() published for its cycle; 0 after reset.
+   * @note RT-safe: one atomic load. Safe from any thread, unlike stats()
+   *       and iface(), which are the cycling thread's own tables.
+   */
+  [[nodiscard]] std::uint8_t sequencesRunning() const noexcept {
+    return sequencesRunning_.load(std::memory_order_acquire);
+  }
 
   /* ----------------------------- TPRM ----------------------------- */
 
@@ -310,6 +324,10 @@ public:
    *   - 0x0520: RESCAN_CATALOG (no payload)
    *   - 0x0521: GET_CATALOG    (no payload, response: catalog dump)
    *   - 0x0522: GET_STATUS     (payload: u16 seqId, response: exec status)
+   *   - 0x0523: GET_RUNNING    (no payload, response: u8 sequences running
+   *             when the last cycle ended; answered from the published
+   *             count, so the reply is a cycle's end state on whichever
+   *             thread serves the command)
    *
    * Resource catalog opcodes:
    *   - 0x0530: ACTIVATE_WP           (payload: u16 watchpointId)
@@ -373,6 +391,9 @@ private:
   void logResolveFailures(std::uint32_t total) noexcept;
 
   data::ActionInterface iface_{};
+  /// Sequences running when the last cycle ended, published by tick() and
+  /// read by GET_RUNNING and sequencesRunning() on other threads.
+  std::atomic<std::uint8_t> sequencesRunning_{0};
   data::SequenceCatalog catalog_;         ///< Sequence catalog (metadata + cached binaries).
   data::WatchpointCatalog wpCatalog_;     ///< Watchpoint definitions.
   data::GroupCatalog grpCatalog_;         ///< Group definitions.

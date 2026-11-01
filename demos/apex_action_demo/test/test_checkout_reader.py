@@ -1,18 +1,16 @@
-"""Unit tests for the action demo checkout's reading of the engine's statistics block.
+"""Unit tests for the action demo checkout's wait on the action component's running count.
 
-The checkout is a standalone demo script, loaded by path. Each test feeds its
-reader a block laid out like the action engine's registered EngineStats and
-drives the running-sequence wait with a fake client and clock.
+The checkout is a standalone demo script, loaded by path. Each test answers its
+GET_RUNNING query with a scripted reply and drives the running-sequence wait
+with a fake client and clock.
 """
 
 import importlib.util
 import pathlib
-import struct
 
 import pytest
 
 CHECKOUT = pathlib.Path(__file__).resolve().parents[1] / "scripts/checkout.py"
-COUNTERS = 16  # the cumulative uint32 counters before the gauge
 
 
 def _load_checkout():
@@ -24,32 +22,30 @@ def _load_checkout():
 
 
 checkout = _load_checkout()
+proto = checkout.proto
 
 
-def current_block(running: int, timeout_seq: int = 0) -> bytes:
-    """The 72-byte layout: sixteen counters, the gauge, the timeout context."""
-    counters = struct.pack("<16I", *range(1, COUNTERS + 1))
-    return counters + struct.pack("<I", running) + struct.pack("<HBB", timeout_seq, 3, 1)
+def reply(running: int) -> dict:
+    """A SUCCESS reply carrying the one-byte count."""
+    return {"status": 0, "status_name": "SUCCESS", "extra": bytes([running])}
 
 
-def old_block(timeout_seq: int = 0) -> bytes:
-    """The 68-byte layout before the gauge: the timeout context sits at offset 64."""
-    counters = struct.pack("<16I", *range(1, COUNTERS + 1))
-    return counters + struct.pack("<HBB", timeout_seq, 3, 1)
+REJECTED = {"status": 2, "status_name": "UNKNOWN_OPCODE", "extra": b""}
+EMPTY = {"status": 0, "status_name": "SUCCESS", "extra": b""}
 
 
 class FakeClient:
-    """Answers INSPECT with the next block of a scripted sequence (the last one repeats)."""
+    """Answers GET_RUNNING with the next reply of a scripted sequence (the last one repeats)."""
 
-    def __init__(self, blocks):
-        self.blocks = list(blocks)
+    def __init__(self, replies):
+        self.replies = list(replies)
         self.reads = 0
 
-    def inspect(self, fulluid, category):
-        assert fulluid == checkout.ALL_COMPONENTS["Action"] and category == 4
-        block = self.blocks[min(self.reads, len(self.blocks) - 1)]
+    def send_command(self, full_uid, opcode, payload=b""):
+        assert (full_uid, opcode, payload) == (proto.FULLUID_ACTION, proto.ACTION_GET_RUNNING, b"")
+        answer = self.replies[min(self.reads, len(self.replies) - 1)]
         self.reads += 1
-        return {"extra": block}
+        return answer
 
 
 class FakeTime:
@@ -72,47 +68,37 @@ def clock(monkeypatch):
     return fake
 
 
-def test_gauge_is_read_only_from_the_layout_that_carries_it():
-    stats = checkout.read_action_stats(FakeClient([current_block(2)]))
-    assert stats["sequencesRunning"] == 2
-    assert stats["blockBytes"] == 72
-    assert stats["totalCycles"] == 1 and stats["exclusionStops"] == 16
+def test_count_is_the_reply_byte():
+    assert checkout.read_running_sequences(FakeClient([reply(2)])) == 2
+    assert checkout.read_running_sequences(FakeClient([reply(0)])) == 0
 
 
-def test_old_layout_timeout_context_is_not_a_running_count():
-    for block in (old_block(), old_block(timeout_seq=7)):
-        stats = checkout.read_action_stats(FakeClient([block]))
-        assert "sequencesRunning" not in stats
-        assert stats["blockBytes"] == 68
-        assert stats["exclusionStops"] == 16
+def test_rejected_or_empty_reply_has_no_count():
+    assert checkout.read_running_sequences(FakeClient([REJECTED])) is None
+    assert checkout.read_running_sequences(FakeClient([EMPTY])) is None
 
 
-def test_shorter_block_has_no_gauge():
-    stats = checkout.read_action_stats(FakeClient([current_block(0)[:64]]))
-    assert "sequencesRunning" not in stats
-
-
-def test_wait_ends_at_once_without_the_gauge(clock):
-    for block in (old_block(), old_block(timeout_seq=7), current_block(0)[:64]):
-        client = FakeClient([block])
+def test_wait_ends_at_once_without_a_count(clock):
+    for answer in (REJECTED, EMPTY):
+        client = FakeClient([answer])
         quiescent, running, elapsed = checkout.wait_for_no_running_sequence(client, 60.0)
         assert (quiescent, running) == (False, None)
         assert client.reads == 1 and elapsed == 0.0
-        assert "expected 72" in checkout.quiescence_detail(client, running, elapsed)
+        detail = checkout.quiescence_detail(client, running, elapsed)
+        assert detail.startswith("running count unavailable: GET_RUNNING " + answer["status_name"])
+        assert detail.endswith("0-byte reply")
 
 
-def test_wait_needs_two_consecutive_zero_readings(clock):
-    client = FakeClient(
-        [current_block(1), current_block(0), current_block(1), current_block(0), current_block(0)]
-    )
+def test_wait_ends_on_the_first_zero_reading(clock):
+    client = FakeClient([reply(1), reply(1), reply(0), reply(1)])
     quiescent, running, elapsed = checkout.wait_for_no_running_sequence(client, 60.0)
     assert (quiescent, running) == (True, 0)
-    assert client.reads == 5
-    assert elapsed == pytest.approx(0.8)
+    assert client.reads == 3
+    assert elapsed == pytest.approx(0.4)
 
 
 def test_wait_fails_on_its_deadline_while_a_sequence_runs(clock):
-    client = FakeClient([current_block(1)])
+    client = FakeClient([reply(1)])
     quiescent, running, elapsed = checkout.wait_for_no_running_sequence(client, 1.0)
     assert (quiescent, running) == (False, 1)
     assert elapsed >= 1.0

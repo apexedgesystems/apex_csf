@@ -15,10 +15,12 @@
 #include <cstring>
 
 #include <array>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -455,15 +457,12 @@ TEST(ActionComponent, RtsExclusionGroupAppliedNowAndAfterRescan) {
   std::filesystem::remove_all(DIR);
 }
 
-/** @test A catalog sequence that chains to itself runs on every tick, and the published gauge says
- * so: the chain handler restarts it after the slot walk counted it. */
-TEST(ActionComponent, RunningGaugeCountsACatalogSequenceChainingToItself) {
-  system_core::action::ActionComponent comp;
-  ResolverCtx rCtx;
-  comp.setResolver(testResolver, &rCtx);
-  ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
+namespace {
 
-  // One immediate command step that chains to sequence id 1: itself.
+constexpr std::uint16_t OP_GET_RUNNING = 0x0523;
+
+/// A catalog of one RTS (id 1) whose single immediate command step chains to id 1: itself.
+std::filesystem::path writeSelfChainCatalog(const char* tag) {
   system_core::action::StandaloneSequenceTprm seq{};
   seq.sequenceId = 1;
   seq.armed = 1;
@@ -472,22 +471,96 @@ TEST(ActionComponent, RunningGaugeCountsACatalogSequenceChainingToItself) {
   seq.steps[0].onComplete =
       static_cast<std::uint8_t>(system_core::data::StepCompletionAction::START_RTS);
   seq.steps[0].gotoStep = 1;
-  const auto DIR = makePrivateDir("action_gauge_self_chain");
-  ASSERT_FALSE(DIR.empty());
-  {
-    std::ofstream out(DIR / "one.rts", std::ios::binary);
-    out.write(reinterpret_cast<const char*>(&seq), static_cast<std::streamsize>(sizeof(seq)));
-    ASSERT_TRUE(out.good());
+  const auto DIR = makePrivateDir(tag);
+  if (DIR.empty()) {
+    return DIR;
   }
+  std::ofstream out(DIR / "one.rts", std::ios::binary);
+  out.write(reinterpret_cast<const char*>(&seq), static_cast<std::streamsize>(sizeof(seq)));
+  return out.good() ? DIR : std::filesystem::path{};
+}
+
+/// GET_RUNNING's reply, the way the queue drain and the interface's synchronous fallback get it.
+std::uint8_t queryRunning(system_core::action::ActionComponent& comp) {
+  std::vector<std::uint8_t> response;
+  EXPECT_EQ(comp.handleCommand(OP_GET_RUNNING, {}, response),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::SUCCESS));
+  EXPECT_EQ(response.size(), 1u);
+  return response.empty() ? 0xFFu : response[0];
+}
+
+} // namespace
+
+/** @test A catalog sequence that chains to itself runs on every tick, and the published count
+ * says so: the chain handler restarts it after the slot walk counted it. A reset while it runs
+ * publishes zero with the emptied tables. */
+TEST(ActionComponent, RunningCountCoversACatalogSequenceChainingToItself) {
+  system_core::action::ActionComponent comp;
+  ResolverCtx rCtx;
+  comp.setResolver(testResolver, &rCtx);
+  ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
+  const auto DIR = writeSelfChainCatalog("action_count_self_chain");
+  ASSERT_FALSE(DIR.empty());
   ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 1u);
+  EXPECT_EQ(queryRunning(comp), 0u) << "nothing published before the first cycle";
   ASSERT_NE(comp.startRtsById(1), 0xFFu);
 
   for (std::uint32_t tick = 0; tick < 5; ++tick) {
     comp.tick(tick);
     EXPECT_TRUE(system_core::data::isRunning(comp.iface().sequences[0])) << "tick " << tick;
-    EXPECT_EQ(comp.stats().sequencesRunning, 1u) << "tick " << tick;
+    EXPECT_EQ(comp.sequencesRunning(), 1u) << "tick " << tick;
+    EXPECT_EQ(queryRunning(comp), 1u) << "tick " << tick;
   }
   EXPECT_EQ(comp.stats().sequenceSteps, 5u);
+
+  comp.reset();
+  EXPECT_EQ(comp.sequencesRunning(), 0u);
+  EXPECT_EQ(queryRunning(comp), 0u);
+  std::filesystem::remove_all(DIR);
+}
+
+/** @test The published count answers GET_RUNNING on another thread while the engine ticks. The
+ * handler reads only what the cycle publishes, whether the queue drain or the interface's
+ * synchronous fallback serves it, so every reply is a cycle's end state and nothing of the
+ * engine's tables is read across the threads (run under ThreadSanitizer). */
+TEST(ActionComponent, RunningCountIsPublishedToItsQueryWhileTheEngineTicks) {
+  system_core::action::ActionComponent comp;
+  ResolverCtx rCtx;
+  comp.setResolver(testResolver, &rCtx);
+  ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
+  const auto DIR = writeSelfChainCatalog("action_count_published");
+  ASSERT_FALSE(DIR.empty());
+  ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 1u);
+  ASSERT_NE(comp.startRtsById(1), 0xFFu);
+
+  // The engine thread cycles the self-chain, stops it, and publishes one
+  // more cycle's end state; the reader queries until the engine is done.
+  constexpr std::uint32_t TICKS = 20000;
+  std::atomic<bool> ticking{true};
+  bool stopped = false;
+  std::thread engine([&] {
+    for (std::uint32_t tick = 0; tick < TICKS; ++tick) {
+      comp.tick(tick);
+    }
+    stopped = comp.stopRtsById(1);
+    comp.tick(TICKS);
+    ticking.store(false, std::memory_order_release);
+  });
+  std::uint32_t replies = 0;
+  std::uint32_t repliesOfOne = 0;
+  while (ticking.load(std::memory_order_acquire)) {
+    const std::uint8_t RUNNING = queryRunning(comp);
+    ASSERT_LE(RUNNING, 1u) << "a cycle's end state: the one sequence or none";
+    repliesOfOne += RUNNING;
+    ++replies;
+  }
+  engine.join();
+  EXPECT_TRUE(stopped);
+  EXPECT_GT(replies, 0u);
+  EXPECT_GT(repliesOfOne, 0u) << "the reader saw the sequence running";
+  EXPECT_EQ(queryRunning(comp), 0u) << "the cycle after the stop published nothing running";
+  EXPECT_EQ(comp.sequencesRunning(), 0u);
+  EXPECT_EQ(comp.stats().totalCycles, TICKS + 1);
   std::filesystem::remove_all(DIR);
 }
 

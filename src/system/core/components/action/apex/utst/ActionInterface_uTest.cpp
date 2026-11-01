@@ -110,7 +110,6 @@ TEST(ActionInterface, EngineStatsDefaults) {
   EXPECT_EQ(S.sequenceSteps, 0U);
   EXPECT_EQ(S.notificationsInvoked, 0U);
   EXPECT_EQ(S.resolveFailures, 0U);
-  EXPECT_EQ(S.sequencesRunning, 0U);
 }
 
 /* ----------------------------- Action Queue ----------------------------- */
@@ -1306,13 +1305,13 @@ TEST(ActionInterface, SkippedTimeoutsKeepASequenceRunningWithoutSteppingTheCount
   std::uint32_t previousArms = 0;
   std::uint32_t unchangedRun = 0;
   for (std::uint32_t cycle = 1; cycle <= 199; ++cycle) {
-    processCycle(iface, cycle);
+    const std::uint8_t RUNNING = processCycle(iface, cycle);
     const bool SAME = iface.stats.sequenceSteps == previousSteps &&
                       iface.stats.armControlsApplied == previousArms;
     unchangedRun = SAME ? unchangedRun + 1 : 0;
     previousSteps = iface.stats.sequenceSteps;
     previousArms = iface.stats.armControlsApplied;
-    EXPECT_EQ(iface.stats.sequencesRunning, 1U) << "cycle " << cycle;
+    EXPECT_EQ(RUNNING, 1U) << "cycle " << cycle;
     EXPECT_TRUE(system_core::data::isRunning(seq)) << "cycle " << cycle;
   }
   EXPECT_GE(unchangedRun, 60U)
@@ -1327,19 +1326,20 @@ TEST(ActionInterface, SkippedTimeoutsKeepASequenceRunningWithoutSteppingTheCount
   }
   EXPECT_GT(cmdCtx.callCount, COMMANDS_BEFORE);
 
-  // Run the campaign out: the gauge reports completion, nothing else does.
+  // Run the campaign out: the cycle's count reports completion, nothing else does.
+  std::uint8_t running = 1;
   for (std::uint32_t cycle = 211; cycle <= 450; ++cycle) {
-    processCycle(iface, cycle);
+    running = processCycle(iface, cycle);
   }
   EXPECT_FALSE(system_core::data::isRunning(seq));
-  EXPECT_EQ(iface.stats.sequencesRunning, 0U);
+  EXPECT_EQ(running, 0U);
 }
 
 namespace {
 
-/// Running sequences by the engine's own predicate, the value the gauge must publish.
-std::uint32_t runningByPredicate(const ActionInterface& iface) {
-  std::uint32_t count = 0;
+/// Running sequences by the engine's own predicate, the value the cycle must return.
+std::uint8_t runningByPredicate(const ActionInterface& iface) {
+  std::uint8_t count = 0;
   for (const auto& seq : iface.sequences) {
     if (system_core::data::isRunning(seq)) {
       ++count;
@@ -1357,22 +1357,22 @@ void setupOneStep(system_core::data::DataSequence& seq, std::uint16_t id, std::u
   initCommandAction(seq.steps[0].action, 0x7800, ActionTrigger::IMMEDIATE, 0, id);
 }
 
-/// One cycle, then the gauge against the predicate; returns the gauge.
-std::uint32_t cycleAndCheck(ActionInterface& iface, std::uint32_t cycle, const char* what) {
-  processCycle(iface, cycle);
-  EXPECT_EQ(iface.stats.sequencesRunning, runningByPredicate(iface)) << what << " cycle " << cycle;
-  return iface.stats.sequencesRunning;
+/// One cycle, then its returned count against the predicate; returns the count.
+std::uint8_t cycleAndCheck(ActionInterface& iface, std::uint32_t cycle, const char* what) {
+  const std::uint8_t RUNNING = processCycle(iface, cycle);
+  EXPECT_EQ(RUNNING, runningByPredicate(iface)) << what << " cycle " << cycle;
+  return RUNNING;
 }
 
 } // namespace
 
 /**
- * @test The running gauge is the cycle's end state: a chain into an earlier slot, a sequence
+ * @test The returned count is the cycle's end state: a chain into an earlier slot, a sequence
  * chaining to itself, a cleanup started by an abort event and a disarm by an ARM_CONTROL action
- * all change what runs after the slot walk counted it, and the gauge reports what runs when the
+ * all change what runs after the slot walk counted it, and the count reports what runs when the
  * cycle ends.
  */
-TEST(ActionInterface, RunningGaugeIsTheCycleEndState) {
+TEST(ActionInterface, RunningCountIsTheCycleEndState) {
   // A chain into an earlier slot (the target was walked before its starter completed).
   for (const bool BACKWARD : {false, true}) {
     CommandCtx cmdCtx;
@@ -1452,7 +1452,10 @@ TEST(ActionInterface, RunningGaugeIsTheCycleEndState) {
     EXPECT_EQ(iface.stats.armControlsApplied, 1U);
   }
 
-  // An ordinary RTS and ATS run out, and reset clears the gauge with the tables.
+  // An ordinary RTS and ATS with one two-cycle step run out: the RTS step's delay counts ticks,
+  // so it fires on its second tick; the ATS step's delay is an offset from the start cycle, so
+  // it fires in cycle 2. A reset while one is still running empties the tables: the next cycle
+  // counts nothing.
   for (const auto TYPE :
        {system_core::data::SequenceType::RTS, system_core::data::SequenceType::ATS}) {
     CommandCtx cmdCtx;
@@ -1461,17 +1464,21 @@ TEST(ActionInterface, RunningGaugeIsTheCycleEndState) {
     setupOneStep(iface.sequences[0], 100, 2);
     iface.sequences[0].type = TYPE;
     system_core::data::startSequence(iface.sequences[0], 0);
-    const char* WHAT = (TYPE == system_core::data::SequenceType::RTS) ? "rts" : "ats";
-    std::uint32_t lastRunning = 0;
-    for (std::uint32_t cycle = 0; cycle < 4; ++cycle) {
-      if (cycleAndCheck(iface, cycle, WHAT) != 0) {
-        lastRunning = cycle;
-      }
+    const bool ATS = TYPE == system_core::data::SequenceType::ATS;
+    const char* WHAT = ATS ? "ats" : "rts";
+    const std::uint32_t FIRES_AT = ATS ? 2 : 1;
+    for (std::uint32_t cycle = 0; cycle <= 3; ++cycle) {
+      EXPECT_EQ(cycleAndCheck(iface, cycle, WHAT), cycle < FIRES_AT ? 1U : 0U)
+          << WHAT << " fires in cycle " << FIRES_AT << " and ends there";
     }
-    EXPECT_EQ(iface.stats.sequencesRunning, 0U) << WHAT;
-    EXPECT_GE(lastRunning, 0U) << WHAT;
     EXPECT_EQ(cmdCtx.callCount, 1U) << WHAT;
+
+    setupOneStep(iface.sequences[1], 101, 10);
+    iface.sequences[1].type = TYPE;
+    system_core::data::startSequence(iface.sequences[1], 4);
+    EXPECT_EQ(cycleAndCheck(iface, 4, WHAT), 1U);
     resetInterface(iface);
-    EXPECT_EQ(iface.stats.sequencesRunning, 0U) << WHAT;
+    EXPECT_EQ(runningByPredicate(iface), 0U) << WHAT;
+    EXPECT_EQ(cycleAndCheck(iface, 5, WHAT), 0U) << WHAT;
   }
 }

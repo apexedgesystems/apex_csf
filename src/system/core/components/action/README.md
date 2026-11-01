@@ -143,14 +143,21 @@ Action, SystemMonitor, DataTransform, ShmRingBridge, the sim
 models); the scheduler is the exception when an application config
 is present, because its table declares the tasks the app expects.
 
-### Ground Command Interface (22 opcodes)
+### Ground Command Interface (23 opcodes)
 
 | Range         | Commands                                                                                     |
 | ------------- | -------------------------------------------------------------------------------------------- |
 | 0x0500-0x0506 | Slot-based: LOAD/START/STOP RTS/ATS, ABORT_ALL_RTS                                           |
 | 0x0510-0x0515 | ID-based: START/STOP_BY_ID, SET_PRIORITY, SET_BLOCKING, SET_ABORT_EVENT, SET_EXCLUSION_GROUP |
-| 0x0520-0x0522 | Catalog: RESCAN, GET_CATALOG, GET_STATUS                                                     |
+| 0x0520-0x0523 | Catalog/status: RESCAN, GET_CATALOG, GET_STATUS, GET_RUNNING                                 |
 | 0x0530-0x0535 | Resources: ACTIVATE/DEACTIVATE WP, GROUP, NOTIFICATION                                       |
+
+GET_RUNNING answers with one byte: the sequences (RTS and ATS) running
+when the last engine cycle ended. The component publishes that count
+after each cycle, so the reply is a cycle's end state whichever thread
+serves the command; the engine's statistics and tables stay with the
+thread that cycles them, and reading them from another thread (INSPECT
+of the registered statistics block included) is not synchronized.
 
 ---
 
@@ -165,6 +172,7 @@ is present, because its table declares the tasks the app expects.
 | `tick(cycle)`                              | Yes     | Run one processCycle                 |
 | `iface()`                                  | Yes     | Direct table access                  |
 | `stats()`                                  | Yes     | Engine statistics                    |
+| `sequencesRunning()`                       | Yes     | Count published when a cycle ends    |
 | `loadTprm(dir)`                            | No      | Load boot configuration              |
 | `scanCatalog(rtsDir, atsDir)`              | No      | Populate sequence catalog            |
 | `startRtsById(id)`                         | Yes     | Catalog lookup + cached load + start |
