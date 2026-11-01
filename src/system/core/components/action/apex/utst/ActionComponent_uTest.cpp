@@ -538,28 +538,44 @@ TEST(ActionComponent, RunningCountIsPublishedToItsQueryWhileTheEngineTicks) {
   ASSERT_EQ(queryRunning(comp), 1u) << "the self-chain runs when its first cycle ends";
 
   // The engine thread cycles the self-chain until the reader has its
-  // replies, then stops it and publishes one more cycle's end state.
+  // replies and the engine has cycled under them, then stops it and
+  // publishes one more cycle's end state. The reader keeps the first
+  // wrong reply and leaves the loop, so the engine thread is joined
+  // before anything is asserted.
   constexpr std::uint32_t REPLIES = 20000;
+  constexpr std::uint32_t TICKS_UNDER_QUERIES = 1000;
   std::atomic<bool> readerDone{false};
-  std::uint32_t ticks = 1;
+  std::atomic<std::uint32_t> ticks{1};
   bool stopped = false;
   std::thread engine([&] {
     while (!readerDone.load(std::memory_order_acquire)) {
-      comp.tick(ticks++);
+      comp.tick(ticks.fetch_add(1, std::memory_order_acq_rel));
     }
     stopped = comp.stopRtsById(1);
-    comp.tick(ticks++);
+    comp.tick(ticks.fetch_add(1, std::memory_order_acq_rel));
   });
-  for (std::uint32_t reply = 0; reply < REPLIES; ++reply) {
-    ASSERT_EQ(queryRunning(comp), 1u) << "reply " << reply << ": the sequence runs until the stop";
+  std::uint32_t replies = 0;
+  std::uint32_t wrongReply = 0;
+  std::uint32_t wrongAt = 0;
+  while (replies < REPLIES || ticks.load(std::memory_order_acquire) < TICKS_UNDER_QUERIES) {
+    const std::uint8_t RUNNING = queryRunning(comp);
+    ++replies;
+    if (RUNNING != 1) {
+      wrongReply = RUNNING;
+      wrongAt = replies;
+      break;
+    }
   }
   readerDone.store(true, std::memory_order_release);
   engine.join();
+  EXPECT_EQ(wrongAt, 0u) << "reply " << wrongAt << " read " << unsigned{wrongReply}
+                         << " while the sequence ran";
+  EXPECT_GE(replies, REPLIES);
+  EXPECT_GE(ticks.load(), TICKS_UNDER_QUERIES) << "the engine cycled under the queries";
   EXPECT_TRUE(stopped);
-  EXPECT_GE(ticks, 2u) << "the engine cycled under the queries";
   EXPECT_EQ(queryRunning(comp), 0u) << "the cycle after the stop published nothing running";
   EXPECT_EQ(comp.sequencesRunning(), 0u);
-  EXPECT_EQ(comp.stats().totalCycles, ticks);
+  EXPECT_EQ(comp.stats().totalCycles, ticks.load());
   std::filesystem::remove_all(DIR);
 }
 
