@@ -53,7 +53,7 @@ build/hosted-x86_64-debug/
 |   +-- build/                      # cfg2bin tprm_pack cdef_gen apex_data_gen
 |   +-- ops/                        # tprm_template upx_tool serial_dev_checker serial_dev_tester
 |   +-- analysis/                   # rdat_tool sdat_tool
-|   +-- py/  sh/  cpp/              # the other families
+|   +-- (the role's Python, shell and C++ tools install here too)
 \-- apex_csf-rust-target/
     +-- build/  ops/  analysis/     # one cargo target dir per role
 ```
@@ -88,7 +88,7 @@ Python, shell and C++ tools, built by language) and `_APEX_TOOL_ROLES`
 The custom target is `apex_csf_<role>_rust_tools`, one part of the role
 aggregate `apex_csf_<role>_tools` that also carries the role's shell
 tools. Two aggregates sit above the roles: `apex_csf_tools_default` is
-in ALL and carries the build role plus the py family; `apex_csf_tools`
+in ALL and carries the build role alone; `apex_csf_tools`
 carries every tool. A plain
 `ninja` therefore compiles the four build tools and nothing from ops or
 analysis.
@@ -111,7 +111,7 @@ tree and per role, so compiled artifacts never cross trees.
 | --------------------------------------- | ------------------------------------------------------------------------- |
 | `make tools-build`                      | the build role: what the apex build stands on                             |
 | `make tools-ops`, `make tools-analysis` | the other roles, on request                                               |
-| `make tools`                            | every tool (all roles and families)                                       |
+| `make tools`                            | every tool (all roles)                                                    |
 | `make test-rust`                        | `cargo test --workspace` at `tools/`                                      |
 | `make clippy`                           | `cargo clippy --workspace --all-targets --locked -- -D warnings`          |
 | `make compat-tprm`                      | the TPRM contract: `-p apex-tprm --test golden_vectors` plus the C++ side |

@@ -71,4 +71,4 @@ ops_sdk_package.sh --app ApexHilDemo \
 ## See Also
 
 - [apex_data_gen](../../../build/rust/apex-build-tools/docs/apex_data_gen.md) -- Generates the struct dictionaries bundled by this tool.
-- [ops-deck](../../../py/docs/ops_deck.md) -- Generates a human-readable command/telemetry deck from the same dictionaries.
+- [ops-deck](../../py/apex_ops/docs/ops_deck.md) -- Generates a human-readable command/telemetry deck from the same dictionaries.
