@@ -163,7 +163,7 @@ public:
   /**
    * @brief Log health stats (1 Hz).
    * @return 0 on success.
-   * @note NOT RT-safe: uses fmt::format for logging.
+   * @note NOT RT-safe: takes the component lock and logs.
    */
   std::uint8_t telemetry() noexcept;
 

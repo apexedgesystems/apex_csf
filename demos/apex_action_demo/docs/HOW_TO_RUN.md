@@ -66,7 +66,7 @@ with AprotoClient("localhost", 9000) as c2:
 
 ## System Checkout
 
-Run the full checkout script to verify all 77 capabilities:
+Run the full checkout script to verify the demo's capabilities:
 
 ```bash
 python3 demos/apex_action_demo/scripts/checkout.py --host localhost

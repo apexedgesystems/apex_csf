@@ -307,9 +307,9 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 
 ### Test Organization
 
-| Test File               | Tests | Coverage                                    |
-| ----------------------- | ----- | ------------------------------------------- |
-| DataTransform_uTest.cpp | 21    | Commands, mask application, fault campaigns |
+| Test File               | Tests | Coverage                                                |
+| ----------------------- | ----- | ------------------------------------------------------- |
+| DataTransform_uTest.cpp | 30    | Commands, mask application, fault campaigns, held masks |
 
 ---
 
