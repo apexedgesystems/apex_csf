@@ -132,7 +132,7 @@ watchpoint -> event -> notification -> sequence -> command chain autonomously.
 
 ## Checkout Coverage
 
-The checkout script (`scripts/checkout.py`) executes 77 tests across 28
+The checkout script (`scripts/checkout.py`) executes 79 checks across 28
 sections covering:
 
 | Section                 | Coverage                                      |

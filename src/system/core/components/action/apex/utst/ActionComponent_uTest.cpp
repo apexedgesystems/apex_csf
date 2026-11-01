@@ -15,9 +15,12 @@
 #include <cstring>
 
 #include <array>
+#include <atomic>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -393,6 +396,189 @@ TEST(ActionComponent, IfaceAccess) {
 /* ----------------------------- Status Tests ----------------------------- */
 
 /** @test Status toString covers all values. */
+/* ----------------------------- RTS exclusion group ----------------------------- */
+
+namespace {
+
+/// Write minimal RTS binaries (header + padding) so a catalog scan loads them.
+std::filesystem::path writeRtsDir(const char* name, std::initializer_list<std::uint16_t> ids) {
+  const std::filesystem::path DIR = std::filesystem::temp_directory_path() / name;
+  std::filesystem::remove_all(DIR);
+  std::filesystem::create_directories(DIR);
+  for (const std::uint16_t ID : ids) {
+    std::array<std::uint8_t, 1352> binary{};
+    std::memcpy(&binary[0], &ID, 2);
+    binary[4] = 2; // stepCount
+    binary[7] = 1; // armed
+    std::ofstream out(DIR / ("rts_" + std::to_string(ID) + ".rts"), std::ios::binary);
+    out.write(reinterpret_cast<const char*>(binary.data()),
+              static_cast<std::streamsize>(binary.size()));
+  }
+  return DIR;
+}
+
+} // namespace
+
+/** @test A group set before the scan is stamped on every RTS the scan loads. */
+TEST(ActionComponent, RtsExclusionGroupStampsEveryScannedRts) {
+  system_core::action::ActionComponent comp;
+  ResolverCtx rCtx;
+  comp.setResolver(testResolver, &rCtx);
+  ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
+  const auto DIR = writeRtsDir("action_excl_scan_rts", {1, 2, 32});
+  comp.setRtsExclusionGroup(1);
+  ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 3u);
+  comp.catalog().forEach([](const system_core::data::CatalogEntry& e) {
+    EXPECT_EQ(e.exclusionGroup, 1u) << "rts " << e.sequenceId;
+  });
+  std::filesystem::remove_all(DIR);
+}
+
+/** @test A group set after the scan is applied to the loaded entries and survives a rescan. */
+TEST(ActionComponent, RtsExclusionGroupAppliedNowAndAfterRescan) {
+  system_core::action::ActionComponent comp;
+  ResolverCtx rCtx;
+  comp.setResolver(testResolver, &rCtx);
+  ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
+  const auto DIR = writeRtsDir("action_excl_rescan_rts", {5, 6});
+  ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 2u);
+  EXPECT_EQ(comp.catalog().findById(5)->exclusionGroup, 0u);
+  comp.setRtsExclusionGroup(3);
+  EXPECT_EQ(comp.catalog().findById(5)->exclusionGroup, 3u);
+  EXPECT_EQ(comp.catalog().findById(6)->exclusionGroup, 3u);
+  // A rescan rebuilds the catalog (an upload does this): the policy re-applies.
+  ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 2u);
+  EXPECT_EQ(comp.catalog().findById(6)->exclusionGroup, 3u);
+  // 0 clears the policy for later scans without touching what is loaded.
+  comp.setRtsExclusionGroup(0);
+  EXPECT_EQ(comp.catalog().findById(5)->exclusionGroup, 3u);
+  ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 2u);
+  EXPECT_EQ(comp.catalog().findById(5)->exclusionGroup, 0u);
+  std::filesystem::remove_all(DIR);
+}
+
+namespace {
+
+constexpr std::uint16_t OP_GET_RUNNING = 0x0523;
+
+/// A catalog of one RTS (id 1) whose single immediate command step chains to id 1: itself.
+std::filesystem::path writeSelfChainCatalog(const char* tag) {
+  system_core::action::StandaloneSequenceTprm seq{};
+  seq.sequenceId = 1;
+  seq.armed = 1;
+  seq.stepCount = 1;
+  seq.steps[0].actionType = static_cast<std::uint8_t>(system_core::data::ActionType::COMMAND);
+  seq.steps[0].onComplete =
+      static_cast<std::uint8_t>(system_core::data::StepCompletionAction::START_RTS);
+  seq.steps[0].gotoStep = 1;
+  const auto DIR = makePrivateDir(tag);
+  if (DIR.empty()) {
+    return DIR;
+  }
+  std::ofstream out(DIR / "one.rts", std::ios::binary);
+  out.write(reinterpret_cast<const char*>(&seq), static_cast<std::streamsize>(sizeof(seq)));
+  return out.good() ? DIR : std::filesystem::path{};
+}
+
+/// GET_RUNNING's reply, the way the queue drain and the interface's synchronous fallback get it.
+std::uint8_t queryRunning(system_core::action::ActionComponent& comp) {
+  std::vector<std::uint8_t> response;
+  EXPECT_EQ(comp.handleCommand(OP_GET_RUNNING, {}, response),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::SUCCESS));
+  EXPECT_EQ(response.size(), 1u);
+  return response.empty() ? 0xFFu : response[0];
+}
+
+} // namespace
+
+/** @test A catalog sequence that chains to itself runs on every tick, and the published count
+ * says so: the chain handler restarts it after the slot walk counted it. A reset while it runs
+ * publishes zero with the emptied tables. */
+TEST(ActionComponent, RunningCountCoversACatalogSequenceChainingToItself) {
+  system_core::action::ActionComponent comp;
+  ResolverCtx rCtx;
+  comp.setResolver(testResolver, &rCtx);
+  ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
+  const auto DIR = writeSelfChainCatalog("action_count_self_chain");
+  ASSERT_FALSE(DIR.empty());
+  ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 1u);
+  EXPECT_EQ(queryRunning(comp), 0u) << "nothing published before the first cycle";
+  ASSERT_NE(comp.startRtsById(1), 0xFFu);
+
+  for (std::uint32_t tick = 0; tick < 5; ++tick) {
+    comp.tick(tick);
+    EXPECT_TRUE(system_core::data::isRunning(comp.iface().sequences[0])) << "tick " << tick;
+    EXPECT_EQ(comp.sequencesRunning(), 1u) << "tick " << tick;
+    EXPECT_EQ(queryRunning(comp), 1u) << "tick " << tick;
+  }
+  EXPECT_EQ(comp.stats().sequenceSteps, 5u);
+
+  comp.reset();
+  EXPECT_EQ(comp.sequencesRunning(), 0u);
+  EXPECT_EQ(queryRunning(comp), 0u);
+  std::filesystem::remove_all(DIR);
+}
+
+/** @test The published count answers GET_RUNNING on another thread while the engine ticks. The
+ * handler reads only what the cycle publishes, whether the queue drain or the interface's
+ * synchronous fallback serves it, so every reply is a cycle's end state and nothing of the
+ * engine's tables is read across the threads (run under ThreadSanitizer). The self-chain runs
+ * when every cycle ends, so every reply while it runs is 1: a transient zero between a cycle's
+ * reset of the count and its publication would fail here. */
+TEST(ActionComponent, RunningCountIsPublishedToItsQueryWhileTheEngineTicks) {
+  system_core::action::ActionComponent comp;
+  ResolverCtx rCtx;
+  comp.setResolver(testResolver, &rCtx);
+  ASSERT_EQ(comp.init(), static_cast<std::uint8_t>(system_core::action::Status::SUCCESS));
+  const auto DIR = writeSelfChainCatalog("action_count_published");
+  ASSERT_FALSE(DIR.empty());
+  ASSERT_EQ(comp.scanCatalog(DIR, DIR / "none"), 1u);
+  ASSERT_NE(comp.startRtsById(1), 0xFFu);
+  comp.tick(0);
+  ASSERT_EQ(queryRunning(comp), 1u) << "the self-chain runs when its first cycle ends";
+
+  // The engine thread cycles the self-chain until the reader has its
+  // replies and the engine has cycled under them, then stops it and
+  // publishes one more cycle's end state. The reader keeps the first
+  // wrong reply and leaves the loop, so the engine thread is joined
+  // before anything is asserted.
+  constexpr std::uint32_t REPLIES = 20000;
+  constexpr std::uint32_t TICKS_UNDER_QUERIES = 1000;
+  std::atomic<bool> readerDone{false};
+  std::atomic<std::uint32_t> ticks{1};
+  bool stopped = false;
+  std::thread engine([&] {
+    while (!readerDone.load(std::memory_order_acquire)) {
+      comp.tick(ticks.fetch_add(1, std::memory_order_acq_rel));
+    }
+    stopped = comp.stopRtsById(1);
+    comp.tick(ticks.fetch_add(1, std::memory_order_acq_rel));
+  });
+  std::uint32_t replies = 0;
+  std::uint32_t wrongReply = 0;
+  std::uint32_t wrongAt = 0;
+  while (replies < REPLIES || ticks.load(std::memory_order_acquire) < TICKS_UNDER_QUERIES) {
+    const std::uint8_t RUNNING = queryRunning(comp);
+    ++replies;
+    if (RUNNING != 1) {
+      wrongReply = RUNNING;
+      wrongAt = replies;
+      break;
+    }
+  }
+  readerDone.store(true, std::memory_order_release);
+  engine.join();
+  EXPECT_EQ(wrongAt, 0u) << "reply " << wrongAt << " read " << unsigned{wrongReply}
+                         << " while the sequence ran";
+  EXPECT_GE(replies, REPLIES);
+  EXPECT_GE(ticks.load(), TICKS_UNDER_QUERIES) << "the engine cycled under the queries";
+  EXPECT_TRUE(stopped);
+  EXPECT_EQ(queryRunning(comp), 0u) << "the cycle after the stop published nothing running";
+  EXPECT_EQ(comp.sequencesRunning(), 0u);
+  EXPECT_EQ(comp.stats().totalCycles, ticks.load());
+  std::filesystem::remove_all(DIR);
+}
+
 TEST(ActionComponentStatus, ToStringCoversAll) {
   using system_core::action::Status;
   using system_core::action::toString;

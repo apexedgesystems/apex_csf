@@ -66,7 +66,10 @@ std::uint8_t ActionComponent::doInit() noexcept {
   return static_cast<std::uint8_t>(Status::SUCCESS);
 }
 
-void ActionComponent::doReset() noexcept { data::resetInterface(iface_); }
+void ActionComponent::doReset() noexcept {
+  data::resetInterface(iface_);
+  sequencesRunning_.store(0, std::memory_order_release);
+}
 
 /* ----------------------------- TPRM Loading ----------------------------- */
 
@@ -470,12 +473,37 @@ std::size_t ActionComponent::scanCatalog(const std::filesystem::path& rtsDir,
   total += catalog_.scan(rtsDir, data::SequenceType::RTS);
   total += catalog_.scan(atsDir, data::SequenceType::ATS);
 
+  applyRtsExclusionGroup();
+
   auto* log = componentLog();
   if (log != nullptr) {
     log->info(label(), fmt::format("Catalog scanned: {} RTS, {} ATS ({} total)",
                                    catalog_.rtsCount(), catalog_.atsCount(), total));
   }
   return total;
+}
+
+void ActionComponent::setRtsExclusionGroup(std::uint8_t group) noexcept {
+  rtsExclusionGroup_ = group;
+  if (group != 0) {
+    applyRtsExclusionGroup();
+  }
+  auto* log = componentLog();
+  if (log != nullptr) {
+    log->info(label(), fmt::format("RTS exclusion group {}: {} RTS entries, one at a time", group,
+                                   catalog_.rtsCount()));
+  }
+}
+
+void ActionComponent::applyRtsExclusionGroup() noexcept {
+  if (rtsExclusionGroup_ == 0) {
+    return;
+  }
+  catalog_.forEachMut([this](data::CatalogEntry& e) {
+    if (e.type == data::SequenceType::RTS) {
+      e.exclusionGroup = rtsExclusionGroup_;
+    }
+  });
 }
 
 std::uint8_t ActionComponent::startRtsById(std::uint16_t sequenceId) noexcept {
@@ -1034,6 +1062,12 @@ std::uint8_t ActionComponent::handleCommand(std::uint16_t opcode,
     response[9] = 0xFF; // No slot assigned
     response[10] = static_cast<std::uint8_t>(entry->type);
     response[11] = entry->armed ? 1 : 0;
+    return static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  }
+
+  case 0x0523: { // GET_RUNNING: no payload -- the sequences running when the last cycle ended
+    response.resize(1);
+    response[0] = sequencesRunning_.load(std::memory_order_acquire);
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 

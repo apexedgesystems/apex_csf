@@ -128,12 +128,36 @@ public:
   /**
    * @brief Get current health packet snapshot.
    *
-   * Populates and returns a snapshot of current executive state for
-   * health monitoring and telemetry. Thread-safe.
+   * Builds a snapshot of the executive's counters and flags from their
+   * atomics and returns it by value, touching no state another caller
+   * could be writing: callable from any thread at any time.
    *
    * @return ExecutiveHealthPacket with current state.
    */
-  [[nodiscard]] const ExecutiveHealthPacket& getHealthPacket() const noexcept;
+  [[nodiscard]] ExecutiveHealthPacket getHealthPacket() const noexcept;
+
+  /// Cycles on which the action phase was skipped because a task was
+  /// still running when the in-flight wait expired. Readable from any
+  /// thread.
+  [[nodiscard]] std::size_t actionPhaseSkips() const noexcept {
+    return scheduler_.totalInFlightWaitTimeouts();
+  }
+
+  /// Cycles on which the in-flight wait was a single poll because the
+  /// task loop was behind the clock. Readable from any thread.
+  /**
+   * @brief The longest wait, in ns, the action phase gave a cycle that
+   *        started behind the clock. A cycle behind gets a poll, so this
+   *        is the poll's own cost (microseconds) when the budget is bound
+   *        to the processed cycle, and most of a frame when it is not.
+   */
+  [[nodiscard]] std::uint64_t actionWaitBehindMaxNs() const noexcept {
+    return actionWaitBehindMaxNs_.load(std::memory_order_acquire);
+  }
+
+  [[nodiscard]] std::uint64_t actionWaitBacklogPolls() const noexcept {
+    return actionWaitBacklogPolls_.load(std::memory_order_acquire);
+  }
 
   /**
    * @brief The clock's wake-lateness record for the run.
@@ -246,6 +270,27 @@ protected:
    * @note Components must be member variables of derived class to ensure lifetime.
    */
   [[nodiscard]] virtual bool registerComponents() noexcept { return true; }
+
+  /**
+   * @brief The seam between selecting the action phase's wait deadline
+   *        and waiting on it, once per cycle.
+   *
+   * Called with the cycle and the selected wait deadline, a
+   * CLOCK_MONOTONIC instant (0 for a cycle that gets a poll). A derived
+   * executive can observe the selection here; a test can hold the thread
+   * here to stand in for a preemption between the two. The deadline is
+   * an instant, so time spent here is taken from the wait's remaining
+   * budget and never renews it. Each sleep the wait then requests is
+   * capped at 250 us and at the remainder as of the clock read before
+   * it, and none is requested once a read finds the deadline passed.
+   * Preemption can delay both issuing a request and its return, so the
+   * deadline does not bound the instant a request is made or the wait
+   * returns (see SchedulerMultiThread::waitForInFlightTasksUntil).
+   */
+  virtual void onWaitDeadlineSelected(std::uint64_t taskCycles, std::uint64_t waitEndNs) noexcept {
+    (void)taskCycles;
+    (void)waitEndNs;
+  }
 
   /**
    * @brief Configure components after interface initialization.
@@ -552,6 +597,9 @@ private:
 
   // Scheduler management
   system_core::scheduler::SchedulerMultiThread scheduler_;
+  /// In-flight waits reduced to a poll because the task loop was behind.
+  std::atomic<std::uint64_t> actionWaitBacklogPolls_{0};
+  std::atomic<std::uint64_t> actionWaitBehindMaxNs_{0}; ///< See actionWaitBehindMaxNs().
 
   // Interface management (external command/telemetry)
   std::unique_ptr<system_core::interface::ApexInterface> interface_{nullptr};
@@ -583,7 +631,15 @@ private:
   ProfilingState profilingState_{}; ///< Profiling subsystem state.
 
   // Output packet (populated on demand, registered as OUTPUT for INSPECT)
-  mutable ExecutiveHealthPacket healthPacket_{}; ///< Current health snapshot.
+  /// The health block registered for INSPECT readback. Init writes the
+  /// first snapshot before any thread starts; afterwards the GET_HEALTH
+  /// handler refreshes it on whichever thread dispatches that command:
+  /// the I/O thread for wire commands, the task thread for a direct
+  /// action COMMAND aimed at the executive. The I/O thread's INSPECT
+  /// reads it as last refreshed and does not refresh it; a task-thread
+  /// refresh is not serialized against that read. Callers wanting a
+  /// snapshot of their own take one from getHealthPacket().
+  ExecutiveHealthPacket healthPacket_{};
 
   // Registered components (for auto-configuration after interface init)
   std::vector<system_core::system_component::SystemComponentBase*> registeredComponents_{};

@@ -1,0 +1,11 @@
+# lidar_model_data.toml - Component data manifest for RoverLidarModel
+#
+# The rover's lidar as a hardware model on its own serial wire to the
+# board (fullUid 0x00E400).
+
+component = "RoverLidarModel"
+namespace = "appsim::rover_board"
+
+[structs]
+RoverLidarModelTunables = { category = "TUNABLE_PARAM", header = "inc/RoverLidarModel.hpp" }
+RoverLidarModelState = { category = "STATE", header = "inc/RoverLidarModel.hpp" }

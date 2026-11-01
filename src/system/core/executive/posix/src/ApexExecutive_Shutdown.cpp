@@ -26,7 +26,14 @@ static inline int64_t getCurrentTimeNs() noexcept {
 
 // Helper: Broadcast shutdown request to all threads
 void ApexExecutive::broadcastShutdownRequest() noexcept {
-  controlState_.shutdownRequested.store(true, std::memory_order_release);
+  // This store takes the mutex the predicate waits on this flag hold, so
+  // it cannot land between a waiter's check and its block. The flag's
+  // other producers (clock faults, the stdin and command paths) store it
+  // without the mutex.
+  {
+    const std::lock_guard<std::mutex> lock(cvMutex_);
+    controlState_.shutdownRequested.store(true, std::memory_order_release);
+  }
   cvShutdown_.notify_all();
 }
 
@@ -351,7 +358,8 @@ void ApexExecutive::shutdownStage5FinalStats() noexcept {
     sysLog_->info(label(), fmt::format("Lag threshold exceeded: yes (max allowed: {} ticks)",
                                        rtConfig_.maxLagTicks));
   }
-  sysLog_->info(label(), fmt::format("Watchdog warnings: {}", watchdogState_.warningCount));
+  sysLog_->info(label(), fmt::format("Watchdog warnings: {}",
+                                     watchdogState_.warningCount.load(std::memory_order_relaxed)));
 
   // Profiling statistics if enabled
   if (profilingState_.isActive() && profilingState_.sampleCount > 0) {

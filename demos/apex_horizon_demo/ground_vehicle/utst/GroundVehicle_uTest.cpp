@@ -95,7 +95,7 @@ TEST(GroundVehicleWire, RoverFrameLayoutIsFrozen) {
   static_assert(offsetof(GroundVehicleTelemetry, lidar_n_rays) == 84u);
   static_assert(offsetof(GroundVehicleTelemetry, lidar_range_m) == 88u);
   static_assert(offsetof(GroundVehicleTelemetry, lidar_hit) == 216u);
-  static_assert(offsetof(GroundVehicleTelemetry, reserved1) == 232u);
+  static_assert(offsetof(GroundVehicleTelemetry, board_link) == 232u);
   SUCCEED();
 }
 
@@ -337,4 +337,760 @@ TEST(GroundVehicle, TimestampsOnTickGrid) {
   }
   const std::uint64_t T2 = rover.telemetry().timestamp_ns;
   EXPECT_EQ(T2 - T1, 5u * 100'000'000u); // 5 ticks at 10 Hz, exact
+}
+
+/* ----------------------------- Grid boot ----------------------------- */
+
+/**
+ * @test A grid boot places the rover at its north/east offset from the anchor, so a scenario
+ *       stated in grid metres starts where the controller's grid says it is.
+ */
+TEST(GroundVehicle, GridBootPlacesTheRoverFromTheAnchor) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  GroundVehicle rover;
+  configureRover(rover);
+  auto& p = rover.tunables().get();
+  p.init_from_grid = 1u;
+  p.anchor_lat_deg = 39.5;
+  p.anchor_lon_deg = -105.5;
+  p.init_north_m = 100.0;
+  p.init_east_m = -50.0;
+  p.init_heading_deg = 0.0;
+  p.throttle_default = 0.0; // sit still after the latch
+  p.steer_rate_deg_s = 0.0;
+  rover.setBody(&earth);
+  (void)rover.vehicleStep();
+
+  const double R = earth.telemetry().reference_radius_m;
+  const double M_PER_DEG_LAT = R * apex::math::vecmat::DEG_TO_RAD;
+  const double M_PER_DEG_LON =
+      R * std::cos(39.5 * apex::math::vecmat::DEG_TO_RAD) * apex::math::vecmat::DEG_TO_RAD;
+  EXPECT_NEAR(rover.telemetry().pos_lat_deg, 39.5 + 100.0 / M_PER_DEG_LAT, 1e-9);
+  EXPECT_NEAR(rover.telemetry().pos_lon_deg, -105.5 - 50.0 / M_PER_DEG_LON, 1e-9);
+}
+
+/* ----------------------------- ROVR/2 command surface ----------------------------- */
+
+namespace {
+
+using appsim::ground_vehicle::CmdResultCode;
+using appsim::ground_vehicle::kCommandResultBusy;
+using appsim::ground_vehicle::kSeqStateGeofenceHalt;
+using appsim::ground_vehicle::kSeqStateHaltBit;
+using appsim::ground_vehicle::kSeqStateLinkLost;
+using appsim::ground_vehicle::kSeqStateManualHalt;
+using appsim::ground_vehicle::kSeqStateObstacleHalt;
+using appsim::ground_vehicle::kSeqStateSensorLost;
+using appsim::ground_vehicle::kSeqStateSlopeHalt;
+using appsim::ground_vehicle::RoverCmdSetLed;
+using appsim::ground_vehicle::RoverCmdSetTarget;
+using appsim::ground_vehicle::RoverOpcode;
+namespace fb = appsim::ground_vehicle;
+
+std::uint8_t sendBytes(GroundVehicle& rover, RoverOpcode op,
+                       const std::vector<std::uint8_t>& bytes) {
+  apex::compat::rospan<std::uint8_t> payload(bytes.data(), bytes.size());
+  std::vector<std::uint8_t> resp;
+  return rover.handleCommand(static_cast<std::uint16_t>(op), payload, resp);
+}
+
+std::vector<std::uint8_t> targetBytes(float a, float b) {
+  RoverCmdSetTarget t{a, b};
+  std::vector<std::uint8_t> v(sizeof(t));
+  std::memcpy(v.data(), &t, sizeof(t));
+  return v;
+}
+
+/// Ready rover, one tick in (pose latched, frame stamped).
+struct ReadyRover {
+  CelestialBody earth;
+  GroundVehicle rover;
+  ReadyRover() {
+    earth.tunables().set(analyticEarth());
+    EXPECT_EQ(earth.init(), 0u);
+    configureRover(rover);
+    rover.setBody(&earth);
+    (void)rover.vehicleStep();
+  }
+  const std::uint8_t* frame() {
+    (void)rover.vehicleStep();
+    return rover.frameBytes();
+  }
+};
+
+} // namespace
+
+/**
+ * @test Every frame-byte name lands on the wire offset the consumer reads.
+ */
+TEST(GroundVehicleWire, ReservedTailOffsetsArePinned) {
+  // The tail's named fields and the FrameByte offsets are two names for
+  // the same bytes: a consumer decoding by name and a consumer reading
+  // the frame by offset must agree on every one.
+  static_assert(offsetof(GroundVehicleTelemetry, board_link) == 232u);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, board_link), 232u + fb::FB_BOARD_LINK);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, controller_mode), 232u + fb::FB_CONTROLLER_MODE);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, seq_state), 232u + fb::FB_SEQ_STATE);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, active_waypoint), 232u + fb::FB_ACTIVE_WAYPOINT);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, waypoint_total), 232u + fb::FB_WAYPOINT_TOTAL);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, led_bits), 232u + fb::FB_LED_BITS);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, led1_colour), 232u + fb::FB_LED1_COLOUR);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, led1_rate), 232u + fb::FB_LED1_RATE);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, led2_colour), 232u + fb::FB_LED2_COLOUR);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, led2_rate), 232u + fb::FB_LED2_RATE);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, last_cmd_result), 232u + fb::FB_LAST_CMD_RESULT);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, last_cmd_opcode_lo), 232u + fb::FB_LAST_CMD_OPCODE_LO);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, last_cmd_opcode_hi), 232u + fb::FB_LAST_CMD_OPCODE_HI);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, board_load_pct), 232u + fb::FB_BOARD_LOAD_PCT);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, board_tick_lo), 232u + fb::FB_BOARD_TICK_LO);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, board_tick_hi), 232u + fb::FB_BOARD_TICK_HI);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, mast_pan_deg), 232u + fb::FB_MAST_PAN_DEG);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, mast_ext_pct), 232u + fb::FB_MAST_EXT_PCT);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, lidar_state), 232u + fb::FB_LIDAR_STATE);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, lidar_hit_bits), 232u + fb::FB_LIDAR_HIT_BITS);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, lidar_nearest_m), 232u + fb::FB_LIDAR_NEAREST_M);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, lidar_scan_seq), 232u + fb::FB_LIDAR_SCAN_SEQ);
+  EXPECT_EQ(offsetof(GroundVehicleTelemetry, reserved1), 254u);
+  EXPECT_EQ(232u + fb::FB_BOARD_LINK, 232u);
+  EXPECT_EQ(232u + fb::FB_CONTROLLER_MODE, 233u);
+  EXPECT_EQ(232u + fb::FB_SEQ_STATE, 234u);
+  EXPECT_EQ(232u + fb::FB_ACTIVE_WAYPOINT, 235u);
+  EXPECT_EQ(232u + fb::FB_WAYPOINT_TOTAL, 236u);
+  EXPECT_EQ(232u + fb::FB_LED_BITS, 237u);
+  EXPECT_EQ(232u + fb::FB_LED1_COLOUR, 238u);
+  EXPECT_EQ(232u + fb::FB_LED1_RATE, 239u);
+  EXPECT_EQ(232u + fb::FB_LED2_COLOUR, 240u);
+  EXPECT_EQ(232u + fb::FB_LED2_RATE, 241u);
+  EXPECT_EQ(232u + fb::FB_LAST_CMD_RESULT, 242u);
+  EXPECT_EQ(232u + fb::FB_LAST_CMD_OPCODE_LO, 243u);
+  EXPECT_EQ(232u + fb::FB_LAST_CMD_OPCODE_HI, 244u);
+  EXPECT_EQ(232u + fb::FB_BOARD_LOAD_PCT, 245u);
+  EXPECT_EQ(232u + fb::FB_BOARD_TICK_LO, 246u);
+  EXPECT_EQ(232u + fb::FB_BOARD_TICK_HI, 247u);
+  EXPECT_EQ(232u + fb::FB_LIDAR_STATE, 250u);
+  EXPECT_EQ(232u + fb::FB_LIDAR_HIT_BITS, 251u);
+  EXPECT_EQ(232u + fb::FB_LIDAR_NEAREST_M, 252u);
+  EXPECT_EQ(232u + fb::FB_LIDAR_SCAN_SEQ, 253u);
+  EXPECT_EQ(232u + fb::FB_MAST_PAN_DEG, 248u);
+  EXPECT_EQ(232u + fb::FB_MAST_EXT_PCT, 249u);
+}
+
+/**
+ * @test A mode command is bounded to the defined modes and reaches the frame.
+ */
+TEST(GroundVehicleCmd, SetModeIsBoundedAndAdoptable) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE, {2u}), 0u);
+  EXPECT_EQ(r.rover.vehicleState().commanded_mode, 2u);
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_MODE, {3u}), 0u);
+  EXPECT_EQ(r.rover.vehicleState().commanded_mode, 2u) << "rejected whole";
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_MODE, {}), 0u) << "short payload";
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT],
+            static_cast<std::uint8_t>(CmdResultCode::NACK_INVALID_ARGUMENT));
+  EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_LO], 0x03u);
+  EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_HI], 0x01u);
+}
+
+/**
+ * @test Targets are range-checked, refused while halted, and counted as legs.
+ */
+TEST(GroundVehicleCmd, TargetsValidateRefuseWhileHaltedAndCountWaypoints) {
+  ReadyRover r;
+  // A running sequence issues its legs through the sequence-owned opcodes.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(1.52F, 0.0F)), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_ABS_SEQ, targetBytes(10.0F, -4.0F)), 0u);
+  const auto& s = r.rover.vehicleState();
+  EXPECT_EQ(s.target_kind, 2u);
+  EXPECT_EQ(s.target_seq, 2u);
+  EXPECT_EQ(s.active_waypoint, 2u);
+  EXPECT_FLOAT_EQ(s.target_a_m, 10.0F);
+
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(5000.0F, 0.0F)), 0u)
+      << "out of bounds";
+  EXPECT_EQ(s.target_seq, 2u) << "rejected whole";
+  {
+    const auto* g = r.frame();
+    EXPECT_EQ(g[fb::FB_SEQ_STATE], 3u);
+    EXPECT_EQ(g[fb::FB_WAYPOINT_TOTAL], 2u);
+    EXPECT_EQ(g[fb::FB_ACTIVE_WAYPOINT], 2u);
+  }
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED));
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT], static_cast<std::uint8_t>(CmdResultCode::NACK_EXEC_FAILED));
+  // The halt supersedes the running sequence on the frame: manual
+  // reason, legs cleared, mode HALTED.
+  EXPECT_EQ(f[fb::FB_SEQ_STATE], appsim::ground_vehicle::kSeqStateManualHalt);
+  EXPECT_EQ(f[fb::FB_WAYPOINT_TOTAL], 0u);
+  EXPECT_EQ(f[fb::FB_ACTIVE_WAYPOINT], 0u);
+  EXPECT_EQ(f[fb::FB_CONTROLLER_MODE], appsim::ground_vehicle::kFrameModeHalted);
+}
+
+/**
+ * @test A lamp command is bounded to the defined codes and stamped on the frame.
+ */
+TEST(GroundVehicleCmd, LedCommandsAreBoundedAndStamped) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 5u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {2u, 1u, 0u}), 0u);
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_LED, {3u, 1u, 1u}), 0u) << "lamp";
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 6u, 1u}), 0u) << "colour";
+  EXPECT_NE(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 1u, 6u}), 0u) << "rate";
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LED1_COLOUR], 2u);
+  EXPECT_EQ(f[fb::FB_LED1_RATE], 5u);
+  EXPECT_EQ(f[fb::FB_LED2_COLOUR], 1u);
+  EXPECT_EQ(f[fb::FB_LED2_RATE], 0u);
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT],
+            static_cast<std::uint8_t>(CmdResultCode::NACK_INVALID_ARGUMENT));
+  EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_LO], 0x06u);
+}
+
+/* ----------------------------- LEDs + step rate ----------------------------- */
+
+/**
+ * @test The frame's lamp bits strobe at the coded rate whatever the step rate, and a steady or
+ *       dark lamp holds, so the displayed strobe matches the commanded one.
+ */
+TEST(GroundVehicleLed, StrobeBitFollowsTheRateCodeAt100Hz) {
+  ReadyRover r;
+  r.rover.tunables().get().step_hz = 100u;
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 5u}), 0u); // green, 10 Hz
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {2u, 1u, 0u}), 0u); // red, steady
+  // 10 Hz at 100 steps/s: period 10 steps, 5 on then 5 off, repeating.
+  std::vector<int> lamp1;
+  for (int i = 0; i < 30; ++i) {
+    (void)r.rover.vehicleStep();
+    const auto* f = r.rover.frameBytes();
+    lamp1.push_back((f[fb::FB_LED_BITS] & 0x01u) != 0u ? 1 : 0);
+    EXPECT_EQ((f[fb::FB_LED_BITS] & 0x02u) != 0u, true) << "steady lamp stays on";
+  }
+  int on = 0, transitions = 0;
+  for (std::size_t i = 0; i < lamp1.size(); ++i) {
+    on += lamp1[i];
+    if (i > 0 && lamp1[i] != lamp1[i - 1]) {
+      ++transitions;
+    }
+  }
+  EXPECT_EQ(on, 15) << "half the steps on over three periods";
+  EXPECT_EQ(transitions, 5) << "toggles every 5 steps";
+  for (std::size_t i = 0; i + 5 < lamp1.size(); i += 10) {
+    EXPECT_EQ(lamp1[i], 1) << "period starts on";
+    EXPECT_EQ(lamp1[i + 5], 0) << "half period off";
+  }
+
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 0u, 5u}), 0u); // colour off wins
+  (void)r.rover.vehicleStep();
+  EXPECT_EQ(r.rover.frameBytes()[fb::FB_LED_BITS] & 0x01u, 0u);
+}
+
+/**
+ * @test A 0.5 Hz lamp is lit for exactly half of a 2 s window.
+ */
+TEST(GroundVehicleLed, HalfHertzAtTenHzStepsIsTenOnTenOff) {
+  ReadyRover r;                                                          // step_hz default 10
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 3u, 1u}), 0u); // blue, 0.5 Hz
+  int on = 0;
+  for (int i = 0; i < 20; ++i) {
+    (void)r.rover.vehicleStep();
+    on += (r.rover.frameBytes()[fb::FB_LED_BITS] & 0x01u) != 0u ? 1 : 0;
+  }
+  EXPECT_EQ(on, 10);
+}
+
+/**
+ * @test Both the integration and the timestamps follow step_hz, not a fixed 10 Hz.
+ */
+TEST(GroundVehicle, StepRateScalesTheIntegrationAndTheTimestampGrid) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  GroundVehicle slow, fast;
+  configureRover(slow);
+  configureRover(fast);
+  slow.tunables().get().step_hz = 10u;
+  fast.tunables().get().step_hz = 100u;
+  slow.setBody(&earth);
+  fast.setBody(&earth);
+  for (int i = 0; i < 20; ++i) {
+    (void)slow.vehicleStep(); // 2 s
+  }
+  for (int i = 0; i < 200; ++i) {
+    (void)fast.vehicleStep(); // 2 s
+  }
+  // Same elapsed time: first-order speed approach and heading agree to
+  // the integration-step difference.
+  EXPECT_NEAR(fast.telemetry().speed_m_s, slow.telemetry().speed_m_s, 0.05);
+  EXPECT_NEAR(fast.telemetry().heading_deg, slow.telemetry().heading_deg, 1e-6);
+  // Timestamp grid follows the step rate.
+  const std::uint64_t T1 = fast.telemetry().timestamp_ns;
+  (void)fast.vehicleStep();
+  EXPECT_EQ(fast.telemetry().timestamp_ns - T1, 10000000u);
+}
+
+/* ----------------------------- Boot seed ----------------------------- */
+
+/**
+ * @test Init seeds the output block with the boot pose and a clear lidar, so anything reading
+ *       it before the first step never sees zeros.
+ */
+TEST(GroundVehicle, InitSeedsTheOutputBlockBeforeTheFirstStep) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  GroundVehicle rover;
+  configureRover(rover);
+  rover.setBody(&earth);
+  ASSERT_EQ(rover.init(), 0u);
+  // No step yet: a watchpoint reading the block now sees the boot pose
+  // and a clear lidar, never zeros.
+  const auto& t = rover.telemetry();
+  EXPECT_NEAR(t.pos_lat_deg, rover.tunables_const().init_lat_deg, 1e-12);
+  EXPECT_NEAR(t.pos_lon_deg, rover.tunables_const().init_lon_deg, 1e-12);
+  EXPECT_EQ(t.lidar_hit[0], 0u);
+  EXPECT_DOUBLE_EQ(t.lidar_range_m[4], rover.tunables_const().lidar_max_range_m);
+  EXPECT_EQ(t.is_slipping, 0u);
+}
+
+/* ----------------------------- Halt attribution ----------------------------- */
+
+/**
+ * @test A wire HALT is attributed as manual unless a sequence already named its reason, and
+ *       RESUME clears either, so the frame always says why the rover stopped.
+ */
+TEST(GroundVehicleCmd, HaltStampsManualReasonAndResumeClearsAnyHalt) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], appsim::ground_vehicle::kSeqStateManualHalt);
+  EXPECT_EQ(r.frame()[fb::FB_CONTROLLER_MODE], appsim::ground_vehicle::kFrameModeHalted);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+
+  // A recovery sequence's reason survives a later plant-level HALT and
+  // is cleared by RESUME like any halt.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0x12u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0x12u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+}
+
+namespace {
+/// The engine's answer in these tests: a bit per catalog id.
+struct RunningIds {
+  std::uint64_t bits{0};
+  static bool query(void* ctx, std::uint8_t id) noexcept {
+    return (static_cast<RunningIds*>(ctx)->bits >> id) & 1u;
+  }
+};
+} // namespace
+
+/**
+ * @test A plain HALT pauses a running sequence: the frame carries the halt reason through the
+ *       pause and the sequence's id and waypoint counters come back on RESUME while the engine
+ *       still runs it, so a console never reads idle during a tour. A sequence that tries to
+ *       re-bracket the frame while halted is what RESUME applies instead, under the same rule.
+ */
+TEST(GroundVehicleCmd, PlainHaltKeepsTheRunningSequenceForResume) {
+  ReadyRover r;
+  RunningIds engine;
+  r.rover.setSequenceOwnershipQuery(&RunningIds::query, &engine);
+  engine.bits = (1u << 2) | (1u << 3);
+  // Sequence 2 running, two legs, the first target accepted.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(10.0F, 0.0F)), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 2u);
+  EXPECT_EQ(r.rover.vehicleState().active_waypoint, 1u);
+
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], appsim::ground_vehicle::kSeqStateManualHalt);
+  EXPECT_EQ(r.rover.vehicleState().active_waypoint, 0u);
+
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 2u) << "the paused sequence is still running";
+  EXPECT_EQ(r.rover.vehicleState().waypoint_total, 2u);
+  EXPECT_EQ(r.rover.vehicleState().active_waypoint, 1u);
+
+  // The sequence ends normally; a later plain HALT with nothing running
+  // restores idle.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+
+  // Paused, then a recovery sequence tries to name its reason: refused
+  // while halted; a halt reason is no running id, so RESUME reads idle.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 1u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  const auto EXEC_FAILED =
+      static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0x14u, 0u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u) << "the engine moved on; nothing to put back";
+}
+
+/**
+ * @test RESUME puts a paused sequence back only while the engine still runs it: one that timed
+ *       out or was stopped during the halt leaves the frame idle (so ordinary commands are not
+ *       BUSY against nothing), a restart or a replacement started during the halt lands as the
+ *       bracket it tried to stamp, and a sequence that ended during the halt reads idle.
+ */
+TEST(GroundVehicleCmd, ResumeRestoresOnlyWhatTheEngineStillRuns) {
+  ReadyRover r;
+  RunningIds engine;
+  r.rover.setSequenceOwnershipQuery(&RunningIds::query, &engine);
+  const auto EXEC_FAILED =
+      static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED);
+
+  // Timed out (or stopped) while halted: not restored, and HOLD is accepted.
+  engine.bits = 1u << 2;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  engine.bits = 0u;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u) << "the engine no longer runs it";
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE, {0u}), 0u) << "not BUSY";
+
+  // Same-id restart while halted: its bracket is refused then, applied on
+  // RESUME with its own waypoint count and no leg in progress.
+  engine.bits = 1u << 3;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(10.0F, 0.0F)), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 1u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 3u);
+  EXPECT_EQ(r.rover.vehicleState().waypoint_total, 1u);
+  EXPECT_EQ(r.rover.vehicleState().active_waypoint, 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+
+  // Replaced while halted by another sequence the engine now runs.
+  engine.bits = 1u << 2;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  engine.bits = 1u << 5;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {5u, 4u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 5u);
+  EXPECT_EQ(r.rover.vehicleState().waypoint_total, 4u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+
+  // Ended while halted: its end is refused then and applied on RESUME.
+  engine.bits = 1u << 2;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 1u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), EXEC_FAILED);
+  engine.bits = 0u;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+
+  // No engine wired at all: the plant cannot vouch for a paused sequence.
+  r.rover.setSequenceOwnershipQuery(nullptr, nullptr);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 1u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+}
+
+/**
+ * @test A halted plant refuses every command that would drive it.
+ */
+TEST(GroundVehicleCmd, WhileHaltedOnlyHaltAndResumeAreAccepted) {
+  // A geofence halt sequence lights the lamps, names its reason, then
+  // latches the halt. Whatever is started afterwards cannot repaint
+  // the lamps, change the mode, retarget, or overwrite the reason
+  // (a sequence that sails through on a stale ARRIVED latch would
+  // otherwise write "state 0" over a live halt).
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0x12u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 1u, 4u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  const auto EXEC_FAILED =
+      static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {1u, 1u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 0u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE_SEQ, {2u}), EXEC_FAILED);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(10.0F, 0.0F)),
+            EXEC_FAILED);
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_SEQ_STATE], 0x12u) << "the reason stays";
+  EXPECT_EQ(f[fb::FB_CONTROLLER_MODE], appsim::ground_vehicle::kFrameModeHalted);
+  EXPECT_EQ(r.rover.vehicleState().led_colour[0], 1u) << "lamp stays red";
+  EXPECT_EQ(r.rover.vehicleState().led_rate[0], 4u);
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT], static_cast<std::uint8_t>(CmdResultCode::NACK_EXEC_FAILED));
+  // RESUME reopens everything.
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::RESUME, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 0u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE_SEQ, {2u}), 0u);
+  EXPECT_EQ(r.frame()[fb::FB_SEQ_STATE], 0u);
+}
+
+/* ----------------------------- BUSY: a sequence owns the drive ----------------------------- */
+
+/**
+ * @test While a sequence runs, wire mode and target commands are refused whole as BUSY and only
+ *       the sequence's own opcodes drive, so the operator cannot fight a running sequence.
+ */
+TEST(GroundVehicleCmd, WireTargetsAreBusyWhileASequenceRunsButSequenceOpcodesAreNot) {
+  ReadyRover r;
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
+            appsim::ground_vehicle::kCommandResultBusy);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE, {0u}),
+            appsim::ground_vehicle::kCommandResultBusy);
+  EXPECT_EQ(r.rover.vehicleState().target_seq, 0u) << "refused whole";
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LAST_CMD_RESULT], static_cast<std::uint8_t>(CmdResultCode::NACK_BUSY));
+  EXPECT_EQ(f[fb::FB_LAST_CMD_OPCODE_LO], 0x03u);
+
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE_SEQ, {2u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(1.0F, 0.0F)), 0u);
+  EXPECT_EQ(r.rover.vehicleState().target_seq, 1u);
+  EXPECT_EQ(r.rover.vehicleState().active_waypoint, 1u);
+
+  // Sequence ends: the wire drives again. A halt (0x1x) is not "running".
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_ABS, targetBytes(0.0F, 0.0F)), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::HALT, {}), 0u);
+  EXPECT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
+            static_cast<std::uint8_t>(system_core::system_component::CommandResult::EXEC_FAILED))
+      << "halted refuses with EXEC_FAILED, not BUSY";
+}
+
+/* ----------------------------- Sequence trace ----------------------------- */
+
+/**
+ * @test The trace samples at 20 Hz only while a sequence runs and marks its end, so a
+ *       demonstration's plot covers exactly the sequence.
+ */
+TEST(GroundVehicleTrace, SamplesAt20HzWhileASequenceRunsAndStopsWhenIdle) {
+  ReadyRover r;
+  r.rover.tunables().get().step_hz = 100u;
+  EXPECT_EQ(r.rover.seqTracePending(), 0u);
+  for (int i = 0; i < 50; ++i) {
+    (void)r.rover.vehicleStep();
+  }
+  EXPECT_EQ(r.rover.seqTracePending(), 0u) << "idle: nothing captured";
+
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {2u, 2u}), 0u);
+  for (int i = 0; i < 100; ++i) { // 1 s at 100 Hz
+    (void)r.rover.vehicleStep();
+  }
+  EXPECT_EQ(r.rover.seqTracePending(), 20u) << "20 Hz";
+
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {0u, 0u}), 0u);
+  for (int i = 0; i < 100; ++i) {
+    (void)r.rover.vehicleStep();
+  }
+  EXPECT_EQ(r.rover.seqTracePending(), 20u) << "idle again: no new samples";
+  EXPECT_EQ(r.rover.vehicleState().trace_ended, 1u) << "end marker pending for the drain";
+}
+
+/**
+ * @test The trace buffer stops at its reserved size and counts what it could not hold.
+ */
+TEST(GroundVehicleTrace, BufferIsBoundedAndCountsDrops) {
+  ReadyRover r;
+  r.rover.tunables().get().step_hz = 100u;
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {1u, 1u}), 0u);
+  for (int i = 0; i < 100 * 5; ++i) { // 5 s without a drain: 100 samples offered, 64 fit
+    (void)r.rover.vehicleStep();
+  }
+  EXPECT_EQ(r.rover.seqTracePending(), 64u);
+  EXPECT_EQ(r.rover.vehicleState().trace_dropped, 36u);
+}
+
+/* ----------------------------- Golden frame ----------------------------- */
+
+/** @test A fully populated reserved tail, byte for byte: the ROVR/2 v2 frame
+ *  as the consumer's golden test pins it (offsets 232..249). */
+TEST(GroundVehicleWire, ReservedTailGoldenBytes) {
+  ReadyRover r;
+  r.rover.tunables().get().step_hz = 100u;
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_SEQ_STATE, {3u, 2u}), 0u);
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_MODE_SEQ, {2u}), 0u);
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL_SEQ, targetBytes(1.524F, 0.0F)), 0u);
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {1u, 2u, 0u}), 0u); // lamp 1 green steady
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_LED, {2u, 1u, 4u}), 0u); // lamp 2 red 5 Hz
+  // Last command on the wire: a refused plain target (BUSY, opcode 0x0104).
+  ASSERT_EQ(sendBytes(r.rover, RoverOpcode::SET_TARGET_REL, targetBytes(1.0F, 0.0F)),
+            appsim::ground_vehicle::kCommandResultBusy);
+  (void)r.rover.vehicleStep(); // lamp 2 phase 0: on
+  const auto* f = r.rover.frameBytes();
+  const std::uint8_t GOLDEN[18] = {
+      0,    // [0]  board_link: no board in the software form
+      1,    // [1]  controller_mode: the attached block's mode is 1 in this fixture (no controller
+            // stepped)
+      3,    // [2]  seq_state: sequence 3 running
+      1,    // [3]  active_waypoint
+      2,    // [4]  waypoint_total
+      0x03, // [5]  led_bits: both lamps on this frame
+      2,
+      0, // [6..7] lamp 1 green, steady
+      1,
+      4, // [8..9] lamp 2 red, 5 Hz
+      4, // [10] last_cmd_result: NACK_BUSY
+      0x04,
+      0x01, // [11..12] last_cmd_opcode 0x0104 LE
+      0,    // [13] board_load_pct
+      0,
+      0, // [14..15] board_tick
+      0,
+      0, // [16..17] mast (stretch)
+  };
+  for (std::size_t i = 0; i < sizeof(GOLDEN); ++i) {
+    EXPECT_EQ(f[i], GOLDEN[i]) << "byte 232+" << i;
+  }
+  static_assert(offsetof(GroundVehicleTelemetry, lidar_state) == 250u);
+}
+
+/* ----------------------------- Lidar bytes ----------------------------- */
+
+/** @test Without a board's sensor picture the frame carries the plant's own sweep. */
+TEST(GroundVehicleWire, LidarBytesCarryThePlantSweepWithoutABoardSensor) {
+  ReadyRover r;
+  const auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LIDAR_STATE], 0u);
+  // The analytic ellipsoid is flat: no ray returns, no closest return.
+  EXPECT_EQ(f[fb::FB_LIDAR_HIT_BITS], 0u);
+  EXPECT_EQ(f[fb::FB_LIDAR_NEAREST_M], 255u);
+}
+
+/** @test The boot frame reads no obstacle, so the obstacle watchpoint cannot fire at tick 0. */
+TEST(GroundVehicleWire, BootFrameReadsNoObstacle) {
+  CelestialBody earth;
+  earth.tunables().set(analyticEarth());
+  ASSERT_EQ(earth.init(), 0u);
+  GroundVehicle rover;
+  configureRover(rover);
+  rover.setBody(&earth);
+  ASSERT_EQ(rover.init(), 0u);
+  EXPECT_EQ(rover.frameBytes()[fb::FB_LIDAR_NEAREST_M], 255u);
+}
+
+/** @test With a board reporting its sensor, the frame carries what the board saw. */
+TEST(GroundVehicleWire, LidarBytesCarryWhatTheBoardSaw) {
+  ReadyRover r;
+  appsim::ground_vehicle::GroundVehicleDriveCommand cmd{};
+  cmd.valid = 1u;
+  cmd.lidar_state = 1u;
+  cmd.lidar_hit_bits = 0x3Cu;
+  cmd.lidar_nearest_m = 12u;
+  cmd.lidar_scan_seq = 0x1234u;
+  r.rover.setDriveCommand(&cmd);
+  auto* f = r.frame();
+  EXPECT_EQ(f[fb::FB_LIDAR_STATE], 1u);
+  EXPECT_EQ(f[fb::FB_LIDAR_HIT_BITS], 0x3Cu);
+  EXPECT_EQ(f[fb::FB_LIDAR_NEAREST_M], 12u);
+  EXPECT_EQ(f[fb::FB_LIDAR_SCAN_SEQ], 0x34u);
+
+  cmd.lidar_state = 2u; // the board's sensor went stale: the frame says so
+  f = r.frame();
+  EXPECT_EQ(f[fb::FB_LIDAR_STATE], 2u);
+
+  cmd.lidar_state = 0u; // no sensor on the board: back to the plant's sweep
+  f = r.frame();
+  EXPECT_EQ(f[fb::FB_LIDAR_STATE], 0u);
+  EXPECT_EQ(f[fb::FB_LIDAR_NEAREST_M], 255u);
+}
+
+/* ----------------------------- Sequence state encoding ----------------------------- */
+
+/**
+ * @test A running id below the halt band owns the drive and refuses manual commands.
+ */
+TEST(GroundVehicleSeqState, RunningSequenceBelowTheHaltBandOwnsTheDrive) {
+  ReadyRover r;
+  const std::uint8_t SEQ[2] = {15u, 2u}; // id 15: the last expressible running id.
+  EXPECT_EQ(sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE), SEQ, 2), 0u);
+  EXPECT_EQ(r.rover.vehicleState().seq_state, 15u);
+
+  // A sequence owns the drive, so a manual mode command is refused.
+  const std::uint8_t MODE[1] = {2u};
+  EXPECT_EQ(sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_MODE), MODE, 1),
+            kCommandResultBusy);
+
+  // A halt now reads as the manual halt, not as sequence 15 recovering.
+  EXPECT_EQ(sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::HALT)), 0u);
+  EXPECT_EQ(r.rover.vehicleState().seq_state, kSeqStateManualHalt);
+}
+
+/**
+ * @test A running id inside the halt band is refused, at both edges.
+ *
+ * The band is reserved for halt reasons, so no sequence id may lie in
+ * it. The plant refuses the values that are not defined reasons; the
+ * defined ones (0x11..0x16) it must accept, because a recovery halt is
+ * authored through this same command, which is why the range is
+ * reserved at the point ids are assigned rather than only here.
+ */
+TEST(GroundVehicleSeqState, RunningIdsInsideTheHaltBandAreRefused) {
+  ReadyRover r;
+  for (const std::uint8_t ID :
+       {std::uint8_t{16}, std::uint8_t{23}, std::uint8_t{24}, std::uint8_t{31}}) {
+    const std::uint8_t SEQ[2] = {ID, 1u};
+    EXPECT_EQ(
+        sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE), SEQ, 2),
+        static_cast<std::uint8_t>(system_core::system_component::CommandResult::INVALID_PAYLOAD))
+        << "id " << static_cast<int>(ID) << " would read as a halt";
+    EXPECT_EQ(r.rover.vehicleState().seq_state, 0u) << "id " << static_cast<int>(ID);
+  }
+
+  // The rule is the bit, not the interval: 48..63 carry it too and are
+  // refused, while 47 and 64 do not and are accepted.
+  for (const std::uint8_t ID : {std::uint8_t{48}, std::uint8_t{63}}) {
+    const std::uint8_t SEQ[2] = {ID, 1u};
+    EXPECT_EQ(
+        sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE), SEQ, 2),
+        static_cast<std::uint8_t>(system_core::system_component::CommandResult::INVALID_PAYLOAD))
+        << "id " << static_cast<int>(ID) << " carries the halt bit";
+  }
+
+  // Either side of a band is accepted: 15 below the first, 32 above it
+  // (the catalog's halt-demo sequences run at 32..36), 47 and 64 around
+  // the second.
+  for (const std::uint8_t ID :
+       {std::uint8_t{15}, std::uint8_t{32}, std::uint8_t{47}, std::uint8_t{64}}) {
+    const std::uint8_t SEQ[2] = {ID, 1u};
+    EXPECT_EQ(sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE), SEQ, 2), 0u)
+        << "id " << static_cast<int>(ID);
+    EXPECT_EQ(r.rover.vehicleState().seq_state, ID);
+  }
+}
+
+/**
+ * @test The halt band is exactly the reserved range the contract names.
+ */
+TEST(GroundVehicleSeqState, TheHaltBandIsTheReservedIdRange) {
+  // Every defined reason sits inside 0x10..0x1F, so reserving that range
+  // for them is what keeps running ids unambiguous.
+  for (const std::uint8_t REASON :
+       {kSeqStateObstacleHalt, kSeqStateGeofenceHalt, kSeqStateSlopeHalt, kSeqStateLinkLost,
+        kSeqStateManualHalt, kSeqStateSensorLost}) {
+    EXPECT_EQ(REASON & kSeqStateHaltBit, kSeqStateHaltBit);
+    EXPECT_LT(REASON, 0x20u);
+  }
+  EXPECT_EQ(kSeqStateHaltBit, 0x10u);
+}
+
+/**
+ * @test Every defined halt reason is still accepted as a recovery state.
+ */
+TEST(GroundVehicleSeqState, DefinedHaltReasonsRemainExpressible) {
+  ReadyRover r;
+  for (const std::uint8_t REASON :
+       {kSeqStateObstacleHalt, kSeqStateGeofenceHalt, kSeqStateSlopeHalt, kSeqStateLinkLost,
+        kSeqStateManualHalt, kSeqStateSensorLost}) {
+    const std::uint8_t SEQ[2] = {REASON, 0u};
+    EXPECT_EQ(sendCmd(r.rover, static_cast<std::uint16_t>(RoverOpcode::SET_SEQ_STATE), SEQ, 2), 0u)
+        << "reason 0x" << std::hex << static_cast<int>(REASON);
+    EXPECT_EQ(r.rover.vehicleState().seq_state, REASON);
+  }
 }

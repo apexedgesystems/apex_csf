@@ -30,7 +30,7 @@ struct __attribute__((packed)) StandaloneStepTprm {
   std::uint32_t timeoutCycles{0}; ///< Max wait (0 = no timeout).
   std::uint8_t onTimeout{0}; ///< StepTimeoutPolicy enum.
   std::uint8_t onComplete{0}; ///< StepCompletionAction enum.
-  std::uint8_t gotoStep{0}; ///< Target for GOTO_STEP or START_RTS slot.
+  std::uint8_t gotoStep{0}; ///< Step index for GOTO_STEP; sequence id for START_RTS.
   std::uint8_t retryMax{0}; ///< Max retries on timeout.
   StandaloneWaitConditionTprm waitCondition{}; ///< Optional hold condition.
   std::uint8_t reserved{0}; ///< Explicit padding.

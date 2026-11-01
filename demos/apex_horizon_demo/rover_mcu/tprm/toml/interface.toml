@@ -1,0 +1,41 @@
+# ApexInterface (0x000400) for rover_mcu: the ops interface, TCP/SLIP.
+#
+# The server binds every interface of its own network namespace -- the
+# producer's container -- on port 9000. That is what lets a published port
+# reach it: the supported console endpoint is the host's loopback,
+# 127.0.0.1:9010, mapped onto this socket by the container's -p flag, so a
+# console on the same machine connects and nothing off the machine can.
+# Inside the container the probe and the uploader keep using
+# 127.0.0.1:9000. Field layout as the component's tunables declare it.
+
+[ApexInterfaceTunables]
+# Host: "0.0.0.0" (listen on all interfaces for remote C2 access)
+host = { type = "string", size = 64, value = "0.0.0.0" }
+
+# TCP server port: 9000
+port = { type = "uint", size = 2, value = 9000 }
+
+# Framing: SLIP = 0
+framing = { type = "uint", size = 1, value = 0 }
+
+# CRC disabled
+crcEnabled = { type = "uint", size = 1, value = 0 }
+
+# Queue capacities
+cmdQueueCapacity = { type = "uint", size = 2, value = 32 }
+tlmQueueCapacity = { type = "uint", size = 2, value = 64 }
+
+# Max APROTO payload size
+maxPayloadBytes = { type = "uint", size = 2, value = 4096 }
+
+# Padding for uint32 alignment (2 bytes before pollTimeoutMs)
+padding1 = { type = "uint", size = 2, value = 0 }
+
+# Socket poll timeout
+pollTimeoutMs = { type = "uint", size = 4, value = 10 }
+
+# Dropped frame report threshold
+droppedFrameReportThreshold = { type = "uint", size = 2, value = 1 }
+
+# Padding to align structure (2 bytes)
+padding2 = { type = "uint", size = 2, value = 0 }

@@ -37,6 +37,9 @@ any such change is called out explicitly in its entry.
   one-command dynamic-mode set-pieces (short period, Dutch roll, spiral,
   phugoid), a 20 Hz mode trace, and a measured recovery boundary that
   restores the autopilot when a demonstration leaves the flight envelope.
+- rover_mcu demo: rover drive control on the host or a NUCLEO-F767ZI,
+  with safety halts, mission upload and pushed telemetry
+  ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
 - Nightly assurance pipeline: warm firmware builds for every MCU target,
   sanitizer suites, cppcheck, dependency and container scans, and
   per-language coverage floors; CodeQL analysis on the default branch.
@@ -112,6 +115,23 @@ any such change is called out explicitly in its entry.
 - The zephyr dev image builds again on Ubuntu 24.04 (its Python tool install
   passes `--break-system-packages`).
   ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
+- DataTransform holds an applied mask on each hold tick while its entry
+  stays armed, and the action demo schedules the hold after its sensor's
+  step, so an injected fault stays visible to the watchpoints
+  ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
+- The action demo's fault campaign chains to its cleanup sequence instead
+  of restarting itself, and its checkout waits on the action component's
+  new GET_RUNNING query, the count of sequences running when its last
+  cycle ended ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
+- The executive's action phase waits for the cycle's in-flight tasks, and
+  one thread frames both pushed telemetry and command replies. Breaking:
+  `TaskEntry::isRunning` is replaced by an in-flight count; migrate to
+  `stillRunning()`, `inFlightCount()`, `markDispatched()`,
+  `markCompleted()` and `unmarkDispatched()`. Copies of
+  `ApexInterface::stats()` must use `statsSnapshot()` (the counters are
+  atomics now), and `getHealthPacket()` returns a value to own rather
+  than a reference to borrow; rebuild dependent code
+  ([#151](https://github.com/apexedgesystems/apex_csf/pull/151)).
 - Improve scalar Legendre accuracy, make the simple scalar API
   allocation-free, and clamp transformed inputs after transformation.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))

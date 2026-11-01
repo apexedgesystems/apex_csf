@@ -209,7 +209,7 @@ name = "gotoStep"
 type = "uint"
 size = 1
 default = 0
-doc = "Target for GOTO_STEP or START_RTS slot."
+doc = "Step index for GOTO_STEP; sequence id for START_RTS."
 
 [[fields.StandaloneStepTprm]]
 name = "retryMax"

@@ -56,7 +56,7 @@ message StandaloneStepTprm {
   uint32 onTimeout = 14 [(apex.width) = 1, (apex.default) = "0"];
   // StepCompletionAction enum.
   uint32 onComplete = 15 [(apex.width) = 1, (apex.default) = "0"];
-  // Target for GOTO_STEP or START_RTS slot.
+  // Step index for GOTO_STEP; sequence id for START_RTS.
   uint32 gotoStep = 16 [(apex.width) = 1, (apex.default) = "0"];
   // Max retries on timeout.
   uint32 retryMax = 17 [(apex.width) = 1, (apex.default) = "0"];

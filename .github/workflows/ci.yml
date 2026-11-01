@@ -73,6 +73,10 @@ jobs:
             case "$file" in
               tools/Cargo.*|tools/*/rust/*) rust=true ;;
               tools/py/*)   py=true ;;
+              # A demo's checkout scripts keep their pytest files beside them;
+              # make test-py collects those directories, so a change there
+              # selects the Python job, as it did from tools/py/tests.
+              demos/*/test/*.py|demos/*/*/test/*.py) py=true ;;
               tools/sh/*)   sh=true ;;
               # Conformance contracts are multi-sided: every suite that pins
               # one must run when it changes.
@@ -81,6 +85,10 @@ jobs:
               # against each other by check-cdef, which runs in the rust job
               # (it needs cdef_gen); either side changing must run it.
               *_data.toml|*/.auto/*) cpp=true; rust=true ;;
+              # A demo's Python scripts are tested by the Python job (beside
+              # them under the demo's test/, or in tools/py/tests), so a change
+              # to one runs that job as well as the demo's C++ selection.
+              demos/*/scripts/*.py|demos/*/*/scripts/*.py) cpp=true; py=true ;;
               src/*|demos/*|apps/*|cmake/*|CMakeLists.txt|CMakePresets.json) cpp=true ;;
               *.md|docs/*)  : ;;
               # Dev-image inputs the gate jobs actually run in (base; the cpu dev
