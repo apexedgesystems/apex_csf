@@ -59,16 +59,21 @@ and configuration produce the same identity, and a reproduced build can be
 checked against a run log by eye.
 
 Tree state is the strongest field. It is the id of the tree git would commit
-from the working tree's tracked paths, built in a temporary index
-(`read-tree HEAD`, `add -u`, `write-tree`) so the checkout's own index is
-neither read nor written: every path whatever its name, every mode and object
-type (regular file, symlink, gitlink), every deletion, under git's own content
-normalization (clean filters, line endings), the content a commit would
-record. `clean` means that tree is HEAD's. Diff settings, path quoting and
-textconv drivers play no part, and the index's stat cache is not consulted, so
-two checkouts carrying the same modifications report the same state, two
-different modifications differ, and an edit that keeps a file's size and
-timestamps still counts. Untracked files are not part of it. The `-dirty`
+from the working tree's tracked paths, built in a temporary index that starts
+as a copy of the checkout's own index, which is read once and never written.
+The copy's `write-tree` names the paths git tracks (HEAD's plus staged
+additions, minus staged removals; HEAD's alone when the copy cannot name a
+tree, as during a merge); `read-tree` of that tree restarts the temporary
+index without a stat cache; `add -u` then reads every path whatever its
+name, every mode and object type (regular file, symlink, gitlink), every
+deletion, under git's own content normalization (clean filters, line
+endings), the content a commit would record; `write-tree` names the result.
+`clean` means that tree is HEAD's. Diff settings, path quoting and textconv
+drivers play no part, and no stat cache is consulted, so two checkouts
+carrying the same modifications report the same state, two different
+modifications differ, and an edit that keeps a file's size and timestamp
+still counts. A staged addition is part of it; an untracked file is not. The
+`-dirty`
 mark on the description is appended from this state, so `describe()` and
 `dirty()` agree by construction; the description pins twelve commit digits
 (`--abbrev=12`) so it reads the same under any `core.abbrev`.
@@ -94,7 +99,7 @@ in `libutilities_build_info.so` beside its siblings in a deployment bank.
 ## 4. Limits
 
 - Untracked files are not part of the tree state; a new file that is not yet
-  added to git leaves the identity unchanged.
+  added to git leaves the identity unchanged, and counts once `git add`ed.
 - Without git or without the repository metadata (a source archive, an image
   build context that omits `.git`) the git-derived fields read `unknown`.
   The configuration fields are always present.
@@ -120,8 +125,11 @@ description forms (exact tags, including names that look like a hash, a hash
 suffix or a dirty mark; tag-N-g<12 digits> under a short `core.abbrev`), and
 the tree state unmoved by diff context, prefixes and path quoting, counting
 edits a textconv driver would hide, paths with `;` and `|` and UTF-8 names,
-symlink retargets, mode-only changes, deletions, gitlink advances and
-same-size same-timestamp edits, and treating a touched file as clean.
+symlink retargets, mode-only changes, deletions, gitlink advances, staged
+additions and removals (with the checkout's index byte-identical across
+runs, a missing index file and a split index), and same-size same-timestamp
+edits under `core.checkStat=minimal`, and treating a touched file and an
+untracked file as clean.
 
 ```bash
 docker compose run --rm -T dev ctest --preset hosted-x86_64-debug -L build_info

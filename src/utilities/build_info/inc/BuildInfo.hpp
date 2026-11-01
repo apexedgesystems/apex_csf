@@ -12,7 +12,8 @@
  *
  * The strings are a function of source state and configuration alone (no
  * build time), so two builds of the same tree and configuration agree. Tree
- * state covers tracked files only: an untracked file changes nothing here.
+ * state covers the paths git tracks, staged additions included: an untracked
+ * file changes nothing here.
  *
  * Where git or the repository metadata is unavailable (a source archive, an
  * image build context without .git), the git-derived fields read "unknown".
@@ -56,7 +57,8 @@ namespace build_info {
  *
  * The digits start the id of the tree git would commit from the working
  * tree's tracked paths (every path, mode and object type, under git's own
- * content normalization), built in a temporary index; "clean" when that tree
+ * content normalization), built in a temporary index seeded from the
+ * checkout's own, which is read and never written; "clean" when that tree
  * is HEAD's. Diff settings, path quoting and textconv drivers play no part,
  * so two trees with the same modifications report the same state and two
  * different modifications differ.

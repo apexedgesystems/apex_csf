@@ -5,8 +5,10 @@
 # repositories this script creates, so the identity's promises can be checked
 # from the outside: the tree state is a function of tracked content alone
 # (diff presentation settings and path quoting do not move it, a textconv
-# driver cannot hide an edit, every path and object type counts, a touched
-# file is not a modification), the description takes its documented forms
+# driver cannot hide an edit, every path and object type counts, membership
+# follows the checkout's index so a staged addition counts and an untracked
+# file does not, the checkout's index is never written, a touched file is not
+# a modification), the description takes its documented forms
 # with twelve commit digits under any core.abbrev, and the -dirty mark
 # follows the tree state even when a tag's own name looks like a hash, a
 # hash suffix or a dirty mark.
@@ -246,6 +248,57 @@ expect_state(utf8-path-edit-counts "${_tq1}")
 expect_eq(quotepath-does-not-move-state "${_tq2}" "${_tq1}")
 
 # ------------------------------------------------------------------------------
+# Membership follows the checkout's index: staged additions and removals count,
+# untracked files do not, and the checkout's index is never written
+# ------------------------------------------------------------------------------
+file(WRITE "${REPO}/new.cpp" "int value = 1;\n")
+identity_field(TREE_STATE _tn0)
+expect_eq(untracked-file-is-not-dirty "${_tn0}" "clean")
+repo_git(add new.cpp)
+file(SHA256 "${REPO}/.git/index" _index_before)
+identity_field(TREE_STATE _tn1)
+identity_field(DIRTY _dn1)
+identity_field(DESCRIBE _dsn1)
+expect_state(staged-addition-counts "${_tn1}")
+expect_eq(staged-addition-dirty "${_dn1}" "true")
+expect_match(describe-dirty-on-staged-addition "${_dsn1}" "-dirty$")
+file(WRITE "${REPO}/new.cpp" "int value = 2;\n")
+identity_field(TREE_STATE _tn2)
+expect_state(staged-addition-edit-counts "${_tn2}")
+expect_ne(staged-addition-edit-moves-state "${_tn2}" "${_tn1}")
+file(SHA256 "${REPO}/.git/index" _index_after)
+expect_eq(checkout-index-unchanged "${_index_after}" "${_index_before}")
+repo_git(rm -q -f --cached new.cpp)
+file(REMOVE "${REPO}/new.cpp")
+identity_field(TREE_STATE _tn3)
+expect_eq(unstaged-addition-clean "${_tn3}" "clean")
+repo_git(rm -q --cached victim)
+identity_field(TREE_STATE _tn4)
+expect_state(staged-removal-counts "${_tn4}")
+repo_git(reset -q -- victim)
+identity_field(TREE_STATE _tn5)
+expect_eq(membership-restored-clean "${_tn5}" "clean")
+file(REMOVE "${REPO}/.git/index")
+identity_field(TREE_STATE _tn6)
+expect_eq(missing-index-seeds-from-head "${_tn6}" "clean")
+repo_git(reset -q)
+repo_git(config core.splitIndex true)
+repo_git(update-index --split-index)
+file(GLOB _shared_before "${REPO}/.git/sharedindex.*")
+list(LENGTH _shared_before _nshared_before)
+identity_field(TREE_STATE _tn7)
+expect_eq(split-index-clean "${_tn7}" "clean")
+file(APPEND "${REPO}/victim" "edited\n")
+identity_field(TREE_STATE _tn8)
+expect_state(split-index-edit-counts "${_tn8}")
+file(GLOB _shared_after "${REPO}/.git/sharedindex.*")
+list(LENGTH _shared_after _nshared_after)
+expect_eq(no-shared-index-left-behind "${_nshared_after}" "${_nshared_before}")
+repo_git(checkout -q -- victim)
+repo_git(update-index --no-split-index)
+repo_git(config --unset core.splitIndex)
+
+# ------------------------------------------------------------------------------
 # Object types: symlink text, executable bit, deletion, gitlink
 # ------------------------------------------------------------------------------
 file(WRITE "${REPO}/a.txt" "a\n")
@@ -331,13 +384,20 @@ expect_eq(gitlink-restored-clean "${_tg2}" "clean")
 file(TOUCH "${REPO}/text.txt")
 identity_field(TREE_STATE _t6)
 expect_eq(touch-is-not-dirty "${_t6}" "clean")
+# A same-size edit that keeps the file's own timestamp is invisible to a stat
+# cache, and core.checkStat=minimal ignores the ctime and inode a rewrite
+# changes; the generator reads content, so the edit still counts.
+execute_process(COMMAND touch -d 2000-01-01T00:00:00Z "${REPO}/text.txt" OUTPUT_QUIET ERROR_QUIET)
+repo_git(add -u)
+repo_git(config core.checkStat minimal)
 file(
   WRITE "${REPO}/text.txt"
   "ONE\ntwo\nthree\nfour\nfor deadbeef\nfor release-golden\nfor release-dirty\nfor release-1-gdeadbeef\n"
 )
-execute_process(COMMAND touch -r "${REPO}/blob.bin" "${REPO}/text.txt" OUTPUT_QUIET ERROR_QUIET)
+execute_process(COMMAND touch -d 2000-01-01T00:00:00Z "${REPO}/text.txt" OUTPUT_QUIET ERROR_QUIET)
 identity_field(TREE_STATE _t7)
 expect_state(same-size-edit-counts "${_t7}")
+repo_git(config --unset core.checkStat)
 repo_git(checkout -q -- text.txt)
 
 if (FAILURES GREATER 0)
