@@ -6,8 +6,9 @@
 # from the outside: the tree state is a function of tracked content alone
 # (diff presentation settings and path quoting do not move it, a textconv
 # driver cannot hide an edit, every path and object type counts, membership
-# follows the checkout's index so a staged addition counts and an untracked
-# file does not, the checkout's index is never written, a touched file is not
+# follows the checkout's index so staged, intent-to-add and unmerged paths
+# count and an untracked file does not, the checkout's index is never
+# written, a sparse checkout reads unknown, a touched file is not
 # a modification), the description takes its documented forms
 # with twelve commit digits under any core.abbrev, and the -dirty mark
 # follows the tree state even when a tag's own name looks like a hash, a
@@ -278,9 +279,11 @@ expect_state(staged-removal-counts "${_tn4}")
 repo_git(reset -q -- victim)
 identity_field(TREE_STATE _tn5)
 expect_eq(membership-restored-clean "${_tn5}" "clean")
+# An absent index file is an empty index, as for git: nothing tracked, so the
+# state is a tree (the empty one), not clean.
 file(REMOVE "${REPO}/.git/index")
 identity_field(TREE_STATE _tn6)
-expect_eq(missing-index-seeds-from-head "${_tn6}" "clean")
+expect_state(missing-index-is-dirty "${_tn6}")
 repo_git(reset -q)
 repo_git(config core.splitIndex true)
 repo_git(update-index --split-index)
@@ -295,8 +298,63 @@ file(GLOB _shared_after "${REPO}/.git/sharedindex.*")
 list(LENGTH _shared_after _nshared_after)
 expect_eq(no-shared-index-left-behind "${_nshared_after}" "${_nshared_before}")
 repo_git(checkout -q -- victim)
-repo_git(update-index --no-split-index)
 repo_git(config --unset core.splitIndex)
+repo_git(update-index --no-split-index)
+# An intent-to-add path (git add -N) is tracked: it counts, and its content
+# moves the state.
+file(WRITE "${REPO}/ita.cpp" "int ita = 1;\n")
+repo_git(add -N ita.cpp)
+identity_field(TREE_STATE _ti1)
+identity_field(DIRTY _di1)
+expect_state(intent-to-add-counts "${_ti1}")
+expect_eq(intent-to-add-dirty "${_di1}" "true")
+file(WRITE "${REPO}/ita.cpp" "int ita = 2;\n")
+identity_field(TREE_STATE _ti2)
+expect_ne(intent-to-add-edit-moves-state "${_ti2}" "${_ti1}")
+repo_git(rm -q --cached ita.cpp)
+file(REMOVE "${REPO}/ita.cpp")
+identity_field(TREE_STATE _ti3)
+expect_eq(intent-to-add-removed-clean "${_ti3}" "clean")
+# A staged addition beside an unmerged path still counts, and its content
+# still moves the state; the unmerged path is read from the working tree, so
+# with HEAD's content there and nothing else changed the tree is HEAD's.
+file(WRITE "${REPO}/conflict.txt" "base\n")
+commit_all(conflict-base)
+repo_git(checkout -q -b side)
+file(WRITE "${REPO}/conflict.txt" "side\n")
+commit_all(conflict-side)
+repo_git(checkout -q main)
+file(WRITE "${REPO}/conflict.txt" "main\n")
+commit_all(conflict-main)
+execute_process(COMMAND "${GIT_EXECUTABLE}" -C "${REPO}" merge -q side OUTPUT_QUIET ERROR_QUIET)
+file(WRITE "${REPO}/conflict.txt" "main\n")
+identity_field(TREE_STATE _tu0)
+expect_eq(unmerged-at-head-content-clean "${_tu0}" "clean")
+file(WRITE "${REPO}/new.cpp" "int value = 1;\n")
+repo_git(add new.cpp)
+identity_field(TREE_STATE _tu1)
+identity_field(DIRTY _du1)
+expect_state(staged-addition-beside-unmerged-counts "${_tu1}")
+expect_eq(staged-addition-beside-unmerged-dirty "${_du1}" "true")
+file(WRITE "${REPO}/new.cpp" "int value = 2;\n")
+identity_field(TREE_STATE _tu2)
+expect_ne(staged-addition-beside-unmerged-edit-moves-state "${_tu2}" "${_tu1}")
+repo_git(rm -q -f --cached new.cpp)
+file(REMOVE "${REPO}/new.cpp")
+repo_git(merge --abort)
+repo_git(branch -q -D side)
+identity_field(TREE_STATE _tu3)
+expect_eq(merge-aborted-clean "${_tu3}" "clean")
+# A sparse checkout's index holds paths its working tree does not: unknown.
+repo_git(config core.sparseCheckout true)
+identity_field(TREE_STATE _tsp)
+identity_field(DIRTY _dsp)
+identity_field(DESCRIBE _dssp)
+expect_eq(sparse-checkout-is-unknown "${_tsp}" "unknown")
+expect_eq(sparse-checkout-not-dirty "${_dsp}" "false")
+# A description never ends in y unless -dirty was appended.
+expect_match(sparse-checkout-no-dirty-mark "${_dssp}" "[^y]$")
+repo_git(config --unset core.sparseCheckout)
 
 # ------------------------------------------------------------------------------
 # Object types: symlink text, executable bit, deletion, gitlink

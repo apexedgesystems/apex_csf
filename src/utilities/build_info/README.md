@@ -59,20 +59,21 @@ and configuration produce the same identity, and a reproduced build can be
 checked against a run log by eye.
 
 Tree state is the strongest field. It is the id of the tree git would commit
-from the working tree's tracked paths, built in a temporary index that starts
-as a copy of the checkout's own index, which is read once and never written.
-The copy's `write-tree` names the paths git tracks (HEAD's plus staged
-additions, minus staged removals; HEAD's alone when the copy cannot name a
-tree, as during a merge); `read-tree` of that tree restarts the temporary
-index without a stat cache; `add -u` then reads every path whatever its
-name, every mode and object type (regular file, symlink, gitlink), every
-deletion, under git's own content normalization (clean filters, line
-endings), the content a commit would record; `write-tree` names the result.
-`clean` means that tree is HEAD's. Diff settings, path quoting and textconv
-drivers play no part, and no stat cache is consulted, so two checkouts
-carrying the same modifications report the same state, two different
-modifications differ, and an edit that keeps a file's size and timestamp
-still counts. A staged addition is part of it; an untracked file is not. The
+from the working tree's tracked paths, built in a temporary index filled from
+the checkout's own index, which is read and never written: `ls-files --stage`
+lists every entry the checkout's index holds (HEAD's paths, staged additions,
+intent-to-add and unmerged paths alike; a staged removal is absent) and
+`update-index --index-info` writes them into the temporary index without a
+stat cache; `add -u` then reads every path whatever its name, every mode and
+object type (regular file, symlink, gitlink), resolves an unmerged path from
+the working tree, records every deletion, under git's own content
+normalization (clean filters, line endings), the content a commit would
+record; `write-tree` names the result. `clean` means that tree is HEAD's.
+Diff settings, path quoting and textconv drivers play no part, and no stat
+cache is consulted, so two checkouts carrying the same modifications report
+the same state, two different modifications differ, and an edit that keeps a
+file's size and timestamp still counts. A staged or intent-to-add path is
+part of it; an untracked file is not. The
 `-dirty`
 mark on the description is appended from this state, so `describe()` and
 `dirty()` agree by construction; the description pins twelve commit digits
@@ -99,7 +100,14 @@ in `libutilities_build_info.so` beside its siblings in a deployment bank.
 ## 4. Limits
 
 - Untracked files are not part of the tree state; a new file that is not yet
-  added to git leaves the identity unchanged, and counts once `git add`ed.
+  added to git leaves the identity unchanged, and counts once `git add`ed
+  (`git add -N` included).
+- A sparse checkout (`core.sparseCheckout`) reads `unknown`: its index holds
+  paths its working tree does not. An absent index file is an empty index,
+  as for git, so the state is the empty tree's id, not `clean`.
+- An unmerged path is read from the working tree like any other: an
+  unresolved merge whose working files carry HEAD's content reads `clean`,
+  where `git describe --dirty` reports the unmerged index.
 - Without git or without the repository metadata (a source archive, an image
   build context that omits `.git`) the git-derived fields read `unknown`.
   The configuration fields are always present.
@@ -126,10 +134,11 @@ suffix or a dirty mark; tag-N-g<12 digits> under a short `core.abbrev`), and
 the tree state unmoved by diff context, prefixes and path quoting, counting
 edits a textconv driver would hide, paths with `;` and `|` and UTF-8 names,
 symlink retargets, mode-only changes, deletions, gitlink advances, staged
-additions and removals (with the checkout's index byte-identical across
-runs, a missing index file and a split index), and same-size same-timestamp
-edits under `core.checkStat=minimal`, and treating a touched file and an
-untracked file as clean.
+and intent-to-add additions, staged removals, a staged addition beside an
+unmerged path (with the checkout's index byte-identical across runs, a
+missing index file, a split index and a sparse checkout reading `unknown`),
+and same-size same-timestamp edits under `core.checkStat=minimal`, and
+treating a touched file and an untracked file as clean.
 
 ```bash
 docker compose run --rm -T dev ctest --preset hosted-x86_64-debug -L build_info

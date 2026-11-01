@@ -124,23 +124,23 @@ if (GIT_EXECUTABLE AND EXISTS "${SOURCE_DIR}/.git")
   _bi_git(_head_tree rev-parse HEAD^{tree})
 
   # Tree state: the id of the tree git would commit from the working tree's
-  # tracked paths, built in a temporary index beside the output, so the
-  # checkout's own index is read once and never written. The temporary index
-  # starts as a copy of the checkout's, and write-tree names what that copy
-  # holds: the paths git tracks, HEAD's plus staged additions, minus staged
-  # removals. read-tree of that tree (of HEAD's when the copy cannot name one,
-  # as during a merge, or when there is no index file) restarts the temporary
-  # index without a stat cache, so add -u reads every tracked path from its
-  # current content, mode and type (regular file, symlink, gitlink) and records
-  # every deletion, and write-tree names the result. Git handles each path
-  # itself, whatever characters it holds, under its own content normalization
-  # (clean filters, line endings): the content a commit would record, and the
-  # content `git describe --dirty` compares. A tree equal to HEAD's is clean;
-  # otherwise the tree id is the state, so the same modifications give the
-  # same state on any checkout and two different modifications differ.
-  # Nothing here depends on diff presentation or on a stat cache, and
-  # core.splitIndex is off for the temporary index so no shared-index file is
-  # left behind.
+  # tracked paths, built in a temporary index beside the output; the
+  # checkout's own index is read and never written. ls-files --stage lists
+  # every entry of the checkout's index (HEAD's paths, staged additions,
+  # intent-to-add and unmerged paths alike; a staged removal is absent) and
+  # update-index --index-info writes them into the temporary index without a
+  # stat cache, so add -u reads every tracked path from its current content,
+  # mode and type (regular file, symlink, gitlink), resolves an unmerged path
+  # from it, records every deletion, and write-tree names the result. Git
+  # handles each path itself, whatever characters it holds, under its own
+  # content normalization (clean filters, line endings): the content a commit
+  # would record. A tree equal to HEAD's is clean; otherwise the tree id is
+  # the state, so the same modifications give the same state on any checkout
+  # and two different modifications differ. Nothing here depends on diff
+  # presentation or on a stat cache. A sparse checkout (core.sparseCheckout)
+  # reads unknown: its index holds paths the working tree does not.
+  # core.splitIndex is off for the temporary index so it leaves no
+  # shared-index file behind.
   set(_tmp_index "${OUTPUT}.index")
   file(REMOVE "${_tmp_index}" "${_tmp_index}.lock")
   set(_tmp_git
@@ -154,27 +154,11 @@ if (GIT_EXECUTABLE AND EXISTS "${SOURCE_DIR}/.git")
       -c
       core.splitIndex=false
   )
-  set(_seed "HEAD")
-  set(_index "")
-  _bi_git(_index rev-parse --git-path index)
-  if (NOT _index STREQUAL "" AND NOT IS_ABSOLUTE "${_index}")
-    set(_index "${SOURCE_DIR}/${_index}")
-  endif ()
-  if (NOT _index STREQUAL "" AND EXISTS "${_index}")
-    configure_file("${_index}" "${_tmp_index}" COPYONLY)
-    execute_process(
-      COMMAND ${_tmp_git} write-tree
-      RESULT_VARIABLE _staged_result
-      OUTPUT_VARIABLE _staged_tree
-      ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-    if (_staged_result EQUAL 0 AND NOT _staged_tree STREQUAL "")
-      set(_seed "${_staged_tree}")
-    endif ()
-  endif ()
+  set(_sparse "false")
+  _bi_git(_sparse config --type=bool core.sparseCheckout)
   execute_process(
-    COMMAND ${_tmp_git} read-tree ${_seed}
-    RESULT_VARIABLE _rt_result
+    COMMAND "${GIT_EXECUTABLE}" -C "${SOURCE_DIR}" ls-files -z --stage
+    COMMAND ${_tmp_git} update-index -z --index-info RESULTS_VARIABLE _fill_results
     OUTPUT_QUIET ERROR_QUIET
   )
   execute_process(
@@ -189,7 +173,8 @@ if (GIT_EXECUTABLE AND EXISTS "${SOURCE_DIR}/.git")
     ERROR_QUIET OUTPUT_STRIP_TRAILING_WHITESPACE
   )
   file(REMOVE "${_tmp_index}" "${_tmp_index}.lock")
-  if (_rt_result EQUAL 0
+  if (NOT _sparse
+      AND _fill_results STREQUAL "0;0"
       AND _add_result EQUAL 0
       AND _wt_result EQUAL 0
       AND NOT _work_tree STREQUAL ""
