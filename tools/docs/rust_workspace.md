@@ -74,10 +74,12 @@ Python, shell and C++ tools, built by language) and `_APEX_TOOL_ROLES`
    directory holds its manifest, and its `bin` targets are what the role
    installs. The manifests are configure inputs, so a manifest edit
    reconfigures before the next build.
-2. Each declared executable is copied from that target dir's `release/`
-   to `bin/tools/<role>/` by name and declared as a byproduct, so
-   file-level dependencies on it (the TPRM rules) resolve in a fresh tree
-   and a renamed tool never lingers from an earlier build.
+2. Each executable cargo currently declares is copied from that target
+   dir's `release/` to `bin/tools/<role>/` by name and declared as a
+   byproduct, so file-level dependencies on it (the TPRM rules) resolve in
+   a fresh tree. Only current bin targets are copied; a name installed by
+   an earlier build is not removed (`make clean-rust` clears the role
+   output dirs).
 3. A stamp (`apex_csf-stamps/rust-<role>-tools.built`) records the
    build. It depends on every `*.rs` under the workspace, every member
    manifest and the lock, so an edit anywhere regenerates the roles that

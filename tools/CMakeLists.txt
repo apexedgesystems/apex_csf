@@ -70,7 +70,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
     # Sharing the registry cache -- not a fresh per-build one -- lets a clean
     # build reuse the baked crates and lets the release build run offline
     # (hermetic). Target dirs stay per-build and per-role so compiled
-    # artifacts isolate and the copy step below is a plain glob.
+    # artifacts isolate.
     set(_CARGO_TARGET_ROOT "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-rust-target")
 
     # Every role's stamp regenerates whenever any workspace source, manifest
@@ -188,10 +188,12 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
       set(_role_stamp "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/rust-${_role}-tools.built")
       set(_role_script "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-build-rust-${_role}-tools.sh")
 
-      # The executables are copied by the names cargo declared and declared
-      # as byproducts, so file-level dependencies on them (the TPRM rules)
-      # resolve in a fresh tree and a renamed or removed tool never lingers
-      # in bin/tools/<role> from an earlier build of the target dir.
+      # Only the executables cargo currently declares are copied, by name,
+      # and declared as byproducts so file-level dependencies on them (the
+      # TPRM rules) resolve in a fresh tree. A stale executable left in the
+      # target dir is never installed again; a name already installed under
+      # bin/tools/<role> by an earlier build is not removed (make clean-rust
+      # clears the role output dirs).
       set(_role_bins "")
       set(_role_copy "")
       foreach (_bin IN LISTS _role_bin_names)
