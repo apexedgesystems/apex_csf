@@ -152,4 +152,4 @@ make check-data-db
 
 - [tprm_template](../../../../ops/rust/apex-ops-tools/docs/tprm_template.md) -- Consumes these JSON dictionaries to generate TOML config templates.
 - [ops-deck](../../../../py/docs/ops_deck.md) -- Generates a command/telemetry deck from these dictionaries.
-- [ops_sdk_package.sh](../../../../sh/docs/ops_sdk_package.md) -- Bundles these dictionaries into a deployable C2 SDK.
+- [ops_sdk_package.sh](../../../../ops/sh/docs/ops_sdk_package.md) -- Bundles these dictionaries into a deployable C2 SDK.

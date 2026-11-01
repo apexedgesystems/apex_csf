@@ -85,9 +85,11 @@ Python, shell and C++ tools, built by language) and `_APEX_TOOL_ROLES`
    manifest and the lock, so an edit anywhere regenerates the roles that
    share the library; cargo is incremental past that point.
 
-The custom target is `apex_csf_<role>_tools`. Two aggregates sit above
-them: `apex_csf_tools_default` is in ALL and carries the build role plus
-the py and sh families; `apex_csf_tools` carries every tool. A plain
+The custom target is `apex_csf_<role>_rust_tools`, one part of the role
+aggregate `apex_csf_<role>_tools` that also carries the role's shell
+tools. Two aggregates sit above the roles: `apex_csf_tools_default` is
+in ALL and carries the build role plus the py family; `apex_csf_tools`
+carries every tool. A plain
 `ninja` therefore compiles the four build tools and nothing from ops or
 analysis.
 

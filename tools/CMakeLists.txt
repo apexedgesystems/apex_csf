@@ -1,11 +1,11 @@
 # ==============================================================================
-# tools/CMakeLists.txt - CLI tools (C++, Rust by role, Python, Shell)
+# tools/CMakeLists.txt - CLI tools (C++, Python, and Rust and shell by role)
 #
 # Discovers and builds tool subdirectories by their native toolchains:
 #   cpp/   - Standard CMake (add_subdirectory)
 #   <role>/rust/ - Cargo workspace rooted at tools/Cargo.toml (requires cargo on PATH)
 #   py/    - uv + pip (requires uv and pip on PATH)
-#   sh/    - Shell scripts (copied to bin/tools/sh/)
+#   <role>/sh/bin/ - shell scripts copied to bin/tools/<role>/
 #
 # Each section is gated on the directory existing and the toolchain being
 # available. Safe to copy to any project that follows the same layout.
@@ -20,7 +20,7 @@
 # is built by role below. The env helper and the make surface (mk/tools.mk
 # TOOL_FAMILIES and TOOL_ROLES) mirror both lists; tools/README.md documents
 # every step of adding a family.
-set(_APEX_TOOL_FAMILIES cpp py sh)
+set(_APEX_TOOL_FAMILIES cpp py)
 # The roles tools are built and installed by: executables land in
 # bin/tools/<role>, and only the build role is a dependency of the apex build.
 set(_APEX_TOOL_ROLES build ops analysis)
@@ -225,11 +225,8 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
         VERBATIM
       )
 
-      add_custom_target(${PROJECT_NAME}_${_role}_tools DEPENDS "${_role_stamp}")
-      list(APPEND _TOOLS_DEPS ${PROJECT_NAME}_${_role}_tools)
-      if (NOT _role STREQUAL "build")
-        list(APPEND _TOOLS_ON_REQUEST ${PROJECT_NAME}_${_role}_tools)
-      endif ()
+      add_custom_target(${PROJECT_NAME}_${_role}_rust_tools DEPENDS "${_role_stamp}")
+      list(APPEND _ROLE_PARTS_${_role} ${PROJECT_NAME}_${_role}_rust_tools)
     endforeach ()
   else ()
     message(WARNING "${PROJECT_NAME}: cargo not found -- Rust tools skipped")
@@ -291,33 +288,58 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/py/pyproject.toml")
 endif ()
 
 # ------------------------------------------------------------------------------
-# Shell tools
+# Shell tools (by role)
 # ------------------------------------------------------------------------------
 
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sh/bin")
-  set(_SH_SRC "${CMAKE_CURRENT_SOURCE_DIR}/sh/bin")
-  set(_SH_OUT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/sh")
-  set(_SH_STAMP "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/sh-tools.built")
+# A role's shell scripts live under <role>/sh/bin and install to
+# bin/tools/<role>; the install re-runs when a script changes.
+foreach (_role IN LISTS _APEX_TOOL_ROLES)
+  set(_sh_src "${CMAKE_CURRENT_SOURCE_DIR}/${_role}/sh/bin")
+  if (NOT EXISTS "${_sh_src}")
+    continue()
+  endif ()
+  set(_sh_out "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/${_role}")
+  set(_sh_stamp "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/sh-${_role}-tools.built")
+  set(_sh_script "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-install-sh-${_role}-tools.sh")
+  file(GLOB _sh_files CONFIGURE_DEPENDS "${_sh_src}/*")
 
-  set(_SH_INSTALL_SCRIPT "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-install-sh-tools.sh")
   file(
-    WRITE "${_SH_INSTALL_SCRIPT}"
-    "#!/bin/bash\nset -e\n" "mkdir -p '${_SH_OUT}'\n" "cp -f '${_SH_SRC}'/* '${_SH_OUT}/'\n"
-    "chmod +x '${_SH_OUT}'/*.sh 2>/dev/null || true\n"
-    "mkdir -p '${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps'\n" "touch '${_SH_STAMP}'\n"
+    WRITE "${_sh_script}"
+    "#!/bin/bash\nset -e\n" "mkdir -p '${_sh_out}'\n" "cp -f '${_sh_src}'/* '${_sh_out}/'\n"
+    "chmod +x '${_sh_out}'/*.sh 2>/dev/null || true\n"
+    "mkdir -p '${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps'\n" "touch '${_sh_stamp}'\n"
   )
 
   add_custom_command(
-    OUTPUT "${_SH_STAMP}"
-    COMMAND bash "${_SH_INSTALL_SCRIPT}"
+    OUTPUT "${_sh_stamp}"
+    COMMAND bash "${_sh_script}"
     COMMAND bash "${_ENV_HELPER}"
-    COMMENT "Installing ${PROJECT_NAME} shell tools"
+    DEPENDS ${_sh_files}
+    COMMENT "Installing ${PROJECT_NAME} ${_role} tools (shell)"
     VERBATIM
   )
 
-  add_custom_target(${PROJECT_NAME}_sh_tools DEPENDS "${_SH_STAMP}")
-  list(APPEND _TOOLS_DEPS ${PROJECT_NAME}_sh_tools)
-endif ()
+  add_custom_target(${PROJECT_NAME}_${_role}_sh_tools DEPENDS "${_sh_stamp}")
+  list(APPEND _ROLE_PARTS_${_role} ${PROJECT_NAME}_${_role}_sh_tools)
+endforeach ()
+
+# ------------------------------------------------------------------------------
+# Role aggregates
+# ------------------------------------------------------------------------------
+
+# ${PROJECT_NAME}_<role>_tools builds every language's tools of that role
+# (make tools-<role>); the TPRM rules depend on the build role's aggregate.
+# Only the build role is a dependency of the apex build.
+foreach (_role IN LISTS _APEX_TOOL_ROLES)
+  if (NOT _ROLE_PARTS_${_role})
+    continue()
+  endif ()
+  add_custom_target(${PROJECT_NAME}_${_role}_tools DEPENDS ${_ROLE_PARTS_${_role}})
+  list(APPEND _TOOLS_DEPS ${PROJECT_NAME}_${_role}_tools)
+  if (NOT _role STREQUAL "build")
+    list(APPEND _TOOLS_ON_REQUEST ${PROJECT_NAME}_${_role}_tools)
+  endif ()
+endforeach ()
 
 # ------------------------------------------------------------------------------
 # Aggregate target

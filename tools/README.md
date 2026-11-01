@@ -21,8 +21,9 @@ A plain build compiles the build role only; `make tools-ops`,
 [docs/rust_tools.md](docs/rust_tools.md) for the tools.
 
 The Python, shell and C++ tools are built by language family
-(`tools/py`, `tools/sh`, `tools/cpp`) into `bin/tools/<family>/`:
-[py/README.md](py/README.md), [sh/docs/](sh/docs/), [cpp/docs/](cpp/docs/).
+(`tools/py`, `tools/cpp`) into `bin/tools/<family>/`:
+[py/README.md](py/README.md), [cpp/docs/](cpp/docs/). Shell tools live
+under their role: [ops/sh/](ops/sh/README.md).
 
 ## Adding a Rust tool
 

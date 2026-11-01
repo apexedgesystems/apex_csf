@@ -41,7 +41,7 @@ endef
 # is built by (mirror _APEX_TOOL_FAMILIES and _APEX_TOOL_ROLES in
 # tools/CMakeLists.txt). Executables land in bin/tools/<family|role>; the
 # apex build itself depends on tools-build alone.
-TOOL_FAMILIES := cpp py sh
+TOOL_FAMILIES := cpp py
 TOOL_ROLES := build ops analysis
 
 $(foreach f,$(TOOL_FAMILIES) $(TOOL_ROLES),$(eval $(call _tool_build,$(f),$(f))))
@@ -159,7 +159,7 @@ ops-artifacts: apex-data-db tprm-templates ops-deck
 ops-sdk: apex-data-db tprm-templates
 	@test -n "$(APP)" || { printf '$(TERM_RED)[ops-sdk]$(TERM_RESET) APP not set. Usage: make ops-sdk APP=<name>\n'; exit 1; }
 	$(call log,ops-sdk,Packaging Ops SDK for $(APP))
-	@bash tools/sh/bin/ops_sdk_package.sh \
+	@bash tools/ops/sh/bin/ops_sdk_package.sh \
 	  --app "$(APP)" \
 	  --build-dir "$(BUILD_DIR)"
 

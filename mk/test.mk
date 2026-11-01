@@ -138,7 +138,7 @@ test-sh:
 	  printf '{"structs":{"SmokeParams":{"category":"TUNABLE_PARAM","fields":[]}}}\n' \
 	    > "$$tmp/build/apex_data_db/SmokeComponent.json" && \
 	  printf '[SmokeParams]\n' > "$$tmp/build/tprm_templates/SmokeComponent_SmokeParams.toml" && \
-	  bash tools/sh/bin/ops_sdk_package.sh --app SmokeApp --build-dir "$$tmp/build" && \
+	  bash tools/ops/sh/bin/ops_sdk_package.sh --app SmokeApp --build-dir "$$tmp/build" && \
 	  tarball="$$tmp/build/ops_sdk/SmokeApp-ops-sdk.tar.gz" && \
 	  test -f "$$tarball" && \
 	  tar -tzf "$$tarball" | grep -q "SmokeApp/structs/SmokeComponent.json" && \

@@ -73,7 +73,7 @@ jobs:
             case "$file" in
               tools/Cargo.*|tools/*/rust/*) rust=true ;;
               tools/py/*)   py=true ;;
-              tools/sh/*)   sh=true ;;
+              tools/ops/sh/*) sh=true ;;
               # Conformance contracts are multi-sided: every suite that pins
               # one must run when it changes.
               compat/tprm/*) cpp=true; rust=true ;;

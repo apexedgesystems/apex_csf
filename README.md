@@ -492,7 +492,7 @@ Performance benchmarking uses
 See [tools/docs/rust_tools.md](tools/docs/rust_tools.md),
 [tools/py/README.md](tools/py/README.md),
 [tools/cpp/README.md](tools/cpp/README.md), and
-[tools/sh/README.md](tools/sh/README.md) for full documentation.
+[tools/ops/sh/README.md](tools/ops/sh/README.md) for full documentation.
 
 ---
 
