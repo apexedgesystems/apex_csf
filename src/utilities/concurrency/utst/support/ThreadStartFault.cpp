@@ -92,19 +92,19 @@ void* runCounted(void* raw) {
 extern "C" int pthread_create(pthread_t* thread, const pthread_attr_t* attr,
                               void* (*routine)(void*), void* arg) {
   using Real = int (*)(pthread_t*, const pthread_attr_t*, void* (*)(void*), void*);
-  static const Real REAL = reinterpret_cast<Real>(dlsym(RTLD_NEXT, "pthread_create"));
+  static const Real realCreate = reinterpret_cast<Real>(dlsym(RTLD_NEXT, "pthread_create"));
 
   apex::concurrency::test::detail::FaultState& state =
       apex::concurrency::test::detail::faultState();
   const unsigned FAIL_AT = state.failAt.load();
   if (FAIL_AT == 0) {
-    return REAL(thread, attr, routine, arg);
+    return realCreate(thread, attr, routine, arg);
   }
   if (state.attempted.fetch_add(1) + 1 == FAIL_AT) {
     return EAGAIN;
   }
   auto* frame = new StartFrame{routine, arg};
-  const int RC = REAL(thread, attr, &runCounted, frame);
+  const int RC = realCreate(thread, attr, &runCounted, frame);
   if (RC == 0) {
     state.started.fetch_add(1);
   } else {

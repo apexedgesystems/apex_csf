@@ -19,6 +19,8 @@
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
+#include <vector>
 
 #include <pthread.h>
 
@@ -427,6 +429,14 @@ template <class Pred> bool settles(Pred done, std::chrono::milliseconds limit) {
 
 constexpr std::chrono::milliseconds BOUND{5000};
 
+/// Pools whose shutdown() did not return within the bound. They stay alive for the rest of the
+/// process rather than being destroyed under a parked worker: the failed bound has recorded the
+/// defect, and the suite goes on.
+std::vector<std::unique_ptr<ThreadPoolLockFree>>& abandoned() {
+  static std::vector<std::unique_ptr<ThreadPoolLockFree>> pools;
+  return pools;
+}
+
 } // namespace
 
 /** @test A task left in the ring with its permit consumed runs on the next permit, together with
@@ -459,7 +469,7 @@ TEST_F(ThreadPoolLockFreeTest, ShutdownRunsTheTaskBehindAConsumedPermit) {
       << "shutdown() did not return: a worker is parked for a permit that never comes";
   if (!BOUNDED) {
     stopper.detach();
-    (void)pool.release(); // a hung shutdown keeps its pool; the suite goes on
+    abandoned().push_back(std::move(pool));
     return;
   }
   stopper.join();
@@ -498,7 +508,7 @@ TEST_F(ThreadPoolLockFreeTest, ShutdownWaitsForAnAdmittedProducerAndRunsItsTask)
   EXPECT_TRUE(BOUNDED) << "shutdown() did not return after the producer left";
   if (!BOUNDED) {
     stopper.detach();
-    (void)pool.release();
+    abandoned().push_back(std::move(pool));
     return;
   }
   stopper.join();
