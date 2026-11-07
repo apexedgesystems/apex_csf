@@ -41,6 +41,7 @@
 #include "OverheadTracker.hpp"
 #include "Stm32Flash.hpp"
 #include "Stm32Uart.hpp"
+#include "src/utilities/build_info/inc/BuildInfo.hpp"
 #include "boards/Board.hpp"
 
 #if APEX_USE_FREERTOS
@@ -49,6 +50,8 @@
 #include "task.h"
 #else
 #include "Stm32SysTickSource.hpp"
+
+#include <string.h>
 #endif
 
 /* ----------------------------- Hardware Definitions ----------------------------- */
@@ -89,6 +92,29 @@ static executive::mcu::McuExecutive<> exec(&tickSource, 100);
 
 static encryptor::OverheadTracker tracker(exec);
 static encryptor::CommandDeck commandDeck(cmdUart, keyStore, engine, tracker);
+
+/* ----------------------------- Boot Banner ----------------------------- */
+
+/// Writes every byte, spinning while the TX path drains.
+static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexcept {
+  const auto* bytes = reinterpret_cast<const uint8_t*>(text);
+  size_t written = 0;
+  while (written < len) {
+    written += uart.write(bytes + written, len - written);
+  }
+}
+
+/// The build identity as the first line on the command channel, before any
+/// frame. The host side decodes SLIP and drops bytes until a frame end, so the
+/// line costs the link nothing; a terminal on the port reads which build is
+/// running.
+static void writeBuildLine(apex::hal::IUart& uart) noexcept {
+  static const char PREFIX[] = "Build: ";
+  static const char CRLF[] = "\r\n";
+  writeAll(uart, PREFIX, sizeof(PREFIX) - 1);
+  writeAll(uart, apex::build_info::summary(), strlen(apex::build_info::summary()));
+  writeAll(uart, CRLF, sizeof(CRLF) - 1);
+}
 
 #if APEX_USE_FREERTOS
 /* ----------------------------- FreeRTOS Configuration ----------------------------- */
@@ -307,6 +333,7 @@ int main() {
   uartCfg.baudRate = 115200;
 #if APEX_BOARD_SHARED_CHANNEL
   static_cast<void>(cmdUart.init(uartCfg)); // shared data + command channel
+  writeBuildLine(cmdUart);
   channelSlipCfg.maxFrameSize = encryptor::MAX_INPUT_FRAME;
   channelSlipCfg.allowEmptyFrame = false;
   channelSlipCfg.dropUntilEnd = true;
@@ -314,6 +341,7 @@ int main() {
 #else
   static_cast<void>(dataUart.init(uartCfg)); // data channel
   static_cast<void>(cmdUart.init(uartCfg));  // command channel
+  writeBuildLine(cmdUart);
 #endif
 
 #if APEX_USE_FREERTOS

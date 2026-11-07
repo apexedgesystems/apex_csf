@@ -241,6 +241,7 @@ main():
   Startup blinks (3x)             # Visual confirmation
   dataUart.init(115200)            # Data UART 8N1, interrupt-driven (two-UART boards)
   cmdUart.init(115200)             # Command / shared UART 8N1, interrupt-driven
+  Build line on cmd UART   # "Build: <identity>", once, before the first frame
   keyStore.init()                  # Scan the board's key-store page for populated slots
   if store empty:
     provision test key      # Write 0x00..0x1F to slot 0

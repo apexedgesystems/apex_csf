@@ -240,6 +240,7 @@ main():
   irq_set_exclusive_handler # Register UART0 IRQ
   dataUart.init(115200)     # UART0 (FTDI) 8N1, interrupt-driven
   cmdUart.init()            # USB CDC (baud rate ignored)
+  Build line on cmd UART   # "Build: <identity>", once, before the first frame
   flash.init()              # Flash interface
   keyStore.init()           # Scan sector 511 for populated slots
   if store empty:

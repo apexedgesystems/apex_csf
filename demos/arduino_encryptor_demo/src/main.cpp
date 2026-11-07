@@ -30,11 +30,14 @@
 #include "AvrUart.hpp"
 
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
+#include "src/utilities/build_info/inc/BuildInfo.hpp"
 
 #include <avr/interrupt.h>
 #include <avr/io.h>
 #include <avr/pgmspace.h>
 #include <util/delay.h>
+
+#include <string.h>
 
 /* ----------------------------- Hardware Definitions ----------------------------- */
 
@@ -81,6 +84,21 @@ static executive::mcu::McuExecutive<8, uint32_t> exec(&tickSource, 100);
 
 static encryptor::OverheadTracker tracker(exec);
 static encryptor::CommandDeck commandDeck(uart, keyStore, engine, tracker);
+
+/* ----------------------------- Boot Banner ----------------------------- */
+
+/// The build identity as the first line on the UART, before any frame. The
+/// host side decodes SLIP and settles past boot before reading, so the line
+/// costs the link nothing; a terminal on the port reads which build is
+/// running. AvrUart::write spins while the TX ring drains under interrupt.
+static void writeBuildLine() noexcept {
+  static const char PREFIX[] = "Build: ";
+  static const char CRLF[] = "\r\n";
+  static_cast<void>(uart.write(reinterpret_cast<const uint8_t*>(PREFIX), sizeof(PREFIX) - 1));
+  static_cast<void>(uart.write(reinterpret_cast<const uint8_t*>(apex::build_info::summary()),
+                               strlen(apex::build_info::summary())));
+  static_cast<void>(uart.write(reinterpret_cast<const uint8_t*>(CRLF), sizeof(CRLF) - 1));
+}
 
 /* ----------------------------- SLIP Decoder State ----------------------------- */
 
@@ -198,6 +216,7 @@ int main() {
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = 115200;
   static_cast<void>(uart.init(uartCfg));
+  writeBuildLine();
 
   // Initialize overhead tracker Timer0
   tracker.enableTimer();

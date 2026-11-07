@@ -31,6 +31,7 @@
 #include "Esp32NvsFlash.hpp"
 #include "Esp32TimerTickSource.hpp"
 #include "Esp32Uart.hpp"
+#include "src/utilities/build_info/inc/BuildInfo.hpp"
 #include "Esp32UsbCdc.hpp"
 #include "KeyStore.hpp"
 #include "McuExecutive.hpp"
@@ -41,6 +42,8 @@
 #include "driver/rmt_encoder.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+
+#include <string.h>
 
 /* ----------------------------- Hardware Definitions ----------------------------- */
 
@@ -136,6 +139,29 @@ static executive::mcu::McuExecutive<> exec(&tickSource, 100);
 
 static encryptor::OverheadTracker tracker(exec);
 static encryptor::CommandDeck commandDeck(cmdUart, keyStore, engine, tracker);
+
+/* ----------------------------- Boot Banner ----------------------------- */
+
+/// Writes every byte, spinning while the TX path drains.
+static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexcept {
+  const auto* bytes = reinterpret_cast<const uint8_t*>(text);
+  size_t written = 0;
+  while (written < len) {
+    written += uart.write(bytes + written, len - written);
+  }
+}
+
+/// The build identity as the first line on the command channel, before any
+/// frame. The host side decodes SLIP and drops bytes until a frame end, so the
+/// line costs the link nothing; a terminal on the port reads which build is
+/// running.
+static void writeBuildLine(apex::hal::IUart& uart) noexcept {
+  static const char PREFIX[] = "Build: ";
+  static const char CRLF[] = "\r\n";
+  writeAll(uart, PREFIX, sizeof(PREFIX) - 1);
+  writeAll(uart, apex::build_info::summary(), strlen(apex::build_info::summary()));
+  writeAll(uart, CRLF, sizeof(CRLF) - 1);
+}
 
 /* ----------------------------- FreeRTOS Configuration ----------------------------- */
 
@@ -267,6 +293,7 @@ extern "C" void app_main() {
 
   // Initialize USB Serial/JTAG for command channel (baud rate ignored)
   static_cast<void>(cmdUart.init(uartCfg));
+  writeBuildLine(cmdUart);
 
   // Initialize NVS-backed key store
   static_cast<void>(keyStore.init());

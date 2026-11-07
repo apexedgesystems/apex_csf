@@ -29,6 +29,7 @@
 #include "stm32l4xx_hal.h"
 
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
+#include "src/utilities/build_info/inc/BuildInfo.hpp"
 #include "src/utilities/checksums/crc/inc/Crc.hpp"
 #include "src/utilities/compatibility/inc/compat_span.hpp"
 
@@ -48,6 +49,29 @@ static hil::FlightController controller;
 
 static apex::hal::stm32::Stm32SysTickSource tickSource(hil::EXEC_FREQ_HZ);
 static executive::mcu::McuExecutive<> exec(&tickSource, hil::EXEC_FREQ_HZ);
+
+/* ----------------------------- Boot Banner ----------------------------- */
+
+/// Writes every byte, spinning while the TX ring drains under interrupt.
+static void writeAll(const char* text, size_t len) noexcept {
+  const auto* bytes = reinterpret_cast<const uint8_t*>(text);
+  size_t written = 0;
+  while (written < len) {
+    written += vcpUart.write(bytes + written, len - written);
+  }
+}
+
+/// The build identity as the first line on the HIL UART, before any frame. The
+/// host side flushes its receive buffer at init and its SLIP decoder drops
+/// bytes until a frame end, so the line costs the link nothing; a terminal on
+/// the port reads which build is running.
+static void writeBuildLine() noexcept {
+  static const char PREFIX[] = "Build: ";
+  static const char CRLF[] = "\r\n";
+  writeAll(PREFIX, sizeof(PREFIX) - 1);
+  writeAll(apex::build_info::summary(), strlen(apex::build_info::summary()));
+  writeAll(CRLF, sizeof(CRLF) - 1);
+}
 
 /* ----------------------------- DWT Profiling ----------------------------- */
 
@@ -364,6 +388,7 @@ int main() {
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = hil::BAUD_RATE;
   static_cast<void>(vcpUart.init(uartCfg));
+  writeBuildLine();
 
   // Configure SLIP decoder
   slipDecodeCfg.maxFrameSize = hil::MAX_FRAME_PAYLOAD;
