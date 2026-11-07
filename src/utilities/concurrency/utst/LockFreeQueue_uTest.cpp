@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <cstdint>
 #include <set>
 #include <thread>
 #include <vector>
@@ -339,4 +340,34 @@ TEST(LockFreeQueueDeterminismTest, CapacityConsistent) {
   const std::size_t SECOND = queue.capacity();
   EXPECT_EQ(FIRST, SECOND);
   EXPECT_EQ(FIRST, 128U);
+}
+
+/* ----------------------------- Storage Alignment Tests ----------------------------- */
+
+namespace {
+
+std::atomic<int> g_misalignedProbes{0};
+
+/// An element that requires the cell's own alignment and counts a misaligned construction.
+struct alignas(64) AlignProbe {
+  AlignProbe() {
+    if (reinterpret_cast<std::uintptr_t>(this) % 64 != 0) {
+      g_misalignedProbes.fetch_add(1, std::memory_order_relaxed);
+    }
+  }
+  std::uint8_t byte{0};
+};
+
+} // namespace
+
+/** @test The cell storage honours alignas(64): every element is constructed at a 64-byte boundary,
+ * at small capacities and at one large enough to come from a page-granular allocation. */
+TEST_F(LockFreeQueueTest, CellStorageHonoursAlignment) {
+  g_misalignedProbes.store(0, std::memory_order_relaxed);
+  for (const std::size_t CAPACITY :
+       {std::size_t{2}, std::size_t{16}, std::size_t{1024}, std::size_t{32768}}) {
+    LockFreeQueue<AlignProbe> queue(CAPACITY);
+    EXPECT_EQ(queue.capacity(), CAPACITY);
+  }
+  EXPECT_EQ(g_misalignedProbes.load(std::memory_order_relaxed), 0);
 }
