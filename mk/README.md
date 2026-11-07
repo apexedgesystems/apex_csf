@@ -150,12 +150,13 @@ service, passing through `VERBOSE` and `CMAKE_EXTRA_ARGS`.
 
 ### Cleanup
 
-| Target              | Description                                  |
-| ------------------- | -------------------------------------------- |
-| `make clean`        | Clean build artifacts (ninja clean + extras) |
-| `make distclean`    | Remove entire `build/` directory             |
-| `make docker-clean` | Remove dangling Docker images                |
-| `make docker-prune` | Remove all `apex.*` images                   |
+| Target                   | Description                                           |
+| ------------------------ | ----------------------------------------------------- |
+| `make clean`             | Clean build artifacts (ninja clean + extras)          |
+| `make clean-tools-build` | Remove the installed tools and every producer's state |
+| `make distclean`         | Remove entire `build/` directory                      |
+| `make docker-clean`      | Remove dangling Docker images                         |
+| `make docker-prune`      | Remove all `apex.*` images                            |
 
 ## Configuration
 

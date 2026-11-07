@@ -46,8 +46,14 @@ clean-docs:
 	fi
 
 # ------------------------------------------------------------------------------
-# Python Clean Targets
+# Tool Clean Targets
 # ------------------------------------------------------------------------------
+# bin/tools/<role> holds every language's tools of a role; each language
+# installs its own through a stamp under <build>/*-stamps. A language's
+# clean removes what that language produced together with its stamps, so
+# the next build regenerates and re-installs it and the other languages'
+# installed tools stay. clean-tools-build removes the role output dirs and
+# every producer's stamp together, so nothing survives without its producer.
 
 # Clean Python build artifacts from source directory
 clean-py-src:
@@ -57,29 +63,26 @@ clean-py-src:
 	@rm -rf "$(PY_TOOLS_DIR)/dist" 2>/dev/null || true
 	@rm -rf "$(PY_TOOLS_DIR)"/*.egg-info 2>/dev/null || true
 
-# Clean Python build artifacts from build directory
+# Clean Python build artifacts (the installed libraries, the wheels and the
+# python stamps) from every build directory
 clean-py-build:
 	$(call log,clean,Removing Python build artifacts)
 	@if [ -d build ]; then \
 	  find build -mindepth 1 -maxdepth 1 -type d -exec sh -c \
-	    'rm -rf "{}/lib/python" "{}/tools-wheels" 2>/dev/null || true' \; ; \
+	    'rm -rf "{}/lib/python" "{}/tools-wheels" "{}"/*-stamps/py-*tools.built 2>/dev/null || true' \; ; \
 	fi
 
 # Clean all Python artifacts
 clean-py: clean-py-src clean-py-build
 	$(call log,clean,Python artifacts cleaned)
 
-# ------------------------------------------------------------------------------
-# Rust Clean Targets
-# ------------------------------------------------------------------------------
-
-# Clean Rust build artifacts (the role output dirs and cargo target dirs)
-# from every build directory
+# Clean Rust build artifacts (the per-role cargo target dirs and the rust
+# stamps) from every build directory
 clean-rust-build:
 	$(call log,clean,Removing Rust build artifacts)
 	@if [ -d build ]; then \
 	  find build -mindepth 1 -maxdepth 1 -type d -exec sh -c \
-	    'rm -rf "{}/bin/tools/build" "{}/bin/tools/ops" "{}/bin/tools/analysis" "{}"/*-rust-target 2>/dev/null || true' \; ; \
+	    'rm -rf "{}"/*-rust-target "{}"/*-stamps/rust-*tools.built 2>/dev/null || true' \; ; \
 	fi
 
 # Clean local Rust target (from development builds within tools/)
@@ -91,12 +94,32 @@ clean-rust-local:
 clean-rust: clean-rust-build clean-rust-local
 	$(call log,clean,Rust artifacts cleaned)
 
+# Clean the shell stamps from every build directory
+clean-sh-build:
+	$(call log,clean,Removing shell tool stamps)
+	@if [ -d build ]; then \
+	  find build -mindepth 1 -maxdepth 1 -type d -exec sh -c \
+	    'rm -rf "{}"/*-stamps/sh-*tools.built 2>/dev/null || true' \; ; \
+	fi
+
+# Clean every installed tool and every tool producer's state
+clean-tools-build: clean-py-build clean-rust-build clean-sh-build
+	$(call log,clean,Removing the installed tools)
+	@if [ -d build ]; then \
+	  find build -mindepth 1 -maxdepth 1 -type d -exec sh -c \
+	    'rm -rf "{}/bin/tools" 2>/dev/null || true' \; ; \
+	fi
+
+# Clean all tool artifacts
+clean-tools: clean-tools-build clean-rust-local clean-py-src
+	$(call log,clean,Tool artifacts cleaned)
+
 # ------------------------------------------------------------------------------
 # Aggregate Clean Targets
 # ------------------------------------------------------------------------------
 
 # Main clean target
-clean: clean-ninja clean-upx clean-docs clean-py clean-rust coverage-clean
+clean: clean-ninja clean-upx clean-docs clean-tools coverage-clean
 	$(call log,clean,Done)
 
 # Refuse distclean when non-default build dirs are present unless SURE=1.
@@ -144,5 +167,6 @@ clean-cross: $(foreach p,$(_CLEAN_PLATFORMS),clean-$(p))
 .PHONY: clean clean-ninja clean-upx clean-docs distclean distclean-guard
 .PHONY: clean-py clean-py-src clean-py-build
 .PHONY: clean-rust clean-rust-build clean-rust-local
+.PHONY: clean-sh-build clean-tools-build clean-tools
 
 endif  # CLEAN_MK_GUARD

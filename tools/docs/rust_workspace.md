@@ -78,8 +78,8 @@ Python, shell and C++ tools, built by language) and `_APEX_TOOL_ROLES`
    dir's `release/` to `bin/tools/<role>/` by name and declared as a
    byproduct, so file-level dependencies on it (the TPRM rules) resolve in
    a fresh tree. Only current bin targets are copied; a name installed by
-   an earlier build is not removed (`make clean-rust` clears the role
-   output dirs).
+   an earlier build is not removed (`make clean-tools-build` clears the
+   role output dirs).
 3. A stamp (`apex_csf-stamps/rust-<role>-tools.built`) records the
    build. It depends on every `*.rs` under the workspace, every member
    manifest and the lock, so an edit anywhere regenerates the roles that
@@ -116,7 +116,8 @@ tree and per role, so compiled artifacts never cross trees.
 | `make clippy`                           | `cargo clippy --workspace --all-targets --locked -- -D warnings`          |
 | `make compat-tprm`                      | the TPRM contract: `-p apex-tprm --test golden_vectors` plus the C++ side |
 | `make coverage-rust`                    | `cargo llvm-cov --workspace`; report at `tools/coverage-rust.lcov`        |
-| `make clean-rust`                       | the role output dirs, the per-role target dirs and `tools/target`         |
+| `make clean-rust`                       | the per-role target dirs, the rust stamps and `tools/target`              |
+| `make clean-tools-build`                | the role output dirs and every language's stamps                          |
 
 The gates stand on the build role: `apex-data-db`, `cdef`, `check-cdef`,
 `check-data-db` and `check-data-db-contract` list `tools-build` as their
@@ -245,7 +246,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ### Stale binaries after moving crates
 
 ```bash
-make clean-rust
+make clean-tools-build
 make tools
 ```
 
