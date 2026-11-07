@@ -6,7 +6,9 @@ ApexActionDemo demonstrates the action engine's telemetry monitoring,
 onboard command sequencing, and runtime data mutation. A SensorModel
 generates temperature telemetry. The action engine monitors it with
 watchpoints and triggers RTS/ATS command sequences. DataTransform
-applies byte-level fault injection via the sequencer.
+applies byte-level fault injection via the sequencer and holds an
+applied mask through each sensor step until the entry is disarmed, so
+the watchpoints see the fault.
 
 No hardware dependencies -- runs as a POSIX process on any Linux host
 or Raspberry Pi.
@@ -64,7 +66,7 @@ with AprotoClient("localhost", 9000) as c2:
 
 ## System Checkout
 
-Run the full checkout script to verify all 77 capabilities:
+Run the full checkout script to verify the demo's capabilities:
 
 ```bash
 python3 demos/apex_action_demo/scripts/checkout.py --host localhost

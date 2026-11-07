@@ -34,37 +34,40 @@ using system_core::system_component::CommandResult;
 
 /* ----------------------------- Health Packet ----------------------------- */
 
-const ExecutiveHealthPacket& ApexExecutive::getHealthPacket() const noexcept {
-  // Populate the cached member (mutable for const access).
-  healthPacket_.clockCycles = clockState_.cycles.load(std::memory_order_acquire);
-  healthPacket_.clockFrequencyHz = clockFrequency_;
-  healthPacket_.frameOverrunCount = clockState_.overrunCount.load(std::memory_order_acquire);
-  healthPacket_.taskExecutionCycles = taskState_.cycles.load(std::memory_order_acquire);
-  healthPacket_.watchdogWarningCount = watchdogState_.warningCount;
-  healthPacket_.rtMode = static_cast<std::uint8_t>(rtConfig_.mode);
+ExecutiveHealthPacket ApexExecutive::getHealthPacket() const noexcept {
+  // A snapshot of the live counters, built in a local and returned by
+  // value: any thread may call this at any time without touching state
+  // another caller could be writing.
+  ExecutiveHealthPacket packet{};
+  packet.clockCycles = clockState_.cycles.load(std::memory_order_acquire);
+  packet.clockFrequencyHz = clockFrequency_;
+  packet.frameOverrunCount = clockState_.overrunCount.load(std::memory_order_acquire);
+  packet.taskExecutionCycles = taskState_.cycles.load(std::memory_order_acquire);
+  packet.watchdogWarningCount = watchdogState_.warningCount.load(std::memory_order_relaxed);
+  packet.rtMode = static_cast<std::uint8_t>(rtConfig_.mode);
 
-  healthPacket_.flags = 0;
+  packet.flags = 0;
   if (clockState_.isRunning.load(std::memory_order_acquire)) {
-    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_CLOCK_RUNNING;
+    packet.flags |= ExecutiveHealthPacket::FLAG_CLOCK_RUNNING;
   }
   if (controlState_.isPaused.load(std::memory_order_acquire)) {
-    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_PAUSED;
+    packet.flags |= ExecutiveHealthPacket::FLAG_PAUSED;
   }
   if (controlState_.shutdownRequested.load(std::memory_order_acquire)) {
-    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_SHUTDOWN_REQUESTED;
+    packet.flags |= ExecutiveHealthPacket::FLAG_SHUTDOWN_REQUESTED;
   }
   if (taskState_.lagThresholdExceeded.load(std::memory_order_acquire)) {
-    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_LAG_EXCEEDED;
+    packet.flags |= ExecutiveHealthPacket::FLAG_LAG_EXCEEDED;
   }
   if (scheduler_.isSleeping()) {
-    healthPacket_.flags |= ExecutiveHealthPacket::FLAG_SLEEPING;
+    packet.flags |= ExecutiveHealthPacket::FLAG_SLEEPING;
   }
 
-  healthPacket_.commandsProcessed = ioState_.commandsProcessed.load(std::memory_order_acquire);
-  healthPacket_.resyncDroppedTicks = static_cast<std::uint32_t>(
+  packet.commandsProcessed = ioState_.commandsProcessed.load(std::memory_order_acquire);
+  packet.resyncDroppedTicks = static_cast<std::uint32_t>(
       clockState_.wallResyncDroppedTicks.load(std::memory_order_acquire));
 
-  return healthPacket_;
+  return packet;
 }
 
 /* ----------------------------- Command Dispatch ----------------------------- */
@@ -76,10 +79,13 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     // === Query commands (no payload, return data) ===
 
   case static_cast<std::uint16_t>(Opcode::GET_HEALTH): {
-    // Return 48-byte health packet (also updates the registered OUTPUT snapshot).
-    const auto& PACKET = getHealthPacket();
+    // Return the 48-byte health packet and refresh the registered INSPECT
+    // block from the same snapshot. Wire commands reach this on the I/O
+    // thread; a direct action COMMAND to the executive reaches it on the
+    // task thread.
+    healthPacket_ = getHealthPacket();
     response.resize(sizeof(ExecutiveHealthPacket));
-    std::memcpy(response.data(), &PACKET, sizeof(ExecutiveHealthPacket));
+    std::memcpy(response.data(), &healthPacket_, sizeof(ExecutiveHealthPacket));
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 
@@ -588,10 +594,15 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     // Write target before flag (release ordering on the atomic store).
     restartExecTarget_ = execTarget;
     restartDidSwapBinary_ = didSwapBinary;
-    controlState_.restartPending.store(true, std::memory_order_release);
     // Wake a paused clock: the SAFE ingest hold (and any pause) repairs
     // through RELOAD_EXECUTIVE, so the pending restart must not wait for
-    // a resume that will never come.
+    // a resume that will never come. This store takes the mutex the
+    // clock's pause wait holds, so it cannot land between that wait's
+    // check and its block.
+    {
+      const std::lock_guard<std::mutex> lock(cvMutex_);
+      controlState_.restartPending.store(true, std::memory_order_release);
+    }
     cvPause_.notify_all();
 
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);

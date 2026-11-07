@@ -24,6 +24,7 @@
 #include <thread>
 
 #include <fmt/core.h>
+#include <chrono>
 
 namespace system_core {
 namespace scheduler {
@@ -386,6 +387,68 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
   }
 }
 
+bool SchedulerMultiThread::waitForInFlightTasks(std::uint64_t timeoutNs) noexcept {
+  return waitForInFlightTasksUntil(apex::helpers::cpu::getMonotonicNs() + timeoutNs);
+}
+
+bool SchedulerMultiThread::waitForInFlightTasksUntil(std::uint64_t deadlineNs) noexcept {
+  const std::uint64_t DEADLINE = deadlineNs;
+  // Two phases. A short spin catches the common case, a task that
+  // completes within tens of microseconds of its dispatch, without a
+  // sleep's latency. Past the spin the waiter sleeps in slices whose
+  // requested length doubles from SLEEP_MIN_NS to SLEEP_MAX_NS and is
+  // capped at what was left of the budget at the preceding clock read: a
+  // worker that shares this CPU gets it while the wait holds. A waiter
+  // that kept spinning would keep the very worker it waits for off a
+  // shared core, and under ordinary scheduling would cost a core's worth
+  // of CPU for every held frame. A sleep gives the CPU up under every
+  // scheduling policy, where a yield does not under a real-time one. The
+  // clock is read before every request and none is issued once a read
+  // finds the deadline passed, but a preemption between that read and
+  // the sleep call can issue the request late, and when a sleep returns
+  // is the host's to decide: the deadline bounds the length of each
+  // request, not the instant it is issued or the instant the wait comes
+  // back. A completion that lands during a sleep is noticed on the next
+  // return.
+  constexpr unsigned SPIN_LIMIT = 1024U;
+  constexpr std::uint64_t SLEEP_MIN_NS = 20000U;
+  constexpr std::uint64_t SLEEP_MAX_NS = 250000U;
+  apex::helpers::cpu::ExponentialBackoff bk;
+  std::uint64_t sleepNs = 0U;
+  for (;;) {
+    bool pending = false;
+    for (const TaskEntry& entry : entries_) {
+      // stillRunning() is the acquire that pairs with each completion's
+      // release, and it counts invocations: an entry with a second
+      // invocation queued or running behind a completed first is still
+      // in flight. Once every entry reads idle, every completed task's
+      // writes are published to this thread.
+      if (entry.stillRunning()) {
+        pending = true;
+        break;
+      }
+    }
+    if (!pending) {
+      return true;
+    }
+    if (stopping_.load(std::memory_order_acquire)) {
+      return false;
+    }
+    const std::uint64_t NOW = apex::helpers::cpu::getMonotonicNs();
+    if (NOW >= DEADLINE) {
+      totalInFlightWaitTimeouts_.fetch_add(1U, std::memory_order_relaxed);
+      return false;
+    }
+    if (bk.n < SPIN_LIMIT) {
+      bk.spinOnce();
+      continue;
+    }
+    sleepNs = (sleepNs == 0U) ? SLEEP_MIN_NS : std::min(sleepNs * 2U, SLEEP_MAX_NS);
+    const std::uint64_t SLICE_NS = std::min(sleepNs, DEADLINE - NOW);
+    std::this_thread::sleep_for(std::chrono::nanoseconds(SLICE_NS));
+  }
+}
+
 /* ----------------------------- Task Dispatch ----------------------------- */
 
 std::uint8_t SchedulerMultiThread::taskTrampoline(void* raw) noexcept {
@@ -474,9 +537,7 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
     // dispatch marks so deadline tracking stays truthful, and count it
     // with the same drop accounting as context exhaustion.
     ctxPools_[poolId]->release(ctx);
-    if (entry->isRunning) {
-      entry->isRunning->store(false, std::memory_order_release);
-    }
+    entry->unmarkDispatched();
     ++entry->skipCount;
     ++totalDispatchDrops_;
     auto* lg = componentLog();

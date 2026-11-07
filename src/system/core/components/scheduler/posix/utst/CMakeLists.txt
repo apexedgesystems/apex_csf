@@ -9,6 +9,7 @@ include(apex/All)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerCompletionBarrier_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerCtxPool_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerData_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerStatus_uTest.cpp"
