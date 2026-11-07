@@ -1,0 +1,12 @@
+# RoverLidarModel (0xE400): the rover's lidar on its own serial wire. Each
+# plant sweep goes out as one LIDAR_SCAN on a USB-serial adapter whose TX
+# and RX run to the board's sensor UART (USART6: adapter TXD -> D0,
+# adapter RXD -> D1, GND -> GND, 3.3 V logic). A ray counts as a return
+# only inside max_range_m. enabled = 0: the port is never opened and the
+# board reports no sensor, so the frame carries the plant's own sweep.
+[RoverLidarModelTunables]
+device_path = { type = "string", size = 64, value = "/dev/ttyUSB0" }
+baud_rate   = { type = "uint",   size = 4,  value = 115200 }
+max_range_m = { type = "float",  size = 4,  value = 50.0 }
+enabled     = { type = "uint",   size = 1,  value = 1 }
+reserved    = { type = "array",  size = 3,  value = [0, 0, 0] }

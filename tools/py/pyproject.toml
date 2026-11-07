@@ -52,5 +52,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/apex_tools"]
 
+# The gate installs the package non-editable, so a sync has to rebuild it
+# when its sources change, not only when this file does (uv's default).
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.py" }]
+
 # Note: black, isort, and flake8 configs are managed by root .pre-commit-config.yaml
 # and .flake8 - no local overrides needed here.

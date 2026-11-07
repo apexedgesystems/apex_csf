@@ -12,6 +12,7 @@
 # ------------------------------------------------------------------------------
 
 set(DEV_TEST_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/ExecutiveTiming_dTest.cpp")
+set(ACTION_GATE_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/ExecutiveActionGate_dTest.cpp")
 
 # ------------------------------------------------------------------------------
 # Dev Test Target (manual execution only)
@@ -28,5 +29,22 @@ apex_add_devtest(
   # construct one link them directly (the library keeps them private).
   system_core_scheduler
   system_core_filesystem
+  fmt::fmt
+)
+
+# ------------------------------------------------------------------------------
+# Action-phase gate under an overrunning task (manual execution only)
+# ------------------------------------------------------------------------------
+
+apex_add_devtest(
+  TARGET
+  ExecutiveActionGate_Dev
+  SOURCES
+  ${ACTION_GATE_SOURCES}
+  LINK
+  system_core_executive
+  system_core_scheduler
+  system_core_filesystem
+  system_core_system_component
   fmt::fmt
 )

@@ -31,6 +31,8 @@ std::uint8_t DataTransform::doInit() noexcept {
 
   registerTask<DataTransform, &DataTransform::telemetry>(
       static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry");
+  registerTask<DataTransform, &DataTransform::hold>(static_cast<std::uint8_t>(TaskUid::HOLD), this,
+                                                    "hold");
 
   registerData(data::DataCategory::STATE, "stats", &stats_, sizeof(TransformStats));
 
@@ -38,11 +40,17 @@ std::uint8_t DataTransform::doInit() noexcept {
 }
 
 void DataTransform::doReset() noexcept {
-  for (auto& entry : entries_) {
-    entry.armed = false;
-    entry.proxy.clear();
+  std::lock_guard<std::mutex> lock(holdMutex_);
+  for (std::uint8_t i = 0; i < TRANSFORM_MAX_ENTRIES; ++i) {
+    entries_[i].armed = false;
+    entries_[i].proxy.clear();
+    withdrawHeld(i);
   }
   stats_ = {};
+  holdApplies_.store(0, std::memory_order_relaxed);
+  holdSkips_.store(0, std::memory_order_relaxed);
+  holdResolveFailures_.store(0, std::memory_order_relaxed);
+  holdApplyFailures_.store(0, std::memory_order_relaxed);
 }
 
 /* ----------------------------- TPRM Loading ----------------------------- */
@@ -382,23 +390,78 @@ void DataTransform::onBusReady() noexcept {
   }
 }
 
+/* ----------------------------- Mask Write ----------------------------- */
+
+namespace {
+
+/// Write one mask into a resolved block, byte = (byte & AND) ^ XOR over the
+/// mask's range; false when that range runs past the bytes available.
+bool writeMask(const data_proxy::MaskEntry& mask, std::uint8_t* block,
+               std::size_t available) noexcept {
+  if (mask.index + mask.len > available) {
+    return false;
+  }
+  std::uint8_t* p = block + mask.index;
+  for (std::uint8_t i = 0; i < mask.len; ++i) {
+    p[i] = static_cast<std::uint8_t>((p[i] & mask.andMask[i]) ^ mask.xorMask[i]);
+  }
+  return true;
+}
+
+} // namespace
+
 /* ----------------------------- Scheduled Tasks ----------------------------- */
 
 std::uint8_t DataTransform::telemetry() noexcept {
   std::uint32_t armed = 0;
-  for (const auto& entry : entries_) {
-    if (entry.armed) {
-      ++armed;
+  TransformStats stats{};
+  {
+    std::lock_guard<std::mutex> lock(holdMutex_); // the entry table and the counters commands write
+    for (const auto& entry : entries_) {
+      if (entry.armed) {
+        ++armed;
+      }
     }
+    stats_.entriesArmed = armed;
+    stats = stats_;
   }
-  stats_.entriesArmed = armed;
 
   auto* log = componentLog();
   if (log != nullptr) {
     char buf[128];
-    std::snprintf(buf, sizeof(buf), "armed=%u applied=%u resolve_fail=%u apply_fail=%u", armed,
-                  stats_.masksApplied, stats_.resolveFailures, stats_.applyFailures);
+    std::snprintf(buf, sizeof(buf),
+                  "armed=%u applied=%u resolve_fail=%u apply_fail=%u | hold: written=%u "
+                  "skipped=%u resolve_fail=%u apply_fail=%u",
+                  armed, stats.masksApplied, stats.resolveFailures, stats.applyFailures,
+                  holdApplies_.load(std::memory_order_relaxed),
+                  holdSkips_.load(std::memory_order_relaxed),
+                  holdResolveFailures_.load(std::memory_order_relaxed),
+                  holdApplyFailures_.load(std::memory_order_relaxed));
     log->info(label(), buf);
+  }
+  return 0;
+}
+
+std::uint8_t DataTransform::hold() noexcept {
+  std::unique_lock<std::mutex> lock(holdMutex_, std::try_to_lock);
+  if (!lock.owns_lock()) {
+    holdSkips_.fetch_add(1U, std::memory_order_relaxed); // a command owns the writes this tick
+    return 0;
+  }
+  for (const auto& held : held_) {
+    if (!held.active) {
+      continue;
+    }
+    auto resolved = resolver_(held.fullUid, held.category);
+    if (resolved.data == nullptr || held.byteOffset >= resolved.size) {
+      holdResolveFailures_.fetch_add(1U, std::memory_order_relaxed);
+      continue;
+    }
+    if (!writeMask(held.mask, resolved.data + held.byteOffset, resolved.size - held.byteOffset)) {
+      holdApplyFailures_.fetch_add(1U, std::memory_order_relaxed);
+      continue;
+    }
+    holdApplies_.fetch_add(1U, std::memory_order_relaxed);
   }
   return 0;
 }
@@ -406,65 +469,63 @@ std::uint8_t DataTransform::telemetry() noexcept {
 /* ----------------------------- Private Helpers ----------------------------- */
 
 bool DataTransform::applyEntry(std::uint8_t index) noexcept {
+  // The caller holds holdMutex_: nothing changes the entry while this runs.
   if (index >= TRANSFORM_MAX_ENTRIES) {
     return false;
   }
-
-  auto& entry = entries_[index];
-  if (!entry.armed || entry.proxy.empty()) {
+  const auto& entry = entries_[index];
+  const data_proxy::MaskEntry* front = entry.proxy.front();
+  if (!entry.armed || front == nullptr) {
     return false;
   }
 
-  // Resolve target to byte pointer
-  auto resolved = resolver_(entry.target.fullUid, entry.target.category);
-  if (resolved.data == nullptr) {
+  // One snapshot of the target and the front mask: the write, the log line
+  // and the held copy all come from it, so a hold writes exactly what this
+  // apply wrote.
+  const data::DataTarget TARGET = entry.target;
+  const data_proxy::MaskEntry MASK = *front;
+
+  auto resolved = resolver_(TARGET.fullUid, TARGET.category);
+  if (resolved.data == nullptr || TARGET.byteOffset >= resolved.size) {
     ++stats_.resolveFailures;
     return false;
   }
+  std::uint8_t* targetBytes = resolved.data + TARGET.byteOffset;
+  const std::size_t AVAILABLE = resolved.size - TARGET.byteOffset;
 
-  // Offset into the resolved block
-  std::uint8_t* targetBytes = resolved.data + entry.target.byteOffset;
-  const std::size_t AVAILABLE =
-      (entry.target.byteOffset < resolved.size) ? (resolved.size - entry.target.byteOffset) : 0;
-
-  if (AVAILABLE == 0) {
-    ++stats_.resolveFailures;
-    return false;
+  // Capture before-state for logging (up to 8 bytes, within the block)
+  std::uint8_t logLen = (TARGET.byteLen <= 8) ? TARGET.byteLen : static_cast<std::uint8_t>(8);
+  if (logLen > AVAILABLE) {
+    logLen = static_cast<std::uint8_t>(AVAILABLE);
   }
-
-  // Capture before-state for logging (up to 8 bytes)
-  const std::uint8_t LOG_LEN =
-      (entry.target.byteLen <= 8) ? entry.target.byteLen : static_cast<std::uint8_t>(8);
   std::uint8_t beforeBytes[8]{};
-  std::memcpy(beforeBytes, targetBytes, LOG_LEN);
+  std::memcpy(beforeBytes, targetBytes, logLen);
 
-  // Apply the front mask
-  auto status = entry.proxy.apply(targetBytes, AVAILABLE);
-  if (status == data_proxy::ByteMaskStatus::SUCCESS) {
-    ++stats_.masksApplied;
-
-    auto* log = componentLog();
-    if (log != nullptr) {
-      // Format before/after hex for the affected bytes
-      char before[24]{};
-      char after[24]{};
-      for (std::uint8_t b = 0; b < LOG_LEN; ++b) {
-        std::snprintf(before + static_cast<ptrdiff_t>(b * 2), 3, "%02X", beforeBytes[b]);
-        std::snprintf(after + static_cast<ptrdiff_t>(b * 2), 3, "%02X", targetBytes[b]);
-      }
-
-      char buf[160];
-      std::snprintf(buf, sizeof(buf),
-                    "APPLY entry=%u uid=0x%06X off=%u len=%u before=[%s] after=[%s] masks=%u",
-                    index, entry.target.fullUid, entry.target.byteOffset, entry.target.byteLen,
-                    before, after, stats_.masksApplied);
-      log->info(label(), buf);
-    }
-    return true;
+  if (!writeMask(MASK, targetBytes, AVAILABLE)) {
+    ++stats_.applyFailures;
+    return false;
   }
+  ++stats_.masksApplied;
+  held_[index] = HeldMask{true, TARGET.fullUid, TARGET.category, TARGET.byteOffset, MASK};
 
-  ++stats_.applyFailures;
-  return false;
+  auto* log = componentLog();
+  if (log != nullptr) {
+    // Format before/after hex for the affected bytes
+    char before[24]{};
+    char after[24]{};
+    for (std::uint8_t b = 0; b < logLen; ++b) {
+      std::snprintf(before + static_cast<ptrdiff_t>(b * 2), 3, "%02X", beforeBytes[b]);
+      std::snprintf(after + static_cast<ptrdiff_t>(b * 2), 3, "%02X", targetBytes[b]);
+    }
+
+    char buf[160];
+    std::snprintf(buf, sizeof(buf),
+                  "APPLY entry=%u uid=0x%06X off=%u len=%u before=[%s] after=[%s] masks=%u", index,
+                  TARGET.fullUid, TARGET.byteOffset, TARGET.byteLen, before, after,
+                  stats_.masksApplied);
+    log->info(label(), buf);
+  }
+  return true;
 }
 
 /* ----------------------------- Command Interface ----------------------------- */
@@ -473,6 +534,14 @@ std::uint8_t DataTransform::handleCommand(std::uint16_t opcode,
                                           apex::compat::rospan<std::uint8_t> payload,
                                           std::vector<std::uint8_t>& response) noexcept {
   const auto OP = static_cast<DataTransformOpcode>(opcode);
+  if (OP < DataTransformOpcode::GET_STATS || OP > DataTransformOpcode::APPLY_ALL) {
+    return SupportComponentBase::handleCommand(opcode, payload, response);
+  }
+
+  // Every command the component handles runs under its lock: the entry
+  // table, the held copies and the statistics block have one owner at a
+  // time, and a hold tick that finds the lock held skips (it never waits).
+  std::lock_guard<std::mutex> lock(holdMutex_);
 
   switch (OP) {
   case DataTransformOpcode::GET_STATS: {
@@ -517,6 +586,7 @@ std::uint8_t DataTransform::handleCommand(std::uint16_t opcode,
       return static_cast<std::uint8_t>(Status::ERROR_PARAM);
     }
     entries_[INDEX].armed = false;
+    withdrawHeld(INDEX);
     {
       auto* log = componentLog();
       if (log != nullptr) {
@@ -610,13 +680,15 @@ std::uint8_t DataTransform::handleCommand(std::uint16_t opcode,
       return static_cast<std::uint8_t>(Status::ERROR_PARAM);
     }
     entries_[INDEX].proxy.clear();
+    withdrawHeld(INDEX);
     return static_cast<std::uint8_t>(Status::SUCCESS);
   }
 
   case DataTransformOpcode::CLEAR_ALL: {
-    for (auto& entry : entries_) {
-      entry.armed = false;
-      entry.proxy.clear();
+    for (std::uint8_t i = 0; i < TRANSFORM_MAX_ENTRIES; ++i) {
+      entries_[i].armed = false;
+      entries_[i].proxy.clear();
+      withdrawHeld(i);
     }
     stats_.entriesArmed = 0;
     return static_cast<std::uint8_t>(Status::SUCCESS);
@@ -672,10 +744,8 @@ std::uint8_t DataTransform::handleCommand(std::uint16_t opcode,
     }
     return static_cast<std::uint8_t>(Status::SUCCESS);
   }
-
-  default:
-    return SupportComponentBase::handleCommand(opcode, payload, response);
   }
+  return static_cast<std::uint8_t>(Status::ERROR_PARAM); // not reached: the range check above
 }
 
 } // namespace support

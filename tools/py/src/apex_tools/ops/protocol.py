@@ -91,6 +91,7 @@ ACTION_STOP_RTS = 0x0502
 ACTION_LOAD_ATS = 0x0503
 ACTION_START_ATS = 0x0504
 ACTION_STOP_ATS = 0x0505
+ACTION_GET_RUNNING = 0x0523  # reply: u8 sequences running when the last cycle ended
 
 # Well-known component fullUids
 FULLUID_EXECUTIVE = 0x000000
