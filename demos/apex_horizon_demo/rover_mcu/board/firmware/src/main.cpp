@@ -43,9 +43,10 @@ static apex::hal::stm32::Stm32Uart<256, 64> sensorUart(board::SENSOR_UART, board
 
 /* ----------------------------- Boot Banner ----------------------------- */
 
-/// Writes every byte, waiting while the TX path drains. Stops when the UART
-/// takes nothing while reporting nothing in flight: no progress is possible
-/// then, and boot goes on without the rest of the line.
+/// Writes the text, retrying partial writes while the TX path drains. Returns
+/// early, the rest of this text unwritten, when a write takes nothing while
+/// the transmitter reports idle; completion otherwise relies on the UART
+/// draining under interrupt, so a transmitter that stays busy is waited on.
 static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexcept {
   const auto* bytes = reinterpret_cast<const uint8_t*>(text);
   size_t written = 0;
@@ -59,9 +60,11 @@ static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexc
 }
 
 /// The build identity as the first line on the link UART, before any frame.
-/// The host side decodes SLIP and resyncs on a frame end; a reader that opens
-/// the port after boot and decodes raw bytes may take the text for a frame. A
-/// terminal on the port reads which build is running.
+/// The host side flushes its input at open and its SLIP decoder resyncs on a
+/// frame end, which disposes of text that has arrived by then; a reader already
+/// open across a warm reset may take the text for a frame and lose the first
+/// frame after it, and one that decodes raw bytes sees the text. A terminal on
+/// the port reads which build is running.
 static void writeBuildLine(apex::hal::IUart& uart) noexcept {
   static const char PREFIX[] = "Build: ";
   static const char CRLF[] = "\r\n";

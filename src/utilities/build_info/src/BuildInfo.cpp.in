@@ -24,7 +24,8 @@ size_t window(size_t len, size_t offset, size_t cap) noexcept {
 #if defined(__AVR__)
 // AVR keeps constants in data memory unless they are placed in program memory,
 // and the summary is the one string a firmware reads: it lives in program
-// memory and is read through pgmspace, so the identity costs no RAM.
+// memory and is read through pgmspace into a caller's buffer, so the identity
+// costs no static SRAM.
 const char SUMMARY[] PROGMEM = "@BI_SUMMARY@";
 constexpr bool DIRTY = @BI_DIRTY@;
 #else

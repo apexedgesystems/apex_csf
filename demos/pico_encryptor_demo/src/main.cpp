@@ -69,9 +69,10 @@ static encryptor::CommandDeck commandDeck(cmdUart, keyStore, engine, tracker);
 
 /* ----------------------------- Boot Banner ----------------------------- */
 
-/// Writes every byte, waiting while the TX path drains. Stops when the UART
-/// takes nothing while reporting nothing in flight: no progress is possible
-/// then, and boot goes on without the rest of the line.
+/// Writes the text, retrying partial writes while the TX path drains. Returns
+/// early, the rest of this text unwritten, when a write takes nothing while
+/// the transmitter reports idle; completion otherwise relies on the UART
+/// draining under interrupt, so a transmitter that stays busy is waited on.
 static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexcept {
   const auto* bytes = reinterpret_cast<const uint8_t*>(text);
   size_t written = 0;
@@ -85,9 +86,10 @@ static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexc
 }
 
 /// The build identity as the first line on the data UART, before any frame.
-/// The checkout scripts drain after a settle at open, so they never parse the
-/// line; a reader that opens the port after boot and decodes raw bytes may take
-/// the text for a frame. A terminal on the port reads which build is running.
+/// The checkout scripts drain after a settle at open, which disposes of text
+/// that has arrived by then; text arriving after the drain, or read across a
+/// warm reset or by a reader that decodes raw bytes, may reach framing. A
+/// terminal on the port reads which build is running.
 /// The command channel is a USB device whose writes wait on a host, and no host
 /// is attached at boot, so the line goes on the UART, which drains under
 /// interrupt on its own.

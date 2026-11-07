@@ -107,24 +107,31 @@ in `libutilities_build_info.so` beside its siblings in a deployment bank.
 `lib.manifest` names the platforms: the POSIX dialects and the MCU platforms
 `stm32`, `avr`, `pico` and `esp32`. Under an MCU toolchain the library is
 STATIC, so the constants link into the firmware image, the probe in
-`probe/` compiles the public surface under that toolchain, and
-`targetSystem()` names the HAL platform, the processor and, where the
-toolchain selects one, the board (`stm32/arm/nucleo_l476rg`,
-`avr/avr`), since every MCU toolchain calls the CMake system `Generic`. A firmware main
-writes `summary()` as its first line on a hardware UART, once, before the
-first frame (the STM32 HIL flight controller, the rover MCU board firmware on its link
-UART, the STM32 and Arduino encryptors on their shared or command UART, the
-Pico and ESP32 encryptors on their data UART, since their command channels are USB devices with no host at boot), so
-a terminal on the port reads which build is running. The line is startup
+`probe/` compiles the public surface under that toolchain, and the target
+field names the HAL platform, the processor and, where the toolchain selects
+one, the board (`stm32/arm/nucleo_l476rg`, `avr/avr`), since every MCU
+toolchain calls the CMake system `Generic`. A firmware main writes the
+summary text (`summary()`, or `copySummary()` windows on AVR) as its first
+line on a hardware UART, once, after that UART's `init` has succeeded and
+before the first frame (the STM32 HIL flight controller, the rover MCU board
+firmware on its link UART, the STM32 and Arduino encryptors on their shared
+or command UART, the Pico and ESP32 encryptors on their data UART, since
+their command channels are USB devices with no host at boot), so a terminal
+on the port reads which build is running. The write is best effort: a failed
+`init` skips the line; the write loop retries a partial write, and when a
+write takes nothing while the transmitter reports idle it gives up the rest
+of that piece of the line (the prefix, the summary or the line end) and goes
+on to the next; completion otherwise relies on the UART draining under
+interrupt, so a transmitter that stays busy is waited on. The line is startup
 I/O on a framed link, so its receivers matter: the HIL host flushes its input
 at init and its SLIP decoder resyncs on a frame end, and the encryptor
-checkout scripts drain after a settle at open, so neither parses it; a reader
-that opens the port after boot and decodes raw bytes, or one already open
-across a warm reset, may take the text for a frame. The identity strings
-cost flash on every MCU; on AVR, where avr-gcc keeps constants in data
-memory, the summary is placed in program memory and copied out in windows,
-so it costs no SRAM. Only the strings a firmware references survive
-`--gc-sections`.
+checkout scripts drain after a settle at open, which disposes of text that
+has arrived by then; text arriving after the drain, or seen by a reader
+already open across a warm reset or by one decoding raw bytes, may reach
+framing. The identity strings cost flash on every MCU; on AVR, where avr-gcc
+keeps constants in data memory, the summary is placed in program memory and
+copied out in windows through the caller's buffer, so it costs no static
+SRAM. Only the strings a firmware references survive `--gc-sections`.
 
 ## 4. Limits
 

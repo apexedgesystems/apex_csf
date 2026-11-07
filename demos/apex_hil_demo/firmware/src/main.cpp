@@ -52,9 +52,10 @@ static executive::mcu::McuExecutive<> exec(&tickSource, hil::EXEC_FREQ_HZ);
 
 /* ----------------------------- Boot Banner ----------------------------- */
 
-/// Writes every byte, waiting while the TX path drains. Stops when the UART
-/// takes nothing while reporting nothing in flight: no progress is possible
-/// then, and boot goes on without the rest of the line.
+/// Writes the text, retrying partial writes while the TX path drains. Returns
+/// early, the rest of this text unwritten, when a write takes nothing while
+/// the transmitter reports idle; completion otherwise relies on the UART
+/// draining under interrupt, so a transmitter that stays busy is waited on.
 static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexcept {
   const auto* bytes = reinterpret_cast<const uint8_t*>(text);
   size_t written = 0;
@@ -69,9 +70,10 @@ static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexc
 
 /// The build identity as the first line on the HIL UART, before any frame.
 /// The HIL host flushes its input at init and its SLIP decoder resyncs on a
-/// frame end, so it never parses the line; a receiver already open across a
-/// warm reset may see the text before its first frame. A terminal on the port
-/// reads which build is running.
+/// frame end, which disposes of text that has arrived by then; text arriving
+/// after the flush, or seen by a receiver already open across a warm reset,
+/// may reach its framing before the first frame. A terminal on the port reads
+/// which build is running.
 static void writeBuildLine(apex::hal::IUart& uart) noexcept {
   static const char PREFIX[] = "Build: ";
   static const char CRLF[] = "\r\n";

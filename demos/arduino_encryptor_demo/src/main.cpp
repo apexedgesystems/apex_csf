@@ -86,11 +86,12 @@ static encryptor::CommandDeck commandDeck(uart, keyStore, engine, tracker);
 /* ----------------------------- Boot Banner ----------------------------- */
 
 /// The build identity as the first line on the UART, before any frame.
-/// The checkout scripts drain after a settle at open, so they never parse the
-/// line; a reader that opens the port after boot and decodes raw bytes may take
-/// the text for a frame. A terminal on the port reads which build is running.
-/// The summary lives in program memory on AVR and is copied out in
-/// windows through a small stack buffer, so the line costs no SRAM.
+/// The checkout scripts drain after a settle at open, which disposes of text
+/// that has arrived by then; text arriving after the drain, or read across a
+/// warm reset or by a reader that decodes raw bytes, may reach framing. A
+/// terminal on the port reads which build is running.
+/// The summary lives in program memory on AVR and is copied out in windows
+/// through an automatic buffer, so the line costs no static SRAM.
 /// AvrUart::write spins while the TX ring drains under interrupt.
 static void writeBuildLine() noexcept {
   static const char PREFIX[] PROGMEM = "Build: ";
