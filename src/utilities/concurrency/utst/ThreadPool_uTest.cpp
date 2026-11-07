@@ -13,7 +13,13 @@
 
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <thread>
+
+#include <pthread.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 using apex::concurrency::DelegateU8;
 using apex::concurrency::PoolStatus;
@@ -229,4 +235,107 @@ TEST(ThreadPoolDeterminismTest, ThreadsRunningConsistent) {
   const bool FIRST = pool.threadsRunning();
   const bool SECOND = pool.threadsRunning();
   EXPECT_EQ(FIRST, SECOND);
+}
+
+/* ----------------------------- Lifecycle Contract Tests ----------------------------- */
+
+namespace {
+
+/// Whether `sig` is blocked on the calling thread.
+bool blockedHere(int sig) {
+  sigset_t mask;
+  sigemptyset(&mask);
+  pthread_sigmask(SIG_BLOCK, nullptr, &mask);
+  return sigismember(&mask, sig) == 1;
+}
+
+/// Clear the calling thread's mask, so the test starts from a known state whatever
+/// earlier tests in this process left behind.
+void unblockAllHere() {
+  sigset_t none;
+  sigemptyset(&none);
+  pthread_sigmask(SIG_SETMASK, &none, nullptr);
+}
+
+} // namespace
+
+/** @test Constructing and destroying a pool leaves the constructing thread's signal mask as it
+ * was: the workers inherit the blocked set, the caller does not keep it. */
+TEST_F(ThreadPoolTest, ConstructorRestoresCallerSignalMask) {
+  bool blockedWhileAlive = false;
+  bool blockedAfter = false;
+  std::thread caller([&]() {
+    unblockAllHere();
+    {
+      ThreadPool pool(2);
+      blockedWhileAlive = blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE) ||
+                          blockedHere(SIGSEGV);
+    }
+    blockedAfter =
+        blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE) || blockedHere(SIGSEGV);
+  });
+  caller.join();
+  EXPECT_FALSE(blockedWhileAlive) << "the pool's worker set leaked onto the constructing thread";
+  EXPECT_FALSE(blockedAfter) << "the constructing thread's mask stayed changed after the pool";
+}
+
+namespace {
+
+/// An affinity naming a CPU no host has, so applying it fails for every user; a requested RT
+/// policy would fail only without CAP_SYS_NICE.
+apex::concurrency::PoolConfig impossibleAffinity() {
+  apex::concurrency::PoolConfig config;
+  config.affinity = {255};
+  return config;
+}
+
+} // namespace
+
+/** @test A worker whose configuration cannot be applied is counted, so the owner can tell the
+ * pool is not running as configured. */
+TEST_F(ThreadPoolTest, ReportsWorkerConfigFailure) {
+  ThreadPool configured(2);
+  EXPECT_EQ(configured.workerConfigFailures(), 0U);
+  ThreadPool unconfigured(2, impossibleAffinity());
+  EXPECT_EQ(unconfigured.workerConfigFailures(), unconfigured.workerCount());
+  EXPECT_EQ(unconfigured.workerCount(), 2U);
+}
+
+/** @test A worker that cannot start leaves an invalid pool and the caller's mask untouched: the
+ * child lowers its thread limit to one so thread creation fails (the limit is not enforced for
+ * root, where the case is skipped). */
+TEST_F(ThreadPoolTest, WorkerStartFailureLeavesPoolInvalid) {
+  if (::geteuid() == 0) {
+    GTEST_SKIP() << "RLIMIT_NPROC is not enforced for root";
+  }
+  const pid_t CHILD = ::fork();
+  ASSERT_NE(CHILD, -1);
+  if (CHILD == 0) {
+    const rlimit ONE{1, 1};
+    if (::setrlimit(RLIMIT_NPROC, &ONE) != 0) {
+      ::_exit(40);
+    }
+    unblockAllHere();
+    int code = 0;
+    try {
+      ThreadPool pool(2);
+      if (pool.isValid() || pool.workerCount() != 0) {
+        code = 10; // the pool claims workers that could not start
+      }
+    } catch (...) {
+      code = 20; // the constructor threw instead of reporting an invalid pool
+    }
+    if (blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE)) {
+      code += 1; // the caller's mask was left blocked
+    }
+    ::_exit(code);
+  }
+  int status = 0;
+  ASSERT_EQ(::waitpid(CHILD, &status, 0), CHILD);
+  ASSERT_TRUE(WIFEXITED(status));
+  if (WEXITSTATUS(status) == 40) {
+    GTEST_SKIP() << "the thread limit could not be lowered";
+  }
+  EXPECT_EQ(WEXITSTATUS(status), 0)
+      << "10: pool valid, 20: constructor threw, +1: mask left blocked";
 }

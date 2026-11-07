@@ -98,7 +98,9 @@ public:
    * @param label Static or long-lived string identifying the task (non-owning).
    * @param task Delegate encapsulating the task logic.
    * @return SUCCESS if enqueued, QUEUE_FULL if queue is full, POOL_STOPPED if shutting down.
-   * @note RT-safe: Lock-free CAS + semaphore release.
+   * @note RT-safe: Lock-free CAS + semaphore release, inside an in-flight
+   *       producer count (one atomic increment and decrement) that shutdown()
+   *       waits on, so SUCCESS means a worker will run the task.
    */
   [[nodiscard]] PoolStatus tryEnqueue(const char* label, TaskFn task) noexcept;
 
@@ -119,7 +121,25 @@ public:
   [[nodiscard]] bool threadsRunning() const noexcept;
 
   /**
+   * @brief Workers whose RT configuration (name, affinity, policy, priority)
+   *        did not fully apply at start-up.
+   * @return The count, 0 when every worker runs as configured. Final once
+   *         the constructor returns: it waits for every worker to have
+   *         applied its configuration.
+   * @note RT-safe: Single atomic load. A requested policy needs CAP_SYS_NICE
+   *       and an affinity needs existing CPUs; a failure leaves that worker
+   *       with the default policy and the inherited affinity.
+   */
+  [[nodiscard]] std::size_t workerConfigFailures() const noexcept {
+    return configFailures_.load(std::memory_order_acquire);
+  }
+
+  /**
    * @brief Signal shutdown and join all worker threads.
+   *
+   * Waits for the producers inside tryEnqueue() before waking the workers,
+   * so a task reported as SUCCESS is always popped before the workers exit.
+   *
    * @note NOT RT-safe: Joins threads, blocks until workers exit.
    */
   void shutdown() noexcept;
@@ -145,8 +165,10 @@ private:
   };
 
   void workerLoop();
-  void blockSignals();
-  static void applyWorkerConfig(const PoolConfig& config, std::size_t workerId);
+  /// Spawn the workers; on a failed thread start, stop and join the ones
+  /// that started and leave workers_ empty.
+  void spawnWorkers(std::size_t numThreads, const PoolConfig& config);
+  [[nodiscard]] static bool applyWorkerConfig(const PoolConfig& config, std::size_t workerId);
 
   // Task queue (lock-free MPMC)
   LockFreeQueue<TaskItem> taskQueue_;
@@ -158,6 +180,11 @@ private:
   // Hot atomics isolated to cache lines.
   cache::AlignCl<std::atomic<bool>> stop_{false};
   cache::AlignCl<std::atomic<std::size_t>> activeTasks_{0};
+  /// Producers between tryEnqueue()'s stop check and its push; shutdown()
+  /// waits for zero before waking the workers.
+  cache::AlignCl<std::atomic<std::size_t>> producers_{0};
+  std::atomic<std::size_t> configFailures_{0}; ///< Workers whose RT config did not apply.
+  std::atomic<std::size_t> started_{0};        ///< Workers past their start-up configuration.
 
   // Error path (rare, mutex-protected)
   std::queue<TaskError> errorQueue_;

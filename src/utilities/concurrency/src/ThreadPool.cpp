@@ -7,11 +7,8 @@
 #include "src/utilities/concurrency/inc/ThreadConfig.hpp"
 
 #include <cstdio>
-
-#if defined(__unix__) || defined(__APPLE__)
-#include <csignal>
-#include <pthread.h>
-#endif
+#include <system_error>
+#include <thread>
 
 namespace apex {
 namespace concurrency {
@@ -19,13 +16,35 @@ namespace concurrency {
 /* ----------------------------- ThreadPool Methods ----------------------------- */
 
 ThreadPool::ThreadPool(std::size_t numThreads, const PoolConfig& config) {
-  blockSignals();
+  spawnWorkers(numThreads, config);
+}
+
+void ThreadPool::spawnWorkers(std::size_t numThreads, const PoolConfig& config) {
+  // The workers inherit the blocked process signals; the scope hands the
+  // constructing thread its own mask back when the spawn is over, success
+  // or not.
+  WorkerSignalScope signals;
   workers_.reserve(numThreads);
-  for (std::size_t i = 0; i < numThreads; ++i) {
-    workers_.emplace_back([this, config, i]() {
-      applyWorkerConfig(config, i);
-      workerLoop();
-    });
+  try {
+    for (std::size_t i = 0; i < numThreads; ++i) {
+      workers_.emplace_back([this, config, i]() {
+        if (!applyWorkerConfig(config, i)) {
+          configFailures_.fetch_add(1, std::memory_order_acq_rel);
+        }
+        started_.fetch_add(1, std::memory_order_release);
+        workerLoop();
+      });
+    }
+  } catch (const std::system_error&) {
+    // A thread could not start (the process or thread limit): the pool is
+    // reported invalid rather than left with joinable threads to terminate on.
+    shutdown();
+    return;
+  }
+  // Every worker has applied its configuration before the pool is handed
+  // over, so workerConfigFailures() is final for the owner's start-up log.
+  while (started_.load(std::memory_order_acquire) < workers_.size()) {
+    std::this_thread::yield();
   }
 }
 
@@ -83,13 +102,13 @@ std::queue<TaskError> ThreadPool::collectErrors() {
 
 /* ----------------------------- File Helpers ----------------------------- */
 
-void ThreadPool::applyWorkerConfig(const PoolConfig& config, std::size_t workerId) {
+bool ThreadPool::applyWorkerConfig(const PoolConfig& config, std::size_t workerId) {
   // Generate worker thread name (max 15 chars + null on Linux).
   char name[16];
   std::snprintf(name, sizeof(name), "pool_w%zu", workerId);
 
   // Use common thread config utility for affinity/policy/priority.
-  applyPoolConfig(config, name);
+  return applyPoolConfig(config, name);
 }
 
 void ThreadPool::workerLoop() {
@@ -142,21 +161,6 @@ void ThreadPool::workerLoop() {
       hasErrors_.value.store(true, std::memory_order_release);
     }
   }
-}
-
-void ThreadPool::blockSignals() {
-#if defined(__unix__) || defined(__APPLE__)
-  // Prevent workers from handling process signals; keep them on the main thread.
-  sigset_t set;
-  sigemptyset(&set);
-  sigaddset(&set, SIGINT);
-  sigaddset(&set, SIGSEGV);
-  sigaddset(&set, SIGPIPE);
-  sigaddset(&set, SIGTERM);
-  pthread_sigmask(SIG_BLOCK, &set, nullptr);
-#else
-  // Non-POSIX platforms: no-op to keep portability.
-#endif
 }
 
 } // namespace concurrency

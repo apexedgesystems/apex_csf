@@ -8,7 +8,7 @@
  *  - Zero-allocation tasks via DelegateU8 (fnptr + context).
  *  - Condition-variable queue for predictable wakeups (no busy spin).
  *  - Cacheline-aligned hot atomics to reduce false sharing.
- *  - Signal masking for worker stability (POSIX).
+ *  - Workers block the process signals; the constructing thread keeps its mask (POSIX).
  *  - Graceful shutdown with queue draining.
  */
 
@@ -140,6 +140,20 @@ public:
   [[nodiscard]] bool threadsRunning() const noexcept;
 
   /**
+   * @brief Workers whose RT configuration (name, affinity, policy, priority)
+   *        did not fully apply at start-up.
+   * @return The count, 0 when every worker runs as configured. Final once
+   *         the constructor returns: it waits for every worker to have
+   *         applied its configuration.
+   * @note RT-safe: Single atomic load. A requested policy needs CAP_SYS_NICE
+   *       and an affinity needs existing CPUs; a failure leaves that worker
+   *       with the default policy and the inherited affinity.
+   */
+  [[nodiscard]] std::size_t workerConfigFailures() const noexcept {
+    return configFailures_.load(std::memory_order_acquire);
+  }
+
+  /**
    * @brief Signal shutdown and join all worker threads.
    * @note NOT RT-safe: Joins threads, blocks until queue is drained.
    */
@@ -161,8 +175,10 @@ public:
 
 private:
   void workerLoop();
-  void blockSignals();
-  static void applyWorkerConfig(const PoolConfig& config, std::size_t workerId);
+  /// Spawn the workers; on a failed thread start, stop and join the ones
+  /// that started and leave workers_ empty.
+  void spawnWorkers(std::size_t numThreads, const PoolConfig& config);
+  [[nodiscard]] static bool applyWorkerConfig(const PoolConfig& config, std::size_t workerId);
 
   // Worker infrastructure
   std::vector<std::thread> workers_;                     ///< Worker threads.
@@ -173,6 +189,8 @@ private:
   // Hot atomics isolated to cache lines to avoid false sharing.
   cache::AlignCl<std::atomic<bool>> stop_{false};           ///< Stop flag.
   cache::AlignCl<std::atomic<std::size_t>> activeTasks_{0}; ///< In-flight task count.
+  std::atomic<std::size_t> configFailures_{0}; ///< Workers whose RT config did not apply.
+  std::atomic<std::size_t> started_{0};        ///< Workers past their start-up configuration.
 
   // Error path (rare, mutex-protected)
   std::queue<TaskError> errorQueue_;                   ///< Collected errors.

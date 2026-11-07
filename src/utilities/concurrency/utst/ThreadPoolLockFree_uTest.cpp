@@ -13,7 +13,14 @@
 
 #include <atomic>
 #include <chrono>
+#include <csignal>
+#include <cstdint>
 #include <thread>
+
+#include <pthread.h>
+#include <sys/resource.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 using apex::concurrency::DelegateU8;
 using apex::concurrency::PoolStatus;
@@ -253,4 +260,175 @@ TEST(ThreadPoolLockFreeDeterminismTest, HasErrorsConsistent) {
   const bool SECOND = pool.hasErrors();
   EXPECT_EQ(FIRST, SECOND);
   EXPECT_FALSE(FIRST);
+}
+
+/* ----------------------------- Lifecycle Contract Tests ----------------------------- */
+
+namespace {
+
+/// Whether `sig` is blocked on the calling thread.
+bool blockedHere(int sig) {
+  sigset_t mask;
+  sigemptyset(&mask);
+  pthread_sigmask(SIG_BLOCK, nullptr, &mask);
+  return sigismember(&mask, sig) == 1;
+}
+
+/// Clear the calling thread's mask, so the test starts from a known state.
+void unblockAllHere() {
+  sigset_t none;
+  sigemptyset(&none);
+  pthread_sigmask(SIG_SETMASK, &none, nullptr);
+}
+
+/// A worker's view of its own mask, written by the task that runs there.
+struct WorkerMask {
+  std::atomic<bool> done{false};
+  bool sigint{false};
+  bool sigterm{false};
+  bool sigpipe{false};
+  bool sigsegv{false};
+};
+
+std::uint8_t recordWorkerMask(void* ctx) noexcept {
+  auto* m = static_cast<WorkerMask*>(ctx);
+  m->sigint = blockedHere(SIGINT);
+  m->sigterm = blockedHere(SIGTERM);
+  m->sigpipe = blockedHere(SIGPIPE);
+  m->sigsegv = blockedHere(SIGSEGV);
+  m->done.store(true, std::memory_order_release);
+  return 0;
+}
+
+std::uint8_t countRun(void* ctx) noexcept {
+  static_cast<std::atomic<std::uint32_t>*>(ctx)->fetch_add(1, std::memory_order_acq_rel);
+  return 0;
+}
+
+} // namespace
+
+/** @test Constructing and destroying a pool leaves the constructing thread's signal mask as it
+ * was: the workers inherit the blocked set, the caller does not keep it. */
+TEST_F(ThreadPoolLockFreeTest, ConstructorRestoresCallerSignalMask) {
+  bool blockedWhileAlive = false;
+  bool blockedAfter = false;
+  std::thread caller([&]() {
+    unblockAllHere();
+    {
+      ThreadPoolLockFree pool(2, 32);
+      blockedWhileAlive = blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE) ||
+                          blockedHere(SIGSEGV);
+    }
+    blockedAfter =
+        blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE) || blockedHere(SIGSEGV);
+  });
+  caller.join();
+  EXPECT_FALSE(blockedWhileAlive) << "the pool's worker set leaked onto the constructing thread";
+  EXPECT_FALSE(blockedAfter) << "the constructing thread's mask stayed changed after the pool";
+}
+
+/** @test The workers block the process signals (SIGINT, SIGTERM, SIGPIPE) so those stay with the
+ * thread that owns them, and do not block SIGSEGV, a synchronous fault whose handler must run. */
+TEST_F(ThreadPoolLockFreeTest, WorkersBlockProcessSignalsOnly) {
+  WorkerMask mask;
+  std::thread caller([&]() {
+    unblockAllHere();
+    ThreadPoolLockFree pool(1, 8);
+    ASSERT_EQ(pool.tryEnqueue("mask", {&recordWorkerMask, &mask}), PoolStatus::SUCCESS);
+    while (!mask.done.load(std::memory_order_acquire)) {
+      std::this_thread::yield();
+    }
+  });
+  caller.join();
+  EXPECT_TRUE(mask.sigint);
+  EXPECT_TRUE(mask.sigterm);
+  EXPECT_TRUE(mask.sigpipe);
+  EXPECT_FALSE(mask.sigsegv) << "a blocked SIGSEGV only bypasses an installed crash handler";
+}
+
+/** @test Every enqueue reported as SUCCESS runs, including one racing shutdown(): a producer that
+ * passed the stop check must not have its task stranded in the ring by the workers leaving. */
+TEST_F(ThreadPoolLockFreeTest, EverySuccessfulEnqueueRunsAcrossShutdown) {
+  constexpr int LIFETIMES = 1000;
+  for (int lifetime = 0; lifetime < LIFETIMES; ++lifetime) {
+    std::atomic<std::uint32_t> executed{0};
+    std::uint32_t accepted = 0;
+    ThreadPoolLockFree pool(2, 64);
+    std::thread producer([&]() {
+      for (;;) {
+        const PoolStatus STATUS = pool.tryEnqueue("count", {&countRun, &executed});
+        if (STATUS == PoolStatus::POOL_STOPPED) {
+          return;
+        }
+        if (STATUS == PoolStatus::SUCCESS) {
+          ++accepted;
+        }
+      }
+    });
+    std::this_thread::yield();
+    pool.shutdown();
+    producer.join();
+    ASSERT_EQ(executed.load(std::memory_order_acquire), accepted) << "lifetime " << lifetime;
+  }
+}
+
+namespace {
+
+/// An affinity naming a CPU no host has, so applying it fails for every user; a requested RT
+/// policy would fail only without CAP_SYS_NICE.
+apex::concurrency::PoolConfig impossibleAffinity() {
+  apex::concurrency::PoolConfig config;
+  config.affinity = {255};
+  return config;
+}
+
+} // namespace
+
+/** @test A worker whose configuration cannot be applied is counted, so the owner can tell the
+ * pool is not running as configured. */
+TEST_F(ThreadPoolLockFreeTest, ReportsWorkerConfigFailure) {
+  ThreadPoolLockFree configured(2, 8);
+  EXPECT_EQ(configured.workerConfigFailures(), 0U);
+  ThreadPoolLockFree unconfigured(2, 8, impossibleAffinity());
+  EXPECT_EQ(unconfigured.workerConfigFailures(), unconfigured.workerCount());
+  EXPECT_EQ(unconfigured.workerCount(), 2U);
+}
+
+/** @test A worker that cannot start leaves an invalid pool and the caller's mask untouched: the
+ * child lowers its thread limit to one so thread creation fails (the limit is not enforced for
+ * root, where the case is skipped). */
+TEST_F(ThreadPoolLockFreeTest, WorkerStartFailureLeavesPoolInvalid) {
+  if (::geteuid() == 0) {
+    GTEST_SKIP() << "RLIMIT_NPROC is not enforced for root";
+  }
+  const pid_t CHILD = ::fork();
+  ASSERT_NE(CHILD, -1);
+  if (CHILD == 0) {
+    const rlimit ONE{1, 1};
+    if (::setrlimit(RLIMIT_NPROC, &ONE) != 0) {
+      ::_exit(40);
+    }
+    unblockAllHere();
+    int code = 0;
+    try {
+      ThreadPoolLockFree pool(2, 8);
+      if (pool.isValid() || pool.workerCount() != 0) {
+        code = 10; // the pool claims workers that could not start
+      }
+    } catch (...) {
+      code = 20; // the constructor threw instead of reporting an invalid pool
+    }
+    if (blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE)) {
+      code += 1; // the caller's mask was left blocked
+    }
+    ::_exit(code);
+  }
+  int status = 0;
+  ASSERT_EQ(::waitpid(CHILD, &status, 0), CHILD);
+  ASSERT_TRUE(WIFEXITED(status));
+  if (WEXITSTATUS(status) == 40) {
+    GTEST_SKIP() << "the thread limit could not be lowered";
+  }
+  EXPECT_EQ(WEXITSTATUS(status), 0)
+      << "10: pool valid, 20: constructor threw, +1: mask left blocked";
 }
