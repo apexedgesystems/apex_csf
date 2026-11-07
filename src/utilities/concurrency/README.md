@@ -2,7 +2,7 @@
 
 **Namespace:** `apex::concurrency`
 **Platform:** Linux (POSIX), cross-platform compatible
-**C++ Standard:** C++17
+**C++ Standard:** C++20 for the built library (`Semaphore` parks on `std::atomic::wait`); declared in `lib.manifest` as `posix_cpp 20 23`, which the configure step checks by compiling `probe/Probe.cpp` at each dialect. The `mcu/` subset keeps its own C++17 contract.
 
 Thread-safe concurrency primitives optimized for real-time and embedded systems.
 
@@ -364,7 +364,7 @@ public:
 #### Requirements
 
 - `T` must be move-constructible and move-assignable
-- Capacity >= 1 (power-of-two not required)
+- Capacity >= 2 (rounded up to a power of two); the cells are 64-byte aligned, one per cache line
 
 ---
 
@@ -549,29 +549,35 @@ public:
 ```cpp
 class Latch {
 public:
-  explicit Latch(std::ptrdiff_t expected) noexcept;
+  explicit Latch(std::size_t count) noexcept;
 
-  void countDown(std::ptrdiff_t n = 1);
+  void countDown(std::size_t n = 1);
   [[nodiscard]] bool tryWait() const noexcept;
-  void wait() const;
+  void wait();
   template <class Rep, class Period>
-  [[nodiscard]] bool waitFor(const std::chrono::duration<Rep, Period>& timeout) const;
-  void arriveAndWait(std::ptrdiff_t n = 1);
-  [[nodiscard]] std::ptrdiff_t count() const;
+  [[nodiscard]] bool waitFor(const std::chrono::duration<Rep, Period>& timeout);
+  void arriveAndWait(std::size_t n = 1);
+  [[nodiscard]] std::size_t count() const noexcept;
 };
 ```
 
+A waiter may destroy the latch as soon as `wait()`, `waitFor()` or
+`tryWait()` reports it triggered: each takes the mutex the final
+`countDown()` notifies under, so that call is done with the latch first.
+
 #### RT-Safety
 
-| Method            | RT-Safe | Reason                |
-| ----------------- | ------- | --------------------- |
-| `Latch()`         | Yes     | No allocation         |
-| `countDown()`     | No      | Mutex lock, CV notify |
-| `tryWait()`       | Yes     | Single atomic load    |
-| `wait()`          | No      | May block on CV       |
-| `waitFor()`       | No      | Timed wait            |
-| `arriveAndWait()` | No      | Mutex lock, may block |
-| `count()`         | Yes     | Single atomic load    |
+| Method            | RT-Safe | Reason                                          |
+| ----------------- | ------- | ----------------------------------------------- |
+| `Latch()`         | Yes     | No allocation                                   |
+| `countDown()`     | No      | Mutex lock, CV notify                           |
+| `tryWait()`       | Yes\*   | Atomic load; a true result takes the mutex once |
+| `wait()`          | No      | May block on CV                                 |
+| `waitFor()`       | No      | Timed wait                                      |
+| `arriveAndWait()` | No      | Mutex lock, may block                           |
+| `count()`         | Yes     | Single atomic load                              |
+
+\*Note: the mutex is held only by a `countDown()` that is notifying, so the wait is that notify.
 
 ---
 
@@ -595,6 +601,12 @@ public:
   [[nodiscard]] std::size_t generation() const;
 };
 ```
+
+Phase semantics follow `std::barrier`: a phase of E participants
+completes after E arrivals whether they wait or drop; `arriveAndDrop()`
+lowers the participant count from the next phase on, and `expected()`
+reports that next-phase count. A timed-out `arriveAndWaitFor()` withdraws
+its arrival, so the barrier stays usable and a retry is one new arrival.
 
 #### RT-Safety
 
