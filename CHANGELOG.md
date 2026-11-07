@@ -10,6 +10,9 @@ any such change is called out explicitly in its entry.
 
 ### Added
 
+- Executives log their build identity (`git describe`, branch, tree state,
+  build type, compiler, target) as the first System Configuration line.
+  ([#172](https://github.com/apexedgesystems/apex_csf/pull/172))
 - Cached scalar Legendre evaluation from precomputed tables
   (`ScalarTables`) for repeated calls up to a fixed degree.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))

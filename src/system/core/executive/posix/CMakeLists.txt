@@ -51,6 +51,7 @@ apex_add_library(
   DEPS_PRIVATE
   system_core_scheduler
   system_core_filesystem
+  utilities_build_info
 )
 
 # ------------------------------------------------------------------------------
