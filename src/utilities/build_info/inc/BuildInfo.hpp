@@ -24,7 +24,15 @@
  * lives in program memory and the pointer accessors are not declared.
  */
 
+// The compatibility header is reached from the repository root in the source
+// tree, where the manifest probes compile this header, and beside this file
+// in an installed include directory, which lays every library's headers out
+// flat.
+#if __has_include("src/utilities/compatibility/inc/compat_rt_attrs.hpp")
 #include "src/utilities/compatibility/inc/compat_rt_attrs.hpp"
+#else
+#include "compat_rt_attrs.hpp"
+#endif
 
 #include <stddef.h>
 
