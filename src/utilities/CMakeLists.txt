@@ -7,6 +7,7 @@
 
 # Bare-metal compatible trees (header-only, explicitly flagged BAREMETAL, or
 # internally gated per subdirectory)
+add_subdirectory(build_info)
 add_subdirectory(checksums)
 add_subdirectory(compatibility)
 add_subdirectory(concurrency)

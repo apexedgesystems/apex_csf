@@ -265,7 +265,7 @@ jobs:
       # failure propagation; valid inputs alone would stay green if either
       # were removed, so the fixtures assert both verdicts here.
       - name: Helper and gate contracts
-        run: docker compose run --rm -T build-base make check-data-manifest-helper check-data-db-contract
+        run: docker compose run --rm -T build-base make check-data-manifest-helper check-data-db-contract check-build-info
 
   py:
     name: Python tool tests
