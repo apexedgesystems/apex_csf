@@ -34,5 +34,15 @@ fi
 mkdir -p "$OUT"
 tar -czf "$OUT/apex-tools-${VERSION}-x86_64-linux.tar.gz" \
   -C "$(dirname "$TOOLS_BIN")" "$(basename "$TOOLS_BIN")"
-find "$WHEELS" -name '*.whl' -exec cp {} "$OUT/" \;
+# Every wheel copies or the packager fails: a copy error is a broken release
+# asset, never a skipped file.
+copied=0
+while IFS= read -r wheel; do
+  cp -- "$wheel" "$OUT/"
+  copied=$((copied + 1))
+done < <(find "$WHEELS" -name '*.whl')
+if [ "$copied" -ne "$wheel_count" ]; then
+  echo "[package-tools] ERROR: copied $copied of $wheel_count wheels" >&2
+  exit 1
+fi
 echo "[package-tools] apex-tools-${VERSION}-x86_64-linux.tar.gz + ${wheel_count} wheel(s) -> $OUT"

@@ -132,8 +132,12 @@ test-rust:
 
 # Shell tools smoke: exercises ops_sdk_package.sh end to end against a
 # synthetic build tree (a stub struct dictionary) and asserts the SDK
-# tarball's shape. Host-runnable in seconds -- bash and tar only -- so the
-# shell family has an executed check, not just shellcheck's static one.
+# tarball's shape; then package-tools.sh against a stub tools tree and
+# wheel dir: every wheel ships under its name, and a wheel that cannot be
+# copied (its destination name is taken by a directory, which no user can
+# overwrite with a file) fails the packager and leaves that destination as
+# it was. Host-runnable in seconds -- bash and tar only -- so the shell
+# tools have an executed check, not just shellcheck's static one.
 test-sh:
 	$(call log,test,Running shell tools smoke)
 	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
@@ -147,7 +151,20 @@ test-sh:
 	  tar -tzf "$$tarball" | grep -q "SmokeApp/structs/SmokeComponent.json" && \
 	  tar -tzf "$$tarball" | grep -q "SmokeApp/templates/SmokeComponent_SmokeParams.toml" && \
 	  tar -tzf "$$tarball" | grep -q "SmokeApp/README.md"
-	$(call log_ok,test,shell smoke: SDK tarball shape verified)
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+	  mkdir -p "$$tmp/bin/tools/ops" "$$tmp/wheels/ops" "$$tmp/wheels/analysis" "$$tmp/taken" && \
+	  printf '#!/bin/sh\n' > "$$tmp/bin/tools/ops/smoke-tool" && \
+	  printf 'ops' > "$$tmp/wheels/ops/smoke_ops-0.0.0-py3-none-any.whl" && \
+	  printf 'analysis' > "$$tmp/wheels/analysis/smoke_analysis-0.0.0-py3-none-any.whl" && \
+	  bash tools/build/sh/package-tools.sh "$$tmp/bin/tools" "$$tmp/wheels" "$$tmp/out" 0.0.0 > /dev/null && \
+	  test -f "$$tmp/out/apex-tools-0.0.0-x86_64-linux.tar.gz" && \
+	  test "$$(cat "$$tmp/out/smoke_ops-0.0.0-py3-none-any.whl")" = ops && \
+	  test "$$(cat "$$tmp/out/smoke_analysis-0.0.0-py3-none-any.whl")" = analysis && \
+	  mkdir "$$tmp/taken/smoke_ops-0.0.0-py3-none-any.whl" && \
+	  if bash tools/build/sh/package-tools.sh "$$tmp/bin/tools" "$$tmp/wheels" "$$tmp/taken" 0.0.0 > /dev/null 2>&1; then \
+	    printf '[test] package-tools.sh reported success over a failed wheel copy\n' >&2; exit 1; fi && \
+	  test -d "$$tmp/taken/smoke_ops-0.0.0-py3-none-any.whl"
+	$(call log_ok,test,shell smoke: SDK tarball shape verified; package-tools.sh ships every wheel and fails on a failed copy)
 
 # ------------------------------------------------------------------------------
 # Conformance contracts (compat/)
