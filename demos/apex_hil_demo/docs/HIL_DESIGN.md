@@ -413,6 +413,11 @@ Wire format: `[SLIP_END] [opcode:1] [payload:N] [CRC-16:2] [SLIP_END]`
 - Flash: 1 MB, RAM: 128 KB
 - UART: USART1 PA9/PA10 (via FTDI adapter to Pi)
 - LED: PA5 (heartbeat)
+- Boot line: `Build: <identity>` once on USART1 after a successful init,
+  before the first frame. The host flushes its input at init and its SLIP
+  decoder resyncs on a frame end; text arriving after the flush, as across a
+  warm reset, may reach the decoder before the first frame. A terminal reads
+  the line.
 
 ### FTDI Adapter
 

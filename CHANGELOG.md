@@ -13,6 +13,9 @@ any such change is called out explicitly in its entry.
 - Executives log their build identity (`git describe`, branch, tree state,
   build type, compiler, target) as the first System Configuration line.
   ([#172](https://github.com/apexedgesystems/apex_csf/pull/172))
+- Firmware images carry the build identity: the library builds for the MCU
+  platforms, and each firmware writes `Build: <identity>` as its first UART
+  line. ([#181](https://github.com/apexedgesystems/apex_csf/pull/181))
 - Cached scalar Legendre evaluation from precomputed tables
   (`ScalarTables`) for repeated calls up to a fixed degree.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
