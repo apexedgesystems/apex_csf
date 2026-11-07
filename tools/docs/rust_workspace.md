@@ -133,13 +133,15 @@ builds `apex_csf_<name>_tools` if that target exists.
 ```bash
 # build/hosted-x86_64-debug/.env
 export PATH="$PWD/bin/tools/build:$PATH"
+export PYTHONPATH="$PWD/lib/python/build${PYTHONPATH:+:$PYTHONPATH}"
 export PATH="$PWD/bin/tools/ops:$PATH"
+export PYTHONPATH="$PWD/lib/python/ops${PYTHONPATH:+:$PYTHONPATH}"
 export PATH="$PWD/bin/tools/analysis:$PATH"
-export PYTHONPATH="$PWD/lib/python:$PYTHONPATH"
+export PYTHONPATH="$PWD/lib/python/analysis${PYTHONPATH:+:$PYTHONPATH}"
 ```
 
-Lines are appended once per `bin/tools/<dir>` by the env helper; `$PWD`
-keeps the build directory relocatable. Source it from the build
+The env helper appends one PATH line and one PYTHONPATH line per role,
+each once; `$PWD` keeps the build directory relocatable. Source it from the build
 directory:
 
 ```bash

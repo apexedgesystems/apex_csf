@@ -35,12 +35,13 @@ file(
   "  local key=\"$1\" line=\"$2\"\n"
   "  grep -q \"$key\" \"$ENV_FILE\" 2>/dev/null || printf '%s\\n' \"$line\" >> \"$ENV_FILE\"\n"
   "}\n"
-  "add_if_missing 'PYTHONPATH.*lib/python' 'export PYTHONPATH=\"$PWD/lib/python:$PYTHONPATH\"'\n"
 )
-# One PATH line per role.
+# One PATH line and one PYTHONPATH line per role.
 foreach (_role IN LISTS _APEX_TOOL_ROLES)
-  file(APPEND "${_ENV_HELPER}"
-       "add_if_missing 'bin/tools/${_role}' 'export PATH=\"$PWD/bin/tools/${_role}:$PATH\"'\n"
+  file(
+    APPEND "${_ENV_HELPER}"
+    "add_if_missing 'bin/tools/${_role}' 'export PATH=\"$PWD/bin/tools/${_role}:$PATH\"'\n"
+    "add_if_missing 'lib/python/${_role}' 'export PYTHONPATH=\"$PWD/lib/python/${_role}\${PYTHONPATH:+:\$PYTHONPATH}\"'\n"
   )
 endforeach ()
 
@@ -244,11 +245,12 @@ endif ()
 # ------------------------------------------------------------------------------
 
 # One uv workspace at tools/ (one lock); each member under <role>/py/<package>
-# is its own distribution. Per role: build each member's wheel into
-# tools-wheels/<role>, install it into lib/python and move its console
-# scripts to bin/tools/<role>. tools-wheels is a fixed name: the release
-# packaging (tools/build/sh/package-tools.sh via make artifact-tools) and the
-# builder prune whitelist key on it.
+# is its own distribution. Per role: build
+# each member's wheel into tools-wheels/<role>, install it into
+# lib/python/<role> and move its console scripts to bin/tools/<role>.
+# tools-wheels is a fixed name: the release packaging
+# (tools/build/sh/package-tools.sh via make artifact-tools) and the builder
+# prune whitelist key on it.
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml")
   find_program(UV_EXECUTABLE uv)
   find_program(PIP_EXECUTABLE pip3 pip)
@@ -267,6 +269,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml")
 
       set(_py_out "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/${_role}")
       set(_py_wheels "${_PY_WHEELS}/${_role}")
+      set(_py_lib "${_PY_LIB}/${_role}")
       set(_py_stamp "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/py-${_role}-tools.built")
       set(_py_script "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-build-py-${_role}-tools.sh")
       file(GLOB_RECURSE _py_sources CONFIGURE_DEPENDS
@@ -286,24 +289,48 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml")
         )
       endforeach ()
 
+      # Each role's script owns its wheel dir and its library dir outright
+      # (the roles build in parallel) and rebuilds both from scratch, so
+      # nothing from an earlier manifest lingers. Each member installs first
+      # without dependencies, so lib/bin holds exactly its console scripts:
+      # every script the wheel declares (the [console_scripts] of its
+      # dist-info entry points; the dist-info is named by the wheel's first
+      # two fields) is copied to bin/tools/<role>, a declared script that pip
+      # did not write fails the build, and lib/bin is dropped before the next
+      # member (pip replaces an existing target bin dir wholesale). The
+      # dependencies install second; their console scripts stay out of the
+      # role's bin dir.
+      #
       # Offline enforcement comes from the environment: the build image sets
       # UV_OFFLINE=1 against its baked uv cache (which also holds the build
       # backend's resolution metadata) and PIP_NO_INDEX/PIP_FIND_LINKS against
-      # the wheelhouse for the pip installs below. Local dev (no such env)
-      # resolves online from PyPI.
+      # the wheelhouse for the pip installs. Local dev (no such env) resolves
+      # online from PyPI.
       file(
         WRITE "${_py_script}"
-        "#!/bin/bash\nset -e\n"
-        "rm -rf '${_py_wheels}'\n"
-        "mkdir -p '${_py_out}' '${_PY_LIB}' '${_py_wheels}'\n"
+        "#!/bin/bash\nset -eo pipefail\n"
+        "rm -rf '${_py_wheels}' '${_py_lib}'\n"
+        "mkdir -p '${_py_out}' '${_py_lib}' '${_py_wheels}'\n"
         "${_py_build}"
         "for w in '${_py_wheels}'/*.whl; do\n"
-        "  '${PIP_EXECUTABLE}' install --quiet --no-deps --target '${_PY_LIB}' --upgrade \"$w\"\n"
-        "  cp -f '${_PY_LIB}/bin'/* '${_py_out}/' 2>/dev/null || true\n"
-        "  rm -rf '${_PY_LIB}/bin'\n"
-        "  '${PIP_EXECUTABLE}' install --quiet --target '${_PY_LIB}' --upgrade \"$w\"\n"
-        "  rm -rf '${_PY_LIB}/bin'\n"
+        "  '${PIP_EXECUTABLE}' install --quiet --no-deps --target '${_py_lib}' --upgrade \"$w\"\n"
+        "  IFS=- read -r dist ver _ <<< \"$(basename \"$w\")\"\n"
+        "  ep='${_py_lib}'/\"$dist-$ver.dist-info/entry_points.txt\"\n"
+        "  if [ -f \"$ep\" ]; then\n"
+        "    sed -n '/^\\[console_scripts\\]/,/^\\[/{s/^\\([^=[ ]*\\) *=.*/\\1/p}' \"$ep\" | while read -r name; do\n"
+        "      if [ ! -f '${_py_lib}/bin'/\"$name\" ]; then\n"
+        "        echo \"${PROJECT_NAME}: $ep declares console script $name but pip wrote none\" >&2\n"
+        "        exit 1\n"
+        "      fi\n"
+        "      cp -f '${_py_lib}/bin'/\"$name\" '${_py_out}'/\"$name\"\n"
+        "    done\n"
+        "  fi\n"
+        "  rm -rf '${_py_lib}/bin'\n"
         "done\n"
+        "for w in '${_py_wheels}'/*.whl; do\n"
+        "  '${PIP_EXECUTABLE}' install --quiet --target '${_py_lib}' --upgrade \"$w\"\n"
+        "done\n"
+        "rm -rf '${_py_lib}/bin'\n"
         "mkdir -p '${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps'\n"
         "touch '${_py_stamp}'\n"
       )

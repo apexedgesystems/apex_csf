@@ -29,7 +29,6 @@ TEST_LOG ?= ctest.log
 
 # Python tools directory
 PY_TOOLS_DIR := tools
-PY_LIB_DIR   := $(BUILD_DIR)/lib/python
 
 # ------------------------------------------------------------------------------
 # CTest Command Presets
