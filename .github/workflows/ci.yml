@@ -96,6 +96,10 @@ jobs:
               # image used by lint/static; the cuda image used by build-test) plus
               # the base compose -- a change here can alter every build.
               docker/base.Dockerfile|docker/dev/cpu.Dockerfile|docker/dev/cuda.Dockerfile|docker-compose.yml) allflag=true ;;
+              # The tools packager has an executed regression in the shell suite
+              # (every wheel shipped; a failed copy fails), so a change to it
+              # runs that job.
+              tools/build/sh/package-tools.sh) sh=true ;;
               # Leaf cross/firmware images and the scripts they COPY are built and
               # verified post-merge (docker-images.yml) + locally, and no gate job
               # runs in them, so a change confined here needs only lint -- not the
