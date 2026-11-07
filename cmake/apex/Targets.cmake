@@ -454,8 +454,9 @@ endfunction ()
 # apex_add_tool(...)
 #
 # Define a CLI executable. A tool lives at tools/<role>/cpp/<tool> and outputs
-# to bin/tools/<role> beside the role's other languages; installs unless
-# NO_INSTALL.
+# to bin/tools/<role> beside the role's other languages. A build-role tool is
+# part of a plain build and installs unless NO_INSTALL; a tool of any other
+# role builds on request through its role aggregate and does not install.
 #
 # By default, tools require POSIX and are skipped on bare-metal builds.
 # Use the BAREMETAL flag to opt a tool into bare-metal compilation.

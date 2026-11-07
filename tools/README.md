@@ -46,7 +46,8 @@ its sources, tests and docs beside its manifest:
 | C++      | a tool directory        | `CMakeLists.txt`, `src/`, `inc/`, `utst/`             | `apex_add_tool`, which derives the role from the directory |
 | Shell    | a script under `sh/bin` | `bin/`, `docs/`                                       | copied as it is                                            |
 
-Mechanics and recipes: [docs/rust_workspace.md](docs/rust_workspace.md);
+Mechanics and recipes: [docs/rust_workspace.md](docs/rust_workspace.md),
+[docs/python_tools.md](docs/python_tools.md#the-workspace-and-the-lock);
 the tools themselves: [docs/rust_tools.md](docs/rust_tools.md),
 [docs/python_tools.md](docs/python_tools.md),
 [registry-info](analysis/cpp/registry_info/docs/registry_info.md),
@@ -100,10 +101,12 @@ every one of them:
    `TOOL_ROLES` in `mk/tools.mk`.
 2. Rust: add `"<role>/rust/*"` to `members` in `tools/Cargo.toml`, which
    names each role. Python: the `*/py/*` glob in `tools/pyproject.toml`
-   takes the role's packages as they appear.
+   already spans every role; a member exists to the build once `uv lock`
+   has recorded it.
 3. For each new crate or package, follow the member steps in
-   [docs/rust_workspace.md](docs/rust_workspace.md#adding-things) or
-   [docs/python_tools.md](docs/python_tools.md), and add its manifest
-   `COPY` line to the image bake in `docker/base.Dockerfile`; a Python
-   package also joins the `--cov` list of `coverage-py` in `mk/test.mk`.
+   [docs/rust_workspace.md](docs/rust_workspace.md#a-member-crate) or
+   [docs/python_tools.md](docs/python_tools.md#a-member-package): the
+   manifest, the lock, the manifest `COPY` line in the image bake
+   (`docker/base.Dockerfile`) and, for a Python package, the `--cov`
+   entry of `coverage-py` in `mk/test.mk`.
 4. Give the role a CI scope only if it should gate on its own.
