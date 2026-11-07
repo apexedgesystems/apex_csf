@@ -63,6 +63,7 @@
 #include <functional>
 #include <memory>
 #include <span>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -143,12 +144,20 @@ public:
    * Creates a ThreadPoolLockFree with the configured thread count.
    * The pool persists for the driver's lifetime, reused across execute().
    *
+   * @throws std::runtime_error when the pool could not start its workers
+   *         (the process or thread limit). A driver over an empty pool would
+   *         report every run of execute() complete without running one, so
+   *         none is built.
    * @note NOT RT-safe: Spawns worker threads.
    */
   explicit MonteCarloDriver(RunFn runFn, DriverConfig config = {})
       : runFn_(std::move(runFn)), config_(config),
         pool_(std::make_unique<concurrency::ThreadPoolLockFree>(resolveThreadCount(config),
-                                                                resolveThreadCount(config))) {}
+                                                                resolveThreadCount(config))) {
+    if (!pool_->isValid()) {
+      throw std::runtime_error("MonteCarloDriver: the worker pool could not start its threads");
+    }
+  }
 
   ~MonteCarloDriver() = default;
 

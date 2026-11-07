@@ -7,7 +7,7 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Sources (5 files)
+# Sources (5 files, plus the concurrency tests' thread-launch seam)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
@@ -16,6 +16,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/SweepGenerator_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/MonteCarloExport_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ConvergenceTracker_uTest.cpp"
+    "${CMAKE_SOURCE_DIR}/src/utilities/concurrency/utst/support/ThreadStartFault.cpp"
 )
 
 # ------------------------------------------------------------------------------
@@ -29,6 +30,7 @@ apex_add_gtest(
   ${UNIT_TEST_SOURCES}
   LINK
   system_core_monte_carlo
+  ${CMAKE_DL_LIBS}
   LABELS
   system
   monte_carlo
