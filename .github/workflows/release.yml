@@ -73,6 +73,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # The Python workspace names its members; the version check asks it.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.29"
       - name: Read builder targets and released apps from the registries
         id: list
         run: |
@@ -106,9 +111,12 @@ jobs:
           # The tool families version with the project, so their binaries
           # self-report the release they shipped in (--version, wheel metadata).
           rust_version=$(sed -n 's/^version = "\([0-9.]*\)"/\1/p' tools/Cargo.toml | head -1)
-          # Every Python member versions with the workspace root.
+          # Every Python member versions with the workspace root; uv names the
+          # members (the workspace's members and exclude in tools/pyproject.toml).
           pairs="tools/Cargo.toml:$rust_version"
-          for f in tools/pyproject.toml tools/*/py/*/pyproject.toml; do
+          members=$(uv export --directory tools --frozen --all-packages --no-dev --no-hashes --format requirements-txt | sed -n 's|^-e \./||p')
+          [ -n "$members" ] || { echo "ERROR: uv export named no workspace members"; exit 1; }
+          for f in tools/pyproject.toml $(for m in $members; do echo "tools/$m/pyproject.toml"; done); do
             v=$(sed -n 's/^version = "\([0-9.]*\)"/\1/p' "$f" | head -1)
             pairs="$pairs $f:$v"
           done
@@ -388,6 +396,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # The wheel count is the Python workspace's resolved member count.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.11.29"
 
       - name: Download platform artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
@@ -431,7 +444,7 @@ jobs:
           want_platform=$(python3 -c 'import json,os; print(len(json.loads(os.environ["BUILDERS"])))')
           want_apps=$(python3 -c 'import json,os; print(len(json.loads(os.environ["APPS"])))')
           n_wheels=$(ls dist/*.whl | wc -l)
-          want_wheels=$(ls tools/*/py/*/pyproject.toml | wc -l)
+          want_wheels=$(uv export --directory tools --frozen --all-packages --no-dev --no-hashes --format requirements-txt | grep -c '^-e \./')
           echo "platform tarballs: $n_platform/$want_platform, app packages: $n_apps/$want_apps, wheels: $n_wheels/$want_wheels"
           [ "$n_platform" -eq "$want_platform" ] || { echo "ERROR: missing platform tarballs"; exit 1; }
           [ "$n_apps" -eq "$want_apps" ] || { echo "ERROR: missing app packages"; exit 1; }

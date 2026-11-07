@@ -114,12 +114,16 @@ testp-cuda: debug
 
 # Python tools unit tests. uv keeps the env in-tree (.venv) and resolves
 # offline in the build images from the baked uv cache (UV_OFFLINE=1).
+# `uv lock --check` first: the build, the release and the image bake read the
+# workspace's members and dependencies from the lock with --frozen, so the
+# lock must agree with the manifests (the check resolves offline from the
+# cache).
 # --no-editable: test the project installed the way the wheel ships, and skip
 # the editable-install machinery (its `editables` backend never enters the
 # lock, so an editable sync could not resolve offline anyway).
 test-py:
 	$(call log,test,Running Python tools tests)
-	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable --all-packages && (uv run --no-sync pytest -v || test $$? -eq 5)
+	@cd "$(PY_TOOLS_DIR)" && uv lock --check && uv sync --frozen --no-editable --all-packages && (uv run --no-sync pytest -v || test $$? -eq 5)
 
 # Rust tools unit tests
 test-rust:

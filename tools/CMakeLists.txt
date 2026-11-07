@@ -245,7 +245,7 @@ endif ()
 # ------------------------------------------------------------------------------
 
 # One uv workspace at tools/ (one lock); each member under <role>/py/<package>
-# is its own distribution. Per role: build
+# is its own distribution and uv says which members exist. Per role: build
 # each member's wheel into tools-wheels/<role>, install it into
 # lib/python/<role> and move its console scripts to bin/tools/<role>.
 # tools-wheels is a fixed name: the release packaging
@@ -259,10 +259,45 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml")
     set(_PY_LIB "${CMAKE_BINARY_DIR}/lib/python")
     set(_PY_WHEELS "${CMAKE_BINARY_DIR}/tools-wheels")
 
-    foreach (_role IN LISTS _APEX_TOOL_ROLES)
-      file(GLOB _py_members CONFIGURE_DEPENDS
-           "${CMAKE_CURRENT_SOURCE_DIR}/${_role}/py/*/pyproject.toml"
+    # uv owns workspace membership (members and exclude in tools/pyproject.toml):
+    # its export lists each resolved member as an editable path, and a
+    # member's role is the directory that path starts with. The manifests and
+    # the lock are configure inputs, so a membership edit reconfigures; a
+    # failed export stops configure with uv's message.
+    file(GLOB _py_manifests CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*/py/*/pyproject.toml")
+    set_property(
+      DIRECTORY
+      APPEND
+      PROPERTY CMAKE_CONFIGURE_DEPENDS ${_py_manifests}
+               "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml" "${CMAKE_CURRENT_SOURCE_DIR}/uv.lock"
+    )
+    execute_process(
+      COMMAND "${UV_EXECUTABLE}" export --directory "${CMAKE_CURRENT_SOURCE_DIR}" --frozen
+              --all-packages --no-dev --no-hashes --format requirements-txt
+      OUTPUT_VARIABLE _uv_export
+      ERROR_VARIABLE _uv_export_err
+      RESULT_VARIABLE _uv_export_rc
+    )
+    if (NOT _uv_export_rc EQUAL 0)
+      message(
+        FATAL_ERROR
+          "${PROJECT_NAME}: uv export failed for ${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml:\n${_uv_export_err}"
       )
+    endif ()
+    string(REGEX MATCHALL "-e \\./[^\n]+" _py_member_lines "${_uv_export}")
+    set(_py_member_dirs "")
+    foreach (_line IN LISTS _py_member_lines)
+      string(REGEX REPLACE "^-e \\./" "" _rel "${_line}")
+      list(APPEND _py_member_dirs "${_rel}")
+    endforeach ()
+
+    foreach (_role IN LISTS _APEX_TOOL_ROLES)
+      set(_py_members "")
+      foreach (_rel IN LISTS _py_member_dirs)
+        if (_rel MATCHES "^${_role}/py/")
+          list(APPEND _py_members "${CMAKE_CURRENT_SOURCE_DIR}/${_rel}/pyproject.toml")
+        endif ()
+      endforeach ()
       if (NOT _py_members)
         continue()
       endif ()
