@@ -1261,3 +1261,224 @@ TEST(ActionInterface, TimeoutAbortFiresAbortEvent) {
   EXPECT_GE(noteCtx.callCount, 1U);
   EXPECT_GE(iface.stats.abortEventsDispatched, 1U);
 }
+
+/* ----------------------------- Running Gauge ----------------------------- */
+
+/**
+ * @test An ATS whose steps time out and SKIP keeps running without moving the
+ * step or arm counters; the running gauge is what reports it, and it drops to
+ * zero only once the last step completes.
+ *
+ * The fixture is the action demo's fault campaign as DataTransform builds it:
+ * five command steps per fault at absolute offsets 100, 200 and 350 cycles
+ * (durations 0, 50, 0), each with a 50-cycle timeout and the SKIP policy.
+ */
+TEST(ActionInterface, SkippedTimeoutsKeepASequenceRunningWithoutSteppingTheCounters) {
+  CommandCtx cmdCtx;
+  ActionInterface iface{};
+  iface.commandHandler = {testCommandHandler, &cmdCtx};
+
+  auto& seq = iface.sequences[0];
+  seq.type = system_core::data::SequenceType::ATS;
+  seq.armed = true;
+  seq.stepCount = 15;
+  const std::uint32_t TRIGGERS[] = {100, 200, 350};
+  const std::uint32_t DURATIONS[] = {0, 50, 0};
+  const std::uint16_t OPCODES[] = {0x0609, 0x0601, 0x0603, 0x060A, 0x0602};
+  for (std::uint8_t f = 0; f < 3; ++f) {
+    for (std::uint8_t j = 0; j < 5; ++j) {
+      auto& step = seq.steps[5 * f + j];
+      step.delayCycles = TRIGGERS[f] + ((j == 4) ? DURATIONS[f] : 0);
+      step.timeoutCycles = 50;
+      step.onTimeout = system_core::data::StepTimeoutPolicy::SKIP;
+      initCommandAction(step.action, 0xCA00, ActionTrigger::IMMEDIATE, 0, OPCODES[j]);
+    }
+  }
+  system_core::data::startSequence(seq, 0);
+
+  // Through cycle 199 the first fault's steps have fired and the second
+  // fault's first step waits on its absolute offset: the step and arm
+  // counters hold still for a run of consecutive cycles longer than any
+  // fixed quiet window the checkout could choose, while the sequence keeps
+  // running and the gauge says so.
+  std::uint32_t previousSteps = 0;
+  std::uint32_t previousArms = 0;
+  std::uint32_t unchangedRun = 0;
+  for (std::uint32_t cycle = 1; cycle <= 199; ++cycle) {
+    const std::uint8_t RUNNING = processCycle(iface, cycle);
+    const bool SAME = iface.stats.sequenceSteps == previousSteps &&
+                      iface.stats.armControlsApplied == previousArms;
+    unchangedRun = SAME ? unchangedRun + 1 : 0;
+    previousSteps = iface.stats.sequenceSteps;
+    previousArms = iface.stats.armControlsApplied;
+    EXPECT_EQ(RUNNING, 1U) << "cycle " << cycle;
+    EXPECT_TRUE(system_core::data::isRunning(seq)) << "cycle " << cycle;
+  }
+  EXPECT_GE(unchangedRun, 60U)
+      << "the counters were flat for six seconds at 10 Hz and the sequence "
+         "still ran";
+  EXPECT_GT(iface.stats.sequenceTimeouts, 0U) << "the waits timed out and were skipped";
+
+  // The second fault's ARM_ENTRY still arrives: silence was not completion.
+  const std::uint32_t COMMANDS_BEFORE = cmdCtx.callCount;
+  for (std::uint32_t cycle = 200; cycle <= 210; ++cycle) {
+    processCycle(iface, cycle);
+  }
+  EXPECT_GT(cmdCtx.callCount, COMMANDS_BEFORE);
+
+  // Run the campaign out: the cycle's count reports completion, nothing else does.
+  std::uint8_t running = 1;
+  for (std::uint32_t cycle = 211; cycle <= 450; ++cycle) {
+    running = processCycle(iface, cycle);
+  }
+  EXPECT_FALSE(system_core::data::isRunning(seq));
+  EXPECT_EQ(running, 0U);
+}
+
+namespace {
+
+/// Running sequences by the engine's own predicate, the value the cycle must return.
+std::uint8_t runningByPredicate(const ActionInterface& iface) {
+  std::uint8_t count = 0;
+  for (const auto& seq : iface.sequences) {
+    if (system_core::data::isRunning(seq)) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+/// A one-step resident sequence: an immediate command, armed, with an optional delay.
+void setupOneStep(system_core::data::DataSequence& seq, std::uint16_t id, std::uint32_t delay) {
+  seq.sequenceId = id;
+  seq.armed = true;
+  seq.stepCount = 1;
+  seq.steps[0].delayCycles = delay;
+  initCommandAction(seq.steps[0].action, 0x7800, ActionTrigger::IMMEDIATE, 0, id);
+}
+
+/// One cycle, then its returned count against the predicate; returns the count.
+std::uint8_t cycleAndCheck(ActionInterface& iface, std::uint32_t cycle, const char* what) {
+  const std::uint8_t RUNNING = processCycle(iface, cycle);
+  EXPECT_EQ(RUNNING, runningByPredicate(iface)) << what << " cycle " << cycle;
+  return RUNNING;
+}
+
+} // namespace
+
+/**
+ * @test The returned count is the cycle's end state: a chain into an earlier slot, a sequence
+ * chaining to itself, a cleanup started by an abort event and a disarm by an ARM_CONTROL action
+ * all change what runs after the slot walk counted it, and the count reports what runs when the
+ * cycle ends.
+ */
+TEST(ActionInterface, RunningCountIsTheCycleEndState) {
+  // A chain into an earlier slot (the target was walked before its starter completed).
+  for (const bool BACKWARD : {false, true}) {
+    CommandCtx cmdCtx;
+    ActionInterface iface{};
+    iface.commandHandler = {testCommandHandler, &cmdCtx};
+    auto& from = iface.sequences[BACKWARD ? 1 : 0];
+    auto& to = iface.sequences[BACKWARD ? 0 : 1];
+    setupOneStep(from, 100, 0);
+    setupOneStep(to, 200, 5);
+    from.steps[0].onComplete = system_core::data::StepCompletionAction::START_RTS;
+    from.steps[0].chainTargetId = 200;
+    system_core::data::startSequence(from);
+    const char* WHAT = BACKWARD ? "backward chain" : "forward chain";
+    // The forward target is walked in the cycle that started it, so its
+    // five-cycle delay runs out one cycle sooner than the backward target's.
+    const std::uint32_t LAST_RUNNING = BACKWARD ? 4 : 3;
+    EXPECT_EQ(cycleAndCheck(iface, 0, WHAT), 1U) << "the chained sequence runs when cycle 0 ends";
+    for (std::uint32_t cycle = 1; cycle <= LAST_RUNNING; ++cycle) {
+      EXPECT_EQ(cycleAndCheck(iface, cycle, WHAT), 1U);
+    }
+    for (std::uint32_t cycle = LAST_RUNNING + 1; cycle <= 6; ++cycle) {
+      EXPECT_EQ(cycleAndCheck(iface, cycle, WHAT), 0U);
+    }
+    EXPECT_EQ(cmdCtx.callCount, 2U) << WHAT;
+  }
+
+  // A sequence chaining to itself completes and restarts inside the same cycle, every cycle.
+  {
+    CommandCtx cmdCtx;
+    ActionInterface iface{};
+    iface.commandHandler = {testCommandHandler, &cmdCtx};
+    auto& seq = iface.sequences[0];
+    setupOneStep(seq, 100, 0);
+    seq.steps[0].onComplete = system_core::data::StepCompletionAction::START_RTS;
+    seq.steps[0].chainTargetId = 100;
+    system_core::data::startSequence(seq);
+    for (std::uint32_t cycle = 0; cycle < 5; ++cycle) {
+      EXPECT_EQ(cycleAndCheck(iface, cycle, "self chain"), 1U);
+    }
+    EXPECT_EQ(cmdCtx.callCount, 5U);
+  }
+
+  // A cleanup sequence started by an abort event dispatched after the slot walk.
+  {
+    CommandCtx cmdCtx;
+    ActionInterface iface{};
+    iface.commandHandler = {testCommandHandler, &cmdCtx};
+    auto& first = iface.sequences[0];
+    auto& cleanup = iface.sequences[1];
+    setupOneStep(first, 100, 0);
+    first.abortEventId = 300;
+    setupOneStep(cleanup, 200, 5);
+    cleanup.eventId = 300;
+    system_core::data::startSequence(first);
+    system_core::data::abortSequence(first);
+    rebuildEventIndex(iface);
+    EXPECT_EQ(cycleAndCheck(iface, 0, "abort start"), 1U) << "the cleanup runs when cycle 0 ends";
+    for (std::uint32_t cycle = 1; cycle <= 4; ++cycle) {
+      EXPECT_EQ(cycleAndCheck(iface, cycle, "abort start"), 1U);
+    }
+    EXPECT_EQ(cycleAndCheck(iface, 5, "abort start"), 0U);
+    EXPECT_EQ(iface.stats.abortEventsDispatched, 1U);
+  }
+
+  // An ARM_CONTROL action disarming a running sequence, applied after the slot walk.
+  {
+    CommandCtx cmdCtx;
+    ActionInterface iface{};
+    iface.commandHandler = {testCommandHandler, &cmdCtx};
+    setupOneStep(iface.sequences[0], 100, 10);
+    system_core::data::startSequence(iface.sequences[0]);
+    DataAction stop{};
+    initArmControlAction(stop, ArmControlTarget::SEQUENCE, 0, false, ActionTrigger::IMMEDIATE, 0);
+    ASSERT_EQ(queueAction(iface, stop), ActionStatus::SUCCESS);
+    EXPECT_EQ(cycleAndCheck(iface, 0, "action disarm"), 0U) << "nothing runs when cycle 0 ends";
+    EXPECT_EQ(cycleAndCheck(iface, 1, "action disarm"), 0U);
+    EXPECT_EQ(iface.stats.armControlsApplied, 1U);
+  }
+
+  // An ordinary RTS and ATS with one two-cycle step run out: the RTS step's delay counts ticks,
+  // so it fires on its second tick; the ATS step's delay is an offset from the start cycle, so
+  // it fires in cycle 2. A reset while one is still running empties the tables: the next cycle
+  // counts nothing.
+  for (const auto TYPE :
+       {system_core::data::SequenceType::RTS, system_core::data::SequenceType::ATS}) {
+    CommandCtx cmdCtx;
+    ActionInterface iface{};
+    iface.commandHandler = {testCommandHandler, &cmdCtx};
+    setupOneStep(iface.sequences[0], 100, 2);
+    iface.sequences[0].type = TYPE;
+    system_core::data::startSequence(iface.sequences[0], 0);
+    const bool ATS = TYPE == system_core::data::SequenceType::ATS;
+    const char* WHAT = ATS ? "ats" : "rts";
+    const std::uint32_t FIRES_AT = ATS ? 2 : 1;
+    for (std::uint32_t cycle = 0; cycle <= 3; ++cycle) {
+      EXPECT_EQ(cycleAndCheck(iface, cycle, WHAT), cycle < FIRES_AT ? 1U : 0U)
+          << WHAT << " fires in cycle " << FIRES_AT << " and ends there";
+    }
+    EXPECT_EQ(cmdCtx.callCount, 1U) << WHAT;
+
+    setupOneStep(iface.sequences[1], 101, 10);
+    iface.sequences[1].type = TYPE;
+    system_core::data::startSequence(iface.sequences[1], 4);
+    EXPECT_EQ(cycleAndCheck(iface, 4, WHAT), 1U);
+    resetInterface(iface);
+    EXPECT_EQ(runningByPredicate(iface), 0U) << WHAT;
+    EXPECT_EQ(cycleAndCheck(iface, 5, WHAT), 0U) << WHAT;
+  }
+}

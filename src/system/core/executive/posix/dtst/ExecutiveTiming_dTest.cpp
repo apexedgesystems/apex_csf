@@ -171,7 +171,7 @@ TEST_F(ExecutiveTimingTest, NominalRunTracksWallAtParity) {
   const auto SPAN_MS = std::chrono::duration_cast<std::chrono::milliseconds>(T_B - T_A).count();
   EXPECT_NEAR(static_cast<double>(SPAN_MS), 2000.0, 150.0);
 
-  const auto& HP = exec_->getHealthPacket();
+  const auto HP = exec_->getHealthPacket();
   EXPECT_EQ(HP.clockCycles, TARGET);
   // Cycle-target shutdown races the final signaled tick: the task
   // thread's post-wake shutdown check may retire it before executing
@@ -209,7 +209,7 @@ TEST_F(ExecutiveTimingTest, ShortStallIsRepaidByCatchUpBurst) {
   const auto SPAN_MS = std::chrono::duration_cast<std::chrono::milliseconds>(T_B - T_A).count();
   EXPECT_NEAR(static_cast<double>(SPAN_MS), 2500.0, 250.0);
 
-  const auto& HP = exec_->getHealthPacket();
+  const auto HP = exec_->getHealthPacket();
   EXPECT_EQ(HP.clockCycles, TARGET);
   // Cycle-target shutdown races the final signaled tick: the task
   // thread's post-wake shutdown check may retire it before executing
@@ -243,7 +243,7 @@ TEST_F(ExecutiveTimingTest, LongStallResyncsWithCountedDrop) {
   const auto T_B = waitForClockCycles(TARGET, std::chrono::seconds(10));
   runner_.join();
 
-  const auto& HP = exec_->getHealthPacket();
+  const auto HP = exec_->getHealthPacket();
   EXPECT_GE(HP.resyncDroppedTicks, 150u);
   EXPECT_LE(HP.resyncDroppedTicks, 175u);
 
@@ -292,7 +292,7 @@ TEST_F(ExecutiveTimingTest, PauseIsSuspendedNotOwed) {
   const auto SPAN_MS = std::chrono::duration_cast<std::chrono::milliseconds>(T_B - T_A).count();
   EXPECT_NEAR(static_cast<double>(SPAN_MS), 3200.0, 250.0);
 
-  const auto& HP = exec_->getHealthPacket();
+  const auto HP = exec_->getHealthPacket();
   EXPECT_EQ(HP.resyncDroppedTicks, 0u);
   EXPECT_EQ(HP.clockCycles, TARGET);
   EXPECT_GE(HP.taskExecutionCycles, TARGET - 1);

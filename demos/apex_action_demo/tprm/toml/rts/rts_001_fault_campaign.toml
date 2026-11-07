@@ -369,7 +369,9 @@ reserved         = { type = "uint", size = 1, value = 0 }
 reserved         = { type = "uint", size = 1, value = 0 }
 
 # ==============================================================================
-# Step 9: NOOP placeholder, onComplete = START_RTS, gotoStep = 1 (RTS slot 1)
+# Step 9: NOOP placeholder, onComplete = START_RTS, gotoStep = 2: the sequence
+# id of RTS 002 (cleanup). START_RTS resolves gotoStep as a sequence id through
+# the catalog, not as a bank slot.
 # ==============================================================================
 [StandaloneSequenceTprm.step_9]
 targetFullUid    = { type = "uint", size = 4, value = "0x000500" }
@@ -387,7 +389,7 @@ delayCycles      = { type = "uint", size = 4, value = 0 }
 timeoutCycles    = { type = "uint", size = 4, value = 50 }
 onTimeout        = { type = "uint", size = 1, value = "SKIP" }
 onComplete       = { type = "uint", size = 1, value = "START_RTS" }
-gotoStep         = { type = "uint", size = 1, value = 1 }
+gotoStep         = { type = "uint", size = 1, value = 2 }
 retryMax         = { type = "uint", size = 1, value = 0 }
 
 [StandaloneSequenceTprm.step_9.waitCondition]

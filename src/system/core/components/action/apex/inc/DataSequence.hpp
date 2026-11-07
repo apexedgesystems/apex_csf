@@ -23,7 +23,7 @@
  *   - Retry: on timeout with SKIP policy, retry the step up to retryMax
  *     times before actually skipping.
  *   - Branching: onComplete can advance linearly (NEXT), jump to a step
- *     (GOTO_STEP), or start another sequence by slot index (START_RTS).
+ *     (GOTO_STEP), or start another sequence by sequence id (START_RTS).
  *
  * Connection to watchpoints:
  *   A watchpoint or group fires an eventId. Sequences bound to that eventId
@@ -179,7 +179,7 @@ enum class StepTimeoutPolicy : std::uint8_t {
 enum class StepCompletionAction : std::uint8_t {
   NEXT = 0,      ///< Advance to next step (default linear execution).
   GOTO_STEP = 1, ///< Jump to gotoStep index.
-  START_RTS = 2  ///< Start another sequence by slot index (gotoStep = slot).
+  START_RTS = 2  ///< Start another sequence by id (the file's gotoStep, resolved via catalog).
 };
 
 /**
