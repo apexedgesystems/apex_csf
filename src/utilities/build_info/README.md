@@ -33,22 +33,29 @@ sysLog->info(label(), fmt::format("Build: {}", apex::build_info::summary()));
 // Build: apex_csf v0.0.1-165-g7c9d744 (main) tree=clean Release Clang-21.1.8 Linux/x86_64
 ```
 
-| Accessor         | Example                    | Source                                                                            |
-| ---------------- | -------------------------- | --------------------------------------------------------------------------------- |
-| `summary()`      | the line above             | project, describe, branch, tree state, build type, compiler, target               |
-| `project()`      | `apex_csf`                 | CMake project name                                                                |
-| `version()`      | `0.0.1`                    | CMake project version                                                             |
-| `describe()`     | `v0.0.1-165-g7c9d744a07c7` | `git describe --tags --always --abbrev=12`, `-dirty` appended from the tree state |
-| `commit()`       | `7c9d744a07c7`             | `git rev-parse --short=12 HEAD`                                                   |
-| `branch()`       | `main`, `HEAD` (detached)  | `git rev-parse --abbrev-ref HEAD`                                                 |
-| `treeState()`    | `clean`, `3f1c0a9b7d2e`    | the working tree's git tree id, first twelve hex; see 2                           |
-| `dirty()`        | `false`                    | `treeState()` names a tree other than HEAD's; `false` for `clean` and `unknown`   |
-| `buildType()`    | `Release`                  | the configuration built                                                           |
-| `compiler()`     | `Clang-21.1.8`             | CMake compiler id and version                                                     |
-| `targetSystem()` | `Linux/x86_64`             | CMake system name and processor; HAL platform, processor and board on firmware    |
+| Accessor          | Example                    | Source                                                                            |
+| ----------------- | -------------------------- | --------------------------------------------------------------------------------- |
+| `summary()`       | the line above             | project, describe, branch, tree state, build type, compiler, target               |
+| `project()`       | `apex_csf`                 | CMake project name                                                                |
+| `version()`       | `0.0.1`                    | CMake project version                                                             |
+| `describe()`      | `v0.0.1-165-g7c9d744a07c7` | `git describe --tags --always --abbrev=12`, `-dirty` appended from the tree state |
+| `commit()`        | `7c9d744a07c7`             | `git rev-parse --short=12 HEAD`                                                   |
+| `branch()`        | `main`, `HEAD` (detached)  | `git rev-parse --abbrev-ref HEAD`                                                 |
+| `treeState()`     | `clean`, `3f1c0a9b7d2e`    | the working tree's git tree id, first twelve hex; see 2                           |
+| `dirty()`         | `false`                    | `treeState()` names a tree other than HEAD's; `false` for `clean` and `unknown`   |
+| `buildType()`     | `Release`                  | the configuration built                                                           |
+| `compiler()`      | `Clang-21.1.8`             | CMake compiler id and version                                                     |
+| `targetSystem()`  | `Linux/x86_64`             | CMake system name and processor; HAL platform, processor and board on firmware    |
+| `summaryLength()` | `131`                      | length of the summary line, without terminator                                    |
+| `copySummary()`   | bytes copied               | the summary line, or a window of it, copied into a caller's buffer; no terminator |
 
 Link `utilities_build_info`. The string accessors return pointers to static
-storage; `dirty()` returns a bool.
+storage; `dirty()` returns a bool. `copySummary(out, cap, offset)` copies up
+to `cap` bytes of the summary from `offset` and returns the count, zero at
+or past the end, so a caller with a small buffer reads the line in windows.
+On AVR the pointer accessors are not declared: the summary lives in program
+memory (`PROGMEM`), where a pointer is not a C string, and `copySummary`,
+`summaryLength()` and `dirty()` are the surface.
 
 ## 2. What the Identity Carries
 
@@ -110,8 +117,9 @@ on their shared or command UART, the Pico and ESP32 encryptors on their data
 UART, since their command channels are USB devices with no host at boot), so
 a terminal on the port reads which build is running; a framed protocol on
 the same port drops the bytes before its first frame end. The identity strings
-cost flash on every MCU and, on AVR, RAM as well, since avr-gcc keeps
-constants in data memory; only the strings a firmware references survive
+cost flash on every MCU; on AVR, where avr-gcc keeps constants in data
+memory, the summary is placed in program memory and copied out in windows,
+so it costs no SRAM. Only the strings a firmware references survive
 `--gc-sections`.
 
 ## 4. Limits

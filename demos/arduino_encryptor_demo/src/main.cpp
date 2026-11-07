@@ -37,8 +37,6 @@
 #include <avr/pgmspace.h>
 #include <util/delay.h>
 
-#include <string.h>
-
 /* ----------------------------- Hardware Definitions ----------------------------- */
 
 /// LED on PB5 (Arduino pin 13).
@@ -90,14 +88,23 @@ static encryptor::CommandDeck commandDeck(uart, keyStore, engine, tracker);
 /// The build identity as the first line on the UART, before any frame. The
 /// host side decodes SLIP and settles past boot before reading, so the line
 /// costs the link nothing; a terminal on the port reads which build is
-/// running. AvrUart::write spins while the TX ring drains under interrupt.
+/// running. The summary lives in program memory on AVR and is copied out in
+/// windows through a small stack buffer, so the line costs no SRAM.
+/// AvrUart::write spins while the TX ring drains under interrupt.
 static void writeBuildLine() noexcept {
-  static const char PREFIX[] = "Build: ";
-  static const char CRLF[] = "\r\n";
-  static_cast<void>(uart.write(reinterpret_cast<const uint8_t*>(PREFIX), sizeof(PREFIX) - 1));
-  static_cast<void>(uart.write(reinterpret_cast<const uint8_t*>(apex::build_info::summary()),
-                               strlen(apex::build_info::summary())));
-  static_cast<void>(uart.write(reinterpret_cast<const uint8_t*>(CRLF), sizeof(CRLF) - 1));
+  static const char PREFIX[] PROGMEM = "Build: ";
+  static const char CRLF[] PROGMEM = "\r\n";
+  char window[16];
+  memcpy_P(window, PREFIX, sizeof(PREFIX) - 1);
+  static_cast<void>(uart.write(reinterpret_cast<const uint8_t*>(window), sizeof(PREFIX) - 1));
+  size_t offset = 0;
+  for (size_t n = apex::build_info::copySummary(window, sizeof(window), offset); n > 0;
+       n = apex::build_info::copySummary(window, sizeof(window), offset)) {
+    static_cast<void>(uart.write(reinterpret_cast<const uint8_t*>(window), n));
+    offset += n;
+  }
+  memcpy_P(window, CRLF, sizeof(CRLF) - 1);
+  static_cast<void>(uart.write(reinterpret_cast<const uint8_t*>(window), sizeof(CRLF) - 1));
 }
 
 /* ----------------------------- SLIP Decoder State ----------------------------- */

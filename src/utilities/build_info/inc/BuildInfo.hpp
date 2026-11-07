@@ -19,13 +19,34 @@
  * image build context without .git), the git-derived fields read "unknown".
  *
  * The string accessors return pointers to static storage and dirty() a bool;
- * all are RT-safe.
+ * all are RT-safe. copySummary() reads the summary line into a caller's
+ * buffer, whole or in windows, and is the surface on AVR, where the summary
+ * lives in program memory and the pointer accessors are not declared.
  */
 
 #include "src/utilities/compatibility/inc/compat_rt_attrs.hpp"
 
+#include <stddef.h>
+
 namespace apex {
 namespace build_info {
+
+/// Length of the summary line, without its terminator.
+[[nodiscard]] size_t summaryLength() noexcept APEX_NONBLOCKING;
+
+/**
+ * @brief Copy the summary line, or a window of it, into a caller's buffer.
+ *
+ * Copies up to cap bytes starting at offset, with no terminator, and returns
+ * the number copied: zero at or past the end, for a zero cap or a null
+ * buffer. A caller with a small buffer reads the line in windows by
+ * advancing offset. This is the way to read the summary where it lives in
+ * program memory (AVR), and it works the same everywhere.
+ */
+[[nodiscard]] size_t copySummary(char* out, size_t cap,
+                                 size_t offset = 0) noexcept APEX_NONBLOCKING;
+
+#if !defined(__AVR__)
 
 /**
  * @brief The whole identity on one line.
@@ -65,10 +86,6 @@ namespace build_info {
  */
 [[nodiscard]] const char* treeState() noexcept APEX_NONBLOCKING;
 
-/// True when treeState() names a tree other than HEAD's; false for "clean"
-/// and "unknown".
-[[nodiscard]] bool dirty() noexcept APEX_NONBLOCKING;
-
 /// Configuration built (CMAKE_BUILD_TYPE), or "unspecified".
 [[nodiscard]] const char* buildType() noexcept APEX_NONBLOCKING;
 
@@ -79,6 +96,12 @@ namespace build_info {
 /// "<hal platform>/<processor>[/<board>]" on firmware, for example
 /// "stm32/arm/nucleo_l476rg".
 [[nodiscard]] const char* targetSystem() noexcept APEX_NONBLOCKING;
+
+#endif // !__AVR__
+
+/// True when treeState() names a tree other than HEAD's; false for "clean"
+/// and "unknown".
+[[nodiscard]] bool dirty() noexcept APEX_NONBLOCKING;
 
 } // namespace build_info
 } // namespace apex

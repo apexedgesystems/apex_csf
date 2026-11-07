@@ -130,8 +130,10 @@ full optimization history (3,533 -> 1,280 bytes across 2 passes + UART fixes).
    Counter type uint64_t -> uint32_t saves 12 bytes of SRAM and ~2 KB of
    flash (eliminates avr-gcc 64-bit software arithmetic routines).
 
-5. **PROGMEM for constant data.** AES S-box (256 B) and test key (32 B)
-   stored in flash via `PROGMEM` + `pgm_read_byte()`.
+5. **PROGMEM for constant data.** AES S-box (256 B), test key (32 B) and the
+   build identity's summary line (about 120 B) stored in flash via
+   `PROGMEM`, read with `pgm_read_byte()` and `memcpy_P()`; the identity is
+   copied out in 16-byte windows at boot, so it adds no SRAM.
 
 ### Stack Safety
 
