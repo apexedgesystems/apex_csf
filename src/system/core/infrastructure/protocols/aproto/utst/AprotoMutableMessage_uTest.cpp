@@ -7,6 +7,7 @@
 
 #include "src/system/core/infrastructure/protocols/aproto/inc/AprotoMutableMessage.hpp"
 #include "src/system/core/infrastructure/protocols/aproto/inc/AprotoCodec.hpp"
+#include "src/system/core/infrastructure/protocols/aproto/utst/HeaderWords.hpp"
 
 #include <gtest/gtest.h>
 
@@ -31,6 +32,8 @@ using system_core::protocols::aproto::MutableAprotoMessageT;
 using system_core::protocols::aproto::PacketView;
 using system_core::protocols::aproto::Status;
 using system_core::protocols::aproto::validatePacket;
+using system_core::protocols::aproto::test::HeaderWords;
+using system_core::protocols::aproto::test::wordsOf;
 
 /* ----------------------------- Test Payload Types ----------------------------- */
 
@@ -76,10 +79,11 @@ TEST(AprotoMutableMessageTest, PackSingleElement) {
   // Decode and check fields.
   AprotoHeader hdr{};
   ASSERT_TRUE(isSuccess(decodeHeader(result->span(), hdr)));
-  EXPECT_EQ(hdr.fullUid, 0x010200u);
-  EXPECT_EQ(hdr.opcode, 0x0100);
-  EXPECT_EQ(hdr.sequence, 42);
-  EXPECT_EQ(hdr.payloadLength, sizeof(TestCmd));
+  const HeaderWords W = wordsOf(hdr);
+  EXPECT_EQ(W.fullUid, 0x010200u);
+  EXPECT_EQ(W.opcode, 0x0100);
+  EXPECT_EQ(W.sequence, 42);
+  EXPECT_EQ(W.payloadLength, sizeof(TestCmd));
 }
 
 /** @test Pack with CRC and verify packet passes validation. */

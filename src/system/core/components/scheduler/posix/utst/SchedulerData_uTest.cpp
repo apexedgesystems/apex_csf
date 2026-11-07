@@ -12,6 +12,7 @@
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
 
+#include <cstdint>
 #include <cstring>
 
 #include <vector>
@@ -99,15 +100,33 @@ TEST(SchedulerDataTest, TaskEntryFieldOffsets) {
   EXPECT_EQ(base[14], 0x0F); // sequencePhase
 }
 
+namespace {
+
+/// The entry's multi-byte members as plain values: the struct is packed, and a
+/// GTest comparison must not bind a reference to a member in place.
+struct EntryWords {
+  std::uint32_t fullUid;
+  std::uint16_t freqN;
+  std::uint16_t freqD;
+  std::uint16_t offset;
+};
+
+EntryWords wordsOf(const SchedulerTaskEntry& entry) {
+  return {entry.fullUid, entry.freqN, entry.freqD, entry.offset};
+}
+
+} // namespace
+
 /** @test Verifies task entry default construction. */
 TEST(SchedulerDataTest, TaskEntryDefaultConstruction) {
   SchedulerTaskEntry entry{};
-  EXPECT_EQ(entry.fullUid, 0u);
+  const EntryWords W = wordsOf(entry);
+  EXPECT_EQ(W.fullUid, 0u);
   EXPECT_EQ(entry.taskUid, 0);
   EXPECT_EQ(entry.poolIndex, 0);
-  EXPECT_EQ(entry.freqN, 0);
-  EXPECT_EQ(entry.freqD, 0);
-  EXPECT_EQ(entry.offset, 0);
+  EXPECT_EQ(W.freqN, 0);
+  EXPECT_EQ(W.freqD, 0);
+  EXPECT_EQ(W.offset, 0);
   EXPECT_EQ(entry.priority, 0);
   EXPECT_EQ(entry.sequenceGroup, 0);
   EXPECT_EQ(entry.sequencePhase, 0);
@@ -116,12 +135,13 @@ TEST(SchedulerDataTest, TaskEntryDefaultConstruction) {
 /** @test Verifies task entry aggregate initialization. */
 TEST(SchedulerDataTest, TaskEntryAggregateInit) {
   SchedulerTaskEntry entry{0x00006500, 1, 0, 5, 1, 10, 63, 0, 1};
-  EXPECT_EQ(entry.fullUid, 0x00006500u);
+  const EntryWords W = wordsOf(entry);
+  EXPECT_EQ(W.fullUid, 0x00006500u);
   EXPECT_EQ(entry.taskUid, 1);
   EXPECT_EQ(entry.poolIndex, 0);
-  EXPECT_EQ(entry.freqN, 5);
-  EXPECT_EQ(entry.freqD, 1);
-  EXPECT_EQ(entry.offset, 10);
+  EXPECT_EQ(W.freqN, 5);
+  EXPECT_EQ(W.freqD, 1);
+  EXPECT_EQ(W.offset, 10);
   EXPECT_EQ(entry.priority, 63);
   EXPECT_EQ(entry.sequenceGroup, 0);
   EXPECT_EQ(entry.sequencePhase, 1);
@@ -266,12 +286,14 @@ TEST(SchedulerDataTest, TaskEntryBinaryRoundTrip) {
   SchedulerTaskEntry restored{};
   std::memcpy(&restored, buffer.data(), sizeof(restored));
 
-  EXPECT_EQ(restored.fullUid, original.fullUid);
+  const EntryWords RESTORED = wordsOf(restored);
+  const EntryWords ORIGINAL = wordsOf(original);
+  EXPECT_EQ(RESTORED.fullUid, ORIGINAL.fullUid);
   EXPECT_EQ(restored.taskUid, original.taskUid);
   EXPECT_EQ(restored.poolIndex, original.poolIndex);
-  EXPECT_EQ(restored.freqN, original.freqN);
-  EXPECT_EQ(restored.freqD, original.freqD);
-  EXPECT_EQ(restored.offset, original.offset);
+  EXPECT_EQ(RESTORED.freqN, ORIGINAL.freqN);
+  EXPECT_EQ(RESTORED.freqD, ORIGINAL.freqD);
+  EXPECT_EQ(RESTORED.offset, ORIGINAL.offset);
   EXPECT_EQ(restored.priority, original.priority);
   EXPECT_EQ(restored.sequenceGroup, original.sequenceGroup);
   EXPECT_EQ(restored.sequencePhase, original.sequencePhase);
@@ -310,11 +332,11 @@ TEST(SchedulerDataTest, FullTprmBufferLayout) {
   SchedulerTaskEntry entry1;
   std::memcpy(&entry0, buffer.data() + sizeof(header), sizeof(entry0));
   std::memcpy(&entry1, buffer.data() + sizeof(header) + sizeof(task1), sizeof(entry1));
-  EXPECT_EQ(entry0.fullUid, 0x00006500u);
+  EXPECT_EQ(wordsOf(entry0).fullUid, 0x00006500u);
   EXPECT_EQ(entry0.sequenceGroup, 0);
   EXPECT_FALSE(isUnsequenced(entry0.sequenceGroup));
 
-  EXPECT_EQ(entry1.fullUid, 0x00006600u);
+  EXPECT_EQ(wordsOf(entry1).fullUid, 0x00006600u);
   EXPECT_EQ(entry1.sequenceGroup, NO_SEQUENCE_GROUP);
   EXPECT_TRUE(isUnsequenced(entry1.sequenceGroup));
 }

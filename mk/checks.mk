@@ -51,13 +51,16 @@ CHECKS_GATE    := asan-ubsan static clippy gitleaks
 # are the only entries a brand-new PR's first push can warm-start from (the
 # gate jobs carry ccache-nightly-* fallback restore-keys). asan-ubsan doubles
 # as the nightly re-proof of the gate sanitizer on main.
+# ubsan rides nightly on its own: ASan's allocator hands out 64-byte-aligned
+# blocks, so the combined asan-ubsan leg cannot see an alignment defect in
+# storage the code allocates itself; the UBSan-only build can.
 CHECKS_NIGHTLY := tsan rtsan static cppcheck clippy coverage-check hardened trivy \
-                  gitleaks osv semgrep coverage-rust coverage-py debug asan-ubsan
+                  gitleaks osv semgrep coverage-rust coverage-py debug asan-ubsan ubsan
 # Checks whose make target compiles C++ through ccache. Drives which nightly
 # legs persist a cache -- the scanners and tooling tests would mint empty
 # entries, and static (clang-tidy) does not compile through the launcher,
 # so its cache entries would never hold objects.
-CHECKS_CCACHE  := tsan rtsan coverage-check hardened debug asan-ubsan
+CHECKS_CCACHE  := tsan rtsan coverage-check hardened debug asan-ubsan ubsan
 
 # ------------------------------------------------------------------------------
 # Aggregate targets -- run a whole category or tier
