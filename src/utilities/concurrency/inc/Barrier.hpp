@@ -83,8 +83,9 @@ public:
    *
    * One arrival of the current phase, and one participant fewer from the
    * next phase on: a phase of E participants completes after E arrivals
-   * whether they wait or drop, as with std::barrier. A drop on a barrier
-   * with no participants left is ignored.
+   * whether they wait or drop, as with std::barrier. With no participants
+   * left, every arrival, a drop included, completes a phase by itself and
+   * advances the generation.
    *
    * @note RT-safe when uncontended: Single mutex lock.
    */

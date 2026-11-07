@@ -96,7 +96,7 @@ Two thread pool implementations for different use cases:
   - Growable queue, handles bursts
   - Best for variable workloads
 - **ThreadPoolLockFree** - Lock-free with bounded queue
-  - LockFreeQueue + Semaphore design (8x faster enqueue)
+  - LockFreeQueue + Semaphore design (lock-free enqueue)
   - Bounded queue with QUEUE_FULL feedback
   - Best for predictable workloads, backpressure-aware systems
 
@@ -599,23 +599,27 @@ public:
 };
 ```
 
-A waiter may destroy the latch as soon as `wait()`, `waitFor()` or
-`tryWait()` reports it triggered: each takes the mutex the final
-`countDown()` notifies under, so that call is done with the latch first.
+`wait()`, `waitFor()` and a true `tryWait()` return after taking the mutex
+the final `countDown()` notifies under, so the final `countDown()` is done
+with the latch when they return. A waiter that is the last to use the latch
+may then destroy it; destruction is not ordered after other waiters or
+later callers, which must be known to be finished.
 
 #### RT-Safety
 
-| Method            | RT-Safe | Reason                                          |
-| ----------------- | ------- | ----------------------------------------------- |
-| `Latch()`         | Yes     | No allocation                                   |
-| `countDown()`     | No      | Mutex lock, CV notify                           |
-| `tryWait()`       | Yes\*   | Atomic load; a true result takes the mutex once |
-| `wait()`          | No      | May block on CV                                 |
-| `waitFor()`       | No      | Timed wait                                      |
-| `arriveAndWait()` | No      | Mutex lock, may block                           |
-| `count()`         | Yes     | Single atomic load                              |
+| Method            | RT-Safe | Reason                                                                    |
+| ----------------- | ------- | ------------------------------------------------------------------------- |
+| `Latch()`         | Yes     | No allocation                                                             |
+| `countDown()`     | No      | Mutex lock, CV notify                                                     |
+| `tryWait()`       | No\*    | One atomic load while the count is nonzero; a true result takes the mutex |
+| `wait()`          | No      | May block on CV                                                           |
+| `waitFor()`       | No      | Mutex lock, timed wait                                                    |
+| `arriveAndWait()` | No      | Mutex lock, may block                                                     |
+| `count()`         | Yes     | Single atomic load                                                        |
 
-\*Note: the mutex is held only by a `countDown()` that is notifying, so the wait is that notify.
+\*Note: the not-ready path is one atomic load. The mutex a true result takes
+is shared with every other call on the latch, and acquiring it may block for
+as long as any holder is scheduled out; a true `tryWait()` is not RT-safe.
 
 ---
 
@@ -912,18 +916,21 @@ SPSCQueue is 1.9x faster than LockFreeQueue (relaxed vs CAS pair).
 | **SpinLock**  | 61.7M ops/s  | 16 ns/op | 12.9% |
 | **Semaphore** | 42.9M ops/s  | 23 ns/op | 7.9%  |
 
-Latch.tryWait and Barrier.generation are single atomic loads (fastest path).
-SpinLock is an atomic exchange. Semaphore uses atomic CAS.
+Barrier.generation is a single atomic load, as is a Latch.tryWait that reads
+a nonzero count; the Latch fixture above polls a triggered latch, so it times
+the true result, which takes the mutex. SpinLock is an atomic exchange.
+Semaphore uses atomic CAS.
 
 ### Task Dispatch
 
-| Primitive              | Throughput | Latency   |
-| ---------------------- | ---------- | --------- |
-| **ThreadPool**         | 428K ops/s | 2.3 us/op |
-| **ThreadPoolLockFree** | ~6x faster | -         |
+| Primitive      | Throughput | Latency   |
+| -------------- | ---------- | --------- |
+| **ThreadPool** | 428K ops/s | 2.3 us/op |
 
 ThreadPool is futex-bound (mutex wake/wait). ThreadPoolLockFree replaces
-the mutex with lock-free queue + semaphore signaling.
+the mutex with lock-free queue + semaphore signaling; its cost relative to
+ThreadPool depends on the task body and the placement of producer and
+workers, so the `ptst/` pool fixtures are the measurement for a build.
 
 ---
 
@@ -936,7 +943,7 @@ the mutex with lock-free queue + semaphore signaling.
 - **SPSCQueue::tryPush/tryPop** - Lock-free, single producer/consumer
 - **SpinLock::tryLock/unlock** - Atomic operations only
 - **Semaphore::tryAcquire/release/count** - Lock-free CAS and atomic ops
-- **Latch::tryWait/count** - Atomic load only
+- **Latch::count** - Atomic load only; `tryWait()` is one load while the count is nonzero and takes the mutex once it is zero
 - **Barrier::expected/generation** - Atomic load only
 - **DelegateU8** - No allocation, direct function call
 - **cache::AlignCl** - Compile-time alignment only

@@ -617,7 +617,8 @@ while (true) {
 
 ### Build Dependencies
 
-- C++17 compiler (GCC 10+, Clang 12+)
+- C++23 compiler, the project build (Clang 21 recommended); the worker
+  pools come from `utilities_concurrency`, whose hosted library needs C++20
 - fmt library (formatting)
 - POSIX threads (pthreads)
 

@@ -51,6 +51,11 @@ public:
   Latch(Latch&&) = delete;
   Latch& operator=(Latch&&) = delete;
 
+  /**
+   * @brief Destroy the latch. No other thread may still be inside a call on
+   *        it: a true wait result orders the destruction after the final
+   *        countDown(), not after other waiters or later callers.
+   */
   ~Latch() = default;
 
   /**
@@ -63,13 +68,15 @@ public:
   /**
    * @brief Check if counter has reached zero.
    *
-   * A true result means the final countDown() is done with the latch, so the
-   * caller may destroy it: the check takes and releases the mutex once after
-   * reading zero. A false result is one atomic load.
+   * A false result is one atomic load. A true result takes and releases the
+   * mutex once after reading zero, so it returns after the final countDown()
+   * has left the latch; a caller that is the last to use the latch may then
+   * destroy it. The mutex is shared with every other call, so that
+   * acquisition may block for as long as any holder is scheduled out.
    *
    * @return True if count is zero.
-   * @note RT-safe while the count is nonzero (one atomic load); a true result
-   *       waits at most for the final countDown()'s notify under the mutex.
+   * @note RT-safe only while the count is nonzero (one atomic load); a true
+   *       result may block on the mutex.
    */
   [[nodiscard]] bool tryWait() const noexcept;
 

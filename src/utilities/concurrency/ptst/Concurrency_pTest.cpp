@@ -8,7 +8,7 @@
  *  - RingBuffer push/pop (single-thread, no atomics)
  *  - SpinLock lock/unlock (uncontended and contended, vs std::mutex)
  *  - Semaphore acquire/release (uncontended and contended)
- *  - Latch countdown coordination and tryWait fast-path
+ *  - Latch countdown coordination and tryWait on a triggered latch
  *  - Barrier phase synchronization and generation query
  *  - ThreadPool / ThreadPoolLockFree enqueue throughput and rejection
  *
@@ -465,7 +465,9 @@ PERF_TEST(Latch, CountdownLatency) {
 }
 
 /**
- * @brief Latch tryWait polling (lock-free fast-path).
+ * @brief Latch tryWait polling on a triggered latch: the true result, one
+ *        atomic load and a mutex round trip. The nonzero-count path is the
+ *        load alone.
  */
 PERF_TEST(Latch, TryWaitThroughput) {
   UB_PERF_GUARD(perf);
@@ -482,8 +484,8 @@ PERF_TEST(Latch, TryWaitThroughput) {
   volatile bool sink = false;
   auto result = perf.throughputLoop([&] { sink = latch.tryWait(); }, "tryWait");
 
-  std::printf("\nLatch tryWait (lock-free): %.0f ops/s (%.1f ns/op)\n", result.callsPerSecond,
-              result.stats.median * 1000);
+  std::printf("\nLatch tryWait (triggered, mutex round trip): %.0f ops/s (%.1f ns/op)\n",
+              result.callsPerSecond, result.stats.median * 1000);
 }
 
 /* ----------------------------- Barrier Tests ----------------------------- */
