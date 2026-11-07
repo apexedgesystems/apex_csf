@@ -11,17 +11,24 @@ namespace concurrency {
 /* ----------------------------- Barrier Methods ----------------------------- */
 
 Barrier::Barrier(std::size_t expected) noexcept
-    : expected_(expected), arrived_(0), generation_(0) {}
+    : expected_(expected), remaining_(expected), generation_(0) {}
+
+bool Barrier::arriveLocked() noexcept {
+  // No participants left means every arrival completes a phase by itself.
+  if (remaining_ > 1) {
+    --remaining_;
+    return false;
+  }
+  remaining_ = expected_.load(std::memory_order_relaxed);
+  generation_.fetch_add(1, std::memory_order_release);
+  return true;
+}
 
 void Barrier::arriveAndWait() {
   std::unique_lock<std::mutex> lk(mutex_);
   const std::size_t MY_GEN = generation_.load(std::memory_order_relaxed);
-  ++arrived_;
 
-  if (arrived_ >= expected_.load(std::memory_order_relaxed)) {
-    // Last thread to arrive: release all and reset for next phase.
-    arrived_ = 0;
-    generation_.fetch_add(1, std::memory_order_release);
+  if (arriveLocked()) {
     lk.unlock();
     cv_.notify_all();
     return;
@@ -33,13 +40,14 @@ void Barrier::arriveAndWait() {
 
 void Barrier::arriveAndDrop() {
   std::unique_lock<std::mutex> lk(mutex_);
-  expected_.fetch_sub(1, std::memory_order_relaxed);
-  ++arrived_;
+  // One participant fewer from the next phase on; this arrival still counts
+  // toward the current phase.
+  const std::size_t EXPECTED = expected_.load(std::memory_order_relaxed);
+  if (EXPECTED > 0) {
+    expected_.store(EXPECTED - 1, std::memory_order_relaxed);
+  }
 
-  if (arrived_ >= expected_.load(std::memory_order_relaxed)) {
-    // This arrival completed the phase.
-    arrived_ = 0;
-    generation_.fetch_add(1, std::memory_order_release);
+  if (arriveLocked()) {
     lk.unlock();
     cv_.notify_all();
   }

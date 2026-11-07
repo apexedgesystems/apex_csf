@@ -71,8 +71,9 @@ TEST_F(BarrierTest, ArriveAndWaitForTimesOut) {
   });
 
   waiter.join();
-  // Barrier is now in inconsistent state (1 arrived, 2 expected)
-  // but that's expected behavior for timeout
+  // The timed-out arrival is withdrawn: the barrier is back to needing two.
+  EXPECT_EQ(barrier.generation(), 0U);
+  EXPECT_FALSE(barrier.arriveAndWaitFor(std::chrono::milliseconds(10)));
 }
 
 /* ----------------------------- Concurrent Tests ----------------------------- */
@@ -162,8 +163,9 @@ TEST_F(BarrierTest, ArriveAndDropTriggersBarrier) {
 
   std::thread t1([&]() { barrier.arriveAndWait(); });
 
-  // Give t1 time to start waiting
-  std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  // Give t1 time to start waiting; the result no longer depends on it (a
+  // drop before or after t1's arrival completes the same phase).
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
   // arriveAndDrop should trigger the barrier and release t1
   barrier.arriveAndDrop();
@@ -244,4 +246,46 @@ TEST(BarrierDeterminismTest, GenerationConsistent) {
   const std::size_t SECOND = barrier.generation();
   EXPECT_EQ(FIRST, SECOND);
   EXPECT_EQ(FIRST, 0U);
+}
+
+/* ----------------------------- Phase Semantics Tests ----------------------------- */
+
+/** @test A drop is one arrival of the current phase, not two: with three participants, a drop
+ * and one arrival leave the phase waiting for the third. */
+TEST_F(BarrierTest, DropCountsOnceInCurrentPhase) {
+  Barrier barrier(3);
+  barrier.arriveAndDrop();
+  EXPECT_FALSE(barrier.arriveAndWaitFor(std::chrono::milliseconds(50)))
+      << "two arrivals of three completed the phase";
+  EXPECT_EQ(barrier.generation(), 0U);
+}
+
+/** @test Drop-then-arrive and arrive-then-drop are the same phase: both end at generation 1 with
+ * one participant left for the next phase. */
+TEST_F(BarrierTest, DropFirstAndArriveFirstGiveSameGeneration) {
+  Barrier dropFirst(2);
+  dropFirst.arriveAndDrop();
+  dropFirst.arriveAndWait();
+  EXPECT_EQ(dropFirst.generation(), 1U);
+  EXPECT_EQ(dropFirst.expected(), 1U);
+
+  Barrier arriveFirst(2);
+  std::thread arriver([&]() { arriveFirst.arriveAndWait(); });
+  // The arriver blocks until the drop completes the phase; whichever order the
+  // two arrivals take, the phase completes once with one participant left.
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  arriveFirst.arriveAndDrop();
+  arriver.join();
+  EXPECT_EQ(arriveFirst.generation(), 1U);
+  EXPECT_EQ(arriveFirst.expected(), 1U);
+}
+
+/** @test A timed-out arrival is withdrawn: one thread timing out twice on a two-party barrier
+ * does not complete its phase alone. */
+TEST_F(BarrierTest, TimedOutArrivalIsWithdrawn) {
+  Barrier barrier(2);
+  EXPECT_FALSE(barrier.arriveAndWaitFor(std::chrono::milliseconds(10)));
+  EXPECT_FALSE(barrier.arriveAndWaitFor(std::chrono::milliseconds(10)))
+      << "the first, timed-out arrival still counted";
+  EXPECT_EQ(barrier.generation(), 0U);
 }
