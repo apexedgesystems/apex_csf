@@ -212,6 +212,37 @@ make format-check
 make format
 ```
 
+### Incremental Builds: What the Build System Cannot See
+
+Ninja rebuilds an output when an input's mtime is newer than the output's
+(headers come from the compiler's dependency file), and ccache keys its
+objects on the content of every input. Both are exact for ordinary edits.
+Four cases are outside what they can see; each has been reproduced on this
+tree.
+
+- **A file restored with an old timestamp.** `cp -p`, `rsync -a`, `tar -x`
+  and `scp -p` keep the source's mtime. If it is older than the object,
+  ninja sees nothing to do and the object keeps the other content. Repair:
+  `touch` the file, or build with `--clean-first`.
+- **A header edited while its compile is running.** The object is stamped
+  after the edit but built from the text the compiler read. Ninja 1.12
+  records the command start time and catches this; ninja 1.11 does not.
+  Repair: edit the file again, or `touch` it.
+- **A binary built outside the build graph.** A probe or tool compiled by
+  hand against a library does not relink when the library's headers
+  change; run across a layout change it fails in memory, not at link.
+  Rebuild such binaries with the library every time.
+- **A target list narrower than what ships.** `--target` builds that
+  closure only; test and tool binaries outside it keep their age. Build
+  everything you deploy, or `make debug` (all targets).
+
+`cmake --build --clean-first --target X` cleans the whole tree before
+rebuilding X's closure: every other output is deleted, not left stale.
+
+Every executive logs `Build: <describe> (<branch>) tree=<state> ...` as the
+first line of its System Configuration block; read it before trusting a run
+(see `src/utilities/build_info/README.md`).
+
 ### Release Workflow
 
 ```bash
