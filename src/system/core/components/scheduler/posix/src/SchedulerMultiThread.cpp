@@ -109,26 +109,26 @@ void SchedulerMultiThread::initPools(std::vector<PoolSpec> specs) noexcept {
     ctxPools_.emplace_back(std::make_unique<TaskCtxPool>());
 
     // The pool reports its own start-up: no workers at all is a launch
-    // failure doInit() refuses; a worker that did not take its requested
-    // policy or affinity runs with the defaults, which the schedule's timing
-    // assumes it does not, so it is a coded warning naming the pool.
+    // failure doInit() refuses. A worker with a setting that did not apply
+    // runs with part of its requested configuration, which the schedule's
+    // timing assumes it does not, so it is a coded warning naming the pool;
+    // the pool does not record which setting failed, and the warning does
+    // not guess.
     const auto& POOL = *pools_.back();
     if (!POOL.isValid()) {
       poolStartFailed_ = true;
-      componentLog()->error(
-          label(), static_cast<std::uint8_t>(Status::ERROR_THREAD_LAUNCH_FAIL),
-          fmt::format("Pool '{}': none of its {} workers could start", spec.name, NUM_THREADS));
+      componentLog()->error(label(), static_cast<std::uint8_t>(Status::ERROR_THREAD_LAUNCH_FAIL),
+                            fmt::format("Pool '{}': start-up failed ({} workers requested); the "
+                                        "workers that had started were joined, none remain",
+                                        spec.name, NUM_THREADS));
     } else if (POOL.workerConfigFailures() != 0) {
-      const bool RT_POLICY_REQUESTED = spec.config.policy != 0 || spec.config.priority != 0;
-      const Status CODE = RT_POLICY_REQUESTED ? Status::ERROR_POLICY_SETTING_FAIL
-                                              : Status::ERROR_AFFINITY_SETTING_FAIL;
-      componentLog()->warning(label(), static_cast<std::uint8_t>(CODE),
-                              fmt::format("Pool '{}': {} of {} workers did not take their RT "
-                                          "configuration (policy {}, priority {}, {} affinity "
-                                          "entries) and run with the defaults",
-                                          spec.name, POOL.workerConfigFailures(),
-                                          POOL.workerCount(), spec.config.policy,
-                                          spec.config.priority, spec.config.affinity.size()));
+      componentLog()->warning(
+          label(), static_cast<std::uint8_t>(Status::WARN_WORKER_CONFIG_FAIL),
+          fmt::format("Pool '{}': {} of {} workers did not apply one or more of their requested "
+                      "settings (policy {}, priority {}, {} affinity entries, thread name); the "
+                      "settings that applied stand, the failed one is not identified",
+                      spec.name, POOL.workerConfigFailures(), POOL.workerCount(),
+                      spec.config.policy, spec.config.priority, spec.config.affinity.size()));
     }
 
     poolNames_.push_back(std::move(spec.name));
