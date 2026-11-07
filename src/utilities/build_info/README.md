@@ -118,11 +118,13 @@ firmware on its link UART, the STM32 and Arduino encryptors on their shared
 or command UART, the Pico and ESP32 encryptors on their data UART, since
 their command channels are USB devices with no host at boot), so a terminal
 on the port reads which build is running. The write is best effort: a failed
-`init` skips the line; the write loop retries a partial write, and when a
-write takes nothing while the transmitter reports idle it gives up the rest
-of that piece of the line (the prefix, the summary or the line end) and goes
-on to the next; completion otherwise relies on the UART draining under
-interrupt, so a transmitter that stays busy is waited on. The line is startup
+`init` skips the line; the generic write loop of the STM32, Pico and ESP32
+mains retries a partial write, and when a write takes nothing while the
+transmitter reports idle it gives up the rest of that piece of the line (the
+prefix, the summary or the line end) and goes on to the next; completion
+otherwise relies on the UART draining under interrupt, so a transmitter that
+stays busy is waited on. The AVR driver waits inside its write until the
+bytes are accepted, so the Arduino banner has no such loop. The line is startup
 I/O on a framed link, so its receivers matter: the HIL host flushes its input
 at init and its SLIP decoder resyncs on a frame end, and the encryptor
 checkout scripts drain after a settle at open, which disposes of text that

@@ -2,7 +2,7 @@
  * @file main.cpp
  * @brief STM32 HIL flight controller firmware for NUCLEO-L476RG.
  *
- * Full SLIP/CRC communication over USART1 (ST-Link VCP).
+ * Full SLIP/CRC communication over USART1 (FTDI adapter to the Pi).
  * Receives VehicleState from host plant, runs flight controller,
  * sends ControlCmd and HeartbeatData back.
  *

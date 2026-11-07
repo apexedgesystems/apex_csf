@@ -62,10 +62,10 @@ rewriting all slots.
 | Bare-metal | 24,008 B    | 2.29%           | 12         |
 | FreeRTOS   | 26,664 B    | 2.54%           | 14         |
 
-The bare-metal row is a RelWithDebInfo link of a clean tree with the boot
-identity line, which added 664 B of flash and no RAM to this variant and
-whose string length moves flash by a few tens of bytes between branches; the
-FreeRTOS row predates the line.
+The bare-metal row is the linker's FLASH region usage from a RelWithDebInfo
+link of a clean tree with the boot identity line, which added 664 B of flash
+and no RAM to this variant and whose string length moves flash by a few tens
+of bytes between branches; the FreeRTOS row predates the line.
 
 Breakdown by component (FreeRTOS variant, from linker map):
 
@@ -217,10 +217,12 @@ mode. Programming is 32-bit; a sector erase takes about a second.
 | Bare-metal | 21,276 B (1.01%)    | 7,488 B (1.43%)  |
 | FreeRTOS   | 23,888 B (1.14%)    | 15,992 B (3.05%) |
 
-The bare-metal row is a RelWithDebInfo link of a clean tree with the boot
-identity line; the FreeRTOS row predates the line. Both variants are smaller
-than their L476 counterparts: one UART instance instead of two, and the
-Cortex-M7 code density.
+The bare-metal row is the linker's region usage (FLASH and RAM used size,
+the RAM figure including the linker script's heap and stack reservations)
+from a RelWithDebInfo link of a clean tree with the boot identity line; the
+FreeRTOS row predates the line. Both variants are smaller than their L476
+counterparts: one UART instance instead of two, and the Cortex-M7 code
+density.
 
 ---
 
@@ -258,8 +260,10 @@ sector erase takes under a second.
 | Bare-metal | 20,440 B (3.90%)    | 7,432 B (5.67%)   |
 | FreeRTOS   | 23,060 B (4.40%)    | 15,936 B (12.16%) |
 
-The bare-metal row is a RelWithDebInfo link of a clean tree with the boot
-identity line; the FreeRTOS row predates the line.
+The bare-metal row is the linker's region usage (FLASH and RAM used size,
+the RAM figure including the linker script's heap and stack reservations)
+from a RelWithDebInfo link of a clean tree with the boot identity line; the
+FreeRTOS row predates the line.
 
 ---
 
