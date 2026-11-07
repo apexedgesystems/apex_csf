@@ -276,6 +276,7 @@ private:
   std::vector<std::unique_ptr<apex::concurrency::ThreadPoolLockFree>> pools_;
   std::vector<std::unique_ptr<TaskCtxPool>> ctxPools_;
   std::vector<std::string> poolNames_;
+  bool poolStartFailed_{false}; ///< A pool reported no workers; doInit() refuses.
   std::filesystem::path logDir_;
   std::size_t periodViolationsThisTick_{0};      ///< Count of period violations detected this tick.
   std::size_t totalPeriodViolations_{0};         ///< Cumulative period violations since startup.

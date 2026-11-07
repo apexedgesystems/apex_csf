@@ -31,8 +31,14 @@ void Latch::countDown(std::size_t n) {
 }
 
 bool Latch::tryWait() const noexcept {
-  // Fast path: pure atomic load - no mutex needed.
-  return count_.load(std::memory_order_acquire) == 0;
+  if (count_.load(std::memory_order_acquire) != 0) {
+    return false;
+  }
+  // Zero was stored under the mutex by the final countDown(), which notifies
+  // before releasing it; taking the mutex once here means a caller that
+  // destroys the latch on a true result is not racing that notify.
+  const std::lock_guard<std::mutex> lk(mutex_);
+  return true;
 }
 
 void Latch::wait() {

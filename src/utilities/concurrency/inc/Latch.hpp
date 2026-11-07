@@ -5,7 +5,7 @@
  * @brief One-shot countdown synchronization primitive.
  *
  * Design goals:
- *  - C++17 compatible (std::latch is C++20).
+ *  - std::latch's shape; C++20 like the rest of the library.
  *  - Multiple threads can count down.
  *  - Wait blocks until count reaches zero.
  *  - One-shot: once triggered, stays triggered.
@@ -16,6 +16,7 @@
  *  - Signal completion of parallel tasks.
  */
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstddef>
@@ -50,6 +51,11 @@ public:
   Latch(Latch&&) = delete;
   Latch& operator=(Latch&&) = delete;
 
+  /**
+   * @brief Destroy the latch. No other thread may still be inside a call on
+   *        it: a true wait result orders the destruction after the final
+   *        countDown(), not after other waiters or later callers.
+   */
   ~Latch() = default;
 
   /**
@@ -61,8 +67,16 @@ public:
 
   /**
    * @brief Check if counter has reached zero.
+   *
+   * A false result is one atomic load. A true result takes and releases the
+   * mutex once after reading zero, so it returns after the final countDown()
+   * has left the latch; a caller that is the last to use the latch may then
+   * destroy it. The mutex is shared with every other call, so that
+   * acquisition may block for as long as any holder is scheduled out.
+   *
    * @return True if count is zero.
-   * @note RT-safe: Single atomic load.
+   * @note RT-safe only while the count is nonzero (one atomic load); a true
+   *       result may block on the mutex.
    */
   [[nodiscard]] bool tryWait() const noexcept;
 
@@ -105,12 +119,9 @@ private:
 
 template <class Rep, class Period>
 bool Latch::waitFor(const std::chrono::duration<Rep, Period>& timeout) {
-  // Fast path: already triggered.
-  if (count_.load(std::memory_order_acquire) == 0) {
-    return true;
-  }
-
-  // Slow path: wait with timeout.
+  // Under the mutex throughout, like wait(): the predicate returns at once
+  // when the count is already zero, and a waiter cannot return and destroy
+  // the latch while the final countDown() still holds the mutex to notify.
   std::unique_lock<std::mutex> lk(mutex_);
   return cv_.wait_for(lk, timeout,
                       [this]() { return count_.load(std::memory_order_relaxed) == 0; });

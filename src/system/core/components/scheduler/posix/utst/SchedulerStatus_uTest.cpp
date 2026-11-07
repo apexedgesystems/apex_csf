@@ -35,7 +35,7 @@ TEST(SchedulerStatusTest, ErrorsStartAfterSystemComponentEOE) {
 /** @test EOE_SCHEDULER is the highest value. */
 TEST(SchedulerStatusTest, EOEIsHighestValue) {
   EXPECT_GT(static_cast<std::uint8_t>(Status::EOE_SCHEDULER),
-            static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION));
+            static_cast<std::uint8_t>(Status::WARN_WORKER_CONFIG_FAIL));
 }
 
 /* ----------------------------- toString Tests ----------------------------- */
@@ -66,6 +66,7 @@ TEST(SchedulerStatusTest, ToStringWarnings) {
   EXPECT_STREQ(toString(Status::WARN_TASK_NON_SUCCESS_RET), "WARN_TASK_NON_SUCCESS_RET");
   EXPECT_STREQ(toString(Status::WARN_CPU_UNDERUTILIZATION), "WARN_CPU_UNDERUTILIZATION");
   EXPECT_STREQ(toString(Status::WARN_PERIOD_VIOLATION), "WARN_PERIOD_VIOLATION");
+  EXPECT_STREQ(toString(Status::WARN_WORKER_CONFIG_FAIL), "WARN_WORKER_CONFIG_FAIL");
 }
 
 /** @test toString returns correct string for EOE marker. */
@@ -103,6 +104,7 @@ TEST(SchedulerStatusTest, AllValuesDistinct) {
       static_cast<std::uint8_t>(Status::WARN_TASK_NON_SUCCESS_RET),
       static_cast<std::uint8_t>(Status::WARN_CPU_UNDERUTILIZATION),
       static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION),
+      static_cast<std::uint8_t>(Status::WARN_WORKER_CONFIG_FAIL),
       static_cast<std::uint8_t>(Status::EOE_SCHEDULER),
   };
 

@@ -6,6 +6,7 @@
  */
 
 #include "src/system/core/infrastructure/protocols/aproto/inc/AprotoCodec.hpp"
+#include "src/system/core/infrastructure/protocols/aproto/utst/HeaderWords.hpp"
 
 #include <gtest/gtest.h>
 
@@ -38,6 +39,8 @@ using system_core::protocols::aproto::PacketView;
 using system_core::protocols::aproto::Status;
 using system_core::protocols::aproto::SystemOpcode;
 using system_core::protocols::aproto::validatePacket;
+using system_core::protocols::aproto::test::HeaderWords;
+using system_core::protocols::aproto::test::wordsOf;
 
 /* ----------------------------- buildHeader Tests ----------------------------- */
 
@@ -45,12 +48,13 @@ using system_core::protocols::aproto::validatePacket;
 TEST(AprotoCodecTest, BuildHeaderFields) {
   AprotoHeader hdr = buildHeader(0x00010002, 0x1234, 0x5678, 100, true, true, true);
 
-  EXPECT_EQ(hdr.magic, APROTO_MAGIC);
+  const HeaderWords W = wordsOf(hdr);
+  EXPECT_EQ(W.magic, APROTO_MAGIC);
   EXPECT_EQ(hdr.version, APROTO_VERSION);
-  EXPECT_EQ(hdr.fullUid, 0x00010002u);
-  EXPECT_EQ(hdr.opcode, 0x1234);
-  EXPECT_EQ(hdr.sequence, 0x5678);
-  EXPECT_EQ(hdr.payloadLength, 100);
+  EXPECT_EQ(W.fullUid, 0x00010002u);
+  EXPECT_EQ(W.opcode, 0x1234);
+  EXPECT_EQ(W.sequence, 0x5678);
+  EXPECT_EQ(W.payloadLength, 100);
   EXPECT_EQ(hdr.flags.isResponse, 1);
   EXPECT_EQ(hdr.flags.ackRequested, 1);
   EXPECT_EQ(hdr.flags.crcPresent, 1);
@@ -105,12 +109,14 @@ TEST(AprotoCodecTest, DecodeHeaderValid) {
   Status st = decodeHeader(apex::compat::rospan<std::uint8_t>{buf.data(), buf.size()}, decoded);
   EXPECT_TRUE(isSuccess(st));
 
-  EXPECT_EQ(decoded.magic, APROTO_MAGIC);
+  const HeaderWords DECODED = wordsOf(decoded);
+  const HeaderWords ORIG = wordsOf(orig);
+  EXPECT_EQ(DECODED.magic, APROTO_MAGIC);
   EXPECT_EQ(decoded.version, APROTO_VERSION);
-  EXPECT_EQ(decoded.fullUid, orig.fullUid);
-  EXPECT_EQ(decoded.opcode, orig.opcode);
-  EXPECT_EQ(decoded.sequence, orig.sequence);
-  EXPECT_EQ(decoded.payloadLength, orig.payloadLength);
+  EXPECT_EQ(DECODED.fullUid, ORIG.fullUid);
+  EXPECT_EQ(DECODED.opcode, ORIG.opcode);
+  EXPECT_EQ(DECODED.sequence, ORIG.sequence);
+  EXPECT_EQ(DECODED.payloadLength, ORIG.payloadLength);
 }
 
 /** @test decodeHeader fails on invalid magic. */
@@ -377,8 +383,10 @@ TEST(AprotoCodecTest, CreatePacketView) {
   Status st = createPacketView(apex::compat::rospan<std::uint8_t>{buf.data(), written}, view);
   EXPECT_TRUE(isSuccess(st));
 
-  EXPECT_EQ(view.header.fullUid, hdr.fullUid);
-  EXPECT_EQ(view.header.opcode, hdr.opcode);
+  const HeaderWords VIEW = wordsOf(view.header);
+  const HeaderWords HDR = wordsOf(hdr);
+  EXPECT_EQ(VIEW.fullUid, HDR.fullUid);
+  EXPECT_EQ(VIEW.opcode, HDR.opcode);
   EXPECT_TRUE(view.hasCrc());
   EXPECT_TRUE(view.isResponse());
   EXPECT_TRUE(view.ackRequested());

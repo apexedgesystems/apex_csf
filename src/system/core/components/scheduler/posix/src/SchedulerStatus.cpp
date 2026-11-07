@@ -40,6 +40,8 @@ const char* toString(Status s) noexcept {
     return "WARN_CPU_UNDERUTILIZATION";
   case Status::WARN_PERIOD_VIOLATION:
     return "WARN_PERIOD_VIOLATION";
+  case Status::WARN_WORKER_CONFIG_FAIL:
+    return "WARN_WORKER_CONFIG_FAIL";
   case Status::EOE_SCHEDULER:
     return "EOE_SCHEDULER";
   }

@@ -246,3 +246,33 @@ TEST(SpinLockDeterminismTest, TryLockDeterministic) {
   EXPECT_TRUE(lock.tryLock());
   lock.unlock();
 }
+
+/* ----------------------------- Observer Tests ----------------------------- */
+
+/** @test isLocked() is a read: a thread polling it never makes tryLock() fail on a lock nobody
+ * holds. */
+TEST_F(SpinLockTest, IsLockedDoesNotDisturbTryLock) {
+  SpinLock lock;
+  std::atomic<bool> running{false};
+  std::atomic<bool> stop{false};
+  std::thread prober([&]() {
+    running.store(true, std::memory_order_release);
+    while (!stop.load(std::memory_order_acquire)) {
+      (void)lock.isLocked();
+    }
+  });
+  while (!running.load(std::memory_order_acquire)) {
+    std::this_thread::yield();
+  }
+  unsigned failures = 0;
+  for (int i = 0; i < 100000; ++i) {
+    if (lock.tryLock()) {
+      lock.unlock();
+    } else {
+      ++failures;
+    }
+  }
+  stop.store(true, std::memory_order_release);
+  prober.join();
+  EXPECT_EQ(failures, 0U);
+}

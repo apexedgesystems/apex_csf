@@ -5,7 +5,8 @@
  * @brief Reusable thread synchronization barrier.
  *
  * Design goals:
- *  - C++17 compatible (std::barrier is C++20).
+ *  - std::barrier's phase semantics (a drop is one arrival of the current
+ *    phase and leaves the next phases); C++20 like the rest of the library.
  *  - Reusable after each phase completes.
  *  - Threads can drop out with arriveAndDrop().
  *  - Simple generation-based implementation.
@@ -66,6 +67,10 @@ public:
 
   /**
    * @brief Arrive at the barrier and wait with timeout.
+   *
+   * A timed-out arrival is withdrawn: the phase no longer counts the caller,
+   * so a later retry is one new arrival and the barrier stays usable.
+   *
    * @param timeout Maximum time to wait.
    * @return True if barrier was reached, false if timeout.
    * @note NOT RT-safe: May block up to timeout.
@@ -76,16 +81,20 @@ public:
   /**
    * @brief Arrive and drop out of future phases.
    *
-   * The thread signals arrival but will not participate in future phases.
-   * Reduces the expected count for subsequent phases.
+   * One arrival of the current phase, and one participant fewer from the
+   * next phase on: a phase of E participants completes after E arrivals
+   * whether they wait or drop, as with std::barrier. With no participants
+   * left, every arrival, a drop included, completes a phase by itself and
+   * advances the generation.
    *
    * @note RT-safe when uncontended: Single mutex lock.
    */
   void arriveAndDrop();
 
   /**
-   * @brief Get the expected count for current phase.
-   * @return Number of threads expected.
+   * @brief Get the participant count of the next phase.
+   * @return Number of threads expected to arrive in each later phase (the
+   *         construction count less the drops so far).
    * @note RT-safe: Atomic load.
    */
   [[nodiscard]] std::size_t expected() const;
@@ -98,10 +107,14 @@ public:
   [[nodiscard]] std::size_t generation() const;
 
 private:
+  /// Count one arrival of the current phase under the lock; true when it
+  /// completes the phase, which then resets for the participants left.
+  bool arriveLocked() noexcept;
+
   mutable std::mutex mutex_;
   std::condition_variable cv_;
-  std::atomic<std::size_t> expected_;   ///< Threads expected in each phase.
-  std::size_t arrived_;                 ///< Threads arrived in current phase.
+  std::atomic<std::size_t> expected_;   ///< Participants of the next phases.
+  std::size_t remaining_;               ///< Arrivals still needed in the current phase.
   std::atomic<std::size_t> generation_; ///< Phase counter.
 };
 
@@ -111,21 +124,22 @@ template <class Rep, class Period>
 bool Barrier::arriveAndWaitFor(const std::chrono::duration<Rep, Period>& timeout) {
   std::unique_lock<std::mutex> lk(mutex_);
   const std::size_t MY_GEN = generation_.load(std::memory_order_relaxed);
-  ++arrived_;
 
-  if (arrived_ >= expected_.load(std::memory_order_relaxed)) {
-    // Last thread to arrive: release all and reset
-    arrived_ = 0;
-    generation_.fetch_add(1, std::memory_order_release);
+  if (arriveLocked()) {
     lk.unlock();
     cv_.notify_all();
     return true;
   }
 
   // Wait for this generation to complete
-  return cv_.wait_for(lk, timeout, [this, MY_GEN]() {
+  const bool COMPLETED = cv_.wait_for(lk, timeout, [this, MY_GEN]() {
     return generation_.load(std::memory_order_relaxed) != MY_GEN;
   });
+  if (!COMPLETED) {
+    // The lock is held and the phase is still MY_GEN: the arrival is withdrawn.
+    ++remaining_;
+  }
+  return COMPLETED;
 }
 
 } // namespace concurrency

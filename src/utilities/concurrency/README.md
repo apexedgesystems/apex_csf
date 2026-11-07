@@ -2,7 +2,7 @@
 
 **Namespace:** `apex::concurrency`
 **Platform:** Linux (POSIX), cross-platform compatible
-**C++ Standard:** C++17
+**C++ Standard:** C++20 for the built library (`Semaphore` parks on `std::atomic::wait`); declared in `lib.manifest` as `posix_cpp 20 23`. The build compiles the manifest's probe (`probe/Probe.cpp`, the API in use) and one generated TU per public header, each header first and alone, at C++20 and C++23 with `-Werror`. The `mcu/` subset keeps its own C++17 contract.
 
 Thread-safe concurrency primitives optimized for real-time and embedded systems.
 
@@ -96,7 +96,7 @@ Two thread pool implementations for different use cases:
   - Growable queue, handles bursts
   - Best for variable workloads
 - **ThreadPoolLockFree** - Lock-free with bounded queue
-  - LockFreeQueue + Semaphore design (8x faster enqueue)
+  - LockFreeQueue + Semaphore design (lock-free enqueue)
   - Bounded queue with QUEUE_FULL feedback
   - Best for predictable workloads, backpressure-aware systems
 
@@ -241,11 +241,12 @@ class ThreadPool {
 public:
   using TaskFn = DelegateU8;
 
-  explicit ThreadPool(std::size_t numThreads);
+  explicit ThreadPool(std::size_t numThreads, const PoolConfig& config = {});
   ~ThreadPool() noexcept;
 
   bool isValid() const noexcept;
   std::size_t workerCount() const noexcept;
+  std::size_t workerConfigFailures() const noexcept;
   void enqueueTask(const char* label, TaskFn task);
   PoolStatus tryEnqueue(const char* label, TaskFn task);
   bool threadsRunning() const noexcept;
@@ -255,20 +256,34 @@ public:
 };
 ```
 
+#### Start-up
+
+The constructor returns once every worker has applied its configuration,
+or with an invalid pool (`isValid()` false, `workerCount()` 0) when a worker
+could not start: the workers that had started are joined first, and no
+exception leaves the constructor. `workerConfigFailures()` counts the
+workers for which a requested setting (name, affinity, policy with priority)
+did not apply; the settings are applied one by one and a failure leaves the
+others as they are, so a counted worker may run with part of its
+configuration, and the count does not say which setting failed. The
+constructing thread's signal mask is as it was when the constructor
+returns; the workers block SIGINT, SIGTERM and SIGPIPE.
+
 #### RT-Safety
 
-| Method             | RT-Safe | Reason                         |
-| ------------------ | ------- | ------------------------------ |
-| `ThreadPool()`     | No      | Spawns threads                 |
-| `~ThreadPool()`    | No      | Joins threads                  |
-| `isValid()`        | Yes     | Checks stored size             |
-| `workerCount()`    | Yes     | Returns stored size            |
-| `enqueueTask()`    | No      | Mutex lock, queue may allocate |
-| `tryEnqueue()`     | No      | Mutex lock, queue may allocate |
-| `threadsRunning()` | Yes     | Atomic load                    |
-| `hasErrors()`      | Yes     | Atomic load                    |
-| `shutdown()`       | No      | Joins threads                  |
-| `collectErrors()`  | No      | Mutex lock                     |
+| Method                   | RT-Safe | Reason                         |
+| ------------------------ | ------- | ------------------------------ |
+| `ThreadPool()`           | No      | Spawns threads                 |
+| `~ThreadPool()`          | No      | Joins threads                  |
+| `isValid()`              | Yes     | Checks stored size             |
+| `workerCount()`          | Yes     | Returns stored size            |
+| `workerConfigFailures()` | Yes     | Atomic load                    |
+| `enqueueTask()`          | No      | Mutex lock, queue may allocate |
+| `tryEnqueue()`           | No      | Mutex lock, queue may allocate |
+| `threadsRunning()`       | Yes     | Atomic load                    |
+| `hasErrors()`            | Yes     | Atomic load                    |
+| `shutdown()`             | No      | Joins threads                  |
+| `collectErrors()`        | No      | Mutex lock                     |
 
 ---
 
@@ -286,12 +301,14 @@ class ThreadPoolLockFree {
 public:
   using TaskFn = DelegateU8;
 
-  explicit ThreadPoolLockFree(std::size_t numThreads, std::size_t queueCapacity = 1024);
+  explicit ThreadPoolLockFree(std::size_t numThreads, std::size_t queueCapacity = 1024,
+                              const PoolConfig& config = {});
   ~ThreadPoolLockFree() noexcept;
 
   bool isValid() const noexcept;
   std::size_t workerCount() const noexcept;
   std::size_t capacity() const noexcept;
+  std::size_t workerConfigFailures() const noexcept;
   PoolStatus tryEnqueue(const char* label, TaskFn task) noexcept;
   void enqueueTask(const char* label, TaskFn task) noexcept;
   bool threadsRunning() const noexcept;
@@ -301,32 +318,53 @@ public:
 };
 ```
 
+Start-up is as for `ThreadPool` above: the constructor waits for the
+workers' configuration, returns an invalid pool instead of throwing when a
+worker cannot start, and `workerConfigFailures()` counts the workers with a
+setting that did not apply.
+
+#### Shutdown
+
+`shutdown()` has two stages. It closes admission, so `tryEnqueue()` returns
+`POOL_STOPPED`; then it parks until the producers admitted before the close
+have published, marks the pool quiescent and wakes the workers. A worker
+exits only when it finds the ring empty after seeing that mark, so every
+task reported as `SUCCESS` has run when `shutdown()` returns. A woken worker
+drains the ring rather than taking one task per permit: a permit consumed
+on a pop that found a cell ahead still being published strands nothing,
+because the permit that publication releases brings a worker back to drain
+both.
+
 #### RT-Safety
 
-| Method                  | RT-Safe | Reason                          |
-| ----------------------- | ------- | ------------------------------- |
-| `ThreadPoolLockFree()`  | No      | Spawns threads, allocates queue |
-| `~ThreadPoolLockFree()` | No      | Joins threads                   |
-| `isValid()`             | Yes     | Checks stored size              |
-| `workerCount()`         | Yes     | Returns stored size             |
-| `capacity()`            | Yes     | Returns queue capacity          |
-| `tryEnqueue()`          | Yes     | Lock-free queue push            |
-| `enqueueTask()`         | Yes     | Lock-free queue push            |
-| `threadsRunning()`      | Yes     | Atomic load                     |
-| `hasErrors()`           | Yes     | Atomic load                     |
-| `shutdown()`            | No      | Joins threads                   |
-| `collectErrors()`       | No      | Mutex lock                      |
+| Method                   | RT-Safe | Reason                                         |
+| ------------------------ | ------- | ---------------------------------------------- |
+| `ThreadPoolLockFree()`   | No      | Spawns threads, allocates queue                |
+| `~ThreadPoolLockFree()`  | No      | Joins threads                                  |
+| `isValid()`              | Yes     | Checks stored size                             |
+| `workerCount()`          | Yes     | Returns stored size                            |
+| `capacity()`             | Yes     | Returns queue capacity                         |
+| `workerConfigFailures()` | Yes     | Atomic load                                    |
+| `tryEnqueue()`           | Yes     | Two RMWs on the admission word, lock-free push |
+| `enqueueTask()`          | Yes     | As `tryEnqueue()`                              |
+| `threadsRunning()`       | Yes     | Atomic load                                    |
+| `hasErrors()`            | Yes     | Atomic load                                    |
+| `shutdown()`             | No      | Parks on producers, joins threads              |
+| `collectErrors()`        | No      | Mutex lock                                     |
 
 #### ThreadPool vs ThreadPoolLockFree
 
-| Aspect          | ThreadPool                 | ThreadPoolLockFree           |
-| --------------- | -------------------------- | ---------------------------- |
-| Queue type      | `std::queue` (unbounded)   | `LockFreeQueue` (bounded)    |
-| Enqueue latency | ~1.2uss (mutex lock)       | ~0.15uss (lock-free)         |
-| Throughput      | 850K ops/s                 | 6.8M ops/s (8x faster)       |
-| Backpressure    | No (queue grows)           | Yes (QUEUE_FULL status)      |
-| Memory          | Grows with load            | Fixed at construction        |
-| Best for        | Variable workloads, bursts | Predictable load, RT systems |
+| Aspect       | ThreadPool                 | ThreadPoolLockFree           |
+| ------------ | -------------------------- | ---------------------------- |
+| Queue type   | `std::queue` (unbounded)   | `LockFreeQueue` (bounded)    |
+| Enqueue path | Mutex lock                 | Lock-free CAS                |
+| Backpressure | No (queue grows)           | Yes (QUEUE_FULL status)      |
+| Memory       | Grows with load            | Fixed at construction        |
+| Best for     | Variable workloads, bursts | Predictable load, RT systems |
+
+The relative cost of the two enqueue paths depends on the task body, the
+placement of producer and workers and the host; the module's `ptst/`
+fixtures measure it for a given build. No figure here is a budget.
 
 ---
 
@@ -364,7 +402,7 @@ public:
 #### Requirements
 
 - `T` must be move-constructible and move-assignable
-- Capacity >= 1 (power-of-two not required)
+- Capacity >= 2 (rounded up to a power of two); the cells are 64-byte aligned, one per cache line
 
 ---
 
@@ -549,29 +587,39 @@ public:
 ```cpp
 class Latch {
 public:
-  explicit Latch(std::ptrdiff_t expected) noexcept;
+  explicit Latch(std::size_t count) noexcept;
 
-  void countDown(std::ptrdiff_t n = 1);
+  void countDown(std::size_t n = 1);
   [[nodiscard]] bool tryWait() const noexcept;
-  void wait() const;
+  void wait();
   template <class Rep, class Period>
-  [[nodiscard]] bool waitFor(const std::chrono::duration<Rep, Period>& timeout) const;
-  void arriveAndWait(std::ptrdiff_t n = 1);
-  [[nodiscard]] std::ptrdiff_t count() const;
+  [[nodiscard]] bool waitFor(const std::chrono::duration<Rep, Period>& timeout);
+  void arriveAndWait(std::size_t n = 1);
+  [[nodiscard]] std::size_t count() const noexcept;
 };
 ```
 
+`wait()`, `waitFor()` and a true `tryWait()` return after taking the mutex
+the final `countDown()` notifies under, so the final `countDown()` is done
+with the latch when they return. A waiter that is the last to use the latch
+may then destroy it; destruction is not ordered after other waiters or
+later callers, which must be known to be finished.
+
 #### RT-Safety
 
-| Method            | RT-Safe | Reason                |
-| ----------------- | ------- | --------------------- |
-| `Latch()`         | Yes     | No allocation         |
-| `countDown()`     | No      | Mutex lock, CV notify |
-| `tryWait()`       | Yes     | Single atomic load    |
-| `wait()`          | No      | May block on CV       |
-| `waitFor()`       | No      | Timed wait            |
-| `arriveAndWait()` | No      | Mutex lock, may block |
-| `count()`         | Yes     | Single atomic load    |
+| Method            | RT-Safe | Reason                                                                    |
+| ----------------- | ------- | ------------------------------------------------------------------------- |
+| `Latch()`         | Yes     | No allocation                                                             |
+| `countDown()`     | No      | Mutex lock, CV notify                                                     |
+| `tryWait()`       | No\*    | One atomic load while the count is nonzero; a true result takes the mutex |
+| `wait()`          | No      | May block on CV                                                           |
+| `waitFor()`       | No      | Mutex lock, timed wait                                                    |
+| `arriveAndWait()` | No      | Mutex lock, may block                                                     |
+| `count()`         | Yes     | Single atomic load                                                        |
+
+\*Note: the not-ready path is one atomic load. The mutex a true result takes
+is shared with every other call on the latch, and acquiring it may block for
+as long as any holder is scheduled out; a true `tryWait()` is not RT-safe.
 
 ---
 
@@ -595,6 +643,12 @@ public:
   [[nodiscard]] std::size_t generation() const;
 };
 ```
+
+Phase semantics follow `std::barrier`: a phase of E participants
+completes after E arrivals whether they wait or drop; `arriveAndDrop()`
+lowers the participant count from the next phase on, and `expected()`
+reports that next-phase count. A timed-out `arriveAndWaitFor()` withdraws
+its arrival, so the barrier stays usable and a retry is one new arrival.
 
 #### RT-Safety
 
@@ -862,18 +916,21 @@ SPSCQueue is 1.9x faster than LockFreeQueue (relaxed vs CAS pair).
 | **SpinLock**  | 61.7M ops/s  | 16 ns/op | 12.9% |
 | **Semaphore** | 42.9M ops/s  | 23 ns/op | 7.9%  |
 
-Latch.tryWait and Barrier.generation are single atomic loads (fastest path).
-SpinLock is an atomic exchange. Semaphore uses atomic CAS.
+Barrier.generation is a single atomic load, as is a Latch.tryWait that reads
+a nonzero count; the Latch fixture above polls a triggered latch, so it times
+the true result, which takes the mutex. SpinLock is an atomic exchange.
+Semaphore uses atomic CAS.
 
 ### Task Dispatch
 
-| Primitive              | Throughput | Latency   |
-| ---------------------- | ---------- | --------- |
-| **ThreadPool**         | 428K ops/s | 2.3 us/op |
-| **ThreadPoolLockFree** | ~6x faster | -         |
+| Primitive      | Throughput | Latency   |
+| -------------- | ---------- | --------- |
+| **ThreadPool** | 428K ops/s | 2.3 us/op |
 
 ThreadPool is futex-bound (mutex wake/wait). ThreadPoolLockFree replaces
-the mutex with lock-free queue + semaphore signaling.
+the mutex with lock-free queue + semaphore signaling; its cost relative to
+ThreadPool depends on the task body and the placement of producer and
+workers, so the `ptst/` pool fixtures are the measurement for a build.
 
 ---
 
@@ -886,12 +943,12 @@ the mutex with lock-free queue + semaphore signaling.
 - **SPSCQueue::tryPush/tryPop** - Lock-free, single producer/consumer
 - **SpinLock::tryLock/unlock** - Atomic operations only
 - **Semaphore::tryAcquire/release/count** - Lock-free CAS and atomic ops
-- **Latch::tryWait/count** - Atomic load only
+- **Latch::count** - Atomic load only; `tryWait()` is one load while the count is nonzero and takes the mutex once it is zero
 - **Barrier::expected/generation** - Atomic load only
 - **DelegateU8** - No allocation, direct function call
 - **cache::AlignCl** - Compile-time alignment only
 - **ThreadPool::threadsRunning/hasErrors** - Single atomic load
-- **ThreadPoolLockFree::tryEnqueue/enqueueTask** - Lock-free queue push
+- **ThreadPoolLockFree::tryEnqueue/enqueueTask** - Two read-modify-writes on the admission word around a lock-free queue push
 - **ThreadPoolLockFree::threadsRunning/hasErrors** - Single atomic load
 
 ### NOT RT-Safe Components

@@ -45,7 +45,8 @@ enum class Status : std::uint8_t {
   WARN_TASK_STARVATION,
   WARN_TASK_NON_SUCCESS_RET,
   WARN_CPU_UNDERUTILIZATION,
-  WARN_PERIOD_VIOLATION, ///< Task still running when next invocation due.
+  WARN_PERIOD_VIOLATION,   ///< Task still running when next invocation due.
+  WARN_WORKER_CONFIG_FAIL, ///< A pool worker runs without one or more of its requested settings.
 
   // Marker --------------------------------------------------------------------
   EOE_SCHEDULER

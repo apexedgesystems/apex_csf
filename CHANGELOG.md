@@ -108,6 +108,12 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Concurrency primitives: pool start-up, shutdown and signal handling,
+  Barrier and Latch semantics, LockFreeQueue cell alignment and
+  SpinLock::isLocked; the UBSan-only check joins the nightly. Breaking:
+  rebuild dependent binaries with `utilities_concurrency`, and check
+  `isValid()` after constructing a pool, which no longer throws when a
+  worker cannot start ([#182](https://github.com/apexedgesystems/apex_csf/pull/182)).
 - Build images ship ninja 1.13.1, which rebuilds an object whose header changed
   while its compile was running; it answers at the distro path too, so an
   existing build tree keeps building and rebuilds once as its build log starts

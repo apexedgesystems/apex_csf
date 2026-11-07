@@ -8,12 +8,15 @@
  */
 
 #include "src/system/core/monte_carlo/inc/MonteCarloDriver.hpp"
+#include "src/utilities/concurrency/utst/support/ThreadStartFault.hpp"
 
 #include <cmath>
 #include <cstdint>
 
 #include <atomic>
 #include <numeric>
+#include <stdexcept>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -41,6 +44,44 @@ TEST(MonteCarloDriverTest, ExplicitConfig) {
 
   EXPECT_EQ(driver.config().threadCount, 4U);
   EXPECT_EQ(driver.config().baseSeed, 42U);
+}
+
+/** @test A driver whose worker pool cannot start, on its first worker or a later one, refuses to
+ * construct: with no workers, execute() would report every run complete with default results
+ * and the progress callback would report the total. The seam is pthread_create, interposed by the
+ * test binary; a sanitizer runtime that owns that symbol skips the case. The same function and
+ * configuration then build and run normally as the control. */
+TEST(MonteCarloDriverTest, RejectsPoolThatCouldNotStart) {
+  using namespace apex::concurrency::test;
+  if (!threadStartFaultAvailable()) {
+    GTEST_SKIP() << "pthread_create belongs to the sanitizer runtime in this build";
+  }
+  std::atomic<std::uint32_t> calls{0};
+  const auto RUN = [&calls](const double& p, std::uint32_t) {
+    calls.fetch_add(1, std::memory_order_acq_rel);
+    return p * 2.0;
+  };
+  DriverConfig cfg;
+  cfg.threadCount = 3;
+  for (const unsigned FAIL_AT : {1U, 2U}) {
+    SCOPED_TRACE("creation " + std::to_string(FAIL_AT) + " of 3 fails");
+    armThreadStartFailure(FAIL_AT);
+    EXPECT_THROW((MonteCarloDriver<double, double>(RUN, cfg)), std::runtime_error);
+    disarmThreadStartFailure();
+    const ThreadStartTally TALLY = threadStartTally();
+    EXPECT_EQ(TALLY.started, FAIL_AT - 1);
+    EXPECT_EQ(TALLY.finished, FAIL_AT - 1) << "a started worker outlived the refused driver";
+  }
+  EXPECT_EQ(calls.load(), 0U);
+
+  MonteCarloDriver<double, double> driver(RUN, cfg);
+  const std::vector<double> PARAMS{1.0, 2.0, 3.0, 4.0, 5.0};
+  const auto RESULTS = driver.execute(PARAMS);
+  EXPECT_EQ(RESULTS.totalRuns, 5U);
+  EXPECT_EQ(RESULTS.completedRuns, 5U);
+  EXPECT_EQ(RESULTS.failedRuns, 0U);
+  EXPECT_EQ(calls.load(), 5U);
+  EXPECT_DOUBLE_EQ(RESULTS.runs[4], 10.0);
 }
 
 /* ----------------------------- Execute Tests ----------------------------- */

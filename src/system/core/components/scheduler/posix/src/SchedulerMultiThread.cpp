@@ -108,6 +108,29 @@ void SchedulerMultiThread::initPools(std::vector<PoolSpec> specs) noexcept {
     // Each pool gets its own context pool (sized for its workers)
     ctxPools_.emplace_back(std::make_unique<TaskCtxPool>());
 
+    // The pool reports its own start-up: no workers at all is a launch
+    // failure doInit() refuses. A worker with a setting that did not apply
+    // runs with part of its requested configuration, which the schedule's
+    // timing assumes it does not, so it is a coded warning naming the pool;
+    // the pool does not record which setting failed, and the warning does
+    // not guess.
+    const auto& POOL = *pools_.back();
+    if (!POOL.isValid()) {
+      poolStartFailed_ = true;
+      componentLog()->error(label(), static_cast<std::uint8_t>(Status::ERROR_THREAD_LAUNCH_FAIL),
+                            fmt::format("Pool '{}': start-up failed ({} workers requested); the "
+                                        "workers that had started were joined, none remain",
+                                        spec.name, NUM_THREADS));
+    } else if (POOL.workerConfigFailures() != 0) {
+      componentLog()->warning(
+          label(), static_cast<std::uint8_t>(Status::WARN_WORKER_CONFIG_FAIL),
+          fmt::format("Pool '{}': {} of {} workers did not apply one or more of their requested "
+                      "settings (policy {}, priority {}, {} affinity entries, thread name); the "
+                      "settings that applied stand, the failed one is not identified",
+                      spec.name, POOL.workerConfigFailures(), POOL.workerCount(),
+                      spec.config.policy, spec.config.priority, spec.config.affinity.size()));
+    }
+
     poolNames_.push_back(std::move(spec.name));
   }
 }
@@ -191,6 +214,9 @@ std::uint8_t SchedulerMultiThread::doInit() noexcept {
   // Spawn worker pools now that the TPRM header is available (loaded by
   // SchedulerBase::loadTprm before doInit runs in the normal apex lifecycle).
   resolveAndInitPoolsFromTprm();
+  if (poolStartFailed_) {
+    return static_cast<std::uint8_t>(Status::ERROR_THREAD_LAUNCH_FAIL);
+  }
 
   // The table may have loaded before the log and the pools existed; the
   // verdicts latched then were computed against an empty pool set.

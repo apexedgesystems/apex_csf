@@ -5,7 +5,7 @@
  * @brief Counting semaphore for resource limiting and synchronization.
  *
  * Design goals:
- *  - C++17 compatible (std::counting_semaphore is C++20).
+ *  - C++20: the slow path parks on std::atomic::wait.
  *  - Blocking acquire with optional timeout.
  *  - Non-blocking tryAcquire for RT-safe paths.
  *  - Release can be called from any thread.

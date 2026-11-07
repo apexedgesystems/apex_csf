@@ -6,6 +6,7 @@
  */
 
 #include "src/system/core/infrastructure/protocols/aproto/inc/AprotoTypes.hpp"
+#include "src/system/core/infrastructure/protocols/aproto/utst/HeaderWords.hpp"
 
 #include <gtest/gtest.h>
 
@@ -28,6 +29,8 @@ using system_core::protocols::aproto::flagsToByte;
 using system_core::protocols::aproto::makeFlags;
 using system_core::protocols::aproto::packetSize;
 using system_core::protocols::aproto::SystemOpcode;
+using system_core::protocols::aproto::test::HeaderWords;
+using system_core::protocols::aproto::test::wordsOf;
 
 /* ----------------------------- Constants Tests ----------------------------- */
 
@@ -145,12 +148,13 @@ TEST(AprotoHeaderTest, SizeIs14Bytes) {
 /** @test Default-initialized header has zero values. */
 TEST(AprotoHeaderTest, DefaultInit) {
   AprotoHeader hdr{};
-  EXPECT_EQ(hdr.magic, 0);
+  const HeaderWords W = wordsOf(hdr);
+  EXPECT_EQ(W.magic, 0);
   EXPECT_EQ(hdr.version, 0);
-  EXPECT_EQ(hdr.fullUid, 0u);
-  EXPECT_EQ(hdr.opcode, 0);
-  EXPECT_EQ(hdr.sequence, 0);
-  EXPECT_EQ(hdr.payloadLength, 0);
+  EXPECT_EQ(W.fullUid, 0u);
+  EXPECT_EQ(W.opcode, 0);
+  EXPECT_EQ(W.sequence, 0);
+  EXPECT_EQ(W.payloadLength, 0);
 }
 
 /** @test packetSize calculates correct size without CRC. */
