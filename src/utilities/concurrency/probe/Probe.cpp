@@ -1,10 +1,11 @@
 /**
  * @file Probe.cpp
- * @brief Compile probe: every public header of the hosted concurrency library,
- *        each included first, and the surface a consumer reaches. Built at each
- *        dialect lib.manifest declares with -Werror, so a header that only
- *        compiles through another's transitive includes, or a claim the build
- *        does not hold, fails the configure that owns it.
+ * @brief Compile probe: the surface a consumer of the hosted concurrency
+ *        library reaches, built at each dialect lib.manifest declares with
+ *        -Werror. The manifest's headers line gives every public header its
+ *        own generated TU in the same build, so a header that compiles only
+ *        through another's transitive includes fails there; this TU checks
+ *        that the API is usable at the declared dialects.
  */
 
 #include "src/utilities/concurrency/inc/Barrier.hpp"
@@ -24,8 +25,10 @@
 #include <cstdint>
 
 // The hosted library parks on std::atomic::wait (Semaphore.cpp), a C++20
-// facility the probe's headers do not reach; the claim is asserted here so a
-// manifest declaring an older dialect fails on this line.
+// facility the probe's headers do not reach, so a manifest declaring an older
+// dialect fails on this line rather than silently compiling the headers. The
+// library's own sources are built at the project dialect; this line states
+// the floor, it does not compile them at it.
 static_assert(__cplusplus >= 202002L, "utilities_concurrency needs C++20");
 
 using namespace apex::concurrency;

@@ -1,3 +1,4 @@
 name utilities_concurrency
 posix_cpp 20 23
 probe probe/Probe.cpp
+headers inc/Barrier.hpp inc/Cache.hpp inc/Delegate.hpp inc/Latch.hpp inc/LockFreeQueue.hpp inc/RingBuffer.hpp inc/SPSCQueue.hpp inc/Semaphore.hpp inc/SpinLock.hpp inc/ThreadConfig.hpp inc/ThreadPool.hpp inc/ThreadPoolLockFree.hpp

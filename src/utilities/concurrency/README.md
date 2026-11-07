@@ -2,7 +2,7 @@
 
 **Namespace:** `apex::concurrency`
 **Platform:** Linux (POSIX), cross-platform compatible
-**C++ Standard:** C++20 for the built library (`Semaphore` parks on `std::atomic::wait`); declared in `lib.manifest` as `posix_cpp 20 23`, which the configure step checks by compiling `probe/Probe.cpp` at each dialect. The `mcu/` subset keeps its own C++17 contract.
+**C++ Standard:** C++20 for the built library (`Semaphore` parks on `std::atomic::wait`); declared in `lib.manifest` as `posix_cpp 20 23`. The build compiles the manifest's probe (`probe/Probe.cpp`, the API in use) and one generated TU per public header, each header first and alone, at C++20 and C++23 with `-Werror`. The `mcu/` subset keeps its own C++17 contract.
 
 Thread-safe concurrency primitives optimized for real-time and embedded systems.
 

@@ -12,6 +12,7 @@
 #   posix_cpp 17 20 23                   # hosted dialects the lib supports
 #   mcu       stm32 avr pico esp32       # APEX_HAL_PLATFORM names
 #   probe     probe/Probe.cpp            # verification TU, relative to lib dir
+#   headers   inc/A.hpp inc/B.hpp        # public headers, each compiled first in its own TU
 #
 # The manifest names WHAT the library supports; toolchain files keep owning
 # HOW each platform compiles (dialect, flags, sysroot).
@@ -21,7 +22,11 @@
 # list (skips are logged). The library's BAREMETAL flag is ignored when a
 # manifest is present — the contract is the single declaration.
 #
-# When a probe is declared it compiles as an OBJECT target with -Werror:
+# When a probe or headers are declared they compile as an OBJECT target with
+# -Werror at build time (the configure only wires the target). The probe is
+# the library's own TU; each declared header gets a generated TU that includes
+# it and nothing else, so a header that compiles only through another's
+# transitive includes fails on its own. The target builds:
 #   - hosted builds: once per declared posix_cpp dialect — hosted CI builds
 #     at C++23, so each lower dialect is a claim needing its own compile.
 #     Libraries claiming MCU platforms also compile their hosted probes with
@@ -57,6 +62,7 @@ function (_apex_manifest_parse _p)
   set(_posix "")
   set(_mcu "")
   set(_probe "")
+  set(_headers "")
   file(STRINGS "${_mf}" _lines)
   foreach (_line IN LISTS _lines)
     string(STRIP "${_line}" _line)
@@ -73,6 +79,8 @@ function (_apex_manifest_parse _p)
       set(_mcu ${_tok})
     elseif (_key STREQUAL "probe")
       list(GET _tok 0 _probe)
+    elseif (_key STREQUAL "headers")
+      set(_headers ${_tok})
     else ()
       message(FATAL_ERROR "[apex] ${_mf}: unknown manifest key '${_key}'")
     endif ()
@@ -96,6 +104,10 @@ function (_apex_manifest_parse _p)
   )
   set(${_p}_PROBE
       "${_probe}"
+      PARENT_SCOPE
+  )
+  set(${_p}_HEADERS
+      "${_headers}"
       PARENT_SCOPE
   )
 endfunction ()
@@ -151,22 +163,45 @@ function (_apex_apply_manifest _target)
     )
   endif ()
 
-  if (NOT _m_PROBE)
+  if (NOT _m_PROBE AND NOT _m_HEADERS)
     return()
   endif ()
-  set(_probe_src "${CMAKE_CURRENT_SOURCE_DIR}/${_m_PROBE}")
-  if (NOT EXISTS "${_probe_src}")
-    message(FATAL_ERROR "[apex] ${CMAKE_CURRENT_SOURCE_DIR}/lib.manifest: "
-                        "probe '${_m_PROBE}' not found"
-    )
+  set(_probe_srcs "")
+  if (_m_PROBE)
+    set(_probe_src "${CMAKE_CURRENT_SOURCE_DIR}/${_m_PROBE}")
+    if (NOT EXISTS "${_probe_src}")
+      message(FATAL_ERROR "[apex] ${CMAKE_CURRENT_SOURCE_DIR}/lib.manifest: "
+                          "probe '${_m_PROBE}' not found"
+      )
+    endif ()
+    list(APPEND _probe_srcs "${_probe_src}")
   endif ()
+
+  # One generated TU per declared header, holding only that include, so
+  # every public header is first in some TU. configure_file rewrites the TU
+  # only when its content changes, so a reconfigure does not rebuild it.
+  foreach (_hdr IN LISTS _m_HEADERS)
+    set(_hdr_src "${CMAKE_CURRENT_SOURCE_DIR}/${_hdr}")
+    if (NOT EXISTS "${_hdr_src}")
+      message(FATAL_ERROR "[apex] ${CMAKE_CURRENT_SOURCE_DIR}/lib.manifest: "
+                          "header '${_hdr}' not found"
+      )
+    endif ()
+    file(RELATIVE_PATH _hdr_rel "${CMAKE_SOURCE_DIR}" "${_hdr_src}")
+    get_filename_component(_hdr_stem "${_hdr}" NAME_WE)
+    set(_hdr_tu "${CMAKE_CURRENT_BINARY_DIR}/manifest_headers/${_hdr_stem}_first.cpp")
+    configure_file(
+      "${CMAKE_SOURCE_DIR}/cmake/apex/assets/manifest_header_first.cpp.in" "${_hdr_tu}" @ONLY
+    )
+    list(APPEND _probe_srcs "${_hdr_tu}")
+  endforeach ()
 
   # Probes include repo-root-relative headers only; no target deps, so a
   # probe can never silently satisfy a claim through a hosted-only usage
   # requirement.
   if (APEX_PLATFORM_BAREMETAL)
     set(_tgt ${_target}_probe)
-    add_library(${_tgt} OBJECT "${_probe_src}")
+    add_library(${_tgt} OBJECT ${_probe_srcs})
     target_include_directories(${_tgt} PRIVATE ${CMAKE_SOURCE_DIR})
     target_compile_options(${_tgt} PRIVATE -Werror)
     return()
@@ -177,7 +212,7 @@ function (_apex_apply_manifest _target)
   endif ()
   foreach (_std IN LISTS _m_POSIX)
     set(_tgt ${_target}_probe_cpp${_std})
-    add_library(${_tgt} OBJECT "${_probe_src}")
+    add_library(${_tgt} OBJECT ${_probe_srcs})
     set_target_properties(
       ${_tgt}
       PROPERTIES CXX_STANDARD ${_std}
