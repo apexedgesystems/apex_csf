@@ -1,0 +1,39 @@
+# The Python tools: one uv workspace, one lock. Members live under
+# <role>/py/<package>, each its own distribution; the role's build step
+# installs each member's console scripts into bin/tools/<role>.
+[project]
+name = "apex-py-tools"
+version = "0.0.1"
+description = "The apex Python tools workspace"
+requires-python = ">=3.11"
+
+[tool.uv]
+package = false
+
+[tool.uv.workspace]
+members = ["*/py/*"]
+# Standalone scripts live under <role>/py/bin; they are not packages.
+exclude = ["*/py/bin"]
+
+[dependency-groups]
+dev = [
+    # Build backend, locked so wheel builds resolve from the offline wheelhouse
+    # (build-system requires are not part of the dependency lock otherwise).
+    "hatchling>=1.27.0,<2.0.0",
+    "pytest>=9.1.1,<10.0.0",
+    "pre-commit>=4.6.1,<5.0.0",
+    "black>=26.5.1,<27.0.0",
+    "flake8>=7.1.2,<8.0.0",
+    "mypy>=2.2.0,<3.0.0",
+    "isort>=8.0.1,<10.0.0",
+    "flake8-bugbear>=25.11.29,<27.0.0",
+    "flake8-comprehensions>=3.16.0,<4.0.0",
+    "flake8-docstrings>=1.7.0,<2.0.0",
+    "pytest-cov>=7.0.0,<8.0.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["*/py/*/tests"]
+
+# Note: black, isort, and flake8 configs are managed by root .pre-commit-config.yaml
+# and .flake8 - no local overrides needed here.

@@ -28,8 +28,7 @@ CUDA_LABEL     ?= cuda
 TEST_LOG ?= ctest.log
 
 # Python tools directory
-PY_TOOLS_DIR := tools/py
-PY_LIB_DIR   := $(BUILD_DIR)/lib/python
+PY_TOOLS_DIR := tools
 
 # ------------------------------------------------------------------------------
 # CTest Command Presets
@@ -115,16 +114,22 @@ testp-cuda: debug
 
 # Python tools unit tests. uv keeps the env in-tree (.venv) and resolves
 # offline in the build images from the baked uv cache (UV_OFFLINE=1).
+# `uv lock --check` first: the build, the release and the image bake read the
+# workspace's members and dependencies from the lock with --frozen, so the
+# lock must agree with the manifests (the check resolves offline from the
+# cache).
 # --no-editable: test the project installed the way the wheel ships, and skip
 # the editable-install machinery (its `editables` backend never enters the
 # lock, so an editable sync could not resolve offline anyway).
 # A demo's checkout scripts keep their tests beside them, in the demo's
-# test/ directory; the gate collects those directories with the tools' own.
+# test/ directory; the gate collects those directories with the members'
+# own (`*/py/*/tests`, named explicitly because positional paths replace
+# the root manifest's testpaths).
 PY_DEMO_TEST_DIRS := demos/apex_action_demo/test demos/apex_horizon_demo/rover_mcu/test
 test-py:
 	$(call log,test,Running Python tools tests)
-	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable && \
-	  (uv run --no-sync pytest -v tests $(addprefix $(CURDIR)/,$(PY_DEMO_TEST_DIRS)) || test $$? -eq 5)
+	@cd "$(PY_TOOLS_DIR)" && uv lock --check && uv sync --frozen --no-editable --all-packages && \
+	  (uv run --no-sync pytest -v */py/*/tests $(addprefix $(CURDIR)/,$(PY_DEMO_TEST_DIRS)) || test $$? -eq 5)
 
 # Rust tools unit tests
 test-rust:
@@ -133,8 +138,12 @@ test-rust:
 
 # Shell tools smoke: exercises ops_sdk_package.sh end to end against a
 # synthetic build tree (a stub struct dictionary) and asserts the SDK
-# tarball's shape. Host-runnable in seconds -- bash and tar only -- so the
-# shell family has an executed check, not just shellcheck's static one.
+# tarball's shape; then package-tools.sh against a stub tools tree and
+# wheel dir: every wheel ships under its name, and a wheel that cannot be
+# copied (its destination name is taken by a directory, which no user can
+# overwrite with a file) fails the packager and leaves that destination as
+# it was. Host-runnable in seconds -- bash and tar only -- so the shell
+# tools have an executed check, not just shellcheck's static one.
 test-sh:
 	$(call log,test,Running shell tools smoke)
 	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
@@ -142,13 +151,26 @@ test-sh:
 	  printf '{"structs":{"SmokeParams":{"category":"TUNABLE_PARAM","fields":[]}}}\n' \
 	    > "$$tmp/build/apex_data_db/SmokeComponent.json" && \
 	  printf '[SmokeParams]\n' > "$$tmp/build/tprm_templates/SmokeComponent_SmokeParams.toml" && \
-	  bash tools/sh/bin/ops_sdk_package.sh --app SmokeApp --build-dir "$$tmp/build" && \
+	  bash tools/ops/sh/bin/ops_sdk_package.sh --app SmokeApp --build-dir "$$tmp/build" && \
 	  tarball="$$tmp/build/ops_sdk/SmokeApp-ops-sdk.tar.gz" && \
 	  test -f "$$tarball" && \
 	  tar -tzf "$$tarball" | grep -q "SmokeApp/structs/SmokeComponent.json" && \
 	  tar -tzf "$$tarball" | grep -q "SmokeApp/templates/SmokeComponent_SmokeParams.toml" && \
 	  tar -tzf "$$tarball" | grep -q "SmokeApp/README.md"
-	$(call log_ok,test,shell smoke: SDK tarball shape verified)
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+	  mkdir -p "$$tmp/bin/tools/ops" "$$tmp/wheels/ops" "$$tmp/wheels/analysis" "$$tmp/taken" && \
+	  printf '#!/bin/sh\n' > "$$tmp/bin/tools/ops/smoke-tool" && \
+	  printf 'ops' > "$$tmp/wheels/ops/smoke_ops-0.0.0-py3-none-any.whl" && \
+	  printf 'analysis' > "$$tmp/wheels/analysis/smoke_analysis-0.0.0-py3-none-any.whl" && \
+	  bash tools/build/sh/package-tools.sh "$$tmp/bin/tools" "$$tmp/wheels" "$$tmp/out" 0.0.0 > /dev/null && \
+	  test -f "$$tmp/out/apex-tools-0.0.0-x86_64-linux.tar.gz" && \
+	  test "$$(cat "$$tmp/out/smoke_ops-0.0.0-py3-none-any.whl")" = ops && \
+	  test "$$(cat "$$tmp/out/smoke_analysis-0.0.0-py3-none-any.whl")" = analysis && \
+	  mkdir "$$tmp/taken/smoke_ops-0.0.0-py3-none-any.whl" && \
+	  if bash tools/build/sh/package-tools.sh "$$tmp/bin/tools" "$$tmp/wheels" "$$tmp/taken" 0.0.0 > /dev/null 2>&1; then \
+	    printf '[test] package-tools.sh reported success over a failed wheel copy\n' >&2; exit 1; fi && \
+	  test -d "$$tmp/taken/smoke_ops-0.0.0-py3-none-any.whl"
+	$(call log_ok,test,shell smoke: SDK tarball shape verified; package-tools.sh ships every wheel and fails on a failed copy)
 
 # ------------------------------------------------------------------------------
 # Conformance contracts (compat/)
@@ -246,9 +268,9 @@ check-data-db: tools-build
 # per case and asserts status, the registered list and the diagnostic.
 # check-data-db-contract hands the real check-data-db recipe a scratch
 # BUILD_DIR holding the built generator and a one-entry registered list per
-# fixture under mk/fixtures/check-data-db, asserting the gate's verdict.
+# fixture under tools/build/fixtures/check-data-db, asserting the gate's verdict.
 HELPER_FIXTURE := cmake/apex/test/data_manifest
-GATE_FIXTURES := mk/fixtures/check-data-db
+GATE_FIXTURES := tools/build/fixtures/check-data-db
 
 # apex/BuildInfo generator contract: the tree state follows tracked content
 # (diff settings cannot move it, a textconv driver cannot hide an edit) and the
@@ -318,8 +340,8 @@ COVERAGE_PY_MIN_LINE   ?= 30
 
 coverage-py:
 	$(call log,coverage,Measuring Python tools coverage)
-	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable && \
-	  (uv run --no-sync pytest --cov=apex_tools --cov-report=term-missing \
+	@cd "$(PY_TOOLS_DIR)" && uv sync --frozen --no-editable --all-packages && \
+	  (uv run --no-sync pytest --cov=apex_ops --cov=apex_analysis --cov-report=term-missing \
 	    --cov-report=xml:coverage-py.xml \
 	    $(if $(filter 1,$(SCAN_GATE)),--cov-fail-under=$(COVERAGE_PY_MIN_LINE),) \
 	    || test $$? -eq 5)

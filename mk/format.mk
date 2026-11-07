@@ -18,7 +18,7 @@ PC_SCOPE ?= .
 
 # Find command with pruning for build/cache directories. Tool-managed
 # directories (venvs, caches, node_modules) prune by NAME so nested
-# instances (e.g. tools/py/.venv) are excluded too -- a local venv's
+# instances (e.g. tools/.venv) are excluded too -- a local venv's
 # site-packages swamps the sweep with thousands of third-party files.
 PRECOMMIT_FIND := find $(PC_SCOPE) \
   \( -path ./build -o -path './cmake-build*' -o -path ./dist -o -path ./out \

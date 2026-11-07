@@ -1,11 +1,12 @@
 # ==============================================================================
-# tools/CMakeLists.txt - CLI tools (C++, Rust by role, Python, Shell)
+# tools/CMakeLists.txt - CLI tools, built and installed by role
 #
-# Discovers and builds tool subdirectories by their native toolchains:
-#   cpp/   - Standard CMake (add_subdirectory)
-#   <role>/rust/ - Cargo workspace rooted at tools/Cargo.toml (requires cargo on PATH)
-#   py/    - uv + pip (requires uv and pip on PATH)
-#   sh/    - Shell scripts (copied to bin/tools/sh/)
+# Every tool lives under tools/<role>/<language>/<unit> and installs to
+# bin/tools/<role>, each language through its native toolchain:
+#   <role>/rust/<crate>/      - Cargo workspace rooted at tools/Cargo.toml (requires cargo)
+#   <role>/py/<package>/      - uv workspace rooted at tools/pyproject.toml (requires uv and pip)
+#   <role>/cpp/<tool>/        - standard CMake (add_subdirectory, apex_add_tool)
+#   <role>/sh/bin/            - shell scripts copied as they are
 #
 # Each section is gated on the directory existing and the toolchain being
 # available. Safe to copy to any project that follows the same layout.
@@ -16,13 +17,10 @@
 # ------------------------------------------------------------------------------
 # Appends PATH/PYTHONPATH entries to the build .env file (idempotent).
 
-# The tool families this tree still builds by language; the Rust workspace
-# is built by role below. The env helper and the make surface (mk/tools.mk
-# TOOL_FAMILIES and TOOL_ROLES) mirror both lists; tools/README.md documents
-# every step of adding a family.
-set(_APEX_TOOL_FAMILIES cpp py sh)
 # The roles tools are built and installed by: executables land in
 # bin/tools/<role>, and only the build role is a dependency of the apex build.
+# The make surface (mk/tools.mk TOOL_ROLES) mirrors this list; tools/README.md
+# documents adding a tool, a language under a role, and a role.
 set(_APEX_TOOL_ROLES build ops analysis)
 
 set(_ENV_FILE "${CMAKE_BINARY_DIR}/.env")
@@ -37,23 +35,32 @@ file(
   "  local key=\"$1\" line=\"$2\"\n"
   "  grep -q \"$key\" \"$ENV_FILE\" 2>/dev/null || printf '%s\\n' \"$line\" >> \"$ENV_FILE\"\n"
   "}\n"
-  "add_if_missing 'PYTHONPATH.*lib/python' 'export PYTHONPATH=\"$PWD/lib/python:$PYTHONPATH\"'\n"
 )
-# One PATH line per bin/tools/<dir>, driven by the same lists the sections
-# below gate on.
-foreach (_dir IN LISTS _APEX_TOOL_FAMILIES _APEX_TOOL_ROLES)
-  file(APPEND "${_ENV_HELPER}"
-       "add_if_missing 'bin/tools/${_dir}' 'export PATH=\"$PWD/bin/tools/${_dir}:$PATH\"'\n"
+# One PATH line and one PYTHONPATH line per role.
+foreach (_role IN LISTS _APEX_TOOL_ROLES)
+  file(
+    APPEND "${_ENV_HELPER}"
+    "add_if_missing 'bin/tools/${_role}' 'export PATH=\"$PWD/bin/tools/${_role}:$PATH\"'\n"
+    "add_if_missing 'lib/python/${_role}' 'export PYTHONPATH=\"$PWD/lib/python/${_role}\${PYTHONPATH:+:\$PYTHONPATH}\"'\n"
   )
 endforeach ()
 
 # ------------------------------------------------------------------------------
-# C++ tools
+# C++ tools (by role)
 # ------------------------------------------------------------------------------
 
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cpp/CMakeLists.txt")
-  add_subdirectory(cpp)
-endif ()
+# Each tools/<role>/cpp/<tool> directory is a CMake subdirectory whose
+# apex_add_tool call outputs to bin/tools/<role> and registers the tool in
+# APEX_TOOLS_<role>; the role aggregates below pick those up.
+foreach (_role IN LISTS _APEX_TOOL_ROLES)
+  file(GLOB _cpp_tool_dirs CONFIGURE_DEPENDS
+       "${CMAKE_CURRENT_SOURCE_DIR}/${_role}/cpp/*/CMakeLists.txt"
+  )
+  foreach (_cpp_cmake IN LISTS _cpp_tool_dirs)
+    get_filename_component(_cpp_dir "${_cpp_cmake}" DIRECTORY)
+    add_subdirectory("${_cpp_dir}")
+  endforeach ()
+endforeach ()
 
 # ------------------------------------------------------------------------------
 # Rust tools (one workspace, built and installed by role)
@@ -225,11 +232,8 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
         VERBATIM
       )
 
-      add_custom_target(${PROJECT_NAME}_${_role}_tools DEPENDS "${_role_stamp}")
-      list(APPEND _TOOLS_DEPS ${PROJECT_NAME}_${_role}_tools)
-      if (NOT _role STREQUAL "build")
-        list(APPEND _TOOLS_ON_REQUEST ${PROJECT_NAME}_${_role}_tools)
-      endif ()
+      add_custom_target(${PROJECT_NAME}_${_role}_rust_tools DEPENDS "${_role_stamp}")
+      list(APPEND _ROLE_PARTS_${_role} ${PROJECT_NAME}_${_role}_rust_tools)
     endforeach ()
   else ()
     message(WARNING "${PROJECT_NAME}: cargo not found -- Rust tools skipped")
@@ -237,96 +241,219 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
 endif ()
 
 # ------------------------------------------------------------------------------
-# Python tools
+# Python tools (by role)
 # ------------------------------------------------------------------------------
 
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/py/pyproject.toml")
+# One uv workspace at tools/ (one lock); each member under <role>/py/<package>
+# is its own distribution and uv says which members exist. Per role: build
+# each member's wheel into tools-wheels/<role>, install it into
+# lib/python/<role> and move its console scripts to bin/tools/<role>.
+# tools-wheels is a fixed name: the release packaging
+# (tools/build/sh/package-tools.sh via make artifact-tools) and the builder
+# prune whitelist key on it.
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml")
   find_program(UV_EXECUTABLE uv)
   find_program(PIP_EXECUTABLE pip3 pip)
 
   if (UV_EXECUTABLE AND PIP_EXECUTABLE)
-    set(_PY_SRC "${CMAKE_CURRENT_SOURCE_DIR}/py")
-    set(_PY_OUT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/py")
     set(_PY_LIB "${CMAKE_BINARY_DIR}/lib/python")
-    # Fixed name: the release packaging (docker/scripts/package-tools.sh via
-    # make artifact-tools) and the builder prune whitelist key on it.
     set(_PY_WHEELS "${CMAKE_BINARY_DIR}/tools-wheels")
-    set(_PY_STAMP "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/py-tools.built")
 
-    # Generate build script (handles shell globs that VERBATIM mode cannot expand)
-    set(_PY_BUILD_SCRIPT "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-build-py-tools.sh")
-    file(
-      WRITE "${_PY_BUILD_SCRIPT}"
-      "#!/bin/bash\nset -e\n"
+    # uv owns workspace membership (members and exclude in tools/pyproject.toml):
+    # its export lists each resolved member as an editable path, and a
+    # member's role is the directory that path starts with. The manifests and
+    # the lock are configure inputs, so a membership edit reconfigures; a
+    # failed export stops configure with uv's message.
+    file(GLOB _py_manifests CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/*/py/*/pyproject.toml")
+    set_property(
+      DIRECTORY
+      APPEND
+      PROPERTY CMAKE_CONFIGURE_DEPENDS ${_py_manifests}
+               "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml" "${CMAKE_CURRENT_SOURCE_DIR}/uv.lock"
+    )
+    execute_process(
+      COMMAND "${UV_EXECUTABLE}" export --directory "${CMAKE_CURRENT_SOURCE_DIR}" --frozen
+              --all-packages --no-dev --no-hashes --format requirements-txt
+      OUTPUT_VARIABLE _uv_export
+      ERROR_VARIABLE _uv_export_err
+      RESULT_VARIABLE _uv_export_rc
+    )
+    if (NOT _uv_export_rc EQUAL 0)
+      message(
+        FATAL_ERROR
+          "${PROJECT_NAME}: uv export failed for ${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml:\n${_uv_export_err}"
+      )
+    endif ()
+    string(REGEX MATCHALL "-e \\./[^\n]+" _py_member_lines "${_uv_export}")
+    set(_py_member_dirs "")
+    foreach (_line IN LISTS _py_member_lines)
+      string(REGEX REPLACE "^-e \\./" "" _rel "${_line}")
+      list(APPEND _py_member_dirs "${_rel}")
+    endforeach ()
+
+    foreach (_role IN LISTS _APEX_TOOL_ROLES)
+      set(_py_members "")
+      foreach (_rel IN LISTS _py_member_dirs)
+        if (_rel MATCHES "^${_role}/py/")
+          list(APPEND _py_members "${CMAKE_CURRENT_SOURCE_DIR}/${_rel}/pyproject.toml")
+        endif ()
+      endforeach ()
+      if (NOT _py_members)
+        continue()
+      endif ()
+
+      set(_py_out "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/${_role}")
+      set(_py_wheels "${_PY_WHEELS}/${_role}")
+      set(_py_lib "${_PY_LIB}/${_role}")
+      set(_py_stamp "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/py-${_role}-tools.built")
+      set(_py_script "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-build-py-${_role}-tools.sh")
+      file(GLOB_RECURSE _py_sources CONFIGURE_DEPENDS
+           "${CMAKE_CURRENT_SOURCE_DIR}/${_role}/py/*/src/*.py"
+      )
+      list(APPEND _py_sources ${_py_members} "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml"
+           "${CMAKE_CURRENT_SOURCE_DIR}/uv.lock"
+      )
+
+      set(_py_build "")
+      foreach (_member IN LISTS _py_members)
+        get_filename_component(_member_dir "${_member}" DIRECTORY)
+        string(
+          APPEND
+          _py_build
+          "'${UV_EXECUTABLE}' build --wheel --directory '${_member_dir}' --out-dir '${_py_wheels}'\n"
+        )
+      endforeach ()
+
+      # Each role's script owns its wheel dir and its library dir outright
+      # (the roles build in parallel) and rebuilds both from scratch, so
+      # nothing from an earlier manifest lingers. Each member installs first
+      # without dependencies, so lib/bin holds exactly its console scripts:
+      # every script the wheel declares (the [console_scripts] of its
+      # dist-info entry points; the dist-info is named by the wheel's first
+      # two fields) is copied to bin/tools/<role>, a declared script that pip
+      # did not write fails the build, and lib/bin is dropped before the next
+      # member (pip replaces an existing target bin dir wholesale). The
+      # dependencies install second; their console scripts stay out of the
+      # role's bin dir.
+      #
       # Offline enforcement comes from the environment: the build image sets
       # UV_OFFLINE=1 against its baked uv cache (which also holds the build
       # backend's resolution metadata) and PIP_NO_INDEX/PIP_FIND_LINKS against
-      # the wheelhouse for the pip install below. Local dev (no such env)
-      # resolves online from PyPI.
-      "mkdir -p '${_PY_OUT}' '${_PY_LIB}' '${_PY_WHEELS}'\n"
-      "cd '${_PY_SRC}'\n"
-      "'${UV_EXECUTABLE}' build --wheel --out-dir '${_PY_WHEELS}'\n"
-      "'${PIP_EXECUTABLE}' install --quiet --no-deps --target '${_PY_LIB}' --upgrade ${_PY_WHEELS}/*.whl\n"
-      "cp -f '${_PY_LIB}/bin'/* '${_PY_OUT}/' 2>/dev/null || true\n"
-      "rm -rf '${_PY_LIB}/bin'\n"
-      "'${PIP_EXECUTABLE}' install --quiet --target '${_PY_LIB}' --upgrade ${_PY_WHEELS}/*.whl\n"
-      "rm -rf '${_PY_LIB}/bin'\n"
-      "mkdir -p '${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps'\n"
-      "touch '${_PY_STAMP}'\n"
-    )
+      # the wheelhouse for the pip installs. Local dev (no such env) resolves
+      # online from PyPI.
+      file(
+        WRITE "${_py_script}"
+        "#!/bin/bash\nset -eo pipefail\n"
+        "rm -rf '${_py_wheels}' '${_py_lib}'\n"
+        "mkdir -p '${_py_out}' '${_py_lib}' '${_py_wheels}'\n"
+        "${_py_build}"
+        "for w in '${_py_wheels}'/*.whl; do\n"
+        "  '${PIP_EXECUTABLE}' install --quiet --no-deps --target '${_py_lib}' --upgrade \"$w\"\n"
+        "  IFS=- read -r dist ver _ <<< \"$(basename \"$w\")\"\n"
+        "  ep='${_py_lib}'/\"$dist-$ver.dist-info/entry_points.txt\"\n"
+        "  if [ -f \"$ep\" ]; then\n"
+        "    sed -n '/^\\[console_scripts\\]/,/^\\[/{s/^\\([^=[ ]*\\) *=.*/\\1/p}' \"$ep\" | while read -r name; do\n"
+        "      if [ ! -f '${_py_lib}/bin'/\"$name\" ]; then\n"
+        "        echo \"${PROJECT_NAME}: $ep declares console script $name but pip wrote none\" >&2\n"
+        "        exit 1\n"
+        "      fi\n"
+        "      cp -f '${_py_lib}/bin'/\"$name\" '${_py_out}'/\"$name\"\n"
+        "    done\n"
+        "  fi\n"
+        "  rm -rf '${_py_lib}/bin'\n"
+        "done\n"
+        "for w in '${_py_wheels}'/*.whl; do\n"
+        "  '${PIP_EXECUTABLE}' install --quiet --target '${_py_lib}' --upgrade \"$w\"\n"
+        "done\n"
+        "rm -rf '${_py_lib}/bin'\n"
+        "mkdir -p '${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps'\n"
+        "touch '${_py_stamp}'\n"
+      )
 
-    add_custom_command(
-      OUTPUT "${_PY_STAMP}"
-      COMMAND bash "${_PY_BUILD_SCRIPT}"
-      COMMAND bash "${_ENV_HELPER}"
-      COMMENT "Building ${PROJECT_NAME} Python tools"
-      VERBATIM
-    )
+      add_custom_command(
+        OUTPUT "${_py_stamp}"
+        COMMAND bash "${_py_script}"
+        COMMAND bash "${_ENV_HELPER}"
+        DEPENDS ${_py_sources}
+        COMMENT "Building ${PROJECT_NAME} ${_role} tools (python)"
+        VERBATIM
+      )
 
-    add_custom_target(${PROJECT_NAME}_py_tools DEPENDS "${_PY_STAMP}")
-    list(APPEND _TOOLS_DEPS ${PROJECT_NAME}_py_tools)
+      add_custom_target(${PROJECT_NAME}_${_role}_py_tools DEPENDS "${_py_stamp}")
+      list(APPEND _ROLE_PARTS_${_role} ${PROJECT_NAME}_${_role}_py_tools)
+    endforeach ()
   else ()
     message(WARNING "${PROJECT_NAME}: uv/pip not found -- Python tools skipped")
   endif ()
 endif ()
 
 # ------------------------------------------------------------------------------
-# Shell tools
+# Shell tools (by role)
 # ------------------------------------------------------------------------------
 
-if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/sh/bin")
-  set(_SH_SRC "${CMAKE_CURRENT_SOURCE_DIR}/sh/bin")
-  set(_SH_OUT "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/sh")
-  set(_SH_STAMP "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/sh-tools.built")
+# A role's shell scripts live under <role>/sh/bin and install to
+# bin/tools/<role>; the install re-runs when a script changes.
+foreach (_role IN LISTS _APEX_TOOL_ROLES)
+  set(_sh_src "${CMAKE_CURRENT_SOURCE_DIR}/${_role}/sh/bin")
+  if (NOT EXISTS "${_sh_src}")
+    continue()
+  endif ()
+  set(_sh_out "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/tools/${_role}")
+  set(_sh_stamp "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps/sh-${_role}-tools.built")
+  set(_sh_script "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-install-sh-${_role}-tools.sh")
+  file(GLOB _sh_files CONFIGURE_DEPENDS "${_sh_src}/*")
 
-  set(_SH_INSTALL_SCRIPT "${CMAKE_BINARY_DIR}/${PROJECT_NAME}-install-sh-tools.sh")
   file(
-    WRITE "${_SH_INSTALL_SCRIPT}"
-    "#!/bin/bash\nset -e\n" "mkdir -p '${_SH_OUT}'\n" "cp -f '${_SH_SRC}'/* '${_SH_OUT}/'\n"
-    "chmod +x '${_SH_OUT}'/*.sh 2>/dev/null || true\n"
-    "mkdir -p '${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps'\n" "touch '${_SH_STAMP}'\n"
+    WRITE "${_sh_script}"
+    "#!/bin/bash\nset -e\n" "mkdir -p '${_sh_out}'\n" "cp -f '${_sh_src}'/* '${_sh_out}/'\n"
+    "chmod +x '${_sh_out}'/*.sh 2>/dev/null || true\n"
+    "mkdir -p '${CMAKE_BINARY_DIR}/${PROJECT_NAME}-stamps'\n" "touch '${_sh_stamp}'\n"
   )
 
   add_custom_command(
-    OUTPUT "${_SH_STAMP}"
-    COMMAND bash "${_SH_INSTALL_SCRIPT}"
+    OUTPUT "${_sh_stamp}"
+    COMMAND bash "${_sh_script}"
     COMMAND bash "${_ENV_HELPER}"
-    COMMENT "Installing ${PROJECT_NAME} shell tools"
+    DEPENDS ${_sh_files}
+    COMMENT "Installing ${PROJECT_NAME} ${_role} tools (shell)"
     VERBATIM
   )
 
-  add_custom_target(${PROJECT_NAME}_sh_tools DEPENDS "${_SH_STAMP}")
-  list(APPEND _TOOLS_DEPS ${PROJECT_NAME}_sh_tools)
-endif ()
+  add_custom_target(${PROJECT_NAME}_${_role}_sh_tools DEPENDS "${_sh_stamp}")
+  list(APPEND _ROLE_PARTS_${_role} ${PROJECT_NAME}_${_role}_sh_tools)
+endforeach ()
+
+# ------------------------------------------------------------------------------
+# Role aggregates
+# ------------------------------------------------------------------------------
+
+# ${PROJECT_NAME}_<role>_tools builds every language's tools of that role
+# (the Rust, Python and shell stamps and the C++ tool targets)
+# (make tools-<role>); the TPRM rules depend on the build role's aggregate.
+# Only the build role is a dependency of the apex build.
+foreach (_role IN LISTS _APEX_TOOL_ROLES)
+  get_property(_role_cpp_tools GLOBAL PROPERTY APEX_TOOLS_${_role})
+  if (_role_cpp_tools)
+    list(APPEND _ROLE_PARTS_${_role} ${_role_cpp_tools})
+  endif ()
+  if (NOT _ROLE_PARTS_${_role})
+    continue()
+  endif ()
+  add_custom_target(${PROJECT_NAME}_${_role}_tools DEPENDS ${_ROLE_PARTS_${_role}})
+  list(APPEND _TOOLS_DEPS ${PROJECT_NAME}_${_role}_tools)
+  if (NOT _role STREQUAL "build")
+    list(APPEND _TOOLS_ON_REQUEST ${PROJECT_NAME}_${_role}_tools)
+  endif ()
+endforeach ()
 
 # ------------------------------------------------------------------------------
 # Aggregate target
 # ------------------------------------------------------------------------------
 
 # A plain build (ninja with no target) carries what the apex build stands on:
-# the build role, plus the families not yet sorted into roles. Every tool,
-# the ops and analysis roles included, builds through ${PROJECT_NAME}_tools
-# (make tools); the release builder runs that explicitly.
+# the build role. Every tool, the ops and analysis roles included, builds
+# through ${PROJECT_NAME}_tools (make tools); the release builder runs that
+# explicitly.
 if (_TOOLS_DEPS)
   set(_TOOLS_DEFAULT_DEPS ${_TOOLS_DEPS})
   if (_TOOLS_ON_REQUEST)

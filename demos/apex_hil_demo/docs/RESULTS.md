@@ -161,7 +161,7 @@ ssh kalex@raspberrypi.local 'cd ~/apex && \
   sudo ./run.sh ApexHilDemo --skip-cleanup --shutdown-after 1800 </dev/null &'
 
 # Monitor
-PYTHONPATH=tools/py/src python3 demos/apex_hil_demo/scripts/health.py \
+PYTHONPATH=tools/ops/py/apex_ops/src python3 demos/apex_hil_demo/scripts/health.py \
   --host raspberrypi.local
 ```
 

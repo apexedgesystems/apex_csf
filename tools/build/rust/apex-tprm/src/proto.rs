@@ -3,7 +3,7 @@
 //! The profile is a narrow, standards-conformant proto3 subset
 //! (docs/proto_profile.md): one message per struct, declaration order
 //! = layout order, field numbers 1..N in order, sizes/counts/defaults
-//! carried by the apex custom options (tools/proto/apex/options.proto,
+//! carried by the apex custom options (tools/build/proto/apex/options.proto,
 //! standard FieldOptions extensions). Anything that cannot be a fixed
 //! memory image -- variable-length data, nested messages, oneof --
 //! is inexpressible and fails ingest with a named error.

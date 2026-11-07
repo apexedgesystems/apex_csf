@@ -104,7 +104,7 @@ it connects to the ops interface at 127.0.0.1:9000:
 
 ```bash
 docker exec -i -w /home/$USER/workspace rover_mcu \
-  tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py \
+  tools/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py \
   demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --start
 ```
 
@@ -163,7 +163,7 @@ producer's container (127.0.0.1:9000, the script's default):
 
 ```bash
 docker exec -i -w /home/$USER/workspace rover_mcu \
-  tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/push_probe.py --seconds 5
+  tools/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/push_probe.py --seconds 5
 ```
 
 It connects, counts every packet by (fullUid, opcode, size) for the

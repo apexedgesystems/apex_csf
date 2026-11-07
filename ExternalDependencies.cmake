@@ -11,7 +11,7 @@ endif ()
 include(FetchContent)
 
 # Hermetic builds: when the dev image has baked the dependency sources at their
-# pinned tags (docker/scripts/bake-external-deps.sh into $APEX_DEPS_DIR), point
+# pinned tags (tools/build/sh/bake-external-deps.sh into $APEX_DEPS_DIR), point
 # FetchContent at the local copies so configure never reaches GitHub. Absent the
 # env (local dev), FetchContent clones normally. Names match the declarations
 # below; FetchContent uppercases them for FETCHCONTENT_SOURCE_DIR_<NAME>.

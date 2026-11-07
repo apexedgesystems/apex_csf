@@ -13,7 +13,7 @@ No hardware dependencies -- pure SIL on any POSIX host.
 ## Prerequisites
 
 - Build the project: `make compose-debug`
-- Python ops client (`apex_tools.ops.client.AprotoClient`) for
+- Python ops client (`apex_ops.client.AprotoClient`) for
   introspection (optional but recommended).
 
 ## Quick start (inside dev container)
@@ -37,7 +37,7 @@ scenarios according to wall-clock seconds.
 Connect from another terminal while the app is running:
 
 ```python
-from apex_tools.ops.client import AprotoClient
+from apex_ops.client import AprotoClient
 import struct
 
 with AprotoClient("localhost", 9000) as c2:
@@ -82,7 +82,7 @@ Run the app, then in a Python loop poll TimeServer's OUTPUT every
 second:
 
 ```python
-from apex_tools.ops.client import AprotoClient
+from apex_ops.client import AprotoClient
 import struct, time
 
 with AprotoClient("localhost", 9000) as c2:

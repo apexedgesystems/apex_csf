@@ -42,7 +42,7 @@ TPRM=build/hosted-x86_64-debug/demos/apex_ops_demo/exec/tprm
 While the app is running, connect from another terminal:
 
 ```python
-from apex_tools.ops.client import AprotoClient
+from apex_ops.client import AprotoClient
 
 with AprotoClient("localhost", 9000) as c2:
     c2.noop()                        # Connectivity check

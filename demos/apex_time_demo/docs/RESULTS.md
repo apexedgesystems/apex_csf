@@ -44,7 +44,7 @@ GPS simulator       (separate thread, 1 Hz)
 
 Every scenario edge produces an `OP_TIME_AT_NEXT_TONE` (`0x0602`)
 broadcast on the IInternalBus. Capture verified by snooping the
-broadcast subscription via `apex_tools.ops.client.AprotoClient` --
+broadcast subscription via `apex_ops.client.AprotoClient` --
 the bus delivers the 40-byte TNT payload on schedule and other
 registered components receive it.
 

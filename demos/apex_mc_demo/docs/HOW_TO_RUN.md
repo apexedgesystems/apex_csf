@@ -55,10 +55,10 @@ docker compose run --rm -T dev-cuda bash -c '
 
 ```bash
 # Build Python tools (uv wheel + pip install to build dir)
-make compose-tools-py
+make compose-tools-analysis
 ```
 
-This installs `mc-plot` to `build/hosted-x86_64-debug/bin/tools/py/`.
+This installs `mc-plot` to `build/hosted-x86_64-debug/bin/tools/analysis/`.
 
 ---
 
@@ -188,10 +188,10 @@ docker compose run --rm -T dev-cuda bash -c '
 
 ## Troubleshooting
 
-| Problem                      | Fix                                                                      |
-| ---------------------------- | ------------------------------------------------------------------------ |
-| `mc-plot: command not found` | Run `make compose-tools-py` then `source build/hosted-x86_64-debug/.env` |
-| `No module named matplotlib` | Python tools not built. Run `make compose-tools-py`                      |
-| CSV is empty                 | Check `--csv` path is writable                                           |
-| All yields 100%              | Tolerances may be too tight. Check model parameters                      |
-| Results differ from archived | Verify `--seed` matches. Same seed = identical results                   |
+| Problem                      | Fix                                                                            |
+| ---------------------------- | ------------------------------------------------------------------------------ |
+| `mc-plot: command not found` | Run `make compose-tools-analysis` then `source build/hosted-x86_64-debug/.env` |
+| `No module named matplotlib` | Python tools not built. Run `make compose-tools-analysis`                      |
+| CSV is empty                 | Check `--csv` path is writable                                                 |
+| All yields 100%              | Tolerances may be too tight. Check model parameters                            |
+| Results differ from archived | Verify `--seed` matches. Same seed = identical results                         |

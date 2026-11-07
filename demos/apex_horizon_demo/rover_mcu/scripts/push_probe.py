@@ -13,7 +13,7 @@ Run from inside the producer's container (the ops interface listens on
 127.0.0.1:9000 there), with the apex tools venv:
 
     docker exec -i -w /home/$USER/workspace rover_mcu \\
-      tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/push_probe.py --seconds 5
+      tools/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/push_probe.py --seconds 5
 
 Arguments:
   --seconds N     window to listen for (default 5)
@@ -77,8 +77,8 @@ def main() -> int:
     ap.add_argument("--expect-hz", type=float, default=0.0)
     a = ap.parse_args()
 
-    sys.path.insert(0, str(REPO / "tools/py/src"))
-    from apex_tools.ops.protocol import parse_header, slip_decode_stream  # noqa: E402
+    sys.path.insert(0, str(REPO / "tools/ops/py/apex_ops/src"))
+    from apex_ops.protocol import parse_header, slip_decode_stream  # noqa: E402
 
     offsets = tail_offsets(pathlib.Path(a.db))
     missing = [n for n in TAIL_NAMES if n not in offsets]

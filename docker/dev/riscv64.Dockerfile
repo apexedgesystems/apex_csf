@@ -18,7 +18,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 # ==============================================================================
 # RISC-V Cross Toolchain
 # ==============================================================================
-COPY --chmod=0755 docker/scripts/setup-cross-toolchain.sh /usr/local/bin/setup-cross-toolchain
+COPY --chmod=0755 tools/build/sh/setup-cross-toolchain.sh /usr/local/bin/setup-cross-toolchain
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     setup-cross-toolchain riscv64
@@ -26,13 +26,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # ==============================================================================
 # Multi-arch Apt Sources (shared: native amd64 + riscv64 ports, dpkg arch)
 # ==============================================================================
-COPY --chmod=0755 docker/scripts/setup-cross-apt.sh /usr/local/bin/setup-cross-apt
+COPY --chmod=0755 tools/build/sh/setup-cross-apt.sh /usr/local/bin/setup-cross-apt
 RUN setup-cross-apt riscv64
 
 # ==============================================================================
 # RISC-V Sysroot Libraries + mold cross-linker
 # ==============================================================================
-COPY --chmod=0755 docker/scripts/setup-sysroot.sh /usr/local/bin/setup-sysroot
+COPY --chmod=0755 tools/build/sh/setup-sysroot.sh /usr/local/bin/setup-sysroot
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     setup-sysroot riscv64 riscv64-linux-gnu

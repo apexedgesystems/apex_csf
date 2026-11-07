@@ -227,7 +227,7 @@ RUN cargo fetch --locked --target x86_64-unknown-linux-gnu \
     chmod -R a+rwX /opt/rust/cargo
 
 # ------------------------------------------------------------------------------
-# uv - Python package manager for the python tools (`make tools-py`)
+# uv - Python package manager for the python tools (`make tools-<role>`)
 # ------------------------------------------------------------------------------
 # Single static binary from the pinned upstream image -- nothing pip-installed.
 COPY --from=ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc \
@@ -245,20 +245,24 @@ COPY --from=ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba8
 # watches it too. The dependency bake below adds FetchContent deps' wheels to
 # the wheelhouse.
 ENV UV_CACHE_DIR=/opt/apex-uv-cache
-COPY tools/py/pyproject.toml tools/py/uv.lock /tmp/py-fetch/
-RUN uv export --directory /tmp/py-fetch --frozen --format requirements-txt \
-      --no-dev --no-emit-project --no-hashes --output-file /tmp/py-fetch/req.txt && \
+# The workspace root, the lock and every member manifest (no sources); uv
+# resolves the workspace from these alone. A new member adds one line.
+COPY tools/pyproject.toml tools/uv.lock /tmp/py-fetch/
+COPY tools/ops/py/apex_ops/pyproject.toml /tmp/py-fetch/ops/py/apex_ops/
+COPY tools/analysis/py/apex_analysis/pyproject.toml /tmp/py-fetch/analysis/py/apex_analysis/
+RUN uv export --directory /tmp/py-fetch --frozen --all-packages --format requirements-txt \
+      --no-dev --no-emit-workspace --no-hashes --output-file /tmp/py-fetch/req.txt && \
     pip3 download --no-cache-dir --requirement /tmp/py-fetch/req.txt \
       --dest /opt/apex-pip-wheels && \
-    uv sync --directory /tmp/py-fetch --frozen --no-install-project && \
+    uv sync --directory /tmp/py-fetch --frozen --all-packages --no-install-workspace && \
     # A frozen sync caches wheels by their locked URLs but never touches the
     # index, and building the project offline re-resolves build-system.requires
-    # (hatchling) against index metadata. Build a stub wheel with the same
-    # pyproject so that exact resolution runs here, online, and its metadata
-    # lands in the cache for the offline runtime builds.
-    mkdir -p /tmp/py-fetch/src/apex_tools && \
-    touch /tmp/py-fetch/src/apex_tools/__init__.py /tmp/py-fetch/README.md && \
-    uv build --wheel --directory /tmp/py-fetch --out-dir /tmp/py-fetch/dist && \
+    # (hatchling) against index metadata. Build a stub wheel per member with
+    # the same manifests so that exact resolution runs here, online, and its
+    # metadata lands in the cache for the offline runtime builds.
+    mkdir -p /tmp/py-fetch/ops/py/apex_ops/src/apex_ops /tmp/py-fetch/analysis/py/apex_analysis/src/apex_analysis && \
+    touch /tmp/py-fetch/ops/py/apex_ops/src/apex_ops/__init__.py /tmp/py-fetch/analysis/py/apex_analysis/src/apex_analysis/__init__.py && \
+    uv build --all-packages --directory /tmp/py-fetch --out-dir /tmp/py-fetch/dist && \
     rm -rf /tmp/py-fetch && \
     chmod -R a+rwX /opt/apex-uv-cache
 
@@ -275,7 +279,7 @@ RUN uv export --directory /tmp/py-fetch --frozen --format requirements-txt \
 # source of truth); the CI image graph watches it too, so a version bump
 # rebuilds and re-bakes.
 COPY ExternalDependencies.cmake /tmp/deps/ExternalDependencies.cmake
-COPY docker/scripts/bake-external-deps.sh /tmp/deps/bake-external-deps.sh
+COPY tools/build/sh/bake-external-deps.sh /tmp/deps/bake-external-deps.sh
 RUN bash /tmp/deps/bake-external-deps.sh /tmp/deps/ExternalDependencies.cmake \
       /opt/apex-deps /opt/apex-pip-wheels && \
     rm -rf /tmp/deps && \

@@ -82,15 +82,13 @@ Configure-only variants available: `configure-jetson`, `configure-rpi`, etc.
 
 ### Tools
 
-| Target                | Description                                 |
-| --------------------- | ------------------------------------------- |
-| `make tools`          | Build every tool (all roles and families)   |
-| `make tools-build`    | Build the tools the apex build needs (Rust) |
-| `make tools-ops`      | Build the ops tools (Rust)                  |
-| `make tools-analysis` | Build the analysis tools (Rust)             |
-| `make tools-cpp`      | Build C++ tools only                        |
-| `make tools-py`       | Build Python tools only                     |
-| `make apex-data-db`   | Generate struct dictionaries                |
+| Target                | Description                               |
+| --------------------- | ----------------------------------------- |
+| `make tools`          | Build every tool (all roles)              |
+| `make tools-build`    | Build the tools the apex build needs      |
+| `make tools-ops`      | Build the ops tools (every language)      |
+| `make tools-analysis` | Build the analysis tools (every language) |
+| `make apex-data-db`   | Generate struct dictionaries              |
 
 ### Release
 
@@ -152,12 +150,13 @@ service, passing through `VERBOSE` and `CMAKE_EXTRA_ARGS`.
 
 ### Cleanup
 
-| Target              | Description                                  |
-| ------------------- | -------------------------------------------- |
-| `make clean`        | Clean build artifacts (ninja clean + extras) |
-| `make distclean`    | Remove entire `build/` directory             |
-| `make docker-clean` | Remove dangling Docker images                |
-| `make docker-prune` | Remove all `apex.*` images                   |
+| Target                   | Description                                           |
+| ------------------------ | ----------------------------------------------------- |
+| `make clean`             | Clean build artifacts (ninja clean + extras)          |
+| `make clean-tools-build` | Remove the installed tools and every producer's state |
+| `make distclean`         | Remove entire `build/` directory                      |
+| `make docker-clean`      | Remove dangling Docker images                         |
+| `make docker-prune`      | Remove all `apex.*` images                            |
 
 ## Configuration
 

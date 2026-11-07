@@ -53,7 +53,7 @@ build/hosted-x86_64-debug/
 |   +-- build/                      # cfg2bin tprm_pack cdef_gen apex_data_gen
 |   +-- ops/                        # tprm_template upx_tool serial_dev_checker serial_dev_tester
 |   +-- analysis/                   # rdat_tool sdat_tool
-|   +-- py/  sh/  cpp/              # the other families
+|   +-- (the role's Python, shell and C++ tools install here too)
 \-- apex_csf-rust-target/
     +-- build/  ops/  analysis/     # one cargo target dir per role
 ```
@@ -62,10 +62,10 @@ build/hosted-x86_64-debug/
 
 ## How CMake builds it
 
-`tools/CMakeLists.txt` holds two lists: `_APEX_TOOL_FAMILIES` (the
-Python, shell and C++ tools, built by language) and `_APEX_TOOL_ROLES`
-(`build ops analysis`). For each role that has crates under
-`<role>/rust/`, it generates one build script and one custom command:
+`tools/CMakeLists.txt` holds the role list `_APEX_TOOL_ROLES`
+(`build ops analysis`); every language builds by role. For each role
+that has crates under `<role>/rust/`, it generates one build script and
+one custom command:
 
 1. `cargo build --release -p <member>...` into
    `${CMAKE_BINARY_DIR}/apex_csf-rust-target/<role>`. The members and
@@ -78,16 +78,18 @@ Python, shell and C++ tools, built by language) and `_APEX_TOOL_ROLES`
    dir's `release/` to `bin/tools/<role>/` by name and declared as a
    byproduct, so file-level dependencies on it (the TPRM rules) resolve in
    a fresh tree. Only current bin targets are copied; a name installed by
-   an earlier build is not removed (`make clean-rust` clears the role
-   output dirs).
+   an earlier build is not removed (`make clean-tools-build` clears the
+   role output dirs).
 3. A stamp (`apex_csf-stamps/rust-<role>-tools.built`) records the
    build. It depends on every `*.rs` under the workspace, every member
    manifest and the lock, so an edit anywhere regenerates the roles that
    share the library; cargo is incremental past that point.
 
-The custom target is `apex_csf_<role>_tools`. Two aggregates sit above
-them: `apex_csf_tools_default` is in ALL and carries the build role plus
-the py and sh families; `apex_csf_tools` carries every tool. A plain
+The custom target is `apex_csf_<role>_rust_tools`, one part of the role
+aggregate `apex_csf_<role>_tools` that also carries the role's shell
+tools. Two aggregates sit above the roles: `apex_csf_tools_default` is
+in ALL and carries the build role alone; `apex_csf_tools`
+carries every tool. A plain
 `ninja` therefore compiles the four build tools and nothing from ops or
 analysis.
 
@@ -109,12 +111,13 @@ tree and per role, so compiled artifacts never cross trees.
 | --------------------------------------- | ------------------------------------------------------------------------- |
 | `make tools-build`                      | the build role: what the apex build stands on                             |
 | `make tools-ops`, `make tools-analysis` | the other roles, on request                                               |
-| `make tools`                            | every tool (all roles and families)                                       |
+| `make tools`                            | every tool (all roles)                                                    |
 | `make test-rust`                        | `cargo test --workspace` at `tools/`                                      |
 | `make clippy`                           | `cargo clippy --workspace --all-targets --locked -- -D warnings`          |
 | `make compat-tprm`                      | the TPRM contract: `-p apex-tprm --test golden_vectors` plus the C++ side |
 | `make coverage-rust`                    | `cargo llvm-cov --workspace`; report at `tools/coverage-rust.lcov`        |
-| `make clean-rust`                       | the role output dirs, the per-role target dirs and `tools/target`         |
+| `make clean-rust`                       | the per-role target dirs, the rust stamps and `tools/target`              |
+| `make clean-tools-build`                | the role output dirs and every language's stamps                          |
 
 The gates stand on the build role: `apex-data-db`, `cdef`, `check-cdef`,
 `check-data-db` and `check-data-db-contract` list `tools-build` as their
@@ -131,14 +134,15 @@ builds `apex_csf_<name>_tools` if that target exists.
 ```bash
 # build/hosted-x86_64-debug/.env
 export PATH="$PWD/bin/tools/build:$PATH"
+export PYTHONPATH="$PWD/lib/python/build${PYTHONPATH:+:$PYTHONPATH}"
 export PATH="$PWD/bin/tools/ops:$PATH"
+export PYTHONPATH="$PWD/lib/python/ops${PYTHONPATH:+:$PYTHONPATH}"
 export PATH="$PWD/bin/tools/analysis:$PATH"
-export PATH="$PWD/bin/tools/py:$PATH"
-export PYTHONPATH="$PWD/lib/python:$PYTHONPATH"
+export PYTHONPATH="$PWD/lib/python/analysis${PYTHONPATH:+:$PYTHONPATH}"
 ```
 
-Lines are appended once per `bin/tools/<dir>` by the env helper; `$PWD`
-keeps the build directory relocatable. Source it from the build
+The env helper appends one PATH line and one PYTHONPATH line per role,
+each once; `$PWD` keeps the build directory relocatable. Source it from the build
 directory:
 
 ```bash
@@ -242,7 +246,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 ### Stale binaries after moving crates
 
 ```bash
-make clean-rust
+make clean-tools-build
 make tools
 ```
 
