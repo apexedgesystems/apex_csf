@@ -524,11 +524,17 @@ function (apex_add_tool)
   if (TOOL_FEATURES)
     list(APPEND _args FEATURES ${TOOL_FEATURES})
   endif ()
-  if (TOOL_NO_INSTALL)
+  # Only the build role is part of a plain build and of the install tree; the
+  # other roles build on request through their aggregate and ship through the
+  # tools tarball (an installed target cannot be excluded from ALL).
+  if (TOOL_NO_INSTALL OR NOT _tool_role STREQUAL "build")
     list(APPEND _args NO_INSTALL)
   endif ()
 
   _apex_add_executable(${_args})
+  if (NOT _tool_role STREQUAL "build")
+    set_target_properties(${TOOL_NAME} PROPERTIES EXCLUDE_FROM_ALL TRUE)
+  endif ()
 
   # The role aggregate in tools/CMakeLists.txt collects the role's tools.
   set_property(GLOBAL APPEND PROPERTY APEX_TOOLS_${_tool_role} ${TOOL_NAME})

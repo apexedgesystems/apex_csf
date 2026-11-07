@@ -139,7 +139,9 @@ apex_add_tool(
 ```
 
 Tools output to `bin/tools/<role>`, the role being the `tools/<role>/cpp/<tool>`
-directory the call sits in.
+directory the call sits in. A build-role tool is part of a plain build and
+installs; a tool of any other role builds on request through its role
+aggregate (`make tools-<role>`) and does not install.
 
 ### Firmware (Bare-Metal Executables)
 
