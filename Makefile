@@ -152,10 +152,10 @@ help:
 	@printf '  %-28s %s\n' "make test-py" "Run Python tools tests"
 	@printf '\n'
 	@printf '%s\n' "Tools:"
-	@printf '  %-28s %s\n' "make tools" "Build every tool (all roles and families)"
-	@printf '  %-28s %s\n' "make tools-build" "Build the tools the apex build needs (Rust)"
-	@printf '  %-28s %s\n' "make tools-ops" "Build the ops tools (Rust)"
-	@printf '  %-28s %s\n' "make tools-analysis" "Build the analysis tools (Rust)"
+	@printf '  %-28s %s\n' "make tools" "Build every tool (all roles)"
+	@printf '  %-28s %s\n' "make tools-build" "Build the tools the apex build needs"
+	@printf '  %-28s %s\n' "make tools-ops" "Build the ops tools (every language)"
+	@printf '  %-28s %s\n' "make tools-analysis" "Build the analysis tools (every language)"
 	@printf '\n'
 	@printf '%s\n' "Profiling (chrome://tracing format):"
 	@printf '  %-28s %s\n' "make profile-configure" "CMake configure-time hotspots"

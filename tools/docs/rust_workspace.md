@@ -62,10 +62,10 @@ build/hosted-x86_64-debug/
 
 ## How CMake builds it
 
-`tools/CMakeLists.txt` holds two lists: `_APEX_TOOL_FAMILIES` (the
-Python, shell and C++ tools, built by language) and `_APEX_TOOL_ROLES`
-(`build ops analysis`). For each role that has crates under
-`<role>/rust/`, it generates one build script and one custom command:
+`tools/CMakeLists.txt` holds the role list `_APEX_TOOL_ROLES`
+(`build ops analysis`); every language builds by role. For each role
+that has crates under `<role>/rust/`, it generates one build script and
+one custom command:
 
 1. `cargo build --release -p <member>...` into
    `${CMAKE_BINARY_DIR}/apex_csf-rust-target/<role>`. The members and

@@ -82,13 +82,13 @@ Configure-only variants available: `configure-jetson`, `configure-rpi`, etc.
 
 ### Tools
 
-| Target                | Description                                 |
-| --------------------- | ------------------------------------------- |
-| `make tools`          | Build every tool (all roles and families)   |
-| `make tools-build`    | Build the tools the apex build needs (Rust) |
-| `make tools-ops`      | Build the ops tools (Rust)                  |
-| `make tools-analysis` | Build the analysis tools (Rust)             |
-| `make apex-data-db`   | Generate struct dictionaries                |
+| Target                | Description                               |
+| --------------------- | ----------------------------------------- |
+| `make tools`          | Build every tool (all roles)              |
+| `make tools-build`    | Build the tools the apex build needs      |
+| `make tools-ops`      | Build the ops tools (every language)      |
+| `make tools-analysis` | Build the analysis tools (every language) |
+| `make apex-data-db`   | Generate struct dictionaries              |
 
 ### Release
 

@@ -96,7 +96,14 @@ every one of them:
 
 ## Adding a role
 
-Add it to `_APEX_TOOL_ROLES` in `tools/CMakeLists.txt` and `TOOL_ROLES` in
-`mk/tools.mk`; the Rust and Python workspace member globs
-(`<role>/rust/*`, `*/py/*`) take its crates and packages. Give it a CI
-scope only if it should gate on its own.
+1. Add it to `_APEX_TOOL_ROLES` in `tools/CMakeLists.txt` and to
+   `TOOL_ROLES` in `mk/tools.mk`.
+2. Rust: add `"<role>/rust/*"` to `members` in `tools/Cargo.toml`, which
+   names each role. Python: the `*/py/*` glob in `tools/pyproject.toml`
+   takes the role's packages as they appear.
+3. For each new crate or package, follow the member steps in
+   [docs/rust_workspace.md](docs/rust_workspace.md#adding-things) or
+   [docs/python_tools.md](docs/python_tools.md), and add its manifest
+   `COPY` line to the image bake in `docker/base.Dockerfile`; a Python
+   package also joins the `--cov` list of `coverage-py` in `mk/test.mk`.
+4. Give the role a CI scope only if it should gate on its own.

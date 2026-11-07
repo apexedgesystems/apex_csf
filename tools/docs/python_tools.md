@@ -54,7 +54,7 @@ Benchmarking tools (`bench-plot`) have moved to the external
 make test-py
 
 # Or directly with uv
-cd tools && uv run pytest -v
+cd tools && uv run --all-packages pytest -v
 ```
 
 ### Local Development
