@@ -1,7 +1,7 @@
 # Apex Build Info Library
 
 **Namespace:** `apex::build_info`
-**Platform:** Hosted (Linux); skipped on bare-metal builds
+**Platform:** Hosted (Linux); MCU stm32, avr, pico and esp32 (`lib.manifest`)
 **C++ Standard:** C++17
 **Library:** `utilities_build_info`
 
@@ -112,11 +112,15 @@ STATIC, so the constants link into the firmware image, the probe in
 toolchain selects one, the board (`stm32/arm/nucleo_l476rg`,
 `avr/avr`), since every MCU toolchain calls the CMake system `Generic`. A firmware main
 writes `summary()` as its first line on a hardware UART, once, before the
-first frame (the STM32 HIL flight controller, the STM32 and Arduino encryptors
-on their shared or command UART, the Pico and ESP32 encryptors on their data
-UART, since their command channels are USB devices with no host at boot), so
-a terminal on the port reads which build is running; a framed protocol on
-the same port drops the bytes before its first frame end. The identity strings
+first frame (the STM32 HIL flight controller, the rover MCU board firmware on its link
+UART, the STM32 and Arduino encryptors on their shared or command UART, the
+Pico and ESP32 encryptors on their data UART, since their command channels are USB devices with no host at boot), so
+a terminal on the port reads which build is running. The line is startup
+I/O on a framed link, so its receivers matter: the HIL host flushes its input
+at init and its SLIP decoder resyncs on a frame end, and the encryptor
+checkout scripts drain after a settle at open, so neither parses it; a reader
+that opens the port after boot and decodes raw bytes, or one already open
+across a warm reset, may take the text for a frame. The identity strings
 cost flash on every MCU; on AVR, where avr-gcc keeps constants in data
 memory, the summary is placed in program memory and copied out in windows,
 so it costs no SRAM. Only the strings a firmware references survive

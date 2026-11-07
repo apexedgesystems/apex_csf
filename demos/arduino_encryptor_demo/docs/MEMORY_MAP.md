@@ -95,7 +95,12 @@ are statically allocated.
 
 ### SRAM Budget (Actual -- Post-Optimization)
 
-Final firmware: **Program 20,244 B (61.8%), Data 1,280 B (62.5%).**
+Firmware after the optimization passes: **Program 20,244 B (61.8%), Data
+1,280 B (62.5%).** Current firmware (with the build identity line): **Program
+22,094 B (67.4%), Data 1,307 B (63.8%), 741 B free for the stack.** The
+build identity's summary lives in program memory and adds no SRAM; in data
+memory it would have taken 120 to 134 B, the length depending on the branch
+name and the dirty mark.
 
 See `SRAM_OPTIMIZATION_PASS_1.md` and `SRAM_OPTIMIZATION_PASS_2.md` for the
 full optimization history (3,533 -> 1,280 bytes across 2 passes + UART fixes).
@@ -137,9 +142,14 @@ full optimization history (3,533 -> 1,280 bytes across 2 passes + UART fixes).
 
 ### Stack Safety
 
-With 768 bytes free for the stack, margin is comfortable. Verified by running
-the full 36-check serial checkout script including sustained encryption stress
-tests (20 consecutive packets) without corruption.
+With 741 B free for the stack, the deepest reachable path, measured by static
+call-chain analysis at the pinned toolchain (main, executive, channel decode,
+frame processing and encryption, plus the UART RX interrupt context and a
+helper return), is 611 B, which leaves 130 B. The 36-check serial checkout,
+including the sustained encryption stress of 20 consecutive packets, runs
+without corruption; it exercises that path, not a stack watermark. Any new
+static data on this board comes out of those 130 B, which is why boot-time
+constants go in program memory.
 
 ---
 
