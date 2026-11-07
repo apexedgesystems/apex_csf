@@ -8,6 +8,7 @@
  */
 
 #include "src/utilities/concurrency/inc/ThreadPoolLockFree.hpp"
+#include "src/utilities/concurrency/utst/support/ThreadStartFault.hpp"
 
 #include <gtest/gtest.h>
 
@@ -15,12 +16,11 @@
 #include <chrono>
 #include <csignal>
 #include <cstdint>
+#include <memory>
+#include <string>
 #include <thread>
 
 #include <pthread.h>
-#include <sys/resource.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 using apex::concurrency::DelegateU8;
 using apex::concurrency::PoolStatus;
@@ -281,6 +281,14 @@ void unblockAllHere() {
   pthread_sigmask(SIG_SETMASK, &none, nullptr);
 }
 
+/// Block `sig` on the calling thread.
+void blockHere(int sig) {
+  sigset_t one;
+  sigemptyset(&one);
+  sigaddset(&one, sig);
+  pthread_sigmask(SIG_BLOCK, &one, nullptr);
+}
+
 /// A worker's view of its own mask, written by the task that runs there.
 struct WorkerMask {
   std::atomic<bool> done{false};
@@ -346,30 +354,157 @@ TEST_F(ThreadPoolLockFreeTest, WorkersBlockProcessSignalsOnly) {
   EXPECT_FALSE(mask.sigsegv) << "a blocked SIGSEGV only bypasses an installed crash handler";
 }
 
-/** @test Every enqueue reported as SUCCESS runs, including one racing shutdown(): a producer that
- * passed the stop check must not have its task stranded in the ring by the workers leaving. */
+/** @test Every enqueue reported as SUCCESS runs, including those racing shutdown(): two producers
+ * that passed the admission check must not have a task stranded in the ring by the workers
+ * leaving, whichever of them publishes last. */
 TEST_F(ThreadPoolLockFreeTest, EverySuccessfulEnqueueRunsAcrossShutdown) {
   constexpr int LIFETIMES = 1000;
   for (int lifetime = 0; lifetime < LIFETIMES; ++lifetime) {
     std::atomic<std::uint32_t> executed{0};
-    std::uint32_t accepted = 0;
+    std::atomic<std::uint32_t> accepted{0};
     ThreadPoolLockFree pool(2, 64);
-    std::thread producer([&]() {
+    const auto PRODUCE = [&]() {
       for (;;) {
         const PoolStatus STATUS = pool.tryEnqueue("count", {&countRun, &executed});
         if (STATUS == PoolStatus::POOL_STOPPED) {
           return;
         }
         if (STATUS == PoolStatus::SUCCESS) {
-          ++accepted;
+          accepted.fetch_add(1, std::memory_order_acq_rel);
         }
       }
-    });
+    };
+    std::thread producerA(PRODUCE);
+    std::thread producerB(PRODUCE);
     std::this_thread::yield();
     pool.shutdown();
-    producer.join();
-    ASSERT_EQ(executed.load(std::memory_order_acquire), accepted) << "lifetime " << lifetime;
+    producerA.join();
+    producerB.join();
+    ASSERT_EQ(executed.load(std::memory_order_acquire), accepted.load(std::memory_order_acquire))
+        << "lifetime " << lifetime;
   }
+}
+
+namespace apex {
+namespace concurrency {
+
+/// The white-box seams the pool's header befriends: the ring and permit states the shutdown
+/// protocol has to survive, built directly rather than hoped for from a racing schedule.
+struct ThreadPoolLockFreeTestAccess {
+  /// A published task with no permit for it: the state left when a worker consumed the permit
+  /// on a pop that found a cell ahead still being published.
+  static bool pushWithoutPermit(ThreadPoolLockFree& pool, const char* label, DelegateU8 task) {
+    return pool.taskQueue_.tryPush(ThreadPoolLockFree::TaskItem{label, task});
+  }
+  /// A permit with nothing published for it.
+  static void releasePermit(ThreadPoolLockFree& pool) { pool.wakeupSem_.release(); }
+  /// A producer past the admission check that has not published yet.
+  static void enterAdmission(ThreadPoolLockFree& pool) {
+    pool.admission_.value.fetch_add(1, std::memory_order_acq_rel);
+  }
+  /// That producer leaving, after its push and permit.
+  static void leaveAdmission(ThreadPoolLockFree& pool) { pool.leaveAdmission(); }
+};
+
+} // namespace concurrency
+} // namespace apex
+
+namespace {
+
+using Access = apex::concurrency::ThreadPoolLockFreeTestAccess;
+
+/// Poll `done` until it holds or `limit` passes.
+template <class Pred> bool settles(Pred done, std::chrono::milliseconds limit) {
+  const auto DEADLINE = std::chrono::steady_clock::now() + limit;
+  while (!done()) {
+    if (std::chrono::steady_clock::now() > DEADLINE) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return true;
+}
+
+constexpr std::chrono::milliseconds BOUND{5000};
+
+} // namespace
+
+/** @test A task left in the ring with its permit consumed runs on the next permit, together with
+ * the task that permit announces: a woken worker drains the ring rather than taking one task per
+ * permit, so a permit spent on a pop that found an unpublished cell ahead strands nothing. */
+TEST_F(ThreadPoolLockFreeTest, TaskBehindAConsumedPermitRunsOnTheNextWake) {
+  std::atomic<std::uint32_t> executed{0};
+  ThreadPoolLockFree pool(1, 8);
+  ASSERT_TRUE(Access::pushWithoutPermit(pool, "stranded", {&countRun, &executed}));
+  ASSERT_EQ(pool.tryEnqueue("next", {&countRun, &executed}), PoolStatus::SUCCESS);
+  EXPECT_TRUE(settles([&]() { return executed.load(std::memory_order_acquire) == 2; }, BOUND))
+      << "ran " << executed.load()
+      << " of 2: the stranded task waits for a permit that never comes";
+}
+
+/** @test shutdown() runs a task whose permit was consumed, and returns: a worker's exit needs the
+ * ring seen empty after the quiescent mark, not a permit per task, so the permit shutdown()
+ * releases per worker is not spent on the task. */
+TEST_F(ThreadPoolLockFreeTest, ShutdownRunsTheTaskBehindAConsumedPermit) {
+  std::atomic<std::uint32_t> executed{0};
+  auto pool = std::make_unique<ThreadPoolLockFree>(1, 8);
+  ASSERT_TRUE(Access::pushWithoutPermit(*pool, "stranded", {&countRun, &executed}));
+  std::atomic<bool> returned{false};
+  std::thread stopper([&]() {
+    pool->shutdown();
+    returned.store(true, std::memory_order_release);
+  });
+  const bool BOUNDED = settles([&]() { return returned.load(std::memory_order_acquire); }, BOUND);
+  EXPECT_TRUE(BOUNDED)
+      << "shutdown() did not return: a worker is parked for a permit that never comes";
+  if (!BOUNDED) {
+    stopper.detach();
+    (void)pool.release(); // a hung shutdown keeps its pool; the suite goes on
+    return;
+  }
+  stopper.join();
+  EXPECT_EQ(executed.load(std::memory_order_acquire), 1U) << "the accepted task did not run";
+  EXPECT_EQ(pool->workerCount(), 0U);
+}
+
+/** @test With admission closed while a producer is still inside tryEnqueue(), a worker woken to an
+ * empty ring parks again rather than exiting, and shutdown() parks until that producer has left;
+ * the task the producer then publishes runs before shutdown() returns. */
+TEST_F(ThreadPoolLockFreeTest, ShutdownWaitsForAnAdmittedProducerAndRunsItsTask) {
+  std::atomic<std::uint32_t> executed{0};
+  std::atomic<std::uint32_t> probes{0};
+  auto pool = std::make_unique<ThreadPoolLockFree>(1, 8);
+  Access::enterAdmission(*pool); // a producer past the admission check, not yet published
+  std::atomic<bool> returned{false};
+  std::thread stopper([&]() {
+    pool->shutdown();
+    returned.store(true, std::memory_order_release);
+  });
+  // Admission is closed once an enqueue is refused; until then the probes are ordinary tasks.
+  ASSERT_TRUE(settles(
+      [&]() { return pool->tryEnqueue("probe", {&countRun, &probes}) == PoolStatus::POOL_STOPPED; },
+      BOUND));
+  // A permit with nothing behind it: the worker wakes to an empty ring with admission closed
+  // and a producer outstanding, which is the state a pop at an unpublished cell leaves.
+  Access::releasePermit(*pool);
+  std::this_thread::sleep_for(std::chrono::milliseconds(50));
+  EXPECT_FALSE(returned.load(std::memory_order_acquire))
+      << "shutdown() returned with a producer still admitted";
+  // The producer publishes, releases its permit and leaves.
+  ASSERT_TRUE(Access::pushWithoutPermit(*pool, "late", {&countRun, &executed}));
+  Access::releasePermit(*pool);
+  Access::leaveAdmission(*pool);
+  const bool BOUNDED = settles([&]() { return returned.load(std::memory_order_acquire); }, BOUND);
+  EXPECT_TRUE(BOUNDED) << "shutdown() did not return after the producer left";
+  if (!BOUNDED) {
+    stopper.detach();
+    (void)pool.release();
+    return;
+  }
+  stopper.join();
+  EXPECT_EQ(executed.load(std::memory_order_acquire), 1U)
+      << "the admitted producer's task did not run: a worker exited on the close alone";
+  EXPECT_EQ(pool->workerCount(), 0U);
 }
 
 namespace {
@@ -394,41 +529,42 @@ TEST_F(ThreadPoolLockFreeTest, ReportsWorkerConfigFailure) {
   EXPECT_EQ(unconfigured.workerCount(), 2U);
 }
 
-/** @test A worker that cannot start leaves an invalid pool and the caller's mask untouched: the
- * child lowers its thread limit to one so thread creation fails (the limit is not enforced for
- * root, where the case is skipped). */
+/** @test A worker that cannot start, the first or one after others, leaves an invalid pool: the
+ * workers that did start ran to their end and were joined before the constructor returned, the
+ * pool has no workers, construction completes, and the caller's own mask is as it was. The seam is
+ * pthread_create, interposed by the test binary; a sanitizer runtime that owns that symbol skips
+ * the case. */
 TEST_F(ThreadPoolLockFreeTest, WorkerStartFailureLeavesPoolInvalid) {
-  if (::geteuid() == 0) {
-    GTEST_SKIP() << "RLIMIT_NPROC is not enforced for root";
+  using namespace apex::concurrency::test;
+  if (!threadStartFaultAvailable()) {
+    GTEST_SKIP() << "pthread_create belongs to the sanitizer runtime in this build";
   }
-  const pid_t CHILD = ::fork();
-  ASSERT_NE(CHILD, -1);
-  if (CHILD == 0) {
-    const rlimit ONE{1, 1};
-    if (::setrlimit(RLIMIT_NPROC, &ONE) != 0) {
-      ::_exit(40);
-    }
+  for (const unsigned FAIL_AT : {1U, 2U, 3U}) {
+    SCOPED_TRACE("creation " + std::to_string(FAIL_AT) + " of 3 fails");
     unblockAllHere();
-    int code = 0;
-    try {
-      ThreadPoolLockFree pool(2, 8);
-      if (pool.isValid() || pool.workerCount() != 0) {
-        code = 10; // the pool claims workers that could not start
-      }
-    } catch (...) {
-      code = 20; // the constructor threw instead of reporting an invalid pool
+    blockHere(SIGUSR1); // the caller's own mask, to find intact afterwards
+    armThreadStartFailure(FAIL_AT);
+    const auto START = std::chrono::steady_clock::now();
+    bool valid = true;
+    std::size_t count = 99;
+    {
+      ThreadPoolLockFree pool(3, 8);
+      valid = pool.isValid();
+      count = pool.workerCount();
     }
-    if (blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE)) {
-      code += 1; // the caller's mask was left blocked
-    }
-    ::_exit(code);
+    const auto ELAPSED = std::chrono::steady_clock::now() - START;
+    disarmThreadStartFailure();
+    const ThreadStartTally TALLY = threadStartTally();
+    EXPECT_FALSE(valid);
+    EXPECT_EQ(count, 0U);
+    EXPECT_EQ(TALLY.attempted, FAIL_AT) << "creation went on past the failure";
+    EXPECT_EQ(TALLY.started, FAIL_AT - 1);
+    EXPECT_EQ(TALLY.finished, FAIL_AT - 1)
+        << "a started worker had not run to its end when the constructor returned";
+    EXPECT_TRUE(blockedHere(SIGUSR1)) << "the caller's own mask was not restored";
+    EXPECT_FALSE(blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE))
+        << "the worker set leaked onto the caller";
+    EXPECT_LT(ELAPSED, std::chrono::seconds(10)) << "construction did not complete promptly";
+    unblockAllHere();
   }
-  int status = 0;
-  ASSERT_EQ(::waitpid(CHILD, &status, 0), CHILD);
-  ASSERT_TRUE(WIFEXITED(status));
-  if (WEXITSTATUS(status) == 40) {
-    GTEST_SKIP() << "the thread limit could not be lowered";
-  }
-  EXPECT_EQ(WEXITSTATUS(status), 0)
-      << "10: pool valid, 20: constructor threw, +1: mask left blocked";
 }

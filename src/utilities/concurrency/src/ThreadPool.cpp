@@ -4,6 +4,7 @@
  */
 
 #include "src/utilities/concurrency/inc/ThreadPool.hpp"
+#include "src/utilities/concurrency/inc/Latch.hpp"
 #include "src/utilities/concurrency/inc/ThreadConfig.hpp"
 
 #include <cstdio>
@@ -24,28 +25,33 @@ void ThreadPool::spawnWorkers(std::size_t numThreads, const PoolConfig& config) 
   // constructing thread its own mask back when the spawn is over, success
   // or not.
   WorkerSignalScope signals;
+  // Each worker counts down once its configuration is applied and never
+  // touches the latch again. The constructor parks on it rather than
+  // yielding, so a worker configured below the constructing thread's
+  // priority, on the same CPU, still gets to run.
+  Latch configured(numThreads);
   workers_.reserve(numThreads);
   try {
     for (std::size_t i = 0; i < numThreads; ++i) {
-      workers_.emplace_back([this, config, i]() {
+      workers_.emplace_back([this, config, i, &configured]() {
         if (!applyWorkerConfig(config, i)) {
           configFailures_.fetch_add(1, std::memory_order_acq_rel);
         }
-        started_.fetch_add(1, std::memory_order_release);
+        configured.countDown();
         workerLoop();
       });
     }
   } catch (const std::system_error&) {
     // A thread could not start (the process or thread limit): the pool is
-    // reported invalid rather than left with joinable threads to terminate on.
+    // reported invalid rather than left with joinable threads to terminate
+    // on. The workers that did start are joined here, so none outlives the
+    // latch.
     shutdown();
     return;
   }
   // Every worker has applied its configuration before the pool is handed
   // over, so workerConfigFailures() is final for the owner's start-up log.
-  while (started_.load(std::memory_order_acquire) < workers_.size()) {
-    std::this_thread::yield();
-  }
+  configured.wait();
 }
 
 ThreadPool::~ThreadPool() noexcept { shutdown(); }

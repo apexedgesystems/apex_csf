@@ -241,11 +241,12 @@ class ThreadPool {
 public:
   using TaskFn = DelegateU8;
 
-  explicit ThreadPool(std::size_t numThreads);
+  explicit ThreadPool(std::size_t numThreads, const PoolConfig& config = {});
   ~ThreadPool() noexcept;
 
   bool isValid() const noexcept;
   std::size_t workerCount() const noexcept;
+  std::size_t workerConfigFailures() const noexcept;
   void enqueueTask(const char* label, TaskFn task);
   PoolStatus tryEnqueue(const char* label, TaskFn task);
   bool threadsRunning() const noexcept;
@@ -255,20 +256,34 @@ public:
 };
 ```
 
+#### Start-up
+
+The constructor returns once every worker has applied its configuration,
+or with an invalid pool (`isValid()` false, `workerCount()` 0) when a worker
+could not start: the workers that had started are joined first, and no
+exception leaves the constructor. `workerConfigFailures()` counts the
+workers for which a requested setting (name, affinity, policy with priority)
+did not apply; the settings are applied one by one and a failure leaves the
+others as they are, so a counted worker may run with part of its
+configuration, and the count does not say which setting failed. The
+constructing thread's signal mask is as it was when the constructor
+returns; the workers block SIGINT, SIGTERM and SIGPIPE.
+
 #### RT-Safety
 
-| Method             | RT-Safe | Reason                         |
-| ------------------ | ------- | ------------------------------ |
-| `ThreadPool()`     | No      | Spawns threads                 |
-| `~ThreadPool()`    | No      | Joins threads                  |
-| `isValid()`        | Yes     | Checks stored size             |
-| `workerCount()`    | Yes     | Returns stored size            |
-| `enqueueTask()`    | No      | Mutex lock, queue may allocate |
-| `tryEnqueue()`     | No      | Mutex lock, queue may allocate |
-| `threadsRunning()` | Yes     | Atomic load                    |
-| `hasErrors()`      | Yes     | Atomic load                    |
-| `shutdown()`       | No      | Joins threads                  |
-| `collectErrors()`  | No      | Mutex lock                     |
+| Method                   | RT-Safe | Reason                         |
+| ------------------------ | ------- | ------------------------------ |
+| `ThreadPool()`           | No      | Spawns threads                 |
+| `~ThreadPool()`          | No      | Joins threads                  |
+| `isValid()`              | Yes     | Checks stored size             |
+| `workerCount()`          | Yes     | Returns stored size            |
+| `workerConfigFailures()` | Yes     | Atomic load                    |
+| `enqueueTask()`          | No      | Mutex lock, queue may allocate |
+| `tryEnqueue()`           | No      | Mutex lock, queue may allocate |
+| `threadsRunning()`       | Yes     | Atomic load                    |
+| `hasErrors()`            | Yes     | Atomic load                    |
+| `shutdown()`             | No      | Joins threads                  |
+| `collectErrors()`        | No      | Mutex lock                     |
 
 ---
 
@@ -286,12 +301,14 @@ class ThreadPoolLockFree {
 public:
   using TaskFn = DelegateU8;
 
-  explicit ThreadPoolLockFree(std::size_t numThreads, std::size_t queueCapacity = 1024);
+  explicit ThreadPoolLockFree(std::size_t numThreads, std::size_t queueCapacity = 1024,
+                              const PoolConfig& config = {});
   ~ThreadPoolLockFree() noexcept;
 
   bool isValid() const noexcept;
   std::size_t workerCount() const noexcept;
   std::size_t capacity() const noexcept;
+  std::size_t workerConfigFailures() const noexcept;
   PoolStatus tryEnqueue(const char* label, TaskFn task) noexcept;
   void enqueueTask(const char* label, TaskFn task) noexcept;
   bool threadsRunning() const noexcept;
@@ -301,32 +318,53 @@ public:
 };
 ```
 
+Start-up is as for `ThreadPool` above: the constructor waits for the
+workers' configuration, returns an invalid pool instead of throwing when a
+worker cannot start, and `workerConfigFailures()` counts the workers with a
+setting that did not apply.
+
+#### Shutdown
+
+`shutdown()` has two stages. It closes admission, so `tryEnqueue()` returns
+`POOL_STOPPED`; then it parks until the producers admitted before the close
+have published, marks the pool quiescent and wakes the workers. A worker
+exits only when it finds the ring empty after seeing that mark, so every
+task reported as `SUCCESS` has run when `shutdown()` returns. A woken worker
+drains the ring rather than taking one task per permit: a permit consumed
+on a pop that found a cell ahead still being published strands nothing,
+because the permit that publication releases brings a worker back to drain
+both.
+
 #### RT-Safety
 
-| Method                  | RT-Safe | Reason                          |
-| ----------------------- | ------- | ------------------------------- |
-| `ThreadPoolLockFree()`  | No      | Spawns threads, allocates queue |
-| `~ThreadPoolLockFree()` | No      | Joins threads                   |
-| `isValid()`             | Yes     | Checks stored size              |
-| `workerCount()`         | Yes     | Returns stored size             |
-| `capacity()`            | Yes     | Returns queue capacity          |
-| `tryEnqueue()`          | Yes     | Lock-free queue push            |
-| `enqueueTask()`         | Yes     | Lock-free queue push            |
-| `threadsRunning()`      | Yes     | Atomic load                     |
-| `hasErrors()`           | Yes     | Atomic load                     |
-| `shutdown()`            | No      | Joins threads                   |
-| `collectErrors()`       | No      | Mutex lock                      |
+| Method                   | RT-Safe | Reason                                         |
+| ------------------------ | ------- | ---------------------------------------------- |
+| `ThreadPoolLockFree()`   | No      | Spawns threads, allocates queue                |
+| `~ThreadPoolLockFree()`  | No      | Joins threads                                  |
+| `isValid()`              | Yes     | Checks stored size                             |
+| `workerCount()`          | Yes     | Returns stored size                            |
+| `capacity()`             | Yes     | Returns queue capacity                         |
+| `workerConfigFailures()` | Yes     | Atomic load                                    |
+| `tryEnqueue()`           | Yes     | Two RMWs on the admission word, lock-free push |
+| `enqueueTask()`          | Yes     | As `tryEnqueue()`                              |
+| `threadsRunning()`       | Yes     | Atomic load                                    |
+| `hasErrors()`            | Yes     | Atomic load                                    |
+| `shutdown()`             | No      | Parks on producers, joins threads              |
+| `collectErrors()`        | No      | Mutex lock                                     |
 
 #### ThreadPool vs ThreadPoolLockFree
 
-| Aspect          | ThreadPool                 | ThreadPoolLockFree           |
-| --------------- | -------------------------- | ---------------------------- |
-| Queue type      | `std::queue` (unbounded)   | `LockFreeQueue` (bounded)    |
-| Enqueue latency | ~1.2uss (mutex lock)       | ~0.15uss (lock-free)         |
-| Throughput      | 850K ops/s                 | 6.8M ops/s (8x faster)       |
-| Backpressure    | No (queue grows)           | Yes (QUEUE_FULL status)      |
-| Memory          | Grows with load            | Fixed at construction        |
-| Best for        | Variable workloads, bursts | Predictable load, RT systems |
+| Aspect       | ThreadPool                 | ThreadPoolLockFree           |
+| ------------ | -------------------------- | ---------------------------- |
+| Queue type   | `std::queue` (unbounded)   | `LockFreeQueue` (bounded)    |
+| Enqueue path | Mutex lock                 | Lock-free CAS                |
+| Backpressure | No (queue grows)           | Yes (QUEUE_FULL status)      |
+| Memory       | Grows with load            | Fixed at construction        |
+| Best for     | Variable workloads, bursts | Predictable load, RT systems |
+
+The relative cost of the two enqueue paths depends on the task body, the
+placement of producer and workers and the host; the module's `ptst/`
+fixtures measure it for a given build. No figure here is a budget.
 
 ---
 
@@ -903,7 +941,7 @@ the mutex with lock-free queue + semaphore signaling.
 - **DelegateU8** - No allocation, direct function call
 - **cache::AlignCl** - Compile-time alignment only
 - **ThreadPool::threadsRunning/hasErrors** - Single atomic load
-- **ThreadPoolLockFree::tryEnqueue/enqueueTask** - Lock-free queue push
+- **ThreadPoolLockFree::tryEnqueue/enqueueTask** - Two read-modify-writes on the admission word around a lock-free queue push
 - **ThreadPoolLockFree::threadsRunning/hasErrors** - Single atomic load
 
 ### NOT RT-Safe Components

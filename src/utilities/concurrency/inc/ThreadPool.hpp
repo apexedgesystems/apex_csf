@@ -140,14 +140,16 @@ public:
   [[nodiscard]] bool threadsRunning() const noexcept;
 
   /**
-   * @brief Workers whose RT configuration (name, affinity, policy, priority)
-   *        did not fully apply at start-up.
+   * @brief Workers for which a requested setting (name, affinity, policy
+   *        with priority) did not apply at start-up.
    * @return The count, 0 when every worker runs as configured. Final once
    *         the constructor returns: it waits for every worker to have
    *         applied its configuration.
-   * @note RT-safe: Single atomic load. A requested policy needs CAP_SYS_NICE
-   *       and an affinity needs existing CPUs; a failure leaves that worker
-   *       with the default policy and the inherited affinity.
+   * @note RT-safe: Single atomic load. The settings are applied one by one
+   *       and a failure leaves the others as they are, so a counted worker
+   *       may run with part of its configuration; which setting failed is
+   *       not recorded. A requested policy needs CAP_SYS_NICE and an
+   *       affinity needs CPUs the process may use.
    */
   [[nodiscard]] std::size_t workerConfigFailures() const noexcept {
     return configFailures_.load(std::memory_order_acquire);
@@ -189,8 +191,7 @@ private:
   // Hot atomics isolated to cache lines to avoid false sharing.
   cache::AlignCl<std::atomic<bool>> stop_{false};           ///< Stop flag.
   cache::AlignCl<std::atomic<std::size_t>> activeTasks_{0}; ///< In-flight task count.
-  std::atomic<std::size_t> configFailures_{0}; ///< Workers whose RT config did not apply.
-  std::atomic<std::size_t> started_{0};        ///< Workers past their start-up configuration.
+  std::atomic<std::size_t> configFailures_{0}; ///< Workers with a setting that did not apply.
 
   // Error path (rare, mutex-protected)
   std::queue<TaskError> errorQueue_;                   ///< Collected errors.

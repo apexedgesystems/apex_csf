@@ -8,18 +8,17 @@
  */
 
 #include "src/utilities/concurrency/inc/ThreadPool.hpp"
+#include "src/utilities/concurrency/utst/support/ThreadStartFault.hpp"
 
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <string>
 #include <thread>
 
 #include <pthread.h>
-#include <sys/resource.h>
-#include <sys/wait.h>
-#include <unistd.h>
 
 using apex::concurrency::DelegateU8;
 using apex::concurrency::PoolStatus;
@@ -257,6 +256,14 @@ void unblockAllHere() {
   pthread_sigmask(SIG_SETMASK, &none, nullptr);
 }
 
+/// Block `sig` on the calling thread.
+void blockHere(int sig) {
+  sigset_t one;
+  sigemptyset(&one);
+  sigaddset(&one, sig);
+  pthread_sigmask(SIG_BLOCK, &one, nullptr);
+}
+
 } // namespace
 
 /** @test Constructing and destroying a pool leaves the constructing thread's signal mask as it
@@ -301,41 +308,42 @@ TEST_F(ThreadPoolTest, ReportsWorkerConfigFailure) {
   EXPECT_EQ(unconfigured.workerCount(), 2U);
 }
 
-/** @test A worker that cannot start leaves an invalid pool and the caller's mask untouched: the
- * child lowers its thread limit to one so thread creation fails (the limit is not enforced for
- * root, where the case is skipped). */
+/** @test A worker that cannot start, the first or one after others, leaves an invalid pool: the
+ * workers that did start ran to their end and were joined before the constructor returned, the
+ * pool has no workers, construction completes, and the caller's own mask is as it was. The seam is
+ * pthread_create, interposed by the test binary; a sanitizer runtime that owns that symbol skips
+ * the case. */
 TEST_F(ThreadPoolTest, WorkerStartFailureLeavesPoolInvalid) {
-  if (::geteuid() == 0) {
-    GTEST_SKIP() << "RLIMIT_NPROC is not enforced for root";
+  using namespace apex::concurrency::test;
+  if (!threadStartFaultAvailable()) {
+    GTEST_SKIP() << "pthread_create belongs to the sanitizer runtime in this build";
   }
-  const pid_t CHILD = ::fork();
-  ASSERT_NE(CHILD, -1);
-  if (CHILD == 0) {
-    const rlimit ONE{1, 1};
-    if (::setrlimit(RLIMIT_NPROC, &ONE) != 0) {
-      ::_exit(40);
-    }
+  for (const unsigned FAIL_AT : {1U, 2U, 3U}) {
+    SCOPED_TRACE("creation " + std::to_string(FAIL_AT) + " of 3 fails");
     unblockAllHere();
-    int code = 0;
-    try {
-      ThreadPool pool(2);
-      if (pool.isValid() || pool.workerCount() != 0) {
-        code = 10; // the pool claims workers that could not start
-      }
-    } catch (...) {
-      code = 20; // the constructor threw instead of reporting an invalid pool
+    blockHere(SIGUSR1); // the caller's own mask, to find intact afterwards
+    armThreadStartFailure(FAIL_AT);
+    const auto START = std::chrono::steady_clock::now();
+    bool valid = true;
+    std::size_t count = 99;
+    {
+      ThreadPool pool(3);
+      valid = pool.isValid();
+      count = pool.workerCount();
     }
-    if (blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE)) {
-      code += 1; // the caller's mask was left blocked
-    }
-    ::_exit(code);
+    const auto ELAPSED = std::chrono::steady_clock::now() - START;
+    disarmThreadStartFailure();
+    const ThreadStartTally TALLY = threadStartTally();
+    EXPECT_FALSE(valid);
+    EXPECT_EQ(count, 0U);
+    EXPECT_EQ(TALLY.attempted, FAIL_AT) << "creation went on past the failure";
+    EXPECT_EQ(TALLY.started, FAIL_AT - 1);
+    EXPECT_EQ(TALLY.finished, FAIL_AT - 1)
+        << "a started worker had not run to its end when the constructor returned";
+    EXPECT_TRUE(blockedHere(SIGUSR1)) << "the caller's own mask was not restored";
+    EXPECT_FALSE(blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE))
+        << "the worker set leaked onto the caller";
+    EXPECT_LT(ELAPSED, std::chrono::seconds(10)) << "construction did not complete promptly";
+    unblockAllHere();
   }
-  int status = 0;
-  ASSERT_EQ(::waitpid(CHILD, &status, 0), CHILD);
-  ASSERT_TRUE(WIFEXITED(status));
-  if (WEXITSTATUS(status) == 40) {
-    GTEST_SKIP() << "the thread limit could not be lowered";
-  }
-  EXPECT_EQ(WEXITSTATUS(status), 0)
-      << "10: pool valid, 20: constructor threw, +1: mask left blocked";
 }
