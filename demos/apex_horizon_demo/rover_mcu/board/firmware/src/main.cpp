@@ -22,6 +22,7 @@
 #include "demos/apex_horizon_demo/rover_mcu/board/inc/RoverBoardLidar.hpp"
 #include "demos/apex_horizon_demo/rover_mcu/board/inc/RoverBoardProtocol.hpp"
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
+#include "src/utilities/build_info/inc/BuildInfo.hpp"
 #include "src/utilities/compatibility/inc/compat_span.hpp"
 #include "stm32f7xx_hal.h"
 
@@ -39,6 +40,35 @@ static constexpr uint16_t LINK_HZ = 20; ///< The host's STATE_UPDATE rate (strob
 
 static apex::hal::stm32::Stm32Uart<512, 512> linkUart(board::LINK_UART, board::LINK_UART_PINS);
 static apex::hal::stm32::Stm32Uart<256, 64> sensorUart(board::SENSOR_UART, board::SENSOR_UART_PINS);
+
+/* ----------------------------- Boot Banner ----------------------------- */
+
+/// Writes every byte, waiting while the TX path drains. Stops when the UART
+/// takes nothing while reporting nothing in flight: no progress is possible
+/// then, and boot goes on without the rest of the line.
+static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexcept {
+  const auto* bytes = reinterpret_cast<const uint8_t*>(text);
+  size_t written = 0;
+  while (written < len) {
+    const size_t N = uart.write(bytes + written, len - written);
+    if (N == 0 && uart.txComplete()) {
+      return;
+    }
+    written += N;
+  }
+}
+
+/// The build identity as the first line on the link UART, before any frame.
+/// The host side decodes SLIP and resyncs on a frame end; a reader that opens
+/// the port after boot and decodes raw bytes may take the text for a frame. A
+/// terminal on the port reads which build is running.
+static void writeBuildLine(apex::hal::IUart& uart) noexcept {
+  static const char PREFIX[] = "Build: ";
+  static const char CRLF[] = "\r\n";
+  writeAll(uart, PREFIX, sizeof(PREFIX) - 1);
+  writeAll(uart, apex::build_info::summary(), strlen(apex::build_info::summary()));
+  writeAll(uart, CRLF, sizeof(CRLF) - 1);
+}
 
 /* ----------------------------- Controller ----------------------------- */
 
@@ -238,7 +268,9 @@ int main() {
 
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = rover_board::BAUD_RATE;
-  static_cast<void>(linkUart.init(uartCfg));
+  if (linkUart.init(uartCfg) == apex::hal::UartStatus::OK) {
+    writeBuildLine(linkUart);
+  }
   HAL_NVIC_SetPriority(board::LINK_UART_IRQN, 6, 0);
   HAL_NVIC_EnableIRQ(board::LINK_UART_IRQN);
   static_cast<void>(sensorUart.init(uartCfg));
