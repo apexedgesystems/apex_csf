@@ -95,19 +95,26 @@ static encryptor::CommandDeck commandDeck(cmdUart, keyStore, engine, tracker);
 
 /* ----------------------------- Boot Banner ----------------------------- */
 
-/// Writes every byte, spinning while the TX path drains.
+/// Writes every byte, waiting while the TX path drains. Stops when the UART
+/// takes nothing while reporting nothing in flight: no progress is possible
+/// then, and boot goes on without the rest of the line.
 static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexcept {
   const auto* bytes = reinterpret_cast<const uint8_t*>(text);
   size_t written = 0;
   while (written < len) {
-    written += uart.write(bytes + written, len - written);
+    const size_t N = uart.write(bytes + written, len - written);
+    if (N == 0 && uart.txComplete()) {
+      return;
+    }
+    written += N;
   }
 }
 
 /// The build identity as the first line on the command channel, before any
-/// frame. The host side decodes SLIP and drops bytes until a frame end, so the
-/// line costs the link nothing; a terminal on the port reads which build is
-/// running.
+/// frame.
+/// The checkout scripts drain after a settle at open, so they never parse the
+/// line; a reader that opens the port after boot and decodes raw bytes may take
+/// the text for a frame. A terminal on the port reads which build is running.
 static void writeBuildLine(apex::hal::IUart& uart) noexcept {
   static const char PREFIX[] = "Build: ";
   static const char CRLF[] = "\r\n";
@@ -332,16 +339,18 @@ int main() {
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = 115200;
 #if APEX_BOARD_SHARED_CHANNEL
-  static_cast<void>(cmdUart.init(uartCfg)); // shared data + command channel
-  writeBuildLine(cmdUart);
+  if (cmdUart.init(uartCfg) == apex::hal::UartStatus::OK) { // shared data + command channel
+    writeBuildLine(cmdUart);
+  }
   channelSlipCfg.maxFrameSize = encryptor::MAX_INPUT_FRAME;
   channelSlipCfg.allowEmptyFrame = false;
   channelSlipCfg.dropUntilEnd = true;
   channelSlipCfg.requireTrailingEnd = true;
 #else
-  static_cast<void>(dataUart.init(uartCfg)); // data channel
-  static_cast<void>(cmdUart.init(uartCfg));  // command channel
-  writeBuildLine(cmdUart);
+  static_cast<void>(dataUart.init(uartCfg));                // data channel
+  if (cmdUart.init(uartCfg) == apex::hal::UartStatus::OK) { // command channel
+    writeBuildLine(cmdUart);
+  }
 #endif
 
 #if APEX_USE_FREERTOS

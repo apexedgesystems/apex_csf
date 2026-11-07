@@ -52,25 +52,32 @@ static executive::mcu::McuExecutive<> exec(&tickSource, hil::EXEC_FREQ_HZ);
 
 /* ----------------------------- Boot Banner ----------------------------- */
 
-/// Writes every byte, spinning while the TX ring drains under interrupt.
-static void writeAll(const char* text, size_t len) noexcept {
+/// Writes every byte, waiting while the TX path drains. Stops when the UART
+/// takes nothing while reporting nothing in flight: no progress is possible
+/// then, and boot goes on without the rest of the line.
+static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexcept {
   const auto* bytes = reinterpret_cast<const uint8_t*>(text);
   size_t written = 0;
   while (written < len) {
-    written += vcpUart.write(bytes + written, len - written);
+    const size_t N = uart.write(bytes + written, len - written);
+    if (N == 0 && uart.txComplete()) {
+      return;
+    }
+    written += N;
   }
 }
 
-/// The build identity as the first line on the HIL UART, before any frame. The
-/// host side flushes its receive buffer at init and its SLIP decoder drops
-/// bytes until a frame end, so the line costs the link nothing; a terminal on
-/// the port reads which build is running.
-static void writeBuildLine() noexcept {
+/// The build identity as the first line on the HIL UART, before any frame.
+/// The HIL host flushes its input at init and its SLIP decoder resyncs on a
+/// frame end, so it never parses the line; a receiver already open across a
+/// warm reset may see the text before its first frame. A terminal on the port
+/// reads which build is running.
+static void writeBuildLine(apex::hal::IUart& uart) noexcept {
   static const char PREFIX[] = "Build: ";
   static const char CRLF[] = "\r\n";
-  writeAll(PREFIX, sizeof(PREFIX) - 1);
-  writeAll(apex::build_info::summary(), strlen(apex::build_info::summary()));
-  writeAll(CRLF, sizeof(CRLF) - 1);
+  writeAll(uart, PREFIX, sizeof(PREFIX) - 1);
+  writeAll(uart, apex::build_info::summary(), strlen(apex::build_info::summary()));
+  writeAll(uart, CRLF, sizeof(CRLF) - 1);
 }
 
 /* ----------------------------- DWT Profiling ----------------------------- */
@@ -387,8 +394,9 @@ int main() {
   // Initialize UART (115200 8N1) for VCP communication
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = hil::BAUD_RATE;
-  static_cast<void>(vcpUart.init(uartCfg));
-  writeBuildLine();
+  if (vcpUart.init(uartCfg) == apex::hal::UartStatus::OK) {
+    writeBuildLine(vcpUart);
+  }
 
   // Configure SLIP decoder
   slipDecodeCfg.maxFrameSize = hil::MAX_FRAME_PAYLOAD;

@@ -85,10 +85,11 @@ static encryptor::CommandDeck commandDeck(uart, keyStore, engine, tracker);
 
 /* ----------------------------- Boot Banner ----------------------------- */
 
-/// The build identity as the first line on the UART, before any frame. The
-/// host side decodes SLIP and settles past boot before reading, so the line
-/// costs the link nothing; a terminal on the port reads which build is
-/// running. The summary lives in program memory on AVR and is copied out in
+/// The build identity as the first line on the UART, before any frame.
+/// The checkout scripts drain after a settle at open, so they never parse the
+/// line; a reader that opens the port after boot and decodes raw bytes may take
+/// the text for a frame. A terminal on the port reads which build is running.
+/// The summary lives in program memory on AVR and is copied out in
 /// windows through a small stack buffer, so the line costs no SRAM.
 /// AvrUart::write spins while the TX ring drains under interrupt.
 static void writeBuildLine() noexcept {
@@ -222,8 +223,9 @@ int main() {
   // Initialize UART (115200 8N1)
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = 115200;
-  static_cast<void>(uart.init(uartCfg));
-  writeBuildLine();
+  if (uart.init(uartCfg) == apex::hal::UartStatus::OK) {
+    writeBuildLine();
+  }
 
   // Initialize overhead tracker Timer0
   tracker.enableTimer();

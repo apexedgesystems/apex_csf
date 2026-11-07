@@ -69,21 +69,28 @@ static encryptor::CommandDeck commandDeck(cmdUart, keyStore, engine, tracker);
 
 /* ----------------------------- Boot Banner ----------------------------- */
 
-/// Writes every byte, spinning while the TX path drains.
+/// Writes every byte, waiting while the TX path drains. Stops when the UART
+/// takes nothing while reporting nothing in flight: no progress is possible
+/// then, and boot goes on without the rest of the line.
 static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexcept {
   const auto* bytes = reinterpret_cast<const uint8_t*>(text);
   size_t written = 0;
   while (written < len) {
-    written += uart.write(bytes + written, len - written);
+    const size_t N = uart.write(bytes + written, len - written);
+    if (N == 0 && uart.txComplete()) {
+      return;
+    }
+    written += N;
   }
 }
 
 /// The build identity as the first line on the data UART, before any frame.
-/// The host side decodes SLIP and drops bytes until a frame end, so the line
-/// costs the link nothing; a terminal on the port reads which build is
-/// running. The command channel is a USB device whose writes wait on a host,
-/// and no host is attached at boot, so the line goes on the UART, which
-/// drains under interrupt on its own.
+/// The checkout scripts drain after a settle at open, so they never parse the
+/// line; a reader that opens the port after boot and decodes raw bytes may take
+/// the text for a frame. A terminal on the port reads which build is running.
+/// The command channel is a USB device whose writes wait on a host, and no host
+/// is attached at boot, so the line goes on the UART, which drains under
+/// interrupt on its own.
 static void writeBuildLine(apex::hal::IUart& uart) noexcept {
   static const char PREFIX[] = "Build: ";
   static const char CRLF[] = "\r\n";
@@ -160,8 +167,9 @@ int main() {
   // Initialize UART0 (115200 8N1) for data channel
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = 115200;
-  static_cast<void>(dataUart.init(uartCfg));
-  writeBuildLine(dataUart);
+  if (dataUart.init(uartCfg) == apex::hal::UartStatus::OK) {
+    writeBuildLine(dataUart);
+  }
 
   // Initialize USB CDC for command channel (baud rate ignored)
   static_cast<void>(cmdUart.init(uartCfg));
