@@ -151,10 +151,12 @@ static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexc
   }
 }
 
-/// The build identity as the first line on the command channel, before any
-/// frame. The host side decodes SLIP and drops bytes until a frame end, so the
-/// line costs the link nothing; a terminal on the port reads which build is
-/// running.
+/// The build identity as the first line on the data UART, before any frame.
+/// The host side decodes SLIP and drops bytes until a frame end, so the line
+/// costs the link nothing; a terminal on the port reads which build is
+/// running. The command channel is a USB device whose writes wait on a host,
+/// and no host is attached at boot, so the line goes on the UART, which
+/// drains under interrupt on its own.
 static void writeBuildLine(apex::hal::IUart& uart) noexcept {
   static const char PREFIX[] = "Build: ";
   static const char CRLF[] = "\r\n";
@@ -290,10 +292,10 @@ extern "C" void app_main() {
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = 115200;
   static_cast<void>(dataUart.init(uartCfg));
+  writeBuildLine(dataUart);
 
   // Initialize USB Serial/JTAG for command channel (baud rate ignored)
   static_cast<void>(cmdUart.init(uartCfg));
-  writeBuildLine(cmdUart);
 
   // Initialize NVS-backed key store
   static_cast<void>(keyStore.init());

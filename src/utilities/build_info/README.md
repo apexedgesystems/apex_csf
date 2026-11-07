@@ -104,10 +104,12 @@ STATIC, so the constants link into the firmware image, the probe in
 `targetSystem()` names the HAL platform, the processor and, where the
 toolchain selects one, the board (`stm32/arm/nucleo_l476rg`,
 `avr/avr`), since every MCU toolchain calls the CMake system `Generic`. A firmware main
-writes `summary()` as its first line on the UART, once, before the first
-frame (the STM32 HIL flight controller and the Arduino encryptor do), so a
-terminal on the port reads which build is running; a framed protocol on the
-same port drops the bytes before its first frame end. The identity strings
+writes `summary()` as its first line on a hardware UART, once, before the
+first frame (the STM32 HIL flight controller, the STM32 and Arduino encryptors
+on their shared or command UART, the Pico and ESP32 encryptors on their data
+UART, since their command channels are USB devices with no host at boot), so
+a terminal on the port reads which build is running; a framed protocol on
+the same port drops the bytes before its first frame end. The identity strings
 cost flash on every MCU and, on AVR, RAM as well, since avr-gcc keeps
 constants in data memory; only the strings a firmware references survive
 `--gc-sections`.
