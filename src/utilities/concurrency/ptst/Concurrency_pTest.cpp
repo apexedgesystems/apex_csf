@@ -614,25 +614,37 @@ PERF_TEST(ThreadPoolLockFree, EnqueueThroughput) {
                          },
                          &counter};
 
+  // A full ring rejects an enqueue, so the waits below count the tasks the
+  // pool accepted, not the attempts: waiting for a dropped task never ends.
+  int accepted = 0;
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles() / 10; ++i) {
-      (void)pool.tryEnqueue("warmup", task);
+      if (pool.tryEnqueue("warmup", task) == PoolStatus::SUCCESS) {
+        ++accepted;
+      }
     }
-    while (counter.load() < perf.cycles() / 10) {
+    while (counter.load() < accepted) {
       std::this_thread::yield();
     }
     counter.store(0);
+    accepted = 0;
   });
 
-  auto result = perf.throughputLoop([&] { (void)pool.tryEnqueue("bench", task); }, "enqueue");
+  auto result = perf.throughputLoop(
+      [&] {
+        if (pool.tryEnqueue("bench", task) == PoolStatus::SUCCESS) {
+          ++accepted;
+        }
+      },
+      "enqueue");
 
-  // Wait for tasks to complete
-  while (counter.load() < static_cast<int>(perf.cycles() * perf.repeats())) {
+  // Wait for the accepted tasks to complete
+  while (counter.load() < accepted) {
     std::this_thread::yield();
   }
 
-  std::printf("\nThreadPoolLockFree enqueue: %.0f ops/s (%.1f us/op)\n", result.callsPerSecond,
-              result.stats.median);
+  std::printf("\nThreadPoolLockFree enqueue: %.0f ops/s (%.1f us/op), %d of %d accepted\n",
+              result.callsPerSecond, result.stats.median, accepted, perf.cycles() * perf.repeats());
 }
 
 /**
@@ -674,24 +686,34 @@ PERF_TEST(ThreadPoolLockFree, VsThreadPool) {
     counter.store(0);
   }
 
-  // ThreadPoolLockFree
+  // ThreadPoolLockFree (its ring is bounded: wait for the accepted tasks)
   {
     ThreadPoolLockFree pool(4, 4096);
+    int accepted = 0;
     perf.warmup([&] {
       for (int i = 0; i < perf.cycles() / 10; ++i) {
-        (void)pool.tryEnqueue("warmup", task);
+        if (pool.tryEnqueue("warmup", task) == PoolStatus::SUCCESS) {
+          ++accepted;
+        }
       }
-      while (counter.load() < perf.cycles() / 10) {
+      while (counter.load() < accepted) {
         std::this_thread::yield();
       }
       counter.store(0);
+      accepted = 0;
     });
 
-    auto result =
-        perf.throughputLoop([&] { (void)pool.tryEnqueue("bench", task); }, "lockfree_pool");
-    std::printf("ThreadPoolLockFree:     %.0f ops/s\n", result.callsPerSecond);
+    auto result = perf.throughputLoop(
+        [&] {
+          if (pool.tryEnqueue("bench", task) == PoolStatus::SUCCESS) {
+            ++accepted;
+          }
+        },
+        "lockfree_pool");
+    std::printf("ThreadPoolLockFree:     %.0f ops/s (%d of %d accepted)\n", result.callsPerSecond,
+                accepted, perf.cycles() * perf.repeats());
 
-    while (counter.load() < static_cast<int>(perf.cycles() * perf.repeats())) {
+    while (counter.load() < accepted) {
       std::this_thread::yield();
     }
   }
