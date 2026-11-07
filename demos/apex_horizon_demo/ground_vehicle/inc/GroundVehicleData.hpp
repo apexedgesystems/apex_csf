@@ -17,6 +17,7 @@
  * All structs trivially-copyable for TPRM compatibility.
  */
 
+#include <cstddef>
 #include <cstdint>
 
 namespace appsim {
@@ -78,6 +79,97 @@ struct GroundVehicleTunables {
 
   /// Tag for log lines.
   char body_label[16]{};
+
+  /// Boot position source: 0 = geodetic (`init_lat/lon_deg`), 1 = grid
+  /// (`init_north/east_m` from the anchor, projected with the same
+  /// local-flat approximation the step integrates with).
+  std::uint8_t init_from_grid{0};
+  std::uint8_t reserved_init[7]{};
+  double anchor_lat_deg{39.5};
+  double anchor_lon_deg{-105.5};
+  double init_north_m{0.0};
+  double init_east_m{0.0};
+
+  /// Steered-vehicle geometry and limits, applied when a drive command
+  /// is attached (the undriven plant keeps its constant-rate circle).
+  double wheelbase_m{1.5};
+  double max_steer_deg{33.0}; ///< Minimum radius = wheelbase / tan(max_steer).
+  double accel_m_s2{1.5};     ///< Speed rate limit toward a higher target.
+  double decel_m_s2{2.0};     ///< Speed rate limit toward a lower target (braking).
+
+  /// Rate `vehicleStep` is scheduled at [Hz]: the integration dt, the
+  /// timestamp grid, and the LED strobe timer all derive from it.
+  std::uint32_t step_hz{10};
+  /// Lidar sweeps every N-th step (the sweep is the expensive part of
+  /// the tick; at 100 Hz a 10 Hz sweep keeps the terrain queries where
+  /// they were).
+  std::uint32_t lidar_divisor{1};
+};
+
+/* ----------------------------- GroundVehicleDriveCommand ----------------------------- */
+
+/**
+ * @brief The controller seam: what a drive controller hands the plant
+ * each tick.
+ *
+ * The vehicle reads this block when one is attached and `valid` is
+ * set; otherwise it drives its built-in trajectory (constant
+ * `throttle_default` + `steer_rate_deg_s`). A RoverController writes
+ * it from its own OUTPUT block; in the hardware-in-the-loop form a
+ * UART driver writes the same block from the board's control frames,
+ * so the plant never knows which produced it.
+ */
+struct GroundVehicleDriveCommand {
+  /// Commanded steering angle [deg], positive right; the plant turns at
+  /// v tan(delta) / wheelbase, so it cannot turn without rolling.
+  double steer_angle_deg{0.0};
+  /// Commanded throttle fraction 0..1 of `max_speed_m_s` (the speed
+  /// target; the plant reaches it under its acceleration limits).
+  double throttle_frac{0.0};
+  /// 0 = block not driving (plant falls back to its trajectory).
+  std::uint8_t valid{0};
+  /// Writer's drive mode (0 HOLD, 1 TRAJECTORY, 2 WAYPOINT) and
+  /// arrival latch -- truth the plant stamps into the frame.
+  std::uint8_t mode{0};
+  std::uint8_t arrived{0};
+  /// Board link status the writer carries when a board computes the
+  /// command (0 NEVER, 1 UP, 2 LOST), the board's tick load and a tick
+  /// counter that moves while the link is alive; zero for a host law.
+  std::uint8_t board_link{0};
+  std::uint8_t board_load_pct{0};
+  /// The lidar as the board saw it (0 NEVER, 1 UP, 2 STALE), the scan
+  /// number, its hit bits and closest return in whole metres (255 no
+  /// return). With lidar_state 0 the plant stamps its own sweep instead.
+  std::uint8_t lidar_state{0};
+  std::uint16_t board_tick{0};
+  std::uint8_t lidar_hit_bits{0};
+  std::uint8_t lidar_nearest_m{255};
+  std::uint16_t lidar_scan_seq{0};
+  std::uint8_t reserved0[4]{};
+};
+
+/* ----------------------------- GroundVehicleSeqTraceSample ----------------------------- */
+
+/// One 20 Hz sample of the rover while a sequence runs: what the
+/// plots of a demonstration are drawn from. Field order matches the
+/// SEQTRACE log line.
+struct GroundVehicleSeqTraceSample {
+  double t_s;       ///< Seconds since the sequence started.
+  std::uint8_t seq; ///< seq_state at the sample.
+  std::uint8_t wp;  ///< active_waypoint.
+  std::uint8_t wp_total;
+  std::uint8_t led_bits;
+  double north_m; ///< Grid position about the anchor.
+  double east_m;
+  double heading_deg;
+  double speed_m_s;
+  double lidar_nearest_m;
+  double slope_deg;
+  std::uint8_t lidar_state;     ///< Frame lidar_state (0 = the plant's own sweep).
+  std::uint8_t lidar_hit_bits;  ///< Frame hit bits (what the board saw, or the sweep).
+  std::uint8_t lidar_frame_m;   ///< Frame closest return, whole metres.
+  std::uint8_t sweep_hit_bits;  ///< The plant's own sweep: rays that returned.
+  std::uint16_t lidar_scan_seq; ///< Frame scan number.
 };
 
 /* ----------------------------- GroundVehicleState ----------------------------- */
@@ -105,7 +197,38 @@ struct GroundVehicleState {
   /// (use `throttle_default`). Set by SET_THROTTLE, cleared by RESUME.
   std::uint8_t throttle_override_pct{255};
 
-  std::uint8_t reserved[5]{};
+  /* ---- Commanded drive state (adopted by the controller, edge-triggered) ---- */
+  std::uint8_t commanded_mode{255}; ///< 255 = never commanded; else 0..2.
+  std::uint8_t target_kind{0};      ///< 0 none, 1 REL, 2 ABS (of the latest target).
+  std::uint16_t target_seq{0};      ///< Bumps per accepted target command.
+  float target_a_m{0.0F};           ///< north (REL displacement / ABS from anchor).
+  float target_b_m{0.0F};           ///< east.
+
+  /* ---- Sequence attribution + LED commands (stamped into the frame) ---- */
+  std::uint8_t seq_state{0};
+  std::uint8_t waypoint_total{0};
+  std::uint8_t active_waypoint{0}; ///< Targets accepted since the sequence started.
+  std::uint8_t led_colour[2]{};
+  std::uint8_t led_rate[2]{};
+  std::uint8_t reserved_led{0};
+
+  /* ---- Last command result on the wire ---- */
+  std::uint8_t last_cmd_result{0};
+  std::uint8_t reserved_cmd{0};
+  std::uint16_t last_cmd_opcode{0};
+
+  /* ---- LED strobe runtime (per lamp) ---- */
+  std::uint16_t led_phase[2]{}; ///< Steps into the current strobe period.
+  std::uint8_t led_on[2]{};     ///< Live on/off, what the frame reports.
+  std::uint8_t reserved_strobe[2]{};
+
+  /* ---- Sequence trace runtime ---- */
+  double trace_t_s{0.0};          ///< Seconds into the current trace window.
+  std::uint32_t trace_decim{0};   ///< Steps since the last sample.
+  std::uint32_t trace_dropped{0}; ///< Samples lost to a full buffer.
+  std::uint8_t trace_active{0};   ///< 1 while a sequence runs.
+  std::uint8_t trace_ended{0};    ///< 1 = drain logs the end marker.
+  std::uint8_t reserved_trace[6]{};
 };
 
 /* ----------------------------- GroundVehicleTelemetry ----------------------------- */
@@ -172,14 +295,59 @@ struct GroundVehicleTelemetry {
   /// 1 iff the corresponding ray hit terrain within its march range.
   std::uint8_t lidar_hit[MAX_LIDAR_RAYS]{};
 
-  /// Padding to a round 256 bytes; reserved for future fields without
-  /// a wire-format version bump (e.g. wheel speeds, IMU, contact normals).
-  std::uint8_t reserved1[24]{};
+  /* ---- The frame's tail: bytes 232..255, each one byte, named ---- */
+  /// What the plant stamps every tick beyond the pose and the sweep: the
+  /// board's link, the controller's mode, the running sequence, the
+  /// lamps, the last command's fate, the board's load and tick, the mast,
+  /// and the lidar picture the rover acts on. Every byte here is zero
+  /// before the feature that writes it exists, which is what lets the
+  /// frame stay ROVR/2 while the tail grows. The FrameByte table names
+  /// the same bytes by offset for the code that stamps them; the fields
+  /// name them for the dictionary, so a consumer sees `board_link`, not
+  /// the second byte of a reserved block.
+  std::uint8_t board_link{0};      ///< 0 NEVER, 1 UP, 2 LOST (hardware form).
+  std::uint8_t controller_mode{0}; ///< 0 HOLD, 1 TRAJECTORY, 2 WAYPOINT, 3 HALTED.
+  std::uint8_t seq_state{0};       ///< 0 idle, a running sequence id, or 0x10|halt reason.
+  std::uint8_t active_waypoint{0}; ///< Leg in progress, 1-based; 0 none.
+  std::uint8_t waypoint_total{0};  ///< Legs in the running sequence.
+  std::uint8_t led_bits{0};        ///< bit0 lamp 1 lit, bit1 lamp 2 lit (live).
+  std::uint8_t led1_colour{0};     ///< 0 off, 1 red, 2 green, 3 blue, 4 yellow, 5 white.
+  std::uint8_t led1_rate{0};       ///< 0 steady, 1 0.5 Hz, 2 1 Hz, 3 2 Hz, 4 5 Hz, 5 10 Hz.
+  std::uint8_t led2_colour{0};
+  std::uint8_t led2_rate{0};
+  std::uint8_t last_cmd_result{0};    ///< CmdResultCode of the last rover-range command.
+  std::uint8_t last_cmd_opcode_lo{0}; ///< Its opcode, little-endian.
+  std::uint8_t last_cmd_opcode_hi{0};
+  std::uint8_t board_load_pct{0}; ///< From the board's heartbeat.
+  std::uint8_t board_tick_lo{0};  ///< The board's tick, little-endian.
+  std::uint8_t board_tick_hi{0};
+  std::uint8_t mast_pan_deg{0}; ///< Reserved for the mast; 0 until it exists.
+  std::uint8_t mast_ext_pct{0};
+  std::uint8_t lidar_state{0};     ///< 0 plant sweep, 1 board UP, 2 board STALE.
+  std::uint8_t lidar_hit_bits{0};  ///< bit i: ray i returned (ray 0 the left edge of the fan).
+  std::uint8_t lidar_nearest_m{0}; ///< Closest return, whole metres; 255 none.
+  std::uint8_t lidar_scan_seq{0};  ///< Low byte of the scan number; moves at the sweep rate.
+
+  /// Bytes 254..255: still free, still zero.
+  std::uint8_t reserved1[2]{};
 };
 
 static_assert(sizeof(GroundVehicleTelemetry) == 256,
               "GroundVehicleTelemetry must match the ROVR/1 RoverFrame wire "
               "format: exactly 256 bytes");
+
+/// Where the frame's tail begins inside the 256-byte frame. The code that
+/// stamps the tail by FrameByte offset takes a byte view of the whole
+/// frame at this offset -- never a pointer into one named member and an
+/// index past it, which the language does not define.
+inline constexpr std::size_t kFrameTailOffset = 232u;
+
+// The tail starts where the reserved block did, and nothing in it has
+// alignment: a consumer reading bytes 232..255 by offset reads the same
+// values a consumer reading the fields by name does.
+static_assert(offsetof(GroundVehicleTelemetry, board_link) == kFrameTailOffset);
+static_assert(offsetof(GroundVehicleTelemetry, lidar_scan_seq) == 253u);
+static_assert(offsetof(GroundVehicleTelemetry, reserved1) == 254u);
 
 } // namespace ground_vehicle
 } // namespace appsim

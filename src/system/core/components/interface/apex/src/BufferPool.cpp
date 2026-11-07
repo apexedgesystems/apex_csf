@@ -96,7 +96,8 @@ MessageBuffer* BufferPool::acquire(std::size_t requiredSize) noexcept {
   assert(!buf->isAcquired && "Buffer already acquired!");
   buf->isAcquired = true;
   buf->acquireTimestamp = 0; // Timestamp tracking for leak detection.
-  ++totalAcquires_;
+  totalAcquires_.fetch_add(
+      1U, std::memory_order_relaxed); // Acquirer and releaser are different threads.
 #endif
 
   // Clear metadata for new message.
@@ -129,7 +130,7 @@ void BufferPool::release(MessageBuffer* buf) noexcept {
   assert(buf->isAcquired && "Buffer was not acquired!");
   buf->isAcquired = false;
   buf->acquireTimestamp = 0;
-  ++totalReleases_;
+  totalReleases_.fetch_add(1U, std::memory_order_relaxed);
 #endif
 
   // Clear metadata and reset refcount for next use.

@@ -21,7 +21,8 @@
  *   1. Watchpoint fires when sensor temperature crosses threshold.
  *   2. Event notification logs the threshold crossing.
  *   3. Sequence starts on event, sends COMMANDs to DataTransform.
- *   4. DataTransform applies masks to corrupt/override sensor output.
+ *   4. DataTransform applies masks to corrupt/override sensor output and
+ *      holds them after each sensor step while the entry stays armed.
  *   5. ARM_CONTROL dynamically enables/disables watchpoints and sequences.
  *
  * No hardware dependencies. Runs as pure SIL on any POSIX host.
