@@ -16,16 +16,10 @@ apex_module(utilities_build_info)
 set(BUILD_INFO_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/BuildInfo.cpp")
 
 # ------------------------------------------------------------------------------
-# Refresh
-# ------------------------------------------------------------------------------
-
-apex_add_build_info(
-  NAME ${LIB_NAME}_refresh TEMPLATE "${SRC_DIR}/BuildInfo.cpp.in" OUTPUT "${BUILD_INFO_SOURCE}"
-)
-
-# ------------------------------------------------------------------------------
 # Library
 # ------------------------------------------------------------------------------
+# lib.manifest decides whether this platform builds the library; the refresh
+# wiring below belongs to a library that exists.
 
 apex_add_library(
   NAME
@@ -39,6 +33,17 @@ apex_add_library(
   DEPS_PUBLIC
   utilities_compatibility
   NO_PCH
+)
+if (NOT TARGET ${LIB_NAME})
+  return()
+endif ()
+
+# ------------------------------------------------------------------------------
+# Refresh
+# ------------------------------------------------------------------------------
+
+apex_add_build_info(
+  NAME ${LIB_NAME}_refresh TEMPLATE "${SRC_DIR}/BuildInfo.cpp.in" OUTPUT "${BUILD_INFO_SOURCE}"
 )
 add_dependencies(${LIB_NAME} ${LIB_NAME}_refresh)
 
