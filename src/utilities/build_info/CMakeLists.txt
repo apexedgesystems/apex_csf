@@ -5,17 +5,13 @@
 # compiler and target system, generated into one translation unit on every
 # build (apex/BuildInfo) and rewritten only when it changes. Executives log the
 # summary at boot so a run log names the source state behind the binaries in
-# its bank.
+# its bank; firmware writes it as its first line on the UART. lib.manifest
+# names the platforms: SHARED on hosted builds, STATIC under the MCU
+# toolchains, where the constants link into the image.
 # ==============================================================================
 
 include(apex/All)
 apex_module(utilities_build_info)
-
-# Hosted only: the identity is read by executives, and firmware trees have no
-# banner to carry it yet.
-if (APEX_PLATFORM_BAREMETAL)
-  return()
-endif ()
 
 set(BUILD_INFO_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/BuildInfo.cpp")
 

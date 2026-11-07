@@ -22,7 +22,7 @@
  * all are RT-safe.
  */
 
-#include "compat_rt_attrs.hpp"
+#include "src/utilities/compatibility/inc/compat_rt_attrs.hpp"
 
 namespace apex {
 namespace build_info {
@@ -75,7 +75,9 @@ namespace build_info {
 /// "<id>-<version>", for example "Clang-21.1.8".
 [[nodiscard]] const char* compiler() noexcept APEX_NONBLOCKING;
 
-/// "<system>/<processor>", for example "Linux/x86_64".
+/// "<system>/<processor>" on hosted builds, for example "Linux/x86_64";
+/// "<hal platform>/<processor>[/<board>]" on firmware, for example
+/// "stm32/arm/nucleo_l476rg".
 [[nodiscard]] const char* targetSystem() noexcept APEX_NONBLOCKING;
 
 } // namespace build_info

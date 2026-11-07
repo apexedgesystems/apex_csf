@@ -45,7 +45,7 @@ sysLog->info(label(), fmt::format("Build: {}", apex::build_info::summary()));
 | `dirty()`        | `false`                    | `treeState()` names a tree other than HEAD's; `false` for `clean` and `unknown`   |
 | `buildType()`    | `Release`                  | the configuration built                                                           |
 | `compiler()`     | `Clang-21.1.8`             | CMake compiler id and version                                                     |
-| `targetSystem()` | `Linux/x86_64`             | CMake system name and processor                                                   |
+| `targetSystem()` | `Linux/x86_64`             | CMake system name and processor; HAL platform, processor and board on firmware    |
 
 Link `utilities_build_info`. The string accessors return pointers to static
 storage; `dirty()` returns a bool.
@@ -97,6 +97,21 @@ spread over the job slots.
 The library is SHARED like the other hosted libraries, so the identity lives
 in `libutilities_build_info.so` beside its siblings in a deployment bank.
 
+`lib.manifest` names the platforms: the POSIX dialects and the MCU platforms
+`stm32`, `avr`, `pico` and `esp32`. Under an MCU toolchain the library is
+STATIC, so the constants link into the firmware image, the probe in
+`probe/` compiles the public surface under that toolchain, and
+`targetSystem()` names the HAL platform, the processor and, where the
+toolchain selects one, the board (`stm32/arm/nucleo_l476rg`,
+`avr/avr`), since every MCU toolchain calls the CMake system `Generic`. A firmware main
+writes `summary()` as its first line on the UART, once, before the first
+frame (the STM32 HIL flight controller and the Arduino encryptor do), so a
+terminal on the port reads which build is running; a framed protocol on the
+same port drops the bytes before its first frame end. The identity strings
+cost flash on every MCU and, on AVR, RAM as well, since avr-gcc keeps
+constants in data memory; only the strings a firmware references survive
+`--gc-sections`.
+
 ## 4. Limits
 
 - Untracked files are not part of the tree state; a new file that is not yet
@@ -127,7 +142,9 @@ time, and `dirty()` returns a bool.
 mutual consistency for the build it was compiled in: the commit is twelve hex
 digits or `unknown`, `dirty()` agrees with `treeState()` and with the `-dirty`
 suffix of `describe()` whenever the tree is dirty, the summary carries its
-fields. The generator's contract is checked from the outside by the fixture
+fields. The manifest's probe compiles the public surface at each declared
+POSIX dialect and under each MCU toolchain. The generator's contract is
+checked from the outside by the fixture
 in `cmake/apex/test/build_info/`, which builds its own repositories: the
 description forms (exact tags, including names that look like a hash, a hash
 suffix or a dirty mark; tag-N-g<12 digits> under a short `core.abbrev`), and
