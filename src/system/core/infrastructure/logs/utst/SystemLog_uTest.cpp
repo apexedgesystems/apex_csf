@@ -38,7 +38,8 @@ static std::string slurp(const std::filesystem::path& p) {
 /// Newlines in a file, read in blocks so a large file stays cheap to count.
 static long countNewlines(const std::filesystem::path& p) {
   std::ifstream ifs(p, std::ios::binary);
-  std::vector<char> block(64 * 1024);
+  constexpr std::size_t BLOCK_BYTES = std::size_t{64} * 1024;
+  std::vector<char> block(BLOCK_BYTES);
   long lines = 0;
   while (ifs) {
     ifs.read(block.data(), static_cast<std::streamsize>(block.size()));
