@@ -182,10 +182,27 @@ Status LogBase::rotate(std::size_t maxSize) noexcept {
     return Status::OK;
   }
 
-  const std::string BACKUP = logPath_.string() + "_" + getTimestampForFile() + ".backup";
+  // A backup never replaces an existing entry: when the timestamped name is
+  // taken (another rotation within the same second), a numeric suffix makes
+  // the name unique. The entry itself is examined, so a symlink counts as
+  // taken wherever it points, and a lookup that fails for any reason other
+  // than absence stops the rotation with the live file untouched.
+  const std::string STEM = logPath_.string() + "_" + getTimestampForFile();
+  std::string backup = STEM + ".backup";
+  for (unsigned seq = 1;; ++seq) {
+    std::error_code statEc;
+    const auto ENTRY = std::filesystem::symlink_status(backup, statEc).type();
+    if (ENTRY == std::filesystem::file_type::not_found) {
+      break;
+    }
+    if (ENTRY == std::filesystem::file_type::none) {
+      return Status::ERROR_ROTATE_RENAME;
+    }
+    backup = STEM + "-" + std::to_string(seq) + ".backup";
+  }
 
   std::error_code renameEc;
-  std::filesystem::rename(logPath_, BACKUP, renameEc);
+  std::filesystem::rename(logPath_, backup, renameEc);
   if (renameEc) {
     openHandleNoThrow();
     return Status::ERROR_ROTATE_RENAME;

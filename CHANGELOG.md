@@ -111,6 +111,9 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Log rotation keeps every backup: a rotation within the same second as an
+  earlier one gets a numeric suffix instead of replacing its backup.
+  ([#187](https://github.com/apexedgesystems/apex_csf/pull/187))
 - Concurrency primitives: pool start-up, shutdown and signal handling,
   Barrier and Latch semantics, LockFreeQueue cell alignment and
   SpinLock::isLocked; the UBSan-only check joins the nightly. Breaking:
@@ -169,6 +172,9 @@ any such change is called out explicitly in its entry.
 
 ### Security
 
+- `rustix` 1.1.6 in the Rust tools lock (RUSTSEC-2026-0486), and a seven-day
+  dependency cooldown for relocks of the Python tools.
+  ([#186](https://github.com/apexedgesystems/apex_csf/pull/186))
 - Python tool dependencies re-locked under a 3.11 floor (pillow 13, filelock
   4.2, virtualenv 21.15) and block-buffer 0.12.1 in the Rust lock. ([#175](https://github.com/apexedgesystems/apex_csf/pull/175))
 - Python tooling lock: virtualenv 21.6.1 to 21.14.5, clearing four

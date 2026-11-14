@@ -8,11 +8,13 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <chrono>
 #include <thread>
 #include <filesystem>
 #include <fstream>
 #include <random>
 #include <string>
+#include <vector>
 #include <algorithm>
 
 using logs::Status;
@@ -31,6 +33,19 @@ static std::filesystem::path uniqTempFile(const std::string& stem) {
 static std::string slurp(const std::filesystem::path& p) {
   std::ifstream ifs(p, std::ios::binary);
   return std::string((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+}
+
+/// Newlines in a file, read in blocks so a large file stays cheap to count.
+static long countNewlines(const std::filesystem::path& p) {
+  std::ifstream ifs(p, std::ios::binary);
+  constexpr std::size_t BLOCK_BYTES = std::size_t{64} * 1024;
+  std::vector<char> block(BLOCK_BYTES);
+  long lines = 0;
+  while (ifs) {
+    ifs.read(block.data(), static_cast<std::streamsize>(block.size()));
+    lines += std::count(block.data(), block.data() + ifs.gcount(), '\n');
+  }
+  return lines;
 }
 
 static bool contains(const std::string& hay, const std::string& needle) {
@@ -178,17 +193,23 @@ TEST(SystemLogTest, FatalLineFormat) {
 
 /* ----------------------------- Rotation Under Load ----------------------------- */
 
-/** @test Logging continues correctly while rotate() runs concurrently.
- *
- * A writer thread logs continuously while the main thread rotates with a
- * tiny size limit, forcing rename+reopen cycles under live traffic. Every
- * write must land in either the pre- or post-rotation file (atomic fd
- * swap), status stays OK throughout, and the run is exactly the workload
- * that makes the openStatus_ read/write pair visible to race detectors.
- */
+/** @test Preserves every accepted line across concurrent writes and rotations */
 TEST(SystemLogTest, RotateWhileLogging) {
-  const auto PATH = std::filesystem::temp_directory_path() / "logs_rotate_race_test.log";
-  std::filesystem::remove(PATH);
+  // A directory of its own keeps the live log and its backups together.
+  const auto DIR = uniqTempFile("systemlog_rotate_race").replace_extension();
+  std::error_code ec;
+  std::filesystem::create_directory(DIR, ec);
+  ASSERT_FALSE(ec) << "Failed to create temp dir: " << DIR;
+  const auto PATH = DIR / "rotate.log";
+
+  constexpr std::size_t LIMIT = 64;
+  constexpr int ROTATIONS = 20;
+  constexpr auto BUDGET = std::chrono::seconds(10);
+
+  int rotations = 0;
+  int rotateFailures = 0;
+  std::atomic<long> writesOk{0};
+  std::atomic<int> writeFailures{0};
 
   {
     logs::SystemLog log(PATH.string(), logs::SystemLog::Mode::SYNC);
@@ -196,49 +217,59 @@ TEST(SystemLogTest, RotateWhileLogging) {
     ASSERT_EQ(log.lastOpenStatus(), logs::Status::OK);
 
     std::atomic<bool> stop{false};
-    std::atomic<bool> started{false};
-    std::atomic<int> writeFailures{0};
     std::thread writer([&] {
-      started.store(true, std::memory_order_release);
       while (!stop.load(std::memory_order_relaxed)) {
-        if (log.info("ROT", "rotation load line", false) != logs::Status::OK) {
+        if (log.info("ROT", "rotation load line", false) == logs::Status::OK) {
+          writesOk.fetch_add(1, std::memory_order_relaxed);
+        } else {
           writeFailures.fetch_add(1, std::memory_order_relaxed);
         }
       }
     });
 
-    while (!started.load(std::memory_order_acquire)) {
-    }
-
-    // Rotate until the writer has forced enough real rotations that the
-    // rename+reopen path demonstrably interleaved with live writes.
-    int rotations = 0;
-    for (int i = 0; i < 5000 && rotations < 50; ++i) {
+    // Rotate only once the writer has pushed the live file past the limit,
+    // so each rotation is a real rename+reopen under live traffic (the
+    // workload that shows the openStatus_ read/write pair to race
+    // detectors). The writer has to make progress before the deadline; the
+    // deadline bounds this polling only, not the join and the file checks
+    // that follow.
+    const auto DEADLINE = std::chrono::steady_clock::now() + BUDGET;
+    while (rotations < ROTATIONS && std::chrono::steady_clock::now() < DEADLINE) {
       std::size_t bytes = 0;
       (void)log.size(bytes);
-      if (bytes > 64) {
-        ++rotations;
+      if (bytes <= LIMIT) {
+        std::this_thread::sleep_for(std::chrono::microseconds(200));
+        continue;
       }
-      ASSERT_EQ(log.rotate(64), logs::Status::OK);
+      if (log.rotate(LIMIT) != logs::Status::OK) {
+        ++rotateFailures;
+        break;
+      }
+      ++rotations;
     }
-    EXPECT_GE(rotations, 50) << "writer never outpaced rotation; no real overlap";
 
     stop.store(true, std::memory_order_relaxed);
     writer.join();
 
+    EXPECT_EQ(rotations, ROTATIONS) << "the live file never refilled within the budget";
+    EXPECT_EQ(rotateFailures, 0);
     EXPECT_EQ(writeFailures.load(), 0);
     EXPECT_EQ(log.lastOpenStatus(), logs::Status::OK);
   }
 
-  // Cleanup: rotation backups share the path prefix.
-  for (const auto& entry :
-       std::filesystem::directory_iterator(std::filesystem::temp_directory_path())) {
-    const auto NAME = entry.path().filename().string();
-    if (NAME.rfind("logs_rotate_race_test.log", 0) == 0) {
-      std::error_code ec;
-      std::filesystem::remove(entry.path(), ec);
+  // Every rotation left its own backup, and no line was lost between files.
+  int backups = 0;
+  long linesOnDisk = 0;
+  for (const auto& entry : std::filesystem::directory_iterator(DIR)) {
+    linesOnDisk += countNewlines(entry.path());
+    if (entry.path().extension() == ".backup") {
+      ++backups;
     }
   }
+  EXPECT_EQ(backups, rotations);
+  EXPECT_EQ(linesOnDisk, writesOk.load());
+
+  std::filesystem::remove_all(DIR, ec);
 }
 
 /** @test With the fatal-flush hook enabled, fatal() returns with the queue drained. */
