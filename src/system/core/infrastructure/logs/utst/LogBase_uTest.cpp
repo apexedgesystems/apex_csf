@@ -282,6 +282,29 @@ TEST(LogBaseTest, RotateAndSizeReportSizeFailure) {
   EXPECT_EQ(log.rotate(0u), Status::ERROR_SIZE);
 }
 
+/** @test Reports ERROR_OPEN from every call when the log cannot be opened */
+TEST(LogBaseTest, UnopenablePathReportsOpenError) {
+  const auto PATH = uniqTempFile("logbase_no_such_dir").replace_extension() / "x.log";
+  LogBase log(PATH.string());
+
+  EXPECT_EQ(log.lastOpenStatus(), Status::ERROR_OPEN);
+  EXPECT_EQ(log.write("nowhere to go"), Status::ERROR_OPEN);
+  EXPECT_EQ(log.flush(), Status::ERROR_OPEN);
+  EXPECT_EQ(log.writeErrorCount(), 0u);
+}
+
+/** @test Reports ERROR_WRITE and counts it when the device refuses the write */
+TEST(LogBaseTest, WriteFailureIsReportedAndCounted) {
+  // A device that accepts the open and refuses every write: no space left.
+  LogBase log("/dev/full");
+  ASSERT_EQ(log.lastOpenStatus(), Status::OK);
+
+  EXPECT_EQ(log.writeErrorCount(), 0u);
+  EXPECT_EQ(log.write("does not fit"), Status::ERROR_WRITE);
+  EXPECT_EQ(log.write("does not fit either"), Status::ERROR_WRITE);
+  EXPECT_EQ(log.writeErrorCount(), 2u);
+}
+
 /** @test Size reports non-decreasing value after additional writes. */
 TEST(LogBaseTest, SizeReflectsGrowthAfterWrites) {
   const auto PATH = uniqTempFile("logbase_size");

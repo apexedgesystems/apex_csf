@@ -1,10 +1,12 @@
 /**
  * @file AsyncLogBackend_uTest.cpp
- * @brief Unit tests for AsyncLogBackend and LogEntry.
+ * @brief Unit tests for AsyncLogBackend and LogEntry, and for SystemLog over
+ *        a stalled drain (they share the stalled-pipe fixture).
  */
 
 #include "src/system/core/infrastructure/logs/inc/AsyncLogBackend.hpp"
 #include "src/system/core/infrastructure/logs/inc/LogDrainService.hpp"
+#include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
 #include <gtest/gtest.h>
 
@@ -262,26 +264,23 @@ TEST(AsyncLogBackendTest, StartStopLifecycle) {
   std::filesystem::remove(PATH, ec);
 }
 
-/**
- * @test AsyncLogBackend tryLog enqueues and writes messages.
- */
+/** @test Has every accepted entry in the file once flush returns true */
 TEST(AsyncLogBackendTest, TryLogWritesToFile) {
   const auto PATH = uniqTempFile("async_write");
   {
     AsyncLogBackend backend(PATH.string());
     ASSERT_TRUE(backend.start());
 
-    EXPECT_TRUE(backend.tryLog("Test message 1"));
-    EXPECT_TRUE(backend.tryLog("Test message 2"));
+    EXPECT_TRUE(backend.tryLog("Test message 1\n"));
+    EXPECT_TRUE(backend.tryLog("Test message 2\n"));
 
-    // Flush to ensure writes complete
+    // Read before stop(): stop() drains on its own, so only this read
+    // shows what flush() waited for.
     EXPECT_TRUE(backend.flush(1000));
+    EXPECT_EQ(slurp(PATH), "Test message 1\nTest message 2\n");
+    EXPECT_EQ(backend.queueDepth(), 0u);
     backend.stop();
   }
-
-  const auto S = slurp(PATH);
-  EXPECT_TRUE(contains(S, "Test message 1"));
-  EXPECT_TRUE(contains(S, "Test message 2"));
 
   std::error_code ec;
   std::filesystem::remove(PATH, ec);
@@ -346,43 +345,147 @@ TEST(AsyncLogBackendTest, FlushWaitsForTheEntryBeingWritten) {
   EXPECT_EQ(static_cast<std::size_t>(std::count(RECEIVED.begin(), RECEIVED.end(), '\n')), FIT + 1);
 }
 
-/**
- * @test AsyncLogBackend droppedCount increments on queue overflow.
- */
-TEST(AsyncLogBackendTest, DroppedCountOnOverflow) {
-  const auto PATH = uniqTempFile("async_overflow");
-  {
-    // Create backend with tiny queue
-    AsyncLogBackend backend(PATH.string(), 4);
-    ASSERT_TRUE(backend.start());
+/** @test Counts every entry a full queue refuses and delivers every accepted one */
+TEST(AsyncLogBackendTest, FullQueueDropsAreCounted) {
+  StalledPipeLog pipe("async_overflow");
+  ASSERT_TRUE(pipe.ok());
 
-    // Fill queue beyond capacity - some should be dropped
-    // Note: exact drop behavior depends on queue implementation
-    EXPECT_EQ(backend.droppedCount(), 0);
+  constexpr std::size_t ENTRY_BYTES = 256;
+  constexpr std::size_t CAPACITY = 8;
+  ASSERT_EQ(pipe.pipeBytes() % ENTRY_BYTES, 0u);
+  const std::string ENTRY = std::string(ENTRY_BYTES - 1, 'o') + "\n";
 
-    backend.stop();
+  AsyncLogBackend backend(pipe.path().string(), CAPACITY);
+  ASSERT_TRUE(backend.start());
+  const ReleaseOnExit RELEASE{pipe};
+
+  std::size_t accepted = 0;
+  std::size_t refused = 0;
+  const auto OFFER = [&]() { backend.tryLog(ENTRY) ? ++accepted : ++refused; };
+
+  // Fill the pipe, pacing the offers so the small ring keeps up.
+  ASSERT_TRUE(waitUntil(
+      [&]() {
+        if (pipe.buffered() == pipe.pipeBytes()) {
+          return true;
+        }
+        OFFER();
+        return false;
+      },
+      std::chrono::seconds(10)));
+
+  // The drain is stalled: the queue fills and everything after is refused.
+  for (std::size_t i = 0; i < 4 * CAPACITY; ++i) {
+    OFFER();
   }
+  ASSERT_TRUE(depthSettles(backend, std::chrono::seconds(5)));
+  EXPECT_EQ(backend.queueDepth(), CAPACITY);
+  EXPECT_GE(refused, 3 * CAPACITY);
+  EXPECT_EQ(backend.droppedCount(), refused);
+
+  pipe.release();
+  EXPECT_TRUE(backend.flush(5000));
+  EXPECT_EQ(backend.queueDepth(), 0u);
+  EXPECT_TRUE(backend.stop());
+
+  const std::string RECEIVED = pipe.finish();
+  EXPECT_EQ(static_cast<std::size_t>(std::count(RECEIVED.begin(), RECEIVED.end(), '\n')), accepted);
+  EXPECT_EQ(RECEIVED.size(), accepted * ENTRY_BYTES);
+}
+
+/** @test Writes nothing for an empty entry and reports an empty queue after it */
+TEST(AsyncLogBackendTest, EmptyEntryWritesNothing) {
+  const auto PATH = uniqTempFile("async_empty");
+  AsyncLogBackend backend(PATH.string());
+  ASSERT_TRUE(backend.start());
+
+  EXPECT_TRUE(backend.tryLog(""));
+  EXPECT_TRUE(backend.flush(1000));
+  EXPECT_EQ(backend.queueDepth(), 0u);
+  EXPECT_EQ(slurp(PATH), "");
+  EXPECT_TRUE(backend.stop());
 
   std::error_code ec;
   std::filesystem::remove(PATH, ec);
 }
 
-/**
- * @test AsyncLogBackend queueDepth tracks pending entries.
- */
-TEST(AsyncLogBackendTest, QueueDepthTracking) {
-  const auto PATH = uniqTempFile("async_depth");
+/** @test Refuses a second start and treats stop and flush as done once stopped */
+TEST(AsyncLogBackendTest, LifecycleCallsOutOfOrder) {
+  const auto PATH = uniqTempFile("async_lifecycle_negative");
   AsyncLogBackend backend(PATH.string());
+
+  EXPECT_TRUE(backend.stop());
+  EXPECT_TRUE(backend.flush(10));
+
+  ASSERT_TRUE(backend.start());
+  EXPECT_FALSE(backend.start());
+  EXPECT_TRUE(backend.isRunning());
+
+  EXPECT_TRUE(backend.stop());
+  EXPECT_TRUE(backend.stop());
+  EXPECT_TRUE(backend.flush(10));
+
+  std::error_code ec;
+  std::filesystem::remove(PATH, ec);
+}
+
+/** @test Fails to start when the log cannot be opened and counts later entries as drops */
+TEST(AsyncLogBackendTest, UnopenablePathDoesNotStart) {
+  const auto PATH = uniqTempFile("async_no_such_dir").replace_extension() / "x.log";
+  AsyncLogBackend backend(PATH.string());
+
+  EXPECT_FALSE(backend.start());
+  EXPECT_FALSE(backend.isRunning());
+  EXPECT_FALSE(backend.tryLog("nowhere to go\n"));
+  EXPECT_EQ(backend.droppedCount(), 1u);
+}
+
+/** @test Counts a write the drain could not complete */
+TEST(AsyncLogBackendTest, DrainWriteFailureIsCounted) {
+  // A device that accepts the open and refuses every write: no space left.
+  AsyncLogBackend backend("/dev/full");
   ASSERT_TRUE(backend.start());
 
-  // Initially empty
-  EXPECT_EQ(backend.queueDepth(), 0);
+  EXPECT_TRUE(backend.tryLog("does not fit\n"));
+  EXPECT_TRUE(backend.flush(1000));
+  EXPECT_EQ(backend.writeErrorCount(), 1u);
+  EXPECT_EQ(backend.droppedCount(), 0u);
+  EXPECT_TRUE(backend.stop());
+}
 
-  // After flush, should be empty again
-  backend.flush(1000);
-  EXPECT_EQ(backend.queueDepth(), 0);
+/** @test Writes every accepted entry when stop follows a burst at once */
+TEST(AsyncLogBackendTest, StopAfterBurstWritesEveryEntry) {
+  const auto PATH = uniqTempFile("async_burst_stop");
+  constexpr std::size_t BURST = 2000;
+  std::size_t accepted = 0;
+  {
+    AsyncLogBackend backend(PATH.string());
+    ASSERT_TRUE(backend.start());
+    for (std::size_t i = 0; i < BURST; ++i) {
+      if (backend.tryLog("burst entry\n")) {
+        ++accepted;
+      }
+    }
+    EXPECT_TRUE(backend.stop());
+    EXPECT_EQ(backend.droppedCount(), BURST - accepted);
+  }
+  EXPECT_EQ(accepted, BURST);
+  const auto S = slurp(PATH);
+  EXPECT_EQ(static_cast<std::size_t>(std::count(S.begin(), S.end(), '\n')), accepted);
 
-  backend.stop();
+  std::error_code ec;
+  std::filesystem::remove(PATH, ec);
+}
+
+/** @test Stops a running backend in its destructor and leaves its entries on disk */
+TEST(AsyncLogBackendTest, DestructorStopsAndWrites) {
+  const auto PATH = uniqTempFile("async_destructor");
+  {
+    AsyncLogBackend backend(PATH.string());
+    ASSERT_TRUE(backend.start());
+    EXPECT_TRUE(backend.tryLog("left to the destructor\n"));
+  }
+  EXPECT_EQ(slurp(PATH), "left to the destructor\n");
 
   std::error_code ec;
   std::filesystem::remove(PATH, ec);
@@ -390,7 +493,7 @@ TEST(AsyncLogBackendTest, QueueDepthTracking) {
 
 /** @test Entries offered to a backend that never started are counted as drops. */
 TEST(AsyncLogBackendTest, NotRunningCountsDrops) {
-  logs::AsyncLogBackend backend("/tmp/logs_backend_notrunning_test.log", 16);
+  logs::AsyncLogBackend backend(uniqTempFile("async_not_running").string(), 16);
 
   EXPECT_FALSE(backend.tryLog("never accepted"));
   EXPECT_FALSE(backend.tryLog("never accepted either"));
@@ -398,41 +501,103 @@ TEST(AsyncLogBackendTest, NotRunningCountsDrops) {
   EXPECT_EQ(backend.writeErrorCount(), 0u);
 }
 
-/** @test Registry saturation falls back to a dedicated I/O thread that works.
- *
- * Fills all shared-drain slots, then verifies the next backend runs in
- * dedicated-thread mode end to end (accepts entries, drains, flushes,
- * stops clean) -- the fallback path the shared service otherwise shadows
- * on Linux. Also exercises registry churn on teardown.
- */
+/** @test Writes through a dedicated I/O thread when the shared drain's registry is full */
 TEST(AsyncLogBackendTest, DedicatedFallbackWhenRegistryFull) {
   constexpr std::size_t FLEET = logs::LogDrainService::MAX_BACKENDS;
   std::array<std::unique_ptr<logs::AsyncLogBackend>, FLEET> fleet;
+  std::array<std::filesystem::path, FLEET> fleetPaths;
 
+  // Fill every shared-drain slot, so the next backend has to run its own
+  // thread: the path the shared service otherwise shadows on Linux.
   for (std::size_t i = 0; i < FLEET; ++i) {
-    const auto PATH = std::filesystem::temp_directory_path() /
-                      ("logs_registry_fill_" + std::to_string(i) + ".log");
-    fleet[i] = std::make_unique<logs::AsyncLogBackend>(PATH.string(), 16);
+    fleetPaths[i] = uniqTempFile("async_registry_fill");
+    fleet[i] = std::make_unique<logs::AsyncLogBackend>(fleetPaths[i].string(), 16);
     ASSERT_TRUE(fleet[i]->start());
   }
 
-  const auto PATH = std::filesystem::temp_directory_path() / "logs_dedicated_fallback.log";
+  const auto PATH = uniqTempFile("async_dedicated_fallback");
   logs::AsyncLogBackend overflowBackend(PATH.string(), 16);
   ASSERT_TRUE(overflowBackend.start());
   EXPECT_FALSE(overflowBackend.usesSharedDrain());
 
   EXPECT_TRUE(overflowBackend.tryLog("dedicated-thread entry\n"));
   EXPECT_TRUE(overflowBackend.flush(2000));
+  EXPECT_EQ(slurp(PATH), "dedicated-thread entry\n");
   EXPECT_TRUE(overflowBackend.stop());
   EXPECT_EQ(overflowBackend.droppedCount(), 0u);
 
+  std::error_code ec;
   for (std::size_t i = 0; i < FLEET; ++i) {
     EXPECT_TRUE(fleet[i]->stop());
-    std::error_code ec;
-    std::filesystem::remove(std::filesystem::temp_directory_path() /
-                                ("logs_registry_fill_" + std::to_string(i) + ".log"),
-                            ec);
+    std::filesystem::remove(fleetPaths[i], ec);
   }
-  std::error_code ec;
   std::filesystem::remove(PATH, ec);
+}
+
+/* ----------------------------- SystemLog Over A Stalled Drain ----------------------------- */
+
+/** @test Returns OK from info and counts the entry when the async queue refuses it */
+TEST(SystemLogAsyncTest, FullQueueDropIsCountedAndInfoReturnsOk) {
+  StalledPipeLog pipe("systemlog_async_overflow");
+  ASSERT_TRUE(pipe.ok());
+
+  std::size_t offered = 0;
+  std::uint64_t dropped = 0;
+  {
+    logs::SystemLog log(pipe.path().string(), logs::SystemLog::Mode::ASYNC, 8);
+    ASSERT_TRUE(log.isAsync());
+    const ReleaseOnExit RELEASE{pipe};
+    const auto BACKEND = log.asyncBackend();
+    const std::string MSG(200, 'd');
+
+    // The producer outruns the drain of an eight-entry queue, and once the
+    // unread pipe is full the drain stops altogether: entries are refused.
+    const auto DEADLINE = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+    while (BACKEND->droppedCount() < 16 && std::chrono::steady_clock::now() < DEADLINE) {
+      ASSERT_EQ(log.info("SRC", MSG, false), logs::Status::OK);
+      ++offered;
+    }
+    dropped = BACKEND->droppedCount();
+    EXPECT_GE(dropped, 16u);
+
+    pipe.release();
+    EXPECT_EQ(log.flush(), logs::Status::OK);
+    EXPECT_EQ(BACKEND->droppedCount(), dropped);
+  }
+
+  const std::string RECEIVED = pipe.finish();
+  EXPECT_EQ(static_cast<std::uint64_t>(std::count(RECEIVED.begin(), RECEIVED.end(), '\n')),
+            offered - dropped);
+}
+
+/** @test Reports ERROR_SYNC from flush when the async queue does not drain in time */
+TEST(SystemLogAsyncTest, FlushTimeoutReportsSyncError) {
+  StalledPipeLog pipe("systemlog_async_flush_timeout");
+  ASSERT_TRUE(pipe.ok());
+
+  logs::SystemLog log(pipe.path().string(), logs::SystemLog::Mode::ASYNC, 64);
+  ASSERT_TRUE(log.isAsync());
+  const ReleaseOnExit RELEASE{pipe};
+  const auto BACKEND = log.asyncBackend();
+  const std::string MSG(200, 't');
+
+  // Offer lines until the drain has stopped: entries are waiting and the
+  // pipe has not grown for 50 ms. (Formatted lines do not divide a pipe
+  // page, so the pipe is full a little below its nominal size.)
+  ASSERT_TRUE(waitUntil(
+      [&]() {
+        for (int i = 0; i < 32; ++i) {
+          (void)log.info("SRC", MSG, false);
+        }
+        const std::size_t BEFORE = pipe.buffered();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        return BACKEND->queueDepth() > 0 && pipe.buffered() == BEFORE;
+      },
+      std::chrono::seconds(10)));
+
+  EXPECT_EQ(log.flush(10), logs::Status::ERROR_SYNC);
+
+  pipe.release();
+  EXPECT_EQ(log.flush(), logs::Status::OK);
+  EXPECT_EQ(BACKEND->queueDepth(), 0u);
 }

@@ -82,22 +82,35 @@ TEST(SystemLogTest, WarningIncludesErrorCode) {
   std::filesystem::remove(PATH, ec);
 }
 
-/** @test Multiple writes append; lines are not overwritten. */
+/** @test Appends each line in order in SYNC and in ASYNC mode */
 TEST(SystemLogTest, AppendsMultipleLines) {
-  const auto PATH = uniqTempFile("systemlog_append");
-  {
-    SystemLog log(PATH.string());
-    ASSERT_EQ(log.info("A", "one", false), Status::OK);
-    ASSERT_EQ(log.error("B", 1, "two", false), Status::OK);
-    ASSERT_EQ(log.warning("C", 7, "three", false), Status::OK);
-  }
-  const auto S = slurp(PATH);
-  EXPECT_TRUE(contains(S, " INFO: A - one\n"));
-  EXPECT_TRUE(contains(S, " ERROR: B[1] - two\n"));
-  EXPECT_TRUE(contains(S, " WARNING: C[7] - three\n"));
+  for (const auto MODE : {SystemLog::Mode::SYNC, SystemLog::Mode::ASYNC}) {
+    SCOPED_TRACE(MODE == SystemLog::Mode::ASYNC ? "ASYNC" : "SYNC");
+    const auto PATH = uniqTempFile("systemlog_append");
+    std::string content;
+    {
+      SystemLog log(PATH.string(), MODE);
+      ASSERT_EQ(log.isAsync(), MODE == SystemLog::Mode::ASYNC);
+      ASSERT_EQ(log.info("A", "one", false), Status::OK);
+      ASSERT_EQ(log.error("B", 1, "two", false), Status::OK);
+      ASSERT_EQ(log.warning("C", 7, "three", false), Status::OK);
+      // Read while the log is alive: only flush() can have put the lines there.
+      ASSERT_EQ(log.flush(), Status::OK);
+      content = slurp(PATH);
+    }
+    const auto ONE = content.find(" INFO: A - one\n");
+    const auto TWO = content.find(" ERROR: B[1] - two\n");
+    const auto THREE = content.find(" WARNING: C[7] - three\n");
+    ASSERT_NE(ONE, std::string::npos);
+    ASSERT_NE(TWO, std::string::npos);
+    ASSERT_NE(THREE, std::string::npos);
+    EXPECT_LT(ONE, TWO);
+    EXPECT_LT(TWO, THREE);
+    EXPECT_EQ(std::count(content.begin(), content.end(), '\n'), 3);
 
-  std::error_code ec;
-  std::filesystem::remove(PATH, ec);
+    std::error_code ec;
+    std::filesystem::remove(PATH, ec);
+  }
 }
 
 /** @test Threshold filtering: below-level messages are skipped. */
@@ -106,7 +119,7 @@ TEST(SystemLogTest, ThresholdFilteringSkipsBelowLevel) {
   {
     SystemLog log(PATH.string());
     log.setLevel(SystemLog::Level::ERROR); // allow ERROR and above only
-    ASSERT_EQ(log.debug("DBG", "hidden", false), Status::OK);
+    ASSERT_EQ(log.debug("DBG", "hidden", 0), Status::OK);
     ASSERT_EQ(log.info("INF", "hidden", false), Status::OK);
     ASSERT_EQ(log.warning("WRN", 3, "hidden", false), Status::OK);
     ASSERT_EQ(log.error("ERR", 1, "visible", false), Status::OK);
@@ -152,15 +165,27 @@ TEST(SystemLogTest, ConsoleEchoDoesNotThrow) {
   std::filesystem::remove(PATH, ec);
 }
 
-/** @test Verbosity defaults to 0; setVerbosity/verbosity getter and setter round-trip. */
-TEST(SystemLogTest, VerbosityGetterSetterRoundTrip) {
+/** @test Logs debug messages at or below the verbosity and skips those above it */
+TEST(SystemLogTest, VerbosityFiltersDebugMessages) {
   const auto PATH = uniqTempFile("systemlog_verbosity");
-  SystemLog log(PATH.string());
-  EXPECT_EQ(log.verbosity(), 0u);
-  log.setVerbosity(5);
-  EXPECT_EQ(log.verbosity(), 5u);
-  log.setVerbosity(0);
-  EXPECT_EQ(log.verbosity(), 0u);
+  {
+    SystemLog log(PATH.string());
+    log.setLevel(SystemLog::Level::DEBUG);
+
+    EXPECT_EQ(log.verbosity(), 0u);
+    ASSERT_EQ(log.debug("SRC", "level zero at verbosity zero", 0), Status::OK);
+    ASSERT_EQ(log.debug("SRC", "level one at verbosity zero", 1), Status::OK);
+
+    log.setVerbosity(3);
+    EXPECT_EQ(log.verbosity(), 3u);
+    ASSERT_EQ(log.debug("SRC", "level three at verbosity three", 3), Status::OK);
+    ASSERT_EQ(log.debug("SRC", "level four at verbosity three", 4), Status::OK);
+  }
+  const auto S = slurp(PATH);
+  EXPECT_TRUE(contains(S, " DEBUG: SRC - level zero at verbosity zero\n"));
+  EXPECT_FALSE(contains(S, "level one at verbosity zero"));
+  EXPECT_TRUE(contains(S, " DEBUG: SRC - level three at verbosity three\n"));
+  EXPECT_FALSE(contains(S, "level four at verbosity three"));
 
   std::error_code ec;
   std::filesystem::remove(PATH, ec);
@@ -177,18 +202,46 @@ TEST(SystemLogTest, DefaultModeIsSyncAndIsAsyncFalse) {
   std::filesystem::remove(PATH, ec);
 }
 
-/** @test fatal() writes a FATAL line to the log file. */
+/** @test Writes the FATAL line with its error code in SYNC and in ASYNC mode */
 TEST(SystemLogTest, FatalLineFormat) {
-  const auto PATH = uniqTempFile("systemlog_fatal");
-  {
-    SystemLog log(PATH.string());
-    ASSERT_EQ(log.fatal("EXEC", /*ec*/ 42, "system halt", false), Status::OK);
-  }
-  const auto S = slurp(PATH);
-  EXPECT_TRUE(contains(S, " FATAL: EXEC[42] - system halt\n"));
+  for (const auto MODE : {SystemLog::Mode::SYNC, SystemLog::Mode::ASYNC}) {
+    SCOPED_TRACE(MODE == SystemLog::Mode::ASYNC ? "ASYNC" : "SYNC");
+    const auto PATH = uniqTempFile("systemlog_fatal");
+    std::string content;
+    {
+      SystemLog log(PATH.string(), MODE);
+      ASSERT_EQ(log.fatal("EXEC", /*ec*/ 42, "system halt", false), Status::OK);
+      ASSERT_EQ(log.flush(), Status::OK);
+      content = slurp(PATH);
+    }
+    EXPECT_TRUE(contains(content, " FATAL: EXEC[42] - system halt\n"));
+    EXPECT_EQ(std::count(content.begin(), content.end(), '\n'), 1);
 
-  std::error_code ec;
-  std::filesystem::remove(PATH, ec);
+    std::error_code ec;
+    std::filesystem::remove(PATH, ec);
+  }
+}
+
+/** @test Falls back to SYNC and reports ERROR_OPEN when the log cannot be opened */
+TEST(SystemLogTest, UnopenablePathFallsBackToSyncAndReportsOpenError) {
+  const auto PATH = uniqTempFile("systemlog_no_such_dir").replace_extension() / "x.log";
+  SystemLog log(PATH.string(), SystemLog::Mode::ASYNC);
+
+  EXPECT_FALSE(log.isAsync());
+  EXPECT_EQ(log.mode(), SystemLog::Mode::SYNC);
+  EXPECT_EQ(log.lastOpenStatus(), Status::ERROR_OPEN);
+  EXPECT_EQ(log.info("SRC", "nowhere to go", false), Status::ERROR_OPEN);
+}
+
+/** @test Reports and counts a failed write in SYNC mode */
+TEST(SystemLogTest, SyncWriteFailureIsReportedAndCounted) {
+  // A device that accepts the open and refuses every write: no space left.
+  SystemLog log("/dev/full");
+  ASSERT_EQ(log.lastOpenStatus(), Status::OK);
+
+  EXPECT_EQ(log.writeErrorCount(), 0u);
+  EXPECT_EQ(log.info("SRC", "does not fit", false), Status::ERROR_WRITE);
+  EXPECT_EQ(log.writeErrorCount(), 1u);
 }
 
 /* ----------------------------- Rotation Under Load ----------------------------- */
@@ -297,23 +350,30 @@ TEST(SystemLogTest, AsyncLongLineStaysOneLine) {
   std::filesystem::remove(PATH, ec);
 }
 
-/** @test With the fatal-flush hook enabled, fatal() returns with the queue drained. */
+/** @test Has every earlier line and the FATAL line on disk when fatal returns with the hook on */
 TEST(SystemLogTest, FatalFlushDrainsQueue) {
-  const auto PATH = std::filesystem::temp_directory_path() / "logs_fatal_flush_test.log";
-  std::filesystem::remove(PATH);
-
+  const auto PATH = uniqTempFile("systemlog_fatal_flush");
+  constexpr int PRE_FATAL = 64;
+  std::string content;
   {
     logs::SystemLog log(PATH.string(), logs::SystemLog::Mode::ASYNC);
     log.setLevel(logs::SystemLog::Level::INFO);
     ASSERT_TRUE(log.isAsync());
     log.setFatalFlush(true);
 
-    for (int i = 0; i < 64; ++i) {
+    for (int i = 0; i < PRE_FATAL; ++i) {
       ASSERT_EQ(log.info("FF", "pre-fatal entry", false), logs::Status::OK);
     }
     ASSERT_EQ(log.fatal("FF", 42, "fatal with flush", false), logs::Status::OK);
     EXPECT_EQ(log.asyncBackend()->queueDepth(), 0u);
+    content = slurp(PATH);
   }
+
+  EXPECT_EQ(std::count(content.begin(), content.end(), '\n'), PRE_FATAL + 1);
+  EXPECT_TRUE(contains(content, " FATAL: FF[42] - fatal with flush\n"));
+  const std::string TAIL = " FATAL: FF[42] - fatal with flush\n";
+  ASSERT_GE(content.size(), TAIL.size());
+  EXPECT_EQ(content.substr(content.size() - TAIL.size()), TAIL);
 
   std::error_code ec;
   std::filesystem::remove(PATH, ec);

@@ -126,6 +126,12 @@ threads (formerly 4-5x).
 - rotate() in ASYNC mode rotates the sync-path descriptor only; async
   entries continue to the original file. Rotation ownership for async
   logs is tracked work.
+- An ASYNC entry holds 511 bytes. A longer line is cut, keeps its newline
+  and is counted in truncatedCount(); SYNC mode writes the whole line.
+- flush() returning OK means every entry accepted before the call is on
+  the descriptor: an entry is counted as queued until it is written.
+- stop() expects producers to have stopped: an entry offered while a
+  backend stops may be neither written nor counted.
 
 ---
 
@@ -166,8 +172,9 @@ public:
   void setVerbosity(std::uint8_t level) noexcept;
   std::uint8_t verbosity() const noexcept;
 
-  /// @note NOT RT-safe: Drains queue or calls fsync.
-  Status flush() noexcept;
+  /// @note NOT RT-safe: Drains queue or calls fsync. ASYNC: ERROR_SYNC when
+  /// the queue has not drained within timeoutMs.
+  Status flush(std::uint32_t timeoutMs = 5000) noexcept;
 
   /// @note RT-safe: Atomic load.
   Mode mode() const noexcept;
@@ -206,14 +213,31 @@ public:
 ```cpp
 class AsyncLogBackend {
 public:
-  /// @note NOT RT-safe: Allocates queue, starts I/O thread.
-  explicit AsyncLogBackend(LogBase& base, std::size_t capacity) noexcept;
+  /// @note NOT RT-safe: Allocates the queue. Opens nothing; call start().
+  explicit AsyncLogBackend(std::string logPath, std::size_t queueSize = 4096) noexcept;
 
-  /// @note RT-safe: Lock-free MPMC enqueue.
-  bool enqueue(std::string_view data) noexcept;
+  /// @note NOT RT-safe: Opens the file and joins the shared drain (or
+  /// starts a dedicated I/O thread). False if already running or the open
+  /// failed.
+  bool start() noexcept;
 
-  /// @note NOT RT-safe: Blocks until queue drains and fsync completes.
-  void flush() noexcept;
+  /// @note NOT RT-safe: Writes what is left, then closes the file.
+  /// Producers must have stopped logging first.
+  bool stop() noexcept;
+
+  /// @note RT-safe: Lock-free MPMC enqueue. False when the entry was not
+  /// accepted (queue full or not running); the refusal is counted.
+  bool tryLog(std::string_view msg) noexcept;
+
+  /// @note NOT RT-safe: Blocks until every entry accepted before the call
+  /// is written, then syncs. False when that takes longer than timeoutMs.
+  bool flush(std::uint32_t timeoutMs = 5000) noexcept;
+
+  /// @note RT-safe: Atomic loads.
+  std::uint64_t droppedCount() const noexcept;
+  std::uint64_t truncatedCount() const noexcept;
+  std::uint64_t writeErrorCount() const noexcept;
+  std::size_t queueDepth() const noexcept;
 };
 ```
 
@@ -226,7 +250,8 @@ enum class Status : std::uint8_t {
   ERROR_SIZE,
   ERROR_ROTATE_RENAME,
   ERROR_ROTATE_REOPEN,
-  ERROR_SYNC
+  ERROR_SYNC,
+  ERROR_WRITE
 };
 ```
 
@@ -294,14 +319,17 @@ log.rotate(MAX_SIZE);  // Example backup: system.log_20241227-143052.backup
 
 | Directory | Type              | Tests | Runs with `make test` |
 | --------- | ----------------- | ----- | --------------------- |
-| `utst/`   | Unit tests        | 26    | Yes                   |
+| `utst/`   | Unit tests        | 48    | Yes                   |
 | `ptst/`   | Performance tests | 6     | No (manual)           |
 
 ### Test Requirements
 
-- All tests are platform-agnostic (uses tmpfile for log output)
+- Tests run on Linux: they use temporary files, a FIFO nobody reads to
+  stall the drain, `/dev/full` for write failures and `/proc/self/fd` to
+  count descriptors
 - Tests verify severity filtering, formatting, rotation, status codes
-- Tests verify async queue lifecycle, enqueue/dequeue, flush semantics
+- Tests verify async queue lifecycle, what ASYNC mode writes, counted
+  drops on a full queue, flush waiting and its timeout
 - Tests verify below-threshold skip path
 
 ---

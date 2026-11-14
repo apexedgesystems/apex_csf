@@ -73,13 +73,15 @@ struct LogEntry {
 
 /**
  * @class AsyncLogBackend
- * @brief Async logging backend with dedicated I/O thread.
+ * @brief Async logging backend: a lock-free ring emptied by the shared
+ *        drain service, or by a dedicated I/O thread when the service's
+ *        registry is full.
  *
  * Lifecycle:
  *  1. Construct with file path
- *  2. start() - launches I/O thread
+ *  2. start() - opens the file, joins the drain (or starts the I/O thread)
  *  3. tryLog() - RT-safe logging from any thread
- *  4. stop() - graceful shutdown, flushes remaining entries
+ *  4. stop() - graceful shutdown, writes remaining entries
  *
  * Thread-safety:
  *  - tryLog() is lock-free and RT-safe
@@ -121,10 +123,12 @@ public:
   bool start() noexcept;
 
   /**
-   * @brief Stop I/O thread and flush remaining entries.
-   * @return true if clean shutdown; false if timeout occurred.
+   * @brief Stop draining and write remaining entries.
+   * @return true if every accepted entry was written; false if some were
+   *         left.
    *
-   * Blocks until queue is drained.
+   * Blocks until queue is drained. Producers must have stopped logging:
+   * an entry offered while stop() runs may be neither written nor counted.
    * Not thread-safe with start().
    * @note NOT RT-safe: Blocks until queue drains, joins thread.
    */
