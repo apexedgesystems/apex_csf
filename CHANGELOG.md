@@ -111,6 +111,10 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- ASYNC logging: `flush()` waits for the entry still being written (the last
+  line before an executive restart could be lost), a line cut to fit an entry
+  keeps its newline, and rotation keeps its descriptor when the rename fails.
+  ([#188](https://github.com/apexedgesystems/apex_csf/pull/188))
 - Log rotation keeps every backup: a rotation within the same second as an
   earlier one gets a numeric suffix instead of replacing its backup.
   ([#187](https://github.com/apexedgesystems/apex_csf/pull/187))
