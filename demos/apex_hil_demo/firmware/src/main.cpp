@@ -6,7 +6,7 @@
  * Receives VehicleState from host plant, runs flight controller,
  * sends ControlCmd and HeartbeatData back.
  *
- *   - UART2 (VCP): SLIP-framed state/command exchange with host
+ *   - USART1 (FTDI adapter): SLIP-framed state/command exchange with the Pi host
  *   - LED heartbeat at 2 Hz
  *   - Flight controller at 50 Hz
  *   - DWT overhead profiling at 100 Hz
@@ -117,7 +117,7 @@ static uint16_t lastRxSeq = 0;
 /* ----------------------------- Frame Processing ----------------------------- */
 
 /**
- * @brief Send a SLIP-framed message over VCP UART.
+ * @brief Send a SLIP-framed message over the HIL UART.
  * @param opcode HIL protocol opcode.
  * @param payload Payload data (may be nullptr).
  * @param payloadLen Payload length in bytes.
@@ -250,7 +250,7 @@ static void ledBlinkTask(void* /*ctx*/) noexcept {
 static void controlTask(void* ctx) noexcept {
   auto* ctrl = static_cast<hil::FlightController*>(ctx);
 
-  // Read available bytes from VCP UART
+  // Read available bytes from the HIL UART
   const size_t AVAIL = vcpUart.read(rxChunk, sizeof(rxChunk));
 
   if (AVAIL > 0) {
@@ -393,7 +393,7 @@ int main() {
     HAL_Delay(150);
   }
 
-  // Initialize UART (115200 8N1) for VCP communication
+  // Initialize the HIL UART (115200 8N1) on USART1
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = hil::BAUD_RATE;
   if (vcpUart.init(uartCfg) == apex::hal::UartStatus::OK) {
