@@ -135,7 +135,9 @@ public:
    * @param timeoutMs Maximum time to wait for queue drain (default 5000ms).
    * @return true if queue fully drained; false on timeout.
    *
-   * Waits until queueDepth reaches zero, then syncs file to disk.
+   * Waits until queueDepth reaches zero, then syncs file to disk. An entry
+   * is counted in the depth until the drain has written it, so a true
+   * return means every entry accepted before the call is on the descriptor.
    * Does not stop the I/O thread - logging continues afterward.
    * Safe to call from any thread.
    * @note NOT RT-safe: Blocks until queue drains.
@@ -184,8 +186,9 @@ public:
   }
 
   /**
-   * @brief Get approximate number of entries currently queued.
-   * @return Queue depth (may be stale due to concurrent access).
+   * @brief Get approximate number of entries accepted and not yet written.
+   * @return Queue depth, including the entry the drain is writing (may be
+   *         stale due to concurrent access).
    * @note RT-safe: Atomic load.
    */
   std::size_t queueDepth() const noexcept { return queueDepth_.load(std::memory_order_relaxed); }

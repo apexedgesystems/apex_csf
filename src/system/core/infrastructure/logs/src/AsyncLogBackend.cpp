@@ -241,10 +241,10 @@ bool AsyncLogBackend::tryLog(std::string_view msg) noexcept {
     return false;
   }
 
-  // Cheap full-check before paying the 520-byte entry copy. The depth is
-  // approximate (drained entries decrement after their write completes),
-  // so this can only fire when the queue is at or within one entry of
-  // full -- where dropping is already the policy.
+  // Cheap full-check before paying the 520-byte entry copy. The depth
+  // still counts the entry the drain is writing, so this can fire when the
+  // ring has one free slot -- at or within one entry of full, where
+  // dropping is already the policy.
   if (queueDepth_.load(std::memory_order_relaxed) >= capacity_) {
     droppedCount_.fetch_add(1, std::memory_order_relaxed);
     return false;
@@ -298,8 +298,10 @@ std::size_t AsyncLogBackend::drainBatch(std::size_t maxEntries) noexcept {
   std::size_t drained = 0;
 
   while (drained < maxEntries && queue_.tryPop(entry)) {
-    const std::size_t prevDepth = queueDepth_.fetch_sub(1, std::memory_order_relaxed);
+    // The depth counts an entry until it is on the descriptor, so a
+    // flush() waiting for zero also waits for the entry being written.
     writeEntry(entry);
+    const std::size_t prevDepth = queueDepth_.fetch_sub(1, std::memory_order_relaxed);
     entriesWritten_.fetch_add(1, std::memory_order_relaxed);
     ++drained;
 
@@ -320,8 +322,9 @@ void AsyncLogBackend::ioThreadLoop() noexcept {
   while (true) {
     // Try to pop entry from queue (lock-free, fast path)
     if (queue_.tryPop(entry)) {
-      const std::size_t prevDepth = queueDepth_.fetch_sub(1, std::memory_order_relaxed);
+      // As in drainBatch(): counted until written.
       writeEntry(entry);
+      const std::size_t prevDepth = queueDepth_.fetch_sub(1, std::memory_order_relaxed);
       entriesWritten_.fetch_add(1, std::memory_order_relaxed);
 
       // If queue just became empty, notify any waiters (flush()). Notify under

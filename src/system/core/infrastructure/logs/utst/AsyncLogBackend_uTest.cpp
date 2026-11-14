@@ -8,7 +8,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
+#include <atomic>
 #include <memory>
 #include <filesystem>
 #include <fstream>
@@ -16,6 +18,13 @@
 #include <string>
 #include <thread>
 #include <chrono>
+
+#include <cerrno>
+#include <fcntl.h>
+#include <poll.h>
+#include <sys/ioctl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 using logs::AsyncLogBackend;
 using logs::LogEntry;
@@ -38,6 +47,124 @@ static std::string slurp(const std::filesystem::path& p) {
 static bool contains(const std::string& hay, const std::string& needle) {
   return hay.find(needle) != std::string::npos;
 }
+
+/// Poll a condition every millisecond until it holds or the budget ends.
+template <typename Predicate> static bool waitUntil(Predicate&& pred, std::chrono::seconds budget) {
+  const auto DEADLINE = std::chrono::steady_clock::now() + budget;
+  while (!pred()) {
+    if (std::chrono::steady_clock::now() >= DEADLINE) {
+      return false;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+  }
+  return true;
+}
+
+/// Wait until the backend's queue depth has kept one value for 50 ms.
+static bool depthSettles(const AsyncLogBackend& backend, std::chrono::seconds budget) {
+  const auto DEADLINE = std::chrono::steady_clock::now() + budget;
+  std::size_t last = backend.queueDepth();
+  auto since = std::chrono::steady_clock::now();
+  while (std::chrono::steady_clock::now() < DEADLINE) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    const std::size_t NOW_DEPTH = backend.queueDepth();
+    if (NOW_DEPTH != last) {
+      last = NOW_DEPTH;
+      since = std::chrono::steady_clock::now();
+    } else if (std::chrono::steady_clock::now() - since >= std::chrono::milliseconds(50)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// A FIFO standing in for the log file. Nothing reads it until release(), so
+/// once the pipe is full the drain blocks inside write(): a stalled drain made
+/// of production code only. The shared drain thread serves every async backend
+/// of the process, so a test releases the pipe before its backend stops (see
+/// ReleaseOnExit) and the destructor always empties it.
+class StalledPipeLog {
+public:
+  explicit StalledPipeLog(const std::string& stem) : path_(uniqTempFile(stem)) {
+    if (::mkfifo(path_.c_str(), 0600) == 0) {
+      readFd_ = ::open(path_.c_str(), O_RDONLY | O_NONBLOCK | O_CLOEXEC);
+    }
+    if (readFd_ >= 0) {
+      const int SIZE = ::fcntl(readFd_, F_GETPIPE_SZ);
+      pipeBytes_ = SIZE > 0 ? static_cast<std::size_t>(SIZE) : 0;
+    }
+  }
+
+  ~StalledPipeLog() {
+    (void)finish();
+    if (readFd_ >= 0) {
+      (void)::close(readFd_);
+    }
+    std::error_code ec;
+    std::filesystem::remove(path_, ec);
+  }
+
+  StalledPipeLog(const StalledPipeLog&) = delete;
+  StalledPipeLog& operator=(const StalledPipeLog&) = delete;
+
+  bool ok() const { return readFd_ >= 0 && pipeBytes_ > 0; }
+  const std::filesystem::path& path() const { return path_; }
+  std::size_t pipeBytes() const { return pipeBytes_; }
+
+  /// Bytes written to the pipe and not yet read.
+  std::size_t buffered() const {
+    int pending = 0;
+    (void)::ioctl(readFd_, FIONREAD, &pending);
+    return pending > 0 ? static_cast<std::size_t>(pending) : 0;
+  }
+
+  /// Start reading the pipe, which unblocks the drain.
+  void release() {
+    if (readFd_ >= 0 && !reader_.joinable()) {
+      reader_ = std::thread([this]() { readLoop(); });
+    }
+  }
+
+  /// Read what is left, stop the reader and return everything that arrived.
+  /// Call once the writer has closed its end.
+  std::string finish() {
+    release();
+    if (reader_.joinable()) {
+      done_.store(true, std::memory_order_release);
+      reader_.join();
+    }
+    return received_;
+  }
+
+private:
+  void readLoop() {
+    std::array<char, 4096> block{};
+    while (true) {
+      pollfd pfd{readFd_, POLLIN, 0};
+      (void)::poll(&pfd, 1, 5);
+      const ssize_t N = ::read(readFd_, block.data(), block.size());
+      if (N > 0) {
+        received_.append(block.data(), static_cast<std::size_t>(N));
+      } else if (done_.load(std::memory_order_acquire)) {
+        break;
+      }
+    }
+  }
+
+  std::filesystem::path path_;
+  int readFd_{-1};
+  std::size_t pipeBytes_{0};
+  std::thread reader_;
+  std::atomic<bool> done_{false};
+  std::string received_;
+};
+
+/// Releases a stalled pipe when the scope ends. Declared after the backend,
+/// so the pipe is being read before the backend's destructor stops it.
+struct ReleaseOnExit {
+  StalledPipeLog& pipe;
+  ~ReleaseOnExit() { pipe.release(); }
+};
 
 /* ----------------------------- LogEntry Tests ----------------------------- */
 
@@ -182,6 +309,41 @@ TEST(AsyncLogBackendTest, TruncatesLongMessages) {
 
   std::error_code ec;
   std::filesystem::remove(PATH, ec);
+}
+
+/** @test Counts an entry as queued until it is written, so flush waits for it */
+TEST(AsyncLogBackendTest, FlushWaitsForTheEntryBeingWritten) {
+  StalledPipeLog pipe("async_flush_inflight");
+  ASSERT_TRUE(pipe.ok());
+
+  // Entries that divide the pipe exactly: the pipe takes FIT of them, and
+  // the drain then holds one more inside a blocked write().
+  constexpr std::size_t ENTRY_BYTES = 256;
+  const std::size_t FIT = pipe.pipeBytes() / ENTRY_BYTES;
+  ASSERT_EQ(FIT * ENTRY_BYTES, pipe.pipeBytes());
+  const std::string ENTRY = std::string(ENTRY_BYTES - 1, 'e') + "\n";
+
+  AsyncLogBackend backend(pipe.path().string(), 2 * FIT);
+  ASSERT_TRUE(backend.start());
+  const ReleaseOnExit RELEASE{pipe};
+
+  for (std::size_t i = 0; i < FIT + 1; ++i) {
+    ASSERT_TRUE(backend.tryLog(ENTRY));
+  }
+  ASSERT_TRUE(
+      waitUntil([&]() { return pipe.buffered() == pipe.pipeBytes(); }, std::chrono::seconds(5)));
+  ASSERT_TRUE(depthSettles(backend, std::chrono::seconds(5)));
+
+  // One entry is not on the descriptor yet.
+  EXPECT_EQ(backend.queueDepth(), 1u);
+  EXPECT_FALSE(backend.flush(100));
+
+  pipe.release();
+  EXPECT_TRUE(backend.flush(5000));
+  EXPECT_TRUE(backend.stop());
+
+  const std::string RECEIVED = pipe.finish();
+  EXPECT_EQ(static_cast<std::size_t>(std::count(RECEIVED.begin(), RECEIVED.end(), '\n')), FIT + 1);
 }
 
 /**
