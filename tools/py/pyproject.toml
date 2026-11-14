@@ -52,9 +52,12 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/apex_tools"]
 
+[tool.uv]
+# A relock takes no release younger than seven days, the cooldown the
+# Dependabot configuration applies to its own updates.
+exclude-newer = "7 days"
 # The gate installs the package non-editable, so a sync has to rebuild it
 # when its sources change, not only when this file does (uv's default).
-[tool.uv]
 cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.py" }]
 
 # Note: black, isort, and flake8 configs are managed by root .pre-commit-config.yaml
