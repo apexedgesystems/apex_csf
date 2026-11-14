@@ -98,6 +98,7 @@ apex_add_firmware(
   LINK
   executive_mcu
   system_core_protocols_framing_slip
+  utilities_build_info
   utilities_checksums_crc
 )
 

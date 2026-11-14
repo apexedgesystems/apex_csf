@@ -239,6 +239,7 @@ main():
   Startup blinks (3x)      # Visual confirmation
   irq_set_exclusive_handler # Register UART0 IRQ
   dataUart.init(115200)     # UART0 (FTDI) 8N1, interrupt-driven
+  Build line on data UART   # "Build: <identity>", once, before the first frame
   cmdUart.init()            # USB CDC (baud rate ignored)
   flash.init()              # Flash interface
   keyStore.init()           # Scan sector 511 for populated slots

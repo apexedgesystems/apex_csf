@@ -57,6 +57,7 @@ apex_add_firmware_with_stm32(
   ${APP_INC}
   LINK
   executive_mcu
+  utilities_build_info
   system_core_protocols_framing_slip
   m # newlib libm for the guidance law's trigonometry
   DEFS

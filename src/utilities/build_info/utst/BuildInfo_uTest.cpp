@@ -19,10 +19,12 @@ using apex::build_info::branch;
 using apex::build_info::buildType;
 using apex::build_info::commit;
 using apex::build_info::compiler;
+using apex::build_info::copySummary;
 using apex::build_info::describe;
 using apex::build_info::dirty;
 using apex::build_info::project;
 using apex::build_info::summary;
+using apex::build_info::summaryLength;
 using apex::build_info::targetSystem;
 using apex::build_info::treeState;
 using apex::build_info::version;
@@ -121,4 +123,32 @@ TEST(BuildInfo, StableStorage) {
   EXPECT_EQ(summary(), summary());
   EXPECT_EQ(describe(), describe());
   EXPECT_EQ(treeState(), treeState());
+}
+
+/** @test The copy form reads the same text as the pointer form: whole, in windows that
+ *  reassemble to it, and nothing at or past the end or into a null buffer. */
+TEST(BuildInfo, CopyFormMatchesPointerForm) {
+  const std::string SUMMARY = summary();
+  ASSERT_EQ(summaryLength(), SUMMARY.size());
+
+  char whole[512] = {};
+  ASSERT_LT(SUMMARY.size(), sizeof(whole));
+  EXPECT_EQ(copySummary(whole, sizeof(whole)), SUMMARY.size());
+  EXPECT_EQ(std::string(whole, SUMMARY.size()), SUMMARY);
+
+  std::string rebuilt;
+  char window[7];
+  size_t offset = 0;
+  for (size_t n = copySummary(window, sizeof(window), offset); n > 0;
+       n = copySummary(window, sizeof(window), offset)) {
+    rebuilt.append(window, n);
+    offset += n;
+  }
+  EXPECT_EQ(rebuilt, SUMMARY);
+
+  EXPECT_EQ(copySummary(window, sizeof(window), SUMMARY.size()), 0U);
+  EXPECT_EQ(copySummary(window, 0, 0), 0U);
+  EXPECT_EQ(copySummary(nullptr, sizeof(window), 0), 0U);
+  EXPECT_EQ(copySummary(window, 3, 2), 3U);
+  EXPECT_EQ(std::string(window, 3), SUMMARY.substr(2, 3));
 }

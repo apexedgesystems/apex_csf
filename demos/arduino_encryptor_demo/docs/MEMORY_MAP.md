@@ -95,10 +95,24 @@ are statically allocated.
 
 ### SRAM Budget (Actual -- Post-Optimization)
 
-Final firmware: **Program 20,244 B (61.8%), Data 1,280 B (62.5%).**
+Figures are from the pinned toolchain (AVR GCC 7.3.0) at RelWithDebInfo,
+which is `-O2` in effect, without LTO. At the end of the optimization passes
+the firmware linked at **Program 20,244 B (61.8%), Data 1,280 B (62.5%)**,
+the state the symbol table below describes. The current firmware, with the
+build identity line and a clean tree, links at **Program 21,918 B (66.9%),
+Data 1,307 B (63.8%), 741 B of SRAM above the static allocation**; a dirty
+tree adds 14 B of program memory and no data, and the identity string's
+length moves the program figure by a few tens of bytes between branches. The
+identity's summary lives in program memory and takes no static SRAM (its
+copy-out window is automatic storage in the banner's frame); in data memory
+it took 120 to 134 B, the length depending on the branch name and the dirty
+mark. The 27 B between the table's total and today's 1,307 B predate the
+identity line: the firmware linked at 1,307 B before it.
 
 See `SRAM_OPTIMIZATION_PASS_1.md` and `SRAM_OPTIMIZATION_PASS_2.md` for the
 full optimization history (3,533 -> 1,280 bytes across 2 passes + UART fixes).
+
+Static allocation at the end of the optimization passes:
 
 | Symbol                               | Size        | % of SRAM | Notes                                     |
 | ------------------------------------ | ----------- | --------- | ----------------------------------------- |
@@ -130,14 +144,28 @@ full optimization history (3,533 -> 1,280 bytes across 2 passes + UART fixes).
    Counter type uint64_t -> uint32_t saves 12 bytes of SRAM and ~2 KB of
    flash (eliminates avr-gcc 64-bit software arithmetic routines).
 
-5. **PROGMEM for constant data.** AES S-box (256 B) and test key (32 B)
-   stored in flash via `PROGMEM` + `pgm_read_byte()`.
+5. **PROGMEM for constant data.** AES S-box (256 B), test key (32 B) and the
+   build identity's summary line (about 120 B) stored in flash via
+   `PROGMEM`, read with `pgm_read_byte()` and `memcpy_P()`; the identity is
+   copied out in 16-byte windows at boot through an automatic buffer, so it
+   adds no static SRAM.
 
 ### Stack Safety
 
-With 768 bytes free for the stack, margin is comfortable. Verified by running
-the full 36-check serial checkout script including sustained encryption stress
-tests (20 consecutive packets) without corruption.
+741 B of SRAM lie above the static allocation. One call chain was inspected
+by static call-chain analysis at the pinned toolchain: main (44 B), the
+executive's run loop (36 B), the channel task (60 B), frame processing (41 B)
+and AES-256-GCM encryption (411 B), with the UART RX interrupt (17 B) and a
+helper return (2 B) on top, 611 B in all, which leaves 130 B of separation for
+that chain. It is one inspected path, not a whole-program stack bound or a
+measured watermark, and the 130 B is not a budget for new static data: a
+static allocation that grows the 1,307 B narrows the separation of every
+path. The boot banner's own paths (main, the window copy out of program
+memory or the UART write, and the RX interrupt) reach 67 to 68 B. The
+36-check serial checkout, including 20 consecutive encryption packets, passes
+against this firmware; that is functional evidence, not a stack measurement.
+Boot-time constants go in program memory so that the static allocation does
+not grow.
 
 ---
 
