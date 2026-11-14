@@ -2,11 +2,11 @@
  * @file main.cpp
  * @brief STM32 HIL flight controller firmware for NUCLEO-L476RG.
  *
- * Full SLIP/CRC communication over USART1 (ST-Link VCP).
+ * Full SLIP/CRC communication over USART1 (FTDI adapter to the Pi).
  * Receives VehicleState from host plant, runs flight controller,
  * sends ControlCmd and HeartbeatData back.
  *
- *   - UART2 (VCP): SLIP-framed state/command exchange with host
+ *   - USART1 (FTDI adapter): SLIP-framed state/command exchange with the Pi host
  *   - LED heartbeat at 2 Hz
  *   - Flight controller at 50 Hz
  *   - DWT overhead profiling at 100 Hz
@@ -29,6 +29,7 @@
 #include "stm32l4xx_hal.h"
 
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
+#include "src/utilities/build_info/inc/BuildInfo.hpp"
 #include "src/utilities/checksums/crc/inc/Crc.hpp"
 #include "src/utilities/compatibility/inc/compat_span.hpp"
 
@@ -48,6 +49,38 @@ static hil::FlightController controller;
 
 static apex::hal::stm32::Stm32SysTickSource tickSource(hil::EXEC_FREQ_HZ);
 static executive::mcu::McuExecutive<> exec(&tickSource, hil::EXEC_FREQ_HZ);
+
+/* ----------------------------- Boot Banner ----------------------------- */
+
+/// Writes the text, retrying partial writes while the TX path drains. Returns
+/// early, the rest of this text unwritten, when a write takes nothing while
+/// the transmitter reports idle; completion otherwise relies on the UART
+/// draining under interrupt, so a transmitter that stays busy is waited on.
+static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexcept {
+  const auto* bytes = reinterpret_cast<const uint8_t*>(text);
+  size_t written = 0;
+  while (written < len) {
+    const size_t N = uart.write(bytes + written, len - written);
+    if (N == 0 && uart.txComplete()) {
+      return;
+    }
+    written += N;
+  }
+}
+
+/// The build identity as the first line on the HIL UART, before any frame.
+/// The HIL host flushes its input at init and its SLIP decoder resyncs on a
+/// frame end, which disposes of text that has arrived by then; text arriving
+/// after the flush, or seen by a receiver already open across a warm reset,
+/// may reach its framing before the first frame. A terminal on the port reads
+/// which build is running.
+static void writeBuildLine(apex::hal::IUart& uart) noexcept {
+  static const char PREFIX[] = "Build: ";
+  static const char CRLF[] = "\r\n";
+  writeAll(uart, PREFIX, sizeof(PREFIX) - 1);
+  writeAll(uart, apex::build_info::summary(), strlen(apex::build_info::summary()));
+  writeAll(uart, CRLF, sizeof(CRLF) - 1);
+}
 
 /* ----------------------------- DWT Profiling ----------------------------- */
 
@@ -84,7 +117,7 @@ static uint16_t lastRxSeq = 0;
 /* ----------------------------- Frame Processing ----------------------------- */
 
 /**
- * @brief Send a SLIP-framed message over VCP UART.
+ * @brief Send a SLIP-framed message over the HIL UART.
  * @param opcode HIL protocol opcode.
  * @param payload Payload data (may be nullptr).
  * @param payloadLen Payload length in bytes.
@@ -217,7 +250,7 @@ static void ledBlinkTask(void* /*ctx*/) noexcept {
 static void controlTask(void* ctx) noexcept {
   auto* ctrl = static_cast<hil::FlightController*>(ctx);
 
-  // Read available bytes from VCP UART
+  // Read available bytes from the HIL UART
   const size_t AVAIL = vcpUart.read(rxChunk, sizeof(rxChunk));
 
   if (AVAIL > 0) {
@@ -360,10 +393,12 @@ int main() {
     HAL_Delay(150);
   }
 
-  // Initialize UART (115200 8N1) for VCP communication
+  // Initialize the HIL UART (115200 8N1) on USART1
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = hil::BAUD_RATE;
-  static_cast<void>(vcpUart.init(uartCfg));
+  if (vcpUart.init(uartCfg) == apex::hal::UartStatus::OK) {
+    writeBuildLine(vcpUart);
+  }
 
   // Configure SLIP decoder
   slipDecodeCfg.maxFrameSize = hil::MAX_FRAME_PAYLOAD;

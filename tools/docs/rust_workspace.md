@@ -98,10 +98,11 @@ joins a role by its `Cargo.toml` entry alone.
 
 ### Cargo home and offline builds
 
-`CARGO_HOME` comes from the environment: the dev image bakes a pinned,
-offline-ready registry cache and sets `CARGO_NET_OFFLINE=true`; locally
-it is `~/.cargo` and builds resolve online. Target dirs are per build
-tree and per role, so compiled artifacts never cross trees.
+`CARGO_HOME` comes from the environment: the build-base image bakes a
+pinned, offline-ready registry cache and sets `CARGO_NET_OFFLINE=true`;
+the dev images built on it keep the cache and turn network access back
+on; locally it is `~/.cargo` and builds resolve online. Target dirs are
+per build tree and per role, so compiled artifacts never cross trees.
 
 ---
 

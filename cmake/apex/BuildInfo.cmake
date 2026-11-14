@@ -43,6 +43,18 @@ if (NOT CMAKE_SCRIPT_MODE_FILE)
 
     set_source_files_properties("${BI_OUTPUT}" PROPERTIES GENERATED TRUE)
 
+    # Target system: the CMake system name and processor on hosted builds. The
+    # MCU toolchains all name the system Generic, so a firmware identity names
+    # the HAL platform and processor instead, and the board when the toolchain
+    # selects one (several NUCLEO boards build from the stm32 toolchain).
+    set(_target_system "${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR}")
+    if (APEX_HAL_PLATFORM)
+      set(_target_system "${APEX_HAL_PLATFORM}/${CMAKE_SYSTEM_PROCESSOR}")
+      if (APEX_STM32_BOARD)
+        string(APPEND _target_system "/${APEX_STM32_BOARD}")
+      endif ()
+    endif ()
+
     # A target with no inputs is always out of date, so the generator runs on
     # every build that needs the library; it leaves the output untouched when
     # the identity is unchanged.
@@ -53,7 +65,7 @@ if (NOT CMAKE_SCRIPT_MODE_FILE)
         -DOUTPUT=${BI_OUTPUT} -DPROJECT_NAME=${CMAKE_PROJECT_NAME}
         -DPROJECT_VERSION=${CMAKE_PROJECT_VERSION} -DBUILD_TYPE=$<CONFIG>
         -DCOMPILER=${CMAKE_CXX_COMPILER_ID}-${CMAKE_CXX_COMPILER_VERSION}
-        -DTARGET_SYSTEM=${CMAKE_SYSTEM_NAME}/${CMAKE_SYSTEM_PROCESSOR} -DGIT_EXECUTABLE=${_git} -P
+        -DTARGET_SYSTEM=${_target_system} -DGIT_EXECUTABLE=${_git} -P
         ${CMAKE_CURRENT_FUNCTION_LIST_FILE}
       BYPRODUCTS "${BI_OUTPUT}"
       COMMENT "Refreshing the build identity"

@@ -26,11 +26,14 @@
 #include "PicoFlash.hpp"
 #include "PicoSysTickSource.hpp"
 #include "PicoUart.hpp"
+#include "src/utilities/build_info/inc/BuildInfo.hpp"
 #include "PicoUsbCdc.hpp"
 
 #include "hardware/gpio.h"
 #include "hardware/irq.h"
 #include "pico/stdlib.h"
+
+#include <string.h>
 
 /* ----------------------------- Hardware Definitions ----------------------------- */
 
@@ -63,6 +66,40 @@ static executive::mcu::McuExecutive<> exec(&tickSource, 100);
 
 static encryptor::OverheadTracker tracker(exec);
 static encryptor::CommandDeck commandDeck(cmdUart, keyStore, engine, tracker);
+
+/* ----------------------------- Boot Banner ----------------------------- */
+
+/// Writes the text, retrying partial writes while the TX path drains. Returns
+/// early, the rest of this text unwritten, when a write takes nothing while
+/// the transmitter reports idle; completion otherwise relies on the UART
+/// draining under interrupt, so a transmitter that stays busy is waited on.
+static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexcept {
+  const auto* bytes = reinterpret_cast<const uint8_t*>(text);
+  size_t written = 0;
+  while (written < len) {
+    const size_t N = uart.write(bytes + written, len - written);
+    if (N == 0 && uart.txComplete()) {
+      return;
+    }
+    written += N;
+  }
+}
+
+/// The build identity as the first line on the data UART, before any frame.
+/// The checkout scripts drain after a settle at open, which disposes of text
+/// that has arrived by then; text arriving after the drain, or read across a
+/// warm reset or by a reader that decodes raw bytes, may reach framing. A
+/// terminal on the port reads which build is running.
+/// The command channel is a USB device whose writes wait on a host, and no host
+/// is attached at boot, so the line goes on the UART, which drains under
+/// interrupt on its own.
+static void writeBuildLine(apex::hal::IUart& uart) noexcept {
+  static const char PREFIX[] = "Build: ";
+  static const char CRLF[] = "\r\n";
+  writeAll(uart, PREFIX, sizeof(PREFIX) - 1);
+  writeAll(uart, apex::build_info::summary(), strlen(apex::build_info::summary()));
+  writeAll(uart, CRLF, sizeof(CRLF) - 1);
+}
 
 /* ----------------------------- Task Functions ----------------------------- */
 
@@ -132,7 +169,9 @@ int main() {
   // Initialize UART0 (115200 8N1) for data channel
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = 115200;
-  static_cast<void>(dataUart.init(uartCfg));
+  if (dataUart.init(uartCfg) == apex::hal::UartStatus::OK) {
+    writeBuildLine(dataUart);
+  }
 
   // Initialize USB CDC for command channel (baud rate ignored)
   static_cast<void>(cmdUart.init(uartCfg));

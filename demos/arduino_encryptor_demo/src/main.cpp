@@ -30,6 +30,7 @@
 #include "AvrUart.hpp"
 
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
+#include "src/utilities/build_info/inc/BuildInfo.hpp"
 
 #include <avr/interrupt.h>
 #include <avr/io.h>
@@ -81,6 +82,32 @@ static executive::mcu::McuExecutive<8, uint32_t> exec(&tickSource, 100);
 
 static encryptor::OverheadTracker tracker(exec);
 static encryptor::CommandDeck commandDeck(uart, keyStore, engine, tracker);
+
+/* ----------------------------- Boot Banner ----------------------------- */
+
+/// The build identity as the first line on the UART, before any frame.
+/// The checkout scripts drain after a settle at open, which disposes of text
+/// that has arrived by then; text arriving after the drain, or read across a
+/// warm reset or by a reader that decodes raw bytes, may reach framing. A
+/// terminal on the port reads which build is running.
+/// The summary lives in program memory on AVR and is copied out in windows
+/// through an automatic buffer, so the line costs no static SRAM.
+/// AvrUart::write spins while the TX ring drains under interrupt.
+static void writeBuildLine() noexcept {
+  static const char PREFIX[] PROGMEM = "Build: ";
+  static const char CRLF[] PROGMEM = "\r\n";
+  char window[16];
+  memcpy_P(window, PREFIX, sizeof(PREFIX) - 1);
+  static_cast<void>(uart.write(reinterpret_cast<const uint8_t*>(window), sizeof(PREFIX) - 1));
+  size_t offset = 0;
+  for (size_t n = apex::build_info::copySummary(window, sizeof(window), offset); n > 0;
+       n = apex::build_info::copySummary(window, sizeof(window), offset)) {
+    static_cast<void>(uart.write(reinterpret_cast<const uint8_t*>(window), n));
+    offset += n;
+  }
+  memcpy_P(window, CRLF, sizeof(CRLF) - 1);
+  static_cast<void>(uart.write(reinterpret_cast<const uint8_t*>(window), sizeof(CRLF) - 1));
+}
 
 /* ----------------------------- SLIP Decoder State ----------------------------- */
 
@@ -197,7 +224,9 @@ int main() {
   // Initialize UART (115200 8N1)
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = 115200;
-  static_cast<void>(uart.init(uartCfg));
+  if (uart.init(uartCfg) == apex::hal::UartStatus::OK) {
+    writeBuildLine();
+  }
 
   // Initialize overhead tracker Timer0
   tracker.enableTimer();
