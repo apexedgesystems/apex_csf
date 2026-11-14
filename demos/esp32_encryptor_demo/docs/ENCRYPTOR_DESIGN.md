@@ -233,6 +233,7 @@ app_main():
   ws2812Init()              # RMT peripheral for RGB LED
   Startup blinks (3x)      # Visual confirmation (green pulses)
   dataUart.init(115200)     # UART0 (FTDI) 8N1
+  Build line on data UART   # "Build: <identity>", once, before the first frame
   cmdUart.init()            # USB Serial/JTAG (baud rate ignored)
   keyStore.init()           # NVS init, read all slots into RAM cache
   if store empty:

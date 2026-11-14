@@ -41,6 +41,7 @@
 #include "OverheadTracker.hpp"
 #include "Stm32Flash.hpp"
 #include "Stm32Uart.hpp"
+#include "src/utilities/build_info/inc/BuildInfo.hpp"
 #include "boards/Board.hpp"
 
 #if APEX_USE_FREERTOS
@@ -49,6 +50,8 @@
 #include "task.h"
 #else
 #include "Stm32SysTickSource.hpp"
+
+#include <string.h>
 #endif
 
 /* ----------------------------- Hardware Definitions ----------------------------- */
@@ -89,6 +92,38 @@ static executive::mcu::McuExecutive<> exec(&tickSource, 100);
 
 static encryptor::OverheadTracker tracker(exec);
 static encryptor::CommandDeck commandDeck(cmdUart, keyStore, engine, tracker);
+
+/* ----------------------------- Boot Banner ----------------------------- */
+
+/// Writes the text, retrying partial writes while the TX path drains. Returns
+/// early, the rest of this text unwritten, when a write takes nothing while
+/// the transmitter reports idle; completion otherwise relies on the UART
+/// draining under interrupt, so a transmitter that stays busy is waited on.
+static void writeAll(apex::hal::IUart& uart, const char* text, size_t len) noexcept {
+  const auto* bytes = reinterpret_cast<const uint8_t*>(text);
+  size_t written = 0;
+  while (written < len) {
+    const size_t N = uart.write(bytes + written, len - written);
+    if (N == 0 && uart.txComplete()) {
+      return;
+    }
+    written += N;
+  }
+}
+
+/// The build identity as the first line on the command channel, before any
+/// frame.
+/// The checkout scripts drain after a settle at open, which disposes of text
+/// that has arrived by then; text arriving after the drain, or read across a
+/// warm reset or by a reader that decodes raw bytes, may reach framing. A
+/// terminal on the port reads which build is running.
+static void writeBuildLine(apex::hal::IUart& uart) noexcept {
+  static const char PREFIX[] = "Build: ";
+  static const char CRLF[] = "\r\n";
+  writeAll(uart, PREFIX, sizeof(PREFIX) - 1);
+  writeAll(uart, apex::build_info::summary(), strlen(apex::build_info::summary()));
+  writeAll(uart, CRLF, sizeof(CRLF) - 1);
+}
 
 #if APEX_USE_FREERTOS
 /* ----------------------------- FreeRTOS Configuration ----------------------------- */
@@ -306,14 +341,18 @@ int main() {
   apex::hal::UartConfig uartCfg;
   uartCfg.baudRate = 115200;
 #if APEX_BOARD_SHARED_CHANNEL
-  static_cast<void>(cmdUart.init(uartCfg)); // shared data + command channel
+  if (cmdUart.init(uartCfg) == apex::hal::UartStatus::OK) { // shared data + command channel
+    writeBuildLine(cmdUart);
+  }
   channelSlipCfg.maxFrameSize = encryptor::MAX_INPUT_FRAME;
   channelSlipCfg.allowEmptyFrame = false;
   channelSlipCfg.dropUntilEnd = true;
   channelSlipCfg.requireTrailingEnd = true;
 #else
-  static_cast<void>(dataUart.init(uartCfg)); // data channel
-  static_cast<void>(cmdUart.init(uartCfg));  // command channel
+  static_cast<void>(dataUart.init(uartCfg));                // data channel
+  if (cmdUart.init(uartCfg) == apex::hal::UartStatus::OK) { // command channel
+    writeBuildLine(cmdUart);
+  }
 #endif
 
 #if APEX_USE_FREERTOS

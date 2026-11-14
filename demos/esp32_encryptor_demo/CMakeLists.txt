@@ -47,6 +47,7 @@ apex_add_firmware_with_esp32(
   executive_mcu
   encryption_mcu
   system_core_protocols_framing_slip
+  utilities_build_info
   utilities_checksums_crc
   COMPONENTS
   freertos

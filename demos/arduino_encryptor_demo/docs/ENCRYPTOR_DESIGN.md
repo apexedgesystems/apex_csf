@@ -237,6 +237,7 @@ main():
   DDRB |= (1 << PB5)    # LED pin as output
   Startup blinks (3x)   # Visual confirmation
   uart.init(115200)      # USART0 8N1, interrupt-driven
+  Build line over UART   # "Build: <identity>", once, before the first frame
   tracker.enableTimer()  # Timer0 for overhead measurement
   keyStore.init()        # Scan EEPROM for populated key slots
   if store empty:

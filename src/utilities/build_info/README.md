@@ -1,7 +1,7 @@
 # Apex Build Info Library
 
 **Namespace:** `apex::build_info`
-**Platform:** Hosted (Linux); skipped on bare-metal builds
+**Platform:** Hosted (Linux); MCU stm32, avr, pico and esp32 (`lib.manifest`)
 **C++ Standard:** C++17
 **Library:** `utilities_build_info`
 
@@ -33,22 +33,29 @@ sysLog->info(label(), fmt::format("Build: {}", apex::build_info::summary()));
 // Build: apex_csf v0.0.1-165-g7c9d744 (main) tree=clean Release Clang-21.1.8 Linux/x86_64
 ```
 
-| Accessor         | Example                    | Source                                                                            |
-| ---------------- | -------------------------- | --------------------------------------------------------------------------------- |
-| `summary()`      | the line above             | project, describe, branch, tree state, build type, compiler, target               |
-| `project()`      | `apex_csf`                 | CMake project name                                                                |
-| `version()`      | `0.0.1`                    | CMake project version                                                             |
-| `describe()`     | `v0.0.1-165-g7c9d744a07c7` | `git describe --tags --always --abbrev=12`, `-dirty` appended from the tree state |
-| `commit()`       | `7c9d744a07c7`             | `git rev-parse --short=12 HEAD`                                                   |
-| `branch()`       | `main`, `HEAD` (detached)  | `git rev-parse --abbrev-ref HEAD`                                                 |
-| `treeState()`    | `clean`, `3f1c0a9b7d2e`    | the working tree's git tree id, first twelve hex; see 2                           |
-| `dirty()`        | `false`                    | `treeState()` names a tree other than HEAD's; `false` for `clean` and `unknown`   |
-| `buildType()`    | `Release`                  | the configuration built                                                           |
-| `compiler()`     | `Clang-21.1.8`             | CMake compiler id and version                                                     |
-| `targetSystem()` | `Linux/x86_64`             | CMake system name and processor                                                   |
+| Accessor          | Example                    | Source                                                                            |
+| ----------------- | -------------------------- | --------------------------------------------------------------------------------- |
+| `summary()`       | the line above             | project, describe, branch, tree state, build type, compiler, target               |
+| `project()`       | `apex_csf`                 | CMake project name                                                                |
+| `version()`       | `0.0.1`                    | CMake project version                                                             |
+| `describe()`      | `v0.0.1-165-g7c9d744a07c7` | `git describe --tags --always --abbrev=12`, `-dirty` appended from the tree state |
+| `commit()`        | `7c9d744a07c7`             | `git rev-parse --short=12 HEAD`                                                   |
+| `branch()`        | `main`, `HEAD` (detached)  | `git rev-parse --abbrev-ref HEAD`                                                 |
+| `treeState()`     | `clean`, `3f1c0a9b7d2e`    | the working tree's git tree id, first twelve hex; see 2                           |
+| `dirty()`         | `false`                    | `treeState()` names a tree other than HEAD's; `false` for `clean` and `unknown`   |
+| `buildType()`     | `Release`                  | the configuration built                                                           |
+| `compiler()`      | `Clang-21.1.8`             | CMake compiler id and version                                                     |
+| `targetSystem()`  | `Linux/x86_64`             | CMake system name and processor; HAL platform, processor and board on firmware    |
+| `summaryLength()` | `131`                      | length of the summary line, without terminator                                    |
+| `copySummary()`   | bytes copied               | the summary line, or a window of it, copied into a caller's buffer; no terminator |
 
 Link `utilities_build_info`. The string accessors return pointers to static
-storage; `dirty()` returns a bool.
+storage; `dirty()` returns a bool. `copySummary(out, cap, offset)` copies up
+to `cap` bytes of the summary from `offset` and returns the count, zero at
+or past the end, so a caller with a small buffer reads the line in windows.
+On AVR the pointer accessors are not declared: the summary lives in program
+memory (`PROGMEM`), where a pointer is not a C string, and `copySummary`,
+`summaryLength()` and `dirty()` are the surface.
 
 ## 2. What the Identity Carries
 
@@ -97,6 +104,37 @@ spread over the job slots.
 The library is SHARED like the other hosted libraries, so the identity lives
 in `libutilities_build_info.so` beside its siblings in a deployment bank.
 
+`lib.manifest` names the platforms: the POSIX dialects and the MCU platforms
+`stm32`, `avr`, `pico` and `esp32`. Under an MCU toolchain the library is
+STATIC, so the constants link into the firmware image, the probe in
+`probe/` compiles the public surface under that toolchain, and the target
+field names the HAL platform, the processor and, where the toolchain selects
+one, the board (`stm32/arm/nucleo_l476rg`, `avr/avr`), since every MCU
+toolchain calls the CMake system `Generic`. A firmware main writes the
+summary text (`summary()`, or `copySummary()` windows on AVR) as its first
+line on a hardware UART, once, after that UART's `init` has succeeded and
+before the first frame (the STM32 HIL flight controller, the rover MCU board
+firmware on its link UART, the STM32 and Arduino encryptors on their shared
+or command UART, the Pico and ESP32 encryptors on their data UART, since
+their command channels are USB devices with no host at boot), so a terminal
+on the port reads which build is running. The write is best effort: a failed
+`init` skips the line; the generic write loop of the STM32, Pico and ESP32
+mains retries a partial write, and when a write takes nothing while the
+transmitter reports idle it gives up the rest of that piece of the line (the
+prefix, the summary or the line end) and goes on to the next; completion
+otherwise relies on the UART draining under interrupt, so a transmitter that
+stays busy is waited on. The AVR driver waits inside its write until the
+bytes are accepted, so the Arduino banner has no such loop. The line is startup
+I/O on a framed link, so its receivers matter: the HIL host flushes its input
+at init and its SLIP decoder resyncs on a frame end, and the encryptor
+checkout scripts drain after a settle at open, which disposes of text that
+has arrived by then; text arriving after the drain, or seen by a reader
+already open across a warm reset or by one decoding raw bytes, may reach
+framing. The identity strings cost flash on every MCU; on AVR, where avr-gcc
+keeps constants in data memory, the summary is placed in program memory and
+copied out in windows through the caller's buffer, so it costs no static
+SRAM. Only the strings a firmware references survive `--gc-sections`.
+
 ## 4. Limits
 
 - Untracked files are not part of the tree state; a new file that is not yet
@@ -127,7 +165,9 @@ time, and `dirty()` returns a bool.
 mutual consistency for the build it was compiled in: the commit is twelve hex
 digits or `unknown`, `dirty()` agrees with `treeState()` and with the `-dirty`
 suffix of `describe()` whenever the tree is dirty, the summary carries its
-fields. The generator's contract is checked from the outside by the fixture
+fields. The manifest's probe compiles the public surface at each declared
+POSIX dialect and under each MCU toolchain. The generator's contract is
+checked from the outside by the fixture
 in `cmake/apex/test/build_info/`, which builds its own repositories: the
 description forms (exact tags, including names that look like a hash, a hash
 suffix or a dirty mark; tag-N-g<12 digits> under a short `core.abbrev`), and
