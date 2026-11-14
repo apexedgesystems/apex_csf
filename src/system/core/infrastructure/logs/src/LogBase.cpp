@@ -178,7 +178,10 @@ Status LogBase::rotate(std::size_t maxSize) noexcept {
   std::lock_guard<std::mutex> lock(logMutex_);
 
   std::size_t bytes = 0;
-  if (sizeNoLock(bytes) != Status::OK || bytes <= maxSize) {
+  if (sizeNoLock(bytes) != Status::OK) {
+    return Status::ERROR_SIZE;
+  }
+  if (bytes <= maxSize) {
     return Status::OK;
   }
 
@@ -204,7 +207,8 @@ Status LogBase::rotate(std::size_t maxSize) noexcept {
   std::error_code renameEc;
   std::filesystem::rename(logPath_, backup, renameEc);
   if (renameEc) {
-    openHandleNoThrow();
+    // The file was not moved, so the open descriptor still refers to the
+    // live log: it and the open status stay as they are.
     return Status::ERROR_ROTATE_RENAME;
   }
 
