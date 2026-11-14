@@ -94,6 +94,14 @@ changes. A new member is absent from the frozen export until then, and
 index, so run it where the network is open: the dev images permit it,
 while the build-base image is offline and works from its baked caches.
 
+The root manifest also sets the relock cooldown (`exclude-newer`, seven
+days): a relock takes no release younger than that. The workspace root
+owns resolution for every member, including the build backend of a
+member's wheel, and uv reads no such setting from a member. A member's
+`[tool.uv]` table holds its cache keys only; the comment above it in
+`ops/py/apex_ops/pyproject.toml` says so for the dependency scanner,
+which reads each manifest on its own.
+
 ---
 
 ## Adding things
@@ -116,8 +124,9 @@ while the build-base image is offline and works from its baked caches.
    table (`name`, `version`, `requires-python = ">=3.11"`,
    `dependencies`), its `[project.scripts]`, the hatchling
    `[build-system]`, `[tool.hatch.build.targets.wheel]` naming
-   `src/<package>`, and the `[tool.uv] cache-keys` entry so a frozen
-   sync rebuilds the wheel when a source changes. Sources go in
+   `src/<package>`, and the `[tool.uv] cache-keys` entry (with the
+   comment above it) so a frozen sync rebuilds the wheel when a source
+   changes. Sources go in
    `src/<package>/`, tests in `tests/`, docs in `docs/`. The workspace
    glob picks the directory up; nothing lists members by hand.
 2. `(cd tools && uv lock)`, and commit `tools/uv.lock` with the member.

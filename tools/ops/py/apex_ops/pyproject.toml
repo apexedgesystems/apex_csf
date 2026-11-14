@@ -22,5 +22,9 @@ packages = ["src/apex_ops"]
 
 # The gate installs the package non-editable, so a sync has to rebuild it
 # when its sources change, not only when this file does (uv's default).
+# Cache keys only. The workspace root (tools/pyproject.toml) owns dependency
+# resolution and sets the cooldown for every member; uv reads no resolution
+# setting from a member, so none is repeated here.
+# nosemgrep: package_managers.uv.uv-missing-dependency-cooldown.uv-missing-dependency-cooldown
 [tool.uv]
 cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.py" }]
