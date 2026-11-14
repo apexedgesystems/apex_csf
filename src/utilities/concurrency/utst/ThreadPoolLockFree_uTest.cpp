@@ -17,14 +17,19 @@
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <ctime>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
 
 #include <pthread.h>
+#include <sys/syscall.h>
 
 using apex::concurrency::DelegateU8;
 using apex::concurrency::PoolStatus;
@@ -415,9 +420,16 @@ struct ThreadPoolLockFreeTestAccess {
     pool.wake_.value.generation.fetch_add(publications * ThreadPoolLockFree::ADVANCE,
                                           std::memory_order_seq_cst);
   }
-  /// The ring holds fewer tasks than one turn of the wake counter, so the workers cannot all
-  /// be a full turn behind it at once.
-  static_assert(ThreadPoolLockFree::MAX_QUEUE_CAPACITY < COUNTER_TURN);
+  /// The ring takes at most half a turn of the wake counter, the capacity term of the bound
+  /// under which the workers cannot all be a full turn behind it at once.
+  static_assert(ThreadPoolLockFree::MAX_QUEUE_CAPACITY * 2 == COUNTER_TURN);
+  /// The word the workers wait on: where it is, and what it holds now.
+  static const void* wakeWordAddress(const ThreadPoolLockFree& pool) {
+    return &pool.wake_.value.generation;
+  }
+  static std::uint32_t wakeWord(const ThreadPoolLockFree& pool) {
+    return pool.wake_.value.generation.load(std::memory_order_seq_cst);
+  }
   /// One publication moves the counter's lowest bit and leaves the quiescent mark alone.
   static_assert((ThreadPoolLockFree::ADVANCE & ThreadPoolLockFree::QUIESCENT) == 0 &&
                 ThreadPoolLockFree::ADVANCE == 2 * ThreadPoolLockFree::QUIESCENT);
@@ -449,6 +461,43 @@ template <class Pred> bool settles(Pred done, std::chrono::milliseconds limit) {
 }
 
 constexpr std::chrono::milliseconds BOUND{5000};
+
+/// How many of this process's threads are asleep in a futex wait on `word` against `value`, read
+/// from each thread's /proc syscall record ("<number> <arguments in hex> ..." while it is blocked
+/// in a system call). A thread counted here has passed its last look at the ring and its decision
+/// to wait, and is inside that wait holding `value` as the word it saved. -1 when the host does
+/// not expose the records.
+int threadsAsleepOn(const void* word, std::uint32_t value) {
+  std::error_code failed;
+  std::filesystem::directory_iterator tasks("/proc/self/task", failed);
+  if (failed) {
+    return -1;
+  }
+  bool readable = false;
+  int asleep = 0;
+  for (const auto& entry : tasks) {
+    std::ifstream record(entry.path() / "syscall");
+    std::string line;
+    if (!std::getline(record, line)) {
+      continue;
+    }
+    readable = true;
+    unsigned long long number = 0;
+    unsigned long long address = 0;
+    unsigned long long operation = 0;
+    unsigned long long expected = 0;
+    if (std::sscanf(line.c_str(), "%llu %llx %llx %llx", &number, &address, &operation,
+                    &expected) != 4) {
+      continue; // "running", or a record without arguments
+    }
+    if (number == static_cast<unsigned long long>(SYS_futex) &&
+        address == reinterpret_cast<std::uintptr_t>(word) &&
+        static_cast<std::uint32_t>(expected) == value) {
+      ++asleep;
+    }
+  }
+  return readable ? asleep : -1;
+}
 
 /// Keep a scenario for the rest of the process. The holder is allocated once and never freed, so
 /// static destruction at exit does not reach a pool whose shutdown() is still running or whose
@@ -490,8 +539,15 @@ private:
 struct ShutdownScenario {
   ShutdownScenario(std::size_t workers, std::size_t capacity) : pool(workers, capacity) {}
 
-  /// Whether every worker is parked or about to park.
-  [[nodiscard]] bool workersIdle() const { return Access::idleWorkers(pool) == pool.workerCount(); }
+  /// Whether every worker is asleep in its wait on the current wake word. Where the host does
+  /// not expose that, whether every worker has announced itself idle.
+  [[nodiscard]] bool workersParked() const {
+    const int ASLEEP = threadsAsleepOn(Access::wakeWordAddress(pool), Access::wakeWord(pool));
+    if (ASLEEP < 0) {
+      return Access::idleWorkers(pool) == pool.workerCount();
+    }
+    return static_cast<std::size_t>(ASLEEP) == pool.workerCount();
+  }
 
   std::atomic<std::uint32_t> executed{0};
   std::atomic<std::uint32_t> probes{0};
@@ -539,7 +595,7 @@ private:
  * wake, so a look at the ring that found an unpublished cell ahead strands nothing. */
 TEST_F(ThreadPoolLockFreeTest, TaskBehindAMissedSignalRunsOnTheNextWake) {
   Held<ShutdownScenario> scenario(1U, 8U);
-  ASSERT_TRUE(settles([&]() { return scenario->workersIdle(); }, BOUND));
+  ASSERT_TRUE(settles([&]() { return scenario->workersParked(); }, BOUND));
   ASSERT_TRUE(
       Access::pushWithoutSignal(scenario->pool, "stranded", {&countRun, &scenario->executed}));
   ASSERT_EQ(scenario->pool.tryEnqueue("next", {&countRun, &scenario->executed}),
@@ -557,7 +613,7 @@ TEST_F(ThreadPoolLockFreeTest, TaskBehindAMissedSignalRunsOnTheNextWake) {
  * wakes every worker, and a worker's exit needs the ring seen empty after the quiescent mark. */
 TEST_F(ThreadPoolLockFreeTest, ShutdownRunsTheTaskBehindAMissedSignal) {
   Held<ShutdownScenario> scenario(1U, 8U);
-  ASSERT_TRUE(settles([&]() { return scenario->workersIdle(); }, BOUND));
+  ASSERT_TRUE(settles([&]() { return scenario->workersParked(); }, BOUND));
   ASSERT_TRUE(
       Access::pushWithoutSignal(scenario->pool, "stranded", {&countRun, &scenario->executed}));
   Stopper stopper(scenario.share());
@@ -599,21 +655,29 @@ TEST_F(ThreadPoolLockFreeTest, ShutdownWaitsForAnAdmittedProducerAndRunsItsTask)
   EXPECT_EQ(scenario->pool.workerCount(), 0U);
 }
 
-/** @test shutdown() reaches workers whose saved wake word the publication counter has come back
- * to. Accelerated state, not executed history: both workers are parked, then the counter is moved
- * directly, with no publication and no wake, by one publication short of a full turn, by a full
- * turn, and by one past it. Those are the words a worker delayed just before its wait would
- * compare against after that many real publications. shutdown() returns in each, because its mark
- * is a bit the counter never touches: no turn of the counter makes the word equal a saved one. */
+/** @test shutdown() returns when every worker is asleep on a wake word that the publication
+ * counter has since come back to: its mark is a bit the counter never touches, so no turn of the
+ * counter makes the word equal a saved one.
+ *
+ * The fixture establishes the position it tests. Each worker is confirmed, from its kernel
+ * record, to be inside its wait on the saved word, past its last look at the ring and its decision
+ * to wait. Only then is the counter moved, directly, with no publication and no wake, by a turn
+ * less one, a turn and a turn plus one: accelerated state, standing in for that many real
+ * publications. shutdown()'s wake makes each worker compare the word against the one it saved. */
 TEST_F(ThreadPoolLockFreeTest, ShutdownReachesWorkersAcrossATurnOfTheWakeCounter) {
   for (const std::uint32_t PUBLICATIONS :
        {Access::COUNTER_TURN - 1, Access::COUNTER_TURN, Access::COUNTER_TURN + 1}) {
     SCOPED_TRACE("counter moved by " + std::to_string(PUBLICATIONS) + " publications");
     Held<ShutdownScenario> scenario(2U, 2U);
-    ASSERT_TRUE(settles([&]() { return scenario->workersIdle(); }, BOUND));
-    // Idle is announced before the last look at the ring; give both workers time to be asleep
-    // on the word they read, so the moved counter is what their wake compares against.
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    const void* const WORD = Access::wakeWordAddress(scenario->pool);
+    const std::uint32_t SAVED = Access::wakeWord(scenario->pool); // nothing has been published
+    if (threadsAsleepOn(WORD, SAVED) < 0) {
+      scenario.settled();
+      GTEST_SKIP() << "this host does not expose a thread's blocked system call";
+    }
+    ASSERT_TRUE(settles([&]() { return threadsAsleepOn(WORD, SAVED) == 2; }, BOUND))
+        << threadsAsleepOn(WORD, SAVED)
+        << " of 2 workers are asleep in their wait on the saved word";
     Access::advanceCounterUnsignalled(scenario->pool, PUBLICATIONS);
     Stopper stopper(scenario.share());
     ASSERT_TRUE(stopper.returnsWithin(BOUND))
