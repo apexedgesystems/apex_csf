@@ -43,9 +43,10 @@ namespace concurrency {
  * @class ThreadPoolLockFree
  * @brief Lock-free thread pool with bounded MPMC queue.
  *
- * Uses LockFreeQueue for task storage. Task submission is lock-free (CAS
- * only); a worker that finds the ring empty parks until a producer
- * publishes or shutdown() begins.
+ * Uses LockFreeQueue for task storage. Task submission takes no lock and
+ * allocates nothing; it may issue a futex wake for an idle worker. A worker
+ * that finds the ring empty parks until a producer publishes or shutdown()
+ * begins.
  */
 class ThreadPoolLockFree {
 public:
@@ -99,11 +100,12 @@ public:
    * @param label Static or long-lived string identifying the task (non-owning).
    * @param task Delegate encapsulating the task logic.
    * @return SUCCESS if enqueued, QUEUE_FULL if queue is full, POOL_STOPPED if shutting down.
-   * @note RT-safe: one read-modify-write to enter the producer count, the
-   *       lock-free push, one to advance the wake generation and one to
-   *       leave; no lock. A futex wake follows only while a worker is parked
-   *       or parking. SUCCESS means a worker runs the task before shutdown()
-   *       returns.
+   * @note RT-DEPENDS: no allocation and no pool mutex: one read-modify-write
+   *       to enter the producer count, the lock-free push, one to advance the
+   *       wake generation and one to leave. Waking an idle worker issues a
+   *       futex syscall, and the push's compare-and-swap has no per-caller
+   *       retry bound, so enqueue latency is not bounded per caller. SUCCESS
+   *       means a worker runs the task before shutdown() returns.
    */
   [[nodiscard]] PoolStatus tryEnqueue(const char* label, TaskFn task) noexcept;
 
@@ -111,7 +113,7 @@ public:
    * @brief Enqueue a task, ignoring status (for API compatibility).
    * @param label Static or long-lived string identifying the task (non-owning).
    * @param task Delegate encapsulating the task logic.
-   * @note RT-safe: As tryEnqueue().
+   * @note RT-DEPENDS: As tryEnqueue().
    * @warning Silently drops task if queue is full or pool is stopped.
    */
   void enqueueTask(const char* label, TaskFn task) noexcept;

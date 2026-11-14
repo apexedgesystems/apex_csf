@@ -116,8 +116,7 @@ bool Semaphore::tryAcquireFor(const std::chrono::duration<Rep, Period>& timeout)
 
   // Slow path: poll with bounded exponential backoff until the deadline.
   // atomic::wait has no timed overload, so a timed acquire polls rather than
-  // parks. This path is never on a hot path (the thread pool only ever calls
-  // the untimed acquire()), so the small poll overhead is acceptable.
+  // parks.
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   std::chrono::nanoseconds backoff{500};
   const std::chrono::nanoseconds maxBackoff{std::chrono::microseconds(100)};

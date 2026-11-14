@@ -223,17 +223,17 @@ This separation enables:
 
 ### RT-Safety Summary
 
-| Operation                    | RT-Safe | Notes                          |
-| ---------------------------- | ------- | ------------------------------ |
-| `task.execute()`             | Yes     | Direct delegate call (~5-10ns) |
-| `entry.shouldRun()`          | Yes     | Inline frequency check         |
-| `executeTasksOnTickSingle()` | Yes     | Sequential, bounded work       |
-| `executeTasksOnTickMulti()`  | Yes     | Dispatch to ThreadPool         |
-| `scheduler.addTask()`        | No      | Vector growth possible         |
-| `scheduler.init()`           | No      | Log creation, allocations      |
-| `waitForPhase()`             | Yes     | Hybrid spin/park wait          |
-| `advancePhase()`             | Yes     | Atomic increment + notify      |
-| `McuScheduler::tick()`       | Yes     | No heap, O(n)                  |
+| Operation                    | RT-Safe | Notes                                                       |
+| ---------------------------- | ------- | ----------------------------------------------------------- |
+| `task.execute()`             | Yes     | Direct delegate call (~5-10ns)                              |
+| `entry.shouldRun()`          | Yes     | Inline frequency check                                      |
+| `executeTasksOnTickSingle()` | Yes     | Sequential, bounded work                                    |
+| `executeTasksOnTickMulti()`  | Depends | Pool enqueue: no lock or allocation; may issue a futex wake |
+| `scheduler.addTask()`        | No      | Vector growth possible                                      |
+| `scheduler.init()`           | No      | Log creation, allocations                                   |
+| `waitForPhase()`             | Yes     | Hybrid spin/park wait                                       |
+| `advancePhase()`             | Yes     | Atomic increment + notify                                   |
+| `McuScheduler::tick()`       | Yes     | No heap, O(n)                                               |
 
 ---
 

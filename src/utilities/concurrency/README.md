@@ -345,27 +345,27 @@ tasks it delivered before.
 
 #### RT-Safety
 
-| Method                   | RT-Safe | Reason                                    |
-| ------------------------ | ------- | ----------------------------------------- |
-| `ThreadPoolLockFree()`   | No      | Spawns threads, allocates queue           |
-| `~ThreadPoolLockFree()`  | No      | Joins threads                             |
-| `isValid()`              | Yes     | Checks stored size                        |
-| `workerCount()`          | Yes     | Returns stored size                       |
-| `capacity()`             | Yes     | Returns queue capacity                    |
-| `workerConfigFailures()` | Yes     | Atomic load                               |
-| `tryEnqueue()`           | Yes     | Three atomic RMWs around a lock-free push |
-| `enqueueTask()`          | Yes     | As `tryEnqueue()`                         |
-| `threadsRunning()`       | Yes     | Atomic load                               |
-| `hasErrors()`            | Yes     | Atomic load                               |
-| `shutdown()`             | No      | Parks on producers, joins threads         |
-| `collectErrors()`        | No      | Mutex lock                                |
+| Method                   | RT-Safe | Reason                                                                                            |
+| ------------------------ | ------- | ------------------------------------------------------------------------------------------------- |
+| `ThreadPoolLockFree()`   | No      | Spawns threads, allocates queue                                                                   |
+| `~ThreadPoolLockFree()`  | No      | Joins threads                                                                                     |
+| `isValid()`              | Yes     | Checks stored size                                                                                |
+| `workerCount()`          | Yes     | Returns stored size                                                                               |
+| `capacity()`             | Yes     | Returns queue capacity                                                                            |
+| `workerConfigFailures()` | Yes     | Atomic load                                                                                       |
+| `tryEnqueue()`           | Depends | No allocation or pool mutex; may issue a futex wake for an idle worker; no per-caller retry bound |
+| `enqueueTask()`          | Depends | As `tryEnqueue()`                                                                                 |
+| `threadsRunning()`       | Yes     | Atomic load                                                                                       |
+| `hasErrors()`            | Yes     | Atomic load                                                                                       |
+| `shutdown()`             | No      | Parks on producers, joins threads                                                                 |
+| `collectErrors()`        | No      | Mutex lock                                                                                        |
 
 #### ThreadPool vs ThreadPoolLockFree
 
 | Aspect       | ThreadPool                 | ThreadPoolLockFree           |
 | ------------ | -------------------------- | ---------------------------- |
 | Queue type   | `std::queue` (unbounded)   | `LockFreeQueue` (bounded)    |
-| Enqueue path | Mutex lock                 | Lock-free CAS                |
+| Enqueue path | Mutex lock                 | No lock; may wake a worker   |
 | Backpressure | No (queue grows)           | Yes (QUEUE_FULL status)      |
 | Memory       | Grows with load            | Fixed at construction        |
 | Best for     | Variable workloads, bursts | Predictable load, RT systems |
@@ -956,8 +956,11 @@ workers, so the `ptst/` pool fixtures are the measurement for a build.
 - **DelegateU8** - No allocation, direct function call
 - **cache::AlignCl** - Compile-time alignment only
 - **ThreadPool::threadsRunning/hasErrors** - Single atomic load
-- **ThreadPoolLockFree::tryEnqueue/enqueueTask** - Three atomic read-modify-writes (enter admission, advance the wake generation, leave) around a lock-free queue push; a futex wake only while a worker is parked or parking
 - **ThreadPoolLockFree::threadsRunning/hasErrors** - Single atomic load
+
+### RT-Dependent Components
+
+- **ThreadPoolLockFree::tryEnqueue/enqueueTask** - No allocation and no pool mutex: three atomic read-modify-writes (enter admission, advance the wake generation, leave) around a lock-free queue push. Waking an idle worker issues a futex syscall, and the push has no per-caller retry bound
 
 ### NOT RT-Safe Components
 
@@ -975,7 +978,7 @@ workers, so the `ptst/` pool fixtures are the measurement for a build.
 1. **Pre-allocate at startup** - Create pools and queues before RT loop
 2. **Use RingBuffer for single-threaded RT paths** - Zero synchronization overhead
 3. **Use SPSCQueue for dedicated producer/consumer** - Minimal atomic overhead
-4. **Use ThreadPoolLockFree for RT task dispatch** - Lock-free enqueue, bounded queue
+4. **Use ThreadPoolLockFree for RT task dispatch** - No lock or allocation on enqueue, bounded queue; see its RT-safety table for the wake syscall
 5. **Use lock-free tryPush/tryPop for RT paths** - Avoid blocking operations
 6. **SpinLock for very short critical sections** - Only when contention is low
 7. **Size queues appropriately** - Prevent allocation during operation
