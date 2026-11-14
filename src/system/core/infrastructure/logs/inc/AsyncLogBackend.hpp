@@ -51,7 +51,9 @@ class LogDrainService;
  * Size: ~520 bytes (512 for message + overhead)
  * Capacity: 4096 entries = ~2.1MB memory per backend
  *
- * @note Messages exceeding MAX_MSG_LEN are truncated (no allocation).
+ * @note A message of MAX_MSG_LEN bytes or more is cut to MAX_MSG_LEN - 1
+ *       bytes (no allocation). When the cut message ended in a newline,
+ *       the last stored byte is that newline.
  */
 struct LogEntry {
   static constexpr std::size_t MAX_MSG_LEN = 512;
@@ -62,8 +64,9 @@ struct LogEntry {
   LogEntry() noexcept = default;
 
   /**
-   * @brief Construct entry from string_view (copies up to MAX_MSG_LEN chars).
-   * @param msg Message to copy (truncated if > MAX_MSG_LEN).
+   * @brief Construct entry from string_view (copies up to MAX_MSG_LEN - 1 chars).
+   * @param msg Message to copy (cut if it does not fit; a cut line keeps
+   *            its newline).
    */
   explicit LogEntry(std::string_view msg) noexcept;
 };
@@ -141,7 +144,8 @@ public:
 
   /**
    * @brief Try to enqueue log entry (RT-safe, lock-free).
-   * @param msg Formatted log message (truncated to 512 bytes if longer).
+   * @param msg Formatted log message (cut to 511 bytes if longer, keeping
+   *            a trailing newline; counted in truncatedCount()).
    * @return true if enqueued; false if queue full (entry dropped).
    *
    * RT guarantees:
@@ -168,6 +172,15 @@ public:
    */
   std::uint64_t droppedCount() const noexcept {
     return droppedCount_.load(std::memory_order_relaxed);
+  }
+
+  /**
+   * @brief Get number of accepted entries that were cut to fit an entry.
+   * @return Truncated entry count (monotonic).
+   * @note RT-safe: Atomic load.
+   */
+  std::uint64_t truncatedCount() const noexcept {
+    return truncatedCount_.load(std::memory_order_relaxed);
   }
 
   /**
@@ -246,6 +259,7 @@ private:
 
   std::atomic<bool> running_{false};             ///< I/O thread control
   std::atomic<std::uint64_t> droppedCount_{0};   ///< Entries not accepted
+  std::atomic<std::uint64_t> truncatedCount_{0}; ///< Accepted entries cut to fit
   std::atomic<std::size_t> queueDepth_{0};       ///< Approximate queue size
   std::atomic<std::uint64_t> entriesWritten_{0}; ///< Total entries written
   std::atomic<std::uint64_t> writeErrors_{0};    ///< write() failures on drain

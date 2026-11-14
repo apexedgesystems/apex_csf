@@ -87,6 +87,17 @@ TEST(LogEntryTest, TruncatesLongMessage) {
   EXPECT_EQ(std::string_view(ENTRY.message, ENTRY.length), EXPECTED);
 }
 
+/** @test Keeps the line terminator when a terminated message is cut */
+TEST(LogEntryTest, CutLineKeepsItsNewline) {
+  const std::size_t MAX_USABLE = LogEntry::MAX_MSG_LEN - 1;
+  const std::string LINE = std::string(LogEntry::MAX_MSG_LEN + 100, 'A') + "\n";
+  const LogEntry ENTRY(LINE);
+
+  ASSERT_EQ(ENTRY.length, MAX_USABLE);
+  EXPECT_EQ(std::string_view(ENTRY.message, MAX_USABLE - 1), std::string(MAX_USABLE - 1, 'A'));
+  EXPECT_EQ(ENTRY.message[MAX_USABLE - 1], '\n');
+}
+
 /**
  * @test LogEntry handles empty message.
  */
@@ -149,32 +160,25 @@ TEST(AsyncLogBackendTest, TryLogWritesToFile) {
   std::filesystem::remove(PATH, ec);
 }
 
-/**
- * @test AsyncLogBackend correctly truncates long messages.
- */
+/** @test Writes exactly the first 511 bytes of a longer message and counts the cut */
 TEST(AsyncLogBackendTest, TruncatesLongMessages) {
   const auto PATH = uniqTempFile("async_truncate");
+  const std::string LONG_MSG = "LONG:" + std::string(LogEntry::MAX_MSG_LEN, 'Z');
   {
     AsyncLogBackend backend(PATH.string());
     ASSERT_TRUE(backend.start());
 
-    // Create a message that exceeds MAX_MSG_LEN
-    const std::string PREFIX = "LONG:";
-    const std::string LONG_MSG = PREFIX + std::string(LogEntry::MAX_MSG_LEN, 'Z');
+    EXPECT_TRUE(backend.tryLog("short entry\n"));
+    EXPECT_EQ(backend.truncatedCount(), 0u);
     EXPECT_TRUE(backend.tryLog(LONG_MSG));
+    EXPECT_EQ(backend.truncatedCount(), 1u);
 
     EXPECT_TRUE(backend.flush(1000));
     backend.stop();
   }
 
-  const auto S = slurp(PATH);
-
-  // Should contain the prefix (first part of message)
-  EXPECT_TRUE(contains(S, "LONG:"));
-
-  // File content should be exactly MAX_MSG_LEN + newline
-  // (backend adds newline after each entry)
-  EXPECT_LE(S.size(), LogEntry::MAX_MSG_LEN + 1);
+  // The backend writes the stored bytes as they are: it adds no terminator.
+  EXPECT_EQ(slurp(PATH), "short entry\n" + LONG_MSG.substr(0, LogEntry::MAX_MSG_LEN - 1));
 
   std::error_code ec;
   std::filesystem::remove(PATH, ec);

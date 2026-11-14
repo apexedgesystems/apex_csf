@@ -272,6 +272,31 @@ TEST(SystemLogTest, RotateWhileLogging) {
   std::filesystem::remove_all(DIR, ec);
 }
 
+/** @test Keeps an ASYNC line longer than an entry on its own line */
+TEST(SystemLogTest, AsyncLongLineStaysOneLine) {
+  const auto PATH = uniqTempFile("systemlog_async_long");
+  std::string content;
+  {
+    logs::SystemLog log(PATH.string(), logs::SystemLog::Mode::ASYNC);
+    ASSERT_TRUE(log.isAsync());
+
+    ASSERT_EQ(log.info("SRC", std::string(600, 'L'), false), Status::OK);
+    ASSERT_EQ(log.info("SRC", "next", false), Status::OK);
+    ASSERT_EQ(log.flush(), Status::OK);
+    content = slurp(PATH);
+  }
+
+  ASSERT_EQ(std::count(content.begin(), content.end(), '\n'), 2);
+  const auto FIRST_END = content.find('\n');
+  EXPECT_EQ(FIRST_END, logs::LogEntry::MAX_MSG_LEN - 2);
+  EXPECT_TRUE(contains(content.substr(0, FIRST_END), " INFO: SRC - LLLL"));
+  const std::string SECOND = content.substr(FIRST_END + 1);
+  EXPECT_EQ(SECOND.substr(SECOND.size() - 17), "INFO: SRC - next\n");
+
+  std::error_code ec;
+  std::filesystem::remove(PATH, ec);
+}
+
 /** @test With the fatal-flush hook enabled, fatal() returns with the queue drained. */
 TEST(SystemLogTest, FatalFlushDrainsQueue) {
   const auto PATH = std::filesystem::temp_directory_path() / "logs_fatal_flush_test.log";

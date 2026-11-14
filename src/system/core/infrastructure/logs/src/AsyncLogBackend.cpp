@@ -34,9 +34,14 @@ namespace logs {
 /* ----------------------------- LogEntry Methods ----------------------------- */
 
 LogEntry::LogEntry(std::string_view msg) noexcept {
-  // Safe copy with truncation
+  // A message that does not fit is cut to the buffer. A cut line keeps its
+  // terminator in the last stored byte, so every entry written from a
+  // terminated message is still one terminated line.
   const std::size_t copyLen = std::min(msg.size(), MAX_MSG_LEN - 1);
   std::memcpy(message, msg.data(), copyLen);
+  if (msg.size() > copyLen && msg.back() == '\n') {
+    message[copyLen - 1] = '\n';
+  }
   message[copyLen] = '\0';
   length = static_cast<std::uint16_t>(copyLen);
 }
@@ -250,6 +255,10 @@ bool AsyncLogBackend::tryLog(std::string_view msg) noexcept {
 
   // Try to push to queue (lock-free, never blocks)
   if (queue_.tryPush(std::move(entry))) {
+    if (msg.size() >= LogEntry::MAX_MSG_LEN) {
+      truncatedCount_.fetch_add(1, std::memory_order_relaxed);
+    }
+
     // Batch notifications: only wake thread if queue was previously empty
     const std::size_t prevDepth = queueDepth_.fetch_add(1, std::memory_order_relaxed);
 
