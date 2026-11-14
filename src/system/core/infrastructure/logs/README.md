@@ -107,7 +107,7 @@ threads (formerly 4-5x).
 - **Counted loss, never silent loss** -- queue-full and stopped-backend drops, and write() failures, are all monotonic counters
 - **No exceptions** -- Typed status codes throughout
 - **fmt formatting** -- Profiler shows formatting dominates the ASYNC hot path; write syscall dominates SYNC
-- **Timestamped rotation** -- Backup files named with YYYYMMDD-HHMMSS suffix; a rotation within the same second adds a numeric suffix, so no backup is replaced
+- **Timestamped rotation** -- Backup files named with YYYYMMDD-HHMMSS suffix; a rotation whose name is taken adds a numeric suffix instead of replacing the existing entry
 - **Fine-grained verbosity** -- Integer levels 0-255 for debug messages
 
 ### Constraints
@@ -282,7 +282,7 @@ using logs::LogBase;
 
 LogBase log("system.log");
 constexpr std::size_t MAX_SIZE = 10 * 1024 * 1024;
-log.rotate(MAX_SIZE);  // Creates backup: system.log.20241227-143052
+log.rotate(MAX_SIZE);  // Example backup: system.log_20241227-143052.backup
 ```
 
 ---
