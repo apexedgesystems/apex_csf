@@ -74,16 +74,25 @@ mc-plot --help
 
 `tools/pyproject.toml` is the workspace root and not itself a package;
 its `members` glob `*/py/*` spans every role, and `tools/uv.lock` pins
-the whole workspace. Every consumer reads the lock, not the manifests:
-CMake's configure takes the member list from `uv export --frozen` (a
-member's role is its directory), the image bake syncs the locked
-dependencies, the release counts the wheels it expects from the same
-export, and `make test-py` begins with `uv lock --check`. So a manifest
-edit (a new member, a changed `dependencies` entry) exists to the build
-once `uv lock` has recorded it and the lock is committed with it; until
-then CMake does not see the member and `make test-py` fails on the stale
-lock. `uv lock` is the one step that resolves against the index, so it
-runs with network; the images are offline and only read the lock.
+the whole workspace. These read the lock, frozen:
+
+- CMake's configure takes the member list from `uv export --frozen` (a
+  member's role is its directory), and the release counts the wheels it
+  expects from the same export.
+- The image bake exports and syncs the locked dependencies into the
+  build image's offline caches.
+- `make test-py` begins with `uv lock --check` and syncs with `--frozen`.
+
+The wheel build does not: CMake builds each member's wheel from its
+current `pyproject.toml`, and pip installs that wheel's dependencies from
+the wheel's own metadata (out of the baked wheelhouse in the build image,
+from the index elsewhere), with no lock constraint.
+
+Refresh and commit `tools/uv.lock` whenever a member or a dependency
+changes. A new member is absent from the frozen export until then, and
+`make test-py` rejects a stale lock. `uv lock` resolves against the
+index, so run it where the network is open: the dev images permit it,
+while the build-base image is offline and works from its baked caches.
 
 ---
 
@@ -111,8 +120,9 @@ runs with network; the images are offline and only read the lock.
    sync rebuilds the wheel when a source changes. Sources go in
    `src/<package>/`, tests in `tests/`, docs in `docs/`. The workspace
    glob picks the directory up; nothing lists members by hand.
-2. `cd tools && uv lock`, and commit `uv.lock` with the member. This is
-   what makes the member exist to CMake, the bake and the release (the
+2. `(cd tools && uv lock)`, and commit `tools/uv.lock` with the member.
+   Until then the member is absent from the frozen export, so CMake's
+   member list, the bake and the release count do not include it (the
    lock section above).
 3. Add one `COPY` line for its `pyproject.toml` to the uv layer in
    `docker/base.Dockerfile`, next to the existing members, so the image's
@@ -124,8 +134,8 @@ runs with network; the images are offline and only read the lock.
 ### A dependency
 
 Add it to the member's `dependencies` with a bounded version, then
-`cd tools && uv lock` and commit the lock. The frozen consumers above
-resolve it from the lock; the image bake caches it on the next image
+`(cd tools && uv lock)` and commit `tools/uv.lock`. The frozen consumers
+above take it from the lock; the image bake caches it on the next image
 build.
 
 ### A role
