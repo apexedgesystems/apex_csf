@@ -14,6 +14,7 @@
 #include <fstream>
 #include <random>
 #include <string>
+#include <vector>
 #include <algorithm>
 
 using logs::Status;
@@ -32,6 +33,18 @@ static std::filesystem::path uniqTempFile(const std::string& stem) {
 static std::string slurp(const std::filesystem::path& p) {
   std::ifstream ifs(p, std::ios::binary);
   return std::string((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+}
+
+/// Newlines in a file, read in blocks so a large file stays cheap to count.
+static long countNewlines(const std::filesystem::path& p) {
+  std::ifstream ifs(p, std::ios::binary);
+  std::vector<char> block(64 * 1024);
+  long lines = 0;
+  while (ifs) {
+    ifs.read(block.data(), static_cast<std::streamsize>(block.size()));
+    lines += std::count(block.data(), block.data() + ifs.gcount(), '\n');
+  }
+  return lines;
 }
 
 static bool contains(const std::string& hay, const std::string& needle) {
@@ -179,18 +192,7 @@ TEST(SystemLogTest, FatalLineFormat) {
 
 /* ----------------------------- Rotation Under Load ----------------------------- */
 
-/** @test Logging continues correctly while rotate() runs concurrently.
- *
- * A writer thread logs continuously while the main thread rotates with a
- * tiny size limit. Before each rotation the main thread waits for the
- * writer to push the file past the limit, so every rotation is a real
- * rename+reopen under live traffic however the two threads are scheduled.
- * Every write must land in either the pre- or post-rotation file (atomic fd
- * swap): status stays OK throughout, and the lines on disk across the live
- * log and its backups equal the writes that reported OK. The run is also
- * the workload that makes the openStatus_ read/write pair visible to race
- * detectors.
- */
+/** @test Preserves every accepted line across concurrent writes and rotations */
 TEST(SystemLogTest, RotateWhileLogging) {
   // A directory of its own keeps the live log and its backups together.
   const auto DIR = uniqTempFile("systemlog_rotate_race").replace_extension();
@@ -224,9 +226,12 @@ TEST(SystemLogTest, RotateWhileLogging) {
       }
     });
 
-    // Rotate only once the writer has refilled the file, sleeping between
-    // polls so the writer gets the processor on a starved host. The budget
-    // bounds the run when the writer makes no progress at all.
+    // Rotate only once the writer has pushed the live file past the limit,
+    // so each rotation is a real rename+reopen under live traffic (the
+    // workload that shows the openStatus_ read/write pair to race
+    // detectors). The writer has to make progress before the deadline; the
+    // deadline bounds this polling only, not the join and the file checks
+    // that follow.
     const auto DEADLINE = std::chrono::steady_clock::now() + BUDGET;
     while (rotations < ROTATIONS && std::chrono::steady_clock::now() < DEADLINE) {
       std::size_t bytes = 0;
@@ -255,8 +260,7 @@ TEST(SystemLogTest, RotateWhileLogging) {
   int backups = 0;
   long linesOnDisk = 0;
   for (const auto& entry : std::filesystem::directory_iterator(DIR)) {
-    const auto CONTENT = slurp(entry.path());
-    linesOnDisk += std::count(CONTENT.begin(), CONTENT.end(), '\n');
+    linesOnDisk += countNewlines(entry.path());
     if (entry.path().extension() == ".backup") {
       ++backups;
     }
