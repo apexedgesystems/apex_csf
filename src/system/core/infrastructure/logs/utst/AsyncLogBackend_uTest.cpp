@@ -161,6 +161,51 @@ private:
   std::string received_;
 };
 
+/// Holds every slot of the shared drain's registry, so a backend started
+/// while it lives runs its own I/O thread: the dedicated path the shared
+/// service otherwise shadows on Linux.
+class RegistryFill {
+public:
+  RegistryFill() {
+    for (std::size_t i = 0; i < FLEET; ++i) {
+      paths_[i] = uniqTempFile("async_registry_fill");
+      fleet_[i] = std::make_unique<AsyncLogBackend>(paths_[i].string(), 16);
+      ok_ = fleet_[i]->start() && ok_;
+    }
+  }
+
+  ~RegistryFill() {
+    std::error_code ec;
+    for (std::size_t i = 0; i < FLEET; ++i) {
+      (void)fleet_[i]->stop();
+      std::filesystem::remove(paths_[i], ec);
+    }
+  }
+
+  RegistryFill(const RegistryFill&) = delete;
+  RegistryFill& operator=(const RegistryFill&) = delete;
+
+  bool ok() const { return ok_; }
+
+private:
+  static constexpr std::size_t FLEET = logs::LogDrainService::MAX_BACKENDS;
+  std::array<std::unique_ptr<AsyncLogBackend>, FLEET> fleet_;
+  std::array<std::filesystem::path, FLEET> paths_;
+  bool ok_{true};
+};
+
+/// Which thread empties the backend under test.
+enum class Drain { SHARED, DEDICATED };
+
+/// The two steps of tryLog(), reachable so a test can stand between them:
+/// where a producer preempted after admission and before publication is.
+class TwoStepBackend : public AsyncLogBackend {
+public:
+  using AsyncLogBackend::admit;
+  using AsyncLogBackend::AsyncLogBackend;
+  using AsyncLogBackend::publishAdmitted;
+};
+
 /// Releases a stalled pipe when the scope ends. Declared after the backend,
 /// so the pipe is being read before the backend's destructor stops it.
 struct ReleaseOnExit {
@@ -310,8 +355,14 @@ TEST(AsyncLogBackendTest, TruncatesLongMessages) {
   std::filesystem::remove(PATH, ec);
 }
 
-/** @test Counts an entry as queued until it is written, so flush waits for it */
-TEST(AsyncLogBackendTest, FlushWaitsForTheEntryBeingWritten) {
+/// The drain holds the last accepted entry inside a blocked write():
+/// flush() must not report completion until that write has been attempted.
+static void expectFlushWaitsForTheEntryBeingWritten(Drain mode) {
+  std::unique_ptr<RegistryFill> fill;
+  if (mode == Drain::DEDICATED) {
+    fill = std::make_unique<RegistryFill>();
+    ASSERT_TRUE(fill->ok());
+  }
   StalledPipeLog pipe("async_flush_inflight");
   ASSERT_TRUE(pipe.ok());
 
@@ -324,17 +375,19 @@ TEST(AsyncLogBackendTest, FlushWaitsForTheEntryBeingWritten) {
 
   AsyncLogBackend backend(pipe.path().string(), 2 * FIT);
   ASSERT_TRUE(backend.start());
+  ASSERT_EQ(backend.usesSharedDrain(), mode == Drain::SHARED);
   const ReleaseOnExit RELEASE{pipe};
 
   for (std::size_t i = 0; i < FIT + 1; ++i) {
     ASSERT_TRUE(backend.tryLog(ENTRY));
   }
+  // The pipe is full and the ring is empty: the last entry is in the drain's
+  // hands, not yet on the descriptor.
   ASSERT_TRUE(
-      waitUntil([&]() { return pipe.buffered() == pipe.pipeBytes(); }, std::chrono::seconds(5)));
+      waitUntil([&]() { return pipe.buffered() == pipe.pipeBytes() && backend.queueDepth() == 0; },
+                std::chrono::seconds(5)));
   ASSERT_TRUE(depthSettles(backend, std::chrono::seconds(5)));
 
-  // One entry is not on the descriptor yet.
-  EXPECT_EQ(backend.queueDepth(), 1u);
   EXPECT_FALSE(backend.flush(100));
 
   pipe.release();
@@ -343,6 +396,60 @@ TEST(AsyncLogBackendTest, FlushWaitsForTheEntryBeingWritten) {
 
   const std::string RECEIVED = pipe.finish();
   EXPECT_EQ(static_cast<std::size_t>(std::count(RECEIVED.begin(), RECEIVED.end(), '\n')), FIT + 1);
+}
+
+/** @test Waits in flush for the entry the shared drain is still writing */
+TEST(AsyncLogBackendTest, FlushWaitsForTheEntryBeingWrittenSharedDrain) {
+  expectFlushWaitsForTheEntryBeingWritten(Drain::SHARED);
+}
+
+/** @test Waits in flush for the entry the dedicated I/O thread is still writing */
+TEST(AsyncLogBackendTest, FlushWaitsForTheEntryBeingWrittenDedicatedThread) {
+  expectFlushWaitsForTheEntryBeingWritten(Drain::DEDICATED);
+}
+
+/// Producer A is admitted and has not published, as when it is preempted
+/// inside tryLog(); producer B logs and returns. B's line reaches the file,
+/// and flush() still may not report completion until A has published and
+/// its write was attempted: an admission is counted before publication, so
+/// no release of another producer's entry can stand in for it.
+static void expectFlushWaitsForAnAdmittedProducer(Drain mode) {
+  std::unique_ptr<RegistryFill> fill;
+  if (mode == Drain::DEDICATED) {
+    fill = std::make_unique<RegistryFill>();
+    ASSERT_TRUE(fill->ok());
+  }
+  const auto PATH = uniqTempFile("async_two_producers");
+  {
+    TwoStepBackend backend(PATH.string(), 16);
+    ASSERT_TRUE(backend.start());
+    ASSERT_EQ(backend.usesSharedDrain(), mode == Drain::SHARED);
+
+    ASSERT_TRUE(backend.admit());
+    ASSERT_TRUE(backend.tryLog("from producer B\n"));
+    EXPECT_TRUE(
+        waitUntil([&]() { return slurp(PATH) == "from producer B\n"; }, std::chrono::seconds(5)));
+
+    EXPECT_FALSE(backend.flush(50));
+
+    ASSERT_TRUE(backend.publishAdmitted("from producer A\n"));
+    EXPECT_TRUE(backend.flush(2000));
+    EXPECT_EQ(slurp(PATH), "from producer B\nfrom producer A\n");
+    EXPECT_TRUE(backend.stop());
+  }
+  std::error_code ec;
+  std::filesystem::remove(PATH, ec);
+}
+
+/** @test Holds flush for a producer admitted before another's entry was written, shared drain */
+TEST(AsyncLogBackendTest, FlushWaitsForAnAdmittedProducerSharedDrain) {
+  expectFlushWaitsForAnAdmittedProducer(Drain::SHARED);
+}
+
+/** @test Holds flush for a producer admitted before another's entry was written, dedicated thread
+ */
+TEST(AsyncLogBackendTest, FlushWaitsForAnAdmittedProducerDedicatedThread) {
+  expectFlushWaitsForAnAdmittedProducer(Drain::DEDICATED);
 }
 
 /** @test Counts every entry a full queue refuses and delivers every accepted one */
@@ -375,13 +482,17 @@ TEST(AsyncLogBackendTest, FullQueueDropsAreCounted) {
       std::chrono::seconds(10)));
 
   // The drain is stalled: the queue fills and everything after is refused.
+  // The entry in the drain's hands has left the depth, so the ring settles
+  // full or one short of it, depending on when the drain took that entry.
   for (std::size_t i = 0; i < 4 * CAPACITY; ++i) {
     OFFER();
   }
   ASSERT_TRUE(depthSettles(backend, std::chrono::seconds(5)));
-  EXPECT_EQ(backend.queueDepth(), CAPACITY);
-  EXPECT_GE(refused, 3 * CAPACITY);
+  EXPECT_GE(backend.queueDepth(), CAPACITY - 1);
+  EXPECT_LE(backend.queueDepth(), CAPACITY);
+  EXPECT_GE(refused, 2 * CAPACITY);
   EXPECT_EQ(backend.droppedCount(), refused);
+  EXPECT_FALSE(backend.flush(10));
 
   pipe.release();
   EXPECT_TRUE(backend.flush(5000));
@@ -503,17 +614,8 @@ TEST(AsyncLogBackendTest, NotRunningCountsDrops) {
 
 /** @test Writes through a dedicated I/O thread when the shared drain's registry is full */
 TEST(AsyncLogBackendTest, DedicatedFallbackWhenRegistryFull) {
-  constexpr std::size_t FLEET = logs::LogDrainService::MAX_BACKENDS;
-  std::array<std::unique_ptr<logs::AsyncLogBackend>, FLEET> fleet;
-  std::array<std::filesystem::path, FLEET> fleetPaths;
-
-  // Fill every shared-drain slot, so the next backend has to run its own
-  // thread: the path the shared service otherwise shadows on Linux.
-  for (std::size_t i = 0; i < FLEET; ++i) {
-    fleetPaths[i] = uniqTempFile("async_registry_fill");
-    fleet[i] = std::make_unique<logs::AsyncLogBackend>(fleetPaths[i].string(), 16);
-    ASSERT_TRUE(fleet[i]->start());
-  }
+  const RegistryFill FILL;
+  ASSERT_TRUE(FILL.ok());
 
   const auto PATH = uniqTempFile("async_dedicated_fallback");
   logs::AsyncLogBackend overflowBackend(PATH.string(), 16);
@@ -527,10 +629,6 @@ TEST(AsyncLogBackendTest, DedicatedFallbackWhenRegistryFull) {
   EXPECT_EQ(overflowBackend.droppedCount(), 0u);
 
   std::error_code ec;
-  for (std::size_t i = 0; i < FLEET; ++i) {
-    EXPECT_TRUE(fleet[i]->stop());
-    std::filesystem::remove(fleetPaths[i], ec);
-  }
   std::filesystem::remove(PATH, ec);
 }
 
