@@ -94,8 +94,8 @@ public:
 
 private:
   // 32-bit so wait()/notify() use the native futex directly (a 64-bit counter
-  // would route through libstdc++'s slower proxy waiter-pool). Permit counts
-  // are bounded by the (small) queue capacity, so 32 bits is ample.
+  // would route through libstdc++'s slower proxy waiter-pool). The count is
+  // the caller's to bound: releases that outrun acquires by 2^32 wrap it.
   std::atomic<std::uint32_t> count_;
 
   // Number of threads parked in acquire(). release() only issues a futex

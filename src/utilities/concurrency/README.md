@@ -96,7 +96,7 @@ Two thread pool implementations for different use cases:
   - Growable queue, handles bursts
   - Best for variable workloads
 - **ThreadPoolLockFree** - Lock-free with bounded queue
-  - LockFreeQueue + Semaphore design (lock-free enqueue)
+  - LockFreeQueue with futex-parked workers (lock-free enqueue)
   - Bounded queue with QUEUE_FULL feedback
   - Best for predictable workloads, backpressure-aware systems
 
@@ -292,7 +292,7 @@ returns; the workers block SIGINT, SIGTERM and SIGPIPE.
 **Header:** `ThreadPoolLockFree.hpp`
 **Purpose:** High-performance lock-free thread pool with bounded queue and backpressure.
 
-Uses `LockFreeQueue` for task storage and `Semaphore` for worker wakeup. Provides immediate `QUEUE_FULL` feedback when the bounded queue is at capacity.
+Uses `LockFreeQueue` for task storage; a worker that finds the ring empty parks on a futex until a producer publishes. Provides immediate `QUEUE_FULL` feedback when the bounded queue is at capacity.
 
 #### Key Types
 
@@ -329,28 +329,36 @@ setting that did not apply.
 `POOL_STOPPED`; then it parks until the producers admitted before the close
 have published, marks the pool quiescent and wakes the workers. A worker
 exits only when it finds the ring empty after seeing that mark, so every
-task reported as `SUCCESS` has run when `shutdown()` returns. A woken worker
-drains the ring rather than taking one task per permit: a permit consumed
-on a pop that found a cell ahead still being published strands nothing,
-because the permit that publication releases brings a worker back to drain
-both.
+task reported as `SUCCESS` has run when `shutdown()` returns.
+
+#### Worker wake
+
+A producer advances a wake generation after it publishes and issues a futex
+wake only while a worker is parked or about to park. A worker drains the
+ring until a pop fails, reads the generation, announces itself idle, looks
+at the ring once more and parks only if the generation has not moved. A pop
+can fail while a producer ahead of a published task is still publishing its
+own cell; that producer's signal brings a worker back to drain both. The
+generation is not a count of tasks: nothing is stored per task, so a worker
+that wakes to an empty ring parks again after two failed pops however many
+tasks it delivered before.
 
 #### RT-Safety
 
-| Method                   | RT-Safe | Reason                                         |
-| ------------------------ | ------- | ---------------------------------------------- |
-| `ThreadPoolLockFree()`   | No      | Spawns threads, allocates queue                |
-| `~ThreadPoolLockFree()`  | No      | Joins threads                                  |
-| `isValid()`              | Yes     | Checks stored size                             |
-| `workerCount()`          | Yes     | Returns stored size                            |
-| `capacity()`             | Yes     | Returns queue capacity                         |
-| `workerConfigFailures()` | Yes     | Atomic load                                    |
-| `tryEnqueue()`           | Yes     | Two RMWs on the admission word, lock-free push |
-| `enqueueTask()`          | Yes     | As `tryEnqueue()`                              |
-| `threadsRunning()`       | Yes     | Atomic load                                    |
-| `hasErrors()`            | Yes     | Atomic load                                    |
-| `shutdown()`             | No      | Parks on producers, joins threads              |
-| `collectErrors()`        | No      | Mutex lock                                     |
+| Method                   | RT-Safe | Reason                                    |
+| ------------------------ | ------- | ----------------------------------------- |
+| `ThreadPoolLockFree()`   | No      | Spawns threads, allocates queue           |
+| `~ThreadPoolLockFree()`  | No      | Joins threads                             |
+| `isValid()`              | Yes     | Checks stored size                        |
+| `workerCount()`          | Yes     | Returns stored size                       |
+| `capacity()`             | Yes     | Returns queue capacity                    |
+| `workerConfigFailures()` | Yes     | Atomic load                               |
+| `tryEnqueue()`           | Yes     | Three atomic RMWs around a lock-free push |
+| `enqueueTask()`          | Yes     | As `tryEnqueue()`                         |
+| `threadsRunning()`       | Yes     | Atomic load                               |
+| `hasErrors()`            | Yes     | Atomic load                               |
+| `shutdown()`             | No      | Parks on producers, joins threads         |
+| `collectErrors()`        | No      | Mutex lock                                |
 
 #### ThreadPool vs ThreadPoolLockFree
 
@@ -928,7 +936,7 @@ Semaphore uses atomic CAS.
 | **ThreadPool** | 428K ops/s | 2.3 us/op |
 
 ThreadPool is futex-bound (mutex wake/wait). ThreadPoolLockFree replaces
-the mutex with lock-free queue + semaphore signaling; its cost relative to
+the mutex with a lock-free queue and futex-parked workers; its cost relative to
 ThreadPool depends on the task body and the placement of producer and
 workers, so the `ptst/` pool fixtures are the measurement for a build.
 
@@ -948,7 +956,7 @@ workers, so the `ptst/` pool fixtures are the measurement for a build.
 - **DelegateU8** - No allocation, direct function call
 - **cache::AlignCl** - Compile-time alignment only
 - **ThreadPool::threadsRunning/hasErrors** - Single atomic load
-- **ThreadPoolLockFree::tryEnqueue/enqueueTask** - Two read-modify-writes on the admission word around a lock-free queue push
+- **ThreadPoolLockFree::tryEnqueue/enqueueTask** - Three atomic read-modify-writes (enter admission, advance the wake generation, leave) around a lock-free queue push; a futex wake only while a worker is parked or parking
 - **ThreadPoolLockFree::threadsRunning/hasErrors** - Single atomic load
 
 ### NOT RT-Safe Components

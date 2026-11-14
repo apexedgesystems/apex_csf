@@ -6,7 +6,7 @@
  *
  * Design goals:
  *  - Lock-free task submission (no mutex on push path).
- *  - Semaphore-based worker wakeup (no busy spin).
+ *  - Idle workers park on a futex (no busy spin, no stored wake per task).
  *  - Bounded capacity for predictable memory usage.
  *  - Every task accepted runs before shutdown() returns.
  *  - Same API as ThreadPool where possible.
@@ -26,7 +26,6 @@
 #include "src/utilities/concurrency/inc/Cache.hpp"
 #include "src/utilities/concurrency/inc/Delegate.hpp"
 #include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
-#include "src/utilities/concurrency/inc/Semaphore.hpp"
 #include "src/utilities/concurrency/inc/ThreadPool.hpp" // For PoolStatus, TaskError
 
 #include <atomic>
@@ -44,8 +43,9 @@ namespace concurrency {
  * @class ThreadPoolLockFree
  * @brief Lock-free thread pool with bounded MPMC queue.
  *
- * Uses LockFreeQueue for task storage and Semaphore for worker wakeup.
- * Task submission is lock-free (CAS only), workers block on semaphore.
+ * Uses LockFreeQueue for task storage. Task submission is lock-free (CAS
+ * only); a worker that finds the ring empty parks until a producer
+ * publishes or shutdown() begins.
  */
 class ThreadPoolLockFree {
 public:
@@ -100,9 +100,10 @@ public:
    * @param task Delegate encapsulating the task logic.
    * @return SUCCESS if enqueued, QUEUE_FULL if queue is full, POOL_STOPPED if shutting down.
    * @note RT-safe: one read-modify-write to enter the producer count, the
-   *       lock-free push, a semaphore release and one read-modify-write to
-   *       leave; no lock. SUCCESS means a worker runs the task before
-   *       shutdown() returns.
+   *       lock-free push, one to advance the wake generation and one to
+   *       leave; no lock. A futex wake follows only while a worker is parked
+   *       or parking. SUCCESS means a worker runs the task before shutdown()
+   *       returns.
    */
   [[nodiscard]] PoolStatus tryEnqueue(const char* label, TaskFn task) noexcept;
 
@@ -110,7 +111,7 @@ public:
    * @brief Enqueue a task, ignoring status (for API compatibility).
    * @param label Static or long-lived string identifying the task (non-owning).
    * @param task Delegate encapsulating the task logic.
-   * @note RT-safe: Lock-free CAS + semaphore release.
+   * @note RT-safe: As tryEnqueue().
    * @warning Silently drops task if queue is full or pool is stopped.
    */
   void enqueueTask(const char* label, TaskFn task) noexcept;
@@ -184,8 +185,30 @@ private:
   static constexpr std::uint32_t QUIESCENT = 1U << 30; ///< Every admitted producer has published.
   static constexpr std::uint32_t PRODUCERS = QUIESCENT - 1; ///< The producer count's bits.
 
+  /// What an idle worker parks on. `generation` is not a count of tasks: a
+  /// producer advances it after publishing and a worker parks only while it
+  /// still equals the value the worker read before its last look at the
+  /// ring, so a publication either is seen by that look or has moved the
+  /// generation. Nothing is stored per task, and a worker that wakes to an
+  /// empty ring parks again after two failed pops, however much it has
+  /// delivered. `idle` counts the workers parked or about to park; a
+  /// producer issues the futex wake only when it is non-zero.
+  ///
+  /// The generation is 32 bits, the width the futex compares. It wraps
+  /// after 2^32 publications; a worker suspended between its last look and
+  /// its park for an exact multiple of that would park against a moved
+  /// generation, and is then woken by the next publication or by
+  /// shutdown(), whose own advance always differs from the parked value.
+  struct WakeState {
+    std::atomic<std::uint32_t> generation{0};
+    std::atomic<std::uint32_t> idle{0};
+  };
+
   void workerLoop();
   void runTask(TaskItem& item);
+  /// Tell the workers the ring changed: advance the generation, and wake
+  /// one worker if any is parked or parking.
+  void signalWork() noexcept;
   /// Leave the producer count; the last one out after the close wakes shutdown().
   void leaveAdmission() noexcept;
   /// Spawn the workers; on a failed thread start, stop and join the ones
@@ -195,15 +218,12 @@ private:
 
   // Task queue (lock-free MPMC)
   LockFreeQueue<TaskItem> taskQueue_;
-  /// Wake hints for the workers: one per published task, one per worker at
-  /// shutdown. A woken worker drains the ring rather than taking one task.
-  Semaphore wakeupSem_{0};
-
   // Worker infrastructure
   std::vector<std::thread> workers_;
 
   // Hot atomics isolated to cache lines.
   cache::AlignCl<std::atomic<std::uint32_t>> admission_{0};
+  cache::AlignCl<WakeState> wake_{};
   cache::AlignCl<std::atomic<std::size_t>> activeTasks_{0};
   std::atomic<std::size_t> configFailures_{0}; ///< Workers with a setting that did not apply.
 

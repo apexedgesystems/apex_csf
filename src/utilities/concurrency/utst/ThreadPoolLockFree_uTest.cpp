@@ -15,7 +15,9 @@
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstddef>
 #include <cstdint>
+#include <ctime>
 #include <memory>
 #include <string>
 #include <thread>
@@ -390,21 +392,25 @@ TEST_F(ThreadPoolLockFreeTest, EverySuccessfulEnqueueRunsAcrossShutdown) {
 namespace apex {
 namespace concurrency {
 
-/// The white-box seams the pool's header befriends: the ring and permit states the shutdown
+/// The white-box seams the pool's header befriends: the ring and wake states the shutdown
 /// protocol has to survive, built directly rather than hoped for from a racing schedule.
 struct ThreadPoolLockFreeTestAccess {
-  /// A published task with no permit for it: the state left when a worker consumed the permit
-  /// on a pop that found a cell ahead still being published.
-  static bool pushWithoutPermit(ThreadPoolLockFree& pool, const char* label, DelegateU8 task) {
+  /// A published task the workers were not told about: the state a worker leaves behind when its
+  /// look at the ring found a cell ahead still being published.
+  static bool pushWithoutSignal(ThreadPoolLockFree& pool, const char* label, DelegateU8 task) {
     return pool.taskQueue_.tryPush(ThreadPoolLockFree::TaskItem{label, task});
   }
-  /// A permit with nothing published for it.
-  static void releasePermit(ThreadPoolLockFree& pool) { pool.wakeupSem_.release(); }
+  /// A signal with nothing published for it.
+  static void signalWithoutTask(ThreadPoolLockFree& pool) { pool.signalWork(); }
+  /// The workers parked or about to park.
+  static std::uint32_t idleWorkers(const ThreadPoolLockFree& pool) {
+    return pool.wake_.value.idle.load(std::memory_order_acquire);
+  }
   /// A producer past the admission check that has not published yet.
   static void enterAdmission(ThreadPoolLockFree& pool) {
     pool.admission_.value.fetch_add(1, std::memory_order_acq_rel);
   }
-  /// That producer leaving, after its push and permit.
+  /// That producer leaving, after its push and signal.
   static void leaveAdmission(ThreadPoolLockFree& pool) { pool.leaveAdmission(); }
 };
 
@@ -429,50 +435,53 @@ template <class Pred> bool settles(Pred done, std::chrono::milliseconds limit) {
 
 constexpr std::chrono::milliseconds BOUND{5000};
 
-/// Everything a shutdown regression's pool, stopper thread and task callbacks touch. It lives on
-/// the heap, shared, so a case that gives up on a bound can walk away from a pool that is still
-/// shutting down: nothing those threads reference is on the test's stack. The pool is the last
-/// member, so it is destroyed, and its tasks finished, before the counters they write.
-struct ShutdownScenario {
-  ShutdownScenario(std::size_t workers, std::size_t capacity) : pool(workers, capacity) {}
-
-  std::atomic<std::uint32_t> executed{0};
-  std::atomic<std::uint32_t> probes{0};
-  std::atomic<bool> returned{false};
-  ThreadPoolLockFree pool;
-};
-
 /// Keep a scenario for the rest of the process. The holder is allocated once and never freed, so
 /// static destruction at exit does not reach a pool whose shutdown() is still running or whose
 /// worker never woke.
-void keepForProcess(std::shared_ptr<ShutdownScenario> scenario) {
-  static auto* const kept = new std::vector<std::shared_ptr<ShutdownScenario>>;
+void keepForProcess(std::shared_ptr<void> scenario) {
+  static auto* const kept = new std::vector<std::shared_ptr<void>>;
   kept->push_back(std::move(scenario));
 }
 
-/// A test body's hold on its scenario. The scenario is destroyed only when the body reports that
-/// the pool's work settled; on any other way out, a failed bound or a fatal assertion, it is kept
-/// for the process, because destroying a pool with a worker parked on a lost wake blocks in the
-/// destructor.
-class HeldScenario {
+/// A test body's hold on a scenario: a pool together with everything its workers, its task
+/// callbacks and any helper thread touch, on the heap and shared, so none of it is on the test's
+/// stack. The scenario is destroyed only when the body reports that the pool's work settled; on
+/// any other way out, a failed bound or a fatal assertion, it is kept for the process, because
+/// destroying a pool with a worker parked on a lost wake blocks in the destructor.
+template <class Scenario> class Held {
 public:
-  HeldScenario(std::size_t workers, std::size_t capacity)
-      : scenario_(std::make_shared<ShutdownScenario>(workers, capacity)) {}
-  HeldScenario(const HeldScenario&) = delete;
-  HeldScenario& operator=(const HeldScenario&) = delete;
-  ~HeldScenario() {
+  template <class... Args>
+  explicit Held(Args&&... args)
+      : scenario_(std::make_shared<Scenario>(std::forward<Args>(args)...)) {}
+  Held(const Held&) = delete;
+  Held& operator=(const Held&) = delete;
+  ~Held() {
     if (!settled_) {
       keepForProcess(std::move(scenario_));
     }
   }
 
-  ShutdownScenario* operator->() const noexcept { return scenario_.get(); }
-  [[nodiscard]] std::shared_ptr<ShutdownScenario> share() const { return scenario_; }
+  Scenario* operator->() const noexcept { return scenario_.get(); }
+  [[nodiscard]] std::shared_ptr<Scenario> share() const { return scenario_; }
   void settled() noexcept { settled_ = true; }
 
 private:
-  std::shared_ptr<ShutdownScenario> scenario_;
+  std::shared_ptr<Scenario> scenario_;
   bool settled_{false};
+};
+
+/// A shutdown regression's state. The pool is the last member, so it is destroyed, and its tasks
+/// finished, before the counters they write.
+struct ShutdownScenario {
+  ShutdownScenario(std::size_t workers, std::size_t capacity) : pool(workers, capacity) {}
+
+  /// Whether every worker is parked or about to park.
+  [[nodiscard]] bool workersIdle() const { return Access::idleWorkers(pool) == pool.workerCount(); }
+
+  std::atomic<std::uint32_t> executed{0};
+  std::atomic<std::uint32_t> probes{0};
+  std::atomic<bool> returned{false};
+  ThreadPoolLockFree pool;
 };
 
 /// shutdown() on its own thread, which holds its own reference to the scenario. The destructor
@@ -510,34 +519,35 @@ private:
 
 } // namespace
 
-/** @test A task left in the ring with its permit consumed runs on the next permit, together with
- * the task that permit announces: a woken worker drains the ring rather than taking one task per
- * permit, so a permit spent on a pop that found an unpublished cell ahead strands nothing. */
-TEST_F(ThreadPoolLockFreeTest, TaskBehindAConsumedPermitRunsOnTheNextWake) {
-  HeldScenario scenario(1, 8);
+/** @test A task the parked worker was not told about runs on the next signal, together with the
+ * task that signal announces: a woken worker drains the ring rather than taking one task per
+ * wake, so a look at the ring that found an unpublished cell ahead strands nothing. */
+TEST_F(ThreadPoolLockFreeTest, TaskBehindAMissedSignalRunsOnTheNextWake) {
+  Held<ShutdownScenario> scenario(1U, 8U);
+  ASSERT_TRUE(settles([&]() { return scenario->workersIdle(); }, BOUND));
   ASSERT_TRUE(
-      Access::pushWithoutPermit(scenario->pool, "stranded", {&countRun, &scenario->executed}));
+      Access::pushWithoutSignal(scenario->pool, "stranded", {&countRun, &scenario->executed}));
   ASSERT_EQ(scenario->pool.tryEnqueue("next", {&countRun, &scenario->executed}),
             PoolStatus::SUCCESS);
   const bool RAN =
       settles([&]() { return scenario->executed.load(std::memory_order_acquire) == 2; }, BOUND);
   EXPECT_TRUE(RAN) << "ran " << scenario->executed.load()
-                   << " of 2: the stranded task waits for a permit that never comes";
+                   << " of 2: a task waits for a signal that never comes";
   if (RAN) {
     scenario.settled();
   }
 }
 
-/** @test shutdown() runs a task whose permit was consumed, and returns: a worker's exit needs the
- * ring seen empty after the quiescent mark, not a permit per task, so the permit shutdown()
- * releases per worker is not spent on the task. */
-TEST_F(ThreadPoolLockFreeTest, ShutdownRunsTheTaskBehindAConsumedPermit) {
-  HeldScenario scenario(1, 8);
+/** @test shutdown() runs a task the parked worker was not told about, and returns: its own signal
+ * wakes every worker, and a worker's exit needs the ring seen empty after the quiescent mark. */
+TEST_F(ThreadPoolLockFreeTest, ShutdownRunsTheTaskBehindAMissedSignal) {
+  Held<ShutdownScenario> scenario(1U, 8U);
+  ASSERT_TRUE(settles([&]() { return scenario->workersIdle(); }, BOUND));
   ASSERT_TRUE(
-      Access::pushWithoutPermit(scenario->pool, "stranded", {&countRun, &scenario->executed}));
+      Access::pushWithoutSignal(scenario->pool, "stranded", {&countRun, &scenario->executed}));
   Stopper stopper(scenario.share());
   ASSERT_TRUE(stopper.returnsWithin(BOUND))
-      << "shutdown() did not return: a worker is parked for a permit that never comes";
+      << "shutdown() did not return: a worker is parked for a signal that never comes";
   scenario.settled();
   EXPECT_EQ(scenario->executed.load(std::memory_order_acquire), 1U)
       << "the accepted task did not run";
@@ -548,7 +558,7 @@ TEST_F(ThreadPoolLockFreeTest, ShutdownRunsTheTaskBehindAConsumedPermit) {
  * empty ring parks again rather than exiting, and shutdown() parks until that producer has left;
  * the task the producer then publishes runs before shutdown() returns. */
 TEST_F(ThreadPoolLockFreeTest, ShutdownWaitsForAnAdmittedProducerAndRunsItsTask) {
-  HeldScenario scenario(1, 8);
+  Held<ShutdownScenario> scenario(1U, 8U);
   Access::enterAdmission(scenario->pool); // a producer past the admission check, not yet published
   Stopper stopper(scenario.share());
   // Admission is closed once an enqueue is refused; until then the probes are ordinary tasks.
@@ -558,20 +568,104 @@ TEST_F(ThreadPoolLockFreeTest, ShutdownWaitsForAnAdmittedProducerAndRunsItsTask)
                PoolStatus::POOL_STOPPED;
       },
       BOUND));
-  // A permit with nothing behind it: the worker wakes to an empty ring with admission closed
+  // A signal with nothing behind it: the worker wakes to an empty ring with admission closed
   // and a producer outstanding, which is the state a pop at an unpublished cell leaves.
-  Access::releasePermit(scenario->pool);
+  Access::signalWithoutTask(scenario->pool);
   std::this_thread::sleep_for(std::chrono::milliseconds(50));
   EXPECT_FALSE(stopper.returned()) << "shutdown() returned with a producer still admitted";
-  // The producer publishes, releases its permit and leaves.
-  ASSERT_TRUE(Access::pushWithoutPermit(scenario->pool, "late", {&countRun, &scenario->executed}));
-  Access::releasePermit(scenario->pool);
+  // The producer publishes, signals and leaves.
+  ASSERT_TRUE(Access::pushWithoutSignal(scenario->pool, "late", {&countRun, &scenario->executed}));
+  Access::signalWithoutTask(scenario->pool);
   Access::leaveAdmission(scenario->pool);
   ASSERT_TRUE(stopper.returnsWithin(BOUND)) << "shutdown() did not return after the producer left";
   scenario.settled();
   EXPECT_EQ(scenario->executed.load(std::memory_order_acquire), 1U)
       << "the admitted producer's task did not run: a worker exited on the close alone";
   EXPECT_EQ(scenario->pool.workerCount(), 0U);
+}
+
+/** @test A task enqueued while the worker is on its way to parking is run: each round enqueues one
+ * task the moment the previous one has run, which is when the worker reads the generation, looks
+ * at the ring and parks. Either that look finds the task or the producer's signal stops the park;
+ * a round that waits out the bound is a wake lost between the two. */
+TEST_F(ThreadPoolLockFreeTest, EveryEnqueueReachesAWorkerThatIsParking) {
+  constexpr std::uint32_t ROUNDS = 20'000;
+  Held<ShutdownScenario> scenario(1U, 8U);
+  for (std::uint32_t round = 0; round < ROUNDS; ++round) {
+    ASSERT_EQ(scenario->pool.tryEnqueue("round", {&countRun, &scenario->executed}),
+              PoolStatus::SUCCESS);
+    const auto DEADLINE = std::chrono::steady_clock::now() + BOUND;
+    while (scenario->executed.load(std::memory_order_acquire) != round + 1) {
+      ASSERT_LT(std::chrono::steady_clock::now(), DEADLINE)
+          << "round " << round << ": the task was accepted and no worker came for it";
+      std::this_thread::yield();
+    }
+  }
+  scenario.settled();
+}
+
+namespace {
+
+std::int64_t cpuNanoseconds(clockid_t clock) {
+  timespec spent{};
+  clock_gettime(clock, &spent);
+  return static_cast<std::int64_t>(spent.tv_sec) * 1'000'000'000 + spent.tv_nsec;
+}
+
+/// A chain of tasks on one worker: each task enqueues its successor before it returns, so the
+/// ring never holds more than one task and every enqueue finds the worker awake. The last task
+/// records the worker's CPU clock and how much of it was spent when the chain ended.
+struct ChainScenario {
+  ChainScenario(std::uint32_t links, std::size_t capacity) : remaining(links), pool(1, capacity) {}
+
+  static std::uint8_t link(void* ctx) noexcept {
+    auto* chain = static_cast<ChainScenario*>(ctx);
+    chain->ran.fetch_add(1, std::memory_order_relaxed);
+    if (--chain->remaining > 0) {
+      if (chain->pool.tryEnqueue("link", {&ChainScenario::link, chain}) != PoolStatus::SUCCESS) {
+        chain->refused.store(true, std::memory_order_release);
+      }
+      return 0;
+    }
+    pthread_getcpuclockid(pthread_self(), &chain->workerClock);
+    chain->cpuAtEnd = cpuNanoseconds(chain->workerClock);
+    chain->ended.store(true, std::memory_order_release);
+    return 0;
+  }
+
+  std::uint32_t remaining; ///< Links still to run; the worker's alone once the chain starts.
+  std::atomic<std::uint32_t> ran{0};
+  std::atomic<bool> refused{false};
+  std::atomic<bool> ended{false};
+  clockid_t workerClock{};  ///< Published by `ended`.
+  std::int64_t cpuAtEnd{0}; ///< Published by `ended`.
+  ThreadPoolLockFree pool;
+};
+
+} // namespace
+
+/** @test What a worker does after a drain does not grow with the drain. One worker runs 500,000
+ * chained tasks through a two-cell ring, every enqueue accepted; from the end of the last task
+ * to its park it spends a bounded amount of CPU, a few failed pops, whatever it delivered before.
+ * A signal says the ring changed; it is not a count kept per task for the worker to work off. */
+TEST_F(ThreadPoolLockFreeTest, WorkAfterASustainedDrainIsBounded) {
+  constexpr std::uint32_t LINKS = 500'000;
+  constexpr std::int64_t TAIL_LIMIT_NS = 1'000'000;
+  Held<ChainScenario> chain(LINKS, 2U);
+  ASSERT_EQ(chain->pool.tryEnqueue("link", {&ChainScenario::link, chain.share().get()}),
+            PoolStatus::SUCCESS);
+  ASSERT_TRUE(settles([&]() { return chain->ended.load(std::memory_order_acquire); },
+                      std::chrono::seconds(30)))
+      << "ran " << chain->ran.load() << " of " << LINKS;
+  EXPECT_FALSE(chain->refused.load(std::memory_order_acquire))
+      << "an enqueue into the two-cell ring was refused";
+  EXPECT_EQ(chain->ran.load(std::memory_order_acquire), LINKS);
+  // Wall time for whatever follows the last task; the worker's CPU clock says what it cost.
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  const std::int64_t TAIL_NS = cpuNanoseconds(chain->workerClock) - chain->cpuAtEnd;
+  EXPECT_LT(TAIL_NS, TAIL_LIMIT_NS)
+      << "the worker spent " << TAIL_NS << " ns of CPU after its last of " << LINKS << " tasks";
+  chain.settled();
 }
 
 namespace {

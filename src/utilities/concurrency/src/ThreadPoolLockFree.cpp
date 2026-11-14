@@ -71,7 +71,7 @@ PoolStatus ThreadPoolLockFree::tryEnqueue(const char* label, TaskFn task) noexce
   TaskItem item{label, task};
   const bool PUSHED = taskQueue_.tryPush(std::move(item));
   if (PUSHED) {
-    wakeupSem_.release();
+    signalWork();
   }
   leaveAdmission();
   return PUSHED ? PoolStatus::SUCCESS : PoolStatus::QUEUE_FULL;
@@ -80,6 +80,18 @@ PoolStatus ThreadPoolLockFree::tryEnqueue(const char* label, TaskFn task) noexce
 void ThreadPoolLockFree::enqueueTask(const char* label, TaskFn task) noexcept {
   // Fire-and-forget version, ignores status.
   (void)tryEnqueue(label, task);
+}
+
+void ThreadPoolLockFree::signalWork() noexcept {
+  // Advance, then look for an idle worker. The worker does the mirror
+  // image in workerLoop(): it announces itself idle, then looks at the
+  // ring and at the generation. All four are sequentially consistent, so
+  // either this load sees the announcement and wakes the worker, or the
+  // worker's look comes after this advance and it does not park.
+  wake_.value.generation.fetch_add(1, std::memory_order_seq_cst);
+  if (wake_.value.idle.load(std::memory_order_seq_cst) != 0) {
+    wake_.value.generation.notify_one();
+  }
 }
 
 void ThreadPoolLockFree::leaveAdmission() noexcept {
@@ -114,9 +126,12 @@ void ThreadPoolLockFree::shutdown() noexcept {
   }
 
   // Stage two: every accepted task is published. A worker that sees this
-  // mark and then finds the ring empty may exit; wake them all.
+  // mark and then finds the ring empty may exit; wake them all. The
+  // advance moves the generation off whatever value a worker is parked
+  // on, and one still on its way to parking finds it moved.
   admission_.value.fetch_or(QUIESCENT, std::memory_order_release);
-  wakeupSem_.release(workers_.size());
+  wake_.value.generation.fetch_add(1, std::memory_order_seq_cst);
+  wake_.value.generation.notify_all();
 
   for (auto& w : workers_) {
     if (w.joinable()) {
@@ -143,26 +158,39 @@ std::queue<TaskError> ThreadPoolLockFree::collectErrors() {
 void ThreadPoolLockFree::workerLoop() {
   TaskItem item;
   for (;;) {
-    // A permit says the ring may hold work; it is not a claim on one task.
-    wakeupSem_.acquire();
-
     // Drain until a pop fails. A pop can fail while a producer ahead of a
-    // published task is still publishing its own cell; the permit that
-    // publication releases brings a worker back to drain both, so no
-    // published task is stranded behind a consumed permit.
+    // published task is still publishing its own cell; that producer's
+    // signal brings a worker back to drain both, so no published task is
+    // stranded behind a worker that looked too early.
     while (taskQueue_.tryPop(item)) {
       runTask(item);
     }
 
+    // Park, unless the ring changed. The generation is read first, the
+    // worker announces itself idle, and only then looks at the ring again:
+    // a task published before that look is found by it, and one published
+    // after it has moved the generation, so the wait returns at once.
+    const std::uint32_t SEEN = wake_.value.generation.load(std::memory_order_seq_cst);
+    wake_.value.idle.fetch_add(1, std::memory_order_seq_cst);
+    if (taskQueue_.tryPop(item)) {
+      wake_.value.idle.fetch_sub(1, std::memory_order_release);
+      runTask(item);
+      continue;
+    }
+
     // Exit only once every admitted producer has published and the ring is
     // seen empty after that; before the mark, an empty pop may be a
-    // publication in progress and the worker parks again.
+    // publication in progress and the worker parks.
     if ((admission_.value.load(std::memory_order_acquire) & QUIESCENT) != 0) {
+      wake_.value.idle.fetch_sub(1, std::memory_order_release);
       while (taskQueue_.tryPop(item)) {
         runTask(item);
       }
       return;
     }
+
+    wake_.value.generation.wait(SEEN, std::memory_order_seq_cst);
+    wake_.value.idle.fetch_sub(1, std::memory_order_release);
   }
 }
 
