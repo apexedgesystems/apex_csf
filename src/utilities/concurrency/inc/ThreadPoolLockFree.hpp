@@ -63,9 +63,9 @@ public:
   explicit ThreadPoolLockFree(std::size_t numThreads, std::size_t queueCapacity = 1024,
                               const PoolConfig& config = {});
 
-  /// The largest ring the pool builds. The wake counter has 31 bits; a ring
-  /// that cannot hold 2^31 tasks is what keeps one worker's view of that
-  /// counter current (see WakeState).
+  /// The largest ring the pool builds: half a turn of the 31-bit wake
+  /// counter, which leaves the other half for producer calls in progress
+  /// (see WakeState for the bound this is one term of).
   static constexpr std::size_t MAX_QUEUE_CAPACITY = std::size_t{1} << 30;
 
   /**
@@ -217,13 +217,19 @@ private:
   /// worker delayed before its wait finds the word changed, and one that
   /// reads the mark does not wait.
   ///
-  /// The counter itself turns over after 2^31 publications, and a worker
+  /// The counter itself turns over after 2^31 advances, and a worker
   /// delayed that long between its last look and its park does park
   /// against a counter that moved. That is harmless while some other
-  /// worker's view is current, and one always is: if every worker were
-  /// stale at once, none of them popped a task during those 2^31 accepted
-  /// publications, and the ring, at most MAX_QUEUE_CAPACITY cells, cannot
-  /// hold them.
+  /// worker's view is current. Every worker is stale at once only if 2^31
+  /// advances follow the last worker's read of the word with no pop after
+  /// it. Such an advance belongs either to a task still in the ring, at
+  /// most C = MAX_QUEUE_CAPACITY of them, or to a task popped before that
+  /// read whose producer had not signalled yet, at most D, one per
+  /// tryEnqueue() call in progress. So one worker's view is current while
+  /// C + D < 2^31, which holds while fewer than 2^30 tryEnqueue() calls are
+  /// in progress at once. Each such call is its own thread; that many
+  /// threads is the caller's limit to keep, and beyond what a Linux
+  /// process can create.
   struct WakeState {
     std::atomic<std::uint32_t> generation{0};
     std::atomic<std::uint32_t> idle{0};
