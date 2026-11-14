@@ -26,7 +26,10 @@
 # -Werror at build time (the configure only wires the target). The probe is
 # the library's own TU; each declared header gets a generated TU that includes
 # it and nothing else, so a header that compiles only through another's
-# transitive includes fails on its own. The target builds:
+# transitive includes fails on its own. A generated TU is named for the whole
+# declared path, so headers that share a file name in different directories
+# each keep their own; two declarations that would still share a TU fail the
+# configure. The target builds:
 #   - hosted builds: once per declared posix_cpp dialect — hosted CI builds
 #     at C++23, so each lower dialect is a claim needing its own compile.
 #     Libraries claiming MCU platforms also compile their hosted probes with
@@ -180,6 +183,10 @@ function (_apex_apply_manifest _target)
   # One generated TU per declared header, holding only that include, so
   # every public header is first in some TU. configure_file rewrites the TU
   # only when its content changes, so a reconfigure does not rebuild it.
+  # The TU's name is the declared path as an identifier; a second header
+  # arriving at a name already taken would replace the first one's TU and
+  # leave it unchecked, so that is an error naming both.
+  set(_hdr_ids "")
   foreach (_hdr IN LISTS _m_HEADERS)
     set(_hdr_src "${CMAKE_CURRENT_SOURCE_DIR}/${_hdr}")
     if (NOT EXISTS "${_hdr_src}")
@@ -188,10 +195,22 @@ function (_apex_apply_manifest _target)
       )
     endif ()
     file(RELATIVE_PATH _hdr_rel "${CMAKE_SOURCE_DIR}" "${_hdr_src}")
-    get_filename_component(_hdr_stem "${_hdr}" NAME_WE)
-    set(_hdr_tu "${CMAKE_CURRENT_BINARY_DIR}/manifest_headers/${_hdr_stem}_first.cpp")
+    string(MAKE_C_IDENTIFIER "${_hdr}" _hdr_id)
+    if (_hdr_id IN_LIST _hdr_ids)
+      message(
+        FATAL_ERROR
+          "[apex] ${CMAKE_CURRENT_SOURCE_DIR}/lib.manifest:\n"
+          "  two declared headers share one generated translation unit\n"
+          "  (${_hdr_id}_first.cpp), so only one of them would be checked:\n"
+          "    ${_hdr_owner_${_hdr_id}}\n"
+          "    ${_hdr}"
+      )
+    endif ()
+    list(APPEND _hdr_ids "${_hdr_id}")
+    set(_hdr_owner_${_hdr_id} "${_hdr}")
+    set(_hdr_tu "${CMAKE_CURRENT_BINARY_DIR}/manifest_headers/${_hdr_id}_first.cpp")
     configure_file(
-      "${CMAKE_SOURCE_DIR}/cmake/apex/assets/manifest_header_first.cpp.in" "${_hdr_tu}" @ONLY
+      "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/assets/manifest_header_first.cpp.in" "${_hdr_tu}" @ONLY
     )
     list(APPEND _probe_srcs "${_hdr_tu}")
   endforeach ()

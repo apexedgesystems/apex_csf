@@ -1,0 +1,8 @@
+#ifndef APEX_FIXTURE_SAME_NAME_WIDGET_HPP
+#define APEX_FIXTURE_SAME_NAME_WIDGET_HPP
+
+struct Widget {
+  int size{0};
+};
+
+#endif // APEX_FIXTURE_SAME_NAME_WIDGET_HPP
