@@ -406,6 +406,21 @@ struct ThreadPoolLockFreeTestAccess {
   static std::uint32_t idleWorkers(const ThreadPoolLockFree& pool) {
     return pool.wake_.value.idle.load(std::memory_order_acquire);
   }
+  /// Publications after which the wake counter is back at a value it held.
+  static constexpr std::uint32_t COUNTER_TURN = std::uint32_t{1} << 31;
+  /// Put the wake counter where that many publications would leave it, without publishing
+  /// anything and without waking anyone. Accelerated state: what a worker delayed before its
+  /// wait would find after that much real history, which no test executes.
+  static void advanceCounterUnsignalled(ThreadPoolLockFree& pool, std::uint32_t publications) {
+    pool.wake_.value.generation.fetch_add(publications * ThreadPoolLockFree::ADVANCE,
+                                          std::memory_order_seq_cst);
+  }
+  /// The ring holds fewer tasks than one turn of the wake counter, so the workers cannot all
+  /// be a full turn behind it at once.
+  static_assert(ThreadPoolLockFree::MAX_QUEUE_CAPACITY < COUNTER_TURN);
+  /// One publication moves the counter's lowest bit and leaves the quiescent mark alone.
+  static_assert((ThreadPoolLockFree::ADVANCE & ThreadPoolLockFree::QUIESCENT) == 0 &&
+                ThreadPoolLockFree::ADVANCE == 2 * ThreadPoolLockFree::QUIESCENT);
   /// A producer past the admission check that has not published yet.
   static void enterAdmission(ThreadPoolLockFree& pool) {
     pool.admission_.value.fetch_add(1, std::memory_order_acq_rel);
@@ -582,6 +597,30 @@ TEST_F(ThreadPoolLockFreeTest, ShutdownWaitsForAnAdmittedProducerAndRunsItsTask)
   EXPECT_EQ(scenario->executed.load(std::memory_order_acquire), 1U)
       << "the admitted producer's task did not run: a worker exited on the close alone";
   EXPECT_EQ(scenario->pool.workerCount(), 0U);
+}
+
+/** @test shutdown() reaches workers whose saved wake word the publication counter has come back
+ * to. Accelerated state, not executed history: both workers are parked, then the counter is moved
+ * directly, with no publication and no wake, by one publication short of a full turn, by a full
+ * turn, and by one past it. Those are the words a worker delayed just before its wait would
+ * compare against after that many real publications. shutdown() returns in each, because its mark
+ * is a bit the counter never touches: no turn of the counter makes the word equal a saved one. */
+TEST_F(ThreadPoolLockFreeTest, ShutdownReachesWorkersAcrossATurnOfTheWakeCounter) {
+  for (const std::uint32_t PUBLICATIONS :
+       {Access::COUNTER_TURN - 1, Access::COUNTER_TURN, Access::COUNTER_TURN + 1}) {
+    SCOPED_TRACE("counter moved by " + std::to_string(PUBLICATIONS) + " publications");
+    Held<ShutdownScenario> scenario(2U, 2U);
+    ASSERT_TRUE(settles([&]() { return scenario->workersIdle(); }, BOUND));
+    // Idle is announced before the last look at the ring; give both workers time to be asleep
+    // on the word they read, so the moved counter is what their wake compares against.
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    Access::advanceCounterUnsignalled(scenario->pool, PUBLICATIONS);
+    Stopper stopper(scenario.share());
+    ASSERT_TRUE(stopper.returnsWithin(BOUND))
+        << "shutdown() did not return: its final wake word equals one a worker saved";
+    scenario.settled();
+    EXPECT_EQ(scenario->pool.workerCount(), 0U);
+  }
 }
 
 /** @test A task enqueued while the worker is on its way to parking is run: each round enqueues one

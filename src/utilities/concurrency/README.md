@@ -343,6 +343,13 @@ generation is not a count of tasks: nothing is stored per task, so a worker
 that wakes to an empty ring parks again after two failed pops however many
 tasks it delivered before.
 
+The word a worker waits on carries the quiescent mark in a bit of its own,
+beside a 31-bit publication counter. `shutdown()` sets the mark once and the
+counter never touches it, so the word after shutdown differs from every
+value a worker saved before it, a full turn of the counter included. The
+ring is capped at 2^30 cells (`MAX_QUEUE_CAPACITY`), below one turn of the
+counter, so the workers cannot all hold a stale view of it at once.
+
 #### RT-Safety
 
 | Method                   | RT-Safe | Reason                                                                                            |

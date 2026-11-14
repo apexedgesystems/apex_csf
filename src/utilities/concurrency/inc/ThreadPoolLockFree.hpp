@@ -55,12 +55,18 @@ public:
   /**
    * @brief Construct a lock-free thread pool.
    * @param numThreads Number of worker threads to spawn.
-   * @param queueCapacity Maximum pending tasks (rounded to power-of-two).
+   * @param queueCapacity Maximum pending tasks (rounded to power-of-two,
+   *        at most MAX_QUEUE_CAPACITY).
    * @param config Optional RT configuration applied to all workers at startup.
    * @note NOT RT-safe: Spawns threads, allocates queue storage.
    */
   explicit ThreadPoolLockFree(std::size_t numThreads, std::size_t queueCapacity = 1024,
                               const PoolConfig& config = {});
+
+  /// The largest ring the pool builds. The wake counter has 31 bits; a ring
+  /// that cannot hold 2^31 tasks is what keeps one worker's view of that
+  /// counter current (see WakeState).
+  static constexpr std::size_t MAX_QUEUE_CAPACITY = std::size_t{1} << 30;
 
   /**
    * @brief Destructor calls shutdown() if not already stopped.
@@ -146,9 +152,10 @@ public:
    *
    * Two stages. Admission closes first, so tryEnqueue() returns POOL_STOPPED;
    * then shutdown() parks until the producers admitted before the close have
-   * published, marks the pool quiescent and wakes the workers. A worker
-   * exits only when it finds the ring empty after seeing that mark, so every
-   * task reported as SUCCESS has run when shutdown() returns.
+   * published, sets the quiescent mark in the word the workers wait on and
+   * wakes them. A worker exits only when it finds the ring empty after
+   * seeing that mark, so every task reported as SUCCESS has run when
+   * shutdown() returns.
    *
    * @note NOT RT-safe: parks on the producers, joins threads.
    */
@@ -179,28 +186,44 @@ private:
   friend struct ThreadPoolLockFreeTestAccess;
 
   /// admission_ is one word: the low bits count the producers inside
-  /// tryEnqueue(), the high bits are shutdown()'s two stages. A producer
+  /// tryEnqueue(), the top bit is shutdown()'s first stage. A producer
   /// enters and reads the stage in one read-modify-write, so it either sees
   /// the close or is counted before shutdown() can see zero producers.
   static constexpr std::uint32_t CLOSED =
       1U << 31; ///< tryEnqueue() rejects; nothing new is published.
-  static constexpr std::uint32_t QUIESCENT = 1U << 30; ///< Every admitted producer has published.
-  static constexpr std::uint32_t PRODUCERS = QUIESCENT - 1; ///< The producer count's bits.
+  static constexpr std::uint32_t PRODUCERS = CLOSED - 1; ///< The producer count's bits.
 
-  /// What an idle worker parks on. `generation` is not a count of tasks: a
-  /// producer advances it after publishing and a worker parks only while it
-  /// still equals the value the worker read before its last look at the
+  /// The wake word's two fields (see WakeState).
+  static constexpr std::uint32_t QUIESCENT = 1U; ///< Every admitted producer has published.
+  static constexpr std::uint32_t ADVANCE = 2U;   ///< One publication, in the counter's bits.
+
+  /// What an idle worker parks on. `generation` is one 32-bit word, the
+  /// width the futex compares: bit 0 is the quiescent mark and the 31 bits
+  /// above it count publications. It is not a count of tasks to work off: a
+  /// producer adds ADVANCE after publishing and a worker parks only while
+  /// the word still equals the value it read before its last look at the
   /// ring, so a publication either is seen by that look or has moved the
-  /// generation. Nothing is stored per task, and a worker that wakes to an
-  /// empty ring parks again after two failed pops, however much it has
-  /// delivered. `idle` counts the workers parked or about to park; a
-  /// producer issues the futex wake only when it is non-zero.
+  /// word. Nothing is stored per task, and a worker that wakes to an empty
+  /// ring parks again after two failed pops, however much it has delivered.
+  /// `idle` counts the workers parked or about to park; a producer issues
+  /// the futex wake only when it is non-zero.
   ///
-  /// The generation is 32 bits, the width the futex compares. It wraps
-  /// after 2^32 publications; a worker suspended between its last look and
-  /// its park for an exact multiple of that would park against a moved
-  /// generation, and is then woken by the next publication or by
-  /// shutdown(), whose own advance always differs from the parked value.
+  /// The mark is what ends the wait for good. shutdown() sets it once,
+  /// after the admitted producers have published, and nothing clears it;
+  /// advancing the counter never touches it. Every value a worker read
+  /// before shutdown() has the mark clear and every value after has it
+  /// set, so no count of publications in between, a full turn of the
+  /// counter included, can make the word equal a value saved earlier: a
+  /// worker delayed before its wait finds the word changed, and one that
+  /// reads the mark does not wait.
+  ///
+  /// The counter itself turns over after 2^31 publications, and a worker
+  /// delayed that long between its last look and its park does park
+  /// against a counter that moved. That is harmless while some other
+  /// worker's view is current, and one always is: if every worker were
+  /// stale at once, none of them popped a task during those 2^31 accepted
+  /// publications, and the ring, at most MAX_QUEUE_CAPACITY cells, cannot
+  /// hold them.
   struct WakeState {
     std::atomic<std::uint32_t> generation{0};
     std::atomic<std::uint32_t> idle{0};

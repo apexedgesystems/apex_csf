@@ -18,7 +18,7 @@ namespace concurrency {
 
 ThreadPoolLockFree::ThreadPoolLockFree(std::size_t numThreads, std::size_t queueCapacity,
                                        const PoolConfig& config)
-    : taskQueue_(queueCapacity) {
+    : taskQueue_(queueCapacity < MAX_QUEUE_CAPACITY ? queueCapacity : MAX_QUEUE_CAPACITY) {
   spawnWorkers(numThreads, config);
 }
 
@@ -88,7 +88,7 @@ void ThreadPoolLockFree::signalWork() noexcept {
   // ring and at the generation. All four are sequentially consistent, so
   // either this load sees the announcement and wakes the worker, or the
   // worker's look comes after this advance and it does not park.
-  wake_.value.generation.fetch_add(1, std::memory_order_seq_cst);
+  wake_.value.generation.fetch_add(ADVANCE, std::memory_order_seq_cst);
   if (wake_.value.idle.load(std::memory_order_seq_cst) != 0) {
     wake_.value.generation.notify_one();
   }
@@ -125,12 +125,13 @@ void ThreadPoolLockFree::shutdown() noexcept {
     state = admission_.value.load(std::memory_order_acquire);
   }
 
-  // Stage two: every accepted task is published. A worker that sees this
-  // mark and then finds the ring empty may exit; wake them all. The
-  // advance moves the generation off whatever value a worker is parked
-  // on, and one still on its way to parking finds it moved.
-  admission_.value.fetch_or(QUIESCENT, std::memory_order_release);
-  wake_.value.generation.fetch_add(1, std::memory_order_seq_cst);
+  // Stage two: every accepted task is published. The mark goes into the
+  // word the workers wait on, in a bit the publication counter never
+  // touches, so the word now differs from every value a worker read before
+  // this point, whatever the counter did in between. A parked worker is
+  // woken; one still on its way to parking finds the word changed; one
+  // that reads the mark exits once it finds the ring empty.
+  wake_.value.generation.fetch_or(QUIESCENT, std::memory_order_seq_cst);
   wake_.value.generation.notify_all();
 
   for (auto& w : workers_) {
@@ -166,10 +167,10 @@ void ThreadPoolLockFree::workerLoop() {
       runTask(item);
     }
 
-    // Park, unless the ring changed. The generation is read first, the
+    // Park, unless the ring changed. The wake word is read first, the
     // worker announces itself idle, and only then looks at the ring again:
     // a task published before that look is found by it, and one published
-    // after it has moved the generation, so the wait returns at once.
+    // after it has moved the word, so the wait returns at once.
     const std::uint32_t SEEN = wake_.value.generation.load(std::memory_order_seq_cst);
     wake_.value.idle.fetch_add(1, std::memory_order_seq_cst);
     if (taskQueue_.tryPop(item)) {
@@ -179,13 +180,12 @@ void ThreadPoolLockFree::workerLoop() {
     }
 
     // Exit only once every admitted producer has published and the ring is
-    // seen empty after that; before the mark, an empty pop may be a
-    // publication in progress and the worker parks.
-    if ((admission_.value.load(std::memory_order_acquire) & QUIESCENT) != 0) {
+    // seen empty after that. The mark read above says the first; the pop
+    // that just failed came after that read, so it saw every accepted task.
+    // Before the mark, an empty pop may be a publication in progress and
+    // the worker parks.
+    if ((SEEN & QUIESCENT) != 0) {
       wake_.value.idle.fetch_sub(1, std::memory_order_release);
-      while (taskQueue_.tryPop(item)) {
-        runTask(item);
-      }
       return;
     }
 
