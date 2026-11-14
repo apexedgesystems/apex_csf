@@ -182,10 +182,18 @@ Status LogBase::rotate(std::size_t maxSize) noexcept {
     return Status::OK;
   }
 
-  const std::string BACKUP = logPath_.string() + "_" + getTimestampForFile() + ".backup";
+  // A backup never replaces an earlier one: when the timestamped name is
+  // taken (another rotation within the same second), a numeric suffix makes
+  // the name unique.
+  const std::string STEM = logPath_.string() + "_" + getTimestampForFile();
+  std::string backup = STEM + ".backup";
+  std::error_code existsEc;
+  for (unsigned seq = 1; std::filesystem::exists(backup, existsEc); ++seq) {
+    backup = STEM + "-" + std::to_string(seq) + ".backup";
+  }
 
   std::error_code renameEc;
-  std::filesystem::rename(logPath_, BACKUP, renameEc);
+  std::filesystem::rename(logPath_, backup, renameEc);
   if (renameEc) {
     openHandleNoThrow();
     return Status::ERROR_ROTATE_RENAME;

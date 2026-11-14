@@ -107,7 +107,7 @@ threads (formerly 4-5x).
 - **Counted loss, never silent loss** -- queue-full and stopped-backend drops, and write() failures, are all monotonic counters
 - **No exceptions** -- Typed status codes throughout
 - **fmt formatting** -- Profiler shows formatting dominates the ASYNC hot path; write syscall dominates SYNC
-- **Timestamped rotation** -- Backup files named with YYYYMMDD-HHMMSS suffix
+- **Timestamped rotation** -- Backup files named with YYYYMMDD-HHMMSS suffix; a rotation within the same second adds a numeric suffix, so no backup is replaced
 - **Fine-grained verbosity** -- Integer levels 0-255 for debug messages
 
 ### Constraints

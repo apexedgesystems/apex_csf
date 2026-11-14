@@ -112,6 +112,49 @@ TEST(LogBaseTest, RotateCreatesBackupWhenNeededAndReopens) {
   std::filesystem::remove(SUBDIR, ec);
 }
 
+/** @test Rotations within the same second each keep their own backup. */
+TEST(LogBaseTest, RotateWithinTheSameSecondKeepsEveryBackup) {
+  const auto BASE_TMP = std::filesystem::temp_directory_path();
+  std::random_device rd;
+  std::mt19937_64 gen(rd());
+  std::uniform_int_distribution<unsigned long long> dist;
+  const auto SUBDIR = BASE_TMP / ("logbase_rotate_burst_" + std::to_string(dist(gen)));
+
+  std::error_code ec{};
+  std::filesystem::create_directory(SUBDIR, ec);
+  ASSERT_FALSE(ec) << "Failed to create temp subdir: " << SUBDIR;
+
+  const auto LOG_PATH = SUBDIR / "test.log";
+  constexpr int ROTATIONS = 4;
+
+  {
+    LogBase log(LOG_PATH.string());
+    for (int i = 0; i < ROTATIONS; ++i) {
+      ASSERT_EQ(log.write("burst line " + std::to_string(i)), Status::OK);
+      ASSERT_EQ(log.rotate(1u), Status::OK);
+    }
+  }
+
+  // Four rotations take far less than a second, so at least two share a
+  // timestamp. Each must have its own backup holding its own line.
+  int backups = 0;
+  std::string rotated;
+  for (auto& de : std::filesystem::directory_iterator(SUBDIR)) {
+    const auto NAME = de.path().filename().string();
+    if (NAME.rfind("test.log_", 0) == 0 && NAME.find(".backup") != std::string::npos) {
+      ++backups;
+      rotated += slurp(de.path());
+    }
+  }
+  EXPECT_EQ(backups, ROTATIONS);
+  EXPECT_EQ(countLines(rotated), ROTATIONS);
+  for (int i = 0; i < ROTATIONS; ++i) {
+    EXPECT_NE(rotated.find("burst line " + std::to_string(i) + "\n"), std::string::npos);
+  }
+
+  std::filesystem::remove_all(SUBDIR, ec);
+}
+
 /** @test Size reports non-decreasing value after additional writes. */
 TEST(LogBaseTest, SizeReflectsGrowthAfterWrites) {
   const auto PATH = uniqTempFile("logbase_size");

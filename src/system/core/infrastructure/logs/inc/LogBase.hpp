@@ -103,6 +103,12 @@ public:
 
   /**
    * @brief Rotate the log file if its size exceeds the limit.
+   *
+   * The current file is renamed to `<path>_YYYYMMDD-HHMMSS.backup` and a
+   * fresh file takes its place. A backup never replaces an earlier one:
+   * when that name is taken (another rotation within the same second), a
+   * numeric suffix (`-1`, `-2`, ...) precedes `.backup`.
+   *
    * @param maxSize Maximum allowed size in bytes.
    * @return Status::OK if rotation was not required or succeeded.
    *         Status::ERROR_ROTATE_RENAME if backup rename failed.
