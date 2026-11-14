@@ -21,7 +21,7 @@
  *   - Pool workers created once at construction, reused across execute() calls
  *   - Internal dispatch via DelegateU8 (zero-allocation callable)
  *   - Completion detection via Latch (one-shot countdown)
- *   - Lock-free task submission (~0.15us per enqueue)
+ *   - Lock-free task submission
  *
  * Dependencies:
  *   - utilities_concurrency: ThreadPoolLockFree, Latch, DelegateU8

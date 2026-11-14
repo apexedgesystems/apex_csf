@@ -260,14 +260,14 @@ public:
 
 The constructor returns once every worker has applied its configuration,
 or with an invalid pool (`isValid()` false, `workerCount()` 0) when a worker
-could not start: the workers that had started are joined first, and no
-exception leaves the constructor. `workerConfigFailures()` counts the
-workers for which a requested setting (name, affinity, policy with priority)
-did not apply; the settings are applied one by one and a failure leaves the
-others as they are, so a counted worker may run with part of its
-configuration, and the count does not say which setting failed. The
-constructing thread's signal mask is as it was when the constructor
-returns; the workers block SIGINT, SIGTERM and SIGPIPE.
+could not start: the workers that had started are joined first, and the
+thread-start failure is reported through invalid state.
+`workerConfigFailures()` counts the workers for which a requested setting
+(name, affinity, policy with priority) did not apply; the settings are
+applied one by one and a failure leaves the others as they are, so a counted
+worker may run with part of its configuration, and the count does not say
+which setting failed. The constructing thread's signal mask is as it was
+when the constructor returns; the workers block SIGINT, SIGTERM and SIGPIPE.
 
 #### RT-Safety
 

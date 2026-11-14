@@ -12,7 +12,7 @@
  *  - Same API as ThreadPool where possible.
  *
  * Trade-offs vs ThreadPool:
- *  - Pro: 2-3x higher throughput under contention.
+ *  - Pro: No mutex on the submission path.
  *  - Pro: Predictable memory (fixed queue size).
  *  - Con: Bounded - tryEnqueue returns QUEUE_FULL if full.
  *  - Con: Must specify capacity at construction.
