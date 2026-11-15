@@ -10,6 +10,10 @@ any such change is called out explicitly in its entry.
 
 ### Added
 
+- A bundle's `TOOLS` takes Rust, shell and Python tools as well as C++
+  targets, staged to run from wherever the package is copied; a tool that
+  cannot run on the target fails the build
+  ([#192](https://github.com/apexedgesystems/apex_csf/pull/192)).
 - Executives log their build identity (`git describe`, branch, tree state,
   build type, compiler, target) as the first System Configuration line.
   ([#172](https://github.com/apexedgesystems/apex_csf/pull/172))
