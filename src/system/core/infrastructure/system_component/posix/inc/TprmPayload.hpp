@@ -110,7 +110,8 @@ enum class TprmPayloadCheck : std::uint8_t {
   case TprmPayloadCheck::BAD_MAGIC:
     return "bad payload magic (want APV4)";
   case TprmPayloadCheck::BAD_VERSION:
-    return "payload version not 3";
+    static_assert(TPRM_PAYLOAD_VERSION == 4, "the text below names the version the reader takes");
+    return "payload version not 4";
   case TprmPayloadCheck::SIZE_MISMATCH:
     return "body length differs from header";
   case TprmPayloadCheck::UID_MISMATCH:
