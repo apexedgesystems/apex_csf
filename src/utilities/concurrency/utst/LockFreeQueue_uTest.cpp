@@ -472,6 +472,34 @@ TEST_F(LockFreeQueueTest, CursorsWrapInsideTheFirstLap) {
   ASSERT_TRUE(crew.finish()) << "a push or pop across the index wrap did not return";
 }
 
+/** @test A queue whose cursors cross the middle of the index range, where a signed view of an
+ * index changes sign, keeps its order and capacity. The push and pop compare a cell's sequence
+ * number with the cursor by their modular distance; forming that distance from two signed values
+ * overflows here, which the undefined-behaviour sanitizer reports. */
+TEST_F(LockFreeQueueTest, CursorsCrossTheSignBoundary) {
+  struct Crossing : CrewState {
+    SteppedQueue queue{4, (std::size_t{1} << 63) - 3};
+  };
+  Crew<Crossing> crew;
+  crew.start([](Crossing& state) {
+    auto& queue = state.queue;
+    int value = 0;
+    for (int lap = 0; lap < 3; ++lap) {
+      for (int i = 0; i < 4; ++i) {
+        ASSERT_TRUE(queue.tryPush(lap * 4 + i));
+      }
+      EXPECT_FALSE(queue.tryPush(-1));
+      EXPECT_EQ(queue.sizeApprox(), 4U);
+      for (int i = 0; i < 4; ++i) {
+        ASSERT_TRUE(queue.tryPop(value));
+        EXPECT_EQ(value, lap * 4 + i);
+      }
+      EXPECT_FALSE(queue.tryPop(value));
+    }
+  });
+  ASSERT_TRUE(crew.finish()) << "a push or pop across the sign boundary did not return";
+}
+
 /** @test sizeApprox() read from a third thread never exceeds the capacity while a producer and a
  * consumer run: a read that catches the consumer ahead of the producer's older cursor reports
  * zero, not a wrapped difference. This case meets the split by chance; the arithmetic for it is
