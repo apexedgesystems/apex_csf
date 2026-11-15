@@ -8,15 +8,26 @@
  */
 
 #include "src/utilities/concurrency/inc/Semaphore.hpp"
+#include "src/utilities/concurrency/utst/support/ThreadProbe.hpp"
+#include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <memory>
 #include <thread>
 #include <vector>
 
 using apex::concurrency::Semaphore;
+using apex::concurrency::test::settles;
+using apex::concurrency::test::threadsAsleepIn;
+
+/// The largest count the semaphore supports.
+constexpr std::size_t MAX_COUNT = std::numeric_limits<std::uint32_t>::max();
 
 /* ----------------------------- Default Construction ----------------------------- */
 
@@ -139,25 +150,86 @@ TEST_F(SemaphoreTest, TryAcquireForSucceedsOnRelease) {
 
 /* ----------------------------- Blocking Tests ----------------------------- */
 
-/** @test acquire blocks until release */
+namespace {
+
+/// Acquirers of one semaphore, with everything they touch on the heap: a case that gives up on
+/// them detaches them, and they keep the state they hold.
+struct Acquirers {
+  Semaphore sem{0};
+  std::atomic<int> entering{0};
+  std::atomic<int> acquired{0};
+
+  /// Whether `count` threads are blocked inside acquire(). Where the host does not expose a
+  /// thread's blocked system call, whether that many have entered and a watch has passed.
+  [[nodiscard]] bool asleep(int count) const {
+    const int ASLEEP = threadsAsleepIn(&sem, sizeof(sem));
+    if (ASLEEP < 0) {
+      std::this_thread::sleep_for(apex::concurrency::test::WATCH);
+      return entering.load() == count;
+    }
+    return ASLEEP == count;
+  }
+};
+
+/// Start `count` threads that each acquire once.
+std::vector<std::thread> startAcquirers(const std::shared_ptr<Acquirers>& state, int count) {
+  std::vector<std::thread> threads;
+  threads.reserve(static_cast<std::size_t>(count));
+  for (int i = 0; i < count; ++i) {
+    threads.emplace_back([state]() {
+      state->entering.fetch_add(1, std::memory_order_acq_rel);
+      state->sem.acquire();
+      state->acquired.fetch_add(1, std::memory_order_acq_rel);
+    });
+  }
+  return threads;
+}
+
+/// Join the acquirers if all of them returned, else detach them.
+void finish(std::vector<std::thread>& threads, bool allReturned) {
+  for (auto& t : threads) {
+    if (allReturned) {
+      t.join();
+    } else {
+      t.detach();
+    }
+  }
+}
+
+} // namespace
+
+/** @test acquire() on an empty semaphore blocks, and one release() lets exactly that acquirer
+ * through. */
 TEST_F(SemaphoreTest, AcquireBlocksUntilRelease) {
-  Semaphore sem(0);
-  std::atomic<bool> acquired{false};
+  const auto state = std::make_shared<Acquirers>();
+  auto threads = startAcquirers(state, 1);
+  const bool ASLEEP = settles([&]() { return state->asleep(1); });
+  EXPECT_TRUE(ASLEEP) << "the acquirer did not block on an empty semaphore";
+  EXPECT_EQ(state->acquired.load(), 0);
 
-  std::thread waiter([&]() {
-    sem.acquire();
-    acquired.store(true, std::memory_order_release);
-  });
+  state->sem.release();
+  const bool RETURNED = settles([&]() { return state->acquired.load() == 1; });
+  finish(threads, RETURNED);
+  ASSERT_TRUE(RETURNED) << "a release did not wake the blocked acquirer";
+  EXPECT_EQ(state->sem.count(), 0U);
+}
 
-  // Give waiter time to block
-  std::this_thread::sleep_for(std::chrono::milliseconds(20));
-  EXPECT_FALSE(acquired.load(std::memory_order_acquire));
+/** @test release(n) wakes every one of n blocked acquirers: with four threads asleep in
+ * acquire(), one release(4) lets all four through. */
+TEST_F(SemaphoreTest, ReleaseOfSeveralWakesEveryBlockedAcquirer) {
+  constexpr int ACQUIRERS = 4;
+  const auto state = std::make_shared<Acquirers>();
+  auto threads = startAcquirers(state, ACQUIRERS);
+  const bool ASLEEP = settles([&]() { return state->asleep(ACQUIRERS); });
+  EXPECT_TRUE(ASLEEP) << "the acquirers did not all block";
+  EXPECT_EQ(state->acquired.load(), 0);
 
-  // Release should unblock waiter
-  sem.release();
-  waiter.join();
-
-  EXPECT_TRUE(acquired.load(std::memory_order_acquire));
+  state->sem.release(ACQUIRERS);
+  const bool RETURNED = settles([&]() { return state->acquired.load() == ACQUIRERS; });
+  finish(threads, RETURNED);
+  ASSERT_TRUE(RETURNED) << state->acquired.load() << " of " << ACQUIRERS
+                        << " blocked acquirers returned after release(" << ACQUIRERS << ")";
+  EXPECT_EQ(state->sem.count(), 0U);
 }
 
 /* ----------------------------- Concurrent Tests ----------------------------- */
@@ -232,6 +304,38 @@ TEST_F(SemaphoreTest, ResourcePoolLimiting) {
   // Max concurrent should never exceed pool size
   EXPECT_LE(maxHeld.load(), POOL_SIZE);
   EXPECT_EQ(pool.count(), static_cast<std::size_t>(POOL_SIZE));
+}
+
+/* ----------------------------- Count Bound Tests ----------------------------- */
+
+/** @test The count holds the largest supported value, UINT32_MAX, as an initial count: it reads
+ * back exactly and an acquire takes one from it. */
+TEST_F(SemaphoreTest, HoldsTheMaximumInitialCount) {
+  Semaphore sem(MAX_COUNT);
+  EXPECT_EQ(sem.count(), MAX_COUNT);
+  EXPECT_TRUE(sem.tryAcquire());
+  EXPECT_EQ(sem.count(), MAX_COUNT - 1);
+}
+
+/** @test One release of the largest supported argument takes an empty semaphore to UINT32_MAX. */
+TEST_F(SemaphoreTest, ReleaseOfTheMaximumFromZero) {
+  Semaphore sem(0);
+  sem.release(MAX_COUNT);
+  EXPECT_EQ(sem.count(), MAX_COUNT);
+  EXPECT_TRUE(sem.tryAcquire());
+  EXPECT_EQ(sem.count(), MAX_COUNT - 1);
+}
+
+/** @test A release that brings the permits outstanding exactly to UINT32_MAX is within the
+ * supported range: from one below the bound, release(1) reaches it and acquires count down from
+ * there. */
+TEST_F(SemaphoreTest, ReleaseReachesTheMaximumFromOneBelow) {
+  Semaphore sem(MAX_COUNT - 1);
+  sem.release(1);
+  EXPECT_EQ(sem.count(), MAX_COUNT);
+  EXPECT_TRUE(sem.tryAcquire());
+  EXPECT_TRUE(sem.tryAcquire());
+  EXPECT_EQ(sem.count(), MAX_COUNT - 2);
 }
 
 /* ----------------------------- Determinism Tests ----------------------------- */

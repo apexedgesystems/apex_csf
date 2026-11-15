@@ -35,12 +35,17 @@ namespace concurrency {
  * then decrements. release() increments the count and wakes waiters.
  *
  * @note Thread-safe: All methods are safe to call from any thread.
+ * @note Count bound: the count is 32 bits wide and the caller keeps it in range. The initial
+ *       count and every release() argument are at most UINT32_MAX, and no release may take the
+ *       permits outstanding above UINT32_MAX, counting releases made at the same time on other
+ *       threads. Reading count() and then releasing is not an atomic check against that. Nothing
+ *       is checked or clamped: a value or a total above the bound wraps the count.
  */
 class Semaphore {
 public:
   /**
    * @brief Construct a semaphore with initial count.
-   * @param initial Initial count (default 0).
+   * @param initial Initial count (default 0), at most UINT32_MAX.
    * @note Trivial: holds a single atomic counter, no internal allocation.
    */
   explicit Semaphore(std::size_t initial = 0) noexcept;
@@ -80,7 +85,9 @@ public:
 
   /**
    * @brief Release the semaphore (increment count).
-   * @param count Number to add (default 1).
+   * @param count Number to add (default 1), at most UINT32_MAX.
+   * @pre The permits outstanding after this release, and after any release running at the same
+   *      time, do not exceed UINT32_MAX.
    * @note RT-safe: Atomic fetch_add + notify.
    */
   void release(std::size_t count = 1);

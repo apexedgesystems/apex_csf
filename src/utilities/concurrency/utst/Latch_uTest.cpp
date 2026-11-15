@@ -8,6 +8,8 @@
  */
 
 #include "src/utilities/concurrency/inc/Latch.hpp"
+#include "src/utilities/concurrency/utst/support/Crew.hpp"
+#include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
 
@@ -17,6 +19,10 @@
 #include <vector>
 
 using apex::concurrency::Latch;
+using apex::concurrency::test::Crew;
+using apex::concurrency::test::CrewState;
+using apex::concurrency::test::escapesWithin;
+using apex::concurrency::test::settles;
 
 /* ----------------------------- Basic Operations Tests ----------------------------- */
 
@@ -156,27 +162,50 @@ TEST_F(LatchTest, WaitForSucceedsOnTrigger) {
 
 /* ----------------------------- arriveAndWait Tests ----------------------------- */
 
-/** @test arriveAndWait decrements and waits */
-TEST_F(LatchTest, ArriveAndWaitDecrementsAndWaits) {
-  Latch latch(2);
-  std::atomic<int> completed{0};
-
-  std::thread t1([&]() {
-    latch.arriveAndWait();
-    completed.fetch_add(1, std::memory_order_relaxed);
+/** @test arriveAndWait blocks an arrival until the count reaches zero: the first of two arrivals
+ * does not return while the second is missing, and returns once it has arrived. */
+TEST_F(LatchTest, ArriveAndWaitBlocksUntilTheLastArrival) {
+  struct Arrivals : CrewState {
+    Latch latch{2};
+    std::atomic<bool> arriving{false};
+    std::atomic<int> returned{0};
+  };
+  Crew<Arrivals> crew;
+  crew.start([](Arrivals& state) {
+    state.arriving.store(true, std::memory_order_release);
+    state.latch.arriveAndWait();
+    state.returned.fetch_add(1, std::memory_order_acq_rel);
   });
 
-  std::thread t2([&]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    latch.arriveAndWait();
-    completed.fetch_add(1, std::memory_order_relaxed);
+  ASSERT_TRUE(settles([&]() { return crew->arriving.load(); }));
+  EXPECT_FALSE(escapesWithin([&]() { return crew->returned.load() > 0; }))
+      << "the first of two arrivals returned with the count still at one";
+
+  crew.start([](Arrivals& state) {
+    state.latch.arriveAndWait();
+    state.returned.fetch_add(1, std::memory_order_acq_rel);
   });
+  ASSERT_TRUE(crew.finish()) << crew->returned.load() << " of 2 arrivals returned";
 
-  t1.join();
-  t2.join();
+  EXPECT_EQ(crew->latch.count(), 0U);
+  EXPECT_TRUE(crew->latch.tryWait());
+}
 
-  EXPECT_EQ(completed.load(), 2);
-  EXPECT_TRUE(latch.tryWait());
+/** @test arriveAndWait on a latch that is already triggered returns at once and leaves it
+ * triggered. */
+TEST_F(LatchTest, ArriveAndWaitOnTriggeredLatchReturns) {
+  struct Triggered : CrewState {
+    Latch latch{1};
+  };
+  Crew<Triggered> crew;
+  crew->latch.countDown();
+  ASSERT_EQ(crew->latch.count(), 0U);
+
+  crew.start([](Triggered& state) { state.latch.arriveAndWait(); });
+  ASSERT_TRUE(crew.finish()) << "arriveAndWait() on a triggered latch did not return";
+
+  EXPECT_EQ(crew->latch.count(), 0U);
+  EXPECT_TRUE(crew->latch.tryWait());
 }
 
 /* ----------------------------- Concurrent Tests ----------------------------- */

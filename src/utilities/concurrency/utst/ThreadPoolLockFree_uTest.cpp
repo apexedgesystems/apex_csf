@@ -8,7 +8,9 @@
  */
 
 #include "src/utilities/concurrency/inc/ThreadPoolLockFree.hpp"
+#include "src/utilities/concurrency/utst/support/ThreadProbe.hpp"
 #include "src/utilities/concurrency/utst/support/ThreadStartFault.hpp"
+#include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
 
@@ -17,19 +19,15 @@
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <ctime>
-#include <filesystem>
-#include <fstream>
 #include <memory>
+#include <optional>
 #include <string>
-#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
 
 #include <pthread.h>
-#include <sys/syscall.h>
 
 using apex::concurrency::DelegateU8;
 using apex::concurrency::PoolStatus;
@@ -151,55 +149,22 @@ TEST_F(ThreadPoolLockFreeTest, ThreadsRunningDuringExecution) {
 
 /* ----------------------------- Bounded Queue Tests ----------------------------- */
 
-/** @test ThreadPoolLockFree returns QUEUE_FULL when queue is full */
-TEST_F(ThreadPoolLockFreeTest, ReturnsQueueFullWhenFull) {
-  // Small capacity, single slow worker
-  ThreadPoolLockFree pool(1, 4);
-
-  struct Context {
-    std::atomic<bool> canFinish{false};
-  };
-  Context ctx{};
-
-  // Task that blocks until signaled
-  auto blockingTask = DelegateU8{[](void* c) noexcept -> std::uint8_t {
-                                   auto* x = static_cast<Context*>(c);
-                                   while (!x->canFinish.load(std::memory_order_acquire)) {
-                                     std::this_thread::yield();
-                                   }
-                                   return 0;
-                                 },
-                                 &ctx};
-
-  // Fill the queue (capacity is rounded to power-of-two, so may be 4 or 8)
-  const std::size_t CAP = pool.capacity();
-  std::size_t enqueued = 0;
-  for (std::size_t i = 0; i < CAP + 10; ++i) {
-    PoolStatus status = pool.tryEnqueue("blocking", blockingTask);
-    if (status == PoolStatus::SUCCESS) {
-      ++enqueued;
-    } else if (status == PoolStatus::QUEUE_FULL) {
-      // Expected once queue is full
-      break;
-    }
-  }
-
-  // Should have hit QUEUE_FULL
-  EXPECT_LE(enqueued, CAP + 1); // +1 for task being executed
-
-  // Release blocked tasks
-  ctx.canFinish.store(true, std::memory_order_release);
-  pool.shutdown();
-}
-
 /** @test ThreadPoolLockFree returns POOL_STOPPED after shutdown */
 TEST_F(ThreadPoolLockFreeTest, ReturnsPoolStoppedAfterShutdown) {
   ThreadPoolLockFree pool(2, 32);
   pool.shutdown();
 
-  auto task = DelegateU8{[](void*) noexcept -> std::uint8_t { return 0; }, nullptr};
+  std::atomic<int> ran{0};
+  auto task = DelegateU8{[](void* ctx) noexcept -> std::uint8_t {
+                           static_cast<std::atomic<int>*>(ctx)->fetch_add(1);
+                           return 0;
+                         },
+                         &ran};
   const PoolStatus STATUS = pool.tryEnqueue("task", task);
   EXPECT_EQ(STATUS, PoolStatus::POOL_STOPPED);
+  // enqueueTask() has no status to return: on a stopped pool it drops the task.
+  pool.enqueueTask("dropped", task);
+  EXPECT_EQ(ran.load(), 0);
 }
 
 /* ----------------------------- Error Handling Tests ----------------------------- */
@@ -447,56 +412,17 @@ struct ThreadPoolLockFreeTestAccess {
 namespace {
 
 using Access = apex::concurrency::ThreadPoolLockFreeTestAccess;
+using apex::concurrency::test::BOUND;
+using apex::concurrency::test::escapesWithin;
+using apex::concurrency::test::settles;
 
-/// Poll `done` until it holds or `limit` passes.
-template <class Pred> bool settles(Pred done, std::chrono::milliseconds limit) {
-  const auto DEADLINE = std::chrono::steady_clock::now() + limit;
-  while (!done()) {
-    if (std::chrono::steady_clock::now() > DEADLINE) {
-      return false;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
-  return true;
-}
-
-constexpr std::chrono::milliseconds BOUND{5000};
-
-/// How many of this process's threads are asleep in a futex wait on `word` against `value`, read
-/// from each thread's /proc syscall record ("<number> <arguments in hex> ..." while it is blocked
-/// in a system call). A thread counted here has passed its last look at the ring and its decision
-/// to wait, and is inside that wait holding `value` as the word it saved. -1 when the host does
-/// not expose the records.
-int threadsAsleepOn(const void* word, std::uint32_t value) {
-  std::error_code failed;
-  std::filesystem::directory_iterator tasks("/proc/self/task", failed);
-  if (failed) {
-    return -1;
-  }
-  bool readable = false;
-  int asleep = 0;
-  for (const auto& entry : tasks) {
-    std::ifstream record(entry.path() / "syscall");
-    std::string line;
-    if (!std::getline(record, line)) {
-      continue;
-    }
-    readable = true;
-    unsigned long long number = 0;
-    unsigned long long address = 0;
-    unsigned long long operation = 0;
-    unsigned long long expected = 0;
-    if (std::sscanf(line.c_str(), "%llu %llx %llx %llx", &number, &address, &operation,
-                    &expected) != 4) {
-      continue; // "running", or a record without arguments
-    }
-    if (number == static_cast<unsigned long long>(SYS_futex) &&
-        address == reinterpret_cast<std::uintptr_t>(word) &&
-        static_cast<std::uint32_t>(expected) == value) {
-      ++asleep;
-    }
-  }
-  return readable ? asleep : -1;
+/// How many threads are asleep in a futex wait on the pool's 32-bit wake word at `word`; with
+/// `value`, only those waiting against that saved word. A worker that was not woken for a task
+/// still sleeps on the word it saved before that task was published, so "parked" counts any
+/// saved word. A thread counted here has passed its last look at the ring and its decision to
+/// wait, and is inside that wait. -1 when the host does not expose the records.
+int threadsAsleepOn(const void* word, std::optional<std::uint32_t> value = std::nullopt) {
+  return apex::concurrency::test::threadsAsleepIn(word, sizeof(std::uint32_t), value);
 }
 
 /// Keep a scenario for the rest of the process. The holder is allocated once and never freed, so
@@ -539,10 +465,10 @@ private:
 struct ShutdownScenario {
   ShutdownScenario(std::size_t workers, std::size_t capacity) : pool(workers, capacity) {}
 
-  /// Whether every worker is asleep in its wait on the current wake word. Where the host does
-  /// not expose that, whether every worker has announced itself idle.
+  /// Whether every worker is asleep in its wait on the wake word. Where the host does not
+  /// expose that, whether every worker has announced itself idle.
   [[nodiscard]] bool workersParked() const {
-    const int ASLEEP = threadsAsleepOn(Access::wakeWordAddress(pool), Access::wakeWord(pool));
+    const int ASLEEP = threadsAsleepOn(Access::wakeWordAddress(pool));
     if (ASLEEP < 0) {
       return Access::idleWorkers(pool) == pool.workerCount();
     }
@@ -769,6 +695,166 @@ TEST_F(ThreadPoolLockFreeTest, WorkAfterASustainedDrainIsBounded) {
   EXPECT_LT(TAIL_NS, TAIL_LIMIT_NS)
       << "the worker spent " << TAIL_NS << " ns of CPU after its last of " << LINKS << " tasks";
   chain.settled();
+}
+
+namespace {
+
+/// A task that announces it is holding its worker and keeps it until the gate opens.
+struct Gate {
+  std::atomic<int> holding{0};
+  std::atomic<bool> open{false};
+
+  static std::uint8_t hold(void* ctx) noexcept {
+    auto* gate = static_cast<Gate*>(ctx);
+    gate->holding.fetch_add(1, std::memory_order_acq_rel);
+    while (!gate->open.load(std::memory_order_acquire)) {
+      std::this_thread::yield();
+    }
+    return 0;
+  }
+};
+
+/// A pool with one gate and counters, for cases that fill the ring behind a held worker or feed
+/// it from several threads. The pool is the last member, as in ShutdownScenario.
+struct LoadScenario {
+  LoadScenario(std::size_t workers, std::size_t capacity) : pool(workers, capacity) {}
+
+  Gate gate;
+  std::atomic<std::uint32_t> executed{0};
+  std::atomic<std::uint32_t> accepted{0};
+  std::atomic<std::uint32_t> refused{0};
+  std::atomic<int> producersDone{0};
+  std::atomic<bool> stop{false};
+  ThreadPoolLockFree pool;
+};
+
+} // namespace
+
+/** @test With its one worker held, the pool accepts exactly capacity() tasks and reports
+ * QUEUE_FULL for the next; enqueueTask() on the full pool drops its task. Once the worker is
+ * released, exactly the accepted tasks run. */
+TEST_F(ThreadPoolLockFreeTest, AcceptsExactlyCapacityThenReportsQueueFull) {
+  Held<LoadScenario> scenario(1U, 4U);
+  ASSERT_EQ(scenario->pool.tryEnqueue("gate", {&Gate::hold, &scenario->gate}), PoolStatus::SUCCESS);
+  ASSERT_TRUE(settles([&]() { return scenario->gate.holding.load() == 1; }, BOUND));
+
+  const std::size_t CAPACITY = scenario->pool.capacity();
+  for (std::size_t i = 0; i < CAPACITY; ++i) {
+    EXPECT_EQ(scenario->pool.tryEnqueue("fill", {&countRun, &scenario->executed}),
+              PoolStatus::SUCCESS)
+        << "task " << i << " of " << CAPACITY;
+  }
+  EXPECT_EQ(scenario->pool.tryEnqueue("extra", {&countRun, &scenario->executed}),
+            PoolStatus::QUEUE_FULL);
+  scenario->pool.enqueueTask("dropped", {&countRun, &scenario->executed});
+
+  scenario->gate.open.store(true, std::memory_order_release);
+  ASSERT_TRUE(settles([&]() { return scenario->executed.load() == CAPACITY; }, BOUND))
+      << "ran " << scenario->executed.load() << " of " << CAPACITY;
+  EXPECT_FALSE(escapesWithin([&]() { return scenario->executed.load() > CAPACITY; }))
+      << "a refused or dropped task ran";
+  scenario.settled();
+}
+
+/** @test Four threads submit 10,000 tasks each through a 64-task ring, retrying while it is full:
+ * every enqueue reported as SUCCESS runs. Both workers are held until a push has been refused, so
+ * the producers always meet a full ring. */
+TEST_F(ThreadPoolLockFreeTest, EverySuccessFromFourProducersRuns) {
+  constexpr int PRODUCERS = 4;
+  constexpr std::uint32_t TASKS_EACH = 10'000;
+  Held<LoadScenario> scenario(2U, 64U);
+  for (int worker = 0; worker < 2; ++worker) {
+    ASSERT_EQ(scenario->pool.tryEnqueue("gate", {&Gate::hold, &scenario->gate}),
+              PoolStatus::SUCCESS);
+  }
+  ASSERT_TRUE(settles([&]() { return scenario->gate.holding.load() == 2; }, BOUND));
+
+  std::vector<std::thread> producers;
+  producers.reserve(PRODUCERS);
+  for (int p = 0; p < PRODUCERS; ++p) {
+    producers.emplace_back([shared = scenario.share()]() {
+      for (std::uint32_t i = 0; i < TASKS_EACH; ++i) {
+        while (shared->pool.tryEnqueue("load", {&countRun, &shared->executed}) !=
+               PoolStatus::SUCCESS) {
+          shared->refused.fetch_add(1, std::memory_order_relaxed);
+          if (shared->stop.load(std::memory_order_relaxed)) {
+            shared->producersDone.fetch_add(1, std::memory_order_release);
+            return;
+          }
+          std::this_thread::yield();
+        }
+        shared->accepted.fetch_add(1, std::memory_order_relaxed);
+      }
+      shared->producersDone.fetch_add(1, std::memory_order_release);
+    });
+  }
+
+  const bool FILLED = settles([&]() { return scenario->refused.load() > 0; }, BOUND);
+  scenario->gate.open.store(true, std::memory_order_release);
+  EXPECT_TRUE(FILLED) << "the producers never found the ring full behind two held workers";
+  const bool SUBMITTED = settles([&]() { return scenario->producersDone.load() == PRODUCERS; },
+                                 std::chrono::seconds(60));
+  scenario->stop.store(true, std::memory_order_release);
+  for (auto& producer : producers) {
+    producer.join();
+  }
+  ASSERT_TRUE(SUBMITTED) << "accepted " << scenario->accepted.load() << " tasks";
+  EXPECT_EQ(scenario->accepted.load(), PRODUCERS * TASKS_EACH);
+  ASSERT_TRUE(
+      settles([&]() { return scenario->executed.load() == scenario->accepted.load(); }, BOUND))
+      << "ran " << scenario->executed.load() << " of " << scenario->accepted.load();
+  scenario.settled();
+}
+
+/** @test Sleeping workers are woken for work and for shutdown: with both workers asleep, one
+ * task runs; with both asleep again, two more run; and shutdown() then returns with both gone. */
+TEST_F(ThreadPoolLockFreeTest, SleepingWorkersWakeForWorkAndForShutdown) {
+  Held<ShutdownScenario> scenario(2U, 8U);
+  ASSERT_TRUE(settles([&]() { return scenario->workersParked(); }, BOUND));
+  ASSERT_EQ(scenario->pool.tryEnqueue("one", {&countRun, &scenario->executed}),
+            PoolStatus::SUCCESS);
+  ASSERT_TRUE(settles([&]() { return scenario->executed.load() == 1; }, BOUND))
+      << "a task was accepted and no sleeping worker came for it";
+
+  ASSERT_TRUE(settles([&]() { return scenario->workersParked(); }, BOUND));
+  ASSERT_EQ(scenario->pool.tryEnqueue("two", {&countRun, &scenario->executed}),
+            PoolStatus::SUCCESS);
+  ASSERT_EQ(scenario->pool.tryEnqueue("three", {&countRun, &scenario->executed}),
+            PoolStatus::SUCCESS);
+  ASSERT_TRUE(settles([&]() { return scenario->executed.load() == 3; }, BOUND))
+      << "ran " << scenario->executed.load() << " of 3";
+
+  ASSERT_TRUE(settles([&]() { return scenario->workersParked(); }, BOUND));
+  Stopper stopper(scenario.share());
+  ASSERT_TRUE(stopper.returnsWithin(BOUND)) << "shutdown() left a sleeping worker asleep";
+  scenario.settled();
+  EXPECT_EQ(scenario->pool.workerCount(), 0U);
+}
+
+/** @test A worker takes the affinity and the name its pool was configured with: a task finds its
+ * thread limited to the one configured CPU and named for the pool. */
+TEST_F(ThreadPoolLockFreeTest, WorkerRunsWithItsConfiguredAffinityAndName) {
+  const std::optional<std::uint8_t> CPU = apex::concurrency::test::nameableAllowedCpu();
+  apex::concurrency::PoolConfig config;
+  if (CPU) {
+    config.affinity = {*CPU};
+  }
+  // Declared before the pool: the pool is destroyed first, and its destructor waits for the task
+  // that writes here, on every way out of this case.
+  apex::concurrency::test::ThreadIdentity worker;
+  ThreadPoolLockFree pool(1, 8, config);
+  EXPECT_EQ(pool.workerConfigFailures(), 0U);
+
+  ASSERT_EQ(
+      pool.tryEnqueue("identity", {&apex::concurrency::test::ThreadIdentity::record, &worker}),
+      PoolStatus::SUCCESS);
+  ASSERT_TRUE(settles([&]() { return worker.done.load(); }, BOUND));
+  EXPECT_STREQ(worker.name.data(), "lf_pool_w0");
+  if (!CPU) {
+    GTEST_SKIP() << "no allowed CPU below 256: the affinity half did not run";
+  }
+  EXPECT_EQ(worker.allowedCpus, 1);
+  EXPECT_EQ(worker.onlyCpu, int{*CPU});
 }
 
 namespace {
