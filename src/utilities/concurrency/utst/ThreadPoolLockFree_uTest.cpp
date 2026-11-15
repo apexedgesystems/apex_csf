@@ -9,6 +9,7 @@
 
 #include "src/utilities/concurrency/inc/ThreadPoolLockFree.hpp"
 #include "src/utilities/concurrency/utst/support/ThreadStartFault.hpp"
+#include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
 
@@ -447,20 +448,8 @@ struct ThreadPoolLockFreeTestAccess {
 namespace {
 
 using Access = apex::concurrency::ThreadPoolLockFreeTestAccess;
-
-/// Poll `done` until it holds or `limit` passes.
-template <class Pred> bool settles(Pred done, std::chrono::milliseconds limit) {
-  const auto DEADLINE = std::chrono::steady_clock::now() + limit;
-  while (!done()) {
-    if (std::chrono::steady_clock::now() > DEADLINE) {
-      return false;
-    }
-    std::this_thread::sleep_for(std::chrono::milliseconds(1));
-  }
-  return true;
-}
-
-constexpr std::chrono::milliseconds BOUND{5000};
+using apex::concurrency::test::BOUND;
+using apex::concurrency::test::settles;
 
 /// How many of this process's threads are asleep in a futex wait on `word` against `value`, read
 /// from each thread's /proc syscall record ("<number> <arguments in hex> ..." while it is blocked

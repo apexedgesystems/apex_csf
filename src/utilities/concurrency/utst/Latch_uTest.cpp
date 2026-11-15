@@ -8,6 +8,7 @@
  */
 
 #include "src/utilities/concurrency/inc/Latch.hpp"
+#include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
 
@@ -17,6 +18,8 @@
 #include <vector>
 
 using apex::concurrency::Latch;
+using apex::concurrency::test::escapesWithin;
+using apex::concurrency::test::settles;
 
 /* ----------------------------- Basic Operations Tests ----------------------------- */
 
@@ -156,26 +159,41 @@ TEST_F(LatchTest, WaitForSucceedsOnTrigger) {
 
 /* ----------------------------- arriveAndWait Tests ----------------------------- */
 
-/** @test arriveAndWait decrements and waits */
-TEST_F(LatchTest, ArriveAndWaitDecrementsAndWaits) {
+/** @test arriveAndWait blocks an arrival until the count reaches zero: the first of two arrivals
+ * does not return while the second is missing, and returns once it has arrived. */
+TEST_F(LatchTest, ArriveAndWaitBlocksUntilTheLastArrival) {
   Latch latch(2);
-  std::atomic<int> completed{0};
+  std::atomic<bool> arriving{false};
+  std::atomic<bool> returned{false};
 
-  std::thread t1([&]() {
+  std::thread first([&]() {
+    arriving.store(true, std::memory_order_release);
     latch.arriveAndWait();
-    completed.fetch_add(1, std::memory_order_relaxed);
+    returned.store(true, std::memory_order_release);
   });
 
-  std::thread t2([&]() {
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    latch.arriveAndWait();
-    completed.fetch_add(1, std::memory_order_relaxed);
-  });
+  ASSERT_TRUE(settles([&]() { return arriving.load(); }));
+  EXPECT_FALSE(escapesWithin([&]() { return returned.load(); }))
+      << "the first of two arrivals returned with the count still at one";
 
-  t1.join();
-  t2.join();
+  latch.arriveAndWait();
+  first.join();
 
-  EXPECT_EQ(completed.load(), 2);
+  EXPECT_TRUE(returned.load());
+  EXPECT_EQ(latch.count(), 0U);
+  EXPECT_TRUE(latch.tryWait());
+}
+
+/** @test arriveAndWait on a latch that is already triggered returns at once and leaves it
+ * triggered. */
+TEST_F(LatchTest, ArriveAndWaitOnTriggeredLatchReturns) {
+  Latch latch(1);
+  latch.countDown();
+  ASSERT_EQ(latch.count(), 0U);
+
+  latch.arriveAndWait();
+
+  EXPECT_EQ(latch.count(), 0U);
   EXPECT_TRUE(latch.tryWait());
 }
 
