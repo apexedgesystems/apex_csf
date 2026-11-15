@@ -1,10 +1,10 @@
 /**
  * @file Delegate_uTest.cpp
- * @brief Unit tests for concurrency::DelegateU8.
+ * @brief Unit tests for concurrency::DelegateU8 and the templated Delegate.
  *
  * Notes:
  *  - Tests verify construction, invocation, and bool conversion.
- *  - DelegateU8 is designed for zero-allocation task dispatch.
+ *  - Both are designed for zero-allocation dispatch.
  */
 
 #include "src/utilities/concurrency/inc/Delegate.hpp"
@@ -12,6 +12,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <type_traits>
 
 using apex::concurrency::DelegateU8;
 
@@ -142,4 +143,86 @@ TEST(DelegateU8DeterminismTest, InvocationConsistent) {
   const std::uint8_t SECOND = DELEGATE();
   EXPECT_EQ(FIRST, SECOND);
   EXPECT_EQ(FIRST, 100);
+}
+
+/* ----------------------------- Delegate<Ret, Args...> Tests ----------------------------- */
+
+namespace {
+
+using apex::concurrency::Delegate;
+using apex::concurrency::makeDelegate;
+
+static_assert(std::is_trivially_copyable_v<Delegate<int, int>>);
+static_assert(std::is_trivially_copyable_v<Delegate<void, int>>);
+
+/// A callee that records what reached it.
+struct Callee {
+  int calls{0};
+  int lastArgument{0};
+};
+
+int addToArgument(void* ctx, int argument) noexcept {
+  auto* callee = static_cast<Callee*>(ctx);
+  ++callee->calls;
+  callee->lastArgument = argument;
+  return argument + 100;
+}
+
+void recordArgument(void* ctx, int argument) noexcept {
+  auto* callee = static_cast<Callee*>(ctx);
+  ++callee->calls;
+  callee->lastArgument = argument;
+}
+
+} // namespace
+
+/** @test A Delegate hands its context and its arguments to the function and returns the
+ * function's result. */
+TEST(DelegateTest, PassesContextAndArgumentsAndReturnsTheResult) {
+  Callee callee;
+  const Delegate<int, int> DELEGATE{&addToArgument, &callee};
+
+  EXPECT_TRUE(static_cast<bool>(DELEGATE));
+  EXPECT_EQ(DELEGATE(7), 107);
+  EXPECT_EQ(callee.calls, 1);
+  EXPECT_EQ(callee.lastArgument, 7);
+}
+
+/** @test A Delegate with no function converts to false and returns a value-initialized result
+ * without calling anything. */
+TEST(DelegateTest, NullDelegateReturnsAValueInitializedResult) {
+  const Delegate<int, int> EMPTY{};
+
+  EXPECT_FALSE(static_cast<bool>(EMPTY));
+  EXPECT_EQ(EMPTY(7), 0);
+}
+
+/** @test A void Delegate calls its function with the context and arguments, and a void Delegate
+ * with no function does nothing. */
+TEST(DelegateTest, VoidDelegateCallsItsFunctionOrDoesNothing) {
+  Callee callee;
+  const Delegate<void, int> DELEGATE{&recordArgument, &callee};
+  DELEGATE(9);
+  EXPECT_EQ(callee.calls, 1);
+  EXPECT_EQ(callee.lastArgument, 9);
+
+  const Delegate<void, int> EMPTY{};
+  EXPECT_FALSE(static_cast<bool>(EMPTY));
+  EMPTY(11);
+  EXPECT_EQ(callee.calls, 1);
+}
+
+/** @test makeDelegate deduces the return and argument types from the function, for both the
+ * value-returning and the void form. */
+TEST(DelegateTest, MakeDelegateDeducesTheSignature) {
+  Callee callee;
+  const auto RETURNING = makeDelegate(&addToArgument, &callee);
+  const auto VOID = makeDelegate(&recordArgument, &callee);
+  static_assert(std::is_same_v<decltype(RETURNING), const Delegate<int, int>>);
+  static_assert(std::is_same_v<decltype(VOID), const Delegate<void, int>>);
+
+  EXPECT_EQ(RETURNING(1), 101);
+  VOID(2);
+  EXPECT_EQ(callee.calls, 2);
+  EXPECT_EQ(callee.lastArgument, 2);
 }
