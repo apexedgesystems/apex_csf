@@ -8,6 +8,7 @@
  */
 
 #include "src/utilities/concurrency/inc/ThreadPoolLockFree.hpp"
+#include "src/utilities/concurrency/utst/support/PoolTasks.hpp"
 #include "src/utilities/concurrency/utst/support/ThreadProbe.hpp"
 #include "src/utilities/concurrency/utst/support/ThreadStartFault.hpp"
 #include "src/utilities/concurrency/utst/support/Waiting.hpp"
@@ -33,6 +34,12 @@ using apex::concurrency::DelegateU8;
 using apex::concurrency::PoolStatus;
 using apex::concurrency::TaskError;
 using apex::concurrency::ThreadPoolLockFree;
+using apex::concurrency::test::countRun;
+using apex::concurrency::test::drainHeldPool;
+using apex::concurrency::test::DrainOutcome;
+using apex::concurrency::test::Gate;
+using apex::concurrency::test::NullTaskOutcome;
+using apex::concurrency::test::runAroundNullDelegate;
 
 /* ----------------------------- ThreadPoolLockFree Lifecycle Tests ----------------------------- */
 
@@ -51,21 +58,32 @@ TEST_F(ThreadPoolLockFreeTest, ConstructsWithThreadCountAndCapacity) {
   EXPECT_FALSE(pool.threadsRunning());
 }
 
-/** @test ThreadPoolLockFree destructor calls shutdown automatically */
-TEST_F(ThreadPoolLockFreeTest, DestructorCallsShutdown) {
-  {
-    ThreadPoolLockFree pool(2, 32);
-    // Pool goes out of scope, destructor should not hang
-  }
-  SUCCEED();
+/** @test shutdown() runs every task accepted before it, then the pool is stopped for good. Ten
+ * tasks wait behind the only worker, which is held until the pool refuses work, so all of them
+ * are still in the ring when the stop begins. After it the pool is not valid, and a second
+ * shutdown() returns and leaves it refusing work. */
+TEST_F(ThreadPoolLockFreeTest, ShutdownRunsEveryQueuedTaskThenRefusesWork) {
+  const DrainOutcome OUT =
+      drainHeldPool<ThreadPoolLockFree>(false, 10U, std::size_t{1}, std::size_t{64});
+  ASSERT_TRUE(OUT.workerHeld);
+  ASSERT_TRUE(OUT.finished) << "shutdown() did not return";
+  EXPECT_EQ(OUT.ranBeforeStop, 0U);
+  EXPECT_GE(OUT.accepted, 10U);
+  EXPECT_EQ(OUT.ran, OUT.accepted);
+  EXPECT_FALSE(OUT.validAfter);
+  EXPECT_EQ(OUT.enqueueAfter, PoolStatus::POOL_STOPPED);
 }
 
-/** @test ThreadPoolLockFree shutdown is idempotent */
-TEST_F(ThreadPoolLockFreeTest, ShutdownIsIdempotent) {
-  ThreadPoolLockFree pool(2, 32);
-  pool.shutdown();
-  pool.shutdown(); // Second call should not hang or crash
-  SUCCEED();
+/** @test Destroying a pool runs every task accepted before it: the same held worker and waiting
+ * tasks, stopped by the destructor. */
+TEST_F(ThreadPoolLockFreeTest, DestructorRunsEveryQueuedTask) {
+  const DrainOutcome OUT =
+      drainHeldPool<ThreadPoolLockFree>(true, 10U, std::size_t{1}, std::size_t{64});
+  ASSERT_TRUE(OUT.workerHeld);
+  ASSERT_TRUE(OUT.finished) << "the destructor did not return";
+  EXPECT_EQ(OUT.ranBeforeStop, 0U);
+  EXPECT_GE(OUT.accepted, 10U);
+  EXPECT_EQ(OUT.ran, OUT.accepted);
 }
 
 /* ----------------------------- Task Execution Tests ----------------------------- */
@@ -205,16 +223,16 @@ TEST_F(ThreadPoolLockFreeTest, CollectErrorsClearsQueue) {
   EXPECT_FALSE(pool.hasErrors());
 }
 
-/** @test ThreadPoolLockFree ignores null delegate tasks */
-TEST_F(ThreadPoolLockFreeTest, IgnoresNullDelegate) {
-  ThreadPoolLockFree pool(1, 32);
-
-  DelegateU8 nullTask{nullptr, nullptr};
-  (void)pool.tryEnqueue("null-task", nullTask);
-  pool.shutdown();
-
-  auto errors = pool.collectErrors();
-  EXPECT_TRUE(errors.empty());
+/** @test A null delegate queued between two tasks is a no-op: both tasks run and no error is
+ * recorded for it. */
+TEST_F(ThreadPoolLockFreeTest, NullDelegateBetweenTasksIsANoOp) {
+  const NullTaskOutcome OUT =
+      runAroundNullDelegate<ThreadPoolLockFree>(std::size_t{1}, std::size_t{32});
+  ASSERT_TRUE(OUT.finished) << "shutdown() did not return";
+  EXPECT_EQ(OUT.accepted, 3U);
+  EXPECT_EQ(OUT.ran, 2U);
+  EXPECT_FALSE(OUT.hasErrors);
+  EXPECT_EQ(OUT.errors, 0U);
 }
 
 /* ----------------------------- Determinism Tests ----------------------------- */
@@ -279,11 +297,6 @@ std::uint8_t recordWorkerMask(void* ctx) noexcept {
   m->sigpipe = blockedHere(SIGPIPE);
   m->sigsegv = blockedHere(SIGSEGV);
   m->done.store(true, std::memory_order_release);
-  return 0;
-}
-
-std::uint8_t countRun(void* ctx) noexcept {
-  static_cast<std::atomic<std::uint32_t>*>(ctx)->fetch_add(1, std::memory_order_acq_rel);
   return 0;
 }
 
@@ -698,21 +711,6 @@ TEST_F(ThreadPoolLockFreeTest, WorkAfterASustainedDrainIsBounded) {
 }
 
 namespace {
-
-/// A task that announces it is holding its worker and keeps it until the gate opens.
-struct Gate {
-  std::atomic<int> holding{0};
-  std::atomic<bool> open{false};
-
-  static std::uint8_t hold(void* ctx) noexcept {
-    auto* gate = static_cast<Gate*>(ctx);
-    gate->holding.fetch_add(1, std::memory_order_acq_rel);
-    while (!gate->open.load(std::memory_order_acquire)) {
-      std::this_thread::yield();
-    }
-    return 0;
-  }
-};
 
 /// A pool with one gate and counters, for cases that fill the ring behind a held worker or feed
 /// it from several threads. The pool is the last member, as in ShutdownScenario.

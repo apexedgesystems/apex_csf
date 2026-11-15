@@ -8,17 +8,19 @@
  */
 
 #include "src/utilities/concurrency/inc/ThreadPool.hpp"
+#include "src/utilities/concurrency/utst/support/PoolTasks.hpp"
 #include "src/utilities/concurrency/utst/support/ThreadProbe.hpp"
 #include "src/utilities/concurrency/utst/support/ThreadStartFault.hpp"
 #include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
 
-#include <optional>
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <thread>
 
@@ -28,6 +30,10 @@ using apex::concurrency::DelegateU8;
 using apex::concurrency::PoolStatus;
 using apex::concurrency::TaskError;
 using apex::concurrency::ThreadPool;
+using apex::concurrency::test::drainHeldPool;
+using apex::concurrency::test::DrainOutcome;
+using apex::concurrency::test::NullTaskOutcome;
+using apex::concurrency::test::runAroundNullDelegate;
 
 /* ----------------------------- Default Construction ----------------------------- */
 
@@ -46,18 +52,12 @@ protected:
   static constexpr std::size_t THREAD_COUNT = 4;
 };
 
-/** @test ThreadPool can be constructed with specified thread count */
-TEST_F(ThreadPoolTest, ConstructsWithThreadCount) {
-  ThreadPool pool(THREAD_COUNT);
-  // Pool should be alive after construction
-  EXPECT_FALSE(pool.threadsRunning());
-}
-
-/** @test ThreadPool isValid returns true after successful construction */
+/** @test A constructed pool is valid, has the requested workers and has no task in flight. */
 TEST_F(ThreadPoolTest, IsValidAfterConstruction) {
   ThreadPool pool(THREAD_COUNT);
   EXPECT_TRUE(pool.isValid());
   EXPECT_EQ(pool.workerCount(), THREAD_COUNT);
+  EXPECT_FALSE(pool.threadsRunning());
 }
 
 /** @test ThreadPool tryEnqueue returns SUCCESS when pool is running */
@@ -88,21 +88,30 @@ TEST_F(ThreadPoolTest, TryEnqueueReturnsPoolStopped) {
   EXPECT_EQ(STATUS, PoolStatus::POOL_STOPPED);
 }
 
-/** @test ThreadPool destructor calls shutdown automatically */
-TEST_F(ThreadPoolTest, DestructorCallsShutdown) {
-  {
-    ThreadPool pool(2);
-    // Pool goes out of scope, destructor should not hang
-  }
-  SUCCEED();
+/** @test shutdown() runs every task queued before it, then the pool is stopped for good. Ten
+ * tasks wait behind the only worker, which is held until the pool refuses work, so all of them
+ * are still queued when the stop begins. After it the pool is not valid, and a second
+ * shutdown() returns and leaves it refusing work. */
+TEST_F(ThreadPoolTest, ShutdownRunsEveryQueuedTaskThenRefusesWork) {
+  const DrainOutcome OUT = drainHeldPool<ThreadPool>(false, 10U, std::size_t{1});
+  ASSERT_TRUE(OUT.workerHeld);
+  ASSERT_TRUE(OUT.finished) << "shutdown() did not return";
+  EXPECT_EQ(OUT.ranBeforeStop, 0U);
+  EXPECT_GE(OUT.accepted, 10U);
+  EXPECT_EQ(OUT.ran, OUT.accepted);
+  EXPECT_FALSE(OUT.validAfter);
+  EXPECT_EQ(OUT.enqueueAfter, PoolStatus::POOL_STOPPED);
 }
 
-/** @test ThreadPool shutdown is idempotent */
-TEST_F(ThreadPoolTest, ShutdownIsIdempotent) {
-  ThreadPool pool(2);
-  pool.shutdown();
-  pool.shutdown(); // Second call should not hang or crash
-  SUCCEED();
+/** @test Destroying a pool runs every task queued before it: the same held worker and waiting
+ * tasks, stopped by the destructor. */
+TEST_F(ThreadPoolTest, DestructorRunsEveryQueuedTask) {
+  const DrainOutcome OUT = drainHeldPool<ThreadPool>(true, 10U, std::size_t{1});
+  ASSERT_TRUE(OUT.workerHeld);
+  ASSERT_TRUE(OUT.finished) << "the destructor did not return";
+  EXPECT_EQ(OUT.ranBeforeStop, 0U);
+  EXPECT_GE(OUT.accepted, 10U);
+  EXPECT_EQ(OUT.ran, OUT.accepted);
 }
 
 /* ----------------------------- Task Execution Tests ----------------------------- */
@@ -233,16 +242,15 @@ TEST_F(ThreadPoolTest, HasErrorsFollowsFailuresAndCollection) {
   EXPECT_FALSE(pool.hasErrors());
 }
 
-/** @test ThreadPool ignores null delegate tasks */
-TEST_F(ThreadPoolTest, IgnoresNullDelegate) {
-  ThreadPool pool(1);
-
-  DelegateU8 nullTask{nullptr, nullptr};
-  pool.enqueueTask("null-task", nullTask);
-  pool.shutdown();
-
-  auto errors = pool.collectErrors();
-  EXPECT_TRUE(errors.empty());
+/** @test A null delegate queued between two tasks is a no-op: both tasks run and no error is
+ * recorded for it. */
+TEST_F(ThreadPoolTest, NullDelegateBetweenTasksIsANoOp) {
+  const NullTaskOutcome OUT = runAroundNullDelegate<ThreadPool>(std::size_t{1});
+  ASSERT_TRUE(OUT.finished) << "shutdown() did not return";
+  EXPECT_EQ(OUT.accepted, 3U);
+  EXPECT_EQ(OUT.ran, 2U);
+  EXPECT_FALSE(OUT.hasErrors);
+  EXPECT_EQ(OUT.errors, 0U);
 }
 
 /* ----------------------------- Determinism Tests ----------------------------- */
