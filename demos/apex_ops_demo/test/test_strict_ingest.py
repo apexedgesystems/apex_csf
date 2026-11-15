@@ -15,7 +15,7 @@ Exercises the boot ingest policy end to end against a built tree:
 
 Run from the repo root inside the dev container:
 
-  PYTHONPATH=tools/py/src python3 demos/apex_ops_demo/test/test_strict_ingest.py
+  PYTHONPATH=tools/ops/py/apex_ops/src python3 demos/apex_ops_demo/test/test_strict_ingest.py
 
 Requires build/hosted-x86_64-debug (binary + generated TPRM tree).
 """
@@ -35,8 +35,8 @@ GEN = f"{BUILD}/demos/apex_ops_demo/exec/tprm"
 SYSMON_UID = 0x00C800
 INGEST_HELD = 12
 
-sys.path.insert(0, "tools/py/src")
-from apex_tools.ops.client import AprotoClient  # noqa: E402
+sys.path.insert(0, "tools/ops/py/apex_ops/src")
+from apex_ops.client import AprotoClient  # noqa: E402
 
 PASS = 0
 FAIL = 0

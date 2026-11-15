@@ -43,10 +43,10 @@ DOCKER_OUT_DIR := output
 # registry; check-platforms (CI lint) fails on drift.
 
 regen-platforms:
-	@python3 docker/scripts/gen-platform-consumers.py
+	@python3 tools/build/py/bin/gen-platform-consumers.py
 
 check-platforms:
-	@python3 docker/scripts/gen-platform-consumers.py --check
+	@python3 tools/build/py/bin/gen-platform-consumers.py --check
 
 .PHONY: regen-platforms check-platforms
 
@@ -248,7 +248,7 @@ endef
 
 $(foreach t,$(BUILDER_TARGETS),$(eval $(call _artifact_target,$(t))))
 
-# CLI tools + python wheel ride the cpu builder. This is the ONLY tools
+# CLI tools + the Python wheels ride the cpu builder. This is the ONLY tools
 # packaging path (the final image carries platform tarballs only); staging is
 # a docker cp, and validation + tar + rename live in the shared script so no
 # second implementation can drift.
@@ -262,12 +262,12 @@ artifact-tools:
 	  docker cp "$$CID:/home/$(USER)/workspace/build/$(ARTIFACT_DIR_cpu)/tools-wheels" \
 	    "$(DOCKER_OUT_DIR)/.stage-tools/tools-wheels" && \
 	  docker rm "$$CID" >/dev/null
-	@bash docker/scripts/package-tools.sh \
+	@bash tools/build/sh/package-tools.sh \
 	  "$(DOCKER_OUT_DIR)/.stage-tools/tools-bin" \
 	  "$(DOCKER_OUT_DIR)/.stage-tools/tools-wheels" \
 	  "$(DOCKER_OUT_DIR)" "$(VERSION)"
 	@rm -rf "$(DOCKER_OUT_DIR)/.stage-tools"
-	$(call log_ok,docker,apex-tools-$(VERSION)-x86_64-linux.tar.gz + wheel)
+	$(call log_ok,docker,apex-tools-$(VERSION)-x86_64-linux.tar.gz + wheels)
 
 # Tools ride artifact-tools (the single packaging path), not the final image.
 artifacts: docker-final artifact-tools
@@ -365,8 +365,14 @@ docker-validate: docker-lint
 # Both must track CMakePresets.json, and every BUILDER_TARGETS entry must map to
 # a real preset dir and be collected by final.Dockerfile. A preset rename that
 # misses any surface broke the release silently -- caught only by running it.
-# This static check fails fast on all three drift classes, in the gate, not on a
-# release tag.
+# The tools have a producer and a consumer of their own: the cpu builder runs
+# `make release-tools`, which builds into the native release tree
+# (HOST_RELEASE_DIR), and `make artifact-tools` packages build/ARTIFACT_DIR_cpu.
+# Those two must name one tree, and the builder must run that target. The
+# builder's command is read from `docker compose config`, the configuration
+# Compose resolves and the build executes, so this check runs on the host.
+# This static check fails fast on every one of these drift classes, in the gate,
+# not on a release tag.
 check-release-paths:
 	@preset_dirs=$$(grep -oE 'build/[A-Za-z0-9._-]+' CMakePresets.json | sed 's#build/##' | sort -u); \
 	final_dirs=$$(grep -E 'COPY --from' docker/final.Dockerfile | grep -oE 'build/[A-Za-z0-9._-]+' | sed 's#build/##' | sort -u); \
@@ -396,7 +402,21 @@ check-release-paths:
 	  printf '[check-release-paths] BUILDER_TARGETS with no COPY --from in final.Dockerfile:%s\n' "$$uncollected" >&2; \
 	  exit 1; \
 	fi; \
-	printf '[check-release-paths] OK -- ARTIFACT_DIR + final.Dockerfile cover all builder targets with preset-valid paths\n'
+	if [ "$(HOST_RELEASE_DIR)" != "build/$(ARTIFACT_DIR_cpu)" ]; then \
+	  printf '[check-release-paths] release-tools builds into %s but artifact-tools packages build/%s\n' \
+	    "$(HOST_RELEASE_DIR)" "$(ARTIFACT_DIR_cpu)" >&2; \
+	  exit 1; \
+	fi; \
+	if ! cpu_cfg=$$(docker compose config --format json builder-cpu 2>/dev/null); then \
+	  printf '[check-release-paths] docker compose config builder-cpu failed; run it on the host to see why\n' >&2; \
+	  exit 1; \
+	fi; \
+	cpu_cmd=$$(printf '%s' "$$cpu_cfg" | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["builder-cpu"]["build"]["args"].get("BUILD_CMD", ""))'); \
+	if ! printf '%s\n' "$$cpu_cmd" | grep -q 'make release-tools'; then \
+	  printf '[check-release-paths] builder-cpu does not run make release-tools: %s\n' "$$cpu_cmd" >&2; \
+	  exit 1; \
+	fi; \
+	printf '[check-release-paths] OK -- ARTIFACT_DIR + final.Dockerfile cover all builder targets with preset-valid paths; the tools producer and artifact-tools name one tree\n'
 
 # Emit BUILDER_TARGETS as a JSON array for the release.yml builders matrix
 # (same pattern as mk/checks.mk print-nightly-checks for the nightly matrix).

@@ -17,8 +17,10 @@ import argparse
 import sys
 import tempfile
 
-sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3] / "tools/py/src"))
-from apex_tools.ops.client import AprotoClient  # noqa: E402
+sys.path.insert(
+    0, str(__import__("pathlib").Path(__file__).resolve().parents[3] / "tools/ops/py/apex_ops/src")
+)
+from apex_ops.client import AprotoClient  # noqa: E402
 
 
 def progress(sent: int, total: int) -> None:
@@ -68,8 +70,8 @@ def main() -> int:
 
         # Demonstrate abort: start transfer, abort mid-stream
         print("\nDemonstrating abort...")
-        from apex_tools.ops import protocol as proto
-        from apex_tools.ops.client import crc32c
+        from apex_ops import protocol as proto
+        from apex_ops.client import crc32c
 
         begin_payload = proto.build_file_begin(
             len(test_data),

@@ -42,7 +42,7 @@ CHECKS_ALL := $(sort $(CHECKS_SANITIZER) $(CHECKS_STATIC) $(CHECKS_SECURITY) \
 
 CHECKS_GATE    := asan-ubsan static clippy gitleaks
 # coverage-rust/coverage-py ride nightly because PR CI runs the tooling tests
-# only when the Rust workspace or tools/py changed; the nightly leg re-proves them on
+# only when the Rust or Python workspace changed; the nightly leg re-proves them on
 # main AND measures coverage (it runs the same suites under instrumentation, so
 # it subsumes the plain test-rust/test-py the gate uses). C++ tests are already
 # re-proven nightly through the coverage-check/tsan/rtsan builds.
