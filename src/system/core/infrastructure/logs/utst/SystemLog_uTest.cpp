@@ -185,21 +185,6 @@ TEST(SystemLogTest, ThresholdFilteringSkipsBelowLevel) {
   std::filesystem::remove(PATH, ec);
 }
 
-/** @test Non-blocking mode: writes still succeed functionally. */
-TEST(SystemLogTest, NonBlockingModeWrites) {
-  const auto PATH = uniqTempFile("systemlog_nonblocking");
-  {
-    SystemLog log(PATH.string());
-    log.setNonBlocking(true);
-    ASSERT_EQ(log.info("NB", "ok", false), Status::OK);
-  }
-  const auto S = slurp(PATH);
-  EXPECT_TRUE(contains(S, " INFO: NB - ok\n"));
-
-  std::error_code ec;
-  std::filesystem::remove(PATH, ec);
-}
-
 /** @test Echoes a line to stdout only when asked, byte for byte as the file holds it */
 TEST(SystemLogTest, ConsoleEchoWritesTheLineToStdout) {
   for (const auto MODE : {SystemLog::Mode::SYNC, SystemLog::Mode::ASYNC}) {

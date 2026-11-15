@@ -10,22 +10,22 @@ Real-time logging facility with file-backed persistence, rotation, and two modes
 
 ## 1. Quick Reference
 
-| Component         | Type   | Purpose                                                                                   | RT-Safe                                 |
-| ----------------- | ------ | ----------------------------------------------------------------------------------------- | --------------------------------------- |
-| `SystemLog`       | Class  | High-level severity-filtered logger with SYNC/ASYNC modes                                 | ASYNC: Yes (log calls), SYNC: No        |
-| `LogBase`         | Class  | Low-level file management, atomic append, rotation                                        | No (file I/O)                           |
-| `AsyncLogBackend` | Class  | Lock-free MPMC queue drained by the shared service (dedicated thread fallback)            | Enqueue: Yes, Lifecycle: No             |
-| `LogDrainService` | Class  | Process-wide drain thread shared by all async backends (Linux)                            | notify(): Yes, Lifecycle: No            |
-| `Level`           | Enum   | DEBUG, INFO, WARNING, ERROR, FATAL                                                        | Yes                                     |
-| `Status`          | Enum   | OK, ERROR_OPEN, ERROR_SIZE, ERROR_ROTATE_RENAME, ERROR_ROTATE_REOPEN, ERROR_SYNC          | Yes                                     |
-| `setLevel`        | Method | Set minimum severity threshold                                                            | Yes (atomic store)                      |
-| `setVerbosity`    | Method | Set debug verbosity level (0-255)                                                         | Yes (atomic store)                      |
-| `flush`           | Method | Drain async queue to disk                                                                 | No (blocks)                             |
-| `rotate`          | Method | Rotate log file with timestamped backup (descriptor stays stable via dup2)                | No (mutex + file I/O)                   |
-| `setFatalFlush`   | Method | Opt-in: fatal() drains the queue before returning (durability over RT safety)             | Yes (atomic store); fatal() then blocks |
-| `writeErrorCount` | Method | Monotonic count of write() failures (disk full, EIO)                                      | Yes (atomic load)                       |
-| `droppedCount`    | Method | Monotonic count of entries not accepted (queue full or backend stopped)                   | Yes (atomic load)                       |
-| `truncatedCount`  | Method | Monotonic count of accepted ASYNC entries cut to 511 bytes (a cut line keeps its newline) | Yes (atomic load)                       |
+| Component         | Type   | Purpose                                                                                       | RT-Safe                                 |
+| ----------------- | ------ | --------------------------------------------------------------------------------------------- | --------------------------------------- |
+| `SystemLog`       | Class  | High-level severity-filtered logger with SYNC/ASYNC modes                                     | ASYNC: Yes (log calls), SYNC: No        |
+| `LogBase`         | Class  | Low-level file management, atomic append, rotation                                            | No (file I/O)                           |
+| `AsyncLogBackend` | Class  | Lock-free MPMC queue drained by the shared service (dedicated thread fallback)                | Enqueue: Yes, Lifecycle: No             |
+| `LogDrainService` | Class  | Process-wide drain thread shared by all async backends (Linux)                                | notify(): Yes, Lifecycle: No            |
+| `Level`           | Enum   | DEBUG, INFO, WARNING, ERROR, FATAL                                                            | Yes                                     |
+| `Status`          | Enum   | OK, ERROR_OPEN, ERROR_SIZE, ERROR_ROTATE_RENAME, ERROR_ROTATE_REOPEN, ERROR_SYNC, ERROR_WRITE | Yes                                     |
+| `setLevel`        | Method | Set minimum severity threshold                                                                | Yes (atomic store)                      |
+| `setVerbosity`    | Method | Set debug verbosity level (0-255)                                                             | Yes (atomic store)                      |
+| `flush`           | Method | Drain async queue to disk                                                                     | No (blocks)                             |
+| `rotate`          | Method | Rotate log file with timestamped backup (descriptor stays stable via dup2)                    | No (mutex + file I/O)                   |
+| `setFatalFlush`   | Method | Opt-in: fatal() drains the queue before returning (durability over RT safety)                 | Yes (atomic store); fatal() then blocks |
+| `writeErrorCount` | Method | Monotonic count of write() failures (disk full, EIO)                                          | Yes (atomic load)                       |
+| `droppedCount`    | Method | Monotonic count of entries not accepted (queue full or backend stopped)                       | Yes (atomic load)                       |
+| `truncatedCount`  | Method | Monotonic count of accepted ASYNC entries cut to 511 bytes (a cut line keeps its newline)     | Yes (atomic load)                       |
 
 ---
 
