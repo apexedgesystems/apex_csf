@@ -559,6 +559,15 @@ public:
 | `release()`       | Yes     | Atomic fetch_add + notify |
 | `count()`         | Yes     | Atomic load               |
 
+#### Requirements
+
+- The count is 32 bits and the caller keeps it in range: the initial count and
+  each `release()` argument are at most `UINT32_MAX`
+- No release may take the permits outstanding above `UINT32_MAX`, counting
+  releases made at the same time on other threads; `count()` followed by
+  `release()` is not an atomic check
+- Nothing is checked or clamped: a value or total above the bound wraps the count
+
 ---
 
 ### SpinLock

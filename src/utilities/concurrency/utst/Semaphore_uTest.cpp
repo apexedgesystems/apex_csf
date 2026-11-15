@@ -16,6 +16,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -23,6 +25,9 @@
 using apex::concurrency::Semaphore;
 using apex::concurrency::test::settles;
 using apex::concurrency::test::threadsAsleepIn;
+
+/// The largest count the semaphore supports.
+constexpr std::size_t MAX_COUNT = std::numeric_limits<std::uint32_t>::max();
 
 /* ----------------------------- Default Construction ----------------------------- */
 
@@ -299,6 +304,38 @@ TEST_F(SemaphoreTest, ResourcePoolLimiting) {
   // Max concurrent should never exceed pool size
   EXPECT_LE(maxHeld.load(), POOL_SIZE);
   EXPECT_EQ(pool.count(), static_cast<std::size_t>(POOL_SIZE));
+}
+
+/* ----------------------------- Count Bound Tests ----------------------------- */
+
+/** @test The count holds the largest supported value, UINT32_MAX, as an initial count: it reads
+ * back exactly and an acquire takes one from it. */
+TEST_F(SemaphoreTest, HoldsTheMaximumInitialCount) {
+  Semaphore sem(MAX_COUNT);
+  EXPECT_EQ(sem.count(), MAX_COUNT);
+  EXPECT_TRUE(sem.tryAcquire());
+  EXPECT_EQ(sem.count(), MAX_COUNT - 1);
+}
+
+/** @test One release of the largest supported argument takes an empty semaphore to UINT32_MAX. */
+TEST_F(SemaphoreTest, ReleaseOfTheMaximumFromZero) {
+  Semaphore sem(0);
+  sem.release(MAX_COUNT);
+  EXPECT_EQ(sem.count(), MAX_COUNT);
+  EXPECT_TRUE(sem.tryAcquire());
+  EXPECT_EQ(sem.count(), MAX_COUNT - 1);
+}
+
+/** @test A release that brings the permits outstanding exactly to UINT32_MAX is within the
+ * supported range: from one below the bound, release(1) reaches it and acquires count down from
+ * there. */
+TEST_F(SemaphoreTest, ReleaseReachesTheMaximumFromOneBelow) {
+  Semaphore sem(MAX_COUNT - 1);
+  sem.release(1);
+  EXPECT_EQ(sem.count(), MAX_COUNT);
+  EXPECT_TRUE(sem.tryAcquire());
+  EXPECT_TRUE(sem.tryAcquire());
+  EXPECT_EQ(sem.count(), MAX_COUNT - 2);
 }
 
 /* ----------------------------- Determinism Tests ----------------------------- */
