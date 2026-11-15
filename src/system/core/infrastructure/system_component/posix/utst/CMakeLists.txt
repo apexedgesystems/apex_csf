@@ -15,6 +15,7 @@
 set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponentStatus_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SystemComponentBase_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/SchedulableComponentBase_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ParamBank_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ComponentRegistry_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/PackedTprm_uTest.cpp"
