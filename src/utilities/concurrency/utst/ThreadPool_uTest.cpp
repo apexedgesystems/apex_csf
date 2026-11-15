@@ -8,13 +8,16 @@
  */
 
 #include "src/utilities/concurrency/inc/ThreadPool.hpp"
+#include "src/utilities/concurrency/utst/support/ThreadProbe.hpp"
 #include "src/utilities/concurrency/utst/support/ThreadStartFault.hpp"
+#include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <string>
 #include <thread>
 
@@ -214,6 +217,21 @@ TEST_F(ThreadPoolTest, CollectErrorsClearsQueue) {
   EXPECT_TRUE(errors2.empty());
 }
 
+/** @test hasErrors() follows the error queue: false on a new pool, true once a task has failed,
+ * false again after collectErrors() has taken the errors. */
+TEST_F(ThreadPoolTest, HasErrorsFollowsFailuresAndCollection) {
+  ThreadPool pool(1);
+  EXPECT_FALSE(pool.hasErrors());
+
+  auto failingTask = DelegateU8{[](void*) noexcept -> std::uint8_t { return 7; }, nullptr};
+  pool.enqueueTask("fail", failingTask);
+  pool.shutdown();
+  EXPECT_TRUE(pool.hasErrors());
+
+  EXPECT_EQ(pool.collectErrors().size(), 1U);
+  EXPECT_FALSE(pool.hasErrors());
+}
+
 /** @test ThreadPool ignores null delegate tasks */
 TEST_F(ThreadPoolTest, IgnoresNullDelegate) {
   ThreadPool pool(1);
@@ -306,6 +324,24 @@ TEST_F(ThreadPoolTest, ReportsWorkerConfigFailure) {
   ThreadPool unconfigured(2, impossibleAffinity());
   EXPECT_EQ(unconfigured.workerConfigFailures(), unconfigured.workerCount());
   EXPECT_EQ(unconfigured.workerCount(), 2U);
+}
+
+/** @test A worker takes the affinity and the name its pool was configured with: a task finds its
+ * thread limited to the one configured CPU and named for the pool. */
+TEST_F(ThreadPoolTest, WorkerRunsWithItsConfiguredAffinityAndName) {
+  const int CPU = apex::concurrency::test::firstAllowedCpu();
+  ASSERT_GE(CPU, 0);
+  apex::concurrency::PoolConfig config;
+  config.affinity = {static_cast<std::uint8_t>(CPU)};
+  ThreadPool pool(1, config);
+  EXPECT_EQ(pool.workerConfigFailures(), 0U);
+
+  apex::concurrency::test::ThreadIdentity worker;
+  pool.enqueueTask("identity", {&apex::concurrency::test::ThreadIdentity::record, &worker});
+  ASSERT_TRUE(apex::concurrency::test::settles([&]() { return worker.done.load(); }));
+  EXPECT_EQ(worker.allowedCpus, 1);
+  EXPECT_EQ(worker.onlyCpu, CPU);
+  EXPECT_STREQ(worker.name, "pool_w0");
 }
 
 /** @test A worker that cannot start, the first or one after others, leaves an invalid pool: the
