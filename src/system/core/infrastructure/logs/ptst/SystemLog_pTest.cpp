@@ -244,9 +244,8 @@ PERF_TEST(Payload, SizeSensitivity) {
  * The dominant production pattern -- components log occasionally, so nearly
  * every call takes the empty-to-non-empty wakeup path (the one the
  * saturated-queue tests never exercise). The measured cycle includes the
- * enqueue, the wakeup, and the wait until the entry is written (the queue
- * depth counts an entry until then, so the drain has parked again before
- * the next call); it is the A/B instrument for wakeup-path changes.
+ * enqueue, the wakeup, and the drain wait; it is the A/B instrument for
+ * wakeup-path changes.
  */
 PERF_TEST(SporadicPattern, SingleLogDrainCycle) {
   UB_PERF_GUARD(perf);

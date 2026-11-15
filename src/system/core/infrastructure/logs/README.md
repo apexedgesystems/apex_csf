@@ -52,8 +52,8 @@ Real-time logging facility with file-backed persistence, rotation, and two modes
 | ----- | ------------------------------------ | ----------- | ------- | ----- |
 | ASYNC | Single-thread enqueue                | 0.367       | 2.72M   | 3.2%  |
 | ASYNC | Multi-thread contention              | 0.601       | 1.66M   | 24.1% |
-| ASYNC | Sporadic log-to-written cycle        | 1.16        | 865K    | 45.7% |
-| ASYNC | Fleet of 16 backends, sporadic cycle | 1.80        | 554K    | 1.5%  |
+| ASYNC | Sporadic log-to-drained cycle        | 0.783       | 1.28M   | 4.2%  |
+| ASYNC | Fleet of 16 backends, sporadic cycle | 0.876       | 1.14M   | 2.1%  |
 | ASYNC | Queue-full drop path                 | 0.502       | 1.99M   | 2.8%  |
 | SYNC  | Single-thread                        | 0.801       | 1.25M   | 3.4%  |
 | SYNC  | Multi-thread contention              | 0.917       | 1.09M   | 14.9% |
@@ -61,16 +61,10 @@ Real-time logging facility with file-backed persistence, rotation, and two modes
 | ASYNC | Payload size sensitivity             | 0.365       | 2.74M   | 8.3%  |
 
 A 256-entry burst followed by flush() (drain + fsync) costs ~1.4 ms:
-flush() is a control-plane checkpoint, never an RT-path call.
-
-The sporadic and fleet cycles log one entry and wait for the queue depth
-to return to zero. The depth counts an entry until it is written, so a
-cycle includes the drain's write and, because the drain has parked by
-then, the wake of a parked drain thread on the next call. Those two rows
-are medians of three runs on a loaded development host (1.11 to 1.93 us
-and 1.76 to 2.29 us); the other rows are an earlier baseline. The fleet
-cycle costs about 1.6 times the single-backend cycle with the shared
-drain thread; with per-component I/O threads it cost 4-5 times.
+flush() is a control-plane checkpoint, never an RT-path call. The fleet
+cycle sits within ~12% of the single-backend cycle -- the shared drain
+thread erases the wake-a-cold-thread penalty of per-component I/O
+threads (formerly 4-5x).
 
 ### Profiler Analysis
 
@@ -134,8 +128,12 @@ drain thread; with per-component I/O threads it cost 4-5 times.
   logs is tracked work.
 - An ASYNC entry holds 511 bytes. A longer line is cut, keeps its newline
   and is counted in truncatedCount(); SYNC mode writes the whole line.
-- flush() returning OK means every entry accepted before the call is on
-  the descriptor: an entry is counted as queued until it is written.
+- flush() returning OK means every entry accepted before the call has had
+  its write attempted, with any number of producers still logging. It is
+  not a durability certificate: a write the file refused is counted in
+  writeErrorCount() and its entry is gone, and the result of the sync is
+  not reported. The timeout bounds the wait for outstanding entries, not
+  the sync that follows.
 - stop() expects producers to have stopped: an entry offered while a
   backend stops may be neither written nor counted.
 
@@ -179,7 +177,8 @@ public:
   std::uint8_t verbosity() const noexcept;
 
   /// @note NOT RT-safe: Drains queue or calls fsync. ASYNC: ERROR_SYNC when
-  /// the queue has not drained within timeoutMs.
+  /// accepted entries are still outstanding after timeoutMs; OK does not
+  /// report write errors or the sync result.
   Status flush(std::uint32_t timeoutMs = 5000) noexcept;
 
   /// @note RT-safe: Atomic load.
@@ -227,8 +226,8 @@ public:
   /// failed.
   bool start() noexcept;
 
-  /// @note NOT RT-safe: Writes what is left, then closes the file.
-  /// Producers must have stopped logging first.
+  /// @note NOT RT-safe: Attempts the write of what is left, then closes
+  /// the file. Producers must have stopped logging first.
   bool stop() noexcept;
 
   /// @note RT-safe: Lock-free MPMC enqueue. False when the entry was not
@@ -236,7 +235,8 @@ public:
   bool tryLog(std::string_view msg) noexcept;
 
   /// @note NOT RT-safe: Blocks until every entry accepted before the call
-  /// is written, then syncs. False when that takes longer than timeoutMs.
+  /// has had its write attempted, then syncs. False when the wait takes
+  /// longer than timeoutMs. Failed writes are counted, not reported here.
   bool flush(std::uint32_t timeoutMs = 5000) noexcept;
 
   /// @note RT-safe: Atomic loads.

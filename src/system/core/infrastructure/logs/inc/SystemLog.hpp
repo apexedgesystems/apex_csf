@@ -87,12 +87,15 @@ public:
    * @brief Force buffered data to disk.
    * @return Status::OK on success; Status::ERROR_SYNC on failure.
    *
-   * For ASYNC mode: flushes async backend by draining queue and syncing;
-   * ERROR_SYNC when the queue has not drained within timeoutMs.
+   * For ASYNC mode: waits until every entry accepted before the call has
+   * had its write attempted, then syncs; ERROR_SYNC when entries are still
+   * outstanding after timeoutMs. OK does not report a write the file
+   * refused (see the backend's writeErrorCount()) or the sync result.
    * For SYNC mode: calls fsync() on file descriptor (timeoutMs is unused).
-   * Call before program exit to ensure all logs are persisted.
+   * Call before program exit to hand all accepted lines to the file.
    *
-   * @param timeoutMs Longest wait for the async queue to drain.
+   * @param timeoutMs Longest wait for outstanding async entries; it does
+   *        not bound the sync that follows.
    *
    * NOTE: This shadows LogBase::flush() (not virtual override).
    */
