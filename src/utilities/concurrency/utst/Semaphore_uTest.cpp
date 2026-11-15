@@ -8,21 +8,21 @@
  */
 
 #include "src/utilities/concurrency/inc/Semaphore.hpp"
+#include "src/utilities/concurrency/utst/support/Crew.hpp"
 #include "src/utilities/concurrency/utst/support/ThreadProbe.hpp"
 #include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
 
 #include <atomic>
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory>
 #include <thread>
-#include <vector>
 
 using apex::concurrency::Semaphore;
+using apex::concurrency::test::Crew;
+using apex::concurrency::test::CrewState;
 using apex::concurrency::test::settles;
 using apex::concurrency::test::threadsAsleepIn;
 
@@ -152,9 +152,9 @@ TEST_F(SemaphoreTest, TryAcquireForSucceedsOnRelease) {
 
 namespace {
 
-/// Acquirers of one semaphore, with everything they touch on the heap: a case that gives up on
-/// them detaches them, and they keep the state they hold.
-struct Acquirers {
+/// Acquirers of one semaphore. A Crew holds this on the heap, so a case that gives up on the
+/// acquirers detaches them with the state they hold.
+struct Acquirers : CrewState {
   Semaphore sem{0};
   std::atomic<int> entering{0};
   std::atomic<int> acquired{0};
@@ -172,138 +172,115 @@ struct Acquirers {
 };
 
 /// Start `count` threads that each acquire once.
-std::vector<std::thread> startAcquirers(const std::shared_ptr<Acquirers>& state, int count) {
-  std::vector<std::thread> threads;
-  threads.reserve(static_cast<std::size_t>(count));
+void startAcquirers(Crew<Acquirers>& crew, int count) {
   for (int i = 0; i < count; ++i) {
-    threads.emplace_back([state]() {
-      state->entering.fetch_add(1, std::memory_order_acq_rel);
-      state->sem.acquire();
-      state->acquired.fetch_add(1, std::memory_order_acq_rel);
+    crew.start([](Acquirers& state) {
+      state.entering.fetch_add(1, std::memory_order_acq_rel);
+      state.sem.acquire();
+      state.acquired.fetch_add(1, std::memory_order_acq_rel);
     });
-  }
-  return threads;
-}
-
-/// Join the acquirers if all of them returned, else detach them.
-void finish(std::vector<std::thread>& threads, bool allReturned) {
-  for (auto& t : threads) {
-    if (allReturned) {
-      t.join();
-    } else {
-      t.detach();
-    }
   }
 }
 
 } // namespace
 
-/** @test acquire() on an empty semaphore blocks, and one release() lets exactly that acquirer
- * through. */
+/** @test acquire() on an empty semaphore blocks, and one release() lets it return. The acquirer
+ * is seen asleep inside the semaphore before the release. */
 TEST_F(SemaphoreTest, AcquireBlocksUntilRelease) {
-  const auto state = std::make_shared<Acquirers>();
-  auto threads = startAcquirers(state, 1);
-  const bool ASLEEP = settles([&]() { return state->asleep(1); });
-  EXPECT_TRUE(ASLEEP) << "the acquirer did not block on an empty semaphore";
-  EXPECT_EQ(state->acquired.load(), 0);
+  Crew<Acquirers> crew;
+  startAcquirers(crew, 1);
+  EXPECT_TRUE(settles([&]() { return crew->asleep(1); }))
+      << "the acquirer did not block on an empty semaphore";
+  EXPECT_EQ(crew->acquired.load(), 0);
 
-  state->sem.release();
-  const bool RETURNED = settles([&]() { return state->acquired.load() == 1; });
-  finish(threads, RETURNED);
-  ASSERT_TRUE(RETURNED) << "a release did not wake the blocked acquirer";
-  EXPECT_EQ(state->sem.count(), 0U);
+  crew->sem.release();
+  ASSERT_TRUE(crew.finish()) << "a release did not wake the blocked acquirer";
+  EXPECT_EQ(crew->acquired.load(), 1);
+  EXPECT_EQ(crew->sem.count(), 0U);
 }
 
-/** @test release(n) wakes every one of n blocked acquirers: with four threads asleep in
- * acquire(), one release(4) lets all four through. */
+/** @test release(n) wakes n blocked acquirers, not one: four threads asleep in acquire() all
+ * return after a single release(4). */
 TEST_F(SemaphoreTest, ReleaseOfSeveralWakesEveryBlockedAcquirer) {
   constexpr int ACQUIRERS = 4;
-  const auto state = std::make_shared<Acquirers>();
-  auto threads = startAcquirers(state, ACQUIRERS);
-  const bool ASLEEP = settles([&]() { return state->asleep(ACQUIRERS); });
-  EXPECT_TRUE(ASLEEP) << "the acquirers did not all block";
-  EXPECT_EQ(state->acquired.load(), 0);
+  Crew<Acquirers> crew;
+  startAcquirers(crew, ACQUIRERS);
+  EXPECT_TRUE(settles([&]() { return crew->asleep(ACQUIRERS); }))
+      << "the acquirers did not all block";
+  EXPECT_EQ(crew->acquired.load(), 0);
 
-  state->sem.release(ACQUIRERS);
-  const bool RETURNED = settles([&]() { return state->acquired.load() == ACQUIRERS; });
-  finish(threads, RETURNED);
-  ASSERT_TRUE(RETURNED) << state->acquired.load() << " of " << ACQUIRERS
-                        << " blocked acquirers returned after release(" << ACQUIRERS << ")";
-  EXPECT_EQ(state->sem.count(), 0U);
+  crew->sem.release(ACQUIRERS);
+  ASSERT_TRUE(crew.finish()) << crew->acquired.load() << " of " << ACQUIRERS
+                             << " blocked acquirers returned after release(" << ACQUIRERS << ")";
+  EXPECT_EQ(crew->acquired.load(), ACQUIRERS);
+  EXPECT_EQ(crew->sem.count(), 0U);
 }
 
 /* ----------------------------- Concurrent Tests ----------------------------- */
 
-/** @test Multiple threads can acquire and release */
+/** @test Every release is matched by one acquire under contention: four threads acquire a
+ * thousand times each while the case releases four thousand, and the count ends at zero. */
 TEST_F(SemaphoreTest, ConcurrentAcquireRelease) {
-  Semaphore sem(0);
   constexpr int THREAD_COUNT = 4;
   constexpr int ITERATIONS = 1000;
-  std::atomic<int> totalAcquired{0};
-
-  // Start consumer threads
-  std::vector<std::thread> consumers;
-  consumers.reserve(THREAD_COUNT);
+  struct Exchange : CrewState {
+    Semaphore sem{0};
+    std::atomic<int> totalAcquired{0};
+  };
+  Crew<Exchange> crew;
   for (int i = 0; i < THREAD_COUNT; ++i) {
-    consumers.emplace_back([&]() {
+    crew.start([](Exchange& state) {
       for (int j = 0; j < ITERATIONS; ++j) {
-        sem.acquire();
-        totalAcquired.fetch_add(1, std::memory_order_relaxed);
+        state.sem.acquire();
+        state.totalAcquired.fetch_add(1, std::memory_order_relaxed);
       }
     });
   }
 
-  // Producer releases enough for all consumers
   const int TOTAL_RELEASES = THREAD_COUNT * ITERATIONS;
   for (int i = 0; i < TOTAL_RELEASES; ++i) {
-    sem.release();
+    crew->sem.release();
   }
+  ASSERT_TRUE(crew.finish()) << crew->totalAcquired.load() << " of " << TOTAL_RELEASES
+                             << " releases were acquired";
 
-  for (auto& t : consumers) {
-    t.join();
-  }
-
-  EXPECT_EQ(totalAcquired.load(), TOTAL_RELEASES);
-  EXPECT_EQ(sem.count(), 0U);
+  EXPECT_EQ(crew->totalAcquired.load(), TOTAL_RELEASES);
+  EXPECT_EQ(crew->sem.count(), 0U);
 }
 
-/** @test Semaphore as resource pool limiter */
+/** @test A semaphore of three limits holders to three: ten threads acquire and release a hundred
+ * times each, and no more than three hold it at once. */
 TEST_F(SemaphoreTest, ResourcePoolLimiting) {
   constexpr int POOL_SIZE = 3;
   constexpr int THREAD_COUNT = 10;
-  Semaphore pool(POOL_SIZE);
-  std::atomic<int> currentlyHeld{0};
-  std::atomic<int> maxHeld{0};
-
-  std::vector<std::thread> workers;
-  workers.reserve(THREAD_COUNT);
+  struct Limited : CrewState {
+    Semaphore pool{POOL_SIZE};
+    std::atomic<int> currentlyHeld{0};
+    std::atomic<int> maxHeld{0};
+  };
+  Crew<Limited> crew;
   for (int i = 0; i < THREAD_COUNT; ++i) {
-    workers.emplace_back([&]() {
+    crew.start([](Limited& state) {
       for (int j = 0; j < 100; ++j) {
-        pool.acquire();
+        state.pool.acquire();
 
-        const int HELD = currentlyHeld.fetch_add(1, std::memory_order_relaxed) + 1;
-        int expected = maxHeld.load(std::memory_order_relaxed);
+        const int HELD = state.currentlyHeld.fetch_add(1, std::memory_order_relaxed) + 1;
+        int expected = state.maxHeld.load(std::memory_order_relaxed);
         while (HELD > expected &&
-               !maxHeld.compare_exchange_weak(expected, HELD, std::memory_order_relaxed)) {
+               !state.maxHeld.compare_exchange_weak(expected, HELD, std::memory_order_relaxed)) {
         }
 
-        // Simulate work
         std::this_thread::yield();
 
-        currentlyHeld.fetch_sub(1, std::memory_order_relaxed);
-        pool.release();
+        state.currentlyHeld.fetch_sub(1, std::memory_order_relaxed);
+        state.pool.release();
       }
     });
   }
+  ASSERT_TRUE(crew.finish()) << "the holders did not all finish";
 
-  for (auto& t : workers) {
-    t.join();
-  }
-
-  // Max concurrent should never exceed pool size
-  EXPECT_LE(maxHeld.load(), POOL_SIZE);
-  EXPECT_EQ(pool.count(), static_cast<std::size_t>(POOL_SIZE));
+  EXPECT_LE(crew->maxHeld.load(), POOL_SIZE);
+  EXPECT_EQ(crew->pool.count(), static_cast<std::size_t>(POOL_SIZE));
 }
 
 /* ----------------------------- Count Bound Tests ----------------------------- */
