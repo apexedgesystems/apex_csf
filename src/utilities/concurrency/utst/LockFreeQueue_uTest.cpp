@@ -8,16 +8,22 @@
  */
 
 #include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
+#include "src/utilities/concurrency/utst/support/AlignProbe.hpp"
+#include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <chrono>
+#include <cstddef>
 #include <cstdint>
-#include <set>
+#include <memory>
 #include <thread>
+#include <utility>
 #include <vector>
 
 using apex::concurrency::LockFreeQueue;
+using apex::concurrency::test::settles;
 
 /* ----------------------------- Basic Operations Tests ----------------------------- */
 
@@ -219,116 +225,190 @@ TEST_F(LockFreeQueueTest, SingleProducerSingleConsumer) {
   }
 }
 
-/** @test Multiple producers single consumer */
-TEST_F(LockFreeQueueTest, MultipleProducersSingleConsumer) {
-  LockFreeQueue<int> queue(1024);
-  constexpr int PRODUCER_COUNT = 4;
-  constexpr int ITEMS_PER_PRODUCER = 1000;
-  std::atomic<int> producersDone{0};
-  std::set<int> received;
-  std::mutex receivedMutex;
+namespace {
 
-  // Consumer thread
-  std::thread consumer([&]() {
-    int value;
-    while (true) {
-      if (queue.tryPop(value)) {
-        std::lock_guard<std::mutex> lk(receivedMutex);
-        received.insert(value);
-      } else if (producersDone.load(std::memory_order_acquire) >= PRODUCER_COUNT) {
-        break;
-      } else {
+/// What a run of producers and consumers through one small ring left behind.
+struct Exchange {
+  std::vector<std::vector<int>> popped; ///< Per consumer, in pop order.
+  std::uint64_t refusedPushes{0};       ///< tryPush() calls that found the ring full.
+  bool finished{false};                 ///< Every thread ran to its end within the bound.
+};
+
+/// PRODUCERS threads each push ITEMS values, producer p pushing p * ITEMS + i for rising i and
+/// retrying while the ring is full, half of them through each tryPush() overload; CONSUMERS
+/// threads record what they pop. The ring holds
+/// eight, so it fills and laps thousands of times. One start gate releases the producers; the
+/// consumers start once a push has been refused, so the full path is always taken.
+///
+/// Everything the threads touch is shared heap state. A run that does not end within the bound
+/// is told to stop; threads that still do not return, because a broken queue has them looping
+/// inside a push or a pop, are detached with the state they hold, and the run is reported as
+/// unfinished.
+Exchange exchangeThroughSmallRing(int producers, int consumers, int items) {
+  struct State {
+    explicit State(int consumerCount) : popped(static_cast<std::size_t>(consumerCount)) {}
+    LockFreeQueue<int> queue{8};
+    std::vector<std::vector<int>> popped;
+    std::atomic<bool> start{false};
+    std::atomic<bool> ringWasFull{false};
+    std::atomic<bool> stop{false};
+    std::atomic<int> producersDone{0};
+    std::atomic<int> threadsDone{0};
+    std::atomic<std::uint64_t> refused{0};
+  };
+  const auto state = std::make_shared<State>(consumers);
+
+  std::vector<std::thread> threads;
+  threads.reserve(static_cast<std::size_t>(producers + consumers));
+  for (int p = 0; p < producers; ++p) {
+    threads.emplace_back([state, p, items]() {
+      while (!state->start.load(std::memory_order_acquire)) {
         std::this_thread::yield();
       }
-    }
-  });
-
-  // Producer threads
-  std::vector<std::thread> producers;
-  producers.reserve(PRODUCER_COUNT);
-  for (int p = 0; p < PRODUCER_COUNT; ++p) {
-    producers.emplace_back([&, p]() {
-      for (int i = 0; i < ITEMS_PER_PRODUCER; ++i) {
-        const int VALUE = p * ITEMS_PER_PRODUCER + i;
-        while (!queue.tryPush(VALUE)) {
+      std::uint64_t refusedHere = 0;
+      // Even producers push by copy and odd ones by move, so both tryPush() overloads meet
+      // contention.
+      const auto PUSH = [&](int value) {
+        return (p % 2 == 0) ? state->queue.tryPush(value) : state->queue.tryPush(int{value});
+      };
+      for (int i = 0; i < items && !state->stop.load(std::memory_order_relaxed); ++i) {
+        while (!PUSH(p * items + i)) {
+          ++refusedHere;
+          state->ringWasFull.store(true, std::memory_order_release);
+          if (state->stop.load(std::memory_order_relaxed)) {
+            break;
+          }
           std::this_thread::yield();
         }
       }
-      producersDone.fetch_add(1, std::memory_order_release);
+      state->refused.fetch_add(refusedHere, std::memory_order_relaxed);
+      state->producersDone.fetch_add(1, std::memory_order_release);
+      state->threadsDone.fetch_add(1, std::memory_order_release);
     });
   }
-
-  for (auto& t : producers) {
-    t.join();
-  }
-  consumer.join();
-
-  // Drain remaining
-  int value;
-  while (queue.tryPop(value)) {
-    std::lock_guard<std::mutex> lk(receivedMutex);
-    received.insert(value);
-  }
-
-  // Verify all unique items received
-  EXPECT_EQ(received.size(), static_cast<std::size_t>(PRODUCER_COUNT * ITEMS_PER_PRODUCER));
-}
-
-/** @test Multiple producers multiple consumers */
-TEST_F(LockFreeQueueTest, MultipleProducersMultipleConsumers) {
-  LockFreeQueue<int> queue(1024);
-  constexpr int PRODUCER_COUNT = 2;
-  constexpr int CONSUMER_COUNT = 2;
-  constexpr int ITEMS_PER_PRODUCER = 500;
-  std::atomic<int> producersDone{0};
-  std::atomic<int> totalReceived{0};
-
-  // Consumer threads
-  std::vector<std::thread> consumers;
-  consumers.reserve(CONSUMER_COUNT);
-  for (int c = 0; c < CONSUMER_COUNT; ++c) {
-    consumers.emplace_back([&]() {
-      int value;
-      while (true) {
-        if (queue.tryPop(value)) {
-          totalReceived.fetch_add(1, std::memory_order_relaxed);
-        } else if (producersDone.load(std::memory_order_acquire) >= PRODUCER_COUNT) {
+  for (int c = 0; c < consumers; ++c) {
+    threads.emplace_back([state, c, producers, items]() {
+      auto& mine = state->popped[static_cast<std::size_t>(c)];
+      const std::size_t TOTAL =
+          static_cast<std::size_t>(producers) * static_cast<std::size_t>(items);
+      mine.reserve(TOTAL);
+      while (!state->ringWasFull.load(std::memory_order_acquire) &&
+             !state->stop.load(std::memory_order_relaxed)) {
+        std::this_thread::yield();
+      }
+      int value = 0;
+      // A consumer never needs more than TOTAL pops; past that the queue is handing out
+      // values it was never given, and the count is the verdict.
+      while (!state->stop.load(std::memory_order_relaxed) && mine.size() <= TOTAL) {
+        if (state->queue.tryPop(value)) {
+          mine.push_back(value);
+        } else if (state->producersDone.load(std::memory_order_acquire) == producers) {
+          // Every push is published; one more look settles whether the ring is empty.
+          while (mine.size() <= TOTAL && state->queue.tryPop(value)) {
+            mine.push_back(value);
+          }
           break;
         } else {
           std::this_thread::yield();
         }
       }
+      state->threadsDone.fetch_add(1, std::memory_order_release);
     });
   }
 
-  // Producer threads
-  std::vector<std::thread> producers;
-  producers.reserve(PRODUCER_COUNT);
-  for (int p = 0; p < PRODUCER_COUNT; ++p) {
-    producers.emplace_back([&, p]() {
-      for (int i = 0; i < ITEMS_PER_PRODUCER; ++i) {
-        while (!queue.tryPush(p * ITEMS_PER_PRODUCER + i)) {
-          std::this_thread::yield();
-        }
+  const auto ALL_DONE = [&]() { return state->threadsDone.load() == producers + consumers; };
+  state->start.store(true, std::memory_order_release);
+  Exchange result;
+  result.finished = settles(ALL_DONE, std::chrono::seconds(20));
+  state->stop.store(true, std::memory_order_release);
+  if (!settles(ALL_DONE, std::chrono::seconds(2))) {
+    for (auto& t : threads) {
+      t.detach();
+    }
+    return result;
+  }
+  for (auto& t : threads) {
+    t.join();
+  }
+  result.popped = std::move(state->popped);
+  result.refusedPushes = state->refused.load();
+  return result;
+}
+
+/// Every value in [0, producers * items) was popped exactly once, and within each consumer's
+/// sequence every producer's values rise.
+void expectEachValueOnceAndInProducerOrder(const Exchange& exchange, int producers, int items) {
+  ASSERT_TRUE(exchange.finished) << "the producers and consumers did not finish";
+  EXPECT_GT(exchange.refusedPushes, 0U) << "the ring was never full";
+  const std::size_t TOTAL = static_cast<std::size_t>(producers) * static_cast<std::size_t>(items);
+  std::vector<int> timesPopped(TOTAL, 0);
+  std::size_t popped = 0;
+  std::size_t outOfRange = 0;
+  std::size_t outOfOrder = 0;
+  for (const auto& sequence : exchange.popped) {
+    std::vector<int> lastFromProducer(static_cast<std::size_t>(producers), -1);
+    for (const int VALUE : sequence) {
+      ++popped;
+      if (VALUE < 0 || static_cast<std::size_t>(VALUE) >= TOTAL) {
+        ++outOfRange;
+        continue;
       }
-      producersDone.fetch_add(1, std::memory_order_release);
-    });
+      ++timesPopped[static_cast<std::size_t>(VALUE)];
+      auto& last = lastFromProducer[static_cast<std::size_t>(VALUE / items)];
+      if (VALUE <= last) {
+        ++outOfOrder;
+      }
+      last = VALUE;
+    }
   }
+  std::size_t missing = 0;
+  std::size_t duplicated = 0;
+  for (const int TIMES : timesPopped) {
+    missing += TIMES == 0 ? 1U : 0U;
+    duplicated += TIMES > 1 ? 1U : 0U;
+  }
+  EXPECT_EQ(popped, TOTAL);
+  EXPECT_EQ(outOfRange, 0U) << "values that no producer pushed";
+  EXPECT_EQ(missing, 0U) << "values pushed and never popped";
+  EXPECT_EQ(duplicated, 0U) << "values popped more than once";
+  EXPECT_EQ(outOfOrder, 0U) << "a consumer saw one producer's values out of order";
+}
 
-  for (auto& t : producers) {
-    t.join();
-  }
-  for (auto& t : consumers) {
-    t.join();
-  }
+} // namespace
 
-  // Drain remaining
-  int value;
-  while (queue.tryPop(value)) {
-    totalReceived.fetch_add(1, std::memory_order_relaxed);
-  }
+/** @test Four producers and one consumer through an eight-cell ring: every value arrives exactly
+ * once and each producer's values arrive in the order it pushed them. */
+TEST_F(LockFreeQueueTest, MultipleProducersSingleConsumerKeepEveryValueInOrder) {
+  constexpr int PRODUCERS = 4;
+  constexpr int ITEMS = 10000;
+  expectEachValueOnceAndInProducerOrder(exchangeThroughSmallRing(PRODUCERS, 1, ITEMS), PRODUCERS,
+                                        ITEMS);
+}
 
-  EXPECT_EQ(totalReceived.load(), PRODUCER_COUNT * ITEMS_PER_PRODUCER);
+/** @test Four producers and four consumers through an eight-cell ring: every value is popped by
+ * exactly one consumer, and each consumer sees each producer's values in rising order. */
+TEST_F(LockFreeQueueTest, MultipleProducersMultipleConsumersPopEachValueOnce) {
+  constexpr int PRODUCERS = 4;
+  constexpr int ITEMS = 10000;
+  expectEachValueOnceAndInProducerOrder(exchangeThroughSmallRing(PRODUCERS, 4, ITEMS), PRODUCERS,
+                                        ITEMS);
+}
+
+/** @test sizeApprox() follows pushes and pops, through a lap of the ring. */
+TEST_F(LockFreeQueueTest, SizeApproxFollowsPushAndPop) {
+  LockFreeQueue<int> queue(4);
+  EXPECT_EQ(queue.sizeApprox(), 0U);
+  int value = 0;
+  for (int lap = 0; lap < 3; ++lap) {
+    for (std::size_t i = 0; i < queue.capacity(); ++i) {
+      ASSERT_TRUE(queue.tryPush(lap));
+      EXPECT_EQ(queue.sizeApprox(), i + 1);
+    }
+    for (std::size_t i = 0; i < queue.capacity(); ++i) {
+      ASSERT_TRUE(queue.tryPop(value));
+      EXPECT_EQ(queue.sizeApprox(), queue.capacity() - i - 1);
+    }
+  }
 }
 
 /* ----------------------------- Determinism Tests ----------------------------- */
@@ -344,24 +424,7 @@ TEST(LockFreeQueueDeterminismTest, CapacityConsistent) {
 
 /* ----------------------------- Storage Alignment Tests ----------------------------- */
 
-namespace {
-
-/// An element that requires the cell's own alignment and counts a misaligned construction.
-struct alignas(64) AlignProbe {
-  AlignProbe() {
-    if (reinterpret_cast<std::uintptr_t>(this) % 64 != 0) {
-      misaligned().fetch_add(1, std::memory_order_relaxed);
-    }
-  }
-  /// Constructions seen at an address that is not a multiple of 64.
-  static std::atomic<int>& misaligned() {
-    static std::atomic<int> count{0};
-    return count;
-  }
-  std::uint8_t byte{0};
-};
-
-} // namespace
+using apex::concurrency::test::AlignProbe;
 
 /** @test The cell storage honours alignas(64): every element is constructed at a 64-byte boundary,
  * at small capacities and at one large enough to come from a page-granular allocation. */

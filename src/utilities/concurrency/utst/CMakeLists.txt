@@ -7,7 +7,7 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Sources (11 files, plus the thread-launch seam under support/)
+# Sources (12 files, plus the thread-launch seam under support/)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
@@ -22,6 +22,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/Barrier_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Delegate_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Cache_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/ThreadConfig_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/support/ThreadStartFault.cpp"
 )
 

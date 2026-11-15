@@ -111,11 +111,12 @@ TEST_F(SpinLockTest, NestedLockGuardScopes) {
 
 /* ----------------------------- Concurrent Tests ----------------------------- */
 
-/** @test SpinLock provides mutual exclusion */
+/** @test SpinLock provides mutual exclusion: eight threads increment a plain counter under the
+ * lock, so an increment lost to two holders shows in the total. */
 TEST_F(SpinLockTest, MutualExclusion) {
   SpinLock lock;
   int counter = 0;
-  constexpr int THREAD_COUNT = 4;
+  constexpr int THREAD_COUNT = 8;
   constexpr int ITERATIONS = 10000;
 
   std::vector<std::thread> threads;
@@ -161,13 +162,15 @@ TEST_F(SpinLockTest, ProtectsDataIntegrity) {
   EXPECT_EQ(data.size(), static_cast<std::size_t>(THREAD_COUNT * ITEMS_PER_THREAD));
 }
 
-/** @test tryLock under contention */
-TEST_F(SpinLockTest, TryLockUnderContention) {
+/** @test tryLock() admits one holder at a time: each thread that gets the lock marks itself
+ * inside and must find nobody already there. */
+TEST_F(SpinLockTest, TryLockAdmitsOneHolderAtATime) {
   SpinLock lock;
+  std::atomic<bool> inside{false};
   std::atomic<int> successCount{0};
-  std::atomic<int> failCount{0};
+  std::atomic<int> twoHolders{0};
   constexpr int THREAD_COUNT = 8;
-  constexpr int ATTEMPTS = 1000;
+  constexpr int ATTEMPTS = 20000;
 
   std::vector<std::thread> threads;
   threads.reserve(THREAD_COUNT);
@@ -175,11 +178,12 @@ TEST_F(SpinLockTest, TryLockUnderContention) {
     threads.emplace_back([&]() {
       for (int j = 0; j < ATTEMPTS; ++j) {
         if (lock.tryLock()) {
+          if (inside.exchange(true, std::memory_order_acq_rel)) {
+            twoHolders.fetch_add(1, std::memory_order_relaxed);
+          }
           successCount.fetch_add(1, std::memory_order_relaxed);
-          // Brief hold
+          inside.store(false, std::memory_order_release);
           lock.unlock();
-        } else {
-          failCount.fetch_add(1, std::memory_order_relaxed);
         }
       }
     });
@@ -189,38 +193,8 @@ TEST_F(SpinLockTest, TryLockUnderContention) {
     t.join();
   }
 
-  // Should have some successes and likely some failures under contention
   EXPECT_GT(successCount.load(), 0);
-  // Total attempts should match
-  EXPECT_EQ(successCount.load() + failCount.load(), THREAD_COUNT * ATTEMPTS);
-}
-
-/* ----------------------------- Stress Tests ----------------------------- */
-
-/** @test High-contention stress test */
-TEST_F(SpinLockTest, HighContentionStress) {
-  SpinLock lock;
-  std::atomic<std::size_t> sum{0};
-  constexpr int THREAD_COUNT = 8;
-  constexpr std::size_t ITERATIONS = 50000;
-
-  std::vector<std::thread> threads;
-  threads.reserve(THREAD_COUNT);
-  for (int i = 0; i < THREAD_COUNT; ++i) {
-    threads.emplace_back([&]() {
-      for (std::size_t j = 0; j < ITERATIONS; ++j) {
-        lock.lock();
-        sum.fetch_add(1, std::memory_order_relaxed);
-        lock.unlock();
-      }
-    });
-  }
-
-  for (auto& t : threads) {
-    t.join();
-  }
-
-  EXPECT_EQ(sum.load(), static_cast<std::size_t>(THREAD_COUNT) * ITERATIONS);
+  EXPECT_EQ(twoHolders.load(), 0) << "tryLock() succeeded while another thread held the lock";
 }
 
 /* ----------------------------- Determinism Tests ----------------------------- */

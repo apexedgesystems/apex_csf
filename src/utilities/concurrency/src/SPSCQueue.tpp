@@ -17,14 +17,14 @@ namespace concurrency {
 /* ----------------------------- SPSCQueue Methods ----------------------------- */
 
 template <class T>
-SPSCQueue<T>::SPSCQueue(std::size_t capacity) noexcept
-    : mask_(0), buffer_(nullptr), head_(0), tail_(0) {
+SPSCQueue<T>::SPSCQueue(std::size_t capacity, std::size_t firstIndex) noexcept
+    : mask_(0), buffer_(nullptr), head_(firstIndex), tail_(firstIndex) {
   // Ensure minimum capacity of 2 and round up to power of two.
   const std::size_t CAP = nextPow2(capacity < 2 ? 2 : capacity);
   mask_ = CAP - 1;
 
-  // Allocate and default-construct elements.
-  buffer_ = static_cast<T*>(::operator new[](CAP * sizeof(T)));
+  // Allocate with the element's own alignment, then default-construct elements.
+  buffer_ = static_cast<T*>(::operator new[](CAP * sizeof(T), std::align_val_t{alignof(T)}));
   for (std::size_t i = 0; i < CAP; ++i) {
     new (&buffer_[i]) T();
   }
@@ -36,7 +36,7 @@ template <class T> SPSCQueue<T>::~SPSCQueue() {
     for (std::size_t i = CAP; i-- > 0;) {
       std::destroy_at(&buffer_[i]);
     }
-    ::operator delete[](buffer_);
+    ::operator delete[](buffer_, std::align_val_t{alignof(T)});
     buffer_ = nullptr;
   }
 }
@@ -89,7 +89,10 @@ template <class T> bool SPSCQueue<T>::empty() const noexcept {
 template <class T> std::size_t SPSCQueue<T>::sizeApprox() const noexcept {
   const std::size_t HEAD = head_.load(std::memory_order_acquire);
   const std::size_t TAIL = tail_.load(std::memory_order_acquire);
-  return HEAD - TAIL;
+
+  // The two loads are not atomic together: the consumer can move the tail past the head read
+  // above. occupancy() reports zero for such a pair.
+  return occupancy(HEAD, TAIL, mask_ + 1);
 }
 
 } // namespace concurrency
