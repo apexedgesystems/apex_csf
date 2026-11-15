@@ -12,6 +12,8 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <cstddef>
 #include <string>
 #include <thread>
 #include <vector>
@@ -303,4 +305,54 @@ TEST_F(SPSCQueueTest, StorageHonoursElementAlignment) {
   }
   EXPECT_EQ(AlignProbe::misaligned().load(std::memory_order_relaxed), 0)
       << "elements were constructed off their 64-byte alignment";
+}
+
+/* ----------------------------- sizeApprox Under Concurrency ----------------------------- */
+
+/** @test sizeApprox() read from a third thread never exceeds the capacity while a producer and a
+ * consumer run: its two index reads are not atomic together, and a read that catches the consumer
+ * ahead of the producer's older index reports zero, not a wrapped difference. */
+TEST_F(SPSCQueueTest, SizeApproxFromAThirdThreadStaysWithinCapacity) {
+  SPSCQueue<int> queue(2);
+  constexpr int ITEMS = 200000;
+  std::atomic<bool> done{false};
+  std::atomic<std::size_t> largestSeen{0};
+
+  // The reader samples in bursts and yields between them, so the case stays quick when all three
+  // threads share one core.
+  std::thread reader([&]() {
+    std::size_t largest = 0;
+    while (!done.load(std::memory_order_acquire)) {
+      for (int sample = 0; sample < 256; ++sample) {
+        const std::size_t SIZE = queue.sizeApprox();
+        if (SIZE > largest) {
+          largest = SIZE;
+        }
+      }
+      std::this_thread::yield();
+    }
+    largestSeen.store(largest, std::memory_order_release);
+  });
+  std::thread consumer([&]() {
+    int value = 0;
+    for (int received = 0; received < ITEMS;) {
+      if (queue.tryPop(value)) {
+        ++received;
+      } else {
+        std::this_thread::yield();
+      }
+    }
+  });
+  for (int i = 0; i < ITEMS;) {
+    if (queue.tryPush(i)) {
+      ++i;
+    } else {
+      std::this_thread::yield();
+    }
+  }
+  consumer.join();
+  done.store(true, std::memory_order_release);
+  reader.join();
+
+  EXPECT_LE(largestSeen.load(), queue.capacity());
 }

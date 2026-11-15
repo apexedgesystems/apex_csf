@@ -89,7 +89,10 @@ template <class T> bool SPSCQueue<T>::empty() const noexcept {
 template <class T> std::size_t SPSCQueue<T>::sizeApprox() const noexcept {
   const std::size_t HEAD = head_.load(std::memory_order_acquire);
   const std::size_t TAIL = tail_.load(std::memory_order_acquire);
-  return HEAD - TAIL;
+
+  // The two loads are not atomic together: the consumer can move the tail past the head read
+  // above. Report an empty queue then, not the wrapped difference.
+  return (HEAD >= TAIL) ? (HEAD - TAIL) : 0;
 }
 
 } // namespace concurrency

@@ -466,6 +466,7 @@ public:
 - Single producer thread, single consumer thread only
 - `T` must be move-constructible and move-assignable
 - Elements are stored at `alignof(T)`, over-aligned types included
+- `sizeApprox()` may be read from any thread and never exceeds `capacity()`
 
 ---
 

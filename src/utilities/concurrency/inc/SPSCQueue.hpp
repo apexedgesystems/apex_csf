@@ -98,8 +98,9 @@ public:
 
   /**
    * @brief Get approximate number of elements in queue.
-   * @return Approximate element count (may be stale).
+   * @return Approximate element count (may be stale), never more than capacity().
    * @note RT-safe: Two atomic loads, result may be approximate.
+   * @note Callable from any thread.
    */
   [[nodiscard]] std::size_t sizeApprox() const noexcept;
 
