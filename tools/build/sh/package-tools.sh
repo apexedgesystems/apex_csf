@@ -24,7 +24,8 @@ if [ -z "$(find "$TOOLS_BIN" -type f 2>/dev/null | head -1)" ]; then
   exit 1
 fi
 
-wheel_count=$(find "$WHEELS" -name '*.whl' 2>/dev/null | wc -l)
+# A missing wheels dir counts as no wheel, so the message below names it.
+wheel_count=$(find "$WHEELS" -name '*.whl' 2>/dev/null | wc -l || true)
 if [ "$wheel_count" -lt 1 ]; then
   echo "[package-tools] ERROR: no wheel under $WHEELS (python tools build broken)" >&2
   exit 1

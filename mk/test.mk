@@ -142,7 +142,8 @@ test-rust:
 # wheel dir: every wheel ships under its name, and a wheel that cannot be
 # copied (its destination name is taken by a directory, which no user can
 # overwrite with a file) fails the packager and leaves that destination as
-# it was. Host-runnable in seconds -- bash and tar only -- so the shell
+# it was; a wheels dir that does not exist fails with the no-wheel message.
+# Host-runnable in seconds -- bash and tar only -- so the shell
 # tools have an executed check, not just shellcheck's static one.
 test-sh:
 	$(call log,test,Running shell tools smoke)
@@ -169,8 +170,11 @@ test-sh:
 	  mkdir "$$tmp/taken/smoke_ops-0.0.0-py3-none-any.whl" && \
 	  if bash tools/build/sh/package-tools.sh "$$tmp/bin/tools" "$$tmp/wheels" "$$tmp/taken" 0.0.0 > /dev/null 2>&1; then \
 	    printf '[test] package-tools.sh reported success over a failed wheel copy\n' >&2; exit 1; fi && \
-	  test -d "$$tmp/taken/smoke_ops-0.0.0-py3-none-any.whl"
-	$(call log_ok,test,shell smoke: SDK tarball shape verified; package-tools.sh ships every wheel and fails on a failed copy)
+	  test -d "$$tmp/taken/smoke_ops-0.0.0-py3-none-any.whl" && \
+	  if bash tools/build/sh/package-tools.sh "$$tmp/bin/tools" "$$tmp/absent" "$$tmp/none" 0.0.0 > /dev/null 2> "$$tmp/err"; then \
+	    printf '[test] package-tools.sh reported success without a wheels dir\n' >&2; exit 1; fi && \
+	  grep -q 'no wheel under' "$$tmp/err"
+	$(call log_ok,test,shell smoke: SDK tarball shape verified; package-tools.sh ships every wheel; fails on a failed copy; names a missing wheels dir)
 
 # ------------------------------------------------------------------------------
 # Conformance contracts (compat/)
