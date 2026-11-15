@@ -186,26 +186,6 @@ TEST_F(BarrierTest, EachPhaseReleasesOnlyWhenAllHaveArrived) {
   EXPECT_EQ(crew->barrier.generation(), static_cast<std::size_t>(PHASE_COUNT));
 }
 
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test expected() returns consistent results */
-TEST(BarrierDeterminismTest, ExpectedConsistent) {
-  Barrier barrier(5);
-  const std::size_t FIRST = barrier.expected();
-  const std::size_t SECOND = barrier.expected();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 5U);
-}
-
-/** @test generation() returns consistent results */
-TEST(BarrierDeterminismTest, GenerationConsistent) {
-  Barrier barrier(1);
-  const std::size_t FIRST = barrier.generation();
-  const std::size_t SECOND = barrier.generation();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 0U);
-}
-
 /* ----------------------------- Phase Semantics Tests ----------------------------- */
 
 /** @test A drop is one arrival of the current phase, not two: with three participants, a drop

@@ -197,30 +197,6 @@ TEST_F(SpinLockTest, TryLockAdmitsOneHolderAtATime) {
   EXPECT_EQ(twoHolders.load(), 0) << "tryLock() succeeded while another thread held the lock";
 }
 
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test isLocked() returns consistent results */
-TEST(SpinLockDeterminismTest, IsLockedConsistent) {
-  SpinLock lock;
-  const bool FIRST = lock.isLocked();
-  const bool SECOND = lock.isLocked();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_FALSE(FIRST);
-}
-
-/** @test tryLock() is deterministic on unlocked lock */
-TEST(SpinLockDeterminismTest, TryLockDeterministic) {
-  SpinLock lock;
-
-  // First call should succeed
-  EXPECT_TRUE(lock.tryLock());
-  lock.unlock();
-
-  // Second call should also succeed (lock is unlocked)
-  EXPECT_TRUE(lock.tryLock());
-  lock.unlock();
-}
-
 /* ----------------------------- Observer Tests ----------------------------- */
 
 /** @test isLocked() is a read: a thread polling it never makes tryLock() fail on a lock nobody

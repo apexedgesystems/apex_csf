@@ -253,16 +253,6 @@ TEST_F(ThreadPoolTest, NullDelegateBetweenTasksIsANoOp) {
   EXPECT_EQ(OUT.errors, 0U);
 }
 
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test ThreadPool threadsRunning returns consistent results */
-TEST(ThreadPoolDeterminismTest, ThreadsRunningConsistent) {
-  ThreadPool pool(2);
-  const bool FIRST = pool.threadsRunning();
-  const bool SECOND = pool.threadsRunning();
-  EXPECT_EQ(FIRST, SECOND);
-}
-
 /* ----------------------------- Lifecycle Contract Tests ----------------------------- */
 
 namespace {

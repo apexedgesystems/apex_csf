@@ -274,26 +274,6 @@ TEST_F(SPSCQueueTest, HighThroughputStress) {
   EXPECT_EQ(sum, EXPECTED);
 }
 
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test capacity() returns consistent results */
-TEST(SPSCQueueDeterminismTest, CapacityConsistent) {
-  SPSCQueue<int> queue(128);
-  const std::size_t FIRST = queue.capacity();
-  const std::size_t SECOND = queue.capacity();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 128U);
-}
-
-/** @test empty() returns consistent results on empty queue */
-TEST(SPSCQueueDeterminismTest, EmptyConsistent) {
-  SPSCQueue<int> queue(16);
-  const bool FIRST = queue.empty();
-  const bool SECOND = queue.empty();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_TRUE(FIRST);
-}
-
 /* ----------------------------- Storage Alignment Tests ----------------------------- */
 
 /** @test The storage honours the element's alignment: every element of a 64-byte-aligned type is

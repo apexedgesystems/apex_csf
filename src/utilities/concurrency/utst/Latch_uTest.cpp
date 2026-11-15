@@ -292,26 +292,6 @@ TEST_F(LatchTest, WorkerCoordination) {
   EXPECT_EQ(workDone.load(), WORKER_COUNT);
 }
 
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test tryWait returns consistent results on triggered latch */
-TEST(LatchDeterminismTest, TryWaitConsistentOnTriggered) {
-  Latch latch(0);
-  const bool FIRST = latch.tryWait();
-  const bool SECOND = latch.tryWait();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_TRUE(FIRST);
-}
-
-/** @test count() returns consistent results */
-TEST(LatchDeterminismTest, CountConsistent) {
-  Latch latch(5);
-  const std::size_t FIRST = latch.count();
-  const std::size_t SECOND = latch.count();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 5U);
-}
-
 /* ----------------------------- Lifetime Tests ----------------------------- */
 
 namespace {

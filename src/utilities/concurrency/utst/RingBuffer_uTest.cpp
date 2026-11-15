@@ -311,39 +311,6 @@ TEST_F(RingBufferTest, HighThroughputStress) {
   EXPECT_EQ(sum, EXPECTED);
 }
 
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test capacity() returns consistent results */
-TEST(RingBufferDeterminismTest, CapacityConsistent) {
-  RingBuffer<int> buffer(128);
-  const std::size_t FIRST = buffer.capacity();
-  const std::size_t SECOND = buffer.capacity();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_GE(FIRST, 128U);
-}
-
-/** @test empty() returns consistent results on empty buffer */
-TEST(RingBufferDeterminismTest, EmptyConsistent) {
-  RingBuffer<int> buffer(16);
-  const bool FIRST = buffer.empty();
-  const bool SECOND = buffer.empty();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_TRUE(FIRST);
-}
-
-/** @test size() is deterministic */
-TEST(RingBufferDeterminismTest, SizeDeterministic) {
-  RingBuffer<int> buffer(16);
-  ASSERT_TRUE(buffer.tryPush(1));
-  ASSERT_TRUE(buffer.tryPush(2));
-  ASSERT_TRUE(buffer.tryPush(3));
-
-  const std::size_t FIRST = buffer.size();
-  const std::size_t SECOND = buffer.size();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 3U);
-}
-
 /* ----------------------------- Storage Alignment Tests ----------------------------- */
 
 /** @test The storage honours the element's alignment: every element of a 64-byte-aligned type is

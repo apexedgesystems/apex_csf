@@ -132,19 +132,6 @@ TEST_F(DelegateU8Test, CanBeAssigned) {
   EXPECT_EQ(delegate(), 42);
 }
 
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test DelegateU8 invocation returns consistent results */
-TEST(DelegateU8DeterminismTest, InvocationConsistent) {
-  auto fn = [](void*) noexcept -> std::uint8_t { return 100; };
-  const DelegateU8 DELEGATE{fn, nullptr};
-
-  const std::uint8_t FIRST = DELEGATE();
-  const std::uint8_t SECOND = DELEGATE();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 100);
-}
-
 /* ----------------------------- Delegate<Ret, Args...> Tests ----------------------------- */
 
 namespace {

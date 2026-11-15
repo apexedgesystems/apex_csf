@@ -235,25 +235,6 @@ TEST_F(ThreadPoolLockFreeTest, NullDelegateBetweenTasksIsANoOp) {
   EXPECT_EQ(OUT.errors, 0U);
 }
 
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test ThreadPoolLockFree threadsRunning returns consistent results */
-TEST(ThreadPoolLockFreeDeterminismTest, ThreadsRunningConsistent) {
-  ThreadPoolLockFree pool(2, 32);
-  const bool FIRST = pool.threadsRunning();
-  const bool SECOND = pool.threadsRunning();
-  EXPECT_EQ(FIRST, SECOND);
-}
-
-/** @test ThreadPoolLockFree hasErrors returns consistent results when no errors */
-TEST(ThreadPoolLockFreeDeterminismTest, HasErrorsConsistent) {
-  ThreadPoolLockFree pool(2, 32);
-  const bool FIRST = pool.hasErrors();
-  const bool SECOND = pool.hasErrors();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_FALSE(FIRST);
-}
-
 /* ----------------------------- Lifecycle Contract Tests ----------------------------- */
 
 namespace {

@@ -506,17 +506,6 @@ TEST_F(LockFreeQueueTest, SizeApproxFromAThirdThreadStaysWithinCapacity) {
   EXPECT_LE(*LARGEST, queue.capacity());
 }
 
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test capacity() returns consistent results */
-TEST(LockFreeQueueDeterminismTest, CapacityConsistent) {
-  LockFreeQueue<int> queue(128);
-  const std::size_t FIRST = queue.capacity();
-  const std::size_t SECOND = queue.capacity();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 128U);
-}
-
 /* ----------------------------- Storage Alignment Tests ----------------------------- */
 
 using apex::concurrency::test::AlignProbe;

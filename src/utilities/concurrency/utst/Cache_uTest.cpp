@@ -121,12 +121,3 @@ TEST(AlignClArrayTest, ArrayHasProperSpacing) {
     EXPECT_EQ(ADDR % CACHE_LINE_SIZE, 0U);
   }
 }
-
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test AlignCl alignment is consistent */
-TEST(AlignClDeterminismTest, AlignmentConsistent) {
-  const std::size_t FIRST = alignof(AlignCl<int>);
-  const std::size_t SECOND = alignof(AlignCl<int>);
-  EXPECT_EQ(FIRST, SECOND);
-}

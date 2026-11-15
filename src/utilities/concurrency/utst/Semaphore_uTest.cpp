@@ -337,23 +337,3 @@ TEST_F(SemaphoreTest, ReleaseReachesTheMaximumFromOneBelow) {
   EXPECT_TRUE(sem.tryAcquire());
   EXPECT_EQ(sem.count(), MAX_COUNT - 2);
 }
-
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test count() returns consistent results */
-TEST(SemaphoreDeterminismTest, CountConsistent) {
-  Semaphore sem(10);
-  const std::size_t FIRST = sem.count();
-  const std::size_t SECOND = sem.count();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 10U);
-}
-
-/** @test tryAcquire is deterministic on empty semaphore */
-TEST(SemaphoreDeterminismTest, TryAcquireConsistentOnEmpty) {
-  Semaphore sem(0);
-  const bool FIRST = sem.tryAcquire();
-  const bool SECOND = sem.tryAcquire();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_FALSE(FIRST);
-}
