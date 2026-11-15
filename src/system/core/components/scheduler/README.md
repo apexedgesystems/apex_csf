@@ -223,17 +223,17 @@ This separation enables:
 
 ### RT-Safety Summary
 
-| Operation                    | RT-Safe | Notes                          |
-| ---------------------------- | ------- | ------------------------------ |
-| `task.execute()`             | Yes     | Direct delegate call (~5-10ns) |
-| `entry.shouldRun()`          | Yes     | Inline frequency check         |
-| `executeTasksOnTickSingle()` | Yes     | Sequential, bounded work       |
-| `executeTasksOnTickMulti()`  | Yes     | Dispatch to ThreadPool         |
-| `scheduler.addTask()`        | No      | Vector growth possible         |
-| `scheduler.init()`           | No      | Log creation, allocations      |
-| `waitForPhase()`             | Yes     | Hybrid spin/park wait          |
-| `advancePhase()`             | Yes     | Atomic increment + notify      |
-| `McuScheduler::tick()`       | Yes     | No heap, O(n)                  |
+| Operation                    | RT-Safe | Notes                                                       |
+| ---------------------------- | ------- | ----------------------------------------------------------- |
+| `task.execute()`             | Yes     | Direct delegate call (~5-10ns)                              |
+| `entry.shouldRun()`          | Yes     | Inline frequency check                                      |
+| `executeTasksOnTickSingle()` | Yes     | Sequential, bounded work                                    |
+| `executeTasksOnTickMulti()`  | Depends | Pool enqueue: no lock or allocation; may issue a futex wake |
+| `scheduler.addTask()`        | No      | Vector growth possible                                      |
+| `scheduler.init()`           | No      | Log creation, allocations                                   |
+| `waitForPhase()`             | Yes     | Hybrid spin/park wait                                       |
+| `advancePhase()`             | Yes     | Atomic increment + notify                                   |
+| `McuScheduler::tick()`       | Yes     | No heap, O(n)                                               |
 
 ---
 
@@ -617,7 +617,8 @@ while (true) {
 
 ### Build Dependencies
 
-- C++17 compiler (GCC 10+, Clang 12+)
+- C++23 compiler, the project build (Clang 21 recommended); the worker
+  pools come from `utilities_concurrency`, whose hosted library needs C++20
 - fmt library (formatting)
 - POSIX threads (pthreads)
 

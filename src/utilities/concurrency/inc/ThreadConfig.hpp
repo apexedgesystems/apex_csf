@@ -17,6 +17,7 @@
 #include <vector>
 
 #if defined(__unix__) || defined(__APPLE__)
+#include <csignal>
 #include <pthread.h>
 #include <sched.h>
 #endif
@@ -136,6 +137,53 @@ inline long setThreadTimerSlackNs(unsigned long slackNs) noexcept {
   return -1;
 #endif
 }
+
+/* ----------------------------- WorkerSignalScope ----------------------------- */
+
+/**
+ * @class WorkerSignalScope
+ * @brief Blocks the process signals on the calling thread while it lives, so the
+ *        threads spawned inside the scope inherit the blocked set, and restores
+ *        the caller's own mask when it ends.
+ *
+ * The worker set is SIGINT, SIGTERM and SIGPIPE: the signals a process handles
+ * on the thread that owns them, so a worker never takes a shutdown signal or
+ * dies on a broken-pipe write. SIGSEGV is not in the set: a blocked fault
+ * signal only bypasses an installed crash handler.
+ *
+ * @note NOT RT-safe: one pthread_sigmask call on construction and one on
+ *       destruction. Non-POSIX platforms: no-op.
+ */
+class WorkerSignalScope {
+public:
+  WorkerSignalScope() noexcept {
+#if defined(__unix__) || defined(__APPLE__)
+    sigset_t workers;
+    sigemptyset(&workers);
+    sigaddset(&workers, SIGINT);
+    sigaddset(&workers, SIGTERM);
+    sigaddset(&workers, SIGPIPE);
+    saved_ = pthread_sigmask(SIG_BLOCK, &workers, &previous_) == 0;
+#endif
+  }
+
+  ~WorkerSignalScope() noexcept {
+#if defined(__unix__) || defined(__APPLE__)
+    if (saved_) {
+      pthread_sigmask(SIG_SETMASK, &previous_, nullptr);
+    }
+#endif
+  }
+
+  WorkerSignalScope(const WorkerSignalScope&) = delete;
+  WorkerSignalScope& operator=(const WorkerSignalScope&) = delete;
+
+private:
+#if defined(__unix__) || defined(__APPLE__)
+  sigset_t previous_{}; ///< The caller's mask before the block.
+  bool saved_{false};   ///< Whether previous_ holds a mask to restore.
+#endif
+};
 
 /* ----------------------------- Convenience Overloads ----------------------------- */
 

@@ -79,44 +79,40 @@ public:
   /**
    * @brief Check if lock is currently held (approximate).
    * @return True if locked.
-   * @note RT-safe: Single atomic load.
+   * @note RT-safe: Single atomic load; it never touches the lock's state.
    */
   [[nodiscard]] bool isLocked() const noexcept APEX_NONBLOCKING;
 
 private:
-  std::atomic_flag flag_ = ATOMIC_FLAG_INIT;
+  std::atomic<bool> locked_{false};
 };
 
 /* ----------------------------- SpinLock Inline Methods ----------------------------- */
 
 inline void SpinLock::lock() noexcept {
-  // Spin with test-and-set, using PAUSE hint between attempts.
-  while (flag_.test_and_set(std::memory_order_acquire)) {
-    // Spin-wait hint: reduces power and improves HT performance.
+  // Acquire with an exchange; while held, spin on a plain read with the
+  // PAUSE hint so the waiters do not hammer the line with writes.
+  while (locked_.exchange(true, std::memory_order_acquire)) {
+    while (locked_.load(std::memory_order_relaxed)) {
+      // Spin-wait hint: reduces power and improves HT performance.
 #if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
-    __builtin_ia32_pause();
+      __builtin_ia32_pause();
 #elif defined(__aarch64__) || defined(_M_ARM64)
-    __asm__ volatile("yield" ::: "memory");
+      __asm__ volatile("yield" ::: "memory");
 #else
-    // Fallback: just spin
+      // Fallback: just spin
 #endif
+    }
   }
 }
 
-inline bool SpinLock::tryLock() noexcept { return !flag_.test_and_set(std::memory_order_acquire); }
-
-inline void SpinLock::unlock() noexcept { flag_.clear(std::memory_order_release); }
-
-inline bool SpinLock::isLocked() const noexcept {
-  // Note: test() is C++20, so we use a const_cast workaround for C++17.
-  // This is safe because we're only reading the state.
-  auto& mutableFlag = const_cast<std::atomic_flag&>(flag_);
-  const bool WAS_SET = mutableFlag.test_and_set(std::memory_order_relaxed);
-  if (!WAS_SET) {
-    mutableFlag.clear(std::memory_order_relaxed);
-  }
-  return WAS_SET;
+inline bool SpinLock::tryLock() noexcept {
+  return !locked_.exchange(true, std::memory_order_acquire);
 }
+
+inline void SpinLock::unlock() noexcept { locked_.store(false, std::memory_order_release); }
+
+inline bool SpinLock::isLocked() const noexcept { return locked_.load(std::memory_order_relaxed); }
 
 } // namespace concurrency
 } // namespace apex

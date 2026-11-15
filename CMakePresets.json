@@ -510,7 +510,8 @@
       "inherits": "_test-base",
       "configurePreset": "hosted-x86_64-ubsan",
       "environment": {
-        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-ubsan/lib:$penv{LD_LIBRARY_PATH}"
+        "LD_LIBRARY_PATH": "${sourceDir}/build/hosted-x86_64-ubsan/lib:$penv{LD_LIBRARY_PATH}",
+        "UBSAN_OPTIONS": "print_stacktrace=1"
       }
     },
     {

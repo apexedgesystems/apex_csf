@@ -1,0 +1,4 @@
+# Two paths that differ only in punctuation share a generated TU name.
+name      fixture_collision
+posix_cpp 20
+headers   inc/wide-gap.hpp inc/wide_gap.hpp

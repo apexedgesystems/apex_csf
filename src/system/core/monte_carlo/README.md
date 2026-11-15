@@ -105,7 +105,10 @@ Each thread writes to `results[runIndex]` (pre-allocated, no contention).
 **RT-safe:** No (allocates, spawns threads, blocks)
 
 Batch executor. Takes a run function and configuration, executes all parameter
-sets across a thread pool, returns aggregate results.
+sets across a thread pool, returns aggregate results. Construction throws
+`std::runtime_error` when the pool could not start its workers (the process or
+thread limit), so no driver exists whose `execute()` would report runs complete
+without running them.
 
 | Method                       | Description                                        |
 | ---------------------------- | -------------------------------------------------- |
