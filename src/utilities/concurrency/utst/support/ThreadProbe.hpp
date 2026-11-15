@@ -8,6 +8,7 @@
  *        given object, read from the kernel's record of its system call.
  */
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -45,9 +46,9 @@ inline int firstAllowedCpu() noexcept {
 /// A thread's own account of itself, published by `done`.
 struct ThreadIdentity {
   std::atomic<bool> done{false};
-  int allowedCpus{-1}; ///< How many CPUs the thread may run on.
-  int onlyCpu{-1};     ///< That CPU when there is exactly one, else -1.
-  char name[16]{};     ///< The thread's name.
+  int allowedCpus{-1};         ///< How many CPUs the thread may run on.
+  int onlyCpu{-1};             ///< That CPU when there is exactly one, else -1.
+  std::array<char, 16> name{}; ///< The thread's name.
 
   /// Fill from the calling thread.
   void recordHere() noexcept {
@@ -63,7 +64,7 @@ struct ThreadIdentity {
         }
       }
     }
-    pthread_getname_np(pthread_self(), name, sizeof(name));
+    pthread_getname_np(pthread_self(), name.data(), name.size());
     done.store(true, std::memory_order_release);
   }
 

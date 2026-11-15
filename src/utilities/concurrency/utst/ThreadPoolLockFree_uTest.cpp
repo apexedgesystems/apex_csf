@@ -848,7 +848,7 @@ TEST_F(ThreadPoolLockFreeTest, WorkerRunsWithItsConfiguredAffinityAndName) {
   ASSERT_TRUE(settles([&]() { return worker.done.load(); }, BOUND));
   EXPECT_EQ(worker.allowedCpus, 1);
   EXPECT_EQ(worker.onlyCpu, CPU);
-  EXPECT_STREQ(worker.name, "lf_pool_w0");
+  EXPECT_STREQ(worker.name.data(), "lf_pool_w0");
 }
 
 namespace {

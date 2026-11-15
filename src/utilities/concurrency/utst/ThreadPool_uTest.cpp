@@ -341,7 +341,7 @@ TEST_F(ThreadPoolTest, WorkerRunsWithItsConfiguredAffinityAndName) {
   ASSERT_TRUE(apex::concurrency::test::settles([&]() { return worker.done.load(); }));
   EXPECT_EQ(worker.allowedCpus, 1);
   EXPECT_EQ(worker.onlyCpu, CPU);
-  EXPECT_STREQ(worker.name, "pool_w0");
+  EXPECT_STREQ(worker.name.data(), "pool_w0");
 }
 
 /** @test A worker that cannot start, the first or one after others, leaves an invalid pool: the

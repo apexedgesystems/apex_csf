@@ -42,7 +42,7 @@ TEST(ThreadConfigTest, AppliesAffinityAndName) {
   EXPECT_TRUE(applied);
   EXPECT_EQ(identity.allowedCpus, 1);
   EXPECT_EQ(identity.onlyCpu, CPU);
-  EXPECT_STREQ(identity.name, "cfg_probe");
+  EXPECT_STREQ(identity.name.data(), "cfg_probe");
 }
 
 /** @test A setting the kernel refuses makes the call return false: an affinity naming no CPU of
@@ -85,7 +85,7 @@ TEST(ThreadConfigTest, EmptyConfigurationIsANoOp) {
 
   EXPECT_TRUE(applied);
   EXPECT_EQ(after.allowedCpus, before.allowedCpus);
-  EXPECT_STREQ(after.name, before.name);
+  EXPECT_STREQ(after.name.data(), before.name.data());
 }
 
 /* ----------------------------- setThreadTimerSlackNs Tests ----------------------------- */
