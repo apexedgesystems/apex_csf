@@ -27,8 +27,9 @@ each reject distinctly) before touching the body.
   `tests/golden_vectors.rs` regenerates every vector and asserts
   byte-identity with the committed files.
 - **C++ runtime**: `GoldenVectors_uTest.cpp` verifies the same files
-  through the v4 payload reader and `PackedTprmReader` and asserts
-  every prelude check, field, and extraction byte.
+  through the v4 payload reader and `PackedTprmReader` and asserts the
+  prelude's target, CRC, magic and size checks, every field, and every
+  extraction byte.
 - **External consumers** (e.g. the Zenith C2 backend): copy this
   directory and assert your encoder/decoder against it. Copy, don't
   reference -- the vector set is the contract, the repos stay

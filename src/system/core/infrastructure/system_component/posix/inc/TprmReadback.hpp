@@ -5,7 +5,7 @@
  * @brief Staged-bank digest assembly for the READBACK_TPRM command.
  *
  * Ground verifies staged parameter payloads before any apply: the
- * digest reports, per staged .tprm file, the identity the v3 prelude
+ * digest reports, per staged .tprm file, the identity the v4 prelude
  * claims (fullUid, layoutHash, payloadCrc) plus a header-level
  * verdict, so a corrupted or wrong-target staged payload is visible
  * from the prelude alone -- no payload body is read.

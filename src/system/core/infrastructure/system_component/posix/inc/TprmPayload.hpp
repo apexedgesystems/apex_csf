@@ -4,10 +4,10 @@
  * @file TprmPayload.hpp
  * @brief Format A v4 payload prelude: verified ingest for component payloads.
  *
- * Every component payload carries a 20-byte little-endian prelude:
+ * Every component payload carries a 28-byte little-endian prelude:
  * ```
  *   magic[4]       = "APV4"
- *   version[2]     = 3
+ *   version[2]     = 4
  *   reserved[2]    = 0
  *   payloadSize[8] = byte length of the payload that follows -- 64-bit
  *                    so bundle entries (world content) ride the same

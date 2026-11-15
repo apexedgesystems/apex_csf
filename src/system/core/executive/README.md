@@ -232,7 +232,7 @@ rate under test.
 
 | Dir           | Contents                                                         | In CI suite? |
 | ------------- | ---------------------------------------------------------------- | ------------ |
-| `posix/utst/` | Struct/config unit tests (status, RT mode, data, shutdown)       | Yes          |
+| `posix/utst/` | Struct/config unit tests; RELOAD_LIBRARY on a live executive     | Yes          |
 | `base/utst/`  | IExecutive contract tests                                        | Yes          |
 | `core/utst/`  | ExecutiveCore identity/contract tests                            | Yes          |
 | `mcu/utst/`   | MCU executive unit tests                                         | Yes          |

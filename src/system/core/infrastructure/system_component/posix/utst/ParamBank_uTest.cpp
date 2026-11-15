@@ -48,7 +48,7 @@ bool nonNegative(const TestParams& p) noexcept { return p.value >= 0; }
 /// fullUid the file-load tests stamp and expect.
 constexpr std::uint32_t TEST_UID = 0x00AB01;
 
-/** @brief Helper to create a temporary v3-stamped payload file. */
+/** @brief Helper to create a temporary v4-stamped payload file. */
 class TempParamsFile {
 public:
   explicit TempParamsFile(const TestParams& p, std::uint32_t fullUid = TEST_UID) {
@@ -192,7 +192,7 @@ TEST(ParamBankTest, LoadFileLayoutMismatch) {
   EXPECT_FALSE(bank.isLoaded());
 }
 
-/** @test load(path): a bare struct image with no prelude is not a v3 payload. */
+/** @test load(path): a bare struct image with no prelude is not a v4 payload. */
 TEST(ParamBankTest, LoadFileRejectsUnstampedImage) {
   ParamBank<TestParams> bank{};
   const TestParams P{3, 0};

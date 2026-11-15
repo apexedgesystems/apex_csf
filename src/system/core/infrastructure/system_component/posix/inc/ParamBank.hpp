@@ -133,8 +133,8 @@ public:
   }
 
   /**
-   * @brief Stage a parameter set from a v3 payload file.
-   * @param path     Payload file ({fullUid:06x}.tprm): 20-byte prelude +
+   * @brief Stage a parameter set from a v4 payload file.
+   * @param path     Payload file ({fullUid:06x}.tprm): 28-byte prelude +
    *                 sizeof(TParams) body (see TprmPayload.hpp).
    * @param fullUid  Target the payload must declare; any prelude check
    *                 failing rejects the stage (lastCheck() carries which).
@@ -163,7 +163,7 @@ public:
     return load(incoming, std::forward<TValidator>(validate));
   }
 
-  /** @brief Stage a parameter set from a v3 payload file, no validation. */
+  /** @brief Stage a parameter set from a v4 payload file, no validation. */
   [[nodiscard]] Status load(const std::filesystem::path& path, std::uint32_t fullUid) noexcept {
     return load(path, fullUid, [](const TParams&) noexcept { return true; });
   }
@@ -293,7 +293,12 @@ public:
     return activeGen_.load(std::memory_order_relaxed);
   }
 
-  /** @brief Count of staging attempts (load calls that wrote a bank). @note RT-safe. */
+  /**
+   * @brief Count of sets that reached validation: every struct load(), and
+   *        every file load() whose payload passed its prelude checks,
+   *        whether the validator then accepted the set or not.
+   * @note RT-safe.
+   */
   [[nodiscard]] std::uint64_t stagedGeneration() const noexcept {
     return stagedGen_.load(std::memory_order_relaxed);
   }
