@@ -16,11 +16,14 @@
  *  - Only ONE thread may call tryPush, only ONE thread may call tryPop.
  */
 
+#include "src/utilities/concurrency/inc/Cache.hpp"
 #include "src/utilities/concurrency/inc/RingIndex.hpp"
+#include "src/utilities/concurrency/inc/RingStorage.hpp"
 
 #include <atomic>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace apex {
 namespace concurrency {
@@ -52,7 +55,7 @@ public:
    * @brief Destructor releases internal storage.
    * @note NOT RT-safe: Deallocates buffer.
    */
-  ~SPSCQueue();
+  ~SPSCQueue() = default;
 
   // Non-copyable / non-movable (owns raw storage).
   SPSCQueue(const SPSCQueue&) = delete;
@@ -66,7 +69,7 @@ public:
    * @return True if pushed, false if queue is full.
    * @note RT-safe: No locks, single atomic load/store.
    */
-  [[nodiscard]] bool tryPush(const T& value) noexcept;
+  [[nodiscard]] bool tryPush(const T& value) noexcept { return push(value); }
 
   /**
    * @brief Try to push a moved value (producer only).
@@ -74,7 +77,7 @@ public:
    * @return True if pushed, false if queue is full.
    * @note RT-safe: No locks, single atomic load/store.
    */
-  [[nodiscard]] bool tryPush(T&& value) noexcept;
+  [[nodiscard]] bool tryPush(T&& value) noexcept { return push(std::move(value)); }
 
   /**
    * @brief Try to pop a value from the queue (consumer only).
@@ -121,28 +124,15 @@ protected:
   SPSCQueue(std::size_t capacity, std::size_t firstIndex) noexcept;
 
 private:
-  static constexpr std::size_t CACHE_LINE = 64;
+  /// The one push: assigns `value` into the slot as the value category it arrived with.
+  template <class U> [[nodiscard]] bool push(U&& value) noexcept;
 
-  /**
-   * @brief Round up to next power of two.
-   */
-  static constexpr std::size_t nextPow2(std::size_t v) noexcept {
-    --v;
-    v |= v >> 1;
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-    v |= v >> 32;
-    return v + 1;
-  }
-
-  std::size_t mask_{0}; ///< capacity - 1 for fast modulo.
-  T* buffer_{nullptr};  ///< Ring storage.
+  std::size_t mask_;      ///< capacity - 1 for fast modulo.
+  RingStorage<T> buffer_; ///< Ring storage.
 
   // Separated to different cache lines to prevent false sharing.
-  alignas(CACHE_LINE) std::atomic<std::size_t> head_{0}; ///< Producer write position.
-  alignas(CACHE_LINE) std::atomic<std::size_t> tail_{0}; ///< Consumer read position.
+  alignas(cache::CACHE_LINE_SIZE) std::atomic<std::size_t> head_; ///< Producer write position.
+  alignas(cache::CACHE_LINE_SIZE) std::atomic<std::size_t> tail_; ///< Consumer read position.
 };
 
 } // namespace concurrency

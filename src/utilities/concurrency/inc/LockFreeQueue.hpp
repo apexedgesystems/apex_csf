@@ -15,11 +15,14 @@
  *  - T must be move-constructible and move-assignable.
  */
 
+#include "src/utilities/concurrency/inc/Cache.hpp"
 #include "src/utilities/concurrency/inc/RingIndex.hpp"
+#include "src/utilities/concurrency/inc/RingStorage.hpp"
 
 #include <atomic>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace apex {
 namespace concurrency {
@@ -49,7 +52,7 @@ public:
    * @brief Destructor releases internal storage.
    * @note NOT RT-safe: Deallocates buffer.
    */
-  ~LockFreeQueue();
+  ~LockFreeQueue() = default;
 
   // Non-copyable / non-movable (owns raw storage).
   LockFreeQueue(const LockFreeQueue&) = delete;
@@ -63,7 +66,7 @@ public:
    * @return True if pushed, false if queue is full.
    * @note RT-safe: Lock-free, bounded CAS loop.
    */
-  [[nodiscard]] bool tryPush(const T& value) noexcept;
+  [[nodiscard]] bool tryPush(const T& value) noexcept { return push(value); }
 
   /**
    * @brief Try to push a moved value.
@@ -71,7 +74,7 @@ public:
    * @return True if pushed, false if queue is full.
    * @note RT-safe: Lock-free, bounded CAS loop.
    */
-  [[nodiscard]] bool tryPush(T&& value) noexcept;
+  [[nodiscard]] bool tryPush(T&& value) noexcept { return push(std::move(value)); }
 
   /**
    * @brief Try to pop a value from the queue.
@@ -116,32 +119,21 @@ protected:
   LockFreeQueue(std::size_t capacity, std::size_t firstIndex) noexcept;
 
 private:
-  static constexpr std::size_t CACHE_LINE = 64;
+  /// One slot of the ring, a whole number of cache lines.
+  struct alignas(cache::CACHE_LINE_SIZE) Cell {
+    explicit Cell(std::size_t firstSequence) : sequence(firstSequence), data() {}
 
-  struct alignas(CACHE_LINE) Cell {
     std::atomic<std::size_t> sequence; ///< Per-slot sequence counter.
     T data;                            ///< Stored value.
-    // Padding implicit via alignas - each Cell occupies full cache line.
   };
 
-  /**
-   * @brief Round up to next power of two.
-   */
-  static constexpr std::size_t nextPow2(std::size_t v) noexcept {
-    --v;
-    v |= v >> 1;
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-    v |= v >> 32;
-    return v + 1;
-  }
+  /// The one push: assigns `value` into the claimed cell as the value category it arrived with.
+  template <class U> [[nodiscard]] bool push(U&& value) noexcept;
 
-  std::size_t mask_{0};                          ///< capacity - 1 for fast modulo.
-  Cell* buffer_{nullptr};                        ///< Ring storage (manual lifetime).
-  alignas(64) std::atomic<std::size_t> head_{0}; ///< Producer cursor.
-  alignas(64) std::atomic<std::size_t> tail_{0}; ///< Consumer cursor.
+  std::size_t mask_;                                              ///< capacity - 1 for fast modulo.
+  RingStorage<Cell> buffer_;                                      ///< Ring storage.
+  alignas(cache::CACHE_LINE_SIZE) std::atomic<std::size_t> head_; ///< Producer cursor.
+  alignas(cache::CACHE_LINE_SIZE) std::atomic<std::size_t> tail_; ///< Consumer cursor.
 };
 
 } // namespace concurrency

@@ -7,8 +7,6 @@
  * with acquire semantics to determine available space/data.
  */
 
-#include <memory>
-#include <new>
 #include <utility>
 
 namespace apex {
@@ -18,30 +16,9 @@ namespace concurrency {
 
 template <class T>
 SPSCQueue<T>::SPSCQueue(std::size_t capacity, std::size_t firstIndex) noexcept
-    : mask_(0), buffer_(nullptr), head_(firstIndex), tail_(firstIndex) {
-  // Ensure minimum capacity of 2 and round up to power of two.
-  const std::size_t CAP = nextPow2(capacity < 2 ? 2 : capacity);
-  mask_ = CAP - 1;
+    : mask_(ringSlots(capacity) - 1), buffer_(mask_ + 1), head_(firstIndex), tail_(firstIndex) {}
 
-  // Allocate with the element's own alignment, then default-construct elements.
-  buffer_ = static_cast<T*>(::operator new[](CAP * sizeof(T), std::align_val_t{alignof(T)}));
-  for (std::size_t i = 0; i < CAP; ++i) {
-    new (&buffer_[i]) T();
-  }
-}
-
-template <class T> SPSCQueue<T>::~SPSCQueue() {
-  if (buffer_) {
-    const std::size_t CAP = mask_ + 1;
-    for (std::size_t i = CAP; i-- > 0;) {
-      std::destroy_at(&buffer_[i]);
-    }
-    ::operator delete[](buffer_, std::align_val_t{alignof(T)});
-    buffer_ = nullptr;
-  }
-}
-
-template <class T> bool SPSCQueue<T>::tryPush(const T& value) noexcept {
+template <class T> template <class U> bool SPSCQueue<T>::push(U&& value) noexcept {
   const std::size_t HEAD = head_.load(std::memory_order_relaxed);
   const std::size_t TAIL = tail_.load(std::memory_order_acquire);
 
@@ -50,21 +27,7 @@ template <class T> bool SPSCQueue<T>::tryPush(const T& value) noexcept {
     return false;
   }
 
-  buffer_[HEAD & mask_] = value;
-  head_.store(HEAD + 1, std::memory_order_release);
-  return true;
-}
-
-template <class T> bool SPSCQueue<T>::tryPush(T&& value) noexcept {
-  const std::size_t HEAD = head_.load(std::memory_order_relaxed);
-  const std::size_t TAIL = tail_.load(std::memory_order_acquire);
-
-  // Full when head - tail == capacity (all slots used).
-  if (HEAD - TAIL > mask_) {
-    return false;
-  }
-
-  buffer_[HEAD & mask_] = std::move(value);
+  buffer_[HEAD & mask_] = std::forward<U>(value);
   head_.store(HEAD + 1, std::memory_order_release);
   return true;
 }

@@ -10,7 +10,9 @@
 #include <cstddef>
 #include <limits>
 
+using apex::concurrency::nextPowerOfTwo;
 using apex::concurrency::ringOccupancy;
+using apex::concurrency::ringSlots;
 
 namespace {
 
@@ -18,6 +20,38 @@ constexpr std::size_t INDEX_MAX = std::numeric_limits<std::size_t>::max();
 constexpr std::size_t CAPACITY = 2;
 
 } // namespace
+
+/* ----------------------------- Slot Count Tests ----------------------------- */
+
+// A power of two stays, anything else goes up to the next one, across the range.
+static_assert(nextPowerOfTwo(1) == 1);
+static_assert(nextPowerOfTwo(2) == 2);
+static_assert(nextPowerOfTwo(3) == 4);
+static_assert(nextPowerOfTwo(16) == 16);
+static_assert(nextPowerOfTwo(17) == 32);
+static_assert(nextPowerOfTwo((std::size_t{1} << 40) + 1) == std::size_t{1} << 41);
+static_assert(nextPowerOfTwo(std::size_t{1} << 63) == std::size_t{1} << 63);
+
+// A ring never has fewer than two slots.
+static_assert(ringSlots(0) == 2);
+static_assert(ringSlots(1) == 2);
+static_assert(ringSlots(2) == 2);
+static_assert(ringSlots(5) == 8);
+static_assert(ringSlots(1024) == 1024);
+
+/** @test The slot count for a request is a power of two that holds it, and at least two, for
+ * every request up to a few thousand. */
+TEST(RingSlotsTest, IsTheSmallestPowerOfTwoHoldingTheRequest) {
+  for (std::size_t requested = 0; requested <= 4100; ++requested) {
+    const std::size_t SLOTS = ringSlots(requested);
+    ASSERT_GE(SLOTS, 2U) << requested;
+    ASSERT_GE(SLOTS, requested) << requested;
+    ASSERT_EQ(SLOTS & (SLOTS - 1), 0U) << requested << " is not a power of two";
+    if (SLOTS > 2) {
+      ASSERT_LT(SLOTS / 2, requested) << requested << " fits in half as many slots";
+    }
+  }
+}
 
 /* ----------------------------- ringOccupancy Tests ----------------------------- */
 

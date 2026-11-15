@@ -2,18 +2,46 @@
 #define APEX_UTILITIES_CONCURRENCY_RING_INDEX_HPP
 /**
  * @file RingIndex.hpp
- * @brief Arithmetic on the free-running indices of the ring queues.
+ * @brief Slot-count and index arithmetic the ring queues share.
  *
- * The queues keep a head and a tail index that only ever increase and wrap at
- * the width of std::size_t. Their difference is meaningful only in that
- * modular arithmetic; comparing the two values numerically is wrong on either
- * side of a wrap.
+ * The queues size their rings to a power of two so an index is reduced with
+ * a mask. They keep a head and a tail index that only ever increase and wrap
+ * at the width of std::size_t; their difference is meaningful only in that
+ * modular arithmetic, and comparing the two values numerically is wrong on
+ * either side of a wrap.
  */
 
 #include <cstddef>
 
 namespace apex {
 namespace concurrency {
+
+/* ----------------------------- Slot Counts ----------------------------- */
+
+/**
+ * @brief Smallest power of two that is not below `value`.
+ * @param value A count from 1 to 2^63.
+ * @note RT-safe: bit operations.
+ */
+[[nodiscard]] constexpr std::size_t nextPowerOfTwo(std::size_t value) noexcept {
+  --value;
+  value |= value >> 1;
+  value |= value >> 2;
+  value |= value >> 4;
+  value |= value >> 8;
+  value |= value >> 16;
+  value |= value >> 32;
+  return value + 1;
+}
+
+/**
+ * @brief Slots in a ring that must hold at least `requested` elements: the
+ *        next power of two, and never fewer than two.
+ * @note RT-safe: bit operations.
+ */
+[[nodiscard]] constexpr std::size_t ringSlots(std::size_t requested) noexcept {
+  return nextPowerOfTwo(requested < 2 ? 2 : requested);
+}
 
 /* ----------------------------- ringOccupancy ----------------------------- */
 
