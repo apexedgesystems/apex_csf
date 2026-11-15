@@ -24,12 +24,23 @@ if [ -z "$(find "$TOOLS_BIN" -type f 2>/dev/null | head -1)" ]; then
   exit 1
 fi
 
-# A missing wheels dir counts as no wheel, so the message below names it.
-wheel_count=$(find "$WHEELS" -name '*.whl' 2>/dev/null | wc -l || true)
-if [ "$wheel_count" -lt 1 ]; then
+# The wheels are listed once, before anything is written, and the copy below
+# works from that list. A wheels dir that does not exist has no wheel; a tree
+# that cannot be read in full is an error of its own, because a partial list
+# would ship a partial release.
+if [ ! -d "$WHEELS" ]; then
   echo "[package-tools] ERROR: no wheel under $WHEELS (python tools build broken)" >&2
   exit 1
 fi
+if ! wheel_list=$(find "$WHEELS" -name '*.whl'); then
+  echo "[package-tools] ERROR: cannot read every directory under $WHEELS" >&2
+  exit 1
+fi
+if [ -z "$wheel_list" ]; then
+  echo "[package-tools] ERROR: no wheel under $WHEELS (python tools build broken)" >&2
+  exit 1
+fi
+wheel_count=$(printf '%s\n' "$wheel_list" | wc -l)
 
 mkdir -p "$OUT"
 tar -czf "$OUT/apex-tools-${VERSION}-x86_64-linux.tar.gz" \
@@ -40,7 +51,7 @@ copied=0
 while IFS= read -r wheel; do
   cp -- "$wheel" "$OUT/"
   copied=$((copied + 1))
-done < <(find "$WHEELS" -name '*.whl')
+done <<<"$wheel_list"
 if [ "$copied" -ne "$wheel_count" ]; then
   echo "[package-tools] ERROR: copied $copied of $wheel_count wheels" >&2
   exit 1
