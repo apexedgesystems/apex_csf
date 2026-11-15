@@ -16,14 +16,29 @@
 
 using apex::concurrency::DelegateU8;
 
-/* ----------------------------- Default Construction ----------------------------- */
+/* ----------------------------- DelegateU8 Compile-Time Contract ----------------------------- */
 
-/** @test Default DelegateU8 has null function and context */
-TEST(DelegateU8DefaultTest, DefaultIsNull) {
-  const DelegateU8 DEFAULT{};
-  EXPECT_EQ(DEFAULT.fn, nullptr);
-  EXPECT_EQ(DEFAULT.ctx, nullptr);
-}
+namespace {
+
+constexpr std::uint8_t answer(void*) noexcept { return 42; }
+
+} // namespace
+
+// A function pointer and a context pointer, nothing else, copied bit for bit: what lets a
+// delegate sit in a queue cell or a task table without a constructor running.
+static_assert(sizeof(DelegateU8) == 2 * sizeof(void*));
+static_assert(std::is_trivially_copyable_v<DelegateU8>);
+static_assert(std::is_aggregate_v<DelegateU8>);
+
+// Usable in constant expressions: a default delegate is null, converts to false and returns
+// zero when called, and a delegate with a function calls it.
+static_assert(DelegateU8{}.fn == nullptr && DelegateU8{}.ctx == nullptr);
+static_assert(!DelegateU8{});
+static_assert(DelegateU8{}() == 0);
+static_assert(DelegateU8{&answer, nullptr});
+static_assert(DelegateU8{&answer, nullptr}() == 42);
+
+/* ----------------------------- Default Construction ----------------------------- */
 
 /** @test Default DelegateU8 converts to false */
 TEST(DelegateU8DefaultTest, DefaultIsFalse) {
@@ -54,19 +69,6 @@ TEST_F(DelegateU8Test, WithFunctionIsTrue) {
   EXPECT_TRUE(static_cast<bool>(DELEGATE));
 }
 
-/** @test DelegateU8 stores function pointer correctly */
-TEST_F(DelegateU8Test, StoresFunctionPointer) {
-  const DelegateU8 DELEGATE{simpleFunction, nullptr};
-  EXPECT_EQ(DELEGATE.fn, simpleFunction);
-}
-
-/** @test DelegateU8 stores context pointer correctly */
-TEST_F(DelegateU8Test, StoresContextPointer) {
-  int context = 123;
-  const DelegateU8 DELEGATE{simpleFunction, &context};
-  EXPECT_EQ(DELEGATE.ctx, &context);
-}
-
 /* ----------------------------- Invocation Tests ----------------------------- */
 
 /** @test DelegateU8 invokes function and returns result */
@@ -82,29 +84,6 @@ TEST_F(DelegateU8Test, PassesContextToFunction) {
   EXPECT_EQ(DELEGATE(), 99);
 }
 
-/** @test DelegateU8 invocation is const-correct */
-TEST_F(DelegateU8Test, InvocationIsConst) {
-  const DelegateU8 DELEGATE{simpleFunction, nullptr};
-  // Should compile - operator() is const
-  const std::uint8_t RESULT = DELEGATE();
-  EXPECT_EQ(RESULT, 42);
-}
-
-/* ----------------------------- Constexpr Tests ----------------------------- */
-
-/** @test DelegateU8 default construction is constexpr */
-TEST(DelegateU8ConstexprTest, DefaultConstructionConstexpr) {
-  constexpr DelegateU8 DELEGATE{};
-  EXPECT_FALSE(static_cast<bool>(DELEGATE));
-}
-
-/** @test DelegateU8 bool conversion is constexpr */
-TEST(DelegateU8ConstexprTest, BoolConversionConstexpr) {
-  constexpr DelegateU8 NULL_DELEGATE{};
-  constexpr bool IS_NULL = static_cast<bool>(NULL_DELEGATE);
-  EXPECT_FALSE(IS_NULL);
-}
-
 /* ----------------------------- Edge Cases ----------------------------- */
 
 /** @test DelegateU8 with null function but valid context */
@@ -113,23 +92,6 @@ TEST_F(DelegateU8Test, NullFunctionWithContext) {
   const DelegateU8 DELEGATE{nullptr, &context};
   EXPECT_FALSE(static_cast<bool>(DELEGATE));
   EXPECT_EQ(DELEGATE(), 0); // Should return 0, not crash
-}
-
-/** @test DelegateU8 can be copied */
-TEST_F(DelegateU8Test, CanBeCopied) {
-  const DelegateU8 ORIGINAL{simpleFunction, nullptr};
-  const DelegateU8 COPY = ORIGINAL;
-  EXPECT_EQ(COPY.fn, ORIGINAL.fn);
-  EXPECT_EQ(COPY.ctx, ORIGINAL.ctx);
-  EXPECT_EQ(COPY(), 42);
-}
-
-/** @test DelegateU8 can be assigned */
-TEST_F(DelegateU8Test, CanBeAssigned) {
-  DelegateU8 delegate{};
-  delegate = DelegateU8{simpleFunction, nullptr};
-  EXPECT_TRUE(static_cast<bool>(delegate));
-  EXPECT_EQ(delegate(), 42);
 }
 
 /* ----------------------------- Delegate<Ret, Args...> Tests ----------------------------- */

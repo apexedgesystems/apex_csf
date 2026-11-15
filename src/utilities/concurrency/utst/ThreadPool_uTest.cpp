@@ -23,6 +23,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <type_traits>
 
 #include <pthread.h>
 
@@ -35,15 +36,14 @@ using apex::concurrency::test::DrainOutcome;
 using apex::concurrency::test::NullTaskOutcome;
 using apex::concurrency::test::runAroundNullDelegate;
 
-/* ----------------------------- Default Construction ----------------------------- */
+/* ----------------------------- TaskError Compile-Time Contract ----------------------------- */
 
-/** @test Default TaskError has null label and zero error code */
-TEST(TaskErrorDefaultTest, DefaultIsZero) {
-  const TaskError DEFAULT{};
-  EXPECT_EQ(DEFAULT.label, nullptr);
-  EXPECT_EQ(DEFAULT.errorCode, 0);
-  EXPECT_EQ(DEFAULT.status, PoolStatus::SUCCESS);
-}
+// A plain record a worker fills in and a collector copies out: no constructor, copied bit for
+// bit, and all zero when value-initialized.
+static_assert(std::is_aggregate_v<TaskError>);
+static_assert(std::is_trivially_copyable_v<TaskError>);
+static_assert(TaskError{}.label == nullptr && TaskError{}.errorCode == 0 &&
+              TaskError{}.status == PoolStatus::SUCCESS);
 
 /* ----------------------------- ThreadPool Lifecycle Tests ----------------------------- */
 
