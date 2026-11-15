@@ -51,7 +51,9 @@ class LogDrainService;
  * Size: ~520 bytes (512 for message + overhead)
  * Capacity: 4096 entries = ~2.1MB memory per backend
  *
- * @note Messages exceeding MAX_MSG_LEN are truncated (no allocation).
+ * @note A message of MAX_MSG_LEN bytes or more is cut to MAX_MSG_LEN - 1
+ *       bytes (no allocation). When the cut message ended in a newline,
+ *       the last stored byte is that newline.
  */
 struct LogEntry {
   static constexpr std::size_t MAX_MSG_LEN = 512;
@@ -62,21 +64,24 @@ struct LogEntry {
   LogEntry() noexcept = default;
 
   /**
-   * @brief Construct entry from string_view (copies up to MAX_MSG_LEN chars).
-   * @param msg Message to copy (truncated if > MAX_MSG_LEN).
+   * @brief Construct entry from string_view (copies up to MAX_MSG_LEN - 1 chars).
+   * @param msg Message to copy (cut if it does not fit; a cut line keeps
+   *            its newline).
    */
   explicit LogEntry(std::string_view msg) noexcept;
 };
 
 /**
  * @class AsyncLogBackend
- * @brief Async logging backend with dedicated I/O thread.
+ * @brief Async logging backend: a lock-free ring emptied by the shared
+ *        drain service, or by a dedicated I/O thread when the service's
+ *        registry is full.
  *
  * Lifecycle:
  *  1. Construct with file path
- *  2. start() - launches I/O thread
+ *  2. start() - opens the file, joins the drain (or starts the I/O thread)
  *  3. tryLog() - RT-safe logging from any thread
- *  4. stop() - graceful shutdown, flushes remaining entries
+ *  4. stop() - graceful shutdown, writes remaining entries
  *
  * Thread-safety:
  *  - tryLog() is lock-free and RT-safe
@@ -118,30 +123,42 @@ public:
   bool start() noexcept;
 
   /**
-   * @brief Stop I/O thread and flush remaining entries.
-   * @return true if clean shutdown; false if timeout occurred.
+   * @brief Stop draining and attempt the write of remaining entries.
+   * @return true if every accepted entry has had its write attempted;
+   *         false if some were left.
    *
-   * Blocks until queue is drained.
+   * Blocks until queue is drained. Producers must have stopped logging:
+   * an entry offered while stop() runs may be neither written nor counted.
+   * A failed write is counted in writeErrorCount() and its entry is gone;
+   * the return value does not report it, nor the result of the final sync.
    * Not thread-safe with start().
    * @note NOT RT-safe: Blocks until queue drains, joins thread.
    */
   bool stop() noexcept;
 
   /**
-   * @brief Flush queued entries to disk without stopping I/O thread.
-   * @param timeoutMs Maximum time to wait for queue drain (default 5000ms).
-   * @return true if queue fully drained; false on timeout.
+   * @brief Wait for accepted entries to be handed to the file, then sync,
+   *        without stopping the drain.
+   * @param timeoutMs Longest wait for the outstanding entries (default
+   *        5000 ms). It bounds that wait only, not the sync that follows.
+   * @return true if every entry accepted before the call has had its write
+   *         attempted; false on timeout.
    *
-   * Waits until queueDepth reaches zero, then syncs file to disk.
-   * Does not stop the I/O thread - logging continues afterward.
-   * Safe to call from any thread.
-   * @note NOT RT-safe: Blocks until queue drains.
+   * An entry counts as outstanding from before it is published until the
+   * drain has attempted its write, so the guarantee holds with several
+   * producers logging while flush() runs; entries accepted during the call
+   * may or may not be covered. A true return is not a durability
+   * certificate: a write the file refused is counted in writeErrorCount()
+   * and its entry is gone, and the result of the sync is not reported.
+   * Logging continues afterward. Safe to call from any thread.
+   * @note NOT RT-safe: Blocks until the outstanding entries are attempted.
    */
   bool flush(std::uint32_t timeoutMs = 5000) noexcept;
 
   /**
    * @brief Try to enqueue log entry (RT-safe, lock-free).
-   * @param msg Formatted log message (truncated to 512 bytes if longer).
+   * @param msg Formatted log message (cut to 511 bytes if longer, keeping
+   *            a trailing newline; counted in truncatedCount()).
    * @return true if enqueued; false if queue full (entry dropped).
    *
    * RT guarantees:
@@ -171,8 +188,19 @@ public:
   }
 
   /**
-   * @brief Get approximate number of entries currently queued.
-   * @return Queue depth (may be stale due to concurrent access).
+   * @brief Get number of accepted entries that were cut to fit an entry.
+   * @return Truncated entry count (monotonic).
+   * @note RT-safe: Atomic load.
+   */
+  std::uint64_t truncatedCount() const noexcept {
+    return truncatedCount_.load(std::memory_order_relaxed);
+  }
+
+  /**
+   * @brief Get approximate number of entries waiting on the ring.
+   * @return Queue depth (may be stale due to concurrent access). An entry
+   *         leaves it when the drain takes it off the ring, before it is
+   *         written; flush() tells when accepted entries were attempted.
    * @note RT-safe: Atomic load.
    */
   std::size_t queueDepth() const noexcept { return queueDepth_.load(std::memory_order_relaxed); }
@@ -209,7 +237,35 @@ public:
    */
   std::size_t drainBatch(std::size_t maxEntries) noexcept;
 
+protected:
+  /**
+   * @brief First step of tryLog(): count one entry as outstanding.
+   * @return false when the queue is full (the refusal is counted).
+   *
+   * An admitted entry holds flush() and stop() back until publishAdmitted()
+   * has handed it to the drain and its write has been attempted, or until
+   * publishAdmitted() fails. Every admit() that returns true is followed by
+   * exactly one publishAdmitted(). The two steps are separate members so a
+   * test can stand between them, where a preempted producer would be.
+   * @note RT-safe: Lock-free.
+   */
+  bool admit() noexcept;
+
+  /**
+   * @brief Second step of tryLog(): publish an admitted entry to the drain.
+   * @return true if published; false if the ring refused it (counted as a
+   *         drop, and the admission is retired).
+   * @note RT-safe: Lock-free MPMC enqueue; wake is a non-blocking syscall.
+   */
+  bool publishAdmitted(std::string_view msg) noexcept;
+
 private:
+  /**
+   * @brief Release one outstanding entry after its write was attempted, and
+   *        notify flush() when it was the last.
+   */
+  void completeOne() noexcept;
+
   /**
    * @brief Block process signals in I/O thread (keeps them on shutdown thread).
    *
@@ -246,7 +302,9 @@ private:
 
   std::atomic<bool> running_{false};             ///< I/O thread control
   std::atomic<std::uint64_t> droppedCount_{0};   ///< Entries not accepted
+  std::atomic<std::uint64_t> truncatedCount_{0}; ///< Accepted entries cut to fit
   std::atomic<std::size_t> queueDepth_{0};       ///< Approximate queue size
+  std::atomic<std::size_t> outstanding_{0};      ///< Admitted, write not yet attempted
   std::atomic<std::uint64_t> entriesWritten_{0}; ///< Total entries written
   std::atomic<std::uint64_t> writeErrors_{0};    ///< write() failures on drain
 };

@@ -40,11 +40,11 @@ SystemLog::~SystemLog() {
   }
 }
 
-Status SystemLog::flush() noexcept {
+Status SystemLog::flush(std::uint32_t timeoutMs) noexcept {
   if (mode_ == Mode::ASYNC && asyncBackend_) {
     // For async mode: wait for queue to drain and sync to disk
     // This does NOT stop the I/O thread - logging continues afterward
-    const bool SUCCESS = asyncBackend_->flush(5000); // 5 second timeout
+    const bool SUCCESS = asyncBackend_->flush(timeoutMs);
     return SUCCESS ? Status::OK : Status::ERROR_SYNC;
   } else {
     // Sync mode: flush base class fd
