@@ -31,10 +31,14 @@ using apex::concurrency::DelegateU8;
 using apex::concurrency::PoolStatus;
 using apex::concurrency::TaskError;
 using apex::concurrency::ThreadPool;
+using apex::concurrency::test::Crew;
+using apex::concurrency::test::CrewState;
 using apex::concurrency::test::drainHeldPool;
 using apex::concurrency::test::DrainOutcome;
 using apex::concurrency::test::NullTaskOutcome;
 using apex::concurrency::test::runAroundNullDelegate;
+using apex::concurrency::test::settles;
+using apex::concurrency::test::threadsAsleepIn;
 
 /* ----------------------------- TaskError Compile-Time Contract ----------------------------- */
 
@@ -101,6 +105,30 @@ TEST_F(ThreadPoolTest, ShutdownRunsEveryQueuedTaskThenRefusesWork) {
   EXPECT_EQ(OUT.ran, OUT.accepted);
   EXPECT_FALSE(OUT.validAfter);
   EXPECT_EQ(OUT.enqueueAfter, PoolStatus::POOL_STOPPED);
+}
+
+/** @test shutdown() wakes workers that are parked with nothing to do. Two idle workers are seen
+ * asleep inside the pool, where the host shows a thread's blocked system call, and a shutdown()
+ * on a thread the case waits for with a bound returns. Elsewhere a watch interval stands in for
+ * seeing them asleep. */
+TEST_F(ThreadPoolTest, ShutdownWakesIdleWorkers) {
+  struct Idle : CrewState {
+    ThreadPool pool{2};
+  };
+  Crew<Idle> crew;
+  const bool PARKED = settles([&]() {
+    const int ASLEEP = threadsAsleepIn(&crew->pool, sizeof(crew->pool));
+    if (ASLEEP < 0) {
+      std::this_thread::sleep_for(apex::concurrency::test::WATCH);
+      return true;
+    }
+    return ASLEEP == 2;
+  });
+  EXPECT_TRUE(PARKED) << "the idle workers did not park";
+
+  crew.start([](Idle& state) { state.pool.shutdown(); });
+  ASSERT_TRUE(crew.finish()) << "shutdown() did not return with two idle workers";
+  EXPECT_FALSE(crew->pool.isValid());
 }
 
 /** @test Destroying a pool runs every task queued before it: the same held worker and waiting
