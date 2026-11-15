@@ -108,6 +108,9 @@ any such change is called out explicitly in its entry.
 
 ### Removed
 
+- Breaking: `PoolStatus::EXCEPTION_STD` and `PoolStatus::EXCEPTION_UNKNOWN`.
+  Pool tasks are `noexcept` delegates, so neither status could be reported.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - The public factorial helpers (`Factorials.hpp`: `precomputedFactorials`,
   `largeFactorial`); replace direct uses before updating. Breaking.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
@@ -120,6 +123,9 @@ any such change is called out explicitly in its entry.
 - Log rotation keeps every backup: a rotation within the same second as an
   earlier one gets a numeric suffix instead of replacing its backup.
   ([#187](https://github.com/apexedgesystems/apex_csf/pull/187))
+- `LockFreeQueue::sizeApprox()` never exceeds `capacity()` and stays correct
+  when the queue's indices wrap.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - `SPSCQueue` and `RingBuffer` store elements at `alignof(T)`, over-aligned
   types included, and `SPSCQueue::sizeApprox()` never exceeds `capacity()`
   when read from a third thread.
