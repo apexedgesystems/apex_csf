@@ -13,23 +13,27 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <optional>
 #include <thread>
 
 using apex::concurrency::applyThreadConfig;
 using apex::concurrency::setThreadTimerSlackNs;
 using apex::concurrency::ThreadConfig;
-using apex::concurrency::test::firstAllowedCpu;
+using apex::concurrency::test::nameableAbsentCpu;
+using apex::concurrency::test::nameableAllowedCpu;
 using apex::concurrency::test::ThreadIdentity;
 
 /* ----------------------------- applyThreadConfig Tests ----------------------------- */
 
 /** @test An affinity and a name are applied to the calling thread: it then runs on that one CPU
- * and reports that name, and the call returns true. */
+ * and reports that name, and the call returns true. On a host where the thread may run only on
+ * CPUs the affinity field cannot name, the name half runs and the case reports a skip. */
 TEST(ThreadConfigTest, AppliesAffinityAndName) {
-  const int CPU = firstAllowedCpu();
-  ASSERT_GE(CPU, 0);
+  const std::optional<std::uint8_t> CPU = nameableAllowedCpu();
   ThreadConfig config;
-  config.affinity = {static_cast<std::uint8_t>(CPU)};
+  if (CPU) {
+    config.affinity = {*CPU};
+  }
 
   bool applied = false;
   ThreadIdentity identity;
@@ -40,35 +44,51 @@ TEST(ThreadConfigTest, AppliesAffinityAndName) {
   configured.join();
 
   EXPECT_TRUE(applied);
-  EXPECT_EQ(identity.allowedCpus, 1);
-  EXPECT_EQ(identity.onlyCpu, CPU);
   EXPECT_STREQ(identity.name.data(), "cfg_probe");
+  if (!CPU) {
+    GTEST_SKIP() << "no allowed CPU below 256: the affinity half did not run";
+  }
+  EXPECT_EQ(identity.allowedCpus, 1);
+  EXPECT_EQ(identity.onlyCpu, int{*CPU});
 }
 
-/** @test A setting the kernel refuses makes the call return false: an affinity naming no CPU of
- * the host, and a scheduling policy that does not exist. The thread keeps running as it was. */
+/** @test A setting the kernel refuses makes the call return false and leaves the thread's CPUs as
+ * they were: a scheduling policy that does not exist, and an affinity naming only a CPU number
+ * the host cannot have. Where every nameable CPU number is possible on the host, the policy half
+ * runs and the case reports a skip. */
 TEST(ThreadConfigTest, ReportsARefusedSetting) {
+  const std::optional<std::uint8_t> ABSENT_CPU = nameableAbsentCpu();
   ThreadConfig noSuchCpu;
-  noSuchCpu.affinity = {255};
+  if (ABSENT_CPU) {
+    noSuchCpu.affinity = {*ABSENT_CPU};
+  }
   ThreadConfig noSuchPolicy;
   noSuchPolicy.policy = 99;
   noSuchPolicy.priority = 1;
 
   bool affinityApplied = true;
   bool policyApplied = true;
-  ThreadIdentity after;
   ThreadIdentity before;
+  ThreadIdentity afterPolicy;
+  ThreadIdentity afterAffinity;
   std::thread configured([&]() {
     before.recordHere();
-    affinityApplied = applyThreadConfig(noSuchCpu, nullptr);
     policyApplied = applyThreadConfig(noSuchPolicy, nullptr);
-    after.recordHere();
+    afterPolicy.recordHere();
+    if (ABSENT_CPU) {
+      affinityApplied = applyThreadConfig(noSuchCpu, nullptr);
+    }
+    afterAffinity.recordHere();
   });
   configured.join();
 
-  EXPECT_FALSE(affinityApplied);
   EXPECT_FALSE(policyApplied);
-  EXPECT_EQ(after.allowedCpus, before.allowedCpus);
+  EXPECT_TRUE(afterPolicy.sameCpusAs(before));
+  if (!ABSENT_CPU) {
+    GTEST_SKIP() << "every CPU number below 256 is possible here: the affinity half did not run";
+  }
+  EXPECT_FALSE(affinityApplied);
+  EXPECT_TRUE(afterAffinity.sameCpusAs(before));
 }
 
 /** @test An empty configuration changes nothing and succeeds. */
@@ -84,7 +104,7 @@ TEST(ThreadConfigTest, EmptyConfigurationIsANoOp) {
   configured.join();
 
   EXPECT_TRUE(applied);
-  EXPECT_EQ(after.allowedCpus, before.allowedCpus);
+  EXPECT_TRUE(after.sameCpusAs(before));
   EXPECT_STREQ(after.name.data(), before.name.data());
 }
 

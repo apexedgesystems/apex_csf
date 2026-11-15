@@ -15,6 +15,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -27,32 +28,70 @@ namespace apex {
 namespace concurrency {
 namespace test {
 
-/// The first CPU the calling thread may run on: a CPU a configuration can
-/// name on any host, whatever cpuset the process was given. -1 if none.
-inline int firstAllowedCpu() noexcept {
+/// The first CPU the calling thread may run on that an affinity setting can name. The affinity
+/// field holds CPU numbers as uint8_t, so only CPUs 0 to 255 qualify. Empty when the thread may
+/// run only on higher-numbered CPUs or its mask cannot be read: a test then has no affinity it
+/// can request and expect to see applied.
+inline std::optional<std::uint8_t> nameableAllowedCpu() noexcept {
   cpu_set_t allowed;
   CPU_ZERO(&allowed);
   if (sched_getaffinity(0, sizeof(allowed), &allowed) != 0) {
-    return -1;
+    return std::nullopt;
   }
-  for (int cpu = 0; cpu < CPU_SETSIZE; ++cpu) {
+  for (int cpu = 0; cpu <= std::numeric_limits<std::uint8_t>::max(); ++cpu) {
     if (CPU_ISSET(cpu, &allowed)) {
-      return cpu;
+      return static_cast<std::uint8_t>(cpu);
     }
   }
-  return -1;
+  return std::nullopt;
+}
+
+/// A CPU number from 0 to 255 that this host cannot have: one outside the set the kernel lists
+/// as possible ("0-15", "0-3,8-11"). An affinity naming only that CPU is refused, whatever
+/// cpuset or mask the process runs under. Empty when every number up to 255 is possible or the
+/// list cannot be read: a test then has no affinity it knows the kernel will refuse.
+inline std::optional<std::uint8_t> nameableAbsentCpu() {
+  std::ifstream list("/sys/devices/system/cpu/possible");
+  std::array<bool, 256> possible{};
+  bool parsed = false;
+  unsigned first = 0;
+  while (list >> first) {
+    unsigned last = first;
+    if (list.peek() == '-') {
+      list.get();
+      if (!(list >> last)) {
+        return std::nullopt;
+      }
+    }
+    for (unsigned cpu = first; cpu <= last && cpu < possible.size(); ++cpu) {
+      possible[cpu] = true;
+    }
+    parsed = true;
+    if (list.peek() == ',') {
+      list.get();
+    }
+  }
+  if (!parsed) {
+    return std::nullopt;
+  }
+  for (std::size_t cpu = 0; cpu < possible.size(); ++cpu) {
+    if (!possible[cpu]) {
+      return static_cast<std::uint8_t>(cpu);
+    }
+  }
+  return std::nullopt;
 }
 
 /// A thread's own account of itself, published by `done`.
 struct ThreadIdentity {
   std::atomic<bool> done{false};
+  cpu_set_t allowed{};         ///< The CPUs the thread may run on, when allowedCpus is not -1.
   int allowedCpus{-1};         ///< How many CPUs the thread may run on.
   int onlyCpu{-1};             ///< That CPU when there is exactly one, else -1.
   std::array<char, 16> name{}; ///< The thread's name.
 
   /// Fill from the calling thread.
   void recordHere() noexcept {
-    cpu_set_t allowed;
     CPU_ZERO(&allowed);
     if (pthread_getaffinity_np(pthread_self(), sizeof(allowed), &allowed) == 0) {
       allowedCpus = CPU_COUNT(&allowed);
@@ -66,6 +105,11 @@ struct ThreadIdentity {
     }
     pthread_getname_np(pthread_self(), name.data(), name.size());
     done.store(true, std::memory_order_release);
+  }
+
+  /// True when both records read their CPU set and the two sets are the same.
+  [[nodiscard]] bool sameCpusAs(const ThreadIdentity& other) const noexcept {
+    return allowedCpus >= 0 && other.allowedCpus >= 0 && CPU_EQUAL(&allowed, &other.allowed) != 0;
   }
 
   /// The same, as a pool task: `ctx` is a ThreadIdentity.

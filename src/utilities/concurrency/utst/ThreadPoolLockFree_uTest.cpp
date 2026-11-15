@@ -834,10 +834,11 @@ TEST_F(ThreadPoolLockFreeTest, SleepingWorkersWakeForWorkAndForShutdown) {
 /** @test A worker takes the affinity and the name its pool was configured with: a task finds its
  * thread limited to the one configured CPU and named for the pool. */
 TEST_F(ThreadPoolLockFreeTest, WorkerRunsWithItsConfiguredAffinityAndName) {
-  const int CPU = apex::concurrency::test::firstAllowedCpu();
-  ASSERT_GE(CPU, 0);
+  const std::optional<std::uint8_t> CPU = apex::concurrency::test::nameableAllowedCpu();
   apex::concurrency::PoolConfig config;
-  config.affinity = {static_cast<std::uint8_t>(CPU)};
+  if (CPU) {
+    config.affinity = {*CPU};
+  }
   // Declared before the pool: the pool is destroyed first, and its destructor waits for the task
   // that writes here, on every way out of this case.
   apex::concurrency::test::ThreadIdentity worker;
@@ -848,9 +849,12 @@ TEST_F(ThreadPoolLockFreeTest, WorkerRunsWithItsConfiguredAffinityAndName) {
       pool.tryEnqueue("identity", {&apex::concurrency::test::ThreadIdentity::record, &worker}),
       PoolStatus::SUCCESS);
   ASSERT_TRUE(settles([&]() { return worker.done.load(); }, BOUND));
-  EXPECT_EQ(worker.allowedCpus, 1);
-  EXPECT_EQ(worker.onlyCpu, CPU);
   EXPECT_STREQ(worker.name.data(), "lf_pool_w0");
+  if (!CPU) {
+    GTEST_SKIP() << "no allowed CPU below 256: the affinity half did not run";
+  }
+  EXPECT_EQ(worker.allowedCpus, 1);
+  EXPECT_EQ(worker.onlyCpu, int{*CPU});
 }
 
 namespace {
