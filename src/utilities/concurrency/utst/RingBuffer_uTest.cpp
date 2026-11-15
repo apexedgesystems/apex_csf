@@ -125,18 +125,24 @@ TEST_F(RingBufferTest, MaintainsFifoOrder) {
 
 /* ----------------------------- Capacity Tests ----------------------------- */
 
-/** @test tryPush fails when buffer is full */
-TEST_F(RingBufferTest, TryPushFailsWhenFull) {
-  RingBuffer<int> buffer(4);
-  const std::size_t CAP = buffer.capacity();
-
-  // Fill the buffer
-  for (std::size_t i = 0; i < CAP; ++i) {
-    EXPECT_TRUE(buffer.tryPush(static_cast<int>(i)));
+/** @test A buffer takes exactly capacity() elements and refuses the next, through the copy
+ * overload and through the move overload. */
+TEST_F(RingBufferTest, TakesExactlyCapacityThenRefuses) {
+  RingBuffer<int> byCopy(4);
+  for (std::size_t i = 0; i < byCopy.capacity(); ++i) {
+    const int VALUE = static_cast<int>(i);
+    EXPECT_TRUE(byCopy.tryPush(VALUE)) << "copy push " << i;
   }
+  const int EXTRA = 99;
+  EXPECT_FALSE(byCopy.tryPush(EXTRA)) << "a full buffer took a copy";
+  EXPECT_EQ(byCopy.size(), byCopy.capacity());
 
-  // Next push should fail
-  EXPECT_FALSE(buffer.tryPush(99));
+  RingBuffer<int> byMove(4);
+  for (std::size_t i = 0; i < byMove.capacity(); ++i) {
+    EXPECT_TRUE(byMove.tryPush(static_cast<int>(i))) << "move push " << i;
+  }
+  EXPECT_FALSE(byMove.tryPush(99)) << "a full buffer took a move";
+  EXPECT_EQ(byMove.size(), byMove.capacity());
 }
 
 /** @test Buffer with small capacity works correctly */
