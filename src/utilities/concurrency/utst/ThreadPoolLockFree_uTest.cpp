@@ -838,10 +838,12 @@ TEST_F(ThreadPoolLockFreeTest, WorkerRunsWithItsConfiguredAffinityAndName) {
   ASSERT_GE(CPU, 0);
   apex::concurrency::PoolConfig config;
   config.affinity = {static_cast<std::uint8_t>(CPU)};
+  // Declared before the pool: the pool is destroyed first, and its destructor waits for the task
+  // that writes here, on every way out of this case.
+  apex::concurrency::test::ThreadIdentity worker;
   ThreadPoolLockFree pool(1, 8, config);
   EXPECT_EQ(pool.workerConfigFailures(), 0U);
 
-  apex::concurrency::test::ThreadIdentity worker;
   ASSERT_EQ(
       pool.tryEnqueue("identity", {&apex::concurrency::test::ThreadIdentity::record, &worker}),
       PoolStatus::SUCCESS);
