@@ -368,7 +368,9 @@ docker-validate: docker-lint
 # The tools have a producer and a consumer of their own: the cpu builder runs
 # `make release-tools`, which builds into the native release tree
 # (HOST_RELEASE_DIR), and `make artifact-tools` packages build/ARTIFACT_DIR_cpu.
-# Those two must name one tree, and the builder must run that target.
+# Those two must name one tree, and the builder must run that target. The
+# builder's command is read from `docker compose config`, the configuration
+# Compose resolves and the build executes, so this check runs on the host.
 # This static check fails fast on every one of these drift classes, in the gate,
 # not on a release tag.
 check-release-paths:
@@ -405,9 +407,13 @@ check-release-paths:
 	    "$(HOST_RELEASE_DIR)" "$(ARTIFACT_DIR_cpu)" >&2; \
 	  exit 1; \
 	fi; \
-	cpu_cmd=$$(awk '/^  builder-cpu:/{f=1} f && /BUILD_CMD:/{print; exit}' docker-compose.yml); \
+	if ! cpu_cfg=$$(docker compose config --format json builder-cpu 2>/dev/null); then \
+	  printf '[check-release-paths] docker compose config builder-cpu failed; run it on the host to see why\n' >&2; \
+	  exit 1; \
+	fi; \
+	cpu_cmd=$$(printf '%s' "$$cpu_cfg" | python3 -c 'import json,sys; print(json.load(sys.stdin)["services"]["builder-cpu"]["build"]["args"].get("BUILD_CMD", ""))'); \
 	if ! printf '%s\n' "$$cpu_cmd" | grep -q 'make release-tools'; then \
-	  printf '[check-release-paths] builder-cpu does not run make release-tools:%s\n' "$$cpu_cmd" >&2; \
+	  printf '[check-release-paths] builder-cpu does not run make release-tools: %s\n' "$$cpu_cmd" >&2; \
 	  exit 1; \
 	fi; \
 	printf '[check-release-paths] OK -- ARTIFACT_DIR + final.Dockerfile cover all builder targets with preset-valid paths; the tools producer and artifact-tools name one tree\n'
