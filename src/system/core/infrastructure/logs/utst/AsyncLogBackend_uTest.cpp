@@ -452,6 +452,57 @@ TEST(AsyncLogBackendTest, FlushWaitsForAnAdmittedProducerDedicatedThread) {
   expectFlushWaitsForAnAdmittedProducer(Drain::DEDICATED);
 }
 
+/** @test Retires the admission of an entry the ring refuses, so flush and stop still complete */
+TEST(AsyncLogBackendTest, RefusedPushRetiresItsAdmission) {
+  StalledPipeLog pipe("async_refused_push");
+  ASSERT_TRUE(pipe.ok());
+
+  constexpr std::size_t ENTRY_BYTES = 256;
+  constexpr std::size_t CAPACITY = 16;
+  constexpr std::size_t EXTRA = 3;
+  const std::size_t FIT = pipe.pipeBytes() / ENTRY_BYTES;
+  ASSERT_EQ(FIT * ENTRY_BYTES, pipe.pipeBytes());
+  const std::string ENTRY = std::string(ENTRY_BYTES - 1, 'r') + "\n";
+
+  TwoStepBackend backend(pipe.path().string(), CAPACITY);
+  ASSERT_TRUE(backend.start());
+  const ReleaseOnExit RELEASE{pipe};
+
+  // Fill the pipe one entry at a time, so the ring is empty when the drain
+  // stalls with one more entry in a blocked write().
+  for (std::size_t i = 0; i < FIT + 1; ++i) {
+    ASSERT_TRUE(backend.tryLog(ENTRY));
+    ASSERT_TRUE(waitUntil([&]() { return backend.queueDepth() == 0; }, std::chrono::seconds(5)));
+  }
+  ASSERT_TRUE(
+      waitUntil([&]() { return pipe.buffered() == pipe.pipeBytes(); }, std::chrono::seconds(5)));
+
+  // Producers that all passed admission before any of them published: the
+  // depth check admits each, and the ring then refuses what it cannot hold.
+  for (std::size_t i = 0; i < CAPACITY + EXTRA; ++i) {
+    ASSERT_TRUE(backend.admit());
+  }
+  std::size_t published = 0;
+  std::size_t refused = 0;
+  for (std::size_t i = 0; i < CAPACITY + EXTRA; ++i) {
+    backend.publishAdmitted(ENTRY) ? ++published : ++refused;
+  }
+  EXPECT_GE(refused, EXTRA);
+  EXPECT_EQ(published + refused, CAPACITY + EXTRA);
+  EXPECT_EQ(backend.droppedCount(), refused);
+  EXPECT_FALSE(backend.flush(10));
+
+  // Every admission is now either published or retired: once the drain
+  // runs again, nothing is left outstanding.
+  pipe.release();
+  EXPECT_TRUE(backend.flush(5000));
+  EXPECT_TRUE(backend.stop());
+
+  const std::string RECEIVED = pipe.finish();
+  EXPECT_EQ(static_cast<std::size_t>(std::count(RECEIVED.begin(), RECEIVED.end(), '\n')),
+            FIT + 1 + published);
+}
+
 /** @test Counts every entry a full queue refuses and delivers every accepted one */
 TEST(AsyncLogBackendTest, FullQueueDropsAreCounted) {
   StalledPipeLog pipe("async_overflow");
