@@ -26,8 +26,11 @@ LockFreeQueue<T>::LockFreeQueue(std::size_t capacity) noexcept
   const std::size_t CAP = nextPow2(capacity < 2 ? 2 : capacity);
   mask_ = CAP - 1;
 
-  // Allocate raw storage; construct elements manually for sequence init.
-  buffer_ = static_cast<Cell*>(::operator new[](CAP * sizeof(Cell)));
+  // Allocate raw storage at the cells' own alignment (a plain new[] gives
+  // only the default new alignment, 16 on x86-64), then construct the
+  // elements manually for sequence init.
+  buffer_ =
+      static_cast<Cell*>(::operator new[](CAP * sizeof(Cell), std::align_val_t{alignof(Cell)}));
 
   for (std::size_t i = 0; i < CAP; ++i) {
     new (&buffer_[i].sequence) std::atomic<std::size_t>(i);
@@ -43,7 +46,7 @@ template <class T> LockFreeQueue<T>::~LockFreeQueue() {
       std::destroy_at(&buffer_[i].data);
       std::destroy_at(&buffer_[i].sequence);
     }
-    ::operator delete[](buffer_);
+    ::operator delete[](buffer_, std::align_val_t{alignof(Cell)});
     buffer_ = nullptr;
   }
 }

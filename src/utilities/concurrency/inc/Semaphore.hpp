@@ -5,7 +5,7 @@
  * @brief Counting semaphore for resource limiting and synchronization.
  *
  * Design goals:
- *  - C++17 compatible (std::counting_semaphore is C++20).
+ *  - C++20: the slow path parks on std::atomic::wait.
  *  - Blocking acquire with optional timeout.
  *  - Non-blocking tryAcquire for RT-safe paths.
  *  - Release can be called from any thread.
@@ -94,8 +94,8 @@ public:
 
 private:
   // 32-bit so wait()/notify() use the native futex directly (a 64-bit counter
-  // would route through libstdc++'s slower proxy waiter-pool). Permit counts
-  // are bounded by the (small) queue capacity, so 32 bits is ample.
+  // would route through libstdc++'s slower proxy waiter-pool). The count is
+  // the caller's to bound: releases that outrun acquires by 2^32 wrap it.
   std::atomic<std::uint32_t> count_;
 
   // Number of threads parked in acquire(). release() only issues a futex
@@ -116,8 +116,7 @@ bool Semaphore::tryAcquireFor(const std::chrono::duration<Rep, Period>& timeout)
 
   // Slow path: poll with bounded exponential backoff until the deadline.
   // atomic::wait has no timed overload, so a timed acquire polls rather than
-  // parks. This path is never on a hot path (the thread pool only ever calls
-  // the untimed acquire()), so the small poll overhead is acceptable.
+  // parks.
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   std::chrono::nanoseconds backoff{500};
   const std::chrono::nanoseconds maxBackoff{std::chrono::microseconds(100)};

@@ -8,12 +8,17 @@
  */
 
 #include "src/utilities/concurrency/inc/ThreadPool.hpp"
+#include "src/utilities/concurrency/utst/support/ThreadStartFault.hpp"
 
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <chrono>
+#include <csignal>
+#include <string>
 #include <thread>
+
+#include <pthread.h>
 
 using apex::concurrency::DelegateU8;
 using apex::concurrency::PoolStatus;
@@ -229,4 +234,116 @@ TEST(ThreadPoolDeterminismTest, ThreadsRunningConsistent) {
   const bool FIRST = pool.threadsRunning();
   const bool SECOND = pool.threadsRunning();
   EXPECT_EQ(FIRST, SECOND);
+}
+
+/* ----------------------------- Lifecycle Contract Tests ----------------------------- */
+
+namespace {
+
+/// Whether `sig` is blocked on the calling thread.
+bool blockedHere(int sig) {
+  sigset_t mask;
+  sigemptyset(&mask);
+  pthread_sigmask(SIG_BLOCK, nullptr, &mask);
+  return sigismember(&mask, sig) == 1;
+}
+
+/// Clear the calling thread's mask, so the test starts from a known state whatever
+/// earlier tests in this process left behind.
+void unblockAllHere() {
+  sigset_t none;
+  sigemptyset(&none);
+  pthread_sigmask(SIG_SETMASK, &none, nullptr);
+}
+
+/// Block `sig` on the calling thread.
+void blockHere(int sig) {
+  sigset_t one;
+  sigemptyset(&one);
+  sigaddset(&one, sig);
+  pthread_sigmask(SIG_BLOCK, &one, nullptr);
+}
+
+} // namespace
+
+/** @test Constructing and destroying a pool leaves the constructing thread's signal mask as it
+ * was: the workers inherit the blocked set, the caller does not keep it. */
+TEST_F(ThreadPoolTest, ConstructorRestoresCallerSignalMask) {
+  bool blockedWhileAlive = false;
+  bool blockedAfter = false;
+  std::thread caller([&]() {
+    unblockAllHere();
+    {
+      ThreadPool pool(2);
+      blockedWhileAlive = blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE) ||
+                          blockedHere(SIGSEGV);
+    }
+    blockedAfter =
+        blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE) || blockedHere(SIGSEGV);
+  });
+  caller.join();
+  EXPECT_FALSE(blockedWhileAlive) << "the pool's worker set leaked onto the constructing thread";
+  EXPECT_FALSE(blockedAfter) << "the constructing thread's mask stayed changed after the pool";
+}
+
+namespace {
+
+/// An affinity naming a CPU no host has, so applying it fails for every user; a requested RT
+/// policy would fail only without CAP_SYS_NICE.
+apex::concurrency::PoolConfig impossibleAffinity() {
+  apex::concurrency::PoolConfig config;
+  config.affinity = {255};
+  return config;
+}
+
+} // namespace
+
+/** @test A worker whose configuration cannot be applied is counted, so the owner can tell the
+ * pool is not running as configured. */
+TEST_F(ThreadPoolTest, ReportsWorkerConfigFailure) {
+  ThreadPool configured(2);
+  EXPECT_EQ(configured.workerConfigFailures(), 0U);
+  ThreadPool unconfigured(2, impossibleAffinity());
+  EXPECT_EQ(unconfigured.workerConfigFailures(), unconfigured.workerCount());
+  EXPECT_EQ(unconfigured.workerCount(), 2U);
+}
+
+/** @test A worker that cannot start, the first or one after others, leaves an invalid pool: the
+ * workers that did start ran to their end and were joined before the constructor returned, the
+ * pool has no workers, construction completes, and the caller's own mask is as it was. The seam is
+ * pthread_create, interposed by the test binary; a sanitizer runtime that owns that symbol skips
+ * the case. */
+TEST_F(ThreadPoolTest, WorkerStartFailureLeavesPoolInvalid) {
+  using namespace apex::concurrency::test;
+  if (!threadStartFaultAvailable()) {
+    GTEST_SKIP() << "pthread_create belongs to the sanitizer runtime in this build";
+  }
+  for (const unsigned FAIL_AT : {1U, 2U, 3U}) {
+    SCOPED_TRACE("creation " + std::to_string(FAIL_AT) + " of 3 fails");
+    unblockAllHere();
+    blockHere(SIGUSR1); // the caller's own mask, to find intact afterwards
+    armThreadStartFailure(FAIL_AT);
+    const auto START = std::chrono::steady_clock::now();
+    bool valid = true;
+    std::size_t count = 99;
+    {
+      ThreadPool pool(3);
+      valid = pool.isValid();
+      count = pool.workerCount();
+    }
+    const auto ELAPSED = std::chrono::steady_clock::now() - START;
+    disarmThreadStartFailure();
+    const ThreadStartTally TALLY = threadStartTally();
+    EXPECT_FALSE(valid);
+    EXPECT_EQ(count, 0U);
+    EXPECT_EQ(TALLY.attempted, FAIL_AT) << "creation went on past the failure";
+    EXPECT_EQ(TALLY.started, FAIL_AT - 1);
+    EXPECT_EQ(TALLY.finished, FAIL_AT - 1)
+        << "a started worker had not run to its end when the constructor returned";
+    EXPECT_TRUE(blockedHere(SIGUSR1)) << "the caller's own mask was not restored";
+    EXPECT_FALSE(blockedHere(SIGINT) || blockedHere(SIGTERM) || blockedHere(SIGPIPE))
+        << "the worker set leaked onto the caller";
+    EXPECT_LT(ELAPSED, std::chrono::seconds(10)) << "construction did not complete promptly";
+    unblockAllHere();
+  }
 }

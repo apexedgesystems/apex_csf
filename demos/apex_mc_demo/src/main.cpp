@@ -32,6 +32,7 @@
 #include <cstring>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <random>
 #include <string>
 #include <vector>
@@ -146,15 +147,20 @@ int main(int argc, char* argv[]) {
   driverCfg.threadCount = ARGS.threads;
   driverCfg.baseSeed = ARGS.seed;
 
-  MonteCarloDriver<RegulatorParams, RegulatorResult> driver(
-      [](const RegulatorParams& p, std::uint32_t) -> RegulatorResult {
-        return sim::analog::simulate(p);
-      },
-      driverCfg);
+  // The driver refuses to exist over a pool that could not start its workers.
+  std::optional<MonteCarloDriver<RegulatorParams, RegulatorResult>> driver;
+  try {
+    driver.emplace([](const RegulatorParams& p,
+                      std::uint32_t) -> RegulatorResult { return sim::analog::simulate(p); },
+                   driverCfg);
+  } catch (const std::exception& e) {
+    fmt::print(stderr, "Cannot run: {}\n", e.what());
+    return 1;
+  }
 
-  fmt::print("Running {} MC iterations across {} cores...\n", ARGS.runs, driver.workerCount());
+  fmt::print("Running {} MC iterations across {} cores...\n", ARGS.runs, driver->workerCount());
 
-  auto results = driver.execute(params);
+  auto results = driver->execute(params);
 
   // ---- Summary statistics ----
   auto columns = makeColumns();

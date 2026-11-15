@@ -1,0 +1,4 @@
+# Two public headers with one file name.
+name      fixture_same_name
+posix_cpp 20
+headers   inc/Widget.hpp inc/detail/Widget.hpp

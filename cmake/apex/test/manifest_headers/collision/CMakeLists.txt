@@ -1,0 +1,1 @@
+_apex_apply_manifest(fixture_collision)

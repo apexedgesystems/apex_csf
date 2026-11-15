@@ -282,3 +282,58 @@ TEST(LatchDeterminismTest, CountConsistent) {
   EXPECT_EQ(FIRST, SECOND);
   EXPECT_EQ(FIRST, 5U);
 }
+
+/* ----------------------------- Lifetime Tests ----------------------------- */
+
+namespace {
+
+/// A waiter that destroys a stack latch as soon as its wait returns, while a second thread does
+/// the final countDown() through a slot: the shape of a progress poll on a completion latch.
+/// Whether the final countDown() can still be touching the latch is what ThreadSanitizer decides;
+/// the plain build only shows the loop completing.
+template <class Wait> void destroyAfterWait(Wait wait) {
+  std::atomic<Latch*> slot{nullptr};
+  std::atomic<bool> quit{false};
+  std::thread counter([&]() {
+    while (!quit.load(std::memory_order_acquire)) {
+      Latch* latch = slot.exchange(nullptr, std::memory_order_acq_rel);
+      if (latch != nullptr) {
+        latch->countDown();
+      }
+    }
+  });
+  for (int i = 0; i < 5000; ++i) {
+    Latch latch(1);
+    slot.store(&latch, std::memory_order_release);
+    wait(latch);
+  }
+  quit.store(true, std::memory_order_release);
+  counter.join();
+}
+
+} // namespace
+
+/** @test A waiter polling tryWait() may destroy the latch once it reads zero: the final countDown()
+ * is done with the latch by then. */
+TEST(LatchLifetimeTest, WaiterDestroysAfterTryWait) {
+  destroyAfterWait([](Latch& latch) {
+    while (!latch.tryWait()) {
+    }
+  });
+  SUCCEED();
+}
+
+/** @test The same with a zero-length waitFor(). */
+TEST(LatchLifetimeTest, WaiterDestroysAfterWaitFor) {
+  destroyAfterWait([](Latch& latch) {
+    while (!latch.waitFor(std::chrono::microseconds(0))) {
+    }
+  });
+  SUCCEED();
+}
+
+/** @test The control: wait() already takes the mutex before returning. */
+TEST(LatchLifetimeTest, WaiterDestroysAfterWait) {
+  destroyAfterWait([](Latch& latch) { latch.wait(); });
+  SUCCEED();
+}
