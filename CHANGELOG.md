@@ -77,6 +77,9 @@ any such change is called out explicitly in its entry.
 - Breaking: rebuild C++ consumers of the logs library and adapt typed
   callbacks to `SystemLog::flush(timeoutMs)`.
   ([#188](https://github.com/apexedgesystems/apex_csf/pull/188))
+- Breaking: `SystemLog::setNonBlocking` is removed; it had no effect, so
+  callers delete the call.
+  ([#190](https://github.com/apexedgesystems/apex_csf/pull/190))
 - Breaking: the Rust tools are one Cargo workspace at `tools/`, built and
   installed by role. Executables move from `bin/tools/rust/` to
   `bin/tools/<role>/` (build, ops, analysis); `make tools-build` replaces
