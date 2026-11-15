@@ -118,49 +118,50 @@ TEST_F(SPSCQueueTest, MaintainsFifoOrder) {
 
 /* ----------------------------- Capacity Tests ----------------------------- */
 
-/** @test tryPush fails when queue is full */
-TEST_F(SPSCQueueTest, TryPushFailsWhenFull) {
-  SPSCQueue<int> queue(4);
+/** @test A queue takes exactly capacity() elements and refuses the next, for both tryPush
+ * overloads, at the smallest capacity and a larger one; what it took comes back in order. */
+TEST_F(SPSCQueueTest, TakesExactlyCapacityThenRefuses) {
+  for (const std::size_t REQUESTED : {std::size_t{2}, std::size_t{8}}) {
+    SCOPED_TRACE("capacity " + std::to_string(REQUESTED));
+    SPSCQueue<int> byCopy(REQUESTED);
+    SPSCQueue<int> byMove(REQUESTED);
+    ASSERT_EQ(byCopy.capacity(), REQUESTED);
+    const int CAPACITY = static_cast<int>(REQUESTED);
 
-  // Fill the queue (capacity is 4, but usable slots are capacity-1 = 3 in classic ring buffer)
-  // Actually with our implementation, we should be able to fill all 4 slots
-  int pushed = 0;
-  while (queue.tryPush(pushed)) {
-    ++pushed;
-    if (pushed > 10)
-      break; // Safety limit
+    for (int i = 0; i < CAPACITY; ++i) {
+      const int VALUE = i;
+      EXPECT_TRUE(byCopy.tryPush(VALUE)) << "copy push " << i;
+      EXPECT_TRUE(byMove.tryPush(int{i})) << "move push " << i;
+    }
+    const int EXTRA = CAPACITY;
+    EXPECT_FALSE(byCopy.tryPush(EXTRA)) << "a full queue took one more by copy";
+    EXPECT_FALSE(byMove.tryPush(int{CAPACITY})) << "a full queue took one more by move";
+    EXPECT_EQ(byCopy.sizeApprox(), REQUESTED);
+    EXPECT_EQ(byMove.sizeApprox(), REQUESTED);
+
+    for (int i = 0; i < CAPACITY; ++i) {
+      int fromCopy = -1;
+      int fromMove = -1;
+      EXPECT_TRUE(byCopy.tryPop(fromCopy));
+      EXPECT_TRUE(byMove.tryPop(fromMove));
+      EXPECT_EQ(fromCopy, i);
+      EXPECT_EQ(fromMove, i);
+    }
+    EXPECT_TRUE(byCopy.empty());
+    EXPECT_TRUE(byMove.empty());
   }
-
-  // Should have pushed at least capacity-1 items
-  EXPECT_GE(pushed, 3);
-  EXPECT_LE(pushed, 4);
-}
-
-/** @test Queue with capacity 2 works correctly */
-TEST_F(SPSCQueueTest, CapacityTwoWorks) {
-  SPSCQueue<int> queue(2);
-
-  EXPECT_TRUE(queue.tryPush(42));
-
-  int value = 0;
-  EXPECT_TRUE(queue.tryPop(value));
-  EXPECT_EQ(value, 42);
-
-  EXPECT_TRUE(queue.tryPush(43));
-  EXPECT_TRUE(queue.tryPop(value));
-  EXPECT_EQ(value, 43);
 }
 
 /** @test Queue can be refilled after draining */
 TEST_F(SPSCQueueTest, CanRefillAfterDrain) {
   SPSCQueue<int> queue(8);
 
-  for (int round = 0; round < 3; ++round) {
-    // Fill
+  // Seven of eight slots a round, so the indices wrap at a different slot each time.
+  for (int round = 0; round < 5; ++round) {
     for (int i = 0; i < 7; ++i) {
       EXPECT_TRUE(queue.tryPush(round * 10 + i));
     }
-    // Drain
+    EXPECT_EQ(queue.sizeApprox(), 7U);
     for (int i = 0; i < 7; ++i) {
       int value = -1;
       EXPECT_TRUE(queue.tryPop(value));
