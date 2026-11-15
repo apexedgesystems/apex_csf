@@ -282,6 +282,34 @@ GATE_FIXTURES := tools/build/fixtures/check-data-db
 # repositories under a scratch directory and runs the real generator on them.
 BUILD_INFO_FIXTURE := cmake/apex/test/build_info/fixture.cmake
 
+# apex/Manifest `headers` contract: every declared header keeps its own
+# generated translation unit. The fixture configures and builds one library
+# directory per case with the real helper: two same-named headers both
+# compile, a broken first one fails the build rather than being replaced by
+# the second, and two paths that map to one TU name fail the configure.
+MANIFEST_HEADERS_FIXTURE := cmake/apex/test/manifest_headers
+
+check-manifest-headers:
+	$(call log,check-manifest-headers,Configuring and building the lib.manifest headers fixture per case)
+	@scratch=$$(mktemp -d) || exit 1; fail=0; \
+	cfg() { cmake -S "$(MANIFEST_HEADERS_FIXTURE)" -B "$$scratch/$$1" -G Ninja -DCASE="$$1" > "$$scratch/$$1.cfg.log" 2>&1; echo $$?; }; \
+	bld() { cmake --build "$$scratch/$$1" > "$$scratch/$$1.build.log" 2>&1; echo $$?; }; \
+	expect() { grep -q -- "$$2" "$$scratch/$$1" || { printf '[check-manifest-headers] %s: missing "%s"\n' "$$1" "$$2"; fail=1; }; }; \
+	tus="$$scratch/same_name/same_name/manifest_headers"; \
+	[ "$$(cfg same_name)" -eq 0 ] && [ -f "$$tus/inc_Widget_hpp_first.cpp" ] && [ -f "$$tus/inc_detail_Widget_hpp_first.cpp" ] \
+	  || { printf '[check-manifest-headers] same_name: expected a configure with one TU per declared header\n'; fail=1; }; \
+	[ "$$(bld same_name)" -eq 0 ] && [ "$$(find "$$scratch/same_name" -name '*_first.cpp.o' | wc -l)" -eq 2 ] \
+	  || { printf '[check-manifest-headers] same_name: expected both header TUs to compile\n'; fail=1; }; \
+	[ "$$(cfg first_broken)" -eq 0 ] || { printf '[check-manifest-headers] first_broken: expected the configure to pass\n'; fail=1; }; \
+	[ "$$(bld first_broken)" -ne 0 ] || { printf '[check-manifest-headers] first_broken: expected the build to fail on the first header\n'; fail=1; }; \
+	expect first_broken.build.log 'FIRST_DECLARED_HEADER_WAS_COMPILED'; \
+	[ "$$(cfg collision)" -ne 0 ] || { printf '[check-manifest-headers] collision: expected a configure error\n'; fail=1; }; \
+	expect collision.cfg.log 'two declared headers share one generated translation unit'; \
+	expect collision.cfg.log 'inc/wide-gap.hpp'; expect collision.cfg.log 'inc/wide_gap.hpp'; \
+	rm -rf "$$scratch"; \
+	[ $$fail -eq 0 ] || exit 1
+	$(call log_ok,check-manifest-headers,same-named headers each compile; a broken first header fails the build; a shared TU name fails configure)
+
 check-build-info:
 	$(call log,check-build-info,Running the apex/BuildInfo generator fixture)
 	@scratch=$$(mktemp -d) || exit 1; \
@@ -328,7 +356,7 @@ check-data-db-contract: tools-build
 	[ $$fail -eq 0 ] || exit 1
 	$(call log_ok,check-data-db-contract,valid passes; a declared-header error and a _warning entry fail the gate)
 
-.PHONY: cdef check-cdef check-data-db check-data-manifest-helper check-data-db-contract check-build-info
+.PHONY: cdef check-cdef check-data-db check-data-manifest-helper check-data-db-contract check-build-info check-manifest-headers
 
 # Tooling coverage (nightly). Each runs its tool test suite under coverage
 # instrumentation and emits a human-readable summary plus a machine report,

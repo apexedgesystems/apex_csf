@@ -1,0 +1,4 @@
+# The first of two same-named headers does not compile.
+name      fixture_first_broken
+posix_cpp 20
+headers   inc/Widget.hpp inc/detail/Widget.hpp
