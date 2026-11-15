@@ -35,7 +35,7 @@ namespace logs {
  *
  * Characteristics:
  *  - Public APIs are noexcept and return a @ref Status.
- *  - Supports threshold filtering, console echo, and non-blocking operation.
+ *  - Supports threshold filtering and console echo.
  *  - Integer verbosity levels for debug messages (0-255).
  *  - Async mode uses lock-free queue for real-time safety.
  */
@@ -134,21 +134,6 @@ public:
     return verbosityLevel_.load(std::memory_order_relaxed);
   }
 
-  /**
-   * @brief Enable or disable non-blocking mode.
-   *
-   * Historical API compatibility: originally controlled whether the
-   * logger would acquire a mutex or attempt a non-blocking write/drop.
-   *
-   * Current implementation: all file writes are already lock-free and
-   * atomic due to O_APPEND. This flag is preserved for interface
-   * compatibility and may only affect drop policy semantics. No mutex
-   * is taken in either mode.
-   */
-  void setNonBlocking(bool enabled) noexcept {
-    nonBlocking_.store(enabled, std::memory_order_relaxed);
-  }
-
   /* ----------------------------- Logging API ----------------------------- */
 
   /**
@@ -244,7 +229,6 @@ private:
   std::shared_ptr<AsyncLogBackend> asyncBackend_{}; ///< Async backend (nullptr if SYNC)
   std::atomic<Level> minLevel_{Level::INFO};        ///< Default: suppress DEBUG output.
   std::atomic<std::uint8_t> verbosityLevel_{0};     ///< Default: no debug messages.
-  std::atomic<bool> nonBlocking_{false};            ///< Default: blocking mode.
   std::atomic<bool> fatalFlush_{false};             ///< fatal() drains the queue when set.
 };
 
