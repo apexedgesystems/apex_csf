@@ -7,6 +7,7 @@
 #include "src/utilities/concurrency/inc/Latch.hpp"
 #include "src/utilities/concurrency/inc/ThreadConfig.hpp"
 
+#include <array>
 #include <cstdio>
 #include <system_error>
 #include <thread>
@@ -212,11 +213,11 @@ void ThreadPoolLockFree::runTask(TaskItem& item) {
 
 bool ThreadPoolLockFree::applyWorkerConfig(const PoolConfig& config, std::size_t workerId) {
   // Generate worker thread name (max 15 chars + null on Linux).
-  char name[16];
-  std::snprintf(name, sizeof(name), "lf_pool_w%zu", workerId);
+  std::array<char, 16> name{};
+  std::snprintf(name.data(), name.size(), "lf_pool_w%zu", workerId);
 
   // Use common thread config utility for affinity/policy/priority.
-  return applyPoolConfig(config, name);
+  return applyPoolConfig(config, name.data());
 }
 
 } // namespace concurrency

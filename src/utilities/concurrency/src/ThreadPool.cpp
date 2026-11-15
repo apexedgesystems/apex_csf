@@ -7,6 +7,7 @@
 #include "src/utilities/concurrency/inc/Latch.hpp"
 #include "src/utilities/concurrency/inc/ThreadConfig.hpp"
 
+#include <array>
 #include <cstdio>
 #include <system_error>
 #include <thread>
@@ -110,11 +111,11 @@ std::queue<TaskError> ThreadPool::collectErrors() {
 
 bool ThreadPool::applyWorkerConfig(const PoolConfig& config, std::size_t workerId) {
   // Generate worker thread name (max 15 chars + null on Linux).
-  char name[16];
-  std::snprintf(name, sizeof(name), "pool_w%zu", workerId);
+  std::array<char, 16> name{};
+  std::snprintf(name.data(), name.size(), "pool_w%zu", workerId);
 
   // Use common thread config utility for affinity/policy/priority.
-  return applyPoolConfig(config, name);
+  return applyPoolConfig(config, name.data());
 }
 
 void ThreadPool::workerLoop() {

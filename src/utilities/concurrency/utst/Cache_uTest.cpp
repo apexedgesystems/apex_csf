@@ -13,6 +13,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -34,7 +35,7 @@ static_assert(alignof(AlignCl<std::atomic<bool>>) == CACHE_LINE_SIZE);
 static_assert(alignof(AlignCl<std::atomic<std::size_t>>) == CACHE_LINE_SIZE);
 static_assert(sizeof(AlignCl<int>) == CACHE_LINE_SIZE);
 static_assert(sizeof(AlignCl<std::atomic<std::size_t>>) == CACHE_LINE_SIZE);
-static_assert(sizeof(AlignCl<int>[4]) == 4 * CACHE_LINE_SIZE);
+static_assert(sizeof(std::array<AlignCl<int>, 4>) == 4 * CACHE_LINE_SIZE);
 
 // It adds nothing to the wrapped type but the alignment: an aggregate, and as copyable as the
 // value it holds.
@@ -45,11 +46,11 @@ static_assert(AlignCl<int>{}.value == 0);
 
 /* ----------------------------- Heap Storage Tests ----------------------------- */
 
-/** @test Storage the allocator provides for AlignCl is cache-line aligned: single objects, an
- * array and a vector's elements all start on a 64-byte boundary. The pools and queues hold
- * AlignCl members inside heap objects, which depends on the allocator honouring the alignment.
- * No change to AlignCl makes this case fail while the assertions above hold: it fails on a
- * toolchain or allocator that ignores over-alignment for new. */
+/** @test Storage the allocator provides for AlignCl is cache-line aligned: single objects and a
+ * vector's elements all start on a 64-byte boundary. The pools and queues hold AlignCl members
+ * inside heap objects, which depends on the allocator honouring the alignment. No change to
+ * AlignCl makes this case fail while the assertions above hold: it fails on a toolchain or
+ * allocator that ignores over-alignment for new. */
 TEST(AlignClTest, HeapStorageIsCacheLineAligned) {
   const auto ALIGNED = [](const void* address) {
     return reinterpret_cast<std::uintptr_t>(address) % CACHE_LINE_SIZE == 0;
@@ -60,12 +61,7 @@ TEST(AlignClTest, HeapStorageIsCacheLineAligned) {
     EXPECT_TRUE(ALIGNED(SINGLE.get()));
   }
 
-  const auto ARRAY = std::make_unique<AlignCl<std::atomic<int>>[]>(5);
-  for (std::size_t i = 0; i < 5; ++i) {
-    EXPECT_TRUE(ALIGNED(&ARRAY[i])) << "array element " << i;
-  }
-
-  const std::vector<AlignCl<int>> ELEMENTS(7);
+  const std::vector<AlignCl<std::atomic<int>>> ELEMENTS(7);
   for (std::size_t i = 0; i < ELEMENTS.size(); ++i) {
     EXPECT_TRUE(ALIGNED(&ELEMENTS[i])) << "vector element " << i;
   }

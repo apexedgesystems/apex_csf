@@ -11,6 +11,7 @@
 #include "src/utilities/concurrency/utst/support/Crew.hpp"
 #include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <cstddef>
@@ -156,8 +157,9 @@ template <class Pool, class... PoolArgs> NullTaskOutcome runAroundNullDelegate(P
   };
   Crew<Scenario> crew(args...);
   crew.start([](Scenario& scenario) {
-    const DelegateU8 TASKS[] = {
-        {&countRun, &scenario.ran}, {nullptr, nullptr}, {&countRun, &scenario.ran}};
+    const std::array<DelegateU8, 3> TASKS{DelegateU8{&countRun, &scenario.ran},
+                                          DelegateU8{nullptr, nullptr},
+                                          DelegateU8{&countRun, &scenario.ran}};
     for (const DelegateU8& task : TASKS) {
       if (scenario.pool.tryEnqueue("task", task) == PoolStatus::SUCCESS) {
         scenario.accepted.fetch_add(1, std::memory_order_acq_rel);
