@@ -34,9 +34,14 @@ namespace logs {
 /* ----------------------------- LogEntry Methods ----------------------------- */
 
 LogEntry::LogEntry(std::string_view msg) noexcept {
-  // Safe copy with truncation
+  // A message that does not fit is cut to the buffer. A cut line keeps its
+  // terminator in the last stored byte, so every entry written from a
+  // terminated message is still one terminated line.
   const std::size_t copyLen = std::min(msg.size(), MAX_MSG_LEN - 1);
   std::memcpy(message, msg.data(), copyLen);
+  if (msg.size() > copyLen && msg.back() == '\n') {
+    message[copyLen - 1] = '\n';
+  }
   message[copyLen] = '\0';
   length = static_cast<std::uint16_t>(copyLen);
 }
@@ -150,7 +155,7 @@ bool AsyncLogBackend::stop() noexcept {
       ::close(logFd_);
       logFd_ = -1;
     }
-    return queueDepth_.load(std::memory_order_relaxed) == 0;
+    return outstanding_.load(std::memory_order_relaxed) == 0;
   }
 #endif
 
@@ -187,8 +192,8 @@ bool AsyncLogBackend::stop() noexcept {
     logFd_ = -1;
   }
 
-  // Check if queue was fully drained
-  const std::size_t remaining = queueDepth_.load(std::memory_order_relaxed);
+  // Every accepted entry has had its write attempted
+  const std::size_t remaining = outstanding_.load(std::memory_order_relaxed);
   return (remaining == 0);
 }
 
@@ -210,13 +215,16 @@ bool AsyncLogBackend::flush(std::uint32_t timeoutMs) noexcept {
   }
 #endif
 
-  // Wait for queue to drain using condition variable (efficient wait)
+  // Wait until no accepted entry is outstanding. The drain notifies under
+  // the mutex when it completes the last one; a producer that retires an
+  // admission does not notify (it takes no lock), so the wait also
+  // re-checks every millisecond.
   std::unique_lock<std::mutex> lock(stopMutex_);
-  bool drained = stopCv_.wait_until(
-      lock, deadline, [this]() { return queueDepth_.load(std::memory_order_relaxed) == 0; });
-
-  if (!drained) {
-    return false; // Timeout
+  while (outstanding_.load(std::memory_order_relaxed) != 0) {
+    if (std::chrono::steady_clock::now() >= deadline) {
+      return false; // Timeout
+    }
+    stopCv_.wait_for(lock, std::chrono::milliseconds(1));
   }
 
   lock.unlock();
@@ -236,21 +244,44 @@ bool AsyncLogBackend::tryLog(std::string_view msg) noexcept {
     return false;
   }
 
+  if (!admit()) {
+    return false;
+  }
+  return publishAdmitted(msg);
+}
+
+bool AsyncLogBackend::admit() noexcept {
   // Cheap full-check before paying the 520-byte entry copy. The depth is
-  // approximate (drained entries decrement after their write completes),
-  // so this can only fire when the queue is at or within one entry of
-  // full -- where dropping is already the policy.
+  // approximate (an entry leaves it when the drain takes it off the ring),
+  // so this fires at or within one entry of full -- where dropping is
+  // already the policy.
   if (queueDepth_.load(std::memory_order_relaxed) >= capacity_) {
     droppedCount_.fetch_add(1, std::memory_order_relaxed);
     return false;
   }
 
+  // Counted as outstanding before the entry can reach the drain. The drain
+  // releases an entry only after writing it, so the count never falls
+  // below the accepted entries still unwritten, whichever producer's
+  // increment a given release pairs with.
+  outstanding_.fetch_add(1, std::memory_order_relaxed);
+  return true;
+}
+
+bool AsyncLogBackend::publishAdmitted(std::string_view msg) noexcept {
   // Create entry (copies message to fixed buffer)
   LogEntry entry(msg);
 
   // Try to push to queue (lock-free, never blocks)
   if (queue_.tryPush(std::move(entry))) {
-    // Batch notifications: only wake thread if queue was previously empty
+    if (msg.size() >= LogEntry::MAX_MSG_LEN) {
+      truncatedCount_.fetch_add(1, std::memory_order_relaxed);
+    }
+
+    // Batch notifications: only wake thread if queue was previously empty.
+    // The depth is counted after the push: the drain polls the ring again
+    // after each decrement, so an entry pushed while the depth was not
+    // zero is found without a wake.
     const std::size_t prevDepth = queueDepth_.fetch_add(1, std::memory_order_relaxed);
 
     if (prevDepth == 0) {
@@ -279,9 +310,21 @@ bool AsyncLogBackend::tryLog(std::string_view msg) noexcept {
     return true;
   }
 
-  // Queue full - drop entry and increment counter
+  // Queue full - drop the entry, count it, and retire its admission. No
+  // notification: flush() re-checks on its own.
   droppedCount_.fetch_add(1, std::memory_order_relaxed);
+  outstanding_.fetch_sub(1, std::memory_order_relaxed);
   return false;
+}
+
+void AsyncLogBackend::completeOne() noexcept {
+  // The predicate changes outside the mutex; the notification is issued
+  // under it, so a flush() that saw a non-zero count has parked (and
+  // released the mutex) before this thread can notify.
+  if (outstanding_.fetch_sub(1, std::memory_order_relaxed) == 1) {
+    std::lock_guard<std::mutex> lock(stopMutex_);
+    stopCv_.notify_all();
+  }
 }
 
 std::size_t AsyncLogBackend::drainBatch(std::size_t maxEntries) noexcept {
@@ -289,18 +332,13 @@ std::size_t AsyncLogBackend::drainBatch(std::size_t maxEntries) noexcept {
   std::size_t drained = 0;
 
   while (drained < maxEntries && queue_.tryPop(entry)) {
-    const std::size_t prevDepth = queueDepth_.fetch_sub(1, std::memory_order_relaxed);
+    // The depth follows the ring; the outstanding count is released only
+    // once the write has been attempted, which is what flush() waits for.
+    queueDepth_.fetch_sub(1, std::memory_order_relaxed);
     writeEntry(entry);
     entriesWritten_.fetch_add(1, std::memory_order_relaxed);
     ++drained;
-
-    // Queue just became empty: notify drain waiters (flush()). Under the
-    // lock so a flush() wakeup cannot be lost between its depth check and
-    // parking on the CV.
-    if (prevDepth == 1) {
-      std::lock_guard<std::mutex> lock(stopMutex_);
-      stopCv_.notify_all();
-    }
+    completeOne();
   }
   return drained;
 }
@@ -311,17 +349,11 @@ void AsyncLogBackend::ioThreadLoop() noexcept {
   while (true) {
     // Try to pop entry from queue (lock-free, fast path)
     if (queue_.tryPop(entry)) {
-      const std::size_t prevDepth = queueDepth_.fetch_sub(1, std::memory_order_relaxed);
+      // As in drainBatch(): the depth at the pop, the release after the write.
+      queueDepth_.fetch_sub(1, std::memory_order_relaxed);
       writeEntry(entry);
       entriesWritten_.fetch_add(1, std::memory_order_relaxed);
-
-      // If queue just became empty, notify any waiters (flush()). Notify under
-      // the lock so a flush() wakeup cannot be lost between its queueDepth_
-      // check and parking on the CV.
-      if (prevDepth == 1) {
-        std::lock_guard<std::mutex> lock(stopMutex_);
-        stopCv_.notify_all();
-      }
+      completeOne();
 
       continue; // Process next entry immediately
     }
