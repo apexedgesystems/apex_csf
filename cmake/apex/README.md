@@ -423,22 +423,66 @@ once.
 apex_add_bundle(
   NAME        GroundStation
   DEPLOYMENTS ApexOpsDemo ApexActionDemo   # each its own apex filesystem
-  TOOLS       my_cli_tool                  # extra executables (+ their closures)
+  TOOLS       my_cli_tool tprm_template    # tools of any kind, by name
   FILES       docs/OPERATIONS.md           # arbitrary support files/dirs
 )
 ninja package_GroundStation
 ```
 
-`package_<NAME>` stages each deployment into its own subdir (reusing that
-deployment's component), tools under `tools/{bin,libs}`, and files at the bundle
-root, then tars it:
+`package_<NAME>` builds what the bundle stages (each deployment's executive and
+TPRM products, each listed tool), then stages each deployment into its own
+subdir (reusing that deployment's component), tools under `tools/`, and files at
+the bundle root, and tars it:
 
 ```
 GroundStation/ApexOpsDemo/run.sh + bank_a/{bin,libs,tprm}
 GroundStation/ApexActionDemo/run.sh + bank_a/{bin,libs,tprm}
 GroundStation/tools/bin/my_cli_tool + tools/libs/*.so*
+GroundStation/tools/bin/tprm_template
+GroundStation/tools/REQUIREMENTS.txt
 GroundStation/docs/OPERATIONS.md
 ```
+
+A bundle is the user's filesystem for one target: it is copied onto the target
+and run in place, with nothing installed, built or fetched afterwards.
+
+#### Tools in a bundle
+
+`TOOLS` takes tools by name. What each kind brings and needs:
+
+| Kind                  | Named by                                 | Staged as                                                                                                    | Needs on the target                       |
+| --------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
+| C++ tool              | its executable target                    | `tools/bin/<name>` and its project shared libraries in `tools/libs`                                          | nothing beyond the package                |
+| Rust tool             | the binary's name                        | `tools/bin/<name>`                                                                                           | the system C library                      |
+| Shell tool            | the script's file name                   | `tools/bin/<name>`                                                                                           | a POSIX shell and the commands it calls   |
+| Python console script | the script's name in `[project.scripts]` | a launcher in `tools/bin/<name>`; its distribution and the distributions that requires in `tools/lib/python` | `python3`; the interpreter is not carried |
+
+The Rust, shell and Python tools of this repository are registered by the tools
+build (`tools/CMakeLists.txt`); a tool from elsewhere registers itself with
+`apex_register_tool(NAME <name> KIND <bin|script|py> FILE <path> [DEPENDS
+<target>] [PYTHON_LIB <dir>])`.
+
+A Python tool carries only its own distribution and what that requires, not the
+rest of its role's installed packages. Its launcher finds `tools/lib/python`
+relative to itself, checks the interpreter version, and says so in one line when
+`python3` is missing or too old. A tool with compiled Python modules needs the
+exact `python3` minor version it was built with.
+
+`tools/REQUIREMENTS.txt` in the package lists each staged tool and what it needs
+on the target, and the package step prints the size each tool added.
+
+What cannot work on the target fails the build, not the user's first run:
+
+- a `TOOLS` name that is neither an executable target nor a registered tool
+  fails the configure, naming the bundle and the tool;
+- a tool built for another architecture than the bundle's executive (a Rust tool
+  in a cross build, a Python distribution with modules compiled for the build
+  machine) fails the package step, naming the tool and both architectures;
+- `TOOLS` in a bare-metal build fails the configure: firmware ships as a
+  flashable image and has no filesystem to carry tools.
+
+`make check-bundle-packaging` asserts all of this on a fixture
+(`cmake/apex/test/bundle_packaging`).
 
 An executive and its watchdog are **two** deployments (two filesystems), shipped
 together in a bundle; the watchdog supervises the executive across them. A bundle

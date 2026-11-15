@@ -35,10 +35,16 @@
 #   apex_add_bundle(
 #     NAME        GroundStation
 #     DEPLOYMENTS ApexOpsDemo ApexActionDemo   # each its own apex filesystem
-#     TOOLS       my_cli_tool                  # extra executables (+ their libs)
+#     TOOLS       my_cli_tool tprm_template    # tools of any kind, by name
 #     FILES       docs/OPERATIONS.md           # arbitrary support files/dirs
 #   )
 #   ninja package_GroundStation
+#
+# A package is the user's filesystem for one target: it is copied onto the
+# target and run in place, with nothing installed, built or fetched afterwards.
+# Whatever cannot work that way fails the build: a tool name nothing provides,
+# a tool built for another architecture, a tool in a bare-metal build (firmware
+# ships as an image and has no filesystem to carry one).
 # ==============================================================================
 
 include_guard(GLOBAL)
@@ -99,17 +105,74 @@ endfunction ()
 # Declare a shippable artifact that consolidates several deployments plus custom
 # tools and support files. NAME is the bundle/dir (and the package_<NAME>
 # target). DEPLOYMENTS are apex_add_deployment() names, each staged into its own
-# subdir. TOOLS are extra executable targets (staged with their shared-lib
-# closures under tools/). FILES are arbitrary files/dirs (docs, configs) staged
-# at the bundle root.
+# subdir. FILES are arbitrary files/dirs (docs, configs) staged at the bundle
+# root. TOOLS are tools by name, staged under tools/ so each runs from wherever
+# the package is copied:
+#
+#   a C++ executable target      tools/bin/<name>, its project shared libraries
+#                                in tools/libs (found through $ORIGIN/../libs)
+#   a registered tool            see apex_register_tool: a prebuilt executable
+#                                or a shell script to tools/bin/<name>; a Python
+#                                console script as a launcher in tools/bin with
+#                                its distribution and what that requires in
+#                                tools/lib/python (the target provides python3)
+#
+# tools/REQUIREMENTS.txt lists what each staged tool needs on the target. A name
+# that is neither is a configure error, and so is TOOLS in a bare-metal build.
 # ------------------------------------------------------------------------------
 function (apex_add_bundle)
   cmake_parse_arguments(B "" "NAME" "DEPLOYMENTS;TOOLS;FILES" ${ARGN})
   apex_require(B_NAME B_DEPLOYMENTS)
+  if (APEX_PLATFORM_BAREMETAL AND B_TOOLS)
+    message(
+      FATAL_ERROR
+        "apex_add_bundle(${B_NAME}): TOOLS (${B_TOOLS}) in a bare-metal build. "
+        "Firmware ships as a flashable image and has no filesystem to carry tools; "
+        "declare the bundle for a hosted target only."
+    )
+  endif ()
   set_property(GLOBAL APPEND PROPERTY APEX_BUNDLES "${B_NAME}")
   set_property(GLOBAL PROPERTY APEX_BUNDLE_${B_NAME}_DEPLOYMENTS "${B_DEPLOYMENTS}")
   set_property(GLOBAL PROPERTY APEX_BUNDLE_${B_NAME}_TOOLS "${B_TOOLS}")
   set_property(GLOBAL PROPERTY APEX_BUNDLE_${B_NAME}_FILES "${B_FILES}")
+endfunction ()
+
+# ------------------------------------------------------------------------------
+# apex_register_tool(NAME <name> KIND <bin|script|py> FILE <path> [DEPENDS <target>]
+#                    [PYTHON_LIB <dir>])
+#
+# Make a tool that is not a CMake executable target available to a bundle's
+# TOOLS by name. Whatever builds the tool registers it: FILE is where the build
+# puts it, DEPENDS the target that produces it.
+#
+#   bin     a prebuilt executable (a Rust tool)
+#   script  a shell script
+#   py      a Python console script; PYTHON_LIB is the directory its
+#           distribution and that distribution's requirements are installed in
+#
+# A name can be registered once.
+# ------------------------------------------------------------------------------
+function (apex_register_tool)
+  cmake_parse_arguments(T "" "NAME;KIND;FILE;DEPENDS;PYTHON_LIB" "" ${ARGN})
+  apex_require(T_NAME T_KIND T_FILE)
+  if (NOT T_KIND MATCHES "^(bin|script|py)$")
+    message(FATAL_ERROR "apex_register_tool(${T_NAME}): KIND is bin, script or py, not ${T_KIND}")
+  endif ()
+  if (T_KIND STREQUAL "py" AND NOT T_PYTHON_LIB)
+    message(FATAL_ERROR "apex_register_tool(${T_NAME}): a py tool names its PYTHON_LIB")
+  endif ()
+  get_property(_known GLOBAL PROPERTY APEX_TOOL_${T_NAME}_KIND)
+  if (_known)
+    get_property(_known_file GLOBAL PROPERTY APEX_TOOL_${T_NAME}_FILE)
+    message(
+      FATAL_ERROR
+        "apex_register_tool(${T_NAME}): already registered as a ${_known} tool at ${_known_file}"
+    )
+  endif ()
+  set_property(GLOBAL PROPERTY APEX_TOOL_${T_NAME}_KIND "${T_KIND}")
+  set_property(GLOBAL PROPERTY APEX_TOOL_${T_NAME}_FILE "${T_FILE}")
+  set_property(GLOBAL PROPERTY APEX_TOOL_${T_NAME}_DEPENDS "${T_DEPENDS}")
+  set_property(GLOBAL PROPERTY APEX_TOOL_${T_NAME}_PYTHON_LIB "${T_PYTHON_LIB}")
 endfunction ()
 
 # ------------------------------------------------------------------------------
@@ -187,7 +250,8 @@ function (apex_finalize_packages)
     return()
   endif ()
 
-  set(_launcher "${CMAKE_SOURCE_DIR}/cmake/apex/assets/run.sh")
+  # The module carries its assets beside itself.
+  set(_launcher "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/assets/run.sh")
   set(_count 0)
 
   foreach (_name IN LISTS _deps)
@@ -283,14 +347,19 @@ function (apex_finalize_packages)
       COMMENT "[package] ${_name} -> cmake --install (bank_a + run.sh)"
       VERBATIM
     )
+    # A bundle stages this deployment through the same install component, so
+    # it needs the same products built first.
+    set(_pkgdeps_${_name} ${_exec} ${_tprm_deps})
     math(EXPR _count "${_count} + 1")
   endforeach ()
 
   # --------------------------------------------------------------------------
   # Bundles: consolidate several deployments + tools + support files into one
   # tarball. Each deployment is staged into its own subdir (reusing its
-  # component); tools go under tools/ with their closures; files land at the root.
+  # component); tools go under tools/; files land at the root.
   # --------------------------------------------------------------------------
+  set(_stage_tools "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/assets/stage_bundle_tools.py")
+  find_program(_APEX_PYTHON3 python3)
   get_property(_bundles GLOBAL PROPERTY APEX_BUNDLES)
   set(_bcount 0)
   set(_pkgroot "${CMAKE_BINARY_DIR}/packages")
@@ -303,17 +372,70 @@ function (apex_finalize_packages)
     set(_has_extra FALSE)
     set(_bdepends "")
 
-    # Tools: binary + shared-lib closure under tools/.
+    # The package's architecture is its executive's. A bundle none of whose
+    # executives exist on this platform has nothing to ship.
+    set(_bref "")
+    foreach (_d IN LISTS _bdeps)
+      get_property(_dexec GLOBAL PROPERTY APEX_DEPLOY_${_d}_EXEC)
+      if (NOT _bref
+          AND _dexec
+          AND TARGET ${_dexec}
+      )
+        set(_bref "${_dexec}")
+      endif ()
+    endforeach ()
+    if (NOT _bref)
+      message(STATUS "[apex] Bundle ${_bname} skipped: none of its executives build here")
+      continue()
+    endif ()
+
+    # Tools: a C++ target installs with its shared-lib closure; a registered
+    # tool is staged by the stage script; any other name is refused.
     set(_toollibs "")
+    set(_stage_args "")
     foreach (_t IN LISTS _btools)
+      get_property(_tkind GLOBAL PROPERTY APEX_TOOL_${_t}_KIND)
       if (TARGET ${_t})
+        get_target_property(_ttype ${_t} TYPE)
+        if (NOT _ttype STREQUAL "EXECUTABLE")
+          message(
+            FATAL_ERROR
+              "apex_add_bundle(${_bname}): TOOLS names ${_t}, a ${_ttype} target. "
+              "A tool is an executable target or a tool registered with apex_register_tool."
+          )
+        endif ()
         install(TARGETS ${_t} RUNTIME DESTINATION tools/bin COMPONENT ${_comp})
         _apex_collect_shared_deps(${_t} _tl)
         list(APPEND _toollibs ${_tl})
         list(APPEND _bdepends ${_t})
         set(_has_extra TRUE)
+      elseif (_tkind)
+        get_property(_tfile GLOBAL PROPERTY APEX_TOOL_${_t}_FILE)
+        get_property(_tdep GLOBAL PROPERTY APEX_TOOL_${_t}_DEPENDS)
+        get_property(_tpylib GLOBAL PROPERTY APEX_TOOL_${_t}_PYTHON_LIB)
+        if (_tkind STREQUAL "py")
+          list(APPEND _stage_args --tool "py:${_t}:${_tfile}:${_tpylib}")
+        else ()
+          list(APPEND _stage_args --tool "${_tkind}:${_t}:${_tfile}")
+        endif ()
+        if (_tdep)
+          list(APPEND _bdepends ${_tdep})
+        endif ()
+      else ()
+        message(
+          FATAL_ERROR
+            "apex_add_bundle(${_bname}): TOOLS names ${_t}, which nothing provides. "
+            "A tool is an executable target or a tool registered with apex_register_tool "
+            "(the tools build registers its Rust, shell and Python tools when it is enabled "
+            "and their toolchains are present)."
+        )
       endif ()
     endforeach ()
+    if (_btools AND NOT _APEX_PYTHON3)
+      message(
+        FATAL_ERROR "apex_add_bundle(${_bname}): staging TOOLS needs python3 on the build machine"
+      )
+    endif ()
     list(REMOVE_DUPLICATES _toollibs)
     if (_toollibs)
       install(
@@ -358,10 +480,7 @@ function (apex_finalize_packages)
         --prefix
         "${_pkgroot}/${_bname}/${_d}"
       )
-      get_property(_dexec GLOBAL PROPERTY APEX_DEPLOY_${_d}_EXEC)
-      if (TARGET ${_dexec})
-        list(APPEND _bdepends ${_dexec})
-      endif ()
+      list(APPEND _bdepends ${_pkgdeps_${_d}})
     endforeach ()
     if (_has_extra)
       list(
@@ -375,6 +494,24 @@ function (apex_finalize_packages)
         ${_comp}
         --prefix
         "${_pkgroot}/${_bname}"
+      )
+    endif ()
+    # Every staged tool is checked against the executive's architecture, the
+    # C++ ones included; a mismatch fails the package step.
+    if (_btools)
+      list(
+        APPEND
+        _subinstalls
+        COMMAND
+        "${_APEX_PYTHON3}"
+        "${_stage_tools}"
+        --bundle
+        ${_bname}
+        --dest
+        "${_pkgroot}/${_bname}/tools"
+        --reference
+        "$<TARGET_FILE:${_bref}>"
+        ${_stage_args}
       )
     endif ()
 

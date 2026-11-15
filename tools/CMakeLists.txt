@@ -233,6 +233,21 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
       )
 
       add_custom_target(${PROJECT_NAME}_${_role}_rust_tools DEPENDS "${_role_stamp}")
+      # A bundle can list any of these binaries by name (apex_add_bundle TOOLS).
+      if (COMMAND apex_register_tool)
+        foreach (_bin IN LISTS _role_bin_names)
+          apex_register_tool(
+            NAME
+            ${_bin}
+            KIND
+            bin
+            FILE
+            "${_role_out}/${_bin}"
+            DEPENDS
+            ${PROJECT_NAME}_${_role}_rust_tools
+          )
+        endforeach ()
+      endif ()
       list(APPEND _ROLE_PARTS_${_role} ${PROJECT_NAME}_${_role}_rust_tools)
     endforeach ()
   else ()
@@ -254,6 +269,7 @@ endif ()
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml")
   find_program(UV_EXECUTABLE uv)
   find_program(PIP_EXECUTABLE pip3 pip)
+  find_program(_PY3_EXECUTABLE python3)
 
   if (UV_EXECUTABLE AND PIP_EXECUTABLE)
     set(_PY_LIB "${CMAKE_BINARY_DIR}/lib/python")
@@ -380,6 +396,42 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/pyproject.toml")
       )
 
       add_custom_target(${PROJECT_NAME}_${_role}_py_tools DEPENDS "${_py_stamp}")
+      # A bundle can list any console script these members declare. The names
+      # come from each member's [project.scripts], read with Python's own TOML
+      # decoder; the build step above holds the installed scripts to the same
+      # declaration.
+      if (COMMAND apex_register_tool AND _PY3_EXECUTABLE)
+        execute_process(
+          COMMAND
+            "${_PY3_EXECUTABLE}" -c
+            "import sys, tomllib\nfor f in sys.argv[1:]:\n    print('\\n'.join(tomllib.load(open(f, 'rb')).get('project', {}).get('scripts', {})))"
+            ${_py_members}
+          OUTPUT_VARIABLE _py_scripts
+          ERROR_VARIABLE _py_scripts_err
+          RESULT_VARIABLE _py_scripts_rc
+        )
+        if (NOT _py_scripts_rc EQUAL 0)
+          message(
+            FATAL_ERROR
+              "${PROJECT_NAME}: cannot read the console scripts of the ${_role} Python members:\n${_py_scripts_err}"
+          )
+        endif ()
+        string(REGEX MATCHALL "[^\n]+" _py_script_names "${_py_scripts}")
+        foreach (_name IN LISTS _py_script_names)
+          apex_register_tool(
+            NAME
+            ${_name}
+            KIND
+            py
+            FILE
+            "${_py_out}/${_name}"
+            DEPENDS
+            ${PROJECT_NAME}_${_role}_py_tools
+            PYTHON_LIB
+            "${_py_lib}"
+          )
+        endforeach ()
+      endif ()
       list(APPEND _ROLE_PARTS_${_role} ${PROJECT_NAME}_${_role}_py_tools)
     endforeach ()
   else ()
@@ -420,6 +472,22 @@ foreach (_role IN LISTS _APEX_TOOL_ROLES)
   )
 
   add_custom_target(${PROJECT_NAME}_${_role}_sh_tools DEPENDS "${_sh_stamp}")
+  # A bundle can list any of these scripts by file name (apex_add_bundle TOOLS).
+  if (COMMAND apex_register_tool)
+    foreach (_sh_file IN LISTS _sh_files)
+      get_filename_component(_sh_name "${_sh_file}" NAME)
+      apex_register_tool(
+        NAME
+        ${_sh_name}
+        KIND
+        script
+        FILE
+        "${_sh_out}/${_sh_name}"
+        DEPENDS
+        ${PROJECT_NAME}_${_role}_sh_tools
+      )
+    endforeach ()
+  endif ()
   list(APPEND _ROLE_PARTS_${_role} ${PROJECT_NAME}_${_role}_sh_tools)
 endforeach ()
 
