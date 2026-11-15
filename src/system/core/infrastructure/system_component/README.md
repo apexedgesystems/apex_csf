@@ -212,7 +212,7 @@ public:
   [[nodiscard]] TParams active() const noexcept;
 
   /// @note RT-safe: Simple reads.
-  [[nodiscard]] const TParams& staged() const noexcept;
+  [[nodiscard]] TParams staged() const noexcept;
   [[nodiscard]] bool canRollback() const noexcept;
   [[nodiscard]] bool isLoaded() const noexcept;
   [[nodiscard]] uint64_t activeGeneration() const noexcept;
@@ -224,6 +224,12 @@ included -- owns one per parameter set and passes its own validator to
 load(). A rejected load() cannot be published (apply() refuses), and
 staging over the rollback source forfeits the rollback history (two banks
 cannot hold three states).
+
+A publish uses up the staged set. `publishInitial()` and `apply()` each
+need an accepted `load()` of their own, and `rollback()` stages nothing:
+an `apply()` with nothing newly staged returns `ERROR_NOT_CONFIGURED` and
+changes nothing. `isLoaded()` is true from an accepted `load()` until the
+next publish or rollback.
 
 ### McuComponentBase (mcu/)
 
@@ -347,6 +353,7 @@ comp.init();
 //    when; a rejected load can never be published)
 comp.loadParams(MyParams{200, 1});
 comp.applyParams();  // bank_.apply(): atomic swap, no re-init
+comp.applyParams();  // nothing staged since: ERROR_NOT_CONFIGURED, no change
 
 // 4. Rollback if needed (one level; staging again forfeits it)
 if (comp.canRollbackParams()) {

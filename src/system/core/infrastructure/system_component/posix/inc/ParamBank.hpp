@@ -16,6 +16,11 @@
  *  3. load(...) then apply()       - hot-reload without re-init.
  *  4. rollback()                   - restore the previous active set.
  *
+ * A publish uses up the staged set: publishInitial() and apply() each
+ * need an accepted load() of their own, and rollback() stages nothing.
+ * The bank a publish leaves behind holds an older set or the
+ * constructor's defaults, neither of which the last load() validated.
+ *
  * Rollback holds one level of history and staging a validated set over
  * the bank the rollback index references forfeits it: two banks cannot
  * hold three states. Callers that need the old set after staging a new
@@ -173,28 +178,33 @@ public:
    * @return SUCCESS on the first publish; WARN_NOOP if already published;
    *         ERROR_NOT_CONFIGURED unless the staged bank holds a validated
    *         set (never staged, or the last staging attempt was rejected).
-   * @note No rollback exists after the initial publish (nothing to roll
-   *       back to). NOT RT-safe: control-plane only.
+   * @note Uses up the staged set. No rollback exists after the initial
+   *       publish (nothing to roll back to). NOT RT-safe: control-plane
+   *       only.
    */
   [[nodiscard]] Status publishInitial() noexcept {
-    if (!stagedValid_) {
-      return Status::ERROR_NOT_CONFIGURED;
-    }
     if (activeGen_.load(std::memory_order_relaxed) != 0) {
       return Status::WARN_NOOP;
     }
+    if (!stagedValid_) {
+      return Status::ERROR_NOT_CONFIGURED;
+    }
     activeIdx_.store(stagedIdx_, std::memory_order_release);
     stagedIdx_ ^= 1U;
+    stagedValid_ = false;
     activeGen_.fetch_add(1, std::memory_order_relaxed);
     return Status::SUCCESS;
   }
 
   /**
    * @brief Hot-reload: publish the staged set, remember the old one.
-   * @return SUCCESS; ERROR_NOT_CONFIGURED unless the staged bank holds a
-   *         validated set — a rejected load() cannot be published.
+   * @return SUCCESS; ERROR_NOT_CONFIGURED unless a load() accepted since
+   *         the last publish or rollback staged a set: a rejected load()
+   *         cannot be published, and neither can a set already published.
+   *         Nothing changes on ERROR_NOT_CONFIGURED.
    * @note Publishes staged -> active atomically (release store), then
-   *       flips the staging pointer. NOT RT-safe: control-plane only.
+   *       flips the staging pointer and uses up the staged set. NOT
+   *       RT-safe: control-plane only.
    */
   [[nodiscard]] Status apply() noexcept {
     if (!stagedValid_) {
@@ -203,6 +213,7 @@ public:
     prevIdx_ = static_cast<int>(activeIdx_.load(std::memory_order_relaxed));
     activeIdx_.store(stagedIdx_, std::memory_order_release);
     stagedIdx_ ^= 1U;
+    stagedValid_ = false;
     activeGen_.fetch_add(1, std::memory_order_relaxed);
     return Status::SUCCESS;
   }
@@ -210,7 +221,8 @@ public:
   /**
    * @brief Restore the previously active set (one level of history).
    * @return SUCCESS if restored; WARN_NOOP if no rollback is available.
-   * @note NOT RT-safe: control-plane only.
+   * @note Stages nothing: the set rolled back from is not publishable
+   *       again without a load(). NOT RT-safe: control-plane only.
    */
   [[nodiscard]] Status rollback() noexcept {
     if (prevIdx_ < 0) {
@@ -219,6 +231,7 @@ public:
     const std::uint32_t PREV = static_cast<std::uint32_t>(prevIdx_);
     activeIdx_.store(PREV, std::memory_order_release);
     stagedIdx_ = PREV ^ 1U;
+    stagedValid_ = false;
     prevIdx_ = -1;
     activeGen_.fetch_add(1, std::memory_order_relaxed);
     return Status::SUCCESS;
@@ -272,7 +285,7 @@ public:
   /** @brief True if rollback() can restore a previous set. @note RT-safe. */
   [[nodiscard]] bool canRollback() const noexcept { return prevIdx_ >= 0; }
 
-  /** @brief True while the staged bank holds a validated set. @note RT-safe. */
+  /** @brief True from an accepted load() until the next publish or rollback. @note RT-safe. */
   [[nodiscard]] bool isLoaded() const noexcept { return stagedValid_; }
 
   /** @brief Count of successful publishes (initial/apply/rollback). @note RT-safe. */
@@ -326,7 +339,7 @@ private:
 
   std::atomic<std::uint64_t> activeGen_;             ///< Successful publishes.
   std::atomic<std::uint64_t> stagedGen_;             ///< Staging attempts.
-  bool stagedValid_{false};                          ///< Staged bank holds a validated set.
+  bool stagedValid_{false};                          ///< A validated set awaits its publish.
   TprmPayloadCheck lastCheck_{TprmPayloadCheck::OK}; ///< Verdict of the last file load.
 };
 
