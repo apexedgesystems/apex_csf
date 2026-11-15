@@ -8,6 +8,7 @@
  */
 
 #include "src/utilities/concurrency/inc/RingBuffer.hpp"
+#include "src/utilities/concurrency/utst/support/AlignProbe.hpp"
 
 #include <gtest/gtest.h>
 
@@ -175,20 +176,22 @@ TEST_F(RingBufferTest, CanRefillAfterDrain) {
   }
 }
 
-/** @test Wraparound handling works correctly */
-TEST_F(RingBufferTest, WraparoundWorks) {
+/** @test Order and size() hold while the indices wrap: the buffer is filled and drained through
+ * many cycles, so the write index is below the read index for part of each. */
+TEST_F(RingBufferTest, WraparoundKeepsOrderAndSize) {
   RingBuffer<int> buffer(4);
   const std::size_t CAP = buffer.capacity();
 
-  // Do many push/pop cycles to ensure wraparound works
   for (int cycle = 0; cycle < 100; ++cycle) {
     for (std::size_t i = 0; i < CAP; ++i) {
       EXPECT_TRUE(buffer.tryPush(cycle * 100 + static_cast<int>(i)));
+      EXPECT_EQ(buffer.size(), i + 1) << "cycle " << cycle;
     }
     for (std::size_t i = 0; i < CAP; ++i) {
       int value = -1;
       EXPECT_TRUE(buffer.tryPop(value));
       EXPECT_EQ(value, cycle * 100 + static_cast<int>(i));
+      EXPECT_EQ(buffer.size(), CAP - i - 1) << "cycle " << cycle;
     }
   }
 }
@@ -339,4 +342,21 @@ TEST(RingBufferDeterminismTest, SizeDeterministic) {
   const std::size_t SECOND = buffer.size();
   EXPECT_EQ(FIRST, SECOND);
   EXPECT_EQ(FIRST, 3U);
+}
+
+/* ----------------------------- Storage Alignment Tests ----------------------------- */
+
+/** @test The storage honours the element's alignment: every element of a 64-byte-aligned type is
+ * constructed at a 64-byte boundary, at small capacities and at one large enough to come from a
+ * page-granular allocation. */
+TEST_F(RingBufferTest, StorageHonoursElementAlignment) {
+  using apex::concurrency::test::AlignProbe;
+  AlignProbe::misaligned().store(0, std::memory_order_relaxed);
+  for (const std::size_t CAPACITY : {std::size_t{2}, std::size_t{16}, std::size_t{1024}}) {
+    for (int repeat = 0; repeat < 8; ++repeat) {
+      const RingBuffer<AlignProbe> queue(CAPACITY);
+    }
+  }
+  EXPECT_EQ(AlignProbe::misaligned().load(std::memory_order_relaxed), 0)
+      << "elements were constructed off their 64-byte alignment";
 }

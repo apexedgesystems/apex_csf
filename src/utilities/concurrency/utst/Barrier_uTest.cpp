@@ -4,19 +4,31 @@
  *
  * Notes:
  *  - Tests verify barrier synchronization and reusability.
- *  - Concurrent tests use multiple threads to verify phase coordination.
+ *  - The threaded cases hold the last arrival back, check that nobody has
+ *    passed, and only then let it arrive, so a barrier that does not block
+ *    fails them.
+ *  - Those cases run every arrival on a Crew thread and wait a bounded time
+ *    for it, so a barrier that never releases fails them too.
  */
 
 #include "src/utilities/concurrency/inc/Barrier.hpp"
+#include "src/utilities/concurrency/utst/support/Crew.hpp"
+#include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <thread>
 #include <vector>
 
 using apex::concurrency::Barrier;
+using apex::concurrency::test::Crew;
+using apex::concurrency::test::CrewState;
+using apex::concurrency::test::escapesWithin;
+using apex::concurrency::test::settles;
 
 /* ----------------------------- Basic Operations Tests ----------------------------- */
 
@@ -24,13 +36,17 @@ class BarrierTest : public ::testing::Test {};
 
 /** @test Barrier with expected 1 releases immediately */
 TEST_F(BarrierTest, SingleThreadReleasesImmediately) {
-  Barrier barrier(1);
-  EXPECT_EQ(barrier.expected(), 1U);
-  EXPECT_EQ(barrier.generation(), 0U);
+  struct Alone : CrewState {
+    Barrier barrier{1};
+  };
+  Crew<Alone> crew;
+  EXPECT_EQ(crew->barrier.expected(), 1U);
+  EXPECT_EQ(crew->barrier.generation(), 0U);
 
-  barrier.arriveAndWait();
+  crew.start([](Alone& state) { state.barrier.arriveAndWait(); });
+  ASSERT_TRUE(crew.finish()) << "the only participant did not pass";
 
-  EXPECT_EQ(barrier.generation(), 1U);
+  EXPECT_EQ(crew->barrier.generation(), 1U);
 }
 
 /** @test expected() returns correct value */
@@ -78,154 +94,96 @@ TEST_F(BarrierTest, ArriveAndWaitForTimesOut) {
 
 /* ----------------------------- Concurrent Tests ----------------------------- */
 
-/** @test Two threads synchronize at barrier */
-TEST_F(BarrierTest, TwoThreadsSynchronize) {
-  Barrier barrier(2);
-  std::atomic<int> phase{0};
-
-  std::thread t1([&]() {
-    phase.fetch_add(1, std::memory_order_relaxed);
-    barrier.arriveAndWait();
-    phase.fetch_add(10, std::memory_order_relaxed);
-  });
-
-  std::thread t2([&]() {
-    phase.fetch_add(1, std::memory_order_relaxed);
-    barrier.arriveAndWait();
-    phase.fetch_add(10, std::memory_order_relaxed);
-  });
-
-  t1.join();
-  t2.join();
-
-  // Both threads should have added 1, then both added 10
-  EXPECT_EQ(phase.load(), 22);
-  EXPECT_EQ(barrier.generation(), 1U);
-}
-
-/** @test Multiple threads synchronize */
-TEST_F(BarrierTest, MultipleThreadsSynchronize) {
+/** @test No arrival passes a barrier before the last one arrives, and every thread that passes
+ * sees all of them arrived. Seven of eight threads arrive; none may pass while the eighth is
+ * held back. */
+TEST_F(BarrierTest, EveryArrivalWaitsForTheLast) {
   constexpr int THREAD_COUNT = 8;
-  Barrier barrier(THREAD_COUNT);
-  std::atomic<int> arrivedCount{0};
-  std::atomic<int> passedCount{0};
-
-  std::vector<std::thread> threads;
-  threads.reserve(THREAD_COUNT);
-  for (int i = 0; i < THREAD_COUNT; ++i) {
-    threads.emplace_back([&]() {
-      arrivedCount.fetch_add(1, std::memory_order_relaxed);
-      barrier.arriveAndWait();
-      passedCount.fetch_add(1, std::memory_order_relaxed);
-    });
+  struct Arrivals : CrewState {
+    Barrier barrier{THREAD_COUNT};
+    std::atomic<int> arrived{0};
+    std::atomic<int> passed{0};
+    std::array<std::atomic<int>, THREAD_COUNT> arrivedWhenPassing{};
+  };
+  Crew<Arrivals> crew;
+  const auto PARTICIPANT = [](int index) {
+    return [index](Arrivals& state) {
+      state.arrived.fetch_add(1, std::memory_order_acq_rel);
+      state.barrier.arriveAndWait();
+      state.arrivedWhenPassing[static_cast<std::size_t>(index)].store(
+          state.arrived.load(std::memory_order_acquire), std::memory_order_release);
+      state.passed.fetch_add(1, std::memory_order_acq_rel);
+    };
+  };
+  for (int i = 0; i < THREAD_COUNT - 1; ++i) {
+    crew.start(PARTICIPANT(i));
   }
 
-  for (auto& t : threads) {
-    t.join();
-  }
+  ASSERT_TRUE(settles([&]() { return crew->arrived.load() == THREAD_COUNT - 1; }));
+  EXPECT_FALSE(escapesWithin([&]() { return crew->passed.load() > 0; }))
+      << crew->passed.load() << " thread(s) passed with one arrival still missing";
 
-  EXPECT_EQ(arrivedCount.load(), THREAD_COUNT);
-  EXPECT_EQ(passedCount.load(), THREAD_COUNT);
-  EXPECT_EQ(barrier.generation(), 1U);
+  crew.start(PARTICIPANT(THREAD_COUNT - 1));
+  ASSERT_TRUE(crew.finish()) << crew->passed.load() << " of " << THREAD_COUNT
+                             << " threads passed after the last arrival";
+
+  for (const auto& seen : crew->arrivedWhenPassing) {
+    EXPECT_EQ(seen.load(), THREAD_COUNT);
+  }
+  EXPECT_EQ(crew->barrier.generation(), 1U);
 }
 
-/** @test Barrier is reusable across phases */
-TEST_F(BarrierTest, ReusableAcrossPhases) {
+/** @test A barrier is reusable: in every phase no thread passes before the last one arrives,
+ * and every thread that passes sees all of that phase's arrivals. The last thread is held back
+ * in each phase until the others are seen not to have passed. */
+TEST_F(BarrierTest, EachPhaseReleasesOnlyWhenAllHaveArrived) {
   constexpr int THREAD_COUNT = 4;
-  constexpr int PHASE_COUNT = 5;
-  Barrier barrier(THREAD_COUNT);
-  std::atomic<int> totalPhases{0};
-
-  std::vector<std::thread> threads;
-  threads.reserve(THREAD_COUNT);
+  constexpr int PHASE_COUNT = 3;
+  struct Phases : CrewState {
+    Barrier barrier{THREAD_COUNT};
+    std::array<std::atomic<int>, PHASE_COUNT> arrived{};
+    std::array<std::atomic<int>, PHASE_COUNT> passed{};
+    std::array<std::atomic<bool>, PHASE_COUNT> lastMayArrive{};
+    std::array<std::array<std::atomic<int>, PHASE_COUNT>, THREAD_COUNT> arrivedWhenPassing{};
+  };
+  Crew<Phases> crew;
   for (int i = 0; i < THREAD_COUNT; ++i) {
-    threads.emplace_back([&]() {
-      for (int p = 0; p < PHASE_COUNT; ++p) {
-        barrier.arriveAndWait();
-        totalPhases.fetch_add(1, std::memory_order_relaxed);
-      }
-    });
-  }
-
-  for (auto& t : threads) {
-    t.join();
-  }
-
-  // Each thread went through PHASE_COUNT phases
-  EXPECT_EQ(totalPhases.load(), THREAD_COUNT * PHASE_COUNT);
-  EXPECT_EQ(barrier.generation(), static_cast<std::size_t>(PHASE_COUNT));
-}
-
-/** @test arriveAndDrop is the last to trigger */
-TEST_F(BarrierTest, ArriveAndDropTriggersBarrier) {
-  // Test that arriveAndDrop can be the triggering arrival
-  Barrier barrier(2);
-
-  std::thread t1([&]() { barrier.arriveAndWait(); });
-
-  // Give t1 time to start waiting; the result no longer depends on it (a
-  // drop before or after t1's arrival completes the same phase).
-  std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-  // arriveAndDrop should trigger the barrier and release t1
-  barrier.arriveAndDrop();
-
-  t1.join();
-
-  EXPECT_EQ(barrier.expected(), 1U);
-  EXPECT_EQ(barrier.generation(), 1U);
-}
-
-/** @test Phased computation pattern */
-TEST_F(BarrierTest, PhasedComputation) {
-  constexpr int THREAD_COUNT = 4;
-  constexpr int ITERATIONS = 3;
-  Barrier barrier(THREAD_COUNT);
-
-  // Shared data that threads update
-  std::vector<int> data(THREAD_COUNT, 0);
-  std::mutex dataMutex;
-
-  std::vector<std::thread> threads;
-  threads.reserve(THREAD_COUNT);
-  for (int i = 0; i < THREAD_COUNT; ++i) {
-    threads.emplace_back([&, i]() {
-      for (int iter = 0; iter < ITERATIONS; ++iter) {
-        // Phase 1: Update local portion
-        {
-          std::lock_guard<std::mutex> lk(dataMutex);
-          data[static_cast<std::size_t>(i)] += iter + 1;
-        }
-
-        // Sync: Wait for all threads to complete phase 1
-        barrier.arriveAndWait();
-
-        // Phase 2: Read others' data (after barrier ensures visibility)
-        int sum = 0;
-        {
-          std::lock_guard<std::mutex> lk(dataMutex);
-          for (int v : data) {
-            sum += v;
+    crew.start([i](Phases& state) {
+      for (std::size_t phase = 0; phase < PHASE_COUNT; ++phase) {
+        if (i == THREAD_COUNT - 1) {
+          while (!state.lastMayArrive[phase].load(std::memory_order_acquire)) {
+            if (state.abandoned.load(std::memory_order_acquire)) {
+              return;
+            }
+            std::this_thread::yield();
           }
         }
-        (void)sum; // Use sum to avoid unused warning
-
-        // Sync before next iteration
-        barrier.arriveAndWait();
+        state.arrived[phase].fetch_add(1, std::memory_order_acq_rel);
+        state.barrier.arriveAndWait();
+        state.arrivedWhenPassing[static_cast<std::size_t>(i)][phase].store(
+            state.arrived[phase].load(std::memory_order_acquire), std::memory_order_release);
+        state.passed[phase].fetch_add(1, std::memory_order_acq_rel);
       }
     });
   }
 
-  for (auto& t : threads) {
-    t.join();
+  for (std::size_t phase = 0; phase < PHASE_COUNT; ++phase) {
+    ASSERT_TRUE(settles([&]() { return crew->arrived[phase].load() == THREAD_COUNT - 1; }))
+        << "phase " << phase;
+    EXPECT_FALSE(escapesWithin([&]() { return crew->passed[phase].load() > 0; }))
+        << crew->passed[phase].load() << " thread(s) passed phase " << phase
+        << " with one arrival still missing";
+    crew->lastMayArrive[phase].store(true, std::memory_order_release);
   }
+  ASSERT_TRUE(crew.finish()) << "not every thread passed the last phase";
 
-  // Each thread added 1+2+3 = 6
-  int total = 0;
-  for (int v : data) {
-    total += v;
+  for (std::size_t thread = 0; thread < THREAD_COUNT; ++thread) {
+    for (std::size_t phase = 0; phase < PHASE_COUNT; ++phase) {
+      EXPECT_EQ(crew->arrivedWhenPassing[thread][phase].load(), THREAD_COUNT)
+          << "thread " << thread << ", phase " << phase;
+    }
   }
-  EXPECT_EQ(total, THREAD_COUNT * (1 + 2 + 3));
+  EXPECT_EQ(crew->barrier.generation(), static_cast<std::size_t>(PHASE_COUNT));
 }
 
 /* ----------------------------- Determinism Tests ----------------------------- */
@@ -261,23 +219,37 @@ TEST_F(BarrierTest, DropCountsOnceInCurrentPhase) {
 }
 
 /** @test Drop-then-arrive and arrive-then-drop are the same phase: both end at generation 1 with
- * one participant left for the next phase. */
+ * one participant left for the next phase. Each arrival runs on a thread of its own, so an
+ * arrival that never returns fails the case. */
 TEST_F(BarrierTest, DropFirstAndArriveFirstGiveSameGeneration) {
-  Barrier dropFirst(2);
-  dropFirst.arriveAndDrop();
-  dropFirst.arriveAndWait();
-  EXPECT_EQ(dropFirst.generation(), 1U);
-  EXPECT_EQ(dropFirst.expected(), 1U);
+  struct Pair : CrewState {
+    Barrier barrier{2};
+    std::atomic<bool> arriving{false};
+    std::atomic<bool> passed{false};
+  };
+  const auto ARRIVER = [](Pair& state) {
+    state.arriving.store(true, std::memory_order_release);
+    state.barrier.arriveAndWait();
+    state.passed.store(true, std::memory_order_release);
+  };
 
-  Barrier arriveFirst(2);
-  std::thread arriver([&]() { arriveFirst.arriveAndWait(); });
-  // The arriver blocks until the drop completes the phase; whichever order the
-  // two arrivals take, the phase completes once with one participant left.
-  std::this_thread::sleep_for(std::chrono::milliseconds(20));
-  arriveFirst.arriveAndDrop();
-  arriver.join();
-  EXPECT_EQ(arriveFirst.generation(), 1U);
-  EXPECT_EQ(arriveFirst.expected(), 1U);
+  Crew<Pair> dropFirst;
+  dropFirst->barrier.arriveAndDrop();
+  dropFirst.start(ARRIVER);
+  ASSERT_TRUE(dropFirst.finish()) << "the arrival after a drop did not pass";
+  EXPECT_EQ(dropFirst->barrier.generation(), 1U);
+  EXPECT_EQ(dropFirst->barrier.expected(), 1U);
+
+  Crew<Pair> arriveFirst;
+  arriveFirst.start(ARRIVER);
+  // The arriver may not pass a two-party barrier alone; the drop is the second arrival.
+  ASSERT_TRUE(settles([&]() { return arriveFirst->arriving.load(); }));
+  EXPECT_FALSE(escapesWithin([&]() { return arriveFirst->passed.load(); }))
+      << "one arrival of two passed the barrier";
+  arriveFirst->barrier.arriveAndDrop();
+  ASSERT_TRUE(arriveFirst.finish()) << "the drop did not release the waiting arrival";
+  EXPECT_EQ(arriveFirst->barrier.generation(), 1U);
+  EXPECT_EQ(arriveFirst->barrier.expected(), 1U);
 }
 
 /** @test A timed-out arrival is withdrawn: one thread timing out twice on a two-party barrier

@@ -123,6 +123,10 @@ any such change is called out explicitly in its entry.
 - Log rotation keeps every backup: a rotation within the same second as an
   earlier one gets a numeric suffix instead of replacing its backup.
   ([#187](https://github.com/apexedgesystems/apex_csf/pull/187))
+- `SPSCQueue` and `RingBuffer` store elements at `alignof(T)`, over-aligned
+  types included, and `SPSCQueue::sizeApprox()` never exceeds `capacity()`
+  when read from a third thread.
+  ([#189](https://github.com/apexedgesystems/apex_csf/pull/189))
 - Concurrency primitives: pool start-up, shutdown and signal handling,
   Barrier and Latch semantics, LockFreeQueue cell alignment and
   SpinLock::isLocked; the UBSan-only check joins the nightly. Breaking:

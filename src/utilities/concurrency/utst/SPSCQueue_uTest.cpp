@@ -8,14 +8,20 @@
  */
 
 #include "src/utilities/concurrency/inc/SPSCQueue.hpp"
+#include "src/utilities/concurrency/utst/support/AlignProbe.hpp"
+#include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <cstddef>
+#include <limits>
 #include <string>
 #include <thread>
 #include <vector>
 
 using apex::concurrency::SPSCQueue;
+using apex::concurrency::test::settles;
 
 /* ----------------------------- Basic Operations Tests ----------------------------- */
 
@@ -118,49 +124,50 @@ TEST_F(SPSCQueueTest, MaintainsFifoOrder) {
 
 /* ----------------------------- Capacity Tests ----------------------------- */
 
-/** @test tryPush fails when queue is full */
-TEST_F(SPSCQueueTest, TryPushFailsWhenFull) {
-  SPSCQueue<int> queue(4);
+/** @test A queue takes exactly capacity() elements and refuses the next, for both tryPush
+ * overloads, at the smallest capacity and a larger one; what it took comes back in order. */
+TEST_F(SPSCQueueTest, TakesExactlyCapacityThenRefuses) {
+  for (const std::size_t REQUESTED : {std::size_t{2}, std::size_t{8}}) {
+    SCOPED_TRACE("capacity " + std::to_string(REQUESTED));
+    SPSCQueue<int> byCopy(REQUESTED);
+    SPSCQueue<int> byMove(REQUESTED);
+    ASSERT_EQ(byCopy.capacity(), REQUESTED);
+    const int CAPACITY = static_cast<int>(REQUESTED);
 
-  // Fill the queue (capacity is 4, but usable slots are capacity-1 = 3 in classic ring buffer)
-  // Actually with our implementation, we should be able to fill all 4 slots
-  int pushed = 0;
-  while (queue.tryPush(pushed)) {
-    ++pushed;
-    if (pushed > 10)
-      break; // Safety limit
+    for (int i = 0; i < CAPACITY; ++i) {
+      const int VALUE = i;
+      EXPECT_TRUE(byCopy.tryPush(VALUE)) << "copy push " << i;
+      EXPECT_TRUE(byMove.tryPush(int{i})) << "move push " << i;
+    }
+    const int EXTRA = CAPACITY;
+    EXPECT_FALSE(byCopy.tryPush(EXTRA)) << "a full queue took one more by copy";
+    EXPECT_FALSE(byMove.tryPush(int{CAPACITY})) << "a full queue took one more by move";
+    EXPECT_EQ(byCopy.sizeApprox(), REQUESTED);
+    EXPECT_EQ(byMove.sizeApprox(), REQUESTED);
+
+    for (int i = 0; i < CAPACITY; ++i) {
+      int fromCopy = -1;
+      int fromMove = -1;
+      EXPECT_TRUE(byCopy.tryPop(fromCopy));
+      EXPECT_TRUE(byMove.tryPop(fromMove));
+      EXPECT_EQ(fromCopy, i);
+      EXPECT_EQ(fromMove, i);
+    }
+    EXPECT_TRUE(byCopy.empty());
+    EXPECT_TRUE(byMove.empty());
   }
-
-  // Should have pushed at least capacity-1 items
-  EXPECT_GE(pushed, 3);
-  EXPECT_LE(pushed, 4);
-}
-
-/** @test Queue with capacity 2 works correctly */
-TEST_F(SPSCQueueTest, CapacityTwoWorks) {
-  SPSCQueue<int> queue(2);
-
-  EXPECT_TRUE(queue.tryPush(42));
-
-  int value = 0;
-  EXPECT_TRUE(queue.tryPop(value));
-  EXPECT_EQ(value, 42);
-
-  EXPECT_TRUE(queue.tryPush(43));
-  EXPECT_TRUE(queue.tryPop(value));
-  EXPECT_EQ(value, 43);
 }
 
 /** @test Queue can be refilled after draining */
 TEST_F(SPSCQueueTest, CanRefillAfterDrain) {
   SPSCQueue<int> queue(8);
 
-  for (int round = 0; round < 3; ++round) {
-    // Fill
+  // Seven of eight slots a round, so the indices wrap at a different slot each time.
+  for (int round = 0; round < 5; ++round) {
     for (int i = 0; i < 7; ++i) {
       EXPECT_TRUE(queue.tryPush(round * 10 + i));
     }
-    // Drain
+    EXPECT_EQ(queue.sizeApprox(), 7U);
     for (int i = 0; i < 7; ++i) {
       int value = -1;
       EXPECT_TRUE(queue.tryPop(value));
@@ -284,4 +291,151 @@ TEST(SPSCQueueDeterminismTest, EmptyConsistent) {
   const bool SECOND = queue.empty();
   EXPECT_EQ(FIRST, SECOND);
   EXPECT_TRUE(FIRST);
+}
+
+/* ----------------------------- Storage Alignment Tests ----------------------------- */
+
+/** @test The storage honours the element's alignment: every element of a 64-byte-aligned type is
+ * constructed at a 64-byte boundary, at small capacities and at one large enough to come from a
+ * page-granular allocation. */
+TEST_F(SPSCQueueTest, StorageHonoursElementAlignment) {
+  using apex::concurrency::test::AlignProbe;
+  AlignProbe::misaligned().store(0, std::memory_order_relaxed);
+  for (const std::size_t CAPACITY : {std::size_t{2}, std::size_t{16}, std::size_t{1024}}) {
+    for (int repeat = 0; repeat < 8; ++repeat) {
+      const SPSCQueue<AlignProbe> queue(CAPACITY);
+    }
+  }
+  EXPECT_EQ(AlignProbe::misaligned().load(std::memory_order_relaxed), 0)
+      << "elements were constructed off their 64-byte alignment";
+}
+
+/* ----------------------------- Index Wrap Tests ----------------------------- */
+
+namespace {
+
+/// A queue of int whose indices start where the test puts them, with the snapshot arithmetic
+/// visible.
+class SteppedQueue : public SPSCQueue<int> {
+public:
+  SteppedQueue(std::size_t capacity, std::size_t firstIndex) noexcept
+      : SPSCQueue<int>(capacity, firstIndex) {}
+  using SPSCQueue<int>::occupancy;
+};
+
+constexpr std::size_t INDEX_MAX = std::numeric_limits<std::size_t>::max();
+
+} // namespace
+
+/** @test A queue whose indices wrap keeps its order, its capacity and its size: started one step
+ * below the index width, it fills across the wrap, refuses the next push, and reports each
+ * occupancy on the way down, with the head index numerically below the tail throughout. */
+TEST_F(SPSCQueueTest, IndicesWrapWithoutLosingOrderCapacityOrSize) {
+  SteppedQueue queue(2, INDEX_MAX);
+  EXPECT_TRUE(queue.empty());
+  EXPECT_EQ(queue.sizeApprox(), 0U);
+
+  ASSERT_TRUE(queue.tryPush(1)); // The head index wraps to zero; the tail is still at the maximum.
+  EXPECT_EQ(queue.sizeApprox(), 1U);
+  ASSERT_TRUE(queue.tryPush(2));
+  EXPECT_EQ(queue.sizeApprox(), 2U);
+  EXPECT_FALSE(queue.tryPush(3)) << "a full queue took a push across the index wrap";
+
+  int value = 0;
+  ASSERT_TRUE(queue.tryPop(value)); // The tail index wraps to zero.
+  EXPECT_EQ(value, 1);
+  EXPECT_EQ(queue.sizeApprox(), 1U);
+  ASSERT_TRUE(queue.tryPush(3));
+  EXPECT_EQ(queue.sizeApprox(), 2U);
+  ASSERT_TRUE(queue.tryPop(value));
+  EXPECT_EQ(value, 2);
+  ASSERT_TRUE(queue.tryPop(value));
+  EXPECT_EQ(value, 3);
+  EXPECT_TRUE(queue.empty());
+  EXPECT_EQ(queue.sizeApprox(), 0U);
+  EXPECT_FALSE(queue.tryPop(value));
+}
+
+/** @test The count sizeApprox() derives from one read of each index is within capacity for every
+ * pair, on both sides of an index wrap. A reader that is neither producer nor consumer can pair
+ * a head with a later tail; the pairs below are that split, written out. */
+TEST_F(SPSCQueueTest, OccupancyOfASplitSnapshotStaysWithinCapacity) {
+  constexpr std::size_t CAPACITY = 2;
+
+  // One instant of the queue: the distance, across the wrap too.
+  EXPECT_EQ(SteppedQueue::occupancy(5, 5, CAPACITY), 0U);
+  EXPECT_EQ(SteppedQueue::occupancy(7, 5, CAPACITY), 2U);
+  EXPECT_EQ(SteppedQueue::occupancy(0, INDEX_MAX, CAPACITY), 1U);
+  EXPECT_EQ(SteppedQueue::occupancy(1, INDEX_MAX, CAPACITY), 2U);
+
+  // The tail was read after the consumer passed the head already read.
+  EXPECT_EQ(SteppedQueue::occupancy(4, 5, CAPACITY), 0U);
+  EXPECT_EQ(SteppedQueue::occupancy(4, 6, CAPACITY), 0U);
+
+  // The same split across the wrap: the head read at the maximum of an empty queue, then a push,
+  // a pop and a push, then the tail read at zero. The numeric difference is the index maximum.
+  EXPECT_EQ(SteppedQueue::occupancy(INDEX_MAX, 0, CAPACITY), 0U);
+  EXPECT_EQ(SteppedQueue::occupancy(INDEX_MAX, 1, CAPACITY), 0U);
+  EXPECT_EQ(SteppedQueue::occupancy(INDEX_MAX - 1, 0, CAPACITY), 0U);
+
+  static_assert(SteppedQueue::occupancy(INDEX_MAX, 0, 2) <= 2);
+  static_assert(SteppedQueue::occupancy(1, INDEX_MAX, 2) == 2);
+}
+
+/* ----------------------------- sizeApprox Under Concurrency ----------------------------- */
+
+/** @test sizeApprox() read from a third thread never exceeds the capacity while a producer and a
+ * consumer run: its two index reads are not atomic together, and a read that catches the consumer
+ * ahead of the producer's older index reports zero, not a wrapped difference. The exchange starts
+ * only once the reader is sampling. This case meets the split by chance; the arithmetic for it
+ * is pinned by OccupancyOfASplitSnapshotStaysWithinCapacity. */
+TEST_F(SPSCQueueTest, SizeApproxFromAThirdThreadStaysWithinCapacity) {
+  SPSCQueue<int> queue(2);
+  constexpr int ITEMS = 200000;
+  std::atomic<bool> done{false};
+  std::atomic<bool> sampling{false};
+  std::atomic<std::size_t> largestSeen{0};
+
+  // The reader samples in bursts and yields between them, so the case stays quick when all three
+  // threads share one core.
+  std::thread reader([&]() {
+    std::size_t largest = 0;
+    while (!done.load(std::memory_order_acquire)) {
+      for (int sample = 0; sample < 256; ++sample) {
+        const std::size_t SIZE = queue.sizeApprox();
+        if (SIZE > largest) {
+          largest = SIZE;
+        }
+      }
+      sampling.store(true, std::memory_order_release);
+      std::this_thread::yield();
+    }
+    largestSeen.store(largest, std::memory_order_release);
+  });
+  const bool READER_SAMPLING = settles([&]() { return sampling.load(std::memory_order_acquire); });
+  if (READER_SAMPLING) {
+    std::thread consumer([&]() {
+      int value = 0;
+      for (int received = 0; received < ITEMS;) {
+        if (queue.tryPop(value)) {
+          ++received;
+        } else {
+          std::this_thread::yield();
+        }
+      }
+    });
+    for (int i = 0; i < ITEMS;) {
+      if (queue.tryPush(i)) {
+        ++i;
+      } else {
+        std::this_thread::yield();
+      }
+    }
+    consumer.join();
+  }
+  done.store(true, std::memory_order_release);
+  reader.join();
+
+  ASSERT_TRUE(READER_SAMPLING) << "the reader thread never sampled";
+  EXPECT_LE(largestSeen.load(), queue.capacity());
 }
