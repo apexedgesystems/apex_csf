@@ -8,12 +8,10 @@
  */
 
 #include "src/utilities/concurrency/inc/RingBuffer.hpp"
+#include "src/utilities/concurrency/utst/support/MoveTracking.hpp"
 #include "src/utilities/concurrency/utst/support/AlignProbe.hpp"
 
 #include <gtest/gtest.h>
-
-#include <string>
-#include <vector>
 
 using apex::concurrency::RingBuffer;
 
@@ -255,29 +253,11 @@ TEST_F(RingBufferTest, WorksAfterClear) {
 
 /* ----------------------------- Move Semantics Tests ----------------------------- */
 
-/** @test tryPush with rvalue moves the value */
-TEST_F(RingBufferTest, TryPushMovesRvalue) {
-  RingBuffer<std::string> buffer(4);
-
-  std::string original = "test string";
-  EXPECT_TRUE(buffer.tryPush(std::move(original)));
-
-  std::string popped;
-  EXPECT_TRUE(buffer.tryPop(popped));
-  EXPECT_EQ(popped, "test string");
-}
-
-/** @test tryPop moves value out of buffer */
-TEST_F(RingBufferTest, TryPopMovesValue) {
-  RingBuffer<std::vector<int>> buffer(4);
-
-  std::vector<int> original = {1, 2, 3, 4, 5};
-  EXPECT_TRUE(buffer.tryPush(original));
-
-  std::vector<int> popped;
-  EXPECT_TRUE(buffer.tryPop(popped));
-  EXPECT_EQ(popped.size(), 5U);
-  EXPECT_EQ(popped[0], 1);
+/** @test An rvalue pushed is moved in without a copy and its source is left moved-from, an
+ * lvalue pushed is copied exactly once, a pop moves the element out without a copy, and a
+ * move-only element type goes through. */
+TEST_F(RingBufferTest, MovesRvaluesAndCopiesLvaluesOnce) {
+  apex::concurrency::test::checkQueueValueCategories<RingBuffer>();
 }
 
 /* ----------------------------- High Throughput Tests ----------------------------- */

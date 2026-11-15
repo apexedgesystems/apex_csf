@@ -8,6 +8,7 @@
  */
 
 #include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
+#include "src/utilities/concurrency/utst/support/MoveTracking.hpp"
 #include "src/utilities/concurrency/utst/support/AlignProbe.hpp"
 #include "src/utilities/concurrency/utst/support/Crew.hpp"
 #include "src/utilities/concurrency/utst/support/SizeReader.hpp"
@@ -120,29 +121,11 @@ TEST_F(LockFreeQueueTest, MaintainsFifoOrder) {
 
 /* ----------------------------- Move Semantics Tests ----------------------------- */
 
-/** @test tryPush with rvalue moves the value */
-TEST_F(LockFreeQueueTest, TryPushMovesRvalue) {
-  LockFreeQueue<std::string> queue(4);
-
-  std::string original = "test string";
-  EXPECT_TRUE(queue.tryPush(std::move(original)));
-
-  std::string popped;
-  EXPECT_TRUE(queue.tryPop(popped));
-  EXPECT_EQ(popped, "test string");
-}
-
-/** @test tryPop moves value out of queue */
-TEST_F(LockFreeQueueTest, TryPopMovesValue) {
-  LockFreeQueue<std::vector<int>> queue(4);
-
-  std::vector<int> original = {1, 2, 3, 4, 5};
-  EXPECT_TRUE(queue.tryPush(original));
-
-  std::vector<int> popped;
-  EXPECT_TRUE(queue.tryPop(popped));
-  EXPECT_EQ(popped.size(), 5U);
-  EXPECT_EQ(popped[0], 1);
+/** @test An rvalue pushed is moved in without a copy and its source is left moved-from, an
+ * lvalue pushed is copied exactly once, a pop moves the element out without a copy, and a
+ * move-only element type goes through. */
+TEST_F(LockFreeQueueTest, MovesRvaluesAndCopiesLvaluesOnce) {
+  apex::concurrency::test::checkQueueValueCategories<LockFreeQueue>();
 }
 
 /* ----------------------------- Capacity Edge Cases ----------------------------- */
