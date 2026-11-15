@@ -7,15 +7,19 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <array>
 #include <atomic>
 #include <chrono>
-#include <thread>
+#include <cstdio>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <random>
+#include <set>
 #include <string>
+#include <thread>
 #include <vector>
-#include <algorithm>
 
 using logs::Status;
 using logs::SystemLog;
@@ -52,34 +56,79 @@ static bool contains(const std::string& hay, const std::string& needle) {
   return hay.find(needle) != std::string::npos;
 }
 
-/* ----------------------------- API Tests ----------------------------- */
-
-/** @test INFO line contains stable parts (level, source, message). */
-TEST(SystemLogTest, InfoLineFormat) {
-  const auto PATH = uniqTempFile("systemlog_info");
-  {
-    SystemLog log(PATH.string());
-    ASSERT_EQ(log.info("EXECUTIVE", "hello world", /*toConsole*/ false), Status::OK);
+/// The lines of a file's content, without their newlines.
+static std::vector<std::string> splitLines(const std::string& content) {
+  std::vector<std::string> lines;
+  std::size_t start = 0;
+  for (std::size_t nl = content.find('\n'); nl != std::string::npos;
+       nl = content.find('\n', start)) {
+    lines.push_back(content.substr(start, nl - start));
+    start = nl + 1;
   }
-  const auto S = slurp(PATH);
-  EXPECT_TRUE(contains(S, " INFO: EXECUTIVE - hello world\n"));
-
-  std::error_code ec;
-  std::filesystem::remove(PATH, ec);
+  return lines;
 }
 
-/** @test WARNING line includes error code in brackets. */
-TEST(SystemLogTest, WarningIncludesErrorCode) {
-  const auto PATH = uniqTempFile("systemlog_warn");
-  {
-    SystemLog log(PATH.string());
-    ASSERT_EQ(log.warning("SCHEDULER_BASE", /*ec*/ 8, "wheel slip detected", false), Status::OK);
-  }
-  const auto S = slurp(PATH);
-  EXPECT_TRUE(contains(S, " WARNING: SCHEDULER_BASE[8] - wheel slip detected\n"));
+/// Length of a line's "[YYYY-MM-DD HH:MM:SS]" prefix.
+constexpr std::size_t STAMP_LEN = 21;
 
-  std::error_code ec;
-  std::filesystem::remove(PATH, ec);
+/// The prefix of a line written during local second T.
+static std::string stampAt(std::time_t t) {
+  std::tm tmLocal{};
+  localtime_r(&t, &tmLocal);
+  std::array<char, 32> buf{};
+  (void)std::strftime(buf.data(), buf.size(), "[%Y-%m-%d %H:%M:%S]", &tmLocal);
+  return std::string(buf.data());
+}
+
+/* ----------------------------- API Tests ----------------------------- */
+
+/** @test Writes each level's whole line: the time of the call, level, source, code and message */
+TEST(SystemLogTest, LineFormatPerLevel) {
+  const std::vector<std::string> TAILS = {
+      " DEBUG: DBG - detail",
+      " INFO: EXECUTIVE - hello world",
+      " WARNING: SCHEDULER_BASE[8] - wheel slip detected",
+      " ERROR: IO[255] - bus fault",
+      " FATAL: EXEC[42] - system halt",
+  };
+
+  for (const auto MODE : {SystemLog::Mode::SYNC, SystemLog::Mode::ASYNC}) {
+    SCOPED_TRACE(MODE == SystemLog::Mode::ASYNC ? "ASYNC" : "SYNC");
+    const auto PATH = uniqTempFile("systemlog_format");
+    std::string content;
+    const std::time_t BEFORE = std::time(nullptr);
+    {
+      SystemLog log(PATH.string(), MODE);
+      log.setLevel(SystemLog::Level::DEBUG);
+      ASSERT_EQ(log.debug("DBG", "detail", 0), Status::OK);
+      ASSERT_EQ(log.info("EXECUTIVE", "hello world", false), Status::OK);
+      ASSERT_EQ(log.warning("SCHEDULER_BASE", /*ec*/ 8, "wheel slip detected", false), Status::OK);
+      ASSERT_EQ(log.error("IO", /*ec*/ 255, "bus fault", false), Status::OK);
+      ASSERT_EQ(log.fatal("EXEC", /*ec*/ 42, "system halt", false), Status::OK);
+      ASSERT_EQ(log.flush(), Status::OK);
+      content = slurp(PATH);
+    }
+    const std::time_t AFTER = std::time(nullptr);
+
+    // Each line starts with the timestamp of one of the seconds between the
+    // first call and the read, and the level follows it directly.
+    std::set<std::string> stamps;
+    for (std::time_t t = BEFORE; t <= AFTER; ++t) {
+      stamps.insert(stampAt(t));
+    }
+    const auto LINES = splitLines(content);
+    ASSERT_EQ(LINES.size(), TAILS.size());
+    for (std::size_t i = 0; i < LINES.size(); ++i) {
+      SCOPED_TRACE(LINES[i]);
+      ASSERT_GE(LINES[i].size(), STAMP_LEN);
+      EXPECT_EQ(stamps.count(LINES[i].substr(0, STAMP_LEN)), 1u)
+          << "the line does not start with [YYYY-MM-DD HH:MM:SS] of the call";
+      EXPECT_EQ(LINES[i].substr(STAMP_LEN), TAILS[i]);
+    }
+
+    std::error_code ec;
+    std::filesystem::remove(PATH, ec);
+  }
 }
 
 /** @test Appends each line in order in SYNC and in ASYNC mode */
@@ -118,7 +167,9 @@ TEST(SystemLogTest, ThresholdFilteringSkipsBelowLevel) {
   const auto PATH = uniqTempFile("systemlog_threshold");
   {
     SystemLog log(PATH.string());
-    log.setLevel(SystemLog::Level::ERROR); // allow ERROR and above only
+    EXPECT_EQ(log.level(), SystemLog::Level::INFO); // the default threshold
+    log.setLevel(SystemLog::Level::ERROR);          // allow ERROR and above only
+    EXPECT_EQ(log.level(), SystemLog::Level::ERROR);
     ASSERT_EQ(log.debug("DBG", "hidden", 0), Status::OK);
     ASSERT_EQ(log.info("INF", "hidden", false), Status::OK);
     ASSERT_EQ(log.warning("WRN", 3, "hidden", false), Status::OK);
@@ -149,20 +200,40 @@ TEST(SystemLogTest, NonBlockingModeWrites) {
   std::filesystem::remove(PATH, ec);
 }
 
-/** @test Console echo: call should succeed; we do not capture stdout here. */
-TEST(SystemLogTest, ConsoleEchoDoesNotThrow) {
-  const auto PATH = uniqTempFile("systemlog_console");
-  {
-    SystemLog log(PATH.string());
-    // Expect OK even if console is not writable; implementation swallows failures.
-    ASSERT_EQ(log.info("CON", "visible in file; echoed to console", /*toConsole*/ true),
-              Status::OK);
-  }
-  const auto S = slurp(PATH);
-  EXPECT_TRUE(contains(S, " INFO: CON - visible in file; echoed to console\n"));
+/** @test Echoes a line to stdout only when asked, byte for byte as the file holds it */
+TEST(SystemLogTest, ConsoleEchoWritesTheLineToStdout) {
+  for (const auto MODE : {SystemLog::Mode::SYNC, SystemLog::Mode::ASYNC}) {
+    SCOPED_TRACE(MODE == SystemLog::Mode::ASYNC ? "ASYNC" : "SYNC");
+    const auto PATH = uniqTempFile("systemlog_console");
+    Status quiet = Status::ERROR_OPEN;
+    Status echoed = Status::ERROR_OPEN;
+    Status flushed = Status::ERROR_OPEN;
+    std::string content;
 
-  std::error_code ec;
-  std::filesystem::remove(PATH, ec);
+    // No assertion runs while stdout is captured, so the capture always ends.
+    testing::internal::CaptureStdout();
+    {
+      SystemLog log(PATH.string(), MODE);
+      quiet = log.info("CON", "file only", /*toConsole*/ false);
+      echoed = log.info("CON", "file and console", /*toConsole*/ true);
+      flushed = log.flush();
+      content = slurp(PATH);
+    }
+    const std::string CAPTURED = testing::internal::GetCapturedStdout();
+
+    ASSERT_EQ(quiet, Status::OK);
+    ASSERT_EQ(echoed, Status::OK);
+    ASSERT_EQ(flushed, Status::OK);
+
+    const auto LINES = splitLines(content);
+    ASSERT_EQ(LINES.size(), 2u);
+    EXPECT_EQ(LINES[0].substr(STAMP_LEN), " INFO: CON - file only");
+    EXPECT_EQ(LINES[1].substr(STAMP_LEN), " INFO: CON - file and console");
+    EXPECT_EQ(CAPTURED, LINES[1] + "\n");
+
+    std::error_code ec;
+    std::filesystem::remove(PATH, ec);
+  }
 }
 
 /** @test Logs debug messages at or below the verbosity and skips those above it */
@@ -321,6 +392,58 @@ TEST(SystemLogTest, RotateWhileLogging) {
   }
   EXPECT_EQ(backups, rotations);
   EXPECT_EQ(linesOnDisk, writesOk.load());
+
+  std::filesystem::remove_all(DIR, ec);
+}
+
+/**
+ * @test Pins the stated ASYNC limitation: rotate() repoints the SYNC descriptor
+ *       only, so ASYNC entries keep going to the rotated file
+ *
+ * The backend writes through a descriptor of its own, which follows the file
+ * into its backup name. This case states what an ASYNC log does on rotation
+ * as it is documented; it changes with the design that gives ASYNC rotation
+ * an owner.
+ */
+TEST(SystemLogTest, AsyncRotateLeavesEntriesInTheRotatedFile) {
+  // A directory of its own keeps the live log and its backup together.
+  const auto DIR = uniqTempFile("systemlog_async_rotate").replace_extension();
+  std::error_code ec;
+  std::filesystem::create_directory(DIR, ec);
+  ASSERT_FALSE(ec) << "Failed to create temp dir: " << DIR;
+  const auto PATH = DIR / "async.log";
+
+  {
+    SystemLog log(PATH.string(), SystemLog::Mode::ASYNC);
+    ASSERT_TRUE(log.isAsync());
+    ASSERT_EQ(log.info("ROT", "before rotation", false), Status::OK);
+    ASSERT_EQ(log.flush(), Status::OK);
+
+    ASSERT_EQ(log.rotate(0u), Status::OK);
+    EXPECT_EQ(log.lastOpenStatus(), Status::OK);
+
+    ASSERT_EQ(log.info("ROT", "after rotation", false), Status::OK);
+    ASSERT_EQ(log.flush(), Status::OK);
+  }
+
+  // The rotation happened: the live file is a fresh one, and one backup
+  // holds the line written before it. The line written after it is in the
+  // backup too, and the live file is empty.
+  std::vector<std::filesystem::path> backups;
+  for (const auto& entry : std::filesystem::directory_iterator(DIR)) {
+    if (entry.path() != PATH) {
+      backups.push_back(entry.path());
+    }
+  }
+  ASSERT_EQ(backups.size(), 1u);
+  EXPECT_EQ(backups.front().extension(), ".backup");
+
+  const auto LINES = splitLines(slurp(backups.front()));
+  ASSERT_EQ(LINES.size(), 2u);
+  EXPECT_EQ(LINES[0].substr(STAMP_LEN), " INFO: ROT - before rotation");
+  EXPECT_EQ(LINES[1].substr(STAMP_LEN), " INFO: ROT - after rotation");
+  EXPECT_EQ(slurp(PATH), "");
+  EXPECT_TRUE(std::filesystem::exists(PATH));
 
   std::filesystem::remove_all(DIR, ec);
 }
