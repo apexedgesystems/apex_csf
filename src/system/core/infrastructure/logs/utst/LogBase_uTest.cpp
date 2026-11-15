@@ -4,6 +4,7 @@
  */
 
 #include "src/system/core/infrastructure/logs/inc/LogBase.hpp"
+#include "src/system/core/infrastructure/logs/utst/WallClockWindow.hpp"
 
 #include <gtest/gtest.h>
 #include <algorithm>
@@ -22,6 +23,8 @@
 
 using logs::LogBase;
 using logs::Status;
+using logs::test::WALL_CLOCK_ATTEMPTS;
+using logs::test::WallClockWindow;
 
 /* ----------------------------- Test Helpers ----------------------------- */
 
@@ -65,8 +68,11 @@ static std::filesystem::path backupNameAt(const std::filesystem::path& log, std:
 /// must leave the taken entries as they were and put its own lines in a
 /// suffixed backup beside one of them. A rotation outside the window finds
 /// no taken name and fails the suffix count, so slow rotations cannot pass
-/// without meeting a collision.
-static void expectRotationKeepsTakenNames(bool symlinks) {
+/// without meeting a collision. JUDGED is set once the checks have run; it
+/// stays false when the wall clock was set between taking the names and
+/// rotating, which puts the rotations outside the window for no fault of
+/// theirs.
+static void rotateOntoTakenNames(bool symlinks, bool& judged) {
   const auto BASE_TMP = std::filesystem::temp_directory_path();
   std::random_device rd;
   std::mt19937_64 gen(rd());
@@ -82,6 +88,7 @@ static void expectRotationKeepsTakenNames(bool symlinks) {
   constexpr int ROTATIONS = 2;
 
   std::set<std::filesystem::path> taken;
+  const WallClockWindow WINDOW;
   const std::time_t NOW = std::time(nullptr);
   for (int dt = -1; dt <= WINDOW_S; ++dt) {
     const auto NAME = backupNameAt(LOG_PATH, NOW + dt);
@@ -103,6 +110,11 @@ static void expectRotationKeepsTakenNames(bool symlinks) {
       ASSERT_EQ(log.rotate(1u), Status::OK);
     }
   }
+  if (WINDOW.close().empty()) {
+    std::filesystem::remove_all(SUBDIR, ec);
+    return;
+  }
+  judged = true;
 
   // The taken entries are what they were.
   for (const auto& NAME : taken) {
@@ -139,6 +151,19 @@ static void expectRotationKeepsTakenNames(bool symlinks) {
   std::filesystem::remove_all(SUBDIR, ec);
 }
 
+/// Runs rotateOntoTakenNames until its checks have run.
+static void expectRotationKeepsTakenNames(bool symlinks) {
+  bool judged = false;
+  for (int attempt = 0;
+       attempt < WALL_CLOCK_ATTEMPTS && !judged && !testing::Test::HasFatalFailure(); ++attempt) {
+    rotateOntoTakenNames(symlinks, judged);
+  }
+  if (!testing::Test::HasFatalFailure()) {
+    EXPECT_TRUE(judged) << "the wall clock was set, or the rotations outlasted the window, "
+                        << "in each of " << WALL_CLOCK_ATTEMPTS << " attempts";
+  }
+}
+
 /* ----------------------------- API Tests ----------------------------- */
 
 /** @test Open, write one line, path remains stable, content lands on disk. */
@@ -163,46 +188,53 @@ TEST(LogBaseTest, OpenWriteAndFpath) {
 
 /** @test Moves the content to one timestamped backup and restarts the live file */
 TEST(LogBaseTest, RotateCreatesBackupWhenNeededAndReopens) {
-  // A directory of its own, so the entries a rotation leaves can be counted.
   const auto BASE_TMP = std::filesystem::temp_directory_path();
   std::random_device rd;
   std::mt19937_64 gen(rd());
   std::uniform_int_distribution<unsigned long long> dist;
-  const auto SUBDIR = BASE_TMP / ("logbase_rotate_" + std::to_string(dist(gen)));
-
-  std::error_code ec{};
-  std::filesystem::create_directory(SUBDIR, ec);
-  ASSERT_FALSE(ec) << "Failed to create temp subdir: " << SUBDIR;
-
-  const auto LOG_PATH = SUBDIR / "test.log";
   const std::string BIG_LINE(4096, 'x');
-  std::time_t before = 0;
-  std::time_t after = 0;
 
-  {
-    LogBase log(LOG_PATH.string());
+  // The rotation runs inside a window of wall-clock seconds. A window the
+  // clock was set in says nothing about the backup's name, so the rotation
+  // is repeated in a fresh directory.
+  std::error_code ec{};
+  std::filesystem::path subdir;
+  std::filesystem::path logPath;
+  std::vector<std::time_t> seconds;
+  for (int attempt = 0; attempt < WALL_CLOCK_ATTEMPTS && seconds.empty(); ++attempt) {
+    std::filesystem::remove_all(subdir, ec);
+
+    // A directory of its own, so the entries a rotation leaves can be counted.
+    subdir = BASE_TMP / ("logbase_rotate_" + std::to_string(dist(gen)));
+    std::filesystem::create_directory(subdir, ec);
+    ASSERT_FALSE(ec) << "Failed to create temp subdir: " << subdir;
+    logPath = subdir / "test.log";
+
+    LogBase log(logPath.string());
     ASSERT_EQ(log.write(BIG_LINE), Status::OK);
 
-    before = std::time(nullptr);
+    const WallClockWindow WINDOW;
     ASSERT_EQ(log.rotate(16u), Status::OK);
-    after = std::time(nullptr);
+    seconds = WINDOW.close();
     EXPECT_EQ(log.lastOpenStatus(), Status::OK);
 
     ASSERT_EQ(log.write("second line"), Status::OK);
   }
+  ASSERT_FALSE(seconds.empty()) << "the wall clock was set, or the rotation outlasted the window, "
+                                << "in each of " << WALL_CLOCK_ATTEMPTS << " attempts";
 
   // The live file restarted: it holds the write made after the rotation only.
-  EXPECT_EQ(slurp(LOG_PATH), "second line\n");
+  EXPECT_EQ(slurp(logPath), "second line\n");
 
-  // The directory holds the live file and one backup, named for the second
-  // the rotation ran in, with the content written before it.
+  // The directory holds the live file and one backup, named for one of the
+  // window's seconds, with the content written before the rotation.
   std::set<std::filesystem::path> expectedNames;
-  for (std::time_t t = before; t <= after; ++t) {
-    expectedNames.insert(backupNameAt(LOG_PATH, t));
+  for (const std::time_t T : seconds) {
+    expectedNames.insert(backupNameAt(logPath, T));
   }
   std::vector<std::filesystem::path> others;
-  for (const auto& de : std::filesystem::directory_iterator(SUBDIR)) {
-    if (de.path() != LOG_PATH) {
+  for (const auto& de : std::filesystem::directory_iterator(subdir)) {
+    if (de.path() != logPath) {
       others.push_back(de.path());
     }
   }
@@ -210,7 +242,7 @@ TEST(LogBaseTest, RotateCreatesBackupWhenNeededAndReopens) {
   EXPECT_EQ(expectedNames.count(others.front()), 1u) << others.front();
   EXPECT_EQ(slurp(others.front()), BIG_LINE + "\n");
 
-  std::filesystem::remove_all(SUBDIR, ec);
+  std::filesystem::remove_all(subdir, ec);
 }
 
 /** @test Preserves an existing backup when a rotation's timestamped name is taken */

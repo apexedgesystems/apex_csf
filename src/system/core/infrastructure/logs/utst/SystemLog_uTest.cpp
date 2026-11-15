@@ -4,6 +4,7 @@
  */
 
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
+#include "src/system/core/infrastructure/logs/utst/WallClockWindow.hpp"
 
 #include <gtest/gtest.h>
 
@@ -23,6 +24,8 @@
 
 using logs::Status;
 using logs::SystemLog;
+using logs::test::WALL_CLOCK_ATTEMPTS;
+using logs::test::WallClockWindow;
 
 /* ----------------------------- Test Helpers ----------------------------- */
 
@@ -94,27 +97,39 @@ TEST(SystemLogTest, LineFormatPerLevel) {
 
   for (const auto MODE : {SystemLog::Mode::SYNC, SystemLog::Mode::ASYNC}) {
     SCOPED_TRACE(MODE == SystemLog::Mode::ASYNC ? "ASYNC" : "SYNC");
-    const auto PATH = uniqTempFile("systemlog_format");
-    std::string content;
-    const std::time_t BEFORE = std::time(nullptr);
-    {
-      SystemLog log(PATH.string(), MODE);
-      log.setLevel(SystemLog::Level::DEBUG);
-      ASSERT_EQ(log.debug("DBG", "detail", 0), Status::OK);
-      ASSERT_EQ(log.info("EXECUTIVE", "hello world", false), Status::OK);
-      ASSERT_EQ(log.warning("SCHEDULER_BASE", /*ec*/ 8, "wheel slip detected", false), Status::OK);
-      ASSERT_EQ(log.error("IO", /*ec*/ 255, "bus fault", false), Status::OK);
-      ASSERT_EQ(log.fatal("EXEC", /*ec*/ 42, "system halt", false), Status::OK);
-      ASSERT_EQ(log.flush(), Status::OK);
-      content = slurp(PATH);
-    }
-    const std::time_t AFTER = std::time(nullptr);
 
-    // Each line starts with the timestamp of one of the seconds between the
-    // first call and the read, and the level follows it directly.
+    // The lines are written inside a window of wall-clock seconds. A window
+    // the clock was set in says nothing about them, so the writes are
+    // repeated in a fresh file.
+    std::string content;
+    std::vector<std::time_t> seconds;
+    for (int attempt = 0; attempt < WALL_CLOCK_ATTEMPTS && seconds.empty(); ++attempt) {
+      const auto PATH = uniqTempFile("systemlog_format");
+      const WallClockWindow WINDOW;
+      {
+        SystemLog log(PATH.string(), MODE);
+        log.setLevel(SystemLog::Level::DEBUG);
+        ASSERT_EQ(log.debug("DBG", "detail", 0), Status::OK);
+        ASSERT_EQ(log.info("EXECUTIVE", "hello world", false), Status::OK);
+        ASSERT_EQ(log.warning("SCHEDULER_BASE", /*ec*/ 8, "wheel slip detected", false),
+                  Status::OK);
+        ASSERT_EQ(log.error("IO", /*ec*/ 255, "bus fault", false), Status::OK);
+        ASSERT_EQ(log.fatal("EXEC", /*ec*/ 42, "system halt", false), Status::OK);
+        ASSERT_EQ(log.flush(), Status::OK);
+        content = slurp(PATH);
+      }
+      seconds = WINDOW.close();
+      std::error_code ec;
+      std::filesystem::remove(PATH, ec);
+    }
+    ASSERT_FALSE(seconds.empty()) << "the wall clock was set, or the writes outlasted the window, "
+                                  << "in each of " << WALL_CLOCK_ATTEMPTS << " attempts";
+
+    // Each line starts with the timestamp of one of the window's seconds,
+    // and the level follows it directly.
     std::set<std::string> stamps;
-    for (std::time_t t = BEFORE; t <= AFTER; ++t) {
-      stamps.insert(stampAt(t));
+    for (const std::time_t T : seconds) {
+      stamps.insert(stampAt(T));
     }
     const auto LINES = splitLines(content);
     ASSERT_EQ(LINES.size(), TAILS.size());
@@ -125,9 +140,6 @@ TEST(SystemLogTest, LineFormatPerLevel) {
           << "the line does not start with [YYYY-MM-DD HH:MM:SS] of the call";
       EXPECT_EQ(LINES[i].substr(STAMP_LEN), TAILS[i]);
     }
-
-    std::error_code ec;
-    std::filesystem::remove(PATH, ec);
   }
 }
 

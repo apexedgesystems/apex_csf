@@ -325,7 +325,7 @@ log.rotate(MAX_SIZE);  // Example backup: system.log_20241227-143052.backup
 
 | Directory | Type              | Tests | Runs with `make test` |
 | --------- | ----------------- | ----- | --------------------- |
-| `utst/`   | Unit tests        | 48    | Yes                   |
+| `utst/`   | Unit tests        | 51    | Yes                   |
 | `ptst/`   | Performance tests | 6     | No (manual)           |
 
 ### Test Requirements
@@ -333,6 +333,9 @@ log.rotate(MAX_SIZE);  // Example backup: system.log_20241227-143052.backup
 - Tests run on Linux: they use temporary files, a FIFO nobody reads to
   stall the drain, `/dev/full` for write failures and `/proc/self/fd` to
   count descriptors
+- Tests that compare a timestamp or a backup name read the wall clock
+  around the step they check and repeat the step, up to five times, when
+  the clock was set during it
 - Tests verify severity filtering, formatting, rotation, status codes
 - Tests verify async queue lifecycle, what ASYNC mode writes, counted
   drops on a full queue, flush waiting and its timeout
