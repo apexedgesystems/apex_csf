@@ -165,35 +165,43 @@ inline bool setNonBlocking(int fd) noexcept {
  * Creates the appropriate OS-level link and populates the TransportLink
  * with both endpoints (model fd + peer fd/path).
  *
+ * A link that is already open is kept as it is: its peer endpoint may be
+ * in a driver's hands, so it is neither closed nor replaced. The call
+ * then reports whether the open link is of the kind asked for.
+ *
  * @param kind Transport kind to provision.
  * @param link Output: populated on success, untouched on failure.
- * @return true on success, false on failure or unsupported transport.
+ * @return true on success, or when the link is already open with this
+ *         kind; false on failure, on an unsupported transport, or when
+ *         the link is open with another kind.
  * @note NOT RT-safe: System calls (posix_openpt, socketpair).
  */
 [[nodiscard]] inline bool provisionTransport(TransportKind kind, TransportLink& link) noexcept {
-  link = TransportLink{};
-  link.kind = kind;
+  if (link.isValid()) {
+    return link.kind == kind;
+  }
 
+  TransportLink fresh{};
+  fresh.kind = kind;
+
+  bool ready = false;
   if (kind == TransportKind::NONE) {
-    return true; // No transport needed.
-  }
-
-  if (isSerial(kind)) {
-    return detail::provisionPty(link);
-  }
-
-  if (kind == TransportKind::CAN) {
+    ready = true; // No transport needed.
+  } else if (isSerial(kind)) {
+    ready = detail::provisionPty(fresh);
+  } else if (kind == TransportKind::CAN) {
     // CAN is message-oriented: use SOCK_DGRAM to preserve frame boundaries.
-    return detail::provisionSocketpair(link, SOCK_DGRAM);
-  }
-
-  if (usesSocketpair(kind)) {
+    ready = detail::provisionSocketpair(fresh, SOCK_DGRAM);
+  } else if (usesSocketpair(kind)) {
     // SPI, I2C, UNIX_STREAM, BLUETOOTH: byte-stream socketpair.
-    return detail::provisionSocketpair(link, SOCK_STREAM);
+    ready = detail::provisionSocketpair(fresh, SOCK_STREAM);
   }
+  // ETH_TCP, ETH_UDP have no provisioner: ready stays false.
 
-  // ETH_TCP, ETH_UDP: would need loopback sockets (not yet implemented).
-  return false;
+  if (ready) {
+    link = fresh;
+  }
+  return ready;
 }
 
 } // namespace system_component
