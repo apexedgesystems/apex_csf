@@ -17,8 +17,8 @@ namespace concurrency {
 /* ----------------------------- SPSCQueue Methods ----------------------------- */
 
 template <class T>
-SPSCQueue<T>::SPSCQueue(std::size_t capacity) noexcept
-    : mask_(0), buffer_(nullptr), head_(0), tail_(0) {
+SPSCQueue<T>::SPSCQueue(std::size_t capacity, std::size_t firstIndex) noexcept
+    : mask_(0), buffer_(nullptr), head_(firstIndex), tail_(firstIndex) {
   // Ensure minimum capacity of 2 and round up to power of two.
   const std::size_t CAP = nextPow2(capacity < 2 ? 2 : capacity);
   mask_ = CAP - 1;
@@ -91,8 +91,8 @@ template <class T> std::size_t SPSCQueue<T>::sizeApprox() const noexcept {
   const std::size_t TAIL = tail_.load(std::memory_order_acquire);
 
   // The two loads are not atomic together: the consumer can move the tail past the head read
-  // above. Report an empty queue then, not the wrapped difference.
-  return (HEAD >= TAIL) ? (HEAD - TAIL) : 0;
+  // above. occupancy() reports zero for such a pair.
+  return occupancy(HEAD, TAIL, mask_ + 1);
 }
 
 } // namespace concurrency
