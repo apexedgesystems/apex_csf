@@ -4,8 +4,9 @@
  * @file Waiting.hpp
  * @brief Bounded waits for threaded tests: a condition that must come true
  *        within a limit, and a condition that must stay false, watched for a
- *        window. A case built on them fails where it would otherwise hang or
- *        pass by timing.
+ *        window. They bound a poll, so a case does not pass by timing or
+ *        wait forever on a condition. They do not bound the case's own joins
+ *        or blocking calls: Crew.hpp owns the threads for that.
  */
 
 #include <chrono>
