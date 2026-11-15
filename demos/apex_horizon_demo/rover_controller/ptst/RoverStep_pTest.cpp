@@ -107,7 +107,10 @@ PERF_TEST(RoverStep, PlantLampsAndTrace) {
   const std::filesystem::path LOG_DIR =
       std::filesystem::temp_directory_path() / ("rover_step_ptest_" + std::to_string(::getpid()));
   std::filesystem::create_directories(LOG_DIR);
-  rig.rover.initComponentLog(LOG_DIR);
+  if (!rig.rover.initComponentLog(LOG_DIR)) {
+    std::printf("[RoverStep] component log did not open under %s\n", LOG_DIR.c_str());
+    return;
+  }
   (void)rig.send(RoverOpcode::SET_LED, {1u, 2u, 5u});   // green 10 Hz
   (void)rig.send(RoverOpcode::SET_LED, {2u, 1u, 2u});   // red 1 Hz
   (void)rig.send(RoverOpcode::SET_SEQ_STATE, {3u, 2u}); // a sequence is running: trace on

@@ -433,7 +433,14 @@ bool ApexExecutive::registerComponent(system_core::system_component::SystemCompo
                             comp->label(), comp->componentId(), instanceIdx, comp->fullUid()));
 
   // Step 3: Initialize component log (uses instance index for filename)
-  comp->initComponentLog(logDir);
+  if (!comp->initComponentLog(logDir)) {
+    sysLog_->warning(
+        label(), static_cast<std::uint8_t>(WARN_IO_ERROR),
+        fmt::format(
+            "{} runs without a log: could not open {}_{}.log under {}", comp->label(),
+            comp->componentName(), instanceIdx,
+            (logDir / system_core::system_component::logSubdir(comp->componentType())).string()));
+  }
 
   // Step 4: Load TPRM configuration
   const auto TPRM_INGEST = comp->loadTprm(fileSystem_.tprmDir());
@@ -661,7 +668,10 @@ RunResult ApexExecutive::run() noexcept {
   // an external caller wires up a real PPS source.
   timeServer_.setSteadyClock(system_core::time_server::TimeServer::defaultSteadyClock());
   timeServer_.setWallClock(system_core::time_server::TimeServer::defaultWallClock());
-  timeServer_.initComponentLog(fileSystem_.logDir());
+  if (!timeServer_.initComponentLog(fileSystem_.logDir())) {
+    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_IO_ERROR),
+                     "TimeServer runs without a log: its log file could not be opened");
+  }
   recordIngestOutcome(&timeServer_, timeServer_.loadTprm(fileSystem_.tprmDir()));
   {
     const std::uint8_t TIME_SERVER_INIT = timeServer_.init();
@@ -694,7 +704,10 @@ RunResult ApexExecutive::run() noexcept {
   registerCoreComponent(actionComp_);
 
   // Load action engine TPRM (watchpoints, groups, sequences, notifications, actions)
-  actionComp_.initComponentLog(fileSystem_.logDir());
+  if (!actionComp_.initComponentLog(fileSystem_.logDir())) {
+    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_IO_ERROR),
+                     "ActionComponent runs without a log: its log file could not be opened");
+  }
   recordIngestOutcome(&actionComp_, actionComp_.loadTprm(fileSystem_.tprmDir()));
 
   // Auto-load standalone RTS/ATS sequences from banked directories.

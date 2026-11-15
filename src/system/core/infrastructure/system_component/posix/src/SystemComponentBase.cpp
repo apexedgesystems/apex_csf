@@ -57,41 +57,26 @@ std::uint8_t SystemComponentBase::handleCommand(std::uint16_t opcode,
   }
 }
 
-void SystemComponentBase::initComponentLog(const std::filesystem::path& logDir) noexcept {
-  // Determine subdirectory based on component type:
-  //   - SW_MODEL, HW_MODEL → logDir/models/
-  //   - CORE, EXECUTIVE    → logDir/core/
-  //   - SUPPORT            → logDir/support/
-  //   - DRIVER             → logDir/drivers/
-  std::filesystem::path subDir;
-  switch (componentType()) {
-  case ComponentType::SW_MODEL:
-  case ComponentType::HW_MODEL:
-    subDir = logDir / "models";
-    break;
-  case ComponentType::SUPPORT:
-    subDir = logDir / "support";
-    break;
-  case ComponentType::DRIVER:
-    subDir = logDir / "drivers";
-    break;
-  case ComponentType::EXECUTIVE:
-  case ComponentType::CORE:
-  default:
-    subDir = logDir / "core";
-    break;
-  }
+bool SystemComponentBase::initComponentLog(const std::filesystem::path& logDir) noexcept {
+  // The log tree has one subdirectory per component type. An open on a
+  // missing directory fails for good, so the directory is made here and
+  // the caller hears whether the log opened.
+  const std::filesystem::path SUB_DIR = logDir / logSubdir(componentType());
+  std::error_code ec;
+  std::filesystem::create_directories(SUB_DIR, ec);
 
   // Format: {componentName}_{instanceIndex}.log (e.g., Scheduler_0.log, PolynomialModel_1.log)
   std::string filename = componentName();
   filename += "_";
   filename += std::to_string(instanceIndex());
   filename += ".log";
-  auto logPath = subDir / filename;
+  auto logPath = SUB_DIR / filename;
   auto log =
       std::make_shared<logs::SystemLog>(logPath.string(), logs::SystemLog::Mode::ASYNC, 4096);
   log->setLevel(logs::SystemLog::Level::DEBUG);
+  const bool OPENED = log->lastOpenStatus() == logs::Status::OK;
   setComponentLog(std::move(log));
+  return OPENED;
 }
 
 std::string SystemComponentBase::tprmFilename(std::uint32_t fullUid) noexcept {

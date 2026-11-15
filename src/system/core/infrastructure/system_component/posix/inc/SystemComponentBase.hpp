@@ -382,12 +382,17 @@ public:
 
   /**
    * @brief Initialize dedicated component log file.
-   * @param logDir Directory for component log files (e.g., ".apex_fs/logs/core").
-   * @note Creates log file named "{componentName}_{instanceIndex}.log" in the specified directory.
+   * @param logDir Root of the log tree (e.g., ".apex_fs/logs").
+   * @return true when the log file is open. false when its directory or
+   *         the file could not be created: the log is installed all the
+   *         same, and it drops every line.
+   * @note The file is "{logDir}/{type subdirectory}/{componentName}_{instanceIndex}.log",
+   *       with the subdirectory logSubdir() names for the component's
+   *       type; the subdirectory is created when missing.
    * @note Must be called AFTER setInstanceIndex() (needs instance index for filename).
    * @note NOT RT-safe: File I/O.
    */
-  void initComponentLog(const std::filesystem::path& logDir) noexcept;
+  [[nodiscard]] bool initComponentLog(const std::filesystem::path& logDir) noexcept;
 
 protected:
   /**

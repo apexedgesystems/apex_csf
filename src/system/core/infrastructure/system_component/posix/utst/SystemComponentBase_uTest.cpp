@@ -11,12 +11,15 @@
 
 #include "src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
+#include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
 #include <gtest/gtest.h>
 
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <random>
+#include <string>
 
 using system_core::system_component::Status;
 using system_core::system_component::SystemComponentBase;
@@ -69,6 +72,54 @@ protected:
     return static_cast<std::uint8_t>(Status::ERROR_PARAM);
   }
 };
+
+/** @brief Component that writes to its own log. */
+class LoggingComponent : public SystemComponentBase {
+public:
+  [[nodiscard]] std::uint16_t componentId() const noexcept override { return 997; }
+  [[nodiscard]] const char* componentName() const noexcept override { return "LoggingComponent"; }
+  [[nodiscard]] const char* label() const noexcept override { return "LOGGING"; }
+
+  [[nodiscard]] bool hasLog() const noexcept { return componentLog() != nullptr; }
+
+  /// One INFO line and a flush; the log's status for the pair.
+  [[nodiscard]] logs::Status logLine(const std::string& message) noexcept {
+    const logs::Status WRITTEN = componentLog()->info(label(), message);
+    const logs::Status FLUSHED = componentLog()->flush();
+    return WRITTEN != logs::Status::OK ? WRITTEN : FLUSHED;
+  }
+
+protected:
+  [[nodiscard]] std::uint8_t doInit() noexcept override { return 0; }
+};
+
+/// A fresh directory under the system temp directory, removed with the object.
+class TempDir {
+public:
+  TempDir() {
+    std::random_device rd;
+    std::mt19937_64 gen(rd());
+    std::uniform_int_distribution<unsigned long long> dist;
+    path_ = std::filesystem::temp_directory_path() / ("syscomp_log_" + std::to_string(dist(gen)));
+    std::filesystem::create_directory(path_);
+  }
+  ~TempDir() {
+    std::error_code ec;
+    std::filesystem::remove_all(path_, ec);
+  }
+  TempDir(const TempDir&) = delete;
+  TempDir& operator=(const TempDir&) = delete;
+
+  [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
+
+private:
+  std::filesystem::path path_;
+};
+
+static std::string slurp(const std::filesystem::path& path) {
+  std::ifstream ifs(path, std::ios::binary);
+  return std::string((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+}
 
 /* ----------------------------- Default Construction ----------------------------- */
 
@@ -199,4 +250,39 @@ TEST(SystemComponentBaseTest, NoexceptContracts) {
   static_assert(noexcept(std::declval<DummyComponent&>().init()), "init() should be noexcept");
   static_assert(noexcept(std::declval<DummyComponent&>().reset()), "reset() should be noexcept");
   SUCCEED();
+}
+
+/* ----------------------------- Component Log ----------------------------- */
+
+/** @test initComponentLog() creates the type subdirectory and the log takes lines. */
+TEST(SystemComponentBaseTest, InitComponentLogCreatesItsSubdirectory) {
+  const TempDir DIR;
+  LoggingComponent comp;
+  comp.setInstanceIndex(3);
+
+  ASSERT_TRUE(comp.initComponentLog(DIR.path()));
+  ASSERT_TRUE(comp.hasLog());
+  EXPECT_EQ(comp.logLine("first line"), logs::Status::OK);
+
+  const auto LOG_FILE = DIR.path() / "core" / "LoggingComponent_3.log";
+  ASSERT_TRUE(std::filesystem::exists(LOG_FILE)) << LOG_FILE;
+  const std::string CONTENT = slurp(LOG_FILE);
+  EXPECT_NE(CONTENT.find(" INFO: LOGGING - first line\n"), std::string::npos) << CONTENT;
+}
+
+/** @test initComponentLog() reports a log that could not open, and installs it all the same. */
+TEST(SystemComponentBaseTest, InitComponentLogReportsAFailedOpen) {
+  const TempDir DIR;
+  // A regular file where the log tree's root should be: no subdirectory can be made under it.
+  const auto NOT_A_DIR = DIR.path() / "occupied";
+  std::ofstream(NOT_A_DIR) << "x";
+
+  LoggingComponent comp;
+  comp.setInstanceIndex(0);
+  EXPECT_FALSE(comp.initComponentLog(NOT_A_DIR));
+
+  // Callers that write without a null check still have a log to call; it drops the line.
+  ASSERT_TRUE(comp.hasLog());
+  EXPECT_EQ(comp.logLine("dropped"), logs::Status::ERROR_OPEN);
+  EXPECT_EQ(slurp(NOT_A_DIR), "x");
 }

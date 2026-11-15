@@ -366,11 +366,14 @@ protected:
    * TPRM loading, initialization, and data descriptor registration.
    *
    * @param comp Pointer to component.
-   * @param logDir Directory for component log file (e.g., fileSystem().coreLogDir()).
+   * @param logDir Root of the log tree: fileSystem().logDir().
    * @return true on success, false on collision or error.
    * @note Called during registerComponents() phase.
    * @note Component must not be null.
-   * @note Log file created as "{componentName}_{instanceIndex}.log" in logDir.
+   * @note Log file created as "{componentName}_{instanceIndex}.log" in the
+   *       subdirectory of logDir for the component's type (core, models,
+   *       support, drivers). A log that cannot be opened is a warning,
+   *       not a refusal.
    */
   [[nodiscard]] bool registerComponent(system_core::system_component::SystemComponentBase* comp,
                                        const std::filesystem::path& logDir) noexcept;

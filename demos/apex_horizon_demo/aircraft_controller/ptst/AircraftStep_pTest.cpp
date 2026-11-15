@@ -120,7 +120,10 @@ PERF_TEST(AircraftStep, PlantTraceArmed) {
   const std::filesystem::path LOG_DIR = std::filesystem::temp_directory_path() /
                                         ("aircraft_step_ptest_" + std::to_string(::getpid()));
   std::filesystem::create_directories(LOG_DIR);
-  rig.aircraft.initComponentLog(LOG_DIR);
+  if (!rig.aircraft.initComponentLog(LOG_DIR)) {
+    std::printf("[AircraftStep] component log did not open under %s\n", LOG_DIR.c_str());
+    return;
+  }
 
   armTrace(rig.aircraft);
   std::uint32_t tick = 0;
