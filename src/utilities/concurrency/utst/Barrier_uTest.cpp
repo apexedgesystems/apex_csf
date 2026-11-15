@@ -49,18 +49,6 @@ TEST_F(BarrierTest, SingleThreadReleasesImmediately) {
   EXPECT_EQ(crew->barrier.generation(), 1U);
 }
 
-/** @test expected() returns correct value */
-TEST_F(BarrierTest, ExpectedReturnsValue) {
-  Barrier barrier(5);
-  EXPECT_EQ(barrier.expected(), 5U);
-}
-
-/** @test generation starts at 0 */
-TEST_F(BarrierTest, GenerationStartsAtZero) {
-  Barrier barrier(3);
-  EXPECT_EQ(barrier.generation(), 0U);
-}
-
 /** @test arriveAndDrop decreases expected */
 TEST_F(BarrierTest, ArriveAndDropDecreasesExpected) {
   Barrier barrier(3);

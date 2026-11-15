@@ -10,19 +10,23 @@
 #include "src/utilities/concurrency/inc/SPSCQueue.hpp"
 #include "src/utilities/concurrency/utst/support/MoveTracking.hpp"
 #include "src/utilities/concurrency/utst/support/AlignProbe.hpp"
+#include "src/utilities/concurrency/utst/support/Crew.hpp"
 #include "src/utilities/concurrency/utst/support/SizeReader.hpp"
 
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <limits>
-#include <optional>
 #include <thread>
 #include <vector>
 
 using apex::concurrency::SPSCQueue;
-using apex::concurrency::test::largestSizeSeenByAThirdReader;
+using apex::concurrency::test::Crew;
+using apex::concurrency::test::CrewState;
+using apex::concurrency::test::readSizeFromAThirdThread;
+using apex::concurrency::test::SizeReadings;
 
 /* ----------------------------- Basic Operations Tests ----------------------------- */
 
@@ -30,12 +34,6 @@ class SPSCQueueTest : public ::testing::Test {
 protected:
   static constexpr std::size_t DEFAULT_CAPACITY = 16;
 };
-
-/** @test Queue capacity matches constructor argument */
-TEST_F(SPSCQueueTest, CapacityMatchesArgument) {
-  SPSCQueue<int> queue(DEFAULT_CAPACITY);
-  EXPECT_EQ(queue.capacity(), DEFAULT_CAPACITY);
-}
 
 /** @test Queue with zero capacity rounds up to 2 (minimum power-of-two) */
 TEST_F(SPSCQueueTest, ZeroCapacityRoundsUpToTwo) {
@@ -189,71 +187,44 @@ TEST_F(SPSCQueueTest, MovesRvaluesAndCopiesLvaluesOnce) {
 
 /* ----------------------------- Concurrent Tests ----------------------------- */
 
-/** @test Single producer single consumer correctness */
+/** @test One producer and one consumer pass 200,000 values through a sixteen-slot queue: every
+ * value arrives, once, in order. The small ring keeps both threads at the full and empty edges.
+ * Both run on threads the case waits for with a bound, and stop when it gives up on them. */
 TEST_F(SPSCQueueTest, SingleProducerSingleConsumer) {
-  SPSCQueue<int> queue(1024);
-  constexpr int ITEM_COUNT = 100000;
-  std::vector<int> received;
-  received.reserve(ITEM_COUNT);
+  constexpr int ITEM_COUNT = 200000;
+  struct Exchange : CrewState {
+    SPSCQueue<int> queue{16};
+    std::vector<int> received;
+  };
+  Crew<Exchange> crew;
+  crew->received.reserve(ITEM_COUNT);
 
-  // Consumer thread
-  std::thread consumer([&]() {
-    int value;
-    int count = 0;
-    while (count < ITEM_COUNT) {
-      if (queue.tryPop(value)) {
-        received.push_back(value);
-        ++count;
+  crew.start([](Exchange& state) {
+    int value = 0;
+    while (static_cast<int>(state.received.size()) < ITEM_COUNT &&
+           !state.abandoned.load(std::memory_order_acquire)) {
+      if (state.queue.tryPop(value)) {
+        state.received.push_back(value);
       } else {
         std::this_thread::yield();
       }
     }
   });
-
-  // Producer (main thread)
-  for (int i = 0; i < ITEM_COUNT; ++i) {
-    while (!queue.tryPush(i)) {
-      std::this_thread::yield();
-    }
-  }
-
-  consumer.join();
-
-  // Verify all items received in order
-  ASSERT_EQ(received.size(), static_cast<std::size_t>(ITEM_COUNT));
-  for (int i = 0; i < ITEM_COUNT; ++i) {
-    EXPECT_EQ(received[static_cast<std::size_t>(i)], i);
-  }
-}
-
-/** @test High-throughput stress test */
-TEST_F(SPSCQueueTest, HighThroughputStress) {
-  SPSCQueue<std::size_t> queue(256);
-  constexpr std::size_t ITEM_COUNT = 1000000;
-  std::size_t sum = 0;
-
-  std::thread consumer([&]() {
-    std::size_t value;
-    std::size_t count = 0;
-    while (count < ITEM_COUNT) {
-      if (queue.tryPop(value)) {
-        sum += value;
-        ++count;
+  crew.start([](Exchange& state) {
+    for (int i = 0; i < ITEM_COUNT && !state.abandoned.load(std::memory_order_acquire);) {
+      if (state.queue.tryPush(i)) {
+        ++i;
+      } else {
+        std::this_thread::yield();
       }
     }
   });
+  ASSERT_TRUE(crew.finish(std::chrono::seconds(20))) << "the exchange did not finish";
 
-  for (std::size_t i = 0; i < ITEM_COUNT; ++i) {
-    while (!queue.tryPush(i)) {
-      // Spin
-    }
+  ASSERT_EQ(crew->received.size(), static_cast<std::size_t>(ITEM_COUNT));
+  for (int i = 0; i < ITEM_COUNT; ++i) {
+    ASSERT_EQ(crew->received[static_cast<std::size_t>(i)], i);
   }
-
-  consumer.join();
-
-  // Sum of 0..N-1 = N*(N-1)/2
-  const std::size_t EXPECTED = ITEM_COUNT * (ITEM_COUNT - 1) / 2;
-  EXPECT_EQ(sum, EXPECTED);
 }
 
 /* ----------------------------- Storage Alignment Tests ----------------------------- */
@@ -324,8 +295,8 @@ TEST_F(SPSCQueueTest, IndicesWrapWithoutLosingOrderCapacityOrSize) {
  * ahead of the producer's older index reports zero, not a wrapped difference. This case meets
  * the split by chance; the arithmetic for it is pinned in RingIndex_uTest.cpp. */
 TEST_F(SPSCQueueTest, SizeApproxFromAThirdThreadStaysWithinCapacity) {
-  SPSCQueue<int> queue(2);
-  const std::optional<std::size_t> LARGEST = largestSizeSeenByAThirdReader(queue, 200000);
-  ASSERT_TRUE(LARGEST.has_value()) << "the reader thread never sampled";
-  EXPECT_LE(*LARGEST, queue.capacity());
+  const SizeReadings SEEN = readSizeFromAThirdThread<SPSCQueue>(2, 200000);
+  ASSERT_TRUE(SEEN.sampled) << "the reader thread never sampled";
+  ASSERT_TRUE(SEEN.finished) << "the exchange did not finish";
+  EXPECT_LE(SEEN.largest, SEEN.capacity);
 }

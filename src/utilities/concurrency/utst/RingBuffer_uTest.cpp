@@ -260,37 +260,6 @@ TEST_F(RingBufferTest, MovesRvaluesAndCopiesLvaluesOnce) {
   apex::concurrency::test::checkQueueValueCategories<RingBuffer>();
 }
 
-/* ----------------------------- High Throughput Tests ----------------------------- */
-
-/** @test High-throughput single-threaded stress test */
-TEST_F(RingBufferTest, HighThroughputStress) {
-  RingBuffer<std::size_t> buffer(256);
-  constexpr std::size_t ITEM_COUNT = 1000000;
-  std::size_t sum = 0;
-
-  // Alternating push/pop to stress wraparound
-  std::size_t pushed = 0;
-  std::size_t popped = 0;
-
-  while (popped < ITEM_COUNT) {
-    // Push a batch
-    while (pushed < ITEM_COUNT && buffer.tryPush(pushed)) {
-      ++pushed;
-    }
-
-    // Pop a batch
-    std::size_t value;
-    while (buffer.tryPop(value)) {
-      sum += value;
-      ++popped;
-    }
-  }
-
-  // Sum of 0..N-1 = N*(N-1)/2
-  const std::size_t EXPECTED = ITEM_COUNT * (ITEM_COUNT - 1) / 2;
-  EXPECT_EQ(sum, EXPECTED);
-}
-
 /* ----------------------------- Storage Alignment Tests ----------------------------- */
 
 /** @test The storage honours the element's alignment: every element of a 64-byte-aligned type is

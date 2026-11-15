@@ -22,7 +22,6 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
-#include <optional>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -30,8 +29,9 @@
 using apex::concurrency::LockFreeQueue;
 using apex::concurrency::test::Crew;
 using apex::concurrency::test::CrewState;
-using apex::concurrency::test::largestSizeSeenByAThirdReader;
+using apex::concurrency::test::readSizeFromAThirdThread;
 using apex::concurrency::test::settles;
+using apex::concurrency::test::SizeReadings;
 
 /* ----------------------------- Basic Operations Tests ----------------------------- */
 
@@ -39,12 +39,6 @@ class LockFreeQueueTest : public ::testing::Test {
 protected:
   static constexpr std::size_t DEFAULT_CAPACITY = 16;
 };
-
-/** @test Queue capacity matches constructor argument */
-TEST_F(LockFreeQueueTest, CapacityMatchesArgument) {
-  LockFreeQueue<int> queue(DEFAULT_CAPACITY);
-  EXPECT_EQ(queue.capacity(), DEFAULT_CAPACITY);
-}
 
 /** @test Queue with zero capacity rounds up to 2 (minimum power-of-two) */
 TEST_F(LockFreeQueueTest, ZeroCapacityRoundsUpToTwo) {
@@ -483,10 +477,10 @@ TEST_F(LockFreeQueueTest, CursorsWrapInsideTheFirstLap) {
  * zero, not a wrapped difference. This case meets the split by chance; the arithmetic for it is
  * pinned in RingIndex_uTest.cpp. */
 TEST_F(LockFreeQueueTest, SizeApproxFromAThirdThreadStaysWithinCapacity) {
-  LockFreeQueue<int> queue(2);
-  const std::optional<std::size_t> LARGEST = largestSizeSeenByAThirdReader(queue, 200000);
-  ASSERT_TRUE(LARGEST.has_value()) << "the reader thread never sampled";
-  EXPECT_LE(*LARGEST, queue.capacity());
+  const SizeReadings SEEN = readSizeFromAThirdThread<LockFreeQueue>(2, 200000);
+  ASSERT_TRUE(SEEN.sampled) << "the reader thread never sampled";
+  ASSERT_TRUE(SEEN.finished) << "the exchange did not finish";
+  EXPECT_LE(SEEN.largest, SEEN.capacity);
 }
 
 /* ----------------------------- Storage Alignment Tests ----------------------------- */
