@@ -6,9 +6,14 @@
 #include "src/system/core/infrastructure/logs/inc/LogBase.hpp"
 
 #include <gtest/gtest.h>
+#include <algorithm>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <random>
+#include <set>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -32,6 +37,94 @@ static std::string slurp(const std::filesystem::path& path) {
 
 static int countLines(const std::string& s) {
   return static_cast<int>(std::count(s.begin(), s.end(), '\n'));
+}
+
+/// First-choice backup name of a rotation at time T: `<log>_YYYYMMDD-HHMMSS.backup`.
+static std::filesystem::path backupNameAt(const std::filesystem::path& log, std::time_t t) {
+  std::tm tmLocal{};
+  localtime_r(&t, &tmLocal);
+  std::ostringstream oss;
+  oss << std::put_time(&tmLocal, "%Y%m%d-%H%M%S");
+  return std::filesystem::path(log.string() + "_" + oss.str() + ".backup");
+}
+
+/// Rotate twice while every first-choice backup name of a time window is
+/// already taken, by regular files or by dangling symlinks. Each rotation
+/// must leave the taken entries as they were and put its own lines in a
+/// suffixed backup beside one of them. A rotation outside the window finds
+/// no taken name and fails the suffix count, so slow rotations cannot pass
+/// without meeting a collision.
+static void expectRotationKeepsTakenNames(bool symlinks) {
+  const auto BASE_TMP = std::filesystem::temp_directory_path();
+  std::random_device rd;
+  std::mt19937_64 gen(rd());
+  std::uniform_int_distribution<unsigned long long> dist;
+  const auto SUBDIR = BASE_TMP / ("logbase_rotate_taken_" + std::to_string(dist(gen)));
+
+  std::error_code ec{};
+  std::filesystem::create_directory(SUBDIR, ec);
+  ASSERT_FALSE(ec) << "Failed to create temp subdir: " << SUBDIR;
+
+  const auto LOG_PATH = SUBDIR / "test.log";
+  constexpr int WINDOW_S = 60;
+  constexpr int ROTATIONS = 2;
+
+  std::set<std::filesystem::path> taken;
+  const std::time_t NOW = std::time(nullptr);
+  for (int dt = -1; dt <= WINDOW_S; ++dt) {
+    const auto NAME = backupNameAt(LOG_PATH, NOW + dt);
+    if (!taken.insert(NAME).second) {
+      continue; // a repeated local second maps to a name already taken
+    }
+    if (symlinks) {
+      std::filesystem::create_symlink(SUBDIR / "no_such_target", NAME, ec);
+      ASSERT_FALSE(ec) << "Failed to create symlink: " << NAME;
+    } else {
+      std::ofstream(NAME) << "occupied\n";
+    }
+  }
+
+  {
+    LogBase log(LOG_PATH.string());
+    for (int i = 0; i < ROTATIONS; ++i) {
+      ASSERT_EQ(log.write("rotated line " + std::to_string(i)), Status::OK);
+      ASSERT_EQ(log.rotate(1u), Status::OK);
+    }
+  }
+
+  // The taken entries are what they were.
+  for (const auto& NAME : taken) {
+    if (symlinks) {
+      EXPECT_TRUE(std::filesystem::is_symlink(std::filesystem::symlink_status(NAME))) << NAME;
+      EXPECT_EQ(std::filesystem::read_symlink(NAME, ec), SUBDIR / "no_such_target") << NAME;
+    } else {
+      EXPECT_EQ(slurp(NAME), "occupied\n") << NAME;
+    }
+  }
+
+  // Each rotation produced `<taken stem>-N.backup` beside a taken name.
+  int suffixed = 0;
+  std::string rotated;
+  for (auto& de : std::filesystem::directory_iterator(SUBDIR)) {
+    const auto NAME = de.path().filename().string();
+    const auto DASH = NAME.rfind('-');
+    if (taken.count(de.path()) != 0 || DASH == std::string::npos || NAME.size() < 7 ||
+        NAME.compare(NAME.size() - 7, 7, ".backup") != 0) {
+      continue;
+    }
+    const auto FIRST_CHOICE = SUBDIR / (NAME.substr(0, DASH) + ".backup");
+    if (taken.count(FIRST_CHOICE) != 0) {
+      ++suffixed;
+      rotated += slurp(de.path());
+    }
+  }
+  EXPECT_EQ(suffixed, ROTATIONS) << "a rotation met no taken name or replaced one";
+  EXPECT_EQ(countLines(rotated), ROTATIONS);
+  for (int i = 0; i < ROTATIONS; ++i) {
+    EXPECT_NE(rotated.find("rotated line " + std::to_string(i) + "\n"), std::string::npos);
+  }
+
+  std::filesystem::remove_all(SUBDIR, ec);
 }
 
 /* ----------------------------- API Tests ----------------------------- */
@@ -111,6 +204,12 @@ TEST(LogBaseTest, RotateCreatesBackupWhenNeededAndReopens) {
   std::filesystem::remove(LOG_PATH, ec);
   std::filesystem::remove(SUBDIR, ec);
 }
+
+/** @test Preserves an existing backup when a rotation's timestamped name is taken */
+TEST(LogBaseTest, RotateOntoTakenBackupNameKeepsBoth) { expectRotationKeepsTakenNames(false); }
+
+/** @test Preserves a dangling symlink that holds a rotation's timestamped name */
+TEST(LogBaseTest, RotateOntoDanglingSymlinkNameKeepsIt) { expectRotationKeepsTakenNames(true); }
 
 /** @test Size reports non-decreasing value after additional writes. */
 TEST(LogBaseTest, SizeReflectsGrowthAfterWrites) {

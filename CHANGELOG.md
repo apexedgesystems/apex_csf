@@ -116,6 +116,9 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Log rotation keeps every backup: a rotation within the same second as an
+  earlier one gets a numeric suffix instead of replacing its backup.
+  ([#187](https://github.com/apexedgesystems/apex_csf/pull/187))
 - Build images ship ninja 1.13.1, which rebuilds an object whose header changed
   while its compile was running; it answers at the distro path too, so an
   existing build tree keeps building and rebuilds once as its build log starts
