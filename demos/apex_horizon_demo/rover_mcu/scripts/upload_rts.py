@@ -11,7 +11,7 @@ Run from inside the producer's container (the ops interface listens on
 127.0.0.1:9000 there), with the apex tools venv:
 
     docker exec -i -w /home/$USER/workspace rover_mcu \\
-      tools/py/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py \\
+      tools/.venv/bin/python demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py \\
       demos/apex_horizon_demo/rover_mcu/tprm/upload/rts_008_uploaded_beacon.toml --slot 13 --start
 
 The slot is the bank file name, and writing a packed slot replaces the
@@ -88,8 +88,8 @@ def main() -> int:
     ap.add_argument("--bank", default="bank_a")
     a = ap.parse_args()
 
-    sys.path.insert(0, str(REPO / "tools/py/src"))
-    from apex_tools.ops.client import AprotoClient  # noqa: E402
+    sys.path.insert(0, str(REPO / "tools/ops/py/apex_ops/src"))
+    from apex_ops.client import AprotoClient  # noqa: E402
 
     toml = pathlib.Path(a.toml)
     m = re.search(r"sequenceId\s*=\s*\{[^}]*value\s*=\s*(\d+)", toml.read_text())

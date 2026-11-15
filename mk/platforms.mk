@@ -8,7 +8,7 @@
 #   - compose.mk: compose-<platform> wrappers
 #   - release.mk: PLATFORM_<p>_SERVICE/BUILD/DIR
 #   - generated : docker-compose leaf services, ci-cache entries, and the
-#                 docker-images image GRAPH (docker/scripts/
+#                 docker-images image GRAPH (tools/build/py/bin/
 #                 gen-platform-consumers.py via make regen-platforms;
 #                 make check-platforms gates drift)
 #

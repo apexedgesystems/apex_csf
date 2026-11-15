@@ -4,7 +4,7 @@
 # Collects framework build outputs from all builder images and packages them
 # into versioned distribution tarballs.
 #
-# Artifacts (12 packages):
+# Artifacts (13 packages):
 #   Library packages (10) -- framework builds per target architecture
 #     apex-csf-{VER}-x86_64-linux.tar.gz
 #     apex-csf-{VER}-x86_64-linux-cuda.tar.gz
@@ -17,9 +17,11 @@
 #     apex-csf-{VER}-esp32.tar.gz
 #     apex-csf-{VER}-c2000.tar.gz
 #
-#   Tool packages (2) -- CLI tools for operators and developers
+#   Tool packages (3) -- CLI tools for operators and developers, packaged
+#   from the cpu builder by `make artifact-tools`, not by this image
 #     apex-tools-{VER}-x86_64-linux.tar.gz
-#     apex_py_tools-{VER}-py3-none-any.whl
+#     apex_ops-{VER}-py3-none-any.whl
+#     apex_analysis-{VER}-py3-none-any.whl
 #
 # Usage:
 #   docker compose build final

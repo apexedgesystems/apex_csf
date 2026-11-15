@@ -276,10 +276,14 @@ services:
       args:
         <<: *build-args
         # Compile against the lean build-base, not dev-base: the CPU release
-        # build (make release && make tools) needs only the compile toolchain,
-        # rust, and uv -- all in build-base, none of dev-base's tooling.
+        # build needs only the compile toolchain, rust, and uv -- all in
+        # build-base, none of dev-base's tooling.
         DEV_IMAGE: apex.build-base
-        BUILD_CMD: "make release && make tools"
+        # A plain build carries the build-role tools only, so the ops and
+        # analysis tools and the Python wheels are built on request:
+        # release-tools builds them into the tree `make release` built, which
+        # is the platform tarball and the one `make artifact-tools` packages.
+        BUILD_CMD: "make release && make release-tools"
 
   builder-cuda:
     image: apex.builder.cuda

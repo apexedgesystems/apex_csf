@@ -65,6 +65,11 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- Breaking: every tool lives under its role and installs to
+  `bin/tools/<role>/`; the Python package `apex_tools` is now the
+  `apex_ops` and `apex_analysis` wheels (scripts set
+  `PYTHONPATH=tools/ops/py/apex_ops/src`); `make tools-{py,sh,cpp}` are
+  gone ([#178](https://github.com/apexedgesystems/apex_csf/pull/178)).
 - Breaking: rebuild C++ consumers of the logs library and adapt typed
   callbacks to `SystemLog::flush(timeoutMs)`.
   ([#188](https://github.com/apexedgesystems/apex_csf/pull/188))

@@ -17,9 +17,11 @@ import struct
 import sys
 import time
 
-sys.path.insert(0, str(__import__("pathlib").Path(__file__).resolve().parents[3] / "tools/py/src"))
-from apex_tools.ops import protocol as proto  # noqa: E402
-from apex_tools.ops.client import AprotoClient  # noqa: E402
+sys.path.insert(
+    0, str(__import__("pathlib").Path(__file__).resolve().parents[3] / "tools/ops/py/apex_ops/src")
+)
+from apex_ops import protocol as proto  # noqa: E402
+from apex_ops.client import AprotoClient  # noqa: E402
 
 # Component UIDs for driver/comparator inspection
 DRIVER_REAL_UID = 0x007A00

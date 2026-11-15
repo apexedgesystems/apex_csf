@@ -165,7 +165,7 @@ few seconds before it starts responding.
 ### 12. Run Checkout
 
 ```bash
-PYTHONPATH=tools/py/src python3 demos/apex_hil_demo/scripts/checkout.py \
+PYTHONPATH=tools/ops/py/apex_ops/src python3 demos/apex_hil_demo/scripts/checkout.py \
     --host raspberrypi.local
 ```
 
@@ -177,8 +177,8 @@ After checkout, the system should still be running (or restarted via test 15).
 Verify:
 
 ```bash
-PYTHONPATH=tools/py/src python3 -c "
-from apex_tools.ops.client import AprotoClient
+PYTHONPATH=tools/ops/py/apex_ops/src python3 -c "
+from apex_ops.client import AprotoClient
 import struct
 with AprotoClient('raspberrypi.local', 9000) as c2:
     r = c2.get_health()
@@ -231,7 +231,7 @@ TPRM=build/hosted-x86_64-debug/demos/apex_hil_demo/exec/tprm
 ./build/hosted-x86_64-debug/bin/ApexHilDemo \
     --config $TPRM/master_1khz.tprm --fs-root /tmp/hil_fs &
 
-PYTHONPATH=tools/py/src python3 demos/apex_hil_demo/scripts/checkout.py \
+PYTHONPATH=tools/ops/py/apex_ops/src python3 demos/apex_hil_demo/scripts/checkout.py \
     --host localhost --no-stm32
 ```
 
@@ -328,7 +328,7 @@ If the system enters PAUSE state, the stdin CLI reader may have received garbage
 Always start with `</dev/null`. To recover:
 
 ```python
-from apex_tools.ops.client import AprotoClient
+from apex_ops.client import AprotoClient
 with AprotoClient("raspberrypi.local", 9000) as c2:
     c2.send_command(0x000000, 0x0115)  # EXEC_CMD_RESUME
 ```

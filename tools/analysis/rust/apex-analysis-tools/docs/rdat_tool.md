@@ -111,5 +111,5 @@ sqlite3 registry.db "SELECT category, COUNT(*), SUM(size) FROM data_entries GROU
 ## See Also
 
 - [sdat_tool](sdat_tool.md) -- Companion tool for scheduler SDAT files.
-- [registry-info](../../../../cpp/docs/registry_info.md) -- C++ tool with filtered views of the same RDAT format.
+- [registry-info](../../../cpp/registry_info/docs/registry_info.md) -- C++ tool with filtered views of the same RDAT format.
 - [Registry Library](../../../../../src/system/core/components/registry/README.md) -- API documentation.
