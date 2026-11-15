@@ -19,20 +19,15 @@
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
-#include <cstdio>
 #include <ctime>
-#include <filesystem>
-#include <fstream>
 #include <memory>
 #include <optional>
 #include <string>
-#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
 
 #include <pthread.h>
-#include <sys/syscall.h>
 
 using apex::concurrency::DelegateU8;
 using apex::concurrency::PoolStatus;
@@ -421,43 +416,13 @@ using apex::concurrency::test::BOUND;
 using apex::concurrency::test::escapesWithin;
 using apex::concurrency::test::settles;
 
-/// How many of this process's threads are asleep in a futex wait on `word`, read from each
-/// thread's /proc syscall record ("<number> <arguments in hex> ..." while it is blocked in a
-/// system call). With `value`, only the threads waiting against that saved word count; without
-/// it, any saved word does, since a worker that was not woken for a task still sleeps on the word
-/// it saved before that task was published. A thread counted here has passed its last look at
-/// the ring and its decision to wait, and is inside that wait. -1 when the host does not expose
-/// the records.
+/// How many threads are asleep in a futex wait on the pool's 32-bit wake word at `word`; with
+/// `value`, only those waiting against that saved word. A worker that was not woken for a task
+/// still sleeps on the word it saved before that task was published, so "parked" counts any
+/// saved word. A thread counted here has passed its last look at the ring and its decision to
+/// wait, and is inside that wait. -1 when the host does not expose the records.
 int threadsAsleepOn(const void* word, std::optional<std::uint32_t> value = std::nullopt) {
-  std::error_code failed;
-  std::filesystem::directory_iterator tasks("/proc/self/task", failed);
-  if (failed) {
-    return -1;
-  }
-  bool readable = false;
-  int asleep = 0;
-  for (const auto& entry : tasks) {
-    std::ifstream record(entry.path() / "syscall");
-    std::string line;
-    if (!std::getline(record, line)) {
-      continue;
-    }
-    readable = true;
-    unsigned long long number = 0;
-    unsigned long long address = 0;
-    unsigned long long operation = 0;
-    unsigned long long expected = 0;
-    if (std::sscanf(line.c_str(), "%llu %llx %llx %llx", &number, &address, &operation,
-                    &expected) != 4) {
-      continue; // "running", or a record without arguments
-    }
-    if (number == static_cast<unsigned long long>(SYS_futex) &&
-        address == reinterpret_cast<std::uintptr_t>(word) &&
-        (!value.has_value() || static_cast<std::uint32_t>(expected) == *value)) {
-      ++asleep;
-    }
-  }
-  return readable ? asleep : -1;
+  return apex::concurrency::test::threadsAsleepIn(word, sizeof(std::uint32_t), value);
 }
 
 /// Keep a scenario for the rest of the process. The holder is allocated once and never freed, so
@@ -734,14 +699,14 @@ TEST_F(ThreadPoolLockFreeTest, WorkAfterASustainedDrainIsBounded) {
 
 namespace {
 
-/// A task that announces it has started and holds its worker until the gate opens.
+/// A task that announces it is holding its worker and keeps it until the gate opens.
 struct Gate {
-  std::atomic<bool> started{false};
+  std::atomic<int> holding{0};
   std::atomic<bool> open{false};
 
   static std::uint8_t hold(void* ctx) noexcept {
     auto* gate = static_cast<Gate*>(ctx);
-    gate->started.store(true, std::memory_order_release);
+    gate->holding.fetch_add(1, std::memory_order_acq_rel);
     while (!gate->open.load(std::memory_order_acquire)) {
       std::this_thread::yield();
     }
@@ -771,7 +736,7 @@ struct LoadScenario {
 TEST_F(ThreadPoolLockFreeTest, AcceptsExactlyCapacityThenReportsQueueFull) {
   Held<LoadScenario> scenario(1U, 4U);
   ASSERT_EQ(scenario->pool.tryEnqueue("gate", {&Gate::hold, &scenario->gate}), PoolStatus::SUCCESS);
-  ASSERT_TRUE(settles([&]() { return scenario->gate.started.load(); }, BOUND));
+  ASSERT_TRUE(settles([&]() { return scenario->gate.holding.load() == 1; }, BOUND));
 
   const std::size_t CAPACITY = scenario->pool.capacity();
   for (std::size_t i = 0; i < CAPACITY; ++i) {
@@ -792,11 +757,17 @@ TEST_F(ThreadPoolLockFreeTest, AcceptsExactlyCapacityThenReportsQueueFull) {
 }
 
 /** @test Four threads submit 10,000 tasks each through a 64-task ring, retrying while it is full:
- * every enqueue reported as SUCCESS runs, and the ring was full along the way. */
+ * every enqueue reported as SUCCESS runs. Both workers are held until a push has been refused, so
+ * the producers always meet a full ring. */
 TEST_F(ThreadPoolLockFreeTest, EverySuccessFromFourProducersRuns) {
   constexpr int PRODUCERS = 4;
   constexpr std::uint32_t TASKS_EACH = 10'000;
   Held<LoadScenario> scenario(2U, 64U);
+  for (int worker = 0; worker < 2; ++worker) {
+    ASSERT_EQ(scenario->pool.tryEnqueue("gate", {&Gate::hold, &scenario->gate}),
+              PoolStatus::SUCCESS);
+  }
+  ASSERT_TRUE(settles([&]() { return scenario->gate.holding.load() == 2; }, BOUND));
 
   std::vector<std::thread> producers;
   producers.reserve(PRODUCERS);
@@ -818,6 +789,9 @@ TEST_F(ThreadPoolLockFreeTest, EverySuccessFromFourProducersRuns) {
     });
   }
 
+  const bool FILLED = settles([&]() { return scenario->refused.load() > 0; }, BOUND);
+  scenario->gate.open.store(true, std::memory_order_release);
+  EXPECT_TRUE(FILLED) << "the producers never found the ring full behind two held workers";
   const bool SUBMITTED = settles([&]() { return scenario->producersDone.load() == PRODUCERS; },
                                  std::chrono::seconds(60));
   scenario->stop.store(true, std::memory_order_release);
@@ -829,7 +803,6 @@ TEST_F(ThreadPoolLockFreeTest, EverySuccessFromFourProducersRuns) {
   ASSERT_TRUE(
       settles([&]() { return scenario->executed.load() == scenario->accepted.load(); }, BOUND))
       << "ran " << scenario->executed.load() << " of " << scenario->accepted.load();
-  EXPECT_GT(scenario->refused.load(), 0U) << "the ring was never full";
   scenario.settled();
 }
 

@@ -2,17 +2,25 @@
 #define APEX_UTILITIES_CONCURRENCY_UTST_SUPPORT_THREAD_PROBE_HPP
 /**
  * @file ThreadProbe.hpp
- * @brief What a thread reports about itself: the CPUs it may run on and its
- *        name. A task or thread body fills one in, and the test compares it
- *        with the configuration it asked for.
+ * @brief What can be learned about a thread from outside the code under test:
+ *        the CPUs it may run on and its name, which a task or thread body
+ *        records about itself, and whether it is asleep in a futex wait on a
+ *        given object, read from the kernel's record of its system call.
  */
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
-#include <cstring>
+#include <cstdio>
+#include <filesystem>
+#include <fstream>
+#include <optional>
+#include <string>
+#include <system_error>
 
 #include <pthread.h>
 #include <sched.h>
+#include <sys/syscall.h>
 
 namespace apex {
 namespace concurrency {
@@ -65,6 +73,45 @@ struct ThreadIdentity {
     return 0;
   }
 };
+
+/// How many of this process's threads are asleep in a futex wait on a word inside the `size`
+/// bytes at `object`, read from each thread's /proc syscall record ("<number> <arguments in hex>
+/// ..." while the thread is blocked in a system call). With `value`, only the threads waiting
+/// against that expected word count. A thread counted here is inside the wait, past whatever its
+/// code checked before deciding to block. -1 when the host does not expose the records.
+inline int threadsAsleepIn(const void* object, std::size_t size,
+                           std::optional<std::uint32_t> value = std::nullopt) {
+  std::error_code failed;
+  std::filesystem::directory_iterator tasks("/proc/self/task", failed);
+  if (failed) {
+    return -1;
+  }
+  const auto BEGIN = reinterpret_cast<std::uintptr_t>(object);
+  bool readable = false;
+  int asleep = 0;
+  for (const auto& entry : tasks) {
+    std::ifstream record(entry.path() / "syscall");
+    std::string line;
+    if (!std::getline(record, line)) {
+      continue;
+    }
+    readable = true;
+    unsigned long long number = 0;
+    unsigned long long address = 0;
+    unsigned long long operation = 0;
+    unsigned long long expected = 0;
+    if (std::sscanf(line.c_str(), "%llu %llx %llx %llx", &number, &address, &operation,
+                    &expected) != 4) {
+      continue; // "running", or a record without arguments
+    }
+    if (number == static_cast<unsigned long long>(SYS_futex) && address >= BEGIN &&
+        address < BEGIN + size &&
+        (!value.has_value() || static_cast<std::uint32_t>(expected) == *value)) {
+      ++asleep;
+    }
+  }
+  return readable ? asleep : -1;
+}
 
 } // namespace test
 } // namespace concurrency
