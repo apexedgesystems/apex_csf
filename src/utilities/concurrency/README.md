@@ -1033,19 +1033,24 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 
 ### Test Organization
 
-| Module             | Test File                      | Coverage                                        |
-| ------------------ | ------------------------------ | ----------------------------------------------- |
-| ThreadPool         | `ThreadPool_uTest.cpp`         | Lifecycle, task execution, error handling       |
-| ThreadPoolLockFree | `ThreadPoolLockFree_uTest.cpp` | Lifecycle, lock-free enqueue, bounded queue     |
-| LockFreeQueue      | `LockFreeQueue_uTest.cpp`      | Push/pop, capacity, MPMC correctness            |
-| SPSCQueue          | `SPSCQueue_uTest.cpp`          | Push/pop, SPSC correctness, stress tests        |
-| RingBuffer         | `RingBuffer_uTest.cpp`         | Push/pop, peek, clear, wraparound, stress tests |
-| Semaphore          | `Semaphore_uTest.cpp`          | Acquire/release, timeout, concurrency           |
-| SpinLock           | `SpinLock_uTest.cpp`           | Lock/unlock, contention, std::lock_guard        |
-| Latch              | `Latch_uTest.cpp`              | Countdown, wait, multi-thread coordination      |
-| Barrier            | `Barrier_uTest.cpp`            | Phases, generations, multi-thread sync          |
-| DelegateU8         | `Delegate_uTest.cpp`           | Construction, invocation                        |
-| AlignCl            | `Cache_uTest.cpp`              | Alignment verification                          |
+| Module               | Test File                      | Coverage                                           |
+| -------------------- | ------------------------------ | -------------------------------------------------- |
+| ThreadPool           | `ThreadPool_uTest.cpp`         | Lifecycle, task execution, errors, worker identity |
+| ThreadPoolLockFree   | `ThreadPoolLockFree_uTest.cpp` | Lifecycle, capacity, producers, wake and shutdown  |
+| ThreadConfig         | `ThreadConfig_uTest.cpp`       | Affinity, name, refused settings, timer slack      |
+| LockFreeQueue        | `LockFreeQueue_uTest.cpp`      | Push/pop, capacity, MPMC integrity, alignment      |
+| SPSCQueue            | `SPSCQueue_uTest.cpp`          | Push/pop, capacity, index wrap, size, alignment    |
+| RingBuffer           | `RingBuffer_uTest.cpp`         | Push/pop, peek, clear, wraparound, alignment       |
+| Semaphore            | `Semaphore_uTest.cpp`          | Acquire/release, timeout, wake-all, count bound    |
+| SpinLock             | `SpinLock_uTest.cpp`           | Lock/unlock, mutual exclusion, std::lock_guard     |
+| Latch                | `Latch_uTest.cpp`              | Countdown, wait, arrive-and-wait, lifetime         |
+| Barrier              | `Barrier_uTest.cpp`            | Phases, generations, drop, blocking until the last |
+| DelegateU8, Delegate | `Delegate_uTest.cpp`           | Construction, invocation, null and void forms      |
+| AlignCl              | `Cache_uTest.cpp`              | Alignment verification                             |
+
+Threaded cases share three helpers under `utst/support/`: bounded waits
+(`Waiting.hpp`), a thread owner that ends a case in bounded time (`Crew.hpp`)
+and thread identity and sleep checks (`ThreadProbe.hpp`).
 
 ---
 
