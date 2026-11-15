@@ -23,8 +23,8 @@ SPSCQueue<T>::SPSCQueue(std::size_t capacity) noexcept
   const std::size_t CAP = nextPow2(capacity < 2 ? 2 : capacity);
   mask_ = CAP - 1;
 
-  // Allocate and default-construct elements.
-  buffer_ = static_cast<T*>(::operator new[](CAP * sizeof(T)));
+  // Allocate with the element's own alignment, then default-construct elements.
+  buffer_ = static_cast<T*>(::operator new[](CAP * sizeof(T), std::align_val_t{alignof(T)}));
   for (std::size_t i = 0; i < CAP; ++i) {
     new (&buffer_[i]) T();
   }
@@ -36,7 +36,7 @@ template <class T> SPSCQueue<T>::~SPSCQueue() {
     for (std::size_t i = CAP; i-- > 0;) {
       std::destroy_at(&buffer_[i]);
     }
-    ::operator delete[](buffer_);
+    ::operator delete[](buffer_, std::align_val_t{alignof(T)});
     buffer_ = nullptr;
   }
 }

@@ -8,6 +8,7 @@
  */
 
 #include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
+#include "src/utilities/concurrency/utst/support/AlignProbe.hpp"
 #include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
@@ -423,24 +424,7 @@ TEST(LockFreeQueueDeterminismTest, CapacityConsistent) {
 
 /* ----------------------------- Storage Alignment Tests ----------------------------- */
 
-namespace {
-
-/// An element that requires the cell's own alignment and counts a misaligned construction.
-struct alignas(64) AlignProbe {
-  AlignProbe() {
-    if (reinterpret_cast<std::uintptr_t>(this) % 64 != 0) {
-      misaligned().fetch_add(1, std::memory_order_relaxed);
-    }
-  }
-  /// Constructions seen at an address that is not a multiple of 64.
-  static std::atomic<int>& misaligned() {
-    static std::atomic<int> count{0};
-    return count;
-  }
-  std::uint8_t byte{0};
-};
-
-} // namespace
+using apex::concurrency::test::AlignProbe;
 
 /** @test The cell storage honours alignas(64): every element is constructed at a 64-byte boundary,
  * at small capacities and at one large enough to come from a page-granular allocation. */

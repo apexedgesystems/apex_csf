@@ -8,6 +8,7 @@
  */
 
 #include "src/utilities/concurrency/inc/SPSCQueue.hpp"
+#include "src/utilities/concurrency/utst/support/AlignProbe.hpp"
 
 #include <gtest/gtest.h>
 
@@ -285,4 +286,21 @@ TEST(SPSCQueueDeterminismTest, EmptyConsistent) {
   const bool SECOND = queue.empty();
   EXPECT_EQ(FIRST, SECOND);
   EXPECT_TRUE(FIRST);
+}
+
+/* ----------------------------- Storage Alignment Tests ----------------------------- */
+
+/** @test The storage honours the element's alignment: every element of a 64-byte-aligned type is
+ * constructed at a 64-byte boundary, at small capacities and at one large enough to come from a
+ * page-granular allocation. */
+TEST_F(SPSCQueueTest, StorageHonoursElementAlignment) {
+  using apex::concurrency::test::AlignProbe;
+  AlignProbe::misaligned().store(0, std::memory_order_relaxed);
+  for (const std::size_t CAPACITY : {std::size_t{2}, std::size_t{16}, std::size_t{1024}}) {
+    for (int repeat = 0; repeat < 8; ++repeat) {
+      const SPSCQueue<AlignProbe> queue(CAPACITY);
+    }
+  }
+  EXPECT_EQ(AlignProbe::misaligned().load(std::memory_order_relaxed), 0)
+      << "elements were constructed off their 64-byte alignment";
 }
