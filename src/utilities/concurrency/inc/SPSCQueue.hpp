@@ -16,6 +16,8 @@
  *  - Only ONE thread may call tryPush, only ONE thread may call tryPop.
  */
 
+#include "src/utilities/concurrency/inc/RingIndex.hpp"
+
 #include <atomic>
 #include <cstddef>
 #include <type_traits>
@@ -117,21 +119,6 @@ protected:
    * @note NOT RT-safe: Allocates buffer storage.
    */
   SPSCQueue(std::size_t capacity, std::size_t firstIndex) noexcept;
-
-  /**
-   * @brief Element count implied by one read of each index.
-   * @param head A value read from the head index.
-   * @param tail A value read from the tail index.
-   * @param capacity The queue's capacity.
-   * @return The distance from tail to head in the indices' modular arithmetic when it is within
-   *         capacity, zero otherwise. A larger distance cannot come from one instant of the
-   *         queue, on either side of an index wrap.
-   */
-  [[nodiscard]] static constexpr std::size_t occupancy(std::size_t head, std::size_t tail,
-                                                       std::size_t capacity) noexcept {
-    const std::size_t DISTANCE = head - tail;
-    return (DISTANCE <= capacity) ? DISTANCE : 0;
-  }
 
 private:
   static constexpr std::size_t CACHE_LINE = 64;

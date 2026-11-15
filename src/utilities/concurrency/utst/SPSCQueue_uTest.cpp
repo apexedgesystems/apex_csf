@@ -9,19 +9,20 @@
 
 #include "src/utilities/concurrency/inc/SPSCQueue.hpp"
 #include "src/utilities/concurrency/utst/support/AlignProbe.hpp"
-#include "src/utilities/concurrency/utst/support/Waiting.hpp"
+#include "src/utilities/concurrency/utst/support/SizeReader.hpp"
 
 #include <gtest/gtest.h>
 
 #include <atomic>
 #include <cstddef>
 #include <limits>
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
 
 using apex::concurrency::SPSCQueue;
-using apex::concurrency::test::settles;
+using apex::concurrency::test::largestSizeSeenByAThirdReader;
 
 /* ----------------------------- Basic Operations Tests ----------------------------- */
 
@@ -314,13 +315,11 @@ TEST_F(SPSCQueueTest, StorageHonoursElementAlignment) {
 
 namespace {
 
-/// A queue of int whose indices start where the test puts them, with the snapshot arithmetic
-/// visible.
+/// A queue of int whose indices start where the test puts them.
 class SteppedQueue : public SPSCQueue<int> {
 public:
   SteppedQueue(std::size_t capacity, std::size_t firstIndex) noexcept
       : SPSCQueue<int>(capacity, firstIndex) {}
-  using SPSCQueue<int>::occupancy;
 };
 
 constexpr std::size_t INDEX_MAX = std::numeric_limits<std::size_t>::max();
@@ -356,86 +355,15 @@ TEST_F(SPSCQueueTest, IndicesWrapWithoutLosingOrderCapacityOrSize) {
   EXPECT_FALSE(queue.tryPop(value));
 }
 
-/** @test The count sizeApprox() derives from one read of each index is within capacity for every
- * pair, on both sides of an index wrap. A reader that is neither producer nor consumer can pair
- * a head with a later tail; the pairs below are that split, written out. */
-TEST_F(SPSCQueueTest, OccupancyOfASplitSnapshotStaysWithinCapacity) {
-  constexpr std::size_t CAPACITY = 2;
-
-  // One instant of the queue: the distance, across the wrap too.
-  EXPECT_EQ(SteppedQueue::occupancy(5, 5, CAPACITY), 0U);
-  EXPECT_EQ(SteppedQueue::occupancy(7, 5, CAPACITY), 2U);
-  EXPECT_EQ(SteppedQueue::occupancy(0, INDEX_MAX, CAPACITY), 1U);
-  EXPECT_EQ(SteppedQueue::occupancy(1, INDEX_MAX, CAPACITY), 2U);
-
-  // The tail was read after the consumer passed the head already read.
-  EXPECT_EQ(SteppedQueue::occupancy(4, 5, CAPACITY), 0U);
-  EXPECT_EQ(SteppedQueue::occupancy(4, 6, CAPACITY), 0U);
-
-  // The same split across the wrap: the head read at the maximum of an empty queue, then a push,
-  // a pop and a push, then the tail read at zero. The numeric difference is the index maximum.
-  EXPECT_EQ(SteppedQueue::occupancy(INDEX_MAX, 0, CAPACITY), 0U);
-  EXPECT_EQ(SteppedQueue::occupancy(INDEX_MAX, 1, CAPACITY), 0U);
-  EXPECT_EQ(SteppedQueue::occupancy(INDEX_MAX - 1, 0, CAPACITY), 0U);
-
-  static_assert(SteppedQueue::occupancy(INDEX_MAX, 0, 2) <= 2);
-  static_assert(SteppedQueue::occupancy(1, INDEX_MAX, 2) == 2);
-}
-
 /* ----------------------------- sizeApprox Under Concurrency ----------------------------- */
 
 /** @test sizeApprox() read from a third thread never exceeds the capacity while a producer and a
  * consumer run: its two index reads are not atomic together, and a read that catches the consumer
- * ahead of the producer's older index reports zero, not a wrapped difference. The exchange starts
- * only once the reader is sampling. This case meets the split by chance; the arithmetic for it
- * is pinned by OccupancyOfASplitSnapshotStaysWithinCapacity. */
+ * ahead of the producer's older index reports zero, not a wrapped difference. This case meets
+ * the split by chance; the arithmetic for it is pinned in RingIndex_uTest.cpp. */
 TEST_F(SPSCQueueTest, SizeApproxFromAThirdThreadStaysWithinCapacity) {
   SPSCQueue<int> queue(2);
-  constexpr int ITEMS = 200000;
-  std::atomic<bool> done{false};
-  std::atomic<bool> sampling{false};
-  std::atomic<std::size_t> largestSeen{0};
-
-  // The reader samples in bursts and yields between them, so the case stays quick when all three
-  // threads share one core.
-  std::thread reader([&]() {
-    std::size_t largest = 0;
-    while (!done.load(std::memory_order_acquire)) {
-      for (int sample = 0; sample < 256; ++sample) {
-        const std::size_t SIZE = queue.sizeApprox();
-        if (SIZE > largest) {
-          largest = SIZE;
-        }
-      }
-      sampling.store(true, std::memory_order_release);
-      std::this_thread::yield();
-    }
-    largestSeen.store(largest, std::memory_order_release);
-  });
-  const bool READER_SAMPLING = settles([&]() { return sampling.load(std::memory_order_acquire); });
-  if (READER_SAMPLING) {
-    std::thread consumer([&]() {
-      int value = 0;
-      for (int received = 0; received < ITEMS;) {
-        if (queue.tryPop(value)) {
-          ++received;
-        } else {
-          std::this_thread::yield();
-        }
-      }
-    });
-    for (int i = 0; i < ITEMS;) {
-      if (queue.tryPush(i)) {
-        ++i;
-      } else {
-        std::this_thread::yield();
-      }
-    }
-    consumer.join();
-  }
-  done.store(true, std::memory_order_release);
-  reader.join();
-
-  ASSERT_TRUE(READER_SAMPLING) << "the reader thread never sampled";
-  EXPECT_LE(largestSeen.load(), queue.capacity());
+  const std::optional<std::size_t> LARGEST = largestSizeSeenByAThirdReader(queue, 200000);
+  ASSERT_TRUE(LARGEST.has_value()) << "the reader thread never sampled";
+  EXPECT_LE(*LARGEST, queue.capacity());
 }

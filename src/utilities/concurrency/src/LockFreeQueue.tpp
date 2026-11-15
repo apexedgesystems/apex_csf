@@ -20,8 +20,8 @@ namespace concurrency {
 /* ----------------------------- LockFreeQueue Methods ----------------------------- */
 
 template <class T>
-LockFreeQueue<T>::LockFreeQueue(std::size_t capacity) noexcept
-    : mask_(0), buffer_(nullptr), head_(0), tail_(0) {
+LockFreeQueue<T>::LockFreeQueue(std::size_t capacity, std::size_t firstIndex) noexcept
+    : mask_(0), buffer_(nullptr), head_(firstIndex), tail_(firstIndex) {
   // Ensure minimum capacity of 2 and round up to power of two
   const std::size_t CAP = nextPow2(capacity < 2 ? 2 : capacity);
   mask_ = CAP - 1;
@@ -32,8 +32,10 @@ LockFreeQueue<T>::LockFreeQueue(std::size_t capacity) noexcept
   buffer_ =
       static_cast<Cell*>(::operator new[](CAP * sizeof(Cell), std::align_val_t{alignof(Cell)}));
 
+  // Each cell starts with the sequence number of the first cursor position that lands on it:
+  // the one value in [firstIndex, firstIndex + CAP) whose low bits are the cell's index.
   for (std::size_t i = 0; i < CAP; ++i) {
-    new (&buffer_[i].sequence) std::atomic<std::size_t>(i);
+    new (&buffer_[i].sequence) std::atomic<std::size_t>(firstIndex + ((i - firstIndex) & mask_));
     new (&buffer_[i].data) T();
   }
 }

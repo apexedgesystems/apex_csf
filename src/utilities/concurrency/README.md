@@ -405,6 +405,7 @@ public:
   bool tryPush(const T& value) noexcept;
   bool tryPush(T&& value) noexcept;
   bool tryPop(T& out) noexcept;
+  std::size_t sizeApprox() const noexcept;
   std::size_t capacity() const noexcept;
 };
 ```
@@ -417,12 +418,14 @@ public:
 | `~LockFreeQueue()` | No      | Deallocates buffer   |
 | `tryPush()`        | Yes     | Lock-free CAS loop   |
 | `tryPop()`         | Yes     | Lock-free CAS loop   |
+| `sizeApprox()`     | Yes     | Atomic loads         |
 | `capacity()`       | Yes     | Returns stored value |
 
 #### Requirements
 
 - `T` must be move-constructible and move-assignable
 - Capacity >= 2 (rounded up to a power of two); the cells are 64-byte aligned, one per cache line
+- `sizeApprox()` may be read from any thread and never exceeds `capacity()`
 
 ---
 
@@ -1038,9 +1041,10 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 | ThreadPool           | `ThreadPool_uTest.cpp`         | Lifecycle, task execution, errors, worker identity |
 | ThreadPoolLockFree   | `ThreadPoolLockFree_uTest.cpp` | Lifecycle, capacity, producers, wake and shutdown  |
 | ThreadConfig         | `ThreadConfig_uTest.cpp`       | Affinity, name, refused settings, timer slack      |
-| LockFreeQueue        | `LockFreeQueue_uTest.cpp`      | Push/pop, capacity, MPMC integrity, alignment      |
+| LockFreeQueue        | `LockFreeQueue_uTest.cpp`      | Push/pop, capacity, MPMC integrity, index wrap     |
 | SPSCQueue            | `SPSCQueue_uTest.cpp`          | Push/pop, capacity, index wrap, size, alignment    |
 | RingBuffer           | `RingBuffer_uTest.cpp`         | Push/pop, peek, clear, wraparound, alignment       |
+| ringOccupancy        | `RingIndex_uTest.cpp`          | Element count across index wrap, split snapshots   |
 | Semaphore            | `Semaphore_uTest.cpp`          | Acquire/release, timeout, wake-all, count bound    |
 | SpinLock             | `SpinLock_uTest.cpp`           | Lock/unlock, mutual exclusion, std::lock_guard     |
 | Latch                | `Latch_uTest.cpp`              | Countdown, wait, arrive-and-wait, lifetime         |

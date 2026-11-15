@@ -91,8 +91,8 @@ template <class T> std::size_t SPSCQueue<T>::sizeApprox() const noexcept {
   const std::size_t TAIL = tail_.load(std::memory_order_acquire);
 
   // The two loads are not atomic together: the consumer can move the tail past the head read
-  // above. occupancy() reports zero for such a pair.
-  return occupancy(HEAD, TAIL, mask_ + 1);
+  // above. ringOccupancy() reports zero for such a pair.
+  return ringOccupancy(HEAD, TAIL, mask_ + 1);
 }
 
 } // namespace concurrency

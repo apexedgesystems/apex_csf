@@ -7,7 +7,7 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Sources (12 files, plus the thread-launch seam under support/)
+# Sources (13 files, plus the thread-launch seam under support/)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
@@ -16,6 +16,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/LockFreeQueue_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SPSCQueue_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/RingBuffer_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/RingIndex_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Semaphore_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SpinLock_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Latch_uTest.cpp"

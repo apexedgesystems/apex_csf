@@ -15,6 +15,8 @@
  *  - T must be move-constructible and move-assignable.
  */
 
+#include "src/utilities/concurrency/inc/RingIndex.hpp"
+
 #include <atomic>
 #include <cstddef>
 #include <type_traits>
@@ -41,7 +43,7 @@ public:
    * @param capacity Minimum queue size (rounded up to power-of-two, minimum 2).
    * @note NOT RT-safe: Allocates buffer storage.
    */
-  explicit LockFreeQueue(std::size_t capacity) noexcept;
+  explicit LockFreeQueue(std::size_t capacity) noexcept : LockFreeQueue(capacity, 0) {}
 
   /**
    * @brief Destructor releases internal storage.
@@ -88,14 +90,30 @@ public:
 
   /**
    * @brief Get approximate number of elements in queue.
-   * @return Approximate element count (may be stale due to concurrent access).
+   * @return Approximate element count (may be stale due to concurrent access), never more than
+   *         capacity().
    * @note RT-safe: Two atomic loads.
+   * @note The two index reads are not one instant: a consumer can pass the head already read,
+   *       and the result is zero for a pair that no state of the queue could have produced.
    */
   [[nodiscard]] std::size_t sizeApprox() const noexcept {
-    const std::size_t h = head_.load(std::memory_order_relaxed);
-    const std::size_t t = tail_.load(std::memory_order_relaxed);
-    return (h >= t) ? (h - t) : 0;
+    const std::size_t HEAD = head_.load(std::memory_order_relaxed);
+    const std::size_t TAIL = tail_.load(std::memory_order_relaxed);
+    return ringOccupancy(HEAD, TAIL, mask_ + 1);
   }
+
+protected:
+  /**
+   * @brief Construct a queue whose two cursors both start at firstIndex.
+   * @param capacity Minimum queue size (rounded up to power-of-two, minimum 2).
+   * @param firstIndex Starting value of the producer and consumer cursors.
+   *
+   * The cursors and the per-cell sequence numbers run freely and wrap at the width of
+   * std::size_t. A queue started just below that width reaches the wrap within a few operations,
+   * which is how the index arithmetic is tested.
+   * @note NOT RT-safe: Allocates buffer storage.
+   */
+  LockFreeQueue(std::size_t capacity, std::size_t firstIndex) noexcept;
 
 private:
   static constexpr std::size_t CACHE_LINE = 64;

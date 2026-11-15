@@ -9,6 +9,8 @@
 
 #include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
 #include "src/utilities/concurrency/utst/support/AlignProbe.hpp"
+#include "src/utilities/concurrency/utst/support/Crew.hpp"
+#include "src/utilities/concurrency/utst/support/SizeReader.hpp"
 #include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
@@ -17,12 +19,17 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
+#include <optional>
 #include <thread>
 #include <utility>
 #include <vector>
 
 using apex::concurrency::LockFreeQueue;
+using apex::concurrency::test::Crew;
+using apex::concurrency::test::CrewState;
+using apex::concurrency::test::largestSizeSeenByAThirdReader;
 using apex::concurrency::test::settles;
 
 /* ----------------------------- Basic Operations Tests ----------------------------- */
@@ -409,6 +416,94 @@ TEST_F(LockFreeQueueTest, SizeApproxFollowsPushAndPop) {
       EXPECT_EQ(queue.sizeApprox(), queue.capacity() - i - 1);
     }
   }
+}
+
+/* ----------------------------- Index Wrap Tests ----------------------------- */
+
+namespace {
+
+/// A queue of int whose cursors start where the test puts them.
+class SteppedQueue : public LockFreeQueue<int> {
+public:
+  SteppedQueue(std::size_t capacity, std::size_t firstIndex) noexcept
+      : LockFreeQueue<int>(capacity, firstIndex) {}
+};
+
+} // namespace
+
+/** @test A queue whose cursors and cell sequence numbers wrap keeps its order, its capacity and
+ * its size: started at the top of the index range, it fills across the wrap, refuses the next
+ * push, and reports each occupancy on the way down, with the producer cursor numerically below
+ * the consumer cursor throughout. The operations run on a thread the case waits for with a
+ * bound, because a push or pop whose sequence arithmetic is wrong retries forever. */
+TEST_F(LockFreeQueueTest, CursorsWrapWithoutLosingOrderCapacityOrSize) {
+  struct Wrapping : CrewState {
+    SteppedQueue queue{2, std::numeric_limits<std::size_t>::max()};
+  };
+  Crew<Wrapping> crew;
+  crew.start([](Wrapping& state) {
+    auto& queue = state.queue;
+    EXPECT_EQ(queue.sizeApprox(), 0U);
+    int value = 0;
+    EXPECT_FALSE(queue.tryPop(value));
+
+    ASSERT_TRUE(queue.tryPush(1)); // The producer cursor wraps to zero.
+    EXPECT_EQ(queue.sizeApprox(), 1U);
+    ASSERT_TRUE(queue.tryPush(2));
+    EXPECT_EQ(queue.sizeApprox(), 2U);
+    EXPECT_FALSE(queue.tryPush(3)) << "a full queue took a push across the index wrap";
+
+    ASSERT_TRUE(queue.tryPop(value)); // The consumer cursor wraps to zero.
+    EXPECT_EQ(value, 1);
+    EXPECT_EQ(queue.sizeApprox(), 1U);
+    const int THREE = 3;
+    ASSERT_TRUE(queue.tryPush(THREE)); // By copy: the other push body, on a wrapped cell.
+    EXPECT_EQ(queue.sizeApprox(), 2U);
+    ASSERT_TRUE(queue.tryPop(value));
+    EXPECT_EQ(value, 2);
+    ASSERT_TRUE(queue.tryPop(value));
+    EXPECT_EQ(value, 3);
+    EXPECT_EQ(queue.sizeApprox(), 0U);
+    EXPECT_FALSE(queue.tryPop(value));
+  });
+  ASSERT_TRUE(crew.finish()) << "a push or pop across the index wrap did not return";
+}
+
+/** @test A queue started below the top of the index range by less than its capacity wraps in
+ * the middle of its first lap: every cell is used in order and nothing is lost. */
+TEST_F(LockFreeQueueTest, CursorsWrapInsideTheFirstLap) {
+  struct Wrapping : CrewState {
+    SteppedQueue queue{8, std::numeric_limits<std::size_t>::max() - 2};
+  };
+  Crew<Wrapping> crew;
+  crew.start([](Wrapping& state) {
+    auto& queue = state.queue;
+    int value = 0;
+    for (int lap = 0; lap < 3; ++lap) {
+      for (int i = 0; i < 8; ++i) {
+        ASSERT_TRUE(queue.tryPush(lap * 8 + i));
+        EXPECT_EQ(queue.sizeApprox(), static_cast<std::size_t>(i) + 1);
+      }
+      EXPECT_FALSE(queue.tryPush(-1));
+      for (int i = 0; i < 8; ++i) {
+        ASSERT_TRUE(queue.tryPop(value));
+        EXPECT_EQ(value, lap * 8 + i);
+      }
+      EXPECT_FALSE(queue.tryPop(value));
+    }
+  });
+  ASSERT_TRUE(crew.finish()) << "a push or pop across the index wrap did not return";
+}
+
+/** @test sizeApprox() read from a third thread never exceeds the capacity while a producer and a
+ * consumer run: a read that catches the consumer ahead of the producer's older cursor reports
+ * zero, not a wrapped difference. This case meets the split by chance; the arithmetic for it is
+ * pinned in RingIndex_uTest.cpp. */
+TEST_F(LockFreeQueueTest, SizeApproxFromAThirdThreadStaysWithinCapacity) {
+  LockFreeQueue<int> queue(2);
+  const std::optional<std::size_t> LARGEST = largestSizeSeenByAThirdReader(queue, 200000);
+  ASSERT_TRUE(LARGEST.has_value()) << "the reader thread never sampled";
+  EXPECT_LE(*LARGEST, queue.capacity());
 }
 
 /* ----------------------------- Determinism Tests ----------------------------- */

@@ -14,6 +14,7 @@
 #include "src/utilities/concurrency/inc/Latch.hpp"
 #include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
 #include "src/utilities/concurrency/inc/RingBuffer.hpp"
+#include "src/utilities/concurrency/inc/RingIndex.hpp"
 #include "src/utilities/concurrency/inc/SPSCQueue.hpp"
 #include "src/utilities/concurrency/inc/Semaphore.hpp"
 #include "src/utilities/concurrency/inc/SpinLock.hpp"
