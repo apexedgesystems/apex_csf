@@ -67,7 +67,8 @@ public:
    *
    * ASYNC mode provides real-time safety:
    *  - tryLog() completes in <1us (never blocks on disk)
-   *  - Dedicated I/O thread handles disk writes
+   *  - The shared drain thread handles disk writes (a dedicated thread
+   *    when the drain's registry is full)
    *  - Queue overflow drops entries (increments counter)
    *
    * Falls back to SYNC mode if async backend fails to start.
@@ -86,13 +87,19 @@ public:
    * @brief Force buffered data to disk.
    * @return Status::OK on success; Status::ERROR_SYNC on failure.
    *
-   * For ASYNC mode: flushes async backend by draining queue and syncing.
-   * For SYNC mode: calls fsync() on file descriptor.
-   * Call before program exit to ensure all logs are persisted.
+   * For ASYNC mode: waits until every entry accepted before the call has
+   * had its write attempted, then syncs; ERROR_SYNC when entries are still
+   * outstanding after timeoutMs. OK does not report a write the file
+   * refused (see the backend's writeErrorCount()) or the sync result.
+   * For SYNC mode: calls fsync() on file descriptor (timeoutMs is unused).
+   * Call before program exit to hand all accepted lines to the file.
+   *
+   * @param timeoutMs Longest wait for outstanding async entries; it does
+   *        not bound the sync that follows.
    *
    * NOTE: This shadows LogBase::flush() (not virtual override).
    */
-  Status flush() noexcept;
+  Status flush(std::uint32_t timeoutMs = 5000) noexcept;
 
   /**
    * @brief Set the minimum severity to log.
@@ -109,8 +116,9 @@ public:
 
   /**
    * @brief Set debug verbosity level.
-   * Debug messages at or below this level will be logged.
-   * Level 0 = no debug messages (default).
+   * Debug messages at or below this level will be logged, when the
+   * severity threshold admits DEBUG. At the default of 0 only debug
+   * messages of level 0 are logged.
    * @param level Maximum debug level to log (0-255).
    * @note RT-safe: Atomic store.
    */

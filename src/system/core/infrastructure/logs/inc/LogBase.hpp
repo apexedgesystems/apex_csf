@@ -113,8 +113,10 @@ public:
    *
    * @param maxSize Maximum allowed size in bytes.
    * @return Status::OK if rotation was not required or succeeded.
+   *         Status::ERROR_SIZE if the log's size could not be read.
    *         Status::ERROR_ROTATE_RENAME if the backup name could not be
-   *         checked or the rename failed.
+   *         checked or the rename failed; the log keeps its descriptor
+   *         and stays writable.
    *         Status::ERROR_ROTATE_REOPEN if reopening failed.
    * @note NOT RT-safe: Acquires mutex, performs file I/O. Call from non-RT context.
    */

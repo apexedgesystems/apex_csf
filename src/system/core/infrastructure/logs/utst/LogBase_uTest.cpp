@@ -17,6 +17,8 @@
 #include <string>
 #include <vector>
 
+#include <unistd.h>
+
 using logs::LogBase;
 using logs::Status;
 
@@ -37,6 +39,15 @@ static std::string slurp(const std::filesystem::path& path) {
 
 static int countLines(const std::string& s) {
   return static_cast<int>(std::count(s.begin(), s.end(), '\n'));
+}
+
+/// Open descriptors of this process (the entries of /proc/self/fd).
+static int openDescriptorCount() {
+  int count = 0;
+  for ([[maybe_unused]] const auto& entry : std::filesystem::directory_iterator("/proc/self/fd")) {
+    ++count;
+  }
+  return count;
 }
 
 /// First-choice backup name of a rotation at time T: `<log>_YYYYMMDD-HHMMSS.backup`.
@@ -210,6 +221,89 @@ TEST(LogBaseTest, RotateOntoTakenBackupNameKeepsBoth) { expectRotationKeepsTaken
 
 /** @test Preserves a dangling symlink that holds a rotation's timestamped name */
 TEST(LogBaseTest, RotateOntoDanglingSymlinkNameKeepsIt) { expectRotationKeepsTakenNames(true); }
+
+/** @test Keeps the log descriptor and status when the backup rename fails */
+TEST(LogBaseTest, RotateRenameFailureKeepsDescriptor) {
+  if (::geteuid() == 0) {
+    GTEST_SKIP() << "root is not refused by directory permissions";
+  }
+
+  const auto BASE_TMP = std::filesystem::temp_directory_path();
+  std::random_device rd;
+  std::mt19937_64 gen(rd());
+  std::uniform_int_distribution<unsigned long long> dist;
+  const auto SUBDIR = BASE_TMP / ("logbase_rotate_denied_" + std::to_string(dist(gen)));
+
+  std::error_code ec{};
+  std::filesystem::create_directory(SUBDIR, ec);
+  ASSERT_FALSE(ec) << "Failed to create temp subdir: " << SUBDIR;
+  const auto LOG_PATH = SUBDIR / "test.log";
+
+  {
+    LogBase log(LOG_PATH.string());
+    ASSERT_EQ(log.write("before the refused rotations"), Status::OK);
+
+    // A directory without write permission refuses the rename; the open
+    // log file itself stays writable through its descriptor.
+    std::filesystem::permissions(
+        SUBDIR, std::filesystem::perms::owner_read | std::filesystem::perms::owner_exec, ec);
+    EXPECT_FALSE(ec);
+
+    const int OPEN_BEFORE = openDescriptorCount();
+    for (int i = 0; i < 3; ++i) {
+      EXPECT_EQ(log.rotate(1u), Status::ERROR_ROTATE_RENAME);
+    }
+    EXPECT_EQ(openDescriptorCount(), OPEN_BEFORE);
+    EXPECT_EQ(log.lastOpenStatus(), Status::OK);
+    EXPECT_EQ(log.write("after the refused rotations"), Status::OK);
+
+    std::filesystem::permissions(SUBDIR, std::filesystem::perms::owner_all, ec);
+  }
+
+  const auto CONTENT = slurp(LOG_PATH);
+  EXPECT_NE(CONTENT.find("before the refused rotations\n"), std::string::npos);
+  EXPECT_NE(CONTENT.find("after the refused rotations\n"), std::string::npos);
+
+  std::filesystem::remove_all(SUBDIR, ec);
+}
+
+/** @test Reports ERROR_SIZE from rotate and size when the log's size cannot be read */
+TEST(LogBaseTest, RotateAndSizeReportSizeFailure) {
+  const auto PATH = uniqTempFile("logbase_size_failure");
+  LogBase log(PATH.string());
+  ASSERT_EQ(log.write("line"), Status::OK);
+
+  std::error_code ec{};
+  std::filesystem::remove(PATH, ec);
+  ASSERT_FALSE(ec);
+
+  std::size_t bytes = 0;
+  EXPECT_EQ(log.size(bytes), Status::ERROR_SIZE);
+  EXPECT_EQ(log.rotate(0u), Status::ERROR_SIZE);
+}
+
+/** @test Reports ERROR_OPEN from every call when the log cannot be opened */
+TEST(LogBaseTest, UnopenablePathReportsOpenError) {
+  const auto PATH = uniqTempFile("logbase_no_such_dir").replace_extension() / "x.log";
+  LogBase log(PATH.string());
+
+  EXPECT_EQ(log.lastOpenStatus(), Status::ERROR_OPEN);
+  EXPECT_EQ(log.write("nowhere to go"), Status::ERROR_OPEN);
+  EXPECT_EQ(log.flush(), Status::ERROR_OPEN);
+  EXPECT_EQ(log.writeErrorCount(), 0u);
+}
+
+/** @test Reports ERROR_WRITE and counts it when the device refuses the write */
+TEST(LogBaseTest, WriteFailureIsReportedAndCounted) {
+  // A device that accepts the open and refuses every write: no space left.
+  LogBase log("/dev/full");
+  ASSERT_EQ(log.lastOpenStatus(), Status::OK);
+
+  EXPECT_EQ(log.writeErrorCount(), 0u);
+  EXPECT_EQ(log.write("does not fit"), Status::ERROR_WRITE);
+  EXPECT_EQ(log.write("does not fit either"), Status::ERROR_WRITE);
+  EXPECT_EQ(log.writeErrorCount(), 2u);
+}
 
 /** @test Size reports non-decreasing value after additional writes. */
 TEST(LogBaseTest, SizeReflectsGrowthAfterWrites) {
