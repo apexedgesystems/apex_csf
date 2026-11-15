@@ -280,10 +280,10 @@ services:
         # build-base, none of dev-base's tooling.
         DEV_IMAGE: apex.build-base
         # A plain build carries the build-role tools only, so the ops and
-        # analysis tools and the Python wheels are built on request, into the
-        # release tree: that tree is the platform tarball and the one
-        # `make artifact-tools` packages.
-        BUILD_CMD: "make release && make tools BUILD_DIR=build/hosted-x86_64-release"
+        # analysis tools and the Python wheels are built on request:
+        # release-tools builds them into the tree `make release` built, which
+        # is the platform tarball and the one `make artifact-tools` packages.
+        BUILD_CMD: "make release && make release-tools"
 
   builder-cuda:
     image: apex.builder.cuda

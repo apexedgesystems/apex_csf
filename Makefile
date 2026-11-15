@@ -121,6 +121,7 @@ help:
 	@printf '%s\n' "Native Builds:"
 	@printf '  %-28s %s\n' "make debug" "Build native debug (default; CUDA auto-detect)"
 	@printf '  %-28s %s\n' "make release" "Build native release (CUDA auto-detect)"
+	@printf '  %-28s %s\n' "make release-tools" "Build every tool into the native release tree"
 	@printf '  %-28s %s\n' "make cuda-debug" "Build native debug requiring CUDA"
 	@printf '  %-28s %s\n' "make cuda-release" "Build native release requiring CUDA"
 	@printf '  %-28s %s\n' "make docs" "Build Doxygen documentation"

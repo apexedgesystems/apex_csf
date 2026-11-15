@@ -25,13 +25,14 @@ make help
 
 ### Native Builds
 
-| Target                   | Description                  |
-| ------------------------ | ---------------------------- |
-| `make` / `make debug`    | Build native debug (default) |
-| `make release`           | Build native release         |
-| `make docs`              | Build Doxygen documentation  |
-| `make configure`         | Configure only (no build)    |
-| `make configure-release` | Configure release only       |
+| Target                   | Description                                   |
+| ------------------------ | --------------------------------------------- |
+| `make` / `make debug`    | Build native debug (default)                  |
+| `make release`           | Build native release                          |
+| `make release-tools`     | Build every tool into the native release tree |
+| `make docs`              | Build Doxygen documentation                   |
+| `make configure`         | Configure only (no build)                     |
+| `make configure-release` | Configure release only                        |
 
 ### Cross-Compilation
 

@@ -453,7 +453,7 @@ endforeach ()
 # A plain build (ninja with no target) carries what the apex build stands on:
 # the build role. Every tool, the ops and analysis roles included, builds
 # through ${PROJECT_NAME}_tools (make tools); the release builder runs that
-# explicitly, in its release tree.
+# in its release tree (make release-tools).
 if (_TOOLS_DEPS)
   set(_TOOLS_DEFAULT_DEPS ${_TOOLS_DEPS})
   if (_TOOLS_ON_REQUEST)
