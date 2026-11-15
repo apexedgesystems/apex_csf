@@ -248,7 +248,7 @@ endef
 
 $(foreach t,$(BUILDER_TARGETS),$(eval $(call _artifact_target,$(t))))
 
-# CLI tools + python wheel ride the cpu builder. This is the ONLY tools
+# CLI tools + the Python wheels ride the cpu builder. This is the ONLY tools
 # packaging path (the final image carries platform tarballs only); staging is
 # a docker cp, and validation + tar + rename live in the shared script so no
 # second implementation can drift.
@@ -267,7 +267,7 @@ artifact-tools:
 	  "$(DOCKER_OUT_DIR)/.stage-tools/tools-wheels" \
 	  "$(DOCKER_OUT_DIR)" "$(VERSION)"
 	@rm -rf "$(DOCKER_OUT_DIR)/.stage-tools"
-	$(call log_ok,docker,apex-tools-$(VERSION)-x86_64-linux.tar.gz + wheel)
+	$(call log_ok,docker,apex-tools-$(VERSION)-x86_64-linux.tar.gz + wheels)
 
 # Tools ride artifact-tools (the single packaging path), not the final image.
 artifacts: docker-final artifact-tools

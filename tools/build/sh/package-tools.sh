@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # ==============================================================================
-# package-tools.sh - package the tool-family outputs into release assets.
+# package-tools.sh - package the tools' outputs into release assets.
 #
-# The single implementation of tools packaging: both the final image's
-# artifact stage and the CI extraction path (make artifact-tools) call this,
-# so the two can never drift.
+# The single implementation of tools packaging: `make artifact-tools` calls
+# it for the local path and for the release, so the two can never drift.
 #
 # Inputs: a bin/tools tree (every role) and the wheels dir the python build
 # writes, one subdir per role with one wheel per member. Validates both -- an

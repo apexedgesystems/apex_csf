@@ -108,7 +108,7 @@ jobs:
             echo "ERROR: Tag version ($TAG_BASE) does not match CMakeLists.txt ($cmake_version)"
             exit 1
           fi
-          # The tool families version with the project, so their binaries
+          # The tools version with the project, so their binaries
           # self-report the release they shipped in (--version, wheel metadata).
           rust_version=$(sed -n 's/^version = "\([0-9.]*\)"/\1/p' tools/Cargo.toml | head -1)
           # Every Python member versions with the workspace root; uv names the
@@ -225,7 +225,7 @@ jobs:
         run: make docker-builder-${{ matrix.builder }}
 
       # Tar this platform's tree here, on the runner that built it; the cpu
-      # builder also carries the CLI tools and the python wheel.
+      # builder also carries the CLI tools and the Python wheels.
       - name: Extract platform artifact
         env:
           VERSION: ${{ needs.targets.outputs.version }}
