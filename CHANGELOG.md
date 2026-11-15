@@ -65,11 +65,9 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
-- **Breaking for C++ consumers of the logs library (rebuild):**
-  `SystemLog::flush` takes a timeout, `flush(timeoutMs = 5000)`; calls are
-  unchanged, a pointer to the zero-argument member no longer compiles.
-  `AsyncLogBackend` gained members, so code built against the old header
-  rebuilds. ([#188](https://github.com/apexedgesystems/apex_csf/pull/188))
+- Breaking: rebuild C++ consumers of the logs library and adapt typed
+  callbacks to `SystemLog::flush(timeoutMs)`.
+  ([#188](https://github.com/apexedgesystems/apex_csf/pull/188))
 - Breaking: the Rust tools are one Cargo workspace at `tools/`, built and
   installed by role. Executables move from `bin/tools/rust/` to
   `bin/tools/<role>/` (build, ops, analysis); `make tools-build` replaces
@@ -116,10 +114,8 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
-- ASYNC logging: `flush()` waits until every accepted entry's write was
-  attempted (the last line before an executive restart could be lost), a line
-  cut to fit an entry keeps its newline, and rotation keeps its descriptor
-  when the rename fails.
+- ASYNC logging: `flush()` waits for every accepted entry's write attempt, a
+  cut line keeps its newline, and a failed rotation keeps the log descriptor.
   ([#188](https://github.com/apexedgesystems/apex_csf/pull/188))
 - Log rotation keeps every backup: a rotation within the same second as an
   earlier one gets a numeric suffix instead of replacing its backup.
