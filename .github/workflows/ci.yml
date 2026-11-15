@@ -2,7 +2,7 @@
 # CI -- lint, build, and test on PRs to main
 #
 # Change-scoped: a "changes" job classifies the PR diff, and the expensive jobs
-# run only when their area changed. A Rust workspace or tools/py change (e.g. a
+# run only when their area changed. A Rust or Python workspace change (e.g. a
 # Dependabot bump) does not rebuild the C++/CUDA surface; a docs-only change
 # runs lint alone. Scope-down is opt-in per known subtree: cross-cutting paths
 # (.github/, mk/, docker/, the CMake build files) and any unrecognized path run
@@ -72,12 +72,13 @@ jobs:
             [ -z "$file" ] && continue
             case "$file" in
               tools/Cargo.*|tools/*/rust/*) rust=true ;;
-              tools/py/*)   py=true ;;
+              tools/build/py/bin/*) : ;;
+              tools/pyproject.toml|tools/uv.lock|tools/*/py/*) py=true ;;
               # A demo's checkout scripts keep their pytest files beside them;
-              # make test-py collects those directories, so a change there
-              # selects the Python job, as it did from tools/py/tests.
+              # make test-py collects those directories with the members' own
+              # tests, so a change there selects the Python job.
               demos/*/test/*.py|demos/*/*/test/*.py) py=true ;;
-              tools/sh/*)   sh=true ;;
+              tools/ops/sh/*) sh=true ;;
               # Conformance contracts are multi-sided: every suite that pins
               # one must run when it changes.
               compat/tprm/*) cpp=true; rust=true ;;
@@ -86,8 +87,8 @@ jobs:
               # (it needs cdef_gen); either side changing must run it.
               *_data.toml|*/.auto/*) cpp=true; rust=true ;;
               # A demo's Python scripts are tested by the Python job (beside
-              # them under the demo's test/, or in tools/py/tests), so a change
-              # to one runs that job as well as the demo's C++ selection.
+              # them under the demo's test/, or in a member's tests), so a
+              # change to one runs that job as well as the demo's C++ selection.
               demos/*/scripts/*.py|demos/*/*/scripts/*.py) cpp=true; py=true ;;
               src/*|demos/*|apps/*|cmake/*|CMakeLists.txt|CMakePresets.json) cpp=true ;;
               *.md|docs/*)  : ;;
@@ -95,12 +96,16 @@ jobs:
               # image used by lint/static; the cuda image used by build-test) plus
               # the base compose -- a change here can alter every build.
               docker/base.Dockerfile|docker/dev/cpu.Dockerfile|docker/dev/cuda.Dockerfile|docker-compose.yml) allflag=true ;;
+              # The tools packager has an executed regression in the shell suite
+              # (every wheel shipped; a failed copy fails), so a change to it
+              # runs that job.
+              tools/build/sh/package-tools.sh) sh=true ;;
               # Leaf cross/firmware images and the scripts they COPY are built and
               # verified post-merge (docker-images.yml) + locally, and no gate job
               # runs in them, so a change confined here needs only lint -- not the
               # full C++/rust/py suite. (Lint always runs; it hadolints/shellchecks
               # these.)
-              docker/dev/*|docker/scripts/*) : ;;
+              docker/dev/*|tools/build/sh/*) : ;;
               .github/*|mk/*|docker/*|docker-compose*) allflag=true ;;
               *)            allflag=true ;;
             esac
@@ -114,15 +119,15 @@ jobs:
           # Rebuild only when a gate-image INPUT changes: the images a gate job
           # runs in (base tiers, the cpu dev image, the cuda image, the base
           # compose), or anything base.Dockerfile bakes -- the dependency
-          # manifests (tools/Cargo.*, the member Cargo.toml files, tools/py/uv.lock|pyproject.toml,
-          # ExternalDependencies.cmake) and the baked scripts (docker/scripts/).
+          # manifests (tools/Cargo.*, tools/uv.lock|pyproject.toml and the member manifests,
+          # ExternalDependencies.cmake) and the baked scripts (tools/build/sh/, tools/build/py/bin/).
           # Without the baked inputs the gate runs offline builds against STALE
           # caches: a lock bump fails on missing crates/wheels, and a GIT_TAG
           # bump silently builds the OLD baked source via the
           # FETCHCONTENT_SOURCE_DIR redirect (green-but-wrong). Leaf
           # cross/firmware Dockerfiles feed only post-merge images; builder/final
           # feed the release pipe; CI compose overlays are runtime-only.
-          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$|^docker/scripts/|^tools/Cargo\.(lock|toml)$|^tools/[^/]+/rust/[^/]+/Cargo\.toml$|^tools/py/(uv\.lock|pyproject\.toml)$|^ExternalDependencies\.cmake$' && echo true || echo false)
+          docker=$(printf '%s\n' "$files" | grep -qE '^docker/base\.Dockerfile$|^docker/dev/cpu\.Dockerfile$|^docker/dev/cuda\.Dockerfile$|^docker-compose\.yml$|^tools/build/sh/|^tools/build/py/bin/|^tools/Cargo\.(lock|toml)$|^tools/[^/]+/rust/[^/]+/Cargo\.toml$|^tools/(uv\.lock|pyproject\.toml)$|^tools/[^/]+/py/[^/]+/pyproject\.toml$|^ExternalDependencies\.cmake$' && echo true || echo false)
           printf 'cpp=%s\nrust=%s\npy=%s\nsh=%s\ndocker=%s\n' "$cpp" "$rust" "$py" "$sh" "$docker" | tee -a "$GITHUB_OUTPUT"
 
   lint:

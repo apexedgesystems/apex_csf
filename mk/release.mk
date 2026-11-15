@@ -218,6 +218,21 @@ release: prep
 endif
 
 # ------------------------------------------------------------------------------
+# release-tools: Build every tool into the native release tree
+#
+# A plain build carries the build-role tools only; the ops and analysis tools
+# and the Python wheels build on request. This is that request for the native
+# release: it builds every role into the tree `make release` builds, which is
+# the tree the release builder ships and `make artifact-tools` packages. The
+# directory comes from the release target's own setting, so the two cannot
+# name different trees.
+# ------------------------------------------------------------------------------
+
+release-tools: prep
+	@test -f "$(HOST_RELEASE_DIR)/CMakeCache.txt" || cmake --preset $(HOST_RELEASE_PRESET) $(CMAKE_VERBOSE_FLAG)
+	@$(MAKE) --no-print-directory tools BUILD_DIR="$(HOST_RELEASE_DIR)"
+
+# ------------------------------------------------------------------------------
 # release-all: Release all registered apps
 # ------------------------------------------------------------------------------
 
@@ -240,6 +255,6 @@ release-clean:
 # ------------------------------------------------------------------------------
 
 .PHONY: package package-clean
-.PHONY: release release-all release-clean
+.PHONY: release release-tools release-all release-clean
 
 endif  # RELEASE_MK_GUARD

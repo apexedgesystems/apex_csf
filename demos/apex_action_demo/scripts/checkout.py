@@ -65,9 +65,9 @@ import sys
 import time
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools/py/src"))
-from apex_tools.ops import protocol as proto  # noqa: E402
-from apex_tools.ops.client import AprotoClient  # noqa: E402
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "tools/ops/py/apex_ops/src"))
+from apex_ops import protocol as proto  # noqa: E402
+from apex_ops.client import AprotoClient  # noqa: E402
 
 # ---------------------------------------------------------------------------
 # Test infrastructure
