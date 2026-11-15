@@ -42,4 +42,12 @@ apex_add_gtest(
   LABELS
   utilities
   concurrency
+  # These four assert an upper bound on elapsed wall-clock time, which host
+  # load stretches when the suite runs in parallel. Timing-marked so they run
+  # serially.
+  TIMING_TESTS
+  SemaphoreTest.TryAcquireForSucceedsImmediately
+  SemaphoreTest.TryAcquireForSucceedsOnRelease
+  LatchTest.WaitOnTriggeredReturnsImmediately
+  LatchTest.WaitForSucceedsOnTrigger
 )
