@@ -46,7 +46,8 @@ namespace concurrency {
  * Uses LockFreeQueue for task storage. Task submission takes no lock and
  * allocates nothing; it may issue a futex wake for an idle worker. A worker
  * that finds the ring empty parks until a producer publishes or shutdown()
- * begins.
+ * begins. A task reports failure through its return code: its type is a
+ * noexcept function pointer, so no exception reaches the pool from a task.
  */
 class ThreadPoolLockFree {
 public:

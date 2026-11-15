@@ -224,11 +224,10 @@ established.
 
 ```cpp
 enum class PoolStatus : std::uint8_t {
-  SUCCESS = 0,           ///< Operation completed successfully.
-  TASK_FAILED = 1,       ///< Task returned non-zero error code.
-  POOL_STOPPED = 2,      ///< Pool is shutting down, task rejected.
-  EXCEPTION_STD = 254,   ///< Task threw std::exception.
-  EXCEPTION_UNKNOWN = 255 ///< Task threw unknown exception type.
+  SUCCESS = 0,      ///< Operation completed successfully.
+  TASK_FAILED = 1,  ///< Task returned non-zero error code.
+  POOL_STOPPED = 2, ///< Pool is shutting down, task rejected.
+  QUEUE_FULL = 3    ///< Queue is full, task rejected (lock-free pool only).
 };
 
 struct TaskError {

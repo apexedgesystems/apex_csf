@@ -142,30 +142,15 @@ void ThreadPool::workerLoop() {
     if (!task)
       continue; // ignore empty slots defensively
 
-    // Ensure activeTasks_ is decremented even if the task throws.
+    // The task is a noexcept delegate call: it reports failure through its return code.
     activeTasks_.value.fetch_add(1, std::memory_order_acq_rel);
-    struct DecOnExit {
-      std::atomic<size_t>* p;
-      ~DecOnExit() { p->fetch_sub(1, std::memory_order_acq_rel); }
-    } dec{&activeTasks_.value};
-
-    try {
-      std::uint8_t rc = task();
-      if (rc != 0) {
-        std::lock_guard<std::mutex> el(errorMutex_);
-        errorQueue_.push(TaskError{label, rc, PoolStatus::TASK_FAILED});
-        hasErrors_.value.store(true, std::memory_order_release);
-      }
-    } catch (const std::exception& /*e*/) {
-      // Exception details available via debugger; no I/O in RT context.
+    const std::uint8_t RC = task();
+    if (RC != 0) {
       std::lock_guard<std::mutex> el(errorMutex_);
-      errorQueue_.push(TaskError{label, 254, PoolStatus::EXCEPTION_STD});
-      hasErrors_.value.store(true, std::memory_order_release);
-    } catch (...) {
-      std::lock_guard<std::mutex> el(errorMutex_);
-      errorQueue_.push(TaskError{label, 255, PoolStatus::EXCEPTION_UNKNOWN});
+      errorQueue_.push(TaskError{label, RC, PoolStatus::TASK_FAILED});
       hasErrors_.value.store(true, std::memory_order_release);
     }
+    activeTasks_.value.fetch_sub(1, std::memory_order_acq_rel);
   }
 }
 

@@ -33,12 +33,10 @@ namespace concurrency {
  * @brief Status codes for ThreadPool operations and task errors.
  */
 enum class PoolStatus : std::uint8_t {
-  SUCCESS = 0,            ///< Operation completed successfully.
-  TASK_FAILED = 1,        ///< Task returned non-zero error code.
-  POOL_STOPPED = 2,       ///< Pool is shutting down, task rejected.
-  QUEUE_FULL = 3,         ///< Queue is full, task rejected (lock-free pool only).
-  EXCEPTION_STD = 254,    ///< Task threw std::exception.
-  EXCEPTION_UNKNOWN = 255 ///< Task threw unknown exception type.
+  SUCCESS = 0,      ///< Operation completed successfully.
+  TASK_FAILED = 1,  ///< Task returned non-zero error code.
+  POOL_STOPPED = 2, ///< Pool is shutting down, task rejected.
+  QUEUE_FULL = 3    ///< Queue is full, task rejected (lock-free pool only).
 };
 
 /* ----------------------------- TaskError ----------------------------- */
@@ -76,6 +74,8 @@ struct PoolConfig {
  *
  * Uses mutex + condition-variable protected FIFO for dispatch. Tasks are
  * represented by DelegateU8 to avoid allocations and type erasure overhead.
+ * A task reports failure through its return code: its type is a noexcept
+ * function pointer, so no exception reaches the pool from a task.
  */
 class ThreadPool {
 public:
