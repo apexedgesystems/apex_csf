@@ -84,8 +84,8 @@ if (queue.tryPop(result)) {
 
 - **Semaphore** - Counting semaphore with timed acquire
 - **SpinLock** - Busy-wait lock with platform-optimized PAUSE hints
-- **Latch** - One-shot countdown synchronization (C++20 backport)
-- **Barrier** - Reusable multi-phase synchronization (C++20 backport)
+- **Latch** - One-shot countdown synchronization (`std::latch`'s shape)
+- **Barrier** - Reusable multi-phase synchronization (`std::barrier`'s phase semantics)
 
 ### Thread Pools
 
@@ -121,11 +121,13 @@ Choose the right module based on your use case, threading model, and target hard
 
 ### Queue Comparison
 
-| Queue             | Threading               | Throughput | Latency | Best For                                     |
-| ----------------- | ----------------------- | ---------- | ------- | -------------------------------------------- |
-| **RingBuffer**    | Single-thread only      | 45M ops/s  | 22ns    | Processing pipelines, event buffers, parsing |
-| **SPSCQueue**     | 1 producer, 1 consumer  | 25M ops/s  | 40ns    | Audio/video streaming, sensor data           |
-| **LockFreeQueue** | Multi-producer/consumer | 14M ops/s  | 70ns    | Work stealing, task queues, general MPMC     |
+| Queue             | Threading               | Best For                                     |
+| ----------------- | ----------------------- | -------------------------------------------- |
+| **RingBuffer**    | Single-thread only      | Processing pipelines, event buffers, parsing |
+| **SPSCQueue**     | 1 producer, 1 consumer  | Audio/video streaming, sensor data           |
+| **LockFreeQueue** | Multi-producer/consumer | Work stealing, task queues, general MPMC     |
+
+Measured costs are in [Performance](#6-performance).
 
 ### Synchronization Selection
 
@@ -173,7 +175,7 @@ Scenario: Hard real-time control loops, audio processing
 - **RingBuffer for single-thread data buffering** - zero synchronization
 - **SPSCQueue for producer/consumer** - predictable single-atomic ops
 - **SpinLock::tryLock** only - never block in RT path
-- **Semaphore::tryAcquire** only - never wait on CV
+- **Semaphore::tryAcquire** only - never block in `acquire()`
 - **Avoid ThreadPool::enqueueTask** - mutex contention
 
 #### Multi-Tenant / Cloud (Variable Load, Shared Resources)
@@ -236,21 +238,23 @@ struct TaskError {
   PoolStatus status;      ///< Categorized error status.
 };
 
-class ThreadPool {
+class ThreadPool : public PoolBase {
 public:
   using TaskFn = DelegateU8;
 
   explicit ThreadPool(std::size_t numThreads, const PoolConfig& config = {});
   ~ThreadPool() noexcept;
 
+  void enqueueTask(const char* label, TaskFn task);
+  PoolStatus tryEnqueue(const char* label, TaskFn task);
+  void shutdown() noexcept;
+
+  // From PoolBase, the same for both pools:
   bool isValid() const noexcept;
   std::size_t workerCount() const noexcept;
   std::size_t workerConfigFailures() const noexcept;
-  void enqueueTask(const char* label, TaskFn task);
-  PoolStatus tryEnqueue(const char* label, TaskFn task);
   bool threadsRunning() const noexcept;
   bool hasErrors() const noexcept;
-  void shutdown() noexcept;
   std::queue<TaskError> collectErrors();
 };
 ```
@@ -296,7 +300,7 @@ Uses `LockFreeQueue` for task storage; a worker that finds the ring empty parks 
 #### Key Types
 
 ```cpp
-class ThreadPoolLockFree {
+class ThreadPoolLockFree : public PoolBase {
 public:
   using TaskFn = DelegateU8;
 
@@ -304,16 +308,13 @@ public:
                               const PoolConfig& config = {});
   ~ThreadPoolLockFree() noexcept;
 
-  bool isValid() const noexcept;
-  std::size_t workerCount() const noexcept;
   std::size_t capacity() const noexcept;
-  std::size_t workerConfigFailures() const noexcept;
   PoolStatus tryEnqueue(const char* label, TaskFn task) noexcept;
   void enqueueTask(const char* label, TaskFn task) noexcept;
-  bool threadsRunning() const noexcept;
-  bool hasErrors() const noexcept;
   void shutdown() noexcept;
-  std::queue<TaskError> collectErrors();
+
+  // From PoolBase: isValid(), workerCount(), workerConfigFailures(),
+  // threadsRunning(), hasErrors(), collectErrors().
 };
 ```
 
@@ -472,6 +473,11 @@ public:
 - Elements are stored at `alignof(T)`, over-aligned types included
 - `sizeApprox()` may be read from any thread and never exceeds `capacity()`
 
+Each side keeps its last view of the other side's index beside its own and
+reads the real one only when that view says the queue is full (producer) or
+empty (consumer). With a backlog in the queue neither side touches the
+other's cache line.
+
 ---
 
 ### RingBuffer
@@ -557,7 +563,7 @@ public:
 | Method            | RT-Safe | Reason                    |
 | ----------------- | ------- | ------------------------- |
 | `Semaphore()`     | Yes     | No allocation             |
-| `acquire()`       | No      | May block on CV           |
+| `acquire()`       | No      | May block (futex wait)    |
 | `tryAcquire()`    | Yes     | Lock-free CAS loop        |
 | `tryAcquireFor()` | No      | Timed wait                |
 | `release()`       | Yes     | Atomic fetch_add + notify |
@@ -616,7 +622,7 @@ public:
 ### Latch
 
 **Header:** `Latch.hpp`
-**Purpose:** One-shot countdown synchronization barrier (C++20 backport).
+**Purpose:** One-shot countdown synchronization with `std::latch`'s shape.
 
 #### Key Types
 
@@ -662,7 +668,7 @@ as long as any holder is scheduled out; a true `tryWait()` is not RT-safe.
 ### Barrier
 
 **Header:** `Barrier.hpp`
-**Purpose:** Reusable multi-phase synchronization barrier (C++20 backport).
+**Purpose:** Reusable multi-phase synchronization barrier with `std::barrier`'s phase semantics.
 
 #### Key Types
 
@@ -696,6 +702,26 @@ its arrival, so the barrier stays usable and a retry is one new arrival.
 | `arriveAndDrop()`    | No      | Mutex lock            |
 | `expected()`         | Yes     | Atomic load           |
 | `generation()`       | Yes     | Atomic load           |
+
+---
+
+### Shared parts
+
+Three headers hold what the pools and the queues have in common. They are
+installed with the library and included by the headers above; a user of a
+pool or a queue does not include them directly.
+
+| Header            | Holds                                                                                                                              |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `PoolBase.hpp`    | `PoolStatus`, `TaskError`, `PoolConfig` and `PoolBase`: worker start-up and joining, the in-flight tally, the error queue, queries |
+| `RingIndex.hpp`   | `ringSlots()` (slot count for a requested capacity) and `ringOccupancy()` (bounded distance between two free-running cursors)      |
+| `RingStorage.hpp` | `RingStorage<Slot>`: the queues' slot array at the slot type's alignment, slots built up front and destroyed with it               |
+
+`threadsRunning()` sums every worker's finished count and then every
+started count, and reports a task in flight when the sums differ. A task
+that runs through the moment between the two sweeps is always reported,
+however work hands over between workers during the call; a task queued and
+not yet taken by a worker is not in flight.
 
 ---
 
@@ -930,43 +956,70 @@ pool.shutdown(); // Drains queue, joins workers
 
 ## 6. Performance
 
-Single-thread throughput on x86-64 (15 repeats):
+Figures from the module's benchmark on a Jetson AGX Thor (14 aarch64 cores,
+Linux 6.8, release build), cores pinned and clocks locked, as of
+[#191](https://github.com/apexedgesystems/apex_csf/pull/191). Each is the
+median of four runs of 15 repeats; CV is the variation within a run. They
+describe that host and build. No figure here is a budget.
 
-### Queues
+### One thread
 
-| Primitive         | Throughput  | Latency  | CV%   |
-| ----------------- | ----------- | -------- | ----- |
-| **RingBuffer**    | 68.5M ops/s | 15 ns/op | 6.9%  |
-| **SPSCQueue**     | 32.1M ops/s | 31 ns/op | 4.5%  |
-| **LockFreeQueue** | 16.5M ops/s | 60 ns/op | 14.3% |
+| Operation                               | Time    | Rate   | CV   |
+| --------------------------------------- | ------- | ------ | ---- |
+| `RingBuffer` push and pop               | 3.0 ns  | 330M/s | 0.6% |
+| `SPSCQueue` push and pop                | 8.5 ns  | 117M/s | 0.1% |
+| `LockFreeQueue` push and pop            | 26.7 ns | 37M/s  | 0.1% |
+| `SpinLock` lock and unlock              | 10.9 ns | 92M/s  | 0.1% |
+| `Semaphore` tryAcquire and release      | 23 ns   | 43M/s  | 0.4% |
+| `Latch::tryWait()` on a triggered latch | 8.6 ns  | 117M/s | 0.1% |
+| `Barrier::generation()`                 | 2.3 ns  | 433M/s | 0.1% |
 
-RingBuffer is 2.1x faster than SPSCQueue (zero atomics vs relaxed atomics).
-SPSCQueue is 1.9x faster than LockFreeQueue (relaxed vs CAS pair).
+`Latch::tryWait()` on a triggered latch takes the mutex; on a latch that is
+still counting it is one atomic load.
 
-### Synchronization Primitives
+### Between threads
 
-| Primitive     | Throughput   | Latency  | CV%   |
-| ------------- | ------------ | -------- | ----- |
-| **Latch**     | 101.0M ops/s | 10 ns/op | 7.1%  |
-| **Barrier**   | 106.4M ops/s | 9 ns/op  | 7.9%  |
-| **SpinLock**  | 61.7M ops/s  | 16 ns/op | 12.9% |
-| **Semaphore** | 42.9M ops/s  | 23 ns/op | 7.9%  |
+| Operation                                                | Time   | CV   |
+| -------------------------------------------------------- | ------ | ---- |
+| `SPSCQueue`, one item from producer to consumer          | 12 ns  | 3.6% |
+| `LockFreeQueue` push and pop, four threads contending    | 277 ns | 3.4% |
+| `SpinLock` lock and unlock, four threads contending      | 92 ns  | 4.5% |
+| `Semaphore` with four permits, four threads contending   | 105 ns | 3.3% |
+| `Latch`, a round of four threads arriving and released   | 8.9 us | 0.8% |
+| `Barrier`, a phase of four threads arriving and released | 6.5 us | 3.2% |
 
-Barrier.generation is a single atomic load, as is a Latch.tryWait that reads
-a nonzero count; the Latch fixture above polls a triggered latch, so it times
-the true result, which takes the mutex. SpinLock is an atomic exchange.
-Semaphore uses atomic CAS.
+### Task dispatch
 
-### Task Dispatch
+| Measure                                                   | ThreadPool | ThreadPoolLockFree |
+| --------------------------------------------------------- | ---------- | ------------------ |
+| Enqueue, every worker busy                                | 31 ns      | 37 ns              |
+| Enqueue to the task's first instruction, worker asleep    | 4.6 us     | 4.5 us             |
+| Worker time per queued task, one worker                   | 27 ns      | 15 ns              |
+| Wall time per queued task, four workers sharing the queue | 212 ns     | 81 ns              |
 
-| Primitive      | Throughput | Latency   |
-| -------------- | ---------- | --------- |
-| **ThreadPool** | 428K ops/s | 2.3 us/op |
+The tasks do nothing, so the worker rows are the pool's own cost per task.
+Four workers draining empty tasks contend for the queue and move fewer
+tasks per second than one; with tasks that do work, the queue is a small
+share of each. The mutex pool's enqueue is the cheaper of the two while it
+does not allocate or wait for the lock; the lock-free pool's enqueue never
+does either.
 
-ThreadPool is futex-bound (mutex wake/wait). ThreadPoolLockFree replaces
-the mutex with a lock-free queue and futex-parked workers; its cost relative to
-ThreadPool depends on the task body and the placement of producer and
-workers, so the `ptst/` pool fixtures are the measurement for a build.
+### Footprint
+
+| Object               | Size                                                                     |
+| -------------------- | ------------------------------------------------------------------------ |
+| `RingBuffer<T>`      | 40 bytes and one `T` per slot                                            |
+| `SPSCQueue<T>`       | Three cache lines (192 bytes) and one `T` per slot                       |
+| `LockFreeQueue<T>`   | Three cache lines and one 64-byte cell per slot (for `T` up to 56 bytes) |
+| `ThreadPool`         | 512 bytes, 64 bytes per worker, and its `std::queue` as it grows         |
+| `ThreadPoolLockFree` | 576 bytes, 64 bytes per worker, and 64 bytes per slot of its ring        |
+| `SpinLock`           | 1 byte                                                                   |
+| `Semaphore`          | 8 bytes                                                                  |
+| `Latch`, `Barrier`   | 96 and 112 bytes (a mutex, a condition variable and their counts)        |
+
+Slot counts are the requested capacity rounded up to a power of two;
+`RingBuffer` keeps one slot empty. Object sizes are for x86-64 and aarch64
+Linux with glibc.
 
 ---
 
@@ -997,7 +1050,7 @@ workers, so the `ptst/` pool fixtures are the measurement for a build.
 - **ThreadPoolLockFree construction/destruction** - Thread creation, queue allocation
 - **ThreadPoolLockFree::collectErrors** - Mutex lock
 - **RingBuffer/LockFreeQueue/SPSCQueue construction/destruction** - Buffer allocation
-- **Semaphore::acquire/tryAcquireFor** - May block on CV
+- **Semaphore::acquire/tryAcquireFor** - May block
 - **Latch::countDown/wait/arriveAndWait** - Mutex lock, may block
 - **Barrier::arriveAndWait/arriveAndDrop** - Mutex lock, may block
 
