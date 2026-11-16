@@ -46,18 +46,23 @@ namespace concurrency {
 /* ----------------------------- ringOccupancy ----------------------------- */
 
 /**
- * @brief Element count implied by one read of each index of a ring queue.
- * @param head A value read from the index that producers advance.
- * @param tail A value read from the index that consumers advance.
+ * @brief Bounded distance from a read of the tail cursor to a read of the
+ *        head cursor of a ring queue.
+ * @param head A value read from the cursor that producers advance.
+ * @param tail A value read from the cursor that consumers advance.
  * @param capacity The queue's capacity.
- * @return The distance from tail to head in the indices' modular arithmetic
- *         when it is within capacity, zero otherwise.
+ * @return The distance from tail to head in the cursors' modular arithmetic
+ *         when it is within capacity, zero otherwise. Never above capacity.
  *
- * For two values read at one instant the distance is the element count, on
- * either side of an index wrap. A reader that takes the two values at
- * different instants can pair a head with a later tail; the distance then
- * exceeds capacity, which no state of the queue produces, and the result is
- * zero. The result is never above capacity.
+ * The arithmetic holds on either side of an index wrap. What the distance
+ * counts depends on when a queue advances its cursors. SPSCQueue advances
+ * the head after the element is stored, so two cursors read at one instant
+ * give its element count. LockFreeQueue advances a cursor to claim a cell
+ * before the element is stored or taken, so its distance includes pushes
+ * and pops in flight: it is the element count when the queue is quiescent,
+ * and a distance above zero does not promise that a pop succeeds. A reader
+ * that takes the two cursors at different instants can pair a head with a
+ * later tail; that distance exceeds capacity and the result is zero.
  *
  * @note RT-safe: one subtraction and one comparison.
  */

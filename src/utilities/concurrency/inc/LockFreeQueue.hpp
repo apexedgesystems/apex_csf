@@ -92,12 +92,14 @@ public:
   [[nodiscard]] std::size_t capacity() const noexcept { return mask_ + 1; }
 
   /**
-   * @brief Get approximate number of elements in queue.
-   * @return Approximate element count (may be stale due to concurrent access), never more than
-   *         capacity().
+   * @brief Get an estimate of the queue's occupancy.
+   * @return The distance between the consumer and producer cursors, never more than capacity().
+   *         It is the element count when no push or pop is in progress.
    * @note RT-safe: Two atomic loads.
-   * @note The two index reads are not one instant: a consumer can pass the head already read,
-   *       and the result is zero for a pair that no state of the queue could have produced.
+   * @note A cursor moves when an operation claims its cell, before the element is stored or
+   *       taken, so the estimate counts operations in flight: a result above zero does not
+   *       promise that tryPop() succeeds. The two cursor reads are also not one instant: a
+   *       consumer can pass the head already read, and that pair gives zero.
    */
   [[nodiscard]] std::size_t sizeApprox() const noexcept {
     const std::size_t HEAD = head_.load(std::memory_order_relaxed);

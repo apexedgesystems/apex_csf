@@ -424,7 +424,9 @@ public:
 
 - `T` must be move-constructible and move-assignable
 - Capacity >= 2 (rounded up to a power of two); the cells are 64-byte aligned, one per cache line
-- `sizeApprox()` may be read from any thread and never exceeds `capacity()`
+- `sizeApprox()` may be read from any thread and never exceeds `capacity()`. It is the
+  distance between the two cursors, which counts pushes and pops in flight: the element count
+  when the queue is quiescent, and no promise that a pop succeeds
 
 ---
 
@@ -1043,7 +1045,7 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 | LockFreeQueue        | `LockFreeQueue_uTest.cpp`      | Push/pop, capacity, MPMC integrity, index wrap     |
 | SPSCQueue            | `SPSCQueue_uTest.cpp`          | Push/pop, capacity, index wrap, size, alignment    |
 | RingBuffer           | `RingBuffer_uTest.cpp`         | Push/pop, peek, clear, wraparound, alignment       |
-| ringOccupancy        | `RingIndex_uTest.cpp`          | Element count across index wrap, split snapshots   |
+| ringOccupancy        | `RingIndex_uTest.cpp`          | Cursor distance across index wrap, split snapshots |
 | Semaphore            | `Semaphore_uTest.cpp`          | Acquire/release, timeout, wake-all, count bound    |
 | SpinLock             | `SpinLock_uTest.cpp`           | Lock/unlock, mutual exclusion, std::lock_guard     |
 | Latch                | `Latch_uTest.cpp`              | Countdown, wait, arrive-and-wait, lifetime         |

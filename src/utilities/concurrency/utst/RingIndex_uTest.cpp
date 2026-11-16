@@ -55,9 +55,9 @@ TEST(RingSlotsTest, IsTheSmallestPowerOfTwoHoldingTheRequest) {
 
 /* ----------------------------- ringOccupancy Tests ----------------------------- */
 
-/** @test For a head and a tail read at one instant the result is the element count, with the
- * head numerically above the tail and, after an index wrap, numerically below it. */
-TEST(RingOccupancyTest, CountsElementsOnBothSidesOfAnIndexWrap) {
+/** @test For a head and a tail read at one instant the result is the distance between them, with
+ * the head numerically above the tail and, after an index wrap, numerically below it. */
+TEST(RingOccupancyTest, GivesTheCursorDistanceOnBothSidesOfAnIndexWrap) {
   EXPECT_EQ(ringOccupancy(5, 5, CAPACITY), 0U);
   EXPECT_EQ(ringOccupancy(6, 5, CAPACITY), 1U);
   EXPECT_EQ(ringOccupancy(7, 5, CAPACITY), 2U);
