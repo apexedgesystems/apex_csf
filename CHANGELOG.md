@@ -114,7 +114,9 @@ any such change is called out explicitly in its entry.
 ### Removed
 
 - Breaking: `PoolStatus::EXCEPTION_STD` and `PoolStatus::EXCEPTION_UNKNOWN`.
-  Pool tasks are `noexcept` delegates, so neither status could be reported.
+  Pool tasks are `noexcept` delegates and report failure through their return
+  code; the statuses were reachable only through the pools' retry of their
+  own failed error recording, which is removed with them.
   ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - The public factorial helpers (`Factorials.hpp`: `precomputedFactorials`,
   `largeFactorial`); replace direct uses before updating. Breaking.
