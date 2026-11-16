@@ -455,3 +455,5 @@ PERF_TEST(ParamBankPerf, ParamSizeScaling) {
                 result.callsPerSecond);
   }
 }
+
+PERF_MAIN()
