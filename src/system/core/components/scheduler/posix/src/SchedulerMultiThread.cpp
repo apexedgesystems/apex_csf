@@ -301,23 +301,15 @@ Status SchedulerMultiThread::executeTasksOnCycleMulti(std::uint64_t cycle) noexc
   periodViolationsThisTick_ = 0;
 
   // Collect errors from async task completions (from previous ticks)
-  // Check all pools for errors
-  bool hadErrors = false;
   auto* lg = componentLog();
   const int LOG_LEVEL = lg ? static_cast<int>(lg->level()) : 0;
-
-  for (auto& pool : pools_) {
+  // The test for pending errors stays in line: one load per pool on
+  // every dispatch, and a call only when a task failed.
+  bool hadErrors = false;
+  for (const auto& pool : pools_) {
     if (pool->hasErrors()) {
-      auto errors = pool->collectErrors();
-      while (!errors.empty()) {
-        hadErrors = true;
-        auto err = errors.front();
-        errors.pop();
-        if (lg && static_cast<int>(logs::SystemLog::Level::WARNING) >= LOG_LEVEL) {
-          lg->warning(label(), static_cast<std::uint8_t>(Status::WARN_TASK_NON_SUCCESS_RET),
-                      fmt::format("Task '{}' returned error code {}", err.label, err.errorCode));
-        }
-      }
+      hadErrors = logCompletionErrors(lg, LOG_LEVEL);
+      break;
     }
   }
 
@@ -415,6 +407,49 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
 
 bool SchedulerMultiThread::waitForInFlightTasks(std::uint64_t timeoutNs) noexcept {
   return waitForInFlightTasksUntil(apex::helpers::cpu::getMonotonicNs() + timeoutNs);
+}
+
+bool SchedulerMultiThread::logCompletionErrors(logs::SystemLog* lg, int logLevel) noexcept {
+  bool hadErrors = false;
+  for (auto& pool : pools_) {
+    if (pool->hasErrors()) {
+      auto errors = pool->collectErrors();
+      while (!errors.empty()) {
+        hadErrors = true;
+        auto err = errors.front();
+        errors.pop();
+        if (lg && static_cast<int>(logs::SystemLog::Level::WARNING) >= logLevel) {
+          lg->warning(label(), static_cast<std::uint8_t>(Status::WARN_TASK_NON_SUCCESS_RET),
+                      fmt::format("Task '{}' returned error code {}", err.label, err.errorCode));
+        }
+      }
+    }
+  }
+  return hadErrors;
+}
+
+bool SchedulerMultiThread::settled() noexcept {
+  // An entry reads idle once each of its invocations has run to the mark
+  // its worker sets inside the task call. A pool reads idle once every
+  // worker that entered a task call has left it and has filed the call's
+  // completion record. This thread is the only one that dispatches, so
+  // with both idle nothing is queued, running or completing.
+  for (const TaskEntry& entry : entries_) {
+    if (entry.stillRunning()) {
+      return false;
+    }
+  }
+  for (const auto& pool : pools_) {
+    if (pool->threadsRunning()) {
+      return false;
+    }
+  }
+
+  // The completion records carry task labels; logging them here leaves
+  // none behind.
+  auto* lg = componentLog();
+  static_cast<void>(logCompletionErrors(lg, lg ? static_cast<int>(lg->level()) : 0));
+  return true;
 }
 
 bool SchedulerMultiThread::waitForInFlightTasksUntil(std::uint64_t deadlineNs) noexcept {
