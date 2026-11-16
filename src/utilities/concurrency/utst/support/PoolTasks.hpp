@@ -85,8 +85,8 @@ struct DrainOutcome {
 /// it. The worker is released only once the pool refuses work, so every waiting task is still
 /// queued at the moment the stop begins: a pool that stops without running its queue leaves
 /// `ran` short of `accepted` on every run. The stop runs on a Crew thread, by shutdown() or by
-/// destroying the pool, and the pool is the last member so it is destroyed before what its
-/// tasks touch.
+/// destroying the pool, and so does the pool's destruction when the scenario cannot be set up.
+/// The pool is the last member so it is destroyed before what its tasks touch.
 template <class Pool, class... PoolArgs>
 DrainOutcome drainHeldPool(bool byDestructor, std::uint32_t queued, PoolArgs... poolArgs) {
   struct Scenario : CrewState {
@@ -102,12 +102,22 @@ DrainOutcome drainHeldPool(bool byDestructor, std::uint32_t queued, PoolArgs... 
   Crew<Scenario> crew(poolArgs...);
   DrainOutcome out;
 
+  // A scenario that cannot be set up still has a pool to destroy, and a pool that could not
+  // start its gate may not stop either. Its destruction runs on a Crew thread like the stop
+  // under test, so a setup that fails ends the case with a failure, not a hang.
+  const auto GIVE_UP = [&crew]() {
+    crew.start([](Scenario& scenario) { scenario.pool.reset(); });
+    (void)crew.finish();
+  };
+
   if (crew->pool->tryEnqueue("gate", {&StopGate<Pool>::holdUntilStopped, &crew->gate}) !=
       PoolStatus::SUCCESS) {
+    GIVE_UP();
     return out;
   }
   out.workerHeld = settles([&]() { return crew->gate.holding.load() == 1; });
   if (!out.workerHeld) {
+    GIVE_UP();
     return out;
   }
   std::uint32_t queuedHere = 0;
