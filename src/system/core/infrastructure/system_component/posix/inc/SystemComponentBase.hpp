@@ -27,6 +27,7 @@
 #include "src/utilities/compatibility/inc/compat_span.hpp"
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 #include <memory>
@@ -361,24 +362,26 @@ public:
 
   /**
    * @brief Lock component for runtime update (reflash, TPRM reload).
-   * @note While locked: scheduler skips tasks, interface NAKs commands, action engine skips
-   * watchpoints.
+   * @note While locked the scheduler dispatches none of its tasks. A task
+   *       dispatched before the lock runs to its end; the lock does not
+   *       wait for it.
    * @note NOT RT-safe: Control-plane only (called by executive on CMD_LOCK_COMPONENT).
    */
-  void lock() noexcept { locked_ = true; }
+  void lock() noexcept { locked_.store(true, std::memory_order_release); }
 
   /**
    * @brief Unlock component after runtime update completes.
    * @note NOT RT-safe: Control-plane only (called by executive on CMD_UNLOCK_COMPONENT).
    */
-  void unlock() noexcept { locked_ = false; }
+  void unlock() noexcept { locked_.store(false, std::memory_order_release); }
 
   /**
    * @brief Check if component is locked for runtime update.
-   * @return true if locked (scheduler should skip, interface should NAK).
-   * @note RT-safe: Simple member read.
+   * @return true if locked (the scheduler skips its tasks).
+   * @note RT-safe: One atomic load. The control plane writes the flag on
+   *       its thread and the dispatching thread reads it.
    */
-  [[nodiscard]] bool isLocked() const noexcept { return locked_; }
+  [[nodiscard]] bool isLocked() const noexcept { return locked_.load(std::memory_order_acquire); }
 
   /**
    * @brief Path of this component's dedicated log file.
@@ -471,7 +474,7 @@ private:
   std::shared_ptr<logs::SystemLog> componentLog_{nullptr};
   IInternalBus* internalBus_{nullptr};
   bool configured_{false};
-  bool locked_{false};
+  std::atomic<bool> locked_{false};
 
   // Command statistics (system-wide tracking).
   std::uint64_t commandCount_{0};
