@@ -260,12 +260,15 @@ constexpr std::size_t INDEX_MAX = std::numeric_limits<std::size_t>::max();
 } // namespace
 
 /** @test A queue whose indices wrap keeps its order, its capacity and its size: started one step
- * below the index width, it fills across the wrap, refuses the next push, and reports each
- * occupancy on the way down, with the head index numerically below the tail throughout. */
+ * below the index width, it is empty to a pop before anything is pushed, fills across the wrap,
+ * refuses the next push, and reports each occupancy on the way down, with the head index
+ * numerically below the tail throughout. */
 TEST_F(SPSCQueueTest, IndicesWrapWithoutLosingOrderCapacityOrSize) {
   SteppedQueue queue(2, INDEX_MAX);
   EXPECT_TRUE(queue.empty());
   EXPECT_EQ(queue.sizeApprox(), 0U);
+  int value = 0;
+  EXPECT_FALSE(queue.tryPop(value)) << "a queue nothing was pushed to gave an item";
 
   ASSERT_TRUE(queue.tryPush(1)); // The head index wraps to zero; the tail is still at the maximum.
   EXPECT_EQ(queue.sizeApprox(), 1U);
@@ -273,7 +276,6 @@ TEST_F(SPSCQueueTest, IndicesWrapWithoutLosingOrderCapacityOrSize) {
   EXPECT_EQ(queue.sizeApprox(), 2U);
   EXPECT_FALSE(queue.tryPush(3)) << "a full queue took a push across the index wrap";
 
-  int value = 0;
   ASSERT_TRUE(queue.tryPop(value)); // The tail index wraps to zero.
   EXPECT_EQ(value, 1);
   EXPECT_EQ(queue.sizeApprox(), 1U);
