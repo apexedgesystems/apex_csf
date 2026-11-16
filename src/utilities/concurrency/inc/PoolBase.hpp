@@ -176,14 +176,13 @@ protected:
 
   /**
    * @brief Run one task on the calling worker: count it in flight, call it,
-   *        record a non-zero return code as a TASK_FAILED error.
+   *        record a non-zero return code as a TASK_FAILED error. An empty
+   *        delegate returns zero from its call, so it runs as a task that
+   *        succeeds.
    * @note RT-safe unless the task fails: two atomic updates around the call.
    *       Recording a failure takes the error mutex and may allocate.
    */
   void runTask(const char* label, TaskFn task) {
-    if (!task) {
-      return; // Ignore empty slots defensively.
-    }
     activeTasks_.value.fetch_add(1, std::memory_order_acq_rel);
     const std::uint8_t RC = task();
     if (RC != 0) {
