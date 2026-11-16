@@ -179,6 +179,21 @@ apex_add_gtest(
   LABELS   Unit
 )
 
+# A library a unit test loads at run time (dlopen): built into the build
+# tree only, never installed. Declare it before the test that names it.
+apex_add_test_plugin(
+  TARGET   MyLib_TestPlugin
+  SOURCES  plugins/test_plugin.cpp
+  LINK     mylib
+)
+apex_add_gtest(
+  TARGET   MyLib_LoaderTest
+  SOURCES  test_loader.cpp
+  LINK     mylib
+  DEFS     MYLIB_VECTORS_DIR="${CMAKE_SOURCE_DIR}/vectors"
+  PLUGINS  MyLib_TestPlugin   # built first; APEX_TEST_PLUGIN_DIR is defined
+)
+
 # Performance tests (not in CTest, run manually)
 apex_add_ptest(
   TARGET   MyLib_PTest
@@ -202,6 +217,10 @@ Test output directories:
 | `apex_add_gtest`   | `bin/utests/`    | Yes      |
 | `apex_add_ptest`   | `bin/ptests/`    | No       |
 | `apex_add_devtest` | `bin/dtests/`    | No       |
+
+`apex_add_test_plugin` builds `<target>.so` into `test_plugins/` under the
+build directory. A test that lists it under `PLUGINS` finds it at
+`APEX_TEST_PLUGIN_DIR "/<target>.so"`.
 
 ## Code Coverage
 

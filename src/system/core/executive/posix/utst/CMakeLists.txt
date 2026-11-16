@@ -20,6 +20,22 @@ set(UNIT_TEST_SOURCES
 )
 
 # ------------------------------------------------------------------------------
+# Test Plugins
+# ------------------------------------------------------------------------------
+
+# The plugin library the RELOAD_LIBRARY test swaps in: the plugin build of
+# the component the test links.
+apex_add_test_plugin(
+  TARGET
+  ExecutiveTestPlugin_Reload
+  SOURCES
+  "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ReloadTargetPlugin.cpp"
+  LINK
+  system_core_system_component
+  system_core_logs
+)
+
+# ------------------------------------------------------------------------------
 # Unit Tests
 # ------------------------------------------------------------------------------
 
@@ -37,30 +53,10 @@ apex_add_gtest(
   system_core_system_component
   system_core_logs
   fmt::fmt
+  PLUGINS
+  ExecutiveTestPlugin_Reload
   LABELS
   system
   core
   executive
-)
-
-# The plugin library the RELOAD_LIBRARY test swaps in: the plugin build of
-# the component the test links. Nothing links it.
-set(_test_plugin_dir "${CMAKE_BINARY_DIR}/test_plugins/executive")
-add_library(
-  ExecutiveTestPlugin_Reload MODULE "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ReloadTargetPlugin.cpp"
-)
-target_include_directories(ExecutiveTestPlugin_Reload PRIVATE "${CMAKE_SOURCE_DIR}")
-target_link_libraries(
-  ExecutiveTestPlugin_Reload
-  PRIVATE system_core_system_component system_core_logs
-)
-set_target_properties(
-  ExecutiveTestPlugin_Reload
-  PROPERTIES PREFIX ""
-             SUFFIX ".so"
-             LIBRARY_OUTPUT_DIRECTORY "${_test_plugin_dir}"
-)
-add_dependencies(TestSystemCoreExecutive ExecutiveTestPlugin_Reload)
-target_compile_definitions(
-  TestSystemCoreExecutive PRIVATE APEX_TEST_PLUGIN_DIR="${_test_plugin_dir}"
 )

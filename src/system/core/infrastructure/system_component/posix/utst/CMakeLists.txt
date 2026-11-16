@@ -32,9 +32,24 @@ set(UNIT_TEST_SOURCES
 )
 
 # ------------------------------------------------------------------------------
+# Test Plugins
+# ------------------------------------------------------------------------------
+
+# Plugin libraries the loader tests open. Each passes the ABI gate and lacks
+# one factory symbol.
+foreach (_plugin NoCreate NoDestroy)
+  apex_add_test_plugin(
+    TARGET SystemComponentTestPlugin_${_plugin} SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/Plugin${_plugin}.cpp"
+  )
+endforeach ()
+
+# ------------------------------------------------------------------------------
 # Test Target
 # ------------------------------------------------------------------------------
 
+# The golden vectors are the cross-language contract (rust generates them,
+# this suite consumes them); the path is baked so ctest runs from any cwd.
 apex_add_gtest(
   TARGET
   TestSystemCoreSystemComponent
@@ -46,34 +61,12 @@ apex_add_gtest(
   system_core_logs
   utilities_helpers
   fmt::fmt
+  DEFS
+  APEX_TPRM_VECTORS_DIR="${CMAKE_SOURCE_DIR}/compat/tprm"
+  PLUGINS
+  SystemComponentTestPlugin_NoCreate
+  SystemComponentTestPlugin_NoDestroy
   LABELS
   system
   system_component
-)
-
-# The golden vectors are the cross-language contract (rust generates them,
-# this suite consumes them); the path is baked so ctest runs from any cwd.
-target_compile_definitions(
-  TestSystemCoreSystemComponent PRIVATE APEX_TPRM_VECTORS_DIR="${CMAKE_SOURCE_DIR}/compat/tprm"
-)
-
-# Plugin libraries the loader tests open. Each passes the ABI gate and lacks
-# one factory symbol; nothing links them.
-set(_test_plugin_dir "${CMAKE_BINARY_DIR}/test_plugins/system_component")
-foreach (_plugin NoCreate NoDestroy)
-  add_library(
-    SystemComponentTestPlugin_${_plugin} MODULE
-    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/Plugin${_plugin}.cpp"
-  )
-  target_include_directories(SystemComponentTestPlugin_${_plugin} PRIVATE "${CMAKE_SOURCE_DIR}")
-  set_target_properties(
-    SystemComponentTestPlugin_${_plugin}
-    PROPERTIES PREFIX ""
-               SUFFIX ".so"
-               LIBRARY_OUTPUT_DIRECTORY "${_test_plugin_dir}"
-  )
-  add_dependencies(TestSystemCoreSystemComponent SystemComponentTestPlugin_${_plugin})
-endforeach ()
-target_compile_definitions(
-  TestSystemCoreSystemComponent PRIVATE APEX_TEST_PLUGIN_DIR="${_test_plugin_dir}"
 )
