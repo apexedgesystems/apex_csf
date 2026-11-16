@@ -48,6 +48,8 @@
 #include <thread>
 #include <vector>
 
+#include <sys/resource.h>
+
 namespace ub = vernier::bench;
 
 using apex::concurrency::Barrier;
@@ -73,6 +75,23 @@ constexpr int DEFAULT_THREADS = 4;
 double nsPerOp(const ub::PerfResult& result, double opsPerCall = 1.0) {
   const double OPS_PER_SECOND = result.callsPerSecond * opsPerCall;
   return (OPS_PER_SECOND > 0.0) ? 1e9 / OPS_PER_SECOND : 0.0;
+}
+
+/// The calling thread's time in the kernel so far, in nanoseconds.
+double kernelNsOfThisThread() {
+  rusage usage{};
+  getrusage(RUSAGE_THREAD, &usage);
+  return static_cast<double>(usage.ru_stime.tv_sec) * 1e9 +
+         static_cast<double>(usage.ru_stime.tv_usec) * 1e3;
+}
+
+/// The producer's kernel time per enqueue over a measured phase that began
+/// at `before`. An enqueue enters the kernel only to wake a worker, so this
+/// is the part of the enqueue figure that is wakes: near zero while the
+/// workers stay busy, most of the figure while they keep going idle.
+double kernelNsPerEnqueue(double before, const ub::PerfCase& perf) {
+  const double ENQUEUES = static_cast<double>(perf.cycles()) * perf.repeats();
+  return (kernelNsOfThisThread() - before) / ENQUEUES;
 }
 
 /// Waits for `ready()` without sleeping on it. The core is offered between
@@ -731,15 +750,17 @@ PERF_TEST(ThreadPool, EnqueueThroughput) {
     counter.store(0);
   });
 
+  const double KERNEL_BEFORE = kernelNsOfThisThread();
   auto result = perf.throughputLoop([&] { pool.enqueueTask("bench", task); }, "enqueue");
+  const double KERNEL_NS = kernelNsPerEnqueue(KERNEL_BEFORE, perf);
 
   // Wait for tasks to complete
   while (counter.load() < static_cast<int>(perf.cycles() * perf.repeats())) {
     std::this_thread::yield();
   }
 
-  std::printf("\nThreadPool enqueue: %.0f ops/s (%.1f ns/op)\n", result.callsPerSecond,
-              nsPerOp(result));
+  std::printf("\nThreadPool enqueue: %.0f ops/s (%.1f ns/op, %.0f of them in the kernel)\n",
+              result.callsPerSecond, nsPerOp(result), KERNEL_NS);
 }
 
 /** @brief ThreadPool worker cost per queued task, one worker. */
@@ -792,6 +813,7 @@ PERF_TEST(ThreadPoolLockFree, EnqueueThroughput) {
     accepted = 0;
   });
 
+  const double KERNEL_BEFORE = kernelNsOfThisThread();
   auto result = perf.throughputLoop(
       [&] {
         if (pool.tryEnqueue("bench", task) == PoolStatus::SUCCESS) {
@@ -799,14 +821,17 @@ PERF_TEST(ThreadPoolLockFree, EnqueueThroughput) {
         }
       },
       "enqueue");
+  const double KERNEL_NS = kernelNsPerEnqueue(KERNEL_BEFORE, perf);
 
   // Wait for the accepted tasks to complete
   while (counter.load() < accepted) {
     std::this_thread::yield();
   }
 
-  std::printf("\nThreadPoolLockFree enqueue: %.0f ops/s (%.1f ns/op), %d of %d accepted\n",
-              result.callsPerSecond, nsPerOp(result), accepted, perf.cycles() * perf.repeats());
+  std::printf("\nThreadPoolLockFree enqueue: %.0f ops/s (%.1f ns/op, %.0f of them in the "
+              "kernel), %d of %d accepted\n",
+              result.callsPerSecond, nsPerOp(result), KERNEL_NS, accepted,
+              perf.cycles() * perf.repeats());
 }
 
 /** @brief ThreadPoolLockFree worker cost per queued task, one worker. */
