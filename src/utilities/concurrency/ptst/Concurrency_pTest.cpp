@@ -10,8 +10,9 @@
  *  - Semaphore acquire/release (uncontended and contended)
  *  - Latch round of four threads and tryWait on a triggered latch
  *  - Barrier phase of four threads and generation query
- *  - ThreadPool / ThreadPoolLockFree enqueue throughput, worker cost per
- *    queued task (one and four workers) and rejection
+ *  - ThreadPool / ThreadPoolLockFree enqueue cost with busy workers, time
+ *    from an enqueue to the task starting on a sleeping worker, worker cost
+ *    per queued task (one and four workers) and rejection
  *
  * Every measuring case writes one CSV row. Per-operation times in the summary
  * lines come from the measured call rate. The contention cases run
@@ -49,8 +50,6 @@
 #include <thread>
 #include <vector>
 
-#include <sys/resource.h>
-
 namespace ub = vernier::bench;
 
 using apex::concurrency::Barrier;
@@ -81,23 +80,6 @@ constexpr std::size_t RETRIES_BEFORE_YIELD = 4096;
 double nsPerOp(const ub::PerfResult& result, double opsPerCall = 1.0) {
   const double OPS_PER_SECOND = result.callsPerSecond * opsPerCall;
   return (OPS_PER_SECOND > 0.0) ? 1e9 / OPS_PER_SECOND : 0.0;
-}
-
-/// The calling thread's time in the kernel so far, in nanoseconds.
-double kernelNsOfThisThread() {
-  rusage usage{};
-  getrusage(RUSAGE_THREAD, &usage);
-  return static_cast<double>(usage.ru_stime.tv_sec) * 1e9 +
-         static_cast<double>(usage.ru_stime.tv_usec) * 1e3;
-}
-
-/// The producer's kernel time per enqueue over a measured phase that began
-/// at `before`. An enqueue enters the kernel only to wake a worker, so this
-/// is the part of the enqueue figure that is wakes: near zero while the
-/// workers stay busy, most of the figure while they keep going idle.
-double kernelNsPerEnqueue(double before, const ub::PerfCase& perf) {
-  const double ENQUEUES = static_cast<double>(perf.cycles()) * perf.repeats();
-  return (kernelNsOfThisThread() - before) / ENQUEUES;
 }
 
 /// Waits for `ready()` without sleeping on it. The core is offered between
@@ -205,6 +187,116 @@ template <class Pool> void measureDrain(ub::PerfCase& perf, Pool& pool, int work
               "%.1f ns of worker time per task\n",
               perf.testName().c_str(), workers, (workers == 1) ? "" : "s", RESULT.callsPerSecond,
               nsPerOp(RESULT), nsPerOp(RESULT) * workers);
+}
+
+/* ----------------------------- Pool enqueue ----------------------------- */
+
+/**
+ * @brief Producer cost of an enqueue while every worker is busy.
+ *
+ * The workers are held at a gate for the whole measurement, so a pass times
+ * `cycles()` enqueues and nothing beside them: no worker takes a task or
+ * goes idle while the producer runs. The queued tasks run when the gate
+ * opens at the end. The lock-free pool's ring is sized for all of them, so
+ * each cell is written once and not reused.
+ */
+template <class Pool> void measureEnqueueToBusyPool(ub::PerfCase& perf, Pool& pool, int workers) {
+  ASSERT_TRUE(pool.isValid());
+
+  std::atomic<bool> abandon{false};
+  DrainGate gate;
+  gate.abandon = &abandon;
+  bool held = true;
+  for (int w = 0; w < workers; ++w) {
+    held = (pool.tryEnqueue("gate", DelegateU8{&holdAtGate, &gate}) == PoolStatus::SUCCESS) && held;
+  }
+  if (!held) {
+    abandon.store(true, std::memory_order_release);
+    pool.shutdown();
+    FAIL() << "the pool refused the gate tasks";
+  }
+  spinUntil([&] { return gate.held.load(std::memory_order_acquire) == workers; });
+
+  std::size_t refused = 0;
+  const auto PASS = [&] {
+    for (int i = 0; i < perf.cycles(); ++i) {
+      if (pool.tryEnqueue("task", DelegateU8{&doNothing, nullptr}) != PoolStatus::SUCCESS) {
+        ++refused;
+      }
+    }
+  };
+
+  PASS(); // warmup
+  const ub::PerfResult RESULT = perf.measured(PASS, "enqueue");
+
+  gate.open.store(true, std::memory_order_release);
+  pool.shutdown();
+
+  EXPECT_EQ(refused, 0U) << "the pool refused part of the workload";
+  std::printf("\n%s (%d busy workers): %.0f enqueues/s (%.1f ns per enqueue)\n",
+              perf.testName().c_str(), workers, RESULT.callsPerSecond, nsPerOp(RESULT));
+}
+
+/// When a wake-latency sample's task started, written by the worker.
+struct WakeSample {
+  std::atomic<bool> started{false};
+  std::chrono::steady_clock::time_point at;
+
+  static std::uint8_t stamp(void* context) noexcept {
+    auto* sample = static_cast<WakeSample*>(context);
+    sample->at = std::chrono::steady_clock::now();
+    sample->started.store(true, std::memory_order_release);
+    return 0;
+  }
+};
+
+/**
+ * @brief Time from an enqueue to the task starting on a worker that was asleep.
+ *
+ * Each sample enqueues one task to a one-worker pool that has had nothing
+ * to do for WAKE_SETTLE, long enough for the worker to be parked, and takes
+ * the time from just before the enqueue to the task's first instruction.
+ * The pause between samples is not measured, which the harness's own loops
+ * cannot leave out, so the case times itself: a repeat is the median of its
+ * samples, and the row is built from the repeats like any other.
+ */
+template <class Pool> void measureWakeLatency(ub::PerfCase& perf, Pool& pool) {
+  ASSERT_TRUE(pool.isValid());
+  constexpr auto WAKE_SETTLE = std::chrono::microseconds(200);
+  const int SAMPLES = std::min(perf.cycles(), 1000);
+
+  std::vector<double> repeatMediansUs;
+  repeatMediansUs.reserve(static_cast<std::size_t>(perf.repeats()));
+  std::vector<double> samplesUs(static_cast<std::size_t>(SAMPLES));
+  WakeSample sample;
+
+  for (int repeat = -1; repeat < perf.repeats(); ++repeat) { // repeat -1 is the warmup
+    for (double& latencyUs : samplesUs) {
+      std::this_thread::sleep_for(WAKE_SETTLE);
+      sample.started.store(false, std::memory_order_release);
+      const auto BEFORE = std::chrono::steady_clock::now();
+      if (pool.tryEnqueue("wake", DelegateU8{&WakeSample::stamp, &sample}) != PoolStatus::SUCCESS) {
+        pool.shutdown();
+        FAIL() << "the pool refused a task";
+      }
+      spinUntil([&] { return sample.started.load(std::memory_order_acquire); });
+      latencyUs = std::chrono::duration<double, std::micro>(sample.at - BEFORE).count();
+    }
+    if (repeat >= 0) {
+      std::sort(samplesUs.begin(), samplesUs.end());
+      repeatMediansUs.push_back(samplesUs[samplesUs.size() / 2]);
+    }
+  }
+  pool.shutdown();
+
+  const ub::Stats STATS = ub::summarize(repeatMediansUs);
+  const double PER_SECOND = (STATS.median > 0.0) ? 1e6 / STATS.median : 0.0;
+  ub::PerfRegistry::instance().set(
+      ub::buildPerfRow(perf.testName(), perf.config(), 1, 1, STATS, PER_SECOND));
+
+  std::printf("\n%s: %.2f us from enqueue to task start (median of %d repeats of %d samples; "
+              "repeats from %.2f to %.2f us)\n",
+              perf.testName().c_str(), STATS.median, perf.repeats(), SAMPLES, STATS.min, STATS.max);
 }
 
 } // namespace
@@ -743,43 +835,18 @@ PERF_TEST(Barrier, GenerationQuery) {
 
 /* ----------------------------- ThreadPool Tests ----------------------------- */
 
-/**
- * @brief ThreadPool task enqueue throughput.
- */
-PERF_TEST(ThreadPool, EnqueueThroughput) {
+/** @brief ThreadPool enqueue cost for the producer while its four workers are busy. */
+PERF_TEST(ThreadPool, EnqueueToBusyPool) {
   UB_PERF_GUARD(perf);
-
   ThreadPool pool(4);
-  std::atomic<int> counter{0};
+  measureEnqueueToBusyPool(perf, pool, 4);
+}
 
-  auto task = DelegateU8{[](void* ctx) noexcept -> std::uint8_t {
-                           auto* c = static_cast<std::atomic<int>*>(ctx);
-                           c->fetch_add(1, std::memory_order_relaxed);
-                           return 0;
-                         },
-                         &counter};
-
-  perf.warmup([&] {
-    for (int i = 0; i < perf.cycles() / 10; ++i) {
-      pool.enqueueTask("warmup", task);
-    }
-    while (counter.load() < perf.cycles() / 10) {
-      std::this_thread::yield();
-    }
-    counter.store(0);
-  });
-
-  const double KERNEL_BEFORE = kernelNsOfThisThread();
-  auto result = perf.throughputLoop([&] { pool.enqueueTask("bench", task); }, "enqueue");
-  const double KERNEL_NS = kernelNsPerEnqueue(KERNEL_BEFORE, perf);
-
-  // Wait for tasks to complete
-  while (counter.load() < static_cast<int>(perf.cycles() * perf.repeats())) {
-    std::this_thread::yield();
-  }
-
-  std::printf("\nThreadPool enqueue: %.0f ops/s (%.1f ns/op, %.0f of them in the kernel)\n",
-              result.callsPerSecond, nsPerOp(result), KERNEL_NS);
+/** @brief ThreadPool time from an enqueue to the task starting on a sleeping worker. */
+PERF_TEST(ThreadPool, WakeLatency) {
+  UB_PERF_GUARD(perf);
+  ThreadPool pool(1);
+  measureWakeLatency(perf, pool);
 }
 
 /** @brief ThreadPool worker cost per queued task, one worker. */
@@ -798,59 +865,18 @@ PERF_TEST(ThreadPool, DrainFourWorkers) {
 
 /* ----------------------------- ThreadPoolLockFree Tests ----------------------------- */
 
-/**
- * @brief ThreadPoolLockFree enqueue throughput.
- *
- * Tests lock-free submission path with bounded queue.
- */
-PERF_TEST(ThreadPoolLockFree, EnqueueThroughput) {
+/** @brief ThreadPoolLockFree enqueue cost for the producer while its four workers are busy. */
+PERF_TEST(ThreadPoolLockFree, EnqueueToBusyPool) {
   UB_PERF_GUARD(perf);
+  ThreadPoolLockFree pool(4, drainTasks(perf, 4));
+  measureEnqueueToBusyPool(perf, pool, 4);
+}
 
-  ThreadPoolLockFree pool(4, 4096);
-  std::atomic<int> counter{0};
-
-  auto task = DelegateU8{[](void* ctx) noexcept -> std::uint8_t {
-                           auto* c = static_cast<std::atomic<int>*>(ctx);
-                           c->fetch_add(1, std::memory_order_relaxed);
-                           return 0;
-                         },
-                         &counter};
-
-  // A full ring rejects an enqueue, so the waits below count the tasks the
-  // pool accepted, not the attempts: waiting for a dropped task never ends.
-  int accepted = 0;
-  perf.warmup([&] {
-    for (int i = 0; i < perf.cycles() / 10; ++i) {
-      if (pool.tryEnqueue("warmup", task) == PoolStatus::SUCCESS) {
-        ++accepted;
-      }
-    }
-    while (counter.load() < accepted) {
-      std::this_thread::yield();
-    }
-    counter.store(0);
-    accepted = 0;
-  });
-
-  const double KERNEL_BEFORE = kernelNsOfThisThread();
-  auto result = perf.throughputLoop(
-      [&] {
-        if (pool.tryEnqueue("bench", task) == PoolStatus::SUCCESS) {
-          ++accepted;
-        }
-      },
-      "enqueue");
-  const double KERNEL_NS = kernelNsPerEnqueue(KERNEL_BEFORE, perf);
-
-  // Wait for the accepted tasks to complete
-  while (counter.load() < accepted) {
-    std::this_thread::yield();
-  }
-
-  std::printf("\nThreadPoolLockFree enqueue: %.0f ops/s (%.1f ns/op, %.0f of them in the "
-              "kernel), %d of %d accepted\n",
-              result.callsPerSecond, nsPerOp(result), KERNEL_NS, accepted,
-              perf.cycles() * perf.repeats());
+/** @brief ThreadPoolLockFree time from an enqueue to the task starting on a sleeping worker. */
+PERF_TEST(ThreadPoolLockFree, WakeLatency) {
+  UB_PERF_GUARD(perf);
+  ThreadPoolLockFree pool(1);
+  measureWakeLatency(perf, pool);
 }
 
 /** @brief ThreadPoolLockFree worker cost per queued task, one worker. */
@@ -865,78 +891,6 @@ PERF_TEST(ThreadPoolLockFree, DrainFourWorkers) {
   UB_PERF_GUARD(perf);
   ThreadPoolLockFree pool(4, drainTasks(perf, 4));
   measureDrain(perf, pool, 4);
-}
-
-/**
- * @brief Compare ThreadPool vs ThreadPoolLockFree enqueue throughput.
- */
-PERF_TEST(ThreadPoolLockFree, VsThreadPool) {
-  UB_PERF_GUARD(perf);
-
-  std::printf("\n=== ThreadPool vs ThreadPoolLockFree ===\n");
-
-  std::atomic<int> counter{0};
-
-  auto task = DelegateU8{[](void* ctx) noexcept -> std::uint8_t {
-                           auto* c = static_cast<std::atomic<int>*>(ctx);
-                           c->fetch_add(1, std::memory_order_relaxed);
-                           return 0;
-                         },
-                         &counter};
-
-  // ThreadPool (mutex-based)
-  {
-    ThreadPool pool(4);
-    perf.warmup([&] {
-      for (int i = 0; i < perf.cycles() / 10; ++i) {
-        pool.enqueueTask("warmup", task);
-      }
-      while (counter.load() < perf.cycles() / 10) {
-        std::this_thread::yield();
-      }
-      counter.store(0);
-    });
-
-    auto result = perf.throughputLoop([&] { pool.enqueueTask("bench", task); }, "mutex_pool");
-    std::printf("ThreadPool (mutex):     %.0f ops/s\n", result.callsPerSecond);
-
-    while (counter.load() < static_cast<int>(perf.cycles() * perf.repeats())) {
-      std::this_thread::yield();
-    }
-    counter.store(0);
-  }
-
-  // ThreadPoolLockFree (its ring is bounded: wait for the accepted tasks)
-  {
-    ThreadPoolLockFree pool(4, 4096);
-    int accepted = 0;
-    perf.warmup([&] {
-      for (int i = 0; i < perf.cycles() / 10; ++i) {
-        if (pool.tryEnqueue("warmup", task) == PoolStatus::SUCCESS) {
-          ++accepted;
-        }
-      }
-      while (counter.load() < accepted) {
-        std::this_thread::yield();
-      }
-      counter.store(0);
-      accepted = 0;
-    });
-
-    auto result = perf.throughputLoop(
-        [&] {
-          if (pool.tryEnqueue("bench", task) == PoolStatus::SUCCESS) {
-            ++accepted;
-          }
-        },
-        "lockfree_pool");
-    std::printf("ThreadPoolLockFree:     %.0f ops/s (%d of %d accepted)\n", result.callsPerSecond,
-                accepted, perf.cycles() * perf.repeats());
-
-    while (counter.load() < accepted) {
-      std::this_thread::yield();
-    }
-  }
 }
 
 /**
