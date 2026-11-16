@@ -4,10 +4,10 @@
  */
 
 #include "src/system/core/infrastructure/system_component/posix/inc/PluginLoader.hpp"
+#include "src/utilities/helpers/inc/Strings.hpp"
 
 #include <dlfcn.h>
 
-#include <cstdio>
 #include <utility>
 
 namespace system_core {
@@ -46,8 +46,7 @@ PluginLoader& PluginLoader::operator=(PluginLoader&& other) noexcept {
 }
 
 void PluginLoader::setError(const char* text) noexcept {
-  (void)std::snprintf(errorText_.data(), errorText_.size(), "%s",
-                      text != nullptr ? text : "unknown");
+  apex::helpers::strings::copyToFixedArray(errorText_, text != nullptr ? text : "unknown");
   hasError_ = true;
 }
 
