@@ -65,6 +65,15 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- Thread pool workers count their in-flight tasks per worker, and the two
+  pools share `PoolBase` (`PoolBase.hpp` now holds `PoolStatus`, `TaskError`
+  and `PoolConfig`; the pool headers still provide them). A worker's cost
+  per task is 27 to 44% lower on the lab host.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `SPSCQueue` sides keep their last view of the other index: a push and pop
+  pair takes a third less time, and with a backlog neither side reads the
+  other's cache line.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - Breaking: every tool lives under its role and installs to
   `bin/tools/<role>/`; the Python package `apex_tools` is now the
   `apex_ops` and `apex_analysis` wheels (scripts set
@@ -136,6 +145,9 @@ any such change is called out explicitly in its entry.
 - `LockFreeQueue::sizeApprox()` never exceeds `capacity()` and stays correct
   when the queue's indices wrap.
   ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `LockFreeQueue` push and pop compare sequences without the signed
+  overflow they had once the cursors pass 2^63, and a pair takes 15% less
+  time. ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - `SPSCQueue` and `RingBuffer` store elements at `alignof(T)`, over-aligned
   types included, and `SPSCQueue::sizeApprox()` never exceeds `capacity()`
   when read from a third thread.
