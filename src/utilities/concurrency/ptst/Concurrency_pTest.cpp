@@ -8,9 +8,14 @@
  *  - RingBuffer push/pop (single-thread, no atomics)
  *  - SpinLock lock/unlock (uncontended and contended, vs std::mutex)
  *  - Semaphore acquire/release (uncontended and contended)
- *  - Latch countdown coordination and tryWait on a triggered latch
- *  - Barrier phase synchronization and generation query
- *  - ThreadPool / ThreadPoolLockFree enqueue throughput and rejection
+ *  - Latch round of four threads and tryWait on a triggered latch
+ *  - Barrier phase of four threads and generation query
+ *  - ThreadPool / ThreadPoolLockFree enqueue throughput, worker cost per
+ *    queued task (one and four workers) and rejection
+ *
+ * Every measuring case writes one CSV row. Per-operation times in the summary
+ * lines come from the measured call rate. The contention cases run
+ * `--threads N` threads, four when the flag is not given.
  *
  * Usage:
  *   ./Concurrency_PTEST --csv results.csv
@@ -37,6 +42,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <deque>
+#include <limits>
 #include <mutex>
 #include <thread>
 #include <vector>
@@ -54,6 +61,128 @@ using apex::concurrency::SpinLock;
 using apex::concurrency::SPSCQueue;
 using apex::concurrency::ThreadPool;
 using apex::concurrency::ThreadPoolLockFree;
+
+namespace {
+
+/// This binary's default for `--threads`: a contention case with one thread
+/// has nobody to contend with.
+constexpr int DEFAULT_THREADS = 4;
+
+/// Nanoseconds per operation from a result's call rate. A call that performs
+/// several operations passes how many.
+double nsPerOp(const ub::PerfResult& result, double opsPerCall = 1.0) {
+  const double OPS_PER_SECOND = result.callsPerSecond * opsPerCall;
+  return (OPS_PER_SECOND > 0.0) ? 1e9 / OPS_PER_SECOND : 0.0;
+}
+
+/// Waits for `ready()` without sleeping on it. The core is offered between
+/// looks, so the wait also ends when threads outnumber cores.
+template <class Ready> void spinUntil(Ready ready) {
+  while (!ready()) {
+    std::this_thread::yield();
+  }
+}
+
+/* ----------------------------- Pool drain ----------------------------- */
+
+/// One round's gate. Each worker runs one gate task and stays in it until the
+/// round opens.
+struct DrainGate {
+  std::atomic<bool> open{false};
+  std::atomic<int> held{0};                  ///< Workers inside this gate.
+  const std::atomic<bool>* abandon{nullptr}; ///< Releases every gate at teardown.
+};
+
+std::uint8_t holdAtGate(void* context) noexcept {
+  auto* gate = static_cast<DrainGate*>(context);
+  gate->held.fetch_add(1, std::memory_order_release);
+  spinUntil([gate] {
+    return gate->open.load(std::memory_order_acquire) ||
+           gate->abandon->load(std::memory_order_acquire);
+  });
+  return 0;
+}
+
+std::uint8_t doNothing(void* /*context*/) noexcept { return 0; }
+
+/// Measured rounds plus one warmup round.
+std::size_t drainRounds(const ub::PerfCase& perf) {
+  return static_cast<std::size_t>(perf.repeats()) + 1;
+}
+
+/// Tasks a drain case queues before it measures: every round's work and one
+/// gate per worker before each round and after the last.
+std::size_t drainTasks(const ub::PerfCase& perf, int workers) {
+  const std::size_t ROUNDS = drainRounds(perf);
+  return ROUNDS * static_cast<std::size_t>(perf.cycles()) +
+         (ROUNDS + 1) * static_cast<std::size_t>(workers);
+}
+
+/**
+ * @brief Worker cost per task with the work already queued.
+ *
+ * Every round's tasks are queued before the measurement, each round behind
+ * one gate task per worker. Opening a round's gates lets all workers go at
+ * once, and the round ends when every worker is inside the next round's
+ * gate, which a worker reaches only after the round's last task returned. A
+ * round therefore times the workers taking and running `cycles()` tasks that
+ * do nothing, and none of the producer's work. Workers and the measuring
+ * thread spin at the gates, so no wake is in the figure.
+ */
+template <class Pool> void measureDrain(ub::PerfCase& perf, Pool& pool, int workers) {
+  ASSERT_TRUE(pool.isValid());
+
+  const std::size_t ROUNDS = drainRounds(perf);
+  std::atomic<bool> abandon{false};
+  std::deque<DrainGate> gates(ROUNDS + 1);
+  for (DrainGate& gate : gates) {
+    gate.abandon = &abandon;
+  }
+
+  bool queued = true;
+  const auto QUEUE = [&](const char* label, DelegateU8 task) {
+    queued = (pool.tryEnqueue(label, task) == PoolStatus::SUCCESS) && queued;
+  };
+  const auto QUEUE_GATE = [&](DrainGate& gate) {
+    for (int w = 0; w < workers; ++w) {
+      QUEUE("gate", DelegateU8{&holdAtGate, &gate});
+    }
+  };
+
+  QUEUE_GATE(gates[0]);
+  for (std::size_t round = 0; round < ROUNDS; ++round) {
+    for (int i = 0; i < perf.cycles(); ++i) {
+      QUEUE("task", DelegateU8{&doNothing, nullptr});
+    }
+    QUEUE_GATE(gates[round + 1]);
+  }
+  if (!queued) {
+    abandon.store(true, std::memory_order_release);
+    pool.shutdown();
+    FAIL() << "the pool refused part of the drain workload";
+  }
+  spinUntil([&] { return gates[0].held.load(std::memory_order_acquire) == workers; });
+
+  std::size_t round = 0;
+  const auto DRAIN_ROUND = [&] {
+    gates[round].open.store(true, std::memory_order_release);
+    ++round;
+    spinUntil([&] { return gates[round].held.load(std::memory_order_acquire) == workers; });
+  };
+
+  DRAIN_ROUND(); // warmup
+  const ub::PerfResult RESULT = perf.measured(DRAIN_ROUND, "drain");
+
+  abandon.store(true, std::memory_order_release);
+  pool.shutdown();
+
+  std::printf("\n%s drain (%d worker%s): %.0f tasks/s, %.1f ns per task, "
+              "%.1f ns of worker time per task\n",
+              perf.testName().c_str(), workers, (workers == 1) ? "" : "s", RESULT.callsPerSecond,
+              nsPerOp(RESULT), nsPerOp(RESULT) * workers);
+}
+
+} // namespace
 
 /* ----------------------------- LockFreeQueue Tests ----------------------------- */
 
@@ -86,8 +215,8 @@ PERF_TEST(LockFreeQueue, SingleThreadThroughput) {
       },
       "push_pop");
 
-  std::printf("\nLockFreeQueue single-thread: %.0f ops/s (%.1f ns/op)\n", result.callsPerSecond,
-              result.stats.median * 1000);
+  std::printf("\nLockFreeQueue single-thread: %.0f push+pop pairs/s (%.1f ns per pair)\n",
+              result.callsPerSecond, nsPerOp(result));
 }
 
 /**
@@ -146,8 +275,8 @@ PERF_TEST(SPSCQueue, SingleThreadThroughput) {
       },
       "push_pop");
 
-  std::printf("\nSPSCQueue single-thread: %.0f ops/s (%.1f ns/op)\n", result.callsPerSecond,
-              result.stats.median * 1000);
+  std::printf("\nSPSCQueue single-thread: %.0f push+pop pairs/s (%.1f ns per pair)\n",
+              result.callsPerSecond, nsPerOp(result));
 }
 
 /**
@@ -225,8 +354,8 @@ PERF_TEST(RingBuffer, SingleThreadThroughput) {
       },
       "push_pop");
 
-  std::printf("\nRingBuffer single-thread: %.0f ops/s (%.1f ns/op)\n", result.callsPerSecond,
-              result.stats.median * 1000);
+  std::printf("\nRingBuffer single-thread: %.0f push+pop pairs/s (%.1f ns per pair)\n",
+              result.callsPerSecond, nsPerOp(result));
 }
 
 /**
@@ -300,8 +429,8 @@ PERF_TEST(SpinLock, Uncontended) {
       },
       "lock_unlock");
 
-  std::printf("\nSpinLock uncontended: %.0f ops/s (%.1f ns/op)\n", result.callsPerSecond,
-              result.stats.median * 1000);
+  std::printf("\nSpinLock uncontended: %.0f lock+unlock pairs/s (%.1f ns per pair)\n",
+              result.callsPerSecond, nsPerOp(result));
 }
 
 /**
@@ -393,8 +522,8 @@ PERF_TEST(Semaphore, Uncontended) {
       },
       "acquire_release");
 
-  std::printf("\nSemaphore uncontended: %.0f ops/s (%.1f ns/op)\n", result.callsPerSecond,
-              result.stats.median * 1000);
+  std::printf("\nSemaphore uncontended: %.0f acquire+release pairs/s (%.1f ns per pair)\n",
+              result.callsPerSecond, nsPerOp(result));
 }
 
 /**
@@ -424,44 +553,55 @@ PERF_TEST(Semaphore, Contended) {
 /* ----------------------------- Latch Tests ----------------------------- */
 
 /**
- * @brief Latch countdown coordination latency.
+ * @brief Latch round: four threads arrive at a fresh latch and all continue.
  *
- * Measures time for N threads to count down and synchronize.
+ * Three helper threads live across the rounds and enter each round's latch
+ * once it is published, so a round times the four arrivals and the wakes
+ * and no thread creation. A latch is single use: every round has its own,
+ * built before the measurement.
  */
 PERF_TEST(Latch, CountdownLatency) {
   UB_PERF_GUARD(perf);
 
-  const int NUM_THREADS = 4;
-  std::vector<double> latencies;
+  constexpr int PARTIES = 4;
+  const std::size_t PASSES = static_cast<std::size_t>(perf.repeats()) + 1; // one warmup pass
+  const std::size_t ROUNDS = PASSES * static_cast<std::size_t>(perf.cycles());
 
-  // Run multiple iterations to get stable measurements
-  for (int rep = 0; rep < perf.repeats(); ++rep) {
-    Latch latch(NUM_THREADS);
-    std::vector<std::thread> threads;
-
-    auto start = std::chrono::steady_clock::now();
-
-    threads.reserve(NUM_THREADS);
-    for (int t = 0; t < NUM_THREADS; ++t) {
-      threads.emplace_back([&latch] { latch.arriveAndWait(); });
-    }
-
-    for (auto& t : threads) {
-      t.join();
-    }
-
-    auto end = std::chrono::steady_clock::now();
-    double us = std::chrono::duration<double, std::micro>(end - start).count();
-    latencies.push_back(us);
+  std::deque<Latch> latches;
+  for (std::size_t round = 0; round < ROUNDS; ++round) {
+    latches.emplace_back(PARTIES);
   }
 
-  std::sort(latencies.begin(), latencies.end());
-  double median = latencies[latencies.size() / 2];
-  double p10 = latencies[latencies.size() / 10];
-  double p90 = latencies[latencies.size() * 9 / 10];
+  std::atomic<std::size_t> published{0}; // Rounds the helpers may enter.
+  std::vector<std::thread> helpers;
+  helpers.reserve(PARTIES - 1);
+  for (int t = 0; t < PARTIES - 1; ++t) {
+    helpers.emplace_back([&] {
+      for (std::size_t round = 0; round < ROUNDS; ++round) {
+        spinUntil([&] { return published.load(std::memory_order_acquire) > round; });
+        latches[round].arriveAndWait();
+      }
+    });
+  }
 
-  std::printf("\nLatch countdown (%d threads): median=%.1f us, p10=%.1f, p90=%.1f\n", NUM_THREADS,
-              median, p10, p90);
+  std::size_t next = 0;
+  const auto PASS = [&] {
+    for (int i = 0; i < perf.cycles(); ++i) {
+      published.store(next + 1, std::memory_order_release);
+      latches[next].arriveAndWait();
+      ++next;
+    }
+  };
+
+  PASS(); // warmup
+  auto result = perf.measured(PASS, "round");
+
+  for (auto& helper : helpers) {
+    helper.join();
+  }
+
+  std::printf("\nLatch round (%d threads): %.0f rounds/s (%.1f us per round)\n", PARTIES,
+              result.callsPerSecond, nsPerOp(result) / 1000.0);
 }
 
 /**
@@ -485,54 +625,60 @@ PERF_TEST(Latch, TryWaitThroughput) {
   auto result = perf.throughputLoop([&] { sink = latch.tryWait(); }, "tryWait");
 
   std::printf("\nLatch tryWait (triggered, mutex round trip): %.0f ops/s (%.1f ns/op)\n",
-              result.callsPerSecond, result.stats.median * 1000);
+              result.callsPerSecond, nsPerOp(result));
 }
 
 /* ----------------------------- Barrier Tests ----------------------------- */
 
 /**
- * @brief Barrier phase synchronization throughput.
+ * @brief Barrier phase: four threads arrive and all continue.
  *
- * Measures how many synchronization phases can be completed per second.
+ * Three helper threads arrive phase after phase; the measuring thread is the
+ * fourth party, so one call is one phase. The helpers leave after the phase
+ * whose number the measuring thread writes before it arrives for it, which
+ * no helper can pass without that arrival.
  */
 PERF_TEST(Barrier, PhaseThroughput) {
   UB_PERF_GUARD(perf);
 
-  const int NUM_THREADS = 4;
-  const int PHASES_PER_REP = 100;
-  std::vector<double> phaseRates;
+  constexpr int PARTIES = 4;
+  Barrier barrier(PARTIES);
+  std::atomic<std::size_t> lastPhase{std::numeric_limits<std::size_t>::max()};
 
-  for (int rep = 0; rep < perf.repeats(); ++rep) {
-    Barrier barrier(NUM_THREADS);
-    std::atomic<bool> stop{false};
-    std::vector<std::thread> threads;
-
-    auto start = std::chrono::steady_clock::now();
-
-    threads.reserve(NUM_THREADS);
-    for (int t = 0; t < NUM_THREADS; ++t) {
-      threads.emplace_back([&barrier, &stop] {
-        for (int p = 0; p < PHASES_PER_REP && !stop.load(std::memory_order_relaxed); ++p) {
-          barrier.arriveAndWait();
+  std::vector<std::thread> helpers;
+  helpers.reserve(PARTIES - 1);
+  for (int t = 0; t < PARTIES - 1; ++t) {
+    helpers.emplace_back([&] {
+      for (std::size_t phase = 1;; ++phase) {
+        barrier.arriveAndWait();
+        if (phase == lastPhase.load(std::memory_order_acquire)) {
+          return;
         }
-      });
-    }
-
-    for (auto& t : threads) {
-      t.join();
-    }
-
-    auto end = std::chrono::steady_clock::now();
-    double secs = std::chrono::duration<double>(end - start).count();
-    double phasesPerSec = PHASES_PER_REP / secs;
-    phaseRates.push_back(phasesPerSec);
+      }
+    });
   }
 
-  std::sort(phaseRates.begin(), phaseRates.end());
-  double median = phaseRates[phaseRates.size() / 2];
+  std::size_t phases = 0;
+  const auto PHASE = [&] {
+    barrier.arriveAndWait();
+    ++phases;
+  };
 
-  std::printf("\nBarrier phase sync (%d threads): %.0f phases/s (%.1f us/phase)\n", NUM_THREADS,
-              median, 1'000'000.0 / median);
+  perf.warmup([&] {
+    for (int i = 0; i < perf.cycles(); ++i) {
+      PHASE();
+    }
+  });
+  auto result = perf.throughputLoop(PHASE, "phase");
+
+  lastPhase.store(phases + 1, std::memory_order_release);
+  barrier.arriveAndWait();
+  for (auto& helper : helpers) {
+    helper.join();
+  }
+
+  std::printf("\nBarrier phase (%d threads): %.0f phases/s (%.1f us per phase)\n", PARTIES,
+              result.callsPerSecond, nsPerOp(result) / 1000.0);
 }
 
 /**
@@ -554,7 +700,7 @@ PERF_TEST(Barrier, GenerationQuery) {
   auto result = perf.throughputLoop([&] { sink = barrier.generation(); }, "generation");
 
   std::printf("\nBarrier generation() (lock-free): %.0f ops/s (%.1f ns/op)\n",
-              result.callsPerSecond, result.stats.median * 1000);
+              result.callsPerSecond, nsPerOp(result));
 }
 
 /* ----------------------------- ThreadPool Tests ----------------------------- */
@@ -592,8 +738,22 @@ PERF_TEST(ThreadPool, EnqueueThroughput) {
     std::this_thread::yield();
   }
 
-  std::printf("\nThreadPool enqueue: %.0f ops/s (%.1f us/op)\n", result.callsPerSecond,
-              result.stats.median);
+  std::printf("\nThreadPool enqueue: %.0f ops/s (%.1f ns/op)\n", result.callsPerSecond,
+              nsPerOp(result));
+}
+
+/** @brief ThreadPool worker cost per queued task, one worker. */
+PERF_TEST(ThreadPool, DrainOneWorker) {
+  UB_PERF_GUARD(perf);
+  ThreadPool pool(1);
+  measureDrain(perf, pool, 1);
+}
+
+/** @brief ThreadPool worker cost per queued task, four workers sharing the queue. */
+PERF_TEST(ThreadPool, DrainFourWorkers) {
+  UB_PERF_GUARD(perf);
+  ThreadPool pool(4);
+  measureDrain(perf, pool, 4);
 }
 
 /* ----------------------------- ThreadPoolLockFree Tests ----------------------------- */
@@ -645,8 +805,22 @@ PERF_TEST(ThreadPoolLockFree, EnqueueThroughput) {
     std::this_thread::yield();
   }
 
-  std::printf("\nThreadPoolLockFree enqueue: %.0f ops/s (%.1f us/op), %d of %d accepted\n",
-              result.callsPerSecond, result.stats.median, accepted, perf.cycles() * perf.repeats());
+  std::printf("\nThreadPoolLockFree enqueue: %.0f ops/s (%.1f ns/op), %d of %d accepted\n",
+              result.callsPerSecond, nsPerOp(result), accepted, perf.cycles() * perf.repeats());
+}
+
+/** @brief ThreadPoolLockFree worker cost per queued task, one worker. */
+PERF_TEST(ThreadPoolLockFree, DrainOneWorker) {
+  UB_PERF_GUARD(perf);
+  ThreadPoolLockFree pool(1, drainTasks(perf, 1));
+  measureDrain(perf, pool, 1);
+}
+
+/** @brief ThreadPoolLockFree worker cost per queued task, four workers sharing the ring. */
+PERF_TEST(ThreadPoolLockFree, DrainFourWorkers) {
+  UB_PERF_GUARD(perf);
+  ThreadPoolLockFree pool(4, drainTasks(perf, 4));
+  measureDrain(perf, pool, 4);
 }
 
 /**
@@ -769,4 +943,16 @@ PERF_TEST(ThreadPoolLockFree, BoundedQueueRejection) {
   EXPECT_GT(rejected.load(), 0) << "Expected some rejections with small queue";
 }
 
-PERF_MAIN()
+/// PERF_MAIN() with this binary's thread default set before the flags are
+/// parsed, so the CSV rows carry the thread count the contention cases ran.
+int main(int argc, char** argv) {
+  auto& cfg = ub::detail::perfConfigSingleton();
+  cfg.threads = DEFAULT_THREADS;
+  ub::parsePerfFlags(cfg, &argc, argv);
+  ub::setGlobalPerfConfig(&cfg);
+  ub::installPerfEventListener(cfg);
+  ::testing::InitGoogleTest(&argc, argv);
+  const int RESULT = RUN_ALL_TESTS();
+  VERNIER_WARN_IF_NO_TESTS_RAN_UNDER_PROFILE(cfg);
+  return RESULT;
+}
