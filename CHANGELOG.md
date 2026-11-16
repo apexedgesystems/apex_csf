@@ -139,6 +139,10 @@ any such change is called out explicitly in its entry.
 - Plugin loader error text is no longer read after it is freed, and a
   component swapped in by `RELOAD_LIBRARY` gets its log.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- `RELOAD_LIBRARY` swaps on the task thread once every dispatched task
+  has settled and destroys the replaced plugin afterwards; a reload that
+  cannot settle within its wait is refused with `NOT_QUIESCENT`.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Component bases: logs open outside a pre-made log tree, the registry
   refuses a 257th instance, `reset()` empties task tables, and a second
   `provisionTransport()` keeps the open link.
