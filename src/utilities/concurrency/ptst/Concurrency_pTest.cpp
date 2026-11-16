@@ -25,6 +25,7 @@
 
 #include "src/bench/inc/Perf.hpp"
 #include "src/utilities/concurrency/inc/Barrier.hpp"
+#include "src/utilities/concurrency/inc/Cache.hpp"
 #include "src/utilities/concurrency/inc/Latch.hpp"
 #include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
 #include "src/utilities/concurrency/inc/RingBuffer.hpp"
@@ -69,6 +70,11 @@ namespace {
 /// This binary's default for `--threads`: a contention case with one thread
 /// has nobody to contend with.
 constexpr int DEFAULT_THREADS = 4;
+
+/// Failed tries in a row before a spinning thread offers its core. On cores
+/// of their own two threads never get there; it keeps a case moving when
+/// threads outnumber cores.
+constexpr std::size_t RETRIES_BEFORE_YIELD = 4096;
 
 /// Nanoseconds per operation from a result's call rate. A call that performs
 /// several operations passes how many.
@@ -299,47 +305,60 @@ PERF_TEST(SPSCQueue, SingleThreadThroughput) {
 }
 
 /**
- * @brief Producer-consumer SPSCQueue throughput.
+ * @brief SPSCQueue transfer between two threads: the intended use.
  *
- * Tests the intended use case: one producer thread, one consumer thread.
+ * A consumer thread pops for the whole case. One pass pushes `cycles()`
+ * items and ends when the consumer has taken the last of them, so the
+ * figure is the time per item moved from one thread to the other. Neither
+ * side sleeps or enters the kernel while the other makes progress: the
+ * producer retries a full queue and the consumer an empty one. The consumer
+ * publishes its count with a plain store to a line of its own.
  */
 PERF_TEST(SPSCQueue, ProducerConsumer) {
   UB_PERF_GUARD(perf);
 
   SPSCQueue<int> queue(4096);
   std::atomic<bool> done{false};
-  std::atomic<long long> consumed{0};
+  apex::concurrency::cache::AlignCl<std::atomic<std::size_t>> consumed{0};
 
-  // Consumer thread
   std::thread consumer([&] {
     int value = 0;
-    while (!done.load(std::memory_order_relaxed) || !queue.empty()) {
+    std::size_t taken = 0;
+    std::size_t misses = 0;
+    while (!done.load(std::memory_order_relaxed)) {
       if (queue.tryPop(value)) {
-        consumed.fetch_add(1, std::memory_order_relaxed);
-      }
-    }
-  });
-
-  perf.warmup([&] {
-    for (int i = 0; i < perf.cycles(); ++i) {
-      while (!queue.tryPush(i)) {
+        consumed.value.store(++taken, std::memory_order_release);
+        misses = 0;
+      } else if (++misses == RETRIES_BEFORE_YIELD) {
         std::this_thread::yield();
+        misses = 0;
       }
     }
   });
 
-  auto result = perf.throughputLoop(
-      [&] {
-        while (!queue.tryPush(42)) {
+  std::size_t pushed = 0;
+  const auto PASS = [&] {
+    for (int i = 0; i < perf.cycles(); ++i) {
+      std::size_t misses = 0;
+      while (!queue.tryPush(i)) {
+        if (++misses == RETRIES_BEFORE_YIELD) {
           std::this_thread::yield();
+          misses = 0;
         }
-      },
-      "produce");
+      }
+    }
+    pushed += static_cast<std::size_t>(perf.cycles());
+    spinUntil([&] { return consumed.value.load(std::memory_order_acquire) == pushed; });
+  };
+
+  perf.warmup(PASS);
+  auto result = perf.measured(PASS, "transfer");
 
   done.store(true);
   consumer.join();
 
-  std::printf("\nSPSCQueue producer-consumer: %.0f ops/s\n", result.callsPerSecond);
+  std::printf("\nSPSCQueue producer-consumer: %.0f items/s (%.1f ns per item)\n",
+              result.callsPerSecond, nsPerOp(result));
 }
 
 /* ----------------------------- RingBuffer Tests ----------------------------- */
