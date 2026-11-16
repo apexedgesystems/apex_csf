@@ -285,7 +285,13 @@ public:
   /** @brief True if rollback() can restore a previous set. @note RT-safe. */
   [[nodiscard]] bool canRollback() const noexcept { return prevIdx_ >= 0; }
 
-  /** @brief True from an accepted load() until the next publish or rollback. @note RT-safe. */
+  /**
+   * @brief True while an accepted set awaits its publish: from an accepted
+   *        load() until a load() is rejected, or a publish or rollback
+   *        succeeds. A publish or rollback that returns WARN_NOOP or an
+   *        error leaves it as it was.
+   * @note RT-safe.
+   */
   [[nodiscard]] bool isLoaded() const noexcept { return stagedValid_; }
 
   /** @brief Count of successful publishes (initial/apply/rollback). @note RT-safe. */
@@ -294,9 +300,10 @@ public:
   }
 
   /**
-   * @brief Count of sets that reached validation: every struct load(), and
-   *        every file load() whose payload passed its prelude checks,
-   *        whether the validator then accepted the set or not.
+   * @brief Count of sets handed to the validator: every struct load(), and
+   *        every file load() whose payload decoded into a TParams, whether
+   *        the validator then accepted the set or not. A file refused by
+   *        a payload check (lastCheck() is not OK) is not counted.
    * @note RT-safe.
    */
   [[nodiscard]] std::uint64_t stagedGeneration() const noexcept {

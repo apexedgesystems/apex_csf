@@ -228,8 +228,8 @@ cannot hold three states).
 A publish uses up the staged set. `publishInitial()` and `apply()` each
 need an accepted `load()` of their own, and `rollback()` stages nothing:
 an `apply()` with nothing newly staged returns `ERROR_NOT_CONFIGURED` and
-changes nothing. `isLoaded()` is true from an accepted `load()` until the
-next publish or rollback.
+changes nothing. `isLoaded()` is true from an accepted `load()` until a
+`load()` is rejected, or a publish or rollback succeeds.
 
 ### McuComponentBase (mcu/)
 
