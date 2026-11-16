@@ -72,6 +72,9 @@ inline char* computeProfilingMetrics(const TimingPoints& tp, std::uint16_t tick,
 /* ----------------------------- Task Execution ----------------------------- */
 
 void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
+  // A swap command that runs on this thread publishes in place.
+  taskThreadId_.store(std::this_thread::get_id(), std::memory_order_release);
+
   // Wait for startup signal
   {
     std::unique_lock lock(cvMutex_);
@@ -131,8 +134,21 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
         return taskState_.stepPending.load(std::memory_order_acquire) ||
                taskState_.cycles.load(std::memory_order_acquire) <
                    clockState_.cycles.load(std::memory_order_acquire) ||
-               controlState_.shutdownRequested.load(std::memory_order_acquire);
+               controlState_.shutdownRequested.load(std::memory_order_acquire) ||
+               swapKick_.load(std::memory_order_acquire);
       });
+    }
+
+    // A library swap asked for one attempt between cycles. Woken for that
+    // alone, with no tick owed, the thread goes back to waiting.
+    if (swapKick_.exchange(false, std::memory_order_acq_rel)) {
+      serviceLibrarySwap();
+      const bool TICK_OWED = taskState_.stepPending.load(std::memory_order_acquire) ||
+                             taskState_.cycles.load(std::memory_order_acquire) <
+                                 clockState_.cycles.load(std::memory_order_acquire);
+      if (!TICK_OWED && !controlState_.shutdownRequested.load(std::memory_order_acquire)) {
+        continue;
+      }
     }
 
     // Check shutdown after wake (covers both emergency and normal shutdown)
@@ -306,6 +322,12 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
       }
     }
     if (TASKS_DONE) {
+      // A library swap another thread handed over is published here,
+      // with this cycle's tasks finished and none dispatched since.
+      if (swapPending_.load(std::memory_order_acquire)) {
+        serviceLibrarySwap();
+      }
+
       // Run action engine: evaluate watchpoints, tick sequences, apply
       // data-writes, on the completed tasks' outputs.
       actionComp_.tick(static_cast<std::uint32_t>(taskCycles));
@@ -369,11 +391,22 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
       sysLog_->info(label(), fmt::format("Task execution paused at cycle {}",
                                          taskState_.cycles.load(std::memory_order_acquire)));
 
+      // Parked until resume or shutdown. A library swap wakes the thread
+      // for one attempt and it parks again.
       std::unique_lock lock(cvMutex_);
-      cvPause_.wait(lock, [this]() {
-        return !controlState_.isPaused.load(std::memory_order_acquire) ||
-               controlState_.shutdownRequested.load(std::memory_order_acquire);
-      });
+      for (;;) {
+        cvPause_.wait(lock, [this]() {
+          return !controlState_.isPaused.load(std::memory_order_acquire) ||
+                 controlState_.shutdownRequested.load(std::memory_order_acquire) ||
+                 swapKick_.load(std::memory_order_acquire);
+        });
+        if (!swapKick_.exchange(false, std::memory_order_acq_rel)) {
+          break;
+        }
+        lock.unlock();
+        serviceLibrarySwap();
+        lock.lock();
+      }
 
       if (controlState_.shutdownRequested.load(std::memory_order_acquire)) {
         break;

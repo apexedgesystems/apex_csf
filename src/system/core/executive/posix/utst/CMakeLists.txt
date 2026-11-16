@@ -54,6 +54,10 @@ apex_add_gtest(
   system_core_filesystem
   system_core_system_component
   system_core_logs
+  # The reload cases send framed commands over the interface's TCP port.
+  system_core_protocols_aproto
+  system_core_protocols_framing_slip
+  system_core_protocols_network_tcp
   fmt::fmt
   PLUGINS
   ExecutiveTestPlugin_Reload

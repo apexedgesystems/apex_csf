@@ -647,8 +647,91 @@ private:
   // Registered components (for auto-configuration after interface init)
   std::vector<system_core::system_component::SystemComponentBase*> registeredComponents_{};
 
-  // Dynamically loaded component plugins (keyed by fullUid)
+  // Dynamically loaded component plugins (keyed by fullUid). Touched only
+  // by the RELOAD_LIBRARY handler, one call at a time (reloadInProgress_).
   std::unordered_map<std::uint32_t, system_core::system_component::PluginLoader> plugins_{};
+
+  /* ----------------------------- Library swap ----------------------------- */
+  //
+  // RELOAD_LIBRARY prepares the replacement on the thread that received
+  // the command and publishes it on the task thread, at a point where the
+  // scheduler reports every dispatched task settled: the task thread is
+  // the one that drains commands to components and dispatches, so between
+  // its cycles nothing else resolves a component for work. The plugin the
+  // swap replaced is destroyed afterwards on the external I/O thread, at
+  // the top of its loop, where that thread holds no component pointer.
+
+  /// Outcome of publishing a swap.
+  struct LibrarySwapOutcome {
+    std::uint8_t status{0};        ///< SUCCESS, NOT_QUIESCENT, TASK_MISMATCH or REGISTRY_FAILED.
+    std::uint8_t tasksExpected{0}; ///< Scheduler entries of the component.
+    std::uint8_t tasksReplaced{0}; ///< Entries the replacement provided a task for.
+    std::uint64_t waitNs{0};       ///< From the request to the end of publication.
+  };
+
+  /// A swap waiting for the task thread.
+  struct LibrarySwap {
+    enum class Phase : std::uint8_t { NONE, PENDING, DONE };
+    Phase phase{Phase::NONE};
+    std::uint32_t fullUid{0};
+    system_core::system_component::SystemComponentBase* oldComp{nullptr};
+    system_core::system_component::SystemComponentBase* newComp{nullptr};
+    LibrarySwapOutcome outcome{};
+  };
+
+  /**
+   * @brief Point the scheduler, the registry and the component list at
+   *        the replacement.
+   * @return status NOT_QUIESCENT, with nothing changed, when the scheduler
+   *         is not settled; otherwise the swap's result. A task mismatch
+   *         or a registry refusal restores the old task pointers.
+   * @note Task thread only.
+   */
+  [[nodiscard]] LibrarySwapOutcome
+  publishLibrarySwapHere(std::uint32_t fullUid,
+                         system_core::system_component::SystemComponentBase& oldComp,
+                         system_core::system_component::SystemComponentBase& newComp) noexcept;
+
+  /**
+   * @brief Publish a swap from any thread and return its outcome.
+   *
+   * On the task thread the swap is published in place, after waiting up
+   * to LIBRARY_SWAP_INLINE_SETTLE_NS for the scheduler to settle. From
+   * another thread the swap is handed to the task thread and the caller
+   * blocks until it is published or librarySwapWaitNs() passes; a swap
+   * not taken by then is withdrawn and reported NOT_QUIESCENT.
+   */
+  [[nodiscard]] LibrarySwapOutcome
+  publishLibrarySwap(std::uint32_t fullUid,
+                     system_core::system_component::SystemComponentBase& oldComp,
+                     system_core::system_component::SystemComponentBase& newComp) noexcept;
+
+  /// Task thread: publish the pending swap if the scheduler is settled.
+  void serviceLibrarySwap() noexcept;
+
+  /// Hand a replaced plugin to the external I/O thread for destruction.
+  void retirePlugin(system_core::system_component::PluginLoader&& loader) noexcept;
+
+  /// External I/O thread: destroy the plugins retired since the last call.
+  void reclaimRetiredPlugins() noexcept;
+
+  /// How long a swap from another thread waits for the task thread: two
+  /// seconds, or four clock periods when that is longer.
+  [[nodiscard]] std::uint64_t librarySwapWaitNs() const noexcept;
+
+  /// Longest the task thread waits for the scheduler to settle when the
+  /// swap command runs on it.
+  static constexpr std::uint64_t LIBRARY_SWAP_INLINE_SETTLE_NS = 1'000'000U;
+
+  std::mutex swapMutex_{};                    ///< Guards swap_ and retiredPlugins_.
+  std::condition_variable cvSwapDone_{};      ///< Signalled when swap_ reaches DONE.
+  LibrarySwap swap_{};                        ///< The one swap in hand-over.
+  std::atomic<bool> swapPending_{false};      ///< swap_ is PENDING; the task thread reads it.
+  std::atomic<bool> swapKick_{false};         ///< Wakes a waiting task thread for one attempt.
+  std::atomic<bool> reloadInProgress_{false}; ///< A RELOAD_LIBRARY call is running.
+  std::vector<system_core::system_component::PluginLoader> retiredPlugins_{};
+  std::atomic<bool> pluginsRetired_{false};     ///< retiredPlugins_ is not empty.
+  std::atomic<std::thread::id> taskThreadId_{}; ///< Set by the task thread when it starts.
 
   // Simulation configuration
   std::uint16_t clockFrequency_{DEFAULT_CLOCK_FREQUENCY};
