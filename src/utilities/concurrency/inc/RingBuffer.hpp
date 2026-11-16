@@ -20,8 +20,12 @@
  *  - Use for processing pipelines, event buffers, batch operations.
  */
 
+#include "src/utilities/concurrency/inc/RingIndex.hpp"
+#include "src/utilities/concurrency/inc/RingStorage.hpp"
+
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace apex {
 namespace concurrency {
@@ -53,7 +57,7 @@ public:
    * @brief Destructor releases internal storage.
    * @note NOT RT-safe: Deallocates buffer.
    */
-  ~RingBuffer();
+  ~RingBuffer() = default;
 
   // Non-copyable / non-movable (owns raw storage).
   RingBuffer(const RingBuffer&) = delete;
@@ -67,7 +71,7 @@ public:
    * @return True if pushed, false if buffer is full.
    * @note RT-safe: No allocations, O(1).
    */
-  [[nodiscard]] bool tryPush(const T& value) noexcept;
+  [[nodiscard]] bool tryPush(const T& value) noexcept { return push(value); }
 
   /**
    * @brief Try to push a moved value.
@@ -75,7 +79,7 @@ public:
    * @return True if pushed, false if buffer is full.
    * @note RT-safe: No allocations, O(1).
    */
-  [[nodiscard]] bool tryPush(T&& value) noexcept;
+  [[nodiscard]] bool tryPush(T&& value) noexcept { return push(std::move(value)); }
 
   /**
    * @brief Try to pop a value from the buffer.
@@ -131,24 +135,13 @@ public:
   }
 
 private:
-  /**
-   * @brief Round up to next power of two.
-   */
-  static constexpr std::size_t nextPow2(std::size_t v) noexcept {
-    --v;
-    v |= v >> 1;
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-    v |= v >> 32;
-    return v + 1;
-  }
+  /// The one push: assigns `value` into the slot as the value category it arrived with.
+  template <class U> [[nodiscard]] bool push(U&& value) noexcept;
 
-  std::size_t mask_{0}; ///< capacity - 1 for fast modulo.
-  T* buffer_{nullptr};  ///< Ring storage.
-  std::size_t head_{0}; ///< Write position (NOT atomic).
-  std::size_t tail_{0}; ///< Read position (NOT atomic).
+  std::size_t mask_;      ///< Slot count - 1 for fast modulo.
+  RingStorage<T> buffer_; ///< Ring storage.
+  std::size_t head_{0};   ///< Write position (NOT atomic).
+  std::size_t tail_{0};   ///< Read position (NOT atomic).
 };
 
 } // namespace concurrency

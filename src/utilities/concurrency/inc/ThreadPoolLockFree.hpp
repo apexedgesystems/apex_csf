@@ -24,15 +24,12 @@
  */
 
 #include "src/utilities/concurrency/inc/Cache.hpp"
-#include "src/utilities/concurrency/inc/Delegate.hpp"
 #include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
-#include "src/utilities/concurrency/inc/ThreadPool.hpp" // For PoolStatus, TaskError
+#include "src/utilities/concurrency/inc/PoolBase.hpp"
 
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
-#include <queue>
-#include <thread>
-#include <vector>
 
 namespace apex {
 namespace concurrency {
@@ -46,12 +43,12 @@ namespace concurrency {
  * Uses LockFreeQueue for task storage. Task submission takes no lock and
  * allocates nothing; it may issue a futex wake for an idle worker. A worker
  * that finds the ring empty parks until a producer publishes or shutdown()
- * begins.
+ * begins. The workers, the in-flight count and the task errors are
+ * PoolBase's: isValid(), workerCount(), threadsRunning(),
+ * workerConfigFailures(), hasErrors() and collectErrors() are inherited.
  */
-class ThreadPoolLockFree {
+class ThreadPoolLockFree : public PoolBase {
 public:
-  using TaskFn = DelegateU8; ///< Zero-allocation callable: uint8_t(void*).
-
   /**
    * @brief Construct a lock-free thread pool.
    * @param numThreads Number of worker threads to spawn.
@@ -79,20 +76,6 @@ public:
   ThreadPoolLockFree& operator=(const ThreadPoolLockFree&) = delete;
   ThreadPoolLockFree(ThreadPoolLockFree&&) = delete;
   ThreadPoolLockFree& operator=(ThreadPoolLockFree&&) = delete;
-
-  /**
-   * @brief Check if pool was constructed successfully.
-   * @return True if at least one worker thread is running.
-   * @note RT-safe: Checks worker count.
-   */
-  [[nodiscard]] bool isValid() const noexcept { return !workers_.empty(); }
-
-  /**
-   * @brief Get the number of worker threads.
-   * @return Number of workers (0 if construction failed).
-   * @note RT-safe: Returns stored size.
-   */
-  [[nodiscard]] std::size_t workerCount() const noexcept { return workers_.size(); }
 
   /**
    * @brief Get the queue capacity.
@@ -125,29 +108,6 @@ public:
   void enqueueTask(const char* label, TaskFn task) noexcept;
 
   /**
-   * @brief Check if any worker is currently executing a task.
-   * @return True if at least one task is in-flight.
-   * @note RT-safe: Single atomic load with acquire ordering.
-   */
-  [[nodiscard]] bool threadsRunning() const noexcept;
-
-  /**
-   * @brief Workers for which a requested setting (name, affinity, policy
-   *        with priority) did not apply at start-up.
-   * @return The count, 0 when every worker runs as configured. Final once
-   *         the constructor returns: it waits for every worker to have
-   *         applied its configuration.
-   * @note RT-safe: Single atomic load. The settings are applied one by one
-   *       and a failure leaves the others as they are, so a counted worker
-   *       may run with part of its configuration; which setting failed is
-   *       not recorded. A requested policy needs CAP_SYS_NICE and an
-   *       affinity needs CPUs the process may use.
-   */
-  [[nodiscard]] std::size_t workerConfigFailures() const noexcept {
-    return configFailures_.load(std::memory_order_acquire);
-  }
-
-  /**
    * @brief Signal shutdown and join all worker threads.
    *
    * Two stages. Admission closes first, so tryEnqueue() returns POOL_STOPPED;
@@ -160,20 +120,6 @@ public:
    * @note NOT RT-safe: parks on the producers, joins threads.
    */
   void shutdown() noexcept;
-
-  /**
-   * @brief Check if any errors have been captured (lock-free).
-   * @return True if there are pending errors to collect.
-   * @note RT-safe: Single atomic load, no mutex.
-   */
-  [[nodiscard]] bool hasErrors() const noexcept;
-
-  /**
-   * @brief Drain and return any task errors captured by workers.
-   * @return Queue of errors (moved out, internal queue cleared).
-   * @note NOT RT-safe: Acquires mutex, moves queue.
-   */
-  [[nodiscard]] std::queue<TaskError> collectErrors();
 
 private:
   struct TaskItem {
@@ -235,33 +181,20 @@ private:
     std::atomic<std::uint32_t> idle{0};
   };
 
-  void workerLoop();
-  void runTask(TaskItem& item);
+  void workerLoop(WorkerTally& tally);
+  static void workerEntry(void* pool, WorkerTally& tally) {
+    static_cast<ThreadPoolLockFree*>(pool)->workerLoop(tally);
+  }
   /// Tell the workers the ring changed: advance the generation, and wake
   /// one worker if any is parked or parking.
   void signalWork() noexcept;
   /// Leave the producer count; the last one out after the close wakes shutdown().
   void leaveAdmission() noexcept;
-  /// Spawn the workers; on a failed thread start, stop and join the ones
-  /// that started and leave workers_ empty.
-  void spawnWorkers(std::size_t numThreads, const PoolConfig& config);
-  [[nodiscard]] static bool applyWorkerConfig(const PoolConfig& config, std::size_t workerId);
-
-  // Task queue (lock-free MPMC)
-  LockFreeQueue<TaskItem> taskQueue_;
-  // Worker infrastructure
-  std::vector<std::thread> workers_;
+  LockFreeQueue<TaskItem> taskQueue_; ///< Task ring (lock-free MPMC).
 
   // Hot atomics isolated to cache lines.
   cache::AlignCl<std::atomic<std::uint32_t>> admission_{0};
   cache::AlignCl<WakeState> wake_{};
-  cache::AlignCl<std::atomic<std::size_t>> activeTasks_{0};
-  std::atomic<std::size_t> configFailures_{0}; ///< Workers with a setting that did not apply.
-
-  // Error path (rare, mutex-protected)
-  std::queue<TaskError> errorQueue_;
-  std::mutex errorMutex_;
-  cache::AlignCl<std::atomic<bool>> hasErrors_{false};
 };
 
 } // namespace concurrency

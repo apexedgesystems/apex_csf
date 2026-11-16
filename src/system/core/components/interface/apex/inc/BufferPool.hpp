@@ -126,10 +126,12 @@ public:
   [[nodiscard]] std::size_t size() const noexcept { return poolSize_; }
 
   /**
-   * @brief Get number of available buffers.
-   * @return Number of buffers currently in free list.
+   * @brief Get an estimate of the available buffers.
+   * @return The free list's cursor distance: the buffers in the list when no acquire or release
+   *         is in progress.
    * @note RT-safe: Lock-free read.
-   * @note Approximate (may change immediately after call).
+   * @note Approximate: it counts acquires and releases in flight and may change immediately
+   *       after the call, so a result above zero does not promise that acquire() succeeds.
    */
   [[nodiscard]] std::size_t available() const noexcept;
 

@@ -15,9 +15,14 @@
  *  - T must be move-constructible and move-assignable.
  */
 
+#include "src/utilities/concurrency/inc/Cache.hpp"
+#include "src/utilities/concurrency/inc/RingIndex.hpp"
+#include "src/utilities/concurrency/inc/RingStorage.hpp"
+
 #include <atomic>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace apex {
 namespace concurrency {
@@ -41,13 +46,13 @@ public:
    * @param capacity Minimum queue size (rounded up to power-of-two, minimum 2).
    * @note NOT RT-safe: Allocates buffer storage.
    */
-  explicit LockFreeQueue(std::size_t capacity) noexcept;
+  explicit LockFreeQueue(std::size_t capacity) noexcept : LockFreeQueue(capacity, 0) {}
 
   /**
    * @brief Destructor releases internal storage.
    * @note NOT RT-safe: Deallocates buffer.
    */
-  ~LockFreeQueue();
+  ~LockFreeQueue() = default;
 
   // Non-copyable / non-movable (owns raw storage).
   LockFreeQueue(const LockFreeQueue&) = delete;
@@ -61,7 +66,7 @@ public:
    * @return True if pushed, false if queue is full.
    * @note RT-safe: Lock-free, bounded CAS loop.
    */
-  [[nodiscard]] bool tryPush(const T& value) noexcept;
+  [[nodiscard]] bool tryPush(const T& value) noexcept { return push(value); }
 
   /**
    * @brief Try to push a moved value.
@@ -69,7 +74,7 @@ public:
    * @return True if pushed, false if queue is full.
    * @note RT-safe: Lock-free, bounded CAS loop.
    */
-  [[nodiscard]] bool tryPush(T&& value) noexcept;
+  [[nodiscard]] bool tryPush(T&& value) noexcept { return push(std::move(value)); }
 
   /**
    * @brief Try to pop a value from the queue.
@@ -87,43 +92,50 @@ public:
   [[nodiscard]] std::size_t capacity() const noexcept { return mask_ + 1; }
 
   /**
-   * @brief Get approximate number of elements in queue.
-   * @return Approximate element count (may be stale due to concurrent access).
+   * @brief Get an estimate of the queue's occupancy.
+   * @return The distance between the consumer and producer cursors, never more than capacity().
+   *         It is the element count when no push or pop is in progress.
    * @note RT-safe: Two atomic loads.
+   * @note A cursor moves when an operation claims its cell, before the element is stored or
+   *       taken, so the estimate counts operations in flight: a result above zero does not
+   *       promise that tryPop() succeeds. The two cursor reads are also not one instant: a
+   *       consumer can pass the head already read, and that pair gives zero.
    */
   [[nodiscard]] std::size_t sizeApprox() const noexcept {
-    const std::size_t h = head_.load(std::memory_order_relaxed);
-    const std::size_t t = tail_.load(std::memory_order_relaxed);
-    return (h >= t) ? (h - t) : 0;
+    const std::size_t HEAD = head_.load(std::memory_order_relaxed);
+    const std::size_t TAIL = tail_.load(std::memory_order_relaxed);
+    return ringOccupancy(HEAD, TAIL, mask_ + 1);
   }
+
+protected:
+  /**
+   * @brief Construct a queue whose two cursors both start at firstIndex.
+   * @param capacity Minimum queue size (rounded up to power-of-two, minimum 2).
+   * @param firstIndex Starting value of the producer and consumer cursors.
+   *
+   * The cursors and the per-cell sequence numbers run freely and wrap at the width of
+   * std::size_t. A queue started just below that width reaches the wrap within a few operations,
+   * which is how the index arithmetic is tested.
+   * @note NOT RT-safe: Allocates buffer storage.
+   */
+  LockFreeQueue(std::size_t capacity, std::size_t firstIndex) noexcept;
 
 private:
-  static constexpr std::size_t CACHE_LINE = 64;
+  /// One slot of the ring, a whole number of cache lines.
+  struct alignas(cache::CACHE_LINE_SIZE) Cell {
+    explicit Cell(std::size_t firstSequence) : sequence(firstSequence), data() {}
 
-  struct alignas(CACHE_LINE) Cell {
     std::atomic<std::size_t> sequence; ///< Per-slot sequence counter.
     T data;                            ///< Stored value.
-    // Padding implicit via alignas - each Cell occupies full cache line.
   };
 
-  /**
-   * @brief Round up to next power of two.
-   */
-  static constexpr std::size_t nextPow2(std::size_t v) noexcept {
-    --v;
-    v |= v >> 1;
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-    v |= v >> 32;
-    return v + 1;
-  }
+  /// The one push: assigns `value` into the claimed cell as the value category it arrived with.
+  template <class U> [[nodiscard]] bool push(U&& value) noexcept;
 
-  std::size_t mask_{0};                          ///< capacity - 1 for fast modulo.
-  Cell* buffer_{nullptr};                        ///< Ring storage (manual lifetime).
-  alignas(64) std::atomic<std::size_t> head_{0}; ///< Producer cursor.
-  alignas(64) std::atomic<std::size_t> tail_{0}; ///< Consumer cursor.
+  std::size_t mask_;                                              ///< capacity - 1 for fast modulo.
+  RingStorage<Cell> buffer_;                                      ///< Ring storage.
+  alignas(cache::CACHE_LINE_SIZE) std::atomic<std::size_t> head_; ///< Producer cursor.
+  alignas(cache::CACHE_LINE_SIZE) std::atomic<std::size_t> tail_; ///< Consumer cursor.
 };
 
 } // namespace concurrency
