@@ -941,16 +941,16 @@ PERF_TEST(ThreadPoolLockFree, BoundedQueueRejection) {
   EXPECT_GT(rejected.load(), 0) << "Expected some rejections with small queue";
 }
 
-/// PERF_MAIN() with this binary's thread default set before the flags are
-/// parsed, so the CSV rows carry the thread count the contention cases ran.
-int main(int argc, char** argv) {
-  auto& cfg = ub::detail::perfConfigSingleton();
-  cfg.threads = DEFAULT_THREADS;
-  ub::parsePerfFlags(cfg, &argc, argv);
-  ub::setGlobalPerfConfig(&cfg);
-  ub::installPerfEventListener(cfg);
-  ::testing::InitGoogleTest(&argc, argv);
-  const int RESULT = RUN_ALL_TESTS();
-  VERNIER_WARN_IF_NO_TESTS_RAN_UNDER_PROFILE(cfg);
-  return RESULT;
-}
+namespace {
+
+/// Sets this binary's thread default before PERF_MAIN()'s main() parses the
+/// flags, so `--threads` overrides it and the CSV rows carry the thread
+/// count the contention cases ran with.
+const bool THREAD_DEFAULT_SET = []() noexcept {
+  ub::detail::perfConfigSingleton().threads = DEFAULT_THREADS;
+  return true;
+}();
+
+} // namespace
+
+PERF_MAIN()
