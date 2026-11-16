@@ -182,6 +182,60 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
                 name
               )
               list(APPEND _role_bin_names "${_bin}")
+              # What the package declares this executable runs on the target:
+              # [package.metadata.apex.requires] in its manifest, one array of
+              # "<command>" or "<command>: <use>" per executable.
+              set(_requires_${_bin} "")
+              string(
+                JSON
+                _req_type
+                ERROR_VARIABLE
+                _req_err
+                TYPE
+                "${_cargo_meta}"
+                packages
+                ${_i}
+                metadata
+                apex
+                requires
+                ${_bin}
+              )
+              if (_req_err STREQUAL "NOTFOUND")
+                if (NOT _req_type STREQUAL "ARRAY")
+                  message(
+                    FATAL_ERROR
+                      "${PROJECT_NAME}: ${_pkg_name} declares package.metadata.apex.requires.${_bin} as ${_req_type}; it is an array of strings"
+                  )
+                endif ()
+                string(
+                  JSON _req_count
+                  LENGTH "${_cargo_meta}"
+                         packages
+                         ${_i}
+                         metadata
+                         apex
+                         requires
+                         ${_bin}
+                )
+                set(_r 0)
+                while (_r LESS _req_count)
+                  string(
+                    JSON
+                    _req
+                    GET
+                    "${_cargo_meta}"
+                    packages
+                    ${_i}
+                    metadata
+                    apex
+                    requires
+                    ${_bin}
+                    ${_r}
+                  )
+                  list(APPEND _requires_${_bin} "${_req}")
+                  math(EXPR _r "${_r} + 1")
+                endwhile ()
+              endif ()
             endif ()
           endwhile ()
         endif ()
@@ -245,6 +299,8 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/Cargo.toml")
             "${_role_out}/${_bin}"
             DEPENDS
             ${PROJECT_NAME}_${_role}_rust_tools
+            REQUIRES
+            ${_requires_${_bin}}
           )
         endforeach ()
       endif ()
@@ -473,9 +529,23 @@ foreach (_role IN LISTS _APEX_TOOL_ROLES)
 
   add_custom_target(${PROJECT_NAME}_${_role}_sh_tools DEPENDS "${_sh_stamp}")
   # A bundle can list any of these scripts by file name (apex_add_bundle TOOLS).
+  # A script declares the commands it runs on the "# Requires:" line of its
+  # header, separated by commas; the line is a configure input.
   if (COMMAND apex_register_tool)
+    set_property(
+      DIRECTORY
+      APPEND
+      PROPERTY CMAKE_CONFIGURE_DEPENDS ${_sh_files}
+    )
     foreach (_sh_file IN LISTS _sh_files)
       get_filename_component(_sh_name "${_sh_file}" NAME)
+      file(
+        STRINGS "${_sh_file}" _sh_requires
+        REGEX "^# Requires: "
+        LIMIT_COUNT 1
+      )
+      string(REGEX REPLACE "^# Requires: *" "" _sh_requires "${_sh_requires}")
+      string(REGEX REPLACE " *, *" ";" _sh_requires "${_sh_requires}")
       apex_register_tool(
         NAME
         ${_sh_name}
@@ -485,6 +555,8 @@ foreach (_role IN LISTS _APEX_TOOL_ROLES)
         "${_sh_out}/${_sh_name}"
         DEPENDS
         ${PROJECT_NAME}_${_role}_sh_tools
+        REQUIRES
+        ${_sh_requires}
       )
     endforeach ()
   endif ()

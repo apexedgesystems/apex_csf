@@ -112,13 +112,16 @@ endfunction ()
 #   a C++ executable target      tools/bin/<name>, its project shared libraries
 #                                in tools/libs (found through $ORIGIN/../libs)
 #   a registered tool            see apex_register_tool: a prebuilt executable
-#                                or a shell script to tools/bin/<name>; a Python
+#                                or a script as tools/bin/<name>; a Python
 #                                console script as a launcher in tools/bin with
 #                                its distribution and what that requires in
 #                                tools/lib/python (the target provides python3)
 #
-# tools/REQUIREMENTS.txt lists what each staged tool needs on the target. A name
-# that is neither is a configure error, and so is TOOLS in a bare-metal build.
+# tools/REQUIREMENTS.txt lists what each staged tool needs on the target: its
+# interpreter and the commands its owner declared. A tool with any of those is
+# started by a launcher (tools/bin/<name>) that checks for them first and says
+# in one line which is missing. A name that is neither kind is a configure
+# error, and so is TOOLS in a bare-metal build.
 # ------------------------------------------------------------------------------
 function (apex_add_bundle)
   cmake_parse_arguments(B "" "NAME" "DEPLOYMENTS;TOOLS;FILES" ${ARGN})
@@ -139,21 +142,26 @@ endfunction ()
 
 # ------------------------------------------------------------------------------
 # apex_register_tool(NAME <name> KIND <bin|script|py> FILE <path> [DEPENDS <target>]
-#                    [PYTHON_LIB <dir>])
+#                    [PYTHON_LIB <dir>] [REQUIRES <command>...])
 #
 # Make a tool that is not a CMake executable target available to a bundle's
 # TOOLS by name. Whatever builds the tool registers it: FILE is where the build
 # puts it, DEPENDS the target that produces it.
 #
 #   bin     a prebuilt executable (a Rust tool)
-#   script  a shell script
+#   script  a script; its first line names its interpreter
 #   py      a Python console script; PYTHON_LIB is the directory its
 #           distribution and that distribution's requirements are installed in
+#
+# REQUIRES is what the tool's owner knows it runs on the target and the package
+# cannot carry: "<command>" for a command every run needs, "<command>: <use>"
+# for one that only that use needs. Both are written to the package's
+# tools/REQUIREMENTS.txt, and the tool does not start without the first kind.
 #
 # A name can be registered once.
 # ------------------------------------------------------------------------------
 function (apex_register_tool)
-  cmake_parse_arguments(T "" "NAME;KIND;FILE;DEPENDS;PYTHON_LIB" "" ${ARGN})
+  cmake_parse_arguments(T "" "NAME;KIND;FILE;DEPENDS;PYTHON_LIB" "REQUIRES" ${ARGN})
   apex_require(T_NAME T_KIND T_FILE)
   if (NOT T_KIND MATCHES "^(bin|script|py)$")
     message(FATAL_ERROR "apex_register_tool(${T_NAME}): KIND is bin, script or py, not ${T_KIND}")
@@ -173,6 +181,7 @@ function (apex_register_tool)
   set_property(GLOBAL PROPERTY APEX_TOOL_${T_NAME}_FILE "${T_FILE}")
   set_property(GLOBAL PROPERTY APEX_TOOL_${T_NAME}_DEPENDS "${T_DEPENDS}")
   set_property(GLOBAL PROPERTY APEX_TOOL_${T_NAME}_PYTHON_LIB "${T_PYTHON_LIB}")
+  set_property(GLOBAL PROPERTY APEX_TOOL_${T_NAME}_REQUIRES "${T_REQUIRES}")
 endfunction ()
 
 # ------------------------------------------------------------------------------
@@ -418,6 +427,10 @@ function (apex_finalize_packages)
         else ()
           list(APPEND _stage_args --tool "${_tkind}:${_t}:${_tfile}")
         endif ()
+        get_property(_trequires GLOBAL PROPERTY APEX_TOOL_${_t}_REQUIRES)
+        foreach (_need IN LISTS _trequires)
+          list(APPEND _stage_args --requires "${_t}=${_need}")
+        endforeach ()
         if (_tdep)
           list(APPEND _bdepends ${_tdep})
         endif ()

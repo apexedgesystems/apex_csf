@@ -450,26 +450,52 @@ and run in place, with nothing installed, built or fetched afterwards.
 
 `TOOLS` takes tools by name. What each kind brings and needs:
 
-| Kind                  | Named by                                 | Staged as                                                                                                    | Needs on the target                       |
-| --------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------- |
-| C++ tool              | its executable target                    | `tools/bin/<name>` and its project shared libraries in `tools/libs`                                          | nothing beyond the package                |
-| Rust tool             | the binary's name                        | `tools/bin/<name>`                                                                                           | the system C library                      |
-| Shell tool            | the script's file name                   | `tools/bin/<name>`                                                                                           | a POSIX shell and the commands it calls   |
-| Python console script | the script's name in `[project.scripts]` | a launcher in `tools/bin/<name>`; its distribution and the distributions that requires in `tools/lib/python` | `python3`; the interpreter is not carried |
+| Kind                  | Named by                                 | Staged as                                                                                      | Needs on the target                                                |
+| --------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| C++ tool              | its executable target                    | `tools/bin/<name>` and its project shared libraries in `tools/libs`                            | nothing beyond the package                                         |
+| Rust tool             | the binary's name                        | `tools/bin/<name>`                                                                             | the system C library, and the commands it declares                 |
+| Shell tool            | the script's file name                   | `tools/bin/<name>`                                                                             | the interpreter its first line names, and the commands it declares |
+| Python console script | the script's name in `[project.scripts]` | `tools/bin/<name>`; its distribution and the distributions that requires in `tools/lib/python` | a `python3` its metadata allows; the interpreter is not carried    |
 
 The Rust, shell and Python tools of this repository are registered by the tools
 build (`tools/CMakeLists.txt`); a tool from elsewhere registers itself with
 `apex_register_tool(NAME <name> KIND <bin|script|py> FILE <path> [DEPENDS
-<target>] [PYTHON_LIB <dir>])`.
+<target>] [PYTHON_LIB <dir>] [REQUIRES <command>...])`.
 
-A Python tool carries only its own distribution and what that requires, not the
-rest of its role's installed packages. Its launcher finds `tools/lib/python`
-relative to itself, checks the interpreter version, and says so in one line when
-`python3` is missing or too old. A tool with compiled Python modules needs the
-exact `python3` minor version it was built with.
+**What a tool runs on the target.** A package cannot carry the target's own
+commands, so the tool's owner declares them and the package states them.
+`REQUIRES` takes `<command>` for a command every run needs and
+`<command>: <use>` for one that only that use needs. This repository's tools
+declare them where each language declares a tool:
 
-`tools/REQUIREMENTS.txt` in the package lists each staged tool and what it needs
-on the target, and the package step prints the size each tool added.
+| Kind  | Declared in                                                                                                |
+| ----- | ---------------------------------------------------------------------------------------------------------- |
+| Rust  | `[package.metadata.apex.requires]` in the crate's `Cargo.toml`: `<binary> = ["upx", "tar: --archive-dir"]` |
+| Shell | the `# Requires:` line of the script's header, separated by commas: `# Requires: cp, sed, tar`             |
+
+`tools/REQUIREMENTS.txt` in the package lists each staged tool with its
+interpreter and these commands, and the package step prints the size each tool
+added. A tool with an interpreter or an every-run command to find is started by
+a launcher in `tools/bin/<name>` (the tool itself is in `tools/libexec`): it
+looks for each one first and, when one is missing, prints one line naming it
+and exits 127 without starting the tool.
+
+**Python tools.** A Python tool carries only its own distribution and what that
+requires, not the rest of its role's installed packages:
+
+- A requirement is followed with the extras it asks for (`dep[fast]` brings what
+  `dep` requires under `fast`); what only an unrequested extra requires stays
+  behind, and a requirement an active extra selects fails the package step when
+  it is not installed.
+- The launcher finds `tools/lib/python` relative to itself and checks the
+  interpreter before importing the tool: every `Requires-Python` clause of every
+  carried distribution has to hold. A clause it cannot check (a pre-release
+  version, `===`, more than three numbers) fails the package step.
+- The carried set is the one the installer chose on the build machine. Compiled
+  modules, or a requirement selected by the interpreter's version, tie the
+  package to the build's `python3` minor version, and the launcher holds the
+  target to it. A requirement selected by the machine fails the package step in
+  a cross build, and one selected by the kernel version always does.
 
 What cannot work on the target fails the build, not the user's first run:
 

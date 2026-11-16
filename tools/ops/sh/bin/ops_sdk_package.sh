@@ -24,6 +24,7 @@
 #     <app>/runtime/scheduler.sdat  Task schedule (if available)
 #     <app>/README.md               Quick-start guide
 #
+# Requires: cat, cp, cut, du, mkdir, rm, sed, tar
 # ==============================================================================
 
 set -euo pipefail
