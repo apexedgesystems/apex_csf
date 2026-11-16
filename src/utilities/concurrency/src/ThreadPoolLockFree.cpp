@@ -15,8 +15,9 @@ namespace concurrency {
 
 ThreadPoolLockFree::ThreadPoolLockFree(std::size_t numThreads, std::size_t queueCapacity,
                                        const PoolConfig& config)
-    : taskQueue_(queueCapacity < MAX_QUEUE_CAPACITY ? queueCapacity : MAX_QUEUE_CAPACITY) {
-  if (!spawnWorkers(numThreads, config, "lf_pool_w", &ThreadPoolLockFree::workerEntry, this)) {
+    : PoolBase(numThreads),
+      taskQueue_(queueCapacity < MAX_QUEUE_CAPACITY ? queueCapacity : MAX_QUEUE_CAPACITY) {
+  if (!spawnWorkers(config, "lf_pool_w", &ThreadPoolLockFree::workerEntry, this)) {
     // A thread could not start: the pool is reported invalid rather than left
     // with a partial set of workers.
     shutdown();
@@ -101,7 +102,7 @@ void ThreadPoolLockFree::shutdown() noexcept {
 
 /* ----------------------------- File Helpers ----------------------------- */
 
-void ThreadPoolLockFree::workerLoop() {
+void ThreadPoolLockFree::workerLoop(WorkerTally& tally) {
   TaskItem item;
   for (;;) {
     // Drain until a pop fails. A pop can fail while a producer ahead of a
@@ -109,7 +110,7 @@ void ThreadPoolLockFree::workerLoop() {
     // signal brings a worker back to drain both, so no published task is
     // stranded behind a worker that looked too early.
     while (taskQueue_.tryPop(item)) {
-      runTask(item.label, item.task);
+      runTask(tally, item.label, item.task);
     }
 
     // Park, unless the ring changed. The wake word is read first, the
@@ -120,7 +121,7 @@ void ThreadPoolLockFree::workerLoop() {
     wake_.value.idle.fetch_add(1, std::memory_order_seq_cst);
     if (taskQueue_.tryPop(item)) {
       wake_.value.idle.fetch_sub(1, std::memory_order_release);
-      runTask(item.label, item.task);
+      runTask(tally, item.label, item.task);
       continue;
     }
 

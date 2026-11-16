@@ -13,8 +13,8 @@ namespace concurrency {
 
 /* ----------------------------- ThreadPool Methods ----------------------------- */
 
-ThreadPool::ThreadPool(std::size_t numThreads, const PoolConfig& config) {
-  if (!spawnWorkers(numThreads, config, "pool_w", &ThreadPool::workerEntry, this)) {
+ThreadPool::ThreadPool(std::size_t numThreads, const PoolConfig& config) : PoolBase(numThreads) {
+  if (!spawnWorkers(config, "pool_w", &ThreadPool::workerEntry, this)) {
     // A thread could not start: the pool is reported invalid rather than left
     // with a partial set of workers.
     shutdown();
@@ -52,7 +52,7 @@ void ThreadPool::shutdown() noexcept {
 
 /* ----------------------------- File Helpers ----------------------------- */
 
-void ThreadPool::workerLoop() {
+void ThreadPool::workerLoop(WorkerTally& tally) {
   for (;;) {
     std::pair<const char*, TaskFn> item;
 
@@ -72,7 +72,7 @@ void ThreadPool::workerLoop() {
       taskQueue_.pop();
     }
 
-    runTask(item.first, item.second);
+    runTask(tally, item.first, item.second);
   }
 }
 

@@ -181,8 +181,10 @@ private:
     std::atomic<std::uint32_t> idle{0};
   };
 
-  void workerLoop();
-  static void workerEntry(void* pool) { static_cast<ThreadPoolLockFree*>(pool)->workerLoop(); }
+  void workerLoop(WorkerTally& tally);
+  static void workerEntry(void* pool, WorkerTally& tally) {
+    static_cast<ThreadPoolLockFree*>(pool)->workerLoop(tally);
+  }
   /// Tell the workers the ring changed: advance the generation, and wake
   /// one worker if any is parked or parking.
   void signalWork() noexcept;

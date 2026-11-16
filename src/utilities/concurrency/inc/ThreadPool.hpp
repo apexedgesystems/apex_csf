@@ -83,8 +83,10 @@ public:
   void shutdown() noexcept;
 
 private:
-  void workerLoop();
-  static void workerEntry(void* pool) { static_cast<ThreadPool*>(pool)->workerLoop(); }
+  void workerLoop(WorkerTally& tally);
+  static void workerEntry(void* pool, WorkerTally& tally) {
+    static_cast<ThreadPool*>(pool)->workerLoop(tally);
+  }
 
   std::queue<std::pair<const char*, TaskFn>> taskQueue_; ///< FIFO of pending tasks.
   std::mutex queueMutex_;                                ///< Protects taskQueue_.

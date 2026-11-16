@@ -3,7 +3,7 @@
 /**
  * @file PoolBase.hpp
  * @brief What the two thread pools share: the worker threads and their
- *        start-up, the count of tasks in flight, and the errors tasks report.
+ *        start-up, the tally of tasks in flight, and the errors tasks report.
  *
  * ThreadPool and ThreadPoolLockFree differ in their queue, in how a worker is
  * woken and in how the pool stops. Everything else is here once.
@@ -63,11 +63,55 @@ struct PoolConfig {
   std::vector<std::uint8_t> affinity{}; ///< CPU affinity (empty = all CPUs).
 };
 
+/* ----------------------------- WorkerTally ----------------------------- */
+
+/**
+ * @struct WorkerTally
+ * @brief One worker's counts of the tasks it started and finished.
+ *
+ * Only the owning worker writes its tally, so a task costs two plain stores
+ * to a line that stays in that worker's cache, where one counter for the
+ * whole pool would cost every task two locked updates of a line all workers
+ * share. The counts wrap; only their difference is used.
+ */
+struct alignas(cache::CACHE_LINE_SIZE) WorkerTally {
+  std::atomic<std::size_t> started{0};
+  std::atomic<std::size_t> finished{0};
+};
+
+/**
+ * @brief True when a task is in flight on any of `count` workers.
+ *
+ * Reads every finished count, then every started count. A worker's started
+ * count read in the second sweep is never behind its finished count read in
+ * the first, and a task in flight at the moment between the sweeps has its
+ * start in the second and its finish in neither, so the sums differ. The
+ * answer is therefore never "idle" while some task runs through that
+ * moment, however tasks hand over between workers during the call. A task
+ * that starts or finishes during the call may be reported either way.
+ *
+ * The tally type is a parameter so the order of the sweeps can be exercised
+ * without threads.
+ * @note RT-safe: Two atomic loads per worker.
+ */
+template <class Tally>
+[[nodiscard]] bool anyTaskInFlight(const Tally* workers, std::size_t count) noexcept {
+  std::size_t finished = 0;
+  for (std::size_t i = 0; i < count; ++i) {
+    finished += workers[i].finished.load(std::memory_order_acquire);
+  }
+  std::size_t started = 0;
+  for (std::size_t i = 0; i < count; ++i) {
+    started += workers[i].started.load(std::memory_order_acquire);
+  }
+  return started != finished;
+}
+
 /* ----------------------------- PoolBase ----------------------------- */
 
 /**
  * @class PoolBase
- * @brief Workers, in-flight count and task errors of a thread pool.
+ * @brief Workers, in-flight tally and task errors of a thread pool.
  *
  * A pool derives from this, starts its workers on its own loop with
  * spawnWorkers(), runs each task it takes off its queue with runTask(), and
@@ -101,11 +145,14 @@ public:
 
   /**
    * @brief Check if any worker is currently executing a task.
-   * @return True if at least one task is in-flight.
-   * @note RT-safe: Single atomic load with acquire ordering.
+   * @return True if at least one task is in-flight, as anyTaskInFlight()
+   *         defines it. A task queued and not yet taken by a worker is not
+   *         in flight.
+   * @note RT-safe: Two atomic loads per worker, no lock. Safe beside
+   *       shutdown(): the tallies live as long as the pool.
    */
   [[nodiscard]] bool threadsRunning() const noexcept {
-    return activeTasks_.value.load(std::memory_order_acquire) > 0;
+    return anyTaskInFlight(tallies_.data(), tallies_.size());
   }
 
   /**
@@ -141,19 +188,20 @@ public:
   [[nodiscard]] std::queue<TaskError> collectErrors();
 
 protected:
-  PoolBase() = default;
+  /// @param numThreads Workers spawnWorkers() will start; each gets a tally.
+  explicit PoolBase(std::size_t numThreads) : tallies_(numThreads) {}
   ~PoolBase() = default;
 
-  /// A worker's body: called once on each worker thread with the pool it belongs to.
-  using WorkerEntry = void (*)(void* pool);
+  /// A worker's body: called once on each worker thread with the pool it
+  /// belongs to and the tally that worker passes to runTask().
+  using WorkerEntry = void (*)(void* pool, WorkerTally& tally);
 
   /**
-   * @brief Start the workers.
-   * @param numThreads Number of worker threads.
+   * @brief Start the workers, as many as the constructor was given.
    * @param config Settings each worker applies to itself before its loop.
    * @param namePrefix Worker i is named `<namePrefix><i>` (15 characters at most on Linux).
    * @param entry The worker's body.
-   * @param pool Passed to `entry`.
+   * @param pool Passed to `entry` with the worker's tally.
    * @return True when every worker started. False when a thread could not
    *         start (the process or thread limit): the workers that did start
    *         are running `entry`, and the caller stops them and calls
@@ -165,8 +213,8 @@ protected:
    * was when this returns.
    * @note NOT RT-safe: Spawns threads, allocates worker storage.
    */
-  [[nodiscard]] bool spawnWorkers(std::size_t numThreads, const PoolConfig& config,
-                                  const char* namePrefix, WorkerEntry entry, void* pool);
+  [[nodiscard]] bool spawnWorkers(const PoolConfig& config, const char* namePrefix,
+                                  WorkerEntry entry, void* pool);
 
   /**
    * @brief Join every worker and forget them. The pool is not valid afterwards.
@@ -179,16 +227,19 @@ protected:
    *        record a non-zero return code as a TASK_FAILED error. An empty
    *        delegate returns zero from its call, so it runs as a task that
    *        succeeds.
-   * @note RT-safe unless the task fails: two atomic updates around the call.
+   * @param tally The calling worker's own tally.
+   * @note RT-safe unless the task fails: two plain stores around the call.
    *       Recording a failure takes the error mutex and may allocate.
    */
-  void runTask(const char* label, TaskFn task) {
-    activeTasks_.value.fetch_add(1, std::memory_order_acq_rel);
+  void runTask(WorkerTally& tally, const char* label, TaskFn task) {
+    tally.started.store(tally.started.load(std::memory_order_relaxed) + 1,
+                        std::memory_order_release);
     const std::uint8_t RC = task();
     if (RC != 0) {
       recordFailure(label, RC);
     }
-    activeTasks_.value.fetch_sub(1, std::memory_order_acq_rel);
+    tally.finished.store(tally.finished.load(std::memory_order_relaxed) + 1,
+                         std::memory_order_release);
   }
 
 private:
@@ -197,7 +248,7 @@ private:
   std::vector<std::thread> workers_;           ///< Worker threads.
   std::atomic<std::size_t> configFailures_{0}; ///< Workers with a setting that did not apply.
 
-  cache::AlignCl<std::atomic<std::size_t>> activeTasks_{0}; ///< In-flight task count.
+  std::vector<WorkerTally> tallies_; ///< One per worker, sized once at construction.
 
   // Error path (rare, mutex-protected)
   std::queue<TaskError> errorQueue_;                   ///< Collected errors.

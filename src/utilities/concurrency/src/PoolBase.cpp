@@ -17,8 +17,9 @@ namespace concurrency {
 
 /* ----------------------------- PoolBase Methods ----------------------------- */
 
-bool PoolBase::spawnWorkers(std::size_t numThreads, const PoolConfig& config,
-                            const char* namePrefix, WorkerEntry entry, void* pool) {
+bool PoolBase::spawnWorkers(const PoolConfig& config, const char* namePrefix, WorkerEntry entry,
+                            void* pool) {
+  const std::size_t WORKERS = tallies_.size();
   // The workers inherit the blocked process signals; the scope hands the
   // constructing thread its own mask back when the spawn is over, success
   // or not.
@@ -27,11 +28,11 @@ bool PoolBase::spawnWorkers(std::size_t numThreads, const PoolConfig& config,
   // touches the latch again. This thread parks on it rather than yielding,
   // so a worker configured below its priority, on the same CPU, still gets
   // to run.
-  Latch configured(numThreads);
-  workers_.reserve(numThreads);
+  Latch configured(WORKERS);
+  workers_.reserve(WORKERS);
   std::size_t started = 0;
   try {
-    for (; started < numThreads; ++started) {
+    for (; started < WORKERS; ++started) {
       workers_.emplace_back([this, config, namePrefix, entry, pool, started, &configured]() {
         // The worker's name: the prefix and its index (15 characters and a terminator on Linux).
         std::array<char, 16> name{};
@@ -40,17 +41,17 @@ bool PoolBase::spawnWorkers(std::size_t numThreads, const PoolConfig& config,
           configFailures_.fetch_add(1, std::memory_order_acq_rel);
         }
         configured.countDown();
-        entry(pool);
+        entry(pool, tallies_[started]);
       });
     }
   } catch (const std::system_error&) {
     // A thread could not start. The arrivals that will never come are counted
     // here, so the wait below still ends once every worker that did start has
     // applied its configuration and let go of the latch.
-    configured.countDown(numThreads - started);
+    configured.countDown(WORKERS - started);
   }
   configured.wait();
-  return started == numThreads;
+  return started == WORKERS;
 }
 
 void PoolBase::joinWorkers() noexcept {

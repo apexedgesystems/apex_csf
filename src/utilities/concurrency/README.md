@@ -279,7 +279,7 @@ when the constructor returns; the workers block SIGINT, SIGTERM and SIGPIPE.
 | `workerConfigFailures()` | Yes     | Atomic load                    |
 | `enqueueTask()`          | No      | Mutex lock, queue may allocate |
 | `tryEnqueue()`           | No      | Mutex lock, queue may allocate |
-| `threadsRunning()`       | Yes     | Atomic load                    |
+| `threadsRunning()`       | Yes     | Two atomic loads per worker    |
 | `hasErrors()`            | Yes     | Atomic load                    |
 | `shutdown()`             | No      | Joins threads                  |
 | `collectErrors()`        | No      | Mutex lock                     |
@@ -366,7 +366,7 @@ calls in progress at once.
 | `workerConfigFailures()` | Yes     | Atomic load                                                                                       |
 | `tryEnqueue()`           | Depends | No allocation or pool mutex; may issue a futex wake for an idle worker; no per-caller retry bound |
 | `enqueueTask()`          | Depends | As `tryEnqueue()`                                                                                 |
-| `threadsRunning()`       | Yes     | Atomic load                                                                                       |
+| `threadsRunning()`       | Yes     | Two atomic loads per worker                                                                       |
 | `hasErrors()`            | Yes     | Atomic load                                                                                       |
 | `shutdown()`             | No      | Parks on producers, joins threads                                                                 |
 | `collectErrors()`        | No      | Mutex lock                                                                                        |
@@ -983,8 +983,8 @@ workers, so the `ptst/` pool fixtures are the measurement for a build.
 - **Barrier::expected/generation** - Atomic load only
 - **DelegateU8** - No allocation, direct function call
 - **cache::AlignCl** - Compile-time alignment only
-- **ThreadPool::threadsRunning/hasErrors** - Single atomic load
-- **ThreadPoolLockFree::threadsRunning/hasErrors** - Single atomic load
+- **ThreadPool / ThreadPoolLockFree::hasErrors** - Single atomic load
+- **ThreadPool / ThreadPoolLockFree::threadsRunning** - Two atomic loads per worker, no lock
 
 ### RT-Dependent Components
 

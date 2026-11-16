@@ -7,10 +7,11 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Sources (14 files, plus the thread-launch seam under support/)
+# Sources (15 files, plus the thread-launch seam under support/)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/PoolBase_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ThreadPool_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ThreadPoolLockFree_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/LockFreeQueue_uTest.cpp"
