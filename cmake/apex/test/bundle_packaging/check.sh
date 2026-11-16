@@ -73,6 +73,18 @@ expect_package_error() {
   done
 }
 
+# One run from an unpacked copy with a system PATH and nothing else in the
+# environment. The exit status and the output are judged separately, so the
+# expected text cannot stand in for a process that failed.
+expect_run() {
+  local what=$1 want_rc=$2 want_out=$3 out rc
+  shift 3
+  out=$(cd / && env -i PATH=/usr/bin:/bin "$@" 2>&1)
+  rc=$?
+  [ "$rc" -eq "$want_rc" ] || note "$what exits $rc, expected $want_rc; it printed: $out"
+  [ "$out" = "$want_out" ] || note "$what printed \"$out\", expected \"$want_out\""
+}
+
 # An ELF header for an architecture this machine is not: sixteen identification
 # bytes, the file type, then the machine field.
 foreign_elf() {
@@ -100,6 +112,7 @@ else
   pkg="$scratch/good/packages/FxBundle"
   for f in FxApp/bank_a/bin/fx_exec FxApp/bank_a/tprm/master.tprm FxApp/run.sh \
     tools/bin/fx_cpp_tool tools/bin/fx-bin tools/bin/fx-script.sh tools/bin/fx-py \
+    tools/bin/fx-fails.sh \
     tools/lib/python/fxpkg/__init__.py tools/lib/python/fxdep/__init__.py \
     tools/REQUIREMENTS.txt; do
     [ -e "$pkg/$f" ] || note "good: the package has no $f"
@@ -111,7 +124,7 @@ else
   [ ! -e "$pkg/tools/lib/python/bin" ] ||
     note "good: the package carries the build tree's console scripts"
   rows=$(grep -c '^fx' "$pkg/tools/REQUIREMENTS.txt" 2>/dev/null)
-  [ "$rows" = "4" ] || note "good: REQUIREMENTS.txt lists $rows tools, expected 4"
+  [ "$rows" = "5" ] || note "good: REQUIREMENTS.txt lists $rows tools, expected 5"
   for kind in cpp bin script py; do
     grep -q "tool .* ($kind) staged" "$scratch/good.pkg.log" ||
       note "good: the package step printed no size line for the $kind tool"
@@ -123,14 +136,15 @@ else
     tar -xzf "$scratch/good/packages/FxBundle.tar.gz" -C "$scratch/elsewhere" &&
     mv "$scratch/good" "$scratch/good.gone"
   moved="$scratch/elsewhere/FxBundle"
-  run() { (cd / && env -i PATH=/usr/bin:/bin "$moved/$1" 2>&1); }
-  [ "$(run FxApp/bank_a/bin/fx_exec)" = "fx_exec" ] || note "good: the executive does not run from the copy"
-  [ "$(run tools/bin/fx_cpp_tool)" = "fx_cpp_tool with fx_dep" ] ||
-    note "good: the C++ tool does not run from the copy: $(run tools/bin/fx_cpp_tool)"
-  [ "$(run tools/bin/fx-bin)" = "fx-bin" ] || note "good: the prebuilt tool does not run from the copy"
-  [ "$(run tools/bin/fx-script.sh)" = "fx-script" ] || note "good: the shell tool does not run from the copy"
-  [ "$(run tools/bin/fx-py)" = "fx-py with fxdep as fx-py" ] ||
-    note "good: the Python tool does not run from the copy: $(run tools/bin/fx-py)"
+  expect_run "good: the executive from the copy" 0 "fx_exec" "$moved/FxApp/bank_a/bin/fx_exec"
+  expect_run "good: the C++ tool from the copy" 0 "fx_cpp_tool with fx_dep" "$moved/tools/bin/fx_cpp_tool"
+  expect_run "good: the prebuilt tool from the copy" 0 "fx-bin" "$moved/tools/bin/fx-bin"
+  expect_run "good: the shell tool from the copy" 0 "fx-script" "$moved/tools/bin/fx-script.sh"
+  expect_run "good: the Python tool from the copy" 0 "fx-py with fxdep as fx-py" "$moved/tools/bin/fx-py"
+
+  # A tool that prints what is expected of it and then fails: its status has to
+  # reach the caller, and this check has to see it.
+  expect_run "good: the failing tool from the copy" 7 "fx-fails" "$moved/tools/bin/fx-fails.sh"
 
   # A target without python3 gets a plain message, not a traceback.
   mkdir "$scratch/empty-path"
@@ -175,4 +189,4 @@ if ! configure baremetal-plain -DCASE=baremetal-plain; then
 fi
 
 [ "$fail" -eq 0 ] || exit 1
-printf '[check-bundle-packaging] OK -- packages from an unbuilt tree; one tool of each kind runs from a copy elsewhere; foreign-architecture tools fail the package step; unknown, library and bare-metal tools fail the configure\n'
+printf '[check-bundle-packaging] OK -- packages from an unbuilt tree; one tool of each kind runs from a copy elsewhere and a failing tool fails; foreign-architecture tools fail the package step; unknown, library and bare-metal tools fail the configure\n'

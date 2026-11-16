@@ -7,8 +7,9 @@
 #
 #   good              one deployment with a generated TPRM and one tool of each
 #                     kind (C++ target, prebuilt executable, shell script,
-#                     Python console script). check.sh packages it from an
-#                     unbuilt tree and runs every tool from a copy elsewhere.
+#                     Python console script), plus a script that prints its
+#                     name and fails. check.sh packages it from an unbuilt tree
+#                     and runs every tool from a copy elsewhere.
 #   unknown-tool      a TOOLS name nothing provides fails the configure
 #   library-as-tool   a TOOLS name that is a library target fails the configure
 #   baremetal-tools   TOOLS in a bare-metal build fails the configure
@@ -119,6 +120,11 @@ apex_register_tool(
 apex_register_tool(
   NAME fx-script.sh KIND script FILE "${CMAKE_CURRENT_SOURCE_DIR}/src/fx-script.sh"
 )
+# A tool that fails after printing what is expected of it: its exit status has
+# to reach whoever runs it from the package.
+set(FX_SCRIPTS "${CMAKE_BINARY_DIR}/scripts")
+file(WRITE "${FX_SCRIPTS}/fx-fails.sh" "#!/bin/sh\necho fx-fails\nexit 7\n")
+apex_register_tool(NAME fx-fails.sh KIND script FILE "${FX_SCRIPTS}/fx-fails.sh")
 apex_register_tool(
   NAME
   fx-py
@@ -131,7 +137,7 @@ apex_register_tool(
 )
 
 if (CASE STREQUAL "good")
-  set(_tools fx_cpp_tool fx-bin fx-script.sh fx-py)
+  set(_tools fx_cpp_tool fx-bin fx-script.sh fx-py fx-fails.sh)
 elseif (CASE STREQUAL "unknown-tool")
   set(_tools fx_cpp_tool no-such-tool)
 elseif (CASE STREQUAL "library-as-tool")
