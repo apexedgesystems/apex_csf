@@ -11,11 +11,21 @@
  * reads the outcome from the files the executive writes. Nothing here
  * depends on timing: every wait is a poll for a state, with a bound that
  * only stops a broken run from hanging.
+ *
+ * Each case owns what its executive would otherwise share with another
+ * run of the same case: a directory created for it alone, and a TCP port
+ * for the interface that the kernel reported free, handed over in the
+ * interface's parameter file.
  */
 
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
+#include "src/system/core/executive/posix/inc/ExecutiveState.hpp"
 #include "src/system/core/executive/posix/utst/plugins/ReloadTarget.hpp"
+#include "src/system/core/components/interface/apex/inc/ApexInterfaceTunables.hpp"
+#include "src/system/core/components/interface/apex/inc/InterfaceBase.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/CommandResult.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 
 #include <gtest/gtest.h>
 
@@ -23,6 +33,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -30,6 +41,11 @@
 #include <string>
 #include <thread>
 #include <vector>
+
+#include <arpa/inet.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 namespace {
 
@@ -41,6 +57,9 @@ using Clock = std::chrono::steady_clock;
 
 /// Bound on each poll; reached only when the state never arrives.
 constexpr std::chrono::seconds POLL_LIMIT{20};
+
+/// Starts tried before a case gives up; each takes a new port.
+constexpr int START_ATTEMPTS = 5;
 
 constexpr const char* LINKED = "linked into the test";
 constexpr const char* LOADED = "loaded from a library";
@@ -58,6 +77,7 @@ public:
   ReloadTarget target{LINKED};
 
   [[nodiscard]] std::filesystem::path logDir() noexcept { return fileSystem().logDir(); }
+  [[nodiscard]] std::filesystem::path tprmDir() noexcept { return fileSystem().tprmDir(); }
   [[nodiscard]] std::filesystem::path inactiveLibDir() noexcept {
     return fileSystem().inactiveLibDir();
   }
@@ -121,34 +141,124 @@ bool waitForLine(const std::filesystem::path& path, const std::string& needle) {
   return false;
 }
 
+/// A TCP port on the loopback address that no socket held a moment ago; 0 when none was found.
+std::uint16_t pickFreePort() {
+  const int FD = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (FD < 0) {
+    return 0;
+  }
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+  socklen_t len = sizeof(addr);
+  std::uint16_t port = 0;
+  if (::bind(FD, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) == 0 &&
+      ::getsockname(FD, reinterpret_cast<sockaddr*>(&addr), &len) == 0) {
+    port = ntohs(addr.sin_port);
+  }
+  ::close(FD);
+  return port;
+}
+
+/// Write the interface's parameter file into DIR: the defaults, served on PORT.
+bool writeInterfacePort(const std::filesystem::path& dir, std::uint16_t port) {
+  namespace sc = system_core::system_component;
+  system_core::interface::ApexInterfaceTunables tunables{};
+  tunables.port = port;
+
+  sc::TprmPayloadHeader header{};
+  header.magic = sc::TPRM_PAYLOAD_MAGIC;
+  header.version = sc::TPRM_PAYLOAD_VERSION;
+  header.fullUid = static_cast<std::uint32_t>(system_core::interface::InterfaceBase::COMPONENT_ID)
+                   << 8;
+  header.payloadSize = sizeof(tunables);
+  header.payloadCrc =
+      sc::tprmCrc32(reinterpret_cast<const std::uint8_t*>(&tunables), sizeof(tunables));
+
+  std::error_code ec;
+  std::filesystem::create_directories(dir, ec);
+  std::ofstream out(dir / sc::SystemComponentBase::tprmFilename(header.fullUid),
+                    std::ios::binary | std::ios::trunc);
+  out.write(reinterpret_cast<const char*>(&header), sizeof(header));
+  out.write(reinterpret_cast<const char*>(&tunables), sizeof(tunables));
+  out.flush();
+  return out.good();
+}
+
 class ReloadLibraryTest : public ::testing::Test {
 protected:
   void SetUp() override {
-    fsRoot_ = std::filesystem::path(::testing::TempDir()) /
-              ("exec_reload_" +
-               std::string(::testing::UnitTest::GetInstance()->current_test_info()->name()));
-    std::filesystem::remove_all(fsRoot_);
-    std::filesystem::create_directories(fsRoot_);
-    exec_ = std::make_unique<ReloadExecutive>(fsRoot_);
-    ASSERT_EQ(exec_->init(), 0) << "executive init failed";
-    runner_ = std::thread([this]() { (void)exec_->run(); });
+    // A directory only this run owns: mkdtemp() picks a free name and
+    // creates it (mode 0700) in one step, so a second run of this case
+    // gets another directory.
+    std::string pattern =
+        (std::filesystem::path(::testing::TempDir()) / "exec_reload_XXXXXX").string();
+    const char* MADE = ::mkdtemp(pattern.data());
+    ASSERT_NE(MADE, nullptr) << "no private directory under " << ::testing::TempDir();
+    ownedDir_ = MADE;
 
-    // Running: the clock has ticked, so registration is behind us.
-    const auto DEADLINE = Clock::now() + POLL_LIMIT;
-    while (exec_->getHealthPacket().clockCycles < 2u && Clock::now() < DEADLINE) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    // The port was free when the kernel named it, and another process can
+    // take it before the interface binds. That start is held at cycle 0;
+    // it is stopped and the next one takes a new port and a new tree.
+    for (int attempt = 0; attempt < START_ATTEMPTS; ++attempt) {
+      fsRoot_ = ownedDir_ / ("boot_" + std::to_string(attempt));
+      bool running = false;
+      ASSERT_NO_FATAL_FAILURE(startExecutive(running));
+      if (running) {
+        return;
+      }
+      stopExecutive();
     }
-    ASSERT_GE(exec_->getHealthPacket().clockCycles, 2u) << "the executive did not start";
+    FAIL() << "the executive did not start in " << START_ATTEMPTS << " attempts; last system log:\n"
+           << slurp(fsRoot_ / "system.log");
   }
 
   void TearDown() override {
+    stopExecutive();
+    // Only the directory SetUp() created, and only now the executive is gone.
+    if (!ownedDir_.empty()) {
+      std::error_code ec;
+      std::filesystem::remove_all(ownedDir_, ec);
+    }
+  }
+
+  /// Boot an executive in fsRoot_ on a port of its own. RUNNING is false when it is held.
+  void startExecutive(bool& running) {
+    const std::uint16_t PORT = pickFreePort();
+    ASSERT_NE(PORT, 0u) << "no free TCP port on the loopback address";
+    std::filesystem::create_directories(fsRoot_);
+    exec_ = std::make_unique<ReloadExecutive>(fsRoot_);
+    ASSERT_TRUE(writeInterfacePort(exec_->tprmDir(), PORT)) << exec_->tprmDir();
+    ASSERT_EQ(exec_->init(), 0) << "executive init failed";
+    runner_ = std::thread([this]() { (void)exec_->run(); });
+
+    // Running: the clock has ticked, so registration is behind us. Held:
+    // the clock is paused before its first cycle.
+    const auto DEADLINE = Clock::now() + POLL_LIMIT;
+    while (Clock::now() < DEADLINE) {
+      const auto HEALTH = exec_->getHealthPacket();
+      if (HEALTH.clockCycles >= 2u) {
+        // The interface serves the port this case chose, not the default.
+        const auto INTERFACE_LOG = exec_->logDir() / "core" / "interface.log";
+        ASSERT_TRUE(waitForLine(INTERFACE_LOG, "port=" + std::to_string(PORT) + "\n"))
+            << "the interface did not take port " << PORT << ":\n"
+            << slurp(INTERFACE_LOG);
+        running = true;
+        return;
+      }
+      if ((HEALTH.flags & executive::ExecutiveHealthPacket::FLAG_PAUSED) != 0u) {
+        return;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+  }
+
+  void stopExecutive() {
     if (runner_.joinable()) {
       exec_->shutdown();
       runner_.join();
     }
     exec_.reset();
-    std::error_code ec;
-    std::filesystem::remove_all(fsRoot_, ec);
   }
 
   /// The log file of the model named NAME, instance 0.
@@ -191,7 +301,8 @@ protected:
     return logs;
   }
 
-  std::filesystem::path fsRoot_;
+  std::filesystem::path ownedDir_; ///< Empty until SetUp() has created the directory.
+  std::filesystem::path fsRoot_;   ///< The running executive's tree, under ownedDir_.
   std::unique_ptr<ReloadExecutive> exec_;
   std::thread runner_;
 };

@@ -15,10 +15,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
-#include <random>
 #include <string>
 
 using system_core::system_component::Status;
@@ -93,19 +93,22 @@ protected:
   [[nodiscard]] std::uint8_t doInit() noexcept override { return 0; }
 };
 
-/// A fresh directory under the system temp directory, removed with the object.
+/// A fresh directory only this object owns, removed with it. mkdtemp()
+/// picks a free name and creates it (mode 0700) in one step; when it
+/// cannot, path() is empty and nothing is removed.
 class TempDir {
 public:
   TempDir() {
-    std::random_device rd;
-    std::mt19937_64 gen(rd());
-    std::uniform_int_distribution<unsigned long long> dist;
-    path_ = std::filesystem::temp_directory_path() / ("syscomp_log_" + std::to_string(dist(gen)));
-    std::filesystem::create_directory(path_);
+    std::string pattern = (std::filesystem::temp_directory_path() / "syscomp_log_XXXXXX").string();
+    if (::mkdtemp(pattern.data()) != nullptr) {
+      path_ = pattern;
+    }
   }
   ~TempDir() {
-    std::error_code ec;
-    std::filesystem::remove_all(path_, ec);
+    if (!path_.empty()) {
+      std::error_code ec;
+      std::filesystem::remove_all(path_, ec);
+    }
   }
   TempDir(const TempDir&) = delete;
   TempDir& operator=(const TempDir&) = delete;
@@ -257,6 +260,7 @@ TEST(SystemComponentBaseTest, NoexceptContracts) {
 /** @test initComponentLog() creates the type subdirectory and the log takes lines. */
 TEST(SystemComponentBaseTest, InitComponentLogCreatesItsSubdirectory) {
   const TempDir DIR;
+  ASSERT_FALSE(DIR.path().empty()) << "no private directory";
   LoggingComponent comp;
   comp.setInstanceIndex(3);
 
@@ -274,6 +278,7 @@ TEST(SystemComponentBaseTest, InitComponentLogCreatesItsSubdirectory) {
 /** @test initComponentLog() reports a log that could not open, and installs it all the same. */
 TEST(SystemComponentBaseTest, InitComponentLogReportsAFailedOpen) {
   const TempDir DIR;
+  ASSERT_FALSE(DIR.path().empty()) << "no private directory";
   // A regular file where the log tree's root should be: no subdirectory can be made under it.
   const auto NOT_A_DIR = DIR.path() / "occupied";
   std::ofstream(NOT_A_DIR) << "x";
