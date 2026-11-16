@@ -68,7 +68,9 @@ template <> struct PoolUnderTest<ThreadPoolLockFree> {
   }
 };
 
+/// Names the two instantiations after their pools. GetName is the name gtest calls.
 struct PoolNames {
+  // NOLINTNEXTLINE(readability-identifier-naming)
   template <class Pool> static std::string GetName(int /*index*/) {
     return std::is_same_v<Pool, ThreadPool> ? "ThreadPool" : "ThreadPoolLockFree";
   }
