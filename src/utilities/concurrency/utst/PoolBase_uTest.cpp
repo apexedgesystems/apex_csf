@@ -1,7 +1,8 @@
 /**
  * @file PoolBase_uTest.cpp
- * @brief Unit tests for concurrency::PoolBase: the in-flight sweep over the
- *        workers' tallies and the tally each worker is started with.
+ * @brief Unit tests for concurrency::PoolBase: the error record, the
+ *        in-flight sweep over the workers' tallies and the tally each worker
+ *        is started with.
  */
 
 #include "src/utilities/concurrency/inc/PoolBase.hpp"
@@ -15,12 +16,24 @@
 #include <functional>
 #include <limits>
 #include <mutex>
+#include <type_traits>
 #include <vector>
 
 using apex::concurrency::anyTaskInFlight;
 using apex::concurrency::PoolBase;
 using apex::concurrency::PoolConfig;
+using apex::concurrency::PoolStatus;
+using apex::concurrency::TaskError;
 using apex::concurrency::WorkerTally;
+
+/* ----------------------------- TaskError Compile-Time Contract ----------------------------- */
+
+// A plain record a worker fills in and a collector copies out: no constructor, copied bit for
+// bit, and all zero when value-initialized.
+static_assert(std::is_aggregate_v<TaskError>);
+static_assert(std::is_trivially_copyable_v<TaskError>);
+static_assert(TaskError{}.label == nullptr && TaskError{}.errorCode == 0 &&
+              TaskError{}.status == PoolStatus::SUCCESS);
 
 namespace {
 

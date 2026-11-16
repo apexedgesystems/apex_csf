@@ -1037,21 +1037,23 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 
 ### Test Organization
 
-| Module               | Test File                      | Coverage                                           |
-| -------------------- | ------------------------------ | -------------------------------------------------- |
-| ThreadPool           | `ThreadPool_uTest.cpp`         | Lifecycle, task execution, errors, worker identity |
-| ThreadPoolLockFree   | `ThreadPoolLockFree_uTest.cpp` | Lifecycle, capacity, producers, wake and shutdown  |
-| ThreadConfig         | `ThreadConfig_uTest.cpp`       | Affinity, name, refused settings, timer slack      |
-| LockFreeQueue        | `LockFreeQueue_uTest.cpp`      | Push/pop, capacity, MPMC integrity, index wrap     |
-| SPSCQueue            | `SPSCQueue_uTest.cpp`          | Push/pop, capacity, index wrap, size, alignment    |
-| RingBuffer           | `RingBuffer_uTest.cpp`         | Push/pop, peek, clear, wraparound, alignment       |
-| ringOccupancy        | `RingIndex_uTest.cpp`          | Cursor distance across index wrap, split snapshots |
-| Semaphore            | `Semaphore_uTest.cpp`          | Acquire/release, timeout, wake-all, count bound    |
-| SpinLock             | `SpinLock_uTest.cpp`           | Lock/unlock, mutual exclusion, std::lock_guard     |
-| Latch                | `Latch_uTest.cpp`              | Countdown, wait, arrive-and-wait, lifetime         |
-| Barrier              | `Barrier_uTest.cpp`            | Phases, generations, drop, blocking until the last |
-| DelegateU8, Delegate | `Delegate_uTest.cpp`           | Construction, invocation, null and void forms      |
-| AlignCl              | `Cache_uTest.cpp`              | Alignment verification                             |
+| Module               | Test File                      | Coverage                                            |
+| -------------------- | ------------------------------ | --------------------------------------------------- |
+| Both pools           | `PoolContract_uTest.cpp`       | Lifecycle, task execution, errors, worker identity  |
+| PoolBase             | `PoolBase_uTest.cpp`           | In-flight sweep, one tally per worker, error record |
+| ThreadPoolLockFree   | `ThreadPoolLockFree_uTest.cpp` | Capacity, producers, admission, wake and shutdown   |
+| ThreadConfig         | `ThreadConfig_uTest.cpp`       | Affinity, name, refused settings, timer slack       |
+| LockFreeQueue        | `LockFreeQueue_uTest.cpp`      | Push/pop, capacity, MPMC integrity, index wrap      |
+| SPSCQueue            | `SPSCQueue_uTest.cpp`          | Push/pop, capacity, index wrap, size, alignment     |
+| RingBuffer           | `RingBuffer_uTest.cpp`         | Push/pop, peek, clear, wraparound, alignment        |
+| ringOccupancy        | `RingIndex_uTest.cpp`          | Cursor distance across index wrap, split snapshots  |
+| RingStorage          | `RingStorage_uTest.cpp`        | Slot construction and destruction order, alignment  |
+| Semaphore            | `Semaphore_uTest.cpp`          | Acquire/release, timeout, wake-all, count bound     |
+| SpinLock             | `SpinLock_uTest.cpp`           | Lock/unlock, mutual exclusion, std::lock_guard      |
+| Latch                | `Latch_uTest.cpp`              | Countdown, wait, arrive-and-wait, lifetime          |
+| Barrier              | `Barrier_uTest.cpp`            | Phases, generations, drop, blocking until the last  |
+| DelegateU8, Delegate | `Delegate_uTest.cpp`           | Construction, invocation, null and void forms       |
+| AlignCl              | `Cache_uTest.cpp`              | Alignment verification                              |
 
 Threaded cases share three helpers under `utst/support/`: bounded waits
 (`Waiting.hpp`), a thread owner that ends a case in bounded time (`Crew.hpp`)

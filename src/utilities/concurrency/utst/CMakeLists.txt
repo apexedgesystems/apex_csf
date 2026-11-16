@@ -12,7 +12,7 @@ include(apex/All)
 
 set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/PoolBase_uTest.cpp"
-    "${CMAKE_CURRENT_SOURCE_DIR}/ThreadPool_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/PoolContract_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ThreadPoolLockFree_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/LockFreeQueue_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SPSCQueue_uTest.cpp"
