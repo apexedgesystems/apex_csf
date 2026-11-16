@@ -129,6 +129,8 @@ any such change is called out explicitly in its entry.
 - `executive::toString` names `ERROR_TPRM_INGEST`; it returned
   `UNKNOWN_STATUS` for that code.
   ([#192](https://github.com/apexedgesystems/apex_csf/pull/192))
+- Firmware releases fail when the build produces no firmware image.
+  ([#192](https://github.com/apexedgesystems/apex_csf/pull/192))
 - ASYNC logging: `flush()` waits for every accepted entry's write attempt, a
   cut line keeps its newline, and a failed rotation keeps the log descriptor.
   ([#188](https://github.com/apexedgesystems/apex_csf/pull/188))
