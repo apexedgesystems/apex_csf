@@ -12,7 +12,6 @@
 
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/executive/posix/inc/ExecutiveStatus.hpp"
-#include "src/system/core/infrastructure/system_component/base/inc/ComponentType.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/PackedTprm.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmReadback.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
@@ -391,26 +390,24 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     newComp->setInstanceIndex(oldComp->instanceIndex());
 
     // The new instance gets its log before it loads parameters and
-    // initializes, as registration does. It opens the file the old
-    // instance wrote: that instance is locked, and archiving copies the
-    // file without moving it, so the new lines follow the old ones.
-    const std::filesystem::path LOG_PATH =
-        fileSystem_.logDir() / system_core::system_component::logSubdir(oldComp->componentType()) /
-        fmt::format("{}_{}.log", oldComp->componentName(), oldComp->instanceIndex());
+    // initializes, as registration does. The file is the one its own name
+    // and type select: a replacement that keeps both appends to the file
+    // the old instance wrote, and any other replacement opens its own.
+    const std::string NEW_LOG_PATH = newComp->componentLogPath(fileSystem_.logDir()).string();
     if (newComp->initComponentLog(fileSystem_.logDir())) {
       if (auto* sl = fileSystem_.swapLog()) {
         sl->info("SWAP", fmt::format("RELOAD_LIBRARY_LOG_ATTACHED: uid=0x{:06X} log={}", targetUid,
-                                     LOG_PATH.string()));
+                                     NEW_LOG_PATH));
       }
     } else {
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_IO_ERROR),
                        fmt::format("RELOAD_LIBRARY: new component runs without a log: could not "
                                    "open {}",
-                                   LOG_PATH.string()));
+                                   NEW_LOG_PATH));
       if (auto* sl = fileSystem_.swapLog()) {
         sl->warning("SWAP", static_cast<std::uint8_t>(WARN_IO_ERROR),
                     fmt::format("RELOAD_LIBRARY_WARN: uid=0x{:06X} log_open_failed log={}",
-                                targetUid, LOG_PATH.string()));
+                                targetUid, NEW_LOG_PATH));
       }
     }
 
@@ -443,11 +440,13 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       sl->info("SWAP", fmt::format("RELOAD_LIBRARY_INIT_OK: uid=0x{:06X}", targetUid));
     }
 
-    // Archive the component's log as it stands at the handover: the old
-    // instance's lines and the new instance's start-up lines.
+    // Copy the old instance's log file as it stands on disk, before the
+    // tasks and the registry entry are replaced. Lines either log still
+    // holds in its queue are not in the copy.
     {
-      const auto ARCHIVED = fileSystem_.archiveComponentLog(LOG_PATH, oldComp->componentName(),
-                                                            oldComp->instanceIndex());
+      const auto ARCHIVED =
+          fileSystem_.archiveComponentLog(oldComp->componentLogPath(fileSystem_.logDir()),
+                                          oldComp->componentName(), oldComp->instanceIndex());
       if (auto* sl = fileSystem_.swapLog()) {
         if (!ARCHIVED.empty()) {
           sl->info("SWAP", fmt::format("RELOAD_LIBRARY_LOG_ARCHIVED: uid=0x{:06X} dest={}",

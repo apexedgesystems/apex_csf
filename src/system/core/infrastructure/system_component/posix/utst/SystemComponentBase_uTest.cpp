@@ -265,6 +265,7 @@ TEST(SystemComponentBaseTest, InitComponentLogCreatesItsSubdirectory) {
   EXPECT_EQ(comp.logLine("first line"), logs::Status::OK);
 
   const auto LOG_FILE = DIR.path() / "core" / "LoggingComponent_3.log";
+  EXPECT_EQ(comp.componentLogPath(DIR.path()), LOG_FILE);
   ASSERT_TRUE(std::filesystem::exists(LOG_FILE)) << LOG_FILE;
   const std::string CONTENT = slurp(LOG_FILE);
   EXPECT_NE(CONTENT.find(" INFO: LOGGING - first line\n"), std::string::npos) << CONTENT;

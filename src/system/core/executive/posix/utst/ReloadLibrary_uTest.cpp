@@ -1,11 +1,11 @@
 /**
  * @file ReloadLibrary_uTest.cpp
  * @brief RELOAD_LIBRARY on a running executive: the swapped-in component
- *        gets its log.
+ *        gets its log, and the swap log names that log.
  *
- * Boots a real ApexExecutive with one linked ReloadTarget, places the
- * plugin build of the same component in the inactive library bank, locks
- * the component and issues RELOAD_LIBRARY. The commands run on the
+ * Boots a real ApexExecutive with one linked ReloadTarget, places a
+ * plugin library with the same component id in the inactive library bank,
+ * locks the component and issues RELOAD_LIBRARY. The commands run on the
  * executive's task thread, at the seam that thread offers once per cycle,
  * so the handler shares no state with another running thread; the test
  * reads the outcome from the files the executive writes. Nothing here
@@ -35,6 +35,7 @@ namespace {
 
 using executive::ApexExecutive;
 using executive::test::ReloadTarget;
+using executive::test::RenamedReloadTarget;
 using system_core::system_component::CommandResult;
 using Clock = std::chrono::steady_clock;
 
@@ -150,6 +151,46 @@ protected:
     std::filesystem::remove_all(fsRoot_, ec);
   }
 
+  /// The log file of the model named NAME, instance 0.
+  [[nodiscard]] std::filesystem::path modelLog(const char* name) const {
+    return exec_->logDir() / "models" / (std::string(name) + "_0.log");
+  }
+
+  [[nodiscard]] std::filesystem::path swapLog() const {
+    return exec_->logDir() / "core" / "swap.log";
+  }
+
+  /**
+   * @brief Swap PLUGIN_FILE in for the linked instance: wait for that
+   *        instance's start-up line, bank the library under the name the
+   *        executive looks for, lock the component and reload it.
+   */
+  void swapIn(const char* pluginFile) {
+    const auto LINKED_LOG = modelLog(ReloadTarget::COMPONENT_NAME);
+    ASSERT_TRUE(waitForLine(LINKED_LOG, ReloadTarget::startupLine(LINKED)))
+        << "the linked instance's start-up line is not in " << LINKED_LOG;
+
+    const auto PLUGIN = std::filesystem::path(APEX_TEST_PLUGIN_DIR) / pluginFile;
+    ASSERT_TRUE(std::filesystem::exists(PLUGIN)) << PLUGIN;
+    std::filesystem::create_directories(exec_->inactiveLibDir());
+    std::filesystem::copy_file(PLUGIN, exec_->inactiveLibDir() / "ReloadTarget_0.so");
+
+    ASSERT_EQ(exec_->runOnTaskThread(ApexExecutive::Opcode::CMD_LOCK_COMPONENT),
+              static_cast<int>(CommandResult::SUCCESS));
+    ASSERT_EQ(exec_->runOnTaskThread(ApexExecutive::Opcode::RELOAD_LIBRARY),
+              static_cast<int>(CommandResult::SUCCESS))
+        << slurp(swapLog());
+  }
+
+  /// The archived copies of the linked instance's log, one per archive made.
+  [[nodiscard]] std::vector<std::filesystem::path> archivedLogs() const {
+    std::vector<std::filesystem::path> logs;
+    for (const auto& entry : std::filesystem::directory_iterator(fsRoot_ / "swap_history")) {
+      logs.push_back(entry.path() / "ReloadTarget_0.log");
+    }
+    return logs;
+  }
+
   std::filesystem::path fsRoot_;
   std::unique_ptr<ReloadExecutive> exec_;
   std::thread runner_;
@@ -159,29 +200,15 @@ protected:
 
 /** @test The component RELOAD_LIBRARY swaps in writes to the component's log file. */
 TEST_F(ReloadLibraryTest, SwappedInComponentHasItsLog) {
-  const auto LOG_FILE = exec_->logDir() / "models" / "ReloadTarget_0.log";
-  const auto SWAP_LOG_FILE = exec_->logDir() / "core" / "swap.log";
-  ASSERT_TRUE(waitForLine(LOG_FILE, ReloadTarget::startupLine(LINKED)))
-      << "the linked instance's start-up line is not in " << LOG_FILE;
+  ASSERT_NO_FATAL_FAILURE(swapIn("ExecutiveTestPlugin_Reload.so"));
 
-  // The replacement, under the name the executive looks for in the inactive bank.
-  const auto PLUGIN = std::filesystem::path(APEX_TEST_PLUGIN_DIR) / "ExecutiveTestPlugin_Reload.so";
-  ASSERT_TRUE(std::filesystem::exists(PLUGIN)) << PLUGIN;
-  std::filesystem::create_directories(exec_->inactiveLibDir());
-  std::filesystem::copy_file(PLUGIN, exec_->inactiveLibDir() / "ReloadTarget_0.so");
-
-  ASSERT_EQ(exec_->runOnTaskThread(ApexExecutive::Opcode::CMD_LOCK_COMPONENT),
-            static_cast<int>(CommandResult::SUCCESS));
-  ASSERT_EQ(exec_->runOnTaskThread(ApexExecutive::Opcode::RELOAD_LIBRARY),
-            static_cast<int>(CommandResult::SUCCESS))
-      << slurp(SWAP_LOG_FILE);
-
+  const auto LOG_FILE = modelLog(ReloadTarget::COMPONENT_NAME);
   EXPECT_TRUE(waitForLine(LOG_FILE, ReloadTarget::startupLine(LOADED)))
       << "the swapped-in instance wrote no start-up line to " << LOG_FILE << ":\n"
       << slurp(LOG_FILE);
 
   // The swap log names the log the new instance was given and the archive.
-  const std::string SWAP_LOG = slurp(SWAP_LOG_FILE);
+  const std::string SWAP_LOG = slurp(swapLog());
   EXPECT_NE(SWAP_LOG.find("RELOAD_LIBRARY_LOG_ATTACHED: uid=0x00FB00 log=" + LOG_FILE.string()),
             std::string::npos)
       << SWAP_LOG;
@@ -189,11 +216,31 @@ TEST_F(ReloadLibraryTest, SwappedInComponentHasItsLog) {
   EXPECT_NE(SWAP_LOG.find("RELOAD_LIBRARY_OK: uid=0x00FB00"), std::string::npos);
 
   // One archive of the component's log, holding the linked instance's line.
-  std::vector<std::filesystem::path> archives;
-  for (const auto& entry : std::filesystem::directory_iterator(fsRoot_ / "swap_history")) {
-    archives.push_back(entry.path());
-  }
-  ASSERT_EQ(archives.size(), 1u);
-  EXPECT_NE(slurp(archives.front() / "ReloadTarget_0.log").find(ReloadTarget::startupLine(LINKED)),
-            std::string::npos);
+  const auto ARCHIVES = archivedLogs();
+  ASSERT_EQ(ARCHIVES.size(), 1u);
+  EXPECT_NE(slurp(ARCHIVES.front()).find(ReloadTarget::startupLine(LINKED)), std::string::npos);
+}
+
+/**
+ * @test A replacement with the same id and another name writes to the log
+ *       its own name selects, and the swap log names that file.
+ */
+TEST_F(ReloadLibraryTest, RenamedReplacementIsReportedWithItsOwnLog) {
+  ASSERT_NO_FATAL_FAILURE(swapIn("ExecutiveTestPlugin_RenamedReload.so"));
+
+  const auto OLD_LOG_FILE = modelLog(ReloadTarget::COMPONENT_NAME);
+  const auto NEW_LOG_FILE = modelLog(RenamedReloadTarget::COMPONENT_NAME);
+  EXPECT_TRUE(waitForLine(NEW_LOG_FILE, ReloadTarget::startupLine(LOADED)))
+      << "the swapped-in instance wrote no start-up line to " << NEW_LOG_FILE;
+
+  const std::string SWAP_LOG = slurp(swapLog());
+  EXPECT_NE(SWAP_LOG.find("RELOAD_LIBRARY_LOG_ATTACHED: uid=0x00FB00 log=" + NEW_LOG_FILE.string()),
+            std::string::npos)
+      << SWAP_LOG;
+  EXPECT_EQ(SWAP_LOG.find("log=" + OLD_LOG_FILE.string()), std::string::npos) << SWAP_LOG;
+
+  // The archive is of the file the linked instance wrote.
+  const auto ARCHIVES = archivedLogs();
+  ASSERT_EQ(ARCHIVES.size(), 1u);
+  EXPECT_NE(slurp(ARCHIVES.front()).find(ReloadTarget::startupLine(LINKED)), std::string::npos);
 }

@@ -23,17 +23,19 @@ set(UNIT_TEST_SOURCES
 # Test Plugins
 # ------------------------------------------------------------------------------
 
-# The plugin library the RELOAD_LIBRARY test swaps in: the plugin build of
-# the component the test links.
-apex_add_test_plugin(
-  TARGET
-  ExecutiveTestPlugin_Reload
-  SOURCES
-  "${CMAKE_CURRENT_SOURCE_DIR}/plugins/ReloadTargetPlugin.cpp"
-  LINK
-  system_core_system_component
-  system_core_logs
-)
+# The plugin libraries the RELOAD_LIBRARY tests swap in: the plugin build of
+# the component the test links, and one with its id under another name.
+foreach (_plugin Reload RenamedReload)
+  apex_add_test_plugin(
+    TARGET
+    ExecutiveTestPlugin_${_plugin}
+    SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/plugins/${_plugin}TargetPlugin.cpp"
+    LINK
+    system_core_system_component
+    system_core_logs
+  )
+endforeach ()
 
 # ------------------------------------------------------------------------------
 # Unit Tests
@@ -55,6 +57,7 @@ apex_add_gtest(
   fmt::fmt
   PLUGINS
   ExecutiveTestPlugin_Reload
+  ExecutiveTestPlugin_RenamedReload
   LABELS
   system
   core

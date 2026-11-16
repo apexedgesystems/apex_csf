@@ -381,14 +381,25 @@ public:
   [[nodiscard]] bool isLocked() const noexcept { return locked_; }
 
   /**
+   * @brief Path of this component's dedicated log file.
+   * @param logDir Root of the log tree (e.g., ".apex_fs/logs").
+   * @return "{logDir}/{type subdirectory}/{componentName}_{instanceIndex}.log",
+   *         with the subdirectory logSubdir() names for the component's type.
+   * @note The name, type and instance index are read at the call:
+   *       meaningful after setInstanceIndex().
+   * @note NOT RT-safe: Allocates.
+   */
+  [[nodiscard]] std::filesystem::path
+  componentLogPath(const std::filesystem::path& logDir) const noexcept;
+
+  /**
    * @brief Initialize dedicated component log file.
    * @param logDir Root of the log tree (e.g., ".apex_fs/logs").
    * @return true when the log file is open. false when its directory or
    *         the file could not be created: the log is installed all the
    *         same, and it drops every line.
-   * @note The file is "{logDir}/{type subdirectory}/{componentName}_{instanceIndex}.log",
-   *       with the subdirectory logSubdir() names for the component's
-   *       type; the subdirectory is created when missing.
+   * @note The file is componentLogPath(logDir); its subdirectory is
+   *       created when missing.
    * @note Must be called AFTER setInstanceIndex() (needs instance index for filename).
    * @note NOT RT-safe: File I/O.
    */

@@ -57,22 +57,26 @@ std::uint8_t SystemComponentBase::handleCommand(std::uint16_t opcode,
   }
 }
 
-bool SystemComponentBase::initComponentLog(const std::filesystem::path& logDir) noexcept {
-  // The log tree has one subdirectory per component type. An open on a
-  // missing directory fails for good, so the directory is made here and
-  // the caller hears whether the log opened.
-  const std::filesystem::path SUB_DIR = logDir / logSubdir(componentType());
-  std::error_code ec;
-  std::filesystem::create_directories(SUB_DIR, ec);
-
+std::filesystem::path
+SystemComponentBase::componentLogPath(const std::filesystem::path& logDir) const noexcept {
   // Format: {componentName}_{instanceIndex}.log (e.g., Scheduler_0.log, PolynomialModel_1.log)
   std::string filename = componentName();
   filename += "_";
   filename += std::to_string(instanceIndex());
   filename += ".log";
-  auto logPath = SUB_DIR / filename;
+  return logDir / logSubdir(componentType()) / filename;
+}
+
+bool SystemComponentBase::initComponentLog(const std::filesystem::path& logDir) noexcept {
+  // The log tree has one subdirectory per component type. An open on a
+  // missing directory fails for good, so the directory is made here and
+  // the caller hears whether the log opened.
+  const std::filesystem::path LOG_PATH = componentLogPath(logDir);
+  std::error_code ec;
+  std::filesystem::create_directories(LOG_PATH.parent_path(), ec);
+
   auto log =
-      std::make_shared<logs::SystemLog>(logPath.string(), logs::SystemLog::Mode::ASYNC, 4096);
+      std::make_shared<logs::SystemLog>(LOG_PATH.string(), logs::SystemLog::Mode::ASYNC, 4096);
   log->setLevel(logs::SystemLog::Level::DEBUG);
   const bool OPENED = log->lastOpenStatus() == logs::Status::OK;
   setComponentLog(std::move(log));
