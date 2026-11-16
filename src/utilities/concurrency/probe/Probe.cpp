@@ -13,6 +13,7 @@
 #include "src/utilities/concurrency/inc/Delegate.hpp"
 #include "src/utilities/concurrency/inc/Latch.hpp"
 #include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
+#include "src/utilities/concurrency/inc/PoolBase.hpp"
 #include "src/utilities/concurrency/inc/RingBuffer.hpp"
 #include "src/utilities/concurrency/inc/RingIndex.hpp"
 #include "src/utilities/concurrency/inc/RingStorage.hpp"

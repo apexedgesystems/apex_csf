@@ -13,58 +13,17 @@
  */
 
 #include "src/utilities/concurrency/inc/Cache.hpp"
-#include "src/utilities/concurrency/inc/Delegate.hpp"
+#include "src/utilities/concurrency/inc/PoolBase.hpp"
 
 #include <atomic>
 #include <condition_variable>
-#include <cstdint>
+#include <cstddef>
 #include <mutex>
 #include <queue>
-#include <thread>
-#include <vector>
+#include <utility>
 
 namespace apex {
 namespace concurrency {
-
-/* ----------------------------- PoolStatus ----------------------------- */
-
-/**
- * @enum PoolStatus
- * @brief Status codes for ThreadPool operations and task errors.
- */
-enum class PoolStatus : std::uint8_t {
-  SUCCESS = 0,      ///< Operation completed successfully.
-  TASK_FAILED = 1,  ///< Task returned non-zero error code.
-  POOL_STOPPED = 2, ///< Pool is shutting down, task rejected.
-  QUEUE_FULL = 3    ///< Queue is full, task rejected (lock-free pool only).
-};
-
-/* ----------------------------- TaskError ----------------------------- */
-
-/**
- * @struct TaskError
- * @brief Captures task execution errors reported by workers.
- */
-struct TaskError {
-  const char* label;      ///< Non-owning pointer to task label (stable storage).
-  std::uint8_t errorCode; ///< Task return code (0 = success, see PoolStatus).
-  PoolStatus status;      ///< Categorized error status.
-};
-
-/* ----------------------------- PoolConfig ----------------------------- */
-
-/**
- * @struct PoolConfig
- * @brief Configuration applied to all workers at pool construction.
- *
- * Workers are configured once at startup (not per-task), eliminating
- * 10-30us syscall overhead per task dispatch.
- */
-struct PoolConfig {
-  std::int8_t policy{0};                ///< POSIX policy (SCHED_OTHER=0, SCHED_FIFO=1, SCHED_RR=2).
-  std::int8_t priority{0};              ///< POSIX priority (0 for SCHED_OTHER, 1-99 for RT).
-  std::vector<std::uint8_t> affinity{}; ///< CPU affinity (empty = all CPUs).
-};
 
 /* ----------------------------- ThreadPool ----------------------------- */
 
@@ -74,13 +33,12 @@ struct PoolConfig {
  *
  * Uses mutex + condition-variable protected FIFO for dispatch. Tasks are
  * represented by DelegateU8 to avoid allocations and type erasure overhead.
- * A task reports failure through its return code: its type is a noexcept
- * function pointer, so no exception reaches the pool from a task.
+ * The workers, the in-flight count and the task errors are PoolBase's:
+ * isValid(), workerCount(), threadsRunning(), workerConfigFailures(),
+ * hasErrors() and collectErrors() are inherited.
  */
-class ThreadPool {
+class ThreadPool : public PoolBase {
 public:
-  using TaskFn = DelegateU8; ///< Zero-allocation callable: uint8_t(void*).
-
   /**
    * @brief Construct a thread pool with the specified number of workers.
    * @param numThreads Number of worker threads to spawn.
@@ -102,20 +60,6 @@ public:
   ThreadPool& operator=(ThreadPool&&) = delete;
 
   /**
-   * @brief Check if pool was constructed successfully.
-   * @return True if at least one worker thread is running.
-   * @note RT-safe: Checks worker count.
-   */
-  [[nodiscard]] bool isValid() const noexcept { return !workers_.empty(); }
-
-  /**
-   * @brief Get the number of worker threads.
-   * @return Number of workers (0 if construction failed).
-   * @note RT-safe: Returns stored size.
-   */
-  [[nodiscard]] std::size_t workerCount() const noexcept { return workers_.size(); }
-
-  /**
    * @brief Enqueue a task for execution.
    * @param label Static or long-lived string identifying the task (non-owning).
    * @param task Delegate encapsulating the task logic.
@@ -133,70 +77,20 @@ public:
   [[nodiscard]] PoolStatus tryEnqueue(const char* label, TaskFn task);
 
   /**
-   * @brief Check if any worker is currently executing a task.
-   * @return True if at least one task is in-flight.
-   * @note RT-safe: Single atomic load with acquire ordering.
-   */
-  [[nodiscard]] bool threadsRunning() const noexcept;
-
-  /**
-   * @brief Workers for which a requested setting (name, affinity, policy
-   *        with priority) did not apply at start-up.
-   * @return The count, 0 when every worker runs as configured. Final once
-   *         the constructor returns: it waits for every worker to have
-   *         applied its configuration.
-   * @note RT-safe: Single atomic load. The settings are applied one by one
-   *       and a failure leaves the others as they are, so a counted worker
-   *       may run with part of its configuration; which setting failed is
-   *       not recorded. A requested policy needs CAP_SYS_NICE and an
-   *       affinity needs CPUs the process may use.
-   */
-  [[nodiscard]] std::size_t workerConfigFailures() const noexcept {
-    return configFailures_.load(std::memory_order_acquire);
-  }
-
-  /**
    * @brief Signal shutdown and join all worker threads.
    * @note NOT RT-safe: Joins threads, blocks until queue is drained.
    */
   void shutdown() noexcept;
 
-  /**
-   * @brief Check if any errors have been captured (lock-free).
-   * @return True if there are pending errors to collect.
-   * @note RT-safe: Single atomic load, no mutex.
-   */
-  [[nodiscard]] bool hasErrors() const noexcept;
-
-  /**
-   * @brief Drain and return any task errors captured by workers.
-   * @return Queue of errors (moved out, internal queue cleared).
-   * @note NOT RT-safe: Acquires mutex, moves queue.
-   */
-  [[nodiscard]] std::queue<TaskError> collectErrors();
-
 private:
   void workerLoop();
-  /// Spawn the workers; on a failed thread start, stop and join the ones
-  /// that started and leave workers_ empty.
-  void spawnWorkers(std::size_t numThreads, const PoolConfig& config);
-  [[nodiscard]] static bool applyWorkerConfig(const PoolConfig& config, std::size_t workerId);
+  static void workerEntry(void* pool) { static_cast<ThreadPool*>(pool)->workerLoop(); }
 
-  // Worker infrastructure
-  std::vector<std::thread> workers_;                     ///< Worker threads.
   std::queue<std::pair<const char*, TaskFn>> taskQueue_; ///< FIFO of pending tasks.
   std::mutex queueMutex_;                                ///< Protects taskQueue_.
   std::condition_variable queueCv_;                      ///< Worker wakeup signal.
 
-  // Hot atomics isolated to cache lines to avoid false sharing.
-  cache::AlignCl<std::atomic<bool>> stop_{false};           ///< Stop flag.
-  cache::AlignCl<std::atomic<std::size_t>> activeTasks_{0}; ///< In-flight task count.
-  std::atomic<std::size_t> configFailures_{0}; ///< Workers with a setting that did not apply.
-
-  // Error path (rare, mutex-protected)
-  std::queue<TaskError> errorQueue_;                   ///< Collected errors.
-  std::mutex errorMutex_;                              ///< Protects errorQueue_.
-  cache::AlignCl<std::atomic<bool>> hasErrors_{false}; ///< Lock-free error flag.
+  cache::AlignCl<std::atomic<bool>> stop_{false}; ///< Stop flag, on a cache line of its own.
 };
 
 } // namespace concurrency

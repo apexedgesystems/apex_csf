@@ -4,13 +4,9 @@
  */
 
 #include "src/utilities/concurrency/inc/ThreadPool.hpp"
-#include "src/utilities/concurrency/inc/Latch.hpp"
-#include "src/utilities/concurrency/inc/ThreadConfig.hpp"
 
-#include <array>
-#include <cstdio>
-#include <system_error>
-#include <thread>
+#include <mutex>
+#include <utility>
 
 namespace apex {
 namespace concurrency {
@@ -18,41 +14,11 @@ namespace concurrency {
 /* ----------------------------- ThreadPool Methods ----------------------------- */
 
 ThreadPool::ThreadPool(std::size_t numThreads, const PoolConfig& config) {
-  spawnWorkers(numThreads, config);
-}
-
-void ThreadPool::spawnWorkers(std::size_t numThreads, const PoolConfig& config) {
-  // The workers inherit the blocked process signals; the scope hands the
-  // constructing thread its own mask back when the spawn is over, success
-  // or not.
-  WorkerSignalScope signals;
-  // Each worker counts down once its configuration is applied and never
-  // touches the latch again. The constructor parks on it rather than
-  // yielding, so a worker configured below the constructing thread's
-  // priority, on the same CPU, still gets to run.
-  Latch configured(numThreads);
-  workers_.reserve(numThreads);
-  try {
-    for (std::size_t i = 0; i < numThreads; ++i) {
-      workers_.emplace_back([this, config, i, &configured]() {
-        if (!applyWorkerConfig(config, i)) {
-          configFailures_.fetch_add(1, std::memory_order_acq_rel);
-        }
-        configured.countDown();
-        workerLoop();
-      });
-    }
-  } catch (const std::system_error&) {
-    // A thread could not start (the process or thread limit): the pool is
-    // reported invalid rather than left with joinable threads to terminate
-    // on. The workers that did start are joined here, so none outlives the
-    // latch.
+  if (!spawnWorkers(numThreads, config, "pool_w", &ThreadPool::workerEntry, this)) {
+    // A thread could not start: the pool is reported invalid rather than left
+    // with a partial set of workers.
     shutdown();
-    return;
   }
-  // Every worker has applied its configuration before the pool is handed
-  // over, so workerConfigFailures() is final for the owner's start-up log.
-  configured.wait();
 }
 
 ThreadPool::~ThreadPool() noexcept { shutdown(); }
@@ -74,49 +40,17 @@ void ThreadPool::enqueueTask(const char* label, TaskFn task) {
   (void)tryEnqueue(label, task);
 }
 
-bool ThreadPool::threadsRunning() const noexcept {
-  return activeTasks_.value.load(std::memory_order_acquire) > 0;
-}
-
 void ThreadPool::shutdown() noexcept {
   {
-    // Set stop and wake all workers so waiters can exit promptly.
-    std::lock_guard<std::mutex> lk(queueMutex_);
-    if (stop_.value.exchange(true, std::memory_order_acq_rel)) {
-      // already stopped
-    }
+    // Set under the queue mutex, so a worker between its check and its wait cannot miss it.
+    const std::lock_guard<std::mutex> LOCK(queueMutex_);
+    stop_.value.store(true, std::memory_order_release);
   }
   queueCv_.notify_all();
-
-  for (auto& w : workers_) {
-    if (w.joinable())
-      w.join();
-  }
-  workers_.clear();
-}
-
-bool ThreadPool::hasErrors() const noexcept {
-  return hasErrors_.value.load(std::memory_order_acquire);
-}
-
-std::queue<TaskError> ThreadPool::collectErrors() {
-  std::lock_guard<std::mutex> lk(errorMutex_);
-  std::queue<TaskError> out = std::move(errorQueue_);
-  errorQueue_ = {};
-  hasErrors_.value.store(false, std::memory_order_release);
-  return out;
+  joinWorkers();
 }
 
 /* ----------------------------- File Helpers ----------------------------- */
-
-bool ThreadPool::applyWorkerConfig(const PoolConfig& config, std::size_t workerId) {
-  // Generate worker thread name (max 15 chars + null on Linux).
-  std::array<char, 16> name{};
-  std::snprintf(name.data(), name.size(), "pool_w%zu", workerId);
-
-  // Use common thread config utility for affinity/policy/priority.
-  return applyPoolConfig(config, name.data());
-}
 
 void ThreadPool::workerLoop() {
   for (;;) {
@@ -138,20 +72,7 @@ void ThreadPool::workerLoop() {
       taskQueue_.pop();
     }
 
-    const char* label = item.first;
-    TaskFn& task = item.second;
-    if (!task)
-      continue; // ignore empty slots defensively
-
-    // The task is a noexcept delegate call: it reports failure through its return code.
-    activeTasks_.value.fetch_add(1, std::memory_order_acq_rel);
-    const std::uint8_t RC = task();
-    if (RC != 0) {
-      std::lock_guard<std::mutex> el(errorMutex_);
-      errorQueue_.push(TaskError{label, RC, PoolStatus::TASK_FAILED});
-      hasErrors_.value.store(true, std::memory_order_release);
-    }
-    activeTasks_.value.fetch_sub(1, std::memory_order_acq_rel);
+    runTask(item.first, item.second);
   }
 }
 
