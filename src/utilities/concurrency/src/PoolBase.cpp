@@ -55,10 +55,9 @@ bool PoolBase::spawnWorkers(const PoolConfig& config, const char* namePrefix, Wo
 }
 
 void PoolBase::joinWorkers() noexcept {
+  // Every thread in the list was started and is joined only here.
   for (auto& worker : workers_) {
-    if (worker.joinable()) {
-      worker.join();
-    }
+    worker.join();
   }
   workers_.clear();
 }

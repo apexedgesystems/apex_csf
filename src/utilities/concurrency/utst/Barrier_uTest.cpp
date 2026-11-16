@@ -56,6 +56,24 @@ TEST_F(BarrierTest, ArriveAndDropDecreasesExpected) {
   EXPECT_EQ(barrier.expected(), 2U);
 }
 
+/** @test With no participants left, a drop completes a phase by itself and the participant
+ * count stays at zero: the barrier's only participant drops, then drops again, and an arrival
+ * after that completes its phase alone. That arrival waits with a limit, so a count that went
+ * below zero fails the case. */
+TEST_F(BarrierTest, DropWithNoParticipantsLeftCompletesAPhase) {
+  Barrier barrier(1);
+  barrier.arriveAndDrop();
+  EXPECT_EQ(barrier.expected(), 0U);
+  EXPECT_EQ(barrier.generation(), 1U);
+
+  barrier.arriveAndDrop();
+  EXPECT_EQ(barrier.expected(), 0U) << "the participant count went below zero";
+  EXPECT_EQ(barrier.generation(), 2U);
+
+  EXPECT_TRUE(barrier.arriveAndWaitFor(std::chrono::seconds(1)));
+  EXPECT_EQ(barrier.generation(), 3U);
+}
+
 /* ----------------------------- Timeout Tests ----------------------------- */
 
 /** @test arriveAndWaitFor succeeds when barrier completes */
