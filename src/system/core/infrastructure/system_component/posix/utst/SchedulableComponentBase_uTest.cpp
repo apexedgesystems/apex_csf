@@ -6,17 +6,22 @@
 
 #include "src/system/core/infrastructure/system_component/posix/inc/HwModelBase.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/TransportLink.hpp"
 
 #include <gtest/gtest.h>
 
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <filesystem>
 
 #include <unistd.h>
 
 using system_core::system_component::HwModelBase;
+using system_core::system_component::provisionTransport;
 using system_core::system_component::SwModelBase;
 using system_core::system_component::TransportKind;
+using system_core::system_component::TransportLink;
 
 namespace {
 
@@ -35,6 +40,16 @@ public:
 
   bool registered{false};
 
+  /// What the last doReset() found in the tables.
+  struct SeenByReset {
+    std::size_t tasks{0};
+    std::size_t groups{0};
+    bool plainTask{false};
+    bool sequencedTask{false};
+    bool group{false};
+  };
+  SeenByReset seenByReset;
+
 protected:
   [[nodiscard]] std::uint8_t doInit() noexcept override {
     registered = createSequenceGroup(0, 1) &&
@@ -42,6 +57,14 @@ protected:
                  registerSequencedTask<TwoTaskModel, &TwoTaskModel::sequenced>(SEQUENCED_UID, this,
                                                                                "sequenced", 0, 1);
     return registered ? 0 : 1;
+  }
+
+  void doReset() noexcept override {
+    seenByReset.tasks = taskCount();
+    seenByReset.groups = sequenceGroupCount();
+    seenByReset.plainTask = taskByUid(PLAIN_UID) != nullptr;
+    seenByReset.sequencedTask = taskByUid(SEQUENCED_UID) != nullptr;
+    seenByReset.group = sequenceGroup(0) != nullptr;
   }
 };
 
@@ -98,6 +121,21 @@ TEST(SchedulableComponentBaseTest, ResetThenInitRegistersEachTaskOnce) {
   }
 }
 
+/** @test The component's doReset() runs while its tasks and group are still in the tables. */
+TEST(SchedulableComponentBaseTest, DoResetRunsBeforeTheTablesAreEmptied) {
+  TwoTaskModel model;
+  ASSERT_EQ(model.init(), 0u);
+
+  model.reset();
+  EXPECT_EQ(model.seenByReset.tasks, 2u);
+  EXPECT_EQ(model.seenByReset.groups, 1u);
+  EXPECT_TRUE(model.seenByReset.plainTask);
+  EXPECT_TRUE(model.seenByReset.sequencedTask);
+  EXPECT_TRUE(model.seenByReset.group);
+  EXPECT_EQ(model.taskCount(), 0u);
+  EXPECT_EQ(model.sequenceGroupCount(), 0u);
+}
+
 /* ----------------------------- Transport ----------------------------- */
 
 /** @test A second provisionTransport() keeps the open link: no descriptor is opened or dropped. */
@@ -125,5 +163,45 @@ TEST(HwModelBaseTest, ProvisioningTwiceKeepsTheLink) {
     ASSERT_EQ(::read(MODEL_FD, &in, 1), 1);
     EXPECT_EQ(in, 'x');
   }
+  EXPECT_EQ(openDescriptorCount(), BEFORE);
+}
+
+/** @test Asking an open link for another kind is refused, and the link stays as it was. */
+TEST(TransportLinkTest, AnotherKindOnAnOpenLinkIsRefused) {
+  const int BEFORE = openDescriptorCount();
+  TransportLink link{};
+  ASSERT_TRUE(provisionTransport(TransportKind::UNIX_STREAM, link));
+  const int MODEL_FD = link.modelFd;
+  const int PEER_FD = link.peerFd;
+  ASSERT_EQ(openDescriptorCount(), BEFORE + 2);
+
+  EXPECT_FALSE(provisionTransport(TransportKind::CAN, link));
+  EXPECT_EQ(link.kind, TransportKind::UNIX_STREAM);
+  EXPECT_EQ(link.modelFd, MODEL_FD);
+  EXPECT_EQ(link.peerFd, PEER_FD);
+  EXPECT_EQ(openDescriptorCount(), BEFORE + 2);
+
+  const char OUT = 'y';
+  ASSERT_EQ(::write(PEER_FD, &OUT, 1), 1);
+  char in = 0;
+  ASSERT_EQ(::read(MODEL_FD, &in, 1), 1);
+  EXPECT_EQ(in, 'y');
+
+  link.close();
+  EXPECT_EQ(openDescriptorCount(), BEFORE);
+}
+
+/** @test A kind with no provisioner fails and leaves the caller's link untouched. */
+TEST(TransportLinkTest, UnsupportedKindLeavesTheLinkUntouched) {
+  const int BEFORE = openDescriptorCount();
+  TransportLink link{};
+  link.kind = TransportKind::SERIAL_232;
+  std::strncpy(link.peerPath, "untouched", sizeof(link.peerPath) - 1);
+
+  EXPECT_FALSE(provisionTransport(TransportKind::ETH_TCP, link));
+  EXPECT_FALSE(link.isValid());
+  EXPECT_EQ(link.peerFd, -1);
+  EXPECT_EQ(link.kind, TransportKind::SERIAL_232);
+  EXPECT_STREQ(link.peerPath, "untouched");
   EXPECT_EQ(openDescriptorCount(), BEFORE);
 }

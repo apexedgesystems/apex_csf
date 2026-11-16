@@ -88,6 +88,8 @@ public:
    *        registers every task and group once.
    * @note Pointers from taskByUid() and sequenceGroup() are invalid from
    *       here until init() has registered the tasks again.
+   * @note NOT RT-safe: boot-time re-initialization only. No reader of the
+   *       task or group tables and no dispatched task may remain.
    */
   void reset() noexcept override {
     SystemComponentBase::reset();
