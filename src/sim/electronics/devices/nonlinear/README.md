@@ -30,18 +30,18 @@ suitable for Newton-Raphson stamping.
 
 ## 1. Overview
 
-| Question                                                     | Model                                                          |
-| ------------------------------------------------------------ | -------------------------------------------------------------- |
-| How do I model a generic forward-biased diode?               | `DiodeShockley`                                                |
-| How do I model a SPICE diode with series R and junction cap? | `DiodeSpice`                                                   |
-| How do I model a Schottky diode?                             | `SchottkyDiode`                                                |
-| How do I model a Zener regulator?                            | `ZenerDiode`                                                   |
-| How do I model a JFET?                                       | `JfetShichman` (3-region) or `JfetLevel2` (gate leakage / cap) |
-| How do I model a digital MOSFET switch?                      | `MosfetBinarySwitch`                                           |
-| How do I model an analog MOSFET?                             | `MosfetLevel1` (Shichman-Hodges)                               |
-| How do I capture short-channel effects?                      | `MosfetLevel2` or `MosfetLevel3`                               |
-| How do I model moderate-inversion conduction?                | `MosfetBsim3`                                                  |
-| How do I model a bipolar transistor?                         | `BjtEbersMoll`                                                 |
+| Question                                                     | Model                                                         |
+| ------------------------------------------------------------ | ------------------------------------------------------------- |
+| How do I model a generic forward-biased diode?               | `DiodeShockley`                                               |
+| How do I model a SPICE diode with series R and junction cap? | `DiodeSpice`                                                  |
+| How do I model a Schottky diode?                             | `SchottkyDiode`                                               |
+| How do I model a Zener regulator?                            | `ZenerDiode`                                                  |
+| How do I model a JFET?                                       | `JfetShichman` (3-region) or `JfetLevel2` (adds gate leakage) |
+| How do I model a digital MOSFET switch?                      | `MosfetBinarySwitch`                                          |
+| How do I model an analog MOSFET?                             | `MosfetLevel1` (Shichman-Hodges)                              |
+| How do I capture short-channel effects?                      | `MosfetLevel2` or `MosfetLevel3`                              |
+| How do I model moderate-inversion conduction?                | `MosfetBsim3`                                                 |
+| How do I model a bipolar transistor?                         | `BjtEbersMoll`                                                |
 
 ### Selection by Circuit Type
 
@@ -117,10 +117,10 @@ static void stamp(MnaSystem& mna, NetID anode, NetID cathode,
 
 **Headers:** `JfetShichman.hpp`, `JfetLevel2.hpp`
 
-| Model          | Captures                          |
-| -------------- | --------------------------------- |
-| `JfetShichman` | Three-region Shichman-Hodges I-V  |
-| `JfetLevel2`   | Adds gate-leakage and capacitance |
+| Model          | Captures                                      |
+| -------------- | --------------------------------------------- |
+| `JfetShichman` | Three-region Shichman-Hodges I-V              |
+| `JfetLevel2`   | Adds gate leakage and subthreshold conduction |
 
 ```cpp
 [[nodiscard]] static double current(double vgs, double vds, const Params& p) noexcept;
@@ -162,8 +162,26 @@ static void stamp(MnaSystem& mna, NetID collector, NetID base, NetID emitter,
 ```
 
 Operating regions (forward / reverse active, saturation, cutoff) emerge
-from the Ebers-Moll equations; the stamp linearizes around the current
-(vbe, vbc) operating point for Newton-Raphson.
+from the Ebers-Moll equations in transport form,
+`Ic = Is*(exp(Vbe/Vt) - exp(Vbc/Vt)) - (Is/Br)*(exp(Vbc/Vt) - 1)`, so the
+reverse-active region has a current gain of `Br`. The stamp linearizes
+around the current (vbe, vbc) operating point for Newton-Raphson.
+
+### Junction helpers
+
+**Header:** `Junction.hpp`
+**Purpose:** Numerical helpers shared by the junction models.
+
+```cpp
+[[nodiscard]] static double criticalVoltage(double is, double nVt) noexcept;
+[[nodiscard]] static double limitVoltage(double vNew, double vOld,
+                                         double nVt, double vCrit) noexcept;
+```
+
+A Newton-Raphson loop over a circuit with a junction passes each junction
+voltage through `limitVoltage` between iterations. Without it the first
+step puts most of the supply across the junction and the iteration comes
+back down one thermal voltage at a time.
 
 ---
 

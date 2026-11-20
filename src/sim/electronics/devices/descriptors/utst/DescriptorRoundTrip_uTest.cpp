@@ -120,8 +120,7 @@ TEST(DescriptorRoundTripTest, MosfetGeometryFlowsToStampValues) {
 
   // Stamp values at a known forward-active bias should be positive
   // when the threshold is met.
-  const MosfetLevel1Params PARAMS{
-      .Kp = 100e-6 * WL_RATIO, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
+  const MosfetLevel1Params PARAMS{.Kp = 100e-6 * WL_RATIO, .Vth = 0.7, .lambda = 0.02};
   const auto SV = MosfetLevel1::stampValues(/*vgs=*/3.0, /*vds=*/3.0, PARAMS);
   EXPECT_GT(SV.id, 0.0);
   EXPECT_GT(SV.gm, 0.0);

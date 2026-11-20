@@ -35,7 +35,7 @@ MnaSystemSparse mna(1000);
 
 // Stamp components
 mna.addConductance(nodeA, nodeB, 1.0 / resistance);
-mna.addCurrentSource(nodeC, nodeD, current);
+mna.addCurrent(nodeC, nodeD, current);
 
 // Solve G*V = I
 auto result = mna.solve();
@@ -249,7 +249,7 @@ for (std::size_t step = 0; step < steps; ++step) {
     double Geq = c.C / dt;
     double Ieq = Geq * v_prev[c.a];
     mna.addConductance(c.a, c.b, Geq);
-    mna.addCurrentSource(c.a, c.b, Ieq);
+    mna.addCurrent(c.a, c.b, Ieq);
   }
 
   // Solve (RT-safe with workspace)
@@ -543,7 +543,9 @@ mna.solve();
 | Operation                | RT-Safe? | Notes                             |
 | ------------------------ | -------- | --------------------------------- |
 | `addConductance()`       | [OK] Yes | Pure stamping, no allocations     |
-| `addCurrentSource()`     | [OK] Yes | Pure stamping, no allocations     |
+| `addCurrent()`           | [OK] Yes | Pure stamping, no allocations     |
+| `addGEntry()`            | [OK] Yes | One asymmetric entry (dense)      |
+| `addTransconductance()`  | [OK] Yes | Controlled current source (dense) |
 | `clearStamps()`          | [OK] Yes | Zeros matrix, preserves structure |
 | `solve()` with workspace | [OK] Yes | No allocations in hot path        |
 
