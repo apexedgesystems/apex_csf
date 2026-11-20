@@ -80,7 +80,7 @@ void buildInputs(Persistent& P, std::vector<nl_cuda::MosfetNets>& hNets,
 
   for (int i = 0; i < N_TRANSISTORS; ++i) {
     hNets[i] = {netDist(rng), netDist(rng), netDist(rng)};
-    hParams[i] = {.Kp = 5e-3, .Vth = 0.3, .lambda = 0.03, .Vsmooth = 0.1};
+    hParams[i] = {.Kp = 5e-3, .Vth = 0.3, .lambda = 0.03};
     hBiases[i].vgs = hPrevV[hNets[i].source] - hPrevV[hNets[i].gate];
     hBiases[i].vds = hPrevV[hNets[i].source] - hPrevV[hNets[i].drain];
   }

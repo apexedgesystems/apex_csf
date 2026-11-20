@@ -59,7 +59,6 @@ static std::vector<MosfetLevel1Params> buildParams(std::size_t count) {
     params[i].Kp = kpDist(rng);
     params[i].Vth = (i % 7 == 0) ? -0.17 : 1.17;
     params[i].lambda = 0.03;
-    params[i].Vsmooth = 0.1;
   }
   return params;
 }
@@ -75,7 +74,7 @@ static void runKernelOnly(std::size_t count, bool perDevice, const char* label) 
 
   const auto BIASES = buildBiases(count);
   const auto PARAMS_ARR = buildParams(count);
-  const MosfetLevel1Params UNIFORM{.Kp = 5e-3, .Vth = 1.17, .lambda = 0.03, .Vsmooth = 0.1};
+  const MosfetLevel1Params UNIFORM{.Kp = 5e-3, .Vth = 1.17, .lambda = 0.03};
 
   nl_cuda::MosfetBias* dBiases = nullptr;
   MosfetLevel1Params* dParams = nullptr;
@@ -332,7 +331,7 @@ static void runWithTransfers(std::size_t count, bool perDevice, const char* labe
 
   const auto BIASES = buildBiases(count);
   const auto PARAMS_ARR = buildParams(count);
-  const MosfetLevel1Params UNIFORM{.Kp = 5e-3, .Vth = 1.17, .lambda = 0.03, .Vsmooth = 0.1};
+  const MosfetLevel1Params UNIFORM{.Kp = 5e-3, .Vth = 1.17, .lambda = 0.03};
 
   nl_cuda::MosfetBias* dBiases = nullptr;
   MosfetLevel1Params* dParams = nullptr;
