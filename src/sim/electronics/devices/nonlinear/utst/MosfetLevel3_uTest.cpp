@@ -1,6 +1,9 @@
 /**
  * @file MosfetLevel3_uTest.cpp
  * @brief Unit tests for MosfetLevel3.
+ *
+ * Expected currents and conductances are reference values computed outside
+ * the library from the model equations, which each table restates.
  */
 
 #include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel3.hpp"
@@ -8,6 +11,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
@@ -20,219 +24,166 @@ using sim::electronics::devices::nonlinear::test::expectCurrent;
 using sim::electronics::devices::nonlinear::test::pinTerminals;
 using sim::electronics::devices::nonlinear::test::terminalNet;
 
-/* ----------------------------- Default Construction ----------------------------- */
+namespace {
 
-/** @test */
-TEST(MosfetLevel3Test, DefaultParameters) {
-  MosfetLevel3Params params;
-  EXPECT_DOUBLE_EQ(params.Kp, 200e-6);
-  EXPECT_DOUBLE_EQ(params.Vth0, 0.5);
-  EXPECT_DOUBLE_EQ(params.lambda, 0.05);
-  EXPECT_DOUBLE_EQ(params.W, 1e-6);
-  EXPECT_DOUBLE_EQ(params.L, 0.18e-6);
-  EXPECT_DOUBLE_EQ(params.eta, 0.05);
-  EXPECT_DOUBLE_EQ(params.kappa, 0.1);
-  EXPECT_DOUBLE_EQ(params.vsat, 1e5);
+/// Relative tolerance on a value against its reference.
+constexpr double VALUE_TOL = 1e-12;
+
+/// Relative tolerance on a conductance: the model differentiates numerically.
+constexpr double CONDUCTANCE_TOL = 1e-4;
+
+/// Geometry, short-channel and threshold parameters moved off their defaults.
+constexpr MosfetLevel3Params OTHER{.Kp = 400e-6,
+                                   .Vth0 = 0.4,
+                                   .lambda = 0.1,
+                                   .W = 0.5e-6,
+                                   .L = 0.13e-6,
+                                   .eta = 0.1,
+                                   .kappa = 0.2,
+                                   .delta_w = 0.05e-6,
+                                   .delta_l = 0.02e-6};
+
+/// Turn-on voltage: one subthreshold slope voltage above threshold.
+double turnOnVoltage(double vds, double vbs, const MosfetLevel3Params& params) {
+  return MosfetLevel3::thresholdVoltage(vds, vbs, params) + params.n_sub * params.Vt;
 }
 
-/** @test */
-TEST(MosfetLevel3Test, CustomParameters) {
-  MosfetLevel3Params params{
-      .Kp = 400e-6, .Vth0 = 0.4, .lambda = 0.1, .W = 0.5e-6, .L = 0.13e-6, .eta = 0.1};
-  EXPECT_DOUBLE_EQ(params.Kp, 400e-6);
-  EXPECT_DOUBLE_EQ(params.Vth0, 0.4);
-  EXPECT_DOUBLE_EQ(params.eta, 0.1);
+/// Drain voltage that equals its own saturation voltage. The threshold moves
+/// with the drain voltage, so the boundary is a fixed point.
+double saturationBoundary(double vgs, double vbs, const MosfetLevel3Params& params) {
+  double vdsat = 1.0;
+  for (int iter = 0; iter < 50; ++iter) {
+    const double VTH = MosfetLevel3::thresholdVoltage(vdsat, vbs, params);
+    vdsat = MosfetLevel3::drainSaturationVoltage(vgs, VTH, params);
+  }
+  return vdsat;
 }
 
-/* ----------------------------- Effective Dimensions Tests ----------------------------- */
+} // namespace
 
-/** @test */
-TEST(MosfetLevel3Test, EffectiveDimensionsNoDeltas) {
-  MosfetLevel3Params params{.W = 1e-6, .L = 0.18e-6, .delta_w = 0.0, .delta_l = 0.0};
-  const auto [W_eff, L_eff] = MosfetLevel3::effectiveDimensions(params.W, params.L, params);
+/* ----------------------------- Dimensions, Threshold, Saturation Voltage
+ * ----------------------------- */
 
-  EXPECT_DOUBLE_EQ(W_eff, params.W);
-  EXPECT_DOUBLE_EQ(L_eff, params.L);
+/** @test Effective dimensions are the drawn ones less the deltas, floored at 10 nm */
+TEST(MosfetLevel3Test, EffectiveDimensionsSubtractDeltas) {
+  const MosfetLevel3Params PLAIN{.W = 1e-6, .L = 0.18e-6};
+  const auto [W_PLAIN, L_PLAIN] = MosfetLevel3::effectiveDimensions(PLAIN.W, PLAIN.L, PLAIN);
+  EXPECT_DOUBLE_EQ(W_PLAIN, 1e-6);
+  EXPECT_DOUBLE_EQ(L_PLAIN, 0.18e-6);
+
+  const MosfetLevel3Params REDUCED{.W = 1e-6, .L = 0.18e-6, .delta_w = 0.05e-6, .delta_l = 0.02e-6};
+  const auto [W_REDUCED, L_REDUCED] =
+      MosfetLevel3::effectiveDimensions(REDUCED.W, REDUCED.L, REDUCED);
+  EXPECT_DOUBLE_EQ(W_REDUCED, 0.95e-6);
+  EXPECT_DOUBLE_EQ(L_REDUCED, 0.16e-6);
+
+  const MosfetLevel3Params CONSUMED{.W = 1e-6, .L = 0.18e-6, .delta_w = 2e-6, .delta_l = 1e-6};
+  const auto [W_FLOOR, L_FLOOR] =
+      MosfetLevel3::effectiveDimensions(CONSUMED.W, CONSUMED.L, CONSUMED);
+  EXPECT_DOUBLE_EQ(W_FLOOR, 0.01e-6);
+  EXPECT_DOUBLE_EQ(L_FLOOR, 0.01e-6);
 }
 
-/** @test */
-TEST(MosfetLevel3Test, EffectiveDimensionsWithDeltas) {
-  MosfetLevel3Params params{.W = 1e-6, .L = 0.18e-6, .delta_w = 0.05e-6, .delta_l = 0.02e-6};
-  const auto [W_eff, L_eff] = MosfetLevel3::effectiveDimensions(params.W, params.L, params);
+/** @test Threshold is Vth0 plus the body term less eta*Vds */
+TEST(MosfetLevel3Test, ThresholdVoltageFollowsBodyEffectAndDibl) {
+  const MosfetLevel3Params PARAMS;
 
-  EXPECT_DOUBLE_EQ(W_eff, 0.95e-6);
-  EXPECT_DOUBLE_EQ(L_eff, 0.16e-6);
+  EXPECT_DOUBLE_EQ(MosfetLevel3::thresholdVoltage(0.0, 0.0, PARAMS), 0.5);
+  EXPECT_NEAR(MosfetLevel3::thresholdVoltage(2.0, 0.0, PARAMS), 0.4, VALUE_TOL);
+  EXPECT_NEAR(MosfetLevel3::thresholdVoltage(2.0, -1.0, PARAMS), 0.5961257579303474, VALUE_TOL);
+
+  // A forward-biased bulk adds no body term.
+  EXPECT_NEAR(MosfetLevel3::thresholdVoltage(2.0, 0.5, PARAMS), 0.4, VALUE_TOL);
 }
 
-/* ----------------------------- DIBL Tests ----------------------------- */
+/** @test Saturation voltage is Vgst*(1 - kappa) above threshold and 0 below */
+TEST(MosfetLevel3Test, DrainSaturationVoltageMatchesReference) {
+  const MosfetLevel3Params PARAMS;
 
-/** @test */
-TEST(MosfetLevel3Test, ThresholdVoltageDIBL) {
-  MosfetLevel3Params params{.Vth0 = 0.5, .eta = 0.1};
-
-  const double VTH_LOW_VDS = MosfetLevel3::thresholdVoltage(0.5, 0.0, params);
-  const double VTH_HIGH_VDS = MosfetLevel3::thresholdVoltage(2.0, 0.0, params);
-
-  // DIBL reduces threshold at high Vds
-  EXPECT_LT(VTH_HIGH_VDS, VTH_LOW_VDS);
+  EXPECT_NEAR(MosfetLevel3::drainSaturationVoltage(1.5, 0.5, PARAMS), 0.9, VALUE_TOL);
+  EXPECT_DOUBLE_EQ(MosfetLevel3::drainSaturationVoltage(0.0, 0.5, PARAMS), 0.0);
 }
 
-/** @test */
-TEST(MosfetLevel3Test, ThresholdVoltageBodyEffect) {
-  MosfetLevel3Params params{.Vth0 = 0.5, .gamma = 0.4, .eta = 0.0};
+/* ----------------------------- Drain Current ----------------------------- */
 
-  const double VTH_NO_BIAS = MosfetLevel3::thresholdVoltage(1.0, 0.0, params);
-  const double VTH_REVERSE = MosfetLevel3::thresholdVoltage(1.0, -1.0, params);
+/** @test Drain current matches the reference in every region */
+TEST(MosfetLevel3Test, CurrentMatchesReference) {
+  struct Row {
+    double vgs;
+    double vds;
+    double vbs;
+    double id;
+  };
 
-  // Body effect increases threshold
-  EXPECT_GT(VTH_REVERSE, VTH_NO_BIAS);
+  // With Vth = Vth0 + body term - eta*Vds, Vgst = Vgs - Vth,
+  // beta = Kp*(Weff/Leff)/(1 + theta*Vgst), Vdsat = Vgst*(1 - kappa) and
+  // Von = Vth + n_sub*Vt:
+  //   Vgs >= Von: beta*(Vgst*V - V^2/2)*(1 + lambda*Vds), V = min(Vds, Vdsat);
+  //   Vgs <  Von: that current at Vgs = Von, times exp((Vgs - Von)/(n_sub*Vt)).
+  const MosfetLevel3Params PARAMS;
+  const std::array<Row, 8> ROWS = {{
+      Row{1.5, 0.3, 0.0, 0.0002432737600443336},  // linear region
+      Row{1.5, 2.0, 0.0, 0.0006000409836065573},  // saturation
+      Row{1.5, 2.0, -0.5, 0.0004952477788762659}, // saturation, reverse body bias
+      Row{0.45, 1.0, 0.0, 3.206360625496811e-07}, // at threshold
+      Row{0.3, 1.0, 0.0, 6.849343938287535e-09},  // weak inversion
+      Row{0.3, 3.0, 0.0, 9.743906561350015e-08},  // same gate, higher drain: lower barrier
+      Row{0.3, 0.01, 0.0, 8.283261142577451e-10}, // below the turn-on saturation voltage
+      Row{0.0, 1.0, 0.0, 3.1255193423404087e-12}, // deep weak inversion
+  }};
+  for (const Row& row : ROWS) {
+    EXPECT_NEAR(MosfetLevel3::current(row.vgs, row.vds, row.vbs, PARAMS), row.id,
+                VALUE_TOL * row.id)
+        << "vgs = " << row.vgs << ", vds = " << row.vds << ", vbs = " << row.vbs;
+  }
+
+  EXPECT_NEAR(MosfetLevel3::current(1.2, 1.5, -0.3, OTHER), 0.0005952651710183392,
+              VALUE_TOL * 0.0005952651710183392);
+  EXPECT_NEAR(MosfetLevel3::current(0.1, 1.5, -0.3, OTHER), 1.7967241245545972e-09,
+              VALUE_TOL * 1.7967241245545972e-09);
 }
 
-/* ----------------------------- Saturation Voltage Tests ----------------------------- */
+/** @test gm, gds and gmb are the derivatives of the drain current */
+TEST(MosfetLevel3Test, ConductancesMatchReference) {
+  struct Row {
+    double vgs;
+    double vds;
+    double vbs;
+    double gm;
+    double gds;
+    double gmb;
+  };
 
-/** @test */
-TEST(MosfetLevel3Test, DrainSaturationVoltageCutoff) {
-  MosfetLevel3Params params;
-  const double VGS = 0.0;
-  const double VTH = 0.5;
-  const double VDSAT = MosfetLevel3::drainSaturationVoltage(VGS, VTH, params);
+  // The bulk transconductance is compared under reverse body bias only: the
+  // body effect switches off at Vbs = 0, so the slope there is one-sided.
+  const MosfetLevel3Params PARAMS;
+  const std::array<Row, 5> ROWS = {{
+      Row{1.5, 0.3, 0.0, 0.00024079682570612353, 0.0006943156332867839, 0.0},
+      Row{1.5, 2.0, 0.0, 0.0009926162321956464, 7.690540177371674e-05, 0.0},
+      Row{1.5, 2.0, -0.5, 0.0009175074483198666, 6.838663509218723e-05, 0.0001749618054654353},
+      Row{0.3, 1.0, 0.0, 1.756242035458342e-07, 9.10736941244826e-09, 0.0},
+      Row{0.3, 0.01, 0.0, 2.123913113481398e-08, 7.175469720428084e-08, 0.0},
+  }};
+  for (const Row& row : ROWS) {
+    EXPECT_NEAR(MosfetLevel3::transconductance(row.vgs, row.vds, row.vbs, PARAMS), row.gm,
+                CONDUCTANCE_TOL * row.gm)
+        << "vgs = " << row.vgs << ", vds = " << row.vds << ", vbs = " << row.vbs;
+    EXPECT_NEAR(MosfetLevel3::outputConductance(row.vgs, row.vds, row.vbs, PARAMS), row.gds,
+                CONDUCTANCE_TOL * row.gds)
+        << "vgs = " << row.vgs << ", vds = " << row.vds << ", vbs = " << row.vbs;
+    if (row.vbs < 0.0) {
+      EXPECT_NEAR(MosfetLevel3::bulkTransconductance(row.vgs, row.vds, row.vbs, PARAMS), row.gmb,
+                  CONDUCTANCE_TOL * row.gmb)
+          << "vgs = " << row.vgs << ", vds = " << row.vds << ", vbs = " << row.vbs;
+    }
+  }
 
-  EXPECT_DOUBLE_EQ(VDSAT, 0.0);
-}
-
-/** @test */
-TEST(MosfetLevel3Test, DrainSaturationVoltageActive) {
-  MosfetLevel3Params params{.L = 0.18e-6, .kappa = 0.1, .vsat = 1e5};
-  const double VGS = 1.5;
-  const double VTH = 0.5;
-  const double VDSAT = MosfetLevel3::drainSaturationVoltage(VGS, VTH, params);
-
-  const double VGST = VGS - VTH;
-  EXPECT_GT(VDSAT, 0.0);
-  EXPECT_LT(VDSAT, VGST); // Velocity saturation reduces below ideal
-}
-
-/* ----------------------------- Current Tests ----------------------------- */
-
-/** @test */
-TEST(MosfetLevel3Test, CurrentCutoff) {
-  MosfetLevel3Params params;
-  const double VGS = 0.0, vds = 1.0, vbs = 0.0;
-  const double ID = MosfetLevel3::current(VGS, vds, vbs, params);
-
-  // Subthreshold current (non-zero but very small)
-  EXPECT_GT(ID, 0.0);
-  EXPECT_LT(ID, 1e-9);
-}
-
-/** @test */
-TEST(MosfetLevel3Test, CurrentLinear) {
-  MosfetLevel3Params params;
-  const double VGS = 1.5, vds = 0.3, vbs = 0.0;
-  const double ID = MosfetLevel3::current(VGS, vds, vbs, params);
-
-  EXPECT_GT(ID, 0.0);
-  EXPECT_LT(ID, 1e-3);
-}
-
-/** @test */
-TEST(MosfetLevel3Test, CurrentSaturation) {
-  MosfetLevel3Params params;
-  const double VGS = 1.5, vds = 2.0, vbs = 0.0;
-  const double ID = MosfetLevel3::current(VGS, vds, vbs, params);
-
-  EXPECT_GT(ID, 0.0);
-  EXPECT_LT(ID, 1e-3);
-}
-
-/** @test */
-TEST(MosfetLevel3Test, CurrentDIBLEffect) {
-  MosfetLevel3Params params{.eta = 0.1};
-  const double VGS = 1.2, vbs = 0.0;
-
-  const double ID_LOW = MosfetLevel3::current(VGS, 0.5, vbs, params);
-  const double ID_HIGH = MosfetLevel3::current(VGS, 2.0, vbs, params);
-
-  // DIBL reduces Vth at high Vds, increasing current
-  EXPECT_GT(ID_HIGH, ID_LOW);
-}
-
-/* ----------------------------- Transconductance Tests ----------------------------- */
-
-/** @test */
-TEST(MosfetLevel3Test, TransconductanceSaturation) {
-  MosfetLevel3Params params{.eta = 0.02}; // Reduced DIBL for stability
-  const double VGS = 1.2, vds = 1.5, vbs = 0.0;
-  const double GM = MosfetLevel3::transconductance(VGS, vds, vbs, params);
-
-  EXPECT_GT(GM, 1e-6);
-}
-
-/** @test */
-TEST(MosfetLevel3Test, OutputConductanceSaturation) {
-  MosfetLevel3Params params{.lambda = 0.05, .eta = 0.02};
-  const double VGS = 1.2, vds = 1.5, vbs = 0.0;
-  const double GDS = MosfetLevel3::outputConductance(VGS, vds, vbs, params);
-
-  // Non-zero due to CLM + DIBL
-  EXPECT_GT(GDS, 0.0);
-  EXPECT_LT(GDS, 1e-3);
-}
-
-/** @test */
-TEST(MosfetLevel3Test, BulkTransconductance) {
-  MosfetLevel3Params params{.gamma = 0.4, .eta = 0.02};
-  const double VGS = 1.2, vds = 1.2, vbs = -0.3;
-  const double GMB = MosfetLevel3::bulkTransconductance(VGS, vds, vbs, params);
-
-  EXPECT_GT(GMB, 0.0);
-}
-
-/* ----------------------------- Numerical Jacobian ----------------------------- */
-
-/** @test */
-TEST(MosfetLevel3Test, TransconductanceNumericalDerivative) {
-  MosfetLevel3Params params{.eta = 0.02};
-  const double VGS = 1.2, vds = 1.2, vbs = 0.0;
-  const double DV = 1e-8;
-
-  const double GM = MosfetLevel3::transconductance(VGS, vds, vbs, params);
-
-  const double I1 = MosfetLevel3::current(VGS - DV, vds, vbs, params);
-  const double I2 = MosfetLevel3::current(VGS + DV, vds, vbs, params);
-  const double GM_NUMERICAL = (I2 - I1) / (2.0 * DV);
-
-  EXPECT_NEAR(GM, GM_NUMERICAL, std::abs(GM_NUMERICAL) * 0.01);
-}
-
-/** @test */
-TEST(MosfetLevel3Test, OutputConductanceNumericalDerivative) {
-  MosfetLevel3Params params{.eta = 0.02};
-  const double VGS = 1.2, vds = 1.2, vbs = 0.0;
-  const double DV = 1e-8;
-
-  const double GDS = MosfetLevel3::outputConductance(VGS, vds, vbs, params);
-
-  const double I1 = MosfetLevel3::current(VGS, vds - DV, vbs, params);
-  const double I2 = MosfetLevel3::current(VGS, vds + DV, vbs, params);
-  const double GDS_NUMERICAL = (I2 - I1) / (2.0 * DV);
-
-  EXPECT_NEAR(GDS, GDS_NUMERICAL, std::abs(GDS_NUMERICAL) * 0.01);
-}
-
-/** @test */
-TEST(MosfetLevel3Test, BulkTransconductanceNumericalDerivative) {
-  MosfetLevel3Params params{.eta = 0.02};
-  const double VGS = 1.2, vds = 1.2, vbs = -0.3;
-  const double DV = 1e-8;
-
-  const double GMB = MosfetLevel3::bulkTransconductance(VGS, vds, vbs, params);
-
-  const double I1 = MosfetLevel3::current(VGS, vds, vbs - DV, params);
-  const double I2 = MosfetLevel3::current(VGS, vds, vbs + DV, params);
-  const double GMB_NUMERICAL = (I2 - I1) / (2.0 * DV);
-
-  EXPECT_NEAR(GMB, GMB_NUMERICAL, std::abs(GMB_NUMERICAL) * 0.01);
+  EXPECT_NEAR(MosfetLevel3::transconductance(0.1, 1.5, -0.3, OTHER), 4.6069849347553775e-08,
+              CONDUCTANCE_TOL * 4.6069849347553775e-08);
+  EXPECT_NEAR(MosfetLevel3::outputConductance(0.1, 1.5, -0.3, OTHER), 4.76322181515143e-09,
+              CONDUCTANCE_TOL * 4.76322181515143e-09);
+  EXPECT_NEAR(MosfetLevel3::bulkTransconductance(0.1, 1.5, -0.3, OTHER), 9.71237702660614e-09,
+              CONDUCTANCE_TOL * 9.71237702660614e-09);
 }
 
 /* ----------------------------- Stamping ----------------------------- */
@@ -258,7 +209,7 @@ TEST(MosfetLevel3Test, StampIsLinearizationAtOperatingPoint) {
   const double V_SOURCE = 0.8;
   const double DV = 0.05;
 
-  for (const Bias& bias : {Bias{0.3, 1.0, 0.0, "subthreshold"}, Bias{2.0, 0.2, -0.5, "linear"},
+  for (const Bias& bias : {Bias{0.3, 1.0, 0.0, "weak inversion"}, Bias{2.0, 0.2, -0.5, "linear"},
                            Bias{2.0, 3.0, -0.5, "saturation"}}) {
     const double ID = MosfetLevel3::current(bias.vgs, bias.vds, bias.vbs, PARAMS);
     const double GM = MosfetLevel3::transconductance(bias.vgs, bias.vds, bias.vbs, PARAMS);
@@ -301,27 +252,56 @@ TEST(MosfetLevel3Test, ContinuousAtSaturationVoltage) {
 
   for (const double VGS : {1.0, 1.5, 2.0, 3.0}) {
     for (const double VBS : {0.0, -0.5}) {
-      // The threshold moves with the drain voltage, so the boundary is the
-      // drain voltage that equals its own saturation voltage.
-      double vdsat = 1.0;
-      for (int iter = 0; iter < 50; ++iter) {
-        const double VTH = MosfetLevel3::thresholdVoltage(vdsat, VBS, PARAMS);
-        vdsat = MosfetLevel3::drainSaturationVoltage(VGS, VTH, PARAMS);
-      }
-      ASSERT_GT(vdsat, 0.0) << "vgs = " << VGS;
+      const double VDSAT = saturationBoundary(VGS, VBS, PARAMS);
+      ASSERT_GT(VDSAT, 0.0) << "vgs = " << VGS;
 
-      const double BELOW = MosfetLevel3::current(VGS, vdsat - EPS, VBS, PARAMS);
-      const double ABOVE = MosfetLevel3::current(VGS, vdsat + EPS, VBS, PARAMS);
+      const double BELOW = MosfetLevel3::current(VGS, VDSAT - EPS, VBS, PARAMS);
+      const double ABOVE = MosfetLevel3::current(VGS, VDSAT + EPS, VBS, PARAMS);
       EXPECT_NEAR(BELOW, ABOVE, 1e-6 * ABOVE) << "vgs = " << VGS << ", vbs = " << VBS;
     }
   }
 }
 
-/** @test Above threshold the drain current never falls as the drain voltage rises */
+/** @test Drain current is continuous in the gate voltage at threshold and at turn-on */
+TEST(MosfetLevel3Test, ContinuousAtThresholdAndTurnOn) {
+  const MosfetLevel3Params PARAMS;
+  constexpr double EPS = 1e-9;
+
+  for (const double VBS : {0.0, -0.5}) {
+    for (const double VDS : {0.01, 0.5, 3.0}) {
+      for (const double VGS :
+           {MosfetLevel3::thresholdVoltage(VDS, VBS, PARAMS), turnOnVoltage(VDS, VBS, PARAMS)}) {
+        const double BELOW = MosfetLevel3::current(VGS - EPS, VDS, VBS, PARAMS);
+        const double ABOVE = MosfetLevel3::current(VGS + EPS, VDS, VBS, PARAMS);
+        EXPECT_GT(ABOVE, 0.0) << "vgs = " << VGS << ", vds = " << VDS << ", vbs = " << VBS;
+        EXPECT_NEAR(BELOW, ABOVE, 1e-6 * ABOVE)
+            << "vgs = " << VGS << ", vds = " << VDS << ", vbs = " << VBS;
+      }
+    }
+  }
+}
+
+/** @test Drain current never falls as the gate voltage rises through threshold */
+TEST(MosfetLevel3Test, MonotonicInGateVoltage) {
+  const MosfetLevel3Params PARAMS;
+
+  for (const double VDS : {0.01, 0.5, 3.0}) {
+    const double VTH = MosfetLevel3::thresholdVoltage(VDS, 0.0, PARAMS);
+    double previous = MosfetLevel3::current(VTH - 0.5, VDS, 0.0, PARAMS);
+    for (int step = 1; step <= 1000; ++step) {
+      const double VGS = VTH - 0.5 + 0.001 * step;
+      const double ID = MosfetLevel3::current(VGS, VDS, 0.0, PARAMS);
+      ASSERT_GE(ID, previous) << "vgs = " << VGS << ", vds = " << VDS;
+      previous = ID;
+    }
+  }
+}
+
+/** @test Drain current never falls as the drain voltage rises, below threshold and above */
 TEST(MosfetLevel3Test, MonotonicInDrainVoltage) {
   const MosfetLevel3Params PARAMS;
 
-  for (const double VGS : {1.0, 1.5, 2.0, 3.0}) {
+  for (const double VGS : {0.2, 0.4, 1.0, 1.5, 2.0, 3.0}) {
     double previous = MosfetLevel3::current(VGS, 0.0, 0.0, PARAMS);
     for (int step = 1; step <= 500; ++step) {
       const double VDS = 0.01 * step;
@@ -338,12 +318,8 @@ TEST(MosfetLevel3Test, OutputConductanceNotNegativeThroughSaturation) {
 
   for (const double VGS : {1.0, 2.0, 3.0}) {
     // On the boundary itself the conductance is a difference taken across it.
-    double vdsat = 1.0;
-    for (int iter = 0; iter < 50; ++iter) {
-      const double VTH = MosfetLevel3::thresholdVoltage(vdsat, 0.0, PARAMS);
-      vdsat = MosfetLevel3::drainSaturationVoltage(VGS, VTH, PARAMS);
-    }
-    for (const double VDS : {vdsat - 5e-9, vdsat, vdsat + 5e-9}) {
+    const double VDSAT = saturationBoundary(VGS, 0.0, PARAMS);
+    for (const double VDS : {VDSAT - 5e-9, VDSAT, VDSAT + 5e-9}) {
       const double GDS = MosfetLevel3::outputConductance(VGS, VDS, 0.0, PARAMS);
       EXPECT_TRUE(std::isfinite(GDS)) << "vgs = " << VGS << ", at the boundary";
       EXPECT_GE(GDS, 0.0) << "vgs = " << VGS << ", at the boundary";
@@ -358,60 +334,19 @@ TEST(MosfetLevel3Test, OutputConductanceNotNegativeThroughSaturation) {
   }
 }
 
-/* ----------------------------- Physical Behavior ----------------------------- */
+/** @test Transconductance is finite and not negative at threshold and at turn-on */
+TEST(MosfetLevel3Test, TransconductanceNotNegativeThroughTurnOn) {
+  const MosfetLevel3Params PARAMS;
 
-/** @test */
-TEST(MosfetLevel3Test, DIBLStrength) {
-  MosfetLevel3Params weak{.Vth0 = 0.5, .eta = 0.01};
-  MosfetLevel3Params strong{.Vth0 = 0.5, .eta = 0.15};
-
-  const double VTH_WEAK = MosfetLevel3::thresholdVoltage(2.0, 0.0, weak);
-  const double VTH_STRONG = MosfetLevel3::thresholdVoltage(2.0, 0.0, strong);
-
-  // Stronger DIBL -> larger threshold reduction
-  EXPECT_LT(VTH_STRONG, VTH_WEAK);
-}
-
-/** @test */
-TEST(MosfetLevel3Test, ShortChannelEffect) {
-  MosfetLevel3Params long_channel{.L = 1e-6, .delta_l = 0.0};
-  MosfetLevel3Params short_channel{.L = 0.18e-6, .delta_l = 0.02e-6};
-
-  const double VGS = 1.5, vds = 1.5, vbs = 0.0;
-
-  const double ID_LONG = MosfetLevel3::current(VGS, vds, vbs, long_channel);
-  const double ID_SHORT = MosfetLevel3::current(VGS, vds, vbs, short_channel);
-
-  EXPECT_GT(ID_SHORT, ID_LONG);
-}
-
-/** @test */
-TEST(MosfetLevel3Test, SaturationVoltageKappaParameter) {
-  MosfetLevel3Params low_kappa{.kappa = 0.05};
-  MosfetLevel3Params high_kappa{.kappa = 0.2};
-
-  const double VGS = 2.0, vth = 0.5;
-
-  const double VDSAT_LOW = MosfetLevel3::drainSaturationVoltage(VGS, vth, low_kappa);
-  const double VDSAT_HIGH = MosfetLevel3::drainSaturationVoltage(VGS, vth, high_kappa);
-
-  // Higher kappa -> stronger reduction -> lower Vdsat
-  EXPECT_LT(VDSAT_HIGH, VDSAT_LOW);
-}
-
-/** @test */
-TEST(MosfetLevel3Test, SubthresholdSlope) {
-  MosfetLevel3Params params{.n_sub = 1.5};
-
-  // Two voltages below threshold
-  const double VGS1 = 0.3, vgs2 = 0.4;
-  const double VDS = 1.0, vbs = 0.0;
-
-  const double ID1 = MosfetLevel3::current(VGS1, VDS, vbs, params);
-  const double ID2 = MosfetLevel3::current(vgs2, VDS, vbs, params);
-
-  // Subthreshold current is exponential in Vgs
-  EXPECT_GT(ID2, ID1);
-  const double RATIO = ID2 / ID1;
-  EXPECT_GT(RATIO, 2.0); // Should increase significantly for 0.1V step
+  for (const double VDS : {0.01, 3.0}) {
+    for (const double BOUNDARY :
+         {MosfetLevel3::thresholdVoltage(VDS, 0.0, PARAMS), turnOnVoltage(VDS, 0.0, PARAMS)}) {
+      // On a boundary the transconductance is a difference taken across it.
+      for (const double VGS : {BOUNDARY - 5e-9, BOUNDARY, BOUNDARY + 5e-9}) {
+        const double GM = MosfetLevel3::transconductance(VGS, VDS, 0.0, PARAMS);
+        EXPECT_TRUE(std::isfinite(GM)) << "vgs = " << VGS << ", vds = " << VDS;
+        EXPECT_GE(GM, 0.0) << "vgs = " << VGS << ", vds = " << VDS;
+      }
+    }
+  }
 }

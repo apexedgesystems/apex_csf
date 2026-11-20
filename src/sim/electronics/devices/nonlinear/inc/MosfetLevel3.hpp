@@ -4,18 +4,14 @@
  * @file MosfetLevel3.hpp
  * @brief SPICE Level 3 MOSFET model with advanced short-channel effects.
  *
- * Extends Level 2 with:
- * - DIBL (drain-induced barrier lowering): Vth(Vds) reduction at high Vds
- * - Improved channel-length modulation: Early voltage model
- * - Saturation voltage empirical model: More accurate Vdsat
- * - Enhanced subthreshold: Gate-induced drain leakage (GIDL)
- * - Narrow-width effects: Threshold voltage shifts for W < 1um
+ * Shares Level 2's geometry, mobility degradation, body effect and
+ * subthreshold conduction, and adds:
+ * - DIBL (drain-induced barrier lowering): Vth falls by eta*Vds
+ * - Empirical saturation voltage: Vdsat = Vgst * (1 - kappa)
+ * - Effective channel dimensions: W - delta_w and L - delta_l
  *
- * More accurate than Level 2 for:
- * - Submicron devices (L < 1 um)
- * - Low-voltage analog design (Vdd < 2V)
- * - Precision matching (threshold variations)
- * - Leakage-critical applications (GIDL)
+ * Intended for short-channel devices, where the drain voltage lowers the
+ * threshold and the drawn dimensions overstate the channel.
  *
  * This is a PHYSICS MODEL (Layer 2) that uses Layer 1 Newton-Raphson solver
  * for nonlinear circuit simulation.
@@ -52,7 +48,7 @@ struct MosfetLevel3Params {
 
   // Mobility (Level 2)
   double theta = 0.2;  ///< Mobility degradation (1/V)
-  double E_crit = 2e6; ///< Critical electric field (V/m)
+  double E_crit = 2e6; ///< Critical electric field (V/m); not read by this model
 
   // Body effect (Level 2)
   double gamma = 0.4; ///< Body-effect parameter (V^0.5)
@@ -61,12 +57,12 @@ struct MosfetLevel3Params {
   // Short-channel effects (Level 3)
   double eta = 0.05;    ///< DIBL coefficient (unitless)
   double kappa = 0.1;   ///< Saturation voltage parameter (unitless)
-  double vsat = 1e5;    ///< Carrier saturation velocity (m/s)
+  double vsat = 1e5;    ///< Carrier saturation velocity (m/s); not read by this model
   double delta_w = 0.0; ///< Narrow-width effect (m)
   double delta_l = 0.0; ///< Short-channel effect (m)
 
   // Subthreshold (Level 2/3)
-  double n_sub = 1.5; ///< Subthreshold slope factor
+  double n_sub = 1.5; ///< Subthreshold slope factor: the slope voltage is n_sub*Vt
   double Vt = 0.026;  ///< Thermal voltage (V)
 };
 
@@ -164,6 +160,17 @@ struct MosfetLevel3 {
   /**
    * @brief Compute MOSFET drain current (Level 3 model).
    *
+   * With Vgst = Vgs - Vth, at and above the turn-on voltage
+   * Von = Vth + n_sub*Vt the device is in strong inversion:
+   *   Id = beta * (Vgst*V - V^2/2) * (1 + lambda*Vds),  V = min(Vds, Vdsat)
+   * so the saturation current is the linear-region current at Vdsat and the
+   * two regions meet there.
+   *
+   * Below Von the current is the strong-inversion current at Von, scaled by
+   * exp((Vgs - Von) / (n_sub*Vt)). It meets the strong-inversion current at
+   * Von, and it saturates in Vds as that current does there. The slope in
+   * Vgs steps at Von. The threshold, and with it Von, falls with Vds.
+   *
    * @param vgs Gate-source voltage in volts
    * @param vds Drain-source voltage in volts
    * @param vbs Bulk-source voltage in volts
@@ -176,33 +183,29 @@ struct MosfetLevel3 {
                                       const MosfetLevel3Params& params) noexcept {
     const auto [W_EFF, L_EFF] = effectiveDimensions(params.W, params.L, params);
     const double VTH = thresholdVoltage(vds, vbs, params);
-    const double VGST = vgs - VTH;
+    const double SLOPE_V = params.n_sub * params.Vt;
+    const double VON = VTH + SLOPE_V;
 
-    // Cutoff/subthreshold
-    if (VGST <= 0.0) {
-      const double I_SUB = params.Kp * W_EFF / L_EFF * params.Vt * params.Vt *
-                           std::exp((vgs - VTH) / (params.n_sub * params.Vt));
-      return I_SUB * vds;
-    }
-
-    // Effective mobility
+    // Strong inversion, held at turn-on for a gate below it
+    const double VGS_STRONG = std::max(vgs, VON);
+    const double VGST = VGS_STRONG - VTH;
     const double MU_FACTOR = 1.0 / (1.0 + params.theta * VGST);
     const double BETA_EFF = params.Kp * W_EFF / L_EFF * MU_FACTOR;
-
-    // Saturation voltage
-    const double VDSAT = drainSaturationVoltage(vgs, VTH, params);
+    const double VDSAT = drainSaturationVoltage(VGS_STRONG, VTH, params);
 
     // Channel-length modulation
     const double CLM = 1.0 + params.lambda * vds;
 
-    // Linear region
-    if (vds < VDSAT) {
-      return BETA_EFF * (VGST * vds - 0.5 * vds * vds) * CLM;
+    // The channel voltage stops at Vdsat, so saturation carries the
+    // linear-region current at Vdsat whatever lowers Vdsat below the overdrive
+    const double V_CHANNEL = std::min(vds, VDSAT);
+    const double ID_STRONG = BETA_EFF * (VGST * V_CHANNEL - 0.5 * V_CHANNEL * V_CHANNEL) * CLM;
+    if (vgs >= VON) {
+      return ID_STRONG;
     }
 
-    // Saturation region: the linear-region current at Vdsat, so the two
-    // regions meet there whatever lowers Vdsat below the gate overdrive
-    return BETA_EFF * (VGST * VDSAT - 0.5 * VDSAT * VDSAT) * CLM;
+    // Weak inversion: exponential in the gate voltage below turn-on
+    return ID_STRONG * std::exp((vgs - VON) / SLOPE_V);
   }
 
   /**

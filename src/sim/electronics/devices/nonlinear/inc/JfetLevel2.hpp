@@ -24,6 +24,7 @@
 #include "src/sim/electronics/devices/nonlinear/inc/JfetShichman.hpp"
 #include "src/sim/electronics/devices/nonlinear/inc/Junction.hpp"
 
+#include <algorithm>
 #include <cmath>
 
 namespace sim::electronics::devices::nonlinear {
@@ -54,7 +55,7 @@ struct JfetLevel2Params {
   double Cgs0 = 1e-12; ///< Zero-bias gate-source capacitance (F)
 
   // Subthreshold
-  double n_sub = 1.5; ///< Subthreshold slope factor
+  double n_sub = 1.5; ///< Subthreshold slope factor: the slope voltage is n_sub*Vt
 };
 
 /**
@@ -80,10 +81,16 @@ struct JfetLevel2 {
   /**
    * @brief Compute drain current.
    *
-   * With Vgst = Vgs - Vp:
+   * With Vgst = Vgs - Vp, at and above the turn-on voltage
+   * Von = Vp + n_sub*Vt the current is the square law:
    *   Linear (Vds < Vgst):      Id = 2*Beta*(Vgst*Vds - Vds^2/2) * (1 + lambda*Vds)
    *   Saturation (Vds >= Vgst): Id = Beta*Vgst^2 * (1 + lambda*Vds)
    * The two meet at Vds = Vgst with the same value and slope.
+   *
+   * Below Von the current is the square-law current at Von, scaled by
+   * exp((Vgs - Von) / (n_sub*Vt)). It meets the square law at Von, and it
+   * saturates in Vds as the square law does there. The slope in Vgs steps
+   * at Von.
    *
    * @param vgs Gate-source voltage in volts
    * @param vds Drain-source voltage in volts
@@ -94,20 +101,19 @@ struct JfetLevel2 {
    */
   [[nodiscard]] static double drainCurrent(double vgs, double vds,
                                            const JfetLevel2Params& params) noexcept {
-    const double VGST = vgs - params.Vp;
+    const double SLOPE_V = params.n_sub * params.Vt;
+    const double VON = params.Vp + SLOPE_V;
 
-    // Cutoff/subthreshold region
-    if (VGST <= 0.0) {
-      // Subthreshold current (weak inversion)
-      const double I_SUB =
-          params.Beta * params.Vt * params.Vt * std::exp(VGST / (params.n_sub * params.Vt));
-      return I_SUB * vds;
+    // The square law of the basic model, held at turn-on for a gate below it
+    const double ID_SQUARE_LAW = JfetShichman::current(
+        std::max(vgs, VON), vds,
+        JfetShichmanParams{.Beta = params.Beta, .Vp = params.Vp, .lambda = params.lambda});
+    if (vgs >= VON) {
+      return ID_SQUARE_LAW;
     }
 
-    // Above pinch-off: the square law of the basic model
-    return JfetShichman::current(
-        vgs, vds,
-        JfetShichmanParams{.Beta = params.Beta, .Vp = params.Vp, .lambda = params.lambda});
+    // Subthreshold: exponential in the gate voltage below turn-on
+    return ID_SQUARE_LAW * std::exp((vgs - VON) / SLOPE_V);
   }
 
   /**
