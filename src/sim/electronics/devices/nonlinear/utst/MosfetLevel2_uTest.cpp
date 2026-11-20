@@ -19,6 +19,7 @@
 using sim::electronics::devices::nonlinear::MnaSystem;
 using sim::electronics::devices::nonlinear::MosfetLevel2;
 using sim::electronics::devices::nonlinear::MosfetLevel2Params;
+using sim::electronics::devices::nonlinear::NetID;
 
 using sim::electronics::devices::nonlinear::test::expectCurrent;
 using sim::electronics::devices::nonlinear::test::pinTerminals;
@@ -330,5 +331,55 @@ TEST(MosfetLevel2Test, TransconductanceNotNegativeThroughTurnOn) {
         EXPECT_GE(GM, 0.0) << "vgs = " << VGS << ", vds = " << VDS;
       }
     }
+  }
+}
+
+/* ----------------------------- Circuit ----------------------------- */
+
+/** @test A resistor-loaded inverter solved through the stamp follows the reference transfer curve
+ */
+TEST(MosfetLevel2Test, ResistorLoadedInverterFollowsReferenceTransferCurve) {
+  struct Point {
+    double vin;
+    double vout;
+  };
+
+  // Supply -- RD -- drain (the output); the gate is the input; source and
+  // bulk grounded. Reference: bisection on (VDD - Vout)/RD = Id(Vin, Vout).
+  const MosfetLevel2Params PARAMS;
+  constexpr double VDD = 5.0;
+  constexpr double RD = 10e3;
+  const std::array<Point, 7> CURVE = {{
+      Point{0.0, 4.999999999950925},   // off
+      Point{0.5, 4.9999818555712086},  // weak inversion
+      Point{0.72, 4.99488825257964},   // between threshold and turn-on
+      Point{1.0, 4.548743661329839},   // saturation
+      Point{1.5, 2.503273679615887},   // saturation
+      Point{2.0, 0.4769298324943575},  // linear region
+      Point{5.0, 0.16342578306930655}, // linear region
+  }};
+
+  const NetID GROUND = 0;
+  const NetID SUPPLY = 1;
+  const NetID OUTPUT = 2;
+  const NetID INPUT = 3;
+  for (const Point& point : CURVE) {
+    double vOut = VDD;
+    bool converged = false;
+    for (int iter = 0; iter < 100 && !converged; ++iter) {
+      MnaSystem mna(4);
+      mna.addVoltageSource(SUPPLY, GROUND, VDD);
+      mna.addVoltageSource(INPUT, GROUND, point.vin);
+      mna.addConductance(SUPPLY, OUTPUT, 1.0 / RD);
+      MosfetLevel2::stamp(mna, OUTPUT, INPUT, GROUND, GROUND, point.vin, vOut, 0.0, PARAMS);
+
+      const auto RESULT = mna.solve();
+      ASSERT_TRUE(RESULT.success) << "vin = " << point.vin << ", iteration " << iter;
+      const double V_OUT = RESULT.nodeVoltages[OUTPUT];
+      converged = std::abs(V_OUT - vOut) < 1e-12;
+      vOut = V_OUT;
+    }
+    ASSERT_TRUE(converged) << "vin = " << point.vin;
+    EXPECT_NEAR(vOut, point.vout, 1e-9) << "vin = " << point.vin;
   }
 }

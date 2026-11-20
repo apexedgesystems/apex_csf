@@ -19,6 +19,7 @@
 using sim::electronics::devices::nonlinear::JfetShichman;
 using sim::electronics::devices::nonlinear::JfetShichmanParams;
 using sim::electronics::devices::nonlinear::MnaSystem;
+using sim::electronics::devices::nonlinear::NetID;
 
 using sim::electronics::devices::nonlinear::test::expectCurrent;
 using sim::electronics::devices::nonlinear::test::pinTerminals;
@@ -173,5 +174,64 @@ TEST(JfetShichmanTest, StampIsLinearizationAtOperatingPoint) {
       expectCurrent(PINNED.into[1], 0.0, "gate");
       expectCurrent(PINNED.into[2], -I_DRAIN, "source");
     }
+  }
+}
+
+/* ----------------------------- Circuit ----------------------------- */
+
+/** @test A self-biased stage solved through the stamp settles at the reference operating point */
+TEST(JfetShichmanTest, SelfBiasedStageSettlesAtReferenceOperatingPoint) {
+  struct Case {
+    double vdd;
+    double rd;
+    double rs;
+    double id;
+    double vd;
+    double vs;
+  };
+
+  // Supply -- RD -- drain; source -- RS -- ground; gate grounded. The drain
+  // current sets its own gate bias through RS. Reference: bisection on the
+  // drain current. The last case has no source resistor and sits in the
+  // linear region.
+  const JfetShichmanParams PARAMS;
+  const std::array<Case, 3> CASES = {{
+      Case{12.0, 2200.0, 1000.0, 0.001027706881764775, 9.739044860117495, 1.0277068817647752},
+      Case{9.0, 1000.0, 470.0, 0.0016269261178539682, 7.3730738821460315, 0.764655275391365},
+      Case{3.0, 4700.0, 0.0, 0.0006048612238656326, 0.15715224783152681, 0.0},
+  }};
+
+  const NetID GROUND = 0;
+  const NetID SUPPLY = 1;
+  const NetID DRAIN = 2;
+  for (const Case& c : CASES) {
+    const bool HAS_RS = c.rs > 0.0;
+    const NetID SOURCE = HAS_RS ? 3 : GROUND;
+
+    double vDrain = c.vdd;
+    double vSource = 0.0;
+    bool converged = false;
+    for (int iter = 0; iter < 100 && !converged; ++iter) {
+      MnaSystem mna(HAS_RS ? 4 : 3);
+      mna.addVoltageSource(SUPPLY, GROUND, c.vdd);
+      mna.addConductance(SUPPLY, DRAIN, 1.0 / c.rd);
+      if (HAS_RS) {
+        mna.addConductance(SOURCE, GROUND, 1.0 / c.rs);
+      }
+      JfetShichman::stamp(mna, DRAIN, GROUND, SOURCE, -vSource, vDrain - vSource, PARAMS);
+
+      const auto RESULT = mna.solve();
+      ASSERT_TRUE(RESULT.success) << "vdd = " << c.vdd << ", iteration " << iter;
+      const double V_DRAIN = RESULT.nodeVoltages[DRAIN];
+      const double V_SOURCE = HAS_RS ? RESULT.nodeVoltages[SOURCE] : 0.0;
+      converged = std::abs(V_DRAIN - vDrain) < 1e-12 && std::abs(V_SOURCE - vSource) < 1e-12;
+      vDrain = V_DRAIN;
+      vSource = V_SOURCE;
+    }
+    ASSERT_TRUE(converged) << "vdd = " << c.vdd;
+
+    EXPECT_NEAR(vDrain, c.vd, 1e-9) << "vdd = " << c.vdd;
+    EXPECT_NEAR(vSource, c.vs, 1e-9) << "vdd = " << c.vdd;
+    EXPECT_NEAR((c.vdd - vDrain) / c.rd, c.id, 1e-9 * c.id) << "vdd = " << c.vdd;
   }
 }
