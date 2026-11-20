@@ -285,13 +285,12 @@ struct MosfetLevel3 {
 
     const double IEQ = ID - GM * vgs - GDS * vds - GMB * vbs;
 
-    // Stamp transconductances
-    mna.addConductance(drainNet, gateNet, GM);
-    mna.addConductance(drainNet, sourceNet, -GM);
+    // gm and gmb drive the drain-to-source current from Vgs and Vbs; gds
+    // sits across drain-source; the equivalent source leaves the drain net
+    mna.addTransconductance(drainNet, sourceNet, gateNet, sourceNet, GM);
     mna.addConductance(drainNet, sourceNet, GDS);
-    mna.addConductance(drainNet, bulkNet, GMB);
-    mna.addConductance(drainNet, sourceNet, -GMB);
-    mna.addCurrent(drainNet, sourceNet, IEQ);
+    mna.addTransconductance(drainNet, sourceNet, bulkNet, sourceNet, GMB);
+    mna.addCurrent(drainNet, sourceNet, -IEQ);
   }
 };
 

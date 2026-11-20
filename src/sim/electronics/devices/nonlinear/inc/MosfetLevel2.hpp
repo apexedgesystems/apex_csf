@@ -290,19 +290,17 @@ struct MosfetLevel2 {
     // Equivalent current: Ieq = Id - gm*Vgs - gds*Vds - gmb*Vbs
     const double IEQ = ID - GM * vgs - GDS * vds - GMB * vbs;
 
-    // Stamp transconductance gm (gate control)
-    mna.addConductance(drainNet, gateNet, GM);
-    mna.addConductance(drainNet, sourceNet, -GM);
+    // Transconductance gm: drain-to-source current controlled by Vgs
+    mna.addTransconductance(drainNet, sourceNet, gateNet, sourceNet, GM);
 
-    // Stamp output conductance gds (drain-source)
+    // Output conductance gds (drain-source)
     mna.addConductance(drainNet, sourceNet, GDS);
 
-    // Stamp bulk transconductance gmb (body effect)
-    mna.addConductance(drainNet, bulkNet, GMB);
-    mna.addConductance(drainNet, sourceNet, -GMB);
+    // Bulk transconductance gmb: drain-to-source current controlled by Vbs
+    mna.addTransconductance(drainNet, sourceNet, bulkNet, sourceNet, GMB);
 
-    // Stamp equivalent current source
-    mna.addCurrent(drainNet, sourceNet, IEQ);
+    // Equivalent current source (leaves the drain net)
+    mna.addCurrent(drainNet, sourceNet, -IEQ);
   }
 };
 

@@ -221,15 +221,15 @@ struct JfetLevel2 {
     const double GG = gateConductance(vgs, params);
     const double IEQ_G = IG - GG * vgs;
 
-    // Stamp drain current (VCCS)
-    mna.addConductance(drainNet, gateNet, GM);
-    mna.addConductance(drainNet, sourceNet, -GM);
+    // Drain current: gm controlled by Vgs, gds across drain-source; the
+    // equivalent source leaves the drain net
+    mna.addTransconductance(drainNet, sourceNet, gateNet, sourceNet, GM);
     mna.addConductance(drainNet, sourceNet, GDS);
-    mna.addCurrent(drainNet, sourceNet, IEQ_D);
+    mna.addCurrent(drainNet, sourceNet, -IEQ_D);
 
-    // Stamp gate leakage
+    // Gate leakage: a junction from gate to source
     mna.addConductance(gateNet, sourceNet, GG);
-    mna.addCurrent(gateNet, sourceNet, IEQ_G);
+    mna.addCurrent(gateNet, sourceNet, -IEQ_G);
   }
 };
 

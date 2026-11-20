@@ -192,6 +192,29 @@ public:
   void addGEntry(NetID row, NetID col, double value) { ctx_.stampGEntry(row, col, value); }
 
   /**
+   * @brief Stamp a voltage-controlled current source.
+   *
+   * A current gm * (V[ctrlPos] - V[ctrlNeg]) flows from net `from` through
+   * the element to net `to`. The control nets carry none of it: only the
+   * rows of `from` and `to` are written. This is the stamp of a
+   * transconductance, such as the gm of a FET (drain to source, controlled
+   * by gate and source).
+   *
+   * @param from Net the controlled current leaves.
+   * @param to Net the controlled current enters.
+   * @param ctrlPos Positive control net.
+   * @param ctrlNeg Negative control net.
+   * @param gm Transconductance in siemens.
+   * @note RT-safe: stamps into pre-allocated matrix.
+   */
+  void addTransconductance(NetID from, NetID to, NetID ctrlPos, NetID ctrlNeg, double gm) {
+    ctx_.stampGEntry(from, ctrlPos, gm);
+    ctx_.stampGEntry(from, ctrlNeg, -gm);
+    ctx_.stampGEntry(to, ctrlPos, -gm);
+    ctx_.stampGEntry(to, ctrlNeg, gm);
+  }
+
+  /**
    * @brief Inject a current between two nets.
    *
    * Adds i to the injected-current vector at a and subtracts it at b: an

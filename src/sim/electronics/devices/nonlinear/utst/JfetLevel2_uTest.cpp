@@ -4,6 +4,7 @@
  */
 
 #include "src/sim/electronics/devices/nonlinear/inc/JfetLevel2.hpp"
+#include "src/sim/electronics/devices/nonlinear/utst/StampProbe.hpp"
 
 #include <gtest/gtest.h>
 
@@ -14,7 +15,10 @@
 using sim::electronics::devices::nonlinear::JfetLevel2;
 using sim::electronics::devices::nonlinear::JfetLevel2Params;
 using sim::electronics::devices::nonlinear::MnaSystem;
-using sim::electronics::devices::nonlinear::NetID;
+
+using sim::electronics::devices::nonlinear::test::expectCurrent;
+using sim::electronics::devices::nonlinear::test::pinTerminals;
+using sim::electronics::devices::nonlinear::test::terminalNet;
 
 /* ----------------------------- Default Construction ----------------------------- */
 
@@ -212,35 +216,55 @@ TEST(JfetLevel2Test, GateConductanceNumericalDerivative) {
 
 /* ----------------------------- Stamping ----------------------------- */
 
-/** @test */
-TEST(JfetLevel2Test, StampSaturation) {
-  MnaSystem mna(4);
-  JfetLevel2Params params;
-  const NetID DRAIN = 1, gate = 2, source = 3;
-  const double VGS = -0.5, vds = 5.0;
+/** @test Stamp is the model's linearization: exact at the operating point, first order around it */
+TEST(JfetLevel2Test, StampIsLinearizationAtOperatingPoint) {
+  const JfetLevel2Params PARAMS;
 
-  // Should stamp both drain and gate currents
-  JfetLevel2::stamp(mna, DRAIN, gate, source, VGS, vds, params);
-}
+  struct Bias {
+    double vgs;
+    double vds;
+    const char* region;
+  };
+  struct Step {
+    double gate;
+    double drain;
+    double source;
+  };
 
-/** @test */
-TEST(JfetLevel2Test, StampLinear) {
-  MnaSystem mna(4);
-  JfetLevel2Params params;
-  const NetID DRAIN = 1, gate = 2, source = 3;
-  const double VGS = -0.5, vds = 0.5;
+  // The source sits off ground so every stamped entry takes part.
+  const double V_SOURCE = 0.8;
+  const double DV = 0.05;
 
-  JfetLevel2::stamp(mna, DRAIN, gate, source, VGS, vds, params);
-}
+  for (const Bias& bias :
+       {Bias{-3.0, 5.0, "cutoff"}, Bias{-0.5, 0.5, "linear"}, Bias{-0.5, 5.0, "saturation"}}) {
+    const double ID = JfetLevel2::drainCurrent(bias.vgs, bias.vds, PARAMS);
+    const double GM = JfetLevel2::transconductance(bias.vgs, bias.vds, PARAMS);
+    const double GDS = JfetLevel2::outputConductance(bias.vgs, bias.vds, PARAMS);
+    const double IG = JfetLevel2::gateCurrent(bias.vgs, PARAMS);
+    const double GG = JfetLevel2::gateConductance(bias.vgs, PARAMS);
 
-/** @test */
-TEST(JfetLevel2Test, StampCutoff) {
-  MnaSystem mna(4);
-  JfetLevel2Params params;
-  const NetID DRAIN = 1, gate = 2, source = 3;
-  const double VGS = -2.5, vds = 5.0;
+    // Terminal order: drain, gate, source.
+    const auto STAMP = [&](MnaSystem& mna) {
+      JfetLevel2::stamp(mna, terminalNet(0), terminalNet(1), terminalNet(2), bias.vgs, bias.vds,
+                        PARAMS);
+    };
 
-  JfetLevel2::stamp(mna, DRAIN, gate, source, VGS, vds, params);
+    for (const Step& step :
+         {Step{0.0, 0.0, 0.0}, Step{DV, 0.0, 0.0}, Step{0.0, DV, 0.0}, Step{0.0, 0.0, DV}}) {
+      const auto PINNED = pinTerminals({V_SOURCE + bias.vds + step.drain,
+                                        V_SOURCE + bias.vgs + step.gate, V_SOURCE + step.source},
+                                       STAMP);
+      ASSERT_TRUE(PINNED.solved) << bias.region;
+
+      const double D_VGS = step.gate - step.source;
+      const double D_VDS = step.drain - step.source;
+      const double I_DRAIN = ID + GM * D_VGS + GDS * D_VDS;
+      expectCurrent(PINNED.into[0], I_DRAIN, "drain");
+      const double I_GATE = IG + GG * D_VGS;
+      expectCurrent(PINNED.into[1], I_GATE, "gate");
+      expectCurrent(PINNED.into[2], -I_DRAIN - I_GATE, "source");
+    }
+  }
 }
 
 /* ----------------------------- Physical Behavior ----------------------------- */

@@ -4,6 +4,7 @@
  */
 
 #include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel2.hpp"
+#include "src/sim/electronics/devices/nonlinear/utst/StampProbe.hpp"
 
 #include <gtest/gtest.h>
 
@@ -14,7 +15,10 @@
 using sim::electronics::devices::nonlinear::MnaSystem;
 using sim::electronics::devices::nonlinear::MosfetLevel2;
 using sim::electronics::devices::nonlinear::MosfetLevel2Params;
-using sim::electronics::devices::nonlinear::NetID;
+
+using sim::electronics::devices::nonlinear::test::expectCurrent;
+using sim::electronics::devices::nonlinear::test::pinTerminals;
+using sim::electronics::devices::nonlinear::test::terminalNet;
 
 /* ----------------------------- Default Construction ----------------------------- */
 
@@ -287,35 +291,59 @@ TEST(MosfetLevel2Test, BulkTransconductanceNumericalDerivative) {
 
 /* ----------------------------- Stamping ----------------------------- */
 
-/** @test */
-TEST(MosfetLevel2Test, StampSaturation) {
-  MnaSystem mna(5);
-  MosfetLevel2Params params;
-  const NetID DRAIN = 1, gate = 2, source = 3, bulk = 4;
-  const double VGS = 2.0, vds = 5.0, vbs = 0.0;
+/** @test Stamp is the model's linearization: exact at the operating point, first order around it */
+TEST(MosfetLevel2Test, StampIsLinearizationAtOperatingPoint) {
+  const MosfetLevel2Params PARAMS;
 
-  // Should stamp four-terminal transconductances
-  MosfetLevel2::stamp(mna, DRAIN, gate, source, bulk, VGS, vds, vbs, params);
-}
+  struct Bias {
+    double vgs;
+    double vds;
+    double vbs;
+    const char* region;
+  };
+  struct Step {
+    double gate;
+    double drain;
+    double source;
+    double bulk;
+  };
 
-/** @test */
-TEST(MosfetLevel2Test, StampLinear) {
-  MnaSystem mna(5);
-  MosfetLevel2Params params;
-  const NetID DRAIN = 1, gate = 2, source = 3, bulk = 4;
-  const double VGS = 2.0, vds = 0.5, vbs = 0.0;
+  // The source sits off ground so every stamped entry takes part.
+  const double V_SOURCE = 0.8;
+  const double DV = 0.05;
 
-  MosfetLevel2::stamp(mna, DRAIN, gate, source, bulk, VGS, vds, vbs, params);
-}
+  for (const Bias& bias : {Bias{0.3, 1.0, 0.0, "subthreshold"}, Bias{2.0, 0.2, -0.5, "linear"},
+                           Bias{2.0, 3.0, -0.5, "saturation"}}) {
+    const double ID = MosfetLevel2::current(bias.vgs, bias.vds, bias.vbs, PARAMS);
+    const double GM = MosfetLevel2::transconductance(bias.vgs, bias.vds, bias.vbs, PARAMS);
+    const double GDS = MosfetLevel2::outputConductance(bias.vgs, bias.vds, bias.vbs, PARAMS);
+    const double GMB = MosfetLevel2::bulkTransconductance(bias.vgs, bias.vds, bias.vbs, PARAMS);
 
-/** @test */
-TEST(MosfetLevel2Test, StampWithBodyBias) {
-  MnaSystem mna(5);
-  MosfetLevel2Params params;
-  const NetID DRAIN = 1, gate = 2, source = 3, bulk = 4;
-  const double VGS = 2.0, vds = 3.0, vbs = -1.0;
+    // Terminal order: drain, gate, source, bulk.
+    const auto STAMP = [&](MnaSystem& mna) {
+      MosfetLevel2::stamp(mna, terminalNet(0), terminalNet(1), terminalNet(2), terminalNet(3),
+                          bias.vgs, bias.vds, bias.vbs, PARAMS);
+    };
 
-  MosfetLevel2::stamp(mna, DRAIN, gate, source, bulk, VGS, vds, vbs, params);
+    for (const Step& step :
+         {Step{0.0, 0.0, 0.0, 0.0}, Step{DV, 0.0, 0.0, 0.0}, Step{0.0, DV, 0.0, 0.0},
+          Step{0.0, 0.0, DV, 0.0}, Step{0.0, 0.0, 0.0, DV}}) {
+      const auto PINNED =
+          pinTerminals({V_SOURCE + bias.vds + step.drain, V_SOURCE + bias.vgs + step.gate,
+                        V_SOURCE + step.source, V_SOURCE + bias.vbs + step.bulk},
+                       STAMP);
+      ASSERT_TRUE(PINNED.solved) << bias.region;
+
+      const double D_VGS = step.gate - step.source;
+      const double D_VDS = step.drain - step.source;
+      const double D_VBS = step.bulk - step.source;
+      const double I_DRAIN = ID + GM * D_VGS + GDS * D_VDS + GMB * D_VBS;
+      expectCurrent(PINNED.into[0], I_DRAIN, "drain");
+      expectCurrent(PINNED.into[1], 0.0, "gate");
+      expectCurrent(PINNED.into[2], -I_DRAIN, "source");
+      expectCurrent(PINNED.into[3], 0.0, "bulk");
+    }
+  }
 }
 
 /* ----------------------------- Physical Behavior ----------------------------- */

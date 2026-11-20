@@ -182,16 +182,14 @@ struct JfetShichman {
     // Equivalent current source: Ieq = Id - gm*Vgs - gds*Vds
     const double IEQ = ID - GM * vgs - GDS * vds;
 
-    // Stamp transconductance (gate-controlled current source)
-    // Creates VCCS: Id controlled by Vgs
-    mna.addConductance(drainNet, gateNet, GM);
-    mna.addConductance(drainNet, sourceNet, -GM);
+    // Transconductance: drain-to-source current controlled by Vgs
+    mna.addTransconductance(drainNet, sourceNet, gateNet, sourceNet, GM);
 
-    // Stamp output conductance (drain-source resistance)
+    // Output conductance (drain-source resistance)
     mna.addConductance(drainNet, sourceNet, GDS);
 
-    // Stamp equivalent current source
-    mna.addCurrent(drainNet, sourceNet, IEQ);
+    // Equivalent current source (leaves the drain net)
+    mna.addCurrent(drainNet, sourceNet, -IEQ);
   }
 
   /**

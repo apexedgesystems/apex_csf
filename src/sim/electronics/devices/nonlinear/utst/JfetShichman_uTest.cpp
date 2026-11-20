@@ -4,6 +4,7 @@
  */
 
 #include "src/sim/electronics/devices/nonlinear/inc/JfetShichman.hpp"
+#include "src/sim/electronics/devices/nonlinear/utst/StampProbe.hpp"
 
 #include <gtest/gtest.h>
 
@@ -14,7 +15,10 @@
 using sim::electronics::devices::nonlinear::JfetShichman;
 using sim::electronics::devices::nonlinear::JfetShichmanParams;
 using sim::electronics::devices::nonlinear::MnaSystem;
-using sim::electronics::devices::nonlinear::NetID;
+
+using sim::electronics::devices::nonlinear::test::expectCurrent;
+using sim::electronics::devices::nonlinear::test::pinTerminals;
+using sim::electronics::devices::nonlinear::test::terminalNet;
 
 /* ----------------------------- Default Construction ----------------------------- */
 
@@ -272,46 +276,52 @@ TEST(JfetShichmanTest, RegionSaturation) {
 
 /* ----------------------------- Stamping ----------------------------- */
 
-/** @test */
-TEST(JfetShichmanTest, StampSaturation) {
-  MnaSystem mna(4);
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.01};
-  const NetID DRAIN = 1;
-  const NetID GATE = 2;
-  const NetID SOURCE = 0;
-  const double VGS = -0.5;
-  const double VDS = 5.0;
+/** @test Stamp is the model's linearization: exact at the operating point, first order around it */
+TEST(JfetShichmanTest, StampIsLinearizationAtOperatingPoint) {
+  const JfetShichmanParams PARAMS;
 
-  // Should stamp transconductance and output conductance
-  JfetShichman::stamp(mna, DRAIN, GATE, SOURCE, VGS, VDS, params);
-}
+  struct Bias {
+    double vgs;
+    double vds;
+    const char* region;
+  };
+  struct Step {
+    double gate;
+    double drain;
+    double source;
+  };
 
-/** @test */
-TEST(JfetShichmanTest, StampLinear) {
-  MnaSystem mna(4);
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0};
-  const NetID DRAIN = 1;
-  const NetID GATE = 2;
-  const NetID SOURCE = 0;
-  const double VGS = -0.5;
-  const double VDS = 0.5;
+  // The source sits off ground so every stamped entry takes part.
+  const double V_SOURCE = 0.8;
+  const double DV = 0.05;
 
-  // Should stamp linear region conductances
-  JfetShichman::stamp(mna, DRAIN, GATE, SOURCE, VGS, VDS, params);
-}
+  for (const Bias& bias :
+       {Bias{-3.0, 5.0, "cutoff"}, Bias{-0.5, 0.5, "linear"}, Bias{-0.5, 5.0, "saturation"}}) {
+    const double ID = JfetShichman::current(bias.vgs, bias.vds, PARAMS);
+    const double GM = JfetShichman::transconductance(bias.vgs, bias.vds, PARAMS);
+    const double GDS = JfetShichman::outputConductance(bias.vgs, bias.vds, PARAMS);
 
-/** @test */
-TEST(JfetShichmanTest, StampCutoff) {
-  MnaSystem mna(4);
-  JfetShichmanParams params{.Vp = -2.0};
-  const NetID DRAIN = 1;
-  const NetID GATE = 2;
-  const NetID SOURCE = 0;
-  const double VGS = -2.5; // Below Vp (cutoff)
-  const double VDS = 5.0;
+    // Terminal order: drain, gate, source.
+    const auto STAMP = [&](MnaSystem& mna) {
+      JfetShichman::stamp(mna, terminalNet(0), terminalNet(1), terminalNet(2), bias.vgs, bias.vds,
+                          PARAMS);
+    };
 
-  // Should stamp zero conductances (cutoff)
-  JfetShichman::stamp(mna, DRAIN, GATE, SOURCE, VGS, VDS, params);
+    for (const Step& step :
+         {Step{0.0, 0.0, 0.0}, Step{DV, 0.0, 0.0}, Step{0.0, DV, 0.0}, Step{0.0, 0.0, DV}}) {
+      const auto PINNED = pinTerminals({V_SOURCE + bias.vds + step.drain,
+                                        V_SOURCE + bias.vgs + step.gate, V_SOURCE + step.source},
+                                       STAMP);
+      ASSERT_TRUE(PINNED.solved) << bias.region;
+
+      const double D_VGS = step.gate - step.source;
+      const double D_VDS = step.drain - step.source;
+      const double I_DRAIN = ID + GM * D_VGS + GDS * D_VDS;
+      expectCurrent(PINNED.into[0], I_DRAIN, "drain");
+      expectCurrent(PINNED.into[1], 0.0, "gate");
+      expectCurrent(PINNED.into[2], -I_DRAIN, "source");
+    }
+  }
 }
 
 /* ----------------------------- Physical Behavior ----------------------------- */
