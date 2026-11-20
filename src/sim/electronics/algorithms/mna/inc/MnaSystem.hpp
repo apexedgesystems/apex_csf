@@ -193,8 +193,14 @@ public:
 
   /**
    * @brief Inject a current between two nets.
-   * @param a Source net (current flows out).
-   * @param b Sink net (current flows in).
+   *
+   * Adds i to the injected-current vector at a and subtracts it at b: an
+   * independent source that delivers i into net a and draws it from net b.
+   * A device whose linearization carries i from net a to net b through
+   * itself stamps addCurrent(a, b, -i).
+   *
+   * @param a Net the current is injected into.
+   * @param b Net the current is drawn from.
    * @param i Current in amperes.
    *
    * @note RT-safe: stamps into pre-allocated vector.

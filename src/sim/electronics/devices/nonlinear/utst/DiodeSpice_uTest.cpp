@@ -4,17 +4,22 @@
  */
 
 #include "src/sim/electronics/devices/nonlinear/inc/DiodeSpice.hpp"
+#include "src/sim/electronics/devices/nonlinear/utst/StampProbe.hpp"
 
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <utility>
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
 
 using sim::electronics::devices::nonlinear::DiodeSpice;
 using sim::electronics::devices::nonlinear::DiodeSpiceParams;
 using sim::electronics::devices::nonlinear::MnaSystem;
-using sim::electronics::devices::nonlinear::NetID;
+
+using sim::electronics::devices::nonlinear::test::expectCurrent;
+using sim::electronics::devices::nonlinear::test::pinTerminals;
+using sim::electronics::devices::nonlinear::test::terminalNet;
 
 /* ----------------------------- Default Construction ----------------------------- */
 
@@ -176,28 +181,31 @@ TEST(DiodeSpiceTest, ConductanceNumericalDerivativeWithRs) {
 
 /* ----------------------------- Stamping ----------------------------- */
 
-/** @test */
-TEST(DiodeSpiceTest, StampForwardBias) {
-  MnaSystem mna(3);
-  DiodeSpiceParams params{.Rs = 0.5};
-  const NetID ANODE = 1;
-  const NetID CATHODE = 2;
-  const double V = 0.7;
+/** @test Stamp is the model's linearization: exact at the operating point, first order around it */
+TEST(DiodeSpiceTest, StampIsLinearizationAtOperatingPoint) {
+  const DiodeSpiceParams PARAMS{.Rs = 0.5};
 
-  // Should stamp linearized conductance and current source
-  DiodeSpice::stamp(mna, ANODE, CATHODE, V, params);
-}
+  // Anode and cathode both sit off ground so every stamped entry takes part.
+  const double V_CATHODE = 1.2;
+  const double DV = 0.01;
+  for (const double V : {0.7, 0.3, -2.0}) {
+    const double I = DiodeSpice::current(V, PARAMS);
+    const double G = DiodeSpice::conductance(V, PARAMS);
+    const auto STAMP = [&](MnaSystem& mna) {
+      DiodeSpice::stamp(mna, terminalNet(0), terminalNet(1), V, PARAMS);
+    };
 
-/** @test */
-TEST(DiodeSpiceTest, StampReverseBias) {
-  MnaSystem mna(3);
-  DiodeSpiceParams params{.Rs = 0.5};
-  const NetID ANODE = 1;
-  const NetID CATHODE = 2;
-  const double V = -2.0;
+    // At the operating point, then one step on each terminal.
+    for (const auto& [dAnode, dCathode] :
+         {std::pair{0.0, 0.0}, std::pair{DV, 0.0}, std::pair{0.0, DV}}) {
+      const auto PINNED = pinTerminals({V_CATHODE + V + dAnode, V_CATHODE + dCathode}, STAMP);
+      ASSERT_TRUE(PINNED.solved) << "v = " << V;
 
-  // Should stamp small conductance (reverse bias)
-  DiodeSpice::stamp(mna, ANODE, CATHODE, V, params);
+      const double I_LINEAR = I + G * (dAnode - dCathode);
+      expectCurrent(PINNED.into[0], I_LINEAR, "anode");
+      expectCurrent(PINNED.into[1], -I_LINEAR, "cathode");
+    }
+  }
 }
 
 /* ----------------------------- Junction Capacitance ----------------------------- */

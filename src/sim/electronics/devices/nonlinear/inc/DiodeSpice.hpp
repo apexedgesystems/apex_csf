@@ -154,9 +154,9 @@ struct DiodeSpice {
     const double G = conductance(vDiode, params);
     const double IEQ = I - G * vDiode;
 
-    // Stamp linearized conductance and equivalent current source
+    // Stamp linearized conductance; the equivalent source leaves the anode net
     mna.addConductance(anodeNet, cathodeNet, G);
-    mna.addCurrent(anodeNet, cathodeNet, IEQ);
+    mna.addCurrent(anodeNet, cathodeNet, -IEQ);
   }
 
   /**

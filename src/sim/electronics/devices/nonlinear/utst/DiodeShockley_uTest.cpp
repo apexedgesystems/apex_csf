@@ -4,15 +4,21 @@
  */
 
 #include "src/sim/electronics/devices/nonlinear/inc/DiodeShockley.hpp"
+#include "src/sim/electronics/devices/nonlinear/utst/StampProbe.hpp"
 
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <utility>
 
 using sim::electronics::devices::nonlinear::DiodeShockley;
 using sim::electronics::devices::nonlinear::DiodeShockleyParams;
 using sim::electronics::devices::nonlinear::MnaSystem;
 using sim::electronics::devices::nonlinear::NetID;
+
+using sim::electronics::devices::nonlinear::test::expectCurrent;
+using sim::electronics::devices::nonlinear::test::pinTerminals;
+using sim::electronics::devices::nonlinear::test::terminalNet;
 
 /* ----------------------------- Constants ----------------------------- */
 
@@ -140,31 +146,54 @@ TEST(DiodeShockleyTest, ConductanceNumericalDerivative) {
 
 /* ----------------------------- Stamping ----------------------------- */
 
-/** @test Stamp into MNA system. */
-TEST(DiodeShockleyTest, Stamp) {
-  MnaSystem mna(3);
-  DiodeShockleyParams params;
-  const NetID ANODE = 1;
-  const NetID CATHODE = 0;
-  const double V_DIODE = 0.6;
+/** @test Stamp is the model's linearization: exact at the operating point, first order around it */
+TEST(DiodeShockleyTest, StampIsLinearizationAtOperatingPoint) {
+  const DiodeShockleyParams PARAMS;
 
-  DiodeShockley::stamp(mna, ANODE, CATHODE, V_DIODE, params);
+  // Anode and cathode both sit off ground so every stamped entry takes part.
+  const double V_CATHODE = 1.2;
+  const double DV = 0.01;
+  for (const double V : {0.7, 0.3, -2.0}) {
+    const double I = DiodeShockley::current(V, PARAMS);
+    const double G = DiodeShockley::conductance(V, PARAMS);
+    const auto STAMP = [&](MnaSystem& mna) {
+      DiodeShockley::stamp(mna, terminalNet(0), terminalNet(1), V, PARAMS);
+    };
 
-  // Should not throw and should modify MNA system
-  // (Detailed MNA matrix checks would require exposing internal state)
+    // At the operating point, then one step on each terminal.
+    for (const auto& [dAnode, dCathode] :
+         {std::pair{0.0, 0.0}, std::pair{DV, 0.0}, std::pair{0.0, DV}}) {
+      const auto PINNED = pinTerminals({V_CATHODE + V + dAnode, V_CATHODE + dCathode}, STAMP);
+      ASSERT_TRUE(PINNED.solved) << "v = " << V;
+
+      const double I_LINEAR = I + G * (dAnode - dCathode);
+      expectCurrent(PINNED.into[0], I_LINEAR, "anode");
+      expectCurrent(PINNED.into[1], -I_LINEAR, "cathode");
+    }
+  }
 }
 
-/** @test Stamp with reverse bias. */
-TEST(DiodeShockleyTest, StampReverseBias) {
-  MnaSystem mna(3);
-  DiodeShockleyParams params;
+/** @test Newton iteration on the stamp reaches the operating point of a current-driven diode */
+TEST(DiodeShockleyTest, NewtonOnStampReachesDrivenOperatingPoint) {
+  const DiodeShockleyParams PARAMS{.Is = 1e-14, .n = 1.0, .Vt = 0.026};
+  const double I_DRIVE = 1e-3;
   const NetID ANODE = 1;
   const NetID CATHODE = 0;
-  const double V_DIODE = -0.5; // Reverse bias
 
-  DiodeShockley::stamp(mna, ANODE, CATHODE, V_DIODE, params);
+  MnaSystem mna(2);
+  double vDiode = 0.7;
+  for (int iter = 0; iter < 20; ++iter) {
+    mna.clear();
+    DiodeShockley::stamp(mna, ANODE, CATHODE, vDiode, PARAMS);
+    mna.addCurrent(ANODE, CATHODE, I_DRIVE);
+    const auto RESULT = mna.solve();
+    ASSERT_TRUE(RESULT.success) << "iteration " << iter;
+    vDiode = RESULT.nodeVoltages[ANODE] - RESULT.nodeVoltages[CATHODE];
+  }
 
-  // Should handle negative voltages without issue
+  // Closed form of I_DRIVE = Is * (exp(V / (n * Vt)) - 1).
+  const double V_EXPECTED = PARAMS.n * PARAMS.Vt * std::log(1.0 + I_DRIVE / PARAMS.Is);
+  EXPECT_NEAR(vDiode, V_EXPECTED, 1e-6);
 }
 
 /* ----------------------------- Physical Behavior ----------------------------- */
