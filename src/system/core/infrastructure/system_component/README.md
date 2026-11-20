@@ -391,7 +391,7 @@ protected:
 | ------------- | ----------------- | ----- | --------------------- |
 | `base/utst/`  | Unit tests        | 15    | Yes                   |
 | `core/utst/`  | Unit tests        | 17    | Yes                   |
-| `posix/utst/` | Unit tests        | 147   | Yes                   |
+| `posix/utst/` | Unit tests        | 148   | Yes                   |
 | `mcu/utst/`   | Unit tests        | 10    | Yes                   |
 | `posix/ptst/` | Performance tests | 11    | No (manual)           |
 

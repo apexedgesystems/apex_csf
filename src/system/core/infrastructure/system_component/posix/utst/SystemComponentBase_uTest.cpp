@@ -20,6 +20,8 @@
 #include <fstream>
 #include <memory>
 #include <string>
+#include <type_traits>
+#include <utility>
 
 using system_core::system_component::Status;
 using system_core::system_component::SystemComponentBase;
@@ -273,6 +275,24 @@ TEST(SystemComponentBaseTest, InitComponentLogCreatesItsSubdirectory) {
   ASSERT_TRUE(std::filesystem::exists(LOG_FILE)) << LOG_FILE;
   const std::string CONTENT = slurp(LOG_FILE);
   EXPECT_NE(CONTENT.find(" INFO: LOGGING - first line\n"), std::string::npos) << CONTENT;
+}
+
+/** @test A component stays movable, and a move carries its lock. */
+TEST(SystemComponentBaseTest, MoveCarriesTheLock) {
+  static_assert(std::is_nothrow_move_constructible_v<LoggingComponent>);
+  static_assert(std::is_nothrow_move_assignable_v<LoggingComponent>);
+
+  LoggingComponent locked;
+  locked.lock();
+  LoggingComponent moved(std::move(locked));
+  EXPECT_TRUE(moved.isLocked());
+
+  LoggingComponent assigned;
+  EXPECT_FALSE(assigned.isLocked());
+  assigned = std::move(moved);
+  EXPECT_TRUE(assigned.isLocked());
+  assigned.unlock();
+  EXPECT_FALSE(assigned.isLocked());
 }
 
 /** @test initComponentLog() reports a log that could not open, and installs it all the same. */

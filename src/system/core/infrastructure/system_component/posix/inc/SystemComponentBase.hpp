@@ -367,13 +367,13 @@ public:
    *       wait for it.
    * @note NOT RT-safe: Control-plane only (called by executive on CMD_LOCK_COMPONENT).
    */
-  void lock() noexcept { locked_.store(true, std::memory_order_release); }
+  void lock() noexcept { locked_.set(true); }
 
   /**
    * @brief Unlock component after runtime update completes.
    * @note NOT RT-safe: Control-plane only (called by executive on CMD_UNLOCK_COMPONENT).
    */
-  void unlock() noexcept { locked_.store(false, std::memory_order_release); }
+  void unlock() noexcept { locked_.set(false); }
 
   /**
    * @brief Check if component is locked for runtime update.
@@ -381,7 +381,7 @@ public:
    * @note RT-safe: One atomic load. The control plane writes the flag on
    *       its thread and the dispatching thread reads it.
    */
-  [[nodiscard]] bool isLocked() const noexcept { return locked_.load(std::memory_order_acquire); }
+  [[nodiscard]] bool isLocked() const noexcept { return locked_.get(); }
 
   /**
    * @brief Path of this component's dedicated log file.
@@ -474,7 +474,31 @@ private:
   std::shared_ptr<logs::SystemLog> componentLog_{nullptr};
   IInternalBus* internalBus_{nullptr};
   bool configured_{false};
-  std::atomic<bool> locked_{false};
+  /// The lock flag: atomic for the dispatching thread's read, and carried
+  /// along when the component is moved. A component is moved only before
+  /// it is registered, so no other thread reads either side of a move.
+  class LockFlag {
+  public:
+    LockFlag() noexcept = default;
+    ~LockFlag() = default;
+    LockFlag(const LockFlag& other) noexcept : value_(other.get()) {}
+    LockFlag& operator=(const LockFlag& other) noexcept {
+      set(other.get());
+      return *this;
+    }
+    LockFlag(LockFlag&& other) noexcept : value_(other.get()) {}
+    LockFlag& operator=(LockFlag&& other) noexcept {
+      set(other.get());
+      return *this;
+    }
+
+    void set(bool locked) noexcept { value_.store(locked, std::memory_order_release); }
+    [[nodiscard]] bool get() const noexcept { return value_.load(std::memory_order_acquire); }
+
+  private:
+    std::atomic<bool> value_{false};
+  };
+  LockFlag locked_{};
 
   // Command statistics (system-wide tracking).
   std::uint64_t commandCount_{0};
