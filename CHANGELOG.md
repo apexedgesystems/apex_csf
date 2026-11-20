@@ -65,6 +65,7 @@ any such change is called out explicitly in its entry.
 - `MnaSystem::addTransconductance` stamps a controlled current source, and
   `Junction.hpp` holds the junction helpers the device models share (limited
   exponential, series-resistance solve, voltage limiting).
+  ([#195](https://github.com/apexedgesystems/apex_csf/pull/195))
 
 ### Changed
 
@@ -131,6 +132,7 @@ any such change is called out explicitly in its entry.
   `BjtCommonEmitter::computeDC` reports a failed solve. Breaking:
   `JfetLevel2Params::alpha` is removed; Zener, BJT and subthreshold currents
   change value.
+  ([#195](https://github.com/apexedgesystems/apex_csf/pull/195))
 - ASYNC logging: `flush()` waits for every accepted entry's write attempt, a
   cut line keeps its newline, and a failed rotation keeps the log descriptor.
   ([#188](https://github.com/apexedgesystems/apex_csf/pull/188))
