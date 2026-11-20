@@ -28,11 +28,10 @@ namespace system_component {
  * appropriate virtual link during startup:
  *
  *   - SERIAL_*: PtyPair (master fd to HW_MODEL, slave path to DRIVER)
- *   - CAN: vcan kernel interface (both sides use CANBusAdapter)
+ *   - CAN: Unix datagram socketpair, one frame per datagram
  *   - SPI: Unix socketpair with SpiSocketDevice wrapper
  *   - I2C: Unix socketpair with I2cSocketDevice wrapper
- *   - ETH_TCP: Loopback TCP (server to HW_MODEL, client to DRIVER)
- *   - ETH_UDP: Loopback UDP (server to HW_MODEL, client to DRIVER)
+ *   - ETH_TCP, ETH_UDP: no link is built; provisioning reports failure
  *   - UNIX_STREAM: socketpair (one fd per side)
  *   - BLUETOOTH: Unix socketpair with RFCOMM-compatible wrapper
  *

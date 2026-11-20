@@ -31,19 +31,25 @@ namespace system_component {
  *
  * Collision rules:
  *  - Same componentId + different componentName = COLLISION (error)
- *  - Same componentId + same componentName = MULTI-INSTANCE (OK)
+ *  - Same componentId + same componentName = MULTI-INSTANCE (OK), up to
+ *    MAX_INSTANCES per id: the instance index is one byte of the fullUid
  *
  * @note NOT RT-safe. Use only during startup/registration phase.
  */
 struct ComponentRegistry {
+  /// Instances one componentId can have: the indices a byte can name.
+  static constexpr std::uint16_t MAX_INSTANCES = 256;
+
   /// Registered component info: componentId -> (componentName, instanceCount)
-  std::unordered_map<std::uint16_t, std::pair<const char*, std::uint8_t>> registered;
+  std::unordered_map<std::uint16_t, std::pair<const char*, std::uint16_t>> registered;
 
   /**
    * @brief Register a component and get its instance index.
    * @param component Pointer to component (any ComponentCore-derived type).
-   * @param[out] instanceIndex Assigned instance index.
-   * @return true on success, false on collision.
+   * @param[out] instanceIndex Assigned instance index; untouched on refusal.
+   * @return true on success; false on collision, or when the id already
+   *         has MAX_INSTANCES instances. A refused component is left as
+   *         it was.
    * @note NOT RT-safe.
    * @note Accepts ComponentCore* so MCU components can register through
    *       the same registry that POSIX components use.
@@ -61,7 +67,10 @@ struct ComponentRegistry {
         return false;
       }
       // MULTI-INSTANCE: same ID, same name - increment instance count
-      instanceIndex = it->second.second++;
+      if (it->second.second >= MAX_INSTANCES) {
+        return false;
+      }
+      instanceIndex = static_cast<std::uint8_t>(it->second.second++);
     } else {
       // New component type - register as instance 0
       instanceIndex = 0;

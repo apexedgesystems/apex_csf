@@ -113,6 +113,12 @@ void ApexExecutive::externalIO(std::promise<std::uint8_t>&& p) noexcept {
   while (!externalIOShouldStop_.load(std::memory_order_relaxed) &&
          !controlState_.shutdownRequested.load(std::memory_order_relaxed)) {
 
+    // Plugins a library swap replaced are destroyed here: this thread
+    // holds no component pointer at the top of its loop.
+    if (pluginsRetired_.load(std::memory_order_acquire)) {
+      reclaimRetiredPlugins();
+    }
+
     // Poll stdin
     const int POLL_RESULT = ::poll(&pfd, 1, STDIN_TIMEOUT_MS);
 

@@ -19,6 +19,8 @@
 
 #include "src/system/core/infrastructure/system_component/posix/inc/PluginInterface.hpp"
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>
 
@@ -74,16 +76,31 @@ public:
   /// Get the path of the currently loaded .so.
   [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
 
-  /// Get the last error message (from dlerror or internal).
-  [[nodiscard]] const char* lastError() const noexcept { return lastError_; }
+  /**
+   * @brief Reason the last load() was refused; nullptr after a load that
+   *        succeeded or before any load.
+   * @note The text is the loader's own copy, cut to ERROR_TEXT_BYTES - 1
+   *       characters: the dynamic linker's message does not outlive the
+   *       next dl* call, and load() closes the library it refuses.
+   */
+  [[nodiscard]] const char* lastError() const noexcept {
+    return hasError_ ? errorText_.data() : nullptr;
+  }
+
+  /// Storage for the last error text, terminator included.
+  static constexpr std::size_t ERROR_TEXT_BYTES = 256;
 
 private:
+  /// Keep a copy of TEXT as the last error ("unknown" when it is null).
+  void setError(const char* text) noexcept;
+
   void* handle_{nullptr};
   ApexPluginCreateFn createFn_{nullptr};
   ApexPluginDestroyFn destroyFn_{nullptr};
   SystemComponentBase* component_{nullptr};
   std::filesystem::path path_;
-  const char* lastError_{nullptr};
+  std::array<char, ERROR_TEXT_BYTES> errorText_{};
+  bool hasError_{false};
 };
 
 } // namespace system_component

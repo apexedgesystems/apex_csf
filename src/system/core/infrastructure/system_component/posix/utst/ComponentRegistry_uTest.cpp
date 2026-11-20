@@ -15,6 +15,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <memory>
+#include <vector>
+
 /* ----------------------------- Test Fixtures ----------------------------- */
 
 /**
@@ -119,6 +123,39 @@ TEST(ComponentRegistry_MultiInstance, AssignsIncreasingInstanceIndices) {
   EXPECT_EQ(first.instanceIndex(), 0u);
   EXPECT_EQ(second.instanceIndex(), 1u);
   EXPECT_EQ(third.instanceIndex(), 2u);
+}
+
+/** @test The instance byte holds 256 instances; the 257th is refused and left unregistered. */
+TEST(ComponentRegistry_MultiInstance, RefusesThe257thInstance) {
+  system_core::system_component::ComponentRegistry registry;
+  std::vector<std::unique_ptr<TestPosixComponent>> instances;
+  std::uint8_t idx = 0;
+
+  for (unsigned i = 0; i < 256u; ++i) {
+    instances.push_back(std::make_unique<TestPosixComponent>(50, "Sensor"));
+    ASSERT_TRUE(registry.registerComponent(instances.back().get(), idx)) << "instance " << i;
+    ASSERT_EQ(idx, i);
+  }
+  EXPECT_EQ(instances.front()->fullUid(), 0x003200u);
+  EXPECT_EQ(instances.back()->fullUid(), 0x0032FFu);
+
+  TestPosixComponent extra{50, "Sensor"};
+  const std::uint32_t UNREGISTERED_UID = extra.fullUid();
+  idx = 77;
+  EXPECT_FALSE(registry.registerComponent(&extra, idx));
+  EXPECT_EQ(idx, 77u) << "a refused registration leaves the index output alone";
+  EXPECT_FALSE(extra.isRegistered());
+  EXPECT_EQ(extra.fullUid(), UNREGISTERED_UID);
+
+  // The refusal changes nothing for the next caller either.
+  TestPosixComponent another{50, "Sensor"};
+  EXPECT_FALSE(registry.registerComponent(&another, idx));
+  EXPECT_FALSE(another.isRegistered());
+
+  // Another id still starts at instance 0.
+  TestPosixComponent other{51, "Other"};
+  ASSERT_TRUE(registry.registerComponent(&other, idx));
+  EXPECT_EQ(idx, 0u);
 }
 
 /** @test Multi-instance works across tiers when ids and names align. */

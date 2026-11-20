@@ -5,9 +5,9 @@
  * The files under compat/tprm/ (APEX_TPRM_VECTORS_DIR) are the
  * byte-level contract between the rust reference implementation, this
  * runtime, and external consumers. The rust suite pins the generator to the
- * committed bytes; these tests pin the v3 payload reader and
+ * committed bytes; these tests pin the v4 payload reader and
  * PackedTprmReader to the same bytes, so a format change on either side
- * fails a test before review. Payload vectors carry the 20-byte v3
+ * fails a test before review. Payload vectors carry the 28-byte v4
  * prelude (verified here against rust-stamped uids and CRCs -- the
  * cross-language proof); the *_raw vector is the unstamped form
  * sequence entries pack.

@@ -155,6 +155,22 @@ public:
     return totalInFlightWaitTimeouts_.load(std::memory_order_acquire);
   }
 
+  /**
+   * @brief Whether every dispatched invocation has left its worker.
+   *
+   * True when no entry is in flight and no worker is inside a task call
+   * or the record of its completion. Pending completion errors are then
+   * logged, as at the start of a dispatch. From a true return until the
+   * next dispatch no worker holds a task pointer or a task label this
+   * scheduler handed out, so a task object may be replaced or destroyed.
+   *
+   * @return false while any invocation is queued, running or completing.
+   * @note Call on the dispatching thread: it is the only source of new
+   *       invocations. One pass over the entries and one load per pool; it
+   *       does not wait. NOT RT-safe: logs when errors are pending.
+   */
+  [[nodiscard]] bool settled() noexcept;
+
   /** @brief Worker count per constructed pool (index = poolId). */
   [[nodiscard]] std::vector<std::uint16_t> poolWorkerCounts() const noexcept override;
 
@@ -260,6 +276,10 @@ protected:
 
 private:
   void initPools(std::vector<PoolSpec> specs) noexcept;
+
+  /// Log (at LOG_LEVEL's say) and discard the pools' pending completion
+  /// errors. @return whether there were any.
+  bool logCompletionErrors(logs::SystemLog* lg, int logLevel) noexcept;
 
   // Resolve PoolSpec.numThreads for each pending spec using the hierarchy:
   // caller-supplied non-zero > TPRM workersPerPool > hardware_concurrency().

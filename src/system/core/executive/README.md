@@ -161,6 +161,46 @@ upload to place a corrected set, VERIFY_TPRM to check it, and
 RELOAD_EXECUTIVE to reboot onto the fix. `--shutdown-after` still
 applies, so automated runs exit rather than hang.
 
+## Library Reload
+
+RELOAD*LIBRARY replaces a locked component with one loaded from
+`<name>*<instance>.so` in the inactive library bank. It runs in three
+steps, on the threads that own what each step touches:
+
+| Step    | Thread                               | Work                                                                                                                       |
+| ------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| Prepare | the thread that received the command | load the library, create the instance, give it its log, load its parameters, initialize it, archive the old instance's log |
+| Publish | TaskExecution                        | point the scheduler's task entries, the registry entry and the component list at the new instance                          |
+| Reclaim | ExternalIO, at the top of its loop   | destroy the plugin the swap replaced and close its library                                                                 |
+
+Publication happens only while the scheduler reports every dispatched
+task settled: no task queued or running, and no worker still filing a
+task's completion. TaskExecution is the thread that drains commands to
+components and dispatches tasks, so at that point nothing holds the old
+instance for work and nothing can pick it up afterwards. The new
+instance is dispatched from the next cycle; the old one stays locked.
+
+- **Wait.** A command that arrives over the wire runs on ExternalIO. It
+  hands the swap to TaskExecution and blocks until it is published or
+  two seconds pass (four clock periods when that is longer). Command
+  and telemetry I/O on that connection wait with it. TaskExecution
+  takes the swap after a cycle whose tasks finished within their frame,
+  between cycles, or while paused.
+- **Refusal.** If the tasks do not settle within the wait, the reply is
+  `NOT_QUIESCENT`: nothing was swapped, the new instance is destroyed
+  and the old one is unlocked. A task that overruns every frame keeps a
+  reload out until it returns. A second RELOAD_LIBRARY while one is
+  running is refused with `NOT_SWAPPABLE`.
+- **From an action.** A RELOAD_LIBRARY an action sends to the executive
+  runs on TaskExecution, in the action phase. It prepares and publishes
+  there, so the library load and the component's initialization are
+  part of that cycle.
+- **Cost when no reload is in hand.** TaskExecution reads one flag per
+  cycle and ExternalIO one per loop.
+
+A component lock stops new dispatches of the component's tasks. It does
+not wait for a task already running; the reload does.
+
 ## Usage
 
 ```bash
@@ -232,7 +272,7 @@ rate under test.
 
 | Dir           | Contents                                                         | In CI suite? |
 | ------------- | ---------------------------------------------------------------- | ------------ |
-| `posix/utst/` | Struct/config unit tests (status, RT mode, data, shutdown)       | Yes          |
+| `posix/utst/` | Struct/config unit tests; RELOAD_LIBRARY on a live executive     | Yes          |
 | `base/utst/`  | IExecutive contract tests                                        | Yes          |
 | `core/utst/`  | ExecutiveCore identity/contract tests                            | Yes          |
 | `mcu/utst/`   | MCU executive unit tests                                         | Yes          |

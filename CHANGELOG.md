@@ -76,6 +76,10 @@ any such change is called out explicitly in its entry.
 - Breaking: `SystemLog::setNonBlocking` is removed; it had no effect, so
   callers delete the call.
   ([#190](https://github.com/apexedgesystems/apex_csf/pull/190))
+- Breaking: rebuild C++ consumers of system_component (`PluginLoader`'s
+  layout changed); `initComponentLog()` returns whether the log opened,
+  and `ParamBank::apply()` needs a `load()` accepted since the last publish.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Breaking: the Rust tools are one Cargo workspace at `tools/`, built and
   installed by role. Executables move from `bin/tools/rust/` to
   `bin/tools/<role>/` (build, ops, analysis); `make tools-build` replaces
@@ -132,6 +136,17 @@ any such change is called out explicitly in its entry.
   types included, and `SPSCQueue::sizeApprox()` never exceeds `capacity()`
   when read from a third thread.
   ([#189](https://github.com/apexedgesystems/apex_csf/pull/189))
+- Plugin loader error text is no longer read after it is freed, and a
+  component swapped in by `RELOAD_LIBRARY` gets its log.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- `RELOAD_LIBRARY` swaps on the task thread once every dispatched task
+  has settled and destroys the replaced plugin afterwards; a reload that
+  cannot settle within its wait is refused with `NOT_QUIESCENT`.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- Component bases: logs open outside a pre-made log tree, the registry
+  refuses a 257th instance, `reset()` empties task tables, and a second
+  `provisionTransport()` keeps the open link.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Concurrency primitives: pool start-up, shutdown and signal handling,
   Barrier and Latch semantics, LockFreeQueue cell alignment and
   SpinLock::isLocked; the UBSan-only check joins the nightly. Breaking:

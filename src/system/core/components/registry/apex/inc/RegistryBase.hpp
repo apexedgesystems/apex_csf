@@ -25,6 +25,7 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/IComponentResolver.hpp"
 #include "src/utilities/compatibility/inc/compat_span.hpp"
 
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
 
@@ -169,30 +170,31 @@ public:
    * @brief Get component pointer by full UID (IComponentResolver implementation).
    * @param fullUid Component's full UID.
    * @return Pointer to SystemComponentBase, or nullptr if not found.
-   * @note RT-safe after freeze().
+   * @note RT-safe after freeze(): one atomic load of the entry's pointer,
+   *       which updateComponent() may replace from another thread.
    */
   [[nodiscard]] system_component::SystemComponentBase*
   getComponent(std::uint32_t fullUid) noexcept override {
     ComponentEntry* entry = getComponentEntry(fullUid);
-    if (entry == nullptr || entry->component == nullptr) {
+    if (entry == nullptr) {
       return nullptr;
     }
-    return static_cast<system_component::SystemComponentBase*>(entry->component);
+    return static_cast<system_component::SystemComponentBase*>(loadComponent(*entry));
   }
 
   /**
    * @brief Get component pointer by full UID (const, IComponentResolver implementation).
    * @param fullUid Component's full UID.
    * @return Const pointer to SystemComponentBase, or nullptr if not found.
-   * @note RT-safe after freeze().
+   * @note RT-safe after freeze(), as the non-const overload.
    */
   [[nodiscard]] const system_component::SystemComponentBase*
   getComponent(std::uint32_t fullUid) const noexcept override {
     const ComponentEntry* entry = getComponentEntry(fullUid);
-    if (entry == nullptr || entry->component == nullptr) {
+    if (entry == nullptr) {
       return nullptr;
     }
-    return static_cast<const system_component::SystemComponentBase*>(entry->component);
+    return static_cast<const system_component::SystemComponentBase*>(loadComponent(*entry));
   }
 
   /**
@@ -201,6 +203,10 @@ public:
    * @param newComp New component pointer.
    * @return true if entry found and updated, false if not found.
    * @note Used during component hot-swap to point registry at new instance.
+   * @note The store is atomic, so a getComponent() on another thread
+   *       returns the old pointer or the new one. It says nothing about
+   *       how long the old instance stays in use: the caller keeps that
+   *       instance alive until every holder of the old pointer is done.
    */
   bool updateComponent(std::uint32_t fullUid,
                        system_component::SystemComponentBase* newComp) noexcept {
@@ -208,7 +214,7 @@ public:
     if (entry == nullptr) {
       return false;
     }
-    entry->component = newComp;
+    std::atomic_ref<void*>(entry->component).store(newComp, std::memory_order_release);
     return true;
   }
 
@@ -345,6 +351,15 @@ public:
    * @note Creates "registry.rdat" in the specified directory.
    */
   [[nodiscard]] virtual Status exportDatabase(const std::filesystem::path& dbDir) noexcept = 0;
+
+private:
+  /// The entry's component pointer as updateComponent() last stored it.
+  [[nodiscard]] static void* loadComponent(const ComponentEntry& entry) noexcept {
+    // Registry entries are never const objects; the cast lets the const
+    // lookup read through the same atomic view the store uses.
+    return std::atomic_ref<void*>(const_cast<void*&>(entry.component))
+        .load(std::memory_order_acquire);
+  }
 };
 
 } // namespace registry

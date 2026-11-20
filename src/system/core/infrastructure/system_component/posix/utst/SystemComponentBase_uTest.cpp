@@ -11,12 +11,17 @@
 
 #include "src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/SystemComponentStatus.hpp"
+#include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 
 #include <gtest/gtest.h>
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <string>
+#include <type_traits>
+#include <utility>
 
 using system_core::system_component::Status;
 using system_core::system_component::SystemComponentBase;
@@ -69,6 +74,57 @@ protected:
     return static_cast<std::uint8_t>(Status::ERROR_PARAM);
   }
 };
+
+/** @brief Component that writes to its own log. */
+class LoggingComponent : public SystemComponentBase {
+public:
+  [[nodiscard]] std::uint16_t componentId() const noexcept override { return 997; }
+  [[nodiscard]] const char* componentName() const noexcept override { return "LoggingComponent"; }
+  [[nodiscard]] const char* label() const noexcept override { return "LOGGING"; }
+
+  [[nodiscard]] bool hasLog() const noexcept { return componentLog() != nullptr; }
+
+  /// One INFO line and a flush; the log's status for the pair.
+  [[nodiscard]] logs::Status logLine(const std::string& message) noexcept {
+    const logs::Status WRITTEN = componentLog()->info(label(), message);
+    const logs::Status FLUSHED = componentLog()->flush();
+    return WRITTEN != logs::Status::OK ? WRITTEN : FLUSHED;
+  }
+
+protected:
+  [[nodiscard]] std::uint8_t doInit() noexcept override { return 0; }
+};
+
+/// A fresh directory only this object owns, removed with it. mkdtemp()
+/// picks a free name and creates it (mode 0700) in one step; when it
+/// cannot, path() is empty and nothing is removed.
+class TempDir {
+public:
+  TempDir() {
+    std::string pattern = (std::filesystem::temp_directory_path() / "syscomp_log_XXXXXX").string();
+    if (::mkdtemp(pattern.data()) != nullptr) {
+      path_ = pattern;
+    }
+  }
+  ~TempDir() {
+    if (!path_.empty()) {
+      std::error_code ec;
+      std::filesystem::remove_all(path_, ec);
+    }
+  }
+  TempDir(const TempDir&) = delete;
+  TempDir& operator=(const TempDir&) = delete;
+
+  [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
+
+private:
+  std::filesystem::path path_;
+};
+
+static std::string slurp(const std::filesystem::path& path) {
+  std::ifstream ifs(path, std::ios::binary);
+  return std::string((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
+}
 
 /* ----------------------------- Default Construction ----------------------------- */
 
@@ -199,4 +255,60 @@ TEST(SystemComponentBaseTest, NoexceptContracts) {
   static_assert(noexcept(std::declval<DummyComponent&>().init()), "init() should be noexcept");
   static_assert(noexcept(std::declval<DummyComponent&>().reset()), "reset() should be noexcept");
   SUCCEED();
+}
+
+/* ----------------------------- Component Log ----------------------------- */
+
+/** @test initComponentLog() creates the type subdirectory and the log takes lines. */
+TEST(SystemComponentBaseTest, InitComponentLogCreatesItsSubdirectory) {
+  const TempDir DIR;
+  ASSERT_FALSE(DIR.path().empty()) << "no private directory";
+  LoggingComponent comp;
+  comp.setInstanceIndex(3);
+
+  ASSERT_TRUE(comp.initComponentLog(DIR.path()));
+  ASSERT_TRUE(comp.hasLog());
+  EXPECT_EQ(comp.logLine("first line"), logs::Status::OK);
+
+  const auto LOG_FILE = DIR.path() / "core" / "LoggingComponent_3.log";
+  EXPECT_EQ(comp.componentLogPath(DIR.path()), LOG_FILE);
+  ASSERT_TRUE(std::filesystem::exists(LOG_FILE)) << LOG_FILE;
+  const std::string CONTENT = slurp(LOG_FILE);
+  EXPECT_NE(CONTENT.find(" INFO: LOGGING - first line\n"), std::string::npos) << CONTENT;
+}
+
+/** @test A component stays movable, and a move carries its lock. */
+TEST(SystemComponentBaseTest, MoveCarriesTheLock) {
+  static_assert(std::is_nothrow_move_constructible_v<LoggingComponent>);
+  static_assert(std::is_nothrow_move_assignable_v<LoggingComponent>);
+
+  LoggingComponent locked;
+  locked.lock();
+  LoggingComponent moved(std::move(locked));
+  EXPECT_TRUE(moved.isLocked());
+
+  LoggingComponent assigned;
+  EXPECT_FALSE(assigned.isLocked());
+  assigned = std::move(moved);
+  EXPECT_TRUE(assigned.isLocked());
+  assigned.unlock();
+  EXPECT_FALSE(assigned.isLocked());
+}
+
+/** @test initComponentLog() reports a log that could not open, and installs it all the same. */
+TEST(SystemComponentBaseTest, InitComponentLogReportsAFailedOpen) {
+  const TempDir DIR;
+  ASSERT_FALSE(DIR.path().empty()) << "no private directory";
+  // A regular file where the log tree's root should be: no subdirectory can be made under it.
+  const auto NOT_A_DIR = DIR.path() / "occupied";
+  std::ofstream(NOT_A_DIR) << "x";
+
+  LoggingComponent comp;
+  comp.setInstanceIndex(0);
+  EXPECT_FALSE(comp.initComponentLog(NOT_A_DIR));
+
+  // Callers that write without a null check still have a log to call; it drops the line.
+  ASSERT_TRUE(comp.hasLog());
+  EXPECT_EQ(comp.logLine("dropped"), logs::Status::ERROR_OPEN);
+  EXPECT_EQ(slurp(NOT_A_DIR), "x");
 }
