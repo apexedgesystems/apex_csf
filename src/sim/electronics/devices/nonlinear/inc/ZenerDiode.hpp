@@ -4,14 +4,21 @@
  * @file ZenerDiode.hpp
  * @brief Zener diode model with breakdown characteristics.
  *
- * Implements SPICE-compatible Zener diode with exponential forward conduction
- * and Zener/avalanche breakdown in reverse bias. Used for voltage regulation,
- * voltage references, and ESD protection.
+ * Exponential forward conduction plus an exponential breakdown current in
+ * reverse bias. Used for voltage regulation, voltage references and clamps.
  *
- * Three operating regions:
- * 1. Forward bias (V > 0): Exponential turn-on like regular diode
- * 2. Reverse bias (V < 0, |V| < Vz): Small leakage current -Is
- * 3. Breakdown (V < -Vz): Exponential current increase (regulation region)
+ *   I(V) = Is * (exp(V / (n*Vt)) - 1) - Ibv * exp(-(V + Vz) / Vbv)
+ *
+ * The breakdown term is part of the current at every bias. It equals Ibv at
+ * V = -Vz, grows by a factor e for every Vbv further into breakdown, and
+ * falls by the same factor on the way back toward zero bias (7e-26 A at
+ * V = 0 with the defaults). The curve and its slope are therefore continuous
+ * through the knee, which a Newton-Raphson solve needs there.
+ *
+ * Regions, for diagnostics only (the equation above holds in all three):
+ * 1. Forward (V >= 0): junction conduction
+ * 2. Reverse (-Vz <= V < 0): leakage, rising toward the knee
+ * 3. Breakdown (V < -Vz): regulation region
  *
  * This is a PHYSICS MODEL (Layer 2) that uses Layer 1 Newton-Raphson solver
  * for nonlinear circuit simulation.
@@ -41,8 +48,8 @@ struct ZenerDiodeParams {
   double n = 1.0;    ///< Ideality factor (unitless), typical 1.0-2.0
   double Vt = 0.026; ///< Thermal voltage (V), kT/q ~= 26mV at 300K
   double Vz = 5.1;   ///< Zener breakdown voltage (V), positive value
-  double Ibv = 1e-3; ///< Breakdown knee current (A)
-  double Vbv = 0.1;  ///< Breakdown voltage parameter (V), controls sharpness
+  double Ibv = 1e-3; ///< Breakdown current at V = -Vz (A)
+  double Vbv = 0.1;  ///< Voltage per factor e of breakdown current (V); smaller is sharper
 };
 
 /**
@@ -69,9 +76,7 @@ struct ZenerDiode {
   /**
    * @brief Compute Zener diode current.
    *
-   * Forward: I = Is * (exp(V / (n * Vt)) - 1)
-   * Reverse: I ~= -Is (small leakage)
-   * Breakdown: I = -Is - Ibv * exp(-(V + Vz) / Vbv)
+   * I = Is * (exp(V / (n*Vt)) - 1) - Ibv * exp(-(V + Vz) / Vbv)
    *
    * @param vDiode Voltage across diode (anode - cathode) in volts.
    * @param params Zener diode physical parameters.
@@ -80,33 +85,16 @@ struct ZenerDiode {
    * @note RT-safe (no allocations, pure math).
    */
   [[nodiscard]] static double current(double vDiode, const ZenerDiodeParams& params) noexcept {
-    const double N_VT = params.n * params.Vt;
-
-    // Forward bias: exponential turn-on
-    if (vDiode > 0.0) {
-      return params.Is * (Junction::limitedExp(vDiode / N_VT) - 1.0);
-    }
-
-    // Reverse bias: check for breakdown
-    const double V_BREAKDOWN = -params.Vz;
-    if (vDiode < V_BREAKDOWN) {
-      // Breakdown region: exponential current increase
-      const double V_EXCESS = vDiode - V_BREAKDOWN; // How far past breakdown (negative)
-      const double I_BREAKDOWN = -params.Ibv * Junction::limitedExp(-V_EXCESS / params.Vbv);
-      const double I_REVERSE = -params.Is;
-      return I_REVERSE + I_BREAKDOWN;
-    }
-
-    // Reverse bias before breakdown: small leakage
-    return params.Is * (Junction::limitedExp(vDiode / N_VT) - 1.0);
+    const double I_JUNCTION = Junction::current(vDiode, params.Is, params.n * params.Vt);
+    const double I_BREAKDOWN =
+        params.Ibv * Junction::limitedExp(-(vDiode + params.Vz) / params.Vbv);
+    return I_JUNCTION - I_BREAKDOWN;
   }
 
   /**
    * @brief Compute Zener diode conductance (dI/dV) for Newton-Raphson.
    *
-   * Forward: g = (Is / (n * Vt)) * exp(V / (n * Vt))
-   * Reverse: g = (Is / (n * Vt)) * exp(V / (n * Vt))  [very small]
-   * Breakdown: g = (Ibv / Vbv) * exp(-(V + Vz) / Vbv)
+   * g = (Is / (n*Vt)) * exp(V / (n*Vt)) + (Ibv / Vbv) * exp(-(V + Vz) / Vbv)
    *
    * @param vDiode Voltage across diode (anode - cathode) in volts.
    * @param params Zener diode physical parameters.
@@ -115,23 +103,10 @@ struct ZenerDiode {
    * @note RT-safe (no allocations, pure math).
    */
   [[nodiscard]] static double conductance(double vDiode, const ZenerDiodeParams& params) noexcept {
-    const double N_VT = params.n * params.Vt;
-
-    // Forward bias: exponential conductance
-    if (vDiode > 0.0) {
-      return (params.Is / N_VT) * Junction::limitedExpSlope(vDiode / N_VT);
-    }
-
-    // Reverse bias: check for breakdown
-    const double V_BREAKDOWN = -params.Vz;
-    if (vDiode < V_BREAKDOWN) {
-      // Breakdown region: exponential conductance
-      const double V_EXCESS = vDiode - V_BREAKDOWN;
-      return (params.Ibv / params.Vbv) * Junction::limitedExpSlope(-V_EXCESS / params.Vbv);
-    }
-
-    // Reverse bias before breakdown: small conductance
-    return (params.Is / N_VT) * Junction::limitedExpSlope(vDiode / N_VT);
+    const double G_JUNCTION = Junction::conductance(vDiode, params.Is, params.n * params.Vt);
+    const double G_BREAKDOWN =
+        (params.Ibv / params.Vbv) * Junction::limitedExpSlope(-(vDiode + params.Vz) / params.Vbv);
+    return G_JUNCTION + G_BREAKDOWN;
   }
 
   /**
