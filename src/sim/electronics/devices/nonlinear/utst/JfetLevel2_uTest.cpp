@@ -121,6 +121,10 @@ TEST(JfetLevel2Test, GateJunctionFollowsShockley) {
   EXPECT_NEAR(JfetLevel2::gateCurrent(-1.0, PARAMS), -9.999999999926846e-15,
               CURRENT_TOL * 9.999999999926846e-15);
   EXPECT_EQ(JfetLevel2::gateCurrent(0.0, PARAMS), 0.0);
+
+  // The default junction: Is = 1e-14 A, n = 1.
+  EXPECT_NEAR(JfetLevel2::gateCurrent(0.6, JfetLevel2Params{}), 0.00010523988178435307,
+              CURRENT_TOL * 0.00010523988178435307);
 }
 
 /* ----------------------------- Region Boundaries ----------------------------- */
