@@ -49,11 +49,6 @@ struct JfetLevel2Params {
   double n = 1.0;    ///< Gate junction ideality factor
   double Vt = 0.026; ///< Thermal voltage (V), kT/q ~= 26mV at 300K
 
-  // Capacitance: carried for a caller's own companion models; the drain
-  // and gate currents here do not read them
-  double Cgd0 = 1e-12; ///< Zero-bias gate-drain capacitance (F)
-  double Cgs0 = 1e-12; ///< Zero-bias gate-source capacitance (F)
-
   // Subthreshold
   double n_sub = 1.5; ///< Subthreshold slope factor: the slope voltage is n_sub*Vt
 };

@@ -47,8 +47,7 @@ struct MosfetLevel3Params {
   double L = 0.18e-6; ///< Channel length (m) - submicron
 
   // Mobility (Level 2)
-  double theta = 0.2;  ///< Mobility degradation (1/V)
-  double E_crit = 2e6; ///< Critical electric field (V/m); not read by this model
+  double theta = 0.2; ///< Mobility degradation (1/V)
 
   // Body effect (Level 2)
   double gamma = 0.4; ///< Body-effect parameter (V^0.5)
@@ -57,7 +56,6 @@ struct MosfetLevel3Params {
   // Short-channel effects (Level 3)
   double eta = 0.05;    ///< DIBL coefficient (unitless)
   double kappa = 0.1;   ///< Saturation voltage parameter (unitless)
-  double vsat = 1e5;    ///< Carrier saturation velocity (m/s); not read by this model
   double delta_w = 0.0; ///< Narrow-width effect (m)
   double delta_l = 0.0; ///< Short-channel effect (m)
 
