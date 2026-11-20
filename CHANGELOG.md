@@ -10,6 +10,10 @@ any such change is called out explicitly in its entry.
 
 ### Added
 
+- A bundle's `TOOLS` takes Rust, shell and Python tools as well as C++
+  targets, staged to run from wherever the package is copied; a tool that
+  cannot run on the target fails the build
+  ([#192](https://github.com/apexedgesystems/apex_csf/pull/192)).
 - Executives log their build identity (`git describe`, branch, tree state,
   build type, compiler, target) as the first System Configuration line.
   ([#172](https://github.com/apexedgesystems/apex_csf/pull/172))
@@ -122,6 +126,11 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- `executive::toString` names `ERROR_TPRM_INGEST`; it returned
+  `UNKNOWN_STATUS` for that code.
+  ([#192](https://github.com/apexedgesystems/apex_csf/pull/192))
+- Firmware releases fail when the build produces no firmware image.
+  ([#192](https://github.com/apexedgesystems/apex_csf/pull/192))
 - ASYNC logging: `flush()` waits for every accepted entry's write attempt, a
   cut line keeps its newline, and a failed rotation keeps the log descriptor.
   ([#188](https://github.com/apexedgesystems/apex_csf/pull/188))

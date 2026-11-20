@@ -132,6 +132,17 @@ TEST(ExecutiveStatus, ToStringNeverReturnsNull) {
   }
 }
 
+/** @test toString names every code from the first error to the final marker. */
+TEST(ExecutiveStatus, ToStringNamesEveryCode) {
+  const auto FIRST = static_cast<std::uint8_t>(executive::Status::ERROR_MODULE_INIT_FAIL);
+  const auto LAST = static_cast<std::uint8_t>(executive::Status::EOE_EXECUTIVE);
+  for (std::uint8_t i = FIRST; i <= LAST; ++i) {
+    EXPECT_STRNE(executive::toString(static_cast<executive::Status>(i)), "UNKNOWN_STATUS")
+        << "code " << static_cast<int>(i);
+  }
+  EXPECT_STREQ(executive::toString(executive::Status::ERROR_TPRM_INGEST), "ERROR_TPRM_INGEST");
+}
+
 /* ----------------------------- Enum Value Tests ----------------------------- */
 
 /** @test Error codes start after SystemComponent base. */

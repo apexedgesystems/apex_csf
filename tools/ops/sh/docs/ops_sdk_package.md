@@ -31,6 +31,8 @@ ops_sdk_package.sh --app <name> --build-dir <path> [options]
 
 ## Prerequisites
 
+- `/bin/bash`, and `cat`, `cp`, `cut`, `du`, `mkdir`, `rm`, `sed` and `tar` on
+  PATH (the script's `# Requires:` line).
 - Run `make apex-data-db` first to generate struct dictionaries.
 - Run the application at least once to produce `registry.rdat` and
   `scheduler.sdat` exports (optional but recommended for the runtime/ section).
