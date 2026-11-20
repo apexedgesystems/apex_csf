@@ -162,8 +162,26 @@ static void stamp(MnaSystem& mna, NetID collector, NetID base, NetID emitter,
 ```
 
 Operating regions (forward / reverse active, saturation, cutoff) emerge
-from the Ebers-Moll equations; the stamp linearizes around the current
-(vbe, vbc) operating point for Newton-Raphson.
+from the Ebers-Moll equations in transport form,
+`Ic = Is*(exp(Vbe/Vt) - exp(Vbc/Vt)) - (Is/Br)*(exp(Vbc/Vt) - 1)`, so the
+reverse-active region has a current gain of `Br`. The stamp linearizes
+around the current (vbe, vbc) operating point for Newton-Raphson.
+
+### Junction helpers
+
+**Header:** `Junction.hpp`
+**Purpose:** Numerical helpers shared by the junction models.
+
+```cpp
+[[nodiscard]] static double criticalVoltage(double is, double nVt) noexcept;
+[[nodiscard]] static double limitVoltage(double vNew, double vOld,
+                                         double nVt, double vCrit) noexcept;
+```
+
+A Newton-Raphson loop over a circuit with a junction passes each junction
+voltage through `limitVoltage` between iterations. Without it the first
+step puts most of the supply across the junction and the iteration comes
+back down one thermal voltage at a time.
 
 ---
 
