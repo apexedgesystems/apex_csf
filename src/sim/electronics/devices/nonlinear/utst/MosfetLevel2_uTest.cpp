@@ -346,6 +346,64 @@ TEST(MosfetLevel2Test, StampIsLinearizationAtOperatingPoint) {
   }
 }
 
+/* ----------------------------- Region Boundaries ----------------------------- */
+
+/** @test Drain current is continuous where the linear region meets saturation */
+TEST(MosfetLevel2Test, ContinuousAtSaturationVoltage) {
+  const MosfetLevel2Params PARAMS;
+  constexpr double EPS = 1e-9;
+
+  for (const double VGS : {1.0, 1.5, 2.0, 3.0}) {
+    for (const double VBS : {0.0, -0.5}) {
+      const double VTH = MosfetLevel2::thresholdVoltage(VBS, PARAMS);
+      const double vdsat = MosfetLevel2::drainSaturationVoltage(VGS, VTH, PARAMS);
+      ASSERT_GT(vdsat, 0.0) << "vgs = " << VGS;
+
+      const double BELOW = MosfetLevel2::current(VGS, vdsat - EPS, VBS, PARAMS);
+      const double ABOVE = MosfetLevel2::current(VGS, vdsat + EPS, VBS, PARAMS);
+      EXPECT_NEAR(BELOW, ABOVE, 1e-6 * ABOVE) << "vgs = " << VGS << ", vbs = " << VBS;
+    }
+  }
+}
+
+/** @test Above threshold the drain current never falls as the drain voltage rises */
+TEST(MosfetLevel2Test, MonotonicInDrainVoltage) {
+  const MosfetLevel2Params PARAMS;
+
+  for (const double VGS : {1.0, 1.5, 2.0, 3.0}) {
+    double previous = MosfetLevel2::current(VGS, 0.0, 0.0, PARAMS);
+    for (int step = 1; step <= 500; ++step) {
+      const double VDS = 0.01 * step;
+      const double ID = MosfetLevel2::current(VGS, VDS, 0.0, PARAMS);
+      ASSERT_GE(ID, previous) << "vgs = " << VGS << ", vds = " << VDS;
+      previous = ID;
+    }
+  }
+}
+
+/** @test Output conductance is finite and not negative through saturation, the boundary included */
+TEST(MosfetLevel2Test, OutputConductanceNotNegativeThroughSaturation) {
+  const MosfetLevel2Params PARAMS;
+
+  for (const double VGS : {1.0, 2.0, 3.0}) {
+    // On the boundary itself the conductance is a difference taken across it.
+    const double VTH = MosfetLevel2::thresholdVoltage(0.0, PARAMS);
+    const double vdsat = MosfetLevel2::drainSaturationVoltage(VGS, VTH, PARAMS);
+    for (const double VDS : {vdsat - 5e-9, vdsat, vdsat + 5e-9}) {
+      const double GDS = MosfetLevel2::outputConductance(VGS, VDS, 0.0, PARAMS);
+      EXPECT_TRUE(std::isfinite(GDS)) << "vgs = " << VGS << ", at the boundary";
+      EXPECT_GE(GDS, 0.0) << "vgs = " << VGS << ", at the boundary";
+    }
+
+    for (int step = 0; step <= 500; ++step) {
+      const double VDS = 0.01 * step;
+      const double GDS = MosfetLevel2::outputConductance(VGS, VDS, 0.0, PARAMS);
+      ASSERT_TRUE(std::isfinite(GDS)) << "vgs = " << VGS << ", vds = " << VDS;
+      ASSERT_GE(GDS, 0.0) << "vgs = " << VGS << ", vds = " << VDS;
+    }
+  }
+}
+
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test */

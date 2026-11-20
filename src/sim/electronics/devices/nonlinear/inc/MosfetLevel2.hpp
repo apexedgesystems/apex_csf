@@ -198,8 +198,9 @@ struct MosfetLevel2 {
       return BETA_EFF * (VGST * vds - 0.5 * vds * vds) * CLM;
     }
 
-    // Saturation region
-    return BETA_EFF * 0.5 * VDSAT * VDSAT * CLM;
+    // Saturation region: the linear-region current at Vdsat, so the two
+    // regions meet there whatever lowers Vdsat below the gate overdrive
+    return BETA_EFF * (VGST * VDSAT - 0.5 * VDSAT * VDSAT) * CLM;
   }
 
   /**

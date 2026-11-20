@@ -292,6 +292,72 @@ TEST(MosfetLevel3Test, StampIsLinearizationAtOperatingPoint) {
   }
 }
 
+/* ----------------------------- Region Boundaries ----------------------------- */
+
+/** @test Drain current is continuous where the linear region meets saturation */
+TEST(MosfetLevel3Test, ContinuousAtSaturationVoltage) {
+  const MosfetLevel3Params PARAMS;
+  constexpr double EPS = 1e-9;
+
+  for (const double VGS : {1.0, 1.5, 2.0, 3.0}) {
+    for (const double VBS : {0.0, -0.5}) {
+      // The threshold moves with the drain voltage, so the boundary is the
+      // drain voltage that equals its own saturation voltage.
+      double vdsat = 1.0;
+      for (int iter = 0; iter < 50; ++iter) {
+        const double VTH = MosfetLevel3::thresholdVoltage(vdsat, VBS, PARAMS);
+        vdsat = MosfetLevel3::drainSaturationVoltage(VGS, VTH, PARAMS);
+      }
+      ASSERT_GT(vdsat, 0.0) << "vgs = " << VGS;
+
+      const double BELOW = MosfetLevel3::current(VGS, vdsat - EPS, VBS, PARAMS);
+      const double ABOVE = MosfetLevel3::current(VGS, vdsat + EPS, VBS, PARAMS);
+      EXPECT_NEAR(BELOW, ABOVE, 1e-6 * ABOVE) << "vgs = " << VGS << ", vbs = " << VBS;
+    }
+  }
+}
+
+/** @test Above threshold the drain current never falls as the drain voltage rises */
+TEST(MosfetLevel3Test, MonotonicInDrainVoltage) {
+  const MosfetLevel3Params PARAMS;
+
+  for (const double VGS : {1.0, 1.5, 2.0, 3.0}) {
+    double previous = MosfetLevel3::current(VGS, 0.0, 0.0, PARAMS);
+    for (int step = 1; step <= 500; ++step) {
+      const double VDS = 0.01 * step;
+      const double ID = MosfetLevel3::current(VGS, VDS, 0.0, PARAMS);
+      ASSERT_GE(ID, previous) << "vgs = " << VGS << ", vds = " << VDS;
+      previous = ID;
+    }
+  }
+}
+
+/** @test Output conductance is finite and not negative through saturation, the boundary included */
+TEST(MosfetLevel3Test, OutputConductanceNotNegativeThroughSaturation) {
+  const MosfetLevel3Params PARAMS;
+
+  for (const double VGS : {1.0, 2.0, 3.0}) {
+    // On the boundary itself the conductance is a difference taken across it.
+    double vdsat = 1.0;
+    for (int iter = 0; iter < 50; ++iter) {
+      const double VTH = MosfetLevel3::thresholdVoltage(vdsat, 0.0, PARAMS);
+      vdsat = MosfetLevel3::drainSaturationVoltage(VGS, VTH, PARAMS);
+    }
+    for (const double VDS : {vdsat - 5e-9, vdsat, vdsat + 5e-9}) {
+      const double GDS = MosfetLevel3::outputConductance(VGS, VDS, 0.0, PARAMS);
+      EXPECT_TRUE(std::isfinite(GDS)) << "vgs = " << VGS << ", at the boundary";
+      EXPECT_GE(GDS, 0.0) << "vgs = " << VGS << ", at the boundary";
+    }
+
+    for (int step = 0; step <= 500; ++step) {
+      const double VDS = 0.01 * step;
+      const double GDS = MosfetLevel3::outputConductance(VGS, VDS, 0.0, PARAMS);
+      ASSERT_TRUE(std::isfinite(GDS)) << "vgs = " << VGS << ", vds = " << VDS;
+      ASSERT_GE(GDS, 0.0) << "vgs = " << VGS << ", vds = " << VDS;
+    }
+  }
+}
+
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test */
