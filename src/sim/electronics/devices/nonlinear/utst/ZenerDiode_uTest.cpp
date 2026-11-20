@@ -265,6 +265,23 @@ TEST(ZenerDiodeTest, StampIsLinearizationAtOperatingPoint) {
   }
 }
 
+/** @test Current, conductance and stamp stay finite far outside any operating range */
+TEST(ZenerDiodeTest, FiniteAtLargeBias) {
+  const ZenerDiodeParams PARAMS;
+
+  for (const double V : {20.0, 100.0, -20.0, -100.0}) {
+    EXPECT_TRUE(std::isfinite(ZenerDiode::current(V, PARAMS))) << "v = " << V;
+    EXPECT_TRUE(std::isfinite(ZenerDiode::conductance(V, PARAMS))) << "v = " << V;
+
+    const auto PINNED = pinTerminals({V, 0.0}, [&](MnaSystem& mna) {
+      ZenerDiode::stamp(mna, terminalNet(0), terminalNet(1), V, PARAMS);
+    });
+    ASSERT_TRUE(PINNED.solved) << "v = " << V;
+    EXPECT_TRUE(std::isfinite(PINNED.into[0])) << "v = " << V;
+    EXPECT_TRUE(std::isfinite(PINNED.into[1])) << "v = " << V;
+  }
+}
+
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test */

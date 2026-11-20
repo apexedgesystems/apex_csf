@@ -267,6 +267,25 @@ TEST(JfetLevel2Test, StampIsLinearizationAtOperatingPoint) {
   }
 }
 
+/** @test Gate junction current, conductance and the stamp stay finite at a large gate bias */
+TEST(JfetLevel2Test, FiniteAtLargeGateBias) {
+  const JfetLevel2Params PARAMS;
+
+  for (const double VGS : {20.0, 100.0, -100.0}) {
+    EXPECT_TRUE(std::isfinite(JfetLevel2::gateCurrent(VGS, PARAMS))) << "vgs = " << VGS;
+    EXPECT_TRUE(std::isfinite(JfetLevel2::gateConductance(VGS, PARAMS))) << "vgs = " << VGS;
+
+    // Terminal order: drain, gate, source.
+    const auto PINNED = pinTerminals({5.0, VGS, 0.0}, [&](MnaSystem& mna) {
+      JfetLevel2::stamp(mna, terminalNet(0), terminalNet(1), terminalNet(2), VGS, 5.0, PARAMS);
+    });
+    ASSERT_TRUE(PINNED.solved) << "vgs = " << VGS;
+    for (const double CURRENT : PINNED.into) {
+      EXPECT_TRUE(std::isfinite(CURRENT)) << "vgs = " << VGS;
+    }
+  }
+}
+
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test */

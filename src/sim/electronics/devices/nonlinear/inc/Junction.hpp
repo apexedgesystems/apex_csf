@@ -14,10 +14,21 @@
  * removes that: the iterate climbs the exponential in steps the model can
  * follow and converges in a handful of iterations.
  *
+ * The exponential itself overflows a double above an argument of about 709,
+ * which a Newton iterate can reach before the limiter above has a previous
+ * voltage to work from. Every junction model therefore evaluates its
+ * exponential through limitedExp(): the true exponential up to EXP_LINEAR_FROM
+ * and its tangent line beyond. Value and slope stay finite and consistent
+ * with each other, so a stamp built from them holds no NaN. At the default
+ * thermal voltage the tangent starts 2.08 V across a bare junction, where a
+ * 1e-14 A junction would already carry 5e20 A; no operating point of a real
+ * circuit lies beyond it.
+ *
  * RT-safety: RT-safe (static functions, no allocations).
  * Thread-safety: Safe (stateless, pure functions).
  */
 
+#include <algorithm>
 #include <cmath>
 
 namespace sim::electronics::devices::nonlinear {
@@ -40,6 +51,60 @@ namespace sim::electronics::devices::nonlinear {
  * @endcode
  */
 struct Junction {
+  /// Exponent above which limitedExp() continues along its tangent line.
+  static constexpr double EXP_LINEAR_FROM = 80.0;
+
+  /**
+   * @brief Exponential that grows linearly above EXP_LINEAR_FROM.
+   *
+   * exp(x) for x <= EXP_LINEAR_FROM; exp(EXP_LINEAR_FROM) * (1 + x - EXP_LINEAR_FROM)
+   * above. Continuous with a continuous first derivative.
+   *
+   * @param x Exponent (junction voltage over n*Vt).
+   * @return Limited exponential.
+   * @note RT-safe.
+   */
+  [[nodiscard]] static double limitedExp(double x) noexcept {
+    if (x <= EXP_LINEAR_FROM) {
+      return std::exp(x);
+    }
+    return std::exp(EXP_LINEAR_FROM) * (1.0 + x - EXP_LINEAR_FROM);
+  }
+
+  /**
+   * @brief Derivative of limitedExp() with respect to its argument.
+   * @param x Exponent (junction voltage over n*Vt).
+   * @return exp(x) up to EXP_LINEAR_FROM, exp(EXP_LINEAR_FROM) above.
+   * @note RT-safe.
+   */
+  [[nodiscard]] static double limitedExpSlope(double x) noexcept {
+    return std::exp(std::min(x, EXP_LINEAR_FROM));
+  }
+
+  /**
+   * @brief Ideal junction current Is * (exp(V / (n*Vt)) - 1), exponential limited.
+   * @param v Junction voltage (V), positive forward.
+   * @param is Saturation current (A).
+   * @param nVt Ideality factor times thermal voltage (V).
+   * @return Junction current (A).
+   * @note RT-safe.
+   */
+  [[nodiscard]] static double current(double v, double is, double nVt) noexcept {
+    return is * (limitedExp(v / nVt) - 1.0);
+  }
+
+  /**
+   * @brief Derivative of current() with respect to the junction voltage.
+   * @param v Junction voltage (V), positive forward.
+   * @param is Saturation current (A).
+   * @param nVt Ideality factor times thermal voltage (V).
+   * @return Junction conductance (S).
+   * @note RT-safe.
+   */
+  [[nodiscard]] static double conductance(double v, double is, double nVt) noexcept {
+    return (is / nVt) * limitedExpSlope(v / nVt);
+  }
+
   /**
    * @brief Voltage above which a junction's step is limited.
    *

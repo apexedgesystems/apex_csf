@@ -223,3 +223,30 @@ TEST(BjtEbersMollTest, StampIsLinearizationAtOperatingPoint) {
     }
   }
 }
+
+/** @test Currents, conductances and the stamp stay finite at large junction voltages */
+TEST(BjtEbersMollTest, FiniteAtLargeBias) {
+  const BjtEbersMollParams PARAMS;
+
+  for (const BjtBias& bias : {BjtBias{20.0, -100.0, "vbe high"}, BjtBias{-100.0, 20.0, "vbc high"},
+                              BjtBias{100.0, 100.0, "both high"}}) {
+    EXPECT_TRUE(std::isfinite(BjtEbersMoll::collectorCurrent(bias.vbe, bias.vbc, PARAMS)))
+        << bias.region;
+    EXPECT_TRUE(std::isfinite(BjtEbersMoll::baseCurrent(bias.vbe, bias.vbc, PARAMS)))
+        << bias.region;
+    EXPECT_TRUE(std::isfinite(BjtEbersMoll::transconductance(bias.vbe, bias.vbc, PARAMS)))
+        << bias.region;
+    EXPECT_TRUE(std::isfinite(BjtEbersMoll::outputConductance(bias.vbe, bias.vbc, PARAMS)))
+        << bias.region;
+
+    // Terminal order: collector, base, emitter.
+    const auto PINNED = pinTerminals({bias.vbe - bias.vbc, bias.vbe, 0.0}, [&](MnaSystem& mna) {
+      BjtEbersMoll::stamp(mna, terminalNet(0), terminalNet(1), terminalNet(2), bias.vbe, bias.vbc,
+                          PARAMS);
+    });
+    ASSERT_TRUE(PINNED.solved) << bias.region;
+    for (const double CURRENT : PINNED.into) {
+      EXPECT_TRUE(std::isfinite(CURRENT)) << bias.region;
+    }
+  }
+}

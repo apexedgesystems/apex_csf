@@ -36,6 +36,7 @@
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/Junction.hpp"
 
 #include <cmath>
 
@@ -94,8 +95,8 @@ struct BjtEbersMoll {
    */
   [[nodiscard]] static double collectorCurrent(double vbe, double vbc,
                                                const BjtEbersMollParams& params) noexcept {
-    const double EXP_BE = std::exp(vbe / params.Vt);
-    const double EXP_BC = std::exp(vbc / params.Vt);
+    const double EXP_BE = Junction::limitedExp(vbe / params.Vt);
+    const double EXP_BC = Junction::limitedExp(vbc / params.Vt);
     const double TRANSPORT = params.Is * (EXP_BE - EXP_BC);           // emitter-collector
     const double BC_DIODE = (params.Is / params.Br) * (EXP_BC - 1.0); // base-collector junction
     return TRANSPORT - BC_DIODE;
@@ -115,8 +116,8 @@ struct BjtEbersMoll {
    */
   [[nodiscard]] static double baseCurrent(double vbe, double vbc,
                                           const BjtEbersMollParams& params) noexcept {
-    const double IBF = (params.Is / params.Bf) * (std::exp(vbe / params.Vt) - 1.0);
-    const double IBR = (params.Is / params.Br) * (std::exp(vbc / params.Vt) - 1.0);
+    const double IBF = Junction::current(vbe, params.Is / params.Bf, params.Vt);
+    const double IBR = Junction::current(vbc, params.Is / params.Br, params.Vt);
     return IBF + IBR;
   }
 
@@ -152,7 +153,7 @@ struct BjtEbersMoll {
   [[nodiscard]] static double transconductance(double vbe, double vbc,
                                                const BjtEbersMollParams& params) noexcept {
     (void)vbc; // Unused, but kept for API consistency
-    return (params.Is / params.Vt) * std::exp(vbe / params.Vt);
+    return Junction::conductance(vbe, params.Is, params.Vt);
   }
 
   /**
@@ -170,7 +171,7 @@ struct BjtEbersMoll {
   [[nodiscard]] static double outputConductance(double vbe, double vbc,
                                                 const BjtEbersMollParams& params) noexcept {
     (void)vbe; // Unused, but kept for API consistency
-    return -(params.Is / params.Vt) * (1.0 + 1.0 / params.Br) * std::exp(vbc / params.Vt);
+    return -(1.0 + 1.0 / params.Br) * Junction::conductance(vbc, params.Is, params.Vt);
   }
 
   /**
@@ -188,7 +189,7 @@ struct BjtEbersMoll {
   [[nodiscard]] static double baseConductanceBE(double vbe, double vbc,
                                                 const BjtEbersMollParams& params) noexcept {
     (void)vbc; // Unused
-    return (params.Is / (params.Bf * params.Vt)) * std::exp(vbe / params.Vt);
+    return Junction::conductance(vbe, params.Is / params.Bf, params.Vt);
   }
 
   /**
@@ -206,7 +207,7 @@ struct BjtEbersMoll {
   [[nodiscard]] static double baseConductanceBC(double vbe, double vbc,
                                                 const BjtEbersMollParams& params) noexcept {
     (void)vbe; // Unused
-    return (params.Is / (params.Br * params.Vt)) * std::exp(vbc / params.Vt);
+    return Junction::conductance(vbc, params.Is / params.Br, params.Vt);
   }
 
   /**

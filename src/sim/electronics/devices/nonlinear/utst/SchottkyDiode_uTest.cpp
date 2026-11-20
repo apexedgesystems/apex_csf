@@ -204,6 +204,23 @@ TEST(SchottkyDiodeTest, StampIsLinearizationAtOperatingPoint) {
   }
 }
 
+/** @test Current, conductance and stamp stay finite far outside any operating range */
+TEST(SchottkyDiodeTest, FiniteAtLargeBias) {
+  const SchottkyDiodeParams PARAMS{.Rs = 0.5};
+
+  for (const double V : {20.0, 100.0, -20.0, -100.0}) {
+    EXPECT_TRUE(std::isfinite(SchottkyDiode::current(V, PARAMS))) << "v = " << V;
+    EXPECT_TRUE(std::isfinite(SchottkyDiode::conductance(V, PARAMS))) << "v = " << V;
+
+    const auto PINNED = pinTerminals({V, 0.0}, [&](MnaSystem& mna) {
+      SchottkyDiode::stamp(mna, terminalNet(0), terminalNet(1), V, PARAMS);
+    });
+    ASSERT_TRUE(PINNED.solved) << "v = " << V;
+    EXPECT_TRUE(std::isfinite(PINNED.into[0])) << "v = " << V;
+    EXPECT_TRUE(std::isfinite(PINNED.into[1])) << "v = " << V;
+  }
+}
+
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test */

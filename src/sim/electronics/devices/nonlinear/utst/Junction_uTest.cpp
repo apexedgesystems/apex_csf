@@ -68,6 +68,34 @@ static int solveResistorDiode(double vSource, double rOhms, bool limit, int maxI
 
 /* ----------------------------- API Tests ----------------------------- */
 
+/** @test Limited exponential is the exponential up to its cap and its tangent line above */
+TEST(JunctionTest, LimitedExpIsExponentialThenTangent) {
+  constexpr double CAP = Junction::EXP_LINEAR_FROM;
+
+  // Below the cap: the exponential itself.
+  for (const double X : {-50.0, 0.0, 1.0, 26.9, CAP}) {
+    EXPECT_DOUBLE_EQ(Junction::limitedExp(X), std::exp(X)) << "x = " << X;
+    EXPECT_DOUBLE_EQ(Junction::limitedExpSlope(X), std::exp(X)) << "x = " << X;
+  }
+
+  // Above: value on the tangent at the cap, slope constant.
+  const double AT_CAP = std::exp(CAP);
+  EXPECT_DOUBLE_EQ(Junction::limitedExp(CAP + 10.0), AT_CAP * 11.0);
+  EXPECT_DOUBLE_EQ(Junction::limitedExp(1e6), AT_CAP * (1.0 + 1e6 - CAP));
+  EXPECT_DOUBLE_EQ(Junction::limitedExpSlope(CAP + 10.0), AT_CAP);
+  EXPECT_DOUBLE_EQ(Junction::limitedExpSlope(1e6), AT_CAP);
+}
+
+/** @test Junction current and conductance are the Shockley values, exactly, below the cap */
+TEST(JunctionTest, CurrentAndConductanceMatchShockleyReference) {
+  // Is * (exp(0.7 / 0.026) - 1) and (Is / 0.026) * exp(0.7 / 0.026), evaluated
+  // outside this library.
+  EXPECT_NEAR(Junction::current(0.7, IS, N_VT), 0.00492655962756388, 1e-17);
+  EXPECT_NEAR(Junction::conductance(0.7, IS, N_VT), 0.18948306259899542, 1e-15);
+  EXPECT_DOUBLE_EQ(Junction::current(0.0, IS, N_VT), 0.0);
+  EXPECT_NEAR(Junction::current(-5.0, IS, N_VT), -IS, 1e-28);
+}
+
 /** @test Critical voltage matches n*Vt * ln(n*Vt / (sqrt(2) * Is)) */
 TEST(JunctionTest, CriticalVoltageMatchesReference) {
   EXPECT_NEAR(Junction::criticalVoltage(IS, N_VT), V_CRIT_REFERENCE, 1e-15);
@@ -95,7 +123,8 @@ TEST(JunctionTest, LargeForwardStepsAreCompressed) {
   EXPECT_DOUBLE_EQ(Junction::limitVoltage(0.9, 5.0, N_VT, V_CRIT), V_CRIT);
 }
 
-/** @test Limited Newton reaches the resistor-diode operating point; unlimited Newton does not */
+/** @test Limited Newton reaches the resistor-diode operating point in a fraction of the iterations
+ */
 TEST(JunctionTest, LimitedNewtonConvergesOnResistorDiode) {
   // Reference: bisection on (V - Vd) / R = Is * (exp(Vd / Vt) - 1).
   struct Row {
@@ -111,14 +140,17 @@ TEST(JunctionTest, LimitedNewtonConvergesOnResistorDiode) {
 
   for (const Row& row : ROWS) {
     double vDiode = 0.0;
-    const int ITERATIONS = solveResistorDiode(row.vSource, row.rOhms, /*limit=*/true, 30, vDiode);
-    EXPECT_LT(ITERATIONS, 30) << "V = " << row.vSource;
+    const int ITERATIONS = solveResistorDiode(row.vSource, row.rOhms, /*limit=*/true, 100, vDiode);
+    EXPECT_LT(ITERATIONS, 15) << "V = " << row.vSource;
     EXPECT_NEAR(vDiode, row.vDiode, 1e-9) << "V = " << row.vSource;
   }
 
-  // Without the limiter the 5 V case walks down one thermal voltage per
-  // iteration and is still far from the operating point after 100 of them.
+  // Without the limiter the 5 V case reaches the same point, but only after
+  // walking down one thermal voltage per iteration from where the limited
+  // exponential turns linear (2.08 V): about (2.08 - 0.70) / 0.026 steps.
   double vUnlimited = 0.0;
-  EXPECT_EQ(solveResistorDiode(5.0, 1e3, /*limit=*/false, 100, vUnlimited), 100);
-  EXPECT_GT(vUnlimited, 1.0);
+  const int UNLIMITED = solveResistorDiode(5.0, 1e3, /*limit=*/false, 100, vUnlimited);
+  EXPECT_GT(UNLIMITED, 40);
+  EXPECT_LT(UNLIMITED, 100);
+  EXPECT_NEAR(vUnlimited, 0.6964845745632098, 1e-9);
 }

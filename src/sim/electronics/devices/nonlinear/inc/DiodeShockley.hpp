@@ -20,6 +20,7 @@
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/Junction.hpp"
 
 #include <cmath>
 
@@ -73,8 +74,7 @@ struct DiodeShockley {
    * @note RT-safe (no allocations, pure math).
    */
   [[nodiscard]] static double current(double vDiode, const DiodeShockleyParams& params) noexcept {
-    const double EXPONENT = vDiode / (params.n * params.Vt);
-    return params.Is * (std::exp(EXPONENT) - 1.0);
+    return Junction::current(vDiode, params.Is, params.n * params.Vt);
   }
 
   /**
@@ -90,8 +90,7 @@ struct DiodeShockley {
    */
   [[nodiscard]] static double conductance(double vDiode,
                                           const DiodeShockleyParams& params) noexcept {
-    const double EXPONENT = vDiode / (params.n * params.Vt);
-    return (params.Is / (params.n * params.Vt)) * std::exp(EXPONENT);
+    return Junction::conductance(vDiode, params.Is, params.n * params.Vt);
   }
 
   /**

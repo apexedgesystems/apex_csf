@@ -25,6 +25,7 @@
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/Junction.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -141,7 +142,7 @@ struct JfetLevel2 {
    * @note RT-safe (no allocations, pure math).
    */
   [[nodiscard]] static double gateCurrent(double vgs, const JfetLevel2Params& params) noexcept {
-    return params.Is * (std::exp(vgs / (params.n * params.Vt)) - 1.0);
+    return Junction::current(vgs, params.Is, params.n * params.Vt);
   }
 
   /**
@@ -190,7 +191,7 @@ struct JfetLevel2 {
    * @note RT-safe (no allocations, pure math).
    */
   [[nodiscard]] static double gateConductance(double vgs, const JfetLevel2Params& params) noexcept {
-    return (params.Is / (params.n * params.Vt)) * std::exp(vgs / (params.n * params.Vt));
+    return Junction::conductance(vgs, params.Is, params.n * params.Vt);
   }
 
   /**

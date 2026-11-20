@@ -26,6 +26,7 @@
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/Junction.hpp"
 
 #include <cmath>
 
@@ -82,17 +83,16 @@ struct SchottkyDiode {
   [[nodiscard]] static double current(double vDiode, const SchottkyDiodeParams& params) noexcept {
     // If no series resistance, use simple Shockley equation
     if (params.Rs <= 0.0) {
-      return params.Is * (std::exp(vDiode / (params.n * params.Vt)) - 1.0);
+      return Junction::current(vDiode, params.Is, params.n * params.Vt);
     }
 
     // Newton-Raphson iteration to solve: V = Vj + I*Rs
-    double iGuess = params.Is * (std::exp(vDiode / (params.n * params.Vt)) - 1.0);
+    double iGuess = Junction::current(vDiode, params.Is, params.n * params.Vt);
 
     for (int iter = 0; iter < 5; ++iter) {
       const double V_JUNCTION = vDiode - iGuess * params.Rs;
-      const double I_JUNCTION = params.Is * (std::exp(V_JUNCTION / (params.n * params.Vt)) - 1.0);
-      const double G_JUNCTION =
-          (params.Is / (params.n * params.Vt)) * std::exp(V_JUNCTION / (params.n * params.Vt));
+      const double I_JUNCTION = Junction::current(V_JUNCTION, params.Is, params.n * params.Vt);
+      const double G_JUNCTION = Junction::conductance(V_JUNCTION, params.Is, params.n * params.Vt);
 
       const double F = iGuess - I_JUNCTION;
       const double DF = 1.0 + G_JUNCTION * params.Rs;
@@ -120,8 +120,7 @@ struct SchottkyDiode {
                                           const SchottkyDiodeParams& params) noexcept {
     const double I = current(vDiode, params);
     const double V_JUNCTION = vDiode - I * params.Rs;
-    const double G_JUNCTION =
-        (params.Is / (params.n * params.Vt)) * std::exp(V_JUNCTION / (params.n * params.Vt));
+    const double G_JUNCTION = Junction::conductance(V_JUNCTION, params.Is, params.n * params.Vt);
 
     // With series resistance: g = gj / (1 + gj*Rs)
     if (params.Rs > 0.0) {

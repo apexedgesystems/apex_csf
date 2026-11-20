@@ -21,6 +21,7 @@
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/Junction.hpp"
 
 #include <cmath>
 
@@ -83,7 +84,7 @@ struct ZenerDiode {
 
     // Forward bias: exponential turn-on
     if (vDiode > 0.0) {
-      return params.Is * (std::exp(vDiode / N_VT) - 1.0);
+      return params.Is * (Junction::limitedExp(vDiode / N_VT) - 1.0);
     }
 
     // Reverse bias: check for breakdown
@@ -91,13 +92,13 @@ struct ZenerDiode {
     if (vDiode < V_BREAKDOWN) {
       // Breakdown region: exponential current increase
       const double V_EXCESS = vDiode - V_BREAKDOWN; // How far past breakdown (negative)
-      const double I_BREAKDOWN = -params.Ibv * std::exp(-V_EXCESS / params.Vbv);
+      const double I_BREAKDOWN = -params.Ibv * Junction::limitedExp(-V_EXCESS / params.Vbv);
       const double I_REVERSE = -params.Is;
       return I_REVERSE + I_BREAKDOWN;
     }
 
     // Reverse bias before breakdown: small leakage
-    return params.Is * (std::exp(vDiode / N_VT) - 1.0);
+    return params.Is * (Junction::limitedExp(vDiode / N_VT) - 1.0);
   }
 
   /**
@@ -118,7 +119,7 @@ struct ZenerDiode {
 
     // Forward bias: exponential conductance
     if (vDiode > 0.0) {
-      return (params.Is / N_VT) * std::exp(vDiode / N_VT);
+      return (params.Is / N_VT) * Junction::limitedExpSlope(vDiode / N_VT);
     }
 
     // Reverse bias: check for breakdown
@@ -126,11 +127,11 @@ struct ZenerDiode {
     if (vDiode < V_BREAKDOWN) {
       // Breakdown region: exponential conductance
       const double V_EXCESS = vDiode - V_BREAKDOWN;
-      return (params.Ibv / params.Vbv) * std::exp(-V_EXCESS / params.Vbv);
+      return (params.Ibv / params.Vbv) * Junction::limitedExpSlope(-V_EXCESS / params.Vbv);
     }
 
     // Reverse bias before breakdown: small conductance
-    return (params.Is / N_VT) * std::exp(vDiode / N_VT);
+    return (params.Is / N_VT) * Junction::limitedExpSlope(vDiode / N_VT);
   }
 
   /**
