@@ -109,11 +109,11 @@ delegates simulation to the algorithms layer. Every model in `devices/`,
 
 #### JFET / BJT
 
-| Header             | Fidelity                          | Use when                                    |
-| ------------------ | --------------------------------- | ------------------------------------------- |
-| `JfetShichman.hpp` | Shichman-Hodges 3-region          | Precision op-amps, analog switches          |
-| `JfetLevel2.hpp`   | Adds gate leakage and capacitance | High-frequency / low-noise amplifiers       |
-| `BjtEbersMoll.hpp` | Ebers-Moll 4-parameter            | Op-amps and the `BjtCommonEmitter` topology |
+| Header             | Fidelity                        | Use when                                    |
+| ------------------ | ------------------------------- | ------------------------------------------- |
+| `JfetShichman.hpp` | Shichman-Hodges 3-region        | Precision op-amps, analog switches          |
+| `JfetLevel2.hpp`   | Adds gate leakage, subthreshold | High-impedance inputs, bias near pinch-off  |
+| `BjtEbersMoll.hpp` | Ebers-Moll 4-parameter          | Op-amps and the `BjtCommonEmitter` topology |
 
 ### topologies/
 

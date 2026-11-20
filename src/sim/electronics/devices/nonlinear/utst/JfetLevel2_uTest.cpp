@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
@@ -30,7 +31,6 @@ TEST(JfetLevel2Test, DefaultParameters) {
   EXPECT_DOUBLE_EQ(params.lambda, 0.01);
   EXPECT_DOUBLE_EQ(params.Is, 1e-14);
   EXPECT_DOUBLE_EQ(params.n, 1.0);
-  EXPECT_DOUBLE_EQ(params.alpha, 1.0);
 }
 
 /** @test */
@@ -55,41 +55,6 @@ TEST(JfetLevel2Test, DrainCurrentCutoff) {
   EXPECT_GT(ID, 0.0);
   EXPECT_LT(ID, 1e-9);
 }
-
-/** @test */
-TEST(JfetLevel2Test, DrainCurrentLinear) {
-  JfetLevel2Params params;
-  const double VGS = -0.5; // Above pinch-off
-  const double VDS = 0.5;  // Small Vds
-  const double ID = JfetLevel2::drainCurrent(VGS, VDS, params);
-
-  EXPECT_GT(ID, 0.0);
-  EXPECT_LT(ID, 1e-2);
-}
-
-/** @test */
-TEST(JfetLevel2Test, DrainCurrentSaturation) {
-  JfetLevel2Params params;
-  const double VGS = -0.5;
-  const double VDS = 5.0; // Large Vds
-  const double ID = JfetLevel2::drainCurrent(VGS, VDS, params);
-
-  EXPECT_GT(ID, 0.0);
-  EXPECT_LT(ID, 1e-2);
-}
-
-/** @test */
-TEST(JfetLevel2Test, DrainCurrentZeroGateVoltage) {
-  JfetLevel2Params params{.Vp = -2.0};
-  const double VGS = 0.0; // Zero gate bias
-  const double VDS = 5.0;
-  const double ID = JfetLevel2::drainCurrent(VGS, VDS, params);
-
-  // Should conduct (Vgs > Vp)
-  EXPECT_GT(ID, 1e-4);
-}
-
-/* ----------------------------- Gate Current Tests ----------------------------- */
 
 /** @test */
 TEST(JfetLevel2Test, GateCurrentReverseBias) {
@@ -286,6 +251,78 @@ TEST(JfetLevel2Test, FiniteAtLargeGateBias) {
   }
 }
 
+/* ----------------------------- Region Boundaries ----------------------------- */
+
+/** @test Above pinch-off the drain current is the square law in both regions */
+TEST(JfetLevel2Test, DrainCurrentAbovePinchOffMatchesReference) {
+  struct Row {
+    double vgs;
+    double vds;
+    double id;
+  };
+
+  // Saturation: Beta*Vgst^2*(1 + lambda*Vds). Linear region:
+  // 2*Beta*(Vgst*Vds - Vds^2/2)*(1 + lambda*Vds). Vgst = Vgs - Vp.
+  const JfetLevel2Params PARAMS;
+  const std::array<Row, 5> ROWS = {{
+      Row{-0.5, 5.0, 0.0023625},
+      Row{-0.5, 0.5, 0.00125625},
+      Row{0.0, 1.0, 0.00303},
+      Row{0.0, 3.0, 0.00412},
+      Row{-1.95, 5.0, 2.625e-06},
+  }};
+  for (const Row& row : ROWS) {
+    EXPECT_NEAR(JfetLevel2::drainCurrent(row.vgs, row.vds, PARAMS), row.id, 1e-12 * row.id)
+        << "vgs = " << row.vgs << ", vds = " << row.vds;
+  }
+
+  const JfetLevel2Params OTHER{.Beta = 2e-3, .Vp = -2.5, .lambda = 0.02};
+  EXPECT_NEAR(JfetLevel2::drainCurrent(-1.0, 4.0, OTHER), 0.00486, 1e-12 * 0.00486);
+}
+
+/** @test Drain current is continuous where the linear region meets saturation */
+TEST(JfetLevel2Test, ContinuousAtSaturationVoltage) {
+  const JfetLevel2Params PARAMS;
+  constexpr double EPS = 1e-9;
+
+  for (const double VGS : {-1.5, -1.0, -0.5, 0.0}) {
+    const double VDSAT = VGS - PARAMS.Vp;
+    const double BELOW = JfetLevel2::drainCurrent(VGS, VDSAT - EPS, PARAMS);
+    const double ABOVE = JfetLevel2::drainCurrent(VGS, VDSAT + EPS, PARAMS);
+    EXPECT_NEAR(BELOW, ABOVE, 1e-6 * ABOVE) << "vgs = " << VGS;
+  }
+}
+
+/** @test Above pinch-off the drain current never falls as the drain voltage rises */
+TEST(JfetLevel2Test, MonotonicInDrainVoltage) {
+  const JfetLevel2Params PARAMS;
+
+  for (const double VGS : {-1.5, -1.0, -0.5, 0.0}) {
+    double previous = JfetLevel2::drainCurrent(VGS, 0.0, PARAMS);
+    for (int step = 1; step <= 500; ++step) {
+      const double VDS = 0.01 * step;
+      const double ID = JfetLevel2::drainCurrent(VGS, VDS, PARAMS);
+      ASSERT_GE(ID, previous) << "vgs = " << VGS << ", vds = " << VDS;
+      previous = ID;
+    }
+  }
+}
+
+/** @test Output conductance is finite and not negative on the saturation boundary */
+TEST(JfetLevel2Test, OutputConductanceNotNegativeAtSaturationVoltage) {
+  const JfetLevel2Params PARAMS;
+
+  for (const double VGS : {-1.5, -0.5, 0.0}) {
+    // On the boundary itself the conductance is a difference taken across it.
+    const double VDSAT = VGS - PARAMS.Vp;
+    for (const double VDS : {VDSAT - 5e-9, VDSAT, VDSAT + 5e-9}) {
+      const double GDS = JfetLevel2::outputConductance(VGS, VDS, PARAMS);
+      EXPECT_TRUE(std::isfinite(GDS)) << "vgs = " << VGS;
+      EXPECT_GE(GDS, 0.0) << "vgs = " << VGS;
+    }
+  }
+}
+
 /* ----------------------------- Physical Behavior ----------------------------- */
 
 /** @test */
@@ -322,21 +359,6 @@ TEST(JfetLevel2Test, GateLeakageIncreasesWithForwardBias) {
 
   // Less reverse bias -> larger (less negative) leakage
   EXPECT_GT(IG_LESS_REVERSE, IG_REVERSE);
-}
-
-/** @test */
-TEST(JfetLevel2Test, SaturationTransitionSmoothness) {
-  JfetLevel2Params smooth{.alpha = 2.0}; // Smoother transition
-  JfetLevel2Params sharp{.alpha = 0.5};  // Sharper transition
-
-  const double VGS = -0.5;
-  const double VDS = 1.5; // Near saturation
-
-  const double ID_SMOOTH = JfetLevel2::drainCurrent(VGS, VDS, smooth);
-  const double ID_SHARP = JfetLevel2::drainCurrent(VGS, VDS, sharp);
-
-  // Different alpha values give different currents in transition region
-  EXPECT_NE(ID_SMOOTH, ID_SHARP);
 }
 
 /** @test */

@@ -2,20 +2,16 @@
 #define APEX_JFETLEVEL2_HPP
 /**
  * @file JfetLevel2.hpp
- * @brief Advanced JFET model with gate capacitance and improved saturation.
+ * @brief JFET model with gate leakage and subthreshold conduction.
  *
- * Extends JfetShichman with:
- * - Gate-channel capacitance: Voltage-dependent Cgd, Cgs
- * - Improved saturation model: Better transition from linear to saturation
- * - Gate leakage current: Reverse-biased gate junction
- * - Temperature dependence: Vp(T), Beta(T) modeling
- * - Subthreshold conduction: Weak inversion below pinch-off
+ * Above pinch-off the drain current is the JfetShichman square law. This
+ * model adds to it:
+ * - Gate leakage current: the gate-source junction, reverse biased in
+ *   normal operation
+ * - Subthreshold conduction: a small drain current below pinch-off
  *
- * More accurate than Shichman for:
- * - High-frequency amplifiers (capacitance matters)
- * - Precision analog circuits (gate leakage, temp drift)
- * - Low-noise applications (gate current noise)
- * - Temperature-sensitive designs
+ * Use it where the gate current matters (high-impedance inputs, precision
+ * analog) or where the device is biased near pinch-off.
  *
  * This is a PHYSICS MODEL (Layer 2) that uses Layer 1 Newton-Raphson solver
  * for nonlinear circuit simulation.
@@ -25,9 +21,9 @@
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/JfetShichman.hpp"
 #include "src/sim/electronics/devices/nonlinear/inc/Junction.hpp"
 
-#include <algorithm>
 #include <cmath>
 
 namespace sim::electronics::devices::nonlinear {
@@ -38,8 +34,8 @@ using algorithms::mna::NetID;
 /**
  * @brief JFET Level 2 model parameters.
  *
- * Physical parameters for advanced N-channel or P-channel JFET modeling.
- * Default values represent a typical N-channel JFET (e.g., 2N5457).
+ * Physical parameters of an N-channel JFET. Default values represent a
+ * typical small-signal device.
  */
 struct JfetLevel2Params {
   // Basic parameters (Shichman)
@@ -52,12 +48,10 @@ struct JfetLevel2Params {
   double n = 1.0;    ///< Gate junction ideality factor
   double Vt = 0.026; ///< Thermal voltage (V), kT/q ~= 26mV at 300K
 
-  // Capacitance (optional, for AC analysis)
+  // Capacitance: carried for a caller's own companion models; the drain
+  // and gate currents here do not read them
   double Cgd0 = 1e-12; ///< Zero-bias gate-drain capacitance (F)
   double Cgs0 = 1e-12; ///< Zero-bias gate-source capacitance (F)
-
-  // Improved saturation
-  double alpha = 1.0; ///< Saturation transition smoothness (unitless)
 
   // Subthreshold
   double n_sub = 1.5; ///< Subthreshold slope factor
@@ -66,8 +60,8 @@ struct JfetLevel2Params {
 /**
  * @brief JFET Level 2 model.
  *
- * Provides I-V characteristics with gate leakage, improved saturation
- * transition, and subthreshold conduction.
+ * Provides I-V characteristics with gate leakage and subthreshold
+ * conduction.
  *
  * Usage:
  * @code
@@ -84,11 +78,12 @@ struct JfetLevel2Params {
  */
 struct JfetLevel2 {
   /**
-   * @brief Compute drain current (improved saturation model).
+   * @brief Compute drain current.
    *
-   * Id = Beta * f(Vgs, Vds) * (1 + lambda*Vds)
-   *
-   * where f(Vgs, Vds) provides smooth transition between regions.
+   * With Vgst = Vgs - Vp:
+   *   Linear (Vds < Vgst):      Id = 2*Beta*(Vgst*Vds - Vds^2/2) * (1 + lambda*Vds)
+   *   Saturation (Vds >= Vgst): Id = Beta*Vgst^2 * (1 + lambda*Vds)
+   * The two meet at Vds = Vgst with the same value and slope.
    *
    * @param vgs Gate-source voltage in volts
    * @param vds Drain-source voltage in volts
@@ -109,23 +104,10 @@ struct JfetLevel2 {
       return I_SUB * vds;
     }
 
-    const double CHANNEL_MOD = 1.0 + params.lambda * vds;
-
-    // Linear region
-    if (vds < VGST) {
-      const double ID_LINEAR = 2.0 * params.Beta * (VGST * vds - 0.5 * vds * vds);
-      return ID_LINEAR * CHANNEL_MOD;
-    }
-
-    // Saturation region (improved transition)
-    const double VDSAT = VGST / params.alpha;
-    const double ID_SAT = params.Beta * VGST * VGST;
-
-    // Smooth transition using tanh
-    const double TRANSITION = 0.5 * (1.0 + std::tanh(params.alpha * (vds - VDSAT)));
-    const double ID = ID_SAT * TRANSITION;
-
-    return ID * CHANNEL_MOD;
+    // Above pinch-off: the square law of the basic model
+    return JfetShichman::current(
+        vgs, vds,
+        JfetShichmanParams{.Beta = params.Beta, .Vp = params.Vp, .lambda = params.lambda});
   }
 
   /**
