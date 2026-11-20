@@ -33,6 +33,14 @@
 
 namespace sim::electronics::devices::nonlinear {
 
+/* ----------------------------- JunctionPoint ----------------------------- */
+
+/// Current through a junction and its derivative with respect to the terminal voltage.
+struct JunctionPoint {
+  double current = 0.0;     ///< Current (A), positive forward.
+  double conductance = 0.0; ///< dI/dV (S).
+};
+
 /* ----------------------------- Junction ----------------------------- */
 
 /**
@@ -103,6 +111,54 @@ struct Junction {
    */
   [[nodiscard]] static double conductance(double v, double is, double nVt) noexcept {
     return (is / nVt) * limitedExpSlope(v / nVt);
+  }
+
+  /// Iteration limit of withSeriesResistance(); it converges in under ten.
+  static constexpr int SERIES_MAX_ITER = 60;
+
+  /**
+   * @brief Current and conductance of a junction behind a series resistance.
+   *
+   * The terminal voltage divides between the junction and the resistance:
+   *   V = Vj + Rs * Is * (exp(Vj / (n*Vt)) - 1)
+   * This is solved for the junction voltage Vj by Newton's method. The
+   * left-hand side minus V is increasing and convex in Vj, so from a start at
+   * or above the root the iterates descend onto it without overshoot. The
+   * start is the smaller of V (all of it across the junction) and the
+   * junction voltage that would pass V / Rs (all of it across the
+   * resistance); both lie at or above the root for forward bias. In reverse
+   * bias the junction is close to linear and one step lands on the root.
+   *
+   * @param v Terminal voltage (V), positive forward.
+   * @param is Saturation current (A).
+   * @param nVt Ideality factor times thermal voltage (V).
+   * @param rs Series resistance (ohm); zero or negative means none.
+   * @return Current, and dI/dV = gj / (1 + gj * Rs) at the solved point.
+   * @note RT-safe: at most SERIES_MAX_ITER iterations, no allocation.
+   */
+  [[nodiscard]] static JunctionPoint withSeriesResistance(double v, double is, double nVt,
+                                                          double rs) noexcept {
+    if (rs <= 0.0) {
+      return {current(v, is, nVt), conductance(v, is, nVt)};
+    }
+
+    double vj = v;
+    if (v > 0.0) {
+      vj = std::min(v, nVt * std::log1p(v / (rs * is)));
+    }
+
+    for (int iter = 0; iter < SERIES_MAX_ITER; ++iter) {
+      const double RESIDUAL = vj + rs * current(vj, is, nVt) - v;
+      const double SLOPE = 1.0 + rs * conductance(vj, is, nVt);
+      const double STEP = RESIDUAL / SLOPE;
+      vj -= STEP;
+      if (std::abs(STEP) <= 1e-15 * (std::abs(vj) + nVt)) {
+        break;
+      }
+    }
+
+    const double GJ = conductance(vj, is, nVt);
+    return {current(vj, is, nVt), GJ / (1.0 + GJ * rs)};
   }
 
   /**

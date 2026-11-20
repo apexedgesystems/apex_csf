@@ -81,26 +81,8 @@ struct SchottkyDiode {
    * @note RT-safe (no allocations, pure math).
    */
   [[nodiscard]] static double current(double vDiode, const SchottkyDiodeParams& params) noexcept {
-    // If no series resistance, use simple Shockley equation
-    if (params.Rs <= 0.0) {
-      return Junction::current(vDiode, params.Is, params.n * params.Vt);
-    }
-
-    // Newton-Raphson iteration to solve: V = Vj + I*Rs
-    double iGuess = Junction::current(vDiode, params.Is, params.n * params.Vt);
-
-    for (int iter = 0; iter < 5; ++iter) {
-      const double V_JUNCTION = vDiode - iGuess * params.Rs;
-      const double I_JUNCTION = Junction::current(V_JUNCTION, params.Is, params.n * params.Vt);
-      const double G_JUNCTION = Junction::conductance(V_JUNCTION, params.Is, params.n * params.Vt);
-
-      const double F = iGuess - I_JUNCTION;
-      const double DF = 1.0 + G_JUNCTION * params.Rs;
-
-      iGuess = iGuess - F / DF;
-    }
-
-    return iGuess;
+    return Junction::withSeriesResistance(vDiode, params.Is, params.n * params.Vt, params.Rs)
+        .current;
   }
 
   /**
@@ -118,16 +100,8 @@ struct SchottkyDiode {
    */
   [[nodiscard]] static double conductance(double vDiode,
                                           const SchottkyDiodeParams& params) noexcept {
-    const double I = current(vDiode, params);
-    const double V_JUNCTION = vDiode - I * params.Rs;
-    const double G_JUNCTION = Junction::conductance(V_JUNCTION, params.Is, params.n * params.Vt);
-
-    // With series resistance: g = gj / (1 + gj*Rs)
-    if (params.Rs > 0.0) {
-      return G_JUNCTION / (1.0 + G_JUNCTION * params.Rs);
-    }
-
-    return G_JUNCTION;
+    return Junction::withSeriesResistance(vDiode, params.Is, params.n * params.Vt, params.Rs)
+        .conductance;
   }
 
   /**
@@ -147,9 +121,10 @@ struct SchottkyDiode {
    */
   static void stamp(MnaSystem& mna, NetID anodeNet, NetID cathodeNet, double vDiode,
                     const SchottkyDiodeParams& params) {
-    const double I = current(vDiode, params);
-    const double G = conductance(vDiode, params);
-    const double IEQ = I - G * vDiode;
+    const JunctionPoint POINT =
+        Junction::withSeriesResistance(vDiode, params.Is, params.n * params.Vt, params.Rs);
+    const double G = POINT.conductance;
+    const double IEQ = POINT.current - G * vDiode;
 
     // Stamp linearized conductance; the equivalent source leaves the anode net
     mna.addConductance(anodeNet, cathodeNet, G);
