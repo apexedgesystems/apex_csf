@@ -62,6 +62,9 @@ any such change is called out explicitly in its entry.
 - An executed check for every tool family: clippy (deny warnings) gates the
   Rust tools on PRs and nightly, and a shell smoke exercises the ops SDK
   packager.
+- `MnaSystem::addTransconductance` stamps a controlled current source, and
+  `Junction.hpp` holds the junction helpers the device models share (limited
+  exponential, series-resistance solve, voltage limiting).
 
 ### Changed
 
@@ -122,6 +125,12 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Nonlinear device models (diodes, JFETs, Level 2 and 3 MOSFETs, BJT): each
+  stamp is the linearization of its model, currents stay finite at any bias
+  and are continuous across region boundaries, and
+  `BjtCommonEmitter::computeDC` reports a failed solve. Breaking:
+  `JfetLevel2Params::alpha` is removed; Zener, BJT and subthreshold currents
+  change value.
 - ASYNC logging: `flush()` waits for every accepted entry's write attempt, a
   cut line keeps its newline, and a failed rotation keeps the log descriptor.
   ([#188](https://github.com/apexedgesystems/apex_csf/pull/188))
