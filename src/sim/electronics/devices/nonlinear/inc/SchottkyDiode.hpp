@@ -76,9 +76,12 @@ struct SchottkyDiode {
    *
    * @param vDiode Voltage across diode terminals (anode - cathode) in volts
    * @param params Schottky diode physical parameters
-   * @return Current through diode in amperes (positive = forward bias)
+   * @return Current through diode in amperes (positive = forward bias); NaN
+   *         if the series-resistance solve does not converge, which
+   *         positive finite parameters do not cause
    *
-   * @note RT-safe (no allocations, pure math).
+   * @note RT-safe: no allocation; with a series resistance, at most
+   *       Junction::SERIES_MAX_ITER iterations.
    */
   [[nodiscard]] static double current(double vDiode, const SchottkyDiodeParams& params) noexcept {
     return Junction::withSeriesResistance(vDiode, params.Is, params.n * params.Vt, params.Rs)
@@ -94,9 +97,10 @@ struct SchottkyDiode {
    *
    * @param vDiode Voltage across diode terminals in volts
    * @param params Schottky diode physical parameters
-   * @return Small-signal conductance in siemens
+   * @return Small-signal conductance in siemens; NaN as for current()
    *
-   * @note RT-safe (no allocations, pure math).
+   * @note RT-safe: no allocation; with a series resistance, at most
+   *       Junction::SERIES_MAX_ITER iterations.
    */
   [[nodiscard]] static double conductance(double vDiode,
                                           const SchottkyDiodeParams& params) noexcept {
@@ -117,7 +121,8 @@ struct SchottkyDiode {
    * @param vDiode Current diode voltage (from previous iteration)
    * @param params Schottky diode physical parameters
    *
-   * @note RT-safe (stamps into pre-allocated matrix/vector).
+   * @note RT-safe: stamps into a pre-allocated matrix and vector; with a
+   *       series resistance, at most Junction::SERIES_MAX_ITER iterations.
    */
   static void stamp(MnaSystem& mna, NetID anodeNet, NetID cathodeNet, double vDiode,
                     const SchottkyDiodeParams& params) {

@@ -18,18 +18,28 @@
  * which a Newton iterate can reach before the limiter above has a previous
  * voltage to work from. Every junction model therefore evaluates its
  * exponential through limitedExp(): the true exponential up to EXP_LINEAR_FROM
- * and its tangent line beyond. Value and slope stay finite and consistent
- * with each other, so a stamp built from them holds no NaN. At the default
- * thermal voltage the tangent starts 2.08 V across a bare junction, where a
- * 1e-14 A junction would already carry 5e20 A; no operating point of a real
- * circuit lies beyond it.
+ * and its tangent line beyond. Value and slope are consistent with each
+ * other, and with positive finite parameters both stay finite at the
+ * junction voltages a solve passes through: tens and hundreds of volts
+ * either way (the unit tests check +/-20 V and +/-100 V). This is not a
+ * guarantee for every finite input. The tangent itself overflows for an
+ * argument near 3e273, and no function here checks that a saturation current
+ * or a thermal voltage is positive, with the one exception of
+ * seriesJunctionVoltage().
  *
- * RT-safety: RT-safe (static functions, no allocations).
+ * Beyond the tangent point the value is the continuation and not the
+ * junction's: at the default thermal voltage that is 2.08 V across a bare
+ * junction, where the exponential would give a 1e-14 A junction 5e20 A.
+ *
+ * RT-safety: every function is static, allocates nothing and does a bounded
+ * amount of work. seriesJunctionVoltage() and withSeriesResistance() iterate,
+ * up to SERIES_MAX_ITER times, and how many depends on their inputs.
  * Thread-safety: Safe (stateless, pure functions).
  */
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace sim::electronics::devices::nonlinear {
 
@@ -113,27 +123,90 @@ struct Junction {
     return (is / nVt) * limitedExpSlope(v / nVt);
   }
 
-  /// Iteration limit of withSeriesResistance(); it converges in under ten.
+  /// Iteration limit of seriesJunctionVoltage().
   static constexpr int SERIES_MAX_ITER = 60;
+
+  /// A junction voltage found by seriesJunctionVoltage(), and how.
+  struct SeriesSolve {
+    double junctionVolts = 0.0; ///< Voltage across the junction itself (V).
+    int iterations = 0;         ///< Evaluations of the terminal equation.
+    bool converged = false;     ///< Whether the solve met its tolerance.
+  };
+
+  /**
+   * @brief Junction voltage of a junction behind a series resistance.
+   *
+   * The terminal voltage divides between the junction and the resistance:
+   *   V = Vj + Rs * Is * (exp(Vj / (n*Vt)) - 1)
+   * The left-hand side minus V is increasing and convex in Vj, and its root
+   * lies between 0 and V: the junction takes part of the terminal voltage,
+   * in the terminal voltage's sense. Newton's method from a start at or
+   * above the root descends onto it without overshoot; from below, its
+   * first step can land far up the exponential, from where each further
+   * step comes down by only about n*Vt. The start is therefore always an
+   * upper one:
+   *   - forward, the smaller of V (all of it across the junction) and the
+   *     junction voltage that would pass V / Rs (all of it across the
+   *     resistance);
+   *   - reverse, 0 V.
+   *
+   * The solve has converged when the terminal equation is met to within
+   * 1e-15 of the sizes of its three terms, which is what a double resolves
+   * of their sum, or when a step is below 1e-15 of |Vj| + n*Vt, which is
+   * what it resolves of Vj. It stops there, or at SERIES_MAX_ITER
+   * evaluations, and says which.
+   *
+   * The argument above holds for a finite voltage and positive finite
+   * parameters. A saturation current or thermal voltage that is not
+   * positive is refused before any evaluation; a value that is not finite
+   * runs to the limit. Neither is reported as converged.
+   *
+   * @param v Terminal voltage (V), positive forward. Finite.
+   * @param is Saturation current (A). Positive and finite.
+   * @param nVt Ideality factor times thermal voltage (V). Positive and finite.
+   * @param rs Series resistance (ohm). Positive and finite.
+   * @return The junction voltage, the evaluations taken and whether they converged.
+   * @note RT-safe: at most SERIES_MAX_ITER iterations, no allocation.
+   */
+  [[nodiscard]] static SeriesSolve seriesJunctionVoltage(double v, double is, double nVt,
+                                                         double rs) noexcept {
+    if (!(is > 0.0 && nVt > 0.0)) {
+      return {0.0, 0, false};
+    }
+    double vj = v > 0.0 ? std::min(v, nVt * std::log1p(v / (rs * is))) : 0.0;
+    for (int iter = 1; iter <= SERIES_MAX_ITER; ++iter) {
+      const double DROP = rs * current(vj, is, nVt);
+      const double RESIDUAL = vj + DROP - v;
+      if (std::abs(RESIDUAL) <= 1e-15 * (std::abs(vj) + std::abs(DROP) + std::abs(v))) {
+        return {vj, iter, true};
+      }
+      const double STEP = RESIDUAL / (1.0 + rs * conductance(vj, is, nVt));
+      vj -= STEP;
+      if (std::abs(STEP) <= 1e-15 * (std::abs(vj) + nVt)) {
+        return {vj, iter, true};
+      }
+    }
+    return {vj, SERIES_MAX_ITER, false};
+  }
 
   /**
    * @brief Current and conductance of a junction behind a series resistance.
    *
-   * The terminal voltage divides between the junction and the resistance:
-   *   V = Vj + Rs * Is * (exp(Vj / (n*Vt)) - 1)
-   * This is solved for the junction voltage Vj by Newton's method. The
-   * left-hand side minus V is increasing and convex in Vj, so from a start at
-   * or above the root the iterates descend onto it without overshoot. The
-   * start is the smaller of V (all of it across the junction) and the
-   * junction voltage that would pass V / Rs (all of it across the
-   * resistance); both lie at or above the root for forward bias. In reverse
-   * bias the junction is close to linear and one step lands on the root.
+   * The junction voltage is found by seriesJunctionVoltage(); the current
+   * is the junction's at that voltage, and the conductance follows from
+   * differentiating the terminal equation.
+   *
+   * A solve that did not converge returns no number: both values are NaN.
+   * A finite voltage with positive finite parameters converges; a
+   * saturation current or thermal voltage that is not positive, or a value
+   * that is not finite, is what does not.
    *
    * @param v Terminal voltage (V), positive forward.
-   * @param is Saturation current (A).
-   * @param nVt Ideality factor times thermal voltage (V).
+   * @param is Saturation current (A), positive.
+   * @param nVt Ideality factor times thermal voltage (V), positive.
    * @param rs Series resistance (ohm); zero or negative means none.
-   * @return Current, and dI/dV = gj / (1 + gj * Rs) at the solved point.
+   * @return Current, and dI/dV = gj / (1 + gj * Rs) at the solved point; NaN
+   *         for both if the solve did not converge.
    * @note RT-safe: at most SERIES_MAX_ITER iterations, no allocation.
    */
   [[nodiscard]] static JunctionPoint withSeriesResistance(double v, double is, double nVt,
@@ -141,24 +214,13 @@ struct Junction {
     if (rs <= 0.0) {
       return {current(v, is, nVt), conductance(v, is, nVt)};
     }
-
-    double vj = v;
-    if (v > 0.0) {
-      vj = std::min(v, nVt * std::log1p(v / (rs * is)));
+    const SeriesSolve SOLVED = seriesJunctionVoltage(v, is, nVt, rs);
+    if (!SOLVED.converged) {
+      const double NONE = std::numeric_limits<double>::quiet_NaN();
+      return {NONE, NONE};
     }
-
-    for (int iter = 0; iter < SERIES_MAX_ITER; ++iter) {
-      const double RESIDUAL = vj + rs * current(vj, is, nVt) - v;
-      const double SLOPE = 1.0 + rs * conductance(vj, is, nVt);
-      const double STEP = RESIDUAL / SLOPE;
-      vj -= STEP;
-      if (std::abs(STEP) <= 1e-15 * (std::abs(vj) + nVt)) {
-        break;
-      }
-    }
-
-    const double GJ = conductance(vj, is, nVt);
-    return {current(vj, is, nVt), GJ / (1.0 + GJ * rs)};
+    const double GJ = conductance(SOLVED.junctionVolts, is, nVt);
+    return {current(SOLVED.junctionVolts, is, nVt), GJ / (1.0 + GJ * rs)};
   }
 
   /**
