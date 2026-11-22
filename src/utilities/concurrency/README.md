@@ -1011,10 +1011,10 @@ share of each. The mutex pool's enqueue is the cheaper of the two while it
 does not allocate or wait for the lock; the lock-free pool's enqueue never
 does either.
 
-| `threadsRunning()`                                  | Time                  |
-| --------------------------------------------------- | --------------------- |
-| Workers parked: one, four, sixteen workers          | 2.3 ns, 5.4 ns, 15 ns |
-| Four workers starting and finishing tasks meanwhile | 12 ns                 |
+| `threadsRunning()`                                 | Time                  |
+| -------------------------------------------------- | --------------------- |
+| Workers parked: one, four, sixteen workers         | 2.3 ns, 5.4 ns, 15 ns |
+| Four task chains running on four workers meanwhile | 12 ns                 |
 
 The query reads two counts per worker, so its cost grows with the worker
 count; that is the price of each task no longer writing a line all workers

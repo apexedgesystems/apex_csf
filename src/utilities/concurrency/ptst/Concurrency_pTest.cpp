@@ -14,7 +14,8 @@
  *    from an enqueue to the task starting on a sleeping worker, drain time
  *    per queued task (one and four workers), rejection, and an enqueue
  *    diagnostic with live workers whose regime is not fixed
- *  - ThreadPoolLockFree threadsRunning() with parked and with working workers
+ *  - ThreadPoolLockFree threadsRunning() with parked workers and with task
+ *    chains running
  *
  * Every measuring case writes one CSV row. Per-operation times in the summary
  * lines come from the measured call rate. The contention cases run
@@ -328,28 +329,36 @@ template <class Pool> void measureInFlightQueryIdle(ub::PerfCase& perf, Pool& po
               (workers == 1) ? "" : "s", nsPerOp(RESULT));
 }
 
-/// A task that puts itself back on its pool until told to stop, so every
-/// worker starts and finishes tasks for as long as a case needs.
+/// A task that puts itself back on its pool until told to stop: one queued
+/// task is a chain that keeps the pool starting and finishing tasks for as
+/// long as a case needs. A refused re-enqueue ends its chain and is counted;
+/// nothing writes the count while every chain lives.
 template <class Pool> struct Recirculating {
   Pool* pool{nullptr};
   std::atomic<bool> stop{false};
+  std::atomic<std::size_t> lost{0};
 
   static std::uint8_t run(void* context) noexcept {
     auto* self = static_cast<Recirculating*>(context);
-    if (!self->stop.load(std::memory_order_acquire)) {
-      (void)self->pool->tryEnqueue("again", DelegateU8{&Recirculating::run, self});
+    if (!self->stop.load(std::memory_order_acquire) &&
+        self->pool->tryEnqueue("again", DelegateU8{&Recirculating::run, self}) !=
+            PoolStatus::SUCCESS) {
+      self->lost.fetch_add(1, std::memory_order_relaxed);
     }
     return 0;
   }
 };
 
 /**
- * @brief threadsRunning() while every worker starts and finishes tasks.
+ * @brief threadsRunning() while the pool starts and finishes tasks.
  *
- * One task per worker keeps putting itself back on the pool, so the workers
- * write the pool's task counts as fast as they can while the caller reads
- * them. The figure is the query with the cache traffic that costs it. The
- * answer may be either value: between two tasks a pool has none in flight.
+ * One task chain per worker keeps putting itself back on the pool, so the
+ * pool's task counts are written as fast as it can run the chains while the
+ * caller reads them. A chain may move between workers: the case keeps as
+ * many chains alive as there are workers and does not establish that every
+ * worker takes part at every moment. The figure is the query with the cache
+ * traffic that costs it. The answer may be either value: between two tasks
+ * a pool has none in flight.
  */
 template <class Pool> void measureInFlightQueryBusy(ub::PerfCase& perf, Pool& pool, int workers) {
   ASSERT_TRUE(pool.isValid());
@@ -373,14 +382,19 @@ template <class Pool> void measureInFlightQueryBusy(ub::PerfCase& perf, Pool& po
   busy = 0;
   const ub::PerfResult RESULT = perf.throughputLoop(QUERY, "query");
 
+  // Read before the stop: a chain that looked before it and re-enqueues
+  // after admission closes is refused by design.
+  const std::size_t LOST = task.lost.load(std::memory_order_relaxed);
   task.stop.store(true, std::memory_order_release);
   pool.shutdown();
 
   EXPECT_TRUE(queued) << "the pool refused the recirculating tasks";
+  EXPECT_EQ(LOST, 0U) << "a task chain ended during the measurement";
   const std::size_t QUERIES =
       static_cast<std::size_t>(perf.cycles()) * static_cast<std::size_t>(perf.repeats());
-  std::printf("\n%s (%d working workers): %.1f ns per query, %zu of %zu saw a task in flight\n",
-              perf.testName().c_str(), workers, nsPerOp(RESULT), busy, QUERIES);
+  std::printf("\n%s (%d task chains on %d workers): %.1f ns per query, %zu of %zu saw a task "
+              "in flight\n",
+              perf.testName().c_str(), workers, workers, nsPerOp(RESULT), busy, QUERIES);
 }
 
 /// When a wake-latency sample's task started, written by the worker.
@@ -1075,7 +1089,7 @@ PERF_TEST(ThreadPoolLockFree, InFlightQueryIdleSixteenWorkers) {
   measureInFlightQueryIdle(perf, pool, 16);
 }
 
-/** @brief ThreadPoolLockFree threadsRunning() while four workers start and finish tasks. */
+/** @brief ThreadPoolLockFree threadsRunning() while four task chains run on four workers. */
 PERF_TEST(ThreadPoolLockFree, InFlightQueryBusyFourWorkers) {
   UB_PERF_GUARD(perf);
   ThreadPoolLockFree pool(4);
