@@ -215,6 +215,11 @@ old one stays locked.
   the first flag when evaluated. ExternalIO checks an empty list and
   loads one word per loop.
 
+The swap log times the three steps apart: `RELOAD_LIBRARY_PUBLISHED`
+carries the wait for publication (`wait_us`), `RELOAD_LIBRARY_OK` the
+whole command from its start (`total_us`), and
+`RELOAD_LIBRARY_RECLAIMED` the destruction of the replaced plugin (`us`).
+
 A component lock stops new dispatches of the component's tasks. It does
 not wait for a task already running; the reload does.
 

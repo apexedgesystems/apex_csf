@@ -26,6 +26,7 @@
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/executive/posix/inc/ExecutiveStatus.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/CommandResult.hpp"
+#include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 #include "src/utilities/helpers/inc/Cpu.hpp"
 
 #include <algorithm>
@@ -37,6 +38,8 @@
 #include <thread>
 #include <utility>
 #include <vector>
+
+#include <fmt/core.h>
 
 using namespace executive;
 using system_core::system_component::CommandResult;
@@ -166,7 +169,13 @@ void ApexExecutive::serviceLibraryControl() noexcept {
   // The handler that retired it has returned, and with it the last use
   // of the old instance on this thread.
   if (!retiredPlugins_.empty()) {
+    const std::size_t COUNT = retiredPlugins_.size();
+    const std::uint64_t BEGIN_NS = apex::helpers::cpu::getMonotonicNs();
     retiredPlugins_.clear();
+    if (auto* sl = fileSystem_.swapLog()) {
+      sl->info("SWAP", fmt::format("RELOAD_LIBRARY_RECLAIMED: plugins={} us={}", COUNT,
+                                   (apex::helpers::cpu::getMonotonicNs() - BEGIN_NS) / 1000U));
+    }
   }
 
   if (deferredReloadUid_.load(std::memory_order_acquire) != NO_DEFERRED_RELOAD) {

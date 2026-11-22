@@ -15,6 +15,7 @@
 #include "src/system/core/infrastructure/system_component/posix/inc/PackedTprm.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmReadback.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
+#include "src/utilities/helpers/inc/Cpu.hpp"
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
 
@@ -335,6 +336,8 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       return static_cast<std::uint8_t>(CommandResult::SUCCESS);
     }
 
+    const std::uint64_t RELOAD_BEGIN_NS = apex::helpers::cpu::getMonotonicNs();
+
     // Component must exist and be locked.
     auto* oldComp = registry_.getComponent(targetUid);
     if (oldComp == nullptr) {
@@ -568,8 +571,10 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
                               targetUid, TASKS_REPLACED, SO_NAME));
 
     if (auto* sl = fileSystem_.swapLog()) {
-      sl->info("SWAP", fmt::format("RELOAD_LIBRARY_OK: uid=0x{:06X} tasks={} so={}", targetUid,
-                                   TASKS_REPLACED, SO_NAME));
+      sl->info("SWAP",
+               fmt::format("RELOAD_LIBRARY_OK: uid=0x{:06X} tasks={} so={} total_us={}", targetUid,
+                           TASKS_REPLACED, SO_NAME,
+                           (apex::helpers::cpu::getMonotonicNs() - RELOAD_BEGIN_NS) / 1000U));
     }
 
     // The new instance was never locked, so it is dispatched from the
