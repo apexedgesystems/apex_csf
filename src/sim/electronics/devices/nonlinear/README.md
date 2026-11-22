@@ -82,10 +82,20 @@ DiodeShockley::stamp(mna, anodeNet, cathodeNet, /*vDiode=*/0.7, params);
   caller owns terminal voltages and net IDs.
 - **Linearization on demand.** Every model exposes the Norton equivalent
   needed by Newton-Raphson stamping (`I_device = G * V + Ieq`).
-- **No exceptions.** Out-of-range inputs return finite numbers (clamped
-  exponents) so the matrix stamp never produces NaNs.
-- **RT-safe everywhere.** Stamping into a pre-sized MNA system performs
-  only arithmetic.
+- **No exceptions.** A junction's exponential is continued along its
+  tangent above an argument of 80, so with positive finite parameters
+  currents and conductances stay finite at the junction voltages a solve
+  passes through (checked to 100 V either way). That is not a guarantee
+  for every input: a parameter that is not positive or a value that is not
+  finite is not guarded against, except in the series-resistance solve of
+  `DiodeSpice` and `SchottkyDiode`, which returns NaN where it does not
+  converge.
+- **Bounded, allocation-free evaluation.** Every model function is static,
+  allocates nothing and does a bounded amount of work; stamping into a
+  pre-sized MNA system performs only arithmetic. The series-resistance
+  solve iterates, up to 60 times, and how many depends on its inputs.
+  What a call costs, and whether a circuit built from these models meets
+  a deadline, is for the user of the model to measure.
 
 ---
 
@@ -142,9 +152,10 @@ static void stamp(MnaSystem& mna, NetID drain, NetID gate, NetID source,
 | `MosfetBsim3`        | Moderate-inversion, Meyer caps | Cross-coupled latches, dynamic logic |
 
 All MOSFET models provide `current`, `transconductance`, `outputConductance`
-(plus `bodyTransconductance` for the bias-aware models), and a `stamp` entry
-point that writes the linearized stamp into an `MnaSystem` or
-`MnaSystemSparse`. `MosfetLevel1BatchCuda.cuh` exposes a CUDA batch
+(plus `bodyTransconductance` for the bias-aware models). Every one but
+`MosfetBsim3` has a `stamp` entry point that writes the linearized stamp
+into a dense `MnaSystem`; `MosfetBsim3` gives the values and leaves the
+stamping to its caller. `MosfetLevel1BatchCuda.cuh` exposes a CUDA batch
 evaluator for large device arrays.
 
 ### BJT family
