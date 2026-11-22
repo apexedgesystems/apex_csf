@@ -305,6 +305,14 @@ void ApexExecutive::shutdownStage3DrainTasks() noexcept {
                      "Tasks still running after timeout (5s), proceeding with shutdown");
   } else {
     sysLog_->info(label(), "All tasks drained successfully");
+
+    // Stop the scheduler here, while the components are alive: stopping
+    // it releases sequenced waiters by writing their groups' counters and
+    // joins the workers. Left to the scheduler's destructor, that would
+    // run after the application's components and any loaded plugin had
+    // been destroyed. With a task still running the stop would block, so
+    // that case stays with the destructor.
+    scheduler_.shutdown();
   }
 
   shutdownState_.stage3Complete.store(true, std::memory_order_release);
