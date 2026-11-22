@@ -463,17 +463,17 @@ auto zBytes = entry->getBytes(16, 8);
 
 | Directory    | Type                   | Tests | Runs with `make test` |
 | ------------ | ---------------------- | ----- | --------------------- |
-| `apex/utst/` | Unit tests             | 80    | Yes                   |
+| `apex/utst/` | Unit tests             | 82    | Yes                   |
 | `apex/ptst/` | Performance benchmarks | 9     | No (manual)           |
 
 ### Test Organization
 
 | Component      | Test File                  | Tests  |
 | -------------- | -------------------------- | ------ |
-| ApexRegistry   | `ApexRegistry_uTest.cpp`   | 55     |
+| ApexRegistry   | `ApexRegistry_uTest.cpp`   | 57     |
 | RegistryData   | `RegistryData_uTest.cpp`   | 16     |
 | RegistryStatus | `RegistryStatus_uTest.cpp` | 9      |
-| **Total**      |                            | **80** |
+| **Total**      |                            | **82** |
 
 ---
 

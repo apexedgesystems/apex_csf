@@ -358,7 +358,7 @@ docker compose run --rm -T dev-cuda \
 
 | Test File               | Tests | Coverage                                                        |
 | ----------------------- | ----- | --------------------------------------------------------------- |
-| ShmRingBridge_uTest.cpp | 8     | Identity, default-idle, validation, full E2E publish, FULL ring |
+| ShmRingBridge_uTest.cpp | 24    | Identity, default-idle, validation, full E2E publish, FULL ring |
 
 `fullEndToEndPublish` is the headline test: configures real shm + sem,
 writes 5 frames, hand-rolled Side B reader (spec-only, no horizon
