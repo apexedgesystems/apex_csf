@@ -21,6 +21,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerRequirements_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/TaskCadence_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerRates_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerReplaceComponentTasks_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------

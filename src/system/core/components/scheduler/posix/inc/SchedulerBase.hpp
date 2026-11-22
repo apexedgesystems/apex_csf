@@ -32,8 +32,10 @@
 #include <cstdint>
 
 #include <atomic>
+#include <deque>
 #include <filesystem>
 #include <memory>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -391,17 +393,23 @@ public:
   [[nodiscard]] const TaskEntry* getEntry(const SchedulableTask& task) const noexcept;
 
   /**
-   * @brief Replace task pointers for all entries belonging to a component.
+   * @brief Bind every entry of a component to a replacement instance.
    *
-   * Used during component hot-swap: after loading a new .so, re-resolves
-   * task pointers by calling newComponent->taskByUid(taskUid) for each
-   * entry matching the given fullUid.
+   * Used during component hot-swap. For each entry matching the fullUid
+   * the replacement must provide the task with the entry's taskUid, and,
+   * for a sequenced entry, a sequence group that holds that task at the
+   * entry's phase and maximum phase. The entries change only if every
+   * one resolves: the task pointer, the sequence counter and the
+   * component name are then all the replacement's, so no entry is left
+   * pointing into the instance it replaced.
    *
    * @param fullUid Component fullUid to match.
-   * @param newComponent New component instance to resolve tasks from.
-   * @return Number of tasks successfully replaced.
+   * @param newComponent Instance to bind the entries to.
+   * @return Number of entries bound; 0, with nothing changed, when an
+   *         entry has no counterpart in the replacement.
    *
-   * @note NOT RT-safe: Control-plane only (called while component is locked).
+   * @note NOT RT-safe: Control-plane only; allocates. Call on the
+   *       dispatching thread with every dispatched task settled.
    */
   std::uint8_t replaceComponentTasks(std::uint32_t fullUid,
                                      SystemComponentBase& newComponent) noexcept;
@@ -547,6 +555,14 @@ protected:
 
   /** @brief All registered task entries (scheduler owns these). */
   std::vector<TaskEntry> entries_{};
+
+  /// Component names the entries point to. An entry's name outlives the
+  /// component that supplied it (a violation report may still be naming
+  /// it), so the scheduler keeps its own copy of each distinct name.
+  std::deque<std::string> componentNames_{};
+
+  /// The scheduler's own copy of NAME (nullptr for nullptr).
+  [[nodiscard]] const char* internComponentName(const char* name) noexcept;
 
   /** @brief Table of tick index -> vector of entry indices scheduled at that tick. */
   std::vector<std::vector<std::size_t>> schedule_{};

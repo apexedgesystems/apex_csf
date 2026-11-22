@@ -9,6 +9,7 @@
 #include "src/system/core/components/scheduler/posix/inc/SchedulerStatus.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerTlm.hpp"
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/SchedulableComponentBase.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 
 #include <cstdint>
@@ -196,7 +197,7 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config, S
   TaskEntry* entry = entries_.empty() ? nullptr : &entries_.back();
   if (entry != nullptr && entry->task == &task) {
     entry->fullUid = fullUid;
-    entry->componentName = componentName;
+    entry->componentName = internComponentName(componentName);
     entry->taskUid = taskUid;
 
     // If sequencing is provided, populate sequencing info
@@ -235,10 +236,29 @@ const TaskEntry* SchedulerBase::getEntry(const SchedulableTask& task) const noex
 
 /* ----------------------------- replaceComponentTasks ----------------------------- */
 
+const char* SchedulerBase::internComponentName(const char* name) noexcept {
+  if (name == nullptr) {
+    return nullptr;
+  }
+  for (const auto& kept : componentNames_) {
+    if (kept == name) {
+      return kept.c_str();
+    }
+  }
+  componentNames_.emplace_back(name);
+  return componentNames_.back().c_str();
+}
+
 std::uint8_t
 SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
                                      system_component::SystemComponentBase& newComponent) noexcept {
-  std::uint8_t replaced = 0;
+  // Resolve every entry's binding first; the entries change only if all resolve.
+  struct Binding {
+    TaskEntry* entry;
+    SchedulableTask* task;
+    std::atomic<int>* seqCounter;
+  };
+  std::vector<Binding> bindings;
 
   for (auto& entry : entries_) {
     if (entry.fullUid != fullUid) {
@@ -247,15 +267,37 @@ SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
 
     auto* newTask = newComponent.taskByUid(entry.taskUid);
     if (newTask == nullptr) {
-      // New component doesn't have this task -- leave it as-is (will be skipped if locked).
-      continue;
+      return 0;
     }
 
-    entry.task = newTask;
-    ++replaced;
+    // A sequenced entry keeps its phase numbers, so the replacement must
+    // sequence this task the same way in one of its groups.
+    std::atomic<int>* seqCounter = nullptr;
+    if (entry.isSequenced()) {
+      for (std::size_t idx = 0; idx < system_component::MAX_GROUPS_PER_COMPONENT; ++idx) {
+        auto* group = newComponent.sequenceGroup(static_cast<std::uint8_t>(idx));
+        const SeqInfo* info = (group != nullptr) ? group->getSeqInfo(newTask) : nullptr;
+        if (info != nullptr && info->phase == entry.seqPhase &&
+            info->maxPhase == entry.seqMaxPhase) {
+          seqCounter = group->counter();
+          break;
+        }
+      }
+      if (seqCounter == nullptr) {
+        return 0;
+      }
+    }
+
+    bindings.push_back({&entry, newTask, seqCounter});
   }
 
-  return replaced;
+  const char* newName = internComponentName(newComponent.componentName());
+  for (const Binding& binding : bindings) {
+    binding.entry->task = binding.task;
+    binding.entry->seqCounter = binding.seqCounter;
+    binding.entry->componentName = newName;
+  }
+  return static_cast<std::uint8_t>(bindings.size());
 }
 
 /* ----------------------------- populateRequirementsTlm ----------------------------- */
