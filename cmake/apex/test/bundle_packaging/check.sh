@@ -281,6 +281,27 @@ else
   show "$scratch/py-kernel-marker.cfg.log"
 fi
 
+# A comparison installers do not all answer alike fails the package step too.
+# Each marker here would select fxold if its two sides were simply exchanged
+# or compared as text: a pre-release on the left ("3.x.yrc1" < the version is
+# false for release 3.x.y, where the version > "3.x.yrc1" is true), and text
+# against something that reads as a version.
+if configure py-prerelease-on-the-left -DCASE=good \
+  -DFX_DEP_REQUIRES="fxold; \"${this_python}rc1\" < python_full_version"; then
+  expect_package_error py-prerelease-on-the-left 'tool fx-py cannot be staged' \
+    "cannot read fxdep's requirement" 'ordered against a pre-release'
+else
+  note "py-prerelease-on-the-left: configure failed"
+  show "$scratch/py-prerelease-on-the-left.cfg.log"
+fi
+if configure py-text-as-version -DCASE=good -DFX_DEP_REQUIRES='fxold; os_name != "3"'; then
+  expect_package_error py-text-as-version 'tool fx-py cannot be staged' \
+    "cannot read fxdep's requirement" 'os_name is text' 'reads as a version'
+else
+  note "py-text-as-version: configure failed"
+  show "$scratch/py-text-as-version.cfg.log"
+fi
+
 # A requirement an active extra selects has to be installed, and so has one
 # selected by an active extra together with the build's python3.
 if configure py-missing-extra -DCASE=good; then

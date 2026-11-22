@@ -505,8 +505,10 @@ requires, not the rest of its role's installed packages:
   the package step: one that turns on `platform_machine` in a cross build, and
   one that turns on the kernel version (`platform_release`, `platform_version`)
   or on `implementation_version` in any build. So does a comparison outside what
-  is read: `~=`, `===` or `in` on a version, more than three numbers, or an
-  ordering of text.
+  is read: `~=`, `===` or `in` on a version, more than three numbers, a
+  pre-release or a trailing `.*` written on the left of the comparison
+  (`"3.11.0rc1" < python_full_version`), an ordering of text, or text
+  compared with something that reads as a version (`os_name == "3"`).
 - An interpreter is read by its release numbers (major, minor, micro), so a
   pre-release `python3` counts as its release.
 

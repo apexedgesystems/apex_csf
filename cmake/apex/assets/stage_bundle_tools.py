@@ -175,7 +175,9 @@ COMPARE = {
     ">=": operator.ge,
 }
 # The comparison that holds exactly when the given one does not, and the one
-# that says the same with its two sides exchanged.
+# that says the same with its two sides exchanged. The exchange is sound for
+# release numbers only: against a pre-release, "3.11.0rc1" < v and
+# v > "3.11.0rc1" give release 3.11.0 different answers.
 OPPOSITE = {"<": ">=", ">=": "<", "<=": ">", ">": "<=", "==": "!=", "!=": "=="}
 EXCHANGED = {"<": ">", ">": "<", "<=": ">=", ">=": "<=", "==": "==", "!=": "!="}
 RELEASE = re.compile(r"(\d+(?:\.\d+){0,2})(\.\*|(?:a|b|rc)\d+)?")
@@ -299,15 +301,21 @@ def parse_marker(text):
             return "unknown", reads
         if reads == "version":
             if not first:
-                compare = None if literal.endswith(".*") else EXCHANGED.get(compare)
+                plain = re.fullmatch(r"\d+(?:\.\d+){0,2}", literal)
+                compare = EXCHANGED.get(compare) if plain else None
             if release_terms(compare, literal, marker=True) is None:
                 raise ValueError(
-                    "%s is read with <, <=, >, >=, == or != against up to three numbers, or "
-                    "ordered against a pre-release of them" % variable
+                    "%s is read with <, <=, >, >=, == or != against up to three numbers; on "
+                    "its right side also with == or != against a trailing .* and ordered "
+                    "against a pre-release" % variable
                 )
             return "version", variable, compare, literal
         if compare not in ("==", "!=", "in", "not in"):
             raise ValueError("%s is text, read with ==, !=, in or not in" % variable)
+        if compare in ("==", "!=") and re.match(r"\s*v?\d", literal):
+            # Installers differ here: some compare the two as text and some
+            # try to read both as versions and fail.
+            raise ValueError("%s is text, and %r reads as a version" % (variable, literal))
         return "text", variable, compare, literal, first
 
     def conjunction():
