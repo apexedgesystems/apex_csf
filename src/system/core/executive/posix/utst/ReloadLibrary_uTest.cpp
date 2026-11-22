@@ -5,12 +5,12 @@
  *
  * Boots a real ApexExecutive with one linked ReloadTarget, places a
  * plugin library with the same component id in the inactive library bank,
- * locks the component and issues RELOAD_LIBRARY. The commands run on the
- * executive's task thread, at the seam that thread offers once per cycle,
- * so the handler shares no state with another running thread; the test
- * reads the outcome from the files the executive writes. Nothing here
- * depends on timing: every wait is a poll for a state, with a bound that
- * only stops a broken run from hanging.
+ * locks the component and issues RELOAD_LIBRARY. The first two cases send
+ * the reload the way a sequence does: as a command action the action
+ * engine dispatches on the task thread, which the executive hands to its
+ * external I/O thread. The test reads the outcome from the files the
+ * executive writes. Nothing here depends on timing: every wait is a poll
+ * for a state, with a bound that only stops a broken run from hanging.
  *
  * Each case owns what its executive would otherwise share with another
  * run of the same case: a directory created for it alone, and a TCP port
@@ -22,13 +22,17 @@
  * while the task thread dispatches the component's scheduled task. They
  * hold a run of that task inside the old instance across the reload and
  * require the swap to wait for it, the old instance to outlive it, and
- * the replacement to run afterwards.
+ * the replacement to run afterwards. They read the component's output
+ * block back through INSPECT, which must show the instance that runs, and
+ * they offer replacements the swap must refuse whole.
  */
 
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
 #include "src/system/core/executive/posix/inc/ExecutiveState.hpp"
 #include "src/system/core/executive/posix/utst/plugins/ReloadTarget.hpp"
 #include "src/system/core/executive/posix/inc/ExecutiveStatus.hpp"
+#include "src/system/core/components/action/apex/inc/ActionInterface.hpp"
+#include "src/system/core/components/action/apex/inc/DataAction.hpp"
 #include "src/system/core/components/interface/apex/inc/ApexInterfaceTunables.hpp"
 #include "src/system/core/components/interface/apex/inc/InterfaceBase.hpp"
 #include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
@@ -37,6 +41,7 @@
 #include "src/system/core/infrastructure/protocols/framing/slip/inc/SLIPFraming.hpp"
 #include "src/system/core/infrastructure/protocols/network/tcp/inc/TcpSocketClient.hpp"
 #include "src/system/core/infrastructure/system_component/base/inc/CommandResult.hpp"
+#include "src/system/core/infrastructure/system_component/posix/inc/DataCategory.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SystemComponentBase.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
 #include "src/utilities/compatibility/inc/compat_span.hpp"
@@ -102,21 +107,29 @@ public:
     return fileSystem().inactiveLibDir();
   }
 
+  static constexpr int NOT_RUN = -1;
+
   /**
    * @brief Run a command whose payload is the target's fullUid on the task
-   *        thread, at its next cycle.
+   *        thread, at its next cycle, by calling the executive's handler.
    * @return The handler's status, or NOT_RUN when no cycle took the
    *         command within POLL_LIMIT.
    */
-  static constexpr int NOT_RUN = -1;
-  [[nodiscard]] int runOnTaskThread(Opcode opcode) noexcept {
-    result_.store(NOT_RUN, std::memory_order_release);
-    pending_.store(static_cast<int>(opcode), std::memory_order_release);
-    const auto DEADLINE = Clock::now() + POLL_LIMIT;
-    while (result_.load(std::memory_order_acquire) == NOT_RUN && Clock::now() < DEADLINE) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(1));
-    }
-    return result_.load(std::memory_order_acquire);
+  [[nodiscard]] int runOnTaskThread(Opcode opcode) noexcept { return post(opcode, false); }
+
+  /**
+   * @brief Queue a command action for the executive, payload the target's
+   *        fullUid, on the task thread at its next cycle. The action
+   *        engine dispatches it in that cycle's action phase.
+   * @return 0 when the action was queued, 1 when the queue refused it,
+   *         NOT_RUN when no cycle took the request within POLL_LIMIT.
+   */
+  [[nodiscard]] int queueCommandAction(Opcode opcode) noexcept { return post(opcode, true); }
+
+  /// Hash of the task thread's id, as ReloadProbe::thisThread() gives it;
+  /// 0 before its first cycle.
+  [[nodiscard]] std::size_t taskThread() const noexcept {
+    return taskThread_.load(std::memory_order_acquire);
   }
 
 protected:
@@ -125,6 +138,7 @@ protected:
   }
 
   void onWaitDeadlineSelected(std::uint64_t, std::uint64_t) noexcept override {
+    taskThread_.store(ReloadProbe::thisThread(), std::memory_order_release);
     const int OPCODE = pending_.exchange(NOT_RUN, std::memory_order_acq_rel);
     if (OPCODE == NOT_RUN) {
       return;
@@ -132,6 +146,18 @@ protected:
     const std::uint32_t UID = target.fullUid();
     std::array<std::uint8_t, sizeof(UID)> payload{};
     std::memcpy(payload.data(), &UID, sizeof(UID));
+
+    if (viaAction_.load(std::memory_order_acquire)) {
+      system_core::data::DataAction action{};
+      system_core::data::initCommandAction(action, 0U, system_core::data::ActionTrigger::IMMEDIATE,
+                                           0U, static_cast<std::uint16_t>(OPCODE), payload.data(),
+                                           static_cast<std::uint8_t>(payload.size()));
+      const auto QUEUED = system_core::data::queueAction(actionComponent().iface(), action);
+      result_.store(QUEUED == system_core::data::ActionStatus::SUCCESS ? 0 : 1,
+                    std::memory_order_release);
+      return;
+    }
+
     std::vector<std::uint8_t> response;
     result_.store(handleCommand(static_cast<std::uint16_t>(OPCODE),
                                 apex::compat::rospan<std::uint8_t>{payload.data(), payload.size()},
@@ -140,8 +166,21 @@ protected:
   }
 
 private:
+  [[nodiscard]] int post(Opcode opcode, bool viaAction) noexcept {
+    result_.store(NOT_RUN, std::memory_order_release);
+    viaAction_.store(viaAction, std::memory_order_release);
+    pending_.store(static_cast<int>(opcode), std::memory_order_release);
+    const auto DEADLINE = Clock::now() + POLL_LIMIT;
+    while (result_.load(std::memory_order_acquire) == NOT_RUN && Clock::now() < DEADLINE) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return result_.load(std::memory_order_acquire);
+  }
+
   std::atomic<int> pending_{NOT_RUN};
+  std::atomic<bool> viaAction_{false};
   std::atomic<int> result_{NOT_RUN};
+  std::atomic<std::size_t> taskThread_{0};
 };
 
 std::string slurp(const std::filesystem::path& path) {
@@ -211,7 +250,8 @@ bool writeInterfacePort(const std::filesystem::path& dir, std::uint16_t port) {
                    sizeof(tunables));
 }
 
-/// Write the scheduler's parameter file into DIR: the target's step task on every cycle.
+/// Write the scheduler's parameter file into DIR: the target's step task, in its
+/// sequence group, on every cycle.
 bool writeStepSchedule(const std::filesystem::path& dir) {
   namespace sch = system_core::scheduler;
   constexpr std::uint32_t SCHEDULER_UID = 1U << 8;
@@ -229,8 +269,8 @@ bool writeStepSchedule(const std::filesystem::path& dir) {
   step.freqD = 1;
   step.offset = 0;
   step.priority = 0;
-  step.sequenceGroup = 0xFF;
-  step.sequencePhase = 0;
+  step.sequenceGroup = ReloadTarget::STEP_GROUP;
+  step.sequencePhase = 1;
 
   std::array<std::uint8_t, sizeof(header) + sizeof(step)> image{};
   std::memcpy(image.data(), &header, sizeof(header));
@@ -251,20 +291,29 @@ public:
     return client_->init(2000, error) == apex::protocols::tcp::TCP_CLIENT_SUCCESS;
   }
 
-  /// Send OPCODE to the executive with UID as its payload. @return the command's sequence, 0 on
-  /// failure.
+  /// Send OPCODE to the executive with UID as its payload.
+  /// @return the command's sequence, 0 on failure.
   [[nodiscard]] std::uint16_t send(ApexExecutive::Opcode opcode, std::uint32_t uid) {
-    const std::uint16_t SEQUENCE = ++sequence_;
     std::array<std::uint8_t, sizeof(uid)> payload{};
     std::memcpy(payload.data(), &uid, sizeof(uid));
+    return send(opcode, payload.data(), payload.size());
+  }
 
+  /// Send OPCODE to the executive with PAYLOAD.
+  /// @return the command's sequence, 0 on failure.
+  [[nodiscard]] std::uint16_t send(ApexExecutive::Opcode opcode, const std::uint8_t* payload,
+                                   std::size_t payloadBytes) {
+    constexpr std::size_t PAYLOAD_MAX = 32;
+    if (payloadBytes > PAYLOAD_MAX) {
+      return 0;
+    }
+    const std::uint16_t SEQUENCE = ++sequence_;
     const aproto::AprotoHeader HEADER =
         aproto::buildHeader(0U, static_cast<std::uint16_t>(opcode), SEQUENCE,
-                            static_cast<std::uint16_t>(payload.size()), false, true, false);
-    std::array<std::uint8_t, aproto::APROTO_HEADER_SIZE + sizeof(uid)> packet{};
+                            static_cast<std::uint16_t>(payloadBytes), false, true, false);
+    std::array<std::uint8_t, aproto::APROTO_HEADER_SIZE + PAYLOAD_MAX> packet{};
     std::size_t packetBytes = 0;
-    if (aproto::encodePacket(HEADER, {payload.data(), payload.size()},
-                             {packet.data(), packet.size()},
+    if (aproto::encodePacket(HEADER, {payload, payloadBytes}, {packet.data(), packet.size()},
                              packetBytes) != aproto::Status::SUCCESS) {
       return 0;
     }
@@ -283,10 +332,10 @@ public:
    * @return true with its status when the reply arrived within LIMIT.
    */
   [[nodiscard]] bool reply(std::uint16_t sequence, std::chrono::milliseconds limit,
-                           std::uint8_t& status) {
+                           std::uint8_t& status, std::vector<std::uint8_t>* extra = nullptr) {
     const auto DEADLINE = Clock::now() + limit;
     for (;;) {
-      if (takeReply(sequence, status)) {
+      if (takeReply(sequence, status, extra)) {
         return true;
       }
       if (Clock::now() >= DEADLINE) {
@@ -303,7 +352,7 @@ public:
 
 private:
   /// Decode the frames received so far; true when one is the reply to SEQUENCE.
-  bool takeReply(std::uint16_t sequence, std::uint8_t& status) {
+  bool takeReply(std::uint16_t sequence, std::uint8_t& status, std::vector<std::uint8_t>* extra) {
     const apex::protocols::slip::DecodeConfig CONFIG{};
     std::array<std::uint8_t, 2048> decoded{};
     while (!received_.empty()) {
@@ -333,6 +382,9 @@ private:
       std::memcpy(&ack, view.payload.data(), sizeof(ack));
       if (ack.cmdSequence == sequence) {
         status = ack.status;
+        if (extra != nullptr) {
+          extra->assign(view.payload.begin() + aproto::APROTO_ACK_PAYLOAD_SIZE, view.payload.end());
+        }
         return true;
       }
     }
@@ -457,9 +509,11 @@ protected:
 
     ASSERT_EQ(exec_->runOnTaskThread(ApexExecutive::Opcode::CMD_LOCK_COMPONENT),
               static_cast<int>(CommandResult::SUCCESS));
-    ASSERT_EQ(exec_->runOnTaskThread(ApexExecutive::Opcode::RELOAD_LIBRARY),
-              static_cast<int>(CommandResult::SUCCESS))
-        << slurp(swapLog());
+    // The reload as a sequence sends it: a command action, dispatched by
+    // the action engine on the task thread. The executive runs it on its
+    // external I/O thread, so the swap is over when the swap log says so.
+    ASSERT_EQ(exec_->queueCommandAction(ApexExecutive::Opcode::RELOAD_LIBRARY), 0);
+    ASSERT_TRUE(waitForLine(swapLog(), "RELOAD_LIBRARY_OK")) << slurp(swapLog());
   }
 
   /// The archived copies of the linked instance's log, one per archive made.
@@ -548,6 +602,29 @@ protected:
     return ground_.send(ApexExecutive::Opcode::RELOAD_LIBRARY, exec_->targetUid());
   }
 
+  /**
+   * @brief Read the target's output block through INSPECT over the wire.
+   * @return The instance number the block holds, or 0 when the read failed.
+   */
+  [[nodiscard]] std::uint32_t inspectedInstance() {
+    const std::uint32_t UID = exec_->targetUid();
+    std::array<std::uint8_t, 9> payload{}; // uid, category, offset, length (0: the whole block)
+    std::memcpy(payload.data(), &UID, sizeof(UID));
+    payload[4] = static_cast<std::uint8_t>(system_core::data::DataCategory::OUTPUT);
+    const std::uint16_t SEQUENCE =
+        ground_.send(ApexExecutive::Opcode::INSPECT, payload.data(), payload.size());
+    std::uint8_t status = 0xFF;
+    std::vector<std::uint8_t> block;
+    ReloadTarget::Output output{};
+    if (SEQUENCE == 0 || !ground_.reply(SEQUENCE, POLL_LIMIT, status, &block) ||
+        status != static_cast<std::uint8_t>(CommandResult::SUCCESS) ||
+        block.size() != sizeof(output)) {
+      return 0;
+    }
+    std::memcpy(&output, block.data(), sizeof(output));
+    return output.instance;
+  }
+
   /// How many times TEXT occurs in the swap log.
   [[nodiscard]] std::size_t swapLogCount(const std::string& text) const {
     const std::string LOG = slurp(swapLog());
@@ -580,6 +657,14 @@ TEST_F(ReloadLibraryTest, SwappedInComponentHasItsLog) {
       << SWAP_LOG;
   EXPECT_NE(SWAP_LOG.find("RELOAD_LIBRARY_LOG_ARCHIVED: uid=0x00FB00"), std::string::npos);
   EXPECT_NE(SWAP_LOG.find("RELOAD_LIBRARY_OK: uid=0x00FB00"), std::string::npos);
+
+  // The action's command was handed over: the replacement (instance 2 on
+  // the probe) was initialized on a thread other than the task thread.
+  EXPECT_NE(SWAP_LOG.find("RELOAD_LIBRARY_DEFERRED: uid=0x00FB00"), std::string::npos) << SWAP_LOG;
+  ASSERT_NE(exec_->taskThread(), 0U);
+  EXPECT_NE(probe_.initThread[2].load(), 0U);
+  EXPECT_NE(probe_.initThread[2].load(), exec_->taskThread())
+      << "the replacement was loaded and initialized on the task thread";
 
   // One archive of the component's log, holding the linked instance's line.
   const auto ARCHIVES = archivedLogs();
@@ -624,6 +709,8 @@ TEST_F(ReloadRouteTest, SwapWaitsForATaskInFlightAndTheOldInstanceOutlivesIt) {
   constexpr std::size_t SECOND_PLUGIN_NO = 3;
   std::uint8_t status = 0xFF;
 
+  EXPECT_EQ(inspectedInstance(), LINKED_NO);
+
   // First swap: the linked instance is replaced by a plugin while one of its runs is held.
   ASSERT_NO_FATAL_FAILURE(bankPlugin("ExecutiveTestPlugin_Reload.so"));
   ASSERT_NO_FATAL_FAILURE(holdARunOf(LINKED_NO));
@@ -642,11 +729,6 @@ TEST_F(ReloadRouteTest, SwapWaitsForATaskInFlightAndTheOldInstanceOutlivesIt) {
   EXPECT_EQ(swapLogCount("RELOAD_LIBRARY_OK"), 0U);
   EXPECT_EQ(probe_.entered[FIRST_PLUGIN_NO].load(), 0U) << "the replacement ran before the swap";
 
-  // One reload at a time: a second, here from the task thread, is refused while the first waits.
-  EXPECT_EQ(exec_->runOnTaskThread(ApexExecutive::Opcode::RELOAD_LIBRARY),
-            static_cast<int>(ExecCommandResult::NOT_SWAPPABLE));
-  EXPECT_TRUE(waitFor([&]() { return swapLogCount("reason=reload_in_progress") == 1U; }));
-
   release();
   ASSERT_TRUE(ground_.reply(FIRST, POLL_LIMIT, status)) << "no reply to the reload";
   EXPECT_EQ(status, static_cast<std::uint8_t>(CommandResult::SUCCESS)) << slurp(swapLog());
@@ -658,6 +740,7 @@ TEST_F(ReloadRouteTest, SwapWaitsForATaskInFlightAndTheOldInstanceOutlivesIt) {
   const std::uint32_t LINKED_RUNS = probe_.entered[LINKED_NO].load();
   ASSERT_TRUE(waitCycles(10));
   EXPECT_EQ(probe_.entered[LINKED_NO].load(), LINKED_RUNS);
+  EXPECT_EQ(inspectedInstance(), FIRST_PLUGIN_NO) << "INSPECT reads another instance's output";
 
   // Second swap: the first plugin is replaced while one of its runs is held.
   ASSERT_NO_FATAL_FAILURE(bankPlugin("ExecutiveTestPlugin_Reload.so"));
@@ -685,6 +768,12 @@ TEST_F(ReloadRouteTest, SwapWaitsForATaskInFlightAndTheOldInstanceOutlivesIt) {
   EXPECT_TRUE(waitFor([&]() { return probe_.finished[SECOND_PLUGIN_NO].load() > 0U; }));
   EXPECT_FALSE(probe_.destroyed[LINKED_NO].load());
   EXPECT_EQ(swapLogCount("RELOAD_LIBRARY_OK"), 2U);
+
+  // The output block and the sequenced task are the second plugin's: the
+  // first is gone, and the task goes on running through its group's counter.
+  EXPECT_EQ(inspectedInstance(), SECOND_PLUGIN_NO);
+  const std::uint32_t RUNS = probe_.finished[SECOND_PLUGIN_NO].load();
+  EXPECT_TRUE(waitFor([&]() { return probe_.finished[SECOND_PLUGIN_NO].load() > RUNS + 5U; }));
 }
 
 /**
@@ -762,4 +851,72 @@ TEST_F(ReloadRouteTest, SwapIsPublishedWhileTheSystemIsPaused) {
   ASSERT_EQ(status, static_cast<std::uint8_t>(CommandResult::SUCCESS));
   EXPECT_TRUE(waitFor([&]() { return probe_.finished[PLUGIN_NO].load() > 0U; }))
       << "the replacement's task is not dispatched after the resume";
+}
+
+/**
+ * @test A replacement that cannot take over what is registered and
+ *       scheduled for the component is refused whole: a shorter output
+ *       block, then a task the schedule sequences left unsequenced. The
+ *       old instance stays bound, unlocked and running each time.
+ */
+TEST_F(ReloadRouteTest, IncompatibleReplacementIsRefusedWhole) {
+  constexpr std::size_t LINKED_NO = 1;
+  struct Refusal {
+    const char* plugin;
+    ExecCommandResult status;
+    const char* reason;
+  };
+  const std::array<Refusal, 2> REFUSALS{{
+      {"ExecutiveTestPlugin_ShorterOutputReload.so", ExecCommandResult::REGISTRY_FAILED,
+       "reason=registry_mismatch"},
+      {"ExecutiveTestPlugin_UnsequencedReload.so", ExecCommandResult::TASK_MISMATCH,
+       "reason=task_mismatch"},
+  }};
+
+  std::size_t refusedNo = LINKED_NO;
+  for (const Refusal& refusal : REFUSALS) {
+    ++refusedNo;
+    ASSERT_NO_FATAL_FAILURE(bankPlugin(refusal.plugin));
+    ASSERT_NO_FATAL_FAILURE(lockTarget());
+    const std::uint16_t RELOAD = sendReload();
+    ASSERT_NE(RELOAD, 0u);
+    std::uint8_t status = 0xFF;
+    ASSERT_TRUE(ground_.reply(RELOAD, POLL_LIMIT, status)) << "no reply to the reload";
+    EXPECT_EQ(status, static_cast<std::uint8_t>(refusal.status)) << refusal.plugin;
+    EXPECT_TRUE(waitFor([&]() { return swapLogCount(refusal.reason) == 1U; })) << slurp(swapLog());
+
+    // Nothing was bound to the refused instance, and it is gone.
+    EXPECT_TRUE(waitFor([&]() { return probe_.destroyed[refusedNo].load(); })) << refusal.plugin;
+    EXPECT_EQ(probe_.entered[refusedNo].load(), 0U);
+    EXPECT_EQ(inspectedInstance(), LINKED_NO);
+    const std::uint32_t RUNS = probe_.entered[LINKED_NO].load();
+    EXPECT_TRUE(waitFor([&]() { return probe_.entered[LINKED_NO].load() > RUNS + 5U; }))
+        << "the old instance is not dispatched after the refusal of " << refusal.plugin;
+  }
+  EXPECT_EQ(swapLogCount("RELOAD_LIBRARY_OK"), 0U);
+}
+
+/**
+ * @test A reload an action sends while the component's task is scheduled
+ *       is run by the external I/O thread: the replacement is loaded and
+ *       initialized off the task thread, then published and dispatched.
+ */
+TEST_F(ReloadRouteTest, ReloadFromAnActionIsPreparedOffTheTaskThread) {
+  constexpr std::size_t PLUGIN_NO = 2;
+  ASSERT_NO_FATAL_FAILURE(bankPlugin("ExecutiveTestPlugin_Reload.so"));
+  ASSERT_NO_FATAL_FAILURE(lockTarget());
+
+  ASSERT_EQ(exec_->queueCommandAction(ApexExecutive::Opcode::RELOAD_LIBRARY), 0);
+  ASSERT_TRUE(waitFor([&]() { return swapLogCount("RELOAD_LIBRARY_OK") == 1U; }))
+      << slurp(swapLog());
+  EXPECT_EQ(swapLogCount("RELOAD_LIBRARY_DEFERRED"), 1U);
+
+  ASSERT_NE(exec_->taskThread(), 0U);
+  EXPECT_NE(probe_.initThread[PLUGIN_NO].load(), 0U);
+  EXPECT_NE(probe_.initThread[PLUGIN_NO].load(), exec_->taskThread())
+      << "the replacement was loaded and initialized on the task thread";
+
+  EXPECT_TRUE(waitFor([&]() { return probe_.finished[PLUGIN_NO].load() > 0U; }))
+      << "the replacement's task is not being dispatched";
+  EXPECT_EQ(inspectedInstance(), PLUGIN_NO);
 }

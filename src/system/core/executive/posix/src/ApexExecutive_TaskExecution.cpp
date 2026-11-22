@@ -72,7 +72,8 @@ inline char* computeProfilingMetrics(const TimingPoints& tp, std::uint16_t tick,
 /* ----------------------------- Task Execution ----------------------------- */
 
 void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
-  // A swap command that runs on this thread publishes in place.
+  // A reload command that reaches its handler on this thread is handed
+  // to the external I/O thread.
   taskThreadId_.store(std::this_thread::get_id(), std::memory_order_release);
 
   // Wait for startup signal
@@ -141,7 +142,8 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
 
     // A library swap asked for one attempt between cycles. Woken for that
     // alone, with no tick owed, the thread goes back to waiting.
-    if (swapKick_.exchange(false, std::memory_order_acq_rel)) {
+    if (swapKick_.load(std::memory_order_acquire) &&
+        swapKick_.exchange(false, std::memory_order_acq_rel)) {
       serviceLibrarySwap();
       const bool TICK_OWED = taskState_.stepPending.load(std::memory_order_acquire) ||
                              taskState_.cycles.load(std::memory_order_acquire) <

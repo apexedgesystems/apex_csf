@@ -24,8 +24,9 @@ set(UNIT_TEST_SOURCES
 # ------------------------------------------------------------------------------
 
 # The plugin libraries the RELOAD_LIBRARY tests swap in: the plugin build of
-# the component the test links, and one with its id under another name.
-foreach (_plugin Reload RenamedReload)
+# the component the test links, one with its id under another name, and two
+# that the swap must refuse (a shorter output block, an unsequenced task).
+foreach (_plugin Reload RenamedReload ShorterOutputReload UnsequencedReload)
   apex_add_test_plugin(
     TARGET
     ExecutiveTestPlugin_${_plugin}
@@ -62,6 +63,8 @@ apex_add_gtest(
   PLUGINS
   ExecutiveTestPlugin_Reload
   ExecutiveTestPlugin_RenamedReload
+  ExecutiveTestPlugin_ShorterOutputReload
+  ExecutiveTestPlugin_UnsequencedReload
   LABELS
   system
   core

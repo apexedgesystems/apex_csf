@@ -197,27 +197,6 @@ public:
     return static_cast<const system_component::SystemComponentBase*>(loadComponent(*entry));
   }
 
-  /**
-   * @brief Update component pointer for a registered entry.
-   * @param fullUid Component's full UID.
-   * @param newComp New component pointer.
-   * @return true if entry found and updated, false if not found.
-   * @note Used during component hot-swap to point registry at new instance.
-   * @note The store is atomic, so a getComponent() on another thread
-   *       returns the old pointer or the new one. It says nothing about
-   *       how long the old instance stays in use: the caller keeps that
-   *       instance alive until every holder of the old pointer is done.
-   */
-  bool updateComponent(std::uint32_t fullUid,
-                       system_component::SystemComponentBase* newComp) noexcept {
-    ComponentEntry* entry = getComponentEntry(fullUid);
-    if (entry == nullptr) {
-      return false;
-    }
-    storeComponent(*entry, newComp);
-    return true;
-  }
-
   /* ----------------------------- Task Queries (RT-safe after freeze) -----------------------------
    */
 

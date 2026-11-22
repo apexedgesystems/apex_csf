@@ -167,39 +167,60 @@ RELOAD*LIBRARY replaces a locked component with one loaded from
 `<name>*<instance>.so` in the inactive library bank. It runs in three
 steps, on the threads that own what each step touches:
 
-| Step    | Thread                               | Work                                                                                                                       |
-| ------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------- |
-| Prepare | the thread that received the command | load the library, create the instance, give it its log, load its parameters, initialize it, archive the old instance's log |
-| Publish | TaskExecution                        | point the scheduler's task entries, the registry entry and the component list at the new instance                          |
-| Reclaim | ExternalIO, at the top of its loop   | destroy the plugin the swap replaced and close its library                                                                 |
+| Step    | Thread                                  | Work                                                                                                                       |
+| ------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Prepare | ExternalIO                              | load the library, create the instance, give it its log, load its parameters, initialize it, archive the old instance's log |
+| Publish | TaskExecution                           | bind the scheduler's entries, the registry's entries and the component list to the new instance                            |
+| Reclaim | ExternalIO, at the top of its next loop | destroy the plugin the swap replaced and close its library                                                                 |
 
 Publication happens only while the scheduler reports every dispatched
-task settled: no task queued or running, and no worker still filing a
-task's completion. TaskExecution is the thread that drains commands to
-components and dispatches tasks, so at that point nothing holds the old
-instance for work and nothing can pick it up afterwards. The new
-instance is dispatched from the next cycle; the old one stays locked.
+task settled (no task queued or running, no worker still filing a task's
+completion) and ExternalIO is waiting for it. TaskExecution is the thread
+that drains commands to components, dispatches tasks and runs the action
+phase, so at that point nothing resolves the component while its
+bindings change. The new instance is dispatched from the next cycle; the
+old one stays locked.
 
-- **Wait.** A command that arrives over the wire runs on ExternalIO. It
-  hands the swap to TaskExecution and blocks until it is published or
-  two seconds pass (four clock periods when that is longer). Command
-  and telemetry I/O on that connection wait with it. TaskExecution
-  takes the swap after a cycle whose tasks finished within their frame,
+- **What is bound.** In the scheduler, each entry's task and, for a
+  sequenced task, its group's counter; the scheduler keeps its own copy
+  of component names. In the registry, the component entry, each
+  registered data block and each registered task. INSPECT, action data
+  access, telemetry and the shared-memory bridge read the new instance's
+  blocks from the next lookup on. Data consumers resolve per use: a
+  pointer kept from an earlier lookup names the replaced instance.
+- **Compatibility.** The replacement must provide every registered data
+  block (same category, name and size) and every scheduled task,
+  sequenced in a group at the same phase. Otherwise the reply is
+  `REGISTRY_FAILED` or `TASK_MISMATCH` and nothing was bound. Data
+  blocks beyond the registered ones are not added: the registry is frozen.
+- **Wait.** ExternalIO hands the swap to TaskExecution and blocks until
+  it is published or two seconds pass (four clock periods when that is
+  longer). Command and telemetry I/O wait with it. TaskExecution takes
+  the swap after a cycle whose tasks finished within their frame,
   between cycles, or while paused.
 - **Refusal.** If the tasks do not settle within the wait, the reply is
-  `NOT_QUIESCENT`: nothing was swapped, the new instance is destroyed
-  and the old one is unlocked. A task that overruns every frame keeps a
-  reload out until it returns. A second RELOAD_LIBRARY while one is
-  running is refused with `NOT_SWAPPABLE`.
-- **From an action.** A RELOAD_LIBRARY an action sends to the executive
-  runs on TaskExecution, in the action phase. It prepares and publishes
-  there, so the library load and the component's initialization are
-  part of that cycle.
-- **Cost when no reload is in hand.** TaskExecution reads one flag per
-  cycle and ExternalIO one per loop.
+  `NOT_QUIESCENT`. A task that overruns every frame keeps a reload out
+  until it returns. After any refusal the new instance is destroyed and
+  the old one is unlocked and unchanged.
+- **From an action.** A RELOAD_LIBRARY an action sends reaches the
+  handler on TaskExecution. It is recorded (`RELOAD_LIBRARY_DEFERRED` in
+  the swap log) and run by ExternalIO at the top of its next loop, so no
+  library is loaded and no component initialized inside a cycle. The
+  action's command returns once recorded; the outcome is in the system
+  log and the swap log. One request can wait at a time; a second is
+  refused with `NOT_SWAPPABLE`.
+- **Cost when no reload is in hand.** TaskExecution loads one flag on
+  each wake (an exchange follows only when it is set) and one after each
+  cycle whose tasks finished; its tick and pause wait predicates load
+  the first flag when evaluated. ExternalIO checks an empty list and
+  loads one word per loop.
 
 A component lock stops new dispatches of the component's tasks. It does
 not wait for a task already running; the reload does.
+
+At shutdown the scheduler is stopped in the stage that drains tasks,
+once they have drained, while the components and loaded plugins are
+alive.
 
 ## Usage
 

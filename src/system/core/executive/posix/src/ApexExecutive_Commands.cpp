@@ -311,23 +311,29 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     std::uint32_t targetUid = 0;
     std::memcpy(&targetUid, payload.data(), 4);
 
-    // One reload at a time: the command can arrive on the external I/O
-    // thread and, from an action, on the task thread.
-    if (reloadInProgress_.exchange(true, std::memory_order_acq_rel)) {
-      sysLog_->warning(
-          label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
-          fmt::format("RELOAD_LIBRARY: 0x{:06X} refused, another reload is running", targetUid));
-      if (auto* sl = fileSystem_.swapLog()) {
-        sl->warning(
-            "SWAP", static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE),
-            fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=reload_in_progress", targetUid));
+    // Loading a library and initializing a component are control-plane
+    // work. A reload that arrives on the task thread (an action's
+    // command) is handed to the external I/O thread, which runs it at the
+    // top of its loop; the outcome is in the system log and the swap log.
+    if (std::this_thread::get_id() == taskThreadId_.load(std::memory_order_acquire)) {
+      std::uint32_t none = NO_DEFERRED_RELOAD;
+      if (!deferredReloadUid_.compare_exchange_strong(none, targetUid, std::memory_order_acq_rel)) {
+        sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
+                         fmt::format("RELOAD_LIBRARY: 0x{:06X} refused, a reload is already "
+                                     "waiting for the control thread",
+                                     targetUid));
+        if (auto* sl = fileSystem_.swapLog()) {
+          sl->warning(
+              "SWAP", static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE),
+              fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=reload_pending", targetUid));
+        }
+        return static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE);
       }
-      return static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE);
+      if (auto* sl = fileSystem_.swapLog()) {
+        sl->info("SWAP", fmt::format("RELOAD_LIBRARY_DEFERRED: uid=0x{:06X}", targetUid));
+      }
+      return static_cast<std::uint8_t>(CommandResult::SUCCESS);
     }
-    struct ReloadDone {
-      std::atomic<bool>& flag;
-      ~ReloadDone() { flag.store(false, std::memory_order_release); }
-    } reloadDone{reloadInProgress_};
 
     // Component must exist and be locked.
     auto* oldComp = registry_.getComponent(targetUid);
@@ -474,9 +480,9 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       }
     }
 
-    // Publish: the scheduler's task pointers, the registry entry and the
-    // component list change on the task thread, with every dispatched
-    // task settled. From another thread this call waits for that.
+    // Publish: the scheduler's entries, the registry's entries and the
+    // component list are bound to the new instance on the task thread,
+    // with every dispatched task settled. This call waits for that.
     const LibrarySwapOutcome SWAP = publishLibrarySwap(targetUid, *oldComp, *newComp);
 
     if (SWAP.status == static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT)) {
@@ -493,13 +499,13 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       return SWAP.status;
     }
 
-    // All tasks must be replaced: an entry left on the old instance would
-    // run it after the swap. Publication restored the old task pointers.
+    // Every scheduled task needs a counterpart, sequenced as before: an
+    // entry left on the old instance would run it after the swap.
     if (SWAP.status == static_cast<std::uint8_t>(ExecCommandResult::TASK_MISMATCH)) {
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
-                       fmt::format("RELOAD_LIBRARY: task mismatch (expected={}, replaced={}), "
-                                   "swap aborted",
-                                   SWAP.tasksExpected, SWAP.tasksReplaced));
+                       fmt::format("RELOAD_LIBRARY: the new component lacks a scheduled task or "
+                                   "sequences one differently ({} entries), nothing swapped",
+                                   SWAP.tasksExpected));
       if (auto* sl = fileSystem_.swapLog()) {
         sl->warning("SWAP", SWAP.status,
                     fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=task_mismatch "
@@ -512,13 +518,13 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
 
     if (SWAP.status == static_cast<std::uint8_t>(ExecCommandResult::REGISTRY_FAILED)) {
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
-                       fmt::format("RELOAD_LIBRARY: registry update failed for 0x{:06X}, "
-                                   "old task pointers restored",
+                       fmt::format("RELOAD_LIBRARY: the new component lacks a registered data "
+                                   "block or task of 0x{:06X}, nothing swapped",
                                    targetUid));
       if (auto* sl = fileSystem_.swapLog()) {
-        sl->warning("SWAP", SWAP.status,
-                    fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=registry_update_failed",
-                                targetUid));
+        sl->warning(
+            "SWAP", SWAP.status,
+            fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=registry_mismatch", targetUid));
       }
       oldComp->unlock();
       return SWAP.status;
@@ -529,12 +535,11 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
                                    targetUid, TASKS_REPLACED, SWAP.waitNs / 1000U));
     }
 
-    // Keep the new library loaded. A plugin this swap replaced goes to
-    // the external I/O thread, which destroys it at the top of its loop:
-    // that thread may still hold the old instance for a command of its
-    // own until then.
+    // Keep the new library loaded. A plugin this swap replaced is
+    // destroyed at the top of this thread's next loop, once this handler
+    // and its uses of the old instance are behind it.
     if (auto it = plugins_.find(targetUid); it != plugins_.end()) {
-      retirePlugin(std::move(it->second));
+      retiredPlugins_.push_back(std::move(it->second));
       it->second = std::move(loader);
     } else {
       plugins_.emplace(targetUid, std::move(loader));

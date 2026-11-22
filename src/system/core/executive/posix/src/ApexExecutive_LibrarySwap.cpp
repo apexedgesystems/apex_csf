@@ -1,22 +1,26 @@
 /**
  * @file ApexExecutive_LibrarySwap.cpp
- * @brief Publication of a RELOAD_LIBRARY swap and reclamation of the
- *        plugin it replaced.
+ * @brief Publication of a RELOAD_LIBRARY swap, reclamation of the plugin
+ *        it replaced, and the hand-over of a reload an action asked for.
  *
  * The RELOAD_LIBRARY handler loads and initializes the replacement on the
- * thread that received the command. What it must not do there is rewrite
- * the pointers the task thread and the scheduler's workers work through,
- * or destroy an instance they may still be using. This file holds the two
- * steps that take care of that:
+ * external I/O thread. What it must not do there is rewrite the bindings
+ * the task thread and the scheduler's workers work through, or destroy an
+ * instance they may still be using. This file holds the steps that take
+ * care of that:
  *
  *  - Publication runs on the task thread while the scheduler reports
- *    every dispatched task settled. That thread drains commands to
- *    components and dispatches tasks, so at that point no worker and no
- *    drain holds the old instance, and none can pick it up afterwards.
- *  - The replaced plugin is destroyed on the external I/O thread, at the
- *    top of its loop. That thread may have resolved the old instance for
- *    a command of its own just before publication; at the top of its loop
- *    it holds no component pointer.
+ *    every dispatched task settled and the I/O thread waits. The task
+ *    thread drains commands to components, dispatches tasks and runs the
+ *    action phase, so at that point no drain, worker or command holds the
+ *    old instance. The scheduler's entries and the registry's entries are
+ *    each bound to the replacement whole or not at all, so afterwards
+ *    nothing they hand out belongs to the instance that was replaced.
+ *  - The replaced plugin is destroyed on the I/O thread at the top of its
+ *    next loop, after the handler that retired it has returned.
+ *  - A reload that reaches the handler on the task thread is recorded and
+ *    run by the I/O thread at the top of its loop: loading a library and
+ *    initializing a component do not belong in a cycle.
  */
 
 #include "src/system/core/executive/posix/inc/ApexExecutive.hpp"
@@ -25,8 +29,10 @@
 #include "src/utilities/helpers/inc/Cpu.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstring>
 #include <mutex>
 #include <thread>
 #include <utility>
@@ -54,16 +60,22 @@ ApexExecutive::publishLibrarySwapHere(std::uint32_t fullUid, SystemComponentBase
     }
   }
 
-  // Every scheduled task must have a counterpart: an entry left on the
-  // old instance would run it after the swap.
+  // The registry and the scheduler each rebind whole or not at all. The
+  // registry is asked first whether it can, so a refusal by either leaves
+  // both on the old instance.
+  using RegistryStatus = system_core::registry::Status;
+  if (registry_.canRebindComponent(fullUid, newComp) != RegistryStatus::SUCCESS) {
+    out.status = static_cast<std::uint8_t>(ExecCommandResult::REGISTRY_FAILED);
+    return out;
+  }
+
   out.tasksReplaced = scheduler_.replaceComponentTasks(fullUid, newComp);
   if (out.tasksReplaced < out.tasksExpected) {
-    static_cast<void>(scheduler_.replaceComponentTasks(fullUid, oldComp));
     out.status = static_cast<std::uint8_t>(ExecCommandResult::TASK_MISMATCH);
     return out;
   }
 
-  if (!registry_.updateComponent(fullUid, &newComp)) {
+  if (registry_.rebindComponent(fullUid, newComp) != RegistryStatus::SUCCESS) {
     static_cast<void>(scheduler_.replaceComponentTasks(fullUid, oldComp));
     out.status = static_cast<std::uint8_t>(ExecCommandResult::REGISTRY_FAILED);
     return out;
@@ -110,25 +122,7 @@ ApexExecutive::publishLibrarySwap(std::uint32_t fullUid, SystemComponentBase& ol
                                   SystemComponentBase& newComp) noexcept {
   const std::uint64_t ASKED_NS = apex::helpers::cpu::getMonotonicNs();
 
-  // On the task thread nothing is being dispatched or drained while this
-  // call runs. A worker may be a few instructions short of leaving a
-  // finished task, so the settled state is polled for a short while.
-  if (std::this_thread::get_id() == taskThreadId_.load(std::memory_order_acquire)) {
-    const std::uint64_t DEADLINE =
-        apex::helpers::cpu::getMonotonicNs() + LIBRARY_SWAP_INLINE_SETTLE_NS;
-    for (;;) {
-      LibrarySwapOutcome out = publishLibrarySwapHere(fullUid, oldComp, newComp);
-      const std::uint64_t NOW_NS = apex::helpers::cpu::getMonotonicNs();
-      if (out.status != static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT) ||
-          NOW_NS >= DEADLINE) {
-        out.waitNs = NOW_NS - ASKED_NS;
-        return out;
-      }
-      std::this_thread::yield();
-    }
-  }
-
-  // Another thread: hand the swap to the task thread and wait for it.
+  // Hand the swap to the task thread and wait for it.
   {
     std::lock_guard lock(swapMutex_);
     swap_ = LibrarySwap{};
@@ -165,22 +159,26 @@ ApexExecutive::publishLibrarySwap(std::uint32_t fullUid, SystemComponentBase& ol
   return out;
 }
 
-/* ----------------------------- Reclamation ----------------------------- */
+/* ----------------------------- Control thread ----------------------------- */
 
-void ApexExecutive::retirePlugin(PluginLoader&& loader) noexcept {
-  std::lock_guard lock(swapMutex_);
-  retiredPlugins_.push_back(std::move(loader));
-  pluginsRetired_.store(true, std::memory_order_release);
-}
-
-void ApexExecutive::reclaimRetiredPlugins() noexcept {
-  std::vector<PluginLoader> retired;
-  {
-    std::lock_guard lock(swapMutex_);
-    retired.swap(retiredPlugins_);
-    pluginsRetired_.store(false, std::memory_order_release);
+void ApexExecutive::serviceLibraryControl() noexcept {
+  // Each retired loader destroys its component and closes its library.
+  // The handler that retired it has returned, and with it the last use
+  // of the old instance on this thread.
+  if (!retiredPlugins_.empty()) {
+    retiredPlugins_.clear();
   }
-  // Destroyed here, outside the lock: each loader destroys its component
-  // and closes its library.
-  retired.clear();
+
+  if (deferredReloadUid_.load(std::memory_order_acquire) != NO_DEFERRED_RELOAD) {
+    const std::uint32_t UID =
+        deferredReloadUid_.exchange(NO_DEFERRED_RELOAD, std::memory_order_acq_rel);
+    std::array<std::uint8_t, sizeof(UID)> payload{};
+    std::memcpy(payload.data(), &UID, sizeof(UID));
+    std::vector<std::uint8_t> response;
+    // The outcome goes to the system log and the swap log; the action
+    // that asked has long returned.
+    static_cast<void>(handleCommand(
+        static_cast<std::uint16_t>(Opcode::RELOAD_LIBRARY),
+        apex::compat::rospan<std::uint8_t>{payload.data(), payload.size()}, response));
+  }
 }
