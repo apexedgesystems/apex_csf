@@ -1010,7 +1010,7 @@ does either.
 
 | Object               | Size                                                                     |
 | -------------------- | ------------------------------------------------------------------------ |
-| `RingBuffer<T>`      | 40 bytes and one `T` per slot                                            |
+| `RingBuffer<T>`      | 48 bytes, 16-byte aligned, and one `T` per slot                          |
 | `SPSCQueue<T>`       | Three cache lines (192 bytes) and one `T` per slot                       |
 | `LockFreeQueue<T>`   | Three cache lines and one 64-byte cell per slot (for `T` up to 56 bytes) |
 | `ThreadPool`         | 512 bytes, 64 bytes per worker, and its `std::queue` as it grows         |

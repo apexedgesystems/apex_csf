@@ -39,9 +39,13 @@ namespace concurrency {
  * Classic ring buffer with head (write) and tail (read) pointers.
  * No atomic operations - maximum single-threaded performance.
  *
+ * The two cursors lead the object, which is aligned to their combined size,
+ * so one cache line holds both wherever the object is placed: a push and pop
+ * pair that finds them on two lines is slower.
+ *
  * @note NOT thread-safe: Single-threaded use only.
  */
-template <class T> class RingBuffer {
+template <class T> class alignas(2 * sizeof(std::size_t)) RingBuffer {
   static_assert(std::is_move_constructible_v<T>, "T must be move-constructible");
   static_assert(std::is_move_assignable_v<T>, "T must be move-assignable");
 
@@ -138,10 +142,10 @@ private:
   /// The one push: assigns `value` into the slot as the value category it arrived with.
   template <class U> [[nodiscard]] bool push(U&& value) noexcept;
 
-  std::size_t mask_;      ///< Slot count - 1 for fast modulo.
-  RingStorage<T> buffer_; ///< Ring storage.
   std::size_t head_{0};   ///< Write position (NOT atomic).
   std::size_t tail_{0};   ///< Read position (NOT atomic).
+  std::size_t mask_;      ///< Slot count - 1 for fast modulo.
+  RingStorage<T> buffer_; ///< Ring storage.
 };
 
 } // namespace concurrency

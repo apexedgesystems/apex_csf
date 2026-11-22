@@ -8,6 +8,7 @@
  * Note: Uses one slot as sentinel, so actual capacity is (power-of-two - 1).
  */
 
+#include <cstddef>
 #include <utility>
 
 namespace apex {
@@ -19,7 +20,11 @@ namespace concurrency {
 // elements it must hold.
 template <class T>
 RingBuffer<T>::RingBuffer(std::size_t capacity) noexcept
-    : mask_(nextPowerOfTwo((capacity < 2 ? 2 : capacity) + 1) - 1), buffer_(mask_ + 1) {}
+    : mask_(nextPowerOfTwo((capacity < 2 ? 2 : capacity) + 1) - 1), buffer_(mask_ + 1) {
+  static_assert(offsetof(RingBuffer, head_) == 0 &&
+                    offsetof(RingBuffer, tail_) + sizeof(tail_) <= alignof(RingBuffer),
+                "the two cursors share the object's first aligned unit");
+}
 
 template <class T> template <class U> bool RingBuffer<T>::push(U&& value) noexcept {
   const std::size_t NEXT = (head_ + 1) & mask_;
