@@ -181,6 +181,20 @@ COMPARE = {
 OPPOSITE = {"<": ">=", ">=": "<", "<=": ">", ">": "<=", "==": "!=", "!=": "=="}
 EXCHANGED = {"<": ">", ">": "<", "<=": ">=", ">=": "<=", "==": "==", "!=": "!="}
 RELEASE = re.compile(r"(\d+(?:\.\d+){0,2})(\.\*|(?:a|b|rc)\d+)?")
+# A version in any spelling PEP 440 normalizes, as it may follow == or !=: a
+# leading v, an epoch, pre-release, post-release, development and local parts
+# under their alternative names and separators, or a trailing .*; in either
+# case, with spaces around it.
+VERSION_LIKE = re.compile(
+    r"""\s*v?(?:[0-9]+!)?[0-9]+(?:\.[0-9]+)*
+        (?:\.\*
+          |(?:[-_.]?(?:alpha|beta|preview|pre|a|b|c|rc)[-_.]?[0-9]*)?
+           (?:-[0-9]+|[-_.]?(?:post|rev|r)[-_.]?[0-9]*)?
+           (?:[-_.]?dev[-_.]?[0-9]*)?
+           (?:\+[a-z0-9]+(?:[-_.][a-z0-9]+)*)?
+        )?\s*""",
+    re.VERBOSE | re.IGNORECASE,
+)
 
 
 def release_terms(comparison, version, marker=False):
@@ -215,6 +229,18 @@ def release_terms(comparison, version, marker=False):
             return None
         return [(3, ">=", full), (len(parts) - 1, "==", parts[:-1])]
     return [(3, comparison, full)]
+
+
+def reads_as_version(text):
+    """Whether an installer may take a string compared with == or != for a version.
+
+    Some installers try the comparison as a version specifier before they
+    compare two strings: they then read <text> as a version when it is spelled
+    like one, and as the operand of === (any text at all) when it starts with
+    another =. Faced with such a string and a value that is no version, they
+    fail where others compare as text, so the comparison has no one answer.
+    """
+    return text.lstrip().startswith("=") or VERSION_LIKE.fullmatch(text) is not None
 
 
 def terms_hold(terms, numbers):
@@ -294,9 +320,12 @@ def parse_marker(text):
         variable, literal = (left[1], right[1]) if first else (right[1], left[1])
         reads = MARKER_VARIABLES[variable]
         if reads == "extra":
-            if compare not in ("==", "!="):
-                raise ValueError("an extra is compared with == or != against one name")
-            return "extra", normalize(literal), compare == "=="
+            name = normalize(literal)
+            if compare not in ("==", "!=") or not first:
+                raise ValueError("an extra is read on the left of == or != against one name")
+            if reads_as_version(name):
+                raise ValueError("the extra %r reads as a version" % literal)
+            return "extra", name, compare == "=="
         if reads in MARKER_UNKNOWN and reads != "machine":
             return "unknown", reads
         if reads == "version":
@@ -312,9 +341,7 @@ def parse_marker(text):
             return "version", variable, compare, literal
         if compare not in ("==", "!=", "in", "not in"):
             raise ValueError("%s is text, read with ==, !=, in or not in" % variable)
-        if compare in ("==", "!=") and re.match(r"\s*v?\d", literal):
-            # Installers differ here: some compare the two as text and some
-            # try to read both as versions and fail.
+        if compare in ("==", "!=") and reads_as_version(literal):
             raise ValueError("%s is text, and %r reads as a version" % (variable, literal))
         return "text", variable, compare, literal, first
 

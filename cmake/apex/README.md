@@ -507,8 +507,10 @@ requires, not the rest of its role's installed packages:
   or on `implementation_version` in any build. So does a comparison outside what
   is read: `~=`, `===` or `in` on a version, more than three numbers, a
   pre-release or a trailing `.*` written on the left of the comparison
-  (`"3.11.0rc1" < python_full_version`), an ordering of text, or text
-  compared with something that reads as a version (`os_name == "3"`).
+  (`"3.11.0rc1" < python_full_version`), an ordering of text, text or an
+  extra's name compared with something an installer may read as a version
+  (`os_name == "V3"`, `extra == "v1"`), or an extra written on the right of
+  the comparison.
 - An interpreter is read by its release numbers (major, minor, micro), so a
   pre-release `python3` counts as its release.
 

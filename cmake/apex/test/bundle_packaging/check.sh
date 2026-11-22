@@ -281,26 +281,31 @@ else
   show "$scratch/py-kernel-marker.cfg.log"
 fi
 
-# A comparison installers do not all answer alike fails the package step too.
-# Each marker here would select fxold if its two sides were simply exchanged
-# or compared as text: a pre-release on the left ("3.x.yrc1" < the version is
-# false for release 3.x.y, where the version > "3.x.yrc1" is true), and text
-# against something that reads as a version.
-if configure py-prerelease-on-the-left -DCASE=good \
-  -DFX_DEP_REQUIRES="fxold; \"${this_python}rc1\" < python_full_version"; then
-  expect_package_error py-prerelease-on-the-left 'tool fx-py cannot be staged' \
-    "cannot read fxdep's requirement" 'ordered against a pre-release'
-else
-  note "py-prerelease-on-the-left: configure failed"
-  show "$scratch/py-prerelease-on-the-left.cfg.log"
-fi
-if configure py-text-as-version -DCASE=good -DFX_DEP_REQUIRES='fxold; os_name != "3"'; then
-  expect_package_error py-text-as-version 'tool fx-py cannot be staged' \
-    "cannot read fxdep's requirement" 'os_name is text' 'reads as a version'
-else
-  note "py-text-as-version: configure failed"
-  show "$scratch/py-text-as-version.cfg.log"
-fi
+# A comparison installers do not all answer alike fails the package step too,
+# naming the requirement. Each marker here would select fxold under one of the
+# readings, or leave it out under another:
+#   - a pre-release on the left ("3.x.yrc1" < the version is false for release
+#     3.x.y, where the version > "3.x.yrc1" is true);
+#   - text, or an extra's name, against something an installer may take for a
+#     version: digits, a v or V before them, or the rest of a === comparison;
+#   - an extra on the right of the comparison, where its own name is what the
+#     installer may take for a version.
+while IFS='|' read -r name marker text; do
+  if configure "$name" -DCASE=good -DFX_DEP_REQUIRES="fxold; $marker"; then
+    expect_package_error "$name" 'tool fx-py cannot be staged' \
+      "cannot read fxdep's requirement" "$marker" "$text"
+  else
+    note "$name: configure failed"
+    show "$scratch/$name.cfg.log"
+  fi
+done <<CASES
+py-prerelease-on-the-left|"${this_python}rc1" < python_full_version|ordered against a pre-release
+py-text-as-version|os_name != "3"|os_name is text, and '3' reads as a version
+py-text-as-prefixed-version|os_name != " V3"|os_name is text, and ' V3' reads as a version
+py-text-as-specifier|os_name == "=posix"|os_name is text, and '=posix' reads as a version
+py-extra-as-version|extra != "v1"|the extra 'v1' reads as a version
+py-extra-on-the-right|"fast" != extra|an extra is read on the left
+CASES
 
 # A requirement an active extra selects has to be installed, and so has one
 # selected by an active extra together with the build's python3.
