@@ -16,8 +16,13 @@
  * Reported per case: the per-cycle samples' median, 10th and 90th
  * percentile, minimum and maximum in nanoseconds, their sum, the cycles
  * measured and, for the scheduled case, the task runs delivered in the
- * window. The delivered runs must be within one of the cycles measured:
- * a dropped or skipped dispatch would show there.
+ * window. The delivered runs must be within one of the cycles measured.
+ * That is a check on the window as a whole, which a sustained loss of
+ * dispatches would fail; it does not show that every cycle completed
+ * its own run.
+ *
+ * Each case runs in a directory it creates for itself and removes when
+ * its executive is gone.
  *
  * This is deliberately not a PerfCase throughput loop: the loop under
  * measurement is paced by the executive's clock, so calls per second is
@@ -186,17 +191,49 @@ bool writeSchedule(const std::filesystem::path& dir, std::uint32_t hz) {
   return out.good();
 }
 
+/// A directory only this object owns, removed with it. mkdtemp() picks a
+/// free name and creates it (mode 0700) in one step; when it cannot,
+/// path() is empty and nothing is removed.
+class OwnedDir {
+public:
+  explicit OwnedDir(const char* tag) {
+    std::string pattern =
+        (std::filesystem::path(::testing::TempDir()) / (std::string(tag) + "_XXXXXX")).string();
+    if (::mkdtemp(pattern.data()) != nullptr) {
+      path_ = pattern;
+    }
+  }
+  ~OwnedDir() {
+    if (!path_.empty()) {
+      std::error_code ec;
+      std::filesystem::remove_all(path_, ec);
+    }
+  }
+  OwnedDir(const OwnedDir&) = delete;
+  OwnedDir& operator=(const OwnedDir&) = delete;
+  OwnedDir(OwnedDir&&) = delete;
+  OwnedDir& operator=(OwnedDir&&) = delete;
+
+  [[nodiscard]] const std::filesystem::path& path() const noexcept { return path_; }
+
+private:
+  std::filesystem::path path_;
+};
+
 /// Run one case and print its figures.
 void measure(const char* name, bool scheduled) {
   const std::uint64_t MEASURED = envNumber("TASKLOOP_CYCLES", 1000U);
   const std::uint64_t WARMUP = envNumber("TASKLOOP_WARMUP", 100U);
   const auto HZ = static_cast<std::uint32_t>(envNumber("TASKLOOP_HZ", 100U));
-  const auto FS_ROOT =
-      std::filesystem::path(::testing::TempDir()) / (std::string("exec_taskloop_ptst_") + name);
-  std::filesystem::remove_all(FS_ROOT);
-  std::filesystem::create_directories(FS_ROOT);
+  ASSERT_GT(MEASURED, 0U) << "TASKLOOP_CYCLES must be at least 1";
+  ASSERT_GT(HZ, 0U) << "TASKLOOP_HZ must be at least 1";
 
-  LoopExecutive exec(FS_ROOT, WARMUP, MEASURED, HZ, scheduled);
+  // Declared before the executive, so it is removed after the executive
+  // is destroyed, on every way out of this function.
+  const OwnedDir FS_ROOT("exec_taskloop_ptst");
+  ASSERT_FALSE(FS_ROOT.path().empty()) << "no private directory under " << ::testing::TempDir();
+
+  LoopExecutive exec(FS_ROOT.path(), WARMUP, MEASURED, HZ, scheduled);
   if (scheduled) {
     ASSERT_TRUE(writeSchedule(exec.tprmDir(), HZ));
   }
@@ -242,7 +279,6 @@ void measure(const char* name, bool scheduled) {
   } else {
     EXPECT_EQ(exec.runsDelivered(), 0U);
   }
-  std::filesystem::remove_all(FS_ROOT);
 }
 
 } // namespace
