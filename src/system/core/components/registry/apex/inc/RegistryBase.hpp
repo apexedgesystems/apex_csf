@@ -171,7 +171,7 @@ public:
    * @param fullUid Component's full UID.
    * @return Pointer to SystemComponentBase, or nullptr if not found.
    * @note RT-safe after freeze(): one atomic load of the entry's pointer,
-   *       which updateComponent() may replace from another thread.
+   *       which a rebind may replace from another thread.
    */
   [[nodiscard]] system_component::SystemComponentBase*
   getComponent(std::uint32_t fullUid) noexcept override {
@@ -214,7 +214,7 @@ public:
     if (entry == nullptr) {
       return false;
     }
-    std::atomic_ref<void*>(entry->component).store(newComp, std::memory_order_release);
+    storeComponent(*entry, newComp);
     return true;
   }
 
@@ -352,13 +352,19 @@ public:
    */
   [[nodiscard]] virtual Status exportDatabase(const std::filesystem::path& dbDir) noexcept = 0;
 
-private:
-  /// The entry's component pointer as updateComponent() last stored it.
+protected:
+  /// The entry's component pointer as storeComponent() last stored it.
   [[nodiscard]] static void* loadComponent(const ComponentEntry& entry) noexcept {
     // Registry entries are never const objects; the cast lets the const
     // lookup read through the same atomic view the store uses.
     return std::atomic_ref<void*>(const_cast<void*&>(entry.component))
         .load(std::memory_order_acquire);
+  }
+
+  /// Replace the entry's component pointer; a lookup on another thread
+  /// returns the old pointer or the new one.
+  static void storeComponent(ComponentEntry& entry, void* component) noexcept {
+    std::atomic_ref<void*>(entry.component).store(component, std::memory_order_release);
   }
 };
 

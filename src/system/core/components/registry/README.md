@@ -190,18 +190,20 @@ registerData()                           getAllTasks()
 
 ### RT-Safety Summary
 
-| Operation             | RT-Safe | Notes                      |
-| --------------------- | ------- | -------------------------- |
-| `registerComponent()` | No      | Vector growth possible     |
-| `registerTask()`      | No      | Vector growth possible     |
-| `registerData()`      | No      | Vector growth possible     |
-| `freeze()`            | No      | Finalizes registry         |
-| `getComponent()`      | Yes     | O(n) scan, after freeze    |
-| `getTask()`           | Yes     | O(n) scan, after freeze    |
-| `getData()`           | Yes     | O(n) scan, after freeze    |
-| `getAllComponents()`  | Yes     | Returns span, after freeze |
-| `entry->getBytes()`   | Yes     | O(1), pointer arithmetic   |
-| `toString(Status)`    | Yes     | Static string lookup       |
+| Operation              | RT-Safe | Notes                                                               |
+| ---------------------- | ------- | ------------------------------------------------------------------- |
+| `registerComponent()`  | No      | Vector growth possible                                              |
+| `registerTask()`       | No      | Vector growth possible                                              |
+| `registerData()`       | No      | Vector growth possible                                              |
+| `freeze()`             | No      | Finalizes registry                                                  |
+| `getComponent()`       | Yes     | O(n) scan, after freeze                                             |
+| `getTask()`            | Yes     | O(n) scan, after freeze                                             |
+| `getData()`            | Yes     | O(n) scan, after freeze                                             |
+| `canRebindComponent()` | No      | Hot-swap: can a replacement take every entry over                   |
+| `rebindComponent()`    | No      | Hot-swap: point every entry at the replacement, whole or not at all |
+| `getAllComponents()`   | Yes     | Returns span, after freeze                                          |
+| `entry->getBytes()`    | Yes     | O(1), pointer arithmetic                                            |
+| `toString(Status)`     | Yes     | Static string lookup                                                |
 
 ---
 
