@@ -171,6 +171,9 @@ endef
 # ------------------------------------------------------------------------------
 # Firmware template: build -> copy artifacts into release/
 # $(1) = app name, $(2) = platform
+#
+# The image is the whole release for a firmware platform, so a build that
+# produced none (a board the firmware does not target, for instance) fails here.
 # ------------------------------------------------------------------------------
 define _RELEASE_FIRMWARE_template
 .PHONY: _release-$(1)-$(2)
@@ -178,7 +181,9 @@ _release-$(1)-$(2):
 	$$(call _compose_run,release build $(2),$(PLATFORM_$(2)_SERVICE),$(PLATFORM_$(2)_BUILD))
 	@mkdir -p $(RELEASE_DIR)/$(1)/$(2)/firmware
 	@cp $$(PLATFORM_$(2)_DIR)/firmware/$(APP_$(1)_$(2)_BINARY).* \
-	  $(RELEASE_DIR)/$(1)/$(2)/firmware/ 2>/dev/null || true
+	  $(RELEASE_DIR)/$(1)/$(2)/firmware/ 2>/dev/null || \
+	  { printf '$(TERM_RED)[release]$(TERM_RESET) %s: no firmware image %s.* under %s/firmware\n' \
+	      "$(1)/$(2)" "$(APP_$(1)_$(2)_BINARY)" "$$(PLATFORM_$(2)_DIR)"; exit 1; }
 endef
 
 # Expand templates for all app/platform combinations

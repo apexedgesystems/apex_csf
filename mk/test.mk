@@ -301,6 +301,17 @@ BUILD_INFO_FIXTURE := cmake/apex/test/build_info/fixture.cmake
 # the second, and two paths that map to one TU name fail the configure.
 MANIFEST_HEADERS_FIXTURE := cmake/apex/test/manifest_headers
 
+# apex/Packaging bundle contract: a bundle packages from a tree where nothing
+# is built, carries one tool of each kind so that each runs from a copy of the
+# package elsewhere, and refuses what cannot work on the target (an unknown
+# tool, a tool of another architecture, tools in a bare-metal build). The
+# cases and their assertions live in the script beside the fixture.
+BUNDLE_PACKAGING_CHECK := cmake/apex/test/bundle_packaging/check.sh
+
+check-bundle-packaging:
+	$(call log,check-bundle-packaging,Packaging the bundle fixture per case)
+	@bash "$(BUNDLE_PACKAGING_CHECK)"
+
 check-manifest-headers:
 	$(call log,check-manifest-headers,Configuring and building the lib.manifest headers fixture per case)
 	@scratch=$$(mktemp -d) || exit 1; fail=0; \
@@ -369,6 +380,7 @@ check-data-db-contract: tools-build
 	$(call log_ok,check-data-db-contract,valid passes; a declared-header error and a _warning entry fail the gate)
 
 .PHONY: cdef check-cdef check-data-db check-data-manifest-helper check-data-db-contract check-build-info check-manifest-headers
+.PHONY: check-bundle-packaging
 
 # Tooling coverage (nightly). Each runs its tool test suite under coverage
 # instrumentation and emits a human-readable summary plus a machine report,
