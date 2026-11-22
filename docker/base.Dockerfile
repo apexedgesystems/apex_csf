@@ -1,13 +1,26 @@
 # ==============================================================================
 # base.Dockerfile - Tiered base images
 #
-# build-base : compile + link + test the release artifacts. The 10 release
-#              builders and the build-test gate inherit only this.
-# dev-base   : build-base + tooling (scanners, formatters, profilers, docs).
-#              The dev shells (`apex.base` consumers) inherit this.
+# Two published tiers and the two stages they are assembled from:
+#
+# toolchain  : compilers, build tools, Rust, uv, system libraries, the user.
+#              Reads no lock and no dependency pin. Not published.
+# bakes      : the dependencies an offline build resolves (cargo registry,
+#              Python wheelhouse and uv cache, FetchContent sources), fetched
+#              on the toolchain. Not published.
+# build-base : toolchain + bakes. Compile + link + test the release artifacts.
+#              The 10 release builders and the build-test gate inherit only this.
+# dev-base   : toolchain + tooling (scanners, formatters, profilers, docs) +
+#              bakes. The dev shells (`apex.base` consumers) inherit this.
+#
+# The bakes are the last layers of each tier. They are what changes most often
+# (a lock bump, a dependency pin), and a layer rebuilds whenever one beneath it
+# changed: with the bakes last, such a change re-runs the bakes and nothing
+# else of these two tiers. Keep it so; a new layer that reads no lock or pin
+# belongs in toolchain or above the bakes in dev-base.
 #
 # The `base` compose service builds the dev-base target, so `apex.base` carries
-# the full toolset and every current consumer is unaffected.
+# the full toolset.
 #
 # Usage:
 #   docker compose build base                       # -> apex.base (dev-base)
@@ -15,9 +28,13 @@
 # ==============================================================================
 
 # ==============================================================================
-# Stage: build-base - compile, link, and test the release artifacts
+# Stage: toolchain - what no lock or dependency pin decides
 # ==============================================================================
-FROM ubuntu:24.04 AS build-base
+# Compilers, build tools, the Rust toolchain, uv, system libraries and the
+# user. Both published tiers start here. Nothing in this stage reads a lock,
+# a manifest or ExternalDependencies.cmake, so a dependency bump leaves every
+# layer of it (and of the dev tooling built on it) in the layer cache.
+FROM ubuntu:24.04 AS toolchain
 
 # Build-time arguments
 ARG USER
@@ -27,10 +44,6 @@ ARG CMAKE_VERSION=4.2.3
 ARG UPX_VERSION=5.1.0
 ARG NINJA_VERSION=1.13.1
 ARG NINJA_SHA256=0830252db77884957a1a4b87b05a1e2d9b5f658b8367f82999a941884cbe0238
-
-LABEL org.opencontainers.image.title="apex.build-base" \
-      org.opencontainers.image.description="Compile/link/test tier for Apex CSF C++ builders" \
-      org.opencontainers.image.vendor="Apex"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -202,6 +215,70 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
 ENV PATH="/opt/rust/cargo/bin:$PATH"
 
 # ------------------------------------------------------------------------------
+# uv - Python package manager for the python tools (`make tools-<role>`)
+# ------------------------------------------------------------------------------
+# Single static binary from the pinned upstream image -- nothing pip-installed.
+COPY --from=ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc \
+    /uv /usr/local/bin/uv
+
+# ------------------------------------------------------------------------------
+# ptest profiler link libraries
+# ------------------------------------------------------------------------------
+# The perf tests link tcmalloc/profiler when present (find_library in
+# cmake/apex/Testing.cmake), so the link-time libs ship in both tiers for parity
+# with the dev build. The profiler binaries/backends live in dev-base.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      libgoogle-perftools-dev \
+      libunwind-dev
+
+# ------------------------------------------------------------------------------
+# SuiteSparse (KLU sparse solver) - required by the MNA solver
+# ------------------------------------------------------------------------------
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      libsuitesparse-dev
+
+# ------------------------------------------------------------------------------
+# ngspice (SPICE reference simulator) - linked by the electronics sim backend
+# ------------------------------------------------------------------------------
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      libngspice0-dev \
+      ngspice
+
+# ------------------------------------------------------------------------------
+# User Setup
+# ------------------------------------------------------------------------------
+# Centralized here so every downstream image (builders and dev shells) inherits
+# the correct user.
+RUN userdel -r ubuntu 2>/dev/null || true && \
+    groupdel ubuntu 2>/dev/null || true && \
+    groupadd -g ${HOST_GID} ${USER} 2>/dev/null || true && \
+    useradd -l -m -u ${HOST_UID} -g ${HOST_GID} -s /bin/bash -p "*" ${USER} 2>/dev/null || true && \
+    echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    chown -R ${HOST_UID}:${HOST_GID} /home/${USER} && \
+    usermod -aG dialout "${USER}"
+
+# ==============================================================================
+# Stage: bakes - what the locks and the dependency pins decide
+# ==============================================================================
+# The cargo registry, the Python wheelhouse and uv cache, and the FetchContent
+# sources: everything an offline build resolves. Built on the toolchain and
+# never published; each tier below copies its output in as its last layers.
+# A dependency bump therefore re-runs this stage and those copies, and
+# nothing above them.
+FROM toolchain AS bakes
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# ------------------------------------------------------------------------------
 # Rust dependency cache (hermetic, offline release builds)
 # ------------------------------------------------------------------------------
 # Pre-fetch the rust tools' pinned dependencies into the shared cargo registry
@@ -225,13 +302,6 @@ RUN cargo fetch --locked --target x86_64-unknown-linux-gnu \
       --manifest-path /tmp/rust-fetch/Cargo.toml && \
     rm -rf /tmp/rust-fetch && \
     chmod -R a+rwX /opt/rust/cargo
-
-# ------------------------------------------------------------------------------
-# uv - Python package manager for the python tools (`make tools-<role>`)
-# ------------------------------------------------------------------------------
-# Single static binary from the pinned upstream image -- nothing pip-installed.
-COPY --from=ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc \
-    /uv /usr/local/bin/uv
 
 # ------------------------------------------------------------------------------
 # Python dependency bake (hermetic, offline python-tools build and test)
@@ -284,7 +354,35 @@ RUN bash /tmp/deps/bake-external-deps.sh /tmp/deps/ExternalDependencies.cmake \
       /opt/apex-deps /opt/apex-pip-wheels && \
     rm -rf /tmp/deps && \
     chmod -R a+rwX /opt/apex-deps /opt/apex-pip-wheels /opt/rust/cargo
-ENV APEX_DEPS_DIR=/opt/apex-deps
+
+# ==============================================================================
+# Stage: build-base - compile, link, and test the release artifacts
+# ==============================================================================
+FROM toolchain AS build-base
+
+ARG USER
+
+LABEL org.opencontainers.image.title="apex.build-base" \
+      org.opencontainers.image.description="Compile/link/test tier for Apex CSF C++ builders" \
+      org.opencontainers.image.vendor="Apex"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# ------------------------------------------------------------------------------
+# Baked dependencies (the bakes stage's output)
+# ------------------------------------------------------------------------------
+COPY --from=bakes /opt/rust/cargo/registry /opt/rust/cargo/registry
+COPY --from=bakes /opt/rust/cargo/.global-cache /opt/rust/cargo/.package-cache /opt/rust/cargo/.package-cache-mutate /opt/rust/cargo/
+COPY --from=bakes /opt/apex-pip-wheels /opt/apex-pip-wheels
+COPY --from=bakes /opt/apex-uv-cache /opt/apex-uv-cache
+COPY --from=bakes /opt/apex-deps /opt/apex-deps
+# A COPY of a directory creates the destination itself with default
+# permissions, whatever the source directory had; everything beneath keeps its
+# own. The unprivileged user writes to all four (cargo unpacks sources, uv and
+# pip add to their stores), so open the four entries as the bakes left them.
+RUN chmod a+rwX /opt/rust/cargo/registry /opt/apex-pip-wheels /opt/apex-uv-cache /opt/apex-deps
+ENV UV_CACHE_DIR=/opt/apex-uv-cache \
+    APEX_DEPS_DIR=/opt/apex-deps
 
 # ------------------------------------------------------------------------------
 # Offline build enforcement
@@ -294,58 +392,14 @@ ENV APEX_DEPS_DIR=/opt/apex-deps
 # and the FetchContent sources. Enforce it globally -- cargo and pip read these
 # natively, so apex's AND every dependency's tool builds run offline with no
 # per-project flag plumbing. A missing bake fails loudly here instead of
-# silently fetching. dev-base re-opens the network for interactive work.
+# silently fetching. dev-base carries the same bakes without this switch:
+# interactive work resolves online.
 # cargo parses CARGO_NET_OFFLINE as a strict boolean: literal true or
 # false only.
 ENV CARGO_NET_OFFLINE=true \
     PIP_NO_INDEX=1 \
     PIP_FIND_LINKS=/opt/apex-pip-wheels \
     UV_OFFLINE=1
-
-# ------------------------------------------------------------------------------
-# ptest profiler link libraries
-# ------------------------------------------------------------------------------
-# The perf tests link tcmalloc/profiler when present (find_library in
-# cmake/apex/Testing.cmake), so the link-time libs ship in build-base for parity
-# with the dev build. The profiler binaries/backends live in dev-base.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      libgoogle-perftools-dev \
-      libunwind-dev
-
-# ------------------------------------------------------------------------------
-# SuiteSparse (KLU sparse solver) - required by the MNA solver
-# ------------------------------------------------------------------------------
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      libsuitesparse-dev
-
-# ------------------------------------------------------------------------------
-# ngspice (SPICE reference simulator) - linked by the electronics sim backend
-# ------------------------------------------------------------------------------
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      libngspice0-dev \
-      ngspice
-
-# ------------------------------------------------------------------------------
-# User Setup
-# ------------------------------------------------------------------------------
-# Centralized here so every downstream image (builders and dev shells) inherits
-# the correct user.
-RUN userdel -r ubuntu 2>/dev/null || true && \
-    groupdel ubuntu 2>/dev/null || true && \
-    groupadd -g ${HOST_GID} ${USER} 2>/dev/null || true && \
-    useradd -l -m -u ${HOST_UID} -g ${HOST_GID} -s /bin/bash -p "*" ${USER} 2>/dev/null || true && \
-    echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
-    chown -R ${HOST_UID}:${HOST_GID} /home/${USER} && \
-    usermod -aG dialout "${USER}"
 
 # ------------------------------------------------------------------------------
 # Cleanup and Validation
@@ -369,16 +423,17 @@ USER ${USER}
 WORKDIR /home/${USER}
 
 # ==============================================================================
-# Stage: dev-base - build-base + tooling (scanners, formatters, profilers, docs)
+# Stage: dev-base - toolchain + tooling (scanners, formatters, profilers, docs)
+#                   + the same baked dependencies build-base carries
 # ==============================================================================
-FROM build-base AS dev-base
+FROM toolchain AS dev-base
 
 # Interactive dev resolves dependencies online; the offline guarantee is for the
 # release builders (build-base tier), not the dev shell. The baked caches are
-# still inherited (PIP_FIND_LINKS stays, so pip prefers the wheelhouse before
-# PyPI), and this stage's own pip installs below need the index open. Explicit
-# `false`, not empty: cargo parses CARGO_NET_OFFLINE as a strict boolean and
-# errors on an empty string (a Dockerfile ENV cannot truly unset).
+# carried all the same (copied in at the end of this stage, with PIP_FIND_LINKS
+# so pip prefers the wheelhouse before PyPI). The switches are stated, not left
+# unset, so a dev shell's environment says which mode it is in; cargo parses
+# CARGO_NET_OFFLINE as a strict boolean (literal true or false).
 ENV CARGO_NET_OFFLINE=false \
     PIP_NO_INDEX=false \
     UV_OFFLINE=false
@@ -396,7 +451,7 @@ ARG OSV_SCANNER_VERSION=2.3.8
 ARG TRIVY_VERSION=0.71.0
 ARG SEMGREP_VERSION=1.165.0
 # cargo-llvm-cov: prebuilt binary (taiki-e) driving `make coverage-rust`.
-# Pinned; llvm-tools-preview (from build-base) supplies the profdata tooling.
+# Pinned; llvm-tools-preview (from the toolchain stage) supplies the profdata tooling.
 ARG CARGO_LLVM_COV_VERSION=0.8.7
 
 LABEL org.opencontainers.image.title="apex.base" \
@@ -424,7 +479,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # LLVM/Clang analysis and format tooling
 # ------------------------------------------------------------------------------
 # clang-21 tidy/format/tools, the LLVM debugger, coverage, and
-# include-what-you-use. The compilers themselves live in build-base.
+# include-what-you-use. The compilers themselves live in the toolchain stage.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
@@ -439,10 +494,16 @@ RUN ln -sf /usr/bin/clang-format-21 /usr/local/bin/clang-format && \
 # ------------------------------------------------------------------------------
 # Bloaty - Binary Size Analysis
 # ------------------------------------------------------------------------------
-# Built from source: not packaged for Ubuntu 24.04. Tracks master tip via
-# shallow clone. CMAKE_POLICY_VERSION_MINIMUM=3.5 satisfies upstream submodule
-# policy floors.
-RUN git clone --recursive --depth 1 https://github.com/google/bloaty.git /tmp/bloaty && \
+# Built from source: not packaged for Ubuntu 24.04, and upstream publishes no
+# binaries. Pinned to a commit, so a rebuild cannot pick up a different tool;
+# bump BLOATY_COMMIT deliberately. CMAKE_POLICY_VERSION_MINIMUM=3.5 satisfies
+# upstream submodule policy floors. The build takes minutes: it sits here, above
+# nothing that changes with a dependency bump, so it stays in the layer cache.
+ARG BLOATY_COMMIT=ccb49b0be3d5bc0dd156bcf16f1515726c395ec5
+RUN git init -q /tmp/bloaty && \
+    git -C /tmp/bloaty fetch -q --depth 1 https://github.com/google/bloaty.git "${BLOATY_COMMIT}" && \
+    git -C /tmp/bloaty checkout -q FETCH_HEAD && \
+    git -C /tmp/bloaty submodule update -q --init --recursive --depth 1 && \
     CC=clang CXX=clang++ CFLAGS=-Wno-deprecated-non-prototype \
     cmake -S /tmp/bloaty -B /tmp/bloaty/build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
@@ -554,7 +615,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ------------------------------------------------------------------------------
 # cargo-llvm-cov - Rust coverage driver (`make coverage-rust`)
 # ------------------------------------------------------------------------------
-# chmod only the new binary: build-base already opened /opt/rust tree-wide, and a
+# chmod only the new binary: the toolchain stage opened /opt/rust tree-wide, and a
 # repeat -R here would copy the whole toolchain into this layer.
 RUN curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 \
       "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v${CARGO_LLVM_COV_VERSION}/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz" \
@@ -565,7 +626,11 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-connrefused --retry-
 # FlameGraph
 # ------------------------------------------------------------------------------
 # Brendan Gregg's scripts for visualizing profiler output as SVG flame graphs.
-RUN git clone --depth 1 https://github.com/brendangregg/FlameGraph.git /opt/FlameGraph && \
+# Pinned to a commit; bump FLAMEGRAPH_COMMIT deliberately.
+ARG FLAMEGRAPH_COMMIT=41fee1f99f9276008b7cd112fca19dc3ea84ac32
+RUN git init -q /opt/FlameGraph && \
+    git -C /opt/FlameGraph fetch -q --depth 1 https://github.com/brendangregg/FlameGraph.git "${FLAMEGRAPH_COMMIT}" && \
+    git -C /opt/FlameGraph checkout -q FETCH_HEAD && \
     ln -s /opt/FlameGraph/flamegraph.pl /usr/local/bin/flamegraph.pl && \
     ln -s /opt/FlameGraph/stackcollapse-perf.pl /usr/local/bin/stackcollapse-perf.pl && \
     ln -s /opt/FlameGraph/difffolded.pl /usr/local/bin/difffolded.pl && \
@@ -577,7 +642,7 @@ ENV FLAMEGRAPH_DIR=/opt/FlameGraph
 # Profiling Tools
 # ------------------------------------------------------------------------------
 # linux-tools:        perf (common wrapper + generic; host-matched added below)
-# google-perftools:   pprof CPU/heap profiler driver (tcmalloc lib is in build-base)
+# google-perftools:   pprof CPU/heap profiler driver (tcmalloc lib is in toolchain)
 # valgrind:           callgrind, massif, memcheck (vernier backends)
 # bpftrace:           dynamic tracing + off-CPU (vernier offcpu backend)
 # heaptrack:          low-overhead heap profiler (vernier heaptrack backend)
@@ -615,6 +680,24 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     else \
       echo "WARN: HOST_KERNEL build-arg empty; perf may not match the host kernel"; \
     fi
+
+# ------------------------------------------------------------------------------
+# Baked dependencies (the bakes stage's output)
+# ------------------------------------------------------------------------------
+# Last, below nothing: the tooling above is unaffected by a dependency bump.
+COPY --from=bakes /opt/rust/cargo/registry /opt/rust/cargo/registry
+COPY --from=bakes /opt/rust/cargo/.global-cache /opt/rust/cargo/.package-cache /opt/rust/cargo/.package-cache-mutate /opt/rust/cargo/
+COPY --from=bakes /opt/apex-pip-wheels /opt/apex-pip-wheels
+COPY --from=bakes /opt/apex-uv-cache /opt/apex-uv-cache
+COPY --from=bakes /opt/apex-deps /opt/apex-deps
+# A COPY of a directory creates the destination itself with default
+# permissions, whatever the source directory had; everything beneath keeps its
+# own. The unprivileged user writes to all four (cargo unpacks sources, uv and
+# pip add to their stores), so open the four entries as the bakes left them.
+RUN chmod a+rwX /opt/rust/cargo/registry /opt/apex-pip-wheels /opt/apex-uv-cache /opt/apex-deps
+ENV UV_CACHE_DIR=/opt/apex-uv-cache \
+    APEX_DEPS_DIR=/opt/apex-deps \
+    PIP_FIND_LINKS=/opt/apex-pip-wheels
 
 # ------------------------------------------------------------------------------
 # Cleanup and Validation
