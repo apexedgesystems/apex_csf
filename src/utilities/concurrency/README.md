@@ -961,16 +961,16 @@ pool.shutdown(); // Drains queue, joins workers
 Figures from the module's benchmark on a Jetson AGX Thor (14 aarch64 cores,
 Linux 6.8, release build), cores pinned and clocks locked, as of
 [#191](https://github.com/apexedgesystems/apex_csf/pull/191). Each is the
-median of four runs of 15 repeats; CV is the variation within a run. They
+median of six runs of 15 repeats; CV is the variation within a run. They
 describe that host and build. No figure here is a budget.
 
 ### One thread
 
 | Operation                               | Time    | Rate   | CV   |
 | --------------------------------------- | ------- | ------ | ---- |
-| `RingBuffer` push and pop               | 3.0 ns  | 330M/s | 0.6% |
+| `RingBuffer` push and pop               | 2.9 ns  | 346M/s | 0.1% |
 | `SPSCQueue` push and pop                | 8.5 ns  | 117M/s | 0.1% |
-| `LockFreeQueue` push and pop            | 26.7 ns | 37M/s  | 0.1% |
+| `LockFreeQueue` push and pop            | 26.6 ns | 38M/s  | 0.1% |
 | `SpinLock` lock and unlock              | 10.9 ns | 92M/s  | 0.1% |
 | `Semaphore` tryAcquire and release      | 23 ns   | 43M/s  | 0.4% |
 | `Latch::tryWait()` on a triggered latch | 8.6 ns  | 117M/s | 0.1% |
@@ -983,28 +983,46 @@ still counting it is one atomic load.
 
 | Operation                                                | Time   | CV   |
 | -------------------------------------------------------- | ------ | ---- |
-| `SPSCQueue`, one item from producer to consumer          | 12 ns  | 3.6% |
-| `LockFreeQueue` push and pop, four threads contending    | 277 ns | 3.4% |
-| `SpinLock` lock and unlock, four threads contending      | 92 ns  | 4.5% |
-| `Semaphore` with four permits, four threads contending   | 105 ns | 3.3% |
-| `Latch`, a round of four threads arriving and released   | 8.9 us | 0.8% |
-| `Barrier`, a phase of four threads arriving and released | 6.5 us | 3.2% |
+| `SPSCQueue`, one item from producer to consumer          | 11 ns  | 2.7% |
+| `LockFreeQueue` push and pop, four threads contending    | 285 ns | 3.4% |
+| `SpinLock` lock and unlock, four threads contending      | 87 ns  | 4.2% |
+| `Semaphore` with four permits, four threads contending   | 100 ns | 3.3% |
+| `Latch`, a round of four threads arriving and released   | 8.8 us | 0.2% |
+| `Barrier`, a phase of four threads arriving and released | 6.6 us | 1.8% |
+
+The `LockFreeQueue` row is the level of the runs in which the four threads
+overlap. In about a third of the runs they do not, and those read 20 to 30
+ns.
 
 ### Task dispatch
 
 | Measure                                                   | ThreadPool | ThreadPoolLockFree |
 | --------------------------------------------------------- | ---------- | ------------------ |
 | Enqueue, every worker busy                                | 31 ns      | 37 ns              |
-| Enqueue to the task's first instruction, worker asleep    | 4.6 us     | 4.5 us             |
-| Worker time per queued task, one worker                   | 27 ns      | 15 ns              |
-| Wall time per queued task, four workers sharing the queue | 212 ns     | 81 ns              |
+| Enqueue to the task's first instruction, worker asleep    | 4.7 us     | 4.4 us             |
+| Wall time per queued task, one worker                     | 27 ns      | 15 ns              |
+| Wall time per queued task, four workers sharing the queue | 223 ns     | 84 ns              |
 
-The tasks do nothing, so the worker rows are the pool's own cost per task.
+The tasks do nothing, so the last two rows are the pool's own cost per
+task, in wall time from the first task taken to the last one finished.
 Four workers draining empty tasks contend for the queue and move fewer
 tasks per second than one; with tasks that do work, the queue is a small
 share of each. The mutex pool's enqueue is the cheaper of the two while it
 does not allocate or wait for the lock; the lock-free pool's enqueue never
 does either.
+
+| `threadsRunning()`                                  | Time                  |
+| --------------------------------------------------- | --------------------- |
+| Workers parked: one, four, sixteen workers          | 2.3 ns, 5.4 ns, 15 ns |
+| Four workers starting and finishing tasks meanwhile | 12 ns                 |
+
+The query reads two counts per worker, so its cost grows with the worker
+count; that is the price of each task no longer writing a line all workers
+share. A caller pays it once per look, not per task.
+
+The benchmark also has an enqueue case with live workers
+(`EnqueueToLiveWorkers`). Its figure follows the relative speed of the
+producer and the workers, not the cost of an enqueue, and has no row here.
 
 ### Footprint
 

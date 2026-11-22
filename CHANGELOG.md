@@ -67,8 +67,15 @@ any such change is called out explicitly in its entry.
 
 - Thread pool workers count their in-flight tasks per worker, and the two
   pools share `PoolBase` (`PoolBase.hpp` now holds `PoolStatus`, `TaskError`
-  and `PoolConfig`; the pool headers still provide them). A worker's cost
-  per task is 27 to 44% lower on the lab host.
+  and `PoolConfig`; the pool headers still provide them). Queued tasks drain
+  in 24 to 51% less wall time than before on the lab host; `threadsRunning()`
+  reads two counts per worker. Breaking for binaries: pool and ring-queue
+  layouts and the pools' `collectErrors()` and `threadsRunning()` symbols
+  changed, so rebuild the concurrency library and everything that uses it
+  together; no source change is needed.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `RingBuffer` keeps its two cursors on one cache line wherever the object
+  is placed (48 bytes, 16-byte aligned).
   ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - `SPSCQueue` sides keep their last view of the other index: a push and pop
   pair takes a third less time, and with a backlog neither side reads the
