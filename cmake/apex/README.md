@@ -423,22 +423,109 @@ once.
 apex_add_bundle(
   NAME        GroundStation
   DEPLOYMENTS ApexOpsDemo ApexActionDemo   # each its own apex filesystem
-  TOOLS       my_cli_tool                  # extra executables (+ their closures)
+  TOOLS       my_cli_tool tprm_template    # tools of any kind, by name
   FILES       docs/OPERATIONS.md           # arbitrary support files/dirs
 )
 ninja package_GroundStation
 ```
 
-`package_<NAME>` stages each deployment into its own subdir (reusing that
-deployment's component), tools under `tools/{bin,libs}`, and files at the bundle
-root, then tars it:
+`package_<NAME>` builds what the bundle stages (each deployment's executive and
+TPRM products, each listed tool), then stages each deployment into its own
+subdir (reusing that deployment's component), tools under `tools/`, and files at
+the bundle root, and tars it:
 
 ```
 GroundStation/ApexOpsDemo/run.sh + bank_a/{bin,libs,tprm}
 GroundStation/ApexActionDemo/run.sh + bank_a/{bin,libs,tprm}
 GroundStation/tools/bin/my_cli_tool + tools/libs/*.so*
+GroundStation/tools/bin/tprm_template
+GroundStation/tools/REQUIREMENTS.txt
 GroundStation/docs/OPERATIONS.md
 ```
+
+A bundle is the user's filesystem for one target: it is copied onto the target
+and run in place, with nothing installed, built or fetched afterwards.
+
+#### Tools in a bundle
+
+`TOOLS` takes tools by name. What each kind brings and needs:
+
+| Kind                  | Named by                                 | Staged as                                                                                      | Needs on the target                                                |
+| --------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| C++ tool              | its executable target                    | `tools/bin/<name>` and its project shared libraries in `tools/libs`                            | nothing beyond the package                                         |
+| Rust tool             | the binary's name                        | `tools/bin/<name>`                                                                             | the system C library, and the commands it declares                 |
+| Shell tool            | the script's file name                   | `tools/bin/<name>`                                                                             | the interpreter its first line names, and the commands it declares |
+| Python console script | the script's name in `[project.scripts]` | `tools/bin/<name>`; its distribution and the distributions that requires in `tools/lib/python` | a `python3` its metadata allows; the interpreter is not carried    |
+
+The Rust, shell and Python tools of this repository are registered by the tools
+build (`tools/CMakeLists.txt`); a tool from elsewhere registers itself with
+`apex_register_tool(NAME <name> KIND <bin|script|py> FILE <path> [DEPENDS
+<target>] [PYTHON_LIB <dir>] [REQUIRES <command>...])`.
+
+**What a tool runs on the target.** A package cannot carry the target's own
+commands, so the tool's owner declares them and the package states them.
+`REQUIRES` takes `<command>` for a command every run needs and
+`<command>: <use>` for one that only that use needs. This repository's tools
+declare them where each language declares a tool:
+
+| Kind  | Declared in                                                                                                |
+| ----- | ---------------------------------------------------------------------------------------------------------- |
+| Rust  | `[package.metadata.apex.requires]` in the crate's `Cargo.toml`: `<binary> = ["upx", "tar: --archive-dir"]` |
+| Shell | the `# Requires:` line of the script's header, separated by commas: `# Requires: cp, sed, tar`             |
+
+`tools/REQUIREMENTS.txt` in the package lists each staged tool with its
+interpreter and these commands, and the package step prints each tool's staged
+payload size. A tool with an interpreter or an every-run command to find is started by
+a launcher in `tools/bin/<name>` (the tool itself is in `tools/libexec`): it
+looks for each one first and, when one is missing, prints one line naming it
+and exits 127 without starting the tool.
+
+**Python tools.** A Python tool carries only its own distribution and what that
+requires, not the rest of its role's installed packages:
+
+- A requirement is followed with the extras it asks for (`dep[fast]` brings what
+  `dep` requires under `fast`), and its environment marker is decided for the
+  active extras and the `python3` that runs the build, which stands for the one
+  the library was installed for. What the marker selects has to be installed, or
+  the package step fails, and is carried; anything else stays behind, even when
+  it is installed for another tool.
+- The launcher finds `tools/lib/python` relative to itself and checks the
+  interpreter before importing the tool: every `Requires-Python` clause of every
+  carried distribution has to hold. A clause it cannot check (a pre-release
+  version, `===`, more than three numbers) fails the package step.
+- A marker can come out differently on the target, so the launcher holds the
+  target to the build's answers. Each comparison of `python_version` or
+  `python_full_version` that selected a requirement has to give the target's
+  `python3` the answer it gave the build's; `tools/REQUIREMENTS.txt` lists them
+  in the form that is true (`python_version >= 3.10`). A requirement selected by
+  the Python implementation holds the target to the build's implementation, and
+  compiled modules tie the package to the build's `python3` minor version.
+  `os_name`, `sys_platform` and `platform_system` are the same on both sides.
+- A requirement whose selection the build cannot answer for the target fails
+  the package step: one that turns on `platform_machine` in a cross build, and
+  one that turns on the kernel version (`platform_release`, `platform_version`)
+  or on `implementation_version` in any build. So does a comparison outside what
+  is read: `~=`, `===` or `in` on a version, more than three numbers, a
+  pre-release or a trailing `.*` written on the left of the comparison
+  (`"3.11.0rc1" < python_full_version`), an ordering of text, text or an
+  extra's name compared with something an installer may read as a version
+  (`os_name == "V3"`, `extra == "v1"`), or an extra written on the right of
+  the comparison.
+- An interpreter is read by its release numbers (major, minor, micro), so a
+  pre-release `python3` counts as its release.
+
+What cannot work on the target fails the build, not the user's first run:
+
+- a `TOOLS` name that is neither an executable target nor a registered tool
+  fails the configure, naming the bundle and the tool;
+- a tool built for another architecture than the bundle's executive (a Rust tool
+  in a cross build, a Python distribution with modules compiled for the build
+  machine) fails the package step, naming the tool and both architectures;
+- `TOOLS` in a bare-metal build fails the configure: firmware ships as a
+  flashable image and has no filesystem to carry tools.
+
+`make check-bundle-packaging` asserts all of this on a fixture
+(`cmake/apex/test/bundle_packaging`).
 
 An executive and its watchdog are **two** deployments (two filesystems), shipped
 together in a bundle; the watchdog supervises the executive across them. A bundle
