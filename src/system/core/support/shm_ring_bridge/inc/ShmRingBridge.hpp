@@ -133,8 +133,13 @@ private:
 
   /// Resolve the configured source DataTarget through the registry
   /// resolver. Validates length matches payload_size. Returns true on
-  /// success. Caches `source_ptr_` + `source_len_`.
+  /// success and keeps the validated length in `source_len_`.
   bool resolveSource() noexcept;
+
+  /// The source bytes as the resolver gives them now, or nullptr when the
+  /// block is gone or no longer holds the configured range. Called on
+  /// every step: the address is never kept across steps.
+  [[nodiscard]] const std::uint8_t* currentSource() const noexcept;
 
   /// Tear down shm + sem (idempotent). Side A unlinks both kernel objects
   /// so the next process start is clean.
@@ -160,8 +165,7 @@ private:
   std::uint8_t* rx_slots_ = nullptr; ///< First slot byte (Ring B).
   std::size_t rx_slot_size_ = 0;     ///< reverse_payload_size (slot bytes).
 
-  const std::uint8_t* source_ptr_ = nullptr; ///< Cached resolved source pointer.
-  std::size_t source_len_ = 0;               ///< Cached resolved source length.
+  std::size_t source_len_ = 0; ///< Validated source length; 0 until the source resolves.
 
   // Identity of the created shm object (fstat at openChannel), used to detect
   // an external unlink/replace of the path while the channel is live.

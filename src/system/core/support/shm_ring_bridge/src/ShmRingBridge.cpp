@@ -360,7 +360,6 @@ void ShmRingBridge::closeChannel() noexcept {
   rx_cons_cursor_ = nullptr;
   rx_slots_ = nullptr;
   rx_slot_size_ = 0;
-  source_ptr_ = nullptr;
   source_len_ = 0;
 }
 
@@ -369,7 +368,6 @@ void ShmRingBridge::closeChannel() noexcept {
 bool ShmRingBridge::resolveSource() noexcept {
   auto& s = state_.get();
   s.source_resolved = 0u;
-  source_ptr_ = nullptr;
   source_len_ = 0;
 
   const auto& p = tunables_.get();
@@ -410,10 +408,19 @@ bool ShmRingBridge::resolveSource() noexcept {
     return false;
   }
 
-  source_ptr_ = SRC.data + OFFSET;
   source_len_ = LEN;
   s.source_resolved = 1u;
   return true;
+}
+
+const std::uint8_t* ShmRingBridge::currentSource() const noexcept {
+  const auto& p = tunables_.get();
+  const ResolvedSource SRC =
+      resolver_(p.source_uid, static_cast<data::DataCategory>(p.source_category));
+  if (SRC.data == nullptr || p.source_byte_offset + source_len_ > SRC.size) {
+    return nullptr;
+  }
+  return SRC.data + p.source_byte_offset;
 }
 
 /* ----------------------------- Tasks ----------------------------- */
@@ -422,8 +429,17 @@ std::uint8_t ShmRingBridge::bridgeStep() noexcept {
   auto& s = state_.get();
   ++s.tick_count;
 
-  if (s.channel_open == 0u || source_ptr_ == nullptr) {
+  if (s.channel_open == 0u || source_len_ == 0u) {
     return 0u; // bridge is idle; sim keeps running
+  }
+
+  // The source block is looked up on every step, not remembered: a
+  // library swap of the source component gives its data a new block, and
+  // the block of the instance it replaced goes away with that instance.
+  const std::uint8_t* const SOURCE = currentSource();
+  s.source_resolved = (SOURCE != nullptr) ? 1u : 0u;
+  if (SOURCE == nullptr) {
+    return 0u; // the source is gone or no longer holds the range; idle until it does
   }
 
   // The ring push sequence (see README section 5.3).
@@ -458,7 +474,7 @@ std::uint8_t ShmRingBridge::bridgeStep() noexcept {
     }
   } else {
     std::uint8_t* SLOT = slots_ + (HEAD & (p.capacity - 1u)) * source_len_;
-    std::memcpy(SLOT, source_ptr_, source_len_);
+    std::memcpy(SLOT, SOURCE, source_len_);
     prod->store(HEAD + 1u, std::memory_order_release);
 
     // Signal the wakeup semaphore (see README section 5.4).
