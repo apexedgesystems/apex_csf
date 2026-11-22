@@ -89,9 +89,10 @@ struct alignas(cache::CACHE_LINE_SIZE) WorkerTally {
  * after the last is therefore reported once its start is visible to the
  * caller, however tasks hand over between workers during the call. A task
  * that starts or finishes during the call may be reported either way. The
- * sums are compared in the counts' modular arithmetic: reading "idle" with
- * a task in flight would take a full turn of the counter, 2^64 starts on a
- * 64-bit target, inside one call.
+ * sums are compared in std::size_t's modular arithmetic, so a difference is
+ * seen while the starts the caller has read without their finishes number
+ * fewer than 2^(bits of std::size_t), 2^64 where it has 64 bits. Tasks
+ * already in flight when the call began count toward that number.
  *
  * The tally type is a parameter so the order of the sweeps can be exercised
  * without threads.
