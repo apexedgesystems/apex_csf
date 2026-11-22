@@ -62,10 +62,8 @@ any such change is called out explicitly in its entry.
 - An executed check for every tool family: clippy (deny warnings) gates the
   Rust tools on PRs and nightly, and a shell smoke exercises the ops SDK
   packager.
-- `MnaSystem::addTransconductance` stamps a controlled current source, and
-  `Junction.hpp` holds the junction helpers the device models share (limited
-  exponential, series-resistance solve, voltage limiting).
-  ([#195](https://github.com/apexedgesystems/apex_csf/pull/195))
+- `MnaSystem::addTransconductance` stamps a voltage-controlled current
+  source. ([#195](https://github.com/apexedgesystems/apex_csf/pull/195))
 
 ### Changed
 
@@ -126,14 +124,11 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
-- Nonlinear device models (diodes, JFETs, MOSFET Levels 1 to 3, BJT): each
-  stamp is the linearization of its model, currents stay finite at any bias
-  and are continuous across region boundaries, and
-  `BjtCommonEmitter::computeDC` reports a failed solve. Breaking: Zener, BJT
-  and subthreshold currents change value; `MosfetLevel1Params::Vsmooth`,
-  `JfetLevel2Params::alpha` and four parameters nothing read are removed;
-  `MosfetLevel1::region()` returns 0, 1, 2.
-  ([#195](https://github.com/apexedgesystems/apex_csf/pull/195))
+- Corrected nonlinear device stamps, junction currents and FET region
+  transitions; `BjtCommonEmitter::computeDC` reports failed solves. Breaking:
+  device currents and Level 1 region codes change and six model parameters
+  are removed; migration steps are in
+  [#195](https://github.com/apexedgesystems/apex_csf/pull/195).
 - ASYNC logging: `flush()` waits for every accepted entry's write attempt, a
   cut line keeps its newline, and a failed rotation keeps the log descriptor.
   ([#188](https://github.com/apexedgesystems/apex_csf/pull/188))
