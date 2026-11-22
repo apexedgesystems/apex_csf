@@ -76,9 +76,12 @@ any such change is called out explicitly in its entry.
 - Breaking: `SystemLog::setNonBlocking` is removed; it had no effect, so
   callers delete the call.
   ([#190](https://github.com/apexedgesystems/apex_csf/pull/190))
-- Breaking: rebuild C++ consumers of system_component (`PluginLoader`'s
-  layout changed); `initComponentLog()` returns whether the log opened,
-  and `ParamBank::apply()` needs a `load()` accepted since the last publish.
+- Breaking: rebuild C++ consumers of system_component, the registry and
+  the scheduler (layouts changed); `RegistryBase::updateComponent()` is
+  replaced by `ApexRegistry::rebindComponent()`.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- Breaking: `initComponentLog()` returns whether the log opened, and
+  `ParamBank::apply()` needs a `load()` accepted since the last publish.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Breaking: the Rust tools are one Cargo workspace at `tools/`, built and
   installed by role. Executables move from `bin/tools/rust/` to
