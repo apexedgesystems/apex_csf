@@ -398,8 +398,10 @@ public:
    * Used during component hot-swap. For each entry matching the fullUid
    * the replacement must provide the task with the entry's taskUid, and,
    * for a sequenced entry, a sequence group that holds that task at the
-   * entry's phase and maximum phase. The entries change only if every
-   * one resolves: the task pointer, the sequence counter and the
+   * entry's phase and maximum phase. Entries that shared a sequence
+   * counter must resolve to one counter again, and entries of different
+   * counters to different ones: a sequence is neither split nor merged.
+   * The entries change only if every one resolves: the task pointer, the sequence counter and the
    * component name are then all the replacement's, so no entry is left
    * pointing into the instance it replaced.
    *

@@ -260,6 +260,14 @@ SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
   };
   std::vector<Binding> bindings;
 
+  // Entries that share a counter are one sequence: they must share one
+  // counter afterwards too, and two sequences must not be merged into one.
+  struct CounterPair {
+    const std::atomic<int>* oldCounter;
+    const std::atomic<int>* newCounter;
+  };
+  std::vector<CounterPair> counters;
+
   for (auto& entry : entries_) {
     if (entry.fullUid != fullUid) {
       continue;
@@ -285,6 +293,18 @@ SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
       }
       if (seqCounter == nullptr) {
         return 0;
+      }
+      bool known = false;
+      for (const CounterPair& pair : counters) {
+        if (pair.oldCounter == entry.seqCounter || pair.newCounter == seqCounter) {
+          if (pair.oldCounter != entry.seqCounter || pair.newCounter != seqCounter) {
+            return 0; // one old sequence split in two, or two merged into one
+          }
+          known = true;
+        }
+      }
+      if (!known) {
+        counters.push_back({entry.seqCounter, seqCounter});
       }
     }
 

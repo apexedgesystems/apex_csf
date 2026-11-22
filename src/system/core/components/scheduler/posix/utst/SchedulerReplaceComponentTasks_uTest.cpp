@@ -13,6 +13,9 @@
  *    new instance's, and the entry's name is a copy the scheduler owns.
  *  - A replacement that lacks a scheduled task, or sequences one at
  *    another phase or not at all, changes nothing.
+ *  - Nor does one that keeps every task's phase but puts the tasks of
+ *    one sequence into two groups: each would wait on a counter its
+ *    predecessor no longer advances.
  */
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerMultiThread.hpp"
@@ -39,6 +42,8 @@ constexpr std::uint32_t MODEL_UID = 0x00C800;
 constexpr std::uint8_t PLAIN_UID = 1;
 constexpr std::uint8_t FIRST_UID = 2;
 constexpr std::uint8_t SECOND_UID = 3;
+constexpr std::uint8_t EXTRA_A_UID = 4;
+constexpr std::uint8_t EXTRA_B_UID = 5;
 
 std::filesystem::path testLogDir() {
   const auto DIR = std::filesystem::temp_directory_path() /
@@ -52,10 +57,13 @@ class SequencedModel : public SwModelBase {
 public:
   /// What an instance registers.
   enum class Shape : std::uint8_t {
-    STANDARD,     ///< plain; first at phase 1; second at phase 2.
-    NO_SECOND,    ///< as STANDARD without the second sequenced task.
-    OTHER_PHASES, ///< the two sequenced tasks at each other's phase.
-    NOT_SEQUENCED ///< all three tasks outside any group.
+    STANDARD,      ///< plain; first at phase 1; second at phase 2.
+    NO_SECOND,     ///< as STANDARD without the second sequenced task.
+    OTHER_PHASES,  ///< the two sequenced tasks at each other's phase.
+    NOT_SEQUENCED, ///< all three tasks outside any group.
+    /// first and second at their phases, each in a group of its own
+    /// beside a task the schedule does not name.
+    SPLIT_GROUPS
   };
 
   explicit SequencedModel(const char* name, Shape shape = Shape::STANDARD) noexcept
@@ -73,6 +81,19 @@ protected:
     if (shape_ == Shape::NOT_SEQUENCED) {
       ok = ok && registerTask<SequencedModel, &SequencedModel::noop>(FIRST_UID, this, "first") &&
            registerTask<SequencedModel, &SequencedModel::noop>(SECOND_UID, this, "second");
+      return ok ? 0 : 1;
+    }
+    if (shape_ == Shape::SPLIT_GROUPS) {
+      // Group 0: first at 1, an extra at 2. Group 1: an extra at 1, second at 2.
+      ok = ok && createSequenceGroup(0, 2) && createSequenceGroup(1, 2) &&
+           registerSequencedTask<SequencedModel, &SequencedModel::noop>(FIRST_UID, this, "first", 0,
+                                                                        1) &&
+           registerSequencedTask<SequencedModel, &SequencedModel::noop>(EXTRA_A_UID, this,
+                                                                        "extra_a", 0, 2) &&
+           registerSequencedTask<SequencedModel, &SequencedModel::noop>(EXTRA_B_UID, this,
+                                                                        "extra_b", 1, 1) &&
+           registerSequencedTask<SequencedModel, &SequencedModel::noop>(SECOND_UID, this, "second",
+                                                                        1, 2);
       return ok ? 0 : 1;
     }
     const int FIRST_PHASE = (shape_ == Shape::OTHER_PHASES) ? 2 : 1;
@@ -153,8 +174,9 @@ TEST(SchedulerReplaceComponentTasksTest, AnIncompleteReplacementChangesNothing) 
   ASSERT_EQ(original.init(), 0u);
   auto sched = scheduleAllOf(original);
 
-  for (const auto SHAPE : {SequencedModel::Shape::NO_SECOND, SequencedModel::Shape::OTHER_PHASES,
-                           SequencedModel::Shape::NOT_SEQUENCED}) {
+  for (const auto SHAPE :
+       {SequencedModel::Shape::NO_SECOND, SequencedModel::Shape::OTHER_PHASES,
+        SequencedModel::Shape::NOT_SEQUENCED, SequencedModel::Shape::SPLIT_GROUPS}) {
     SequencedModel refused("Refused", SHAPE);
     ASSERT_EQ(refused.init(), 0u);
     EXPECT_EQ(sched->replaceComponentTasks(MODEL_UID, refused), 0u) << int(SHAPE);
