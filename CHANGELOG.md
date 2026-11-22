@@ -140,8 +140,8 @@ any such change is called out explicitly in its entry.
   component swapped in by `RELOAD_LIBRARY` gets its log.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - `RELOAD_LIBRARY` swaps on the task thread once every dispatched task
-  has settled and destroys the replaced plugin afterwards; a reload that
-  cannot settle within its wait is refused with `NOT_QUIESCENT`.
+  has settled, rebinds the component's data and sequenced tasks or
+  refuses whole, and always prepares on the I/O thread.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Component bases: logs open outside a pre-made log tree, the registry
   refuses a 257th instance, `reset()` empties task tables, and a second
