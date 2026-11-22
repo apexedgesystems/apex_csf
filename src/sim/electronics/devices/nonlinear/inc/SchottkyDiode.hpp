@@ -77,8 +77,9 @@ struct SchottkyDiode {
    * @param vDiode Voltage across diode terminals (anode - cathode) in volts
    * @param params Schottky diode physical parameters
    * @return Current through diode in amperes (positive = forward bias); NaN
-   *         if the series-resistance solve does not converge, which
-   *         positive finite parameters do not cause
+   *         if the series-resistance solve does not converge. Over the
+   *         values diodes have it converges; Junction::seriesJunctionVoltage()
+   *         says what it refuses and where, far outside them, it may not
    *
    * @note RT-safe: no allocation; with a series resistance, at most
    *       Junction::SERIES_MAX_ITER iterations.
