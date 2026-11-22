@@ -11,8 +11,10 @@
  *  - Latch round of four threads and tryWait on a triggered latch
  *  - Barrier phase of four threads and generation query
  *  - ThreadPool / ThreadPoolLockFree enqueue cost with busy workers, time
- *    from an enqueue to the task starting on a sleeping worker, worker cost
- *    per queued task (one and four workers) and rejection
+ *    from an enqueue to the task starting on a sleeping worker, drain time
+ *    per queued task (one and four workers), rejection, and an enqueue
+ *    diagnostic with live workers whose regime is not fixed
+ *  - ThreadPoolLockFree threadsRunning() with parked and with working workers
  *
  * Every measuring case writes one CSV row. Per-operation times in the summary
  * lines come from the measured call rate. The contention cases run
@@ -126,7 +128,7 @@ std::size_t drainTasks(const ub::PerfCase& perf, int workers) {
 }
 
 /**
- * @brief Worker cost per task with the work already queued.
+ * @brief Wall time per task for the workers to drain work already queued.
  *
  * Every round's tasks are queued before the measurement, each round behind
  * one gate task per worker. Opening a round's gates lets all workers go at
@@ -183,10 +185,9 @@ template <class Pool> void measureDrain(ub::PerfCase& perf, Pool& pool, int work
   abandon.store(true, std::memory_order_release);
   pool.shutdown();
 
-  std::printf("\n%s drain (%d worker%s): %.0f tasks/s, %.1f ns per task, "
-              "%.1f ns of worker time per task\n",
+  std::printf("\n%s drain (%d worker%s): %.0f tasks/s, %.1f ns of wall time per task\n",
               perf.testName().c_str(), workers, (workers == 1) ? "" : "s", RESULT.callsPerSecond,
-              nsPerOp(RESULT), nsPerOp(RESULT) * workers);
+              nsPerOp(RESULT));
 }
 
 /* ----------------------------- Pool enqueue ----------------------------- */
@@ -235,6 +236,151 @@ template <class Pool> void measureEnqueueToBusyPool(ub::PerfCase& perf, Pool& po
   EXPECT_EQ(refused, 0U) << "the pool refused part of the workload";
   std::printf("\n%s (%d busy workers): %.0f enqueues/s (%.1f ns per enqueue)\n",
               perf.testName().c_str(), workers, RESULT.callsPerSecond, nsPerOp(RESULT));
+}
+
+/// The workers' count of finished tasks, on a cache line of its own. Next to
+/// a variable the producer writes, every task would move that line between
+/// the two threads and the case would time that exchange instead of the pool.
+struct alignas(apex::concurrency::cache::CACHE_LINE_SIZE) CompletionCount {
+  std::atomic<std::size_t> value{0};
+
+  static std::uint8_t add(void* context) noexcept {
+    static_cast<CompletionCount*>(context)->value.fetch_add(1, std::memory_order_relaxed);
+    return 0;
+  }
+};
+
+/**
+ * @brief Producer cost of an enqueue attempt while the workers take the tasks (diagnostic).
+ *
+ * One producer submits tasks that only count themselves to live workers. The
+ * regime this settles in is not fixed. Workers that keep up leave the queue
+ * empty and look for work between tasks, on the memory the producer writes
+ * next; workers that fall behind leave a backlog and stay off it; a bounded
+ * ring that fills refuses attempts. The figure follows the relative speed of
+ * the two sides, so a change to either moves it without the cost of an
+ * enqueue having changed. Read it with its accepted share and as a
+ * description of this one workload; judge a change by EnqueueToBusyPool,
+ * WakeLatency and the drain cases, whose regimes are fixed.
+ */
+template <class Pool>
+void measureEnqueueToLiveWorkers(ub::PerfCase& perf, Pool& pool, int workers) {
+  ASSERT_TRUE(pool.isValid());
+
+  CompletionCount completed;
+  const DelegateU8 TASK{&CompletionCount::add, &completed};
+  std::size_t accepted = 0;
+  const auto ATTEMPT = [&] {
+    if (pool.tryEnqueue("task", TASK) == PoolStatus::SUCCESS) {
+      ++accepted;
+    }
+  };
+  const auto WAIT_FOR_ACCEPTED = [&] {
+    spinUntil([&] { return completed.value.load(std::memory_order_acquire) == accepted; });
+  };
+
+  perf.warmup([&] {
+    for (int i = 0; i < perf.cycles() / 10; ++i) {
+      ATTEMPT();
+    }
+    WAIT_FOR_ACCEPTED();
+  });
+  const std::size_t WARMUP = accepted;
+
+  const ub::PerfResult RESULT = perf.throughputLoop(ATTEMPT, "enqueue");
+  WAIT_FOR_ACCEPTED();
+  pool.shutdown();
+
+  const std::size_t ATTEMPTS =
+      static_cast<std::size_t>(perf.cycles()) * static_cast<std::size_t>(perf.repeats());
+  std::printf("\n%s (%d live workers): %.1f ns per attempt, %zu of %zu attempts accepted, "
+              "%zu tasks completed\n",
+              perf.testName().c_str(), workers, nsPerOp(RESULT), accepted - WARMUP, ATTEMPTS,
+              completed.value.load(std::memory_order_acquire) - WARMUP);
+}
+
+/* ----------------------------- Pool in-flight query ----------------------------- */
+
+/**
+ * @brief threadsRunning() on a pool whose workers are parked.
+ *
+ * Nothing writes the pool's task counts while the caller reads them, so the
+ * figure is the query's own work: it grows with the worker count where the
+ * pool keeps one count per worker.
+ */
+template <class Pool> void measureInFlightQueryIdle(ub::PerfCase& perf, Pool& pool, int workers) {
+  ASSERT_TRUE(pool.isValid());
+  constexpr auto PARK_SETTLE = std::chrono::milliseconds(20);
+  std::this_thread::sleep_for(PARK_SETTLE);
+
+  std::size_t busy = 0;
+  const auto QUERY = [&] { busy += pool.threadsRunning() ? 1U : 0U; };
+  perf.warmup([&] {
+    for (int i = 0; i < perf.cycles(); ++i) {
+      QUERY();
+    }
+  });
+  const ub::PerfResult RESULT = perf.throughputLoop(QUERY, "query");
+  pool.shutdown();
+
+  EXPECT_EQ(busy, 0U) << "an idle pool reported a task in flight";
+  std::printf("\n%s (%d parked worker%s): %.1f ns per query\n", perf.testName().c_str(), workers,
+              (workers == 1) ? "" : "s", nsPerOp(RESULT));
+}
+
+/// A task that puts itself back on its pool until told to stop, so every
+/// worker starts and finishes tasks for as long as a case needs.
+template <class Pool> struct Recirculating {
+  Pool* pool{nullptr};
+  std::atomic<bool> stop{false};
+
+  static std::uint8_t run(void* context) noexcept {
+    auto* self = static_cast<Recirculating*>(context);
+    if (!self->stop.load(std::memory_order_acquire)) {
+      (void)self->pool->tryEnqueue("again", DelegateU8{&Recirculating::run, self});
+    }
+    return 0;
+  }
+};
+
+/**
+ * @brief threadsRunning() while every worker starts and finishes tasks.
+ *
+ * One task per worker keeps putting itself back on the pool, so the workers
+ * write the pool's task counts as fast as they can while the caller reads
+ * them. The figure is the query with the cache traffic that costs it. The
+ * answer may be either value: between two tasks a pool has none in flight.
+ */
+template <class Pool> void measureInFlightQueryBusy(ub::PerfCase& perf, Pool& pool, int workers) {
+  ASSERT_TRUE(pool.isValid());
+
+  Recirculating<Pool> task;
+  task.pool = &pool;
+  bool queued = true;
+  for (int w = 0; w < workers; ++w) {
+    queued = (pool.tryEnqueue("again", DelegateU8{&Recirculating<Pool>::run, &task}) ==
+              PoolStatus::SUCCESS) &&
+             queued;
+  }
+
+  std::size_t busy = 0;
+  const auto QUERY = [&] { busy += pool.threadsRunning() ? 1U : 0U; };
+  perf.warmup([&] {
+    for (int i = 0; i < perf.cycles(); ++i) {
+      QUERY();
+    }
+  });
+  busy = 0;
+  const ub::PerfResult RESULT = perf.throughputLoop(QUERY, "query");
+
+  task.stop.store(true, std::memory_order_release);
+  pool.shutdown();
+
+  EXPECT_TRUE(queued) << "the pool refused the recirculating tasks";
+  const std::size_t QUERIES =
+      static_cast<std::size_t>(perf.cycles()) * static_cast<std::size_t>(perf.repeats());
+  std::printf("\n%s (%d working workers): %.1f ns per query, %zu of %zu saw a task in flight\n",
+              perf.testName().c_str(), workers, nsPerOp(RESULT), busy, QUERIES);
 }
 
 /// When a wake-latency sample's task started, written by the worker.
@@ -842,6 +988,13 @@ PERF_TEST(ThreadPool, EnqueueToBusyPool) {
   measureEnqueueToBusyPool(perf, pool, 4);
 }
 
+/** @brief ThreadPool enqueue attempts while its four workers take the tasks (diagnostic). */
+PERF_TEST(ThreadPool, EnqueueToLiveWorkers) {
+  UB_PERF_GUARD(perf);
+  ThreadPool pool(4);
+  measureEnqueueToLiveWorkers(perf, pool, 4);
+}
+
 /** @brief ThreadPool time from an enqueue to the task starting on a sleeping worker. */
 PERF_TEST(ThreadPool, WakeLatency) {
   UB_PERF_GUARD(perf);
@@ -872,6 +1025,14 @@ PERF_TEST(ThreadPoolLockFree, EnqueueToBusyPool) {
   measureEnqueueToBusyPool(perf, pool, 4);
 }
 
+/** @brief ThreadPoolLockFree enqueue attempts while its four workers take the tasks (diagnostic).
+ */
+PERF_TEST(ThreadPoolLockFree, EnqueueToLiveWorkers) {
+  UB_PERF_GUARD(perf);
+  ThreadPoolLockFree pool(4, 4096);
+  measureEnqueueToLiveWorkers(perf, pool, 4);
+}
+
 /** @brief ThreadPoolLockFree time from an enqueue to the task starting on a sleeping worker. */
 PERF_TEST(ThreadPoolLockFree, WakeLatency) {
   UB_PERF_GUARD(perf);
@@ -891,6 +1052,34 @@ PERF_TEST(ThreadPoolLockFree, DrainFourWorkers) {
   UB_PERF_GUARD(perf);
   ThreadPoolLockFree pool(4, drainTasks(perf, 4));
   measureDrain(perf, pool, 4);
+}
+
+/** @brief ThreadPoolLockFree threadsRunning() with one parked worker. */
+PERF_TEST(ThreadPoolLockFree, InFlightQueryIdleOneWorker) {
+  UB_PERF_GUARD(perf);
+  ThreadPoolLockFree pool(1);
+  measureInFlightQueryIdle(perf, pool, 1);
+}
+
+/** @brief ThreadPoolLockFree threadsRunning() with four parked workers. */
+PERF_TEST(ThreadPoolLockFree, InFlightQueryIdleFourWorkers) {
+  UB_PERF_GUARD(perf);
+  ThreadPoolLockFree pool(4);
+  measureInFlightQueryIdle(perf, pool, 4);
+}
+
+/** @brief ThreadPoolLockFree threadsRunning() with sixteen parked workers. */
+PERF_TEST(ThreadPoolLockFree, InFlightQueryIdleSixteenWorkers) {
+  UB_PERF_GUARD(perf);
+  ThreadPoolLockFree pool(16);
+  measureInFlightQueryIdle(perf, pool, 16);
+}
+
+/** @brief ThreadPoolLockFree threadsRunning() while four workers start and finish tasks. */
+PERF_TEST(ThreadPoolLockFree, InFlightQueryBusyFourWorkers) {
+  UB_PERF_GUARD(perf);
+  ThreadPoolLockFree pool(4);
+  measureInFlightQueryBusy(perf, pool, 4);
 }
 
 /**
