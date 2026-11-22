@@ -125,9 +125,15 @@ ApexExecutive::publishLibrarySwap(std::uint32_t fullUid, SystemComponentBase& ol
                                   SystemComponentBase& newComp) noexcept {
   const std::uint64_t ASKED_NS = apex::helpers::cpu::getMonotonicNs();
 
-  // Hand the swap to the task thread and wait for it.
+  // Hand the swap to the task thread and wait for it. Once that thread
+  // has ended nothing publishes, and the swap is refused at once.
   {
     std::lock_guard lock(swapMutex_);
+    if (swapClosed_) {
+      LibrarySwapOutcome closed{};
+      closed.status = static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT);
+      return closed;
+    }
     swap_ = LibrarySwap{};
     swap_.phase = LibrarySwap::Phase::PENDING;
     swap_.fullUid = fullUid;
@@ -146,8 +152,10 @@ ApexExecutive::publishLibrarySwap(std::uint32_t fullUid, SystemComponentBase& ol
 
   std::unique_lock lock(swapMutex_);
   const bool DONE =
-      cvSwapDone_.wait_for(lock, std::chrono::nanoseconds(librarySwapWaitNs()),
-                           [this]() { return swap_.phase == LibrarySwap::Phase::DONE; });
+      cvSwapDone_.wait_for(
+          lock, std::chrono::nanoseconds(librarySwapWaitNs()),
+          [this]() { return swap_.phase == LibrarySwap::Phase::DONE || swapClosed_; }) &&
+      swap_.phase == LibrarySwap::Phase::DONE;
   LibrarySwapOutcome out{};
   if (DONE) {
     out = swap_.outcome;

@@ -190,12 +190,13 @@ old one stays locked.
   pointer kept from an earlier lookup names the replaced instance.
 - **Compatibility.** The replacement must provide every registered data
   block (same category, name and size) and every scheduled task,
-  sequenced in a group at the same phase. Otherwise the reply is
+  sequenced in a group at the same phase, with the tasks of one sequence
+  in one group again. Otherwise the reply is
   `REGISTRY_FAILED` or `TASK_MISMATCH` and nothing was bound. Data
   blocks beyond the registered ones are not added: the registry is frozen.
 - **Wait.** ExternalIO hands the swap to TaskExecution and blocks until
-  it is published or two seconds pass (four clock periods when that is
-  longer). Command and telemetry I/O wait with it. TaskExecution takes
+  it is published, two seconds pass (four clock periods when that is
+  longer) or TaskExecution ends. Command and telemetry I/O wait with it. TaskExecution takes
   the swap after a cycle whose tasks finished within their frame,
   between cycles, or while paused.
 - **Refusal.** If the tasks do not settle within the wait, the reply is
@@ -223,9 +224,11 @@ whole command from its start (`total_us`), and
 A component lock stops new dispatches of the component's tasks. It does
 not wait for a task already running; the reload does.
 
-At shutdown the scheduler is stopped in the stage that drains tasks,
-once they have drained, while the components and loaded plugins are
-alive.
+At shutdown the scheduler is stopped by `run()` after its threads have
+been joined: TaskExecution, which alone dispatches and alone publishes a
+swap, has ended, and the components and loaded plugins are still alive.
+When TaskExecution ends, a reload still waiting for publication is
+refused with `NOT_QUIESCENT` at once.
 
 ## Usage
 
@@ -308,6 +311,13 @@ rate under test.
 | `posix/ptst/` | Delivered-cadence benchmark (period fidelity, jitter tail,       | No (manual)  |
 |               | cumulative drift vs the deadline grid, wake lateness) at the     |              |
 |               | rate `CADENCE_HZ` selects                                        |              |
+
+`posix/ptst/` also holds `ExecutiveTaskLoop_PTEST`: the task thread's
+own CPU time per cycle (`CLOCK_THREAD_CPUTIME_ID`, read once per cycle),
+with nothing scheduled and with one registered component's no-work task
+dispatched every cycle, and the task runs delivered in the measured
+window. `TASKLOOP_CYCLES` (default 1000), `TASKLOOP_WARMUP` (100) and
+`TASKLOOP_HZ` (100) size a run; `TASKLOOP_CSV` appends every sample.
 
 The dtst and ptst tiers boot a real `ApexExecutive` (config-less CLI
 boot, cycle-target shutdown) and assert wall-clock spans, so they run

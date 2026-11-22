@@ -418,6 +418,14 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
     }
   }
 
+  // No swap is published from here on: a caller waiting for one is told
+  // now instead of at the end of its wait.
+  {
+    std::lock_guard lock(swapMutex_);
+    swapClosed_ = true;
+  }
+  cvSwapDone_.notify_all();
+
   sysLog_->info(label(), fmt::format("Task execution stopped ({} cycles)",
                                      taskState_.cycles.load(std::memory_order_acquire)));
   p.set_value(static_cast<uint8_t>(Status::SUCCESS));

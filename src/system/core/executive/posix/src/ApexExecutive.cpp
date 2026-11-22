@@ -1037,6 +1037,19 @@ RunResult ApexExecutive::run() noexcept {
     }
   }
 
+  // Stop the scheduler here. The task thread, which alone dispatches and
+  // alone publishes a library swap, has been joined, so the entries the
+  // stop reads can no longer change; and the application's components and
+  // the loaded plugins are still alive, so the sequence counters the stop
+  // writes to release waiters still exist. Left to the scheduler's
+  // destructor, the stop would run after both were destroyed. With a task
+  // still running the stop would block, so that case stays with the
+  // destructor.
+  if (!scheduler_.threadsRunning()) {
+    scheduler_.shutdown();
+    sysLog_->info(label(), "Scheduler stopped");
+  }
+
   sysLog_->info(label(), "System shutdown completed");
 
   // CRITICAL: Flush all logs to disk before exit

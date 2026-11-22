@@ -698,9 +698,9 @@ private:
   /**
    * @brief Hand a swap to the task thread and wait for its outcome.
    *
-   * The caller blocks until the swap is published or librarySwapWaitNs()
-   * passes; a swap not taken by then is withdrawn and reported
-   * NOT_QUIESCENT.
+   * The caller blocks until the swap is published, librarySwapWaitNs()
+   * passes or the task thread ends; a swap not taken by then is
+   * withdrawn and reported NOT_QUIESCENT.
    * @note External I/O thread only: the task thread cannot wait for itself.
    */
   [[nodiscard]] LibrarySwapOutcome
@@ -726,6 +726,7 @@ private:
   std::condition_variable cvSwapDone_{}; ///< Signalled when swap_ reaches DONE.
   LibrarySwap swap_{};                   ///< The one swap in hand-over.
   std::atomic<bool> swapPending_{false}; ///< swap_ is PENDING; the task thread reads it.
+  bool swapClosed_{false};               ///< The task thread has ended; guarded by swapMutex_.
   std::atomic<bool> swapKick_{false};    ///< Wakes a waiting task thread for one attempt.
   /// Target of a RELOAD_LIBRARY that arrived on the task thread and waits
   /// for the external I/O thread to run it.

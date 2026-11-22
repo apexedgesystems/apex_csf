@@ -920,3 +920,43 @@ TEST_F(ReloadRouteTest, ReloadFromAnActionIsPreparedOffTheTaskThread) {
       << "the replacement's task is not being dispatched";
   EXPECT_EQ(inspectedInstance(), PLUGIN_NO);
 }
+
+/**
+ * @test A shutdown that arrives while a reload waits for publication ends
+ *       the wait: the reload is refused whole, and the scheduler is
+ *       stopped only after the task thread, which publishes, has ended.
+ */
+TEST_F(ReloadRouteTest, ShutdownWhileASwapWaitsRefusesItWhole) {
+  constexpr std::size_t LINKED_NO = 1;
+  constexpr std::size_t REFUSED_NO = 2;
+  ASSERT_NO_FATAL_FAILURE(bankPlugin("ExecutiveTestPlugin_Reload.so"));
+  ASSERT_NO_FATAL_FAILURE(holdARunOf(LINKED_NO));
+  ASSERT_NO_FATAL_FAILURE(lockTarget());
+  ASSERT_NE(sendReload(), 0u);
+  ASSERT_TRUE(waitFor([&]() { return swapLogCount("RELOAD_LIBRARY_INIT_OK") == 1U; }))
+      << slurp(swapLog());
+
+  // With the run still held, no settled point comes; the shutdown ends
+  // the task thread, and with it the swap's chance of being published.
+  exec_->shutdown();
+  EXPECT_TRUE(waitFor([&]() { return swapLogCount("reason=not_quiescent") == 1U; }))
+      << slurp(swapLog());
+  EXPECT_TRUE(waitFor([&]() { return probe_.destroyed[REFUSED_NO].load(); }))
+      << "the refused replacement is still alive";
+  EXPECT_EQ(probe_.entered[REFUSED_NO].load(), 0U);
+
+  release();
+  runner_.join();
+  EXPECT_EQ(swapLogCount("RELOAD_LIBRARY_OK"), 0U);
+  EXPECT_FALSE(probe_.destroyed[LINKED_NO].load());
+  EXPECT_FALSE(probe_.destroyedInTask[REFUSED_NO].load());
+
+  // The scheduler's stop reads the entries a publication writes, so it
+  // comes after the thread that publishes.
+  const std::string SYSTEM_LOG = slurp(fsRoot_ / "system.log");
+  const auto TASKS_ENDED = SYSTEM_LOG.find("Task execution stopped");
+  const auto SCHEDULER_STOPPED = SYSTEM_LOG.find("Scheduler stopped");
+  ASSERT_NE(TASKS_ENDED, std::string::npos) << SYSTEM_LOG;
+  ASSERT_NE(SCHEDULER_STOPPED, std::string::npos) << SYSTEM_LOG;
+  EXPECT_LT(TASKS_ENDED, SCHEDULER_STOPPED);
+}
