@@ -1,0 +1,69 @@
+# ci-classify.py's contract: for a set of changed paths, the decisions that
+# must be true. One case per line: <decisions> | <paths>, `-` for none.
+# Run by `make check-ci-classify`.
+
+# --- nothing to run but lint ---------------------------------------------------
+-                       | README.md
+-                       | docs/architecture/overview.rst
+
+# --- C++ -----------------------------------------------------------------------
+cpp                     | src/system/core/executive/posix/src/ApexExecutive.cpp
+cpp                     | demos/apex_hil_demo/exec/src/main.cpp
+cpp                     | apps/template_app/exec/CMakeLists.txt
+cpp                     | cmake/apex/Packaging.cmake
+cpp                     | CMakeLists.txt
+cpp                     | CMakePresets.json
+# A path is judged by the first rule it meets: a README under src/ is a src/
+# path before it is a Markdown file.
+cpp                     | src/system/core/executive/README.md
+
+# --- contracts with more than one side -------------------------------------------
+cpp rust                | compat/tprm/vectors/basic.toml
+cpp rust                | src/sim/models/foo/foo_data.toml
+cpp rust                | src/sim/models/foo/inc/.auto/FooData.hpp
+
+# --- tools, by language ----------------------------------------------------------
+rust                    | tools/build/rust/apex-build-tools/src/bin/cfg2bin.rs
+rust                    | tools/ops/rust/apex-ops-tools/src/bin/upx_tool.rs
+rust                    | tools/analysis/rust/apex-analysis-tools/src/bin/rdat_tool.rs
+py                      | tools/ops/py/apex_ops/src/apex_ops/client.py
+py                      | tools/analysis/py/apex_analysis/tests/test_plot.py
+py                      | demos/apex_action_demo/test/test_checkout_reader.py
+py                      | demos/apex_horizon_demo/rover_mcu/test/test_rover_ring_probe.py
+cpp py                  | demos/apex_hil_demo/scripts/checkout.py
+cpp py                  | demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py
+sh                      | tools/ops/sh/bin/ops_sdk_package.sh
+sh docker               | tools/build/sh/package-tools.sh
+
+# --- what the gate images are built from -----------------------------------------
+rust docker             | tools/Cargo.lock
+rust docker             | tools/Cargo.toml
+rust docker             | tools/ops/rust/apex-ops-tools/Cargo.toml
+py docker               | tools/uv.lock
+py docker               | tools/pyproject.toml
+py docker               | tools/ops/py/apex_ops/pyproject.toml
+cpp rust py sh docker   | ExternalDependencies.cmake
+cpp rust py sh docker   | docker/base.Dockerfile
+cpp rust py sh docker   | docker/dev/cpu.Dockerfile
+cpp rust py sh docker   | docker/dev/cuda.Dockerfile
+cpp rust py sh docker   | docker-compose.yml
+docker                  | tools/build/sh/bake-external-deps.sh
+docker                  | tools/build/py/bin/gen-platform-consumers.py
+
+# --- leaf images: built after the merge, no gate runs in them --------------------
+-                       | docker/dev/rpi.Dockerfile
+-                       | docker/dev/stm32.Dockerfile
+
+# --- build and CI infrastructure, and anything unknown: everything ---------------
+cpp rust py sh          | .github/workflows/ci.yml
+cpp rust py sh          | mk/test.mk
+cpp rust py sh          | docker/builder.Dockerfile
+cpp rust py sh          | docker-compose.ci.yml
+cpp rust py sh          | Makefile
+cpp rust py sh          | some_new_top_level_dir/file.txt
+cpp rust py sh          | -
+
+# --- several paths: the union ----------------------------------------------------
+cpp rust                | README.md src/a.cpp tools/build/rust/apex-tprm/src/lib.rs
+cpp py sh               | cmake/apex/README.md cmake/apex/Packaging.cmake tools/ops/sh/bin/ops_sdk_package.sh tools/ops/py/apex_ops/src/apex_ops/target_gen.py
+cpp rust py sh docker   | docs/x.md tools/ops/rust/apex-ops-tools/Cargo.toml mk/release.mk

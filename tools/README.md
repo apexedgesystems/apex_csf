@@ -22,9 +22,10 @@ tools/
   build/
     rust/{apex-tprm, apex-build-tools}/   cfg2bin, tprm_pack, cdef_gen, apex_data_gen
     sh/                                   the image bake, the cross setup scripts, the tools packager
-    py/bin/                               gen-platform-consumers.py (a script, not a package)
+    py/bin/                               gen-platform-consumers.py, ci-classify.py (scripts, not a package)
     proto/apex/options.proto              the proto profile cdef_gen reads
     fixtures/check-data-db/               the data-db gate's contract fixtures
+    fixtures/ci-classify/                 the CI change classifier's cases
   ops/
     rust/apex-ops-tools/                  tprm_template, upx_tool, serial_dev_checker, serial_dev_tester
     py/apex_ops/                          ops-deck, zenith-target; the APROTO client and protocol

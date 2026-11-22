@@ -382,6 +382,18 @@ check-data-db-contract: tools-build
 .PHONY: cdef check-cdef check-data-db check-data-manifest-helper check-data-db-contract check-build-info check-manifest-headers
 .PHONY: check-bundle-packaging
 
+# The change classifier's contract: for a set of changed paths, which CI jobs
+# run and whether the gate images are rebuilt. The rules live in the script the
+# workflow calls; the cases beside the fixture name hold them to it. Runs on a
+# bare host (stock Python).
+CI_CLASSIFY := tools/build/py/bin/ci-classify.py
+CI_CLASSIFY_CASES := tools/build/fixtures/ci-classify/cases.txt
+
+check-ci-classify:
+	@python3 "$(CI_CLASSIFY)" --check "$(CI_CLASSIFY_CASES)"
+
+.PHONY: check-ci-classify
+
 # Tooling coverage (nightly). Each runs its tool test suite under coverage
 # instrumentation and emits a human-readable summary plus a machine report,
 # so the nightly leg both gates (tests still fail the job) and measures. The
