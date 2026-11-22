@@ -86,15 +86,37 @@ TEST(BjtCommonEmitterTest, ComputeDcSuccessImpliesFixedPoint) {
   }
 }
 
-/** @test A DC solve that cannot converge returns false and keeps the cached operating point */
+/**
+ * @test A DC solve that fails returns false and leaves the operating point of the last
+ * solve that succeeded: a stage is solved, a current that is not a number is then stamped
+ * into its base through its public circuit, and the second solve fails with the first
+ * solve's three values still reported. A stage that has never been solved reports zeros.
+ */
 TEST(BjtCommonEmitterTest, ComputeDcFailureKeepsCachedOperatingPoint) {
-  // A supply that is not a number has no operating point to converge to.
-  BjtCommonEmitter amp(std::numeric_limits<double>::quiet_NaN(), 1e3, 1e6);
+  BjtCommonEmitter amp(12.0, 1e3, 1e6);
+  ASSERT_TRUE(amp.computeDC());
+  const double VB = amp.baseVoltage();
+  const double VC = amp.collectorVoltage();
+  const double IC = amp.collectorCurrent();
+  ASSERT_GT(VB, 0.6);
+  ASSERT_GT(VC, 10.0);
+  ASSERT_GT(IC, 1e-3);
+
+  amp.circuit().addStamp([](auto& mna, double, const std::vector<double>&) {
+    mna.addCurrent(1, 0, std::numeric_limits<double>::quiet_NaN());
+  });
 
   EXPECT_FALSE(amp.computeDC());
-  EXPECT_DOUBLE_EQ(amp.collectorVoltage(), 0.0);
-  EXPECT_DOUBLE_EQ(amp.baseVoltage(), 0.0);
-  EXPECT_DOUBLE_EQ(amp.collectorCurrent(), 0.0);
+  EXPECT_DOUBLE_EQ(amp.baseVoltage(), VB);
+  EXPECT_DOUBLE_EQ(amp.collectorVoltage(), VC);
+  EXPECT_DOUBLE_EQ(amp.collectorCurrent(), IC);
+
+  // A supply that is not a number has no operating point to converge to.
+  BjtCommonEmitter unsolved(std::numeric_limits<double>::quiet_NaN(), 1e3, 1e6);
+  EXPECT_FALSE(unsolved.computeDC());
+  EXPECT_DOUBLE_EQ(unsolved.collectorVoltage(), 0.0);
+  EXPECT_DOUBLE_EQ(unsolved.baseVoltage(), 0.0);
+  EXPECT_DOUBLE_EQ(unsolved.collectorCurrent(), 0.0);
 }
 
 /* ----------------------------- Determinism Tests ----------------------------- */

@@ -66,6 +66,39 @@ TEST(ZenerDiodeTest, CurrentMatchesReference) {
   }
 }
 
+/**
+ * @test Current and conductance follow the three breakdown parameters when they are off
+ * their defaults: a 3.3 V and a 12 V Zener, and the default 5.1 V one with a sharper and a
+ * softer knee. Reference values are the model equation in 50-digit arithmetic, and the
+ * central difference of that current for the conductance.
+ */
+TEST(ZenerDiodeTest, CurrentAndConductanceFollowNondefaultBreakdownParameters) {
+  struct Row {
+    double v;
+    double vz;
+    double ibv;
+    double vbv;
+    double current;
+    double conductance;
+  };
+  const std::array<Row, 5> ROWS = {{
+      Row{-3.4, 3.3, 5e-3, 0.05, -0.03694528049466325, 0.7389056099423253},
+      Row{-3.2, 3.3, 5e-3, 0.05, -0.0006766764161930635, 0.013533528324563504},
+      Row{-12.5, 12.0, 1e-3, 0.2, -0.012182493960713473, 0.06091246980377117},
+      Row{-5.5, 5.1, 1e-3, 0.05, -2.980957987041738, 59.619159744809174},
+      Row{-5.5, 5.1, 1e-3, 0.2, -0.0073890560989406506, 0.03694528049480719},
+  }};
+
+  for (const Row& row : ROWS) {
+    const ZenerDiodeParams PARAMS{.Vz = row.vz, .Ibv = row.ibv, .Vbv = row.vbv};
+    EXPECT_NEAR(ZenerDiode::current(row.v, PARAMS), row.current, 1e-11 * std::abs(row.current))
+        << "v = " << row.v << ", Vz = " << row.vz << ", Vbv = " << row.vbv;
+    // The reference conductance is a difference over 2 uV: good to 1e-9 of its size.
+    EXPECT_NEAR(ZenerDiode::conductance(row.v, PARAMS), row.conductance, 1e-9 * row.conductance)
+        << "v = " << row.v << ", Vz = " << row.vz << ", Vbv = " << row.vbv;
+  }
+}
+
 /** @test Current and conductance are continuous across the breakdown voltage */
 TEST(ZenerDiodeTest, ContinuousAcrossBreakdownVoltage) {
   const ZenerDiodeParams PARAMS;
