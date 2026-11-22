@@ -474,8 +474,8 @@ declare them where each language declares a tool:
 | Shell | the `# Requires:` line of the script's header, separated by commas: `# Requires: cp, sed, tar`             |
 
 `tools/REQUIREMENTS.txt` in the package lists each staged tool with its
-interpreter and these commands, and the package step prints the size each tool
-added. A tool with an interpreter or an every-run command to find is started by
+interpreter and these commands, and the package step prints each tool's staged
+payload size. A tool with an interpreter or an every-run command to find is started by
 a launcher in `tools/bin/<name>` (the tool itself is in `tools/libexec`): it
 looks for each one first and, when one is missing, prints one line naming it
 and exits 127 without starting the tool.
@@ -484,18 +484,31 @@ and exits 127 without starting the tool.
 requires, not the rest of its role's installed packages:
 
 - A requirement is followed with the extras it asks for (`dep[fast]` brings what
-  `dep` requires under `fast`); what only an unrequested extra requires stays
-  behind, and a requirement an active extra selects fails the package step when
-  it is not installed.
+  `dep` requires under `fast`), and its environment marker is decided for the
+  active extras and the `python3` that runs the build, which stands for the one
+  the library was installed for. What the marker selects has to be installed, or
+  the package step fails, and is carried; anything else stays behind, even when
+  it is installed for another tool.
 - The launcher finds `tools/lib/python` relative to itself and checks the
   interpreter before importing the tool: every `Requires-Python` clause of every
   carried distribution has to hold. A clause it cannot check (a pre-release
   version, `===`, more than three numbers) fails the package step.
-- The carried set is the one the installer chose on the build machine. Compiled
-  modules, or a requirement selected by the interpreter's version, tie the
-  package to the build's `python3` minor version, and the launcher holds the
-  target to it. A requirement selected by the machine fails the package step in
-  a cross build, and one selected by the kernel version always does.
+- A marker can come out differently on the target, so the launcher holds the
+  target to the build's answers. Each comparison of `python_version` or
+  `python_full_version` that selected a requirement has to give the target's
+  `python3` the answer it gave the build's; `tools/REQUIREMENTS.txt` lists them
+  in the form that is true (`python_version >= 3.10`). A requirement selected by
+  the Python implementation holds the target to the build's implementation, and
+  compiled modules tie the package to the build's `python3` minor version.
+  `os_name`, `sys_platform` and `platform_system` are the same on both sides.
+- A requirement whose selection the build cannot answer for the target fails
+  the package step: one that turns on `platform_machine` in a cross build, and
+  one that turns on the kernel version (`platform_release`, `platform_version`)
+  or on `implementation_version` in any build. So does a comparison outside what
+  is read: `~=`, `===` or `in` on a version, more than three numbers, or an
+  ordering of text.
+- An interpreter is read by its release numbers (major, minor, micro), so a
+  pre-release `python3` counts as its release.
 
 What cannot work on the target fails the build, not the user's first run:
 

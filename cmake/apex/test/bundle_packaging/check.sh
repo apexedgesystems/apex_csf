@@ -146,6 +146,8 @@ else
     note "good: the C++ tool's shared library is not in tools/libs"
   [ ! -e "$pkg/tools/lib/python/unrelated" ] ||
     note "good: the package carries a Python distribution only an unrequested extra requires"
+  [ ! -e "$pkg/tools/lib/python/fxold" ] ||
+    note "good: the package carries a Python distribution the tool does not require"
   [ ! -e "$pkg/tools/lib/python/bin" ] ||
     note "good: the package carries the build tree's console scripts"
   [ ! -e "$pkg/tools/libexec/fx-script.sh" ] ||
@@ -217,14 +219,50 @@ if packaged py-dependency-floor -DFX_DEP_PYTHON='>=3.99'; then
     "fx-py: needs python3 matching >=3.99; this machine has python ..." \
     "$(py_tool py-dependency-floor)"
 fi
-# A requirement selected by the interpreter's version ties the copy to the
-# version it was selected for.
-if packaged py-version-marker -DFX_DEP_REQUIRES='fxold; python_version < "3"'; then
-  grep -q '^fx-py (py): python3 [0-9.]* exactly (its requirements were selected for that version)' \
+# A requirement's marker is decided for the build's python3. One it does not
+# select stays behind even though it is installed (fxold allows no python3, so
+# carrying it would stop the tool), and the package says which answer its
+# requirements were selected for. python_version is the minor version alone:
+# no patch release of this python3 is above it.
+this_python=$(PATH=/usr/bin:/bin python3 -c 'import sys; print("%d.%d.%d" % sys.version_info[:3])')
+this_minor=${this_python%.*}
+next_python=$this_minor.$((${this_python##*.} + 1))
+if packaged py-version-marker -DFX_DEP_REQUIRES="fxold; python_version > \"$this_minor\""; then
+  [ ! -e "$scratch/py-version-marker/packages/FxBundle/tools/lib/python/fxold" ] ||
+    note "py-version-marker: the package carries a distribution whose marker does not select it"
+  grep -q "^fx-py (py): python3 matching >=3.8 and python_version <= $this_minor (its requirements were selected for that); carries fxdep 2.0, fxfast 1.0, fxpkg 1.0\$" \
     "$scratch/py-version-marker/packages/FxBundle/tools/REQUIREMENTS.txt" ||
-    note "py-version-marker: REQUIREMENTS.txt does not hold the tool to the build's python3 version"
+    note "py-version-marker: REQUIREMENTS.txt does not state the answer the requirements were selected for"
   expect_run "py-version-marker: the Python tool" 0 "fx-py with fxdep and fxfast as fx-py" \
     "$(py_tool py-version-marker)"
+fi
+
+# The launcher holds the target to that answer down to the patch release. The
+# requirement here is selected from the next patch release on, so it is left
+# out for this python3; a python3 that reports itself as that next release is
+# refused before the tool is imported.
+if packaged py-patch-marker -DFX_DEP_REQUIRES="fxnext; python_full_version > \"$this_python\""; then
+  expect_run "py-patch-marker: the Python tool on the build's python3" 0 \
+    "fx-py with fxdep and fxfast as fx-py" "$(py_tool py-patch-marker)"
+  # Called as python3 -c <program> <arguments>, like the launcher calls it.
+  mkdir "$scratch/next-patch"
+  cat >"$scratch/next-patch/python3" <<'SHIM'
+#!/bin/sh
+program=$2
+shift 2
+PATH=/usr/bin:/bin
+exec python3 -c '
+import sys
+info = sys.version_info
+sys.version_info = info[:2] + (info[2] + 1,) + tuple(info[3:])
+sys.version = "%d.%d.%d (fixture)" % sys.version_info[:3]
+exec(sys.argv.pop(1))
+' "$program" "$@"
+SHIM
+  chmod +x "$scratch/next-patch/python3"
+  expect_run "py-patch-marker: the Python tool on the next patch release" 1 \
+    "fx-py: needs python3 matching >=3.8 and python_full_version <= $this_python (its requirements were selected for that); this machine has python $next_python" \
+    env PATH="$scratch/next-patch:/usr/bin:/bin" "$(py_tool py-patch-marker)"
 fi
 
 # What the launcher could not check, or the build cannot know, fails the
@@ -243,13 +281,21 @@ else
   show "$scratch/py-kernel-marker.cfg.log"
 fi
 
-# A requirement an active extra selects has to be installed.
+# A requirement an active extra selects has to be installed, and so has one
+# selected by an active extra together with the build's python3.
 if configure py-missing-extra -DCASE=good; then
   rm -r "$scratch/py-missing-extra/pylib/fxfast-1.0.dist-info"
   expect_package_error py-missing-extra 'tool fx-py cannot be staged' 'fxdep requires fxfast'
 else
   note "py-missing-extra: configure failed"
   show "$scratch/py-missing-extra.cfg.log"
+fi
+if configure py-missing-selected -DCASE=good \
+  -DFX_DEP_REQUIRES='fxgone; extra == "fast" and python_version >= "3"'; then
+  expect_package_error py-missing-selected 'tool fx-py cannot be staged' 'fxdep requires fxgone'
+else
+  note "py-missing-selected: configure failed"
+  show "$scratch/py-missing-selected.cfg.log"
 fi
 
 # ------------------------------------------------------------------------------
@@ -287,4 +333,4 @@ if ! configure baremetal-plain -DCASE=baremetal-plain; then
 fi
 
 [ "$fail" -eq 0 ] || exit 1
-printf '[check-bundle-packaging] OK -- packages from an unbuilt tree; one tool of each kind runs from a copy elsewhere and a failing tool fails; a missing command, interpreter or python3 version stops a tool with one line; extras are followed; foreign-architecture tools and unreadable metadata fail the package step; unknown, library and bare-metal tools fail the configure\n'
+printf '[check-bundle-packaging] OK -- packages from an unbuilt tree; one tool of each kind runs from a copy elsewhere and a failing tool fails; a missing command, interpreter or python3 version stops a tool with one line; extras and markers select what a Python tool carries; foreign-architecture tools and unreadable metadata fail the package step; unknown, library and bare-metal tools fail the configure\n'

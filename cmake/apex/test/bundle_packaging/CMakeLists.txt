@@ -20,7 +20,8 @@
 # architecture, and check.sh adds such a module to the generated Python library;
 # the package step must refuse both. FX_PKG_PYTHON and FX_DEP_PYTHON set the
 # Requires-Python of the Python tool's distribution and of its dependency, and
-# FX_DEP_REQUIRES adds one requirement to the dependency.
+# FX_DEP_REQUIRES adds one requirement to the dependency, which check.sh uses
+# to put a marker in front of a distribution that is or is not installed.
 # ==============================================================================
 
 cmake_minimum_required(VERSION 3.24)
@@ -76,9 +77,11 @@ set(FX_BIN_FILE
     CACHE FILEPATH "The prebuilt executable registered as fx-bin"
 )
 # An installed Python library, written the way an installer leaves one: fxpkg
-# declares the console script fx-py and requires fxdep with its `fast` extra,
-# which brings fxfast. `unrelated` is installed beside them and required only by
-# an extra nothing asks for, so a bundle must not carry it.
+# declares the console script fx-py and requires fxdep with two of its extras,
+# written with a space between them; `fast` brings fxfast. `unrelated` is
+# installed beside them and required only by an extra nothing asks for, and
+# `fxold` is installed for some other tool and allows no python3 at all, so a
+# bundle must carry neither.
 set(FX_PKG_PYTHON
     ">=3.8"
     CACHE STRING "Requires-Python of the Python tool's distribution"
@@ -103,10 +106,11 @@ file(WRITE "${FX_PYLIB}/fxpkg/__init__.py"
 file(WRITE "${FX_PYLIB}/fxdep/__init__.py" "import fxfast\n\nNAME = 'fxdep and ' + fxfast.NAME\n")
 file(WRITE "${FX_PYLIB}/fxfast/__init__.py" "NAME = 'fxfast'\n")
 file(WRITE "${FX_PYLIB}/unrelated/__init__.py" "")
+file(WRITE "${FX_PYLIB}/fxold/__init__.py" "")
 file(
   WRITE "${FX_PYLIB}/fxpkg-1.0.dist-info/METADATA"
   "Metadata-Version: 2.1\nName: fxpkg\nVersion: 1.0\nRequires-Python: ${FX_PKG_PYTHON}\n"
-  "Provides-Extra: plots\nRequires-Dist: fxdep[fast]\n"
+  "Provides-Extra: plots\nRequires-Dist: fxdep[slow, fast]\n"
   "Requires-Dist: unrelated; extra == \"plots\"\nRequires-Dist: fxextra; extra == \"plots\"\n"
 )
 file(WRITE "${FX_PYLIB}/fxpkg-1.0.dist-info/entry_points.txt"
@@ -116,9 +120,11 @@ file(WRITE "${FX_PYLIB}/fxpkg-1.0.dist-info/RECORD"
      "fxpkg/__init__.py,,\nfxpkg-1.0.dist-info/METADATA,,\n"
      "fxpkg-1.0.dist-info/entry_points.txt,,\nfxpkg-1.0.dist-info/RECORD,,\nbin/fx-py,,\n"
 )
-file(WRITE "${FX_PYLIB}/fxdep-2.0.dist-info/METADATA"
-     "Metadata-Version: 2.1\nName: fxdep\nVersion: 2.0\nRequires-Python: ${FX_DEP_PYTHON}\n"
-     "Provides-Extra: fast\nRequires-Dist: fxfast; extra == \"fast\"\n${_dep_requires}"
+file(
+  WRITE "${FX_PYLIB}/fxdep-2.0.dist-info/METADATA"
+  "Metadata-Version: 2.1\nName: fxdep\nVersion: 2.0\nRequires-Python: ${FX_DEP_PYTHON}\n"
+  "Provides-Extra: slow\nProvides-Extra: fast\nRequires-Dist: fxfast; extra == \"fast\"\n"
+  "${_dep_requires}"
 )
 file(WRITE "${FX_PYLIB}/fxdep-2.0.dist-info/RECORD"
      "fxdep/__init__.py,,\nfxdep-2.0.dist-info/METADATA,,\nfxdep-2.0.dist-info/RECORD,,\n"
@@ -135,6 +141,12 @@ file(WRITE "${FX_PYLIB}/unrelated-3.0.dist-info/METADATA"
 file(
   WRITE "${FX_PYLIB}/unrelated-3.0.dist-info/RECORD"
   "unrelated/__init__.py,,\nunrelated-3.0.dist-info/METADATA,,\nunrelated-3.0.dist-info/RECORD,,\n"
+)
+file(WRITE "${FX_PYLIB}/fxold-0.1.dist-info/METADATA"
+     "Metadata-Version: 2.1\nName: fxold\nVersion: 0.1\nRequires-Python: <3\n"
+)
+file(WRITE "${FX_PYLIB}/fxold-0.1.dist-info/RECORD"
+     "fxold/__init__.py,,\nfxold-0.1.dist-info/METADATA,,\nfxold-0.1.dist-info/RECORD,,\n"
 )
 
 # The prebuilt tool declares a command every run needs and one a single use

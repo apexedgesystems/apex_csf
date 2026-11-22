@@ -40,7 +40,9 @@ REQUIREMENTS.txt in <dest> lists what the target must provide for each tool.
 import argparse
 import importlib.metadata
 import json
+import operator
 import os
+import platform
 import re
 import shutil
 import stat
@@ -108,28 +110,51 @@ def normalize(name):
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-# How a requirement whose environment marker names a variable is decided for
-# the target. The installer evaluated every marker on the build machine, and
-# the distributions it left in the library are that decision; each class says
-# what the target has to share with the build machine for it to hold.
+# How an environment marker's variables are read. A requirement's marker is
+# evaluated for the python3 that runs this script, which stands for the
+# interpreter the library was installed for; each class says what the target
+# has to share with it for the answer to hold there too.
 MARKER_VARIABLES = {
-    # The extras this closure activates; evaluated here.
+    # The extras this closure activates.
     "extra": "extra",
-    # The interpreter: the package then runs on the build's version only.
-    "python_version": "interpreter",
-    "python_full_version": "interpreter",
-    "implementation_version": "interpreter",
+    # The interpreter's release numbers. The launcher checks that each
+    # comparison read here gives the target the answer it gave the build.
+    "python_version": "version",
+    "python_full_version": "version",
+    # The launcher holds the target to the build's implementation.
     "platform_python_implementation": "implementation",
     "implementation_name": "implementation",
     # Linux on both sides.
-    "os_name": "same",
-    "sys_platform": "same",
-    "platform_system": "same",
-    # Holds for a package of the build machine's own architecture only.
+    "os_name": "linux",
+    "sys_platform": "linux",
+    "platform_system": "linux",
+    # Known for a package of the build machine's own architecture only.
     "platform_machine": "machine",
     # The target's kernel is unknown to the build.
     "platform_release": "kernel",
     "platform_version": "kernel",
+    # Not read: a launcher checks the interpreter's version, not its
+    # implementation's.
+    "implementation_version": "implementation-version",
+}
+
+MARKER_TEXT = {
+    "platform_python_implementation": platform.python_implementation,
+    "implementation_name": lambda: sys.implementation.name,
+    "os_name": lambda: os.name,
+    "sys_platform": lambda: sys.platform,
+    "platform_system": platform.system,
+    "platform_machine": platform.machine,
+}
+
+# Why a requirement whose marker the build cannot answer is refused, by class.
+MARKER_UNKNOWN = {
+    "kernel": "depends on the kernel version of the machine it runs on, which the build "
+    "does not know",
+    "machine": "depends on the machine, and its library was installed on another "
+    "architecture than the package's",
+    "implementation-version": "depends on the version of the Python implementation, which "
+    "a launcher does not check",
 }
 
 MARKER_TOKEN = re.compile(
@@ -141,10 +166,70 @@ REQUIREMENT_HEAD = re.compile(
     r"\s*([A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?)\s*(?:\[([^\]]*)\])?"
 )
 COMPARISONS = ("===", "==", "~=", "!=", "<=", ">=", "<", ">")
+COMPARE = {
+    "==": operator.eq,
+    "!=": operator.ne,
+    "<": operator.lt,
+    "<=": operator.le,
+    ">": operator.gt,
+    ">=": operator.ge,
+}
+# The comparison that holds exactly when the given one does not, and the one
+# that says the same with its two sides exchanged.
+OPPOSITE = {"<": ">=", ">=": "<", "<=": ">", ">": "<=", "==": "!=", "!=": "=="}
+EXCHANGED = {"<": ">", ">": "<", "<=": ">=", ">=": "<=", "==": "==", "!=": "!="}
+RELEASE = re.compile(r"(\d+(?:\.\d+){0,2})(\.\*|(?:a|b|rc)\d+)?")
+
+
+def release_terms(comparison, version, marker=False):
+    """What `<comparison><version>` asks of an interpreter's (major, minor, micro).
+
+    Returns [(length, comparison, numbers)]: every term has to hold, and one
+    holds when the first <length> of the interpreter's numbers compare so with
+    <numbers>. Returns None for a clause outside what is read here: a version
+    is up to three numbers, with a trailing .* for == and != only, and ~=
+    takes at least two.
+
+    A marker (not a Requires-Python clause) may also order the interpreter
+    against a pre-release such as 3.11.0a7, which sorts just before its
+    release; in exchange it has no ~=, so that every comparison a marker makes
+    has an opposite. An interpreter is read by its release numbers alone, so a
+    pre-release interpreter counts as its release.
+    """
+    match = RELEASE.fullmatch(version)
+    if match is None or comparison not in COMPARE and comparison != "~=":
+        return None
+    parts = tuple(int(n) for n in match.group(1).split("."))
+    full = parts + (0,) * (3 - len(parts))
+    suffix = match.group(2) or ""
+    if suffix == ".*":
+        return [(len(parts), comparison, parts)] if comparison in ("==", "!=") else None
+    if suffix:
+        if not marker or comparison not in ("<", "<=", ">", ">="):
+            return None
+        return [(3, "<" if comparison in ("<", "<=") else ">=", full)]
+    if comparison == "~=":
+        if marker or len(parts) < 2:
+            return None
+        return [(3, ">=", full), (len(parts) - 1, "==", parts[:-1])]
+    return [(3, comparison, full)]
+
+
+def terms_hold(terms, numbers):
+    """Whether an interpreter with these (major, minor, micro) meets every term."""
+    return all(COMPARE[comparison](numbers[:length], want) for length, comparison, want in terms)
+
+
+def terms_check(terms, subject="v"):
+    """The same test as Python text for a launcher, over the name <subject>."""
+    return " and ".join(
+        "%s %s %r" % (subject if length == 3 else "%s[:%d]" % (subject, length), comparison, want)
+        for length, comparison, want in terms
+    )
 
 
 def any3(values):
-    """Three-valued or: None stands for 'the installer's environment decided'."""
+    """Three-valued or: None stands for 'not answered'."""
     return True if True in values else (None if None in values else False)
 
 
@@ -153,13 +238,15 @@ def all3(values):
     return False if False in values else (None if None in values else True)
 
 
-def marker_value(text, extra, classes):
-    """Evaluate an environment marker for one active extra ('' for none).
+def parse_marker(text):
+    """Read an environment marker into a tree of its comparisons.
 
-    Returns True or False when the extra alone decides the marker, and None
-    when it also depends on the environment; the classes of the variables it
-    names (MARKER_VARIABLES) are added to <classes>. A marker outside the
-    grammar raises ValueError.
+    A node is ("and" | "or", [nodes]), ("extra", name, whether it has to be
+    active), ("version", variable, comparison, version) with the variable on
+    the left, ("text", variable, comparison, quoted string, whether the
+    variable is on the left), or ("unknown", class) for a variable the build
+    cannot answer for the target. A marker outside the grammar, or a comparison
+    outside what is read here, raises ValueError.
     """
     tokens = []
     position = 0
@@ -192,71 +279,98 @@ def marker_value(text, extra, classes):
             tokens.pop()
             return value
         left = operand()
-        kind, operator = tokens.pop() if tokens else (None, None)
-        if (kind, operator) == ("word", "not") and peek() == ("word", "in"):
+        kind, compare = tokens.pop() if tokens else (None, None)
+        if (kind, compare) == ("word", "not") and peek() == ("word", "in"):
             tokens.pop()
-            operator = "not in"
-        elif not (kind == "op" and operator in COMPARISONS) and (kind, operator) != ("word", "in"):
-            raise ValueError("expected a comparison, not %r" % (operator,))
+            compare = "not in"
+        elif not (kind == "op" and compare in COMPARISONS) and (kind, compare) != ("word", "in"):
+            raise ValueError("expected a comparison, not %r" % (compare,))
         right = operand()
-        names = [value for kind, value in (left, right) if kind == "variable"]
-        if "extra" in names:
-            literal = [value for kind, value in (left, right) if kind == "text"]
-            if operator not in ("==", "!=") or len(literal) != 1:
+        if (left[0] == "variable") == (right[0] == "variable"):
+            raise ValueError("a comparison is between one marker variable and one quoted string")
+        first = left[0] == "variable"
+        variable, literal = (left[1], right[1]) if first else (right[1], left[1])
+        reads = MARKER_VARIABLES[variable]
+        if reads == "extra":
+            if compare not in ("==", "!="):
                 raise ValueError("an extra is compared with == or != against one name")
-            return (normalize(literal[0]) == extra) == (operator == "==")
-        classes.update(MARKER_VARIABLES[name] for name in names)
-        return None
+            return "extra", normalize(literal), compare == "=="
+        if reads in MARKER_UNKNOWN and reads != "machine":
+            return "unknown", reads
+        if reads == "version":
+            if not first:
+                compare = None if literal.endswith(".*") else EXCHANGED.get(compare)
+            if release_terms(compare, literal, marker=True) is None:
+                raise ValueError(
+                    "%s is read with <, <=, >, >=, == or != against up to three numbers, or "
+                    "ordered against a pre-release of them" % variable
+                )
+            return "version", variable, compare, literal
+        if compare not in ("==", "!=", "in", "not in"):
+            raise ValueError("%s is text, read with ==, !=, in or not in" % variable)
+        return "text", variable, compare, literal, first
 
     def conjunction():
         values = [comparison()]
         while peek() == ("word", "and"):
             tokens.pop()
             values.append(comparison())
-        return all3(values)
+        return ("and", values) if len(values) > 1 else values[0]
 
     def alternatives():
         values = [conjunction()]
         while peek() == ("word", "or"):
             tokens.pop()
             values.append(conjunction())
-        return any3(values)
+        return ("or", values) if len(values) > 1 else values[0]
 
-    value = alternatives()
+    tree = alternatives()
     if tokens:
         raise ValueError("unexpected %r" % (tokens[-1][1],))
-    return value
+    return tree
 
 
-def read_requirement(requirement, extras):
-    """Read one Requires-Dist entry of a distribution whose active extras are <extras>.
+def marker_value(tree, extra, answer):
+    """Evaluate a marker tree for one active extra ('' for none).
 
-    Returns (name, extras it requests, verdict, marker classes). The verdict is
-    True when the requirement holds on every target, False when no active extra
-    selects it, and None when the installer's environment decided it.
+    <answer> gives a comparison with the environment its value: True, False,
+    or None when it is not answered. Every comparison is asked, whatever the
+    others gave.
     """
+    if tree[0] in ("and", "or"):
+        values = [marker_value(node, extra, answer) for node in tree[1]]
+        return all3(values) if tree[0] == "and" else any3(values)
+    if tree[0] == "extra":
+        return (tree[1] == extra) == tree[2]
+    return answer(tree)
+
+
+def read_requirement(requirement):
+    """Read one Requires-Dist entry: (name, extras it requests, marker tree or None)."""
     head, _, marker = requirement.partition(";")
     match = REQUIREMENT_HEAD.match(head)
     if match is None:
         raise ValueError("no distribution name")
-    name = normalize(match.group(1))
-    requested = {normalize(e) for e in (match.group(2) or "").split(",") if e.strip()}
-    if not marker.strip():
-        return name, requested, True, set()
-    classes = set()
-    verdict = any3([marker_value(marker, extra, classes) for extra in sorted(extras) or [""]])
-    return name, requested, verdict, classes
+    requested = {normalize(e.strip()) for e in (match.group(2) or "").split(",") if e.strip()}
+    return normalize(match.group(1)), requested, parse_marker(marker) if marker.strip() else None
 
 
 def python_closure(bundle, tool, lib, reference):
     """Find the distribution that provides console script <tool> and everything it requires.
 
-    Returns (owner, entry point value, [distributions], marker classes). The
-    closure follows each requirement with the extras it requests. A requirement
-    no active extra selects is left out even when it is installed; one that
-    holds on every target and is not installed is an error; one whose marker
-    names the environment is taken as the installer left it, and the classes
-    of what it names are returned so the launcher can hold the target to them.
+    Returns (owner, entry point value, [distributions], [version comparisons],
+    whether the implementation was asked). The closure follows each requirement
+    with the extras it requests, and decides each marker for the active extras
+    and the build's interpreter: a requirement the marker selects has to be
+    installed and is carried, and one it does not select is left out even when
+    it is installed, since a library holds what other tools need too.
+
+    A marker the extras alone decide holds on every target. For any other, each
+    comparison it makes with the interpreter's version is returned in the form
+    that is true for the build, as (variable, comparison, version), so the
+    launcher can hold the target to the same answers; so is whether it asked
+    for the implementation. A marker that turns on something the build cannot
+    answer for the target is an error.
     """
     by_name = {}
     owner = None
@@ -272,47 +386,76 @@ def python_closure(bundle, tool, lib, reference):
             "declares that console script" % (bundle, tool, lib)
         )
     refused = "bundle %s: tool %s cannot be staged: " % (bundle, tool)
-    build = elf_identity(os.path.realpath(sys.executable))
+    native = elf_identity(os.path.realpath(sys.executable)) == reference
+    numbers = {
+        "python_version": tuple(sys.version_info[:2]) + (0,),
+        "python_full_version": tuple(sys.version_info[:3]),
+    }
+    versions = set()
+    asked = set()
+
+    def answer(node):
+        if node[0] == "version":
+            _, variable, compare, version = node
+            holds = terms_hold(release_terms(compare, version, marker=True), numbers[variable])
+            versions.add((variable, compare if holds else OPPOSITE[compare], version))
+            return holds
+        reads = node[1] if node[0] == "unknown" else MARKER_VARIABLES[node[1]]
+        asked.add(reads)
+        if node[0] == "unknown" or (reads == "machine" and not native):
+            return None
+        _, variable, compare, literal, first = node
+        value = MARKER_TEXT[variable]()
+        left, right = (value, literal) if first else (literal, value)
+        if compare in ("in", "not in"):
+            return (left in right) == (compare == "in")
+        return (left == right) == (compare == "==")
+
     start = normalize(owner.metadata["Name"])
     active = {start: set()}
     queue = [start]
     held = set()
+    implementation = False
     while queue:
         name = queue.pop()
         for requirement in by_name[name].requires or []:
             try:
-                required, requested, verdict, classes = read_requirement(requirement, active[name])
+                required, requested, marker = read_requirement(requirement)
             except ValueError as error:
                 raise StageError(
                     refused + "cannot read %s's requirement %r: %s" % (name, requirement, error)
                 ) from None
-            if verdict is False:
-                continue
-            if "kernel" in classes:
-                raise StageError(
-                    refused + "%s's requirement %r depends on the kernel version of the machine "
-                    "it runs on, which the build does not know" % (name, requirement)
-                )
-            if "machine" in classes and build != reference:
-                raise StageError(
-                    refused + "%s's requirement %r depends on the machine, and %s was installed "
-                    "on another architecture than the package's" % (name, requirement, lib)
-                )
-            held |= classes & {"interpreter", "implementation"}
-            if required not in by_name:
-                if verdict is True:
+            extras = sorted(active[name]) or [""]
+            selected = marker is None or any3(
+                [marker_value(marker, extra, lambda node: None) for extra in extras]
+            )
+            if selected is None:
+                versions.clear()
+                asked.clear()
+                selected = any3([marker_value(marker, extra, answer) for extra in extras])
+                if selected is None:
                     raise StageError(
                         refused
-                        + "%s requires %s, which is not installed under %s" % (name, required, lib)
+                        + "%s's requirement %r %s"
+                        % (
+                            name,
+                            requirement,
+                            MARKER_UNKNOWN[sorted(asked & set(MARKER_UNKNOWN))[0]],
+                        )
                     )
+                held |= versions
+                implementation = implementation or "implementation" in asked
+            if not selected:
                 continue
+            if required not in by_name:
+                raise StageError(
+                    refused
+                    + "%s requires %s, which is not installed under %s" % (name, required, lib)
+                )
             if required not in active or not requested <= active[required]:
                 active.setdefault(required, set()).update(requested)
                 queue.append(required)
-    return owner, entry, [by_name[name] for name in sorted(active)], held
-
-
-SPECIFIER = re.compile(r"(~=|===|==|!=|<=|>=|<|>)\s*(\d+(?:\.\d+)*)(\.\*)?")
+    return owner, entry, [by_name[name] for name in sorted(active)], sorted(held), implementation
 
 
 def python_clauses(bundle, tool, dists):
@@ -321,42 +464,27 @@ def python_clauses(bundle, tool, dists):
     Returns [(clause text, expression over v)], where v is the interpreter's
     (major, minor, micro). Every clause of every distribution has to hold, so
     the launcher checks them all; the >= clauses are one clause, the highest,
-    and the rest follow once each in the order met. A clause this cannot turn
-    into a check is refused: versions are up to three numbers, with a trailing
-    .* for == and != only.
+    and the rest follow once each in the order met. A clause release_terms
+    does not read is refused.
     """
     floor = None
     clauses = {}
     for dist in dists:
         declared = dist.metadata.get("Requires-Python") or ""
         for clause in filter(None, (c.strip() for c in declared.split(","))):
-            match = SPECIFIER.fullmatch(clause)
-            operator = match.group(1) if match else None
-            parts = tuple(int(n) for n in match.group(2).split(".")) if match else ()
-            wildcard = bool(match and match.group(3))
-            if (
-                match is None
-                or operator == "==="
-                or len(parts) > 3
-                or (wildcard and operator not in ("==", "!="))
-                or (operator == "~=" and len(parts) < 2)
-            ):
+            match = re.fullmatch(r"(~=|===|==|!=|<=|>=|<|>)\s*(\S+)", clause)
+            terms = release_terms(match.group(1), match.group(2)) if match else None
+            if terms is None:
                 raise StageError(
                     "bundle %s: tool %s cannot be staged: %s declares Requires-Python %r, "
                     "and the launcher cannot check the clause %r"
                     % (bundle, tool, dist.metadata["Name"], declared, clause)
                 )
-            full = parts + (0,) * (3 - len(parts))
-            text = operator + match.group(2) + (".*" if wildcard else "")
-            if operator == ">=":
-                floor = max(floor or (full, text), (full, text))
-            elif wildcard:
-                clauses.setdefault(text, "v[:%d] %s %r" % (len(parts), operator, parts))
-            elif operator == "~=":
-                check = "v >= %r and v[:%d] == %r" % (full, len(parts) - 1, parts[:-1])
-                clauses.setdefault(text, check)
+            text = match.group(1) + match.group(2)
+            if match.group(1) == ">=":
+                floor = max(floor or (terms[0][2], text), (terms[0][2], text))
             else:
-                clauses.setdefault(text, "v %s %r" % (operator, full))
+                clauses.setdefault(text, terms_check(terms))
     lowest = [(floor[1], "v >= %r" % (floor[0],))] if floor else []
     return lowest + list(clauses.items())
 
@@ -398,7 +526,7 @@ def on_path(always, sometimes):
 
 def stage_python(bundle, tool, lib, dest, reference, always=(), sometimes=()):
     """Copy a Python tool's distributions to lib/python and write its launcher."""
-    owner, entry, dists, held = python_closure(bundle, tool, lib, reference)
+    owner, entry, dists, versions, implementation = python_closure(bundle, tool, lib, reference)
     module, _, func = entry.partition(":")
     if not re.fullmatch(r"[A-Za-z_][\w.]*", module) or not re.fullmatch(r"[A-Za-z_][\w.]*", func):
         raise StageError(
@@ -433,34 +561,42 @@ def stage_python(bundle, tool, lib, dest, reference, always=(), sometimes=()):
             shutil.copymode(src, dst)
             copied.append(dst)
 
-    # Which interpreters run this copy: every Requires-Python clause of every
-    # staged distribution, the build's own version when compiled modules or a
-    # version-dependent requirement tie the copy to it, and the build's
-    # implementation when a requirement was selected for it.
+    # Which interpreters run this copy: those every Requires-Python clause of
+    # every staged distribution allows, of the build's own version when the
+    # copy carries compiled modules, of the build's implementation when a
+    # requirement was selected by it, and for which each version comparison
+    # that selected a requirement gives the answer it gave the build.
     clauses = python_clauses(bundle, tool, [owner] + [d for d in dists if d is not owner])
     checks = [check for _, check in clauses]
-    here = "%d.%d" % sys.version_info[:2]
     needs = "python3"
-    if compiled or "interpreter" in held:
+    if compiled:
         checks.append("v[:2] == %r" % (tuple(sys.version_info[:2]),))
-        needs += " %s exactly (%s)" % (
-            here,
-            (
-                "it carries modules compiled for that version"
-                if compiled
-                else "its requirements were selected for that version"
-            ),
+        needs += " %d.%d exactly (it carries modules compiled for that version)" % (
+            sys.version_info[:2]
         )
-    if "implementation" in held:
+    if implementation:
         checks.append("sys.implementation.name == %s" % json.dumps(sys.implementation.name))
         needs += " (%s)" % sys.implementation.name
     if clauses:
         needs += " matching " + ", ".join(text for text, _ in clauses)
+    if versions:
+        checks += [
+            terms_check(
+                release_terms(compare, version, marker=True),
+                "v" if variable == "python_full_version" else "u",
+            )
+            for variable, compare, version in versions
+        ]
+        needs += " %s %s (its requirements were selected for that)" % (
+            "and" if clauses else "with",
+            ", ".join("%s %s %s" % held for held in versions),
+        )
 
     # The launcher hands this one-line program to python3 inside single
     # quotes, so the program itself carries none.
     code = (
         "import sys; lib = sys.argv.pop(1); sys.argv[0] = %s; v = sys.version_info[:3]; "
+        "u = v[:2] + (0,); "
         "(%s) or sys.exit(%s + sys.version.split()[0]); "
         "sys.path.insert(0, lib); from %s import %s as run; sys.exit(run())"
     ) % (
