@@ -29,7 +29,7 @@ External command/telemetry interface for bidirectional communication with ground
 | ----------------------- | ------------------------------------------- | ------- |
 | `InterfaceBase`         | Abstract socket management, RX/TX pipes     | Partial |
 | `ApexInterface`         | Concrete APROTO implementation with routing | Partial |
-| `BufferPool`            | Lock-free RT-safe buffer pool               | Yes     |
+| `BufferPool`            | Lock-free buffer pool                       | Depends |
 | `ComponentQueues`       | Per-component SPSC queue pairs              | Yes     |
 | `MessageBuffer`         | Zero-copy message buffer with refcount      | Yes     |
 | `ApexInterfaceTunables` | Configuration struct (host, port, framing)  | Yes     |
@@ -199,7 +199,7 @@ This separation enables:
 | `ApexInterfaceTunables.hpp`        | `ApexInterfaceTunables` | Configuration struct           |
 | `ComponentQueues.hpp`              | `ComponentQueues`       | Per-component queue pairs      |
 | `MessageBuffer.hpp`                | `MessageBuffer`         | Zero-copy message buffer       |
-| `BufferPool.hpp`                   | `BufferPool`            | RT-safe buffer pool            |
+| `BufferPool.hpp`                   | `BufferPool`            | Lock-free buffer pool          |
 | `InterfaceSocketConfiguration.hpp` | Config structs          | Socket endpoint config         |
 
 ---
@@ -255,7 +255,7 @@ The interface uses a zero-copy architecture with pointer-based queues:
 
 **MessageBuffer**: Actual-size allocation (not fixed 4KB) with APROTO metadata.
 
-**BufferPool**: Lock-free RT-safe buffer pool with pre-allocated buffers.
+**BufferPool**: Lock-free buffer pool with pre-allocated buffers. `acquire()` and `release()` take no lock and allocate nothing; like the queue under them they have no per-caller retry bound while other threads acquire or release.
 
 **Pointer-based queues**: `SPSCQueue<MessageBuffer*>` instead of copying large structs.
 

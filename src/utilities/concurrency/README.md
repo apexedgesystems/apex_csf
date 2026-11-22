@@ -412,14 +412,14 @@ public:
 
 #### RT-Safety
 
-| Method             | RT-Safe | Reason               |
-| ------------------ | ------- | -------------------- |
-| `LockFreeQueue()`  | No      | Allocates buffer     |
-| `~LockFreeQueue()` | No      | Deallocates buffer   |
-| `tryPush()`        | Yes     | Lock-free CAS loop   |
-| `tryPop()`         | Yes     | Lock-free CAS loop   |
-| `sizeApprox()`     | Yes     | Atomic loads         |
-| `capacity()`       | Yes     | Returns stored value |
+| Method             | RT-Safe | Reason                                                                                |
+| ------------------ | ------- | ------------------------------------------------------------------------------------- |
+| `LockFreeQueue()`  | No      | Allocates buffer                                                                      |
+| `~LockFreeQueue()` | No      | Deallocates buffer                                                                    |
+| `tryPush()`        | Depends | Lock-free, no allocation or syscall; no per-caller retry bound; runs `T`'s assignment |
+| `tryPop()`         | Depends | Lock-free, no allocation or syscall; no per-caller retry bound; runs `T`'s assignment |
+| `sizeApprox()`     | Yes     | Atomic loads                                                                          |
+| `capacity()`       | Yes     | Returns stored value                                                                  |
 
 #### Requirements
 
@@ -560,14 +560,14 @@ public:
 
 #### RT-Safety
 
-| Method            | RT-Safe | Reason                    |
-| ----------------- | ------- | ------------------------- |
-| `Semaphore()`     | Yes     | No allocation             |
-| `acquire()`       | No      | May block (futex wait)    |
-| `tryAcquire()`    | Yes     | Lock-free CAS loop        |
-| `tryAcquireFor()` | No      | Timed wait                |
-| `release()`       | Yes     | Atomic fetch_add + notify |
-| `count()`         | Yes     | Atomic load               |
+| Method            | RT-Safe | Reason                                        |
+| ----------------- | ------- | --------------------------------------------- |
+| `Semaphore()`     | Yes     | No allocation                                 |
+| `acquire()`       | No      | May block (futex wait)                        |
+| `tryAcquire()`    | Depends | Lock-free CAS loop, no per-caller retry bound |
+| `tryAcquireFor()` | No      | Timed wait                                    |
+| `release()`       | Yes     | Atomic fetch_add + notify                     |
+| `count()`         | Yes     | Atomic load                                   |
 
 #### Requirements
 
@@ -719,9 +719,11 @@ pool or a queue does not include them directly.
 
 `threadsRunning()` sums every worker's finished count and then every
 started count, and reports a task in flight when the sums differ. A task
-that runs through the moment between the two sweeps is always reported,
-however work hands over between workers during the call; a task queued and
-not yet taken by a worker is not in flight.
+that runs from before the first read to after the last is reported once its
+start is visible to the caller, however work hands over between workers
+during the call; a task queued and not yet taken by a worker is not in
+flight. It is an activity reading, not a completion handshake: closing
+admission and joining the workers is what ends a pool's work.
 
 ---
 
@@ -1028,10 +1030,9 @@ Linux with glibc.
 ### RT-Safe Components
 
 - **RingBuffer::tryPush/tryPop/tryPeek** - No atomics, O(1) operations
-- **LockFreeQueue::tryPush/tryPop** - Lock-free, bounded operations
 - **SPSCQueue::tryPush/tryPop** - Lock-free, single producer/consumer
 - **SpinLock::tryLock/unlock** - Atomic operations only
-- **Semaphore::tryAcquire/release/count** - Lock-free CAS and atomic ops
+- **Semaphore::release/count** - Atomic operations (`release()` then notifies any waiter)
 - **Latch::count** - Atomic load only; `tryWait()` is one load while the count is nonzero and takes the mutex once it is zero
 - **Barrier::expected/generation** - Atomic load only
 - **DelegateU8** - No allocation, direct function call
@@ -1041,6 +1042,8 @@ Linux with glibc.
 
 ### RT-Dependent Components
 
+- **LockFreeQueue::tryPush/tryPop** - Lock-free, with no allocation, lock or syscall. The compare-and-swap loop has no per-caller retry bound: a competing producer or consumer, or a spurious failure of the weak exchange, sends the call round again. The call runs `T`'s assignment and needs a lock-free `std::atomic<std::size_t>`
+- **Semaphore::tryAcquire** - Lock-free compare-and-swap loop with no per-caller retry bound while other threads take or return permits
 - **ThreadPoolLockFree::tryEnqueue/enqueueTask** - No allocation and no pool mutex: three atomic read-modify-writes (enter admission, advance the wake generation, leave) around a lock-free queue push. Waking an idle worker issues a futex syscall, and the push has no per-caller retry bound
 
 ### NOT RT-Safe Components

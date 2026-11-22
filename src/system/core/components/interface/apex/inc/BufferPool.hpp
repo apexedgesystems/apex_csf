@@ -2,24 +2,24 @@
 #define APEX_SYSTEM_CORE_INTERFACE_BUFFER_POOL_HPP
 /**
  * @file BufferPool.hpp
- * @brief RT-safe buffer pool for zero-copy APROTO messaging.
+ * @brief Lock-free buffer pool for zero-copy APROTO messaging.
  *
  * Design:
  *   - Pre-allocate MessageBuffers at startup (NOT RT-safe, done once)
- *   - RT-safe acquire/release via lock-free free list
+ *   - Lock-free acquire/release via a free list
  *   - Fixed pool size (no runtime allocation)
  *   - Exhaustion handled gracefully (return nullptr)
  *
  * Usage:
  *   BufferPool pool(100, 4096);  // 100 buffers, 4KB each (startup, NOT RT-safe)
- *   auto* buf = pool.acquire(200);  // RT-safe
+ *   auto* buf = pool.acquire(200);  // lock-free, see RT-Safety
  *   // ... use buffer ...
- *   pool.release(buf);  // RT-safe
+ *   pool.release(buf);  // lock-free, see RT-Safety
  *
  * RT-Safety:
  *   - Constructor: NOT RT-safe (allocates memory)
- *   - acquire(): RT-safe (lock-free pop from free list)
- *   - release(): RT-safe (lock-free push to free list)
+ *   - acquire(): RT-DEPENDS (lock-free pop from the free list, no per-caller retry bound)
+ *   - release(): RT-DEPENDS (lock-free push to the free list, no per-caller retry bound)
  */
 
 #include "src/system/core/components/interface/apex/inc/MessageBuffer.hpp"
@@ -45,12 +45,12 @@ inline constexpr std::size_t DEFAULT_BUFFER_CAPACITY = 4096;
 
 /**
  * @class BufferPool
- * @brief RT-safe pool of MessageBuffers for zero-copy messaging.
+ * @brief Lock-free pool of MessageBuffers for zero-copy messaging.
  *
  * Allocation Strategy:
  *   - All buffers pre-allocated at construction (NOT RT-safe, done once)
  *   - Fixed pool size (no runtime growth)
- *   - Lock-free free list for RT-safe acquire/release
+ *   - Lock-free free list: acquire/release take no lock and allocate nothing
  *
  * Exhaustion Handling:
  *   - acquire() returns nullptr if pool exhausted
@@ -58,7 +58,7 @@ inline constexpr std::size_t DEFAULT_BUFFER_CAPACITY = 4096;
  *   - Buffers return to pool when released
  *
  * Thread Safety:
- *   - acquire() and release() are RT-safe (lock-free)
+ *   - acquire() and release() are lock-free and may run on different threads at once
  *   - Can acquire from one thread, release from another
  *   - Pool must outlive all acquired buffers
  *
@@ -68,7 +68,10 @@ inline constexpr std::size_t DEFAULT_BUFFER_CAPACITY = 4096;
  *   - Caller owns buffer between acquire() and release()
  *
  * @note NOT RT-safe: Constructor, destructor
- * @note RT-safe: acquire(), release(), size(), available()
+ * @note RT-DEPENDS: acquire(), release() (LockFreeQueue::tryPop()/tryPush(): no lock,
+ *       allocation or syscall, and no per-caller retry bound while other threads
+ *       acquire or release)
+ * @note RT-safe: size(), available()
  */
 class BufferPool {
 public:
@@ -95,21 +98,23 @@ public:
   BufferPool(BufferPool&&) = delete;
   BufferPool& operator=(BufferPool&&) = delete;
 
-  /* ----------------------------- RT-Safe Operations ----------------------------- */
+  /* ----------------------------- Lock-Free Operations ----------------------------- */
 
   /**
-   * @brief Acquire buffer from pool (RT-safe).
+   * @brief Acquire buffer from pool (lock-free).
    * @param requiredSize Minimum buffer size required (bytes).
    * @return Pointer to buffer, or nullptr if pool exhausted or size too large.
-   * @note RT-safe: Lock-free pop from free list.
+   * @note RT-DEPENDS: lock-free pop from the free list, as LockFreeQueue::tryPop():
+   *       no per-caller retry bound while other threads acquire.
    * @note Caller MUST release buffer when done (or leak!).
    */
   [[nodiscard]] MessageBuffer* acquire(std::size_t requiredSize) noexcept;
 
   /**
-   * @brief Release buffer back to pool (RT-safe).
+   * @brief Release buffer back to pool (lock-free).
    * @param buf Buffer to release (must have been acquired from this pool).
-   * @note RT-safe: Lock-free push to free list.
+   * @note RT-DEPENDS: lock-free push to the free list, as LockFreeQueue::tryPush():
+   *       no per-caller retry bound while other threads release.
    * @note CRITICAL: Do not access buffer after releasing!
    * @note CRITICAL: Do not release nullptr!
    * @note CRITICAL: Do not release same buffer twice!

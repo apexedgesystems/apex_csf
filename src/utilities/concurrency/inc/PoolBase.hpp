@@ -84,11 +84,14 @@ struct alignas(cache::CACHE_LINE_SIZE) WorkerTally {
  *
  * Reads every finished count, then every started count. A worker's started
  * count read in the second sweep is never behind its finished count read in
- * the first, and a task in flight at the moment between the sweeps has its
- * start in the second and its finish in neither, so the sums differ. The
- * answer is therefore never "idle" while some task runs through that
- * moment, however tasks hand over between workers during the call. A task
- * that starts or finishes during the call may be reported either way.
+ * the first, so the sums differ whenever the caller has read a start whose
+ * finish it did not read. A task that runs from before the first read to
+ * after the last is therefore reported once its start is visible to the
+ * caller, however tasks hand over between workers during the call. A task
+ * that starts or finishes during the call may be reported either way. The
+ * sums are compared in the counts' modular arithmetic: reading "idle" with
+ * a task in flight would take a full turn of the counter, 2^64 starts on a
+ * 64-bit target, inside one call.
  *
  * The tally type is a parameter so the order of the sweeps can be exercised
  * without threads.

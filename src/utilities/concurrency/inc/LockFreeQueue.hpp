@@ -8,7 +8,8 @@
  *  - Multiple producers / multiple consumers (MPMC).
  *  - Fixed capacity, non-blocking tryPush/tryPop API.
  *  - No heap allocation after construction.
- *  - Wait-free progress for individual operations.
+ *  - Lock-free progress: some operation always completes. One call has no
+ *    retry bound while others compete for the same cursor.
  *
  * Requirements:
  *  - Capacity >= 2 (rounded up to power-of-two internally for performance).
@@ -64,7 +65,11 @@ public:
    * @brief Try to push a copy of value.
    * @param value Value to copy into the queue.
    * @return True if pushed, false if queue is full.
-   * @note RT-safe: Lock-free, bounded CAS loop.
+   * @note RT-DEPENDS: lock-free, with no allocation, lock or syscall. The
+   *       compare-and-swap loop has no per-caller retry bound: a competing
+   *       producer, or a spurious failure of the weak exchange, sends the
+   *       call round again. Also depends on T's copy assignment, which runs
+   *       inside the call, and on a lock-free std::atomic<std::size_t>.
    */
   [[nodiscard]] bool tryPush(const T& value) noexcept { return push(value); }
 
@@ -72,7 +77,7 @@ public:
    * @brief Try to push a moved value.
    * @param value Value to move into the queue.
    * @return True if pushed, false if queue is full.
-   * @note RT-safe: Lock-free, bounded CAS loop.
+   * @note RT-DEPENDS: as tryPush(const T&), with T's move assignment.
    */
   [[nodiscard]] bool tryPush(T&& value) noexcept { return push(std::move(value)); }
 
@@ -80,7 +85,11 @@ public:
    * @brief Try to pop a value from the queue.
    * @param out Output parameter receiving the popped value.
    * @return True if popped, false if queue is empty.
-   * @note RT-safe: Lock-free, bounded CAS loop.
+   * @note RT-DEPENDS: lock-free, with no allocation, lock or syscall. The
+   *       compare-and-swap loop has no per-caller retry bound: a competing
+   *       consumer, or a spurious failure of the weak exchange, sends the
+   *       call round again. Also depends on T's move assignment, which runs
+   *       inside the call, and on a lock-free std::atomic<std::size_t>.
    */
   [[nodiscard]] bool tryPop(T& out) noexcept;
 
