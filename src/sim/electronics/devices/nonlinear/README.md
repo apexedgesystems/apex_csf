@@ -88,8 +88,10 @@ DiodeShockley::stamp(mna, anodeNet, cathodeNet, /*vDiode=*/0.7, params);
   passes through (checked to 100 V either way). That is not a guarantee
   for every input: a parameter that is not positive or a value that is not
   finite is not guarded against, except in the series-resistance solve of
-  `DiodeSpice` and `SchottkyDiode`, which returns NaN where it does not
-  converge.
+  `DiodeSpice` and `SchottkyDiode`, which refuses both and returns NaN.
+  A NaN stamped into an MNA system is not reported by the system's solve,
+  which can succeed with a node voltage that is NaN: a caller that may pass
+  such values has to check its results.
 - **Bounded, allocation-free evaluation.** Every model function is static,
   allocates nothing and does a bounded amount of work; stamping into a
   pre-sized MNA system performs only arithmetic. The series-resistance

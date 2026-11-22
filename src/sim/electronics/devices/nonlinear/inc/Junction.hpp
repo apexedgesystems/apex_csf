@@ -156,10 +156,20 @@ struct Junction {
    * what it resolves of Vj. It stops there, or at SERIES_MAX_ITER
    * evaluations, and says which.
    *
-   * The argument above holds for a finite voltage and positive finite
-   * parameters. A saturation current or thermal voltage that is not
-   * positive is refused before any evaluation; a value that is not finite
-   * runs to the limit. Neither is reported as converged.
+   * The argument above is about real numbers. In doubles it holds over
+   * the values diodes have, where every solve converges (checked from
+   * -100 V to 100 V, saturation currents from 1e-16 A to 1 mA, n*Vt from
+   * 15 mV to 52 mV and resistances from 1 uohm to 1 Tohm). Two kinds of
+   * input are outside it:
+   *   - A saturation current or thermal voltage that is not positive, and a
+   *     voltage, saturation current, thermal voltage or resistance that is
+   *     not finite. These are refused before any evaluation and are not
+   *     reported as converged.
+   *   - Finite values so large or small that the arithmetic overflows or
+   *     underflows (hundreds of orders of magnitude from a diode's). These
+   *     are not refused. The solve may run to the limit, which is not
+   *     reported as converged, or stop at a point that is not a solution,
+   *     which is.
    *
    * @param v Terminal voltage (V), positive forward. Finite.
    * @param is Saturation current (A). Positive and finite.
@@ -170,7 +180,9 @@ struct Junction {
    */
   [[nodiscard]] static SeriesSolve seriesJunctionVoltage(double v, double is, double nVt,
                                                          double rs) noexcept {
-    if (!(is > 0.0 && nVt > 0.0)) {
+    const bool FINITE =
+        std::isfinite(v) && std::isfinite(is) && std::isfinite(nVt) && std::isfinite(rs);
+    if (!(FINITE && is > 0.0 && nVt > 0.0)) {
       return {0.0, 0, false};
     }
     double vj = v > 0.0 ? std::min(v, nVt * std::log1p(v / (rs * is))) : 0.0;
@@ -197,9 +209,15 @@ struct Junction {
    * differentiating the terminal equation.
    *
    * A solve that did not converge returns no number: both values are NaN.
-   * A finite voltage with positive finite parameters converges; a
-   * saturation current or thermal voltage that is not positive, or a value
-   * that is not finite, is what does not.
+   * Over the values diodes have every solve converges; what
+   * seriesJunctionVoltage() refuses does not, and what it says of values
+   * far outside a diode's holds here. With a series resistance of zero or
+   * less there is no solve and nothing is refused: the junction's own
+   * current and conductance are returned for whatever was passed.
+   *
+   * A NaN is for the caller to notice. Stamped into an MNA system it is
+   * not reported by the system's solve, which can succeed with a node
+   * voltage that is NaN.
    *
    * @param v Terminal voltage (V), positive forward.
    * @param is Saturation current (A), positive.

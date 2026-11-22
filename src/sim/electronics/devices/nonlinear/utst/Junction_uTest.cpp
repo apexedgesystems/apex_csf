@@ -180,7 +180,7 @@ TEST(JunctionTest, SeriesSolveMatchesReferenceForLargeResistanceTimesSaturationC
     double conductance;
     double tolerance; // relative, of the current
   };
-  // In the seventh row a millionth of the saturation current flows: the junction's
+  // In the seventh row a billionth of the saturation current flows: the junction's
   // exp(x) - 1 is taken at x = -1e-9, where a double keeps eight digits of it.
   const std::array<Row, 9> ROWS = {{
       Row{-1.0, 1e-9, 0.026, 1e10, -9.972685163484649e-11, 9.971203042147085e-11, 1e-12},
@@ -256,10 +256,10 @@ TEST(JunctionTest, SeriesSolveConvergesToAPointBetweenZeroAndTheTerminalVoltage)
 
 /**
  * @test A solve outside its domain returns no number, where the point it stopped at would
- * have been one. A saturation current or a thermal voltage that is not positive is refused
- * before any evaluation; a terminal voltage that is not a number runs to the iteration
- * limit. In both the junction voltage reported is not called converged, and current and
- * conductance are NaN.
+ * have been one. A saturation current or a thermal voltage that is not positive, and a
+ * voltage, saturation current, thermal voltage or resistance that is infinite or not a
+ * number, is refused before any evaluation: the junction voltage reported is not called
+ * converged, and current and conductance are NaN.
  */
 TEST(JunctionTest, SeriesSolveOutsideItsDomainReturnsNoNumber) {
   struct Refused {
@@ -278,9 +278,48 @@ TEST(JunctionTest, SeriesSolveOutsideItsDomainReturnsNoNumber) {
     EXPECT_TRUE(std::isnan(POINT.conductance)) << "Is = " << row.is << ", nVt = " << row.nVt;
   }
 
+  // Left to run, an infinite reverse voltage meets the convergence test at once (infinity
+  // is within any tolerance of infinity) with a current of zero, and so does an infinite
+  // thermal voltage.
   const double NOT_A_NUMBER = std::numeric_limits<double>::quiet_NaN();
-  const auto UNSOLVED = Junction::seriesJunctionVoltage(NOT_A_NUMBER, 1e-14, 0.026, 1.0);
-  EXPECT_FALSE(UNSOLVED.converged);
-  EXPECT_EQ(UNSOLVED.iterations, Junction::SERIES_MAX_ITER);
-  EXPECT_TRUE(std::isnan(Junction::withSeriesResistance(NOT_A_NUMBER, 1e-14, 0.026, 1.0).current));
+  const double INFINITE = std::numeric_limits<double>::infinity();
+  struct NotFinite {
+    double v;
+    double is;
+    double nVt;
+    double rs;
+  };
+  for (const NotFinite& row :
+       {NotFinite{NOT_A_NUMBER, 1e-14, 0.026, 1.0}, NotFinite{INFINITE, 1e-14, 0.026, 1.0},
+        NotFinite{-INFINITE, 1e-14, 0.026, 1.0}, NotFinite{1.0, NOT_A_NUMBER, 0.026, 1.0},
+        NotFinite{1.0, INFINITE, 0.026, 1.0}, NotFinite{1.0, 1e-14, NOT_A_NUMBER, 1.0},
+        NotFinite{1.0, 1e-14, INFINITE, 1.0}, NotFinite{-1.0, 1e-14, INFINITE, 1.0},
+        NotFinite{1.0, 1e-14, 0.026, NOT_A_NUMBER}, NotFinite{1.0, 1e-14, 0.026, INFINITE},
+        NotFinite{-1.0, 1e-14, 0.026, INFINITE}}) {
+    SCOPED_TRACE(::testing::Message() << "V = " << row.v << ", Is = " << row.is
+                                      << ", nVt = " << row.nVt << ", Rs = " << row.rs);
+    const auto SOLVED = Junction::seriesJunctionVoltage(row.v, row.is, row.nVt, row.rs);
+    EXPECT_FALSE(SOLVED.converged);
+    EXPECT_EQ(SOLVED.iterations, 0);
+    const auto POINT = Junction::withSeriesResistance(row.v, row.is, row.nVt, row.rs);
+    EXPECT_TRUE(std::isnan(POINT.current));
+    EXPECT_TRUE(std::isnan(POINT.conductance));
+  }
+}
+
+/**
+ * @test Finite values far outside a diode's are not refused, and a solve among them that
+ * runs to the iteration limit is not reported as converged: with a terminal voltage of
+ * 1.7e264 V and a series resistance of 1e293 ohm the steps alternate between two points,
+ * and current and conductance are NaN.
+ */
+TEST(JunctionTest, SeriesSolveStoppedAtItsLimitIsNotConverged) {
+  const auto SOLVED =
+      Junction::seriesJunctionVoltage(1.73843e264, 2.07639e-122, 3.71175e204, 1.01674e293);
+  EXPECT_FALSE(SOLVED.converged);
+  EXPECT_EQ(SOLVED.iterations, Junction::SERIES_MAX_ITER);
+  const auto POINT =
+      Junction::withSeriesResistance(1.73843e264, 2.07639e-122, 3.71175e204, 1.01674e293);
+  EXPECT_TRUE(std::isnan(POINT.current));
+  EXPECT_TRUE(std::isnan(POINT.conductance));
 }

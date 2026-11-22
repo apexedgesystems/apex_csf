@@ -123,6 +123,9 @@ struct SchottkyDiode {
    *
    * @note RT-safe: stamps into a pre-allocated matrix and vector; with a
    *       series resistance, at most Junction::SERIES_MAX_ITER iterations.
+   * @note With parameters the series-resistance solve refuses, the values
+   *       stamped are NaN. The system's solve does not report that: check
+   *       its result for voltages that are not finite.
    */
   static void stamp(MnaSystem& mna, NetID anodeNet, NetID cathodeNet, double vDiode,
                     const SchottkyDiodeParams& params) {
