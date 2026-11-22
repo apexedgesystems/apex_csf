@@ -6,6 +6,11 @@
  * release-store the producer cursor, sem_post. A minimal in-harness consumer
  * maps the Ring A prelude and advances the consumer cursor each tick, keeping the
  * ring drained so the measured path is the push -- not the FULL-refusal path.
+ *
+ * The Throughput case resolves its source through a constant-time resolver. The
+ * RegistryResolver case resolves it the way the applications do, through
+ * ApexRegistry::getData on a frozen registry of an application's size with the
+ * source registered last, so the lookup scans every data entry.
  */
 
 #include <array>
@@ -20,6 +25,7 @@
 #include <unistd.h>
 
 #include "src/bench/inc/Perf.hpp"
+#include "src/system/core/components/registry/apex/inc/ApexRegistry.hpp"
 #include "src/system/core/support/shm_ring_bridge/inc/ShmRingBridge.hpp"
 
 namespace {
@@ -115,6 +121,99 @@ PERF_TEST(BridgeStepPush, Throughput) {
 
   std::printf("\n[ShmRingBridge] bridgeStep: %.0f ticks/s (%.4f us/tick), channel_open=%u\n",
               result.callsPerSecond, 1.0e6 / result.callsPerSecond, b.bridgeState().channel_open);
+}
+
+/* ----------------------------- Registry resolver ----------------------------- */
+
+namespace {
+
+// The resolver the applications wire: (fullUid, category) looked up in the
+// registry, a linear scan of its data entries.
+ResolvedSource registryResolver(void* ctx, std::uint32_t uid, DataCategory cat) noexcept {
+  auto* registry = static_cast<system_core::registry::ApexRegistry*>(ctx);
+  auto* entry = registry->getData(uid, cat);
+  if (entry == nullptr || !entry->isValid()) {
+    return {};
+  }
+  return {reinterpret_cast<const std::uint8_t*>(entry->dataPtr), entry->size};
+}
+
+} // namespace
+
+// The push path with the production resolver. The registry has the size of the
+// ops demo's (12 components, 22 data entries) and the bridge's source is the last
+// data entry registered, the far end of the scan. Every step must publish: the
+// counts printed at the end say whether one was refused or found no source.
+PERF_TEST(BridgeStepPush, RegistryResolver) {
+  UB_PERF_GUARD(perf);
+
+  constexpr std::size_t COMPONENTS = 12;
+  constexpr std::size_t DATA_ENTRIES = 22;
+  constexpr std::uint32_t SOURCE_UID = 0xDE00u;
+  using system_core::registry::Status;
+
+  system_core::registry::ApexRegistry registry;
+  std::array<std::array<std::uint8_t, 64>, DATA_ENTRIES> blocks{};
+  bool registered = true;
+  for (std::size_t c = 0; c + 1 < COMPONENTS; ++c) {
+    registered =
+        registered && registry.registerComponent(static_cast<std::uint32_t>(0x6400u + c * 0x100u),
+                                                 "Filler") == Status::SUCCESS;
+  }
+  registered = registered && registry.registerComponent(SOURCE_UID, "Source") == Status::SUCCESS;
+  // Two blocks per filler component (tunables and outputs, the mix the demo
+  // registers), then the source's output block last.
+  for (std::size_t d = 0; d + 1 < DATA_ENTRIES; ++d) {
+    const auto UID = static_cast<std::uint32_t>(0x6400u + (d % (COMPONENTS - 1)) * 0x100u);
+    const DataCategory CAT =
+        (d < COMPONENTS - 1) ? DataCategory::TUNABLE_PARAM : DataCategory::OUTPUT;
+    registered =
+        registered && registry.registerData(UID, CAT, (d < COMPONENTS - 1) ? "tunables" : "output",
+                                            blocks[d].data(), blocks[d].size()) == Status::SUCCESS;
+  }
+  registered =
+      registered && registry.registerData(SOURCE_UID, DataCategory::OUTPUT, "output",
+                                          blocks[DATA_ENTRIES - 1].data(),
+                                          blocks[DATA_ENTRIES - 1].size()) == Status::SUCCESS;
+  registered = registered && registry.freeze() == Status::SUCCESS;
+
+  ShmRingBridge b;
+  b.setResolver(registryResolver, &registry);
+
+  const std::string shm = std::string("/shm_ring_bridge_bench_reg_") + std::to_string(::getpid());
+  ShmRingBridgeTunables& t = b.tunables().get();
+  t.app_magic = 0x54455354u; // "TEST"
+  t.app_version = 1;
+  t.capacity = 1024;
+  t.payload_size = 64;
+  t.source_uid = SOURCE_UID;
+  t.source_category = static_cast<std::uint8_t>(DataCategory::OUTPUT);
+  t.source_byte_len = 64;
+  std::snprintf(t.shm_path, sizeof(t.shm_path), "%s", shm.c_str());
+  b.onBusReady();
+
+  Drainer drainer;
+  const bool drained = drainer.open(shm);
+
+  volatile std::uint8_t sink = 0;
+  auto result = perf.throughputLoop(
+      [&] {
+        sink = static_cast<std::uint8_t>(sink + b.bridgeStep());
+        if (drained) {
+          drainer.drain();
+        }
+      },
+      "bridge_step_push_registry");
+
+  const auto& STATE = b.bridgeState();
+  std::printf("\n[ShmRingBridge] bridgeStep, registry resolver (%zu components, %zu data entries, "
+              "source at entry %zu): %.0f ticks/s (%.4f us/tick); registered=%d channel_open=%u "
+              "source_resolved=%u steps=%llu published=%llu refused_full=%llu\n",
+              COMPONENTS, DATA_ENTRIES, DATA_ENTRIES, result.callsPerSecond,
+              1.0e6 / result.callsPerSecond, registered ? 1 : 0, STATE.channel_open,
+              STATE.source_resolved, static_cast<unsigned long long>(STATE.tick_count),
+              static_cast<unsigned long long>(STATE.frames_published),
+              static_cast<unsigned long long>(STATE.pushes_failed_full));
 }
 
 /* ----------------------------- Payload scaling ----------------------------- */
