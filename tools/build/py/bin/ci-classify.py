@@ -17,8 +17,9 @@ per decision, the form a workflow appends to its outputs:
   rust_analysis  the analysis role's Rust tests and clippy
   py             the Python tool tests
   sh             the shell tool smoke
-  images         an image a job runs in is defined differently: every job
-                 rebuilds its image from the Dockerfiles instead of pulling it
+  images         an image a job runs in is defined differently, or built
+                 differently: every job rebuilds its image from the
+                 Dockerfiles instead of pulling it
   bakes_gate     the dependencies baked into those images differ for the C++
                  jobs and the dictionary gate, which rebuild
   bakes_rust     the same for the Rust tool tests
@@ -135,14 +136,21 @@ RULES = (
     (("*",), EVERY_JOB),
 )
 
-# The images the gate jobs run in, and the compose file every image build
-# reads its arguments from.
+# The images the gate jobs run in.
 GATE_DOCKERFILES = (
     "docker/base.Dockerfile",
     "docker/dev/cpu.Dockerfile",
     "docker/dev/cuda.Dockerfile",
 )
-COMPOSE_FILE = "docker-compose.yml"
+# What a rebuild of those images reads besides the Dockerfiles: the compose
+# file with every build's arguments, the overlay naming the registry cache a
+# rebuild starts from, and the action that pulls or rebuilds a job's image.
+# Only a rebuild runs what a change to one of them changed.
+IMAGE_BUILD_FILES = (
+    "docker-compose.yml",
+    "docker-compose.ci-cache.yml",
+    ".github/actions/dev-setup/action.yml",
+)
 BAKES_STAGE = "bakes"
 
 
@@ -196,7 +204,7 @@ def image_decisions(paths, gates=GATE_DOCKERFILES):
     `jobs` is the set of jobs whose baked dependencies changed: those of every
     changed path the bakes stage copies (see the module text).
     """
-    images = COMPOSE_FILE in paths
+    images = any(path in IMAGE_BUILD_FILES for path in paths)
     baked = set()
     for dockerfile in gates:
         images = images or dockerfile in paths

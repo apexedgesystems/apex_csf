@@ -15,9 +15,10 @@
 # :latest image, which docker-images.yml keeps current with main. When the PR
 # changes what an image is built from, the jobs that use that part rebuild it
 # from the Dockerfiles instead, so tests run against the PR's intended image:
-# every job for an image's own definition, and for a baked dependency only the
-# jobs that build with it (the Python lock rebuilds for the Python tests
-# alone; lint uses no bake).
+# every job for an image's own definition or for a change to how CI builds
+# images (the setup action, the registry-cache overlay), and for a baked
+# dependency only the jobs that build with it (the Python lock rebuilds for
+# the Python tests alone; lint uses no bake).
 #
 # The build/test/smoke/docs chain runs in dev-cuda so the .cu surface is compile
 # and link verified; docker-compose.ci.yml drops the GPU reservation so it

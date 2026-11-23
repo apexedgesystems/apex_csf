@@ -61,6 +61,9 @@ cpp rust_build rust_ops rust_analysis py sh images | docker/base.Dockerfile
 cpp rust_build rust_ops rust_analysis py sh images | docker/dev/cpu.Dockerfile
 cpp rust_build rust_ops rust_analysis py sh images | docker/dev/cuda.Dockerfile
 cpp rust_build rust_ops rust_analysis py sh images | docker-compose.yml
+# How CI rebuilds them: the registry-cache overlay and the image setup action.
+cpp rust_build rust_ops rust_analysis py sh images | docker-compose.ci-cache.yml
+cpp rust_build rust_ops rust_analysis py sh images | .github/actions/dev-setup/action.yml
 
 # --- what base.Dockerfile's bakes stage copies: its consumers rebuild --------------
 # The Rust lock: everything that compiles a crate, the C++ jobs included.
@@ -92,6 +95,8 @@ cpp rust_build rust_ops rust_analysis py sh | .github/workflows/ci.yml
 cpp rust_build rust_ops rust_analysis py sh | mk/test.mk
 cpp rust_build rust_ops rust_analysis py sh | docker/builder.Dockerfile
 cpp rust_build rust_ops rust_analysis py sh | docker-compose.ci.yml
+cpp rust_build rust_ops rust_analysis py sh | .github/actions/docker-build-push/action.yml
+cpp rust_build rust_ops rust_analysis py sh | .github/actions/reclaim-disk/action.yml
 cpp rust_build rust_ops rust_analysis py sh | Makefile
 cpp rust_build rust_ops rust_analysis py sh | tools/CMakeLists.txt
 cpp rust_build rust_ops rust_analysis py sh | some_new_top_level_dir/file.txt
