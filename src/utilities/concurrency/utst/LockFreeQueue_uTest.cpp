@@ -395,6 +395,116 @@ TEST_F(LockFreeQueueTest, SizeApproxFollowsPushAndPop) {
   }
 }
 
+/* ----------------------------- Held Cell Tests ----------------------------- */
+
+namespace {
+
+/// Where one marked element waits inside its assignment, for as long as the gate is closed.
+struct Gate {
+  std::atomic<bool> closed{false};
+  std::atomic<bool> reached{false};            ///< A thread is waiting at the gate.
+  const std::atomic<bool>* abandoned{nullptr}; ///< The case gave up: stop waiting.
+};
+
+/// An element whose assignment from a source carrying a gate waits at that gate. The queue
+/// assigns the element between claiming a cell and releasing it, so a closed gate stops a thread
+/// inside tryPush() or tryPop() with its cell held.
+struct Gated {
+  int value{0};
+  Gate* gate{nullptr};
+
+  Gated() = default;
+  explicit Gated(int v, Gate* g = nullptr) noexcept : value(v), gate(g) {}
+  Gated(const Gated&) = default;
+  Gated(Gated&&) = default;
+  Gated& operator=(const Gated& other) noexcept {
+    waitAt(other.gate);
+    value = other.value;
+    gate = other.gate;
+    return *this;
+  }
+  Gated& operator=(Gated&& other) noexcept { return *this = other; }
+
+  static void waitAt(Gate* gate) noexcept {
+    if (gate == nullptr || !gate->closed.load(std::memory_order_acquire)) {
+      return;
+    }
+    gate->reached.store(true, std::memory_order_release);
+    while (gate->closed.load(std::memory_order_acquire) &&
+           !gate->abandoned->load(std::memory_order_acquire)) {
+      std::this_thread::yield();
+    }
+  }
+};
+
+/// A ring of four cells, the gate, and what the held call returned.
+struct HeldCell : CrewState {
+  Gate gate;
+  LockFreeQueue<Gated> queue{4};
+  std::atomic<bool> returned{false};
+  HeldCell() { gate.abandoned = &abandoned; }
+};
+
+} // namespace
+
+/** @test While a consumer holds the oldest cell, tryPush() reports full with no element left
+ * unread, and takes the element once that consumer has finished. */
+TEST_F(LockFreeQueueTest, PushIsRefusedAtACellAConsumerStillHolds) {
+  Crew<HeldCell> crew;
+  ASSERT_TRUE(crew->queue.tryPush(Gated{0, &crew->gate}));
+  for (int i = 1; i < 4; ++i) {
+    ASSERT_TRUE(crew->queue.tryPush(Gated{i}));
+  }
+
+  crew->gate.closed.store(true, std::memory_order_release);
+  crew.start([](HeldCell& state) {
+    Gated out;
+    state.returned.store(state.queue.tryPop(out), std::memory_order_release);
+  });
+  ASSERT_TRUE(settles([&]() { return crew->gate.reached.load(std::memory_order_acquire); }))
+      << "the consumer never reached its cell";
+
+  Gated out;
+  for (int i = 1; i < 4; ++i) {
+    ASSERT_TRUE(crew->queue.tryPop(out));
+    EXPECT_EQ(out.value, i);
+  }
+  EXPECT_FALSE(crew->queue.tryPop(out)) << "an element was left unread";
+  EXPECT_FALSE(crew->queue.tryPush(Gated{4})) << "the push passed a cell its consumer still holds";
+
+  crew->gate.closed.store(false, std::memory_order_release);
+  ASSERT_TRUE(crew.finish()) << "the held consumer did not return";
+  EXPECT_TRUE(crew->returned.load(std::memory_order_acquire));
+  EXPECT_TRUE(crew->queue.tryPush(Gated{4})) << "the released cell was still refused";
+}
+
+/** @test While a producer holds a cell, tryPop() reports empty at it with three elements
+ * published behind it, and reads all four in order once that producer has finished. */
+TEST_F(LockFreeQueueTest, PopFindsNothingBehindACellAProducerStillHolds) {
+  Crew<HeldCell> crew;
+  crew->gate.closed.store(true, std::memory_order_release);
+  crew.start([](HeldCell& state) {
+    state.returned.store(state.queue.tryPush(Gated{0, &state.gate}), std::memory_order_release);
+  });
+  ASSERT_TRUE(settles([&]() { return crew->gate.reached.load(std::memory_order_acquire); }))
+      << "the producer never reached its cell";
+
+  for (int i = 1; i < 4; ++i) {
+    ASSERT_TRUE(crew->queue.tryPush(Gated{i}));
+  }
+  Gated out;
+  EXPECT_FALSE(crew->queue.tryPop(out)) << "the pop passed a cell its producer still holds";
+  EXPECT_EQ(crew->queue.sizeApprox(), 4U);
+
+  crew->gate.closed.store(false, std::memory_order_release);
+  ASSERT_TRUE(crew.finish()) << "the held producer did not return";
+  EXPECT_TRUE(crew->returned.load(std::memory_order_acquire));
+  for (int i = 0; i < 4; ++i) {
+    ASSERT_TRUE(crew->queue.tryPop(out));
+    EXPECT_EQ(out.value, i);
+  }
+}
+
 /* ----------------------------- Index Wrap Tests ----------------------------- */
 
 namespace {

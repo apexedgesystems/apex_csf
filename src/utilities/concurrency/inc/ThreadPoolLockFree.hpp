@@ -89,6 +89,10 @@ public:
    * @param label Static or long-lived string identifying the task (non-owning).
    * @param task Delegate encapsulating the task logic.
    * @return SUCCESS if enqueued, QUEUE_FULL if queue is full, POOL_STOPPED if shutting down.
+   *         QUEUE_FULL is also returned while a worker descheduled inside a dequeue holds the
+   *         ring cell the producer cursor has come round to (LockFreeQueue.hpp, "Held cells"):
+   *         the queue then refuses with fewer than capacity() tasks waiting, until that worker
+   *         runs again.
    * @note RT-DEPENDS: no allocation and no pool mutex: one read-modify-write
    *       to enter the producer count, the lock-free push, one to advance the
    *       wake generation and one to leave. Waking an idle worker issues a

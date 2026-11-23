@@ -77,9 +77,13 @@ any such change is called out explicitly in its entry.
 - `RingBuffer` keeps its two cursors on one cache line wherever the object
   is placed (48 bytes, 16-byte aligned).
   ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
-- `SPSCQueue` sides keep their last view of the other index: a push and pop
-  pair takes a third less time, and with a backlog neither side reads the
-  other's cache line.
+- `SPSCQueue` sides keep their last view of the other index: on the lab
+  host a push and pop pair takes a third less time, and with a backlog
+  neither side reads the other's cache line.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `LockFreeQueue` and `ThreadPoolLockFree` state that a push is refused as
+  full while a consumer descheduled inside a pop still holds a cell; a
+  caller that must not lose the element tries again.
   ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - Breaking: every tool lives under its role and installs to
   `bin/tools/<role>/`; the Python package `apex_tools` is now the

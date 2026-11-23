@@ -8,8 +8,24 @@
  *  - Multiple producers / multiple consumers (MPMC).
  *  - Fixed capacity, non-blocking tryPush/tryPop API.
  *  - No heap allocation after construction.
- *  - Lock-free progress: some operation always completes. One call has no
- *    retry bound while others compete for the same cursor.
+ *  - Calls never wait: tryPush and tryPop return without blocking on another
+ *    thread. One call has no retry bound while others compete for the same
+ *    cursor.
+ *
+ * Held cells:
+ *  A call claims its cell by advancing a cursor and releases it by storing the
+ *  cell's sequence number, with the element's assignment in between. A cell
+ *  claimed and not yet released is held. While a consumer holds a cell,
+ *  tryPush reports full once the producer cursor has come round to that cell,
+ *  however few elements are unread. While a producer holds a cell, tryPop
+ *  reports empty at that cell, whatever was published behind it. Both last
+ *  until the holding thread runs again, so a thread descheduled inside a call
+ *  can keep every other thread from passing its cell. The calls never wait,
+ *  but the ring is not lock-free in the strict sense: no push or pop is
+ *  certain to succeed while one thread is stopped inside a call. A caller
+ *  that must not lose an element on a false return tries again; even a ring
+ *  whose users never offer more than capacity() elements can refuse a push
+ *  this way.
  *
  * Requirements:
  *  - Capacity >= 2 (rounded up to power-of-two internally for performance).
@@ -64,7 +80,8 @@ public:
   /**
    * @brief Try to push a copy of value.
    * @param value Value to copy into the queue.
-   * @return True if pushed, false if queue is full.
+   * @return True if pushed. False if the queue is full, or if a consumer still holds the cell at
+   *         the producer cursor (see "Held cells" above); value is then untouched.
    * @note RT-DEPENDS: lock-free, with no allocation, lock or syscall. The
    *       compare-and-swap loop has no per-caller retry bound: a competing
    *       producer, or a spurious failure of the weak exchange, sends the
@@ -76,7 +93,7 @@ public:
   /**
    * @brief Try to push a moved value.
    * @param value Value to move into the queue.
-   * @return True if pushed, false if queue is full.
+   * @return True if pushed. False as for tryPush(const T&); value is then not moved from.
    * @note RT-DEPENDS: as tryPush(const T&), with T's move assignment.
    */
   [[nodiscard]] bool tryPush(T&& value) noexcept { return push(std::move(value)); }
@@ -84,7 +101,8 @@ public:
   /**
    * @brief Try to pop a value from the queue.
    * @param out Output parameter receiving the popped value.
-   * @return True if popped, false if queue is empty.
+   * @return True if popped. False if the queue is empty, or if a producer still holds the cell at
+   *         the consumer cursor (see "Held cells" above); out is then untouched.
    * @note RT-DEPENDS: lock-free, with no allocation, lock or syscall. The
    *       compare-and-swap loop has no per-caller retry bound: a competing
    *       consumer, or a spurious failure of the weak exchange, sends the

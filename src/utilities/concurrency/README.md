@@ -295,7 +295,7 @@ when the constructor returns; the workers block SIGINT, SIGTERM and SIGPIPE.
 **Header:** `ThreadPoolLockFree.hpp`
 **Purpose:** High-performance lock-free thread pool with bounded queue and backpressure.
 
-Uses `LockFreeQueue` for task storage; a worker that finds the ring empty parks on a futex until a producer publishes. Provides immediate `QUEUE_FULL` feedback when the bounded queue is at capacity.
+Uses `LockFreeQueue` for task storage; a worker that finds the ring empty parks on a futex until a producer publishes. Provides immediate `QUEUE_FULL` feedback when the bounded queue is at capacity. `QUEUE_FULL` is also the answer while a worker descheduled inside a dequeue holds the ring cell the producers have come round to (see `LockFreeQueue`): a caller that must not drop the task tries again.
 
 #### Key Types
 
@@ -428,6 +428,12 @@ public:
 - `sizeApprox()` may be read from any thread and never exceeds `capacity()`. It is the
   distance between the two cursors, which counts pushes and pops in flight: the element count
   when the queue is quiescent, and no promise that a pop succeeds
+- A call holds its cell from claiming it until releasing it. `tryPush()` returns false at a cell a
+  consumer still holds, however few elements are unread, and `tryPop()` returns false at a cell a
+  producer still holds, whatever is published behind it, until the holding thread runs again. The
+  calls never wait, but a thread descheduled inside one can stop the others at its cell, so the
+  queue is not lock-free in the strict sense. A caller that must not lose an element on a false
+  return tries again
 
 ---
 
