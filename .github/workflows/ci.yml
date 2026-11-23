@@ -45,7 +45,8 @@ jobs:
       rust: ${{ steps.f.outputs.rust }}
       py: ${{ steps.f.outputs.py }}
       sh: ${{ steps.f.outputs.sh }}
-      docker: ${{ steps.f.outputs.docker }}
+      images: ${{ steps.f.outputs.images }}
+      bakes: ${{ steps.f.outputs.bakes }}
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -74,10 +75,10 @@ jobs:
     name: Lint and secret scan
     needs: changes
     runs-on: ubuntu-24.04
-    # Rebuild-path headroom: when the PR changes image inputs, dev-setup
-    # rebuilds dev-base here, and a low-cache-overlap rebuild runs ~19 min
-    # before the checks even start (a 20-minute cap made it a runner-speed
-    # coin flip). Pull-path runs still finish in minutes.
+    # This job rebuilds its image only when the image's own definition
+    # changed (`images`): the format check and the secret scan use none of
+    # the baked dependencies, so a lock bump leaves it on the pulled image.
+    # The headroom is for that rebuild, which re-runs the dev tooling.
     timeout-minutes: 40
     steps:
       - name: Checkout
@@ -99,7 +100,7 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: dev
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images }}
       - name: Format check
         run: docker compose run --rm -T dev make format-check
       - name: Secret scan (gitleaks)
@@ -132,7 +133,7 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: cuda-build
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images == 'true' || needs.changes.outputs.bakes == 'true' }}
       # Second restore key: the nightly debug leg saves main-scoped entries,
       # the only ones a brand-new PR's first push can see (ccache is
       # content-addressed, so a partial-match cache only helps, never hurts).
@@ -176,7 +177,7 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: build-base
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images == 'true' || needs.changes.outputs.bakes == 'true' }}
       - name: Run Rust tests
         run: docker compose run --rm -T build-base make test-rust
       # Deny-all-warnings: the rust counterpart of clang-tidy's
@@ -213,7 +214,7 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: build-base
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images == 'true' || needs.changes.outputs.bakes == 'true' }}
       - name: Dictionaries generate (check-data-db)
         run: docker compose run --rm -T build-base make check-data-db
       # The gate stands on the helper's explicit-path error and its own
@@ -240,7 +241,7 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: build-base
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images == 'true' || needs.changes.outputs.bakes == 'true' }}
       - name: Run Python tests
         run: docker compose run --rm -T build-base make test-py
 
@@ -277,7 +278,7 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: build-base
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images == 'true' || needs.changes.outputs.bakes == 'true' }}
       - name: Restore ccache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -319,7 +320,7 @@ jobs:
           actor: ${{ github.actor }}
           token: ${{ secrets.GITHUB_TOKEN }}
           service: dev-cuda
-          rebuild: ${{ needs.changes.outputs.docker }}
+          rebuild: ${{ needs.changes.outputs.images == 'true' || needs.changes.outputs.bakes == 'true' }}
       # No ccache here: clang-tidy does not compile through the launcher --
       # every cache this job ever saved was ~191 bytes (see CHECKS_CCACHE in
       # mk/checks.mk for the same rule on nightly legs).
@@ -351,12 +352,14 @@ jobs:
           CPP: ${{ needs.changes.outputs.cpp }}
           RUST: ${{ needs.changes.outputs.rust }}
           PY: ${{ needs.changes.outputs.py }}
-          DOCKER: ${{ needs.changes.outputs.docker }}
+          IMAGES: ${{ needs.changes.outputs.images }}
+          BAKES: ${{ needs.changes.outputs.bakes }}
         run: |
           scope="scoped"
           [ "$CPP$RUST$PY" = "truetruetrue" ] && scope="full"
           images="pulled"
-          [ "$DOCKER" = "true" ] && images="rebuilt (image inputs changed)"
+          [ "$BAKES" = "true" ] && images="rebuilt for the baked dependencies (lint pulled its image)"
+          [ "$IMAGES" = "true" ] && images="rebuilt (an image definition changed)"
           echo "::notice title=CI scope::suite=$scope (cpp=$CPP rust=$RUST py=$PY); gate images $images"
           {
             echo "## CI run report"

@@ -274,6 +274,14 @@ RUN userdel -r ubuntu 2>/dev/null || true && \
 # never published; each tier below copies its output in as its last layers.
 # A dependency bump therefore re-runs this stage and those copies, and
 # nothing above them.
+#
+# CI reads this file to know when an image has to be rebuilt
+# (tools/build/py/bin/ci-classify.py): a file copied from the repository in
+# this stage is a baked dependency, and a change to it rebuilds the images the
+# build jobs run in; a file copied in any other stage defines the image, and a
+# change to it rebuilds the images of every job. A Cargo.toml is the one
+# exception: it is copied so cargo can read the workspace, and what is fetched
+# is the lock's. So a new input needs no list updated anywhere, only its COPY.
 FROM toolchain AS bakes
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]

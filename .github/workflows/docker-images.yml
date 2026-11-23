@@ -30,22 +30,9 @@ name: Docker Images
 on:
   push:
     branches: [main]
-    paths:
-      - docker/**
-      - docker-compose.yml
-      # base.Dockerfile bakes the rust cargo cache + the FetchContent sources from
-      # these, so a bump must rebuild the image to refresh them (offline/hermetic
-      # builds depend on the baked copies).
-      - tools/Cargo.lock
-      - tools/Cargo.toml
-      - tools/*/rust/*/Cargo.toml
-      - tools/uv.lock
-      - tools/pyproject.toml
-      - tools/*/py/*/pyproject.toml
-      - ExternalDependencies.cmake
-      # The build role's scripts are COPYd into the images.
-      - tools/build/sh/**
-      - tools/build/py/bin/**
+    # No path filter: which images a push rebuilds is decided in the detect
+    # job, from each Dockerfile's own COPY lines (ci-classify.py). A push
+    # that touches none of them runs that one job and builds nothing.
   workflow_dispatch:
     inputs:
       force_rebuild:
@@ -133,26 +120,17 @@ jobs:
           else
             RANGE="HEAD~1..HEAD"
           fi
-          DIFF=$(git diff --name-only "$RANGE" -- docker/ docker-compose.yml tools/build/sh tools/build/py/bin tools/Cargo.lock tools/Cargo.toml 'tools/*/rust/*/Cargo.toml' tools/uv.lock tools/pyproject.toml 'tools/*/py/*/pyproject.toml' ExternalDependencies.cmake 2>/dev/null || echo "docker/base.Dockerfile")
+          CHANGED=$(git diff --name-only "$RANGE")
 
-          # A change to a build-role script (tools/build/sh, tools/build/py/bin)
-          # must rebuild every
-          # image whose Dockerfile COPYs it. The COPY line is the source of truth
-          # for that dependency, so fold each changed script's consuming
-          # Dockerfiles into DIFF -- the per-image match below then selects them
-          # (with the usual parent cascade), no separate script-to-image table.
-          for script in $(printf '%s\n' "$DIFF" | grep -E '^tools/build/(sh|py/bin)/' || true); do
-            consumers=$(grep -rlF "$script" docker --include='*.Dockerfile' 2>/dev/null || true)
-            [ -n "$consumers" ] && DIFF=$(printf '%s\n%s' "$DIFF" "$consumers")
-          done
-
-          # base.Dockerfile bakes the rust cargo cache (tools/Cargo.* and the member manifests), the
-          # python wheelhouse (tools/uv.lock and the member manifests), and the FetchContent sources
-          # (ExternalDependencies.cmake), so a change to any must rebuild
-          # base/build-base to refresh them -- otherwise an offline build would run
-          # against a stale cache. Map those onto base.Dockerfile (cascades to all).
-          if printf '%s\n' "$DIFF" | grep -qE '^tools/Cargo\.|^tools/[^/]+/rust/[^/]+/Cargo\.toml$|^tools/(uv\.lock|pyproject\.toml)$|^tools/[^/]+/py/[^/]+/pyproject\.toml$|^ExternalDependencies\.cmake'; then
-            DIFF=$(printf '%s\n%s' "$DIFF" "docker/base.Dockerfile")
+          # The images to rebuild directly: each Dockerfile that changed, or
+          # that copies a changed file from the repository. The COPY line is
+          # the source of truth for what an image is built from, and
+          # ci-classify.py reads it (the PR gate asks it the same question),
+          # so there is no list of image inputs here. The per-image match
+          # below then selects them, with the usual parent cascade.
+          DIFF=$(printf '%s\n' "$CHANGED" | python3 tools/build/py/bin/ci-classify.py --dockerfiles)
+          if printf '%s\n' "$CHANGED" | grep -qx "docker-compose.yml"; then
+            DIFF=$(printf '%s\n%s' "$DIFF" "docker-compose.yml")
           fi
 
           echo "Changed docker files (${RANGE}):"; echo "$DIFF"
