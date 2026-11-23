@@ -25,7 +25,7 @@ tools/
     py/bin/                               gen-platform-consumers.py, ci-classify.py (scripts, not a package)
     proto/apex/options.proto              the proto profile cdef_gen reads
     fixtures/check-data-db/               the data-db gate's contract fixtures
-    fixtures/ci-classify/                 the CI change classifier's cases
+    fixtures/ci-classify/                 the CI change classifier's cases and crate-graph fixture
   ops/
     rust/apex-ops-tools/                  tprm_template, upx_tool, serial_dev_checker, serial_dev_tester
     py/apex_ops/                          ops-deck, zenith-target; the APROTO client and protocol
@@ -110,4 +110,29 @@ every one of them:
    manifest, the lock, the manifest `COPY` line in the image bake
    (`docker/base.Dockerfile`) and, for a Python package, the `--cov`
    entry of `coverage-py` in `mk/test.mk`.
-4. Give the role a CI scope only if it should gate on its own.
+4. CI: until a rule names it, a path under the new role runs every job.
+   To scope it, see [What CI runs for a tools change](#what-ci-runs-for-a-tools-change).
+
+## What CI runs for a tools change
+
+The rules are the `RULES` table in
+[build/py/bin/ci-classify.py](build/py/bin/ci-classify.py), held to the
+cases in [build/fixtures/ci-classify/cases.txt](build/fixtures/ci-classify/cases.txt)
+by `make check-ci-classify`. For a pull request that touches only:
+
+| Path                                                | Runs                                                                      |
+| --------------------------------------------------- | ------------------------------------------------------------------------- |
+| `tools/build/rust/`, `proto/`, the data-db fixtures | the build role's Rust tests and clippy, `check-cdef`, the dictionary gate |
+| `tools/build/rust/apex-tprm/`                       | the same, and the ops role's Rust tests (the ops crate links it)          |
+| `tools/ops/rust/`, `tools/analysis/rust/`           | that role's Rust tests and clippy                                         |
+| `tools/<role>/py/`                                  | the Python suite (the target-generation tests are in it)                  |
+| `tools/ops/sh/`                                     | the shell smoke                                                           |
+| `tools/<role>/cpp/`                                 | the C++ jobs, which build it                                              |
+| `tools/Cargo.lock`                                  | every role's Rust tests and the build role's gates, in rebuilt images     |
+| `tools/uv.lock`, a `pyproject.toml`                 | the Python suite, in an image rebuilt with the new wheels                 |
+
+Lint runs for every change. A crate that a crate of another role links
+must select that role's tests as well; `make check-ci-crates` (run by
+`make test-rust`) fails until its rule says so. A new role, or a new
+language under a role, runs every job until a rule and its cases are
+added; a Rust role also takes an entry in `RUST_JOBS`.

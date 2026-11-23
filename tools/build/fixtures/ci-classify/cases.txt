@@ -5,6 +5,8 @@
 # --- nothing to run but lint ---------------------------------------------------
 -                       | README.md
 -                       | docs/architecture/overview.rst
+-                       | tools/README.md
+-                       | tools/docs/rust_workspace.md
 
 # --- C++ -----------------------------------------------------------------------
 cpp                     | src/system/core/executive/posix/src/ApexExecutive.cpp
@@ -18,50 +20,66 @@ cpp                     | CMakePresets.json
 cpp                     | src/system/core/executive/README.md
 
 # --- contracts with more than one side -------------------------------------------
-cpp rust                | compat/tprm/vectors/basic.toml
-cpp rust                | src/sim/models/foo/foo_data.toml
-cpp rust                | src/sim/models/foo/inc/.auto/FooData.hpp
+cpp rust_build          | compat/tprm/vectors/basic.toml
+cpp rust_build          | src/sim/models/foo/foo_data.toml
+cpp rust_build          | src/sim/models/foo/inc/.auto/FooData.hpp
 
-# --- tools, by language ----------------------------------------------------------
-rust                    | tools/build/rust/apex-build-tools/src/bin/cfg2bin.rs
-rust                    | tools/ops/rust/apex-ops-tools/src/bin/upx_tool.rs
-rust                    | tools/analysis/rust/apex-analysis-tools/src/bin/rdat_tool.rs
+# --- the build role: what the C++ build and the dictionary gate stand on ---------
+rust_build              | tools/build/rust/apex-build-tools/src/bin/cfg2bin.rs
+rust_build              | tools/build/rust/apex-build-tools/Cargo.toml
+rust_build              | tools/build/proto/apex/options.proto
+rust_build              | tools/build/fixtures/check-data-db/valid/apex_data.toml
+# The TPRM library is linked by the ops crate too.
+rust_build rust_ops     | tools/build/rust/apex-tprm/src/lib.rs
+rust_build rust_ops     | tools/build/rust/apex-tprm/Cargo.toml
+
+# --- the ops role: its own suites, and none of the gates -------------------------
+rust_ops                | tools/ops/rust/apex-ops-tools/src/bin/upx_tool.rs
+rust_ops                | tools/ops/rust/apex-ops-tools/Cargo.toml
 py                      | tools/ops/py/apex_ops/src/apex_ops/client.py
+py                      | tools/ops/py/apex_ops/src/apex_ops/target_gen.py
+py                      | tools/ops/py/apex_ops/tests/test_ops_target_gen.py
+sh                      | tools/ops/sh/bin/ops_sdk_package.sh
+
+# --- the analysis role: its own suites, and none of the gates --------------------
+rust_analysis           | tools/analysis/rust/apex-analysis-tools/src/bin/rdat_tool.rs
+rust_analysis           | tools/analysis/rust/apex-analysis-tools/Cargo.toml
 py                      | tools/analysis/py/apex_analysis/tests/test_plot.py
+# A C++ tool of any role is a target of the C++ build.
+cpp                     | tools/analysis/cpp/registry_info/src/registry-info.cpp
+
+# --- the tools workspaces ----------------------------------------------------------
+rust_build rust_ops rust_analysis | tools/Cargo.toml
 py                      | demos/apex_action_demo/test/test_checkout_reader.py
 py                      | demos/apex_horizon_demo/rover_mcu/test/test_rover_ring_probe.py
 cpp py                  | demos/apex_hil_demo/scripts/checkout.py
 cpp py                  | demos/apex_horizon_demo/rover_mcu/scripts/upload_rts.py
-sh                      | tools/ops/sh/bin/ops_sdk_package.sh
 sh                      | tools/build/sh/package-tools.sh
 
 # --- the gate images' own definition: every job rebuilds its image -------------
-cpp rust py sh images   | docker/base.Dockerfile
-cpp rust py sh images   | docker/dev/cpu.Dockerfile
-cpp rust py sh images   | docker/dev/cuda.Dockerfile
-cpp rust py sh images   | docker-compose.yml
+cpp rust_build rust_ops rust_analysis py sh images | docker/base.Dockerfile
+cpp rust_build rust_ops rust_analysis py sh images | docker/dev/cpu.Dockerfile
+cpp rust_build rust_ops rust_analysis py sh images | docker/dev/cuda.Dockerfile
+cpp rust_build rust_ops rust_analysis py sh images | docker-compose.yml
 
-# --- what base.Dockerfile's bakes stage copies: the jobs that build rebuild ------
-rust bakes              | tools/Cargo.lock
-py bakes                | tools/uv.lock
-py bakes                | tools/pyproject.toml
-py bakes                | tools/ops/py/apex_ops/pyproject.toml
-py bakes                | tools/analysis/py/apex_analysis/pyproject.toml
-cpp rust py sh bakes    | ExternalDependencies.cmake
-cpp rust py sh bakes    | tools/build/sh/bake-external-deps.sh
+# --- what base.Dockerfile's bakes stage copies: its consumers rebuild --------------
+# The Rust lock: everything that compiles a crate, the C++ jobs included.
+rust_build rust_ops rust_analysis bakes_gate bakes_rust | tools/Cargo.lock
+# The Python lock and manifests: the Python job alone.
+py bakes_py             | tools/uv.lock
+py bakes_py             | tools/pyproject.toml
+py bakes_py             | tools/ops/py/apex_ops/pyproject.toml
+py bakes_py             | tools/analysis/py/apex_analysis/pyproject.toml
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | ExternalDependencies.cmake
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | tools/build/sh/bake-external-deps.sh
 
 # A copied file is a path, not the start of a name.
-rust                    | tools/Cargo.lock.orig
-
-# --- copied by the bakes, but the lock decides what is fetched -------------------
-rust                    | tools/Cargo.toml
-rust                    | tools/build/rust/apex-build-tools/Cargo.toml
-rust                    | tools/ops/rust/apex-ops-tools/Cargo.toml
-rust                    | tools/analysis/rust/apex-analysis-tools/Cargo.toml
+rust_build rust_ops rust_analysis | tools/Cargo.lock.orig
 
 # --- under tools/build, and no gate image copies it -------------------------------
 -                       | tools/build/py/bin/gen-platform-consumers.py
 -                       | tools/build/py/bin/ci-classify.py
+-                       | tools/build/fixtures/ci-classify/cases.txt
 -                       | tools/build/sh/setup-cross-toolchain.sh
 -                       | tools/build/sh/setup-sysroot.sh
 
@@ -70,32 +88,46 @@ rust                    | tools/analysis/rust/apex-analysis-tools/Cargo.toml
 -                       | docker/dev/stm32.Dockerfile
 
 # --- build and CI infrastructure, and anything unknown: everything ---------------
-cpp rust py sh          | .github/workflows/ci.yml
-cpp rust py sh          | mk/test.mk
-cpp rust py sh          | docker/builder.Dockerfile
-cpp rust py sh          | docker-compose.ci.yml
-cpp rust py sh          | Makefile
-cpp rust py sh          | some_new_top_level_dir/file.txt
-cpp rust py sh          | -
+cpp rust_build rust_ops rust_analysis py sh | .github/workflows/ci.yml
+cpp rust_build rust_ops rust_analysis py sh | mk/test.mk
+cpp rust_build rust_ops rust_analysis py sh | docker/builder.Dockerfile
+cpp rust_build rust_ops rust_analysis py sh | docker-compose.ci.yml
+cpp rust_build rust_ops rust_analysis py sh | Makefile
+cpp rust_build rust_ops rust_analysis py sh | tools/CMakeLists.txt
+cpp rust_build rust_ops rust_analysis py sh | some_new_top_level_dir/file.txt
+# A role or a language under tools/ that no rule names.
+cpp rust_build rust_ops rust_analysis py sh | tools/newrole/rust/some-crate/src/lib.rs
+cpp rust_build rust_ops rust_analysis py sh | tools/ops/go/some-tool/main.go
+cpp rust_build rust_ops rust_analysis py sh | -
 
 # --- several paths: the union ----------------------------------------------------
-cpp rust                | README.md src/a.cpp tools/build/rust/apex-tprm/src/lib.rs
+cpp rust_build rust_ops | README.md src/a.cpp tools/build/rust/apex-tprm/src/lib.rs
+rust_ops rust_analysis  | tools/ops/rust/apex-ops-tools/src/lib.rs tools/analysis/rust/apex-analysis-tools/src/lib.rs
 cpp py sh               | cmake/apex/README.md cmake/apex/Packaging.cmake tools/ops/sh/bin/ops_sdk_package.sh tools/ops/py/apex_ops/src/apex_ops/target_gen.py
-cpp rust py sh          | docs/x.md tools/ops/rust/apex-ops-tools/Cargo.toml mk/release.mk
-rust py bakes           | tools/Cargo.lock tools/uv.lock
-cpp rust bakes          | src/a.cpp tools/Cargo.lock tools/ops/rust/apex-ops-tools/Cargo.toml
-cpp rust py sh images bakes | docker/base.Dockerfile tools/Cargo.lock
+cpp rust_build rust_ops rust_analysis py sh | docs/x.md tools/ops/rust/apex-ops-tools/Cargo.toml mk/release.mk
+rust_build rust_ops rust_analysis py bakes_gate bakes_rust bakes_py | tools/Cargo.lock tools/uv.lock
+# A lock outside the build role leaves the C++ jobs on their pulled images.
+cpp py bakes_py         | src/a.cpp tools/uv.lock
+cpp rust_build rust_ops rust_analysis bakes_gate bakes_rust | src/a.cpp tools/Cargo.lock tools/ops/rust/apex-ops-tools/Cargo.toml
+cpp rust_build rust_ops rust_analysis py sh images bakes_gate bakes_rust | docker/base.Dockerfile tools/Cargo.lock
 
 # --- how a Dockerfile's copies are read (stages.Dockerfile is a fixture) ---------
 # Outside the bakes stage a copied file defines the image; in it, the bakes. A
-# directory is its content; a Cargo.toml and a COPY --from are not inputs.
+# directory is its content; a Cargo.toml and a COPY --from are not inputs. A
+# baked file rebuilds for the jobs its path selects, and one whose path selects
+# none (docs/ here) for every job that has a bake.
 @gates tools/build/fixtures/ci-classify/stages.Dockerfile
-cpp rust py sh images   | fixture/tool.sh
-cpp rust py sh bakes    | fixture/Cargo.lock
-cpp rust py sh          | fixture/Cargo.toml
-cpp rust py sh bakes    | fixture/assets/table.bin
-cpp rust py sh          | fixture/assets-other/table.bin
-cpp rust py sh          | opt/baked/file opt/other/file
-cpp rust py sh images   | tools/build/fixtures/ci-classify/stages.Dockerfile
-cpp rust py sh images bakes | fixture/tool.sh fixture/assets/a/b.bin
+cpp rust_build rust_ops rust_analysis py sh images | fixture/tool.sh
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/Cargo.lock
+cpp rust_build rust_ops rust_analysis py sh | fixture/Cargo.toml
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/assets/table.bin
+cpp rust_build rust_ops rust_analysis py sh | fixture/assets-other/table.bin
+cpp rust_build rust_ops rust_analysis py sh | opt/baked/file opt/other/file
+# The gate file itself defines the image; its path selects no job of its own.
+images                  | tools/build/fixtures/ci-classify/stages.Dockerfile
+cpp rust_build rust_ops rust_analysis py sh images bakes_gate bakes_rust bakes_py | fixture/tool.sh fixture/assets/a/b.bin
+bakes_gate bakes_rust bakes_py | docs/baked/table.bin
+rust_ops bakes_rust     | tools/ops/rust/baked.bin
+py bakes_py             | tools/ops/py/baked.bin
+cpp bakes_gate          | src/baked.bin
 @gates

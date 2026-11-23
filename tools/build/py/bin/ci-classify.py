@@ -4,18 +4,28 @@
     git diff --name-only --no-renames origin/main...HEAD | ci-classify.py
     git diff --name-only <range> | ci-classify.py --dockerfiles
     ci-classify.py --check tools/build/fixtures/ci-classify/cases.txt
+    (cd tools && cargo metadata --format-version 1 --no-deps) | ci-classify.py --check-crates
 
 Reads one changed path per line on stdin and prints one `name=true|false` line
 per decision, the form a workflow appends to its outputs:
 
-  cpp     the C++ build, its tests, the sanitizer and static-analysis jobs
-  rust    the Rust tool tests, clippy and the spec/.auto pin
-  py      the Python tool tests
-  sh      the shell tool smoke
-  images  an image a gate job runs in is defined differently: every job
-          rebuilds its image from the Dockerfiles instead of pulling it
-  bakes   the dependencies baked into those images differ: the jobs that
-          build with them rebuild; lint, which uses none of them, pulls
+  cpp            the C++ build, its tests, the sanitizer and static-analysis
+                 jobs
+  rust_build     the build role's Rust tests and clippy, the spec/.auto pin
+                 and the dictionary gate: what the C++ build stands on
+  rust_ops       the ops role's Rust tests and clippy
+  rust_analysis  the analysis role's Rust tests and clippy
+  py             the Python tool tests
+  sh             the shell tool smoke
+  images         an image a job runs in is defined differently: every job
+                 rebuilds its image from the Dockerfiles instead of pulling it
+  bakes_gate     the dependencies baked into those images differ for the C++
+                 jobs and the dictionary gate, which rebuild
+  bakes_rust     the same for the Rust tool tests
+  bakes_py       the same for the Python tool tests
+
+and one line `rust_roles=<roles>`, the roles of the selected rust_* decisions
+separated by spaces, the form `make test-rust ROLES=...` takes.
 
 A path selects the jobs of the first rule it matches (RULES, in order; `*` in
 a pattern also crosses `/`, so demos/*/test covers a demo at any depth). The
@@ -27,10 +37,24 @@ and rebuilds nothing.
 What an image is built from is read from its Dockerfile, not listed here: the
 Dockerfile itself and every file a COPY takes from the repository. In
 docker/base.Dockerfile those copies are all in the `bakes` stage, which is
-what separates `bakes` from `images`. One kind of copied file is not an
+what separates a bake from `images`. One kind of copied file is not an
 input: a Cargo.toml. cargo needs every member manifest to read the workspace,
 but what it fetches is what Cargo.lock lists; a manifest edit that changed
 that would change the lock.
+
+Who rebuilds for a changed bake follows from the jobs its path selects: the
+Rust tests when it selects a Rust role, the Python tests when it selects py,
+and the C++ jobs and the dictionary gate when it selects cpp or rust_build
+(they compile the build role's crates, and cargo resolves the whole lock to
+do it). So the Rust lock rebuilds everything that compiles a crate, and the
+Python lock rebuilds the Python job alone. A bake whose path selects no job
+has no known consumer, and rebuilds for all of them. Lint uses no bake and
+rebuilds for `images` only.
+
+--check-crates reads `cargo metadata` for the tools workspace on stdin and
+fails when a crate is linked by a crate of a role its own paths do not
+select: the role rules name directories, and this holds them to the crate
+graph cargo reports.
 
 --dockerfiles prints, for the changed paths on stdin, each Dockerfile under
 docker/ that is one of them or copies one of them: the images the publish
@@ -49,28 +73,45 @@ stdlib only: this runs on the bare CI host before any image exists.
 
 import fnmatch
 import glob
+import json
 import os
 import shlex
 import sys
 
-JOBS = ("cpp", "rust", "py", "sh")
+RUST_JOBS = ("rust_build", "rust_ops", "rust_analysis")
+JOBS = ("cpp",) + RUST_JOBS + ("py", "sh")
 EVERY_JOB = frozenset(JOBS)
 
 # (patterns, jobs). A pattern is a shell glob in which `*` also crosses `/`.
 RULES = (
-    (("tools/Cargo.*", "tools/*/rust/*"), {"rust"}),
-    # Scripts the build runs in place; nothing here has a test job of its own.
-    (("tools/build/py/bin/*",), set()),
+    # The workspace manifest and the lock are every crate's.
+    (("tools/Cargo.*",), set(RUST_JOBS)),
+    # The TPRM library is linked by the ops crate as well as the build one.
+    (("tools/build/rust/apex-tprm/*",), {"rust_build", "rust_ops"}),
+    # The build role: its crates, the proto profile cdef_gen reads, and the
+    # fixtures of the dictionary gate.
+    (
+        ("tools/build/rust/*", "tools/build/proto/*", "tools/build/fixtures/check-data-db/*"),
+        {"rust_build"},
+    ),
+    (("tools/ops/rust/*",), {"rust_ops"}),
+    (("tools/analysis/rust/*",), {"rust_analysis"}),
+    # Scripts the build and CI run in place, and this classifier's own cases;
+    # lint checks them and nothing here has a test job of its own.
+    (("tools/build/py/bin/*", "tools/build/fixtures/ci-classify/*"), set()),
     (("tools/pyproject.toml", "tools/uv.lock", "tools/*/py/*"), {"py"}),
     # A demo's checkout scripts keep their pytest files beside them; make
     # test-py collects those directories with the members' own tests.
     (("demos/*/test/*.py",), {"py"}),
     (("tools/ops/sh/*",), {"sh"}),
-    # Conformance contracts are multi-sided: every suite that pins one runs.
-    (("compat/tprm/*",), {"cpp", "rust"}),
+    # A C++ tool of any role is a target of the C++ build.
+    (("tools/*/cpp/*",), {"cpp"}),
+    # The TPRM conformance vectors are pinned from both sides: the C++ loader's
+    # tests and the TPRM library's.
+    (("compat/tprm/*",), {"cpp", "rust_build"}),
     # Component specs and their committed .auto headers are pinned against
-    # each other by check-cdef, which runs in the rust job (it needs cdef_gen).
-    (("*_data.toml", "*/.auto/*"), {"cpp", "rust"}),
+    # each other by check-cdef, and the dictionary gate reads both.
+    (("*_data.toml", "*/.auto/*"), {"cpp", "rust_build"}),
     # A demo's Python scripts are tested by the Python job as well as built
     # around by the demo's C++ selection.
     (("demos/*/scripts/*.py",), {"cpp", "py"}),
@@ -89,7 +130,8 @@ RULES = (
     # still checks them.
     (("docker/dev/*", "tools/build/sh/*"), set()),
     # Everything else: the base image, compose files, workflows, make files,
-    # root configuration, and whatever is new.
+    # root configuration, a tools role or language no rule names, and
+    # whatever is new.
     (("*",), EVERY_JOB),
 )
 
@@ -139,19 +181,35 @@ def touches(paths, source):
     return any(path == source or path.startswith(source + "/") for path in paths)
 
 
+def selected_jobs(path):
+    """Return the jobs of the first rule a path matches (the last matches any)."""
+    return next(
+        selected
+        for patterns, selected in RULES
+        if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
+    )
+
+
 def image_decisions(paths, gates=GATE_DOCKERFILES):
-    """Return (images, bakes) for a list of changed paths."""
+    """Return (images, jobs) for a list of changed paths.
+
+    `jobs` is the set of jobs whose baked dependencies changed: those of every
+    changed path the bakes stage copies (see the module text).
+    """
     images = COMPOSE_FILE in paths
-    bakes = False
+    baked = set()
     for dockerfile in gates:
         images = images or dockerfile in paths
         for stage, source in copied_sources(dockerfile):
-            if decides_image(source) and touches(paths, source):
-                if stage == BAKES_STAGE:
-                    bakes = True
-                else:
-                    images = True
-    return images, bakes
+            if not decides_image(source):
+                continue
+            touching = [path for path in paths if touches([path], source)]
+            if stage != BAKES_STAGE:
+                images = images or bool(touching)
+                continue
+            for path in touching:
+                baked |= selected_jobs(path) or EVERY_JOB
+    return images, baked
 
 
 def dockerfiles_to_rebuild(paths):
@@ -175,15 +233,66 @@ def classify(paths, gates=GATE_DOCKERFILES):
     """Return {decision: bool} for a list of changed paths."""
     jobs = set()
     for path in paths:
-        for patterns, selected in RULES:
-            if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns):
-                jobs |= selected
-                break
+        jobs |= selected_jobs(path)
     if not paths:
         jobs = set(EVERY_JOB)
     decisions = {job: job in jobs for job in JOBS}
-    decisions["images"], decisions["bakes"] = image_decisions(paths, gates)
+    decisions["images"], baked = image_decisions(paths, gates)
+    decisions["bakes_gate"] = bool(baked & {"cpp", "rust_build"})
+    decisions["bakes_rust"] = bool(baked & set(RUST_JOBS))
+    decisions["bakes_py"] = "py" in baked
     return decisions
+
+
+def rust_roles(decisions):
+    """Return the selected Rust roles, as `make test-rust ROLES=...` takes them."""
+    return " ".join(job[len("rust_") :] for job in RUST_JOBS if decisions[job])
+
+
+def check_crates(metadata):
+    """Hold the role rules to the crate graph; return the number of crates missed.
+
+    `metadata` is `cargo metadata --no-deps` for the tools workspace, run from
+    tools/. A crate's own job is the one its directory selects; every crate
+    that links it, directly or through another, must have its job selected by
+    the same path.
+    """
+    tools = metadata["workspace_root"]
+    crates = {}
+    for package in metadata["packages"]:
+        directory = os.path.dirname(package["manifest_path"])
+        links = [d["path"] for d in package["dependencies"] if d.get("path")]
+        crates[directory] = (package["name"], links)
+
+    def path_in_repository(directory):
+        return "tools/%s/src/lib.rs" % os.path.relpath(directory, tools)
+
+    def users(directory, seen):
+        for other, (_, links) in crates.items():
+            if directory in links and other not in seen:
+                seen.add(other)
+                users(other, seen)
+        return seen
+
+    missed = 0
+    for directory, (name, _) in sorted(crates.items()):
+        selected = selected_jobs(path_in_repository(directory))
+        for user in sorted(users(directory, set())):
+            needed = selected_jobs(path_in_repository(user)) & set(RUST_JOBS)
+            if not needed <= selected:
+                missed += 1
+                print(
+                    "%s is linked by %s, whose tests (%s) a change to %s does not select"
+                    % (
+                        name,
+                        crates[user][0],
+                        " ".join(sorted(needed - selected)),
+                        os.path.relpath(directory, os.path.dirname(tools)),
+                    ),
+                    file=sys.stderr,
+                )
+    print("[check-ci-crates] %d crates, %d missed" % (len(crates), missed))
+    return missed
 
 
 def check(table):
@@ -223,6 +332,8 @@ def check(table):
 def main(argv):
     if len(argv) == 3 and argv[1] == "--check":
         return 1 if check(argv[2]) else 0
+    if argv[1:] == ["--check-crates"]:
+        return 1 if check_crates(json.load(sys.stdin)) else 0
     if argv[1:] == ["--dockerfiles"]:
         paths = [line.strip() for line in sys.stdin if line.strip()]
         for dockerfile in dockerfiles_to_rebuild(paths):
@@ -232,8 +343,10 @@ def main(argv):
         print(__doc__.split("\n\n")[1], file=sys.stderr)
         return 2
     paths = [line.strip() for line in sys.stdin if line.strip()]
-    for name, value in classify(paths).items():
+    decisions = classify(paths)
+    for name, value in decisions.items():
         print("%s=%s" % (name, "true" if value else "false"))
+    print("rust_roles=%s" % rust_roles(decisions))
     return 0
 
 

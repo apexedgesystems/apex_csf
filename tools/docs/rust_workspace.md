@@ -113,8 +113,8 @@ per build tree and per role, so compiled artifacts never cross trees.
 | `make tools-build`                      | the build role: what the apex build stands on                             |
 | `make tools-ops`, `make tools-analysis` | the other roles, on request                                               |
 | `make tools`                            | every tool (all roles)                                                    |
-| `make test-rust`                        | `cargo test --workspace` at `tools/`                                      |
-| `make clippy`                           | `cargo clippy --workspace --all-targets --locked -- -D warnings`          |
+| `make test-rust`                        | `cargo test --locked` for every member; `ROLES="ops"` for those roles'    |
+| `make clippy`                           | `cargo clippy --all-targets --locked -- -D warnings`, by `ROLES` likewise |
 | `make compat-tprm`                      | the TPRM contract: `-p apex-tprm --test golden_vectors` plus the C++ side |
 | `make coverage-rust`                    | `cargo llvm-cov --workspace`; report at `tools/coverage-rust.lcov`        |
 | `make clean-rust`                       | the per-role target dirs, the rust stamps and `tools/target`              |
@@ -205,9 +205,9 @@ only.
    role's crates are workspace members and inherit the shared fields.
 2. Add the role to `_APEX_TOOL_ROLES` in `tools/CMakeLists.txt` and to
    `TOOL_ROLES` in `mk/tools.mk`.
-3. Follow the member-crate steps above for its first crate; give the
-   role a CI scope in `.github/workflows/ci.yml` only if it should gate
-   on its own.
+3. Follow the member-crate steps above for its first crate. CI runs
+   every job for the role's paths until a rule scopes it (see
+   [What CI runs for a tools change](../README.md#what-ci-runs-for-a-tools-change)).
 
 ---
 
@@ -215,6 +215,7 @@ only.
 
 ```bash
 make test-rust                       # every member
+make test-rust ROLES=ops             # the members of one role
 cd tools && cargo test -p apex-tprm  # one member
 cd tools && cargo test -p apex-build-tools --test apex_data_gen
 ```

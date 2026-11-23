@@ -69,6 +69,9 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- CI runs a tool change's own role and rebuilds an image only for what the
+  change bakes into it; `make test-rust` and `make clippy` take `ROLES=`
+  ([#198](https://github.com/apexedgesystems/apex_csf/pull/198)).
 - Breaking: every tool lives under its role and installs to
   `bin/tools/<role>/`; the Python package `apex_tools` is now the
   `apex_ops` and `apex_analysis` wheels (scripts set

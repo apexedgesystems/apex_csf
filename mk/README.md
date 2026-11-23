@@ -67,7 +67,7 @@ Configure-only variants available: `configure-jetson`, `configure-rpi`, etc.
 | `make test`      | Run all C++ tests serially                 |
 | `make testp`     | Run tests in parallel, timing tests serial |
 | `make test-py`   | Run Python tools tests                     |
-| `make test-rust` | Run Rust tools tests                       |
+| `make test-rust` | Run Rust tools tests (`ROLES=` narrows)    |
 
 ### Code Quality
 

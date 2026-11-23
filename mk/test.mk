@@ -131,10 +131,18 @@ test-py:
 	@cd "$(PY_TOOLS_DIR)" && uv lock --check && uv sync --frozen --no-editable --all-packages && \
 	  (uv run --no-sync pytest -v */py/*/tests $(addprefix $(CURDIR)/,$(PY_DEMO_TEST_DIRS)) || test $$? -eq 5)
 
-# Rust tools unit tests
-test-rust:
-	$(call log,test,Running Rust tools tests)
-	@cd tools && cargo test --workspace
+# Rust tools unit tests, by role. ROLES names the roles whose crates are tested
+# (default: every role, which is the whole workspace). A crate is a member
+# manifest under tools/<role>/rust/, so a new crate needs no entry here.
+# check-ci-crates first: CI runs one role's tests for a change in that role,
+# which is only sound while no crate of another role links it unannounced.
+test-rust: check-ci-crates
+	$(call log,test,Running Rust tools tests ($(ROLES)))
+	@cd tools && for role in $(ROLES); do \
+	  for manifest in "$$role"/rust/*/Cargo.toml; do \
+	    cargo test --locked --manifest-path "$$manifest" || exit 1; \
+	  done; \
+	done
 
 # Shell tools smoke: exercises ops_sdk_package.sh end to end against a
 # synthetic build tree (a stub struct dictionary) and asserts the SDK
@@ -384,15 +392,30 @@ check-data-db-contract: tools-build
 
 # The change classifier's contract: for a set of changed paths, which CI jobs
 # run and whether the gate images are rebuilt. The rules live in the script the
-# workflow calls; the cases beside the fixture name hold them to it. Runs on a
-# bare host (stock Python).
+# workflow calls; the cases beside the fixture name hold them to it, and a
+# recorded crate graph with two links the rules miss holds the crate check to
+# its refusal. Runs on a bare host (stock Python).
 CI_CLASSIFY := tools/build/py/bin/ci-classify.py
 CI_CLASSIFY_CASES := tools/build/fixtures/ci-classify/cases.txt
+CI_CLASSIFY_MISSED := tools/build/fixtures/ci-classify/crates_missed.json
 
 check-ci-classify:
 	@python3 "$(CI_CLASSIFY)" --check "$(CI_CLASSIFY_CASES)"
+	@out=$$(python3 "$(CI_CLASSIFY)" --check-crates < "$(CI_CLASSIFY_MISSED)" 2>&1); rc=$$?; \
+	  if [ $$rc -ne 1 ] || ! printf '%s\n' "$$out" | grep -qxF '[check-ci-crates] 4 crates, 2 missed'; then \
+	    printf '%s\n' "$$out"; \
+	    echo "[check-ci-classify] the crate check passed a graph with two missed links (exit $$rc)"; \
+	    exit 1; \
+	  fi
 
-.PHONY: check-ci-classify
+# The role rules against the crate graph cargo reports: a crate that a crate
+# of another role links must select that role's tests too. Needs cargo, so it
+# runs where the Rust tests do.
+check-ci-crates:
+	@(cd tools && cargo metadata --format-version 1 --locked --no-deps) | \
+	  python3 "$(CI_CLASSIFY)" --check-crates
+
+.PHONY: check-ci-classify check-ci-crates
 
 # Tooling coverage (nightly). Each runs its tool test suite under coverage
 # instrumentation and emits a human-readable summary plus a machine report,

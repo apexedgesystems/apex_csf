@@ -1,0 +1,43 @@
+{
+  "workspace_root": "/w/tools",
+  "packages": [
+    {
+      "name": "apex-tprm",
+      "manifest_path": "/w/tools/build/rust/apex-tprm/Cargo.toml",
+      "dependencies": [{ "name": "serde", "kind": null }]
+    },
+    {
+      "name": "apex-build-tools",
+      "manifest_path": "/w/tools/build/rust/apex-build-tools/Cargo.toml",
+      "dependencies": [
+        {
+          "name": "apex-tprm",
+          "kind": null,
+          "path": "/w/tools/build/rust/apex-tprm"
+        }
+      ]
+    },
+    {
+      "name": "apex-ops-tools",
+      "manifest_path": "/w/tools/ops/rust/apex-ops-tools/Cargo.toml",
+      "dependencies": [
+        {
+          "name": "apex-tprm",
+          "kind": null,
+          "path": "/w/tools/build/rust/apex-tprm"
+        }
+      ]
+    },
+    {
+      "name": "apex-analysis-tools",
+      "manifest_path": "/w/tools/analysis/rust/apex-analysis-tools/Cargo.toml",
+      "dependencies": [
+        {
+          "name": "apex-ops-tools",
+          "kind": "dev",
+          "path": "/w/tools/ops/rust/apex-ops-tools"
+        }
+      ]
+    }
+  ]
+}

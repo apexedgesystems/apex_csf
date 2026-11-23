@@ -7,6 +7,7 @@ FROM toolchain AS bakes
 COPY fixture/Cargo.toml fixture/Cargo.lock \
      /tmp/fetch/
 COPY fixture/assets/ /tmp/assets/
+COPY docs/baked/ tools/ops/rust/baked.bin tools/ops/py/baked.bin src/baked.bin /tmp/by-consumer/
 
 FROM toolchain AS tier
 COPY --from=bakes /opt/baked /opt/baked
