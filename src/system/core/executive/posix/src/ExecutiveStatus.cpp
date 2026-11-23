@@ -35,6 +35,8 @@ const char* toString(Status s) noexcept {
     return "ERROR_CONFIG_NOT_FOUND";
   case Status::ERROR_TPRM_UNPACK_FAIL:
     return "ERROR_TPRM_UNPACK_FAIL";
+  case Status::ERROR_TPRM_INGEST:
+    return "ERROR_TPRM_INGEST";
   case Status::ERROR_TPRM_REJECTED:
     return "ERROR_TPRM_REJECTED";
 

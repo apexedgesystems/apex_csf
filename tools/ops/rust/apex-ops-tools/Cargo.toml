@@ -6,6 +6,14 @@ edition.workspace = true
 authors.workspace = true
 license.workspace = true
 
+# Commands these executables run that a package cannot carry, for a bundle's
+# tools/REQUIREMENTS.txt and start check: "<command>" is needed by every run,
+# "<command>: <use>" by that use only.
+[package.metadata.apex.requires]
+upx_tool = ["upx", "tar: --archive-dir"]
+serial_dev_checker = ["lsof: finding a port held by another process, skipped without it"]
+serial_dev_tester = ["lsof: finding a port held by another process, skipped without it"]
+
 [lib]
 name = "apex_ops_tools"
 path = "src/lib.rs"
