@@ -35,9 +35,9 @@ set(UNIT_TEST_SOURCES
 # Test Plugins
 # ------------------------------------------------------------------------------
 
-# Plugin libraries the loader tests open. Each passes the ABI gate and lacks
-# one factory symbol.
-foreach (_plugin NoCreate NoDestroy)
+# Plugin libraries the loader tests open. Two pass the ABI gate and lack one
+# factory symbol; one has both factories and reports another ABI version.
+foreach (_plugin NoCreate NoDestroy OtherAbi)
   apex_add_test_plugin(
     TARGET SystemComponentTestPlugin_${_plugin} SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/plugins/Plugin${_plugin}.cpp"
@@ -66,6 +66,7 @@ apex_add_gtest(
   PLUGINS
   SystemComponentTestPlugin_NoCreate
   SystemComponentTestPlugin_NoDestroy
+  SystemComponentTestPlugin_OtherAbi
   LABELS
   system
   system_component

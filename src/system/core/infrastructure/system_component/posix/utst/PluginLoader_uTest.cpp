@@ -21,6 +21,7 @@ namespace {
 
 constexpr std::uint8_t DLOPEN_FAILED = 17;
 constexpr std::uint8_t FACTORY_NOT_FOUND = 18;
+constexpr std::uint8_t ABI_MISMATCH = 20;
 
 std::filesystem::path pluginPath(const char* name) {
   return std::filesystem::path(APEX_TEST_PLUGIN_DIR) / name;
@@ -59,6 +60,23 @@ TEST(PluginLoaderTest, MissingDestroyFactoryLeavesAReadableError) {
   const std::string TEXT =
       errorAfterMissingFactory("SystemComponentTestPlugin_NoDestroy.so", "apex_destroy_component");
   EXPECT_FALSE(TEXT.empty());
+}
+
+/**
+ * @test A library built for another plugin ABI version is refused before
+ *       either factory is called, and the reason says so.
+ */
+TEST(PluginLoaderTest, AnotherAbiVersionIsRefusedBeforeAnyFactoryCall) {
+  const auto PATH = pluginPath("SystemComponentTestPlugin_OtherAbi.so");
+  ASSERT_TRUE(std::filesystem::exists(PATH)) << PATH;
+
+  PluginLoader loader;
+  EXPECT_EQ(loader.load(PATH), ABI_MISMATCH);
+  EXPECT_FALSE(loader.isLoaded());
+  EXPECT_EQ(loader.component(), nullptr);
+  ASSERT_NE(loader.lastError(), nullptr);
+  EXPECT_NE(std::string(loader.lastError()).find("ABI version mismatch"), std::string::npos)
+      << loader.lastError();
 }
 
 /** @test A path that cannot be opened is refused with the linker's reason. */

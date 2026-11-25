@@ -83,8 +83,10 @@ any such change is called out explicitly in its entry.
   callers delete the call.
   ([#190](https://github.com/apexedgesystems/apex_csf/pull/190))
 - Breaking: rebuild C++ consumers of system_component, the registry and
-  the scheduler (layouts changed); `RegistryBase::updateComponent()` is
-  replaced by `ApexRegistry::rebindComponent()`.
+  the scheduler (layouts changed); the plugin ABI version is 2, so
+  plugins built earlier are refused at load;
+  `RegistryBase::updateComponent()` is replaced by
+  `ApexRegistry::rebindComponent()`.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Breaking: `initComponentLog()` returns whether the log opened, and
   `ParamBank::apply()` needs a `load()` accepted since the last publish.
