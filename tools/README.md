@@ -114,8 +114,13 @@ every one of them:
    manifest, the lock, the manifest `COPY` line in the image bake
    (`docker/base.Dockerfile`) and, for a Python package, the `--cov`
    entry of `coverage-py` in `mk/test.mk`.
-4. CI: until a rule names it, a path under the new role runs every job.
-   To scope it, see [What CI runs for a tools change](#what-ci-runs-for-a-tools-change).
+4. CI: two rules span every role, so they already cover the new one. A
+   package under `tools/<role>/py/` runs the Python suite and a tool
+   under `tools/<role>/cpp/` the C++ jobs. A path no rule names (a
+   crate, a script) runs every job. The role's suites run together only
+   once it has an entry in `ROLE_SUITES`. Read the ordered rules for
+   the scope you intend, then add the rule and its cases; see
+   [What CI runs for a tools change](#what-ci-runs-for-a-tools-change).
 
 ## What CI runs for a tools change
 
@@ -141,9 +146,15 @@ the build role. The Python suite is one suite: every member's tests and
 the demos' checkout tests, the target-generation tests among them. A
 crate that a crate of another role links must select that role's tests
 as well; `make check-ci-crates` (run by `make test-rust`) fails until
-its rule says so. A new role, or a new language under a role, runs every
-job until a rule and its cases are added; a Rust role also takes an
-entry in `RUST_JOBS`.
+its rule says so.
+
+The first rule a path matches decides, and two rules span every role
+(`tools/*/py/*` and `tools/*/cpp/*`). So a new role's packages and C++
+tools select the Python suite and the C++ jobs from the start, while
+its crates and scripts, like a new language under any role, match no
+rule and run every job until one is added with its cases. A new role's
+suites run together only once it has an entry in `ROLE_SUITES`; a Rust
+role also takes an entry in `RUST_JOBS`.
 
 What an image is rebuilt for is read from its Dockerfile's `COPY` lines,
 so a new input needs only its line. One written in a form the classifier

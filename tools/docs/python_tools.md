@@ -151,8 +151,10 @@ build.
 
 1. Add the role to `_APEX_TOOL_ROLES` in `tools/CMakeLists.txt` and to
    `TOOL_ROLES` in `mk/tools.mk`. The `*/py/*` glob already spans it.
-2. Follow the member-package steps above for its first package. CI runs
-   every job for the role's paths until a rule scopes it (see
+2. Follow the member-package steps above for its first package. The CI
+   rule for `tools/*/py/*` already covers it: a change to the package
+   runs the Python suite. The role's other suites run with it only once
+   the role has an entry in `ROLE_SUITES` (see
    [What CI runs for a tools change](../README.md#what-ci-runs-for-a-tools-change)).
 
 ---

@@ -205,8 +205,9 @@ only.
    role's crates are workspace members and inherit the shared fields.
 2. Add the role to `_APEX_TOOL_ROLES` in `tools/CMakeLists.txt` and to
    `TOOL_ROLES` in `mk/tools.mk`.
-3. Follow the member-crate steps above for its first crate. CI runs
-   every job for the role's paths until a rule scopes it (see
+3. Follow the member-crate steps above for its first crate. No CI rule
+   names a new role's crates, so a change to one runs every job until a
+   rule scopes it (see
    [What CI runs for a tools change](../README.md#what-ci-runs-for-a-tools-change)).
 
 ---

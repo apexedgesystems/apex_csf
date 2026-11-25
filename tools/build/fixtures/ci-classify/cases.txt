@@ -54,6 +54,10 @@ rust_analysis py        | tools/analysis/py/apex_analysis/tests/test_plot.py
 cpp rust_analysis py    | tools/analysis/cpp/registry_info/src/registry-info.cpp
 cpp rust_ops py sh      | tools/ops/cpp/some_tool/src/main.cpp
 cpp                     | tools/build/cpp/some_tool/src/main.cpp
+# The Python and C++ rules span every role, a new one included; its suites do
+# not run together until ROLE_SUITES names it.
+py                      | tools/newrole/py/some_pkg/src/some_pkg/main.py
+cpp                     | tools/newrole/cpp/some_tool/src/main.cpp
 
 # --- the tools workspaces ----------------------------------------------------------
 rust_build rust_ops rust_analysis | tools/Cargo.toml
@@ -110,6 +114,7 @@ cpp rust_build rust_ops rust_analysis py sh | tools/CMakeLists.txt
 cpp rust_build rust_ops rust_analysis py sh | some_new_top_level_dir/file.txt
 # A role or a language under tools/ that no rule names.
 cpp rust_build rust_ops rust_analysis py sh | tools/newrole/rust/some-crate/src/lib.rs
+cpp rust_build rust_ops rust_analysis py sh | tools/newrole/sh/bin/some_script.sh
 cpp rust_build rust_ops rust_analysis py sh | tools/ops/go/some-tool/main.go
 cpp rust_build rust_ops rust_analysis py sh | -
 
