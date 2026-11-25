@@ -397,7 +397,13 @@ check-data-db-contract: tools-build
 # its refusal. A table in which every case is wrong holds the check to
 # failing each. An image input written in a form the script does not read has
 # to stop every way it is run, so each is run in a scratch tree whose base
-# Dockerfile is the fixture of such inputs. Runs on a bare host (stock Python).
+# Dockerfile is the fixture of such inputs. What the workflow acts on is the
+# command's printed lines, so printed.txt records them: each `#` line names
+# changed paths (none for a bare `#`) and the lines after it are what the
+# command prints for them. Running the command for every `#` line has to
+# reproduce the file exactly, and every output the workflow maps or a job
+# reads has to be one of those lines. Runs on a bare host (stock Python).
+CI_WORKFLOW := .github/workflows/ci.yml
 CI_CLASSIFY := tools/build/py/bin/ci-classify.py
 CI_CLASSIFY_FIXTURES := tools/build/fixtures/ci-classify
 CI_CLASSIFY_CASES := $(CI_CLASSIFY_FIXTURES)/cases.txt
@@ -432,6 +438,28 @@ check-ci-classify:
 	    echo "[check-ci-classify] the crate check passed a graph with two missed links (exit $$rc)"; \
 	    exit 1; \
 	  fi
+	@want="$(CI_CLASSIFY_FIXTURES)/printed.txt"; \
+	got=$$(grep '^#' "$$want" | while read -r _ paths; do \
+	    printf '# %s\n' "$$paths" | sed 's/ *$$//'; \
+	    printf '%s\n' $$paths | python3 "$(CI_CLASSIFY)" || echo "exit $$?"; \
+	  done); \
+	if [ "$$got" != "$$(cat "$$want")" ]; then \
+	  printf '%s\n' "$$got" | diff "$$want" -; \
+	  echo "[check-ci-classify] the command does not print what $$want records"; \
+	  exit 1; \
+	fi; \
+	n=$$(grep -c '^#' "$$want"); \
+	printed=$$(sed -n 's/=.*//p' "$$want" | sort -u); \
+	mapped=$$(grep -oE 'steps\.f\.outputs\.[a-z_]+' "$(CI_WORKFLOW)" | sed 's/.*\.//' | sort -u); \
+	for name in $$mapped; do \
+	  printf '%s\n' "$$printed" | grep -qxF "$$name" || \
+	    { echo "[check-ci-classify] $(CI_WORKFLOW) maps the output $$name, which the command does not print"; exit 1; }; \
+	done; \
+	for name in $$(grep -oE 'needs\.changes\.outputs\.[a-z_]+' "$(CI_WORKFLOW)" | sed 's/.*\.//' | sort -u); do \
+	  printf '%s\n' "$$mapped" | grep -qxF "$$name" || \
+	    { echo "[check-ci-classify] a job in $(CI_WORKFLOW) reads the output $$name, which the changes job does not map"; exit 1; }; \
+	done; \
+	echo "[check-ci-classify] $$n printed outputs match; $(CI_WORKFLOW) reads only what is printed"
 
 # The role rules against the crate graph cargo reports: a crate that a crate
 # of another role links must select that role's tests too. Needs cargo, so it
