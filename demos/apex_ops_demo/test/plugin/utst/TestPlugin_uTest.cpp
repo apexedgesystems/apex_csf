@@ -61,7 +61,7 @@ TestPlugin::Stats getStats(TestPlugin& plugin) {
 } // namespace
 
 /** @test The registered output block is the build's version and nothing else. */
-TEST(TestPluginTest, RegisteredOutputIsTheBuildVersion) {
+TEST(OpsDemoTestPluginTest, RegisteredOutputIsTheBuildVersion) {
   TestPlugin plugin;
   ASSERT_TRUE(initialize(plugin));
 
@@ -73,7 +73,7 @@ TEST(TestPluginTest, RegisteredOutputIsTheBuildVersion) {
 }
 
 /** @test GET_STATS returns the version and the number of task runs. */
-TEST(TestPluginTest, GetStatsCountsTaskRuns) {
+TEST(OpsDemoTestPluginTest, GetStatsCountsTaskRuns) {
   TestPlugin plugin;
   ASSERT_TRUE(initialize(plugin));
 
@@ -87,7 +87,7 @@ TEST(TestPluginTest, GetStatsCountsTaskRuns) {
 }
 
 /** @test An opcode the plugin does not define is the base class's to answer. */
-TEST(TestPluginTest, OtherOpcodesReachTheBaseClass) {
+TEST(OpsDemoTestPluginTest, OtherOpcodesReachTheBaseClass) {
   TestPlugin plugin;
   ASSERT_TRUE(initialize(plugin));
 
@@ -97,12 +97,15 @@ TEST(TestPluginTest, OtherOpcodesReachTheBaseClass) {
 }
 
 /** @test Both observations hold while the task runs on another thread. */
-TEST(TestPluginTest, ObservationsHoldWhileTheTaskRuns) {
+TEST(OpsDemoTestPluginTest, ObservationsHoldWhileTheTaskRuns) {
   constexpr std::uint32_t RUNS = 200000;
   TestPlugin plugin;
   ASSERT_TRUE(initialize(plugin));
 
+  // The reader runs for as long as the task thread does and once more
+  // after it, so its end does not depend on the count it checks.
   std::atomic<bool> go{false};
+  std::atomic<bool> done{false};
   std::thread task([&] {
     while (!go.load(std::memory_order_acquire)) {
       std::this_thread::yield();
@@ -110,6 +113,7 @@ TEST(TestPluginTest, ObservationsHoldWhileTheTaskRuns) {
     for (std::uint32_t i = 0; i < RUNS; ++i) {
       static_cast<void>(plugin.tick());
     }
+    done.store(true, std::memory_order_release);
   });
 
   go.store(true, std::memory_order_release);
@@ -117,7 +121,9 @@ TEST(TestPluginTest, ObservationsHoldWhileTheTaskRuns) {
   std::uint32_t reads = 0;
   bool ordered = true;
   bool versioned = true;
-  while (last < RUNS) {
+  bool finished = false;
+  do {
+    finished = done.load(std::memory_order_acquire);
     const auto BYTES = inspectOutput(plugin);
     std::uint32_t version = 0;
     if (BYTES.size() == sizeof(version)) {
@@ -128,11 +134,11 @@ TEST(TestPluginTest, ObservationsHoldWhileTheTaskRuns) {
     ordered = ordered && STATS.tickCount >= last && STATS.tickCount <= RUNS;
     last = STATS.tickCount;
     ++reads;
-  }
+  } while (!finished);
   task.join();
 
   EXPECT_TRUE(versioned);
   EXPECT_TRUE(ordered);
   EXPECT_GT(reads, 0U);
-  EXPECT_EQ(getStats(plugin).tickCount, RUNS);
+  EXPECT_EQ(last, RUNS);
 }
