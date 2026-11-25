@@ -13,10 +13,14 @@
  * COO-to-CSC conversion is done directly (counting sort, no intermediate).
  *
  * Usage pattern:
- * 1. Stamp conductances (builds triplet list)
- * 2. Call factorize() (one-time symbolic + numeric cost)
- * 3. Call solve() repeatedly with new RHS (O(nnz) per solve)
- * 4. Re-factorize only when circuit topology changes
+ * 1. Stamp conductances and sources (builds the triplet list)
+ * 2. Call factorize(), then solve()
+ * 3. Clear, stamp again and call factorize() whenever the matrix changed. It
+ *    keeps the symbolic analysis while the pattern is the analysed one and
+ *    the pivot order while it suits the values, so the caller does not track
+ *    what changed.
+ * 4. When tripletsMatch() says the matrix is the factorized one, updateRhs()
+ *    replaces factorize() and only the right-hand side is rebuilt.
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/StampContext.hpp"
@@ -145,6 +149,13 @@ public:
    * Converts triplet list (COO) to CSC format, applies ground constraint,
    * augments with voltage sources, and computes LU factorization.
    *
+   * What an earlier call left is reused only where it still applies:
+   * - the symbolic analysis, while the pattern (the positions stamped and the
+   *   voltage sources) is the analysed one; otherwise the pattern is analysed
+   *   again;
+   * - the pivot order of the numeric factors, under the same pattern, unless
+   *   a pivot is zero for the new values; then the matrix is pivoted anew.
+   *
    * @return true on success, false if matrix is singular.
    *
    * @note NOT RT-safe: allocates and factorizes.
@@ -155,7 +166,7 @@ public:
    * @brief Solve with pre-factorized matrix (fast, O(nnz)).
    *
    * Uses cached LU factorization to solve for new RHS. Must call factorize()
-   * first or after topology change.
+   * first, and again after any change to the matrix.
    *
    * @return MnaResultSparse with voltages, currents, and status.
    *
@@ -181,6 +192,9 @@ public:
   /**
    * @brief Clear stamps and prepare for new circuit.
    *
+   * solve() fails until the next factorize() or updateRhs(). The analysis and
+   * factors in hand are kept for factorize() to reuse where they still apply.
+   *
    * @note RT-safe: clears triplets and RHS without deallocation.
    */
   void clear();
@@ -189,9 +203,9 @@ public:
    * @brief Clear stamps but preserve cached LU factorization.
    *
    * Resets triplets, current injections, and voltage sources for re-stamping,
-   * but does NOT invalidate the factorized_ flag. Use this in the cached
-   * sparse LU path where we want to re-stamp for matvec computation while
-   * keeping the old factorization for the back-solve.
+   * and leaves isFactorized() as it is. Use this in the cached sparse LU path,
+   * where the stamps are rebuilt for computeMatvec() while solveCached() goes
+   * on using the factors in hand.
    *
    * @note RT-safe: clears without deallocation.
    */
@@ -214,7 +228,8 @@ public:
   /**
    * @brief Get number of non-zero entries in conductance matrix.
    *
-   * Useful for topology change detection (nnz changes when topology changes).
+   * Counts stamped entries, not distinct positions. A different count means
+   * a different pattern; an equal count does not mean the same one.
    * @note RT-safe.
    */
   [[nodiscard]] std::size_t nnz() const noexcept { return triplets_.size(); }
@@ -226,62 +241,37 @@ public:
   [[nodiscard]] bool isFactorized() const noexcept { return factorized_; }
 
   /**
-   * @brief Check if symbolic pattern analysis has been performed.
+   * @brief Check if a symbolic analysis is held.
    *
-   * After the first factorize(), the symbolic elimination tree is cached.
-   * Subsequent calls with the same sparsity pattern can use refactorize()
-   * for numeric-only factorization (skips symbolic ordering).
+   * True once factorize() has analysed a pattern. The analysis is that of
+   * the pattern last factorized, which need not be the current stamps'.
    * @note RT-safe.
    */
-  [[nodiscard]] bool isPatternAnalyzed() const noexcept { return patternAnalyzed_; }
+  [[nodiscard]] bool isPatternAnalyzed() const noexcept { return kluSymbolic_ != nullptr; }
 
   /* ----------------------------- Advanced Solve ----------------------------- */
 
   /**
-   * @brief Rebuild matrix from stamps and perform numeric-only factorization.
+   * @brief Check whether the current stamps are the ones the factors were computed from.
    *
-   * Reuses the cached symbolic analysis from a previous factorize() call.
-   * Valid only when the sparsity pattern has not changed (same triplet positions).
-   * The numerical values in the matrix and RHS are rebuilt from current stamps.
+   * When they are (same entries and values, voltage sources on the same
+   * nets), the matrix is unchanged and the factors can be reused: only the
+   * RHS vector needs rebuilding (via updateRhs). Injected currents and the
+   * values of voltage sources are free to differ, being right-hand side
+   * only. A factorization that reuses the pivot order keeps no copy of
+   * its stamps, and after it the answer is false until the matrix is pivoted
+   * anew, so a true result never names other factors.
    *
-   * @return true on success, false if factorization fails.
-   * @pre isPatternAnalyzed() must be true.
-   *
-   * @note NOT RT-safe.
-   */
-  bool refactorize();
-
-  /**
-   * @brief Update CSC matrix values in-place and perform numeric-only factorization.
-   *
-   * Instead of rebuilding the CSC matrix from triplets (copy + sort + merge),
-   * this method zeros the existing CSC value array and accumulates new values
-   * directly using coeffRef(). Avoids setFromTriplets overhead.
-   *
-   * @return true on success, false if factorization fails or CSC structure is invalid.
-   * @pre isPatternAnalyzed() must be true (CSC structure established by prior factorize).
-   *
-   * @note NOT RT-safe.
-   */
-  bool refactorizeInPlace();
-
-  /**
-   * @brief Check if current triplets match cached copy from last factorize.
-   *
-   * When stamps produce identical triplets (same positions and values),
-   * the matrix A_ is unchanged and LU factors can be reused. Only the
-   * RHS vector needs rebuilding (via updateRhs).
-   *
-   * @return true if current triplets exactly match the cached copy.
+   * @return true if the factors in hand belong to the current stamps.
    */
   [[nodiscard]] bool tripletsMatch() const;
 
   /**
    * @brief Rebuild only the RHS vector, reusing cached LU factorization.
    *
-   * Valid when the conductance matrix (triplets) has not changed since
-   * the last factorize() or refactorize(). Only rebuilds b_ from current
-   * I_ (current injections) and vsources_ (voltage source values).
+   * Valid when the matrix has not changed since the last factorize(). Only
+   * rebuilds b_ from current I_ (current injections) and vsources_ (voltage
+   * source values).
    *
    * @pre tripletsMatch() must be true.
    *
@@ -308,8 +298,8 @@ public:
   /**
    * @brief Solve with cached LU factorization (no re-factorization).
    *
-   * Uses the LU factors from the most recent factorize() or refactorize()
-   * to solve A*dx = rhs. The caller provides the RHS (typically a residual
+   * Uses the LU factors from the most recent factorize() to solve
+   * A*dx = rhs. The caller provides the RHS (typically a residual
    * vector from iterative refinement).
    *
    * @param rhs Right-hand side vector (dim entries).
@@ -349,9 +339,9 @@ private:
   std::vector<double> b_; ///< RHS vector for solver.
   std::vector<double> x_; ///< Solution vector.
   bool factorized_ = false;
-  bool patternAnalyzed_ = false;
-  std::vector<CooEntry> cachedTriplets_; ///< Triplets from last factorize/refactorize.
-  std::size_t cachedVsourceCount_ = 0;   ///< Voltage source count from last factorize.
+  std::vector<CooEntry> cachedTriplets_; ///< Stamps of the last full numeric factorization.
+  bool cachedTripletsCurrent_ = false;   ///< cachedTriplets_ are the stamps of the current factors.
+  bool analysisCurrent_ = false; ///< The symbolic analysis describes the current CSC pattern.
 
   klu_symbolic* kluSymbolic_ = nullptr; ///< KLU symbolic analysis (elimination tree).
   klu_numeric* kluNumeric_ = nullptr;   ///< KLU numeric factorization (LU factors).
@@ -375,6 +365,8 @@ private:
   std::vector<std::int64_t> cachedVsourceRc_; ///< Packed (pos<<32 | neg) per vsource for match.
 
   void freeKluFactors();
+  bool analyze();       ///< Drop analysis and factors, then analyse the current pattern.
+  bool factorNumeric(); ///< Full numeric factorization under the current analysis.
   bool kluSolve(double* rhsSolution, std::size_t dim);
   void buildCsc();
   bool patternMatchesCached() const noexcept;

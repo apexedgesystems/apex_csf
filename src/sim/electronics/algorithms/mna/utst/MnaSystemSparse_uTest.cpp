@@ -2,9 +2,9 @@
  * @file MnaSystemSparse_uTest.cpp
  * @brief Unit tests for sparse MNA solver.
  *
- * Covers stamping, factorize/solve, the cached-pattern fast paths
- * (refactorize, refactorizeInPlace, tripletsMatch, updateRhs), and
- * accessor invariants.
+ * Covers stamping, factorize/solve, what factorize() reuses of an earlier
+ * factorization and what it does not, the right-hand-side-only path
+ * (tripletsMatch, updateRhs), and accessor invariants.
  *
  * Tests are platform-agnostic: they assert circuit invariants (KCL,
  * superposition) rather than exact KLU internals.
@@ -16,6 +16,8 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstddef>
+#include <vector>
 
 using sim::electronics::algorithms::mna::MnaSystem;
 using sim::electronics::algorithms::mna::MnaSystemSparse;
@@ -184,36 +186,6 @@ TEST(MnaSystemSparseTest, MatchesDense_VoltageDivider) {
 /* ----------------------------- Workflow ----------------------------- */
 
 /**
- * @test MnaSystemSparse_ClearAndReuse_ProducesSameResult
- * @brief Clear stamps, rebuild circuit, solve again.
- */
-TEST(MnaSystemSparseTest, ClearAndReuse_ProducesSameResult) {
-  MnaSystemSparse mna(3);
-
-  mna.addConductance(0, 1, 1.0 / 10.0);
-  mna.addConductance(1, 2, 1.0 / 20.0);
-  mna.addVoltageSource(2, 0, 10.0);
-  ASSERT_TRUE(mna.factorize());
-  auto result1 = mna.solve();
-  ASSERT_TRUE(result1.success);
-
-  // Clear and rebuild same circuit
-  mna.clear();
-  mna.addConductance(0, 1, 1.0 / 10.0);
-  mna.addConductance(1, 2, 1.0 / 20.0);
-  mna.addVoltageSource(2, 0, 10.0);
-  ASSERT_TRUE(mna.factorize());
-  auto result2 = mna.solve();
-  ASSERT_TRUE(result2.success);
-
-  // Results should be identical
-  ASSERT_EQ(result1.nodeVoltages.size(), result2.nodeVoltages.size());
-  for (std::size_t i = 0; i < result1.nodeVoltages.size(); ++i) {
-    EXPECT_NEAR(result1.nodeVoltages[i], result2.nodeVoltages[i], TOL);
-  }
-}
-
-/**
  * @test MnaSystemSparse_SolveWithoutFactorize_Fails
  * @brief Calling solve() before factorize() should fail gracefully.
  */
@@ -278,81 +250,7 @@ TEST(MnaSystemSparseTest, NnzCount_ReflectsStamps) {
   EXPECT_EQ(mna.nnz(), 0u);
 }
 
-/* ----------------------------- Refactorize / updateRhs fast paths ----------------------------- */
-
-/** @test refactorize() after factorize() preserves the solution when triplets are unchanged. */
-TEST(MnaSystemSparseTest, RefactorizePreservesSolutionWithSamePattern) {
-  MnaSystemSparse mna(3);
-  mna.addConductance(1, 2, 1.0 / 1000.0);
-  mna.addConductance(2, 0, 1.0 / 1000.0);
-  mna.addVoltageSource(1, 0, 10.0);
-  ASSERT_TRUE(mna.factorize());
-  EXPECT_TRUE(mna.isPatternAnalyzed());
-
-  const auto FIRST = mna.solve();
-  ASSERT_TRUE(FIRST.success);
-
-  // Restamp same structure and call refactorize -- pattern is unchanged.
-  mna.clearStamps();
-  mna.addConductance(1, 2, 1.0 / 1000.0);
-  mna.addConductance(2, 0, 1.0 / 1000.0);
-  mna.addVoltageSource(1, 0, 10.0);
-  ASSERT_TRUE(mna.refactorize());
-
-  const auto SECOND = mna.solve();
-  ASSERT_TRUE(SECOND.success);
-  for (std::size_t i = 0; i < FIRST.nodeVoltages.size(); ++i) {
-    EXPECT_NEAR(SECOND.nodeVoltages[i], FIRST.nodeVoltages[i], TOL);
-  }
-}
-
-/** @test refactorize() picks up new conductance values when stamps change. */
-TEST(MnaSystemSparseTest, RefactorizeReflectsUpdatedValues) {
-  MnaSystemSparse mna(3);
-  mna.addConductance(1, 2, 1.0 / 1000.0);
-  mna.addConductance(2, 0, 1.0 / 1000.0);
-  mna.addVoltageSource(1, 0, 10.0);
-  ASSERT_TRUE(mna.factorize());
-  const auto BEFORE = mna.solve();
-  ASSERT_TRUE(BEFORE.success);
-
-  // Change the bottom resistor to 3 kohm so the divider ratio changes.
-  mna.clearStamps();
-  mna.addConductance(1, 2, 1.0 / 1000.0);
-  mna.addConductance(2, 0, 1.0 / 3000.0);
-  mna.addVoltageSource(1, 0, 10.0);
-  ASSERT_TRUE(mna.refactorize());
-  const auto AFTER = mna.solve();
-  ASSERT_TRUE(AFTER.success);
-
-  // V_mid moved from 5V (equal divider) toward 7.5V (3:1 divider).
-  EXPECT_GT(AFTER.nodeVoltages[2], BEFORE.nodeVoltages[2] + 1.0);
-}
-
-/** @test refactorizeInPlace() produces the same result as refactorize(). */
-TEST(MnaSystemSparseTest, RefactorizeInPlaceMatchesRefactorize) {
-  MnaSystemSparse ref(3);
-  ref.addConductance(1, 2, 1.0 / 1000.0);
-  ref.addConductance(2, 0, 1.0 / 1000.0);
-  ref.addVoltageSource(1, 0, 5.0);
-  ASSERT_TRUE(ref.factorize());
-  ASSERT_TRUE(ref.refactorize());
-  const auto VIA_REFACTOR = ref.solve();
-  ASSERT_TRUE(VIA_REFACTOR.success);
-
-  MnaSystemSparse inp(3);
-  inp.addConductance(1, 2, 1.0 / 1000.0);
-  inp.addConductance(2, 0, 1.0 / 1000.0);
-  inp.addVoltageSource(1, 0, 5.0);
-  ASSERT_TRUE(inp.factorize());
-  ASSERT_TRUE(inp.refactorizeInPlace());
-  const auto VIA_INPLACE = inp.solve();
-  ASSERT_TRUE(VIA_INPLACE.success);
-
-  for (std::size_t i = 0; i < VIA_REFACTOR.nodeVoltages.size(); ++i) {
-    EXPECT_NEAR(VIA_INPLACE.nodeVoltages[i], VIA_REFACTOR.nodeVoltages[i], TOL);
-  }
-}
+/* ----------------------------- Right-Hand Side Only ----------------------------- */
 
 /** @test tripletsMatch() is true after factorize when stamps are unchanged. */
 TEST(MnaSystemSparseTest, TripletsMatchAfterFactorize) {
@@ -416,4 +314,331 @@ TEST(MnaSystemSparseTest, UpdateRhsReusesFactors) {
   for (std::size_t i = 0; i < AT_10V.nodeVoltages.size(); ++i) {
     EXPECT_NEAR(AT_20V.nodeVoltages[i], 2.0 * AT_10V.nodeVoltages[i], TOL);
   }
+}
+
+/* ----------------------------- Factor Reuse ----------------------------- */
+
+namespace {
+
+// Circuits of four nets (0 is ground) with 10 V held on net 1. Ladders A and
+// C stamp sixteen conductance entries each, at different positions; divider B
+// stamps twelve.
+
+/** @brief R(1,2), R(2,0), R(2,3), R(3,0) at 1 kohm: net 2 at 4 V, net 3 at 2 V. */
+template <class System> void stampLadderA(System& mna) {
+  mna.addConductance(1, 2, 1e-3);
+  mna.addConductance(2, 0, 1e-3);
+  mna.addConductance(2, 3, 1e-3);
+  mna.addConductance(3, 0, 1e-3);
+  mna.addVoltageSource(1, 0, 10.0);
+}
+
+/** @brief R(1,3) = 1 kohm over R(3,0) = 3 kohm, R(2,0) = 2 kohm alone: net 3 at 7.5 V, net 2 at 0
+ * V. */
+template <class System> void stampDividerB(System& mna) {
+  mna.addConductance(1, 3, 1e-3);
+  mna.addConductance(3, 0, 1.0 / 3000.0);
+  mna.addConductance(2, 0, 0.5e-3);
+  mna.addVoltageSource(1, 0, 10.0);
+}
+
+/** @brief R(1,3), R(3,0), R(3,2) at 1 kohm, R(2,0) = 0.5 kohm: net 3 at 3.75 V, net 2 at 1.25 V. */
+template <class System> void stampLadderC(System& mna) {
+  mna.addConductance(1, 3, 1e-3);
+  mna.addConductance(3, 0, 1e-3);
+  mna.addConductance(3, 2, 1e-3);
+  mna.addConductance(2, 0, 2e-3);
+  mna.addVoltageSource(1, 0, 10.0);
+}
+
+constexpr double SWITCH_CLOSED_SIEMENS = 1.0;
+constexpr double SWITCH_OPEN_SIEMENS = 1e-9;
+
+// Net 2 of the switched ladder sees 1 mS to the source, the switch to ground
+// and 0.5 mS to ground through R(2,3) and R(3,0) in series.
+constexpr double SWITCH_CLOSED_VOLTS = 10.0 * 1e-3 / (1e-3 + SWITCH_CLOSED_SIEMENS + 0.5e-3);
+constexpr double SWITCH_OPEN_VOLTS = 10.0 * 1e-3 / (1e-3 + SWITCH_OPEN_SIEMENS + 0.5e-3);
+
+/** @brief Ladder A with R(2,0) replaced by a switch: 1 S closed, 1 nS open. */
+template <class System> void stampSwitched(System& mna, bool closed) {
+  mna.addConductance(1, 2, 1e-3);
+  mna.addConductance(2, 0, closed ? SWITCH_CLOSED_SIEMENS : SWITCH_OPEN_SIEMENS);
+  mna.addConductance(2, 3, 1e-3);
+  mna.addConductance(3, 0, 1e-3);
+  mna.addVoltageSource(1, 0, 10.0);
+}
+
+/**
+ * @brief Expects `voltages` to be what a new sparse system and the dense
+ *        system give for the same stamps.
+ */
+template <class Stamp>
+void expectMatchesFreshAndDense(const std::vector<double>& voltages, Stamp stamp) {
+  MnaSystemSparse fresh(4);
+  stamp(fresh);
+  ASSERT_TRUE(fresh.factorize());
+  const auto FRESH = fresh.solve();
+  ASSERT_TRUE(FRESH.success) << FRESH.errorMessage;
+
+  MnaSystem dense(4);
+  stamp(dense);
+  const auto DENSE = dense.solve();
+  ASSERT_TRUE(DENSE.success) << DENSE.errorMessage;
+
+  ASSERT_EQ(voltages.size(), 4U);
+  ASSERT_EQ(FRESH.nodeVoltages.size(), 4U);
+  ASSERT_EQ(DENSE.nodeVoltages.size(), 4U);
+  for (std::size_t net = 0; net < 4; ++net) {
+    EXPECT_NEAR(voltages[net], FRESH.nodeVoltages[net], TOL) << "net " << net << ", new sparse";
+    EXPECT_NEAR(voltages[net], DENSE.nodeVoltages[net], TOL) << "net " << net << ", dense";
+  }
+}
+
+} // namespace
+
+/** @test factorize() after clear() and a different circuit solves that circuit. */
+TEST(MnaSystemSparseTest, FactorizeAfterTopologyChangeMatchesFresh) {
+  MnaSystemSparse mna(4);
+  stampLadderA(mna);
+  EXPECT_FALSE(mna.isPatternAnalyzed());
+  ASSERT_TRUE(mna.factorize());
+  EXPECT_TRUE(mna.isPatternAnalyzed());
+
+  mna.clear();
+  stampDividerB(mna);
+  ASSERT_TRUE(mna.factorize());
+  const auto RESULT = mna.solve();
+  ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
+
+  EXPECT_NEAR(RESULT.nodeVoltages[2], 0.0, TOL);
+  EXPECT_NEAR(RESULT.nodeVoltages[3], 7.5, TOL);
+  expectMatchesFreshAndDense(RESULT.nodeVoltages, [](auto& system) { stampDividerB(system); });
+}
+
+/** @test factorize() with as many entries at other positions solves the new matrix. */
+TEST(MnaSystemSparseTest, FactorizeWithEntriesMovedDoesNotReuseFactors) {
+  MnaSystemSparse mna(4);
+  stampLadderA(mna);
+  ASSERT_TRUE(mna.factorize());
+  const std::size_t ENTRIES = mna.nnz();
+
+  mna.clear();
+  stampLadderC(mna);
+  ASSERT_EQ(mna.nnz(), ENTRIES);
+  ASSERT_FALSE(mna.tripletsMatch());
+  ASSERT_TRUE(mna.factorize());
+
+  std::vector<double> voltages(4);
+  std::vector<double> currents(1);
+  ASSERT_TRUE(mna.solveInto(voltages.data(), currents.data()));
+
+  EXPECT_NEAR(voltages[2], 1.25, TOL);
+  EXPECT_NEAR(voltages[3], 3.75, TOL);
+  expectMatchesFreshAndDense(voltages, [](auto& system) { stampLadderC(system); });
+}
+
+/** @test factorize() after a voltage source was added solves the larger system. */
+TEST(MnaSystemSparseTest, FactorizeAfterVoltageSourceAddedSolvesNewSystem) {
+  MnaSystemSparse mna(4);
+  stampLadderA(mna);
+  ASSERT_TRUE(mna.factorize());
+
+  // Net 3 is now held at 1 V: net 2 sits at (10 + 1) / 3 V.
+  const auto WITH_SECOND_SOURCE = [](auto& system) {
+    stampLadderA(system);
+    system.addVoltageSource(3, 0, 1.0);
+  };
+  mna.clearStamps();
+  WITH_SECOND_SOURCE(mna);
+  ASSERT_TRUE(mna.factorize());
+  const auto RESULT = mna.solve();
+  ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
+
+  EXPECT_NEAR(RESULT.nodeVoltages[2], 11.0 / 3.0, TOL);
+  EXPECT_NEAR(RESULT.nodeVoltages[3], 1.0, TOL);
+  expectMatchesFreshAndDense(RESULT.nodeVoltages, WITH_SECOND_SOURCE);
+}
+
+/**
+ * @test Stamps equal to an earlier matrix's do not match once other factors
+ *       replaced it, across a change of nine decades in one conductance.
+ */
+TEST(MnaSystemSparseTest, TripletsMatchFalseAfterFastPathRefactor) {
+  MnaSystemSparse mna(4);
+  stampSwitched(mna, true);
+  ASSERT_TRUE(mna.factorize());
+  ASSERT_TRUE(mna.tripletsMatch());
+
+  // Opened: same pattern, so the pivot order of the closed switch is kept.
+  mna.clearStamps();
+  stampSwitched(mna, false);
+  ASSERT_FALSE(mna.tripletsMatch());
+  ASSERT_TRUE(mna.factorize());
+  const auto OPEN = mna.solve();
+  ASSERT_TRUE(OPEN.success) << OPEN.errorMessage;
+  EXPECT_NEAR(OPEN.nodeVoltages[2], SWITCH_OPEN_VOLTS, TOL);
+  expectMatchesFreshAndDense(OPEN.nodeVoltages, [](auto& system) { stampSwitched(system, false); });
+
+  // Closed again. The stamps are those of the first factorization; the
+  // factors in hand are the open switch's. The choice below is a caller's:
+  // a new right-hand side alone for an unchanged matrix, new factors otherwise.
+  mna.clearStamps();
+  stampSwitched(mna, true);
+  EXPECT_FALSE(mna.tripletsMatch());
+  if (mna.tripletsMatch()) {
+    mna.updateRhs();
+  } else {
+    ASSERT_TRUE(mna.factorize());
+  }
+  const auto CLOSED = mna.solve();
+  ASSERT_TRUE(CLOSED.success) << CLOSED.errorMessage;
+  EXPECT_NEAR(CLOSED.nodeVoltages[2], SWITCH_CLOSED_VOLTS, TOL);
+  expectMatchesFreshAndDense(CLOSED.nodeVoltages,
+                             [](auto& system) { stampSwitched(system, true); });
+}
+
+/** @test The same conductances with the voltage source on another net are another matrix. */
+TEST(MnaSystemSparseTest, TripletsMatchFalseWhenVoltageSourceMoved) {
+  MnaSystemSparse mna(4);
+  stampLadderA(mna);
+  ASSERT_TRUE(mna.factorize());
+
+  // 10 V on net 3 in place of net 1. Net 1 then hangs on net 2 alone, and
+  // net 2 sits halfway between net 3 and ground.
+  const auto SOURCE_ON_NET_3 = [](auto& system) {
+    system.addConductance(1, 2, 1e-3);
+    system.addConductance(2, 0, 1e-3);
+    system.addConductance(2, 3, 1e-3);
+    system.addConductance(3, 0, 1e-3);
+    system.addVoltageSource(3, 0, 10.0);
+  };
+  mna.clearStamps();
+  SOURCE_ON_NET_3(mna);
+  EXPECT_FALSE(mna.tripletsMatch());
+  if (mna.tripletsMatch()) {
+    mna.updateRhs();
+  } else {
+    ASSERT_TRUE(mna.factorize());
+  }
+  const auto RESULT = mna.solve();
+  ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
+
+  EXPECT_NEAR(RESULT.nodeVoltages[1], 5.0, TOL);
+  EXPECT_NEAR(RESULT.nodeVoltages[2], 5.0, TOL);
+  EXPECT_NEAR(RESULT.nodeVoltages[3], 10.0, TOL);
+  expectMatchesFreshAndDense(RESULT.nodeVoltages, SOURCE_ON_NET_3);
+}
+
+/** @test The same conductances with one more voltage source, or one fewer, are another matrix. */
+TEST(MnaSystemSparseTest, TripletsMatchFalseWhenVoltageSourceAddedOrRemoved) {
+  MnaSystemSparse mna(4);
+  stampLadderA(mna);
+  ASSERT_TRUE(mna.factorize());
+
+  mna.clearStamps();
+  stampLadderA(mna);
+  mna.addVoltageSource(3, 0, 1.0);
+  EXPECT_FALSE(mna.tripletsMatch());
+  ASSERT_TRUE(mna.factorize());
+  ASSERT_TRUE(mna.tripletsMatch());
+
+  mna.clearStamps();
+  stampLadderA(mna);
+  EXPECT_FALSE(mna.tripletsMatch());
+}
+
+/** @test A pivot that is zero for the new values under the kept pivot order is pivoted anew. */
+TEST(MnaSystemSparseTest, FactorizePivotsAnewWhenKeptOrderMeetsZeroPivot) {
+  // Nets 1 and 2 with all four entries stamped. The first matrix is
+  // diagonally dominant, so its pivots are the diagonal entries.
+  const auto STAMP = [](MnaSystemSparse& system, double diagonal, double offDiagonal) {
+    system.addMatrixEntry(1, 1, diagonal);
+    system.addMatrixEntry(1, 2, offDiagonal);
+    system.addMatrixEntry(2, 1, offDiagonal);
+    system.addMatrixEntry(2, 2, diagonal);
+    system.addCurrent(1, 0, 3.0);
+    system.addCurrent(2, 0, 5.0);
+  };
+  MnaSystemSparse mna(3);
+  STAMP(mna, 1.0, 0.5);
+  ASSERT_TRUE(mna.factorize());
+
+  // Same pattern with a zero diagonal: v2 = 3 and v1 = 5, reached only by
+  // exchanging the rows.
+  mna.clearStamps();
+  STAMP(mna, 0.0, 1.0);
+  ASSERT_TRUE(mna.factorize());
+  EXPECT_TRUE(mna.tripletsMatch());
+  const auto RESULT = mna.solve();
+  ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
+  EXPECT_NEAR(RESULT.nodeVoltages[1], 5.0, TOL);
+  EXPECT_NEAR(RESULT.nodeVoltages[2], 3.0, TOL);
+}
+
+/** @test Singular values under the factorized pattern are refused, and the system no longer reads
+ * as factorized. */
+TEST(MnaSystemSparseTest, FactorizeRefusesSingularValuesUnderSamePattern) {
+  const auto STAMP = [](MnaSystemSparse& system, double diagonal, double offDiagonal) {
+    system.addMatrixEntry(1, 1, diagonal);
+    system.addMatrixEntry(1, 2, offDiagonal);
+    system.addMatrixEntry(2, 1, offDiagonal);
+    system.addMatrixEntry(2, 2, diagonal);
+    system.addCurrent(1, 0, 3.0);
+    system.addCurrent(2, 0, 5.0);
+  };
+  MnaSystemSparse mna(3);
+  STAMP(mna, 1.0, 0.5);
+  ASSERT_TRUE(mna.factorize());
+
+  // Two equal rows: no pivot order factorizes it.
+  mna.clearStamps();
+  STAMP(mna, 1.0, 1.0);
+  ASSERT_TRUE(mna.isFactorized());
+  EXPECT_FALSE(mna.factorize());
+  EXPECT_FALSE(mna.isFactorized());
+  EXPECT_FALSE(mna.tripletsMatch());
+  EXPECT_FALSE(mna.solve().success);
+
+  mna.clearStamps();
+  STAMP(mna, 1.0, 0.5);
+  ASSERT_TRUE(mna.factorize());
+  const auto RESULT = mna.solve();
+  ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
+  // [1 0.5; 0.5 1] v = [3; 5]: v1 = 2/3, v2 = 14/3.
+  EXPECT_NEAR(RESULT.nodeVoltages[1], 2.0 / 3.0, TOL);
+  EXPECT_NEAR(RESULT.nodeVoltages[2], 14.0 / 3.0, TOL);
+}
+
+/** @test A floating net is refused, new or after a factorization, and the next circuit solves. */
+TEST(MnaSystemSparseTest, FactorizeRefusesFloatingNetAndRecovers) {
+  // Net 3 has no entry at all.
+  const auto NET_3_FLOATING = [](MnaSystemSparse& system) {
+    system.addConductance(1, 2, 1e-3);
+    system.addConductance(2, 0, 1e-3);
+    system.addVoltageSource(1, 0, 10.0);
+  };
+  MnaSystemSparse fresh(4);
+  NET_3_FLOATING(fresh);
+  EXPECT_FALSE(fresh.factorize());
+  EXPECT_FALSE(fresh.isFactorized());
+
+  // clearStamps() leaves the system reading as factorized until the refusal.
+  MnaSystemSparse mna(4);
+  stampLadderA(mna);
+  ASSERT_TRUE(mna.factorize());
+  mna.clearStamps();
+  NET_3_FLOATING(mna);
+  ASSERT_TRUE(mna.isFactorized());
+  EXPECT_FALSE(mna.factorize());
+  EXPECT_FALSE(mna.isFactorized());
+  EXPECT_FALSE(mna.tripletsMatch());
+  EXPECT_FALSE(mna.solve().success);
+
+  mna.clear();
+  stampLadderA(mna);
+  ASSERT_TRUE(mna.factorize());
+  const auto RESULT = mna.solve();
+  ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
+  EXPECT_NEAR(RESULT.nodeVoltages[2], 4.0, TOL);
+  EXPECT_NEAR(RESULT.nodeVoltages[3], 2.0, TOL);
 }

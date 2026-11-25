@@ -266,7 +266,7 @@ private:
   bool useSparse_ = false;
   bool sparseCacheValid_ = false;   ///< Sparse LU cache state (invalidated per half-clock).
   std::size_t sparseCachedDim_ = 0; ///< Augmented dimension of cached sparse factorization.
-  bool alwaysReanalyze_ = false;    ///< Force full symbolic+numeric factorize every step.
+  bool alwaysReanalyze_ = false;    ///< Sparse steps iterate Newton, factorizing each iteration.
 
   // Newton-Raphson iteration for nonlinear transient (used with alwaysReanalyze_)
   std::size_t nrMaxIterations_ = 10; ///< Max NR iterations per timestep.
@@ -401,13 +401,13 @@ public:
   void setSparse(bool enable) noexcept { useSparse_ = enable; }
 
   /**
-   * @brief Force full symbolic reanalysis on every sparse solve step.
-   * @param enable True to always reanalyze.
+   * @brief Solve each sparse step by Newton iteration.
+   * @param enable True to iterate.
    *
-   * Required when device stamps produce voltage-dependent sparsity patterns
-   * (e.g., Level 1 MOSFET symmetric drain/source swap). Without this, the
-   * 3-level cache may reuse a stale symbolic analysis when nnz coincidentally
-   * matches but the CSC pattern differs, causing KLU to segfault.
+   * Each iteration stamps the devices at the latest voltages and factorizes.
+   * The sparse system analyses the pattern again when the stamps form a new
+   * one (e.g., a Level 1 MOSFET whose drain and source exchange) and keeps
+   * its analysis otherwise. Without this a sparse step is one linear solve.
    * @note RT-safe: sets boolean flag.
    */
   void setAlwaysReanalyze(bool enable) noexcept { alwaysReanalyze_ = enable; }

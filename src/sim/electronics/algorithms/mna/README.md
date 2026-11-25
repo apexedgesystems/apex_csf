@@ -37,10 +37,12 @@ MnaSystemSparse mna(1000);
 mna.addConductance(nodeA, nodeB, 1.0 / resistance);
 mna.addCurrent(nodeC, nodeD, current);
 
-// Solve G*V = I
-auto result = mna.solve();
-if (result.success) {
-  double voltage = result.nodeVoltages[nodeA];
+// Factorize, then solve G*V = I
+if (mna.factorize()) {
+  auto result = mna.solve();
+  if (result.success) {
+    double voltage = result.nodeVoltages[nodeA];
+  }
 }
 ```
 
@@ -120,14 +122,19 @@ Sparse MNA solver using KLU (SuiteSparse). Direct CSC construction, counting sor
 
 MnaSystemSparse mna(netCount);
 mna.addConductance(a, b, g);
-auto result = mna.solve();  // Sparse LU factorization
+mna.factorize();            // Sparse LU factorization
+auto result = mna.solve();  // Back-substitution
 ```
 
 **Key features:**
 
 - Direct CSC (Compressed Sparse Column) build
-- `clearStamps()` preserves factorization structure
-- Avoids `klu_refactor` (unsafe for large value changes)
+- `factorize()` is the one entry point after any change. It keeps the
+  symbolic analysis while the pattern (stamped positions and voltage sources)
+  is the analysed one, and the pivot order (`klu_refactor`) while no pivot is
+  zero for the new values; otherwise it analyses or pivots anew.
+- `tripletsMatch()` tells whether the stamps are those of the factors in
+  hand; `updateRhs()` then rebuilds the right-hand side alone.
 
 ### AcMnaSystem (AC Frequency Domain)
 
@@ -229,15 +236,16 @@ using namespace sim::electronics::algorithms::mna;
 // Setup (NOT RT-safe)
 const std::size_t netCount = 500;
 MnaSystemSparse mna(netCount);
-MnaSolveWorkspace workspace(netCount);
 std::vector<double> v_prev(netCount, 0.0);
+std::vector<double> v(netCount, 0.0);
+std::vector<double> i_branch(sourceCount, 0.0);
 
-// Time-stepping loop (RT-safe with workspace)
+// Time-stepping loop
 const double dt = 1e-6;  // 1us timestep
 const std::size_t steps = 1000;
 
 for (std::size_t step = 0; step < steps; ++step) {
-  mna.clearStamps();  // RT-safe: zeros matrix, preserves structure
+  mna.clearStamps();  // RT-safe: clears the stamps, keeps the factors in hand
 
   // Stamp resistors (RT-safe)
   for (const auto& r : resistors) {
@@ -252,11 +260,20 @@ for (std::size_t step = 0; step < steps; ++step) {
     mna.addCurrent(c.a, c.b, Ieq);
   }
 
-  // Solve (RT-safe with workspace)
-  auto result = mna.solve(workspace);
+  // With a constant timestep and constant resistances the matrix is the one
+  // factorized on the first step: after it only the right-hand side is
+  // rebuilt (RT-safe). factorize() is NOT RT-safe.
+  if (mna.tripletsMatch()) {
+    mna.updateRhs();
+  } else if (!mna.factorize()) {
+    break;
+  }
+
+  // Solve into pre-allocated buffers (RT-safe)
+  mna.solveInto(v.data(), i_branch.data());
 
   // Update state for next step (RT-safe)
-  std::copy(result.nodeVoltages.begin(), result.nodeVoltages.end(), v_prev.begin());
+  v_prev = v;
 }
 ```
 
@@ -518,21 +535,23 @@ matrix size (Dim ~= 1081):
 ### Factorization Caching
 
 Cached back-substitution is 45x faster than full factorize+solve at 150 nets
-(1.5 us vs 65.5 us). Use `clearStamps()` to preserve the LU factorization
-between solves when circuit topology is unchanged:
+(1.5 us vs 65.5 us). When the stamps are those of the matrix already
+factorized, only the right-hand side is rebuilt:
 
 ```cpp
-// RT-safe path: 1.5 us/solve (back-substitution only)
 mna.clearStamps();
 mna.addConductance(...);
+if (mna.tripletsMatch()) {
+  mna.updateRhs();   // RT-safe path: 1.5 us/solve (back-substitution only)
+} else {
+  mna.factorize();   // Full path: 65.5 us/solve
+}
 mna.solveInto(nodeV, branchI);
-
-// Full path: 65.5 us/solve (refactorizes)
-mna.clear();
-mna.addConductance(...);
-mna.factorize();
-mna.solve();
 ```
+
+`tripletsMatch()` is true only for the stamps of the last factorization that
+pivoted anew. After one that kept the pivot order it is false, so an earlier
+matrix's stamps never select another matrix's factors.
 
 ---
 
@@ -540,14 +559,14 @@ mna.solve();
 
 ### RT-Safe Operations
 
-| Operation                | RT-Safe? | Notes                             |
-| ------------------------ | -------- | --------------------------------- |
-| `addConductance()`       | [OK] Yes | Pure stamping, no allocations     |
-| `addCurrent()`           | [OK] Yes | Pure stamping, no allocations     |
-| `addGEntry()`            | [OK] Yes | One asymmetric entry (dense)      |
-| `addTransconductance()`  | [OK] Yes | Controlled current source (dense) |
-| `clearStamps()`          | [OK] Yes | Zeros matrix, preserves structure |
-| `solve()` with workspace | [OK] Yes | No allocations in hot path        |
+| Operation                | RT-Safe? | Notes                                |
+| ------------------------ | -------- | ------------------------------------ |
+| `addConductance()`       | [OK] Yes | Pure stamping, no allocations        |
+| `addCurrent()`           | [OK] Yes | Pure stamping, no allocations        |
+| `addGEntry()`            | [OK] Yes | One asymmetric entry (dense)         |
+| `addTransconductance()`  | [OK] Yes | Controlled current source (dense)    |
+| `clearStamps()`          | [OK] Yes | Sparse: clears stamps, keeps factors |
+| `solve()` with workspace | [OK] Yes | No allocations in hot path           |
 
 ### NOT RT-Safe
 
@@ -556,30 +575,34 @@ mna.solve();
 | MNA construction            | [X] No   | Allocates matrices                |
 | `solve()` without workspace | [X] No   | Allocates internally              |
 | Resizing                    | [X] No   | Reallocates matrices              |
-| First `clear()`             | [X] No   | Destroys factorization cache      |
+| Sparse `factorize()`        | [X] No   | KLU analysis and factors allocate |
 | GPU batch solving           | [X] No   | Kernel launches, memory transfers |
 
 ### RT-Safe Usage Pattern
 
 ```cpp
-// SETUP PHASE (not RT-safe)
+// SETUP PHASE (not RT-safe): stamp once and factorize
 MnaSystemSparse mna(netCount);
-MnaSolveWorkspace workspace(netCount);
+stampCircuit(mna, inputs);
+mna.factorize();
+std::vector<double> v(netCount);
+std::vector<double> i_branch(mna.voltageSourceCount());
 
-// HOT LOOP (RT-safe)
+// HOT LOOP (RT-safe while the matrix is the one factorized)
 while (running) {
-  mna.clearStamps();  // RT-safe: zeros, preserves structure
+  mna.clearStamps();  // RT-safe: clears the stamps, keeps the factors in hand
 
-  // Stamp circuit components (RT-safe)
-  for (const auto& r : resistors) {
-    mna.addConductance(r.a, r.b, 1.0 / r.R);
+  // Stamp the same conductances with new source values (RT-safe)
+  stampCircuit(mna, inputs);
+
+  if (!mna.tripletsMatch()) {
+    break;  // The matrix changed: factorize() outside the RT path
   }
-
-  // Solve (RT-safe with workspace)
-  auto result = mna.solve(workspace);
+  mna.updateRhs();                           // RT-safe: right-hand side only
+  mna.solveInto(v.data(), i_branch.data());  // RT-safe: back-substitution
 
   // Use result
-  updateCircuit(result.nodeVoltages);
+  updateCircuit(v);
 }
 ```
 
