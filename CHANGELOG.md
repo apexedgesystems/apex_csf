@@ -73,10 +73,12 @@ any such change is called out explicitly in its entry.
   pools share `PoolBase` (`PoolBase.hpp` now holds `PoolStatus`, `TaskError`
   and `PoolConfig`; the pool headers still provide them). Queued tasks drain
   in 24 to 51% less wall time than before on the lab host; `threadsRunning()`
-  reads two counts per worker. Breaking for binaries: pool and ring-queue
-  layouts and the pools' `collectErrors()` and `threadsRunning()` symbols
-  changed, so rebuild the concurrency library and everything that uses it
-  together; no source change is needed.
+  reads two counts per worker. Breaking for binaries: thread pool, ring-queue
+  and `BufferPool` layouts and the pools' `collectErrors()` and
+  `threadsRunning()` symbols changed, so rebuild the concurrency and interface
+  libraries and everything that uses them together, from matching headers and
+  one build type. One source change: remove any use of the debug-only
+  `MessageBuffer::acquireTimestamp`, which is gone.
   ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - `RingBuffer` keeps its two cursors on one cache line wherever the object
   is placed (48 bytes, 16-byte aligned).
