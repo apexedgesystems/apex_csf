@@ -46,8 +46,8 @@ TEST(CmosInverterTest, Construction) {
  *
  * Uses Vin = VDD so the NMOS is strongly ON (Vgs_nmos = VDD >> Vth_nmos),
  * guaranteeing nonzero gm, gds, and Ieq stamps. The PMOS uses the Level 1
- * model with positive Vth (no sign-inversion), so it also contributes when
- * Vgs_pmos = Vin - VDD = 0 falls in the subthreshold smoothing window.
+ * model with positive Vth (no sign-inversion); at Vgs_pmos = Vin - VDD = 0
+ * it is in cutoff.
  */
 TEST(CmosInverterTest, StampProducesNonzeroEntries) {
   const NetID VDD = 1, GND = 0, INPUT = 2, OUTPUT = 3;

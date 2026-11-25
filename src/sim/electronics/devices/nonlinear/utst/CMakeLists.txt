@@ -8,6 +8,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/DiodeSpice_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/JfetLevel2_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/JfetShichman_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/Junction_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/MosfetBinarySwitch_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/MosfetLevel1_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/MosfetLevel2_uTest.cpp"

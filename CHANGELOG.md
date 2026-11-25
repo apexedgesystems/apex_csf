@@ -66,6 +66,8 @@ any such change is called out explicitly in its entry.
 - An executed check for every tool family: clippy (deny warnings) gates the
   Rust tools on PRs and nightly, and a shell smoke exercises the ops SDK
   packager.
+- `MnaSystem::addTransconductance` stamps a voltage-controlled current
+  source. ([#195](https://github.com/apexedgesystems/apex_csf/pull/195))
 
 ### Changed
 
@@ -133,6 +135,11 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Corrected nonlinear device stamps, junction currents and FET region
+  transitions; `BjtCommonEmitter::computeDC` reports failed solves. Breaking:
+  device currents and Level 1 region codes change and six model parameters
+  are removed; migration steps are in
+  [#195](https://github.com/apexedgesystems/apex_csf/pull/195).
 - `executive::toString` names `ERROR_TPRM_INGEST`; it returned
   `UNKNOWN_STATUS` for that code.
   ([#192](https://github.com/apexedgesystems/apex_csf/pull/192))
