@@ -22,3 +22,5 @@ apex_add_interface_library(
 )
 
 apex_add_data_manifest(MANIFEST "${CMAKE_CURRENT_SOURCE_DIR}/apex_data.toml")
+
+apex_add_test_subdirs()

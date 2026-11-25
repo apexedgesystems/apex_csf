@@ -173,6 +173,10 @@ any such change is called out explicitly in its entry.
 - A PING reply no longer copies its payload over itself: the echo is
   assembled with an overlap-safe copy.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- Spec-generated component bases keep the running parameters when a
+  reload brings a set the component refuses; they applied the defaults
+  in its place.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - A component swapped in by `RELOAD_LIBRARY` is attached to the internal
   bus and told so before its tasks run; a reload of a hardware model is
   refused with `NOT_SWAPPABLE` instead of cutting its driver off.

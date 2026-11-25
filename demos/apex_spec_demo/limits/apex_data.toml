@@ -1,8 +1,8 @@
 # SpecLimits -- constraint-torture component: every constraint kind
 # the rails support, including edge values. The authored TPRM sits
 # inside every range; the checkout proves in-range values boot and an
-# out-of-range upload rejects loudly (CONSTRAINT_VIOLATION, defaults
-# fallback) without disturbing the running set.
+# out-of-range upload rejects loudly (CONSTRAINT_VIOLATION)
+# without disturbing the running set.
 
 component = "SpecLimits"
 namespace = "appsim::spec"
