@@ -53,8 +53,8 @@ MessageBuffer* BufferPool::acquire(std::size_t requiredSize) noexcept {
       // Take the lowest free buffer of this word. A failed exchange reloads bits: another
       // thread took or returned a buffer of the word, and the choice is made again.
       const std::uint64_t TAKEN = bits & (~bits + 1U);
-      if (!freeMap_[word].compare_exchange_weak(bits, bits & ~TAKEN, std::memory_order_acq_rel,
-                                                std::memory_order_acquire)) {
+      if (!freeMap_[word].compare_exchange_strong(bits, bits & ~TAKEN, std::memory_order_acq_rel,
+                                                  std::memory_order_acquire)) {
         continue;
       }
 
