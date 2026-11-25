@@ -422,7 +422,7 @@ iface.freezeQueues();
 
 | Directory    | Type                   | Tests | Runs with `make test` |
 | ------------ | ---------------------- | ----- | --------------------- |
-| `apex/utst/` | Unit tests             | 33    | Yes                   |
+| `apex/utst/` | Unit tests             | 70    | Yes                   |
 | `apex/ptst/` | Performance benchmarks | 20    | No (manual)           |
 
 ### Test Organization

@@ -170,6 +170,9 @@ any such change is called out explicitly in its entry.
   another is no longer discarded, so a queued command's completion is
   not lost when it lands with its acceptance.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- A PING reply no longer copies its payload over itself: the echo is
+  assembled with an overlap-safe copy.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Concurrency primitives: pool start-up, shutdown and signal handling,
   Barrier and Latch semantics, LockFreeQueue cell alignment and
   SpinLock::isLocked; the UBSan-only check joins the nightly. Breaking:
