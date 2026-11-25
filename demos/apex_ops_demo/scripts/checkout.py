@@ -114,6 +114,22 @@ def wave_gen_frequency(c2) -> float:
     return struct.unpack_from("<f", extra, 0)[0] if len(extra) >= 4 else float("nan")
 
 
+def wait_for_paused(c2, want: bool, limit: float = 3.0) -> bool:
+    """Poll the executive's health until its paused flag reads WANT.
+
+    The flag follows the clock thread, which takes a pause or a resume at
+    its next tick; a fixed wait would be a guess at when that is.
+    """
+    deadline = time.monotonic() + limit
+    while True:
+        extra = c2.send_command(0x000000, proto.EXEC_GET_HEALTH).get("extra", b"")
+        if len(extra) >= 48 and bool(extra[35] & 0x02) == want:
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(0.05)
+
+
 def test_plugin_version(c2):
     """The version in TestPlugin's registered OUTPUT block, or None.
 
@@ -533,23 +549,11 @@ def run_checkout(args: argparse.Namespace) -> int:
         section("21. Pause / Resume")
         r = c2.pause()
         check("PAUSE returns SUCCESS", r["status"] == 0, r["status_name"])
-        time.sleep(0.3)
-
-        r = c2.send_command(0x000000, proto.EXEC_GET_HEALTH)
-        extra = r.get("extra", b"")
-        if len(extra) >= 48:
-            flags = extra[35]
-            check("Paused flag set after PAUSE", bool(flags & 0x02))
+        check("Paused flag set after PAUSE", wait_for_paused(c2, True))
 
         r = c2.resume()
         check("RESUME returns SUCCESS", r["status"] == 0, r["status_name"])
-        time.sleep(0.3)
-
-        r = c2.send_command(0x000000, proto.EXEC_GET_HEALTH)
-        extra = r.get("extra", b"")
-        if len(extra) >= 48:
-            flags = extra[35]
-            check("Paused flag cleared after RESUME", not bool(flags & 0x02))
+        check("Paused flag cleared after RESUME", wait_for_paused(c2, False))
 
         c1 = c2.get_clock_cycles()
         time.sleep(0.5)
@@ -1010,9 +1014,7 @@ def run_checkout(args: argparse.Namespace) -> int:
             with AprotoClient(host, port, timeout=timeout) as c2:
                 r = c2.pause()
                 check("PAUSE returns SUCCESS", r["status"] == 0, r["status_name"])
-                time.sleep(0.3)
-                extra = c2.send_command(0x000000, proto.EXEC_GET_HEALTH).get("extra", b"")
-                check("Paused before the restart", len(extra) >= 48 and bool(extra[35] & 0x02))
+                check("Paused before the restart", wait_for_paused(c2, True))
                 r = c2.reload_executive()
                 check("RELOAD_EXECUTIVE accepted while paused", r["status"] == 0, r["status_name"])
         except Exception as e:
@@ -1025,8 +1027,7 @@ def run_checkout(args: argparse.Namespace) -> int:
             with AprotoClient(host, port, timeout=timeout) as c2:
                 r = c2.noop()
                 check("NOOP after the restart from a pause", r["status"] == 0, r["status_name"])
-                extra = c2.send_command(0x000000, proto.EXEC_GET_HEALTH).get("extra", b"")
-                check("Not paused after the restart", len(extra) >= 48 and not extra[35] & 0x02)
+                check("Not paused after the restart", wait_for_paused(c2, False, limit=0.0))
                 cycles = c2.get_clock_cycles()
                 check(
                     f"New process after the restart from a pause ({cycles} cycles)", cycles < 2000
