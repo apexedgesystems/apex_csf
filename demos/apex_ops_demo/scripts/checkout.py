@@ -625,20 +625,28 @@ def run_checkout(args: argparse.Namespace) -> int:
                         abs(freq - base_freq) < 0.1,
                     )
 
-                    with open(staged_file, "wb") as f:
-                        f.write(tprm_with_frequency(running, new_freq))
-                    result = c2.update_tprm(0x00D000, staged_file)
-                    check("TPRM reload accepted", result["status"] == 0, result["status_name"])
-                    time.sleep(0.2)
-                    freq = wave_gen_frequency(c2)
-                    check(
-                        f"Frequency updated to {freq:.1f} Hz",
-                        abs(freq - new_freq) < 0.1,
-                    )
-
-                    # Leave the target on the parameters it started with.
-                    result = c2.update_tprm(0x00D000, running_file)
-                    check("Original TPRM restored", result["status"] == 0, result["status_name"])
+                    try:
+                        with open(staged_file, "wb") as f:
+                            f.write(tprm_with_frequency(running, new_freq))
+                        result = c2.update_tprm(0x00D000, staged_file)
+                        check("TPRM reload accepted", result["status"] == 0, result["status_name"])
+                        time.sleep(0.2)
+                        freq = wave_gen_frequency(c2)
+                        check(
+                            f"Frequency updated to {freq:.1f} Hz",
+                            abs(freq - new_freq) < 0.1,
+                        )
+                    finally:
+                        # Leave the target on the parameters it started with,
+                        # also when the checks above were cut short. A target
+                        # that can no longer be reached is reported as not
+                        # restored.
+                        try:
+                            result = c2.update_tprm(0x00D000, running_file)
+                            restored, detail = result["status"] == 0, result["status_name"]
+                        except OSError as exc:
+                            restored, detail = False, f"{type(exc).__name__}: {exc}"
+                        check("Original TPRM restored", restored, detail)
                     time.sleep(0.2)
                     freq = wave_gen_frequency(c2)
                     check(
