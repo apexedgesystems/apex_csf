@@ -31,7 +31,7 @@ Comprehensive C2 verification suite organized in three layers:
     22. Lock / Unlock          Lock component, verify, unlock, error case
     23. SET_VERBOSITY          Log level control
     24. TPRM reload            Upload new params, reload, verify via INSPECT
-    25. RELOAD_LIBRARY         Hot-swap TestPlugin v1 -> v2
+    25. RELOAD_LIBRARY         Hot-swap TestPlugin to v2, verify via INSPECT
     26. RTS sequence           Upload, load, start, verify, stop NOOP sweep
     35. RELOAD_EXECUTIVE       Restart via execve, reconnect, verify
 
@@ -88,6 +88,15 @@ def check(name: str, condition: bool, detail: str = "") -> bool:
             msg += f"  ({detail})"
         print(msg)
     return condition
+
+
+def test_plugin_output(c2) -> tuple:
+    """Read TestPlugin's OUTPUT block: (version, tickCount), or (None, None)."""
+    r = c2.inspect(0x00FA00, category=4)
+    extra = r.get("extra", b"")
+    if r["status"] != 0 or len(extra) < 8:
+        return (None, None)
+    return struct.unpack_from("<II", extra, 0)
 
 
 DIVIDER = "-" * 72
@@ -605,6 +614,10 @@ def run_checkout(args: argparse.Namespace) -> int:
                     plugin_so = max(existing, key=os.path.getmtime)
 
             if plugin_so and os.path.isfile(plugin_so):
+                # The plugin's OUTPUT block is its version and the number of
+                # runs of its task since the instance was initialized.
+                ticks_before = test_plugin_output(c2)[1]
+
                 result = c2.update_component(
                     full_uid=0x00FA00,
                     local_so_path=plugin_so,
@@ -615,6 +628,26 @@ def run_checkout(args: argparse.Namespace) -> int:
                     "Library hot-swap accepted",
                     result["status"] == 0,
                     result["status_name"],
+                )
+
+                # A read that still reaches the replaced instance shows its
+                # version and its count, which no longer moves; the count of
+                # a new instance starts again from zero and then advances.
+                version, ticks_after = test_plugin_output(c2)
+                check(f"INSPECT reads the v2 build (version={version})", version == 2)
+                check(
+                    f"Task count restarted ({ticks_before} before, {ticks_after} after)",
+                    ticks_before is not None
+                    and ticks_after is not None
+                    and ticks_after < ticks_before,
+                )
+                time.sleep(0.5)
+                ticks_later = test_plugin_output(c2)[1]
+                check(
+                    f"Swapped-in task is running ({ticks_after} then {ticks_later})",
+                    ticks_after is not None
+                    and ticks_later is not None
+                    and ticks_later > ticks_after,
                 )
             else:
                 check("OpsTestPlugin_v2.so found", False, f"path={plugin_so}")

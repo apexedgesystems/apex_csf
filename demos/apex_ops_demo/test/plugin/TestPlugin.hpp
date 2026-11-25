@@ -15,8 +15,11 @@
  *   7. Re-wire scheduler tasks
  *   8. Update registry
  *
- * Two versions exist (VERSION 1 and VERSION 2) to verify that
- * after hot-swap, the new version is running.
+ * Two versions exist (VERSION 1 and VERSION 2). The registered output
+ * block holds the version and the number of times the task has run
+ * since the instance was initialized, so a client reading it over
+ * INSPECT sees which build its data comes from and that the build's
+ * task is the one being scheduled.
  */
 
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
@@ -46,6 +49,14 @@ public:
 
   [[nodiscard]] std::uint8_t version() const noexcept { return VERSION; }
 
+  /* ----------------------------- Output ----------------------------- */
+
+  /// The registered output block.
+  struct Output {
+    std::uint32_t version{VERSION}; ///< The build this instance came from.
+    std::uint32_t tickCount{0};     ///< Task runs since this instance was initialized.
+  };
+
   /* ----------------------------- Task UIDs ----------------------------- */
 
   enum class TaskUid : std::uint8_t {
@@ -61,20 +72,22 @@ public:
 
 protected:
   [[nodiscard]] std::uint8_t doInit() noexcept override {
-    registerTask<TestPlugin, &TestPlugin::tick>(static_cast<std::uint8_t>(TaskUid::TICK), this,
-                                                "tick");
-    return 0;
+    const bool OK = registerData(system_core::data::DataCategory::OUTPUT, "output", &output_,
+                                 sizeof(output_)) &&
+                    registerTask<TestPlugin, &TestPlugin::tick>(
+                        static_cast<std::uint8_t>(TaskUid::TICK), this, "tick");
+    return OK ? 0 : 1;
   }
 
 public:
   /* ----------------------------- Task Methods ----------------------------- */
 
   std::uint8_t tick() noexcept {
-    ++tickCount_;
+    ++output_.tickCount;
     return 0;
   }
 
-  [[nodiscard]] std::uint32_t tickCount() const noexcept { return tickCount_; }
+  [[nodiscard]] std::uint32_t tickCount() const noexcept { return output_.tickCount; }
 
   /* ----------------------------- TPRM ----------------------------- */
 
@@ -86,7 +99,7 @@ public:
   }
 
 private:
-  std::uint32_t tickCount_{0};
+  Output output_{};
 };
 
 } // namespace test
