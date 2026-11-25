@@ -457,6 +457,15 @@ def test_plugin_stats(c2: AprotoClient) -> tuple:
     return struct.unpack_from("<II", extra, 0)
 
 
+def emulated_driver_rx(c2: AprotoClient):
+    """Frames the emulated driver has received from the virtual controller, or None."""
+    r = c2.inspect(0x007A01, category=2)
+    state = r.get("extra", b"")
+    if r["status"] != 0 or len(state) < 8:
+        return None
+    return struct.unpack_from("<I", state, 4)[0]
+
+
 def test_reload_library(c2: AprotoClient, plugin_so: str) -> bool:
     """Test 12: Hot-swap TestPlugin .so via RELOAD_LIBRARY."""
     print("\n--- 12. RELOAD_LIBRARY ---")
@@ -504,6 +513,20 @@ def test_reload_library(c2: AprotoClient, plugin_so: str) -> bool:
     # Verify system still healthy
     cycles = c2.get_clock_cycles()
     ok &= check("Clock advancing after library reload", cycles > 0)
+
+    # The virtual flight controller is a hardware model: the far end of
+    # its transport link is in the emulated driver's hands, so a reload of
+    # it is refused and the two keep exchanging frames.
+    rx_before = emulated_driver_rx(c2)
+    c2.lock_component(0x007900)
+    r = c2.reload_library(0x007900)
+    ok &= check("Hardware model reload refused (NOT_SWAPPABLE)", r["status"] == 8, r["status_name"])
+    time.sleep(0.5)
+    rx_after = emulated_driver_rx(c2)
+    ok &= check(
+        f"Emulated driver still receiving from the model ({rx_before} then {rx_after})",
+        rx_before is not None and rx_after is not None and rx_after > rx_before,
+    )
     return ok
 
 

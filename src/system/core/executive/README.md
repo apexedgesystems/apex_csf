@@ -209,7 +209,8 @@ old one stays locked.
   runs before that call returns.
 - **Hardware models.** A reload whose old or new instance is a hardware
   model is refused with `NOT_SWAPPABLE` (`reason=hw_model_transport` in
-  the swap log) before the replacement is initialized: the far end of
+  the swap log), for a registered hardware model before a library is
+  looked for and for a replacement before it is initialized: the far end of
   the model's transport link is in a driver's hands and is not carried
   to a new instance.
 - **From an action.** A RELOAD_LIBRARY an action sends reaches the

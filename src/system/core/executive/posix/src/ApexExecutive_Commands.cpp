@@ -353,6 +353,27 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       return static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE);
     }
 
+    // A hardware model's transport link has its far end in a driver's
+    // hands. A swap would leave that driver on the link of an instance
+    // about to be destroyed and the new instance on a link no driver
+    // holds, so it is refused, before a library is looked for.
+    const auto refuseHardwareModel = [&]() noexcept {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
+                       fmt::format("RELOAD_LIBRARY: 0x{:06X} is a hardware model; its transport "
+                                   "link cannot be carried to a new instance, nothing swapped",
+                                   targetUid));
+      if (auto* sl = fileSystem_.swapLog()) {
+        sl->warning(
+            "SWAP", static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE),
+            fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=hw_model_transport", targetUid));
+      }
+      oldComp->unlock();
+      return static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE);
+    };
+    if (oldComp->asHwModel() != nullptr) {
+      return refuseHardwareModel();
+    }
+
     // Build .so name and look in inactive bank.
     const std::string SO_NAME =
         fmt::format("{}_{}.so", oldComp->componentName(), oldComp->instanceIndex());
@@ -414,22 +435,10 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       return static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE);
     }
 
-    // A hardware model's transport link has its far end in a driver's
-    // hands. A swap would leave that driver on the link of an instance
-    // about to be destroyed and the new instance on a link no driver
-    // holds, so it is refused.
-    if (oldComp->asHwModel() != nullptr || newComp->asHwModel() != nullptr) {
-      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
-                       fmt::format("RELOAD_LIBRARY: 0x{:06X} is a hardware model; its transport "
-                                   "link cannot be carried to a new instance, nothing swapped",
-                                   targetUid));
-      if (auto* sl = fileSystem_.swapLog()) {
-        sl->warning(
-            "SWAP", static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE),
-            fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=hw_model_transport", targetUid));
-      }
-      oldComp->unlock();
-      return static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE);
+    // A hardware model cannot take a software component's place either:
+    // nothing would provision its transport.
+    if (newComp->asHwModel() != nullptr) {
+      return refuseHardwareModel();
     }
 
     // Transfer identity from old component.
