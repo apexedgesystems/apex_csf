@@ -15,17 +15,26 @@
  *   7. Re-wire scheduler tasks
  *   8. Update registry
  *
- * Two versions exist (VERSION 1 and VERSION 2). The registered output
- * block holds the version and the number of times the task has run
- * since the instance was initialized, so a client reading it over
- * INSPECT sees which build its data comes from and that the build's
- * task is the one being scheduled.
+ * Two versions exist (VERSION 1 and VERSION 2). A client tells them
+ * apart, and tells that the build's task is the one being scheduled,
+ * through two observations:
+ *   - The registered output block holds the version. It is written
+ *     before the instance is registered and never after, so INSPECT,
+ *     which copies registered bytes on the command thread, reads it
+ *     without synchronization.
+ *   - GET_STATS returns the version and the number of times the task
+ *     has run since the instance was initialized. The count is an
+ *     atomic the task increments and the command loads, so it is never
+ *     reached through a copy of raw bytes.
  */
 
 #include "src/system/core/infrastructure/system_component/posix/inc/SwModelBase.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/PluginInterface.hpp"
 
+#include <atomic>
 #include <cstdint>
+#include <cstring>
+#include <vector>
 
 namespace test {
 
@@ -51,9 +60,19 @@ public:
 
   /* ----------------------------- Output ----------------------------- */
 
-  /// The registered output block.
+  /// The registered output block. Never written once the instance exists.
   struct Output {
     std::uint32_t version{VERSION}; ///< The build this instance came from.
+  };
+
+  /* ----------------------------- Commands ----------------------------- */
+
+  /// Returns a Stats block.
+  static constexpr std::uint16_t GET_STATS = 0x0100;
+
+  /// The GET_STATS reply.
+  struct Stats {
+    std::uint32_t version{VERSION}; ///< The build that answered.
     std::uint32_t tickCount{0};     ///< Task runs since this instance was initialized.
   };
 
@@ -83,11 +102,33 @@ public:
   /* ----------------------------- Task Methods ----------------------------- */
 
   std::uint8_t tick() noexcept {
-    ++output_.tickCount;
+    tickCount_.fetch_add(1U, std::memory_order_relaxed);
     return 0;
   }
 
-  [[nodiscard]] std::uint32_t tickCount() const noexcept { return output_.tickCount; }
+  [[nodiscard]] std::uint32_t tickCount() const noexcept {
+    return tickCount_.load(std::memory_order_relaxed);
+  }
+
+  /* ----------------------------- Command Handling ----------------------------- */
+
+  /**
+   * @brief Answer GET_STATS; every other opcode goes to the base class.
+   * @note The run count is a counter on its own: no other state is read
+   *       with it, so relaxed ordering is enough on both sides.
+   */
+  [[nodiscard]] std::uint8_t handleCommand(std::uint16_t opcode,
+                                           apex::compat::rospan<std::uint8_t> payload,
+                                           std::vector<std::uint8_t>& response) noexcept override {
+    if (opcode != GET_STATS) {
+      return SwModelBase::handleCommand(opcode, payload, response);
+    }
+    Stats stats{};
+    stats.tickCount = tickCount();
+    response.resize(sizeof(stats));
+    std::memcpy(response.data(), &stats, sizeof(stats));
+    return static_cast<std::uint8_t>(system_core::system_component::CommandResult::SUCCESS);
+  }
 
   /* ----------------------------- TPRM ----------------------------- */
 
@@ -99,7 +140,8 @@ public:
   }
 
 private:
-  Output output_{};
+  const Output output_{};
+  std::atomic<std::uint32_t> tickCount_{0};
 };
 
 } // namespace test

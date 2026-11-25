@@ -36,3 +36,6 @@ set_target_properties(
              SUFFIX ".so"
              LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/test_plugins"
 )
+
+# Unit tests of the plugin's header.
+add_subdirectory(utst)

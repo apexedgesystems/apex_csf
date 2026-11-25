@@ -114,9 +114,26 @@ def wave_gen_frequency(c2) -> float:
     return struct.unpack_from("<f", extra, 0)[0] if len(extra) >= 4 else float("nan")
 
 
-def test_plugin_output(c2) -> tuple:
-    """Read TestPlugin's OUTPUT block: (version, tickCount), or (None, None)."""
+def test_plugin_version(c2):
+    """The version in TestPlugin's registered OUTPUT block, or None.
+
+    INSPECT copies the block through the registry's binding to the
+    instance; the plugin never writes it after initialization.
+    """
     r = c2.inspect(0x00FA00, category=4)
+    extra = r.get("extra", b"")
+    if r["status"] != 0 or len(extra) < 4:
+        return None
+    return struct.unpack_from("<I", extra, 0)[0]
+
+
+def test_plugin_stats(c2) -> tuple:
+    """TestPlugin's GET_STATS reply: (version, task runs), or (None, None).
+
+    The command is routed to the instance and answered beside its task,
+    which counts its runs in an atomic.
+    """
+    r = c2.send_command(0x00FA00, 0x0100)
     extra = r.get("extra", b"")
     if r["status"] != 0 or len(extra) < 8:
         return (None, None)
@@ -656,9 +673,9 @@ def run_checkout(args: argparse.Namespace) -> int:
                     plugin_so = max(existing, key=os.path.getmtime)
 
             if plugin_so and os.path.isfile(plugin_so):
-                # The plugin's OUTPUT block is its version and the number of
-                # runs of its task since the instance was initialized.
-                ticks_before = test_plugin_output(c2)[1]
+                # GET_STATS returns the number of runs of the plugin's task
+                # since the instance was initialized.
+                ticks_before = test_plugin_stats(c2)[1]
 
                 result = c2.update_component(
                     full_uid=0x00FA00,
@@ -672,11 +689,18 @@ def run_checkout(args: argparse.Namespace) -> int:
                     result["status_name"],
                 )
 
-                # A read that still reaches the replaced instance shows its
-                # version and its count, which no longer moves; the count of
-                # a new instance starts again from zero and then advances.
-                version, ticks_after = test_plugin_output(c2)
+                # Three bindings moved with the swap. A registered block
+                # still bound to the replaced instance reads its version; a
+                # command still routed to it is answered by its build; and
+                # its count no longer moves, where the count of a new
+                # instance starts again from zero and then advances.
+                version = test_plugin_version(c2)
                 check(f"INSPECT reads the v2 build (version={version})", version == 2)
+                stats_version, ticks_after = test_plugin_stats(c2)
+                check(
+                    f"GET_STATS is answered by the v2 build (version={stats_version})",
+                    stats_version == 2,
+                )
                 check(
                     f"Task count restarted ({ticks_before} before, {ticks_after} after)",
                     ticks_before is not None
@@ -684,7 +708,7 @@ def run_checkout(args: argparse.Namespace) -> int:
                     and ticks_after < ticks_before,
                 )
                 time.sleep(0.5)
-                ticks_later = test_plugin_output(c2)[1]
+                ticks_later = test_plugin_stats(c2)[1]
                 check(
                     f"Swapped-in task is running ({ticks_after} then {ticks_later})",
                     ticks_after is not None

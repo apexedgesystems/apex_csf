@@ -169,7 +169,7 @@ PYTHONPATH=tools/ops/py/apex_ops/src python3 demos/apex_hil_demo/scripts/checkou
     --host raspberrypi.local
 ```
 
-All 64 assertions across 16 tests must pass (0 failures).
+All 65 assertions across 16 tests must pass (0 failures).
 
 ### 13. Verify Post-Checkout Health (optional)
 
@@ -239,7 +239,7 @@ All non-skipped assertions must pass (0 failures).
 
 ## Checkout Test Coverage
 
-The checkout script (`scripts/checkout.py`) runs 16 tests with 64 assertions:
+The checkout script (`scripts/checkout.py`) runs 16 tests with 65 assertions:
 
 | #   | Test                 | Assertions | What it verifies                                                       |
 | --- | -------------------- | ---------- | ---------------------------------------------------------------------- |
@@ -254,7 +254,7 @@ The checkout script (`scripts/checkout.py`) runs 16 tests with 64 assertions:
 | 9   | File transfer        | 4          | Chunked 8KB transfer with CRC-32C, progress callback, state IDLE       |
 | 10  | File transfer abort  | 4          | Abort mid-transfer, state returns to IDLE, clean recovery              |
 | 11  | TPRM reload          | 4          | Running payload downloaded, corrupt copy refused, intact copy reloaded |
-| 12  | RELOAD_LIBRARY       | 5          | Hot-swap TestPlugin .so, v2 data via INSPECT, its task running         |
+| 12  | RELOAD_LIBRARY       | 6          | Hot-swap TestPlugin .so, v2 via INSPECT and GET_STATS, task running    |
 | 13  | C2 latency           | 1          | 20-ping median < 50ms                                                  |
 | 14  | Post-test health     | 1          | Clock rate still ~1000 Hz after all tests                              |
 | 15  | RELOAD_EXECUTIVE     | 3          | Graceful restart via execve, connection drops                          |

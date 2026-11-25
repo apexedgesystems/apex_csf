@@ -431,9 +431,26 @@ def test_tprm_reload(c2: AprotoClient) -> bool:
     return ok
 
 
-def test_plugin_output(c2: AprotoClient) -> tuple:
-    """Read TestPlugin's OUTPUT block: (version, tickCount), or (None, None)."""
+def test_plugin_version(c2: AprotoClient):
+    """The version in TestPlugin's registered OUTPUT block, or None.
+
+    INSPECT copies the block through the registry's binding to the
+    instance; the plugin never writes it after initialization.
+    """
     r = c2.inspect(0x00FA00, category=4)
+    extra = r.get("extra", b"")
+    if r["status"] != 0 or len(extra) < 4:
+        return None
+    return struct.unpack_from("<I", extra, 0)[0]
+
+
+def test_plugin_stats(c2: AprotoClient) -> tuple:
+    """TestPlugin's GET_STATS reply: (version, task runs), or (None, None).
+
+    The command is routed to the instance and answered beside its task,
+    which counts its runs in an atomic.
+    """
+    r = c2.send_command(0x00FA00, 0x0100)
     extra = r.get("extra", b"")
     if r["status"] != 0 or len(extra) < 8:
         return (None, None)
@@ -449,9 +466,9 @@ def test_reload_library(c2: AprotoClient, plugin_so: str) -> bool:
         print(f"  SKIP  TestPlugin .so not found: {plugin_so}")
         return True
 
-    # The plugin's OUTPUT block is its version and the number of runs of
-    # its task since the instance was initialized.
-    ticks_before = test_plugin_output(c2)[1]
+    # GET_STATS returns the number of runs of the plugin's task since the
+    # instance was initialized.
+    ticks_before = test_plugin_stats(c2)[1]
 
     # Compound operation: lock -> transfer .so -> reload -> auto-unlock
     r = c2.update_component(
@@ -462,17 +479,23 @@ def test_reload_library(c2: AprotoClient, plugin_so: str) -> bool:
     )
     ok &= check("update_component succeeds", r["status"] == 0, r["status_name"])
 
-    # A read that still reaches the replaced instance shows its version
-    # and its count, which no longer moves; the count of a new instance
-    # starts again from zero and then advances.
-    version, ticks_after = test_plugin_output(c2)
+    # Three bindings moved with the swap. A registered block still bound
+    # to the replaced instance reads its version; a command still routed
+    # to it is answered by its build; and its count no longer moves, where
+    # the count of a new instance starts again from zero and then advances.
+    version = test_plugin_version(c2)
     ok &= check(f"INSPECT reads the v2 build (version={version})", version == 2)
+    stats_version, ticks_after = test_plugin_stats(c2)
+    ok &= check(
+        f"GET_STATS is answered by the v2 build (version={stats_version})",
+        stats_version == 2,
+    )
     ok &= check(
         f"Task count restarted ({ticks_before} before, {ticks_after} after)",
         ticks_before is not None and ticks_after is not None and ticks_after < ticks_before,
     )
     time.sleep(0.5)
-    ticks_later = test_plugin_output(c2)[1]
+    ticks_later = test_plugin_stats(c2)[1]
     ok &= check(
         f"Swapped-in task is running ({ticks_after} then {ticks_later})",
         ticks_after is not None and ticks_later is not None and ticks_later > ticks_after,

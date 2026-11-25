@@ -73,11 +73,13 @@ Two instances generate independent waveforms. Each has:
 
 ### TestPlugin (componentId=250, SW_MODEL)
 
-Generic hot-swap test target. Has a single tick counter task at 10 Hz and
-one OUTPUT block holding the build's version and the task's run count.
-Two .so versions built (v1 and v2) to verify the RELOAD_LIBRARY pipeline:
-after the swap the checkout reads version 2 over INSPECT, with a count
-that started again and is advancing.
+Generic hot-swap test target. Has a single tick counter task at 10 Hz, one
+OUTPUT block holding the build's version, written once at initialization,
+and a GET_STATS command (0x0100) that returns the version and the task's
+run count, an atomic the task increments. Two .so versions built (v1 and
+v2) to verify the RELOAD_LIBRARY pipeline: after the swap the checkout
+reads version 2 over INSPECT and from GET_STATS, with a count that started
+again and is advancing.
 
 ### SystemMonitor (componentId=200, SUPPORT)
 
