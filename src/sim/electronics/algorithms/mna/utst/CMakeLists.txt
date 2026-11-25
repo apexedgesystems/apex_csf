@@ -50,6 +50,7 @@ if (TARGET sim_electronics_algorithms_mna_cuda AND CMAKE_CUDA_COMPILER)
     ${CUDA_TEST_SOURCES}
     LINK
     sim_electronics_algorithms_mna_cuda
+    sim_electronics_algorithms_mna
     LABELS
     sim
     electronics

@@ -8,7 +8,8 @@
  *
  * Two workload families:
  *   - Batch small-matrix solves (MnaBatchCuda): dims 8/16/32/64, batches
- *     up to 1024. End-to-end and kernel-only regimes.
+ *     up to 1024, in double and single precision. End to end: host to
+ *     device, kernel, device to host.
  *   - Large single-system solve (MnaSystemCuda): dim 100/500/1000/2000.
  *     Probes the cuSOLVER vs CPU LAPACK crossover.
  *
@@ -28,6 +29,7 @@ extern "C" {
 #include <lapacke.h>
 }
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdio>
 #include <cuda_runtime_api.h>
@@ -39,23 +41,23 @@ namespace mna_cuda = sim::electronics::algorithms::mna::cuda;
 
 /* ----------------------------- Matrix Builders ----------------------------- */
 
-static void buildBatch(std::size_t dim, std::size_t batch, std::vector<double>& As,
-                       std::vector<double>& bs) {
-  As.assign(batch * dim * dim, 0.0);
+template <typename T>
+static void buildBatch(std::size_t dim, std::size_t batch, std::vector<T>& As, std::vector<T>& bs) {
+  As.assign(batch * dim * dim, T(0));
   bs.resize(batch * dim);
   std::mt19937 rng(0xC0DE);
   std::uniform_real_distribution<double> dist(-1.0, 1.0);
   for (std::size_t k = 0; k < batch; ++k) {
-    double* A = As.data() + k * dim * dim;
+    T* A = As.data() + k * dim * dim;
     for (std::size_t i = 0; i < dim; ++i) {
-      A[i * dim + i] = 4.0 + 0.01 * dist(rng);
+      A[i * dim + i] = static_cast<T>(4.0 + 0.01 * dist(rng));
       if (i + 1 < dim) {
-        A[i * dim + (i + 1)] = -1.0;
-        A[(i + 1) * dim + i] = -1.0;
+        A[i * dim + (i + 1)] = T(-1);
+        A[(i + 1) * dim + i] = T(-1);
       }
     }
     for (std::size_t i = 0; i < dim; ++i) {
-      bs[k * dim + i] = dist(rng);
+      bs[k * dim + i] = static_cast<T>(dist(rng));
     }
   }
 }
@@ -77,23 +79,49 @@ static void buildSingle(std::size_t dim, std::vector<double>& A, std::vector<dou
 
 /* ----------------------------- Batch Tests ----------------------------- */
 
+/** @brief The batch solver's interface in one precision. */
+template <typename T> struct BatchApi;
+
+template <> struct BatchApi<double> {
+  using Workspace = mna_cuda::MnaBatchWorkspace;
+  static bool solve(Workspace& ws, const double* As, double* bs, std::size_t dim, std::size_t batch,
+                    cudaStream_t s) {
+    return mna_cuda::solveBatchCustom(ws, As, bs, dim, batch, s);
+  }
+  static mna_cuda::LaunchConfig config(std::size_t dim, std::size_t batch) {
+    return mna_cuda::getLaunchConfig(dim, batch);
+  }
+};
+
+template <> struct BatchApi<float> {
+  using Workspace = mna_cuda::MnaBatchWorkspaceF32;
+  static bool solve(Workspace& ws, const float* As, float* bs, std::size_t dim, std::size_t batch,
+                    cudaStream_t s) {
+    return mna_cuda::solveBatchCustomF32(ws, As, bs, dim, batch, s);
+  }
+  static mna_cuda::LaunchConfig config(std::size_t dim, std::size_t batch) {
+    return mna_cuda::getLaunchConfigF32(dim, batch);
+  }
+};
+
+template <typename T>
 static void runBatchCase(std::size_t dim, std::size_t batch, const char* label) {
   if (!mna_cuda::batchAvailable() || !mna_cuda::isSupportedDim(dim)) {
     GTEST_SKIP() << "CUDA batch solver unavailable or dim unsupported.";
   }
   UB_PERF_GPU_GUARD(perf);
 
-  std::vector<double> As, bsTemplate;
+  std::vector<T> As, bsTemplate;
   buildBatch(dim, batch, As, bsTemplate);
 
-  mna_cuda::MnaBatchWorkspace ws;
+  typename BatchApi<T>::Workspace ws;
   if (!ws.prepare(dim, batch)) {
     GTEST_SKIP() << "GPU workspace allocation failed.";
   }
-  std::vector<double> bsGpu(bsTemplate.size());
+  std::vector<T> bsGpu(bsTemplate.size());
 
   // Vernier wants a launch config to compute occupancy.
-  const auto CFG = mna_cuda::getLaunchConfig(dim, batch);
+  const auto CFG = BatchApi<T>::config(dim, batch);
   const dim3 grid(static_cast<unsigned>(CFG.gridX), static_cast<unsigned>(CFG.gridY),
                   static_cast<unsigned>(CFG.gridZ));
   const dim3 block(static_cast<unsigned>(CFG.blockX), static_cast<unsigned>(CFG.blockY),
@@ -104,29 +132,60 @@ static void runBatchCase(std::size_t dim, std::size_t batch, const char* label) 
   // The library entry point bundles H2D + kernel + D2H in one call. Wrap
   // the whole call as the "kernel" lambda for Vernier; transfers are
   // then implicit. End-to-end wall time is captured by Vernier's stats.
+  // The solve overwrites its right-hand sides, so each call is given them
+  // again.
+  bool everySolved = true;
   auto runFn = [&](cudaStream_t s) {
-    mna_cuda::solveBatchCustom(ws, As.data(), bsGpu.data(), dim, batch, s);
+    std::copy(bsTemplate.begin(), bsTemplate.end(), bsGpu.begin());
+    everySolved = BatchApi<T>::solve(ws, As.data(), bsGpu.data(), dim, batch, s) && everySolved;
   };
 
   perf.cudaWarmup(runFn);
   auto result = perf.cudaKernel(runFn, "gpu_batch_solve").withLaunchConfig(grid, block).measure();
 
+  EXPECT_TRUE(everySolved) << "a batch was not solved";
   std::printf("  GPU end-to-end: %.2f us  occupancy=%.0f%%\n", result.stats.kernelTimeMedianUs,
               result.stats.occupancy.achievedOccupancy * 100.0);
 }
 
-PERF_GPU_TEST(MnaCudaBatch, Dim8_Batch64) { runBatchCase(8, 64, "Dim8_Batch64"); }
-PERF_GPU_TEST(MnaCudaBatch, Dim8_Batch256) { runBatchCase(8, 256, "Dim8_Batch256"); }
-PERF_GPU_TEST(MnaCudaBatch, Dim8_Batch1024) { runBatchCase(8, 1024, "Dim8_Batch1024"); }
-PERF_GPU_TEST(MnaCudaBatch, Dim16_Batch64) { runBatchCase(16, 64, "Dim16_Batch64"); }
-PERF_GPU_TEST(MnaCudaBatch, Dim16_Batch256) { runBatchCase(16, 256, "Dim16_Batch256"); }
-PERF_GPU_TEST(MnaCudaBatch, Dim16_Batch1024) { runBatchCase(16, 1024, "Dim16_Batch1024"); }
-PERF_GPU_TEST(MnaCudaBatch, Dim32_Batch64) { runBatchCase(32, 64, "Dim32_Batch64"); }
-PERF_GPU_TEST(MnaCudaBatch, Dim32_Batch256) { runBatchCase(32, 256, "Dim32_Batch256"); }
-PERF_GPU_TEST(MnaCudaBatch, Dim32_Batch1024) { runBatchCase(32, 1024, "Dim32_Batch1024"); }
-PERF_GPU_TEST(MnaCudaBatch, Dim64_Batch64) { runBatchCase(64, 64, "Dim64_Batch64"); }
-PERF_GPU_TEST(MnaCudaBatch, Dim64_Batch256) { runBatchCase(64, 256, "Dim64_Batch256"); }
-PERF_GPU_TEST(MnaCudaBatch, Dim64_Batch1024) { runBatchCase(64, 1024, "Dim64_Batch1024"); }
+PERF_GPU_TEST(MnaCudaBatch, Dim8_Batch64) { runBatchCase<double>(8, 64, "Dim8_Batch64"); }
+PERF_GPU_TEST(MnaCudaBatch, Dim8_Batch256) { runBatchCase<double>(8, 256, "Dim8_Batch256"); }
+PERF_GPU_TEST(MnaCudaBatch, Dim8_Batch1024) { runBatchCase<double>(8, 1024, "Dim8_Batch1024"); }
+PERF_GPU_TEST(MnaCudaBatch, Dim16_Batch64) { runBatchCase<double>(16, 64, "Dim16_Batch64"); }
+PERF_GPU_TEST(MnaCudaBatch, Dim16_Batch256) { runBatchCase<double>(16, 256, "Dim16_Batch256"); }
+PERF_GPU_TEST(MnaCudaBatch, Dim16_Batch1024) { runBatchCase<double>(16, 1024, "Dim16_Batch1024"); }
+PERF_GPU_TEST(MnaCudaBatch, Dim32_Batch64) { runBatchCase<double>(32, 64, "Dim32_Batch64"); }
+PERF_GPU_TEST(MnaCudaBatch, Dim32_Batch256) { runBatchCase<double>(32, 256, "Dim32_Batch256"); }
+PERF_GPU_TEST(MnaCudaBatch, Dim32_Batch1024) { runBatchCase<double>(32, 1024, "Dim32_Batch1024"); }
+PERF_GPU_TEST(MnaCudaBatch, Dim64_Batch64) { runBatchCase<double>(64, 64, "Dim64_Batch64"); }
+PERF_GPU_TEST(MnaCudaBatch, Dim64_Batch256) { runBatchCase<double>(64, 256, "Dim64_Batch256"); }
+PERF_GPU_TEST(MnaCudaBatch, Dim64_Batch1024) { runBatchCase<double>(64, 1024, "Dim64_Batch1024"); }
+PERF_GPU_TEST(MnaCudaBatchF32, Dim8_Batch64) { runBatchCase<float>(8, 64, "Dim8_Batch64_F32"); }
+PERF_GPU_TEST(MnaCudaBatchF32, Dim8_Batch256) { runBatchCase<float>(8, 256, "Dim8_Batch256_F32"); }
+PERF_GPU_TEST(MnaCudaBatchF32, Dim8_Batch1024) {
+  runBatchCase<float>(8, 1024, "Dim8_Batch1024_F32");
+}
+PERF_GPU_TEST(MnaCudaBatchF32, Dim16_Batch64) { runBatchCase<float>(16, 64, "Dim16_Batch64_F32"); }
+PERF_GPU_TEST(MnaCudaBatchF32, Dim16_Batch256) {
+  runBatchCase<float>(16, 256, "Dim16_Batch256_F32");
+}
+PERF_GPU_TEST(MnaCudaBatchF32, Dim16_Batch1024) {
+  runBatchCase<float>(16, 1024, "Dim16_Batch1024_F32");
+}
+PERF_GPU_TEST(MnaCudaBatchF32, Dim32_Batch64) { runBatchCase<float>(32, 64, "Dim32_Batch64_F32"); }
+PERF_GPU_TEST(MnaCudaBatchF32, Dim32_Batch256) {
+  runBatchCase<float>(32, 256, "Dim32_Batch256_F32");
+}
+PERF_GPU_TEST(MnaCudaBatchF32, Dim32_Batch1024) {
+  runBatchCase<float>(32, 1024, "Dim32_Batch1024_F32");
+}
+PERF_GPU_TEST(MnaCudaBatchF32, Dim64_Batch64) { runBatchCase<float>(64, 64, "Dim64_Batch64_F32"); }
+PERF_GPU_TEST(MnaCudaBatchF32, Dim64_Batch256) {
+  runBatchCase<float>(64, 256, "Dim64_Batch256_F32");
+}
+PERF_GPU_TEST(MnaCudaBatchF32, Dim64_Batch1024) {
+  runBatchCase<float>(64, 1024, "Dim64_Batch1024_F32");
+}
 
 /* ----------------------------- Single-Solve Tests ----------------------------- */
 
@@ -170,7 +229,7 @@ PERF_GPU_TEST(MnaCudaSolve, Dim2000) { runSingleCase(2000, "Dim2000"); }
 static void runBatchCpu(std::size_t dim, std::size_t batch) {
   UB_PERF_GUARD(perf);
   std::vector<double> As, bsTemplate;
-  buildBatch(dim, batch, As, bsTemplate);
+  buildBatch<double>(dim, batch, As, bsTemplate);
   std::vector<double> bs(bsTemplate.size());
   std::vector<double> workA(dim * dim);
   std::vector<int> ipiv(dim);

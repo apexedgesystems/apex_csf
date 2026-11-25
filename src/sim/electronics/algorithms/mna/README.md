@@ -177,17 +177,22 @@ GPU-accelerated batch MNA solver for small-medium matrices (8-64 dimensions). Lo
 using namespace sim::electronics::algorithms::mna::cuda;
 
 MnaBatchWorkspace workspace;
-workspace.prepare(dim, batchSize);
+workspace.prepare(32, batchSize);
 
 // Solve 1000 independent 32x32 systems in parallel
-solveBatch32x32(workspace, hA, hb, batchSize, stream);
+bool everySolved = solveBatchCustom(workspace, hA, hb, 32, batchSize, stream);
 ```
 
 **Key features:**
 
-- Supported dimensions: 8, 16, 32, 64
+- Supported dimensions: 8, 16, 32, 64, in double (`solveBatchCustom`) and
+  single precision (`solveBatchCustomF32`)
 - Custom kernels optimized per size
-- Async operation via CUDA streams
+- A CUDA stream may be given; the call returns when the batch is done
+- Returns true only when every system was solved. A system with no pivot
+  in some column (relative to that column's largest entry) is reported in
+  the optional `solved` flags and comes back as not-a-number in every
+  entry; the rest of its batch is solved all the same
 
 ### StampContext (Stamping Helper)
 
@@ -435,20 +440,29 @@ const std::size_t batchSize = 1000;  // 1000 Monte Carlo trials
 
 // Prepare GPU workspace (NOT RT-safe)
 MnaBatchWorkspace workspace;
-workspace.prepare(dim, batchSize);
+if (!workspace.prepare(dim, batchSize)) {
+  return;  // No device, or no memory
+}
 
-// Host-side matrices (batchSize independent 32x32 systems)
+// Host-side matrices (batchSize independent 32x32 systems, row-major)
 std::vector<double> hA(batchSize * dim * dim);
 std::vector<double> hb(batchSize * dim);
+std::unique_ptr<bool[]> solved(new bool[batchSize]);
 
 // Fill hA and hb with parameter-varied circuits
 // (each trial has slightly different component values)
 
 // Solve all 1000 systems in parallel on GPU (NOT RT-safe)
-cudaStream_t stream = 0;
-bool success = solveBatch32x32(workspace, hA.data(), hb.data(), batchSize, stream);
+bool everySolved =
+    solveBatchCustom(workspace, hA.data(), hb.data(), dim, batchSize, nullptr, solved.get());
 
-// Extract results (hb now contains solutions)
+// hb now holds the solution of each trial whose flag is true; a trial that
+// was not solved (a floating node, say) holds not-a-number throughout.
+for (std::size_t trial = 0; trial < batchSize; ++trial) {
+  if (solved[trial]) {
+    record(&hb[trial * dim]);
+  }
+}
 ```
 
 ### Workflow 4: RT-Safe Hot-Path Simulation
@@ -647,32 +661,36 @@ while (running) {
 # Build library
 make compose-debug
 
-# Run all tests (19 tests: 9 DC sparse + 10 AC + batch CUDA if enabled)
+# Run all tests
 make compose-testp
 
-# Run specific test suite
+# Run this module's unit tests
 docker compose run --rm dev-cuda bash -c \
-  './build/native-linux-debug/bin/utests/TestSimElectronicsMna'
+  './build/hosted-x86_64-debug/bin/utests/TestSimElectronicsMna'
+
+# Run the GPU batch solver's unit tests (needs a CUDA device)
+docker compose run --rm dev-cuda bash -c \
+  './build/hosted-x86_64-debug/bin/utests/TestSimElectronicsMnaBatch'
 ```
 
 **Test coverage:**
 
-- **DC Analysis (9 tests):**
-  - Dense vs sparse solver correctness
-  - Voltage divider circuits
-  - Parallel resistors
-  - Current source circuits
-  - Matrix factorization caching
-  - Solver state management
-- **AC Frequency Domain (10 tests):**
-  - Resistive circuits (frequency-independent)
-  - Capacitor/inductor impedance
-  - RC low-pass and high-pass filters
-  - Series RLC resonance
-  - Frequency sweeps and Bode plots
-  - Cutoff frequency detection
-- **Batch CUDA (conditional, if CUDA enabled):**
-  - GPU batch solver for parameter sweeps
+- **`TestSimElectronicsMna` (CPU):**
+  - Dense system: stamping, solve, cached factorization, the
+    external-matrix and matvec modes and what each solve refuses
+  - Sparse system: what a factorization reuses of the one before it, the
+    right-hand-side-only path, singular and floating-net refusals, agreement
+    with the dense system
+  - Stamp context in its three modes
+  - AC system: impedances, RC filters, RLC resonance, and the frequency
+    sweep's points, ends and refusals
+- **`TestSimElectronicsMnaBatch` (CUDA; skipped where there is no device, and
+  run by no CI job):**
+  - Every supported dimension in both precisions: known solutions, systems
+    that need a row exchange at every step, entries far from 1
+  - A circuit's matrix with voltage sources against the dense solver
+  - Systems that cannot be solved, reported one by one
+  - The reported launch configuration against the launch performed
 
 **Expected results:** All tests pass with no regressions. Sparse and dense solvers produce results within 1e-9 numerical precision.
 

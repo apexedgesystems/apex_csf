@@ -19,7 +19,14 @@
  * API Design:
  *  - Host-device transfers are explicit
  *  - Stream parameter for async operation
- *  - Returns bool: true on success, false on failure
+ *  - Returns bool: true when every system of the batch was solved
+ *
+ * A system is solved unless, at some elimination step, no entry left in the
+ * pivot column is above dim * epsilon * (the largest magnitude of that
+ * column in the matrix as given), epsilon being the precision's machine
+ * epsilon. A column of zeros is the limiting case. A system that is not
+ * solved comes back as not-a-number in every entry, and the others of its
+ * batch are solved all the same. The entries given are taken to be finite.
  *
  * @note NOT RT-SAFE: GPU operations involve kernel launches and memory transfers.
  */
@@ -33,11 +40,12 @@ namespace sim::electronics::algorithms::mna::cuda {
 /* ----------------------------- Availability ----------------------------- */
 
 /**
- * @brief Check if custom batch MNA solver is available.
- * @return true if CUDA runtime is available, false otherwise.
+ * @brief Check if the custom batch MNA solver was built.
+ * @return true if this build has the kernels, false otherwise.
  *
- * @note Uses COMPAT_HAVE_CUSOLVER which is a CMake-detected flag
- *       set when cuSOLVER (and thus CUDA runtime) is found.
+ * A compile-time fact (COMPAT_HAVE_CUSOLVER, set by CMake when cuSOLVER and
+ * with it the CUDA toolkit is found). It does not say that a device is
+ * present: without one, prepare() returns false.
  */
 inline constexpr bool batchAvailable() noexcept {
 #if COMPAT_HAVE_CUSOLVER
@@ -63,24 +71,32 @@ inline constexpr bool isSupportedDim(std::size_t dim) noexcept {
 /**
  * @brief GPU workspace for batch MNA solver.
  *
- * Manages device memory for batch matrices, vectors, and status flags.
- * Create once at setup, reuse for multiple batch solves.
+ * Owns device memory for batch matrices and vectors. Create once at setup,
+ * reuse for multiple batch solves. Not copyable: the memory has one owner.
+ *
+ * @tparam Scalar double (MnaBatchWorkspace) or float (MnaBatchWorkspaceF32).
  */
-struct MnaBatchWorkspace {
+template <typename Scalar> struct BatchWorkspace {
   void* dA = nullptr;           ///< Device matrices (batch * dim * dim).
   void* db = nullptr;           ///< Device RHS/solution vectors (batch * dim).
-  void* dSuccess = nullptr;     ///< Device success flags (batch bools).
   std::size_t maxDim = 0;       ///< Maximum dimension supported.
   std::size_t maxBatchSize = 0; ///< Maximum batch size supported.
   bool initialized = false;
 
-  ~MnaBatchWorkspace();
+  BatchWorkspace() = default;
+  ~BatchWorkspace();
+
+  BatchWorkspace(const BatchWorkspace&) = delete;
+  BatchWorkspace& operator=(const BatchWorkspace&) = delete;
+  BatchWorkspace(BatchWorkspace&&) = delete;
+  BatchWorkspace& operator=(BatchWorkspace&&) = delete;
 
   /**
    * @brief Prepare workspace for given dimension and batch size.
    * @param dim Matrix dimension (must be 8, 16, 32, or 64).
-   * @param maxBatch Maximum batch size.
-   * @return true on success, false on allocation failure.
+   * @param maxBatch Maximum batch size (at least 1).
+   * @return true on success; false for another dimension, an empty batch,
+   *         no device, or an allocation failure.
    */
   bool prepare(std::size_t dim, std::size_t maxBatch) noexcept;
 
@@ -97,10 +113,24 @@ struct MnaBatchWorkspace {
   }
 };
 
+extern template struct BatchWorkspace<double>;
+extern template struct BatchWorkspace<float>;
+
+/// Workspace for double-precision batches.
+using MnaBatchWorkspace = BatchWorkspace<double>;
+
+/**
+ * @brief Workspace for single-precision batches.
+ *
+ * 32-bit floats take half the memory bandwidth, where about 7 digits of
+ * precision are enough.
+ */
+using MnaBatchWorkspaceF32 = BatchWorkspace<float>;
+
 /* ----------------------------- Launch Configuration ----------------------------- */
 
 /**
- * @brief Kernel launch configuration for profiling.
+ * @brief The launch a batch solve performs, for profiling.
  */
 struct LaunchConfig {
   std::size_t gridX = 0;
@@ -114,51 +144,17 @@ struct LaunchConfig {
 };
 
 /**
- * @brief Get launch configuration for given dimension and batch.
+ * @brief Get the launch solveBatchCustom performs for a dimension and batch.
+ *
+ * Grid and block come from the table the launch itself reads; the shared
+ * memory is what the compiled kernel declares, asked of the CUDA runtime
+ * (zero when there is no device to ask).
+ *
  * @param dim Matrix dimension.
  * @param batch Batch size.
- * @return Launch configuration for profiling.
+ * @return The launch configuration; all zeros for an unsupported dimension.
  */
 LaunchConfig getLaunchConfig(std::size_t dim, std::size_t batch) noexcept;
-
-/* ----------------------------- FP32 Workspace ----------------------------- */
-
-/**
- * @brief GPU workspace for batch MNA solver (single precision).
- *
- * Uses 32-bit floats for 2x memory bandwidth and potentially higher throughput.
- * Suitable for applications where ~7 digits of precision is sufficient.
- */
-struct MnaBatchWorkspaceF32 {
-  void* dA = nullptr;           ///< Device matrices (batch * dim * dim floats).
-  void* db = nullptr;           ///< Device RHS/solution vectors (batch * dim floats).
-  void* dSuccess = nullptr;     ///< Device success flags (batch bools).
-  std::size_t maxDim = 0;       ///< Maximum dimension supported.
-  std::size_t maxBatchSize = 0; ///< Maximum batch size supported.
-  bool initialized = false;
-
-  ~MnaBatchWorkspaceF32();
-
-  /**
-   * @brief Prepare workspace for given dimension and batch size.
-   * @param dim Matrix dimension (must be 8, 16, 32, or 64).
-   * @param maxBatch Maximum batch size.
-   * @return true on success, false on allocation failure.
-   */
-  bool prepare(std::size_t dim, std::size_t maxBatch) noexcept;
-
-  /**
-   * @brief Release all device memory.
-   */
-  void release() noexcept;
-
-  /**
-   * @brief Check if workspace can handle dimension and batch.
-   */
-  [[nodiscard]] bool canHandle(std::size_t dim, std::size_t batch) const noexcept {
-    return initialized && dim <= maxDim && batch <= maxBatchSize;
-  }
-};
 
 /* ----------------------------- Batch Solve API ----------------------------- */
 
@@ -170,16 +166,21 @@ struct MnaBatchWorkspaceF32 {
  *
  * @param ws Prepared workspace.
  * @param As Host matrices (batch * dim * dim elements, row-major).
- * @param bs Host RHS vectors (batch * dim elements), receives solutions.
+ * @param bs Host RHS vectors (batch * dim elements), receives solutions. A
+ *           system that is not solved receives not-a-number in every entry.
  * @param dim Matrix dimension (must be 8, 16, 32, or 64).
  * @param batch Number of systems to solve.
  * @param stream CUDA stream (nullptr for default stream).
- * @return true on success, false on failure.
+ * @param solved Optional: batch flags, true for each system solved. Written
+ *               only when the batch ran.
+ * @return true when every system was solved (an empty batch included).
+ *         False when at least one was not, or when the batch did not run:
+ *         unsupported dimension, workspace too small, or a CUDA error.
  *
  * @note NOT RT-SAFE: involves memory transfers and kernel launches.
  */
 bool solveBatchCustom(MnaBatchWorkspace& ws, const double* As, double* bs, std::size_t dim,
-                      std::size_t batch, void* stream = nullptr) noexcept;
+                      std::size_t batch, void* stream = nullptr, bool* solved = nullptr) noexcept;
 
 /**
  * @brief Solve batch of linear systems using single precision (FP32).
@@ -193,22 +194,26 @@ bool solveBatchCustom(MnaBatchWorkspace& ws, const double* As, double* bs, std::
  *
  * @param ws Prepared FP32 workspace.
  * @param As Host matrices (batch * dim * dim floats, row-major).
- * @param bs Host RHS vectors (batch * dim floats), receives solutions.
+ * @param bs Host RHS vectors (batch * dim floats), receives solutions. A
+ *           system that is not solved receives not-a-number in every entry.
  * @param dim Matrix dimension (must be 8, 16, 32, or 64).
  * @param batch Number of systems to solve.
  * @param stream CUDA stream (nullptr for default stream).
- * @return true on success, false on failure.
+ * @param solved Optional: batch flags, true for each system solved. Written
+ *               only when the batch ran.
+ * @return As solveBatchCustom.
  *
  * @note NOT RT-SAFE: involves memory transfers and kernel launches.
  */
 bool solveBatchCustomF32(MnaBatchWorkspaceF32& ws, const float* As, float* bs, std::size_t dim,
-                         std::size_t batch, void* stream = nullptr) noexcept;
+                         std::size_t batch, void* stream = nullptr,
+                         bool* solved = nullptr) noexcept;
 
 /**
- * @brief Get launch configuration for FP32 kernels.
+ * @brief Get the launch solveBatchCustomF32 performs.
  * @param dim Matrix dimension.
  * @param batch Batch size.
- * @return Launch configuration for profiling.
+ * @return As getLaunchConfig, for the single-precision kernels.
  */
 LaunchConfig getLaunchConfigF32(std::size_t dim, std::size_t batch) noexcept;
 
