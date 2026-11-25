@@ -1,10 +1,11 @@
 /**
  * @file BufferPool.cpp
- * @brief Implementation of RT-safe buffer pool for zero-copy messaging.
+ * @brief Implementation of the lock-free buffer pool for zero-copy messaging.
  */
 
 #include "src/system/core/components/interface/apex/inc/BufferPool.hpp"
 
+#include <bit>
 #include <cassert>
 #include <utility>
 
@@ -14,108 +15,73 @@ namespace interface {
 /* ----------------------------- Construction ----------------------------- */
 
 BufferPool::BufferPool(std::size_t poolSize, std::size_t bufferCapacity)
-    : freeList_(poolSize), poolSize_(poolSize), bufferCapacity_(bufferCapacity) {
+    : buffers_(poolSize), freeMap_((poolSize + MAP_WORD_BITS - 1U) / MAP_WORD_BITS),
+      poolSize_(poolSize), bufferCapacity_(bufferCapacity) {
 
-  // Reserve space to avoid reallocations.
-  buffers_.reserve(poolSize);
   dataArrays_.reserve(poolSize);
 
-  // Pre-allocate all buffers and data arrays.
   for (std::size_t i = 0; i < poolSize; ++i) {
-    // Allocate MessageBuffer.
-    auto buf = std::make_unique<MessageBuffer>();
-
-    // Allocate data array.
     auto dataArray = std::make_unique<std::uint8_t[]>(bufferCapacity);
 
-    // Link buffer to data array.
-    buf->data = dataArray.get();
-    buf->capacity = bufferCapacity;
-    buf->length = 0;
+    // Link buffer to data array; its other members keep their initializers.
+    buffers_[i].data = dataArray.get();
+    buffers_[i].capacity = bufferCapacity;
 
-    // Clear metadata.
-    buf->fullUid = 0;
-    buf->opcode = 0;
-    buf->sequence = 0;
-    buf->internalOrigin = false;
-
-#ifndef NDEBUG
-    // Initialize debug fields.
-    buf->magic = 0xDEADBEEF;
-    buf->isAcquired = false;
-    buf->acquireTimestamp = 0;
-#endif
-
-    // Add buffer to free list (raw pointer).
-    MessageBuffer* rawPtr = buf.get();
-    const bool pushed = freeList_.tryPush(rawPtr);
-    assert(pushed && "Free list should never be full during construction!");
-    (void)pushed; // Silence unused variable warning in release builds.
-
-    // Store ownership in pool.
-    buffers_.push_back(std::move(buf));
     dataArrays_.push_back(std::move(dataArray));
   }
-}
 
-BufferPool::~BufferPool() {
-  // Buffers and data arrays are automatically freed via unique_ptr.
-  // Check for leaks in debug mode.
-#ifndef NDEBUG
-  const std::size_t leakedBuffers = poolSize_ - available();
-  if (leakedBuffers > 0) {
-    // Log warning: leakedBuffers not returned to pool!
-    // In production, this would go to a log system.
-    // For now, just a comment. Could add fprintf(stderr, ...) if needed.
+  // Every buffer starts in the pool: all bits set below poolSize, none above.
+  for (std::size_t word = 0; word < freeMap_.size(); ++word) {
+    const std::size_t REMAINING = poolSize - (word * MAP_WORD_BITS);
+    const std::uint64_t BITS =
+        (REMAINING >= MAP_WORD_BITS) ? ~std::uint64_t{0} : ((std::uint64_t{1} << REMAINING) - 1U);
+    freeMap_[word].store(BITS, std::memory_order_release);
   }
-#endif
 }
 
-/* ----------------------------- RT-Safe Operations ----------------------------- */
+/* ----------------------------- Acquire and Release ----------------------------- */
 
 MessageBuffer* BufferPool::acquire(std::size_t requiredSize) noexcept {
   // Check if required size exceeds buffer capacity.
   if (requiredSize > bufferCapacity_) {
-    // Size too large, cannot satisfy.
     return nullptr;
   }
 
-  // Try to pop buffer from free list.
-  MessageBuffer* buf = nullptr;
-  if (!freeList_.tryPop(buf)) {
-    // Pool exhausted, no buffers available.
-    return nullptr;
-  }
+  for (std::size_t word = 0; word < freeMap_.size(); ++word) {
+    std::uint64_t bits = freeMap_[word].load(std::memory_order_acquire);
+    while (bits != 0U) {
+      // Take the lowest free buffer of this word. A failed exchange reloads bits: another
+      // thread took or returned a buffer of the word, and the choice is made again.
+      const std::uint64_t TAKEN = bits & (~bits + 1U);
+      if (!freeMap_[word].compare_exchange_weak(bits, bits & ~TAKEN, std::memory_order_acq_rel,
+                                                std::memory_order_acquire)) {
+        continue;
+      }
 
-  // Validate buffer (should never fail if pool is correct).
-  assert(buf != nullptr && "Free list returned null buffer!");
-  assert(buf->isValid() && "Buffer from pool is invalid!");
+      MessageBuffer* buf =
+          &buffers_[(word * MAP_WORD_BITS) + static_cast<std::size_t>(std::countr_zero(TAKEN))];
+      assert(buf->isValid() && "Buffer from pool is invalid!");
 
 #ifndef NDEBUG
-  // Debug: Check buffer was not already acquired.
-  assert(!buf->isAcquired && "Buffer already acquired!");
-  buf->isAcquired = true;
-  buf->acquireTimestamp = 0; // Timestamp tracking for leak detection.
-  totalAcquires_.fetch_add(
-      1U, std::memory_order_relaxed); // Acquirer and releaser are different threads.
+      assert(!buf->isAcquired && "Buffer already acquired!");
+      buf->isAcquired = true;
 #endif
 
-  // Clear metadata for new message.
-  buf->clear();
+      // Clear metadata for new message.
+      buf->clear();
+      return buf;
+    }
+  }
 
-  return buf;
+  // Pool exhausted: one pass found no free buffer.
+  return nullptr;
 }
 
 void BufferPool::release(MessageBuffer* buf) noexcept {
-  // Defensive: Return early if null.
   if (buf == nullptr) {
     return;
   }
 
-  // CRITICAL: Should never reach here with nullptr in correct usage.
-  assert(buf != nullptr && "Attempted to release null buffer!");
-
-  // Validate buffer.
   assert(buf->isValid() && "Attempted to release invalid buffer!");
 
   // Decrement refcount, only return to pool on last reference.
@@ -124,32 +90,33 @@ void BufferPool::release(MessageBuffer* buf) noexcept {
     return;
   }
 
-  // Last reference: return buffer to pool.
+  const std::size_t INDEX = static_cast<std::size_t>(buf - buffers_.data());
+  assert(INDEX < poolSize_ && "Buffer is not from this pool!");
+
 #ifndef NDEBUG
-  // Debug: Check buffer was acquired.
   assert(buf->isAcquired && "Buffer was not acquired!");
   buf->isAcquired = false;
-  buf->acquireTimestamp = 0;
-  totalReleases_.fetch_add(1U, std::memory_order_relaxed);
 #endif
 
   // Clear metadata and reset refcount for next use.
   buf->clear();
 
-  // Return buffer to free list.
-  const bool pushed = freeList_.tryPush(buf);
-  assert(pushed && "Free list should never be full during release!");
-  (void)pushed; // Silence unused variable warning.
-
-  // Note: If push fails (should never happen), buffer is leaked.
-  // In debug mode, destructor will detect this.
+  // Return the buffer: setting its bit hands it to the next acquire() and cannot fail.
+  const std::uint64_t BIT = std::uint64_t{1} << (INDEX % MAP_WORD_BITS);
+  const std::uint64_t BEFORE =
+      freeMap_[INDEX / MAP_WORD_BITS].fetch_or(BIT, std::memory_order_release);
+  assert((BEFORE & BIT) == 0U && "Buffer released twice!");
+  (void)BEFORE;
 }
 
 /* ----------------------------- Statistics ----------------------------- */
 
 std::size_t BufferPool::available() const noexcept {
-  // LockFreeQueue::sizeApprox() is lock-free and RT-safe.
-  return freeList_.sizeApprox();
+  std::size_t free = 0;
+  for (std::size_t word = 0; word < freeMap_.size(); ++word) {
+    free += static_cast<std::size_t>(std::popcount(freeMap_[word].load(std::memory_order_acquire)));
+  }
+  return free;
 }
 
 } // namespace interface

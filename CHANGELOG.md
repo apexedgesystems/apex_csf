@@ -162,6 +162,9 @@ any such change is called out explicitly in its entry.
 - Log rotation keeps every backup: a rotation within the same second as an
   earlier one gets a numeric suffix instead of replacing its backup.
   ([#187](https://github.com/apexedgesystems/apex_csf/pull/187))
+- `BufferPool::release()` always returns its buffer: the pool lost a buffer
+  for good when a release met a thread descheduled inside `acquire()`.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - `LockFreeQueue::sizeApprox()` never exceeds `capacity()` and stays correct
   when the queue's indices wrap.
   ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))

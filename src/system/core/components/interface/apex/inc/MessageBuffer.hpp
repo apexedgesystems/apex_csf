@@ -79,9 +79,8 @@ struct MessageBuffer {
   /* ----------------------------- Debug/Safety ----------------------------- */
 
 #ifndef NDEBUG
-  std::uint32_t magic{0xDEADBEEF};   ///< Magic number (detect corruption).
-  bool isAcquired{false};            ///< Debug: Track acquire/release state.
-  std::uint64_t acquireTimestamp{0}; ///< Debug: When buffer was acquired.
+  std::uint32_t magic{0xDEADBEEF}; ///< Magic number (detect corruption).
+  bool isAcquired{false};          ///< Debug: Track acquire/release state.
 #endif
 
   /* ----------------------------- Methods ----------------------------- */

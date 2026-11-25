@@ -152,14 +152,6 @@ are counted per server and reported in the stats summary.
 | `slip::encode`        | 92.0%     | CPU-bound (SLIP framing dominates) |
 | `aproto::buildHeader` | 2.1%      | CPU-bound (header construction)    |
 
-**BufferPool AcquireRelease (77 samples):**
-
-| Function                 | Self-Time | Type                         |
-| ------------------------ | --------- | ---------------------------- |
-| `LockFreeQueue::tryPush` | 24.7%     | CPU-bound (atomic CAS)       |
-| `MessageBuffer::decRef`  | 16.9%     | CPU-bound (atomic decrement) |
-| `LockFreeQueue::tryPop`  | 14.3%     | CPU-bound (atomic CAS)       |
-
 **MulticastCommand4 (499 samples):**
 
 | Function                          | Self-Time | Type                          |
@@ -255,7 +247,7 @@ The interface uses a zero-copy architecture with pointer-based queues:
 
 **MessageBuffer**: Actual-size allocation (not fixed 4KB) with APROTO metadata.
 
-**BufferPool**: Lock-free buffer pool with pre-allocated buffers. `acquire()` and `release()` take no lock and allocate nothing; like the queue under them they have no per-caller retry bound while other threads acquire or release.
+**BufferPool**: Lock-free buffer pool with pre-allocated buffers and one free bit per buffer. `acquire()` and `release()` take no lock and allocate nothing. `release()` returns a buffer with one atomic operation that cannot be refused, so a buffer is never lost to what other threads are doing; `acquire()` retries only when another thread took or returned a buffer of the same 64-buffer word, with no per-caller retry bound. Which free buffer `acquire()` returns is unspecified.
 
 **Pointer-based queues**: `SPSCQueue<MessageBuffer*>` instead of copying large structs.
 
@@ -427,11 +419,12 @@ iface.freezeQueues();
 
 ### Test Organization
 
-| Component     | Test File                 | Tests  |
-| ------------- | ------------------------- | ------ |
-| ApexInterface | `ApexInterface_uTest.cpp` | 4      |
-| BufferPool    | `BufferPool_uTest.cpp`    | 29     |
-| **Total**     |                           | **33** |
+| Component           | Test File                       | Tests  |
+| ------------------- | ------------------------------- | ------ |
+| ApexInterface       | `ApexInterface_uTest.cpp`       | 8      |
+| BufferPool          | `BufferPool_uTest.cpp`          | 31     |
+| FileTransferHandler | `FileTransferHandler_uTest.cpp` | 33     |
+| **Total**           |                                 | **72** |
 
 ---
 
