@@ -165,7 +165,7 @@ jobs:
           # would fail the substitution, so the test is an if rather than &&.
           rebuilds=$(for image in "${!RB[@]}"; do if [ "${RB[$image]}" = true ]; then echo "$image"; fi; done | sort | paste -sd' ' -)
           count=$(echo "$rebuilds" | wc -w)
-          echo "::notice title=Image graph::rebuilding ${count}/13 images${rebuilds:+: }${rebuilds}"
+          echo "::notice title=Image graph::rebuilding ${count}/${#RB[@]} images${rebuilds:+: }${rebuilds}"
 
           # Emit one JSON matrix array per tier of the images that will rebuild.
           for tier in $(seq 0 "$MAX_TIER"); do

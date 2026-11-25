@@ -79,7 +79,12 @@ jobs:
           # make check-ci-classify): which jobs the paths select, which roles'
           # Rust tests, and which jobs rebuild their image. An empty diff (a
           # dispatch on main itself) selects every job and rebuilds nothing.
-          printf '%s\n' "$files" | python3 tools/build/py/bin/ci-classify.py | tee -a "$GITHUB_OUTPUT"
+          # Its output is captured before it is written: a classifier that
+          # fails stops this step with its status, where a pipeline into tee
+          # would report tee's and leave every decision empty, which skips
+          # the jobs that read them.
+          decisions=$(printf '%s\n' "$files" | python3 tools/build/py/bin/ci-classify.py)
+          printf '%s\n' "$decisions" | tee -a "$GITHUB_OUTPUT"
 
   lint:
     name: Lint and secret scan
