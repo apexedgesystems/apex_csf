@@ -35,6 +35,12 @@ top-level directory or a build or CI file can never silently run less. A
 change set with no paths at all (a manual run on main) selects every job too,
 and rebuilds nothing.
 
+The ops and the analysis role each run their suites together (ROLE_SUITES): a
+path under one of them that selects any job selects the role's other suites
+as well. So an ops crate, script or package runs the ops Rust tests, the
+shell smoke and the Python suite, which holds the target-generation tests;
+none of them selects what stands on the build role.
+
 What an image is built from is read from its Dockerfile, not listed here: the
 Dockerfile itself and every file a COPY or ADD takes from the repository. In
 docker/base.Dockerfile those copies are all in the `bakes` stage, which is
@@ -49,14 +55,16 @@ word, a character class, a here-document, a RUN that mounts the repository)
 is refused: the run ends nonzero with the file and line, so the input is
 rewritten where it was added instead of going unseen by every later change.
 
-Who rebuilds for a changed bake follows from the jobs its path selects: the
+Who rebuilds for a changed bake follows from the jobs its own rule selects
+(not the rest of its role's suites, which do not install from it): the
 Rust tests when it selects a Rust role, the Python tests when it selects py,
 and the C++ jobs and the dictionary gate when it selects cpp or rust_build
 (they compile the build role's crates, and cargo resolves the whole lock to
 do it). So the Rust lock rebuilds everything that compiles a crate, and the
-Python lock rebuilds the Python job alone. A bake whose path selects no job
-has no known consumer, and rebuilds for all of them. Lint uses no bake and
-rebuilds for `images` only.
+Python lock rebuilds the Python job alone. A bake whose path selects none of
+those (no job, or only the shell smoke, which runs on the bare host) has no
+known consumer, and rebuilds for all of them. Lint uses no bake and rebuilds
+for `images` only.
 
 --check-crates reads `cargo metadata` for the tools workspace on stdin and
 fails when a crate is linked by a crate of a role its own paths do not
@@ -144,6 +152,13 @@ RULES = (
     # root configuration, a tools role or language no rule names, and
     # whatever is new.
     (("*",), EVERY_JOB),
+)
+
+# The roles whose suites run together: under the pattern, a path that
+# selects any job selects these too.
+ROLE_SUITES = (
+    ("tools/ops/*", frozenset({"rust_ops", "py", "sh"})),
+    ("tools/analysis/*", frozenset({"rust_analysis", "py"})),
 )
 
 # The images the gate jobs run in.
@@ -279,12 +294,25 @@ def touches(paths, source):
 
 
 def selected_jobs(path):
-    """Return the jobs of the first rule a path matches (the last matches any)."""
+    """Return the jobs of the first rule a path matches (the last matches any).
+
+    These are the jobs that build or install the path, which is what decides
+    who rebuilds for a bake and which crates a crate's users are.
+    """
     return next(
         selected
         for patterns, selected in RULES
         if any(fnmatch.fnmatchcase(path, pattern) for pattern in patterns)
     )
+
+
+def jobs_to_run(path):
+    """Return the jobs a changed path runs: its rule's, and its role's other suites."""
+    jobs = set(selected_jobs(path))
+    for pattern, suites in ROLE_SUITES:
+        if jobs and fnmatch.fnmatchcase(path, pattern):
+            jobs |= suites
+    return jobs
 
 
 def image_decisions(paths, gates=GATE_DOCKERFILES):
@@ -305,7 +333,7 @@ def image_decisions(paths, gates=GATE_DOCKERFILES):
                 images = images or bool(touching)
                 continue
             for path in touching:
-                baked |= selected_jobs(path) or EVERY_JOB
+                baked |= (selected_jobs(path) - {"sh"}) or EVERY_JOB
     return images, baked
 
 
@@ -335,7 +363,7 @@ def classify(paths, gates=GATE_DOCKERFILES):
     """Return {decision: bool} for a list of changed paths."""
     jobs = set()
     for path in paths:
-        jobs |= selected_jobs(path)
+        jobs |= jobs_to_run(path)
     if not paths:
         jobs = set(EVERY_JOB)
     decisions = {job: job in jobs for job in JOBS}

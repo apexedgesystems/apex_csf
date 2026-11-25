@@ -151,9 +151,9 @@ build.
 
 1. Add the role to `_APEX_TOOL_ROLES` in `tools/CMakeLists.txt` and to
    `TOOL_ROLES` in `mk/tools.mk`. The `*/py/*` glob already spans it.
-2. Follow the member-package steps above for its first package; give the
-   role a CI scope in `.github/workflows/ci.yml` only if it should gate
-   on its own.
+2. Follow the member-package steps above for its first package. CI runs
+   every job for the role's paths until a rule scopes it (see
+   [What CI runs for a tools change](../README.md#what-ci-runs-for-a-tools-change)).
 
 ---
 

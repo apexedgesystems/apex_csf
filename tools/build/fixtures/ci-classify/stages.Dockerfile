@@ -8,6 +8,7 @@ COPY fixture/Cargo.toml fixture/Cargo.lock \
      /tmp/fetch/
 COPY fixture/assets/ /tmp/assets/
 COPY docs/baked/ tools/ops/rust/baked.bin tools/ops/py/baked.bin src/baked.bin /tmp/by-consumer/
+COPY tools/ops/sh/baked.bin tools/analysis/rust/baked.bin tools/analysis/py/baked.bin /tmp/by-consumer/
 # The ways a source may be written: the JSON form, a path that is not
 # normalized, a tab after the keyword, a wildcard within a path segment (a
 # file or a directory), a keyword in lower case, and ADD (a URL is not the

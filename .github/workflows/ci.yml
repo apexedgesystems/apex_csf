@@ -6,10 +6,12 @@
 # Dependabot bump) does not rebuild the C++/CUDA surface; a docs-only change
 # runs lint alone. Tools are scoped by role: a build-role change runs what the
 # C++ build stands on (that role's Rust tests, the spec/.auto pin, the
-# dictionary gate); an ops or analysis change runs its own suites and none of
-# those. Scope-down is opt-in per known subtree: cross-cutting paths
-# (.github/, mk/, docker/, the CMake build files) and any unrecognized path run
-# the full suite, so a missed filter never silently drops coverage.
+# dictionary gate); an ops or analysis change runs that role's suites together
+# (for ops: its Rust tests, the shell smoke and the Python suite, which holds
+# the target-generation tests) and none of those. Scope-down is opt-in per
+# known subtree: cross-cutting paths (.github/, mk/, docker/, the CMake build
+# files) and any unrecognized path run the full suite, so a missed filter
+# never silently drops coverage.
 #
 # Image strategy (see .github/actions/dev-setup): jobs pull the registry
 # :latest image, which docker-images.yml keeps current with main. When the PR

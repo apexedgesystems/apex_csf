@@ -164,8 +164,8 @@ fetch layer in `docker/base.Dockerfile` copies the root manifest, the
 lock and each member's `Cargo.toml` (no sources) and runs
 `cargo fetch --locked`, which is why members declare their targets with
 explicit `path`s: cargo resolves the workspace from manifests alone. CI
-rebuilds the gate image when `tools/Cargo.*` or a member manifest
-changes.
+rebuilds an image when `tools/Cargo.lock` changes; a manifest alone
+rebuilds nothing, since the lock decides what is fetched.
 
 Measured on x86_64 Linux as distinct normal-edge packages, local members
 included (`cargo tree --locked -e normal --prefix none <selection> | sed

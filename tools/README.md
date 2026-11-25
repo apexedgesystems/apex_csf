@@ -25,7 +25,7 @@ tools/
     py/bin/                               gen-platform-consumers.py, ci-classify.py (scripts, not a package)
     proto/apex/options.proto              the proto profile cdef_gen reads
     fixtures/check-data-db/               the data-db gate's contract fixtures
-    fixtures/ci-classify/                 the CI change classifier's cases and crate-graph fixture
+    fixtures/ci-classify/                 the CI change classifier's cases and fixtures
   ops/
     rust/apex-ops-tools/                  tprm_template, upx_tool, serial_dev_checker, serial_dev_tester
     py/apex_ops/                          ops-deck, zenith-target; the APROTO client and protocol
@@ -84,9 +84,13 @@ every one of them:
    script into `bin/tools/<role>`, one stamp and target
    `${PROJECT_NAME}_<role>_go_tools`, appended to `_ROLE_PARTS_<role>` so
    the role aggregate picks it up.
-3. **Checks**: an executed test entry (`test-go` in `mk/test.mk`) and a
-   CI classifier scope in `.github/workflows/ci.yml` if it should gate on
-   its own.
+3. **Checks**: an executed test entry (`test-go` in `mk/test.mk`). Until
+   a rule names it, a path under the new language runs every CI job. To
+   give it a job of its own, add the decision and its rule to
+   [build/py/bin/ci-classify.py](build/py/bin/ci-classify.py) with cases
+   in [build/fixtures/ci-classify/cases.txt](build/fixtures/ci-classify/cases.txt),
+   and a job in `.github/workflows/ci.yml` that reads the decision (see
+   [What CI runs for a tools change](#what-ci-runs-for-a-tools-change)).
 4. **Hermetic bake**: install the toolchain and bake an offline module
    cache in `docker/base.Dockerfile` (the cargo and uv sections are the
    patterns), or release builds will fail offline.
@@ -120,19 +124,28 @@ The rules are the `RULES` table in
 cases in [build/fixtures/ci-classify/cases.txt](build/fixtures/ci-classify/cases.txt)
 by `make check-ci-classify`. For a pull request that touches only:
 
-| Path                                                | Runs                                                                      |
-| --------------------------------------------------- | ------------------------------------------------------------------------- |
-| `tools/build/rust/`, `proto/`, the data-db fixtures | the build role's Rust tests and clippy, `check-cdef`, the dictionary gate |
-| `tools/build/rust/apex-tprm/`                       | the same, and the ops role's Rust tests (the ops crate links it)          |
-| `tools/ops/rust/`, `tools/analysis/rust/`           | that role's Rust tests and clippy                                         |
-| `tools/<role>/py/`                                  | the Python suite (the target-generation tests are in it)                  |
-| `tools/ops/sh/`                                     | the shell smoke                                                           |
-| `tools/<role>/cpp/`                                 | the C++ jobs, which build it                                              |
-| `tools/Cargo.lock`                                  | every role's Rust tests and the build role's gates, in rebuilt images     |
-| `tools/uv.lock`, a `pyproject.toml`                 | the Python suite, in an image rebuilt with the new wheels                 |
+| Path                                                | Runs                                                                         |
+| --------------------------------------------------- | ---------------------------------------------------------------------------- |
+| `tools/build/rust/`, `proto/`, the data-db fixtures | the build role's Rust tests and clippy, `check-cdef`, the dictionary gate    |
+| `tools/build/rust/apex-tprm/`                       | the same, and the ops role's Rust tests (the ops crate links it)             |
+| `tools/ops/` (a crate, a package, a script)         | the ops suites: its Rust tests and clippy, the shell smoke, the Python suite |
+| `tools/analysis/` (a crate, a package)              | the analysis suites: its Rust tests and clippy, and the Python suite         |
+| `tools/<role>/cpp/`                                 | the C++ jobs, which build it, and its role's suites                          |
+| `tools/Cargo.lock`                                  | every role's Rust tests and the build role's gates, in rebuilt images        |
+| `tools/uv.lock`, `tools/pyproject.toml`             | the Python suite, in an image rebuilt with the new wheels                    |
+| a member's `pyproject.toml`                         | its role's suites, the Python suite in a rebuilt image                       |
 
-Lint runs for every change. A crate that a crate of another role links
-must select that role's tests as well; `make check-ci-crates` (run by
-`make test-rust`) fails until its rule says so. A new role, or a new
-language under a role, runs every job until a rule and its cases are
-added; a Rust role also takes an entry in `RUST_JOBS`.
+Lint runs for every change. The ops role and the analysis role each run
+their suites together (`ROLE_SUITES`), and neither runs what stands on
+the build role. The Python suite is one suite: every member's tests and
+the demos' checkout tests, the target-generation tests among them. A
+crate that a crate of another role links must select that role's tests
+as well; `make check-ci-crates` (run by `make test-rust`) fails until
+its rule says so. A new role, or a new language under a role, runs every
+job until a rule and its cases are added; a Rust role also takes an
+entry in `RUST_JOBS`.
+
+What an image is rebuilt for is read from its Dockerfile's `COPY` lines,
+so a new input needs only its line. One written in a form the classifier
+does not read (a build variable in the path, for one) fails
+`make check-ci-classify` with the file and line.
