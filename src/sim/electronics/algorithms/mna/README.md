@@ -152,13 +152,15 @@ AcMnaSystem mna(netCount, omega);
 mna.stampConductance(a, b, g);               // Resistor (real)
 mna.stampAdmittance(a, b, Complex(0, w*C));  // Capacitor (imaginary)
 
-auto result = mna.solveAc();  // Complex node voltages
+auto result = mna.solve();  // Complex node voltages
 ```
 
 **Key features:**
 
 - Complex admittance matrix (Y = G + jB)
-- Frequency sweep support
+- `frequencySweep()`: log-spaced points with both ends included; arguments
+  that describe no sweep (a start at or below zero, an end below the start,
+  no points per decade, no input voltage) return no points
 - Bode plot generation (magnitude/phase)
 
 ### MnaBatchCuda (GPU Batch Solver)
@@ -460,23 +462,29 @@ using namespace sim::electronics::algorithms::mna;
 
 // SETUP PHASE (NOT RT-safe - run once at initialization)
 const std::size_t netCount = 100;
+const std::size_t sourceCount = 1;
 MnaSystem mna(netCount);
-MnaSolveWorkspace workspace(netCount);
+MnaSolveWorkspace workspace;
+workspace.prepare(netCount + sourceCount);
+std::vector<double> v(netCount);
+std::vector<double> i_branch(sourceCount);
+mna.addVoltageSource(supplyNode, 0, supplyVolts);  // reserves the source list
 
 // HOT LOOP (RT-safe - runs every control cycle)
 void rtControlLoop() {
-  mna.clearStamps();  // RT-safe: zeros matrix, preserves factorization
+  mna.clear();  // RT-safe: zeros the stamps, keeps the storage
 
   // Stamp circuit from sensor inputs (RT-safe)
+  mna.addVoltageSource(supplyNode, 0, supplyVolts);
   for (const auto& r : resistors) {
     mna.addConductance(r.a, r.b, 1.0 / r.R);
   }
 
-  // Solve (RT-safe with workspace - no allocations)
-  auto result = mna.solve(workspace);
-
-  // Use result for control output (RT-safe)
-  setActuatorVoltage(result.nodeVoltages[outputNode]);
+  // Solve into pre-allocated buffers (RT-safe with workspace - no allocations)
+  if (mna.solveInto(workspace, v.data(), i_branch.data())) {
+    // Use result for control output (RT-safe)
+    setActuatorVoltage(v[outputNode]);
+  }
 }
 ```
 
@@ -559,24 +567,24 @@ matrix's stamps never select another matrix's factors.
 
 ### RT-Safe Operations
 
-| Operation                | RT-Safe? | Notes                                |
-| ------------------------ | -------- | ------------------------------------ |
-| `addConductance()`       | [OK] Yes | Pure stamping, no allocations        |
-| `addCurrent()`           | [OK] Yes | Pure stamping, no allocations        |
-| `addGEntry()`            | [OK] Yes | One asymmetric entry (dense)         |
-| `addTransconductance()`  | [OK] Yes | Controlled current source (dense)    |
-| `clearStamps()`          | [OK] Yes | Sparse: clears stamps, keeps factors |
-| `solve()` with workspace | [OK] Yes | No allocations in hot path           |
+| Operation                 | RT-Safe? | Notes                                |
+| ------------------------- | -------- | ------------------------------------ |
+| `addConductance()`        | [OK] Yes | Pure stamping, no allocations        |
+| `addCurrent()`            | [OK] Yes | Pure stamping, no allocations        |
+| `addGEntry()`             | [OK] Yes | One asymmetric entry (dense)         |
+| `addTransconductance()`   | [OK] Yes | Controlled current source (dense)    |
+| `clearStamps()`           | [OK] Yes | Sparse: clears stamps, keeps factors |
+| `solveInto()` + workspace | [OK] Yes | No allocations in hot path           |
 
 ### NOT RT-Safe
 
-| Operation                   | RT-Safe? | Notes                             |
-| --------------------------- | -------- | --------------------------------- |
-| MNA construction            | [X] No   | Allocates matrices                |
-| `solve()` without workspace | [X] No   | Allocates internally              |
-| Resizing                    | [X] No   | Reallocates matrices              |
-| Sparse `factorize()`        | [X] No   | KLU analysis and factors allocate |
-| GPU batch solving           | [X] No   | Kernel launches, memory transfers |
+| Operation            | RT-Safe? | Notes                             |
+| -------------------- | -------- | --------------------------------- |
+| MNA construction     | [X] No   | Allocates matrices                |
+| `solve()`            | [X] No   | Allocates matrix and result       |
+| Resizing             | [X] No   | Reallocates matrices              |
+| Sparse `factorize()` | [X] No   | KLU analysis and factors allocate |
+| GPU batch solving    | [X] No   | Kernel launches, memory transfers |
 
 ### RT-Safe Usage Pattern
 

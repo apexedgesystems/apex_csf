@@ -13,6 +13,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <cmath>
 #include <vector>
 
@@ -259,6 +260,111 @@ TEST(MnaSystemTest, BuildAugmentedMatrixWritesShape) {
   EXPECT_NEAR(A[3 * DIM + 1], 1.0, TOL);
   // RHS at the voltage-source slot should be 5 V.
   EXPECT_NEAR(b[3], 5.0, TOL);
+}
+
+/* ----------------------------- External-Matrix Mode ----------------------------- */
+
+namespace {
+
+/** @brief 10 V on net 1 over `upper` ohms to net 2 over `lower` ohms to ground. */
+void stampDivider(MnaSystem& mna, double upper, double lower) {
+  mna.addConductance(1, 2, 1.0 / upper);
+  mna.addConductance(2, 0, 1.0 / lower);
+  mna.addVoltageSource(1, 0, 10.0);
+}
+
+} // namespace
+
+/** @test clear() in external-matrix mode leaves none of the earlier stamps */
+TEST(MnaSystemTest, ClearInExternalModeRemovesEarlierStamps) {
+  MnaSolveWorkspace ws;
+  ws.prepare(4);
+  std::fill(ws.A.begin(), ws.A.end(), 0.0);
+  MnaSystem mna(3, ws.A.data(), 4);
+  std::vector<double> voltages(3);
+  std::vector<double> currents(1);
+
+  stampDivider(mna, 1000.0, 1000.0);
+  mna.clear();
+  stampDivider(mna, 1000.0, 3000.0);
+  ASSERT_TRUE(mna.solveInto(ws, voltages.data(), currents.data()));
+  EXPECT_NEAR(voltages[2], 7.5, TOL);
+}
+
+/** @test clear() after a solve in external-matrix mode makes the system reusable */
+TEST(MnaSystemTest, ClearInExternalModeAfterSolveAllowsReuse) {
+  MnaSolveWorkspace ws;
+  ws.prepare(4);
+  std::fill(ws.A.begin(), ws.A.end(), 0.0);
+  MnaSystem mna(3, ws.A.data(), 4);
+  std::vector<double> voltages(3);
+  std::vector<double> currents(1);
+
+  stampDivider(mna, 1000.0, 1000.0);
+  ASSERT_TRUE(mna.solveInto(ws, voltages.data(), currents.data()));
+  EXPECT_NEAR(voltages[2], 5.0, TOL);
+
+  // The solve left its factors in the matrix.
+  mna.clear();
+  stampDivider(mna, 1000.0, 3000.0);
+  ASSERT_TRUE(mna.solveInto(ws, voltages.data(), currents.data()));
+  EXPECT_NEAR(voltages[2], 7.5, TOL);
+  EXPECT_NEAR(currents[0], -10.0 / 4000.0, TOL);
+}
+
+/** @test The solves that read the system's own matrix refuse a system that has none */
+TEST(MnaSystemTest, SolvesThatNeedOwnMatrixRefuseBorrowedStorage) {
+  MnaSolveWorkspace ws;
+  ws.prepare(4);
+  std::fill(ws.A.begin(), ws.A.end(), 0.0);
+  MnaSystem external(3, ws.A.data(), 4);
+  stampDivider(external, 1000.0, 1000.0);
+
+  const std::vector<double> X(4, 1.0);
+  std::vector<double> ax(4, 0.0);
+  MnaSystem matvec(3, X.data(), ax.data());
+  stampDivider(matvec, 1000.0, 1000.0);
+
+  for (const MnaSystem* SYSTEM : {&external, &matvec}) {
+    const auto RESULT = SYSTEM->solve();
+    EXPECT_FALSE(RESULT.success);
+    EXPECT_FALSE(RESULT.errorMessage.empty());
+
+    MnaFactorizedWorkspace factors;
+    factors.prepare(4);
+    EXPECT_FALSE(SYSTEM->factorize(factors));
+    EXPECT_FALSE(factors.factorized);
+
+    // Nothing of its own to copy: the outputs stay as given.
+    std::vector<double> augmented(16, 0.0);
+    std::vector<double> rhs(4, 0.0);
+    SYSTEM->buildAugmentedMatrix(augmented.data(), rhs.data());
+    EXPECT_EQ(std::count(augmented.begin(), augmented.end(), 0.0), 16);
+    EXPECT_EQ(std::count(rhs.begin(), rhs.end(), 0.0), 4);
+  }
+
+  // A matvec system has no matrix at all to solve, and an external-matrix
+  // system solves in the workspace it stamps into and no other.
+  // The other workspace holds a divider of its own, which would solve.
+  MnaSolveWorkspace other;
+  other.prepare(4);
+  std::fill(other.A.begin(), other.A.end(), 0.0);
+  MnaSystem elsewhere(3, other.A.data(), 4);
+  stampDivider(elsewhere, 1000.0, 3000.0);
+  std::vector<double> voltages(3);
+  std::vector<double> currents(1);
+  EXPECT_FALSE(matvec.solveInto(other, voltages.data(), currents.data()));
+  EXPECT_FALSE(external.solveInto(other, voltages.data(), currents.data()));
+  ASSERT_TRUE(external.solveInto(ws, voltages.data(), currents.data()));
+  EXPECT_NEAR(voltages[2], 5.0, TOL);
+
+  // An external matrix of the nets' size has no room for a source's row.
+  std::fill(ws.A.begin(), ws.A.end(), 0.0);
+  MnaSystem narrow(3, ws.A.data(), 3);
+  stampDivider(narrow, 1000.0, 1000.0);
+  EXPECT_FALSE(narrow.solveInto(ws, voltages.data(), currents.data()));
+  // Refused before anything is written past the nets' block.
+  EXPECT_EQ(std::count(ws.A.begin() + 9, ws.A.end(), 0.0), 7);
 }
 
 /* ----------------------------- Determinism ----------------------------- */

@@ -252,12 +252,21 @@ public:
    * Uses LAPACKE_dgesv (LU factorization) when available for 5-10x speedup,
    * falling back to Gaussian elimination with partial pivoting otherwise.
    *
+   * Reads the system's own conductance matrix, so a system constructed in
+   * external-matrix or matvec mode is refused; an external-matrix system is
+   * solved with solveInto().
+   *
    * @return MnaResult containing voltages, currents, and success status.
    *
    * @note NOT RT-safe: allocates matrix and result vectors.
    */
   [[nodiscard]] MnaResult solve() const {
     MnaResult result;
+
+    if (!ctx_.hasOwnMatrix()) {
+      result.errorMessage = "solve() needs the system's own matrix; this system stamps elsewhere";
+      return result;
+    }
 
     const auto& BASE_G = ctx_.g();
     const auto& BASE_I = ctx_.i();
@@ -289,7 +298,10 @@ public:
    * @param ws Pre-allocated workspace (call ws.prepare() at setup time).
    * @param nodeVoltages Output vector for node voltages (must be sized >= netCount).
    * @param branchCurrents Output vector for branch currents (must be sized >= vsrcCount).
-   * @return true on success, false on singular matrix.
+   * @return true on success. False on a singular matrix, a workspace too
+   *         small, a matvec-mode system (it holds no matrix), or an
+   *         external-matrix system given a workspace other than the one it
+   *         stamps into or more voltage sources than that matrix has room for.
    *
    * @note RT-safe if workspace and output vectors are pre-allocated.
    */
@@ -308,10 +320,23 @@ public:
       return false;
     }
 
-#if COMPAT_HAVE_LAPACKE
     if (ctx_.hasExternalMatrix()) {
+#if COMPAT_HAVE_LAPACKE
+      // The conductances are in the external matrix, which is solved in
+      // place: it has to be this workspace's, with room for every source.
+      if (ws.A.data() != ctx_.externalMatrix() || dim > ctx_.externalDim()) {
+        return false;
+      }
       return solveIntoLapackDirect(ws, ctx_.i(), VSRC, n, m, dim, nodeVoltages, branchCurrents);
+#else
+      return false;
+#endif
     }
+    if (!ctx_.hasOwnMatrix()) {
+      return false; // Matvec mode holds no matrix.
+    }
+
+#if COMPAT_HAVE_LAPACKE
     return solveIntoLapack(ws, ctx_.g(), ctx_.i(), VSRC, n, m, dim, nodeVoltages, branchCurrents);
 #else
     return solveIntoNaive(ws, ctx_.g(), ctx_.i(), VSRC, n, m, dim, nodeVoltages, branchCurrents);
@@ -323,7 +348,9 @@ public:
   /**
    * @brief Clear stamps for reuse.
    *
-   * Call this before re-stamping a circuit for a new simulation.
+   * Call this before re-stamping a circuit for a new simulation. In
+   * external-matrix mode the external matrix is zeroed; in matvec mode the
+   * net entries of the output are.
    *
    * @note RT-safe: no allocation.
    */
@@ -358,11 +385,17 @@ public:
    * from the current stamps. Applies ground constraint (V[0]=0).
    * Caller must pre-zero A and b before calling.
    *
+   * A system constructed in external-matrix or matvec mode has no matrix of
+   * its own to copy: A and b are left as given.
+   *
    * @param A Output matrix (dim * dim doubles, must be zeroed).
    * @param b Output RHS vector (dim doubles, must be zeroed).
    * @note RT-safe if output arrays are pre-allocated.
    */
   void buildAugmentedMatrix(double* __restrict__ A, double* __restrict__ b) const noexcept {
+    if (!ctx_.hasOwnMatrix()) {
+      return;
+    }
     const double* __restrict__ G_DATA = ctx_.g().data();
     const double* __restrict__ I_DATA = ctx_.i().data();
     std::size_t n = ctx_.netCount();
@@ -410,7 +443,9 @@ public:
    * After factorization, use solveFactorized() for O(n^2) back-substitution.
    *
    * @param ws Workspace to store factorization (must be prepared).
-   * @return true on success, false on singular matrix or workspace too small.
+   * @return true on success, false on singular matrix, workspace too small,
+   *         or a system constructed in external-matrix or matvec mode (the
+   *         factorization reads the system's own matrix).
    *
    * @note NOT RT-safe: performs O(n^3) LU factorization.
    */
@@ -422,7 +457,7 @@ public:
     std::size_t m = VSRC.size();
     std::size_t dim = n + m;
 
-    if (dim == 0 || dim > ws.maxDim) {
+    if (dim == 0 || dim > ws.maxDim || !ctx_.hasOwnMatrix()) {
       return false;
     }
 
