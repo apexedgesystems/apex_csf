@@ -86,6 +86,8 @@ iface.pollSockets(10);  // 10ms timeout
 
 ## 3. Performance
 
+The tables in this section record earlier builds. The buffer pool, queue, internal bus, pipeline and profiler tables have stood here since release 0.0.1 (2026-03-27); the TX wire and chain table since 2026-09-11. All of them predate the `BufferPool` free map and none has been re-measured since, so they do not describe the current build.
+
 Measured on x86_64 (clang-21, -O2), Docker container, 15 repeats per data point, 10000 cycles.
 
 ### Buffer Pool Operations
@@ -414,8 +416,8 @@ iface.freezeQueues();
 
 | Directory    | Type                   | Tests | Runs with `make test` |
 | ------------ | ---------------------- | ----- | --------------------- |
-| `apex/utst/` | Unit tests             | 33    | Yes                   |
-| `apex/ptst/` | Performance benchmarks | 20    | No (manual)           |
+| `apex/utst/` | Unit tests             | 72    | Yes (one disabled)    |
+| `apex/ptst/` | Performance benchmarks | 25    | No (manual)           |
 
 ### Test Organization
 
