@@ -17,6 +17,7 @@ Usage:
         c2.update_component(0x006600, "new_model.so", "PolynomialModel", 0)
 """
 
+import collections
 import socket
 import struct
 import time
@@ -65,6 +66,9 @@ class AprotoClient:
         self._sock: Optional[socket.socket] = None
         self._seq = 0
         self._rx_buf = bytearray()
+        # Frames decoded from the stream and not yet handed to a caller.
+        # One read can carry several, and each receive returns one.
+        self._rx_frames: collections.deque[bytes] = collections.deque()
 
     def __enter__(self):
         self.connect()
@@ -79,6 +83,7 @@ class AprotoClient:
         self._sock.settimeout(self.timeout)
         self._sock.connect((self.host, self.port))
         self._rx_buf.clear()
+        self._rx_frames.clear()
 
     def close(self) -> None:
         """Close connection."""
@@ -116,11 +121,13 @@ class AprotoClient:
             raise ConnectionError("Not connected")
 
         deadline = time.monotonic() + (timeout or self.timeout)
-        while time.monotonic() < deadline:
-            # Check for complete frames in buffer.
-            frames = proto.slip_decode_stream(self._rx_buf)
-            for frame in frames:
-                parsed = proto.parse_header(frame)
+        while True:
+            # Take the next response from the frames already decoded. The
+            # frames behind it stay queued for the next call: a QUEUED
+            # frame and its COMPLETION can arrive in one read.
+            self._rx_frames.extend(proto.slip_decode_stream(self._rx_buf))
+            while self._rx_frames:
+                parsed = proto.parse_header(self._rx_frames.popleft())
                 if parsed is None or not parsed["is_response"]:
                     continue
                 # Only accept ACK/NAK packets (opcode 0x00FE or 0x00FF).
@@ -128,6 +135,9 @@ class AprotoClient:
                 opc = parsed["opcode"]
                 if opc == proto.SYS_ACK or opc == proto.SYS_NAK:
                     return parsed
+
+            if time.monotonic() >= deadline:
+                break
 
             # Read more data.
             remaining = max(0.1, deadline - time.monotonic())

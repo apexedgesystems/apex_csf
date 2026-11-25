@@ -159,6 +159,10 @@ any such change is called out explicitly in its entry.
   refuses a 257th instance, `reset()` empties task tables, and a second
   `provisionTransport()` keeps the open link.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- `apex_ops` client: a response frame that arrives in the same read as
+  another is no longer discarded, so a queued command's completion is
+  not lost when it lands with its acceptance.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Concurrency primitives: pool start-up, shutdown and signal handling,
   Barrier and Latch semantics, LockFreeQueue cell alignment and
   SpinLock::isLocked; the UBSan-only check joins the nightly. Breaking:
