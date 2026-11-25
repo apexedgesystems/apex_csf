@@ -21,13 +21,27 @@
  *   BufferPool pool(100, 4096);  // 100 buffers, 4KB each (startup, NOT RT-safe)
  *   auto* buf = pool.acquire(200);  // lock-free, see RT-Safety
  *   // ... use buffer ...
- *   pool.release(buf);  // wait-free, see RT-Safety
+ *   pool.release(buf);  // cannot be refused, see RT-Safety
  *
  * RT-Safety:
  *   - Constructor: NOT RT-safe (allocates memory)
  *   - acquire(): RT-DEPENDS (one pass over the free map; an exchange is retried only when
  *     another thread changed the same word, with no per-caller retry bound)
- *   - release(): RT-safe (one atomic operation on the free map, no loop)
+ *   - release(): RT-DEPENDS (no loop in the pool: one atomic update of the reference count
+ *     and, for the last reference, one of the free map; bounded where the target and the
+ *     build bound each update, see Atomic updates)
+ *
+ * Atomic updates:
+ *   The pool's own work is a fixed number of atomic read-modify-write operations: the
+ *   exchange in acquire(), the reference-count decrement and the free-map OR in release().
+ *   How long one of them takes belongs to the target and the build:
+ *     - x86-64, and AArch64 with the LSE atomic instructions (Armv8.1 and later): one
+ *       instruction each in a release build.
+ *     - AArch64 without LSE: each is an exclusive load and store repeated until the store
+ *       succeeds, with no per-caller bound on the repeats. A build that does not fix the
+ *       instruction set can choose between the two forms on the running CPU.
+ *     - Debug builds: release() checks the bit's previous value, which the compiler may
+ *       build as a compare-exchange loop on any target.
  */
 
 #include "src/system/core/components/interface/apex/inc/MessageBuffer.hpp"
@@ -80,9 +94,13 @@ inline constexpr std::size_t DEFAULT_BUFFER_CAPACITY = 4096;
  *
  * @note NOT RT-safe: Constructor, destructor
  * @note RT-DEPENDS: acquire() (no lock, allocation or syscall; at most one pass over
- *       size() / 64 words, and no per-caller retry bound while other threads acquire
- *       or release buffers of the same word)
- * @note RT-safe: release(), size(), available()
+ *       the free map, one word per 64 buffers with a partial last word included, and no
+ *       per-caller retry bound while other threads acquire or release buffers of the
+ *       same word)
+ * @note RT-DEPENDS: release() (no lock, allocation, syscall or loop in the pool; bounded
+ *       where the target and the build bound an atomic update, see Atomic updates in the
+ *       file comment)
+ * @note RT-safe: size(), available(), acquired()
  */
 class BufferPool {
 public:
@@ -123,10 +141,12 @@ public:
   [[nodiscard]] MessageBuffer* acquire(std::size_t requiredSize) noexcept;
 
   /**
-   * @brief Release buffer back to pool (wait-free).
+   * @brief Release buffer back to pool (cannot be refused).
    * @param buf Buffer to release (must have been acquired from this pool).
-   * @note RT-safe: the last reference returns the buffer with one atomic operation,
-   *       which cannot be refused; no loop.
+   * @note RT-DEPENDS: one atomic update of the reference count; the last reference then
+   *       returns the buffer with one atomic update of the free map, which cannot be
+   *       refused. No loop in the pool; each update is bounded where the target and the
+   *       build bound it (Atomic updates in the file comment).
    * @note CRITICAL: Do not access buffer after releasing!
    * @note CRITICAL: Do not release nullptr!
    * @note CRITICAL: Do not release same buffer twice!
@@ -146,7 +166,7 @@ public:
    * @brief Get an estimate of the available buffers.
    * @return The set bits of the free map, read one word at a time: the buffers in the pool
    *         when no acquire or release runs during the call.
-   * @note RT-safe: one read per 64 buffers of the pool.
+   * @note RT-safe: one read per word of the free map.
    * @note Approximate: the words are not read at one instant and the count may change
    *       immediately after the call, so a result above zero does not promise that
    *       acquire() succeeds. Never above size().

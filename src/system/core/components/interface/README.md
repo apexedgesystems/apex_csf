@@ -31,7 +31,7 @@ External command/telemetry interface for bidirectional communication with ground
 | `ApexInterface`         | Concrete APROTO implementation with routing | Partial |
 | `BufferPool`            | Lock-free buffer pool                       | Depends |
 | `ComponentQueues`       | Per-component SPSC queue pairs              | Yes     |
-| `MessageBuffer`         | Zero-copy message buffer with refcount      | Yes     |
+| `MessageBuffer`         | Zero-copy message buffer with refcount      | Depends |
 | `ApexInterfaceTunables` | Configuration struct (host, port, framing)  | Yes     |
 | `Status`                | Typed status codes                          | Yes     |
 
@@ -247,7 +247,7 @@ The interface uses a zero-copy architecture with pointer-based queues:
 
 **MessageBuffer**: Actual-size allocation (not fixed 4KB) with APROTO metadata.
 
-**BufferPool**: Lock-free buffer pool with pre-allocated buffers and one free bit per buffer. `acquire()` and `release()` take no lock and allocate nothing. `release()` returns a buffer with one atomic operation that cannot be refused, so a buffer is never lost to what other threads are doing; `acquire()` retries only when another thread took or returned a buffer of the same 64-buffer word, with no per-caller retry bound. Which free buffer `acquire()` returns is unspecified.
+**BufferPool**: Lock-free buffer pool with pre-allocated buffers and one free bit per buffer. `acquire()` and `release()` take no lock and allocate nothing. `release()` returns a buffer with one atomic update that cannot be refused, so a buffer is never lost to what other threads are doing, and the pool adds no loop of its own: how long that update takes depends on the target and the build (`BufferPool.hpp`, Atomic updates); `acquire()` retries only when another thread took or returned a buffer of the same 64-buffer word, with no per-caller retry bound. Which free buffer `acquire()` returns is unspecified.
 
 **Pointer-based queues**: `SPSCQueue<MessageBuffer*>` instead of copying large structs.
 
