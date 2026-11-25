@@ -284,7 +284,7 @@ python3 checkout.py --host raspberrypi.local --plugin-so path/to/TestPlugin_v2.s
 | DriverEmulated | 0x007A01 | DRIVER   |
 | Comparator     | 0x007B00 | SUPPORT  |
 | SystemMonitor  | 0x00C800 | SUPPORT  |
-| TestPlugin     | 0x00FA00 | SUPPORT  |
+| TestPlugin     | 0x00FA00 | SW_MODEL |
 
 ## Troubleshooting
 

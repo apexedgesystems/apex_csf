@@ -20,7 +20,6 @@ elseif (NOT APEX_PLATFORM_BAREMETAL)
   add_subdirectory(model)
   add_subdirectory(exec)
   add_subdirectory(watchdog)
-  add_subdirectory(test/plugin)
 
   # Supervised stack: ship the executive and its watchdog as two isolated
   # filesystems plus the operating doc, in one artifact. The watchdog supervises

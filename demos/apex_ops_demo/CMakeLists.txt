@@ -8,5 +8,4 @@
 if (NOT APEX_PLATFORM_BAREMETAL)
   add_subdirectory(wave)
   add_subdirectory(exec)
-  add_subdirectory(test/plugin)
 endif ()

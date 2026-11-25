@@ -23,7 +23,7 @@
 #ifndef APEX_TEST_PLUGIN_VERSION
 #define APEX_TEST_PLUGIN_VERSION 1
 #endif
-#include "demos/apex_ops_demo/test/plugin/TestPlugin.hpp"
+#include "demos/test_plugin/TestPlugin.hpp"
 
 namespace appsim {
 namespace exec {

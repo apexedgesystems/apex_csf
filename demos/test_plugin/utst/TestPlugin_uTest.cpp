@@ -1,6 +1,6 @@
 /**
  * @file TestPlugin_uTest.cpp
- * @brief Unit tests for the ops demo's hot-swap test plugin.
+ * @brief Unit tests for the demos' hot-swap test plugin.
  *
  * Covers the plugin's two observations as a client reaches them:
  *   - The registered output block, copied the way INSPECT copies it.
@@ -13,7 +13,7 @@
 
 #define APEX_TEST_PLUGIN_VERSION 2
 
-#include "demos/apex_ops_demo/test/plugin/TestPlugin.hpp"
+#include "demos/test_plugin/TestPlugin.hpp"
 
 #include <gtest/gtest.h>
 
@@ -61,7 +61,7 @@ TestPlugin::Stats getStats(TestPlugin& plugin) {
 } // namespace
 
 /** @test The registered output block is the build's version and nothing else. */
-TEST(OpsDemoTestPluginTest, RegisteredOutputIsTheBuildVersion) {
+TEST(DemoTestPluginTest, RegisteredOutputIsTheBuildVersion) {
   TestPlugin plugin;
   ASSERT_TRUE(initialize(plugin));
 
@@ -73,7 +73,7 @@ TEST(OpsDemoTestPluginTest, RegisteredOutputIsTheBuildVersion) {
 }
 
 /** @test GET_STATS returns the version and the number of task runs. */
-TEST(OpsDemoTestPluginTest, GetStatsCountsTaskRuns) {
+TEST(DemoTestPluginTest, GetStatsCountsTaskRuns) {
   TestPlugin plugin;
   ASSERT_TRUE(initialize(plugin));
 
@@ -87,7 +87,7 @@ TEST(OpsDemoTestPluginTest, GetStatsCountsTaskRuns) {
 }
 
 /** @test An opcode the plugin does not define is the base class's to answer. */
-TEST(OpsDemoTestPluginTest, OtherOpcodesReachTheBaseClass) {
+TEST(DemoTestPluginTest, OtherOpcodesReachTheBaseClass) {
   TestPlugin plugin;
   ASSERT_TRUE(initialize(plugin));
 
@@ -97,7 +97,7 @@ TEST(OpsDemoTestPluginTest, OtherOpcodesReachTheBaseClass) {
 }
 
 /** @test Both observations hold while the task runs on another thread. */
-TEST(OpsDemoTestPluginTest, ObservationsHoldWhileTheTaskRuns) {
+TEST(DemoTestPluginTest, ObservationsHoldWhileTheTaskRuns) {
   constexpr std::uint32_t RUNS = 200000;
   TestPlugin plugin;
   ASSERT_TRUE(initialize(plugin));

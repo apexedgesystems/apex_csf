@@ -672,7 +672,7 @@ def run_checkout(args: argparse.Namespace) -> int:
                         "build",
                         tree,
                         "test_plugins",
-                        "OpsTestPlugin_v2.so",
+                        "TestPlugin_v2.so",
                     )
                     for tree in ("hosted-x86_64-debug", "hosted-x86_64-debug-cpu")
                 ]
@@ -724,7 +724,7 @@ def run_checkout(args: argparse.Namespace) -> int:
                     and ticks_later > ticks_after,
                 )
             else:
-                check("OpsTestPlugin_v2.so found", False, f"path={plugin_so}")
+                check("TestPlugin_v2.so found", False, f"path={plugin_so}")
         else:
             print("  SKIP  (--skip-reload-lib)")
 
@@ -1022,7 +1022,7 @@ def main():
     parser.add_argument("--skip-reload-lib", action="store_true", help="Skip RELOAD_LIBRARY test")
     parser.add_argument("--skip-tprm", action="store_true", help="Skip TPRM reload test")
     parser.add_argument("--skip-rts", action="store_true", help="Skip RTS sequence test")
-    parser.add_argument("--plugin-so", default=None, help="Path to OpsTestPlugin_v2.so")
+    parser.add_argument("--plugin-so", default=None, help="Path to TestPlugin_v2.so")
     args = parser.parse_args()
     sys.exit(run_checkout(args))
 

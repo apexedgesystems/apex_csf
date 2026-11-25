@@ -1,8 +1,9 @@
-#ifndef APEX_TEST_PLUGIN_HPP
-#define APEX_TEST_PLUGIN_HPP
+#ifndef APEX_DEMOS_TEST_PLUGIN_HPP
+#define APEX_DEMOS_TEST_PLUGIN_HPP
 /**
  * @file TestPlugin.hpp
- * @brief Minimal component for hot-swap testing.
+ * @brief Minimal component for hot-swap testing, shared by the demos that
+ *        swap a library at run time.
  *
  * This component does nothing useful. It exists purely to verify
  * the RELOAD_LIBRARY (dlopen/dlclose) pipeline end-to-end:
@@ -146,4 +147,4 @@ private:
 
 } // namespace test
 
-#endif // APEX_TEST_PLUGIN_HPP
+#endif // APEX_DEMOS_TEST_PLUGIN_HPP

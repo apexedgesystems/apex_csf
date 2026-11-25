@@ -1,17 +1,17 @@
 # ==============================================================================
-# Unit tests: HIL demo hot-swap test plugin
+# Unit tests: the demos' hot-swap test plugin
 # ==============================================================================
 
 include(apex/All)
 
 apex_add_gtest(
   TARGET
-  TestHilDemoTestPlugin
+  TestDemoTestPlugin
   SOURCES
   "${CMAKE_CURRENT_SOURCE_DIR}/TestPlugin_uTest.cpp"
   LINK
   system_core_system_component
   LABELS
-  apex_hil_demo
+  demos
   test_plugin
 )
