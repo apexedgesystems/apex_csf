@@ -173,6 +173,9 @@ any such change is called out explicitly in its entry.
 - A PING reply no longer copies its payload over itself: the echo is
   assembled with an overlap-safe copy.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- `RELOAD_EXECUTIVE` during a pause restarts also when the task thread
+  was parked in the pause; it could be left waiting for a resume.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Spec-generated component bases keep the running parameters when a
   reload brings a set the component refuses; they applied the defaults
   in its place.

@@ -1002,8 +1002,42 @@ def run_checkout(args: argparse.Namespace) -> int:
                 check(f"Low cycle count after restart ({cycles})", cycles < 2000)
         except Exception as e:
             check("Post-restart connection", False, str(e))
+
+        # A paused system must still take a restart: it is how a hold is
+        # left without a resume. The new process starts unpaused.
+        section("36. Executive Restart From A Pause")
+        try:
+            with AprotoClient(host, port, timeout=timeout) as c2:
+                r = c2.pause()
+                check("PAUSE returns SUCCESS", r["status"] == 0, r["status_name"])
+                time.sleep(0.3)
+                extra = c2.send_command(0x000000, proto.EXEC_GET_HEALTH).get("extra", b"")
+                check("Paused before the restart", len(extra) >= 48 and bool(extra[35] & 0x02))
+                r = c2.reload_executive()
+                check("RELOAD_EXECUTIVE accepted while paused", r["status"] == 0, r["status_name"])
+        except Exception as e:
+            check("Restart from a pause: connection", False, str(e))
+
+        print("  Waiting 8 seconds for restart...")
+        time.sleep(8.0)
+
+        try:
+            with AprotoClient(host, port, timeout=timeout) as c2:
+                r = c2.noop()
+                check("NOOP after the restart from a pause", r["status"] == 0, r["status_name"])
+                extra = c2.send_command(0x000000, proto.EXEC_GET_HEALTH).get("extra", b"")
+                check("Not paused after the restart", len(extra) >= 48 and not extra[35] & 0x02)
+                cycles = c2.get_clock_cycles()
+                check(
+                    f"New process after the restart from a pause ({cycles} cycles)", cycles < 2000
+                )
+                time.sleep(0.5)
+                later = c2.get_clock_cycles()
+                check("Clock advancing after the restart from a pause", later > cycles)
+        except Exception as e:
+            check("Connection after the restart from a pause", False, str(e))
     else:
-        print("\n  SKIP  22. Executive Restart (--skip-restart)")
+        print("\n  SKIP  35, 36. Executive Restart (--skip-restart)")
 
     # -- Final Summary -----------------------------------------------------
     print(f"\n{'=' * 72}")

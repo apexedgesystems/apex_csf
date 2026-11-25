@@ -349,16 +349,27 @@ void ApexExecutive::handleClockPause() noexcept {
   // through it -- so a pending restart wakes the clock and releases the
   // task loop, whose per-tick restart processing execs before any task
   // dispatches.
-  std::unique_lock lock(cvMutex_);
-  cvPause_.wait(lock, [this]() {
-    return !controlState_.pauseRequested.load(std::memory_order_acquire) ||
-           controlState_.shutdownRequested.load(std::memory_order_acquire) ||
-           controlState_.restartPending.load(std::memory_order_acquire);
-  });
-  if (controlState_.restartPending.load(std::memory_order_acquire)) {
-    sysLog_->info(label(), "Deferred restart requested while paused; releasing for exec");
-    controlState_.pauseRequested.store(false, std::memory_order_release);
-    controlState_.isPaused.store(false, std::memory_order_release);
+  bool releasedForRestart = false;
+  {
+    std::unique_lock lock(cvMutex_);
+    cvPause_.wait(lock, [this]() {
+      return !controlState_.pauseRequested.load(std::memory_order_acquire) ||
+             controlState_.shutdownRequested.load(std::memory_order_acquire) ||
+             controlState_.restartPending.load(std::memory_order_acquire);
+    });
+    if (controlState_.restartPending.load(std::memory_order_acquire)) {
+      sysLog_->info(label(), "Deferred restart requested while paused; releasing for exec");
+      controlState_.pauseRequested.store(false, std::memory_order_release);
+      controlState_.isPaused.store(false, std::memory_order_release);
+      releasedForRestart = true;
+    }
+  }
+  // The task thread parks in this pause too when a cycle was still
+  // running as it began, and waits on the paused flag just cleared. The
+  // restart request's own notification may have reached it before the
+  // flag changed, so it is notified again now that it has.
+  if (releasedForRestart) {
+    cvPause_.notify_all();
   }
 
   // Reset frame overrun counter after pause (fresh start for RT checks)

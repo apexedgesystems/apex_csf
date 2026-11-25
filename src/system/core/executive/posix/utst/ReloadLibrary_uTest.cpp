@@ -132,6 +132,19 @@ public:
     return taskThread_.load(std::memory_order_acquire);
   }
 
+  /// Keep the task thread inside the cycle it is in or next begins.
+  /// @return false when no cycle was held within POLL_LIMIT.
+  [[nodiscard]] bool holdACycle() noexcept {
+    holdCycle_.store(true, std::memory_order_release);
+    const auto DEADLINE = Clock::now() + POLL_LIMIT;
+    while (!cycleHeld_.load(std::memory_order_acquire) && Clock::now() < DEADLINE) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return cycleHeld_.load(std::memory_order_acquire);
+  }
+
+  void releaseTheCycle() noexcept { holdCycle_.store(false, std::memory_order_release); }
+
 protected:
   [[nodiscard]] bool registerComponents() noexcept override {
     return registerComponent(&target, fileSystem().logDir());
@@ -139,6 +152,14 @@ protected:
 
   void onWaitDeadlineSelected(std::uint64_t, std::uint64_t) noexcept override {
     taskThread_.store(ReloadProbe::thisThread(), std::memory_order_release);
+    if (holdCycle_.load(std::memory_order_acquire)) {
+      cycleHeld_.store(true, std::memory_order_release);
+      const auto DEADLINE = Clock::now() + ReloadTarget::HOLD_LIMIT;
+      while (holdCycle_.load(std::memory_order_acquire) && Clock::now() < DEADLINE) {
+        std::this_thread::sleep_for(std::chrono::microseconds(200));
+      }
+      cycleHeld_.store(false, std::memory_order_release);
+    }
     const int OPCODE = pending_.exchange(NOT_RUN, std::memory_order_acq_rel);
     if (OPCODE == NOT_RUN) {
       return;
@@ -181,6 +202,8 @@ private:
   std::atomic<bool> viaAction_{false};
   std::atomic<int> result_{NOT_RUN};
   std::atomic<std::size_t> taskThread_{0};
+  std::atomic<bool> holdCycle_{false};
+  std::atomic<bool> cycleHeld_{false};
 };
 
 std::string slurp(const std::filesystem::path& path) {
@@ -431,6 +454,9 @@ protected:
   void TearDown() override {
     // A run still held would keep its worker, and the shutdown, waiting.
     probe_.hold.store(false, std::memory_order_release);
+    if (exec_) {
+      exec_->releaseTheCycle();
+    }
     stopExecutive();
     ReloadProbe::withdraw();
     // Only the directory SetUp() created, and only now the executive is gone.
@@ -882,6 +908,58 @@ TEST_F(ReloadRouteTest, SwappedInComponentIsOnTheInternalBus) {
   EXPECT_TRUE(probe_.busAtReady[PLUGIN_NO].load());
   EXPECT_EQ(probe_.runsBeforeBusReady[PLUGIN_NO].load(), 0U);
   EXPECT_TRUE(probe_.busInTask[PLUGIN_NO].load());
+}
+
+/**
+ * @test A RELOAD_EXECUTIVE sent while the system is paused reaches the task
+ *       thread when that thread is parked in the pause itself. It parks
+ *       there when a cycle is still running as the pause begins; the
+ *       fixture holds a cycle to bring that about. The restart is carried out by the
+ *       task thread: here it is attempted and fails, the fixture's
+ *       executable path naming no file, and the system runs on.
+ */
+TEST_F(ReloadRouteTest, RestartRequestedWhilePausedReachesTheParkedTaskThread) {
+  constexpr std::size_t ROUNDS = 25;
+  const auto SYSTEM_LOG = fsRoot_ / "system.log";
+  const auto count = [&](const std::string& text) {
+    const std::string LOG = slurp(SYSTEM_LOG);
+    std::size_t n = 0;
+    for (std::size_t at = LOG.find(text); at != std::string::npos;
+         at = LOG.find(text, at + text.size())) {
+      ++n;
+    }
+    return n;
+  };
+  const auto paused = [&]() {
+    return (exec_->getHealthPacket().flags & executive::ExecutiveHealthPacket::FLAG_PAUSED) != 0u;
+  };
+
+  for (std::size_t round = 1; round <= ROUNDS; ++round) {
+    std::uint8_t status = 0xFF;
+    // The cycle in hand outlasts the start of the pause, so the task
+    // thread meets the pause at the end of its cycle and parks in it.
+    ASSERT_TRUE(exec_->holdACycle()) << "round " << round << ": no cycle was held";
+    const std::uint16_t PAUSE = ground_.send(ApexExecutive::Opcode::CMD_PAUSE, 0U);
+    ASSERT_NE(PAUSE, 0u);
+    ASSERT_TRUE(ground_.reply(PAUSE, POLL_LIMIT, status));
+    ASSERT_EQ(status, static_cast<std::uint8_t>(CommandResult::SUCCESS));
+    ASSERT_TRUE(waitFor(paused)) << "round " << round << ": the system did not pause";
+    exec_->releaseTheCycle();
+    ASSERT_TRUE(waitFor([&]() { return count("Task execution paused") == round; }))
+        << "round " << round << ": the task thread did not park in the pause\n"
+        << slurp(SYSTEM_LOG);
+
+    const std::uint16_t RESTART = ground_.send(ApexExecutive::Opcode::RELOAD_EXECUTIVE, 0U);
+    ASSERT_NE(RESTART, 0u);
+    ASSERT_TRUE(ground_.reply(RESTART, POLL_LIMIT, status)) << "no reply to the restart";
+    ASSERT_EQ(status, static_cast<std::uint8_t>(CommandResult::SUCCESS));
+
+    ASSERT_TRUE(waitFor([&]() { return count("execv failed") == round; }))
+        << "round " << round << ": the task thread did not take the restart";
+    const std::uint32_t RUNS = probe_.entered[1].load();
+    EXPECT_TRUE(waitFor([&]() { return !paused() && probe_.entered[1].load() > RUNS + 5U; }))
+        << "round " << round << ": the tasks are not running after the restart was refused";
+  }
 }
 
 /**
