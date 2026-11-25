@@ -16,8 +16,8 @@ Tests (in order):
   8. Lock / Unlock        Lock component, verify scheduler skip, unlock
   9. File transfer        Chunked 8KB transfer with CRC-32C
  10. File transfer abort  Begin, partial send, abort, verify recovery
- 11. TPRM reload          Transfer dummy TPRM, issue reload command
- 12. RELOAD_LIBRARY       Hot-swap TestPlugin v1 -> v2 (lock, transfer .so, reload)
+ 11. TPRM reload          Refuse a corrupt payload, reload an intact one
+ 12. RELOAD_LIBRARY       Hot-swap TestPlugin to v2, verify its data via INSPECT
  13. C2 latency           20-ping round-trip measurement
  14. Post-test health     Verify clock rate still ~1000 Hz
  15. RELOAD_EXECUTIVE     Graceful restart via execve (kills connection)
@@ -56,6 +56,9 @@ from apex_ops.client import AprotoClient, crc32c  # noqa: E402
 
 PASS_COUNT = 0
 FAIL_COUNT = 0
+
+# Bytes of the prelude ahead of a TPRM payload's parameter block.
+TPRM_PRELUDE_SIZE = 28
 
 
 def check(name: str, condition: bool, detail: str = "") -> bool:
@@ -390,34 +393,51 @@ def test_file_transfer_abort(c2: AprotoClient) -> bool:
 
 
 def test_tprm_reload(c2: AprotoClient) -> bool:
-    """Test 11: TPRM file transfer + reload command."""
+    """Test 11: stage SystemMonitor's own payload, corrupt and then intact."""
     print("\n--- 11. TPRM Reload ---")
     ok = True
     target = 0x00C800  # SystemMonitor
 
-    dummy_tprm = bytes([0x00] * 64)
-    with tempfile.NamedTemporaryFile(suffix=".tprm", delete=False) as f:
-        f.write(dummy_tprm)
-        tprm_file = f.name
+    # The payload the component runs on comes from the target, so its
+    # prelude names this component and the layout this build expects.
+    with tempfile.TemporaryDirectory() as tmp:
+        running_file = os.path.join(tmp, "running.tprm")
+        staged_file = os.path.join(tmp, "staged.tprm")
+        r = c2.recv_file(f"bank_a/tprm/{target:06x}.tprm", running_file)
+        running = b""
+        if r["status"] == 0:
+            with open(running_file, "rb") as f:
+                running = f.read()
+        if not check(
+            f"Running TPRM downloaded ({len(running)} bytes)",
+            len(running) > TPRM_PRELUDE_SIZE,
+            r["status_name"],
+        ):
+            return False
 
-    try:
-        remote_path = f"tprm/{target:06x}.tprm"
-        r = c2.send_file(tprm_file, remote_path, chunk_size=4096)
-        ok &= check("TPRM file transfer succeeds", r["status"] == 0, r["status_name"])
+        # A payload whose body fails its CRC is refused.
+        corrupt = bytearray(running)
+        corrupt[-1] ^= 0xFF
+        with open(staged_file, "wb") as f:
+            f.write(bytes(corrupt))
+        r = c2.update_tprm(target, staged_file)
+        ok &= check("Corrupt TPRM refused (LOAD_FAILED)", r["status"] == 5, r["status_name"])
 
-        r = c2.reload_tprm(target)
-        # Status 5 (LOAD_FAILED) is expected for dummy data; 0 means it loaded.
-        ok &= check(
-            "RELOAD_TPRM command accepted",
-            r["status"] in (0, 5),
-            f"status={r['status']} ({r['status_name']})",
-        )
+        r = c2.update_tprm(target, running_file)
+        ok &= check("Intact TPRM reloaded", r["status"] == 0, r["status_name"])
 
-        cycles = c2.get_clock_cycles()
-        ok &= check("System still running after TPRM reload", cycles > 0)
-    finally:
-        os.unlink(tprm_file)
+    cycles = c2.get_clock_cycles()
+    ok &= check("System still running after TPRM reload", cycles > 0)
     return ok
+
+
+def test_plugin_output(c2: AprotoClient) -> tuple:
+    """Read TestPlugin's OUTPUT block: (version, tickCount), or (None, None)."""
+    r = c2.inspect(0x00FA00, category=4)
+    extra = r.get("extra", b"")
+    if r["status"] != 0 or len(extra) < 8:
+        return (None, None)
+    return struct.unpack_from("<II", extra, 0)
 
 
 def test_reload_library(c2: AprotoClient, plugin_so: str) -> bool:
@@ -429,9 +449,9 @@ def test_reload_library(c2: AprotoClient, plugin_so: str) -> bool:
         print(f"  SKIP  TestPlugin .so not found: {plugin_so}")
         return True
 
-    # Verify TestPlugin responds before swap
-    r = c2.send_command(0x00FA00, proto.SYS_NOOP)
-    ok &= check("TestPlugin NOOP before swap", r["status"] == 0, r["status_name"])
+    # The plugin's OUTPUT block is its version and the number of runs of
+    # its task since the instance was initialized.
+    ticks_before = test_plugin_output(c2)[1]
 
     # Compound operation: lock -> transfer .so -> reload -> auto-unlock
     r = c2.update_component(
@@ -442,9 +462,21 @@ def test_reload_library(c2: AprotoClient, plugin_so: str) -> bool:
     )
     ok &= check("update_component succeeds", r["status"] == 0, r["status_name"])
 
-    # Verify TestPlugin responds after swap
-    r = c2.send_command(0x00FA00, proto.SYS_NOOP)
-    ok &= check("TestPlugin NOOP after swap", r["status"] == 0, r["status_name"])
+    # A read that still reaches the replaced instance shows its version
+    # and its count, which no longer moves; the count of a new instance
+    # starts again from zero and then advances.
+    version, ticks_after = test_plugin_output(c2)
+    ok &= check(f"INSPECT reads the v2 build (version={version})", version == 2)
+    ok &= check(
+        f"Task count restarted ({ticks_before} before, {ticks_after} after)",
+        ticks_before is not None and ticks_after is not None and ticks_after < ticks_before,
+    )
+    time.sleep(0.5)
+    ticks_later = test_plugin_output(c2)[1]
+    ok &= check(
+        f"Swapped-in task is running ({ticks_after} then {ticks_later})",
+        ticks_after is not None and ticks_later is not None and ticks_later > ticks_after,
+    )
 
     # Verify system still healthy
     cycles = c2.get_clock_cycles()
