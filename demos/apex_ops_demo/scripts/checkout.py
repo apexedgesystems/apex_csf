@@ -30,7 +30,7 @@ Comprehensive C2 verification suite organized in three layers:
     21. Pause / Resume         Pause tasks, verify, resume
     22. Lock / Unlock          Lock component, verify, unlock, error case
     23. SET_VERBOSITY          Log level control
-    24. TPRM reload            Upload new params, reload, verify via INSPECT
+    24. TPRM reload            Refuse a corrupt payload, load a valid one, restore
     25. RELOAD_LIBRARY         Hot-swap TestPlugin to v2, verify via INSPECT
     26. RTS sequence           Upload, load, start, verify, stop NOOP sweep
     35. RELOAD_EXECUTIVE       Restart via execve, reconnect, verify
@@ -61,6 +61,7 @@ import struct
 import sys
 import tempfile
 import time
+import zlib
 
 sys.path.insert(
     0, str(__import__("pathlib").Path(__file__).resolve().parents[3] / "tools/ops/py/apex_ops/src")
@@ -88,6 +89,29 @@ def check(name: str, condition: bool, detail: str = "") -> bool:
             msg += f"  ({detail})"
         print(msg)
     return condition
+
+
+TPRM_PRELUDE_SIZE = 28
+
+
+def tprm_with_frequency(payload: bytes, frequency: float) -> bytes:
+    """A copy of a WaveGenerator TPRM payload with its frequency replaced.
+
+    The payload is a 28-byte prelude and the parameter block; the block
+    starts with the frequency and the prelude ends with the CRC-32 of the
+    block, which is restamped here.
+    """
+    body = bytearray(payload[TPRM_PRELUDE_SIZE:])
+    struct.pack_into("<f", body, 0, frequency)
+    prelude = bytearray(payload[:TPRM_PRELUDE_SIZE])
+    struct.pack_into("<I", prelude, 24, zlib.crc32(bytes(body)) & 0xFFFFFFFF)
+    return bytes(prelude + body)
+
+
+def wave_gen_frequency(c2) -> float:
+    """WaveGen#0's frequency as INSPECT reads it, or NaN."""
+    extra = c2.inspect(0x00D000, category=1).get("extra", b"")
+    return struct.unpack_from("<f", extra, 0)[0] if len(extra) >= 4 else float("nan")
 
 
 def test_plugin_output(c2) -> tuple:
@@ -545,47 +569,65 @@ def run_checkout(args: argparse.Namespace) -> int:
 
         section("24. TPRM Reload")
         if not args.skip_tprm:
-            # Create a TPRM (32 bytes matching WaveGenTunableParams)
-            # Set frequency to 10.0 Hz to verify change via INSPECT
-            tprm_data = struct.pack(
-                "<ffffffff",
-                10.0,  # frequency
-                1.5,  # amplitude
-                0.0,  # dcOffset
-                0.0,  # phaseOffset
-                0.0,  # noiseAmplitude
-                0.5,  # dutyCycle
-                0.0,  # waveType (as float for packing) + reserved
-                0.0,  # reserved2
-            )
-            # Fix waveType byte at offset 24
-            tprm_data = tprm_data[:24] + bytes([0, 0, 0, 0]) + tprm_data[28:]
-
-            with tempfile.NamedTemporaryFile(suffix=".tprm", delete=False) as f:
-                f.write(tprm_data)
-                tprm_file = f.name
-
-            try:
-                result = c2.update_tprm(0x00D000, tprm_file)
-                check(
-                    "TPRM reload accepted",
-                    result["status"] in (0, 5),
-                    result["status_name"],
+            # The payload WaveGen#0 runs on comes from the target, so its
+            # prelude carries the layout hash this build expects; the staged
+            # copies differ from it in the frequency alone.
+            with tempfile.TemporaryDirectory() as tmp:
+                running_file = os.path.join(tmp, "running.tprm")
+                staged_file = os.path.join(tmp, "staged.tprm")
+                r = c2.recv_file("bank_a/tprm/00d000.tprm", running_file)
+                running = b""
+                if r["status"] == 0:
+                    with open(running_file, "rb") as f:
+                        running = f.read()
+                have_running = check(
+                    f"Running TPRM downloaded ({len(running)} bytes)",
+                    len(running) == TPRM_PRELUDE_SIZE + 32,
+                    r["status_name"],
                 )
 
-                # Verify the new frequency via INSPECT
-                if result["status"] == 0:
+                if have_running:
+                    base_freq = struct.unpack_from("<f", running, TPRM_PRELUDE_SIZE)[0]
+                    new_freq = 10.0 if abs(base_freq - 10.0) > 0.5 else 5.0
+
+                    # A payload whose body fails its CRC is refused and
+                    # leaves the parameters as they were.
+                    corrupt = bytearray(tprm_with_frequency(running, new_freq))
+                    corrupt[-1] ^= 0xFF
+                    with open(staged_file, "wb") as f:
+                        f.write(bytes(corrupt))
+                    result = c2.update_tprm(0x00D000, staged_file)
+                    check(
+                        "Corrupt TPRM refused (LOAD_FAILED)",
+                        result["status"] == 5,
+                        result["status_name"],
+                    )
+                    freq = wave_gen_frequency(c2)
+                    check(
+                        f"Frequency unchanged by the refusal ({freq:.1f} Hz)",
+                        abs(freq - base_freq) < 0.1,
+                    )
+
+                    with open(staged_file, "wb") as f:
+                        f.write(tprm_with_frequency(running, new_freq))
+                    result = c2.update_tprm(0x00D000, staged_file)
+                    check("TPRM reload accepted", result["status"] == 0, result["status_name"])
                     time.sleep(0.2)
-                    r = c2.inspect(0x00D000, category=1)
-                    extra = r.get("extra", b"")
-                    if len(extra) >= 4:
-                        new_freq = struct.unpack_from("<f", extra, 0)[0]
-                        check(
-                            f"Frequency updated to {new_freq:.1f} Hz",
-                            abs(new_freq - 10.0) < 0.1,
-                        )
-            finally:
-                os.unlink(tprm_file)
+                    freq = wave_gen_frequency(c2)
+                    check(
+                        f"Frequency updated to {freq:.1f} Hz",
+                        abs(freq - new_freq) < 0.1,
+                    )
+
+                    # Leave the target on the parameters it started with.
+                    result = c2.update_tprm(0x00D000, running_file)
+                    check("Original TPRM restored", result["status"] == 0, result["status_name"])
+                    time.sleep(0.2)
+                    freq = wave_gen_frequency(c2)
+                    check(
+                        f"Frequency back to {freq:.1f} Hz",
+                        abs(freq - base_freq) < 0.1,
+                    )
         else:
             print("  SKIP  (--skip-tprm)")
 
