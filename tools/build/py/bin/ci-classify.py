@@ -51,11 +51,11 @@ that would change the lock.
 
 A source is read in the shell form or the JSON form, with a `*` or `?` in a
 path segment. An input written any other way (a build variable, a quoted
-word, a character class, a here-document, a RUN that mounts the repository)
-is refused, and so is a whole file whose `# escape=` directive changes the
-continuation character: the run ends nonzero with the file and line, so the
-input is rewritten where it was added instead of going unseen by every later
-change.
+word, a character class, a here-document, a RUN that mounts the repository
+or carries a here-document) is refused, and so is a whole file whose
+`# escape=` directive changes the continuation character: the run ends
+nonzero with the file and line, so the input is rewritten where it was
+added instead of going unseen by every later change.
 
 Who rebuilds for a changed bake follows from the jobs its own rule selects
 (not the rest of its role's suites, which do not install from it): the
@@ -249,6 +249,11 @@ def repository_sources(keyword, rest):
     flags, rest = FLAGS_THEN_REST.match(rest).groups()
     flags = flags.split()
     if keyword == "RUN":
+        if "<<" in rest:
+            raise ValueError(
+                "RUN with a here-document is not read: the lines of its body "
+                "would be taken for instructions"
+            )
         for flag in flags:
             if not flag.startswith("--mount="):
                 continue

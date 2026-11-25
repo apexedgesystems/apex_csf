@@ -23,3 +23,7 @@ RUN --mount=type=cache,target=/var/cache/fixture \
 COPY <<END /tmp/inline.txt
 inline
 END
+
+RUN <<END
+true
+END
