@@ -8,6 +8,26 @@ COPY fixture/Cargo.toml fixture/Cargo.lock \
      /tmp/fetch/
 COPY fixture/assets/ /tmp/assets/
 COPY docs/baked/ tools/ops/rust/baked.bin tools/ops/py/baked.bin src/baked.bin /tmp/by-consumer/
+# The ways a source may be written: the JSON form, a path that is not
+# normalized, a tab after the keyword, a wildcard within a path segment (a
+# file or a directory), a keyword in lower case, and ADD (a URL is not the
+# repository, whatever it is spelled with).
+COPY ["fixture/json/table.bin", "fixture/json/other.bin", "/tmp/json/"]
+COPY ./fixture/dot/./table.bin /fixture/rooted.bin /tmp/dot/
+COPY	fixture/tab.bin /tmp/tab/
+COPY fixture/glob/*.lock fixture/glob/?/table.bin fixture/glob/dir-*/ /tmp/glob/
+copy fixture/lower.bin /tmp/lower/
+# hadolint ignore=DL3020
+ADD fixture/added.tar https://example.com/fixture/remote[1].tar /tmp/added/
+# A comment inside a continued instruction is not part of it.
+COPY fixture/continued.bin \
+     # fixture/commented.bin
+     fixture/after-comment.bin /tmp/continued/
+# Mounts that take nothing from the repository.
+RUN --network=none \
+    --mount=type=cache,target=/var/cache/fixture \
+    --mount=type=bind,from=toolchain,source=/usr/local/bin,target=/mnt/tools \
+    true
 
 FROM toolchain AS tier
 COPY --from=bakes /opt/baked /opt/baked

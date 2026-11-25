@@ -135,4 +135,35 @@ bakes_gate bakes_rust bakes_py | docs/baked/table.bin
 rust_ops bakes_rust     | tools/ops/rust/baked.bin
 py bakes_py             | tools/ops/py/baked.bin
 cpp bakes_gate          | src/baked.bin
+# The ways a source may be written.
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/json/table.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/json/other.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/dot/table.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/rooted.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/tab.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/lower.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/added.tar
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/continued.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/after-comment.bin
+cpp rust_build rust_ops rust_analysis py sh | fixture/commented.bin
+cpp rust_build rust_ops rust_analysis py sh | fixture/remote.tar
+# A source that is a directory is not touched by a file of its name's start.
+cpp rust_build rust_ops rust_analysis py sh | fixture/json
+# A wildcard matches within one path segment: a file, or a directory and so
+# its content.
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/glob/Cargo.lock
+cpp rust_build rust_ops rust_analysis py sh | fixture/glob/sub/Cargo.lock
+cpp rust_build rust_ops rust_analysis py sh | fixture/glob/Cargo.lock.orig
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/glob/a/table.bin
+cpp rust_build rust_ops rust_analysis py sh | fixture/glob/ab/table.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/glob/dir-x/deep/table.bin
+cpp rust_build rust_ops rust_analysis py sh | fixture/glob/other-x/deep/table.bin
+# An image that copies the whole repository is defined by every file in it.
+@gates tools/build/fixtures/ci-classify/whole_tree.Dockerfile
+images                  | README.md
+cpp images              | src/a.cpp
+cpp rust_build rust_ops rust_analysis py sh | -
 @gates
+
+# --- inputs in a form the reader does not read: each is refused ------------------
+@refused tools/build/fixtures/ci-classify/refused.Dockerfile

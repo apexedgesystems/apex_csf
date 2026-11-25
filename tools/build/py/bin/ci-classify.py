@@ -36,12 +36,18 @@ change set with no paths at all (a manual run on main) selects every job too,
 and rebuilds nothing.
 
 What an image is built from is read from its Dockerfile, not listed here: the
-Dockerfile itself and every file a COPY takes from the repository. In
+Dockerfile itself and every file a COPY or ADD takes from the repository. In
 docker/base.Dockerfile those copies are all in the `bakes` stage, which is
 what separates a bake from `images`. One kind of copied file is not an
 input: a Cargo.toml. cargo needs every member manifest to read the workspace,
 but what it fetches is what Cargo.lock lists; a manifest edit that changed
 that would change the lock.
+
+A source is read in the shell form or the JSON form, with a `*` or `?` in a
+path segment. An input written any other way (a build variable, a quoted
+word, a character class, a here-document, a RUN that mounts the repository)
+is refused: the run ends nonzero with the file and line, so the input is
+rewritten where it was added instead of going unseen by every later change.
 
 Who rebuilds for a changed bake follows from the jobs its path selects: the
 Rust tests when it selects a Rust role, the Python tests when it selects py,
@@ -66,8 +72,11 @@ decisions that must be true, then the changed paths, each list separated by
 spaces; `-` for an empty list), and reports every case whose answer differs.
 A line `@gates <Dockerfile>...` makes the named files the gate images for the
 cases after it (a fixture Dockerfile, to pin how copies are read); `@gates`
-alone returns to the real ones. It is how `make check-ci-classify` holds the
-rules to their contract.
+alone returns to the real ones. A line `@refused <Dockerfile>...` is a case
+per COPY, ADD and RUN of the named files, each of which must be refused. It
+then reads every Dockerfile under docker/, so an input the reader refuses
+fails in the pull request that writes it. It is how `make check-ci-classify`
+holds the rules to their contract.
 
 stdlib only: this runs on the bare CI host before any image exists.
 """
@@ -76,7 +85,8 @@ import fnmatch
 import glob
 import json
 import os
-import shlex
+import posixpath
+import re
 import sys
 
 RUST_JOBS = ("rust_build", "rust_ops", "rust_analysis")
@@ -153,28 +163,100 @@ IMAGE_BUILD_FILES = (
 )
 BAKES_STAGE = "bakes"
 
+# An instruction's leading --flags, then its operands.
+FLAGS_THEN_REST = re.compile(r"((?:--\S+(?:\s+|$))*)(.*)", re.DOTALL)
+# What repository_sources does not read in a source: a build variable, shell
+# quoting, a character class, an escape, a here-document.
+UNREAD_IN_SOURCE = re.compile(r"""[$"'\[\\<]""")
+# An ADD source fetched from elsewhere.
+REMOTE_SOURCE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://|git@")
 
-def copied_sources(dockerfile):
-    """Return [(stage, path)] for every file a Dockerfile copies from the repository.
 
-    A COPY with --from takes from another image or stage, not from the
-    repository, and is left out. A stage is named by its FROM ... AS name.
+def instructions(dockerfile):
+    """Yield (line number, keyword, text after it) for each instruction of a Dockerfile.
+
+    Comment lines are dropped and a trailing backslash joins the next line,
+    the order docker applies them in.
     """
     with open(dockerfile, encoding="utf-8") as handle:
-        text = handle.read().replace("\\\n", " ")
+        lines = handle.read().split("\n")
+    first, joined = 0, ""
+    for number, line in enumerate(lines, 1):
+        if line.lstrip().startswith("#"):
+            continue
+        first = first if joined else number
+        line = line.rstrip()
+        if line.endswith("\\"):
+            joined += line[:-1] + " "
+            continue
+        words = (joined + line).split(None, 1)
+        joined = ""
+        if words:
+            yield first, words[0].upper(), words[1] if len(words) > 1 else ""
+
+
+def repository_sources(keyword, rest):
+    """Return the repository paths one instruction takes into the image.
+
+    COPY and ADD, in the shell form or the JSON form; a path is normalized
+    (`./a/` is `a`) and may hold `*` and `?`. A --from takes from another
+    image or stage and an ADD from a URL, neither from the repository. Raises
+    ValueError for an input written in a form this does not read, so that it
+    is refused where it is written instead of going unseen.
+    """
+    flags, rest = FLAGS_THEN_REST.match(rest).groups()
+    flags = flags.split()
+    if keyword == "RUN":
+        for flag in flags:
+            if not flag.startswith("--mount="):
+                continue
+            options = dict(option.partition("=")[::2] for option in flag[8:].split(","))
+            if options.get("type", "bind") == "bind" and "from" not in options:
+                raise ValueError("RUN %s mounts the repository, an input this does not read" % flag)
+        return []
+    if keyword not in ("COPY", "ADD") or any(flag.startswith("--from") for flag in flags):
+        return []
+    operands = None
+    if rest.startswith("["):
+        try:
+            operands = json.loads(rest)
+        except ValueError:
+            pass
+    # What is not a JSON list of strings docker reads as the shell form.
+    if not isinstance(operands, list) or not all(isinstance(word, str) for word in operands):
+        operands = rest.split()
+    sources = []
+    for source in operands[:-1]:
+        if keyword == "ADD" and REMOTE_SOURCE.match(source):
+            continue
+        path = posixpath.normpath(source).lstrip("/")
+        if UNREAD_IN_SOURCE.search(source) or path.split("/")[0] == "..":
+            raise ValueError(
+                "%s source %s is not read (a variable, a quoted word, a character class, a "
+                "here-document or a path outside the repository); write the path out"
+                % (keyword, source)
+            )
+        sources.append(path)
+    return sources
+
+
+def copied_sources(dockerfile):
+    """Return [(stage, path)] for every file a Dockerfile takes from the repository.
+
+    A stage is named by its FROM ... AS name. An input in a form
+    repository_sources refuses ends the run with the file and line.
+    """
     stage = ""
     found = []
-    for line in text.splitlines():
-        if not line.lstrip().upper().startswith(("FROM ", "COPY ")):
+    for number, keyword, rest in instructions(dockerfile):
+        if keyword == "FROM":
+            words = rest.split()
+            stage = words[-1] if len(words) >= 3 and words[-2].upper() == "AS" else ""
             continue
-        words = shlex.split(line, comments=True)
-        if words[0].upper() == "FROM":
-            stage = words[-1] if len(words) >= 4 and words[-2].upper() == "AS" else ""
-            continue
-        flags = [word for word in words[1:] if word.startswith("--")]
-        operands = [word for word in words[1:] if not word.startswith("--")]
-        if not any(flag.startswith("--from") for flag in flags):
-            found.extend((stage, source) for source in operands[:-1])
+        try:
+            found.extend((stage, source) for source in repository_sources(keyword, rest))
+        except ValueError as refusal:
+            raise SystemExit("%s:%d: %s" % (dockerfile, number, refusal)) from None
     return found
 
 
@@ -184,9 +266,16 @@ def decides_image(source):
 
 
 def touches(paths, source):
-    """Whether a change set touches a copied source (a file, or a directory's content)."""
-    source = source.rstrip("/")
-    return any(path == source or path.startswith(source + "/") for path in paths)
+    """Whether a change set touches a copied source.
+
+    A source is a file, a directory (its content) or the whole repository
+    (`.`); a `*` or `?` matches within one path segment, as docker's does.
+    """
+    wanted = [] if source == "." else source.split("/")
+    return any(
+        len(have) >= len(wanted) and all(map(fnmatch.fnmatchcase, have, wanted))
+        for have in (path.split("/") for path in paths)
+    )
 
 
 def selected_jobs(path):
@@ -220,6 +309,11 @@ def image_decisions(paths, gates=GATE_DOCKERFILES):
     return images, baked
 
 
+def image_dockerfiles():
+    """Return every Dockerfile under docker/."""
+    return sorted(glob.glob("docker/**/*.Dockerfile", recursive=True))
+
+
 def dockerfiles_to_rebuild(paths):
     """Return the Dockerfiles under docker/ a change set rebuilds directly.
 
@@ -228,7 +322,7 @@ def dockerfiles_to_rebuild(paths):
     when it is needed, not kept current with it.
     """
     rebuilt = []
-    for dockerfile in sorted(glob.glob("docker/**/*.Dockerfile", recursive=True)):
+    for dockerfile in image_dockerfiles():
         if dockerfile in paths or any(
             source != "." and decides_image(source) and touches(paths, source)
             for _, source in copied_sources(dockerfile)
@@ -305,6 +399,9 @@ def check_crates(metadata):
 
 def check(table):
     """Run every case of a table; return the number that failed."""
+    # An input the reader refuses ends the run here, with its file and line.
+    for dockerfile in image_dockerfiles():
+        copied_sources(dockerfile)
     failed = cases = 0
     gates = GATE_DOCKERFILES
     with open(table, encoding="utf-8") as handle:
@@ -314,6 +411,23 @@ def check(table):
                 continue
             if line.startswith("@gates"):
                 gates = tuple(line.split()[1:]) or GATE_DOCKERFILES
+                continue
+            if line.startswith("@refused"):
+                for dockerfile in line.split()[1:]:
+                    for at, keyword, rest in instructions(dockerfile):
+                        if keyword not in ("COPY", "ADD", "RUN"):
+                            continue
+                        cases += 1
+                        try:
+                            read = repository_sources(keyword, rest)
+                        except ValueError:
+                            continue
+                        failed += 1
+                        print(
+                            "%s:%d: %s %s is read as [%s], expected a refusal"
+                            % (dockerfile, at, keyword, rest, " ".join(read)),
+                            file=sys.stderr,
+                        )
                 continue
             expected, _, paths = (part.strip() for part in line.partition("|"))
             want = set() if expected == "-" else set(expected.split())
@@ -334,6 +448,7 @@ def check(table):
                     file=sys.stderr,
                 )
     print("[check-ci-classify] %d cases, %d failed" % (cases, failed))
+    print("[check-ci-classify] %d Dockerfiles read" % len(image_dockerfiles()))
     return failed
 
 
