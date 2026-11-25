@@ -52,8 +52,10 @@ that would change the lock.
 A source is read in the shell form or the JSON form, with a `*` or `?` in a
 path segment. An input written any other way (a build variable, a quoted
 word, a character class, a here-document, a RUN that mounts the repository)
-is refused: the run ends nonzero with the file and line, so the input is
-rewritten where it was added instead of going unseen by every later change.
+is refused, and so is a whole file whose `# escape=` directive changes the
+continuation character: the run ends nonzero with the file and line, so the
+input is rewritten where it was added instead of going unseen by every later
+change.
 
 Who rebuilds for a changed bake follows from the jobs its own rule selects
 (not the rest of its role's suites, which do not install from it): the
@@ -81,7 +83,8 @@ spaces; `-` for an empty list), and reports every case whose answer differs.
 A line `@gates <Dockerfile>...` makes the named files the gate images for the
 cases after it (a fixture Dockerfile, to pin how copies are read); `@gates`
 alone returns to the real ones. A line `@refused <Dockerfile>...` is a case
-per COPY, ADD and RUN of the named files, each of which must be refused. It
+per COPY, ADD, RUN and ONBUILD of the named files, and per escape directive
+that is not read, each of which must be refused. It
 then reads every Dockerfile under docker/, so an input the reader refuses
 fails in the pull request that writes it. It is how `make check-ci-classify`
 holds the rules to their contract.
@@ -178,6 +181,8 @@ IMAGE_BUILD_FILES = (
 )
 BAKES_STAGE = "bakes"
 
+# A parser directive: `# key=value`, spaces allowed around each part.
+PARSER_DIRECTIVE = re.compile(r"\s*#\s*([A-Za-z][A-Za-z0-9]*)\s*=\s*(.*?)\s*$")
 # An instruction's leading --flags, then its operands.
 FLAGS_THEN_REST = re.compile(r"((?:--\S+(?:\s+|$))*)(.*)", re.DOTALL)
 # What repository_sources does not read in a source: a build variable, shell
@@ -191,10 +196,21 @@ def instructions(dockerfile):
     """Yield (line number, keyword, text after it) for each instruction of a Dockerfile.
 
     Comment lines are dropped and a trailing backslash joins the next line,
-    the order docker applies them in.
+    the order docker applies them in. The backslash is docker's default: a
+    file whose leading `# escape=` directive names another character yields
+    that directive alone, as ESCAPE, since nothing after it can be read by
+    these rules.
     """
     with open(dockerfile, encoding="utf-8") as handle:
         lines = handle.read().split("\n")
+    # Parser directives are the `# key=value` lines before anything else.
+    for number, line in enumerate(lines, 1):
+        directive = PARSER_DIRECTIVE.match(line)
+        if not directive:
+            break
+        if directive.group(1).lower() == "escape" and directive.group(2) != "\\":
+            yield number, "ESCAPE", directive.group(2)
+            return
     first, joined = 0, ""
     for number, line in enumerate(lines, 1):
         if line.lstrip().startswith("#"):
@@ -213,12 +229,23 @@ def instructions(dockerfile):
 def repository_sources(keyword, rest):
     """Return the repository paths one instruction takes into the image.
 
-    COPY and ADD, in the shell form or the JSON form; a path is normalized
-    (`./a/` is `a`) and may hold `*` and `?`. A --from takes from another
+    COPY and ADD, alone or after ONBUILD, in the shell form or the JSON form;
+    a path is normalized (`./a/` is `a`) and may hold `*` and `?`. A --from
+    takes from another
     image or stage and an ADD from a URL, neither from the repository. Raises
     ValueError for an input written in a form this does not read, so that it
     is refused where it is written instead of going unseen.
     """
+    if keyword == "ESCAPE":
+        raise ValueError(
+            "the escape directive sets %s; lines are joined on a backslash only, "
+            "so the file's inputs cannot be read" % rest
+        )
+    if keyword == "ONBUILD":
+        # Deferred to the images built on this one, which are built from the
+        # same repository and rebuilt when this one is.
+        deferred = rest.split(None, 1)
+        return repository_sources(deferred[0].upper(), deferred[1]) if len(deferred) == 2 else []
     flags, rest = FLAGS_THEN_REST.match(rest).groups()
     flags = flags.split()
     if keyword == "RUN":
@@ -443,7 +470,7 @@ def check(table):
             if line.startswith("@refused"):
                 for dockerfile in line.split()[1:]:
                     for at, keyword, rest in instructions(dockerfile):
-                        if keyword not in ("COPY", "ADD", "RUN"):
+                        if keyword not in ("COPY", "ADD", "RUN", "ONBUILD", "ESCAPE"):
                             continue
                         cases += 1
                         try:

@@ -14,6 +14,7 @@ COPY [1, "/tmp/"]
 COPY fixture/../../outside.bin /tmp/
 # hadolint ignore=DL3020
 ADD ${SOURCE} /tmp/
+ONBUILD COPY ${SOURCE} /tmp/
 RUN --mount=type=bind,target=/src true
 RUN --mount=target=/src true
 RUN --mount=type=cache,target=/var/cache/fixture \

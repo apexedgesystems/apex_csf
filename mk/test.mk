@@ -418,17 +418,19 @@ check-ci-classify:
 	    exit 1; \
 	  fi
 	@scratch=$$(mktemp -d) && mkdir -p "$$scratch/docker/dev" && \
-	  cp "$(CI_CLASSIFY_FIXTURES)/refused.Dockerfile" "$$scratch/docker/base.Dockerfile" && \
 	  cp "$(CI_CLASSIFY_FIXTURES)/whole_tree.Dockerfile" "$$scratch/docker/dev/cpu.Dockerfile" && \
 	  cp "$(CI_CLASSIFY_FIXTURES)/whole_tree.Dockerfile" "$$scratch/docker/dev/cuda.Dockerfile" || exit 1; \
 	  fail=0; \
-	  for mode in "" "--dockerfiles" "--check /dev/null"; do \
-	    out=$$(cd "$$scratch" && echo README.md | python3 "$(abspath $(CI_CLASSIFY))" $$mode 2>&1); rc=$$?; \
-	    if [ $$rc -eq 0 ] || [ "$$out" != "$$(printf '%s\n' "$$out" | grep '^docker/base.Dockerfile:6: COPY source ')" ]; then \
-	      printf '%s\n' "$$out"; \
-	      echo "[check-ci-classify] ci-classify.py $$mode read an input it has to refuse (exit $$rc)"; \
-	      fail=1; \
-	    fi; \
+	  for refused in "refused.Dockerfile=6: COPY source " "escape_directive.Dockerfile.txt=1: the escape directive "; do \
+	    cp "$(CI_CLASSIFY_FIXTURES)/$${refused%%=*}" "$$scratch/docker/base.Dockerfile" || exit 1; \
+	    for mode in "" "--dockerfiles" "--check /dev/null"; do \
+	      out=$$(cd "$$scratch" && echo README.md | python3 "$(abspath $(CI_CLASSIFY))" $$mode 2>&1); rc=$$?; \
+	      if [ $$rc -eq 0 ] || [ "$$out" != "$$(printf '%s\n' "$$out" | grep "^docker/base.Dockerfile:$${refused#*=}")" ]; then \
+	        printf '%s\n' "$$out"; \
+	        echo "[check-ci-classify] ci-classify.py $$mode read $${refused%%=*}, which it has to refuse (exit $$rc)"; \
+	        fail=1; \
+	      fi; \
+	    done; \
 	  done; \
 	  rm -rf "$$scratch"; \
 	  [ $$fail -eq 0 ] || exit 1

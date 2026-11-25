@@ -1,3 +1,4 @@
+# escape=\
 # Not an image anyone builds: the shapes of COPY that ci-classify.py has to
 # read, for the cases in cases.txt that name this file as the gate image.
 FROM scratch AS toolchain
@@ -18,12 +19,17 @@ COPY ./fixture/dot/./table.bin /fixture/rooted.bin /tmp/dot/
 COPY	fixture/tab.bin /tmp/tab/
 COPY fixture/glob/*.lock fixture/glob/?/table.bin fixture/glob/dir-*/ /tmp/glob/
 copy fixture/lower.bin /tmp/lower/
+# An instruction deferred to the images built on this one.
+ONBUILD COPY fixture/onbuild.bin /tmp/onbuild/
 # hadolint ignore=DL3020
 ADD fixture/added.tar https://example.com/fixture/remote[1].tar /tmp/added/
 # A comment inside a continued instruction is not part of it.
 COPY fixture/continued.bin \
      # fixture/commented.bin
      fixture/after-comment.bin /tmp/continued/
+# escape=`
+# The line above is a comment: a directive is read only before anything
+# else, and the first line names the default.
 # Mounts that take nothing from the repository.
 RUN --network=none \
     --mount=type=cache,target=/var/cache/fixture \

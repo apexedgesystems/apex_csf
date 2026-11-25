@@ -156,6 +156,7 @@ cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fix
 cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/rooted.bin
 cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/tab.bin
 cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/lower.bin
+cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/onbuild.bin
 cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/added.tar
 cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/continued.bin
 cpp rust_build rust_ops rust_analysis py sh bakes_gate bakes_rust bakes_py | fixture/after-comment.bin
@@ -181,3 +182,6 @@ cpp rust_build rust_ops rust_analysis py sh | -
 
 # --- inputs in a form the reader does not read: each is refused ------------------
 @refused tools/build/fixtures/ci-classify/refused.Dockerfile
+# A file that changes the continuation character is refused whole, at its
+# directive.
+@refused tools/build/fixtures/ci-classify/escape_directive.Dockerfile.txt
