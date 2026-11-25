@@ -62,6 +62,8 @@ inline constexpr std::size_t COMPONENT_NAME_MAX_LEN = 32;
 /// Maximum data descriptors per component.
 inline constexpr std::size_t MAX_DATA_PER_COMPONENT = 16;
 
+class HwModelBase;
+
 /* ----------------------------- DataDescriptor ----------------------------- */
 
 /**
@@ -300,6 +302,17 @@ public:
    * @note Default implementation does nothing.
    */
   virtual void onBusReady() noexcept {}
+
+  /**
+   * @brief This component as a hardware model, or nullptr when it is none.
+   *
+   * The framework reaches a hardware model's transport through this. A
+   * class can report ComponentType::HW_MODEL without deriving from
+   * HwModelBase, so the reported type is not a basis for a cast.
+   *
+   * @note RT-safe: O(1).
+   */
+  [[nodiscard]] virtual HwModelBase* asHwModel() noexcept { return nullptr; }
 
   /**
    * @brief Look up a schedulable task by UID.

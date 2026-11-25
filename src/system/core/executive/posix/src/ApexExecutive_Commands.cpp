@@ -414,6 +414,24 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       return static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE);
     }
 
+    // A hardware model's transport link has its far end in a driver's
+    // hands. A swap would leave that driver on the link of an instance
+    // about to be destroyed and the new instance on a link no driver
+    // holds, so it is refused.
+    if (oldComp->asHwModel() != nullptr || newComp->asHwModel() != nullptr) {
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_SWAP_FAILED),
+                       fmt::format("RELOAD_LIBRARY: 0x{:06X} is a hardware model; its transport "
+                                   "link cannot be carried to a new instance, nothing swapped",
+                                   targetUid));
+      if (auto* sl = fileSystem_.swapLog()) {
+        sl->warning(
+            "SWAP", static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE),
+            fmt::format("RELOAD_LIBRARY_FAIL: uid=0x{:06X} reason=hw_model_transport", targetUid));
+      }
+      oldComp->unlock();
+      return static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE);
+    }
+
     // Transfer identity from old component.
     newComp->setInstanceIndex(oldComp->instanceIndex());
 
@@ -463,6 +481,14 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       oldComp->unlock();
       return static_cast<std::uint8_t>(ExecCommandResult::INIT_FAILED);
     }
+
+    // Attach the internal bus as registration does for a schedulable
+    // component. The instance is published locked, so none of its tasks
+    // runs before it has been told the bus is ready.
+    if (interface_ && system_core::system_component::isSchedulable(newComp->componentType())) {
+      newComp->setInternalBus(interface_.get());
+    }
+    newComp->lock();
 
     if (auto* sl = fileSystem_.swapLog()) {
       sl->info("SWAP", fmt::format("RELOAD_LIBRARY_INIT_OK: uid=0x{:06X}", targetUid));
@@ -577,8 +603,12 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
                            (apex::helpers::cpu::getMonotonicNs() - RELOAD_BEGIN_NS) / 1000U));
     }
 
-    // The new instance was never locked, so it is dispatched from the
-    // cycle after its publication; the instance it replaced stays locked.
+    // The new instance was published locked. It is told the bus is ready
+    // on this thread, as at start-up, and unlocked: its tasks are
+    // dispatched from the next cycle. The instance it replaced stays
+    // locked.
+    newComp->onBusReady();
+    newComp->unlock();
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 

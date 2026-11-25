@@ -77,6 +77,8 @@ public:
     return ComponentType::HW_MODEL;
   }
 
+  [[nodiscard]] HwModelBase* asHwModel() noexcept final { return this; }
+
   /**
    * @brief Declare the transport this HW_MODEL requires.
    *

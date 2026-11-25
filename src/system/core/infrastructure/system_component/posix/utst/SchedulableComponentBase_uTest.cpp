@@ -138,6 +138,40 @@ TEST(SchedulableComponentBaseTest, DoResetRunsBeforeTheTablesAreEmptied) {
 
 /* ----------------------------- Transport ----------------------------- */
 
+namespace {
+
+/// A software model that reports the hardware model type without being one.
+class MislabelledModel final : public SwModelBase {
+public:
+  [[nodiscard]] std::uint16_t componentId() const noexcept override { return 994; }
+  [[nodiscard]] const char* componentName() const noexcept override { return "Mislabelled"; }
+  [[nodiscard]] const char* label() const noexcept override { return "MISLABELLED"; }
+  [[nodiscard]] system_core::system_component::ComponentType
+  componentType() const noexcept override {
+    return system_core::system_component::ComponentType::HW_MODEL;
+  }
+
+protected:
+  [[nodiscard]] std::uint8_t doInit() noexcept override { return 0; }
+};
+
+} // namespace
+
+/**
+ * @test asHwModel() is the object itself for a hardware model and nullptr for
+ *       every other component, whatever type the component reports.
+ */
+TEST(HwModelBaseTest, AsHwModelFollowsTheClassNotTheReportedType) {
+  PairedModel hardware;
+  TwoTaskModel software;
+  MislabelledModel mislabelled;
+
+  EXPECT_EQ(hardware.asHwModel(), &hardware);
+  EXPECT_EQ(software.asHwModel(), nullptr);
+  ASSERT_EQ(mislabelled.componentType(), system_core::system_component::ComponentType::HW_MODEL);
+  EXPECT_EQ(mislabelled.asHwModel(), nullptr);
+}
+
 /** @test A second provisionTransport() keeps the open link: no descriptor is opened or dropped. */
 TEST(HwModelBaseTest, ProvisioningTwiceKeepsTheLink) {
   const int BEFORE = openDescriptorCount();

@@ -445,14 +445,18 @@ bool ApexExecutive::registerComponent(system_core::system_component::SystemCompo
   // Step 4: Load TPRM configuration
   const auto TPRM_INGEST = comp->loadTprm(fileSystem_.tprmDir());
 
-  // Step 4.5: Provision transport for HW_MODEL components
-  if (comp->componentType() == system_core::system_component::ComponentType::HW_MODEL) {
-    auto* hwModel = static_cast<system_core::system_component::HwModelBase*>(comp);
+  // Step 4.5: Provision transport for hardware models
+  if (auto* hwModel = comp->asHwModel()) {
     if (!hwModel->provisionTransport()) {
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_IO_ERROR),
                        fmt::format("Transport provisioning failed for {} (0x{:06X})", comp->label(),
                                    comp->fullUid()));
     }
+  } else if (comp->componentType() == system_core::system_component::ComponentType::HW_MODEL) {
+    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_IO_ERROR),
+                     fmt::format("{} (0x{:06X}) reports HW_MODEL but is not a HwModelBase: no "
+                                 "transport provisioned",
+                                 comp->label(), comp->fullUid()));
   }
 
   // Step 5: Initialize the component

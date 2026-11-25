@@ -854,6 +854,37 @@ TEST_F(ReloadRouteTest, SwapIsPublishedWhileTheSystemIsPaused) {
 }
 
 /**
+ * @test A swapped-in instance is attached to the internal bus as a
+ *       registered one is: it is told the bus is ready once, with the bus
+ *       in hand and before its task first runs, and its task runs find
+ *       the bus.
+ */
+TEST_F(ReloadRouteTest, SwappedInComponentIsOnTheInternalBus) {
+  constexpr std::size_t LINKED_NO = 1;
+  constexpr std::size_t PLUGIN_NO = 2;
+  // The linked instance, attached at start-up, is the reference.
+  EXPECT_EQ(probe_.busReadyCalls[LINKED_NO].load(), 1U);
+  EXPECT_TRUE(probe_.busAtReady[LINKED_NO].load());
+  EXPECT_EQ(probe_.runsBeforeBusReady[LINKED_NO].load(), 0U);
+  EXPECT_TRUE(waitFor([&]() { return probe_.busInTask[LINKED_NO].load(); }));
+
+  std::uint8_t status = 0xFF;
+  ASSERT_NO_FATAL_FAILURE(bankPlugin("ExecutiveTestPlugin_Reload.so"));
+  ASSERT_NO_FATAL_FAILURE(lockTarget());
+  const std::uint16_t RELOAD = sendReload();
+  ASSERT_NE(RELOAD, 0u);
+  ASSERT_TRUE(ground_.reply(RELOAD, POLL_LIMIT, status)) << "no reply to the reload";
+  ASSERT_EQ(status, static_cast<std::uint8_t>(CommandResult::SUCCESS)) << slurp(swapLog());
+
+  ASSERT_TRUE(waitFor([&]() { return probe_.finished[PLUGIN_NO].load() > 1U; }))
+      << "the replacement's task is not dispatched";
+  EXPECT_EQ(probe_.busReadyCalls[PLUGIN_NO].load(), 1U);
+  EXPECT_TRUE(probe_.busAtReady[PLUGIN_NO].load());
+  EXPECT_EQ(probe_.runsBeforeBusReady[PLUGIN_NO].load(), 0U);
+  EXPECT_TRUE(probe_.busInTask[PLUGIN_NO].load());
+}
+
+/**
  * @test A replacement that cannot take over what is registered and
  *       scheduled for the component is refused whole: a shorter output
  *       block, then a task the schedule sequences left unsequenced. The
@@ -894,6 +925,31 @@ TEST_F(ReloadRouteTest, IncompatibleReplacementIsRefusedWhole) {
         << "the old instance is not dispatched after the refusal of " << refusal.plugin;
   }
   EXPECT_EQ(swapLogCount("RELOAD_LIBRARY_OK"), 0U);
+}
+
+/**
+ * @test A replacement that is a hardware model is refused before it is
+ *       initialized: its transport link could not take the place of one
+ *       whose far end a driver holds. The old instance stays bound,
+ *       unlocked and running.
+ */
+TEST_F(ReloadRouteTest, HardwareModelReplacementIsRefused) {
+  constexpr std::size_t LINKED_NO = 1;
+  ASSERT_NO_FATAL_FAILURE(bankPlugin("ExecutiveTestPlugin_HardwareReload.so"));
+  ASSERT_NO_FATAL_FAILURE(lockTarget());
+  const std::uint16_t RELOAD = sendReload();
+  ASSERT_NE(RELOAD, 0u);
+  std::uint8_t status = 0xFF;
+  ASSERT_TRUE(ground_.reply(RELOAD, POLL_LIMIT, status)) << "no reply to the reload";
+  EXPECT_EQ(status, static_cast<std::uint8_t>(ExecCommandResult::NOT_SWAPPABLE));
+  EXPECT_EQ(swapLogCount("reason=hw_model_transport"), 1U) << slurp(swapLog());
+  EXPECT_EQ(swapLogCount("RELOAD_LIBRARY_INIT_OK"), 0U);
+  EXPECT_EQ(swapLogCount("RELOAD_LIBRARY_OK"), 0U);
+
+  EXPECT_EQ(inspectedInstance(), LINKED_NO);
+  const std::uint32_t RUNS = probe_.entered[LINKED_NO].load();
+  EXPECT_TRUE(waitFor([&]() { return probe_.entered[LINKED_NO].load() > RUNS + 5U; }))
+      << "the old instance is not dispatched after the refusal";
 }
 
 /**

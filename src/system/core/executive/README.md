@@ -203,6 +203,15 @@ old one stays locked.
   `NOT_QUIESCENT`. A task that overruns every frame keeps a reload out
   until it returns. After any refusal the new instance is destroyed and
   the old one is unlocked and unchanged.
+- **Bus.** A schedulable replacement is attached to the internal bus
+  after it initializes. It is published locked, told the bus is ready
+  (`onBusReady()`) on ExternalIO, then unlocked, so none of its tasks
+  runs before that call returns.
+- **Hardware models.** A reload whose old or new instance is a hardware
+  model is refused with `NOT_SWAPPABLE` (`reason=hw_model_transport` in
+  the swap log) before the replacement is initialized: the far end of
+  the model's transport link is in a driver's hands and is not carried
+  to a new instance.
 - **From an action.** A RELOAD_LIBRARY an action sends reaches the
   handler on TaskExecution. It is recorded (`RELOAD_LIBRARY_DEFERRED` in
   the swap log) and run by ExternalIO at the top of its next loop, so no

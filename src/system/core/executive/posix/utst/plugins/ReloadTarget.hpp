@@ -12,9 +12,9 @@
  * instance runs that task and on which thread each instance was
  * initialized, can hold a run inside the task, and learns when an
  * instance is destroyed and whether one of its runs was still inside the
- * task at that moment. Variants differ from the linked instance in the
- * size of the output block or in how the task is sequenced, for the
- * swaps that must be refused.
+ * task at that moment, and whether each instance was attached to the
+ * internal bus and told so before its task first ran. Variants differ from the linked instance in
+ * the size of the output block or in how the task is sequenced, for the swaps that must be refused.
  */
 
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
@@ -57,6 +57,14 @@ struct ReloadProbe {
   std::array<std::atomic<bool>, MAX_INSTANCES + 1> destroyedInTask{};
   /// Hash of the id of the thread that initialized the instance; 0 until then.
   std::array<std::atomic<std::size_t>, MAX_INSTANCES + 1> initThread{};
+  /// Set once a task run of the instance found the internal bus attached.
+  std::array<std::atomic<bool>, MAX_INSTANCES + 1> busInTask{};
+  /// Times the instance was told the bus is ready.
+  std::array<std::atomic<std::uint32_t>, MAX_INSTANCES + 1> busReadyCalls{};
+  /// Set when the bus was attached at the moment the instance was told so.
+  std::array<std::atomic<bool>, MAX_INSTANCES + 1> busAtReady{};
+  /// Task runs the instance had begun when it was told the bus is ready.
+  std::array<std::atomic<std::uint32_t>, MAX_INSTANCES + 1> runsBeforeBusReady{};
 
   /// The value initThread holds for the calling thread.
   [[nodiscard]] static std::size_t thisThread() noexcept {
@@ -150,6 +158,9 @@ public:
       return 0;
     }
     probe_->entered[number_].fetch_add(1, std::memory_order_acq_rel);
+    if (internalBus() != nullptr) {
+      probe_->busInTask[number_].store(true, std::memory_order_release);
+    }
     const auto DEADLINE = std::chrono::steady_clock::now() + HOLD_LIMIT;
     while (probe_->hold.load(std::memory_order_acquire) &&
            std::chrono::steady_clock::now() < DEADLINE) {
@@ -157,6 +168,16 @@ public:
     }
     probe_->finished[number_].fetch_add(1, std::memory_order_acq_rel);
     return 0;
+  }
+
+  void onBusReady() noexcept override {
+    if (probe_ == nullptr) {
+      return;
+    }
+    probe_->runsBeforeBusReady[number_].store(probe_->entered[number_].load(),
+                                              std::memory_order_release);
+    probe_->busAtReady[number_].store(internalBus() != nullptr, std::memory_order_release);
+    probe_->busReadyCalls[number_].fetch_add(1, std::memory_order_acq_rel);
   }
 
 protected:
