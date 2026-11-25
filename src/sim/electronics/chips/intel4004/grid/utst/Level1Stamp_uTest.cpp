@@ -44,11 +44,11 @@ TEST(Level1StampTest, ModelSanityStrongOn) {
 TEST(Level1StampTest, ModelSanityOff) {
   MosfetLevel1Params params{.Kp = 5e-3, .Vth = 1.0, .lambda = 0.02};
 
-  // vgs = 0 < Vth - Vsmooth -> deep cutoff
+  // vgs = 0 < Vth -> cutoff
   EXPECT_DOUBLE_EQ(MosfetLevel1::current(0.0, 5.0, params), 0.0);
   EXPECT_DOUBLE_EQ(MosfetLevel1::transconductance(0.0, 5.0, params), 0.0);
   EXPECT_DOUBLE_EQ(MosfetLevel1::outputConductance(0.0, 5.0, params), 0.0);
-  EXPECT_EQ(MosfetLevel1::region(0.0, 5.0, params), -1) << "should be deep cutoff";
+  EXPECT_EQ(MosfetLevel1::region(0.0, 5.0, params), 0) << "should be cutoff";
 }
 
 /** @test Saturation current scales quadratically with gate overdrive. */

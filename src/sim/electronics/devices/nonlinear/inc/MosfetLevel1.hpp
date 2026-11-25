@@ -6,7 +6,7 @@
  *
  * Implements the classic Shichman-Hodges MOSFET equations with three regions:
  *
- * 1. Cutoff (Vgs < Vth): Id = 0
+ * 1. Cutoff (Vgs <= Vth): Id = 0
  * 2. Linear (Vgs > Vth, Vds < Vgs - Vth): Id = Kp * ((Vgs - Vth) * Vds - 0.5 * Vds^2)
  * 3. Saturation (Vgs > Vth, Vds >= Vgs - Vth): Id = 0.5 * Kp * (Vgs - Vth)^2
  *
@@ -14,8 +14,12 @@
  *   Kp = transconductance parameter (A/V^2), typically 20u-200u for NMOS
  *   Vth = threshold voltage (V), typically 0.5-1.5V for NMOS
  *
- * This is a PHYSICS MODEL (Layer 2) for analog circuit simulation with
- * smooth I-V curves and derivatives for Newton-Raphson convergence.
+ * The current, the transconductance and the output conductance are each
+ * continuous across the three regions: all three are zero at threshold, and
+ * the linear and saturation expressions agree at Vds = Vgs - Vth.
+ *
+ * This is a PHYSICS MODEL (Layer 2) for analog circuit simulation, with
+ * analytic derivatives for Newton-Raphson.
  *
  * RT-safety: RT-safe (static functions, no allocations).
  * Thread-safety: Safe (stateless, pure functions).
@@ -41,11 +45,6 @@ struct MosfetLevel1Params {
   double Kp = 100e-6;  ///< Transconductance parameter (A/V^2), typical 20u-200u
   double Vth = 0.7;    ///< Threshold voltage (V), typical 0.5-1.5V
   double lambda = 0.0; ///< Channel-length modulation (1/V), 0 = ideal, typical 0.01-0.1
-
-  /// Subthreshold smoothing voltage. Below Vth, current transitions exponentially
-  /// to zero over this range. Prevents the Jacobian discontinuity at Vth that
-  /// causes NR convergence failures. Set to 0 for hard cutoff (original behavior).
-  double Vsmooth = 0.1; ///< Smoothing range below Vth (V). 0 = disabled.
 };
 
 /**
@@ -90,27 +89,17 @@ struct MosfetLevel1 {
    *
    * Equivalent to calling `current`, `transconductance`, and
    * `outputConductance` successively, but evaluates the region branch
-   * and shared subexpressions (VGST, LAMBDA_FACTOR, ratio, id_at_th_base)
-   * exactly once. The 2242-MOSFET Intel 4004 NR stamp path invokes all
-   * three per transistor per iteration; this combined call is the fast
-   * path for that workload.
+   * and shared subexpressions (VGST, LAMBDA_FACTOR) exactly once. The 2242-MOSFET Intel 4004 NR
+   * stamp path invokes all three per transistor per iteration; this combined call is the fast path
+   * for that workload.
    *
    * @note RT-safe (pure math, no allocations).
    */
   [[nodiscard]] SIM_HD_FI static StampValues
   stampValues(double vgs, double vds, const MosfetLevel1Params& params) noexcept {
-    if (vgs <= params.Vth - params.Vsmooth) {
+    // Cutoff: at or below threshold
+    if (vgs <= params.Vth) {
       return {0.0, 0.0, 0.0};
-    }
-
-    if (vgs < params.Vth && params.Vsmooth > 0.0) {
-      const double VGST_EFF = vgs - (params.Vth - params.Vsmooth);
-      const double RATIO = VGST_EFF / params.Vsmooth;
-      const double ID_AT_TH_BASE = 0.5 * params.Kp * params.Vsmooth * params.Vsmooth;
-      const double LAMBDA_FACTOR = 1.0 + params.lambda * vds;
-      const double ID_AT_TH = ID_AT_TH_BASE * LAMBDA_FACTOR;
-      return {ID_AT_TH * RATIO * RATIO, ID_AT_TH * 2.0 * RATIO / params.Vsmooth,
-              ID_AT_TH_BASE * params.lambda * RATIO * RATIO};
     }
 
     const double VGST = vgs - params.Vth;
@@ -146,21 +135,9 @@ struct MosfetLevel1 {
    */
   [[nodiscard]] static double current(double vgs, double vds,
                                       const MosfetLevel1Params& params) noexcept {
-    // Deep cutoff (well below threshold)
-    if (vgs <= params.Vth - params.Vsmooth) {
+    // Cutoff: at or below threshold
+    if (vgs <= params.Vth) {
       return 0.0;
-    }
-
-    // Subthreshold smoothing region: exponential transition to zero
-    if (vgs < params.Vth && params.Vsmooth > 0.0) {
-      // Current at threshold (vgst=0, saturation boundary). Use a small
-      // virtual overdrive to avoid zero current at exact threshold.
-      double vgst_eff = vgs - (params.Vth - params.Vsmooth);
-      double ratio = vgst_eff / params.Vsmooth; // 0 at deep cutoff, 1 at Vth
-      // Quadratic smoothing: id = id_threshold * ratio^2
-      double id_at_th =
-          0.5 * params.Kp * params.Vsmooth * params.Vsmooth * (1.0 + params.lambda * vds);
-      return id_at_th * ratio * ratio;
     }
 
     const double VGST = vgs - params.Vth; // Gate overdrive voltage
@@ -187,18 +164,9 @@ struct MosfetLevel1 {
    */
   [[nodiscard]] static double transconductance(double vgs, double vds,
                                                const MosfetLevel1Params& params) noexcept {
-    if (vgs <= params.Vth - params.Vsmooth) {
+    // Cutoff: at or below threshold
+    if (vgs <= params.Vth) {
       return 0.0;
-    }
-
-    // Subthreshold: derivative of quadratic smoothing
-    if (vgs < params.Vth && params.Vsmooth > 0.0) {
-      double vgst_eff = vgs - (params.Vth - params.Vsmooth);
-      double ratio = vgst_eff / params.Vsmooth;
-      double id_at_th =
-          0.5 * params.Kp * params.Vsmooth * params.Vsmooth * (1.0 + params.lambda * vds);
-      // d(id)/d(vgs) = id_at_th * 2*ratio / Vsmooth
-      return id_at_th * 2.0 * ratio / params.Vsmooth;
     }
 
     const double VGST = vgs - params.Vth;
@@ -223,18 +191,9 @@ struct MosfetLevel1 {
    */
   [[nodiscard]] static double outputConductance(double vgs, double vds,
                                                 const MosfetLevel1Params& params) noexcept {
-    if (vgs <= params.Vth - params.Vsmooth) {
+    // Cutoff: at or below threshold
+    if (vgs <= params.Vth) {
       return 0.0;
-    }
-
-    // Subthreshold: d(id)/d(vds) of quadratic smoothing
-    if (vgs < params.Vth && params.Vsmooth > 0.0) {
-      double vgst_eff = vgs - (params.Vth - params.Vsmooth);
-      double ratio = vgst_eff / params.Vsmooth;
-      double id_at_th_base = 0.5 * params.Kp * params.Vsmooth * params.Vsmooth;
-      // id = id_at_th_base * (1 + lambda*vds) * ratio^2
-      // d(id)/d(vds) = id_at_th_base * lambda * ratio^2
-      return id_at_th_base * params.lambda * ratio * ratio;
     }
 
     const double VGST = vgs - params.Vth;
@@ -472,17 +431,14 @@ struct MosfetLevel1 {
 
   /**
    * @brief Classify MOSFET operating region.
-   * @return -1 = deep cutoff, 0 = subthreshold, 1 = linear, 2 = saturation.
+   * @return 0 = cutoff, 1 = linear, 2 = saturation.
    *
    * @note RT-safe (no allocations, pure math).
    */
   [[nodiscard]] static int region(double vgs, double vds,
                                   const MosfetLevel1Params& params) noexcept {
-    if (vgs <= params.Vth - params.Vsmooth) {
-      return -1; // Deep cutoff
-    }
-    if (vgs < params.Vth) {
-      return 0; // Subthreshold smoothing
+    if (vgs <= params.Vth) {
+      return 0; // Cutoff
     }
     const double VGST = vgs - params.Vth;
     return (vds < VGST) ? 1 : 2; // Linear : Saturation

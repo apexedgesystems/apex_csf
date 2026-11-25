@@ -8,9 +8,9 @@
  * Used in high-input-impedance op-amps (TL071, LF356, OPA134) and analog switches.
  *
  * Three operating regions:
- * 1. Cutoff (Vgs > Vp): Id = 0 (gate reverse-biased beyond pinch-off)
- * 2. Linear (Vgs < Vp, Vds < Vgst): Ohmic region, controlled resistance
- * 3. Saturation (Vgs < Vp, Vds >= Vgst): Constant current source
+ * 1. Cutoff (Vgs <= Vp): Id = 0 (gate reverse-biased to pinch-off or beyond)
+ * 2. Linear (Vgs > Vp, Vds < Vgst): Ohmic region, controlled resistance
+ * 3. Saturation (Vgs > Vp, Vds >= Vgst): Constant current source
  *
  * This is a PHYSICS MODEL (Layer 2) that uses Layer 1 Newton-Raphson solver
  * for nonlinear circuit simulation.
@@ -65,7 +65,7 @@ struct JfetShichman {
   /**
    * @brief Compute JFET drain current.
    *
-   * Cutoff: Id = 0 (Vgs > Vp)
+   * Cutoff: Id = 0 (Vgs <= Vp)
    * Linear: Id = 2*Beta*[(Vgs - Vp)*Vds - 0.5*Vds^2] * (1 + lambda*Vds)
    * Saturation: Id = Beta*(Vgs - Vp)^2 * (1 + lambda*Vds)
    *
@@ -182,16 +182,14 @@ struct JfetShichman {
     // Equivalent current source: Ieq = Id - gm*Vgs - gds*Vds
     const double IEQ = ID - GM * vgs - GDS * vds;
 
-    // Stamp transconductance (gate-controlled current source)
-    // Creates VCCS: Id controlled by Vgs
-    mna.addConductance(drainNet, gateNet, GM);
-    mna.addConductance(drainNet, sourceNet, -GM);
+    // Transconductance: drain-to-source current controlled by Vgs
+    mna.addTransconductance(drainNet, sourceNet, gateNet, sourceNet, GM);
 
-    // Stamp output conductance (drain-source resistance)
+    // Output conductance (drain-source resistance)
     mna.addConductance(drainNet, sourceNet, GDS);
 
-    // Stamp equivalent current source
-    mna.addCurrent(drainNet, sourceNet, IEQ);
+    // Equivalent current source (leaves the drain net)
+    mna.addCurrent(drainNet, sourceNet, -IEQ);
   }
 
   /**

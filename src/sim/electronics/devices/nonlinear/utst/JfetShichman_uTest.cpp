@@ -1,12 +1,17 @@
 /**
  * @file JfetShichman_uTest.cpp
  * @brief Unit tests for JfetShichman.
+ *
+ * Expected currents and conductances are reference values computed outside
+ * the library from the model equations, which each table restates.
  */
 
 #include "src/sim/electronics/devices/nonlinear/inc/JfetShichman.hpp"
+#include "src/sim/electronics/devices/nonlinear/utst/StampProbe.hpp"
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
@@ -16,372 +21,217 @@ using sim::electronics::devices::nonlinear::JfetShichmanParams;
 using sim::electronics::devices::nonlinear::MnaSystem;
 using sim::electronics::devices::nonlinear::NetID;
 
-/* ----------------------------- Default Construction ----------------------------- */
+using sim::electronics::devices::nonlinear::test::expectCurrent;
+using sim::electronics::devices::nonlinear::test::pinTerminals;
+using sim::electronics::devices::nonlinear::test::terminalNet;
 
-/** @test */
-TEST(JfetShichmanTest, DefaultParameters) {
-  JfetShichmanParams params;
-  EXPECT_DOUBLE_EQ(params.Beta, 1e-3);
-  EXPECT_DOUBLE_EQ(params.Vp, -2.0);
-  EXPECT_DOUBLE_EQ(params.lambda, 0.01);
+namespace {
+
+/// Relative tolerance on a value against its reference.
+constexpr double VALUE_TOL = 1e-12;
+
+} // namespace
+
+/* ----------------------------- Drain Current ----------------------------- */
+
+/** @test Drain current matches the reference in cutoff, the linear region and saturation */
+TEST(JfetShichmanTest, CurrentMatchesReference) {
+  struct Row {
+    double vgs;
+    double vds;
+    double id;
+  };
+
+  // With Vgst = Vgs - Vp: zero for Vgs <= Vp;
+  // 2*Beta*(Vgst*Vds - Vds^2/2)*(1 + lambda*Vds) for Vds < Vgst;
+  // Beta*Vgst^2*(1 + lambda*Vds) from there on.
+  const JfetShichmanParams PARAMS;
+  const std::array<Row, 6> ROWS = {{
+      Row{-0.5, 5.0, 0.0023625},  // saturation
+      Row{-0.5, 0.5, 0.00125625}, // linear region
+      Row{0.0, 1.0, 0.00303},     // linear region
+      Row{0.0, 3.0, 0.00412},     // saturation
+      Row{-2.0, 5.0, 0.0},        // at pinch-off
+      Row{-2.5, 5.0, 0.0},        // below pinch-off
+  }};
+  for (const Row& row : ROWS) {
+    EXPECT_NEAR(JfetShichman::current(row.vgs, row.vds, PARAMS), row.id, VALUE_TOL * row.id)
+        << "vgs = " << row.vgs << ", vds = " << row.vds;
+  }
+
+  // Every parameter moved off its default.
+  const JfetShichmanParams OTHER{.Beta = 2e-3, .Vp = -2.5, .lambda = 0.02};
+  EXPECT_NEAR(JfetShichman::current(-1.0, 4.0, OTHER), 0.00486, VALUE_TOL * 0.00486);
 }
 
-/** @test */
-TEST(JfetShichmanTest, CustomParameters) {
-  JfetShichmanParams params{.Beta = 2e-3, .Vp = -3.0, .lambda = 0.02};
-  EXPECT_DOUBLE_EQ(params.Beta, 2e-3);
-  EXPECT_DOUBLE_EQ(params.Vp, -3.0);
-  EXPECT_DOUBLE_EQ(params.lambda, 0.02);
+/** @test Transconductance and output conductance are the derivatives of the drain current */
+TEST(JfetShichmanTest, ConductancesMatchReference) {
+  struct Row {
+    double vgs;
+    double vds;
+    double gm;
+    double gds;
+  };
+
+  const JfetShichmanParams PARAMS;
+  const std::array<Row, 5> ROWS = {{
+      Row{-0.5, 5.0, 0.00315, 2.25e-05},   // saturation
+      Row{-0.5, 0.5, 0.001005, 0.0020225}, // linear region
+      Row{0.0, 1.0, 0.00202, 0.00205},     // linear region
+      Row{0.0, 3.0, 0.00412, 4e-05},       // saturation
+      Row{-2.5, 5.0, 0.0, 0.0},            // below pinch-off
+  }};
+  for (const Row& row : ROWS) {
+    EXPECT_NEAR(JfetShichman::transconductance(row.vgs, row.vds, PARAMS), row.gm,
+                VALUE_TOL * row.gm)
+        << "vgs = " << row.vgs << ", vds = " << row.vds;
+    EXPECT_NEAR(JfetShichman::outputConductance(row.vgs, row.vds, PARAMS), row.gds,
+                VALUE_TOL * row.gds)
+        << "vgs = " << row.vgs << ", vds = " << row.vds;
+  }
 }
 
-/* ----------------------------- Current Tests ----------------------------- */
+/* ----------------------------- Region Boundaries ----------------------------- */
 
-/** @test */
-TEST(JfetShichmanTest, CurrentCutoff) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0};
-  const double VGS = -2.5; // Below Vp (cutoff)
-  const double VDS = 5.0;
-  const double ID = JfetShichman::current(VGS, VDS, params);
+/** @test Drain current is continuous at the saturation voltage and at pinch-off */
+TEST(JfetShichmanTest, ContinuousAtRegionBoundaries) {
+  const JfetShichmanParams PARAMS;
+  constexpr double EPS = 1e-9;
 
-  // Should be zero (cutoff region)
-  EXPECT_DOUBLE_EQ(ID, 0.0);
+  for (const double VGS : {-1.5, -1.0, -0.5, 0.0}) {
+    const double VDSAT = VGS - PARAMS.Vp;
+    const double BELOW = JfetShichman::current(VGS, VDSAT - EPS, PARAMS);
+    const double ABOVE = JfetShichman::current(VGS, VDSAT + EPS, PARAMS);
+    EXPECT_NEAR(BELOW, ABOVE, 1e-6 * ABOVE) << "vgs = " << VGS;
+  }
+
+  // The square law leaves pinch-off from zero: 1 nV above it the current is
+  // Beta*(1e-9)^2 in saturation and no more in the linear region.
+  for (const double VDS : {0.01, 5.0}) {
+    EXPECT_EQ(JfetShichman::current(PARAMS.Vp - EPS, VDS, PARAMS), 0.0);
+    EXPECT_LT(JfetShichman::current(PARAMS.Vp + EPS, VDS, PARAMS), 1e-18) << "vds = " << VDS;
+  }
 }
 
-/** @test */
-TEST(JfetShichmanTest, CurrentLinear) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.0};
-  const double VGS = -0.5; // Below Vp
-  const double VDS = 0.5;  // Vds < Vgst = -0.5 - (-2.0) = 1.5
-  const double ID = JfetShichman::current(VGS, VDS, params);
+/** @test Region code is 0 at or below pinch-off, 1 for Vds < Vgst, 2 from Vds = Vgst on */
+TEST(JfetShichmanTest, RegionClassifiesBias) {
+  const JfetShichmanParams PARAMS;
 
-  // Linear region: Id = 2*Beta*[(Vgs - Vp)*Vds - 0.5*Vds^2]
-  const double VGST = VGS - params.Vp; // 1.5
-  const double EXPECTED = 2.0 * params.Beta * (VGST * VDS - 0.5 * VDS * VDS);
-  EXPECT_NEAR(ID, EXPECTED, std::abs(EXPECTED) * 1e-10);
-  EXPECT_GT(ID, 0.0); // Should conduct
-}
+  EXPECT_EQ(JfetShichman::region(-3.0, 5.0, PARAMS), 0);
+  EXPECT_EQ(JfetShichman::region(-2.0, 5.0, PARAMS), 0); // at pinch-off
 
-/** @test */
-TEST(JfetShichmanTest, CurrentSaturation) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.0};
-  const double VGS = -0.5; // Below Vp
-  const double VDS = 5.0;  // Vds > Vgst = 1.5 (saturation)
-  const double ID = JfetShichman::current(VGS, VDS, params);
-
-  // Saturation region: Id = Beta*(Vgs - Vp)^2
-  const double VGST = VGS - params.Vp; // 1.5
-  const double EXPECTED = params.Beta * VGST * VGST;
-  EXPECT_NEAR(ID, EXPECTED, std::abs(EXPECTED) * 1e-10);
-}
-
-/** @test */
-TEST(JfetShichmanTest, CurrentChannelModulation) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.01};
-  const double VGS = -0.5;
-  const double VDS = 5.0;
-  const double ID = JfetShichman::current(VGS, VDS, params);
-
-  // Saturation with channel modulation: Id = Beta*Vgst^2 * (1 + lambda*Vds)
-  const double VGST = VGS - params.Vp;
-  const double EXPECTED = params.Beta * VGST * VGST * (1.0 + params.lambda * VDS);
-  EXPECT_NEAR(ID, EXPECTED, std::abs(EXPECTED) * 1e-10);
-  EXPECT_GT(ID, params.Beta * VGST * VGST); // Should be higher than no modulation
-}
-
-/** @test */
-TEST(JfetShichmanTest, CurrentAtPinchoff) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0};
-  const double VGS = -2.0; // Exactly at Vp
-  const double VDS = 5.0;
-  const double ID = JfetShichman::current(VGS, VDS, params);
-
-  // At pinch-off, current should be very small (Vgst = 0)
-  EXPECT_NEAR(ID, 0.0, 1e-10);
-}
-
-/* ----------------------------- Conductance Tests ----------------------------- */
-
-/** @test */
-TEST(JfetShichmanTest, TransconductanceCutoff) {
-  JfetShichmanParams params{.Vp = -2.0};
-  const double VGS = -2.5; // Below Vp (cutoff)
-  const double VDS = 5.0;
-  const double GM = JfetShichman::transconductance(VGS, VDS, params);
-
-  EXPECT_DOUBLE_EQ(GM, 0.0);
-}
-
-/** @test */
-TEST(JfetShichmanTest, TransconductanceLinear) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.0};
-  const double VGS = -0.5;
-  const double VDS = 0.5;
-  const double GM = JfetShichman::transconductance(VGS, VDS, params);
-
-  // Linear: gm = 2*Beta*Vds
-  const double EXPECTED = 2.0 * params.Beta * VDS;
-  EXPECT_NEAR(GM, EXPECTED, std::abs(EXPECTED) * 1e-10);
-  EXPECT_GT(GM, 0.0);
-}
-
-/** @test */
-TEST(JfetShichmanTest, TransconductanceSaturation) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.0};
-  const double VGS = -0.5;
-  const double VDS = 5.0;
-  const double GM = JfetShichman::transconductance(VGS, VDS, params);
-
-  // Saturation: gm = 2*Beta*Vgst
-  const double VGST = VGS - params.Vp;
-  const double EXPECTED = 2.0 * params.Beta * VGST;
-  EXPECT_NEAR(GM, EXPECTED, std::abs(EXPECTED) * 1e-10);
-  EXPECT_GT(GM, 0.0);
-}
-
-/** @test */
-TEST(JfetShichmanTest, OutputConductanceCutoff) {
-  JfetShichmanParams params{.Vp = -2.0};
-  const double VGS = -2.5; // Below Vp (cutoff)
-  const double VDS = 5.0;
-  const double GDS = JfetShichman::outputConductance(VGS, VDS, params);
-
-  EXPECT_DOUBLE_EQ(GDS, 0.0);
-}
-
-/** @test */
-TEST(JfetShichmanTest, OutputConductanceLinear) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.01};
-  const double VGS = -0.5;
-  const double VDS = 0.5;
-  const double GDS = JfetShichman::outputConductance(VGS, VDS, params);
-
-  // Linear region has higher output conductance
-  EXPECT_GT(GDS, 0.0);
-}
-
-/** @test */
-TEST(JfetShichmanTest, OutputConductanceSaturation) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.01};
-  const double VGS = -0.5;
-  const double VDS = 5.0;
-  const double GDS = JfetShichman::outputConductance(VGS, VDS, params);
-
-  // Saturation: gds = lambda*Beta*Vgst^2 (channel modulation only)
-  const double VGST = VGS - params.Vp;
-  const double EXPECTED = params.lambda * params.Beta * VGST * VGST;
-  EXPECT_NEAR(GDS, EXPECTED, std::abs(EXPECTED) * 1e-10);
-  EXPECT_GT(GDS, 0.0);
-}
-
-/* ----------------------------- Numerical Jacobian ----------------------------- */
-
-/** @test */
-TEST(JfetShichmanTest, TransconductanceNumericalDerivativeSaturation) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.01};
-  const double VGS = -0.5;
-  const double VDS = 5.0;
-  const double DVGS = 1e-8;
-
-  const double GM_ANALYTICAL = JfetShichman::transconductance(VGS, VDS, params);
-
-  const double ID1 = JfetShichman::current(VGS - DVGS, VDS, params);
-  const double ID2 = JfetShichman::current(VGS + DVGS, VDS, params);
-  const double GM_NUMERICAL = (ID2 - ID1) / (2.0 * DVGS);
-
-  EXPECT_NEAR(GM_ANALYTICAL, GM_NUMERICAL, std::abs(GM_NUMERICAL) * 0.01);
-}
-
-/** @test */
-TEST(JfetShichmanTest, TransconductanceNumericalDerivativeLinear) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.01};
-  const double VGS = -0.5;
-  const double VDS = 0.5;
-  const double DVGS = 1e-8;
-
-  const double GM_ANALYTICAL = JfetShichman::transconductance(VGS, VDS, params);
-
-  const double ID1 = JfetShichman::current(VGS - DVGS, VDS, params);
-  const double ID2 = JfetShichman::current(VGS + DVGS, VDS, params);
-  const double GM_NUMERICAL = (ID2 - ID1) / (2.0 * DVGS);
-
-  EXPECT_NEAR(GM_ANALYTICAL, GM_NUMERICAL, std::abs(GM_NUMERICAL) * 0.01);
-}
-
-/** @test */
-TEST(JfetShichmanTest, OutputConductanceNumericalDerivativeSaturation) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.01};
-  const double VGS = -0.5;
-  const double VDS = 5.0;
-  const double DVDS = 1e-8;
-
-  const double GDS_ANALYTICAL = JfetShichman::outputConductance(VGS, VDS, params);
-
-  const double ID1 = JfetShichman::current(VGS, VDS - DVDS, params);
-  const double ID2 = JfetShichman::current(VGS, VDS + DVDS, params);
-  const double GDS_NUMERICAL = (ID2 - ID1) / (2.0 * DVDS);
-
-  EXPECT_NEAR(GDS_ANALYTICAL, GDS_NUMERICAL, std::abs(GDS_NUMERICAL) * 0.01);
-}
-
-/** @test */
-TEST(JfetShichmanTest, OutputConductanceNumericalDerivativeLinear) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.01};
-  const double VGS = -0.5;
-  const double VDS = 0.5;
-  const double DVDS = 1e-8;
-
-  const double GDS_ANALYTICAL = JfetShichman::outputConductance(VGS, VDS, params);
-
-  const double ID1 = JfetShichman::current(VGS, VDS - DVDS, params);
-  const double ID2 = JfetShichman::current(VGS, VDS + DVDS, params);
-  const double GDS_NUMERICAL = (ID2 - ID1) / (2.0 * DVDS);
-
-  EXPECT_NEAR(GDS_ANALYTICAL, GDS_NUMERICAL, std::abs(GDS_NUMERICAL) * 0.01);
-}
-
-/* ----------------------------- Region Detection ----------------------------- */
-
-/** @test */
-TEST(JfetShichmanTest, RegionCutoff) {
-  JfetShichmanParams params{.Vp = -2.0};
-  EXPECT_EQ(JfetShichman::region(-3.0, 5.0, params), 0); // Below Vp (cutoff)
-  EXPECT_EQ(JfetShichman::region(-2.5, 5.0, params), 0); // Below Vp (cutoff)
-  EXPECT_EQ(JfetShichman::region(-2.0, 5.0, params), 0); // At Vp (cutoff)
-}
-
-/** @test */
-TEST(JfetShichmanTest, RegionLinear) {
-  JfetShichmanParams params{.Vp = -2.0};
-  const double VGS = -0.5; // VGST = VGS - Vp = 1.5; the Vds values below are all < it
-
-  EXPECT_EQ(JfetShichman::region(VGS, 0.5, params), 1); // Vds < Vgst
-  EXPECT_EQ(JfetShichman::region(VGS, 1.0, params), 1); // Vds < Vgst
-  EXPECT_EQ(JfetShichman::region(VGS, 1.4, params), 1); // Vds < Vgst
-}
-
-/** @test */
-TEST(JfetShichmanTest, RegionSaturation) {
-  JfetShichmanParams params{.Vp = -2.0};
-  const double VGS = -0.5;
-  const double VGST = VGS - params.Vp; // 1.5
-
-  EXPECT_EQ(JfetShichman::region(VGS, VGST, params), 2); // Vds = Vgst (boundary)
-  EXPECT_EQ(JfetShichman::region(VGS, 2.0, params), 2);  // Vds > Vgst
-  EXPECT_EQ(JfetShichman::region(VGS, 5.0, params), 2);  // Vds > Vgst
+  // Vgs = -0.5 V puts the boundary at Vds = 1.5 V.
+  EXPECT_EQ(JfetShichman::region(-0.5, 0.5, PARAMS), 1);
+  EXPECT_EQ(JfetShichman::region(-0.5, 1.4, PARAMS), 1);
+  EXPECT_EQ(JfetShichman::region(-0.5, 1.5, PARAMS), 2); // on the boundary
+  EXPECT_EQ(JfetShichman::region(-0.5, 5.0, PARAMS), 2);
 }
 
 /* ----------------------------- Stamping ----------------------------- */
 
-/** @test */
-TEST(JfetShichmanTest, StampSaturation) {
-  MnaSystem mna(4);
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.01};
-  const NetID DRAIN = 1;
-  const NetID GATE = 2;
-  const NetID SOURCE = 0;
-  const double VGS = -0.5;
-  const double VDS = 5.0;
+/** @test Stamp is the model's linearization: exact at the operating point, first order around it */
+TEST(JfetShichmanTest, StampIsLinearizationAtOperatingPoint) {
+  const JfetShichmanParams PARAMS;
 
-  // Should stamp transconductance and output conductance
-  JfetShichman::stamp(mna, DRAIN, GATE, SOURCE, VGS, VDS, params);
+  struct Bias {
+    double vgs;
+    double vds;
+    const char* region;
+  };
+  struct Step {
+    double gate;
+    double drain;
+    double source;
+  };
+
+  // The source sits off ground so every stamped entry takes part.
+  const double V_SOURCE = 0.8;
+  const double DV = 0.05;
+
+  for (const Bias& bias :
+       {Bias{-3.0, 5.0, "cutoff"}, Bias{-0.5, 0.5, "linear"}, Bias{-0.5, 5.0, "saturation"}}) {
+    const double ID = JfetShichman::current(bias.vgs, bias.vds, PARAMS);
+    const double GM = JfetShichman::transconductance(bias.vgs, bias.vds, PARAMS);
+    const double GDS = JfetShichman::outputConductance(bias.vgs, bias.vds, PARAMS);
+
+    // Terminal order: drain, gate, source.
+    const auto STAMP = [&](MnaSystem& mna) {
+      JfetShichman::stamp(mna, terminalNet(0), terminalNet(1), terminalNet(2), bias.vgs, bias.vds,
+                          PARAMS);
+    };
+
+    for (const Step& step :
+         {Step{0.0, 0.0, 0.0}, Step{DV, 0.0, 0.0}, Step{0.0, DV, 0.0}, Step{0.0, 0.0, DV}}) {
+      const auto PINNED = pinTerminals({V_SOURCE + bias.vds + step.drain,
+                                        V_SOURCE + bias.vgs + step.gate, V_SOURCE + step.source},
+                                       STAMP);
+      ASSERT_TRUE(PINNED.solved) << bias.region;
+
+      const double D_VGS = step.gate - step.source;
+      const double D_VDS = step.drain - step.source;
+      const double I_DRAIN = ID + GM * D_VGS + GDS * D_VDS;
+      expectCurrent(PINNED.into[0], I_DRAIN, "drain");
+      expectCurrent(PINNED.into[1], 0.0, "gate");
+      expectCurrent(PINNED.into[2], -I_DRAIN, "source");
+    }
+  }
 }
 
-/** @test */
-TEST(JfetShichmanTest, StampLinear) {
-  MnaSystem mna(4);
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0};
-  const NetID DRAIN = 1;
-  const NetID GATE = 2;
-  const NetID SOURCE = 0;
-  const double VGS = -0.5;
-  const double VDS = 0.5;
+/* ----------------------------- Circuit ----------------------------- */
 
-  // Should stamp linear region conductances
-  JfetShichman::stamp(mna, DRAIN, GATE, SOURCE, VGS, VDS, params);
-}
+/** @test A self-biased stage solved through the stamp settles at the reference operating point */
+TEST(JfetShichmanTest, SelfBiasedStageSettlesAtReferenceOperatingPoint) {
+  struct Case {
+    double vdd;
+    double rd;
+    double rs;
+    double id;
+    double vd;
+    double vs;
+  };
 
-/** @test */
-TEST(JfetShichmanTest, StampCutoff) {
-  MnaSystem mna(4);
-  JfetShichmanParams params{.Vp = -2.0};
-  const NetID DRAIN = 1;
-  const NetID GATE = 2;
-  const NetID SOURCE = 0;
-  const double VGS = -2.5; // Below Vp (cutoff)
-  const double VDS = 5.0;
+  // Supply -- RD -- drain; source -- RS -- ground; gate grounded. The drain
+  // current sets its own gate bias through RS. Reference: bisection on the
+  // drain current. The last case has no source resistor and sits in the
+  // linear region.
+  const JfetShichmanParams PARAMS;
+  const std::array<Case, 3> CASES = {{
+      Case{12.0, 2200.0, 1000.0, 0.001027706881764775, 9.739044860117495, 1.0277068817647752},
+      Case{9.0, 1000.0, 470.0, 0.0016269261178539682, 7.3730738821460315, 0.764655275391365},
+      Case{3.0, 4700.0, 0.0, 0.0006048612238656326, 0.15715224783152681, 0.0},
+  }};
 
-  // Should stamp zero conductances (cutoff)
-  JfetShichman::stamp(mna, DRAIN, GATE, SOURCE, VGS, VDS, params);
-}
+  const NetID GROUND = 0;
+  const NetID SUPPLY = 1;
+  const NetID DRAIN = 2;
+  for (const Case& c : CASES) {
+    const bool HAS_RS = c.rs > 0.0;
+    const NetID SOURCE = HAS_RS ? 3 : GROUND;
 
-/* ----------------------------- Physical Behavior ----------------------------- */
+    double vDrain = c.vdd;
+    double vSource = 0.0;
+    bool converged = false;
+    for (int iter = 0; iter < 100 && !converged; ++iter) {
+      MnaSystem mna(HAS_RS ? 4 : 3);
+      mna.addVoltageSource(SUPPLY, GROUND, c.vdd);
+      mna.addConductance(SUPPLY, DRAIN, 1.0 / c.rd);
+      if (HAS_RS) {
+        mna.addConductance(SOURCE, GROUND, 1.0 / c.rs);
+      }
+      JfetShichman::stamp(mna, DRAIN, GROUND, SOURCE, -vSource, vDrain - vSource, PARAMS);
 
-/** @test */
-TEST(JfetShichmanTest, SaturationConstantCurrent) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.0};
-  const double VGS = -0.5;
+      const auto RESULT = mna.solve();
+      ASSERT_TRUE(RESULT.success) << "vdd = " << c.vdd << ", iteration " << iter;
+      const double V_DRAIN = RESULT.nodeVoltages[DRAIN];
+      const double V_SOURCE = HAS_RS ? RESULT.nodeVoltages[SOURCE] : 0.0;
+      converged = std::abs(V_DRAIN - vDrain) < 1e-12 && std::abs(V_SOURCE - vSource) < 1e-12;
+      vDrain = V_DRAIN;
+      vSource = V_SOURCE;
+    }
+    ASSERT_TRUE(converged) << "vdd = " << c.vdd;
 
-  // In saturation (no channel modulation), current should be constant vs Vds
-  const double ID1 = JfetShichman::current(VGS, 3.0, params);
-  const double ID2 = JfetShichman::current(VGS, 5.0, params);
-  const double ID3 = JfetShichman::current(VGS, 10.0, params);
-
-  // All should be nearly equal (saturation)
-  EXPECT_NEAR(ID1, ID2, 1e-10);
-  EXPECT_NEAR(ID2, ID3, 1e-10);
-}
-
-/** @test */
-TEST(JfetShichmanTest, LinearOhmicBehavior) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.0};
-  const double VGS = -0.5;
-
-  // In linear region, current should increase with Vds
-  const double ID1 = JfetShichman::current(VGS, 0.1, params);
-  const double ID2 = JfetShichman::current(VGS, 0.5, params);
-  const double ID3 = JfetShichman::current(VGS, 1.0, params);
-
-  EXPECT_GT(ID2, ID1); // Current increases with Vds
-  EXPECT_GT(ID3, ID2);
-}
-
-/** @test */
-TEST(JfetShichmanTest, TransconductanceIncreasesWithVgs) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0};
-  const double VDS = 5.0; // Saturation
-
-  // More negative Vgs (closer to Vp) should reduce transconductance
-  const double GM1 = JfetShichman::transconductance(-0.2, VDS, params);
-  const double GM2 = JfetShichman::transconductance(-0.5, VDS, params);
-  const double GM3 = JfetShichman::transconductance(-1.0, VDS, params);
-
-  EXPECT_GT(GM1, GM2); // Less negative Vgs -> higher gm
-  EXPECT_GT(GM2, GM3);
-}
-
-/** @test */
-TEST(JfetShichmanTest, PinchoffCutoff) {
-  JfetShichmanParams params{.Beta = 1e-3, .Vp = -2.0};
-  const double VDS = 5.0;
-
-  // Vgs at or below Vp should cut off
-  const double ID_CUTOFF = JfetShichman::current(-2.5, VDS, params);  // Below Vp
-  const double ID_CONDUCT = JfetShichman::current(-0.5, VDS, params); // Above Vp
-
-  EXPECT_DOUBLE_EQ(ID_CUTOFF, 0.0);
-  EXPECT_GT(ID_CONDUCT, 1e-6);
-}
-
-/** @test */
-TEST(JfetShichmanTest, ChannelModulationEffect) {
-  JfetShichmanParams noMod{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.0};
-  JfetShichmanParams withMod{.Beta = 1e-3, .Vp = -2.0, .lambda = 0.02};
-  const double VGS = -0.5;
-  const double VDS = 5.0;
-
-  const double ID_NO_MOD = JfetShichman::current(VGS, VDS, noMod);
-  const double ID_WITH_MOD = JfetShichman::current(VGS, VDS, withMod);
-
-  // Channel modulation should increase current
-  EXPECT_GT(ID_WITH_MOD, ID_NO_MOD);
+    EXPECT_NEAR(vDrain, c.vd, 1e-9) << "vdd = " << c.vdd;
+    EXPECT_NEAR(vSource, c.vs, 1e-9) << "vdd = " << c.vdd;
+    EXPECT_NEAR((c.vdd - vDrain) / c.rd, c.id, 1e-9 * c.id) << "vdd = " << c.vdd;
+  }
 }

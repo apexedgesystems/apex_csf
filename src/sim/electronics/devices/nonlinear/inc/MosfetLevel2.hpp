@@ -9,7 +9,8 @@
  * - Mobility degradation: mu(Vgs) = mu0 / (1 + theta*(Vgs - Vth))
  * - Velocity saturation: Vdsat = Vgst / (1 + Vgst / (E_crit * L))
  * - Threshold voltage modulation: Vth(Vsb) = Vth0 + gamma*(sqrt(phi + Vsb) - sqrt(phi))
- * - Subthreshold conduction: exponential weak inversion
+ * - Subthreshold conduction: weak-inversion current below the turn-on
+ *   voltage Von = Vth + n_sub*Vt, exponential in Vgs
  *
  * More accurate than Level 1 for:
  * - Short-channel devices (L < 2 um)
@@ -61,7 +62,7 @@ struct MosfetLevel2Params {
   double phi = 0.6;   ///< Surface potential (V), 2*phi_f
 
   // Subthreshold
-  double n_sub = 1.5; ///< Subthreshold slope factor (unitless)
+  double n_sub = 1.5; ///< Subthreshold slope factor: the slope voltage is n_sub*Vt
   double Vt = 0.026;  ///< Thermal voltage (V), kT/q ~= 26mV at 300K
 };
 
@@ -164,6 +165,17 @@ struct MosfetLevel2 {
    * Includes geometry, mobility degradation, velocity saturation, body effect,
    * and subthreshold conduction.
    *
+   * With Vgst = Vgs - Vth, at and above the turn-on voltage
+   * Von = Vth + n_sub*Vt the device is in strong inversion:
+   *   Id = beta * (Vgst*V - V^2/2) * (1 + lambda*Vds),  V = min(Vds, Vdsat)
+   * so the saturation current is the linear-region current at Vdsat and the
+   * two regions meet there.
+   *
+   * Below Von the current is the strong-inversion current at Von, scaled by
+   * exp((Vgs - Von) / (n_sub*Vt)). It meets the strong-inversion current at
+   * Von, and it saturates in Vds as that current does there. The slope in
+   * Vgs steps at Von.
+   *
    * @param vgs Gate-source voltage in volts
    * @param vds Drain-source voltage in volts
    * @param vbs Bulk-source voltage in volts (usually 0 or negative)
@@ -175,31 +187,29 @@ struct MosfetLevel2 {
   [[nodiscard]] static double current(double vgs, double vds, double vbs,
                                       const MosfetLevel2Params& params) noexcept {
     const double VTH = thresholdVoltage(vbs, params);
-    const double VGST = vgs - VTH;
+    const double SLOPE_V = params.n_sub * params.Vt;
+    const double VON = VTH + SLOPE_V;
 
-    // Cutoff region (with weak inversion)
-    if (VGST <= 0.0) {
-      // Subthreshold current: I = I0 * exp(Vgs / (n_sub * Vt))
-      const double I_SUB = params.Kp * params.W / params.L * params.Vt * params.Vt *
-                           std::exp((vgs - VTH) / (params.n_sub * params.Vt));
-      return I_SUB * vds; // Linear in Vds in weak inversion
-    }
-
-    // Effective parameters
-    const double MU_FACTOR = mobilityFactor(vgs, VTH, params);
+    // Strong inversion, held at turn-on for a gate below it
+    const double VGS_STRONG = std::max(vgs, VON);
+    const double VGST = VGS_STRONG - VTH;
+    const double MU_FACTOR = mobilityFactor(VGS_STRONG, VTH, params);
     const double BETA_EFF = params.Kp * params.W / params.L * MU_FACTOR;
-    const double VDSAT = drainSaturationVoltage(vgs, VTH, params);
+    const double VDSAT = drainSaturationVoltage(VGS_STRONG, VTH, params);
 
     // Channel-length modulation
     const double CLM = 1.0 + params.lambda * vds;
 
-    // Linear region
-    if (vds < VDSAT) {
-      return BETA_EFF * (VGST * vds - 0.5 * vds * vds) * CLM;
+    // The channel voltage stops at Vdsat, so saturation carries the
+    // linear-region current at Vdsat whatever lowers Vdsat below the overdrive
+    const double V_CHANNEL = std::min(vds, VDSAT);
+    const double ID_STRONG = BETA_EFF * (VGST * V_CHANNEL - 0.5 * V_CHANNEL * V_CHANNEL) * CLM;
+    if (vgs >= VON) {
+      return ID_STRONG;
     }
 
-    // Saturation region
-    return BETA_EFF * 0.5 * VDSAT * VDSAT * CLM;
+    // Weak inversion: exponential in the gate voltage below turn-on
+    return ID_STRONG * std::exp((vgs - VON) / SLOPE_V);
   }
 
   /**
@@ -290,19 +300,17 @@ struct MosfetLevel2 {
     // Equivalent current: Ieq = Id - gm*Vgs - gds*Vds - gmb*Vbs
     const double IEQ = ID - GM * vgs - GDS * vds - GMB * vbs;
 
-    // Stamp transconductance gm (gate control)
-    mna.addConductance(drainNet, gateNet, GM);
-    mna.addConductance(drainNet, sourceNet, -GM);
+    // Transconductance gm: drain-to-source current controlled by Vgs
+    mna.addTransconductance(drainNet, sourceNet, gateNet, sourceNet, GM);
 
-    // Stamp output conductance gds (drain-source)
+    // Output conductance gds (drain-source)
     mna.addConductance(drainNet, sourceNet, GDS);
 
-    // Stamp bulk transconductance gmb (body effect)
-    mna.addConductance(drainNet, bulkNet, GMB);
-    mna.addConductance(drainNet, sourceNet, -GMB);
+    // Bulk transconductance gmb: drain-to-source current controlled by Vbs
+    mna.addTransconductance(drainNet, sourceNet, bulkNet, sourceNet, GMB);
 
-    // Stamp equivalent current source
-    mna.addCurrent(drainNet, sourceNet, IEQ);
+    // Equivalent current source (leaves the drain net)
+    mna.addCurrent(drainNet, sourceNet, -IEQ);
   }
 };
 

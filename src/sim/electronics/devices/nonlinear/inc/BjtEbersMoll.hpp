@@ -12,8 +12,15 @@
  * 3. Reverse Active: Base-collector forward, base-emitter reverse (Vbe < 0, Vbc > 0)
  * 4. Saturation: Both junctions forward-biased (Vbe > 0, Vbc > 0)
  *
- * Collector current (simplified):
- *   Ic = Is * (exp(Vbe/Vt) - 1) - Is/Br * (exp(Vbc/Vt) - 1)
+ * Terminal currents (transport form):
+ *   Ic = Is * (exp(Vbe/Vt) - exp(Vbc/Vt)) - (Is/Br) * (exp(Vbc/Vt) - 1)
+ *   Ib = (Is/Bf) * (exp(Vbe/Vt) - 1) + (Is/Br) * (exp(Vbc/Vt) - 1)
+ *   Ie = -(Ic + Ib)
+ *
+ * The first term of Ic is the current transported between emitter and
+ * collector; it changes sign with the bias, which is what gives the
+ * reverse-active region a current gain of Br. The remaining terms are the
+ * two junction diodes seen from the base.
  *
  * Where:
  *   Is = saturation current (A), typically 1e-14 to 1e-16
@@ -29,6 +36,7 @@
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/Junction.hpp"
 
 #include <cmath>
 
@@ -76,7 +84,7 @@ struct BjtEbersMoll {
   /**
    * @brief Compute collector current using Ebers-Moll equations.
    *
-   * Ic = Is * (exp(Vbe/Vt) - 1) - Is/Br * (exp(Vbc/Vt) - 1)
+   * Ic = Is * (exp(Vbe/Vt) - exp(Vbc/Vt)) - (Is/Br) * (exp(Vbc/Vt) - 1)
    *
    * @param vbe Base-emitter voltage in volts.
    * @param vbc Base-collector voltage in volts.
@@ -87,10 +95,11 @@ struct BjtEbersMoll {
    */
   [[nodiscard]] static double collectorCurrent(double vbe, double vbc,
                                                const BjtEbersMollParams& params) noexcept {
-    const double ICF = params.Is * (std::exp(vbe / params.Vt) - 1.0); // Forward current
-    const double ICR =
-        (params.Is / params.Br) * (std::exp(vbc / params.Vt) - 1.0); // Reverse current
-    return ICF - ICR;
+    const double EXP_BE = Junction::limitedExp(vbe / params.Vt);
+    const double EXP_BC = Junction::limitedExp(vbc / params.Vt);
+    const double TRANSPORT = params.Is * (EXP_BE - EXP_BC);           // emitter-collector
+    const double BC_DIODE = (params.Is / params.Br) * (EXP_BC - 1.0); // base-collector junction
+    return TRANSPORT - BC_DIODE;
   }
 
   /**
@@ -107,8 +116,8 @@ struct BjtEbersMoll {
    */
   [[nodiscard]] static double baseCurrent(double vbe, double vbc,
                                           const BjtEbersMollParams& params) noexcept {
-    const double IBF = (params.Is / params.Bf) * (std::exp(vbe / params.Vt) - 1.0);
-    const double IBR = (params.Is / params.Br) * (std::exp(vbc / params.Vt) - 1.0);
+    const double IBF = Junction::current(vbe, params.Is / params.Bf, params.Vt);
+    const double IBR = Junction::current(vbc, params.Is / params.Br, params.Vt);
     return IBF + IBR;
   }
 
@@ -144,13 +153,13 @@ struct BjtEbersMoll {
   [[nodiscard]] static double transconductance(double vbe, double vbc,
                                                const BjtEbersMollParams& params) noexcept {
     (void)vbc; // Unused, but kept for API consistency
-    return (params.Is / params.Vt) * std::exp(vbe / params.Vt);
+    return Junction::conductance(vbe, params.Is, params.Vt);
   }
 
   /**
    * @brief Compute output conductance go = dIc/dVbc for Newton-Raphson.
    *
-   * go = -(Is/(Br*Vt)) * exp(Vbc/Vt)
+   * go = -(Is/Vt) * (1 + 1/Br) * exp(Vbc/Vt)
    *
    * @param vbe Base-emitter voltage in volts (unused for go).
    * @param vbc Base-collector voltage in volts.
@@ -162,7 +171,7 @@ struct BjtEbersMoll {
   [[nodiscard]] static double outputConductance(double vbe, double vbc,
                                                 const BjtEbersMollParams& params) noexcept {
     (void)vbe; // Unused, but kept for API consistency
-    return -(params.Is / (params.Br * params.Vt)) * std::exp(vbc / params.Vt);
+    return -(1.0 + 1.0 / params.Br) * Junction::conductance(vbc, params.Is, params.Vt);
   }
 
   /**
@@ -180,7 +189,7 @@ struct BjtEbersMoll {
   [[nodiscard]] static double baseConductanceBE(double vbe, double vbc,
                                                 const BjtEbersMollParams& params) noexcept {
     (void)vbc; // Unused
-    return (params.Is / (params.Bf * params.Vt)) * std::exp(vbe / params.Vt);
+    return Junction::conductance(vbe, params.Is / params.Bf, params.Vt);
   }
 
   /**
@@ -198,7 +207,7 @@ struct BjtEbersMoll {
   [[nodiscard]] static double baseConductanceBC(double vbe, double vbc,
                                                 const BjtEbersMollParams& params) noexcept {
     (void)vbe; // Unused
-    return (params.Is / (params.Br * params.Vt)) * std::exp(vbc / params.Vt);
+    return Junction::conductance(vbc, params.Is / params.Br, params.Vt);
   }
 
   /**
@@ -214,6 +223,11 @@ struct BjtEbersMoll {
    *   gbe = dIb/dVbe, gbc = dIb/dVbc
    *   Ic_eq = Ic - gm*Vbe - go*Vbc
    *   Ib_eq = Ib - gbe*Vbe - gbc*Vbc
+   *
+   * Ic is stamped as a current from collector to emitter and Ib as a current
+   * from base to emitter, each a sum of two controlled sources (one per
+   * junction voltage) and its equivalent current. The emitter row then
+   * carries -(Ic + Ib).
    *
    * @param mna MNA system to stamp into.
    * @param collectorNet Collector net ID.
@@ -241,23 +255,15 @@ struct BjtEbersMoll {
     const double IC_EQ = IC - GM * vbe - GO * vbc;
     const double IB_EQ = IB - GBE * vbe - GBC * vbc;
 
-    // Stamp collector current: Ic controlled by Vbe and Vbc.
-    // KNOWN LIMITATION: addConductance stamps symmetrically, which is
-    // incorrect for the VCCS (transconductance) terms below. The
-    // symmetric stamp is sufficient for per-device tests but does not
-    // converge at circuit-level DC. A proper asymmetric stamp via
-    // addGEntry is required to enable circuit-level BJT DC tests.
-    mna.addConductance(collectorNet, baseNet, GM);       // dIc/dVbe term
-    mna.addConductance(collectorNet, emitterNet, -GM);   // -dIc/dVbe term
-    mna.addConductance(collectorNet, baseNet, GO);       // dIc/dVbc term
-    mna.addConductance(collectorNet, collectorNet, -GO); // -dIc/dVbc term
-    mna.addCurrent(collectorNet, emitterNet, IC_EQ);
+    // Collector current: from collector to emitter, controlled by Vbe and Vbc
+    mna.addTransconductance(collectorNet, emitterNet, baseNet, emitterNet, GM);
+    mna.addTransconductance(collectorNet, emitterNet, baseNet, collectorNet, GO);
+    mna.addCurrent(collectorNet, emitterNet, -IC_EQ);
 
-    // Stamp base current: Ib controlled by Vbe and Vbc
-    mna.addConductance(baseNet, baseNet, GBE + GBC); // dIb/dVbe + dIb/dVbc
-    mna.addConductance(baseNet, emitterNet, -GBE);   // -dIb/dVbe term
-    mna.addConductance(baseNet, collectorNet, -GBC); // -dIb/dVbc term
-    mna.addCurrent(baseNet, emitterNet, IB_EQ);
+    // Base current: from base to emitter, controlled by Vbe and Vbc
+    mna.addTransconductance(baseNet, emitterNet, baseNet, emitterNet, GBE);
+    mna.addTransconductance(baseNet, emitterNet, baseNet, collectorNet, GBC);
+    mna.addCurrent(baseNet, emitterNet, -IB_EQ);
   }
 
   /**

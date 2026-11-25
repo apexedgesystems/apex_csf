@@ -425,13 +425,13 @@ TEST(AtomicCellTest, PmosNorPlainLoad_InputAHigh_VOL_BSIM3) {
   EXPECT_LT(VOUT, VTH_ENH) << "VOL must be below VTH for downstream NOR to register LOW";
 }
 
-/** @test Same plain-load NOR but stamped with Level2 (no BSIM3). Cross-check
- *        against the BSIM3 result -- if both report similar VOH, the deficit
- *        isn't a BSIM3 weak-inversion artifact. */
+/** @test Same plain-load NOR stamped with Level2 (no BSIM3) -- VOH check. Both
+ *        gates sit at VDD, so neither pull-down conducts (each needs its gate
+ *        below its source) and the depletion load holds OUT at the supply. */
 TEST(AtomicCellTest, PmosNorPlainLoad_VOH_L2) {
-  const double VOUT = solveDepletionNor(0.0, 0.0, KP * WL_ENH, KP * WL_DEP,
+  const double VOUT = solveDepletionNor(VDD, VDD, KP * WL_ENH, KP * WL_DEP,
                                         /*n_factor=*/0.0, /*useBsim3=*/false);
-  EXPECT_GT(VOUT, VTH_ENH) << "VOH should be above logic threshold";
+  EXPECT_GT(VOUT, VDD - 0.01) << "VOH should sit at the supply with both pull-downs off";
   EXPECT_LT(VOUT, VDD + 0.01) << "VOH cannot exceed VDD";
 }
 
