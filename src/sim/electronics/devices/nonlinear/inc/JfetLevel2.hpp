@@ -2,20 +2,16 @@
 #define APEX_JFETLEVEL2_HPP
 /**
  * @file JfetLevel2.hpp
- * @brief Advanced JFET model with gate capacitance and improved saturation.
+ * @brief JFET model with gate leakage and subthreshold conduction.
  *
- * Extends JfetShichman with:
- * - Gate-channel capacitance: Voltage-dependent Cgd, Cgs
- * - Improved saturation model: Better transition from linear to saturation
- * - Gate leakage current: Reverse-biased gate junction
- * - Temperature dependence: Vp(T), Beta(T) modeling
- * - Subthreshold conduction: Weak inversion below pinch-off
+ * Above pinch-off the drain current is the JfetShichman square law. This
+ * model adds to it:
+ * - Gate leakage current: the gate-source junction, reverse biased in
+ *   normal operation
+ * - Subthreshold conduction: a small drain current below pinch-off
  *
- * More accurate than Shichman for:
- * - High-frequency amplifiers (capacitance matters)
- * - Precision analog circuits (gate leakage, temp drift)
- * - Low-noise applications (gate current noise)
- * - Temperature-sensitive designs
+ * Use it where the gate current matters (high-impedance inputs, precision
+ * analog) or where the device is biased near pinch-off.
  *
  * This is a PHYSICS MODEL (Layer 2) that uses Layer 1 Newton-Raphson solver
  * for nonlinear circuit simulation.
@@ -25,6 +21,8 @@
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/JfetShichman.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/Junction.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -37,8 +35,8 @@ using algorithms::mna::NetID;
 /**
  * @brief JFET Level 2 model parameters.
  *
- * Physical parameters for advanced N-channel or P-channel JFET modeling.
- * Default values represent a typical N-channel JFET (e.g., 2N5457).
+ * Physical parameters of an N-channel JFET. Default values represent a
+ * typical small-signal device.
  */
 struct JfetLevel2Params {
   // Basic parameters (Shichman)
@@ -51,22 +49,15 @@ struct JfetLevel2Params {
   double n = 1.0;    ///< Gate junction ideality factor
   double Vt = 0.026; ///< Thermal voltage (V), kT/q ~= 26mV at 300K
 
-  // Capacitance (optional, for AC analysis)
-  double Cgd0 = 1e-12; ///< Zero-bias gate-drain capacitance (F)
-  double Cgs0 = 1e-12; ///< Zero-bias gate-source capacitance (F)
-
-  // Improved saturation
-  double alpha = 1.0; ///< Saturation transition smoothness (unitless)
-
   // Subthreshold
-  double n_sub = 1.5; ///< Subthreshold slope factor
+  double n_sub = 1.5; ///< Subthreshold slope factor: the slope voltage is n_sub*Vt
 };
 
 /**
  * @brief JFET Level 2 model.
  *
- * Provides I-V characteristics with gate leakage, improved saturation
- * transition, and subthreshold conduction.
+ * Provides I-V characteristics with gate leakage and subthreshold
+ * conduction.
  *
  * Usage:
  * @code
@@ -83,11 +74,18 @@ struct JfetLevel2Params {
  */
 struct JfetLevel2 {
   /**
-   * @brief Compute drain current (improved saturation model).
+   * @brief Compute drain current.
    *
-   * Id = Beta * f(Vgs, Vds) * (1 + lambda*Vds)
+   * With Vgst = Vgs - Vp, at and above the turn-on voltage
+   * Von = Vp + n_sub*Vt the current is the square law:
+   *   Linear (Vds < Vgst):      Id = 2*Beta*(Vgst*Vds - Vds^2/2) * (1 + lambda*Vds)
+   *   Saturation (Vds >= Vgst): Id = Beta*Vgst^2 * (1 + lambda*Vds)
+   * The two meet at Vds = Vgst with the same value and slope.
    *
-   * where f(Vgs, Vds) provides smooth transition between regions.
+   * Below Von the current is the square-law current at Von, scaled by
+   * exp((Vgs - Von) / (n_sub*Vt)). It meets the square law at Von, and it
+   * saturates in Vds as the square law does there. The slope in Vgs steps
+   * at Von.
    *
    * @param vgs Gate-source voltage in volts
    * @param vds Drain-source voltage in volts
@@ -98,33 +96,19 @@ struct JfetLevel2 {
    */
   [[nodiscard]] static double drainCurrent(double vgs, double vds,
                                            const JfetLevel2Params& params) noexcept {
-    const double VGST = vgs - params.Vp;
+    const double SLOPE_V = params.n_sub * params.Vt;
+    const double VON = params.Vp + SLOPE_V;
 
-    // Cutoff/subthreshold region
-    if (VGST <= 0.0) {
-      // Subthreshold current (weak inversion)
-      const double I_SUB =
-          params.Beta * params.Vt * params.Vt * std::exp(VGST / (params.n_sub * params.Vt));
-      return I_SUB * vds;
+    // The square law of the basic model, held at turn-on for a gate below it
+    const double ID_SQUARE_LAW = JfetShichman::current(
+        std::max(vgs, VON), vds,
+        JfetShichmanParams{.Beta = params.Beta, .Vp = params.Vp, .lambda = params.lambda});
+    if (vgs >= VON) {
+      return ID_SQUARE_LAW;
     }
 
-    const double CHANNEL_MOD = 1.0 + params.lambda * vds;
-
-    // Linear region
-    if (vds < VGST) {
-      const double ID_LINEAR = 2.0 * params.Beta * (VGST * vds - 0.5 * vds * vds);
-      return ID_LINEAR * CHANNEL_MOD;
-    }
-
-    // Saturation region (improved transition)
-    const double VDSAT = VGST / params.alpha;
-    const double ID_SAT = params.Beta * VGST * VGST;
-
-    // Smooth transition using tanh
-    const double TRANSITION = 0.5 * (1.0 + std::tanh(params.alpha * (vds - VDSAT)));
-    const double ID = ID_SAT * TRANSITION;
-
-    return ID * CHANNEL_MOD;
+    // Subthreshold: exponential in the gate voltage below turn-on
+    return ID_SQUARE_LAW * std::exp((vgs - VON) / SLOPE_V);
   }
 
   /**
@@ -141,7 +125,7 @@ struct JfetLevel2 {
    * @note RT-safe (no allocations, pure math).
    */
   [[nodiscard]] static double gateCurrent(double vgs, const JfetLevel2Params& params) noexcept {
-    return params.Is * (std::exp(vgs / (params.n * params.Vt)) - 1.0);
+    return Junction::current(vgs, params.Is, params.n * params.Vt);
   }
 
   /**
@@ -190,7 +174,7 @@ struct JfetLevel2 {
    * @note RT-safe (no allocations, pure math).
    */
   [[nodiscard]] static double gateConductance(double vgs, const JfetLevel2Params& params) noexcept {
-    return (params.Is / (params.n * params.Vt)) * std::exp(vgs / (params.n * params.Vt));
+    return Junction::conductance(vgs, params.Is, params.n * params.Vt);
   }
 
   /**
@@ -221,15 +205,15 @@ struct JfetLevel2 {
     const double GG = gateConductance(vgs, params);
     const double IEQ_G = IG - GG * vgs;
 
-    // Stamp drain current (VCCS)
-    mna.addConductance(drainNet, gateNet, GM);
-    mna.addConductance(drainNet, sourceNet, -GM);
+    // Drain current: gm controlled by Vgs, gds across drain-source; the
+    // equivalent source leaves the drain net
+    mna.addTransconductance(drainNet, sourceNet, gateNet, sourceNet, GM);
     mna.addConductance(drainNet, sourceNet, GDS);
-    mna.addCurrent(drainNet, sourceNet, IEQ_D);
+    mna.addCurrent(drainNet, sourceNet, -IEQ_D);
 
-    // Stamp gate leakage
+    // Gate leakage: a junction from gate to source
     mna.addConductance(gateNet, sourceNet, GG);
-    mna.addCurrent(gateNet, sourceNet, IEQ_G);
+    mna.addCurrent(gateNet, sourceNet, -IEQ_G);
   }
 };
 

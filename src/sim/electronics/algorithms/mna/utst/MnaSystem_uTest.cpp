@@ -74,6 +74,36 @@ TEST(MnaSystemTest, CurrentSourceWithResistorComputesVoltage) {
   EXPECT_NEAR(R.nodeVoltages[1], 0.5, TOL);
 }
 
+/** @test A transconductance moves gm * Vctrl between its output nets and loads neither control net
+ */
+TEST(MnaSystemTest, TransconductanceDrivesOutputFromControlVoltage) {
+  // Net 0 = GND. Control nets 1 and 2 are held by sources; output nets 3 and
+  // 4 each have a load to ground. No output or control net is ground, so each
+  // of the four stamped entries decides a result.
+  constexpr double GM = 2e-3;
+  constexpr double V_CTRL_POS = 1.5;
+  constexpr double V_CTRL_NEG = 0.5;
+  constexpr double R_FROM = 1000.0;
+  constexpr double R_TO = 500.0;
+
+  MnaSystem mna(5);
+  const std::size_t POS_SOURCE = mna.addVoltageSource(1, 0, V_CTRL_POS);
+  const std::size_t NEG_SOURCE = mna.addVoltageSource(2, 0, V_CTRL_NEG);
+  mna.addConductance(3, 0, 1.0 / R_FROM);
+  mna.addConductance(4, 0, 1.0 / R_TO);
+  mna.addTransconductance(/*from=*/3, /*to=*/4, /*ctrlPos=*/1, /*ctrlNeg=*/2, GM);
+
+  const auto R = mna.solve();
+  ASSERT_TRUE(R.success);
+
+  // 2 mA leaves net 3 through the element and enters net 4.
+  const double I_OUT = GM * (V_CTRL_POS - V_CTRL_NEG);
+  EXPECT_NEAR(R.nodeVoltages[3], -I_OUT * R_FROM, TOL);
+  EXPECT_NEAR(R.nodeVoltages[4], I_OUT * R_TO, TOL);
+  EXPECT_NEAR(R.branchCurrents[POS_SOURCE], 0.0, TOL);
+  EXPECT_NEAR(R.branchCurrents[NEG_SOURCE], 0.0, TOL);
+}
+
 /** @test Parallel resistors give equivalent conductance */
 TEST(MnaSystemTest, ParallelResistorsEquivalentConductance) {
   MnaSystem mna(2);

@@ -20,6 +20,7 @@
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/Junction.hpp"
 
 #include <cmath>
 
@@ -73,8 +74,7 @@ struct DiodeShockley {
    * @note RT-safe (no allocations, pure math).
    */
   [[nodiscard]] static double current(double vDiode, const DiodeShockleyParams& params) noexcept {
-    const double EXPONENT = vDiode / (params.n * params.Vt);
-    return params.Is * (std::exp(EXPONENT) - 1.0);
+    return Junction::current(vDiode, params.Is, params.n * params.Vt);
   }
 
   /**
@@ -90,8 +90,7 @@ struct DiodeShockley {
    */
   [[nodiscard]] static double conductance(double vDiode,
                                           const DiodeShockleyParams& params) noexcept {
-    const double EXPONENT = vDiode / (params.n * params.Vt);
-    return (params.Is / (params.n * params.Vt)) * std::exp(EXPONENT);
+    return Junction::conductance(vDiode, params.Is, params.n * params.Vt);
   }
 
   /**
@@ -101,13 +100,16 @@ struct DiodeShockley {
    *   I_total = I(V) = g * V + Ieq
    *   where: g = dI/dV, Ieq = I - g*V
    *
+   * The device carries Ieq out of the anode net and into the cathode net,
+   * so the injected-current vector takes it with the opposite sign.
+   *
    * Stamps:
    *   G[anode][anode] += g
    *   G[anode][cathode] -= g
    *   G[cathode][anode] -= g
    *   G[cathode][cathode] += g
-   *   I[anode] += Ieq
-   *   I[cathode] -= Ieq
+   *   I[anode] -= Ieq
+   *   I[cathode] += Ieq
    *
    * @param mna MNA system to stamp into.
    * @param anodeNet Anode net ID.
@@ -126,8 +128,8 @@ struct DiodeShockley {
     // Stamp linearized conductance
     mna.addConductance(anodeNet, cathodeNet, G);
 
-    // Stamp equivalent current source
-    mna.addCurrent(anodeNet, cathodeNet, IEQ);
+    // Stamp equivalent current source (leaves the anode net)
+    mna.addCurrent(anodeNet, cathodeNet, -IEQ);
   }
 };
 
