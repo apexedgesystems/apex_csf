@@ -297,7 +297,7 @@ bool writeStepSchedule(const std::filesystem::path& dir) {
 
   std::array<std::uint8_t, sizeof(header) + sizeof(step)> image{};
   std::memcpy(image.data(), &header, sizeof(header));
-  std::memcpy(image.data() + sizeof(header), &step, sizeof(step));
+  std::memcpy(&image[sizeof(header)], &step, sizeof(step));
   return writeTprm(dir, SCHEDULER_UID, image.data(), image.size());
 }
 

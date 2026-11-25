@@ -171,7 +171,7 @@ bool writeSchedule(const std::filesystem::path& dir, std::uint32_t hz) {
 
   std::array<std::uint8_t, sizeof(header) + sizeof(step)> image{};
   std::memcpy(image.data(), &header, sizeof(header));
-  std::memcpy(image.data() + sizeof(header), &step, sizeof(step));
+  std::memcpy(&image[sizeof(header)], &step, sizeof(step));
 
   sc::TprmPayloadHeader prelude{};
   prelude.magic = sc::TPRM_PAYLOAD_MAGIC;
