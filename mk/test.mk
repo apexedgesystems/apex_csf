@@ -394,15 +394,18 @@ check-data-db-contract: tools-build
 # run and whether the gate images are rebuilt. The rules live in the script the
 # workflow calls; the cases beside the fixture name hold them to it, and a
 # recorded crate graph with two links the rules miss holds the crate check to
-# its refusal. A table in which every case is wrong holds the check to
-# failing each. An image input written in a form the script does not read has
-# to stop every way it is run, so each is run in a scratch tree whose base
-# Dockerfile is the fixture of such inputs. What the workflow acts on is the
+# its refusal. A table in which every case is wrong holds the check to failing
+# each. An image input written in a form the script does not read has to stop
+# every way it is run, so each is run in a scratch tree whose base Dockerfile
+# is the fixture of such inputs. The cases also hold whole Dockerfiles, byte
+# for byte, to the way docker puts lines together; one of them (a COPY after a
+# line that ends in two backslashes) is run in that tree too, where the command
+# and --dockerfiles have to select it. What the workflow acts on is the
 # command's printed lines, so printed.txt records them: each `#` line names
 # changed paths (none for a bare `#`) and the lines after it are what the
 # command prints for them. Running the command for every `#` line has to
-# reproduce the file exactly, and every output the workflow maps or a job
-# reads has to be one of those lines. Runs on a bare host (stock Python).
+# reproduce the file exactly, and every output the workflow maps or a job reads
+# has to be one of those lines. Runs on a bare host (stock Python).
 CI_WORKFLOW := .github/workflows/ci.yml
 CI_CLASSIFY := tools/build/py/bin/ci-classify.py
 CI_CLASSIFY_FIXTURES := tools/build/fixtures/ci-classify
@@ -412,7 +415,7 @@ CI_CLASSIFY_MISSED := $(CI_CLASSIFY_FIXTURES)/crates_missed.json
 check-ci-classify:
 	@python3 "$(CI_CLASSIFY)" --check "$(CI_CLASSIFY_CASES)"
 	@out=$$(python3 "$(CI_CLASSIFY)" --check "$(CI_CLASSIFY_FIXTURES)/failing_cases.txt" 2>&1); rc=$$?; \
-	  if [ $$rc -ne 1 ] || ! printf '%s\n' "$$out" | grep -qxF '[check-ci-classify] 3 cases, 3 failed'; then \
+	  if [ $$rc -ne 1 ] || ! printf '%s\n' "$$out" | grep -qxF '[check-ci-classify] 4 cases, 4 failed'; then \
 	    printf '%s\n' "$$out"; \
 	    echo "[check-ci-classify] the check passed a case of the table in which every case is wrong (exit $$rc)"; \
 	    exit 1; \
@@ -432,6 +435,13 @@ check-ci-classify:
 	      fi; \
 	    done; \
 	  done; \
+	  printf 'FROM scratch AS bakes\nRUN true \\\\\nCOPY tools/uv.lock /tmp/\n' > "$$scratch/docker/base.Dockerfile"; \
+	  bake=$$(cd "$$scratch" && echo tools/uv.lock | python3 "$(abspath $(CI_CLASSIFY))" 2>&1 | grep -x 'bakes_py=true'); \
+	  named=$$(cd "$$scratch" && echo tools/uv.lock | python3 "$(abspath $(CI_CLASSIFY))" --dockerfiles 2>&1); \
+	  if [ "$$bake" != "bakes_py=true" ] || [ "$$named" != "docker/base.Dockerfile" ]; then \
+	    echo "[check-ci-classify] a COPY after a line that ends in two backslashes is not read (bake: [$$bake], rebuilt: [$$named])"; \
+	    fail=1; \
+	  fi; \
 	  rm -rf "$$scratch"; \
 	  [ $$fail -eq 0 ] || exit 1
 	@out=$$(python3 "$(CI_CLASSIFY)" --check-crates < "$(CI_CLASSIFY_MISSED)" 2>&1); rc=$$?; \

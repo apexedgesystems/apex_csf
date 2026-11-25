@@ -190,3 +190,74 @@ cpp rust_build rust_ops rust_analysis py sh | -
 # A file that changes the continuation character is refused whole, at its
 # directive.
 @refused tools/build/fixtures/ci-classify/escape_directive.Dockerfile.txt
+
+# --- how lines are put together, held to docker's parser --------------------------
+# Each case is the bytes of a whole Dockerfile on one line, written with
+# escapes (\n, \\ for one backslash, \t, \r, \xNN for any byte: \x23 the
+# comment sign, \x60 a backtick), and what it must be read as: `stage:path`
+# per source, `-` for none, or `refused:` and the line the refusal names.
+#
+# Two backslashes end a line: the RUN is whole and the COPY after it is read.
+@reader bakes:tools/uv.lock | FROM busybox AS bakes\nRUN true \\\\\nCOPY tools/uv.lock /tmp/\n
+@reader bakes:tools/uv.lock | FROM busybox AS bakes\nRUN true \\\\ \t\nCOPY tools/uv.lock /tmp/\n
+# One backslash continues, also with spaces or tabs after it and before a
+# carriage return and newline.
+@reader bakes:a.bin bakes:b.bin | FROM scratch AS bakes\n \tCOPY a.bin \\ \t\n     b.bin /tmp/\n
+@reader bakes:a.bin bakes:b.bin | FROM scratch AS bakes\r\nCOPY a.bin \\\r\n     b.bin /tmp/\r\n
+# A carriage return anywhere else is a space between two words, not a line's end.
+@reader bakes:a.bin bakes:b.bin | FROM scratch AS bakes\nCOPY a.bin\rb.bin /tmp/\n
+# Anything else after the backslash ends the line there (a form feed here).
+@reader bakes:b.bin     | FROM busybox AS bakes\nRUN true \\\x0c\nCOPY b.bin /tmp/\n
+# The next line is joined as written: no space comes between the two.
+@reader bakes:tools/uv.lock | FROM scratch AS bakes\nCOPY to\\\nols/uv.lock /tmp/\n
+# An empty line inside a continued instruction is skipped, like a comment.
+@reader bakes:a.bin bakes:b.bin | FROM scratch AS bakes\nCOPY a.bin \\\n\n  \t\n     \x23 c.bin\n     b.bin /tmp/\n
+# The file may end inside a continued instruction, with no newline.
+@reader bakes:a.bin     | FROM scratch AS bakes\nCOPY a.bin /tmp/ \\
+# A byte-order mark is dropped before the first line is read: the stage is
+# named, and a directive behind the mark is a directive.
+@reader bakes:a.bin     | \xef\xbb\xbfFROM scratch AS bakes\nCOPY a.bin /tmp/\n
+@reader refused:1       | \xef\xbb\xbf\x23 escape=\x60\nFROM scratch AS bakes\nCOPY a.bin \x60\n     b.bin /tmp/\n
+# A directive after anything else, an empty line included, is a comment.
+@reader :a.bin :b.bin   | \n\x23 escape=\x60\nFROM scratch\nCOPY a.bin \\\n     b.bin /tmp/\n
+# A refusal names the line its instruction starts on.
+@reader refused:4       | FROM scratch AS bakes\n\x23 comment\n\nCOPY a.bin \\\n     ${B} /tmp/\n
+
+# --- flags and sources docker reads another way: refused --------------------------
+# A quoted flag: docker takes the quotes off and keeps the space, so the
+# --from inside it is not a flag and the mount after it is one.
+@reader refused:2       | FROM scratch AS bakes\nCOPY --exclude="x --from=y" a.bin /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nCOPY --exclude='x --from=y' a.bin /tmp/\n
+@reader refused:2       | FROM busybox AS bakes\nRUN --mount=type=cache,target="/a b" --mount=type=bind,target=/src cp /src/a.bin /tmp/\n
+@reader refused:2       | FROM busybox AS bakes\nRUN --mount=type=b\\ind,target=/src cp /src/a.bin /tmp/\n
+# A bind mount of the repository however its type is spelled, or with a
+# `from` that names nothing; a cache mount spelled the same ways is no input.
+@reader refused:2       | FROM busybox AS bakes\nRUN --mount=type=BIND,target=/src cp /src/a.bin /tmp/\n
+@reader refused:2       | FROM busybox AS bakes\nRUN --mount=TYPE=bind,target=/src cp /src/a.bin /tmp/\n
+@reader refused:2       | FROM busybox AS bakes\nRUN --mount=type=bind,from=,target=/src cp /src/a.bin /tmp/\n
+@reader refused:3       | FROM busybox AS bakes\nARG KIND=bind\nRUN --mount=type=${KIND},target=/src cp /src/a.bin /tmp/\n
+@reader -               | FROM busybox AS bakes\nRUN --mount=TYPE=Cache,target=/var/cache/fixture --mount=type=bind,FROM=busybox,target=/mnt true\n
+# A space outside ASCII does not end a flag for docker (an em space here), so
+# the --from after it is part of the flag before it.
+@reader refused:2       | FROM scratch AS bakes\nCOPY --exclude=x\xe2\x80\x83--from=y a.bin /tmp/\n
+# A --from that names nothing takes from the repository; a here-document is
+# refused whatever comes before it.
+@reader bakes:a.bin     | FROM scratch AS bakes\nCOPY --from= a.bin /tmp/\n
+@reader refused:4       | FROM scratch AS other\nCOPY a.bin /a.bin\nFROM scratch\nCOPY --from=other <<END /tmp/inline.txt\nFROM scratch AS bakes\nEND\nCOPY b.bin /tmp/\n
+# A source with a colon that is not a URL docker fetches; a character outside
+# printable ASCII, written out or as a JSON escape; a byte that is not UTF-8.
+@reader -               | FROM scratch AS bakes\nADD https://example.com/a.bin http://example.com/b.bin /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nADD ftp://example.com/a.bin /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nADD HTTP://example.com/a.bin /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nADD git@example.com:fixture/repository.git /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nCOPY a\xc2\xa0b.bin /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nCOPY a.bin\x1cb.bin /tmp/\n
+@reader refused:2       | FROM scratch AS bakes\nCOPY ["a\\u00e9.bin", "/tmp/"]\n
+@reader refused:2       | FROM scratch AS bakes\nCOPY a\xff.bin /tmp/\n
+# In a comment such a byte is no concern of the reader's, nor is a character
+# outside ASCII in what a RUN runs.
+@reader bakes:a.bin     | FROM busybox AS bakes\n\x23 caf\xe9 \xff\nRUN echo caf\xc3\xa9\nCOPY a.bin /tmp/\n
+# Two stars in a segment are one star to docker: one directory, not any depth.
+@reader bakes:tools/**/uv.lock | FROM scratch AS bakes\nCOPY tools/**/uv.lock /tmp/\n
+# A keyword docker would lower to ONBUILD (a dotted capital I).
+@reader refused:2       | FROM scratch AS bakes\nONBU\xc4\xb0LD COPY a.bin /tmp/\n

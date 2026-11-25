@@ -49,13 +49,17 @@ input: a Cargo.toml. cargo needs every member manifest to read the workspace,
 but what it fetches is what Cargo.lock lists; a manifest edit that changed
 that would change the lock.
 
-A source is read in the shell form or the JSON form, with a `*` or `?` in a
-path segment. An input written any other way (a build variable, a quoted
-word, a character class, a here-document, a RUN that mounts the repository
-or carries a here-document) is refused, and so is a whole file whose
-`# escape=` directive changes the continuation character: the run ends
-nonzero with the file and line, so the input is rewritten where it was
-added instead of going unseen by every later change.
+A Dockerfile's lines are put together as docker's parser does it: a line
+that ends in one backslash continues on the next, and one that ends in two
+does not (instructions() has the rest). A source is read in the shell form
+or the JSON form, with a `*` or `?` in a path segment. An input written any
+other way (a build variable, a quoted word, a character class, a colon that
+is not a fetched URL's, a character outside printable ASCII, a
+here-document, a quoted or escaped flag, a RUN that mounts the repository)
+is refused, and so is a whole file whose `# escape=` directive changes the
+continuation character: the run ends nonzero with the file and line, so the
+input is rewritten where it was added instead of going unseen by every
+later change.
 
 Who rebuilds for a changed bake follows from the jobs its own rule selects
 (not the rest of its role's suites, which do not install from it): the
@@ -84,14 +88,17 @@ A line `@gates <Dockerfile>...` makes the named files the gate images for the
 cases after it (a fixture Dockerfile, to pin how copies are read); `@gates`
 alone returns to the real ones. A line `@refused <Dockerfile>...` is a case
 per COPY, ADD, RUN and ONBUILD of the named files, and per escape directive
-that is not read, each of which must be refused. It
-then reads every Dockerfile under docker/, so an input the reader refuses
-fails in the pull request that writes it. It is how `make check-ci-classify`
+that is not read, each of which must be refused. A line
+`@reader <reading> | <Dockerfile>` is the bytes of a whole Dockerfile on one
+line, written with escapes, and what it must be read as (read_as() has the
+form). The check also reads every Dockerfile under docker/, so an input the
+reader refuses fails in the pull request that writes it. It is how `make check-ci-classify`
 holds the rules to their contract.
 
 stdlib only: this runs on the bare CI host before any image exists.
 """
 
+import codecs
 import fnmatch
 import glob
 import json
@@ -99,6 +106,7 @@ import os
 import posixpath
 import re
 import sys
+import tempfile
 
 RUST_JOBS = ("rust_build", "rust_ops", "rust_analysis")
 JOBS = ("cpp",) + RUST_JOBS + ("py", "sh")
@@ -183,26 +191,44 @@ BAKES_STAGE = "bakes"
 
 # A parser directive: `# key=value`, spaces allowed around each part.
 PARSER_DIRECTIVE = re.compile(r"\s*#\s*([A-Za-z][A-Za-z0-9]*)\s*=\s*(.*?)\s*$")
-# An instruction's leading --flags, then its operands.
-FLAGS_THEN_REST = re.compile(r"((?:--\S+(?:\s+|$))*)(.*)", re.DOTALL)
-# What repository_sources does not read in a source: a build variable, shell
-# quoting, a character class, an escape, a here-document.
-UNREAD_IN_SOURCE = re.compile(r"""[$"'\[\\<]""")
-# An ADD source fetched from elsewhere.
-REMOTE_SOURCE = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*://|git@")
+# Where docker continues an instruction on the next line: a backslash that no
+# backslash precedes, then only spaces or tabs. Two backslashes end the line.
+CONTINUED = re.compile(r"(?<!\\)\\[ \t]*\Z")
+# What docker separates the words of an instruction on.
+WORD_BREAK = re.compile(r"[\t\v\f\r ]+")
+# One of an instruction's leading --flags. docker ends a flag at an ASCII
+# space only.
+FLAG = re.compile(r"(--\S+)(?:\s+|$)", re.ASCII)
+# What repository_sources does not read in a flag: docker would take a quoted
+# or escaped part out of it, and split it on a byte outside ASCII.
+UNREAD_IN_FLAG = re.compile(r"""["'\\]|[^!-~]""")
+# What it does not read in a source: a build variable, shell quoting, a
+# character class, an escape, a colon (a remote that is not a URL, or a path
+# docker takes for one), and a character outside printable ASCII, which git
+# prints quoted in a changed path.
+UNREAD_IN_SOURCE = re.compile(r"""[$"'\[\\:]|[^ -~]""")
+# An ADD source docker fetches: a URL, spelled as docker tests for it.
+REMOTE_SOURCE = re.compile(r"https?://")
 
 
 def instructions(dockerfile):
     """Yield (line number, keyword, text after it) for each instruction of a Dockerfile.
 
-    Comment lines are dropped and a trailing backslash joins the next line,
-    the order docker applies them in. The backslash is docker's default: a
-    file whose leading `# escape=` directive names another character yields
-    that directive alone, as ESCAPE, since nothing after it can be read by
-    these rules.
+    The lines are put together as docker's parser does it. A byte-order mark
+    is dropped and a line ends at a newline, a carriage return before it
+    aside. A comment line is dropped, also inside a continued instruction,
+    where an empty line is dropped too. A line that ends in one backslash
+    (spaces or tabs may follow) continues on the next, joined to it as
+    written, with no space added; a line that ends in two does not. The last
+    instruction may end the file while continued. A byte that is not UTF-8
+    stays in the text as one character outside ASCII.
+
+    The backslash is docker's default: a file whose leading `# escape=`
+    directive names another character yields that directive alone, as
+    ESCAPE, since nothing after it can be read by these rules.
     """
-    with open(dockerfile, encoding="utf-8") as handle:
-        lines = handle.read().split("\n")
+    with open(dockerfile, encoding="utf-8-sig", errors="surrogateescape", newline="") as handle:
+        lines = [line.rstrip("\r") for line in handle.read().split("\n")]
     # Parser directives are the `# key=value` lines before anything else.
     for number, line in enumerate(lines, 1):
         directive = PARSER_DIRECTIVE.match(line)
@@ -211,19 +237,19 @@ def instructions(dockerfile):
         if directive.group(1).lower() == "escape" and directive.group(2) != "\\":
             yield number, "ESCAPE", directive.group(2)
             return
-    first, joined = 0, ""
+    joined = []  # [the line an instruction starts on, its text]
+    continued = False
     for number, line in enumerate(lines, 1):
-        if line.lstrip().startswith("#"):
+        if line.lstrip().startswith("#") or (continued and not line.strip()):
             continue
-        first = first if joined else number
-        line = line.rstrip()
-        if line.endswith("\\"):
-            joined += line[:-1] + " "
-            continue
-        words = (joined + line).split(None, 1)
-        joined = ""
-        if words:
-            yield first, words[0].upper(), words[1] if len(words) > 1 else ""
+        if not continued:
+            joined.append([number, ""])
+        continued = bool(CONTINUED.search(line))
+        joined[-1][1] += CONTINUED.sub("", line)
+    for first, text in joined:
+        words = WORD_BREAK.split(text.strip(), 1)
+        if words[0]:
+            yield first, words[0].upper(), words[1].strip() if len(words) > 1 else ""
 
 
 def repository_sources(keyword, rest):
@@ -231,37 +257,60 @@ def repository_sources(keyword, rest):
 
     COPY and ADD, alone or after ONBUILD, in the shell form or the JSON form;
     a path is normalized (`./a/` is `a`) and may hold `*` and `?`. A --from
-    takes from another
-    image or stage and an ADD from a URL, neither from the repository. Raises
-    ValueError for an input written in a form this does not read, so that it
-    is refused where it is written instead of going unseen.
+    that names an image or a stage takes from there, and an ADD of a URL
+    from elsewhere, neither from the repository. Raises ValueError for an
+    input written in a form this does not read, so that it is refused where
+    it is written instead of going unseen.
     """
     if keyword == "ESCAPE":
         raise ValueError(
             "the escape directive sets %s; lines are joined on a backslash only, "
             "so the file's inputs cannot be read" % rest
         )
+    if not keyword.isascii():
+        # docker lowers a keyword by rules that take some letters outside
+        # ASCII to ASCII ones; which instruction this is cannot be told here.
+        raise ValueError("the keyword %s holds a character outside ASCII" % keyword)
     if keyword == "ONBUILD":
         # Deferred to the images built on this one, which are built from the
         # same repository and rebuilt when this one is.
-        deferred = rest.split(None, 1)
+        deferred = WORD_BREAK.split(rest, 1)
         return repository_sources(deferred[0].upper(), deferred[1]) if len(deferred) == 2 else []
-    flags, rest = FLAGS_THEN_REST.match(rest).groups()
-    flags = flags.split()
-    if keyword == "RUN":
-        if "<<" in rest:
+    if keyword not in ("RUN", "COPY", "ADD"):
+        return []
+    flags = []
+    flag = FLAG.match(rest)
+    while flag:
+        flags.append(flag.group(1))
+        rest = rest[flag.end() :]
+        flag = FLAG.match(rest)
+    if "<<" in rest:
+        raise ValueError(
+            "%s with a here-document is not read: the lines of its body "
+            "would be taken for instructions" % keyword
+        )
+    for flag in flags:
+        if UNREAD_IN_FLAG.search(flag):
             raise ValueError(
-                "RUN with a here-document is not read: the lines of its body "
-                "would be taken for instructions"
+                "%s %s is not read (a quoted or escaped part, or a character "
+                "outside ASCII); write the flag out plainly" % (keyword, flag)
             )
+    if keyword == "RUN":
         for flag in flags:
             if not flag.startswith("--mount="):
                 continue
-            options = dict(option.partition("=")[::2] for option in flag[8:].split(","))
-            if options.get("type", "bind") == "bind" and "from" not in options:
+            options = {}
+            for option in flag[len("--mount=") :].split(","):
+                name, _, value = option.partition("=")
+                options[name.lower()] = value
+            kind = options.get("type", "bind")
+            # docker reads the type in any case, after expanding a variable;
+            # an empty `from` is the repository.
+            if "$" in kind or (kind.lower() == "bind" and not options.get("from")):
                 raise ValueError("RUN %s mounts the repository, an input this does not read" % flag)
         return []
-    if keyword not in ("COPY", "ADD") or any(flag.startswith("--from") for flag in flags):
+    # A --from that names nothing takes from the repository.
+    if any(flag.startswith("--from=") and flag != "--from=" for flag in flags):
         return []
     operands = None
     if rest.startswith("["):
@@ -271,7 +320,7 @@ def repository_sources(keyword, rest):
             pass
     # What is not a JSON list of strings docker reads as the shell form.
     if not isinstance(operands, list) or not all(isinstance(word, str) for word in operands):
-        operands = rest.split()
+        operands = WORD_BREAK.split(rest)
     sources = []
     for source in operands[:-1]:
         if keyword == "ADD" and REMOTE_SOURCE.match(source):
@@ -280,8 +329,8 @@ def repository_sources(keyword, rest):
         if UNREAD_IN_SOURCE.search(source) or path.split("/")[0] == "..":
             raise ValueError(
                 "%s source %s is not read (a variable, a quoted word, a character class, a "
-                "here-document or a path outside the repository); write the path out"
-                % (keyword, source)
+                "colon, a character outside printable ASCII or a path outside the "
+                "repository); write the path out" % (keyword, source)
             )
         sources.append(path)
     return sources
@@ -457,6 +506,24 @@ def check_crates(metadata):
     return missed
 
 
+def read_as(text):
+    """Return what a Dockerfile of these bytes is read as, the way a @reader case states it.
+
+    `text` holds one character per byte. The reading is `stage:path` for
+    each source in order (`-` for none), or `refused:` and the line the
+    refusal names.
+    """
+    with tempfile.TemporaryDirectory() as scratch:
+        dockerfile = os.path.join(scratch, "Dockerfile")
+        with open(dockerfile, "wb") as handle:
+            handle.write(text.encode("latin-1"))
+        try:
+            found = copied_sources(dockerfile)
+        except SystemExit as refusal:
+            return "refused:" + str(refusal)[len(dockerfile) + 1 :].split(":")[0]
+    return " ".join("%s:%s" % pair for pair in found) or "-"
+
+
 def check(table):
     """Run every case of a table; return the number that failed."""
     # An input the reader refuses ends the run here, with its file and line.
@@ -471,6 +538,17 @@ def check(table):
                 continue
             if line.startswith("@gates"):
                 gates = tuple(line.split()[1:]) or GATE_DOCKERFILES
+                continue
+            if line.startswith("@reader"):
+                expected, _, text = (part.strip() for part in line[7:].partition("|"))
+                cases += 1
+                got = read_as(codecs.decode(text, "unicode_escape"))
+                if got != expected:
+                    failed += 1
+                    print(
+                        "%s:%d: read as [%s], expected [%s]" % (table, number, got, expected),
+                        file=sys.stderr,
+                    )
                 continue
             if line.startswith("@refused"):
                 for dockerfile in line.split()[1:]:

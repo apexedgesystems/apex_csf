@@ -4,3 +4,4 @@ cpp                     | README.md
 -                       | src/a.cpp
 # A file whose one COPY is read, named as one that must be refused.
 @refused tools/build/fixtures/ci-classify/whole_tree.Dockerfile
+@reader bakes:other.bin | FROM scratch AS bakes\nCOPY a.bin /tmp/\n
