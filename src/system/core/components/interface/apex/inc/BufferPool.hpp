@@ -32,9 +32,9 @@
  *     build bound each update, see Atomic updates)
  *
  * Atomic updates:
- *   The pool's own work is a fixed number of atomic read-modify-write operations: the
- *   exchange in acquire(), the reference-count decrement and the free-map OR in release().
- *   How long one of them takes belongs to the target and the build:
+ *   The pool's own work is atomic read-modify-write operations: in acquire() one exchange
+ *   per attempt, and in release() a fixed number, the reference-count decrement and the
+ *   free-map OR. How long one of them takes belongs to the target and the build:
  *     - x86-64, and AArch64 with the LSE atomic instructions (Armv8.1 and later): one
  *       instruction each in a release build.
  *     - AArch64 without LSE: each is an exclusive load and store repeated until the store
