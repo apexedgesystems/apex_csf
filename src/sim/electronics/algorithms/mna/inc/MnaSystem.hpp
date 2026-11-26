@@ -303,7 +303,9 @@ public:
    *         external-matrix system given a workspace other than the one it
    *         stamps into or more voltage sources than that matrix has room for.
    *
-   * @note RT-safe if workspace and output vectors are pre-allocated.
+   * @note RT-safe if workspace and output vectors are pre-allocated, in a
+   *       build with LAPACKE. The fallback elimination of a build without
+   *       it allocates on every call.
    */
   bool solveInto(MnaSolveWorkspace& ws, double* nodeVoltages,
                  double* branchCurrents) const noexcept {
@@ -444,8 +446,9 @@ public:
    *
    * @param ws Workspace to store factorization (must be prepared).
    * @return true on success, false on singular matrix, workspace too small,
-   *         or a system constructed in external-matrix or matvec mode (the
-   *         factorization reads the system's own matrix).
+   *         a system constructed in external-matrix or matvec mode (the
+   *         factorization reads the system's own matrix), or a build
+   *         without LAPACKE, which keeps no factors.
    *
    * @note NOT RT-safe: performs O(n^3) LU factorization.
    */

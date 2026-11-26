@@ -365,7 +365,8 @@ public:
    * After factorization, use solveFactorized() for O(n^2) back-substitution.
    *
    * @param ws Workspace to store factorization (must be prepared).
-   * @return true on success, false on singular matrix or workspace too small.
+   * @return true on success, false on singular matrix, workspace too small,
+   *         or a build without LAPACKE, which keeps no factors.
    *
    * @note NOT RT-safe: performs O(n^3) complex LU factorization.
    */

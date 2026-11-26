@@ -553,14 +553,21 @@ TEST(AcMnaTest, FactorizedSolveMatchesSingleShot) {
 
   sim::electronics::algorithms::mna::AcMnaFactorizedWorkspace ws;
   ws.prepare(8);
+  std::vector<Complex> nodeV(3);
+  std::vector<Complex> vsrcCurr(1);
+#if COMPAT_HAVE_LAPACKE
   ASSERT_TRUE(ac2.factorize(ws));
   EXPECT_TRUE(ws.isFactorized());
 
-  std::vector<Complex> nodeV(3);
-  std::vector<Complex> vsrcCurr(1);
   ASSERT_TRUE(ac2.solveFactorized(ws, nodeV.data(), vsrcCurr.data()));
 
   EXPECT_NEAR(std::abs(nodeV[VOUT] - SHOT.nodeVoltages[VOUT]), 0.0, 1e-9);
+#else
+  // Kept factors need LAPACKE: without it both calls refuse.
+  EXPECT_FALSE(ac2.factorize(ws));
+  EXPECT_FALSE(ws.isFactorized());
+  EXPECT_FALSE(ac2.solveFactorized(ws, nodeV.data(), vsrcCurr.data()));
+#endif
 }
 
 /** @test invalidate() forces a fresh factorization */
@@ -572,8 +579,12 @@ TEST(AcMnaTest, FactorizedWorkspaceInvalidate) {
   AcMnaSystem ac(2, 2.0 * std::numbers::pi * 100.0);
   ac.stampConductance(1, 0, 1.0 / R_1K);
   ac.addVoltageSource(1, 0, Complex(V_IN, 0.0));
+#if COMPAT_HAVE_LAPACKE
   ASSERT_TRUE(ac.factorize(ws));
   EXPECT_TRUE(ws.isFactorized());
+#else
+  EXPECT_FALSE(ac.factorize(ws));
+#endif
 
   ws.invalidate();
   EXPECT_FALSE(ws.isFactorized());

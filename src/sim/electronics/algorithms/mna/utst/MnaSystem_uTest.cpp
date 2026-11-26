@@ -138,16 +138,23 @@ TEST(MnaSystemTest, FactorizedSolveMatchesSingleShot) {
   ws.prepare(/*maxSize=*/8);
   EXPECT_FALSE(ws.isFactorized());
 
+  std::vector<double> nodeV(3);
+  std::vector<double> vsrc(1);
+#if COMPAT_HAVE_LAPACKE
   ASSERT_TRUE(mna.factorize(ws));
   EXPECT_TRUE(ws.isFactorized());
 
-  std::vector<double> nodeV(3);
-  std::vector<double> vsrc(1);
   ASSERT_TRUE(mna.solveFactorized(ws, nodeV.data(), vsrc.data()));
 
   for (std::size_t i = 0; i < 3; ++i) {
     EXPECT_NEAR(nodeV[i], SHOT.nodeVoltages[i], TOL);
   }
+#else
+  // Kept factors need LAPACKE: without it both calls refuse.
+  EXPECT_FALSE(mna.factorize(ws));
+  EXPECT_FALSE(ws.isFactorized());
+  EXPECT_FALSE(mna.solveFactorized(ws, nodeV.data(), vsrc.data()));
+#endif
 }
 
 /** @test FactorizedWorkspace.invalidate forces a re-factorization */
@@ -159,8 +166,12 @@ TEST(MnaSystemTest, FactorizedWorkspaceInvalidate) {
   MnaSystem mna(2);
   mna.addConductance(1, 0, 1.0 / 1000.0);
   mna.addVoltageSource(1, 0, 1.0);
+#if COMPAT_HAVE_LAPACKE
   ASSERT_TRUE(mna.factorize(ws));
   EXPECT_TRUE(ws.isFactorized());
+#else
+  EXPECT_FALSE(mna.factorize(ws));
+#endif
 
   ws.invalidate();
   EXPECT_FALSE(ws.isFactorized());
@@ -287,8 +298,21 @@ TEST(MnaSystemTest, ClearInExternalModeRemovesEarlierStamps) {
   stampDivider(mna, 1000.0, 1000.0);
   mna.clear();
   stampDivider(mna, 1000.0, 3000.0);
+
+  // The external matrix (column-major, four to a column) holds the second
+  // divider alone.
+  EXPECT_NEAR(ws.A[1 * 4 + 1], 1e-3, TOL);
+  EXPECT_NEAR(ws.A[2 * 4 + 2], 1e-3 + 1.0 / 3000.0, TOL);
+  EXPECT_NEAR(ws.A[2 * 4 + 1], -1e-3, TOL);
+  EXPECT_NEAR(ws.A[1 * 4 + 2], -1e-3, TOL);
+
+#if COMPAT_HAVE_LAPACKE
   ASSERT_TRUE(mna.solveInto(ws, voltages.data(), currents.data()));
   EXPECT_NEAR(voltages[2], 7.5, TOL);
+#else
+  // Without LAPACKE an external matrix is not solved.
+  EXPECT_FALSE(mna.solveInto(ws, voltages.data(), currents.data()));
+#endif
 }
 
 /** @test clear() after a solve in external-matrix mode makes the system reusable */
@@ -301,15 +325,26 @@ TEST(MnaSystemTest, ClearInExternalModeAfterSolveAllowsReuse) {
   std::vector<double> currents(1);
 
   stampDivider(mna, 1000.0, 1000.0);
+#if COMPAT_HAVE_LAPACKE
   ASSERT_TRUE(mna.solveInto(ws, voltages.data(), currents.data()));
   EXPECT_NEAR(voltages[2], 5.0, TOL);
+#else
+  // Without LAPACKE an external matrix is not solved; what a solve would
+  // leave outside the nets' block stands in for it.
+  EXPECT_FALSE(mna.solveInto(ws, voltages.data(), currents.data()));
+  ws.A[3 * 4 + 3] = 9.0;
+#endif
 
-  // The solve left its factors in the matrix.
+  // The solve left its factors in the matrix; clear() leaves none of them.
   mna.clear();
+  EXPECT_EQ(std::count(ws.A.begin(), ws.A.end(), 0.0), 16);
+
   stampDivider(mna, 1000.0, 3000.0);
+#if COMPAT_HAVE_LAPACKE
   ASSERT_TRUE(mna.solveInto(ws, voltages.data(), currents.data()));
   EXPECT_NEAR(voltages[2], 7.5, TOL);
   EXPECT_NEAR(currents[0], -10.0 / 4000.0, TOL);
+#endif
 }
 
 /** @test The solves that read the system's own matrix refuse a system that has none */
@@ -355,8 +390,13 @@ TEST(MnaSystemTest, SolvesThatNeedOwnMatrixRefuseBorrowedStorage) {
   std::vector<double> currents(1);
   EXPECT_FALSE(matvec.solveInto(other, voltages.data(), currents.data()));
   EXPECT_FALSE(external.solveInto(other, voltages.data(), currents.data()));
+#if COMPAT_HAVE_LAPACKE
   ASSERT_TRUE(external.solveInto(ws, voltages.data(), currents.data()));
   EXPECT_NEAR(voltages[2], 5.0, TOL);
+#else
+  // Without LAPACKE an external matrix is not solved in its own workspace either.
+  EXPECT_FALSE(external.solveInto(ws, voltages.data(), currents.data()));
+#endif
 
   // An external matrix of the nets' size has no room for a source's row.
   std::fill(ws.A.begin(), ws.A.end(), 0.0);
