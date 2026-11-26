@@ -22,6 +22,7 @@
 #include <vector>
 
 using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::MnaSystemSparse;
 using sim::electronics::algorithms::transient::IntegrationMethod;
 using sim::electronics::algorithms::transient::TransientConfig;
 using sim::electronics::algorithms::transient::TransientSolver;
@@ -182,6 +183,20 @@ void buildDrivenRc(Stepped& run) {
     mna.addVoltageSource(1, 0, DRIVE_VOLTS * std::sin(seconds / TAU));
     mna.addConductance(1, 2, 1.0 / OHMS);
   });
+}
+
+/** @brief The RC of rcError on the sparse solver, ready to step. */
+void buildDrivenRcSparse(Stepped& run) {
+  constexpr double OHMS = 1000.0;
+  constexpr double FARADS = 1e-6;
+  constexpr double TAU = OHMS * FARADS;
+  run.solver.companions().addCapacitor(2, 0, FARADS);
+  run.solver.setSparse(true);
+  run.solver.setStatefulStampCallbackSparse(
+      [](MnaSystemSparse& mna, double seconds, const std::vector<double>& /*previous*/) {
+        mna.addVoltageSource(1, 0, DRIVE_VOLTS * std::sin(seconds / TAU));
+        mna.addConductance(1, 2, 1.0 / OHMS);
+      });
 }
 
 /**
@@ -422,6 +437,28 @@ TEST(IntegrationOrderTest, KeptFactorsFollowGear2AcrossAChangedStep) {
     BOTH(100, 1e-5);
     BOTH(1, 5e-6);
     BOTH(50, 1e-5);
+  }
+}
+
+/**
+ * @test The sparse solver's kept factors serve steps of the length they were
+ *       built for: steps of 10, 20, 40 and 80 us, each twice the one before.
+ *
+ * Gear's factor is 5/3 for each of the last three while C/dt halves from one
+ * to the next, so the factor alone does not tell the matrices apart. The
+ * steps of 80 us that follow reach the same factor and length, where the
+ * kept factors do serve.
+ */
+TEST(IntegrationOrderTest, KeptSparseFactorsFollowTheStepLength) {
+  Stepped plain(3, IntegrationMethod::GEAR2);
+  Stepped sparse(3, IntegrationMethod::GEAR2);
+  buildDrivenRc(plain);
+  buildDrivenRcSparse(sparse);
+  for (const double DT : {10e-6, 20e-6, 40e-6, 80e-6, 80e-6, 80e-6, 80e-6}) {
+    plain.steps(1, DT);
+    sparse.steps(1, DT);
+    ASSERT_NEAR(sparse.state.voltage(2), plain.state.voltage(2), 1e-12)
+        << "after a step of " << DT << " s, at " << plain.state.time << " s";
   }
 }
 

@@ -272,6 +272,7 @@ private:
   bool useSparse_ = false;
   bool sparseCacheValid_ = false;   ///< Sparse LU cache state (invalidated per half-clock).
   std::size_t sparseCachedDim_ = 0; ///< Augmented dimension of cached sparse factorization.
+  double sparseCachedDt_ = 0.0;     ///< Step length the sparse factors were built with.
   double sparseCachedFactor_ = 0.0; ///< Companions' conductance factor of the sparse factors.
   bool alwaysReanalyze_ = false;    ///< Force full symbolic+numeric factorize every step.
 

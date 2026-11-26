@@ -110,12 +110,14 @@ inline TransientStatus TransientSolver::computeDC(TransientState& state) {
 /* ----------------------------- Single Step ----------------------------- */
 
 inline TransientStatus TransientSolver::step(double dt, TransientState& state) {
-  // Factors are of a matrix that holds the companions' conductances, which
-  // a method scales by a factor that GEAR2 changes with the step before.
+  // Factors are of a matrix that holds the companions' conductances: C/dt
+  // and dt/L, scaled by a factor of the method that GEAR2 changes with the
+  // step before. They serve a step of the same length and the same factor.
   const double FACTOR = companions_.conductanceFactor(dt, method_);
 
   // Sparse cached LU path
-  if (useSparse_ && sparseCacheValid_ && FACTOR == sparseCachedFactor_) {
+  if (useSparse_ && sparseCacheValid_ && std::fabs(dt - sparseCachedDt_) < 1e-15 * dt &&
+      FACTOR == sparseCachedFactor_) {
     return solveCachedStepSparse(dt, state);
   }
 
@@ -284,6 +286,7 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
 
     sparseCacheValid_ = true;
     sparseCachedDim_ = n + m;
+    sparseCachedDt_ = dt;
     sparseCachedFactor_ = companions_.conductanceFactor(dt, method_);
 
     // Update state
