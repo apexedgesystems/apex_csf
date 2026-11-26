@@ -86,7 +86,7 @@ const auto RESULT = solver.run(config, /*recordHistory=*/true);
   with low matrix fill.
 - **Three discretizations.** Backward Euler (first-order, dissipative),
   Trapezoidal (second-order, energy-conserving), GEAR2 / BDF2 (second-order,
-  L-stable for stiff systems). All share the same per-step cost.
+  L-stable for stiff systems).
 - **Optional GPU step.** `cuda::stepCuda` runs a single step on the GPU
   when a CUDA workspace is prepared. Callers handle fallback.
 

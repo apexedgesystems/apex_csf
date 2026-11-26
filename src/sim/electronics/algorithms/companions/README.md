@@ -23,7 +23,8 @@ inductors) used by the transient solver.
 6. [Real-Time Considerations](#6-real-time-considerations)
 7. [CLI Tools](#7-cli-tools)
 8. [Example: Transient RC Step](#8-example-transient-rc-step)
-9. [See Also](#9-see-also)
+9. [Migration](#9-migration)
+10. [See Also](#10-see-also)
 
 ---
 
@@ -80,11 +81,14 @@ companions.updateAll(RESULT.nodeVoltages, dt, IntegrationMethod::BACKWARD_EULER)
 - **Steps of any length.** GEAR2 weighs its two steps of history by their
   lengths (`gear2Weights`), so a step of another length, such as a last step
   shortened to land on the end time, keeps the method's order.
-- **Starting at rest.** An element as constructed, after `reset()`, after
+- **Starting.** An element as constructed, after `reset()`, after
   `setInitialVoltage()` / `setInitialCurrent()`, or after
-  `initializeFromDC()` has a flat history: the capacitor's voltage or the
-  inductor's current was the same one and two steps ago, and the other
-  quantity is zero. That is the history GEAR2 starts from. An inductor's
+  `initializeFromDC()` has one value behind it (the capacitor's voltage or
+  the inductor's current), the other quantity zero and no step taken. One
+  value supports a first-order formula: GEAR2 takes its first step as
+  backward Euler (`gear2Weights(dt, 0)` is 1, 1, 0) and is Gear's formula
+  from the second step on, which keeps the run second order whatever the
+  slope it starts with. An inductor's
   resting current is not in the node voltages; `initializeFromDC` takes it
   as what the operating-point solve passed through the conductance it stood
   in for the inductor with.
@@ -285,25 +289,37 @@ companions.updateAll(RESULT.nodeVoltages, dt, method);
 ```cpp
 MnaFactorizedWorkspace factors;
 factors.prepare(mna.netCount() + sourceCount);
-double factoredFor = 0.0;  // conductanceFactor the factors hold
+double factoredStep = 0.0;    // step length the factors hold
+double factoredFactor = 0.0;  // conductanceFactor the factors hold
 
 for (double t = 0.0; t < tEnd; t += dt) {
-  // Equal dt, method and factor mean equal conductances.
+  // Factors serve a step of the same length, method and factor.
   const double FACTOR = companions.conductanceFactor(dt, method);
-  if (!factors.isFactorized() || FACTOR != factoredFor) {
+  if (!factors.isFactorized() || dt != factoredStep || FACTOR != factoredFactor) {
     mna.clear();
     stampResistors(mna);
     companions.stampConductanceAll(mna, dt, method);
-    mna.factorize(factors);
-    factoredFor = FACTOR;
+    stampSources(mna, t + dt);  // a voltage source's row and column are part of the matrix
+    if (!mna.factorize(factors)) {
+      break;  // singular, or a build without LAPACKE
+    }
+    factoredStep = dt;
+    factoredFactor = FACTOR;
   }
-  mna.clearRHS();
-  stampSources(mna, t + dt);
+  mna.clearRHS();             // currents and source values; the matrix stays
+  stampSources(mna, t + dt);  // the same sources, in the same order
   companions.stampCurrentAll(mna, dt, method);
-  mna.solveFactorized(factors, voltages.data(), currents.data());
+  if (!mna.solveFactorized(factors, voltages.data(), currents.data())) {
+    break;  // history advances only by a step that was solved
+  }
   companions.updateAll(voltages, dt, method);
 }
 ```
+
+The voltage sources are stamped before the factorization: each adds a row
+and a column to the matrix that is factorized, and the right-hand side built
+afterwards must name the same sources in the same order. GEAR2 factorizes
+twice at a fixed step, once for its first step and once for the rest.
 
 ### Resetting State
 
@@ -391,7 +407,27 @@ int main() {
 
 ---
 
-## 9. See Also
+## 9. Migration
+
+`CapacitorCompanion` and `InductorCompanion` gained a member (`prevStep`; 40
+to 48 bytes on x86-64) and `TransientSolver` changed layout. The CUDA
+evaluators keep their names while the records they copy to the device grew.
+Rebuild everything that uses the companions or the transient solver, host
+objects and CUDA libraries together, from one revision.
+
+| Earlier                                                           | Now                                                                                                                                                                                        |
+| ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `update(volts, dt)`, `updateAll(nodeVoltages, dt)`                | A third argument, with no default: the method the step was stamped with. Stamping with one method and updating with another leaves a history neither method computed.                      |
+| `evaluateCapacitorsCuda`, `evaluateInductorsCuda` returned `void` | Return `bool`, `[[nodiscard]]`. On false neither output array holds a result: discard both and evaluate on the host.                                                                       |
+| History set field by field (`prevVoltage = v`)                    | `setInitialVoltage(v)` / `setInitialCurrent(i)`: the value, the one before it and the step taken, together. A field set alone leaves the others from the last run.                         |
+| `initializeFromDC(nodeVoltages)`                                  | `initializeFromDC(nodeVoltages, inductorSiemens)`: pass the conductance each inductor stood as in the operating-point solve to recover its current; with the default 0 they start at none. |
+| GEAR2's inductor `geq` 3dt/(2L), `ieq` 2 I1 - I2/2                | 2dt/(3L) and (4 I1 - I2)/3 after an equal step; values computed from the old ones change.                                                                                                  |
+| GEAR2's first step used Gear's weights on a repeated start value  | The first step is backward Euler's (`conductanceFactor` 1), the second onward Gear's. A caller that keeps factors sees one more change of factor at the start.                             |
+| Factors kept across steps keyed on `dt` alone                     | Key on `dt` and `conductanceFactor(dt, method)` together.                                                                                                                                  |
+
+---
+
+## 10. See Also
 
 - [Linear devices](../../devices/linear/README.md) - Resistor / capacitor / inductor primitives
 - [Transient solver](../transient/README.md) - Integration methods and time stepping

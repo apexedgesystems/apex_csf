@@ -284,7 +284,7 @@ for (double t = 0.0; t < tEnd; t += dt) {
     stampResistors(mna);
   });
   const auto RESULT = nonlinear.solve(config);
-  transient.companions().updateAll(RESULT.nodeVoltages, dt);
+  transient.companions().updateAll(RESULT.nodeVoltages, dt, method);
 }
 ```
 

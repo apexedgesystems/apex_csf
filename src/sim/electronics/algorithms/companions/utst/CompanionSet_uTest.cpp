@@ -133,6 +133,85 @@ TEST(CompanionSetTest, ConductanceAndCurrentDecompositionMatchesFullStamp) {
   }
 }
 
+/* ----------------------------- Kept Factors ----------------------------- */
+
+#if COMPAT_HAVE_LAPACKE
+/**
+ * @test Factors kept across steps, with the right-hand side rebuilt each
+ *       step, give the voltages of a system stamped and solved anew.
+ *
+ * 5 V on net 1, 1 kohm to net 2, 1 kohm and 1 uF from net 2 to ground. The
+ * voltage source is stamped before the factorization and again, in the same
+ * place, for each right-hand side. Factors are kept while the step length
+ * and the conductance factor stay: once for backward Euler and the
+ * trapezoidal rule, twice for GEAR2 (its first step, then the rest).
+ */
+TEST(CompanionSetTest, KeptFactorsWithRebuiltRightHandSideMatchOneShotSolves) {
+  using sim::electronics::algorithms::mna::MnaFactorizedWorkspace;
+  constexpr double DT = 1e-5;
+  const auto STAMP_RESISTORS = [](MnaSystem& mna) {
+    mna.addConductance(1, 2, 1e-3);
+    mna.addConductance(2, 0, 1e-3);
+  };
+  const auto STAMP_SOURCES = [](MnaSystem& mna) { mna.addVoltageSource(1, 0, 5.0); };
+
+  struct Case {
+    IntegrationMethod method;
+    int factorizations;
+  };
+  for (const Case& CASE :
+       {Case{IntegrationMethod::BACKWARD_EULER, 1}, Case{IntegrationMethod::TRAPEZOIDAL, 1},
+        Case{IntegrationMethod::GEAR2, 2}}) {
+    SCOPED_TRACE(static_cast<int>(CASE.method));
+    CompanionSet kept;
+    CompanionSet anew;
+    kept.addCapacitor(/*posNet=*/2, /*negNet=*/0, /*capacitance=*/1e-6);
+    anew.addCapacitor(/*posNet=*/2, /*negNet=*/0, /*capacitance=*/1e-6);
+
+    MnaSystem mna(/*netCount=*/3);
+    MnaFactorizedWorkspace factors;
+    factors.prepare(/*maxSize=*/4);
+    std::vector<double> voltages(3);
+    std::vector<double> currents(1);
+    double factoredStep = 0.0;
+    double factoredFactor = 0.0;
+    int factorizations = 0;
+
+    for (int step = 0; step < 6; ++step) {
+      const double FACTOR = kept.conductanceFactor(DT, CASE.method);
+      if (!factors.isFactorized() || DT != factoredStep || FACTOR != factoredFactor) {
+        mna.clear();
+        STAMP_RESISTORS(mna);
+        kept.stampConductanceAll(mna, DT, CASE.method);
+        STAMP_SOURCES(mna);
+        ASSERT_TRUE(mna.factorize(factors));
+        factoredStep = DT;
+        factoredFactor = FACTOR;
+        ++factorizations;
+      }
+      mna.clearRHS();
+      STAMP_SOURCES(mna);
+      kept.stampCurrentAll(mna, DT, CASE.method);
+      ASSERT_TRUE(mna.solveFactorized(factors, voltages.data(), currents.data()));
+      kept.updateAll(voltages, DT, CASE.method);
+
+      MnaSystem fresh(/*netCount=*/3);
+      STAMP_RESISTORS(fresh);
+      STAMP_SOURCES(fresh);
+      anew.stampAll(fresh, DT, CASE.method);
+      const auto RESULT = fresh.solve();
+      ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
+      anew.updateAll(RESULT.nodeVoltages, DT, CASE.method);
+
+      EXPECT_NEAR(voltages[1], 5.0, TOL) << "step " << step;
+      EXPECT_NEAR(voltages[2], RESULT.nodeVoltages[2], TOL) << "step " << step;
+      EXPECT_GT(voltages[2], 0.0) << "step " << step;
+    }
+    EXPECT_EQ(factorizations, CASE.factorizations);
+  }
+}
+#endif
+
 /* ----------------------------- updateAll ----------------------------- */
 
 /**
