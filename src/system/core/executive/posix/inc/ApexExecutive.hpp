@@ -677,7 +677,20 @@ private:
     std::uint32_t fullUid{0};
     system_core::system_component::SystemComponentBase* oldComp{nullptr};
     system_core::system_component::SystemComponentBase* newComp{nullptr};
+    /// Set for a parameter reload, which goes through the same hand-over:
+    /// the directory oldComp loads from. There is then no replacement.
+    const std::filesystem::path* tprmDir{nullptr};
+    system_core::system_component::TprmIngest tprmIngest{
+        system_core::system_component::TprmIngest::NONE}; ///< What that load returned.
     LibrarySwapOutcome outcome{};
+  };
+
+  /// What a parameter reload handed to the task thread came to.
+  struct TprmApplyOutcome {
+    bool applied{false}; ///< False when the tasks did not settle within the wait.
+    system_core::system_component::TprmIngest ingest{
+        system_core::system_component::TprmIngest::NONE}; ///< The load's result when applied.
+    std::uint64_t waitNs{0};                              ///< From the request to its end.
   };
 
   /**
@@ -708,7 +721,29 @@ private:
                      system_core::system_component::SystemComponentBase& oldComp,
                      system_core::system_component::SystemComponentBase& newComp) noexcept;
 
-  /// Task thread: publish the pending swap if the scheduler is settled.
+  /**
+   * @brief Have the task thread load a component's parameters from DIR
+   *        between cycles, and wait for it.
+   *
+   * The load runs with every dispatched task settled and none dispatched
+   * meanwhile, so it cannot meet a run of the component's own tasks, the
+   * dispatch that reads the scheduler's tables, or the action phase. The
+   * caller blocks as for a library swap; a load not taken within
+   * librarySwapWaitNs() is withdrawn and reported not applied.
+   * @note External I/O thread only: the task thread cannot wait for itself.
+   */
+  [[nodiscard]] TprmApplyOutcome
+  applyTprmAtSettledPoint(system_core::system_component::SystemComponentBase& comp,
+                          const std::filesystem::path& dir) noexcept;
+
+  /// Hand REQUEST to the task thread and wait for it as publishLibrarySwap()
+  /// describes. @return true when the task thread carried it out; DONE is
+  /// then the request as the task thread left it.
+  [[nodiscard]] bool handOverToTaskThread(const LibrarySwap& request, LibrarySwap& done,
+                                          std::uint64_t& waitNs) noexcept;
+
+  /// Task thread: carry out the pending swap or parameter reload if the
+  /// scheduler is settled.
   void serviceLibrarySwap() noexcept;
 
   /// External I/O thread, top of its loop: destroy the plugins retired

@@ -106,6 +106,9 @@ public:
   [[nodiscard]] std::filesystem::path inactiveLibDir() noexcept {
     return fileSystem().inactiveLibDir();
   }
+  [[nodiscard]] std::filesystem::path inactiveTprmDir() noexcept {
+    return fileSystem().inactiveTprmDir();
+  }
 
   static constexpr int NOT_RUN = -1;
 
@@ -651,6 +654,17 @@ protected:
     return output.instance;
   }
 
+  /// Stage a parameter payload for the target in the inactive bank.
+  void stageTargetTprm() {
+    const std::array<std::uint8_t, 4> BODY{1, 2, 3, 4};
+    ASSERT_TRUE(writeTprm(exec_->inactiveTprmDir(), exec_->targetUid(), BODY.data(), BODY.size()));
+  }
+
+  /// Send RELOAD_TPRM for the target. @return the command's sequence.
+  [[nodiscard]] std::uint16_t sendTprmReload() {
+    return ground_.send(ApexExecutive::Opcode::RELOAD_TPRM, exec_->targetUid());
+  }
+
   /// How many times TEXT occurs in the swap log.
   [[nodiscard]] std::size_t swapLogCount(const std::string& text) const {
     const std::string LOG = slurp(swapLog());
@@ -988,6 +1002,117 @@ TEST_F(ReloadRouteTest, ShutdownWaitsForATaskThatOutlastsTheDrainStage) {
   const std::string LOG = slurp(SYSTEM_LOG);
   EXPECT_NE(LOG.find("Tasks still running after"), std::string::npos) << LOG;
   EXPECT_NE(LOG.find("Scheduler stopped"), std::string::npos) << LOG;
+}
+
+/**
+ * @test A parameter reload sent while a run of the component's task is in
+ *       flight is applied only after that run has returned, on the task
+ *       thread, between cycles.
+ */
+TEST_F(ReloadRouteTest, TprmReloadWaitsForATaskInFlight) {
+  constexpr std::size_t LINKED_NO = 1;
+  ASSERT_NO_FATAL_FAILURE(stageTargetTprm());
+  ASSERT_NO_FATAL_FAILURE(holdARunOf(LINKED_NO));
+
+  const std::uint16_t RELOAD = sendTprmReload();
+  ASSERT_NE(RELOAD, 0u);
+  // The run is still inside the task: nothing is applied yet.
+  std::this_thread::sleep_for(std::chrono::milliseconds(200));
+  EXPECT_TRUE(probe_.inTask(LINKED_NO));
+  EXPECT_EQ(probe_.tprmLoads[LINKED_NO].load(), 0U);
+
+  release();
+  std::uint8_t status = 0xFF;
+  ASSERT_TRUE(ground_.reply(RELOAD, POLL_LIMIT, status)) << "no reply to the parameter reload";
+  EXPECT_EQ(status, static_cast<std::uint8_t>(CommandResult::SUCCESS)) << slurp(swapLog());
+  EXPECT_EQ(probe_.tprmLoads[LINKED_NO].load(), 1U);
+  EXPECT_FALSE(probe_.tprmLoadedInTask[LINKED_NO].load());
+  EXPECT_EQ(probe_.tprmLoadThread[LINKED_NO].load(), exec_->taskThread());
+
+  const std::uint32_t RUNS = probe_.entered[LINKED_NO].load();
+  EXPECT_TRUE(waitFor([&]() { return probe_.entered[LINKED_NO].load() > RUNS + 5U; }))
+      << "the component is not dispatched after the parameter reload";
+}
+
+/**
+ * @test A parameter reload whose component's task does not return within
+ *       the wait is refused with nothing applied, and goes through once
+ *       the task has returned.
+ */
+TEST_F(ReloadRouteTest, TprmReloadIsRefusedWhenTheTaskDoesNotReturnInTime) {
+  constexpr std::size_t LINKED_NO = 1;
+  std::uint8_t status = 0xFF;
+  ASSERT_NO_FATAL_FAILURE(stageTargetTprm());
+  ASSERT_NO_FATAL_FAILURE(holdARunOf(LINKED_NO));
+
+  const std::uint16_t HELD = sendTprmReload();
+  ASSERT_NE(HELD, 0u);
+  ASSERT_TRUE(ground_.reply(HELD, POLL_LIMIT, status)) << "no reply to the parameter reload";
+  EXPECT_EQ(status, static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT));
+  EXPECT_TRUE(probe_.inTask(LINKED_NO));
+  EXPECT_EQ(probe_.tprmLoads[LINKED_NO].load(), 0U);
+  EXPECT_TRUE(waitFor([&]() { return swapLogCount("RELOAD_TPRM_FAIL") == 1U; }))
+      << slurp(swapLog());
+
+  // Unlocked by the refusal: once released, the component is dispatched again.
+  release();
+  const std::uint32_t RUNS = probe_.entered[LINKED_NO].load();
+  EXPECT_TRUE(waitFor([&]() { return probe_.entered[LINKED_NO].load() > RUNS + 5U; }))
+      << "the component is not dispatched after the refusal";
+
+  const std::uint16_t AGAIN = sendTprmReload();
+  ASSERT_NE(AGAIN, 0u);
+  ASSERT_TRUE(ground_.reply(AGAIN, POLL_LIMIT, status)) << "no reply to the second reload";
+  EXPECT_EQ(status, static_cast<std::uint8_t>(CommandResult::SUCCESS)) << slurp(swapLog());
+  EXPECT_EQ(probe_.tprmLoads[LINKED_NO].load(), 1U);
+}
+
+/**
+ * @test The scheduler's own table is reloaded while its tasks are being
+ *       dispatched, and the system is whole afterwards: the target's task
+ *       keeps running on the rebuilt table and a library swap after it
+ *       goes through.
+ */
+TEST_F(ReloadRouteTest, SchedulerTableReloadThenLibrarySwap) {
+  constexpr std::size_t LINKED_NO = 1;
+  constexpr std::size_t PLUGIN_NO = 2;
+  constexpr std::uint32_t SCHEDULER_UID = 1U << 8;
+  std::uint8_t status = 0xFF;
+
+  ASSERT_TRUE(writeStepSchedule(exec_->inactiveTprmDir()));
+  const std::uint16_t TABLE = ground_.send(ApexExecutive::Opcode::RELOAD_TPRM, SCHEDULER_UID);
+  ASSERT_NE(TABLE, 0u);
+  ASSERT_TRUE(ground_.reply(TABLE, POLL_LIMIT, status)) << "no reply to the table reload";
+  ASSERT_EQ(status, static_cast<std::uint8_t>(CommandResult::SUCCESS)) << slurp(swapLog());
+
+  const std::uint32_t RUNS = probe_.entered[LINKED_NO].load();
+  ASSERT_TRUE(waitFor([&]() { return probe_.entered[LINKED_NO].load() > RUNS + 5U; }))
+      << "the target's task is not dispatched from the reloaded table";
+
+  ASSERT_NO_FATAL_FAILURE(bankPlugin("ExecutiveTestPlugin_Reload.so"));
+  ASSERT_NO_FATAL_FAILURE(lockTarget());
+  const std::uint16_t RELOAD = sendReload();
+  ASSERT_NE(RELOAD, 0u);
+  ASSERT_TRUE(ground_.reply(RELOAD, POLL_LIMIT, status)) << "no reply to the library reload";
+  EXPECT_EQ(status, static_cast<std::uint8_t>(CommandResult::SUCCESS)) << slurp(swapLog());
+  EXPECT_TRUE(waitFor([&]() { return probe_.finished[PLUGIN_NO].load() > 1U; }))
+      << "the replacement's task is not dispatched after the table reload";
+  EXPECT_EQ(inspectedInstance(), PLUGIN_NO);
+}
+
+/**
+ * @test A parameter reload an action sends is applied by the task thread
+ *       in its action phase, where no task is in flight.
+ */
+TEST_F(ReloadRouteTest, TprmReloadFromAnActionIsAppliedBetweenTasks) {
+  constexpr std::size_t LINKED_NO = 1;
+  ASSERT_NO_FATAL_FAILURE(stageTargetTprm());
+
+  ASSERT_EQ(exec_->queueCommandAction(ApexExecutive::Opcode::RELOAD_TPRM), 0);
+  ASSERT_TRUE(waitFor([&]() { return probe_.tprmLoads[LINKED_NO].load() == 1U; }))
+      << slurp(swapLog());
+  EXPECT_FALSE(probe_.tprmLoadedInTask[LINKED_NO].load());
+  EXPECT_EQ(probe_.tprmLoadThread[LINKED_NO].load(), exec_->taskThread());
 }
 
 /**

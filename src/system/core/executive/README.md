@@ -234,6 +234,18 @@ whole command from its start (`total_us`), and
 A component lock stops new dispatches of the component's tasks. It does
 not wait for a task already running; the reload does.
 
+**Parameter reload.** `RELOAD_TPRM` goes through the same hand-over.
+ExternalIO verifies the staged payload, then TaskExecution calls the
+component's `loadTprm()` between cycles, with every dispatched task
+settled and none dispatched meanwhile: the load cannot meet a run of
+the component's tasks, the dispatch that reads the scheduler's tables
+(the scheduler's own reload rebuilds them) or the action phase. The
+payload file is read on TaskExecution in that call. If the tasks do
+not settle within the wait the reply is `NOT_QUIESCENT` and nothing is
+loaded. A `RELOAD_TPRM` an action sends reaches the handler on
+TaskExecution in its action phase, which runs only once the cycle's
+tasks have finished, and loads there.
+
 At shutdown the scheduler is stopped by `run()` after its threads have
 been joined: TaskExecution, which alone dispatches and alone publishes a
 swap, has ended, and the components and loaded plugins are still alive.

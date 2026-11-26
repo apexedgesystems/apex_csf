@@ -100,12 +100,23 @@ void ApexExecutive::serviceLibrarySwap() noexcept {
   if (swap_.phase != LibrarySwap::Phase::PENDING) {
     return;
   }
-  const LibrarySwapOutcome OUT =
-      publishLibrarySwapHere(swap_.fullUid, *swap_.oldComp, *swap_.newComp);
-  if (OUT.status == static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT)) {
-    return; // Still pending: the next settled point takes it.
+  if (swap_.tprmDir != nullptr) {
+    // A parameter reload: the component loads here, where no task of its
+    // own is running, none is being dispatched and the action phase is
+    // not reading its data.
+    if (!scheduler_.settled()) {
+      return; // Still pending: the next settled point takes it.
+    }
+    swap_.tprmIngest = swap_.oldComp->loadTprm(*swap_.tprmDir);
+    swap_.outcome.status = static_cast<std::uint8_t>(CommandResult::SUCCESS);
+  } else {
+    const LibrarySwapOutcome OUT =
+        publishLibrarySwapHere(swap_.fullUid, *swap_.oldComp, *swap_.newComp);
+    if (OUT.status == static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT)) {
+      return; // Still pending: the next settled point takes it.
+    }
+    swap_.outcome = OUT;
   }
-  swap_.outcome = OUT;
   swap_.phase = LibrarySwap::Phase::DONE;
   swapPending_.store(false, std::memory_order_release);
   lock.unlock();
@@ -120,25 +131,20 @@ std::uint64_t ApexExecutive::librarySwapWaitNs() const noexcept {
   return std::max(FLOOR_NS, 4U * PERIOD_NS);
 }
 
-ApexExecutive::LibrarySwapOutcome
-ApexExecutive::publishLibrarySwap(std::uint32_t fullUid, SystemComponentBase& oldComp,
-                                  SystemComponentBase& newComp) noexcept {
+bool ApexExecutive::handOverToTaskThread(const LibrarySwap& request, LibrarySwap& done,
+                                         std::uint64_t& waitNs) noexcept {
   const std::uint64_t ASKED_NS = apex::helpers::cpu::getMonotonicNs();
 
-  // Hand the swap to the task thread and wait for it. Once that thread
-  // has ended nothing publishes, and the swap is refused at once.
+  // Hand the request to the task thread and wait for it. Once that thread
+  // has ended nothing is carried out, and the request is refused at once.
   {
     std::lock_guard lock(swapMutex_);
     if (swapClosed_) {
-      LibrarySwapOutcome closed{};
-      closed.status = static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT);
-      return closed;
+      waitNs = 0;
+      return false;
     }
-    swap_ = LibrarySwap{};
+    swap_ = request;
     swap_.phase = LibrarySwap::Phase::PENDING;
-    swap_.fullUid = fullUid;
-    swap_.oldComp = &oldComp;
-    swap_.newComp = &newComp;
     swapPending_.store(true, std::memory_order_release);
   }
   {
@@ -156,17 +162,53 @@ ApexExecutive::publishLibrarySwap(std::uint32_t fullUid, SystemComponentBase& ol
           lock, std::chrono::nanoseconds(librarySwapWaitNs()),
           [this]() { return swap_.phase == LibrarySwap::Phase::DONE || swapClosed_; }) &&
       swap_.phase == LibrarySwap::Phase::DONE;
-  LibrarySwapOutcome out{};
   if (DONE) {
-    out = swap_.outcome;
+    done = swap_;
   } else {
-    // Not taken: publication holds this mutex from start to end, so the
-    // swap is withdrawn whole and nothing was changed.
-    out.status = static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT);
+    // Not taken: the task thread holds this mutex from start to end of
+    // what it carries out, so the request is withdrawn whole and nothing
+    // was changed.
     swapPending_.store(false, std::memory_order_release);
   }
   swap_ = LibrarySwap{};
-  out.waitNs = apex::helpers::cpu::getMonotonicNs() - ASKED_NS;
+  waitNs = apex::helpers::cpu::getMonotonicNs() - ASKED_NS;
+  return DONE;
+}
+
+ApexExecutive::LibrarySwapOutcome
+ApexExecutive::publishLibrarySwap(std::uint32_t fullUid, SystemComponentBase& oldComp,
+                                  SystemComponentBase& newComp) noexcept {
+  LibrarySwap request{};
+  request.fullUid = fullUid;
+  request.oldComp = &oldComp;
+  request.newComp = &newComp;
+
+  LibrarySwap done{};
+  LibrarySwapOutcome out{};
+  std::uint64_t waitNs = 0;
+  if (handOverToTaskThread(request, done, waitNs)) {
+    out = done.outcome;
+  } else {
+    out.status = static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT);
+  }
+  out.waitNs = waitNs;
+  return out;
+}
+
+ApexExecutive::TprmApplyOutcome
+ApexExecutive::applyTprmAtSettledPoint(SystemComponentBase& comp,
+                                       const std::filesystem::path& dir) noexcept {
+  LibrarySwap request{};
+  request.fullUid = comp.fullUid();
+  request.oldComp = &comp;
+  request.tprmDir = &dir;
+
+  LibrarySwap done{};
+  TprmApplyOutcome out{};
+  out.applied = handOverToTaskThread(request, done, out.waitNs);
+  if (out.applied) {
+    out.ingest = done.tprmIngest;
+  }
   return out;
 }
 

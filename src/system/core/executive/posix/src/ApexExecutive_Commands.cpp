@@ -265,14 +265,43 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
       response.clear(); // Verified: the apply outcome is the response.
     }
 
-    // Lock the component so the scheduler skips its tasks during reload.
-    // This prevents data races when loadTprm() modifies shared state
-    // (e.g. scheduler's entries_ and schedule_ vectors).
+    // The load runs on the task thread between cycles, with every
+    // dispatched task settled: it writes state the component's tasks, the
+    // dispatch (the scheduler's tables) and the action phase read. A
+    // dispatch-skip lock alone would not wait for a task already running.
+    // The lock is still taken, so no run of the component's tasks begins
+    // while the request waits.
     comp->lock();
 
     // Load TPRM from inactive bank (C2 uploaded it there via FILE_TRANSFER).
-    if (comp->loadTprm(fileSystem_.inactiveTprmDir()) !=
-        system_core::system_component::TprmIngest::LOADED) {
+    const std::filesystem::path TPRM_SOURCE = fileSystem_.inactiveTprmDir();
+    auto ingest = system_core::system_component::TprmIngest::NONE;
+    bool settled = true;
+    if (std::this_thread::get_id() == taskThreadId_.load(std::memory_order_acquire)) {
+      // Reached from an action: this is the task thread, in its action
+      // phase, which runs only once the cycle's tasks have finished.
+      settled = scheduler_.settled();
+      if (settled) {
+        ingest = comp->loadTprm(TPRM_SOURCE);
+      }
+    } else {
+      const TprmApplyOutcome APPLY = applyTprmAtSettledPoint(*comp, TPRM_SOURCE);
+      settled = APPLY.applied;
+      ingest = APPLY.ingest;
+    }
+    if (!settled) {
+      comp->unlock();
+      sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
+                       fmt::format("RELOAD_TPRM: tasks did not come to rest for 0x{:06X}, "
+                                   "nothing loaded",
+                                   targetUid));
+      if (auto* sl = fileSystem_.swapLog()) {
+        sl->warning("SWAP", static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT),
+                    fmt::format("RELOAD_TPRM_FAIL: uid=0x{:06X} reason=not_quiescent", targetUid));
+      }
+      return static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT);
+    }
+    if (ingest != system_core::system_component::TprmIngest::LOADED) {
       comp->unlock();
       sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TPRM_LOAD_FAIL),
                        fmt::format("TPRM reload failed for component 0x{:06X}", targetUid));

@@ -13,7 +13,9 @@
  * initialized, can hold a run inside the task, and learns when an
  * instance is destroyed and whether one of its runs was still inside the
  * task at that moment, and whether each instance was attached to the
- * internal bus and told so before its task first ran. Variants differ from the linked instance in
+ * internal bus and told so before its task first ran, and on which
+ * thread it loaded parameters from a file and whether one of its runs
+ * was inside the task then. Variants differ from the linked instance in
  * the size of the output block or in how the task is sequenced, for the swaps that must be refused.
  */
 
@@ -27,6 +29,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <functional>
 #include <string>
 #include <thread>
@@ -57,6 +60,12 @@ struct ReloadProbe {
   std::array<std::atomic<bool>, MAX_INSTANCES + 1> destroyedInTask{};
   /// Hash of the id of the thread that initialized the instance; 0 until then.
   std::array<std::atomic<std::size_t>, MAX_INSTANCES + 1> initThread{};
+  /// Parameter loads the instance took from a file.
+  std::array<std::atomic<std::uint32_t>, MAX_INSTANCES + 1> tprmLoads{};
+  /// Set when a parameter load ran while a run of the instance was inside the task.
+  std::array<std::atomic<bool>, MAX_INSTANCES + 1> tprmLoadedInTask{};
+  /// Hash of the id of the thread that ran the last parameter load; 0 until then.
+  std::array<std::atomic<std::size_t>, MAX_INSTANCES + 1> tprmLoadThread{};
   /// Set once a task run of the instance found the internal bus attached.
   std::array<std::atomic<bool>, MAX_INSTANCES + 1> busInTask{};
   /// Times the instance was told the bus is ready.
@@ -168,6 +177,25 @@ public:
     }
     probe_->finished[number_].fetch_add(1, std::memory_order_acq_rel);
     return 0;
+  }
+
+  /// Parameters: the file's presence is all the instance takes from it.
+  system_core::system_component::TprmIngest
+  loadTprm(const std::filesystem::path& tprmDir) noexcept override {
+    using system_core::system_component::TprmIngest;
+    setConfigured(true);
+    std::error_code ec;
+    if (!std::filesystem::exists(tprmDir / tprmFilename(fullUid()), ec)) {
+      return TprmIngest::NONE;
+    }
+    if (probe_ != nullptr) {
+      if (probe_->inTask(number_)) {
+        probe_->tprmLoadedInTask[number_].store(true, std::memory_order_release);
+      }
+      probe_->tprmLoadThread[number_].store(ReloadProbe::thisThread(), std::memory_order_release);
+      probe_->tprmLoads[number_].fetch_add(1, std::memory_order_acq_rel);
+    }
+    return TprmIngest::LOADED;
   }
 
   void onBusReady() noexcept override {
