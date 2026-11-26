@@ -175,6 +175,10 @@ any such change is called out explicitly in its entry.
 - A PING reply no longer copies its payload over itself: the echo is
   assembled with an overlap-safe copy.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- Shutdown waits for a task that is still running before the scheduler
+  stops; past the five-second drain stage it had let components be
+  destroyed under the task.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - `RELOAD_EXECUTIVE` during a pause restarts also when the task thread
   was parked in the pause; it could be left waiting for a resume.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))

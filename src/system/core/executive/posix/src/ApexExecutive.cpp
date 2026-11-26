@@ -1046,13 +1046,21 @@ RunResult ApexExecutive::run() noexcept {
   // stop reads can no longer change; and the application's components and
   // the loaded plugins are still alive, so the sequence counters the stop
   // writes to release waiters still exist. Left to the scheduler's
-  // destructor, the stop would run after both were destroyed. With a task
-  // still running the stop would block, so that case stays with the
-  // destructor.
-  if (!scheduler_.threadsRunning()) {
-    scheduler_.shutdown();
-    sysLog_->info(label(), "Scheduler stopped");
+  // destructor, the stop would run after both were destroyed.
+  //
+  // A task dispatched before the shutdown was requested is allowed to
+  // finish: no cycle starts after the request, and the stop joins the
+  // workers, so it waits here for a run that outlasted the drain stage
+  // and run() returns only once no task is inside a component.
+  if (scheduler_.threadsRunning()) {
+    sysLog_->warning(label(), static_cast<std::uint8_t>(WARN_TASK_DRAIN_TIMEOUT),
+                     fmt::format("Waiting for running tasks to return before the scheduler "
+                                 "stops: {}",
+                                 scheduler_.inFlightSummary(4)));
+    sysLog_->flush();
   }
+  scheduler_.shutdown();
+  sysLog_->info(label(), "Scheduler stopped");
 
   sysLog_->info(label(), "System shutdown completed");
 

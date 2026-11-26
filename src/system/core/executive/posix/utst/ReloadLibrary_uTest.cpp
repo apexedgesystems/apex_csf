@@ -963,6 +963,34 @@ TEST_F(ReloadRouteTest, RestartRequestedWhilePausedReachesTheParkedTaskThread) {
 }
 
 /**
+ * @test A task dispatched before the shutdown was requested is allowed to
+ *       finish, however long it takes: run() does not return, and no
+ *       component is destroyed, while a run is still inside its task. The
+ *       run here outlasts the shutdown's five-second drain stage.
+ */
+TEST_F(ReloadRouteTest, ShutdownWaitsForATaskThatOutlastsTheDrainStage) {
+  constexpr std::size_t LINKED_NO = 1;
+  const auto SYSTEM_LOG = fsRoot_ / "system.log";
+  ASSERT_NO_FATAL_FAILURE(holdARunOf(LINKED_NO));
+
+  std::thread releaser([this]() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(6500));
+    release();
+  });
+  // Requests the shutdown, joins run() and destroys the executive with
+  // its linked component.
+  stopExecutive();
+  releaser.join();
+
+  EXPECT_TRUE(probe_.destroyed[LINKED_NO].load());
+  EXPECT_FALSE(probe_.destroyedInTask[LINKED_NO].load())
+      << "the component was destroyed with a run still inside its task";
+  const std::string LOG = slurp(SYSTEM_LOG);
+  EXPECT_NE(LOG.find("Tasks still running after"), std::string::npos) << LOG;
+  EXPECT_NE(LOG.find("Scheduler stopped"), std::string::npos) << LOG;
+}
+
+/**
  * @test A replacement that cannot take over what is registered and
  *       scheduled for the component is refused whole: a shorter output
  *       block, then a task the schedule sequences left unsequenced. The
