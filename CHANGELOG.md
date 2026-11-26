@@ -175,6 +175,10 @@ any such change is called out explicitly in its entry.
 - A PING reply no longer copies its payload over itself: the echo is
   assembled with an overlap-safe copy.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- `make release APP=ApexHilDemo` builds its STM32 firmware for the board
+  its manifest names, in that board's own build directory; it failed
+  when the shared STM32 directory was configured for another board.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - `RELOAD_TPRM` loads on the task thread between cycles, once every
   dispatched task has settled, and answers `NOT_QUIESCENT` when they do
   not; it loaded on the calling thread while tasks ran.
