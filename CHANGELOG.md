@@ -128,6 +128,11 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Companion models: TRAPEZOIDAL is second order, GEAR2's inductor uses
+  Gear's coefficients and follows the step length, and a run starts from the
+  operating point with each inductor's current. Breaking: `update` and
+  `updateAll` take the integration method and the CUDA evaluators return a
+  status; see [#200](https://github.com/apexedgesystems/apex_csf/pull/200).
 - Corrected nonlinear device stamps, junction currents and FET region
   transitions; `BjtCommonEmitter::computeDC` reports failed solves. Breaking:
   device currents and Level 1 region codes change and six model parameters
