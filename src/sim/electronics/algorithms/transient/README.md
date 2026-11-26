@@ -190,6 +190,15 @@ enum class IntegrationMethod : std::uint8_t {
 | `TRAPEZOIDAL`    | 2nd   | A-stable  | Conserving  | LC oscillators, analog filters |
 | `GEAR2`          | 2nd   | L-stable  | Damping     | Stiff systems                  |
 
+Each method's companions take the steps of the integrator of the same name
+in `src/utilities/math/integration` on the circuit's differential equation
+(`BackwardEuler`, `TrapezoidalRule`, `BDF2`; held step for step in the unit
+tests). A run with `dcOpPoint` starts at rest: each capacitor at its
+operating-point voltage, each inductor with the current the operating point
+passed through it. GEAR2 weighs its history by the lengths of the two steps,
+so a last step shortened to land on `tEnd` keeps the method's order.
+`cuda::stepCuda` steps with backward Euler.
+
 ### TransientCuda
 
 **Header:** `TransientCuda.cuh`

@@ -649,11 +649,12 @@ TEST(InductorCompanionTest, Gear2EquivalentValues) {
 
   double dt = 1e-9;
 
-  // Geq = 3dt/(2L) = 1.5e-6 S
-  EXPECT_DOUBLE_EQ(ind.geq(dt, IntegrationMethod::GEAR2), 1.5e-6);
+  // V = L * (3*I - 4*I(t-dt) + I(t-2dt)) / (2dt), solved for I:
+  // Geq = 2dt/(3L) = 2e-9 / 3e-3 S
+  EXPECT_DOUBLE_EQ(ind.geq(dt, IntegrationMethod::GEAR2), 2e-9 / 3e-3);
 
-  // Ieq = 2*I(t-dt) - 0.5*I(t-2dt) = 2*0.1 - 0.5*0.08 = 0.2 - 0.04 = 0.16 A
-  EXPECT_DOUBLE_EQ(ind.ieq(dt, IntegrationMethod::GEAR2), 0.16);
+  // Ieq = (4*I(t-dt) - I(t-2dt)) / 3 = (0.4 - 0.08) / 3 A
+  EXPECT_DOUBLE_EQ(ind.ieq(dt, IntegrationMethod::GEAR2), 0.32 / 3.0);
 }
 
 /**
@@ -973,36 +974,6 @@ TEST(TransientSolverTest, Gear2StiffRCCircuit) {
     EXPECT_GE(v, vPrev * 0.99) << "Voltage should be non-decreasing (L-stable damping)";
     vPrev = v;
   }
-}
-
-/**
- * @test History update verification - companion state shifting.
- *
- * Verifies that update() correctly shifts history (prev2 = prev, prev = new)
- * for GEAR2 integration.
- */
-TEST(CompanionModelsTest, HistoryUpdateShifting) {
-  // Test capacitor history update
-  CapacitorCompanion cap;
-  cap.capacitance = 1e-6;
-  cap.prevVoltage = 2.0;
-  cap.prev2Voltage = 1.5;
-
-  cap.update(3.0, 1e-9);
-
-  EXPECT_DOUBLE_EQ(cap.prevVoltage, 3.0) << "prevVoltage should be updated to new voltage";
-  EXPECT_DOUBLE_EQ(cap.prev2Voltage, 2.0) << "prev2Voltage should be shifted from prevVoltage";
-
-  // Test inductor history update
-  InductorCompanion ind;
-  ind.inductance = 1e-3;
-  ind.prevCurrent = 0.1;
-  ind.prev2Current = 0.08;
-
-  ind.update(2.0, 1e-9); // V=2V, dt=1ns => dI = (1e-9/1e-3)*2.0 = 2e-6 A
-
-  EXPECT_NEAR(ind.prevCurrent, 0.100002, 1e-9) << "prevCurrent should be I_old + dI";
-  EXPECT_DOUBLE_EQ(ind.prev2Current, 0.1) << "prev2Current should be shifted from prevCurrent";
 }
 
 /* ----------------------------- Sparse Solver Tests ----------------------------- */

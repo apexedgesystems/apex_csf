@@ -58,10 +58,10 @@ inline TransientStatus TransientSolver::computeDC(TransientState& state) {
 
     statefulStampCallbackSparse_(sparseDc, 0.0, prevVoltages_);
 
-    // Inductors: short circuit (stamp as very high conductance)
+    // An inductor at rest: a conductance large beside the circuit's.
     for (std::size_t i = 0; i < companions_.inductorCount(); ++i) {
       const auto& IND = companions_.inductor(i);
-      sparseDc.addConductance(IND.posNet, IND.negNet, 1000.0);
+      sparseDc.addConductance(IND.posNet, IND.negNet, OPERATING_POINT_INDUCTOR_SIEMENS);
     }
 
     if (!sparseDc.factorize()) {
@@ -82,10 +82,10 @@ inline TransientStatus TransientSolver::computeDC(TransientState& state) {
 
     invokeStampCallback(mna, 0.0);
 
-    // Inductors: short circuit (stamp as very high conductance)
+    // An inductor at rest: a conductance large beside the circuit's.
     for (std::size_t i = 0; i < companions_.inductorCount(); ++i) {
       const auto& IND = companions_.inductor(i);
-      mna.addConductance(IND.posNet, IND.negNet, 1000.0);
+      mna.addConductance(IND.posNet, IND.negNet, OPERATING_POINT_INDUCTOR_SIEMENS);
     }
 
     MnaResult result = mna.solve();
@@ -102,7 +102,7 @@ inline TransientStatus TransientSolver::computeDC(TransientState& state) {
   prevVoltages_ = state.nodeVoltages;
 
   // Initialize companions from DC solution
-  companions_.initializeFromDC(state.nodeVoltages);
+  companions_.initializeFromDC(state.nodeVoltages, OPERATING_POINT_INDUCTOR_SIEMENS);
 
   return TransientStatus::SUCCESS;
 }
@@ -110,13 +110,18 @@ inline TransientStatus TransientSolver::computeDC(TransientState& state) {
 /* ----------------------------- Single Step ----------------------------- */
 
 inline TransientStatus TransientSolver::step(double dt, TransientState& state) {
+  // Factors are of a matrix that holds the companions' conductances, which
+  // a method scales by a factor that GEAR2 changes with the step before.
+  const double FACTOR = companions_.conductanceFactor(dt, method_);
+
   // Sparse cached LU path
-  if (useSparse_ && sparseCacheValid_) {
+  if (useSparse_ && sparseCacheValid_ && FACTOR == sparseCachedFactor_) {
     return solveCachedStepSparse(dt, state);
   }
 
   // Dense cached LU path
-  if (useCachedLU_ && factorizedWs_.isFactorized() && std::fabs(dt - cachedDt_) < 1e-15 * dt) {
+  if (useCachedLU_ && factorizedWs_.isFactorized() && std::fabs(dt - cachedDt_) < 1e-15 * dt &&
+      FACTOR == cachedFactor_) {
     return solveCachedStep(dt, state);
   }
 
@@ -225,7 +230,7 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
 
       // Accept result (converged or not) and advance time
       prevVoltages_ = state.nodeVoltages;
-      companions_.updateAll(state.nodeVoltages, dt);
+      companions_.updateAll(state.nodeVoltages, dt, method_);
       time_ += dt;
 
       sparseCacheValid_ = false;
@@ -279,11 +284,12 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
 
     sparseCacheValid_ = true;
     sparseCachedDim_ = n + m;
+    sparseCachedFactor_ = companions_.conductanceFactor(dt, method_);
 
     // Update state
     state.time = time_ + dt;
     prevVoltages_ = state.nodeVoltages;
-    companions_.updateAll(state.nodeVoltages, dt);
+    companions_.updateAll(state.nodeVoltages, dt, method_);
     time_ += dt;
 
     return TransientStatus::SUCCESS;
@@ -326,7 +332,10 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
   // Track previous voltages for stateful stamp callbacks
   prevVoltages_ = state.nodeVoltages;
 
-  companions_.updateAll(state.nodeVoltages, dt);
+  // The factor the conductances just solved were stamped with, read before
+  // the update moves the companions on.
+  const double STAMPED_FACTOR = companions_.conductanceFactor(dt, method_);
+  companions_.updateAll(state.nodeVoltages, dt, method_);
 
   time_ += dt;
 
@@ -336,6 +345,7 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
   if (useCachedLU_) {
     std::size_t dim = n + m;
     captureLU(dt, dim);
+    cachedFactor_ = STAMPED_FACTOR;
   }
 
   return TransientStatus::SUCCESS;
@@ -362,6 +372,7 @@ inline bool TransientSolver::buildAndFactorize(double dt) {
 
   if (ok) {
     cachedDt_ = dt;
+    cachedFactor_ = companions_.conductanceFactor(dt, method_);
   }
 
   return ok;
@@ -481,7 +492,7 @@ inline TransientStatus TransientSolver::solveCachedStep(double dt, TransientStat
   // 8. Update state
   state.time = time_ + dt;
   prevVoltages_ = state.nodeVoltages;
-  companions_.updateAll(state.nodeVoltages, dt);
+  companions_.updateAll(state.nodeVoltages, dt, method_);
   time_ += dt;
 
   return TransientStatus::SUCCESS;
@@ -583,7 +594,7 @@ inline TransientStatus TransientSolver::solveCachedStepSparse(double dt, Transie
   // 7. Update state
   state.time = time_ + dt;
   prevVoltages_ = state.nodeVoltages;
-  companions_.updateAll(state.nodeVoltages, dt);
+  companions_.updateAll(state.nodeVoltages, dt, method_);
   time_ += dt;
 
   return TransientStatus::SUCCESS;
@@ -598,7 +609,9 @@ inline TransientStatus TransientSolver::stepDual(double dt, int stateIdx, Transi
   }
 
   // Check if we have a valid cache for this state
-  if (dualFactorizedWs_[stateIdx].isFactorized() && std::fabs(dt - dualCachedDt_) < 1e-15 * dt) {
+  const double FACTOR = companions_.conductanceFactor(dt, method_);
+  if (dualFactorizedWs_[stateIdx].isFactorized() && std::fabs(dt - dualCachedDt_) < 1e-15 * dt &&
+      FACTOR == dualCachedFactor_[stateIdx]) {
     return solveDualCachedStep(dt, stateIdx, state);
   }
 
@@ -609,6 +622,7 @@ inline TransientStatus TransientSolver::stepDual(double dt, int stateIdx, Transi
   }
 
   dualCachedDt_ = dt;
+  dualCachedFactor_[stateIdx] = FACTOR;
   return solveDualCachedStep(dt, stateIdx, state);
 }
 
@@ -669,7 +683,7 @@ inline TransientStatus TransientSolver::solveDualCachedStep(double dt, int state
   // Track previous voltages for stateful stamp callbacks
   prevVoltages_ = state.nodeVoltages;
 
-  companions_.updateAll(state.nodeVoltages, dt);
+  companions_.updateAll(state.nodeVoltages, dt, method_);
   time_ += dt;
 
   return TransientStatus::SUCCESS;

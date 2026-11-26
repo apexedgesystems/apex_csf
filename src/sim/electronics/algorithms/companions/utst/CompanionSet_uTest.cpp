@@ -135,32 +135,66 @@ TEST(CompanionSetTest, ConductanceAndCurrentDecompositionMatchesFullStamp) {
 
 /* ----------------------------- updateAll ----------------------------- */
 
-/** @test updateAll advances each capacitor's prevVoltage from solved nodes */
-TEST(CompanionSetTest, UpdateAllAdvancesCapacitorState) {
-  CompanionSet set;
-  set.addCapacitor(/*posNet=*/1, /*negNet=*/0, /*capacitance=*/1e-6);
-  set.capacitor(0).prevVoltage = 0.0;
+/**
+ * @test updateAll gives every element its voltage from the solved nets and
+ *       the method the step was stamped with.
+ *
+ * 1 uF from net 2 to net 1 and 1 mH from net 3 to ground, from rest; the
+ * nets solve to 0.2 V, 0.7 V and 0.1 V after a step of 1 ms.
+ */
+TEST(CompanionSetTest, UpdateAllAdvancesEveryElementByTheMethod) {
+  struct Case {
+    IntegrationMethod method;
+    double capacitorAmperes;
+    double inductorAmperes;
+  };
+  // Capacitor at 0.5 V from 0: C * 0.5 / dt, twice that, and 1.5 times that.
+  // Inductor with 0.1 V from rest: (dt / L) * 0.1, half that, two thirds of that.
+  for (const Case& CASE : {Case{IntegrationMethod::BACKWARD_EULER, 5e-4, 0.1},
+                           Case{IntegrationMethod::TRAPEZOIDAL, 1e-3, 0.05},
+                           Case{IntegrationMethod::GEAR2, 7.5e-4, 0.2 / 3.0}}) {
+    CompanionSet set;
+    set.addCapacitor(/*posNet=*/2, /*negNet=*/1, /*capacitance=*/1e-6);
+    set.addInductor(/*posNet=*/3, /*negNet=*/0, /*inductance=*/1e-3);
 
-  const std::vector<double> V = {0.0, 0.5, 0.0};
-  const double DT = 1e-3;
-  set.updateAll(V, DT);
+    const std::vector<double> V = {0.0, 0.2, 0.7, 0.1};
+    set.updateAll(V, 1e-3, CASE.method);
 
-  EXPECT_DOUBLE_EQ(set.capacitor(0).prevVoltage, 0.5);
-  EXPECT_NEAR(set.capacitor(0).current, 1e-6 * 0.5 / DT, TOL);
+    EXPECT_DOUBLE_EQ(set.capacitor(0).prevVoltage, 0.5);
+    EXPECT_NEAR(set.capacitor(0).current, CASE.capacitorAmperes, 1e-15)
+        << "method " << static_cast<int>(CASE.method);
+    EXPECT_DOUBLE_EQ(set.inductor(0).voltage, 0.1);
+    EXPECT_NEAR(set.inductor(0).prevCurrent, CASE.inductorAmperes, 1e-15)
+        << "method " << static_cast<int>(CASE.method);
+  }
 }
 
-/** @test updateAll advances each inductor's prevCurrent integral */
-TEST(CompanionSetTest, UpdateAllAdvancesInductorState) {
+/* ----------------------------- conductanceFactor ----------------------------- */
+
+/** @test The factor on C/dt is 1, 2 and, for GEAR2, 3/2 until the step length changes */
+TEST(CompanionSetTest, ConductanceFactorFollowsTheMethodAndTheStepBefore) {
   CompanionSet set;
-  set.addInductor(/*posNet=*/1, /*negNet=*/0, /*inductance=*/1e-3);
-  set.inductor(0).prevCurrent = 0.0;
+  set.addCapacitor(/*posNet=*/1, /*negNet=*/0, /*capacitance=*/1e-6);
+  const std::vector<double> V = {0.0, 1.0};
 
-  const std::vector<double> V = {0.0, 0.1, 0.0};
-  const double DT = 1e-6;
-  set.updateAll(V, DT);
+  EXPECT_DOUBLE_EQ(set.conductanceFactor(1e-3, IntegrationMethod::BACKWARD_EULER), 1.0);
+  EXPECT_DOUBLE_EQ(set.conductanceFactor(1e-3, IntegrationMethod::TRAPEZOIDAL), 2.0);
+  EXPECT_DOUBLE_EQ(set.conductanceFactor(1e-3, IntegrationMethod::GEAR2), 1.5);
 
-  EXPECT_DOUBLE_EQ(set.inductor(0).voltage, 0.1);
-  EXPECT_NEAR(set.inductor(0).prevCurrent, (DT / 1e-3) * 0.1, TOL);
+  // After a step of 1 ms: 3/2 for another of 1 ms, 4/3 for one of 0.5 ms.
+  set.updateAll(V, 1e-3, IntegrationMethod::GEAR2);
+  EXPECT_DOUBLE_EQ(set.conductanceFactor(1e-3, IntegrationMethod::GEAR2), 1.5);
+  EXPECT_DOUBLE_EQ(set.conductanceFactor(0.5e-3, IntegrationMethod::GEAR2), 4.0 / 3.0);
+
+  // It is the factor of what is stamped.
+  EXPECT_DOUBLE_EQ(set.capacitor(0).geq(0.5e-3, IntegrationMethod::GEAR2),
+                   (4.0 / 3.0) * 1e-6 / 0.5e-3);
+
+  // A set of inductors answers by its inductors.
+  CompanionSet coils;
+  coils.addInductor(/*posNet=*/1, /*negNet=*/0, /*inductance=*/1e-3);
+  coils.updateAll(V, 1e-3, IntegrationMethod::GEAR2);
+  EXPECT_DOUBLE_EQ(coils.conductanceFactor(0.5e-3, IntegrationMethod::GEAR2), 4.0 / 3.0);
 }
 
 /* ----------------------------- reset ----------------------------- */
@@ -176,6 +210,8 @@ TEST(CompanionSetTest, ResetZerosAllHistory) {
   set.inductor(0).prevCurrent = 0.05;
   set.inductor(0).prev2Current = 0.02;
   set.inductor(0).voltage = 0.1;
+  set.capacitor(0).prevStep = 1e-3;
+  set.inductor(0).prevStep = 1e-3;
 
   set.reset();
 
@@ -185,23 +221,48 @@ TEST(CompanionSetTest, ResetZerosAllHistory) {
   EXPECT_DOUBLE_EQ(set.inductor(0).prevCurrent, 0.0);
   EXPECT_DOUBLE_EQ(set.inductor(0).prev2Current, 0.0);
   EXPECT_DOUBLE_EQ(set.inductor(0).voltage, 0.0);
+  EXPECT_DOUBLE_EQ(set.capacitor(0).prevStep, 0.0);
+  EXPECT_DOUBLE_EQ(set.inductor(0).prevStep, 0.0);
 }
 
 /* ----------------------------- initializeFromDC ----------------------------- */
 
-/** @test initializeFromDC seeds capacitor prevVoltage from node voltages */
+/** @test initializeFromDC leaves each capacitor at rest at the voltage between its nets */
 TEST(CompanionSetTest, InitializeFromDCSeedsCapacitorVoltage) {
   CompanionSet set;
   set.addCapacitor(/*posNet=*/2, /*negNet=*/1, /*capacitance=*/1e-6);
-  set.capacitor(0).current = 1e-4; // any non-zero starting current
+  set.capacitor(0).current = 1e-4;     // what an earlier run left
+  set.capacitor(0).prev2Voltage = 0.3; // likewise
+  set.capacitor(0).prevStep = 1e-3;    // likewise
 
   const std::vector<double> V_DC = {0.0, 0.7, 1.5}; // node 0=GND, 1=0.7V, 2=1.5V
   set.initializeFromDC(V_DC);
 
-  // V_pos - V_neg = 1.5 - 0.7 = 0.8
+  // V_pos - V_neg = 1.5 - 0.7 = 0.8, with a flat history and no current.
   EXPECT_DOUBLE_EQ(set.capacitor(0).prevVoltage, 0.8);
-  // No current in steady state.
+  EXPECT_DOUBLE_EQ(set.capacitor(0).prev2Voltage, 0.8);
   EXPECT_DOUBLE_EQ(set.capacitor(0).current, 0.0);
+  EXPECT_DOUBLE_EQ(set.capacitor(0).prevStep, 0.0);
+}
+
+/** @test initializeFromDC gives each inductor the current its stand-in conductance carried */
+TEST(CompanionSetTest, InitializeFromDCSeedsInductorCurrent) {
+  CompanionSet set;
+  set.addInductor(/*posNet=*/2, /*negNet=*/1, /*inductance=*/1e-3);
+  set.inductor(0).prevCurrent = 4.74e-3; // what an earlier run left
+  set.inductor(0).voltage = 0.2;
+
+  // 50 uV across a stand-in of 1000 S: 50 mA.
+  const std::vector<double> V_DC = {0.0, 1.0, 1.00005};
+  set.initializeFromDC(V_DC, 1000.0);
+  EXPECT_NEAR(set.inductor(0).prevCurrent, 50e-3, 1e-12);
+  EXPECT_NEAR(set.inductor(0).prev2Current, 50e-3, 1e-12);
+  EXPECT_DOUBLE_EQ(set.inductor(0).voltage, 0.0);
+  EXPECT_DOUBLE_EQ(set.inductor(0).prevStep, 0.0);
+
+  // Without a stand-in conductance the inductor starts without current.
+  set.initializeFromDC(V_DC);
+  EXPECT_DOUBLE_EQ(set.inductor(0).prevCurrent, 0.0);
 }
 
 /* ----------------------------- Determinism Tests ----------------------------- */

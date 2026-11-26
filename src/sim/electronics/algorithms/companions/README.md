@@ -55,8 +55,8 @@ companions.addCapacitor(/*pos=*/1, /*neg=*/0, /*C=*/1e-9);
 companions.addInductor(/*pos=*/2, /*neg=*/0, /*L=*/10e-6);
 
 companions.stampAll(mna, dt, IntegrationMethod::BACKWARD_EULER);
-// ... solve mna ...
-companions.updateAll(mna.solution(), dt);
+const auto RESULT = mna.solve();
+companions.updateAll(RESULT.nodeVoltages, dt, IntegrationMethod::BACKWARD_EULER);
 ```
 
 ---
@@ -73,9 +73,21 @@ companions.updateAll(mna.solution(), dt);
   time step. Safe to copy, batch, or hand to a GPU kernel.
 - **Separable conductance / RHS.** `stampConductanceAll` and `stampCurrentAll`
   let callers reuse a factorized MNA matrix and only update the RHS each step.
-- **No fallbacks.** Inductor steady-state current cannot be derived from node
-  voltages alone, so `initializeFromDC` leaves inductor current at zero
-  rather than guessing.
+- **One definition per method.** `update` takes an element's new current
+  from the `geq` and `ieq` that were stamped, so the history a method reads
+  on the next step is the one that method produced. The CUDA evaluators call
+  the same `geq` and `ieq`.
+- **Steps of any length.** GEAR2 weighs its two steps of history by their
+  lengths (`gear2Weights`), so a step of another length, such as a last step
+  shortened to land on the end time, keeps the method's order.
+- **Starting at rest.** An element as constructed, after `reset()`, after
+  `setInitialVoltage()` / `setInitialCurrent()`, or after
+  `initializeFromDC()` has a flat history: the capacitor's voltage or the
+  inductor's current was the same one and two steps ago, and the other
+  quantity is zero. That is the history GEAR2 starts from. An inductor's
+  resting current is not in the node voltages; `initializeFromDC` takes it
+  as what the operating-point solve passed through the conductance it stood
+  in for the inductor with.
 
 ---
 
@@ -93,9 +105,10 @@ struct CapacitorCompanion {
   NetID posNet;          ///< Positive terminal net
   NetID negNet;          ///< Negative terminal net
   double capacitance;    ///< Farads
-  double prevVoltage;    ///< V(t - dt)
-  double prev2Voltage;   ///< V(t - 2*dt), used by GEAR2
-  double current;        ///< Current through the device, for output
+  double prevVoltage;    ///< Voltage at the end of the last step
+  double prev2Voltage;   ///< Voltage at the end of the step before it (GEAR2)
+  double current;        ///< Current at the end of the last step (TRAPEZOIDAL, output)
+  double prevStep;       ///< Length of the last step; 0 before any (GEAR2)
 };
 ```
 
@@ -108,11 +121,13 @@ struct CapacitorCompanion {
 void stamp(MnaSystem& mna, double dt, IntegrationMethod method) const;
 void stamp(MnaSystemSparse& mna, double dt, IntegrationMethod method) const;
 
-void update(double newVoltage, double dt) noexcept;
+void update(double newVoltage, double dt, IntegrationMethod method) noexcept;
+void setInitialVoltage(double volts) noexcept;
 ```
 
 `geq` and `ieq` are RT-safe (constant time, no allocation). `stamp` is RT-safe
-once the MNA system is sized.
+once the MNA system is sized. `update` takes the method the step was stamped
+with.
 
 #### Usage
 
@@ -121,7 +136,7 @@ CapacitorCompanion cap{.posNet = 1, .negNet = 0, .capacitance = 1e-9};
 cap.stamp(mna, dt, IntegrationMethod::BACKWARD_EULER);
 
 const double V_CAP = solution[1] - solution[0];
-cap.update(V_CAP, dt);
+cap.update(V_CAP, dt, IntegrationMethod::BACKWARD_EULER);
 ```
 
 ### InductorCompanion
@@ -136,9 +151,10 @@ struct InductorCompanion {
   NetID posNet;          ///< Positive terminal net
   NetID negNet;          ///< Negative terminal net
   double inductance;     ///< Henries
-  double prevCurrent;    ///< I(t - dt)
-  double prev2Current;   ///< I(t - 2*dt), used by GEAR2
-  double voltage;        ///< Voltage across the device, for output
+  double prevCurrent;    ///< Current at the end of the last step
+  double prev2Current;   ///< Current at the end of the step before it (GEAR2)
+  double voltage;        ///< Voltage at the end of the last step (TRAPEZOIDAL, output)
+  double prevStep;       ///< Length of the last step; 0 before any (GEAR2)
 };
 ```
 
@@ -151,8 +167,13 @@ struct InductorCompanion {
 void stamp(MnaSystem& mna, double dt, IntegrationMethod method) const;
 void stamp(MnaSystemSparse& mna, double dt, IntegrationMethod method) const;
 
-void update(double newVoltage, double dt) noexcept;
+void update(double newVoltage, double dt, IntegrationMethod method) noexcept;
+void setInitialCurrent(double amperes) noexcept;
 ```
+
+The trapezoidal rule reads the inductor's last voltage: an inductor that
+starts with a voltage across it (a tank with a charged capacitor) has
+`voltage` set to it.
 
 #### Usage
 
@@ -161,7 +182,7 @@ InductorCompanion ind{.posNet = 1, .negNet = 0, .inductance = 10e-6};
 ind.stamp(mna, dt, IntegrationMethod::TRAPEZOIDAL);
 
 const double V_IND = solution[1] - solution[0];
-ind.update(V_IND, dt);
+ind.update(V_IND, dt, IntegrationMethod::TRAPEZOIDAL);
 ```
 
 ### CompanionSet
@@ -180,9 +201,11 @@ void stampAll(MnaSystem& mna, double dt, IntegrationMethod method) const;
 void stampConductanceAll(MnaSystem& mna, double dt, IntegrationMethod method) const;
 void stampCurrentAll(MnaSystem& mna, double dt, IntegrationMethod method) const;
 
-void updateAll(const std::vector<double>& nodeVoltages, double dt);
+void updateAll(const std::vector<double>& nodeVoltages, double dt, IntegrationMethod method);
 void reset() noexcept;
-void initializeFromDC(const std::vector<double>& nodeVoltages);
+void initializeFromDC(const std::vector<double>& nodeVoltages, double inductorSiemens = 0.0);
+
+[[nodiscard]] double conductanceFactor(double dt, IntegrationMethod method) const noexcept;
 
 [[nodiscard]] std::size_t capacitorCount() const noexcept;
 [[nodiscard]] std::size_t inductorCount() const noexcept;
@@ -191,6 +214,11 @@ void initializeFromDC(const std::vector<double>& nodeVoltages);
 `addCapacitor` / `addInductor` are NOT RT-safe (they grow internal vectors).
 `stampAll`, `stampConductanceAll`, `stampCurrentAll`, `updateAll`, and `reset`
 are RT-safe once the set is populated.
+
+`conductanceFactor` is the factor the method puts on C/dt for a step taken
+now: 1, 2, and for GEAR2 3/2 unless the step before had another length.
+Steps of equal length, method and factor stamp equal conductances, which is
+what a caller that keeps factors of the matrix compares.
 
 #### Usage
 
@@ -201,7 +229,7 @@ companions.addInductor(2, 0, 10e-6);
 
 companions.stampAll(mna, dt, IntegrationMethod::BACKWARD_EULER);
 // solve ...
-companions.updateAll(solution, dt);
+companions.updateAll(solution, dt, IntegrationMethod::BACKWARD_EULER);
 ```
 
 ### CompanionSetCuda
@@ -213,26 +241,31 @@ inductors in parallel.
 #### API
 
 ```cpp
-void evaluateCapacitorsCuda(const CapacitorCompanion* capacitors, int n, double dt,
-                            IntegrationMethod method,
-                            double* geqOut, double* ieqOut);
+[[nodiscard]] bool evaluateCapacitorsCuda(const CapacitorCompanion* capacitors, int n, double dt,
+                                          IntegrationMethod method,
+                                          double* geqOut, double* ieqOut);
 
-void evaluateInductorsCuda(const InductorCompanion* inductors, int n, double dt,
-                           IntegrationMethod method,
-                           double* geqOut, double* ieqOut);
+[[nodiscard]] bool evaluateInductorsCuda(const InductorCompanion* inductors, int n, double dt,
+                                         IntegrationMethod method,
+                                         double* geqOut, double* ieqOut);
 ```
 
 Both functions copy host arrays to the device, launch one CUDA thread per
 element, and copy results back. NOT RT-safe (device allocation + transfer).
+They return false, and the outputs are not to be read, when there is no
+device, a CUDA call fails, a pointer is null or `n` is negative. The values
+are those `geq()` and `ieq()` return on the host.
 
 #### Usage
 
 ```cpp
-const std::size_t N = companions.capacitorCount();
-std::vector<double> geq(N), ieq(N);
-cuda::evaluateCapacitorsCuda(companions.capacitors().data(), N, dt,
-                             IntegrationMethod::TRAPEZOIDAL,
-                             geq.data(), ieq.data());
+std::vector<CapacitorCompanion> capacitors = /* ... */;
+const int N = static_cast<int>(capacitors.size());
+std::vector<double> geq(capacitors.size()), ieq(capacitors.size());
+if (!cuda::evaluateCapacitorsCuda(capacitors.data(), N, dt, IntegrationMethod::TRAPEZOIDAL,
+                                  geq.data(), ieq.data())) {
+  // No device, or the device refused: evaluate on the host instead.
+}
 ```
 
 ---
@@ -243,30 +276,47 @@ cuda::evaluateCapacitorsCuda(companions.capacitors().data(), N, dt,
 
 ```cpp
 companions.stampAll(mna, dt, method);
-mna.solve(solution);
-companions.updateAll(solution, dt);
+const auto RESULT = mna.solve();
+companions.updateAll(RESULT.nodeVoltages, dt, method);
 ```
 
 ### Cached LU (factorize once, RHS each step)
 
 ```cpp
-mna.clear();
-companions.stampConductanceAll(mna, dt, method);
-auto factor = mna.factorize();
+MnaFactorizedWorkspace factors;
+factors.prepare(mna.netCount() + sourceCount);
+double factoredFor = 0.0;  // conductanceFactor the factors hold
 
 for (double t = 0.0; t < tEnd; t += dt) {
-  factor.rhs().setZero();
-  companions.stampCurrentAll(factor.rhs(), dt, method);
-  factor.solve(solution);
-  companions.updateAll(solution, dt);
+  // Equal dt, method and factor mean equal conductances.
+  const double FACTOR = companions.conductanceFactor(dt, method);
+  if (!factors.isFactorized() || FACTOR != factoredFor) {
+    mna.clear();
+    stampResistors(mna);
+    companions.stampConductanceAll(mna, dt, method);
+    mna.factorize(factors);
+    factoredFor = FACTOR;
+  }
+  mna.clearRHS();
+  stampSources(mna, t + dt);
+  companions.stampCurrentAll(mna, dt, method);
+  mna.solveFactorized(factors, voltages.data(), currents.data());
+  companions.updateAll(voltages, dt, method);
 }
 ```
 
 ### Resetting State
 
 ```cpp
-companions.reset();              // history -> 0
-companions.initializeFromDC(dc); // seed from DC operating point
+companions.reset();              // every element at rest at zero
+
+// Seed from an operating point in which each inductor was solved as a
+// conductance of 1000 S: capacitors take their voltages, inductors the
+// current that conductance carried.
+companions.initializeFromDC(dc, 1000.0);
+
+// Or one element by hand.
+companions.capacitor(0).setInitialVoltage(5.0);
 ```
 
 ---
@@ -331,8 +381,8 @@ int main() {
     mna.addConductance(0, 1, 1.0 / R);
     mna.addCurrent(1, 0, V_IN / R);
     companions.stampAll(mna, DT, IntegrationMethod::BACKWARD_EULER);
-    mna.solve(solution);
-    companions.updateAll(solution, DT);
+    solution = mna.solve().nodeVoltages;
+    companions.updateAll(solution, DT, IntegrationMethod::BACKWARD_EULER);
     fmt::print("t={:.3e}  vCap={:.6f}\n", t, solution[1]);
   }
   return 0;

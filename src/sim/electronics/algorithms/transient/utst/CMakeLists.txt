@@ -4,7 +4,7 @@
 
 include(apex/All)
 
-set(UNIT_TEST_SOURCES Transient_uTest.cpp)
+set(UNIT_TEST_SOURCES Transient_uTest.cpp IntegrationOrder_uTest.cpp)
 
 apex_add_gtest(
   TARGET
@@ -13,6 +13,7 @@ apex_add_gtest(
   ${UNIT_TEST_SOURCES}
   LINK
   sim_electronics_algorithms_transient
+  utilities_math_integration
   LABELS
   sim
   electronics
