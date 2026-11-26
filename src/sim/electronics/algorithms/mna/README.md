@@ -19,7 +19,8 @@ High-performance Modified Nodal Analysis solvers for circuit simulation. Provide
 7. [RT-Safety](#7-rt-safety)
 8. [Requirements](#8-requirements)
 9. [Testing](#9-testing)
-10. [See Also](#10-see-also)
+10. [Migration](#10-migration)
+11. [See Also](#11-see-also)
 
 ---
 
@@ -131,10 +132,13 @@ auto result = mna.solve();  // Back-substitution
 - Direct CSC (Compressed Sparse Column) build
 - `factorize()` is the one entry point after any change. It keeps the
   symbolic analysis while the pattern (stamped positions and voltage sources)
-  is the analysed one, and the pivot order (`klu_refactor`) while no pivot is
-  zero for the new values; otherwise it analyses or pivots anew.
+  is the analysed one, and the pivot order (`klu_refactor`) while it suits
+  the new values: no pivot is zero and the pivots have not grown small
+  beside their columns (`klu_rgrowth` at least the square root of machine
+  epsilon). Otherwise it analyses or pivots anew.
 - `tripletsMatch()` tells whether the stamps are those of the factors in
-  hand; `updateRhs()` then rebuilds the right-hand side alone.
+  hand, after any factorization; `updateRhs()` then rebuilds the right-hand
+  side alone.
 
 ### AcMnaSystem (AC Frequency Domain)
 
@@ -447,7 +451,7 @@ if (!workspace.prepare(dim, batchSize)) {
 // Host-side matrices (batchSize independent 32x32 systems, row-major)
 std::vector<double> hA(batchSize * dim * dim);
 std::vector<double> hb(batchSize * dim);
-std::unique_ptr<bool[]> solved(new bool[batchSize]);
+std::unique_ptr<bool[]> solved(new bool[batchSize]());  // every flag false
 
 // Fill hA and hb with parameter-varied circuits
 // (each trial has slightly different component values)
@@ -456,8 +460,11 @@ std::unique_ptr<bool[]> solved(new bool[batchSize]);
 bool everySolved =
     solveBatchCustom(workspace, hA.data(), hb.data(), dim, batchSize, nullptr, solved.get());
 
-// hb now holds the solution of each trial whose flag is true; a trial that
-// was not solved (a floating node, say) holds not-a-number throughout.
+// hb holds the solution of each trial whose flag is true, whatever became
+// of its neighbours; a trial that was not solved (a floating node, say)
+// holds not-a-number throughout. When the batch did not run to its end
+// (everySolved is false then) every flag is false: read no trial without
+// its flag.
 for (std::size_t trial = 0; trial < batchSize; ++trial) {
   if (solved[trial]) {
     record(&hb[trial * dim]);
@@ -494,13 +501,18 @@ void rtControlLoop() {
     mna.addConductance(r.a, r.b, 1.0 / r.R);
   }
 
-  // Solve into pre-allocated buffers (RT-safe with workspace - no allocations)
+  // Solve into pre-allocated buffers (with LAPACKE: no allocations)
   if (mna.solveInto(workspace, v.data(), i_branch.data())) {
     // Use result for control output (RT-safe)
     setActuatorVoltage(v[outputNode]);
   }
 }
 ```
+
+This holds for a build with LAPACKE (`COMPAT_HAVE_LAPACKE=1`, the hosted
+default). Without it the dense solver falls back to its own elimination,
+which allocates on every solve whatever the workspace: that build has no
+allocation-free dense solve.
 
 ---
 
@@ -571,9 +583,16 @@ if (mna.tripletsMatch()) {
 mna.solveInto(nodeV, branchI);
 ```
 
-`tripletsMatch()` is true only for the stamps of the last factorization that
-pivoted anew. After one that kept the pivot order it is false, so an earlier
-matrix's stamps never select another matrix's factors.
+`tripletsMatch()` compares with the stamps of the last factorization,
+whichever way that one was done, so an earlier matrix's stamps never select
+another matrix's factors. The comparison allocates nothing: `clearStamps()`
+sets the factorized stamp list aside by exchanging two buffers.
+
+When the values change on every pass (a Newton iteration), `factorize()`
+keeps the pivot order and then measures the pivot growth of the result, a
+pass over the matrix and its factors on top of the refactorization. Where
+the growth is too small it pivots anew, which costs a full numeric
+factorization for that pass.
 
 ---
 
@@ -581,14 +600,17 @@ matrix's stamps never select another matrix's factors.
 
 ### RT-Safe Operations
 
-| Operation                 | RT-Safe? | Notes                                |
-| ------------------------- | -------- | ------------------------------------ |
-| `addConductance()`        | [OK] Yes | Pure stamping, no allocations        |
-| `addCurrent()`            | [OK] Yes | Pure stamping, no allocations        |
-| `addGEntry()`             | [OK] Yes | One asymmetric entry (dense)         |
-| `addTransconductance()`   | [OK] Yes | Controlled current source (dense)    |
-| `clearStamps()`           | [OK] Yes | Sparse: clears stamps, keeps factors |
-| `solveInto()` + workspace | [OK] Yes | No allocations in hot path           |
+| Operation               | RT-Safe? | Notes                                |
+| ----------------------- | -------- | ------------------------------------ |
+| `addConductance()`      | [OK] Yes | Pure stamping, no allocations        |
+| `addCurrent()`          | [OK] Yes | Pure stamping, no allocations        |
+| `addGEntry()`           | [OK] Yes | One asymmetric entry (dense)         |
+| `addTransconductance()` | [OK] Yes | Controlled current source (dense)    |
+| `clearStamps()`         | [OK] Yes | Sparse: clears stamps, keeps factors |
+| `tripletsMatch()`       | [OK] Yes | Sparse: compares, no allocations     |
+| `updateRhs()`           | [OK] Yes | Sparse: right-hand side only         |
+| Sparse `solveInto()`    | [OK] Yes | After a `factorize()`                |
+| Dense `solveInto()`     | [OK] Yes | Prepared workspace, LAPACKE build    |
 
 ### NOT RT-Safe
 
@@ -598,15 +620,19 @@ matrix's stamps never select another matrix's factors.
 | `solve()`            | [X] No   | Allocates matrix and result       |
 | Resizing             | [X] No   | Reallocates matrices              |
 | Sparse `factorize()` | [X] No   | KLU analysis and factors allocate |
+| Dense, no LAPACKE    | [X] No   | Fallback elimination allocates    |
 | GPU batch solving    | [X] No   | Kernel launches, memory transfers |
 
 ### RT-Safe Usage Pattern
 
 ```cpp
-// SETUP PHASE (not RT-safe): stamp once and factorize
+// SETUP PHASE (not RT-safe): stamp once and factorize. factorize() also
+// sizes the storage the solves work in, so the first solve allocates nothing.
 MnaSystemSparse mna(netCount);
 stampCircuit(mna, inputs);
-mna.factorize();
+if (!mna.factorize()) {
+  return;  // Singular, or a floating net
+}
 std::vector<double> v(netCount);
 std::vector<double> i_branch(mna.voltageSourceCount());
 
@@ -684,6 +710,10 @@ docker compose run --rm dev-cuda bash -c \
   - Stamp context in its three modes
   - AC system: impedances, RC filters, RLC resonance, and the frequency
     sweep's points, ends and refusals
+- **`TestSimElectronicsMnaAllocation` (CPU; a binary of its own, counting
+  through the global allocation functions):**
+  - The sparse right-hand-side path and, with LAPACKE, the dense solve into
+    a prepared workspace allocate nothing, from the first pass after setup
 - **`TestSimElectronicsMnaBatch` (CUDA; skipped where there is no device, and
   run by no CI job):**
   - Every supported dimension in both precisions: known solutions, systems
@@ -696,7 +726,28 @@ docker compose run --rm dev-cuda bash -c \
 
 ---
 
-## 10. See Also
+## 10. Migration
+
+The sparse system and the batch workspaces changed layout, and the batch
+solvers their signature: rebuild everything that includes
+`MnaSystemSparse.hpp` or `MnaBatchCuda.cuh` together with the library.
+Objects compiled against the earlier headers do not link or load against it.
+
+| Earlier                                                                 | Now                                                                                                                                                                          |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MnaSystemSparse::refactorize()`, `refactorizeInPlace()`                | `factorize()`. It keeps the analysis and the pivot order where they still apply.                                                                                             |
+| `tripletsMatch()` to choose `refactorizeInPlace()`                      | `tripletsMatch()` true: `updateRhs()`. False: `factorize()`.                                                                                                                 |
+| `MnaBatchWorkspace`, `MnaBatchWorkspaceF32` as two structs              | Aliases of `BatchWorkspace<double>` and `BatchWorkspace<float>`. Neither copyable nor movable; no aggregate construction. A forward declaration must name the template.      |
+| `MnaBatchWorkspace::dSuccess`                                           | Gone. Pass `solved` to the solve call, or test the first entry of a system for not-a-number.                                                                                 |
+| `solveBatchCustom(ws, As, bs, dim, batch, stream)` and the `F32` form   | A trailing `bool* solved = nullptr`. Calls compile as they are; a function pointer or wrapper of the six-argument type takes the seventh.                                    |
+| A batch with an unsolved system returned true, that system's `bs` kept  | Returns false; that system is not-a-number in every entry and its flag is false. The others are solved.                                                                      |
+| `MnaSystem::solve()`, `factorize()` on an external-matrix/matvec system | Refused. An external-matrix system solves with `solveInto()` and the workspace it stamps into, in a LAPACKE build. A matvec system holds no matrix and has nothing to solve. |
+| `StampContext::clear()` left borrowed storage as it was                 | Zeroes the external matrix, and the net entries of the matvec output.                                                                                                        |
+| `frequencySweep()` with equal ends, a short span, or no valid span      | One point; both ends; no points.                                                                                                                                             |
+
+---
+
+## 11. See Also
 
 **Related Modules:**
 

@@ -126,7 +126,8 @@ any such change is called out explicitly in its entry.
   `largeFactorial`); replace direct uses before updating. Breaking.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
 - `MnaSystemSparse::refactorize()` and `refactorizeInPlace()`; call
-  `factorize()`, which reuses what still applies. Breaking.
+  `factorize()`, which reuses what still applies. Breaking: see the
+  [MNA migration table](src/sim/electronics/algorithms/mna/README.md#10-migration).
   ([#199](https://github.com/apexedgesystems/apex_csf/pull/199))
 
 ### Fixed
@@ -135,8 +136,9 @@ any such change is called out explicitly in its entry.
   their own matrix, the AC sweep and the dense solver's borrowed-storage
   modes handle their edge inputs, and the CUDA batch solver reports each
   system it did not solve. Breaking: `solveBatchCustom*` return false for
-  such a batch and mark the system with not-a-number; see
-  [#199](https://github.com/apexedgesystems/apex_csf/pull/199).
+  such a batch and mark the system with not-a-number; rebuild what uses the
+  sparse or batch solvers
+  ([#199](https://github.com/apexedgesystems/apex_csf/pull/199)).
 - Corrected nonlinear device stamps, junction currents and FET region
   transitions; `BjtCommonEmitter::computeDC` reports failed solves. Breaking:
   device currents and Level 1 region codes change and six model parameters
