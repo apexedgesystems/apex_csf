@@ -27,14 +27,15 @@
  *   - Constructor: NOT RT-safe (allocates memory)
  *   - acquire(): RT-DEPENDS (one pass over the free map; an exchange is retried only when
  *     another thread changed the same word, with no per-caller retry bound)
- *   - release(): RT-DEPENDS (no loop in the pool: one atomic update of the reference count
- *     and, for the last reference, one of the free map; bounded where the target and the
- *     build bound each update, see Atomic updates)
+ *   - release(): RT-DEPENDS (no loop in the pool: a shared buffer takes one atomic update of
+ *     its reference count, and the last or only reference one of the free map; bounded
+ *     where the target and the build bound each update, see Atomic updates)
  *
  * Atomic updates:
  *   The pool's own work is atomic read-modify-write operations: in acquire() one exchange
- *   per attempt, and in release() a fixed number, the reference-count decrement and the
- *   free-map OR. How long one of them takes belongs to the target and the build:
+ *   per attempt, and in release() at most two, the reference-count decrement of a shared
+ *   buffer and the free-map OR. How long one of them takes belongs to the target and the
+ *   build:
  *     - x86-64, and AArch64 with the LSE atomic instructions (Armv8.1 and later): one
  *       instruction each in a release build.
  *     - AArch64 without LSE: each is an exclusive load and store repeated until the store
@@ -143,10 +144,13 @@ public:
   /**
    * @brief Release buffer back to pool (cannot be refused).
    * @param buf Buffer to release (must have been acquired from this pool).
-   * @note RT-DEPENDS: one atomic update of the reference count; the last reference then
-   *       returns the buffer with one atomic update of the free map, which cannot be
-   *       refused. No loop in the pool; each update is bounded where the target and the
-   *       build bound it (Atomic updates in the file comment).
+   * @note RT-DEPENDS: a buffer with one reference is returned with one atomic update of the
+   *       free map, which cannot be refused, and its count is read, not written. A shared
+   *       buffer takes one atomic update of its count first, and only its last reference
+   *       goes on to the free map. No loop in the pool; each update is bounded where the
+   *       target and the build bound it (Atomic updates in the file comment).
+   * @note Each call gives up one counted reference of the caller's: a count of one means
+   *       no other thread holds the buffer.
    * @note CRITICAL: Do not access buffer after releasing!
    * @note CRITICAL: Do not release nullptr!
    * @note CRITICAL: Do not release same buffer twice!
