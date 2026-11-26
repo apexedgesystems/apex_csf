@@ -759,11 +759,13 @@ def run_checkout(args: argparse.Namespace) -> int:
             if os.path.isfile(rts_path):
                 # Transfer paths are filesystem-root-relative; LOAD paths are
                 # bank-relative (resolve against the active bank). The pair
-                # must land on the same file: upload into the bank.
-                result = c2.send_file(rts_path, "bank_a/rts/noop_sweep.rts")
+                # must land on the same file: upload into the bank. A file in
+                # the bank's rts directory is named for its slot, which is how
+                # the executive loads it again at the next start.
+                result = c2.send_file(rts_path, "bank_a/rts/000.rts")
                 check("Upload RTS file", result["status"] == 0, result["status_name"])
 
-                load_payload = b"\x00" + b"rts/noop_sweep.rts\x00"
+                load_payload = b"\x00" + b"rts/000.rts\x00"
                 r = c2.send_command(0x000500, proto.ACTION_LOAD_RTS, load_payload)
                 check("LOAD_RTS slot 0", r["status"] == 0, r["status_name"])
 
