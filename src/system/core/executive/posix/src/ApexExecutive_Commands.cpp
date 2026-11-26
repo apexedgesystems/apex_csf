@@ -253,8 +253,8 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
           fileSystem_.inactiveTprmDir(), targetUid, comp->expectedLayoutHash(), response);
       if (VERDICT != system_core::system_component::TprmPayloadCheck::OK) {
         sysLog_->warning(label(), system_core::system_component::toFaultCode(VERDICT),
-                         fmt::format("RELOAD_TPRM refused for 0x{:06X}: staged payload {}",
-                                     targetUid, system_core::system_component::toString(VERDICT)));
+                         fmt::format("RELOAD_TPRM refused for 0x{:06X}: {}", targetUid,
+                                     system_core::system_component::toString(VERDICT)));
         if (auto* sl = fileSystem_.swapLog()) {
           sl->warning("SWAP", system_core::system_component::toFaultCode(VERDICT),
                       fmt::format("RELOAD_TPRM_REFUSED: uid=0x{:06X} verdict={}", targetUid,
