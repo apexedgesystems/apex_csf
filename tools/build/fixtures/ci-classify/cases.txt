@@ -69,7 +69,6 @@ sh                      | tools/build/sh/package-tools.sh
 
 # --- the gate images' own definition: every job rebuilds its image -------------
 cpp rust_build rust_ops rust_analysis py sh images | docker/base.Dockerfile
-cpp rust_build rust_ops rust_analysis py sh images | docker/dev/cpu.Dockerfile
 cpp rust_build rust_ops rust_analysis py sh images | docker/dev/cuda.Dockerfile
 cpp rust_build rust_ops rust_analysis py sh images | docker-compose.yml
 # How CI rebuilds them: the registry-cache overlay and the image setup action.
@@ -98,7 +97,10 @@ rust_build rust_ops rust_analysis | tools/Cargo.lock.orig
 -                       | tools/build/sh/setup-cross-toolchain.sh
 -                       | tools/build/sh/setup-sysroot.sh
 
-# --- leaf images: built after the merge, no gate runs in them --------------------
+# --- images no gate job runs in: built after the merge ---------------------------
+# The CPU shell among them: lint has an image of its own, and the C++ jobs run
+# in the CUDA tiers.
+-                       | docker/dev/cpu.Dockerfile
 -                       | docker/dev/rpi.Dockerfile
 -                       | docker/dev/stm32.Dockerfile
 

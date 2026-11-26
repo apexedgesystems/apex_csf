@@ -421,7 +421,6 @@ check-ci-classify:
 	    exit 1; \
 	  fi
 	@scratch=$$(mktemp -d) && mkdir -p "$$scratch/docker/dev" && \
-	  cp "$(CI_CLASSIFY_FIXTURES)/whole_tree.Dockerfile" "$$scratch/docker/dev/cpu.Dockerfile" && \
 	  cp "$(CI_CLASSIFY_FIXTURES)/whole_tree.Dockerfile" "$$scratch/docker/dev/cuda.Dockerfile" || exit 1; \
 	  fail=0; \
 	  for refused in "refused.Dockerfile=6: COPY source " "escape_directive.Dockerfile.txt=1: the escape directive "; do \

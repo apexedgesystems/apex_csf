@@ -15,7 +15,7 @@ inputs:
     description: GITHUB_TOKEN used for registry login
     required: true
   service:
-    description: Compose service to prepare (dev, dev-cuda, or cuda-build)
+    description: Compose service to prepare (dev, dev-cuda, cuda-build, build-base, or lint)
     default: dev
   rebuild:
     description: Rebuild base and the service image from the Dockerfiles instead of using the pulled cache
@@ -52,6 +52,7 @@ runs:
           dev-cuda)   tag=apex.dev.cuda;   parent=apex.base;       parent_svc=base ;;
           cuda-build) tag=apex.cuda-build; parent=apex.build-base; parent_svc=build-base ;;
           build-base) tag=apex.build-base; parent=;               parent_svc=build-base ;;
+          lint)       tag=apex.lint;       parent=;               parent_svc=lint ;;
           *) echo "dev-setup: unknown service '$SERVICE'" >&2; exit 1 ;;
         esac
         {
@@ -67,7 +68,7 @@ runs:
         TAG: ${{ steps.img.outputs.tag }}
         PARENT: ${{ steps.img.outputs.parent }}
       run: |
-        # A root tier (build-base) has no parent to pull.
+        # A root tier (build-base, lint) has no parent to pull.
         if [ -n "$PARENT" ]; then
           docker pull "$REGISTRY/$PARENT:latest" \
             && docker tag "$REGISTRY/$PARENT:latest" "$PARENT" || true
@@ -89,7 +90,7 @@ runs:
         REGISTRY: ${{ inputs.registry }}
       run: |
         # Build the parent first so the service's FROM resolves -- unless the
-        # service is its own root (build-base), in which case build it once.
+        # service is its own root (build-base, lint), in which case build it once.
         if [ "$PARENT_SVC" != "$SERVICE" ]; then
           docker compose -f docker-compose.yml -f docker-compose.ci-cache.yml build "$PARENT_SVC"
         fi

@@ -147,17 +147,17 @@ RULES = (
     (("demos/*/scripts/*.py",), {"cpp", "py"}),
     (("src/*", "demos/*", "apps/*", "cmake/*", "CMakeLists.txt", "CMakePresets.json"), {"cpp"}),
     (("*.md", "docs/*"), set()),
-    # Two of the images under docker/dev are ones the gate jobs run in; a
-    # change to either can alter every build.
-    (("docker/dev/cpu.Dockerfile", "docker/dev/cuda.Dockerfile"), EVERY_JOB),
+    # One of the images under docker/dev is one the gate jobs run in (the
+    # C++ jobs, in its two tiers); a change to it can alter every build.
+    (("docker/dev/cuda.Dockerfile",), EVERY_JOB),
     # The script that bakes the FetchContent dependencies, and their crates and
     # wheels, into the images: every build stands on what it leaves.
     (("tools/build/sh/bake-external-deps.sh",), EVERY_JOB),
     # The tools packager has an executed regression in the shell suite.
     (("tools/build/sh/package-tools.sh",), {"sh"}),
-    # The other images under docker/dev (cross and firmware) and the scripts
-    # they copy are built after the merge; no gate job runs in them. Lint
-    # still checks them.
+    # The other images under docker/dev (the CPU shell, cross and firmware)
+    # and the scripts they copy are built after the merge; no gate job runs
+    # in them. Lint still checks them.
     (("docker/dev/*", "tools/build/sh/*"), set()),
     # Everything else: the base image, compose files, workflows, make files,
     # root configuration, a tools role or language no rule names, and
@@ -172,10 +172,10 @@ ROLE_SUITES = (
     ("tools/analysis/*", frozenset({"rust_analysis", "py"})),
 )
 
-# The images the gate jobs run in.
+# The images the gate jobs run in: the base file's tiers (build-base, lint,
+# and dev-base under the CUDA shell) and the CUDA layer on two of them.
 GATE_DOCKERFILES = (
     "docker/base.Dockerfile",
-    "docker/dev/cpu.Dockerfile",
     "docker/dev/cuda.Dockerfile",
 )
 # What a rebuild of those images reads besides the Dockerfiles: the compose
