@@ -501,7 +501,7 @@ TEST_F(MnaBatchCudaTest, FailureIsReportedWithoutFlags) {
   expectKnownSolution(vectors, DIM, 1);
 }
 
-/** @test A batch that does not run is refused and writes nothing */
+/** @test A batch that does not run is refused: no solution written, no system flagged solved */
 TEST_F(MnaBatchCudaTest, BatchThatCannotRunIsRefused) {
   constexpr std::size_t DIM = 8;
   std::vector<double> matrices;
@@ -523,7 +523,7 @@ TEST_F(MnaBatchCudaTest, BatchThatCannotRunIsRefused) {
       cuda::solveBatchCustom(ws, matrices.data(), vectors.data(), 12, 1, nullptr, solved.data()));
 
   EXPECT_EQ(vectors, GIVEN);
-  EXPECT_EQ(std::count(solved.begin(), solved.end(), true), 4);
+  EXPECT_EQ(std::count(solved.begin(), solved.end(), true), 0);
 }
 
 /** @test An empty batch is solved: there is nothing in it that was not */

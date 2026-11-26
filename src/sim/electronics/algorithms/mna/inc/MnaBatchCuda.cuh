@@ -18,7 +18,8 @@
  *
  * API Design:
  *  - Host-device transfers are explicit
- *  - Stream parameter for async operation
+ *  - Stream parameter: the work is queued on the stream given, and the call
+ *    returns when that work is done
  *  - Returns bool: true when every system of the batch was solved
  *
  * A system is solved unless, at some elimination step, no entry left in the
@@ -171,11 +172,12 @@ LaunchConfig getLaunchConfig(std::size_t dim, std::size_t batch) noexcept;
  * @param dim Matrix dimension (must be 8, 16, 32, or 64).
  * @param batch Number of systems to solve.
  * @param stream CUDA stream (nullptr for default stream).
- * @param solved Optional: batch flags, true for each system solved. Written
- *               only when the batch ran.
+ * @param solved Optional: batch flags, true for each system solved. Every
+ *               flag is false when the batch did not run to its end.
  * @return true when every system was solved (an empty batch included).
- *         False when at least one was not, or when the batch did not run:
- *         unsupported dimension, workspace too small, or a CUDA error.
+ *         False when at least one was not, or when the batch did not run to
+ *         its end: unsupported dimension, workspace too small, or a CUDA
+ *         error. After a CUDA error the contents of bs are unspecified.
  *
  * @note NOT RT-SAFE: involves memory transfers and kernel launches.
  */
@@ -199,8 +201,8 @@ bool solveBatchCustom(MnaBatchWorkspace& ws, const double* As, double* bs, std::
  * @param dim Matrix dimension (must be 8, 16, 32, or 64).
  * @param batch Number of systems to solve.
  * @param stream CUDA stream (nullptr for default stream).
- * @param solved Optional: batch flags, true for each system solved. Written
- *               only when the batch ran.
+ * @param solved Optional: batch flags, true for each system solved. Every
+ *               flag is false when the batch did not run to its end.
  * @return As solveBatchCustom.
  *
  * @note NOT RT-SAFE: involves memory transfers and kernel launches.

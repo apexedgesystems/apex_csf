@@ -141,11 +141,15 @@ static void runBatchCase(std::size_t dim, std::size_t batch, const char* label) 
   };
 
   perf.cudaWarmup(runFn);
-  auto result = perf.cudaKernel(runFn, "gpu_batch_solve").withLaunchConfig(grid, block).measure();
+  auto result = perf.cudaKernel(runFn, "gpu_batch_solve")
+                    .withLaunchConfig(grid, block, CFG.sharedMemBytes)
+                    .measure();
 
   EXPECT_TRUE(everySolved) << "a batch was not solved";
-  std::printf("  GPU end-to-end: %.2f us  occupancy=%.0f%%\n", result.stats.kernelTimeMedianUs,
-              result.stats.occupancy.achievedOccupancy * 100.0);
+  // The occupancy is the harness's estimate from the launch (block size
+  // and shared memory), not a measurement of the run.
+  std::printf("  GPU end-to-end: %.2f us  occupancy estimate=%.0f%%\n",
+              result.stats.kernelTimeMedianUs, result.stats.occupancy.achievedOccupancy * 100.0);
 }
 
 PERF_GPU_TEST(MnaCudaBatch, Dim8_Batch64) { runBatchCase<double>(8, 64, "Dim8_Batch64"); }

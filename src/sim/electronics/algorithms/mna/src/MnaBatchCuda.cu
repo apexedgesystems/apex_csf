@@ -21,6 +21,8 @@
 #include "src/utilities/compatibility/inc/compat_cuda_attrs.hpp"
 #include "src/utilities/compatibility/inc/compat_cuda_error.hpp"
 
+#include <algorithm>
+
 #if COMPAT_HAVE_CUSOLVER
 #include <cuda_runtime.h>
 #include <cmath>
@@ -837,6 +839,11 @@ template <typename T> LaunchConfig launchConfigOf(std::size_t dim, std::size_t b
 template <typename T>
 bool solveBatch(BatchWorkspace<T>& ws, const T* As, T* bs, std::size_t dim, std::size_t batch,
                 void* stream, bool* solved) noexcept {
+  // Whatever keeps the batch from running to its end, no system of it is
+  // reported solved: the flags are true only where the last loop says so.
+  if (solved != nullptr) {
+    std::fill_n(solved, batch, false);
+  }
   if (!isSupportedDim(dim) || !ws.canHandle(dim, batch)) {
     return false;
   }
@@ -966,9 +973,10 @@ bool solveBatchCustom(MnaBatchWorkspace& ws, const double* As, double* bs, std::
   (void)As;
   (void)bs;
   (void)dim;
-  (void)batch;
   (void)stream;
-  (void)solved;
+  if (solved != nullptr) {
+    std::fill_n(solved, batch, false);
+  }
   return false;
 #endif
 }
@@ -982,9 +990,10 @@ bool solveBatchCustomF32(MnaBatchWorkspaceF32& ws, const float* As, float* bs, s
   (void)As;
   (void)bs;
   (void)dim;
-  (void)batch;
   (void)stream;
-  (void)solved;
+  if (solved != nullptr) {
+    std::fill_n(solved, batch, false);
+  }
   return false;
 #endif
 }
