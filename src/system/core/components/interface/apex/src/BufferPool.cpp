@@ -83,9 +83,9 @@ void BufferPool::release(MessageBuffer* buf) noexcept {
 
   assert(buf->isValid() && "Attempted to release invalid buffer!");
 
-  // The holder of the only reference returns the buffer without writing the count: no other
-  // thread holds the buffer, so none can change the count. A shared buffer takes the atomic
-  // decrement, and only its last reference goes on.
+  // The holder of the only reference skips the atomic decrement: no other thread holds the
+  // buffer, so none can change the count. A shared buffer takes the decrement, and only its
+  // last reference goes on. Either way the count is reset with the metadata below.
   if (buf->getRefCount() != 1U && !buf->decRef()) {
     return;
   }

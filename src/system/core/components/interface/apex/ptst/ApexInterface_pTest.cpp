@@ -155,7 +155,7 @@ PERF_TEST(BufferPoolPerf, RefcountRelease) {
     pool.release(buf); // refcount 4->3
     pool.release(buf); // refcount 3->2
     pool.release(buf); // refcount 2->1
-    pool.release(buf); // refcount 1->0, returns to pool
+    pool.release(buf); // last reference: no decrement, returns to pool
   };
 
   perf.warmup(fn);

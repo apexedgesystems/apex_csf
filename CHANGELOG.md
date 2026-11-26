@@ -85,9 +85,9 @@ any such change is called out explicitly in its entry.
 - `RingBuffer` keeps its two cursors on one cache line wherever the object
   is placed (48 bytes, 16-byte aligned).
   ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
-- `BufferPool` releases a buffer's only reference without an atomic update
-  of its count: an acquire and release pair takes about a third less time
-  on the lab host.
+- `BufferPool` does no redundant work in `acquire()` or when a buffer's only
+  reference is released: an acquire and release pair takes about a third
+  less time on the lab host.
   ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - `SPSCQueue` sides keep their last view of the other index: on the lab
   host a push and pop pair takes a third less time, and with a backlog

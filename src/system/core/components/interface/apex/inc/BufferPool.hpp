@@ -145,10 +145,11 @@ public:
    * @brief Release buffer back to pool (cannot be refused).
    * @param buf Buffer to release (must have been acquired from this pool).
    * @note RT-DEPENDS: a buffer with one reference is returned with one atomic update of the
-   *       free map, which cannot be refused, and its count is read, not written. A shared
-   *       buffer takes one atomic update of its count first, and only its last reference
-   *       goes on to the free map. No loop in the pool; each update is bounded where the
-   *       target and the build bound it (Atomic updates in the file comment).
+   *       free map, which cannot be refused; the atomic decrement of its count is skipped.
+   *       A shared buffer takes that decrement first, and only its last reference goes on
+   *       to the free map. A returned buffer's count is reset with its metadata. No loop in
+   *       the pool; each update is bounded where the target and the build bound it (Atomic
+   *       updates in the file comment).
    * @note Each call gives up one counted reference of the caller's: a count of one means
    *       no other thread holds the buffer.
    * @note CRITICAL: Do not access buffer after releasing!
