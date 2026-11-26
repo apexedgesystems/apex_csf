@@ -1,7 +1,7 @@
 # ==============================================================================
 # base.Dockerfile - Tiered base images
 #
-# Two published tiers and the two stages they are assembled from:
+# Three published tiers and the two stages two of them are assembled from:
 #
 # toolchain  : compilers, build tools, Rust, uv, system libraries, the user.
 #              Reads no lock and no dependency pin. Not published.
@@ -10,8 +10,12 @@
 #              on the toolchain. Not published.
 # build-base : toolchain + bakes. Compile + link + test the release artifacts.
 #              The 10 release builders and the build-test gate inherit only this.
+# lint       : the format check and the secret scan: pre-commit, the tools its
+#              hooks call, gitleaks. No compiler toolchain, no bakes; built on
+#              the distro image alone. The CI lint job runs in it.
 # dev-base   : toolchain + tooling (scanners, formatters, profilers, docs) +
-#              bakes. The dev shells (`apex.base` consumers) inherit this.
+#              bakes. The dev shells (`apex.base` consumers) inherit this. Its
+#              format tools are the lint tier's, copied from it.
 #
 # The bakes are the last layers of each tier. They are what changes most often
 # (a lock bump, a dependency pin), and a layer rebuilds whenever one beneath it
@@ -25,7 +29,28 @@
 # Usage:
 #   docker compose build base                       # -> apex.base (dev-base)
 #   docker build --target build-base -f this .      # -> the lean compile/test tier
+#   docker compose build lint                       # -> apex.lint
 # ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Versions more than one stage installs
+# ------------------------------------------------------------------------------
+# Declared before the first stage so each has one value; a stage that uses one
+# names it with a bare ARG. The lint tier and the dev tier have to format
+# alike, so everything both carry is pinned here.
+#
+# RUST_VERSION: clippy's rule set and rustfmt's output move with the
+# toolchain, and CI treats both as code defects (-D warnings, the format
+# gate) -- an image rebuild must never change the rules underneath a PR. Bump
+# deliberately, with the tree clean under the new version.
+ARG RUST_VERSION=1.98.0
+ARG HADOLINT_VERSION=v2.14.0
+ARG SHFMT_VERSION=v3.12.0
+ARG CMAKELANG_VERSION=0.6.13
+ARG PRE_COMMIT_VERSION=4.5.1
+ARG NODE_VERSION=26.13.0
+ARG NODE_SHA256=d28a96af6c38596f6d9d97c0ee531c13d238d757742387d1928de822d959e997
+ARG GITLEAKS_VERSION=8.30.1
 
 # ==============================================================================
 # Stage: toolchain - what no lock or dependency pin decides
@@ -200,12 +225,9 @@ RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error
 # Install Rust via rustup to /opt/rust for system-wide access.
 # Using /opt avoids permission issues when COPY --from overlays onto CUDA images.
 # Includes: rustc, cargo, clippy (linter), rustfmt (formatter). The coverage
-# driver (cargo-llvm-cov) is added in dev-base.
-# Pinned: clippy's rule set moves with the toolchain, and CI treats its
-# findings as code defects (-D warnings) -- an image rebuild must never
-# change the rules underneath a PR. Bump deliberately, with the tree
-# clean under the new version.
-ARG RUST_VERSION=1.98.0
+# driver (cargo-llvm-cov) is added in dev-base. The version is pinned at the
+# top of this file.
+ARG RUST_VERSION
 ENV RUSTUP_HOME=/opt/rust/rustup \
     CARGO_HOME=/opt/rust/cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
@@ -431,6 +453,145 @@ USER ${USER}
 WORKDIR /home/${USER}
 
 # ==============================================================================
+# Stage: lint - the format check and the secret scan, and nothing else
+# ==============================================================================
+# What `make format-check` and `make gitleaks` run: pre-commit, the tools its
+# local hooks call (clang-format, cmake-format, cmake-lint, hadolint, shfmt,
+# cargo fmt), node for its node hooks, and gitleaks. Neither check compiles or
+# resolves a dependency, so this tier starts from the distro image: no
+# compiler toolchain, no bakes, and a rebuild of it re-runs no layer of the
+# other tiers. dev-base copies its format tools from here.
+FROM ubuntu:24.04 AS lint
+
+ARG USER
+ARG HOST_UID
+ARG HOST_GID
+ARG RUST_VERSION
+ARG HADOLINT_VERSION
+ARG SHFMT_VERSION
+ARG CMAKELANG_VERSION
+ARG PRE_COMMIT_VERSION
+ARG NODE_VERSION
+ARG NODE_SHA256
+ARG GITLEAKS_VERSION
+
+LABEL org.opencontainers.image.title="apex.lint" \
+      org.opencontainers.image.description="Format-check and secret-scan tier for Apex CSF" \
+      org.opencontainers.image.vendor="Apex"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ENV PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=5
+
+# Container detection flag for scripts that behave differently in containers
+ENV CONTAINER=yes
+
+# git and make drive both checks; python runs pre-commit and its Python hooks;
+# libatomic is a library the node binary loads; the rest fetch and unpack the
+# tools below.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      wget curl gnupg ca-certificates \
+      git make \
+      python3 python3-pip python3-venv \
+      libatomic1 \
+      xz-utils
+
+# clang-format, from the same apt repository and release line as the
+# compilers and the dev tier's clang tooling.
+RUN install -d -m 0755 /etc/apt/keyrings && \
+    wget --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 \
+      --waitretry=15 --timeout=30 -qO /tmp/llvm-snapshot.gpg.key \
+      https://apt.llvm.org/llvm-snapshot.gpg.key && \
+    gpg --dearmor -o /etc/apt/keyrings/llvm.gpg /tmp/llvm-snapshot.gpg.key && \
+    rm -f /tmp/llvm-snapshot.gpg.key && \
+    . /etc/os-release && \
+    echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] http://apt.llvm.org/${VERSION_CODENAME}/ llvm-toolchain-${VERSION_CODENAME}-21 main" \
+      >> /etc/apt/sources.list.d/llvm.list
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      clang-format-21 && \
+    ln -sf /usr/bin/clang-format-21 /usr/local/bin/clang-format
+
+# cargo fmt: cargo, rustfmt and the compiler library rustfmt links. The same
+# release as the toolchain stage's. rustup's smallest profile also installs
+# the standard library, which only a compile uses; it is removed.
+ENV RUSTUP_HOME=/opt/rust/rustup \
+    CARGO_HOME=/opt/rust/cargo
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain ${RUST_VERSION} --profile minimal --component rustfmt && \
+    /opt/rust/cargo/bin/rustup component remove rust-std && \
+    chmod -R a+rwX /opt/rust
+ENV PATH="/opt/rust/cargo/bin:$PATH"
+
+# hadolint (Dockerfile linter), shfmt (shell formatter; its file name keeps the
+# 'v' prefix) and gitleaks (secret scanner): static binaries from their
+# GitHub releases.
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/hadolint \
+      "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-linux-x86_64" && \
+    wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/shfmt \
+      "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64" && \
+    wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/gitleaks.tar.gz \
+      "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" && \
+    tar -C /usr/local/bin -xzf /tmp/gitleaks.tar.gz gitleaks && \
+    rm /tmp/gitleaks.tar.gz && \
+    chmod +x /usr/local/bin/hadolint /usr/local/bin/shfmt /usr/local/bin/gitleaks
+
+# Node.js - runtime for the node-language pre-commit hooks. With node and npm
+# on PATH, pre-commit runs its node hooks (prettier, markdownlint) on this
+# node instead of asking nodeenv to download whichever release nodejs.org
+# lists first at install time, so the format gate's node is an image fact.
+# Official tarball, checksum-verified, unpacked whole under /opt/node so the
+# notices it ships (its own LICENSE and every bundled npm dependency's) stay
+# with the code; only the executables are linked onto PATH. Unpacked as root's
+# files: the archive records the user id of the machine that packed it.
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/node.tar.xz \
+      "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" && \
+    echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - && \
+    tar -C /opt --no-same-owner -xJf /tmp/node.tar.xz && \
+    mv "/opt/node-v${NODE_VERSION}-linux-x64" /opt/node && \
+    ln -s /opt/node/bin/node /usr/local/bin/node && \
+    ln -s /opt/node/bin/npm /usr/local/bin/npm && \
+    ln -s /opt/node/bin/npx /usr/local/bin/npx && \
+    rm /tmp/node.tar.xz && \
+    node --version && npm --version && test -f /opt/node/LICENSE
+
+# pre-commit (the hook framework) and cmakelang (cmake-format, cmake-lint).
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install --no-cache-dir --break-system-packages \
+      pre-commit==${PRE_COMMIT_VERSION} \
+      cmakelang==${CMAKELANG_VERSION}
+
+# The same user as the other tiers, so files a format run rewrites in the
+# mounted workspace keep their owner.
+RUN userdel -r ubuntu 2>/dev/null || true && \
+    groupdel ubuntu 2>/dev/null || true && \
+    groupadd -g ${HOST_GID} ${USER} 2>/dev/null || true && \
+    useradd -l -m -u ${HOST_UID} -g ${HOST_GID} -s /bin/bash -p "*" ${USER} 2>/dev/null || true && \
+    chown -R ${HOST_UID}:${HOST_GID} /home/${USER}
+
+RUN echo "Validating lint image..." && \
+    pre-commit --version && \
+    clang-format --version && \
+    cmake-format --version && \
+    hadolint --version && \
+    shfmt --version && \
+    cargo fmt --version && \
+    node --version && \
+    gitleaks version && \
+    echo "lint image validation: OK"
+
+USER ${USER}
+WORKDIR /home/${USER}
+
+# ==============================================================================
 # Stage: dev-base - toolchain + tooling (scanners, formatters, profilers, docs)
 #                   + the same baked dependencies build-base carries
 # ==============================================================================
@@ -447,14 +608,9 @@ ENV CARGO_NET_OFFLINE=false \
     UV_OFFLINE=false
 
 ARG USER
-ARG HADOLINT_VERSION=v2.14.0
-ARG SHFMT_VERSION=v3.12.0
 ARG BLACK_VERSION=26.1.0
-ARG CMAKELANG_VERSION=0.6.13
-ARG PRE_COMMIT_VERSION=4.5.1
-ARG NODE_VERSION=26.13.0
-ARG NODE_SHA256=d28a96af6c38596f6d9d97c0ee531c13d238d757742387d1928de822d959e997
-ARG GITLEAKS_VERSION=8.30.1
+ARG CMAKELANG_VERSION
+ARG PRE_COMMIT_VERSION
 ARG OSV_SCANNER_VERSION=2.3.8
 ARG TRIVY_VERSION=0.71.0
 ARG SEMGREP_VERSION=1.165.0
@@ -521,19 +677,17 @@ RUN git init -q /tmp/bloaty && \
     rm -rf /tmp/bloaty
 
 # ------------------------------------------------------------------------------
-# Linters and Formatters
+# Format tools and the secret scanner (the lint stage's)
 # ------------------------------------------------------------------------------
-# Static binaries for speed and reproducibility.
-
-# hadolint: Dockerfile linter
-RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/hadolint \
-      "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-linux-x86_64" && \
-    chmod +x /usr/local/bin/hadolint
-
-# shfmt: Shell script formatter (note: filename keeps 'v' prefix)
-RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/shfmt \
-      "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64" && \
-    chmod +x /usr/local/bin/shfmt
+# hadolint, shfmt, gitleaks and node are installed once, in the lint stage, and
+# copied from it: the dev shell and the CI lint job run the same files. Node is
+# linked onto PATH as it is there.
+COPY --from=lint /usr/local/bin/hadolint /usr/local/bin/shfmt /usr/local/bin/gitleaks /usr/local/bin/
+COPY --from=lint /opt/node /opt/node
+RUN ln -s /opt/node/bin/node /usr/local/bin/node && \
+    ln -s /opt/node/bin/npm /usr/local/bin/npm && \
+    ln -s /opt/node/bin/npx /usr/local/bin/npx && \
+    node --version && npm --version && test -f /opt/node/LICENSE
 
 # ------------------------------------------------------------------------------
 # Python Formatters and Hooks
@@ -541,31 +695,12 @@ RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error
 # pre-commit: Git hook framework
 # black: Python formatter
 # cmakelang: CMake formatter (cmake-format, cmake-lint)
+# pre-commit and cmakelang are the lint stage's versions (pinned at the top).
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --no-cache-dir --break-system-packages \
       pre-commit==${PRE_COMMIT_VERSION} \
       black==${BLACK_VERSION} \
       cmakelang==${CMAKELANG_VERSION}
-
-# ------------------------------------------------------------------------------
-# Node.js - runtime for the node-language pre-commit hooks
-# ------------------------------------------------------------------------------
-# With node and npm on PATH, pre-commit runs its node hooks (prettier,
-# markdownlint) on this node instead of asking nodeenv to download whichever
-# release nodejs.org lists first at install time, so the format gate's node is
-# an image fact. Official tarball, checksum-verified, unpacked whole under
-# /opt/node so the notices it ships (its own LICENSE and every bundled npm
-# dependency's) stay with the code; only the executables are linked onto PATH.
-RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/node.tar.xz \
-      "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" && \
-    echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - && \
-    tar -C /opt -xJf /tmp/node.tar.xz && \
-    mv "/opt/node-v${NODE_VERSION}-linux-x64" /opt/node && \
-    ln -s /opt/node/bin/node /usr/local/bin/node && \
-    ln -s /opt/node/bin/npm /usr/local/bin/npm && \
-    ln -s /opt/node/bin/npx /usr/local/bin/npx && \
-    rm /tmp/node.tar.xz && \
-    node --version && npm --version && test -f /opt/node/LICENSE
 
 # ------------------------------------------------------------------------------
 # ninjatracing - Convert .ninja_log to chrome-tracing JSON
@@ -585,7 +720,7 @@ RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error
 #   cppcheck    : independent static analyzer (+ bundled MISRA C++ addon)
 #   cbmc        : bounded model checker -- proves absence of overflow/OOB/assert
 #   trivy       : vulnerability + secret + SBOM (CycloneDX/SPDX) scanner
-#   gitleaks    : secret scanner
+#   gitleaks    : secret scanner (copied from the lint stage above)
 #   osv-scanner : dependency vulnerability scanner (OSV database)
 #   semgrep     : pattern-based SAST
 # (mull mutation testing is deferred: no LLVM-21 release build yet.)
@@ -602,13 +737,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 RUN curl -sfL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 \
       https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
       sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}"
-
-# gitleaks: static binary from GitHub releases
-RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/gitleaks.tar.gz \
-      "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" && \
-    tar -C /usr/local/bin -xzf /tmp/gitleaks.tar.gz gitleaks && \
-    chmod +x /usr/local/bin/gitleaks && \
-    rm /tmp/gitleaks.tar.gz
 
 # osv-scanner: static binary from GitHub releases
 RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/osv-scanner \
@@ -717,6 +845,7 @@ RUN echo "Validating dev-base image..." && \
     clang-format --version && \
     hadolint --version && \
     shfmt --version && \
+    gitleaks version && \
     semgrep --version && \
     echo "dev-base image validation: OK"
 

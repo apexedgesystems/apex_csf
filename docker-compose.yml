@@ -64,6 +64,20 @@ services:
     privileged: true
     command: bash
 
+  # Lint tier: pre-commit, the tools its hooks call, and gitleaks, on the
+  # distro image alone (no compiler toolchain, no baked dependencies). The CI
+  # lint job runs `make format-check` and `make gitleaks` here.
+  lint:
+    <<: *common
+    image: apex.lint
+    build:
+      context: .
+      dockerfile: docker/base.Dockerfile
+      target: lint
+      args:
+        <<: *build-args
+    command: bash
+
   # ============================================================================
   # Interactive development shells - Primary
   # ============================================================================

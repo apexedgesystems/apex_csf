@@ -59,6 +59,20 @@ Includes: LLVM toolchain, formatters (clang-format, black, shfmt, hadolint),
 math/crypto libraries (OpenBLAS, LAPACK, SuiteSparse, OpenSSL), Doxygen, UPX,
 FlameGraph, google-perftools, bpftrace.
 
+### CI Tiers
+
+Two more targets of `docker/base.Dockerfile`, each carrying only what its
+jobs run:
+
+| Image             | Base         | Description                                                                                                    |
+| ----------------- | ------------ | -------------------------------------------------------------------------------------------------------------- |
+| `apex.build-base` | Ubuntu 24.04 | Compile, link and test: the toolchain and the baked dependencies, offline. The builders inherit it.            |
+| `apex.lint`       | Ubuntu 24.04 | `make format-check` and `make gitleaks`: pre-commit, the tools its hooks call, gitleaks. No compiler, no bake. |
+
+`apex.base` copies its format tools from the lint target, so a dev shell and
+the CI lint job format with the same files. Build one with
+`docker compose build build-base` or `docker compose build lint`.
+
 ### Development Shells
 
 | Image                  | Prompt          | Target          | Use Case                  |

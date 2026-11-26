@@ -82,14 +82,16 @@ jobs:
 
           # --- BEGIN GENERATED: platform consumers (make regen-platforms) ---
           # image | compose-service | parent-image | tier | dockerfile
-          # apex.base and apex.build-base are two targets of base.Dockerfile, so
-          # a base.Dockerfile change rebuilds both (and cascades to their
-          # children). apex.cuda-build is the lean CUDA tier on build-base,
+          # apex.base, apex.build-base and apex.lint are three targets of
+          # base.Dockerfile, so a base.Dockerfile change rebuilds all three (and
+          # cascades to their children; apex.lint has none). apex.cuda-build is
+          # the lean CUDA tier on build-base,
           # sharing cuda.Dockerfile with apex.dev.cuda; apex.build.jetson is its
           # jetson child. Leaf rows derive from mk/platforms.mk (ROLE != skeleton).
           GRAPH="
           apex.base|base||0|docker/base.Dockerfile
           apex.build-base|build-base||0|docker/base.Dockerfile
+          apex.lint|lint||0|docker/base.Dockerfile
           apex.dev.cpu|dev|apex.base|1|docker/dev/cpu.Dockerfile
           apex.dev.cuda|dev-cuda|apex.base|1|docker/dev/cuda.Dockerfile
           apex.cuda-build|cuda-build|apex.build-base|1|docker/dev/cuda.Dockerfile
