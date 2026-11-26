@@ -67,8 +67,7 @@ MessageBuffer* BufferPool::acquire(std::size_t requiredSize) noexcept {
       buf->isAcquired = true;
 #endif
 
-      // Clear metadata for new message.
-      buf->clear();
+      // The metadata is clear already: construction left it so, and so does every release().
       return buf;
     }
   }
