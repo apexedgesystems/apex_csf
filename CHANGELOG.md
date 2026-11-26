@@ -125,9 +125,18 @@ any such change is called out explicitly in its entry.
 - The public factorial helpers (`Factorials.hpp`: `precomputedFactorials`,
   `largeFactorial`); replace direct uses before updating. Breaking.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
+- `MnaSystemSparse::refactorize()` and `refactorizeInPlace()`; call
+  `factorize()`, which reuses what still applies. Breaking.
+  ([#199](https://github.com/apexedgesystems/apex_csf/pull/199))
 
 ### Fixed
 
+- MNA solvers: the sparse solver reuses an analysis and factors only for
+  their own matrix, the AC sweep and the dense solver's borrowed-storage
+  modes handle their edge inputs, and the CUDA batch solver reports each
+  system it did not solve. Breaking: `solveBatchCustom*` return false for
+  such a batch and mark the system with not-a-number; see
+  [#199](https://github.com/apexedgesystems/apex_csf/pull/199).
 - Corrected nonlinear device stamps, junction currents and FET region
   transitions; `BjtCommonEmitter::computeDC` reports failed solves. Breaking:
   device currents and Level 1 region codes change and six model parameters
