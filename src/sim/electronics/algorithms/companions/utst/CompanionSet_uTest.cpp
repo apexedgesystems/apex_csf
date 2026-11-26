@@ -148,11 +148,12 @@ TEST(CompanionSetTest, UpdateAllAdvancesEveryElementByTheMethod) {
     double capacitorAmperes;
     double inductorAmperes;
   };
-  // Capacitor at 0.5 V from 0: C * 0.5 / dt, twice that, and 1.5 times that.
-  // Inductor with 0.1 V from rest: (dt / L) * 0.1, half that, two thirds of that.
+  // Capacitor at 0.5 V from 0: C * 0.5 / dt, and twice that.
+  // Inductor with 0.1 V from rest: (dt / L) * 0.1, and half that.
+  // GEAR2's first step is backward Euler's.
   for (const Case& CASE : {Case{IntegrationMethod::BACKWARD_EULER, 5e-4, 0.1},
                            Case{IntegrationMethod::TRAPEZOIDAL, 1e-3, 0.05},
-                           Case{IntegrationMethod::GEAR2, 7.5e-4, 0.2 / 3.0}}) {
+                           Case{IntegrationMethod::GEAR2, 5e-4, 0.1}}) {
     CompanionSet set;
     set.addCapacitor(/*posNet=*/2, /*negNet=*/1, /*capacitance=*/1e-6);
     set.addInductor(/*posNet=*/3, /*negNet=*/0, /*inductance=*/1e-3);
@@ -171,7 +172,10 @@ TEST(CompanionSetTest, UpdateAllAdvancesEveryElementByTheMethod) {
 
 /* ----------------------------- conductanceFactor ----------------------------- */
 
-/** @test The factor on C/dt is 1, 2 and, for GEAR2, 3/2 until the step length changes */
+/**
+ * @test The factor on C/dt is 1, 2 and, for GEAR2, 1 on a first step and 3/2
+ *       from then on until the step length changes.
+ */
 TEST(CompanionSetTest, ConductanceFactorFollowsTheMethodAndTheStepBefore) {
   CompanionSet set;
   set.addCapacitor(/*posNet=*/1, /*negNet=*/0, /*capacitance=*/1e-6);
@@ -179,7 +183,7 @@ TEST(CompanionSetTest, ConductanceFactorFollowsTheMethodAndTheStepBefore) {
 
   EXPECT_DOUBLE_EQ(set.conductanceFactor(1e-3, IntegrationMethod::BACKWARD_EULER), 1.0);
   EXPECT_DOUBLE_EQ(set.conductanceFactor(1e-3, IntegrationMethod::TRAPEZOIDAL), 2.0);
-  EXPECT_DOUBLE_EQ(set.conductanceFactor(1e-3, IntegrationMethod::GEAR2), 1.5);
+  EXPECT_DOUBLE_EQ(set.conductanceFactor(1e-3, IntegrationMethod::GEAR2), 1.0);
 
   // After a step of 1 ms: 3/2 for another of 1 ms, 4/3 for one of 0.5 ms.
   set.updateAll(V, 1e-3, IntegrationMethod::GEAR2);

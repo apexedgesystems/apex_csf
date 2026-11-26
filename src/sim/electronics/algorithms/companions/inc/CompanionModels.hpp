@@ -28,8 +28,9 @@
  *
  * Starting: an element as constructed, after CompanionSet::reset(), after
  * setInitialVoltage() or setInitialCurrent(), or after
- * CompanionSet::initializeFromDC() is at rest with a flat history, which is
- * what GEAR2 then integrates from.
+ * CompanionSet::initializeFromDC() has one value behind it and no step
+ * taken. One value supports a first-order formula, so GEAR2 takes its first
+ * step as backward Euler and is Gear's formula from the second step on.
  *
  * RT-safety: All methods are RT-safe (no allocations) after initialization.
  *
@@ -64,7 +65,7 @@ using algorithms::transient::IntegrationMethod;
  *
  * exact for a quadratic. For equal steps the weights are 3/2, 2 and 1/2. As
  * dt shrinks beside the step before it they tend to 1, 1 and 0, which is
- * backward Euler.
+ * backward Euler; with no step before it they are 1, 1 and 0.
  */
 struct Gear2Weights {
   double a0; ///< Weight of the value at the end of this step.
@@ -75,13 +76,17 @@ struct Gear2Weights {
 /**
  * @brief Weights for a step of dt after a step of `before`.
  * @param dt Length of this step.
- * @param before Length of the step before it; 0 for none recorded, which is
- *        taken as equal steps (a flat history is that of a quantity at rest
- *        whatever the step it is read with).
+ * @param before Length of the step before it; 0 for none recorded. A first
+ *        step has one value behind it, not two, and takes backward Euler's
+ *        weights: with the value before that one invented as equal to it,
+ *        the step would be of first order with a larger error.
  * @note RT-safe.
  */
 [[nodiscard]] SIM_HD_FI Gear2Weights gear2Weights(double dt, double before) noexcept {
-  const double RATIO = (before > 0.0) ? dt / before : 1.0;
+  if (!(before > 0.0)) {
+    return {1.0, 1.0, 0.0};
+  }
+  const double RATIO = dt / before;
   return {(1.0 + 2.0 * RATIO) / (1.0 + RATIO), 1.0 + RATIO, RATIO * RATIO / (1.0 + RATIO)};
 }
 
@@ -127,7 +132,7 @@ struct CapacitorCompanion {
     case IntegrationMethod::TRAPEZOIDAL:
       return 2.0 * capacitance / dt; // 2C/dt
     case IntegrationMethod::GEAR2:
-      return gear2Weights(dt, prevStep).a0 * capacitance / dt; // 3C/(2dt) for equal steps
+      return gear2Weights(dt, prevStep).a0 * capacitance / dt; // 3C/(2dt) after an equal step
     }
     return capacitance / dt;
   }
@@ -146,7 +151,7 @@ struct CapacitorCompanion {
     case IntegrationMethod::TRAPEZOIDAL:
       return 2.0 * capacitance * prevVoltage / dt + current; // 2C*V_prev/dt + I_prev
     case IntegrationMethod::GEAR2: {
-      // (C/dt) * (2*V_prev - 0.5*V_prev2) for equal steps
+      // (C/dt) * (2*V_prev - 0.5*V_prev2) after an equal step
       const Gear2Weights W = gear2Weights(dt, prevStep);
       return (capacitance / dt) * (W.a1 * prevVoltage - W.a2 * prev2Voltage);
     }
@@ -207,7 +212,7 @@ struct CapacitorCompanion {
   }
 
   /**
-   * @brief Put the capacitor at rest at a voltage: no current, a flat history.
+   * @brief Put the capacitor at a voltage with no current and no step taken.
    * @param volts Voltage across the capacitor (Vpos - Vneg).
    * @note RT-safe.
    */
@@ -261,7 +266,7 @@ struct InductorCompanion {
     case IntegrationMethod::TRAPEZOIDAL:
       return dt / (2.0 * inductance); // dt/(2L)
     case IntegrationMethod::GEAR2:
-      return dt / (gear2Weights(dt, prevStep).a0 * inductance); // 2dt/(3L) for equal steps
+      return dt / (gear2Weights(dt, prevStep).a0 * inductance); // 2dt/(3L) after an equal step
     }
     return dt / inductance;
   }
@@ -280,7 +285,7 @@ struct InductorCompanion {
     case IntegrationMethod::TRAPEZOIDAL:
       return prevCurrent + (dt / (2.0 * inductance)) * voltage; // I_prev + (dt/(2L))*V_prev
     case IntegrationMethod::GEAR2: {
-      // (4*I_prev - I_prev2) / 3 for equal steps
+      // (4*I_prev - I_prev2) / 3 after an equal step
       const Gear2Weights W = gear2Weights(dt, prevStep);
       return (W.a1 * prevCurrent - W.a2 * prev2Current) / W.a0;
     }
@@ -345,7 +350,7 @@ struct InductorCompanion {
   }
 
   /**
-   * @brief Put the inductor at rest with a current: no voltage, a flat history.
+   * @brief Put the inductor at a current with no voltage and no step taken.
    * @param amperes Current from posNet to negNet through the inductor.
    * @note RT-safe.
    */
@@ -514,8 +519,8 @@ public:
   /**
    * @brief The factor a method puts on C/dt for a step of dt taken now (and
    *        divides dt/L by): 1 for backward Euler, 2 for the trapezoidal
-   *        rule, and for GEAR2 3/2 after a step of the same length and
-   *        another value after a step of another length.
+   *        rule, and for GEAR2 1 on a first step, 3/2 after a step of the
+   *        same length and another value after a step of another length.
    *
    * Steps of equal length, method and factor stamp equal conductances: what
    * a caller that holds factors of the matrix has to know. The elements of a
@@ -563,8 +568,8 @@ public:
    * with, @p inductorSiemens times the voltage that solve left across it.
    * With 0 the inductors start without current.
    *
-   * Each element's history is flat at its resting value, which is the
-   * history GEAR2 starts from.
+   * Each element is left with that one value behind it and no step taken,
+   * so GEAR2 takes its first step from it as backward Euler.
    * @param nodeVoltages The resting state's voltages.
    * @param inductorSiemens The conductance each inductor was solved as.
    */

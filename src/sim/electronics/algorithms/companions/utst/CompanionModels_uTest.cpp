@@ -72,11 +72,13 @@ TEST(CapacitorCompanionGeqTest, TrapezoidalFormula) {
   EXPECT_NEAR(cap.geq(DT, IntegrationMethod::TRAPEZOIDAL), 2.0 * cap.capacitance / DT, TOL);
 }
 
-/** @test Capacitor GEAR2 Geq is 1.5*C/dt (BDF2) */
+/** @test Capacitor GEAR2 Geq is 1.5*C/dt after a step of the same length, C/dt on a first step */
 TEST(CapacitorCompanionGeqTest, Gear2Formula) {
   CapacitorCompanion cap{};
   cap.capacitance = 1e-6;
   const double DT = 1e-3;
+  EXPECT_NEAR(cap.geq(DT, IntegrationMethod::GEAR2), cap.capacitance / DT, TOL);
+  cap.prevStep = DT;
   EXPECT_NEAR(cap.geq(DT, IntegrationMethod::GEAR2), 1.5 * cap.capacitance / DT, TOL);
 }
 
@@ -117,13 +119,18 @@ TEST(CapacitorCompanionIeqTest, TrapezoidalFormula) {
   EXPECT_NEAR(cap.ieq(DT, IntegrationMethod::TRAPEZOIDAL), EXPECTED, TOL);
 }
 
-/** @test Capacitor GEAR2 Ieq uses two-step history (2*Vprev - 0.5*Vprev2) */
+/**
+ * @test Capacitor GEAR2 Ieq uses two steps of history (2*Vprev - 0.5*Vprev2)
+ *       after a step of the same length, and the last value alone on a first step.
+ */
 TEST(CapacitorCompanionIeqTest, Gear2Formula) {
   CapacitorCompanion cap{};
   cap.capacitance = 1e-6;
   cap.prevVoltage = 0.5;
   cap.prev2Voltage = 0.3;
   const double DT = 1e-4;
+  EXPECT_NEAR(cap.ieq(DT, IntegrationMethod::GEAR2), cap.capacitance * 0.5 / DT, TOL);
+  cap.prevStep = DT;
   const double EXPECTED = (cap.capacitance / DT) * (2.0 * cap.prevVoltage - 0.5 * cap.prev2Voltage);
   EXPECT_NEAR(cap.ieq(DT, IntegrationMethod::GEAR2), EXPECTED, TOL);
 }
@@ -218,14 +225,57 @@ TEST(CapacitorCompanionUpdateTest, InitialVoltageIsAStateOfRest) {
 
 /* ----------------------------- Gear2Weights ----------------------------- */
 
-/** @test Equal steps give 3/2, 2 and 1/2; so does no step recorded */
+/** @test Equal steps give 3/2, 2 and 1/2 */
 TEST(Gear2WeightsTest, EqualStepsAreTheClassicWeights) {
-  for (const double BEFORE : {1e-3, 0.0}) {
-    const Gear2Weights W = gear2Weights(1e-3, BEFORE);
-    EXPECT_DOUBLE_EQ(W.a0, 1.5);
-    EXPECT_DOUBLE_EQ(W.a1, 2.0);
-    EXPECT_DOUBLE_EQ(W.a2, 0.5);
-  }
+  const Gear2Weights W = gear2Weights(1e-3, 1e-3);
+  EXPECT_DOUBLE_EQ(W.a0, 1.5);
+  EXPECT_DOUBLE_EQ(W.a1, 2.0);
+  EXPECT_DOUBLE_EQ(W.a2, 0.5);
+}
+
+/** @test With no step before it a step takes backward Euler's weights: 1, 1 and 0 */
+TEST(Gear2WeightsTest, FirstStepIsBackwardEuler) {
+  const Gear2Weights W = gear2Weights(1e-3, 0.0);
+  EXPECT_DOUBLE_EQ(W.a0, 1.0);
+  EXPECT_DOUBLE_EQ(W.a1, 1.0);
+  EXPECT_DOUBLE_EQ(W.a2, 0.0);
+}
+
+/**
+ * @test An element's first GEAR2 step is its backward-Euler step, value for
+ *       value, and its second is Gear's formula on the two values it then has.
+ */
+TEST(Gear2WeightsTest, ElementsStartAsBackwardEulerAndGoOnAsGear) {
+  constexpr double DT = 1e-4;
+  CapacitorCompanion gear{};
+  gear.capacitance = 1e-6;
+  gear.setInitialVoltage(2.0);
+  CapacitorCompanion euler = gear;
+  EXPECT_DOUBLE_EQ(gear.geq(DT, IntegrationMethod::GEAR2),
+                   euler.geq(DT, IntegrationMethod::BACKWARD_EULER));
+  EXPECT_DOUBLE_EQ(gear.ieq(DT, IntegrationMethod::GEAR2),
+                   euler.ieq(DT, IntegrationMethod::BACKWARD_EULER));
+  gear.update(1.5, DT, IntegrationMethod::GEAR2);
+  euler.update(1.5, DT, IntegrationMethod::BACKWARD_EULER);
+  EXPECT_DOUBLE_EQ(gear.current, euler.current);
+  // Second step: 3C/(2dt), and (C/dt) * (2 * 1.5 - 0.5 * 2.0).
+  EXPECT_NEAR(gear.geq(DT, IntegrationMethod::GEAR2), 1.5e-2, TOL);
+  EXPECT_NEAR(gear.ieq(DT, IntegrationMethod::GEAR2), 2.0e-2, TOL);
+
+  InductorCompanion coil{};
+  coil.inductance = 1e-3;
+  coil.setInitialCurrent(0.05);
+  InductorCompanion coilEuler = coil;
+  EXPECT_DOUBLE_EQ(coil.geq(DT, IntegrationMethod::GEAR2),
+                   coilEuler.geq(DT, IntegrationMethod::BACKWARD_EULER));
+  EXPECT_DOUBLE_EQ(coil.ieq(DT, IntegrationMethod::GEAR2),
+                   coilEuler.ieq(DT, IntegrationMethod::BACKWARD_EULER));
+  coil.update(0.1, DT, IntegrationMethod::GEAR2);
+  coilEuler.update(0.1, DT, IntegrationMethod::BACKWARD_EULER);
+  EXPECT_DOUBLE_EQ(coil.prevCurrent, coilEuler.prevCurrent);
+  // Second step: 2dt/(3L), and (4 * 0.06 - 0.05) / 3.
+  EXPECT_NEAR(coil.geq(DT, IntegrationMethod::GEAR2), 2.0e-4 / 3.0e-3, TOL);
+  EXPECT_NEAR(coil.ieq(DT, IntegrationMethod::GEAR2), 0.19 / 3.0, TOL);
 }
 
 /** @test Whatever the two steps, the weights differentiate a quadratic exactly */
@@ -266,10 +316,15 @@ TEST(InductorCompanionGeqTest, TrapezoidalFormula) {
   EXPECT_NEAR(ind.geq(DT, IntegrationMethod::TRAPEZOIDAL), DT / (2.0 * ind.inductance), TOL);
 }
 
-/** @test Inductor GEAR2 Geq is 2*dt/(3*L): 1 mH and 1 us give 2/3 mS */
+/**
+ * @test Inductor GEAR2 Geq is 2*dt/(3*L) after a step of the same length: 1 mH
+ *       and 1 us give 2/3 mS. On a first step it is dt/L, 1 mS.
+ */
 TEST(InductorCompanionGeqTest, Gear2Formula) {
   InductorCompanion ind{};
   ind.inductance = 1e-3;
+  EXPECT_NEAR(ind.geq(1e-6, IntegrationMethod::GEAR2), 1.0e-3, TOL);
+  ind.prevStep = 1e-6;
   EXPECT_NEAR(ind.geq(1e-6, IntegrationMethod::GEAR2), 2.0e-3 / 3.0, TOL);
 }
 
@@ -294,12 +349,17 @@ TEST(InductorCompanionIeqTest, TrapezoidalFormula) {
   EXPECT_NEAR(ind.ieq(DT, IntegrationMethod::TRAPEZOIDAL), EXPECTED, TOL);
 }
 
-/** @test Inductor GEAR2 Ieq is (4*Iprev - Iprev2) / 3: 0.10 A and 0.05 A give 0.35 / 3 A */
+/**
+ * @test Inductor GEAR2 Ieq is (4*Iprev - Iprev2) / 3 after a step of the same
+ *       length: 0.10 A and 0.05 A give 0.35 / 3 A. On a first step it is Iprev.
+ */
 TEST(InductorCompanionIeqTest, Gear2Formula) {
   InductorCompanion ind{};
   ind.inductance = 1e-3;
   ind.prevCurrent = 0.10;
   ind.prev2Current = 0.05;
+  EXPECT_NEAR(ind.ieq(1e-6, IntegrationMethod::GEAR2), 0.10, TOL);
+  ind.prevStep = 1e-6;
   EXPECT_NEAR(ind.ieq(1e-6, IntegrationMethod::GEAR2), 0.35 / 3.0, TOL);
 }
 

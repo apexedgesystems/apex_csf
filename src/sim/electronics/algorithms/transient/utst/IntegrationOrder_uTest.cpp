@@ -8,8 +8,8 @@
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/MnaSystemSparse.hpp"
 #include "src/sim/electronics/algorithms/transient/inc/TransientSolver.hpp"
-#include "src/utilities/math/integration/inc/BDF2.hpp"
 #include "src/utilities/math/integration/inc/BackwardEuler.hpp"
 #include "src/utilities/math/integration/inc/TrapezoidalRule.hpp"
 
@@ -101,6 +101,45 @@ double rlError(IntegrationMethod method, std::size_t stepsPerTau) {
   const double DRIVE = DRIVE_VOLTS * std::sin(run.state.time / TAU);
   const double AMPERES = (DRIVE - run.state.voltage(2)) / OHMS;
   return AMPERES - (DRIVE_VOLTS / OHMS) * firstOrderResponse(run.state.time, TAU);
+}
+
+/**
+ * @brief 1 uF at 5 V discharging through 1 kohm (tau = 1 ms): the voltage
+ *        starts with a slope of -5 V per tau.
+ * @return The capacitor's voltage less 5 exp(-t / tau) at 2 tau, in volts.
+ */
+double rcDecayError(IntegrationMethod method, std::size_t stepsPerTau) {
+  constexpr double OHMS = 1000.0;
+  constexpr double FARADS = 1e-6;
+  constexpr double TAU = OHMS * FARADS;
+  constexpr double START_VOLTS = 5.0;
+  Stepped run(2, method);
+  run.solver.companions().addCapacitor(1, 0, FARADS);
+  run.solver.companions().capacitor(0).setInitialVoltage(START_VOLTS);
+  run.solver.setStampCallback(
+      [](MnaSystem& mna, double /*seconds*/) { mna.addConductance(1, 0, 1.0 / OHMS); });
+  run.steps(2 * stepsPerTau, TAU / static_cast<double>(stepsPerTau));
+  return run.state.voltage(1) - START_VOLTS * std::exp(-run.state.time / TAU);
+}
+
+/**
+ * @brief 10 mH carrying 50 mA, closed on 100 ohm (tau = 100 us): the
+ *        current starts with a slope of -50 mA per tau.
+ * @return The inductor's current less 50 mA exp(-t / tau) at 2 tau, in amperes.
+ */
+double rlDecayError(IntegrationMethod method, std::size_t stepsPerTau) {
+  constexpr double OHMS = 100.0;
+  constexpr double HENRIES = 10e-3;
+  constexpr double TAU = HENRIES / OHMS;
+  constexpr double START_AMPERES = 50e-3;
+  Stepped run(2, method);
+  run.solver.companions().addInductor(1, 0, HENRIES);
+  run.solver.companions().inductor(0).setInitialCurrent(START_AMPERES);
+  run.solver.setStampCallback(
+      [](MnaSystem& mna, double /*seconds*/) { mna.addConductance(1, 0, 1.0 / OHMS); });
+  run.steps(2 * stepsPerTau, TAU / static_cast<double>(stepsPerTau));
+  return run.solver.companions().inductor(0).prevCurrent -
+         START_AMPERES * std::exp(-run.state.time / TAU);
 }
 
 /**
@@ -221,6 +260,40 @@ TEST(IntegrationOrderTest, Gear2IsSecondOrder) {
   EXPECT_NEAR(RL_COARSE / rlError(IntegrationMethod::GEAR2, 200), 4.0, 0.3);
   EXPECT_LT(std::fabs(RC_COARSE), 5e-4);
   EXPECT_LT(std::fabs(RL_COARSE), 1e-4);
+}
+
+/**
+ * @test Gear's formula is second order from a start with a slope: a
+ *       discharge, where the first step already moves.
+ *
+ * The first step is backward Euler, whose one step costs an error of second
+ * order; a first step of Gear's formula on an invented earlier value costs
+ * one of first order (3.4 mV here at a hundred steps a time constant).
+ */
+TEST(IntegrationOrderTest, Gear2IsSecondOrderFromANonzeroSlope) {
+  const double RC_COARSE = rcDecayError(IntegrationMethod::GEAR2, 100);
+  const double RC_MIDDLE = rcDecayError(IntegrationMethod::GEAR2, 200);
+  const double RC_FINE = rcDecayError(IntegrationMethod::GEAR2, 400);
+  EXPECT_NEAR(RC_COARSE / RC_MIDDLE, 4.0, 0.3);
+  EXPECT_NEAR(RC_MIDDLE / RC_FINE, 4.0, 0.3);
+  EXPECT_LT(std::fabs(RC_COARSE), 1e-5);
+
+  const double RL_COARSE = rlDecayError(IntegrationMethod::GEAR2, 100);
+  const double RL_MIDDLE = rlDecayError(IntegrationMethod::GEAR2, 200);
+  const double RL_FINE = rlDecayError(IntegrationMethod::GEAR2, 400);
+  EXPECT_NEAR(RL_COARSE / RL_MIDDLE, 4.0, 0.3);
+  EXPECT_NEAR(RL_MIDDLE / RL_FINE, 4.0, 0.3);
+  EXPECT_LT(std::fabs(RL_COARSE), 1e-7);
+}
+
+/** @test Backward Euler is first order on the same discharges */
+TEST(IntegrationOrderTest, BackwardEulerIsFirstOrderFromANonzeroSlope) {
+  EXPECT_NEAR(rcDecayError(IntegrationMethod::BACKWARD_EULER, 100) /
+                  rcDecayError(IntegrationMethod::BACKWARD_EULER, 200),
+              2.0, 0.1);
+  EXPECT_NEAR(rlDecayError(IntegrationMethod::BACKWARD_EULER, 100) /
+                  rlDecayError(IntegrationMethod::BACKWARD_EULER, 200),
+              2.0, 0.1);
 }
 
 /* ----------------------------- Conservation ----------------------------- */
@@ -397,9 +470,34 @@ TEST(IntegrationOrderTest, TrapezoidalMatchesTheIntegrationLibrary) {
       IntegrationMethod::TRAPEZOIDAL, 0.5);
 }
 
-/** @test The GEAR2 companions are the integration library's BDF2, flat history at the start
- * included */
-TEST(IntegrationOrderTest, Gear2MatchesTheIntegrationLibrary) {
-  expectCompanionMatchesLibrary<apex::math::integration::BDF2<double>>(IntegrationMethod::GEAR2,
-                                                                       2.0 / 3.0);
+/**
+ * @test The GEAR2 companions take the integration library's backward-Euler
+ *       step first and Gear's recurrence from then on.
+ *
+ * The recurrence is written out for tau v' = vin(t) - v with equal steps:
+ * (3 v - 4 v1 + v2) / (2 dt) = (vin - v) / tau. The library's BDF2 starts on
+ * an invented earlier value, so it is not the reference past the start.
+ */
+TEST(IntegrationOrderTest, Gear2StartsAsBackwardEulerThenFollowsItsRecurrence) {
+  constexpr double TAU = 1e-3;
+  constexpr double DT = TAU / 50.0;
+  Stepped gear(3, IntegrationMethod::GEAR2);
+  Stepped euler(3, IntegrationMethod::BACKWARD_EULER);
+  buildDrivenRc(gear);
+  buildDrivenRc(euler);
+
+  gear.steps(1, DT);
+  euler.steps(1, DT);
+  ASSERT_DOUBLE_EQ(gear.state.voltage(2), euler.state.voltage(2));
+
+  double before = 0.0;
+  double last = gear.state.voltage(2);
+  for (int step = 2; step <= 200; ++step) {
+    gear.steps(1, DT);
+    const double DRIVE = DRIVE_VOLTS * std::sin(gear.state.time / TAU);
+    const double NEXT = (4.0 * last - before + 2.0 * DT / TAU * DRIVE) / (3.0 + 2.0 * DT / TAU);
+    ASSERT_NEAR(gear.state.voltage(2), NEXT, 1e-11) << "step " << step;
+    before = last;
+    last = gear.state.voltage(2);
+  }
 }

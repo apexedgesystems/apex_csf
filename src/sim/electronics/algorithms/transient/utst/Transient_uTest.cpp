@@ -628,6 +628,7 @@ TEST(CapacitorCompanionTest, Gear2EquivalentValues) {
   cap.prev2Voltage = 2.0;
 
   double dt = 1e-9;
+  cap.prevStep = dt; // The step before was of the same length.
 
   // Geq = 3C/(2dt) = 1.5 * C/dt = 1500 S
   EXPECT_DOUBLE_EQ(cap.geq(dt, IntegrationMethod::GEAR2), 1500.0);
@@ -648,6 +649,7 @@ TEST(InductorCompanionTest, Gear2EquivalentValues) {
   ind.prev2Current = 0.08;
 
   double dt = 1e-9;
+  ind.prevStep = dt; // The step before was of the same length.
 
   // V = L * (3*I - 4*I(t-dt) + I(t-2dt)) / (2dt), solved for I:
   // Geq = 2dt/(3L) = 2e-9 / 3e-3 S
