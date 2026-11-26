@@ -24,6 +24,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstring>
+#include <limits>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -904,7 +905,8 @@ private:
  * @param inputVoltage AC source voltage magnitude, above zero (typically 1.0).
  * @param startFreq Start frequency in Hz, above zero.
  * @param endFreq End frequency in Hz, finite and not below startFreq.
- * @param pointsPerDecade Number of points per decade, at least one.
+ * @param pointsPerDecade Number of points per decade, at least one, and
+ *                        few enough for std::size_t to count the intervals.
  * @param stampCircuit Callback to stamp circuit elements at given frequency.
  * @return Sweep result with magnitude and phase at each frequency that
  *         solved; no points when the arguments are outside the ranges above.
@@ -927,7 +929,12 @@ AcSweepResult frequencySweep(std::size_t netCount, NetID inputNet, NetID outputN
 
   const double LOG_START = std::log10(startFreq);
   const double DECADES = std::log10(endFreq) - LOG_START;
-  auto intervals = static_cast<std::size_t>(DECADES * static_cast<double>(pointsPerDecade));
+  // The limit is 2^64 as a double, so every count below it converts.
+  const double SPACINGS = DECADES * static_cast<double>(pointsPerDecade);
+  if (!(SPACINGS < static_cast<double>(std::numeric_limits<std::size_t>::max()))) {
+    return result;
+  }
+  auto intervals = static_cast<std::size_t>(SPACINGS);
   if (intervals == 0 && endFreq > startFreq) {
     intervals = 1;
   }

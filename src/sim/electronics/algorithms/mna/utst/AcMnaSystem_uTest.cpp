@@ -323,6 +323,8 @@ TEST(AcSweepTest, FrequencySweepRefusesWhatIsNoSweep) {
   EXPECT_EQ(POINTS(-1.0, 10.0, 1000.0, 10), 0U) << "negative input magnitude";
   EXPECT_EQ(POINTS(NOT_A_NUMBER, 10.0, 1000.0, 10), 0U) << "input not a number";
   EXPECT_EQ(POINTS(INFINITE, 10.0, 1000.0, 10), 0U) << "infinite input";
+  EXPECT_EQ(POINTS(V_IN, 1.0, 100.0, std::numeric_limits<std::size_t>::max()), 0U)
+      << "more intervals than can be counted";
 }
 
 /** @test Frequency sweep generates valid Bode plot data. */
