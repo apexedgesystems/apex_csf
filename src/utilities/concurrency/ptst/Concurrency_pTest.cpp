@@ -516,21 +516,20 @@ PERF_TEST(LockFreeQueue, SingleThreadThroughput) {
 /**
  * @brief Multi-producer multi-consumer LockFreeQueue throughput.
  *
- * Tests contention behavior with multiple threads competing for access.
+ * Every thread pushes and pops on one queue. The threads share nothing else:
+ * a counter of their own would put a second contended line beside the queue's
+ * cursors and the case would time both.
  */
 PERF_TEST(LockFreeQueue, MPMCContention) {
   UB_PERF_GUARD(perf);
 
   LockFreeQueue<int> queue(4096);
-  std::atomic<long long> totalOps{0};
 
   auto result = perf.contentionRun(
       [&] {
         if (queue.tryPush(42)) {
           int out = 0;
-          if (queue.tryPop(out)) {
-            totalOps.fetch_add(1, std::memory_order_relaxed);
-          }
+          (void)queue.tryPop(out);
         }
       },
       "mpmc");
@@ -743,24 +742,25 @@ PERF_TEST(SpinLock, Uncontended) {
 /**
  * @brief Contended SpinLock throughput.
  *
- * Tests performance when multiple threads compete for the lock.
+ * Threads compete for the lock around one plain increment: the protected work
+ * is as small as a critical section gets, and it is the lock that orders it.
  */
 PERF_TEST(SpinLock, Contended) {
   UB_PERF_GUARD(perf);
 
   SpinLock lock;
-  std::atomic<long long> counter{0};
+  long long counter = 0;
 
   auto result = perf.contentionRun(
       [&] {
         lock.lock();
-        counter.fetch_add(1, std::memory_order_relaxed);
+        ++counter;
         lock.unlock();
       },
       "contended");
 
-  std::printf("\nSpinLock contended (%d threads): %.0f ops/s\n", perf.threads(),
-              result.callsPerSecond);
+  std::printf("\nSpinLock contended (%d threads): %.0f ops/s, %lld increments under the lock\n",
+              perf.threads(), result.callsPerSecond, counter);
 }
 
 /**
@@ -771,31 +771,32 @@ PERF_TEST(SpinLock, VsMutex) {
 
   SpinLock spinLock;
   std::mutex stdMutex;
-  std::atomic<long long> counter{0};
+  long long underSpinLock = 0;
+  long long underMutex = 0;
 
   std::printf("\n=== SpinLock vs std::mutex ===\n");
 
-  // SpinLock
+  // SpinLock: one plain increment is the protected work on both sides.
   auto spinResult = perf.contentionRun(
       [&] {
         spinLock.lock();
-        counter.fetch_add(1, std::memory_order_relaxed);
+        ++underSpinLock;
         spinLock.unlock();
       },
       "spinlock");
 
-  std::printf("SpinLock:   %.0f ops/s\n", spinResult.callsPerSecond);
+  std::printf("SpinLock:   %.0f ops/s, %lld increments\n", spinResult.callsPerSecond,
+              underSpinLock);
 
   // std::mutex
-  counter.store(0);
   auto mutexResult = perf.contentionRun(
       [&] {
         std::lock_guard<std::mutex> guard(stdMutex);
-        counter.fetch_add(1, std::memory_order_relaxed);
+        ++underMutex;
       },
       "mutex");
 
-  std::printf("std::mutex: %.0f ops/s\n", mutexResult.callsPerSecond);
+  std::printf("std::mutex: %.0f ops/s, %lld increments\n", mutexResult.callsPerSecond, underMutex);
 
   double speedup = spinResult.callsPerSecond / mutexResult.callsPerSecond;
   std::printf("SpinLock is %.2fx %s\n", speedup > 1 ? speedup : 1 / speedup,
@@ -836,18 +837,16 @@ PERF_TEST(Semaphore, Uncontended) {
 /**
  * @brief Contended Semaphore signaling throughput.
  *
- * Multiple threads competing for a limited resource.
+ * Threads take and return permits of one semaphore and share nothing else.
  */
 PERF_TEST(Semaphore, Contended) {
   UB_PERF_GUARD(perf);
 
   Semaphore sem(4); // Limited permits
-  std::atomic<long long> acquired{0};
 
   auto result = perf.contentionRun(
       [&] {
         if (sem.tryAcquire()) {
-          acquired.fetch_add(1, std::memory_order_relaxed);
           sem.release();
         }
       },
