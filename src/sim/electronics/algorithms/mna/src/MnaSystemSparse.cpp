@@ -11,6 +11,14 @@
 
 namespace sim::electronics::algorithms::mna {
 
+namespace {
+
+/// Reciprocal pivot growth below which a kept pivot order is given up: the
+/// square root of a double's epsilon, half of its digits.
+constexpr double KEPT_ORDER_GROWTH_FLOOR = 1.4901161193847656e-08;
+
+} // namespace
+
 /* ----------------------------- Constructor ----------------------------- */
 
 MnaSystemSparse::MnaSystemSparse(std::size_t netCount) : netCount_(netCount), I_(netCount, 0.0) {
@@ -19,6 +27,7 @@ MnaSystemSparse::MnaSystemSparse(std::size_t netCount) : netCount_(netCount), I_
   // than nets). The vector retains capacity across clear() calls, so this
   // only matters for the first factorize.
   triplets_.reserve(netCount * 4);
+  factoredTriplets_.reserve(netCount * 4);
   klu_defaults(&kluCommon_);
 }
 
@@ -34,7 +43,8 @@ void MnaSystemSparse::freeKluFactors() {
     kluSymbolic_ = nullptr;
   }
   analysisCurrent_ = false;
-  cachedTripletsCurrent_ = false;
+  stampsAreFactors_ = false;
+  factoredTripletsHeld_ = false;
   factorized_ = false;
 }
 
@@ -336,6 +346,8 @@ void MnaSystemSparse::buildRhsVector() {
 bool MnaSystemSparse::factorize() {
   buildCsc();
   buildRhsVector();
+  // The solves copy the right-hand side here; sized now, they allocate nothing.
+  x_.resize(b_.size());
 
   // A pattern other than the analysed one (stamps moved, a voltage source
   // added or removed) needs its own analysis, and leaves no factor to reuse.
@@ -347,17 +359,38 @@ bool MnaSystemSparse::factorize() {
   // keeps the pivot order and redoes the numeric work only. This is every
   // Newton iteration after the first, where the structure is stable and the
   // values change.
-  if (kluNumeric_ != nullptr && klu_refactor(cscAp_.data(), cscAi_.data(), cscAx_.data(),
-                                             kluSymbolic_, kluNumeric_, &kluCommon_) != 0) {
-    factorized_ = true;
-    // The factors are this matrix's; cachedTriplets_ is not updated here
-    // (the copy is O(nnz) per iteration), so it no longer describes them.
-    cachedTripletsCurrent_ = false;
+  if (kluNumeric_ != nullptr &&
+      klu_refactor(cscAp_.data(), cscAi_.data(), cscAx_.data(), kluSymbolic_, kluNumeric_,
+                   &kluCommon_) != 0 &&
+      keptOrderSuits()) {
+    markFactorized();
     return true;
   }
 
-  // No numeric factor, or a zero pivot under its pivot order: pivot anew.
+  // No numeric factor, or a pivot order that does not suit these values (a
+  // zero pivot, or growth that costs the solution its accuracy): pivot anew.
   return factorNumeric();
+}
+
+bool MnaSystemSparse::keptOrderSuits() {
+  // `klu_refactor` succeeds with any nonzero pivot, however small beside the
+  // entries it eliminates. The reciprocal pivot growth, the smallest ratio
+  // over the columns of the largest matrix entry to the largest entry of U,
+  // tells: at or above the floor the factors lose less than half of a
+  // double's digits to growth.
+  if (klu_rgrowth(cscAp_.data(), cscAi_.data(), cscAx_.data(), kluSymbolic_, kluNumeric_,
+                  &kluCommon_) == 0) {
+    return false;
+  }
+  return kluCommon_.rgrowth >= KEPT_ORDER_GROWTH_FLOOR;
+}
+
+void MnaSystemSparse::markFactorized() {
+  factorized_ = true;
+  stampsAreFactors_ = true;
+  factoredCount_ = triplets_.size();
+  // Room for the list to be set aside and stamped again without allocating.
+  factoredTriplets_.reserve(triplets_.capacity());
 }
 
 bool MnaSystemSparse::analyze() {
@@ -374,7 +407,8 @@ bool MnaSystemSparse::factorNumeric() {
     klu_free_numeric(&kluNumeric_, &kluCommon_);
     kluNumeric_ = nullptr;
   }
-  cachedTripletsCurrent_ = false;
+  stampsAreFactors_ = false;
+  factoredTripletsHeld_ = false;
 
   // KLU returns no factor for a singular matrix.
   kluNumeric_ = klu_factor(cscAp_.data(), cscAi_.data(), cscAx_.data(), kluSymbolic_, &kluCommon_);
@@ -383,29 +417,35 @@ bool MnaSystemSparse::factorNumeric() {
     return false;
   }
 
-  factorized_ = true;
-  cachedTriplets_ = triplets_;
-  cachedTripletsCurrent_ = true;
+  markFactorized();
   return true;
 }
 
 bool MnaSystemSparse::tripletsMatch() const {
-  if (!cachedTripletsCurrent_ || triplets_.size() != cachedTriplets_.size() ||
-      vsources_.size() != cachedVsourceRc_.size()) {
-    return false;
-  }
-  for (std::size_t i = 0; i < triplets_.size(); ++i) {
-    if (triplets_[i].row != cachedTriplets_[i].row || triplets_[i].col != cachedTriplets_[i].col ||
-        triplets_[i].value != cachedTriplets_[i].value) {
-      return false;
-    }
-  }
   // A voltage source's nets place rows and columns of the matrix; its value
   // is in the right-hand side only. cachedVsourceRc_ holds the sources of the
-  // pattern last built, which is the pattern of the current factors.
+  // pattern last built, which is the pattern of the factors in hand.
+  if (vsources_.size() != cachedVsourceRc_.size()) {
+    return false;
+  }
   for (std::size_t i = 0; i < vsources_.size(); ++i) {
     if (packRowCol(static_cast<int>(vsources_[i].pos), static_cast<int>(vsources_[i].neg)) !=
         cachedVsourceRc_[i]) {
+      return false;
+    }
+  }
+
+  // Still the list the factors were computed from: nothing was added to it.
+  if (stampsAreFactors_) {
+    return triplets_.size() == factoredCount_;
+  }
+  if (!factoredTripletsHeld_ || triplets_.size() != factoredTriplets_.size()) {
+    return false;
+  }
+  for (std::size_t i = 0; i < triplets_.size(); ++i) {
+    if (triplets_[i].row != factoredTriplets_[i].row ||
+        triplets_[i].col != factoredTriplets_[i].col ||
+        triplets_[i].value != factoredTriplets_[i].value) {
       return false;
     }
   }
@@ -514,19 +554,31 @@ bool MnaSystemSparse::solveCached(const double* rhs, double* dx, std::size_t dim
 
 /* ----------------------------- Clear ----------------------------- */
 
-void MnaSystemSparse::clear() {
+void MnaSystemSparse::setStampsAside() {
+  // The list being cleared is the one the factors in hand were computed
+  // from: it is kept, by exchange and without a copy, for tripletsMatch() to
+  // hold the next stamps against. Anything stamped after the factorization
+  // is not part of it.
+  if (stampsAreFactors_) {
+    triplets_.resize(factoredCount_);
+    triplets_.swap(factoredTriplets_);
+    factoredTripletsHeld_ = true;
+    stampsAreFactors_ = false;
+  }
   triplets_.clear();
   std::fill(I_.begin(), I_.end(), 0.0);
   vsources_.clear();
+}
+
+void MnaSystemSparse::clear() {
+  setStampsAside();
   factorized_ = false;
 }
 
 void MnaSystemSparse::clearStamps() {
   // factorized_ is left as it is: the factors in hand stay usable for a
   // back-solve while the stamps are rebuilt.
-  triplets_.clear();
-  std::fill(I_.begin(), I_.end(), 0.0);
-  vsources_.clear();
+  setStampsAside();
 }
 
 } // namespace sim::electronics::algorithms::mna

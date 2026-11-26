@@ -252,12 +252,19 @@ TEST(MnaSystemSparseTest, NnzCount_ReflectsStamps) {
 
 /* ----------------------------- Right-Hand Side Only ----------------------------- */
 
-/** @test tripletsMatch() is true after factorize when stamps are unchanged. */
+/**
+ * @test tripletsMatch() is true after factorize when stamps are unchanged,
+ *       and false before any factorization, with stamps or without.
+ */
 TEST(MnaSystemSparseTest, TripletsMatchAfterFactorize) {
+  MnaSystemSparse unstamped(3);
+  EXPECT_FALSE(unstamped.tripletsMatch());
+
   MnaSystemSparse mna(3);
   mna.addConductance(1, 2, 1.0 / 1000.0);
   mna.addConductance(2, 0, 1.0 / 1000.0);
   mna.addVoltageSource(1, 0, 5.0);
+  EXPECT_FALSE(mna.tripletsMatch());
   ASSERT_TRUE(mna.factorize());
 
   EXPECT_TRUE(mna.tripletsMatch());
@@ -460,10 +467,10 @@ TEST(MnaSystemSparseTest, FactorizeAfterVoltageSourceAddedSolvesNewSystem) {
 }
 
 /**
- * @test Stamps equal to an earlier matrix's do not match once other factors
- *       replaced it, across a change of nine decades in one conductance.
+ * @test tripletsMatch() follows the factors in hand through a factorization
+ *       that kept the pivot order, across nine decades in one conductance.
  */
-TEST(MnaSystemSparseTest, TripletsMatchFalseAfterFastPathRefactor) {
+TEST(MnaSystemSparseTest, TripletsMatchFollowsTheFactorsAfterAKeptOrder) {
   MnaSystemSparse mna(4);
   stampSwitched(mna, true);
   ASSERT_TRUE(mna.factorize());
@@ -478,6 +485,16 @@ TEST(MnaSystemSparseTest, TripletsMatchFalseAfterFastPathRefactor) {
   ASSERT_TRUE(OPEN.success) << OPEN.errorMessage;
   EXPECT_NEAR(OPEN.nodeVoltages[2], SWITCH_OPEN_VOLTS, TOL);
   expectMatchesFreshAndDense(OPEN.nodeVoltages, [](auto& system) { stampSwitched(system, false); });
+
+  // Open again: the factors in hand are the open switch's, and a new
+  // right-hand side is all it takes.
+  mna.clearStamps();
+  stampSwitched(mna, false);
+  ASSERT_TRUE(mna.tripletsMatch());
+  mna.updateRhs();
+  const auto OPEN_AGAIN = mna.solve();
+  ASSERT_TRUE(OPEN_AGAIN.success) << OPEN_AGAIN.errorMessage;
+  EXPECT_NEAR(OPEN_AGAIN.nodeVoltages[2], SWITCH_OPEN_VOLTS, TOL);
 
   // Closed again. The stamps are those of the first factorization; the
   // factors in hand are the open switch's. The choice below is a caller's:
@@ -495,6 +512,119 @@ TEST(MnaSystemSparseTest, TripletsMatchFalseAfterFastPathRefactor) {
   EXPECT_NEAR(CLOSED.nodeVoltages[2], SWITCH_CLOSED_VOLTS, TOL);
   expectMatchesFreshAndDense(CLOSED.nodeVoltages,
                              [](auto& system) { stampSwitched(system, true); });
+}
+
+/** @test Factorizing the same matrix again leaves it matched, with a new right-hand side solved */
+TEST(MnaSystemSparseTest, FactorizingTheSameMatrixAgainKeepsTheMatch) {
+  MnaSystemSparse mna(4);
+  stampLadderA(mna);
+  ASSERT_TRUE(mna.factorize());
+  mna.clearStamps();
+  stampLadderA(mna);
+  ASSERT_TRUE(mna.factorize());
+
+  // Three more passes with other supplies: the matrix is the factorized one
+  // each time, and net 2 sits at four tenths of the supply.
+  for (const double SUPPLY : {10.0, 20.0, -5.0}) {
+    mna.clearStamps();
+    mna.addConductance(1, 2, 1e-3);
+    mna.addConductance(2, 0, 1e-3);
+    mna.addConductance(2, 3, 1e-3);
+    mna.addConductance(3, 0, 1e-3);
+    mna.addVoltageSource(1, 0, SUPPLY);
+    ASSERT_TRUE(mna.tripletsMatch()) << "supply " << SUPPLY;
+    mna.updateRhs();
+    const auto RESULT = mna.solve();
+    ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
+    EXPECT_NEAR(RESULT.nodeVoltages[2], 0.4 * SUPPLY, TOL);
+  }
+}
+
+/**
+ * @test A stamp added after the factorization is not part of the factorized
+ *       matrix, and a pass that leaves a stamp out is not that matrix.
+ */
+TEST(MnaSystemSparseTest, StampAddedAfterFactorizationIsNotMatched) {
+  MnaSystemSparse mna(4);
+  stampLadderA(mna);
+  ASSERT_TRUE(mna.factorize());
+  ASSERT_TRUE(mna.tripletsMatch());
+
+  mna.addConductance(3, 0, 1e-3);
+  EXPECT_FALSE(mna.tripletsMatch());
+
+  // Cleared and stamped as it was factorized, it matches again: what was
+  // added later was not kept with the factors' stamps.
+  mna.clearStamps();
+  stampLadderA(mna);
+  EXPECT_TRUE(mna.tripletsMatch());
+  mna.clearStamps();
+  stampLadderA(mna);
+  mna.addConductance(3, 0, 1e-3);
+  EXPECT_FALSE(mna.tripletsMatch());
+
+  // The ladder's first three conductances and its source: every stamp of
+  // this pass equals the factorized one at its place, and one is missing.
+  mna.clearStamps();
+  mna.addConductance(1, 2, 1e-3);
+  mna.addConductance(2, 0, 1e-3);
+  mna.addConductance(2, 3, 1e-3);
+  mna.addVoltageSource(1, 0, 10.0);
+  EXPECT_FALSE(mna.tripletsMatch());
+}
+
+/**
+ * @test A kept pivot order that would grow its pivots is given up, though no
+ *       pivot is zero; one that grows them little is as accurate as its
+ *       growth allows.
+ *
+ * [[1, 1], [1, 2]] is pivoted on its diagonal. [[e, 1], [1, 1]] at the same
+ * positions is well conditioned (about 4) for any small e, with the solution
+ * v1 = 1 / (1 - e), v2 = (1 - 2e) / (1 - e) for the right-hand side [1, 2].
+ * On the kept order its first pivot is e and the factors lose their digits
+ * in proportion: every one for e = 1e-20 (v = [0, 1]), nine for e = 1e-9.
+ * Both are below the growth floor and are pivoted anew. e = 1e-6 is above
+ * it, and keeps ten digits either way.
+ */
+TEST(MnaSystemSparseTest, FactorizeRepivotsWhenKeptOrderGrowsItsPivots) {
+  const auto STAMP = [](auto& system, double first, double last) {
+    system.addMatrixEntry(1, 1, first);
+    system.addMatrixEntry(1, 2, 1.0);
+    system.addMatrixEntry(2, 1, 1.0);
+    system.addMatrixEntry(2, 2, last);
+    system.addCurrent(1, 0, 1.0);
+    system.addCurrent(2, 0, 2.0);
+  };
+  struct Case {
+    double first;
+    double tolerance;
+  };
+  for (const Case CASE : {Case{1e-20, 1e-12}, Case{1e-9, 1e-12}, Case{1e-6, 1e-8}}) {
+    SCOPED_TRACE(CASE.first);
+    MnaSystemSparse mna(3);
+    STAMP(mna, 1.0, 2.0);
+    ASSERT_TRUE(mna.factorize());
+
+    mna.clearStamps();
+    STAMP(mna, CASE.first, 1.0);
+    ASSERT_TRUE(mna.factorize());
+    const auto RESULT = mna.solve();
+    ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
+    EXPECT_NEAR(RESULT.nodeVoltages[1], 1.0 / (1.0 - CASE.first), CASE.tolerance);
+    EXPECT_NEAR(RESULT.nodeVoltages[2], (1.0 - 2.0 * CASE.first) / (1.0 - CASE.first),
+                CASE.tolerance);
+
+    // The residual of each row, and a system that never held other factors.
+    EXPECT_NEAR(CASE.first * RESULT.nodeVoltages[1] + RESULT.nodeVoltages[2], 1.0, CASE.tolerance);
+    EXPECT_NEAR(RESULT.nodeVoltages[1] + RESULT.nodeVoltages[2], 2.0, CASE.tolerance);
+    MnaSystemSparse fresh(3);
+    STAMP(fresh, CASE.first, 1.0);
+    ASSERT_TRUE(fresh.factorize());
+    const auto FRESH = fresh.solve();
+    ASSERT_TRUE(FRESH.success);
+    EXPECT_NEAR(RESULT.nodeVoltages[1], FRESH.nodeVoltages[1], CASE.tolerance);
+    EXPECT_NEAR(RESULT.nodeVoltages[2], FRESH.nodeVoltages[2], CASE.tolerance);
+  }
 }
 
 /** @test The same conductances with the voltage source on another net are another matrix. */
@@ -599,8 +729,11 @@ TEST(MnaSystemSparseTest, FactorizeRefusesSingularValuesUnderSamePattern) {
   EXPECT_FALSE(mna.tripletsMatch());
   EXPECT_FALSE(mna.solve().success);
 
+  // The first matrix again: its factors went with the refused
+  // factorization, so its stamps match nothing.
   mna.clearStamps();
   STAMP(mna, 1.0, 0.5);
+  EXPECT_FALSE(mna.tripletsMatch());
   ASSERT_TRUE(mna.factorize());
   const auto RESULT = mna.solve();
   ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;

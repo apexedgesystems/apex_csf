@@ -153,8 +153,15 @@ public:
    * - the symbolic analysis, while the pattern (the positions stamped and the
    *   voltage sources) is the analysed one; otherwise the pattern is analysed
    *   again;
-   * - the pivot order of the numeric factors, under the same pattern, unless
-   *   a pivot is zero for the new values; then the matrix is pivoted anew.
+   * - the pivot order of the numeric factors, under the same pattern, while
+   *   it suits the new values. It does not when a pivot is zero, or when
+   *   KLU's reciprocal pivot growth of the result (the smallest ratio, over
+   *   the columns, of the largest matrix entry to the largest entry of U) is
+   *   below the square root of a double's epsilon; then the matrix is
+   *   pivoted anew under the same analysis.
+   *
+   * Also sizes the storage solve() and solveInto() copy the right-hand side
+   * into, so that they allocate nothing.
    *
    * @return true on success, false if matrix is singular.
    *
@@ -258,11 +265,11 @@ public:
    * nets), the matrix is unchanged and the factors can be reused: only the
    * RHS vector needs rebuilding (via updateRhs). Injected currents and the
    * values of voltage sources are free to differ, being right-hand side
-   * only. A factorization that reuses the pivot order keeps no copy of
-   * its stamps, and after it the answer is false until the matrix is pivoted
-   * anew, so a true result never names other factors.
+   * only. The stamps of every successful factorize() are known: the list is
+   * set aside when it is cleared, so nothing is copied to keep it.
    *
    * @return true if the factors in hand belong to the current stamps.
+   * @note RT-safe: compares, no allocation.
    */
   [[nodiscard]] bool tripletsMatch() const;
 
@@ -339,9 +346,11 @@ private:
   std::vector<double> b_; ///< RHS vector for solver.
   std::vector<double> x_; ///< Solution vector.
   bool factorized_ = false;
-  std::vector<CooEntry> cachedTriplets_; ///< Stamps of the last full numeric factorization.
-  bool cachedTripletsCurrent_ = false;   ///< cachedTriplets_ are the stamps of the current factors.
-  bool analysisCurrent_ = false; ///< The symbolic analysis describes the current CSC pattern.
+  bool stampsAreFactors_ = false; ///< triplets_ is the list the factors were computed from.
+  std::size_t factoredCount_ = 0; ///< Its length at the factorization.
+  std::vector<CooEntry> factoredTriplets_; ///< That list, set aside when the stamps were cleared.
+  bool factoredTripletsHeld_ = false; ///< factoredTriplets_ are the stamps of the current factors.
+  bool analysisCurrent_ = false;      ///< The symbolic analysis describes the current CSC pattern.
 
   klu_symbolic* kluSymbolic_ = nullptr; ///< KLU symbolic analysis (elimination tree).
   klu_numeric* kluNumeric_ = nullptr;   ///< KLU numeric factorization (LU factors).
@@ -365,8 +374,11 @@ private:
   std::vector<std::int64_t> cachedVsourceRc_; ///< Packed (pos<<32 | neg) per vsource for match.
 
   void freeKluFactors();
-  bool analyze();       ///< Drop analysis and factors, then analyse the current pattern.
-  bool factorNumeric(); ///< Full numeric factorization under the current analysis.
+  bool analyze();        ///< Drop analysis and factors, then analyse the current pattern.
+  bool factorNumeric();  ///< Full numeric factorization under the current analysis.
+  bool keptOrderSuits(); ///< Whether the refactorization just made grew its pivots acceptably.
+  void markFactorized(); ///< The current stamps are the factors'.
+  void setStampsAside(); ///< Clear the stamps, keeping the factors' list for comparison.
   bool kluSolve(double* rhsSolution, std::size_t dim);
   void buildCsc();
   bool patternMatchesCached() const noexcept;
