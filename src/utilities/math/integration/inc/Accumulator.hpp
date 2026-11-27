@@ -24,7 +24,11 @@ namespace integration {
 /**
  * @brief Accumulator status codes.
  */
-enum class AccumulatorStatus : uint8_t { SUCCESS = 0, ERROR_INVALID_DT = 1, ERROR_OVERFLOW = 2 };
+enum class AccumulatorStatus : uint8_t {
+  SUCCESS = 0,
+  ERROR_INVALID_DT = 1, ///< Time step is not positive and finite.
+  ERROR_OVERFLOW = 2    ///< Source index is not below the number of sources.
+};
 
 /* ------------------------------ Accumulator ------------------------------ */
 
@@ -246,8 +250,15 @@ public:
   constexpr const State& state() const noexcept { return state_; }
   constexpr State& state() noexcept { return state_; }
 
+  /**
+   * @brief Totals of one source.
+   * @param idx Source index (0 to N-1).
+   * @return That source's totals. For an index that names no source, totals
+   *         of zero: nothing was ever accumulated from it.
+   * @note RT-safe: O(1).
+   */
   constexpr const SourceStats& sourceStats(std::size_t idx) const noexcept {
-    return sourceStats_[idx < N ? idx : 0];
+    return idx < N ? sourceStats_[idx] : noSource_;
   }
 
   static constexpr std::size_t maxSources() noexcept { return N; }
@@ -255,6 +266,7 @@ public:
 private:
   State state_{};
   SourceStats sourceStats_[N]{};
+  SourceStats noSource_{}; ///< What sourceStats() refers to for an index outside 0..N-1.
 };
 
 } // namespace integration

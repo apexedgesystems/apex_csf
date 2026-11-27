@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstddef>
 
 using apex::math::integration::Accumulator;
 using apex::math::integration::AccumulatorStatus;
@@ -66,8 +67,11 @@ TEST(Accumulator, TrapezoidalAccumulation) {
     prev = curr;
   }
 
-  // Trapezoidal integral of linearly increasing derivative
+  // The derivative rises linearly from 0 to 10 over one second, which the
+  // trapezoidal rule integrates exactly: 5
+  EXPECT_NEAR(acc.state(), 5.0, 1e-12);
   EXPECT_NEAR(acc.time(), 1.0, 1e-10);
+  EXPECT_EQ(acc.sampleCount(), 10u);
 }
 
 /** @test Invalid dt returns error. */
@@ -182,6 +186,20 @@ TEST(MultiRateAccumulator, InvalidSourceReturnsError) {
   MultiRateAccumulator<double, 2> acc(0.0);
   uint8_t status = acc.accumulate(5, 1.0, 0.1); // Invalid source index
   EXPECT_EQ(status, static_cast<uint8_t>(AccumulatorStatus::ERROR_OVERFLOW));
+}
+
+/** @test Reports zero totals for an index that names no source, whatever the sources hold */
+TEST(MultiRateAccumulator, SourceStatsOutOfRangeIsEmpty) {
+  MultiRateAccumulator<double, 2> acc;
+  acc.accumulate(0, 1.0, 0.25);
+  acc.accumulate(1, 1.0, 0.5);
+
+  for (const std::size_t idx : {std::size_t{2}, std::size_t{7}, static_cast<std::size_t>(-1)}) {
+    EXPECT_EQ(acc.sourceStats(idx).sampleCount, 0u) << "index " << idx;
+    EXPECT_EQ(acc.sourceStats(idx).totalTime, 0.0) << "index " << idx;
+  }
+  EXPECT_EQ(acc.sourceStats(0).sampleCount, 1u);
+  EXPECT_DOUBLE_EQ(acc.sourceStats(1).totalTime, 0.5);
 }
 
 /** @test MultiRateAccumulator reset clears all. */
