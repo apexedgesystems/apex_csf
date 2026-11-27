@@ -562,6 +562,12 @@ void SchedulerBase::logTablePreflight() noexcept {
   log->info(label(), fmt::format("[{}] sequence references: {} task(s) the table sequences "
                                  "and their component does not",
                                  NAME(P.seqRefs), P.unsequencedTasks));
+  if (P.boundedSlots > 0) {
+    log->info(label(), fmt::format("{} slot(s) hold tasks paced over several seconds whose "
+                                   "common period is past the analysis budget: taken with "
+                                   "every task due, an upper bound",
+                                   P.boundedSlots));
+  }
   const char* OVERALL = NAME(P.overall());
   if (P.overall() == PreflightVerdict::FAIL) {
     log->error(label(), 0,

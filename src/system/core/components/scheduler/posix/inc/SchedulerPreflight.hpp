@@ -12,7 +12,7 @@
  *
  * Checks:
  *  - Pool references: tasks assigned to pools that do not exist.
- *  - Dispatch burst: worst per-tick task load vs pool workers (offset
+ *  - Dispatch burst: worst per-instant task load vs pool workers (offset
  *    collision view -- everything at offset 0 shows up here).
  *  - Chain dispatch order: within a sequence group, the EFFECTIVE
  *    dispatch order (per-tick schedule order = priority-sorted, ties
@@ -20,11 +20,22 @@
  *    dispatched ahead of an earlier one can park every worker with
  *    the earlier phase still queued behind them -- a hard deadlock on
  *    pools with fewer workers than waiting phases.
- *  - Chain shape: phases-vs-workers depth on the worst tick (parking
+ *  - Chain shape: phases-vs-workers depth on the worst instant (parking
  *    pressure). Groups whose tasks differ in rate or offset are counted
  *    for information; each tick orders the tasks that run on it.
  *  - Sequence references: tasks the table sequences whose component
  *    offers no such sequencing; they run unsequenced.
+ *
+ * The burst, order and shape checks count the tasks dispatched together
+ * on an instant: a slot of the schedule, and for a slot that holds tasks
+ * paced over several seconds, each second of the span after which their
+ * paces repeat. Tasks that share a slot and never a cycle are not counted
+ * together. The walk over such spans has a fixed budget; a slot past it
+ * is taken with every task on it due, counted in boundedSlots, and an
+ * order hazard seen only there is a WARN.
+ *
+ * The hazard counts are eight bits wide and stop at 255. A verdict is
+ * set where its hazard is seen and does not depend on the count.
  *
  * RT-Safety: config-time only (allocates, logs); never on the tick path.
  */
@@ -66,6 +77,12 @@ struct TablePreflight {
 
   PreflightVerdict seqRefs{PreflightVerdict::PASS}; ///< Unmet sequencing requests.
   std::uint8_t unsequencedTasks{0};                 ///< Tasks sequenced by the table only.
+
+  /// Slots taken with every task on them due because the paces of their
+  /// multi-second tasks share no period within the analysis budget. The
+  /// burst and shape figures are upper bounds where such a slot decides
+  /// them, and an order hazard seen only there warns.
+  std::uint16_t boundedSlots{0};
 
   /** @brief Worst verdict across all checks. */
   [[nodiscard]] PreflightVerdict overall() const noexcept {
