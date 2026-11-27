@@ -27,6 +27,7 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -94,6 +95,7 @@ struct Shape {
   const char* offsetMode{"uniform"};
   std::uint64_t seed{0xC0FFEEULL};
   int maxWorkers{-1}; // -1 -> scheduler default
+  int workers{0};     // Workers of the one pool; 0 -> one per hardware thread
 };
 
 inline Shape loadShape() noexcept {
@@ -105,6 +107,7 @@ inline Shape loadShape() noexcept {
   s.offsetMode = envStr("OFFSET_MODE", "uniform");
   s.seed = envU64("SEED", 0xC0FFEEULL);
   s.maxWorkers = envI("MT_MAX_WORKERS", -1);
+  s.workers = envI("MT_WORKERS", 0);
   return s;
 }
 
@@ -113,6 +116,10 @@ struct TaskCtx {
   std::uint32_t spinIters{0};
   std::uint8_t rc{static_cast<std::uint8_t>(Status::SUCCESS)};
 };
+
+// Task bodies run since the process started. A case compares the runs it
+// caused with the dispatches it made.
+static std::atomic<std::uint64_t> g_bodyRuns{0};
 
 // Task execution function
 static std::uint8_t taskThunk(void* ctx) noexcept {
@@ -123,7 +130,25 @@ static std::uint8_t taskThunk(void* ctx) noexcept {
     asm volatile("" ::: "memory");
   }
 
+  g_bodyRuns.fetch_add(1, std::memory_order_relaxed);
   return c->rc;
+}
+
+// A task body the case can keep inside itself.
+static std::atomic<bool> g_hold{false};
+static std::atomic<bool> g_heldInside{false};
+
+static std::uint8_t holdThunk(void*) noexcept {
+  if (g_hold.load(std::memory_order_acquire)) {
+    g_heldInside.store(true, std::memory_order_release);
+    const auto END = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (g_hold.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < END) {
+      std::this_thread::yield();
+    }
+    g_heldInside.store(false, std::memory_order_release);
+  }
+  g_bodyRuns.fetch_add(1, std::memory_order_relaxed);
+  return 0;
 }
 
 // Factory: create SchedulableTask with dedicated context
@@ -155,7 +180,9 @@ template <typename T> inline void trySetMaxWorkers(T& sched, int n) noexcept {
   }
 }
 
-// Scheduler factory
+// Scheduler factory. The scheduler is not started: a case registers its
+// tasks and then calls startScheduler(), because init() sizes the dispatch
+// contexts for the table it finds.
 inline std::unique_ptr<SchedulerMultiThread> makeScheduler(const Shape& sh) {
   const auto LOG_DIR = std::filesystem::temp_directory_path() / "scheduler_mt_ptest";
   std::filesystem::create_directories(LOG_DIR);
@@ -163,14 +190,88 @@ inline std::unique_ptr<SchedulerMultiThread> makeScheduler(const Shape& sh) {
   static std::vector<std::filesystem::path> toClean;
   toClean.push_back(LOG_DIR);
 
-  auto sched = std::make_unique<SchedulerMultiThread>(sh.ffreq, LOG_DIR);
-  (void)sched->init();
-
-  // Optional tuning
-  trySetMaxWorkers(*sched, sh.maxWorkers);
-
-  return sched;
+  if (sh.workers > 0) {
+    system_core::scheduler::PoolSpec spec;
+    spec.numThreads = static_cast<std::size_t>(sh.workers);
+    return std::make_unique<SchedulerMultiThread>(
+        sh.ffreq, LOG_DIR, std::vector<system_core::scheduler::PoolSpec>{spec});
+  }
+  return std::make_unique<SchedulerMultiThread>(sh.ffreq, LOG_DIR);
 }
+
+// Start a scheduler whose tasks are registered.
+inline void startScheduler(SchedulerMultiThread& sched, const Shape& sh) {
+  ASSERT_EQ(sched.init(), static_cast<std::uint8_t>(Status::SUCCESS));
+  trySetMaxWorkers(sched, sh.maxWorkers);
+}
+
+// What a case dispatched and what came of it. Every dispatch is followed
+// by a wait for the work it queued, so the next one starts from rest and a
+// measured interval is a whole tick's work; the instructions of the
+// dispatch call alone are read from a profile's call records.
+class Delivery {
+public:
+  static constexpr std::uint64_t SETTLE_NS = 5'000'000'000ULL;
+
+  // TASKS_PER_DISPATCH: the tasks one tick() selects.
+  Delivery(SchedulerMultiThread& sched, std::uint64_t tasksPerDispatch) noexcept
+      : sched_(sched), perDispatch_(tasksPerDispatch),
+        runsAtStart_(g_bodyRuns.load(std::memory_order_acquire)),
+        dropsAtStart_(sched.totalDispatchDrops()), skipsAtStart_(sched.totalSkipCount()) {}
+
+  // Dispatch TICK, then wait for everything it queued.
+  void tick(std::uint16_t tick) noexcept {
+    volatile auto status = sched_.executeTasksOnTickMulti(tick);
+    (void)status;
+    ++dispatches_;
+    visited_ += perDispatch_;
+    settle();
+  }
+
+  // Dispatch CYCLE, on which VISITED tasks sit on the slot, without waiting.
+  void dispatchCycle(std::uint64_t cycle, std::uint64_t visited) noexcept {
+    volatile auto status = sched_.executeTasksOnCycleMulti(cycle);
+    (void)status;
+    ++dispatches_;
+    visited_ += visited;
+  }
+
+  // Wait for everything queued so far.
+  void settle() noexcept {
+    if (!sched_.waitForInFlightTasks(SETTLE_NS)) {
+      ++unsettled_;
+    }
+  }
+
+  // Print the counts and require that every selected task was admitted,
+  // ran and finished. Selected: visited less those skipped as still busy.
+  void expectWhole() const {
+    const std::uint64_t SKIPPED = sched_.totalSkipCount() - skipsAtStart_;
+    const std::uint64_t DROPPED = sched_.totalDispatchDrops() - dropsAtStart_;
+    const std::uint64_t SELECTED = visited_ - SKIPPED;
+    const std::uint64_t RUN = g_bodyRuns.load(std::memory_order_acquire) - runsAtStart_;
+    std::printf("  Dispatches: %llu  visited: %llu  selected: %llu  admitted: %llu  "
+                "completed: %llu  unsettled waits: %llu\n",
+                static_cast<unsigned long long>(dispatches_),
+                static_cast<unsigned long long>(visited_),
+                static_cast<unsigned long long>(SELECTED),
+                static_cast<unsigned long long>(SELECTED - DROPPED),
+                static_cast<unsigned long long>(RUN), static_cast<unsigned long long>(unsettled_));
+    EXPECT_EQ(unsettled_, 0U) << "a wait for queued work ran out";
+    EXPECT_EQ(DROPPED, 0U) << "a dispatch found no context or was refused by its pool";
+    EXPECT_EQ(RUN, SELECTED) << "not every selected task ran";
+  }
+
+private:
+  SchedulerMultiThread& sched_;
+  std::uint64_t perDispatch_;
+  std::uint64_t runsAtStart_;
+  std::uint64_t dropsAtStart_;
+  std::uint64_t skipsAtStart_;
+  std::uint64_t dispatches_{0};
+  std::uint64_t visited_{0};
+  std::uint64_t unsettled_{0};
+};
 
 } // namespace
 
@@ -184,6 +285,7 @@ PERF_TEST(SchedulerMtPerf, EmptyTickOverhead) {
 
   const Shape SH = loadShape();
   auto sched = makeScheduler(SH);
+  startScheduler(*sched, SH);
   const std::uint16_t TICK = 0;
 
   perf.warmup([&] {
@@ -241,10 +343,12 @@ PERF_TEST(SchedulerMtPerf, ManyNoWork) {
 
   const std::uint16_t TICK = 0;
 
+  startScheduler(*sched, SH);
+  Delivery delivery(*sched, N);
+
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      volatile auto status = sched->executeTasksOnTickMulti(TICK);
-      (void)status;
+      delivery.tick(TICK);
     }
   });
 
@@ -259,12 +363,7 @@ PERF_TEST(SchedulerMtPerf, ManyNoWork) {
                                .bytesWritten = N * sizeof(std::uint8_t), // Result codes
                                .bytesAllocated = 0};
 
-  auto result = perf.throughputLoop(
-      [&] {
-        volatile auto status = sched->executeTasksOnTickMulti(TICK);
-        (void)status;
-      },
-      "many-nowork", memProfile);
+  auto result = perf.throughputLoop([&] { delivery.tick(TICK); }, "many-nowork", memProfile);
 
   // Relaxed CV% for workloads that might be too fast
   if (result.stats.median < 1.0) {
@@ -277,6 +376,8 @@ PERF_TEST(SchedulerMtPerf, ManyNoWork) {
               (result.callsPerSecond * N) / 1e3);
   std::printf("  Workers: %u\n", std::thread::hardware_concurrency());
   std::printf("  Expected: 5-20 us per-task (vs 2.7 ns ST)\n");
+
+  delivery.expectWhole();
 
   sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
@@ -314,10 +415,12 @@ PERF_TEST(SchedulerMtPerf, ManyLightWork) {
 
   const std::uint16_t TICK = 0;
 
+  startScheduler(*sched, SH);
+  Delivery delivery(*sched, N);
+
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      volatile auto status = sched->executeTasksOnTickMulti(TICK);
-      (void)status;
+      delivery.tick(TICK);
     }
   });
 
@@ -330,12 +433,7 @@ PERF_TEST(SchedulerMtPerf, ManyLightWork) {
                                .bytesWritten = N * sizeof(std::uint8_t),
                                .bytesAllocated = 0};
 
-  auto result = perf.throughputLoop(
-      [&] {
-        volatile auto status = sched->executeTasksOnTickMulti(TICK);
-        (void)status;
-      },
-      "many-light", memProfile);
+  auto result = perf.throughputLoop([&] { delivery.tick(TICK); }, "many-light", memProfile);
 
   // With real work (>1us), expect stable results. The CV gate needs a
   // meaningful sample: reduced Tier-A runs (few repeats) estimate CV
@@ -356,6 +454,8 @@ PERF_TEST(SchedulerMtPerf, ManyLightWork) {
   std::printf("  Workers: %u\n", std::thread::hardware_concurrency());
   std::printf("  Speedup vs ST: %.1fx (ideal: %ux)\n", SPEEDUP,
               std::thread::hardware_concurrency());
+
+  delivery.expectWhole();
 
   sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
@@ -398,19 +498,16 @@ PERF_TEST(SchedulerMtPerf, ThreadScaling) {
     tasks.push_back(std::move(t));
   }
 
+  startScheduler(*sched, SH);
+  Delivery delivery(*sched, N);
+
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      volatile auto status = sched->executeTasksOnTickMulti(0);
-      (void)status;
+      delivery.tick(0);
     }
   });
 
-  auto result = perf.throughputLoop(
-      [&] {
-        volatile auto status = sched->executeTasksOnTickMulti(0);
-        (void)status;
-      },
-      "thread-scaling");
+  auto result = perf.throughputLoop([&] { delivery.tick(0); }, "thread-scaling");
 
   const double tasksPerSec = (result.callsPerSecond * N) / 1e3;
 
@@ -421,6 +518,8 @@ PERF_TEST(SchedulerMtPerf, ThreadScaling) {
   std::printf("  >80%% efficiency: Excellent scaling\n");
   std::printf("  50-80%% efficiency: Good, some contention\n");
   std::printf("  <50%% efficiency: Poor scaling, investigate locks/cache\n");
+
+  delivery.expectWhole();
 
   sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
@@ -463,25 +562,24 @@ PERF_TEST(SchedulerMtPerf, TaskCountScaling) {
       tasks.push_back(std::move(t));
     }
 
+    startScheduler(*sched, SH);
+    Delivery delivery(*sched, taskCount);
+
     perf.warmup([&] {
       for (int i = 0; i < perf.cycles(); ++i) {
-        volatile auto status = sched->executeTasksOnTickMulti(0);
-        (void)status;
+        delivery.tick(0);
       }
     });
 
-    auto result = perf.throughputLoop(
-        [&] {
-          volatile auto status = sched->executeTasksOnTickMulti(0);
-          (void)status;
-        },
-        "task-count");
+    auto result = perf.throughputLoop([&] { delivery.tick(0); }, "task-count");
 
     const double perTaskNs = (result.stats.median * 1000.0) / taskCount;
     const double cvPercent = result.stats.cv * 100.0;
 
     std::printf("%-10zu %-15.3f %-15.1f %-15.1f\n", taskCount, result.stats.median, perTaskNs,
                 cvPercent);
+
+    delivery.expectWhole();
 
     sched.reset(); // Join workers before this iteration's tasks are destroyed.
   }
@@ -521,20 +619,17 @@ PERF_TEST(SchedulerMtPerf, ConcurrentExecutionStress) {
     tasks.push_back(std::move(t));
   }
 
+  startScheduler(*sched, SH);
+  Delivery delivery(*sched, N);
+
   perf.warmup([&] {
     for (int i = 0; i < perf.cycles(); ++i) {
-      volatile auto status = sched->executeTasksOnTickMulti(0);
-      (void)status;
+      delivery.tick(0);
     }
   });
 
   // Measure repeated execution to stress test consistency
-  auto result = perf.throughputLoop(
-      [&] {
-        volatile auto status = sched->executeTasksOnTickMulti(0);
-        (void)status;
-      },
-      "concurrent-stress");
+  auto result = perf.throughputLoop([&] { delivery.tick(0); }, "concurrent-stress");
 
   std::printf("\nConcurrent Execution Stress Results:\n");
   std::printf("  Tasks: %zu\n", N);
@@ -548,6 +643,8 @@ PERF_TEST(SchedulerMtPerf, ConcurrentExecutionStress) {
   std::printf("  Low CV%% (<5%%): Consistent execution time\n");
   std::printf("  High CV%% (>10%%): Uneven load distribution or contention\n");
   std::printf("  p90/p50 ratio > 1.5: High tail latency variance\n");
+
+  delivery.expectWhole();
 
   sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
@@ -571,6 +668,7 @@ PERF_TEST(SchedulerMtPerf, AddTaskSetupCost) {
 
   perf.warmup([&] {
     auto warm = makeScheduler(SH);
+    startScheduler(*warm, SH);
     const std::uint16_t FREQ = warm->fundamentalFreq();
     const std::uint16_t DEN = denDist(rng);
 
@@ -592,6 +690,7 @@ PERF_TEST(SchedulerMtPerf, AddTaskSetupCost) {
   auto result = perf.throughputLoop(
       [&] {
         auto sched = makeScheduler(SH);
+        startScheduler(*sched, SH);
         const std::uint16_t FREQ = sched->fundamentalFreq();
         const std::uint16_t DEN = denDist(rng);
 
@@ -666,6 +765,7 @@ PERF_TEST(SchedulerMtPerf, AddTaskWarmCost) {
 
   const Shape SH = loadShape();
   auto sched = makeScheduler(SH);
+  startScheduler(*sched, SH);
   const std::uint16_t FREQ = sched->fundamentalFreq();
 
   std::mt19937_64 rng(SH.seed);
@@ -716,7 +816,7 @@ PERF_TEST(SchedulerMtPerf, AddTaskWarmCost) {
  */
 PERF_TEST(SchedulerMtPerf, SequencedChain4) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
-  cfg.cycles = std::min(cfg.cycles, 200); // Reduced - we add wait overhead
+  cfg.cycles = std::min(cfg.cycles, 200); // Each dispatch waits for its chain
   cfg.repeats = std::min(cfg.repeats, 5);
   auto perf = ub::makePerfCaseWithProfiler("SchedulerMtPerf.SequencedChain4", cfg);
 
@@ -771,47 +871,24 @@ PERF_TEST(SchedulerMtPerf, SequencedChain4) {
 
   const std::uint16_t TICK = 0;
 
-  // For sequenced tasks, we need to wait for completion between iterations.
-  // The seq counter wraps to 1 when all 4 tasks complete, so we wait for that.
-  auto waitForCompletion = [&] {
-    // First wait for counter to leave 1 (tasks started)
-    for (int wait = 0; wait < 10000; ++wait) {
-      if (seq.counter()->load(std::memory_order_acquire) != 1) {
-        break;
-      }
-      std::this_thread::yield();
-    }
-    // Then wait for counter to wrap back to 1 (all 4 tasks completed)
-    // Timeout after 100ms to avoid infinite hangs in case of bugs
-    for (int wait = 0; wait < 100000; ++wait) {
-      if (seq.counter()->load(std::memory_order_acquire) == 1) {
-        return;
-      }
-      std::this_thread::sleep_for(std::chrono::microseconds(1));
-    }
-  };
+  startScheduler(*sched, SH);
+  Delivery delivery(*sched, 4U);
 
   perf.warmup([&] {
     for (int i = 0; i < 10; ++i) { // Reduced warmup cycles
-      volatile auto status = sched->executeTasksOnTickMulti(TICK);
-      (void)status;
-      waitForCompletion();
+      delivery.tick(TICK);
     }
   });
 
-  auto result = perf.throughputLoop(
-      [&] {
-        volatile auto status = sched->executeTasksOnTickMulti(TICK);
-        (void)status;
-        waitForCompletion();
-      },
-      "seq-chain4");
+  auto result = perf.throughputLoop([&] { delivery.tick(TICK); }, "seq-chain4");
 
   std::printf("\n[Sequencing-MT] 4-task chain (pre1|pre2 -> step -> post):\n");
   std::printf("  Total: %.3f us\n", result.stats.median);
   std::printf("  Per-task: %.3f us\n", result.stats.median / 4.0);
   std::printf("  Workers: %u\n", std::thread::hardware_concurrency());
   std::printf("  Spin: %u iters\n", SH.spin);
+
+  delivery.expectWhole();
 
   sched.reset(); // Join workers before caller-owned tasks are destroyed.
 }
@@ -823,7 +900,7 @@ PERF_TEST(SchedulerMtPerf, SequencedChain4) {
  */
 PERF_TEST(SchedulerMtPerf, SequencingOverhead) {
   ub::PerfConfig cfg = ub::detail::getPerfConfig();
-  cfg.cycles = std::min(cfg.cycles, 200); // Reduced - we add wait overhead
+  cfg.cycles = std::min(cfg.cycles, 200); // Each dispatch waits for its tasks
   cfg.repeats = std::min(cfg.repeats, 5);
   ub::PerfCase perf{"SchedulerMtPerf.SequencingOverhead", cfg};
 
@@ -851,19 +928,14 @@ PERF_TEST(SchedulerMtPerf, SequencingOverhead) {
   }
 
   const std::uint16_t TICK = 0;
+  startScheduler(*schedNonSeq, SH);
+  Delivery deliveryNonSeq(*schedNonSeq, 4U);
   double nonSeqMedian = 0.0;
   {
-    // For non-sequenced, we just need a small delay to let tasks complete
-    auto resultNonSeq = perf.throughputLoop(
-        [&] {
-          volatile auto status = schedNonSeq->executeTasksOnTickMulti(TICK);
-          (void)status;
-          // Small delay to allow parallel tasks to complete
-          std::this_thread::sleep_for(std::chrono::microseconds(50));
-        },
-        "nonseq-4task");
+    auto resultNonSeq = perf.throughputLoop([&] { deliveryNonSeq.tick(TICK); }, "nonseq-4task");
     nonSeqMedian = resultNonSeq.stats.median;
   }
+  deliveryNonSeq.expectWhole(); // Before the second scheduler's tasks add to the run count.
 
   // Test 2: Sequenced (4 tasks in chain - strictly sequential)
   SequenceGroup seq(4); // Outlives the scheduler (shutdown sentinel sweep).
@@ -892,33 +964,12 @@ PERF_TEST(SchedulerMtPerf, SequencingOverhead) {
     tasksSeq.push_back(std::move(task));
   }
 
-  // Wait for sequenced tasks to complete
-  auto waitForSeqCompletion = [&] {
-    // First wait for counter to leave 1 (tasks started)
-    for (int wait = 0; wait < 10000; ++wait) {
-      if (seq.counter()->load(std::memory_order_acquire) != 1) {
-        break;
-      }
-      std::this_thread::yield();
-    }
-    // Then wait for counter to wrap back to 1 (all 4 tasks completed)
-    for (int wait = 0; wait < 100000; ++wait) {
-      if (seq.counter()->load(std::memory_order_acquire) == 1) {
-        return;
-      }
-      std::this_thread::sleep_for(std::chrono::microseconds(1));
-    }
-  };
+  startScheduler(*schedSeq, SH);
+  Delivery deliverySeq(*schedSeq, 4U);
 
   double seqMedian = 0.0;
   {
-    auto resultSeq = perf.throughputLoop(
-        [&] {
-          volatile auto status = schedSeq->executeTasksOnTickMulti(TICK);
-          (void)status;
-          waitForSeqCompletion();
-        },
-        "seq-4task");
+    auto resultSeq = perf.throughputLoop([&] { deliverySeq.tick(TICK); }, "seq-4task");
     seqMedian = resultSeq.stats.median;
   }
 
@@ -933,8 +984,221 @@ PERF_TEST(SchedulerMtPerf, SequencingOverhead) {
   std::printf(
       "  Note: Sequential tasks cannot run in parallel, so overhead includes serialization\n");
 
+  deliverySeq.expectWhole();
+
   schedSeq.reset(); // Join workers before caller-owned tasks are destroyed.
   schedNonSeq.reset();
+}
+
+/* ----------------------------- Sequenced Slots ----------------------------- */
+
+namespace {
+
+/// One slot's tasks: GROUPS chains of four (pre1 | pre2 -> step -> post),
+/// each its own sequence group, and UNSEQUENCED plain tasks. The groups
+/// are declared ahead of the scheduler: they outlive its shutdown sweep.
+struct SequencedSlot {
+  std::vector<std::unique_ptr<SequenceGroup>> groups;
+  std::unique_ptr<SchedulerMultiThread> sched;
+  std::vector<std::unique_ptr<TaskCtx>> ctxPool;
+  std::vector<std::string> labels;
+  std::vector<std::unique_ptr<SchedulableTask>> tasks;
+};
+
+/// Register the slot's tasks and start the scheduler. HELD_PRE1 gives the
+/// first group's pre1 the body a case can hold; PACED_PRE2 runs the first
+/// group's pre2 on every other tick instead of on each.
+void buildSequencedSlot(SequencedSlot& slot, const Shape& sh, std::size_t groups,
+                        std::size_t unsequenced, bool heldPre1 = false, bool pacedPre2 = false) {
+  slot.sched = makeScheduler(sh);
+  SchedulerMultiThread& sched = *slot.sched;
+  const std::uint16_t HZ = sched.fundamentalFreq();
+  slot.labels.reserve(groups * 4U + unsequenced);
+
+  const auto ADD = [&](std::string_view role, std::size_t n, SequenceGroup* seq, int phase,
+                       system_core::scheduler::TaskPriority priority, bool held, bool paced) {
+    slot.labels.emplace_back(std::string(role) + std::to_string(n));
+    std::unique_ptr<SchedulableTask> task;
+    if (held) {
+      task = std::make_unique<SchedulableTask>(DelegateU8{&holdThunk, nullptr},
+                                               std::string_view(slot.labels.back()));
+    } else {
+      task = makeFuncTask(slot.ctxPool, std::string_view(slot.labels.back()), 0U);
+    }
+    const TaskConfig CFG(HZ, paced ? 2 : 1, 0, priority);
+    if (seq != nullptr) {
+      seq->addTask(*task, phase);
+      ASSERT_EQ(sched.addTask(*task, CFG, seq), Status::SUCCESS);
+    } else {
+      ASSERT_EQ(sched.addTask(*task, CFG), Status::SUCCESS);
+    }
+    slot.tasks.push_back(std::move(task));
+  };
+
+  for (std::size_t g = 0; g < groups; ++g) {
+    slot.groups.push_back(std::make_unique<SequenceGroup>(4));
+    SequenceGroup* const SEQ = slot.groups.back().get();
+    const bool FIRST = (g == 0U);
+    ADD("pre1_", g, SEQ, 1, system_core::scheduler::PRIORITY_HIGH, FIRST && heldPre1, false);
+    ADD("pre2_", g, SEQ, 1, system_core::scheduler::PRIORITY_HIGH, false, FIRST && pacedPre2);
+    ADD("step_", g, SEQ, 3, system_core::scheduler::PRIORITY_NORMAL, false, false);
+    ADD("post_", g, SEQ, 4, system_core::scheduler::PRIORITY_LOW, false, false);
+  }
+  for (std::size_t u = 0; u < unsequenced; ++u) {
+    ADD("plain_", u, nullptr, 0, system_core::scheduler::PRIORITY_NORMAL, false, false);
+  }
+  startScheduler(sched, sh);
+}
+
+/// Dispatch one tick of GROUPS chains of four beside UNSEQUENCED plain
+/// tasks, each dispatch waiting for the tick's work.
+void runSequencedSlot(const char* name, const char* label, std::size_t groups,
+                      std::size_t unsequenced) {
+  ub::PerfConfig cfg = ub::detail::getPerfConfig();
+  cfg.cycles = std::min(cfg.cycles, 200);
+  cfg.repeats = std::min(cfg.repeats, 5);
+  auto perf = ub::makePerfCaseWithProfiler(name, cfg);
+
+  const Shape SH = loadShape();
+  SequencedSlot slot;
+  ASSERT_NO_FATAL_FAILURE(buildSequencedSlot(slot, SH, groups, unsequenced));
+  const std::size_t ON_SLOT = groups * 4U + unsequenced;
+  Delivery delivery(*slot.sched, ON_SLOT);
+  const std::uint16_t TICK = 0;
+
+  perf.warmup([&] {
+    for (int i = 0; i < 10; ++i) {
+      delivery.tick(TICK);
+    }
+  });
+  auto result = perf.throughputLoop([&] { delivery.tick(TICK); }, label);
+
+  std::printf("\n[Sequencing-MT] %zu chain(s) of four and %zu plain task(s) on one tick:\n", groups,
+              unsequenced);
+  std::printf("  Total: %.3f us  (%.3f us per task)\n", result.stats.median,
+              result.stats.median / static_cast<double>(ON_SLOT));
+  delivery.expectWhole();
+
+  slot.sched.reset(); // Join workers before the tasks and groups are destroyed.
+}
+
+} // namespace
+
+/** @brief One chain of four on the tick: 4 sequenced entries, 1 group. */
+PERF_TEST(SchedulerMtPerf, SequencedGroups1) {
+  runSequencedSlot("SchedulerMtPerf.SequencedGroups1", "seq-groups-1", 1, 0);
+}
+
+/** @brief Four independent chains of four: 16 sequenced entries, 4 groups. */
+PERF_TEST(SchedulerMtPerf, SequencedGroups4) {
+  runSequencedSlot("SchedulerMtPerf.SequencedGroups4", "seq-groups-4", 4, 0);
+}
+
+/** @brief Sixteen independent chains of four: 64 sequenced entries, 16 groups. */
+PERF_TEST(SchedulerMtPerf, SequencedGroups16) {
+  runSequencedSlot("SchedulerMtPerf.SequencedGroups16", "seq-groups-16", 16, 0);
+}
+
+/** @brief One chain of four beside 252 plain tasks: a slot of 256 that mixes both. */
+PERF_TEST(SchedulerMtPerf, SequencedMixedSlot) {
+  runSequencedSlot("SchedulerMtPerf.SequencedMixedSlot", "seq-mixed-256", 1, 252);
+}
+
+/**
+ * @brief A chain whose pre2 runs on every other tick, over consecutive
+ *        cycles: the cadence test comes before the chain is ordered, so
+ *        the step follows two tasks on one cycle and one on the next.
+ */
+PERF_TEST(SchedulerMtPerf, SequencedPacedMember) {
+  ub::PerfConfig cfg = ub::detail::getPerfConfig();
+  cfg.cycles = std::min(cfg.cycles, 200);
+  cfg.repeats = std::min(cfg.repeats, 5);
+  auto perf = ub::makePerfCaseWithProfiler("SchedulerMtPerf.SequencedPacedMember", cfg);
+
+  const Shape SH = loadShape();
+  SequencedSlot slot;
+  ASSERT_NO_FATAL_FAILURE(buildSequencedSlot(slot, SH, 1, 0, false, true));
+  Delivery delivery(*slot.sched, 0);
+  std::uint64_t cycle = 0;
+
+  // pre2 runs on the even cycles: four tasks there, three on the odd ones.
+  const auto PAIR = [&] {
+    delivery.dispatchCycle(cycle, (cycle % 2U == 0U) ? 4U : 3U);
+    delivery.settle();
+    ++cycle;
+    delivery.dispatchCycle(cycle, (cycle % 2U == 0U) ? 4U : 3U);
+    delivery.settle();
+    ++cycle;
+  };
+  perf.warmup([&] {
+    for (int i = 0; i < 10; ++i) {
+      PAIR();
+    }
+  });
+  auto result = perf.throughputLoop(PAIR, "seq-paced-pair");
+
+  std::printf("\n[Sequencing-MT] chain of four, pre2 on every other tick (two cycles):\n");
+  std::printf("  Total: %.3f us\n", result.stats.median);
+  delivery.expectWhole();
+
+  slot.sched.reset();
+}
+
+/**
+ * @brief A chain whose pre1 is still running when the next cycle comes:
+ *        that cycle visits four entries and selects none, the group
+ *        being still under way. pre1 is let go afterwards and the pair
+ *        of cycles is waited out.
+ */
+PERF_TEST(SchedulerMtPerf, SequencedBusyMember) {
+  ub::PerfConfig cfg = ub::detail::getPerfConfig();
+  cfg.cycles = std::min(cfg.cycles, 100);
+  cfg.repeats = std::min(cfg.repeats, 5);
+  auto perf = ub::makePerfCaseWithProfiler("SchedulerMtPerf.SequencedBusyMember", cfg);
+
+  const Shape SH = loadShape();
+  SequencedSlot slot;
+  ASSERT_NO_FATAL_FAILURE(buildSequencedSlot(slot, SH, 1, 0, true, false));
+  slot.sched->setSkipOnBusy(true);
+  Delivery delivery(*slot.sched, 0);
+  std::uint64_t cycle = 0;
+  std::uint64_t notHeld = 0;
+
+  const auto PAIR = [&] {
+    // First cycle: all four go out; pre1 stays in its body, pre2 finishes,
+    // step and post wait behind pre1.
+    const std::uint64_t RUNS = g_bodyRuns.load(std::memory_order_acquire);
+    g_hold.store(true, std::memory_order_release);
+    delivery.dispatchCycle(cycle++, 4U);
+    const auto END = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while ((!g_heldInside.load(std::memory_order_acquire) ||
+            g_bodyRuns.load(std::memory_order_acquire) == RUNS) &&
+           std::chrono::steady_clock::now() < END) {
+      std::this_thread::yield();
+    }
+    if (!g_heldInside.load(std::memory_order_acquire)) {
+      ++notHeld;
+    }
+    // Second cycle: pre1, step and post are still busy and pre2's group
+    // is still running, so all four are skipped.
+    delivery.dispatchCycle(cycle++, 4U);
+    g_hold.store(false, std::memory_order_release);
+    delivery.settle();
+  };
+  perf.warmup([&] {
+    for (int i = 0; i < 5; ++i) {
+      PAIR();
+    }
+  });
+  auto result = perf.throughputLoop(PAIR, "seq-busy-pair");
+
+  std::printf("\n[Sequencing-MT] chain of four, pre1 busy across the next cycle (two cycles):\n");
+  std::printf("  Total: %.3f us\n", result.stats.median);
+  std::printf("  Skipped as busy: %zu\n", slot.sched->totalSkipCount());
+  EXPECT_EQ(notHeld, 0U) << "pre1 was not inside its body when the second cycle came";
+  delivery.expectWhole();
+
+  slot.sched.reset();
 }
 
 PERF_MAIN()
