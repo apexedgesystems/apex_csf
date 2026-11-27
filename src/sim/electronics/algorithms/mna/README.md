@@ -194,11 +194,13 @@ bool everySolved = solveBatchCustom(workspace, hA, hb, 32, batchSize, stream);
 - Supported dimensions: 8, 16, 32, 64, in double (`solveBatchCustom`) and
   single precision (`solveBatchCustomF32`)
 - Custom kernels optimized per size
-- A CUDA stream may be given. The call waits for it before it returns,
-  whatever stopped the batch, so nothing it queued uses the host arrays or
-  the workspace afterwards. Only if that wait itself fails (the CUDA
-  context is in error) is the queued work's state unknown: keep the arrays
-  and the workspace alive and unchanged until CUDA's recovery allows reuse
+- A CUDA stream may be given. A call that queues work waits for the stream
+  before it returns, whatever stopped the batch; a refused call and an
+  empty batch queue nothing. `false` does not say whether that wait
+  succeeded. After `false`, unless completion is established some other
+  way, keep the host arrays and the workspace alive and unchanged until a
+  `cudaStreamSynchronize` of the stream succeeds or CUDA's recovery for the
+  error allows reuse
 - Returns true only when every system was solved. A system with no pivot
   in some column (relative to that column's largest entry) is reported in
   the optional `solved` flags and comes back as not-a-number in every
@@ -470,7 +472,8 @@ bool everySolved =
 // of its neighbours; a trial that was not solved (a floating node, say)
 // holds not-a-number throughout. When the batch did not run to its end
 // (everySolved is false then) every flag is false: read no trial without
-// its flag.
+// its flag. After false, hA, hb and the workspace are released or refilled
+// only once the stream has been synchronized successfully.
 for (std::size_t trial = 0; trial < batchSize; ++trial) {
   if (solved[trial]) {
     record(&hb[trial * dim]);

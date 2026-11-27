@@ -18,9 +18,11 @@
  *
  * API Design:
  *  - Host-device transfers are explicit
- *  - Stream parameter: the work is queued on the stream given, and the call
- *    waits for that stream before it returns, whatever stopped the batch.
- *    Only when the wait itself fails may queued work still be pending
+ *  - Stream parameter: a call that queues work on the stream given waits for
+ *    that stream before it returns, whatever stopped the batch. A refused
+ *    dimension or workspace and an empty batch queue nothing and wait for
+ *    nothing. A false return does not say whether the wait succeeded: the
+ *    note on solveBatchCustom says what a caller keeps after it
  *  - Returns bool: true when every system of the batch was solved
  *
  * A system is solved unless, at some elimination step, no entry left in the
@@ -181,15 +183,20 @@ LaunchConfig getLaunchConfig(std::size_t dim, std::size_t batch) noexcept;
  *         error. After a CUDA error the contents of bs are unspecified.
  *
  * @note NOT RT-SAFE: involves memory transfers and kernel launches.
- * @note Once work may be queued, every return follows a wait for the stream:
- *       nothing queued by the call uses As, bs or the workspace afterwards.
- *       The exception is a wait that itself fails, which says the CUDA
- *       context is in error. The call then returns false with the state of
- *       the queued work unknown: keep As, bs and the workspace alive and
- *       unchanged until CUDA's recovery for the error allows their reuse.
+ * @note A call that may have queued work waits for the stream before it
+ *       returns, and when that wait succeeds nothing it queued goes on using
+ *       As, bs or the workspace. False does not say whether the wait
+ *       succeeded: it is returned for a batch with a system not solved, after
+ *       a wait that did, and for a CUDA error, the wait's own among them. So
+ *       after false, unless completion has been established some other way,
+ *       keep As, bs and the workspace alive and unchanged until a
+ *       cudaStreamSynchronize of that stream succeeds or CUDA's recovery for
+ *       the error allows their reuse. A call that is refused (dimension,
+ *       workspace) or has an empty batch queues nothing.
  * @note A call stopped by a CUDA error reads the calling thread's CUDA error
- *       state (cudaGetLastError), so that the error is not found by a later
- *       launch check.
+ *       state (cudaGetLastError), so that this call's error is not found by
+ *       a later launch check. An error the device goes on reporting is not
+ *       cleared by that.
  */
 bool solveBatchCustom(MnaBatchWorkspace& ws, const double* As, double* bs, std::size_t dim,
                       std::size_t batch, void* stream = nullptr, bool* solved = nullptr) noexcept;
@@ -216,7 +223,7 @@ bool solveBatchCustom(MnaBatchWorkspace& ws, const double* As, double* bs, std::
  * @return As solveBatchCustom.
  *
  * @note NOT RT-SAFE: involves memory transfers and kernel launches.
- * @note After a CUDA error As, bs and the workspace are kept as for
+ * @note After false, As, bs and the workspace are kept as for
  *       solveBatchCustom.
  */
 bool solveBatchCustomF32(MnaBatchWorkspaceF32& ws, const float* As, float* bs, std::size_t dim,

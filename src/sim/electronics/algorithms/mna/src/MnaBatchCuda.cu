@@ -887,10 +887,12 @@ bool solveBatch(BatchWorkspace<T>& ws, const T* As, T* bs, std::size_t dim, std:
   auto s = static_cast<cudaStream_t>(stream);
 
   // From here work may be queued on the stream. Whatever stops the sequence,
-  // the stream is waited for before the call returns, so that nothing queued
-  // goes on using As, bs or the workspace afterwards. An error of this call
-  // is read off the thread's error state, where the next launch check would
-  // otherwise find it.
+  // the stream is waited for before the call returns; when that wait
+  // succeeds nothing queued goes on using As, bs or the workspace. A wait
+  // that fails is reported as false like a step that was refused: the caller
+  // cannot tell them apart and keeps its storage after either. An error of
+  // this call is read off the thread's error state, where the next launch
+  // check would otherwise find it.
   const bool QUEUED = queueBatch(ws, As, bs, dim, batch, s);
   const bool WAITED = cudaStreamSynchronize(s) == cudaSuccess;
   if (!QUEUED || !WAITED) {
