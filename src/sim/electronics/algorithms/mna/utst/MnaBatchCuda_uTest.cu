@@ -19,9 +19,11 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstddef>
 #include <limits>
+#include <thread>
 #include <vector>
 
 #include <cuda_runtime_api.h>
@@ -528,6 +530,41 @@ TEST_F(MnaBatchCudaTest, BatchThatCannotRunIsRefused) {
   EXPECT_EQ(FLAGGED_AFTER(ws, 12, 1), 0);
 
   EXPECT_EQ(vectors, GIVEN);
+}
+
+/**
+ * @test A call stopped by a CUDA error has waited for the stream when it
+ *       returns, and leaves nothing of the error for the next call.
+ *
+ * Without a right-hand side the second transfer is refused after the first
+ * is queued. A host function that sleeps is put on the stream first: the
+ * stream is still busy afterwards unless the call waited for it.
+ */
+TEST_F(MnaBatchCudaTest, CudaErrorReturnHasWaitedForTheStream) {
+  constexpr std::size_t DIM = 8;
+  std::vector<double> matrices;
+  std::vector<double> vectors;
+  buildKnownSystems<double>(DIM, 2, 1.0, false, matrices, vectors);
+
+  cuda::MnaBatchWorkspace ws;
+  ASSERT_TRUE(ws.prepare(DIM, 2));
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+  ASSERT_EQ(cudaLaunchHostFunc(
+                stream, [](void*) { std::this_thread::sleep_for(std::chrono::milliseconds(200)); },
+                nullptr),
+            cudaSuccess);
+
+  std::array<bool, 2> solved = {true, true};
+  EXPECT_FALSE(cuda::solveBatchCustom(ws, matrices.data(), nullptr, DIM, 2, stream, solved.data()));
+  EXPECT_EQ(cudaStreamQuery(stream), cudaSuccess);
+  EXPECT_EQ(std::count(solved.begin(), solved.end(), true), 0);
+
+  // The same workspace and stream, a batch that solves.
+  EXPECT_TRUE(cuda::solveBatchCustom(ws, matrices.data(), vectors.data(), DIM, 2, stream));
+  expectKnownSolution(vectors, DIM, 0);
+  expectKnownSolution(vectors, DIM, 1);
+  EXPECT_EQ(cudaStreamDestroy(stream), cudaSuccess);
 }
 
 /** @test An empty batch is solved: there is nothing in it that was not */

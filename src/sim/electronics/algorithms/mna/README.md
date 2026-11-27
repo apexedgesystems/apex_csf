@@ -194,11 +194,11 @@ bool everySolved = solveBatchCustom(workspace, hA, hb, 32, batchSize, stream);
 - Supported dimensions: 8, 16, 32, 64, in double (`solveBatchCustom`) and
   single precision (`solveBatchCustomF32`)
 - Custom kernels optimized per size
-- A CUDA stream may be given. A batch that runs to its end has been waited
-  for when the call returns, also where systems of it were not solved. A
-  return on a CUDA error does not wait: keep the host arrays and the
-  workspace alive and unchanged until the stream has completed or CUDA's
-  recovery for the error allows their reuse
+- A CUDA stream may be given. The call waits for it before it returns,
+  whatever stopped the batch, so nothing it queued uses the host arrays or
+  the workspace afterwards. Only if that wait itself fails (the CUDA
+  context is in error) is the queued work's state unknown: keep the arrays
+  and the workspace alive and unchanged until CUDA's recovery allows reuse
 - Returns true only when every system was solved. A system with no pivot
   in some column (relative to that column's largest entry) is reported in
   the optional `solved` flags and comes back as not-a-number in every

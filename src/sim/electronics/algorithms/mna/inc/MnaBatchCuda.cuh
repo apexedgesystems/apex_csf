@@ -18,10 +18,9 @@
  *
  * API Design:
  *  - Host-device transfers are explicit
- *  - Stream parameter: the work is queued on the stream given. A batch that
- *    runs to its end has been waited for when the call returns, whether or
- *    not every system of it was solved. A return on a CUDA error does not
- *    wait: work queued before the error may still be pending
+ *  - Stream parameter: the work is queued on the stream given, and the call
+ *    waits for that stream before it returns, whatever stopped the batch.
+ *    Only when the wait itself fails may queued work still be pending
  *  - Returns bool: true when every system of the batch was solved
  *
  * A system is solved unless, at some elimination step, no entry left in the
@@ -182,12 +181,15 @@ LaunchConfig getLaunchConfig(std::size_t dim, std::size_t batch) noexcept;
  *         error. After a CUDA error the contents of bs are unspecified.
  *
  * @note NOT RT-SAFE: involves memory transfers and kernel launches.
- * @note After a CUDA error, transfers and the kernel queued before it may
- *       still be using As, bs and the workspace. Keep all three alive and
- *       unchanged until the stream has completed (a cudaStreamSynchronize of
- *       it succeeds) or CUDA's recovery for the error allows their reuse.
- *       The flags being false says no solution is to be read, not that the
- *       stream is idle.
+ * @note Once work may be queued, every return follows a wait for the stream:
+ *       nothing queued by the call uses As, bs or the workspace afterwards.
+ *       The exception is a wait that itself fails, which says the CUDA
+ *       context is in error. The call then returns false with the state of
+ *       the queued work unknown: keep As, bs and the workspace alive and
+ *       unchanged until CUDA's recovery for the error allows their reuse.
+ * @note A call stopped by a CUDA error reads the calling thread's CUDA error
+ *       state (cudaGetLastError), so that the error is not found by a later
+ *       launch check.
  */
 bool solveBatchCustom(MnaBatchWorkspace& ws, const double* As, double* bs, std::size_t dim,
                       std::size_t batch, void* stream = nullptr, bool* solved = nullptr) noexcept;

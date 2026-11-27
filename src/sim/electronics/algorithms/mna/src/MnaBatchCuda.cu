@@ -836,6 +836,39 @@ template <typename T> LaunchConfig launchConfigOf(std::size_t dim, std::size_t b
   return cfg;
 }
 
+/**
+ * @brief Queue one batch on the stream: both transfers in, the kernel, the
+ *        transfer back.
+ * @return false at the first step CUDA refuses; the steps before it stay
+ *         queued.
+ */
+template <typename T>
+bool queueBatch(BatchWorkspace<T>& ws, const T* As, T* bs, std::size_t dim, std::size_t batch,
+                cudaStream_t s) noexcept {
+  const std::size_t MATRIX_BYTES = batch * dim * dim * sizeof(T);
+  const std::size_t VECTOR_BYTES = batch * dim * sizeof(T);
+
+  if (cudaMemcpyAsync(ws.dA, As, MATRIX_BYTES, cudaMemcpyHostToDevice, s) != cudaSuccess) {
+    return false;
+  }
+  if (cudaMemcpyAsync(ws.db, bs, VECTOR_BYTES, cudaMemcpyHostToDevice, s) != cudaSuccess) {
+    return false;
+  }
+
+  const KernelShape SHAPE = shapeOf(dim);
+  const dim3 GRID(
+      static_cast<unsigned>((batch + SHAPE.systemsPerBlock - 1) / SHAPE.systemsPerBlock));
+  const dim3 BLOCK(SHAPE.threadsPerBlock);
+  const Kernel<T> KERNEL = kernelOf<T>(dim);
+  KERNEL<<<GRID, BLOCK, 0, s>>>(static_cast<T*>(ws.dA), static_cast<T*>(ws.db),
+                                static_cast<int>(batch));
+  if (cudaGetLastError() != cudaSuccess) {
+    return false;
+  }
+
+  return cudaMemcpyAsync(bs, ws.db, VECTOR_BYTES, cudaMemcpyDeviceToHost, s) == cudaSuccess;
+}
+
 template <typename T>
 bool solveBatch(BatchWorkspace<T>& ws, const T* As, T* bs, std::size_t dim, std::size_t batch,
                 void* stream, bool* solved) noexcept {
@@ -853,37 +886,15 @@ bool solveBatch(BatchWorkspace<T>& ws, const T* As, T* bs, std::size_t dim, std:
 
   auto s = static_cast<cudaStream_t>(stream);
 
-  const std::size_t MATRIX_BYTES = batch * dim * dim * sizeof(T);
-  const std::size_t VECTOR_BYTES = batch * dim * sizeof(T);
-
-  // Copy to device
-  if (cudaMemcpyAsync(ws.dA, As, MATRIX_BYTES, cudaMemcpyHostToDevice, s) != cudaSuccess) {
-    return false;
-  }
-  if (cudaMemcpyAsync(ws.db, bs, VECTOR_BYTES, cudaMemcpyHostToDevice, s) != cudaSuccess) {
-    return false;
-  }
-
-  const KernelShape SHAPE = shapeOf(dim);
-  const dim3 GRID(
-      static_cast<unsigned>((batch + SHAPE.systemsPerBlock - 1) / SHAPE.systemsPerBlock));
-  const dim3 BLOCK(SHAPE.threadsPerBlock);
-  const Kernel<T> KERNEL = kernelOf<T>(dim);
-  KERNEL<<<GRID, BLOCK, 0, s>>>(static_cast<T*>(ws.dA), static_cast<T*>(ws.db),
-                                static_cast<int>(batch));
-
-  // Check kernel launch
-  if (cudaGetLastError() != cudaSuccess) {
-    return false;
-  }
-
-  // Copy results back
-  if (cudaMemcpyAsync(bs, ws.db, VECTOR_BYTES, cudaMemcpyDeviceToHost, s) != cudaSuccess) {
-    return false;
-  }
-
-  // Sync
-  if (cudaStreamSynchronize(s) != cudaSuccess) {
+  // From here work may be queued on the stream. Whatever stops the sequence,
+  // the stream is waited for before the call returns, so that nothing queued
+  // goes on using As, bs or the workspace afterwards. An error of this call
+  // is read off the thread's error state, where the next launch check would
+  // otherwise find it.
+  const bool QUEUED = queueBatch(ws, As, bs, dim, batch, s);
+  const bool WAITED = cudaStreamSynchronize(s) == cudaSuccess;
+  if (!QUEUED || !WAITED) {
+    (void)cudaGetLastError();
     return false;
   }
 
