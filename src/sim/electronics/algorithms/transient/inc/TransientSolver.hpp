@@ -289,6 +289,7 @@ private:
   std::size_t newtonIterationCount_ = 0; ///< Newton iterations of nonlinear steps.
   std::size_t unconvergedStepCount_ = 0; ///< Nonlinear steps that did not converge.
   std::vector<double> nrPrevIterV_;      ///< Previous NR iteration voltages (workspace).
+  std::vector<double> nrAcceptedV_;      ///< Voltages accepted before a step that may be refused.
 
   /// Post-solve device limiting callback. Called after each NR matrix solve
   /// to apply per-device voltage limiting (fetlim). The callback receives
@@ -456,8 +457,9 @@ public:
    *
    * Off (the default): the last iterate is accepted, the step returns
    * SUCCESS and unconvergedStepCount() counts it. On: the step is not taken.
-   * It returns ERROR_CONVERGENCE with time, companions and node voltages as
-   * they were before it; the branch currents are the last iterate's.
+   * It returns ERROR_CONVERGENCE with time, companions, prevVoltages() and
+   * the node voltages as they were before it, whatever a pre-batch callback
+   * wrote to prevVoltages(); the branch currents are the last iterate's.
    *
    * @note RT-safe.
    */

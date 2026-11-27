@@ -552,3 +552,33 @@ TEST(TransientSteppingTest, RunReportsNewtonIterations) {
   EXPECT_EQ(AGAIN.nonlinearIters, 40U);
   EXPECT_EQ(AGAIN.unconvergedSteps, 4U);
 }
+
+/**
+ * @test A refused step leaves the solver's previous voltages and the node
+ *       voltages as they were accepted, also where a pre-batch callback
+ *       wrote to prevVoltages() on the way, and the step can be tried again.
+ */
+TEST(TransientSteppingTest, RefusedStepUndoesWhatThePreBatchCallbackWrote) {
+  std::size_t stampCalls = 0;
+  TransientSolver solver(2);
+  buildNoFixedPoint(solver, &stampCalls);
+  solver.setRequireConvergence(true);
+  solver.setNrPreBatchCallback([&solver](double /*dt*/) { solver.prevVoltages()[1] = 0.125; });
+  TransientState state;
+  state.resize(2, 0);
+
+  for (int attempt = 0; attempt < 2; ++attempt) {
+    SCOPED_TRACE(attempt);
+    EXPECT_EQ(solver.step(1e-6, state), TransientStatus::ERROR_CONVERGENCE);
+    EXPECT_EQ(solver.prevVoltages()[1], 0.0);
+    EXPECT_EQ(state.voltage(1), 0.0);
+    EXPECT_EQ(solver.time(), 0.0);
+  }
+  EXPECT_EQ(solver.unconvergedStepCount(), 2U);
+
+  // The same step accepted: the callback's write is what the solver goes on from.
+  solver.setRequireConvergence(false);
+  EXPECT_EQ(solver.step(1e-6, state), TransientStatus::SUCCESS);
+  EXPECT_DOUBLE_EQ(solver.time(), 1e-6);
+  EXPECT_NE(solver.prevVoltages()[1], 0.0);
+}

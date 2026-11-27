@@ -157,6 +157,12 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
       }
       std::copy(prevVoltages_.begin(), prevVoltages_.end(), nrPrevIterV_.begin());
 
+      // The voltages the solver holds as accepted, kept for a step that is
+      // refused: the pre-batch callback may write to prevVoltages().
+      if (requireConvergence_) {
+        nrAcceptedV_.assign(prevVoltages_.begin(), prevVoltages_.end());
+      }
+
       // nrPreBatchCallback runs AFTER copy (Entry 16: reordering didn't
       // unlock multi-instruction, structural limit is elsewhere).
       if (nrPreBatchCallback_) {
@@ -239,7 +245,9 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
         ++unconvergedStepCount_;
         if (requireConvergence_) {
           // The step is not taken. The companions and the time have not
-          // moved; the node voltages go back to those before the step.
+          // moved; the solver's previous voltages and the node voltages go
+          // back to those accepted before the step.
+          prevVoltages_ = nrAcceptedV_;
           std::copy(prevVoltages_.begin(), prevVoltages_.begin() + static_cast<std::ptrdiff_t>(n),
                     state.nodeVoltages.begin());
           sparseCacheValid_ = false;
