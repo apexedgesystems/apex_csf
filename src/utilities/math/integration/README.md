@@ -164,15 +164,22 @@ nav.accumulate(1, gpsCorrection, 1.0 / 10.0); // Source 1: GPS
 
 **Implicit Methods (Stiff ODEs):**
 
-| Method          | Order | Stages | Best For                     |
-| --------------- | ----- | ------ | ---------------------------- |
-| BackwardEuler   | 1     | 1+     | Simple stiff systems         |
-| TrapezoidalRule | 2     | 1+     | Energy-conserving            |
-| BDF             | 1-6   | 1+     | General stiff (industry std) |
-| AdamsMoulton    | 3     | 2+     | High-accuracy multi-step     |
-| SDIRK2          | 2     | 2+     | L-stable, DAE-friendly       |
-| ROS2            | 2     | 2      | Moderately stiff             |
-| ROS3P           | 3     | 3      | Moderately stiff             |
+| Method          | Order                                | Stages | Best For                     |
+| --------------- | ------------------------------------ | ------ | ---------------------------- |
+| BackwardEuler   | 1                                    | 1+     | Simple stiff systems         |
+| TrapezoidalRule | 2                                    | 1+     | Energy-conserving            |
+| BDF             | 2 (formulas of order 1-6; see below) | 1+     | General stiff (industry std) |
+| AdamsMoulton    | 3                                    | 2+     | High-accuracy multi-step     |
+| SDIRK2          | 2                                    | 2+     | L-stable, DAE-friendly       |
+| ROS2            | 2                                    | 2      | Moderately stiff             |
+| ROS3P           | 3                                    | 3      | Moderately stiff             |
+
+Variable-order `BDF` starts with one first-order step and raises its order
+by one per step, at the caller's constant step size. The first step's error
+holds a run to second order whatever `MaxOrder` is, and a `MaxOrder` above 2
+does not make it more accurate; with `MaxOrder` 1 it is backward Euler, first
+order. The order-k formula's own order is reached only when the solution is
+flat at the start.
 
 **Second-Order ODE Methods (y'' = f):**
 
