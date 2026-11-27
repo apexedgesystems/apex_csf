@@ -293,31 +293,28 @@ protected:
    * One body, four instantiations. The gated ones consult a multi-second
    * task's cadence per visit; the others, used for every slot that holds
    * no such task, test nothing per visit. The sequenced ones, used for a
-   * slot that holds a sequenced task, first settle which entries run this
-   * tick and then hand them over through enqueueSequencedSlot(); the
-   * others enqueue as they go.
+   * slot that holds a sequenced task, hand a sequenced entry to its pool
+   * with its wait unset, keep the ones accepted, and place them through
+   * placeSequencedSlot() once the slot has been walked; an unsequenced
+   * entry is enqueued as in the others.
    */
   template <bool kGated, bool kSequenced>
   void dispatchSlot(const std::vector<std::size_t>& entryIndices, std::uint64_t cycle,
                     std::uint16_t tick, std::uint64_t dispatchNs, logs::SystemLog* lg,
                     int logLevel) noexcept;
 
-  /// Whether any task of ENTRY's sequence group is still running.
-  [[nodiscard]] bool groupStillRunning(const TaskEntry& entry) const noexcept;
-
   /**
-   * @brief Enqueue the entries a sequenced slot runs this tick.
+   * @brief Give each sequenced entry accepted on this tick its place.
    *
-   * Two steps. Every entry in slotDispatch_ goes to its pool in slot
-   * order, a sequenced one with its wait unset, which holds its worker at
-   * the start of the trampoline. Then each sequenced entry its pool
-   * accepted is given its place among the accepted entries of its group:
-   * it waits for those whose phase is lower than its own, and a task
-   * alone in its group waits for nothing. An entry its pool refused is a
-   * counted drop and takes no part: no task waits for it and the group's
-   * counter wraps without it.
+   * An entry in slotDispatch_ waits for the accepted entries of its group
+   * whose phase is lower than its own, and a task alone in its group
+   * waits for nothing. An entry its pool refused is a counted drop and is
+   * not there: no task waits for it and the group's counter wraps without
+   * it. An entry of a group in ascending phase order on the slot has
+   * its count already; one of a group that is not costs a walk of its
+   * group.
    */
-  void enqueueSequencedSlot(std::uint16_t tick, std::uint64_t dispatchNs) noexcept;
+  void placeSequencedSlot() noexcept;
 
   /**
    * @brief Initialize the scheduler. Called by base init().
@@ -328,7 +325,7 @@ protected:
    * @brief Hand one entry to its pool.
    * @tparam kUnplaced Whether the entry is sequenced. Such a dispatch
    *         goes out with its wait unset and returns its context, null
-   *         when the pool refused it, for enqueueSequencedSlot() to
+   *         when the pool refused it, for placeSequencedSlot() to
    *         place. Any other returns nothing and stores no more than an
    *         unsequenced dispatch needs.
    */

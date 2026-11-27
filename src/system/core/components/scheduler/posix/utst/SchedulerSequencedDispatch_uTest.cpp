@@ -16,7 +16,8 @@
  *  - The same holds when the earlier phase sits on the slot and is not
  *    due on that cycle.
  *  - Two tasks at one phase both finish before the phase after them
- *    starts, and the phase numbers need not count tasks.
+ *    starts, and the phase numbers need not count tasks; so too when
+ *    the later phase is listed first on the slot.
  *  - The group's counter rests at 1 after every tick.
  *  - A task the scheduler could not hand to its pool is not counted by
  *    the tasks of its group that it did hand over: a later phase does not
@@ -315,6 +316,38 @@ TEST(SchedulerSequencedDispatchTest, APhaseWaitsForEveryTaskOfTheEarlierPhase) {
   EXPECT_EQ(shared.overlaps.load(), 0);
   EXPECT_EQ(shared.laterTooSoon.load(), 0) << "the last phase started before both earlier "
                                               "tasks had finished";
+  EXPECT_EQ(seq.counter()->load(), 1);
+  sched->shutdown();
+}
+
+/**
+ * @test A later phase listed ahead of the earlier ones on the slot, by a
+ *       higher priority, still follows them: the scheduler counts what
+ *       is ahead of it by phase, not by the order they are handed over.
+ */
+TEST(SchedulerSequencedDispatchTest, APhaseListedFirstStillFollowsTheEarlierPhases) {
+  Shared shared;
+  shared.earlierPerTick = 2;
+  SequenceGroup seq(3);
+  auto sched = twoWorkers();
+
+  SchedulableTask last(DelegateU8{&Shared::later, &shared}, "last");
+  SchedulableTask first(DelegateU8{&Shared::earlier, &shared}, "first");
+  SchedulableTask second(DelegateU8{&Shared::earlier, &shared}, "second");
+  seq.addTask(last, 2);
+  seq.addTask(first, 1);
+  seq.addTask(second, 1);
+  // Three workers' worth of order on two workers: the later phase is
+  // taken first and waits; the earlier two then run one after the other.
+  ASSERT_EQ(sched->addTask(last, TaskConfig(100, 1, 0, 127), &seq), Status::SUCCESS);
+  ASSERT_EQ(sched->addTask(first, TaskConfig(100, 1, 0, 0), &seq), Status::SUCCESS);
+  ASSERT_EQ(sched->addTask(second, TaskConfig(100, 1, 0, -128), &seq), Status::SUCCESS);
+
+  runTicks(*sched, 50);
+
+  EXPECT_EQ(shared.laterRuns.load(), 50);
+  EXPECT_EQ(shared.overlaps.load(), 0);
+  EXPECT_EQ(shared.laterTooSoon.load(), 0) << "the phase listed first ran before the earlier two";
   EXPECT_EQ(seq.counter()->load(), 1);
   sched->shutdown();
 }

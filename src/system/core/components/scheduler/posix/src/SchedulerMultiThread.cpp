@@ -378,6 +378,7 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
                                         int logLevel) noexcept {
   if constexpr (kSequenced) {
     slotDispatch_.clear();
+    ++seqStamp_;
   }
   for (std::size_t idx : entryIndices) {
     TaskEntry& entry = entries_[idx];
@@ -430,83 +431,100 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
       //  - SOFT modes: Violations expected, count tracked for shutdown summary
     }
     if constexpr (kSequenced) {
-      // A group counts its completions from rest. While any of its tasks
-      // is still running from an earlier tick the count is under way, and
-      // a task dispatched into it would be counted with that tick: it
-      // could wrap the counter under a task still waiting, which then
-      // never runs. So the group is not dispatched again until it has
-      // come to rest; its tasks due now are skipped and counted, whether
-      // or not busy tasks are otherwise skipped. Nothing of this tick has
-      // been handed over yet, so a task that reads running is of an
-      // earlier one.
-      if (entry.isSequenced() && groupStillRunning(entry)) {
-        ++entry.skipCount;
-        ++totalSkipCount_;
-        if (lg && static_cast<int>(logs::SystemLog::Level::WARNING) >= logLevel) {
-          lg->warning(label(), static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION),
-                      fmt::format("Skipping task '{}' at tick {} (its sequence group is still "
-                                  "running, skip #{})",
-                                  entry.task->getLabel(), tick, entry.skipCount));
+      if (entry.isSequenced()) {
+        // What this tick knows of the entry's group, set the first time
+        // the group is met on it. A group counts its completions from
+        // rest. While any of its tasks is still running from an earlier
+        // tick the count is under way, and a task dispatched into it
+        // would be counted with that tick: it could wrap the counter
+        // under a task still waiting, which then never runs. So the
+        // group is not dispatched again until it has come to rest; its
+        // tasks due now are skipped and counted, whether or not busy
+        // tasks are otherwise skipped. The question is asked before any
+        // task of the group is handed over on this tick and its answer
+        // kept, so a task found running is of an earlier one.
+        SeqGroupState& group = seqGroups_[entry.seqGroup];
+        if (group.stamp != seqStamp_) {
+          group.stamp = seqStamp_;
+          group.head = NO_SLOT_DISPATCH;
+          group.together = 0;
+          group.aheadOfPhase = 0;
+          group.lastPhase = entry.seqPhase;
+          group.busy = false;
+          group.unordered = false;
+          for (const std::size_t MEMBER : group.entries) {
+            if (entries_[MEMBER].stillRunning()) {
+              group.busy = true;
+              break;
+            }
+          }
+        }
+        if (group.busy) {
+          ++entry.skipCount;
+          ++totalSkipCount_;
+          if (lg && static_cast<int>(logs::SystemLog::Level::WARNING) >= logLevel) {
+            lg->warning(label(), static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION),
+                        fmt::format("Skipping task '{}' at tick {} (its sequence group is still "
+                                    "running, skip #{})",
+                                    entry.task->getLabel(), tick, entry.skipCount));
+          }
+          continue;
+        }
+        // It goes to its pool with its wait unset: a worker that takes it
+        // holds at the start of the trampoline until placeSequencedSlot()
+        // has placed it. A pool can refuse any entry, and which it
+        // refused is known only once the slot has been walked.
+        TaskCtx* const CTX = enqueueTask<true>(&entry, tick, dispatchNs);
+        if (CTX != nullptr) {
+          // A group's entries normally sit on the slot in ascending
+          // phase order, the order its preflight asks for. Then every
+          // entry accepted before a new phase begins is ahead of it,
+          // and the count is kept as the entries come. An entry that
+          // comes after one of a higher phase sends its group to the
+          // walk in placeSequencedSlot().
+          if (entry.seqPhase > group.lastPhase) {
+            group.aheadOfPhase = group.together;
+            group.lastPhase = entry.seqPhase;
+          } else if (entry.seqPhase < group.lastPhase) {
+            group.unordered = true;
+          }
+          slotDispatch_.push_back({&entry, CTX, group.head, group.aheadOfPhase});
+          group.head = static_cast<std::uint32_t>(slotDispatch_.size() - 1U);
+          ++group.together;
         }
         continue;
       }
-      slotDispatch_.push_back({&entry, nullptr});
-    } else {
-      enqueueTask<false>(&entry, tick, dispatchNs);
     }
+    enqueueTask<false>(&entry, tick, dispatchNs);
   }
   if constexpr (kSequenced) {
-    enqueueSequencedSlot(tick, dispatchNs);
+    placeSequencedSlot();
   }
 }
 
-bool SchedulerMultiThread::groupStillRunning(const TaskEntry& entry) const noexcept {
-  for (const std::size_t IDX : seqGroupEntries_[entry.seqGroup]) {
-    if (entries_[IDX].stillRunning()) {
-      return true;
-    }
-  }
-  return false;
-}
-
-void SchedulerMultiThread::enqueueSequencedSlot(std::uint16_t tick,
-                                                std::uint64_t dispatchNs) noexcept {
-  // Step 1: every entry goes to its pool, in slot order. A sequenced one
-  // goes with its wait unset: a worker that takes it holds at the start
-  // of the trampoline until step 2 has placed it. A pool can refuse any
-  // of them, and which it refuses is known only once all have been tried.
-  for (SlotDispatch& item : slotDispatch_) {
-    if (item.entry->isSequenced()) {
-      item.ctx = enqueueTask<true>(item.entry, tick, dispatchNs);
-    } else {
-      enqueueTask<false>(item.entry, tick, dispatchNs);
-    }
-  }
-
-  // Step 2: a group's counter rests at 1 between ticks and each of the
-  // group's tasks advances it once when it completes. So a task that must
-  // follow AHEAD tasks waits for the counter to reach AHEAD + 1, and the
-  // last completion of TOGETHER tasks wraps it back to 1. Both are
-  // counted over the entries the pools accepted this tick: a task whose
-  // earlier phases are not on this tick, were skipped, or were refused by
-  // their pool waits for none of them, and the counter wraps without them.
+void SchedulerMultiThread::placeSequencedSlot() noexcept {
+  // A group's counter rests at 1 between ticks and each of the group's
+  // tasks advances it once when it completes. So a task that must follow
+  // AHEAD tasks waits for the counter to reach AHEAD + 1, and the last
+  // completion of TOGETHER tasks wraps it back to 1. Both are counted
+  // over the entries the pools accepted this tick: a task whose earlier
+  // phases are not on this tick, were skipped, or were refused by their
+  // pool waits for none of them, and the counter wraps without them. The
+  // count ahead was kept as the entries were accepted; a group whose
+  // entries did not come in phase order is walked along its chain.
   for (const SlotDispatch& item : slotDispatch_) {
-    if (item.ctx == nullptr) {
-      continue;
-    }
-    int ahead = 0;
-    int together = 0;
-    for (const SlotDispatch& other : slotDispatch_) {
-      if (other.ctx == nullptr || other.entry->seqCounter != item.entry->seqCounter) {
-        continue;
-      }
-      ++together;
-      if (other.entry->seqPhase < item.entry->seqPhase) {
-        ++ahead;
+    const SeqGroupState& GROUP = seqGroups_[item.entry->seqGroup];
+    std::uint32_t ahead = item.ahead;
+    if (GROUP.unordered) {
+      ahead = 0;
+      for (std::uint32_t at = GROUP.head; at != NO_SLOT_DISPATCH; at = slotDispatch_[at].next) {
+        if (slotDispatch_[at].entry->seqPhase < item.entry->seqPhase) {
+          ++ahead;
+        }
       }
     }
-    item.ctx->seqMaxPhase = together;
-    item.ctx->seqPhase.store(ahead + 1, std::memory_order_release);
+    item.ctx->seqMaxPhase = static_cast<int>(GROUP.together);
+    item.ctx->seqPhase.store(static_cast<int>(ahead) + 1, std::memory_order_release);
   }
 }
 

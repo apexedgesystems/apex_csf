@@ -623,20 +623,27 @@ protected:
    */
   std::vector<std::uint8_t> slotHasSequenced_{};
 
+  /// End of a chain through slotDispatch_.
+  static constexpr std::uint32_t NO_SLOT_DISPATCH = 0xFFFFFFFFU;
+
   /**
-   * @brief One entry a sequenced slot dispatches this tick.
+   * @brief A sequenced entry a pool accepted on the tick being dispatched.
    *
-   * CTX is the context the entry went to its pool with: set for a
-   * sequenced entry its pool accepted, null for one it did not and for
-   * every unsequenced entry.
+   * AHEAD is how many accepted entries of its group it follows, as far
+   * as that is known when it is taken: exact while the group's entries
+   * come in ascending phase order. NEXT chains the accepted entries of
+   * one group, newest first, as indices into slotDispatch_, for the
+   * group whose entries do not.
    */
   struct SlotDispatch {
     TaskEntry* entry{nullptr};
     TaskCtx* ctx{nullptr};
+    std::uint32_t next{NO_SLOT_DISPATCH};
+    std::uint32_t ahead{0};
   };
 
   /**
-   * @brief Entries a sequenced slot dispatches this tick, in slot order.
+   * @brief The sequenced entries accepted on the tick being dispatched, in slot order.
    *
    * Tick thread only. Its capacity follows the largest slot, set where
    * entries are placed, so a dispatch allocates nothing.
@@ -644,16 +651,33 @@ protected:
   std::vector<SlotDispatch> slotDispatch_{};
 
   /**
-   * @brief Entries of each sequence group, by the group's index (TaskEntry::seqGroup).
+   * @brief One sequence group: its entries, and what the dispatch of the
+   *        current tick has found of it.
    *
-   * The dispatch reads it to learn whether any task of a group is still
-   * running from an earlier tick.
+   * The fields after ENTRIES belong to the tick thread and to the tick
+   * whose number STAMP holds; a group met for the first time on a tick
+   * has them set afresh.
    */
-  std::vector<std::vector<std::size_t>> seqGroupEntries_{};
+  struct SeqGroupState {
+    std::vector<std::size_t> entries;     ///< The group's entries, by index into entries_.
+    std::uint64_t stamp{0};               ///< Sequenced dispatch the fields below are of.
+    std::uint32_t head{NO_SLOT_DISPATCH}; ///< Newest accepted entry in slotDispatch_.
+    std::uint32_t together{0};            ///< Entries of the group accepted so far.
+    std::uint32_t aheadOfPhase{0};        ///< Accepted entries below the phase last accepted.
+    int lastPhase{0};                     ///< Phase of the entry last accepted.
+    bool busy{false};                     ///< A task of an earlier tick was still running.
+    bool unordered{false};                ///< An entry came after one of a higher phase.
+  };
+
+  /// The sequence groups, by TaskEntry::seqGroup.
+  std::vector<SeqGroupState> seqGroups_{};
+
+  /// Number of the sequenced dispatch under way; tick thread only.
+  std::uint64_t seqStamp_{0};
 
   /**
    * @brief Recompute slotHasSequenced_, each entry's group index and
-   *        seqGroupEntries_ from the entries' sequencing.
+   *        seqGroups_ from the entries' sequencing.
    */
   void markSequencedSlots() noexcept;
 
