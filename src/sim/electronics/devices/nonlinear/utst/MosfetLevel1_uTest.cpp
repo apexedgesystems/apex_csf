@@ -1,964 +1,416 @@
 /**
  * @file MosfetLevel1_uTest.cpp
  * @brief Unit tests for MosfetLevel1 model.
+ *
+ * Expected currents and conductances are reference values computed outside
+ * the library from the model equations, which each table restates.
  */
 
 #include "src/sim/electronics/devices/nonlinear/inc/MosfetLevel1.hpp"
+#include "src/sim/electronics/devices/nonlinear/utst/StampProbe.hpp"
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
+#include <vector>
 
 using sim::electronics::devices::nonlinear::MnaSystem;
 using sim::electronics::devices::nonlinear::MosfetLevel1;
 using sim::electronics::devices::nonlinear::MosfetLevel1Params;
 using sim::electronics::devices::nonlinear::NetID;
 
-/* ----------------------------- Parameters ----------------------------- */
+using sim::electronics::devices::nonlinear::test::expectCurrent;
+using sim::electronics::devices::nonlinear::test::pinTerminals;
+using sim::electronics::devices::nonlinear::test::terminalNet;
 
-/** @test Default parameters are reasonable. */
-TEST(MosfetLevel1Test, DefaultParameters) {
-  MosfetLevel1Params params;
+namespace {
 
-  EXPECT_DOUBLE_EQ(params.Kp, 100e-6);
-  EXPECT_DOUBLE_EQ(params.Vth, 0.7);
-  EXPECT_DOUBLE_EQ(params.lambda, 0.0);
+/// Relative tolerance on a value against its reference.
+constexpr double VALUE_TOL = 1e-12;
+
+/// The device most cases use: channel-length modulation on.
+constexpr MosfetLevel1Params DEVICE{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02};
+
+/// Previous-iteration voltages as stampNmos and stampPmos read them: indexed
+/// by net, ground first, then the three terminal nets of the stamp probe.
+std::vector<double> previousVoltages(double first, double second, double third) {
+  return {0.0, first, second, third};
 }
 
-/** @test Custom parameters. */
-TEST(MosfetLevel1Test, CustomParameters) {
-  MosfetLevel1Params params{.Kp = 50e-6, .Vth = 1.0, .lambda = 0.02};
-
-  EXPECT_DOUBLE_EQ(params.Kp, 50e-6);
-  EXPECT_DOUBLE_EQ(params.Vth, 1.0);
-  EXPECT_DOUBLE_EQ(params.lambda, 0.02);
-}
+} // namespace
 
 /* ----------------------------- I-V Characteristic ----------------------------- */
 
-/** @test Cutoff region (Vgs < Vth). */
-TEST(MosfetLevel1Test, CutoffRegion) {
-  MosfetLevel1Params params;
+/** @test Current, gm and gds match the reference in cutoff, the linear region and saturation */
+TEST(MosfetLevel1Test, CurrentAndConductancesMatchReference) {
+  struct Row {
+    MosfetLevel1Params params;
+    double vgs;
+    double vds;
+    double id;
+    double gm;
+    double gds;
+  };
 
-  double id1 = MosfetLevel1::current(0.0, 2.0, params); // Vgs = 0V
-  double id2 = MosfetLevel1::current(0.5, 2.0, params); // Vgs < Vth
-  double id3 = MosfetLevel1::current(0.7, 2.0, params); // Vgs = Vth
+  // With Vgst = Vgs - Vth: zero for Vgs <= Vth;
+  // Kp*(Vgst*Vds - Vds^2/2)*(1 + lambda*Vds) for Vds < Vgst;
+  // (Kp/2)*Vgst^2*(1 + lambda*Vds) from there on.
+  const std::array<Row, 8> ROWS = {{
+      Row{DEVICE, 1.5, 2.0, 3.328e-05, 8.32e-05, 6.4e-07},         // saturation
+      Row{DEVICE, 1.5, 0.3, 1.9617e-05, 3.018e-05, 5.069e-05},     // linear region
+      Row{DEVICE, 3.0, 1.0, 0.0001836, 0.000102, 0.0001362},       // linear region
+      Row{DEVICE, 0.65, 2.0, 0.0, 0.0, 0.0},                       // just below threshold
+      Row{DEVICE, 0.0, 2.0, 0.0, 0.0, 0.0},                        // far below threshold
+      Row{MosfetLevel1Params{}, 2.0, 5.0, 8.45e-05, 0.00013, 0.0}, // the defaults: no modulation
+      Row{MosfetLevel1Params{.Kp = 5e-3, .Vth = 1.17, .lambda = 0.03}, 3.0, 1.0, 0.0068495, 0.00515,
+          0.004474},
+      Row{MosfetLevel1Params{.Kp = 100e-6, .Vth = -1.0}, 0.0, 3.0, 5e-05, 0.0001, 0.0}, // depletion
+  }};
+  for (const Row& row : ROWS) {
+    EXPECT_NEAR(MosfetLevel1::current(row.vgs, row.vds, row.params), row.id, VALUE_TOL * row.id)
+        << "vgs = " << row.vgs << ", vds = " << row.vds;
+    EXPECT_NEAR(MosfetLevel1::transconductance(row.vgs, row.vds, row.params), row.gm,
+                VALUE_TOL * row.gm)
+        << "vgs = " << row.vgs << ", vds = " << row.vds;
+    EXPECT_NEAR(MosfetLevel1::outputConductance(row.vgs, row.vds, row.params), row.gds,
+                VALUE_TOL * row.gds)
+        << "vgs = " << row.vgs << ", vds = " << row.vds;
 
-  EXPECT_DOUBLE_EQ(id1, 0.0);
-  EXPECT_DOUBLE_EQ(id2, 0.0);
-  EXPECT_DOUBLE_EQ(id3, 0.0); // At threshold, still cutoff
+    // The combined evaluation returns the same three values.
+    const auto COMBINED = MosfetLevel1::stampValues(row.vgs, row.vds, row.params);
+    EXPECT_NEAR(COMBINED.id, row.id, VALUE_TOL * row.id) << "vgs = " << row.vgs;
+    EXPECT_NEAR(COMBINED.gm, row.gm, VALUE_TOL * row.gm) << "vgs = " << row.vgs;
+    EXPECT_NEAR(COMBINED.gds, row.gds, VALUE_TOL * row.gds) << "vgs = " << row.vgs;
+  }
 }
 
-/** @test Linear region (Vgs > Vth, Vds < Vgst). */
-TEST(MosfetLevel1Test, LinearRegion) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
+/* ----------------------------- Region Boundaries ----------------------------- */
 
-  // Vgs = 1.5V, Vgst = 0.8V, Vds = 0.5V < Vgst
-  double id = MosfetLevel1::current(1.5, 0.5, params);
+/** @test Current, gm and gds are continuous at threshold and at the saturation voltage */
+TEST(MosfetLevel1Test, ContinuousAtRegionBoundaries) {
+  constexpr double EPS = 1e-9;
 
-  // Id = Kp * (Vgst * Vds - 0.5 * Vds^2)
-  //    = 100e-6 * (0.8 * 0.5 - 0.5 * 0.25)
-  //    = 100e-6 * (0.4 - 0.125)
-  //    = 100e-6 * 0.275 = 27.5 uA
-  EXPECT_NEAR(id, 27.5e-6, 1e-9);
+  // At threshold everything leaves from zero.
+  for (const double VDS : {0.01, 5.0}) {
+    const auto BELOW = MosfetLevel1::stampValues(DEVICE.Vth - EPS, VDS, DEVICE);
+    const auto ABOVE = MosfetLevel1::stampValues(DEVICE.Vth + EPS, VDS, DEVICE);
+    EXPECT_EQ(BELOW.id, 0.0) << "vds = " << VDS;
+    EXPECT_EQ(BELOW.gm, 0.0) << "vds = " << VDS;
+    EXPECT_EQ(BELOW.gds, 0.0) << "vds = " << VDS;
+    EXPECT_LT(ABOVE.id, 1e-20) << "vds = " << VDS;
+    EXPECT_LT(ABOVE.gm, 1e-12) << "vds = " << VDS;
+    EXPECT_LT(ABOVE.gds, 1e-12) << "vds = " << VDS;
+  }
+
+  // Where the linear region meets saturation the three values agree.
+  for (const double VGS : {1.0, 1.5, 2.0, 3.0}) {
+    const double VDSAT = VGS - DEVICE.Vth;
+    const auto BELOW = MosfetLevel1::stampValues(VGS, VDSAT - EPS, DEVICE);
+    const auto ABOVE = MosfetLevel1::stampValues(VGS, VDSAT + EPS, DEVICE);
+    EXPECT_NEAR(BELOW.id, ABOVE.id, 1e-6 * ABOVE.id) << "vgs = " << VGS;
+    EXPECT_NEAR(BELOW.gm, ABOVE.gm, 1e-6 * ABOVE.gm) << "vgs = " << VGS;
+    EXPECT_NEAR(BELOW.gds, ABOVE.gds, 1e-9 + 1e-6 * ABOVE.gds) << "vgs = " << VGS;
+  }
 }
 
-/** @test Saturation region (Vgs > Vth, Vds >= Vgst). */
-TEST(MosfetLevel1Test, SaturationRegion) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
-
-  // Vgs = 1.5V, Vgst = 0.8V, Vds = 2.0V > Vgst
-  double id = MosfetLevel1::current(1.5, 2.0, params);
-
-  // Id = 0.5 * Kp * Vgst^2
-  //    = 0.5 * 100e-6 * 0.64
-  //    = 32 uA
-  EXPECT_NEAR(id, 32e-6, 1e-9);
+/** @test Drain current never falls as the gate voltage rises through threshold */
+TEST(MosfetLevel1Test, MonotonicInGateVoltage) {
+  for (const double VDS : {0.01, 0.5, 5.0}) {
+    double previous = MosfetLevel1::current(DEVICE.Vth - 0.5, VDS, DEVICE);
+    for (int step = 1; step <= 1000; ++step) {
+      const double VGS = DEVICE.Vth - 0.5 + 0.001 * step;
+      const double ID = MosfetLevel1::current(VGS, VDS, DEVICE);
+      ASSERT_GE(ID, previous) << "vgs = " << VGS << ", vds = " << VDS;
+      previous = ID;
+    }
+  }
 }
 
-/** @test Saturation region boundary (Vds = Vgst). */
-TEST(MosfetLevel1Test, SaturationBoundary) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
+/** @test Region code is 0 at or below threshold, 1 for Vds < Vgst, 2 from Vds = Vgst on */
+TEST(MosfetLevel1Test, RegionClassifiesBias) {
+  EXPECT_EQ(MosfetLevel1::region(0.0, 2.0, DEVICE), 0);
+  EXPECT_EQ(MosfetLevel1::region(0.65, 2.0, DEVICE), 0);
+  EXPECT_EQ(MosfetLevel1::region(0.7, 2.0, DEVICE), 0); // at threshold
 
-  // Vgs = 1.5V, Vgst = 0.8V, Vds = 0.8V (exactly at boundary)
-  double id = MosfetLevel1::current(1.5, 0.8, params);
-
-  // Should be in saturation region
-  // Id = 0.5 * Kp * Vgst^2 = 0.5 * 100e-6 * 0.64 = 32 uA
-  EXPECT_NEAR(id, 32e-6, 1e-9);
-}
-
-/** @test Channel-length modulation (lambda > 0). */
-TEST(MosfetLevel1Test, ChannelLengthModulation) {
-  MosfetLevel1Params ideal{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.0};
-  MosfetLevel1Params realistic{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02};
-
-  // Saturation region: Vgs = 1.5V, Vds = 2.0V
-  double idIdeal = MosfetLevel1::current(1.5, 2.0, ideal);
-  double idRealistic = MosfetLevel1::current(1.5, 2.0, realistic);
-
-  // With lambda, current increases: Id * (1 + lambda * Vds)
-  // idRealistic = idIdeal * (1 + 0.02 * 2.0) = idIdeal * 1.04
-  EXPECT_NEAR(idRealistic / idIdeal, 1.04, 1e-6);
-}
-
-/* ----------------------------- Transconductance (gm) ----------------------------- */
-
-/** @test Transconductance in cutoff. */
-TEST(MosfetLevel1Test, TransconductanceCutoff) {
-  MosfetLevel1Params params;
-
-  double gm = MosfetLevel1::transconductance(0.5, 2.0, params); // Vgs < Vth
-
-  EXPECT_DOUBLE_EQ(gm, 0.0);
-}
-
-/** @test Transconductance in linear region. */
-TEST(MosfetLevel1Test, TransconductanceLinear) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
-
-  // Vgs = 1.5V, Vds = 0.5V (linear region)
-  double gm = MosfetLevel1::transconductance(1.5, 0.5, params);
-
-  // gm = Kp * Vds = 100e-6 * 0.5 = 50 uS
-  EXPECT_NEAR(gm, 50e-6, 1e-9);
-}
-
-/** @test Transconductance in saturation region. */
-TEST(MosfetLevel1Test, TransconductanceSaturation) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
-
-  // Vgs = 1.5V, Vds = 2.0V (saturation region)
-  double gm = MosfetLevel1::transconductance(1.5, 2.0, params);
-
-  // gm = Kp * Vgst = 100e-6 * 0.8 = 80 uS
-  EXPECT_NEAR(gm, 80e-6, 1e-9);
-}
-
-/** @test Transconductance matches numerical derivative. */
-TEST(MosfetLevel1Test, TransconductanceNumericalDerivative) {
-  MosfetLevel1Params params;
-  const double VGS = 1.5;
-  const double VDS = 2.0;
-  const double DVGS = 1e-6;
-
-  // Analytical transconductance
-  double gmAnalytical = MosfetLevel1::transconductance(VGS, VDS, params);
-
-  // Numerical derivative: dId/dVgs ~= (Id(vgs+dvgs) - Id(vgs-dvgs)) / (2*dvgs)
-  double id1 = MosfetLevel1::current(VGS - DVGS, VDS, params);
-  double id2 = MosfetLevel1::current(VGS + DVGS, VDS, params);
-  double gmNumerical = (id2 - id1) / (2.0 * DVGS);
-
-  // Should match within 1%
-  EXPECT_NEAR(gmAnalytical, gmNumerical, std::abs(gmNumerical) * 0.01);
-}
-
-/* ----------------------------- Output Conductance (gds) ----------------------------- */
-
-/** @test Output conductance in cutoff. */
-TEST(MosfetLevel1Test, OutputConductanceCutoff) {
-  MosfetLevel1Params params;
-
-  double gds = MosfetLevel1::outputConductance(0.5, 2.0, params); // Vgs < Vth
-
-  EXPECT_DOUBLE_EQ(gds, 0.0);
-}
-
-/** @test Output conductance in saturation with lambda = 0. */
-TEST(MosfetLevel1Test, OutputConductanceSaturationIdeal) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.0};
-
-  // Vgs = 1.5V, Vds = 2.0V (saturation, ideal)
-  double gds = MosfetLevel1::outputConductance(1.5, 2.0, params);
-
-  // Ideal MOSFET: gds = 0 in saturation
-  EXPECT_DOUBLE_EQ(gds, 0.0);
-}
-
-/** @test Output conductance in saturation with lambda > 0. */
-TEST(MosfetLevel1Test, OutputConductanceSaturationRealistic) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02};
-
-  // Vgs = 1.5V, Vds = 2.0V (saturation, realistic)
-  double gds = MosfetLevel1::outputConductance(1.5, 2.0, params);
-
-  // gds = Id * lambda = 32e-6 * 0.02 = 0.64 uS
-  EXPECT_GT(gds, 0.0);
-  EXPECT_NEAR(gds, 0.64e-6, 1e-9);
-}
-
-/** @test Output conductance in linear region. */
-TEST(MosfetLevel1Test, OutputConductanceLinear) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
-
-  // Vgs = 1.5V, Vds = 0.5V (linear region)
-  double gds = MosfetLevel1::outputConductance(1.5, 0.5, params);
-
-  // gds = Kp * (Vgst - Vds) = 100e-6 * (0.8 - 0.5) = 30 uS
-  EXPECT_NEAR(gds, 30e-6, 1e-9);
-}
-
-/** @test Output conductance matches numerical derivative. */
-TEST(MosfetLevel1Test, OutputConductanceNumericalDerivative) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02};
-  const double VGS = 1.5;
-  const double VDS = 2.0;
-  const double DVDS = 1e-6;
-
-  // Analytical output conductance
-  double gdsAnalytical = MosfetLevel1::outputConductance(VGS, VDS, params);
-
-  // Numerical derivative: dId/dVds ~= (Id(vds+dvds) - Id(vds-dvds)) / (2*dvds)
-  double id1 = MosfetLevel1::current(VGS, VDS - DVDS, params);
-  double id2 = MosfetLevel1::current(VGS, VDS + DVDS, params);
-  double gdsNumerical = (id2 - id1) / (2.0 * DVDS);
-
-  // Should match within 1%
-  EXPECT_NEAR(gdsAnalytical, gdsNumerical, std::abs(gdsNumerical) * 0.01);
-}
-
-/* ----------------------------- Region Detection ----------------------------- */
-
-/** @test Region detection: deep cutoff and subthreshold smoothing.
- *
- * region() returns:
- *   -1 : deep cutoff      (vgs <= Vth - Vsmooth)
- *    0 : subthreshold     (Vth - Vsmooth < vgs < Vth)
- *    1 : linear           (vgs >= Vth, vds < vgst)
- *    2 : saturation       (vgs >= Vth, vds >= vgst)
- *
- * The subthreshold smoothing region was added during ngspice calibration to
- * fix the Jacobian discontinuity at Vth that broke NR convergence.
- */
-TEST(MosfetLevel1Test, RegionCutoff) {
-  MosfetLevel1Params params; // Vth=0.7, Vsmooth=0.1 (defaults)
-
-  // vgs = 0 < Vth - Vsmooth = 0.6  -> deep cutoff
-  EXPECT_EQ(MosfetLevel1::region(0.0, 2.0, params), -1);
-
-  // vgs = 0.5 < 0.6 -> deep cutoff
-  EXPECT_EQ(MosfetLevel1::region(0.5, 2.0, params), -1);
-
-  // vgs = 0.65 in (0.6, 0.7) -> subthreshold smoothing
-  EXPECT_EQ(MosfetLevel1::region(0.65, 2.0, params), 0);
-
-  // vgs = 0.7 == Vth -> active region (vgst = 0, vds > 0 -> saturation)
-  EXPECT_EQ(MosfetLevel1::region(0.7, 2.0, params), 2);
-}
-
-/** @test Region detection: hard cutoff when Vsmooth is disabled.
- *
- * Setting Vsmooth=0 reverts to the original Shichman-Hodges form with hard
- * cutoff at Vth. The cutoff condition is `vgs <= Vth - Vsmooth`, so with
- * Vsmooth=0 the boundary `vgs == Vth` evaluates as deep cutoff (inclusive).
- */
-TEST(MosfetLevel1Test, RegionCutoffHard) {
-  MosfetLevel1Params params{.Vth = 0.7, .Vsmooth = 0.0};
-
-  // No smoothing window: anything <= Vth is deep cutoff
-  EXPECT_EQ(MosfetLevel1::region(0.0, 2.0, params), -1);
-  EXPECT_EQ(MosfetLevel1::region(0.5, 2.0, params), -1);
-  EXPECT_EQ(MosfetLevel1::region(0.699, 2.0, params), -1);
-  EXPECT_EQ(MosfetLevel1::region(0.7, 2.0, params), -1); // Boundary inclusive
-
-  // Just above Vth: active region (vgst tiny, vds large -> saturation)
-  EXPECT_EQ(MosfetLevel1::region(0.701, 2.0, params), 2);
-}
-
-/** @test Region detection: linear. */
-TEST(MosfetLevel1Test, RegionLinear) {
-  MosfetLevel1Params params{.Vth = 0.7};
-
-  // Vgs = 1.5V, Vgst = 0.8V, Vds = 0.5V < Vgst
-  int r = MosfetLevel1::region(1.5, 0.5, params);
-
-  EXPECT_EQ(r, 1);
-}
-
-/** @test Region detection: saturation. */
-TEST(MosfetLevel1Test, RegionSaturation) {
-  MosfetLevel1Params params{.Vth = 0.7};
-
-  // Vgs = 1.5V, Vgst = 0.8V, Vds = 2.0V > Vgst
-  int r = MosfetLevel1::region(1.5, 2.0, params);
-
-  EXPECT_EQ(r, 2);
-}
-
-/** @test Region detection: linear-saturation boundary. */
-TEST(MosfetLevel1Test, RegionBoundary) {
-  MosfetLevel1Params params{.Vth = 0.7};
-
-  // Vgs = 1.5V, Vgst = 0.8V, Vds = 0.8V (exactly at boundary)
-  int r = MosfetLevel1::region(1.5, 0.8, params);
-
-  EXPECT_EQ(r, 2); // Boundary is saturation (Vds >= Vgst)
+  // Vgs = 1.5 V puts the boundary at Vds = 0.8 V.
+  EXPECT_EQ(MosfetLevel1::region(1.5, 0.3, DEVICE), 1);
+  EXPECT_EQ(MosfetLevel1::region(1.5, 0.79, DEVICE), 1);
+  EXPECT_EQ(MosfetLevel1::region(1.5, 0.8, DEVICE), 2); // on the boundary
+  EXPECT_EQ(MosfetLevel1::region(1.5, 2.0, DEVICE), 2);
 }
 
 /* ----------------------------- Stamping ----------------------------- */
 
-/** @test Stamp cutoff state. */
-TEST(MosfetLevel1Test, StampCutoff) {
-  MnaSystem mna(4);
-  MosfetLevel1Params params;
-  const NetID DRAIN = 1;
-  const NetID GATE = 2;
-  const NetID SOURCE = 0;
+/** @test Stamp is the model's linearization: exact at the operating point, first order around it */
+TEST(MosfetLevel1Test, StampIsLinearizationAtOperatingPoint) {
+  struct Bias {
+    double vgs;
+    double vds;
+    const char* region;
+  };
+  struct Step {
+    double gate;
+    double drain;
+    double source;
+  };
 
-  MosfetLevel1::stamp(mna, DRAIN, GATE, SOURCE, 0.5, 2.0, params);
+  // The source sits off ground so every stamped entry takes part.
+  const double V_SOURCE = 0.8;
+  const double DV = 0.05;
 
-  // Should stamp zero conductances (cutoff)
+  for (const Bias& bias :
+       {Bias{0.3, 2.0, "cutoff"}, Bias{1.5, 0.3, "linear"}, Bias{1.5, 2.0, "saturation"}}) {
+    const auto MODEL = MosfetLevel1::stampValues(bias.vgs, bias.vds, DEVICE);
+
+    // Terminal order: drain, gate, source.
+    const auto STAMP = [&](MnaSystem& mna) {
+      MosfetLevel1::stamp(mna, terminalNet(0), terminalNet(1), terminalNet(2), bias.vgs, bias.vds,
+                          DEVICE);
+    };
+
+    for (const Step& step :
+         {Step{0.0, 0.0, 0.0}, Step{DV, 0.0, 0.0}, Step{0.0, DV, 0.0}, Step{0.0, 0.0, DV}}) {
+      const auto PINNED = pinTerminals({V_SOURCE + bias.vds + step.drain,
+                                        V_SOURCE + bias.vgs + step.gate, V_SOURCE + step.source},
+                                       STAMP);
+      ASSERT_TRUE(PINNED.solved) << bias.region;
+
+      const double D_VGS = step.gate - step.source;
+      const double D_VDS = step.drain - step.source;
+      const double I_DRAIN = MODEL.id + MODEL.gm * D_VGS + MODEL.gds * D_VDS;
+      expectCurrent(PINNED.into[0], I_DRAIN, "drain");
+      expectCurrent(PINNED.into[1], 0.0, "gate");
+      expectCurrent(PINNED.into[2], -I_DRAIN, "source");
+    }
+  }
 }
 
-/** @test Stamp linear region. */
-TEST(MosfetLevel1Test, StampLinear) {
-  MnaSystem mna(4);
-  MosfetLevel1Params params;
-  const NetID DRAIN = 1;
-  const NetID GATE = 2;
-  const NetID SOURCE = 0;
+/** @test stampNmos carries the model current drain to source, and source to drain when reversed */
+TEST(MosfetLevel1Test, StampNmosCarriesModelCurrentInBothDirections) {
+  // Terminal order: drain, gate, source. No minimum conductance, so the
+  // stamped device is the model alone.
+  constexpr double GMIN = 0.0;
 
-  MosfetLevel1::stamp(mna, DRAIN, GATE, SOURCE, 1.5, 0.5, params);
+  // Forward: Vgs = 2 V, Vds = 3 V, saturation. (Kp/2)*1.3^2*(1 + 0.02*3).
+  {
+    const std::vector<double> PREV = previousVoltages(3.0, 2.0, 0.0);
+    const auto PINNED = pinTerminals({3.0, 2.0, 0.0}, [&](MnaSystem& mna) {
+      MosfetLevel1::stampNmos(mna, terminalNet(0), terminalNet(1), terminalNet(2), PREV, DEVICE,
+                              GMIN);
+    });
+    ASSERT_TRUE(PINNED.solved);
+    expectCurrent(PINNED.into[0], 8.957e-05, "drain, forward");
+    expectCurrent(PINNED.into[1], 0.0, "gate, forward");
+    expectCurrent(PINNED.into[2], -8.957e-05, "source, forward");
+  }
 
-  // Should stamp gm and gds
+  // Reversed: the drain net sits below the source net, so the source net
+  // acts as the drain. Gate 2 V above the lower net, 1 V across the channel:
+  // linear region, Kp*(1.3*1 - 0.5)*(1 + 0.02*1).
+  {
+    const std::vector<double> PREV = previousVoltages(0.0, 2.0, 1.0);
+    const auto STAMP = [&](MnaSystem& mna) {
+      MosfetLevel1::stampNmos(mna, terminalNet(0), terminalNet(1), terminalNet(2), PREV, DEVICE,
+                              GMIN);
+    };
+    const auto PINNED = pinTerminals({0.0, 2.0, 1.0}, STAMP);
+    ASSERT_TRUE(PINNED.solved);
+    expectCurrent(PINNED.into[0], -8.16e-05, "drain, reversed");
+    expectCurrent(PINNED.into[1], 0.0, "gate, reversed");
+    expectCurrent(PINNED.into[2], 8.16e-05, "source, reversed");
+
+    // First order around it: the gate is referred to the lower (drain) net.
+    const auto MODEL = MosfetLevel1::stampValues(2.0, 1.0, DEVICE);
+    const double DV = 0.05;
+    const auto GATE_STEP = pinTerminals({0.0, 2.0 + DV, 1.0}, STAMP);
+    ASSERT_TRUE(GATE_STEP.solved);
+    expectCurrent(GATE_STEP.into[2], MODEL.id + MODEL.gm * DV, "source, reversed, gate step");
+    const auto CHANNEL_STEP = pinTerminals({0.0, 2.0, 1.0 + DV}, STAMP);
+    ASSERT_TRUE(CHANNEL_STEP.solved);
+    expectCurrent(CHANNEL_STEP.into[2], MODEL.id + MODEL.gds * DV, "source, reversed, drain step");
+  }
 }
 
-/** @test Stamp saturation region. */
-TEST(MosfetLevel1Test, StampSaturation) {
-  MnaSystem mna(4);
-  MosfetLevel1Params params;
-  const NetID DRAIN = 1;
-  const NetID GATE = 2;
-  const NetID SOURCE = 0;
+/** @test stampPmos carries the model current source to drain, and drain to source when reversed */
+TEST(MosfetLevel1Test, StampPmosCarriesModelCurrentInBothDirections) {
+  // Terminal order: source, gate, drain. No minimum conductance.
+  constexpr double GMIN = 0.0;
 
-  MosfetLevel1::stamp(mna, DRAIN, GATE, SOURCE, 1.5, 2.0, params);
+  // Forward: Vsg = 2 V, Vsd = 4 V, saturation. (Kp/2)*1.3^2*(1 + 0.02*4).
+  {
+    const std::vector<double> PREV = previousVoltages(5.0, 3.0, 1.0);
+    const auto PINNED = pinTerminals({5.0, 3.0, 1.0}, [&](MnaSystem& mna) {
+      MosfetLevel1::stampPmos(mna, terminalNet(0), terminalNet(1), terminalNet(2), PREV, DEVICE,
+                              GMIN);
+    });
+    ASSERT_TRUE(PINNED.solved);
+    expectCurrent(PINNED.into[0], 9.126e-05, "source, forward");
+    expectCurrent(PINNED.into[1], 0.0, "gate, forward");
+    expectCurrent(PINNED.into[2], -9.126e-05, "drain, forward");
+  }
 
-  // Should stamp gm (non-zero) and gds (zero for ideal)
+  // Reversed: the source net sits below the drain net, so the drain net
+  // acts as the source. 3 V from it to the gate, 2 V across the channel:
+  // linear region, Kp*(2.3*2 - 2)*(1 + 0.02*2).
+  {
+    const std::vector<double> PREV = previousVoltages(1.0, 0.0, 3.0);
+    const auto STAMP = [&](MnaSystem& mna) {
+      MosfetLevel1::stampPmos(mna, terminalNet(0), terminalNet(1), terminalNet(2), PREV, DEVICE,
+                              GMIN);
+    };
+    const auto PINNED = pinTerminals({1.0, 0.0, 3.0}, STAMP);
+    ASSERT_TRUE(PINNED.solved);
+    expectCurrent(PINNED.into[0], -0.0002704, "source, reversed");
+    expectCurrent(PINNED.into[1], 0.0, "gate, reversed");
+    expectCurrent(PINNED.into[2], 0.0002704, "drain, reversed");
+
+    // First order around it: the gate is referred to the upper (drain) net.
+    const auto MODEL = MosfetLevel1::stampValues(3.0, 2.0, DEVICE);
+    const double DV = 0.05;
+    const auto GATE_STEP = pinTerminals({1.0, 0.0 - DV, 3.0}, STAMP);
+    ASSERT_TRUE(GATE_STEP.solved);
+    expectCurrent(GATE_STEP.into[2], MODEL.id + MODEL.gm * DV, "drain, reversed, gate step");
+  }
 }
 
-/* ----------------------------- Physical Behavior ----------------------------- */
-
-/** @test Output characteristics (Id vs Vds for fixed Vgs). */
-TEST(MosfetLevel1Test, OutputCharacteristics) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
-  const double VGS = 1.5; // Fixed Vgs
-
-  double id1 = MosfetLevel1::current(VGS, 0.1, params);
-  double id2 = MosfetLevel1::current(VGS, 0.3, params);
-  double id3 = MosfetLevel1::current(VGS, 0.5, params);
-  double id4 = MosfetLevel1::current(VGS, 0.8, params); // Boundary
-  double id5 = MosfetLevel1::current(VGS, 1.5, params); // Saturation
-  double id6 = MosfetLevel1::current(VGS, 3.0, params); // Deep saturation
-
-  // Linear region: current increases with Vds
-  EXPECT_LT(id1, id2);
-  EXPECT_LT(id2, id3);
-  EXPECT_LT(id3, id4);
-
-  // Saturation region: current saturates (constant if lambda=0)
-  EXPECT_NEAR(id4, id5, 1e-9);
-  EXPECT_NEAR(id5, id6, 1e-9);
+/** @test The minimum conductance is stamped beside the device and does not change its current */
+TEST(MosfetLevel1Test, MinimumConductanceAddsToACutOffDevice) {
+  // Terminal order: drain, gate, source. Gate at 0 V: the device is cut off
+  // and carries nothing, so what flows is the minimum conductance times Vds.
+  constexpr double GMIN = 1e-9;
+  const std::vector<double> PREV = previousVoltages(3.0, 0.0, 0.0);
+  const auto PINNED = pinTerminals({3.0, 0.0, 0.0}, [&](MnaSystem& mna) {
+    MosfetLevel1::stampNmos(mna, terminalNet(0), terminalNet(1), terminalNet(2), PREV, DEVICE,
+                            GMIN);
+  });
+  ASSERT_TRUE(PINNED.solved);
+  expectCurrent(PINNED.into[0], 3e-9, "drain");
+  expectCurrent(PINNED.into[2], -3e-9, "source");
 }
 
-/** @test Transfer characteristics (Id vs Vgs for fixed Vds). */
-TEST(MosfetLevel1Test, TransferCharacteristics) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
-  const double VDS = 2.0; // Fixed Vds (saturation)
-
-  double id1 = MosfetLevel1::current(0.5, VDS, params); // Below Vth
-  double id2 = MosfetLevel1::current(0.7, VDS, params); // At Vth
-  double id3 = MosfetLevel1::current(1.0, VDS, params);
-  double id4 = MosfetLevel1::current(1.5, VDS, params);
-  double id5 = MosfetLevel1::current(2.0, VDS, params);
-
-  // Below threshold: zero current
-  EXPECT_DOUBLE_EQ(id1, 0.0);
-  EXPECT_DOUBLE_EQ(id2, 0.0);
-
-  // Above threshold: quadratic increase (saturation region)
-  EXPECT_GT(id3, 0.0);
-  EXPECT_GT(id4, id3);
-  EXPECT_GT(id5, id4);
-
-  // Verify quadratic relationship: Id proportional to Vgst^2
-  // (Vgs=1.5, Vgst=0.8): Id4 = 32 uA
-  // (Vgs=2.0, Vgst=1.3): Id5 = 0.5 * 100e-6 * 1.69 = 84.5 uA
-  // Ratio: Id5/Id4 = 1.69/0.64 = 2.64
-  EXPECT_NEAR(id5 / id4, (1.3 * 1.3) / (0.8 * 0.8), 1e-6);
+/** @test A net beyond the previous-voltage vector is read as 0 V */
+TEST(MosfetLevel1Test, StampNmosReadsMissingPreviousVoltagesAsZero) {
+  // With no previous voltages every terminal reads 0 V: the linearization
+  // point is a cut-off device, whatever the terminals are then held at.
+  constexpr double GMIN = 1e-9;
+  const std::vector<double> EMPTY;
+  const auto PINNED = pinTerminals({3.0, 2.0, 0.0}, [&](MnaSystem& mna) {
+    MosfetLevel1::stampNmos(mna, terminalNet(0), terminalNet(1), terminalNet(2), EMPTY, DEVICE,
+                            GMIN);
+  });
+  ASSERT_TRUE(PINNED.solved);
+  expectCurrent(PINNED.into[0], 3e-9, "drain");
+  expectCurrent(PINNED.into[1], 0.0, "gate");
 }
 
-/** @test Subthreshold smoothing transitions continuously to zero.
- *
- * The model has a quadratic smoothing region over [Vth-Vsmooth, Vth] (default
- * Vsmooth=0.1) added during ngspice calibration to make the Jacobian continuous
- * across the threshold. Hard cutoff applies only below Vth-Vsmooth.
- *
- * This test verifies:
- *   1. Deep cutoff (vgs <= Vth-Vsmooth) returns exactly zero
- *   2. Smoothing region produces small but nonzero current
- *   3. Smoothing is monotonic (current grows with vgs in the window)
- *   4. Above-threshold current is much larger than smoothing-region current
- *   5. With Vsmooth=0 the model reverts to a hard cutoff at Vth
+/* ----------------------------- Voltage Limiting ----------------------------- */
+
+/** @test fetlim limits a gate-voltage step: one row for each branch a step can take */
+TEST(MosfetLevel1Test, FetlimMatchesReference) {
+  struct Row {
+    double vold;
+    double vnew;
+    double limited;
+    const char* branch;
+  };
+
+  // Threshold 0.7 V. The breakpoints are vto - 0.5 = 0.2, vto + 0.5 = 1.2,
+  // vto + 2 = 2.7, vto + 3.5 = 4.2 and vto + 4 = 4.7; the step bounds are
+  // |2*(vold - vto)| + 2 upward and |vold - vto| + 1 downward.
+  constexpr double VTO = 0.7;
+  const std::array<Row, 13> ROWS = {{
+      Row{6.0, 5.5, 5.5, "well on, small step down: unchanged"},
+      Row{6.0, 3.0, 3.0, "well on, down past vto + 3.5 but above vto + 2: unchanged"},
+      Row{6.0, 1.0, 2.7, "well on, down below vto + 2: held at vto + 2"},
+      Row{5.0, 6.0, 6.0, "well on, small step up: unchanged"},
+      Row{5.0, 20.0, 15.6, "well on, large step up: bounded by 2*(vold - vto) + 2"},
+      Row{2.0, 1.5, 1.5, "on, small step down: unchanged"},
+      Row{2.0, -3.0, 0.2, "on, large step down: held at vto - 0.5"},
+      Row{2.0, 3.0, 3.0, "on, small step up: unchanged"},
+      Row{2.0, 10.0, 4.7, "on, large step up: held at vto + 4"},
+      Row{0.0, -1.0, -1.0, "off, small step down: unchanged"},
+      Row{0.0, -10.0, -3.4, "off, large step down: bounded by 2*(vto - vold) + 2"},
+      Row{0.0, 1.0, 1.0, "off, step up to below vto + 0.5: unchanged"},
+      Row{0.0, 5.0, 1.2, "off, step up past vto + 0.5: held at vto + 0.5"},
+  }};
+  for (const Row& row : ROWS) {
+    EXPECT_DOUBLE_EQ(MosfetLevel1::fetlim(row.vnew, row.vold, VTO), row.limited) << row.branch;
+  }
+}
+
+/** @test limvds limits a drain-voltage step: one row for each branch a step can take */
+TEST(MosfetLevel1Test, LimvdsMatchesReference) {
+  struct Row {
+    double vold;
+    double vnew;
+    double limited;
+    const char* branch;
+  };
+
+  const std::array<Row, 9> ROWS = {{
+      Row{5.0, 6.0, 6.0, "high, small step up: unchanged"},
+      Row{5.0, 100.0, 17.0, "high, large step up: bounded by 3*vold + 2"},
+      Row{5.0, 4.0, 4.0, "high, step down staying above 3.5: unchanged"},
+      Row{5.0, 3.0, 3.0, "high, step down below 3.5 but above 2: unchanged"},
+      Row{5.0, 0.0, 2.0, "high, step down below 2: held at 2"},
+      Row{1.0, 2.0, 2.0, "low, small step up: unchanged"},
+      Row{1.0, 10.0, 4.0, "low, large step up: held at 4"},
+      Row{1.0, 0.5, 0.5, "low, small step down: unchanged"},
+      Row{1.0, -5.0, -0.5, "low, large step down: held at -0.5"},
+  }};
+  for (const Row& row : ROWS) {
+    EXPECT_DOUBLE_EQ(MosfetLevel1::limvds(row.vnew, row.vold), row.limited) << row.branch;
+  }
+}
+
+/* ----------------------------- Circuit ----------------------------- */
+
+/** @test A resistor-loaded inverter solved through stampNmos follows the reference transfer curve
  */
-TEST(MosfetLevel1Test, SubthresholdCutoff) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7}; // Vsmooth=0.1 default
-
-  // Deep cutoff: vgs <= Vth - Vsmooth -> exactly zero
-  EXPECT_DOUBLE_EQ(MosfetLevel1::current(0.0, 2.0, params), 0.0);
-  EXPECT_DOUBLE_EQ(MosfetLevel1::current(0.5, 2.0, params), 0.0);
-  EXPECT_DOUBLE_EQ(MosfetLevel1::current(0.6, 2.0, params), 0.0);
-
-  // Subthreshold smoothing window (0.6, 0.7): nonzero, monotonically increasing
-  double idLo = MosfetLevel1::current(0.65, 2.0, params);
-  double idHi = MosfetLevel1::current(0.699, 2.0, params);
-  EXPECT_GT(idLo, 0.0);
-  EXPECT_GT(idHi, idLo) << "Smoothing should grow monotonically toward Vth";
-
-  // Above threshold: current grows quickly via Shichman-Hodges
-  double idAbove = MosfetLevel1::current(0.701, 2.0, params);
-  EXPECT_GT(idAbove, 0.0);
-
-  // Smoothing-region current is bounded by id_at_threshold:
-  //   id_at_th = 0.5 * Kp * Vsmooth^2 * (1 + lambda*vds)
-  //            = 0.5 * 100e-6 * 0.01 * 1 = 5e-7 A
-  // The smoothing returns id_at_th * (ratio)^2 where ratio in [0,1].
-  constexpr double ID_AT_THRESHOLD = 0.5 * 100e-6 * 0.1 * 0.1;
-  EXPECT_LE(idHi, ID_AT_THRESHOLD) << "Smoothing region must not exceed id_at_threshold";
-
-  // With a real overdrive (well above threshold) the saturation current
-  // dominates the smoothing leakage by orders of magnitude.
-  double idOverdrive = MosfetLevel1::current(2.0, 2.0, params); // 1.3V overdrive
-  EXPECT_LT(idHi * 100.0, idOverdrive)
-      << "Smoothing leakage should be << current with substantial overdrive";
-}
-
-/** @test Hard cutoff: original Shichman-Hodges form when Vsmooth is disabled. */
-TEST(MosfetLevel1Test, SubthresholdCutoffHard) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .Vsmooth = 0.0};
-
-  // With Vsmooth=0 the model has the original abrupt cutoff at Vth
-  EXPECT_DOUBLE_EQ(MosfetLevel1::current(0.699, 2.0, params), 0.0);
-  EXPECT_GT(MosfetLevel1::current(0.701, 2.0, params), 0.0);
-}
-
-/** @test Transconductance increases with Vgs in saturation. */
-TEST(MosfetLevel1Test, TransconductanceVsVgs) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7};
-  const double VDS = 2.0; // Saturation
-
-  double gm1 = MosfetLevel1::transconductance(1.0, VDS, params);
-  double gm2 = MosfetLevel1::transconductance(1.5, VDS, params);
-  double gm3 = MosfetLevel1::transconductance(2.0, VDS, params);
-
-  // gm = Kp * Vgst (linear with Vgst in saturation)
-  EXPECT_LT(gm1, gm2);
-  EXPECT_LT(gm2, gm3);
-
-  // Verify linear relationship
-  // gm1 = 100e-6 * 0.3 = 30 uS
-  // gm2 = 100e-6 * 0.8 = 80 uS
-  // gm3 = 100e-6 * 1.3 = 130 uS
-  EXPECT_NEAR(gm1, 30e-6, 1e-9);
-  EXPECT_NEAR(gm2, 80e-6, 1e-9);
-  EXPECT_NEAR(gm3, 130e-6, 1e-9);
-}
-
-/** @test Channel-length modulation increases gds. */
-TEST(MosfetLevel1Test, ChannelLengthModulationGds) {
-  MosfetLevel1Params ideal{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.0};
-  MosfetLevel1Params realistic{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02};
-
-  double gdsIdeal = MosfetLevel1::outputConductance(1.5, 2.0, ideal);
-  double gdsRealistic = MosfetLevel1::outputConductance(1.5, 2.0, realistic);
-
-  // Ideal: gds = 0
-  EXPECT_DOUBLE_EQ(gdsIdeal, 0.0);
-
-  // Realistic: gds > 0
-  EXPECT_GT(gdsRealistic, 0.0);
-}
-
-/** @test Weak MOSFET (low Kp). */
-TEST(MosfetLevel1Test, WeakMosfet) {
-  MosfetLevel1Params params{.Kp = 20e-6, .Vth = 0.7}; // Low Kp
-
-  double id = MosfetLevel1::current(1.5, 2.0, params);
-
-  // Id = 0.5 * 20e-6 * 0.64 = 6.4 uA
-  EXPECT_NEAR(id, 6.4e-6, 1e-9);
-}
-
-/** @test Strong MOSFET (high Kp). */
-TEST(MosfetLevel1Test, StrongMosfet) {
-  MosfetLevel1Params params{.Kp = 200e-6, .Vth = 0.7}; // High Kp
-
-  double id = MosfetLevel1::current(1.5, 2.0, params);
-
-  // Id = 0.5 * 200e-6 * 0.64 = 64 uA
-  EXPECT_NEAR(id, 64e-6, 1e-9);
-}
-
-/** @test Low threshold voltage (depletion mode). */
-TEST(MosfetLevel1Test, DepletionMode) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = -0.5}; // Negative Vth
-
-  // Even at Vgs = 0, MOSFET is ON
-  double id = MosfetLevel1::current(0.0, 2.0, params);
-
-  EXPECT_GT(id, 0.0);
-}
-
-/** @test High threshold voltage (enhancement mode). */
-TEST(MosfetLevel1Test, EnhancementMode) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 1.5}; // High Vth
-
-  // At Vgs = 1.0V, MOSFET is OFF
-  double id1 = MosfetLevel1::current(1.0, 2.0, params);
-  EXPECT_DOUBLE_EQ(id1, 0.0);
-
-  // At Vgs = 2.0V, MOSFET is ON
-  double id2 = MosfetLevel1::current(2.0, 2.0, params);
-  EXPECT_GT(id2, 0.0);
-}
-
-/* ----------------------------- Voltage Limiting (fetlim) ----------------------------- */
-
-/** @test fetlim limits large positive jumps above threshold. */
-TEST(MosfetLevel1Test, FetlimAboveThresholdLargePositiveJump) {
-  const double VTO = 0.7;
-
-  // vold well above vtox (vto + 3.5 = 4.2), large positive jump
-  double vold = 5.0;
-  double vnew = 50.0;
-
-  double limited = MosfetLevel1::fetlim(vnew, vold, VTO);
-
-  // vtsthi = |2*(5.0-0.7)| + 2 = 10.6
-  // vnew should be clamped to vold + vtsthi = 15.6
-  EXPECT_LT(limited, vnew);
-  EXPECT_NEAR(limited, vold + std::fabs(2.0 * (vold - VTO)) + 2.0, 1e-12);
-}
-
-/** @test fetlim limits large negative jumps above threshold, above vtox. */
-TEST(MosfetLevel1Test, FetlimAboveThresholdLargeNegativeJump) {
-  const double VTO = 0.7;
-
-  // vold above vtox, large negative jump but vnew still above vtox
-  double vold = 10.0;
-  double vnew = -5.0; // drops below vtox
-
-  double limited = MosfetLevel1::fetlim(vnew, vold, VTO);
-
-  // vnew < vtox, so clamped to max(vnew, vto + 2.0) = max(-5, 2.7) = 2.7
-  EXPECT_NEAR(limited, VTO + 2.0, 1e-12);
-}
-
-/** @test fetlim limits negative jump above vtox when vnew stays above vtox. */
-TEST(MosfetLevel1Test, FetlimAboveVtoxNegativeJumpStaysAbove) {
-  const double VTO = 0.7;
-  double vold = 10.0;
-  // vtstlo = |10.0 - 0.7| + 1 = 10.3
-  // vnew still above vtox but delta exceeds vtstlo
-  double vnew = -2.0;
-
-  double limited = MosfetLevel1::fetlim(vnew, vold, VTO);
-
-  // vnew < vtox so path is max(vnew, vto+2) = max(-2, 2.7) = 2.7
-  EXPECT_NEAR(limited, VTO + 2.0, 1e-12);
-}
-
-/** @test fetlim between vto and vtox: negative jump clamps to vto - 0.5. */
-TEST(MosfetLevel1Test, FetlimBetweenVtoAndVtoxNegativeJump) {
-  const double VTO = 0.7;
-
-  // vold between vto and vtox
-  double vold = 2.0;
-  double vnew = -5.0;
-
-  double limited = MosfetLevel1::fetlim(vnew, vold, VTO);
-
-  // Path: vold >= vto, vold < vtox, delv <= 0 -> max(vnew, vto - 0.5)
-  EXPECT_NEAR(limited, VTO - 0.5, 1e-12);
-}
-
-/** @test fetlim between vto and vtox: positive jump clamps to vto + 4.0. */
-TEST(MosfetLevel1Test, FetlimBetweenVtoAndVtoxPositiveJump) {
-  const double VTO = 0.7;
-
-  // vold between vto and vtox
-  double vold = 2.0;
-  double vnew = 20.0;
-
-  double limited = MosfetLevel1::fetlim(vnew, vold, VTO);
-
-  // Path: vold >= vto, vold < vtox, delv > 0 -> min(vnew, vto + 4.0)
-  EXPECT_NEAR(limited, VTO + 4.0, 1e-12);
-}
-
-/** @test fetlim below threshold: large negative jump is limited. */
-TEST(MosfetLevel1Test, FetlimBelowThresholdNegativeJump) {
-  const double VTO = 0.7;
-
-  // vold below threshold
-  double vold = -1.0;
-  // vtsthi = |2*(-1.0-0.7)| + 2 = 5.4
-  double vnew = -20.0;
-
-  double limited = MosfetLevel1::fetlim(vnew, vold, VTO);
-
-  // delv = -19, -delv=19 > vtsthi=5.4 -> vnew = vold - vtsthi = -6.4
-  EXPECT_NEAR(limited, vold - (std::fabs(2.0 * (vold - VTO)) + 2.0), 1e-12);
-}
-
-/** @test fetlim below threshold: positive jump below vtemp is limited by vtstlo. */
-TEST(MosfetLevel1Test, FetlimBelowThresholdPositiveJumpSmall) {
-  const double VTO = 0.7;
-
-  // vold below threshold
-  double vold = -0.5;
-  // vtstlo = |-0.5 - 0.7| + 1 = 2.2
-  // vtemp = vto + 0.5 = 1.2
-  // vnew = 0.5 < vtemp, delv = 1.0 < vtstlo -> no clamping
-  double vnew = 0.5;
-
-  double limited = MosfetLevel1::fetlim(vnew, vold, VTO);
-  EXPECT_NEAR(limited, 0.5, 1e-12);
-
-  // Larger jump: vnew below vtemp, delv exceeds vtstlo
-  vnew = 5.0; // delv = 5.5, but vnew > vtemp -> clamps to vtemp
-  limited = MosfetLevel1::fetlim(vnew, vold, VTO);
-  EXPECT_NEAR(limited, VTO + 0.5, 1e-12);
-}
-
-/** @test fetlim small changes pass through unmodified. */
-TEST(MosfetLevel1Test, FetlimSmallChange) {
-  const double VTO = 0.7;
-
-  // Above threshold, small change
-  double vold = 2.0;
-  double vnew = 2.1;
-
-  double limited = MosfetLevel1::fetlim(vnew, vold, VTO);
-  EXPECT_NEAR(limited, vnew, 1e-12);
-
-  // Below threshold, small change
-  vold = -0.5;
-  vnew = -0.4;
-  limited = MosfetLevel1::fetlim(vnew, vold, VTO);
-  EXPECT_NEAR(limited, vnew, 1e-12);
-}
-
-/* ----------------------------- Voltage Limiting (limvds) ----------------------------- */
-
-/** @test limvds limits upward jump when vold >= 3.5. */
-TEST(MosfetLevel1Test, LimvdsHighVoldUpwardJump) {
-  // vold >= 3.5, large upward jump
-  double limited = MosfetLevel1::limvds(100.0, 5.0);
-
-  // Clamped to min(100, 3*5+2) = 17
-  EXPECT_NEAR(limited, 17.0, 1e-12);
-}
-
-/** @test limvds limits downward jump below 3.5 when vold >= 3.5. */
-TEST(MosfetLevel1Test, LimvdsHighVoldDownwardJump) {
-  // vold >= 3.5, vnew drops below 3.5
-  double limited = MosfetLevel1::limvds(0.5, 4.0);
-
-  // max(0.5, 2.0) = 2.0
-  EXPECT_NEAR(limited, 2.0, 1e-12);
-}
-
-/** @test limvds limits upward jump when vold < 3.5. */
-TEST(MosfetLevel1Test, LimvdsLowVoldUpwardJump) {
-  // vold < 3.5, vnew jumps up
-  double limited = MosfetLevel1::limvds(20.0, 1.0);
-
-  // min(20, 4) = 4
-  EXPECT_NEAR(limited, 4.0, 1e-12);
-}
-
-/** @test limvds limits downward jump when vold < 3.5. */
-TEST(MosfetLevel1Test, LimvdsLowVoldDownwardJump) {
-  // vold < 3.5, vnew drops below -0.5
-  double limited = MosfetLevel1::limvds(-5.0, 1.0);
-
-  // max(-5, -0.5) = -0.5
-  EXPECT_NEAR(limited, -0.5, 1e-12);
-}
-
-/** @test limvds passes through small changes. */
-TEST(MosfetLevel1Test, LimvdsSmallChange) {
-  // Within limits at high vold
-  double limited = MosfetLevel1::limvds(5.5, 5.0);
-  EXPECT_NEAR(limited, 5.5, 1e-12);
-
-  // Within limits at low vold
-  limited = MosfetLevel1::limvds(2.0, 1.0);
-  EXPECT_NEAR(limited, 2.0, 1e-12);
-}
-
-/* ----------------------------- Smooth Transition Region ----------------------------- */
-
-/** @test Current in smooth transition region matches expected quadratic. */
-TEST(MosfetLevel1Test, SmoothTransitionCurrent) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-
-  // Midpoint of smoothing window: vgs = 0.65, ratio = 0.5
-  double vgs = 0.65;
-  double vds = 2.0;
-  double id = MosfetLevel1::current(vgs, vds, params);
-
-  double id_at_th = 0.5 * params.Kp * params.Vsmooth * params.Vsmooth * (1.0 + params.lambda * vds);
-  double ratio = (vgs - (params.Vth - params.Vsmooth)) / params.Vsmooth;
-  double expected = id_at_th * ratio * ratio;
-
-  EXPECT_NEAR(id, expected, 1e-15);
-}
-
-/** @test Transconductance in smooth transition matches analytical derivative. */
-TEST(MosfetLevel1Test, SmoothTransitionTransconductance) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-
-  double vgs = 0.65;
-  double vds = 2.0;
-  double gm = MosfetLevel1::transconductance(vgs, vds, params);
-
-  // Analytical: id_at_th * 2 * ratio / Vsmooth
-  double id_at_th = 0.5 * params.Kp * params.Vsmooth * params.Vsmooth * (1.0 + params.lambda * vds);
-  double ratio = (vgs - (params.Vth - params.Vsmooth)) / params.Vsmooth;
-  double expected = id_at_th * 2.0 * ratio / params.Vsmooth;
-
-  EXPECT_NEAR(gm, expected, 1e-15);
-}
-
-/** @test Transconductance in smooth transition matches numerical derivative. */
-TEST(MosfetLevel1Test, SmoothTransitionTransconductanceNumerical) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-
-  double vgs = 0.65;
-  double vds = 2.0;
-  double dvgs = 1e-7;
-
-  double gm = MosfetLevel1::transconductance(vgs, vds, params);
-  double id_lo = MosfetLevel1::current(vgs - dvgs, vds, params);
-  double id_hi = MosfetLevel1::current(vgs + dvgs, vds, params);
-  double gm_num = (id_hi - id_lo) / (2.0 * dvgs);
-
-  EXPECT_NEAR(gm, gm_num, std::fabs(gm_num) * 0.001);
-}
-
-/** @test Output conductance in smooth transition with lambda > 0. */
-TEST(MosfetLevel1Test, SmoothTransitionOutputConductance) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-
-  double vgs = 0.65;
-  double vds = 2.0;
-  double gds = MosfetLevel1::outputConductance(vgs, vds, params);
-
-  // Analytical: id_at_th_base * lambda * ratio^2
-  double id_at_th_base = 0.5 * params.Kp * params.Vsmooth * params.Vsmooth;
-  double ratio = (vgs - (params.Vth - params.Vsmooth)) / params.Vsmooth;
-  double expected = id_at_th_base * params.lambda * ratio * ratio;
-
-  EXPECT_NEAR(gds, expected, 1e-15);
-}
-
-/** @test Output conductance in smooth transition matches numerical derivative. */
-TEST(MosfetLevel1Test, SmoothTransitionOutputConductanceNumerical) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-
-  double vgs = 0.65;
-  double vds = 2.0;
-  double dvds = 1e-7;
-
-  double gds = MosfetLevel1::outputConductance(vgs, vds, params);
-  double id_lo = MosfetLevel1::current(vgs, vds - dvds, params);
-  double id_hi = MosfetLevel1::current(vgs, vds + dvds, params);
-  double gds_num = (id_hi - id_lo) / (2.0 * dvds);
-
-  EXPECT_NEAR(gds, gds_num, std::fabs(gds_num) * 0.001);
-}
-
-/** @test Smooth transition is continuous at the lower boundary (deep cutoff edge).
- *
- * At Vth - Vsmooth, the smoothing quadratic evaluates to zero (ratio=0),
- * matching the deep-cutoff region. The upper boundary at Vth has a small
- * step because the smoothing peak (id_at_th = 0.5*Kp*Vsmooth^2) does not
- * equal the Shichman-Hodges value at vgst=0 (which is zero). This step is
- * intentional and bounded by id_at_th, which is negligible for typical
- * Vsmooth values.
- */
-TEST(MosfetLevel1Test, SmoothTransitionContinuity) {
-  MosfetLevel1Params params{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-  double vds = 2.0;
-
-  // Lower boundary: Vth - Vsmooth = 0.6
-  // Just inside smoothing vs just outside (deep cutoff)
-  double eps = 1e-10;
-  double id_below = MosfetLevel1::current(0.6 - eps, vds, params);
-  double id_above = MosfetLevel1::current(0.6 + eps, vds, params);
-
-  // Deep cutoff is exactly 0; smoothing near boundary approaches 0
-  EXPECT_DOUBLE_EQ(id_below, 0.0);
-  EXPECT_NEAR(id_above, 0.0, 1e-15);
-
-  // Upper boundary at Vth: smoothing peak is id_at_th, above-threshold is ~0.
-  // The step is bounded by id_at_th = 0.5 * Kp * Vsmooth^2 * (1+lambda*vds).
-  double id_at_th = 0.5 * params.Kp * params.Vsmooth * params.Vsmooth * (1.0 + params.lambda * vds);
-  double id_smooth_top = MosfetLevel1::current(0.7 - eps, vds, params);
-
-  EXPECT_GT(id_smooth_top, 0.0);
-  EXPECT_NEAR(id_smooth_top, id_at_th, 1e-12);
-
-  // Above threshold with small overdrive, saturation current grows quickly
-  double id_above_th = MosfetLevel1::current(0.8, vds, params);
-  EXPECT_GT(id_above_th, id_at_th);
-}
-
-/* ----------------------------- stampNmos / stampPmos ----------------------------- */
-
-/** @test stampNmos saturation drain current matches the SPICE Level 1
- *        Shichman-Hodges formula: Id = (Kp/2) * (Vgs-Vth)^2 * (1 + lambda*Vds).
- *
- * With prev_v at the pinning voltage-source values, the linearized companion
- * stamp evaluates exactly at the operating point.
- */
-TEST(MosfetLevel1Test, StampNmosInSaturationMatchesShichmanHodges) {
-  const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-  // Vgs = 3 - 0 = 3, Vds = 5 - 0 = 5; saturation: Vds > Vgs - Vth = 2.3.
-  const std::vector<double> PREV_V = {0.0, 5.0, 3.0, 0.0};
-
-  MnaSystem mna(/*netCount=*/4);
-  MosfetLevel1::stampNmos(mna, /*drainNet=*/1, /*gateNet=*/2, /*sourceNet=*/3, PREV_V, PARAMS);
-  const std::size_t DRAIN_VS = mna.addVoltageSource(/*pos=*/1, /*neg=*/0, /*v=*/5.0);
-  mna.addVoltageSource(2, 0, 3.0);
-  mna.addVoltageSource(3, 0, 0.0);
-
-  const auto R = mna.solve();
-  ASSERT_TRUE(R.success);
-
-  const double VGST = 3.0 - PARAMS.Vth;
-  const double EXPECTED_ID = 0.5 * PARAMS.Kp * VGST * VGST * (1.0 + PARAMS.lambda * 5.0);
-  EXPECT_NEAR(std::abs(R.branchCurrents[DRAIN_VS]), EXPECTED_ID, 1e-9)
-      << "Vgs=3, Vds=5, Vth=0.7 -> Id_sat = " << EXPECTED_ID << " A";
-}
-
-/** @test stampNmos with Vgs below Vth produces effectively zero drain current
- *        (cutoff region of Shichman-Hodges). */
-TEST(MosfetLevel1Test, StampNmosCutoffHasNegligibleDrainCurrent) {
-  const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-  // Vgs = 0.3 < Vth = 0.7 -> cutoff, modulo Vsmooth subthreshold rounding.
-  const std::vector<double> PREV_V = {0.0, 5.0, 0.3, 0.0};
-
-  MnaSystem mna(4);
-  MosfetLevel1::stampNmos(mna, 1, 2, 3, PREV_V, PARAMS);
-  const std::size_t DRAIN_VS = mna.addVoltageSource(1, 0, 5.0);
-  mna.addVoltageSource(2, 0, 0.3);
-  mna.addVoltageSource(3, 0, 0.0);
-
-  const auto R = mna.solve();
-  ASSERT_TRUE(R.success);
-  // Subthreshold |Id| is bounded by ~Kp*Vsmooth^2 = 100e-6 * 0.01 = 1 uA;
-  // 5 uA gives headroom for the smooth-transition shoulder.
-  EXPECT_LT(std::abs(R.branchCurrents[DRAIN_VS]), 5e-6);
-}
-
-/** @test stampPmos saturation drain current matches Shichman-Hodges (PMOS sign
- *        convention, magnitude only): |Id| = (Kp/2)*Vsgt^2*(1 + lambda*Vsd). */
-TEST(MosfetLevel1Test, StampPmosInSaturationMatchesShichmanHodges) {
-  const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-  // Source=5, gate=0 -> Vsg = 5 (strongly on). Drain=1 -> Vsd = 4 > Vsg-Vth = 4.3? no, 5-0.7=4.3,
-  // Vsd=4 So linear region. Pick drain=0 for clean saturation: Vsd=5 > Vsg-Vth=4.3.
-  const std::vector<double> PREV_V = {0.0, 5.0, 0.0, 0.0};
-
-  MnaSystem mna(4);
-  MosfetLevel1::stampPmos(mna, /*sourceNet=*/1, /*gateNet=*/2, /*drainNet=*/3, PREV_V, PARAMS);
-  mna.addVoltageSource(1, 0, 5.0);
-  mna.addVoltageSource(2, 0, 0.0);
-  const std::size_t DRAIN_VS = mna.addVoltageSource(3, 0, 0.0);
-
-  const auto R = mna.solve();
-  ASSERT_TRUE(R.success);
-
-  const double VSG = 5.0;
-  const double VSD = 5.0;
-  const double VSGT = VSG - PARAMS.Vth;
-  const double EXPECTED_ID = 0.5 * PARAMS.Kp * VSGT * VSGT * (1.0 + PARAMS.lambda * VSD);
-  EXPECT_NEAR(std::abs(R.branchCurrents[DRAIN_VS]), EXPECTED_ID, 1e-9)
-      << "Vsg=5, Vsd=5, Vth=0.7 -> |Id_sat| = " << EXPECTED_ID << " A";
-}
-
-/** @test stampPmos with Vsg below Vth produces effectively zero drain current. */
-TEST(MosfetLevel1Test, StampPmosCutoffHasNegligibleDrainCurrent) {
-  const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
-  // Source=0.5, gate=0 -> Vsg = 0.5 < Vth = 0.7 -> cutoff.
-  const std::vector<double> PREV_V = {0.0, 0.5, 0.0, 0.0};
-
-  MnaSystem mna(4);
-  MosfetLevel1::stampPmos(mna, 1, 2, 3, PREV_V, PARAMS);
-  mna.addVoltageSource(1, 0, 0.5);
-  mna.addVoltageSource(2, 0, 0.0);
-  const std::size_t DRAIN_VS = mna.addVoltageSource(3, 0, 0.0);
-
-  const auto R = mna.solve();
-  ASSERT_TRUE(R.success);
-  EXPECT_LT(std::abs(R.branchCurrents[DRAIN_VS]), 5e-6);
-}
-
-/* ----------------------------- fetlim() NR damping ----------------------------- */
-
-/** @test fetlim returns vnew unchanged below threshold with a small step */
-TEST(MosfetLevel1Test, FetlimSmallStepBelowThresholdPasses) {
-  EXPECT_DOUBLE_EQ(MosfetLevel1::fetlim(0.6, 0.5, 1.0), 0.6);
-}
-
-/** @test fetlim upward jump crossing Vth (vold below): clamped to vto + 0.5 per
- *        ngspice devsup.c MOSlim "Vgs upward crossing" branch. */
-TEST(MosfetLevel1Test, FetlimClampsUpwardCrossingThresholdToVtoPlusHalf) {
-  // vnew=5, vold=0.5, vto=1 -> vold < vto, delv > 0, vnew > vto + 0.5 -> clamp to vto+0.5.
-  EXPECT_DOUBLE_EQ(MosfetLevel1::fetlim(/*vnew=*/5.0, /*vold=*/0.5, /*vto=*/1.0), 1.5);
-}
-
-/** @test fetlim downward jump from above-Vth: vnew = max(vnew, vto + 2.0) per
- *        ngspice devsup.c MOSlim "above-Vtox, downward, vnew below Vtox" branch. */
-TEST(MosfetLevel1Test, FetlimDownwardJumpAboveVtoxClampsToVtoPlusTwo) {
-  // vnew=0, vold=5, vto=1 -> vtox=4.5, vold>=vtox, delv<0, vnew<vtox -> max(vnew, vto+2.0).
-  EXPECT_DOUBLE_EQ(MosfetLevel1::fetlim(/*vnew=*/0.0, /*vold=*/5.0, /*vto=*/1.0), 3.0);
-}
-
-/** @test fetlim large upward step deep in saturation: clamped to vold + vtsthi
- *        where vtsthi = |2*(vold-vto)| + 2, per ngspice devsup.c MOSlim. */
-TEST(MosfetLevel1Test, FetlimLargeUpwardStepInSaturationClampsToVoldPlusVtsthi) {
-  // vnew=100, vold=5, vto=1 -> vtox=4.5, vold>=vtox, delv>0, vtsthi=|2*(5-1)|+2=10.
-  // delv=95 >= vtsthi=10, so vnew = vold + vtsthi = 5 + 10 = 15.
-  EXPECT_DOUBLE_EQ(MosfetLevel1::fetlim(/*vnew=*/100.0, /*vold=*/5.0, /*vto=*/1.0), 15.0);
-}
-
-/* ----------------------------- limvds() NR damping ----------------------------- */
-
-/** @test limvds caps upward jump when vold >= 3.5 (3*vold + 2) */
-TEST(MosfetLevel1Test, LimvdsClampsUpwardWhenVoldHigh) {
-  EXPECT_NEAR(MosfetLevel1::limvds(/*vnew=*/100.0, /*vold=*/5.0), 3.0 * 5.0 + 2.0, 1e-12);
-}
-
-/** @test limvds clamps a large downward jump to 2.0 floor when vold high */
-TEST(MosfetLevel1Test, LimvdsClampsDownwardWhenVoldHigh) {
-  EXPECT_DOUBLE_EQ(MosfetLevel1::limvds(0.0, 5.0), 2.0);
-}
-
-/** @test limvds caps upward at 4.0 when vold < 3.5 */
-TEST(MosfetLevel1Test, LimvdsCapsUpwardWhenVoldLow) {
-  EXPECT_DOUBLE_EQ(MosfetLevel1::limvds(100.0, 2.0), 4.0);
-}
-
-/** @test limvds clamps downward to -0.5 when vold < 3.5 */
-TEST(MosfetLevel1Test, LimvdsClampsDownwardWhenVoldLow) {
-  EXPECT_DOUBLE_EQ(MosfetLevel1::limvds(-10.0, 2.0), -0.5);
-}
-
-/** @test limvds passes through values inside the bounds */
-TEST(MosfetLevel1Test, LimvdsPassesValuesInsideBounds) {
-  EXPECT_DOUBLE_EQ(MosfetLevel1::limvds(2.0, 2.0), 2.0);
-  EXPECT_DOUBLE_EQ(MosfetLevel1::limvds(3.0, 2.5), 3.0);
+TEST(MosfetLevel1Test, ResistorLoadedInverterFollowsReferenceTransferCurve) {
+  struct Point {
+    double vin;
+    double vout;
+  };
+
+  // Supply -- RD -- drain (the output); the gate is the input; source
+  // grounded. Reference: bisection on (VDD - Vout)/RD = Id(Vin, Vout).
+  const MosfetLevel1Params PARAMS{.Kp = 1e-3, .Vth = 0.7, .lambda = 0.02};
+  constexpr double VDD = 5.0;
+  constexpr double RD = 10e3;
+  const std::array<Point, 6> CURVE = {{
+      Point{0.0, 5.0},                 // off
+      Point{0.7, 5.0},                 // at threshold: still off
+      Point{1.0, 4.509415262636273},   // saturation
+      Point{1.5, 1.6917293233082706},  // saturation
+      Point{2.0, 0.41634836260691266}, // linear region
+      Point{5.0, 0.11488160083141971}, // linear region
+  }};
+
+  const NetID GROUND = 0;
+  const NetID SUPPLY = 1;
+  const NetID OUTPUT = 2;
+  const NetID INPUT = 3;
+  for (const Point& point : CURVE) {
+    // Previous voltages by net; the drain step goes through the model's own
+    // limiter, as a solver using this model would apply it.
+    std::vector<double> prev = {0.0, VDD, VDD, point.vin};
+    bool converged = false;
+    for (int iter = 0; iter < 100 && !converged; ++iter) {
+      MnaSystem mna(4);
+      mna.addVoltageSource(SUPPLY, GROUND, VDD);
+      mna.addVoltageSource(INPUT, GROUND, point.vin);
+      mna.addConductance(SUPPLY, OUTPUT, 1.0 / RD);
+      MosfetLevel1::stampNmos(mna, OUTPUT, INPUT, GROUND, prev, PARAMS, 0.0);
+
+      const auto RESULT = mna.solve();
+      ASSERT_TRUE(RESULT.success) << "vin = " << point.vin << ", iteration " << iter;
+      const double V_OUT = MosfetLevel1::limvds(RESULT.nodeVoltages[OUTPUT], prev[OUTPUT]);
+      converged = std::abs(V_OUT - prev[OUTPUT]) < 1e-12;
+      prev[OUTPUT] = V_OUT;
+    }
+    ASSERT_TRUE(converged) << "vin = " << point.vin;
+    EXPECT_NEAR(prev[OUTPUT], point.vout, 1e-9) << "vin = " << point.vin;
+  }
 }

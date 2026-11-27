@@ -70,7 +70,9 @@ public:
   /**
    * @brief Try to acquire without blocking.
    * @return True if acquired, false if count was zero.
-   * @note RT-safe: Lock-free CAS loop.
+   * @note RT-DEPENDS: lock-free, with no lock or syscall. The
+   *       compare-and-swap loop has no per-caller retry bound while other
+   *       threads take or return permits.
    */
   [[nodiscard]] bool tryAcquire();
 

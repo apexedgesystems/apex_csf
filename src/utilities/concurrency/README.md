@@ -84,8 +84,8 @@ if (queue.tryPop(result)) {
 
 - **Semaphore** - Counting semaphore with timed acquire
 - **SpinLock** - Busy-wait lock with platform-optimized PAUSE hints
-- **Latch** - One-shot countdown synchronization (C++20 backport)
-- **Barrier** - Reusable multi-phase synchronization (C++20 backport)
+- **Latch** - One-shot countdown synchronization (`std::latch`'s shape)
+- **Barrier** - Reusable multi-phase synchronization (`std::barrier`'s phase semantics)
 
 ### Thread Pools
 
@@ -121,11 +121,13 @@ Choose the right module based on your use case, threading model, and target hard
 
 ### Queue Comparison
 
-| Queue             | Threading               | Throughput | Latency | Best For                                     |
-| ----------------- | ----------------------- | ---------- | ------- | -------------------------------------------- |
-| **RingBuffer**    | Single-thread only      | 45M ops/s  | 22ns    | Processing pipelines, event buffers, parsing |
-| **SPSCQueue**     | 1 producer, 1 consumer  | 25M ops/s  | 40ns    | Audio/video streaming, sensor data           |
-| **LockFreeQueue** | Multi-producer/consumer | 14M ops/s  | 70ns    | Work stealing, task queues, general MPMC     |
+| Queue             | Threading               | Best For                                     |
+| ----------------- | ----------------------- | -------------------------------------------- |
+| **RingBuffer**    | Single-thread only      | Processing pipelines, event buffers, parsing |
+| **SPSCQueue**     | 1 producer, 1 consumer  | Audio/video streaming, sensor data           |
+| **LockFreeQueue** | Multi-producer/consumer | Work stealing, task queues, general MPMC     |
+
+Measured costs are in [Performance](#6-performance).
 
 ### Synchronization Selection
 
@@ -173,7 +175,7 @@ Scenario: Hard real-time control loops, audio processing
 - **RingBuffer for single-thread data buffering** - zero synchronization
 - **SPSCQueue for producer/consumer** - predictable single-atomic ops
 - **SpinLock::tryLock** only - never block in RT path
-- **Semaphore::tryAcquire** only - never wait on CV
+- **Semaphore::tryAcquire** only - never block in `acquire()`
 - **Avoid ThreadPool::enqueueTask** - mutex contention
 
 #### Multi-Tenant / Cloud (Variable Load, Shared Resources)
@@ -224,11 +226,10 @@ established.
 
 ```cpp
 enum class PoolStatus : std::uint8_t {
-  SUCCESS = 0,           ///< Operation completed successfully.
-  TASK_FAILED = 1,       ///< Task returned non-zero error code.
-  POOL_STOPPED = 2,      ///< Pool is shutting down, task rejected.
-  EXCEPTION_STD = 254,   ///< Task threw std::exception.
-  EXCEPTION_UNKNOWN = 255 ///< Task threw unknown exception type.
+  SUCCESS = 0,      ///< Operation completed successfully.
+  TASK_FAILED = 1,  ///< Task returned non-zero error code.
+  POOL_STOPPED = 2, ///< Pool is shutting down, task rejected.
+  QUEUE_FULL = 3    ///< Queue is full, task rejected (lock-free pool only).
 };
 
 struct TaskError {
@@ -237,21 +238,23 @@ struct TaskError {
   PoolStatus status;      ///< Categorized error status.
 };
 
-class ThreadPool {
+class ThreadPool : public PoolBase {
 public:
   using TaskFn = DelegateU8;
 
   explicit ThreadPool(std::size_t numThreads, const PoolConfig& config = {});
   ~ThreadPool() noexcept;
 
+  void enqueueTask(const char* label, TaskFn task);
+  PoolStatus tryEnqueue(const char* label, TaskFn task);
+  void shutdown() noexcept;
+
+  // From PoolBase, the same for both pools:
   bool isValid() const noexcept;
   std::size_t workerCount() const noexcept;
   std::size_t workerConfigFailures() const noexcept;
-  void enqueueTask(const char* label, TaskFn task);
-  PoolStatus tryEnqueue(const char* label, TaskFn task);
   bool threadsRunning() const noexcept;
   bool hasErrors() const noexcept;
-  void shutdown() noexcept;
   std::queue<TaskError> collectErrors();
 };
 ```
@@ -280,7 +283,7 @@ when the constructor returns; the workers block SIGINT, SIGTERM and SIGPIPE.
 | `workerConfigFailures()` | Yes     | Atomic load                    |
 | `enqueueTask()`          | No      | Mutex lock, queue may allocate |
 | `tryEnqueue()`           | No      | Mutex lock, queue may allocate |
-| `threadsRunning()`       | Yes     | Atomic load                    |
+| `threadsRunning()`       | Yes     | Two atomic loads per worker    |
 | `hasErrors()`            | Yes     | Atomic load                    |
 | `shutdown()`             | No      | Joins threads                  |
 | `collectErrors()`        | No      | Mutex lock                     |
@@ -292,12 +295,12 @@ when the constructor returns; the workers block SIGINT, SIGTERM and SIGPIPE.
 **Header:** `ThreadPoolLockFree.hpp`
 **Purpose:** High-performance lock-free thread pool with bounded queue and backpressure.
 
-Uses `LockFreeQueue` for task storage; a worker that finds the ring empty parks on a futex until a producer publishes. Provides immediate `QUEUE_FULL` feedback when the bounded queue is at capacity.
+Uses `LockFreeQueue` for task storage; a worker that finds the ring empty parks on a futex until a producer publishes. Provides immediate `QUEUE_FULL` feedback when the bounded queue is at capacity. `QUEUE_FULL` is also the answer while a worker descheduled inside a dequeue holds the ring cell the producers have come round to (see `LockFreeQueue`): a caller that must not drop the task tries again.
 
 #### Key Types
 
 ```cpp
-class ThreadPoolLockFree {
+class ThreadPoolLockFree : public PoolBase {
 public:
   using TaskFn = DelegateU8;
 
@@ -305,16 +308,13 @@ public:
                               const PoolConfig& config = {});
   ~ThreadPoolLockFree() noexcept;
 
-  bool isValid() const noexcept;
-  std::size_t workerCount() const noexcept;
   std::size_t capacity() const noexcept;
-  std::size_t workerConfigFailures() const noexcept;
   PoolStatus tryEnqueue(const char* label, TaskFn task) noexcept;
   void enqueueTask(const char* label, TaskFn task) noexcept;
-  bool threadsRunning() const noexcept;
-  bool hasErrors() const noexcept;
   void shutdown() noexcept;
-  std::queue<TaskError> collectErrors();
+
+  // From PoolBase: isValid(), workerCount(), workerConfigFailures(),
+  // threadsRunning(), hasErrors(), collectErrors().
 };
 ```
 
@@ -367,7 +367,7 @@ calls in progress at once.
 | `workerConfigFailures()` | Yes     | Atomic load                                                                                       |
 | `tryEnqueue()`           | Depends | No allocation or pool mutex; may issue a futex wake for an idle worker; no per-caller retry bound |
 | `enqueueTask()`          | Depends | As `tryEnqueue()`                                                                                 |
-| `threadsRunning()`       | Yes     | Atomic load                                                                                       |
+| `threadsRunning()`       | Yes     | Two atomic loads per worker                                                                       |
 | `hasErrors()`            | Yes     | Atomic load                                                                                       |
 | `shutdown()`             | No      | Parks on producers, joins threads                                                                 |
 | `collectErrors()`        | No      | Mutex lock                                                                                        |
@@ -405,24 +405,35 @@ public:
   bool tryPush(const T& value) noexcept;
   bool tryPush(T&& value) noexcept;
   bool tryPop(T& out) noexcept;
+  std::size_t sizeApprox() const noexcept;
   std::size_t capacity() const noexcept;
 };
 ```
 
 #### RT-Safety
 
-| Method             | RT-Safe | Reason               |
-| ------------------ | ------- | -------------------- |
-| `LockFreeQueue()`  | No      | Allocates buffer     |
-| `~LockFreeQueue()` | No      | Deallocates buffer   |
-| `tryPush()`        | Yes     | Lock-free CAS loop   |
-| `tryPop()`         | Yes     | Lock-free CAS loop   |
-| `capacity()`       | Yes     | Returns stored value |
+| Method             | RT-Safe | Reason                                                                                |
+| ------------------ | ------- | ------------------------------------------------------------------------------------- |
+| `LockFreeQueue()`  | No      | Allocates buffer                                                                      |
+| `~LockFreeQueue()` | No      | Deallocates buffer                                                                    |
+| `tryPush()`        | Depends | Lock-free, no allocation or syscall; no per-caller retry bound; runs `T`'s assignment |
+| `tryPop()`         | Depends | Lock-free, no allocation or syscall; no per-caller retry bound; runs `T`'s assignment |
+| `sizeApprox()`     | Yes     | Atomic loads                                                                          |
+| `capacity()`       | Yes     | Returns stored value                                                                  |
 
 #### Requirements
 
 - `T` must be move-constructible and move-assignable
 - Capacity >= 2 (rounded up to a power of two); the cells are 64-byte aligned, one per cache line
+- `sizeApprox()` may be read from any thread and never exceeds `capacity()`. It is the
+  distance between the two cursors, which counts pushes and pops in flight: the element count
+  when the queue is quiescent, and no promise that a pop succeeds
+- A call holds its cell from claiming it until releasing it. `tryPush()` returns false at a cell a
+  consumer still holds, however few elements are unread, and `tryPop()` returns false at a cell a
+  producer still holds, whatever is published behind it, until the holding thread runs again. The
+  calls never wait, but a thread descheduled inside one can stop the others at its cell, so the
+  queue is not lock-free in the strict sense. A caller that must not lose an element on a false
+  return tries again
 
 ---
 
@@ -467,6 +478,11 @@ public:
 - `T` must be move-constructible and move-assignable
 - Elements are stored at `alignof(T)`, over-aligned types included
 - `sizeApprox()` may be read from any thread and never exceeds `capacity()`
+
+Each side keeps its last view of the other side's index beside its own and
+reads the real one only when that view says the queue is full (producer) or
+empty (consumer). With a backlog in the queue neither side touches the
+other's cache line.
 
 ---
 
@@ -550,14 +566,14 @@ public:
 
 #### RT-Safety
 
-| Method            | RT-Safe | Reason                    |
-| ----------------- | ------- | ------------------------- |
-| `Semaphore()`     | Yes     | No allocation             |
-| `acquire()`       | No      | May block on CV           |
-| `tryAcquire()`    | Yes     | Lock-free CAS loop        |
-| `tryAcquireFor()` | No      | Timed wait                |
-| `release()`       | Yes     | Atomic fetch_add + notify |
-| `count()`         | Yes     | Atomic load               |
+| Method            | RT-Safe | Reason                                        |
+| ----------------- | ------- | --------------------------------------------- |
+| `Semaphore()`     | Yes     | No allocation                                 |
+| `acquire()`       | No      | May block (futex wait)                        |
+| `tryAcquire()`    | Depends | Lock-free CAS loop, no per-caller retry bound |
+| `tryAcquireFor()` | No      | Timed wait                                    |
+| `release()`       | Yes     | Atomic fetch_add + notify                     |
+| `count()`         | Yes     | Atomic load                                   |
 
 #### Requirements
 
@@ -612,7 +628,7 @@ public:
 ### Latch
 
 **Header:** `Latch.hpp`
-**Purpose:** One-shot countdown synchronization barrier (C++20 backport).
+**Purpose:** One-shot countdown synchronization with `std::latch`'s shape.
 
 #### Key Types
 
@@ -658,7 +674,7 @@ as long as any holder is scheduled out; a true `tryWait()` is not RT-safe.
 ### Barrier
 
 **Header:** `Barrier.hpp`
-**Purpose:** Reusable multi-phase synchronization barrier (C++20 backport).
+**Purpose:** Reusable multi-phase synchronization barrier with `std::barrier`'s phase semantics.
 
 #### Key Types
 
@@ -692,6 +708,28 @@ its arrival, so the barrier stays usable and a retry is one new arrival.
 | `arriveAndDrop()`    | No      | Mutex lock            |
 | `expected()`         | Yes     | Atomic load           |
 | `generation()`       | Yes     | Atomic load           |
+
+---
+
+### Shared parts
+
+Three headers hold what the pools and the queues have in common. They are
+installed with the library and included by the headers above; a user of a
+pool or a queue does not include them directly.
+
+| Header            | Holds                                                                                                                              |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `PoolBase.hpp`    | `PoolStatus`, `TaskError`, `PoolConfig` and `PoolBase`: worker start-up and joining, the in-flight tally, the error queue, queries |
+| `RingIndex.hpp`   | `ringSlots()` (slot count for a requested capacity) and `ringOccupancy()` (bounded distance between two free-running cursors)      |
+| `RingStorage.hpp` | `RingStorage<Slot>`: the queues' slot array at the slot type's alignment, slots built up front and destroyed with it               |
+
+`threadsRunning()` sums every worker's finished count and then every
+started count, and reports a task in flight when the sums differ. A task
+that runs from before the first read to after the last is reported once its
+start is visible to the caller, however work hands over between workers
+during the call; a task queued and not yet taken by a worker is not in
+flight. It is an activity reading, not a completion handshake: closing
+admission and joining the workers is what ends a pool's work.
 
 ---
 
@@ -926,43 +964,88 @@ pool.shutdown(); // Drains queue, joins workers
 
 ## 6. Performance
 
-Single-thread throughput on x86-64 (15 repeats):
+Figures from the module's benchmark on a Jetson AGX Thor (14 aarch64 cores,
+Linux 6.8, release build), cores pinned and clocks locked, as of
+[#191](https://github.com/apexedgesystems/apex_csf/pull/191). Each is the
+median of six runs of 15 repeats; CV is the variation within a run. They
+describe that host and build. No figure here is a budget.
 
-### Queues
+### One thread
 
-| Primitive         | Throughput  | Latency  | CV%   |
-| ----------------- | ----------- | -------- | ----- |
-| **RingBuffer**    | 68.5M ops/s | 15 ns/op | 6.9%  |
-| **SPSCQueue**     | 32.1M ops/s | 31 ns/op | 4.5%  |
-| **LockFreeQueue** | 16.5M ops/s | 60 ns/op | 14.3% |
+| Operation                               | Time    | Rate   | CV   |
+| --------------------------------------- | ------- | ------ | ---- |
+| `RingBuffer` push and pop               | 2.9 ns  | 346M/s | 0.1% |
+| `SPSCQueue` push and pop                | 8.5 ns  | 117M/s | 0.1% |
+| `LockFreeQueue` push and pop            | 26.6 ns | 38M/s  | 0.1% |
+| `SpinLock` lock and unlock              | 10.9 ns | 92M/s  | 0.1% |
+| `Semaphore` tryAcquire and release      | 23 ns   | 43M/s  | 0.4% |
+| `Latch::tryWait()` on a triggered latch | 8.6 ns  | 117M/s | 0.1% |
+| `Barrier::generation()`                 | 2.3 ns  | 433M/s | 0.1% |
 
-RingBuffer is 2.1x faster than SPSCQueue (zero atomics vs relaxed atomics).
-SPSCQueue is 1.9x faster than LockFreeQueue (relaxed vs CAS pair).
+`Latch::tryWait()` on a triggered latch takes the mutex; on a latch that is
+still counting it is one atomic load.
 
-### Synchronization Primitives
+### Between threads
 
-| Primitive     | Throughput   | Latency  | CV%   |
-| ------------- | ------------ | -------- | ----- |
-| **Latch**     | 101.0M ops/s | 10 ns/op | 7.1%  |
-| **Barrier**   | 106.4M ops/s | 9 ns/op  | 7.9%  |
-| **SpinLock**  | 61.7M ops/s  | 16 ns/op | 12.9% |
-| **Semaphore** | 42.9M ops/s  | 23 ns/op | 7.9%  |
+| Operation                                                | Time   | CV   |
+| -------------------------------------------------------- | ------ | ---- |
+| `SPSCQueue`, one item from producer to consumer          | 11 ns  | 2.7% |
+| `LockFreeQueue` push and pop, four threads contending    | 285 ns | 3.4% |
+| `SpinLock` lock and unlock, four threads contending      | 87 ns  | 4.2% |
+| `Semaphore` with four permits, four threads contending   | 100 ns | 3.3% |
+| `Latch`, a round of four threads arriving and released   | 8.8 us | 0.2% |
+| `Barrier`, a phase of four threads arriving and released | 6.6 us | 1.8% |
 
-Barrier.generation is a single atomic load, as is a Latch.tryWait that reads
-a nonzero count; the Latch fixture above polls a triggered latch, so it times
-the true result, which takes the mutex. SpinLock is an atomic exchange.
-Semaphore uses atomic CAS.
+The `LockFreeQueue` row is the level of the runs in which the four threads
+overlap. In about a third of the runs they do not, and those read 20 to 30
+ns.
 
-### Task Dispatch
+### Task dispatch
 
-| Primitive      | Throughput | Latency   |
-| -------------- | ---------- | --------- |
-| **ThreadPool** | 428K ops/s | 2.3 us/op |
+| Measure                                                   | ThreadPool | ThreadPoolLockFree |
+| --------------------------------------------------------- | ---------- | ------------------ |
+| Enqueue, every worker busy                                | 31 ns      | 37 ns              |
+| Enqueue to the task's first instruction, worker asleep    | 4.7 us     | 4.4 us             |
+| Wall time per queued task, one worker                     | 27 ns      | 15 ns              |
+| Wall time per queued task, four workers sharing the queue | 223 ns     | 84 ns              |
 
-ThreadPool is futex-bound (mutex wake/wait). ThreadPoolLockFree replaces
-the mutex with a lock-free queue and futex-parked workers; its cost relative to
-ThreadPool depends on the task body and the placement of producer and
-workers, so the `ptst/` pool fixtures are the measurement for a build.
+The tasks do nothing, so the last two rows are the pool's own cost per
+task, in wall time from the first task taken to the last one finished.
+Four workers draining empty tasks contend for the queue and move fewer
+tasks per second than one; with tasks that do work, the queue is a small
+share of each. The mutex pool's enqueue is the cheaper of the two while it
+does not allocate or wait for the lock; the lock-free pool's enqueue never
+does either.
+
+| `threadsRunning()`                                 | Time                  |
+| -------------------------------------------------- | --------------------- |
+| Workers parked: one, four, sixteen workers         | 2.3 ns, 5.4 ns, 15 ns |
+| Four task chains running on four workers meanwhile | 12 ns                 |
+
+The query reads two counts per worker, so its cost grows with the worker
+count; that is the price of each task no longer writing a line all workers
+share. A caller pays it once per look, not per task.
+
+The benchmark also has an enqueue case with live workers
+(`EnqueueToLiveWorkers`). Its figure follows the relative speed of the
+producer and the workers, not the cost of an enqueue, and has no row here.
+
+### Footprint
+
+| Object               | Size                                                                     |
+| -------------------- | ------------------------------------------------------------------------ |
+| `RingBuffer<T>`      | 48 bytes, 16-byte aligned, and one `T` per slot                          |
+| `SPSCQueue<T>`       | Three cache lines (192 bytes) and one `T` per slot                       |
+| `LockFreeQueue<T>`   | Three cache lines and one 64-byte cell per slot (for `T` up to 56 bytes) |
+| `ThreadPool`         | 512 bytes, 64 bytes per worker, and its `std::queue` as it grows         |
+| `ThreadPoolLockFree` | 576 bytes, 64 bytes per worker, and 64 bytes per slot of its ring        |
+| `SpinLock`           | 1 byte                                                                   |
+| `Semaphore`          | 8 bytes                                                                  |
+| `Latch`, `Barrier`   | 96 and 112 bytes (a mutex, a condition variable and their counts)        |
+
+Slot counts are the requested capacity rounded up to a power of two;
+`RingBuffer` keeps one slot empty. Object sizes are for x86-64 and aarch64
+Linux with glibc.
 
 ---
 
@@ -971,19 +1054,20 @@ workers, so the `ptst/` pool fixtures are the measurement for a build.
 ### RT-Safe Components
 
 - **RingBuffer::tryPush/tryPop/tryPeek** - No atomics, O(1) operations
-- **LockFreeQueue::tryPush/tryPop** - Lock-free, bounded operations
 - **SPSCQueue::tryPush/tryPop** - Lock-free, single producer/consumer
 - **SpinLock::tryLock/unlock** - Atomic operations only
-- **Semaphore::tryAcquire/release/count** - Lock-free CAS and atomic ops
+- **Semaphore::release/count** - Atomic operations (`release()` then notifies any waiter)
 - **Latch::count** - Atomic load only; `tryWait()` is one load while the count is nonzero and takes the mutex once it is zero
 - **Barrier::expected/generation** - Atomic load only
 - **DelegateU8** - No allocation, direct function call
 - **cache::AlignCl** - Compile-time alignment only
-- **ThreadPool::threadsRunning/hasErrors** - Single atomic load
-- **ThreadPoolLockFree::threadsRunning/hasErrors** - Single atomic load
+- **ThreadPool / ThreadPoolLockFree::hasErrors** - Single atomic load
+- **ThreadPool / ThreadPoolLockFree::threadsRunning** - Two atomic loads per worker, no lock
 
 ### RT-Dependent Components
 
+- **LockFreeQueue::tryPush/tryPop** - Lock-free, with no allocation, lock or syscall. The compare-and-swap loop has no per-caller retry bound: a competing producer or consumer, or a spurious failure of the weak exchange, sends the call round again. The call runs `T`'s assignment and needs a lock-free `std::atomic<std::size_t>`
+- **Semaphore::tryAcquire** - Lock-free compare-and-swap loop with no per-caller retry bound while other threads take or return permits
 - **ThreadPoolLockFree::tryEnqueue/enqueueTask** - No allocation and no pool mutex: three atomic read-modify-writes (enter admission, advance the wake generation, leave) around a lock-free queue push. Waking an idle worker issues a futex syscall, and the push has no per-caller retry bound
 
 ### NOT RT-Safe Components
@@ -993,7 +1077,7 @@ workers, so the `ptst/` pool fixtures are the measurement for a build.
 - **ThreadPoolLockFree construction/destruction** - Thread creation, queue allocation
 - **ThreadPoolLockFree::collectErrors** - Mutex lock
 - **RingBuffer/LockFreeQueue/SPSCQueue construction/destruction** - Buffer allocation
-- **Semaphore::acquire/tryAcquireFor** - May block on CV
+- **Semaphore::acquire/tryAcquireFor** - May block
 - **Latch::countDown/wait/arriveAndWait** - Mutex lock, may block
 - **Barrier::arriveAndWait/arriveAndDrop** - Mutex lock, may block
 
@@ -1033,20 +1117,23 @@ docker compose run --rm -T dev-cuda ctest --test-dir build/hosted-x86_64-debug -
 
 ### Test Organization
 
-| Module               | Test File                      | Coverage                                           |
-| -------------------- | ------------------------------ | -------------------------------------------------- |
-| ThreadPool           | `ThreadPool_uTest.cpp`         | Lifecycle, task execution, errors, worker identity |
-| ThreadPoolLockFree   | `ThreadPoolLockFree_uTest.cpp` | Lifecycle, capacity, producers, wake and shutdown  |
-| ThreadConfig         | `ThreadConfig_uTest.cpp`       | Affinity, name, refused settings, timer slack      |
-| LockFreeQueue        | `LockFreeQueue_uTest.cpp`      | Push/pop, capacity, MPMC integrity, alignment      |
-| SPSCQueue            | `SPSCQueue_uTest.cpp`          | Push/pop, capacity, index wrap, size, alignment    |
-| RingBuffer           | `RingBuffer_uTest.cpp`         | Push/pop, peek, clear, wraparound, alignment       |
-| Semaphore            | `Semaphore_uTest.cpp`          | Acquire/release, timeout, wake-all, count bound    |
-| SpinLock             | `SpinLock_uTest.cpp`           | Lock/unlock, mutual exclusion, std::lock_guard     |
-| Latch                | `Latch_uTest.cpp`              | Countdown, wait, arrive-and-wait, lifetime         |
-| Barrier              | `Barrier_uTest.cpp`            | Phases, generations, drop, blocking until the last |
-| DelegateU8, Delegate | `Delegate_uTest.cpp`           | Construction, invocation, null and void forms      |
-| AlignCl              | `Cache_uTest.cpp`              | Alignment verification                             |
+| Module               | Test File                      | Coverage                                            |
+| -------------------- | ------------------------------ | --------------------------------------------------- |
+| Both pools           | `PoolContract_uTest.cpp`       | Lifecycle, task execution, errors, worker identity  |
+| PoolBase             | `PoolBase_uTest.cpp`           | In-flight sweep, one tally per worker, error record |
+| ThreadPoolLockFree   | `ThreadPoolLockFree_uTest.cpp` | Capacity, producers, admission, wake and shutdown   |
+| ThreadConfig         | `ThreadConfig_uTest.cpp`       | Affinity, name, refused settings, timer slack       |
+| LockFreeQueue        | `LockFreeQueue_uTest.cpp`      | Push/pop, capacity, MPMC integrity, index wrap      |
+| SPSCQueue            | `SPSCQueue_uTest.cpp`          | Push/pop, capacity, index wrap, size, alignment     |
+| RingBuffer           | `RingBuffer_uTest.cpp`         | Push/pop, peek, clear, wraparound, alignment        |
+| ringOccupancy        | `RingIndex_uTest.cpp`          | Cursor distance across index wrap, split snapshots  |
+| RingStorage          | `RingStorage_uTest.cpp`        | Slot construction and destruction order, alignment  |
+| Semaphore            | `Semaphore_uTest.cpp`          | Acquire/release, timeout, wake-all, count bound     |
+| SpinLock             | `SpinLock_uTest.cpp`           | Lock/unlock, mutual exclusion, std::lock_guard      |
+| Latch                | `Latch_uTest.cpp`              | Countdown, wait, arrive-and-wait, lifetime          |
+| Barrier              | `Barrier_uTest.cpp`            | Phases, generations, drop, blocking until the last  |
+| DelegateU8, Delegate | `Delegate_uTest.cpp`           | Construction, invocation, null and void forms       |
+| AlignCl              | `Cache_uTest.cpp`              | Alignment verification                              |
 
 Threaded cases share three helpers under `utst/support/`: bounded waits
 (`Waiting.hpp`), a thread owner that ends a case in bounded time (`Crew.hpp`)

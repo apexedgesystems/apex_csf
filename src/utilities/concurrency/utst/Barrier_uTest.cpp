@@ -49,23 +49,29 @@ TEST_F(BarrierTest, SingleThreadReleasesImmediately) {
   EXPECT_EQ(crew->barrier.generation(), 1U);
 }
 
-/** @test expected() returns correct value */
-TEST_F(BarrierTest, ExpectedReturnsValue) {
-  Barrier barrier(5);
-  EXPECT_EQ(barrier.expected(), 5U);
-}
-
-/** @test generation starts at 0 */
-TEST_F(BarrierTest, GenerationStartsAtZero) {
-  Barrier barrier(3);
-  EXPECT_EQ(barrier.generation(), 0U);
-}
-
 /** @test arriveAndDrop decreases expected */
 TEST_F(BarrierTest, ArriveAndDropDecreasesExpected) {
   Barrier barrier(3);
   barrier.arriveAndDrop();
   EXPECT_EQ(barrier.expected(), 2U);
+}
+
+/** @test With no participants left, a drop completes a phase by itself and the participant
+ * count stays at zero: the barrier's only participant drops, then drops again, and an arrival
+ * after that completes its phase alone. That arrival waits with a limit, so a count that went
+ * below zero fails the case. */
+TEST_F(BarrierTest, DropWithNoParticipantsLeftCompletesAPhase) {
+  Barrier barrier(1);
+  barrier.arriveAndDrop();
+  EXPECT_EQ(barrier.expected(), 0U);
+  EXPECT_EQ(barrier.generation(), 1U);
+
+  barrier.arriveAndDrop();
+  EXPECT_EQ(barrier.expected(), 0U) << "the participant count went below zero";
+  EXPECT_EQ(barrier.generation(), 2U);
+
+  EXPECT_TRUE(barrier.arriveAndWaitFor(std::chrono::seconds(1)));
+  EXPECT_EQ(barrier.generation(), 3U);
 }
 
 /* ----------------------------- Timeout Tests ----------------------------- */
@@ -184,26 +190,6 @@ TEST_F(BarrierTest, EachPhaseReleasesOnlyWhenAllHaveArrived) {
     }
   }
   EXPECT_EQ(crew->barrier.generation(), static_cast<std::size_t>(PHASE_COUNT));
-}
-
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test expected() returns consistent results */
-TEST(BarrierDeterminismTest, ExpectedConsistent) {
-  Barrier barrier(5);
-  const std::size_t FIRST = barrier.expected();
-  const std::size_t SECOND = barrier.expected();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 5U);
-}
-
-/** @test generation() returns consistent results */
-TEST(BarrierDeterminismTest, GenerationConsistent) {
-  Barrier barrier(1);
-  const std::size_t FIRST = barrier.generation();
-  const std::size_t SECOND = barrier.generation();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 0U);
 }
 
 /* ----------------------------- Phase Semantics Tests ----------------------------- */

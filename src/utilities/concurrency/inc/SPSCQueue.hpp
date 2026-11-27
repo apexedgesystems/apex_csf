@@ -8,7 +8,8 @@
  *  - Single producer, single consumer (no contention).
  *  - Fixed capacity, non-blocking tryPush/tryPop API.
  *  - No heap allocation after construction.
- *  - Minimal cache-line bouncing via separated head/tail.
+ *  - Minimal cache-line bouncing: each side's index is on its own line,
+ *    beside that side's last view of the other index.
  *
  * Requirements:
  *  - Capacity >= 2 (rounded up to power-of-two internally).
@@ -16,9 +17,14 @@
  *  - Only ONE thread may call tryPush, only ONE thread may call tryPop.
  */
 
+#include "src/utilities/concurrency/inc/Cache.hpp"
+#include "src/utilities/concurrency/inc/RingIndex.hpp"
+#include "src/utilities/concurrency/inc/RingStorage.hpp"
+
 #include <atomic>
 #include <cstddef>
 #include <type_traits>
+#include <utility>
 
 namespace apex {
 namespace concurrency {
@@ -31,6 +37,12 @@ namespace concurrency {
  *
  * Uses a classic ring buffer with separated head (producer) and tail (consumer)
  * pointers. Each pointer is cache-line aligned to prevent false sharing.
+ *
+ * Each side keeps its last view of the other side's index and reads the real
+ * one only when that view says the queue is full (producer) or empty
+ * (consumer). The view only ever understates the room or the items there
+ * are, so acting on it is safe, and with a backlog in the queue neither
+ * side touches the other's line.
  *
  * @note Thread safety: Exactly one producer thread and one consumer thread.
  */
@@ -50,7 +62,7 @@ public:
    * @brief Destructor releases internal storage.
    * @note NOT RT-safe: Deallocates buffer.
    */
-  ~SPSCQueue();
+  ~SPSCQueue() = default;
 
   // Non-copyable / non-movable (owns raw storage).
   SPSCQueue(const SPSCQueue&) = delete;
@@ -62,23 +74,25 @@ public:
    * @brief Try to push a copy of value (producer only).
    * @param value Value to copy into the queue.
    * @return True if pushed, false if queue is full.
-   * @note RT-safe: No locks, single atomic load/store.
+   * @note RT-safe: No locks. One atomic load and store, one more load when
+   *       the queue looks full.
    */
-  [[nodiscard]] bool tryPush(const T& value) noexcept;
+  [[nodiscard]] bool tryPush(const T& value) noexcept { return push(value); }
 
   /**
    * @brief Try to push a moved value (producer only).
    * @param value Value to move into the queue.
    * @return True if pushed, false if queue is full.
-   * @note RT-safe: No locks, single atomic load/store.
+   * @note RT-safe: As the copying overload.
    */
-  [[nodiscard]] bool tryPush(T&& value) noexcept;
+  [[nodiscard]] bool tryPush(T&& value) noexcept { return push(std::move(value)); }
 
   /**
    * @brief Try to pop a value from the queue (consumer only).
    * @param out Output parameter receiving the popped value.
    * @return True if popped, false if queue is empty.
-   * @note RT-safe: No locks, single atomic load/store.
+   * @note RT-safe: No locks. One atomic load and store, one more load when
+   *       the queue looks empty.
    */
   [[nodiscard]] bool tryPop(T& out) noexcept;
 
@@ -118,44 +132,20 @@ protected:
    */
   SPSCQueue(std::size_t capacity, std::size_t firstIndex) noexcept;
 
-  /**
-   * @brief Element count implied by one read of each index.
-   * @param head A value read from the head index.
-   * @param tail A value read from the tail index.
-   * @param capacity The queue's capacity.
-   * @return The distance from tail to head in the indices' modular arithmetic when it is within
-   *         capacity, zero otherwise. A larger distance cannot come from one instant of the
-   *         queue, on either side of an index wrap.
-   */
-  [[nodiscard]] static constexpr std::size_t occupancy(std::size_t head, std::size_t tail,
-                                                       std::size_t capacity) noexcept {
-    const std::size_t DISTANCE = head - tail;
-    return (DISTANCE <= capacity) ? DISTANCE : 0;
-  }
-
 private:
-  static constexpr std::size_t CACHE_LINE = 64;
+  /// The one push: assigns `value` into the slot as the value category it arrived with.
+  template <class U> [[nodiscard]] bool push(U&& value) noexcept;
 
-  /**
-   * @brief Round up to next power of two.
-   */
-  static constexpr std::size_t nextPow2(std::size_t v) noexcept {
-    --v;
-    v |= v >> 1;
-    v |= v >> 2;
-    v |= v >> 4;
-    v |= v >> 8;
-    v |= v >> 16;
-    v |= v >> 32;
-    return v + 1;
-  }
+  std::size_t mask_;      ///< capacity - 1 for fast modulo.
+  RingStorage<T> buffer_; ///< Ring storage.
 
-  std::size_t mask_{0}; ///< capacity - 1 for fast modulo.
-  T* buffer_{nullptr};  ///< Ring storage.
+  // The producer's line: its index and its last view of the consumer's.
+  alignas(cache::CACHE_LINE_SIZE) std::atomic<std::size_t> head_; ///< Producer write position.
+  std::size_t tailSeen_; ///< tail_ as the producer last read it; never ahead of tail_.
 
-  // Separated to different cache lines to prevent false sharing.
-  alignas(CACHE_LINE) std::atomic<std::size_t> head_{0}; ///< Producer write position.
-  alignas(CACHE_LINE) std::atomic<std::size_t> tail_{0}; ///< Consumer read position.
+  // The consumer's line: its index and its last view of the producer's.
+  alignas(cache::CACHE_LINE_SIZE) std::atomic<std::size_t> tail_; ///< Consumer read position.
+  std::size_t headSeen_; ///< head_ as the consumer last read it; never ahead of head_.
 };
 
 } // namespace concurrency

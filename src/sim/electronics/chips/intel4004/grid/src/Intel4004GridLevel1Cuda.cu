@@ -57,8 +57,7 @@ Phase4ScatterTable populateScatterTable(const Intel4004GridLevel1& grid) {
       out.params.push_back(sim::electronics::devices::nonlinear::MosfetLevel1Params{
           .Kp = HAVE_KP ? grid.transistorKp_[i] : Intel4004GridLevel1::KP_PROCESS,
           .Vth = VTH,
-          .lambda = Intel4004GridLevel1::LAMBDA,
-          .Vsmooth = 0.1});
+          .lambda = Intel4004GridLevel1::LAMBDA});
       out.l1Indices.push_back(i);
       out.l1Count++;
       break;

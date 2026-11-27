@@ -48,7 +48,7 @@ struct Phase4ScatterTable {
   std::vector<sim::electronics::devices::nonlinear::cuda::MosfetNets>
       nets; ///< Per-L1 transistor (drain, gate, source).
   std::vector<sim::electronics::devices::nonlinear::MosfetLevel1Params>
-      params;                                 ///< Per-L1 transistor Kp/Vth/lambda/Vsmooth.
+      params;                                 ///< Per-L1 transistor Kp/Vth/lambda.
   std::vector<std::size_t> l1Indices;         ///< Index in grid.transistors_.
   std::vector<Phase4TransistorClass> classes; ///< Classification of every transistor.
   std::size_t l1Count = 0;                    ///< Count of L1-eligible transistors.

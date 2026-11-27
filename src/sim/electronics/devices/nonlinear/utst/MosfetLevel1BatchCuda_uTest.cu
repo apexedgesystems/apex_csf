@@ -58,7 +58,7 @@ static std::vector<nl_cuda::MosfetBias> buildBiases(std::size_t count) {
 /** @test Uniform-params GPU batch matches CPU stampValues element-wise. */
 TEST_F(MosfetBatchCudaTest, UniformMatchesCpu) {
   const std::size_t N = 4096;
-  const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02, .Vsmooth = 0.1};
+  const MosfetLevel1Params PARAMS{.Kp = 100e-6, .Vth = 0.7, .lambda = 0.02};
 
   const auto BIASES = buildBiases(N);
 
@@ -103,7 +103,6 @@ TEST_F(MosfetBatchCudaTest, PerDeviceMatchesCpu) {
     params[i].Kp = 5e-3 * (0.5 + 0.001 * static_cast<double>(i));
     params[i].Vth = (i % 7 == 0) ? -0.17 : 1.17;
     params[i].lambda = 0.03;
-    params[i].Vsmooth = 0.1;
   }
 
   nl_cuda::MosfetBias* dBiases = nullptr;
@@ -150,7 +149,6 @@ TEST_F(MosfetBatchCudaTest, SoAMatchesCpu) {
     params[i].Kp = 5e-3 * (0.5 + 0.001 * static_cast<double>(i));
     params[i].Vth = (i % 7 == 0) ? -0.17 : 1.17;
     params[i].lambda = 0.03;
-    params[i].Vsmooth = 0.1;
   }
 
   nl_cuda::MosfetBias* dBiases = nullptr;
@@ -282,7 +280,7 @@ TEST_F(MosfetBatchCudaTest, StampMosfetL1BatchMatchesCpu) {
     const double VSG = 0.5 + 0.05 * static_cast<double>(i % 31);
     const double VSD = (i % 3 == 0) ? -0.4 + 0.02 * i : 0.2 + 0.03 * i;
     biases[i] = {VSG, VSD};
-    params[i] = {.Kp = 5e-3 * (1.0 + 0.001 * i), .Vth = 1.17, .lambda = 0.03, .Vsmooth = 0.1};
+    params[i] = {.Kp = 5e-3 * (1.0 + 0.001 * i), .Vth = 1.17, .lambda = 0.03};
     nets[i] = {1 + (i * 5 + 3) % (NET_COUNT - 1), 1 + (i * 7 + 2) % (NET_COUNT - 1),
                1 + (i * 11 + 5) % (NET_COUNT - 1)};
   }

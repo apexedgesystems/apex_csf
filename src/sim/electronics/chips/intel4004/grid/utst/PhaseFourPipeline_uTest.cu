@@ -73,7 +73,7 @@ Inputs buildInputs(double voltageScale) {
   for (int i = 0; i < N_TRANSISTORS; ++i) {
     in.nets[i] = {1 + (i * 5 + 3) % (NET_COUNT - 1), 1 + (i * 7 + 2) % (NET_COUNT - 1),
                   1 + (i * 11 + 5) % (NET_COUNT - 1)};
-    in.params[i] = {.Kp = 5e-3 * (1.0 + 0.001 * i), .Vth = 0.3, .lambda = 0.03, .Vsmooth = 0.1};
+    in.params[i] = {.Kp = 5e-3 * (1.0 + 0.001 * i), .Vth = 0.3, .lambda = 0.03};
   }
 
   // Non-trivial initial voltages so the first NR iter produces a

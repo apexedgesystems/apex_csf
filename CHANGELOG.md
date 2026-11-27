@@ -66,6 +66,8 @@ any such change is called out explicitly in its entry.
 - An executed check for every tool family: clippy (deny warnings) gates the
   Rust tools on PRs and nightly, and a shell smoke exercises the ops SDK
   packager.
+- `MnaSystem::addTransconductance` stamps a voltage-controlled current
+  source. ([#195](https://github.com/apexedgesystems/apex_csf/pull/195))
 
 ### Changed
 
@@ -75,6 +77,32 @@ any such change is called out explicitly in its entry.
 - The CI lint job runs in its own image, `apex.lint`: the format and
   secret-scan tools with no compiler toolchain
   ([#198](https://github.com/apexedgesystems/apex_csf/pull/198)).
+- Thread pool workers count their in-flight tasks per worker, and the two
+  pools share `PoolBase` (`PoolBase.hpp` now holds `PoolStatus`, `TaskError`
+  and `PoolConfig`; the pool headers still provide them). Queued tasks drain
+  in 24 to 51% less wall time than before on the lab host; `threadsRunning()`
+  reads two counts per worker. Breaking for binaries: thread pool, ring-queue
+  and `BufferPool` layouts and the pools' `collectErrors()` and
+  `threadsRunning()` symbols changed, so rebuild the concurrency and interface
+  libraries and everything that uses them together, from matching headers and
+  one build type. One source change: remove any use of the debug-only
+  `MessageBuffer::acquireTimestamp`, which is gone.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `RingBuffer` keeps its two cursors on one cache line wherever the object
+  is placed (48 bytes, 16-byte aligned).
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `BufferPool` does no redundant work in `acquire()` or when a buffer's only
+  reference is released: an acquire and release pair takes about a third
+  less time on the lab host.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `SPSCQueue` sides keep their last view of the other index: on the lab
+  host a push and pop pair takes a third less time, and with a backlog
+  neither side reads the other's cache line.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `LockFreeQueue` and `ThreadPoolLockFree` state that a push is refused as
+  full while a consumer descheduled inside a pop still holds a cell; a
+  caller that must not lose the element tries again.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - Breaking: every tool lives under its role and installs to
   `bin/tools/<role>/`; the Python package `apex_tools` is now the
   `apex_ops` and `apex_analysis` wheels (scripts set
@@ -126,12 +154,22 @@ any such change is called out explicitly in its entry.
 
 ### Removed
 
+- Breaking: `PoolStatus::EXCEPTION_STD` and `PoolStatus::EXCEPTION_UNKNOWN`.
+  Pool tasks are `noexcept` delegates and report failure through their return
+  code; the statuses were reachable only through the pools' retry of their
+  own failed error recording, which is removed with them.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - The public factorial helpers (`Factorials.hpp`: `precomputedFactorials`,
   `largeFactorial`); replace direct uses before updating. Breaking.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
 
 ### Fixed
 
+- Corrected nonlinear device stamps, junction currents and FET region
+  transitions; `BjtCommonEmitter::computeDC` reports failed solves. Breaking:
+  device currents and Level 1 region codes change and six model parameters
+  are removed; migration steps are in
+  [#195](https://github.com/apexedgesystems/apex_csf/pull/195).
 - `executive::toString` names `ERROR_TPRM_INGEST`; it returned
   `UNKNOWN_STATUS` for that code.
   ([#192](https://github.com/apexedgesystems/apex_csf/pull/192))
@@ -143,6 +181,15 @@ any such change is called out explicitly in its entry.
 - Log rotation keeps every backup: a rotation within the same second as an
   earlier one gets a numeric suffix instead of replacing its backup.
   ([#187](https://github.com/apexedgesystems/apex_csf/pull/187))
+- `BufferPool::release()` always returns its buffer: the pool lost a buffer
+  for good when a release met a thread descheduled inside `acquire()`.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `LockFreeQueue::sizeApprox()` never exceeds `capacity()` and stays correct
+  when the queue's indices wrap.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `LockFreeQueue` push and pop compare sequences without the signed
+  overflow they had once the cursors pass 2^63, and a pair takes 15% less
+  time. ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - `SPSCQueue` and `RingBuffer` store elements at `alignof(T)`, over-aligned
   types included, and `SPSCQueue::sizeApprox()` never exceeds `capacity()`
   when read from a third thread.

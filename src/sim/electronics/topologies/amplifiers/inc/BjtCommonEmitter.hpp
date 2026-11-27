@@ -30,6 +30,7 @@
 
 #include "src/sim/electronics/circuit/inc/Circuit.hpp"
 #include "src/sim/electronics/devices/nonlinear/inc/BjtEbersMoll.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/Junction.hpp"
 
 #include <cmath>
 
@@ -41,6 +42,7 @@ using algorithms::transient::TransientState;
 using algorithms::transient::TransientStatus;
 using devices::nonlinear::BjtEbersMoll;
 using devices::nonlinear::BjtEbersMollParams;
+using devices::nonlinear::Junction;
 
 /* ----------------------------- BjtCommonEmitter ----------------------------- */
 
@@ -49,10 +51,11 @@ using devices::nonlinear::BjtEbersMollParams;
  *
  * Usage:
  * @code
- * BjtCommonEmitter amp(12.0, 1e3, 100e3);  // VCC=12V, RC=1k, RB=100k
- * amp.computeDC();
- * double vc = amp.collectorVoltage();   // ~6-7V in active region
- * double ic = amp.collectorCurrent();   // ~5-6 mA
+ * BjtCommonEmitter amp(12.0, 1e3, 1e6);  // VCC=12V, RC=1k, RB=1M
+ * if (amp.computeDC()) {
+ *   double vc = amp.collectorVoltage();   // 10.87 V, forward active
+ *   double ic = amp.collectorCurrent();   // 1.13 mA = 100 * (12 - 0.66) / 1M
+ * }
  * @endcode
  */
 struct BjtCommonEmitter {
@@ -131,53 +134,58 @@ struct BjtCommonEmitter {
   /**
    * @brief Compute DC operating point via Newton-Raphson iteration.
    *
-   * Iterates the linearized BJT stamp until node voltages converge.
-   * Updates cached collector voltage, base voltage, and collector current.
+   * Each iteration solves the circuit with the BJT linearized at the previous
+   * junction voltages, then limits the step of both junction voltages
+   * (Junction::limitVoltage) before linearizing again. The solve has
+   * converged when a linear solve returns the junction voltages it was
+   * linearized at.
    *
-   * @return True if converged, false otherwise.
+   * On success the cached collector voltage, base voltage and collector
+   * current are updated. On failure they keep their previous values.
+   *
+   * @return True if converged, false if a linear solve failed or the
+   *         iteration limit was reached.
    * @note NOT RT-safe (builds and solves circuit).
    */
   bool computeDC() {
     static constexpr int MAX_ITER = 100;
-    static constexpr int MIN_ITER = 10;
-    static constexpr double TOL = 1e-6;
-    static constexpr double MAX_STEP = 5.0;
+    static constexpr double TOL = 1e-9;
+
+    const double V_CRIT = Junction::criticalVoltage(bjtParams_.Is, bjtParams_.Vt);
 
     circuit_.resetSolver();
     circuit_.build();
 
     TransientState state;
-    std::size_t N = circuit_.netCount();
-    std::vector<double> prev(N, 0.0);
+    double vbe = 0.0;
+    double vbc = 0.0;
 
     for (int iter = 0; iter < MAX_ITER; ++iter) {
-      TransientStatus status = circuit_.computeDC(state);
-      if (status != TransientStatus::SUCCESS) {
+      if (circuit_.computeDC(state) != TransientStatus::SUCCESS) {
         return false;
       }
 
-      double maxDelta = 0.0;
-      for (std::size_t i = 0; i < N && i < state.nodeVoltages.size(); ++i) {
-        double DELTA = std::clamp(state.nodeVoltages[i] - prev[i], -MAX_STEP, MAX_STEP);
-        state.nodeVoltages[i] = prev[i] + DELTA;
-        maxDelta = std::max(maxDelta, std::abs(DELTA));
+      // Emitter is ground, so the base voltage is Vbe.
+      const double VBE_SOLVED = state.nodeVoltages[baseNet_];
+      const double VBC_SOLVED = VBE_SOLVED - state.nodeVoltages[collectorNet_];
+      if (std::abs(VBE_SOLVED - vbe) < TOL && std::abs(VBC_SOLVED - vbc) < TOL) {
+        vb_ = state.nodeVoltages[baseNet_];
+        vc_ = state.nodeVoltages[collectorNet_];
+        ic_ = (state.nodeVoltages[vccNet_] - vc_) / rc_;
+        return true;
       }
 
+      vbe = Junction::limitVoltage(VBE_SOLVED, vbe, bjtParams_.Vt, V_CRIT);
+      vbc = Junction::limitVoltage(VBC_SOLVED, vbc, bjtParams_.Vt, V_CRIT);
+
+      // The stamp linearizes at the solver's previous voltages.
       auto& solverPrev = circuit_.solver().prevVoltages();
-      for (std::size_t i = 0; i < N && i < solverPrev.size(); ++i) {
-        solverPrev[i] = state.nodeVoltages[i];
-      }
-
-      if (iter >= MIN_ITER && maxDelta < TOL) {
-        break;
-      }
-      prev = state.nodeVoltages;
+      solverPrev[vccNet_] = state.nodeVoltages[vccNet_];
+      solverPrev[baseNet_] = vbe;
+      solverPrev[collectorNet_] = vbe - vbc;
     }
 
-    vb_ = state.nodeVoltages[baseNet_];
-    vc_ = state.nodeVoltages[collectorNet_];
-    ic_ = (state.nodeVoltages[vccNet_] - vc_) / rc_;
-    return true;
+    return false;
   }
 
   /// Underlying Circuit (for advanced configuration).

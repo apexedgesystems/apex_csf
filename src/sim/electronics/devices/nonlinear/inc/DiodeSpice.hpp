@@ -22,6 +22,7 @@
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/devices/nonlinear/inc/Junction.hpp"
 
 #include <cmath>
 
@@ -77,33 +78,17 @@ struct DiodeSpice {
    *
    * @param vDiode Voltage across diode terminals (anode - cathode) in volts
    * @param params Diode physical parameters
-   * @return Current through diode in amperes (positive = forward bias)
+   * @return Current through diode in amperes (positive = forward bias); NaN
+   *         if the series-resistance solve does not converge. Over the
+   *         values diodes have it converges; Junction::seriesJunctionVoltage()
+   *         says what it refuses and where, far outside them, it may not
    *
-   * @note RT-safe (no allocations, pure math).
+   * @note RT-safe: no allocation; with a series resistance, at most
+   *       Junction::SERIES_MAX_ITER iterations.
    */
   [[nodiscard]] static double current(double vDiode, const DiodeSpiceParams& params) noexcept {
-    // If no series resistance, use simple Shockley equation
-    if (params.Rs <= 0.0) {
-      return params.Is * (std::exp(vDiode / (params.n * params.Vt)) - 1.0);
-    }
-
-    // Newton-Raphson iteration to solve: V = Vj + I*Rs
-    // where Vj is junction voltage, I = Is*(exp(Vj/(n*Vt)) - 1)
-    double iGuess = params.Is * (std::exp(vDiode / (params.n * params.Vt)) - 1.0);
-
-    for (int iter = 0; iter < 5; ++iter) {
-      const double V_JUNCTION = vDiode - iGuess * params.Rs;
-      const double I_JUNCTION = params.Is * (std::exp(V_JUNCTION / (params.n * params.Vt)) - 1.0);
-      const double G_JUNCTION =
-          (params.Is / (params.n * params.Vt)) * std::exp(V_JUNCTION / (params.n * params.Vt));
-
-      const double F = iGuess - I_JUNCTION;
-      const double DF = 1.0 + G_JUNCTION * params.Rs;
-
-      iGuess = iGuess - F / DF;
-    }
-
-    return iGuess;
+    return Junction::withSeriesResistance(vDiode, params.Is, params.n * params.Vt, params.Rs)
+        .current;
   }
 
   /**
@@ -115,22 +100,14 @@ struct DiodeSpice {
    *
    * @param vDiode Voltage across diode terminals in volts
    * @param params Diode physical parameters
-   * @return Small-signal conductance in siemens
+   * @return Small-signal conductance in siemens; NaN as for current()
    *
-   * @note RT-safe (no allocations, pure math).
+   * @note RT-safe: no allocation; with a series resistance, at most
+   *       Junction::SERIES_MAX_ITER iterations.
    */
   [[nodiscard]] static double conductance(double vDiode, const DiodeSpiceParams& params) noexcept {
-    const double I = current(vDiode, params);
-    const double V_JUNCTION = vDiode - I * params.Rs;
-    const double G_JUNCTION =
-        (params.Is / (params.n * params.Vt)) * std::exp(V_JUNCTION / (params.n * params.Vt));
-
-    // With series resistance: g = gj / (1 + gj*Rs)
-    if (params.Rs > 0.0) {
-      return G_JUNCTION / (1.0 + G_JUNCTION * params.Rs);
-    }
-
-    return G_JUNCTION;
+    return Junction::withSeriesResistance(vDiode, params.Is, params.n * params.Vt, params.Rs)
+        .conductance;
   }
 
   /**
@@ -146,17 +123,22 @@ struct DiodeSpice {
    * @param vDiode Current diode voltage (from previous iteration)
    * @param params Diode physical parameters
    *
-   * @note RT-safe (stamps into pre-allocated matrix/vector).
+   * @note RT-safe: stamps into a pre-allocated matrix and vector; with a
+   *       series resistance, at most Junction::SERIES_MAX_ITER iterations.
+   * @note With parameters the series-resistance solve refuses, the values
+   *       stamped are NaN. The system's solve does not report that: check
+   *       its result for voltages that are not finite.
    */
   static void stamp(MnaSystem& mna, NetID anodeNet, NetID cathodeNet, double vDiode,
                     const DiodeSpiceParams& params) {
-    const double I = current(vDiode, params);
-    const double G = conductance(vDiode, params);
-    const double IEQ = I - G * vDiode;
+    const JunctionPoint POINT =
+        Junction::withSeriesResistance(vDiode, params.Is, params.n * params.Vt, params.Rs);
+    const double G = POINT.conductance;
+    const double IEQ = POINT.current - G * vDiode;
 
-    // Stamp linearized conductance and equivalent current source
+    // Stamp linearized conductance; the equivalent source leaves the anode net
     mna.addConductance(anodeNet, cathodeNet, G);
-    mna.addCurrent(anodeNet, cathodeNet, IEQ);
+    mna.addCurrent(anodeNet, cathodeNet, -IEQ);
   }
 
   /**
