@@ -251,6 +251,15 @@ All surfaces ride the generic component command path and the registry;
 no consumer is privileged. Hard-RT FATALs name their violating task,
 and frame-loss events list the tasks in flight when cycles fall behind.
 
+The frame-loss list is read on the clock thread while the thread that
+dispatches may be changing the table (a table reload, a component's
+tasks rebound to a replacement, a task added). `inFlightSummary()` reads
+under a `TableRead`, which never blocks: a change waits for the reads
+already begun, and a read that arrives during a change returns
+`unavailable (task table changing)` without touching the entries. Any
+other reader of `entries()` off the dispatching thread takes a
+`TableRead` the same way.
+
 ### Deadline Semantics
 
 The deadline base is **dispatch time**: `markDispatched` stamps the

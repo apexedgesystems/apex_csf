@@ -242,10 +242,65 @@ public:
   /**
    * @brief Names of tasks currently marked in-flight, for loss events.
    * @param cap Maximum names listed.
-   * @return "Component:taskUid" list, comma-separated ("none" if empty).
+   * @return "Component:taskUid" list, comma-separated ("none" if empty),
+   *         or TABLE_CHANGING_TEXT when the table is being changed.
+   *
+   * Safe from any thread while the scheduler runs: it reads the table
+   * under a TableRead, so a table change (a reload, a component swap, an
+   * added task) on the thread that owns the table waits for it, and a
+   * call that arrives during a change returns at once without touching
+   * the table.
+   *
    * @note Diagnostic path only (allocates); never on the tick path.
    */
   [[nodiscard]] std::string inFlightSummary(std::size_t cap) const noexcept;
+
+  /// What inFlightSummary() returns when it finds the table being changed.
+  static constexpr const char* TABLE_CHANGING_TEXT = "unavailable (task table changing)";
+
+  /**
+   * @class TableRead
+   * @brief A read of the task table from a thread that does not own it.
+   *
+   * The thread that dispatches is the one that changes the table (adds a
+   * task, loads a table, rebinds a component's tasks), and it needs no
+   * guard for its own reads. Any other thread reads the entries only
+   * while it holds a TableRead that tests true. Taking one never blocks:
+   * when a change is in progress it tests false and the reader goes
+   * without. A change waits until the reads that began before it have
+   * ended, so a reader that holds one sees entries that stay where they
+   * are and as they are.
+   *
+   * @note RT-safe: two atomic operations to take, one to release.
+   */
+  class TableRead {
+  public:
+    explicit TableRead(const SchedulerBase& sched) noexcept : sched_(sched) {
+      // Announce, then look: a change announces itself and then looks
+      // for readers, so one of the two always sees the other.
+      sched_.tableReaders_.fetch_add(1U, std::memory_order_seq_cst);
+      held_ = !sched_.tableChanging_.load(std::memory_order_seq_cst);
+      if (!held_) {
+        sched_.tableReaders_.fetch_sub(1U, std::memory_order_release);
+      }
+    }
+    ~TableRead() {
+      if (held_) {
+        sched_.tableReaders_.fetch_sub(1U, std::memory_order_release);
+      }
+    }
+    TableRead(const TableRead&) = delete;
+    TableRead& operator=(const TableRead&) = delete;
+    TableRead(TableRead&&) = delete;
+    TableRead& operator=(TableRead&&) = delete;
+
+    /// True when the entries may be read until this object is destroyed.
+    [[nodiscard]] explicit operator bool() const noexcept { return held_; }
+
+  private:
+    const SchedulerBase& sched_;
+    bool held_{false};
+  };
 
   /**
    * @brief Worker count per constructed pool (index = poolId).
@@ -590,6 +645,34 @@ protected:
 
   /** @brief Recompute slotHasSequenced_ from the entries' sequencing. */
   void markSequencedSlots() noexcept;
+
+  /**
+   * @class TableChange
+   * @brief A change to the task table, on the thread that owns it.
+   *
+   * Held by everything that moves, grows, clears or rewrites the entries.
+   * It turns new TableRead requests away and waits for the reads already
+   * begun, which are bounded walks of the table. Nests on its thread, so
+   * a table load that adds tasks holds one change throughout.
+   *
+   * @note NOT RT-safe: waits for readers.
+   */
+  class TableChange {
+  public:
+    explicit TableChange(SchedulerBase& sched) noexcept;
+    ~TableChange();
+    TableChange(const TableChange&) = delete;
+    TableChange& operator=(const TableChange&) = delete;
+    TableChange(TableChange&&) = delete;
+    TableChange& operator=(TableChange&&) = delete;
+
+  private:
+    SchedulerBase& sched_;
+  };
+
+  mutable std::atomic<std::uint32_t> tableReaders_{0}; ///< TableRead objects that test true.
+  std::atomic<bool> tableChanging_{false};             ///< A TableChange is held.
+  std::uint32_t tableChangeDepth_{0};                  ///< Nested changes; owning thread only.
 
   /** @brief All registered task entries (scheduler owns these). */
   std::vector<TaskEntry> entries_{};

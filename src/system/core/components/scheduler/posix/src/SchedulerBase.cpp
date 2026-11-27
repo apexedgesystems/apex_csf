@@ -11,17 +11,20 @@
 #include "src/system/core/infrastructure/logs/inc/SystemLog.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/SchedulableComponentBase.hpp"
 #include "src/system/core/infrastructure/system_component/posix/inc/TprmPayload.hpp"
+#include "src/utilities/helpers/inc/Cpu.hpp"
 
 #include <cstdint>
 #include <cstring>
 
 #include <algorithm>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <map>
 #include <set>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -30,9 +33,38 @@
 namespace system_core {
 namespace scheduler {
 
+/* ----------------------------- TableChange ----------------------------- */
+
+SchedulerBase::TableChange::TableChange(SchedulerBase& sched) noexcept : sched_(sched) {
+  if (sched_.tableChangeDepth_++ != 0U) {
+    return;
+  }
+  // Announce, then look (TableRead does the same from its side). A read
+  // in progress is a bounded walk of the table on another thread: spin
+  // for it, and past the spin sleep in short slices so a reader that
+  // shares this CPU gets it.
+  constexpr unsigned SPIN_LIMIT = 1024U;
+  sched_.tableChanging_.store(true, std::memory_order_seq_cst);
+  apex::helpers::cpu::ExponentialBackoff bk;
+  while (sched_.tableReaders_.load(std::memory_order_seq_cst) != 0U) {
+    if (bk.n < SPIN_LIMIT) {
+      bk.spinOnce();
+    } else {
+      std::this_thread::sleep_for(std::chrono::microseconds(20));
+    }
+  }
+}
+
+SchedulerBase::TableChange::~TableChange() {
+  if (--sched_.tableChangeDepth_ == 0U) {
+    sched_.tableChanging_.store(false, std::memory_order_release);
+  }
+}
+
 /* ----------------------------- addTask (TaskConfig) ----------------------------- */
 
 Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) noexcept {
+  const TableChange CHANGE(*this);
   const std::uint16_t TFREQN = config.freqN;
   const std::uint16_t TFREQD = config.freqD;
   const std::uint16_t OFFSET = config.offset;
@@ -192,6 +224,7 @@ Status SchedulerBase::addTask(SchedulableTask& task, std::uint16_t tfreqn, std::
 Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config, SequenceGroup* seq,
                               std::uint32_t fullUid, std::uint8_t taskUid,
                               const char* componentName) noexcept {
+  const TableChange CHANGE(*this);
   // Add task with base method first
   const Status RC = addTask(task, config);
   if (RC != Status::SUCCESS) {
@@ -337,6 +370,7 @@ SchedulerBase::replaceComponentTasks(std::uint32_t fullUid,
   }
 
   const char* newName = internComponentName(newComponent.componentName());
+  const TableChange CHANGE(*this);
   for (const Binding& binding : bindings) {
     binding.entry->task = binding.task;
     binding.entry->seqCounter = binding.seqCounter;
@@ -477,6 +511,10 @@ bool SchedulerBase::runTaskCensus(std::uint8_t repeats) noexcept {
 /* ----------------------------- inFlightSummary ----------------------------- */
 
 std::string SchedulerBase::inFlightSummary(std::size_t cap) const noexcept {
+  const TableRead READ(*this);
+  if (!READ) {
+    return TABLE_CHANGING_TEXT;
+  }
   std::string out;
   std::size_t listed = 0;
   for (const auto& entry : entries_) {
@@ -827,6 +865,7 @@ void SchedulerBase::logScheduleLayout(std::string_view modeDescription) noexcept
 /* ----------------------------- clearTasks ----------------------------- */
 
 void SchedulerBase::clearTasks() noexcept {
+  const TableChange CHANGE(*this);
   entries_.clear();
   cadences_.clear();
   for (auto& tick : schedule_) {
@@ -891,6 +930,11 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     setLastError("Scheduler tprm size mismatch");
     return TprmIngest::REJECTED;
   }
+
+  // The change is held from before the entries move until after the
+  // backup below is destroyed, on every way out: a reader that began
+  // before it is waited for, and none begins until the table is whole.
+  const TableChange CHANGE(*this);
 
   // Backup current schedule for restoration on failure.
   // This prevents leaving the scheduler empty if parsing fails.
