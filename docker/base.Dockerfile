@@ -613,6 +613,7 @@ ARG CMAKELANG_VERSION
 ARG PRE_COMMIT_VERSION
 ARG OSV_SCANNER_VERSION=2.3.8
 ARG TRIVY_VERSION=0.71.0
+ARG TRIVY_SHA256=30a3d22b23f88c233f1658f562fb477cae3b3e8b4761109d515b7698daf85814
 ARG SEMGREP_VERSION=1.165.0
 # cargo-llvm-cov: prebuilt binary (taiki-e) driving `make coverage-rust`.
 # Pinned; llvm-tools-preview (from the toolchain stage) supplies the profdata tooling.
@@ -733,10 +734,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       cppcheck \
       cbmc
 
-# trivy (pinned) via the upstream install script
-RUN curl -sfL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 \
-      https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
-      sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}"
+# trivy: the release archive itself, checksum-verified. Upstream's install
+# script resolves the tag through a second GitHub endpoint with no retry and
+# is read from that project's main branch; this needs neither.
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/trivy.tar.gz \
+      "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" && \
+    echo "${TRIVY_SHA256}  /tmp/trivy.tar.gz" | sha256sum -c - && \
+    tar -C /usr/local/bin --no-same-owner -xzf /tmp/trivy.tar.gz trivy && \
+    chmod +x /usr/local/bin/trivy && \
+    rm /tmp/trivy.tar.gz
 
 # osv-scanner: static binary from GitHub releases
 RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/osv-scanner \
