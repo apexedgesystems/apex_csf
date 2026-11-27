@@ -27,7 +27,12 @@ namespace integration {
 
 /* -------------------------------- Status ---------------------------------- */
 
-enum class RKNStatus : uint8_t { SUCCESS = 0, ERROR_INVALID_STEP = 1 };
+enum class RKNStatus : uint8_t {
+  SUCCESS = 0,
+  ERROR_INVALID_STEP = 1, ///< Step size is not positive and finite.
+  STEP_REJECTED = 2,      ///< Adaptive step rejected: state and time unchanged, retry with dtNext.
+  ERROR_NON_FINITE = 3    ///< The acceleration produced a NaN or the step overflowed.
+};
 
 /* ---------------------------------- RKN4 ---------------------------------- */
 
@@ -330,7 +335,11 @@ public:
    * @param dt Proposed step size.
    * @param accel Acceleration function.
    * @param opts Tolerance options.
-   * @return Result with status, error, and suggested next dt.
+   * @return Result with status, error, and suggested next dt. SUCCESS only
+   *         when the step was taken. STEP_REJECTED when the error estimate
+   *         exceeds the tolerance, and ERROR_NON_FINITE when it is NaN or
+   *         infinite: in both, y, v and time() are unchanged, and dtNext is
+   *         a smaller step to retry with (no lower than dtMin).
    */
   template <typename AccelFunc>
   Result step(State& y, State& v, double dt, AccelFunc&& accel, const Options& opts) noexcept {
@@ -378,6 +387,14 @@ public:
 
     result.errorEstimate = computeNorm(errY, errV, yNew, vNew, opts);
 
+    // A NaN compares false with everything: without this test it would be
+    // handled as a rejection with a NaN step suggestion.
+    if (!std::isfinite(result.errorEstimate)) {
+      result.status = RKNStatus::ERROR_NON_FINITE;
+      result.dtNext = std::max(dt * opts.maxShrink, opts.dtMin);
+      return result;
+    }
+
     if (result.errorEstimate <= 1.0) {
       // Accept step
       y = yNew;
@@ -391,6 +408,7 @@ public:
       result.dtNext = std::min(dt * factor, opts.dtMax);
     } else {
       // Reject step
+      result.status = RKNStatus::STEP_REJECTED;
       ++stats_.rejectedSteps;
 
       double factor = opts.safetyFactor * std::pow(result.errorEstimate, -0.2);
@@ -413,6 +431,13 @@ private:
   Stats stats_{};
   double t_{0.0};
 
+  // The larger of two error norms, NaN when either is NaN. std::max returns
+  // its first argument whenever the comparison is false, which drops a NaN
+  // held by the second.
+  static double largerKeepingNan(double a, double b) noexcept {
+    return (a > b || std::isnan(a)) ? a : b;
+  }
+
   double computeNorm(const State& errY, const State& errV, const State& y, const State& v,
                      const Options& opts) const noexcept {
     if constexpr (std::is_arithmetic_v<State>) {
@@ -420,13 +445,13 @@ private:
       double scaleV = opts.absTol + opts.relTol * std::abs(v);
       double normY = std::abs(errY) / scaleY;
       double normV = std::abs(errV) / scaleV;
-      return std::max(normY, normV);
+      return largerKeepingNan(normY, normV);
     } else {
       double scaleY = opts.absTol + opts.relTol * y.normInf();
       double scaleV = opts.absTol + opts.relTol * v.normInf();
       double normY = errY.normInf() / scaleY;
       double normV = errV.normInf() / scaleV;
-      return std::max(normY, normV);
+      return largerKeepingNan(normY, normV);
     }
   }
 };
