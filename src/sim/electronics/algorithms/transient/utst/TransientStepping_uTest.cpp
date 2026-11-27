@@ -133,6 +133,56 @@ TEST(TransientSteppingTest, StepCountIsWhatRunTakes) {
   EXPECT_EQ(config.stepCount(), 1U);
 }
 
+/**
+ * @test The whole steps and the last step are read from one count, so a
+ *       span that is whole within the tolerance has no last step, at any
+ *       count.
+ *
+ * 0.54 s in steps of 0.1 us is 5,400,000 steps and 6e-10 of one more as the
+ * doubles stand; a rest worked out again from a product of 5,400,000 and
+ * the step comes to 1.1e-16 s, which is not a step. Around a thousand steps
+ * of 1 s, half a billionth of a step either way is whole and ten
+ * billionths either way is not. At 2^40 steps a double moves by 1.2e-4 of
+ * a step, and one such move either way is still the whole count.
+ */
+TEST(TransientSteppingTest, WholeAndLastStepAreReadFromOneCount) {
+  const auto PLAN = [](double tEnd, double tStep) {
+    TransientConfig config;
+    config.tEnd = tEnd;
+    config.tStep = tStep;
+    return config;
+  };
+
+  const TransientConfig FINE = PLAN(0.54, 1e-7);
+  EXPECT_EQ(FINE.wholeSteps(), 5400000U);
+  EXPECT_EQ(FINE.lastStep(), 0.0);
+  EXPECT_EQ(FINE.stepCount(), 5400000U);
+
+  // Within the tolerance of a thousand, on either side: a thousand.
+  for (const double T_END : {1000.0 + 5e-10, 1000.0 - 5e-10}) {
+    SCOPED_TRACE(T_END - 1000.0);
+    EXPECT_EQ(PLAN(T_END, 1.0).wholeSteps(), 1000U);
+    EXPECT_EQ(PLAN(T_END, 1.0).lastStep(), 0.0);
+  }
+  // Beyond it above: a thousand and a last step of what is over.
+  EXPECT_EQ(PLAN(1000.0 + 1e-8, 1.0).wholeSteps(), 1000U);
+  EXPECT_NEAR(PLAN(1000.0 + 1e-8, 1.0).lastStep(), 1e-8, 1e-12);
+  EXPECT_EQ(PLAN(1000.0 + 1e-8, 1.0).stepCount(), 1001U);
+  // Beyond it below: 999 and a last step a hair short of a whole one.
+  EXPECT_EQ(PLAN(1000.0 - 1e-8, 1.0).wholeSteps(), 999U);
+  EXPECT_NEAR(PLAN(1000.0 - 1e-8, 1.0).lastStep(), 1.0 - 1e-8, 1e-12);
+
+  // A count where a double no longer resolves a billionth of a step.
+  const double MANY = 1099511627776.0; // 2^40
+  for (const double T_END : {MANY, std::nextafter(MANY, 2.0 * MANY), std::nextafter(MANY, 0.0)}) {
+    SCOPED_TRACE(T_END - MANY);
+    EXPECT_EQ(PLAN(T_END, 1.0).wholeSteps(), 1099511627776U);
+    EXPECT_EQ(PLAN(T_END, 1.0).lastStep(), 0.0);
+  }
+  EXPECT_EQ(PLAN(MANY + 0.5, 1.0).wholeSteps(), 1099511627776U);
+  EXPECT_EQ(PLAN(MANY + 0.5, 1.0).lastStep(), 0.5);
+}
+
 /** @test A configuration with no countable number of steps is refused. */
 TEST(TransientSteppingTest, UncountableSpanIsRefused) {
   for (const double T_STEP : {0.0, -1e-9, std::numeric_limits<double>::quiet_NaN(), 1e-300}) {

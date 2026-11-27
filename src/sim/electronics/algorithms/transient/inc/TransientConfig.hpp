@@ -51,39 +51,64 @@ struct TransientConfig {
   /// when the two are decimal.
   static constexpr double WHOLE_STEP_TOLERANCE = 1e-9;
 
+  /// The count of steps is known to this fraction of itself: four of a
+  /// double's rounding steps. For a large count that is more than
+  /// WHOLE_STEP_TOLERANCE, and it is then the tolerance.
+  static constexpr double COUNT_ROUNDING = 4.0 * 2.220446049250313e-16;
+
   /// Step counts are kept below 2^53, where a double still counts by ones.
   static constexpr double STEP_COUNT_LIMIT = 9007199254740992.0;
 
+  /** @brief How a span divides into steps. */
+  struct StepPlan {
+    std::size_t whole = 0; ///< Steps of tStep.
+    double last = 0.0;     ///< Length of the shorter step that follows them; 0 for none.
+  };
+
   /**
-   * @brief The number of steps of tStep that fit the span.
-   * @return 0 when tStep is not above zero, the span is not above zero, or
-   *         the count is not below STEP_COUNT_LIMIT (not-a-number included).
+   * @brief Divide the span into steps of tStep and, where it is not a whole
+   *        number of them, one shorter step.
+   *
+   * The span's count of steps, (tEnd - tStart) / tStep, is worked out once,
+   * and both parts are read from it: the whole steps are the count taken to
+   * the whole number below it or within the tolerance above it, and what is
+   * left of the count is a last step only where it is beyond the tolerance.
+   * The tolerance is WHOLE_STEP_TOLERANCE of a step, or the count's own
+   * rounding where that is larger, so no last step is a rounding of the
+   * count.
+   *
+   * @return No steps when tStep is not above zero, the span is not above
+   *         zero, or the count is not below STEP_COUNT_LIMIT (not-a-number
+   *         included).
    * @note RT-safe: pure arithmetic.
    */
-  [[nodiscard]] constexpr std::size_t wholeSteps() const noexcept {
+  [[nodiscard]] constexpr StepPlan stepPlan() const noexcept {
     if (!(tStep > 0.0) || !(tEnd > tStart)) {
-      return 0;
+      return {};
     }
-    const double RATIO = (tEnd - tStart) / tStep;
-    if (!(RATIO < STEP_COUNT_LIMIT)) {
-      return 0;
+    const double COUNT = (tEnd - tStart) / tStep;
+    if (!(COUNT < STEP_COUNT_LIMIT)) {
+      return {};
     }
-    return static_cast<std::size_t>(RATIO + WHOLE_STEP_TOLERANCE);
+    const double ROUNDING = COUNT * COUNT_ROUNDING;
+    const double TOLERANCE = ROUNDING > WHOLE_STEP_TOLERANCE ? ROUNDING : WHOLE_STEP_TOLERANCE;
+    const auto WHOLE = static_cast<std::size_t>(COUNT + TOLERANCE);
+    const double LEFT = COUNT - static_cast<double>(WHOLE);
+    return {WHOLE, LEFT > TOLERANCE ? LEFT * tStep : 0.0};
   }
 
   /**
-   * @brief Length of the shorter step that ends a span which is not a whole
-   *        number of steps.
-   * @return 0 when the span is whole, or has no countable number of steps.
+   * @brief The number of steps of tStep that fit the span: stepPlan().whole.
    * @note RT-safe: pure arithmetic.
    */
-  [[nodiscard]] constexpr double lastStep() const noexcept {
-    if (!(tStep > 0.0) || !(tEnd > tStart) || !((tEnd - tStart) / tStep < STEP_COUNT_LIMIT)) {
-      return 0.0;
-    }
-    const double REST = (tEnd - tStart) - static_cast<double>(wholeSteps()) * tStep;
-    return REST > WHOLE_STEP_TOLERANCE * tStep ? REST : 0.0;
-  }
+  [[nodiscard]] constexpr std::size_t wholeSteps() const noexcept { return stepPlan().whole; }
+
+  /**
+   * @brief Length of the shorter step that ends a span which is not a whole
+   *        number of steps: stepPlan().last, 0 for none.
+   * @note RT-safe: pure arithmetic.
+   */
+  [[nodiscard]] constexpr double lastStep() const noexcept { return stepPlan().last; }
 
   /**
    * @brief The number of steps run() takes: the whole steps, and one more
@@ -92,7 +117,8 @@ struct TransientConfig {
    * @note RT-safe: pure arithmetic.
    */
   [[nodiscard]] constexpr std::size_t stepCount() const noexcept {
-    return wholeSteps() + (lastStep() > 0.0 ? 1U : 0U);
+    const StepPlan PLAN = stepPlan();
+    return PLAN.whole + (PLAN.last > 0.0 ? 1U : 0U);
   }
 
   /**

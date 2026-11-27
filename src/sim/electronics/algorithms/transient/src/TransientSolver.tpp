@@ -694,9 +694,10 @@ inline TransientResult TransientSolver::run(const TransientConfig& config, bool 
 
   // A span with no countable number of steps is no run: a step or a span
   // that is not above zero, not a number, or too many steps to count.
-  const std::size_t WHOLE_STEPS = config.wholeSteps();
-  const double LAST_STEP = config.lastStep();
-  const std::size_t STEPS = config.stepCount();
+  const TransientConfig::StepPlan PLAN = config.stepPlan();
+  const std::size_t WHOLE_STEPS = PLAN.whole;
+  const double LAST_STEP = PLAN.last;
+  const std::size_t STEPS = WHOLE_STEPS + (LAST_STEP > 0.0 ? 1U : 0U);
   if (STEPS == 0) {
     result.success = false;
     result.errorMessage = "Invalid time configuration";
