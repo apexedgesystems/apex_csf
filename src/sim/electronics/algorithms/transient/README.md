@@ -157,8 +157,15 @@ accepted and counted by `unconvergedStepCount()`. With
 companions and node voltages as before the step, and `run()` ends there.
 
 The dense workspaces have room for sixteen voltage sources. A circuit with
-more is given the room at its first step, which allocates; the steps after
-it do not.
+more is given the room at its first step, and the workspaces do not grow
+again. That is about the matrix and factor storage only: a dense step
+allocates at every call, because it builds the system it stamps into anew.
+
+A stamp callback can be called more than once for a step: the step that
+finds the workspaces too small stamps again, a kept factorization is
+stamped for as well as the step it serves, and a step that falls back is
+stamped again. It stamps the same circuit each time and advances nothing
+of its own per call.
 
 ### TransientConfig
 
@@ -240,7 +247,7 @@ repeated value. A run with `dcOpPoint` starts at rest: each capacitor at its
 operating-point voltage, each inductor with the current the operating point
 passed through it. GEAR2 weighs its history by the lengths of the two steps,
 so a last step shortened to land on `tEnd` keeps the method's order.
-`cuda::stepCuda` steps with backward Euler.
+`cuda::stepCuda` steps with the method it is given.
 
 ### TransientCuda
 
@@ -350,32 +357,40 @@ if (cuda::available() && gpuWs.prepare(netCount + sourceCount)) {
 
 ### RT-Safe Functions
 
-- `TransientSolver::step` on the dense path, once the workspaces fit the
-  circuit: from the first step with up to sixteen voltage sources, from the
-  second with more
-- `TransientSolver::stepDual`, once each state has been factorized
 - `TransientSolver::time`, `reset`, `invalidateCache`,
   `setIntegrationMethod`, `integrationMethod`, the Newton settings and
   counters
-- `setStampCallback` (small `std::function` copy)
 
 ### NOT RT-Safe Functions
 
 - `TransientSolver` construction (allocates workspace)
 - `TransientSolver::computeDC` (builds its own system)
+- `TransientSolver::step` on the dense paths, with or without kept
+  factors: each call builds the system it stamps into. Room in the
+  workspaces keeps the matrix and factor storage from growing and no more
 - `TransientSolver::step` on the sparse paths (KLU analysis and factors
   allocate)
+- `TransientSolver::stepDual`: a call that factorizes allocates, and one
+  whose factors cannot serve falls back to the dense step. A call served
+  by kept factors reuses the state's system and workspace (it is served
+  while the state's step length, the method's conductance factor and the
+  number of voltage sources are those the factors were built with); no
+  test counts what such a call allocates, so it is not offered as
+  allocation-free
+- `setStampCallback` and the other callback setters (a `std::function` is
+  moved in and may allocate)
 - `CompanionSet::addCapacitor`, `addInductor` (grow internal vectors)
 - `TransientSolver::run` (may allocate `history`)
 - `cuda::stepCuda`, `cuda::evaluateCapacitorsCuda` (device alloc + transfers)
 
 ### Recommended Configuration
 
-- Build the solver, add reactive elements, and call `run` once outside the
-  RT loop to warm up workspaces.
-- Inside the RT loop, only call `step` or `stepDual` with a reused
-  `TransientState`.
-- Enable `setCachedLU(true)` for any topology that does not change.
+- No stepping path of this solver is allocation-free as it stands, so
+  none is offered for a hard real-time loop. Kept factors
+  (`setCachedLU(true)`, `setDualLU(true)`) cut the work of a step for a
+  topology that does not change; they do not remove its allocations.
+- A loop that must not allocate solves a prepared
+  [MNA system](../mna/README.md#7-rt-safety) directly.
 
 ---
 

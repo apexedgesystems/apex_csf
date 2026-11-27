@@ -13,9 +13,10 @@ namespace sim::electronics::algorithms::transient {
 
 inline TransientSolver::TransientSolver(std::size_t netCount)
     : netCount_(netCount), prevVoltages_(netCount, 0.0) {
-  // Room for the nets and SOURCE_ROOM voltage sources, so that a step of a
-  // circuit within that allocates nothing. A circuit with more sources gets
-  // its room at its first step.
+  // Room for the nets and SOURCE_ROOM voltage sources, so that the matrix
+  // and factor storage of a circuit within that does not grow. A circuit
+  // with more sources gets its room at its first step. A dense step still
+  // allocates at every call: it builds the system it stamps into anew.
   workspace_.prepare(netCount + SOURCE_ROOM);
 
   // Pre-allocate factorized workspace for cached LU
@@ -330,7 +331,7 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
 
   // The stamp says how many voltage sources there are. With more than the
   // workspaces have room for, they are given the room and the circuit is
-  // stamped again into it: this step allocates, the ones after it do not.
+  // stamped again into it. The workspaces grow at this step and not again.
   if (const std::size_t DIM = netCount_ + stamped->voltageSourceCount();
       !workspace_.canHandle(DIM)) {
     workspace_.prepare(DIM);

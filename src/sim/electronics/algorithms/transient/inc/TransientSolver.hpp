@@ -15,7 +15,10 @@
  * 4. Call run() with configuration
  *
  * @note Initialization is NOT RT-safe (allocates).
- * @note step() can be made RT-safe with pre-allocated workspace.
+ * @note step() is NOT RT-safe: the dense paths build the system they stamp
+ *       into at every call, and the sparse paths factorize. Room in the
+ *       workspaces keeps the matrix and factor storage from growing; it
+ *       does not make a step allocation-free.
  */
 
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
@@ -135,6 +138,10 @@ public:
    *
    * This callback is invoked at each time step before solving.
    * It should stamp all resistors, voltage sources, current sources, etc.
+   * A step can call it more than once (a step that finds the workspaces too
+   * small stamps again; a factorization that is kept is stamped for, and so
+   * is the step it serves; a step that falls back is stamped again): it
+   * stamps the same circuit each time and advances nothing of its own.
    * @note NOT RT-safe: moves std::function (may allocate).
    */
   void setStampCallback(StampCallback cb) { stampCallback_ = std::move(cb); }
@@ -185,7 +192,8 @@ public:
    * @param state Current state (updated in place).
    * @return Status code.
    *
-   * @note Can be RT-safe if workspace is pre-allocated.
+   * @note NOT RT-safe: the dense paths construct their stamping system at
+   *       each call, and the sparse paths analyse and factorize.
    */
   TransientStatus step(double dt, TransientState& state);
 
@@ -511,8 +519,14 @@ public:
    * @return Status code.
    *
    * On first call for each stateIdx, builds and factorizes.
-   * Subsequent calls use O(n^2) back-substitution.
-   * @note NOT RT-safe: first call per stateIdx allocates and factorizes.
+   * Subsequent calls use O(n^2) back-substitution, for as long as the
+   * state's step length, the method's conductance factor and the number of
+   * voltage sources are those its factors were built with; otherwise the
+   * state is factorized again.
+   * @note NOT RT-safe: a call that factorizes allocates, and a call whose
+   *       factors cannot serve falls back to the dense step. A call served
+   *       by kept factors reuses the state's system and workspace; what it
+   *       allocates is not counted by a test.
    */
   TransientStatus stepDual(double dt, int stateIdx, TransientState& state);
 
