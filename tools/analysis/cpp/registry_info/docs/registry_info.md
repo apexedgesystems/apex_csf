@@ -29,7 +29,9 @@ registry-info [options] <rdat-file>
 
 ---
 
-## Output Fields
+## Reference
+
+### Output Fields
 
 | Section    | Fields                                    |
 | ---------- | ----------------------------------------- |
