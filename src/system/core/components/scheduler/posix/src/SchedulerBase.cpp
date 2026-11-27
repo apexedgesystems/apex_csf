@@ -534,6 +534,9 @@ void SchedulerBase::logTablePreflight() noexcept {
   log->info(label(), fmt::format("[{}] chain shape: {} group(s) with waiters >= workers, "
                                  "{} group(s) mixing rates/offsets",
                                  NAME(P.chainShape), P.chainsOverWorkers, P.mixedRateChains));
+  log->info(label(), fmt::format("[{}] sequence references: {} task(s) the table sequences "
+                                 "and their component does not",
+                                 NAME(P.seqRefs), P.unsequencedTasks));
   const char* OVERALL = NAME(P.overall());
   if (P.overall() == PreflightVerdict::FAIL) {
     log->error(label(), 0,
@@ -913,8 +916,9 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     }
 
     // Get sequence group if sequenced
+    const bool WANTS_SEQUENCE = !isUnsequenced(entry.sequenceGroup);
     SequenceGroup* seqGroup = nullptr;
-    if (!isUnsequenced(entry.sequenceGroup)) {
+    if (WANTS_SEQUENCE) {
       seqGroup = component->sequenceGroup(entry.sequenceGroup);
     }
 
@@ -927,6 +931,22 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
         log->warning(
             label(), 0,
             fmt::format("TPRM task {}: addTask failed (rc={}), skipped", i, static_cast<int>(RC)));
+      }
+      continue;
+    }
+
+    // Sequencing is the component's to offer: a row can only opt a task
+    // into a group the component created and registered that task in. A
+    // row asking for anything else runs the task unsequenced. The request
+    // is kept on the entry for the preflight, which reports it once the
+    // log exists; a table loaded at startup precedes the log.
+    entries_.back().seqRequested = WANTS_SEQUENCE;
+    if (WANTS_SEQUENCE && !entries_.back().isSequenced()) {
+      if (auto* log = componentLog()) {
+        log->warning(label(), 0,
+                     fmt::format("TPRM task {}: component 0x{:06X} does not sequence task {} in "
+                                 "group {}; running it unsequenced",
+                                 i, entry.fullUid, entry.taskUid, entry.sequenceGroup));
       }
     }
   }

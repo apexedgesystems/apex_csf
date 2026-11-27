@@ -22,6 +22,8 @@
  *    pools with fewer workers than waiting phases.
  *  - Chain shape: phases-vs-workers depth (parking pressure) and
  *    mixed rates/offsets within one group (cross-frame hazards).
+ *  - Sequence references: tasks the table sequences whose component
+ *    offers no such sequencing; they run unsequenced.
  *
  * RT-Safety: config-time only (allocates, logs); never on the tick path.
  */
@@ -61,6 +63,9 @@ struct TablePreflight {
   std::uint8_t chainsOverWorkers{0};    ///< Groups with waiting phases >= workers.
   std::uint8_t mixedRateChains{0};      ///< Groups mixing rates/offsets.
 
+  PreflightVerdict seqRefs{PreflightVerdict::PASS}; ///< Unmet sequencing requests.
+  std::uint8_t unsequencedTasks{0};                 ///< Tasks sequenced by the table only.
+
   /** @brief Worst verdict across all checks. */
   [[nodiscard]] PreflightVerdict overall() const noexcept {
     PreflightVerdict v = poolRefs;
@@ -72,6 +77,9 @@ struct TablePreflight {
     }
     if (chainShape > v) {
       v = chainShape;
+    }
+    if (seqRefs > v) {
+      v = seqRefs;
     }
     return v;
   }

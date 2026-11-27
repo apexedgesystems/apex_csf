@@ -232,6 +232,11 @@ struct TaskEntry {
   int seqPhase{0};    ///< Phase to wait for.
   int seqMaxPhase{0}; ///< Max phase (for wrap).
 
+  /// The task table asked for this task to be sequenced. Sequencing is the
+  /// component's to offer, so the request can go unmet; the preflight
+  /// reports an entry that asked and is not sequenced.
+  bool seqRequested{false};
+
   /** @brief Check if this entry has sequencing enabled. */
   [[nodiscard]] bool isSequenced() const noexcept { return seqCounter != nullptr; }
 };

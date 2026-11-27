@@ -142,6 +142,16 @@ TablePreflight analyzeTaskTable(const std::vector<TaskEntry>& entries,
     out.chainShape = PreflightVerdict::WARN;
   }
 
+  // ---- Sequence references ----------------------------------------------------
+  for (const auto& e : entries) {
+    if (e.seqRequested && !e.isSequenced() && out.unsequencedTasks < 0xFFU) {
+      ++out.unsequencedTasks;
+    }
+  }
+  if (out.unsequencedTasks > 0) {
+    out.seqRefs = PreflightVerdict::FAIL;
+  }
+
   return out;
 }
 
