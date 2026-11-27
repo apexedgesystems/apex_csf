@@ -2,31 +2,54 @@
 #define APEX_SYSTEM_CORE_INTERFACE_BUFFER_POOL_HPP
 /**
  * @file BufferPool.hpp
- * @brief RT-safe buffer pool for zero-copy APROTO messaging.
+ * @brief Lock-free buffer pool for zero-copy APROTO messaging.
  *
  * Design:
  *   - Pre-allocate MessageBuffers at startup (NOT RT-safe, done once)
- *   - RT-safe acquire/release via lock-free free list
+ *   - Free map: one bit per buffer, set while the pool holds it
  *   - Fixed pool size (no runtime allocation)
  *   - Exhaustion handled gracefully (return nullptr)
  *
+ * Free map:
+ *   A buffer changes hands in one atomic operation on its bit. release() sets
+ *   the bit unconditionally, so a return cannot be refused or lost, whatever
+ *   other threads are doing and wherever they are stopped. acquire() clears a
+ *   set bit it finds with a compare-exchange; a thread stopped between
+ *   reading a word and exchanging it holds nothing.
+ *
  * Usage:
  *   BufferPool pool(100, 4096);  // 100 buffers, 4KB each (startup, NOT RT-safe)
- *   auto* buf = pool.acquire(200);  // RT-safe
+ *   auto* buf = pool.acquire(200);  // lock-free, see RT-Safety
  *   // ... use buffer ...
- *   pool.release(buf);  // RT-safe
+ *   pool.release(buf);  // cannot be refused, see RT-Safety
  *
  * RT-Safety:
  *   - Constructor: NOT RT-safe (allocates memory)
- *   - acquire(): RT-safe (lock-free pop from free list)
- *   - release(): RT-safe (lock-free push to free list)
+ *   - acquire(): RT-DEPENDS (one pass over the free map; an exchange is retried only when
+ *     another thread changed the same word, with no per-caller retry bound)
+ *   - release(): RT-DEPENDS (no loop in the pool: a shared buffer takes one atomic update of
+ *     its reference count, and the last or only reference one of the free map; bounded
+ *     where the target and the build bound each update, see Atomic updates)
+ *
+ * Atomic updates:
+ *   The pool's own work is atomic read-modify-write operations: in acquire() one exchange
+ *   per attempt, and in release() at most two, the reference-count decrement of a shared
+ *   buffer and the free-map OR. How long one of them takes belongs to the target and the
+ *   build:
+ *     - x86-64, and AArch64 with the LSE atomic instructions (Armv8.1 and later): one
+ *       instruction each in a release build.
+ *     - AArch64 without LSE: each is an exclusive load and store repeated until the store
+ *       succeeds, with no per-caller bound on the repeats. A build that does not fix the
+ *       instruction set can choose between the two forms on the running CPU.
+ *     - Debug builds: release() checks the bit's previous value, which the compiler may
+ *       build as a compare-exchange loop on any target.
  */
 
 #include "src/system/core/components/interface/apex/inc/MessageBuffer.hpp"
-#include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -45,22 +68,25 @@ inline constexpr std::size_t DEFAULT_BUFFER_CAPACITY = 4096;
 
 /**
  * @class BufferPool
- * @brief RT-safe pool of MessageBuffers for zero-copy messaging.
+ * @brief Lock-free pool of MessageBuffers for zero-copy messaging.
  *
  * Allocation Strategy:
  *   - All buffers pre-allocated at construction (NOT RT-safe, done once)
  *   - Fixed pool size (no runtime growth)
- *   - Lock-free free list for RT-safe acquire/release
+ *   - Free map: acquire/release take no lock and allocate nothing
  *
  * Exhaustion Handling:
- *   - acquire() returns nullptr if pool exhausted
+ *   - acquire() returns nullptr if one pass over the free map finds no buffer
  *   - Caller must check for nullptr
- *   - Buffers return to pool when released
+ *   - Buffers return to pool when released; a release always completes
  *
  * Thread Safety:
- *   - acquire() and release() are RT-safe (lock-free)
+ *   - acquire() and release() may run on any threads at once
  *   - Can acquire from one thread, release from another
  *   - Pool must outlive all acquired buffers
+ *
+ * Reuse Order:
+ *   - Unspecified: which free buffer acquire() returns is not part of the contract
  *
  * Memory Ownership:
  *   - Pool owns all MessageBuffer instances
@@ -68,7 +94,14 @@ inline constexpr std::size_t DEFAULT_BUFFER_CAPACITY = 4096;
  *   - Caller owns buffer between acquire() and release()
  *
  * @note NOT RT-safe: Constructor, destructor
- * @note RT-safe: acquire(), release(), size(), available()
+ * @note RT-DEPENDS: acquire() (no lock, allocation or syscall; at most one pass over
+ *       the free map, one word per 64 buffers with a partial last word included, and no
+ *       per-caller retry bound while other threads acquire or release buffers of the
+ *       same word)
+ * @note RT-DEPENDS: release() (no lock, allocation, syscall or loop in the pool; bounded
+ *       where the target and the build bound an atomic update, see Atomic updates in the
+ *       file comment)
+ * @note RT-safe: size(), available(), acquired()
  */
 class BufferPool {
 public:
@@ -87,7 +120,7 @@ public:
    * @brief Destructor (frees all buffers).
    * @note NOT RT-safe: Deallocates memory.
    */
-  ~BufferPool();
+  ~BufferPool() = default;
 
   // Non-copyable, non-movable (owns resources).
   BufferPool(const BufferPool&) = delete;
@@ -95,21 +128,30 @@ public:
   BufferPool(BufferPool&&) = delete;
   BufferPool& operator=(BufferPool&&) = delete;
 
-  /* ----------------------------- RT-Safe Operations ----------------------------- */
+  /* ----------------------------- Acquire and Release ----------------------------- */
 
   /**
-   * @brief Acquire buffer from pool (RT-safe).
+   * @brief Acquire buffer from pool (lock-free).
    * @param requiredSize Minimum buffer size required (bytes).
-   * @return Pointer to buffer, or nullptr if pool exhausted or size too large.
-   * @note RT-safe: Lock-free pop from free list.
+   * @return Pointer to buffer, or nullptr if pool exhausted or size too large. A buffer
+   *         released behind the pass while it runs is not seen by it.
+   * @note RT-DEPENDS: lock-free; an exchange is retried only when another thread
+   *       acquired or released a buffer of the same word, with no per-caller bound.
    * @note Caller MUST release buffer when done (or leak!).
    */
   [[nodiscard]] MessageBuffer* acquire(std::size_t requiredSize) noexcept;
 
   /**
-   * @brief Release buffer back to pool (RT-safe).
+   * @brief Release buffer back to pool (cannot be refused).
    * @param buf Buffer to release (must have been acquired from this pool).
-   * @note RT-safe: Lock-free push to free list.
+   * @note RT-DEPENDS: a buffer with one reference is returned with one atomic update of the
+   *       free map, which cannot be refused; the atomic decrement of its count is skipped.
+   *       A shared buffer takes that decrement first, and only its last reference goes on
+   *       to the free map. A returned buffer's count is reset with its metadata. No loop in
+   *       the pool; each update is bounded where the target and the build bound it (Atomic
+   *       updates in the file comment).
+   * @note Each call gives up one counted reference of the caller's: a count of one means
+   *       no other thread holds the buffer.
    * @note CRITICAL: Do not access buffer after releasing!
    * @note CRITICAL: Do not release nullptr!
    * @note CRITICAL: Do not release same buffer twice!
@@ -126,10 +168,13 @@ public:
   [[nodiscard]] std::size_t size() const noexcept { return poolSize_; }
 
   /**
-   * @brief Get number of available buffers.
-   * @return Number of buffers currently in free list.
-   * @note RT-safe: Lock-free read.
-   * @note Approximate (may change immediately after call).
+   * @brief Get an estimate of the available buffers.
+   * @return The set bits of the free map, read one word at a time: the buffers in the pool
+   *         when no acquire or release runs during the call.
+   * @note RT-safe: one read per word of the free map.
+   * @note Approximate: the words are not read at one instant and the count may change
+   *       immediately after the call, so a result above zero does not promise that
+   *       acquire() succeeds. Never above size().
    */
   [[nodiscard]] std::size_t available() const noexcept;
 
@@ -143,28 +188,25 @@ public:
 private:
   /* ----------------------------- Internal State ----------------------------- */
 
-  /// Pool of MessageBuffer instances (owned by pool).
-  std::vector<std::unique_ptr<MessageBuffer>> buffers_;
+  /// Buffers per word of the free map.
+  static constexpr std::size_t MAP_WORD_BITS = 64;
+
+  /// MessageBuffer instances (owned by pool), sized once at construction. A buffer's index is
+  /// its position here.
+  std::vector<MessageBuffer> buffers_;
 
   /// Pool of data arrays (owned by pool, pointed to by MessageBuffer::data).
   std::vector<std::unique_ptr<std::uint8_t[]>> dataArrays_;
 
-  /// Lock-free free list (MPMC queue for multi-thread acquire/release).
-  apex::concurrency::LockFreeQueue<MessageBuffer*> freeList_;
+  /// Free map, sized once at construction: bit (i % 64) of word (i / 64) is set while the pool
+  /// holds buffer i. Bits at and above size() in the last word stay clear.
+  std::vector<std::atomic<std::uint64_t>> freeMap_;
 
   /// Total pool size (constant after construction).
   std::size_t poolSize_;
 
   /// Buffer capacity (constant after construction).
   std::size_t bufferCapacity_;
-
-#ifndef NDEBUG
-  /// Debug: Total acquire count.
-  std::atomic<std::uint64_t> totalAcquires_{0};
-
-  /// Debug: Total release count.
-  std::atomic<std::uint64_t> totalReleases_{0};
-#endif
 };
 
 } // namespace interface

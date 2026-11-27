@@ -29,9 +29,9 @@ External command/telemetry interface for bidirectional communication with ground
 | ----------------------- | ------------------------------------------- | ------- |
 | `InterfaceBase`         | Abstract socket management, RX/TX pipes     | Partial |
 | `ApexInterface`         | Concrete APROTO implementation with routing | Partial |
-| `BufferPool`            | Lock-free RT-safe buffer pool               | Yes     |
+| `BufferPool`            | Lock-free buffer pool                       | Depends |
 | `ComponentQueues`       | Per-component SPSC queue pairs              | Yes     |
-| `MessageBuffer`         | Zero-copy message buffer with refcount      | Yes     |
+| `MessageBuffer`         | Zero-copy message buffer with refcount      | Depends |
 | `ApexInterfaceTunables` | Configuration struct (host, port, framing)  | Yes     |
 | `Status`                | Typed status codes                          | Yes     |
 
@@ -85,6 +85,8 @@ iface.pollSockets(10);  // 10ms timeout
 ---
 
 ## 3. Performance
+
+The tables in this section record earlier builds. The buffer pool, queue, internal bus, pipeline and profiler tables have stood here since release 0.0.1 (2026-03-27); the TX wire and chain table since 2026-09-11. All of them predate the `BufferPool` free map and none has been re-measured since, so they do not describe the current build.
 
 Measured on x86_64 (clang-21, -O2), Docker container, 15 repeats per data point, 10000 cycles.
 
@@ -152,14 +154,6 @@ are counted per server and reported in the stats summary.
 | `slip::encode`        | 92.0%     | CPU-bound (SLIP framing dominates) |
 | `aproto::buildHeader` | 2.1%      | CPU-bound (header construction)    |
 
-**BufferPool AcquireRelease (77 samples):**
-
-| Function                 | Self-Time | Type                         |
-| ------------------------ | --------- | ---------------------------- |
-| `LockFreeQueue::tryPush` | 24.7%     | CPU-bound (atomic CAS)       |
-| `MessageBuffer::decRef`  | 16.9%     | CPU-bound (atomic decrement) |
-| `LockFreeQueue::tryPop`  | 14.3%     | CPU-bound (atomic CAS)       |
-
 **MulticastCommand4 (499 samples):**
 
 | Function                          | Self-Time | Type                          |
@@ -199,7 +193,7 @@ This separation enables:
 | `ApexInterfaceTunables.hpp`        | `ApexInterfaceTunables` | Configuration struct           |
 | `ComponentQueues.hpp`              | `ComponentQueues`       | Per-component queue pairs      |
 | `MessageBuffer.hpp`                | `MessageBuffer`         | Zero-copy message buffer       |
-| `BufferPool.hpp`                   | `BufferPool`            | RT-safe buffer pool            |
+| `BufferPool.hpp`                   | `BufferPool`            | Lock-free buffer pool          |
 | `InterfaceSocketConfiguration.hpp` | Config structs          | Socket endpoint config         |
 
 ---
@@ -255,7 +249,7 @@ The interface uses a zero-copy architecture with pointer-based queues:
 
 **MessageBuffer**: Actual-size allocation (not fixed 4KB) with APROTO metadata.
 
-**BufferPool**: Lock-free RT-safe buffer pool with pre-allocated buffers.
+**BufferPool**: Lock-free buffer pool with pre-allocated buffers and one free bit per buffer. `acquire()` and `release()` take no lock and allocate nothing. `release()` returns a buffer with one atomic update that cannot be refused, so a buffer is never lost to what other threads are doing, and the pool adds no loop of its own: how long that update takes depends on the target and the build (`BufferPool.hpp`, Atomic updates); `acquire()` retries only when another thread took or returned a buffer of the same 64-buffer word, with no per-caller retry bound. Which free buffer `acquire()` returns is unspecified.
 
 **Pointer-based queues**: `SPSCQueue<MessageBuffer*>` instead of copying large structs.
 
@@ -422,16 +416,17 @@ iface.freezeQueues();
 
 | Directory    | Type                   | Tests | Runs with `make test` |
 | ------------ | ---------------------- | ----- | --------------------- |
-| `apex/utst/` | Unit tests             | 70    | Yes                   |
-| `apex/ptst/` | Performance benchmarks | 20    | No (manual)           |
+| `apex/utst/` | Unit tests             | 74    | Yes (one disabled)    |
+| `apex/ptst/` | Performance benchmarks | 25    | No (manual)           |
 
 ### Test Organization
 
-| Component     | Test File                 | Tests  |
-| ------------- | ------------------------- | ------ |
-| ApexInterface | `ApexInterface_uTest.cpp` | 4      |
-| BufferPool    | `BufferPool_uTest.cpp`    | 29     |
-| **Total**     |                           | **33** |
+| Component           | Test File                       | Tests  |
+| ------------------- | ------------------------------- | ------ |
+| ApexInterface       | `ApexInterface_uTest.cpp`       | 9      |
+| BufferPool          | `BufferPool_uTest.cpp`          | 32     |
+| FileTransferHandler | `FileTransferHandler_uTest.cpp` | 33     |
+| **Total**           |                                 | **74** |
 
 ---
 
