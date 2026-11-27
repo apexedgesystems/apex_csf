@@ -198,6 +198,14 @@ any such change is called out explicitly in its entry.
   bus and told so before its tasks run; a reload of a hardware model is
   refused with `NOT_SWAPPABLE` instead of cutting its driver off.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- The scheduler preflight fails a table that sequences a task its
+  component does not (the task ran unsequenced, unreported); the
+  preflight record grows from 16 to 18 bytes. The contention check
+  no longer flags tasks sharing a one-worker pool.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- The ops and HIL demos' task tables run one worker; on two, tasks
+  sharing a component's state could overlap.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Concurrency primitives: pool start-up, shutdown and signal handling,
   Barrier and Latch semantics, LockFreeQueue cell alignment and
   SpinLock::isLocked; the UBSan-only check joins the nightly. Breaking:
