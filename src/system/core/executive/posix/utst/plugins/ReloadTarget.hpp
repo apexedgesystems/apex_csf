@@ -86,6 +86,31 @@ struct ReloadProbe {
   /// Of those, the ones that arrived while it was being told the bus is ready.
   std::array<std::atomic<std::uint32_t>, MAX_INSTANCES + 1> pokesInBusReady{};
 
+  /// Forget every instance: the next one constructed is number 1 again.
+  /// For a test whose executive has stopped and whose instances are gone.
+  void reset() noexcept {
+    hold.store(false, std::memory_order_release);
+    holdBusReady.store(false, std::memory_order_release);
+    constructed.store(0, std::memory_order_release);
+    for (std::size_t n = 0; n <= MAX_INSTANCES; ++n) {
+      entered[n].store(0, std::memory_order_release);
+      finished[n].store(0, std::memory_order_release);
+      destroyed[n].store(false, std::memory_order_release);
+      destroyedInTask[n].store(false, std::memory_order_release);
+      initThread[n].store(0, std::memory_order_release);
+      tprmLoads[n].store(0, std::memory_order_release);
+      tprmLoadedInTask[n].store(false, std::memory_order_release);
+      tprmLoadThread[n].store(0, std::memory_order_release);
+      busInTask[n].store(false, std::memory_order_release);
+      busReadyCalls[n].store(0, std::memory_order_release);
+      busAtReady[n].store(false, std::memory_order_release);
+      runsBeforeBusReady[n].store(0, std::memory_order_release);
+      inBusReady[n].store(false, std::memory_order_release);
+      pokes[n].store(0, std::memory_order_release);
+      pokesInBusReady[n].store(0, std::memory_order_release);
+    }
+  }
+
   /// The value initThread holds for the calling thread.
   [[nodiscard]] static std::size_t thisThread() noexcept {
     return std::hash<std::thread::id>{}(std::this_thread::get_id()) | 1U;

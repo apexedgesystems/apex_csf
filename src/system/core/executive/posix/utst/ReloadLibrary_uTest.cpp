@@ -58,6 +58,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <memory>
 #include <string>
 #include <thread>
@@ -276,6 +277,25 @@ std::uint16_t pickFreePort() {
   return port;
 }
 
+/// Listen on PORT, on every address, so that no other socket can bind it.
+/// @return The listening socket, or -1 when PORT could not be taken.
+int occupyPort(std::uint16_t port) {
+  const int FD = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (FD < 0) {
+    return -1;
+  }
+  sockaddr_in addr{};
+  addr.sin_family = AF_INET;
+  addr.sin_addr.s_addr = htonl(INADDR_ANY);
+  addr.sin_port = htons(port);
+  if (::bind(FD, reinterpret_cast<const sockaddr*>(&addr), sizeof(addr)) != 0 ||
+      ::listen(FD, 1) != 0) {
+    ::close(FD);
+    return -1;
+  }
+  return FD;
+}
+
 /// Write the parameter file FULL_UID loads from DIR: the prelude, then BODY.
 bool writeTprm(const std::filesystem::path& dir, std::uint32_t fullUid, const std::uint8_t* body,
                std::size_t bodyBytes) {
@@ -475,11 +495,16 @@ protected:
     for (int attempt = 0; attempt < START_ATTEMPTS; ++attempt) {
       fsRoot_ = ownedDir_ / ("boot_" + std::to_string(attempt));
       bool running = false;
-      ASSERT_NO_FATAL_FAILURE(startExecutive(running));
+      ASSERT_NO_FATAL_FAILURE(startExecutive(running, occupyFirstPort_ && attempt == 0));
+      starts_ = attempt + 1;
       if (running) {
         return;
       }
+      // The held start made an instance and is stopped whole, the instance
+      // with it. The probe forgets it, so the instance the next start
+      // links is number 1 as every case counts on.
       stopExecutive();
+      probe_.reset();
     }
     FAIL() << "the executive did not start in " << START_ATTEMPTS << " attempts; last system log:\n"
            << slurp(fsRoot_ / "system.log");
@@ -494,17 +519,37 @@ protected:
     }
     stopExecutive();
     ReloadProbe::withdraw();
-    // Only the directory SetUp() created, and only now the executive is gone.
-    if (!ownedDir_.empty()) {
-      std::error_code ec;
-      std::filesystem::remove_all(ownedDir_, ec);
+    // Only the directory SetUp() created, and only now the executive is
+    // gone. A failed case keeps it: every start's logs are in it.
+    if (ownedDir_.empty()) {
+      return;
     }
+    if (HasFailure()) {
+      std::cerr << "ReloadLibrary_uTest: logs kept in " << ownedDir_ << "\n";
+      return;
+    }
+    std::error_code ec;
+    std::filesystem::remove_all(ownedDir_, ec);
   }
 
-  /// Boot an executive in fsRoot_ on a port of its own. RUNNING is false when it is held.
-  void startExecutive(bool& running) {
+  /// Boot an executive in fsRoot_ on a port of its own. RUNNING is false
+  /// when it is held. With OCCUPY_PORT the case takes the port itself
+  /// first, so the interface finds it in use and the start is held.
+  void startExecutive(bool& running, bool occupyPort = false) {
     const std::uint16_t PORT = pickFreePort();
     ASSERT_NE(PORT, 0u) << "no free TCP port on the loopback address";
+    struct Occupied {
+      int fd{-1};
+      ~Occupied() {
+        if (fd >= 0) {
+          ::close(fd);
+        }
+      }
+    } occupied;
+    if (occupyPort) {
+      occupied.fd = ::occupyPort(PORT);
+      ASSERT_GE(occupied.fd, 0) << "port " << PORT << " could not be occupied";
+    }
     std::filesystem::create_directories(fsRoot_);
     exec_ = std::make_unique<ReloadExecutive>(fsRoot_);
     ASSERT_TRUE(writeInterfacePort(exec_->tprmDir(), PORT)) << exec_->tprmDir();
@@ -614,6 +659,8 @@ protected:
   }
 
   bool scheduleStep_{false};       ///< Set before SetUp(): schedule the target's task.
+  bool occupyFirstPort_{false};    ///< Set before SetUp(): the first start finds its port taken.
+  int starts_{0};                  ///< Starts SetUp() made, the running one included.
   ReloadProbe probe_;              ///< What the component's instances report.
   std::uint16_t port_{0};          ///< The interface's TCP port.
   std::filesystem::path ownedDir_; ///< Empty until SetUp() has created the directory.
@@ -709,6 +756,12 @@ protected:
   }
 
   CommandClient ground_;
+};
+
+/// The route cases after a first start that found its port in use.
+class ReloadRetryTest : public ReloadRouteTest {
+protected:
+  ReloadRetryTest() { occupyFirstPort_ = true; }
 };
 
 } // namespace
@@ -997,6 +1050,29 @@ TEST_F(ReloadRouteTest, ActionsAndCommandsWaitUntilTheReplacementIsToldTheBusIsR
       << probe_.pokes[PLUGIN_NO].load() << " did";
   EXPECT_EQ(probe_.pokesInBusReady[PLUGIN_NO].load(), 0U);
   EXPECT_EQ(swapLogCount("RELOAD_LIBRARY_READY"), 1U) << slurp(swapLog());
+}
+
+/**
+ * @test A first start that finds its port in use is stopped and the next
+ *       one runs the case: the linked instance is number 1 again, its
+ *       task is dispatched, and a swap brings in number 2.
+ */
+TEST_F(ReloadRetryTest, ASwapRunsAfterAStartThatFoundItsPortInUse) {
+  ASSERT_EQ(starts_, 2) << "the first start was to be held and the second to run";
+  EXPECT_TRUE(std::filesystem::exists(ownedDir_ / "boot_0")) << "the held start's tree is kept";
+
+  std::uint8_t status = 0xFF;
+  ASSERT_NO_FATAL_FAILURE(bankPlugin("ExecutiveTestPlugin_Reload.so"));
+  ASSERT_NO_FATAL_FAILURE(lockTarget());
+  const std::uint16_t RELOAD = sendReload();
+  ASSERT_NE(RELOAD, 0u);
+  ASSERT_TRUE(ground_.reply(RELOAD, POLL_LIMIT, status)) << "no reply to the reload";
+  ASSERT_EQ(status, static_cast<std::uint8_t>(CommandResult::SUCCESS)) << slurp(swapLog());
+
+  EXPECT_EQ(probe_.constructed.load(), 2U);
+  EXPECT_TRUE(waitFor([&]() { return probe_.finished[2].load() > 1U; }))
+      << "the replacement's task is not dispatched";
+  EXPECT_EQ(inspectedInstance(), 2U);
 }
 
 /**
