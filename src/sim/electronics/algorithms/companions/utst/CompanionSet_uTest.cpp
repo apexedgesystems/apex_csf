@@ -219,20 +219,33 @@ TEST(CompanionSetTest, KeptFactorsWithRebuiltRightHandSideMatchOneShotSolves) {
  *       the method the step was stamped with.
  *
  * 1 uF from net 2 to net 1 and 1 mH from net 3 to ground, from rest; the
- * nets solve to 0.2 V, 0.7 V and 0.1 V after a step of 1 ms.
+ * nets solve to 0.2 V, 0.7 V and 0.1 V after a step of 1 ms, and to 0.1 V,
+ * 0.9 V and 0.3 V after a second. C/dt is 1 mS and dt/L is 1 S.
+ *
+ * First step, capacitor at 0.5 V from 0 and inductor with 0.1 V from rest:
+ * - backward Euler: C/dt * 0.5; dt/L * 0.1
+ * - trapezoidal: twice the capacitor's, half the inductor's
+ * - GEAR2: backward Euler's, its first step
+ *
+ * Second step, capacitor at 0.8 V and inductor with 0.3 V. Here the three
+ * methods differ in both elements:
+ * - backward Euler: C/dt * (0.8 - 0.5); 0.1 + dt/L * 0.3
+ * - trapezoidal: 2C/dt * (0.8 - 0.5) - 1 mA; 0.05 + dt/2L * (0.3 + 0.1)
+ * - GEAR2: C/dt * (1.5 * 0.8 - 2 * 0.5 + 0.5 * 0);
+ *   (4 * 0.1 - 0) / 3 + 2dt/3L * 0.3
  */
 TEST(CompanionSetTest, UpdateAllAdvancesEveryElementByTheMethod) {
   struct Case {
     IntegrationMethod method;
     double capacitorAmperes;
     double inductorAmperes;
+    double capacitorAmperesSecond;
+    double inductorAmperesSecond;
   };
-  // Capacitor at 0.5 V from 0: C * 0.5 / dt, and twice that.
-  // Inductor with 0.1 V from rest: (dt / L) * 0.1, and half that.
-  // GEAR2's first step is backward Euler's.
-  for (const Case& CASE : {Case{IntegrationMethod::BACKWARD_EULER, 5e-4, 0.1},
-                           Case{IntegrationMethod::TRAPEZOIDAL, 1e-3, 0.05},
-                           Case{IntegrationMethod::GEAR2, 5e-4, 0.1}}) {
+  for (const Case& CASE : {Case{IntegrationMethod::BACKWARD_EULER, 5e-4, 0.1, 3e-4, 0.4},
+                           Case{IntegrationMethod::TRAPEZOIDAL, 1e-3, 0.05, -4e-4, 0.25},
+                           Case{IntegrationMethod::GEAR2, 5e-4, 0.1, 2e-4, 1.0 / 3.0}}) {
+    SCOPED_TRACE(static_cast<int>(CASE.method));
     CompanionSet set;
     set.addCapacitor(/*posNet=*/2, /*negNet=*/1, /*capacitance=*/1e-6);
     set.addInductor(/*posNet=*/3, /*negNet=*/0, /*inductance=*/1e-3);
@@ -241,11 +254,17 @@ TEST(CompanionSetTest, UpdateAllAdvancesEveryElementByTheMethod) {
     set.updateAll(V, 1e-3, CASE.method);
 
     EXPECT_DOUBLE_EQ(set.capacitor(0).prevVoltage, 0.5);
-    EXPECT_NEAR(set.capacitor(0).current, CASE.capacitorAmperes, 1e-15)
-        << "method " << static_cast<int>(CASE.method);
+    EXPECT_NEAR(set.capacitor(0).current, CASE.capacitorAmperes, 1e-15);
     EXPECT_DOUBLE_EQ(set.inductor(0).voltage, 0.1);
-    EXPECT_NEAR(set.inductor(0).prevCurrent, CASE.inductorAmperes, 1e-15)
-        << "method " << static_cast<int>(CASE.method);
+    EXPECT_NEAR(set.inductor(0).prevCurrent, CASE.inductorAmperes, 1e-15);
+
+    const std::vector<double> SECOND = {0.0, 0.1, 0.9, 0.3};
+    set.updateAll(SECOND, 1e-3, CASE.method);
+
+    EXPECT_DOUBLE_EQ(set.capacitor(0).prevVoltage, 0.8);
+    EXPECT_NEAR(set.capacitor(0).current, CASE.capacitorAmperesSecond, 1e-15);
+    EXPECT_DOUBLE_EQ(set.inductor(0).voltage, 0.3);
+    EXPECT_NEAR(set.inductor(0).prevCurrent, CASE.inductorAmperesSecond, 1e-15);
   }
 }
 
