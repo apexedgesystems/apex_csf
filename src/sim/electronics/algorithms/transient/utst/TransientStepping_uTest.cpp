@@ -11,12 +11,15 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
 
 using sim::electronics::algorithms::mna::MnaSystem;
 using sim::electronics::algorithms::transient::TransientConfig;
 using sim::electronics::algorithms::transient::TransientResult;
 using sim::electronics::algorithms::transient::TransientSolver;
+using sim::electronics::algorithms::transient::TransientState;
+using sim::electronics::algorithms::transient::TransientStatus;
 
 namespace {
 
@@ -118,4 +121,79 @@ TEST(TransientSteppingTest, UncountableSpanIsRefused) {
   }
   EXPECT_FALSE(runRc(std::numeric_limits<double>::quiet_NaN(), 1e-9).success);
   EXPECT_FALSE(runRc(-1.0, 1e-9).success);
+}
+
+/* ----------------------------- Voltage Sources ----------------------------- */
+
+namespace {
+
+constexpr std::size_t MANY_SOURCES = 17;
+
+/**
+ * @brief Seventeen voltage sources, each on its own net with 1 kohm to
+ *        ground, and an RC on the first: nets 1 to 17 the sources (k volts on
+ *        net k), net 18 the capacitor, charged from net 1 through 1 kohm.
+ */
+void buildManySources(TransientSolver& solver) {
+  solver.companions().addCapacitor(MANY_SOURCES + 1, 0, 1e-6);
+  solver.setStampCallback([](MnaSystem& mna, double /*seconds*/) {
+    for (std::uint32_t k = 1; k <= MANY_SOURCES; ++k) {
+      mna.addVoltageSource(k, 0, static_cast<double>(k));
+      mna.addConductance(k, 0, 1e-3);
+    }
+    mna.addConductance(1, MANY_SOURCES + 1, 1e-3);
+  });
+}
+
+} // namespace
+
+/**
+ * @test A circuit with more voltage sources than the solver set room aside
+ *       for is stepped all the same, by the plain step and by both ways of
+ *       keeping factors.
+ *
+ * The capacitor charges to the first source's 1 V with a time constant of
+ * 1 ms; after twenty of them the run is at the operating point computeDC
+ * gives.
+ */
+TEST(TransientSteppingTest, MoreVoltageSourcesThanTheRoomSetAside) {
+  enum class Keeping { NONE, DENSE, DUAL };
+  for (const Keeping KEEPING : {Keeping::NONE, Keeping::DENSE, Keeping::DUAL}) {
+    SCOPED_TRACE(static_cast<int>(KEEPING));
+    TransientSolver solver(MANY_SOURCES + 2);
+    buildManySources(solver);
+    solver.setCachedLU(KEEPING == Keeping::DENSE);
+    solver.setDualLU(KEEPING == Keeping::DUAL);
+
+    TransientState state;
+    state.resize(MANY_SOURCES + 2, 0);
+    for (int k = 0; k < 2000; ++k) {
+      const TransientStatus STATUS =
+          (KEEPING == Keeping::DUAL) ? solver.stepDual(1e-5, 0, state) : solver.step(1e-5, state);
+      ASSERT_EQ(STATUS, TransientStatus::SUCCESS) << "step " << k;
+    }
+
+    TransientSolver atRest(MANY_SOURCES + 2);
+    buildManySources(atRest);
+    TransientState rest;
+    ASSERT_EQ(atRest.computeDC(rest), TransientStatus::SUCCESS);
+    EXPECT_NEAR(rest.voltage(MANY_SOURCES + 1), 1.0, 1e-12);
+    EXPECT_NEAR(state.voltage(MANY_SOURCES + 1), rest.voltage(MANY_SOURCES + 1), 1e-8);
+    for (std::size_t k = 1; k <= MANY_SOURCES; ++k) {
+      EXPECT_NEAR(state.voltage(k), static_cast<double>(k), 1e-12) << "net " << k;
+    }
+  }
+}
+
+/** @test run() on that circuit succeeds. */
+TEST(TransientSteppingTest, RunWithMoreVoltageSourcesThanTheRoomSetAside) {
+  TransientSolver solver(MANY_SOURCES + 2);
+  buildManySources(solver);
+  TransientConfig config;
+  config.tEnd = 1e-3;
+  config.tStep = 1e-5;
+  const TransientResult RESULT = solver.run(config, false);
+  ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
+  EXPECT_EQ(RESULT.stepsTaken, 100U);
+  EXPECT_NEAR(RESULT.finalState.voltage(MANY_SOURCES + 1), 1.0, 1e-9);
 }

@@ -23,10 +23,12 @@
 #include "src/sim/electronics/algorithms/companions/inc/CompanionModels.hpp"
 #include "src/sim/electronics/algorithms/transient/inc/TransientConfig.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 namespace sim::electronics::algorithms::transient {
@@ -251,6 +253,9 @@ private:
   StatefulStampCallback statefulStampCallback_;
   StatefulStampCallbackSparse statefulStampCallbackSparse_;
   std::vector<double> prevVoltages_;
+  /// Voltage sources the dense workspaces have room for before a step grows them.
+  static constexpr std::size_t SOURCE_ROOM = 16;
+
   MnaSolveWorkspace workspace_;
 
   // Cached LU optimization (disabled by default - enable for constant-topology circuits)
@@ -315,21 +320,14 @@ private:
   TransientStatus solveStep(double dt, TransientState& state);
 
   /**
-   * @brief Build matrix and factorize for cached LU solve.
-   * @param dt Time step.
-   * @return true if factorization succeeded.
-   */
-  bool buildAndFactorize(double dt);
-
-  /**
    * @brief Capture LU factors from workspace after dgesv.
    * @param dt Time step (stored for cache validity check).
    * @param dim Augmented matrix dimension (n + m).
    *
    * Copies the LU factors and pivot indices from workspace_ (stride ld)
-   * into factorizedWs_ (stride dim) after a dgesv call. This avoids
-   * the O(n^3) cost of buildAndFactorize by reusing the factorization
-   * that dgesv already computed. Cost: O(n^2) memcpy vs O(n^3) dgetrf.
+   * into factorizedWs_ (stride dim) after a dgesv call, which keeps the
+   * factorization dgesv computed in place of a second one. Cost: O(n^2)
+   * memcpy vs O(n^3) dgetrf.
    */
   void captureLU(double dt, std::size_t dim);
 

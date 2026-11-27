@@ -13,12 +13,13 @@ namespace sim::electronics::algorithms::transient {
 
 inline TransientSolver::TransientSolver(std::size_t netCount)
     : netCount_(netCount), prevVoltages_(netCount, 0.0) {
-  // Pre-allocate workspace for RT-safe stepping
-  // Estimate max dimension: nets + some voltage sources
-  workspace_.prepare(netCount + 16);
+  // Room for the nets and SOURCE_ROOM voltage sources, so that a step of a
+  // circuit within that allocates nothing. A circuit with more sources gets
+  // its room at its first step.
+  workspace_.prepare(netCount + SOURCE_ROOM);
 
   // Pre-allocate factorized workspace for cached LU
-  factorizedWs_.prepare(netCount + 16);
+  factorizedWs_.prepare(netCount + SOURCE_ROOM);
 
   // CUDA workspace is lazy-initialized on setCuda(true) to avoid
   // paying cusolverDnCreate + cublasCreate_v2 overhead (~2ms) when
@@ -289,15 +290,30 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
   // Build MNA system.
   // Stamp conductances directly into LAPACK workspace (column-major)
   // to eliminate intermediate G_ allocation and copy overhead.
-  const std::size_t LD = workspace_.maxDim;
-  std::memset(workspace_.A.data(), 0, LD * LD * sizeof(double));
-  MnaSystem mna(netCount_, workspace_.A.data(), LD);
+  std::optional<MnaSystem> stamped;
+  const auto STAMP = [this, dt, &stamped] {
+    const std::size_t LD = workspace_.maxDim;
+    std::memset(workspace_.A.data(), 0, LD * LD * sizeof(double));
+    stamped.emplace(netCount_, workspace_.A.data(), LD);
 
-  // Stamp static elements (resistors, sources)
-  invokeStampCallback(mna, time_ + dt);
+    // Stamp static elements (resistors, sources)
+    invokeStampCallback(*stamped, time_ + dt);
 
-  // Stamp companion models for reactive elements
-  companions_.stampAll(mna, dt, method_);
+    // Stamp companion models for reactive elements
+    companions_.stampAll(*stamped, dt, method_);
+  };
+  STAMP();
+
+  // The stamp says how many voltage sources there are. With more than the
+  // workspaces have room for, they are given the room and the circuit is
+  // stamped again into it: this step allocates, the ones after it do not.
+  if (const std::size_t DIM = netCount_ + stamped->voltageSourceCount();
+      !workspace_.canHandle(DIM)) {
+    workspace_.prepare(DIM);
+    factorizedWs_.prepare(DIM);
+    STAMP();
+  }
+  MnaSystem& mna = *stamped;
 
   // Solve using pre-allocated workspace (avoids per-solve allocation)
   std::size_t n = mna.netCount();
@@ -331,8 +347,7 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
   time_ += dt;
 
   // captureLU copies the LU factors that dgesv already computed in
-  // workspace_.A, avoiding a separate O(n^3) buildAndFactorize call on the
-  // next step.
+  // workspace_.A, so the next step needs no factorization of its own.
   if (useCachedLU_) {
     std::size_t dim = n + m;
     captureLU(dt, dim);
@@ -343,31 +358,6 @@ inline TransientStatus TransientSolver::solveStep(double dt, TransientState& sta
 }
 
 /* ----------------------------- Cached LU Methods ----------------------------- */
-
-inline bool TransientSolver::buildAndFactorize(double dt) {
-  // Create or reuse cached MNA system
-  if (!cachedMna_) {
-    cachedMna_ = std::make_unique<MnaSystem>(netCount_);
-  }
-
-  cachedMna_->clear();
-
-  // Stamp static elements (conductances only)
-  invokeStampCallback(*cachedMna_, time_ + dt);
-
-  // Stamp companion conductances (not currents)
-  companions_.stampConductanceAll(*cachedMna_, dt, method_);
-
-  // Factorize the matrix
-  bool ok = cachedMna_->factorize(factorizedWs_);
-
-  if (ok) {
-    cachedDt_ = dt;
-    cachedFactor_ = companions_.conductanceFactor(dt, method_);
-  }
-
-  return ok;
-}
 
 /* ----------------------------- Capture LU from Workspace ----------------------------- */
 
@@ -623,11 +613,6 @@ inline bool TransientSolver::buildAndFactorizeDual(double dt, int stateIdx) {
     dualCachedMna_[stateIdx] = std::make_unique<MnaSystem>(netCount_);
   }
 
-  // Prepare factorized workspace
-  if (!dualFactorizedWs_[stateIdx].isFactorized()) {
-    dualFactorizedWs_[stateIdx].prepare(netCount_ + 16);
-  }
-
   dualCachedMna_[stateIdx]->clear();
 
   // Stamp static elements
@@ -635,6 +620,11 @@ inline bool TransientSolver::buildAndFactorizeDual(double dt, int stateIdx) {
 
   // Stamp companion conductances
   companions_.stampConductanceAll(*dualCachedMna_[stateIdx], dt, method_);
+
+  // Room for the factors of what was stamped, and at least for SOURCE_ROOM
+  // voltage sources. prepare() only ever grows.
+  dualFactorizedWs_[stateIdx].prepare(
+      netCount_ + std::max(SOURCE_ROOM, dualCachedMna_[stateIdx]->voltageSourceCount()));
 
   // Factorize
   bool ok = dualCachedMna_[stateIdx]->factorize(dualFactorizedWs_[stateIdx]);
