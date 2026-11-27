@@ -277,17 +277,25 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     const std::filesystem::path TPRM_SOURCE = fileSystem_.inactiveTprmDir();
     auto ingest = system_core::system_component::TprmIngest::NONE;
     bool settled = true;
+    // Both times are of the task thread: how long the request waited for
+    // it, and how long the load then held it between two cycles.
+    std::uint64_t waitNs = 0;
+    std::uint64_t loadNs = 0;
     if (std::this_thread::get_id() == taskThreadId_.load(std::memory_order_acquire)) {
       // Reached from an action: this is the task thread, in its action
       // phase, which runs only once the cycle's tasks have finished.
       settled = scheduler_.settled();
       if (settled) {
+        const std::uint64_t LOAD_BEGIN_NS = apex::helpers::cpu::getMonotonicNs();
         ingest = comp->loadTprm(TPRM_SOURCE);
+        loadNs = apex::helpers::cpu::getMonotonicNs() - LOAD_BEGIN_NS;
       }
     } else {
       const TprmApplyOutcome APPLY = applyTprmAtSettledPoint(*comp, TPRM_SOURCE);
       settled = APPLY.applied;
       ingest = APPLY.ingest;
+      waitNs = APPLY.waitNs;
+      loadNs = APPLY.loadNs;
     }
     if (!settled) {
       comp->unlock();
@@ -329,7 +337,8 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     sysLog_->info(label(),
                   fmt::format("TPRM reloaded for component 0x{:06X} (bank swapped)", targetUid));
     if (auto* sl = fileSystem_.swapLog()) {
-      sl->info("SWAP", fmt::format("RELOAD_TPRM_OK: uid=0x{:06X} file={}", targetUid, TPRM_FN));
+      sl->info("SWAP", fmt::format("RELOAD_TPRM_OK: uid=0x{:06X} file={} wait_us={} load_us={}",
+                                   targetUid, TPRM_FN, waitNs / 1000U, loadNs / 1000U));
     }
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }

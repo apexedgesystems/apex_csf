@@ -107,7 +107,9 @@ void ApexExecutive::serviceLibrarySwap() noexcept {
     if (!scheduler_.settled()) {
       return; // Still pending: the next settled point takes it.
     }
+    const std::uint64_t LOAD_BEGIN_NS = apex::helpers::cpu::getMonotonicNs();
     swap_.tprmIngest = swap_.oldComp->loadTprm(*swap_.tprmDir);
+    swap_.tprmLoadNs = apex::helpers::cpu::getMonotonicNs() - LOAD_BEGIN_NS;
     swap_.outcome.status = static_cast<std::uint8_t>(CommandResult::SUCCESS);
   } else {
     const LibrarySwapOutcome OUT =
@@ -208,6 +210,7 @@ ApexExecutive::applyTprmAtSettledPoint(SystemComponentBase& comp,
   out.applied = handOverToTaskThread(request, done, out.waitNs);
   if (out.applied) {
     out.ingest = done.tprmIngest;
+    out.loadNs = done.tprmLoadNs;
   }
   return out;
 }

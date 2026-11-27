@@ -682,6 +682,7 @@ private:
     const std::filesystem::path* tprmDir{nullptr};
     system_core::system_component::TprmIngest tprmIngest{
         system_core::system_component::TprmIngest::NONE}; ///< What that load returned.
+    std::uint64_t tprmLoadNs{0};                          ///< How long that load held the thread.
     LibrarySwapOutcome outcome{};
   };
 
@@ -691,6 +692,7 @@ private:
     system_core::system_component::TprmIngest ingest{
         system_core::system_component::TprmIngest::NONE}; ///< The load's result when applied.
     std::uint64_t waitNs{0};                              ///< From the request to its end.
+    std::uint64_t loadNs{0}; ///< How long the load held the task thread.
   };
 
   /**
