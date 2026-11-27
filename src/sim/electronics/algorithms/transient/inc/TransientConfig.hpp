@@ -10,6 +10,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 namespace sim::electronics::algorithms::transient {
 
@@ -54,15 +56,53 @@ struct TransientConfig {
   std::size_t maxNonlinearIter = 20; ///< Max Newton iterations per step.
   double nonlinearTol = 1e-9;        ///< Nonlinear convergence tolerance.
 
+  /// A span within this fraction of a step of a whole number of steps is
+  /// that number of steps: (tEnd - tStart) / tStep is rarely whole in binary
+  /// when the two are decimal.
+  static constexpr double WHOLE_STEP_TOLERANCE = 1e-9;
+
+  /// Step counts are kept below 2^53, where a double still counts by ones.
+  static constexpr double STEP_COUNT_LIMIT = 9007199254740992.0;
+
   /**
-   * @brief Calculate total number of steps for fixed stepping.
-   * @return Approximate step count.
+   * @brief The number of steps of tStep that fit the span.
+   * @return 0 when tStep is not above zero, the span is not above zero, or
+   *         the count is not below STEP_COUNT_LIMIT (not-a-number included).
+   * @note RT-safe: pure arithmetic.
+   */
+  [[nodiscard]] constexpr std::size_t wholeSteps() const noexcept {
+    if (!(tStep > 0.0) || !(tEnd > tStart)) {
+      return 0;
+    }
+    const double RATIO = (tEnd - tStart) / tStep;
+    if (!(RATIO < STEP_COUNT_LIMIT)) {
+      return 0;
+    }
+    return static_cast<std::size_t>(RATIO + WHOLE_STEP_TOLERANCE);
+  }
+
+  /**
+   * @brief Length of the shorter step that ends a span which is not a whole
+   *        number of steps.
+   * @return 0 when the span is whole, or has no countable number of steps.
+   * @note RT-safe: pure arithmetic.
+   */
+  [[nodiscard]] constexpr double lastStep() const noexcept {
+    if (!(tStep > 0.0) || !(tEnd > tStart) || !((tEnd - tStart) / tStep < STEP_COUNT_LIMIT)) {
+      return 0.0;
+    }
+    const double REST = (tEnd - tStart) - static_cast<double>(wholeSteps()) * tStep;
+    return REST > WHOLE_STEP_TOLERANCE * tStep ? REST : 0.0;
+  }
+
+  /**
+   * @brief The number of steps run() takes: the whole steps, and one more
+   *        when a shorter step ends the span.
+   * @return 0 for a configuration run() refuses.
    * @note RT-safe: pure arithmetic.
    */
   [[nodiscard]] constexpr std::size_t stepCount() const noexcept {
-    if (tStep <= 0.0)
-      return 0;
-    return static_cast<std::size_t>((tEnd - tStart) / tStep);
+    return wholeSteps() + (lastStep() > 0.0 ? 1U : 0U);
   }
 
   /**

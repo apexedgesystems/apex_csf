@@ -4,7 +4,7 @@
 
 include(apex/All)
 
-set(UNIT_TEST_SOURCES Transient_uTest.cpp IntegrationOrder_uTest.cpp)
+set(UNIT_TEST_SOURCES Transient_uTest.cpp IntegrationOrder_uTest.cpp TransientStepping_uTest.cpp)
 
 apex_add_gtest(
   TARGET

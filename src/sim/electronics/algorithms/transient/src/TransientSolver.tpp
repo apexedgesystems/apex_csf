@@ -685,8 +685,12 @@ inline TransientStatus TransientSolver::solveDualCachedStep(double dt, int state
 inline TransientResult TransientSolver::run(const TransientConfig& config, bool recordHistory) {
   TransientResult result;
 
-  // Validate configuration
-  if (config.tStep <= 0.0 || config.tEnd <= config.tStart) {
+  // A span with no countable number of steps is no run: a step or a span
+  // that is not above zero, not a number, or too many steps to count.
+  const std::size_t WHOLE_STEPS = config.wholeSteps();
+  const double LAST_STEP = config.lastStep();
+  const std::size_t STEPS = config.stepCount();
+  if (STEPS == 0) {
     result.success = false;
     result.errorMessage = "Invalid time configuration";
     return result;
@@ -719,19 +723,15 @@ inline TransientResult TransientSolver::run(const TransientConfig& config, bool 
 
   // Reserve history if recording
   if (recordHistory) {
-    std::size_t estimatedSteps = config.stepCount();
-    result.history.reserve(estimatedSteps + 1);
+    result.history.reserve(STEPS + 1);
     result.history.push_back(state); // Initial state
   }
 
-  // Time-stepping loop
-  double dt = config.tStep;
-
-  while (time_ < config.tEnd) {
-    // Adjust last step to hit end exactly
-    if (time_ + dt > config.tEnd) {
-      dt = config.tEnd - time_;
-    }
+  // The steps are counted, and each ends at a time worked out from its
+  // number: summing step lengths lands beside the end time, and a loop that
+  // ran until the sum reached it would take one more step of the difference.
+  for (std::size_t k = 1; k <= STEPS; ++k) {
+    const double dt = (k <= WHOLE_STEPS) ? config.tStep : LAST_STEP;
 
     TransientStatus stepStatus = step(dt, state);
 
@@ -743,14 +743,13 @@ inline TransientResult TransientSolver::run(const TransientConfig& config, bool 
       return result;
     }
 
+    time_ = (k == STEPS) ? config.tEnd : config.tStart + static_cast<double>(k) * config.tStep;
+    state.time = time_;
     result.stepsTaken++;
 
     if (recordHistory) {
       result.history.push_back(state);
     }
-
-    // Reset dt for next iteration
-    dt = config.tStep;
   }
 
   result.success = true;
