@@ -169,6 +169,9 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- The gitleaks binary in the lint and dev images belongs to root, not to
+  the user id its release archive records.
+  ([#202](https://github.com/apexedgesystems/apex_csf/pull/202))
 - MNA solvers: the sparse solver reuses an analysis and factors only for
   their own matrix, the AC sweep and the dense solver's borrowed-storage
   modes handle their edge inputs, and the CUDA batch solver reports each
