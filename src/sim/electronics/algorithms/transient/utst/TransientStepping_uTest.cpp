@@ -504,7 +504,7 @@ TEST(TransientSteppingTest, NewtonLimitAndTolerancesAreSettings) {
     TransientSolver solver(2);
     buildContraction(solver);
     solver.setNewtonIterationLimit(60);
-    solver.setNewtonTolerances(VOLTS, 0.0);
+    ASSERT_TRUE(solver.setNewtonTolerances(VOLTS, 0.0));
     TransientState state;
     state.resize(2, 0);
     ASSERT_EQ(solver.step(1e-6, state), TransientStatus::SUCCESS);
@@ -521,7 +521,7 @@ TEST(TransientSteppingTest, NewtonLimitAndTolerancesAreSettings) {
     TransientSolver solver(2);
     buildContraction(solver);
     solver.setNewtonIterationLimit(60);
-    solver.setNewtonTolerances(0.0, RELATIVE);
+    ASSERT_TRUE(solver.setNewtonTolerances(0.0, RELATIVE));
     TransientState state;
     state.resize(2, 0);
     ASSERT_EQ(solver.step(1e-6, state), TransientStatus::SUCCESS);
@@ -581,6 +581,28 @@ TEST(TransientSteppingTest, RefusedStepUndoesWhatThePreBatchCallbackWrote) {
   EXPECT_EQ(solver.step(1e-6, state), TransientStatus::SUCCESS);
   EXPECT_DOUBLE_EQ(solver.time(), 1e-6);
   EXPECT_NE(solver.prevVoltages()[1], 0.0);
+}
+
+/** @test A tolerance that is negative or not finite is refused and changes nothing. */
+TEST(TransientSteppingTest, NewtonTolerancesAreFiniteAndNotNegative) {
+  TransientSolver solver(2);
+  buildContraction(solver);
+  solver.setNewtonIterationLimit(60);
+  ASSERT_TRUE(solver.setNewtonTolerances(1e-2, 0.0));
+  const double NOT_A_NUMBER = std::numeric_limits<double>::quiet_NaN();
+  const double INFINITE = std::numeric_limits<double>::infinity();
+  EXPECT_FALSE(solver.setNewtonTolerances(NOT_A_NUMBER, 0.0));
+  EXPECT_FALSE(solver.setNewtonTolerances(0.0, NOT_A_NUMBER));
+  EXPECT_FALSE(solver.setNewtonTolerances(-1e-6, 0.0));
+  EXPECT_FALSE(solver.setNewtonTolerances(0.0, -1e-3));
+  EXPECT_FALSE(solver.setNewtonTolerances(INFINITE, 0.0));
+  EXPECT_FALSE(solver.setNewtonTolerances(0.0, INFINITE));
+
+  // The step runs to the tolerance that was accepted.
+  TransientState state;
+  state.resize(2, 0);
+  ASSERT_EQ(solver.step(1e-6, state), TransientStatus::SUCCESS);
+  EXPECT_EQ(solver.newtonIterationCount(), contractionIterations(1e-2));
 }
 
 /**

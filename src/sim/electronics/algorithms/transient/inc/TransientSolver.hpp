@@ -442,13 +442,21 @@ public:
    * It has when every net moved from the iterate before by no more than
    * `relative` times the larger of its two voltages plus `absoluteVolts`.
    *
-   * @param absoluteVolts Absolute part, in volts.
-   * @param relative Relative part.
+   * @param absoluteVolts Absolute part, in volts: finite and not below zero.
+   * @param relative Relative part: finite and not below zero.
+   * @return false, with both tolerances as they were, when either is
+   *         negative or not finite: a comparison with not-a-number never
+   *         holds, and an iteration judged by it would read as converged.
    * @note RT-safe.
    */
-  void setNewtonTolerances(double absoluteVolts, double relative) noexcept {
+  [[nodiscard]] bool setNewtonTolerances(double absoluteVolts, double relative) noexcept {
+    if (!std::isfinite(absoluteVolts) || !std::isfinite(relative) || absoluteVolts < 0.0 ||
+        relative < 0.0) {
+      return false;
+    }
     nrVoltageTolerance_ = absoluteVolts;
     nrRelativeTolerance_ = relative;
+    return true;
   }
 
   /**
