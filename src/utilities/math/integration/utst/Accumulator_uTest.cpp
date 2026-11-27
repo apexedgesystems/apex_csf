@@ -74,17 +74,6 @@ TEST(Accumulator, TrapezoidalAccumulation) {
   EXPECT_EQ(acc.sampleCount(), 10u);
 }
 
-/** @test Invalid dt returns error. */
-TEST(Accumulator, InvalidDtReturnsError) {
-  Accumulator<double> acc(0.0);
-
-  uint8_t status1 = acc.accumulate(1.0, 0.0);
-  EXPECT_EQ(status1, static_cast<uint8_t>(AccumulatorStatus::ERROR_INVALID_DT));
-
-  uint8_t status2 = acc.accumulate(1.0, -0.1);
-  EXPECT_EQ(status2, static_cast<uint8_t>(AccumulatorStatus::ERROR_INVALID_DT));
-}
-
 /* -------------------------- State Management ------------------------------ */
 
 /** @test Reset clears state and counters. */

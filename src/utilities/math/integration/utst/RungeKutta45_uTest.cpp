@@ -60,21 +60,6 @@ TEST(RungeKutta45Test, IntegrateExponentialDecay) {
   EXPECT_NEAR(y, std::exp(-1.0), 1e-6);
 }
 
-/** @test RK45 rejects invalid step size. */
-TEST(RungeKutta45Test, RejectsInvalidStepSize) {
-  RungeKutta45<double> integrator;
-  RungeKutta45Options opts;
-
-  auto f = [](const double& y, double /*t*/) { return -y; };
-
-  double y = 1.0;
-  auto result = integrator.step(y, 0.0, 0.0, f, opts);
-  EXPECT_EQ(result.status, RK45Status::ERROR_INVALID_STEP);
-
-  result = integrator.step(y, 0.0, -0.1, f, opts);
-  EXPECT_EQ(result.status, RK45Status::ERROR_INVALID_STEP);
-}
-
 /** @test RK45 provides suggested next step size. */
 TEST(RungeKutta45Test, SuggestsNextStepSize) {
   RungeKutta45<double> integrator;

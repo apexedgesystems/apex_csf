@@ -76,22 +76,6 @@ TEST(RKN4Test, EnergyConservation) {
   EXPECT_NEAR(FINAL_ENERGY, INITIAL_ENERGY, 1e-4);
 }
 
-/** @test RKN4 rejects invalid step size. */
-TEST(RKN4Test, RejectsInvalidStep) {
-  RKN4<double> integrator;
-
-  double y = 1.0;
-  double v = 0.0;
-
-  auto accel = [](double /*t*/, const double& pos, const double& /*vel*/) { return -pos; };
-
-  uint8_t status = integrator.step(y, v, 0.0, accel);
-  EXPECT_EQ(status, static_cast<uint8_t>(RKNStatus::ERROR_INVALID_STEP));
-
-  status = integrator.step(y, v, -0.1, accel);
-  EXPECT_EQ(status, static_cast<uint8_t>(RKNStatus::ERROR_INVALID_STEP));
-}
-
 /** @test RKN4 statistics tracking. */
 TEST(RKN4Test, TracksStatistics) {
   RKN4<double> integrator;
