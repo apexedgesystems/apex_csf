@@ -206,7 +206,14 @@ old one stays locked.
 - **Bus.** A schedulable replacement is attached to the internal bus
   after it initializes. It is published locked, told the bus is ready
   (`onBusReady()`) on ExternalIO, then unlocked, so none of its tasks
-  runs before that call returns.
+  runs before that call returns. The lock stops task dispatch only, so
+  from the publication until that call returns TaskExecution also runs
+  no action phase and delivers no queued command: an action or a command
+  could otherwise read or command the replacement beside its hook. The
+  cycles go on meanwhile and their tasks run; actions and queued
+  commands are taken up on the first cycle after the hook returns. A
+  hook that takes long holds every action and every queued command that
+  long, not only those for the replacement.
 - **Hardware models.** A reload whose old or new instance is a hardware
   model is refused with `NOT_SWAPPABLE` (`reason=hw_model_transport` in
   the swap log), for a registered hardware model before a library is
@@ -226,10 +233,19 @@ old one stays locked.
   the first flag when evaluated. ExternalIO checks an empty list and
   loads one word per loop.
 
-The swap log times the three steps apart: `RELOAD_LIBRARY_PUBLISHED`
+The swap log times the steps apart: `RELOAD_LIBRARY_PUBLISHED`
 carries the wait for publication (`wait_us`), `RELOAD_LIBRARY_OK` the
-whole command from its start (`total_us`), and
+whole command from its start to the publication's bookkeeping
+(`total_us`), `RELOAD_LIBRARY_READY` the replacement's `onBusReady()`
+(`hook_us`) and the cycles whose action phase was held from the
+publication until it returned (`cycles_held`), and
 `RELOAD_LIBRARY_RECLAIMED` the destruction of the replaced plugin (`us`).
+
+The clock thread names the tasks in flight when it logs a frame loss.
+It reads the scheduler's table for that under the scheduler's
+`TableRead`, which a reload's change to the table waits out and which
+never makes the clock wait: a frame loss logged while the table is
+being changed reads `in-flight: unavailable (task table changing)`.
 
 A component lock stops new dispatches of the component's tasks. It does
 not wait for a task already running; the reload does.

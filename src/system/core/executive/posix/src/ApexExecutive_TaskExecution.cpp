@@ -197,7 +197,11 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
     // which also frames replies, so the encoder scratch and the pipe
     // have one owner.
     if (interface_ && interface_->isInitialized()) {
-      interface_->drainCommandsToComponents();
+      // Queued commands stay queued while a published replacement is
+      // being told the bus is ready: one of them may be for it.
+      if (!replacementPreparing_.load(std::memory_order_acquire)) {
+        interface_->drainCommandsToComponents();
+      }
 
       // Deferred RELOAD_EXECUTIVE: the ACK was framed and produced by the
       // external I/O thread on receipt, which also writes the wire. Give
@@ -331,8 +335,16 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
       }
 
       // Run action engine: evaluate watchpoints, tick sequences, apply
-      // data-writes, on the completed tasks' outputs.
-      actionComp_.tick(static_cast<std::uint32_t>(taskCycles));
+      // data-writes, on the completed tasks' outputs. Not while a
+      // replacement this thread published is still inside onBusReady()
+      // on the external I/O thread: an action could read or command it
+      // beside the hook. The engine is level- and time-driven, so a held
+      // cycle resolves on the next one that runs.
+      if (replacementPreparing_.load(std::memory_order_acquire)) {
+        actionPhaseHolds_.fetch_add(1U, std::memory_order_relaxed);
+      } else {
+        actionComp_.tick(static_cast<std::uint32_t>(taskCycles));
+      }
     } else if (!controlState_.shutdownRequested.load(std::memory_order_acquire)) {
       constexpr std::size_t BARRIER_LOG_INTERVAL = 1024U;
       const std::size_t TIMEOUTS = scheduler_.totalInFlightWaitTimeouts();

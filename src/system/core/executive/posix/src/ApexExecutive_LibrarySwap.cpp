@@ -118,6 +118,13 @@ void ApexExecutive::serviceLibrarySwap() noexcept {
       return; // Still pending: the next settled point takes it.
     }
     swap_.outcome = OUT;
+    if (OUT.status == static_cast<std::uint8_t>(CommandResult::SUCCESS)) {
+      // Published, and not yet told the bus is ready: that is the
+      // requester's to do, on its thread, once it sees DONE. From here
+      // this thread keeps its action phase and its command delivery off
+      // until the requester clears the flag.
+      replacementPreparing_.store(true, std::memory_order_release);
+    }
   }
   swap_.phase = LibrarySwap::Phase::DONE;
   swapPending_.store(false, std::memory_order_release);

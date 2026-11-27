@@ -143,6 +143,13 @@ public:
     return scheduler_.totalInFlightWaitTimeouts();
   }
 
+  /// Cycles on which the action phase and the delivery of queued commands
+  /// were held because a replacement RELOAD_LIBRARY had published was
+  /// still being told the bus is ready. Readable from any thread.
+  [[nodiscard]] std::size_t actionPhaseHolds() const noexcept {
+    return actionPhaseHolds_.load(std::memory_order_relaxed);
+  }
+
   /// Cycles on which the in-flight wait was a single poll because the
   /// task loop was behind the clock. Readable from any thread.
   /**
@@ -765,6 +772,14 @@ private:
   std::atomic<bool> swapPending_{false}; ///< swap_ is PENDING; the task thread reads it.
   bool swapClosed_{false};               ///< The task thread has ended; guarded by swapMutex_.
   std::atomic<bool> swapKick_{false};    ///< Wakes a waiting task thread for one attempt.
+  /// A replacement is published and its onBusReady() has not returned.
+  /// Set by the task thread where it publishes the swap, cleared by the
+  /// external I/O thread once the hook is back. While it is set the task
+  /// thread runs no action phase and delivers no queued command, so
+  /// neither reads nor commands the replacement beside its hook; the
+  /// clear is the release the next action phase's read acquires.
+  std::atomic<bool> replacementPreparing_{false};
+  std::atomic<std::size_t> actionPhaseHolds_{0}; ///< Cycles held for replacementPreparing_.
   /// Target of a RELOAD_LIBRARY that arrived on the task thread and waits
   /// for the external I/O thread to run it.
   std::atomic<std::uint32_t> deferredReloadUid_{NO_DEFERRED_RELOAD};

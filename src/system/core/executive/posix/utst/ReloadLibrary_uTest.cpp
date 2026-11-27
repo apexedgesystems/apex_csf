@@ -148,6 +148,23 @@ public:
 
   void releaseTheCycle() noexcept { holdCycle_.store(false, std::memory_order_release); }
 
+  /**
+   * @brief Send the target two POKE commands from the task thread at its
+   *        next cycle: one as a command action, for the action phase to
+   *        dispatch, and one on the internal bus, for the task thread to
+   *        deliver when it next drains its queues.
+   * @return true when both were queued within POLL_LIMIT.
+   */
+  [[nodiscard]] bool pokeTargetBothWays() noexcept {
+    pokeResult_.store(NOT_RUN, std::memory_order_release);
+    pokeAsked_.store(true, std::memory_order_release);
+    const auto DEADLINE = Clock::now() + POLL_LIMIT;
+    while (pokeResult_.load(std::memory_order_acquire) == NOT_RUN && Clock::now() < DEADLINE) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return pokeResult_.load(std::memory_order_acquire) == 0;
+  }
+
 protected:
   [[nodiscard]] bool registerComponents() noexcept override {
     return registerComponent(&target, fileSystem().logDir());
@@ -162,6 +179,18 @@ protected:
         std::this_thread::sleep_for(std::chrono::microseconds(200));
       }
       cycleHeld_.store(false, std::memory_order_release);
+    }
+    if (pokeAsked_.exchange(false, std::memory_order_acq_rel)) {
+      system_core::data::DataAction action{};
+      system_core::data::initCommandAction(action, target.fullUid(),
+                                           system_core::data::ActionTrigger::IMMEDIATE, 0U,
+                                           ReloadTarget::POKE_OPCODE);
+      const bool AS_ACTION = system_core::data::queueAction(actionComponent().iface(), action) ==
+                             system_core::data::ActionStatus::SUCCESS;
+      const bool ON_BUS =
+          interface() != nullptr && interface()->postInternalCommand(fullUid(), target.fullUid(),
+                                                                     ReloadTarget::POKE_OPCODE, {});
+      pokeResult_.store(AS_ACTION && ON_BUS ? 0 : 1, std::memory_order_release);
     }
     const int OPCODE = pending_.exchange(NOT_RUN, std::memory_order_acq_rel);
     if (OPCODE == NOT_RUN) {
@@ -207,6 +236,8 @@ private:
   std::atomic<std::size_t> taskThread_{0};
   std::atomic<bool> holdCycle_{false};
   std::atomic<bool> cycleHeld_{false};
+  std::atomic<bool> pokeAsked_{false};
+  std::atomic<int> pokeResult_{NOT_RUN};
 };
 
 std::string slurp(const std::filesystem::path& path) {
@@ -457,6 +488,7 @@ protected:
   void TearDown() override {
     // A run still held would keep its worker, and the shutdown, waiting.
     probe_.hold.store(false, std::memory_order_release);
+    probe_.holdBusReady.store(false, std::memory_order_release);
     if (exec_) {
       exec_->releaseTheCycle();
     }
@@ -922,6 +954,49 @@ TEST_F(ReloadRouteTest, SwappedInComponentIsOnTheInternalBus) {
   EXPECT_TRUE(probe_.busAtReady[PLUGIN_NO].load());
   EXPECT_EQ(probe_.runsBeforeBusReady[PLUGIN_NO].load(), 0U);
   EXPECT_TRUE(probe_.busInTask[PLUGIN_NO].load());
+}
+
+/**
+ * @test From the publication of a replacement until it has been told the
+ *       bus is ready, no action and no queued command reaches it. The
+ *       replacement is held inside onBusReady(); a command action and an
+ *       internal-bus command for it, both queued meanwhile, are delivered
+ *       only after the hook returns, and the cycles go on in between.
+ */
+TEST_F(ReloadRouteTest, ActionsAndCommandsWaitUntilTheReplacementIsToldTheBusIsReady) {
+  constexpr std::size_t LINKED_NO = 1;
+  constexpr std::size_t PLUGIN_NO = 2;
+  constexpr std::uint64_t CYCLES_HELD = 20;
+
+  probe_.holdBusReady.store(true, std::memory_order_release);
+  ASSERT_NO_FATAL_FAILURE(bankPlugin("ExecutiveTestPlugin_Reload.so"));
+  ASSERT_NO_FATAL_FAILURE(lockTarget());
+  const std::uint16_t RELOAD = sendReload();
+  ASSERT_NE(RELOAD, 0u);
+  ASSERT_TRUE(waitFor([&]() { return probe_.inBusReady[PLUGIN_NO].load(); }))
+      << "the replacement was not told the bus is ready:\n"
+      << slurp(swapLog());
+
+  const std::size_t HOLDS_BEFORE = exec_->actionPhaseHolds();
+  ASSERT_TRUE(exec_->pokeTargetBothWays());
+  ASSERT_TRUE(waitCycles(CYCLES_HELD));
+  EXPECT_TRUE(probe_.inBusReady[PLUGIN_NO].load());
+  EXPECT_EQ(probe_.pokes[PLUGIN_NO].load(), 0U)
+      << "a command reached the replacement while it was being told the bus is ready";
+  EXPECT_EQ(probe_.pokes[LINKED_NO].load(), 0U);
+  EXPECT_GE(exec_->actionPhaseHolds(), HOLDS_BEFORE + CYCLES_HELD / 2U)
+      << "the cycles that ran meanwhile were to hold their action phase";
+
+  probe_.holdBusReady.store(false, std::memory_order_release);
+  std::uint8_t status = 0xFF;
+  ASSERT_TRUE(ground_.reply(RELOAD, POLL_LIMIT, status)) << "no reply to the reload";
+  ASSERT_EQ(status, static_cast<std::uint8_t>(CommandResult::SUCCESS)) << slurp(swapLog());
+
+  EXPECT_TRUE(waitFor([&]() { return probe_.pokes[PLUGIN_NO].load() == 2U; }))
+      << "the action's command and the bus command were to reach the replacement afterwards, "
+      << probe_.pokes[PLUGIN_NO].load() << " did";
+  EXPECT_EQ(probe_.pokesInBusReady[PLUGIN_NO].load(), 0U);
+  EXPECT_EQ(swapLogCount("RELOAD_LIBRARY_READY"), 1U) << slurp(swapLog());
 }
 
 /**

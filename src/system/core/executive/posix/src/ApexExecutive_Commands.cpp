@@ -559,6 +559,7 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     // Publish: the scheduler's entries, the registry's entries and the
     // component list are bound to the new instance on the task thread,
     // with every dispatched task settled. This call waits for that.
+    const std::size_t HELD_AT_PUBLISH = actionPhaseHolds_.load(std::memory_order_relaxed);
     const LibrarySwapOutcome SWAP = publishLibrarySwap(targetUid, *oldComp, *newComp);
 
     if (SWAP.status == static_cast<std::uint8_t>(ExecCommandResult::NOT_QUIESCENT)) {
@@ -653,9 +654,21 @@ std::uint8_t ApexExecutive::handleCommand(std::uint16_t opcode,
     // The new instance was published locked. It is told the bus is ready
     // on this thread, as at start-up, and unlocked: its tasks are
     // dispatched from the next cycle. The instance it replaced stays
-    // locked.
+    // locked. Since the publication the task thread has run no action
+    // phase and delivered no queued command, and it resumes both once
+    // the flag is cleared, so nothing reads or commands the instance
+    // beside its hook.
+    const std::uint64_t HOOK_BEGIN_NS = apex::helpers::cpu::getMonotonicNs();
     newComp->onBusReady();
+    replacementPreparing_.store(false, std::memory_order_release);
     newComp->unlock();
+    if (auto* sl = fileSystem_.swapLog()) {
+      sl->info("SWAP",
+               fmt::format("RELOAD_LIBRARY_READY: uid=0x{:06X} hook_us={} cycles_held={}",
+                           targetUid,
+                           (apex::helpers::cpu::getMonotonicNs() - HOOK_BEGIN_NS) / 1000U,
+                           actionPhaseHolds_.load(std::memory_order_relaxed) - HELD_AT_PUBLISH));
+    }
     return static_cast<std::uint8_t>(CommandResult::SUCCESS);
   }
 

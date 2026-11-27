@@ -15,7 +15,9 @@
  * task at that moment, and whether each instance was attached to the
  * internal bus and told so before its task first ran, and on which
  * thread it loaded parameters from a file and whether one of its runs
- * was inside the task then. Variants differ from the linked instance in
+ * was inside the task then, and can hold an instance inside the call
+ * that tells it the bus is ready and learns whether a command reached the
+ * instance meanwhile. Variants differ from the linked instance in
  * the size of the output block or in how the task is sequenced, for the swaps that must be refused.
  */
 
@@ -33,6 +35,7 @@
 #include <functional>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace executive {
 namespace test {
@@ -74,6 +77,14 @@ struct ReloadProbe {
   std::array<std::atomic<bool>, MAX_INSTANCES + 1> busAtReady{};
   /// Task runs the instance had begun when it was told the bus is ready.
   std::array<std::atomic<std::uint32_t>, MAX_INSTANCES + 1> runsBeforeBusReady{};
+  /// While set, an instance told the bus is ready stays inside that call (HOLD_LIMIT at most).
+  std::atomic<bool> holdBusReady{false};
+  /// Set while the instance is inside the call that tells it the bus is ready.
+  std::array<std::atomic<bool>, MAX_INSTANCES + 1> inBusReady{};
+  /// POKE commands the instance has handled.
+  std::array<std::atomic<std::uint32_t>, MAX_INSTANCES + 1> pokes{};
+  /// Of those, the ones that arrived while it was being told the bus is ready.
+  std::array<std::atomic<std::uint32_t>, MAX_INSTANCES + 1> pokesInBusReady{};
 
   /// The value initThread holds for the calling thread.
   [[nodiscard]] static std::size_t thisThread() noexcept {
@@ -113,6 +124,8 @@ public:
   static constexpr std::uint8_t STEP_TASK_UID = 1;
   static constexpr std::uint8_t STEP_GROUP = 0;
   static constexpr std::chrono::seconds HOLD_LIMIT{10};
+  /// A command an instance only counts.
+  static constexpr std::uint16_t POKE_OPCODE = 0x0100;
 
   /// The registered output block: the number of the instance that owns it.
   struct Output {
@@ -206,6 +219,28 @@ public:
                                               std::memory_order_release);
     probe_->busAtReady[number_].store(internalBus() != nullptr, std::memory_order_release);
     probe_->busReadyCalls[number_].fetch_add(1, std::memory_order_acq_rel);
+
+    probe_->inBusReady[number_].store(true, std::memory_order_release);
+    const auto DEADLINE = std::chrono::steady_clock::now() + HOLD_LIMIT;
+    while (probe_->holdBusReady.load(std::memory_order_acquire) &&
+           std::chrono::steady_clock::now() < DEADLINE) {
+      std::this_thread::sleep_for(std::chrono::microseconds(200));
+    }
+    probe_->inBusReady[number_].store(false, std::memory_order_release);
+  }
+
+  /// POKE is counted, with whether it found the instance inside onBusReady().
+  [[nodiscard]] std::uint8_t handleCommand(std::uint16_t opcode,
+                                           apex::compat::rospan<std::uint8_t> payload,
+                                           std::vector<std::uint8_t>& response) noexcept override {
+    if (opcode != POKE_OPCODE || probe_ == nullptr) {
+      return SwModelBase::handleCommand(opcode, payload, response);
+    }
+    if (probe_->inBusReady[number_].load(std::memory_order_acquire)) {
+      probe_->pokesInBusReady[number_].fetch_add(1, std::memory_order_acq_rel);
+    }
+    probe_->pokes[number_].fetch_add(1, std::memory_order_acq_rel);
+    return 0;
   }
 
 protected:
