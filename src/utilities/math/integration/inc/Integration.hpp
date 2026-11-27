@@ -37,16 +37,16 @@ concept Derivative = std::invocable<Func, const State&, double> &&
 /* --------------------------------- Status --------------------------------- */
 
 /**
- * @brief Error and status codes used by all integrators.
+ * @brief Status codes of the integrators built on IntegratorBase, and of BDF.
+ *
+ * Every code here is one a step can return. The solver callbacks return a
+ * State and have no way to report a failure of their own, so there is no
+ * code for a failed Jacobian evaluation or linear solve.
  */
 enum class Status : uint8_t {
-  SUCCESS = 0,                /**< Completed successfully. */
-  ERROR_INVALID_STEP = 1,     /**< Time-step is not positive and finite. */
-  ERROR_MAX_ITERATIONS = 2,   /**< Implicit solver exceeded max iterations. */
-  ERROR_JACOBIAN_FAILURE = 3, /**< Jacobian evaluation failed or returned NaN. */
-  ERROR_LINEAR_SOLVER = 4,    /**< Linear solver reported failure. */
-  ERROR_CONVERGENCE = 5,      /**< Implicit method did not converge. */
-  ERROR_UNKNOWN = 255         /**< Unspecified error. */
+  SUCCESS = 0,            /**< Step taken. */
+  ERROR_INVALID_STEP = 1, /**< Time-step is not positive and finite. */
+  ERROR_CONVERGENCE = 5   /**< Newton iteration used opts.maxIterations without converging. */
 };
 
 /* ---------------------------------- Stats --------------------------------- */

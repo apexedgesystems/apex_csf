@@ -30,9 +30,7 @@ namespace integration {
 
 enum class RosenbrockStatus : uint8_t {
   SUCCESS = 0,
-  ERROR_INVALID_STEP = 1,
-  ERROR_JACOBIAN_FAILURE = 2,
-  ERROR_LINEAR_SOLVER = 3
+  ERROR_INVALID_STEP = 1 ///< Step size is not positive and finite.
 };
 
 /* ------------------------------ ROS2 Options ------------------------------ */

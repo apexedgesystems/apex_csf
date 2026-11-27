@@ -45,10 +45,20 @@ template <typename State> struct ImplicitOptions {
   double tolerance = 1e-6;        /**< Convergence tolerance. */
   std::size_t maxIterations = 10; /**< Maximum Newton-Raphson iterations. */
 
-  /** @brief Compute the Jacobian df/dx at (x, t). */
+  /**
+   * @brief Compute the Newton matrix of the integrator's implicit equation at (x, t).
+   *
+   * Not df/dx alone: the matrix the Newton iteration solves with, which is
+   * I - c*dt*df/dx with c the coefficient of the method in use: 1 for
+   * BackwardEuler, 1/2 for TrapezoidalRule, 2/3 for BDF2, 5/12 for
+   * AdamsMoulton, 1 - 1/sqrt(2) for SDIRK2. For the variable-order BDF it
+   * is leadingCoefficient()*I - dt*df/dx. Its result is passed to
+   * linearSolve as J. A factorization may be returned in place of the
+   * matrix when linearSolve expects one.
+   */
   std::function<State(const State& x, double t)> computeJacobian;
 
-  /** @brief Solve J * delta = rhs for delta. */
+  /** @brief Solve J * delta = rhs for delta, J being what computeJacobian returned. */
   std::function<State(const State& J, const State& rhs)> linearSolve;
 
   /**
@@ -98,7 +108,10 @@ template <typename State> struct ImplicitOptionsRT {
   double tolerance = 1e-6;        /**< Convergence tolerance. */
   std::size_t maxIterations = 10; /**< Maximum Newton-Raphson iterations. */
 
-  /** @brief Jacobian callback: State(void* ctx, const State& x, double t). */
+  /**
+   * @brief Newton-matrix callback: State(void* ctx, const State& x, double t).
+   *        Returns what ImplicitOptions::computeJacobian returns.
+   */
   concurrency::Delegate<State, const State&, double> jacobianDelegate;
 
   /** @brief Linear solver: State(void* ctx, const State& J, const State& rhs). */
@@ -108,16 +121,16 @@ template <typename State> struct ImplicitOptionsRT {
   concurrency::Delegate<bool, const State&, const State&> convergedDelegate;
 
   /**
-   * @brief Compute Jacobian using delegate.
+   * @brief Compute the Newton matrix using the delegate.
    * @param x Current state.
    * @param t Current time.
-   * @return Jacobian value (or default State if delegate is null).
+   * @return Newton matrix (or default State if delegate is null).
    */
   State computeJacobian(const State& x, double t) const noexcept { return jacobianDelegate(x, t); }
 
   /**
    * @brief Solve linear system using delegate.
-   * @param J Jacobian matrix.
+   * @param J Newton matrix from computeJacobian.
    * @param rhs Right-hand side.
    * @return Solution delta (or default State if delegate is null).
    */

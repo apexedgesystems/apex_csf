@@ -153,26 +153,26 @@ nav.accumulate(1, gpsCorrection, 1.0 / 10.0); // Source 1: GPS
 
 **Explicit Methods:**
 
-| Method         | Order | F-evals/step | Best For                 |
-| -------------- | ----- | ------------ | ------------------------ |
-| ExplicitEuler  | 1     | 1            | Prototyping, non-stiff   |
-| RungeKutta4    | 4     | 4            | General non-stiff        |
-| RungeKutta45   | 4/5   | 7            | Adaptive non-stiff       |
-| AdamsBashforth | 1-4   | 1            | Efficient multi-step     |
-| Leapfrog       | 2     | 2            | Symplectic, Hamiltonian  |
-| VelocityVerlet | 2     | 2            | Symplectic, velocity-dep |
+| Method         | Order | F-evals/step                     | Best For                 |
+| -------------- | ----- | -------------------------------- | ------------------------ |
+| ExplicitEuler  | 1     | 1                                | Prototyping, non-stiff   |
+| RungeKutta4    | 4     | 4                                | General non-stiff        |
+| RungeKutta45   | 4/5   | 7                                | Adaptive non-stiff       |
+| AdamsBashforth | 1-4   | 1 (4 on its first order-1 steps) | Efficient multi-step     |
+| Leapfrog       | 2     | 2                                | Symplectic, Hamiltonian  |
+| VelocityVerlet | 2     | 2                                | Symplectic, velocity-dep |
 
 **Implicit Methods (Stiff ODEs):**
 
-| Method          | Order                                | Stages | Best For                     |
-| --------------- | ------------------------------------ | ------ | ---------------------------- |
-| BackwardEuler   | 1                                    | 1+     | Simple stiff systems         |
-| TrapezoidalRule | 2                                    | 1+     | Energy-conserving            |
-| BDF             | 2 (formulas of order 1-6; see below) | 1+     | General stiff (industry std) |
-| AdamsMoulton    | 3                                    | 2+     | High-accuracy multi-step     |
-| SDIRK2          | 2                                    | 2+     | L-stable, DAE-friendly       |
-| ROS2            | 2                                    | 2      | Moderately stiff             |
-| ROS3            | 3                                    | 3      | Moderately stiff             |
+| Method          | Order                                | Stages                                         | Best For                     |
+| --------------- | ------------------------------------ | ---------------------------------------------- | ---------------------------- |
+| BackwardEuler   | 1                                    | 1+                                             | Simple stiff systems         |
+| TrapezoidalRule | 2                                    | 1+                                             | Energy-conserving            |
+| BDF             | 2 (formulas of order 1-6; see below) | 1+                                             | General stiff (industry std) |
+| AdamsMoulton    | 3                                    | 2+ (first step: one explicit Runge-Kutta step) | High-accuracy multi-step     |
+| SDIRK2          | 2                                    | 2+                                             | L-stable, DAE-friendly       |
+| ROS2            | 2                                    | 2                                              | Moderately stiff, L-stable   |
+| ROS3            | 3                                    | 3                                              | Moderately stiff, L-stable   |
 
 Variable-order `BDF` starts with one first-order step and raises its order
 by one per step, at the caller's constant step size. The first step's error
@@ -216,7 +216,7 @@ All integrators are RT-safe during stepping. Initialization may store callbacks.
 | `time()`       | YES     | Inline accessor                    |
 | `stats()`      | YES     | Inline accessor                    |
 
-Implicit methods require user-provided callbacks for Jacobian computation and linear solving. These callbacks must be RT-safe for the integrator to remain RT-safe.
+Implicit and Rosenbrock methods require user-provided callbacks for the matrix and the linear solve. These callbacks must be RT-safe for the integrator to remain RT-safe.
 
 ---
 
@@ -238,17 +238,32 @@ double time() const noexcept;
 
 ### Status Codes
 
+`Status` is returned by the integrators built on `IntegratorBase` and by `BDF`:
+
 ```cpp
 enum class Status : uint8_t {
   SUCCESS = 0,
-  ERROR_INVALID_STEP = 1,     // dt <= 0
-  ERROR_MAX_ITERATIONS = 2,   // Implicit solver exceeded max iterations
-  ERROR_JACOBIAN_FAILURE = 3, // Jacobian evaluation failed
-  ERROR_LINEAR_SOLVER = 4,    // Linear solver failed
-  ERROR_CONVERGENCE = 5,      // Did not converge
-  ERROR_UNKNOWN = 255
+  ERROR_INVALID_STEP = 1, // dt is not positive and finite
+  ERROR_CONVERGENCE = 5   // Newton iteration used maxIterations without converging
 };
 ```
+
+The other integrators have a status type of their own:
+
+| Type                | Returned by                           | Codes                                                                                              |
+| ------------------- | ------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `RK45Status`        | `RungeKutta45`                        | `SUCCESS`, `STEP_REJECTED`, `ERROR_DT_TOO_SMALL`, `ERROR_INVALID_STEP`, `ERROR_NON_FINITE`         |
+| `RKNStatus`         | `RKN4`, `RKN6`, `RKN34`               | `SUCCESS`, `ERROR_INVALID_STEP`; from `RKN34` also `STEP_REJECTED` and `ERROR_NON_FINITE`          |
+| `RosenbrockStatus`  | `ROS2`, `ROS3`                        | `SUCCESS`, `ERROR_INVALID_STEP`                                                                    |
+| `LeapfrogStatus`    | `Leapfrog`, `VelocityVerlet`          | `SUCCESS`, `ERROR_INVALID_STEP`                                                                    |
+| `AccumulatorStatus` | `Accumulator`, `MultiRateAccumulator` | `SUCCESS`, `ERROR_INVALID_DT`, `ERROR_OVERFLOW` (a source index outside the accumulator's sources) |
+
+Every stepper refuses a step size that is zero, negative, infinite or NaN,
+and changes nothing when it does. A rejected adaptive step (`STEP_REJECTED`)
+leaves state and time unchanged; retry with the suggested `dtNext`. Only the
+adaptive integrators examine what the derivative returns: `RungeKutta45` and
+`RKN34` report a NaN or an overflow as `ERROR_NON_FINITE`. A fixed-step
+integrator given a NaN by the derivative returns `SUCCESS` with a NaN state.
 
 ### Statistics
 
@@ -276,6 +291,20 @@ struct ImplicitOptions {
   std::function<bool(const State& delta, const State& F)> converged;
 };
 ```
+
+`computeJacobian` returns the Newton matrix of the method in use, not `df/dx`
+alone: `I - c*dt*df/dx`, with `c` = 1 for `BackwardEuler`, 1/2 for
+`TrapezoidalRule`, 2/3 for `BDF2`, 5/12 for `AdamsMoulton` and `1 - 1/sqrt(2)`
+for `SDIRK2`. For the variable-order `BDF` it is
+`leadingCoefficient()*I - dt*df/dx`, read before each step because the order
+changes while it ramps up. `converged` defaults to always true, which is one
+Newton iteration per step: enough for a linear problem with the exact matrix,
+and otherwise to be replaced by a real test.
+
+The multistep integrators (`AdamsBashforth`, `AdamsMoulton`, `BDF2`, `BDF`)
+assume the same step size on every step, and step from the state they are
+given. After a jump in the state or a change of step size, initialize them
+again.
 
 ### ImplicitOptionsRT (RT-Safe)
 
@@ -368,20 +397,21 @@ docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/utests/TestM
 | ----------------------------- | ---------------------------------- | ----- |
 | `ExplicitEuler_uTest.cpp`     | Forward Euler integrator           | 4     |
 | `RungeKutta4_uTest.cpp`       | Classical RK4                      | 4     |
-| `RungeKutta45_uTest.cpp`      | Adaptive RK4/5 (Dormand-Prince)    | 8     |
+| `RungeKutta45_uTest.cpp`      | Adaptive RK4/5 (Dormand-Prince)    | 12    |
 | `BackwardEuler_uTest.cpp`     | Implicit Euler                     | 4     |
 | `TrapezoidalRule_uTest.cpp`   | Crank-Nicolson                     | 4     |
-| `BDF2_uTest.cpp`              | 2-step BDF                         | 5     |
-| `BDF_uTest.cpp`               | Variable-order BDF (1-6)           | 6     |
-| `AdamsBashforth_uTest.cpp`    | Adams-Bashforth                    | 4     |
-| `AdamsMoulton_uTest.cpp`      | Adams-Moulton                      | 5     |
+| `BDF2_uTest.cpp`              | 2-step BDF                         | 8     |
+| `BDF_uTest.cpp`               | Variable-order BDF (1-6)           | 10    |
+| `AdamsBashforth_uTest.cpp`    | Adams-Bashforth                    | 6     |
+| `AdamsMoulton_uTest.cpp`      | Adams-Moulton                      | 7     |
 | `SDIRK2_uTest.cpp`            | 2-stage SDIRK                      | 5     |
-| `Rosenbrock_uTest.cpp`        | ROS2, ROS3 methods                 | 7     |
+| `Rosenbrock_uTest.cpp`        | ROS2, ROS3 methods                 | 12    |
 | `Leapfrog_uTest.cpp`          | Symplectic integrators             | 7     |
 | `Quaternion_uTest.cpp`        | Quaternion types and integration   | 14    |
-| `RungeKuttaNystrom_uTest.cpp` | RKN4, RKN6, RKN34 methods          | 10    |
-| `StateVector_uTest.cpp`       | Fixed-size state container         | 18    |
+| `RungeKuttaNystrom_uTest.cpp` | RKN4, RKN6, RKN34 methods          | 14    |
+| `StateVector_uTest.cpp`       | Fixed-size state container         | 20    |
 | `Accumulator_uTest.cpp`       | Direct integration / sensor fusion | 16    |
+| `StepSize_uTest.cpp`          | Step-size check in every stepper   | 11    |
 
 ---
 
