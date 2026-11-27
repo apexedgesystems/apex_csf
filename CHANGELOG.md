@@ -247,8 +247,9 @@ any such change is called out explicitly in its entry.
   tick, so tasks at different rates are ordered where they meet; a
   slower task at a later phase could run beside the step it follows.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
-- The ops and HIL demos' task tables run one worker; on two, tasks
-  sharing a component's state could overlap.
+- The ops and HIL demos' components put their own tasks in a sequence
+  group and the tables opt them in, on two workers; a component's tasks
+  could run beside one another on the tick they share.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - Concurrency primitives: pool start-up, shutdown and signal handling,
   Barrier and Latch semantics, LockFreeQueue cell alignment and

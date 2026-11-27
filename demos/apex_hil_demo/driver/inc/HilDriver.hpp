@@ -154,13 +154,18 @@ protected:
       }
     }
 
-    // Register tasks
-    registerTask<HilDriver, &HilDriver::sendState>(static_cast<std::uint8_t>(TaskUid::SEND_STATE),
-                                                   this, "sendState");
-    registerTask<HilDriver, &HilDriver::recvCommand>(
-        static_cast<std::uint8_t>(TaskUid::RECV_COMMAND), this, "recvCommand");
-    registerTask<HilDriver, &HilDriver::telemetry>(static_cast<std::uint8_t>(TaskUid::TELEMETRY),
-                                                   this, "telemetry");
+    // The three tasks share sequence group 0 (send phase 0, receive
+    // phase 1, telemetry phase 2). Send stamps the sequence number
+    // receive last stored, and telemetry reads the counters both keep.
+    // Whichever of them share a tick run in that order. The TPRM task
+    // table opts in per task.
+    (void)createSequenceGroup(0, 3);
+    registerSequencedTask<HilDriver, &HilDriver::sendState>(
+        static_cast<std::uint8_t>(TaskUid::SEND_STATE), this, "sendState", 0, 0);
+    registerSequencedTask<HilDriver, &HilDriver::recvCommand>(
+        static_cast<std::uint8_t>(TaskUid::RECV_COMMAND), this, "recvCommand", 0, 1);
+    registerSequencedTask<HilDriver, &HilDriver::telemetry>(
+        static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry", 0, 2);
 
     // Register data for registry integration
     registerData(DataCategory::STATE, "state", &state_.get(), sizeof(DriverState));

@@ -106,15 +106,21 @@ protected:
     dynamics_.reset({0.0, 0.0, 0.0}, {0.0, 0.0, 0.0});
     drag_.init(p.dragCd, p.dragArea);
 
-    // Register tasks
-    registerTask<HilPlantModel, &HilPlantModel::plantStep>(
-        static_cast<std::uint8_t>(TaskUid::PLANT_STEP), this, "plantStep");
+    // The three tasks share sequence group 0 (step phase 0, control
+    // phase 1, telemetry phase 2). The step integrates with the thrust
+    // control last set and writes the state telemetry reads; control
+    // falls back on the dynamics the step advances. Whichever of them
+    // share a tick run in that order. The TPRM task table opts in per
+    // task.
+    (void)createSequenceGroup(0, 3);
+    registerSequencedTask<HilPlantModel, &HilPlantModel::plantStep>(
+        static_cast<std::uint8_t>(TaskUid::PLANT_STEP), this, "plantStep", 0, 0);
 
-    registerTask<HilPlantModel, &HilPlantModel::control>(
-        static_cast<std::uint8_t>(TaskUid::CONTROL), this, "control");
+    registerSequencedTask<HilPlantModel, &HilPlantModel::control>(
+        static_cast<std::uint8_t>(TaskUid::CONTROL), this, "control", 0, 1);
 
-    registerTask<HilPlantModel, &HilPlantModel::telemetry>(
-        static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry");
+    registerSequencedTask<HilPlantModel, &HilPlantModel::telemetry>(
+        static_cast<std::uint8_t>(TaskUid::TELEMETRY), this, "telemetry", 0, 2);
 
     // Register data for registry integration
     registerData(DataCategory::TUNABLE_PARAM, "tunableParams", &tunableParams_.get(),
