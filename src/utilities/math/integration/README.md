@@ -172,7 +172,7 @@ nav.accumulate(1, gpsCorrection, 1.0 / 10.0); // Source 1: GPS
 | AdamsMoulton    | 3                                    | 2+     | High-accuracy multi-step     |
 | SDIRK2          | 2                                    | 2+     | L-stable, DAE-friendly       |
 | ROS2            | 2                                    | 2      | Moderately stiff             |
-| ROS3P           | 3                                    | 3      | Moderately stiff             |
+| ROS3            | 3                                    | 3      | Moderately stiff             |
 
 Variable-order `BDF` starts with one first-order step and raises its order
 by one per step, at the caller's constant step size. The first step's error
@@ -376,7 +376,7 @@ docker compose run --rm -T dev-cuda ./build/hosted-x86_64-debug/bin/utests/TestM
 | `AdamsBashforth_uTest.cpp`    | Adams-Bashforth                    | 4     |
 | `AdamsMoulton_uTest.cpp`      | Adams-Moulton                      | 5     |
 | `SDIRK2_uTest.cpp`            | 2-stage SDIRK                      | 5     |
-| `Rosenbrock_uTest.cpp`        | ROS2, ROS3P methods                | 7     |
+| `Rosenbrock_uTest.cpp`        | ROS2, ROS3 methods                 | 7     |
 | `Leapfrog_uTest.cpp`          | Symplectic integrators             | 7     |
 | `Quaternion_uTest.cpp`        | Quaternion types and integration   | 14    |
 | `RungeKuttaNystrom_uTest.cpp` | RKN4, RKN6, RKN34 methods          | 10    |

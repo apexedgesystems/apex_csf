@@ -52,7 +52,7 @@ using apex::math::integration::RKN4;
 using apex::math::integration::RKN6;
 using apex::math::integration::RKNStatus;
 using apex::math::integration::ROS2;
-using apex::math::integration::ROS3P;
+using apex::math::integration::ROS3;
 using apex::math::integration::RosenbrockOptions;
 using apex::math::integration::RosenbrockStatus;
 using apex::math::integration::RungeKutta4;
@@ -256,14 +256,14 @@ TEST(RosenbrockStepGuardTest, RefusesInvalidStep) {
     EXPECT_EQ(ros2.time(), START_TIME) << "dt " << dt;
     EXPECT_EQ(ros2.stats().steps, 0U) << "dt " << dt;
 
-    ROS3P<double> ros3p;
-    ros3p.initialize(f, START_VALUE, START_TIME);
-    EXPECT_EQ(ros3p.step(y, dt, opts),
+    ROS3<double> ros3;
+    ros3.initialize(f, START_VALUE, START_TIME);
+    EXPECT_EQ(ros3.step(y, dt, opts),
               static_cast<std::uint8_t>(RosenbrockStatus::ERROR_INVALID_STEP))
         << "dt " << dt;
     EXPECT_EQ(y, START_VALUE) << "dt " << dt;
-    EXPECT_EQ(ros3p.time(), START_TIME) << "dt " << dt;
-    EXPECT_EQ(ros3p.stats().steps, 0U) << "dt " << dt;
+    EXPECT_EQ(ros3.time(), START_TIME) << "dt " << dt;
+    EXPECT_EQ(ros3.stats().steps, 0U) << "dt " << dt;
 
     EXPECT_EQ(calls, 0) << "dt " << dt;
   }
