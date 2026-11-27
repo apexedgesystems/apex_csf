@@ -17,7 +17,7 @@ Crates `apex-tprm` (library) and `apex-build-tools` under
 - **[tprm_pack](../build/rust/apex-build-tools/docs/tprm_pack.md)**
   Pack/unpack/list/diff TPRM archives for multi-component configuration.
 
-- **cdef_gen**
+- **[cdef_gen](../build/rust/apex-build-tools/docs/cdef_gen.md)**
   Generates the `.auto` component headers from their specs (see the
   [proto profile](../build/rust/apex-tprm/docs/proto_profile.md) it reads).
 
