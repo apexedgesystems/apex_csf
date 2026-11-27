@@ -169,6 +169,13 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Transient solver: `run()` counts its steps (no extra sliver step), dense
+  steps take any number of voltage sources, Newton steps that do not
+  converge are counted and can be refused, the two-state factors follow
+  each state's step length, and `cuda::stepCuda` takes the integration
+  method. Breaking: unread `TransientConfig` fields and two unused status
+  values are removed and `stepCuda` gains a parameter; see the
+  [transient migration table](src/sim/electronics/algorithms/transient/README.md#9-migration).
 - The gitleaks binary in the lint and dev images belongs to root, not to
   the user id its release archive records.
   ([#202](https://github.com/apexedgesystems/apex_csf/pull/202))
