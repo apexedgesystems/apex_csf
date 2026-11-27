@@ -18,8 +18,10 @@
  *
  * API Design:
  *  - Host-device transfers are explicit
- *  - Stream parameter: the work is queued on the stream given, and the call
- *    returns when that work is done
+ *  - Stream parameter: the work is queued on the stream given. A batch that
+ *    runs to its end has been waited for when the call returns, whether or
+ *    not every system of it was solved. A return on a CUDA error does not
+ *    wait: work queued before the error may still be pending
  *  - Returns bool: true when every system of the batch was solved
  *
  * A system is solved unless, at some elimination step, no entry left in the
@@ -180,6 +182,12 @@ LaunchConfig getLaunchConfig(std::size_t dim, std::size_t batch) noexcept;
  *         error. After a CUDA error the contents of bs are unspecified.
  *
  * @note NOT RT-SAFE: involves memory transfers and kernel launches.
+ * @note After a CUDA error, transfers and the kernel queued before it may
+ *       still be using As, bs and the workspace. Keep all three alive and
+ *       unchanged until the stream has completed (a cudaStreamSynchronize of
+ *       it succeeds) or CUDA's recovery for the error allows their reuse.
+ *       The flags being false says no solution is to be read, not that the
+ *       stream is idle.
  */
 bool solveBatchCustom(MnaBatchWorkspace& ws, const double* As, double* bs, std::size_t dim,
                       std::size_t batch, void* stream = nullptr, bool* solved = nullptr) noexcept;
@@ -206,6 +214,8 @@ bool solveBatchCustom(MnaBatchWorkspace& ws, const double* As, double* bs, std::
  * @return As solveBatchCustom.
  *
  * @note NOT RT-SAFE: involves memory transfers and kernel launches.
+ * @note After a CUDA error As, bs and the workspace are kept as for
+ *       solveBatchCustom.
  */
 bool solveBatchCustomF32(MnaBatchWorkspaceF32& ws, const float* As, float* bs, std::size_t dim,
                          std::size_t batch, void* stream = nullptr,

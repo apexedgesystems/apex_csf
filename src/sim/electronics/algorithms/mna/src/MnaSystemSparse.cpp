@@ -14,7 +14,8 @@ namespace sim::electronics::algorithms::mna {
 namespace {
 
 /// Reciprocal pivot growth below which a kept pivot order is given up: the
-/// square root of a double's epsilon, half of its digits.
+/// square root of a double's epsilon. A chosen threshold on KLU's growth
+/// measure, not a bound on the error of a solution.
 constexpr double KEPT_ORDER_GROWTH_FLOOR = 1.4901161193847656e-08;
 
 } // namespace
@@ -346,7 +347,8 @@ void MnaSystemSparse::buildRhsVector() {
 bool MnaSystemSparse::factorize() {
   buildCsc();
   buildRhsVector();
-  // The solves copy the right-hand side here; sized now, they allocate nothing.
+  // A solve copies the right-hand side here. Sized now, solveInto() allocates
+  // nothing; solve() still allocates the vectors it returns.
   x_.resize(b_.size());
 
   // A pattern other than the analysed one (stamps moved, a voltage source
@@ -367,17 +369,20 @@ bool MnaSystemSparse::factorize() {
     return true;
   }
 
-  // No numeric factor, or a pivot order that does not suit these values (a
-  // zero pivot, or growth that costs the solution its accuracy): pivot anew.
+  // No numeric factor, or a pivot order given up for these values (a zero
+  // pivot, a growth that cannot be measured or is below the floor): pivot
+  // anew.
   return factorNumeric();
 }
 
 bool MnaSystemSparse::keptOrderSuits() {
-  // `klu_refactor` succeeds with any nonzero pivot, however small beside the
-  // entries it eliminates. The reciprocal pivot growth, the smallest ratio
-  // over the columns of the largest matrix entry to the largest entry of U,
-  // tells: at or above the floor the factors lose less than half of a
-  // double's digits to growth.
+  // `klu_refactor` succeeds with any nonzero pivot. KLU's reciprocal pivot
+  // growth is the smallest ratio, over the columns of each diagonal block of
+  // the row-scaled matrix, of the block's largest entry in a column to U's
+  // largest in it: a small value warns that U grew under this pivot order.
+  // The order is given up when the measurement fails or the ratio is below
+  // the floor. The floor is a heuristic: it bounds neither the condition
+  // number nor the error of a solution.
   if (klu_rgrowth(cscAp_.data(), cscAi_.data(), cscAx_.data(), kluSymbolic_, kluNumeric_,
                   &kluCommon_) == 0) {
     return false;

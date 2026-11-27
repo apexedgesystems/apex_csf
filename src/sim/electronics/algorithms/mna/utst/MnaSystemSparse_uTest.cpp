@@ -574,17 +574,18 @@ TEST(MnaSystemSparseTest, StampAddedAfterFactorizationIsNotMatched) {
 }
 
 /**
- * @test A kept pivot order that would grow its pivots is given up, though no
- *       pivot is zero; one that grows them little is as accurate as its
- *       growth allows.
+ * @test A kept pivot order under which U grows past the floor is given up,
+ *       though no pivot is zero; one above the floor is kept.
  *
  * [[1, 1], [1, 2]] is pivoted on its diagonal. [[e, 1], [1, 1]] at the same
  * positions is well conditioned (about 4) for any small e, with the solution
  * v1 = 1 / (1 - e), v2 = (1 - 2e) / (1 - e) for the right-hand side [1, 2].
- * On the kept order its first pivot is e and the factors lose their digits
- * in proportion: every one for e = 1e-20 (v = [0, 1]), nine for e = 1e-9.
- * Both are below the growth floor and are pivoted anew. e = 1e-6 is above
- * it, and keeps ten digits either way.
+ * On the kept order its first pivot is e and U's last entry is 1 - 1/e, a
+ * reciprocal growth of about e. With e = 1e-20 that order returns
+ * v = [0, 1]. e = 1e-20 and e = 1e-9 are below the floor and are pivoted
+ * anew: both are held to 1e-12. e = 1e-6 is above it and keeps its order:
+ * it is held to 1e-8, which is what this case is asked for, not what the
+ * floor promises of any other matrix.
  */
 TEST(MnaSystemSparseTest, FactorizeRepivotsWhenKeptOrderGrowsItsPivots) {
   const auto STAMP = [](auto& system, double first, double last) {

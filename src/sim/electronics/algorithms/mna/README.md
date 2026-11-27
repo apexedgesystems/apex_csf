@@ -77,7 +77,8 @@ make compose-testp  # Verify tests pass
 - Dense AC: 5-10x speedup from LAPACK zgesv vs naive complex Gaussian
 - Sparse DC: 25x speedup over baseline (138.2ms -> 5.57ms)
 - Cached LU: O(n^2) back-substitution vs O(n^3) full solve (massive win for sweeps)
-- RT-safe with pre-allocated workspace (both DC and AC)
+- RT-safe solves into a pre-allocated workspace, DC and AC, in a build with
+  LAPACKE ([section 7](#7-rt-safety))
 
 **Applications:**
 
@@ -92,7 +93,7 @@ make compose-testp  # Verify tests pass
 
 ### MnaSystem (Dense Solver)
 
-**RT-safe:** Yes (with workspace)
+**RT-safe:** `solveInto()` with a prepared workspace, in a build with LAPACKE; the fallback elimination allocates ([section 7](#7-rt-safety))
 **Best for:** Small circuits (<200 nets), dense connectivity
 
 Dense MNA solver using BLAS/LAPACK cached LU factorization. 76% of time spent in optimized BLAS/LAPACK routines.
@@ -113,7 +114,7 @@ auto result = mna.solve();  // O(n^3) first solve, O(n^2) cached
 
 ### MnaSystemSparse (Sparse Solver)
 
-**RT-safe:** Yes (with workspace)
+**RT-safe:** `updateRhs()` and `solveInto()` on factors in hand; `factorize()` allocates ([section 7](#7-rt-safety))
 **Best for:** Large circuits (200+ nets), sparse connectivity
 
 Sparse MNA solver using KLU (SuiteSparse). Direct CSC construction, counting sort assembly. Within 1.6x of dense performance at 150 nets, scales better for larger circuits.
@@ -132,17 +133,18 @@ auto result = mna.solve();  // Back-substitution
 - Direct CSC (Compressed Sparse Column) build
 - `factorize()` is the one entry point after any change. It keeps the
   symbolic analysis while the pattern (stamped positions and voltage sources)
-  is the analysed one, and the pivot order (`klu_refactor`) while it suits
-  the new values: no pivot is zero and the pivots have not grown small
-  beside their columns (`klu_rgrowth` at least the square root of machine
-  epsilon). Otherwise it analyses or pivots anew.
+  is the analysed one, and the pivot order (`klu_refactor`) unless a pivot
+  is zero or KLU's reciprocal pivot growth (`klu_rgrowth`) cannot be
+  measured or is below the square root of machine epsilon. Otherwise it
+  analyses or pivots anew. The threshold is a heuristic against growth in
+  U, not a bound on the error of a solution.
 - `tripletsMatch()` tells whether the stamps are those of the factors in
   hand, after any factorization; `updateRhs()` then rebuilds the right-hand
   side alone.
 
 ### AcMnaSystem (AC Frequency Domain)
 
-**RT-safe:** Yes (with workspace)
+**RT-safe:** `solveInto()` with a prepared workspace, in a build with LAPACKE
 **Best for:** Frequency response, Bode plots, AC analysis
 
 AC MNA solver with complex impedances. Supports frequency sweeps for analog circuit design.
@@ -192,7 +194,11 @@ bool everySolved = solveBatchCustom(workspace, hA, hb, 32, batchSize, stream);
 - Supported dimensions: 8, 16, 32, 64, in double (`solveBatchCustom`) and
   single precision (`solveBatchCustomF32`)
 - Custom kernels optimized per size
-- A CUDA stream may be given; the call returns when the batch is done
+- A CUDA stream may be given. A batch that runs to its end has been waited
+  for when the call returns, also where systems of it were not solved. A
+  return on a CUDA error does not wait: keep the host arrays and the
+  workspace alive and unchanged until the stream has completed or CUDA's
+  recovery for the error allows their reuse
 - Returns true only when every system was solved. A system with no pivot
   in some column (relative to that column's largest entry) is reported in
   the optional `solved` flags and comes back as not-a-number in every
@@ -225,7 +231,7 @@ ctx.stampVoltageSource(pos, neg, v); // Voltage source
 | How do I analyze frequency response (Bode plots)? | `AcMnaSystem` (AC, complex LAPACK zgesv)                     |
 | How do I run Monte Carlo parameter sweeps?        | `MnaBatchCuda` (GPU batch solver)                            |
 | How do I stamp resistors/capacitors into MNA?     | `StampContext` (DC) or `AcMnaSystem` (AC)                    |
-| How do I make solving RT-safe?                    | Use `MnaSolveWorkspace` (DC) or `AcMnaSolveWorkspace` (AC)   |
+| How do I make solving RT-safe?                    | Per solver and backend: see [section 7](#7-rt-safety)        |
 | When should I use dense vs sparse?                | Dense <200 nets, sparse >200 nets                            |
 | How do I handle voltage sources?                  | Augmented MNA (built-in to all solvers)                      |
 | How do I cache factorizations for speed?          | DC: `MnaFactorizedWorkspace`, AC: `AcMnaFactorizedWorkspace` |
@@ -589,10 +595,12 @@ another matrix's factors. The comparison allocates nothing: `clearStamps()`
 sets the factorized stamp list aside by exchanging two buffers.
 
 When the values change on every pass (a Newton iteration), `factorize()`
-keeps the pivot order and then measures the pivot growth of the result, a
-pass over the matrix and its factors on top of the refactorization. Where
-the growth is too small it pivots anew, which costs a full numeric
-factorization for that pass.
+keeps the pivot order and then measures the reciprocal pivot growth of the
+result, a pass over the matrix and its factors on top of the
+refactorization. Where that is below the threshold, or cannot be measured,
+it pivots anew, which costs a full numeric factorization for that pass. The
+measure warns of growth in U under the kept order; it does not certify the
+accuracy of the solution.
 
 ---
 
@@ -627,7 +635,8 @@ factorization for that pass.
 
 ```cpp
 // SETUP PHASE (not RT-safe): stamp once and factorize. factorize() also
-// sizes the storage the solves work in, so the first solve allocates nothing.
+// sizes the storage solveInto() works in, so the first solveInto() allocates
+// nothing. solve() allocates the vectors it returns and is not for the loop.
 MnaSystemSparse mna(netCount);
 stampCircuit(mna, inputs);
 if (!mna.factorize()) {
@@ -730,8 +739,10 @@ docker compose run --rm dev-cuda bash -c \
 
 The sparse system and the batch workspaces changed layout, and the batch
 solvers their signature: rebuild everything that includes
-`MnaSystemSparse.hpp` or `MnaBatchCuda.cuh` together with the library.
-Objects compiled against the earlier headers do not link or load against it.
+`MnaSystemSparse.hpp` or `MnaBatchCuda.cuh` together with the library. Do
+not link or load objects compiled against the earlier headers; rebuild all
+dependents together. The linker and the loader do not reject every mixed
+build: the sparse system's symbols are unchanged while its layout is not.
 
 | Earlier                                                                 | Now                                                                                                                                                                          |
 | ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

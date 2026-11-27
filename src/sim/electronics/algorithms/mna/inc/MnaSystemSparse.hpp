@@ -153,15 +153,18 @@ public:
    * - the symbolic analysis, while the pattern (the positions stamped and the
    *   voltage sources) is the analysed one; otherwise the pattern is analysed
    *   again;
-   * - the pivot order of the numeric factors, under the same pattern, while
-   *   it suits the new values. It does not when a pivot is zero, or when
-   *   KLU's reciprocal pivot growth of the result (the smallest ratio, over
-   *   the columns, of the largest matrix entry to the largest entry of U) is
-   *   below the square root of a double's epsilon; then the matrix is
-   *   pivoted anew under the same analysis.
+   * - the pivot order of the numeric factors, under the same pattern, unless
+   *   a pivot is zero, KLU's reciprocal pivot growth of the result cannot be
+   *   measured, or it is below the square root of a double's epsilon; then
+   *   the matrix is pivoted anew under the same analysis. The growth is the
+   *   smallest ratio, over the columns of each diagonal block of the
+   *   row-scaled matrix, of the block's largest entry in a column to U's
+   *   largest in it. The threshold is a heuristic against growth in U: it
+   *   certifies neither a condition number nor the error of a solution.
    *
-   * Also sizes the storage solve() and solveInto() copy the right-hand side
-   * into, so that they allocate nothing.
+   * Also sizes the storage a solve copies the right-hand side into, so that
+   * solveInto() on the factors allocates nothing. solve() still allocates
+   * the vectors it returns.
    *
    * @return true on success, false if matrix is singular.
    *
