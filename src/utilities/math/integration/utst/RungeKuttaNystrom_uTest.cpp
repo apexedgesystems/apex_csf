@@ -11,12 +11,15 @@
 #include "src/utilities/math/integration/inc/RungeKuttaNystrom.hpp"
 
 #include "src/utilities/math/integration/inc/StateVector.hpp"
+#include "src/utilities/math/integration/utst/support/ConvergenceOrder.hpp"
 
 #include <gtest/gtest.h>
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 
+#include <algorithm>
 #include <limits>
 
 using apex::math::integration::RKN34;
@@ -24,6 +27,7 @@ using apex::math::integration::RKN4;
 using apex::math::integration::RKN6;
 using apex::math::integration::RKNStatus;
 using apex::math::integration::State3;
+using apex::math::integration::test::observedOrder;
 
 /* -------------------------------- RKN4 Tests ------------------------------- */
 
@@ -108,22 +112,62 @@ TEST(RKN4Test, TracksStatistics) {
 
 /* -------------------------------- RKN6 Tests ------------------------------- */
 
-/** @test RKN6 provides reasonable accuracy for harmonic oscillator. */
-TEST(RKN6Test, ReasonableAccuracy) {
-  const double DT = 0.01;
-  const int STEPS = static_cast<int>(2.0 * M_PI / DT); // One period
+/** @test Integrates a constant acceleration exactly in one step */
+TEST(RKN6Test, ConstantAccelerationIsExact) {
+  RKN6<double> integrator;
+  double y = 0.0;
+  double v = 0.0;
 
-  RKN6<double> rkn6;
-  double y = 1.0, v = 0.0;
-  auto accel = [](double /*t*/, const double& pos, const double& /*vel*/) { return -pos; };
+  ASSERT_EQ(integrator.step(y, v, 1.0, [](double, const double&, const double&) { return 1.0; }),
+            static_cast<std::uint8_t>(RKNStatus::SUCCESS));
 
-  for (int i = 0; i < STEPS; ++i) {
-    rkn6.step(y, v, DT, accel);
-  }
+  // From rest under unit acceleration for unit time: y = 1/2, v = 1
+  EXPECT_NEAR(y, 0.5, 1e-14);
+  EXPECT_NEAR(v, 1.0, 1e-14);
+  EXPECT_DOUBLE_EQ(integrator.time(), 1.0);
+}
 
-  // RKN6 provides reasonable accuracy (coefficients may need refinement)
-  EXPECT_NEAR(y, 1.0, 0.2);
-  EXPECT_NEAR(v, 0.0, 0.5);
+/** @test Converges at sixth order on the harmonic oscillator, in position and velocity */
+TEST(RKN6Test, ConvergesAtSixthOrderOnOscillator) {
+  // y'' = -y, y(0) = 1, v(0) = 0: y = cos(t), v = -sin(t)
+  const auto errorAtOne = [](int steps) {
+    RKN6<double> integrator;
+    double y = 1.0;
+    double v = 0.0;
+    const double dt = 1.0 / steps;
+    for (int i = 0; i < steps; ++i) {
+      integrator.step(y, v, dt, [](double, const double& pos, const double&) { return -pos; });
+    }
+    return std::max(std::fabs(y - std::cos(1.0)), std::fabs(v + std::sin(1.0)));
+  };
+
+  const double measured = observedOrder(errorAtOne, 5);
+  EXPECT_GT(measured, 5.6);
+  EXPECT_LT(measured, 6.6);
+  EXPECT_LT(errorAtOne(10), 1e-9);
+}
+
+/** @test Converges at sixth order when the acceleration depends on time, position and velocity */
+TEST(RKN6Test, ConvergesAtSixthOrderWithVelocityAndTime) {
+  // y = exp(sin(t)) solves y'' = v^2/y - sin(t)*y with y(0) = 1, v(0) = 1;
+  // its velocity is cos(t)*exp(sin(t)).
+  const auto errorAtOne = [](int steps) {
+    RKN6<double> integrator;
+    double y = 1.0;
+    double v = 1.0;
+    const double dt = 1.0 / steps;
+    for (int i = 0; i < steps; ++i) {
+      integrator.step(y, v, dt, [](double t, const double& pos, const double& vel) {
+        return vel * vel / pos - std::sin(t) * pos;
+      });
+    }
+    const double exact = std::exp(std::sin(1.0));
+    return std::max(std::fabs(y - exact), std::fabs(v - std::cos(1.0) * exact));
+  };
+
+  const double measured = observedOrder(errorAtOne, 8);
+  EXPECT_GT(measured, 5.6);
+  EXPECT_LT(measured, 6.6);
 }
 
 /** @test RKN6 statistics tracking. */
