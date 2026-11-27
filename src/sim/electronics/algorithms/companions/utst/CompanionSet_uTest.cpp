@@ -18,6 +18,8 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 using sim::electronics::algorithms::companions::CompanionSet;
@@ -133,34 +135,234 @@ TEST(CompanionSetTest, ConductanceAndCurrentDecompositionMatchesFullStamp) {
   }
 }
 
+/* ----------------------------- Kept Factors ----------------------------- */
+
+#if COMPAT_HAVE_LAPACKE
+/**
+ * @test Factors kept across steps, with the right-hand side rebuilt each
+ *       step, give the voltages of a system stamped and solved anew.
+ *
+ * 5 V on net 1, 1 kohm to net 2, 1 kohm and 1 uF from net 2 to ground. The
+ * voltage source is stamped before the factorization and again, in the same
+ * place, for each right-hand side. Factors are kept while the step length
+ * and the conductance factor stay: once for backward Euler and the
+ * trapezoidal rule, twice for GEAR2 (its first step, then the rest).
+ */
+TEST(CompanionSetTest, KeptFactorsWithRebuiltRightHandSideMatchOneShotSolves) {
+  using sim::electronics::algorithms::mna::MnaFactorizedWorkspace;
+  constexpr double DT = 1e-5;
+  const auto STAMP_RESISTORS = [](MnaSystem& mna) {
+    mna.addConductance(1, 2, 1e-3);
+    mna.addConductance(2, 0, 1e-3);
+  };
+  const auto STAMP_SOURCES = [](MnaSystem& mna) { mna.addVoltageSource(1, 0, 5.0); };
+
+  struct Case {
+    IntegrationMethod method;
+    int factorizations;
+  };
+  for (const Case& CASE :
+       {Case{IntegrationMethod::BACKWARD_EULER, 1}, Case{IntegrationMethod::TRAPEZOIDAL, 1},
+        Case{IntegrationMethod::GEAR2, 2}}) {
+    SCOPED_TRACE(static_cast<int>(CASE.method));
+    CompanionSet kept;
+    CompanionSet anew;
+    kept.addCapacitor(/*posNet=*/2, /*negNet=*/0, /*capacitance=*/1e-6);
+    anew.addCapacitor(/*posNet=*/2, /*negNet=*/0, /*capacitance=*/1e-6);
+
+    MnaSystem mna(/*netCount=*/3);
+    MnaFactorizedWorkspace factors;
+    factors.prepare(/*maxSize=*/4);
+    std::vector<double> voltages(3);
+    std::vector<double> currents(1);
+    double factoredStep = 0.0;
+    double factoredFactor = 0.0;
+    int factorizations = 0;
+
+    for (int step = 0; step < 6; ++step) {
+      const double FACTOR = kept.conductanceFactor(DT, CASE.method);
+      if (!factors.isFactorized() || DT != factoredStep || FACTOR != factoredFactor) {
+        mna.clear();
+        STAMP_RESISTORS(mna);
+        kept.stampConductanceAll(mna, DT, CASE.method);
+        STAMP_SOURCES(mna);
+        ASSERT_TRUE(mna.factorize(factors));
+        factoredStep = DT;
+        factoredFactor = FACTOR;
+        ++factorizations;
+      }
+      mna.clearRHS();
+      STAMP_SOURCES(mna);
+      kept.stampCurrentAll(mna, DT, CASE.method);
+      ASSERT_TRUE(mna.solveFactorized(factors, voltages.data(), currents.data()));
+      kept.updateAll(voltages, DT, CASE.method);
+
+      MnaSystem fresh(/*netCount=*/3);
+      STAMP_RESISTORS(fresh);
+      STAMP_SOURCES(fresh);
+      anew.stampAll(fresh, DT, CASE.method);
+      const auto RESULT = fresh.solve();
+      ASSERT_TRUE(RESULT.success) << RESULT.errorMessage;
+      anew.updateAll(RESULT.nodeVoltages, DT, CASE.method);
+
+      EXPECT_NEAR(voltages[1], 5.0, TOL) << "step " << step;
+      EXPECT_NEAR(voltages[2], RESULT.nodeVoltages[2], TOL) << "step " << step;
+      EXPECT_GT(voltages[2], 0.0) << "step " << step;
+    }
+    EXPECT_EQ(factorizations, CASE.factorizations);
+  }
+}
+#endif
+
 /* ----------------------------- updateAll ----------------------------- */
 
-/** @test updateAll advances each capacitor's prevVoltage from solved nodes */
-TEST(CompanionSetTest, UpdateAllAdvancesCapacitorState) {
-  CompanionSet set;
-  set.addCapacitor(/*posNet=*/1, /*negNet=*/0, /*capacitance=*/1e-6);
-  set.capacitor(0).prevVoltage = 0.0;
+/**
+ * @test updateAll gives every element its voltage from the solved nets and
+ *       the method the step was stamped with.
+ *
+ * 1 uF from net 2 to net 1 and 1 mH from net 3 to ground, from rest; the
+ * nets solve to 0.2 V, 0.7 V and 0.1 V after a step of 1 ms, and to 0.1 V,
+ * 0.9 V and 0.3 V after a second. C/dt is 1 mS and dt/L is 1 S.
+ *
+ * First step, capacitor at 0.5 V from 0 and inductor with 0.1 V from rest:
+ * - backward Euler: C/dt * 0.5; dt/L * 0.1
+ * - trapezoidal: twice the capacitor's, half the inductor's
+ * - GEAR2: backward Euler's, its first step
+ *
+ * Second step, capacitor at 0.8 V and inductor with 0.3 V. Here the three
+ * methods differ in both elements:
+ * - backward Euler: C/dt * (0.8 - 0.5); 0.1 + dt/L * 0.3
+ * - trapezoidal: 2C/dt * (0.8 - 0.5) - 1 mA; 0.05 + dt/2L * (0.3 + 0.1)
+ * - GEAR2: C/dt * (1.5 * 0.8 - 2 * 0.5 + 0.5 * 0);
+ *   (4 * 0.1 - 0) / 3 + 2dt/3L * 0.3
+ */
+TEST(CompanionSetTest, UpdateAllAdvancesEveryElementByTheMethod) {
+  struct Case {
+    IntegrationMethod method;
+    double capacitorAmperes;
+    double inductorAmperes;
+    double capacitorAmperesSecond;
+    double inductorAmperesSecond;
+  };
+  for (const Case& CASE : {Case{IntegrationMethod::BACKWARD_EULER, 5e-4, 0.1, 3e-4, 0.4},
+                           Case{IntegrationMethod::TRAPEZOIDAL, 1e-3, 0.05, -4e-4, 0.25},
+                           Case{IntegrationMethod::GEAR2, 5e-4, 0.1, 2e-4, 1.0 / 3.0}}) {
+    SCOPED_TRACE(static_cast<int>(CASE.method));
+    CompanionSet set;
+    set.addCapacitor(/*posNet=*/2, /*negNet=*/1, /*capacitance=*/1e-6);
+    set.addInductor(/*posNet=*/3, /*negNet=*/0, /*inductance=*/1e-3);
 
-  const std::vector<double> V = {0.0, 0.5, 0.0};
-  const double DT = 1e-3;
-  set.updateAll(V, DT);
+    const std::vector<double> V = {0.0, 0.2, 0.7, 0.1};
+    set.updateAll(V, 1e-3, CASE.method);
 
-  EXPECT_DOUBLE_EQ(set.capacitor(0).prevVoltage, 0.5);
-  EXPECT_NEAR(set.capacitor(0).current, 1e-6 * 0.5 / DT, TOL);
+    EXPECT_DOUBLE_EQ(set.capacitor(0).prevVoltage, 0.5);
+    EXPECT_NEAR(set.capacitor(0).current, CASE.capacitorAmperes, 1e-15);
+    EXPECT_DOUBLE_EQ(set.inductor(0).voltage, 0.1);
+    EXPECT_NEAR(set.inductor(0).prevCurrent, CASE.inductorAmperes, 1e-15);
+
+    const std::vector<double> SECOND = {0.0, 0.1, 0.9, 0.3};
+    set.updateAll(SECOND, 1e-3, CASE.method);
+
+    EXPECT_DOUBLE_EQ(set.capacitor(0).prevVoltage, 0.8);
+    EXPECT_NEAR(set.capacitor(0).current, CASE.capacitorAmperesSecond, 1e-15);
+    EXPECT_DOUBLE_EQ(set.inductor(0).voltage, 0.3);
+    EXPECT_NEAR(set.inductor(0).prevCurrent, CASE.inductorAmperesSecond, 1e-15);
+  }
 }
 
-/** @test updateAll advances each inductor's prevCurrent integral */
-TEST(CompanionSetTest, UpdateAllAdvancesInductorState) {
+/**
+ * @test The set gives each element Gear's weights of its own last step,
+ *       though it works them out once for a run of equal ones.
+ *
+ * Three capacitors and three inductors, each to ground on its own net. In
+ * each kind the first two have taken a step of 2 ms, the third one of
+ * 0.5 ms, so for the step of 1 ms that follows the weights are those of a
+ * ratio of 1/2 twice and then of 2. What the set stamps and what it leaves
+ * in each element after updateAll equal what the element gives by itself.
+ */
+TEST(CompanionSetTest, ElementsWithDifferentLastStepsGetTheirOwnWeights) {
+  constexpr double DT = 1e-3;
+  constexpr IntegrationMethod GEAR = IntegrationMethod::GEAR2;
   CompanionSet set;
-  set.addInductor(/*posNet=*/1, /*negNet=*/0, /*inductance=*/1e-3);
-  set.inductor(0).prevCurrent = 0.0;
+  for (std::uint32_t k = 0; k < 3; ++k) {
+    set.addCapacitor(/*posNet=*/1 + k, /*negNet=*/0, /*capacitance=*/1e-6 * (1 + k));
+    set.addInductor(/*posNet=*/4 + k, /*negNet=*/0, /*inductance=*/1e-3 * (1 + k));
+  }
+  for (std::size_t k = 0; k < 3; ++k) {
+    const double BEFORE = (k < 2) ? 2e-3 : 0.5e-3;
+    set.capacitor(k).update(0.1 * static_cast<double>(k + 1), BEFORE, GEAR);
+    set.capacitor(k).update(0.3 * static_cast<double>(k + 1), BEFORE, GEAR);
+    set.inductor(k).update(0.2 * static_cast<double>(k + 1), BEFORE, GEAR);
+    set.inductor(k).update(0.1 * static_cast<double>(k + 1), BEFORE, GEAR);
+  }
+  ASSERT_NE(set.capacitor(1).terms(DT, GEAR).geq * 3.0, set.capacitor(2).terms(DT, GEAR).geq * 2.0)
+      << "the two last steps give the same weights: the case tells nothing";
 
-  const std::vector<double> V = {0.0, 0.1, 0.0};
-  const double DT = 1e-6;
-  set.updateAll(V, DT);
+  // Stamped: each element alone on its net, so its terms are the net's entries.
+  MnaSystem mna(/*netCount=*/7);
+  set.stampAll(mna, DT, GEAR);
+  MnaSystem conductances(/*netCount=*/7);
+  MnaSystem currents(/*netCount=*/7);
+  set.stampConductanceAll(conductances, DT, GEAR);
+  set.stampCurrentAll(currents, DT, GEAR);
+  for (std::uint32_t k = 0; k < 3; ++k) {
+    SCOPED_TRACE(k);
+    const auto CAP = set.capacitor(k).terms(DT, GEAR);
+    const auto IND = set.inductor(k).terms(DT, GEAR);
+    EXPECT_DOUBLE_EQ(g(mna, 1 + k, 1 + k), CAP.geq);
+    EXPECT_DOUBLE_EQ(rhs(mna, 1 + k), CAP.ieq);
+    EXPECT_DOUBLE_EQ(g(mna, 4 + k, 4 + k), IND.geq);
+    EXPECT_DOUBLE_EQ(rhs(mna, 4 + k), -IND.ieq);
+    EXPECT_DOUBLE_EQ(g(conductances, 1 + k, 1 + k), CAP.geq);
+    EXPECT_DOUBLE_EQ(rhs(currents, 1 + k), CAP.ieq);
+    EXPECT_DOUBLE_EQ(g(conductances, 4 + k, 4 + k), IND.geq);
+    EXPECT_DOUBLE_EQ(rhs(currents, 4 + k), -IND.ieq);
+  }
 
-  EXPECT_DOUBLE_EQ(set.inductor(0).voltage, 0.1);
-  EXPECT_NEAR(set.inductor(0).prevCurrent, (DT / 1e-3) * 0.1, TOL);
+  // Updated: the set against a copy of each element updated by itself.
+  const std::vector<double> V = {0.0, 0.5, 0.7, 0.9, 0.05, 0.07, 0.09};
+  CompanionSet alone = set;
+  for (std::uint32_t k = 0; k < 3; ++k) {
+    alone.capacitor(k).update(V[1 + k], DT, GEAR);
+    alone.inductor(k).update(V[4 + k], DT, GEAR);
+  }
+  set.updateAll(V, DT, GEAR);
+  for (std::size_t k = 0; k < 3; ++k) {
+    SCOPED_TRACE(k);
+    EXPECT_DOUBLE_EQ(set.capacitor(k).current, alone.capacitor(k).current);
+    EXPECT_DOUBLE_EQ(set.inductor(k).prevCurrent, alone.inductor(k).prevCurrent);
+  }
+}
+
+/* ----------------------------- conductanceFactor ----------------------------- */
+
+/**
+ * @test The factor on C/dt is 1, 2 and, for GEAR2, 1 on a first step and 3/2
+ *       from then on until the step length changes.
+ */
+TEST(CompanionSetTest, ConductanceFactorFollowsTheMethodAndTheStepBefore) {
+  CompanionSet set;
+  set.addCapacitor(/*posNet=*/1, /*negNet=*/0, /*capacitance=*/1e-6);
+  const std::vector<double> V = {0.0, 1.0};
+
+  EXPECT_DOUBLE_EQ(set.conductanceFactor(1e-3, IntegrationMethod::BACKWARD_EULER), 1.0);
+  EXPECT_DOUBLE_EQ(set.conductanceFactor(1e-3, IntegrationMethod::TRAPEZOIDAL), 2.0);
+  EXPECT_DOUBLE_EQ(set.conductanceFactor(1e-3, IntegrationMethod::GEAR2), 1.0);
+
+  // After a step of 1 ms: 3/2 for another of 1 ms, 4/3 for one of 0.5 ms.
+  set.updateAll(V, 1e-3, IntegrationMethod::GEAR2);
+  EXPECT_DOUBLE_EQ(set.conductanceFactor(1e-3, IntegrationMethod::GEAR2), 1.5);
+  EXPECT_DOUBLE_EQ(set.conductanceFactor(0.5e-3, IntegrationMethod::GEAR2), 4.0 / 3.0);
+
+  // It is the factor of what is stamped.
+  EXPECT_DOUBLE_EQ(set.capacitor(0).geq(0.5e-3, IntegrationMethod::GEAR2),
+                   (4.0 / 3.0) * 1e-6 / 0.5e-3);
+
+  // A set of inductors answers by its inductors.
+  CompanionSet coils;
+  coils.addInductor(/*posNet=*/1, /*negNet=*/0, /*inductance=*/1e-3);
+  coils.updateAll(V, 1e-3, IntegrationMethod::GEAR2);
+  EXPECT_DOUBLE_EQ(coils.conductanceFactor(0.5e-3, IntegrationMethod::GEAR2), 4.0 / 3.0);
 }
 
 /* ----------------------------- reset ----------------------------- */
@@ -176,6 +378,8 @@ TEST(CompanionSetTest, ResetZerosAllHistory) {
   set.inductor(0).prevCurrent = 0.05;
   set.inductor(0).prev2Current = 0.02;
   set.inductor(0).voltage = 0.1;
+  set.capacitor(0).prevStep = 1e-3;
+  set.inductor(0).prevStep = 1e-3;
 
   set.reset();
 
@@ -185,23 +389,48 @@ TEST(CompanionSetTest, ResetZerosAllHistory) {
   EXPECT_DOUBLE_EQ(set.inductor(0).prevCurrent, 0.0);
   EXPECT_DOUBLE_EQ(set.inductor(0).prev2Current, 0.0);
   EXPECT_DOUBLE_EQ(set.inductor(0).voltage, 0.0);
+  EXPECT_DOUBLE_EQ(set.capacitor(0).prevStep, 0.0);
+  EXPECT_DOUBLE_EQ(set.inductor(0).prevStep, 0.0);
 }
 
 /* ----------------------------- initializeFromDC ----------------------------- */
 
-/** @test initializeFromDC seeds capacitor prevVoltage from node voltages */
+/** @test initializeFromDC leaves each capacitor at rest at the voltage between its nets */
 TEST(CompanionSetTest, InitializeFromDCSeedsCapacitorVoltage) {
   CompanionSet set;
   set.addCapacitor(/*posNet=*/2, /*negNet=*/1, /*capacitance=*/1e-6);
-  set.capacitor(0).current = 1e-4; // any non-zero starting current
+  set.capacitor(0).current = 1e-4;     // what an earlier run left
+  set.capacitor(0).prev2Voltage = 0.3; // likewise
+  set.capacitor(0).prevStep = 1e-3;    // likewise
 
   const std::vector<double> V_DC = {0.0, 0.7, 1.5}; // node 0=GND, 1=0.7V, 2=1.5V
   set.initializeFromDC(V_DC);
 
-  // V_pos - V_neg = 1.5 - 0.7 = 0.8
+  // V_pos - V_neg = 1.5 - 0.7 = 0.8, with a flat history and no current.
   EXPECT_DOUBLE_EQ(set.capacitor(0).prevVoltage, 0.8);
-  // No current in steady state.
+  EXPECT_DOUBLE_EQ(set.capacitor(0).prev2Voltage, 0.8);
   EXPECT_DOUBLE_EQ(set.capacitor(0).current, 0.0);
+  EXPECT_DOUBLE_EQ(set.capacitor(0).prevStep, 0.0);
+}
+
+/** @test initializeFromDC gives each inductor the current its stand-in conductance carried */
+TEST(CompanionSetTest, InitializeFromDCSeedsInductorCurrent) {
+  CompanionSet set;
+  set.addInductor(/*posNet=*/2, /*negNet=*/1, /*inductance=*/1e-3);
+  set.inductor(0).prevCurrent = 4.74e-3; // what an earlier run left
+  set.inductor(0).voltage = 0.2;
+
+  // 50 uV across a stand-in of 1000 S: 50 mA.
+  const std::vector<double> V_DC = {0.0, 1.0, 1.00005};
+  set.initializeFromDC(V_DC, 1000.0);
+  EXPECT_NEAR(set.inductor(0).prevCurrent, 50e-3, 1e-12);
+  EXPECT_NEAR(set.inductor(0).prev2Current, 50e-3, 1e-12);
+  EXPECT_DOUBLE_EQ(set.inductor(0).voltage, 0.0);
+  EXPECT_DOUBLE_EQ(set.inductor(0).prevStep, 0.0);
+
+  // Without a stand-in conductance the inductor starts without current.
+  set.initializeFromDC(V_DC);
+  EXPECT_DOUBLE_EQ(set.inductor(0).prevCurrent, 0.0);
 }
 
 /* ----------------------------- Determinism Tests ----------------------------- */

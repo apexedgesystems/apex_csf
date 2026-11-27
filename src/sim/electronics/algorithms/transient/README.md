@@ -86,7 +86,7 @@ const auto RESULT = solver.run(config, /*recordHistory=*/true);
   with low matrix fill.
 - **Three discretizations.** Backward Euler (first-order, dissipative),
   Trapezoidal (second-order, energy-conserving), GEAR2 / BDF2 (second-order,
-  L-stable for stiff systems). All share the same per-step cost.
+  L-stable for stiff systems).
 - **Optional GPU step.** `cuda::stepCuda` runs a single step on the GPU
   when a CUDA workspace is prepared. Callers handle fallback.
 
@@ -189,6 +189,19 @@ enum class IntegrationMethod : std::uint8_t {
 | `BACKWARD_EULER` | 1st   | A-stable  | Dissipative | Digital, fast settling         |
 | `TRAPEZOIDAL`    | 2nd   | A-stable  | Conserving  | LC oscillators, analog filters |
 | `GEAR2`          | 2nd   | L-stable  | Damping     | Stiff systems                  |
+
+The backward-Euler and trapezoidal companions take the steps of
+`BackwardEuler` and `TrapezoidalRule` in `src/utilities/math/integration`
+on the circuit's differential equation, held step for step in the unit
+tests. GEAR2 takes its first step as backward Euler and Gear's two-step
+formula from the second; it is held to that first step, to the recurrence
+written out, and to second-order convergence on RC and RL discharges. It
+does not follow that library's `BDF2` step for step, which starts from a
+repeated value. A run with `dcOpPoint` starts at rest: each capacitor at its
+operating-point voltage, each inductor with the current the operating point
+passed through it. GEAR2 weighs its history by the lengths of the two steps,
+so a last step shortened to land on `tEnd` keeps the method's order.
+`cuda::stepCuda` steps with backward Euler.
 
 ### TransientCuda
 

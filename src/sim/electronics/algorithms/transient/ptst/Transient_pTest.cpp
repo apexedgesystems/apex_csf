@@ -14,15 +14,19 @@
 #include "src/bench/inc/Perf.hpp"
 #include "src/sim/electronics/algorithms/transient/inc/TransientSolver.hpp"
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/MnaSystemSparse.hpp"
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <vector>
 
 namespace ub = vernier::bench;
 using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::MnaSystemSparse;
 using sim::electronics::algorithms::transient::IntegrationMethod;
 using sim::electronics::algorithms::transient::TransientConfig;
 using sim::electronics::algorithms::transient::TransientResult;
@@ -402,3 +406,199 @@ PERF_TEST(TransientPerf, RcTransient_10section_1000step) {
 }
 
 PERF_MAIN()
+
+/* ----------------------------- Mixed RLC, by Method ----------------------------- */
+
+namespace {
+
+constexpr std::size_t RLC_SECTIONS = 10;
+constexpr double RLC_STEP = 1e-6;
+
+/**
+ * @brief Ten driven RLC sections side by side: 22 nets, ten inductors and
+ *        ten capacitors.
+ *
+ * Net 0 is ground and net 1 the source, 5 sin(2e4 t) V. Section k has 1 kohm
+ * from the source to net 2 + 2k, 1 mH from there to net 3 + 2k and 1 uF from
+ * that net to ground.
+ */
+TransientSolver buildRlcSections(IntegrationMethod method) {
+  TransientSolver solver(2 + 2 * RLC_SECTIONS);
+  for (std::size_t k = 0; k < RLC_SECTIONS; ++k) {
+    const auto MIDDLE = static_cast<std::uint32_t>(2 + 2 * k);
+    solver.companions().addInductor(MIDDLE, MIDDLE + 1, 1e-3);
+    solver.companions().addCapacitor(MIDDLE + 1, 0, 1e-6);
+  }
+  solver.setStampCallback([](MnaSystem& mna, double seconds) {
+    mna.addVoltageSource(1, 0, VDD * std::sin(2.0e4 * seconds));
+    for (std::size_t k = 0; k < RLC_SECTIONS; ++k) {
+      mna.addConductance(1, static_cast<std::uint32_t>(2 + 2 * k), 1e-3);
+    }
+  });
+  solver.setIntegrationMethod(method);
+  return solver;
+}
+
+/** @brief How a solver keeps its factors between steps. */
+enum class Keeping : std::uint8_t { NONE, DENSE, DUAL, SPARSE };
+
+/** @brief One step by the way the solver keeps its factors. */
+bool stepBy(TransientSolver& solver, Keeping keeping, double dt, TransientState& state) {
+  const TransientStatus STATUS =
+      (keeping == Keeping::DUAL) ? solver.stepDual(dt, 0, state) : solver.step(dt, state);
+  return STATUS == TransientStatus::SUCCESS;
+}
+
+/**
+ * @brief Time an operation of `steps` steps on one solver and state that
+ *        persist across operations, and report the time of a step.
+ *
+ * `operation` returns whether every one of its steps succeeded. The last
+ * capacitor voltage and inductor current are read after each operation and
+ * checked finite at the end.
+ */
+template <typename Operation>
+void runSteppingCase(vernier::bench::PerfCase& perf, const char* label, TransientSolver& solver,
+                     TransientState& state, std::size_t steps, Operation operation) {
+  volatile double sink = 0.0;
+  bool everyStep = true;
+  const auto BODY = [&] {
+    everyStep = operation() && everyStep;
+    sink = state.voltage(3) + solver.companions().inductor(0).prevCurrent;
+  };
+  perf.warmup(BODY);
+  const auto RESULT = perf.throughputLoop(BODY, label);
+
+  EXPECT_TRUE(everyStep);
+  EXPECT_TRUE(std::isfinite(sink));
+  std::printf("  %s: %.1f ns/step over %zu steps an operation\n", label,
+              1e9 / (RESULT.callsPerSecond * static_cast<double>(steps)), steps);
+}
+
+/** @brief A thousand steps of 1 us on the warmed solver: steady stepping, no factors kept. */
+void runSteadyCase(vernier::bench::PerfCase& perf, IntegrationMethod method, const char* label) {
+  constexpr std::size_t STEPS = 1000;
+  auto solver = buildRlcSections(method);
+  TransientState state;
+  state.resize(solver.netCount(), 1);
+  runSteppingCase(perf, label, solver, state, STEPS, [&] {
+    bool ok = true;
+    for (std::size_t i = 0; i < STEPS; ++i) {
+      ok = stepBy(solver, Keeping::NONE, RLC_STEP, state) && ok;
+    }
+    return ok;
+  });
+}
+
+/** @brief A reset and the ten steps after it: the start of a run. */
+void runStartCase(vernier::bench::PerfCase& perf, IntegrationMethod method, const char* label) {
+  constexpr std::size_t STEPS = 10;
+  auto solver = buildRlcSections(method);
+  TransientState state;
+  state.resize(solver.netCount(), 1);
+  runSteppingCase(perf, label, solver, state, STEPS, [&] {
+    solver.reset();
+    bool ok = true;
+    for (std::size_t i = 0; i < STEPS; ++i) {
+      ok = stepBy(solver, Keeping::NONE, RLC_STEP, state) && ok;
+    }
+    return ok;
+  });
+}
+
+/**
+ * @brief GEAR2 over a hundred steps of 1 us, one of 0.5 us and a hundred more
+ *        of 1 us: what a change of step length costs each way of keeping factors.
+ */
+void runChangedStepCase(vernier::bench::PerfCase& perf, Keeping keeping, const char* label) {
+  constexpr std::size_t STEPS = 201;
+  auto solver = buildRlcSections(IntegrationMethod::GEAR2);
+  if (keeping == Keeping::DENSE) {
+    solver.setCachedLU(true);
+  } else if (keeping == Keeping::DUAL) {
+    solver.setDualLU(true);
+  } else if (keeping == Keeping::SPARSE) {
+    // The same circuit stamped into the sparse system, which keeps its
+    // factors between steps by itself.
+    solver.setSparse(true);
+    solver.setStatefulStampCallbackSparse(
+        [](MnaSystemSparse& mna, double seconds, const std::vector<double>& /*previous*/) {
+          mna.addVoltageSource(1, 0, VDD * std::sin(2.0e4 * seconds));
+          for (std::size_t k = 0; k < RLC_SECTIONS; ++k) {
+            mna.addConductance(1, static_cast<std::uint32_t>(2 + 2 * k), 1e-3);
+          }
+        });
+  }
+  TransientState state;
+  state.resize(solver.netCount(), 1);
+  runSteppingCase(perf, label, solver, state, STEPS, [&] {
+    bool ok = true;
+    for (std::size_t i = 0; i < 100; ++i) {
+      ok = stepBy(solver, keeping, RLC_STEP, state) && ok;
+    }
+    ok = stepBy(solver, keeping, 0.5 * RLC_STEP, state) && ok;
+    for (std::size_t i = 0; i < 100; ++i) {
+      ok = stepBy(solver, keeping, RLC_STEP, state) && ok;
+    }
+    return ok;
+  });
+}
+
+} // namespace
+
+/** @brief Steady backward-Euler stepping of the mixed RLC circuit. */
+PERF_TEST(TransientMethods, MixedRlc_BackwardEuler_1000step) {
+  UB_PERF_GUARD(perf);
+  std::printf("\n=== Mixed RLC, 22 nets: steady stepping by method ===\n");
+  runSteadyCase(perf, IntegrationMethod::BACKWARD_EULER, "rlc_be_1000step");
+}
+
+/** @brief Steady trapezoidal stepping of the mixed RLC circuit. */
+PERF_TEST(TransientMethods, MixedRlc_Trapezoidal_1000step) {
+  UB_PERF_GUARD(perf);
+  runSteadyCase(perf, IntegrationMethod::TRAPEZOIDAL, "rlc_trap_1000step");
+}
+
+/** @brief Steady GEAR2 stepping of the mixed RLC circuit. */
+PERF_TEST(TransientMethods, MixedRlc_Gear2_1000step) {
+  UB_PERF_GUARD(perf);
+  runSteadyCase(perf, IntegrationMethod::GEAR2, "rlc_gear2_1000step");
+}
+
+/** @brief The start of a backward-Euler run: a reset and ten steps. */
+PERF_TEST(TransientMethods, MixedRlc_BackwardEuler_ResetThen10step) {
+  UB_PERF_GUARD(perf);
+  std::printf("\n=== Mixed RLC, 22 nets: the start of a run ===\n");
+  runStartCase(perf, IntegrationMethod::BACKWARD_EULER, "rlc_be_start");
+}
+
+/** @brief The start of a GEAR2 run: a reset and ten steps. */
+PERF_TEST(TransientMethods, MixedRlc_Gear2_ResetThen10step) {
+  UB_PERF_GUARD(perf);
+  runStartCase(perf, IntegrationMethod::GEAR2, "rlc_gear2_start");
+}
+
+/** @brief GEAR2 across a changed step, factorizing on every step. */
+PERF_TEST(TransientKeptFactors, Gear2ChangedStep_NoneKept_201step) {
+  UB_PERF_GUARD(perf);
+  std::printf("\n=== Mixed RLC, 22 nets: GEAR2 across a changed step ===\n");
+  runChangedStepCase(perf, Keeping::NONE, "rlc_gear2_changed_none");
+}
+
+/** @brief GEAR2 across a changed step with the dense factors kept. */
+PERF_TEST(TransientKeptFactors, Gear2ChangedStep_DenseKept_201step) {
+  UB_PERF_GUARD(perf);
+  runChangedStepCase(perf, Keeping::DENSE, "rlc_gear2_changed_dense");
+}
+
+/** @brief GEAR2 across a changed step with the two-state factors kept. */
+PERF_TEST(TransientKeptFactors, Gear2ChangedStep_DualKept_201step) {
+  UB_PERF_GUARD(perf);
+  runChangedStepCase(perf, Keeping::DUAL, "rlc_gear2_changed_dual");
+}
+
+/** @brief GEAR2 across a changed step on the sparse solver, which keeps its factors. */
+PERF_TEST(TransientKeptFactors, Gear2ChangedStep_SparseKept_201step) {
+  UB_PERF_GUARD(perf);
+  runChangedStepCase(perf, Keeping::SPARSE, "rlc_gear2_changed_sparse");
+}

@@ -157,8 +157,12 @@ for (double t = 0.0; t < tEnd; t += dt) {
   ResistorModel::stamp(mna, IN, OUT, 1e3);
   cap.stamp(mna, dt, IntegrationMethod::BACKWARD_EULER);
   mna.addVoltageSource(IN, GND, vIn(t));
-  mna.solve(solution);
-  cap.update(solution[OUT], dt);
+  const auto RESULT = mna.solve();
+  if (!RESULT.success) {
+    break;
+  }
+  // The method the step was stamped with.
+  cap.update(RESULT.nodeVoltages[OUT], dt, IntegrationMethod::BACKWARD_EULER);
 }
 ```
 
