@@ -197,3 +197,47 @@ TEST(StampContextTest, StampGEntryMatvecAccumulates) {
   ctx.stampGEntry(/*row=*/2, /*col=*/1, /*value=*/0.5);
   EXPECT_NEAR(ax[2], 1.5, STAMP_TOL);
 }
+
+/* ----------------------------- clear() in the borrowed-storage modes -----------------------------
+ */
+
+/** @test clear() zeroes the whole external matrix, whatever a solve left in it */
+TEST(StampContextTest, ClearResetsExternalMatrix) {
+  std::vector<double> matrix(static_cast<std::size_t>(4 * 4), 0.0);
+  StampContext ctx(3, matrix.data(), 4);
+  ctx.stampConductance(1, 2, 0.5);
+  ctx.stampGEntry(2, 1, 0.25);
+  ctx.stampCurrent(1, 0, 2.0);
+  ctx.stampVoltageSource(1, 0, 5.0);
+  // A solve augments the matrix outside the nets' block and factorizes in place.
+  matrix[3 * 4 + 3] = 9.0;
+  matrix[3 * 4 + 1] = 1.0;
+
+  ctx.clear();
+
+  for (std::size_t i = 0; i < matrix.size(); ++i) {
+    EXPECT_EQ(matrix[i], 0.0) << "entry " << i;
+  }
+  EXPECT_EQ(ctx.i()[1], 0.0);
+  EXPECT_TRUE(ctx.voltageSources().empty());
+}
+
+/** @test clear() zeroes what the stamps accumulated into the matvec output */
+TEST(StampContextTest, ClearResetsMatvecOutput) {
+  std::vector<double> x{0.0, 4.0, 2.0};
+  std::vector<double> ax(3, 0.0);
+  StampContext ctx(3, x.data(), ax.data());
+  ctx.stampConductance(1, 2, 0.25);
+  ctx.stampGEntry(2, 1, 0.5);
+
+  ctx.clear();
+
+  for (std::size_t i = 0; i < ax.size(); ++i) {
+    EXPECT_EQ(ax[i], 0.0) << "entry " << i;
+  }
+
+  // Stamped again, the output is that of a new context.
+  ctx.stampConductance(1, 2, 0.25);
+  EXPECT_NEAR(ax[1], 0.5, STAMP_TOL);
+  EXPECT_NEAR(ax[2], -0.5, STAMP_TOL);
+}

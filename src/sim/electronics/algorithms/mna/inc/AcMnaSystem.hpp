@@ -24,6 +24,7 @@
 #include <complex>
 #include <cstddef>
 #include <cstring>
+#include <limits>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -365,7 +366,8 @@ public:
    * After factorization, use solveFactorized() for O(n^2) back-substitution.
    *
    * @param ws Workspace to store factorization (must be prepared).
-   * @return true on success, false on singular matrix or workspace too small.
+   * @return true on success, false on singular matrix, workspace too small,
+   *         or a build without LAPACKE, which keeps no factors.
    *
    * @note NOT RT-safe: performs O(n^3) complex LU factorization.
    */
@@ -893,15 +895,21 @@ private:
 /**
  * @brief Perform logarithmic frequency sweep.
  *
+ * Both ends are points of the sweep. Between them the points are evenly
+ * spaced in log frequency, floor(decades * pointsPerDecade) intervals and at
+ * least one; equal ends give the one point.
+ *
  * @param netCount Number of nets in circuit.
  * @param inputNet Net where AC voltage source is connected.
  * @param outputNet Net to measure output voltage.
- * @param inputVoltage AC source voltage magnitude (typically 1.0).
- * @param startFreq Start frequency in Hz.
- * @param endFreq End frequency in Hz.
- * @param pointsPerDecade Number of points per decade.
+ * @param inputVoltage AC source voltage magnitude, above zero (typically 1.0).
+ * @param startFreq Start frequency in Hz, above zero.
+ * @param endFreq End frequency in Hz, finite and not below startFreq.
+ * @param pointsPerDecade Number of points per decade, at least one, and
+ *                        few enough for std::size_t to count the intervals.
  * @param stampCircuit Callback to stamp circuit elements at given frequency.
- * @return Sweep result with magnitude and phase at each frequency.
+ * @return Sweep result with magnitude and phase at each frequency that
+ *         solved; no points when the arguments are outside the ranges above.
  */
 template <typename StampFunc>
 AcSweepResult frequencySweep(std::size_t netCount, NetID inputNet, NetID outputNet,
@@ -913,14 +921,33 @@ AcSweepResult frequencySweep(std::size_t netCount, NetID inputNet, NetID outputN
   result.outputNet = outputNet;
   result.inputVoltage = inputVoltage;
 
-  double logStart = std::log10(startFreq);
-  double logEnd = std::log10(endFreq);
-  double decades = logEnd - logStart;
-  std::size_t totalPoints = static_cast<std::size_t>(decades * pointsPerDecade) + 1;
+  // Written so that a value that is not a number fails each comparison.
+  if (!(startFreq > 0.0) || !(endFreq >= startFreq) || !std::isfinite(endFreq) ||
+      !(inputVoltage > 0.0) || !std::isfinite(inputVoltage) || pointsPerDecade == 0) {
+    return result;
+  }
 
-  for (std::size_t i = 0; i < totalPoints; ++i) {
-    double logF = logStart + (logEnd - logStart) * i / (totalPoints - 1);
-    double freq = std::pow(10.0, logF);
+  const double LOG_START = std::log10(startFreq);
+  const double DECADES = std::log10(endFreq) - LOG_START;
+  // The limit is 2^64 as a double, so every count below it converts.
+  const double SPACINGS = DECADES * static_cast<double>(pointsPerDecade);
+  if (!(SPACINGS < static_cast<double>(std::numeric_limits<std::size_t>::max()))) {
+    return result;
+  }
+  auto intervals = static_cast<std::size_t>(SPACINGS);
+  if (intervals == 0 && endFreq > startFreq) {
+    intervals = 1;
+  }
+
+  for (std::size_t i = 0; i <= intervals; ++i) {
+    // The ends are the frequencies given, not their logarithms raised again.
+    double freq = startFreq;
+    if (i == intervals && i > 0) {
+      freq = endFreq;
+    } else if (i > 0) {
+      freq = std::pow(10.0, LOG_START +
+                                DECADES * static_cast<double>(i) / static_cast<double>(intervals));
+    }
     double omega = 2.0 * std::numbers::pi * freq;
 
     AcMnaSystem ac(netCount, omega);

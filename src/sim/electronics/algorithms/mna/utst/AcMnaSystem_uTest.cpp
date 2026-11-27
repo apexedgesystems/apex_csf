@@ -14,7 +14,10 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
+#include <cstddef>
+#include <limits>
 #include <numbers>
 
 using sim::electronics::algorithms::mna::AcMnaSystem;
@@ -220,6 +223,108 @@ TEST(AcSweepTest, LowPassRC_FindCutoff) {
 
   // Expected: fc = 159.15 Hz
   EXPECT_NEAR(fc, FC_RC, FC_RC * FREQ_TOL);
+}
+
+/** @test A sweep whose ends are equal is one finite point at that frequency. */
+TEST(AcSweepTest, FrequencySweepSinglePointIsFinite) {
+  constexpr NetID GND = 0, VIN = 1, VOUT = 2;
+
+  const auto SWEEP =
+      frequencySweep(3, VIN, VOUT, V_IN, 100.0, 100.0, 10, [](AcMnaSystem& ac, double /*omega*/) {
+        ac.stampConductance(VIN, VOUT, 1.0 / R_1K);
+        ac.stampCapacitor(VOUT, GND, C_1UF);
+      });
+
+  // RC low-pass at f: |H| = 1/sqrt(1 + (f/fc)^2), phase = -atan(f/fc).
+  const double RATIO = 100.0 / FC_RC;
+  ASSERT_EQ(SWEEP.points.size(), 1U);
+  const auto& POINT = SWEEP.points.front();
+  EXPECT_DOUBLE_EQ(POINT.frequency, 100.0);
+  EXPECT_DOUBLE_EQ(POINT.omega, 2.0 * std::numbers::pi * 100.0);
+  EXPECT_NEAR(POINT.magnitudeDb, -10.0 * std::log10(1.0 + RATIO * RATIO), 1e-9);
+  EXPECT_NEAR(POINT.phaseDegrees, -std::atan(RATIO) * 180.0 / std::numbers::pi, 1e-9);
+}
+
+/** @test A span shorter than the spacing of its points per decade still has both ends. */
+TEST(AcSweepTest, FrequencySweepShortSpanHasBothEnds) {
+  constexpr NetID GND = 0, VIN = 1, VOUT = 2;
+
+  // 100 Hz to 150 Hz is 0.18 decade; two points per decade are 0.5 decade apart.
+  const auto SWEEP =
+      frequencySweep(3, VIN, VOUT, V_IN, 100.0, 150.0, 2, [](AcMnaSystem& ac, double /*omega*/) {
+        ac.stampConductance(VIN, VOUT, 1.0 / R_1K);
+        ac.stampCapacitor(VOUT, GND, C_1UF);
+      });
+
+  ASSERT_EQ(SWEEP.points.size(), 2U);
+  const std::array<double, 2> HERTZ = {100.0, 150.0};
+  for (std::size_t i = 0; i < HERTZ.size(); ++i) {
+    const double RATIO = HERTZ[i] / FC_RC;
+    EXPECT_DOUBLE_EQ(SWEEP.points[i].frequency, HERTZ[i]);
+    EXPECT_NEAR(SWEEP.points[i].magnitudeDb, -10.0 * std::log10(1.0 + RATIO * RATIO), 1e-9);
+  }
+}
+
+/** @test A sweep has floor(decades * points per decade) intervals and both ends exactly. */
+TEST(AcSweepTest, FrequencySweepPointCountAndEnds) {
+  constexpr NetID GND = 0, VIN = 1, VOUT = 2;
+  struct Span {
+    double startHz;
+    double endHz;
+    std::size_t pointsPerDecade;
+    std::size_t points;
+    bool wholeDecades;
+  };
+  // Three decades at 10 per decade, twice (the second's logarithms are not
+  // whole numbers), four decades at 20, and a span of no whole decade.
+  // (2.37 decades, where the 23 intervals stretch to end on 7 kHz).
+  for (const Span& SPAN : {Span{10.0, 10000.0, 10, 31, true}, Span{20.0, 20000.0, 10, 31, true},
+                           Span{1.0, 10000.0, 20, 81, true}, Span{30.0, 7000.0, 10, 24, false}}) {
+    const auto SWEEP = frequencySweep(3, VIN, VOUT, V_IN, SPAN.startHz, SPAN.endHz,
+                                      SPAN.pointsPerDecade, [](AcMnaSystem& ac, double /*omega*/) {
+                                        ac.stampConductance(VIN, VOUT, 1.0 / R_1K);
+                                        ac.stampCapacitor(VOUT, GND, C_1UF);
+                                      });
+    ASSERT_EQ(SWEEP.points.size(), SPAN.points) << SPAN.startHz << " Hz to " << SPAN.endHz;
+    // The ends are the frequencies given, to the last bit.
+    EXPECT_EQ(SWEEP.points.front().frequency, SPAN.startHz);
+    EXPECT_EQ(SWEEP.points.back().frequency, SPAN.endHz);
+    if (SPAN.wholeDecades) {
+      // One decade on is ten times the frequency.
+      EXPECT_NEAR(SWEEP.points[SPAN.pointsPerDecade].frequency, 10.0 * SPAN.startHz,
+                  1e-9 * SPAN.startHz);
+    }
+  }
+}
+
+/** @test Arguments that describe no sweep return no points. */
+TEST(AcSweepTest, FrequencySweepRefusesWhatIsNoSweep) {
+  constexpr NetID GND = 0, VIN = 1, VOUT = 2;
+  const auto POINTS = [](double inputVolts, double startHz, double endHz,
+                         std::size_t pointsPerDecade) {
+    return frequencySweep(3, VIN, VOUT, inputVolts, startHz, endHz, pointsPerDecade,
+                          [](AcMnaSystem& ac, double /*omega*/) {
+                            ac.stampConductance(VIN, VOUT, 1.0 / R_1K);
+                            ac.stampCapacitor(VOUT, GND, C_1UF);
+                          })
+        .points.size();
+  };
+  const double NOT_A_NUMBER = std::numeric_limits<double>::quiet_NaN();
+  const double INFINITE = std::numeric_limits<double>::infinity();
+
+  EXPECT_EQ(POINTS(V_IN, 0.0, 1000.0, 10), 0U) << "start at zero";
+  EXPECT_EQ(POINTS(V_IN, -10.0, 1000.0, 10), 0U) << "negative start";
+  EXPECT_EQ(POINTS(V_IN, 1000.0, 10.0, 10), 0U) << "end below start";
+  EXPECT_EQ(POINTS(V_IN, NOT_A_NUMBER, 1000.0, 10), 0U) << "start not a number";
+  EXPECT_EQ(POINTS(V_IN, 10.0, NOT_A_NUMBER, 10), 0U) << "end not a number";
+  EXPECT_EQ(POINTS(V_IN, 10.0, INFINITE, 10), 0U) << "infinite end";
+  EXPECT_EQ(POINTS(V_IN, 10.0, 1000.0, 0), 0U) << "no points per decade";
+  EXPECT_EQ(POINTS(0.0, 10.0, 1000.0, 10), 0U) << "no input voltage";
+  EXPECT_EQ(POINTS(-1.0, 10.0, 1000.0, 10), 0U) << "negative input magnitude";
+  EXPECT_EQ(POINTS(NOT_A_NUMBER, 10.0, 1000.0, 10), 0U) << "input not a number";
+  EXPECT_EQ(POINTS(INFINITE, 10.0, 1000.0, 10), 0U) << "infinite input";
+  EXPECT_EQ(POINTS(V_IN, 1.0, 100.0, std::numeric_limits<std::size_t>::max()), 0U)
+      << "more intervals than can be counted";
 }
 
 /** @test Frequency sweep generates valid Bode plot data. */
@@ -450,14 +555,21 @@ TEST(AcMnaTest, FactorizedSolveMatchesSingleShot) {
 
   sim::electronics::algorithms::mna::AcMnaFactorizedWorkspace ws;
   ws.prepare(8);
+  std::vector<Complex> nodeV(3);
+  std::vector<Complex> vsrcCurr(1);
+#if COMPAT_HAVE_LAPACKE
   ASSERT_TRUE(ac2.factorize(ws));
   EXPECT_TRUE(ws.isFactorized());
 
-  std::vector<Complex> nodeV(3);
-  std::vector<Complex> vsrcCurr(1);
   ASSERT_TRUE(ac2.solveFactorized(ws, nodeV.data(), vsrcCurr.data()));
 
   EXPECT_NEAR(std::abs(nodeV[VOUT] - SHOT.nodeVoltages[VOUT]), 0.0, 1e-9);
+#else
+  // Kept factors need LAPACKE: without it both calls refuse.
+  EXPECT_FALSE(ac2.factorize(ws));
+  EXPECT_FALSE(ws.isFactorized());
+  EXPECT_FALSE(ac2.solveFactorized(ws, nodeV.data(), vsrcCurr.data()));
+#endif
 }
 
 /** @test invalidate() forces a fresh factorization */
@@ -469,8 +581,12 @@ TEST(AcMnaTest, FactorizedWorkspaceInvalidate) {
   AcMnaSystem ac(2, 2.0 * std::numbers::pi * 100.0);
   ac.stampConductance(1, 0, 1.0 / R_1K);
   ac.addVoltageSource(1, 0, Complex(V_IN, 0.0));
+#if COMPAT_HAVE_LAPACKE
   ASSERT_TRUE(ac.factorize(ws));
   EXPECT_TRUE(ws.isFactorized());
+#else
+  EXPECT_FALSE(ac.factorize(ws));
+#endif
 
   ws.invalidate();
   EXPECT_FALSE(ws.isFactorized());

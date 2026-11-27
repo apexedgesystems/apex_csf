@@ -37,6 +37,23 @@ apex_add_gtest(
 )
 
 # ------------------------------------------------------------------------------
+# Allocation Tests (a binary of their own: they replace the global operator new)
+# ------------------------------------------------------------------------------
+
+apex_add_gtest(
+  TARGET
+  TestSimElectronicsMnaAllocation
+  SOURCES
+  MnaAllocation_uTest.cpp
+  LINK
+  sim_electronics_algorithms_mna
+  LABELS
+  sim
+  electronics
+  mna
+)
+
+# ------------------------------------------------------------------------------
 # CUDA Tests (requires CUDA toolkit)
 # ------------------------------------------------------------------------------
 
@@ -50,6 +67,7 @@ if (TARGET sim_electronics_algorithms_mna_cuda AND CMAKE_CUDA_COMPILER)
     ${CUDA_TEST_SOURCES}
     LINK
     sim_electronics_algorithms_mna_cuda
+    sim_electronics_algorithms_mna
     LABELS
     sim
     electronics
