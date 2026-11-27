@@ -132,13 +132,23 @@ template <std::size_t N> struct StateVector {
     return std::sqrt(sum);
   }
 
-  /** @brief Infinity norm (max absolute value). */
+  /**
+   * @brief Infinity norm (max absolute value).
+   *
+   * NaN when any component is NaN: the adaptive integrators judge a step by
+   * this norm, and a maximum that skipped a NaN component would report a
+   * broken step as a small error.
+   */
   double normInf() const noexcept {
     double maxVal = 0.0;
     for (std::size_t i = 0; i < N; ++i) {
-      double absVal = std::fabs(x[i]);
-      if (absVal > maxVal)
+      const double absVal = std::fabs(x[i]);
+      if (std::isnan(absVal)) {
+        return absVal;
+      }
+      if (absVal > maxVal) {
         maxVal = absVal;
+      }
     }
     return maxVal;
   }

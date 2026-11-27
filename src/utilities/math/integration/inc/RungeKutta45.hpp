@@ -8,7 +8,7 @@
  * for non-stiff ODEs requiring adaptive step control.
  *
  * Use cases: Trajectory prediction, orbital mechanics, control simulation.
- * @note RT-safe: Zero allocation, fixed 6 function evaluations per step.
+ * @note RT-safe: Zero allocation, fixed 7 function evaluations per step.
  */
 
 #include "src/utilities/math/integration/inc/StepSize.hpp"
@@ -43,7 +43,8 @@ enum class RK45Status : uint8_t {
   SUCCESS = 0,
   STEP_REJECTED = 1,      ///< Step rejected, try smaller dt.
   ERROR_DT_TOO_SMALL = 2, ///< Step size below dtMin.
-  ERROR_INVALID_STEP = 3  ///< Step size is not positive and finite.
+  ERROR_INVALID_STEP = 3, ///< Step size or integration interval is not positive and finite.
+  ERROR_NON_FINITE = 4    ///< The derivative produced a NaN or the step overflowed.
 };
 
 /* -------------------------------- Result ---------------------------------- */
@@ -64,13 +65,17 @@ template <typename State> struct RK45Result {
 /**
  * @brief Dormand-Prince RK45 adaptive integrator.
  *
- * Uses 7-stage FSAL (First Same As Last) scheme for efficiency.
- * Provides embedded error estimation without extra function evaluations.
+ * Seven stages per step. The seventh is the derivative at the fifth-order
+ * result, which the fourth-order solution of the error estimate needs; it is
+ * evaluated on every step and not carried over to the next one.
  *
  * Algorithm: Dormand-Prince 5(4) with coefficients optimized for
  * local truncation error minimization.
  *
- * @tparam State State type (must support +, -, * scalar, norm()).
+ * @tparam State State type: arithmetic, or a type with +, -, * scalar and
+ *         normInf(). normInf() must return NaN when a component is NaN, as
+ *         StateVector's does, so a non-finite result is seen in the error
+ *         estimate.
  *
  * Example:
  * @code
@@ -94,7 +99,7 @@ template <typename State> struct RK45Result {
  *   }
  * @endcode
  *
- * @note RT-safe: Zero allocation, 6 function evaluations per step.
+ * @note RT-safe: Zero allocation, 7 function evaluations per step.
  */
 template <typename State> class RungeKutta45 {
 public:
@@ -114,7 +119,11 @@ public:
    * @param f Derivative function.
    * @param opts Integration options.
    * @return Result with status, error estimate, and suggested next dt.
-   * @note RT-safe: O(1), 6 function evaluations.
+   *         ERROR_NON_FINITE when the error estimate is NaN or infinite: the
+   *         step is neither accepted nor counted as rejected, y5 and y4 are
+   *         not to be used, and dtNext is dt shrunk by maxShrink (no lower
+   *         than dtMin) for a caller that chooses to retry.
+   * @note RT-safe: O(1), 7 function evaluations.
    */
   template <typename Func>
   RK45Result<State> step(const State& y, double t, double dt, Func&& f,
@@ -187,6 +196,15 @@ public:
     State err = result.y5 - result.y4;
     result.errorEstimate = computeNorm(err, result.y5, opts);
 
+    // A NaN compares false with everything, so without this test it would
+    // take the reject branch with a NaN step suggestion, and a caller that
+    // retries on STEP_REJECTED would never stop.
+    if (!std::isfinite(result.errorEstimate)) {
+      result.status = RK45Status::ERROR_NON_FINITE;
+      result.dtNext = std::max(dt * opts.maxShrink, opts.dtMin);
+      return result;
+    }
+
     // Step size control
     if (result.errorEstimate <= 1.0) {
       // Step accepted
@@ -225,11 +243,17 @@ public:
    * @param dt0 Initial step size guess.
    * @param f Derivative function.
    * @param opts Integration options.
-   * @return Final status.
+   * @return SUCCESS at tEnd, or the first status of a step that is neither
+   *         SUCCESS nor STEP_REJECTED. ERROR_INVALID_STEP when t0 or tEnd is
+   *         not finite. A tEnd at or before t0 integrates nothing.
    */
   template <typename Func>
   RK45Status integrate(State& y, double t0, double tEnd, double dt0, Func&& f,
                        const RungeKutta45Options& opts) noexcept {
+    if (!std::isfinite(t0) || !std::isfinite(tEnd)) {
+      return RK45Status::ERROR_INVALID_STEP;
+    }
+
     double t = t0;
     double dt = dt0;
 
