@@ -42,14 +42,20 @@ inline constexpr bool available() noexcept { return algorithms::mna::cuda::avail
 /**
  * @brief Execute one transient time step using GPU acceleration.
  *
- * Performs complete transient step: stamp MNA, solve on GPU, update state.
- * Automatically falls back to CPU for small circuits or on GPU failure.
+ * Clears the system, stamps it, solves on the GPU and updates the state.
+ * A step the GPU does not take (no CUDA, fewer than 100 nets, a workspace
+ * too small, a failed solve) returns ERROR_STEP_FAILED with time, companions
+ * and state as they were, for the caller to take it on the CPU.
  *
  * @param cudaWs Prepared CUDA workspace (call prepare() first).
- * @param mna MNA system to stamp into (netCount must match workspace).
+ * @param mna MNA system to stamp into (netCount must match workspace). It is
+ *            cleared first, so one system serves every step.
  * @param companions Companion models for reactive elements.
  * @param stampCallback Callback to stamp static elements (resistors, sources).
  * @param dt Time step size in seconds.
+ * @param method Integration method of the step: the one the companions are
+ *               stamped and updated with. A run that mixes GPU and CPU steps
+ *               passes the method its TransientSolver steps with.
  * @param time Current simulation time (updated on success).
  * @param prevVoltages Previous node voltages (updated on success).
  * @param workspace CPU workspace for MNA solving.
@@ -62,8 +68,8 @@ inline constexpr bool available() noexcept { return algorithms::mna::cuda::avail
  */
 TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs,
                          algorithms::mna::MnaSystem& mna, CompanionSet& companions,
-                         const StampCallback& stampCallback, double dt, double& time,
-                         std::vector<double>& prevVoltages,
+                         const StampCallback& stampCallback, double dt, IntegrationMethod method,
+                         double& time, std::vector<double>& prevVoltages,
                          algorithms::mna::MnaSolveWorkspace& workspace, TransientState& state);
 
 /**
@@ -73,8 +79,8 @@ TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs,
  */
 TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs,
                          algorithms::mna::MnaSystem& mna, CompanionSet& companions,
-                         const StatefulStampCallback& stampCallback, double dt, double& time,
-                         std::vector<double>& prevVoltages,
+                         const StatefulStampCallback& stampCallback, double dt,
+                         IntegrationMethod method, double& time, std::vector<double>& prevVoltages,
                          algorithms::mna::MnaSolveWorkspace& workspace, TransientState& state);
 
 } // namespace sim::electronics::algorithms::transient::cuda
