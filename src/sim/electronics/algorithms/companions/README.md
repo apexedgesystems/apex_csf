@@ -121,11 +121,18 @@ struct CapacitorCompanion {
 ```cpp
 [[nodiscard]] double geq(double dt, IntegrationMethod method) const noexcept;
 [[nodiscard]] double ieq(double dt, IntegrationMethod method) const noexcept;
+// Both at once, sharing their division; with Gear's weights given when a
+// caller has them for many elements.
+[[nodiscard]] CompanionTerms terms(double dt, IntegrationMethod method) const noexcept;
+[[nodiscard]] CompanionTerms terms(double dt, IntegrationMethod method,
+                                   const Gear2Weights& gear) const noexcept;
 
 void stamp(MnaSystem& mna, double dt, IntegrationMethod method) const;
 void stamp(MnaSystemSparse& mna, double dt, IntegrationMethod method) const;
 
 void update(double newVoltage, double dt, IntegrationMethod method) noexcept;
+// From the terms that were stamped for the step, taken before this call.
+void update(double newVoltage, double dt, const CompanionTerms& stamped) noexcept;
 void setInitialVoltage(double volts) noexcept;
 ```
 
@@ -167,11 +174,18 @@ struct InductorCompanion {
 ```cpp
 [[nodiscard]] double geq(double dt, IntegrationMethod method) const noexcept;
 [[nodiscard]] double ieq(double dt, IntegrationMethod method) const noexcept;
+// Both at once, sharing their division; with Gear's weights given when a
+// caller has them for many elements.
+[[nodiscard]] CompanionTerms terms(double dt, IntegrationMethod method) const noexcept;
+[[nodiscard]] CompanionTerms terms(double dt, IntegrationMethod method,
+                                   const Gear2Weights& gear) const noexcept;
 
 void stamp(MnaSystem& mna, double dt, IntegrationMethod method) const;
 void stamp(MnaSystemSparse& mna, double dt, IntegrationMethod method) const;
 
 void update(double newVoltage, double dt, IntegrationMethod method) noexcept;
+// From the terms that were stamped for the step, taken before this call.
+void update(double newVoltage, double dt, const CompanionTerms& stamped) noexcept;
 void setInitialCurrent(double amperes) noexcept;
 ```
 

@@ -90,6 +90,15 @@ struct Gear2Weights {
   return {(1.0 + 2.0 * RATIO) / (1.0 + RATIO), 1.0 + RATIO, RATIO * RATIO / (1.0 + RATIO)};
 }
 
+/**
+ * @brief What a companion puts into the system for one step: a conductance
+ *        between its terminals and a source beside it.
+ */
+struct CompanionTerms {
+  double geq; ///< Equivalent conductance.
+  double ieq; ///< Equivalent current source.
+};
+
 /* ----------------------------- CapacitorCompanion ----------------------------- */
 
 /**
@@ -126,15 +135,7 @@ struct CapacitorCompanion {
    */
   [[nodiscard]] SIM_HD_FI double
   geq(double dt, IntegrationMethod method = IntegrationMethod::BACKWARD_EULER) const noexcept {
-    switch (method) {
-    case IntegrationMethod::BACKWARD_EULER:
-      return capacitance / dt; // C/dt
-    case IntegrationMethod::TRAPEZOIDAL:
-      return 2.0 * capacitance / dt; // 2C/dt
-    case IntegrationMethod::GEAR2:
-      return gear2Weights(dt, prevStep).a0 * capacitance / dt; // 3C/(2dt) after an equal step
-    }
-    return capacitance / dt;
+    return terms(dt, method).geq;
   }
 
   /**
@@ -145,18 +146,46 @@ struct CapacitorCompanion {
    */
   [[nodiscard]] SIM_HD_FI double
   ieq(double dt, IntegrationMethod method = IntegrationMethod::BACKWARD_EULER) const noexcept {
+    return terms(dt, method).ieq;
+  }
+
+  /**
+   * @brief Both terms of a step. C/dt is divided once and shared by the two.
+   * @param dt Time step in seconds.
+   * @param method Integration method.
+   * @return Conductance and source: C/dt and (C/dt) V_prev for backward
+   *         Euler; 2C/dt and (2C/dt) V_prev + I_prev for the trapezoidal
+   *         rule; a0 C/dt and (C/dt)(a1 V_prev - a2 V_prev2) for GEAR2.
+   * @note RT-safe.
+   */
+  [[nodiscard]] SIM_HD_FI CompanionTerms terms(double dt, IntegrationMethod method) const noexcept {
+    return terms(dt, method,
+                 method == IntegrationMethod::GEAR2 ? gear2Weights(dt, prevStep)
+                                                    : Gear2Weights{1.0, 1.0, 0.0});
+  }
+
+  /**
+   * @brief Both terms of a step, with Gear's weights given.
+   *
+   * For a caller that steps many elements whose last step was the same: the
+   * weights depend on the two step lengths alone and are worked out once.
+   *
+   * @param gear gear2Weights(dt, prevStep) of this element. Read under GEAR2
+   *        only.
+   * @note RT-safe.
+   */
+  [[nodiscard]] SIM_HD_FI CompanionTerms terms(double dt, IntegrationMethod method,
+                                               const Gear2Weights& gear) const noexcept {
+    const double RATE = capacitance / dt;
     switch (method) {
     case IntegrationMethod::BACKWARD_EULER:
-      return capacitance * prevVoltage / dt; // C*V_prev/dt
+      break;
     case IntegrationMethod::TRAPEZOIDAL:
-      return 2.0 * capacitance * prevVoltage / dt + current; // 2C*V_prev/dt + I_prev
-    case IntegrationMethod::GEAR2: {
-      // (C/dt) * (2*V_prev - 0.5*V_prev2) after an equal step
-      const Gear2Weights W = gear2Weights(dt, prevStep);
-      return (capacitance / dt) * (W.a1 * prevVoltage - W.a2 * prev2Voltage);
+      return {2.0 * RATE, 2.0 * RATE * prevVoltage + current};
+    case IntegrationMethod::GEAR2:
+      return {gear.a0 * RATE, RATE * (gear.a1 * prevVoltage - gear.a2 * prev2Voltage)};
     }
-    }
-    return capacitance * prevVoltage / dt;
+    return {RATE, RATE * prevVoltage};
   }
 
   /**
@@ -171,8 +200,9 @@ struct CapacitorCompanion {
    */
   void stamp(MnaSystem& mna, double dt,
              IntegrationMethod method = IntegrationMethod::BACKWARD_EULER) const {
-    double g = geq(dt, method);
-    double i = ieq(dt, method);
+    const CompanionTerms STAMPED = terms(dt, method);
+    const double g = STAMPED.geq;
+    const double i = STAMPED.ieq;
 
     mna.addConductance(posNet, negNet, g);
     mna.addCurrent(posNet, negNet, i);
@@ -186,8 +216,9 @@ struct CapacitorCompanion {
    */
   void stamp(MnaSystemSparse& mna, double dt,
              IntegrationMethod method = IntegrationMethod::BACKWARD_EULER) const {
-    double g = geq(dt, method);
-    double i = ieq(dt, method);
+    const CompanionTerms STAMPED = terms(dt, method);
+    const double g = STAMPED.geq;
+    const double i = STAMPED.ieq;
 
     mna.addConductance(posNet, negNet, g);
     mna.addCurrent(posNet, negNet, i);
@@ -205,7 +236,19 @@ struct CapacitorCompanion {
    * @param method Integration method the step was stamped with.
    */
   SIM_HD_FI void update(double newVoltage, double dt, IntegrationMethod method) noexcept {
-    current = geq(dt, method) * newVoltage - ieq(dt, method);
+    update(newVoltage, dt, terms(dt, method));
+  }
+
+  /**
+   * @brief Update state after time step from the terms that were stamped.
+   * @param newVoltage Voltage across capacitor (Vpos - Vneg).
+   * @param dt Time step that was taken.
+   * @param stamped terms() of this element for that step, taken before this
+   *        call.
+   * @note RT-safe.
+   */
+  SIM_HD_FI void update(double newVoltage, double dt, const CompanionTerms& stamped) noexcept {
+    current = stamped.geq * newVoltage - stamped.ieq;
     prev2Voltage = prevVoltage;
     prevVoltage = newVoltage;
     prevStep = dt;
@@ -260,15 +303,7 @@ struct InductorCompanion {
    */
   [[nodiscard]] SIM_HD_FI double
   geq(double dt, IntegrationMethod method = IntegrationMethod::BACKWARD_EULER) const noexcept {
-    switch (method) {
-    case IntegrationMethod::BACKWARD_EULER:
-      return dt / inductance; // dt/L
-    case IntegrationMethod::TRAPEZOIDAL:
-      return dt / (2.0 * inductance); // dt/(2L)
-    case IntegrationMethod::GEAR2:
-      return dt / (gear2Weights(dt, prevStep).a0 * inductance); // 2dt/(3L) after an equal step
-    }
-    return dt / inductance;
+    return terms(dt, method).geq;
   }
 
   /**
@@ -279,18 +314,44 @@ struct InductorCompanion {
    */
   [[nodiscard]] SIM_HD_FI double
   ieq(double dt, IntegrationMethod method = IntegrationMethod::BACKWARD_EULER) const noexcept {
+    return terms(dt, method).ieq;
+  }
+
+  /**
+   * @brief Both terms of a step. dt/L is divided once and shared by the two.
+   * @param dt Time step in seconds.
+   * @param method Integration method.
+   * @return Conductance and source: dt/L and I_prev for backward Euler;
+   *         dt/(2L) and I_prev + (dt/(2L)) V_prev for the trapezoidal rule;
+   *         dt/(a0 L) and (a1 I_prev - a2 I_prev2)/a0 for GEAR2.
+   * @note RT-safe.
+   */
+  [[nodiscard]] SIM_HD_FI CompanionTerms terms(double dt, IntegrationMethod method) const noexcept {
+    return terms(dt, method,
+                 method == IntegrationMethod::GEAR2 ? gear2Weights(dt, prevStep)
+                                                    : Gear2Weights{1.0, 1.0, 0.0});
+  }
+
+  /**
+   * @brief Both terms of a step, with Gear's weights given.
+   * @param gear gear2Weights(dt, prevStep) of this element. Read under GEAR2
+   *        only.
+   * @note RT-safe.
+   */
+  [[nodiscard]] SIM_HD_FI CompanionTerms terms(double dt, IntegrationMethod method,
+                                               const Gear2Weights& gear) const noexcept {
+    const double RATE = dt / inductance;
     switch (method) {
     case IntegrationMethod::BACKWARD_EULER:
-      return prevCurrent; // I_prev
+      break;
     case IntegrationMethod::TRAPEZOIDAL:
-      return prevCurrent + (dt / (2.0 * inductance)) * voltage; // I_prev + (dt/(2L))*V_prev
+      return {0.5 * RATE, prevCurrent + 0.5 * RATE * voltage};
     case IntegrationMethod::GEAR2: {
-      // (4*I_prev - I_prev2) / 3 after an equal step
-      const Gear2Weights W = gear2Weights(dt, prevStep);
-      return (W.a1 * prevCurrent - W.a2 * prev2Current) / W.a0;
+      const double SHARE = 1.0 / gear.a0;
+      return {RATE * SHARE, (gear.a1 * prevCurrent - gear.a2 * prev2Current) * SHARE};
     }
     }
-    return prevCurrent;
+    return {RATE, prevCurrent};
   }
 
   /**
@@ -305,8 +366,9 @@ struct InductorCompanion {
    */
   void stamp(MnaSystem& mna, double dt,
              IntegrationMethod method = IntegrationMethod::BACKWARD_EULER) const {
-    double g = geq(dt, method);
-    double i = ieq(dt, method);
+    const CompanionTerms STAMPED = terms(dt, method);
+    const double g = STAMPED.geq;
+    const double i = STAMPED.ieq;
 
     mna.addConductance(posNet, negNet, g);
     // Current source: Ieq flows from posNet to negNet
@@ -323,8 +385,9 @@ struct InductorCompanion {
    */
   void stamp(MnaSystemSparse& mna, double dt,
              IntegrationMethod method = IntegrationMethod::BACKWARD_EULER) const {
-    double g = geq(dt, method);
-    double i = ieq(dt, method);
+    const CompanionTerms STAMPED = terms(dt, method);
+    const double g = STAMPED.geq;
+    const double i = STAMPED.ieq;
 
     mna.addConductance(posNet, negNet, g);
     mna.addCurrent(negNet, posNet, i);
@@ -342,7 +405,19 @@ struct InductorCompanion {
    * @param method Integration method the step was stamped with.
    */
   SIM_HD_FI void update(double newVoltage, double dt, IntegrationMethod method) noexcept {
-    const double NEW_CURRENT = ieq(dt, method) + geq(dt, method) * newVoltage;
+    update(newVoltage, dt, terms(dt, method));
+  }
+
+  /**
+   * @brief Update state after time step from the terms that were stamped.
+   * @param newVoltage Voltage across inductor (Vpos - Vneg).
+   * @param dt Time step that was taken.
+   * @param stamped terms() of this element for that step, taken before this
+   *        call.
+   * @note RT-safe.
+   */
+  SIM_HD_FI void update(double newVoltage, double dt, const CompanionTerms& stamped) noexcept {
+    const double NEW_CURRENT = stamped.ieq + stamped.geq * newVoltage;
     voltage = newVoltage;
     prev2Current = prevCurrent;
     prevCurrent = NEW_CURRENT;
@@ -430,12 +505,7 @@ public:
    */
   void stampAll(MnaSystem& mna, double dt,
                 IntegrationMethod method = IntegrationMethod::BACKWARD_EULER) const {
-    for (const auto& cap : capacitors_) {
-      cap.stamp(mna, dt, method);
-    }
-    for (const auto& ind : inductors_) {
-      ind.stamp(mna, dt, method);
-    }
+    stampAllInto(mna, dt, method);
   }
 
   /**
@@ -447,12 +517,7 @@ public:
    */
   void stampAll(MnaSystemSparse& mna, double dt,
                 IntegrationMethod method = IntegrationMethod::BACKWARD_EULER) const {
-    for (const auto& cap : capacitors_) {
-      cap.stamp(mna, dt, method);
-    }
-    for (const auto& ind : inductors_) {
-      ind.stamp(mna, dt, method);
-    }
+    stampAllInto(mna, dt, method);
   }
 
   /**
@@ -468,11 +533,12 @@ public:
    */
   void stampConductanceAll(MnaSystem& mna, double dt,
                            IntegrationMethod method = IntegrationMethod::BACKWARD_EULER) const {
+    GearWeightsOfPass gear(dt);
     for (const auto& cap : capacitors_) {
-      mna.addConductance(cap.posNet, cap.negNet, cap.geq(dt, method));
+      mna.addConductance(cap.posNet, cap.negNet, cap.terms(dt, method, gear.of(cap.prevStep)).geq);
     }
     for (const auto& ind : inductors_) {
-      mna.addConductance(ind.posNet, ind.negNet, ind.geq(dt, method));
+      mna.addConductance(ind.posNet, ind.negNet, ind.terms(dt, method, gear.of(ind.prevStep)).geq);
     }
   }
 
@@ -489,12 +555,13 @@ public:
    */
   void stampCurrentAll(MnaSystem& mna, double dt,
                        IntegrationMethod method = IntegrationMethod::BACKWARD_EULER) const {
+    GearWeightsOfPass gear(dt);
     for (const auto& cap : capacitors_) {
-      mna.addCurrent(cap.posNet, cap.negNet, cap.ieq(dt, method));
+      mna.addCurrent(cap.posNet, cap.negNet, cap.terms(dt, method, gear.of(cap.prevStep)).ieq);
     }
     for (const auto& ind : inductors_) {
       // Inductor current flows from pos to neg
-      mna.addCurrent(ind.negNet, ind.posNet, ind.ieq(dt, method));
+      mna.addCurrent(ind.negNet, ind.posNet, ind.terms(dt, method, gear.of(ind.prevStep)).ieq);
     }
   }
 
@@ -508,11 +575,12 @@ public:
     const auto AT = [&nodeVoltages](NetID net) {
       return net < nodeVoltages.size() ? nodeVoltages[net] : 0.0;
     };
+    GearWeightsOfPass gear(dt);
     for (auto& cap : capacitors_) {
-      cap.update(AT(cap.posNet) - AT(cap.negNet), dt, method);
+      cap.update(AT(cap.posNet) - AT(cap.negNet), dt, cap.terms(dt, method, gear.of(cap.prevStep)));
     }
     for (auto& ind : inductors_) {
-      ind.update(AT(ind.posNet) - AT(ind.negNet), dt, method);
+      ind.update(AT(ind.posNet) - AT(ind.negNet), dt, ind.terms(dt, method, gear.of(ind.prevStep)));
     }
   }
 
@@ -604,6 +672,49 @@ public:
   [[nodiscard]] InductorCompanion& inductor(std::size_t idx) { return inductors_.at(idx); }
 
 private:
+  /**
+   * @brief Gear's weights for the elements of one pass over the set.
+   *
+   * The weights depend on the step being taken and on the element's last
+   * step. Elements stepped together share their last step, so the weights
+   * are worked out for the first and again only for an element whose last
+   * step differs from the one before it.
+   */
+  class GearWeightsOfPass {
+  public:
+    explicit GearWeightsOfPass(double dt) noexcept : dt_(dt) {}
+
+    /** @brief gear2Weights(dt, before), reusing the last result for the same `before`. */
+    [[nodiscard]] const Gear2Weights& of(double before) noexcept {
+      if (before != before_) {
+        weights_ = gear2Weights(dt_, before);
+        before_ = before;
+      }
+      return weights_;
+    }
+
+  private:
+    double dt_;
+    double before_ = -1.0; ///< No step length is negative: the first element always computes.
+    Gear2Weights weights_{1.0, 1.0, 0.0};
+  };
+
+  /** @brief Stamp every element's conductance and source into a dense or a sparse system. */
+  template <typename Mna> void stampAllInto(Mna& mna, double dt, IntegrationMethod method) const {
+    GearWeightsOfPass gear(dt);
+    for (const auto& cap : capacitors_) {
+      const CompanionTerms TERMS = cap.terms(dt, method, gear.of(cap.prevStep));
+      mna.addConductance(cap.posNet, cap.negNet, TERMS.geq);
+      mna.addCurrent(cap.posNet, cap.negNet, TERMS.ieq);
+    }
+    for (const auto& ind : inductors_) {
+      const CompanionTerms TERMS = ind.terms(dt, method, gear.of(ind.prevStep));
+      mna.addConductance(ind.posNet, ind.negNet, TERMS.geq);
+      // The source carries Ieq from posNet to negNet: it arrives at negNet.
+      mna.addCurrent(ind.negNet, ind.posNet, TERMS.ieq);
+    }
+  }
+
   std::vector<CapacitorCompanion> capacitors_;
   std::vector<InductorCompanion> inductors_;
 };

@@ -18,6 +18,8 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
 #include <vector>
 
 using sim::electronics::algorithms::companions::CompanionSet;
@@ -265,6 +267,70 @@ TEST(CompanionSetTest, UpdateAllAdvancesEveryElementByTheMethod) {
     EXPECT_NEAR(set.capacitor(0).current, CASE.capacitorAmperesSecond, 1e-15);
     EXPECT_DOUBLE_EQ(set.inductor(0).voltage, 0.3);
     EXPECT_NEAR(set.inductor(0).prevCurrent, CASE.inductorAmperesSecond, 1e-15);
+  }
+}
+
+/**
+ * @test The set gives each element Gear's weights of its own last step,
+ *       though it works them out once for a run of equal ones.
+ *
+ * Three capacitors and three inductors, each to ground on its own net. In
+ * each kind the first two have taken a step of 2 ms, the third one of
+ * 0.5 ms, so for the step of 1 ms that follows the weights are those of a
+ * ratio of 1/2 twice and then of 2. What the set stamps and what it leaves
+ * in each element after updateAll equal what the element gives by itself.
+ */
+TEST(CompanionSetTest, ElementsWithDifferentLastStepsGetTheirOwnWeights) {
+  constexpr double DT = 1e-3;
+  constexpr IntegrationMethod GEAR = IntegrationMethod::GEAR2;
+  CompanionSet set;
+  for (std::uint32_t k = 0; k < 3; ++k) {
+    set.addCapacitor(/*posNet=*/1 + k, /*negNet=*/0, /*capacitance=*/1e-6 * (1 + k));
+    set.addInductor(/*posNet=*/4 + k, /*negNet=*/0, /*inductance=*/1e-3 * (1 + k));
+  }
+  for (std::size_t k = 0; k < 3; ++k) {
+    const double BEFORE = (k < 2) ? 2e-3 : 0.5e-3;
+    set.capacitor(k).update(0.1 * static_cast<double>(k + 1), BEFORE, GEAR);
+    set.capacitor(k).update(0.3 * static_cast<double>(k + 1), BEFORE, GEAR);
+    set.inductor(k).update(0.2 * static_cast<double>(k + 1), BEFORE, GEAR);
+    set.inductor(k).update(0.1 * static_cast<double>(k + 1), BEFORE, GEAR);
+  }
+  ASSERT_NE(set.capacitor(1).terms(DT, GEAR).geq * 3.0, set.capacitor(2).terms(DT, GEAR).geq * 2.0)
+      << "the two last steps give the same weights: the case tells nothing";
+
+  // Stamped: each element alone on its net, so its terms are the net's entries.
+  MnaSystem mna(/*netCount=*/7);
+  set.stampAll(mna, DT, GEAR);
+  MnaSystem conductances(/*netCount=*/7);
+  MnaSystem currents(/*netCount=*/7);
+  set.stampConductanceAll(conductances, DT, GEAR);
+  set.stampCurrentAll(currents, DT, GEAR);
+  for (std::uint32_t k = 0; k < 3; ++k) {
+    SCOPED_TRACE(k);
+    const auto CAP = set.capacitor(k).terms(DT, GEAR);
+    const auto IND = set.inductor(k).terms(DT, GEAR);
+    EXPECT_DOUBLE_EQ(g(mna, 1 + k, 1 + k), CAP.geq);
+    EXPECT_DOUBLE_EQ(rhs(mna, 1 + k), CAP.ieq);
+    EXPECT_DOUBLE_EQ(g(mna, 4 + k, 4 + k), IND.geq);
+    EXPECT_DOUBLE_EQ(rhs(mna, 4 + k), -IND.ieq);
+    EXPECT_DOUBLE_EQ(g(conductances, 1 + k, 1 + k), CAP.geq);
+    EXPECT_DOUBLE_EQ(rhs(currents, 1 + k), CAP.ieq);
+    EXPECT_DOUBLE_EQ(g(conductances, 4 + k, 4 + k), IND.geq);
+    EXPECT_DOUBLE_EQ(rhs(currents, 4 + k), -IND.ieq);
+  }
+
+  // Updated: the set against a copy of each element updated by itself.
+  const std::vector<double> V = {0.0, 0.5, 0.7, 0.9, 0.05, 0.07, 0.09};
+  CompanionSet alone = set;
+  for (std::uint32_t k = 0; k < 3; ++k) {
+    alone.capacitor(k).update(V[1 + k], DT, GEAR);
+    alone.inductor(k).update(V[4 + k], DT, GEAR);
+  }
+  set.updateAll(V, DT, GEAR);
+  for (std::size_t k = 0; k < 3; ++k) {
+    SCOPED_TRACE(k);
+    EXPECT_DOUBLE_EQ(set.capacitor(k).current, alone.capacitor(k).current);
+    EXPECT_DOUBLE_EQ(set.inductor(k).prevCurrent, alone.inductor(k).prevCurrent);
   }
 }
 
