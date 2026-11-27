@@ -33,6 +33,11 @@ struct TaskCtx {
   SchedulableTask* task{nullptr};
   TaskEntry* entry{nullptr}; ///< TaskEntry for sequencing info.
   TaskCtx* next{nullptr};
+  /// For a sequenced task, the counter value this dispatch waits for and
+  /// the value its group's counter wraps after, both counted over the
+  /// group's tasks dispatched on the same tick.
+  int seqPhase{0};
+  int seqMaxPhase{0};
   std::uint16_t tick{0};
   std::uint8_t poolId{0}; ///< Pool ID for multi-pool context release.
 };

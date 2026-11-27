@@ -243,6 +243,10 @@ any such change is called out explicitly in its entry.
   preflight record grows from 16 to 18 bytes. The contention check
   no longer flags tasks sharing a one-worker pool.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
+- A sequence group orders its tasks among those dispatched on the same
+  tick, so tasks at different rates are ordered where they meet; a
+  slower task at a later phase could run beside the step it follows.
+  ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))
 - The ops and HIL demos' task tables run one worker; on two, tasks
   sharing a component's state could overlap.
   ([#193](https://github.com/apexedgesystems/apex_csf/pull/193))

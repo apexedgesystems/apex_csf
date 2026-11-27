@@ -555,6 +555,28 @@ protected:
    */
   std::vector<std::uint8_t> slotHasGated_{};
 
+  /**
+   * @brief Per slot: whether any sequenced entry is placed on it.
+   *
+   * A sequenced task waits for the tasks of its group that are dispatched
+   * on the same tick at an earlier phase, so a slot that holds one is
+   * dispatched in two steps: which entries run this tick, then each
+   * sequenced entry's place among them. A slot with none keeps the single
+   * loop. Index-aligned with schedule_.
+   */
+  std::vector<std::uint8_t> slotHasSequenced_{};
+
+  /**
+   * @brief Entries a sequenced slot dispatches this tick, in slot order.
+   *
+   * Tick thread only. Its capacity follows the largest slot, set where
+   * entries are placed, so a dispatch allocates nothing.
+   */
+  std::vector<TaskEntry*> slotDispatch_{};
+
+  /** @brief Recompute slotHasSequenced_ from the entries' sequencing. */
+  void markSequencedSlots() noexcept;
+
   /** @brief All registered task entries (scheduler owns these). */
   std::vector<TaskEntry> entries_{};
 

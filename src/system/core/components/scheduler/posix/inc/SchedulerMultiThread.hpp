@@ -256,21 +256,39 @@ protected:
   /**
    * @brief Enqueue every entry on one slot in order.
    *
-   * One body, two instantiations: the gated one consults a multi-second
-   * task's cadence per visit; the other, used for every slot that holds
-   * no such task, is the plain loop with no per-visit test.
+   * One body, four instantiations. The gated ones consult a multi-second
+   * task's cadence per visit; the others, used for every slot that holds
+   * no such task, test nothing per visit. The sequenced ones, used for a
+   * slot that holds a sequenced task, first settle which entries run this
+   * tick and then give each sequenced entry its place among the tasks of
+   * its group that run with it; the others enqueue as they go.
    */
-  template <bool kGated>
+  template <bool kGated, bool kSequenced>
   void dispatchSlot(const std::vector<std::size_t>& entryIndices, std::uint64_t cycle,
                     std::uint16_t tick, std::uint64_t dispatchNs, logs::SystemLog* lg,
                     int logLevel) noexcept;
+
+  /**
+   * @brief Enqueue the entries a sequenced slot runs this tick.
+   *
+   * A sequenced entry waits for the tasks of its group, among those in
+   * slotDispatch_, whose phase is lower than its own; a task alone in its
+   * group on this tick waits for nothing.
+   */
+  void enqueueSequencedSlot(std::uint16_t tick, std::uint64_t dispatchNs) noexcept;
 
   /**
    * @brief Initialize the scheduler. Called by base init().
    */
   [[nodiscard]] std::uint8_t doInit() noexcept override;
 
-  void enqueueTask(TaskEntry* entry, std::uint16_t tick, std::uint64_t dispatchNs) noexcept;
+  /**
+   * @brief Hand one entry to its pool.
+   * @param seqPhase Counter value a sequenced entry waits for on this
+   *        dispatch; seqMaxPhase the value its counter wraps after.
+   */
+  void enqueueTask(TaskEntry* entry, std::uint16_t tick, std::uint64_t dispatchNs, int seqPhase,
+                   int seqMaxPhase) noexcept;
 
   static std::uint8_t taskTrampoline(void* raw) noexcept;
 

@@ -69,6 +69,7 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) n
   if (schedule_.empty()) {
     schedule_.resize(static_cast<std::size_t>(ffreq_));
     slotHasGated_.assign(static_cast<std::size_t>(ffreq_), 0U);
+    slotHasSequenced_.assign(static_cast<std::size_t>(ffreq_), 0U);
   }
 
   // The cadence aligns to the cycle the next dispatch will carry, so a
@@ -164,6 +165,14 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config) n
     vec.insert(IT, ENTRY_IDX);
   }
 
+  // The dispatch scratch holds one slot's entries: keep it as large as
+  // the largest slot, here, so a dispatch never grows it.
+  for (const auto& slotEntries : schedule_) {
+    if (slotEntries.size() > slotDispatch_.capacity()) {
+      slotDispatch_.reserve(slotEntries.capacity());
+    }
+  }
+
   setLastError(nullptr);
   setStatus(static_cast<std::uint8_t>(Status::SUCCESS));
   return Status::SUCCESS;
@@ -207,11 +216,27 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config, S
         entry->seqCounter = seq->counter();
         entry->seqPhase = info->phase;
         entry->seqMaxPhase = info->maxPhase;
+        markSequencedSlots();
       }
     }
   }
 
   return Status::SUCCESS;
+}
+
+/* ----------------------------- markSequencedSlots ----------------------------- */
+
+void SchedulerBase::markSequencedSlots() noexcept {
+  for (std::size_t slot = 0; slot < schedule_.size() && slot < slotHasSequenced_.size(); ++slot) {
+    std::uint8_t any = 0U;
+    for (const std::size_t IDX : schedule_[slot]) {
+      if (entries_[IDX].isSequenced()) {
+        any = 1U;
+        break;
+      }
+    }
+    slotHasSequenced_[slot] = any;
+  }
 }
 
 /* ----------------------------- getEntry ----------------------------- */
@@ -802,6 +827,7 @@ void SchedulerBase::clearTasks() noexcept {
     tick.clear();
   }
   std::fill(slotHasGated_.begin(), slotHasGated_.end(), static_cast<std::uint8_t>(0U));
+  std::fill(slotHasSequenced_.begin(), slotHasSequenced_.end(), static_cast<std::uint8_t>(0U));
 }
 
 /* ----------------------------- loadTprm ----------------------------- */
@@ -866,10 +892,12 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   auto backupCadences = std::move(cadences_);
   auto backupSchedule = std::move(schedule_);
   auto backupSlotHasGated = std::move(slotHasGated_);
+  auto backupSlotHasSequenced = std::move(slotHasSequenced_);
   entries_.clear();
   cadences_.clear();
   schedule_.clear();
   slotHasGated_.clear();
+  slotHasSequenced_.clear();
 
   const std::uint8_t* taskEntryBytes = tprmData.data() + sizeof(SchedulerTprmHeader);
 
@@ -969,6 +997,7 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     cadences_ = std::move(backupCadences);
     schedule_ = std::move(backupSchedule);
     slotHasGated_ = std::move(backupSlotHasGated);
+    slotHasSequenced_ = std::move(backupSlotHasSequenced);
     setLastError("TPRM reload failed: 0 tasks resolved, keeping previous schedule");
     if (auto* log = componentLog()) {
       log->warning(label(), 0,

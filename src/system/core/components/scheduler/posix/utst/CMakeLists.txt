@@ -5,7 +5,7 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Test Sources (14)
+# Test Sources (15)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
@@ -23,6 +23,7 @@ set(UNIT_TEST_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerRates_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerReplaceComponentTasks_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerTableSequencing_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/SchedulerSequencedDispatch_uTest.cpp"
 )
 
 # ------------------------------------------------------------------------------

@@ -229,8 +229,8 @@ struct TaskEntry {
   /// The group must outlive every entry registered against it -- the same
   /// lifetime the addTask(task, config, group) seam already requires.
   std::atomic<int>* seqCounter{nullptr};
-  int seqPhase{0};    ///< Phase to wait for.
-  int seqMaxPhase{0}; ///< Max phase (for wrap).
+  int seqPhase{0};    ///< The task's phase in its group, as registered: its place in the order.
+  int seqMaxPhase{0}; ///< The group's registered maximum phase.
 
   /// The task table asked for this task to be sequenced. Sequencing is the
   /// component's to offer, so the request can go unmet; the preflight

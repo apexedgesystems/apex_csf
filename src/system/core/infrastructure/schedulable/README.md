@@ -219,10 +219,18 @@ void advancePhase(std::atomic<int>& counter, int maxPhase) noexcept;
 ```
 
 Lifetime: the group owns the phase counter; scheduler entries point at
-it, so the group must outlive its registered tasks. Frame contract: a
-sequenced chain must complete within its period -- a tail waiter that
-loses the counter to the cycle wrap completes in the following cycle
-(delayed, never corrupt).
+it, so the group must outlive its registered tasks.
+
+Under the multi-threaded scheduler the phases are an order, and the
+tasks of a group need not share a rate. On each tick the scheduler
+orders the group's tasks it dispatches on that tick: a task waits for
+the lower phases that run with it and for nothing else, so a 1 Hz
+report at a later phase follows the 100 Hz step on the tick they share
+and the step runs unhindered on the others.
+
+Frame contract: the tasks of a group dispatched on one tick must
+complete before the group is next dispatched; a group dispatched again
+while an earlier tick's tasks still run does not hold that tick's order.
 
 ---
 

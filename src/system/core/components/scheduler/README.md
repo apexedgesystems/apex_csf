@@ -362,7 +362,9 @@ scheduler.addTask(taskStep, cfg, &seq);
 scheduler.addTask(taskPost, cfg, &seq);
 ```
 
-Phase numbers account for task count: if 2 tasks run at phase 1, the next phase is 3.
+Phases are an order. The scheduler places each task among the tasks of its group that it dispatches on the same tick, so the numbers only have to sort: counting tasks as above (two at phase 1, the next at 3) and numbering 1, 2, 3 come to the same thing.
+
+The tasks of a group may run at different rates. A 100 Hz step and a 1 Hz report at a later phase share a tick once a second; on that tick the report waits for the step, and on the others the step runs alone and waits for nothing. A task whose earlier phases are not dispatched on its tick (another rate, another offset, skipped while busy) does not wait for them.
 
 ### McuScheduler for MCUs
 
@@ -454,8 +456,8 @@ scheduler.init();  // Creates scheduler.log with schedule layout
 | `config`        | TaskConfig for this task                         |
 | `holdCtr`       | Frequency decimation counter                     |
 | `seqCounter`    | Shared sequencing counter (null = no sequencing) |
-| `seqPhase`      | Phase to wait for                                |
-| `seqMaxPhase`   | Max phase (for counter wrap)                     |
+| `seqPhase`      | Registered phase: the task's place in its group  |
+| `seqMaxPhase`   | The group's registered maximum phase             |
 | `shouldRun()`   | Check if task runs this tick                     |
 | `isSequenced()` | Check if task has sequencing                     |
 | `resetHold()`   | Reset decimation counter                         |
