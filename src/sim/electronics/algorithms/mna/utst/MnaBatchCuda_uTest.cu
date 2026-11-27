@@ -508,22 +508,26 @@ TEST_F(MnaBatchCudaTest, BatchThatCannotRunIsRefused) {
   std::vector<double> vectors;
   buildKnownSystems<double>(DIM, 4, 1.0, false, matrices, vectors);
   const std::vector<double> GIVEN = vectors;
-  std::array<bool, 4> solved = {true, true, true, true};
+  // Each refusal starts from flags all true, so that one refusal's clearing
+  // does not stand in for the next one's.
+  std::array<bool, 4> solved{};
+  const auto FLAGGED_AFTER = [&](auto& workspace, std::size_t dim, std::size_t batch) {
+    solved.fill(true);
+    EXPECT_FALSE(cuda::solveBatchCustom(workspace, matrices.data(), vectors.data(), dim, batch,
+                                        nullptr, solved.data()));
+    return std::count(solved.begin(), solved.begin() + static_cast<std::ptrdiff_t>(batch), true);
+  };
 
   cuda::MnaBatchWorkspace unprepared;
-  EXPECT_FALSE(cuda::solveBatchCustom(unprepared, matrices.data(), vectors.data(), DIM, 4, nullptr,
-                                      solved.data()));
+  EXPECT_EQ(FLAGGED_AFTER(unprepared, DIM, 4), 0);
 
   cuda::MnaBatchWorkspace ws;
   ASSERT_TRUE(ws.prepare(16, 2));
   // More systems than the workspace holds, and a dimension with no kernel.
-  EXPECT_FALSE(
-      cuda::solveBatchCustom(ws, matrices.data(), vectors.data(), DIM, 4, nullptr, solved.data()));
-  EXPECT_FALSE(
-      cuda::solveBatchCustom(ws, matrices.data(), vectors.data(), 12, 1, nullptr, solved.data()));
+  EXPECT_EQ(FLAGGED_AFTER(ws, DIM, 4), 0);
+  EXPECT_EQ(FLAGGED_AFTER(ws, 12, 1), 0);
 
   EXPECT_EQ(vectors, GIVEN);
-  EXPECT_EQ(std::count(solved.begin(), solved.end(), true), 0);
 }
 
 /** @test An empty batch is solved: there is nothing in it that was not */
