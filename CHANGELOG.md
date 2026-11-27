@@ -175,7 +175,8 @@ any such change is called out explicitly in its entry.
   each state's step length, and `cuda::stepCuda` takes the integration
   method. Breaking: unread `TransientConfig` fields and two unused status
   values are removed and `stepCuda` gains a parameter; see the
-  [transient migration table](src/sim/electronics/algorithms/transient/README.md#9-migration).
+  [transient migration table](src/sim/electronics/algorithms/transient/README.md#9-migration)
+  ([#204](https://github.com/apexedgesystems/apex_csf/pull/204)).
 - The gitleaks binary in the lint and dev images belongs to root, not to
   the user id its release archive records.
   ([#202](https://github.com/apexedgesystems/apex_csf/pull/202))
