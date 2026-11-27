@@ -71,6 +71,38 @@ any such change is called out explicitly in its entry.
 
 ### Changed
 
+- CI runs a tool change's own role and rebuilds an image only for what the
+  change bakes into it; `make test-rust` and `make clippy` take `ROLES=`
+  ([#198](https://github.com/apexedgesystems/apex_csf/pull/198)).
+- The CI lint job runs in its own image, `apex.lint`: the format and
+  secret-scan tools with no compiler toolchain
+  ([#198](https://github.com/apexedgesystems/apex_csf/pull/198)).
+- Thread pool workers count their in-flight tasks per worker, and the two
+  pools share `PoolBase` (`PoolBase.hpp` now holds `PoolStatus`, `TaskError`
+  and `PoolConfig`; the pool headers still provide them). Queued tasks drain
+  in 24 to 51% less wall time than before on the lab host; `threadsRunning()`
+  reads two counts per worker. Breaking for binaries: thread pool, ring-queue
+  and `BufferPool` layouts and the pools' `collectErrors()` and
+  `threadsRunning()` symbols changed, so rebuild the concurrency and interface
+  libraries and everything that uses them together, from matching headers and
+  one build type. One source change: remove any use of the debug-only
+  `MessageBuffer::acquireTimestamp`, which is gone.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `RingBuffer` keeps its two cursors on one cache line wherever the object
+  is placed (48 bytes, 16-byte aligned).
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `BufferPool` does no redundant work in `acquire()` or when a buffer's only
+  reference is released: an acquire and release pair takes about a third
+  less time on the lab host.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `SPSCQueue` sides keep their last view of the other index: on the lab
+  host a push and pop pair takes a third less time, and with a backlog
+  neither side reads the other's cache line.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `LockFreeQueue` and `ThreadPoolLockFree` state that a push is refused as
+  full while a consumer descheduled inside a pop still holds a cell; a
+  caller that must not lose the element tries again.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - Breaking: every tool lives under its role and installs to
   `bin/tools/<role>/`; the Python package `apex_tools` is now the
   `apex_ops` and `apex_analysis` wheels (scripts set
@@ -122,9 +154,18 @@ any such change is called out explicitly in its entry.
 
 ### Removed
 
+- Breaking: `PoolStatus::EXCEPTION_STD` and `PoolStatus::EXCEPTION_UNKNOWN`.
+  Pool tasks are `noexcept` delegates and report failure through their return
+  code; the statuses were reachable only through the pools' retry of their
+  own failed error recording, which is removed with them.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - The public factorial helpers (`Factorials.hpp`: `precomputedFactorials`,
   `largeFactorial`); replace direct uses before updating. Breaking.
   ([#167](https://github.com/apexedgesystems/apex_csf/pull/167))
+- `MnaSystemSparse::refactorize()` and `refactorizeInPlace()`; call
+  `factorize()`, which reuses what still applies. Breaking: see the
+  [MNA migration table](src/sim/electronics/algorithms/mna/README.md#10-migration).
+  ([#199](https://github.com/apexedgesystems/apex_csf/pull/199))
 
 ### Fixed
 
@@ -135,6 +176,14 @@ any such change is called out explicitly in its entry.
   status; rebuild what uses the companions or the transient solver. See the
   [companions migration table](src/sim/electronics/algorithms/companions/README.md#9-migration)
   ([#200](https://github.com/apexedgesystems/apex_csf/pull/200)).
+- MNA solvers: the sparse solver reuses an analysis and factors only for
+  their own matrix, the AC sweep and the dense solver's borrowed-storage
+  modes handle their edge inputs, and the CUDA batch solver reports each
+  system it did not solve and, once it has queued work, waits for its
+  stream before it returns.
+  Breaking: `solveBatchCustom*` return false for such a batch and mark the
+  system with not-a-number; rebuild what uses the sparse or batch solvers
+  ([#199](https://github.com/apexedgesystems/apex_csf/pull/199)).
 - Corrected nonlinear device stamps, junction currents and FET region
   transitions; `BjtCommonEmitter::computeDC` reports failed solves. Breaking:
   device currents and Level 1 region codes change and six model parameters
@@ -151,6 +200,15 @@ any such change is called out explicitly in its entry.
 - Log rotation keeps every backup: a rotation within the same second as an
   earlier one gets a numeric suffix instead of replacing its backup.
   ([#187](https://github.com/apexedgesystems/apex_csf/pull/187))
+- `BufferPool::release()` always returns its buffer: the pool lost a buffer
+  for good when a release met a thread descheduled inside `acquire()`.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `LockFreeQueue::sizeApprox()` never exceeds `capacity()` and stays correct
+  when the queue's indices wrap.
+  ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
+- `LockFreeQueue` push and pop compare sequences without the signed
+  overflow they had once the cursors pass 2^63, and a pair takes 15% less
+  time. ([#191](https://github.com/apexedgesystems/apex_csf/pull/191))
 - `SPSCQueue` and `RingBuffer` store elements at `alignof(T)`, over-aligned
   types included, and `SPSCQueue::sizeApprox()` never exceeds `capacity()`
   when read from a third thread.

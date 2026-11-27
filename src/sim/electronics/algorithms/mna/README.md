@@ -19,7 +19,8 @@ High-performance Modified Nodal Analysis solvers for circuit simulation. Provide
 7. [RT-Safety](#7-rt-safety)
 8. [Requirements](#8-requirements)
 9. [Testing](#9-testing)
-10. [See Also](#10-see-also)
+10. [Migration](#10-migration)
+11. [See Also](#11-see-also)
 
 ---
 
@@ -37,10 +38,12 @@ MnaSystemSparse mna(1000);
 mna.addConductance(nodeA, nodeB, 1.0 / resistance);
 mna.addCurrent(nodeC, nodeD, current);
 
-// Solve G*V = I
-auto result = mna.solve();
-if (result.success) {
-  double voltage = result.nodeVoltages[nodeA];
+// Factorize, then solve G*V = I
+if (mna.factorize()) {
+  auto result = mna.solve();
+  if (result.success) {
+    double voltage = result.nodeVoltages[nodeA];
+  }
 }
 ```
 
@@ -74,7 +77,8 @@ make compose-testp  # Verify tests pass
 - Dense AC: 5-10x speedup from LAPACK zgesv vs naive complex Gaussian
 - Sparse DC: 25x speedup over baseline (138.2ms -> 5.57ms)
 - Cached LU: O(n^2) back-substitution vs O(n^3) full solve (massive win for sweeps)
-- RT-safe with pre-allocated workspace (both DC and AC)
+- RT-safe solves into a pre-allocated workspace, DC and AC, in a build with
+  LAPACKE ([section 7](#7-rt-safety))
 
 **Applications:**
 
@@ -89,7 +93,7 @@ make compose-testp  # Verify tests pass
 
 ### MnaSystem (Dense Solver)
 
-**RT-safe:** Yes (with workspace)
+**RT-safe:** `solveInto()` with a prepared workspace, in a build with LAPACKE; the fallback elimination allocates ([section 7](#7-rt-safety))
 **Best for:** Small circuits (<200 nets), dense connectivity
 
 Dense MNA solver using BLAS/LAPACK cached LU factorization. 76% of time spent in optimized BLAS/LAPACK routines.
@@ -110,7 +114,7 @@ auto result = mna.solve();  // O(n^3) first solve, O(n^2) cached
 
 ### MnaSystemSparse (Sparse Solver)
 
-**RT-safe:** Yes (with workspace)
+**RT-safe:** `updateRhs()` and `solveInto()` on factors in hand; `factorize()` allocates ([section 7](#7-rt-safety))
 **Best for:** Large circuits (200+ nets), sparse connectivity
 
 Sparse MNA solver using KLU (SuiteSparse). Direct CSC construction, counting sort assembly. Within 1.6x of dense performance at 150 nets, scales better for larger circuits.
@@ -120,18 +124,27 @@ Sparse MNA solver using KLU (SuiteSparse). Direct CSC construction, counting sor
 
 MnaSystemSparse mna(netCount);
 mna.addConductance(a, b, g);
-auto result = mna.solve();  // Sparse LU factorization
+mna.factorize();            // Sparse LU factorization
+auto result = mna.solve();  // Back-substitution
 ```
 
 **Key features:**
 
 - Direct CSC (Compressed Sparse Column) build
-- `clearStamps()` preserves factorization structure
-- Avoids `klu_refactor` (unsafe for large value changes)
+- `factorize()` is the one entry point after any change. It keeps the
+  symbolic analysis while the pattern (stamped positions and voltage sources)
+  is the analysed one, and the pivot order (`klu_refactor`) unless a pivot
+  is zero or KLU's reciprocal pivot growth (`klu_rgrowth`) cannot be
+  measured or is below the square root of machine epsilon. Otherwise it
+  analyses or pivots anew. The threshold is a heuristic against growth in
+  U, not a bound on the error of a solution.
+- `tripletsMatch()` tells whether the stamps are those of the factors in
+  hand, after any factorization; `updateRhs()` then rebuilds the right-hand
+  side alone.
 
 ### AcMnaSystem (AC Frequency Domain)
 
-**RT-safe:** Yes (with workspace)
+**RT-safe:** `solveInto()` with a prepared workspace, in a build with LAPACKE
 **Best for:** Frequency response, Bode plots, AC analysis
 
 AC MNA solver with complex impedances. Supports frequency sweeps for analog circuit design.
@@ -145,13 +158,15 @@ AcMnaSystem mna(netCount, omega);
 mna.stampConductance(a, b, g);               // Resistor (real)
 mna.stampAdmittance(a, b, Complex(0, w*C));  // Capacitor (imaginary)
 
-auto result = mna.solveAc();  // Complex node voltages
+auto result = mna.solve();  // Complex node voltages
 ```
 
 **Key features:**
 
 - Complex admittance matrix (Y = G + jB)
-- Frequency sweep support
+- `frequencySweep()`: log-spaced points with both ends included; arguments
+  that describe no sweep (a start at or below zero, an end below the start,
+  no points per decade, no input voltage) return no points
 - Bode plot generation (magnitude/phase)
 
 ### MnaBatchCuda (GPU Batch Solver)
@@ -168,17 +183,28 @@ GPU-accelerated batch MNA solver for small-medium matrices (8-64 dimensions). Lo
 using namespace sim::electronics::algorithms::mna::cuda;
 
 MnaBatchWorkspace workspace;
-workspace.prepare(dim, batchSize);
+workspace.prepare(32, batchSize);
 
 // Solve 1000 independent 32x32 systems in parallel
-solveBatch32x32(workspace, hA, hb, batchSize, stream);
+bool everySolved = solveBatchCustom(workspace, hA, hb, 32, batchSize, stream);
 ```
 
 **Key features:**
 
-- Supported dimensions: 8, 16, 32, 64
+- Supported dimensions: 8, 16, 32, 64, in double (`solveBatchCustom`) and
+  single precision (`solveBatchCustomF32`)
 - Custom kernels optimized per size
-- Async operation via CUDA streams
+- A CUDA stream may be given. A call that queues work waits for the stream
+  before it returns, whatever stopped the batch; a refused call and an
+  empty batch queue nothing. `false` does not say whether that wait
+  succeeded. After `false`, unless completion is established some other
+  way, keep the host arrays and the workspace alive and unchanged until a
+  `cudaStreamSynchronize` of the stream succeeds or CUDA's recovery for the
+  error allows reuse
+- Returns true only when every system was solved. A system with no pivot
+  in some column (relative to that column's largest entry) is reported in
+  the optional `solved` flags and comes back as not-a-number in every
+  entry; the rest of its batch is solved all the same
 
 ### StampContext (Stamping Helper)
 
@@ -207,7 +233,7 @@ ctx.stampVoltageSource(pos, neg, v); // Voltage source
 | How do I analyze frequency response (Bode plots)? | `AcMnaSystem` (AC, complex LAPACK zgesv)                     |
 | How do I run Monte Carlo parameter sweeps?        | `MnaBatchCuda` (GPU batch solver)                            |
 | How do I stamp resistors/capacitors into MNA?     | `StampContext` (DC) or `AcMnaSystem` (AC)                    |
-| How do I make solving RT-safe?                    | Use `MnaSolveWorkspace` (DC) or `AcMnaSolveWorkspace` (AC)   |
+| How do I make solving RT-safe?                    | Per solver and backend: see [section 7](#7-rt-safety)        |
 | When should I use dense vs sparse?                | Dense <200 nets, sparse >200 nets                            |
 | How do I handle voltage sources?                  | Augmented MNA (built-in to all solvers)                      |
 | How do I cache factorizations for speed?          | DC: `MnaFactorizedWorkspace`, AC: `AcMnaFactorizedWorkspace` |
@@ -229,15 +255,16 @@ using namespace sim::electronics::algorithms::mna;
 // Setup (NOT RT-safe)
 const std::size_t netCount = 500;
 MnaSystemSparse mna(netCount);
-MnaSolveWorkspace workspace(netCount);
 std::vector<double> v_prev(netCount, 0.0);
+std::vector<double> v(netCount, 0.0);
+std::vector<double> i_branch(sourceCount, 0.0);
 
-// Time-stepping loop (RT-safe with workspace)
+// Time-stepping loop
 const double dt = 1e-6;  // 1us timestep
 const std::size_t steps = 1000;
 
 for (std::size_t step = 0; step < steps; ++step) {
-  mna.clearStamps();  // RT-safe: zeros matrix, preserves structure
+  mna.clearStamps();  // RT-safe: clears the stamps, keeps the factors in hand
 
   // Stamp resistors (RT-safe)
   for (const auto& r : resistors) {
@@ -252,11 +279,20 @@ for (std::size_t step = 0; step < steps; ++step) {
     mna.addCurrent(c.a, c.b, Ieq);
   }
 
-  // Solve (RT-safe with workspace)
-  auto result = mna.solve(workspace);
+  // With a constant timestep and constant resistances the matrix is the one
+  // factorized on the first step: after it only the right-hand side is
+  // rebuilt (RT-safe). factorize() is NOT RT-safe.
+  if (mna.tripletsMatch()) {
+    mna.updateRhs();
+  } else if (!mna.factorize()) {
+    break;
+  }
+
+  // Solve into pre-allocated buffers (RT-safe)
+  mna.solveInto(v.data(), i_branch.data());
 
   // Update state for next step (RT-safe)
-  std::copy(result.nodeVoltages.begin(), result.nodeVoltages.end(), v_prev.begin());
+  v_prev = v;
 }
 ```
 
@@ -416,20 +452,33 @@ const std::size_t batchSize = 1000;  // 1000 Monte Carlo trials
 
 // Prepare GPU workspace (NOT RT-safe)
 MnaBatchWorkspace workspace;
-workspace.prepare(dim, batchSize);
+if (!workspace.prepare(dim, batchSize)) {
+  return;  // No device, or no memory
+}
 
-// Host-side matrices (batchSize independent 32x32 systems)
+// Host-side matrices (batchSize independent 32x32 systems, row-major)
 std::vector<double> hA(batchSize * dim * dim);
 std::vector<double> hb(batchSize * dim);
+std::unique_ptr<bool[]> solved(new bool[batchSize]());  // every flag false
 
 // Fill hA and hb with parameter-varied circuits
 // (each trial has slightly different component values)
 
 // Solve all 1000 systems in parallel on GPU (NOT RT-safe)
-cudaStream_t stream = 0;
-bool success = solveBatch32x32(workspace, hA.data(), hb.data(), batchSize, stream);
+bool everySolved =
+    solveBatchCustom(workspace, hA.data(), hb.data(), dim, batchSize, nullptr, solved.get());
 
-// Extract results (hb now contains solutions)
+// hb holds the solution of each trial whose flag is true, whatever became
+// of its neighbours; a trial that was not solved (a floating node, say)
+// holds not-a-number throughout. When the batch did not run to its end
+// (everySolved is false then) every flag is false: read no trial without
+// its flag. After false, hA, hb and the workspace are released or refilled
+// only once the stream has been synchronized successfully.
+for (std::size_t trial = 0; trial < batchSize; ++trial) {
+  if (solved[trial]) {
+    record(&hb[trial * dim]);
+  }
+}
 ```
 
 ### Workflow 4: RT-Safe Hot-Path Simulation
@@ -443,25 +492,36 @@ using namespace sim::electronics::algorithms::mna;
 
 // SETUP PHASE (NOT RT-safe - run once at initialization)
 const std::size_t netCount = 100;
+const std::size_t sourceCount = 1;
 MnaSystem mna(netCount);
-MnaSolveWorkspace workspace(netCount);
+MnaSolveWorkspace workspace;
+workspace.prepare(netCount + sourceCount);
+std::vector<double> v(netCount);
+std::vector<double> i_branch(sourceCount);
+mna.addVoltageSource(supplyNode, 0, supplyVolts);  // reserves the source list
 
 // HOT LOOP (RT-safe - runs every control cycle)
 void rtControlLoop() {
-  mna.clearStamps();  // RT-safe: zeros matrix, preserves factorization
+  mna.clear();  // RT-safe: zeros the stamps, keeps the storage
 
   // Stamp circuit from sensor inputs (RT-safe)
+  mna.addVoltageSource(supplyNode, 0, supplyVolts);
   for (const auto& r : resistors) {
     mna.addConductance(r.a, r.b, 1.0 / r.R);
   }
 
-  // Solve (RT-safe with workspace - no allocations)
-  auto result = mna.solve(workspace);
-
-  // Use result for control output (RT-safe)
-  setActuatorVoltage(result.nodeVoltages[outputNode]);
+  // Solve into pre-allocated buffers (with LAPACKE: no allocations)
+  if (mna.solveInto(workspace, v.data(), i_branch.data())) {
+    // Use result for control output (RT-safe)
+    setActuatorVoltage(v[outputNode]);
+  }
 }
 ```
+
+This holds for a build with LAPACKE (`COMPAT_HAVE_LAPACKE=1`, the hosted
+default). Without it the dense solver falls back to its own elimination,
+which allocates on every solve whatever the workspace: that build has no
+allocation-free dense solve.
 
 ---
 
@@ -518,21 +578,32 @@ matrix size (Dim ~= 1081):
 ### Factorization Caching
 
 Cached back-substitution is 45x faster than full factorize+solve at 150 nets
-(1.5 us vs 65.5 us). Use `clearStamps()` to preserve the LU factorization
-between solves when circuit topology is unchanged:
+(1.5 us vs 65.5 us). When the stamps are those of the matrix already
+factorized, only the right-hand side is rebuilt:
 
 ```cpp
-// RT-safe path: 1.5 us/solve (back-substitution only)
 mna.clearStamps();
 mna.addConductance(...);
+if (mna.tripletsMatch()) {
+  mna.updateRhs();   // RT-safe path: 1.5 us/solve (back-substitution only)
+} else {
+  mna.factorize();   // Full path: 65.5 us/solve
+}
 mna.solveInto(nodeV, branchI);
-
-// Full path: 65.5 us/solve (refactorizes)
-mna.clear();
-mna.addConductance(...);
-mna.factorize();
-mna.solve();
 ```
+
+`tripletsMatch()` compares with the stamps of the last factorization,
+whichever way that one was done, so an earlier matrix's stamps never select
+another matrix's factors. The comparison allocates nothing: `clearStamps()`
+sets the factorized stamp list aside by exchanging two buffers.
+
+When the values change on every pass (a Newton iteration), `factorize()`
+keeps the pivot order and then measures the reciprocal pivot growth of the
+result, a pass over the matrix and its factors on top of the
+refactorization. Where that is below the threshold, or cannot be measured,
+it pivots anew, which costs a full numeric factorization for that pass. The
+measure warns of growth in U under the kept order; it does not certify the
+accuracy of the solution.
 
 ---
 
@@ -540,46 +611,58 @@ mna.solve();
 
 ### RT-Safe Operations
 
-| Operation                | RT-Safe? | Notes                             |
-| ------------------------ | -------- | --------------------------------- |
-| `addConductance()`       | [OK] Yes | Pure stamping, no allocations     |
-| `addCurrent()`           | [OK] Yes | Pure stamping, no allocations     |
-| `addGEntry()`            | [OK] Yes | One asymmetric entry (dense)      |
-| `addTransconductance()`  | [OK] Yes | Controlled current source (dense) |
-| `clearStamps()`          | [OK] Yes | Zeros matrix, preserves structure |
-| `solve()` with workspace | [OK] Yes | No allocations in hot path        |
+| Operation               | RT-Safe? | Notes                                |
+| ----------------------- | -------- | ------------------------------------ |
+| `addConductance()`      | [OK] Yes | Pure stamping, no allocations        |
+| `addCurrent()`          | [OK] Yes | Pure stamping, no allocations        |
+| `addGEntry()`           | [OK] Yes | One asymmetric entry (dense)         |
+| `addTransconductance()` | [OK] Yes | Controlled current source (dense)    |
+| `clearStamps()`         | [OK] Yes | Sparse: clears stamps, keeps factors |
+| `tripletsMatch()`       | [OK] Yes | Sparse: compares, no allocations     |
+| `updateRhs()`           | [OK] Yes | Sparse: right-hand side only         |
+| Sparse `solveInto()`    | [OK] Yes | After a `factorize()`                |
+| Dense `solveInto()`     | [OK] Yes | Prepared workspace, LAPACKE build    |
 
 ### NOT RT-Safe
 
-| Operation                   | RT-Safe? | Notes                             |
-| --------------------------- | -------- | --------------------------------- |
-| MNA construction            | [X] No   | Allocates matrices                |
-| `solve()` without workspace | [X] No   | Allocates internally              |
-| Resizing                    | [X] No   | Reallocates matrices              |
-| First `clear()`             | [X] No   | Destroys factorization cache      |
-| GPU batch solving           | [X] No   | Kernel launches, memory transfers |
+| Operation            | RT-Safe? | Notes                             |
+| -------------------- | -------- | --------------------------------- |
+| MNA construction     | [X] No   | Allocates matrices                |
+| `solve()`            | [X] No   | Allocates matrix and result       |
+| Resizing             | [X] No   | Reallocates matrices              |
+| Sparse `factorize()` | [X] No   | KLU analysis and factors allocate |
+| Dense, no LAPACKE    | [X] No   | Fallback elimination allocates    |
+| GPU batch solving    | [X] No   | Kernel launches, memory transfers |
 
 ### RT-Safe Usage Pattern
 
 ```cpp
-// SETUP PHASE (not RT-safe)
+// SETUP PHASE (not RT-safe): stamp once and factorize. factorize() also
+// sizes the storage solveInto() works in, so the first solveInto() allocates
+// nothing. solve() allocates the vectors it returns and is not for the loop.
 MnaSystemSparse mna(netCount);
-MnaSolveWorkspace workspace(netCount);
+stampCircuit(mna, inputs);
+if (!mna.factorize()) {
+  return;  // Singular, or a floating net
+}
+std::vector<double> v(netCount);
+std::vector<double> i_branch(mna.voltageSourceCount());
 
-// HOT LOOP (RT-safe)
+// HOT LOOP (RT-safe while the matrix is the one factorized)
 while (running) {
-  mna.clearStamps();  // RT-safe: zeros, preserves structure
+  mna.clearStamps();  // RT-safe: clears the stamps, keeps the factors in hand
 
-  // Stamp circuit components (RT-safe)
-  for (const auto& r : resistors) {
-    mna.addConductance(r.a, r.b, 1.0 / r.R);
+  // Stamp the same conductances with new source values (RT-safe)
+  stampCircuit(mna, inputs);
+
+  if (!mna.tripletsMatch()) {
+    break;  // The matrix changed: factorize() outside the RT path
   }
-
-  // Solve (RT-safe with workspace)
-  auto result = mna.solve(workspace);
+  mna.updateRhs();                           // RT-safe: right-hand side only
+  mna.solveInto(v.data(), i_branch.data());  // RT-safe: back-substitution
 
   // Use result
-  updateCircuit(result.nodeVoltages);
+  updateCircuit(v);
 }
 ```
 
@@ -616,38 +699,69 @@ while (running) {
 # Build library
 make compose-debug
 
-# Run all tests (19 tests: 9 DC sparse + 10 AC + batch CUDA if enabled)
+# Run all tests
 make compose-testp
 
-# Run specific test suite
+# Run this module's unit tests
 docker compose run --rm dev-cuda bash -c \
-  './build/native-linux-debug/bin/utests/TestSimElectronicsMna'
+  './build/hosted-x86_64-debug/bin/utests/TestSimElectronicsMna'
+
+# Run the GPU batch solver's unit tests (needs a CUDA device)
+docker compose run --rm dev-cuda bash -c \
+  './build/hosted-x86_64-debug/bin/utests/TestSimElectronicsMnaBatch'
 ```
 
 **Test coverage:**
 
-- **DC Analysis (9 tests):**
-  - Dense vs sparse solver correctness
-  - Voltage divider circuits
-  - Parallel resistors
-  - Current source circuits
-  - Matrix factorization caching
-  - Solver state management
-- **AC Frequency Domain (10 tests):**
-  - Resistive circuits (frequency-independent)
-  - Capacitor/inductor impedance
-  - RC low-pass and high-pass filters
-  - Series RLC resonance
-  - Frequency sweeps and Bode plots
-  - Cutoff frequency detection
-- **Batch CUDA (conditional, if CUDA enabled):**
-  - GPU batch solver for parameter sweeps
+- **`TestSimElectronicsMna` (CPU):**
+  - Dense system: stamping, solve, cached factorization, the
+    external-matrix and matvec modes and what each solve refuses
+  - Sparse system: what a factorization reuses of the one before it, the
+    right-hand-side-only path, singular and floating-net refusals, agreement
+    with the dense system
+  - Stamp context in its three modes
+  - AC system: impedances, RC filters, RLC resonance, and the frequency
+    sweep's points, ends and refusals
+- **`TestSimElectronicsMnaAllocation` (CPU; a binary of its own, counting
+  through the global allocation functions):**
+  - The sparse right-hand-side path and, with LAPACKE, the dense solve into
+    a prepared workspace allocate nothing, from the first pass after setup
+- **`TestSimElectronicsMnaBatch` (CUDA; skipped where there is no device, and
+  run by no CI job):**
+  - Every supported dimension in both precisions: known solutions, systems
+    that need a row exchange at every step, entries far from 1
+  - A circuit's matrix with voltage sources against the dense solver
+  - Systems that cannot be solved, reported one by one
+  - The reported launch configuration against the launch performed
 
 **Expected results:** All tests pass with no regressions. Sparse and dense solvers produce results within 1e-9 numerical precision.
 
 ---
 
-## 10. See Also
+## 10. Migration
+
+The sparse system and the batch workspaces changed layout, and the batch
+solvers their signature: rebuild everything that includes
+`MnaSystemSparse.hpp` or `MnaBatchCuda.cuh` together with the library. Do
+not link or load objects compiled against the earlier headers; rebuild all
+dependents together. The linker and the loader do not reject every mixed
+build: the sparse system's symbols are unchanged while its layout is not.
+
+| Earlier                                                                 | Now                                                                                                                                                                          |
+| ----------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MnaSystemSparse::refactorize()`, `refactorizeInPlace()`                | `factorize()`. It keeps the analysis and the pivot order where they still apply.                                                                                             |
+| `tripletsMatch()` to choose `refactorizeInPlace()`                      | `tripletsMatch()` true: `updateRhs()`. False: `factorize()`.                                                                                                                 |
+| `MnaBatchWorkspace`, `MnaBatchWorkspaceF32` as two structs              | Aliases of `BatchWorkspace<double>` and `BatchWorkspace<float>`. Neither copyable nor movable; no aggregate construction. A forward declaration must name the template.      |
+| `MnaBatchWorkspace::dSuccess`                                           | Gone. Pass `solved` to the solve call, or test the first entry of a system for not-a-number.                                                                                 |
+| `solveBatchCustom(ws, As, bs, dim, batch, stream)` and the `F32` form   | A trailing `bool* solved = nullptr`. Calls compile as they are; a function pointer or wrapper of the six-argument type takes the seventh.                                    |
+| A batch with an unsolved system returned true, that system's `bs` kept  | Returns false; that system is not-a-number in every entry and its flag is false. The others are solved.                                                                      |
+| `MnaSystem::solve()`, `factorize()` on an external-matrix/matvec system | Refused. An external-matrix system solves with `solveInto()` and the workspace it stamps into, in a LAPACKE build. A matvec system holds no matrix and has nothing to solve. |
+| `StampContext::clear()` left borrowed storage as it was                 | Zeroes the external matrix, and the net entries of the matvec output.                                                                                                        |
+| `frequencySweep()` with equal ends, a short span, or no valid span      | One point; both ends; no points.                                                                                                                                             |
+
+---
+
+## 11. See Also
 
 **Related Modules:**
 

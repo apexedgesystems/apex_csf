@@ -12,9 +12,11 @@
  *   - Ownership transfer pattern: allocate -> queue -> process -> release
  *
  * RT-Safety:
- *   - Allocation from pool is RT-safe (lock-free)
+ *   - Acquiring from and releasing to the pool: as BufferPool states for acquire() and
+ *     release() (BufferPool.hpp, RT-Safety)
  *   - Buffer access is RT-safe (no locks, single-owner)
- *   - Release to pool is RT-safe (lock-free)
+ *   - addRef() and decRef() are one atomic update each, bounded where the target bounds
+ *     it (BufferPool.hpp, Atomic updates)
  */
 
 #include <cstddef>
@@ -52,8 +54,10 @@ namespace interface {
  *   - Never write past capacity
  *   - Always release when done (or leak!)
  *
- * @note NOT RT-safe: Allocation (pool creates this struct)
- * @note RT-safe: All operations after allocation
+ * @note NOT RT-safe: Construction (the pool creates this struct at startup)
+ * @note RT-safe: field access, clear(), canFit(), isValid(), setRefCount(), getRefCount()
+ * @note RT-DEPENDS: addRef(), decRef() (one atomic update each; BufferPool.hpp, Atomic
+ *       updates)
  */
 struct MessageBuffer {
   /* ----------------------------- Data Members ----------------------------- */
@@ -79,9 +83,8 @@ struct MessageBuffer {
   /* ----------------------------- Debug/Safety ----------------------------- */
 
 #ifndef NDEBUG
-  std::uint32_t magic{0xDEADBEEF};   ///< Magic number (detect corruption).
-  bool isAcquired{false};            ///< Debug: Track acquire/release state.
-  std::uint64_t acquireTimestamp{0}; ///< Debug: When buffer was acquired.
+  std::uint32_t magic{0xDEADBEEF}; ///< Magic number (detect corruption).
+  bool isAcquired{false};          ///< Debug: Track acquire/release state.
 #endif
 
   /* ----------------------------- Methods ----------------------------- */
@@ -126,14 +129,14 @@ struct MessageBuffer {
 
   /**
    * @brief Increment reference count.
-   * @note RT-safe: Atomic increment.
+   * @note RT-DEPENDS: one atomic update (BufferPool.hpp, Atomic updates).
    */
   void addRef() noexcept { refCount.fetch_add(1, std::memory_order_relaxed); }
 
   /**
    * @brief Decrement reference count.
    * @return true if this was the last reference (caller should return to pool).
-   * @note RT-safe: Atomic decrement.
+   * @note RT-DEPENDS: one atomic update (BufferPool.hpp, Atomic updates).
    */
   [[nodiscard]] bool decRef() noexcept {
     return refCount.fetch_sub(1, std::memory_order_acq_rel) == 1;

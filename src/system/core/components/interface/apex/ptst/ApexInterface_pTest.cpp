@@ -3,7 +3,7 @@
  * @brief Performance tests for the ApexInterface inter-component bus.
  *
  * Measures:
- *  - BufferPool acquire / release, payload copy, refcount paths
+ *  - BufferPool acquire / release, payload copy, refcount paths, threads sharing one pool
  *  - SPSC and MPMC queue push/pop; QueueManager lookup
  *  - Internal bus command / telemetry post, multicast, broadcast
  *  - APROTO codec header encode / decode, round-trip, payload sweep
@@ -155,11 +155,42 @@ PERF_TEST(BufferPoolPerf, RefcountRelease) {
     pool.release(buf); // refcount 4->3
     pool.release(buf); // refcount 3->2
     pool.release(buf); // refcount 2->1
-    pool.release(buf); // refcount 1->0, returns to pool
+    pool.release(buf); // last reference: no decrement, returns to pool
   };
 
   perf.warmup(fn);
   perf.throughputLoop(fn, "BufferPool_RefcountRelease_4x");
+}
+
+/**
+ * @brief Measure acquire/release with `--threads N` threads working one pool.
+ *
+ * The pool is larger than the thread count, so an acquire finds a buffer unless buffers have
+ * been lost; the case fails when the pool does not end full.
+ */
+PERF_TEST(BufferPoolPerf, ContendedAcquireRelease) {
+  UB_PERF_GUARD(perf);
+
+  BufferPool pool(128, 512);
+  std::atomic<std::size_t> exhausted{0};
+
+  auto result = perf.contentionRun(
+      [&] {
+        MessageBuffer* buf = pool.acquire(64);
+        if (buf == nullptr) {
+          exhausted.fetch_add(1U, std::memory_order_relaxed);
+          return;
+        }
+        pool.release(buf);
+      },
+      "contended");
+
+  std::printf("\nBufferPool contended (%d threads): %.0f calls/s, %zu found the pool empty, "
+              "%zu of %zu buffers in the pool afterwards\n",
+              perf.threads(), result.callsPerSecond, exhausted.load(), pool.available(),
+              pool.size());
+  EXPECT_EQ(pool.available(), pool.size());
+  EXPECT_EQ(exhausted.load(), 0U);
 }
 
 /* ----------------------------- Queue Benchmarks ----------------------------- */

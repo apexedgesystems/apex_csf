@@ -27,6 +27,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -165,6 +167,123 @@ PERF_TEST(MnaSparse, CachedSolveOnly_150net) {
 
   std::printf("  Cached solve 150-net: %8.0f solves/s  (%.3f us/solve)\n", result.callsPerSecond,
               result.stats.median);
+}
+
+/* ----------------------------- Sparse KLU Reuse ----------------------------- */
+
+namespace {
+
+/**
+ * @brief One pass of a caller that keeps a sparse system across solves:
+ *        clear, stamp the ladder with its conductances scaled and a supply,
+ *        take the right-hand side alone when the matrix is the factorized
+ *        one and factorize otherwise, then solve into buffers.
+ * @return Whether the pass solved.
+ */
+bool reusePass(sim::electronics::algorithms::mna::MnaSystemSparse& mna,
+               const std::vector<Stamp>& stamps, double scale, double supply, std::size_t nets,
+               std::vector<double>& nodeV, std::vector<double>& branchI) {
+  mna.clearStamps();
+  for (const auto& s : stamps) {
+    mna.addConductance(s.a, s.b, s.g * scale);
+  }
+  mna.addVoltageSource(static_cast<std::uint32_t>(nets - 1), 0, supply);
+  if (mna.tripletsMatch()) {
+    mna.updateRhs();
+  } else if (!mna.factorize()) {
+    return false;
+  }
+  return mna.solveInto(nodeV.data(), branchI.data());
+}
+
+/**
+ * @brief Run a reuse sequence on one persistent 150-net system.
+ *
+ * `scaleOf(pass)` gives the conductance scale of each measured pass; the
+ * supply differs on every pass, so the right-hand side always does. `setup`
+ * brings the system to the state the sequence starts from. Every pass is
+ * checked: the source's net holds the supply it was given.
+ */
+template <typename Setup, typename ScaleOf>
+void runReuseCase(vernier::bench::PerfCase& perf, const char* label, Setup setup, ScaleOf scaleOf) {
+  const std::size_t N = 150;
+  const auto STAMPS = buildLadder(N);
+  sim::electronics::algorithms::mna::MnaSystemSparse mna(N);
+  std::vector<double> nodeV(N, 0.0);
+  std::vector<double> branchI(1, 0.0);
+  setup(mna, STAMPS, nodeV, branchI);
+
+  std::size_t pass = 0;
+  bool everySolved = true;
+  double worst = 0.0;
+  const auto BODY = [&] {
+    const double SUPPLY = 5.0 + 0.001 * static_cast<double>(pass % 1000);
+    everySolved = reusePass(mna, STAMPS, scaleOf(pass), SUPPLY, N, nodeV, branchI) && everySolved;
+    worst = std::max(worst, std::fabs(nodeV[N - 1] - SUPPLY));
+    ++pass;
+  };
+
+  perf.warmup(BODY);
+  const auto RESULT = perf.throughputLoop(BODY, label);
+
+  EXPECT_TRUE(everySolved);
+  EXPECT_LT(worst, 1e-9);
+  std::printf("  %s: %8.0f passes/s  (%.3f us/pass)\n", label, RESULT.callsPerSecond,
+              1e6 / RESULT.callsPerSecond);
+}
+
+} // namespace
+
+/**
+ * @brief Same pattern, other values on every pass: each pass factorizes,
+ *        keeping the pivot order where it suits. The Newton-iteration shape.
+ */
+PERF_TEST(MnaSparseReuse, ValuesChangeEveryPass_150net) {
+  UB_PERF_GUARD(perf);
+  std::printf("\n=== Sparse KLU reuse: values change every pass (150 nets) ===\n");
+  runReuseCase(
+      perf, "reuse_values_change",
+      [](auto& mna, const auto& stamps, auto& nodeV, auto& branchI) {
+        (void)reusePass(mna, stamps, 1.0, 5.0, 150, nodeV, branchI);
+      },
+      [](std::size_t pass) { return (pass % 2 == 0) ? 1.25 : 0.8; });
+}
+
+/**
+ * @brief Values changed once, then the same matrix with a new right-hand
+ *        side on every pass: a linear circuit after a switch has moved.
+ */
+PERF_TEST(MnaSparseReuse, ChangedOnceThenNewRhs_150net) {
+  UB_PERF_GUARD(perf);
+  std::printf("\n=== Sparse KLU reuse: changed once, then new RHS (150 nets) ===\n");
+  runReuseCase(
+      perf, "reuse_changed_once",
+      [](auto& mna, const auto& stamps, auto& nodeV, auto& branchI) {
+        (void)reusePass(mna, stamps, 1.0, 5.0, 150, nodeV, branchI);
+        (void)reusePass(mna, stamps, 1.25, 5.0, 150, nodeV, branchI);
+      },
+      [](std::size_t /*pass*/) { return 1.25; });
+}
+
+/**
+ * @brief The same matrix factorized twice, then a new right-hand side on
+ *        every pass.
+ */
+PERF_TEST(MnaSparseReuse, SameMatrixFactorizedTwiceThenNewRhs_150net) {
+  UB_PERF_GUARD(perf);
+  std::printf("\n=== Sparse KLU reuse: factorized twice, then new RHS (150 nets) ===\n");
+  runReuseCase(
+      perf, "reuse_factorized_twice",
+      [](auto& mna, const auto& stamps, auto& nodeV, auto& branchI) {
+        (void)reusePass(mna, stamps, 1.0, 5.0, 150, nodeV, branchI);
+        mna.clearStamps();
+        for (const auto& s : stamps) {
+          mna.addConductance(s.a, s.b, s.g);
+        }
+        mna.addVoltageSource(149, 0, 5.0);
+        (void)mna.factorize();
+      },
+      [](std::size_t /*pass*/) { return 1.0; });
 }
 
 /* ----------------------------- Dense LAPACK Solve ----------------------------- */

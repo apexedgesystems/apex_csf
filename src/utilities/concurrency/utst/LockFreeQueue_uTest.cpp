@@ -8,7 +8,10 @@
  */
 
 #include "src/utilities/concurrency/inc/LockFreeQueue.hpp"
+#include "src/utilities/concurrency/utst/support/MoveTracking.hpp"
 #include "src/utilities/concurrency/utst/support/AlignProbe.hpp"
+#include "src/utilities/concurrency/utst/support/Crew.hpp"
+#include "src/utilities/concurrency/utst/support/SizeReader.hpp"
 #include "src/utilities/concurrency/utst/support/Waiting.hpp"
 
 #include <gtest/gtest.h>
@@ -17,13 +20,18 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <thread>
 #include <utility>
 #include <vector>
 
 using apex::concurrency::LockFreeQueue;
+using apex::concurrency::test::Crew;
+using apex::concurrency::test::CrewState;
+using apex::concurrency::test::readSizeFromAThirdThread;
 using apex::concurrency::test::settles;
+using apex::concurrency::test::SizeReadings;
 
 /* ----------------------------- Basic Operations Tests ----------------------------- */
 
@@ -31,12 +39,6 @@ class LockFreeQueueTest : public ::testing::Test {
 protected:
   static constexpr std::size_t DEFAULT_CAPACITY = 16;
 };
-
-/** @test Queue capacity matches constructor argument */
-TEST_F(LockFreeQueueTest, CapacityMatchesArgument) {
-  LockFreeQueue<int> queue(DEFAULT_CAPACITY);
-  EXPECT_EQ(queue.capacity(), DEFAULT_CAPACITY);
-}
 
 /** @test Queue with zero capacity rounds up to 2 (minimum power-of-two) */
 TEST_F(LockFreeQueueTest, ZeroCapacityRoundsUpToTwo) {
@@ -113,29 +115,11 @@ TEST_F(LockFreeQueueTest, MaintainsFifoOrder) {
 
 /* ----------------------------- Move Semantics Tests ----------------------------- */
 
-/** @test tryPush with rvalue moves the value */
-TEST_F(LockFreeQueueTest, TryPushMovesRvalue) {
-  LockFreeQueue<std::string> queue(4);
-
-  std::string original = "test string";
-  EXPECT_TRUE(queue.tryPush(std::move(original)));
-
-  std::string popped;
-  EXPECT_TRUE(queue.tryPop(popped));
-  EXPECT_EQ(popped, "test string");
-}
-
-/** @test tryPop moves value out of queue */
-TEST_F(LockFreeQueueTest, TryPopMovesValue) {
-  LockFreeQueue<std::vector<int>> queue(4);
-
-  std::vector<int> original = {1, 2, 3, 4, 5};
-  EXPECT_TRUE(queue.tryPush(original));
-
-  std::vector<int> popped;
-  EXPECT_TRUE(queue.tryPop(popped));
-  EXPECT_EQ(popped.size(), 5U);
-  EXPECT_EQ(popped[0], 1);
+/** @test An rvalue pushed is moved in without a copy and its source is left moved-from, an
+ * lvalue pushed is copied exactly once, a pop moves the element out without a copy, and a
+ * move-only element type goes through. */
+TEST_F(LockFreeQueueTest, MovesRvaluesAndCopiesLvaluesOnce) {
+  apex::concurrency::test::checkQueueValueCategories<LockFreeQueue>();
 }
 
 /* ----------------------------- Capacity Edge Cases ----------------------------- */
@@ -411,15 +395,230 @@ TEST_F(LockFreeQueueTest, SizeApproxFollowsPushAndPop) {
   }
 }
 
-/* ----------------------------- Determinism Tests ----------------------------- */
+/* ----------------------------- Held Cell Tests ----------------------------- */
 
-/** @test capacity() returns consistent results */
-TEST(LockFreeQueueDeterminismTest, CapacityConsistent) {
-  LockFreeQueue<int> queue(128);
-  const std::size_t FIRST = queue.capacity();
-  const std::size_t SECOND = queue.capacity();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 128U);
+namespace {
+
+/// Where one marked element waits inside its assignment, for as long as the gate is closed.
+struct Gate {
+  std::atomic<bool> closed{false};
+  std::atomic<bool> reached{false};            ///< A thread is waiting at the gate.
+  const std::atomic<bool>* abandoned{nullptr}; ///< The case gave up: stop waiting.
+};
+
+/// An element whose assignment from a source carrying a gate waits at that gate. The queue
+/// assigns the element between claiming a cell and releasing it, so a closed gate stops a thread
+/// inside tryPush() or tryPop() with its cell held.
+struct Gated {
+  int value{0};
+  Gate* gate{nullptr};
+
+  Gated() = default;
+  explicit Gated(int v, Gate* g = nullptr) noexcept : value(v), gate(g) {}
+  Gated(const Gated&) = default;
+  Gated(Gated&&) = default;
+  Gated& operator=(const Gated& other) noexcept {
+    waitAt(other.gate);
+    value = other.value;
+    gate = other.gate;
+    return *this;
+  }
+  Gated& operator=(Gated&& other) noexcept { return *this = other; }
+
+  static void waitAt(Gate* gate) noexcept {
+    if (gate == nullptr || !gate->closed.load(std::memory_order_acquire)) {
+      return;
+    }
+    gate->reached.store(true, std::memory_order_release);
+    while (gate->closed.load(std::memory_order_acquire) &&
+           !gate->abandoned->load(std::memory_order_acquire)) {
+      std::this_thread::yield();
+    }
+  }
+};
+
+/// A ring of four cells, the gate, and what the held call returned.
+struct HeldCell : CrewState {
+  Gate gate;
+  LockFreeQueue<Gated> queue{4};
+  std::atomic<bool> returned{false};
+  HeldCell() { gate.abandoned = &abandoned; }
+};
+
+} // namespace
+
+/** @test While a consumer holds the oldest cell, tryPush() reports full with no element left
+ * unread, and takes the element once that consumer has finished. */
+TEST_F(LockFreeQueueTest, PushIsRefusedAtACellAConsumerStillHolds) {
+  Crew<HeldCell> crew;
+  ASSERT_TRUE(crew->queue.tryPush(Gated{0, &crew->gate}));
+  for (int i = 1; i < 4; ++i) {
+    ASSERT_TRUE(crew->queue.tryPush(Gated{i}));
+  }
+
+  crew->gate.closed.store(true, std::memory_order_release);
+  crew.start([](HeldCell& state) {
+    Gated out;
+    state.returned.store(state.queue.tryPop(out), std::memory_order_release);
+  });
+  ASSERT_TRUE(settles([&]() { return crew->gate.reached.load(std::memory_order_acquire); }))
+      << "the consumer never reached its cell";
+
+  Gated out;
+  for (int i = 1; i < 4; ++i) {
+    ASSERT_TRUE(crew->queue.tryPop(out));
+    EXPECT_EQ(out.value, i);
+  }
+  EXPECT_FALSE(crew->queue.tryPop(out)) << "an element was left unread";
+  EXPECT_FALSE(crew->queue.tryPush(Gated{4})) << "the push passed a cell its consumer still holds";
+
+  crew->gate.closed.store(false, std::memory_order_release);
+  ASSERT_TRUE(crew.finish()) << "the held consumer did not return";
+  EXPECT_TRUE(crew->returned.load(std::memory_order_acquire));
+  EXPECT_TRUE(crew->queue.tryPush(Gated{4})) << "the released cell was still refused";
+}
+
+/** @test While a producer holds a cell, tryPop() reports empty at it with three elements
+ * published behind it, and reads all four in order once that producer has finished. */
+TEST_F(LockFreeQueueTest, PopFindsNothingBehindACellAProducerStillHolds) {
+  Crew<HeldCell> crew;
+  crew->gate.closed.store(true, std::memory_order_release);
+  crew.start([](HeldCell& state) {
+    state.returned.store(state.queue.tryPush(Gated{0, &state.gate}), std::memory_order_release);
+  });
+  ASSERT_TRUE(settles([&]() { return crew->gate.reached.load(std::memory_order_acquire); }))
+      << "the producer never reached its cell";
+
+  for (int i = 1; i < 4; ++i) {
+    ASSERT_TRUE(crew->queue.tryPush(Gated{i}));
+  }
+  Gated out;
+  EXPECT_FALSE(crew->queue.tryPop(out)) << "the pop passed a cell its producer still holds";
+  EXPECT_EQ(crew->queue.sizeApprox(), 4U);
+
+  crew->gate.closed.store(false, std::memory_order_release);
+  ASSERT_TRUE(crew.finish()) << "the held producer did not return";
+  EXPECT_TRUE(crew->returned.load(std::memory_order_acquire));
+  for (int i = 0; i < 4; ++i) {
+    ASSERT_TRUE(crew->queue.tryPop(out));
+    EXPECT_EQ(out.value, i);
+  }
+}
+
+/* ----------------------------- Index Wrap Tests ----------------------------- */
+
+namespace {
+
+/// A queue of int whose cursors start where the test puts them.
+class SteppedQueue : public LockFreeQueue<int> {
+public:
+  SteppedQueue(std::size_t capacity, std::size_t firstIndex) noexcept
+      : LockFreeQueue<int>(capacity, firstIndex) {}
+};
+
+} // namespace
+
+/** @test A queue whose cursors and cell sequence numbers wrap keeps its order, its capacity and
+ * its size: started at the top of the index range, it fills across the wrap, refuses the next
+ * push, and reports each occupancy on the way down, with the producer cursor numerically below
+ * the consumer cursor throughout. The operations run on a thread the case waits for with a
+ * bound, because a push or pop whose sequence arithmetic is wrong retries forever. */
+TEST_F(LockFreeQueueTest, CursorsWrapWithoutLosingOrderCapacityOrSize) {
+  struct Wrapping : CrewState {
+    SteppedQueue queue{2, std::numeric_limits<std::size_t>::max()};
+  };
+  Crew<Wrapping> crew;
+  crew.start([](Wrapping& state) {
+    auto& queue = state.queue;
+    EXPECT_EQ(queue.sizeApprox(), 0U);
+    int value = 0;
+    EXPECT_FALSE(queue.tryPop(value));
+
+    ASSERT_TRUE(queue.tryPush(1)); // The producer cursor wraps to zero.
+    EXPECT_EQ(queue.sizeApprox(), 1U);
+    ASSERT_TRUE(queue.tryPush(2));
+    EXPECT_EQ(queue.sizeApprox(), 2U);
+    EXPECT_FALSE(queue.tryPush(3)) << "a full queue took a push across the index wrap";
+
+    ASSERT_TRUE(queue.tryPop(value)); // The consumer cursor wraps to zero.
+    EXPECT_EQ(value, 1);
+    EXPECT_EQ(queue.sizeApprox(), 1U);
+    const int THREE = 3;
+    ASSERT_TRUE(queue.tryPush(THREE)); // By copy: the other push body, on a wrapped cell.
+    EXPECT_EQ(queue.sizeApprox(), 2U);
+    ASSERT_TRUE(queue.tryPop(value));
+    EXPECT_EQ(value, 2);
+    ASSERT_TRUE(queue.tryPop(value));
+    EXPECT_EQ(value, 3);
+    EXPECT_EQ(queue.sizeApprox(), 0U);
+    EXPECT_FALSE(queue.tryPop(value));
+  });
+  ASSERT_TRUE(crew.finish()) << "a push or pop across the index wrap did not return";
+}
+
+/** @test A queue started below the top of the index range by less than its capacity wraps in
+ * the middle of its first lap: every cell is used in order and nothing is lost. */
+TEST_F(LockFreeQueueTest, CursorsWrapInsideTheFirstLap) {
+  struct Wrapping : CrewState {
+    SteppedQueue queue{8, std::numeric_limits<std::size_t>::max() - 2};
+  };
+  Crew<Wrapping> crew;
+  crew.start([](Wrapping& state) {
+    auto& queue = state.queue;
+    int value = 0;
+    for (int lap = 0; lap < 3; ++lap) {
+      for (int i = 0; i < 8; ++i) {
+        ASSERT_TRUE(queue.tryPush(lap * 8 + i));
+        EXPECT_EQ(queue.sizeApprox(), static_cast<std::size_t>(i) + 1);
+      }
+      EXPECT_FALSE(queue.tryPush(-1));
+      for (int i = 0; i < 8; ++i) {
+        ASSERT_TRUE(queue.tryPop(value));
+        EXPECT_EQ(value, lap * 8 + i);
+      }
+      EXPECT_FALSE(queue.tryPop(value));
+    }
+  });
+  ASSERT_TRUE(crew.finish()) << "a push or pop across the index wrap did not return";
+}
+
+/** @test A queue whose cursors cross the middle of the index range, where a signed view of an
+ * index changes sign, keeps its order and capacity. The push and pop compare a cell's sequence
+ * number with the cursor by their modular distance; forming that distance from two signed values
+ * overflows here, which the undefined-behaviour sanitizer reports. */
+TEST_F(LockFreeQueueTest, CursorsCrossTheSignBoundary) {
+  struct Crossing : CrewState {
+    SteppedQueue queue{4, (std::size_t{1} << 63) - 3};
+  };
+  Crew<Crossing> crew;
+  crew.start([](Crossing& state) {
+    auto& queue = state.queue;
+    int value = 0;
+    for (int lap = 0; lap < 3; ++lap) {
+      for (int i = 0; i < 4; ++i) {
+        ASSERT_TRUE(queue.tryPush(lap * 4 + i));
+      }
+      EXPECT_FALSE(queue.tryPush(-1));
+      EXPECT_EQ(queue.sizeApprox(), 4U);
+      for (int i = 0; i < 4; ++i) {
+        ASSERT_TRUE(queue.tryPop(value));
+        EXPECT_EQ(value, lap * 4 + i);
+      }
+      EXPECT_FALSE(queue.tryPop(value));
+    }
+  });
+  ASSERT_TRUE(crew.finish()) << "a push or pop across the sign boundary did not return";
+}
+
+/** @test sizeApprox() read from a third thread never exceeds the capacity while a producer and a
+ * consumer run: a read that catches the consumer ahead of the producer's older cursor reports
+ * zero, not a wrapped difference. This case meets the split by chance; the arithmetic for it is
+ * pinned in RingIndex_uTest.cpp. */
+TEST_F(LockFreeQueueTest, SizeApproxFromAThirdThreadStaysWithinCapacity) {
+  const SizeReadings SEEN = readSizeFromAThirdThread<LockFreeQueue>(2, 200000);
+  ASSERT_TRUE(SEEN.sampled) << "the reader thread never sampled";
+  ASSERT_TRUE(SEEN.finished) << "the exchange did not finish";
+  EXPECT_LE(SEEN.largest, SEEN.capacity);
 }
 
 /* ----------------------------- Storage Alignment Tests ----------------------------- */

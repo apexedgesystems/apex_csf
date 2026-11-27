@@ -1,23 +1,65 @@
 # ==============================================================================
 # base.Dockerfile - Tiered base images
 #
-# build-base : compile + link + test the release artifacts. The 10 release
-#              builders and the build-test gate inherit only this.
-# dev-base   : build-base + tooling (scanners, formatters, profilers, docs).
-#              The dev shells (`apex.base` consumers) inherit this.
+# Three published tiers and the two stages two of them are assembled from:
+#
+# toolchain  : compilers, build tools, Rust, uv, system libraries, the user.
+#              Reads no lock and no dependency pin. Not published.
+# bakes      : the dependencies an offline build resolves (cargo registry,
+#              Python wheelhouse and uv cache, FetchContent sources), fetched
+#              on the toolchain. Not published.
+# build-base : toolchain + bakes. Compile + link + test the release artifacts.
+#              The 10 release builders and the build-test gate inherit only this.
+# lint       : the format check and the secret scan: pre-commit, the tools its
+#              hooks call, gitleaks. No compiler toolchain, no bakes; built on
+#              the distro image alone. The CI lint job runs in it.
+# dev-base   : toolchain + tooling (scanners, formatters, profilers, docs) +
+#              bakes. The dev shells (`apex.base` consumers) inherit this. Its
+#              format tools are the lint tier's, copied from it.
+#
+# The bakes are the last layers of each tier. They are what changes most often
+# (a lock bump, a dependency pin), and a layer rebuilds whenever one beneath it
+# changed: with the bakes last, such a change re-runs the bakes and nothing
+# else of these two tiers. Keep it so; a new layer that reads no lock or pin
+# belongs in toolchain or above the bakes in dev-base.
 #
 # The `base` compose service builds the dev-base target, so `apex.base` carries
-# the full toolset and every current consumer is unaffected.
+# the full toolset.
 #
 # Usage:
 #   docker compose build base                       # -> apex.base (dev-base)
 #   docker build --target build-base -f this .      # -> the lean compile/test tier
+#   docker compose build lint                       # -> apex.lint
 # ==============================================================================
 
+# ------------------------------------------------------------------------------
+# Versions more than one stage installs
+# ------------------------------------------------------------------------------
+# Declared before the first stage so each has one value; a stage that uses one
+# names it with a bare ARG. The lint tier and the dev tier have to format
+# alike, so everything both carry is pinned here.
+#
+# RUST_VERSION: clippy's rule set and rustfmt's output move with the
+# toolchain, and CI treats both as code defects (-D warnings, the format
+# gate) -- an image rebuild must never change the rules underneath a PR. Bump
+# deliberately, with the tree clean under the new version.
+ARG RUST_VERSION=1.98.0
+ARG HADOLINT_VERSION=v2.14.0
+ARG SHFMT_VERSION=v3.12.0
+ARG CMAKELANG_VERSION=0.6.13
+ARG PRE_COMMIT_VERSION=4.5.1
+ARG NODE_VERSION=26.13.0
+ARG NODE_SHA256=d28a96af6c38596f6d9d97c0ee531c13d238d757742387d1928de822d959e997
+ARG GITLEAKS_VERSION=8.30.1
+
 # ==============================================================================
-# Stage: build-base - compile, link, and test the release artifacts
+# Stage: toolchain - what no lock or dependency pin decides
 # ==============================================================================
-FROM ubuntu:24.04 AS build-base
+# Compilers, build tools, the Rust toolchain, uv, system libraries and the
+# user. Both published tiers start here. Nothing in this stage reads a lock,
+# a manifest or ExternalDependencies.cmake, so a dependency bump leaves every
+# layer of it (and of the dev tooling built on it) in the layer cache.
+FROM ubuntu:24.04 AS toolchain
 
 # Build-time arguments
 ARG USER
@@ -27,10 +69,6 @@ ARG CMAKE_VERSION=4.2.3
 ARG UPX_VERSION=5.1.0
 ARG NINJA_VERSION=1.13.1
 ARG NINJA_SHA256=0830252db77884957a1a4b87b05a1e2d9b5f658b8367f82999a941884cbe0238
-
-LABEL org.opencontainers.image.title="apex.build-base" \
-      org.opencontainers.image.description="Compile/link/test tier for Apex CSF C++ builders" \
-      org.opencontainers.image.vendor="Apex"
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -187,12 +225,9 @@ RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error
 # Install Rust via rustup to /opt/rust for system-wide access.
 # Using /opt avoids permission issues when COPY --from overlays onto CUDA images.
 # Includes: rustc, cargo, clippy (linter), rustfmt (formatter). The coverage
-# driver (cargo-llvm-cov) is added in dev-base.
-# Pinned: clippy's rule set moves with the toolchain, and CI treats its
-# findings as code defects (-D warnings) -- an image rebuild must never
-# change the rules underneath a PR. Bump deliberately, with the tree
-# clean under the new version.
-ARG RUST_VERSION=1.98.0
+# driver (cargo-llvm-cov) is added in dev-base. The version is pinned at the
+# top of this file.
+ARG RUST_VERSION
 ENV RUSTUP_HOME=/opt/rust/rustup \
     CARGO_HOME=/opt/rust/cargo
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
@@ -200,6 +235,78 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
     /opt/rust/cargo/bin/rustup component add clippy rustfmt llvm-tools-preview && \
     chmod -R a+rwX /opt/rust
 ENV PATH="/opt/rust/cargo/bin:$PATH"
+
+# ------------------------------------------------------------------------------
+# uv - Python package manager for the python tools (`make tools-<role>`)
+# ------------------------------------------------------------------------------
+# Single static binary from the pinned upstream image -- nothing pip-installed.
+COPY --from=ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc \
+    /uv /usr/local/bin/uv
+
+# ------------------------------------------------------------------------------
+# ptest profiler link libraries
+# ------------------------------------------------------------------------------
+# The perf tests link tcmalloc/profiler when present (find_library in
+# cmake/apex/Testing.cmake), so the link-time libs ship in both tiers for parity
+# with the dev build. The profiler binaries/backends live in dev-base.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      libgoogle-perftools-dev \
+      libunwind-dev
+
+# ------------------------------------------------------------------------------
+# SuiteSparse (KLU sparse solver) - required by the MNA solver
+# ------------------------------------------------------------------------------
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      libsuitesparse-dev
+
+# ------------------------------------------------------------------------------
+# ngspice (SPICE reference simulator) - linked by the electronics sim backend
+# ------------------------------------------------------------------------------
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      libngspice0-dev \
+      ngspice
+
+# ------------------------------------------------------------------------------
+# User Setup
+# ------------------------------------------------------------------------------
+# Centralized here so every downstream image (builders and dev shells) inherits
+# the correct user.
+RUN userdel -r ubuntu 2>/dev/null || true && \
+    groupdel ubuntu 2>/dev/null || true && \
+    groupadd -g ${HOST_GID} ${USER} 2>/dev/null || true && \
+    useradd -l -m -u ${HOST_UID} -g ${HOST_GID} -s /bin/bash -p "*" ${USER} 2>/dev/null || true && \
+    echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
+    chown -R ${HOST_UID}:${HOST_GID} /home/${USER} && \
+    usermod -aG dialout "${USER}"
+
+# ==============================================================================
+# Stage: bakes - what the locks and the dependency pins decide
+# ==============================================================================
+# The cargo registry, the Python wheelhouse and uv cache, and the FetchContent
+# sources: everything an offline build resolves. Built on the toolchain and
+# never published; each tier below copies its output in as its last layers.
+# A dependency bump therefore re-runs this stage and those copies, and
+# nothing above them.
+#
+# CI reads this file to know when an image has to be rebuilt
+# (tools/build/py/bin/ci-classify.py): a file copied from the repository in
+# this stage is a baked dependency, and a change to it rebuilds the images the
+# build jobs run in; a file copied in any other stage defines the image, and a
+# change to it rebuilds the images of every job. A Cargo.toml is the one
+# exception: it is copied so cargo can read the workspace, and what is fetched
+# is the lock's. So a new input needs no list updated anywhere, only its COPY.
+FROM toolchain AS bakes
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # ------------------------------------------------------------------------------
 # Rust dependency cache (hermetic, offline release builds)
@@ -225,13 +332,6 @@ RUN cargo fetch --locked --target x86_64-unknown-linux-gnu \
       --manifest-path /tmp/rust-fetch/Cargo.toml && \
     rm -rf /tmp/rust-fetch && \
     chmod -R a+rwX /opt/rust/cargo
-
-# ------------------------------------------------------------------------------
-# uv - Python package manager for the python tools (`make tools-<role>`)
-# ------------------------------------------------------------------------------
-# Single static binary from the pinned upstream image -- nothing pip-installed.
-COPY --from=ghcr.io/astral-sh/uv:0.11.29@sha256:eb2843a1e56fd9e30c7276ce1a52cba86e64c7b385f5e3279a0e08e02dd058fc \
-    /uv /usr/local/bin/uv
 
 # ------------------------------------------------------------------------------
 # Python dependency bake (hermetic, offline python-tools build and test)
@@ -284,7 +384,35 @@ RUN bash /tmp/deps/bake-external-deps.sh /tmp/deps/ExternalDependencies.cmake \
       /opt/apex-deps /opt/apex-pip-wheels && \
     rm -rf /tmp/deps && \
     chmod -R a+rwX /opt/apex-deps /opt/apex-pip-wheels /opt/rust/cargo
-ENV APEX_DEPS_DIR=/opt/apex-deps
+
+# ==============================================================================
+# Stage: build-base - compile, link, and test the release artifacts
+# ==============================================================================
+FROM toolchain AS build-base
+
+ARG USER
+
+LABEL org.opencontainers.image.title="apex.build-base" \
+      org.opencontainers.image.description="Compile/link/test tier for Apex CSF C++ builders" \
+      org.opencontainers.image.vendor="Apex"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# ------------------------------------------------------------------------------
+# Baked dependencies (the bakes stage's output)
+# ------------------------------------------------------------------------------
+COPY --from=bakes /opt/rust/cargo/registry /opt/rust/cargo/registry
+COPY --from=bakes /opt/rust/cargo/.global-cache /opt/rust/cargo/.package-cache /opt/rust/cargo/.package-cache-mutate /opt/rust/cargo/
+COPY --from=bakes /opt/apex-pip-wheels /opt/apex-pip-wheels
+COPY --from=bakes /opt/apex-uv-cache /opt/apex-uv-cache
+COPY --from=bakes /opt/apex-deps /opt/apex-deps
+# A COPY of a directory creates the destination itself with default
+# permissions, whatever the source directory had; everything beneath keeps its
+# own. The unprivileged user writes to all four (cargo unpacks sources, uv and
+# pip add to their stores), so open the four entries as the bakes left them.
+RUN chmod a+rwX /opt/rust/cargo/registry /opt/apex-pip-wheels /opt/apex-uv-cache /opt/apex-deps
+ENV UV_CACHE_DIR=/opt/apex-uv-cache \
+    APEX_DEPS_DIR=/opt/apex-deps
 
 # ------------------------------------------------------------------------------
 # Offline build enforcement
@@ -294,58 +422,14 @@ ENV APEX_DEPS_DIR=/opt/apex-deps
 # and the FetchContent sources. Enforce it globally -- cargo and pip read these
 # natively, so apex's AND every dependency's tool builds run offline with no
 # per-project flag plumbing. A missing bake fails loudly here instead of
-# silently fetching. dev-base re-opens the network for interactive work.
+# silently fetching. dev-base carries the same bakes without this switch:
+# interactive work resolves online.
 # cargo parses CARGO_NET_OFFLINE as a strict boolean: literal true or
 # false only.
 ENV CARGO_NET_OFFLINE=true \
     PIP_NO_INDEX=1 \
     PIP_FIND_LINKS=/opt/apex-pip-wheels \
     UV_OFFLINE=1
-
-# ------------------------------------------------------------------------------
-# ptest profiler link libraries
-# ------------------------------------------------------------------------------
-# The perf tests link tcmalloc/profiler when present (find_library in
-# cmake/apex/Testing.cmake), so the link-time libs ship in build-base for parity
-# with the dev build. The profiler binaries/backends live in dev-base.
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      libgoogle-perftools-dev \
-      libunwind-dev
-
-# ------------------------------------------------------------------------------
-# SuiteSparse (KLU sparse solver) - required by the MNA solver
-# ------------------------------------------------------------------------------
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      libsuitesparse-dev
-
-# ------------------------------------------------------------------------------
-# ngspice (SPICE reference simulator) - linked by the electronics sim backend
-# ------------------------------------------------------------------------------
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked \
-    apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
-      libngspice0-dev \
-      ngspice
-
-# ------------------------------------------------------------------------------
-# User Setup
-# ------------------------------------------------------------------------------
-# Centralized here so every downstream image (builders and dev shells) inherits
-# the correct user.
-RUN userdel -r ubuntu 2>/dev/null || true && \
-    groupdel ubuntu 2>/dev/null || true && \
-    groupadd -g ${HOST_GID} ${USER} 2>/dev/null || true && \
-    useradd -l -m -u ${HOST_UID} -g ${HOST_GID} -s /bin/bash -p "*" ${USER} 2>/dev/null || true && \
-    echo "${USER} ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers && \
-    chown -R ${HOST_UID}:${HOST_GID} /home/${USER} && \
-    usermod -aG dialout "${USER}"
 
 # ------------------------------------------------------------------------------
 # Cleanup and Validation
@@ -369,34 +453,170 @@ USER ${USER}
 WORKDIR /home/${USER}
 
 # ==============================================================================
-# Stage: dev-base - build-base + tooling (scanners, formatters, profilers, docs)
+# Stage: lint - the format check and the secret scan, and nothing else
 # ==============================================================================
-FROM build-base AS dev-base
+# What `make format-check` and `make gitleaks` run: pre-commit, the tools its
+# local hooks call (clang-format, cmake-format, cmake-lint, hadolint, shfmt,
+# cargo fmt), node for its node hooks, and gitleaks. Neither check compiles or
+# resolves a dependency, so this tier starts from the distro image: no
+# compiler toolchain, no bakes, and a rebuild of it re-runs no layer of the
+# other tiers. dev-base copies its format tools from here.
+FROM ubuntu:24.04 AS lint
+
+ARG USER
+ARG HOST_UID
+ARG HOST_GID
+ARG RUST_VERSION
+ARG HADOLINT_VERSION
+ARG SHFMT_VERSION
+ARG CMAKELANG_VERSION
+ARG PRE_COMMIT_VERSION
+ARG NODE_VERSION
+ARG NODE_SHA256
+ARG GITLEAKS_VERSION
+
+LABEL org.opencontainers.image.title="apex.lint" \
+      org.opencontainers.image.description="Format-check and secret-scan tier for Apex CSF" \
+      org.opencontainers.image.vendor="Apex"
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+ENV PIP_NO_CACHE_DIR=off \
+    PIP_DISABLE_PIP_VERSION_CHECK=on \
+    PIP_DEFAULT_TIMEOUT=120 \
+    PIP_RETRIES=5
+
+# Container detection flag for scripts that behave differently in containers
+ENV CONTAINER=yes
+
+# git and make drive both checks; python runs pre-commit and its Python hooks;
+# libatomic is a library the node binary loads; the rest fetch and unpack the
+# tools below.
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      wget curl gnupg ca-certificates \
+      git make \
+      python3 python3-pip python3-venv \
+      libatomic1 \
+      xz-utils
+
+# clang-format, from the same apt repository and release line as the
+# compilers and the dev tier's clang tooling.
+RUN install -d -m 0755 /etc/apt/keyrings && \
+    wget --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 \
+      --waitretry=15 --timeout=30 -qO /tmp/llvm-snapshot.gpg.key \
+      https://apt.llvm.org/llvm-snapshot.gpg.key && \
+    gpg --dearmor -o /etc/apt/keyrings/llvm.gpg /tmp/llvm-snapshot.gpg.key && \
+    rm -f /tmp/llvm-snapshot.gpg.key && \
+    . /etc/os-release && \
+    echo "deb [signed-by=/etc/apt/keyrings/llvm.gpg] http://apt.llvm.org/${VERSION_CODENAME}/ llvm-toolchain-${VERSION_CODENAME}-21 main" \
+      >> /etc/apt/sources.list.d/llvm.list
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked \
+    apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install --no-install-recommends -y \
+      clang-format-21 && \
+    ln -sf /usr/bin/clang-format-21 /usr/local/bin/clang-format
+
+# cargo fmt: cargo, rustfmt and the compiler library rustfmt links. The same
+# release as the toolchain stage's. rustup's smallest profile also installs
+# the standard library, which only a compile uses; it is removed.
+ENV RUSTUP_HOME=/opt/rust/rustup \
+    CARGO_HOME=/opt/rust/cargo
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
+    sh -s -- -y --default-toolchain ${RUST_VERSION} --profile minimal --component rustfmt && \
+    /opt/rust/cargo/bin/rustup component remove rust-std && \
+    chmod -R a+rwX /opt/rust
+ENV PATH="/opt/rust/cargo/bin:$PATH"
+
+# hadolint (Dockerfile linter), shfmt (shell formatter; its file name keeps the
+# 'v' prefix) and gitleaks (secret scanner): static binaries from their
+# GitHub releases.
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/hadolint \
+      "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-linux-x86_64" && \
+    wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/shfmt \
+      "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64" && \
+    wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/gitleaks.tar.gz \
+      "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" && \
+    tar -C /usr/local/bin -xzf /tmp/gitleaks.tar.gz gitleaks && \
+    rm /tmp/gitleaks.tar.gz && \
+    chmod +x /usr/local/bin/hadolint /usr/local/bin/shfmt /usr/local/bin/gitleaks
+
+# Node.js - runtime for the node-language pre-commit hooks. With node and npm
+# on PATH, pre-commit runs its node hooks (prettier, markdownlint) on this
+# node instead of asking nodeenv to download whichever release nodejs.org
+# lists first at install time, so the format gate's node is an image fact.
+# Official tarball, checksum-verified, unpacked whole under /opt/node so the
+# notices it ships (its own LICENSE and every bundled npm dependency's) stay
+# with the code; only the executables are linked onto PATH. Unpacked as root's
+# files: the archive records the user id of the machine that packed it.
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/node.tar.xz \
+      "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" && \
+    echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - && \
+    tar -C /opt --no-same-owner -xJf /tmp/node.tar.xz && \
+    mv "/opt/node-v${NODE_VERSION}-linux-x64" /opt/node && \
+    ln -s /opt/node/bin/node /usr/local/bin/node && \
+    ln -s /opt/node/bin/npm /usr/local/bin/npm && \
+    ln -s /opt/node/bin/npx /usr/local/bin/npx && \
+    rm /tmp/node.tar.xz && \
+    node --version && npm --version && test -f /opt/node/LICENSE
+
+# pre-commit (the hook framework) and cmakelang (cmake-format, cmake-lint).
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip3 install --no-cache-dir --break-system-packages \
+      pre-commit==${PRE_COMMIT_VERSION} \
+      cmakelang==${CMAKELANG_VERSION}
+
+# The same user as the other tiers, so files a format run rewrites in the
+# mounted workspace keep their owner.
+RUN userdel -r ubuntu 2>/dev/null || true && \
+    groupdel ubuntu 2>/dev/null || true && \
+    groupadd -g ${HOST_GID} ${USER} 2>/dev/null || true && \
+    useradd -l -m -u ${HOST_UID} -g ${HOST_GID} -s /bin/bash -p "*" ${USER} 2>/dev/null || true && \
+    chown -R ${HOST_UID}:${HOST_GID} /home/${USER}
+
+RUN echo "Validating lint image..." && \
+    pre-commit --version && \
+    clang-format --version && \
+    cmake-format --version && \
+    hadolint --version && \
+    shfmt --version && \
+    cargo fmt --version && \
+    node --version && \
+    gitleaks version && \
+    echo "lint image validation: OK"
+
+USER ${USER}
+WORKDIR /home/${USER}
+
+# ==============================================================================
+# Stage: dev-base - toolchain + tooling (scanners, formatters, profilers, docs)
+#                   + the same baked dependencies build-base carries
+# ==============================================================================
+FROM toolchain AS dev-base
 
 # Interactive dev resolves dependencies online; the offline guarantee is for the
 # release builders (build-base tier), not the dev shell. The baked caches are
-# still inherited (PIP_FIND_LINKS stays, so pip prefers the wheelhouse before
-# PyPI), and this stage's own pip installs below need the index open. Explicit
-# `false`, not empty: cargo parses CARGO_NET_OFFLINE as a strict boolean and
-# errors on an empty string (a Dockerfile ENV cannot truly unset).
+# carried all the same (copied in at the end of this stage, with PIP_FIND_LINKS
+# so pip prefers the wheelhouse before PyPI). The switches are stated, not left
+# unset, so a dev shell's environment says which mode it is in; cargo parses
+# CARGO_NET_OFFLINE as a strict boolean (literal true or false).
 ENV CARGO_NET_OFFLINE=false \
     PIP_NO_INDEX=false \
     UV_OFFLINE=false
 
 ARG USER
-ARG HADOLINT_VERSION=v2.14.0
-ARG SHFMT_VERSION=v3.12.0
 ARG BLACK_VERSION=26.1.0
-ARG CMAKELANG_VERSION=0.6.13
-ARG PRE_COMMIT_VERSION=4.5.1
-ARG NODE_VERSION=26.13.0
-ARG NODE_SHA256=d28a96af6c38596f6d9d97c0ee531c13d238d757742387d1928de822d959e997
-ARG GITLEAKS_VERSION=8.30.1
+ARG CMAKELANG_VERSION
+ARG PRE_COMMIT_VERSION
 ARG OSV_SCANNER_VERSION=2.3.8
 ARG TRIVY_VERSION=0.71.0
+ARG TRIVY_SHA256=30a3d22b23f88c233f1658f562fb477cae3b3e8b4761109d515b7698daf85814
 ARG SEMGREP_VERSION=1.165.0
 # cargo-llvm-cov: prebuilt binary (taiki-e) driving `make coverage-rust`.
-# Pinned; llvm-tools-preview (from build-base) supplies the profdata tooling.
+# Pinned; llvm-tools-preview (from the toolchain stage) supplies the profdata tooling.
 ARG CARGO_LLVM_COV_VERSION=0.8.7
 
 LABEL org.opencontainers.image.title="apex.base" \
@@ -424,7 +644,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 # LLVM/Clang analysis and format tooling
 # ------------------------------------------------------------------------------
 # clang-21 tidy/format/tools, the LLVM debugger, coverage, and
-# include-what-you-use. The compilers themselves live in build-base.
+# include-what-you-use. The compilers themselves live in the toolchain stage.
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
     apt-get update && \
@@ -439,10 +659,16 @@ RUN ln -sf /usr/bin/clang-format-21 /usr/local/bin/clang-format && \
 # ------------------------------------------------------------------------------
 # Bloaty - Binary Size Analysis
 # ------------------------------------------------------------------------------
-# Built from source: not packaged for Ubuntu 24.04. Tracks master tip via
-# shallow clone. CMAKE_POLICY_VERSION_MINIMUM=3.5 satisfies upstream submodule
-# policy floors.
-RUN git clone --recursive --depth 1 https://github.com/google/bloaty.git /tmp/bloaty && \
+# Built from source: not packaged for Ubuntu 24.04, and upstream publishes no
+# binaries. Pinned to a commit, so a rebuild cannot pick up a different tool;
+# bump BLOATY_COMMIT deliberately. CMAKE_POLICY_VERSION_MINIMUM=3.5 satisfies
+# upstream submodule policy floors. The build takes minutes: it sits here, above
+# nothing that changes with a dependency bump, so it stays in the layer cache.
+ARG BLOATY_COMMIT=ccb49b0be3d5bc0dd156bcf16f1515726c395ec5
+RUN git init -q /tmp/bloaty && \
+    git -C /tmp/bloaty fetch -q --depth 1 https://github.com/google/bloaty.git "${BLOATY_COMMIT}" && \
+    git -C /tmp/bloaty checkout -q FETCH_HEAD && \
+    git -C /tmp/bloaty submodule update -q --init --recursive --depth 1 && \
     CC=clang CXX=clang++ CFLAGS=-Wno-deprecated-non-prototype \
     cmake -S /tmp/bloaty -B /tmp/bloaty/build -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
@@ -452,19 +678,17 @@ RUN git clone --recursive --depth 1 https://github.com/google/bloaty.git /tmp/bl
     rm -rf /tmp/bloaty
 
 # ------------------------------------------------------------------------------
-# Linters and Formatters
+# Format tools and the secret scanner (the lint stage's)
 # ------------------------------------------------------------------------------
-# Static binaries for speed and reproducibility.
-
-# hadolint: Dockerfile linter
-RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/hadolint \
-      "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-linux-x86_64" && \
-    chmod +x /usr/local/bin/hadolint
-
-# shfmt: Shell script formatter (note: filename keeps 'v' prefix)
-RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/shfmt \
-      "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64" && \
-    chmod +x /usr/local/bin/shfmt
+# hadolint, shfmt, gitleaks and node are installed once, in the lint stage, and
+# copied from it: the dev shell and the CI lint job run the same files. Node is
+# linked onto PATH as it is there.
+COPY --from=lint /usr/local/bin/hadolint /usr/local/bin/shfmt /usr/local/bin/gitleaks /usr/local/bin/
+COPY --from=lint /opt/node /opt/node
+RUN ln -s /opt/node/bin/node /usr/local/bin/node && \
+    ln -s /opt/node/bin/npm /usr/local/bin/npm && \
+    ln -s /opt/node/bin/npx /usr/local/bin/npx && \
+    node --version && npm --version && test -f /opt/node/LICENSE
 
 # ------------------------------------------------------------------------------
 # Python Formatters and Hooks
@@ -472,31 +696,12 @@ RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error
 # pre-commit: Git hook framework
 # black: Python formatter
 # cmakelang: CMake formatter (cmake-format, cmake-lint)
+# pre-commit and cmakelang are the lint stage's versions (pinned at the top).
 RUN --mount=type=cache,target=/root/.cache/pip \
     pip3 install --no-cache-dir --break-system-packages \
       pre-commit==${PRE_COMMIT_VERSION} \
       black==${BLACK_VERSION} \
       cmakelang==${CMAKELANG_VERSION}
-
-# ------------------------------------------------------------------------------
-# Node.js - runtime for the node-language pre-commit hooks
-# ------------------------------------------------------------------------------
-# With node and npm on PATH, pre-commit runs its node hooks (prettier,
-# markdownlint) on this node instead of asking nodeenv to download whichever
-# release nodejs.org lists first at install time, so the format gate's node is
-# an image fact. Official tarball, checksum-verified, unpacked whole under
-# /opt/node so the notices it ships (its own LICENSE and every bundled npm
-# dependency's) stay with the code; only the executables are linked onto PATH.
-RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/node.tar.xz \
-      "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" && \
-    echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c - && \
-    tar -C /opt -xJf /tmp/node.tar.xz && \
-    mv "/opt/node-v${NODE_VERSION}-linux-x64" /opt/node && \
-    ln -s /opt/node/bin/node /usr/local/bin/node && \
-    ln -s /opt/node/bin/npm /usr/local/bin/npm && \
-    ln -s /opt/node/bin/npx /usr/local/bin/npx && \
-    rm /tmp/node.tar.xz && \
-    node --version && npm --version && test -f /opt/node/LICENSE
 
 # ------------------------------------------------------------------------------
 # ninjatracing - Convert .ninja_log to chrome-tracing JSON
@@ -516,7 +721,7 @@ RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error
 #   cppcheck    : independent static analyzer (+ bundled MISRA C++ addon)
 #   cbmc        : bounded model checker -- proves absence of overflow/OOB/assert
 #   trivy       : vulnerability + secret + SBOM (CycloneDX/SPDX) scanner
-#   gitleaks    : secret scanner
+#   gitleaks    : secret scanner (copied from the lint stage above)
 #   osv-scanner : dependency vulnerability scanner (OSV database)
 #   semgrep     : pattern-based SAST
 # (mull mutation testing is deferred: no LLVM-21 release build yet.)
@@ -529,17 +734,15 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
       cppcheck \
       cbmc
 
-# trivy (pinned) via the upstream install script
-RUN curl -sfL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 \
-      https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | \
-      sh -s -- -b /usr/local/bin "v${TRIVY_VERSION}"
-
-# gitleaks: static binary from GitHub releases
-RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/gitleaks.tar.gz \
-      "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" && \
-    tar -C /usr/local/bin -xzf /tmp/gitleaks.tar.gz gitleaks && \
-    chmod +x /usr/local/bin/gitleaks && \
-    rm /tmp/gitleaks.tar.gz
+# trivy: the release archive itself, checksum-verified. Upstream's install
+# script resolves the tag through a second GitHub endpoint with no retry and
+# is read from that project's main branch; this needs neither.
+RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/trivy.tar.gz \
+      "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" && \
+    echo "${TRIVY_SHA256}  /tmp/trivy.tar.gz" | sha256sum -c - && \
+    tar -C /usr/local/bin --no-same-owner -xzf /tmp/trivy.tar.gz trivy && \
+    chmod +x /usr/local/bin/trivy && \
+    rm /tmp/trivy.tar.gz
 
 # osv-scanner: static binary from GitHub releases
 RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/osv-scanner \
@@ -554,7 +757,7 @@ RUN --mount=type=cache,target=/root/.cache/pip \
 # ------------------------------------------------------------------------------
 # cargo-llvm-cov - Rust coverage driver (`make coverage-rust`)
 # ------------------------------------------------------------------------------
-# chmod only the new binary: build-base already opened /opt/rust tree-wide, and a
+# chmod only the new binary: the toolchain stage opened /opt/rust tree-wide, and a
 # repeat -R here would copy the whole toolchain into this layer.
 RUN curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-connrefused --retry-all-errors --connect-timeout 30 \
       "https://github.com/taiki-e/cargo-llvm-cov/releases/download/v${CARGO_LLVM_COV_VERSION}/cargo-llvm-cov-x86_64-unknown-linux-gnu.tar.gz" \
@@ -565,7 +768,11 @@ RUN curl --proto '=https' --tlsv1.2 -fsSL --retry 5 --retry-connrefused --retry-
 # FlameGraph
 # ------------------------------------------------------------------------------
 # Brendan Gregg's scripts for visualizing profiler output as SVG flame graphs.
-RUN git clone --depth 1 https://github.com/brendangregg/FlameGraph.git /opt/FlameGraph && \
+# Pinned to a commit; bump FLAMEGRAPH_COMMIT deliberately.
+ARG FLAMEGRAPH_COMMIT=41fee1f99f9276008b7cd112fca19dc3ea84ac32
+RUN git init -q /opt/FlameGraph && \
+    git -C /opt/FlameGraph fetch -q --depth 1 https://github.com/brendangregg/FlameGraph.git "${FLAMEGRAPH_COMMIT}" && \
+    git -C /opt/FlameGraph checkout -q FETCH_HEAD && \
     ln -s /opt/FlameGraph/flamegraph.pl /usr/local/bin/flamegraph.pl && \
     ln -s /opt/FlameGraph/stackcollapse-perf.pl /usr/local/bin/stackcollapse-perf.pl && \
     ln -s /opt/FlameGraph/difffolded.pl /usr/local/bin/difffolded.pl && \
@@ -577,7 +784,7 @@ ENV FLAMEGRAPH_DIR=/opt/FlameGraph
 # Profiling Tools
 # ------------------------------------------------------------------------------
 # linux-tools:        perf (common wrapper + generic; host-matched added below)
-# google-perftools:   pprof CPU/heap profiler driver (tcmalloc lib is in build-base)
+# google-perftools:   pprof CPU/heap profiler driver (tcmalloc lib is in toolchain)
 # valgrind:           callgrind, massif, memcheck (vernier backends)
 # bpftrace:           dynamic tracing + off-CPU (vernier offcpu backend)
 # heaptrack:          low-overhead heap profiler (vernier heaptrack backend)
@@ -617,6 +824,24 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     fi
 
 # ------------------------------------------------------------------------------
+# Baked dependencies (the bakes stage's output)
+# ------------------------------------------------------------------------------
+# Last, below nothing: the tooling above is unaffected by a dependency bump.
+COPY --from=bakes /opt/rust/cargo/registry /opt/rust/cargo/registry
+COPY --from=bakes /opt/rust/cargo/.global-cache /opt/rust/cargo/.package-cache /opt/rust/cargo/.package-cache-mutate /opt/rust/cargo/
+COPY --from=bakes /opt/apex-pip-wheels /opt/apex-pip-wheels
+COPY --from=bakes /opt/apex-uv-cache /opt/apex-uv-cache
+COPY --from=bakes /opt/apex-deps /opt/apex-deps
+# A COPY of a directory creates the destination itself with default
+# permissions, whatever the source directory had; everything beneath keeps its
+# own. The unprivileged user writes to all four (cargo unpacks sources, uv and
+# pip add to their stores), so open the four entries as the bakes left them.
+RUN chmod a+rwX /opt/rust/cargo/registry /opt/apex-pip-wheels /opt/apex-uv-cache /opt/apex-deps
+ENV UV_CACHE_DIR=/opt/apex-uv-cache \
+    APEX_DEPS_DIR=/opt/apex-deps \
+    PIP_FIND_LINKS=/opt/apex-pip-wheels
+
+# ------------------------------------------------------------------------------
 # Cleanup and Validation
 # ------------------------------------------------------------------------------
 RUN rm -rf /usr/local/man /tmp/*
@@ -626,6 +851,7 @@ RUN echo "Validating dev-base image..." && \
     clang-format --version && \
     hadolint --version && \
     shfmt --version && \
+    gitleaks version && \
     semgrep --version && \
     echo "dev-base image validation: OK"
 

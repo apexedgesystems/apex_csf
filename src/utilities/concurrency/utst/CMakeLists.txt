@@ -7,15 +7,18 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Sources (12 files, plus the thread-launch seam under support/)
+# Sources (15 files, plus the thread-launch seam under support/)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
-    "${CMAKE_CURRENT_SOURCE_DIR}/ThreadPool_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/PoolBase_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/PoolContract_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/ThreadPoolLockFree_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/LockFreeQueue_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SPSCQueue_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/RingBuffer_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/RingIndex_uTest.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/RingStorage_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Semaphore_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/SpinLock_uTest.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/Latch_uTest.cpp"
@@ -41,4 +44,12 @@ apex_add_gtest(
   LABELS
   utilities
   concurrency
+  # These four assert an upper bound on elapsed wall-clock time, which host
+  # load stretches when the suite runs in parallel. Timing-marked so they run
+  # serially.
+  TIMING_TESTS
+  SemaphoreTest.TryAcquireForSucceedsImmediately
+  SemaphoreTest.TryAcquireForSucceedsOnRelease
+  LatchTest.WaitOnTriggeredReturnsImmediately
+  LatchTest.WaitForSucceedsOnTrigger
 )
