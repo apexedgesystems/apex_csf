@@ -1,6 +1,6 @@
 /**
  * @file SchedulerTableSequencing_uTest.cpp
- * @brief What a task table's sequencing columns come to.
+ * @brief What a task table's sequencing columns and worker count come to.
  *
  * A table row can ask for a task to be sequenced, but the sequencing is
  * the component's: the row takes effect only when the component created
@@ -12,6 +12,9 @@
  *    group that task is not part of, leaves the task unsequenced and
  *    fails the preflight's sequence-reference check, with the count; a
  *    row the component honours passes it.
+ *  - The contention check reports two unsequenced tasks of one component
+ *    on one tick when the pool has two workers, and does not when it has
+ *    one, where the tasks run one after the other.
  */
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerData.hpp"
@@ -193,4 +196,33 @@ TEST(SchedulerTableSequencingTest, ARowTheComponentDoesNotHonourFailsThePrefligh
   const std::string LOG = schedulerLog(l.dir);
   EXPECT_NE(LOG.find("[FAIL] sequence references: 2 task(s)"), std::string::npos) << LOG;
   EXPECT_NE(LOG.find("preflight verdict: FAIL"), std::string::npos);
+}
+
+/* ----------------------------- Contention check ----------------------------- */
+
+/** @test Two unsequenced tasks of one component on one tick: two workers. */
+TEST(SchedulerTableSequencingTest, ContentionIsReportedWhereTwoWorkersCanOverlap) {
+  Loaded l("two_workers", 2,
+           {row(STEP_UID, NO_SEQUENCE_GROUP), row(REPORT_UID, NO_SEQUENCE_GROUP)});
+
+  const std::string LOG = schedulerLog(l.dir);
+  EXPECT_NE(LOG.find("CONTENTION: 2 tasks from component 0x00C800"), std::string::npos) << LOG;
+  EXPECT_EQ(LOG.find("No intra-component contention detected."), std::string::npos);
+}
+
+/** @test The same table on one worker: the tasks cannot overlap. */
+TEST(SchedulerTableSequencingTest, NoContentionIsReportedOnOneWorker) {
+  Loaded l("one_worker", 1, {row(STEP_UID, NO_SEQUENCE_GROUP), row(REPORT_UID, NO_SEQUENCE_GROUP)});
+
+  const std::string LOG = schedulerLog(l.dir);
+  EXPECT_EQ(LOG.find("CONTENTION:"), std::string::npos) << LOG;
+  EXPECT_NE(LOG.find("No intra-component contention detected."), std::string::npos);
+}
+
+/** @test Sequenced together, the two tasks are not reported on two workers. */
+TEST(SchedulerTableSequencingTest, NoContentionIsReportedForASequencedPair) {
+  Loaded l("sequenced_pair", 2, {row(STEP_UID, 0), row(REPORT_UID, 0)});
+
+  const std::string LOG = schedulerLog(l.dir);
+  EXPECT_EQ(LOG.find("CONTENTION:"), std::string::npos) << LOG;
 }

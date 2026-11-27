@@ -703,9 +703,12 @@ void SchedulerBase::logScheduleLayout(std::string_view modeDescription) noexcept
   componentLog()->info(label(), "========================================");
   componentLog()->info(label(), "");
 
-  // Detect potential intra-component data races:
-  // Multiple tasks from same fullUid on same tick without shared sequencing.
+  // Detect potential intra-component data races: multiple tasks from the
+  // same fullUid on the same tick, able to run at the same time, without
+  // shared sequencing. A pool with one worker runs its tasks one after
+  // another, so tasks that all sit on one such pool cannot overlap.
   std::size_t contentionWarnings = 0;
+  const std::vector<std::uint16_t> POOL_WORKERS = poolWorkerCounts();
 
   for (std::size_t tick = 0; tick < schedule_.size(); ++tick) {
     const auto& indices = schedule_[tick];
@@ -725,6 +728,15 @@ void SchedulerBase::logScheduleLayout(std::string_view modeDescription) noexcept
     // Check each component with multiple concurrent tasks
     for (const auto& [uid, taskIndices] : byComponent) {
       if (taskIndices.size() < 2) {
+        continue;
+      }
+
+      const std::uint8_t FIRST_POOL = entries_[taskIndices.front()].config.poolId;
+      bool onePool = true;
+      for (std::size_t idx : taskIndices) {
+        onePool = onePool && entries_[idx].config.poolId == FIRST_POOL;
+      }
+      if (onePool && FIRST_POOL < POOL_WORKERS.size() && POOL_WORKERS[FIRST_POOL] == 1U) {
         continue;
       }
 
