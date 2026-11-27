@@ -235,29 +235,17 @@ std::uint8_t SchedulerMultiThread::doInit() noexcept {
                                               pools_[i]->workerCount()));
   }
 
-  // Count total task instances across all ticks for pool sizing, and the
-  // largest single-tick burst -- the number of contexts one tick can demand
-  // before any completion returns a context to the pool.
   std::size_t totalTaskInstances = 0;
-  std::size_t maxTickBurst = 0;
   for (const auto& tickIndices : schedule_) {
     totalTaskInstances += tickIndices.size();
-    maxTickBurst = std::max(maxTickBurst, tickIndices.size());
   }
 
-  // Pre-allocate context pools. Capacity must cover the densest tick with
-  // every one of its tasks dispatched before any completes, plus headroom
-  // for tasks still in flight from earlier ticks. Sizing from worker count
-  // alone starves dense ticks, and in production (fallback allocation
-  // disabled) a starved acquire has no heap escape.
-  for (std::size_t i = 0; i < pools_.size(); ++i) {
-    const std::size_t POOL_SIZE = maxTickBurst + pools_[i]->workerCount() * 2;
-    ctxPools_[i]->preallocate(POOL_SIZE);
-
+  sizeContextPools();
 #ifdef NDEBUG
-    ctxPools_[i]->setFallbackAlloc(false);
-#endif
+  for (auto& ctxPool : ctxPools_) {
+    ctxPool->setFallbackAlloc(false);
   }
+#endif
 
   componentLog()->info(label(),
                        fmt::format("Total task instances in schedule: {}", totalTaskInstances));
@@ -279,6 +267,34 @@ std::uint8_t SchedulerMultiThread::doInit() noexcept {
       fmt::format("Multi-threaded ({} workers, {} pools)", totalWorkers, pools_.size()));
 
   return static_cast<std::uint8_t>(Status::SUCCESS);
+}
+
+/* ----------------------------- Context Capacity ----------------------------- */
+
+void SchedulerMultiThread::sizeContextPools() noexcept {
+  // The largest single-tick burst is the number of contexts one tick can
+  // demand before any completion returns one to its pool.
+  std::size_t maxTickBurst = 0;
+  for (const auto& tickIndices : schedule_) {
+    maxTickBurst = std::max(maxTickBurst, tickIndices.size());
+  }
+
+  // Capacity must cover the densest tick with every one of its tasks
+  // dispatched before any completes, plus headroom for tasks still in
+  // flight from earlier ticks. Sizing from worker count alone starves
+  // dense ticks, and in production (fallback allocation disabled) a
+  // starved acquire has no heap escape.
+  for (std::size_t i = 0; i < ctxPools_.size(); ++i) {
+    ctxPools_[i]->reserve(maxTickBurst + pools_[i]->workerCount() * 2);
+  }
+}
+
+Status SchedulerMultiThread::addTask(SchedulableTask& task, const TaskConfig& config) noexcept {
+  const Status RC = SchedulerBase::addTask(task, config);
+  if (RC == Status::SUCCESS) {
+    sizeContextPools();
+  }
+  return RC;
 }
 
 /* ----------------------------- Execution ----------------------------- */

@@ -223,6 +223,25 @@ public:
   /** @brief Dispatches dropped (context exhaustion or ring rejection) since startup. */
   [[nodiscard]] std::size_t totalDispatchDrops() const noexcept { return totalDispatchDrops_; }
 
+  using SchedulerBase::addTask;
+
+  /**
+   * @brief Add a task; once the pools exist, keep their contexts in step.
+   *
+   * The context pools are sized for the table's densest tick. A task
+   * added after init(), or a table loaded after it, can make a denser
+   * tick, so each addition sizes them again. Every other addTask()
+   * overload and loadTprm() add through this one.
+   *
+   * @note NOT RT-safe: may allocate.
+   */
+  [[nodiscard]] Status addTask(SchedulableTask& task, const TaskConfig& config) noexcept override;
+
+  /** @brief Contexts preallocated for a pool: its capacity when nothing is allocated on demand. */
+  [[nodiscard]] std::size_t ctxPoolReserved(std::size_t poolIdx) const noexcept {
+    return poolIdx < ctxPools_.size() ? ctxPools_[poolIdx]->reserved() : 0;
+  }
+
   /**
    * @brief Whether a dispatch that finds its context pool empty allocates.
    *
@@ -324,6 +343,10 @@ protected:
 
 private:
   void initPools(std::vector<PoolSpec> specs) noexcept;
+
+  /// Bring each pool's contexts up to the table's densest tick plus two
+  /// per worker. Does nothing before the pools exist.
+  void sizeContextPools() noexcept;
 
   /// Log (at LOG_LEVEL's say) and discard the pools' pending completion
   /// errors. @return whether there were any.
