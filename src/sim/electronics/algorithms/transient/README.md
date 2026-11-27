@@ -131,7 +131,8 @@ IntegrationMethod integrationMethod() const noexcept;
 // Sparse steps solved by Newton iteration
 void setAlwaysReanalyze(bool enable) noexcept;
 void setNewtonIterationLimit(std::size_t iterations) noexcept;                // 10
-void setNewtonTolerances(double absoluteVolts, double relative) noexcept;     // 1e-6, 1e-3
+[[nodiscard]] bool setNewtonTolerances(double absoluteVolts,
+                                       double relative) noexcept;             // 1e-6, 1e-3
 void setRequireConvergence(bool require) noexcept;                            // off
 [[nodiscard]] std::size_t newtonIterationCount() const noexcept;
 [[nodiscard]] std::size_t unconvergedStepCount() const noexcept;
@@ -157,6 +158,8 @@ A Newton step that reaches its iteration limit without converging is
 accepted and counted by `unconvergedStepCount()`. With
 `setRequireConvergence(true)` it is refused: `ERROR_CONVERGENCE`, with time,
 companions and node voltages as before the step, and `run()` ends there.
+`setNewtonTolerances()` returns true and sets both tolerances, or returns
+false and changes neither when one of them is negative or not finite.
 
 The dense workspaces have room for sixteen voltage sources. A circuit with
 more is given the room at its first step, and the workspaces do not grow
