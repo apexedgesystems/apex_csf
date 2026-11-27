@@ -58,9 +58,7 @@ On failure, the backup is restored.
 upx_tool patch --upx <F.upx> --target <T.so> [--orig <O.so>] [--backup-dir <dir>] [--print-sha]
 ```
 
----
-
-## Options
+### Common options
 
 These apply to `test`, `verify`, `compress`, `decompress`, and `compare`.
 

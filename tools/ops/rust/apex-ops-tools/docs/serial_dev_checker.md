@@ -29,7 +29,18 @@ serial_dev_checker --config <file> [options]
 
 ---
 
-## Config Format
+## Exit Codes
+
+| Code | Meaning                                    |
+| ---- | ------------------------------------------ |
+| 0    | Success, results printed.                  |
+| 1    | Config file not found or no ports defined. |
+
+---
+
+## Reference
+
+### Config Format
 
 ```toml
 [[ports]]
@@ -42,15 +53,6 @@ path  = "/dev/ttyACM1"
 ```
 
 Each entry requires `path`; `label` is optional.
-
----
-
-## Exit Codes
-
-| Code | Meaning                                    |
-| ---- | ------------------------------------------ |
-| 0    | Success, results printed.                  |
-| 1    | Config file not found or no ports defined. |
 
 ---
 

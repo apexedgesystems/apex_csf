@@ -44,6 +44,13 @@ make compose-testp  # tests
 Tool changes also run their family's suite: `make test-rust`,
 `make test-py`, or `make test-sh`.
 
+The build itself stands on one group of tools, the build role under
+`tools/build/`: `make tools-build` is its only tool prerequisite, and
+[tools/build/README.md](tools/build/README.md) names each tool and what
+invokes it. The ops and analysis roles (`tools/ops/`, `tools/analysis/`)
+are built on request and nothing in the build depends on them; see
+[tools/README.md](tools/README.md) for the layout and for adding a tool.
+
 `make format` applies formatting fixes in place. Static analysis and
 tests run inside the same container images CI uses, so a local pass is
 representative.

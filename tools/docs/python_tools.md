@@ -28,11 +28,12 @@ The build directory is relocatable (copy anywhere, source `.env`, and run).
 
 ## Tools
 
-### Operations (1)
+### Operations (2)
 
-| Tool       | Purpose                                                     | Docs                                               |
-| ---------- | ----------------------------------------------------------- | -------------------------------------------------- |
-| `ops-deck` | Generate consolidated cmd/tlm deck from struct dictionaries | [ops_deck.md](../ops/py/apex_ops/docs/ops_deck.md) |
+| Tool            | Purpose                                                     | Docs                                                         |
+| --------------- | ----------------------------------------------------------- | ------------------------------------------------------------ |
+| `ops-deck`      | Generate consolidated cmd/tlm deck from struct dictionaries | [ops_deck.md](../ops/py/apex_ops/docs/ops_deck.md)           |
+| `zenith-target` | Generate the Zenith target configuration for an application | [zenith_target.md](../ops/py/apex_ops/docs/zenith_target.md) |
 
 ### Monte Carlo (1)
 

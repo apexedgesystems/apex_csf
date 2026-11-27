@@ -17,13 +17,15 @@ Crates `apex-tprm` (library) and `apex-build-tools` under
 - **[tprm_pack](../build/rust/apex-build-tools/docs/tprm_pack.md)**
   Pack/unpack/list/diff TPRM archives for multi-component configuration.
 
-- **cdef_gen**
+- **[cdef_gen](../build/rust/apex-build-tools/docs/cdef_gen.md)**
   Generates the `.auto` component headers from their specs (see the
   [proto profile](../build/rust/apex-tprm/docs/proto_profile.md) it reads).
 
 - **[apex_data_gen](../build/rust/apex-build-tools/docs/apex_data_gen.md)**
   Generates JSON struct dictionaries from `apex_data.toml` manifests for
   external C2 systems, fault injection, and debugging.
+
+---
 
 ## Ops role: run beside a deployed system
 
@@ -42,6 +44,8 @@ Crate `apex-ops-tools` under `tools/ops/rust/`; executables in
 
 - **[serial_dev_tester](../ops/rust/apex-ops-tools/docs/serial_dev_tester.md)**
   Verifies serial loopback and interconnect wiring.
+
+---
 
 ## Analysis role: inspect what a run left behind
 
@@ -74,6 +78,8 @@ cargo run -p apex-build-tools --bin cfg2bin -- --help
 cargo run -p apex-analysis-tools --bin rdat_tool -- --help
 ```
 
+---
+
 ## Testing
 
 ```bash
@@ -83,6 +89,8 @@ cd tools && cargo test -p apex-tprm   # one crate
 
 Unit tests live inline with the modules; integration tests sit under
 each crate's `tests/`.
+
+---
 
 ## Documentation
 
