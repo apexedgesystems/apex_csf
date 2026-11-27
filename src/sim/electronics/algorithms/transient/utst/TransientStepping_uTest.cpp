@@ -183,6 +183,44 @@ TEST(TransientSteppingTest, WholeAndLastStepAreReadFromOneCount) {
   EXPECT_EQ(PLAN(MANY + 0.5, 1.0).lastStep(), 0.5);
 }
 
+/**
+ * @test A count that is a whole number is the plan's count as it stands, at
+ *       sizes where the tolerance comes to a step or more, up to the largest
+ *       count taken; between whole numbers there, the nearer one.
+ *
+ * At 2^50 steps the count's rounding, four of a double's rounding steps, is
+ * one step, at 2^52 four. 2^53 - 1 is the largest count below the limit.
+ * Between 2^50 and 2^51 a double moves by a quarter of a step: a quarter
+ * over is the count below, three quarters over the count above, and
+ * neither is a last step. Between 2^51 and 2^52 it moves by a half, which
+ * stays below.
+ */
+TEST(TransientSteppingTest, WholeCountIsNotMovedByTheTolerance) {
+  const auto PLAN = [](double tEnd) {
+    TransientConfig config;
+    config.tEnd = tEnd;
+    config.tStep = 1.0;
+    return config;
+  };
+  struct Case {
+    double tEnd;
+    std::size_t steps;
+  };
+  for (const Case CASE :
+       {Case{3.0, 3U}, Case{1125899906842624.0, 1125899906842624U},
+        Case{2251799813685248.0, 2251799813685248U}, Case{4503599627370496.0, 4503599627370496U},
+        Case{9007199254740991.0, 9007199254740991U}, Case{1125899906842624.25, 1125899906842624U},
+        Case{1125899906842624.75, 1125899906842625U},
+        Case{2251799813685248.5, 2251799813685248U}}) {
+    SCOPED_TRACE(CASE.steps);
+    EXPECT_EQ(PLAN(CASE.tEnd).wholeSteps(), CASE.steps);
+    EXPECT_EQ(PLAN(CASE.tEnd).lastStep(), 0.0);
+    EXPECT_EQ(PLAN(CASE.tEnd).stepCount(), CASE.steps);
+  }
+  // The limit itself is not counted.
+  EXPECT_EQ(PLAN(9007199254740992.0).stepCount(), 0U);
+}
+
 /** @test A configuration with no countable number of steps is refused. */
 TEST(TransientSteppingTest, UncountableSpanIsRefused) {
   for (const double T_STEP : {0.0, -1e-9, std::numeric_limits<double>::quiet_NaN(), 1e-300}) {

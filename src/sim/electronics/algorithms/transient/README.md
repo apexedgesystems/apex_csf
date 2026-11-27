@@ -149,7 +149,9 @@ void reset() noexcept;  // time, companions, kept factors, Newton counters
 whole number of them, one shorter step at the end. It takes the steps by
 number and sets each step's end time from its number, the last to `tEnd`:
 a thousand steps for 1 us by 1 ns, with no extra step for what a sum of
-steps leaves over. A rest below 1e-9 of a step is not a step.
+steps leaves over. What the span leaves within the tolerance of a whole
+count is not a step: 1e-9 of a step, or the count's own rounding where
+that is larger. A count that is a whole number is taken as it stands.
 
 A Newton step that reaches its iteration limit without converging is
 accepted and counted by `unconvergedStepCount()`. With

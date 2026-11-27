@@ -53,7 +53,7 @@ struct TransientConfig {
 
   /// The count of steps is known to this fraction of itself: four of a
   /// double's rounding steps. For a large count that is more than
-  /// WHOLE_STEP_TOLERANCE, and it is then the tolerance.
+  /// WHOLE_STEP_TOLERANCE, and it is then the tolerance, up to half a step.
   static constexpr double COUNT_ROUNDING = 4.0 * 2.220446049250313e-16;
 
   /// Step counts are kept below 2^53, where a double still counts by ones.
@@ -70,12 +70,15 @@ struct TransientConfig {
    *        number of them, one shorter step.
    *
    * The span's count of steps, (tEnd - tStart) / tStep, is worked out once,
-   * and both parts are read from it: the whole steps are the count taken to
-   * the whole number below it or within the tolerance above it, and what is
-   * left of the count is a last step only where it is beyond the tolerance.
+   * and both parts are read from what it leaves over the whole number below
+   * it. Left within the tolerance of nothing, the whole steps are that
+   * number; within the tolerance of a whole step, the next; otherwise that
+   * number and a last step of what is left. A count that is a whole number
+   * leaves nothing and is the plan's count as it stands.
    * The tolerance is WHOLE_STEP_TOLERANCE of a step, or the count's own
    * rounding where that is larger, so no last step is a rounding of the
-   * count.
+   * count; it is never more than half a step, where the count goes to the
+   * nearer whole number and a half stays below.
    *
    * @return No steps when tStep is not above zero, the span is not above
    *         zero, or the count is not below STEP_COUNT_LIMIT (not-a-number
@@ -90,11 +93,20 @@ struct TransientConfig {
     if (!(COUNT < STEP_COUNT_LIMIT)) {
       return {};
     }
+    // Under the limit both are exact: the whole number below the count, and
+    // what the count leaves over it.
+    const auto BELOW = static_cast<std::size_t>(COUNT);
+    const double LEFT = COUNT - static_cast<double>(BELOW);
     const double ROUNDING = COUNT * COUNT_ROUNDING;
-    const double TOLERANCE = ROUNDING > WHOLE_STEP_TOLERANCE ? ROUNDING : WHOLE_STEP_TOLERANCE;
-    const auto WHOLE = static_cast<std::size_t>(COUNT + TOLERANCE);
-    const double LEFT = COUNT - static_cast<double>(WHOLE);
-    return {WHOLE, LEFT > TOLERANCE ? LEFT * tStep : 0.0};
+    const double WIDEST = ROUNDING > WHOLE_STEP_TOLERANCE ? ROUNDING : WHOLE_STEP_TOLERANCE;
+    const double TOLERANCE = WIDEST < 0.5 ? WIDEST : 0.5;
+    if (LEFT <= TOLERANCE) {
+      return {BELOW, 0.0};
+    }
+    if (LEFT >= 1.0 - TOLERANCE) {
+      return {BELOW + 1U, 0.0};
+    }
+    return {BELOW, LEFT * tStep};
   }
 
   /**
