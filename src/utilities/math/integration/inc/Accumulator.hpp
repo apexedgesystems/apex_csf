@@ -10,6 +10,8 @@
  *  - Zero-allocation, O(1) operations
  */
 
+#include "src/utilities/math/integration/inc/StepSize.hpp"
+
 #include <cstddef>
 #include <cstdint>
 
@@ -85,12 +87,12 @@ public:
    * Uses forward Euler: state += derivative * dt
    *
    * @param derivative Rate of change (e.g., acceleration, velocity).
-   * @param dt Time step in seconds (must be positive).
+   * @param dt Time step in seconds (positive and finite).
    * @return Status code.
    * @note RT-safe: O(1) arithmetic operations.
    */
   constexpr uint8_t accumulate(const State& derivative, double dt) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(AccumulatorStatus::ERROR_INVALID_DT);
     }
     state_ = state_ + derivative * dt;
@@ -113,7 +115,7 @@ public:
    */
   constexpr uint8_t accumulateTrapezoidal(const State& prevDerivative, const State& derivative,
                                           double dt) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(AccumulatorStatus::ERROR_INVALID_DT);
     }
     state_ = state_ + (prevDerivative + derivative) * (0.5 * dt);
@@ -224,7 +226,7 @@ public:
     if (sourceIdx >= N) {
       return static_cast<uint8_t>(AccumulatorStatus::ERROR_OVERFLOW);
     }
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(AccumulatorStatus::ERROR_INVALID_DT);
     }
     state_ = state_ + derivative * dt;

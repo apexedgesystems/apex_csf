@@ -11,6 +11,8 @@
  * @note RT-safe: Zero allocation, fixed 6 function evaluations per step.
  */
 
+#include "src/utilities/math/integration/inc/StepSize.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
@@ -41,7 +43,7 @@ enum class RK45Status : uint8_t {
   SUCCESS = 0,
   STEP_REJECTED = 1,      ///< Step rejected, try smaller dt.
   ERROR_DT_TOO_SMALL = 2, ///< Step size below dtMin.
-  ERROR_INVALID_STEP = 3  ///< Invalid step size (dt <= 0).
+  ERROR_INVALID_STEP = 3  ///< Step size is not positive and finite.
 };
 
 /* -------------------------------- Result ---------------------------------- */
@@ -119,7 +121,7 @@ public:
                          const RungeKutta45Options& opts) noexcept {
     RK45Result<State> result;
 
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       result.status = RK45Status::ERROR_INVALID_STEP;
       result.dtNext = opts.dtMin;
       return result;

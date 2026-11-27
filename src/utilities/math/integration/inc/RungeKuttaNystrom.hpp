@@ -15,6 +15,8 @@
  * @note RT-safe: Zero allocation, fixed evaluations per step.
  */
 
+#include "src/utilities/math/integration/inc/StepSize.hpp"
+
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -74,14 +76,14 @@ public:
    * @tparam AccelFunc Callable: State(double t, const State& y, const State& v)
    * @param y Position (modified in place).
    * @param v Velocity (modified in place).
-   * @param dt Time step (must be positive).
+   * @param dt Time step (positive and finite).
    * @param accel Acceleration function of (time, position, velocity).
    * @return Status code.
    * @note RT-safe: O(1), 4 function evaluations.
    */
   template <typename AccelFunc>
   uint8_t step(State& y, State& v, double dt, AccelFunc&& accel) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(RKNStatus::ERROR_INVALID_STEP);
     }
 
@@ -166,7 +168,7 @@ public:
    */
   template <typename AccelFunc>
   uint8_t step(State& y, State& v, double dt, AccelFunc&& accel) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(RKNStatus::ERROR_INVALID_STEP);
     }
 
@@ -334,7 +336,7 @@ public:
   Result step(State& y, State& v, double dt, AccelFunc&& accel, const Options& opts) noexcept {
     Result result;
 
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       result.status = RKNStatus::ERROR_INVALID_STEP;
       result.dtNext = opts.dtMin;
       return result;

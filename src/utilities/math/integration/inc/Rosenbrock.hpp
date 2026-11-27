@@ -16,6 +16,8 @@
  * @note RT-safe with RT-safe callbacks.
  */
 
+#include "src/utilities/math/integration/inc/StepSize.hpp"
+
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -114,7 +116,7 @@ public:
    * @return Status code.
    */
   uint8_t step(State& y, double dt, const RosenbrockOptions<State>& opts) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(RosenbrockStatus::ERROR_INVALID_STEP);
     }
 
@@ -203,7 +205,7 @@ public:
   }
 
   uint8_t step(State& y, double dt, const RosenbrockOptions<State>& opts) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(RosenbrockStatus::ERROR_INVALID_STEP);
     }
 

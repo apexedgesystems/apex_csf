@@ -5,7 +5,7 @@
 include(apex/All)
 
 # ------------------------------------------------------------------------------
-# Test Sources (16 files)
+# Test Sources (17 files)
 # ------------------------------------------------------------------------------
 
 set(UNIT_TEST_SOURCES
@@ -25,6 +25,7 @@ set(UNIT_TEST_SOURCES
     BDF_uTest.cpp
     Rosenbrock_uTest.cpp
     RungeKuttaNystrom_uTest.cpp
+    StepSize_uTest.cpp
 )
 
 # ------------------------------------------------------------------------------

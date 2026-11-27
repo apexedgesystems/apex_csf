@@ -11,6 +11,7 @@
  */
 
 #include "src/utilities/math/integration/inc/IntegrationOptions.hpp"
+#include "src/utilities/math/integration/inc/StepSize.hpp"
 
 #include <concepts>
 #include <cstddef>
@@ -40,7 +41,7 @@ concept Derivative = std::invocable<Func, const State&, double> &&
  */
 enum class Status : uint8_t {
   SUCCESS = 0,                /**< Completed successfully. */
-  ERROR_INVALID_STEP = 1,     /**< Provided time-step <= 0. */
+  ERROR_INVALID_STEP = 1,     /**< Time-step is not positive and finite. */
   ERROR_MAX_ITERATIONS = 2,   /**< Implicit solver exceeded max iterations. */
   ERROR_JACOBIAN_FAILURE = 3, /**< Jacobian evaluation failed or returned NaN. */
   ERROR_LINEAR_SOLVER = 4,    /**< Linear solver reported failure. */
@@ -104,12 +105,12 @@ public:
    * @brief Advance the state by one time step.
    *
    * @param state Current state (modified in-place).
-   * @param dt    Time step size (must be > 0).
+   * @param dt    Time step size (positive and finite; see isValidStep).
    * @param opts  Algorithm-specific options.
    * @return      Status code (0 on success).
    */
   uint8_t step(State& state, double dt, const Options& opts) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       ++stats_.stepRejections;
       return static_cast<uint8_t>(Status::ERROR_INVALID_STEP);
     }

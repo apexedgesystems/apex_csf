@@ -13,6 +13,7 @@
 
 #include "src/utilities/math/integration/inc/Integration.hpp"
 #include "src/utilities/math/integration/inc/IntegrationOptions.hpp"
+#include "src/utilities/math/integration/inc/StepSize.hpp"
 
 #include <array>
 #include <cstddef>
@@ -96,7 +97,7 @@ public:
    * @return Status code.
    */
   uint8_t step(State& state, double dt, const Options& opts) noexcept {
-    if (dt <= 0.0) {
+    if (!isValidStep(dt)) {
       return static_cast<uint8_t>(Status::ERROR_INVALID_STEP);
     }
 
