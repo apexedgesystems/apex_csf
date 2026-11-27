@@ -47,9 +47,13 @@ its sources, tests and docs beside its manifest:
 | C++      | a tool directory        | `CMakeLists.txt`, `src/`, `inc/`, `utst/`             | `apex_add_tool`, which derives the role from the directory |
 | Shell    | a script under `sh/bin` | `bin/`, `docs/`                                       | copied as it is                                            |
 
+Each role's tools, who invokes them and how to build and test them:
+[build/](build/README.md), [ops/](ops/README.md),
+[analysis/](analysis/README.md).
+
 Mechanics and recipes: [docs/rust_workspace.md](docs/rust_workspace.md),
 [docs/python_tools.md](docs/python_tools.md#the-workspace-and-the-lock);
-the tools themselves: [docs/rust_tools.md](docs/rust_tools.md),
+the tools by language: [docs/rust_tools.md](docs/rust_tools.md),
 [docs/python_tools.md](docs/python_tools.md),
 [registry-info](analysis/cpp/registry_info/docs/registry_info.md),
 [ops/sh/](ops/sh/README.md).
