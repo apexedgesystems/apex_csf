@@ -3,10 +3,18 @@
 # At 100Hz: telemetry offsets 51-54 (510-540ms into each second).
 # At 1000Hz: telemetry offsets 510-540 (same wall-clock positions).
 # Comparator/TestPlugin offsets also scaled (10Hz offset 0->0, 10Hz offset 5->50).
+#
+# One worker runs the pool's tasks one after another, in priority order
+# within a tick. The plant, the controller and both drivers each have
+# tasks that share a tick and the component's state (the plant's step
+# and control, a driver's send and receive), and the plant, the drivers
+# and the comparator read one another's data through pointers; on one
+# worker none of these tasks can overlap. No task is sequenced: these
+# components offer no sequence group.
 
 [SchedulerTprmHeader]
 numPools = { type = "uint", size = 1, value = 1 }
-workersPerPool = { type = "uint", size = 1, value = 2 }
+workersPerPool = { type = "uint", size = 1, value = 1 }
 numTasks = { type = "uint", size = 1, value = 14 }
 
 # Task 0: HilPlantModel.plantStep - 100Hz, highest priority

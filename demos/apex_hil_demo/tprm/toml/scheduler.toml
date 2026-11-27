@@ -3,7 +3,7 @@
 #
 # SchedulerTprmHeader (3 bytes):
 #   uint8_t numPools = 1
-#   uint8_t workersPerPool = 2
+#   uint8_t workersPerPool = 1
 #   uint8_t numTasks = 14
 #
 # SchedulerTaskEntry (15 bytes, packed):
@@ -16,10 +16,18 @@
 #   int8_t priority
 #   uint8_t seqGroup (0xFF = no sequencing)
 #   uint8_t seqPhase
+#
+# One worker runs the pool's tasks one after another, in priority order
+# within a tick. The plant, the controller and both drivers each have
+# tasks that share a tick and the component's state (the plant's step
+# and control, a driver's send and receive), and the plant, the drivers
+# and the comparator read one another's data through pointers; on one
+# worker none of these tasks can overlap. No task is sequenced: these
+# components offer no sequence group.
 
 [SchedulerTprmHeader]
 numPools = { type = "uint", size = 1, value = 1 }
-workersPerPool = { type = "uint", size = 1, value = 2 }
+workersPerPool = { type = "uint", size = 1, value = 1 }
 numTasks = { type = "uint", size = 1, value = 14 }
 
 # Component fullUids:
@@ -56,7 +64,7 @@ seqGroup = { type = "uint", size = 1, value = 255 }
 seqPhase = { type = "uint", size = 1, value = 0 }
 
 # Task 2: HilPlantModel.telemetry - 1Hz, lowest priority, offset 51
-# Odd tick avoids 50Hz task overlap; staggered with other telemetry tasks
+# Odd tick: off the 50Hz tasks' ticks; staggered with other telemetry tasks
 [[task]]
 fullUid = { type = "uint", size = 4, value = 30720 }
 taskUid = { type = "uint", size = 1, value = 3 }
