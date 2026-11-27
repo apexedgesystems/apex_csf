@@ -4,6 +4,8 @@ What the apex build, its gates and its images invoke. A plain build depends
 on this role and no other: `make tools-build` is the only tool prerequisite
 of the C++ build, and it is what the gate images are baked for.
 
+---
+
 ## Tools
 
 Executables install to `bin/tools/build/` in the build directory.
@@ -19,6 +21,8 @@ The four share the library crate `apex-tprm`
 ([proto profile](rust/apex-tprm/docs/proto_profile.md), which `cdef_gen`
 reads). How the crates build and where they install:
 [../docs/rust_workspace.md](../docs/rust_workspace.md).
+
+---
 
 ## Scripts
 
@@ -38,12 +42,16 @@ A script copied into an image is an input of that image: changing it
 rebuilds the images that copy it (see
 [What CI runs for a tools change](../README.md#what-ci-runs-for-a-tools-change)).
 
+---
+
 ## Also here
 
 - `proto/apex/options.proto`: the proto profile's option definitions.
 - `fixtures/check-data-db/`: the contract fixtures of the dictionary gate.
 - `fixtures/ci-classify/`: the change classifier's cases and fixture
   Dockerfiles.
+
+---
 
 ## Build and test
 

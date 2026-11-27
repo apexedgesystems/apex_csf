@@ -39,6 +39,8 @@ MoveRequest = { category = "COMMAND", opcode = "0x0210" }
 - Commands, telemetry, constraints, and enums stay in the TOML
   manifest -- the proto carries **layouts only**.
 
+---
+
 ## File shape
 
 ```proto
@@ -66,6 +68,8 @@ message SpecActuatorTunableParams {
   never silent.
 - A `//` comment line (or lines) directly above a field becomes the
   field's doc; other comments are ignored.
+
+---
 
 ## Type mapping
 
@@ -98,6 +102,8 @@ be defined in the same file, arrays are `repeated` with an
 enums, maps, `oneof`, services, non-apex options -- is outside the
 profile and fails ingest with a named error.
 
+---
+
 ## Options
 
 - `(apex.width) = N` -- byte width (1|2|4) for `uint32`/`int32`
@@ -111,6 +117,8 @@ profile and fails ingest with a named error.
   float, otherwise integer) and must match the field type. Not
   applicable to strings (author the value in the TPRM TOML).
 
+---
+
 ## Fixpoint guarantee
 
 Emission is canonical, and the two directions are pinned by tests:
@@ -118,6 +126,8 @@ Emission is canonical, and the two directions are pinned by tests:
 layout hash**, and `emit(ingest(proto))` re-emits byte-identically.
 An authored file may differ in formatting from the canonical form;
 its `.auto/<Component>.proto` emission is the normalized interface.
+
+---
 
 ## See also
 

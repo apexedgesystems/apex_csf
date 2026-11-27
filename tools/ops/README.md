@@ -5,6 +5,8 @@ command and telemetry deck, ground-system target configuration, the
 operations SDK, and checks of the hardware a deployment talks to. Nothing
 in the apex build depends on this role.
 
+---
+
 ## Tools
 
 Executables install to `bin/tools/ops/` in the build directory.
@@ -27,6 +29,8 @@ one.
 How each language's units build:
 [../docs/rust_workspace.md](../docs/rust_workspace.md),
 [../docs/python_tools.md](../docs/python_tools.md), [sh/](sh/README.md).
+
+---
 
 ## Build and test
 

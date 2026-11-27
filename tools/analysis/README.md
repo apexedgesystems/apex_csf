@@ -4,6 +4,8 @@ What inspects the data a run leaves behind: the registry and scheduler
 data files and Monte Carlo results.
 Nothing in the apex build depends on this role.
 
+---
+
 ## Tools
 
 Executables install to `bin/tools/analysis/` in the build directory. All
@@ -21,6 +23,8 @@ How each language's units build:
 [../docs/python_tools.md](../docs/python_tools.md). `registry-info` is a
 C++ tool built by `apex_add_tool`: it links the apex registry library and
 is compiled by the C++ build.
+
+---
 
 ## Build and test
 
