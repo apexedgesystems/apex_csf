@@ -9,20 +9,19 @@
  *
  * Usage:
  * ```cpp
- * CompanionSet companions;
- * // ... add capacitors and inductors ...
+ * std::vector<CapacitorCompanion> capacitors = ...;
+ * std::vector<double> geq(capacitors.size());
+ * std::vector<double> ieq(capacitors.size());
  *
- * std::vector<double> capGeq(companions.capacitorCount());
- * std::vector<double> capIeq(companions.capacitorCount());
- *
- * cuda::evaluateCapacitorsCuda(companions.capacitors().data(),
- *                              companions.capacitorCount(),
- *                              dt, IntegrationMethod::TRAPEZOIDAL,
- *                              capGeq.data(), capIeq.data());
+ * if (!cuda::evaluateCapacitorsCuda(capacitors.data(), static_cast<int>(capacitors.size()),
+ *                                   dt, IntegrationMethod::TRAPEZOIDAL,
+ *                                   geq.data(), ieq.data())) {
+ *   // No device, or the device refused: geq and ieq are not to be read.
+ * }
  * ```
  *
- * Performance: For circuits with 10,000+ capacitors/inductors,
- * GPU evaluation provides ~100x speedup over CPU sequential evaluation.
+ * The values are those CapacitorCompanion::geq() and ieq() return on the
+ * host: the kernels call the same functions.
  */
 
 #include "src/sim/electronics/algorithms/companions/inc/CompanionModels.hpp"
@@ -41,12 +40,15 @@ namespace sim::electronics::algorithms::companions::cuda {
  * @param method Integration method.
  * @param geqOut Host output array for geq values (pre-allocated, size n).
  * @param ieqOut Host output array for ieq values (pre-allocated, size n).
+ * @return true when both outputs were written (and for n of 0). False when a
+ *         pointer is null, n is negative, there is no device, or a CUDA call
+ *         failed; the outputs are then not to be read.
  *
  * @note NOT RT-safe: performs device memory allocation and data transfers.
  * @note Requires CUDA-capable GPU and CUDA toolkit.
  */
-void evaluateCapacitorsCuda(const CapacitorCompanion* capacitors, int n, double dt,
-                            IntegrationMethod method, double* geqOut, double* ieqOut);
+[[nodiscard]] bool evaluateCapacitorsCuda(const CapacitorCompanion* capacitors, int n, double dt,
+                                          IntegrationMethod method, double* geqOut, double* ieqOut);
 
 /**
  * @brief Evaluate all inductor companions in parallel on GPU.
@@ -60,12 +62,13 @@ void evaluateCapacitorsCuda(const CapacitorCompanion* capacitors, int n, double 
  * @param method Integration method.
  * @param geqOut Host output array for geq values (pre-allocated, size n).
  * @param ieqOut Host output array for ieq values (pre-allocated, size n).
+ * @return As evaluateCapacitorsCuda.
  *
  * @note NOT RT-safe: performs device memory allocation and data transfers.
  * @note Requires CUDA-capable GPU and CUDA toolkit.
  */
-void evaluateInductorsCuda(const InductorCompanion* inductors, int n, double dt,
-                           IntegrationMethod method, double* geqOut, double* ieqOut);
+[[nodiscard]] bool evaluateInductorsCuda(const InductorCompanion* inductors, int n, double dt,
+                                         IntegrationMethod method, double* geqOut, double* ieqOut);
 
 } // namespace sim::electronics::algorithms::companions::cuda
 

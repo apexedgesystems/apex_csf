@@ -241,6 +241,10 @@ public:
 private:
   std::size_t netCount_;
   double time_ = 0.0;
+  /// What an inductor is at an operating point: a conductance large beside the circuit's,
+  /// through which its resting current is found. 1 mOhm.
+  static constexpr double OPERATING_POINT_INDUCTOR_SIEMENS = 1000.0;
+
   IntegrationMethod method_ = IntegrationMethod::BACKWARD_EULER;
   CompanionSet companions_;
   StampCallback stampCallback_;
@@ -253,12 +257,14 @@ private:
   MnaFactorizedWorkspace factorizedWs_;
   std::unique_ptr<MnaSystem> cachedMna_;
   double cachedDt_ = 0.0;
-  bool useCachedLU_ = false; // Disabled by default (enable for constant topology)
+  double cachedFactor_ = 0.0; ///< Companions' conductance factor the cached factors hold.
+  bool useCachedLU_ = false;  // Disabled by default (enable for constant topology)
 
   // Dual-LU caching for alternating topology (clock HIGH/LOW)
   MnaFactorizedWorkspace dualFactorizedWs_[2]; // [0]=state0, [1]=state1
   std::unique_ptr<MnaSystem> dualCachedMna_[2];
   double dualCachedDt_ = 0.0;
+  double dualCachedFactor_[2] = {0.0, 0.0}; ///< Conductance factor of each state's factors.
   bool useDualLU_ = false;
 
   // Sparse LU solver (KLU for low-fill circuits)
@@ -266,6 +272,8 @@ private:
   bool useSparse_ = false;
   bool sparseCacheValid_ = false;   ///< Sparse LU cache state (invalidated per half-clock).
   std::size_t sparseCachedDim_ = 0; ///< Augmented dimension of cached sparse factorization.
+  double sparseCachedDt_ = 0.0;     ///< Step length the sparse factors were built with.
+  double sparseCachedFactor_ = 0.0; ///< Companions' conductance factor of the sparse factors.
   bool alwaysReanalyze_ = false;    ///< Sparse steps iterate Newton, factorizing each iteration.
 
   // Newton-Raphson iteration for nonlinear transient (used with alwaysReanalyze_)

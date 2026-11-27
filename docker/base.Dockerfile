@@ -11,8 +11,8 @@
 # build-base : toolchain + bakes. Compile + link + test the release artifacts.
 #              The 10 release builders and the build-test gate inherit only this.
 # lint       : the format check and the secret scan: pre-commit, the tools its
-#              hooks call, gitleaks. No compiler toolchain, no bakes; built on
-#              the distro image alone. The CI lint job runs in it.
+#              hooks call, gitleaks. No C++ or CUDA compiler stack, no bakes;
+#              built on the distro image alone. The CI lint job runs in it.
 # dev-base   : toolchain + tooling (scanners, formatters, profilers, docs) +
 #              bakes. The dev shells (`apex.base` consumers) inherit this. Its
 #              format tools are the lint tier's, copied from it.
@@ -458,9 +458,9 @@ WORKDIR /home/${USER}
 # What `make format-check` and `make gitleaks` run: pre-commit, the tools its
 # local hooks call (clang-format, cmake-format, cmake-lint, hadolint, shfmt,
 # cargo fmt), node for its node hooks, and gitleaks. Neither check compiles or
-# resolves a dependency, so this tier starts from the distro image: no
-# compiler toolchain, no bakes, and a rebuild of it re-runs no layer of the
-# other tiers. dev-base copies its format tools from here.
+# resolves a dependency, so this tier starts from the distro image: no C++
+# or CUDA compiler stack, no bakes, and a rebuild of it re-runs no layer of
+# the other tiers. dev-base copies its format tools from here.
 FROM ubuntu:24.04 AS lint
 
 ARG USER
@@ -533,14 +533,15 @@ ENV PATH="/opt/rust/cargo/bin:$PATH"
 
 # hadolint (Dockerfile linter), shfmt (shell formatter; its file name keeps the
 # 'v' prefix) and gitleaks (secret scanner): static binaries from their
-# GitHub releases.
+# GitHub releases. gitleaks comes in an archive and is unpacked as root's
+# file: the archive records the user id of the machine that packed it.
 RUN wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/hadolint \
       "https://github.com/hadolint/hadolint/releases/download/${HADOLINT_VERSION}/hadolint-linux-x86_64" && \
     wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /usr/local/bin/shfmt \
       "https://github.com/mvdan/sh/releases/download/${SHFMT_VERSION}/shfmt_${SHFMT_VERSION}_linux_amd64" && \
     wget --progress=dot:giga --tries=5 --retry-connrefused --retry-on-http-error=429,500,502,503,504 --waitretry=15 --timeout=30 -O /tmp/gitleaks.tar.gz \
       "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" && \
-    tar -C /usr/local/bin -xzf /tmp/gitleaks.tar.gz gitleaks && \
+    tar -C /usr/local/bin --no-same-owner -xzf /tmp/gitleaks.tar.gz gitleaks && \
     rm /tmp/gitleaks.tar.gz && \
     chmod +x /usr/local/bin/hadolint /usr/local/bin/shfmt /usr/local/bin/gitleaks
 

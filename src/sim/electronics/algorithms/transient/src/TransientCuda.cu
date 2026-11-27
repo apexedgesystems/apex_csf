@@ -33,7 +33,7 @@ TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs,
   }
 
   // Stamp companion models for reactive elements
-  companions.stampAll(mna, dt);
+  companions.stampAll(mna, dt, IntegrationMethod::BACKWARD_EULER);
 
   // Check if GPU can handle this dimension
   std::size_t dim = mna.augmentedDim();
@@ -68,7 +68,7 @@ TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs,
 
   // Update state
   prevVoltages = state.nodeVoltages;
-  companions.updateAll(state.nodeVoltages, dt);
+  companions.updateAll(state.nodeVoltages, dt, IntegrationMethod::BACKWARD_EULER);
   time += dt;
 
   return TransientStatus::SUCCESS;
@@ -96,7 +96,7 @@ TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs,
   }
 
   // Stamp companion models for reactive elements
-  companions.stampAll(mna, dt);
+  companions.stampAll(mna, dt, IntegrationMethod::BACKWARD_EULER);
 
   // Check if GPU can handle this dimension
   std::size_t dim = mna.augmentedDim();
@@ -131,7 +131,7 @@ TransientStatus stepCuda(algorithms::mna::cuda::MnaCudaWorkspace& cudaWs,
 
   // Update state
   prevVoltages = state.nodeVoltages;
-  companions.updateAll(state.nodeVoltages, dt);
+  companions.updateAll(state.nodeVoltages, dt, IntegrationMethod::BACKWARD_EULER);
   time += dt;
 
   return TransientStatus::SUCCESS;

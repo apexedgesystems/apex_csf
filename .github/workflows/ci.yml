@@ -21,8 +21,8 @@
 # images (the setup action, the registry-cache overlay), and for a baked
 # dependency only the jobs that build with it (the Python lock rebuilds for
 # the Python tests alone; lint uses no bake). Lint has an image of its own
-# (apex.lint: the format and secret-scan tools, no compiler toolchain), so
-# its rebuild is that one stage.
+# (apex.lint: the format and secret-scan tools, no C++ or CUDA compiler
+# stack), so its rebuild is that one stage.
 #
 # The build/test/smoke/docs chain runs in dev-cuda so the .cu surface is compile
 # and link verified; docker-compose.ci.yml drops the GPU reservation so it
@@ -95,8 +95,8 @@ jobs:
     needs: changes
     runs-on: ubuntu-24.04
     # Runs in the lint image: pre-commit, the tools its hooks call and
-    # gitleaks, with no compiler toolchain and no baked dependency. It is
-    # rebuilt only when an image definition changed (`images`), and that
+    # gitleaks, with no C++ or CUDA compiler stack and no baked dependency.
+    # It is rebuilt only when an image definition changed (`images`), and that
     # rebuild is of the lint stage alone, so a lock bump leaves the job on
     # the pulled image and a Dockerfile change costs it one small stage.
     timeout-minutes: 20

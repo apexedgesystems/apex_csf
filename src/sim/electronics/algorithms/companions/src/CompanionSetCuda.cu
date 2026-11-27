@@ -5,13 +5,15 @@
  * Provides GPU-accelerated batch evaluation of companion model parameters
  * (geq, ieq) for large circuits with thousands of reactive elements.
  *
- * Performance benefit: For circuits with 10,000+ capacitors/inductors,
- * parallel evaluation provides ~100x speedup over sequential CPU evaluation.
+ * The kernels call the companions' own geq() and ieq(), which are host and
+ * device functions: the formulas exist once.
  */
 
-#include "src/sim/electronics/algorithms/companions/inc/CompanionModels.hpp"
+#include "src/sim/electronics/algorithms/companions/inc/CompanionSetCuda.hpp"
 
 #include <cuda_runtime.h>
+
+#include <cstddef>
 
 namespace sim::electronics::algorithms::companions::cuda {
 
@@ -19,222 +21,109 @@ using algorithms::companions::CapacitorCompanion;
 using algorithms::companions::InductorCompanion;
 using algorithms::transient::IntegrationMethod;
 
-/* ----------------------------- Device Functions ----------------------------- */
+namespace {
+
+/* ----------------------------- Kernel ----------------------------- */
 
 /**
- * @brief Device function to calculate capacitor geq.
- * @param C Capacitance in Farads.
- * @param dt Time step in seconds.
- * @param method Integration method.
- * @return Equivalent conductance.
- */
-__device__ inline double capacitorGeq(double C, double dt, IntegrationMethod method) {
-  switch (method) {
-  case IntegrationMethod::BACKWARD_EULER:
-    return C / dt;
-  case IntegrationMethod::TRAPEZOIDAL:
-    return 2.0 * C / dt;
-  case IntegrationMethod::GEAR2:
-    return 1.5 * C / dt;
-  }
-  return C / dt;
-}
-
-/**
- * @brief Device function to calculate capacitor ieq.
- * @param C Capacitance.
- * @param vPrev Voltage at t-dt.
- * @param vPrev2 Voltage at t-2dt.
- * @param iPrev Current at t-dt.
- * @param dt Time step.
- * @param method Integration method.
- * @return Equivalent current source.
- */
-__device__ inline double capacitorIeq(double C, double vPrev, double vPrev2, double iPrev,
-                                      double dt, IntegrationMethod method) {
-  switch (method) {
-  case IntegrationMethod::BACKWARD_EULER:
-    return C * vPrev / dt;
-  case IntegrationMethod::TRAPEZOIDAL:
-    return 2.0 * C * vPrev / dt + iPrev;
-  case IntegrationMethod::GEAR2:
-    return (C / dt) * (2.0 * vPrev - 0.5 * vPrev2);
-  }
-  return C * vPrev / dt;
-}
-
-/**
- * @brief Device function to calculate inductor geq.
- * @param L Inductance in Henries.
- * @param dt Time step in seconds.
- * @param method Integration method.
- * @return Equivalent conductance.
- */
-__device__ inline double inductorGeq(double L, double dt, IntegrationMethod method) {
-  switch (method) {
-  case IntegrationMethod::BACKWARD_EULER:
-    return dt / L;
-  case IntegrationMethod::TRAPEZOIDAL:
-    return dt / (2.0 * L);
-  case IntegrationMethod::GEAR2:
-    return 1.5 * dt / L;
-  }
-  return dt / L;
-}
-
-/**
- * @brief Device function to calculate inductor ieq.
- * @param iPrev Current at t-dt.
- * @param iPrev2 Current at t-2dt.
- * @param vPrev Voltage at t-dt.
- * @param L Inductance.
- * @param dt Time step.
- * @param method Integration method.
- * @return Equivalent current source.
- */
-__device__ inline double inductorIeq(double iPrev, double iPrev2, double vPrev, double L, double dt,
-                                     IntegrationMethod method) {
-  switch (method) {
-  case IntegrationMethod::BACKWARD_EULER:
-    return iPrev;
-  case IntegrationMethod::TRAPEZOIDAL:
-    return iPrev + (dt / (2.0 * L)) * vPrev;
-  case IntegrationMethod::GEAR2:
-    return 2.0 * iPrev - 0.5 * iPrev2;
-  }
-  return iPrev;
-}
-
-/* ----------------------------- CUDA Kernels ----------------------------- */
-
-/**
- * @brief Kernel to evaluate all capacitor companion parameters in parallel.
+ * @brief Kernel to evaluate companion parameters in parallel.
  *
- * Each thread processes one capacitor, computing geq and ieq values.
+ * Each thread processes one element, computing its geq and ieq.
  *
- * @param capacitors Array of capacitor companions (device memory).
+ * @tparam Element CapacitorCompanion or InductorCompanion.
+ * @param elements Array of companions (device memory).
  * @param geqOut Output array for geq values (device memory).
  * @param ieqOut Output array for ieq values (device memory).
- * @param n Number of capacitors.
+ * @param n Number of elements.
  * @param dt Time step.
  * @param method Integration method.
  */
-__global__ void evaluateCapacitorsKernel(const CapacitorCompanion* capacitors, double* geqOut,
-                                         double* ieqOut, int n, double dt,
-                                         IntegrationMethod method) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+template <typename Element>
+__global__ void evaluateKernel(const Element* elements, double* geqOut, double* ieqOut, int n,
+                               double dt, IntegrationMethod method) {
+  const int IDX = blockIdx.x * blockDim.x + threadIdx.x;
 
-  if (idx < n) {
-    const auto& CAP = capacitors[idx];
-    geqOut[idx] = capacitorGeq(CAP.capacitance, dt, method);
-    ieqOut[idx] =
-        capacitorIeq(CAP.capacitance, CAP.prevVoltage, CAP.prev2Voltage, CAP.current, dt, method);
+  if (IDX < n) {
+    geqOut[IDX] = elements[IDX].geq(dt, method);
+    ieqOut[IDX] = elements[IDX].ieq(dt, method);
   }
 }
 
-/**
- * @brief Kernel to evaluate all inductor companion parameters in parallel.
- *
- * Each thread processes one inductor, computing geq and ieq values.
- *
- * @param inductors Array of inductor companions (device memory).
- * @param geqOut Output array for geq values (device memory).
- * @param ieqOut Output array for ieq values (device memory).
- * @param n Number of inductors.
- * @param dt Time step.
- * @param method Integration method.
- */
-__global__ void evaluateInductorsKernel(const InductorCompanion* inductors, double* geqOut,
-                                        double* ieqOut, int n, double dt,
-                                        IntegrationMethod method) {
-  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+/* ----------------------------- Device Memory ----------------------------- */
 
-  if (idx < n) {
-    const auto& IND = inductors[idx];
-    geqOut[idx] = inductorGeq(IND.inductance, dt, method);
-    ieqOut[idx] =
-        inductorIeq(IND.prevCurrent, IND.prev2Current, IND.voltage, IND.inductance, dt, method);
+/** @brief An array on the device, freed on every way out of its scope. */
+template <typename T> struct DeviceArray {
+  T* data = nullptr;
+
+  DeviceArray() = default;
+  ~DeviceArray() {
+    if (data != nullptr) {
+      cudaFree(data);
+    }
   }
+  DeviceArray(const DeviceArray&) = delete;
+  DeviceArray& operator=(const DeviceArray&) = delete;
+
+  [[nodiscard]] bool allocate(std::size_t count) {
+    void* memory = nullptr;
+    if (cudaMalloc(&memory, count * sizeof(T)) != cudaSuccess) {
+      return false;
+    }
+    data = static_cast<T*>(memory);
+    return true;
+  }
+};
+
+/* ----------------------------- Evaluation ----------------------------- */
+
+template <typename Element>
+bool evaluate(const Element* elements, int n, double dt, IntegrationMethod method, double* geqOut,
+              double* ieqOut) {
+  if (n == 0) {
+    return true;
+  }
+  if (n < 0 || elements == nullptr || geqOut == nullptr || ieqOut == nullptr) {
+    return false;
+  }
+  const auto COUNT = static_cast<std::size_t>(n);
+
+  DeviceArray<Element> dElements;
+  DeviceArray<double> dGeq;
+  DeviceArray<double> dIeq;
+  if (!dElements.allocate(COUNT) || !dGeq.allocate(COUNT) || !dIeq.allocate(COUNT)) {
+    return false;
+  }
+  if (cudaMemcpy(dElements.data, elements, COUNT * sizeof(Element), cudaMemcpyHostToDevice) !=
+      cudaSuccess) {
+    return false;
+  }
+
+  constexpr int THREADS_PER_BLOCK = 256;
+  const int BLOCKS = (n + THREADS_PER_BLOCK - 1) / THREADS_PER_BLOCK;
+  evaluateKernel<Element>
+      <<<BLOCKS, THREADS_PER_BLOCK>>>(dElements.data, dGeq.data, dIeq.data, n, dt, method);
+  if (cudaGetLastError() != cudaSuccess) {
+    return false;
+  }
+
+  return cudaMemcpy(geqOut, dGeq.data, COUNT * sizeof(double), cudaMemcpyDeviceToHost) ==
+             cudaSuccess &&
+         cudaMemcpy(ieqOut, dIeq.data, COUNT * sizeof(double), cudaMemcpyDeviceToHost) ==
+             cudaSuccess;
 }
+
+} // namespace
 
 /* ----------------------------- Host Functions ----------------------------- */
 
-/**
- * @brief Evaluate all capacitor companions in parallel on GPU.
- *
- * @param capacitors Host array of capacitor companions.
- * @param n Number of capacitors.
- * @param dt Time step.
- * @param method Integration method.
- * @param geqOut Host output array for geq values (pre-allocated, size n).
- * @param ieqOut Host output array for ieq values (pre-allocated, size n).
- *
- * @note NOT RT-safe: performs device memory allocation and transfers.
- */
-void evaluateCapacitorsCuda(const CapacitorCompanion* capacitors, int n, double dt,
+bool evaluateCapacitorsCuda(const CapacitorCompanion* capacitors, int n, double dt,
                             IntegrationMethod method, double* geqOut, double* ieqOut) {
-  if (n == 0)
-    return;
-
-  CapacitorCompanion* dCapacitors = nullptr;
-  double* dGeq = nullptr;
-  double* dIeq = nullptr;
-
-  cudaMalloc(&dCapacitors, n * sizeof(CapacitorCompanion));
-  cudaMalloc(&dGeq, n * sizeof(double));
-  cudaMalloc(&dIeq, n * sizeof(double));
-
-  cudaMemcpy(dCapacitors, capacitors, n * sizeof(CapacitorCompanion), cudaMemcpyHostToDevice);
-
-  int threadsPerBlock = 256;
-  int blocks = (n + threadsPerBlock - 1) / threadsPerBlock;
-  evaluateCapacitorsKernel<<<blocks, threadsPerBlock>>>(dCapacitors, dGeq, dIeq, n, dt, method);
-
-  cudaMemcpy(geqOut, dGeq, n * sizeof(double), cudaMemcpyDeviceToHost);
-  cudaMemcpy(ieqOut, dIeq, n * sizeof(double), cudaMemcpyDeviceToHost);
-
-  cudaFree(dCapacitors);
-  cudaFree(dGeq);
-  cudaFree(dIeq);
+  return evaluate(capacitors, n, dt, method, geqOut, ieqOut);
 }
 
-/**
- * @brief Evaluate all inductor companions in parallel on GPU.
- *
- * @param inductors Host array of inductor companions.
- * @param n Number of inductors.
- * @param dt Time step.
- * @param method Integration method.
- * @param geqOut Host output array for geq values (pre-allocated, size n).
- * @param ieqOut Host output array for ieq values (pre-allocated, size n).
- *
- * @note NOT RT-safe: performs device memory allocation and transfers.
- */
-void evaluateInductorsCuda(const InductorCompanion* inductors, int n, double dt,
+bool evaluateInductorsCuda(const InductorCompanion* inductors, int n, double dt,
                            IntegrationMethod method, double* geqOut, double* ieqOut) {
-  if (n == 0)
-    return;
-
-  InductorCompanion* dInductors = nullptr;
-  double* dGeq = nullptr;
-  double* dIeq = nullptr;
-
-  cudaMalloc(&dInductors, n * sizeof(InductorCompanion));
-  cudaMalloc(&dGeq, n * sizeof(double));
-  cudaMalloc(&dIeq, n * sizeof(double));
-
-  cudaMemcpy(dInductors, inductors, n * sizeof(InductorCompanion), cudaMemcpyHostToDevice);
-
-  int threadsPerBlock = 256;
-  int blocks = (n + threadsPerBlock - 1) / threadsPerBlock;
-  evaluateInductorsKernel<<<blocks, threadsPerBlock>>>(dInductors, dGeq, dIeq, n, dt, method);
-
-  cudaMemcpy(geqOut, dGeq, n * sizeof(double), cudaMemcpyDeviceToHost);
-  cudaMemcpy(ieqOut, dIeq, n * sizeof(double), cudaMemcpyDeviceToHost);
-
-  cudaFree(dInductors);
-  cudaFree(dGeq);
-  cudaFree(dIeq);
+  return evaluate(inductors, n, dt, method, geqOut, ieqOut);
 }
 
 } // namespace sim::electronics::algorithms::companions::cuda
