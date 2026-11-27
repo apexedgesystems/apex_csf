@@ -8,12 +8,10 @@
  */
 
 #include "src/utilities/concurrency/inc/RingBuffer.hpp"
+#include "src/utilities/concurrency/utst/support/MoveTracking.hpp"
 #include "src/utilities/concurrency/utst/support/AlignProbe.hpp"
 
 #include <gtest/gtest.h>
-
-#include <string>
-#include <vector>
 
 using apex::concurrency::RingBuffer;
 
@@ -127,18 +125,24 @@ TEST_F(RingBufferTest, MaintainsFifoOrder) {
 
 /* ----------------------------- Capacity Tests ----------------------------- */
 
-/** @test tryPush fails when buffer is full */
-TEST_F(RingBufferTest, TryPushFailsWhenFull) {
-  RingBuffer<int> buffer(4);
-  const std::size_t CAP = buffer.capacity();
-
-  // Fill the buffer
-  for (std::size_t i = 0; i < CAP; ++i) {
-    EXPECT_TRUE(buffer.tryPush(static_cast<int>(i)));
+/** @test A buffer takes exactly capacity() elements and refuses the next, through the copy
+ * overload and through the move overload. */
+TEST_F(RingBufferTest, TakesExactlyCapacityThenRefuses) {
+  RingBuffer<int> byCopy(4);
+  for (std::size_t i = 0; i < byCopy.capacity(); ++i) {
+    const int VALUE = static_cast<int>(i);
+    EXPECT_TRUE(byCopy.tryPush(VALUE)) << "copy push " << i;
   }
+  const int EXTRA = 99;
+  EXPECT_FALSE(byCopy.tryPush(EXTRA)) << "a full buffer took a copy";
+  EXPECT_EQ(byCopy.size(), byCopy.capacity());
 
-  // Next push should fail
-  EXPECT_FALSE(buffer.tryPush(99));
+  RingBuffer<int> byMove(4);
+  for (std::size_t i = 0; i < byMove.capacity(); ++i) {
+    EXPECT_TRUE(byMove.tryPush(static_cast<int>(i))) << "move push " << i;
+  }
+  EXPECT_FALSE(byMove.tryPush(99)) << "a full buffer took a move";
+  EXPECT_EQ(byMove.size(), byMove.capacity());
 }
 
 /** @test Buffer with small capacity works correctly */
@@ -255,93 +259,11 @@ TEST_F(RingBufferTest, WorksAfterClear) {
 
 /* ----------------------------- Move Semantics Tests ----------------------------- */
 
-/** @test tryPush with rvalue moves the value */
-TEST_F(RingBufferTest, TryPushMovesRvalue) {
-  RingBuffer<std::string> buffer(4);
-
-  std::string original = "test string";
-  EXPECT_TRUE(buffer.tryPush(std::move(original)));
-
-  std::string popped;
-  EXPECT_TRUE(buffer.tryPop(popped));
-  EXPECT_EQ(popped, "test string");
-}
-
-/** @test tryPop moves value out of buffer */
-TEST_F(RingBufferTest, TryPopMovesValue) {
-  RingBuffer<std::vector<int>> buffer(4);
-
-  std::vector<int> original = {1, 2, 3, 4, 5};
-  EXPECT_TRUE(buffer.tryPush(original));
-
-  std::vector<int> popped;
-  EXPECT_TRUE(buffer.tryPop(popped));
-  EXPECT_EQ(popped.size(), 5U);
-  EXPECT_EQ(popped[0], 1);
-}
-
-/* ----------------------------- High Throughput Tests ----------------------------- */
-
-/** @test High-throughput single-threaded stress test */
-TEST_F(RingBufferTest, HighThroughputStress) {
-  RingBuffer<std::size_t> buffer(256);
-  constexpr std::size_t ITEM_COUNT = 1000000;
-  std::size_t sum = 0;
-
-  // Alternating push/pop to stress wraparound
-  std::size_t pushed = 0;
-  std::size_t popped = 0;
-
-  while (popped < ITEM_COUNT) {
-    // Push a batch
-    while (pushed < ITEM_COUNT && buffer.tryPush(pushed)) {
-      ++pushed;
-    }
-
-    // Pop a batch
-    std::size_t value;
-    while (buffer.tryPop(value)) {
-      sum += value;
-      ++popped;
-    }
-  }
-
-  // Sum of 0..N-1 = N*(N-1)/2
-  const std::size_t EXPECTED = ITEM_COUNT * (ITEM_COUNT - 1) / 2;
-  EXPECT_EQ(sum, EXPECTED);
-}
-
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test capacity() returns consistent results */
-TEST(RingBufferDeterminismTest, CapacityConsistent) {
-  RingBuffer<int> buffer(128);
-  const std::size_t FIRST = buffer.capacity();
-  const std::size_t SECOND = buffer.capacity();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_GE(FIRST, 128U);
-}
-
-/** @test empty() returns consistent results on empty buffer */
-TEST(RingBufferDeterminismTest, EmptyConsistent) {
-  RingBuffer<int> buffer(16);
-  const bool FIRST = buffer.empty();
-  const bool SECOND = buffer.empty();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_TRUE(FIRST);
-}
-
-/** @test size() is deterministic */
-TEST(RingBufferDeterminismTest, SizeDeterministic) {
-  RingBuffer<int> buffer(16);
-  ASSERT_TRUE(buffer.tryPush(1));
-  ASSERT_TRUE(buffer.tryPush(2));
-  ASSERT_TRUE(buffer.tryPush(3));
-
-  const std::size_t FIRST = buffer.size();
-  const std::size_t SECOND = buffer.size();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 3U);
+/** @test An rvalue pushed is moved in without a copy and its source is left moved-from, an
+ * lvalue pushed is copied exactly once, a pop moves the element out without a copy, and a
+ * move-only element type goes through. */
+TEST_F(RingBufferTest, MovesRvaluesAndCopiesLvaluesOnce) {
+  apex::concurrency::test::checkQueueValueCategories<RingBuffer>();
 }
 
 /* ----------------------------- Storage Alignment Tests ----------------------------- */

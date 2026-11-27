@@ -97,30 +97,27 @@ TEST_F(LatchTest, WaitOnTriggeredReturnsImmediately) {
   EXPECT_LT(ELAPSED, std::chrono::milliseconds(50));
 }
 
-/** @test wait blocks until countDown */
+/** @test wait() blocks while the count is above zero and returns once it reaches zero. */
 TEST_F(LatchTest, WaitBlocksUntilCountDown) {
-  Latch latch(1);
-  std::atomic<bool> waiting{false};
-  std::atomic<bool> done{false};
-
-  std::thread waiter([&]() {
-    waiting.store(true, std::memory_order_release);
-    latch.wait();
-    done.store(true, std::memory_order_release);
+  struct Waiting : CrewState {
+    Latch latch{1};
+    std::atomic<bool> waiting{false};
+    std::atomic<bool> done{false};
+  };
+  Crew<Waiting> crew;
+  crew.start([](Waiting& state) {
+    state.waiting.store(true, std::memory_order_release);
+    state.latch.wait();
+    state.done.store(true, std::memory_order_release);
   });
 
-  // Wait for waiter to start waiting
-  while (!waiting.load(std::memory_order_acquire)) {
-    std::this_thread::yield();
-  }
-  std::this_thread::sleep_for(std::chrono::milliseconds(20));
-  EXPECT_FALSE(done.load(std::memory_order_acquire));
+  ASSERT_TRUE(settles([&]() { return crew->waiting.load(); }));
+  EXPECT_FALSE(escapesWithin([&]() { return crew->done.load(); }))
+      << "wait() returned with the count at one";
 
-  // Trigger latch
-  latch.countDown();
-  waiter.join();
-
-  EXPECT_TRUE(done.load(std::memory_order_acquire));
+  crew->latch.countDown();
+  ASSERT_TRUE(crew.finish()) << "wait() did not return after the count reached zero";
+  EXPECT_TRUE(crew->done.load());
 }
 
 /** @test waitFor returns true on triggered latch */
@@ -210,106 +207,81 @@ TEST_F(LatchTest, ArriveAndWaitOnTriggeredLatchReturns) {
 
 /* ----------------------------- Concurrent Tests ----------------------------- */
 
-/** @test Multiple threads count down */
+/** @test Ten threads counting down once each trigger a latch of ten. */
 TEST_F(LatchTest, MultipleThreadsCountDown) {
   constexpr int THREAD_COUNT = 10;
-  Latch latch(THREAD_COUNT);
-
-  std::vector<std::thread> threads;
-  threads.reserve(THREAD_COUNT);
+  struct Counting : CrewState {
+    Latch latch{THREAD_COUNT};
+  };
+  Crew<Counting> crew;
   for (int i = 0; i < THREAD_COUNT; ++i) {
-    threads.emplace_back([&]() { latch.countDown(); });
+    crew.start([](Counting& state) { state.latch.countDown(); });
   }
+  ASSERT_TRUE(crew.finish()) << "a countDown() did not return";
 
-  for (auto& t : threads) {
-    t.join();
-  }
-
-  EXPECT_TRUE(latch.tryWait());
-  EXPECT_EQ(latch.count(), 0U);
+  EXPECT_TRUE(crew->latch.tryWait());
+  EXPECT_EQ(crew->latch.count(), 0U);
 }
 
-/** @test Multiple waiters are all released */
+/** @test One countDown() to zero releases every waiter: five threads in wait() stay there while
+ * the count is one, and all five return after it. */
 TEST_F(LatchTest, MultipleWaitersReleased) {
-  Latch latch(1);
   constexpr int WAITER_COUNT = 5;
-  std::atomic<int> released{0};
-
-  std::vector<std::thread> waiters;
-  waiters.reserve(WAITER_COUNT);
+  struct Waiters : CrewState {
+    Latch latch{1};
+    std::atomic<int> entering{0};
+    std::atomic<int> released{0};
+  };
+  Crew<Waiters> crew;
   for (int i = 0; i < WAITER_COUNT; ++i) {
-    waiters.emplace_back([&]() {
-      latch.wait();
-      released.fetch_add(1, std::memory_order_relaxed);
+    crew.start([](Waiters& state) {
+      state.entering.fetch_add(1, std::memory_order_acq_rel);
+      state.latch.wait();
+      state.released.fetch_add(1, std::memory_order_acq_rel);
     });
   }
 
-  // Give waiters time to start waiting
-  std::this_thread::sleep_for(std::chrono::milliseconds(20));
-  EXPECT_EQ(released.load(), 0);
+  ASSERT_TRUE(settles([&]() { return crew->entering.load() == WAITER_COUNT; }));
+  EXPECT_FALSE(escapesWithin([&]() { return crew->released.load() > 0; }))
+      << crew->released.load() << " waiter(s) returned with the count at one";
 
-  // Trigger latch
-  latch.countDown();
-
-  for (auto& t : waiters) {
-    t.join();
-  }
-
-  EXPECT_EQ(released.load(), WAITER_COUNT);
+  crew->latch.countDown();
+  ASSERT_TRUE(crew.finish()) << crew->released.load() << " of " << WAITER_COUNT
+                             << " waiters returned";
+  EXPECT_EQ(crew->released.load(), WAITER_COUNT);
 }
 
-/** @test Worker coordination pattern */
+/** @test A start latch and a done latch coordinate workers: four workers do nothing until the
+ * start latch is triggered, then each works once and counts the done latch down, which a timed
+ * wait then finds triggered. */
 TEST_F(LatchTest, WorkerCoordination) {
   constexpr int WORKER_COUNT = 4;
-  Latch startLatch(1);
-  Latch doneLatch(WORKER_COUNT);
-  std::atomic<int> workDone{0};
-
-  std::vector<std::thread> workers;
-  workers.reserve(WORKER_COUNT);
+  struct Coordinated : CrewState {
+    Latch startLatch{1};
+    Latch doneLatch{WORKER_COUNT};
+    std::atomic<int> entering{0};
+    std::atomic<int> workDone{0};
+  };
+  Crew<Coordinated> crew;
   for (int i = 0; i < WORKER_COUNT; ++i) {
-    workers.emplace_back([&]() {
-      startLatch.wait(); // Wait for start signal
-      workDone.fetch_add(1, std::memory_order_relaxed);
-      doneLatch.countDown(); // Signal done
+    crew.start([](Coordinated& state) {
+      state.entering.fetch_add(1, std::memory_order_acq_rel);
+      state.startLatch.wait();
+      state.workDone.fetch_add(1, std::memory_order_acq_rel);
+      state.doneLatch.countDown();
     });
   }
 
-  // Workers should be waiting
-  std::this_thread::sleep_for(std::chrono::milliseconds(20));
-  EXPECT_EQ(workDone.load(), 0);
+  ASSERT_TRUE(settles([&]() { return crew->entering.load() == WORKER_COUNT; }));
+  EXPECT_FALSE(escapesWithin([&]() { return crew->workDone.load() > 0; }))
+      << "a worker ran before the start latch was triggered";
 
-  // Start workers
-  startLatch.countDown();
-
-  // Wait for all workers to finish
-  doneLatch.wait();
-
-  for (auto& t : workers) {
-    t.join();
-  }
-
-  EXPECT_EQ(workDone.load(), WORKER_COUNT);
-}
-
-/* ----------------------------- Determinism Tests ----------------------------- */
-
-/** @test tryWait returns consistent results on triggered latch */
-TEST(LatchDeterminismTest, TryWaitConsistentOnTriggered) {
-  Latch latch(0);
-  const bool FIRST = latch.tryWait();
-  const bool SECOND = latch.tryWait();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_TRUE(FIRST);
-}
-
-/** @test count() returns consistent results */
-TEST(LatchDeterminismTest, CountConsistent) {
-  Latch latch(5);
-  const std::size_t FIRST = latch.count();
-  const std::size_t SECOND = latch.count();
-  EXPECT_EQ(FIRST, SECOND);
-  EXPECT_EQ(FIRST, 5U);
+  crew->startLatch.countDown();
+  EXPECT_TRUE(crew->doneLatch.waitFor(apex::concurrency::test::BOUND))
+      << "the done latch was not triggered";
+  ASSERT_TRUE(crew.finish()) << crew->workDone.load() << " of " << WORKER_COUNT
+                             << " workers finished";
+  EXPECT_EQ(crew->workDone.load(), WORKER_COUNT);
 }
 
 /* ----------------------------- Lifetime Tests ----------------------------- */
@@ -340,29 +312,35 @@ template <class Wait> void destroyAfterWait(Wait wait) {
   counter.join();
 }
 
+/// Run destroyAfterWait() on a thread the case waits for with a bound: a wait that never returns
+/// fails the case, and everything the loop touches is on that thread's own stack.
+template <class Wait> bool destroyAfterWaitFinishes(Wait wait) {
+  struct Nothing : CrewState {};
+  Crew<Nothing> crew;
+  crew.start([wait](Nothing&) { destroyAfterWait(wait); });
+  return crew.finish(std::chrono::seconds(20));
+}
+
 } // namespace
 
 /** @test A waiter polling tryWait() may destroy the latch once it reads zero: the final countDown()
  * is done with the latch by then. */
 TEST(LatchLifetimeTest, WaiterDestroysAfterTryWait) {
-  destroyAfterWait([](Latch& latch) {
+  EXPECT_TRUE(destroyAfterWaitFinishes([](Latch& latch) {
     while (!latch.tryWait()) {
     }
-  });
-  SUCCEED();
+  }));
 }
 
 /** @test The same with a zero-length waitFor(). */
 TEST(LatchLifetimeTest, WaiterDestroysAfterWaitFor) {
-  destroyAfterWait([](Latch& latch) {
+  EXPECT_TRUE(destroyAfterWaitFinishes([](Latch& latch) {
     while (!latch.waitFor(std::chrono::microseconds(0))) {
     }
-  });
-  SUCCEED();
+  }));
 }
 
 /** @test The control: wait() already takes the mutex before returning. */
 TEST(LatchLifetimeTest, WaiterDestroysAfterWait) {
-  destroyAfterWait([](Latch& latch) { latch.wait(); });
-  SUCCEED();
+  EXPECT_TRUE(destroyAfterWaitFinishes([](Latch& latch) { latch.wait(); }));
 }

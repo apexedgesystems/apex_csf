@@ -91,6 +91,23 @@ TEST(ThreadConfigTest, ReportsARefusedSetting) {
   EXPECT_TRUE(afterAffinity.sameCpusAs(before));
 }
 
+/** @test A thread name longer than the kernel takes, fifteen characters, makes the call return
+ * false and leaves the thread's name as it was. */
+TEST(ThreadConfigTest, ReportsANameTheKernelRefuses) {
+  bool applied = true;
+  ThreadIdentity before;
+  ThreadIdentity after;
+  std::thread named([&]() {
+    before.recordHere();
+    applied = applyThreadConfig(ThreadConfig{}, "sixteen-letters-");
+    after.recordHere();
+  });
+  named.join();
+
+  EXPECT_FALSE(applied);
+  EXPECT_STREQ(after.name.data(), before.name.data());
+}
+
 /** @test An empty configuration changes nothing and succeeds. */
 TEST(ThreadConfigTest, EmptyConfigurationIsANoOp) {
   bool applied = false;

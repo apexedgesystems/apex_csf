@@ -33,8 +33,9 @@ apex_module(utilities_concurrency)
 # Sources
 # ------------------------------------------------------------------------------
 
-set(CPP_SOURCES "${SRC_DIR}/ThreadPool.cpp" "${SRC_DIR}/ThreadPoolLockFree.cpp"
-                "${SRC_DIR}/Semaphore.cpp" "${SRC_DIR}/Latch.cpp" "${SRC_DIR}/Barrier.cpp"
+set(CPP_SOURCES
+    "${SRC_DIR}/PoolBase.cpp" "${SRC_DIR}/ThreadPool.cpp" "${SRC_DIR}/ThreadPoolLockFree.cpp"
+    "${SRC_DIR}/Semaphore.cpp" "${SRC_DIR}/Latch.cpp" "${SRC_DIR}/Barrier.cpp"
 )
 
 # ------------------------------------------------------------------------------

@@ -4,11 +4,10 @@
  *
  * Classic ring buffer with power-of-two capacity for fast index wrapping.
  * Head is written by producer, tail by consumer. Each observes the other
- * with acquire semantics to determine available space/data.
+ * with acquire semantics to determine available space/data, and only when
+ * its last observation no longer shows any.
  */
 
-#include <memory>
-#include <new>
 #include <utility>
 
 namespace apex {
@@ -18,53 +17,23 @@ namespace concurrency {
 
 template <class T>
 SPSCQueue<T>::SPSCQueue(std::size_t capacity, std::size_t firstIndex) noexcept
-    : mask_(0), buffer_(nullptr), head_(firstIndex), tail_(firstIndex) {
-  // Ensure minimum capacity of 2 and round up to power of two.
-  const std::size_t CAP = nextPow2(capacity < 2 ? 2 : capacity);
-  mask_ = CAP - 1;
+    : mask_(ringSlots(capacity) - 1), buffer_(mask_ + 1), head_(firstIndex), tailSeen_(firstIndex),
+      tail_(firstIndex), headSeen_(firstIndex) {}
 
-  // Allocate with the element's own alignment, then default-construct elements.
-  buffer_ = static_cast<T*>(::operator new[](CAP * sizeof(T), std::align_val_t{alignof(T)}));
-  for (std::size_t i = 0; i < CAP; ++i) {
-    new (&buffer_[i]) T();
-  }
-}
+template <class T> template <class U> bool SPSCQueue<T>::push(U&& value) noexcept {
+  const std::size_t HEAD = head_.load(std::memory_order_relaxed);
 
-template <class T> SPSCQueue<T>::~SPSCQueue() {
-  if (buffer_) {
-    const std::size_t CAP = mask_ + 1;
-    for (std::size_t i = CAP; i-- > 0;) {
-      std::destroy_at(&buffer_[i]);
+  // Full when head - tail == capacity (all slots used). The last view of the
+  // tail can only make the queue look fuller than it is, so it is refreshed
+  // before the queue is called full.
+  if (HEAD - tailSeen_ > mask_) {
+    tailSeen_ = tail_.load(std::memory_order_acquire);
+    if (HEAD - tailSeen_ > mask_) {
+      return false;
     }
-    ::operator delete[](buffer_, std::align_val_t{alignof(T)});
-    buffer_ = nullptr;
-  }
-}
-
-template <class T> bool SPSCQueue<T>::tryPush(const T& value) noexcept {
-  const std::size_t HEAD = head_.load(std::memory_order_relaxed);
-  const std::size_t TAIL = tail_.load(std::memory_order_acquire);
-
-  // Full when head - tail == capacity (all slots used).
-  if (HEAD - TAIL > mask_) {
-    return false;
   }
 
-  buffer_[HEAD & mask_] = value;
-  head_.store(HEAD + 1, std::memory_order_release);
-  return true;
-}
-
-template <class T> bool SPSCQueue<T>::tryPush(T&& value) noexcept {
-  const std::size_t HEAD = head_.load(std::memory_order_relaxed);
-  const std::size_t TAIL = tail_.load(std::memory_order_acquire);
-
-  // Full when head - tail == capacity (all slots used).
-  if (HEAD - TAIL > mask_) {
-    return false;
-  }
-
-  buffer_[HEAD & mask_] = std::move(value);
+  buffer_[HEAD & mask_] = std::forward<U>(value);
   head_.store(HEAD + 1, std::memory_order_release);
   return true;
 }
@@ -72,9 +41,13 @@ template <class T> bool SPSCQueue<T>::tryPush(T&& value) noexcept {
 template <class T> bool SPSCQueue<T>::tryPop(T& out) noexcept {
   const std::size_t TAIL = tail_.load(std::memory_order_relaxed);
 
-  // Check if queue is empty: tail equals head.
-  if (TAIL == head_.load(std::memory_order_acquire)) {
-    return false; // Empty
+  // Empty when tail equals head. The last view of the head can only hide
+  // items pushed since, so it is refreshed before the queue is called empty.
+  if (TAIL == headSeen_) {
+    headSeen_ = head_.load(std::memory_order_acquire);
+    if (TAIL == headSeen_) {
+      return false;
+    }
   }
 
   out = std::move(buffer_[TAIL & mask_]);
@@ -91,8 +64,8 @@ template <class T> std::size_t SPSCQueue<T>::sizeApprox() const noexcept {
   const std::size_t TAIL = tail_.load(std::memory_order_acquire);
 
   // The two loads are not atomic together: the consumer can move the tail past the head read
-  // above. occupancy() reports zero for such a pair.
-  return occupancy(HEAD, TAIL, mask_ + 1);
+  // above. ringOccupancy() reports zero for such a pair.
+  return ringOccupancy(HEAD, TAIL, mask_ + 1);
 }
 
 } // namespace concurrency

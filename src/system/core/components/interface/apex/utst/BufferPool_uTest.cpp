@@ -288,6 +288,133 @@ TEST(BufferPool, CrossThreadOwnershipTransfer) {
   EXPECT_EQ(pool.available(), 16);
 }
 
+/** @test Threads acquiring and releasing at once never lose a buffer or share one. */
+TEST(BufferPool, ConcurrentAcquireReleaseKeepsEveryBuffer) {
+  constexpr std::size_t POOL_SIZE = 4;
+  constexpr std::size_t THREADS = 4;
+  constexpr std::size_t CYCLES = 50000;
+
+  BufferPool pool(POOL_SIZE, 64);
+  std::atomic<bool> start{false};
+  std::atomic<std::size_t> shared{0};
+
+  std::vector<std::thread> crew;
+  crew.reserve(THREADS);
+  for (std::size_t id = 0; id < THREADS; ++id) {
+    crew.emplace_back([&pool, &start, &shared, id]() {
+      while (!start.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+      }
+      for (std::size_t cycle = 0; cycle < CYCLES; ++cycle) {
+        MessageBuffer* buf = pool.acquire(8);
+        if (buf == nullptr) {
+          continue;
+        }
+        // The owner's mark must survive until the owner releases the buffer.
+        const std::uint32_t MARK = static_cast<std::uint32_t>((id << 24U) | (cycle & 0xFFFFFFU));
+        buf->fullUid = MARK;
+        std::memcpy(buf->data, &MARK, sizeof(MARK));
+        std::uint32_t stored = 0;
+        std::memcpy(&stored, buf->data, sizeof(stored));
+        if (buf->fullUid != MARK || stored != MARK) {
+          shared.fetch_add(1U, std::memory_order_relaxed);
+        }
+        pool.release(buf);
+      }
+    });
+  }
+  start.store(true, std::memory_order_release);
+  for (std::thread& member : crew) {
+    member.join();
+  }
+
+  EXPECT_EQ(shared.load(), 0U);
+  EXPECT_EQ(pool.available(), POOL_SIZE);
+
+  // Every buffer can be taken again, each once.
+  std::vector<MessageBuffer*> taken;
+  taken.reserve(POOL_SIZE);
+  for (std::size_t i = 0; i < POOL_SIZE; ++i) {
+    MessageBuffer* buf = pool.acquire(8);
+    ASSERT_NE(buf, nullptr) << "buffer " << i << " of " << POOL_SIZE << " did not come back";
+    for (const MessageBuffer* earlier : taken) {
+      EXPECT_NE(buf, earlier);
+    }
+    taken.push_back(buf);
+  }
+  EXPECT_EQ(pool.acquire(8), nullptr);
+  for (MessageBuffer* buf : taken) {
+    pool.release(buf);
+  }
+}
+
+/** @test Holders of one shared buffer releasing at once return it once, after the last. */
+TEST(BufferPool, ConcurrentReleasesOfSharedBufferReturnItOnce) {
+  constexpr std::uint32_t HOLDERS = 4;
+  constexpr std::uint32_t ROUNDS = 2000;
+
+  BufferPool pool(1, 64);
+  std::atomic<MessageBuffer*> current{nullptr};
+  std::atomic<std::uint32_t> round{0};
+  std::atomic<std::uint32_t> released{0};
+  std::atomic<std::uint32_t> wiped{0};
+  std::atomic<bool> stop{false};
+
+  std::vector<std::thread> crew;
+  crew.reserve(HOLDERS);
+  for (std::uint32_t id = 0; id < HOLDERS; ++id) {
+    crew.emplace_back([&pool, &current, &round, &released, &wiped, &stop]() {
+      std::uint32_t seen = 0;
+      for (;;) {
+        std::uint32_t now = round.load(std::memory_order_acquire);
+        while (now == seen && !stop.load(std::memory_order_acquire)) {
+          std::this_thread::yield();
+          now = round.load(std::memory_order_acquire);
+        }
+        if (now == seen) {
+          return;
+        }
+        seen = now;
+        MessageBuffer* buf = current.load(std::memory_order_acquire);
+        // The round's mark is this holder's to read until it gives its reference up.
+        if (buf->fullUid != now) {
+          wiped.fetch_add(1U, std::memory_order_relaxed);
+        }
+        pool.release(buf);
+        released.fetch_add(1U, std::memory_order_release);
+      }
+    });
+  }
+
+  std::uint32_t lostInRound = 0;
+  for (std::uint32_t r = 1; r <= ROUNDS; ++r) {
+    MessageBuffer* buf = pool.acquire(8);
+    if (buf == nullptr) {
+      lostInRound = r;
+      break;
+    }
+    buf->fullUid = r;
+    buf->setRefCount(HOLDERS);
+    current.store(buf, std::memory_order_release);
+    round.store(r, std::memory_order_release);
+    while (released.load(std::memory_order_acquire) != r * HOLDERS) {
+      std::this_thread::yield();
+    }
+    if (pool.available() != 1U) {
+      lostInRound = r;
+      break;
+    }
+  }
+  stop.store(true, std::memory_order_release);
+  for (std::thread& member : crew) {
+    member.join();
+  }
+
+  EXPECT_EQ(lostInRound, 0U)
+      << "the shared buffer was not back in the pool after every holder released it";
+  EXPECT_EQ(wiped.load(), 0U) << "a holder found the buffer cleared before giving its reference up";
+}
+
 /** @test Sequential acquire/release from single thread (stress test). */
 TEST(BufferPool, SequentialStressTest) {
   constexpr std::size_t POOL_SIZE = 64;
@@ -427,6 +554,36 @@ TEST(BufferPool, LargePool) {
   }
 
   EXPECT_EQ(pool.available(), LARGE_POOL_SIZE);
+}
+
+/** @test A pool size that is not a multiple of the map word hands out each buffer once. */
+TEST(BufferPool, SizeBetweenMapWordsHandsOutEachBufferOnce) {
+  constexpr std::size_t POOL_SIZE = 70;
+  BufferPool pool(POOL_SIZE, 32);
+
+  EXPECT_EQ(pool.available(), POOL_SIZE);
+
+  std::vector<MessageBuffer*> buffers;
+  buffers.reserve(POOL_SIZE);
+  for (std::size_t i = 0; i < POOL_SIZE; ++i) {
+    MessageBuffer* buf = pool.acquire(32);
+    ASSERT_NE(buf, nullptr);
+    ASSERT_NE(buf->data, nullptr);
+    for (const MessageBuffer* earlier : buffers) {
+      ASSERT_NE(buf, earlier);
+      ASSERT_NE(buf->data, earlier->data);
+    }
+    buffers.push_back(buf);
+  }
+
+  EXPECT_EQ(pool.acquire(32), nullptr);
+  EXPECT_EQ(pool.available(), 0U);
+
+  // Returned from the last word first.
+  for (std::size_t i = POOL_SIZE; i > 0; --i) {
+    pool.release(buffers[i - 1]);
+    EXPECT_EQ(pool.available(), POOL_SIZE - i + 1);
+  }
 }
 
 /* ----------------------------- Refcount Tests ----------------------------- */
