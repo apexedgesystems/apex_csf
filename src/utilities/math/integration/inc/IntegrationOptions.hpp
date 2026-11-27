@@ -177,7 +177,8 @@ template <typename State> using SDIRK2OptionsRT = ImplicitOptionsRT<State>;
 /**
  * @brief Options for Adams-Bashforth explicit multi-step integrator.
  *
- * order = number of steps (1..4)
+ * order = number of steps and order of convergence (1..4); values outside
+ * that range are clamped to it.
  */
 template <typename State> struct AdamsBashforthOptions {
   std::size_t order = 2; /**< Number of steps (1..4). */
