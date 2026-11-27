@@ -2,8 +2,8 @@
  * @file TransientCuda_uTest.cu
  * @brief Unit tests for CUDA-accelerated transient simulation.
  *
- * Tests GPU transient stepping and verifies CPU fallback behavior
- * for small circuits below the 100-net GPU threshold.
+ * Tests GPU transient stepping, and that a circuit below the 100-net GPU
+ * threshold is not stepped: the call returns a failure and takes no CPU step.
  */
 
 #include "src/sim/electronics/algorithms/transient/inc/TransientCuda.cuh"
@@ -49,12 +49,11 @@ using sim::electronics::algorithms::transient::cuda::stepCuda;
 static constexpr double VDD = 5.0;
 static constexpr IntegrationMethod METHOD = IntegrationMethod::BACKWARD_EULER;
 
-/* ----------------------------- CPU Fallback Tests ----------------------------- */
+/* ----------------------------- Below the Threshold ----------------------------- */
 
-/** @test Small RC circuit falls back to CPU (below 100-net threshold). */
-TEST(TransientCudaTest, SmallCircuitFallsBackToCPU) {
+/** @test A small RC circuit (below the 100-net threshold) is not stepped. */
+TEST(TransientCudaTest, SmallCircuitIsNotStepped) {
   // 3-net RC circuit: Gnd(0), Vdd(1), Vout(2)
-  // Forces CPU fallback path
   MnaSystem mna(3);
   CompanionSet companions;
   companions.addCapacitor(2, 0, 1e-6);
@@ -79,20 +78,20 @@ TEST(TransientCudaTest, SmallCircuitFallsBackToCPU) {
 
   double dt = 1e-7;
 
-  // stepCuda should return ERROR_STEP_FAILED for small circuits,
-  // signalling the caller to use CPU solve instead.
+  // stepCuda returns ERROR_STEP_FAILED for a small circuit and steps
+  // nothing; what to do then is the caller's.
   TransientStatus status =
       stepCuda(cudaWs, mna, companions, stampCb, dt, METHOD, time, prevVoltages, workspace, state);
 
   EXPECT_EQ(status, TransientStatus::ERROR_STEP_FAILED)
-      << "Small circuit should fall back (return error) for caller to use CPU";
+      << "A circuit below the threshold is refused";
 
   // Time should not have advanced
   EXPECT_DOUBLE_EQ(time, 0.0);
 }
 
-/** @test Stateful stamp callback also falls back for small circuits. */
-TEST(TransientCudaTest, StatefulCallbackSmallCircuitFallback) {
+/** @test With a stateful stamp callback a small circuit is not stepped either. */
+TEST(TransientCudaTest, StatefulCallbackSmallCircuitIsNotStepped) {
   MnaSystem mna(3);
   CompanionSet companions;
   companions.addCapacitor(2, 0, 1e-6);
@@ -121,7 +120,7 @@ TEST(TransientCudaTest, StatefulCallbackSmallCircuitFallback) {
       stepCuda(cudaWs, mna, companions, stampCb, dt, METHOD, time, prevVoltages, workspace, state);
 
   EXPECT_EQ(status, TransientStatus::ERROR_STEP_FAILED)
-      << "Stateful callback variant should also fall back for small circuits";
+      << "The stateful form refuses a circuit below the threshold too";
 }
 
 /* ----------------------------- Availability Tests ----------------------------- */
