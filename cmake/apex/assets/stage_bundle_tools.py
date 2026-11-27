@@ -99,10 +99,16 @@ def tree_size(paths):
     return sum(os.path.getsize(p) for p in paths if os.path.isfile(p))
 
 
+# A package is unpacked and run by users other than the one who built it: its executables are
+# readable and runnable by all and writable by the owner alone, whatever the builder's umask.
+PACKAGED_EXECUTABLE_MODE = 0o755
+
+
 def copy_executable(src, dst):
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     shutil.copyfile(src, dst)
-    os.chmod(dst, 0o755)
+    # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+    os.chmod(dst, PACKAGED_EXECUTABLE_MODE)
 
 
 def normalize(name):
@@ -549,7 +555,8 @@ def write_launcher(dest, tool, needs, commands, run):
             "done\n"
             'exec %s "$@"\n' % (tool, needs, " ".join(commands), tool, needs, run)
         )
-    os.chmod(launcher, 0o755)
+    # nosemgrep: python.lang.security.audit.insecure-file-permissions.insecure-file-permissions
+    os.chmod(launcher, PACKAGED_EXECUTABLE_MODE)
     return launcher
 
 
