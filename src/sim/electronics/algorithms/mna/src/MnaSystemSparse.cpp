@@ -25,9 +25,9 @@ MnaSystemSparse::MnaSystemSparse(std::size_t netCount) : netCount_(netCount), I_
   // Reserve for ~4 entries per net (typical for circuit matrices: each
   // transistor stamps 3-5 entries, and most circuits have more transistors
   // than nets). The vector retains capacity across clear() calls, so this
-  // only matters for the first factorize.
+  // only matters for the first factorize, which also sizes the list the
+  // factors' stamps are set aside into.
   triplets_.reserve(netCount * 4);
-  factoredTriplets_.reserve(netCount * 4);
   klu_defaults(&kluCommon_);
 }
 
