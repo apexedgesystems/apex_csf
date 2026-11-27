@@ -75,7 +75,7 @@ any such change is called out explicitly in its entry.
   change bakes into it; `make test-rust` and `make clippy` take `ROLES=`
   ([#198](https://github.com/apexedgesystems/apex_csf/pull/198)).
 - The CI lint job runs in its own image, `apex.lint`: the format and
-  secret-scan tools with no compiler toolchain
+  secret-scan tools with no C++ or CUDA compiler stack
   ([#198](https://github.com/apexedgesystems/apex_csf/pull/198)).
 - Thread pool workers count their in-flight tasks per worker, and the two
   pools share `PoolBase` (`PoolBase.hpp` now holds `PoolStatus`, `TaskError`

@@ -65,8 +65,8 @@ services:
     command: bash
 
   # Lint tier: pre-commit, the tools its hooks call, and gitleaks, on the
-  # distro image alone (no compiler toolchain, no baked dependencies). The CI
-  # lint job runs `make format-check` and `make gitleaks` here.
+  # distro image alone (no C++ or CUDA compiler stack, no baked dependencies).
+  # The CI lint job runs `make format-check` and `make gitleaks` here.
   lint:
     <<: *common
     image: apex.lint
