@@ -556,8 +556,8 @@ void SchedulerBase::logTablePreflight() noexcept {
   log->info(label(), fmt::format("[{}] chain dispatch order: {} group(s) with a later phase "
                                  "dispatched ahead of an earlier one",
                                  NAME(P.chainOrder), P.chainOrderViolations));
-  log->info(label(), fmt::format("[{}] chain shape: {} group(s) with waiters >= workers, "
-                                 "{} group(s) mixing rates/offsets",
+  log->info(label(), fmt::format("[{}] chain shape: {} group(s) with waiters >= workers on a "
+                                 "tick ({} group(s) mix rates/offsets)",
                                  NAME(P.chainShape), P.chainsOverWorkers, P.mixedRateChains));
   log->info(label(), fmt::format("[{}] sequence references: {} task(s) the table sequences "
                                  "and their component does not",

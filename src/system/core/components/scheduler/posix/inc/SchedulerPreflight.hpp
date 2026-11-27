@@ -20,8 +20,9 @@
  *    dispatched ahead of an earlier one can park every worker with
  *    the earlier phase still queued behind them -- a hard deadlock on
  *    pools with fewer workers than waiting phases.
- *  - Chain shape: phases-vs-workers depth (parking pressure) and
- *    mixed rates/offsets within one group (cross-frame hazards).
+ *  - Chain shape: phases-vs-workers depth on the worst tick (parking
+ *    pressure). Groups whose tasks differ in rate or offset are counted
+ *    for information; each tick orders the tasks that run on it.
  *  - Sequence references: tasks the table sequences whose component
  *    offers no such sequencing; they run unsequenced.
  *
@@ -52,7 +53,7 @@ struct TablePreflight {
   PreflightVerdict poolRefs{PreflightVerdict::PASS};      ///< Missing-pool references.
   PreflightVerdict dispatchBurst{PreflightVerdict::PASS}; ///< Worst tick load vs workers.
   PreflightVerdict chainOrder{PreflightVerdict::PASS};    ///< Phase dispatch-order liveness.
-  PreflightVerdict chainShape{PreflightVerdict::PASS};    ///< Parking depth / mixed rates.
+  PreflightVerdict chainShape{PreflightVerdict::PASS};    ///< Parking depth on the worst tick.
 
   std::uint16_t missingPoolTasks{0};    ///< Tasks that referenced absent pools.
   std::uint16_t worstBurstTick{0};      ///< Tick with the highest load factor.
@@ -60,8 +61,8 @@ struct TablePreflight {
   std::uint16_t worstBurstWorkers{0};   ///< Workers serving that pool.
   std::uint8_t worstBurstPool{0};       ///< Pool where the worst burst lands.
   std::uint8_t chainOrderViolations{0}; ///< Groups with order-liveness hazards.
-  std::uint8_t chainsOverWorkers{0};    ///< Groups with waiting phases >= workers.
-  std::uint8_t mixedRateChains{0};      ///< Groups mixing rates/offsets.
+  std::uint8_t chainsOverWorkers{0};    ///< Groups with waiting phases >= workers on a tick.
+  std::uint8_t mixedRateChains{0};      ///< Groups mixing rates/offsets (information).
 
   PreflightVerdict seqRefs{PreflightVerdict::PASS}; ///< Unmet sequencing requests.
   std::uint8_t unsequencedTasks{0};                 ///< Tasks sequenced by the table only.

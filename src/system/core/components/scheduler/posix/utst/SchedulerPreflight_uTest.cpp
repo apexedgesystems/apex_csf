@@ -119,7 +119,10 @@ TEST(SchedulerPreflightTest, ChainDispatchOrderHazardFails) {
   EXPECT_EQ(P.overall(), PreflightVerdict::FAIL);
 }
 
-/** @test Waiters >= workers and mixed-rate groups WARN the shape check. */
+/**
+ * @test As many waiting tasks on one tick as the pool has workers WARNs
+ *       the shape check; the group's mixed rates are counted beside it.
+ */
 TEST(SchedulerPreflightTest, ChainShapeHazardsWarn) {
   std::atomic<int> counter{1};
   std::vector<TaskEntry> entries;
@@ -132,6 +135,31 @@ TEST(SchedulerPreflightTest, ChainShapeHazardsWarn) {
   EXPECT_EQ(P.chainShape, PreflightVerdict::WARN);
   EXPECT_EQ(P.chainsOverWorkers, 1U);
   EXPECT_EQ(P.mixedRateChains, 1U);
+}
+
+/**
+ * @test The waiting tasks are counted tick by tick: a group of three whose
+ *       tasks never all share a tick keeps one waiter at most, which two
+ *       workers carry, and its mixed rates alone do not WARN.
+ */
+TEST(SchedulerPreflightTest, ChainShapeCountsWaitersOnEachTick) {
+  std::atomic<int> counter{1};
+  std::vector<TaskEntry> entries;
+  entries.push_back(makeEntry(0, &counter, 1, 100, 0)); // Every tick.
+  entries.push_back(makeEntry(0, &counter, 2, 50, 0));  // Tick 0.
+  entries.push_back(makeEntry(0, &counter, 3, 1, 1));   // Tick 1.
+  std::vector<std::vector<std::size_t>> schedule{{0U, 1U}, {0U, 2U}, {0U}};
+  const auto P = analyzeTaskTable(entries, schedule, {2U});
+
+  EXPECT_EQ(P.chainShape, PreflightVerdict::PASS);
+  EXPECT_EQ(P.chainsOverWorkers, 0U);
+  EXPECT_EQ(P.mixedRateChains, 1U);
+  EXPECT_EQ(P.chainOrder, PreflightVerdict::PASS);
+
+  // One worker cannot carry even one parked task beside the one it waits for.
+  const auto ONE = analyzeTaskTable(entries, schedule, {1U});
+  EXPECT_EQ(ONE.chainShape, PreflightVerdict::WARN);
+  EXPECT_EQ(ONE.chainsOverWorkers, 1U);
 }
 
 /* ----------------------------- Integration ----------------------------- */

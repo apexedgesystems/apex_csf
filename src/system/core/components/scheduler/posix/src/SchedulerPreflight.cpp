@@ -83,8 +83,6 @@ TablePreflight analyzeTaskTable(const std::vector<TaskEntry>& entries,
   }
 
   for (const auto& [counter, g] : groups) {
-    (void)counter;
-
     // Chain order: walk every tick's dispatch list; phases of one group
     // must appear in ascending order, because the per-tick list order IS
     // the pool-queue order and a later phase parked ahead of an earlier
@@ -111,23 +109,36 @@ TablePreflight analyzeTaskTable(const std::vector<TaskEntry>& entries,
       ++out.chainOrderViolations;
     }
 
-    // Chain shape: waiting phases (all but phase-min tasks can park) vs
-    // workers on the group's pool.
+    // Chain shape: waiting phases (all but the lowest phase on a tick can
+    // park) vs workers on the group's pool. A task waits only for the
+    // tasks of its group dispatched on the same tick, so the count is
+    // taken tick by tick and the worst tick decides.
     const std::uint8_t POOL = entries[g.entryIdx.front()].config.poolId;
     const std::uint16_t WORKERS = POOL < poolWorkers.size() && poolWorkers[POOL] > 0
                                       ? poolWorkers[POOL]
                                       : static_cast<std::uint16_t>(1U);
-    int minPhase = entries[g.entryIdx.front()].seqPhase;
-    for (const std::size_t IDX : g.entryIdx) {
-      minPhase = std::min(minPhase, entries[IDX].seqPhase);
-    }
-    std::size_t waiters = 0;
-    for (const std::size_t IDX : g.entryIdx) {
-      if (entries[IDX].seqPhase > minPhase) {
-        ++waiters;
+    std::size_t worstWaiters = 0;
+    for (const auto& tickList : schedule) {
+      bool any = false;
+      int minPhase = 0;
+      for (const std::size_t IDX : tickList) {
+        const auto& e = entries[IDX];
+        if (e.seqCounter != counter) {
+          continue;
+        }
+        minPhase = any ? std::min(minPhase, e.seqPhase) : e.seqPhase;
+        any = true;
       }
+      std::size_t waiters = 0;
+      for (const std::size_t IDX : tickList) {
+        const auto& e = entries[IDX];
+        if (e.seqCounter == counter && e.seqPhase > minPhase) {
+          ++waiters;
+        }
+      }
+      worstWaiters = std::max(worstWaiters, waiters);
     }
-    if (waiters >= WORKERS) {
+    if (worstWaiters >= WORKERS) {
       ++out.chainsOverWorkers;
     }
     if (g.mixedRate) {
@@ -138,7 +149,9 @@ TablePreflight analyzeTaskTable(const std::vector<TaskEntry>& entries,
   if (out.chainOrderViolations > 0) {
     out.chainOrder = PreflightVerdict::FAIL;
   }
-  if (out.chainsOverWorkers > 0 || out.mixedRateChains > 0) {
+  // Rates or offsets that differ within a group are counted and are not
+  // a hazard: each tick orders the group's tasks that run on it.
+  if (out.chainsOverWorkers > 0) {
     out.chainShape = PreflightVerdict::WARN;
   }
 
