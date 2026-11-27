@@ -96,7 +96,6 @@ public:
   uint8_t initialize(Func&& f, const State& initialState, double t0, const Options& opts) noexcept {
     stats_ = Stats{};
     t_ = t0;
-    options_ = opts;
     return static_cast<uint8_t>(
         static_cast<Derived*>(this)->initializeImpl(std::forward<Func>(f), initialState, t0, opts));
   }
@@ -119,7 +118,6 @@ public:
 
     if (s == static_cast<uint8_t>(Status::SUCCESS)) {
       t_ += dt;
-      options_ = opts;
     }
 
     return s;
@@ -134,7 +132,6 @@ public:
 protected:
   Stats stats_{};
   double t_{};
-  Options options_{};
 };
 
 /* ----------------------- Forward Declarations ----------------------------- */

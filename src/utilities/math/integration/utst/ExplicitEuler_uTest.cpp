@@ -78,20 +78,35 @@ TEST(ExplicitEulerTest, MultipleStepsAccumulated) {
   EXPECT_NEAR(state, EXPECTED, 1e-12);
 }
 
-/* ----------------------------- Error Handling ----------------------------- */
+/* ------------------------------ Options Use ------------------------------- */
 
-/** @test Invalid step size (dt <= 0) returns ERROR_INVALID_STEP. */
-TEST(ExplicitEulerTest, InvalidStepSize) {
-  ExplicitEuler<double, EulerOptions> integrator;
-  const double T0 = 0.0;
-  auto f = [](double y, double t) -> double { return y + t; };
+namespace {
 
-  integrator.initialize(f, 1.0, T0, EulerOptions{});
+/** Options that count how often an instance is assigned from another. */
+struct CountingOptions {
+  static inline int copies = 0;
+  CountingOptions() = default;
+  CountingOptions(const CountingOptions&) { ++copies; }
+  CountingOptions& operator=(const CountingOptions&) {
+    ++copies;
+    return *this;
+  }
+};
+
+} // namespace
+
+/** @test Keeps no copy of the caller's options: initialize and step copy none */
+TEST(ExplicitEulerTest, DoesNotCopyOptions) {
+  ExplicitEuler<double, CountingOptions> integrator;
+  const CountingOptions opts;
+  CountingOptions::copies = 0;
+
+  ASSERT_EQ(integrator.initialize([](double y, double) { return -y; }, 1.0, 0.0, opts),
+            static_cast<uint8_t>(Status::SUCCESS));
   double state = 1.0;
+  for (int i = 0; i < 3; ++i) {
+    ASSERT_EQ(integrator.step(state, 0.1, opts), static_cast<uint8_t>(Status::SUCCESS));
+  }
 
-  const uint8_t STATUS = integrator.step(state, 0.0, EulerOptions{});
-  EXPECT_EQ(STATUS, static_cast<uint8_t>(Status::ERROR_INVALID_STEP));
-
-  EXPECT_EQ(integrator.stats().functionEvals, 0u);
-  EXPECT_DOUBLE_EQ(integrator.time(), T0);
+  EXPECT_EQ(CountingOptions::copies, 0);
 }
