@@ -111,8 +111,7 @@ void writeTable(const std::filesystem::path& dir, std::uint8_t workers,
   const SchedulerTprmHeader HEADER{1, workers, static_cast<std::uint8_t>(rows.size())};
   std::memcpy(body.data(), &HEADER, sizeof(HEADER));
   if (!rows.empty()) {
-    std::memcpy(body.data() + sizeof(HEADER), rows.data(),
-                rows.size() * sizeof(SchedulerTaskEntry));
+    std::memcpy(&body[sizeof(HEADER)], rows.data(), rows.size() * sizeof(SchedulerTaskEntry));
   }
 
   sc::TprmPayloadHeader prelude{};
