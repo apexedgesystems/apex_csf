@@ -302,6 +302,9 @@ protected:
                     std::uint16_t tick, std::uint64_t dispatchNs, logs::SystemLog* lg,
                     int logLevel) noexcept;
 
+  /// Whether any task of ENTRY's sequence group is still running.
+  [[nodiscard]] bool groupStillRunning(const TaskEntry& entry) const noexcept;
+
   /**
    * @brief Enqueue the entries a sequenced slot runs this tick.
    *

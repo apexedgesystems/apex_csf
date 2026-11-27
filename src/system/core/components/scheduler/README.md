@@ -377,6 +377,8 @@ The tasks of a group may run at different rates. A 100 Hz step and a 1 Hz report
 
 The same holds for a task its pool refuses (no free context, or the pool's ring rejecting it): it is a counted drop, the tasks of its group that were handed over neither wait for it nor count it, and the group's counter is back at 1 when they finish. A sequenced task is handed to its pool before its place is known and its worker holds until the tick thread has tried every entry of the slot, so the place is always among the tasks that were accepted.
 
+A group still running from an earlier tick is not dispatched again. While any of its tasks is running or waiting, the tasks of the group due on a tick are skipped and counted (`totalSkipCount()`, a warning per skip), in every real-time mode and whether or not busy tasks are otherwise skipped: a task dispatched into a group that is mid-count would be counted with the unfinished tick. A task that is itself still running also raises the period violation as before.
+
 ### McuScheduler for MCUs
 
 Zero-heap scheduler with compile-time-sized task table:

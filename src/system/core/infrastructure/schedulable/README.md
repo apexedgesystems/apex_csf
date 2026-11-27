@@ -229,9 +229,12 @@ report at a later phase follows the 100 Hz step on the tick they share
 and the step runs unhindered on the others. A task the scheduler could
 not hand to its pool on a tick takes no part in that tick's order.
 
-Frame contract: the tasks of a group dispatched on one tick must
-complete before the group is next dispatched; a group dispatched again
-while an earlier tick's tasks still run does not hold that tick's order.
+Frame contract: the tasks of a group dispatched on one tick are meant
+to complete before the group is next due. The multi-threaded scheduler
+holds a group to that: while any of its tasks is still running from an
+earlier tick, none of its tasks is dispatched, and those due are skipped
+and counted. A group that overruns its frame loses runs and is not left
+mid-count.
 
 ---
 

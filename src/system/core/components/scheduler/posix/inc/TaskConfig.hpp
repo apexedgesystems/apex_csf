@@ -231,6 +231,10 @@ struct TaskEntry {
   std::atomic<int>* seqCounter{nullptr};
   int seqPhase{0};    ///< The task's phase in its group, as registered: its place in the order.
   int seqMaxPhase{0}; ///< The group's registered maximum phase.
+  /// Which of the scheduler's sequence groups the task is in: an index the
+  /// scheduler assigns to every entry that shares this one's counter.
+  /// Meaningful only when isSequenced().
+  std::uint16_t seqGroup{0};
 
   /// The task table asked for this task to be sequenced. Sequencing is the
   /// component's to offer, so the request can go unmet; the preflight

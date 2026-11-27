@@ -260,6 +260,27 @@ Status SchedulerBase::addTask(SchedulableTask& task, const TaskConfig& config, S
 /* ----------------------------- markSequencedSlots ----------------------------- */
 
 void SchedulerBase::markSequencedSlots() noexcept {
+  // Entries that share a counter are one group. The groups are few, so
+  // the counters seen so far are searched in order.
+  std::vector<const std::atomic<int>*> counters;
+  seqGroupEntries_.clear();
+  for (std::size_t i = 0; i < entries_.size(); ++i) {
+    TaskEntry& entry = entries_[i];
+    if (!entry.isSequenced()) {
+      continue;
+    }
+    std::size_t group = 0;
+    while (group < counters.size() && counters[group] != entry.seqCounter) {
+      ++group;
+    }
+    if (group == counters.size()) {
+      counters.push_back(entry.seqCounter);
+      seqGroupEntries_.emplace_back();
+    }
+    entry.seqGroup = static_cast<std::uint16_t>(group);
+    seqGroupEntries_[group].push_back(i);
+  }
+
   for (std::size_t slot = 0; slot < schedule_.size() && slot < slotHasSequenced_.size(); ++slot) {
     std::uint8_t any = 0U;
     for (const std::size_t IDX : schedule_[slot]) {
@@ -873,6 +894,7 @@ void SchedulerBase::clearTasks() noexcept {
   }
   std::fill(slotHasGated_.begin(), slotHasGated_.end(), static_cast<std::uint8_t>(0U));
   std::fill(slotHasSequenced_.begin(), slotHasSequenced_.end(), static_cast<std::uint8_t>(0U));
+  seqGroupEntries_.clear();
 }
 
 /* ----------------------------- loadTprm ----------------------------- */
@@ -943,11 +965,13 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
   auto backupSchedule = std::move(schedule_);
   auto backupSlotHasGated = std::move(slotHasGated_);
   auto backupSlotHasSequenced = std::move(slotHasSequenced_);
+  auto backupSeqGroupEntries = std::move(seqGroupEntries_);
   entries_.clear();
   cadences_.clear();
   schedule_.clear();
   slotHasGated_.clear();
   slotHasSequenced_.clear();
+  seqGroupEntries_.clear();
 
   const std::uint8_t* taskEntryBytes = tprmData.data() + sizeof(SchedulerTprmHeader);
 
@@ -1048,6 +1072,7 @@ SchedulerBase::loadTprm(const std::filesystem::path& tprmDir) noexcept {
     schedule_ = std::move(backupSchedule);
     slotHasGated_ = std::move(backupSlotHasGated);
     slotHasSequenced_ = std::move(backupSlotHasSequenced);
+    seqGroupEntries_ = std::move(backupSeqGroupEntries);
     setLastError("TPRM reload failed: 0 tasks resolved, keeping previous schedule");
     if (auto* log = componentLog()) {
       log->warning(label(), 0,

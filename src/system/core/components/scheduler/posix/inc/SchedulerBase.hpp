@@ -643,7 +643,18 @@ protected:
    */
   std::vector<SlotDispatch> slotDispatch_{};
 
-  /** @brief Recompute slotHasSequenced_ from the entries' sequencing. */
+  /**
+   * @brief Entries of each sequence group, by the group's index (TaskEntry::seqGroup).
+   *
+   * The dispatch reads it to learn whether any task of a group is still
+   * running from an earlier tick.
+   */
+  std::vector<std::vector<std::size_t>> seqGroupEntries_{};
+
+  /**
+   * @brief Recompute slotHasSequenced_, each entry's group index and
+   *        seqGroupEntries_ from the entries' sequencing.
+   */
   void markSequencedSlots() noexcept;
 
   /**

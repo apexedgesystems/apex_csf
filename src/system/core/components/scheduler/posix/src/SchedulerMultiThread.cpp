@@ -430,6 +430,26 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
       //  - SOFT modes: Violations expected, count tracked for shutdown summary
     }
     if constexpr (kSequenced) {
+      // A group counts its completions from rest. While any of its tasks
+      // is still running from an earlier tick the count is under way, and
+      // a task dispatched into it would be counted with that tick: it
+      // could wrap the counter under a task still waiting, which then
+      // never runs. So the group is not dispatched again until it has
+      // come to rest; its tasks due now are skipped and counted, whether
+      // or not busy tasks are otherwise skipped. Nothing of this tick has
+      // been handed over yet, so a task that reads running is of an
+      // earlier one.
+      if (entry.isSequenced() && groupStillRunning(entry)) {
+        ++entry.skipCount;
+        ++totalSkipCount_;
+        if (lg && static_cast<int>(logs::SystemLog::Level::WARNING) >= logLevel) {
+          lg->warning(label(), static_cast<std::uint8_t>(Status::WARN_PERIOD_VIOLATION),
+                      fmt::format("Skipping task '{}' at tick {} (its sequence group is still "
+                                  "running, skip #{})",
+                                  entry.task->getLabel(), tick, entry.skipCount));
+        }
+        continue;
+      }
       slotDispatch_.push_back({&entry, nullptr});
     } else {
       enqueueTask<false>(&entry, tick, dispatchNs);
@@ -438,6 +458,15 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
   if constexpr (kSequenced) {
     enqueueSequencedSlot(tick, dispatchNs);
   }
+}
+
+bool SchedulerMultiThread::groupStillRunning(const TaskEntry& entry) const noexcept {
+  for (const std::size_t IDX : seqGroupEntries_[entry.seqGroup]) {
+    if (entries_[IDX].stillRunning()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void SchedulerMultiThread::enqueueSequencedSlot(std::uint16_t tick,

@@ -21,6 +21,9 @@
  *  - A task the scheduler could not hand to its pool is not counted by
  *    the tasks of its group that it did hand over: a later phase does not
  *    wait for it, and the counter rests at 1 so the next tick is ordered.
+ *  - A group whose tasks from an earlier tick are still running is not
+ *    dispatched again until they have finished: no task of it joins the
+ *    unfinished tick, and none is left waiting once it ends.
  */
 
 #include "src/system/core/components/scheduler/posix/inc/SchedulerMultiThread.hpp"
@@ -152,6 +155,7 @@ struct Admission {
   std::atomic<bool> firstInside{false};    ///< The first phase is held in its body.
   std::atomic<int> holdFirstOnRun{0};      ///< Run of the first phase to hold; 0 for none.
   std::atomic<int> firstRuns{0};
+  std::atomic<int> besideRuns{0}; ///< Runs of a task at the first phase that is never held.
   std::atomic<int> secondRuns{0};
   std::atomic<int> overlaps{0}; ///< Second-phase runs that found the first inside.
 
@@ -174,6 +178,11 @@ struct Admission {
     return 0;
   }
 
+  static std::uint8_t beside(void* raw) noexcept {
+    static_cast<Admission*>(raw)->besideRuns.fetch_add(1, std::memory_order_acq_rel);
+    return 0;
+  }
+
   static std::uint8_t second(void* raw) noexcept {
     auto* s = static_cast<Admission*>(raw);
     if (s->firstInside.load(std::memory_order_acquire)) {
@@ -183,6 +192,9 @@ struct Admission {
     return 0;
   }
 };
+
+/// Whether tasks still busy are skipped (true) or dispatched again (false).
+class GroupStillRunning : public ::testing::TestWithParam<bool> {};
 
 /// Lets every held task go and stops the scheduler when a test ends, on
 /// a failed expectation as on a passed one.
@@ -411,3 +423,64 @@ TEST(SchedulerSequencedDispatchTest, ATaskThatWasNotAdmittedLeavesTheNextTickInO
   EXPECT_EQ(state.overlaps.load(), 0);
   EXPECT_EQ(seq.counter()->load(), 1);
 }
+
+/* ----------------------------- A group still running ----------------------------- */
+
+/**
+ * @test The first task of a group is still in its body when the next
+ *       tick comes. No task of the group is dispatched on that tick: the
+ *       task beside it, which is free, does not join the unfinished tick,
+ *       and the second phase runs once, after the first, when it is let
+ *       go. The tick after that runs the whole group in order.
+ */
+TEST_P(GroupStillRunning, IsNotDispatchedAgainUntilItHasComeToRest) {
+  Admission state;
+  SequenceGroup seq(3);
+  auto sched = withPools({2});
+
+  SchedulableTask first(DelegateU8{&Admission::first, &state}, "first");
+  SchedulableTask beside(DelegateU8{&Admission::beside, &state}, "beside");
+  SchedulableTask second(DelegateU8{&Admission::second, &state}, "second");
+  seq.addTask(first, 1);
+  seq.addTask(beside, 1);
+  seq.addTask(second, 2);
+  ASSERT_EQ(sched->addTask(first, TaskConfig(100, 1, 0, 127), &seq), Status::SUCCESS);
+  ASSERT_EQ(sched->addTask(beside, TaskConfig(100, 1, 0, 126), &seq), Status::SUCCESS);
+  ASSERT_EQ(sched->addTask(second, TaskConfig(100, 1, 0, -128), &seq), Status::SUCCESS);
+  ASSERT_EQ(sched->init(), 0U);
+  sched->setSkipOnBusy(GetParam());
+  const ReleaseAndStop AT_EXIT{state, *sched};
+
+  // Tick 0: the first task stays in its body; the one beside it finishes;
+  // the second phase waits for both.
+  state.holdFirstOnRun.store(1, std::memory_order_release);
+  (void)sched->executeTasksOnCycleMulti(0);
+  ASSERT_TRUE(waitFor([&state] { return state.firstInside.load() && state.besideRuns.load() == 1; },
+                      std::chrono::seconds(2)));
+
+  // Tick 1: the group is still running.
+  (void)sched->executeTasksOnCycleMulti(1);
+  std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  EXPECT_EQ(state.besideRuns.load(), 1) << "a free task joined a tick of its group still running";
+  EXPECT_EQ(state.secondRuns.load(), 0) << "the second phase ran with the first in its body";
+
+  state.releaseFirst.store(true, std::memory_order_release);
+  ASSERT_TRUE(sched->waitForInFlightTasks(5 * ONE_SECOND_NS))
+      << "a task of the group was left waiting";
+  EXPECT_EQ(state.firstRuns.load(), 1);
+  EXPECT_EQ(state.besideRuns.load(), 1);
+  EXPECT_EQ(state.secondRuns.load(), 1);
+  EXPECT_EQ(state.overlaps.load(), 0);
+  EXPECT_EQ(seq.counter()->load(), 1);
+  EXPECT_EQ(sched->totalSkipCount(), 3U) << "the three tasks due on tick 1 were to be held back";
+
+  // Tick 2: the group is at rest and runs whole.
+  (void)sched->executeTasksOnCycleMulti(2);
+  ASSERT_TRUE(sched->waitForInFlightTasks(5 * ONE_SECOND_NS));
+  EXPECT_EQ(state.firstRuns.load(), 2);
+  EXPECT_EQ(state.besideRuns.load(), 2);
+  EXPECT_EQ(state.secondRuns.load(), 2);
+  EXPECT_EQ(seq.counter()->load(), 1);
+}
+
+INSTANTIATE_TEST_SUITE_P(SkipOnBusy, GroupStillRunning, ::testing::Values(true, false));

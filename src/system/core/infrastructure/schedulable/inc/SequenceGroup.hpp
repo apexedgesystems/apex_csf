@@ -33,12 +33,13 @@
  * pointer to it, so the group must outlive every task registered with
  * the scheduler against it.
  *
- * Frame contract: the tasks of a group dispatched on one tick must
- * complete before the group is next dispatched. The counter rests at 1
+ * Frame contract: the tasks of a group dispatched on one tick are meant
+ * to complete before the group is next due. The counter rests at 1
  * between ticks and wraps there on the last completion of a tick's
- * tasks; a group dispatched again while an earlier tick's tasks are
- * still running finds the counter mid-count, and the ordering of that
- * tick is not held.
+ * tasks. The multi-threaded scheduler holds a group to that: while any
+ * of its tasks is still running from an earlier tick, none of its tasks
+ * is dispatched, and those due are skipped and counted. A group that
+ * overruns its frame loses runs; it is not left mid-count.
  *
  * Example:
  * @code
