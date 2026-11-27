@@ -169,6 +169,14 @@ any such change is called out explicitly in its entry.
 
 ### Fixed
 
+- Integration library: `ROS3P` diverged and is corrected and renamed
+  `ROS3`; `RKN6` did not converge and has a new coefficient table;
+  `AdamsBashforth` (orders 2-4), `BDF2` and `AdamsMoulton` reach their
+  documented order; every stepper refuses a NaN or infinite step size.
+  Breaking: `ROS3P` is now `ROS3`, `RKN34` returns `STEP_REJECTED` for a
+  rejected step, and six status values no step returned are removed
+  ([#194](https://github.com/apexedgesystems/apex_csf/issues/194),
+  [#205](https://github.com/apexedgesystems/apex_csf/pull/205)).
 - The gitleaks binary in the lint and dev images belongs to root, not to
   the user id its release archive records.
   ([#202](https://github.com/apexedgesystems/apex_csf/pull/202))
