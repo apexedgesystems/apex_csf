@@ -339,9 +339,10 @@ void ApexExecutive::executeTasks(std::promise<std::uint8_t>&& p) noexcept {
       if (TIMEOUTS == 1U || (TIMEOUTS % BARRIER_LOG_INTERVAL) == 0U) {
         sysLog_->warning(label(), static_cast<std::uint8_t>(0x01),
                          fmt::format("Action phase skipped at cycle {}: a task is still "
-                                     "running at the wait's end{} (total skips: {})",
+                                     "running at the wait's end{} (total skips: {}) -- "
+                                     "in-flight: {}",
                                      taskCycles, BACKLOG ? ", polled while behind the clock" : "",
-                                     TIMEOUTS));
+                                     TIMEOUTS, scheduler_.inFlightSummary(4)));
       }
     }
 
