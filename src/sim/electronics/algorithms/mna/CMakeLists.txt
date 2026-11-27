@@ -6,7 +6,9 @@
 # 25x sparse and 31x dense speedup over baseline.
 #
 # Dependencies: BLAS, LAPACK, SuiteSparse (KLU)
-# RT-safety: Core MNA operations RT-safe with pre-allocated workspace
+# RT-safety: stamping; dense and AC solveInto() with a prepared workspace in a
+#            build with LAPACKE; sparse updateRhs() and solveInto() on factors
+#            in hand. See section 7 of the README.
 # ==============================================================================
 
 include(apex/All)
