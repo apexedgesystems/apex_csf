@@ -401,24 +401,31 @@ TEST(IntegrationOrderTest, Gear2KeepsItsAccuracyOverAShorterStep) {
 /**
  * @test A solver that keeps its factors takes the same steps as one that does
  *       not, across a change of step length under Gear's formula: by the
- *       dense and by the two-state way of keeping them.
+ *       dense, the two-state and the sparse way of keeping them.
  *
  * After a shorter step the formula weighs its history differently for one
- * step more, so the conductances of two steps of equal length differ.
+ * step more, so the conductances of two steps of equal length differ. The
+ * run starts at rest, so it also crosses GEAR2's first step, which is
+ * backward Euler's, into its second.
  */
 TEST(IntegrationOrderTest, KeptFactorsFollowGear2AcrossAChangedStep) {
-  enum class Keeping { DENSE, DUAL };
-  for (const Keeping KEEPING : {Keeping::DENSE, Keeping::DUAL}) {
+  enum class Keeping { DENSE, DUAL, SPARSE };
+  for (const Keeping KEEPING : {Keeping::DENSE, Keeping::DUAL, Keeping::SPARSE}) {
     Stepped plain(3, IntegrationMethod::GEAR2);
     Stepped kept(3, IntegrationMethod::GEAR2);
     buildDrivenRc(plain);
-    buildDrivenRc(kept);
     switch (KEEPING) {
     case Keeping::DENSE:
+      buildDrivenRc(kept);
       kept.solver.setCachedLU(true);
       break;
     case Keeping::DUAL:
+      buildDrivenRc(kept);
       kept.solver.setDualLU(true);
+      break;
+    case Keeping::SPARSE:
+      // The sparse solver keeps its factors between steps by itself.
+      buildDrivenRcSparse(kept);
       break;
     }
 

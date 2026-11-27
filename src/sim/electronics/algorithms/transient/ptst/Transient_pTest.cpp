@@ -14,6 +14,7 @@
 #include "src/bench/inc/Perf.hpp"
 #include "src/sim/electronics/algorithms/transient/inc/TransientSolver.hpp"
 #include "src/sim/electronics/algorithms/mna/inc/MnaSystem.hpp"
+#include "src/sim/electronics/algorithms/mna/inc/MnaSystemSparse.hpp"
 
 #include <gtest/gtest.h>
 
@@ -25,6 +26,7 @@
 
 namespace ub = vernier::bench;
 using sim::electronics::algorithms::mna::MnaSystem;
+using sim::electronics::algorithms::mna::MnaSystemSparse;
 using sim::electronics::algorithms::transient::IntegrationMethod;
 using sim::electronics::algorithms::transient::TransientConfig;
 using sim::electronics::algorithms::transient::TransientResult;
@@ -438,7 +440,7 @@ TransientSolver buildRlcSections(IntegrationMethod method) {
 }
 
 /** @brief How a solver keeps its factors between steps. */
-enum class Keeping : std::uint8_t { NONE, DENSE, DUAL };
+enum class Keeping : std::uint8_t { NONE, DENSE, DUAL, SPARSE };
 
 /** @brief One step by the way the solver keeps its factors. */
 bool stepBy(TransientSolver& solver, Keeping keeping, double dt, TransientState& state) {
@@ -515,6 +517,17 @@ void runChangedStepCase(vernier::bench::PerfCase& perf, Keeping keeping, const c
     solver.setCachedLU(true);
   } else if (keeping == Keeping::DUAL) {
     solver.setDualLU(true);
+  } else if (keeping == Keeping::SPARSE) {
+    // The same circuit stamped into the sparse system, which keeps its
+    // factors between steps by itself.
+    solver.setSparse(true);
+    solver.setStatefulStampCallbackSparse(
+        [](MnaSystemSparse& mna, double seconds, const std::vector<double>& /*previous*/) {
+          mna.addVoltageSource(1, 0, VDD * std::sin(2.0e4 * seconds));
+          for (std::size_t k = 0; k < RLC_SECTIONS; ++k) {
+            mna.addConductance(1, static_cast<std::uint32_t>(2 + 2 * k), 1e-3);
+          }
+        });
   }
   TransientState state;
   state.resize(solver.netCount(), 1);
@@ -582,4 +595,10 @@ PERF_TEST(TransientKeptFactors, Gear2ChangedStep_DenseKept_201step) {
 PERF_TEST(TransientKeptFactors, Gear2ChangedStep_DualKept_201step) {
   UB_PERF_GUARD(perf);
   runChangedStepCase(perf, Keeping::DUAL, "rlc_gear2_changed_dual");
+}
+
+/** @brief GEAR2 across a changed step on the sparse solver, which keeps its factors. */
+PERF_TEST(TransientKeptFactors, Gear2ChangedStep_SparseKept_201step) {
+  UB_PERF_GUARD(perf);
+  runChangedStepCase(perf, Keeping::SPARSE, "rlc_gear2_changed_sparse");
 }
