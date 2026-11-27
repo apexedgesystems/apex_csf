@@ -416,7 +416,7 @@ void SchedulerMultiThread::dispatchSlot(const std::vector<std::size_t>& entryInd
     if constexpr (kSequenced) {
       slotDispatch_.push_back(&entry);
     } else {
-      enqueueTask(&entry, tick, dispatchNs, entry.seqPhase, entry.seqMaxPhase);
+      enqueueTask(&entry, tick, dispatchNs);
     }
   }
   if constexpr (kSequenced) {
@@ -434,7 +434,7 @@ void SchedulerMultiThread::enqueueSequencedSlot(std::uint16_t tick,
   // not on this tick, or were skipped, waits for none of them.
   for (TaskEntry* entry : slotDispatch_) {
     if (!entry->isSequenced()) {
-      enqueueTask(entry, tick, dispatchNs, 0, 0);
+      enqueueTask(entry, tick, dispatchNs);
       continue;
     }
     int ahead = 0;
@@ -599,9 +599,11 @@ std::uint8_t SchedulerMultiThread::taskTrampoline(void* raw) noexcept {
   return rc;
 }
 
+template <typename... SeqWait>
 void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
-                                       std::uint64_t dispatchNs, int seqPhase,
-                                       int seqMaxPhase) noexcept {
+                                       std::uint64_t dispatchNs, SeqWait... seqWait) noexcept {
+  static_assert(sizeof...(SeqWait) == 0 || sizeof...(SeqWait) == 2,
+                "a sequenced dispatch carries the wait and the wrap, any other nothing");
   // First drop and every interval-th after: surfaces sustained exhaustion
   // without logging at tick rate from the dispatch path. Power of two so the
   // modulo compiles to a mask; the totalDispatchDrops_ counter stays exact.
@@ -639,8 +641,11 @@ void SchedulerMultiThread::enqueueTask(TaskEntry* entry, std::uint16_t tick,
   ctx->tick = tick;
   ctx->poolId = poolId;
   ctx->entry = entry; // Store entry for sequencing in trampoline
-  ctx->seqPhase = seqPhase;
-  ctx->seqMaxPhase = seqMaxPhase;
+  if constexpr (sizeof...(SeqWait) == 2) {
+    const int WAIT[2] = {seqWait...};
+    ctx->seqPhase = WAIT[0];
+    ctx->seqMaxPhase = WAIT[1];
+  }
   const auto STATUS = pools_[poolId]->tryEnqueue(task->getLabel().data(), {&taskTrampoline, ctx});
   if (STATUS != apex::concurrency::PoolStatus::SUCCESS) {
     // Bounded ring rejected the dispatch (full ring = the pool stopped

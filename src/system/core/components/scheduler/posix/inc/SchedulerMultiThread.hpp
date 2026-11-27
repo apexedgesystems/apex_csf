@@ -284,11 +284,14 @@ protected:
 
   /**
    * @brief Hand one entry to its pool.
-   * @param seqPhase Counter value a sequenced entry waits for on this
-   *        dispatch; seqMaxPhase the value its counter wraps after.
+   * @param seqWait For a sequenced entry, two values: the counter value
+   *        this dispatch waits for, then the value the counter wraps
+   *        after. For any other entry, nothing: an unsequenced dispatch
+   *        passes and stores no more than it needs.
    */
-  void enqueueTask(TaskEntry* entry, std::uint16_t tick, std::uint64_t dispatchNs, int seqPhase,
-                   int seqMaxPhase) noexcept;
+  template <typename... SeqWait>
+  void enqueueTask(TaskEntry* entry, std::uint16_t tick, std::uint64_t dispatchNs,
+                   SeqWait... seqWait) noexcept;
 
   static std::uint8_t taskTrampoline(void* raw) noexcept;
 
